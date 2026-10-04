@@ -1,0 +1,30 @@
+# Секреты и локальные настройки — никогда в Git (docs/SECURITY.md)
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+cookies*.txt
+*.cookies
+secrets/
+local/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Node
+node_modules/
+
+# Рабочие файлы рендера и сессии
+build/
+.tmp/
+*.log
+
+# ОС и редакторы
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

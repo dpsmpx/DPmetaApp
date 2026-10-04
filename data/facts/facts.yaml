@@ -1,0 +1,457 @@
+# Реестр утверждений (Content Facts / Claims / Evidence).
+#
+# Единственный источник фактов для контента (Д1, Д6). Контент ссылается
+# на факты по id; утверждение без записи здесь — неподтверждённое.
+# Правила — docs/content/CLAIM_POLICY.md; схема — schemas/facts.schema.json.
+#
+# class:        FACT | INTERPRETATION | HYPOTHESIS
+# risk:         high (числа, «собственный», «работает на», сроки, сравнения) | medium | low
+# public:       можно ли использовать в публичном контенте
+# verification: re-measured (перемерено в сессии) | reported (из документа
+#               проекта, не перепроверено) | observed (видно на площадке) |
+#               decision (записанное решение) | self-reported (сказано автором)
+# recheck_by:   дата, после которой число/состояние перепроверяется перед использованием
+schema: facts/v1
+as_of: 2026-10-04
+facts:
+  # ---------------------------------------------------------------- автор
+  - id: AU-HANDLE
+    subject: author
+    class: FACT
+    risk: low
+    public: true
+    statement: Публичный псевдоним автора — dpsmpx; в профиле GitHub также «DP» и «DearPixel».
+    allowed_wording:
+      ru: ["dpsmpx"]
+      en: ["dpsmpx (aka DP, DearPixel)"]
+    evidence:
+      - {kind: platform_page, source: "github.com/dpsmpx — README dpsmpx/dpsmpx", ref: "433f627", date: 2026-10-04, verification: observed}
+  - id: AU-ROLE
+    subject: author
+    class: FACT
+    risk: medium
+    public: true
+    statement: Автор описывает себя как независимого разработчика нативных игровых технологий, системных игр и инструментов.
+    allowed_wording:
+      ru: ["независимый разработчик", "разрабатываю игру, движок и язык программирования"]
+      en: ["independent developer building native game technology, systems-driven games and developer tools"]
+    evidence:
+      - {kind: platform_page, source: "README dpsmpx/dpsmpx", ref: "433f627", date: 2026-10-04, verification: self-reported}
+  - id: AU-STACK
+    subject: author
+    class: FACT
+    risk: low
+    public: true
+    statement: Основные языки — C++ и Python; ранние проекты — также PascalABC.NET и C.
+    allowed_wording:
+      ru: ["C++ и Python"]
+      en: ["C++ and Python"]
+    evidence:
+      - {kind: platform_page, source: "README dpsmpx/dpsmpx, раздел Technology", ref: "433f627", date: 2026-10-04, verification: self-reported}
+      - {kind: code, source: "открытые репозитории: Andors-Love (C++11), PixRogue (Python), TrueJointTileMaker (PascalABC.NET), dpcalls (C99)", date: 2026-10-04, verification: observed}
+  - id: AU-METHOD
+    subject: author
+    class: FACT
+    risk: medium
+    public: true
+    statement: >-
+      Код Galdhold в основном пишут сессии ИИ (Claude Code) по заданиям автора; архитектурные
+      решения, постановки задач и приёмка каждого слияния — за автором и записаны в репозитории.
+    allowed_wording:
+      ru: ["ИИ пишет большую часть кода, архитектуру и решения определяю я", "каждое изменение принимаю сам"]
+      en: ["AI agents write most of the code; architecture and final decisions stay with me"]
+    evidence:
+      - {kind: doc, source: "dpsmpx/Galdhold docs/PROVENANCE.md §2–§3", ref: "f2ba263", date: 2026-10-04, verification: reported}
+      - {kind: decision, source: "dpsmpx/Galdhold docs/direction/DECISIONS.md Р0–Р20", ref: "f2ba263", date: 2026-10-04, verification: decision}
+  - id: AU-MEMORY
+    subject: author
+    class: FACT
+    risk: low
+    public: true
+    statement: >-
+      Контекст проектов хранится в репозитории (Git, DECISIONS, ROADMAP, TODO, проверки);
+      новая сессия ИИ восстанавливает состояние из него, а не из памяти прошлой сессии.
+    allowed_wording:
+      ru: ["ИИ может забывать сессию — проект не обязан забывать", "память проекта — в Git, решениях и проверках"]
+      en: ["the AI can forget the session; the project does not have to"]
+    evidence:
+      - {kind: doc, source: "dpsmpx/Galdhold CLAUDE.md «Не терять работу между сессиями», .claude/hooks/session-start.sh", ref: "f2ba263", date: 2026-10-04, verification: observed}
+      - {kind: public_post, source: "Telegraph «Почему разработка с ИИ для меня оказалась намного сильнее обычной» (дневник, № 79)", date: 2026-10-04, verification: self-reported}
+  - id: AU-ORIGIN
+    subject: author
+    class: FACT
+    risk: low
+    public: true
+    statement: >-
+      Игру автор начал ради интереса: братья сказали, что было бы классно поиграть в воксельную
+      RPG на телефоне; проект вырос дальше планов.
+    allowed_wording:
+      ru: ["начал игру ради интереса — братья хотели воксельную RPG на телефоне"]
+    notes: >-
+      В оригинале названа чужая игра (Cube World). По правилу оригинальности Galdhold чужое имя —
+      только как история, не в заголовке и не как сравнение.
+    evidence:
+      - {kind: public_post, source: "t.me/gh_3D_Voxel_OpenWorld_RPG/80", date: 2026-10-04, verification: self-reported}
+
+  # ---------------------------------------------------------------- Galdhold
+  - id: GH-NAME
+    subject: galdhold
+    class: FACT
+    risk: medium
+    public: true
+    statement: Игра называется Galdhold (прежнее рабочее название — VoxelRPG); решение автора 4 октября 2026.
+    allowed_wording:
+      ru: ["Galdhold", "Galdhold (прежде VoxelRPG)"]
+      en: ["Galdhold", "Galdhold (formerly VoxelRPG)"]
+    evidence:
+      - {kind: decision, source: "dpsmpx/Galdhold docs/direction/DECISIONS.md Р20", ref: "f2ba263", date: 2026-10-04, verification: decision}
+  - id: GH-GENRE
+    subject: galdhold
+    class: FACT
+    risk: low
+    public: true
+    statement: Galdhold — воксельная action-RPG с открытым процедурным миром, живыми поселениями и регионами, погодой и сменой суток.
+    allowed_wording:
+      ru: ["воксельная action-RPG с открытым процедурным миром"]
+      en: ["a voxel action-RPG with an open procedural world"]
+    evidence:
+      - {kind: doc, source: "dpsmpx/Galdhold docs/direction/DECISIONS.md §1, ROADMAP этапы 3–4", ref: "f2ba263", date: 2026-10-04, verification: reported}
+  - id: GH-TECH
+    subject: galdhold
+    class: FACT
+    risk: low
+    public: true
+    statement: Технологии — C++20, Vulkan 1.1, EnTT, toml++; на Android — NDK и AAudio, на компьютере — SDL3.
+    allowed_wording:
+      ru: ["C++20 и Vulkan"]
+      en: ["C++20 and Vulkan"]
+    evidence:
+      - {kind: code, source: "dpsmpx/Galdhold — исходники и сборка", ref: "f2ba263", date: 2026-10-04, verification: observed}
+  - id: GH-LOC
+    subject: galdhold
+    class: FACT
+    risk: high
+    public: true
+    statement: >-
+      Около 157 тысяч строк C++ (.cpp/.h/.hpp, wc -l, с пустыми строками и комментариями) на коммит
+      f2ba263, 4 октября 2026. README Galdhold на ту же дату: «около 167 тысяч строк собственного
+      кода, 154 тысячи — C++» (другой способ счёта).
+    allowed_wording:
+      ru: ["больше 150 тысяч строк C++ (октябрь 2026)"]
+      en: ["over 150,000 lines of C++ (October 2026)"]
+    supersedes: ["115 000 строк (описание YouTube, 28.09.2026)", "≈130 тыс. строк (дневник № 38, 29.09.2026)", "153k (пример из постановки)"]
+    recheck_by: 2026-11-04
+    evidence:
+      - {kind: measurement, source: "find … -name '*.cpp' -o -name '*.h' -o -name '*.hpp' | xargs cat | wc -l → 156 809", ref: "dpsmpx/Galdhold f2ba263", date: 2026-10-04, verification: re-measured}
+      - {kind: doc, source: "dpsmpx/Galdhold README.md, «Технологии»", ref: "f2ba263", date: 2026-10-04, verification: reported}
+  - id: GH-CHECKS
+    subject: galdhold
+    class: FACT
+    risk: high
+    public: true
+    statement: "5453 автоматические проверки логики (hostcheck): 579 — движка, 4695 — игры, 179 — полигона; на 3 октября 2026."
+    allowed_wording:
+      ru: ["больше 5 000 автоматических проверок", "5 453 автоматические проверки (октябрь 2026)"]
+      en: ["over 5,000 automated checks"]
+    recheck_by: 2026-11-04
+    evidence:
+      - {kind: doc, source: "dpsmpx/Galdhold README.md, «Состояние проекта» (числа из прогона hostcheck)", ref: "f2ba263", date: 2026-10-04, verification: reported}
+    notes: В этой сессии hostcheck не запускался; число — из документа проекта.
+  - id: GH-ENGINE
+    subject: galdhold
+    class: FACT
+    risk: high
+    public: true
+    statement: >-
+      Движок собственный и логически отделён от игры: не зависит ни от Galdhold, ни от полигона;
+      граница проверяется автоматически; полигон — отдельный синтетический потребитель движка.
+    allowed_wording:
+      ru: ["собственный движок, отделённый от игры", "граница движка и игры проверяется автоматически"]
+      en: ["my own engine, kept separate from the game"]
+    evidence:
+      - {kind: decision, source: "dpsmpx/Galdhold DECISIONS.md Р1, Р5", ref: "f2ba263", date: 2026-10-04, verification: decision}
+      - {kind: code, source: "dpsmpx/Galdhold tools/hostcheck/check_engine_boundary.py", ref: "f2ba263", date: 2026-10-04, verification: observed}
+  - id: GH-ASSETS
+    subject: galdhold
+    class: FACT
+    risk: high
+    public: true
+    statement: >-
+      Графика, звук и музыка генерируются кодом; растровых и звуковых сторонних ассетов в проекте нет
+      (растровые картинки запрещены проверкой). Происхождение встроенного шрифта 5×7 автор ещё уточняет.
+    allowed_wording:
+      ru: ["графика, звук и музыка генерируются процедурно"]
+      en: ["graphics, sound and music are generated procedurally"]
+    evidence:
+      - {kind: doc, source: "dpsmpx/Galdhold docs/PROVENANCE.md §5", ref: "f2ba263", date: 2026-10-04, verification: reported}
+      - {kind: code, source: "dpsmpx/Galdhold tools/hostcheck/check_raster.py", ref: "f2ba263", date: 2026-10-04, verification: observed}
+    notes: «Ни одного чужого ассета» не писать, пока не закрыт вопрос о шрифте 5×7.
+  - id: GH-ANDROID
+    subject: galdhold
+    class: FACT
+    risk: high
+    public: true
+    statement: APK запускался и проверялся на телефонах Redmi Note 13 и Poco X7 Pro 5G.
+    allowed_wording:
+      ru: ["проверялась на Android-телефонах (Redmi Note 13, Poco X7 Pro 5G)"]
+      en: ["tested on Android phones (Redmi Note 13, Poco X7 Pro 5G)"]
+    evidence:
+      - {kind: doc, source: "dpsmpx/Galdhold README.md, «Состояние проекта»", ref: "f2ba263", date: 2026-10-04, verification: reported}
+  - id: GH-PERF-2026-09-30
+    subject: galdhold
+    class: FACT
+    risk: high
+    public: true
+    statement: >-
+      Замер 30 сентября 2026 на телефоне (окно 2306×1080): автопресет начинает с Medium
+      (GPU 18–23 мс) и сходит на Low — GPU 11,6–12,4 мс, 55–68 кадров/с.
+    allowed_wording:
+      ru: ["55–68 кадров/с на пресете Low (замер 30.09.2026)"]
+    supersedes: ["80–100+ FPS на Poco X7 Pro (дневник № 9, 26.09.2026)"]
+    recheck_by: 2026-11-04
+    evidence:
+      - {kind: doc, source: "dpsmpx/Galdhold README.md; DECISIONS.md, история, 30.09.2026", ref: "f2ba263", date: 2026-10-04, verification: reported}
+  - id: GH-WINDOWS
+    subject: galdhold
+    class: FACT
+    risk: high
+    public: true
+    statement: Windows-версия собирается кросс-компиляцией на Linux; на настоящей Windows игра ещё не запускалась (на 3 октября 2026).
+    allowed_wording:
+      ru: ["готовится версия для Windows"]
+      en: ["a Windows version is in progress"]
+    recheck_by: 2026-11-04
+    evidence:
+      - {kind: doc, source: "dpsmpx/Galdhold README.md, «Состояние проекта»", ref: "f2ba263", date: 2026-10-04, verification: reported}
+  - id: GH-RELEASE-PLAN
+    subject: galdhold
+    class: FACT
+    risk: medium
+    public: true
+    statement: Первый выпуск планируется на Android и Windows (Steam); дат нет.
+    allowed_wording:
+      ru: ["выйдет на Android и Windows (Steam) — план, без дат"]
+      en: ["planned for Android and Windows (Steam)"]
+    evidence:
+      - {kind: decision, source: "dpsmpx/Galdhold DECISIONS.md Р2, Р14", ref: "f2ba263", date: 2026-10-04, verification: decision}
+  - id: GH-STAGES
+    subject: galdhold
+    class: FACT
+    risk: medium
+    public: true
+    statement: Этапы 1–4 закрыты — движок, полигон, живое поселение, регионы; идёт этап 5 — коммерческая версия 1 и выпуск.
+    allowed_wording:
+      ru: ["закрыты этапы: движок, живое поселение, регионы; идёт подготовка версии 1"]
+    recheck_by: 2026-11-04
+    evidence:
+      - {kind: doc, source: "dpsmpx/Galdhold ROADMAP/ROADMAP.md, «Этапы развития»", ref: "f2ba263", date: 2026-10-04, verification: reported}
+  - id: GH-READINESS
+    subject: galdhold
+    class: FACT
+    risk: high
+    public: false
+    statement: "Оценка готовности к первому релизу в Steam — 43 %, по всем задачам — 31 % (3 октября 2026, check_progress.py)."
+    recheck_by: 2026-10-18
+    evidence:
+      - {kind: doc, source: "dpsmpx/Galdhold README.md, блок готовности", ref: "f2ba263", date: 2026-10-04, verification: reported}
+    notes: Внутренняя оценка; публично проценты без определения не используются (аудит, § 4).
+  - id: GH-REPO-START
+    subject: galdhold
+    class: FACT
+    risk: medium
+    public: true
+    statement: >-
+      Репозиторий создан 11 сентября 2026; первый коммит — 30 801 строка, созданная до
+      репозитория (происхождение — в закрытой записи автора).
+    allowed_wording:
+      ru: ["репозиторий начат 11 сентября 2026"]
+      en: ["the repository started on 11 September 2026"]
+    evidence:
+      - {kind: doc, source: "dpsmpx/Galdhold docs/PROVENANCE.md §2", ref: "f2ba263", date: 2026-10-04, verification: reported}
+  - id: GH-FROM-ZERO
+    subject: galdhold
+    class: INTERPRETATION
+    risk: high
+    public: true
+    statement: >-
+      «С нуля за 23 дня» — толкование автора. Репозиторий начат 11.09.2026, но с первым коммитом
+      в 30 801 строку, написанным до репозитория.
+    allowed_wording:
+      ru: ["с 11 сентября 2026 — от первого коммита до …"]
+    evidence:
+      - {kind: doc, source: "dpsmpx/Galdhold docs/PROVENANCE.md §2", ref: "f2ba263", date: 2026-10-04, verification: reported}
+    notes: «С нуля» — только с оговоркой о первом коммите или без слова «нуль».
+  - id: GH-COMMITS
+    subject: galdhold
+    class: FACT
+    risk: medium
+    public: true
+    statement: >-
+      На 1 октября 2026 в main 563 коммита: 352 — сессии Claude Code по заданиям автора,
+      152 — слияния запросов, принятые автором, 58 — коммиты автора.
+    allowed_wording:
+      ru: ["за три недели — больше 560 коммитов; каждое слияние принимал сам"]
+    recheck_by: 2026-11-04
+    evidence:
+      - {kind: doc, source: "dpsmpx/Galdhold docs/PROVENANCE.md §2", ref: "f2ba263", date: 2026-10-04, verification: reported}
+  - id: GH-PRIVATE
+    subject: galdhold
+    class: FACT
+    risk: medium
+    public: true
+    statement: Исходный код Galdhold закрыт с 1 октября 2026; посторонним — только по письменному разрешению.
+    allowed_wording:
+      ru: ["код закрыт"]
+      en: ["closed source"]
+    evidence:
+      - {kind: decision, source: "dpsmpx/Galdhold DECISIONS.md Р12", ref: "f2ba263", date: 2026-10-04, verification: decision}
+  - id: GH-ROSPATENT
+    subject: galdhold
+    class: FACT
+    risk: high
+    public: true
+    statement: 2 октября 2026 подана заявка на государственную регистрацию программы для ЭВМ (под рабочим названием VoxelRPG); свидетельства пока нет.
+    allowed_wording:
+      ru: ["подал заявку на регистрацию программы в Роспатенте"]
+    evidence:
+      - {kind: doc, source: "dpsmpx/Galdhold docs/PROVENANCE.md §2.1", ref: "f2ba263", date: 2026-10-04, verification: reported}
+    notes: Это не патент. «Запатентовал» и «зарегистрировал» — до свидетельства запрещено.
+  - id: GH-BUSINESS
+    subject: galdhold
+    class: FACT
+    risk: medium
+    public: true
+    statement: Модель продаж — премиум, один раз; без доната, гачи, рекламы и обязательных покупок.
+    allowed_wording:
+      ru: ["игра покупается один раз — без доната и рекламы"]
+    evidence:
+      - {kind: decision, source: "dpsmpx/Galdhold DECISIONS.md Р13", ref: "f2ba263", date: 2026-10-04, verification: decision}
+  - id: GH-AI-TEXTS
+    subject: galdhold
+    class: FACT
+    risk: medium
+    public: true
+    statement: Тексты игры (диалоги, предметы, интерфейс) созданы с помощью ИИ; это раскрывается в анкете Steam.
+    evidence:
+      - {kind: doc, source: "dpsmpx/Galdhold docs/PROVENANCE.md §5", ref: "f2ba263", date: 2026-10-04, verification: reported}
+  - id: GH-SPEEDUP
+    subject: galdhold
+    class: HYPOTHESIS
+    risk: high
+    public: false
+    statement: ИИ ускорил разработку в N раз по сравнению с работой без ИИ.
+    evidence: []
+    notes: Методики сравнения нет. Не публикуется ни в каком виде (Д7).
+
+  # ---------------------------------------------------------------- DPlang
+  - id: DP-WHAT
+    subject: dplang
+    class: FACT
+    risk: medium
+    public: true
+    statement: >-
+      DPlang — собственный язык программирования автора; приоритеты — надёжность, детерминизм и
+      контролируемость, затем проверяемость, скорость разработки и сборки, работа с ИИ.
+    allowed_wording:
+      ru: ["разрабатываю собственный язык программирования — DPlang"]
+      en: ["I'm designing my own programming language, DPlang"]
+    evidence:
+      - {kind: doc, source: "dpsmpx/DPlang README.md", ref: "66e461c", date: 2026-10-04, verification: reported}
+  - id: DP-STAGE
+    subject: dplang
+    class: FACT
+    risk: high
+    public: true
+    statement: v0.0 «замер до компилятора» пройдена 4 октября 2026; следующая — v0.1, компилятор ядра. Выпущенного компилятора нет.
+    allowed_wording:
+      ru: ["язык на ранней стадии: выбран синтаксис, начат компилятор"]
+      en: ["early stage: syntax chosen, compiler work started"]
+    recheck_by: 2026-10-18
+    evidence:
+      - {kind: doc, source: "dpsmpx/DPlang ROADMAP/ROADMAP.md, docs/CHANGELOG.md", ref: "66e461c", date: 2026-10-04, verification: reported}
+  - id: DP-EXPERIMENT
+    subject: dplang
+    class: FACT
+    risk: high
+    public: true
+    statement: >-
+      Синтаксис выбран экспериментом: модель ИИ решала 14 эталонных задач на трёх вариантах записи
+      и на C++; в прогоне r1 приняты 56 из 56 решений с первой попытки. Набор оказался слишком
+      лёгким, чтобы различить варианты — для v0.1 нужен сложнее.
+    allowed_wording:
+      ru: ["синтаксис выбирал не на вкус, а замером: 14 задач, три варианта записи"]
+    evidence:
+      - {kind: doc, source: "dpsmpx/DPlang docs/audits/2026-10-04-syntax-experiment.md, ROADMAP v0.0", ref: "66e461c", date: 2026-10-04, verification: reported}
+    notes: «ИИ пишет на DPlang лучше, чем на C++» — не доказано (все варианты сдали 100 %).
+  - id: DP-INDEPENDENT
+    subject: dplang
+    class: FACT
+    risk: medium
+    public: true
+    statement: Galdhold не зависит от DPlang; перенос игры на язык — не раньше v1.0 и только отдельным решением.
+    evidence:
+      - {kind: decision, source: "dpsmpx/Galdhold DECISIONS.md Р18; dpsmpx/DPlang DECISIONS.md Р22", date: 2026-10-04, verification: decision}
+  - id: DP-PRIVATE
+    subject: dplang
+    class: FACT
+    risk: low
+    public: true
+    statement: DPlang — закрытый проект с временной проприетарной лицензией.
+    evidence:
+      - {kind: doc, source: "dpsmpx/DPlang README.md, LICENSE", ref: "66e461c", date: 2026-10-04, verification: reported}
+
+  # ---------------------------------------------------------------- прочие проекты
+  - id: AL-WHAT
+    subject: andors_love
+    class: FACT
+    risk: low
+    public: true
+    statement: Andors-Love — пошаговая RPG на C++11 с двумя оболочками над одной логикой — терминальной и на SDL2.
+    evidence:
+      - {kind: code, source: "github.com/dpsmpx/Andors-Love README.md", date: 2026-10-04, verification: observed}
+  - id: TJTM-WHAT
+    subject: truejointtilemaker
+    class: FACT
+    risk: low
+    public: true
+    statement: TrueJointTileMaker — редактор пиксельной графики и карт локаций для Andors-Love на PascalABC.NET.
+    evidence:
+      - {kind: code, source: "github.com/dpsmpx/TrueJointTileMaker README.md", date: 2026-10-04, verification: observed}
+  - id: PIX-WHAT
+    subject: pixrogue
+    class: FACT
+    risk: low
+    public: true
+    statement: PixRogue — классический Rogue в пиксельном стиле для вертикального экрана и касаний, Python + Pygame, GPLv3.
+    evidence:
+      - {kind: code, source: "github.com/dpsmpx/PixRogue README.md", date: 2026-10-04, verification: observed}
+  - id: ECO-WHAT
+    subject: dp_ecosystem
+    class: FACT
+    risk: low
+    public: true
+    statement: DP_Ecosystem — пошаговая клеточная симуляция экосистемы (вода, растения, травоядные, хищники), Python + Pygame.
+    evidence:
+      - {kind: code, source: "github.com/dpsmpx/DP_Ecosystem README.md", date: 2026-10-04, verification: observed}
+
+  # ---------------------------------------------------------------- площадки (внутреннее)
+  - id: CH-AUDIENCE-2026-10-04
+    subject: channels
+    class: FACT
+    risk: low
+    public: false
+    statement: "На 4 октября 2026: канал-дневник Telegram — 5 подписчиков; YouTube — 84 подписчика, 1 видео, 27 просмотров канала."
+    recheck_by: 2026-11-04
+    evidence:
+      - {kind: platform_page, source: "t.me/s/gh_3D_Voxel_OpenWorld_RPG; youtube.com/@dpsmpx/about", date: 2026-10-04, verification: observed}
+  - id: ME-NO-CI
+    subject: method
+    class: FACT
+    risk: medium
+    public: true
+    statement: С 3 октября 2026 GitHub Actions в Galdhold не используются; каждую правку проверяет hostcheck в сессии.
+    allowed_wording:
+      ru: ["каждую правку проверяет набор автоматических проверок перед слиянием"]
+    evidence:
+      - {kind: decision, source: "dpsmpx/Galdhold DECISIONS.md Р12", ref: "f2ba263", date: 2026-10-04, verification: decision}
+    notes: «CI» о нынешнем состоянии не писать.
