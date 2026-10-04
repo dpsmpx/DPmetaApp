@@ -1,0 +1,83 @@
+{
+  "note": "Синтетические классы ограничений (docs/research/RUSSIA_NETWORK_RESTRICTIONS.md), не снимки операторов.",
+  "config": "../configs/valid-multi.json",
+  "conditions": [
+    {
+      "condition": "NORMAL",
+      "restriction": "NORMAL",
+      "udp": "OK",
+      "connects": true
+    },
+    {
+      "condition": "DNS_BLOCKED",
+      "restriction": "DEGRADED",
+      "dns": "DEGRADED",
+      "connects": true
+    },
+    {
+      "condition": "DNS_DEGRADED",
+      "restriction": "DEGRADED",
+      "dns": "BLOCKED",
+      "connects": true
+    },
+    {
+      "condition": "IP_BLOCKED",
+      "restriction": "NORMAL",
+      "connects": true,
+      "blocked_endpoints": [
+        "203.0.113.10:443"
+      ],
+      "first_failed": "reality-1"
+    },
+    {
+      "condition": "TCP_REACHABLE_UDP_BLOCKED",
+      "restriction": "NORMAL",
+      "udp": "BLOCKED",
+      "connects": true,
+      "excluded": [
+        "hy2"
+      ]
+    },
+    {
+      "condition": "TLS_DEGRADED",
+      "restriction": "DEGRADED",
+      "tls": "BLOCKED",
+      "connects": true,
+      "first_attempt_class": "HTTP_CDN"
+    },
+    {
+      "condition": "HIGH_LATENCY",
+      "restriction": "DEGRADED",
+      "connects": true
+    },
+    {
+      "condition": "PACKET_LOSS",
+      "restriction": "DEGRADED",
+      "connects": true
+    },
+    {
+      "condition": "CAPTIVE_PORTAL",
+      "restriction": "CAPTIVE",
+      "connects": false,
+      "verdict": "ENDPOINT_UNREACHABLE"
+    },
+    {
+      "condition": "ALLOWLIST_LIKE",
+      "restriction": "ALLOWLIST_LIKE",
+      "connects": true,
+      "only_candidate": "domestic-relay"
+    },
+    {
+      "condition": "FULL_ENDPOINT_BLOCK",
+      "restriction": "NORMAL",
+      "connects": false,
+      "verdict": "ATTEMPTS_EXHAUSTED"
+    },
+    {
+      "condition": "OFFLINE",
+      "restriction": "OFFLINE",
+      "connects": false,
+      "verdict": "NETWORK_OFFLINE"
+    }
+  ]
+}
