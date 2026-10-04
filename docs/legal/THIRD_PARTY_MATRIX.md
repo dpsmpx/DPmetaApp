@@ -91,18 +91,22 @@ APK проверяет `check_apk.py`. Транзитивные зависимо
 
 | Компонент | Версия | Лицензия | Куда | Статус | Основание |
 |---|---|---|---|---|---|
-| `XTLS/Xray-core` (только upstream, не форки) | 26.9.30 | MPL-2.0 | проверка компилятора на хосте (`tools/xray`); в APK — с интеграцией (`docs/direction/ROADMAP/02-xray-backend.md`, работа 4) | разрешён | D-03, D-24, `docs/research/BACKEND_STRATEGY.md` |
+| `XTLS/Xray-core` (только upstream, не форки) | 26.9.30 | MPL-2.0 | APK — библиотека `libdppassxray.so` (мост `tools/xray/bridge` и `tools/xray/jni`, D-25); проверка компилятора на хосте (`tools/xray`) | разрешён | D-03, D-24, D-25, `docs/research/BACKEND_STRATEGY.md` |
 
 Обязательства MPL-2.0 — файловые: изменённые файлы самого Xray
 открываются под MPL-2.0, код DPpass не затрагивается; в приложении —
 уведомление и где взять исходники (этап 5). DPpass файлы Xray не
 меняет: ядро собирается из модуля upstream как есть.
 
-### 1.7. Модули Go проверки ядра (`tools/xray`)
+### 1.7. Модули Go ядра и его проверки (`tools/xray`)
 
-Всё, что `tools/xray/go.mod` требует для сборки upstream `xray` и
-собственного `dppass-xray-probe` (D-24). Только хост: в APK и `cli` не
-попадает и не распространяется. Состав и версии задаёт Xray 26.9.30;
+Всё, что `tools/xray/go.mod` требует для сборки upstream `xray`,
+собственного `dppass-xray-probe` (D-24) и библиотеки ядра
+`libdppassxray` (D-25). **Распространяются в APK:** библиотека ядра
+статически компонует все модули таблицы, кроме помеченных «в сборку не
+входит», — 46 модулей; состав для Android и для хоста одинаков
+(`go list -deps ./jni` для `GOOS=android` и `GOOS=linux`, 4 октября
+2026). В `cli` модули не попадают. Состав и версии задаёт Xray 26.9.30;
 DPpass их не выбирает, но записывает и сверяет каждую. «Кто
 использует» — пакет, через который модуль попадает в сборку
 (`go mod why -m`). Модули с пометкой «в сборку не входит» есть в графе
@@ -123,7 +127,7 @@ DPpass их не выбирает, но записывает и сверяет �
 | `github.com/gorilla/websocket` | `v1.5.3` | BSD-2-Clause | `transport/internet/websocket` | разрешён |
 | `github.com/huin/goupnp` | `v1.2.0` | BSD-2-Clause | `transport/internet/finalmask/realm` | разрешён |
 | `github.com/jackpal/go-nat-pmp` | `v1.0.2` | Apache-2.0 | `transport/internet/finalmask/realm` | разрешён |
-| `github.com/juju/ratelimit` | `v1.0.2` | LGPL-3.0 с исключением для статической и динамической компоновки | `github.com/xtls/reality` (REALITY) | разрешён (только хост; для APK — пересмотр, `TODO.md`) |
+| `github.com/juju/ratelimit` | `v1.0.2` | LGPL-3.0 с исключением для статической и динамической компоновки | `github.com/xtls/reality` (REALITY) | разрешён (в APK — с уведомлением и ссылкой на исходники библиотеки, этап 5) |
 | `github.com/klauspost/compress` | `v1.17.4` | BSD-3-Clause; части — Apache-2.0, MIT | `app/dns` | разрешён |
 | `github.com/klauspost/cpuid/v2` | `v2.4.0` | MIT | `common/utils` | разрешён |
 | `github.com/koron/go-ssdp` | `v0.0.4` | MIT | `transport/internet/finalmask/realm` | разрешён |
@@ -165,10 +169,12 @@ DPpass их не выбирает, но записывает и сверяет �
 — файловый; у `juju/ratelimit` LGPL-3.0 с исключением, которое
 разрешает распространять статически или динамически скомпонованную
 программу без минимального соответствующего исходного кода и сведений
-об установке (п. 4d и 4e LGPL-3.0). Для APK состав пересматривается
-при интеграции ядра: часть модулей нужна функциям Xray вне IR v1
-(например, WireGuard), и что из них попадёт в библиотеку ядра, решает
-её сборка (`TODO.md`).
+об установке (п. 4d и 4e LGPL-3.0); остальные обязательства LGPL-3.0
+(текст лицензии, уведомление, доступность исходников самой библиотеки)
+— уведомления о лицензиях в приложении, этап 5. Модули функций Xray вне
+IR v1 (например, WireGuard) в библиотеке есть: их тянет разбор JSON
+Xray (`infra/conf`), а не DPpass, и отсечь их без правки upstream
+нельзя; запустить их конфигурацией не даёт политика моста (D-25).
 
 ## 2. Запланированные
 
@@ -182,7 +188,6 @@ DPpass их не выбирает, но записывает и сверяет �
 
 | Компонент | Лицензия | Для чего | Статус | Основание |
 |---|---|---|---|---|
-| `XTLS/libXray` | MIT | обёртка gomobile над Xray (или своя обёртка) | рассматривается | этап 2, работа 4; `docs/research/BACKEND_STRATEGY.md` |
 | `heiher/hev-socks5-tunnel` | MIT | мост fd → ядро против TUN inbound Xray | рассматривается | отложенное решение «Мост fd → ядро»; `docs/research/ANDROID_NETWORK_MODEL.md` |
 
 ## 4. Запрещённые
@@ -195,6 +200,7 @@ DPpass их не выбирает, но записывает и сверяет �
 | Форк `Happ-proxy/Xray-core` как источник Xray | MPL-2.0 (upstream) | источник Xray — только `XTLS/Xray-core` (`docs/research/HAPP_SOURCE_AUDIT.md`, §4) |
 | Тексты `XTLS/Xray-docs-next` и его форков | CC-BY-SA-4.0 | тексты не копируются (D-20) |
 | Эталонная реализация AnyTLS (`anytls-go`) | нет лицензии | `docs/research/TRANSPORT_COMPARISON.md` |
+| `XTLS/libXray` как обёртка ядра | MIT | отклонён D-25: своя обёртка Go с JNI (`tools/xray/bridge`, `tools/xray/jni`); libXray несёт разбор ссылок, пинг и правку геоданных, которые DPpass делает сам или не поручает ядру |
 | Результаты обратной разработки закрытых клиентов (Happwner и др.) | — | `docs/direction/RESEARCH_SCOPE.md`, §4 |
 | SDK аналитики, отчётов о падениях, push-уведомлений (Firebase, Sentry и подобные) | — | без телеметрии и идентификаторов (D-12) |
 
