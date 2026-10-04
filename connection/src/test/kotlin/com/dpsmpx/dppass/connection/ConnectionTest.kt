@@ -16,6 +16,7 @@ import com.dpsmpx.dppass.network.NetworkType
 import com.dpsmpx.dppass.network.ProbeBudget
 import com.dpsmpx.dppass.network.simulation.NetworkCondition
 import com.dpsmpx.dppass.network.simulation.SimulatedNetwork
+import com.dpsmpx.dppass.storage.BlobStore
 import com.dpsmpx.dppass.storage.InMemoryBlobStore
 import com.dpsmpx.dppass.storage.Quarantine
 import kotlinx.coroutines.runBlocking
@@ -29,6 +30,14 @@ import kotlin.test.assertTrue
 
 internal fun ir(name: String): ConfigIr =
     ConfigLoader().load(File(System.getProperty("dppass.repoRoot"), "tests/data/configs/$name").readText()).valueOrNull()!!.ir
+
+/** Хранилище, чтение из которого можно временно «сломать» (недоступный ключ, сбой ввода-вывода). */
+internal class FlakyBlobStore(private val inner: BlobStore) : BlobStore by inner {
+    var failReads = false
+
+    override fun read(key: String): Outcome<ByteArray?> =
+        if (failReads) Outcome.failure(DiagCode.STORAGE_READ_FAILED, "чтение «$key» временно не работает") else inner.read(key)
+}
 
 class ActivationServiceTest {
     private val clock = ManualClock(100)
@@ -86,6 +95,39 @@ class ActivationServiceTest {
         assertEquals("old", s.state.active!!.sourceChecksum)
         assertEquals(1, s.state.activeConfig!!.profiles.size)
         assertEquals(DiagCode.NOTHING_TO_ROLL_BACK, s.rollback(Diagnostic.error(DiagCode.PAYLOAD_STALLED, "x")).errors.single().code)
+    }
+
+    @Test
+    fun unreadableStateIsNeverOverwritten() = runBlocking {
+        val raw = InMemoryBlobStore()
+        val flaky = FlakyBlobStore(raw)
+        fun on(store: BlobStore) = ActivationService(MockBackendCompiler(), engine, ActivationStore(store, Quarantine(store, clock)), clock)
+        on(flaky).activate(ir("valid-multi.json"), "t", "kept")
+        val before = raw.rawSnapshot()
+
+        flaky.failReads = true
+        val s = on(flaky)
+        assertEquals(DiagCode.STORAGE_READ_FAILED, s.restore().single().code)
+        // Сохранённое не прочитано: запись затёрла бы действующую и предыдущую конфигурации и историю (D-07).
+        val r = assertIs<ActivationResult.Rejected>(s.activate(ir("valid-minimal.json"), "t", "new"))
+        assertEquals(ActivationStep.COMMIT, r.record.failedStep)
+        assertEquals(DiagCode.STORAGE_READ_FAILED, r.diagnostics.first().causes.single().code)
+        assertEquals(DiagCode.STORAGE_READ_FAILED, s.rollback(Diagnostic.error(DiagCode.PAYLOAD_STALLED, "x")).errors.single().causes.single().code)
+        assertEquals(before.keys, raw.rawSnapshot().keys)
+        before.forEach { (k, v) -> assertTrue(v.contentEquals(raw.rawSnapshot().getValue(k)), "запись $k не должна меняться") }
+
+        // Чтение вернулось: перед записью сервис перечитывает сохранённое и продолжает с него.
+        flaky.failReads = false
+        assertIs<ActivationResult.Activated>(s.activate(ir("valid-minimal.json"), "t", "new"))
+        assertEquals("kept", s.state.previous!!.sourceChecksum)
+    }
+
+    @Test
+    fun writeWithoutRestoreReadsStoredStateFirst() = runBlocking {
+        service().activate(ir("valid-multi.json"), "t", "first")
+        val s = service() // restore() не вызывали
+        assertIs<ActivationResult.Activated>(s.activate(ir("valid-minimal.json"), "t", "second"))
+        assertEquals("first", s.state.previous!!.sourceChecksum, "сохранённая конфигурация — предыдущая, а не затёрта")
     }
 
     @Test

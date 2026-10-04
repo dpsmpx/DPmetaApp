@@ -91,12 +91,38 @@ class ActivationService(
     var state: ActivationState = ActivationState.EMPTY
         private set
 
+    /**
+     * Почему писать нельзя: сохранённое состояние не прочитано и не
+     * отложено в карантин (ключ хранилища недоступен, сбой чтения) —
+     * запись затёрла бы действующую и предыдущую конфигурации и историю
+     * (D-07). null — прочитано или отложено.
+     */
+    private var unreadable: List<Diagnostic>? = null
+    private var restored = false
+
     /** Прочитать сохранённое состояние; повреждённое — в карантин, не «по умолчанию». */
     fun restore(): List<Diagnostic> {
         val r = store.load()
         state = r.valueOrNull() ?: ActivationState.EMPTY
+        unreadable = (r as? Outcome.Failure)?.diagnostics
+        restored = true
         return r.diagnostics
     }
+
+    /**
+     * Перед любой записью: сохранённое должно быть прочитано. Не читали
+     * или не прочиталось — ещё попытка (ключ хранилища мог вернуться);
+     * находки чтения (например, карантин) идут в результат, а не теряются.
+     */
+    private fun ensureReadable(): Outcome<Unit> {
+        if (restored && unreadable == null) return Outcome.Success(Unit)
+        val notes = restore()
+        return unreadable?.let { Outcome.Failure(it) } ?: Outcome.Success(Unit, notes)
+    }
+
+    private fun unreadableRejection(what: String, causes: List<Diagnostic>): Diagnostic =
+        Diagnostic.error(DiagCode.ACTIVATION_REJECTED, "$what: сохранённое состояние не прочитано — запись затёрла бы его; ничего не записано")
+            .copy(causes = causes.filter { it.isError })
 
     suspend fun activate(
         ir: ConfigIr,
@@ -106,8 +132,17 @@ class ActivationService(
         withTun: Boolean = true,
         preCheck: PreActivationCheck? = null,
     ): ActivationResult {
-        val revision = state.nextRevision
         val pid = profileId ?: ir.profiles.firstOrNull()?.id
+        val readable = ensureReadable()
+        if (readable is Outcome.Failure) {
+            val record = ActivationRecord(
+                state.nextRevision, clock.nowMillis(), source, sourceChecksum, null, pid?.value,
+                ActivationStatus.REJECTED, ActivationStep.COMMIT, readable.errors.firstOrNull()?.let { "${it.code}: ${it.message}" },
+            )
+            return ActivationResult.Rejected(record, listOf(unreadableRejection("не активировано", readable.diagnostics)))
+        }
+        val restoreNotes = readable.diagnostics
+        val revision = state.nextRevision
         fun reject(step: ActivationStep, diags: List<Diagnostic>, compiled: String? = null): ActivationResult.Rejected {
             val first = diags.firstOrNull { it.isError }
             val record = ActivationRecord(
@@ -117,7 +152,7 @@ class ActivationService(
             val top = Diagnostic.error(DiagCode.ACTIVATION_REJECTED, "конфигурация не активирована на шаге $step; действующая сохранена")
                 .copy(causes = diags.filter { it.isError })
             commit(state.copy(history = trim(state.history + record), nextRevision = revision + 1))
-            return ActivationResult.Rejected(record, listOf(top) + diags.filter { !it.isError })
+            return ActivationResult.Rejected(record, listOf(top) + restoreNotes + diags.filter { !it.isError })
         }
 
         if (pid == null) return reject(ActivationStep.CAPABILITY, listOf(Diagnostic.error(DiagCode.PROFILES_EMPTY, "нет ни одного профиля")))
@@ -153,7 +188,7 @@ class ActivationService(
             // Не удалось сохранить — значит, не активировано: состояние в памяти не меняется.
             return ActivationResult.Rejected(record.copy(status = ActivationStatus.REJECTED, failedStep = ActivationStep.COMMIT), saved.diagnostics)
         }
-        return ActivationResult.Activated(record, notes)
+        return ActivationResult.Activated(record, restoreNotes + notes)
     }
 
     /**
@@ -161,6 +196,8 @@ class ActivationService(
      * работе не передаёт данных (L7 «подключено, но пусто»).
      */
     fun rollback(reason: Diagnostic): Outcome<ActivationRecord> {
+        val readable = ensureReadable()
+        if (readable is Outcome.Failure) return Outcome.failure(unreadableRejection("откат не выполнен", readable.diagnostics))
         val prev = state.previous
         val prevConfig = state.previousConfig
         val current = state.active
@@ -217,9 +254,22 @@ class ActivationStore(private val blobs: BlobStore, private val quarantine: Quar
         val parsed = parse(String(bytes, Charsets.UTF_8))
         if (parsed is Outcome.Failure) {
             val reason = parsed.errors.first()
-            quarantine.keep("activation", bytes, reason)
-            return Outcome.Failure(
-                listOf(Diagnostic.error(DiagCode.STORAGE_CORRUPTED, "состояние активации не прочитано; исходник сохранён в карантин").copy(causes = parsed.diagnostics)),
+            // Начать с пустого можно, только когда исходник сохранён (D-06); не сохранился — читать нечего и писать нельзя.
+            val kept = quarantine.keep("activation", bytes, reason)
+            if (kept is Outcome.Failure) {
+                return Outcome.Failure(
+                    listOf(
+                        Diagnostic.error(DiagCode.STORAGE_CORRUPTED, "состояние активации не прочитано и не сохранено в карантин")
+                            .copy(causes = parsed.diagnostics + kept.diagnostics),
+                    ),
+                )
+            }
+            return Outcome.Success(
+                ActivationState.EMPTY,
+                listOf(
+                    Diagnostic.warning(DiagCode.STORAGE_CORRUPTED, "состояние активации не прочитано; исходник сохранён в карантин, начато с пустого")
+                        .copy(causes = parsed.diagnostics),
+                ),
             )
         }
         return parsed

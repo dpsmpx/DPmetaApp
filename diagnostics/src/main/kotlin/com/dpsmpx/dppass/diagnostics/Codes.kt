@@ -145,5 +145,11 @@ enum class DiagCode(val kind: FailureKind, val defaultSeverity: Severity) {
     STORAGE_CORRUPTED(FailureKind.STORAGE_FAILED, Severity.ERROR),
     STORAGE_KEY_INVALID(FailureKind.STORAGE_FAILED, Severity.ERROR),
 
+    /** Ключ данных хранилища сейчас недоступен (сбой Keystore, ввода-вывода): ничего не записано, повторить позже. */
+    STORAGE_DATA_KEY_UNAVAILABLE(FailureKind.STORAGE_FAILED, Severity.ERROR),
+
+    /** Ключ данных утрачен или не расшифровывается: сохранённое не прочитать, нужен сброс хранилища (D-19). */
+    STORAGE_DATA_KEY_LOST(FailureKind.STORAGE_FAILED, Severity.ERROR),
+
     INTERNAL_ERROR(FailureKind.INTERNAL, Severity.ERROR),
 }

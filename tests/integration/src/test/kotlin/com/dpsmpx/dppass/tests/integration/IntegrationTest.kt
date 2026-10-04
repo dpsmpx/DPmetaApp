@@ -28,6 +28,9 @@ import com.dpsmpx.dppass.routing.RouteQuery
 import com.dpsmpx.dppass.storage.EncryptingBlobStore
 import com.dpsmpx.dppass.storage.InMemoryBlobStore
 import com.dpsmpx.dppass.storage.KeyProvider
+import com.dpsmpx.dppass.storage.KeyWrapper
+import com.dpsmpx.dppass.storage.StorageReset
+import com.dpsmpx.dppass.storage.WrappedKeyProvider
 import com.dpsmpx.dppass.subscriptions.FetchedPayload
 import com.dpsmpx.dppass.subscriptions.Subscription
 import com.dpsmpx.dppass.subscriptions.SubscriptionFetcher
@@ -38,6 +41,10 @@ import com.dpsmpx.dppass.tunnel.FakeTunnelProvider
 import com.dpsmpx.dppass.tunnel.PlatformTraits
 import kotlinx.coroutines.runBlocking
 import java.io.File
+import javax.crypto.Cipher
+import javax.crypto.KeyGenerator
+import javax.crypto.SecretKey
+import javax.crypto.spec.GCMParameterSpec
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -50,7 +57,7 @@ private fun data(p: String) = File(root, "tests/data/$p").readText()
 private class Env(val engine: MockProxyEngine = MockProxyEngine(), val blobs: InMemoryBlobStore = InMemoryBlobStore()) {
     val clock = ManualClock(1_000_000)
     val sink = MemoryLogSink(4096)
-    val store = EncryptingBlobStore(blobs, KeyProvider { ByteArray(32) { 7 } })
+    val store = EncryptingBlobStore(blobs, KeyProvider { Outcome.Success(ByteArray(32) { 7 }) })
     val core = DPpassCore(MockBackendCompiler(engine.capabilities), engine, store, clock, "com.dpsmpx.dppass", PlatformTraits(true), sink)
 
     fun assess(c: NetworkCondition, net: SimulatedNetwork = SimulatedNetwork(c)) =
@@ -190,5 +197,72 @@ class SecretLeakTest {
         texts += env.blobs.rawSnapshot().values.map { String(it, Charsets.ISO_8859_1) }
 
         for (t in texts) for (s in secrets) assertFalse(s in t, "утечка «$s» в: ${t.take(200)}")
+    }
+}
+
+/** Keystore на хосте: AES-GCM в памяти; ключ можно «утратить». */
+private class HostKeyWrapper : KeyWrapper {
+    var kek: SecretKey? = null
+
+    override fun exists(): Boolean = kek != null
+
+    override fun create() {
+        if (kek == null) kek = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
+    }
+
+    override fun wrap(plain: ByteArray): ByteArray =
+        Cipher.getInstance("AES/GCM/NoPadding").run { init(Cipher.ENCRYPT_MODE, kek); iv + doFinal(plain) }
+
+    override fun unwrap(sealed: ByteArray): ByteArray =
+        Cipher.getInstance("AES/GCM/NoPadding").run {
+            init(Cipher.DECRYPT_MODE, kek, GCMParameterSpec(128, sealed, 0, 12))
+            doFinal(sealed, 12, sealed.size - 12)
+        }
+}
+
+/** Утрата ключа хранилища (D-19): ничего не затирается молча; сброс — действием пользователя, без потери. */
+class StorageKeyLossTest {
+    private val clock = ManualClock(1_000_000)
+    private val data = InMemoryBlobStore()
+    private val keys = InMemoryBlobStore()
+    private val wrapper = HostKeyWrapper()
+
+    /** Новый процесс: ключ данных заново читается с «диска». */
+    private fun core(): DPpassCore {
+        val provider = WrappedKeyProvider(keys, wrapper, dataPresent = { StorageReset.hasData(data) })
+        val engine = MockProxyEngine()
+        return DPpassCore(
+            MockBackendCompiler(engine.capabilities), engine, EncryptingBlobStore(data, provider), clock, "com.dpsmpx.dppass",
+            PlatformTraits(true), storageRecovery = StorageReset(data, provider, clock),
+        )
+    }
+
+    @Test
+    fun lostKeyBlocksWritesUntilExplicitResetThatKeepsEverything() = runBlocking {
+        val first = core()
+        assertTrue(first.restore().isEmpty())
+        assertIs<ActivationResult.Activated>(first.importAndActivate(data("configs/valid-multi.json")).valueOrNull())
+        val stored = data.rawSnapshot()
+
+        wrapper.kek = null // ключ Keystore утрачен
+        val after = core()
+        assertEquals(DiagCode.STORAGE_DATA_KEY_LOST, after.restore().single().code)
+        val r = assertIs<ActivationResult.Rejected>(after.importAndActivate(data("configs/valid-minimal.json")).valueOrNull())
+        assertEquals(DiagCode.STORAGE_DATA_KEY_LOST, r.diagnostics.first().causes.single().code)
+        assertEquals(stored.keys, data.rawSnapshot().keys, "ничего не записано и не удалено")
+
+        val moved = after.resetStorage()
+        val where = moved.valueOrNull()!!
+        assertTrue(moved.diagnostics.isEmpty(), "после сброса состояние читается: пустое")
+        stored.forEach { (k, v) -> assertTrue(v.contentEquals(data.rawSnapshot().getValue("$where/$k")), "отложено как есть: $k") }
+        assertIs<ActivationResult.Activated>(after.importAndActivate(data("configs/valid-minimal.json")).valueOrNull())
+        val restarted = core()
+        assertTrue(restarted.restore().isEmpty(), "после перезапуска новым ключом всё читается")
+        assertEquals(1, restarted.activation.state.activeConfig!!.profiles.size)
+    }
+
+    @Test
+    fun shellWithoutRecoveryCannotResetSilently() {
+        assertEquals(DiagCode.INTERNAL_ERROR, Env().core.resetStorage().errors.single().code)
     }
 }

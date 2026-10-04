@@ -121,20 +121,23 @@ class FileBlobStore(private val root: File) : BlobStore {
 }
 
 /**
- * Источник ключа шифрования. На Android — ключ, обёрнутый Android
- * Keystore (реализация — `app/`, этап 3 `ROADMAP`); в тестах —
- * фиксированный ключ.
+ * Источник ключа шифрования. На Android — [WrappedKeyProvider] с ключом
+ * Keystore (`app/`); в тестах — фиксированный ключ. Отказ — значение
+ * (`STORAGE_DATA_KEY_UNAVAILABLE`, `STORAGE_DATA_KEY_LOST`), а не
+ * исключение: ключ бывает временно недоступен (D-22).
  */
 fun interface KeyProvider {
     /** 32 байта ключа AES-256. */
-    fun key(): ByteArray
+    fun key(): Outcome<ByteArray>
 }
 
 /**
  * Шифрование поверх любого [BlobStore]: AES-256-GCM, случайный nonce на
  * запись, ключ хранилища как дополнительные данные (запись нельзя
  * переложить под другой ключ). На диске не бывает открытых секретов
- * (D-19); подмена или порча — `STORAGE_CORRUPTED`, а не мусор в IR.
+ * (D-19); подмена или порча записи — `STORAGE_CORRUPTED`, а не мусор в
+ * IR. Отказ ключа — его собственный код от [KeyProvider]: ключ один на
+ * всё хранилище, и его сбой — не порча одной записи.
  */
 class EncryptingBlobStore(
     private val inner: BlobStore,
@@ -149,9 +152,13 @@ class EncryptingBlobStore(
         if (raw.size < HEADER + NONCE + TAG_BYTES || raw[0] != VERSION) {
             return Outcome.failure(DiagCode.STORAGE_CORRUPTED, "запись «$key» повреждена или не того формата")
         }
+        val dataKey = when (val k = keys.key()) {
+            is Outcome.Failure -> return k
+            is Outcome.Success -> k.value
+        }
         return try {
             val cipher = Cipher.getInstance(TRANSFORMATION)
-            cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(keys.key(), "AES"), GCMParameterSpec(TAG_BYTES * 8, raw, HEADER, NONCE))
+            cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(dataKey, "AES"), GCMParameterSpec(TAG_BYTES * 8, raw, HEADER, NONCE))
             cipher.updateAAD(key.toByteArray(Charsets.UTF_8))
             Outcome.Success(cipher.doFinal(raw, HEADER + NONCE, raw.size - HEADER - NONCE))
         } catch (e: AEADBadTagException) {
@@ -163,10 +170,14 @@ class EncryptingBlobStore(
 
     override fun write(key: String, bytes: ByteArray): Outcome<Unit> {
         StorageKeys.check(key)?.let { return Outcome.failure(it) }
+        val dataKey = when (val k = keys.key()) {
+            is Outcome.Failure -> return k
+            is Outcome.Success -> k.value
+        }
         val nonce = ByteArray(NONCE).also(random::nextBytes)
         val sealed = try {
             val cipher = Cipher.getInstance(TRANSFORMATION)
-            cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(keys.key(), "AES"), GCMParameterSpec(TAG_BYTES * 8, nonce))
+            cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(dataKey, "AES"), GCMParameterSpec(TAG_BYTES * 8, nonce))
             cipher.updateAAD(key.toByteArray(Charsets.UTF_8))
             cipher.doFinal(bytes)
         } catch (e: java.security.GeneralSecurityException) {

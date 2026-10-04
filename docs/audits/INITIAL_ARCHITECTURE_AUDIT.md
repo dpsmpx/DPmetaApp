@@ -123,6 +123,18 @@ Trojan — с `sni=bad%20name` и с `host=bad%20host` (WebSocket):
 восстановления без потери исходников пользователя (этап 3), запись ключа
 — тем же атомарным способом, что и записи.
 
+**Состояние (4 октября 2026): закрыто.** Коды
+`STORAGE_DATA_KEY_UNAVAILABLE` и `STORAGE_DATA_KEY_LOST`; конверт —
+`WrappedKeyProvider` в `storage/` (проверяется на хосте), обёрнутый ключ
+пишется атомарно через `FileBlobStore`, отказы — значения, новый ключ
+поверх записей молча не создаётся; в Android — только `KeystoreKeyWrapper`.
+Найдено при исправлении: после неудачного чтения состояния активация
+затирала сохранённое (и без `restore()` — тоже); теперь запись — только
+после чтения. Сброс — `DPpassCore.resetStorage()` с переносом всего в
+`lost/<время>/`. Тесты: `DataKeyTest`, `StorageKeyLossTest`,
+`ActivationServiceTest.unreadableStateIsNeverOverwritten`. На устройстве —
+`TODO.md`, «На устройстве».
+
 ### A-3 — Разрешение на уведомления не запрашивается (низкая)
 
 `POST_NOTIFICATIONS` объявлено в манифесте, но `MainActivity` его не

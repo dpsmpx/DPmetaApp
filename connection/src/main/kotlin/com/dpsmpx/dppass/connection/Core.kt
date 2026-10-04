@@ -24,6 +24,7 @@ import com.dpsmpx.dppass.routing.RouteEvaluator
 import com.dpsmpx.dppass.routing.RouteQuery
 import com.dpsmpx.dppass.storage.BlobStore
 import com.dpsmpx.dppass.storage.Quarantine
+import com.dpsmpx.dppass.storage.StorageRecovery
 import com.dpsmpx.dppass.subscriptions.FilterResult
 import com.dpsmpx.dppass.subscriptions.ProfileFilter
 import com.dpsmpx.dppass.subscriptions.Subscription
@@ -67,6 +68,8 @@ class DPpassCore(
     private val platform: PlatformTraits,
     val logSink: LogSink = MemoryLogSink(),
     val policy: ConnectionPolicy = ConnectionPolicy(),
+    /** Сброс хранилища, которое не читается (на Android — `StorageReset`); null — оболочка его не даёт. */
+    private val storageRecovery: StorageRecovery? = null,
 ) {
     val log: Logger = Logger("core", logSink, clock::nowMillis)
     private val quarantine = Quarantine(store, clock)
@@ -75,6 +78,24 @@ class DPpassCore(
     private val loader = ConfigLoader()
 
     fun restore(): List<Diagnostic> = activation.restore().also { it.forEach(log::diagnostic) }
+
+    /**
+     * Сброс хранилища — только действием пользователя (D-19), когда
+     * сохранённое не прочитать: прежде всего `STORAGE_DATA_KEY_LOST`. Всё
+     * сохранённое откладывается как есть, ключ данных создаётся заново,
+     * состояние начинается с пустого; исходники — у пользователя.
+     * Результат — куда отложено.
+     */
+    fun resetStorage(): Outcome<String> {
+        val recovery = storageRecovery ?: return Outcome.failure(DiagCode.INTERNAL_ERROR, "сброс хранилища в этой оболочке не подключён")
+        return when (val r = recovery.reset()) {
+            is Outcome.Failure -> r.also { it.diagnostics.forEach(log::diagnostic) }
+            is Outcome.Success -> {
+                log.info("storage.reset", "moved_to" to r.value)
+                Outcome.Success(r.value, restore())
+            }
+        }
+    }
 
     /**
      * Разбор документа. Отвергнутый импорт не сохраняется: исходник —
