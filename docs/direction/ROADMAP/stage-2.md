@@ -17,8 +17,8 @@
 
 ## Критерии выхода
 
-- [ ] Не меньше 40 строк хронологии <!-- gate: count:timeline>=40 -->
+- [x] Не меньше 40 строк хронологии <!-- gate: count:timeline>=40 -->
 - [x] Каждый тег проекта есть в хронологии <!-- gate: coverage:timeline -->
 - [x] Пробелы источников записаны <!-- gate: file:docs/timeline/GAPS.md -->
-- [ ] Решение о составе предмета принято <!-- gate: decision-mark:scope-prior-review -->
+- [x] Решение о составе предмета принято <!-- gate: decision-mark:scope-prior-review -->
 - [ ] Автор сверил хронологию и закрыл этап решением <!-- gate: decision-mark:stage-2-review -->

@@ -35,3 +35,11 @@
 - origin: слова автора в сессии Claude Code 2026-10-04 — ответ в форме вопросов на вопрос о том, где и как создавался код первого коммита VoxelRPG 758804f (234 файла, 30 801 строка; F-0014)
 - content: «Его сгенерировал DeepSeek за 16 проходов. Ссылка на сэссию: https://chat.deepseek.com/share/dgshsv2klukia1dwj4»
 - verify: открыть https://chat.deepseek.com/share/dgshsv2klukia1dwj4; из среды сессии 2026-10-04 страница не открылась (HTTP 403 от CloudFront), её содержимое с коммитом 758804f не сверено
+
+### N-0004
+
+- source: S-10
+- observed: 2026-10-04
+- origin: список репозиториев аккаунта dpsmpx, полученный инструментом сессии Claude Code (list_repos) 2026-10-04; здесь — только публичные
+- content: публичных 20; не форки — dpsmpx, tanks_blitz_stat_chat, DP_Ecosystem, DP_Repeated_Tasks, PixRogue, Andors-Love, DP_TextFile_Sorter, dpcalls, DP_Autoclicker, TrueJointTileMaker, DP_Typing_Master, DP_Backup_Tool, DP_Gen_Bots, DP_Graph_Builder, AIM_Trainer_pas, DP_Random_Cells; форки — andors-trail-load, gravitydefied, CreepyCodeCollection, pascalabcnet
+- verify: https://github.com/dpsmpx?tab=repositories — список публичных репозиториев и пометка «forked from» у форков (меняется со временем)
