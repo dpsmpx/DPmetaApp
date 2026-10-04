@@ -6,5 +6,8 @@
   "activate": {
     "backend": "mock",
     "outcome": "activated"
+  },
+  "xray": {
+    "outcome": "compiled"
   }
 }

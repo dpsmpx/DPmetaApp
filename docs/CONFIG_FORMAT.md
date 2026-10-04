@@ -86,7 +86,7 @@
 | `type` | Поля |
 |---|---|
 | `none` | — (только `shadowsocks`) |
-| `tls` | `server_name` (домен, необяз.); `alpn` (массив строк 1…32 символа, необяз.); `fingerprint` — `chrome`, `firefox`, `safari`, `randomized` (необяз.); `allow_insecure`: `true` — ошибка `INSECURE_TLS_REJECTED` (D-11), `false` допускается |
+| `tls` | `server_name` (домен, необяз.); `alpn` (массив строк 1…32 символа, необяз.); `fingerprint` — `chrome`, `firefox`, `safari`, `randomized` (необяз.; без него — отпечаток ядра по умолчанию, у Xray 26.9.30 — `chrome`). У Hysteria2 в Xray отпечатка нет, а ALPN всегда `h3`: профиль Hysteria2 с `fingerprint` или с `alpn`, отличным от `h3`, компилятор Xray отвергает, а не применяет молча иначе; `allow_insecure`: `true` — ошибка `INSECURE_TLS_REJECTED` (D-11), `false` допускается |
 | `reality` | `server_name` (домен, обяз.); `public_key` — 32 байта X25519 в base64url без `=` (43 символа, `REALITY_PUBLIC_KEY_INVALID`); `short_id` — 0…16 шестнадцатеричных цифр в нижнем регистре, чётное число (секрет, `REALITY_SHORT_ID_INVALID`); `fingerprint` (по умолчанию `chrome`); `spider_x` (необяз.) |
 
 REALITY — только с `vless` и транспортом `tcp`, `xhttp` или `grpc`.
@@ -136,6 +136,20 @@ REALITY — только с `vless` и транспортом `tcp`, `xhttp` и�
 | `rules` | массив | `[]` | `{domain, domain_suffix, geosite, server}`: какие имена — какому серверу |
 | `strategy` | `dual` / `prefer_ipv4` / `prefer_ipv6` / `ipv4_only` / `ipv6_only` | `prefer_ipv4` | стратегия адресов |
 | `leak_protection` | логическое | `true` | имена из туннеля не уходят мимо него открыто; сервер по умолчанию напрямую при включённой защите — `DNS_LEAK_RISK` |
+
+Смысл, который обязан сохранить компилятор ядра (D-10; для Xray —
+`docs/ARCHITECTURE.md`, §6):
+
+- **Правила** — по порядку, первое сработавшее решает: имя спрашивается
+  только у сервера этого правила, а его отказ не уводит имя к другому
+  серверу (в том числе мимо туннеля). Имя, не попавшее ни в одно
+  правило, — к серверу `default`.
+- **`strategy`.** `dual`, `prefer_ipv4`, `prefer_ipv6` — приложения в
+  туннеле получают и A, и AAAA (каким адресом соединяться, решает
+  приложение); там, где адрес выбирает сам клиент (прямое соединение по
+  имени), `prefer_ipv4` берёт сначала IPv4, `prefer_ipv6` — сначала
+  IPv6, `dual` — любой. `ipv4_only` и `ipv6_only` — только адреса этого
+  семейства: на запрос другого — пустой ответ.
 
 ### 5.1. Сервер
 

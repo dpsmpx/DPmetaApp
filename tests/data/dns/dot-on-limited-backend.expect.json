@@ -10,5 +10,11 @@
       "ACTIVATION_REJECTED",
       "CAPABILITY_FEATURE_UNSUPPORTED"
     ]
+  },
+  "xray": {
+    "outcome": "rejected",
+    "codes": [
+      "CAPABILITY_FEATURE_UNSUPPORTED"
+    ]
   }
 }

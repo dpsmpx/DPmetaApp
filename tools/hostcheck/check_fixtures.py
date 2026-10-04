@@ -19,7 +19,8 @@ CorpusTest читает корпус по соглашениям об имена
   * эталоны компилятора Xray (`tests/data/xray/`): у каждой разбираемой
     конфигурации корпуса есть ожидание `xray`; при `compiled` — по
     эталону на каждый профиль и ничего лишнего; у каждого файла случаев
-    маршрутизации — `*.probe.json` и эталон его конфигурации;
+    маршрутизации — `*.probe.json` и эталон его конфигурации, а в
+    `xray/routing/` нет файлов без случаев;
   * данные синтетические (и внутри base64-тел подписок): IP только из
     документационных и служебных диапазонов, домены — `example.com/.net/.org`, `.example`, `.test`,
     `.invalid` (исключения ниже — с причиной), UUID — вида
@@ -284,6 +285,23 @@ def check_routing():
                 bad(path, f"{where}: rule — строка или null")
 
 
+def check_xray_routing():
+    """В tests/data/xray/ — только то, что пишет CorpusTest: configs/, dns/ и пары сверки в routing/."""
+    if os.path.isdir(XRAY):
+        for n in sorted(os.listdir(XRAY)):
+            if n not in ("configs", "dns", "routing") or not os.path.isdir(os.path.join(XRAY, n)):
+                bad(os.path.join(XRAY, n), "в xray/ — только каталоги configs/, dns/, routing/: остальное CorpusTest не пишет и не сверяет")
+    root = os.path.join(XRAY, "routing")
+    if not os.path.isdir(root):
+        return
+    for n in sorted(os.listdir(root)):
+        base = next((n[:-len(sfx)] for sfx in (".probe.json", ".config.json") if n.endswith(sfx)), None)
+        if base is None:
+            bad(os.path.join(root, n), "в xray/routing/ — только *.probe.json и *.config.json")
+        elif not os.path.isfile(os.path.join(DATA, "routing", base + ".cases.json")):
+            bad(os.path.join(root, n), f"нет tests/data/routing/{base}.cases.json — эталон сверки устарел")
+
+
 def check_network():
     path = os.path.join(DATA, "network", "conditions.json")
     t = load(path)
@@ -472,6 +490,7 @@ def main():
     check_config_dirs()
     check_subscriptions()
     check_routing()
+    check_xray_routing()
     check_network()
     check_registry()
     for root in [DATA] + SAMPLES:

@@ -1,0 +1,42 @@
+{
+  "format": "dppass.config",
+  "format_version": 1,
+  "name": "Hysteria2 with TLS options Xray ignores",
+  "profiles": [
+    {
+      "id": "hy2-tls-options",
+      "name": "Hysteria2 with ALPN h2 and fingerprint",
+      "server": "192.0.2.30",
+      "port": 8443,
+      "protocol": {
+        "type": "hysteria2",
+        "password": "test-password-2"
+      },
+      "transport": {
+        "type": "native"
+      },
+      "security": {
+        "type": "tls",
+        "server_name": "hy2.example.com",
+        "alpn": [
+          "h2"
+        ],
+        "fingerprint": "chrome"
+      }
+    }
+  ],
+  "routing": {
+    "default": "proxy"
+  },
+  "dns": {
+    "servers": [
+      {
+        "id": "remote",
+        "type": "https",
+        "url": "https://dns.example.net/dns-query",
+        "route": "tunnel"
+      }
+    ],
+    "default": "remote"
+  }
+}

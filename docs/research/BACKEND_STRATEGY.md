@@ -56,3 +56,23 @@
 
 Что не делать: не тащить sing-box «на всякий случай»; не форкать ядро;
 не обновлять ядро «потому что вышло» (D-18).
+
+## 5. Xray 26.9.30: на что опирается компилятор
+
+Дата: **4 октября 2026**. Источник — исходники upstream на теге
+`v26.9.30` (коммит `b26a91de4f32`, D-24), прочитанные при выборе версии;
+пути ниже — внутри модуля `github.com/xtls/xray-core` (и его
+зависимости `github.com/apernet/quic-go`). Факты проверяются эталонами и
+шагом hostcheck «Xray» лишь в той части, которую видит `xray run -test`
+(сборка конфигурации без соединений); остальное держится на отказах
+компилятора и при смене версии перечитывается заново (D-18).
+
+| Свойство | Где | Что из этого следует для DPpass |
+|---|---|---|
+| DNS-over-TLS нет: адрес сервера — `localhost`, `https`/`h2c` (с `+local` — мимо маршрутизации), `quic+local`, `tcp`/`tcp+local`, `fakedns` или классический UDP; строка `tls://…` ушла бы в классический UDP | `app/dns/nameserver.go`, `NewServer` | `DNS_DOT` нет в матрице; DoT — отказ, а не открытый DNS |
+| Сервер для имени: совпавшие по доменам — по порядку записи; `finalQuery` — дальше не спрашивать; `skipFallback` — не быть запасным для чужих имён | `app/dns/dns.go`, `sortClients` | правило DNS — отдельная запись сервера: имя видит только сервер первого сработавшего правила |
+| `queryStrategy` `UseIPv4`/`UseIPv6`: запрос другого семейства — пустой ответ без ошибки | `app/dns/dns.go`, `LookupIP`; `proxy/dns/dns.go`, `handleIPQuery` | смысл `ipv4_only`/`ipv6_only` сохраняется и для перехваченных запросов приложений |
+| `allowInsecure` удалён: ошибка сборки конфигурации с отсылкой к `pinnedPeerCertSha256` и `verifyPeerCertByName` | `infra/conf/transport_security.go` | компилятор не пишет ни его, ни замен (T5) |
+| Пустой `fingerprint` у TLS — отпечаток Chrome | `transport/internet/tls/tls.go`, `GetFingerprint` | «без отпечатка» в IR — отпечаток ядра по умолчанию (`docs/CONFIG_FORMAT.md`) |
+| Hysteria2 (`hysteria`) соединяется через HTTP/3-транспорт quic-go: uTLS не участвует, ALPN всегда `h3` | `transport/internet/hysteria/dialer.go`; `http3/transport.go` в `apernet/quic-go` | `fingerprint` и иной `alpn` у Hysteria2 — отказ, а не молчаливое игнорирование |
+| Ключ Shadowsocks-2022 читается как base64 `StdEncoding`; не сумев — байты строки берутся как ключ, «:» делит строку на несколько ключей | `proxy/shadowsocks_2022/kdf.go`, `ParseKey` и `ParsePSKList` | ключ раскодируется и записывается заново со стандартным дополнением |

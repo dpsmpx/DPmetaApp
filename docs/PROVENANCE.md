@@ -7,8 +7,10 @@
 
 Сверку делает `tools/provenance/check_dependencies.py` (шаг hostcheck):
 каждая запись `gradle/libs.versions.toml` — строка в §2 с той же
-версией; SHA-256 дистрибутива Gradle и `gradle-wrapper.jar` — как в §3;
-каждый двоичный файл репозитория — строка в §4 с его SHA-256.
+версией; каждый модуль `tools/xray/go.mod` — строка в §2 с той же
+версией и суммой из `go.sum`; SHA-256 дистрибутива Gradle и
+`gradle-wrapper.jar` — как в §3; каждый двоичный файл репозитория —
+строка в §4 с его SHA-256.
 
 ## 1. Правила
 
@@ -54,6 +56,77 @@
 Версии закреплены, а содержимое артефактов Gradle пока не сверяет с
 записанными суммами (нет `gradle/verification-metadata.xml`) — долг
 в `TODO.md`.
+
+### Ядро прокси и модули Go (`tools/xray`)
+
+Xray и всё, что нужно для его сборки на хосте (D-24). В APK и `cli` это
+не попадает; бинарники в репозиторий не кладутся — шаг hostcheck
+«Xray» собирает их из исходников при каждом прогоне (`build/xray/`).
+
+| Что | Значение |
+|---|---|
+| Xray-core | 26.9.30: тег `v26.9.30` в `github.com/XTLS/Xray-core` (upstream, не форк) указывает на коммит `b26a91de4f3294e26a0ad0a970b81a386a41f789` — сверено `git ls-remote` 4 октября 2026; Go-модуль `github.com/xtls/xray-core` той же ревизии — псевдоверсия `v1.260327.1-0.20260930074004-b26a91de4f32` (каталог: `xray`, `xray-go-module`); собранный `xray version` печатает «Xray 26.9.30» |
+| Toolchain Go | `golang.org/toolchain` `go1.27.1` — версия из директивы `go` в `tools/xray/go.mod`; `go` 1.21+ скачивает её сам с proxy.golang.org и сверяет с sum.golang.org (`GOTOOLCHAIN=auto` в `check_xray.py`) |
+| Откуда модули | proxy.golang.org; каждый архив Go сверяет с суммой `h1:` в `tools/xray/go.sum`, а новую сумму — с журналом sum.golang.org. `check_xray.py` собирает с `-mod=readonly` (суммы не меняются) и отказывается работать, если сверка выключена (`GOSUMDB=off`, `GONOSUMDB`, `GOINSECURE`, `GOPRIVATE`, `GONOPROXY`, `-insecure`) — T10 |
+| Директивы `replace` | запрещены (`check_dependencies.py`): подмена модуля форком (например, `Happ-proxy/Xray-core`, `docs/legal/THIRD_PARTY_MATRIX.md`, §4) прошла бы мимо этой таблицы |
+
+Модули `require` из `tools/xray/go.mod` (лицензии — `docs/legal/THIRD_PARTY_MATRIX.md`,
+§1.7). Сумма — `h1:` архива модуля из `go.sum`; `check_dependencies.py`
+сверяет с ней и версию, и сумму: смена `go.sum` без правки этой таблицы
+— ошибка. Проверено 4 октября 2026: сборка с `-mod=readonly` и сверкой
+sum.golang.org прошла, лицензии прочитаны в архивах этих версий.
+
+| Модуль | Версия | Сумма архива (`go.sum`) |
+|---|---|---|
+| `github.com/xtls/xray-core` | `v1.260327.1-0.20260930074004-b26a91de4f32` | `h1:Bxo6+07IvdWlqxugsn2/sQrFbR7hjrxRRDMjbOInRho=` |
+| `google.golang.org/protobuf` | `v1.36.12` | `h1:pJOKDDOyeXErUroCihFAd5LQuwXBSpVnKGrj5o/fwxc=` |
+| `github.com/andybalholm/brotli` | `v1.0.6` | `h1:Yf9fFpf49Zrxb9NlQaluyE92/+X7UVHlhMNJN2sxfOI=` |
+| `github.com/apernet/quic-go` | `v0.61.1-0.20260806010916-184d081eef3e` | `h1:5mgtR5gwIgBKMiGI1QdXldZZ+SNor06Nbu1wCBulQBg=` |
+| `github.com/cloudflare/circl` | `v1.6.5` | `h1:O64F26HEqNhznd/hrC5KZXVKYuKM2rx4deZDTc4ihQA=` |
+| `github.com/ghodss/yaml` | `v1.0.1-0.20220118164431-d8423dcdf344` | `h1:Arcl6UOIS/kgO2nW3A65HN+7CMjSDP/gofXL4CZt1V4=` |
+| `github.com/google/btree` | `v1.1.2` | `h1:xf4v41cLI2Z6FxbKm+8Bu+m8ifhj15JuZ9sa0jZCMUU=` |
+| `github.com/google/gopacket` | `v1.1.19` | `h1:ves8RnFZPGiFnTS0uPQStjwru6uO6h+nlr9j6fL7kF8=` |
+| `github.com/google/uuid` | `v1.6.0` | `h1:NIvaJDMOsjHA8n1jAhLSgzrAzy1Hgr+hNrb57e+94F0=` |
+| `github.com/gorilla/websocket` | `v1.5.3` | `h1:saDtZ6Pbx/0u+bgYQ3q96pZgCzfhKXGPqt7kZ72aNNg=` |
+| `github.com/huin/goupnp` | `v1.2.0` | `h1:uOKW26NG1hsSSbXIZ1IR7XP9Gjd1U8pnLaCMgntmkmY=` |
+| `github.com/jackpal/go-nat-pmp` | `v1.0.2` | `h1:KzKSgb7qkJvOUTqYl9/Hg/me3pWgBmERKrTGD7BdWus=` |
+| `github.com/juju/ratelimit` | `v1.0.2` | `h1:sRxmtRiajbvrcLQT7S+JbqU0ntsb9W2yhSdNN8tWfaI=` |
+| `github.com/klauspost/compress` | `v1.17.4` | `h1:Ej5ixsIri7BrIjBkRZLTo6ghwrEtHFk7ijlczPW4fZ4=` |
+| `github.com/klauspost/cpuid/v2` | `v2.4.0` | `h1:S6Hrbc7+ywsr0r+RLapfGBHfyefhCTwEh3A0tV913Dw=` |
+| `github.com/koron/go-ssdp` | `v0.0.4` | `h1:1IDwrghSKYM7yLf7XCzbByg2sJ/JcNOZRXS2jczTwz0=` |
+| `github.com/kr/text` | `v0.2.0` | `h1:5Nx0Ya0ZqY2ygV366QzturHI13Jq95ApcVaJBhpS+AY=` |
+| `github.com/libp2p/go-nat` | `v1.0.1-0.20250821073202-01afc089f138` | `h1:YohuNPT/1k3VcThCQlBZ43PCPWPfMRS1zcxWBF2SLK8=` |
+| `github.com/libp2p/go-netroute` | `v0.2.1` | `h1:V8kVrpD8GK0Riv15/7VN6RbUQ3URNZVosw7H2v9tksU=` |
+| `github.com/miekg/dns` | `v1.1.73` | `h1:uhT8nJxmTrPJYClxVxTCX+CVn6qnzSiybRk72Z6DgrE=` |
+| `github.com/pelletier/go-toml` | `v1.9.5` | `h1:4yBQzkHv+7BHq2PQUZF3Mx0IYxG7LsP222s7Agd3ve8=` |
+| `github.com/pion/dtls/v3` | `v3.1.5` | `h1:9xJtVsHwMYeSjPp5Hh1FTis4DchnQWtnOa5o+6ygqfc=` |
+| `github.com/pion/logging` | `v0.2.4` | `h1:tTew+7cmQ+Mc1pTBLKH2puKsOvhm32dROumOZ655zB8=` |
+| `github.com/pion/stun/v3` | `v3.1.7` | `h1:uRXMTlGLf89WgItGNyZ6aR5jMTX0NBbybXADpQCzn+E=` |
+| `github.com/pion/transport/v4` | `v4.1.0` | `h1:8S+nF2reM2cJuqC6g78OVy2BBgmbdns+acx3jA97BvQ=` |
+| `github.com/pires/go-proxyproto` | `v0.15.0` | `h1:dTshmNbFm/D+0+sbrxUuddPOZ5Y0B7c5NhtsBkm6LqI=` |
+| `github.com/quic-go/qpack` | `v0.6.0` | `h1:g7W+BMYynC1LbYLSqRt8PBg5Tgwxn214ZZR34VIOjz8=` |
+| `github.com/refraction-networking/utls` | `v1.8.3-0.20260301010127-aa6edf4b11af` | `h1:er2acxbi3N1nvEq6HXHUAR1nTWEJmQfqiGR8EVT9rfs=` |
+| `github.com/robfig/cron/v3` | `v3.0.1` | `h1:WdRxkvbJztn8LMz/QEvLN5sBU+xKpSqwwUO1Pjr4qDs=` |
+| `github.com/vishvananda/netlink` | `v1.3.1` | `h1:3AEMt62VKqz90r0tmNhog0r/PpWKmrEShJU0wJW6bV0=` |
+| `github.com/vishvananda/netns` | `v0.0.5` | `h1:DfiHV+j8bA32MFM7bfEunvT8IAqQ/NzSJHtcmW5zdEY=` |
+| `github.com/wlynxg/anet` | `v0.0.5` | `h1:J3VJGi1gvo0JwZ/P1/Yc/8p63SoW98B5dHkYDmpgvvU=` |
+| `github.com/xtls/reality` | `v0.0.0-20260908062103-8cdf7bf9c7f0` | `h1:rb+fKQFhz+5I2PPuQsNYxI5mUU840XWYtRF0ZBjvkws=` |
+| `go4.org/netipx` | `v0.0.0-20231129151722-fdeea329fbba` | `h1:0b9z3AuHCjxk0x/opv64kcgZLBseWJUpBw5I82+2U4M=` |
+| `golang.org/x/crypto` | `v0.57.0` | `h1:3ZVCjf8Ggz7zneR/EHRVx68Ctf+2pmIMP2UFhh9cC6M=` |
+| `golang.org/x/exp` | `v0.0.0-20240506185415-9bf2ced13842` | `h1:vr/HnozRka3pE4EsMEg1lgkXJkTFJCVUX+S/ZT6wYzM=` |
+| `golang.org/x/net` | `v0.59.0` | `h1:5zfYln+w5XCxwrnMMJPufRgNoXEaGxl0wo5GqPXyues=` |
+| `golang.org/x/sync` | `v0.23.0` | `h1:KameEIfc1IkluZyXWLn39Wd4tURc6GbCiISGiZm2bQk=` |
+| `golang.org/x/sys` | `v0.48.0` | `h1:bbX/i/6MgT9BVLM9RT1thmxL04yeTAhbEz4SyadbXoo=` |
+| `golang.org/x/text` | `v0.42.0` | `h1:JbOZXgfeCPU9gacVtYliJqOhD+zhrEqK4LfdpmlUZqI=` |
+| `golang.org/x/time` | `v0.14.0` | `h1:MRx4UaLrDotUKUdCIqzPC48t1Y9hANFKIRpNx+Te8PI=` |
+| `golang.zx2c4.com/wintun` | `v0.0.0-20230126152724-0fa3db229ce2` | `h1:B82qJJgjvYKsXS9jeunTOisW56dUokqW/FOteYJJ/yg=` |
+| `golang.zx2c4.com/wireguard` | `v0.0.0-20250521234502-f333402bd9cb` | `h1:whnFRlWMcXI9d+ZbWg+4sHnLp52d5yiIPUxMBSt4X9A=` |
+| `golang.zx2c4.com/wireguard/windows` | `v1.1.1` | `h1:8/H97U1v1PNDNcBsMZgU3KFuND9MQdTsU2NOwmCXArE=` |
+| `google.golang.org/genproto/googleapis/rpc` | `v0.0.0-20260706201446-f0a921348800` | `h1:qEHAMpSaUhtD0p3NbEEI83HwNGFxEwaSJ1G9PLnCBZE=` |
+| `google.golang.org/grpc` | `v1.84.0` | `h1:soMyaPJ8pAak5PIQ0DGBUir0XRo2fRoMqhNWMLlLxO0=` |
+| `gopkg.in/yaml.v2` | `v2.4.0` | `h1:D8xgwECY7CYvx+Y2n4sBz93Jn9JRvxdiyyo8CTfuKaY=` |
+| `gvisor.dev/gvisor` | `v0.0.0-20260122175437-89a5d21be8f0` | `h1:Lk6hARj5UPY47dBep70OD/TIMwikJ5fGUGX0Rm3Xigk=` |
+| `lukechampine.com/blake3` | `v1.4.1` | `h1:I3Smz7gso8w4/TunLKec6K2fn+kyKtDxr/xcQEN84Wg=` |
 
 ## 3. Gradle
 

@@ -51,12 +51,13 @@ tools/hostcheck/run.sh --full     # перед слиянием (§4): проп�
 | секреты — `tools/security/check_secrets.py` | файлы ключей, закрытые ключи, токены, ссылки прокси на настоящие адреса, несинтетические UUID — и в открытом виде, и внутри base64 | D-11, D-20 |
 | корпус — `tools/hostcheck/check_fixtures.py` | непарные файлы корпуса, нестрогие ожидания, несуществующие коды и условия сети, реестр кодов, несинтетические данные (и в base64-телах подписок) | D-05, D-22 |
 | ссылки — `tools/hostcheck/check_docs.py` | ссылки на несуществующие документы, разделы, решения, угрозы, этапы и тесты | все |
-| зависимости — `tools/provenance/check_dependencies.py` | зависимость или версия без строки в матрице лицензий и PROVENANCE, координаты мимо каталога, чужие репозитории, несверенный Gradle, незаписанный двоичный файл | D-12, D-18, D-20 |
+| зависимости — `tools/provenance/check_dependencies.py` | зависимость или версия без строки в матрице лицензий и PROVENANCE, координаты мимо каталога, чужие репозитории, несверенный Gradle, незаписанный двоичный файл; модуль Go ядра (`tools/xray/go.mod`) без строки или с другой суммой `go.sum`, Xray не той версии, что в каталоге, `replace` | D-12, D-18, D-20, D-24 |
 | манифест — `tools/hostcheck/check_manifest.py` | неутверждённые разрешения, резервные копии, открытый HTTP, лишний экспорт компонентов | D-17, D-19 |
 | README — `tools/hostcheck/readme_progress.py --check` | раздел «Прогресс» в `README.md` отстал от плана, критериев выхода, решений, `TODO.md`, аудитов; противоречия между ними (этап «выполнен» при открытых критериях, разное состояние в плане и в файле этапа) | — |
 | формат — `tools/hostcheck/check_format.py` | не UTF-8, CR/CRLF, нет перевода строки в конце, хвостовые пробелы, табуляции, невидимые и двунаправленные символы (Trojan Source); корпус не проверяется | — |
 | сборка и тесты ядра — `./gradlew build :cli:installDist` | ошибки и **предупреждения** компилятора (они — ошибки), модульные и межмодульные тесты, корпус, fuzz | D-05 … D-22 |
 | cli smoke — в `run.sh` | весь конвейер через оболочку JVM: 15 сценариев, коды выхода, вывод, секреты не печатаются | D-11, D-21 |
+| Xray — `tools/xray/check_xray.py` | эталон компилятора, который Xray закреплённой версии не принимает (`xray run -test`); решение маршрутизации Xray, не совпавшее с `RouteEvaluator`; собранное ядро не той версии, что в каталоге (`docs/TESTING.md`, «Эталоны Xray») | D-05, D-09, D-24 |
 | Android: сборка и Lint — `:app:assembleDebug :app:lint` | сборка APK; Lint с `warningsAsErrors`, и для модулей ядра (`checkDependencies`) | D-17 |
 | Android: API ядра ≤ minSdk — `tools/hostcheck/check_android_api.py` | вызовы Java API в модулях ядра, которых нет на Android 8.0 (Lint их в JVM-модулях не видит) | D-02, D-17 |
 | Android: APK — `tools/hostcheck/check_apk.py` | в собранном APK: разрешения и компоненты из зависимостей в итоговом манифесте, код не из утверждённых корней пакетов (SDK телеметрии и прочее чужое), нативные библиотеки до этапа 2 | D-12, D-17, D-20 |
@@ -70,8 +71,9 @@ tools/hostcheck/run.sh --full     # перед слиянием (§4): проп�
 |---|---|---|
 | JDK | 21 | инструменты сборки (`jvmToolchain(21)`); байт-код — Java 17 |
 | Python | 3.11 или новее | скрипты `tools/` (`tomllib`) |
+| Go | 1.21 или новее (нужную версию toolchain — `go1.27.1` — он скачивает сам по `tools/xray/go.mod`) | шаг «Xray»: сборка ядра и `dppass-xray-probe`; без Go шаг пропускается, а `--full` падает |
 | Android SDK | платформа 36 (`compileSdk`) и build-tools (`aapt2`, `dexdump`), путь — `ANDROID_HOME` или `sdk.dir` в `local.properties` | модуль `app`, `check_android_api.py`, `check_apk.py`; без SDK `app` не подключается, а `--full` падает |
-| Сеть | при первом запуске | Gradle скачивает дистрибутив (сверяя SHA-256) и зависимости из Maven Central и Google Maven |
+| Сеть | при первом запуске | Gradle скачивает дистрибутив (сверяя SHA-256) и зависимости из Maven Central и Google Maven; Go — toolchain и модули с proxy.golang.org (сверяя с `go.sum` и sum.golang.org) |
 
 ### Правила
 
@@ -111,9 +113,14 @@ tools/hostcheck/run.sh --full     # перед слиянием (§4): проп�
    `services.gradle.org/distributions/gradle-X-bin.zip.sha256`; SHA-256
    нового `gradle-wrapper.jar` сверяется с `gradle-X-wrapper.jar.sha256`;
    обе суммы — в `docs/PROVENANCE.md`, §3.
-7. **Ядро прокси** (этап 2): `capabilityDiff` старой и новой матрицы
-   возможностей — в описании изменения; компиляция корпуса и сверка
-   маршрутизации проходят.
+7. **Ядро прокси** (D-24): новая версия — в каталоге (`xray`,
+   `xray-go-module`) и в `tools/xray/go.mod` (`go get` версии upstream,
+   затем `go mod tidy`; `go.sum` — только так, не руками); каждый
+   модуль `go.mod` — строка матрицы (лицензия — по файлу в архиве
+   модуля) и PROVENANCE (версия и сумма `h1:` из `go.sum`);
+   `capabilityDiff` старой и новой матрицы возможностей — в описании
+   изменения; эталоны перезаписаны (`docs/TESTING.md`, «Эталоны Xray»)
+   и их разница просмотрена; шаг «Xray» зелёный.
 8. **Полный прогон**: `tools/hostcheck/run.sh --full` зелёный,
    корпус и fuzz — без новых находок.
 

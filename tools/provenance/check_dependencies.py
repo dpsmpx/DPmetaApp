@@ -6,6 +6,13 @@
   * каждая библиотека и плагин из `gradle/libs.versions.toml` — строка в
     `docs/legal/THIRD_PARTY_MATRIX.md` (координаты и **та же версия**) и
     в `docs/PROVENANCE.md`; смена версии без правки документов — ошибка;
+  * ядро прокси и его сборка на хосте (D-24): `tools/xray/go.mod` требует
+    Xray той версии, что в каталоге (`xray-go-module`), каждый модуль
+    `require` — строка матрицы с той же версией и строка PROVENANCE с
+    той же версией и суммой `h1:` из `go.sum`; строки модулей, которых
+    в `go.mod` больше нет, — тоже ошибка; toolchain Go из директивы `go`
+    записан; `replace` и неизвестные директивы запрещены (подмена
+    модуля форком прошла бы мимо записей);
   * зависимостей мимо каталога нет: строковые координаты
     `"группа:артефакт:версия"` и `id(…) version …` в `*.gradle.kts`
     запрещены (исключение — `kotlin("test")`: версия = версии Kotlin);
@@ -33,6 +40,12 @@ CATALOG = os.path.join(PROJ, "gradle", "libs.versions.toml")
 MATRIX = os.path.join(PROJ, "docs", "legal", "THIRD_PARTY_MATRIX.md")
 PROVENANCE = os.path.join(PROJ, "docs", "PROVENANCE.md")
 WRAPPER_PROPS = os.path.join(PROJ, "gradle", "wrapper", "gradle-wrapper.properties")
+GOMOD = os.path.join(PROJ, "tools", "xray", "go.mod")
+GOSUM = os.path.join(PROJ, "tools", "xray", "go.sum")
+XRAY_MODULE = "github.com/xtls/xray-core"
+# Директивы go.mod, которые проверка понимает; любая другая (replace, exclude,
+# retract, godebug, …) меняет то, что соберётся, мимо записей — ошибка.
+GOMOD_DIRECTIVES = {"module", "go", "toolchain", "require", "tool"}
 REPOSITORIES = {"google()", "mavenCentral()", "gradlePluginPortal()"}
 # Версия задаётся не каталогом, а самим плагином Kotlin — и потому совпадает с ним.
 IMPLICIT = {'kotlin("test")': ("org.jetbrains.kotlin:kotlin-test", "kotlin")}
@@ -61,6 +74,114 @@ def tracked_files():
     out = subprocess.run(["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
                          cwd=PROJ, capture_output=True, check=True).stdout.decode("utf-8").split("\0")
     return sorted(p for p in out if p and os.path.isfile(os.path.join(PROJ, p)))
+
+
+def parse_gomod(text):
+    """Директивы go.mod: {имя: [аргументы, …]}; блоки «директива ( … )» раскрываются."""
+    out = {}
+    block = None
+    for raw in re.sub(r"//[^\n]*", "", text).splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if block is not None:
+            if line == ")":
+                block = None
+                continue
+            name, args = block, line
+        else:
+            name, _, args = line.partition(" ")
+            args = args.strip()
+            if args == "(":
+                block = name
+                out.setdefault(name, [])
+                continue
+        out.setdefault(name, []).append(args)
+    return out
+
+
+def section_rows(text, marker):
+    """Строки таблиц раздела, заголовок которого содержит marker (до следующего заголовка)."""
+    rows, inside = [], False
+    for line in text.splitlines():
+        if line.startswith("#"):
+            inside = marker in line
+        elif inside and line.lstrip().startswith("|"):
+            rows.append(line)
+    return rows
+
+
+def has_version(rows, ver):
+    return any(re.search(r"(?<![\w.])" + re.escape(ver) + r"(?![\w.])", r) for r in rows)
+
+
+def check_go(versions, matrix, mrows, prows, problems):
+    """Ядро прокси и модули Go его сборки на хосте (D-24): go.mod ↔ каталог, матрица, PROVENANCE."""
+    if not os.path.isfile(GOMOD):
+        problems.append("нет tools/xray/go.mod — ядро для проверки на хосте не собрать (D-24)")
+        return 0
+    mod = parse_gomod(read(GOMOD))
+    for name in sorted(set(mod) - GOMOD_DIRECTIVES):
+        problems.append(f"tools/xray/go.mod: директива {name} — запрещена или не разобрана проверкой "
+                        "(подмена модуля прошла бы мимо матрицы и PROVENANCE)")
+    sums = {}
+    if os.path.isfile(GOSUM):
+        for line in read(GOSUM).splitlines():
+            parts = line.split()
+            if len(parts) == 3 and not parts[1].endswith("/go.mod"):
+                sums[(parts[0], parts[1])] = parts[2]
+    else:
+        problems.append("нет tools/xray/go.sum — суммы модулей Go не закреплены")
+
+    requires = {}
+    for args in mod.get("require", []):
+        parts = args.split()
+        if len(parts) < 2:
+            problems.append(f"tools/xray/go.mod: не разобрано «require {args}»")
+            continue
+        requires[parts[0]] = parts[1]
+
+    want_xray, want_module = versions.get("xray"), versions.get("xray-go-module")
+    if not want_xray or not want_module:
+        problems.append("libs.versions.toml: нет версий xray и xray-go-module (ядро закрепляется в каталоге, D-18)")
+    elif requires.get(XRAY_MODULE) != want_module:
+        problems.append(f"tools/xray/go.mod: {XRAY_MODULE} {requires.get(XRAY_MODULE)}, а в каталоге "
+                        f"xray-go-module = {want_module} — ядро разошлось с каталогом")
+    else:
+        if not has_version(row_with(mrows, "XTLS/Xray-core"), want_xray):
+            problems.append(f"THIRD_PARTY_MATRIX.md: нет строки `XTLS/Xray-core` с версией {want_xray}")
+        core_rows = [r for r in prows if r.lstrip().startswith("| Xray-core |")]
+        if not (has_version(core_rows, want_xray) and has_version(core_rows, want_module)):
+            problems.append(f"PROVENANCE.md: строка «Xray-core» не с версией {want_xray} и модулем {want_module}")
+
+    for args in mod.get("go", []) + mod.get("toolchain", []):
+        ver = args.split()[0]
+        ver = ver if ver.startswith("go") else "go" + ver
+        if not has_version(row_with(prows, "golang.org/toolchain"), ver):
+            problems.append(f"PROVENANCE.md: нет строки `golang.org/toolchain` с {ver} (tools/xray/go.mod)")
+        if not has_version([r for r in mrows if "Go " in r], ver):
+            problems.append(f"THIRD_PARTY_MATRIX.md: в строке Go нет toolchain {ver} (tools/xray/go.mod)")
+
+    for path, ver in sorted(requires.items()):
+        if not has_version(row_with(mrows, path), ver):
+            problems.append(f"THIRD_PARTY_MATRIX.md: нет строки `{path}` с версией {ver} (tools/xray/go.mod)")
+        h1 = sums.get((path, ver))
+        if h1 is None:
+            problems.append(f"tools/xray/go.sum: нет суммы {path} {ver}")
+            continue
+        found = row_with(prows, path)
+        if not any(has_version([r], ver) and f"`{h1}`" in r for r in found):
+            problems.append(f"PROVENANCE.md: нет строки `{path}` с версией {ver} и суммой {h1} из go.sum")
+
+    # Строки модулей, которых в go.mod больше нет: запись о том, чего не собирается, вводит в заблуждение.
+    module_ref = re.compile(r"^\|\s*`([^`]+)`")
+    for name, rows in (("THIRD_PARTY_MATRIX.md", section_rows(matrix, "`tools/xray`")),
+                       ("PROVENANCE.md", [r for r in prows if "`h1:" in r])):
+        for r in rows:
+            m = module_ref.match(r.strip())
+            if m and "/" in m.group(1) and m.group(1) not in requires:
+                problems.append(f"{name}: строка `{m.group(1)}` — такого модуля в tools/xray/go.mod нет (устарела)")
+    return len(requires)
 
 
 def main():
@@ -116,6 +237,8 @@ def main():
             elif not any(re.search(r"(?<![\w.])" + re.escape(ver) + r"(?![\w.])", r) for r in found):
                 problems.append(f"{name}: строка `{coord}` не с версией {ver} (каталог изменён без записи)")
 
+    go_modules = check_go(versions, matrix, mrows, prows, problems)
+
     for call, (coord, vref) in IMPLICIT.items():
         ver = versions.get(vref)
         if not any(ver in r for r in row_with(mrows, coord)):
@@ -168,7 +291,8 @@ def main():
             print("    " + p)
         print("  Новая зависимость или версия — по чек-листу D-18 вместе со строками THIRD_PARTY_MATRIX.md и PROVENANCE.md (docs/PROCESS.md).")
         return 1
-    print(f"✓ Зависимости: {checked} записей каталога сверены с матрицей лицензий и PROVENANCE.md; "
+    print(f"✓ Зависимости: {checked} записей каталога и {go_modules} модулей Go (tools/xray, Xray {versions.get('xray')}) "
+          f"сверены с матрицей лицензий и PROVENANCE.md; "
           f"Gradle {gradle_version} и {binaries} двоичный файл — с записанными SHA-256; workflow CI нет")
     return 0
 

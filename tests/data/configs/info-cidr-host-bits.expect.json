@@ -4,5 +4,8 @@
     "codes": [
       "CIDR_HOST_BITS"
     ]
+  },
+  "xray": {
+    "outcome": "compiled"
   }
 }

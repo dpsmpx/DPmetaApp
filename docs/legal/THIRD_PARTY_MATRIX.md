@@ -4,8 +4,8 @@
 попадает в приложение, в `cli`, в сборку или в тесты, — строка
 здесь с лицензией и статусом (D-20). Что сборка реально берёт, сверяет
 `tools/provenance/check_dependencies.py`: каждая запись
-`gradle/libs.versions.toml` должна иметь строку с **той же версией**,
-иначе hostcheck падает. Откуда взят компонент и как проверен —
+`gradle/libs.versions.toml` и каждый модуль `tools/xray/go.mod` должны
+иметь строку с **той же версией**, иначе hostcheck падает. Откуда взят компонент и как проверен —
 `docs/PROVENANCE.md`.
 
 Статусы:
@@ -19,8 +19,9 @@
 - **запрещён** — не используется ни в каком виде; основание — в строке.
 
 Лицензии библиотек сверены по POM опубликованной версии
-(Maven Central, Google Maven), Gradle — по `LICENSE` дистрибутива; все —
-4 октября 2026.
+(Maven Central, Google Maven), Gradle — по `LICENSE` дистрибутива,
+модули Go — по файлам лицензии в архиве модуля той версии, что
+закреплена в `tools/xray/go.sum`; все — 4 октября 2026.
 
 ## 1. Разрешённые
 
@@ -83,16 +84,95 @@ APK проверяет `check_apk.py`. Транзитивные зависимо
 | JDK 21 (например, OpenJDK или Eclipse Temurin) | GPL-2.0 с Classpath Exception | сборка, тесты |
 | Android SDK (платформа 36, build-tools) | Android Software Development Kit License Agreement | сборка `app`, `check_android_api.py`; не распространяется |
 | Python 3.11+ | PSF-2.0 | скрипты проверок `tools/` |
+| Go 1.21+ (сам скачивает toolchain `go1.27.1` по `tools/xray/go.mod`, `docs/PROVENANCE.md`, §2) | BSD-3-Clause | шаг hostcheck «Xray»: сборка ядра и `dppass-xray-probe` |
 
-## 2. Запланированные
+### 1.6. Ядро прокси
 
 | Компонент | Версия | Лицензия | Куда | Статус | Основание |
 |---|---|---|---|---|---|
-| `XTLS/Xray-core` (только upstream, не форки) | выбирается на этапе 2 по D-18 | MPL-2.0 | APK (нативная библиотека) | запланирован | D-03, `docs/research/BACKEND_STRATEGY.md` |
+| `XTLS/Xray-core` (только upstream, не форки) | 26.9.30 | MPL-2.0 | проверка компилятора на хосте (`tools/xray`); в APK — с интеграцией (`docs/direction/ROADMAP/02-xray-backend.md`, работа 4) | разрешён | D-03, D-24, `docs/research/BACKEND_STRATEGY.md` |
 
 Обязательства MPL-2.0 — файловые: изменённые файлы самого Xray
 открываются под MPL-2.0, код DPpass не затрагивается; в приложении —
-уведомление и где взять исходники (этап 5).
+уведомление и где взять исходники (этап 5). DPpass файлы Xray не
+меняет: ядро собирается из модуля upstream как есть.
+
+### 1.7. Модули Go проверки ядра (`tools/xray`)
+
+Всё, что `tools/xray/go.mod` требует для сборки upstream `xray` и
+собственного `dppass-xray-probe` (D-24). Только хост: в APK и `cli` не
+попадает и не распространяется. Состав и версии задаёт Xray 26.9.30;
+DPpass их не выбирает, но записывает и сверяет каждую. «Кто
+использует» — пакет, через который модуль попадает в сборку
+(`go mod why -m`). Модули с пометкой «в сборку не входит» есть в графе
+модулей, но не компилируются на Linux (только Windows или только тесты
+чужого модуля).
+
+| Модуль | Версия | Лицензия | Кто использует | Статус |
+|---|---|---|---|---|
+| `github.com/xtls/xray-core` | `v1.260327.1-0.20260930074004-b26a91de4f32` | MPL-2.0 | само ядро (тег `v26.9.30`, §1.6) | разрешён |
+| `google.golang.org/protobuf` | `v1.36.12` | BSD-3-Clause | `dppass-xray-probe` (синтетические геоданные), конфигурация ядра | разрешён |
+| `github.com/andybalholm/brotli` | `v1.0.6` | MIT | `app/dns` | разрешён |
+| `github.com/apernet/quic-go` | `v0.61.1-0.20260806010916-184d081eef3e` | MIT | `app/dns` (QUIC: DoQ, Hysteria2) | разрешён |
+| `github.com/cloudflare/circl` | `v1.6.5` | BSD-3-Clause | `main/commands/all` (криптография) | разрешён |
+| `github.com/ghodss/yaml` | `v1.0.1-0.20220118164431-d8423dcdf344` | MIT | `infra/conf/serial` (конфигурация в YAML) | разрешён |
+| `github.com/google/btree` | `v1.1.2` | Apache-2.0 | `proxy/wireguard` (через gVisor) | разрешён |
+| `github.com/google/gopacket` | `v1.1.19` | BSD-3-Clause | `transport/internet/finalmask/realm` | разрешён |
+| `github.com/google/uuid` | `v1.6.0` | BSD-3-Clause | `infra/conf` | разрешён |
+| `github.com/gorilla/websocket` | `v1.5.3` | BSD-2-Clause | `transport/internet/websocket` | разрешён |
+| `github.com/huin/goupnp` | `v1.2.0` | BSD-2-Clause | `transport/internet/finalmask/realm` | разрешён |
+| `github.com/jackpal/go-nat-pmp` | `v1.0.2` | Apache-2.0 | `transport/internet/finalmask/realm` | разрешён |
+| `github.com/juju/ratelimit` | `v1.0.2` | LGPL-3.0 с исключением для статической и динамической компоновки | `github.com/xtls/reality` (REALITY) | разрешён (только хост; для APK — пересмотр, `TODO.md`) |
+| `github.com/klauspost/compress` | `v1.17.4` | BSD-3-Clause; части — Apache-2.0, MIT | `app/dns` | разрешён |
+| `github.com/klauspost/cpuid/v2` | `v2.4.0` | MIT | `common/utils` | разрешён |
+| `github.com/koron/go-ssdp` | `v0.0.4` | MIT | `transport/internet/finalmask/realm` | разрешён |
+| `github.com/kr/text` | `v0.2.0` | MIT | тесты `gopkg.in/yaml.v2`; в сборку не входит | разрешён |
+| `github.com/libp2p/go-nat` | `v1.0.1-0.20250821073202-01afc089f138` | Apache-2.0 | `transport/internet/finalmask/realm` | разрешён |
+| `github.com/libp2p/go-netroute` | `v0.2.1` | BSD-3-Clause | `transport/internet/finalmask/realm` | разрешён |
+| `github.com/miekg/dns` | `v1.1.73` | BSD-3-Clause | `transport/internet/tls` | разрешён |
+| `github.com/pelletier/go-toml` | `v1.9.5` | MIT; два файла — Apache-2.0 | `infra/conf/serial` (конфигурация в TOML) | разрешён |
+| `github.com/pion/dtls/v3` | `v3.1.5` | MIT; части — CC0-1.0 | `transport/internet/finalmask/realm` | разрешён |
+| `github.com/pion/logging` | `v0.2.4` | MIT | `transport/internet/finalmask/realm` | разрешён |
+| `github.com/pion/stun/v3` | `v3.1.7` | MIT; части — BSD-3-Clause, CC0-1.0 | `transport/internet/finalmask/realm` | разрешён |
+| `github.com/pion/transport/v4` | `v4.1.0` | MIT; части — BSD-3-Clause | `transport/internet/finalmask/realm` | разрешён |
+| `github.com/pires/go-proxyproto` | `v0.15.0` | Apache-2.0 | `transport/internet` | разрешён |
+| `github.com/quic-go/qpack` | `v0.6.0` | MIT | `transport/internet/masque` | разрешён |
+| `github.com/refraction-networking/utls` | `v1.8.3-0.20260301010127-aa6edf4b11af` | BSD-3-Clause | `app/dns`, отпечаток TLS | разрешён |
+| `github.com/robfig/cron/v3` | `v3.0.1` | MIT | `infra/conf` | разрешён |
+| `github.com/vishvananda/netlink` | `v1.3.1` | Apache-2.0 | `proxy/wireguard` | разрешён |
+| `github.com/vishvananda/netns` | `v0.0.5` | Apache-2.0 | `proxy/wireguard` | разрешён |
+| `github.com/wlynxg/anet` | `v0.0.5` | BSD-3-Clause | `transport/internet/finalmask/realm` | разрешён |
+| `github.com/xtls/reality` | `v0.0.0-20260908062103-8cdf7bf9c7f0` | MPL-2.0; части из Go — BSD-3-Clause | REALITY | разрешён |
+| `go4.org/netipx` | `v0.0.0-20231129151722-fdeea329fbba` | BSD-3-Clause | `common/geodata` | разрешён |
+| `golang.org/x/crypto` | `v0.57.0` | BSD-3-Clause | `proxy/shadowsocks` и др. | разрешён |
+| `golang.org/x/exp` | `v0.0.0-20240506185415-9bf2ced13842` | BSD-3-Clause | `transport/internet/hysteria/congestion/bbr` | разрешён |
+| `golang.org/x/net` | `v0.59.0` | BSD-3-Clause | `app/dns` и др. | разрешён |
+| `golang.org/x/sync` | `v0.23.0` | BSD-3-Clause | `app/dns` | разрешён |
+| `golang.org/x/sys` | `v0.48.0` | BSD-3-Clause | `common/net` | разрешён |
+| `golang.org/x/text` | `v0.42.0` | BSD-3-Clause | `common/geodata/strmatcher` | разрешён |
+| `golang.org/x/time` | `v0.14.0` | BSD-3-Clause | `proxy/wireguard` | разрешён |
+| `golang.zx2c4.com/wintun` | `v0.0.0-20230126152724-0fa3db229ce2` | MIT | `proxy/tun` (только Windows); в сборку не входит | разрешён |
+| `golang.zx2c4.com/wireguard` | `v0.0.0-20250521234502-f333402bd9cb` | MIT | `proxy/wireguard` | разрешён |
+| `golang.zx2c4.com/wireguard/windows` | `v1.1.1` | MIT | `proxy/tun` (только Windows); в сборку не входит | разрешён |
+| `google.golang.org/genproto/googleapis/rpc` | `v0.0.0-20260706201446-f0a921348800` | Apache-2.0 | `app/log/command` (gRPC) | разрешён |
+| `google.golang.org/grpc` | `v1.84.0` | Apache-2.0 | `app/commander`, транспорт gRPC | разрешён |
+| `gopkg.in/yaml.v2` | `v2.4.0` | Apache-2.0; части из libyaml — MIT | `infra/conf/serial` | разрешён |
+| `gvisor.dev/gvisor` | `v0.0.0-20260122175437-89a5d21be8f0` | Apache-2.0 | `proxy/wireguard`, `proxy/tun` (сетевой стек) | разрешён |
+| `lukechampine.com/blake3` | `v1.4.1` | MIT | `main/commands/all` (BLAKE3) | разрешён |
+
+Копилефта, который распространялся бы на код DPpass, здесь нет: MPL-2.0
+— файловый; у `juju/ratelimit` LGPL-3.0 с исключением, которое
+разрешает распространять статически или динамически скомпонованную
+программу без минимального соответствующего исходного кода и сведений
+об установке (п. 4d и 4e LGPL-3.0). Для APK состав пересматривается
+при интеграции ядра: часть модулей нужна функциям Xray вне IR v1
+(например, WireGuard), и что из них попадёт в библиотеку ядра, решает
+её сборка (`TODO.md`).
+
+## 2. Запланированные
+
+Нет. Xray-core переведён в «разрешён» с выбором версии 26.9.30 (D-24,
+§1.6).
 
 ## 3. Рассматриваемые
 

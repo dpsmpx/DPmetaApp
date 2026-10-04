@@ -11,6 +11,13 @@ agp = "9.4.1"
 kotlinx-coroutines = "1.11.0"
 junit = "6.1.3"
 
+# Ядро прокси (D-24): версия Xray и Go-модуль той же версии (тег v26.9.30
+# upstream XTLS/Xray-core). Из него tools/xray собирает ядро для проверки
+# компилятора на хосте; tools/xray/go.mod должен требовать именно его —
+# сверяют check_dependencies.py и check_xray.py (версия собранного ядра).
+xray = "26.9.30"
+xray-go-module = "v1.260327.1-0.20260930074004-b26a91de4f32"
+
 android-compileSdk = "36"
 android-targetSdk = "36"
 android-minSdk = "26"
