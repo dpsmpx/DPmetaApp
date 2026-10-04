@@ -16,8 +16,8 @@ CorpusTest читает корпус по соглашениям об имена
   * коды — контракт (D-22): реестр `tools/hostcheck/diag_codes.txt`
     сверяется с `DiagCode` и `FailureKind`: пропавший или
     переименованный код — ошибка, новый код без записи в реестре — тоже;
-  * данные синтетические: IP только из документационных и служебных
-    диапазонов, домены — `example.com/.net/.org`, `.example`, `.test`,
+  * данные синтетические (и внутри base64-тел подписок): IP только из
+    документационных и служебных диапазонов, домены — `example.com/.net/.org`, `.example`, `.test`,
     `.invalid` (исключения ниже — с причиной), UUID — вида
     `00000000-0000-…`. Так в корпус не попадёт настоящий сервер или ключ.
 
@@ -354,6 +354,24 @@ def walk_json(path, value, key=None, where="$"):
                 bad(path, f"{where}: UUID {u[:8]}… не синтетический")
 
 
+def base64_links(line):
+    """Строки ссылок, спрятанные в base64 (тело подписки), — или пусто."""
+    import base64
+    import binascii
+    s = line.strip()
+    if len(s) < 24 or not re.fullmatch(r"[A-Za-z0-9+/_-]+=*", s):
+        return []
+    padded = s + "=" * (-len(s) % 4)
+    for decode in (base64.b64decode, base64.urlsafe_b64decode):
+        try:
+            text = decode(padded.encode("ascii")).decode("utf-8")
+        except (binascii.Error, ValueError, UnicodeDecodeError):
+            continue
+        if "://" in text:
+            return text.splitlines()
+    return []
+
+
 def check_synthetic(root):
     for dirpath, _, files in os.walk(root):
         for fn in sorted(files):
@@ -372,12 +390,15 @@ def check_synthetic(root):
                     s = line.strip()
                     if s.startswith("#") and ":" in s:
                         s = s.split(":", 1)[1].strip()  # «#ключ: значение» в теле подписки
-                    check_link(path, s, f"строка {n}")
-                    for u in UUID.findall(line):
-                        if not u.startswith("00000000-0000-"):
-                            bad(path, f"строка {n}: UUID {u[:8]}… не синтетический")
-                    for ip in re.findall(r"\b(?:\d{1,3}\.){3}\d{1,3}\b", line):
-                        check_host(path, ip, f"строка {n}")
+                    # Строка и ссылки, спрятанные в ней в base64, — по одним правилам.
+                    views = [(f"строка {n}", s)] + [(f"строка {n}, base64 → {k}", d) for k, d in enumerate(base64_links(s), 1)]
+                    for where, view in views:
+                        check_link(path, view, where)
+                        for u in UUID.findall(view):
+                            if not u.startswith("00000000-0000-"):
+                                bad(path, f"{where}: UUID {u[:8]}… не синтетический")
+                        for ip in re.findall(r"\b(?:\d{1,3}\.){3}\d{1,3}\b", view):
+                            check_host(path, ip, where)
 
 
 def main():

@@ -28,6 +28,11 @@
   android-log      android.util.Log — мимо редактирования журнала.
   blocking         Thread.sleep, GlobalScope, runBlocking вне cli/ —
                    ожидание через pause/Clock, жизненный цикл — у scope.
+  nested-comment   «/*» внутри комментария: в Kotlin блоки вкладываются,
+                   и путь вида `tests/data/**` в KDoc открывает новый
+                   комментарий — код после него молча становится
+                   комментарием (или файл не собирается). Пишите
+                   `tests/data/…` или без звёздочки после косой черты.
 
     python3 tools/security/check_forbidden_apis.py
 
@@ -108,14 +113,20 @@ def kotlin_files():
         return found
 
 
-def strip_comments(text):
-    """Комментарии → пробелы (переводы строк сохраняются); строки остаются."""
+def strip_comments(text, nested=None):
+    """Комментарии → пробелы (переводы строк сохраняются); строки остаются.
+
+    [nested] (если передан) получает номера строк, где внутри комментария
+    открывается вложенный — см. правило nested-comment.
+    """
     out, i, n = [], 0, len(text)
     depth = 0  # вложенность /* */ (в Kotlin блоки вкладываются)
     while i < n:
         c = text[i]
         if depth:
             if text.startswith("/*", i):
+                if nested is not None:
+                    nested.append(text.count("\n", 0, i) + 1)
                 depth += 1
                 out.append("  ")
                 i += 2
@@ -163,7 +174,10 @@ def main():
     for rel in sorted(kotlin_files()):
         files += 1
         with open(os.path.join(PROJ, rel), encoding="utf-8") as f:
-            code = strip_comments(f.read())
+            nested = []
+            code = strip_comments(f.read(), nested)
+        for n in nested:
+            problems.append(f"{rel}:{n}: [nested-comment] «/*» внутри комментария — в Kotlin это вложенный комментарий, а не текст")
         for n, line in enumerate(code.splitlines(), 1):
             for name, rx, ok, why in rules:
                 if rx.search(line) and not ok(rel):
@@ -174,7 +188,7 @@ def main():
             print("    " + p)
         print("  Правила и разрешённые места — tools/security/check_forbidden_apis.py; новое исключение — с причиной.")
         return 1
-    print(f"✓ Запрещённые API: {files} файлов Kotlin, {len(rules)} правил — нарушений нет")
+    print(f"✓ Запрещённые API: {files} файлов Kotlin, {len(rules) + 1} правил — нарушений нет")
     return 0
 
 
