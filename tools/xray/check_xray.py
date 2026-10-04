@@ -34,14 +34,15 @@ import subprocess
 import sys
 import tomllib
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import goenv  # noqa: E402 — общее окружение Go (native.py)
+
 PROJ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 TOOL = os.path.join(PROJ, "tools", "xray")
 GOLDEN = os.path.join(PROJ, "tests", "data", "xray")
 CATALOG = os.path.join(PROJ, "gradle", "libs.versions.toml")
 OUT = os.path.join(PROJ, "build", "xray")
 GEO_RULE = re.compile(r'"(geoip|geosite):([^"]+)"')
-# Эти переменные выключают сверку модулей с sum.golang.org или пускают мимо прокси без неё.
-UNSAFE_ENV = ("GONOSUMDB", "GONOSUMCHECK", "GONOSUMCHECKS", "GOINSECURE", "GOPRIVATE", "GONOPROXY")
 
 
 def fail(msg):
@@ -50,18 +51,10 @@ def fail(msg):
 
 
 def go_env():
-    env = dict(os.environ)
-    for k in UNSAFE_ENV:
-        if env.get(k):
-            raise SystemExit(fail(f"{k}={env[k]}: сверка модулей Go с sum.golang.org выключена — проверка не запускается (T10)"))
-    if env.get("GOSUMDB", "").strip().lower() == "off":
-        raise SystemExit(fail("GOSUMDB=off: сверка модулей Go выключена — проверка не запускается (T10)"))
-    if "-insecure" in env.get("GOFLAGS", ""):
-        raise SystemExit(fail("GOFLAGS содержит -insecure — проверка не запускается (T10)"))
-    env["GOFLAGS"] = "-mod=readonly"
-    # Версию toolchain задаёт go.mod; local запретил бы её скачать, а чужая версия — не та сборка.
-    env["GOTOOLCHAIN"] = "auto"
-    return env
+    try:
+        return goenv.go_env()
+    except goenv.UnsafeGoEnv as e:
+        raise SystemExit(fail(str(e)))
 
 
 def run(cmd, env=None, cwd=None):
