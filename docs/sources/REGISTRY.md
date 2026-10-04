@@ -30,3 +30,14 @@
 | S-09 | repo | github.com/dpsmpx/AIM_Trainer_pas | public | aim_trainer_pas | публичный проект автора |
 | S-10 | site | github.com/dpsmpx | public | — | аккаунт GitHub автора (данные аккаунта — заметка N-0001) |
 | S-11 | site | store.steampowered.com | public | — | магазин Steam: поиск и страницы игр |
+| S-12 | repo | github.com/dpsmpx/DP_Ecosystem | public | dp_ecosystem | публичный проект автора (D-13) |
+| S-13 | repo | github.com/dpsmpx/DP_Repeated_Tasks | public | dp_repeated_tasks | публичный проект автора (D-13) |
+| S-14 | repo | github.com/dpsmpx/PixRogue | public | pixrogue | публичный проект автора (D-13) |
+| S-15 | repo | github.com/dpsmpx/DP_TextFile_Sorter | public | dp_textfile_sorter | публичный проект автора (D-13) |
+| S-16 | repo | github.com/dpsmpx/dpcalls | public | dpcalls | публичный проект автора (D-13) |
+| S-17 | repo | github.com/dpsmpx/DP_Autoclicker | public | dp_autoclicker | публичный проект автора (D-13) |
+| S-18 | repo | github.com/dpsmpx/DP_Typing_Master | public | dp_typing_master | публичный проект автора (D-13) |
+| S-19 | repo | github.com/dpsmpx/DP_Backup_Tool | public | dp_backup_tool | публичный проект автора (D-13) |
+| S-20 | repo | github.com/dpsmpx/DP_Gen_Bots | public | dp_gen_bots | публичный проект автора (D-13) |
+| S-21 | repo | github.com/dpsmpx/DP_Graph_Builder | public | dp_graph_builder | публичный проект автора (D-13) |
+| S-22 | repo | github.com/dpsmpx/andors-trail-load | public | andors-trail-load | форк чужого репозитория (N-0004); в предмете — только коммиты автора (D-13) |
