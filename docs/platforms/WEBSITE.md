@@ -39,7 +39,8 @@
 /feed.xml /rss.xml /feed.json   фиды
 /sitemap.xml /robots.txt /404.html
 /api/v1/index.json /api/v1/projects.json /api/v1/news.json
-/media/<объект>/…  /fonts/…  /style.css
+/media/<объект>/…  /fonts/…  /style.css  /favicon.svg
+/_headers               заголовки для хостинга (не страница)
 ```
 
 Отличия от предварительной схемы §5 — `docs/research/publishing/WEBSITE.md`,
@@ -81,14 +82,56 @@ false`, §80). Адрес записи (`/news/<slug>/`) не меняется �
 `<title>`, `description`, `rel=canonical`, `hreflang` RU/EN, Open Graph
 (`og:title`, `og:type`, `og:image`, `og:url`, `og:description`,
 `og:locale`), `twitter:card`, JSON-LD (`Person`, `WebSite`,
-`BlogPosting`, `CreativeWork` проекта), `/sitemap.xml`, `/robots.txt`,
-фиды. Проверка `site` собирает обе версии, читает фиды и JSON, ищет
-битые внутренние ссылки.
+`BlogPosting`, `CreativeWork` проекта), `/sitemap.xml` с `lastmod` и
+парами `hreflang` (`xhtml:link` у каждого адреса пары и `x-default`),
+`/robots.txt`, фиды. `lastmod` — дата самого нового источника страницы:
+записи или свидетельства факта, который на ней выведен; источника с
+датой нет — `lastmod` не пишется. Значок `/favicon.svg` — «d» и
+точка-акцент из токенов бренда, без шрифтов. Проверка `site` собирает
+обе версии, читает фиды и JSON, ищет битые внутренние ссылки, проверяет
+доступность и CSP каждой страницы, наличие значка и `_headers`.
+
+## Доступность (П2-10, П2-14)
+
+- `<html lang>`; ссылка «к содержимому» (`#main`) первой по Tab; видимый
+  фокус (`:focus-visible`, акцент `human`); у текущего раздела меню —
+  `aria-current="page"`; переключатель языка с `lang` и подписью.
+- Один `h1` на странице: заголовок страницы; разметка вариантов даёт
+  только `##`/`###` (`h2`/`h3`).
+- У каждого изображения — `alt`. Для медиа вариантов это `media_alt` —
+  по строке на файл `media`, с подстановками фактов (Д28); alt входит в
+  хэш одобрения, его меняет только новая фиксация варианта. Нет
+  `media_alt` — ошибка сборки.
+- Телефон — проверка на 390 px: без горизонтальной прокрутки, пункты
+  меню не рвутся, цели касания меню и списков ссылок — не ниже 24 px
+  (WCAG 2.2, 2.5.8; ссылки внутри предложений — исключение).
+
+## Заголовки безопасности (П2-12)
+
+`/_headers` — формат Cloudflare Pages и Netlify, правило для `/*`:
+`Content-Security-Policy` (только свои файлы: `script-src 'none'`,
+`style-src 'self'`, `img-src 'self'`, `font-src 'self'`,
+`frame-ancestors 'none'`; JSON-LD — блок данных, не исполняется),
+`X-Content-Type-Options: nosniff`, `Referrer-Policy:
+strict-origin-when-cross-origin`, `Permissions-Policy` (камера,
+микрофон, геолокация, оплата, USB — выключены), `X-Frame-Options: DENY`,
+`Cross-Origin-Opener-Policy: same-origin`; у staging ещё
+`X-Robots-Tag: noindex, nofollow`. Политика — в `tools/cs/site/build.py`
+(`SECURITY_HEADERS`) рядом с генератором: что страница может содержать,
+решает он. Проверка `site` ловит встроенные скрипты, стили, обработчики
+`on…=` и внешние ресурсы страниц. Работают заголовки только на
+хостинге; локальный сервер их не применяет.
 
 ## Выпуск (§48)
 
+Предпросмотр (`python3 -m tools.cs preview <объект|кампания> --serve`) —
+staging-сборка в корне `build/preview/<id>/`, страница со всеми
+вариантами — `/_preview/`; сайт ссылается на свои файлы от корня, поэтому
+открывается через локальный сервер (`site serve`, `preview --serve`;
+нет адреса — `/404.html` с кодом 404, как на хостинге), а не из `file://`.
+
 ```
-commit → python3 -m tools.cs check → site build --env staging → предпросмотр (site serve, preview)
+commit → python3 -m tools.cs check → site build --env staging → предпросмотр (site serve, preview --serve)
        → publish <объект> website.ru --to site-production --production (сборка + выгрузка + запись в журнал)
 ```
 

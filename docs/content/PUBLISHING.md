@@ -120,7 +120,7 @@ python3 -m tools.cs publish CI-0001 vk.ru --to vk-author --record-manual --url h
 python3 -m tools.cs canonical seal CI-0101                    # канон проверен и зафиксирован
 python3 -m tools.cs adapt CI-0101 --platform telegram --lang ru   # заготовка варианта
 python3 -m tools.cs variant seal CI-0101 telegram.ru          # валидатор, зависимости, ready
-python3 -m tools.cs preview CI-0101                           # build/preview/CI-0101/index.html
+python3 -m tools.cs preview CI-0101 --serve                   # http://localhost:8001/_preview/
 python3 -m tools.cs approve CI-0101 telegram.ru               # автор, в своём терминале
 python3 -m tools.cs publish CI-0101 website.ru --to site-production --production
 python3 -m tools.cs publish CI-0101 telegram.ru --to tg-devlog            # пробный прогон

@@ -118,6 +118,7 @@ class SiteBuild:
         self._warned: set = set()
         self._og: str | None = None
         self._used: set = set()  # факты текущей страницы — для lastmod
+        self._tokens: dict | None = None
 
     # ------------------------------------------------------- данные
     def _published(self) -> dict[tuple, dict]:
@@ -478,7 +479,7 @@ class SiteBuild:
         self.report.files.append(str(p.relative_to(out)))
 
     def tokens(self) -> dict:
-        if not hasattr(self, "_tokens"):
+        if self._tokens is None:
             self._tokens = json.loads(self.repo.path("assets", "brand", "tokens.json").read_text(encoding="utf-8"))
         return self._tokens
 

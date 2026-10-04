@@ -47,7 +47,7 @@ tools/cs/
 │   ├── telegram.py      Bot API через транспорт (urllib; в тестах — имитация API)
 │   ├── manual.py        VK, YouTube, Discord, GitHub, TikTok — отрисовка и лимиты; публикация — ручной путь (Д33)
 │   └── mock.py          имитации всех площадок с внедрением отказов (§102)
-├── site/            САЙТ — генератор (build.py), фиды и API (feeds.py), подписи (i18n.py), предпросмотр (preview.py)
+├── site/            САЙТ — генератор (build.py), фиды и API (feeds.py), подписи (i18n.py), предпросмотр (preview.py), локальный сервер (serve.py)
 ├── platform_cli.py  команды платформы;  platform_checks.py  проверки платформы;  capabilities.py  матрица
 └── claims.py facts.py validate.py visual.py exports.py provenance.py render.py …   конвейер изображений и гейты (v1)
 website/             тема сайта: templates/base.html, static/style.css (цвета — из токенов бренда)
