@@ -3,8 +3,8 @@
 
 Списки — tools/verify/forbidden_claims.txt. Где что проверяется:
 
-  * hype (оценки, лозунги, прогнозы успеха) — факты, хронология и
-    пробелы, выводы, метод, документы книги, README.md, TODO.md;
+  * hype (оценки, лозунги, прогнозы успеха) — все документы docs/,
+    README.md, TODO.md, CLAUDE.md;
   * inference (маркеры вывода и догадки) — файлы фактов F-NNNN.md и
     события хронологии: факт — без интерпретаций;
   * prescriptive (предписания) — описание метода docs/method/.
@@ -61,7 +61,8 @@ def check(root=None):
     r = dm.Report("запрещённые формулировки")
     patterns = load_patterns(root)
     hype = files(root, "docs/facts/*.md", "docs/timeline/*.md", "docs/insights/*.md",
-                 "docs/method/*.md", "docs/book/*.md", "README.md", "TODO.md")
+                 "docs/method/*.md", "docs/book/*.md", "docs/sources/*.md", "docs/direction/*.md",
+                 "docs/direction/ROADMAP/*.md", "README.md", "TODO.md", "CLAUDE.md")
     for rel in hype:
         scan(r, root, rel, patterns["hype"], "hype")
     for rel in files(root, "docs/facts/F-*.md"):

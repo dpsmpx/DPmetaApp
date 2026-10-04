@@ -17,7 +17,7 @@
 | Список незавершённого `TODO.md` | VoxelRPG, DPlang, DPpass | F-0019, F-0036, F-0044 |
 | Скрипт локальных проверок | VoxelRPG, DPlang, DPpass | F-0016, F-0036, F-0044 |
 | Решение не использовать GitHub Actions; проверки в сессии | VoxelRPG, DPlang | F-0027, F-0039 |
-| Влитые PR из веток с префиксом `claude/` | VoxelRPG | F-0015 |
+| PR № 1 из ветки с префиксом `claude/` | VoxelRPG | F-0015 |
 | Коммиты с именем автора «Claude» в истории | VoxelRPG, DPlang, DPpass | F-0031, F-0041, F-0047 |
 | Записанный перенос практик из VoxelRPG в новый проект | DPlang | F-0036, F-0037 |
 | Машинная проверка границы движка | VoxelRPG | F-0021 |
