@@ -71,6 +71,27 @@ class ShareLinkParserTest {
     }
 
     @Test
+    fun emptyPathAndServiceNameMeanAbsent() {
+        val ws = ShareLinkParser.parse("trojan://pass@198.51.100.1:443?sni=t.example.org&type=ws&path=", "s").valueOrNull()!!
+        assertEquals(TransportSpec.WebSocket("/", null), ws.transport)
+        val grpc = ShareLinkParser.parse("trojan://pass@198.51.100.1:443?sni=t.example.org&type=grpc&serviceName=", "s")
+        assertEquals(DiagCode.SHARE_LINK_INVALID, grpc.errors.single().code)
+    }
+
+    @Test
+    fun invalidPathAndServiceNameReachProfileValidation() {
+        for (link in listOf(
+            "trojan://pass@198.51.100.1:443?sni=t.example.org&type=ws&path=no-slash",
+            "trojan://pass@198.51.100.1:443?sni=t.example.org&type=httpupgrade&path=%2Fa%20b",
+            "vless://$UUID1@198.51.100.1:443?security=tls&sni=t.example.org&type=xhttp&path=x",
+            "trojan://pass@198.51.100.1:443?sni=t.example.org&type=grpc&serviceName=bad%20name",
+        )) {
+            val p = ShareLinkParser.parse(link, "s").valueOrNull()!!
+            assertEquals(listOf(DiagCode.PATH_INVALID), ConfigValidator.validateProfile(p, "profiles[0]").map { it.code }, link)
+        }
+    }
+
+    @Test
     fun unknownParameterMakesLinkUnusableExplicitly() {
         val r = ShareLinkParser.parse("vless://$UUID1@203.0.113.1:443?security=tls&xyz=1", "s")
         val e = r.errors.single()

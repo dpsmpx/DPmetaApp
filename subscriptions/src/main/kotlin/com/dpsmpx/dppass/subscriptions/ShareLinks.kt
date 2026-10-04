@@ -66,14 +66,19 @@ object ShareLinkParser {
         }
 
         val hostHeader = domainParam(q["host"])
+        // Пустое значение — как отсутствие параметра; неверный путь или serviceName остаётся
+        // как есть — его отвергает ConfigValidator.validateProfile с путём, как и у документа.
+        val path = q["path"]?.takeIf { it.isNotEmpty() } ?: "/"
         val transport = when (val type = q["type"] ?: "tcp") {
             "tcp", "raw" -> TransportSpec.Tcp
-            "ws" -> TransportSpec.WebSocket(q["path"] ?: "/", hostHeader)
-            "httpupgrade" -> TransportSpec.HttpUpgrade(q["path"] ?: "/", hostHeader)
-            "grpc" -> TransportSpec.Grpc(q["servicename"] ?: return Outcome.failure(DiagCode.SHARE_LINK_INVALID, "grpc без serviceName"))
+            "ws" -> TransportSpec.WebSocket(path, hostHeader)
+            "httpupgrade" -> TransportSpec.HttpUpgrade(path, hostHeader)
+            "grpc" -> TransportSpec.Grpc(
+                q["servicename"]?.takeIf { it.isNotEmpty() } ?: return Outcome.failure(DiagCode.SHARE_LINK_INVALID, "grpc без serviceName"),
+            )
             "xhttp", "splithttp" -> {
                 val mode = XHttpMode.entries.firstOrNull { it.wire == (q["mode"] ?: "auto") } ?: return unsupported("mode=${q["mode"]}")
-                TransportSpec.XHttp(q["path"] ?: "/", hostHeader, mode)
+                TransportSpec.XHttp(path, hostHeader, mode)
             }
             else -> return unsupported("type=$type")
         }
