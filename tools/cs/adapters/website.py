@@ -19,6 +19,10 @@ from .base import Identity, Payload, PlatformAdapter, RemoteRef, RemoteStatus
 class WebsiteAdapter(PlatformAdapter):
     platform = "website"
 
+    @classmethod
+    def default_format(cls, has_media: bool, category: str | None = None) -> str:
+        return "page" if category == "page" else "post"
+
     def env(self) -> str:
         return self.destination.get("environment") or "staging"
 

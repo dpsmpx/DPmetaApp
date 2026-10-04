@@ -112,8 +112,8 @@ def cmd_adapt(a) -> int:
     req = GenerationRequest("template:adapt@1", {"text": cv.doc.body, "platform": a.platform, "lang": a.lang},
                             cv.record.get("sha256") or "", "none")
     res = generate(repo, TemplateProvider(), req)
-    fmt = a.format or {"website": "page" if item.category == "page" else "post", "github": "readme",
-                       "youtube": "description"}.get(a.platform, "post")
+    from .adapters import adapter_class
+    fmt = a.format or adapter_class(a.platform).default_format(False, item.category)
     meta = {"schema": "variant/v1", "item": item.id, "platform": a.platform, "lang": a.lang, "format": fmt,
             "source_version": cv.version, "version": 1, "status": "draft", "trust": "unverified",
             "title": cv.doc.meta.get("title"), "link": "canonical" if a.platform != "website" else None,

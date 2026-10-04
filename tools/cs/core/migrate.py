@@ -22,9 +22,6 @@ from ..common import today
 from . import textdoc
 from .content import CItem, save_item
 
-FORMAT_BY_PLATFORM = {"github": "readme", "youtube": "description", "website": "page"}
-
-
 def _lang(item: CItem, platform: str) -> str:
     langs = (item.repo.yaml("data/platforms/export_specs.yaml") or {}).get("platform_languages", {})
     have = item.data.get("languages") or ["ru"]
@@ -55,7 +52,8 @@ def plan_v1_to_v2(item: CItem) -> list[dict]:
         platform = p.stem
         lang = _lang(item, platform)
         media = _media(item, platform, lang)
-        fmt = FORMAT_BY_PLATFORM.get(platform) or ("photo_post" if media and platform == "telegram" else "post")
+        from ..adapters import adapter_class
+        fmt = adapter_class(platform).default_format(bool(media), item.data.get("category"))
         acts.append({"from": f"copy/{p.name}", "to": f"variants/{platform}.{lang}.md", "platform": platform,
                      "lang": lang, "format": fmt, "media": media, "note": notes, "body": body, "skip": not body})
     return acts

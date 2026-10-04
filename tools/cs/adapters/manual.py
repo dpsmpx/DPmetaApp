@@ -30,6 +30,10 @@ class YouTubeAdapter(PlatformAdapter):
     platform = "youtube"
     automated = False
 
+    @classmethod
+    def default_format(cls, has_media: bool, category: str | None = None) -> str:
+        return "description"
+
     def validate(self, p: Payload) -> list[Finding]:
         out = super().validate(p)
         lim = self.limits()
@@ -66,6 +70,10 @@ class DiscordAdapter(PlatformAdapter):
 class GitHubAdapter(PlatformAdapter):
     platform = "github"
     automated = False
+
+    @classmethod
+    def default_format(cls, has_media: bool, category: str | None = None) -> str:
+        return "release_note" if category == "release" else "readme"
 
     def render_text(self, blocks: list, base: str) -> tuple[str, int]:
         text = markup.to_discord_md(blocks, base)  # GitHub Markdown — то же подмножество

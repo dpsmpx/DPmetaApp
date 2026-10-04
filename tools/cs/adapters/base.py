@@ -106,6 +106,11 @@ class PlatformAdapter:
         self.retry_policy = retry or RetryPolicy.from_policy(repo.policy().get("retry"))
         self.rate_limiter = RateLimiter(self.min_interval_s, clock, sleep)
 
+    @classmethod
+    def default_format(cls, has_media: bool, category: str | None = None) -> str:
+        """Формат заготовки варианта (adapt, migrate) — знание площадки, а не ядра."""
+        return "post"
+
     # ------------------------------------------------------- данные площадки
     def caps(self) -> dict:
         return self.repo.capabilities().get(self.platform) or {}

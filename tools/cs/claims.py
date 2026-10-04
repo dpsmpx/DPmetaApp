@@ -167,6 +167,18 @@ def item_findings(item: Item, variant: str | None = None) -> list[Finding]:
         soft = v.get("status") == "rejected"
         for lang, t in (spec.get("text") or {}).items():
             out += text_findings(item, "\n".join(_strings(t)), spec_claims, f"{where} [{lang}]", soft, reg, rule_list)
+    vdir = item.dir / "variants"
+    if vdir.is_dir():  # content_item/v2: тексты вариантов площадок после подстановки фактов (Д22, Д28)
+        from .core import textdoc
+        from .core.inject import resolve
+        from .core.repo import Repo
+        repo = Repo()
+        for p in sorted(vdir.glob("*.md")):
+            doc = textdoc.load(p)
+            res = resolve(doc.body, doc.meta.get("lang", "ru"), repo, repo.canonical_base())
+            fids = sorted(set(item_claims + res.facts_used))
+            text = "\n".join(x for x in (doc.meta.get("title"), res.text, doc.meta.get("cta")) if x)
+            out += text_findings(item, text, fids, rel(p), doc.meta.get("status") == "rejected", reg, rule_list)
     copy_dir = item.dir / "copy"
     if copy_dir.is_dir():
         for p in sorted(copy_dir.glob("*.md")):

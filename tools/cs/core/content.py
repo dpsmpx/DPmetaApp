@@ -240,7 +240,7 @@ def stale_reasons(v: Variant) -> list[str]:
     rec_c = deps.get("canonical") or {}
     if rec_c.get("version"):
         cv = item.canon(rec_c["version"])
-        now = cv.record.get("sha256") if cv else None
+        now = sha256_file(cv.path) if cv is not None and cv.path.is_file() else None
         if rec_c.get("sha256") and now != rec_c.get("sha256"):
             out.append(f"канон v{rec_c['version']} изменён после фиксации")
     out += changed(deps, item.repo)

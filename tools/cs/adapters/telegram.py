@@ -103,6 +103,10 @@ class TelegramAdapter(PlatformAdapter):
     platform = "telegram"
     min_interval_s = 1.0  # не чаще ~1 сообщения в секунду в один чат (FAQ Bot API)
 
+    @classmethod
+    def default_format(cls, has_media: bool, category: str | None = None) -> str:
+        return "photo_post" if has_media else "post"
+
     def _call(self, method: str, params: dict, files: dict | None = None):
         if self.transport is None:
             self.transport = urllib_transport(self.credential())

@@ -149,8 +149,9 @@ class Publisher:
         d, env = plan.destination, plan.environment
         if self.mode == "production" and is_ai_session():
             E("рабочая публикация из сессии ИИ запрещена (Д26) — запускает автор у себя")
-        if self.mode in ("safe", "production") and d.get("status") != "active":
-            E(f"адресат {d['id']} — статус {d.get('status')}, нужен active")
+        if self.mode in ("safe", "production", "dry-run") and d.get("status") != "active":
+            E(f"адресат {d['id']} — статус {d.get('status')}, нужен active"
+              + (f" (ждёт: {', '.join(d['blocked_by'])})" if d.get("blocked_by") else ""))
         need_approval = (self.policy.get("approval") or {}).get("required", {}).get(env, env == "production")
         st = approval_state(plan.variant)
         if need_approval and st != "valid":

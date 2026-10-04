@@ -94,6 +94,7 @@ class SiteBuild:
         self.links = repo.links()
         self._about: dict = {}
         self._warned: set = set()
+        self._og: str | None = None
 
     # ------------------------------------------------------- данные
     def _published(self) -> dict[tuple, dict]:
@@ -375,8 +376,16 @@ class SiteBuild:
         return out
 
     def og_default(self) -> str | None:
+        return self._og
+
+    def _resolve_og(self) -> str | None:
+        """Изображение по умолчанию; на production — только из утверждённого объекта (Д12)."""
         og = self.cfg.get("og_default") or {}
-        if not og.get("item"):
+        item = next((i for i in load_items(self.repo) if i.id == og.get("item")), None)
+        if item is None:
+            return None
+        if self.env == "production" and item.data.get("state") not in ("APPROVED", "EXPORTED", "PUBLISHED"):
+            self.report.warnings.append(f"og_default: {item.id} не утверждён — изображения по умолчанию на production нет")
             return None
         return f"/media/{og['item']}/{Path(og['file']).name}"
 
@@ -429,6 +438,7 @@ class SiteBuild:
     def build(self, out: Path) -> BuildReport:
         self.report = BuildReport(self.env, out)
         self._warned = set()
+        self._og = self._resolve_og()
         if out.exists():
             shutil.rmtree(out)
         out.mkdir(parents=True)
@@ -468,11 +478,11 @@ class SiteBuild:
                 if src.is_file():
                     self.write(out, f"/media/{e.item.id}/{src.name}", src.read_bytes())
         og = self.cfg.get("og_default") or {}
-        if og.get("item"):
+        if self._og:
             from ..core.content import find
             src = find(self.repo, og["item"]).dir / og["file"]
             if src.is_file():
-                self.write(out, f"/media/{og['item']}/{src.name}", src.read_bytes())
+                self.write(out, self._og, src.read_bytes())
             else:
                 self.report.warnings.append(f"og_default {og['file']} — файла нет")
         # тема, шрифты, фиды, карта, robots, API
