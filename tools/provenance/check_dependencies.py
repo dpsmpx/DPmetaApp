@@ -13,7 +13,9 @@
   * Gradle: версия дистрибутива и его SHA-256 из
     `gradle-wrapper.properties` и SHA-256 `gradle-wrapper.jar` совпадают
     с записанными в PROVENANCE.md (сверены с services.gradle.org);
-  * каждый двоичный файл в репозитории записан в PROVENANCE.md с SHA-256.
+  * каждый двоичный файл в репозитории записан в PROVENANCE.md с SHA-256;
+  * workflow GitHub Actions нет: CI не используется и не запускается,
+    сторонних действий в цепочке поставки нет (D-23).
 
     python3 tools/provenance/check_dependencies.py
 
@@ -140,6 +142,11 @@ def main():
     if gradle_version and not any(gradle_version in r for r in row_with(mrows, "gradle")):
         problems.append(f"THIRD_PARTY_MATRIX.md: нет строки `gradle` с версией {gradle_version}")
 
+    for rel in tracked_files():
+        if rel.startswith(".github/workflows/"):
+            problems.append(f"{rel}: workflow GitHub Actions — CI не используется и не запускается (D-23); "
+                            "готовность — tools/hostcheck/run.sh --full локально")
+
     binaries = 0
     for rel in tracked_files():
         path = os.path.join(PROJ, rel)
@@ -162,7 +169,7 @@ def main():
         print("  Новая зависимость или версия — по чек-листу D-18 вместе со строками THIRD_PARTY_MATRIX.md и PROVENANCE.md (docs/PROCESS.md).")
         return 1
     print(f"✓ Зависимости: {checked} записей каталога сверены с матрицей лицензий и PROVENANCE.md; "
-          f"Gradle {gradle_version} и {binaries} двоичный файл — с записанными SHA-256")
+          f"Gradle {gradle_version} и {binaries} двоичный файл — с записанными SHA-256; workflow CI нет")
     return 0
 
 

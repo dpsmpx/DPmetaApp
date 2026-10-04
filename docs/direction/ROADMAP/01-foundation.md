@@ -19,7 +19,7 @@
 | Ядро прокси | граница `ProxyEngine`/`BackendCompiler`, фиктивное ядро `mock` и `mock-limited` |
 | Оболочки | `cli` (JVM) и `app/` (Android: `VpnService`, Keystore, оболочка разработки) |
 | Тесты | модульные, межмодульные, корпус регрессий `tests/data/`, fuzz (`docs/TESTING.md`) |
-| Проверки | `tools/hostcheck/run.sh`, проверки безопасности и происхождения, CI (`docs/PROCESS.md`) |
+| Проверки | `tools/hostcheck/run.sh`, проверки безопасности и происхождения (`docs/PROCESS.md`) |
 | Лицензии | `docs/legal/THIRD_PARTY_MATRIX.md`, `docs/PROVENANCE.md` |
 | Аудит | `docs/audits/INITIAL_ARCHITECTURE_AUDIT.md` |
 

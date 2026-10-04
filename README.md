@@ -71,11 +71,12 @@ SDK ядро собирается и тестируется, модуль `app` 
 ./gradlew build                     # ядро и все тесты
 tools/hostcheck/run.sh --quick      # быстрые проверки без сборки
 tools/hostcheck/run.sh              # всё, что можно на этой машине
-tools/hostcheck/run.sh --full       # как CI: без Android SDK — ошибка
+tools/hostcheck/run.sh --full       # перед слиянием: без Android SDK — ошибка
 ```
 
 Что проверяет каждый шаг — `docs/PROCESS.md`, «Проверки»; тесты,
-корпус регрессий и fuzz — `docs/TESTING.md`.
+корпус регрессий и fuzz — `docs/TESTING.md`. CI нет: GitHub Actions не
+используется (D-23), полный прогон делается локально перед слиянием.
 
 ## Попробовать на хосте
 
