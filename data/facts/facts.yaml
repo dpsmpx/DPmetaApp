@@ -444,6 +444,15 @@ facts:
     recheck_by: 2026-11-04
     evidence:
       - {kind: platform_page, source: "t.me/s/gh_3D_Voxel_OpenWorld_RPG; youtube.com/@dpsmpx/about", date: 2026-10-04, verification: observed}
+  - id: CH-TIKTOK-2026-10-04
+    subject: channels
+    class: FACT
+    risk: low
+    public: false
+    statement: "На 4 октября 2026: TikTok @dpsmpx — 69 подписчиков, 6 видео, 33 лайка; аккаунт создан 11 марта 2023."
+    recheck_by: 2026-11-04
+    evidence:
+      - {kind: platform_page, source: "tiktok.com/@dpsmpx (данные страницы без входа)", date: 2026-10-04, verification: observed}
   - id: ME-NO-CI
     subject: method
     class: FACT

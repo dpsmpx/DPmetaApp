@@ -56,6 +56,16 @@ links:
     role: «Automatic Game Debug #andorstrail»
     status: limited
     checked: 2026-10-04
+  - id: L-TT-PROFILE
+    platform: tiktok
+    url: https://www.tiktok.com/@dpsmpx
+    role: короткие вертикальные видео (Д19)
+    status: limited
+    checked: 2026-10-04
+    user_id: "7209160379036976133"
+    notes: >-
+      профиль виден без входа; список видео — нет («Что-то пошло не так»). В био ссылка
+      youtube.com/dpsmpx — 404 (IC-10). Аудит — docs/audits/2026-10-04-TIKTOK_AUDIT.md.
   - id: L-VK
     platform: vk
     url: https://vk.com/dpsmpx

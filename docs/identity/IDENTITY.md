@@ -1,7 +1,8 @@
 # Идентичность автора
 
 Кто автор публично — по подтверждённым данным на 4 октября 2026
-(`docs/audits/2026-10-04-SOCIAL_AUDIT.md`). Расхождения —
+(`docs/audits/2026-10-04-SOCIAL_AUDIT.md`, TikTok —
+`docs/audits/2026-10-04-TIKTOK_AUDIT.md`). Расхождения —
 `IDENTITY_CONFLICTS.md`; проекты — `PROJECT_MAP.md`; проверенные ссылки
 — `data/identity/links.yaml`. Изменение идентичности — только через
 `docs/direction/DECISIONS.md` (`CLAUDE.md`, «Идентичность»).
@@ -17,6 +18,7 @@ dpsmpx  (псевдоним; aka DP, DearPixel)
 │   └── канал   @dp_fil ...................... «Философия?» (вне контент-системы)
 ├── YouTube     @dpsmpx (прежде @9_6ox) ...... «dpsmpx», RU
 ├── VK          vk.com/dpsmpx ................ «Dpsmpx Code» — ACCESS = LIMITED
+├── TikTok      @dpsmpx ...................... «dpsmpx», RU; видео — ACCESS = LIMITED (Д19)
 ├── Discord     dpsmpx ....................... UNKNOWN / AUTH REQUIRED
 ├── Telegraph   статьи ....................... подписаны «dpsmpx» и настоящим именем
 │
@@ -66,6 +68,14 @@ dpsmpx  (псевдоним; aka DP, DearPixel)
 
 ### VK — `@dpsmpx`
 - Отображаемое имя «Dpsmpx Code». Остальное — ACCESS = LIMITED.
+
+### TikTok — `@dpsmpx`
+- Роль: короткие вертикальные клипы из настоящего рендера (Д19); русский.
+- Сейчас (04.10.2026): 69 подписчиков, 6 видео; содержание видео без
+  входа не видно — UNKNOWN (`docs/audits/2026-10-04-TIKTOK_AUDIT.md`).
+- Био: ссылки на GitHub, YouTube (`youtube.com/dpsmpx` — 404, IC-10) и
+  канал-дневник.
+- Аватар: обрезка пробного рендера презентационного изображения (IC-11).
 
 ### Discord — `dpsmpx`
 - Аккаунт и сервер упомянуты автором; публично не находятся — UNKNOWN
