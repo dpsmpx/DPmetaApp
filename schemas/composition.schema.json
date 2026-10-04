@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "composition/v1",
+  "title": "Спецификация композиции изображения",
+  "description": "Вход рендера (tools/cs/render.py): макет, портрет, тексты по языкам, схема, доказательства с фактами.",
+  "type": "object",
+  "required": ["schema", "variant", "label", "layout", "text", "claims"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {"const": "composition/v1"},
+    "variant": {"type": "string"},
+    "label": {"type": "string"},
+    "layout": {"enum": ["professional", "technical", "cinematic", "minimal"]},
+    "rationale": {"type": "string"},
+    "portrait": {
+      "type": ["object", "null"],
+      "required": ["input", "focus", "treatment"],
+      "additionalProperties": false,
+      "properties": {
+        "input": {"type": "string", "pattern": "^A-[0-9]{3}$"},
+        "focus": {"type": "object", "required": ["x", "y"], "additionalProperties": false, "properties": {"x": {"type": "number", "minimum": 0, "maximum": 1}, "y": {"type": "number", "minimum": 0, "maximum": 1}}},
+        "zoom": {"type": "number", "minimum": 1, "maximum": 4},
+        "treatment": {"enum": ["natural", "duotone", "mono"]}
+      }
+    },
+    "text": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "patternProperties": {
+        "^(ru|en)$": {
+          "type": "object",
+          "required": ["name", "role"],
+          "additionalProperties": false,
+          "properties": {
+            "name": {"type": "string"},
+            "role": {"type": "string"},
+            "sub": {"type": "string"},
+            "pipeline": {"type": "array", "items": {"type": "object", "required": ["label", "kind"], "additionalProperties": false, "properties": {"label": {"type": "string"}, "kind": {"enum": ["intent", "architecture", "implementation", "verification", "git", "product"]}}}},
+            "gates": {"type": "array", "items": {"type": "object", "required": ["after", "label"], "additionalProperties": false, "properties": {"after": {"type": "integer", "minimum": 0}, "label": {"type": "string"}}}},
+            "legend": {"type": "array", "items": {"type": "object", "required": ["token", "label"], "additionalProperties": false, "properties": {"token": {"type": "string"}, "label": {"type": "string"}}}},
+            "evidence": {"type": "array", "items": {"type": "string"}}
+          }
+        }
+      }
+    },
+    "claims": {"type": "array", "items": {"type": "string"}}
+  }
+}
