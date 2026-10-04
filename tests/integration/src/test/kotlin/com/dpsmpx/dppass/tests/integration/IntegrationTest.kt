@@ -6,6 +6,7 @@ import com.dpsmpx.dppass.connection.ActivationResult
 import com.dpsmpx.dppass.connection.ConnectionReport
 import com.dpsmpx.dppass.connection.DPpassCore
 import com.dpsmpx.dppass.connection.SimulatedHealthChecker
+import com.dpsmpx.dppass.connection.toTunInput
 import com.dpsmpx.dppass.core.ManualClock
 import com.dpsmpx.dppass.core.SubscriptionId
 import com.dpsmpx.dppass.diagnostics.DiagCode
@@ -75,7 +76,7 @@ class ConfigToActiveProfileTest {
         val tun = FakeTunnelProvider()
         val handle = tun.establish(env.core.tunnelSpec()!!.valueOrNull()!!).valueOrNull()!!
         val net = SimulatedNetwork(NetworkCondition.NORMAL)
-        val report = env.core.connect(env.assess(NetworkCondition.NORMAL, net), SimulatedHealthChecker(net), TunInput(handle.fd, handle.spec.mtu)) { env.clock.advance(it) }
+        val report = env.core.connect(env.assess(NetworkCondition.NORMAL, net), SimulatedHealthChecker(net), handle.toTunInput()) { env.clock.advance(it) }
         val connected = assertIs<ConnectionReport.Connected>(report)
         assertEquals(listOf(connected.profileId.value), env.engine.startedProfiles)
     }

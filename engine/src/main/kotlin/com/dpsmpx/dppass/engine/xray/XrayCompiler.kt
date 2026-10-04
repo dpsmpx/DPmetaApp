@@ -53,7 +53,8 @@ import java.util.Base64
  *   маршрутизации (`routeOnly`): правила по домену видят имя, а
  *   соединение идёт на тот адрес, который выбрало приложение;
  * - журнал ядра выключен: журнал DPpass — только `Logger` с
- *   редактированием (D-11), а журнал доступа Xray пишет адреса назначения.
+ *   редактированием (D-11), а журнал доступа Xray пишет адреса назначения;
+ * - счётчики трафика исходящих включены — из них `TrafficStats` (D-25).
  *
  * Конфигурация содержит секреты: наружу — только через
  * [CompiledConfig.payloadForEngine].
@@ -86,6 +87,12 @@ class XrayCompiler(override val capabilities: EngineCapabilities = XrayBackend.C
             "routing" to routing,
             "inbounds" to Json.arr(listOfNotNull(tunInbound().takeIf { plan.withTun })),
             "outbounds" to Json.arr(outbounds),
+            // Счётчики исходящих (`outbound>>>proxy>>>traffic>>>…`): по ним мост отдаёт
+            // TrafficStats сессии (D-25); без них запуск отвергается, а не врёт нулями.
+            "stats" to Json.obj(),
+            "policy" to Json.obj(
+                "system" to Json.obj("statsOutboundUplink" to Json.bool(true), "statsOutboundDownlink" to Json.bool(true)),
+            ),
         )
         val payload = Json.write(doc, pretty = true) + "\n"
         return Outcome.Success(

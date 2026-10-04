@@ -109,6 +109,9 @@ enum class DiagCode(val kind: FailureKind, val defaultSeverity: Severity) {
     BACKEND_ALREADY_RUNNING(FailureKind.BACKEND_START_FAILED, Severity.ERROR),
     TUN_ESTABLISH_FAILED(FailureKind.TUN_START_FAILED, Severity.ERROR),
 
+    /** Ядро занято: проверены сборка и политика, полная проверка — при запуске (D-25). */
+    BACKEND_VALIDATION_PARTIAL(FailureKind.BACKEND_VALIDATION_FAILED, Severity.INFO),
+
     // --- подключение и здоровье ---
     NETWORK_OFFLINE(FailureKind.NETWORK_UNREACHABLE, Severity.ERROR),
     DNS_FAILED(FailureKind.DNS_RESOLUTION_FAILED, Severity.ERROR),

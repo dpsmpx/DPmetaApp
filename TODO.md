@@ -7,33 +7,75 @@
 
 ## Следующее (этап 2)
 
-Версия Xray, матрица, компилятор и его проверка самим ядром на хосте —
-сделаны (D-24). Дальше — `docs/direction/ROADMAP/02-xray-backend.md`,
-работы 4–7:
+Работа 4 (`docs/direction/ROADMAP/02-xray-backend.md`) — в работе по
+D-25. **Сделано:** мост Go `tools/xray/bridge` (один экземпляр,
+политика входов «только TUN» на собранной protobuf, хук `protect()` с
+отказом через `dup3`, счётчики `proxy`, неполная проверка при работающем
+ядре) и его `go test` (обе сборки, сквозные тесты с тестовым входом);
+экспорт JNI `tools/xray/jni` (собирается для хоста:
+`go build -buildmode=c-shared -tags dppass_testinbound ./jni` с
+`CGO_CFLAGS=-I$JAVA_HOME/include -I$JAVA_HOME/include/linux`);
+`SocketProtector`, `TunInput.protector`, `TunnelHandle.protect`,
+`toTunInput()`; `XrayRuntime`/`XrayJni`/`JniXrayRuntime`/`XrayProxyEngine`
+и `XrayProxyEngineTest`; код `BACKEND_VALIDATION_PARTIAL`; счётчики в
+`XrayCompiler` и перезаписанные эталоны; факты — `BACKEND_STRATEGY.md`, §6.
 
-- [ ] `ProxyEngine` поверх Xray (libXray или своя обёртка): сейчас
-      `XrayCompiler` не подключён ни к приложению, ни к `cli`.
-- [ ] MTU в конфигурации Xray — константа `XrayBackend.TUN_MTU`:
-      `TunnelSpecBuilder.build(mtu = …)` и `TunInput.mtu` её не меняют.
-      При подключении ядра передавать MTU в компиляцию или отказывать
-      при расхождении — иначе договор `XrayTunnelContractTest`
-      разойдётся молча.
-- [ ] Состав модулей Go в библиотеке ядра для APK: `juju/ratelimit`
-      (LGPL-3.0 с исключением о компоновке, приходит через
-      `xtls/reality`) и модули функций Xray вне IR v1 — пересмотреть
-      при её сборке (`docs/legal/THIRD_PARTY_MATRIX.md`, §1.7);
-      уведомления — этап 5.
+Осталось по работе 4 (порядок — как здесь):
+
+- [ ] скрипт сборки библиотеки (план: native.py в tools/xray): `host` (go vet, `go test ./bridge` с тегом
+      `dppass_testinbound` и без, библиотека хоста в `build/xray/host/`)
+      и `android --out DIR` (NDK из `gradle/libs.versions.toml` —
+      добавить `android-ndk = "30.0.16248370"`; ABI arm64-v8a,
+      armeabi-v7a, x86_64; `-ldflags "-s -w -buildid=
+      -extldflags=-Wl,-z,max-page-size=16384"`; проверка ELF: машина и
+      `p_align` ≥ 16 КБ). Общие `go_env`/`UNSAFE_ENV` — вынести из
+      `check_xray.py` в общий модуль.
+- [ ] `tools/xray/go.mod`: мост импортирует `golang.org/x/sys` напрямую —
+      `go mod tidy` (версии не меняются), сверить `check_dependencies.py`.
+- [ ] `:app`: задача сборки библиотеки на вариант
+      (`androidComponents.onVariants` → `sources.jniLibs.addGeneratedSourceDirectory`,
+      задача совместима с configuration cache — `ExecOperations`).
+- [ ] Тест JNI XrayJniTest (JVM хоста, отдельный source set `xrayJni` в
+      `tests/integration`, задача `xrayJniTest` падает без
+      `-Pdppass.xray.lib`): версия, проверка, запуск/остановка, вызов
+      `protect` и закрытие пути при отказе, счётчики.
+- [ ] `run.sh`: шаг «Xray: мост и JNI» (`native.py host` + `xrayJniTest`);
+      шаги Android — требовать NDK (в `--full` его нет — ошибка).
+- [ ] `check_apk.py`: `NATIVE_OK` — ровно `lib/<3 ABI>/libdppassxray.so`,
+      выравнивание ELF и смещения в zip по 16 КБ, без сжатия; размер по
+      ABI — `docs/PERFORMANCE_BUDGET.md`.
+- [ ] `check_forbidden_apis.py`: `System.load*`/`external fun` — только
+      `AppGraph`, `XrayRuntime.kt` и тест JNI.
+- [ ] `AppGraph` → `XrayCompiler` + `XrayProxyEngine(JniXrayRuntime.load(
+      { System.loadLibrary(LIBRARY) }, каталог геоданных))`;
+      `check_modules.py`: `engine.mock` в `app/` запрещён; тексты
+      `MainActivity`/`strings.xml` про фиктивное ядро.
+- [ ] Геоданные на устройстве (источник, лицензия, обновление) —
+      решение; до него конфигурации с geoip/geosite ядро на устройстве
+      отвергает.
+- [ ] Документы: `ARCHITECTURE.md` (§2 — `engine`, правило
+      `engine.mock`; §3.4, §6, §11), `SECURITY_MODEL.md` (T4 — `protect`
+      сделан; T10 — сборка библиотеки; T11 — политика моста; таблица §6),
+      `TESTING.md` (go test моста, тест JNI на хосте), `PROCESS.md` (NDK,
+      новые шаги), матрица лицензий (libXray — «отклонён»; модули Go
+      §1.7 теперь и в APK; NDK как инструмент) и `PROVENANCE.md` (NDK
+      r30 30.0.16248370 с dl.google.com), `CLAUDE.md` («Что это»).
+- [ ] Полный прогон `tools/hostcheck/run.sh --full` — после всего выше
+      (в этом изменении не выполнялся).
+
+Дальше по этапу 2:
+
 - [ ] Имя сервера профиля (`server` — домен) Xray резолвит системным
       резолвером: у исходящего `proxy` нет `sockopt.domainStrategy`
-      (`transport/internet/dialer.go`, `DialSystem`). Имя сервера видит
-      сеть, а подменённый DNS (`DNS_BLOCKED`) уведёт соединение. В IR
-      этого смысла нет: решить при подключении ядра (резолв напрямую по
-      DnsPolicy без петли через туннель или явная находка), с записью в
-      `docs/SECURITY_MODEL.md` (T4).
-- [ ] Эксперимент «мост fd → ядро»: TUN inbound Xray против
-      hev-socks5-tunnel; итог — новое решение.
-- [ ] Шаг hostcheck: выравнивание нативных библиотек APK по 16 КБ —
-      в `check_apk.py`, вместе с разрешённой библиотекой ядра.
+      (`transport/internet/dialer.go`, `DialSystem`). Решить с записью в
+      `docs/SECURITY_MODEL.md` (T4); учесть, что `core.New` переназначает
+      глобальный DNS-клиент dialer (`BACKEND_STRATEGY.md`, §6).
+- [ ] Состав модулей Go в библиотеке для APK: `juju/ratelimit`
+      (LGPL-3.0 с исключением, через `xtls/reality`, нужен REALITY) —
+      уведомления к этапу 5; модули функций вне IR v1 приходят с
+      разбором JSON Xray (`infra/conf`) и не отсекаются.
+- [ ] Эксперимент «мост fd → ядро» (работа 5), сервис туннеля и
+      отдельный процесс (работа 6).
 
 ## Известные долги (из аудита)
 

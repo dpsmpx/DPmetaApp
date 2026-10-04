@@ -163,9 +163,10 @@ class ActivationService(
             is Outcome.Failure -> return reject(ActivationStep.COMPILE, c.diagnostics)
             is Outcome.Success -> c
         }
-        val notes = caps + compiled.diagnostics
         val v = engine.validate(compiled.value)
         if (v is Outcome.Failure) return reject(ActivationStep.BACKEND_VALIDATION, v.diagnostics, compiled.value.checksum)
+        // Находки проверки ядром (например, неполная проверка при работающем ядре, D-25) — не теряются.
+        val notes = caps + compiled.diagnostics + v.diagnostics
         if (preCheck != null) {
             val h = preCheck.check(ir, compiled.value)
             if (h is Outcome.Failure) return reject(ActivationStep.HEALTH_CHECK, h.diagnostics, compiled.value.checksum)

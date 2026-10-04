@@ -84,6 +84,14 @@ interface TunnelHandle {
     val fd: Int
     val spec: TunnelSpec
 
+    /**
+     * Вывести сокет из этого TUN (`VpnService.protect` на Android): так
+     * соединения ядра к серверу не возвращаются в туннель петлёй (T4, D-25).
+     * Ложь — не вышло; ядро такой сокет не использует.
+     */
+    fun protect(socketFd: Int): Boolean
+
+    /** Закрыть TUN — после остановки ядра: fd принадлежит платформе (D-25). */
     fun close()
 }
 
@@ -98,6 +106,9 @@ class FakeTunnelProvider(private val fail: Boolean = false) : TunnelProvider {
     var open: Int = 0
         private set
 
+    /** Сокеты, выведенные из туннеля. */
+    val protected: MutableList<Int> = mutableListOf()
+
     override suspend fun establish(spec: TunnelSpec): Outcome<TunnelHandle> {
         if (fail) return Outcome.failure(com.dpsmpx.dppass.diagnostics.DiagCode.TUN_ESTABLISH_FAILED, "fake: TUN не поднят по сценарию")
         established += spec
@@ -105,6 +116,7 @@ class FakeTunnelProvider(private val fail: Boolean = false) : TunnelProvider {
         return Outcome.Success(object : TunnelHandle {
             override val fd: Int = 100 + established.size
             override val spec: TunnelSpec = spec
+            override fun protect(socketFd: Int): Boolean = protected.add(socketFd)
             override fun close() {
                 open--
             }

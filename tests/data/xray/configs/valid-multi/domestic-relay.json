@@ -149,5 +149,12 @@
         ]
       }
     }
-  ]
+  ],
+  "stats": {},
+  "policy": {
+    "system": {
+      "statsOutboundUplink": true,
+      "statsOutboundDownlink": true
+    }
+  }
 }

@@ -104,6 +104,17 @@ class XrayCompilerTest {
     }
 
     @Test
+    fun proxyTrafficCountersAreOn() {
+        // TrafficStats сессии — из счётчиков исходящего proxy; без них мост не запускает ядро (D-25).
+        for (withTun in listOf(true, false)) {
+            val p = payload(ir(), withTun)
+            assertEquals(JsonObject(emptyMap()), p["stats"])
+            assertEquals(Json.bool(true), p["policy"]["system"]["statsOutboundUplink"])
+            assertEquals(Json.bool(true), p["policy"]["system"]["statsOutboundDownlink"])
+        }
+    }
+
+    @Test
     fun defaultActionIsFirstOutbound() {
         for (action in RouteAction.entries) {
             val p = payload(ir(routing = """{"default": "${action.name.lowercase()}"}"""))

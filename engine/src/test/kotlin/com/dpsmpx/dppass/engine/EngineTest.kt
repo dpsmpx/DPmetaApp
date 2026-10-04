@@ -71,7 +71,7 @@ class MockBackendTest {
         val compiled = MockBackendCompiler().compile(multi, CompilePlan(multi.profiles[0].id, true)).valueOrNull()!!
         val engine = MockProxyEngine()
         assertTrue(engine.validate(compiled).isSuccess)
-        val s = engine.start(compiled, TunInput(10, 1500)).valueOrNull()!!
+        val s = engine.start(compiled, TunInput(10, 1500) { true }).valueOrNull()!!
         assertEquals(EngineState.RUNNING, s.state())
         assertEquals(DiagCode.BACKEND_ALREADY_RUNNING, engine.start(compiled, null).errors.single().code)
         s.stop()

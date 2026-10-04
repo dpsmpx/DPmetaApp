@@ -86,8 +86,21 @@ interface BackendCompiler {
     fun compile(ir: ConfigIr, plan: CompilePlan): Outcome<CompiledConfig>
 }
 
-/** Вход TUN для ядра: fd от платформы и MTU. Домен про fd больше ничего не знает. */
-data class TunInput(val fd: Int, val mtu: Int)
+/**
+ * Держит собственный сокет ядра вне TUN — на Android `VpnService.protect`
+ * (D-25). Ложь — сокет не защищён; ядро тогда его не использует.
+ * Вызывается из потоков ядра, параллельно.
+ */
+fun interface SocketProtector {
+    fun protect(socketFd: Int): Boolean
+}
+
+/**
+ * Вход TUN для ядра: fd от платформы, MTU и защитник сокетов ядра от
+ * петли через этот же TUN. Домен про fd больше ничего не знает; fd
+ * принадлежит платформе и закрывается ею после остановки ядра.
+ */
+data class TunInput(val fd: Int, val mtu: Int, val protector: SocketProtector)
 
 enum class EngineState { STOPPED, STARTING, RUNNING, STOPPING, FAILED }
 
@@ -105,8 +118,9 @@ interface EngineSession {
 }
 
 /**
- * Граница ядра (D-04). Реализации: фиктивная [mock] (сейчас) и Xray
- * (этап 2 `ROADMAP`). Домен не знает, какая из них работает.
+ * Граница ядра (D-04). Реализации: Xray (`xray.XrayProxyEngine`, D-25) и
+ * фиктивная [mock] — второй бэкенд в тестах. Домен не знает, какая из
+ * них работает.
  */
 interface ProxyEngine {
     val capabilities: EngineCapabilities
