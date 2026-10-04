@@ -7,7 +7,7 @@
     validate ITEM [--variant V] [--to DEST]      ContentValidator
     approve ITEM VARIANT                         одобрение автора (не из сессии ИИ, Д26)
     diff ITEM vA vB | ITEM VARIANT               разница версий канона / вариант против канона
-    preview ITEM|CMP-…                           предпросмотр всех вариантов
+    preview ITEM|CMP-… [--serve [--port N]]      предпросмотр всех вариантов
     publish ITEM VARIANT --to DEST [--dev|--safe|--production] [--at ISO]
     publish --due | --record-manual | --reconcile PUB-…
     campaign status CMP-… | campaign list ; calendar ; search ; stale
@@ -17,11 +17,8 @@ from __future__ import annotations
 
 import datetime as _dt
 import difflib
-import http.server
 import os
-import socketserver
 import sys
-from functools import partial
 
 from .common import Finding, today
 from .core import textdoc
@@ -343,14 +340,12 @@ def cmd_stale(a) -> int:
 def cmd_site(a) -> int:
     repo = Repo()
     if a.action == "serve":
+        from .site.serve import serve
         root = repo.path("build", "site", a.env)
         if not root.is_dir() or a.rebuild:
             from .site.build import build
             build(repo, a.env)
-        handler = partial(http.server.SimpleHTTPRequestHandler, directory=str(root))
-        with socketserver.TCPServer(("127.0.0.1", a.port), handler) as srv:
-            print(f"staging: http://localhost:{a.port}/ (Ctrl+C — стоп)")
-            srv.serve_forever()
+        serve(root, a.port, a.env)
         return 0
     from .site.build import build
     out = repo.path(a.out) if a.out else None
@@ -366,9 +361,14 @@ def cmd_site(a) -> int:
 
 
 def cmd_preview(a) -> int:
-    from .site.preview import preview
+    from .site.preview import PAGE_DIR, preview
     path = preview(Repo(), a.id)
     print(f"предпросмотр: {path}")
+    if a.serve:
+        from .site.serve import serve
+        serve(path.parent.parent, a.port, "предпросмотр", f"/{PAGE_DIR}/")
+    else:
+        print(f"  открыть со стилями сайта: python3 -m tools.cs preview {a.id} --serve")
     return 0
 
 
@@ -545,6 +545,8 @@ def register(sub) -> None:
     p.set_defaults(fn=cmd_site)
     p = sub.add_parser("preview", help="предпросмотр объекта или кампании")
     p.add_argument("id")
+    p.add_argument("--serve", action="store_true", help="открыть на локальном сервере (сайт — от корня)")
+    p.add_argument("--port", type=int, default=8001)
     p.set_defaults(fn=cmd_preview)
     p = sub.add_parser("health", help="здоровье площадок, учётных данных, сайта, хранилища")
     p.add_argument("--remote", action="store_true")

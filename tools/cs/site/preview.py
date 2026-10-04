@@ -1,12 +1,16 @@
 """Предпросмотр объекта или кампании до публикации (PLATFORM_VISION §49–50).
 
-build/preview/<id>/index.html — одна страница со всеми вариантами:
-  - сайт — настоящая страница staging-сборки (тот же генератор, что и
-    публикация) во фрейме: это и есть итоговая вёрстка;
+build/preview/<id>/ — staging-сборка сайта в корне (тот же генератор, что
+и публикация; страницы ссылаются на свои файлы от корня), а
+build/preview/<id>/_preview/index.html — одна страница со всеми вариантами:
+  - сайт — настоящая страница этой сборки во фрейме: это и есть итоговая
+    вёрстка;
   - Telegram, VK, Discord, YouTube, GitHub — текст в разметке площадки,
     как его отправит адаптер, с медиа, длиной и лимитом; вид карточки —
     приближение (помечено), а текст и разметка — точные.
 У каждого — адресат, проверка валидатора, одобрение и устаревание.
+Открывать через сервер (`preview <id> --serve`): из file:// корень сайта —
+корень диска, и фрейм остаётся без стилей.
 """
 from __future__ import annotations
 
@@ -22,12 +26,13 @@ from ..core.validator import validate_variant
 from .build import build
 
 E = html.escape
+PAGE_DIR = "_preview"  # страница предпросмотра; адресов сайта с «_» в начале нет
 
 CSS = """body{font:15px/1.5 system-ui,sans-serif;background:#111214;color:#EEEEEC;margin:0;padding:24px}
 h1{font-size:22px} .v{border:1px solid #2E3036;border-radius:8px;margin:18px 0;padding:14px;background:#1A1B1E}
 .meta{color:#A3A6AD;font-size:13px} .err{color:#FF7A59} .ok{color:#7FD68E} .warn{color:#F2B33D}
 .tg{background:#212d3b;border-radius:12px;padding:10px 14px;max-width:520px;color:#fff}
-.tg img,.card img{max-width:100%;border-radius:8px} .card{background:#fff;color:#111;border-radius:8px;padding:12px;max-width:560px}
+.v img{max-width:100%;height:auto;border-radius:8px} .card{background:#fff;color:#111;border-radius:8px;padding:12px;max-width:560px}
 .dc{background:#313338;color:#dbdee1;border-radius:6px;padding:10px 14px;max-width:560px;white-space:pre-wrap}
 pre{white-space:pre-wrap;background:#0b0c0d;padding:10px;border-radius:6px} iframe{width:100%;height:640px;border:1px solid #2E3036;background:#fff}
 .note{color:#A3A6AD;font-style:italic;font-size:12px}"""
@@ -63,13 +68,13 @@ def preview(repo: Repo, target_id: str, out: Path | None = None) -> Path:
     else:
         pairs = [(find(repo, target_id), None)]
     out = out or repo.path("build", "preview", target_id)
-    if out.exists():
-        shutil.rmtree(out)
-    out.mkdir(parents=True)
-    rep = build(repo, "staging", out / "site", drafts=True)
+    rep = build(repo, "staging", out, drafts=True)  # очищает out
+    page_dir = out / PAGE_DIR
+    page_dir.mkdir()
     dests = repo.destinations()
     body = [f"<h1>Предпросмотр {E(target_id)}</h1>",
-            '<p class="meta">Сайт — настоящая staging-сборка; карточки площадок — приближение вида, текст и разметка — точные (так их отправит адаптер).</p>']
+            '<p class="meta">Сайт — настоящая staging-сборка (<a href="/" style="color:inherit">весь сайт</a>); карточки площадок — '
+            'приближение вида, текст и разметка — точные (так их отправит адаптер).</p>']
     for item, camp in pairs:
         tmap = {t["variant"]: t for t in targets(item, camp)}
         for vid, v in item.variants().items():
@@ -95,13 +100,14 @@ def preview(repo: Repo, target_id: str, out: Path | None = None) -> Path:
                       + ('<p class="ok">✓ валидатор: ошибок нет</p>' if not errs else ""))
             if v.platform == "website":
                 page = item.url_path(v.lang)
-                view = (f'<iframe src="site{E(page)}index.html"></iframe>'
+                view = (f'<iframe src="{E(page)}" title="{E(page)}"></iframe>'
                         f'<p class="note">итоговая вёрстка страницы {E(page)} (staging)</p>')
             else:
-                view = _card(v.platform, payload, _media_html(payload, out, item.id)) + '<p class="note">вид карточки — приближение</p>'
+                view = _card(v.platform, payload, _media_html(payload, page_dir, item.id)) + '<p class="note">вид карточки — приближение</p>'
             body.append(f'<div class="v">{head}{status}{view}</div>')
     if rep.errors:
         body.append("<h2>Сборка сайта</h2>" + "".join(f'<p class="err">✗ {E(e)}</p>' for e in rep.errors))
-    (out / "index.html").write_text(f"<!doctype html><meta charset='utf-8'><title>Предпросмотр {E(target_id)}</title>"
-                                    f"<style>{CSS}</style>{''.join(body)}", encoding="utf-8")
-    return out / "index.html"
+    (page_dir / "index.html").write_text(f"<!doctype html><html lang='ru'><meta charset='utf-8'>"
+                                         f"<meta name='robots' content='noindex, nofollow'><title>Предпросмотр {E(target_id)}</title>"
+                                         f"<style>{CSS}</style>{''.join(body)}", encoding="utf-8")
+    return page_dir / "index.html"
