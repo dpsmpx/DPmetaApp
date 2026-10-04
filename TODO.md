@@ -20,12 +20,6 @@
 
 Подробности и обоснование — `docs/audits/INITIAL_ARCHITECTURE_AUDIT.md`.
 
-- [ ] **Ссылки подписки: `path` и `serviceName` без проверки.** Имя
-      сервера и `host` уже проверяет `ConfigValidator.validateProfile`
-      для любого источника, но `path` (в документе — с «/», без
-      пробелов, до 1024) и `serviceName` gRPC (без пробелов, до 256)
-      из ссылки по-прежнему не проверяются, а тот же профиль документом
-      отвергается (`PATH_INVALID`). Перенести туда же, с файлом корпуса.
 - [ ] `KeystoreKeyProvider`: сбой Keystore при расшифровке ключа данных
       `EncryptingBlobStore` выдаёт за порчу записи (`STORAGE_CORRUPTED`/
       `STORAGE_READ_FAILED`), а `IOException` и `error(…)` из провайдера

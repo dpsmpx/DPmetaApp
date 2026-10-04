@@ -111,8 +111,8 @@ internal class DocumentMapper(private val diags: DiagnosticCollector, private va
                 if (p == null || mode == null) null else TransportSpec.XHttp(p, h, mode)
             }
             TransportKind.GRPC -> r.string("service_name")?.let { s ->
-                if (s.isEmpty() || s.length > 256 || s.any { it.isWhitespace() }) {
-                    diags.error(DiagCode.PATH_INVALID, "service_name пустое или с пробелами", "${r.path}.service_name")
+                if (!ConfigValidator.isValidServiceName(s)) {
+                    diags.error(DiagCode.PATH_INVALID, ConfigValidator.SERVICE_NAME_MESSAGE, "${r.path}.service_name")
                     null
                 } else {
                     TransportSpec.Grpc(s)
@@ -124,8 +124,8 @@ internal class DocumentMapper(private val diags: DiagnosticCollector, private va
     }
 
     private fun path(r: ObjReader): String? = r.string("path")?.let { p ->
-        if (!p.startsWith("/") || p.length > 1024 || p.any { it.isWhitespace() || it.code < 0x20 }) {
-            diags.error(DiagCode.PATH_INVALID, "путь должен начинаться с «/» и быть без пробелов", "${r.path}.path")
+        if (!ConfigValidator.isValidPath(p)) {
+            diags.error(DiagCode.PATH_INVALID, ConfigValidator.PATH_MESSAGE, "${r.path}.path")
             null
         } else {
             p

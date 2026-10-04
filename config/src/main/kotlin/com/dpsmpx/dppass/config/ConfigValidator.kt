@@ -17,6 +17,19 @@ object ConfigValidator {
     private val UUID = Regex("""[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}""")
     private val SHORT_ID = Regex("""([0-9a-f]{2}){0,8}""")
     private const val SERVER_NAME_MESSAGE = "имя сервера (server_name; в ссылке — sni) должно быть доменным именем (IDN — в punycode)"
+    internal const val PATH_MESSAGE = "путь должен начинаться с «/», быть без пробелов и управляющих символов, не длиннее 1024"
+    internal const val SERVICE_NAME_MESSAGE = "service_name (в ссылке — serviceName) — непустой, без пробелов, не длиннее 256"
+
+    /**
+     * Правила значений транспорта — одни для разбора документа
+     * (`DocumentMapper`) и для проверки профиля из любого источника, чтобы
+     * они не разошлись.
+     */
+    internal fun isValidPath(p: String): Boolean =
+        p.startsWith("/") && p.length <= 1024 && p.none { it.isWhitespace() || it.code < 0x20 }
+
+    internal fun isValidServiceName(s: String): Boolean =
+        s.isNotEmpty() && s.length <= 256 && s.none { it.isWhitespace() }
 
     fun validate(ir: ConfigIr, limits: ConfigLimits = ConfigLimits()): List<Diagnostic> {
         val out = mutableListOf<Diagnostic>()
@@ -52,7 +65,7 @@ object ConfigValidator {
      * поэтому всё, что определяет смысл профиля, проверяется здесь, даже
      * если разбор документа уже проверил то же самое: один и тот же профиль
      * не может быть верным ссылкой и неверным документом (D-05). Так —
-     * имя сервера и `host` транспорта.
+     * имя сервера, `host`, путь и `service_name` транспорта.
      */
     fun validateProfile(p: ServerProfile, path: String): List<Diagnostic> {
         val out = mutableListOf<Diagnostic>()
@@ -144,11 +157,18 @@ object ConfigValidator {
             }
             SecuritySpec.None -> Unit
         }
-        val hostHeader = when (val t = p.transport) {
-            is TransportSpec.WebSocket -> t.host
-            is TransportSpec.HttpUpgrade -> t.host
-            is TransportSpec.XHttp -> t.host
-            TransportSpec.Tcp, TransportSpec.Native, is TransportSpec.Grpc -> null
+        val (transportPath, hostHeader) = when (val t = p.transport) {
+            is TransportSpec.WebSocket -> t.path to t.host
+            is TransportSpec.HttpUpgrade -> t.path to t.host
+            is TransportSpec.XHttp -> t.path to t.host
+            is TransportSpec.Grpc -> {
+                if (!isValidServiceName(t.serviceName)) err(DiagCode.PATH_INVALID, SERVICE_NAME_MESSAGE, "$path.transport.service_name")
+                null to null
+            }
+            TransportSpec.Tcp, TransportSpec.Native -> null to null
+        }
+        if (transportPath != null && !isValidPath(transportPath)) {
+            err(DiagCode.PATH_INVALID, PATH_MESSAGE, "$path.transport.path")
         }
         if (hostHeader != null && Host.normalizeDomain(hostHeader) == null) {
             err(DiagCode.DOMAIN_INVALID, "host должен быть доменным именем (IDN — в punycode)", "$path.transport.host")

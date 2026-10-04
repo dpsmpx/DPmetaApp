@@ -111,6 +111,28 @@ class ProfileValidationTest {
         }
         assertEquals(emptyList(), codesAt(trojan.copy(transport = TransportSpec.WebSocket("/ws", null))))
     }
+
+    @Test
+    fun transportPathAndServiceNameAreChecked() {
+        val paths = listOf(
+            TransportSpec.WebSocket("ws", null),
+            TransportSpec.HttpUpgrade("/a b", null),
+            TransportSpec.XHttp("/x\u0001", null, XHttpMode.AUTO),
+            TransportSpec.WebSocket("/" + "p".repeat(1024), null),
+        )
+        for (t in paths) {
+            assertEquals(listOf(DiagCode.PATH_INVALID to "profiles[0].transport.path"), codesAt(trojan.copy(transport = t)), t.toString())
+        }
+        for (name in listOf("", "bad name", "s".repeat(257))) {
+            assertEquals(
+                listOf(DiagCode.PATH_INVALID to "profiles[0].transport.service_name"),
+                codesAt(trojan.copy(transport = TransportSpec.Grpc(name))),
+                name,
+            )
+        }
+        assertEquals(emptyList(), codesAt(trojan.copy(transport = TransportSpec.Grpc("dppass.Tunnel"))))
+        assertEquals(emptyList(), codesAt(trojan.copy(transport = TransportSpec.XHttp("/x?ed=2048", null, XHttpMode.AUTO))))
+    }
 }
 
 class MigrationTest {
