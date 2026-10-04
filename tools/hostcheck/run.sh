@@ -74,6 +74,7 @@ step "ссылки" "$PY" tools/hostcheck/check_docs.py
 step "зависимости" "$PY" tools/provenance/check_dependencies.py
 step "манифест" "$PY" tools/hostcheck/check_manifest.py
 step "формат" "$PY" tools/hostcheck/check_format.py
+step "README" "$PY" tools/hostcheck/readme_progress.py --check
 
 # ---- 2. Сборка и тесты ядра ----
 cli_smoke() {
