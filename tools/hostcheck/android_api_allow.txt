@@ -1,0 +1,6 @@
+# Исключения check_android_api.py: регулярное выражение по «класс.имя(дескриптор)».
+# Каждое — с причиной. Добавлять только то, что D8 переписывает сам.
+
+# invokedynamic: склейку строк и лямбды D8 переписывает для любого minSdk.
+^java/lang/invoke/StringConcatFactory
+^java/lang/invoke/LambdaMetafactory

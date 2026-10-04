@@ -28,7 +28,7 @@ data class DecodedPayload(
  */
 object PayloadDecoder {
     fun decode(bytes: ByteArray, idPrefix: String, maxEntries: Int): Outcome<DecodedPayload> {
-        val text = String(bytes, Charsets.UTF_8).removePrefix("﻿").trim()
+        val text = String(bytes, Charsets.UTF_8).removePrefix("\uFEFF").trim()
         if (text.isEmpty()) return Outcome.failure(DiagCode.SUBSCRIPTION_EMPTY, "подписка пуста")
         if (text.startsWith("{")) return native(text)
         if (looksLikeLinkList(text)) return links(text, idPrefix, maxEntries)

@@ -7,6 +7,9 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     id("org.jetbrains.kotlin.jvm")
+    // Android Lint и для JVM-модулей: при сборке :app (checkDependencies)
+    // их код проверяется на уровни API Android (minSdk приложения).
+    id("com.android.lint")
 }
 
 val catalog = extensions.getByType<VersionCatalogsExtension>().named("libs")
