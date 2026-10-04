@@ -61,7 +61,7 @@
 - **Сайт (staging):** главная, «обо мне», проекты RU/EN, лента, метки,
   фиды Atom/RSS/JSON, sitemap, robots, `/api/v1/`, 404; production-сборка
   пуста до одобрения и публикации.
-- **Документы:** `ARCHITECTURE.md` (переписан), `content/CANONICAL_MODEL.md`,
+- **Документы:** `ARCHITECTURE.md` (переписан), `docs/content/CANONICAL_MODEL.md`,
   `PUBLISHING.md`, `GOVERNANCE.md`, `docs/operations/` (README,
   ENVIRONMENTS, CREDENTIALS, BACKUP, DISASTER_RECOVERY),
   `platforms/WEBSITE.md`, `ROADMAP/ROADMAP.md` (фазы П0–П11, К1–К7 с
