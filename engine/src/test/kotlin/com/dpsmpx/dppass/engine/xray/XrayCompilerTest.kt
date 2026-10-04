@@ -420,9 +420,9 @@ class XrayCompilerTest {
         for (i in multi.profiles.indices) {
             val profile = multi.profiles[i]
             val proxy = outbound(payload(multi, profile = i), "proxy")
-            assertEquals(profile.endpoint.host.toString(), proxy["settings"]["address"].text, profile.id)
+            assertEquals(profile.endpoint.host.toString(), proxy["settings"]["address"].text, profile.id.value)
             assertTrue(proxy["streamSettings"]["sockopt"] == null, "${profile.id}: sockopt у proxy (D-29)")
-            if (profile.endpoint.host is Host.Domain) byName += profile.id
+            if (profile.endpoint.host is Host.Domain) byName += profile.id.value
         }
         assertEquals(listOf("xhttp-cdn", "domestic-relay"), byName, "в корпусе есть серверы по имени")
     }
