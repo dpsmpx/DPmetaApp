@@ -30,3 +30,4 @@
 | S-03 | tools/hostcheck/run.sh | 3b68ffd61d518b34c7e1650c7d4e143d407ea2e0 | вход проверок DPpass |
 | S-03 | tools/hostcheck/readme_progress.py | 3b68ffd61d518b34c7e1650c7d4e143d407ea2e0 | построение раздела «Прогресс» README |
 | S-04 | README.md | 0b7aad9d6fae8d20ce249dff1fc5112cf80cb15c | README профиля автора |
+| S-00 | docs/direction/DECISIONS.md | 396ad75229e65222938fe4cfc2b5ed5162f24ace | журнал решений DPprofile (D-01…D-11) в первой редакции |
