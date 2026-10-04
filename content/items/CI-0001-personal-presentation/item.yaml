@@ -330,3 +330,40 @@ review:
       variant: D
       text: цвета без расшифровки
       status: open
+exports:
+- format: github_social
+  file: exports/A-en-github_social.png
+  lang: en
+  variant: A
+  sha256: 4f50467895511d39b04da6f56646ebfc2b3584c06c71622d70cf7254c163f4b9
+  status: preview
+- format: master
+  file: exports/A-en-master.png
+  lang: en
+  variant: A
+  sha256: 1fd0ec4233cfecc67ae4970df575fb8b1dbd71e3b621287e3ec0d5b6bbf0f344
+  status: preview
+- format: master
+  file: exports/A-ru-master.png
+  lang: ru
+  variant: A
+  sha256: 8ece156fb910c41d3894b877931a501a3f11de2e7ee638ef27c61eb94c2d0062
+  status: preview
+- format: telegram_post
+  file: exports/A-ru-telegram_post.jpg
+  lang: ru
+  variant: A
+  sha256: 4337ffdb90e47e46b8f98ce651edbcdf8fbf27c177530df54060460819e365f8
+  status: preview
+- format: vk_post
+  file: exports/A-ru-vk_post.jpg
+  lang: ru
+  variant: A
+  sha256: 4337ffdb90e47e46b8f98ce651edbcdf8fbf27c177530df54060460819e365f8
+  status: preview
+- format: youtube_banner
+  file: exports/A-ru-youtube_banner.jpg
+  lang: ru
+  variant: A
+  sha256: 5d61330b39c9fa70da778ac27fce7bbd00893af38fb87c33d7f449d864f0417c
+  status: preview
