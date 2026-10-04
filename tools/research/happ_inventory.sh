@@ -117,9 +117,12 @@ for entry in "${REPOS[@]}"; do
 
   case "$kind" in
     own-history)
-      echo "   коммитов: $(g rev-list --count HEAD), первый: $(g log --reverse --format='%cs' | head -1)"
+      # Теги могут вести в историю, которой нет в ветке по умолчанию
+      # (у happ-android так и есть): считаем и то, и другое.
+      echo "   коммитов в ветке по умолчанию: $(g rev-list --count HEAD), первый: $(g log --reverse --format='%cs' HEAD | head -1)"
+      echo "   коммитов по всем веткам и тегам: $(g rev-list --count --all), первый: $(g log --reverse --all --format='%cs' | head -1)"
       ever="$(g log --all --name-only --format= | grep . | sort -u)"
-      echo "   файлы за всю историю ($(printf '%s\n' "$ever" | grep -c .)), исходный код среди них: $(printf '%s\n' "$ever" | grep -cE "$SOURCE_EXT")"
+      echo "   файлы за всю историю, с тегами ($(printf '%s\n' "$ever" | grep -c .)), исходный код среди них: $(printf '%s\n' "$ever" | grep -cE "$SOURCE_EXT")"
       printf '%s\n' "$ever" | sed 's/^/     /'
       ;;
     fork)

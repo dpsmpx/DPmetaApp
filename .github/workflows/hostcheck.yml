@@ -1,0 +1,50 @@
+# hostcheck в полном режиме — те же проверки, что у разработчика
+# (docs/PROCESS.md, «CI»). Полный режим: пропуск Android-шагов — ошибка.
+#
+# Цепочка поставки (docs/SECURITY_MODEL.md, T10): права — только чтение,
+# секретов нет, действия закреплены по SHA коммита (тег — в комментарии),
+# каждое — строка в docs/legal/THIRD_PARTY_MATRIX.md, §1.4.
+name: hostcheck
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hostcheck-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hostcheck:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      # Android SDK есть в образе раннера (ANDROID_HOME); платформа
+      # compileSdk ставится явно, а не полагается на состав образа.
+      - name: Android SDK — платформа 36
+        run: |
+          test -n "${ANDROID_HOME:-}" && test -d "$ANDROID_HOME" || { echo "нет ANDROID_HOME"; exit 1; }
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-36" > /dev/null
+
+      - name: Окружение
+        run: |
+          java -version
+          python3 --version
+          ls "$ANDROID_HOME/platforms"
+
+      - name: hostcheck --full
+        run: tools/hostcheck/run.sh --full
