@@ -19,10 +19,11 @@ import kotlinx.coroutines.launch
 
 /**
  * Сервис туннеля (D-17). Жизненный цикл уже настоящий: foreground с
- * типом `specialUse`, уведомление, `onRevoke`, остановка. Туннель не
- * поднимается, пока ядро фиктивное: TUN без ядра «съел» бы весь трафик
- * устройства. Сервис это проверяет и честно останавливается с
- * BACKEND_NOT_AVAILABLE — граница готова для этапа 2 (Xray).
+ * типом `specialUse`, уведомление, `onRevoke`, остановка. Ядро Xray в
+ * приложении есть (D-25), но путь «TUN → ядро» включается вместе с
+ * сервисом туннеля (этап 2, работа 6): до этого сервис честно
+ * останавливается с BACKEND_NOT_AVAILABLE, а не поднимает TUN, который
+ * «съел» бы весь трафик устройства.
  */
 class DPpassVpnService : VpnService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -41,17 +42,12 @@ class DPpassVpnService : VpnService() {
             stopSelf()
             return
         }
-        if (core.engine.capabilities.backendId.startsWith("mock")) {
-            core.log.diagnostic(
-                Diagnostic.error(DiagCode.BACKEND_NOT_AVAILABLE, "реального ядра ещё нет (этап 2): TUN без ядра отрезал бы устройство от сети"),
-            )
-            core.log.info("tunnel_spec_ready", "routes" to spec.routes.size, "apps" to Safe(spec.apps::class.simpleName ?: "?"))
-            stopSelf()
-            return
-        }
-        // Этап 2 (ROADMAP): AndroidTunnelProvider(this).establish(spec) → TunInput(fd, mtu) →
-        // core.connect(...). До интеграции ядра этот путь недостижим.
-        core.log.diagnostic(Diagnostic.error(DiagCode.BACKEND_NOT_AVAILABLE, "интеграция ядра ещё не сделана"))
+        core.log.info("tunnel_spec_ready", "routes" to spec.routes.size, "apps" to Safe(spec.apps::class.simpleName ?: "?"))
+        // Этап 2, работа 6 (ROADMAP): AndroidTunnelProvider(this).establish(spec) →
+        // toTunInput() → core.connect(...). До неё TUN не поднимается.
+        core.log.diagnostic(
+            Diagnostic.error(DiagCode.BACKEND_NOT_AVAILABLE, "сервис туннеля ещё не подключён к ядру (этап 2, работа 6): TUN не поднимается"),
+        )
         stopSelf()
     }
 

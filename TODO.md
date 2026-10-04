@@ -19,28 +19,23 @@ D-25. **Сделано:** мост Go `tools/xray/bridge` (один экземп
 `toTunInput()`; `XrayRuntime`/`XrayJni`/`JniXrayRuntime`/`XrayProxyEngine`
 и `XrayProxyEngineTest`; код `BACKEND_VALIDATION_PARTIAL`; счётчики в
 `XrayCompiler` и перезаписанные эталоны; факты — `BACKEND_STRATEGY.md`, §6.
+Сборка библиотеки — `tools/xray/native.py` (`host`: go vet, go test моста
+в обеих сборках, библиотека для JVM хоста в `build/xray/host/`;
+`android --out DIR`: NDK `android-ndk` из каталога, три ABI, проверка
+ELF — машина, выравнивание 16 КБ, экспорт JNI = `external` XrayJni),
+общее окружение Go — `tools/xray/goenv.py`; `go.mod` приведён `go mod
+tidy` (`golang.org/x/sys` — прямая, версии те же). Тест JNI на хосте —
+`XrayJniTest` (набор `xrayJni` в `tests/integration`, задача
+`xrayJniTest`, без `-Pdppass.xray.lib` — отказ с подсказкой) и шаг
+hostcheck «Xray: мост и JNI» (`native.py host` + `xrayJniTest`).
 
 Осталось по работе 4 (порядок — как здесь):
 
-- [ ] скрипт сборки библиотеки (план: native.py в tools/xray): `host` (go vet, `go test ./bridge` с тегом
-      `dppass_testinbound` и без, библиотека хоста в `build/xray/host/`)
-      и `android --out DIR` (NDK из `gradle/libs.versions.toml` —
-      добавить `android-ndk = "30.0.16248370"`; ABI arm64-v8a,
-      armeabi-v7a, x86_64; `-ldflags "-s -w -buildid=
-      -extldflags=-Wl,-z,max-page-size=16384"`; проверка ELF: машина и
-      `p_align` ≥ 16 КБ). Общие `go_env`/`UNSAFE_ENV` — вынести из
-      `check_xray.py` в общий модуль.
-- [ ] `tools/xray/go.mod`: мост импортирует `golang.org/x/sys` напрямую —
-      `go mod tidy` (версии не меняются), сверить `check_dependencies.py`.
 - [ ] `:app`: задача сборки библиотеки на вариант
       (`androidComponents.onVariants` → `sources.jniLibs.addGeneratedSourceDirectory`,
       задача совместима с configuration cache — `ExecOperations`).
-- [ ] Тест JNI XrayJniTest (JVM хоста, отдельный source set `xrayJni` в
-      `tests/integration`, задача `xrayJniTest` падает без
-      `-Pdppass.xray.lib`): версия, проверка, запуск/остановка, вызов
-      `protect` и закрытие пути при отказе, счётчики.
-- [ ] `run.sh`: шаг «Xray: мост и JNI» (`native.py host` + `xrayJniTest`);
-      шаги Android — требовать NDK (в `--full` его нет — ошибка).
+- [ ] `run.sh`: шаги Android — требовать NDK (в `--full` его нет — ошибка);
+      шаг ядра собирать без `:app` (APK без Go и NDK не собирается, D-25).
 - [ ] `check_apk.py`: `NATIVE_OK` — ровно `lib/<3 ABI>/libdppassxray.so`,
       выравнивание ELF и смещения в zip по 16 КБ, без сжатия; размер по
       ABI — `docs/PERFORMANCE_BUDGET.md`.

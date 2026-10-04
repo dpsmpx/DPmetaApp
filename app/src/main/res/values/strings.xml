@@ -2,7 +2,7 @@
 <resources>
     <string name="app_name">DPpass</string>
     <string name="shell_title">DPpass — оболочка разработки</string>
-    <string name="shell_note">Ядро прокси пока фиктивное (MockProxyEngine): туннель не поднимается и трафик не передаётся.</string>
+    <string name="shell_note">Ядро Xray встроено, но сервис туннеля к нему ещё не подключён: туннель не поднимается и трафик не передаётся.</string>
     <string name="start_vpn">Проверить VPN-сервис</string>
     <string name="notification_channel">Туннель</string>
     <string name="notification_text">DPpass: проверка сервиса туннеля</string>

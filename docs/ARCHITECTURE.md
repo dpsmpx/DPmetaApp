@@ -57,7 +57,7 @@
 | `core` | IP, CIDR и дополнение маршрутов, хосты и порты, идентификаторы, строгий JSON, `Clock`, SHA-256 | `diagnostics` |
 | `routing` | модель маршрутизации и DNS, эталонный вычислитель, перенос правил приложений на уровень VpnService, проверки смысла правил | `core` |
 | `config` | формат документа, миграции, IR, нормализация, проверка, запись (полная и отредактированная) | `routing` |
-| `engine` | граница ядра: `ProxyEngine`, `BackendCompiler`, матрица возможностей и сверка с ней; фиктивное ядро; матрица и компилятор Xray | `config` |
+| `engine` | граница ядра: `ProxyEngine`, `BackendCompiler`, матрица возможностей и сверка с ней; фиктивное ядро; Xray — матрица, компилятор, `XrayRuntime` (объявления JNI моста) и `XrayProxyEngine` | `config` |
 | `network` | пробы сети, бюджет проб, классификация ограничений; синтетическая модель сети для тестов | `core` |
 | `storage` | атомарное хранилище «ключ → байты», шифрование, карантин | `core` |
 | `subscriptions` | подписка как версионированный объект, тело (документ, ссылки, base64), метаданные, конвейер обновления | `config` |
@@ -76,8 +76,11 @@
 - Синтетическая модель сети (`network.simulation`) — инструмент тестов и
   `cli`; в основном коде `connection/` — только `SimulatedHealthChecker`
   (`Orchestrator.kt`); в `app/` — нельзя.
-- Фиктивное ядро (`engine.mock`) в приложении — только в `AppGraph`
-  и только до этапа 2 (D-03).
+- Фиктивное ядро (`engine.mock`) — второй бэкенд тестов и `cli`; в
+  `app/` — нельзя: приложение работает на Xray (D-25).
+- Нативный код (`external fun`, `System.load*`) — только мост ядра:
+  объявления JNI — `engine.xray.XrayRuntime`, загрузка — `AppGraph` и тест
+  JNI на хосте (`check_forbidden_apis.py`, правило `native-load`).
 
 Сборка: convention-плагины в `build-logic/` (`dppass.kotlin-library`,
 `dppass.kotlin-application`, `dppass.test-suite`, `dppass.android-app`),
@@ -142,7 +145,9 @@ ConnectionOrchestrator.connect
 или дополнение маршрутов, DNS `172.19.0.2`, MTU, политика приложений,
 IPv6) → `TunnelProvider.establish` (Android: `AndroidTunnelProvider`,
 один к одному в `VpnService.Builder`) → `TunnelHandle(fd)` → `TunInput`
-→ `ProxyEngine.start`. С фиктивным ядром туннель не поднимается (D-03).
+→ `ProxyEngine.start`. Ядро Xray в приложении есть (D-25), но сервис
+туннеля к нему ещё не подключён (этап 2, работа 6): до этого TUN не
+поднимается.
 
 ## 4. Конфигурация и IR
 
@@ -227,14 +232,16 @@ Xray так, чтобы смысл IR сохранился, а где Xray по�
 путь, счётчики `proxy`) и экспорт JNI `tools/xray/jni` →
 `libdppassxray.so`; в Kotlin — `XrayRuntime` (`JniXrayRuntime`) и
 `XrayProxyEngine`. `TunInput` несёт `SocketProtector`
-(`TunnelHandle.protect`, на Android — `VpnService.protect`). Что ещё не
-подключено — `TODO.md`, этап 2.
+(`TunnelHandle.protect`, на Android — `VpnService.protect`).
+Библиотеку собирает `tools/xray/native.py` из того же `tools/xray/go.mod`:
+для APK — задача `:app` `xrayNative<Вариант>` (NDK из каталога, три ABI,
+выравнивание 16 КБ), для хоста — шаг «Xray: мост и JNI», где тот же мост
+проверяет `XrayJniTest` в JVM хоста. Что ещё не подключено (сервис
+туннеля, геоданные на устройстве) — `TODO.md`, этап 2.
 
 Компилятор проверяется на хосте самим ядром (`docs/TESTING.md`,
 «Эталоны Xray»): `tools/xray` — модуль Go вне сборки Gradle, собирает
-upstream `xray` и `dppass-xray-probe` из `tools/xray/go.mod`. В приложение
-Xray ещё не подключён: `ProxyEngine` поверх него, мост fd → ядро и
-`protect()` — следующие работы этапа 2 (`docs/direction/ROADMAP/02-xray-backend.md`).
+upstream `xray` и `dppass-xray-probe` из `tools/xray/go.mod`.
 MTU и DNS-адрес TUN записаны и в `tunnel/`, и в `XrayBackend` (`engine`
 от `tunnel` не зависит) — совпадение проверяет `XrayTunnelContractTest`.
 
@@ -354,13 +361,18 @@ DEGRADED; `SKIPPED` или нет пробы → UNKNOWN; прочее → BLOCK
 ## 11. Android-слой
 
 `app/` (D-17, D-19): `AppGraph` — единственное место, где Android
-встречается с ядром (хранилище в `noBackupFilesDir`, Keystore, фиктивное
-ядро, `PlatformTraits` по версии API). `DPpassVpnService` — foreground
-`specialUse`, уведомление, `onRevoke`; с фиктивным ядром честно
-останавливается. `AndroidTunnelProvider` — `TunnelSpec` → `Builder`;
+встречается с ядром (хранилище в `noBackupFilesDir`, Keystore, ядро Xray —
+`XrayCompiler` и `XrayProxyEngine` поверх `libdppassxray` из APK, каталог
+геоданных `noBackupFilesDir/geodata`, `PlatformTraits` по версии API).
+Библиотека не загрузилась или не той версии — каждый вызов ядра отвечает
+`BACKEND_NOT_AVAILABLE` с причиной. `DPpassVpnService` — foreground
+`specialUse`, уведомление, `onRevoke`; пока сервис не подключён к ядру
+(работа 6), он честно останавливается. `AndroidTunnelProvider` — `TunnelSpec` → `Builder`;
 адреса — `InetAddress.getByAddress` (без DNS). `MainActivity` —
 оболочка разработки с `FLAG_SECURE`. Манифест и сетевые настройки
-проверяет `check_manifest.py`; API модулей ядра — `check_android_api.py`.
+проверяет `check_manifest.py`; API модулей ядра — `check_android_api.py`;
+собранный APK, в том числе нативный код (только `libdppassxray.so` трёх
+ABI, несжатая, выровнена по 16 КБ), — `check_apk.py`.
 
 ## 12. Время, потоки, детерминизм
 

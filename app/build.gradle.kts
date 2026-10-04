@@ -1,5 +1,7 @@
 // Android-приложение DPpass: оболочка над DPpassCore (D-02, D-17).
 // Подключается, только если найден Android SDK (settings.gradle.kts).
+import com.dpsmpx.dppass.build.XrayNativeTask
+
 plugins {
     id("dppass.android-app")
 }
@@ -31,6 +33,15 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    packaging {
+        jniLibs {
+            // Библиотеку ядра собирает и проверяет tools/xray/native.py (уже без
+            // символов, выровнена по 16 КБ); AGP её не трогает — в APK ровно то,
+            // что проверено (check_apk.py).
+            keepDebugSymbols += "**/libdppassxray.so"
+        }
+    }
+
     lint {
         warningsAsErrors = true
         abortOnError = true
@@ -43,6 +54,29 @@ android {
 
 kotlin {
     jvmToolchain(21)
+}
+
+// Ядро Xray в APK (D-25): библиотека собирается задачей на вариант из
+// tools/xray тем же go.mod, по которому шаг hostcheck «Xray» проверяет
+// компилятор. Без Go или NDK сборка APK падает с причиной.
+androidComponents {
+    onVariants { variant ->
+        val name = "xrayNative" + variant.name.replaceFirstChar { it.uppercase() }
+        val task = tasks.register<XrayNativeTask>(name) {
+            description = "libdppassxray.so для ${variant.name}: tools/xray/native.py android"
+            val xray = rootProject.layout.projectDirectory.dir("tools/xray")
+            sources.from(
+                xray.asFileTree.matching { include("**/*.go", "go.mod", "go.sum", "*.py") },
+                rootProject.layout.projectDirectory.file("gradle/libs.versions.toml"),
+                // Экспорт JNI сверяется с external fun объекта XrayJni.
+                rootProject.layout.projectDirectory.file("engine/src/main/kotlin/com/dpsmpx/dppass/engine/xray/XrayRuntime.kt"),
+            )
+            script.set(xray.file("native.py"))
+            ndkVersion.set(libs.versions.android.ndk)
+            sdkDirectory.set(androidComponents.sdkComponents.sdkDirectory)
+        }
+        variant.sources.jniLibs?.addGeneratedSourceDirectory(task, XrayNativeTask::outputDir)
+    }
 }
 
 dependencies {

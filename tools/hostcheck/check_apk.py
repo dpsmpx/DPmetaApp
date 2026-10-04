@@ -16,9 +16,14 @@ Android SDK: aapt2 и dexdump):
     и прочий чужой код не попадут незамеченными (D-12, D-20). Классы
     `android.*`/`dalvik.*` допустимы только синтетические — это заглушки,
     которые D8 создаёт для классов платформы новее minSdk;
-  * нативных библиотек до этапа 2 нет (с ядром Xray — вместе с проверкой
-    выравнивания по 16 КБ, `TODO.md`);
-  * размер APK печатается (бюджет по ABI — этап 2, docs/PERFORMANCE_BUDGET.md).
+  * нативный код — ровно библиотека ядра `lib/<ABI>/libdppassxray.so`
+    трёх ABI (D-25) и ничего больше: каждая хранится несжатой, её данные в
+    zip начинаются на границе 16 КБ, сегменты ELF выровнены по 16 КБ,
+    машина ELF — та, что у ABI, экспорт JNI — ровно `external` объекта
+    `XrayJni` (страницы 16 КБ — Android 15+; иначе загрузка с mmap из APK
+    невозможна);
+  * размер APK и библиотеки по ABI печатаются (бюджет —
+    docs/PERFORMANCE_BUDGET.md).
 
     python3 tools/hostcheck/check_apk.py [APK]
         по умолчанию app/build/outputs/apk/debug/app-debug.apk
@@ -28,6 +33,7 @@ Android SDK: aapt2 и dexdump):
 """
 import os
 import re
+import struct
 import subprocess
 import sys
 import tempfile
@@ -36,6 +42,9 @@ import xml.etree.ElementTree as ET
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from check_manifest import EXPORTED_OK, PERMISSIONS  # noqa: E402 — один список утверждённого
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "xray"))
+import native  # noqa: E402 — разбор ELF и договор JNI — те же, что при сборке библиотеки
 
 PROJ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 APK = os.path.join(PROJ, "app", "build", "outputs", "apk", "debug", "app-debug.apk")
@@ -56,8 +65,9 @@ CODE_ROOTS = {
 }
 # Только синтетические: заглушки D8 для классов платформы, которых нет на minSdk.
 SYNTHETIC_ONLY_ROOTS = ("android/", "dalvik/")
-# Нативные библиотеки — пусто до этапа 2.
-NATIVE_OK = {}
+# Нативные библиотеки: ровно ядро Xray (D-25) для каждого ABI — {путь в APK: ABI}.
+NATIVE_OK = {f"lib/{abi}/{native.LIBRARY}": abi for abi in native.ABIS}
+PAGE_16K = native.PAGE_16K
 
 
 def sdk_dir():
@@ -136,6 +146,38 @@ def dex_classes(dexdump, apk):
     return classes
 
 
+def check_natives(apk, problems):
+    """Нативный код APK — ровно NATIVE_OK, несжатый и выровненный по 16 КБ (D-25)."""
+    sizes = []
+    with zipfile.ZipFile(apk) as z, tempfile.TemporaryDirectory() as tmp:
+        infos = {i.filename: i for i in z.infolist()}
+        found = {n for n in infos if n.startswith("lib/")}
+        for n in sorted(found - set(NATIVE_OK)):
+            problems.append(f"нативный код {n}: в APK допускается только {native.LIBRARY} трёх ABI (D-25)")
+        for n, abi in sorted(NATIVE_OK.items()):
+            info = infos.get(n)
+            if info is None:
+                problems.append(f"нет {n}: APK без ядра для {abi} бесполезен (D-25)")
+                continue
+            if info.compress_type != zipfile.ZIP_STORED:
+                problems.append(f"{n}: сжата — библиотека должна лежать в APK несжатой (загрузка прямо из APK)")
+            # Данные записи начинаются после локального заголовка: 30 байт + имя + поле extra.
+            with open(apk, "rb") as f:
+                f.seek(info.header_offset + 26)
+                name_len, extra_len = struct.unpack("<HH", f.read(4))
+            data_offset = info.header_offset + 30 + name_len + extra_len
+            if data_offset % PAGE_16K:
+                problems.append(f"{n}: данные в zip со смещения {data_offset}, не кратного 16 КБ")
+            path = z.extract(n, tmp)
+            machine, is64 = native.ABIS[abi][3], native.ABIS[abi][4]
+            try:
+                native.check_library(path, machine, is64, PAGE_16K)
+            except RuntimeError as e:
+                problems.append(f"{n}: {str(e).split(': ', 1)[-1]}")
+            sizes.append(f"{abi} {info.file_size / 1024 / 1024:.1f} МиБ")
+    return ", ".join(sizes)
+
+
 def main():
     apk = sys.argv[1] if len(sys.argv) > 1 else APK
     if not os.path.isfile(apk):
@@ -209,11 +251,7 @@ def main():
         problems.append("dex: в APK не найдено ни одного класса")
 
     # ---- нативные библиотеки и размер ----
-    with zipfile.ZipFile(apk) as z:
-        natives = [n for n in z.namelist() if n.startswith("lib/") and n.endswith(".so")]
-    for n in natives:
-        if os.path.basename(n) not in NATIVE_OK:
-            problems.append(f"нативная библиотека {n}: до этапа 2 их нет; с ядром — вместе с проверкой выравнивания 16 КБ")
+    native_sizes = check_natives(apk, problems)
     size = os.path.getsize(apk)
 
     if problems:
@@ -225,7 +263,8 @@ def main():
         return 1
     roots = ", ".join(f"{r.rstrip('/').replace('/', '.')} {n}" for r, n in sorted(by_root.items(), key=lambda kv: -kv[1]))
     print(f"✓ APK {os.path.relpath(apk, PROJ)}: {size / 1024 / 1024:.1f} МиБ; манифест — утверждённые разрешения и компоненты; "
-          f"{len(classes)} классов только из утверждённых корней ({roots}); нативных библиотек нет")
+          f"{len(classes)} классов только из утверждённых корней ({roots}); "
+          f"нативный код — только {native.LIBRARY} ({native_sizes}), несжатая, выровнена по 16 КБ в zip и ELF, экспорт JNI = XrayJni")
     return 0
 
 

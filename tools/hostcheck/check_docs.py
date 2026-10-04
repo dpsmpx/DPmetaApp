@@ -62,10 +62,10 @@ def headings(rel):
 
 
 def test_classes(all_files):
-    """{класс теста: множество его методов} по исходникам src/test."""
+    """{класс теста: множество его методов} по тестовым исходникам (src/test, src/xrayJni — всё, кроме src/main)."""
     out = {}
     for rel in all_files:
-        if "/src/test/" not in rel or not rel.endswith(".kt"):
+        if "/src/" not in rel or "/src/main/" in rel or not rel.endswith(".kt"):
             continue
         text = read(rel)
         marks = [(m.start(), m.group(1)) for m in re.finditer(r"^class\s+(\w+)", text, re.M)]

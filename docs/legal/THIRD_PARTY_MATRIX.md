@@ -84,7 +84,8 @@ APK проверяет `check_apk.py`. Транзитивные зависимо
 | JDK 21 (например, OpenJDK или Eclipse Temurin) | GPL-2.0 с Classpath Exception | сборка, тесты |
 | Android SDK (платформа 36, build-tools) | Android Software Development Kit License Agreement | сборка `app`, `check_android_api.py`; не распространяется |
 | Python 3.11+ | PSF-2.0 | скрипты проверок `tools/` |
-| Go 1.21+ (сам скачивает toolchain `go1.27.1` по `tools/xray/go.mod`, `docs/PROVENANCE.md`, §2) | BSD-3-Clause | шаг hostcheck «Xray»: сборка ядра и `dppass-xray-probe` |
+| Go 1.21+ (сам скачивает toolchain `go1.27.1` по `tools/xray/go.mod`, `docs/PROVENANCE.md`, §2) | BSD-3-Clause | шаг hostcheck «Xray»: сборка ядра и `dppass-xray-probe`; сборка библиотеки ядра `libdppassxray` (`tools/xray/native.py`, D-25). Среда выполнения Go входит в библиотеку — §1.7 |
+| Android NDK r30 (`30.0.16248370`, `android-ndk` в каталоге) | Android Software Development Kit License Agreement; инструменты LLVM — Apache-2.0 with LLVM Exception | cgo-компилятор и sysroot для `GOOS=android` (`tools/xray/native.py android`). Библиотека зависит только от системных `libc.so`, `libdl.so`, `liblog.so` устройства; из NDK в APK попадают разве что встроенные функции компилятора (compiler-rt, исключение LLVM — без обязательств для двоичного кода) |
 
 ### 1.6. Ядро прокси
 

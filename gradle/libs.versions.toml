@@ -21,6 +21,10 @@ xray-go-module = "v1.260327.1-0.20260930074004-b26a91de4f32"
 android-compileSdk = "36"
 android-targetSdk = "36"
 android-minSdk = "26"
+# NDK для библиотеки ядра libdppassxray (D-25): cgo-компилятор и sysroot
+# для GOOS=android; сборка — tools/xray/native.py android (задача :app
+# xrayNative<Вариант>). Инструмент сборки: в APK из NDK ничего не попадает.
+android-ndk = "30.0.16248370"
 
 [libraries]
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
