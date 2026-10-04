@@ -17,6 +17,7 @@ from pathlib import Path
 from . import capabilities, claims, exports, facts, links, metrics, newitem, platform_checks, platform_cli, provenance, secrets, validate, visual
 from .common import Item, dump_yaml, find_item, load_yaml, rel, sha256_file
 from .model import effective_state, reached
+from .site import shots as site_shots
 
 CHECKS = {
     "schemas": validate.schemas_check,
@@ -36,6 +37,7 @@ CHECKS = {
     "projects": platform_checks.projects_check,
     "capabilities": capabilities.check,
     "site": platform_checks.site_check,
+    "siteshots": site_shots.check,
 }
 REVIEW_FORMAT = "telegram_post"  # формат рендеров для критики: самый частый 16:9
 

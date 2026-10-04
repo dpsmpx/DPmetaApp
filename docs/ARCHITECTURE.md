@@ -47,7 +47,7 @@ tools/cs/
 │   ├── telegram.py      Bot API через транспорт (urllib; в тестах — имитация API)
 │   ├── manual.py        VK, YouTube, Discord, GitHub, TikTok — отрисовка и лимиты; публикация — ручной путь (Д33)
 │   └── mock.py          имитации всех площадок с внедрением отказов (§102)
-├── site/            САЙТ — генератор (build.py), фиды и API (feeds.py), подписи (i18n.py), предпросмотр (preview.py), локальный сервер (serve.py), выгрузка на Beget (deploy.py)
+├── site/            САЙТ — генератор (build.py), фиды и API (feeds.py), подписи (i18n.py), предпросмотр (preview.py), локальный сервер (serve.py), снимки страниц (shots.py), выгрузка на Beget (deploy.py)
 ├── platform_cli.py  команды платформы;  platform_checks.py  проверки платформы;  capabilities.py  матрица
 └── claims.py facts.py validate.py visual.py exports.py provenance.py render.py …   конвейер изображений и гейты (v1)
 website/             тема сайта: templates/base.html, static/style.css (цвета — из токенов бренда)
@@ -139,6 +139,7 @@ renders/ и exports/: PNG/JPEG + *.layout.json → provenance.yaml (хэши, в
 | `campaigns`, `projects` | ссылки на объекты, адресаты, факты страниц | configuration |
 | `capabilities` | матрица = данные; данные = адаптеры | adapters |
 | `site` | сборка staging и production, фиды, JSON, внутренние ссылки | build, website |
+| `siteshots` | страницы staging в Chromium на 390 и 1280 px: прокрутка вбок, край экрана, изображения, CSP, консоль, запросы, шрифт, `h1`, цели касания (`--fast` — пропуск) | website (визуальная регрессия, П2-17) |
 | тесты | `tests/` — модульные, контрактные, интеграционные, сквозной, свойства, регрессия | tests |
 
 ## 7. Тесты (§100–104)
@@ -150,7 +151,7 @@ renders/ и exports/: PNG/JPEG + *.layout.json → provenance.yaml (хэши, в
 | интеграционные (движок) | `tests/test_publishing.py`: сценарии §56, одобрение, адресаты, бренды, режимы |
 | свойства | `tests/test_publishing.py`, `Properties`: случайные сбои — не больше одного поста |
 | сквозной | `tests/test_platform_e2e.py`: новость → сайт → Telegram → проверка → аналитика → production-сборка |
-| регрессия | рендер (хэши), миграция, неизменность канона, граница модулей |
+| регрессия | рендер (хэши), миграция, неизменность канона, граница модулей; снимки сайта — `tests/test_site_shots.py` (правила ловят поломки, staging фикстуры чистый) |
 
 Реальные площадки в тестах не используются; рабочая проверка —
 безопасный режим на тестовом канале автора (§104).
@@ -165,7 +166,7 @@ python3 -m tools.cs preview <объект|кампания> | approve <объе�
 python3 -m tools.cs publish <объект> <вариант> --to <адресат> [--dev|--safe|--production] [--at ISO]
 python3 -m tools.cs publish --due | --record-manual | --reconcile | --cancel | --delete
 python3 -m tools.cs campaign status|list | calendar | search | stale
-python3 -m tools.cs site build|serve | health | bundle | capabilities [--write] | events
+python3 -m tools.cs site build|serve|shots|deploy | health | bundle | capabilities [--write] | events
 ```
 
 ## 9. Окружение
