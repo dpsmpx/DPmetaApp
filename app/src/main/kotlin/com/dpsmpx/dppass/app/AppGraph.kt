@@ -9,6 +9,8 @@ import com.dpsmpx.dppass.engine.mock.MockBackendCompiler
 import com.dpsmpx.dppass.engine.mock.MockProxyEngine
 import com.dpsmpx.dppass.storage.EncryptingBlobStore
 import com.dpsmpx.dppass.storage.FileBlobStore
+import com.dpsmpx.dppass.storage.StorageReset
+import com.dpsmpx.dppass.storage.WrappedKeyProvider
 import com.dpsmpx.dppass.tunnel.PlatformTraits
 import java.io.File
 
@@ -26,17 +28,22 @@ object AppGraph {
     }
 
     private fun build(context: Context): DPpassCore {
-        val dir = File(context.noBackupFilesDir, "state")
-        val keys = KeystoreKeyProvider(File(context.noBackupFilesDir, "keys"))
-        val store = EncryptingBlobStore(FileBlobStore(dir), keys)
+        val data = FileBlobStore(File(context.noBackupFilesDir, "state"))
+        // Ключ данных — конвертом в своём каталоге (D-19); поверх существующих записей новый не создаётся.
+        val keys = WrappedKeyProvider(
+            FileBlobStore(File(context.noBackupFilesDir, "keys")),
+            KeystoreKeyWrapper(),
+            dataPresent = { StorageReset.hasData(data) },
+        )
         val engine = MockProxyEngine(MockBackend.FULL)
         return DPpassCore(
             compiler = MockBackendCompiler(engine.capabilities),
             engine = engine,
-            store = store,
+            store = EncryptingBlobStore(data, keys),
             clock = Clock.SYSTEM,
             selfPackage = context.packageName,
             platform = PlatformTraits(supportsExcludeRoute = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU),
+            storageRecovery = StorageReset(data, keys, Clock.SYSTEM),
         )
     }
 }
