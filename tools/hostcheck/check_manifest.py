@@ -13,7 +13,10 @@
     network_security_config), доверие — только системным CA;
   * нет `debuggable`; экспортировано только то, что нужно: запуск
     Activity и VpnService под `BIND_VPN_SERVICE`; у экспортированного
-    сервиса всегда есть `android:permission`.
+    сервиса всегда есть `android:permission`;
+  * один процесс (D-30): ни у приложения, ни у компонентов нет
+    `android:process` — ядро, хранилище и журнал рассчитаны на один
+    процесс.
 
     python3 tools/hostcheck/check_manifest.py
 
@@ -76,6 +79,8 @@ def main():
             problems.append("android:fullBackupContent должен быть false (Android ≤ 11)")
         if attr("usesCleartextTraffic") != "false":
             problems.append("android:usesCleartextTraffic должен быть false")
+        if attr("process") is not None:
+            problems.append("<application android:process>: приложение работает в одном процессе (D-30)")
         if attr("debuggable") is not None:
             problems.append("android:debuggable в манифесте запрещён — его ставит тип сборки")
 
@@ -112,6 +117,8 @@ def main():
         for kind in ("activity", "activity-alias", "service", "receiver", "provider"):
             for el in app.findall(kind):
                 name = el.get(A + "name")
+                if el.get(A + "process") is not None:
+                    problems.append(f"<{kind} {name}> android:process: компоненты — в процессе приложения (D-30)")
                 exported = el.get(A + "exported")
                 if exported is None and el.find("intent-filter") is not None:
                     problems.append(f"<{kind} {name}>: android:exported не указан явно")
@@ -130,7 +137,7 @@ def main():
         for p in problems:
             print("    " + p)
         return 1
-    print(f"✓ Манифест: {len(PERMISSIONS)} утверждённых разрешения, без резервных копий и открытого HTTP, экспорт — только {', '.join(EXPORTED_OK)}")
+    print(f"✓ Манифест: {len(PERMISSIONS)} утверждённых разрешения, без резервных копий и открытого HTTP, один процесс, экспорт — только {', '.join(EXPORTED_OK)}")
     return 0
 
 

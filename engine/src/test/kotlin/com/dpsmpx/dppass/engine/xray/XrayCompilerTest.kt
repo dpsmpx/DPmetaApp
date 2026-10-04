@@ -4,6 +4,7 @@ import com.dpsmpx.dppass.config.ConfigIr
 import com.dpsmpx.dppass.config.ConfigLoader
 import com.dpsmpx.dppass.config.SecuritySpec
 import com.dpsmpx.dppass.config.TransportSpec
+import com.dpsmpx.dppass.core.Host
 import com.dpsmpx.dppass.core.Json
 import com.dpsmpx.dppass.core.JsonArray
 import com.dpsmpx.dppass.core.JsonNumber
@@ -407,6 +408,23 @@ class XrayCompilerTest {
                 assertFalse("\"$field\"" in text, "${multi.profiles[i].id}: $field (T5)")
             }
         }
+    }
+
+    @Test
+    fun serverNameIsLeftToTheSystemResolver() {
+        // D-29: имя сервера ядро отдаёт системному dialer — система резолвит его вне
+        // туннеля (пакет DPpass вне туннеля), а не DNS ядра, чьи серверы сами могут идти
+        // через proxy. Поэтому у proxy нет sockopt: ни domainStrategy, ни dialerProxy.
+        val multi = corpus("valid-multi.json")
+        val byName = mutableListOf<String>()
+        for (i in multi.profiles.indices) {
+            val profile = multi.profiles[i]
+            val proxy = outbound(payload(multi, profile = i), "proxy")
+            assertEquals(profile.endpoint.host.toString(), proxy["settings"]["address"].text, profile.id)
+            assertTrue(proxy["streamSettings"]["sockopt"] == null, "${profile.id}: sockopt у proxy (D-29)")
+            if (profile.endpoint.host is Host.Domain) byName += profile.id
+        }
+        assertEquals(listOf("xhttp-cdn", "domestic-relay"), byName, "в корпусе есть серверы по имени")
     }
 
     @Test

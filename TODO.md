@@ -12,28 +12,31 @@
 `XrayProxyEngine`, сборка библиотеки (`tools/xray/native.py`, задача
 `xrayNative<Вариант>`), тест JNI на хосте (`XrayJniTest`), `AppGraph` на
 Xray, проверки `check_apk.py` (16 КБ), `check_forbidden_apis.py`
-(`native-load`), `check_modules.py` (`engine.mock`). Дальше — работы 5–7:
+(`native-load`), `check_modules.py` (`engine.mock`). Решения о
+геоданных, выпуске по ABI, имени сервера и процессе приняты (D-27…D-30).
+Дальше — работы 5–6:
 
-- [ ] Геоданные на устройстве (источник, лицензия, обновление) —
-      решение. Сейчас каталог `noBackupFilesDir/geodata` пуст, и ядро на
-      устройстве отвергает конфигурации с `geoip`/`geosite`
-      (`XrayJniTest.geodataWithoutAssetsIsRejected`).
-- [ ] Размер APK: библиотека ядра — 33–37 МиБ на ABI без сжатия, debug
-      APK с тремя ABI — около 106 МиБ (`docs/PERFORMANCE_BUDGET.md`, §4).
-      Разделение по ABI (split APK или AAB) — решение к этапу 5.
-- [ ] Имя сервера профиля (`server` — домен) Xray резолвит системным
-      резолвером: у исходящего `proxy` нет `sockopt.domainStrategy`
-      (`transport/internet/dialer.go`, `DialSystem`). Решить с записью в
-      `docs/SECURITY_MODEL.md` (T4); учесть, что `core.New` переназначает
-      глобальный DNS-клиент dialer (`docs/research/BACKEND_STRATEGY.md`, §6).
+- [ ] Набор геоданных (D-27): источники (коммит dlc, месяц DB-IP) — в
+      каталоге с SHA-256, матрице и PROVENANCE по чек-листу D-18; свой
+      сборщик на Go в `tools/xray` (списки dlc с `include` и атрибутами,
+      CSV DB-IP → подсети, своя таблица `private`); задача Gradle кладёт
+      набор и атрибуцию DB-IP в assets; перенос в
+      `noBackupFilesDir/geodata` со сверкой SHA-256; оглавление кодов для
+      компилятора (новый код диагностики с путём правила); `GeoResolver`
+      по тем же файлам; состав набора в отчёте; `check_apk.py` — набор в
+      APK; новый предел APK одного ABI — с замером (D-28). Пока каталог
+      пуст, и ядро на устройстве отвергает конфигурации с
+      `geoip`/`geosite` (`XrayJniTest.geodataWithoutAssetsIsRejected`).
 - [ ] `-checklinkname=0` в сборке для Android (`wlynxg/anet` →
       `net.zoneCache`, `docs/PROVENANCE.md`): перепроверять при каждом
       обновлении Go или Xray (D-18).
-- [ ] Эксперимент «мост fd → ядро» (работа 5); сервис туннеля
-      (`DPpassVpnService` → `AndroidTunnelProvider.establish` →
-      `toTunInput()` → `DPpassCore.connect`) и решение об отдельном
-      процессе (работа 6). Пока сервис останавливается с
-      `BACKEND_NOT_AVAILABLE`.
+- [ ] Сервис туннеля (работа 6) в процессе приложения (D-30):
+      `DPpassVpnService` → `AndroidTunnelProvider.establish` →
+      `toTunInput()` → `DPpassCore.connect`. Пока сервис
+      останавливается с `BACKEND_NOT_AVAILABLE`. На устройстве вместе с
+      ним: имя сервера резолвится вне туннеля, с «Частным DNS» и без, без
+      петли (D-29); вход TUN Xray — стабильность, память, батарея, утечки
+      (D-30, замеры этапа 3).
 
 ## Известные долги (из аудита)
 

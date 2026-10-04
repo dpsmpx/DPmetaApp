@@ -10,7 +10,8 @@ Android SDK: aapt2 и dexdump):
     (`check_manifest.PERMISSIONS`), без резервных копий и открытого HTTP,
     компоненты — только объявленные в исходном манифесте (зависимость не
     добавит свой provider или receiver), экспортировано только
-    утверждённое, у сервиса VPN — BIND_VPN_SERVICE и тип specialUse;
+    утверждённое, у сервиса VPN — BIND_VPN_SERVICE и тип specialUse,
+    `android:process` нет ни у чего (один процесс, D-30);
   * код (dex): классы только из утверждённых корней пакетов — свой код
     и компоненты из матрицы лицензий; SDK аналитики, отчётов о падениях
     и прочий чужой код не попадут незамеченными (D-12, D-20). Классы
@@ -22,8 +23,9 @@ Android SDK: aapt2 и dexdump):
     машина ELF — та, что у ABI, экспорт JNI — ровно `external` объекта
     `XrayJni` (страницы 16 КБ — Android 15+; иначе загрузка с mmap из APK
     невозможна);
-  * размер APK и библиотеки по ABI печатаются (бюджет —
-    docs/PERFORMANCE_BUDGET.md).
+  * размер: APK одного ABI (D-28: выпуск — по APK на ABI) оценивается
+    как этот APK без библиотек других ABI и не превышает
+    `ABI_APK_BUDGET_MIB` (docs/PERFORMANCE_BUDGET.md, §4).
 
     python3 tools/hostcheck/check_apk.py [APK]
         по умолчанию app/build/outputs/apk/debug/app-debug.apk
@@ -68,6 +70,10 @@ SYNTHETIC_ONLY_ROOTS = ("android/", "dalvik/")
 # Нативные библиотеки: ровно ядро Xray (D-25) для каждого ABI — {путь в APK: ABI}.
 NATIVE_OK = {f"lib/{abi}/{native.LIBRARY}": abi for abi in native.ABIS}
 PAGE_16K = native.PAGE_16K
+# Предел APK одного ABI (D-28), МиБ: замер 4 октября 2026 — 34,9…38,3 МиБ
+# (больше всех x86_64) плюс запас; новое значение — вместе с замером
+# (docs/PERFORMANCE_BUDGET.md, §4).
+ABI_APK_BUDGET_MIB = 40
 
 
 def sdk_dir():
@@ -178,6 +184,27 @@ def check_natives(apk, problems):
     return ", ".join(sizes)
 
 
+def abi_apk_sizes(apk):
+    """{ABI: байт} — сколько весил бы APK только с этим ABI (D-28).
+
+    Из размера APK вычитаются записи `lib/<другой ABI>/`: данные,
+    локальный заголовок (30 байт, имя, его extra — там выравнивание) и
+    запись центрального каталога (46 байт, имя, extra, комментарий).
+    """
+    per_abi = {}
+    with zipfile.ZipFile(apk) as z, open(apk, "rb") as f:
+        for i in z.infolist():
+            parts = i.filename.split("/")
+            if len(parts) > 2 and parts[0] == "lib":
+                f.seek(i.header_offset + 26)
+                name_len, extra_len = struct.unpack("<HH", f.read(4))
+                local = 30 + name_len + extra_len
+                central = 46 + len(i.orig_filename.encode()) + len(i.extra) + len(i.comment)
+                per_abi[parts[1]] = per_abi.get(parts[1], 0) + i.compress_size + local + central
+    total = os.path.getsize(apk)
+    return {abi: total - sum(c for other, c in per_abi.items() if other != abi) for abi in per_abi}
+
+
 def main():
     apk = sys.argv[1] if len(sys.argv) > 1 else APK
     if not os.path.isfile(apk):
@@ -209,6 +236,8 @@ def main():
         for attr in ("networkSecurityConfig", "dataExtractionRules"):
             if not app.get(A + attr):
                 problems.append(f"манифест APK: нет android:{attr}")
+        if app.get(A + "process") is not None:
+            problems.append("манифест APK: <application android:process> — приложение работает в одном процессе (D-30)")
 
         def full(name):
             return package + name if name.startswith(".") else name
@@ -220,6 +249,8 @@ def main():
             if el.tag not in ("activity", "activity-alias", "service", "receiver", "provider"):
                 continue
             name = full(el.get(A + "name", ""))
+            if el.get(A + "process") is not None:
+                problems.append(f"манифест APK: <{el.tag} {name}> android:process — компоненты в процессе приложения (D-30)")
             if name not in own:
                 problems.append(f"манифест APK: <{el.tag} {name}> не объявлен в исходном манифесте — добавлен зависимостью")
             if el.get(A + "exported") == "true":
@@ -253,6 +284,12 @@ def main():
     # ---- нативные библиотеки и размер ----
     native_sizes = check_natives(apk, problems)
     size = os.path.getsize(apk)
+    per_abi = abi_apk_sizes(apk)
+    for abi, n in sorted(per_abi.items()):
+        if n > ABI_APK_BUDGET_MIB * 1024 * 1024:
+            problems.append(f"APK для {abi} — {n / 1024 / 1024:.1f} МиБ, предел {ABI_APK_BUDGET_MIB} МиБ "
+                            "(D-28; новое значение — с замером, docs/PERFORMANCE_BUDGET.md, §4)")
+    abi_sizes = ", ".join(f"{abi} {n / 1024 / 1024:.1f}" for abi, n in sorted(per_abi.items()))
 
     if problems:
         print("✗ APK:")
@@ -264,7 +301,8 @@ def main():
     roots = ", ".join(f"{r.rstrip('/').replace('/', '.')} {n}" for r, n in sorted(by_root.items(), key=lambda kv: -kv[1]))
     print(f"✓ APK {os.path.relpath(apk, PROJ)}: {size / 1024 / 1024:.1f} МиБ; манифест — утверждённые разрешения и компоненты; "
           f"{len(classes)} классов только из утверждённых корней ({roots}); "
-          f"нативный код — только {native.LIBRARY} ({native_sizes}), несжатая, выровнена по 16 КБ в zip и ELF, экспорт JNI = XrayJni")
+          f"нативный код — только {native.LIBRARY} ({native_sizes}), несжатая, выровнена по 16 КБ в zip и ELF, экспорт JNI = XrayJni; "
+          f"APK одного ABI (D-28) — {abi_sizes} МиБ, предел {ABI_APK_BUDGET_MIB}")
     return 0
 
 

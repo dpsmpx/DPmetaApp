@@ -39,7 +39,7 @@ object AppGraph {
             KeystoreKeyWrapper(),
             dataPresent = { StorageReset.hasData(data) },
         )
-        // Каталог геоданных ядра пуст, пока нет решения о геоданных на устройстве
+        // Каталог геоданных ядра пуст, пока набор D-27 не собирается в APK
         // (TODO.md): конфигурации с geoip/geosite ядро отвергает при проверке.
         val geodata = File(context.noBackupFilesDir, "geodata").apply { mkdirs() }
         val runtime = JniXrayRuntime.load({ System.loadLibrary(JniXrayRuntime.LIBRARY) }, geodata.path)
