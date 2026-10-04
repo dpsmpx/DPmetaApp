@@ -33,8 +33,14 @@ def redact(value):
 
 
 def is_ai_session() -> bool:
-    """Запуск из сессии Claude Code (Д26): одобрение и рабочая публикация отсюда запрещены."""
+    """Запуск из сессии Claude Code (Д26): одобрение и рабочая публикация отсюда запрещены
+    (исключение — выгрузка сайта из локальной сессии, Д36)."""
     return bool(os.environ.get("CLAUDECODE") or os.environ.get("CLAUDE_CODE_REMOTE"))
+
+
+def is_remote_session() -> bool:
+    """Облачная сессия Claude Code: рабочих ключей нет, выгрузка невозможна и запрещена (Д36)."""
+    return bool(os.environ.get("CLAUDE_CODE_REMOTE"))
 
 
 def actor() -> str:

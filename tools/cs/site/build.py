@@ -8,9 +8,10 @@
     production  только одобренное автором и опубликованное (журнал production)
     staging     всё с вариантами website, черновики — с плашкой; noindex
 
-Кроме страниц: значок `/favicon.svg` из токенов бренда, `_headers` —
-заголовки безопасности для хостинга статики (Cloudflare Pages, Netlify:
-CSP без внешних источников и встроенных скриптов и стилей), sitemap с
+Кроме страниц: значок `/favicon.svg` из токенов бренда, заголовки
+безопасности для хостинга (CSP без внешних источников и встроенных
+скриптов и стилей) — `/.htaccess` для Apache (Beget, Д35) или `/_headers`
+для Cloudflare Pages и Netlify, по `hosting` в site.yaml; sitemap с
 `lastmod` (дата самого нового источника страницы) и парами `hreflang`.
 
 build(repo, env, out) → BuildReport. Ничего не скачивает и не отправляет.
@@ -496,12 +497,31 @@ class SiteBuild:
                 f'<path d="M19 6.5V25" stroke="{c["paper"]}" stroke-width="3.4" stroke-linecap="round"/>'
                 f'<circle cx="25.3" cy="23.6" r="2.7" fill="{c["human"]}"/></svg>\n')
 
-    def headers(self) -> str:
-        """_headers (П2-12) — формат Cloudflare Pages и Netlify; staging ещё и закрыт от индексации."""
-        lines = ["/*"] + [f"  {k}: {v}" for k, v in SECURITY_HEADERS.items()]
+    def _headers(self) -> dict:
+        h = dict(SECURITY_HEADERS)
         if self.noindex:
-            lines.append("  X-Robots-Tag: noindex, nofollow")
-        return "\n".join(lines) + "\n"
+            h["X-Robots-Tag"] = "noindex, nofollow"
+        return h
+
+    def headers_file(self) -> tuple[str, str]:
+        """Файл заголовков хостинга (П2-12, Д35): (путь, текст)."""
+        if self.cfg.get("hosting") == "beget":
+            return "/.htaccess", self.htaccess()
+        return "/_headers", "\n".join(["/*"] + [f"  {k}: {v}" for k, v in self._headers().items()]) + "\n"
+
+    def htaccess(self) -> str:
+        """Apache (Beget): 404, кодировка, типы, заголовки. mod_headers для статики на Beget —
+        не подтверждено (Д35): проверка curl -I после первой выгрузки."""
+        lines = ["# Создаёт tools/cs/site/build.py (Д35); на сервере не править — перезапишет выгрузка.",
+                 "AddDefaultCharset utf-8",
+                 "ErrorDocument 404 /404.html",
+                 "<IfModule mod_mime.c>",
+                 "  AddType font/woff2 .woff2",
+                 "  AddType image/svg+xml .svg",
+                 "</IfModule>",
+                 "<IfModule mod_headers.c>"]
+        lines += [f'  Header always set {k} "{v}"' for k, v in self._headers().items()]
+        return "\n".join(lines + ["</IfModule>"]) + "\n"
 
     def build(self, out: Path) -> BuildReport:
         self.report = BuildReport(self.env, out)
@@ -558,7 +578,7 @@ class SiteBuild:
         # тема, значок, заголовки, шрифты, фиды, карта, robots, API
         self.write(out, "/style.css", self.css())
         self.write(out, "/favicon.svg", self.favicon())
-        self.write(out, "/_headers", self.headers())
+        self.write(out, *self.headers_file())
         for f in sorted(self.repo.path("assets", "brand", "fonts").glob("*")):
             if f.suffix in (".woff2", ".txt"):
                 self.write(out, f"/fonts/{f.name}", f.read_bytes())

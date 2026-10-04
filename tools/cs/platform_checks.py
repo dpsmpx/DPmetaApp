@@ -7,7 +7,8 @@ destinations  явные id, границы учётных данных (пло�
 campaigns     объекты, варианты, адресаты, время расписания
 projects      бренды, факты и ссылки страниц проектов
 site          staging- и production-сборка: ошибки, фиды и JSON читаются, внутренние ссылки живы,
-              доступность страниц (П2-10), значок, _headers и страницы без нарушений CSP (П2-12)
+              доступность страниц (П2-10), значок, заголовки хостинга и страницы без нарушений CSP
+              (П2-12), адрес выгрузки site.yaml = адресат site-production (Д35)
 """
 from __future__ import annotations
 
@@ -228,9 +229,9 @@ def _site_findings(rep, out: Path, r: Report, label: str) -> None:
                 r.error(f"{label}: {page.relative_to(out)} → {href} — нет такого файла")
         for msg in page_a11y(text) + page_csp(text):
             r.error(f"{label}: {page.relative_to(out)}: {msg}")
-    headers = out / "_headers"
-    if not headers.is_file() or "Content-Security-Policy:" not in headers.read_text(encoding="utf-8"):
-        r.error(f"{label}: _headers без Content-Security-Policy")
+    headers = out / ".htaccess" if (out / ".htaccess").is_file() else out / "_headers"
+    if not headers.is_file() or "Content-Security-Policy" not in headers.read_text(encoding="utf-8"):
+        r.error(f"{label}: {headers.name} без Content-Security-Policy")
     if not (out / "favicon.svg").is_file():
         r.error(f"{label}: нет favicon.svg")
 
@@ -283,4 +284,8 @@ def site_check(repo: Repo | None = None) -> Report:
             robots = (out / "robots.txt").read_text()
             if env == "staging" and "Disallow: /" not in robots:
                 r.error("staging открыт для индексации — нужен Disallow: /")
+    dep = ((repo.site().get("environments") or {}).get("production") or {}).get("deploy") or {}
+    prod = repo.destinations().get("site-production") or {}
+    if dep.get("target_ref") and prod and dep["target_ref"] != prod.get("credential_ref"):
+        r.error(f"site.yaml deploy.target_ref {dep['target_ref']} ≠ credential_ref site-production ({prod.get('credential_ref')})")
     return r

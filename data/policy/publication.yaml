@@ -11,6 +11,9 @@ roles:                      # §87
   session: [reader, generator, reviewer]   # сессия ИИ: черновики и критика, без одобрения и рабочих токенов (Д26)
   tool: [reader]
 session_modes: [dry-run, development]   # что можно запускать из сессии ИИ
+# Д36: площадки, на которые ЛОКАЛЬНАЯ сессия Claude Code может публиковать в production —
+# после «да» автора на каждую команду (.claude/settings.json, ask). Облачная — никогда.
+local_session_production: [website]
 retry:                      # Д24
   max_attempts: 3
   max_total_attempts: 5

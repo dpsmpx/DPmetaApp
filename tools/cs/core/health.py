@@ -41,8 +41,12 @@ def report(repo: Repo, remote: bool = False) -> list[tuple[str, str, str]]:
         rep = build(repo, "staging", repo.path("build", "health-site"))
         out.append(("сайт", "staging-сборка", f"страниц {len(rep.pages)}, ошибок {len(rep.errors)}, предупреждений {len(rep.warnings)}"))
         prod = build(repo, "production", repo.path("build", "health-site-prod"))
-        out.append(("сайт", "production-сборка", f"страниц {len(prod.pages)}, записей {len(prod.entries)}; деплой: "
-                    + ("настроен" if ((repo.site().get('environments') or {}).get('production') or {}).get("deploy") else "не настроен (ОР-11)")))
+        out.append(("сайт", "production-сборка", f"страниц {len(prod.pages)}, записей {len(prod.entries)}"))
+        from ..site import deploy
+        cfg, ecfg = deploy.config(repo), deploy.env_config(repo)
+        out.append(("сайт", "выгрузка", "не настроена" if not cfg else
+                    f"{cfg.get('kind')}; выпуск: {'да' if ecfg.get('live') else 'нет — ждёт «сайт готов» (Д34)'}; "
+                    f"адрес {cfg.get('target_ref')}: {store.health(cfg.get('target_ref')) if cfg.get('target_ref') else '—'}"))
     except Exception as e:  # noqa: BLE001
         out.append(("сайт", "сборка", f"ошибка: {e}"))
     r = subprocess.run(["git", "status", "--porcelain"], cwd=repo.root, capture_output=True, text=True)

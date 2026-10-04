@@ -11,7 +11,7 @@
     publish ITEM VARIANT --to DEST [--dev|--safe|--production] [--at ISO]
     publish --due | --record-manual | --reconcile PUB-…
     campaign status CMP-… | campaign list ; calendar ; search ; stale
-    site build|serve ; health ; bundle ; capabilities [--write] ; events release …
+    site build|serve|deploy [--dry-run] ; health ; bundle ; capabilities [--write] ; events release …
 """
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ from .core import textdoc
 from .core.content import (approval_state, canon_stale, find, save_item, seal_canon, seal_variant,
                            stale_reasons, variant_sha, load_items)
 from .core.engine import Publisher, Target
-from .core.obs import is_ai_session
+from .core.obs import is_ai_session, is_remote_session
 from .core.repo import Repo
 from .core.validator import validate_canon, validate_variant
 
@@ -228,6 +228,8 @@ def cmd_publish(a) -> int:
     repo = Repo()
     mode = _mode(a)
     allowed = repo.policy().get("session_modes") or ["dry-run", "development"]
+    if mode == "production" and repo.policy().get("local_session_production") and not is_remote_session():
+        allowed = [*allowed, "production"]  # Д36: движок пропустит только площадки из политики
     if is_ai_session() and mode not in allowed:
         print(f"режим {mode} из сессии ИИ запрещён (Д26; data/policy/publication.yaml, session_modes)")
         return 2
@@ -337,8 +339,52 @@ def cmd_stale(a) -> int:
     return 0
 
 
+def _site_deploy(repo: Repo, dry_run: bool) -> int:
+    """Выгрузка production-сборки на хостинг (Д35): тема и код сайта без новой записи.
+    Записи публикуются через publish; выгружается та же сборка из журнала production."""
+    from .common import Report
+    from .core.obs import actor, log
+    from .platform_checks import _site_findings
+    from .site import deploy
+    from .site.build import build
+    problems = deploy.guard(repo, "production", dry_run=dry_run)
+    dest = repo.destinations().get("site-production") or {}
+    if not dry_run and dest.get("status") != "active":
+        problems.append(f"адресат site-production — статус {dest.get('status')}"
+                        + (f" (ждёт: {', '.join(dest.get('blocked_by') or [])})" if dest.get("blocked_by") else ""))
+    if problems:
+        print("выгрузка не запускается:" + "".join(f"\n  ✗ {p}" for p in problems))
+        return 2
+    out = repo.path("build", "site", "production")
+    rep = build(repo, "production", out)
+    r = Report("site deploy")
+    _site_findings(rep, out, r, "production")
+    if r.errors:
+        print("сборка не прошла проверку — не выгружаю:" + "".join(f"\n  ✗ {e}" for e in r.errors))
+        return 1
+    res = deploy.run(repo, out, "production", dry_run=dry_run)
+    print(("пробный прогон" if dry_run else "выгрузка") + f": {' '.join(res.command)}")
+    for line in res.changes[:200]:
+        print(f"  {line}")
+    print(f"  изменений: {len(res.changes)}" + (" (показаны первые 200)" if len(res.changes) > 200 else ""))
+    for p in res.problems:
+        print(f"  ✗ {p}")
+    if res.output and not res.ok:
+        print(res.output)
+    if dry_run or not res.ok:
+        return 0 if res.ok else 1
+    seen = deploy.verify(repo.site_base("production"), ["/", "/en/", "/projects/"])
+    for path, ok in seen.items():
+        print(f"  {'✓' if ok else '✗' if ok is False else '?'} {repo.site_base('production')}{path}")
+    log(repo, "deploy", {"env": "production", "actor": actor(), "changes": len(res.changes),
+                         "verified": {k: v for k, v in seen.items()}})
+    return 0 if all(v is not False for v in seen.values()) else 1
+
+
 def cmd_site(a) -> int:
     repo = Repo()
+    if a.action == "deploy":
+        return _site_deploy(repo, a.dry_run)
     if a.action == "serve":
         from .site.serve import serve
         root = repo.path("build", "site", a.env)
@@ -355,8 +401,8 @@ def cmd_site(a) -> int:
         print(f"  ✗ {e}")
     for w in sorted(set(rep.warnings)):
         print(f"  ! {w}")
-    if a.env == "production" and not ((repo.site().get("environments") or {}).get("production") or {}).get("deploy"):
-        print("  · выгрузка на хостинг не настроена (ОР-11) — папка готова для ручной выгрузки")
+    if a.env == "production":
+        print("  · выгрузка: python3 -m tools.cs site deploy --dry-run (показать изменения), затем без --dry-run (Д35, Д36)")
     return 1 if rep.errors else 0
 
 
@@ -535,8 +581,9 @@ def register(sub) -> None:
     p.set_defaults(fn=cmd_search)
     p = sub.add_parser("stale", help="устаревшие каноны и варианты")
     p.set_defaults(fn=cmd_stale)
-    p = sub.add_parser("site", help="сайт: сборка и локальный staging")
-    p.add_argument("action", choices=["build", "serve"])
+    p = sub.add_parser("site", help="сайт: сборка, локальный staging, выгрузка на хостинг")
+    p.add_argument("action", choices=["build", "serve", "deploy"])
+    p.add_argument("--dry-run", action="store_true", help="deploy: только показать изменения (rsync --dry-run)")
     p.add_argument("--env", default="staging", choices=["staging", "production"])
     p.add_argument("--out")
     p.add_argument("--no-drafts", action="store_true")
