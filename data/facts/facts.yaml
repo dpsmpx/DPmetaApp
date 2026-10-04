@@ -33,10 +33,11 @@ facts:
     public: true
     statement: Автор описывает себя как независимого разработчика нативных игровых технологий, системных игр и инструментов.
     allowed_wording:
-      ru: ["независимый разработчик", "разрабатываю игру, движок и язык программирования"]
-      en: ["independent developer building native game technology, systems-driven games and developer tools"]
+      ru: ["независимый разработчик", "разрабатываю игру, движок и язык программирования", "разработчик нативных систем"]
+      en: ["independent developer building native game technology, systems-driven games and developer tools", "native systems developer"]
     evidence:
       - {kind: platform_page, source: "README dpsmpx/dpsmpx", ref: "433f627", date: 2026-10-04, verification: self-reported}
+    notes: «Разработчик нативных систем» — короткая роль из позиционирования (Д4, CONTENT_STRATEGY §1), сжатие самоописания автора.
   - id: AU-STACK
     subject: author
     class: FACT

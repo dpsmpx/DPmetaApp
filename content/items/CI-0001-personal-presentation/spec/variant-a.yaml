@@ -13,13 +13,13 @@ portrait:
   focus: {x: 0.60, y: 0.29}
   face: {w: 0.22, h: 0.20}
   zoom: 1.9
-  vignette: 0.8
+  vignette: 0.9
   treatment: natural
 text:
   ru:
     name: dpsmpx
     role: Разработчик нативных систем
-    sub: "Игра, движок и свой язык (в разработке).\nИИ — инструмент, архитектура и решения — мои."
+    sub: "Игра, движок и свой язык (в разработке).\nИИ — инструмент; архитектура и решения — мои."
     pipeline:
       - {label: Замысел, kind: intent}
       - {label: Архитектура, kind: architecture}

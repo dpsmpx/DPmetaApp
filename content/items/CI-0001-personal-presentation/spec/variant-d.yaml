@@ -19,7 +19,7 @@ text:
       - {label: Git, kind: git}
       - {label: Продукт, kind: product}
     gates:
-      - {after: 3, label: приёмка}
+      - {after: 3, label: принимаю сам}
   en:
     name: dpsmpx
     role: Native systems developer · AI as an instrument
@@ -31,5 +31,5 @@ text:
       - {label: Git, kind: git}
       - {label: Product, kind: product}
     gates:
-      - {after: 3, label: approval}
+      - {after: 3, label: I approve}
 claims: [AU-HANDLE, AU-ROLE, AU-METHOD, AU-MEMORY, ME-NO-CI]

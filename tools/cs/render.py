@@ -112,7 +112,7 @@ def portrait_html(spec: dict, tok: dict, pw: float, ph: float, target=(0.5, 0.38
     top = min(0, max(ph - ih, top))
     ink = _c(tok, "ink")
     filt = {
-        "natural": "saturate(0.80) contrast(1.06) brightness(0.97)",
+        "natural": "saturate(0.80) contrast(1.06) brightness(1.06)",
         "mono": "grayscale(1) contrast(1.12) brightness(0.95)",
         "duotone": "grayscale(1) contrast(1.22) brightness(0.92)",
     }[p["treatment"]]
@@ -128,7 +128,7 @@ def portrait_html(spec: dict, tok: dict, pw: float, ph: float, target=(0.5, 0.38
     layers = [
         # Виньетка вокруг лица: интерьер уходит в ink (Д18 — фон не должен читаться).
         # Эллипс вытянут по голове: волосы видны, а стена по бокам уходит в тень.
-        f"radial-gradient(ellipse {26 * v:.1f}% {33 * v:.1f}% at {fx:.1f}% {fy - 2:.1f}%, "
+        f"radial-gradient(ellipse {26 * v:.1f}% {40 * v:.1f}% at {fx:.1f}% {fy - 6:.1f}%, "
         f"{_rgba(ink, 0)} 0%, {_rgba(ink, 0.25)} 50%, {_rgba(ink, 0.90)} 100%)",
         f"radial-gradient(ellipse {58 * v:.1f}% {70 * v:.1f}% at {fx:.1f}% {fy + 32:.1f}%, "
         f"{_rgba(ink, 0)} 30%, {_rgba(ink, 0.96)} 100%)",
@@ -222,11 +222,12 @@ def _cube_svg(size: float, tok: dict) -> str:
 
 
 def metro_html(tok: dict, steps: list[dict], gates: list[dict], x, y, w, size, alt=True,
-               note_y: float | None = None) -> str:
+               note_y: float | None = None, note_left: bool = False) -> str:
     """Цепочка работ линией: узлы цветом смысла, подписи над и под линией поочерёдно.
 
     note_y — строка подписи ворот: текст кончается ромбом ровно под (над) ромбом на линии,
-    так что решение человека объяснено на месте, без легенды.
+    так что решение человека объяснено на месте, без легенды. note_left — строка от начала
+    цепочки с ромбом впереди (на шапке над цепочкой: иначе подпись читается как часть роли).
     """
     n = len(steps)
     r = size * 0.42
@@ -280,7 +281,16 @@ def metro_html(tok: dict, steps: list[dict], gates: list[dict], x, y, w, size, a
             f'height:{d:.1f}px;background:{_c(tok, "human")};transform:rotate(45deg);'
             f'box-shadow:0 0 0 {size * 0.18:.1f}px {_c(tok, "ink")}"></div>'
         )
-        if note_y is not None:
+        if note_y is not None and note_left:
+            nd = size * 0.5
+            parts.append(
+                f'<div class="mono" data-role="gate-label" data-group="pipeline" data-fg="human" data-bg="ink" '
+                f'style="position:absolute;left:{x:.1f}px;top:{note_y:.1f}px;font-size:{size:.1f}px;font-weight:500;'
+                f'line-height:1.25;white-space:nowrap;color:{_c(tok, "human")}"><span style="display:inline-block;'
+                f'width:{nd:.1f}px;height:{nd:.1f}px;background:{_c(tok, "human")};transform:rotate(45deg);'
+                f'margin-right:{size * 0.6:.1f}px;vertical-align:{size * 0.05:.1f}px"></span>{_e(g["label"])}</div>'
+            )
+        elif note_y is not None:
             nd = size * 0.5
             box = 4000.0  # широкий блок с выравниванием вправо: правый край — у ромба
             parts.append(
@@ -392,7 +402,7 @@ def layout_banner(spec, t, tok, fmt: Fmt) -> str:
     if t.get("pipeline"):
         py = sy + sh - 78 * unit
         body.append(metro_html(tok, t["pipeline"], t.get("gates", []), x0 + label * 0.2, py, cw - label * 0.4, label,
-                               note_y=ry + title * 1.45))
+                               note_y=ry + title * 1.6, note_left=True))
     # продолжение линии за пределы зоны — декор (видно на ТВ)
     line = _rgba(_c(tok, "line"), 0.9)
     body.append(f'<div style="position:absolute;left:0;top:{sy + sh - 92 * unit - 2 * unit:.1f}px;width:{sx:.1f}px;'
@@ -492,9 +502,9 @@ def layout_minimal(spec, t, tok, fmt: Fmt) -> str:
     body.append(text_html(tok, "role", "identity", t["role"], x0, ry, cw, title, weight=500))
     if t.get("pipeline"):
         # Подпись ворот у ромба (D-2): над цепочкой на шапке, под ней — в остальных форматах.
-        note_y = ry + title * 1.5 if fmt.safe_area else py + label * 2.9
+        note_y = ry + title * 1.6 if fmt.safe_area else py + label * 2.9
         body.append(metro_html(tok, t["pipeline"], t.get("gates", []), x0 + label * 0.2, py, cw - label * 0.4, label,
-                               note_y=note_y))
+                               note_y=note_y, note_left=bool(fmt.safe_area)))
     return "".join(body)
 
 
