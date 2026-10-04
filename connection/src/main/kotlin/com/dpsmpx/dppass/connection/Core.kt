@@ -8,6 +8,7 @@ import com.dpsmpx.dppass.core.Clock
 import com.dpsmpx.dppass.diagnostics.DiagCode
 import com.dpsmpx.dppass.diagnostics.Diagnostic
 import com.dpsmpx.dppass.diagnostics.DiagnosticReport
+import com.dpsmpx.dppass.diagnostics.LogHistory
 import com.dpsmpx.dppass.diagnostics.LogSink
 import com.dpsmpx.dppass.diagnostics.Logger
 import com.dpsmpx.dppass.diagnostics.MemoryLogSink
@@ -172,7 +173,7 @@ class DPpassCore(
     /** Локальный отчёт (D-12): собирается на устройстве, наружу не отправляется. */
     fun report(extra: List<Diagnostic> = emptyList()): DiagnosticReport {
         val s = activation.state
-        val logEvents = (logSink as? MemoryLogSink)?.snapshot().orEmpty()
+        val logEvents = (logSink as? LogHistory)?.snapshot().orEmpty()
         return DiagnosticReport.Builder("DPpass diagnostic report")
             .section(
                 "Engine",

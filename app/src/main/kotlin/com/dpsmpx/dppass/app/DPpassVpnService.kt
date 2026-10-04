@@ -29,6 +29,7 @@ class DPpassVpnService : VpnService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        DeviceLog.log.info("service_start")
         startInForeground()
         scope.launch { run() }
         return START_NOT_STICKY
@@ -53,10 +54,13 @@ class DPpassVpnService : VpnService() {
 
     override fun onRevoke() {
         // Пользователь отозвал разрешение или включил другой VPN.
+        DeviceLog.log.info("service_revoked")
         stopSelf()
     }
 
     override fun onDestroy() {
+        // Сервис остановлен — работа закончена: журнал в буфер обмена (D-26).
+        DeviceLog.onWorkFinished(this, "service_stop")
         scope.cancel()
         super.onDestroy()
     }
