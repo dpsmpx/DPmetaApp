@@ -9,6 +9,7 @@ cookies*.txt
 *.cookies
 secrets/
 local/
+.claude/settings.local.json
 
 # Python
 __pycache__/

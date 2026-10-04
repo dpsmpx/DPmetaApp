@@ -16,14 +16,12 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from .common import ROOT, dump_yaml, load_json, load_yaml, rel, sha256_file, today
+from .common import ROOT, Item, dump_yaml, load_json, load_yaml, rel, sha256_file, today
 
 TOKENS_PATH = ROOT / "assets" / "brand" / "tokens.json"
 FONTS_DIR = ROOT / "assets" / "brand" / "fonts"
 RENDER_JS = ROOT / "tools" / "render" / "render.js"
 BUILD = ROOT / "build" / "render"
-
-SRC_W, SRC_H = None, None  # размеры фото берутся из файла
 
 
 @dataclass
@@ -440,7 +438,6 @@ def layout_cinematic(spec, t, tok, fmt: Fmt) -> str:
 
 def layout_minimal(spec, t, tok, fmt: Fmt) -> str:
     W, H = fmt.width, fmt.height
-    s = H / 720
     ts = tok["type_scale"]
     disp, title, label = ts["display"] * H * 1.6, ts["title"] * H, ts["label"] * H
     x0 = W * 0.12
@@ -478,7 +475,7 @@ def render_one(spec_path: Path, lang: str, fmt: Fmt, out: Path, quality: int = 9
     spec = load_yaml(spec_path)
     page = build_html(spec, lang, fmt)
     BUILD.mkdir(parents=True, exist_ok=True)
-    html_path = BUILD / f"{spec_path.stem}-{lang}-{fmt.name}.html"
+    html_path = BUILD / f"{spec_path.parent.parent.name}-{spec_path.stem}-{lang}-{fmt.name}.html"
     html_path.write_text(page, encoding="utf-8")
     out.parent.mkdir(parents=True, exist_ok=True)
     layout_path = out.with_suffix(".layout.json")
@@ -495,17 +492,50 @@ def render_one(spec_path: Path, lang: str, fmt: Fmt, out: Path, quality: int = 9
     return layout
 
 
-def record_output(item_dir: Path, item_id: str, out: Path, spec_path: Path, spec: dict, lang: str,
+def asset_inputs(spec: dict) -> list[str]:
+    """Входы композиции из реестра: портрет (REFERENCE_IMAGE), шрифты, токены бренда."""
+    ids = [spec["portrait"]["input"]] if spec.get("portrait") else []
+    for a in load_yaml("data/provenance/assets.yaml")["assets"]:
+        if a["path"] in (rel(FONTS_DIR), rel(TOKENS_PATH)):
+            ids.append(a["id"])
+    return ids
+
+
+def prompt_path(item: Item) -> str | None:
+    p = item.data.get("prompt")
+    return f"prompts/{p['id']}.v{p['version']}.md" if p else None
+
+
+def output_path(item: Item, variant: str, lang: str, fmt: Fmt, kind: str) -> Path:
+    sub = "renders" if kind == "render" else "exports"
+    return item.dir / sub / f"{variant}-{lang}-{fmt.name}.{fmt.file}"
+
+
+def produce(item: Item, variant: str, lang: str, fmt_name: str, kind: str) -> Path:
+    """Рендер варианта в формат: файл, раскладка и запись происхождения."""
+    v = item.variant(variant)
+    if v is None:
+        raise SystemExit(f"{item.id}: нет варианта {variant}")
+    spec_path = item.path(v["spec"])
+    spec = load_yaml(spec_path)
+    if lang not in spec["text"]:
+        raise SystemExit(f"{item.id}/{variant}: нет текста на языке {lang}")
+    fmt = formats()[fmt_name]
+    out = output_path(item, variant, lang, fmt, kind)
+    render_one(spec_path, lang, fmt, out)
+    record_output(item, out, spec_path, spec, lang, fmt_name, kind, variant)
+    return out
+
+
+def record_output(item: Item, out: Path, spec_path: Path, spec: dict, lang: str,
                   fmt_name: str, kind: str, variant: str) -> None:
-    """Запись в provenance.yaml объекта: файл, хэш, вход, спецификация, инструмент."""
-    prov_path = item_dir / "provenance.yaml"
-    prov = load_yaml(prov_path) if prov_path.exists() else {"schema": "item_provenance/v1", "item": item_id, "outputs": []}
+    """Запись в provenance.yaml объекта: файл, хэш, входы, спецификация, промпт, инструмент."""
+    prov_path = item.dir / "provenance.yaml"
+    prov = load_yaml(prov_path) if prov_path.exists() else {"schema": "item_provenance/v1", "item": item.id, "outputs": []}
     outputs = [o for o in prov["outputs"] if o["file"] != rel(out)]
-    inputs = [spec["portrait"]["input"]] if spec.get("portrait") else []
-    inputs += ["A-002"]  # шрифты IBM Plex
     mods = ["кадрирование и масштаб портрета", f"тон: {spec['portrait']['treatment']}", "виньетка и маска краёв"] \
         if spec.get("portrait") else []
-    outputs.append({
+    rec = {
         "file": rel(out),
         "sha256": sha256_file(out),
         "variant": variant,
@@ -513,14 +543,16 @@ def record_output(item_dir: Path, item_id: str, out: Path, spec_path: Path, spec
         "lang": lang,
         "kind": kind,
         "method": "программная композиция: спецификация → HTML/SVG → Chromium (Д11)",
-        "inputs": inputs,
+        "inputs": asset_inputs(spec),
         "spec": rel(spec_path),
         "spec_sha256": sha256_file(spec_path),
-        "prompt": "prompts/image/presentation-composition.v1.md",
-        "tool": f"tools/cs/render.py + tools/render/render.js (Playwright, Chromium)",
+        "tool": "tools/cs/render.py + tools/render/render.js (Playwright, Chromium)",
         "modifications": mods,
         "layout": rel(out.with_suffix(".layout.json")),
         "date": today().isoformat(),
-    })
+    }
+    if prompt_path(item):
+        rec["prompt"] = prompt_path(item)
+    outputs.append(rec)
     prov["outputs"] = sorted(outputs, key=lambda o: o["file"])
     dump_yaml(prov, prov_path)

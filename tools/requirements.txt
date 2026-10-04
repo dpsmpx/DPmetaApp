@@ -1,0 +1,3 @@
+# Зависимости инструментов (tools/cs). Рендеру нужны ещё Node.js и Playwright с Chromium (docs/ARCHITECTURE.md).
+pyyaml>=6
+jsonschema>=4.18

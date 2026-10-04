@@ -7,6 +7,15 @@
 #            (x, y, w, h в пикселях формата).
 # Порядок проверки — docs/content/QUALITY_MODEL.md, гейт Platform.
 schema: export_specs/v1
+# Языки экспорта по площадкам — Д8: русский — Telegram, VK, YouTube; английский — GitHub.
+# internal (мастер) — на всех языках объекта.
+platform_languages:
+  internal: [ru, en]
+  github: [en]
+  telegram: [ru]
+  youtube: [ru]
+  vk: [ru]
+  discord: [ru]
 formats:
   master:
     platform: internal
