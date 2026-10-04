@@ -7,70 +7,33 @@
 
 ## Следующее (этап 2)
 
-Работа 4 (`docs/direction/ROADMAP/02-xray-backend.md`) — в работе по
-D-25. **Сделано:** мост Go `tools/xray/bridge` (один экземпляр,
-политика входов «только TUN» на собранной protobuf, хук `protect()` с
-отказом через `dup3`, счётчики `proxy`, неполная проверка при работающем
-ядре) и его `go test` (обе сборки, сквозные тесты с тестовым входом);
-экспорт JNI `tools/xray/jni` (собирается для хоста:
-`go build -buildmode=c-shared -tags dppass_testinbound ./jni` с
-`CGO_CFLAGS=-I$JAVA_HOME/include -I$JAVA_HOME/include/linux`);
-`SocketProtector`, `TunInput.protector`, `TunnelHandle.protect`,
-`toTunInput()`; `XrayRuntime`/`XrayJni`/`JniXrayRuntime`/`XrayProxyEngine`
-и `XrayProxyEngineTest`; код `BACKEND_VALIDATION_PARTIAL`; счётчики в
-`XrayCompiler` и перезаписанные эталоны; факты — `BACKEND_STRATEGY.md`, §6.
-Сборка библиотеки — `tools/xray/native.py` (`host`: go vet, go test моста
-в обеих сборках, библиотека для JVM хоста в `build/xray/host/`;
-`android --out DIR`: NDK `android-ndk` из каталога, три ABI, проверка
-ELF — машина, выравнивание 16 КБ, экспорт JNI = `external` XrayJni),
-общее окружение Go — `tools/xray/goenv.py`; `go.mod` приведён `go mod
-tidy` (`golang.org/x/sys` — прямая, версии те же). Тест JNI на хосте —
-`XrayJniTest` (набор `xrayJni` в `tests/integration`, задача
-`xrayJniTest`, без `-Pdppass.xray.lib` — отказ с подсказкой) и шаг
-hostcheck «Xray: мост и JNI» (`native.py host` + `xrayJniTest`).
+Работа 4 (`docs/direction/ROADMAP/02-xray-backend.md`, D-25) сделана на
+хосте: мост `tools/xray/bridge` и экспорт JNI `tools/xray/jni`,
+`XrayProxyEngine`, сборка библиотеки (`tools/xray/native.py`, задача
+`xrayNative<Вариант>`), тест JNI на хосте (`XrayJniTest`), `AppGraph` на
+Xray, проверки `check_apk.py` (16 КБ), `check_forbidden_apis.py`
+(`native-load`), `check_modules.py` (`engine.mock`). Дальше — работы 5–7:
 
-Осталось по работе 4 (порядок — как здесь):
-
-- [ ] `:app`: задача сборки библиотеки на вариант
-      (`androidComponents.onVariants` → `sources.jniLibs.addGeneratedSourceDirectory`,
-      задача совместима с configuration cache — `ExecOperations`).
-- [ ] `run.sh`: шаги Android — требовать NDK (в `--full` его нет — ошибка);
-      шаг ядра собирать без `:app` (APK без Go и NDK не собирается, D-25).
-- [ ] `check_apk.py`: `NATIVE_OK` — ровно `lib/<3 ABI>/libdppassxray.so`,
-      выравнивание ELF и смещения в zip по 16 КБ, без сжатия; размер по
-      ABI — `docs/PERFORMANCE_BUDGET.md`.
-- [ ] `check_forbidden_apis.py`: `System.load*`/`external fun` — только
-      `AppGraph`, `XrayRuntime.kt` и тест JNI.
-- [ ] `AppGraph` → `XrayCompiler` + `XrayProxyEngine(JniXrayRuntime.load(
-      { System.loadLibrary(LIBRARY) }, каталог геоданных))`;
-      `check_modules.py`: `engine.mock` в `app/` запрещён; тексты
-      `MainActivity`/`strings.xml` про фиктивное ядро.
 - [ ] Геоданные на устройстве (источник, лицензия, обновление) —
-      решение; до него конфигурации с geoip/geosite ядро на устройстве
-      отвергает.
-- [ ] Документы: `ARCHITECTURE.md` (§2 — `engine`, правило
-      `engine.mock`; §3.4, §6, §11), `SECURITY_MODEL.md` (T4 — `protect`
-      сделан; T10 — сборка библиотеки; T11 — политика моста; таблица §6),
-      `TESTING.md` (go test моста, тест JNI на хосте), `PROCESS.md` (NDK,
-      новые шаги), матрица лицензий (libXray — «отклонён»; модули Go
-      §1.7 теперь и в APK; NDK как инструмент) и `PROVENANCE.md` (NDK
-      r30 30.0.16248370 с dl.google.com), `CLAUDE.md` («Что это»).
-- [ ] Полный прогон `tools/hostcheck/run.sh --full` — после всего выше
-      (в этом изменении не выполнялся).
-
-Дальше по этапу 2:
-
+      решение. Сейчас каталог `noBackupFilesDir/geodata` пуст, и ядро на
+      устройстве отвергает конфигурации с `geoip`/`geosite`
+      (`XrayJniTest.geodataWithoutAssetsIsRejected`).
+- [ ] Размер APK: библиотека ядра — 33–37 МиБ на ABI без сжатия, debug
+      APK с тремя ABI — около 106 МиБ (`docs/PERFORMANCE_BUDGET.md`, §4).
+      Разделение по ABI (split APK или AAB) — решение к этапу 5.
 - [ ] Имя сервера профиля (`server` — домен) Xray резолвит системным
       резолвером: у исходящего `proxy` нет `sockopt.domainStrategy`
       (`transport/internet/dialer.go`, `DialSystem`). Решить с записью в
       `docs/SECURITY_MODEL.md` (T4); учесть, что `core.New` переназначает
-      глобальный DNS-клиент dialer (`BACKEND_STRATEGY.md`, §6).
-- [ ] Состав модулей Go в библиотеке для APK: `juju/ratelimit`
-      (LGPL-3.0 с исключением, через `xtls/reality`, нужен REALITY) —
-      уведомления к этапу 5; модули функций вне IR v1 приходят с
-      разбором JSON Xray (`infra/conf`) и не отсекаются.
-- [ ] Эксперимент «мост fd → ядро» (работа 5), сервис туннеля и
-      отдельный процесс (работа 6).
+      глобальный DNS-клиент dialer (`docs/research/BACKEND_STRATEGY.md`, §6).
+- [ ] `-checklinkname=0` в сборке для Android (`wlynxg/anet` →
+      `net.zoneCache`, `docs/PROVENANCE.md`): перепроверять при каждом
+      обновлении Go или Xray (D-18).
+- [ ] Эксперимент «мост fd → ядро» (работа 5); сервис туннеля
+      (`DPpassVpnService` → `AndroidTunnelProvider.establish` →
+      `toTunInput()` → `DPpassCore.connect`) и решение об отдельном
+      процессе (работа 6). Пока сервис останавливается с
+      `BACKEND_NOT_AVAILABLE`.
 
 ## Известные долги (из аудита)
 
@@ -127,6 +90,10 @@ hostcheck «Xray: мост и JNI» (`native.py host` + `xrayJniTest`).
       ничего не уносят.
 - [ ] `AndroidTunnelProvider`: Builder принимает `TunnelSpec` (API 26,
       29, 33+; с `excludeRoute` и без) — вместе с реальным ядром.
+- [ ] Ядро Xray на устройстве: загрузка `libdppassxray.so` на трёх ABI
+      (в том числе страницы 16 КБ, Android 15+), активация примера в
+      оболочке (`core.New` на устройстве), `protect()` из потоков Go
+      через JNI.
 
 ## Исследования
 

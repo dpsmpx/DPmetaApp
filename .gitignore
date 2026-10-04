@@ -1,5 +1,7 @@
 # Сборка
 build/
+# …но не пакеты исходников с именем build (build-logic: com.dpsmpx.dppass.build).
+!**/src/**/build/
 .gradle/
 .kotlin/
 local.properties
