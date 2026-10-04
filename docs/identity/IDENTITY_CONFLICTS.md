@@ -12,7 +12,7 @@
 |---|---|---|---|
 | IC-01 | IDENTITY_LINK_INCONSISTENCY | высокая | OPEN (ОР-3) |
 | IC-02 | PROJECT_NAME_DRIFT | низкая | OPEN (ОР-5) |
-| IC-03 | NAME_EXPOSURE | средняя | OPEN (ОР-1) |
+| IC-03 | NAME_EXPOSURE | средняя | RESOLVED 04.10.2026 (Д20) |
 | IC-04 | PROJECT_NAME_DRIFT + BROKEN_LINK | средняя | PROPOSED (ОР-4) |
 | IC-05 | CONFLICTING_DESCRIPTION | средняя | PROPOSED (ОР-4) |
 | IC-06 | CONFLICTING_DESCRIPTION | низкая | PROPOSED (ОР-4) |
@@ -66,8 +66,9 @@
 - **Согласованный вариант.** Определяет автор: (а) только `dpsmpx` —
   тогда переподписать статьи Telegraph; (б) имя открыто — тогда
   записать решение и применять одинаково везде.
-- **Решение автора.** Нужно — ОР-1. До решения новый контент имя не
-  добавляет.
+- **Решение автора.** ~~Нужно — ОР-1.~~ **RESOLVED 04.10.2026:** автор
+  открыл имя (вариант «б», Д20): «Борис Давыдов / dpsmpx» применяется
+  одинаково везде; статьи Telegraph не переподписываются.
 
 ## IC-04. PROJECT_NAME_DRIFT + BROKEN_LINK — VoxelRPG в профилях
 
