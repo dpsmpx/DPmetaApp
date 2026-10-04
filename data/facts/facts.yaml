@@ -411,6 +411,9 @@ facts:
     risk: low
     public: true
     statement: DPlang — закрытый проект с временной проприетарной лицензией.
+    allowed_wording:
+      ru: ["код закрыт"]
+      en: ["closed source"]
     evidence:
       - {kind: doc, source: "dpsmpx/DPlang README.md, LICENSE", ref: "66e461c", date: 2026-10-04, verification: reported}
 

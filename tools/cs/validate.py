@@ -31,6 +31,14 @@ SCHEMA_MAP = [
     ("content/items/*/spec/*.yaml", "composition"),
     ("data/experiments/*.yaml", "experiment"),
     ("data/metrics/*/*.yaml", "metrics"),
+    ("data/identity/brands.yaml", "brands"),
+    ("data/projects/*.yaml", "project"),
+    ("data/platforms/destinations.yaml", "destinations"),
+    ("data/platforms/capabilities.yaml", "capabilities"),
+    ("data/policy/publication.yaml", "policy"),
+    ("data/website/site.yaml", "site"),
+    ("data/releases/*.yaml", "releases"),
+    ("data/campaigns/*.yaml", "campaign"),
 ]
 
 
