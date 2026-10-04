@@ -39,6 +39,12 @@ tasks.withType<Test>().configureEach {
     useJUnitPlatform()
     // Корень репозитория — для тестов, читающих tests/data.
     systemProperty("dppass.repoRoot", rootDir.absolutePath)
+    // Корпус читается по пути, мимо classpath: без явного входа Gradle считал
+    // тест актуальным после правки tests/data (или брал успех из кеша) —
+    // сломанный файл корпуса проходил бы hostcheck молча (docs/TESTING.md).
+    inputs.dir(rootDir.resolve("tests/data"))
+        .withPropertyName("corpus")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
     // Параметры fuzz из командной строки (-Ddppass.fuzz.iterations=…, docs/TESTING.md, «Fuzz»):
     // без проброса они остались бы в JVM Gradle и до тестов не дошли.
     for (key in listOf("dppass.fuzz.iterations", "dppass.fuzz.seed")) {
