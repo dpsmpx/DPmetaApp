@@ -74,11 +74,33 @@ class Logger(
     fun warning(event: String, vararg fields: Pair<String, Any?>) = log(Severity.WARNING, event, fields)
     fun error(event: String, vararg fields: Pair<String, Any?>) = log(Severity.ERROR, event, fields)
 
-    fun diagnostic(d: Diagnostic) = log(
-        d.severity,
-        "diagnostic",
-        arrayOf("code" to Safe(d.code.name), "path" to d.path, "message" to d.message),
-    )
+    /**
+     * Диагностика и вся цепочка её причин (D-22): «не активировано» без
+     * «ядро отвергло» и без текста ядра ничего не объясняет. Каждая
+     * причина — своё событие `cause` с глубиной; сводка исключения —
+     * полями `error_type`/`error`. Глубина и число причин ограничены.
+     */
+    fun diagnostic(d: Diagnostic) {
+        log(d.severity, "diagnostic", fieldsOf(d, null))
+        var budget = MAX_CAUSES
+        fun causes(of: Diagnostic, depth: Int) {
+            for (c in of.causes) {
+                if (budget-- <= 0 || depth > MAX_CAUSE_DEPTH) return
+                log(c.severity, "cause", fieldsOf(c, depth))
+                causes(c, depth + 1)
+            }
+        }
+        causes(d, 1)
+    }
+
+    private fun fieldsOf(d: Diagnostic, depth: Int?): Array<Pair<String, Any?>> = listOfNotNull(
+        depth?.let { "depth" to it },
+        "code" to Safe(d.code.name),
+        "path" to d.path,
+        "message" to d.message,
+        d.error?.let { "error_type" to it.type },
+        d.error?.message?.let { "error" to it },
+    ).toTypedArray()
 
     private fun log(severity: Severity, event: String, fields: Array<out Pair<String, Any?>>) {
         val rendered = LinkedHashMap<String, String>(fields.size)
@@ -92,5 +114,10 @@ class Logger(
             }
         }
         sink.emit(LogEvent(nowMillis(), severity, component, event, rendered))
+    }
+
+    private companion object {
+        const val MAX_CAUSE_DEPTH = 8
+        const val MAX_CAUSES = 32
     }
 }

@@ -104,6 +104,15 @@ class XrayCompilerTest {
     }
 
     @Test
+    fun tunInboundIsNamedSoXrayDoesNotEnumerateInterfaces() {
+        // Найдено на устройстве (Android 15): без имени Xray подбирает его через net.Interfaces(),
+        // netlink приложениям запрещён — «failed to build inbound handler for protocol tun».
+        val tun = payload(ir())["inbounds"].items.single()
+        assertEquals(XrayBackend.TUN_NAME, tun["settings"]["name"].text)
+        assertTrue(XrayBackend.TUN_NAME.length in 1..15, "IFNAMSIZ")
+    }
+
+    @Test
     fun proxyTrafficCountersAreOn() {
         // TrafficStats сессии — из счётчиков исходящего proxy; без них мост не запускает ядро (D-25).
         for (withTun in listOf(true, false)) {

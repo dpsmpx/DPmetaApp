@@ -69,6 +69,16 @@ object XrayBackend {
     const val TUN_MTU: Int = 1500
     const val TUN_DNS4: String = "172.19.0.2"
 
+    /**
+     * Имя входа TUN. На Android интерфейс создаёт `VpnService`, ядро берёт
+     * только его fd, и имя ни на что не влияет — но без имени Xray при
+     * сборке конфигурации подбирает свободное через `net.Interfaces()`, а
+     * этот запрос netlink приложениям на Android 11+ запрещён: вход не
+     * собирается (`netlinkrib: permission denied`, найдено на устройстве;
+     * `docs/research/BACKEND_STRATEGY.md`, §6). Не длиннее 15 символов (IFNAMSIZ).
+     */
+    const val TUN_NAME: String = "dppass0"
+
     fun outboundTag(action: RouteAction): String = when (action) {
         RouteAction.PROXY -> TAG_PROXY
         RouteAction.DIRECT -> TAG_DIRECT

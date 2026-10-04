@@ -74,6 +74,38 @@ class LoggerTest {
     }
 
     @Test
+    fun diagnosticCausesReachTheLog() {
+        // Найдено на устройстве: «не активировано» было в журнале без причины (D-22, D-26).
+        val core = Diagnostic(
+            DiagCode.BACKEND_REJECTED_CONFIG, "ядро Xray: config",
+            error = ErrorSummary("xray", "invalid id 00000000-0000-4000-8000-000000000009"),
+        )
+        val top = Diagnostic.error(DiagCode.ACTIVATION_REJECTED, "не активировано")
+            .withCause(Diagnostic.error(DiagCode.BACKEND_REJECTED_CONFIG, "ядро Xray отвергло конфигурацию").withCause(core))
+        val sink = MemoryLogSink()
+        Logger("t", sink, { 0L }).diagnostic(top)
+        val events = sink.snapshot()
+        assertEquals(listOf("diagnostic", "cause", "cause"), events.map { it.event })
+        assertEquals(listOf(null, "1", "2"), events.map { it.fields["depth"] })
+        assertEquals("xray", events[2].fields["error_type"])
+        val text = events.joinToString("\n") { it.render() }
+        assertTrue("invalid id" in text, text)
+        assertFalse("00000000-0000-4000-8000-000000000009" in text, text)
+        val lines = top.renderWithCauses()
+        assertEquals(3, lines.size)
+        assertTrue(lines[2].startsWith("    ERROR BACKEND_REJECTED_CONFIG") && "[xray: invalid id" in lines[2], lines[2])
+    }
+
+    @Test
+    fun causeChainIsBounded() {
+        var d = Diagnostic.error(DiagCode.INTERNAL_ERROR, "leaf")
+        repeat(50) { d = Diagnostic.error(DiagCode.INTERNAL_ERROR, "level $it").withCause(d) }
+        val sink = MemoryLogSink(capacity = 1000)
+        Logger("t", sink, { 0L }).diagnostic(d)
+        assertTrue(sink.snapshot().size <= 1 + 9, "${sink.snapshot().size}")
+    }
+
+    @Test
     fun ringBufferIsBounded() {
         val sink = MemoryLogSink(capacity = 3)
         val log = Logger("t", sink, { 0L })
