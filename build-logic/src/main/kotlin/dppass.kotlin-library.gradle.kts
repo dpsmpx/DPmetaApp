@@ -39,6 +39,11 @@ tasks.withType<Test>().configureEach {
     useJUnitPlatform()
     // Корень репозитория — для тестов, читающих tests/data.
     systemProperty("dppass.repoRoot", rootDir.absolutePath)
+    // Параметры fuzz из командной строки (-Ddppass.fuzz.iterations=…, docs/TESTING.md, «Fuzz»):
+    // без проброса они остались бы в JVM Gradle и до тестов не дошли.
+    for (key in listOf("dppass.fuzz.iterations", "dppass.fuzz.seed")) {
+        providers.systemProperty(key).orNull?.let { systemProperty(key, it) }
+    }
     testLogging {
         events("failed")
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
