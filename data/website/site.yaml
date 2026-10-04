@@ -1,0 +1,26 @@
+# Сайт dpsmpx.com (Д21, Д32; docs/platforms/WEBSITE.md).
+schema: site/v1
+title: {ru: Борис Давыдов / dpsmpx, en: Boris Davydov / dpsmpx}
+canonical_base: https://dpsmpx.com       # канонические адреса (§79) — не зависят от окружения
+languages: [ru, en]                      # EN — главная, «обо мне», проекты (Д21)
+environments:
+  staging:
+    base_url: http://localhost:8000      # python3 -m tools.cs site serve
+    noindex: true
+    drafts: true
+    deploy: null
+  production:
+    base_url: https://dpsmpx.com
+    noindex: false
+    drafts: false
+    deploy: null                         # команда выгрузки на хостинг — после ОР-11
+home:
+  projects: [galdhold, dplang]
+  social_links:                          # публичные подписи (role в links.yaml — служебная)
+    - {link: L-TG-DEVLOG, ru: дневник разработки Galdhold, en: Galdhold dev log (in Russian)}
+    - {link: L-YT-CHANNEL, ru: видео, en: videos}
+    - {link: L-GH-PROFILE, ru: открытые проекты, en: open-source projects}
+    - {link: L-TT-PROFILE, ru: короткие видео, en: short videos}
+    - {link: L-TG-AUTHOR, ru: личные сообщения, en: direct messages}
+  contact: L-TG-AUTHOR
+og_default: {item: CI-0001, file: exports/A-en-github_social.png}

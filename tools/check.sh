@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # Все проверки репозитория (Д3: GitHub Actions нет — проверяет этот скрипт в сессии).
 #
-#   tools/check.sh           всё: проверки данных и контента + тесты (с рендером)
-#   tools/check.sh --fast    без тестов, которым нужен рендер (Node + Chromium)
-#   tools/check.sh claims    только названные проверки (без тестов)
+#   tools/check.sh             full: все проверки + все тесты (с рендером)
+#   tools/check.sh --fast      full без тестов рендера (Node + Chromium)
+#   tools/check.sh --quick     quick: схемы, объекты, секреты, ссылки, адресаты, матрица — без тестов
+#   tools/check.sh --affected  affected: проверки по изменённым файлам (от origin/main), тесты — если менялся код
+#   tools/check.sh --release   release: full + сборка production-сайта и сводки кампаний
+#   tools/check.sh claims      только названные проверки (без тестов)
 #
 # Проверки — python3 -m tools.cs check (docs/ARCHITECTURE.md). Красное — не
 # коммитить как готовое (CLAUDE.md).
@@ -11,11 +14,15 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 fast=0
+level=full
 names=()
 for a in "$@"; do
   case "$a" in
     --fast) fast=1 ;;
-    -h|--help) sed -n '2,9p' "$0"; exit 0 ;;
+    --quick) level=quick ;;
+    --affected) level=affected ;;
+    --release) level=release ;;
+    -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
     *) names+=("$a") ;;
   esac
 done
@@ -36,9 +43,29 @@ if missing:
 PY
 
 status=0
+run_tests=1
+if [ "$level" = quick ] && [ ${#names[@]} -eq 0 ]; then
+  names=(schemas items secrets links destinations capabilities)
+fi
+if [ "$level" = affected ] && [ ${#names[@]} -eq 0 ]; then
+  aff=$(python3 -m tools.cs affected)
+  echo "затронуто: $aff"
+  case "$aff" in *"+tests"*) run_tests=1; fast=1 ;; *) run_tests=0 ;; esac
+  read -r -a names <<< "${aff/ +tests/}"
+  [ $run_tests -eq 1 ] && names=()
+fi
 python3 -m tools.cs check "${names[@]}" || status=1
 
-if [ ${#names[@]} -eq 0 ]; then
+if [ "$level" = release ]; then
+  echo
+  echo "release: production-сайт и кампании"
+  python3 -m tools.cs site build --env production --out build/release-site || status=1
+  for c in data/campaigns/CMP-*.yaml; do
+    [ -f "$c" ] && python3 -m tools.cs campaign status "$(basename "$c" .yaml)"
+  done
+fi
+
+if [ ${#names[@]} -eq 0 ] && [ "$level" != quick ] && [ $run_tests -eq 1 ]; then
   echo
   if [ $fast -eq 1 ]; then
     export CS_SKIP_RENDER=1

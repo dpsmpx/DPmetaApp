@@ -31,6 +31,14 @@ SCHEMA_MAP = [
     ("content/items/*/spec/*.yaml", "composition"),
     ("data/experiments/*.yaml", "experiment"),
     ("data/metrics/*/*.yaml", "metrics"),
+    ("data/identity/brands.yaml", "brands"),
+    ("data/projects/*.yaml", "project"),
+    ("data/platforms/destinations.yaml", "destinations"),
+    ("data/platforms/capabilities.yaml", "capabilities"),
+    ("data/policy/publication.yaml", "policy"),
+    ("data/website/site.yaml", "site"),
+    ("data/releases/*.yaml", "releases"),
+    ("data/campaigns/*.yaml", "campaign"),
 ]
 
 
@@ -122,7 +130,12 @@ def item_findings(item: Item) -> list[Finding]:
     if reached(eff, "BRIEFED"):
         if not d.get("brief") or not item.path(d["brief"]).is_file():
             E(f"с BRIEFED нужен файл брифа ({d.get('brief')})")
-    if reached(eff, "GENERATED"):
+    v2 = str(d.get("schema", "")).endswith("/v2")
+    canon_versions = (d.get("canonical") or {}).get("versions") or []
+    if reached(eff, "GENERATED") and v2 and not variants:
+        if not canon_versions:
+            E("с GENERATED нужна версия канона (content_item/v2) или вариант со спецификацией")
+    elif reached(eff, "GENERATED"):
         if not variants:
             E("с GENERATED нужен хотя бы один вариант")
         rendered = 0
@@ -186,10 +199,23 @@ def item_findings(item: Item) -> list[Finding]:
         fmts = exports.specs()
         finals = [e for e in d.get("exports", []) if e.get("status") == "final" and e.get("variant") == sel]
         have = {fmts.get(e["format"], {}).get("platform") for e in finals}
+        approved_text = set()
+        if v2:  # текст площадки — одобренный вариант (Д12); изображения — финальный экспорт
+            from .core.content import approval_state, find
+            from .core.repo import Repo
+            ci = find(Repo(), item.id)
+            approved_text = {v.platform for v in ci.variants().values() if approval_state(v) == "valid"}
         for p in d.get("platforms", []):
-            if p not in have:
+            if v2 and p not in approved_text:
+                E(f"EXPORTED: нет одобренного варианта для {p}")
+            if p not in have and (not v2 or (variants and p in {s.get("platform") for s in fmts.values()})):
                 E(f"EXPORTED: нет финального экспорта для {p}")
     published = [p for p in d.get("publication", []) if p.get("state") == "published"]
+    if v2:  # журнал публикаций — источник истины о публикациях (Д24)
+        from .core.ledger import Ledger
+        from .core.repo import Repo
+        published += [{"url": p.remote.get("remote_url"), "published_at": p.last("PUBLISHED").get("ts")}
+                      for p in Ledger(Repo(), "production").find(item=item.id, states={"PUBLISHED", "SUPERSEDED"})]
     if published and not reached(eff, "PUBLISHED"):
         E("есть публикация, а состояние ниже PUBLISHED — публикация не из EXPORTED")
     if reached(eff, "PUBLISHED") and not any(p.get("url") and p.get("published_at") for p in published):

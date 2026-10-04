@@ -10,7 +10,7 @@
 ## 1. Граф идентичности
 
 ```
-dpsmpx  (псевдоним; aka DP, DearPixel)
+Борис Давыдов / dpsmpx  (имя — Д20; псевдоним aka DP, DearPixel)
 │
 ├── GitHub      github.com/dpsmpx ............ «dpsmpx (aka DP, DearPixel)», EN
 ├── Telegram    @dpsmpx ...................... имя «dpsmpx», аватар «dpsmpx code»
@@ -20,7 +20,8 @@ dpsmpx  (псевдоним; aka DP, DearPixel)
 ├── VK          vk.com/dpsmpx ................ «Dpsmpx Code» — ACCESS = LIMITED
 ├── TikTok      @dpsmpx ...................... «dpsmpx», RU; видео — ACCESS = LIMITED (Д19)
 ├── Discord     dpsmpx ....................... UNKNOWN / AUTH REQUIRED
-├── Telegraph   статьи ....................... подписаны «dpsmpx» и настоящим именем
+├── Telegraph   статьи ....................... подписаны «dpsmpx» и «Борис Давыдов»
+├── Сайт        dpsmpx.com ................... центральная точка и архив (Д21); домен — ОР-11
 │
 └── Проекты
     ├── Galdhold (прежде VoxelRPG, репозиторий 3D_Voxel_OpenWorld_RPG)
@@ -36,7 +37,7 @@ dpsmpx  (псевдоним; aka DP, DearPixel)
 | Имя (публичное) | `dpsmpx` | FACT | все площадки |
 | Псевдонимы | DP, DearPixel | FACT | README профиля GitHub |
 | Вариант имени | «Dpsmpx Code» / «dpsmpx code» | FACT | VK (имя), Telegram (аватар) |
-| Настоящее имя | указано автором в постановке; публично — на двух статьях Telegraph | FACT; использование — **ОР-1** | Telegraph № 75, 79 |
+| Имя | **Борис Давыдов** / Boris Davydov — публично рядом с `dpsmpx` (Д20) | FACT (AU-NAME) | Telegraph № 75, 79; решение автора 04.10.2026 |
 | Лицо | фотография-референс `A-001`; публично ранее не показывалось | Д18 | `docs/PROVENANCE.md` |
 | Язык | русский — каналы; английский — GitHub | FACT | площадки |
 | Профессиональная идентичность | независимый разработчик нативных систем: игра, движок, язык | FACT | AU-ROLE |

@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "site/v1",
+  "title": "Сайт",
+  "description": "data/website/site.yaml (Д21, Д32)",
+  "type": "object",
+  "required": [
+    "schema",
+    "canonical_base",
+    "languages",
+    "environments"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "site/v1"
+    },
+    "title": {
+      "type": "object"
+    },
+    "canonical_base": {
+      "type": "string",
+      "pattern": "^https://"
+    },
+    "languages": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "ru",
+          "en"
+        ]
+      }
+    },
+    "environments": {
+      "type": "object",
+      "required": [
+        "staging",
+        "production"
+      ],
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "base_url",
+          "noindex"
+        ],
+        "properties": {
+          "base_url": {
+            "type": "string"
+          },
+          "noindex": {
+            "type": "boolean"
+          },
+          "drafts": {
+            "type": "boolean"
+          },
+          "deploy": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "command": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "home": {
+      "type": "object"
+    },
+    "og_default": {
+      "type": [
+        "object",
+        "null"
+      ]
+    }
+  }
+}

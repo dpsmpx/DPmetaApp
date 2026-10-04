@@ -1,0 +1,60 @@
+/* Тема сайта dpsmpx.com. Цвета и шрифты — токены бренда (assets/brand/tokens.json, Д9):
+   переменные :root генератор пишет перед этим файлом. */
+@font-face { font-family: "IBM Plex Sans"; font-weight: 400; font-display: swap; src: url("/fonts/IBMPlexSans-Regular.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Sans"; font-weight: 500; font-display: swap; src: url("/fonts/IBMPlexSans-Medium.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Sans"; font-weight: 600; font-display: swap; src: url("/fonts/IBMPlexSans-SemiBold.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Sans"; font-weight: 700; font-display: swap; src: url("/fonts/IBMPlexSans-Bold.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-weight: 400; font-display: swap; src: url("/fonts/IBMPlexMono-Regular.woff2") format("woff2"); }
+
+* { box-sizing: border-box; }
+html { background: var(--ink); color: var(--paper); }
+body { margin: 0; font: 17px/1.6 "IBM Plex Sans", system-ui, sans-serif; }
+a { color: var(--paper); text-decoration-color: var(--human); text-underline-offset: 3px; }
+a:hover { color: var(--human); }
+code, .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+main { max-width: 860px; margin: 0 auto; padding: 24px 20px 64px; }
+
+.site-header { max-width: 860px; margin: 0 auto; padding: 20px; display: flex; gap: 24px;
+  align-items: baseline; justify-content: space-between; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
+.brand { font-weight: 700; font-size: 20px; text-decoration: none; }
+.brand .dot { color: var(--human); }
+nav a { margin-right: 18px; text-decoration: none; color: var(--mist); }
+nav a.current, nav a:hover { color: var(--paper); }
+nav .lang { margin-left: 8px; padding: 2px 8px; border: 1px solid var(--line); border-radius: 4px; }
+
+.banner { background: var(--graphite); border-bottom: 2px solid var(--human); color: var(--paper);
+  padding: 8px 20px; font-size: 14px; text-align: center; }
+.draft { border-left: 3px solid var(--human); padding: 6px 12px; background: var(--graphite);
+  color: var(--mist); font-size: 14px; margin: 12px 0; }
+
+.hero { padding: 32px 0 16px; }
+.hero h1 { font-size: 44px; line-height: 1.1; margin: 0 0 8px; }
+.hero .handle { color: var(--human); font-family: "IBM Plex Mono", monospace; }
+.hero .role { color: var(--mist); margin: 0 0 16px; }
+.hero .lead { font-size: 20px; max-width: 680px; }
+.hero img { width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--line); margin-top: 16px; }
+
+h2 { font-size: 24px; margin: 40px 0 12px; }
+h3 { font-size: 19px; margin: 24px 0 8px; }
+.muted { color: var(--mist); }
+
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+.card { background: var(--graphite); border: 1px solid var(--line); border-radius: 8px; padding: 16px 18px; }
+.card.primary { border-color: var(--human); grid-column: 1 / -1; }
+.card h3 { margin: 0 0 6px; }
+.card .status { color: var(--verified); font-size: 14px; }
+
+.facts { width: 100%; border-collapse: collapse; }
+.facts th { text-align: left; vertical-align: top; color: var(--mist); font-weight: 500; padding: 8px 16px 8px 0; width: 30%; }
+.facts td { padding: 8px 0; border-bottom: 1px solid var(--line); }
+
+.posts { list-style: none; padding: 0; }
+.posts li { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.posts time, .meta { color: var(--mist); font-size: 14px; font-family: "IBM Plex Mono", monospace; }
+.tag { display: inline-block; font-size: 13px; color: var(--ai); margin-right: 8px; }
+
+.links { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 10px 20px; }
+.site-footer { max-width: 860px; margin: 0 auto; padding: 24px 20px 40px; border-top: 1px solid var(--line);
+  color: var(--mist); font-size: 14px; }
+.site-footer a { color: var(--mist); }
+@media (max-width: 600px) { .hero h1 { font-size: 34px; } body { font-size: 16px; } }

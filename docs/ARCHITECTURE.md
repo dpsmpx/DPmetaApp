@@ -1,151 +1,208 @@
 # Архитектура
 
 Как устроены репозиторий и инструменты **сейчас**. Почему правила
-такие — `docs/PROCESS.md`; что решено — `docs/direction/DECISIONS.md`.
+такие — `docs/PROCESS.md`; что решено — `docs/direction/DECISIONS.md`;
+постановка платформы — `docs/direction/PLATFORM_VISION.md`.
 
-## 1. Поток данных
+## 1. Главная идея
 
 ```
-docs/identity, docs/context, data/facts ──┐   проверенный контекст
-docs/direction, docs/platforms, brand ────┤
-                                          ▼
-content/items/<id>/item.yaml ── spec/*.yaml ──▶ tools/cs/render.py ──▶ HTML ──▶ tools/render/render.js (Chromium)
-   цель, утверждения,             (composition/v1)                                   │
-   варианты, гейты                                                                   ▼
-                                       renders/ и exports/: PNG/JPEG + *.layout.json (раскладка)
+Author identity → Canonical knowledge → Canonical content → Owned website → Replaceable adapters → External platforms
+(docs/identity)   (data/facts, projects)  (content/items v2)   (tools/cs/site)  (tools/cs/adapters)      (Telegram, VK, …)
                                                                                      │
-                                       provenance.yaml (хэши, входы, спецификация, промпт)
-                                                                                     ▼
-                                       tools/check.sh → python3 -m tools.cs check → гейты
+Analytics ← Publications (журнал) ←──────────────────────────────────────────────────┘
+   └→ Knowledge → Strategy (решения автора) → следующий контент
 ```
 
-Знание живёт в файлах; инструменты только читают его и проверяют
-согласованность. Состояние объекта меняет сессия правкой `item.yaml`
-(с записью в `history`), утверждение — только автор (Д12).
+Главная собственность автора — канон, медиа, происхождение и история
+публикаций в Git; площадки — каналы распространения (§122). Контент
+создаётся один раз и показывается многими родными формами (Д22).
 
-## 2. Данные и схемы
+## 2. Слои и модули (модульный монолит, Д23)
 
-| Файл | Схема | Пишет | Читает |
-|---|---|---|---|
-| `data/facts/facts.yaml` | `facts` | сессия по первоисточнику | `claims`, `facts`, документы по id |
-| `data/facts/forbidden.yaml` | `forbidden` | сессия | `claims` |
-| `data/identity/links.yaml` | `links` | сессия (проверка без входа) | документы идентичности |
-| `data/platforms/export_specs.yaml` | `export_specs` | сессия по официальным источникам (Д13) | `render`, `exports`, `visual` |
-| `data/provenance/assets.yaml` | `assets` | сессия при добавлении материала | `provenance`, `render` |
-| `assets/brand/tokens.json` | `brand_tokens` | изменение основ | `render`, `visual` |
-| `content/items/<id>/item.yaml` | `content_item` | сессия; `render`/`export` дописывают рендеры и экспорт | `validate`, все проверки объекта |
-| `content/items/<id>/spec/*.yaml` | `composition` | сессия по промпту | `render`, `claims` |
-| `content/items/<id>/provenance.yaml` | `item_provenance` | только `render.py` | `provenance`, `visual` |
-| `data/experiments/EXP-NNNN.yaml` | `experiment` | сессия до запуска | `metrics` |
-| `data/metrics/<id>/<платформа>-<дата>.yaml` | `metrics` | `metrics import` | `metrics` |
+Один пакет `tools/cs`, одна командная строка `python3 -m tools.cs`.
 
-Каталог объекта — `docs/content/CONTENT_MODEL.md`, §1.
+```
+tools/cs/
+├── core/            ЯДРО — не знает площадок по имени (тест Boundaries)
+│   ├── repo.py          чтение данных с подменяемым корнем (тесты на временном репозитории)
+│   ├── textdoc.py       файлы «заголовок YAML + текст» (каноны, варианты)
+│   ├── markup.py        разметка канона и рендеры: HTML, HTML Telegram, Markdown, текст
+│   ├── inject.py        подстановки {{fact|link|site|release:…}}, отпечатки зависимостей
+│   ├── content.py       ContentItem v2: версии канона, варианты, хэш содержимого, одобрение, устаревание
+│   ├── validator.py     ContentValidator (§46)
+│   ├── ledger.py        журнал публикаций: события, переходы, ключ идемпотентности, целостность
+│   ├── engine.py        движок: план → предпроверка → публикация → проверка → запись; повторы; режимы
+│   ├── errors.py retry.py credentials.py obs.py   коды ошибок; повторы и частота; учётные данные; логи без секретов
+│   ├── campaigns.py     сводка по площадкам, календарь, поиск — виды над моделью
+│   ├── analytics.py     нормализованные события метрик (Д29)
+│   ├── generation.py    GenerationProvider и кэш генерации (§43–44)
+│   ├── events.py        событие проекта → черновик кампании (§36–38)
+│   ├── migrate.py       явные миграции схем (Д31)
+│   ├── bundle.py health.py   выгрузка базы; здоровье
+├── adapters/        ПЛОЩАДКИ — по адаптеру на площадку за PlatformAdapter (§29)
+│   ├── base.py          интерфейс: render, validate, identify/check_identity, publish, edit, delete,
+│   │                    upload_media, get_status, лимиты из capabilities.yaml, ограничитель частоты, повторы
+│   ├── website.py       сайт: сборка с записью + выгрузка (ОР-11)
+│   ├── telegram.py      Bot API через транспорт (urllib; в тестах — имитация API)
+│   ├── manual.py        VK, YouTube, Discord, GitHub, TikTok — отрисовка и лимиты; публикация — ручной путь (Д33)
+│   └── mock.py          имитации всех площадок с внедрением отказов (§102)
+├── site/            САЙТ — генератор (build.py), фиды и API (feeds.py), подписи (i18n.py), предпросмотр (preview.py)
+├── platform_cli.py  команды платформы;  platform_checks.py  проверки платформы;  capabilities.py  матрица
+└── claims.py facts.py validate.py visual.py exports.py provenance.py render.py …   конвейер изображений и гейты (v1)
+website/             тема сайта: templates/base.html, static/style.css (цвета — из токенов бренда)
+```
 
-## 3. Инструменты (`tools/cs/`)
+Соответствие структуре постановки (§95): `apps/web` → `tools/cs/site`;
+`apps/publisher` → `tools/cs/core/engine.py` + `platform_cli.py`;
+`apps/tools` → `tools/cs` (проверки, рендер); `core/*` → `tools/cs/core`;
+`adapters/*` → `tools/cs/adapters`; `website/` — тема. Причина — правило
+«дополнить существующее, а не завести второе» (`CLAUDE.md`) и одна
+командная строка; разделение модулей — то же, что в постановке.
 
-| Модуль | Что делает |
+## 3. Данные
+
+| Файл | Схема | Что |
+|---|---|---|
+| `data/facts/facts.yaml` | `facts` | факты с доказательствами (PROJECT_FACTS, EVIDENCE) |
+| `data/facts/forbidden.yaml`, `claim_keywords.yaml` | `forbidden`, `claim_keywords` | anti-hype, слова-утверждения |
+| `data/identity/links.yaml` | `links` | проверенные ссылки |
+| `data/identity/brands.yaml` | `brands` | бренды автора и проектов (Д27) |
+| `data/projects/<id>.yaml` | `project` | канонические сущности проектов |
+| `data/releases/<проект>.yaml` | `releases` | выпуски (RELEASE_DATA) — пока нет |
+| `data/campaigns/CMP-NNNN.yaml` | `campaign` | кампании |
+| `data/platforms/capabilities.yaml` | `capabilities` | что позволяют площадки (Д33) |
+| `data/platforms/destinations.yaml` | `destinations` | адресаты с явными id и `credential_ref` (Д25) |
+| `data/platforms/export_specs.yaml` | `export_specs` | размеры экспорта (Д13) |
+| `data/policy/publication.yaml` | `policy` | одобрение, автопубликация (пусто), роли, повторы, отказы, хранение |
+| `data/website/site.yaml` | `site` | сайт: адреса окружений, языки, главная |
+| `data/publications/<окружение>.jsonl` | `publication` | журнал публикаций (только дописывание) |
+| `data/provenance/assets.yaml` | `assets` | входные ассеты (MediaAsset) |
+| `data/metrics/…`, `data/experiments/…` | `metrics`, `experiment` | метрики (Д15) и эксперименты (Д14) |
+| `assets/brand/tokens.json` | `brand_tokens` | токены визуальной системы |
+| `content/items/<id>/item.yaml` | `content_item` v1/v2 | объект контента |
+| `content/items/<id>/canonical/vN.md` | `canonical` | каноническая версия |
+| `content/items/<id>/variants/<площадка>.<язык>.md` | `variant` | вариант площадки |
+| `content/items/<id>/spec/*.yaml`, `provenance.yaml` | `composition`, `item_provenance` | изображения и их происхождение |
+
+Модель — `docs/content/CANONICAL_MODEL.md` (v2) и `CONTENT_MODEL.md` (v1).
+
+## 4. Поток публикации
+
+```
+canonical/vN.md ──seal──► variants/*.md ──seal──► approve (автор, sha256)
+                                                     │
+publish: Publisher.plan → validate_variant + preflight (адресат по id, аккаунт, язык, бренд,
+         одобрение, устаревание, канон в Git, политика) → Ledger PUBLISHING → Adapter.publish
+         → Adapter.get_status (verify) → Ledger PUBLISHED | FAILED | UNKNOWN (+ RETRY с задержкой)
+                                                     │
+site build (production): только одобренное и опубликованное → фиды, sitemap, /api/v1/
+```
+
+Подробно — `docs/content/PUBLISHING.md`. Окружения и учётные данные —
+`docs/operations/`.
+
+## 5. Конвейер изображений (v1, без изменений)
+
+```
+spec/*.yaml (composition/v1) → tools/cs/render.py → HTML → tools/render/render.js (Chromium) →
+renders/ и exports/: PNG/JPEG + *.layout.json → provenance.yaml (хэши, входы, промпт) → гейты
+```
+
+Рендер детерминирован (Д11; `tests/test_render.py`); портрет — только из
+`REFERENCE_IMAGE`; каждый формат рендерится под свой размер. Экспорт
+выбранного варианта — медиа вариантов площадок (`media` в
+`variants/*.md`).
+
+## 6. Проверки (Д3 — без Actions)
+
+`tools/check.sh` — уровни (§99):
+
+| Уровень | Команда | Что |
+|---|---|---|
+| quick | `tools/check.sh --quick` | схемы, объекты, секреты, ссылки, адресаты — секунды |
+| affected | `tools/check.sh --affected` | проверки, затронутые изменёнными файлами (сравнение с `origin/main`) |
+| full | `tools/check.sh` | все проверки + все тесты (с рендером) |
+| release | `tools/check.sh --release` | full + сборка production-сайта и пробный прогон всех целей кампаний |
+
+| Проверка | Что | Гейт / §99 |
+|---|---|---|
+| `schemas`, `items` | данные по JSON Schema; состояния, история, гейты | все; malformed content |
+| `facts`, `claims` | реестр, утверждения и anti-hype (в том числе тексты `variants/`) | Factual |
+| `provenance`, `visual`, `exports` | ассеты и выходы; читаемость, контраст, зоны; файлы экспорта | Provenance, Visual, Platform, Safety, Legal |
+| `metrics` | метрики и эксперименты | — |
+| `links` | пути в документах | invalid links |
+| `secrets` | ключи, токены, cookies, подписанные адреса | secrets, credentials |
+| `canonical` | неизменность зафиксированных версий; варианты: валидатор, одобрение, устаревание | content, provenance |
+| `publications` | журнал: переходы, время, дубли, одобрение рабочих публикаций | duplicate publication |
+| `destinations` | явные id, границы учётных данных, близнецы, бренды | configuration, credentials |
+| `campaigns`, `projects` | ссылки на объекты, адресаты, факты страниц | configuration |
+| `capabilities` | матрица = данные; данные = адаптеры | adapters |
+| `site` | сборка staging и production, фиды, JSON, внутренние ссылки | build, website |
+| тесты | `tests/` — модульные, контрактные, интеграционные, сквозной, свойства, регрессия | tests |
+
+## 7. Тесты (§100–104)
+
+| Вид | Где |
 |---|---|
-| `common.py` | пути, YAML/JSON, хэши, размеры PNG/JPEG и метаданные по заголовкам; `Report`, `Finding`; загрузка объектов; файлы репозитория (`git ls-files`) |
-| `schema.py` | проверка по JSON Schema (Draft 2020-12) с приведением дат YAML |
-| `model.py` | состояния, переходы, гейты, оси оценок; `check_path`, `reached`, `effective_state` |
-| `validate.py` | `schemas` и `items`: требования состояний, история, выбор, утверждение, блокеры, согласованность записанных гейтов с автоматическими находками |
-| `facts.py` | целостность реестра, просроченные `recheck_by`, id фактов и правил в документах |
-| `claims.py` | гейт Factual: ссылки объекта на реестр, запреты в публикуемом тексте, числа только из заявленных фактов |
-| `provenance.py` | реестр ассетов (хэши, покрытие `assets/`, метаданные фото) и выходы объектов |
-| `visual.py` | гейты Visual/Platform/Legal по раскладке: размер текста, контраст по фону, группы, наложения, переполнение, «человек крупнее текста», безопасная зона, шрифты, внешние запросы |
-| `exports.py` | гейты Platform/Safety по файлам экспорта: тип, размеры, вес, хэш, метаданные |
-| `links.py` | пути в документах существуют |
-| `secrets.py` | секреты и личные данные (`docs/SECURITY.md`) |
-| `metrics.py` | импорт CSV (Д15) и проверка метрик и экспериментов |
-| `newitem.py` | новый объект в `IDEA` |
-| `render.py` | макеты (professional, technical, cinematic, minimal, шапка) → HTML; запуск рендера; запись происхождения |
-| `__main__.py` | командная строка |
+| модульные | `tests/test_platform_units.py` (разметка, подстановки, журнал, повторы, учётные данные), прежние `tests/test_*.py` |
+| контрактные (адаптеры) | `tests/test_adapter_contract.py`: Telegram через имитацию Bot API; общий контракт имитаций; ручные адаптеры |
+| интеграционные (движок) | `tests/test_publishing.py`: сценарии §56, одобрение, адресаты, бренды, режимы |
+| свойства | `tests/test_publishing.py`, `Properties`: случайные сбои — не больше одного поста |
+| сквозной | `tests/test_platform_e2e.py`: новость → сайт → Telegram → проверка → аналитика → production-сборка |
+| регрессия | рендер (хэши), миграция, неизменность канона, граница модулей |
 
-`tools/render/render.js` — Chromium через Playwright: открывает HTML с
-диска, запрещает сеть, снимает кадр и раскладку: рамки элементов и
-самого текста, размер и насыщенность шрифта, токен цвета, переполнение
-(по осям с заданным размером) и яркость фона под текстом — по второму
-кадру со скрытым текстом (95-й перцентиль яркости рамки).
+Реальные площадки в тестах не используются; рабочая проверка —
+безопасный режим на тестовом канале автора (§104).
 
-## 4. Команды
+## 8. Команды
 
 ```sh
-tools/check.sh                    # все проверки + тесты (с рендером)
-tools/check.sh --fast             # без тестов рендера
-tools/check.sh claims visual      # только названные проверки
-python3 -m tools.cs status        # объекты: состояние, вариант, гейты, блокеры
-python3 -m tools.cs render CI-0001 [--variant A] [--lang ru en] [--format telegram_post]
-python3 -m tools.cs export CI-0001 --variant A [--format …] [--final]
-python3 -m tools.cs new --type post --pillar RESULT --slug … --objective "…"
-python3 -m tools.cs metrics import --item CI-0001 --platform youtube --file … --from … --to …
+tools/check.sh [--quick|--affected|--release|--fast] [проверка …]
+python3 -m tools.cs status | render | export | new | metrics import          # конвейер изображений (v1)
+python3 -m tools.cs migrate | canonical new|seal | adapt | variant seal | validate | diff
+python3 -m tools.cs preview <объект|кампания> | approve <объект> <вариант>
+python3 -m tools.cs publish <объект> <вариант> --to <адресат> [--dev|--safe|--production] [--at ISO]
+python3 -m tools.cs publish --due | --record-manual | --reconcile | --cancel | --delete
+python3 -m tools.cs campaign status|list | calendar | search | stale
+python3 -m tools.cs site build|serve | health | bundle | capabilities [--write] | events
 ```
 
-`render` пишет `renders/<вариант>-<язык>-<формат>.<тип>`, `export` —
-`exports/…`; оба обновляют `provenance.yaml` и списки в `item.yaml`.
-Экспорт — `preview` до утверждения; `--final` — только после
-`APPROVED`. Языки экспорта по площадкам — `platform_languages` в
-`export_specs.yaml` (Д8).
+## 9. Окружение
 
-## 5. Проверки и гейты
+- Python 3.10+ с PyYAML и jsonschema (`tools/requirements.txt`); сайт и
+  платформа — без других зависимостей.
+- Рендер изображений: Node.js и Playwright с Chromium (как раньше;
+  `CS_CHROMIUM=<путь>`).
+- `CS_TODAY` — дата для тестов сроков; `CS_SKIP_RENDER=1` — без тестов
+  рендера (`--fast`).
+- Учётные данные — переменные `CS_<DEV|STAGING|PROD>_…` у автора
+  (`docs/operations/CREDENTIALS.md`).
+- Хук начала сессии `.claude/hooks/session-start.sh` — зависимости,
+  указатель на HANDOFF, ветки с невлитой работой.
 
-| Проверка | Гейт |
-|---|---|
-| `schemas`, `items` | все: структура и состояния |
-| `facts`, `claims` | Factual |
-| `visual` | Visual; Platform (безопасная зона, размеры); Legal (шрифты, сеть) |
-| `exports` | Platform (тип, размеры, вес); Safety (метаданные) |
-| `provenance` | Provenance; Safety (метаданные фото) |
-| `links`, `secrets`, `metrics` | целостность репозитория |
+## 10. Как расширять
 
-Brand и права фотографа — за автором; инструмент проверяет только то,
-что выражается в данных (токены, шрифты, портрет из `REFERENCE_IMAGE`).
-Гейт, записанный `pass` при ошибке соответствующей проверки, — ошибка
-`items`. Находки по отклонённым вариантам — предупреждения: их рендеры
-хранятся как история выбора.
+- **Площадка:** класс в `tools/cs/adapters/` (наследник `PlatformAdapter`),
+  строка в `REGISTRY`, запись в `capabilities.yaml` (+ `--write`
+  матрицы), адресаты в `destinations.yaml`, контрактный тест. Модель,
+  кампании, сайт не меняются (§69).
+- **Проверка:** функция `check() -> Report`, строка в `CHECKS`
+  (`__main__.py`), тест.
+- **Поле модели:** схема + миграция (`core/migrate.py`, Д31).
+- **Поставщик генерации:** класс с `name` и `generate()` (`core/generation.py`).
+- **Формат площадки:** `export_specs.yaml` с источником (Д13).
 
-## 6. Рендер
+## 11. Ограничения
 
-- Детерминированный (Д11): одна спецификация → тот же файл; тест
-  `tests/test_render.py` сравнивает хэши двух рендеров.
-- Каждый формат рендерится заново под свой размер; шапка YouTube —
-  отдельный макет со смыслом в безопасной зоне.
-- Портрет — только из записи `REFERENCE_IMAGE`; геометрия — масштаб и
-  сдвиг, тон — CSS-фильтры, интерьер — виньетка и маски.
-- HTML лежит в `build/` (не в Git), раскладка — рядом с файлом без путей
-  машины.
-
-## 7. Окружение
-
-- Python 3.10+ с PyYAML и jsonschema (`tools/requirements.txt`).
-- Рендер: Node.js и Playwright с Chromium. Playwright ищется как
-  модуль `playwright`, в `NODE_PATH` или в `/opt/node22/lib/node_modules`;
-  другой Chromium — `CS_CHROMIUM=<путь>`.
-- `CS_TODAY=YYYY-MM-DD` — дата для проверок сроков в тестах;
-  `CS_SKIP_RENDER=1` — пропуск тестов рендера (`--fast`).
-- Хук начала сессии `.claude/hooks/session-start.sh` (`.claude/settings.json`):
-  ставит зависимости в облачной сессии, печатает указатель на
-  `HANDOFF.md` и ветки с невлитой работой.
-
-## 8. Как расширять
-
-- **Проверка:** функция `check() -> Report` в модуле и строка в `CHECKS`
-  (`__main__.py`); тест в `tests/`.
-- **Формат площадки:** запись в `export_specs.yaml` с источником и датой
-  (Д13); если у формата `safe_area` — макет должен уметь его
-  (`layout_banner` — пример).
-- **Макет:** функция `layout_<имя>` в `render.py`, имя — в `LAYOUTS` и в
-  `composition.schema.json`; элементы с `data-role`, `data-group`,
-  `data-fg` для проверок.
-- **Схема:** `schemas/<имя>.schema.json` и строка в `SCHEMA_MAP`
-  (`validate.py`).
-
-## 9. Ограничения проверок
-
-- Контраст считается по 95-му перцентилю яркости фона в рамке текста —
-  тонкие светлые детали фона могут остаться незамеченными; критика
-  смотрит глазами.
+- Контраст в `visual` — по 95-му перцентилю яркости фона; тонкие детали
+  может пропустить — смотреть глазами.
 - Проверка чисел различает числа и даты по шаблонам; числа меньше 10 не
   проверяются.
-- Проверка ссылок ищет пути в обратных кавычках и ссылках Markdown;
-  пути закрытых проектов («Galdhold `docs/…`») пропускает.
 - `secrets` знает известные формы ключей — не заменяет осторожности.
+- Telegram не позволяет сверить исход по ключу — после обрыва решает
+  человек (`--reconcile`).
+- Предпросмотр площадок — точный текст и разметка, вид карточки —
+  приближение; сайт — настоящая сборка.
+- Защита «не из сессии ИИ» — по переменным окружения Claude Code; это
+  защита от случайности, граница безопасности — отсутствие токенов.

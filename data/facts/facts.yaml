@@ -26,6 +26,19 @@ facts:
       en: ["dpsmpx (aka DP, DearPixel)"]
     evidence:
       - {kind: platform_page, source: "github.com/dpsmpx — README dpsmpx/dpsmpx", ref: "433f627", date: 2026-10-04, verification: observed}
+  - id: AU-NAME
+    subject: author
+    class: FACT
+    risk: medium
+    public: true
+    statement: Имя автора — Борис Давыдов (Boris Davydov); публично используется рядом с псевдонимом dpsmpx (Д20).
+    allowed_wording:
+      ru: ["Борис Давыдов", "Борис Давыдов (dpsmpx)", "Борис Давыдов / dpsmpx"]
+      en: ["Boris Davydov", "Boris Davydov (dpsmpx)", "Boris Davydov / dpsmpx"]
+    evidence:
+      - {kind: platform_page, source: "api.telegra.ph getPage — статья «Почему разработка с ИИ для меня оказалась намного сильнее обычной», author_name со ссылкой на t.me/dpsmpx", date: 2026-10-04, verification: observed}
+      - {kind: decision, source: "DECISIONS.md Д20 — решение автора открыть имя (ОР-1)", date: 2026-10-04, verification: decision}
+    notes: Латинское написание — из постановки автора (docs/direction/PLATFORM_VISION.md). Имя не разрешает личное (ОР-8).
   - id: AU-ROLE
     subject: author
     class: FACT
@@ -243,6 +256,7 @@ facts:
     statement: Этапы 1–4 закрыты — движок, полигон, живое поселение, регионы; идёт этап 5 — коммерческая версия 1 и выпуск.
     allowed_wording:
       ru: ["закрыты этапы: движок, живое поселение, регионы; идёт подготовка версии 1"]
+      en: ["completed stages: the engine, a living settlement, regions; version 1 is in preparation"]
     recheck_by: 2026-11-04
     evidence:
       - {kind: doc, source: "dpsmpx/Galdhold ROADMAP/ROADMAP.md, «Этапы развития»", ref: "f2ba263", date: 2026-10-04, verification: reported}
@@ -398,6 +412,9 @@ facts:
     risk: low
     public: true
     statement: DPlang — закрытый проект с временной проприетарной лицензией.
+    allowed_wording:
+      ru: ["код закрыт"]
+      en: ["closed source"]
     evidence:
       - {kind: doc, source: "dpsmpx/DPlang README.md, LICENSE", ref: "66e461c", date: 2026-10-04, verification: reported}
 
