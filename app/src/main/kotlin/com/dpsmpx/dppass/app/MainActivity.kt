@@ -94,10 +94,17 @@ class MainActivity : Activity() {
         val lines = mutableListOf<String>()
         lines += "restore: ${if (restored.isEmpty()) "ok" else restored.joinToString { it.code.name }}"
         when (val r = core.importAndActivate(sample)) {
-            is Outcome.Failure -> lines += "sample rejected: ${r.errors.joinToString { it.code.name }}"
-            is Outcome.Success -> lines += when (val a = r.value) {
-                is ActivationResult.Activated -> "activated revision ${a.record.revision}, profile ${a.record.profileId}"
-                is ActivationResult.Rejected -> "rejected at ${a.record.failedStep}"
+            is Outcome.Failure -> {
+                lines += "sample rejected:"
+                r.errors.forEach { lines += it.renderWithCauses() }
+            }
+            is Outcome.Success -> when (val a = r.value) {
+                is ActivationResult.Activated -> lines += "activated revision ${a.record.revision}, profile ${a.record.profileId}"
+                is ActivationResult.Rejected -> {
+                    // Причина целиком, с текстом ядра: на устройстве её больше негде увидеть (D-22).
+                    lines += "rejected at ${a.record.failedStep}:"
+                    a.diagnostics.filter { it.isError }.forEach { lines += it.renderWithCauses() }
+                }
             }
         }
         core.tunnelSpec()?.valueOrNull()?.let { lines += "tunnel spec: ${it.routes.size} routes, ${it.excludedRoutes.size} excluded, mtu ${it.mtu}" }

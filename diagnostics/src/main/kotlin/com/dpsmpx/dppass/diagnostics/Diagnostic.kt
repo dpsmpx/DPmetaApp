@@ -28,6 +28,21 @@ data class Diagnostic(
 
     fun withCause(cause: Diagnostic): Diagnostic = copy(causes = causes + cause)
 
+    /**
+     * Строки для человека: эта диагностика и её причины с отступом, со
+     * сводкой исключения (уже отредактированной). Глубина ограничена.
+     */
+    fun renderWithCauses(maxDepth: Int = 8): List<String> {
+        val out = mutableListOf<String>()
+        fun walk(d: Diagnostic, depth: Int) {
+            val err = d.error?.let { " [${it.type}${it.message?.let { m -> ": $m" } ?: ""}]" } ?: ""
+            out += "  ".repeat(depth) + d.render() + err
+            if (depth < maxDepth) d.causes.forEach { walk(it, depth + 1) }
+        }
+        walk(this, 0)
+        return out
+    }
+
     companion object {
         fun error(code: DiagCode, message: String, path: String? = null): Diagnostic =
             Diagnostic(code, message, path, Severity.ERROR)
