@@ -16,6 +16,10 @@ CorpusTest читает корпус по соглашениям об имена
   * коды — контракт (D-22): реестр `tools/hostcheck/diag_codes.txt`
     сверяется с `DiagCode` и `FailureKind`: пропавший или
     переименованный код — ошибка, новый код без записи в реестре — тоже;
+  * эталоны компилятора Xray (`tests/data/xray/`): у каждой разбираемой
+    конфигурации корпуса есть ожидание `xray`; при `compiled` — по
+    эталону на каждый профиль и ничего лишнего; у каждого файла случаев
+    маршрутизации — `*.probe.json` и эталон его конфигурации;
   * данные синтетические (и внутри base64-тел подписок): IP только из
     документационных и служебных диапазонов, домены — `example.com/.net/.org`, `.example`, `.test`,
     `.invalid` (исключения ниже — с причиной), UUID — вида
@@ -52,7 +56,12 @@ EXTRA_DOMAINS = {
 }
 UUID = re.compile(r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b")
 LINK = re.compile(r"^([a-z][a-z0-9+.-]*)://(.*)$", re.I)
-HOST_KEYS = {"server", "host", "server_name", "address", "domain", "domain_suffix", "sni"}
+HOST_KEYS = {"server", "host", "server_name", "address", "domain", "domain_suffix", "sni", "serverName"}
+# Префиксы правил Xray в эталонах компилятора (tests/data/xray/): имя после
+# `full:`/`domain:` — домен; после `keyword:`, `geosite:`, `geoip:` — не адрес.
+XRAY_NAME_PREFIXES = ("full:", "domain:")
+XRAY_NOT_HOST_PREFIXES = ("keyword:", "geosite:", "geoip:", "regexp:")
+XRAY = os.path.join(DATA, "xray")
 
 
 def enum_entries(path, enum):
@@ -145,7 +154,7 @@ def check_config_dirs():
         for n in sorted(expects & inputs):
             path = os.path.join(root, n + ".expect.json")
             e = load(path)
-            if e is None or not keys(path, e, {"load", "activate"}, ("load",)):
+            if e is None or not keys(path, e, {"load", "activate", "xray"}, ("load",)):
                 continue
             ld = e["load"]
             if keys(path, ld, {"outcome", "codes"}, ("outcome",)):
@@ -158,6 +167,47 @@ def check_config_dirs():
                 codes(path, act)
                 if ld.get("outcome") != "ok":
                     bad(path, "activate есть, а load.outcome не ok — активация не дойдёт до проверки")
+            xr = e.get("xray")
+            if xr is None and ld.get("outcome") == "ok":
+                bad(path, "нет ожидания xray: разбираемая конфигурация корпуса компилируется и для Xray (этап 2)")
+            if xr is not None and keys(path, xr, {"outcome", "codes"}, ("outcome",)):
+                one_of(path, "xray.outcome", xr.get("outcome"), {"compiled", "rejected"})
+                codes(path, xr)
+                if ld.get("outcome") != "ok":
+                    bad(path, "xray есть, а load.outcome не ok — компиляция не дойдёт до проверки")
+                check_xray_golden(d, n, os.path.join(root, n + ".json"), xr.get("outcome") == "compiled")
+        check_xray_orphans(d, expects & inputs)
+
+
+def profile_ids(config_path):
+    doc = load(config_path)
+    if not isinstance(doc, dict):
+        return set()
+    return {p.get("id") for p in doc.get("profiles", []) if isinstance(p, dict) and isinstance(p.get("id"), str)}
+
+
+def check_xray_golden(d, name, config_path, compiled):
+    """Эталоны одной конфигурации: по файлу на профиль — ровно когда компиляция ожидается."""
+    gdir = os.path.join(XRAY, d, name)
+    have = sorted(os.listdir(gdir)) if os.path.isdir(gdir) else []
+    if not compiled:
+        if have:
+            bad(gdir, "эталоны Xray у конфигурации, компиляция которой ожидается с отказом")
+        return
+    want = {f"{pid}.json" for pid in profile_ids(config_path)}
+    for f in sorted(want - set(have)):
+        bad(os.path.join(gdir, f), "нет эталона Xray для профиля (CorpusTest с -Ddppass.golden.update=true)")
+    for f in sorted(set(have) - want):
+        bad(os.path.join(gdir, f), "эталон Xray без профиля в конфигурации — устарел")
+
+
+def check_xray_orphans(d, names):
+    root = os.path.join(XRAY, d)
+    if not os.path.isdir(root):
+        return
+    for n in sorted(os.listdir(root)):
+        if n not in names:
+            bad(os.path.join(root, n), f"эталоны Xray без конфигурации tests/data/{d}/{n}.json")
 
 
 def check_subscriptions():
@@ -204,6 +254,14 @@ def check_routing():
             continue
         if not os.path.isfile(os.path.join(root, str(c["config"]))):
             bad(path, f"нет конфигурации {c['config']}")
+        base = n[:-len(".cases.json")]
+        probe = os.path.join(XRAY, "routing", base + ".probe.json")
+        if not os.path.isfile(probe):
+            bad(path, f"нет {os.path.relpath(probe, PROJ)} — сверка с Xray не увидит эти случаи")
+        else:
+            pr = load(probe)
+            if isinstance(pr, dict) and not os.path.isfile(os.path.join(os.path.dirname(probe), str(pr.get("config")))):
+                bad(probe, f"нет эталона конфигурации {pr.get('config')}")
         geo = c.get("geo", {})
         if keys(path, geo, {"geoip"}):
             for code, nets in geo.get("geoip", {}).items():
@@ -212,6 +270,8 @@ def check_routing():
                         ipaddress.ip_network(net, strict=False)
                     except ValueError:
                         bad(path, f"geo.geoip.{code}: не подсеть {net!r}")
+                        continue
+                    check_cidr(path, net, f"geo.geoip.{code}")
         for i, case in enumerate(c.get("cases", [])):
             where = f"{n}#{i}"
             if not keys(path, case, {"query", "action", "rule"}, ("query", "action")):
@@ -338,13 +398,20 @@ def walk_json(path, value, key=None, where="$"):
     elif isinstance(value, str):
         if LINK.match(value):
             check_link(path, value, where)
+        elif key in HOST_KEYS and value.startswith(XRAY_NOT_HOST_PREFIXES):
+            pass
         elif key in HOST_KEYS:
             host = value
+            for prefix in XRAY_NAME_PREFIXES:
+                if host.startswith(prefix):
+                    host = host[len(prefix):]
             if key == "address" and value.count(":") == 1:
                 host = value.split(":", 1)[0]
             elif key == "address" and value.startswith("["):
                 host = value[:value.find("]") + 1]
             check_host(path, host, where)
+        elif key in ("ip_cidr", "ip") and value.startswith(XRAY_NOT_HOST_PREFIXES):
+            pass
         elif key in ("ip_cidr", "ip"):
             check_cidr(path, value, where)
         elif key == "blocked_endpoints":

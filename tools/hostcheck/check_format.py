@@ -9,7 +9,8 @@
   * переводы строк — LF (исключение — `*.bat`: так их генерирует Gradle,
     docs/PROVENANCE.md);
   * перевод строки в конце файла, без пробелов и табуляций в конце строк,
-    без табуляций для отступа;
+    без табуляций для отступа (исключение — исходники Go `*.go`, `go.mod`:
+    их вид задаёт `gofmt`, а он отступает табуляцией; `tools/xray/`);
   * без невидимых и управляющих направлением письма символов: BOM
     (U+FEFF), нулевой ширины (U+200B…U+200F), мягкий перенос (U+00AD),
     разделители U+2028/U+2029, двунаправленные U+202A…U+202E и
@@ -31,6 +32,8 @@ import sys
 PROJ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SKIP_PREFIXES = ("tests/data/",)
 CRLF_ALLOWED = (".bat",)
+# gofmt — единственный формат исходников Go, и отступ в нём — табуляция.
+TAB_INDENT_ALLOWED = (".go", "/go.mod")
 INVISIBLE = re.compile("[\ufeff\u200b-\u200f\u00ad\u2028\u2029\u202a-\u202e\u2066-\u2069]")
 NAMES = {
     "\ufeff": "BOM U+FEFF", "\u00ad": "мягкий перенос U+00AD",
@@ -79,7 +82,7 @@ def main():
                 problems.append(f"{rel}:{n}: {describe(m.group(0))}, столбец {m.start() + 1}")
             if line != line.rstrip(" \t"):
                 problems.append(f"{rel}:{n}: пробелы или табуляция в конце строки")
-            if line.startswith("\t") or re.match(r"^ *\t", line):
+            if (line.startswith("\t") or re.match(r"^ *\t", line)) and not rel.endswith(TAB_INDENT_ALLOWED):
                 problems.append(f"{rel}:{n}: табуляция в отступе")
     if problems:
         print("✗ Формат:")
