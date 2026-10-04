@@ -471,7 +471,8 @@ class XrayCompiler(override val capabilities: EngineCapabilities = XrayBackend.C
         fun tunInbound(): JsonObject = Json.obj(
             "tag" to Json.str(XrayBackend.TAG_TUN_IN),
             "protocol" to Json.str("tun"),
-            "settings" to Json.obj("mtu" to Json.num(XrayBackend.TUN_MTU)),
+            // Имя — всегда: без него Xray перебирает интерфейсы системы, а на Android это запрещено (XrayBackend.TUN_NAME).
+            "settings" to Json.obj("name" to Json.str(XrayBackend.TUN_NAME), "mtu" to Json.num(XrayBackend.TUN_MTU)),
             "sniffing" to Json.obj(
                 "enabled" to Json.bool(true),
                 "destOverride" to Json.strings(listOf("http", "tls", "quic")),

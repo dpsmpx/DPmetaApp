@@ -80,6 +80,7 @@
       "tag": "tun-in",
       "protocol": "tun",
       "settings": {
+        "name": "dppass0",
         "mtu": 1500
       },
       "sniffing": {

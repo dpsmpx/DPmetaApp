@@ -231,6 +231,10 @@ RFC 3849, RFC 2544) и частных сетей, домены `example.com/.net
   маршрутизацию, но не соединяется; подключение через TUN — на
   устройстве (`docs/direction/ROADMAP/02-xray-backend.md`).
 - Настоящая сеть — этап 3.
+- Ограничения Android, которых нет на хосте: например, запрет netlink
+  для приложений с Android 11 (вход TUN Xray без имени не собирался —
+  найдено по журналу устройства, D-26). Найденное закрепляется тестом
+  на хосте (`XrayCompilerTest.tunInboundIsNamedSoXrayDoesNotEnumerateInterfaces`).
 - Android на устройстве: Keystore, `VpnService`, `FLAG_SECURE`,
   резервные копии, буфер обмена и обработчик падений журнала
   устройства — `TODO.md`, «На устройстве».
