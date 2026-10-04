@@ -58,6 +58,7 @@ tools/hostcheck/run.sh --full     # перед слиянием (§4): проп�
 | сборка и тесты ядра — `./gradlew build :cli:installDist` | ошибки и **предупреждения** компилятора (они — ошибки), модульные и межмодульные тесты, корпус, fuzz | D-05 … D-22 |
 | cli smoke — в `run.sh` | весь конвейер через оболочку JVM: 15 сценариев, коды выхода, вывод, секреты не печатаются | D-11, D-21 |
 | Xray — `tools/xray/check_xray.py` | эталон компилятора, который Xray закреплённой версии не принимает (`xray run -test`); решение маршрутизации Xray, не совпавшее с `RouteEvaluator`; собранное ядро не той версии, что в каталоге (`docs/TESTING.md`, «Эталоны Xray») | D-05, D-09, D-24 |
+| Xray: мост и JNI — `tools/xray/native.py host` и `:tests:integration:xrayJniTest` | `go vet` и `go test` моста ядра в обеих сборках (с тестовым входом и без); библиотека для JVM хоста, экспорт JNI которой не совпал с `external` объекта `XrayJni`; нарушение договора JNI в JVM хоста — версия, проверка, один экземпляр, защитник сокетов, счётчики (`docs/TESTING.md`, «Мост Xray и JNI») | D-25 |
 | Android: сборка и Lint — `:app:assembleDebug :app:lint` | сборка APK; Lint с `warningsAsErrors`, и для модулей ядра (`checkDependencies`) | D-17 |
 | Android: API ядра ≤ minSdk — `tools/hostcheck/check_android_api.py` | вызовы Java API в модулях ядра, которых нет на Android 8.0 (Lint их в JVM-модулях не видит) | D-02, D-17 |
 | Android: APK — `tools/hostcheck/check_apk.py` | в собранном APK: разрешения и компоненты из зависимостей в итоговом манифесте, код не из утверждённых корней пакетов (SDK телеметрии и прочее чужое), нативные библиотеки до этапа 2 | D-12, D-17, D-20 |
@@ -71,7 +72,8 @@ tools/hostcheck/run.sh --full     # перед слиянием (§4): проп�
 |---|---|---|
 | JDK | 21 | инструменты сборки (`jvmToolchain(21)`); байт-код — Java 17 |
 | Python | 3.11 или новее | скрипты `tools/` (`tomllib`) |
-| Go | 1.21 или новее (нужную версию toolchain — `go1.27.1` — он скачивает сам по `tools/xray/go.mod`) | шаг «Xray»: сборка ядра и `dppass-xray-probe`; без Go шаг пропускается, а `--full` падает |
+| Go | 1.21 или новее (нужную версию toolchain — `go1.27.1` — он скачивает сам по `tools/xray/go.mod`) | шаги «Xray» и «Xray: мост и JNI»: сборка ядра, `dppass-xray-probe` и библиотеки `libdppassxray`; без Go шаги пропускаются, а `--full` падает |
+| Компилятор C и заголовки JNI | `cc` (gcc или clang) для cgo; `jni.h` из JDK (`JAVA_HOME/include`) | библиотека моста для JVM хоста (`native.py host`) |
 | Android SDK | платформа 36 (`compileSdk`) и build-tools (`aapt2`, `dexdump`), путь — `ANDROID_HOME` или `sdk.dir` в `local.properties` | модуль `app`, `check_android_api.py`, `check_apk.py`; без SDK `app` не подключается, а `--full` падает |
 | Сеть | при первом запуске | Gradle скачивает дистрибутив (сверяя SHA-256) и зависимости из Maven Central и Google Maven; Go — toolchain и модули с proxy.golang.org (сверяя с `go.sum` и sum.golang.org) |
 

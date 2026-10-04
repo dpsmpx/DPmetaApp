@@ -51,7 +51,8 @@ def main_code(path):
 
 
 def test_code(path):
-    return "/src/test/" in path
+    # Любой набор исходников, кроме основного: src/test и отдельные тестовые (src/xrayJni).
+    return "/src/" in path and not main_code(path)
 
 
 def under(*prefixes):

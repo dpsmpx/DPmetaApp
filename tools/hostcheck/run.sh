@@ -116,6 +116,24 @@ cli_smoke() {
   return "$fails"
 }
 
+# Мост Xray (D-25): go vet и go test моста, библиотека для JVM хоста и тест
+# JNI в этой JVM — тот же код, что уходит в APK.
+xray_bridge() {
+  "$PY" tools/xray/native.py host || return 1
+  local lib=build/xray/host/libdppassxray.so
+  "${GRADLE[@]}" :tests:integration:xrayJniTest -Pdppass.xray.lib="$lib" || return 1
+  "$PY" - <<'PYEOF' || return 1
+import glob, xml.etree.ElementTree as ET
+n = f = 0
+for p in glob.glob("tests/integration/build/test-results/xrayJniTest/*.xml"):
+    r = ET.parse(p).getroot()
+    n += int(r.get("tests")); f += int(r.get("failures")) + int(r.get("errors"))
+if n == 0 or f:
+    raise SystemExit(f"✗ XrayJniTest: тестов {n}, отказов {f}")
+print(f"✓ XrayJniTest: {n} тестов моста через JNI в JVM хоста")
+PYEOF
+}
+
 if [ "$MODE" != quick ]; then
   step "сборка и тесты ядра" "${GRADLE[@]}" build :cli:installDist
   if [ -x "$CLI" ]; then
@@ -128,8 +146,10 @@ if [ "$MODE" != quick ]; then
   # ---- 3. Xray на хосте (этап 2): эталоны компилятора принимает само ядро ----
   if command -v go >/dev/null 2>&1; then
     step "Xray: корпус и маршрутизация" "$PY" tools/xray/check_xray.py
+    step "Xray: мост и JNI" xray_bridge
   else
     skip "Xray: корпус и маршрутизация" "нет Go (Xray собирается из tools/xray/go.mod)"
+    skip "Xray: мост и JNI" "нет Go (библиотека ядра собирается из tools/xray/go.mod)"
   fi
 
   # ---- 4. Android ----

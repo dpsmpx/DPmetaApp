@@ -24,19 +24,18 @@ D-25. **Сделано:** мост Go `tools/xray/bridge` (один экземп
 `android --out DIR`: NDK `android-ndk` из каталога, три ABI, проверка
 ELF — машина, выравнивание 16 КБ, экспорт JNI = `external` XrayJni),
 общее окружение Go — `tools/xray/goenv.py`; `go.mod` приведён `go mod
-tidy` (`golang.org/x/sys` — прямая, версии те же).
+tidy` (`golang.org/x/sys` — прямая, версии те же). Тест JNI на хосте —
+`XrayJniTest` (набор `xrayJni` в `tests/integration`, задача
+`xrayJniTest`, без `-Pdppass.xray.lib` — отказ с подсказкой) и шаг
+hostcheck «Xray: мост и JNI» (`native.py host` + `xrayJniTest`).
 
 Осталось по работе 4 (порядок — как здесь):
 
 - [ ] `:app`: задача сборки библиотеки на вариант
       (`androidComponents.onVariants` → `sources.jniLibs.addGeneratedSourceDirectory`,
       задача совместима с configuration cache — `ExecOperations`).
-- [ ] Тест JNI XrayJniTest (JVM хоста, отдельный source set `xrayJni` в
-      `tests/integration`, задача `xrayJniTest` падает без
-      `-Pdppass.xray.lib`): версия, проверка, запуск/остановка, вызов
-      `protect` и закрытие пути при отказе, счётчики.
-- [ ] `run.sh`: шаг «Xray: мост и JNI» (`native.py host` + `xrayJniTest`);
-      шаги Android — требовать NDK (в `--full` его нет — ошибка).
+- [ ] `run.sh`: шаги Android — требовать NDK (в `--full` его нет — ошибка);
+      шаг ядра собирать без `:app` (APK без Go и NDK не собирается, D-25).
 - [ ] `check_apk.py`: `NATIVE_OK` — ровно `lib/<3 ABI>/libdppassxray.so`,
       выравнивание ELF и смещения в zip по 16 КБ, без сжатия; размер по
       ABI — `docs/PERFORMANCE_BUDGET.md`.
