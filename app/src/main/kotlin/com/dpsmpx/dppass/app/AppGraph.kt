@@ -4,7 +4,10 @@ import android.content.Context
 import android.os.Build
 import com.dpsmpx.dppass.connection.DPpassCore
 import com.dpsmpx.dppass.core.Clock
+import com.dpsmpx.dppass.diagnostics.Outcome
+import com.dpsmpx.dppass.diagnostics.Safe
 import com.dpsmpx.dppass.engine.xray.JniXrayRuntime
+import com.dpsmpx.dppass.engine.xray.XrayBackend
 import com.dpsmpx.dppass.engine.xray.XrayCompiler
 import com.dpsmpx.dppass.engine.xray.XrayProxyEngine
 import com.dpsmpx.dppass.storage.EncryptingBlobStore
@@ -40,6 +43,10 @@ object AppGraph {
         // (TODO.md): конфигурации с geoip/geosite ядро отвергает при проверке.
         val geodata = File(context.noBackupFilesDir, "geodata").apply { mkdirs() }
         val runtime = JniXrayRuntime.load({ System.loadLibrary(JniXrayRuntime.LIBRARY) }, geodata.path)
+        when (runtime) {
+            is Outcome.Success -> DeviceLog.log.info("engine_loaded", "backend" to Safe(XrayBackend.ID), "version" to Safe(runtime.value.version()))
+            is Outcome.Failure -> runtime.errors.forEach(DeviceLog.log::diagnostic)
+        }
         return DPpassCore(
             compiler = XrayCompiler(),
             engine = XrayProxyEngine(runtime),
@@ -48,6 +55,8 @@ object AppGraph {
             selfPackage = context.packageName,
             platform = PlatformTraits(supportsExcludeRoute = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU),
             storageRecovery = StorageReset(data, keys, Clock.SYSTEM),
+            // Журнал устройства (D-26): кольцо для отчёта и файл в фоне.
+            logSink = DeviceLog.sink,
         )
     }
 }

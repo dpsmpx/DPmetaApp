@@ -30,8 +30,13 @@ fun interface LogSink {
     fun emit(event: LogEvent)
 }
 
+/** Приёмник, который помнит последние события: из них строится локальный отчёт. */
+interface LogHistory {
+    fun snapshot(): List<LogEvent>
+}
+
 /** Кольцевой буфер в памяти: источник для локального отчёта. */
-class MemoryLogSink(private val capacity: Int = 512) : LogSink {
+class MemoryLogSink(private val capacity: Int = 512) : LogSink, LogHistory {
     private val buffer = ArrayDeque<LogEvent>()
 
     @Synchronized
@@ -41,7 +46,22 @@ class MemoryLogSink(private val capacity: Int = 512) : LogSink {
     }
 
     @Synchronized
-    fun snapshot(): List<LogEvent> = buffer.toList()
+    override fun snapshot(): List<LogEvent> = buffer.toList()
+}
+
+/**
+ * Одно событие — в несколько приёмников (на устройстве: кольцо для
+ * отчёта и файл журнала, D-26). История — у первого приёмника, который
+ * её помнит.
+ */
+class TeeLogSink(private val sinks: List<LogSink>) : LogSink, LogHistory {
+    constructor(vararg sinks: LogSink) : this(sinks.toList())
+
+    override fun emit(event: LogEvent) {
+        for (s in sinks) s.emit(event)
+    }
+
+    override fun snapshot(): List<LogEvent> = sinks.firstNotNullOfOrNull { it as? LogHistory }?.snapshot().orEmpty()
 }
 
 class Logger(

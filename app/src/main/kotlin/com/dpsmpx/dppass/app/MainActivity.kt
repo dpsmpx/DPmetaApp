@@ -9,6 +9,7 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import com.dpsmpx.dppass.R
 import com.dpsmpx.dppass.connection.ActivationResult
 import com.dpsmpx.dppass.diagnostics.Outcome
@@ -38,6 +39,16 @@ class MainActivity : Activity() {
             setText(R.string.start_vpn)
             setOnClickListener { requestVpn() }
         }
+        val copyLog = Button(this).apply {
+            setText(R.string.copy_log)
+            setOnClickListener { copyLog() }
+        }
+        val logToggle = Button(this)
+        logToggle.setOnClickListener {
+            DeviceLog.setEnabled(this, !DeviceLog.enabled(this))
+            showLogState(logToggle)
+        }
+        showLogState(logToggle)
         val title = TextView(this).apply { setText(R.string.shell_title) }
         val note = TextView(this).apply { setText(R.string.shell_note) }
         val column = LinearLayout(this).apply {
@@ -47,10 +58,33 @@ class MainActivity : Activity() {
             addView(title)
             addView(note)
             addView(start)
+            addView(copyLog)
+            addView(logToggle)
             addView(output)
         }
         setContentView(ScrollView(this).apply { addView(column) })
+        DeviceLog.log.info("activity_create")
         scope.launch { runShell() }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // Оболочка ушла с экрана — работа закончена: журнал в буфер обмена (D-26).
+        // Поворот экрана — не уход.
+        if (!isChangingConfigurations) DeviceLog.onWorkFinished(this, "activity_stop")
+    }
+
+    private fun showLogState(button: Button) {
+        button.setText(if (DeviceLog.enabled(this)) R.string.log_on else R.string.log_off)
+    }
+
+    private fun copyLog() {
+        DeviceLog.copyToClipboard(this, "button") { chars ->
+            runOnUiThread {
+                val text = if (chars != null) getString(R.string.log_copied, chars) else getString(R.string.log_copy_failed)
+                Toast.makeText(this, text, Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     private suspend fun runShell() {
