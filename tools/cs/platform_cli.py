@@ -239,6 +239,14 @@ def cmd_publish(a) -> int:
         o = pub.reconcile(a.reconcile, a.exists == "yes", a.url, a.remote_id)
         print(f"{o.status}: {' '.join(o.notes)}")
         return 0 if o.status != "blocked" else 1
+    if a.cancel:
+        o = pub.cancel(a.cancel)
+        print(f"{o.status}: {' '.join(o.notes)}")
+        return 0 if o.status == "cancelled" else 1
+    if a.delete:
+        o = pub.delete(a.delete, manual=a.manual)
+        print(f"{o.status}: {' '.join(o.notes)} {o.error or ''}")
+        return 0 if o.status == "deleted" else 1
     if a.due:
         ts = pub.due()
         if not ts:
@@ -402,7 +410,59 @@ def cmd_events(a) -> int:
     return 0
 
 
+AFFECTED = [  # префикс пути → проверки (tools/check.sh --affected)
+    ("data/facts/", ["facts", "claims", "canonical", "projects", "site"]),
+    ("content/items/", ["items", "claims", "provenance", "visual", "exports", "canonical", "campaigns", "site"]),
+    ("data/publications/", ["publications", "site"]),
+    ("data/platforms/destinations", ["destinations", "campaigns", "capabilities"]),
+    ("data/platforms/capabilities", ["capabilities", "destinations"]),
+    ("data/platforms/export_specs", ["exports", "visual"]),
+    ("data/campaigns/", ["campaigns"]),
+    ("data/projects/", ["projects", "site"]),
+    ("data/identity/", ["destinations", "projects", "canonical", "site"]),
+    ("data/website/", ["site"]),
+    ("data/provenance/", ["provenance"]),
+    ("data/metrics/", ["metrics"]),
+    ("data/experiments/", ["metrics"]),
+    ("website/", ["site"]),
+    ("assets/", ["provenance", "visual", "site"]),
+    ("schemas/", ["schemas"]),
+    ("docs/", ["links", "facts"]),
+]
+
+
+def affected_checks(files: list[str]) -> tuple[list[str], bool]:
+    """(проверки, нужны ли тесты) по изменённым файлам."""
+    from .__main__ import CHECKS
+    names = {"schemas", "secrets"}
+    tests = False
+    for f in files:
+        if f.startswith(("tools/", "tests/")):
+            return list(CHECKS), True
+        for prefix, checks in AFFECTED:
+            if f.startswith(prefix):
+                names.update(checks)
+        if f.endswith(".md"):
+            names.update(["links", "facts"])
+    return [n for n in CHECKS if n in names], tests
+
+
+def cmd_affected(a) -> int:
+    import subprocess
+    repo = Repo()
+    base = "origin/main" if subprocess.run(["git", "rev-parse", "-q", "--verify", "origin/main"], cwd=repo.root,
+                                            capture_output=True).returncode == 0 else "main"
+    out = subprocess.run(["git", "diff", "--name-only", f"{base}...HEAD"], cwd=repo.root, capture_output=True, text=True).stdout
+    out += subprocess.run(["git", "status", "--porcelain"], cwd=repo.root, capture_output=True, text=True).stdout
+    files = sorted({l[3:] if l[:2].strip() and len(l) > 3 and l[2] == " " else l.strip() for l in out.splitlines() if l.strip()})
+    checks, tests = affected_checks(files)
+    print(" ".join(checks) + (" +tests" if tests else ""))
+    return 0
+
+
 def register(sub) -> None:
+    p = sub.add_parser("affected", help="проверки, затронутые изменениями (для tools/check.sh --affected)")
+    p.set_defaults(fn=cmd_affected)
     p = sub.add_parser("migrate", help="миграция объекта v1 → v2")
     p.add_argument("item")
     p.add_argument("--apply", action="store_true")
@@ -453,6 +513,9 @@ def register(sub) -> None:
     p.add_argument("--due", action="store_true", help="наступившие и повторяемые")
     p.add_argument("--record-manual", action="store_true", help="записать ручную публикацию (Д33)")
     p.add_argument("--reconcile", metavar="PUB_ID")
+    p.add_argument("--cancel", metavar="PUB_ID", help="отменить запланированную")
+    p.add_argument("--delete", metavar="PUB_ID", help="удалить опубликованное на площадке")
+    p.add_argument("--manual", action="store_true", help="с --delete: удалено вручную, только записать")
     p.add_argument("--exists", choices=["yes", "no"])
     p.add_argument("--url")
     p.add_argument("--remote-id")

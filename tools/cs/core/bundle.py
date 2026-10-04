@@ -1,8 +1,8 @@
 """Выгрузка всей базы в переносимом виде (Д30, PLATFORM_VISION §65, §110).
 
 Один архив .tar.gz с манифестом: контент (объекты, каноны, варианты),
-медиа (ассеты и экспорт), происхождение, журнал публикаций, решения и
-данные. Формат — обычные файлы YAML/JSON/Markdown/PNG/JPEG: читаются без
+медиа (ассеты и экспорт), происхождение, журнал публикаций, решения,
+данные и код инструментов (архив самодостаточен для проверки). Формат — обычные файлы YAML/JSON/Markdown/PNG/JPEG: читаются без
 этой системы. Это и резервная копия «вне GitHub» (локальная и внешняя
 копии — docs/operations/BACKUP.md).
 """
@@ -27,6 +27,7 @@ PARTS = {
              "data/website/", "data/releases/", "data/campaigns/", "data/metrics/", "data/experiments/"],
     "decisions": ["docs/", "ROADMAP/", "README.md", "CLAUDE.md", "TODO.md"],
     "schemas": ["schemas/"],
+    "code": ["tools/", "tests/", "website/", "templates/", "prompts/", ".gitignore"],
 }
 
 

@@ -42,6 +42,13 @@
 
 Шаблон — `templates/discord_announcement.md`.
 
+## Публикация
+
+Вебхук канала даёт полную автоматизацию объявлений без бота (Execute,
+Edit, Delete; текст до 2000 знаков, до 10 embed, файл до 20 МиБ); URL
+вебхука — секрет. Адаптер — фаза П6, после ОР-6
+(`docs/research/publishing/PLATFORM_APIS.md`, §4).
+
 ## Источники
 
 support.discord.com: «Community Onboarding FAQ» (11074987197975), «Server

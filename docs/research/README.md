@@ -9,5 +9,8 @@
 |---|---|---|
 | Профессиональный образ разработчика | `docs/research/developer_branding/DEVELOPER_BRANDING.md` | по чему оценивают разработчика, если главные проекты закрыты |
 | Требования и рекомендации площадок | `docs/research/platforms/PLATFORM_GUIDANCE.md` | размеры, лимиты, правила — из официальных источников |
+| API площадок для публикации | `docs/research/publishing/PLATFORM_APIS.md` | что можно автоматизировать в Telegram, VK, YouTube, Discord, GitHub, TikTok |
+| Сайт автора | `docs/research/publishing/WEBSITE.md` | статика, CMS или бэкенд; хостинг; фиды; SEO |
+| Устройство системы | `docs/research/publishing/SYSTEM_DESIGN.md` | монолит или модули; события; учётные данные; надёжность |
 
 Срезы состояния площадок автора — не здесь, а в `docs/audits/`.

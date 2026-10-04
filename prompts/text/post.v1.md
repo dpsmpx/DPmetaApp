@@ -1,6 +1,7 @@
 # Промпт: текст публикации под площадку, версия 1
 
-Пишет `content/items/<id>/copy/<площадка>.md` по шаблону площадки
+Пишет вариант площадки `content/items/<id>/variants/<площадка>.<язык>.md`
+(из канона `canonical/vN.md`, `docs/content/CANONICAL_MODEL.md`) по шаблону площадки
 (`templates/`). Один объект — свой текст для каждой площадки, а не копия
 (`QUALITY_MODEL.md`, §6).
 

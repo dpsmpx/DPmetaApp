@@ -343,6 +343,43 @@ class Publisher:
         return Outcome("failed", pub_id, notes=["можно повторить: publish --due"])
 
 
+    def cancel(self, pub_id: str) -> Outcome:
+        """Отменить запланированную публикацию до наступления времени (GOVERNANCE.md, §4)."""
+        env = ENV_OF_MODE[self.mode]
+        if env is None:
+            return Outcome("blocked", pub_id, notes=["режим dry-run ничего не меняет"])
+        led = self.ledger(env)
+        p = led.publications().get(pub_id)
+        if p is None or p.state not in ("SCHEDULED", "FAILED", "RETRY"):
+            return Outcome("blocked", pub_id, notes=[f"отменить можно запланированную или упавшую (сейчас {p.state if p else 'нет'})"])
+        led.append({"publication_id": pub_id, "event": "CANCELLED", "actor": actor()})
+        return Outcome("cancelled", pub_id)
+
+    def delete(self, pub_id: str, manual: bool = False) -> Outcome:
+        """Удалить опубликованное на площадке и записать DELETED (журнал и архив сохраняют историю)."""
+        env = ENV_OF_MODE[self.mode]
+        if env is None:
+            return Outcome("blocked", pub_id, notes=["режим dry-run ничего не меняет"])
+        if env == "production" and is_ai_session():
+            return Outcome("blocked", pub_id, notes=["удаление рабочей публикации — действие автора (Д26)"])
+        led = self.ledger(env)
+        p = led.publications().get(pub_id)
+        if p is None or p.state != "PUBLISHED":
+            return Outcome("blocked", pub_id, notes=[f"удалить можно опубликованное (сейчас {p.state if p else 'нет'})"])
+        f = p.first
+        if not manual:
+            dest = self.repo.destinations()[f["destination"]]
+            adapter = self.adapter_factory(f["platform"], dest)
+            from ..adapters.base import RemoteRef
+            try:
+                adapter.delete(RemoteRef(p.remote["remote_id"], p.remote["remote_url"]))
+            except PublishError as e:
+                return Outcome("failed", pub_id, error=e.as_record(),
+                               notes=["удалите вручную на площадке и запишите: publish --delete … --manual"])
+        led.append({"publication_id": pub_id, "event": "DELETED", "actor": actor(), "method": "manual" if manual else None})
+        return Outcome("deleted", pub_id)
+
+
 def _in_git(repo: Repo, path) -> bool:
     """Файл отслеживается Git и не изменён (канон «сохранён», §108)."""
     try:

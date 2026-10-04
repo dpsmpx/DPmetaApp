@@ -36,6 +36,13 @@ Galdhold и DPlang закрыты (Д17). Профессиональная оц�
 Текст правок — `TODO.md`, пункт «README профиля GitHub». Править
 репозиторий `dpsmpx/dpsmpx` — только по согласию автора.
 
+## Публикация и источник фактов
+
+GitHub — прежде всего источник истины о софте: релизы и теги открытых
+репозиториев → `data/releases/` (после проверки человеком) → черновик
+кампании; публикация — release notes открытых проектов и README профиля
+через PR, правку принимает автор (фаза П8; `docs/research/publishing/PLATFORM_APIS.md`, §5).
+
 ## Официальные источники
 
 docs.github.com: «Customizing your repository's social media preview»

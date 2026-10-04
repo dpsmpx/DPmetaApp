@@ -15,9 +15,9 @@ CI-0001 --variant A --format … --final`.
 |---|---|---|---|---|
 | `exports/A-ru-master.png`, `exports/A-en-master.png` | `master` | 2560×1440 PNG | RU, EN | мастер-файлы (внутренние) |
 | `exports/A-ru-youtube_banner.jpg` | `youtube_banner` | 2560×1440 JPEG, смысл в зоне 1544×423 | RU | шапка канала YouTube |
-| `exports/A-ru-telegram_post.jpg` | `telegram_post` | 1280×720 JPEG | RU | закреплённая запись-вход канала-дневника + `copy/telegram.md` |
-| `exports/A-ru-vk_post.jpg` | `vk_post` | 1280×720 JPEG (размеры VK не подтверждены) | RU | запись VK + `copy/vk.md` |
-| `exports/A-en-github_social.png` | `github_social` | 1280×640 PNG < 1 МБ | EN | баннер README профиля + `copy/github.md` |
+| `exports/A-ru-telegram_post.jpg` | `telegram_post` | 1280×720 JPEG | RU | закреплённая запись-вход канала-дневника + `variants/telegram.ru.md` |
+| `exports/A-ru-vk_post.jpg` | `vk_post` | 1280×720 JPEG (размеры VK не подтверждены) | RU | запись VK + `variants/vk.ru.md` |
+| `exports/A-en-github_social.png` | `github_social` | 1280×640 PNG < 1 МБ | EN | баннер README профиля + `variants/github.en.md` |
 
 ## Рендеры для критики — все варианты
 
@@ -35,6 +35,9 @@ EN), шапка YouTube (RU), 2:1 GitHub (EN) — для A, B, C, D. Ренде�
 
 ## Тексты публикаций
 
-`copy/telegram.md` (RU), `copy/vk.md` (RU), `copy/github.md` (EN, подпись
-и строка под баннером), `copy/youtube.md` (шапка — без текста).
+до 04.10.2026 — `copy/`; после миграции v2 — варианты
+`variants/telegram.ru.md`, `variants/vk.ru.md`, `variants/github.en.md` (EN,
+подпись и строка под баннером), сайт — `variants/website.ru.md`,
+`variants/website.en.md`; шапка YouTube — без текста. Канон —
+`canonical/v1.md`; кампания — `data/campaigns/CMP-0001.yaml`.
 Проверены `tools/check.sh` (`claims`): факты, запреты, числа.

@@ -57,5 +57,6 @@ Platform, Safety, Provenance) — `pass`; интерьер не читается
 `item.yaml`; состояние `APPROVED`; финальный экспорт —
 `python3 -m tools.cs export CI-0001 --variant A --format master
 youtube_banner telegram_post vk_post github_social --final` → `EXPORTED`.
-Публикует автор (Д12): тексты — `copy/`, файлы — `exports/`
+Публикация — по кампании CMP-0001 (Д12: только одобренные автором версии):
+тексты — варианты площадок `variants/` (до 04.10.2026 — `copy/`), файлы — `exports/`
 (`OUTPUTS.md`).

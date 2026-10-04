@@ -236,6 +236,14 @@ class Gates(Base):
         self.assertEqual(len(due), 1)
         self.assertEqual(later.run(due[0]).status, "published")
 
+    def test_cancel_and_delete(self):
+        o = self.pub().run(self.tg(at="2026-10-06T09:00:00Z"))
+        self.assertEqual(self.pub().cancel(o.pub_id).status, "cancelled")
+        self.assertEqual(self.pub().cancel(o.pub_id).status, "blocked")
+        site = self.pub().run(Target("CI-0101", "website.ru", "site-production"))
+        self.assertEqual(self.pub().delete(site.pub_id).status, "deleted")
+        self.assertEqual(Ledger(self.repo, "production").publications()[site.pub_id].state, "DELETED")
+
     def test_new_version_edits_published_post(self):
         self.assertEqual(self.pub().run(self.tg()).status, "published")
         v = find(self.repo, "CI-0101").variants()["telegram.ru"]

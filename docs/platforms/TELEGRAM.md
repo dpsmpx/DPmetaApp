@@ -30,6 +30,16 @@
   код (Д17), числа не из реестра.
 - Шаблоны: `templates/telegram_devlog.md`, `templates/telegram_milestone.md`.
 
+## Публикация через бота
+
+Канал-дневник — площадка с полной автоматизацией через Bot API (Д12,
+`docs/platforms/PUBLISHING_CAPABILITY_MATRIX.md`): адаптер
+`tools/cs/adapters/telegram.py`, адресат `tg-devlog` (тестовый — `tg-test`).
+Публикуется только одобренная автором версия варианта `telegram.ru`;
+отложенной публикации в Bot API нет — откладывает планировщик системы;
+удалить бот может только посты младше 48 часов; статистика — вручную
+(Д15). Подключение — `docs/operations/CREDENTIALS.md`, «Telegram».
+
 ## Профиль `@dpsmpx`
 
 Био: ссылки на GitHub и YouTube. Исправить YouTube-ссылку на `@dpsmpx`

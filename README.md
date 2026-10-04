@@ -1,30 +1,35 @@
-# SocialMediaImage — система контента dpsmpx
+# SocialMediaImage — контентная платформа Бориса Давыдова / dpsmpx
 
-Система исследования, создания, проверки и хранения контента автора
-**dpsmpx** (GitHub, Telegram, YouTube, TikTok, VK, Discord): изображения,
-посты, описания, обложки, анонсы, дневники разработки.
+Система исследования, создания, проверки, публикации и хранения
+контента автора **Борис Давыдов / dpsmpx**: свой сайт `dpsmpx.com` как
+центральная точка и архив, и адаптированные версии для Telegram, VK,
+YouTube, TikTok, Discord, GitHub.
 
-Это не «генератор постов». Контент здесь — производная проверенного
-контекста: кто автор, что он строит, что доказуемо, для кого и где.
-Знание об авторе, проектах, аудиториях и площадках живёт в
-репозитории, а не в памяти сессии ИИ.
+Это не «кросспостинг-бот». Контент — производная проверенного контекста
+(Д1): кто автор, что он строит, что доказуемо, для кого и где. Материал
+создаётся **один раз** как канон, проверяется один раз и показывается
+многими родными формами; площадки — каналы распространения, а канон,
+медиа, происхождение и история публикаций остаются у автора (Д21, Д22).
 
 ```
-идентичность → намерение → исследование → спецификация → генерация
-→ проверка → публикация (автор) → измерение → выводы
+Author / Projects → Research / Facts → Canonical content → Adaptation → Validation → Approval (автор)
+  → Website (dpsmpx.com) → Platform adapters → Publication journal → Analytics → Strategy (решения автора)
 ```
 
-## Состояние
+## Состояние на 4 октября 2026
 
-| что | состояние на 4 октября 2026 |
+| что | состояние |
 |---|---|
-| исследование источников | сделано, с ограничениями доступа (VK, Discord, видео TikTok) — `docs/audits/INITIAL_AUDIT.md`, `docs/audits/2026-10-04-SOCIAL_AUDIT.md`, `docs/audits/2026-10-04-TIKTOK_AUDIT.md` |
-| идентичность, проекты, факты | сделано — `docs/identity/`, `docs/context/`, `data/facts/`; конфликты IC-01…IC-11 записаны, правки профилей — за автором |
-| модель контента, конвейер, гейты | сделано — `docs/content/`, `schemas/`, `tools/cs/` |
-| проверки | `tools/check.sh`: схемы, состояния и гейты, факты и запреты, происхождение, визуальные проверки по раскладке, экспорт, ссылки, секреты; тесты — `tests/` |
-| первый продукт — презентационное изображение | `UNDER_REVIEW`: после критики и ревизии рекомендован вариант A, экспорт-превью и тексты готовы; ждёт автора — утверждение (гейт Brand), ОР-1, права фотографа (гейт Legal) — `docs/content/products/personal_presentation/` |
+| исследование | источники и площадки (`docs/audits/`), API площадок и сайт (`docs/research/publishing/`), матрица возможностей |
+| идентичность, проекты, факты | сделано; имя открыто — Д20; бренды автора и проектов — Д27 |
+| модель контента | v2: канон с версиями, варианты площадок, подстановка фактов, зависимости и устаревание, кампании, проекты, релизы |
+| публикация | движок: журнал, идемпотентность, повторы, структурные ошибки, dry-run / safe / production, одобрение автора по хэшу; адаптеры — сайт, Telegram (Bot API), имитации всех площадок; VK, YouTube, Discord, GitHub, TikTok — ручной путь (Д33) |
+| сайт | генератор, staging (`site serve`), главная, «обо мне», проекты RU/EN, лента, фиды Atom/RSS/JSON, sitemap, `/api/v1/`; домен `dpsmpx.com` не зарегистрирован — ОР-11 |
+| проверки | `tools/check.sh` (quick / affected / full / release) — 17 проверок и тесты: модульные, контрактные, движок, сквозной |
+| первый продукт CI-0001 | `UNDER_REVIEW`, переведён в v2 (канон, варианты сайта RU/EN, Telegram, VK, GitHub), кампания CMP-0001; ждёт ревизии подписи по Д20 и утверждения автора |
 
-Что дальше — `ROADMAP/ROADMAP.md`; незавершённое — `TODO.md`.
+Что дальше — `ROADMAP/ROADMAP.md` (фазы П0–П11 платформы и К1–К7
+контента); незавершённое — `TODO.md`; постановка — `docs/direction/PLATFORM_VISION.md`.
 
 ## С чего начать
 
@@ -32,64 +37,68 @@
 |---|---|
 | Кто автор и что он делает? | `docs/context/AUTHOR_MASTER_CONTEXT.md` |
 | Что о нём доказуемо, что нельзя утверждать? | `docs/context/PROJECT_FACTS.md`, `data/facts/facts.yaml`, `docs/content/CLAIM_POLICY.md` |
-| Какие проекты главные? | `docs/identity/PROJECT_MAP.md` |
-| Аккаунты, имена, расхождения | `docs/identity/IDENTITY.md`, `docs/identity/IDENTITY_CONFLICTS.md` |
+| Какие проекты главные? | `docs/identity/PROJECT_MAP.md`, `data/projects/` |
+| Аккаунты, имена, бренды, расхождения | `docs/identity/`, `data/identity/brands.yaml` |
 | Для кого и что публиковать? | `docs/direction/CONTENT_STRATEGY.md` |
-| Что публиковать на каждой площадке? | `docs/platforms/` |
-| Какой визуальный язык? | `docs/brand/VISUAL_SYSTEM.md` |
-| Как создать новый контент? | `docs/content/CONTENT_PIPELINE.md`, `templates/`, `prompts/` |
-| Как его проверить и когда он готов? | `docs/content/QUALITY_MODEL.md`, `tools/check.sh` |
+| Что умеет каждая площадка? | `docs/platforms/PUBLISHING_CAPABILITY_MATRIX.md`, `docs/platforms/` |
+| Как устроен сайт? | `docs/platforms/WEBSITE.md` |
+| Как создать контент? | `docs/content/CONTENT_PIPELINE.md`, `docs/content/CANONICAL_MODEL.md`, `templates/`, `prompts/` |
+| Как опубликовать? | `docs/content/PUBLISHING.md`, `docs/content/GOVERNANCE.md` |
+| Как проверить и когда готово? | `docs/content/QUALITY_MODEL.md`, `tools/check.sh` |
+| Токены, окружения, резервные копии, сбои | `docs/operations/` |
+| Как устроены инструменты? | `docs/ARCHITECTURE.md` |
 | Что решено и почему? | `docs/direction/DECISIONS.md` |
 | Где остановилась прошлая сессия? | `docs/session/HANDOFF.md` |
 
 ## Карта репозитория
 
 ```
-CLAUDE.md                правила работы (кратко)
-TODO.md                  незавершённое
-ROADMAP/                 фазы 0–7
+CLAUDE.md  README.md  TODO.md      правила; точка входа; незавершённое
+ROADMAP/                           фазы П0–П11 и К1–К7 с задачами
 docs/
-  direction/             решения, цели системы, контент-стратегия
-  identity/              идентичность, конфликты, карта проектов
-  context/               мастер-контекст автора, факты по проектам
-  platforms/             модель каждой площадки
-  content/               модель, конвейер, качество, утверждения, эксперименты
-    products/            документы продуктов (бриф, направление, критика…)
-  brand/                 визуальная система
-  research/              исследования по темам
-  audits/                срезы на дату
-  legal/                 права на материалы
-  session/               передача между сессиями
-  ARCHITECTURE.md  PROCESS.md  PROVENANCE.md  SECURITY.md
+  direction/   решения, цели, стратегия, постановка платформы и её трассировка
+  identity/    идентичность, конфликты, карта проектов
+  context/     мастер-контекст автора, факты по проектам
+  platforms/   модель каждой площадки, сайт, матрица возможностей
+  content/     модель (v1, v2), конвейер, публикация, управление, качество, утверждения
+  operations/  окружения, учётные данные, резервирование, восстановление
+  research/    исследования по темам (в том числе publishing/)
+  audits/      срезы на дату
+  brand/ legal/ session/   визуальная система; права; передача между сессиями
 data/
-  facts/                 реестр утверждений и запрещённые формулировки
-  identity/              проверенные ссылки
-  platforms/             требования экспорта площадок
-  metrics/ experiments/  метрики и эксперименты (пока пусто)
-schemas/                 JSON Schema объектов
-content/items/<id>/      объекты контента: item.yaml, спецификация, варианты, экспорт
-prompts/                 версионированные промпты
-templates/               структурные шаблоны публикаций
-assets/
-  brand/                 шрифты (OFL) и токены
-  reference/             REFERENCE_IMAGE — настоящие фотографии автора
+  facts/ identity/ projects/ releases/ campaigns/   факты, ссылки и бренды, проекты, релизы, кампании
+  platforms/   возможности площадок, адресаты, размеры экспорта
+  policy/ website/ publications/   политика публикации, сайт, журнал публикаций
+  provenance/ metrics/ experiments/
+schemas/                           JSON Schema всех данных
+content/items/<id>/                объекты: item.yaml, canonical/, variants/, spec/, renders/, exports/
+website/                           тема сайта (шаблон, стили)
+prompts/ templates/                промпты и шаблоны публикаций
+assets/                            шрифты (OFL), токены, REFERENCE_IMAGE
 tools/
-  check.sh               все проверки
-  cs/                    инструменты системы (Python)
-  render/                рендер композиций (Chromium)
-tests/                   тесты инструментов
+  check.sh                         все проверки
+  cs/                              пакет системы: core/ (ядро), adapters/ (площадки), site/ (сайт), проверки, рендер
+  render/                          рендер композиций (Chromium)
+tests/                             тесты
 ```
 
-## Проверки
+## Команды
 
 ```sh
-tools/check.sh            # всё
-tools/check.sh --fast     # без рендера и тестов рендера
-python3 -m tools.cs status   # объекты контента и их состояния
+tools/check.sh                       # всё (--quick, --affected, --release, --fast)
+python3 -m tools.cs status           # объекты контента и их состояния
+python3 -m tools.cs campaign status CMP-0001       # сводка кампании по площадкам
+python3 -m tools.cs preview CI-0001                # предпросмотр всех вариантов
+python3 -m tools.cs site build && python3 -m tools.cs site serve   # staging сайта: http://localhost:8000
+python3 -m tools.cs publish CI-0001 telegram.ru --to tg-devlog     # пробный прогон публикации
+python3 -m tools.cs health           # площадки, учётные данные, сайт, хранилище
+python3 -m tools.cs bundle           # выгрузка всей базы (резервная копия)
 ```
 
-Нужны Python 3.10+ с `PyYAML` и `jsonschema`; для рендера — Node.js и
-Playwright с Chromium (`docs/ARCHITECTURE.md`, «Окружение»).
+Нужны Python 3.10+ с `PyYAML` и `jsonschema`; для рендера изображений —
+Node.js и Playwright с Chromium (`docs/ARCHITECTURE.md`, «Окружение»).
+Одобрение (`approve`) и рабочая публикация (`--production`) — только
+автор, в своём терминале, со своими учётными данными (Д12, Д26).
 
 ## Права
 
