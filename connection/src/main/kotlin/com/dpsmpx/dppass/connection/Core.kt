@@ -17,6 +17,7 @@ import com.dpsmpx.dppass.engine.BackendCompiler
 import com.dpsmpx.dppass.engine.CapabilityChecker
 import com.dpsmpx.dppass.engine.EngineCapabilities
 import com.dpsmpx.dppass.engine.ProxyEngine
+import com.dpsmpx.dppass.engine.SocketProtector
 import com.dpsmpx.dppass.engine.TunInput
 import com.dpsmpx.dppass.network.NetworkAssessment
 import com.dpsmpx.dppass.routing.RouteDecision
@@ -31,8 +32,16 @@ import com.dpsmpx.dppass.subscriptions.Subscription
 import com.dpsmpx.dppass.subscriptions.SubscriptionCandidate
 import com.dpsmpx.dppass.subscriptions.UpdateResult
 import com.dpsmpx.dppass.tunnel.PlatformTraits
+import com.dpsmpx.dppass.tunnel.TunnelHandle
 import com.dpsmpx.dppass.tunnel.TunnelSpec
 import com.dpsmpx.dppass.tunnel.TunnelSpecBuilder
+
+/**
+ * Поднятый TUN → вход ядра: fd, MTU спецификации и защита сокетов ядра
+ * от этого же TUN (D-25). `tunnel` и `engine` друг о друге не знают —
+ * встречаются здесь.
+ */
+fun TunnelHandle.toTunInput(): TunInput = TunInput(fd, spec.mtu, SocketProtector(::protect))
 
 /** Фильтр серверов подписки по возможностям ядра: исключение — всегда с предупреждением. */
 class EngineProfileFilter(private val caps: EngineCapabilities) : ProfileFilter {

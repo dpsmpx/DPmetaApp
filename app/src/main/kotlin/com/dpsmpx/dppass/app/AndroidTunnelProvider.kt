@@ -48,6 +48,7 @@ class AndroidTunnelProvider(private val service: VpnService) : TunnelProvider {
         return Outcome.Success(object : TunnelHandle {
             override val fd: Int = pfd.fd
             override val spec: TunnelSpec = spec
+            override fun protect(socketFd: Int): Boolean = service.protect(socketFd)
             override fun close() = pfd.close()
         })
     }

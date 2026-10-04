@@ -222,6 +222,14 @@ Xray так, чтобы смысл IR сохранился, а где Xray по�
 - журнал ядра выключен (D-11); полей, выключающих проверку
   сертификата, нет (T5).
 
+Ядро в процессе (D-25): мост Go `tools/xray/bridge` (одно ядро на
+процесс, входы — только TUN, хук `protect()` с отказом, закрывающим
+путь, счётчики `proxy`) и экспорт JNI `tools/xray/jni` →
+`libdppassxray.so`; в Kotlin — `XrayRuntime` (`JniXrayRuntime`) и
+`XrayProxyEngine`. `TunInput` несёт `SocketProtector`
+(`TunnelHandle.protect`, на Android — `VpnService.protect`). Что ещё не
+подключено — `TODO.md`, этап 2.
+
 Компилятор проверяется на хосте самим ядром (`docs/TESTING.md`,
 «Эталоны Xray»): `tools/xray` — модуль Go вне сборки Gradle, собирает
 upstream `xray` и `dppass-xray-probe` из `tools/xray/go.mod`. В приложение

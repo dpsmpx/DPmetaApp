@@ -76,3 +76,19 @@
 | Пустой `fingerprint` у TLS — отпечаток Chrome | `transport/internet/tls/tls.go`, `GetFingerprint` | «без отпечатка» в IR — отпечаток ядра по умолчанию (`docs/CONFIG_FORMAT.md`) |
 | Hysteria2 (`hysteria`) соединяется через HTTP/3-транспорт quic-go: uTLS не участвует, ALPN всегда `h3` | `transport/internet/hysteria/dialer.go`; `http3/transport.go` в `apernet/quic-go` | `fingerprint` и иной `alpn` у Hysteria2 — отказ, а не молчаливое игнорирование |
 | Ключ Shadowsocks-2022 читается как base64 `StdEncoding`; не сумев — байты строки берутся как ключ, «:» делит строку на несколько ключей | `proxy/shadowsocks_2022/kdf.go`, `ParseKey` и `ParsePSKList` | ключ раскодируется и записывается заново со стандартным дополнением |
+
+## 6. Xray 26.9.30 внутри процесса: на что опирается мост
+
+Дата: **4 октября 2026**. Источник — те же исходники upstream
+(`v26.9.30`, коммит `b26a91de4f32`) и модуль `gvisor.dev/gvisor` из
+`tools/xray/go.sum`, прочитанные при выборе обёртки ядра (D-25). Пути —
+внутри модуля `github.com/xtls/xray-core`, если не сказано иное.
+
+| Свойство | Где | Что из этого следует для DPpass |
+|---|---|---|
+| Хуки сокетов (`RegisterDialerController`) вызываются для каждого сокета системного dialer: TCP — `net.Dialer.Control`, UDP — `ListenConfig.Control`, а также для системного резолвера ядра; хук один на процесс, снять его нельзя | `transport/internet/system_dialer.go`, `Dial` и `RegisterDialerController`; `features/dns/localdns/client.go`, `New` | `protect()` — один хук на процесс, который спрашивает защитника текущего сеанса |
+| Ошибку хука Xray только журналирует: сокет идёт дальше, соединение устанавливается | там же: `errors.LogInfoInner(…, "failed to apply external controller")` | отказ `protect()` мост закрывает сам, на уровне сокета |
+| Все исходящие транспорта клиента (`raw`, `ws`, `grpc`, `xhttp`, `httpupgrade`, `hysteria`) и DNS с `+local` соединяются через `internet.DialSystem` → системный dialer | `transport/internet/*/dialer.go`; `app/dns/nameserver_doh.go`, `nameserver_tcp.go` | хук видит все сокеты ядра к серверу и прямые соединения |
+| `core.New` переназначает глобальные DNS-клиент и менеджер исходящих системного dialer (`InitSystemDialer`); по ним `DialSystem` резолвит имя, если у исходящего задан `sockopt.domainStrategy` (у `direct` компилятора — `ForceIPv4v6`) | `core/xray.go`, `initInstanceWithConfig`; `transport/internet/dialer.go`, `DialSystem` и `LookupForIP` | второй `core.New` при работающем ядре подменил бы ему резолвер — проверка на ходу без `core.New` |
+| Вход TUN на Android берёт fd из переменной окружения `xray.tun.fd`; без неё — fd 0. Устройство открывается в `Handler.Start`, а не в `core.New` | `common/platform/platform.go`, `TunFdKey`; `proxy/tun/tun_android.go`, `NewTun`; `proxy/tun/handler.go`, `Start` | вход TUN ⇔ передан fd; `xray run -test` и проверка fd не трогают |
+| Ядро fd TUN не закрывает (`AndroidTun.Close` пустой); остановка стека отсоединяет fd-канал gVisor, а `Attach(nil)` ждёт, пока циклы чтения fd завершатся | `proxy/tun/stack_gvisor.go`, `Close`; `gvisor.dev/gvisor`: `pkg/tcpip/link/fdbased/endpoint.go`, `Attach` | fd остаётся у платформы; закрывать — после остановки ядра |

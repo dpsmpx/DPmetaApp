@@ -1,0 +1,179 @@
+//go:build linux
+
+package bridge
+
+import (
+	"errors"
+	"strings"
+	"testing"
+)
+
+// cfg — конфигурация в духе компилятора DPpass: журнал выключен,
+// счётчики исходящего proxy включены, исходящий proxy — freedom (без
+// сервера: в тестах моста соединяться не с кем), входы — из аргумента.
+func cfg(inbounds string, extra ...string) []byte {
+	parts := []string{
+		`"log": {"loglevel": "none"}`,
+		`"stats": {}`,
+		`"policy": {"system": {"statsOutboundUplink": true, "statsOutboundDownlink": true}}`,
+		`"inbounds": [` + inbounds + `]`,
+		`"outbounds": [{"tag": "proxy", "protocol": "freedom"}, {"tag": "block", "protocol": "blackhole"}]`,
+	}
+	parts = append(parts, extra...)
+	return []byte("{" + strings.Join(parts, ",") + "}")
+}
+
+const tunIn = `{"tag": "tun-in", "protocol": "tun", "settings": {"mtu": 1500}}`
+
+func kindOf(t *testing.T, err error) Kind {
+	t.Helper()
+	var be *Error
+	if !errors.As(err, &be) {
+		t.Fatalf("ожидался *bridge.Error, получено %T: %v", err, err)
+	}
+	return be.Kind
+}
+
+func setup(t *testing.T) {
+	t.Helper()
+	if err := Stop(); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetAssetDir(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := Stop(); err != nil {
+			t.Error(err)
+		}
+	})
+}
+
+func TestVersionIsPinnedCore(t *testing.T) {
+	if v := Version(); v != "26.9.30" {
+		t.Fatalf("в мост вкомпилирован Xray %s, а закреплён 26.9.30 (D-24)", v)
+	}
+}
+
+func TestValidateAcceptsAndRejects(t *testing.T) {
+	setup(t)
+	full, err := Validate(cfg(tunIn))
+	if err != nil || !full {
+		t.Fatalf("корректная конфигурация: full=%v err=%v", full, err)
+	}
+	if _, err := Validate([]byte(`{"outbounds": [`)); kindOf(t, err) != KindConfig {
+		t.Fatalf("битый JSON — KindConfig, получено %v", err)
+	}
+	if _, err := Validate(nil); kindOf(t, err) != KindConfig {
+		t.Fatalf("пустая конфигурация — KindConfig, получено %v", err)
+	}
+}
+
+func TestPolicyAllowsOnlyTunInbound(t *testing.T) {
+	setup(t)
+	cases := map[string][]byte{
+		"socks":        cfg(`{"tag": "s", "protocol": "socks", "listen": "127.0.0.1", "port": 10808}`),
+		"второй TUN":   cfg(tunIn + `,{"tag": "tun-2", "protocol": "tun", "settings": {"mtu": 1500}}`),
+		"API ядра":     cfg("", `"api": {"tag": "api", "services": ["StatsService"]}`),
+		"метрики HTTP": cfg("", `"metrics": {"tag": "m", "listen": "127.0.0.1:11111"}`),
+		"регистр":      []byte(`{"Inbounds": [{"tag": "s", "protocol": "socks", "port": 10808}], "outbounds": [{"protocol": "freedom"}]}`),
+	}
+	for name, c := range cases {
+		// Отвергнуть должна именно политика моста, а не сборка конфигурации.
+		_, err := Validate(c)
+		if err == nil || kindOf(t, err) != KindConfig || !strings.Contains(err.Error(), "мост:") {
+			t.Errorf("%s: политика должна отвергнуть конфигурацию, получено %v", name, err)
+		}
+	}
+}
+
+func TestStartContract(t *testing.T) {
+	setup(t)
+	p := &recorder{allow: true}
+	cases := []struct {
+		name   string
+		config []byte
+		tun    Tun
+		p      Protector
+	}{
+		{"вход TUN без fd", cfg(tunIn), NoTun, p},
+		{"fd без входа TUN", cfg(""), Tun{FD: 1000, MTU: 1500}, p},
+		{"MTU не совпал", cfg(tunIn), Tun{FD: 1000, MTU: 1400}, p},
+		{"TUN без защитника", cfg(tunIn), Tun{FD: 1000, MTU: 1500}, nil},
+	}
+	for _, c := range cases {
+		if err := Start(c.config, c.tun, c.p); err == nil || kindOf(t, err) != KindContract {
+			t.Errorf("%s: ожидался KindContract, получено %v", c.name, err)
+		}
+		if Running() {
+			t.Fatalf("%s: ядро запустилось вопреки договору", c.name)
+		}
+	}
+}
+
+func TestStartRequiresProxyCounters(t *testing.T) {
+	setup(t)
+	noStats := []byte(`{"log": {"loglevel": "none"}, "outbounds": [{"tag": "proxy", "protocol": "freedom"}]}`)
+	if err := Start(noStats, NoTun, nil); err == nil || kindOf(t, err) != KindConfig {
+		t.Fatalf("без счётчиков TrafficStats были бы нулями-неправдой: ожидался KindConfig, получено %v", err)
+	}
+	if Running() {
+		t.Fatal("ядро запустилось без счётчиков")
+	}
+}
+
+func TestSingleInstanceAndPartialValidation(t *testing.T) {
+	setup(t)
+	if _, _, ok := Traffic(); ok {
+		t.Fatal("счётчики без ядра")
+	}
+	if err := Start(cfg(""), NoTun, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := Start(cfg(""), NoTun, nil); err == nil || kindOf(t, err) != KindRunning {
+		t.Fatalf("второй запуск — KindRunning, получено %v", err)
+	}
+	full, err := Validate(cfg(tunIn))
+	if err != nil || full {
+		t.Fatalf("при работающем ядре проверка неполная и без ошибки: full=%v err=%v", full, err)
+	}
+	if _, err := Validate([]byte(`{"inbounds": [{"protocol": "socks", "port": 1}]}`)); err == nil {
+		t.Fatal("неполная проверка всё равно применяет политику входов")
+	}
+	if err := SetAssetDir(t.TempDir()); err == nil || kindOf(t, err) != KindRunning {
+		t.Fatalf("каталог геоданных у запущенного ядра не меняется, получено %v", err)
+	}
+	up, down, ok := Traffic()
+	if !ok || up != 0 || down != 0 {
+		t.Fatalf("счётчики только что запущенного ядра: %d %d %v", up, down, ok)
+	}
+	if err := Stop(); err != nil {
+		t.Fatal(err)
+	}
+	if err := Stop(); err != nil {
+		t.Fatalf("повторная остановка — не ошибка: %v", err)
+	}
+	if Running() {
+		t.Fatal("ядро не остановилось")
+	}
+	full, err = Validate(cfg(tunIn))
+	if err != nil || !full {
+		t.Fatalf("после остановки проверка снова полная: full=%v err=%v", full, err)
+	}
+}
+
+// recorder — защитник для тестов: запоминает fd, отвечает allow.
+type recorder struct {
+	allow bool
+	fds   chan int
+}
+
+func (r *recorder) Protect(fd int) bool {
+	if r.fds != nil {
+		select {
+		case r.fds <- fd:
+		default:
+		}
+	}
+	return r.allow
+}
