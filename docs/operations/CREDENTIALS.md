@@ -74,12 +74,91 @@ CS_PROD_YOUTUBE_OAUTH: {rotated: 2026-10-05, expires: 2026-10-12}
    `destinations.yaml` (сессия правит по слову автора), затем
    `site deploy` или `publish … --to site-production --production`.
 
-`rsync` — Linux, macOS, WSL на Windows. Локальный Claude Code запускает
-выгрузку только после «да» на запрос разрешения (`.claude/settings.json`:
-`ask` на `publish`, `site deploy`, `rsync`, `ssh`, `scp`, `sftp`; чтение
-`~/.ssh/**` запрещено). Правила `ask` спрашивают в любом режиме Claude
-Code, но сверяют текст команды — это защита от случайности; ключ на
-машине доступен локальному агенту технически (Д36).
+`rsync` — Linux, macOS, WSL на Windows, Android (Termux — ниже).
+Локальный Claude Code запускает выгрузку только после «да» на запрос
+разрешения (`.claude/settings.json`: `ask` на `publish`, `site deploy`,
+`rsync`, `ssh`, `scp`, `sftp`; чтение `~/.ssh/**` запрещено). Правила
+`ask` спрашивают в любом режиме Claude Code, но сверяют текст команды —
+это защита от случайности; ключ на машине доступен локальному агенту
+технически (Д36).
+
+#### С телефона: Termux (Android)
+Автор работает с телефона в Termux (сообщено 4 октября 2026). Что
+отличается от компьютера:
+- **Claude Code в Termux официально не поддерживается.** Поддерживаемые
+  системы: macOS, Windows, Ubuntu, Debian, Alpine; пакет npm — для
+  `linux-arm64` на glibc и musl, а в Android — Bionic
+  (code.claude.com/docs/en/setup, 04.10.2026). Для выгрузки он и не
+  нужен: по Д36 выгружает автор, а запуск вне сессии ИИ проверка вида
+  сессии не останавливает (`session_may_deploy` в
+  `tools/cs/site/deploy.py`). Команды ниже автор вводит сам.
+- **Рендер изображений** (Playwright, Chromium) на Android не работает;
+  `site deploy` его не требует: сборка сайта — чистый Python.
+- `rpds-py` (зависимость `jsonschema` ≥ 4.18) собирается из исходников
+  компилятором Rust: готовых колёс для Termux нет.
+
+Шаги. `ЛОГИН` и `СЕРВЕР` — из «Общей информации» на главной странице
+панели; по Д35 адрес выгрузки в Git не записывается, поэтому здесь —
+заполнители:
+1. Termux — с F-Droid или из релизов `termux/termux-app` на GitHub,
+   не вперемешку с другими источниками. Затем:
+   `pkg update && pkg upgrade`,
+   `pkg install openssh rsync git gh python python-pip clang rust`.
+   `pip` в Termux не обновлять через `pip` — им управляет `pkg`.
+2. Репозиторий — в домашний каталог Termux, не в `/sdcard` (там нет
+   прав на исполнение): `gh auth login` (GitHub.com, HTTPS, вход через
+   браузер), `gh repo clone dpsmpx/SocialMediaImage ~/SocialMediaImage`.
+3. Зависимости: `export ANDROID_API_LEVEL="$(getprop
+   ro.build.version.sdk)"` (без неё maturin не соберёт `rpds-py`), затем
+   `pip install -r tools/requirements.txt` — несколько минут; проверка —
+   `python -c "import yaml, jsonschema; print(jsonschema.__version__)"`.
+4. Первый вход паролем, шаги 1–2 выше:
+   `ssh ЛОГИН@СЕРВЕР`, `yes` на отпечаток, пароль панели
+   (на экране не виден). На сервере: `rsync --version | head -1`,
+   `ls ~/dpsmpx.com` (ждём `public_html`), `exit`.
+5. Ключ (шаг 3 выше):
+   `ssh-keygen -t ed25519 -f ~/.ssh/beget_dpsmpx -C "dpsmpx deploy termux"`
+   (без пароля на ключ — иначе нужен `ssh-agent`: выгрузка идёт с
+   `BatchMode=yes`), затем
+   `cat ~/.ssh/beget_dpsmpx.pub | ssh ЛОГИН@СЕРВЕР 'mkdir -p ~/.ssh && chmod 711 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys'`
+   (пароль панели — последний раз). В `~/.ssh/config` (`chmod 600`):
+   ```
+   Host СЕРВЕР
+     User ЛОГИН
+     IdentityFile ~/.ssh/beget_dpsmpx
+     IdentitiesOnly yes
+     ServerAliveInterval 30
+   ```
+   Проверка без пароля: `ssh -o BatchMode=yes СЕРВЕР 'echo ok'`.
+6. Адрес выгрузки — в профиль своей оболочки (`echo $0`: `bash` →
+   `~/.bashrc`, `zsh` → `~/.zshrc`; в Termux по умолчанию bash):
+   `export CS_PROD_SITE_DEPLOY_TARGET='ЛОГИН@СЕРВЕР:dpsmpx.com/public_html/'`;
+   новая вкладка Termux.
+7. Проверки: `tools/check.sh --quick`, `python -m tools.cs health`,
+   `python -m tools.cs site deploy --dry-run` — ничего не выкладывает,
+   последняя строка «изменений: N».
+
+Ключ на телефоне отзывается удалением его строки из
+`~/.ssh/authorized_keys` на сервере (§3 «Ротация и отказ»); потерян
+телефон — удалить строку сразу.
+
+#### Если Beget отказывает
+Точный текст ошибки и `ssh -v ЛОГИН@СЕРВЕР 2>&1 | tail -25`
+показывают причину (пароль в выводе не печатается).
+
+| Сообщение | Вероятная причина | Что делать |
+|---|---|---|
+| `Permission denied, please try again.` после пароля | неверный логин или пароль; SSH ещё выключен | логин — из «Общей информации», не имя и не почта; пароль — от панели (сброс — в панели); переключатель SSH включён; пароль — вставкой (долгое нажатие → Paste): клавиатура телефона может подменять символы и регистр |
+| соединение закрывается сразу после пароля (`Connection closed by … port 22`) | SSH-доступ ещё не применился | выключить и включить SSH в панели, подождать несколько минут, войти снова; не помогает — тикет в поддержку Beget с текстом ошибки |
+| `Connection timed out`, `Network is unreachable` | порт 22 закрыт сетью (мобильный оператор, VPN) | другая сеть или без VPN |
+| `Could not resolve hostname` | опечатка в имени сервера | имя — из панели |
+| `Host key verification failed` | первый вход был с `BatchMode` или отпечаток сменился | первый вход — вручную; сменился — сверить с поддержкой Beget, только потом `ssh-keygen -R СЕРВЕР` |
+| `Permission denied (publickey,password)` с `BatchMode=yes` | ключ не принят | `ssh -v`: какой файл ключа предложен; на сервере `chmod 711 ~/.ssh`, `chmod 600 ~/.ssh/authorized_keys`; строка `.pub` целиком, одной строкой |
+| `rsync: command not found` на сервере | rsync у Beget нет | сообщить сессии: выгрузка — `kind: command` (`lftp mirror` по SFTP; в Termux — `pkg install lftp`) |
+
+Много неудачных попыток подряд сервер может временно блокировать
+адрес — подождать перед новой попыткой (как именно у Beget —
+UNKNOWN).
 
 ### VK, YouTube, Discord, GitHub, TikTok
 Сейчас — ручной путь (`docs/platforms/PUBLISHING_CAPABILITY_MATRIX.md`).
