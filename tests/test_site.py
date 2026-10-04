@@ -1,20 +1,26 @@
-"""Сайт: предпросмотр и сервер (П2-09), доступность (П2-10), значок (П2-11), _headers (П2-12), sitemap (П2-13)."""
+"""Сайт: предпросмотр и сервер (П2-09), доступность (П2-10), значок (П2-11), _headers (П2-12), sitemap (П2-13),
+имени автора на сайте нет (Д37)."""
 from __future__ import annotations
 
+import json
 import re
 import shutil
+import tempfile
 import threading
 import unittest
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
+from pathlib import Path
 from unittest import mock
+
+import yaml
 
 from tools.cs.common import ROOT
 from tools.cs.core import textdoc
 from tools.cs.core.content import approval_state, find
 from tools.cs.platform_checks import page_a11y, page_csp
-from tools.cs.site.build import build
+from tools.cs.site.build import SiteBuild, build
 from tools.cs.site.preview import PAGE_DIR, preview
 from tools.cs.site.serve import _Handler, server
 from tests.platform_fixture import approve, make_repo
@@ -173,6 +179,54 @@ class HostFiles(unittest.TestCase):
         self.assertEqual(urls["http://localhost:8000/news/"].find(f"{SM}lastmod").text, "2026-10-04", "дата записи в ленте")
         prod = {u.find(f"{SM}loc").text: u for u in ET.parse(self.pr / "sitemap.xml").getroot().findall(f"{SM}url")}
         self.assertIsNone(prod["https://dpsmpx.com/news/"].find(f"{SM}lastmod"), "записей нет — lastmod не выдумывается")
+
+
+class AuthorName(unittest.TestCase):
+    """Д37: на сайте только dpsmpx; имя (AU-NAME) — только при real_name: true; утечка — ошибка сборки."""
+
+    def built(self, repo, env="staging"):
+        out = Path(tempfile.mkdtemp(prefix="cs-name-")) / env
+        sb = SiteBuild(repo, env)
+        return sb, sb.build(out), out
+
+    def test_no_name_anywhere_by_default(self):
+        repo = make_repo(git=False)
+        for env in ("staging", "production"):
+            sb, rep, out = self.built(repo, env)
+            self.assertEqual(rep.errors, [], env)
+            forms = sb.name_forms()
+            self.assertTrue({"Борис", "Давыдов", "Boris", "Davydov"} <= set(forms))
+            for f in out.rglob("*"):
+                if f.is_file():
+                    text = f.read_bytes().decode("utf-8", "ignore").lower()
+                    self.assertFalse([w for w in forms if w.lower() in text], f"{env}: {f.relative_to(out)}")
+        home = (out / "index.html").read_text(encoding="utf-8")
+        self.assertIn("<h1>dpsmpx</h1>", home)
+        person = next(json.loads(m) for m in re.findall(r'<script type="application/ld\+json">(.*?)</script>', home)
+                      if '"Person"' in m)
+        self.assertEqual(person["name"], "dpsmpx")
+        self.assertNotIn("alternateName", person)
+        self.assertEqual(json.loads((out / "feed.json").read_text(encoding="utf-8"))["authors"][0]["name"], "dpsmpx")
+
+    def test_name_in_content_is_a_build_error(self):
+        repo = make_repo(git=False)
+        v = find(repo, "CI-0101").variants()["website.ru"]
+        v.doc.body = "Автор — {{fact:AU-NAME}}.\n\n" + v.doc.body
+        textdoc.save(v.doc, v.path)
+        repo.reset()
+        _, rep, _ = self.built(repo)
+        self.assertTrue(any("news/test-news/index.html: имя автора на сайте" in e for e in rep.errors), rep.errors)
+
+    def test_real_name_only_by_explicit_switch(self):
+        repo = make_repo(git=False)
+        site = repo.path("data/website/site.yaml")
+        cfg = yaml.safe_load(site.read_text(encoding="utf-8"))
+        cfg["real_name"] = True
+        site.write_text(yaml.safe_dump(cfg, allow_unicode=True), encoding="utf-8")
+        repo.reset()
+        _, rep, out = self.built(repo)
+        self.assertEqual(rep.errors, [])
+        self.assertIn("<h1>Борис Давыдов</h1>", (out / "index.html").read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

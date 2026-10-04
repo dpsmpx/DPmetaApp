@@ -397,6 +397,11 @@ def cmd_site(a) -> int:
             build(repo, a.env)
         serve(root, a.port, a.env)
         return 0
+    if a.action == "shots":
+        from .site import shots
+        r = shots.check(repo, repo.path(a.out) if a.out else None)
+        r.print()
+        return 0 if r.ok else 1
     from .site.build import build
     out = repo.path(a.out) if a.out else None
     rep = build(repo, a.env, out, drafts=False if a.no_drafts else None)
@@ -461,21 +466,21 @@ def cmd_events(a) -> int:
 
 
 AFFECTED = [  # префикс пути → проверки (tools/check.sh --affected)
-    ("data/facts/", ["facts", "claims", "canonical", "projects", "site"]),
-    ("content/items/", ["items", "claims", "provenance", "visual", "exports", "canonical", "campaigns", "site"]),
-    ("data/publications/", ["publications", "site"]),
+    ("data/facts/", ["facts", "claims", "canonical", "projects", "site", "siteshots"]),
+    ("content/items/", ["items", "claims", "provenance", "visual", "exports", "canonical", "campaigns", "site", "siteshots"]),
+    ("data/publications/", ["publications", "site", "siteshots"]),
     ("data/platforms/destinations", ["destinations", "campaigns", "capabilities"]),
     ("data/platforms/capabilities", ["capabilities", "destinations"]),
     ("data/platforms/export_specs", ["exports", "visual"]),
     ("data/campaigns/", ["campaigns"]),
-    ("data/projects/", ["projects", "site"]),
-    ("data/identity/", ["destinations", "projects", "canonical", "site"]),
-    ("data/website/", ["site"]),
+    ("data/projects/", ["projects", "site", "siteshots"]),
+    ("data/identity/", ["destinations", "projects", "canonical", "site", "siteshots"]),
+    ("data/website/", ["site", "siteshots"]),
     ("data/provenance/", ["provenance"]),
     ("data/metrics/", ["metrics"]),
     ("data/experiments/", ["metrics"]),
-    ("website/", ["site"]),
-    ("assets/", ["provenance", "visual", "site"]),
+    ("website/", ["site", "siteshots"]),
+    ("assets/", ["provenance", "visual", "site", "siteshots"]),
     ("schemas/", ["schemas"]),
     ("docs/", ["links", "facts"]),
 ]
@@ -585,8 +590,8 @@ def register(sub) -> None:
     p.set_defaults(fn=cmd_search)
     p = sub.add_parser("stale", help="устаревшие каноны и варианты")
     p.set_defaults(fn=cmd_stale)
-    p = sub.add_parser("site", help="сайт: сборка, локальный staging, выгрузка на хостинг")
-    p.add_argument("action", choices=["build", "serve", "deploy"])
+    p = sub.add_parser("site", help="сайт: сборка, локальный staging, снимки страниц, выгрузка на хостинг")
+    p.add_argument("action", choices=["build", "serve", "shots", "deploy"])
     p.add_argument("--dry-run", action="store_true", help="deploy: только показать изменения (rsync --dry-run)")
     p.add_argument("--env", default="staging", choices=["staging", "production"])
     p.add_argument("--out")

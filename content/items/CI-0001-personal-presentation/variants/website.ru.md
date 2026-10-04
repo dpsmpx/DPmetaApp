@@ -20,10 +20,9 @@ media_alt:
 link: null
 generation:
   provider: session
-  note: из канона v1 для страницы «Обо мне» и главной (summary — первая строка главной)
+  note: из канона v1 для страницы «Обо мне» и главной (summary — первая строка главной); без имени автора — только dpsmpx (Д37)
 deps:
   facts:
-    AU-NAME: 5d083e3db9612d37
     AU-ROLE: 0d84826a46110966
     GH-NAME: 18e9e8bc34f1c9f0
     GH-GENRE: 87840cd38160c9f1
@@ -44,7 +43,7 @@ deps:
   media:
     exports/A-ru-telegram_post.jpg: f5d778d09184b31aac3c19a9b2256e78fabbec96e3d0ce3df9c05e6e0a262c16
 ---
-Меня зовут {{fact:AU-NAME}}, в сети — dpsmpx. Я {{fact:AU-ROLE}}: {{fact:AU-ROLE#1}}.
+Я — dpsmpx, {{fact:AU-ROLE}}: {{fact:AU-ROLE#1}}.
 
 ## Galdhold
 

@@ -1,7 +1,8 @@
 # Сайт dpsmpx.com (Д21, Д32, Д35; docs/platforms/WEBSITE.md).
 schema: site/v1
 hosting: beget                           # Д35: .htaccess вместо _headers
-title: {ru: Борис Давыдов / dpsmpx, en: Boris Davydov / dpsmpx}
+title: {ru: dpsmpx, en: dpsmpx}
+real_name: false                         # Д37: имени автора на сайте нет — только dpsmpx; сборка проверяет
 canonical_base: https://dpsmpx.com       # канонические адреса (§79) — не зависят от окружения
 languages: [ru, en]                      # EN — главная, «обо мне», проекты (Д21)
 environments:

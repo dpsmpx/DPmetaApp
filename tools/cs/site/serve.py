@@ -14,6 +14,15 @@ from pathlib import Path
 
 
 class _Handler(http.server.SimpleHTTPRequestHandler):
+    extra_headers: dict = {}
+
+    def end_headers(self):
+        # Заголовки сайта (CSP и др., П2-12) — как их отдаст хостинг: браузер проверки
+        # тогда ловит нарушения политики так же, как на рабочем сайте (П2-17).
+        for k, v in self.extra_headers.items():
+            self.send_header(k, v)
+        super().end_headers()
+
     def send_error(self, code, message=None, explain=None):
         page = Path(self.directory) / "404.html"
         if code == 404 and page.is_file():
@@ -36,9 +45,14 @@ class _Server(socketserver.TCPServer):
     allow_reuse_address = True
 
 
-def server(root: Path, port: int = 8000) -> socketserver.TCPServer:
-    """Сервер на 127.0.0.1:port (0 — свободный порт); корень — root."""
-    return _Server(("127.0.0.1", port), partial(_Handler, directory=str(root)))
+def server(root: Path, port: int = 8000, headers: dict | None = None, quiet: bool = False) -> socketserver.TCPServer:
+    """Сервер на 127.0.0.1:port (0 — свободный порт); корень — root; headers — заголовки сайта;
+    quiet — без журнала запросов (проверки)."""
+    attrs = {"extra_headers": dict(headers or {})}
+    if quiet:
+        attrs["log_message"] = lambda self, *a: None
+    handler = type("Handler", (_Handler,), attrs)
+    return _Server(("127.0.0.1", port), partial(handler, directory=str(root)))
 
 
 def serve(root: Path, port: int, label: str, path: str = "/") -> None:

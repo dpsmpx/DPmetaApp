@@ -2,7 +2,7 @@
 # Все проверки репозитория (Д3: GitHub Actions нет — проверяет этот скрипт в сессии).
 #
 #   tools/check.sh             full: все проверки + все тесты (с рендером)
-#   tools/check.sh --fast      full без тестов рендера (Node + Chromium)
+#   tools/check.sh --fast      full без Chromium: без тестов рендера и снимков сайта (siteshots)
 #   tools/check.sh --quick     quick: схемы, объекты, секреты, ссылки, адресаты, матрица — без тестов
 #   tools/check.sh --affected  affected: проверки по изменённым файлам (от origin/main), тесты — если менялся код
 #   tools/check.sh --release   release: full + сборка production-сайта и сводки кампаний
@@ -54,6 +54,8 @@ if [ "$level" = affected ] && [ ${#names[@]} -eq 0 ]; then
   read -r -a names <<< "${aff/ +tests/}"
   [ $run_tests -eq 1 ] && names=()
 fi
+# --fast: без Chromium — и в проверках (siteshots), и в тестах рендера
+[ $fast -eq 1 ] && export CS_SKIP_RENDER=1
 python3 -m tools.cs check "${names[@]}" || status=1
 
 if [ "$level" = release ]; then

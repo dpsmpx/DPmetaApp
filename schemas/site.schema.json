@@ -18,6 +18,10 @@
     "title": {
       "type": "object"
     },
+    "real_name": {
+      "type": "boolean",
+      "description": "Д37: имя автора (AU-NAME) на сайте; false — только dpsmpx, сборка проверяет каждый файл"
+    },
     "canonical_base": {
       "type": "string",
       "pattern": "^https://"
