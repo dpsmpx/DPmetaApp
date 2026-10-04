@@ -1,0 +1,8 @@
+{
+  "load": {
+    "outcome": "ok",
+    "codes": [
+      "CIDR_HOST_BITS"
+    ]
+  }
+}

@@ -5,7 +5,6 @@ import com.dpsmpx.dppass.config.ConfigLoader
 import com.dpsmpx.dppass.config.LoadedConfig
 import com.dpsmpx.dppass.config.ServerProfile
 import com.dpsmpx.dppass.core.Clock
-import com.dpsmpx.dppass.core.ProfileId
 import com.dpsmpx.dppass.diagnostics.DiagCode
 import com.dpsmpx.dppass.diagnostics.Diagnostic
 import com.dpsmpx.dppass.diagnostics.DiagnosticReport
@@ -124,8 +123,7 @@ class DPpassCore(
 
     fun plan(assessment: NetworkAssessment?): ConnectionPlan? {
         val ir = activation.state.activeConfig ?: return null
-        val lkg = activation.state.active?.profileId?.let(::ProfileId)
-        return CandidatePlanner.plan(ir, compiler.capabilities, assessment, health, lkg, clock.nowMillis(), policy)
+        return CandidatePlanner.plan(ir, compiler.capabilities, assessment, health, health.lastGood(), clock.nowMillis(), policy)
     }
 
     suspend fun connect(assessment: NetworkAssessment?, checker: HealthChecker, tun: TunInput?, pause: suspend (Long) -> Unit): ConnectionReport? {

@@ -1,0 +1,91 @@
+{
+  "format": "dppass.config",
+  "format_version": 1,
+  "name": "Test config",
+  "profiles": [
+    {
+      "id": "xhttp-cdn",
+      "name": "XHTTP via CDN",
+      "server": "cdn.example.net",
+      "port": 443,
+      "protocol": {
+        "type": "vless",
+        "id": "00000000-0000-4000-8000-000000000002"
+      },
+      "transport": {
+        "type": "xhttp",
+        "path": "/x",
+        "host": "cdn.example.net",
+        "mode": "packet-up"
+      },
+      "security": {
+        "type": "tls",
+        "server_name": "cdn.example.net",
+        "alpn": [
+          "h2"
+        ],
+        "fingerprint": "chrome"
+      },
+      "hints": {
+        "priority": 5
+      }
+    }
+  ],
+  "routing": {
+    "default": "proxy",
+    "domain_resolution": "never",
+    "bypass_lan": true,
+    "apps": {
+      "mode": "all"
+    },
+    "rules": [
+      {
+        "id": "ads-block",
+        "action": "block",
+        "domain_suffix": [
+          "ads.example.com"
+        ]
+      },
+      {
+        "id": "ru-direct",
+        "action": "direct",
+        "domain_suffix": [
+          "example.ru"
+        ]
+      },
+      {
+        "id": "lan-ip-direct",
+        "action": "direct",
+        "ip_cidr": [
+          "198.18.0.0/15"
+        ]
+      }
+    ]
+  },
+  "dns": {
+    "servers": [
+      {
+        "id": "remote",
+        "type": "https",
+        "url": "https://dns.example.net/dns-query",
+        "route": "tunnel"
+      },
+      {
+        "id": "local",
+        "type": "system",
+        "route": "direct"
+      }
+    ],
+    "default": "remote",
+    "rules": [
+      {
+        "domain_suffix": [
+          "example.ru"
+        ],
+        "server": "local"
+      }
+    ],
+    "strategy": "prefer_ipv4",
+    "leak_protection": true
+  }
+}

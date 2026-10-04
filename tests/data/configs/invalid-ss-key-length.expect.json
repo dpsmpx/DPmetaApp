@@ -1,0 +1,8 @@
+{
+  "load": {
+    "outcome": "rejected",
+    "codes": [
+      "PASSWORD_FORMAT_INVALID"
+    ]
+  }
+}

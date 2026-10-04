@@ -157,9 +157,9 @@ class SubscriptionUpdater(private val fetcher: SubscriptionFetcher, private val 
 
         val valid = mutableListOf<ServerProfile>()
         for ((i, p) in decoded.profiles.withIndex()) {
-            val problems = ConfigValidator.validateProfile(p, "entry[$i]")
+            val problems = ConfigValidator.validateProfile(p, "profiles[$i]")
             if (problems.any { it.isError }) {
-                notes += Diagnostic.warning(DiagCode.SUBSCRIPTION_ENTRY_SKIPPED, "сервер «${p.name}» пропущен: не прошёл проверку", "entry[$i]")
+                notes += Diagnostic.warning(DiagCode.SUBSCRIPTION_ENTRY_SKIPPED, "сервер «${p.name}» пропущен: не прошёл проверку", "profiles[$i]")
                     .copy(causes = problems)
             } else {
                 valid += p

@@ -1,0 +1,10 @@
+{
+  "load": {
+    "outcome": "ok",
+    "codes": []
+  },
+  "activate": {
+    "backend": "mock",
+    "outcome": "activated"
+  }
+}

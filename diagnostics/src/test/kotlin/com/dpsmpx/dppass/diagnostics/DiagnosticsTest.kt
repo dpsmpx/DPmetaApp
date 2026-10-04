@@ -1,0 +1,123 @@
+package com.dpsmpx.dppass.diagnostics
+
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+
+class RedactorTest {
+    private val r = Redactor()
+
+    @Test
+    fun uuidIsRemoved() {
+        val out = r.redact("auth failed for 00000000-0000-4000-8000-000000000001 at step 2")
+        assertFalse("00000000-0000-4000-8000-000000000001" in out)
+        assertTrue(Redactor.UUID_MARK in out)
+    }
+
+    @Test
+    fun urlKeepsOnlySchemeAndHost() {
+        val out = r.redact("fetch https://sub.example.com/api/v1/sub/AbC123token?key=zzz failed")
+        assertEquals("fetch https://sub.example.com/<redacted> failed", out)
+    }
+
+    @Test
+    fun shareLinkUserInfoIsRemoved() {
+        val out = r.redact("bad link vless://secret-user@203.0.113.1:443?pbk=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8#x")
+        assertFalse("secret-user" in out)
+        assertFalse("AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8" in out)
+        assertTrue("203.0.113.1:443" in out)
+    }
+
+    @Test
+    fun secretPairsAndLongTokensAreRemoved() {
+        val out = r.redact("password=hunter2 sid: 0a1b2c3d token AbCdEf0123456789AbCdEf0123")
+        assertFalse("hunter2" in out)
+        assertFalse("0a1b2c3d" in out)
+        assertFalse("AbCdEf0123456789AbCdEf0123" in out)
+    }
+
+    @Test
+    fun codeNamesSurvive() {
+        // длинные слова без цифр — коды диагностики, их не трогаем
+        assertEquals("SUBSCRIPTION_NO_USABLE_SERVERS", r.redact("SUBSCRIPTION_NO_USABLE_SERVERS"))
+    }
+
+    @Test
+    fun strictLevelHidesAddresses() {
+        val strict = Redactor(Redactor.Level.STRICT)
+        val out = strict.redact("connect 203.0.113.7 and 2001:db8::1 via https://cdn.example.net/x")
+        assertFalse("203.0.113.7" in out)
+        assertFalse("2001:db8::1" in out)
+        assertFalse("cdn.example.net" in out)
+    }
+}
+
+class LoggerTest {
+    @Test
+    fun secretsNeverReachTheSink() {
+        val sink = MemoryLogSink()
+        val log = Logger("t", sink, { 42L })
+        log.info("connect", "id" to Secret("00000000-0000-4000-8000-000000000009"), "url" to "https://s.example.com/tok/abc123def456ghi789jkl", "n" to 3)
+        val line = sink.snapshot().single().render()
+        assertFalse("00000000-0000-4000-8000-000000000009" in line)
+        assertFalse("abc123def456ghi789jkl" in line)
+        assertTrue("n=3" in line)
+    }
+
+    @Test
+    fun safeValuesAreNotTouched() {
+        val sink = MemoryLogSink()
+        Logger("t", sink, { 0L }).info("x", "step" to Safe("COMPILE_0123456789abcdefghij"))
+        assertTrue("COMPILE_0123456789abcdefghij" in sink.snapshot().single().render())
+    }
+
+    @Test
+    fun ringBufferIsBounded() {
+        val sink = MemoryLogSink(capacity = 3)
+        val log = Logger("t", sink, { 0L })
+        repeat(10) { log.info("e$it") }
+        assertEquals(listOf("e7", "e8", "e9"), sink.snapshot().map { it.event })
+    }
+}
+
+class OutcomeTest {
+    @Test
+    fun diagnosticsAccumulateAcrossSteps() {
+        val a: Outcome<Int> = Outcome.Success(1, listOf(Diagnostic.warning(DiagCode.RULE_SHADOWED, "w")))
+        val b = a.then { Outcome.Success(it + 1, listOf(Diagnostic.info(DiagCode.CIDR_HOST_BITS, "i"))) }
+        assertEquals(2, b.valueOrNull())
+        assertEquals(2, b.diagnostics.size)
+    }
+
+    @Test
+    fun failureStopsTheChainAndKeepsEarlierNotes() {
+        val a: Outcome<Int> = Outcome.Success(1, listOf(Diagnostic.warning(DiagCode.RULE_SHADOWED, "w")))
+        val b = a.then { Outcome.failure(DiagCode.JSON_SYNTAX, "e") }.then { Outcome.Success(it) }
+        assertTrue(b is Outcome.Failure)
+        assertEquals(listOf(DiagCode.RULE_SHADOWED, DiagCode.JSON_SYNTAX), b.diagnostics.map { it.code })
+    }
+
+    @Test
+    fun failureWithoutErrorIsRejected() {
+        assertFailsWith<IllegalArgumentException> { Outcome.Failure(listOf(Diagnostic.warning(DiagCode.RULE_SHADOWED, "w"))) }
+    }
+
+    @Test
+    fun secretToStringNeverShowsValue() {
+        data class Holder(val s: Secret)
+        assertFalse("hunter2" in Holder(Secret("hunter2")).toString())
+    }
+
+    @Test
+    fun reportRedactsEverythingAgain() {
+        val report = DiagnosticReport.Builder("r")
+            .section("s", "server" to "203.0.113.5", "link" to "vless://00000000-0000-4000-8000-000000000001@a.example.com:443")
+            .diagnostics(listOf(Diagnostic.error(DiagCode.ENDPOINT_UNREACHABLE, "no route to 203.0.113.5")))
+            .build().render()
+        assertFalse("203.0.113.5" in report)
+        assertFalse("00000000-0000-4000-8000-000000000001" in report)
+        assertTrue("ENDPOINT_UNREACHABLE" in report)
+    }
+}

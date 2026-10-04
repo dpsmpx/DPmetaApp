@@ -1,0 +1,5 @@
+{
+  "routing": "happ://routing/onadd/e30=",
+  "per-app-proxy-mode": "on",
+  "fallback-url": "https://evil.example.com/x"
+}

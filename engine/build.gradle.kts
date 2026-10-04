@@ -7,3 +7,7 @@ plugins {
 dependencies {
     api(project(":config"))
 }
+
+dependencies {
+    testImplementation(libs.kotlinx.coroutines.core)
+}

@@ -1,0 +1,8 @@
+{
+  "load": {
+    "outcome": "rejected",
+    "codes": [
+      "APP_POLICY_CONFLICT"
+    ]
+  }
+}

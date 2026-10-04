@@ -49,6 +49,11 @@ class HealthBook(private val policy: ConnectionPolicy = ConnectionPolicy()) {
         map[id] = CandidateHealth(HealthState.HEALTHY, 0, null, 0, now)
     }
 
+    /** Кандидат, который последним реально передал данные (а не просто был активирован). */
+    fun lastGood(): ProfileId? = map.entries
+        .filter { it.value.state == HealthState.HEALTHY && it.value.lastSuccessMillis != null }
+        .maxByOrNull { it.value.lastSuccessMillis!! }?.key
+
     fun recordFailure(id: ProfileId, code: DiagCode, now: Long) {
         val prev = of(id)
         val n = prev.consecutiveFailures + 1
@@ -122,7 +127,9 @@ object CandidatePlanner {
             }
             return ConnectionPlan(emptyList(), excluded, DiagCode.NO_VIABLE_CANDIDATE, msg)
         }
-        val tcpPenalized = assessment != null &&
+        // Штраф TCP-потока — только когда путь наружу есть, но TLS или крупные передачи режутся;
+        // при белом списке зарубежное недоступно целиком, и штраф ничего не значит.
+        val tcpPenalized = assessment != null && assessment.restriction != RestrictionClass.ALLOWLIST_LIKE &&
             (assessment.tls == Reachability.BLOCKED || assessment.tls == Reachability.DEGRADED || assessment.bulk == Reachability.DEGRADED)
 
         fun healthRank(p: ServerProfile) = when (health.of(p.id).state) {

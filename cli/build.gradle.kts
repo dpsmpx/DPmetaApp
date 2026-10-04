@@ -12,3 +12,7 @@ application {
     mainClass.set("com.dpsmpx.dppass.cli.MainKt")
     applicationName = "dppass-cli"
 }
+
+// Вывод — UTF-8 независимо от локали системы (сообщения диагностики — по-русски).
+tasks.named<JavaExec>("run") { jvmArgs("-Dstdout.encoding=UTF-8", "-Dstderr.encoding=UTF-8") }
+application.applicationDefaultJvmArgs = listOf("-Dstdout.encoding=UTF-8", "-Dstderr.encoding=UTF-8", "-Dfile.encoding=UTF-8")
