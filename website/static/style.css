@@ -24,9 +24,11 @@ main { max-width: 860px; margin: 0 auto; padding: 24px 20px 64px; }
   align-items: baseline; justify-content: space-between; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
 .brand { font-weight: 700; font-size: 20px; text-decoration: none; }
 .brand .dot { color: var(--human); }
-nav a { margin-right: 18px; text-decoration: none; color: var(--mist); }
+/* пункты меню не рвутся по словам; высота цели касания ≥ 24 px (WCAG 2.2, 2.5.8) */
+nav { display: flex; flex-wrap: wrap; align-items: center; column-gap: 18px; }
+nav a { display: inline-block; padding: 8px 0; white-space: nowrap; text-decoration: none; color: var(--mist); }
 nav a.current, nav a:hover { color: var(--paper); }
-nav .lang { margin-left: 8px; padding: 2px 8px; border: 1px solid var(--line); border-radius: 4px; }
+nav .lang { margin-left: 4px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 4px; }
 
 .banner { background: var(--graphite); border-bottom: 2px solid var(--human); color: var(--paper);
   padding: 8px 20px; font-size: 14px; text-align: center; }
@@ -44,9 +46,10 @@ h2 { font-size: 24px; margin: 40px 0 12px; }
 h3 { font-size: 19px; margin: 24px 0 8px; }
 .muted { color: var(--mist); }
 
-.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
-.card { background: var(--graphite); border: 1px solid var(--line); border-radius: 8px; padding: 16px 18px; }
-.card.primary { border-color: var(--human); grid-column: 1 / -1; }
+/* flex, а не grid: одна карточка в ряду занимает всю ширину, без пустой дорожки */
+.cards { display: flex; flex-wrap: wrap; gap: 16px; }
+.card { flex: 1 1 240px; background: var(--graphite); border: 1px solid var(--line); border-radius: 8px; padding: 16px 18px; }
+.card.primary { border-color: var(--human); flex-basis: 100%; }
 .card h3 { margin: 0 0 6px; }
 .card .status { color: var(--verified); font-size: 14px; }
 
@@ -57,10 +60,26 @@ h3 { font-size: 19px; margin: 24px 0 8px; }
 .posts { list-style: none; padding: 0; }
 .posts li { padding: 10px 0; border-bottom: 1px solid var(--line); }
 .posts time, .meta { color: var(--mist); font-size: 14px; font-family: "IBM Plex Mono", monospace; }
-.tag { display: inline-block; font-size: 13px; color: var(--ai); margin-right: 8px; }
+.tag { display: inline-block; font-size: 13px; color: var(--ai); margin-right: 8px; padding: 4px 0; }
 
-.links { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 10px 20px; }
+.links { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 20px; }
+.links a, .feeds a { display: inline-block; padding: 4px 0; }
 .site-footer { max-width: 860px; margin: 0 auto; padding: 24px 20px 40px; border-top: 1px solid var(--line);
   color: var(--mist); font-size: 14px; }
-.site-footer a { color: var(--mist); }
-@media (max-width: 600px) { .hero h1 { font-size: 34px; } body { font-size: 16px; } }
+.site-footer a { color: var(--mist); display: inline-block; padding: 2px 0; }
+
+/* телефон (проверка — 390 px, П2-14) */
+@media (max-width: 600px) {
+  body { font-size: 16px; }
+  .site-header { padding: 14px 16px 6px; row-gap: 4px; }
+  nav { column-gap: 16px; }
+  main { padding: 16px 16px 48px; }
+  .site-footer { padding: 20px 16px 32px; }
+  .banner { padding: 6px 16px; font-size: 13px; }
+  .hero { padding: 16px 0 8px; }
+  .hero h1 { font-size: 34px; }
+  .hero .lead { font-size: 18px; }
+  h2 { font-size: 22px; margin-top: 32px; }
+  .links { flex-direction: column; gap: 2px; }
+  .facts th { width: 38%; padding-right: 12px; }
+}

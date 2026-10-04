@@ -363,7 +363,7 @@ class SiteBuild:
             if devlog.get("url"):
                 body += f' <a href="{E(devlog["url"])}">{E(devlog["url"])}</a>'
             body += "</p>"
-        feeds_html = (f'<p class="muted">{E(t("ru", "feeds"))}: <a href="/feed.xml">Atom</a> · '
+        feeds_html = (f'<p class="muted feeds">{E(t("ru", "feeds"))}: <a href="/feed.xml">Atom</a> · '
                       f'<a href="/rss.xml">RSS</a> · <a href="/feed.json">JSON Feed</a></p>')
         return Page("/news/", "ru", t("ru", "news_title"), t("ru", "news_title"),
                     f"<h1>{E(t('ru', 'news_title'))}</h1>{body}{feeds_html}", image=self.og_default(),
@@ -538,7 +538,8 @@ class SiteBuild:
             self.write(out, page.path, self.render(page))
             self.report.pages.append(page.path)
         self.write(out, "/404.html", self.render(Page("/404.html", "ru", t("ru", "not_found"), t("ru", "not_found"),
-                                                       f"<h1>{E(t('ru', 'not_found'))}</h1><p>{E(t('ru', 'not_found_text'))} <a href='/'>/</a></p>")))
+                                                       f"<h1>{E(t('ru', 'not_found'))}</h1><p>{E(t('ru', 'not_found_text'))} "
+                                                       f"<a href=\"/\">{E(t('ru', 'not_found_home'))}</a>.</p>")))
         # медиа вариантов и изображение по умолчанию
         for e in entries:
             for ref in e.variant.m("media") or []:
