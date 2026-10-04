@@ -1,5 +1,6 @@
 package com.dpsmpx.dppass.subscriptions
 
+import com.dpsmpx.dppass.config.ConfigValidator
 import com.dpsmpx.dppass.config.ProtocolSpec
 import com.dpsmpx.dppass.config.SecuritySpec
 import com.dpsmpx.dppass.config.TransportSpec
@@ -48,6 +49,25 @@ class ShareLinkParserTest {
         val t = ShareLinkParser.parse("trojan://pass@198.51.100.1:443?sni=t.example.org", "s").valueOrNull()!!
         assertIs<SecuritySpec.Tls>(t.security)
         assertEquals(Secret("pass"), (t.protocol as ProtocolSpec.Trojan).password)
+    }
+
+    @Test
+    fun namesAreNormalizedLikeDocumentAndEmptyMeansAbsent() {
+        val p = ShareLinkParser.parse("vless://$UUID1@cdn.example.net:443?type=ws&security=tls&sni=CDN.Example.NET.&host=CDN.Example.NET&path=%2Fws", "s").valueOrNull()!!
+        assertEquals("cdn.example.net", (p.security as SecuritySpec.Tls).serverName)
+        assertEquals(TransportSpec.WebSocket("/ws", "cdn.example.net"), p.transport)
+        val empty = ShareLinkParser.parse("trojan://pass@198.51.100.1:443?sni=&type=ws&host=", "s").valueOrNull()!!
+        assertNull((empty.security as SecuritySpec.Tls).serverName)
+        assertEquals(TransportSpec.WebSocket("/", null), empty.transport)
+    }
+
+    @Test
+    fun invalidNamesReachProfileValidation() {
+        // Разбор ссылки неверное имя не чинит и не прячет: его отвергает проверка профиля с путём (D-05).
+        val sni = ShareLinkParser.parse("trojan://pass@198.51.100.1:443?sni=bad%20name.example.org", "s").valueOrNull()!!
+        assertEquals(listOf(DiagCode.SERVER_NAME_INVALID), ConfigValidator.validateProfile(sni, "profiles[0]").map { it.code })
+        val host = ShareLinkParser.parse("trojan://pass@198.51.100.1:443?sni=t.example.org&type=ws&host=bad%20host.example.org", "s").valueOrNull()!!
+        assertEquals(listOf(DiagCode.DOMAIN_INVALID), ConfigValidator.validateProfile(host, "profiles[0]").map { it.code })
     }
 
     @Test

@@ -89,6 +89,12 @@ Trojan — с `sni=bad%20name` и с `host=bad%20host` (WebSocket):
 `validateProfile`, чтобы оба пути шли через неё; файл корпуса
 `tests/data/subscriptions/` с такими ссылками.
 
+**Состояние (4 октября 2026, PR #3).** Имя сервера и `host` проверяет
+`validateProfile` для любого источника; разбор ссылки приводит верные
+имена к виду документа. Корпус: `tests/data/subscriptions/links-invalid-names.txt`,
+`tests/data/configs/invalid-server-name-host.json`. Открыто: `path` и
+`serviceName` (`TODO.md`).
+
 ### A-2 — Ошибки ключа хранилища: не та причина и не перехваченные исключения (средняя)
 
 **Где.** `app/…/KeystoreKeyProvider.kt`, `storage/…/Storage.kt`

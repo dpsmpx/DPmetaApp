@@ -1,5 +1,6 @@
 package com.dpsmpx.dppass.config
 
+import com.dpsmpx.dppass.core.Host
 import com.dpsmpx.dppass.diagnostics.DiagCode
 import com.dpsmpx.dppass.diagnostics.Diagnostic
 import com.dpsmpx.dppass.diagnostics.Secret
@@ -15,6 +16,7 @@ import java.util.Base64
 object ConfigValidator {
     private val UUID = Regex("""[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}""")
     private val SHORT_ID = Regex("""([0-9a-f]{2}){0,8}""")
+    private const val SERVER_NAME_MESSAGE = "имя сервера (server_name; в ссылке — sni) должно быть доменным именем (IDN — в punycode)"
 
     fun validate(ir: ConfigIr, limits: ConfigLimits = ConfigLimits()): List<Diagnostic> {
         val out = mutableListOf<Diagnostic>()
@@ -43,7 +45,15 @@ object ConfigValidator {
         return out
     }
 
-    /** Проверка одного профиля — и для документа, и для записи подписки. */
+    /**
+     * Проверка одного профиля — и для документа, и для записи подписки.
+     *
+     * Запись подписки приходит мимо `DocumentMapper` (ссылка → IR напрямую),
+     * поэтому всё, что определяет смысл профиля, проверяется здесь, даже
+     * если разбор документа уже проверил то же самое: один и тот же профиль
+     * не может быть верным ссылкой и неверным документом (D-05). Так —
+     * имя сервера и `host` транспорта.
+     */
     fun validateProfile(p: ServerProfile, path: String): List<Diagnostic> {
         val out = mutableListOf<Diagnostic>()
         fun err(code: DiagCode, msg: String, at: String) {
@@ -120,13 +130,28 @@ object ConfigValidator {
                 if (!SHORT_ID.matches(sec.shortId.reveal())) {
                     err(DiagCode.REALITY_SHORT_ID_INVALID, "short_id — чётное число шестнадцатеричных цифр в нижнем регистре, до 16", "$path.security.short_id")
                 }
+                if (Host.normalizeDomain(sec.serverName) == null) {
+                    err(DiagCode.SERVER_NAME_INVALID, SERVER_NAME_MESSAGE, "$path.security.server_name")
+                }
             }
             is SecuritySpec.Tls -> {
                 if (sec.alpn.any { it.isEmpty() || it.length > 32 }) {
                     err(DiagCode.FIELD_TYPE, "значение alpn пустое или длиннее 32 символов", "$path.security.alpn")
                 }
+                if (sec.serverName != null && Host.normalizeDomain(sec.serverName) == null) {
+                    err(DiagCode.SERVER_NAME_INVALID, SERVER_NAME_MESSAGE, "$path.security.server_name")
+                }
             }
             SecuritySpec.None -> Unit
+        }
+        val hostHeader = when (val t = p.transport) {
+            is TransportSpec.WebSocket -> t.host
+            is TransportSpec.HttpUpgrade -> t.host
+            is TransportSpec.XHttp -> t.host
+            TransportSpec.Tcp, TransportSpec.Native, is TransportSpec.Grpc -> null
+        }
+        if (hostHeader != null && Host.normalizeDomain(hostHeader) == null) {
+            err(DiagCode.DOMAIN_INVALID, "host должен быть доменным именем (IDN — в punycode)", "$path.transport.host")
         }
         return out
     }

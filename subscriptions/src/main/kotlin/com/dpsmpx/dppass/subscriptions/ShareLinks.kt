@@ -65,23 +65,25 @@ object ShareLinkParser {
             return Outcome.failure(DiagCode.INSECURE_TLS_REJECTED, "ссылка отключает проверку сертификата — такой профиль не принимается")
         }
 
+        val hostHeader = domainParam(q["host"])
         val transport = when (val type = q["type"] ?: "tcp") {
             "tcp", "raw" -> TransportSpec.Tcp
-            "ws" -> TransportSpec.WebSocket(q["path"] ?: "/", q["host"])
-            "httpupgrade" -> TransportSpec.HttpUpgrade(q["path"] ?: "/", q["host"])
+            "ws" -> TransportSpec.WebSocket(q["path"] ?: "/", hostHeader)
+            "httpupgrade" -> TransportSpec.HttpUpgrade(q["path"] ?: "/", hostHeader)
             "grpc" -> TransportSpec.Grpc(q["servicename"] ?: return Outcome.failure(DiagCode.SHARE_LINK_INVALID, "grpc без serviceName"))
             "xhttp", "splithttp" -> {
                 val mode = XHttpMode.entries.firstOrNull { it.wire == (q["mode"] ?: "auto") } ?: return unsupported("mode=${q["mode"]}")
-                TransportSpec.XHttp(q["path"] ?: "/", q["host"], mode)
+                TransportSpec.XHttp(q["path"] ?: "/", hostHeader, mode)
             }
             else -> return unsupported("type=$type")
         }
         val fp = q["fp"]?.let { f -> TlsFingerprint.entries.firstOrNull { it.wire == f } ?: return unsupported("fp=$f") }
+        val sni = domainParam(q["sni"])
         val security = when (val s = q["security"] ?: if (scheme == "trojan") "tls" else "none") {
             "none" -> SecuritySpec.None
-            "tls" -> SecuritySpec.Tls(q["sni"], q["alpn"]?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList(), fp)
+            "tls" -> SecuritySpec.Tls(sni, q["alpn"]?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList(), fp)
             "reality" -> SecuritySpec.Reality(
-                serverName = q["sni"] ?: return Outcome.failure(DiagCode.SHARE_LINK_INVALID, "reality без sni"),
+                serverName = sni ?: return Outcome.failure(DiagCode.SHARE_LINK_INVALID, "reality без sni"),
                 publicKey = q["pbk"] ?: return Outcome.failure(DiagCode.SHARE_LINK_INVALID, "reality без pbk"),
                 shortId = Secret(q["sid"] ?: ""),
                 fingerprint = fp ?: TlsFingerprint.CHROME,
@@ -106,6 +108,15 @@ object ShareLinkParser {
             ?: "${host}:$port"
         return Outcome.Success(ServerProfile(ProfileId(id), name, Endpoint(host, port), protocol, transport, security, CandidateHints()))
     }
+
+    /**
+     * Имя из `sni`/`host` — в том виде, в каком его дал бы документ
+     * (нижний регистр, без точки в конце), чтобы один и тот же сервер
+     * давал один и тот же IR. Пустое значение — то же, что отсутствие
+     * параметра. Неверное имя остаётся как есть: его отвергает
+     * `ConfigValidator.validateProfile` с путём, а не разбор ссылки молча.
+     */
+    private fun domainParam(value: String?): String? = value?.takeIf { it.isNotEmpty() }?.let { Host.normalizeDomain(it) ?: it }
 
     private fun unsupported(what: String): Outcome<ServerProfile> = Outcome.Failure(
         listOf(

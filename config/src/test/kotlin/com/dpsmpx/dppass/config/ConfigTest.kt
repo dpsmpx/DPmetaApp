@@ -6,6 +6,7 @@ import com.dpsmpx.dppass.core.JsonObject
 import com.dpsmpx.dppass.core.JsonString
 import com.dpsmpx.dppass.diagnostics.DiagCode
 import com.dpsmpx.dppass.diagnostics.Outcome
+import com.dpsmpx.dppass.diagnostics.Secret
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -63,6 +64,52 @@ class ConfigLoaderTest {
     @Test
     fun foreignDocumentIsNotDppass() {
         assertEquals(DiagCode.FORMAT_NOT_DPPASS, loader.load("""{"outbounds":[]}""").errors.single().code)
+    }
+}
+
+/**
+ * Проверка профиля не зависит от того, откуда он пришёл (D-05): запись
+ * подписки строится мимо `DocumentMapper`, поэтому имя сервера и `host`
+ * проверяет и `ConfigValidator.validateProfile`.
+ */
+class ProfileValidationTest {
+    private val reality = ConfigLoader().load(Fixtures.text("configs/valid-minimal.json")).valueOrNull()!!.ir.profiles.single()
+    private val trojan = reality.copy(
+        protocol = ProtocolSpec.Trojan(Secret("test-password-1")),
+        security = SecuritySpec.Tls("t.example.org", emptyList(), null),
+    )
+
+    private fun codesAt(p: ServerProfile): List<Pair<DiagCode, String?>> =
+        ConfigValidator.validateProfile(p, "profiles[0]").map { it.code to it.path }
+
+    @Test
+    fun validProfilesStayValid() {
+        assertEquals(emptyList(), codesAt(reality))
+        assertEquals(emptyList(), codesAt(trojan))
+        // Имя без server_name и имя в другом регистре — не ошибка: регистр смысла не меняет.
+        assertEquals(emptyList(), codesAt(trojan.copy(security = SecuritySpec.Tls(null, emptyList(), null))))
+        assertEquals(emptyList(), codesAt(trojan.copy(security = SecuritySpec.Tls("T.Example.ORG", emptyList(), null))))
+    }
+
+    @Test
+    fun serverNameIsChecked() {
+        val badTls = trojan.copy(security = SecuritySpec.Tls("bad name.example.org", emptyList(), null))
+        assertEquals(listOf(DiagCode.SERVER_NAME_INVALID to "profiles[0].security.server_name"), codesAt(badTls))
+        val badReality = reality.copy(security = (reality.security as SecuritySpec.Reality).copy(serverName = "bad_name.example.com"))
+        assertEquals(listOf(DiagCode.SERVER_NAME_INVALID to "profiles[0].security.server_name"), codesAt(badReality))
+    }
+
+    @Test
+    fun transportHostIsChecked() {
+        val hosts = listOf(
+            TransportSpec.WebSocket("/ws", "bad host.example.org"),
+            TransportSpec.HttpUpgrade("/u", "-bad-.example.net"),
+            TransportSpec.XHttp("/x", "1.2.3", XHttpMode.AUTO),
+        )
+        for (t in hosts) {
+            assertEquals(listOf(DiagCode.DOMAIN_INVALID to "profiles[0].transport.host"), codesAt(trojan.copy(transport = t)), t.toString())
+        }
+        assertEquals(emptyList(), codesAt(trojan.copy(transport = TransportSpec.WebSocket("/ws", null))))
     }
 }
 
