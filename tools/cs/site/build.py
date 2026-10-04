@@ -21,6 +21,7 @@ from __future__ import annotations
 import datetime as _dt
 import html
 import json
+import re
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -198,6 +199,33 @@ class SiteBuild:
             return None
         return words[idx]
 
+    def author(self, lang: str) -> str:
+        """Как сайт называет автора: dpsmpx; имя (AU-NAME) — только при real_name: true в site.yaml (Д37)."""
+        return (self.fact("AU-NAME", lang) or "dpsmpx") if self.cfg.get("real_name") else "dpsmpx"
+
+    def signature(self, lang: str) -> str:
+        name = self.author(lang)
+        return name if name == "dpsmpx" else f"{name} / dpsmpx"
+
+    def name_forms(self) -> list[str]:
+        """Слова имени автора из AU-NAME (все языки) — при real_name: false их нет ни в одном файле сайта (Д37)."""
+        forms = set()
+        for words in ((self.facts.get("AU-NAME") or {}).get("allowed_wording") or {}).values():
+            for w in words:
+                forms.update(x for x in re.findall(r"\w+", w) if x != "dpsmpx" and len(x) > 2)
+        return sorted(forms)
+
+    def check_no_name(self, out: Path) -> None:
+        forms = [(f, f.lower()) for f in self.name_forms()]
+        for p in sorted(out.rglob("*")):
+            if not p.is_file():
+                continue
+            text = p.read_bytes().decode("utf-8", "ignore").lower()
+            hit = [f for f, low in forms if low in text]
+            if hit:
+                self.report.errors.append(f"{p.relative_to(out)}: имя автора на сайте ({', '.join(hit)}) — "
+                                          f"по Д37 только dpsmpx")
+
     # ------------------------------------------------------- страницы
     def nav(self, lang: str, current: str, alt: dict) -> str:
         pre = "/en" if lang == "en" else ""
@@ -217,9 +245,11 @@ class SiteBuild:
     def person_jsonld(self, lang: str) -> dict:
         ids = [(x if isinstance(x, str) else x.get("link")) for x in (self.cfg.get("home") or {}).get("social_links", [])]
         same = [self.links[i]["url"] for i in ids if i in self.links and self.links[i].get("status") in ("ok", "limited")]
-        return {"@context": "https://schema.org", "@type": "Person",
-                "name": self.fact("AU-NAME", lang) or "dpsmpx", "alternateName": "dpsmpx",
-                "url": self.base + ("/en/" if lang == "en" else "/"), "sameAs": same}
+        name = self.author(lang)
+        ld = {"@context": "https://schema.org", "@type": "Person", "name": name}
+        if name != "dpsmpx":
+            ld["alternateName"] = "dpsmpx"
+        return {**ld, "url": self.base + ("/en/" if lang == "en" else "/"), "sameAs": same}
 
     def project_card(self, p: dict, lang: str, primary: bool) -> str:
         pre = "/en" if lang == "en" else ""
@@ -258,11 +288,14 @@ class SiteBuild:
 
     def page_home(self, lang: str, entries: list[Entry]) -> Page:
         home = self.cfg.get("home") or {}
-        name = self.fact("AU-NAME", lang) or "dpsmpx"
+        name = self.author(lang)
         role = self.fact("AU-ROLE", lang, 1 if lang == "ru" else 1)
         about = self._about.get(lang)
-        parts = ['<section class="hero">', f"<h1>{E(name)}</h1>",
-                 f'<p class="role"><span class="handle">dpsmpx</span> · {E(role or "")}</p>']
+        if name == "dpsmpx":  # Д37: без имени h1 — сам dpsmpx, строка роли — отдельным предложением
+            line = E((role or "")[:1].upper() + (role or "")[1:])
+        else:
+            line = f'<span class="handle">dpsmpx</span> · {E(role or "")}'
+        parts = ['<section class="hero">', f"<h1>{E(name)}</h1>", f'<p class="role">{line}</p>']
         if about:
             parts.append(self.draft_note(about))
             parts.append(f'<p class="lead">{E(about.summary)}</p>')
@@ -291,10 +324,10 @@ class SiteBuild:
         desc = about.summary if about else (role or name)
         path = "/en/" if lang == "en" else "/"
         img = (about.image if about else None) or self.og_default()
-        return Page(path, lang, name + " — dpsmpx" if lang == "ru" else name + " — dpsmpx", desc, "\n".join(parts),
+        return Page(path, lang, name if name == "dpsmpx" else name + " — dpsmpx", desc, "\n".join(parts),
                     "profile", self._alt("/", "/en/"), img,
                     [self.person_jsonld(lang), {"@context": "https://schema.org", "@type": "WebSite",
-                                                "name": name + " / dpsmpx", "url": self.base + path, "inLanguage": lang}],
+                                                "name": self.signature(lang), "url": self.base + path, "inLanguage": lang}],
                     draft=bool(about and about.draft), lastmod=max(dates, default=None))
 
     def page_about(self, lang: str) -> Page | None:
@@ -344,7 +377,7 @@ class SiteBuild:
                     alternates=self._alt(f"/projects/{p['id']}/", f"/en/projects/{p['id']}/"), image=self.og_default(),
                     jsonld=[{"@context": "https://schema.org", "@type": "CreativeWork", "name": p["name"],
                              "description": desc, "url": self.base + f"{pre}/projects/{p['id']}/",
-                             "author": {"@type": "Person", "name": self.fact("AU-NAME", lang) or "dpsmpx"}}])
+                             "author": {"@type": "Person", "name": self.author(lang)}}])
 
     def post_list(self, posts: list[Entry], lang: str) -> str:
         lis = []
@@ -391,7 +424,7 @@ class SiteBuild:
         ld = {"@context": "https://schema.org", "@type": "BlogPosting", "headline": e.title,
               "datePublished": e.date, "dateModified": e.date, "inLanguage": e.lang,
               "mainEntityOfPage": self.base + e.path, "description": e.summary,
-              "author": {"@type": "Person", "name": self.fact("AU-NAME", e.lang) or "dpsmpx", "url": self.base + "/"}}
+              "author": {"@type": "Person", "name": self.author(e.lang), "url": self.base + "/"}}
         img = e.image or self.og_default()
         if img:
             ld["image"] = self.base + img
@@ -462,7 +495,7 @@ class SiteBuild:
         current = {"/": "home", "/en/": "home"}.get(page.path) or ("projects" if "/projects/" in page.path else
                                                                     "news" if page.path.startswith("/news/") else
                                                                     "about" if "/about/" in page.path else "")
-        footer = (f'<p>{E(self.fact("AU-NAME", page.lang) or "dpsmpx")} / dpsmpx · '
+        footer = (f'<p>{E(self.signature(page.lang))} · '
                   f'<a href="/feed.xml">Atom</a> · <a href="/rss.xml">RSS</a> · <a href="/feed.json">JSON Feed</a></p>'
                   + (f'<p>Шрифты IBM Plex — SIL OFL 1.1 (<a href="/fonts/OFL-IBM-Plex.txt">лицензия</a>).</p>' if page.lang == "ru" else
                      f'<p>IBM Plex fonts — SIL OFL 1.1 (<a href="/fonts/OFL-IBM-Plex.txt">license</a>).</p>'))
@@ -591,6 +624,8 @@ class SiteBuild:
         self.write(out, "/robots.txt", robots)
         for name, data in feeds.api(self, entries).items():
             self.write(out, f"/api/v1/{name}", json.dumps(data, ensure_ascii=False, indent=1))
+        if not self.cfg.get("real_name"):
+            self.check_no_name(out)
         return self.report
 
 

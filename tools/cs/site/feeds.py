@@ -35,7 +35,7 @@ def atom(site, posts) -> str:
            f"<title>{X(_title(site))}</title>", f"<id>{X(site.base)}/</id>",
            f'<link href="{X(site.base)}/"/>', f'<link rel="self" href="{X(site.base)}/feed.xml"/>',
            f"<updated>{updated}</updated>",
-           f"<author><name>{X(site.fact('AU-NAME', 'ru') or 'dpsmpx')}</name><uri>{X(site.base)}/</uri></author>"]
+           f"<author><name>{X(site.author('ru'))}</name><uri>{X(site.base)}/</uri></author>"]
     for e in posts[:20]:
         url = site.base + e.path
         out += ["<entry>", f"<title>{X(e.title)}</title>", f"<id>{X(url)}</id>", f'<link href="{X(url)}"/>',
@@ -66,7 +66,7 @@ def json_feed(site, posts) -> str:
     data = {
         "version": "https://jsonfeed.org/version/1.1",
         "title": _title(site), "home_page_url": site.base + "/", "feed_url": site.base + "/feed.json",
-        "language": "ru", "authors": [{"name": site.fact("AU-NAME", "ru") or "dpsmpx", "url": site.base + "/"}],
+        "language": "ru", "authors": [{"name": site.author("ru"), "url": site.base + "/"}],
         "items": [{"id": site.base + e.path, "url": site.base + e.path, "title": e.title, "summary": e.summary,
                    "content_html": e.html, "date_published": _iso(e.date), "language": e.lang,
                    "tags": [e.category] + list(e.item.data.get("tags") or [])} for e in posts[:20]],

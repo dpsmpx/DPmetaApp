@@ -21,10 +21,9 @@ media_alt:
 link: null
 generation:
   provider: session
-  note: английский вариант канона v1 (Д21, Д22) — тот же смысл, формулировки фактов на en
+  note: английский вариант канона v1 (Д21, Д22) — тот же смысл, формулировки фактов на en; без имени автора — только dpsmpx (Д37)
 deps:
   facts:
-    AU-NAME: 5d083e3db9612d37
     AU-ROLE: 0d84826a46110966
     GH-NAME: 18e9e8bc34f1c9f0
     GH-GENRE: 87840cd38160c9f1
@@ -45,7 +44,7 @@ deps:
   media:
     exports/A-en-github_social.png: 3624a2a23687ffe2ceff23b766aa5030a47f1e808280b8b088619b0bb8142749
 ---
-I'm {{fact:AU-NAME}}, online — dpsmpx: a {{fact:AU-ROLE#1}}.
+I'm dpsmpx, a {{fact:AU-ROLE#1}}.
 
 ## Galdhold
 
