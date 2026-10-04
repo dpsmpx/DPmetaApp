@@ -30,11 +30,14 @@ formats:
     checked: 2026-10-04
   youtube_thumbnail:
     platform: youtube
-    width: 1280
-    height: 720
+    width: 3840
+    height: 2160
     min_width: 640
     max_bytes: 2097152          # 2 МБ — при загрузке с телефона; с компьютера — 50 МБ
     file: jpg
+    notes: >-
+      справка на 04.10.2026 рекомендует 3840×2160 для видео (2160×3840 для Shorts), 16:9,
+      ширина ≥ 640; прежняя запись 1280×720 устарела
     source: https://support.google.com/youtube/answer/72431
     source_class: official
     verified: true

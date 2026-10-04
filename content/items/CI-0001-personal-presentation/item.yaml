@@ -1,0 +1,113 @@
+# Объект контента (docs/content/CONTENT_MODEL.md). Схема — schemas/content_item.schema.json.
+schema: content_item/v1
+id: CI-0001
+slug: personal-presentation
+title: Презентационное изображение автора
+type: presentation_card
+pillar: PERSON
+topic: кто такой dpsmpx и как он работает
+objective: 'За 2–3 секунды показать, кто такой dpsmpx: человек, который строит сложные нативные системы
+  — игру, движок и язык — с ИИ как инструментом и сам принимает архитектурные решения; за этим есть настоящий
+  результат.'
+audiences:
+- professional
+- collaborators
+- developers
+- ai_developers
+platforms:
+- github
+- youtube
+- telegram
+- vk
+languages:
+- ru
+- en
+tone: спокойный, точный, от первого лица; без эпитетов
+owner: author
+created: 2026-10-04
+claims:
+- fact: AU-HANDLE
+- fact: AU-ROLE
+- fact: AU-METHOD
+- fact: AU-MEMORY
+- fact: ME-NO-CI
+- fact: GH-NAME
+- fact: GH-GENRE
+- fact: GH-TECH
+- fact: GH-ENGINE
+- fact: GH-LOC
+- fact: GH-CHECKS
+- fact: GH-COMMITS
+- fact: GH-ANDROID
+  note: только вариант B
+- fact: GH-RELEASE-PLAN
+  note: только вариант B
+- fact: DP-WHAT
+source_projects:
+- galdhold
+- dplang
+brief: docs/content/products/personal_presentation/BRIEF.md
+visual_direction: docs/content/products/personal_presentation/CREATIVE_DIRECTION.md
+prompt:
+  id: image/presentation-composition
+  version: 1
+inputs:
+- A-001
+- A-002
+- A-003
+variants:
+- id: A
+  label: professional
+  spec: spec/variant-a.yaml
+  status: candidate
+  renders:
+  - renders/A-en-github_social.png
+  - renders/A-en-telegram_post.jpg
+  - renders/A-ru-telegram_post.jpg
+  - renders/A-ru-youtube_banner.jpg
+- id: B
+  label: technical
+  spec: spec/variant-b.yaml
+  status: candidate
+  renders:
+  - renders/B-en-github_social.png
+  - renders/B-en-telegram_post.jpg
+  - renders/B-ru-telegram_post.jpg
+  - renders/B-ru-youtube_banner.jpg
+- id: C
+  label: cinematic
+  spec: spec/variant-c.yaml
+  status: candidate
+  renders:
+  - renders/C-en-github_social.png
+  - renders/C-en-telegram_post.jpg
+  - renders/C-ru-telegram_post.jpg
+  - renders/C-ru-youtube_banner.jpg
+- id: D
+  label: minimal
+  spec: spec/variant-d.yaml
+  status: candidate
+  renders:
+  - renders/D-en-github_social.png
+  - renders/D-en-telegram_post.jpg
+  - renders/D-ru-telegram_post.jpg
+  - renders/D-ru-youtube_banner.jpg
+selected_variant: null
+provenance: provenance.yaml
+blocked_by: []
+state: GENERATED
+history:
+- date: 2026-10-04
+  state: IDEA
+  note: 'объект заведён: первый продукт системы — презентационное изображение автора'
+- date: 2026-10-04
+  state: RESEARCHED
+  note: исследование — социальный аудит, идентичность, реестр фактов; аудитории, площадки и утверждения
+    выбраны
+- date: 2026-10-04
+  state: BRIEFED
+  note: бриф BRIEF.md и творческое направление CREATIVE_DIRECTION.md; спецификации вариантов A–D
+- date: 2026-10-04
+  state: GENERATED
+  note: 'варианты A–D отрендерены по промпту image/presentation-composition v1: renders/, RU и EN, формат
+    telegram_post'
