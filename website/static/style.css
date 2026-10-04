@@ -11,6 +11,12 @@ html { background: var(--ink); color: var(--paper); }
 body { margin: 0; font: 17px/1.6 "IBM Plex Sans", system-ui, sans-serif; }
 a { color: var(--paper); text-decoration-color: var(--human); text-underline-offset: 3px; }
 a:hover { color: var(--human); }
+:focus-visible { outline: 2px solid var(--human); outline-offset: 3px; border-radius: 2px; }
+main:focus { outline: none; }
+.skip { position: absolute; left: 12px; top: -48px; z-index: 10; padding: 8px 14px; background: var(--paper);
+  color: var(--ink); border-radius: 4px; font-weight: 600; text-decoration: none; }
+.skip:focus { top: 12px; }
+img { max-width: 100%; height: auto; }
 code, .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
 main { max-width: 860px; margin: 0 auto; padding: 24px 20px 64px; }
 
@@ -32,7 +38,7 @@ nav .lang { margin-left: 8px; padding: 2px 8px; border: 1px solid var(--line); b
 .hero .handle { color: var(--human); font-family: "IBM Plex Mono", monospace; }
 .hero .role { color: var(--mist); margin: 0 0 16px; }
 .hero .lead { font-size: 20px; max-width: 680px; }
-.hero img { width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--line); margin-top: 16px; }
+.hero img, .cover { width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--line); margin-top: 16px; }
 
 h2 { font-size: 24px; margin: 40px 0 12px; }
 h3 { font-size: 19px; margin: 24px 0 8px; }

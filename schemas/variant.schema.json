@@ -94,6 +94,14 @@
         "type": "string"
       }
     },
+    "media_alt": {
+      "description": "Текст-замена медиа (alt) — по одному на файл media, в том же порядке; подстановки {{fact:…}} как в тексте (Д28)",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
     "link": {
       "type": [
         "string",

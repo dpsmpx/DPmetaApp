@@ -18,6 +18,7 @@ LABELS = {
         "not_found_text": "Такой страницы нет. Начните с главной.",
         "news_title": "Записи: новости, дневник, статьи, релизы",
         "projects_title": "Проекты",
+        "skip": "К содержимому", "nav_label": "Разделы сайта", "other_lang": "Русская версия",
         "cat": {"news": "Новость", "devlog": "Дневник", "article": "Статья", "release": "Релиз", "page": "Страница"},
     },
     "en": {
@@ -35,6 +36,7 @@ LABELS = {
         "feeds": "Subscribe", "not_found": "Page not found",
         "not_found_text": "There is no such page. Start from the home page.",
         "news_title": "Posts", "projects_title": "Projects",
+        "skip": "Skip to content", "nav_label": "Site sections", "other_lang": "English version",
         "cat": {"news": "News", "devlog": "Devlog", "article": "Article", "release": "Release", "page": "Page"},
     },
 }

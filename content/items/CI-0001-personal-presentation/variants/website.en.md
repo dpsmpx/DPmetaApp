@@ -13,6 +13,11 @@ summary: I build complex native systems — a game, an engine, a language — wi
   and architecture under my own control.
 media:
 - exports/A-en-github_social.png
+media_alt:
+- 'Presentation card. On the left, a photo of the author. On the right: dpsmpx, {{fact:AU-ROLE#1}}; the
+  workflow from intent through architecture, AI implementation and verification to Git and the product,
+  marked “I approve every merge”. Below: {{fact:GH-NAME}}, {{fact:GH-GENRE}}, {{fact:GH-TECH}}; {{fact:GH-LOC}},
+  {{fact:GH-CHECKS}}.'
 link: null
 generation:
   provider: session

@@ -6,7 +6,8 @@ publications  журналы: схема событий, переходы, вр�
 destinations  явные id, границы учётных данных (площадка × окружение), близнецы, бренды
 campaigns     объекты, варианты, адресаты, время расписания
 projects      бренды, факты и ссылки страниц проектов
-site          staging- и production-сборка: ошибки, фиды и JSON читаются, внутренние ссылки живы
+site          staging- и production-сборка: ошибки, фиды и JSON читаются, внутренние ссылки живы,
+              доступность страниц (П2-10), значок, _headers и страницы без нарушений CSP (П2-12)
 """
 from __future__ import annotations
 
@@ -220,10 +221,53 @@ def _site_findings(rep, out: Path, r: Report, label: str) -> None:
         except ValueError as e:
             r.error(f"{label}: {p.relative_to(out)} — JSON не читается: {e}")
     for page in out.rglob("*.html"):
-        for href in re.findall(r'(?:href|src)="(/[^"#?]*)"', page.read_text(encoding="utf-8")):
+        text = page.read_text(encoding="utf-8")
+        for href in re.findall(r'(?:href|src)="(/[^"#?]*)"', text):
             target = out / href.lstrip("/")
             if not (target.is_file() or (target / "index.html").is_file()):
                 r.error(f"{label}: {page.relative_to(out)} → {href} — нет такого файла")
+        for msg in page_a11y(text) + page_csp(text):
+            r.error(f"{label}: {page.relative_to(out)}: {msg}")
+    headers = out / "_headers"
+    if not headers.is_file() or "Content-Security-Policy:" not in headers.read_text(encoding="utf-8"):
+        r.error(f"{label}: _headers без Content-Security-Policy")
+    if not (out / "favicon.svg").is_file():
+        r.error(f"{label}: нет favicon.svg")
+
+
+def page_a11y(text: str) -> list[str]:
+    """Доступность страницы сайта (П2-10): язык, один h1, alt, «к содержимому», текущий раздел."""
+    out = []
+    if not re.search(r'<html lang="(ru|en)"', text):
+        out.append("нет <html lang>")
+    h1 = len(re.findall(r"<h1[\s>]", text))
+    if h1 != 1:
+        out.append(f"заголовков h1 — {h1}, нужен один")
+    for img in re.findall(r"<img\b[^>]*>", text):
+        alt = re.search(r'\salt="([^"]*)"', img)
+        if alt is None or not alt.group(1).strip():
+            out.append(f"изображение без alt: {img[:80]}")
+    if 'href="#main"' not in text or 'id="main"' not in text:
+        out.append("нет ссылки «к содержимому» (#main)")
+    for a in re.findall(r'<a\b[^>]*class="current"[^>]*>', text):
+        if 'aria-current="page"' not in a:
+            out.append("текущий раздел без aria-current")
+    return out
+
+
+def page_csp(text: str) -> list[str]:
+    """Страница не нарушает CSP из _headers (П2-12): нет встроенных скриптов, стилей и обработчиков."""
+    out = []
+    if re.search(r"<script(?![^>]*type=\"application/ld\+json\")[^>]*>", text):
+        out.append("встроенный или внешний скрипт — CSP script-src 'none'")
+    if re.search(r"<style[\s>]", text) or re.search(r'\sstyle="', text):
+        out.append("встроенный стиль — CSP style-src 'self'")
+    if re.search(r"\son[a-z]+=\"", text):
+        out.append("обработчик on…= — CSP script-src 'none'")
+    if (re.search(r'<(?:img|script|iframe|source|video|audio)\b[^>]*\ssrc="https?://', text)
+            or re.search(r'<link\b[^>]*rel="(?:stylesheet|preload|icon)"[^>]*href="https?://', text)):
+        out.append("внешний ресурс страницы — CSP только 'self'")
+    return out
 
 
 def site_check(repo: Repo | None = None) -> Report:
