@@ -172,11 +172,16 @@ def resolved_body(v: Variant, base: str) -> Resolved:
     return resolve(v.doc.body, v.lang, v.item.repo, base)
 
 
+def resolved_alt(v: Variant, base: str = "") -> list[Resolved]:
+    """media_alt после подстановок — по одному на файл media (то, что прочтёт экранный диктор)."""
+    return [resolve(a, v.lang, v.item.repo, base) for a in v.m("media_alt") or []]
+
+
 def variant_sha(v: Variant) -> str:
     """Хэш содержимого варианта — то, что одобряет автор (Д12).
 
     Входят: площадка, язык, формат, версия канона, ссылка, CTA, медиа с
-    хэшами файлов и текст после подстановки фактов с каноническим адресом.
+    хэшами файлов и их alt, текст после подстановки фактов с каноническим адресом.
     Не входят: статус, доверие, одобрение, зависимости, номер версии.
     """
     repo = v.item.repo
@@ -190,6 +195,8 @@ def variant_sha(v: Variant) -> str:
         "link": link_url(v, base), "cta": v.m("cta"), "title": v.m("title"),
         "media": media, "body": resolved_body(v, base).text,
     }
+    if v.m("media_alt"):  # без alt хэш прежний — одобрения вариантов без медиа не сбиваются
+        payload["media_alt"] = [r.text for r in resolved_alt(v, base)]
     raw = json.dumps(payload, ensure_ascii=False, sort_keys=True)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
@@ -217,6 +224,9 @@ def seal_variant(v: Variant) -> None:
     """Записать зависимости варианта: версия канона с хэшем, факты/ссылки, хэши медиа."""
     item = v.item
     deps = resolved_body(v, item.repo.canonical_base()).deps
+    for alt in resolved_alt(v, item.repo.canonical_base()):
+        for kind, d in alt.deps.items():
+            deps.setdefault(kind, {}).update(d)
     facts = item.repo.facts()
     for fid in v.m("claims") or []:  # факты, написанные в тексте словами, а не подстановкой
         if fid in facts:

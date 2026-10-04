@@ -24,7 +24,7 @@ Author / Projects → Research / Facts → Canonical content → Adaptation → 
 | идентичность, проекты, факты | сделано; имя открыто — Д20; бренды автора и проектов — Д27 |
 | модель контента | v2: канон с версиями, варианты площадок, подстановка фактов, зависимости и устаревание, кампании, проекты, релизы |
 | публикация | движок: журнал, идемпотентность, повторы, структурные ошибки, dry-run / safe / production, одобрение автора по хэшу; адаптеры — сайт, Telegram (Bot API), имитации всех площадок; VK, YouTube, Discord, GitHub, TikTok — ручной путь (Д33) |
-| сайт | генератор, staging (`site serve`), главная, «обо мне», проекты RU/EN, лента, фиды Atom/RSS/JSON, sitemap, `/api/v1/`; домен `dpsmpx.com` не зарегистрирован — ОР-11 |
+| сайт | генератор, staging (`site serve`), предпросмотр (`preview --serve`), главная, «обо мне», проекты RU/EN, лента, фиды Atom/RSS/JSON, sitemap с `lastmod`/`hreflang`, `/api/v1/`, значок, заголовки (CSP), доступность и телефон (390 px); хостинг — Beget, выгрузка rsync (`site deploy`, Д35, Д36) — после «сайт готов»; домен в реестре не найден — ОР-11 |
 | проверки | `tools/check.sh` (quick / affected / full / release) — 17 проверок и тесты: модульные, контрактные, движок, сквозной |
 | первый продукт CI-0001 | `UNDER_REVIEW`, переведён в v2 (канон, варианты сайта RU/EN, Telegram, VK, GitHub), кампания CMP-0001; ждёт ревизии подписи по Д20 и утверждения автора |
 
@@ -88,7 +88,7 @@ tests/                             тесты
 tools/check.sh                       # всё (--quick, --affected, --release, --fast)
 python3 -m tools.cs status           # объекты контента и их состояния
 python3 -m tools.cs campaign status CMP-0001       # сводка кампании по площадкам
-python3 -m tools.cs preview CI-0001                # предпросмотр всех вариантов
+python3 -m tools.cs preview CI-0001 --serve        # предпросмотр всех вариантов: http://localhost:8001/_preview/
 python3 -m tools.cs site build && python3 -m tools.cs site serve   # staging сайта: http://localhost:8000
 python3 -m tools.cs publish CI-0001 telegram.ru --to tg-devlog     # пробный прогон публикации
 python3 -m tools.cs health           # площадки, учётные данные, сайт, хранилище

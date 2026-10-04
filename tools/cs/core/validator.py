@@ -92,8 +92,15 @@ def validate_variant(v: Variant, adapter=None, destination: dict | None = None) 
             out.append(Finding("error", f"{where}: канон v{sv} не зафиксирован (canonical seal)"))
     res = resolved_body(v, repo.canonical_base())
     out += [Finding("error", f"{where}: {e}") for e in res.errors]
-    fids = sorted(set([c["fact"] for c in item.data.get("claims", [])] + res.facts_used))
-    text = "\n".join(x for x in (v.m("title"), res.text, v.m("cta")) if x)
+    from .content import resolved_alt
+    alts = resolved_alt(v, repo.canonical_base())
+    for a in alts:
+        out += [Finding("error", f"{where}: media_alt: {e}") for e in a.errors]
+    if len(alts) > len(v.m("media") or []):
+        out.append(Finding("error", f"{where}: media_alt — {len(alts)} строк на {len(v.m('media') or [])} файлов media"))
+    fids = sorted(set([c["fact"] for c in item.data.get("claims", [])] + res.facts_used
+                      + [f for a in alts for f in a.facts_used]))
+    text = "\n".join(x for x in (v.m("title"), res.text, v.m("cta"), *[a.text for a in alts]) if x)
     out += _claim_findings(item, text, fids, where)
     out += _link_findings(repo, markup.links(markup.parse(res.text)), where)
     # медиа — только записанные в происхождении (гейт Provenance)

@@ -7,6 +7,10 @@
 на файлы закрытых проектов («Galdhold `docs/…`», «dpsmpx/DPlang …») и
 внешние адреса. Фигурные скобки раскрываются: `a/{b,c}.md` → два пути.
 
+Каталоги верхнего уровня — только те, где есть файлы Git: игнорируемые
+(`build/` — сборки и кэш) путями не считаются, иначе итог зависел бы от
+того, что лежит на диске у сессии.
+
 Аудиты (docs/audits/) — срезы на дату: битая ссылка в них — предупреждение.
 """
 from __future__ import annotations
@@ -30,8 +34,8 @@ def _expand(p: str) -> list[str]:
     return [x for alt in m.group(1).split(",") for x in _expand(p[:m.start()] + alt + p[m.end():])]
 
 
-def _top_dirs() -> set[str]:
-    return {p.name for p in ROOT.iterdir() if p.is_dir() and not p.name.startswith(".git")} | {".claude"}
+def _top_dirs(files: list[Path]) -> set[str]:
+    return {f.relative_to(ROOT).parts[0] for f in files if len(f.relative_to(ROOT).parts) > 1} | {".claude"}
 
 
 def candidates(token: str, top: set[str]) -> bool:
@@ -66,7 +70,7 @@ def check() -> Report:
         for parent in f.relative_to(ROOT).parents:
             if str(parent) != ".":
                 names.setdefault(parent.name, []).append(ROOT / parent)
-    top = _top_dirs()
+    top = _top_dirs(files)
     count = 0
     for doc in files:
         if doc.suffix != ".md":

@@ -7,17 +7,20 @@
 <meta name="description" content="$description">
 $head
 <link rel="stylesheet" href="/style.css">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta name="theme-color" content="$theme">
 <link rel="alternate" type="application/atom+xml" title="Atom" href="/feed.xml">
 <link rel="alternate" type="application/rss+xml" title="RSS" href="/rss.xml">
 <link rel="alternate" type="application/feed+json" title="JSON Feed" href="/feed.json">
 </head>
 <body>
+<a class="skip" href="#main">$skip</a>
 $banner
 <header class="site-header">
   <a class="brand" href="$home">$brand<span class="dot">.</span></a>
-  <nav>$nav</nav>
+  <nav aria-label="$nav_label">$nav</nav>
 </header>
-<main>
+<main id="main" tabindex="-1">
 $main
 </main>
 <footer class="site-footer">

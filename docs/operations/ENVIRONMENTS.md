@@ -7,7 +7,7 @@
 | | development | staging | production |
 |---|---|---|---|
 | Площадки | имитации (`tools/cs/adapters/mock.py`) | тестовые адресаты: закрытый тестовый канал Telegram, staging сайта | рабочие адресаты |
-| Сайт | — | сборка в build/site/staging, `python3 -m tools.cs site serve` → `http://localhost:8000`; `noindex`, `Disallow: /`, черновики с плашкой | сборка в build/site/production → хостинг (ОР-11); только одобренное и опубликованное |
+| Сайт | — | сборка в build/site/staging, `python3 -m tools.cs site serve` → `http://localhost:8000`; `noindex`, `Disallow: /`, черновики с плашкой | сборка в build/site/production → rsync на Beget (Д35: `site deploy`, `publish --production`); только одобренное и опубликованное; выпуск — после «сайт готов» (Д34) |
 | Журнал | каталог сборки (не в Git) | `data/publications/staging.jsonl` | `data/publications/production.jsonl` |
 | Режим запуска | `--dev` | `--safe` | `--production` |
 | Одобрение | не нужно | не нужно (проверки — да) | **нужно** (Д12) |

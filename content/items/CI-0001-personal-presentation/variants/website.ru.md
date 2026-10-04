@@ -13,6 +13,10 @@ summary: Строю сложные нативные системы — игру,
   — мои.
 media:
 - exports/A-ru-telegram_post.jpg
+media_alt:
+- 'Карточка-презентация. Слева — фотография автора. Справа — dpsmpx, {{fact:AU-ROLE#2}}; схема работы
+  от замысла через архитектуру, реализацию с ИИ и проверку к Git и продукту — «{{fact:AU-METHOD#1}}».
+  Внизу — {{fact:GH-NAME}}: {{fact:GH-GENRE}}, {{fact:GH-TECH}}; {{fact:GH-LOC}}, {{fact:GH-CHECKS}}.'
 link: null
 generation:
   provider: session

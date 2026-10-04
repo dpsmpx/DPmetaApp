@@ -75,9 +75,20 @@ def json_feed(site, posts) -> str:
 
 
 def sitemap(site, pages) -> str:
-    out = ['<?xml version="1.0" encoding="utf-8"?>', '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
+    """lastmod — дата самого нового источника страницы (нет даты — нет lastmod, без выдумки);
+    пары RU/EN — xhtml:link hreflang у каждого адреса пары, включая сам адрес, и x-default (П2-13)."""
+    out = ['<?xml version="1.0" encoding="utf-8"?>',
+           '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">']
     for p in pages:
-        out.append(f"<url><loc>{X(site.base + p.path)}</loc></url>")
+        row = [f"<loc>{X(site.base + p.path)}</loc>"]
+        if p.lastmod:
+            row.append(f"<lastmod>{X(p.lastmod[:10])}</lastmod>")
+        if len(p.alternates) > 1:
+            for lg, path in p.alternates.items():
+                row.append(f'<xhtml:link rel="alternate" hreflang="{lg}" href="{X(site.base + path)}"/>')
+            default = p.alternates.get("ru", p.path)
+            row.append(f'<xhtml:link rel="alternate" hreflang="x-default" href="{X(site.base + default)}"/>')
+        out.append("<url>" + "".join(row) + "</url>")
     out.append("</urlset>")
     return "\n".join(out) + "\n"
 

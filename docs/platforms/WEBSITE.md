@@ -3,7 +3,8 @@
 **Сайт в разработке (Д34):** сессии развивают его в репозитории
 (staging), пока автор не скажет «сайт готов»; список работ —
 `ROADMAP/ROADMAP.md`, П2, «Сайт — в работе». Выпуск — после этих слов и
-ОР-11.
+ОР-11 (домен). Хостинг — Beget, выгрузка — rsync (Д35); выгружает автор
+или локальная сессия Claude Code после его «да» (Д36).
 
 Центральная точка публикации и постоянный архив автора (Д21, Д32;
 постановка §4–7, §25, §32–35, §48, §79–85, §94, §117–118). Исследование —
@@ -39,7 +40,8 @@
 /feed.xml /rss.xml /feed.json   фиды
 /sitemap.xml /robots.txt /404.html
 /api/v1/index.json /api/v1/projects.json /api/v1/news.json
-/media/<объект>/…  /fonts/…  /style.css
+/media/<объект>/…  /fonts/…  /style.css  /favicon.svg
+/.htaccess              заголовки и 404 для Apache (Beget, Д35); /_headers — для Cloudflare Pages и Netlify
 ```
 
 Отличия от предварительной схемы §5 — `docs/research/publishing/WEBSITE.md`,
@@ -67,7 +69,7 @@
 | Страницы проектов | из фактов реестра | то же — публичные `FACT` с допустимыми формулировками |
 | Изображение по умолчанию | экспорт CI-0001 (превью) | только из утверждённого объекта |
 | Индексация | `noindex`, `Disallow: /` | открыта, `sitemap.xml` |
-| Выгрузка | локально (`site serve`) | команда `deploy` в `site.yaml` — после ОР-11 |
+| Выгрузка | локально (`site serve`) | rsync на Beget (`deploy` в `site.yaml`, Д35) — после «сайт готов» (`live`, Д34) |
 
 ## Адреса (§79)
 
@@ -81,20 +83,85 @@ false`, §80). Адрес записи (`/news/<slug>/`) не меняется �
 `<title>`, `description`, `rel=canonical`, `hreflang` RU/EN, Open Graph
 (`og:title`, `og:type`, `og:image`, `og:url`, `og:description`,
 `og:locale`), `twitter:card`, JSON-LD (`Person`, `WebSite`,
-`BlogPosting`, `CreativeWork` проекта), `/sitemap.xml`, `/robots.txt`,
-фиды. Проверка `site` собирает обе версии, читает фиды и JSON, ищет
-битые внутренние ссылки.
+`BlogPosting`, `CreativeWork` проекта), `/sitemap.xml` с `lastmod` и
+парами `hreflang` (`xhtml:link` у каждого адреса пары и `x-default`),
+`/robots.txt`, фиды. `lastmod` — дата самого нового источника страницы:
+записи или свидетельства факта, который на ней выведен; источника с
+датой нет — `lastmod` не пишется. Значок `/favicon.svg` — «d» и
+точка-акцент из токенов бренда, без шрифтов. Проверка `site` собирает
+обе версии, читает фиды и JSON, ищет битые внутренние ссылки, проверяет
+доступность и CSP каждой страницы, наличие значка и файла заголовков
+хостинга.
 
-## Выпуск (§48)
+## Доступность (П2-10, П2-14)
+
+- `<html lang>`; ссылка «к содержимому» (`#main`) первой по Tab; видимый
+  фокус (`:focus-visible`, акцент `human`); у текущего раздела меню —
+  `aria-current="page"`; переключатель языка с `lang` и подписью.
+- Один `h1` на странице: заголовок страницы; разметка вариантов даёт
+  только `##`/`###` (`h2`/`h3`).
+- У каждого изображения — `alt`. Для медиа вариантов это `media_alt` —
+  по строке на файл `media`, с подстановками фактов (Д28); alt входит в
+  хэш одобрения, его меняет только новая фиксация варианта. Нет
+  `media_alt` — ошибка сборки.
+- Телефон — проверка на 390 px: без горизонтальной прокрутки, пункты
+  меню не рвутся, цели касания меню и списков ссылок — не ниже 24 px
+  (WCAG 2.2, 2.5.8; ссылки внутри предложений — исключение).
+
+## Заголовки безопасности (П2-12, Д35)
+
+Файл — по `hosting` в `site.yaml`: для Beget (Apache) — `/.htaccess`
+(`Header always set …` внутри `<IfModule mod_headers.c>`,
+`ErrorDocument 404 /404.html`, `AddDefaultCharset utf-8`, типы
+`woff2`/`svg`); для Cloudflare Pages и Netlify — `/_headers`, правило
+для `/*`. Набор один: `Content-Security-Policy` (только свои файлы: `script-src 'none'`,
+`style-src 'self'`, `img-src 'self'`, `font-src 'self'`,
+`frame-ancestors 'none'`; JSON-LD — блок данных, не исполняется),
+`X-Content-Type-Options: nosniff`, `Referrer-Policy:
+strict-origin-when-cross-origin`, `Permissions-Policy` (камера,
+микрофон, геолокация, оплата, USB — выключены), `X-Frame-Options: DENY`,
+`Cross-Origin-Opener-Policy: same-origin`; у staging ещё
+`X-Robots-Tag: noindex, nofollow`. Политика — в `tools/cs/site/build.py`
+(`SECURITY_HEADERS`) рядом с генератором: что страница может содержать,
+решает он. Проверка `site` ловит встроенные скрипты, стили, обработчики
+`on…=` и внешние ресурсы страниц. Работают заголовки только на
+хостинге; локальный сервер их не применяет. Применяет ли Beget `Header`
+к статике — **не подтверждено** (UNKNOWN): после первой выгрузки
+`curl -I https://dpsmpx.com/` (П2-02).
+
+## Выпуск и выгрузка (§48, Д35, Д36)
+
+Предпросмотр (`python3 -m tools.cs preview <объект|кампания> --serve`) —
+staging-сборка в корне `build/preview/<id>/`, страница со всеми
+вариантами — `/_preview/`; сайт ссылается на свои файлы от корня, поэтому
+открывается через локальный сервер (`site serve`, `preview --serve`;
+нет адреса — `/404.html` с кодом 404, как на хостинге), а не из `file://`.
 
 ```
-commit → python3 -m tools.cs check → site build --env staging → предпросмотр (site serve, preview)
-       → publish <объект> website.ru --to site-production --production (сборка + выгрузка + запись в журнал)
+commit → python3 -m tools.cs check → site build --env staging → предпросмотр (site serve, preview --serve)
+       → publish <объект> website.ru --to site-production --production (сборка + rsync + проверка по HTTP + журнал)
+       → site deploy --dry-run → site deploy        (тема и код сайта без новой записи)
 ```
 
-До ОР-11 production-сборка готовится (`site build --env production`), а
-выгрузка не настроена: рабочая публикация на сайт отвечает
-`MANUAL_REQUIRED`.
+- **Запись** (новая или изменённая): `publish … --to site-production
+  --production` — одобрение, сборка с записью, rsync, проверка страницы
+  по HTTP (canonical на месте), запись в журнал.
+- **Тема и код сайта** без новой записи: `site deploy --dry-run` (что
+  изменится: rsync `--dry-run --itemize-changes`), затем `site deploy` —
+  та же production-сборка из журнала; проверка `site` до выгрузки,
+  главные страницы по HTTP — после; событие — `build/logs/deploy.jsonl`.
+- rsync: `--checksum --delete-delay --delay-updates` (файлы встают на
+  место в конце), `--filter=P /.well-known/` (не удалять), SSH с
+  `BatchMode=yes`; путь обязан кончаться `public_html/`. Адрес —
+  переменная автора `CS_PROD_SITE_DEPLOY_TARGET`, ключ — его SSH
+  (`docs/operations/CREDENTIALS.md`, «Сайт: Beget»). Есть ли rsync на
+  сервере Beget — проверить при подключении (UNKNOWN).
+- Запреты: до «сайт готов» — `production.live: false`; адресат
+  `site-production` — `blocked`, пока домена нет в реестре (ОР-11);
+  облачная сессия — никогда; локальная — только после «да» (Д36).
+  Причины отказа печатают `site deploy` и `health`.
+- Откат: `git revert` правки и снова `site deploy` (сборка выводится из
+  модели и журнала); снять запись — `publish --delete` (автор).
 
 ## Расширения (не сейчас)
 

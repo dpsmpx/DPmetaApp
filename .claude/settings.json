@@ -1,4 +1,17 @@
 {
+  "permissions": {
+    "ask": [
+      "Bash(python3 -m tools.cs publish *)",
+      "Bash(python3 -m tools.cs site deploy *)",
+      "Bash(rsync *)",
+      "Bash(ssh *)",
+      "Bash(scp *)",
+      "Bash(sftp *)"
+    ],
+    "deny": [
+      "Read(~/.ssh/**)"
+    ]
+  },
   "hooks": {
     "SessionStart": [
       {

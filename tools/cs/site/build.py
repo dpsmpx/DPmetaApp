@@ -8,6 +8,12 @@
     production  только одобренное автором и опубликованное (журнал production)
     staging     всё с вариантами website, черновики — с плашкой; noindex
 
+Кроме страниц: значок `/favicon.svg` из токенов бренда, заголовки
+безопасности для хостинга (CSP без внешних источников и встроенных
+скриптов и стилей) — `/.htaccess` для Apache (Beget, Д35) или `/_headers`
+для Cloudflare Pages и Netlify, по `hosting` в site.yaml; sitemap с
+`lastmod` (дата самого нового источника страницы) и парами `hreflang`.
+
 build(repo, env, out) → BuildReport. Ничего не скачивает и не отправляет.
 """
 from __future__ import annotations
@@ -21,7 +27,8 @@ from pathlib import Path
 from string import Template
 
 from ..core import markup
-from ..core.content import POST_CATEGORIES, CItem, Variant, approval_state, load_items, resolved_body, stale_reasons
+from ..core.content import (POST_CATEGORIES, CItem, Variant, approval_state, load_items, resolved_alt, resolved_body,
+                            stale_reasons)
 from ..core.inject import resolve
 from ..core.ledger import Ledger
 from ..core.repo import Repo
@@ -29,6 +36,20 @@ from . import feeds
 from .i18n import PLATFORM_NAMES, t
 
 E = html.escape
+
+# Заголовки для хостинга (П2-12). CSP — только свои файлы: внешних скриптов,
+# шрифтов и картинок у сайта нет; JSON-LD — блок данных, не исполняется.
+# Проверка site следит, чтобы страницы не нарушали эту политику.
+CSP = ("default-src 'self'; script-src 'none'; style-src 'self'; img-src 'self'; font-src 'self'; "
+       "connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+SECURITY_HEADERS = {
+    "Content-Security-Policy": CSP,
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+    "X-Frame-Options": "DENY",
+    "Cross-Origin-Opener-Policy": "same-origin",
+}
 
 
 @dataclass
@@ -46,6 +67,7 @@ class Entry:
     draft: bool
     stale: bool
     image: str | None = None
+    image_alt: str | None = None
     social: list = field(default_factory=list)
 
     @property
@@ -65,6 +87,7 @@ class Page:
     image: str | None = None
     jsonld: list = field(default_factory=list)
     draft: bool = False
+    lastmod: str | None = None
 
 
 @dataclass
@@ -95,6 +118,8 @@ class SiteBuild:
         self._about: dict = {}
         self._warned: set = set()
         self._og: str | None = None
+        self._used: set = set()  # факты текущей страницы — для lastmod
+        self._tokens: dict | None = None
 
     # ------------------------------------------------------- данные
     def _published(self) -> dict[tuple, dict]:
@@ -140,22 +165,27 @@ class SiteBuild:
                 res = resolved_body(v, self.base)
                 if res.errors:
                     self.report.errors += [f"{item.id}/{vid}: {e}" for e in res.errors]
-                blocks = markup.parse(res.text)
+                blocks = markup.parse(res.text)  # заголовки текста — h2/h3: h1 у страницы один
                 rec = pub.get((item.id, vid)) or {}
                 date = str(rec.get("ts") or "")[:10] or str(v.m("date") or item.data.get("created") or "")
                 title = v.m("title") or item.data.get("title")
                 summary = v.m("summary") or markup.first_text(blocks)
-                img = None
+                img = alt = None
                 media = v.m("media") or []
                 if media:
                     img = f"/media/{item.id}/{Path(media[0]).name}"
+                    alts = resolved_alt(v, self.base)
+                    alt = alts[0].text if alts else None
+                    if not alt:
+                        self.report.errors.append(f"{item.id}/{vid}: у {media[0]} нет media_alt — изображение без текста-замены")
                 out.append(Entry(item, v, v.lang, item.url_path(v.lang), title, summary,
                                  markup.to_html(blocks), date, item.category,
-                                 draft=not (approved and published), stale=stale, image=img,
+                                 draft=not (approved and published), stale=stale, image=img, image_alt=alt,
                                  social=self._social(item)))
         return out
 
     def fact(self, fid: str, lang: str, idx: int = 0) -> str | None:
+        self._used.add(fid)
         f = self.facts.get(fid)
         if not f or not f.get("public"):
             self.report.errors.append(f"факт {fid} не найден или не публичный")
@@ -176,11 +206,12 @@ class SiteBuild:
         for key, href in items:
             if key == "about" and not self._about.get(lang):
                 continue
-            cls = ' class="current"' if key == current else ""
+            cls = ' class="current" aria-current="page"' if key == current else ""
             out.append(f'<a href="{href}"{cls}>{E(t(lang, key))}</a>')
         other = "en" if lang == "ru" else "ru"
         if other in alt:
-            out.append(f'<a class="lang" href="{alt[other]}" hreflang="{other}">{other.upper()}</a>')
+            out.append(f'<a class="lang" href="{alt[other]}" hreflang="{other}" lang="{other}" '
+                       f'aria-label="{E(t(other, "other_lang"))}">{other.upper()}</a>')
         return "".join(out)
 
     def person_jsonld(self, lang: str) -> dict:
@@ -236,7 +267,7 @@ class SiteBuild:
             parts.append(self.draft_note(about))
             parts.append(f'<p class="lead">{E(about.summary)}</p>')
             if about.image:
-                parts.append(f'<img src="{about.image}" alt="{E(name)}" width="1280" height="720">')
+                parts.append(f'<img src="{about.image}" alt="{E(about.image_alt or "")}" width="1280" height="720">')
         parts.append("</section>")
         projects = [p for p in sorted(self.repo.projects().values(), key=lambda x: x.get("order", 99)) if p.get("page")]
         prim = [p for p in projects if p.get("weight") == "primary"]
@@ -248,6 +279,7 @@ class SiteBuild:
             parts.append(f'<h2>{E(t(lang, "other_projects"))}</h2><div class="cards">'
                          + "".join(self.project_card(p, lang, False) for p in rest) + "</div>")
         posts = [e for e in entries if e.is_post and e.lang == "ru"][:3]
+        dates = [e.date for e in posts + ([about] if about else [])]
         if posts:
             parts.append(f'<h2>{E(t(lang, "latest"))}</h2>' + self.post_list(posts, lang)
                          + f'<p><a href="/news/">{E(t(lang, "all_posts"))} →</a></p>')
@@ -263,7 +295,7 @@ class SiteBuild:
                     "profile", self._alt("/", "/en/"), img,
                     [self.person_jsonld(lang), {"@context": "https://schema.org", "@type": "WebSite",
                                                 "name": name + " / dpsmpx", "url": self.base + path, "inLanguage": lang}],
-                    draft=bool(about and about.draft))
+                    draft=bool(about and about.draft), lastmod=max(dates, default=None))
 
     def page_about(self, lang: str) -> Page | None:
         e = self._about.get(lang)
@@ -273,7 +305,7 @@ class SiteBuild:
         main = (f"<h1>{E(e.title)}</h1>" + self.draft_note(e) + e.html
                 + f'<h2>{E(t(lang, "follow"))}</h2>' + self.link_list(home.get("social_links", []), lang))
         return Page(e.path, lang, e.title, e.summary, main, "profile", self._alt(self._about_path("ru"), self._about_path("en")),
-                    e.image or self.og_default(), [self.person_jsonld(lang)], e.draft)
+                    e.image or self.og_default(), [self.person_jsonld(lang)], e.draft, lastmod=e.date)
 
     def _about_path(self, lang):
         e = self._about.get(lang)
@@ -333,10 +365,11 @@ class SiteBuild:
             if devlog.get("url"):
                 body += f' <a href="{E(devlog["url"])}">{E(devlog["url"])}</a>'
             body += "</p>"
-        feeds_html = (f'<p class="muted">{E(t("ru", "feeds"))}: <a href="/feed.xml">Atom</a> · '
+        feeds_html = (f'<p class="muted feeds">{E(t("ru", "feeds"))}: <a href="/feed.xml">Atom</a> · '
                       f'<a href="/rss.xml">RSS</a> · <a href="/feed.json">JSON Feed</a></p>')
         return Page("/news/", "ru", t("ru", "news_title"), t("ru", "news_title"),
-                    f"<h1>{E(t('ru', 'news_title'))}</h1>{body}{feeds_html}", image=self.og_default())
+                    f"<h1>{E(t('ru', 'news_title'))}</h1>{body}{feeds_html}", image=self.og_default(),
+                    lastmod=max((e.date for e in posts), default=None))
 
     def page_post(self, e: Entry) -> Page:
         cat = t(e.lang, "cat").get(e.category, e.category)
@@ -349,7 +382,7 @@ class SiteBuild:
         tags = "".join(f'<a class="tag" href="/tags/{E(tg)}/">#{E(tg)}</a>' for tg in e.item.data.get("tags") or [])
         main = f"<article><h1>{E(e.title)}</h1>{meta}{self.draft_note(e)}"
         if e.image:
-            main += f'<img src="{e.image}" alt="" style="width:100%;height:auto">'
+            main += f'<img class="cover" src="{e.image}" alt="{E(e.image_alt or "")}">'
         main += e.html + (f"<p>{tags}</p>" if tags else "")
         if e.social:
             main += f'<h3>{E(t(e.lang, "discuss"))}</h3><ul class="links">' + "".join(
@@ -362,10 +395,11 @@ class SiteBuild:
         img = e.image or self.og_default()
         if img:
             ld["image"] = self.base + img
-        return Page(e.path, e.lang, e.title, e.summary, main, "article", image=img, jsonld=[ld], draft=e.draft)
+        return Page(e.path, e.lang, e.title, e.summary, main, "article", image=img, jsonld=[ld], draft=e.draft, lastmod=e.date)
 
     def page_tag(self, tag: str, posts: list[Entry]) -> Page:
-        return Page(f"/tags/{tag}/", "ru", f"#{tag}", f"#{tag}", f"<h1>#{E(tag)}</h1>" + self.post_list(posts, "ru"))
+        return Page(f"/tags/{tag}/", "ru", f"#{tag}", f"#{tag}", f"<h1>#{E(tag)}</h1>" + self.post_list(posts, "ru"),
+                    lastmod=max((e.date for e in posts), default=None))
 
     def _alt(self, ru: str | None, en: str | None) -> dict:
         out = {}
@@ -377,6 +411,20 @@ class SiteBuild:
 
     def og_default(self) -> str | None:
         return self._og
+
+    def _fact_date(self, fid: str) -> str | None:
+        """Дата самого нового свидетельства факта — когда содержимое страницы последний раз сверено."""
+        ev = (self.facts.get(fid) or {}).get("evidence") or []
+        return max((str(x.get("date")) for x in ev if x.get("date")), default=None)
+
+    def _page(self, fn, *args) -> Page | None:
+        """Страница + lastmod: самая поздняя из дат записей страницы и свидетельств её фактов."""
+        self._used = set()
+        page = fn(*args)
+        if page is not None:
+            dates = [self._fact_date(f) for f in self._used] + [page.lastmod]
+            page.lastmod = max((d for d in dates if d), default=None)
+        return page
 
     def _resolve_og(self) -> str | None:
         """Изображение по умолчанию; на production — только из утверждённого объекта (Д12)."""
@@ -410,7 +458,7 @@ class SiteBuild:
             head.append(f'<link rel="alternate" hreflang="x-default" href="{E(self.base + page.alternates.get("ru", page.path))}">')
         for ld in page.jsonld:
             head.append('<script type="application/ld+json">' + json.dumps(ld, ensure_ascii=False).replace("</", "<\\/") + "</script>")
-        banner = f'<div class="banner">{E(t(page.lang, "staging"))}</div>' if self.noindex else ""
+        banner = f'<div class="banner" role="note">{E(t(page.lang, "staging"))}</div>' if self.noindex else ""
         current = {"/": "home", "/en/": "home"}.get(page.path) or ("projects" if "/projects/" in page.path else
                                                                     "news" if page.path.startswith("/news/") else
                                                                     "about" if "/about/" in page.path else "")
@@ -419,7 +467,8 @@ class SiteBuild:
                   + (f'<p>Шрифты IBM Plex — SIL OFL 1.1 (<a href="/fonts/OFL-IBM-Plex.txt">лицензия</a>).</p>' if page.lang == "ru" else
                      f'<p>IBM Plex fonts — SIL OFL 1.1 (<a href="/fonts/OFL-IBM-Plex.txt">license</a>).</p>'))
         return tpl.substitute(lang=page.lang, title=E(page.title), description=E(page.description), head="\n".join(head),
-                              banner=banner, home="/en/" if page.lang == "en" else "/",
+                              banner=banner, home="/en/" if page.lang == "en" else "/", theme=self.tokens()["color"]["ink"]["hex"],
+                              skip=E(t(page.lang, "skip")), nav_label=E(t(page.lang, "nav_label")),
                               brand="dpsmpx", nav=self.nav(page.lang, current, page.alternates), main=page.main, footer=footer)
 
     def write(self, out: Path, rel: str, data: str | bytes) -> None:
@@ -430,10 +479,49 @@ class SiteBuild:
         (p.write_bytes if isinstance(data, bytes) else lambda d: p.write_text(d, encoding="utf-8"))(data)
         self.report.files.append(str(p.relative_to(out)))
 
+    def tokens(self) -> dict:
+        if self._tokens is None:
+            self._tokens = json.loads(self.repo.path("assets", "brand", "tokens.json").read_text(encoding="utf-8"))
+        return self._tokens
+
     def css(self) -> str:
-        tokens = json.loads(self.repo.path("assets", "brand", "tokens.json").read_text(encoding="utf-8"))
-        root = ":root { " + " ".join(f"--{k}: {v['hex']};" for k, v in tokens["color"].items()) + " }\n"
+        root = ":root { " + " ".join(f"--{k}: {v['hex']};" for k, v in self.tokens()["color"].items()) + " }\n"
         return root + self.repo.path("website", "static", "style.css").read_text(encoding="utf-8")
+
+    def favicon(self) -> str:
+        """Значок (П2-11): «d» и точка-акцент, как в знаке «dpsmpx.», — цвета из токенов; без шрифтов."""
+        c = {k: v["hex"] for k, v in self.tokens()["color"].items()}
+        return ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
+                f'<rect width="32" height="32" rx="7" fill="{c["ink"]}"/>'
+                f'<circle cx="13" cy="19" r="6" fill="none" stroke="{c["paper"]}" stroke-width="3.4"/>'
+                f'<path d="M19 6.5V25" stroke="{c["paper"]}" stroke-width="3.4" stroke-linecap="round"/>'
+                f'<circle cx="25.3" cy="23.6" r="2.7" fill="{c["human"]}"/></svg>\n')
+
+    def _headers(self) -> dict:
+        h = dict(SECURITY_HEADERS)
+        if self.noindex:
+            h["X-Robots-Tag"] = "noindex, nofollow"
+        return h
+
+    def headers_file(self) -> tuple[str, str]:
+        """Файл заголовков хостинга (П2-12, Д35): (путь, текст)."""
+        if self.cfg.get("hosting") == "beget":
+            return "/.htaccess", self.htaccess()
+        return "/_headers", "\n".join(["/*"] + [f"  {k}: {v}" for k, v in self._headers().items()]) + "\n"
+
+    def htaccess(self) -> str:
+        """Apache (Beget): 404, кодировка, типы, заголовки. mod_headers для статики на Beget —
+        не подтверждено (Д35): проверка curl -I после первой выгрузки."""
+        lines = ["# Создаёт tools/cs/site/build.py (Д35); на сервере не править — перезапишет выгрузка.",
+                 "AddDefaultCharset utf-8",
+                 "ErrorDocument 404 /404.html",
+                 "<IfModule mod_mime.c>",
+                 "  AddType font/woff2 .woff2",
+                 "  AddType image/svg+xml .svg",
+                 "</IfModule>",
+                 "<IfModule mod_headers.c>"]
+        lines += [f'  Header always set {k} "{v}"' for k, v in self._headers().items()]
+        return "\n".join(lines + ["</IfModule>"]) + "\n"
 
     def build(self, out: Path) -> BuildReport:
         self.report = BuildReport(self.env, out)
@@ -446,31 +534,33 @@ class SiteBuild:
         self.report.entries = entries
         self._about = {e.lang: e for e in entries if e.category == "page" and e.path.rstrip("/").endswith("/about")}
         langs = self.cfg.get("languages") or ["ru"]
-        pages = [self.page_home("ru", entries), self.page_projects("ru"), self.page_news(entries)]
+        pg = self._page
+        pages = [pg(self.page_home, "ru", entries), pg(self.page_projects, "ru"), pg(self.page_news, entries)]
         if "en" in langs:
-            pages += [self.page_home("en", entries), self.page_projects("en")]
+            pages += [pg(self.page_home, "en", entries), pg(self.page_projects, "en")]
         for lang in langs:
-            ab = self.page_about(lang)
+            ab = pg(self.page_about, lang)
             if ab:
                 pages.append(ab)
         for p in self.repo.projects().values():
             if p.get("page"):
                 for lang in langs:
-                    pages.append(self.page_project(p, lang, entries))
+                    pages.append(pg(self.page_project, p, lang, entries))
         posts = [e for e in entries if e.is_post]
         for e in posts:
-            pages.append(self.page_post(e))
+            pages.append(pg(self.page_post, e))
         tags: dict[str, list] = {}
         for e in posts:
             for tg in e.item.data.get("tags") or []:
                 tags.setdefault(tg, []).append(e)
         for tg, ps in sorted(tags.items()):
-            pages.append(self.page_tag(tg, ps))
+            pages.append(pg(self.page_tag, tg, ps))
         for page in pages:
             self.write(out, page.path, self.render(page))
             self.report.pages.append(page.path)
         self.write(out, "/404.html", self.render(Page("/404.html", "ru", t("ru", "not_found"), t("ru", "not_found"),
-                                                       f"<h1>{E(t('ru', 'not_found'))}</h1><p>{E(t('ru', 'not_found_text'))} <a href='/'>/</a></p>")))
+                                                       f"<h1>{E(t('ru', 'not_found'))}</h1><p>{E(t('ru', 'not_found_text'))} "
+                                                       f"<a href=\"/\">{E(t('ru', 'not_found_home'))}</a>.</p>")))
         # медиа вариантов и изображение по умолчанию
         for e in entries:
             for ref in e.variant.m("media") or []:
@@ -485,8 +575,10 @@ class SiteBuild:
                 self.write(out, self._og, src.read_bytes())
             else:
                 self.report.warnings.append(f"og_default {og['file']} — файла нет")
-        # тема, шрифты, фиды, карта, robots, API
+        # тема, значок, заголовки, шрифты, фиды, карта, robots, API
         self.write(out, "/style.css", self.css())
+        self.write(out, "/favicon.svg", self.favicon())
+        self.write(out, *self.headers_file())
         for f in sorted(self.repo.path("assets", "brand", "fonts").glob("*")):
             if f.suffix in (".woff2", ".txt"):
                 self.write(out, f"/fonts/{f.name}", f.read_bytes())

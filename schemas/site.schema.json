@@ -58,7 +58,30 @@
               "object",
               "null"
             ],
+            "required": [
+              "kind"
+            ],
+            "additionalProperties": false,
             "properties": {
+              "kind": {
+                "enum": [
+                  "rsync",
+                  "command"
+                ]
+              },
+              "target_ref": {
+                "type": "string",
+                "pattern": "^CS_(DEV|STAGING|PROD)_[A-Z0-9_]+$"
+              },
+              "guard_suffix": {
+                "type": "string"
+              },
+              "protect": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
               "command": {
                 "type": "array",
                 "items": {
@@ -66,6 +89,10 @@
                 }
               }
             }
+          },
+          "live": {
+            "type": "boolean",
+            "description": "Д34: выгрузка разрешена только после слов автора «сайт готов»"
           }
         }
       }
@@ -78,6 +105,14 @@
         "object",
         "null"
       ]
+    },
+    "hosting": {
+      "enum": [
+        "beget",
+        "cloudflare_pages",
+        "netlify"
+      ],
+      "description": "Хостинг рабочего сайта (Д35): какой файл заголовков писать"
     }
   }
 }

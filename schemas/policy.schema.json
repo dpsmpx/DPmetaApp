@@ -95,6 +95,13 @@
     },
     "retention": {
       "type": "object"
+    },
+    "local_session_production": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Д36: площадки production для локальной сессии Claude Code"
     }
   }
 }

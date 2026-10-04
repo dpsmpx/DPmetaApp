@@ -20,10 +20,10 @@ destinations:
     accepts_brands: [author, galdhold, dplang]
     language: null
     target: {id: dpsmpx.com, base_url: "https://dpsmpx.com"}
-    credential_ref: null
+    credential_ref: CS_PROD_SITE_DEPLOY_TARGET   # адрес выгрузки rsync на Beget (Д35) — у автора
     staging_twin: site-staging
     status: blocked
-    blocked_by: [ОР-11]
+    blocked_by: ["ОР-11: домена нет в реестре .com", "Д34: «сайт готов»"]
   - id: site-staging
     platform: website
     environment: staging

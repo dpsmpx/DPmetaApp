@@ -148,7 +148,10 @@ class Publisher:
         E = lambda m: out.append(Finding("error", m))  # noqa: E731
         d, env = plan.destination, plan.environment
         if self.mode == "production" and is_ai_session():
-            E("рабочая публикация из сессии ИИ запрещена (Д26) — запускает автор у себя")
+            from ..site.deploy import session_may_deploy
+            why = session_may_deploy(self.repo, plan.variant.platform)  # Д36: локальная сессия — только сайт
+            if why:
+                E(why)
         if self.mode in ("safe", "production", "dry-run") and d.get("status") != "active":
             E(f"адресат {d['id']} — статус {d.get('status')}, нужен active"
               + (f" (ждёт: {', '.join(d['blocked_by'])})" if d.get("blocked_by") else ""))

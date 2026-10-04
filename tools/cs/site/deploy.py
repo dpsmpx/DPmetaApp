@@ -1,0 +1,141 @@
+"""Выгрузка рабочего сайта на хостинг (Д35, Д36; docs/platforms/WEBSITE.md, «Выгрузка»).
+
+Хостинг — Beget, выгрузка — rsync по SSH готовой production-сборки.
+Адрес (`логин@сервер:путь`) — в переменной окружения автора из
+`deploy.target_ref` (в Git его нет), ключ — в его SSH-агенте; SSH — с
+`BatchMode=yes`: без ключа отказ, а не вопрос пароля. Путь обязан
+кончаться `deploy.guard_suffix` (`public_html/`): `--delete` не тронет
+другой каталог по ошибке в адресе. Из `deploy.protect` rsync ничего не
+удаляет (`.well-known/` — выпуск сертификата).
+
+Кто может выгружать (Д36): автор; из сессии Claude Code — только
+локальной и только для сайта (`local_session_production` политики);
+облачная — никогда. До слов автора «сайт готов» (Д34) выгрузки нет:
+`environments.production.live: false`.
+"""
+from __future__ import annotations
+
+import re
+import subprocess
+import urllib.error
+import urllib.request
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from ..core.credentials import EnvCredentialStore
+from ..core.obs import is_ai_session, is_remote_session
+from ..core.repo import Repo
+
+TARGET = re.compile(r"^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:(?P<path>[^\s]+)$")
+
+
+@dataclass
+class DeployResult:
+    ok: bool
+    command: list = field(default_factory=list)
+    changes: list = field(default_factory=list)
+    problems: list = field(default_factory=list)
+    output: str = ""
+
+
+def env_config(repo: Repo, env: str = "production") -> dict:
+    return ((repo.site().get("environments") or {}).get(env) or {})
+
+
+def config(repo: Repo, env: str = "production") -> dict | None:
+    return env_config(repo, env).get("deploy") or None
+
+
+def session_may_deploy(repo: Repo, platform: str = "website") -> str | None:
+    """None — можно; иначе причина отказа (Д26, Д36)."""
+    if not is_ai_session():
+        return None
+    if is_remote_session():
+        return "из облачной сессии ИИ рабочая выгрузка запрещена (Д36): ключа здесь нет — запускает автор или локальная сессия"
+    if platform not in (repo.policy().get("local_session_production") or []):
+        return f"рабочая публикация на {platform} из сессии ИИ запрещена (Д26) — запускает автор у себя"
+    return None
+
+
+def guard(repo: Repo, env: str = "production", store: EnvCredentialStore | None = None,
+          dry_run: bool = False) -> list[str]:
+    """Почему выгружать нельзя (пусто — можно). dry_run — показ изменений, не выпуск:
+    live и вид сессии не мешают, нужны настройка и адрес."""
+    out = []
+    ecfg, cfg = env_config(repo, env), config(repo, env)
+    if not cfg:
+        return [f"выгрузка {env} не настроена (data/website/site.yaml, deploy)"]
+    if not dry_run:
+        if env == "production" and not ecfg.get("live"):
+            out.append("выпуск сайта — после слов автора «сайт готов» (Д34): environments.production.live: false")
+        why = session_may_deploy(repo)
+        if why:
+            out.append(why)
+    if cfg.get("kind") == "rsync":
+        target = (store or EnvCredentialStore()).get(cfg.get("target_ref"))
+        if not target:
+            out.append(f"нет адреса выгрузки: переменная {cfg.get('target_ref')} (docs/operations/CREDENTIALS.md, «Сайт: Beget»)")
+        else:
+            out += target_problems(str(target), cfg)
+    elif cfg.get("kind") != "command":
+        out.append(f"deploy.kind {cfg.get('kind')} — нужно rsync или command")
+    return out
+
+
+def target_problems(target: str, cfg: dict) -> list[str]:
+    m = TARGET.match(target)
+    if not m:
+        return ["адрес выгрузки — не вида логин@сервер:путь"]
+    suffix = cfg.get("guard_suffix") or ""
+    path = m.group("path")
+    if suffix and not (path if path.endswith("/") else path + "/").endswith(suffix):
+        return [f"путь выгрузки не кончается на {suffix} — --delete не запускаю"]
+    return []
+
+
+def rsync_argv(src: Path, target: str, cfg: dict, dry_run: bool = False) -> list[str]:
+    argv = ["rsync", "-rlz", "--checksum", "--delete-delay", "--delay-updates", "--itemize-changes",
+            "-e", "ssh -o BatchMode=yes"]
+    for p in cfg.get("protect") or []:
+        argv.append(f"--filter=P {p}")
+    if dry_run:
+        argv.append("--dry-run")
+    dest = target if target.endswith("/") else target + "/"
+    return argv + [f"{src}/", dest]
+
+
+def run(repo: Repo, src: Path, env: str = "production", dry_run: bool = False,
+        store: EnvCredentialStore | None = None, runner=subprocess.run) -> DeployResult:
+    """Выгрузить готовую сборку src. dry_run — только показать изменения (rsync --dry-run)."""
+    problems = guard(repo, env, store, dry_run)
+    if problems:
+        return DeployResult(False, problems=problems)
+    cfg = config(repo, env)
+    if cfg.get("kind") == "command":
+        if dry_run:
+            return DeployResult(True, list(cfg.get("command") or []), problems=["kind: command — показа изменений нет"])
+        argv = list(cfg.get("command") or [])
+    else:
+        argv = rsync_argv(src, str((store or EnvCredentialStore()).get(cfg["target_ref"])), cfg, dry_run)
+    r = runner(argv, cwd=repo.root, capture_output=True, text=True)
+    shown = [a if not TARGET.match(a.rstrip("/")) else "<адрес выгрузки>" for a in argv]
+    changes = [ln for ln in (r.stdout or "").splitlines() if ln[:1] in "<>ch*." and ln.strip()]
+    if r.returncode != 0:
+        return DeployResult(False, shown, changes, [f"выгрузка: код {r.returncode}"], (r.stderr or "")[-2000:])
+    return DeployResult(True, shown, changes, output=(r.stdout or "")[-4000:])
+
+
+def verify(base: str, paths: list[str], fetch=urllib.request.urlopen, timeout: float = 15) -> dict[str, bool | None]:
+    """Страницы на хостинге: True — отдаётся и это наша страница (canonical), False — 404/чужая, None — не дошли."""
+    out = {}
+    for path in paths:
+        url = base.rstrip("/") + path
+        try:
+            with fetch(urllib.request.Request(url, headers={"User-Agent": "dpsmpx-cs-verify"}), timeout=timeout) as r:
+                body = r.read(200_000).decode("utf-8", "replace")
+                out[path] = r.status == 200 and f'rel="canonical" href="{url}"' in body
+        except urllib.error.HTTPError as e:
+            out[path] = False if e.code in (404, 410) else None
+        except (urllib.error.URLError, OSError):
+            out[path] = None
+    return out
