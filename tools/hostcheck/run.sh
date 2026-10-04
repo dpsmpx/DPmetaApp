@@ -3,7 +3,7 @@
 #
 #   tools/hostcheck/run.sh            всё, что можно на этой машине; пропуск — громко, но не ошибка
 #   tools/hostcheck/run.sh --quick    только быстрые проверки (без Gradle)
-#   tools/hostcheck/run.sh --full     перед слиянием (CI нет, D-23): каждый пропуск (нет Android SDK) — ошибка
+#   tools/hostcheck/run.sh --full     перед слиянием (CI нет, D-23): каждый пропуск (нет Android SDK, Go) — ошибка
 #
 # Код возврата: 0 — всё прошло (в обычном режиме — кроме явно названных
 # пропусков); 1 — хотя бы один шаг упал; 2 — неверный вызов.
@@ -125,7 +125,14 @@ if [ "$MODE" != quick ]; then
     FAILED=1
   fi
 
-  # ---- 3. Android ----
+  # ---- 3. Xray на хосте (этап 2): эталоны компилятора принимает само ядро ----
+  if command -v go >/dev/null 2>&1; then
+    step "Xray: корпус и маршрутизация" "$PY" tools/xray/check_xray.py
+  else
+    skip "Xray: корпус и маршрутизация" "нет Go (Xray собирается из tools/xray/go.mod)"
+  fi
+
+  # ---- 4. Android ----
   if android_sdk; then
     step "Android: сборка и Lint" "${GRADLE[@]}" :app:assembleDebug :app:lint
     step "Android: API ядра ≤ minSdk" "$PY" tools/hostcheck/check_android_api.py
@@ -136,7 +143,7 @@ if [ "$MODE" != quick ]; then
     skip "Android: APK" "нет Android SDK"
   fi
 else
-  RESULTS+=("○ сборка, тесты, cli, Android — не запускались (--quick)")
+  RESULTS+=("○ сборка, тесты, cli, Xray, Android — не запускались (--quick)")
 fi
 
 echo

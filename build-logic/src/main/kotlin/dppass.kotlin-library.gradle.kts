@@ -47,7 +47,9 @@ tasks.withType<Test>().configureEach {
         .withPathSensitivity(PathSensitivity.RELATIVE)
     // Параметры fuzz из командной строки (-Ddppass.fuzz.iterations=…, docs/TESTING.md, «Fuzz»):
     // без проброса они остались бы в JVM Gradle и до тестов не дошли.
-    for (key in listOf("dppass.fuzz.iterations", "dppass.fuzz.seed")) {
+    // Так же — режим перезаписи эталонов компилятора Xray (-Ddppass.golden.update=true,
+    // docs/TESTING.md, «Эталоны Xray»).
+    for (key in listOf("dppass.fuzz.iterations", "dppass.fuzz.seed", "dppass.golden.update")) {
         providers.systemProperty(key).orNull?.let { systemProperty(key, it) }
     }
     testLogging {
