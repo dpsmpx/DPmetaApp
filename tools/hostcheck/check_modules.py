@@ -33,8 +33,8 @@ RESTRICTED_IMPORTS = [
      "Android только в app/: ядро собирается и проверяется на JVM (D-02, D-21)"),
     (f"{PKG}.network.simulation.", {"network", "cli", "connection/src/main/kotlin/com/dpsmpx/dppass/connection/Orchestrator.kt"},
      "модель сети — инструмент тестов и cli; в connection — только SimulatedHealthChecker; в app/ — нельзя"),
-    (f"{PKG}.engine.mock.", {"engine", "cli", "app/src/main/kotlin/com/dpsmpx/dppass/app/AppGraph.kt"},
-     "фиктивное ядро — до этапа 2 (D-03): в приложении только в сборке зависимостей AppGraph"),
+    (f"{PKG}.engine.mock.", {"engine", "cli"},
+     "фиктивное ядро — второй бэкенд тестов и cli; приложение работает на Xray (D-25), engine.mock в app/ — нельзя"),
 ]
 
 

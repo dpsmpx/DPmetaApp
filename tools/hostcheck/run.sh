@@ -3,7 +3,7 @@
 #
 #   tools/hostcheck/run.sh            всё, что можно на этой машине; пропуск — громко, но не ошибка
 #   tools/hostcheck/run.sh --quick    только быстрые проверки (без Gradle)
-#   tools/hostcheck/run.sh --full     перед слиянием (CI нет, D-23): каждый пропуск (нет Android SDK, Go) — ошибка
+#   tools/hostcheck/run.sh --full     перед слиянием (CI нет, D-23): каждый пропуск (нет Android SDK, NDK, Go) — ошибка
 #
 # Код возврата: 0 — всё прошло (в обычном режиме — кроме явно названных
 # пропусков); 1 — хотя бы один шаг упал; 2 — неверный вызов.
@@ -55,14 +55,24 @@ skip() { # skip <имя> <причина>
   fi
 }
 
-android_sdk() { # тот же признак, что в settings.gradle.kts
+sdk_dir() { # тот же признак, что в settings.gradle.kts; печатает путь
   local dir="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
-  if [ -n "$dir" ] && [ -d "$dir" ]; then return 0; fi
+  if [ -n "$dir" ] && [ -d "$dir" ]; then echo "$dir"; return 0; fi
   if [ -f local.properties ]; then
     dir="$(sed -n 's/^sdk\.dir=//p' local.properties | head -1)"
-    [ -n "$dir" ] && [ -d "$dir" ] && return 0
+    [ -n "$dir" ] && [ -d "$dir" ] && { echo "$dir"; return 0; }
   fi
   return 1
+}
+
+android_sdk() { sdk_dir >/dev/null; }
+
+NDK_VERSION="$(sed -n 's/^android-ndk *= *"\(.*\)"/\1/p' gradle/libs.versions.toml)"
+
+ndk_ready() { # NDK версии из каталога — им собирается ядро Xray для APK (D-25)
+  local sdk
+  sdk="$(sdk_dir)" || return 1
+  [ -n "$NDK_VERSION" ] && [ -f "$sdk/ndk/$NDK_VERSION/source.properties" ]
 }
 
 # ---- 1. Быстрые проверки (Python, без сборки) ----
@@ -135,7 +145,10 @@ PYEOF
 }
 
 if [ "$MODE" != quick ]; then
-  step "сборка и тесты ядра" "${GRADLE[@]}" build :cli:installDist
+  # Ядро — без :app: APK собирается только с Go и NDK (D-25), это шаг Android ниже.
+  CORE_TASKS=(build :cli:installDist)
+  android_sdk && CORE_TASKS+=(-x :app:build)
+  step "сборка и тесты ядра" "${GRADLE[@]}" "${CORE_TASKS[@]}"
   if [ -x "$CLI" ]; then
     step "cli smoke" cli_smoke
   else
@@ -153,14 +166,22 @@ if [ "$MODE" != quick ]; then
   fi
 
   # ---- 4. Android ----
-  if android_sdk; then
-    step "Android: сборка и Lint" "${GRADLE[@]}" :app:assembleDebug :app:lint
+  android_missing=""
+  if ! android_sdk; then
+    android_missing="нет Android SDK (ANDROID_HOME или sdk.dir в local.properties)"
+  elif ! command -v go >/dev/null 2>&1; then
+    android_missing="нет Go: без ядра Xray APK не собирается (D-25)"
+  elif ! ndk_ready; then
+    android_missing="нет NDK $NDK_VERSION (sdkmanager \"ndk;$NDK_VERSION\"): без ядра Xray APK не собирается (D-25)"
+  fi
+  if [ -z "$android_missing" ]; then
+    step "Android: сборка и Lint" "${GRADLE[@]}" :app:build :app:lint
     step "Android: API ядра ≤ minSdk" "$PY" tools/hostcheck/check_android_api.py
     step "Android: APK" "$PY" tools/hostcheck/check_apk.py
   else
-    skip "Android: сборка и Lint" "нет Android SDK (ANDROID_HOME или sdk.dir в local.properties)"
-    skip "Android: API ядра ≤ minSdk" "нет Android SDK"
-    skip "Android: APK" "нет Android SDK"
+    skip "Android: сборка и Lint" "$android_missing"
+    skip "Android: API ядра ≤ minSdk" "$android_missing"
+    skip "Android: APK" "$android_missing"
   fi
 else
   RESULTS+=("○ сборка, тесты, cli, Xray, Android — не запускались (--quick)")

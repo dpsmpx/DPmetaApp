@@ -4,9 +4,9 @@ import android.content.Context
 import android.os.Build
 import com.dpsmpx.dppass.connection.DPpassCore
 import com.dpsmpx.dppass.core.Clock
-import com.dpsmpx.dppass.engine.mock.MockBackend
-import com.dpsmpx.dppass.engine.mock.MockBackendCompiler
-import com.dpsmpx.dppass.engine.mock.MockProxyEngine
+import com.dpsmpx.dppass.engine.xray.JniXrayRuntime
+import com.dpsmpx.dppass.engine.xray.XrayCompiler
+import com.dpsmpx.dppass.engine.xray.XrayProxyEngine
 import com.dpsmpx.dppass.storage.EncryptingBlobStore
 import com.dpsmpx.dppass.storage.FileBlobStore
 import com.dpsmpx.dppass.storage.StorageReset
@@ -16,8 +16,9 @@ import java.io.File
 
 /**
  * Сборка зависимостей приложения — единственное место, где Android
- * встречается с ядром DPpass. Ядро прокси пока фиктивное (D-03:
- * реальный Xray — этап 2 `ROADMAP`).
+ * встречается с ядром DPpass. Ядро прокси — Xray в процессе приложения
+ * (D-25): библиотека `libdppassxray` из APK; не загрузилась или не той
+ * версии — каждый вызов ядра отвечает `BACKEND_NOT_AVAILABLE` с причиной.
  */
 object AppGraph {
     @Volatile
@@ -35,10 +36,13 @@ object AppGraph {
             KeystoreKeyWrapper(),
             dataPresent = { StorageReset.hasData(data) },
         )
-        val engine = MockProxyEngine(MockBackend.FULL)
+        // Каталог геоданных ядра пуст, пока нет решения о геоданных на устройстве
+        // (TODO.md): конфигурации с geoip/geosite ядро отвергает при проверке.
+        val geodata = File(context.noBackupFilesDir, "geodata").apply { mkdirs() }
+        val runtime = JniXrayRuntime.load({ System.loadLibrary(JniXrayRuntime.LIBRARY) }, geodata.path)
         return DPpassCore(
-            compiler = MockBackendCompiler(engine.capabilities),
-            engine = engine,
+            compiler = XrayCompiler(),
+            engine = XrayProxyEngine(runtime),
             store = EncryptingBlobStore(data, keys),
             clock = Clock.SYSTEM,
             selfPackage = context.packageName,

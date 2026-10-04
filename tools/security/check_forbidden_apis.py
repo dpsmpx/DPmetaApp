@@ -28,6 +28,11 @@
   android-log      android.util.Log — мимо редактирования журнала.
   blocking         Thread.sleep, GlobalScope, runBlocking вне cli/ —
                    ожидание через pause/Clock, жизненный цикл — у scope.
+  native-load      System.load/loadLibrary, Runtime.load*, external fun —
+                   нативный код только моста ядра (D-25): объявления JNI
+                   в engine.xray.XrayRuntime, загрузка — в AppGraph и в
+                   тесте JNI на хосте; чужая .so в процессе — мимо
+                   сверки версии и экспорта (native.py, check_apk.py).
   nested-comment   «/*» внутри комментария: в Kotlin блоки вкладываются,
                    и путь вида `tests/data/**` в KDoc открывает новый
                    комментарий — код после него молча становится
@@ -98,6 +103,13 @@ RULES = [
     ("blocking", r"\bThread\.sleep\s*\(|\bGlobalScope\b|\brunBlocking\b",
      lambda p: not main_code(p) or under("cli/")(p),
      "ожидание — через pause/Clock; корутины — в своём scope"),
+    ("native-load", r"\bSystem\.load(Library)?\s*\(|\bRuntime\.getRuntime\(\)\.load|\bexternal\s+fun\b",
+     under(
+         "app/src/main/kotlin/com/dpsmpx/dppass/app/AppGraph.kt",
+         "engine/src/main/kotlin/com/dpsmpx/dppass/engine/xray/XrayRuntime.kt",
+         "tests/integration/src/xrayJni/",
+     ),
+     "нативный код — только мост ядра (D-25): JNI — XrayRuntime, загрузка — AppGraph и тест JNI"),
 ]
 
 
