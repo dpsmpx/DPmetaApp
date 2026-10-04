@@ -97,7 +97,7 @@ record     PUBLISHED (remote_id, remote_url, verified) | FAILED (код) | UNKNO
 | `dry-run` (по умолчанию) | — | всё готовит и проверяет, печатает адресат, текст, медиа, ключ; ничего не пишет и не отправляет | кто угодно |
 | `--dev` | development | имитации площадок (`adapters/mock.py`), журнал в каталоге сборки | сессия ИИ, тесты |
 | `--safe` | staging | только staging-близнец адресата (`staging_twin`): тестовый канал, staging сайта | автор |
-| `--production` | production | рабочий адресат, нужно одобрение, канон закоммичен | **только автор** |
+| `--production` | production | рабочий адресат, нужно одобрение, канон закоммичен | **только автор**; сайт — ещё локальная сессия Claude Code после «да» автора (Д36) |
 
 Учётные данные staging и production разные (`CS_STAGING_…`/`CS_PROD_…`,
 проверка `destinations`). Разработка идёт в staging (§105).
@@ -122,7 +122,8 @@ python3 -m tools.cs adapt CI-0101 --platform telegram --lang ru   # загото
 python3 -m tools.cs variant seal CI-0101 telegram.ru          # валидатор, зависимости, ready
 python3 -m tools.cs preview CI-0101 --serve                   # http://localhost:8001/_preview/
 python3 -m tools.cs approve CI-0101 telegram.ru               # автор, в своём терминале
-python3 -m tools.cs publish CI-0101 website.ru --to site-production --production
+python3 -m tools.cs publish CI-0101 website.ru --to site-production --production   # сборка → rsync на Beget → проверка по HTTP (Д35)
+python3 -m tools.cs site deploy --dry-run                     # тема и код сайта: что изменится на хостинге
 python3 -m tools.cs publish CI-0101 telegram.ru --to tg-devlog            # пробный прогон
 python3 -m tools.cs publish CI-0101 telegram.ru --to tg-devlog --safe     # тестовый канал
 python3 -m tools.cs publish CI-0101 telegram.ru --to tg-devlog --production
@@ -142,8 +143,8 @@ python3 -m tools.cs publish --due --production                # запланир
 - Сайт недоступен → публикация в соцсети допускается, только если канон
   сохранён в Git (`outage.require_canonical_in_git: true`); после запуска
   рабочего сайта — ещё и «сначала сайт»
-  (`require_website_published_before_social`, сейчас `false` — сайта нет,
-  ОР-11).
+  (`require_website_published_before_social`, сейчас `false` — сайта нет:
+  ОР-11 по домену, Д34).
 
 ## 10. Наблюдаемость (§106–107)
 

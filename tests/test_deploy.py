@@ -187,6 +187,26 @@ class PublishToBeget(unittest.TestCase):
         self.assertEqual(fake.calls, [])
 
 
+class Cli(unittest.TestCase):
+    """Сессии в production — только публикация на сайт; сверка и прочее — автор (Д24, Д26, Д36)."""
+
+    def run_cli(self, env, *argv):
+        from contextlib import redirect_stdout
+        from tools.cs.__main__ import main
+        buf = io.StringIO()
+        with mock.patch.dict(os.environ, env), redirect_stdout(buf):
+            rc = main(list(argv))
+        return rc, buf.getvalue()
+
+    def test_author_only_actions(self):
+        rc, out = self.run_cli(LOCAL, "publish", "--reconcile", "PUB-x", "--exists", "yes", "--production")
+        self.assertEqual(rc, 2)
+        self.assertIn("действия автора", out)
+        rc, out = self.run_cli(REMOTE, "publish", "CI-0001", "website.ru", "--to", "site-production", "--production")
+        self.assertEqual(rc, 2, "облачной сессии production закрыт целиком")
+        self.assertIn("session_modes", out)
+
+
 class Htaccess(unittest.TestCase):
     def test_beget_gets_htaccess(self):
         repo = site_repo()

@@ -24,14 +24,14 @@ platforms:
     adapter: website
     adapter_status: implemented
     automation: FULLY_AUTOMATED
-    auth: свой хостинг; загрузка сборки с машины автора (ОР-11)
-    blocked_by: [ОР-11]
+    auth: хостинг Beget, rsync по SSH с машины автора — ключ и адрес у автора (Д35, Д36)
+    blocked_by: ["ОР-11: домен", "Д34: «сайт готов»"]
     operations:
       read: {status: "own"}
       create: {status: "own"}
       edit: {status: "own", note: "новая версия записи, адрес не меняется"}
       delete: {status: "own", note: "снятие с публикации; запись остаётся в журнале и архиве Git"}
-      media: {status: "own", note: "файл ≤ 25 МиБ на Cloudflare Pages"}
+      media: {status: "own", note: "лимиты хостинга Beget на файл не проверены (UNKNOWN)"}
       schedule: {status: "own", note: "планировщик системы"}
       analytics: {status: "manual", note: "без счётчиков до решения фазы 10"}
     limits: {}

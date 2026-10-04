@@ -42,6 +42,39 @@ CS_PROD_YOUTUBE_OAUTH: {rotated: 2026-10-05, expires: 2026-10-12}
    переменная `CS_PROD_TELEGRAM_BOT_TOKEN` (лучше отдельный бот для
    staging).
 
+### Сайт: Beget (rsync по SSH, Д35, Д36)
+Делает автор на своей машине; в репозиторий и в облачные сессии не
+попадает ничего, кроме имени переменной.
+1. Панель Beget → включить **SSH-доступ**; имя сервера — там же (логин
+   тот же, что для панели). Проверить: `ssh логин@сервер`, затем на
+   сервере `rsync --version` — **есть ли rsync на сервере Beget, не
+   подтверждено** (UNKNOWN); нет — сообщить сессии: выгрузка перейдёт на
+   `kind: command` (например, `lftp mirror` по SFTP).
+2. Первый вход — вручную: подтвердить отпечаток ключа сервера
+   (`known_hosts`). Выгрузка идёт с `BatchMode=yes` и без этого шага
+   откажет, а не спросит.
+3. Отдельный ключ только для Beget: `ssh-keygen -t ed25519 -f
+   ~/.ssh/beget_dpsmpx`, открытую часть — в `~/.ssh/authorized_keys` на
+   сервере (принимает ли Beget ключи так — проверить; иначе — по их
+   инструкции). В `~/.ssh/config`: `Host логин.beget.tech` →
+   `IdentityFile ~/.ssh/beget_dpsmpx`.
+4. `export CS_PROD_SITE_DEPLOY_TARGET='логин@сервер:dpsmpx.com/public_html/'`
+   — в профиле оболочки, не в репозитории. Путь обязан кончаться на
+   `public_html/` (`guard_suffix`), иначе выгрузка откажет.
+5. `python3 -m tools.cs health` — строка «сайт / выгрузка»;
+   `python3 -m tools.cs site deploy --dry-run` — что изменится.
+6. Выгрузка — после слов «сайт готов» (Д34): `production.live: true` в
+   `data/website/site.yaml` и `site-production` → `status: active` в
+   `destinations.yaml` (сессия правит по слову автора), затем
+   `site deploy` или `publish … --to site-production --production`.
+
+`rsync` — Linux, macOS, WSL на Windows. Локальный Claude Code запускает
+выгрузку только после «да» на запрос разрешения (`.claude/settings.json`:
+`ask` на `publish`, `site deploy`, `rsync`, `ssh`, `scp`, `sftp`; чтение
+`~/.ssh/**` запрещено). Правила `ask` спрашивают в любом режиме Claude
+Code, но сверяют текст команды — это защита от случайности; ключ на
+машине доступен локальному агенту технически (Д36).
+
 ### VK, YouTube, Discord, GitHub, TikTok
 Сейчас — ручной путь (`docs/platforms/PUBLISHING_CAPABILITY_MATRIX.md`).
 Подключение — в своих фазах `ROADMAP/ROADMAP.md` (П5–П8): VK — ключ

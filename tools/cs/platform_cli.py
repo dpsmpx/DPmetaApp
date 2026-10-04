@@ -233,6 +233,10 @@ def cmd_publish(a) -> int:
     if is_ai_session() and mode not in allowed:
         print(f"режим {mode} из сессии ИИ запрещён (Д26; data/policy/publication.yaml, session_modes)")
         return 2
+    if is_ai_session() and mode == "production" and (a.reconcile or a.cancel or a.delete or a.record_manual):
+        print("сверка, отмена, удаление и ручная запись в production — действия автора (Д24, Д26); "
+              "сессии разрешена только публикация на сайт (Д36)")
+        return 2
     pub = Publisher(repo, mode)
     if a.reconcile:
         o = pub.reconcile(a.reconcile, a.exists == "yes", a.url, a.remote_id)
