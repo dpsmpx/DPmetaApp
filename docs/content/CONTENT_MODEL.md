@@ -34,7 +34,7 @@ ContentItem
 ├── topic
 ├── objective          одна фраза: что должен понять/сделать зритель
 ├── audiences          из CONTENT_STRATEGY §2
-├── platforms          github | telegram | youtube | vk | discord
+├── platforms          github | telegram | youtube | vk | discord | tiktok
 ├── languages          ru | en
 ├── tone
 ├── claims[]           ссылки на факты реестра: {fact: <id>}

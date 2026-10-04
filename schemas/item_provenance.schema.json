@@ -28,6 +28,7 @@
           "spec_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
           "prompt": {"type": "string"},
           "tool": {"type": "string"},
+          "tool_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "хэш tools/cs/render.py + tools/render/render.js на момент рендера"},
           "modifications": {"type": "array", "items": {"type": "string"}},
           "layout": {"type": "string"},
           "date": {"type": "string", "format": "date"}

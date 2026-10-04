@@ -58,3 +58,17 @@ def check_path(states: list[str]) -> list[str]:
         if b not in TRANSITIONS.get(a, set()):
             errors.append(f"недопустимый переход {a} → {b}")
     return errors
+
+
+def effective_state(state: str, history_states: list[str]) -> str:
+    """Состояние для требований: у ARCHIVED/REJECTED — последнее нетерминальное из истории.
+
+    Отклонённый на шаге BRIEFED объект должен отвечать требованиям BRIEFED, а не
+    ни одному (reached() для конечных состояний ложно).
+    """
+    if state not in TERMINAL:
+        return state
+    for s in reversed(history_states):
+        if s not in TERMINAL:
+            return s
+    return "IDEA"

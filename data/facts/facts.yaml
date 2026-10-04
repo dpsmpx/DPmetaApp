@@ -33,10 +33,11 @@ facts:
     public: true
     statement: Автор описывает себя как независимого разработчика нативных игровых технологий, системных игр и инструментов.
     allowed_wording:
-      ru: ["независимый разработчик", "разрабатываю игру, движок и язык программирования"]
-      en: ["independent developer building native game technology, systems-driven games and developer tools"]
+      ru: ["независимый разработчик", "разрабатываю игру, движок и язык программирования", "разработчик нативных систем"]
+      en: ["independent developer building native game technology, systems-driven games and developer tools", "native systems developer"]
     evidence:
       - {kind: platform_page, source: "README dpsmpx/dpsmpx", ref: "433f627", date: 2026-10-04, verification: self-reported}
+    notes: «Разработчик нативных систем» — короткая роль из позиционирования (Д4, CONTENT_STRATEGY §1), сжатие самоописания автора.
   - id: AU-STACK
     subject: author
     class: FACT
@@ -444,6 +445,15 @@ facts:
     recheck_by: 2026-11-04
     evidence:
       - {kind: platform_page, source: "t.me/s/gh_3D_Voxel_OpenWorld_RPG; youtube.com/@dpsmpx/about", date: 2026-10-04, verification: observed}
+  - id: CH-TIKTOK-2026-10-04
+    subject: channels
+    class: FACT
+    risk: low
+    public: false
+    statement: "На 4 октября 2026: TikTok @dpsmpx — 69 подписчиков, 6 видео, 33 лайка; аккаунт создан 11 марта 2023."
+    recheck_by: 2026-11-04
+    evidence:
+      - {kind: platform_page, source: "tiktok.com/@dpsmpx (данные страницы без входа)", date: 2026-10-04, verification: observed}
   - id: ME-NO-CI
     subject: method
     class: FACT

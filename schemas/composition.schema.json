@@ -20,6 +20,8 @@
         "input": {"type": "string", "pattern": "^A-[0-9]{3}$"},
         "focus": {"type": "object", "required": ["x", "y"], "additionalProperties": false, "properties": {"x": {"type": "number", "minimum": 0, "maximum": 1}, "y": {"type": "number", "minimum": 0, "maximum": 1}}},
         "zoom": {"type": "number", "minimum": 1, "maximum": 4},
+        "face": {"type": "object", "required": ["w", "h"], "additionalProperties": false, "description": "размер лица на фото, доли кадра: маркер лица в раскладке (проверки размера и безопасной зоны)", "properties": {"w": {"type": "number", "exclusiveMinimum": 0, "maximum": 1}, "h": {"type": "number", "exclusiveMinimum": 0, "maximum": 1}}},
+        "vignette": {"type": "number", "minimum": 0.5, "maximum": 1.6, "description": "сила затемнения вокруг лица: меньше — плотнее (интерьер не читается, Д18); по умолчанию 1"},
         "treatment": {"enum": ["natural", "duotone", "mono"]}
       }
     },

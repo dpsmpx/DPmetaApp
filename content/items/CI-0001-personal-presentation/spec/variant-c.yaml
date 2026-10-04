@@ -9,6 +9,7 @@ rationale: >-
 portrait:
   input: A-001
   focus: {x: 0.60, y: 0.29}
+  face: {w: 0.22, h: 0.20}
   zoom: 1.0
   treatment: duotone
 text:

@@ -7,6 +7,16 @@
 #            (x, y, w, h в пикселях формата).
 # Порядок проверки — docs/content/QUALITY_MODEL.md, гейт Platform.
 schema: export_specs/v1
+# Языки экспорта по площадкам — Д8: русский — Telegram, VK, YouTube, TikTok (Д19); английский — GitHub.
+# internal (мастер) — на всех языках объекта.
+platform_languages:
+  internal: [ru, en]
+  github: [en]
+  telegram: [ru]
+  youtube: [ru]
+  vk: [ru]
+  discord: [ru]
+  tiktok: [ru]
 formats:
   master:
     platform: internal
@@ -20,11 +30,14 @@ formats:
     checked: 2026-10-04
   youtube_thumbnail:
     platform: youtube
-    width: 1280
-    height: 720
+    width: 3840
+    height: 2160
     min_width: 640
     max_bytes: 2097152          # 2 МБ — при загрузке с телефона; с компьютера — 50 МБ
     file: jpg
+    notes: >-
+      справка на 04.10.2026 рекомендует 3840×2160 для видео (2160×3840 для Shorts), 16:9,
+      ширина ≥ 640; прежняя запись 1280×720 устарела
     source: https://support.google.com/youtube/answer/72431
     source_class: official
     verified: true
@@ -81,4 +94,18 @@ formats:
     source: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/customizing-your-repositorys-social-media-preview
     source_class: official
     verified: true
+    checked: 2026-10-04
+  tiktok_vertical:
+    platform: tiktok
+    width: 1080
+    height: 1920
+    min_width: 540
+    file: jpg
+    notes: >-
+      обложка клипа и фото-публикация 9:16. Официальные размеры даны только для рекламы
+      (9:16 ≥ 540×960); безопасная зона — шаблоны Ads Manager, без входа не получены (UNKNOWN):
+      надписи — в центре, вне нижней трети и правого края
+    source: https://ads.tiktok.com/help/article/tiktok-auction-in-feed-ads (обновлено в июне 2026)
+    source_class: official
+    verified: false
     checked: 2026-10-04

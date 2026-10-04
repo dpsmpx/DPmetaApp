@@ -1,0 +1,471 @@
+schema: item_provenance/v1
+item: CI-0001
+outputs:
+- file: content/items/CI-0001-personal-presentation/exports/A-en-github_social.png
+  sha256: 3624a2a23687ffe2ceff23b766aa5030a47f1e808280b8b088619b0bb8142749
+  variant: A
+  format: github_social
+  lang: en
+  kind: export
+  method: 'программная композиция: спецификация → HTML/SVG → Chromium (Д11)'
+  inputs:
+  - A-001
+  - A-002
+  - A-003
+  spec: content/items/CI-0001-personal-presentation/spec/variant-a.yaml
+  spec_sha256: 02a20771adbb33ba723c917b14eb4289c8a9672dd7d9433901fc9fd55c4cf083
+  tool: tools/cs/render.py + tools/render/render.js (Playwright, Chromium)
+  tool_sha256: a772b31aa64d3931bd7497f836ded62d14d2200286939bc7f8c914d3809a9e58
+  modifications:
+  - кадрирование и масштаб портрета
+  - 'тон: natural'
+  - виньетка и маска краёв
+  layout: content/items/CI-0001-personal-presentation/exports/A-en-github_social.layout.json
+  date: '2026-10-04'
+  prompt: prompts/image/presentation-composition.v1.md
+- file: content/items/CI-0001-personal-presentation/exports/A-en-master.png
+  sha256: 8db341bfe62414a40e74ce1518852225efaedc2593690091f5996eaa1f35e6f3
+  variant: A
+  format: master
+  lang: en
+  kind: export
+  method: 'программная композиция: спецификация → HTML/SVG → Chromium (Д11)'
+  inputs:
+  - A-001
+  - A-002
+  - A-003
+  spec: content/items/CI-0001-personal-presentation/spec/variant-a.yaml
+  spec_sha256: 02a20771adbb33ba723c917b14eb4289c8a9672dd7d9433901fc9fd55c4cf083
+  tool: tools/cs/render.py + tools/render/render.js (Playwright, Chromium)
+  tool_sha256: a772b31aa64d3931bd7497f836ded62d14d2200286939bc7f8c914d3809a9e58
+  modifications:
+  - кадрирование и масштаб портрета
+  - 'тон: natural'
+  - виньетка и маска краёв
+  layout: content/items/CI-0001-personal-presentation/exports/A-en-master.layout.json
+  date: '2026-10-04'
+  prompt: prompts/image/presentation-composition.v1.md
+- file: content/items/CI-0001-personal-presentation/exports/A-ru-master.png
+  sha256: 5c421d54e840b18777c51b78761546b65ce4e6f4b1189af555c456fd680bae30
+  variant: A
+  format: master
+  lang: ru
+  kind: export
+  method: 'программная композиция: спецификация → HTML/SVG → Chromium (Д11)'
+  inputs:
+  - A-001
+  - A-002
+  - A-003
+  spec: content/items/CI-0001-personal-presentation/spec/variant-a.yaml
+  spec_sha256: 02a20771adbb33ba723c917b14eb4289c8a9672dd7d9433901fc9fd55c4cf083
+  tool: tools/cs/render.py + tools/render/render.js (Playwright, Chromium)
+  tool_sha256: a772b31aa64d3931bd7497f836ded62d14d2200286939bc7f8c914d3809a9e58
+  modifications:
+  - кадрирование и масштаб портрета
+  - 'тон: natural'
+  - виньетка и маска краёв
+  layout: content/items/CI-0001-personal-presentation/exports/A-ru-master.layout.json
+  date: '2026-10-04'
+  prompt: prompts/image/presentation-composition.v1.md
+- file: content/items/CI-0001-personal-presentation/exports/A-ru-telegram_post.jpg
+  sha256: f5d778d09184b31aac3c19a9b2256e78fabbec96e3d0ce3df9c05e6e0a262c16
+  variant: A
+  format: telegram_post
+  lang: ru
+  kind: export
+  method: 'программная композиция: спецификация → HTML/SVG → Chromium (Д11)'
+  inputs:
+  - A-001
+  - A-002
+  - A-003
+  spec: content/items/CI-0001-personal-presentation/spec/variant-a.yaml
+  spec_sha256: 02a20771adbb33ba723c917b14eb4289c8a9672dd7d9433901fc9fd55c4cf083
+  tool: tools/cs/render.py + tools/render/render.js (Playwright, Chromium)
+  tool_sha256: a772b31aa64d3931bd7497f836ded62d14d2200286939bc7f8c914d3809a9e58
+  modifications:
+  - кадрирование и масштаб портрета
+  - 'тон: natural'
+  - виньетка и маска краёв
+  layout: content/items/CI-0001-personal-presentation/exports/A-ru-telegram_post.layout.json
+  date: '2026-10-04'
+  prompt: prompts/image/presentation-composition.v1.md
+- file: content/items/CI-0001-personal-presentation/exports/A-ru-vk_post.jpg
+  sha256: f5d778d09184b31aac3c19a9b2256e78fabbec96e3d0ce3df9c05e6e0a262c16
+  variant: A
+  format: vk_post
+  lang: ru
+  kind: export
+  method: 'программная композиция: спецификация → HTML/SVG → Chromium (Д11)'
+  inputs:
+  - A-001
+  - A-002
+  - A-003
+  spec: content/items/CI-0001-personal-presentation/spec/variant-a.yaml
+  spec_sha256: 02a20771adbb33ba723c917b14eb4289c8a9672dd7d9433901fc9fd55c4cf083
+  tool: tools/cs/render.py + tools/render/render.js (Playwright, Chromium)
+  tool_sha256: a772b31aa64d3931bd7497f836ded62d14d2200286939bc7f8c914d3809a9e58
+  modifications:
+  - кадрирование и масштаб портрета
+  - 'тон: natural'
+  - виньетка и маска краёв
+  layout: content/items/CI-0001-personal-presentation/exports/A-ru-vk_post.layout.json
+  date: '2026-10-04'
+  prompt: prompts/image/presentation-composition.v1.md
+- file: content/items/CI-0001-personal-presentation/exports/A-ru-youtube_banner.jpg
+  sha256: 48572f03ad55dc12dbac6e77942c7d668b864b85d1d1998db44ab994ddb430e4
+  variant: A
+  format: youtube_banner
+  lang: ru
+  kind: export
+  method: 'программная композиция: спецификация → HTML/SVG → Chromium (Д11)'
+  inputs:
+  - A-001
+  - A-002
+  - A-003
+  spec: content/items/CI-0001-personal-presentation/spec/variant-a.yaml
+  spec_sha256: 02a20771adbb33ba723c917b14eb4289c8a9672dd7d9433901fc9fd55c4cf083
+  tool: tools/cs/render.py + tools/render/render.js (Playwright, Chromium)
+  tool_sha256: a772b31aa64d3931bd7497f836ded62d14d2200286939bc7f8c914d3809a9e58
+  modifications:
+  - кадрирование и масштаб портрета
+  - 'тон: natural'
+  - виньетка и маска краёв
+  layout: content/items/CI-0001-personal-presentation/exports/A-ru-youtube_banner.layout.json
+  date: '2026-10-04'
+  prompt: prompts/image/presentation-composition.v1.md
+- file: content/items/CI-0001-personal-presentation/renders/A-en-github_social.png
+  sha256: 3624a2a23687ffe2ceff23b766aa5030a47f1e808280b8b088619b0bb8142749
+  variant: A
+  format: github_social
+  lang: en
+  kind: render
+  method: 'программная композиция: спецификация → HTML/SVG → Chromium (Д11)'
+  inputs:
+  - A-001
+  - A-002
+  - A-003
+  spec: content/items/CI-0001-personal-presentation/spec/variant-a.yaml
+  spec_sha256: 02a20771adbb33ba723c917b14eb4289c8a9672dd7d9433901fc9fd55c4cf083
+  tool: tools/cs/render.py + tools/render/render.js (Playwright, Chromium)
+  tool_sha256: a772b31aa64d3931bd7497f836ded62d14d2200286939bc7f8c914d3809a9e58
+  modifications:
+  - кадрирование и масштаб портрета
+  - 'тон: natural'
+  - виньетка и маска краёв
+  layout: content/items/CI-0001-personal-presentation/renders/A-en-github_social.layout.json
+  date: '2026-10-04'
+  prompt: prompts/image/presentation-composition.v1.md
+- file: content/items/CI-0001-personal-presentation/renders/A-en-telegram_post.jpg
+  sha256: 3d4fca8d4e4528f1d6f7dc1ab47529d64570748774b005594f6f3eb046b74b5a
+  variant: A
+  format: telegram_post
+  lang: en
+  kind: render
+  method: 'программная композиция: спецификация → HTML/SVG → Chromium (Д11)'
+  inputs:
+  - A-001
+  - A-002
+  - A-003
+  spec: content/items/CI-0001-personal-presentation/spec/variant-a.yaml
+  spec_sha256: 02a20771adbb33ba723c917b14eb4289c8a9672dd7d9433901fc9fd55c4cf083
+  tool: tools/cs/render.py + tools/render/render.js (Playwright, Chromium)
+  tool_sha256: a772b31aa64d3931bd7497f836ded62d14d2200286939bc7f8c914d3809a9e58
+  modifications:
+  - кадрирование и масштаб портрета
+  - 'тон: natural'
+  - виньетка и маска краёв
+  layout: content/items/CI-0001-personal-presentation/renders/A-en-telegram_post.layout.json
+  date: '2026-10-04'
+  prompt: prompts/image/presentation-composition.v1.md
+- file: content/items/CI-0001-personal-presentation/renders/A-ru-telegram_post.jpg
+  sha256: f5d778d09184b31aac3c19a9b2256e78fabbec96e3d0ce3df9c05e6e0a262c16
+  variant: A
+  format: telegram_post
+  lang: ru
+  kind: render
+  method: 'программная композиция: спецификация → HTML/SVG → Chromium (Д11)'
+  inputs:
+  - A-001
+  - A-002
+  - A-003
+  spec: content/items/CI-0001-personal-presentation/spec/variant-a.yaml
+  spec_sha256: 02a20771adbb33ba723c917b14eb4289c8a9672dd7d9433901fc9fd55c4cf083
+  tool: tools/cs/render.py + tools/render/render.js (Playwright, Chromium)
+  tool_sha256: a772b31aa64d3931bd7497f836ded62d14d2200286939bc7f8c914d3809a9e58
+  modifications:
+  - кадрирование и масштаб портрета
+  - 'тон: natural'
+  - виньетка и маска краёв
+  layout: content/items/CI-0001-personal-presentation/renders/A-ru-telegram_post.layout.json
+  date: '2026-10-04'
+  prompt: prompts/image/presentation-composition.v1.md
+- file: content/items/CI-0001-personal-presentation/renders/A-ru-youtube_banner.jpg
+  sha256: 48572f03ad55dc12dbac6e77942c7d668b864b85d1d1998db44ab994ddb430e4
+  variant: A
+  format: youtube_banner
+  lang: ru
+  kind: render
+  method: 'программная композиция: спецификация → HTML/SVG → Chromium (Д11)'
+  inputs:
+  - A-001
+  - A-002
+  - A-003
+  spec: content/items/CI-0001-personal-presentation/spec/variant-a.yaml
+  spec_sha256: 02a20771adbb33ba723c917b14eb4289c8a9672dd7d9433901fc9fd55c4cf083
+  tool: tools/cs/render.py + tools/render/render.js (Playwright, Chromium)
+  tool_sha256: a772b31aa64d3931bd7497f836ded62d14d2200286939bc7f8c914d3809a9e58
+  modifications:
+  - кадрирование и масштаб портрета
+  - 'тон: natural'
+  - виньетка и маска краёв
+  layout: content/items/CI-0001-personal-presentation/renders/A-ru-youtube_banner.layout.json
+  date: '2026-10-04'
+  prompt: prompts/image/presentation-composition.v1.md
+- file: content/items/CI-0001-personal-presentation/renders/B-en-github_social.png
+  sha256: f8c24c634ff48d80fe5d9420aac1ebba84649f59a89d02fffd4be8262dfd36a5
+  variant: B
+  format: github_social
+  lang: en
+  kind: render
+  method: 'программная композиция: спецификация → HTML/SVG → Chromium (Д11)'
+  inputs:
+  - A-001
+  - A-002
+  - A-003
+  spec: content/items/CI-0001-personal-presentation/spec/variant-b.yaml
+  spec_sha256: 088b91510055428e1d071a247de8f023420652cf41064e882821bf2f318b60f3
+  tool: tools/cs/render.py + tools/render/render.js (Playwright, Chromium)
+  tool_sha256: a772b31aa64d3931bd7497f836ded62d14d2200286939bc7f8c914d3809a9e58
+  modifications:
+  - кадрирование и масштаб портрета
+  - 'тон: natural'
+  - виньетка и маска краёв
+  layout: content/items/CI-0001-personal-presentation/renders/B-en-github_social.layout.json
+  date: '2026-10-04'
+  prompt: prompts/image/presentation-composition.v1.md
+- file: content/items/CI-0001-personal-presentation/renders/B-en-telegram_post.jpg
+  sha256: a758643fe285efcb2273d58962d682295da4d62c8dada27cb4add28538fe6ed1
+  variant: B
+  format: telegram_post
+  lang: en
+  kind: render
+  method: 'программная композиция: спецификация → HTML/SVG → Chromium (Д11)'
+  inputs:
+  - A-001
+  - A-002
+  - A-003
+  spec: content/items/CI-0001-personal-presentation/spec/variant-b.yaml
+  spec_sha256: 088b91510055428e1d071a247de8f023420652cf41064e882821bf2f318b60f3
+  tool: tools/cs/render.py + tools/render/render.js (Playwright, Chromium)
+  tool_sha256: a772b31aa64d3931bd7497f836ded62d14d2200286939bc7f8c914d3809a9e58
+  modifications:
+  - кадрирование и масштаб портрета
+  - 'тон: natural'
+  - виньетка и маска краёв
+  layout: content/items/CI-0001-personal-presentation/renders/B-en-telegram_post.layout.json
+  date: '2026-10-04'
+  prompt: prompts/image/presentation-composition.v1.md
+- file: content/items/CI-0001-personal-presentation/renders/B-ru-telegram_post.jpg
+  sha256: 93b7eb16003145e7099ff1c8f4f1b8b7ee4d0fafbdd676fc2ca1e77d05cea0c7
+  variant: B
+  format: telegram_post
+  lang: ru
+  kind: render
+  method: 'программная композиция: спецификация → HTML/SVG → Chromium (Д11)'
+  inputs:
+  - A-001
+  - A-002
+  - A-003
+  spec: content/items/CI-0001-personal-presentation/spec/variant-b.yaml
+  spec_sha256: 088b91510055428e1d071a247de8f023420652cf41064e882821bf2f318b60f3
+  tool: tools/cs/render.py + tools/render/render.js (Playwright, Chromium)
+  tool_sha256: a772b31aa64d3931bd7497f836ded62d14d2200286939bc7f8c914d3809a9e58
+  modifications:
+  - кадрирование и масштаб портрета
+  - 'тон: natural'
+  - виньетка и маска краёв
+  layout: content/items/CI-0001-personal-presentation/renders/B-ru-telegram_post.layout.json
+  date: '2026-10-04'
+  prompt: prompts/image/presentation-composition.v1.md
+- file: content/items/CI-0001-personal-presentation/renders/B-ru-youtube_banner.jpg
+  sha256: 4619c9bd16e21c0049829a2fea489aacd3f8fe1c3b53beb4b9b36dc8d91e12f6
+  variant: B
+  format: youtube_banner
+  lang: ru
+  kind: render
+  method: 'программная композиция: спецификация → HTML/SVG → Chromium (Д11)'
+  inputs:
+  - A-001
+  - A-002
+  - A-003
+  spec: content/items/CI-0001-personal-presentation/spec/variant-b.yaml
+  spec_sha256: 088b91510055428e1d071a247de8f023420652cf41064e882821bf2f318b60f3
+  tool: tools/cs/render.py + tools/render/render.js (Playwright, Chromium)
+  tool_sha256: a772b31aa64d3931bd7497f836ded62d14d2200286939bc7f8c914d3809a9e58
+  modifications:
+  - кадрирование и масштаб портрета
+  - 'тон: natural'
+  - виньетка и маска краёв
+  layout: content/items/CI-0001-personal-presentation/renders/B-ru-youtube_banner.layout.json
+  date: '2026-10-04'
+  prompt: prompts/image/presentation-composition.v1.md
+- file: content/items/CI-0001-personal-presentation/renders/C-en-github_social.png
+  sha256: adc3f66abf3b3c4586519c92f891923c4a54a282b785b87bfc6636409b30ec70
+  variant: C
+  format: github_social
+  lang: en
+  kind: render
+  method: 'программная композиция: спецификация → HTML/SVG → Chromium (Д11)'
+  inputs:
+  - A-001
+  - A-002
+  - A-003
+  spec: content/items/CI-0001-personal-presentation/spec/variant-c.yaml
+  spec_sha256: 7a164f159c2c1ab4e8a2eeda69da137071c7824d10847e681110811a45f44dd6
+  tool: tools/cs/render.py + tools/render/render.js (Playwright, Chromium)
+  tool_sha256: a772b31aa64d3931bd7497f836ded62d14d2200286939bc7f8c914d3809a9e58
+  modifications:
+  - кадрирование и масштаб портрета
+  - 'тон: duotone'
+  - виньетка и маска краёв
+  layout: content/items/CI-0001-personal-presentation/renders/C-en-github_social.layout.json
+  date: '2026-10-04'
+  prompt: prompts/image/presentation-composition.v1.md
+- file: content/items/CI-0001-personal-presentation/renders/C-en-telegram_post.jpg
+  sha256: 1c54544aadd41e20acaa2a3bbdadd44ecb0d7a3407b2b31449c3e3c2f6d557cb
+  variant: C
+  format: telegram_post
+  lang: en
+  kind: render
+  method: 'программная композиция: спецификация → HTML/SVG → Chromium (Д11)'
+  inputs:
+  - A-001
+  - A-002
+  - A-003
+  spec: content/items/CI-0001-personal-presentation/spec/variant-c.yaml
+  spec_sha256: 7a164f159c2c1ab4e8a2eeda69da137071c7824d10847e681110811a45f44dd6
+  tool: tools/cs/render.py + tools/render/render.js (Playwright, Chromium)
+  tool_sha256: a772b31aa64d3931bd7497f836ded62d14d2200286939bc7f8c914d3809a9e58
+  modifications:
+  - кадрирование и масштаб портрета
+  - 'тон: duotone'
+  - виньетка и маска краёв
+  layout: content/items/CI-0001-personal-presentation/renders/C-en-telegram_post.layout.json
+  date: '2026-10-04'
+  prompt: prompts/image/presentation-composition.v1.md
+- file: content/items/CI-0001-personal-presentation/renders/C-ru-telegram_post.jpg
+  sha256: 0f9f2b3fc37131c277b71ee79e93ab8e3fa051466a4e25b64a131f038c52a0b1
+  variant: C
+  format: telegram_post
+  lang: ru
+  kind: render
+  method: 'программная композиция: спецификация → HTML/SVG → Chromium (Д11)'
+  inputs:
+  - A-001
+  - A-002
+  - A-003
+  spec: content/items/CI-0001-personal-presentation/spec/variant-c.yaml
+  spec_sha256: 7a164f159c2c1ab4e8a2eeda69da137071c7824d10847e681110811a45f44dd6
+  tool: tools/cs/render.py + tools/render/render.js (Playwright, Chromium)
+  tool_sha256: a772b31aa64d3931bd7497f836ded62d14d2200286939bc7f8c914d3809a9e58
+  modifications:
+  - кадрирование и масштаб портрета
+  - 'тон: duotone'
+  - виньетка и маска краёв
+  layout: content/items/CI-0001-personal-presentation/renders/C-ru-telegram_post.layout.json
+  date: '2026-10-04'
+  prompt: prompts/image/presentation-composition.v1.md
+- file: content/items/CI-0001-personal-presentation/renders/C-ru-youtube_banner.jpg
+  sha256: d9febeb93ff4268ac28eda725f350946dc5ce026062ccbb6748a6ef265fbaf7a
+  variant: C
+  format: youtube_banner
+  lang: ru
+  kind: render
+  method: 'программная композиция: спецификация → HTML/SVG → Chromium (Д11)'
+  inputs:
+  - A-001
+  - A-002
+  - A-003
+  spec: content/items/CI-0001-personal-presentation/spec/variant-c.yaml
+  spec_sha256: 7a164f159c2c1ab4e8a2eeda69da137071c7824d10847e681110811a45f44dd6
+  tool: tools/cs/render.py + tools/render/render.js (Playwright, Chromium)
+  tool_sha256: a772b31aa64d3931bd7497f836ded62d14d2200286939bc7f8c914d3809a9e58
+  modifications:
+  - кадрирование и масштаб портрета
+  - 'тон: duotone'
+  - виньетка и маска краёв
+  layout: content/items/CI-0001-personal-presentation/renders/C-ru-youtube_banner.layout.json
+  date: '2026-10-04'
+  prompt: prompts/image/presentation-composition.v1.md
+- file: content/items/CI-0001-personal-presentation/renders/D-en-github_social.png
+  sha256: d6a0b786c98679b321f73e77bfc03f677b026f01ce90a4f85936bd675f1b8349
+  variant: D
+  format: github_social
+  lang: en
+  kind: render
+  method: 'программная композиция: спецификация → HTML/SVG → Chromium (Д11)'
+  inputs:
+  - A-002
+  - A-003
+  spec: content/items/CI-0001-personal-presentation/spec/variant-d.yaml
+  spec_sha256: 94ad11e8f023369eb94c3a4f14116bddcd3c2545cd247819f0f17fffb92b9b1c
+  tool: tools/cs/render.py + tools/render/render.js (Playwright, Chromium)
+  tool_sha256: a772b31aa64d3931bd7497f836ded62d14d2200286939bc7f8c914d3809a9e58
+  modifications: []
+  layout: content/items/CI-0001-personal-presentation/renders/D-en-github_social.layout.json
+  date: '2026-10-04'
+  prompt: prompts/image/presentation-composition.v1.md
+- file: content/items/CI-0001-personal-presentation/renders/D-en-telegram_post.jpg
+  sha256: cd2e05b921e95160d9e83dd6aa4de0e0ddeff4adfa478ec23bdd2f2240d2c0d8
+  variant: D
+  format: telegram_post
+  lang: en
+  kind: render
+  method: 'программная композиция: спецификация → HTML/SVG → Chromium (Д11)'
+  inputs:
+  - A-002
+  - A-003
+  spec: content/items/CI-0001-personal-presentation/spec/variant-d.yaml
+  spec_sha256: 94ad11e8f023369eb94c3a4f14116bddcd3c2545cd247819f0f17fffb92b9b1c
+  tool: tools/cs/render.py + tools/render/render.js (Playwright, Chromium)
+  tool_sha256: a772b31aa64d3931bd7497f836ded62d14d2200286939bc7f8c914d3809a9e58
+  modifications: []
+  layout: content/items/CI-0001-personal-presentation/renders/D-en-telegram_post.layout.json
+  date: '2026-10-04'
+  prompt: prompts/image/presentation-composition.v1.md
+- file: content/items/CI-0001-personal-presentation/renders/D-ru-telegram_post.jpg
+  sha256: a2d1716dbb6cefb7c70df52955c499db6a6f27128859ea0f8bf3879074ca6900
+  variant: D
+  format: telegram_post
+  lang: ru
+  kind: render
+  method: 'программная композиция: спецификация → HTML/SVG → Chromium (Д11)'
+  inputs:
+  - A-002
+  - A-003
+  spec: content/items/CI-0001-personal-presentation/spec/variant-d.yaml
+  spec_sha256: 94ad11e8f023369eb94c3a4f14116bddcd3c2545cd247819f0f17fffb92b9b1c
+  tool: tools/cs/render.py + tools/render/render.js (Playwright, Chromium)
+  tool_sha256: a772b31aa64d3931bd7497f836ded62d14d2200286939bc7f8c914d3809a9e58
+  modifications: []
+  layout: content/items/CI-0001-personal-presentation/renders/D-ru-telegram_post.layout.json
+  date: '2026-10-04'
+  prompt: prompts/image/presentation-composition.v1.md
+- file: content/items/CI-0001-personal-presentation/renders/D-ru-youtube_banner.jpg
+  sha256: cc43690b9e0264f25631e027b442fe85e0c48345f0d1732db8e00ffa1deb45c2
+  variant: D
+  format: youtube_banner
+  lang: ru
+  kind: render
+  method: 'программная композиция: спецификация → HTML/SVG → Chromium (Д11)'
+  inputs:
+  - A-002
+  - A-003
+  spec: content/items/CI-0001-personal-presentation/spec/variant-d.yaml
+  spec_sha256: 94ad11e8f023369eb94c3a4f14116bddcd3c2545cd247819f0f17fffb92b9b1c
+  tool: tools/cs/render.py + tools/render/render.js (Playwright, Chromium)
+  tool_sha256: a772b31aa64d3931bd7497f836ded62d14d2200286939bc7f8c914d3809a9e58
+  modifications: []
+  layout: content/items/CI-0001-personal-presentation/renders/D-ru-youtube_banner.layout.json
+  date: '2026-10-04'
+  prompt: prompts/image/presentation-composition.v1.md

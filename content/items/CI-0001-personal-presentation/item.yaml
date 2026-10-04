@@ -1,0 +1,471 @@
+# Объект контента (docs/content/CONTENT_MODEL.md). Схема — schemas/content_item.schema.json.
+schema: content_item/v1
+id: CI-0001
+slug: personal-presentation
+title: Презентационное изображение автора
+type: presentation_card
+pillar: PERSON
+topic: кто такой dpsmpx и как он работает
+objective: 'За 2–3 секунды показать, кто такой dpsmpx: человек, который строит сложные нативные системы
+  — игру, движок и язык — с ИИ как инструментом и сам принимает архитектурные решения; за этим есть настоящий
+  результат.'
+audiences:
+- professional
+- collaborators
+- developers
+- ai_developers
+platforms:
+- github
+- youtube
+- telegram
+- vk
+languages:
+- ru
+- en
+tone: спокойный, точный, от первого лица; без эпитетов
+owner: author
+created: 2026-10-04
+claims:
+- fact: AU-HANDLE
+- fact: AU-ROLE
+- fact: AU-METHOD
+- fact: AU-MEMORY
+- fact: ME-NO-CI
+- fact: GH-NAME
+- fact: GH-GENRE
+- fact: GH-TECH
+- fact: GH-ENGINE
+- fact: GH-LOC
+- fact: GH-CHECKS
+- fact: GH-COMMITS
+- fact: GH-ANDROID
+  note: вариант B и тексты copy/
+- fact: GH-RELEASE-PLAN
+  note: только вариант B
+- fact: DP-WHAT
+- fact: DP-STAGE
+  note: «язык — в разработке» (вариант A, copy/telegram.md)
+source_projects:
+- galdhold
+- dplang
+brief: docs/content/products/personal_presentation/BRIEF.md
+visual_direction: docs/content/products/personal_presentation/CREATIVE_DIRECTION.md
+prompt:
+  id: image/presentation-composition
+  version: 1
+inputs:
+- A-001
+- A-002
+- A-003
+variants:
+- id: A
+  label: professional
+  spec: spec/variant-a.yaml
+  status: selected
+  renders:
+  - renders/A-en-github_social.png
+  - renders/A-en-telegram_post.jpg
+  - renders/A-ru-telegram_post.jpg
+  - renders/A-ru-youtube_banner.jpg
+- id: B
+  label: technical
+  spec: spec/variant-b.yaml
+  status: rejected
+  renders:
+  - renders/B-en-github_social.png
+  - renders/B-en-telegram_post.jpg
+  - renders/B-ru-telegram_post.jpg
+  - renders/B-ru-youtube_banner.jpg
+  rejection_reason: fatal B-1 (двусмысленность о Windows и Steam); шапка вне безопасной зоны; 6 групп
+    текста
+- id: C
+  label: cinematic
+  spec: spec/variant-c.yaml
+  status: rejected
+  renders:
+  - renders/C-en-github_social.png
+  - renders/C-en-telegram_post.jpg
+  - renders/C-ru-telegram_post.jpg
+  - renders/C-ru-youtube_banner.jpg
+  rejection_reason: 'fatal C-1: интерьер заложен в концепцию (Д18); нет результата'
+- id: D
+  label: minimal
+  spec: spec/variant-d.yaml
+  status: fallback
+  renders:
+  - renders/D-en-github_social.png
+  - renders/D-en-telegram_post.jpg
+  - renders/D-ru-telegram_post.jpg
+  - renders/D-ru-youtube_banner.jpg
+selected_variant: A
+provenance: provenance.yaml
+blocked_by:
+- ОР-1
+- 'автор: утверждение и гейт Brand'
+- 'автор: права фотографа A-001 (гейт Legal)'
+- 'автор: О-1 — размер роли на миниатюре'
+state: UNDER_REVIEW
+history:
+- date: 2026-10-04
+  state: IDEA
+  note: 'объект заведён: первый продукт системы — презентационное изображение автора'
+- date: 2026-10-04
+  state: RESEARCHED
+  note: исследование — социальный аудит, идентичность, реестр фактов; аудитории, площадки и утверждения
+    выбраны
+- date: 2026-10-04
+  state: BRIEFED
+  note: бриф BRIEF.md и творческое направление CREATIVE_DIRECTION.md; спецификации вариантов A–D
+- date: &id001 2026-10-04
+  state: GENERATED
+  note: 'варианты A–D отрендерены по промпту image/presentation-composition v1: renders/, RU и EN, формат
+    telegram_post'
+- date: *id001
+  state: UNDER_REVIEW
+  note: 'критика отдельным проходом (агент только для чтения): CRITIQUE.md; B и C отклонены по fatal,
+    D — запасной, A — к ревизии'
+- date: *id001
+  state: REVISED
+  note: 'ревизия A по критике: плотный кадр (zoom 1.9, vignette 0.8) — интерьер не читается (A-1); лицо
+    крупнее, шапка — портрет выше зоны, человек крупнее имени (A-2); GH-ENGINE и DP-STAGE в claims, «свой
+    язык (в разработке)», «ИИ — инструмент» без утверждения о DPlang (A-3, A-4); три размера текста, минимум
+    на всех форматах, подписи шапки 32 px, отступ от края зоны (A-5, A-10); подпись ворот у ромба вместо
+    легенды — «каждое изменение принимаю сам» (A-7, A-8); перенос подзаголовка (A-11); плашки без куба
+    (A-12). D: шапка в безопасной зоне, подпись ворот, AU-MEMORY (D-2, D-3). Д9 приведено к токенам (О-2).
+    Инструменты: слова-утверждения, размеры текста, поля, маркер лица по настоящему размеру'
+- date: *id001
+  state: UNDER_REVIEW
+  note: 'повторный проход критики: прежние major A исправлены, кроме О-1 (решает автор); новые minor A-14…A-17,
+    D-7, D-8 исправлены после прохода (проверено инструментами и замерами); A выбран сессией для проверки
+    (08), автоматические гейты pass; экспорт-превью; ждёт автора — DECISION.md'
+review:
+  file: docs/content/products/personal_presentation/CRITIQUE.md
+  scores:
+    A:
+      factuality: 4
+      identity_fit: 4
+      visual_quality: 4
+      communication: 4
+      platform_fit: 4
+      strategic_value: 4
+    B:
+      factuality: 1
+      identity_fit: 3
+      visual_quality: 2
+      communication: 2
+      platform_fit: 1
+      strategic_value: 2
+    C:
+      factuality: 4
+      identity_fit: 3
+      visual_quality: 3
+      communication: 3
+      platform_fit: 2
+      strategic_value: 2
+    D:
+      factuality: 4
+      identity_fit: 3
+      visual_quality: 4
+      communication: 2
+      platform_fit: 4
+      strategic_value: 2
+  issues:
+    fatal:
+    - id: B-1
+      variant: B
+      text: «Android → Windows (Steam)» читается как «уже работает на Windows и в Steam» (GH-WINDOWS,
+        GH-RELEASE-PLAN)
+      status: open
+    - id: C-1
+      variant: C
+      text: 'интерьер читается как комната: окно со шторой, обои, угол — заложено в концепцию (Д18, Д2)'
+      status: open
+    major:
+    - id: О-1
+      text: 'роль не читается на миниатюре (≈ 6,5 px при 320 px): роль ≈ 5,5 % высоты или критерий «лицо
+        и имя»'
+      status: open
+      resolution: 'решает автор: токен title ≈ 5,5 % (изменение основ) или критерий «лицо и имя»'
+    - id: A-1
+      variant: A
+      text: 'интерьер читается: обои справа от головы, окно со шторой за плечом и слева от головы (Д18)'
+      status: fixed
+      resolution: 'zoom 1.9, виньетка; замеры 2-го прохода: фон у головы 18–21 при чистом 18'
+    - id: A-2
+      variant: A
+      text: лицо мелкое (101×173 в ленте); на шапке имя крупнее человека
+      status: fixed
+      resolution: лицо 226×274 в ленте; на шапке 238×289 при имени 307×80
+    - id: A-3
+      variant: A
+      text: «движок» без GH-ENGINE в claims спецификации
+      status: fixed
+      resolution: GH-ENGINE в claims; правило KW-ENGINE
+    - id: A-4
+      variant: A
+      text: язык без статуса, EN «built» — «уже построен»; «с ИИ» о DPlang без факта
+      status: fixed
+      resolution: «свой язык (в разработке)» + DP-STAGE; «ИИ — инструмент» отдельной фразой
+    - id: A-5
+      variant: A
+      text: текст ниже минимума (15,9 / 14,1 / 22 px на шапке), четыре размера текста вместо трёх
+      status: fixed
+      resolution: три размера в каждом формате, все не меньше минимума
+    - id: A-6
+      variant: A
+      text: роль на миниатюре — см. О-1
+      status: open
+      resolution: '= О-1: крупнее роль — смена токена title (изменение основ), решает автор'
+    - id: B-2
+      variant: B
+      text: «2 телефона» без «проверялась на», сокращённая модель
+      status: open
+    - id: B-3
+      variant: B
+      text: 'интерьер: штора за плечом, обои'
+      status: open
+    - id: B-4
+      variant: B
+      text: 'шапка — растянутая лента: лицо, имя, роль вне безопасной зоны'
+      status: open
+    - id: B-5
+      variant: B
+      text: 6 групп текста и 6 размеров; текст 10–14 px
+      status: open
+    - id: B-6
+      variant: B
+      text: схема 3×2 без связей; ворота висят над углами
+      status: open
+    - id: B-7
+      variant: B
+      text: 'человек на втором плане: лицо 74 px, числа спорят с именем'
+      status: open
+    - id: C-2
+      variant: C
+      text: нет «что» и результата; «сложные системы» — эпитет
+      status: open
+    - id: C-3
+      variant: C
+      text: шапка — растянутая лента, лицо срезано границей зоны
+      status: open
+    - id: C-4
+      variant: C
+      text: подписи схемы ниже минимума
+      status: open
+    - id: D-1
+      variant: D
+      text: нет человека — иерархия перевёрнута
+      status: accepted
+      resolution: D — запасной вариант (fallback) для мест, где лицо не нужно
+    - id: D-2
+      variant: D
+      text: 'ромб ворот без подписи: подпись спецификации потеряна в рендере'
+      status: fixed
+      resolution: подпись ворот показывается во всех форматах
+    - id: D-3
+      variant: D
+      text: 'шапка — растянутая лента: имя, роль, схема вне безопасной зоны'
+      status: fixed
+      resolution: макет minimal знает безопасную зону
+    - id: D-4
+      variant: D
+      text: нет доказательства
+      status: accepted
+      resolution: та же причина, что D-1
+    minor:
+    - id: О-2
+      text: 'Д9 «янтарный» против токена human #FF7A59 (коралловый)'
+      status: fixed
+      resolution: Д9 приведено к токенам (история DECISIONS)
+    - id: О-3
+      text: не отрендерены vk_post RU и мастер RU/EN
+      status: fixed
+      resolution: экспорт vk_post RU и мастер RU/EN сделан
+    - id: О-4
+      text: recheck_by GH-LOC, GH-CHECKS, GH-COMMITS — 2026-11-04
+      status: accepted
+      resolution: ближайший recheck_by — DP-STAGE 18.10.2026, затем 04.11.2026; перемерить перед публикацией
+        (TODO)
+    - id: A-7
+      variant: A
+      text: ромб объяснён только в легенде; легенда — пятая полоса текста
+      status: fixed
+      resolution: подпись ворот у ромба, легенда убрана
+    - id: A-8
+      variant: A
+      text: «приёмку решаю я» — не из разрешённых формулировок
+      status: fixed
+      resolution: «каждое изменение принимаю сам» — формулировка AU-METHOD
+    - id: A-9
+      variant: A
+      text: AU-MEMORY заявлен, но не выражен
+      status: accepted
+      resolution: узел Git — память проекта по VISUAL_SYSTEM §6; связь Git → AU-MEMORY проверяет KW-GIT;
+        подпись «память» — по желанию автора
+    - id: A-10
+      variant: A
+      text: подписи цепочки зигзагом; «Продукт» в 2 px от края зоны шапки
+      status: accepted
+      resolution: 'отступ на шапке исправлен (27 px); зигзаг оставлен: в один ряд подписи минимального
+        размера не помещаются'
+    - id: A-11
+      variant: A
+      text: неудачный перенос подзаголовка
+      status: fixed
+      resolution: строки разбиты по предложениям
+    - id: A-12
+      variant: A
+      text: один значок-куб у плашки Galdhold и узла «Продукт»
+      status: fixed
+      resolution: значок с плашки убран
+    - id: A-13
+      variant: A
+      text: доказательства мелкие при показе баннера GitHub в колонке README
+      status: accepted
+      resolution: README показывает баннер уменьшенным — вторичный показ; минимум формата соблюдён
+    - id: B-8
+      variant: B
+      text: неровная строка подписей чисел
+      status: open
+    - id: B-9
+      variant: B
+      text: пустые полосы при мелком тексте
+      status: open
+    - id: C-5
+      variant: C
+      text: тире в начале строки
+      status: open
+    - id: C-6
+      variant: C
+      text: взгляд уводит из кадра
+      status: open
+    - id: C-7
+      variant: C
+      text: неловкая EN-фраза
+      status: open
+    - id: C-8
+      variant: C
+      text: виден рюкзак
+      status: open
+    - id: C-9
+      variant: C
+      text: дуотон вне палитры
+      status: open
+    - id: C-10
+      variant: C
+      text: ME-NO-CI не в claims варианта
+      status: open
+    - id: D-5
+      variant: D
+      text: пустая нижняя треть
+      status: open
+    - id: D-6
+      variant: D
+      text: цвета без расшифровки
+      status: accepted
+      resolution: подписи узлов окрашены по смыслу
+    - id: A-14
+      variant: A
+      text: 'виньетка 0.8 съедала голову: волосы 22 при фоне 18'
+      status: fixed
+      resolution: 'vignette 0.9, эллипс выше по голове, экспозиция 1.06: волосы 25, висок 59, стены 18–21,5;
+        сходство — автору при гейте Brand'
+    - id: A-15
+      variant: A
+      text: пунктуация RU-подзаголовка
+      status: fixed
+      resolution: «ИИ — инструмент; архитектура и решения — мои.»
+    - id: A-16
+      variant: A
+      text: подпись ворот на шапке читалась как подзаголовок роли
+      status: fixed
+      resolution: на шапке — строкой от начала цепочки с ромбом впереди
+    - id: A-17
+      variant: A
+      text: «Разработчик нативных систем» нет в allowed_wording AU-ROLE
+      status: fixed
+      resolution: формулировка Д4 внесена в реестр
+    - id: D-7
+      variant: D
+      text: «приёмка» без субъекта
+      status: fixed
+      resolution: «принимаю сам» / «I approve»
+    - id: D-8
+      variant: D
+      text: подпись ворот на шапке читалась как часть роли
+      status: fixed
+      resolution: как A-16
+exports:
+- format: github_social
+  file: exports/A-en-github_social.png
+  lang: en
+  variant: A
+  sha256: 3624a2a23687ffe2ceff23b766aa5030a47f1e808280b8b088619b0bb8142749
+  status: preview
+- format: master
+  file: exports/A-en-master.png
+  lang: en
+  variant: A
+  sha256: 8db341bfe62414a40e74ce1518852225efaedc2593690091f5996eaa1f35e6f3
+  status: preview
+- format: master
+  file: exports/A-ru-master.png
+  lang: ru
+  variant: A
+  sha256: 5c421d54e840b18777c51b78761546b65ce4e6f4b1189af555c456fd680bae30
+  status: preview
+- format: telegram_post
+  file: exports/A-ru-telegram_post.jpg
+  lang: ru
+  variant: A
+  sha256: f5d778d09184b31aac3c19a9b2256e78fabbec96e3d0ce3df9c05e6e0a262c16
+  status: preview
+- format: vk_post
+  file: exports/A-ru-vk_post.jpg
+  lang: ru
+  variant: A
+  sha256: f5d778d09184b31aac3c19a9b2256e78fabbec96e3d0ce3df9c05e6e0a262c16
+  status: preview
+- format: youtube_banner
+  file: exports/A-ru-youtube_banner.jpg
+  lang: ru
+  variant: A
+  sha256: 48572f03ad55dc12dbac6e77942c7d668b864b85d1d1998db44ab994ddb430e4
+  status: preview
+gates:
+  factual:
+    status: pass
+    by: tool
+    date: *id001
+    note: 'claims: факты, слова-утверждения, запреты, числа — вариант A и copy/; повторная критика — Factuality
+      4'
+  brand:
+    status: pending
+    by: author
+    date: *id001
+    note: образ и сходство утверждает автор (Д18); показать A-14 — плотная виньетка
+  visual:
+    status: pass
+    by: tool
+    date: *id001
+    note: 'visual: размер, контраст по фону, группы, три размера, поля; повторная критика — Visual 4'
+  platform:
+    status: pass
+    by: tool
+    date: *id001
+    note: размеры, вес, безопасная зона шапки; vk_post — размеры VK официально не подтверждены
+  safety:
+    status: pass
+    by: session
+    date: *id001
+    note: интерьер не читается (замеры 2-го прохода и после A-14); EXIF/XMP нет в фото и экспорте
+  legal:
+    status: pending
+    by: author
+    date: *id001
+    note: права фотографа A-001 не подтверждены; шрифты OFL; внешних запросов при рендере нет
+  provenance:
+    status: pass
+    by: tool
+    date: *id001
+    note: входы A-001…A-003 в реестре; все рендеры и экспорт записаны с хэшами

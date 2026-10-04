@@ -14,9 +14,12 @@ import struct
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import subprocess
+
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
+ITEMS_DIR = ROOT / "content" / "items"
 
 
 def rel(path: Path | str) -> str:
@@ -32,10 +35,11 @@ def load_yaml(path: Path | str):
         return yaml.safe_load(f)
 
 
-def dump_yaml(data, path: Path | str) -> None:
+def dump_yaml(data, path: Path | str, header: str = "") -> None:
     p = ROOT / path if not Path(path).is_absolute() else Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     with open(p, "w", encoding="utf-8") as f:
+        f.write(header)
         yaml.safe_dump(data, f, allow_unicode=True, sort_keys=False, width=100)
 
 
@@ -118,6 +122,14 @@ def jpeg_metadata_segments(path: Path | str) -> list[str]:
     return found
 
 
+@dataclass(frozen=True)
+class Finding:
+    """Находка проверки объекта: level — error | warn | note."""
+
+    level: str
+    msg: str
+
+
 @dataclass
 class Report:
     """Итог одной проверки: ошибки валят check.sh, предупреждения — нет."""
@@ -136,6 +148,10 @@ class Report:
     def note(self, msg: str) -> None:
         self.notes.append(msg)
 
+    def add(self, findings: list[Finding], prefix: str = "") -> None:
+        for f in findings:
+            {"error": self.errors, "warn": self.warnings, "note": self.notes}[f.level].append(prefix + f.msg)
+
     @property
     def ok(self) -> bool:
         return not self.errors
@@ -150,3 +166,64 @@ class Report:
             print(f"    ! {w}")
         for e in self.errors:
             print(f"    ✗ {e}")
+
+
+def repo_files() -> list[Path]:
+    """Файлы репозитория: отслеживаемые и новые, кроме игнорируемых (.gitignore)."""
+    res = subprocess.run(
+        ["git", "ls-files", "-co", "--exclude-standard", "-z"],
+        cwd=ROOT, capture_output=True, text=True, check=True,
+    )
+    return sorted(ROOT / f for f in res.stdout.split("\0") if f and (ROOT / f).is_file())
+
+
+def is_text(path: Path) -> bool:
+    try:
+        chunk = path.read_bytes()[:4096]
+    except OSError:
+        return False
+    if b"\0" in chunk:
+        return False
+    try:
+        chunk.decode("utf-8")
+    except UnicodeDecodeError as e:
+        return e.start > len(chunk) - 4  # обрезанный многобайтовый символ на границе
+    return True
+
+
+@dataclass
+class Item:
+    """Объект контента: каталог content/items/<id>-<slug>/ и его item.yaml."""
+
+    dir: Path
+    data: dict
+
+    @property
+    def id(self) -> str:
+        return self.data.get("id", self.dir.name)
+
+    def path(self, p: str) -> Path:
+        """Путь из item.yaml: от корня, если начинается с каталога верхнего уровня (docs/…), иначе — от объекта (spec/…)."""
+        q = Path(p)
+        return ROOT / q if q.parts and (ROOT / q.parts[0]).is_dir() else self.dir / q
+
+    def variant(self, vid: str) -> dict | None:
+        return next((v for v in self.data.get("variants", []) if v.get("id") == vid), None)
+
+
+def load_items() -> list[Item]:
+    out = []
+    if not ITEMS_DIR.is_dir():
+        return out
+    for d in sorted(ITEMS_DIR.iterdir()):
+        f = d / "item.yaml"
+        if d.is_dir() and f.is_file():
+            out.append(Item(d, load_yaml(f) or {}))
+    return out
+
+
+def find_item(item_id: str) -> Item:
+    for it in load_items():
+        if it.id == item_id or it.dir.name == item_id:
+            return it
+    raise SystemExit(f"объект {item_id} не найден в content/items/")

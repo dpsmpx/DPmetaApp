@@ -1,0 +1,256 @@
+{
+ "width": 1280,
+ "height": 720,
+ "fonts_loaded": [
+  "IBM Plex Sans",
+  "IBM Plex Mono"
+ ],
+ "external_requests": [],
+ "elements": [
+  {
+   "role": "name",
+   "group": "name",
+   "text": "dpsmpx",
+   "x": 153.59375,
+   "y": 158.390625,
+   "w": 375.5,
+   "h": 97.90625,
+   "text_box": {
+    "x": 153.59375,
+    "y": 143.390625,
+    "w": 375.5,
+    "h": 127
+   },
+   "font_px": 97.9,
+   "font_weight": 600,
+   "font_family": "\"IBM Plex Sans\", sans-serif",
+   "fg": "paper",
+   "bg": "ink",
+   "overflow": false,
+   "bg_luminance": {
+    "p95": 0.006022900252773424,
+    "max": 0.01167803924597011
+   }
+  },
+  {
+   "role": "role",
+   "group": "identity",
+   "text": "Native systems developer · AI as an instrument",
+   "x": 153.59375,
+   "y": 275.890625,
+   "w": 972.796875,
+   "h": 33.671875,
+   "text_box": {
+    "x": 153.59375,
+    "y": 274.890625,
+    "w": 559.1875,
+    "h": 34
+   },
+   "font_px": 25.9,
+   "font_weight": 500,
+   "font_family": "\"IBM Plex Sans\", sans-serif",
+   "fg": "paper",
+   "bg": "ink",
+   "overflow": false,
+   "bg_luminance": {
+    "p95": 0.006868373800136411,
+    "max": 0.014973038084482165
+   }
+  },
+  {
+   "role": "pipeline-label",
+   "group": "pipeline",
+   "text": "Intent",
+   "x": 155.296875,
+   "y": 466.5,
+   "w": 367,
+   "h": 21.609375,
+   "text_box": {
+    "x": 155.296875,
+    "y": 465.5,
+    "w": 62.21875,
+    "h": 23
+   },
+   "font_px": 17.3,
+   "font_weight": 500,
+   "font_family": "\"IBM Plex Mono\", monospace",
+   "fg": "human",
+   "bg": "ink",
+   "overflow": false,
+   "bg_luminance": {
+    "p95": 0.006522703769067774,
+    "max": 0.007469150592752586
+   }
+  },
+  {
+   "role": "pipeline-label",
+   "group": "pipeline",
+   "text": "Architecture",
+   "x": 171.09375,
+   "y": 519,
+   "w": 367,
+   "h": 21.609375,
+   "text_box": {
+    "x": 292.375,
+    "y": 518,
+    "w": 124.4375,
+    "h": 23
+   },
+   "font_px": 17.3,
+   "font_weight": 500,
+   "font_family": "\"IBM Plex Mono\", monospace",
+   "fg": "human",
+   "bg": "ink",
+   "overflow": false,
+   "bg_luminance": {
+    "p95": 0.007469150592752586,
+    "max": 0.009145581077498292
+   }
+  },
+  {
+   "role": "pipeline-label",
+   "group": "pipeline",
+   "text": "AI implementation",
+   "x": 361.296875,
+   "y": 466.5,
+   "w": 367,
+   "h": 21.609375,
+   "text_box": {
+    "x": 456.65625,
+    "y": 465.5,
+    "w": 176.28125,
+    "h": 23
+   },
+   "font_px": 17.3,
+   "font_weight": 500,
+   "font_family": "\"IBM Plex Mono\", monospace",
+   "fg": "ai",
+   "bg": "ink",
+   "overflow": false,
+   "bg_luminance": {
+    "p95": 0.00898422283526022,
+    "max": 0.012160257966283514
+   }
+  },
+  {
+   "role": "pipeline-label",
+   "group": "pipeline",
+   "text": "Verification",
+   "x": 551.59375,
+   "y": 519,
+   "w": 367,
+   "h": 21.609375,
+   "text_box": {
+    "x": 672.875,
+    "y": 518,
+    "w": 124.4375,
+    "h": 23
+   },
+   "font_px": 17.3,
+   "font_weight": 500,
+   "font_family": "\"IBM Plex Mono\", monospace",
+   "fg": "verified",
+   "bg": "ink",
+   "overflow": false,
+   "bg_luminance": {
+    "p95": 0.009732919609503758,
+    "max": 0.012909160437325484
+   }
+  },
+  {
+   "role": "pipeline-label",
+   "group": "pipeline",
+   "text": "Git",
+   "x": 741.890625,
+   "y": 466.5,
+   "w": 367,
+   "h": 21.609375,
+   "text_box": {
+    "x": 909.828125,
+    "y": 465.5,
+    "w": 31.109375,
+    "h": 23
+   },
+   "font_px": 17.3,
+   "font_weight": 500,
+   "font_family": "\"IBM Plex Mono\", monospace",
+   "fg": "mist",
+   "bg": "ink",
+   "overflow": false,
+   "bg_luminance": {
+    "p95": 0.011024070005553395,
+    "max": 0.014517048909840506
+   }
+  },
+  {
+   "role": "pipeline-label",
+   "group": "pipeline",
+   "text": "Product",
+   "x": 757.59375,
+   "y": 519,
+   "w": 367,
+   "h": 21.609375,
+   "text_box": {
+    "x": 1052,
+    "y": 518,
+    "w": 72.59375,
+    "h": 23
+   },
+   "font_px": 17.3,
+   "font_weight": 500,
+   "font_family": "\"IBM Plex Mono\", monospace",
+   "fg": "paper",
+   "bg": "ink",
+   "overflow": false,
+   "bg_luminance": {
+    "p95": 0.010168194412858832,
+    "max": 0.012909160437325484
+   }
+  },
+  {
+   "role": "gate",
+   "group": "pipeline",
+   "text": null,
+   "x": 822.6771850585938,
+   "y": 496.38031005859375,
+   "w": 15.1143798828125,
+   "h": 15.1143798828125,
+   "text_box": null,
+   "font_px": 16,
+   "font_weight": 400,
+   "font_family": "\"IBM Plex Sans\", sans-serif",
+   "fg": null,
+   "bg": null,
+   "overflow": false,
+   "bg_luminance": null
+  },
+  {
+   "role": "gate-label",
+   "group": "pipeline",
+   "text": "I approve",
+   "x": -3164.390625,
+   "y": 554.09375,
+   "w": 4000,
+   "h": 21.609375,
+   "text_box": {
+    "x": 722.296875,
+    "y": 553.09375,
+    "w": 114.09228515625,
+    "h": 23
+   },
+   "font_px": 17.3,
+   "font_weight": 500,
+   "font_family": "\"IBM Plex Mono\", monospace",
+   "fg": "human",
+   "bg": "ink",
+   "overflow": false,
+   "bg_luminance": {
+    "p95": 0.009612602235813153,
+    "max": 0.012354114539414079
+   }
+  }
+ ],
+ "spec": "content/items/CI-0001-personal-presentation/spec/variant-d.yaml",
+ "lang": "en",
+ "format": "telegram_post"
+}
