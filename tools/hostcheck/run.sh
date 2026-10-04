@@ -73,6 +73,7 @@ step "корпус" "$PY" tools/hostcheck/check_fixtures.py
 step "ссылки" "$PY" tools/hostcheck/check_docs.py
 step "зависимости" "$PY" tools/provenance/check_dependencies.py
 step "манифест" "$PY" tools/hostcheck/check_manifest.py
+step "формат" "$PY" tools/hostcheck/check_format.py
 
 # ---- 2. Сборка и тесты ядра ----
 cli_smoke() {
@@ -96,18 +97,21 @@ cli_smoke() {
   expect 0 "ACTIVATED" - check $d/configs/valid-multi.json
   expect 1 "CAPABILITY_TRANSPORT_UNSUPPORTED" - check $d/configs/limited-backend-xhttp.json --backend mock-limited
   expect 1 "INSECURE_TLS_REJECTED" - check $d/configs/invalid-allow-insecure.json
-  expect 0 "DIRECT (ru-direct)" - route $d/configs/valid-multi.json --domain www.example.ru
+  expect 0 "DIRECT (ru-direct)" "примечание" route $d/configs/valid-multi.json --domain www.example.ru
+  expect 0 "geoip/geosite не проверены" - route $d/configs/valid-multi.json --ip 198.51.100.7
   expect 0 "restriction=ALLOWLIST_LIKE" - classify --condition ALLOWLIST_LIKE
   expect 0 "1. xhttp-cdn [HTTP_CDN]" - plan $d/configs/valid-multi.json --condition TLS_DEGRADED
   expect 0 "CONNECTED via domestic-relay" - connect $d/configs/valid-multi.json --condition ALLOWLIST_LIKE
   expect 1 "NETWORK_OFFLINE" - connect $d/configs/valid-multi.json --condition OFFLINE
   expect 0 "READY revision=1 profiles=3" "evil.example.com" subscription $d/subscriptions/links-with-directives.txt \
     --headers $d/subscriptions/links-with-directives.headers.json
+  expect 0 "SERVER_NAME_INVALID at profiles[1].security.server_name" "test-password" \
+    subscription $d/subscriptions/links-invalid-names.txt
   expect 0 '"id": "<redacted>"' "$uuid" export $d/configs/valid-minimal.json
   expect 0 "active_profile: reality-1" "$uuid" report $d/configs/valid-minimal.json
   expect 0 "route decisions:" - bench --rules 200
   expect 2 - - no-such-command
-  [ "$fails" = 0 ] && echo "✓ cli: 13 сценариев — коды выхода и вывод как ожидалось, секреты не печатаются"
+  [ "$fails" = 0 ] && echo "✓ cli: 15 сценариев — коды выхода и вывод как ожидалось, секреты не печатаются"
   return "$fails"
 }
 
@@ -124,9 +128,11 @@ if [ "$MODE" != quick ]; then
   if android_sdk; then
     step "Android: сборка и Lint" "${GRADLE[@]}" :app:assembleDebug :app:lint
     step "Android: API ядра ≤ minSdk" "$PY" tools/hostcheck/check_android_api.py
+    step "Android: APK" "$PY" tools/hostcheck/check_apk.py
   else
     skip "Android: сборка и Lint" "нет Android SDK (ANDROID_HOME или sdk.dir в local.properties)"
     skip "Android: API ядра ≤ minSdk" "нет Android SDK"
+    skip "Android: APK" "нет Android SDK"
   fi
 else
   RESULTS+=("○ сборка, тесты, cli, Android — не запускались (--quick)")

@@ -12,7 +12,9 @@
     `hysteria2://`, `tuic://` …) с адресом не из документационных
     диапазонов — это настоящий сервер и, как правило, его ключ;
   * UUID не синтетического вида `00000000-0000-…` — в DPpass UUID
-    бывает только идентификатором VLESS, то есть секретом.
+    бывает только идентификатором VLESS, то есть секретом;
+  * то же внутри base64: подписки часто приходят списком ссылок в base64,
+    и настоящий сервер в таком виде не должен пройти незамеченным.
 
 Ложное срабатывание — строка в `tools/security/secrets_allow.txt`
 («путь: регулярное выражение # причина»), а не ослабление правила.
@@ -62,6 +64,24 @@ def reserved_host(host):
         return any(ip in n for n in RESERVED_NETS)
     except ValueError:
         return any(host == d or host.endswith("." + d) for d in RESERVED_DOMAINS)
+
+
+BASE64_TOKEN = re.compile(r"[A-Za-z0-9+/_-]{24,}={0,2}")
+
+
+def base64_text(token):
+    """Текст ссылок из base64-токена — или None (не base64, не текст, ссылок нет)."""
+    import base64
+    import binascii
+    padded = token + "=" * (-len(token) % 4)
+    for decode in (base64.b64decode, base64.urlsafe_b64decode):
+        try:
+            text = decode(padded.encode("ascii")).decode("utf-8")
+        except (binascii.Error, ValueError, UnicodeDecodeError):
+            continue
+        if "://" in text:
+            return text
+    return None
 
 
 def link_host(rest):
@@ -119,13 +139,16 @@ def main():
             for what, rx in PATTERNS:
                 if rx.search(line):
                     report(rel, n, what, line)
-            for m in PROXY_LINK.finditer(line):
-                host = link_host(m.group(2))
-                if host is not None and not reserved_host(host):
-                    report(rel, n, f"ссылка {m.group(1)}:// на адрес не из документационных диапазонов ({host})", line)
-            for m in UUID.finditer(line):
-                if not SYNTHETIC_UUID.match(m.group(0)):
-                    report(rel, n, f"UUID не синтетического вида ({m.group(0)[:8]}…) — похоже на идентификатор VLESS", line)
+            # Сама строка и то, что в ней спрятано в base64 (тело подписки), — по одним правилам.
+            views = [("", line)] + [(" (в base64)", d) for d in map(base64_text, BASE64_TOKEN.findall(line)) if d]
+            for where, view in views:
+                for m in PROXY_LINK.finditer(view):
+                    host = link_host(m.group(2))
+                    if host is not None and not reserved_host(host):
+                        report(rel, n, f"ссылка {m.group(1)}:// на адрес не из документационных диапазонов ({host}){where}", line)
+                for m in UUID.finditer(view):
+                    if not SYNTHETIC_UUID.match(m.group(0)):
+                        report(rel, n, f"UUID не синтетического вида ({m.group(0)[:8]}…){where} — похоже на идентификатор VLESS", line)
 
     if problems:
         print("✗ Возможные секреты в репозитории:")

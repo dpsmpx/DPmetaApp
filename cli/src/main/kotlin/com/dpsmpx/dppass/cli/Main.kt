@@ -213,6 +213,15 @@ private fun route(a: Args): Int {
     )
     val d = RouteEvaluator(ir.ir.routing).decide(q)
     println("${d.action} (${d.ruleId ?: "default"}): ${d.reason}")
+    // Геоданных в cli нет (GeoResolver.None): правило с geoip/geosite здесь не срабатывает
+    // никогда. Если такое правило стоит раньше решившего, с геоданными решение могло быть
+    // другим — об этом говорится прямо, а не молчанием «ни одно правило не сработало».
+    val rules = ir.ir.routing.rules
+    val decidedAt = rules.indexOfFirst { it.id == d.ruleId }.takeIf { it >= 0 } ?: rules.size
+    val unchecked = rules.take(decidedAt).filter { it.conditions.geoSites.isNotEmpty() || it.conditions.geoIps.isNotEmpty() }
+    if (unchecked.isNotEmpty()) {
+        println("примечание: правила с geoip/geosite не проверены — в dppass-cli нет геоданных: ${unchecked.joinToString { it.id.value }}")
+    }
     return 0
 }
 
