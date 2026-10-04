@@ -196,6 +196,13 @@
     },
     "note": {
       "type": "string"
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "факты, на которые текст опирается без подстановки (для устаревания)"
     }
   }
 }

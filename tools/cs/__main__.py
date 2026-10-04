@@ -6,6 +6,7 @@
   export ITEM --variant  экспорт варианта по форматам площадок (exports/)
   new                    новый объект в состоянии IDEA
   metrics import         импорт выгрузки CSV площадки (Д15)
+  …и команды платформы публикации — tools/cs/platform_cli.py (publish, approve, preview, site…)
 """
 from __future__ import annotations
 
@@ -13,7 +14,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import claims, exports, facts, links, metrics, newitem, provenance, secrets, validate, visual
+from . import capabilities, claims, exports, facts, links, metrics, newitem, platform_checks, platform_cli, provenance, secrets, validate, visual
 from .common import Item, dump_yaml, find_item, load_yaml, rel, sha256_file
 from .model import effective_state, reached
 
@@ -28,6 +29,13 @@ CHECKS = {
     "metrics": metrics.check,
     "links": links.check,
     "secrets": secrets.check,
+    "canonical": platform_checks.canonical_check,
+    "publications": platform_checks.publications_check,
+    "destinations": platform_checks.destinations_check,
+    "campaigns": platform_checks.campaigns_check,
+    "projects": platform_checks.projects_check,
+    "capabilities": capabilities.check,
+    "site": platform_checks.site_check,
 }
 REVIEW_FORMAT = "telegram_post"  # формат рендеров для критики: самый частый 16:9
 
@@ -169,6 +177,7 @@ def main(argv=None) -> int:
     m.add_argument("--variant")
     m.add_argument("--url")
     m.set_defaults(fn=cmd_metrics)
+    platform_cli.register(sub)
     args = ap.parse_args(argv)
     return args.fn(args)
 

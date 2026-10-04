@@ -256,6 +256,7 @@ facts:
     statement: Этапы 1–4 закрыты — движок, полигон, живое поселение, регионы; идёт этап 5 — коммерческая версия 1 и выпуск.
     allowed_wording:
       ru: ["закрыты этапы: движок, живое поселение, регионы; идёт подготовка версии 1"]
+      en: ["completed stages: the engine, a living settlement, regions; version 1 is in preparation"]
     recheck_by: 2026-11-04
     evidence:
       - {kind: doc, source: "dpsmpx/Galdhold ROADMAP/ROADMAP.md, «Этапы развития»", ref: "f2ba263", date: 2026-10-04, verification: reported}

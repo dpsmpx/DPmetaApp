@@ -10,7 +10,6 @@ page: true
 tagline: DP-WHAT
 status: DP-STAGE
 facts:
-  - {label: what, facts: [DP-WHAT]}
   - {label: status, facts: [DP-STAGE]}
   - {label: code, facts: [DP-PRIVATE]}
 links: []

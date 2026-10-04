@@ -91,7 +91,7 @@ def api(site, entries) -> dict:
         projects.append({"id": p["id"], "name": p["name"], "weight": p.get("weight"),
                          "url": {"ru": site.base + f"/projects/{p['id']}/", "en": site.base + f"/en/projects/{p['id']}/"},
                          "tagline": {lg: site.fact(p["tagline"], lg) for lg in ("ru", "en")} if p.get("tagline") else {},
-                         "links": [site.links[l]["url"] for l in p.get("links", []) if l in site.links and site.links[l].get("url")]})
+                         "links": [site.links[r["id"]]["url"] for r in p.get("links", []) if r["id"] in site.links and site.links[r["id"]].get("url")]})
     posts = [{"id": e.item.id, "url": site.base + e.path, "title": e.title, "summary": e.summary, "date": e.date,
               "category": e.category, "tags": e.item.data.get("tags") or [], "projects": e.item.data.get("source_projects") or [],
               "lang": e.lang, "draft": e.draft} for e in entries if e.is_post]

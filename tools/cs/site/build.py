@@ -183,8 +183,8 @@ class SiteBuild:
         return "".join(out)
 
     def person_jsonld(self, lang: str) -> dict:
-        same = [l["url"] for k, l in self.links.items()
-                if k in (self.cfg.get("home") or {}).get("social_links", []) and l.get("status") in ("ok", "limited")]
+        ids = [(x if isinstance(x, str) else x.get("link")) for x in (self.cfg.get("home") or {}).get("social_links", [])]
+        same = [self.links[i]["url"] for i in ids if i in self.links and self.links[i].get("status") in ("ok", "limited")]
         return {"@context": "https://schema.org", "@type": "Person",
                 "name": self.fact("AU-NAME", lang) or "dpsmpx", "alternateName": "dpsmpx",
                 "url": self.base + ("/en/" if lang == "en" else "/"), "sameAs": same}
@@ -201,16 +201,19 @@ class SiteBuild:
             out += f'<p class="status">{E(status)}</p>'
         return out + "</div>"
 
-    def link_list(self, ids: list[str], lang: str) -> str:
+    def link_list(self, refs: list, lang: str) -> str:
+        """Ссылки: id из links.yaml или {link|id, ru, en} — публичная подпись; служебная role не выводится."""
         lis = []
-        for lid in ids:
+        for ref in refs:
+            lid = ref if isinstance(ref, str) else (ref.get("link") or ref.get("id"))
+            label = "" if isinstance(ref, str) else (ref.get(lang) or ref.get("ru") or "")
             l = self.links.get(lid)
             if not l or not l.get("url") or l.get("status") in ("broken_for_public", "stale"):
                 if l is not None:
                     self.report.warnings.append(f"ссылка {lid}: статус {l.get('status')} — не выводится")
                 continue
             name = PLATFORM_NAMES.get(l.get("platform"), l.get("platform"))
-            lis.append(f'<li><a href="{E(l["url"])}" rel="me noopener">{E(name)}</a> <span class="muted">{E(l.get("role", ""))}</span></li>')
+            lis.append(f'<li><a href="{E(l["url"])}" rel="me noopener">{E(name)}</a> <span class="muted">{E(label)}</span></li>')
         return f'<ul class="links">{"".join(lis)}</ul>'
 
     def draft_note(self, e: Entry) -> str:
@@ -404,7 +407,8 @@ class SiteBuild:
                                                                     "about" if "/about/" in page.path else "")
         footer = (f'<p>{E(self.fact("AU-NAME", page.lang) or "dpsmpx")} / dpsmpx · '
                   f'<a href="/feed.xml">Atom</a> · <a href="/rss.xml">RSS</a> · <a href="/feed.json">JSON Feed</a></p>'
-                  f'<p>Шрифты IBM Plex — SIL OFL 1.1 (<a href="/fonts/OFL-IBM-Plex.txt">лицензия</a>).</p>')
+                  + (f'<p>Шрифты IBM Plex — SIL OFL 1.1 (<a href="/fonts/OFL-IBM-Plex.txt">лицензия</a>).</p>' if page.lang == "ru" else
+                     f'<p>IBM Plex fonts — SIL OFL 1.1 (<a href="/fonts/OFL-IBM-Plex.txt">license</a>).</p>'))
         return tpl.substitute(lang=page.lang, title=E(page.title), description=E(page.description), head="\n".join(head),
                               banner=banner, home="/en/" if page.lang == "en" else "/",
                               brand="dpsmpx", nav=self.nav(page.lang, current, page.alternates), main=page.main, footer=footer)

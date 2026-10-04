@@ -104,7 +104,8 @@ def validate_variant(v: Variant, adapter=None, destination: dict | None = None) 
         if not p.is_file():
             out.append(Finding("error", f"{where}: медиа {ref} — файла нет"))
             continue
-        rec = known.get(ref, assets.get(ref))
+        rel = str(p.relative_to(repo.root)) if p.is_relative_to(repo.root) else ref
+        rec = known.get(rel, known.get(ref, assets.get(rel, assets.get(ref))))
         if rec is None:
             out.append(Finding("error", f"{where}: медиа {ref} не записано в provenance.yaml объекта или реестре ассетов"))
         elif rec != sha256_file(p):

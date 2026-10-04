@@ -23,7 +23,7 @@ import yaml
 
 from ..common import sha256_file
 from . import textdoc
-from .inject import Resolved, changed, resolve
+from .inject import Resolved, changed, fact_fp, resolve
 from .repo import Repo
 
 POST_CATEGORIES = {"news", "devlog", "article", "release"}
@@ -217,6 +217,10 @@ def seal_variant(v: Variant) -> None:
     """Записать зависимости варианта: версия канона с хэшем, факты/ссылки, хэши медиа."""
     item = v.item
     deps = resolved_body(v, item.repo.canonical_base()).deps
+    facts = item.repo.facts()
+    for fid in v.m("claims") or []:  # факты, написанные в тексте словами, а не подстановкой
+        if fid in facts:
+            deps["facts"].setdefault(fid, fact_fp(facts[fid]))
     sv = v.m("source_version")
     cv = item.canon(sv) if sv else None
     if cv is not None:

@@ -16,6 +16,11 @@ environments:
     deploy: null                         # команда выгрузки на хостинг — после ОР-11
 home:
   projects: [galdhold, dplang]
-  social_links: [L-TG-DEVLOG, L-YT-CHANNEL, L-GH-PROFILE, L-TT-PROFILE, L-TG-AUTHOR]
+  social_links:                          # публичные подписи (role в links.yaml — служебная)
+    - {link: L-TG-DEVLOG, ru: дневник разработки Galdhold, en: Galdhold dev log (in Russian)}
+    - {link: L-YT-CHANNEL, ru: видео, en: videos}
+    - {link: L-GH-PROFILE, ru: открытые проекты, en: open-source projects}
+    - {link: L-TT-PROFILE, ru: короткие видео, en: short videos}
+    - {link: L-TG-AUTHOR, ru: личные сообщения, en: direct messages}
   contact: L-TG-AUTHOR
 og_default: {item: CI-0001, file: exports/A-en-github_social.png}

@@ -11,13 +11,15 @@ page: true
 tagline: GH-GENRE
 status: GH-STAGES
 facts:
-  - {label: what, facts: [GH-GENRE]}
   - {label: technology, facts: [GH-TECH, GH-ENGINE, GH-ASSETS]}
   - {label: platforms, facts: [GH-ANDROID, GH-RELEASE-PLAN, GH-WINDOWS]}
   - {label: status, facts: [GH-STAGES]}
   - {label: scale, facts: [GH-LOC, GH-CHECKS]}
   - {label: code, facts: [GH-PRIVATE]}
-links: [L-TG-DEVLOG, L-YT-PRESENTATION, L-YT-CHANNEL]
+links:
+  - {id: L-TG-DEVLOG, ru: дневник разработки, en: dev log (in Russian)}
+  - {id: L-YT-PRESENTATION, ru: "видео: показ игры (под прежним именем)", en: "video: gameplay (under the former name)"}
+  - {id: L-YT-CHANNEL, ru: канал YouTube, en: YouTube channel}
 repository: null           # закрыт (GH-PRIVATE, Д17)
 download: null             # выпуска нет (GH-RELEASE-PLAN)
 media: []                  # снимки игры — после записи в реестр ассетов (docs/PROVENANCE.md)

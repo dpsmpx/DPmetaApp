@@ -71,7 +71,6 @@
         "properties": {
           "label": {
             "enum": [
-              "what",
               "technology",
               "platforms",
               "status",
@@ -92,8 +91,23 @@
     "links": {
       "type": "array",
       "items": {
-        "type": "string",
-        "pattern": "^L-[A-Z0-9-]+$"
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^L-[A-Z0-9-]+$"
+          },
+          "ru": {
+            "type": "string"
+          },
+          "en": {
+            "type": "string"
+          }
+        }
       }
     },
     "repository": {

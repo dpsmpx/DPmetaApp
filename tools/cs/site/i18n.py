@@ -21,7 +21,7 @@ LABELS = {
         "cat": {"news": "Новость", "devlog": "Дневник", "article": "Статья", "release": "Релиз", "page": "Страница"},
     },
     "en": {
-        "home": "Home", "projects": "Projects", "news": "Posts", "about": "About",
+        "home": "Home", "projects": "Projects", "news": "Posts (RU)", "about": "About",
         "main_project": "Main project", "other_projects": "Other projects",
         "latest": "Latest posts", "all_posts": "All posts", "follow": "Follow",
         "contact": "Contact", "what": "What it is", "technology": "Technology", "platforms": "Platforms",

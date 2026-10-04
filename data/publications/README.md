@@ -4,7 +4,7 @@
 
 - `production.jsonl` — рабочие публикации;
 - `staging.jsonl` — безопасный режим (тестовые адресаты);
-- окружение development пишет в `build/publications/` (не в Git).
+- окружение development пишет в build/publications (каталог сборки, не в Git).
 
 Файлы не правятся руками: исправление — новым событием
 (`publish --reconcile`, `publish --record-manual`). Проверка —

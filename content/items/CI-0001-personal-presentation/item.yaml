@@ -1,10 +1,18 @@
 # Объект контента (docs/content/CONTENT_MODEL.md). Схема — schemas/content_item.schema.json.
-schema: content_item/v1
+schema: content_item/v2
 id: CI-0001
 slug: personal-presentation
 title: Презентационное изображение автора
 type: presentation_card
 pillar: PERSON
+category: page
+brand:
+  mode: PERSONAL
+  brands:
+  - author
+campaign: CMP-0001
+website:
+  path: /about/
 topic: кто такой dpsmpx и как он работает
 objective: 'За 2–3 секунды показать, кто такой dpsmpx: человек, который строит сложные нативные системы
   — игру, движок и язык — с ИИ как инструментом и сам принимает архитектурные решения; за этим есть настоящий
@@ -15,6 +23,7 @@ audiences:
 - developers
 - ai_developers
 platforms:
+- website
 - github
 - youtube
 - telegram
@@ -26,6 +35,8 @@ tone: спокойный, точный, от первого лица; без э�
 owner: author
 created: 2026-10-04
 claims:
+- fact: AU-NAME
+  note: 'имя рядом с dpsmpx (Д20): канон, сайт, тексты площадок'
 - fact: AU-HANDLE
 - fact: AU-ROLE
 - fact: AU-METHOD
@@ -104,44 +115,6 @@ blocked_by:
 - 'автор: утверждение и гейт Brand'
 - 'автор: права фотографа A-001 (гейт Legal)'
 - 'автор: О-1 — размер роли на миниатюре'
-state: UNDER_REVIEW
-history:
-- date: 2026-10-04
-  state: IDEA
-  note: 'объект заведён: первый продукт системы — презентационное изображение автора'
-- date: 2026-10-04
-  state: RESEARCHED
-  note: исследование — социальный аудит, идентичность, реестр фактов; аудитории, площадки и утверждения
-    выбраны
-- date: 2026-10-04
-  state: BRIEFED
-  note: бриф BRIEF.md и творческое направление CREATIVE_DIRECTION.md; спецификации вариантов A–D
-- date: &id001 2026-10-04
-  state: GENERATED
-  note: 'варианты A–D отрендерены по промпту image/presentation-composition v1: renders/, RU и EN, формат
-    telegram_post'
-- date: *id001
-  state: UNDER_REVIEW
-  note: 'критика отдельным проходом (агент только для чтения): CRITIQUE.md; B и C отклонены по fatal,
-    D — запасной, A — к ревизии'
-- date: *id001
-  state: REVISED
-  note: 'ревизия A по критике: плотный кадр (zoom 1.9, vignette 0.8) — интерьер не читается (A-1); лицо
-    крупнее, шапка — портрет выше зоны, человек крупнее имени (A-2); GH-ENGINE и DP-STAGE в claims, «свой
-    язык (в разработке)», «ИИ — инструмент» без утверждения о DPlang (A-3, A-4); три размера текста, минимум
-    на всех форматах, подписи шапки 32 px, отступ от края зоны (A-5, A-10); подпись ворот у ромба вместо
-    легенды — «каждое изменение принимаю сам» (A-7, A-8); перенос подзаголовка (A-11); плашки без куба
-    (A-12). D: шапка в безопасной зоне, подпись ворот, AU-MEMORY (D-2, D-3). Д9 приведено к токенам (О-2).
-    Инструменты: слова-утверждения, размеры текста, поля, маркер лица по настоящему размеру'
-- date: *id001
-  state: UNDER_REVIEW
-  note: 'повторный проход критики: прежние major A исправлены, кроме О-1 (решает автор); новые minor A-14…A-17,
-    D-7, D-8 исправлены после прохода (проверено инструментами и замерами); A выбран сессией для проверки
-    (08), автоматические гейты pass; экспорт-превью; ждёт автора — DECISION.md'
-- date: 2026-10-04
-  state: UNDER_REVIEW
-  note: 'ОР-1 решён автором (Д20): имя «Борис Давыдов» рядом с dpsmpx. Подпись варианта A пересмотреть
-    на ревизии до утверждения; объект войдёт в кампанию CMP-0001 новой системы (PLATFORM_VISION §116)'
 review:
   file: docs/content/products/personal_presentation/CRITIQUE.md
   scores:
@@ -440,7 +413,7 @@ gates:
   factual:
     status: pass
     by: tool
-    date: *id001
+    date: &id001 2026-10-04
     note: 'claims: факты, слова-утверждения, запреты, числа — вариант A и copy/; повторная критика — Factuality
       4'
   brand:
@@ -473,3 +446,92 @@ gates:
     by: tool
     date: *id001
     note: входы A-001…A-003 в реестре; все рендеры и экспорт записаны с хэшами
+canonical:
+  lang: ru
+  current: 1
+  versions:
+  - version: 1
+    file: canonical/v1.md
+    date: '2026-10-04'
+    note: 'первая версия: смысл текстов copy/ без разметки площадок'
+    sha256: 4645db6c929c320b4da7da3a7a683295be6243520e53268973610d20b57acee5
+    deps:
+      facts:
+        AU-NAME: 5d083e3db9612d37
+        AU-ROLE: 0d84826a46110966
+        GH-NAME: 18e9e8bc34f1c9f0
+        GH-GENRE: 87840cd38160c9f1
+        GH-TECH: 885bae9eed2b037d
+        GH-ENGINE: 3ae43184e26a50af
+        GH-ANDROID: 3ae50de8a7427f5c
+        GH-LOC: ac29b63c2833e291
+        GH-CHECKS: 5b1aac0836af0098
+        DP-WHAT: 091c2d23907bb1fb
+        DP-STAGE: 0d8aced210be861e
+        AU-METHOD: 95e9ba70d576890a
+        AU-MEMORY: 823f4b5a22945aae
+      links:
+        L-TG-DEVLOG: e4702bf8299c4509
+        L-YT-CHANNEL: 47b36d944006ecd3
+      releases: {}
+targets:
+- variant: website.ru
+  destination: site-production
+- variant: website.en
+  destination: site-production
+- variant: telegram.ru
+  destination: tg-devlog
+  note: закреплённая запись-вход канала (IC-09)
+- variant: vk.ru
+  destination: vk-author
+  note: ручной путь до права wall (Д33)
+- variant: github.en
+  destination: github-profile
+  note: баннер и подпись README профиля — по ОР-4
+- variant: youtube.ru
+  destination: yt-channel
+  na: шапка канала загружается в Studio без текста (OUTPUTS.md)
+- variant: discord.ru
+  na: 'ОР-6: сервер не подтверждён'
+state: UNDER_REVIEW
+history:
+- date: 2026-10-04
+  state: IDEA
+  note: 'объект заведён: первый продукт системы — презентационное изображение автора'
+- date: 2026-10-04
+  state: RESEARCHED
+  note: исследование — социальный аудит, идентичность, реестр фактов; аудитории, площадки и утверждения
+    выбраны
+- date: 2026-10-04
+  state: BRIEFED
+  note: бриф BRIEF.md и творческое направление CREATIVE_DIRECTION.md; спецификации вариантов A–D
+- date: *id001
+  state: GENERATED
+  note: 'варианты A–D отрендерены по промпту image/presentation-composition v1: renders/, RU и EN, формат
+    telegram_post'
+- date: *id001
+  state: UNDER_REVIEW
+  note: 'критика отдельным проходом (агент только для чтения): CRITIQUE.md; B и C отклонены по fatal,
+    D — запасной, A — к ревизии'
+- date: *id001
+  state: REVISED
+  note: 'ревизия A по критике: плотный кадр (zoom 1.9, vignette 0.8) — интерьер не читается (A-1); лицо
+    крупнее, шапка — портрет выше зоны, человек крупнее имени (A-2); GH-ENGINE и DP-STAGE в claims, «свой
+    язык (в разработке)», «ИИ — инструмент» без утверждения о DPlang (A-3, A-4); три размера текста, минимум
+    на всех форматах, подписи шапки 32 px, отступ от края зоны (A-5, A-10); подпись ворот у ромба вместо
+    легенды — «каждое изменение принимаю сам» (A-7, A-8); перенос подзаголовка (A-11); плашки без куба
+    (A-12). D: шапка в безопасной зоне, подпись ворот, AU-MEMORY (D-2, D-3). Д9 приведено к токенам (О-2).
+    Инструменты: слова-утверждения, размеры текста, поля, маркер лица по настоящему размеру'
+- date: *id001
+  state: UNDER_REVIEW
+  note: 'повторный проход критики: прежние major A исправлены, кроме О-1 (решает автор); новые minor A-14…A-17,
+    D-7, D-8 исправлены после прохода (проверено инструментами и замерами); A выбран сессией для проверки
+    (08), автоматические гейты pass; экспорт-превью; ждёт автора — DECISION.md'
+- date: 2026-10-04
+  state: UNDER_REVIEW
+  note: 'ОР-1 решён автором (Д20): имя «Борис Давыдов» рядом с dpsmpx. Подпись варианта A пересмотреть
+    на ревизии до утверждения; объект войдёт в кампанию CMP-0001 новой системы (PLATFORM_VISION §116)'
+- date: 2026-10-04
+  state: UNDER_REVIEW
+  note: 'миграция content_item/v1 → v2 (Д31): copy/github.md → variants/github.en.md; copy/telegram.md
+    → variants/telegram.ru.md; copy/vk.md → variants/vk.ru.md; без текста, не перенесено: copy/youtube.md'

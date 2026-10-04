@@ -137,7 +137,7 @@ v0.167.0); decapcms.org/docs/intro. Это исследование; решен�
 - **структурированные данные** (JSON-LD): `Person` — главная и «обо
   мне»; `WebSite`; `BlogPosting`/`NewsArticle` — записи (Google:
   «Article» structured data). Без оценок и отзывов — их нет;
-- `sitemap.xml` (≤ 50 000 адресов и 50 МБ на файл); `robots.txt`;
+- `/sitemap.xml` (≤ 50 000 адресов и 50 МБ на файл); `/robots.txt`;
 - **staging закрыт от индексации**: `Disallow: /` и `noindex` на каждой
   странице.
 
