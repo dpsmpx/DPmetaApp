@@ -39,10 +39,12 @@ claims:
 - fact: GH-CHECKS
 - fact: GH-COMMITS
 - fact: GH-ANDROID
-  note: только вариант B
+  note: вариант B и тексты copy/
 - fact: GH-RELEASE-PLAN
   note: только вариант B
 - fact: DP-WHAT
+- fact: DP-STAGE
+  note: «язык — в разработке» (вариант A, copy/telegram.md)
 source_projects:
 - galdhold
 - dplang
@@ -68,25 +70,28 @@ variants:
 - id: B
   label: technical
   spec: spec/variant-b.yaml
-  status: candidate
+  status: rejected
   renders:
   - renders/B-en-github_social.png
   - renders/B-en-telegram_post.jpg
   - renders/B-ru-telegram_post.jpg
   - renders/B-ru-youtube_banner.jpg
+  rejection_reason: fatal B-1 (двусмысленность о Windows и Steam); шапка вне безопасной зоны; 6 групп
+    текста
 - id: C
   label: cinematic
   spec: spec/variant-c.yaml
-  status: candidate
+  status: rejected
   renders:
   - renders/C-en-github_social.png
   - renders/C-en-telegram_post.jpg
   - renders/C-ru-telegram_post.jpg
   - renders/C-ru-youtube_banner.jpg
+  rejection_reason: 'fatal C-1: интерьер заложен в концепцию (Д18); нет результата'
 - id: D
   label: minimal
   spec: spec/variant-d.yaml
-  status: candidate
+  status: fallback
   renders:
   - renders/D-en-github_social.png
   - renders/D-en-telegram_post.jpg
@@ -95,7 +100,7 @@ variants:
 selected_variant: null
 provenance: provenance.yaml
 blocked_by: []
-state: GENERATED
+state: REVISED
 history:
 - date: 2026-10-04
   state: IDEA
@@ -107,7 +112,221 @@ history:
 - date: 2026-10-04
   state: BRIEFED
   note: бриф BRIEF.md и творческое направление CREATIVE_DIRECTION.md; спецификации вариантов A–D
-- date: 2026-10-04
+- date: &id001 2026-10-04
   state: GENERATED
   note: 'варианты A–D отрендерены по промпту image/presentation-composition v1: renders/, RU и EN, формат
     telegram_post'
+- date: *id001
+  state: UNDER_REVIEW
+  note: 'критика отдельным проходом (агент только для чтения): CRITIQUE.md; B и C отклонены по fatal,
+    D — запасной, A — к ревизии'
+- date: *id001
+  state: REVISED
+  note: 'ревизия A по критике: плотный кадр (zoom 1.9, vignette 0.8) — интерьер не читается (A-1); лицо
+    крупнее, шапка — портрет выше зоны, человек крупнее имени (A-2); GH-ENGINE и DP-STAGE в claims, «свой
+    язык (в разработке)», «ИИ — инструмент» без утверждения о DPlang (A-3, A-4); три размера текста, минимум
+    на всех форматах, подписи шапки 32 px, отступ от края зоны (A-5, A-10); подпись ворот у ромба вместо
+    легенды — «каждое изменение принимаю сам» (A-7, A-8); перенос подзаголовка (A-11); плашки без куба
+    (A-12). D: шапка в безопасной зоне, подпись ворот, AU-MEMORY (D-2, D-3). Д9 приведено к токенам (О-2).
+    Инструменты: слова-утверждения, размеры текста, поля, маркер лица по настоящему размеру'
+review:
+  file: docs/content/products/personal_presentation/CRITIQUE.md
+  scores:
+    A:
+      factuality: 3
+      identity_fit: 4
+      visual_quality: 3
+      communication: 4
+      platform_fit: 3
+      strategic_value: 4
+    B:
+      factuality: 1
+      identity_fit: 3
+      visual_quality: 2
+      communication: 2
+      platform_fit: 1
+      strategic_value: 2
+    C:
+      factuality: 4
+      identity_fit: 3
+      visual_quality: 3
+      communication: 3
+      platform_fit: 2
+      strategic_value: 2
+    D:
+      factuality: 4
+      identity_fit: 3
+      visual_quality: 4
+      communication: 2
+      platform_fit: 3
+      strategic_value: 2
+  issues:
+    fatal:
+    - id: B-1
+      variant: B
+      text: «Android → Windows (Steam)» читается как «уже работает на Windows и в Steam» (GH-WINDOWS,
+        GH-RELEASE-PLAN)
+      status: open
+    - id: C-1
+      variant: C
+      text: 'интерьер читается как комната: окно со шторой, обои, угол — заложено в концепцию (Д18, Д2)'
+      status: open
+    major:
+    - id: О-1
+      text: 'роль не читается на миниатюре (≈ 6,5 px при 320 px): роль ≈ 5,5 % высоты или критерий «лицо
+        и имя»'
+      status: open
+    - id: A-1
+      variant: A
+      text: 'интерьер читается: обои справа от головы, окно со шторой за плечом и слева от головы (Д18)'
+      status: open
+    - id: A-2
+      variant: A
+      text: лицо мелкое (101×173 в ленте); на шапке имя крупнее человека
+      status: open
+    - id: A-3
+      variant: A
+      text: «движок» без GH-ENGINE в claims спецификации
+      status: open
+    - id: A-4
+      variant: A
+      text: язык без статуса, EN «built» — «уже построен»; «с ИИ» о DPlang без факта
+      status: open
+    - id: A-5
+      variant: A
+      text: текст ниже минимума (15,9 / 14,1 / 22 px на шапке), четыре размера текста вместо трёх
+      status: open
+    - id: A-6
+      variant: A
+      text: роль на миниатюре — см. О-1
+      status: open
+    - id: B-2
+      variant: B
+      text: «2 телефона» без «проверялась на», сокращённая модель
+      status: open
+    - id: B-3
+      variant: B
+      text: 'интерьер: штора за плечом, обои'
+      status: open
+    - id: B-4
+      variant: B
+      text: 'шапка — растянутая лента: лицо, имя, роль вне безопасной зоны'
+      status: open
+    - id: B-5
+      variant: B
+      text: 6 групп текста и 6 размеров; текст 10–14 px
+      status: open
+    - id: B-6
+      variant: B
+      text: схема 3×2 без связей; ворота висят над углами
+      status: open
+    - id: B-7
+      variant: B
+      text: 'человек на втором плане: лицо 74 px, числа спорят с именем'
+      status: open
+    - id: C-2
+      variant: C
+      text: нет «что» и результата; «сложные системы» — эпитет
+      status: open
+    - id: C-3
+      variant: C
+      text: шапка — растянутая лента, лицо срезано границей зоны
+      status: open
+    - id: C-4
+      variant: C
+      text: подписи схемы ниже минимума
+      status: open
+    - id: D-1
+      variant: D
+      text: нет человека — иерархия перевёрнута
+      status: open
+    - id: D-2
+      variant: D
+      text: 'ромб ворот без подписи: подпись спецификации потеряна в рендере'
+      status: open
+    - id: D-3
+      variant: D
+      text: 'шапка — растянутая лента: имя, роль, схема вне безопасной зоны'
+      status: open
+    - id: D-4
+      variant: D
+      text: нет доказательства
+      status: open
+    minor:
+    - id: О-2
+      text: 'Д9 «янтарный» против токена human #FF7A59 (коралловый)'
+      status: open
+    - id: О-3
+      text: не отрендерены vk_post RU и мастер RU/EN
+      status: open
+    - id: О-4
+      text: recheck_by GH-LOC, GH-CHECKS, GH-COMMITS — 2026-11-04
+      status: open
+    - id: A-7
+      variant: A
+      text: ромб объяснён только в легенде; легенда — пятая полоса текста
+      status: open
+    - id: A-8
+      variant: A
+      text: «приёмку решаю я» — не из разрешённых формулировок
+      status: open
+    - id: A-9
+      variant: A
+      text: AU-MEMORY заявлен, но не выражен
+      status: open
+    - id: A-10
+      variant: A
+      text: подписи цепочки зигзагом; «Продукт» в 2 px от края зоны шапки
+      status: open
+    - id: A-11
+      variant: A
+      text: неудачный перенос подзаголовка
+      status: open
+    - id: A-12
+      variant: A
+      text: один значок-куб у плашки Galdhold и узла «Продукт»
+      status: open
+    - id: A-13
+      variant: A
+      text: доказательства мелкие при показе баннера GitHub в колонке README
+      status: open
+    - id: B-8
+      variant: B
+      text: неровная строка подписей чисел
+      status: open
+    - id: B-9
+      variant: B
+      text: пустые полосы при мелком тексте
+      status: open
+    - id: C-5
+      variant: C
+      text: тире в начале строки
+      status: open
+    - id: C-6
+      variant: C
+      text: взгляд уводит из кадра
+      status: open
+    - id: C-7
+      variant: C
+      text: неловкая EN-фраза
+      status: open
+    - id: C-8
+      variant: C
+      text: виден рюкзак
+      status: open
+    - id: C-9
+      variant: C
+      text: дуотон вне палитры
+      status: open
+    - id: C-10
+      variant: C
+      text: ME-NO-CI не в claims варианта
+      status: open
+    - id: D-5
+      variant: D
+      text: пустая нижняя треть
+      status: open
+    - id: D-6
+      variant: D
+      text: цвета без расшифровки
+      status: open

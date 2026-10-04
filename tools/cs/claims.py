@@ -4,6 +4,9 @@
 вариантов и файлы `copy/*.md`. Документация не проверяется — в ней
 запрещённые формулировки встречаются как примеры (forbidden.yaml).
 
+Слова-утверждения: слово из data/facts/claim_keywords.yaml («движок»,
+«Windows»…) требует подкрепляющего факта в claims.
+
 Числа: каждое число от 10 в публикуемом тексте должно встречаться в
 утверждении или допустимой формулировке заявленного факта (CLAIM_POLICY
 §3). Даты и годы не считаются; «150 тысяч» = «150 000» = «150,000».
@@ -112,6 +115,10 @@ def _fact_refs(fids: list[str], reg: dict, where: str) -> list[Finding]:
     return out
 
 
+def keywords() -> list[dict]:
+    return load_yaml("data/facts/claim_keywords.yaml")["rules"]
+
+
 def text_findings(item: Item, text: str, fids: list[str], where: str, soft: bool, reg: dict,
                   rule_list: list[dict]) -> list[Finding]:
     """Запреты и числа в одном публикуемом тексте. soft — отклонённый вариант: только предупреждения."""
@@ -125,6 +132,10 @@ def text_findings(item: Item, text: str, fids: list[str], where: str, soft: bool
             out.append(Finding("note" if _accepted(item, rule["id"]) else hard, msg))
         else:
             out.append(Finding("warn", msg))
+    for kw in keywords():
+        m = re.search(kw["pattern"], text)
+        if m and not set(kw["any_of"]) & set(fids):
+            out.append(Finding(hard, f"{where}: «{m.group(0)}» — нужен факт из {', '.join(kw['any_of'])} в claims ({kw['id']})"))
     allowed = fact_numbers(fids, reg)
     for n in sorted(numbers(text)):
         if n >= 10 and n not in allowed:

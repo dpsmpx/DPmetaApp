@@ -15,6 +15,8 @@ from .common import ROOT, Finding, Item, Report, load_items, load_json, load_yam
 
 TOKENS = "assets/brand/tokens.json"
 SAFE_ROLES = {"face", "name", "role"}  # обязаны быть в safe_area (QUALITY_MODEL, гейт Platform)
+MIN_MARGIN = 0.05  # поля — не меньше 5 % короткой стороны (VISUAL_SYSTEM.md §4); у форматов с safe_area — зона
+MAX_TEXT_SIZES = 3  # «не больше трёх размеров текста» — VISUAL_SYSTEM.md §3, tokens.json type_scale.note
 
 
 def _lin(c: float) -> float:
@@ -64,6 +66,7 @@ def layout_checks(layout: dict, fmt: dict, tok: dict, where: str, soft: bool = F
     allowed = set(tok["allowed_fonts"])
     loaded = set(layout.get("fonts_loaded", []))
     min_px = lim["min_text_px_at_720"] * H / 720
+    margin = MIN_MARGIN * min(W, H)
     texts = [e for e in layout["elements"] if e.get("text")]
     for e in texts:
         name = f"{where}: {e['role']} «{e['text'][:32]}»"
@@ -78,6 +81,8 @@ def layout_checks(layout: dict, fmt: dict, tok: dict, where: str, soft: bool = F
             out["visual"].append(Finding(lvl, f"{name}: текст не помещается в свой блок"))
         if not _inside(_box(e), 0, 0, W, H):
             out["visual"].append(Finding(lvl, f"{name}: текст выходит за край изображения"))
+        elif not fmt.get("safe_area") and not _inside(_box(e), margin, margin, W - 2 * margin, H - 2 * margin):
+            out["visual"].append(Finding(lvl, f"{name}: текст ближе {margin:.0f} px к краю (поля ≥ 5 % короткой стороны)"))
         fg, bg = e.get("fg"), e.get("bg_luminance")
         if fg and bg:
             norm = e["font_px"] * 720 / H  # размер в пересчёте на высоту 720
@@ -88,6 +93,9 @@ def layout_checks(layout: dict, fmt: dict, tok: dict, where: str, soft: bool = F
                 out["visual"].append(Finding(lvl, f"{name}: контраст {c:.2f} < {need} (по фону под текстом)"))
         elif not fg:
             out["visual"].append(Finding("warn", f"{name}: нет data-fg — контраст не проверен"))
+    sizes = sorted({round(e["font_px"] * 2) / 2 for e in texts}, reverse=True)
+    if len(sizes) > MAX_TEXT_SIZES:
+        out["visual"].append(Finding(lvl, f"{where}: размеров текста {len(sizes)} > {MAX_TEXT_SIZES} ({', '.join(f'{x:g}' for x in sizes)} px)"))
     groups = sorted({e["group"] for e in texts if e.get("group")})
     if len(groups) > lim["max_text_groups"]:
         out["visual"].append(Finding(lvl, f"{where}: групп текста {len(groups)} > {lim['max_text_groups']} ({', '.join(groups)})"))

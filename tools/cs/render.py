@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import html
 import json
 import shutil
@@ -117,10 +118,17 @@ def portrait_html(spec: dict, tok: dict, pw: float, ph: float, target=(0.5, 0.38
     }[p["treatment"]]
     fx = (left + p["focus"]["x"] * iw) / pw * 100
     fy = (top + p["focus"]["y"] * ih) / ph * 100
-    v = vignette
+    # Маркер лица: настоящий размер лица на фото (spec face), иначе — условная доля рамки.
+    if p.get("face"):
+        fw, fh = p["face"]["w"] * iw, p["face"]["h"] * ih
+    else:
+        fw, fh = pw * 0.18, ph * 0.24
+    fl, ft = fx / 100 * pw - fw / 2, fy / 100 * ph - fh / 2
+    v = vignette * p.get("vignette", 1.0)
     layers = [
         # Виньетка вокруг лица: интерьер уходит в ink (Д18 — фон не должен читаться).
-        f"radial-gradient(ellipse {30 * v:.1f}% {27 * v:.1f}% at {fx:.1f}% {fy + 4:.1f}%, "
+        # Эллипс вытянут по голове: волосы видны, а стена по бокам уходит в тень.
+        f"radial-gradient(ellipse {26 * v:.1f}% {33 * v:.1f}% at {fx:.1f}% {fy - 2:.1f}%, "
         f"{_rgba(ink, 0)} 0%, {_rgba(ink, 0.25)} 50%, {_rgba(ink, 0.90)} 100%)",
         f"radial-gradient(ellipse {58 * v:.1f}% {70 * v:.1f}% at {fx:.1f}% {fy + 32:.1f}%, "
         f"{_rgba(ink, 0)} 30%, {_rgba(ink, 0.96)} 100%)",
@@ -143,7 +151,7 @@ def portrait_html(spec: dict, tok: dict, pw: float, ph: float, target=(0.5, 0.38
         f'{duo}'
         f'<div style="position:absolute;inset:0;background:{", ".join(layers)}"></div>'
         f'<div data-role="face" data-group="person" data-text="0" style="position:absolute;'
-        f'left:{fx - 9:.1f}%;top:{fy - 13:.1f}%;width:18%;height:24%"></div>'
+        f'left:{fl:.1f}px;top:{ft:.1f}px;width:{fw:.1f}px;height:{fh:.1f}px"></div>'
         f'</div>'
     )
 
@@ -184,7 +192,8 @@ def name_html(tok: dict, name: str, x, y, size, color="paper") -> str:
 def text_html(tok: dict, role: str, group: str, text: str, x, y, w, size, color="paper",
               weight=400, mono=False, line=1.3, nowrap=False) -> str:
     fam = "mono" if mono else ""
-    ws = "white-space:nowrap;" if nowrap else ""
+    # «\n» в тексте спецификации — явный перенос (а не случайный по ширине блока).
+    ws = "white-space:nowrap;" if nowrap else ("white-space:pre-line;" if "\n" in text else "")
     return (
         f'<div class="{fam}" data-role="{role}" data-group="{group}" data-fg="{color}" data-bg="ink" '
         f'style="position:absolute;left:{x:.1f}px;top:{y:.1f}px;width:{w:.1f}px;font-size:{size:.1f}px;'
@@ -212,8 +221,13 @@ def _cube_svg(size: float, tok: dict) -> str:
     )
 
 
-def metro_html(tok: dict, steps: list[dict], gates: list[dict], x, y, w, size, alt=True) -> str:
-    """Цепочка работ линией: узлы цветом смысла, подписи над и под линией поочерёдно."""
+def metro_html(tok: dict, steps: list[dict], gates: list[dict], x, y, w, size, alt=True,
+               note_y: float | None = None) -> str:
+    """Цепочка работ линией: узлы цветом смысла, подписи над и под линией поочерёдно.
+
+    note_y — строка подписи ворот: текст кончается ромбом ровно под (над) ромбом на линии,
+    так что решение человека объяснено на месте, без легенды.
+    """
     n = len(steps)
     r = size * 0.42
     xs = [x + r + i * (w - 2 * r) / (n - 1) for i in range(n)]
@@ -266,6 +280,17 @@ def metro_html(tok: dict, steps: list[dict], gates: list[dict], x, y, w, size, a
             f'height:{d:.1f}px;background:{_c(tok, "human")};transform:rotate(45deg);'
             f'box-shadow:0 0 0 {size * 0.18:.1f}px {_c(tok, "ink")}"></div>'
         )
+        if note_y is not None:
+            nd = size * 0.5
+            box = 4000.0  # широкий блок с выравниванием вправо: правый край — у ромба
+            parts.append(
+                f'<div class="mono" data-role="gate-label" data-group="pipeline" data-fg="human" data-bg="ink" '
+                f'style="position:absolute;left:{gx + d / 2 - box:.1f}px;top:{note_y:.1f}px;width:{box:.1f}px;'
+                f'text-align:right;font-size:{size:.1f}px;font-weight:500;line-height:1.25;white-space:nowrap;'
+                f'color:{_c(tok, "human")}">{_e(g["label"])}<span style="display:inline-block;width:{nd:.1f}px;'
+                f'height:{nd:.1f}px;background:{_c(tok, "human")};transform:rotate(45deg);'
+                f'margin-left:{size * 0.6:.1f}px;margin-right:{(d - nd) / 2:.1f}px;vertical-align:{size * 0.05:.1f}px"></span></div>'
+            )
     return "".join(parts)
 
 
@@ -317,7 +342,7 @@ def layout_professional(spec, t, tok, fmt: Fmt) -> str:
     ts = tok["type_scale"]
     disp, title, label = ts["display"] * H, ts["title"] * H, ts["label"] * H
     aspect = W / H
-    pw = W * (0.44 if aspect < 1.9 else 0.40)
+    pw = W * (0.42 if aspect < 1.9 else 0.40)
     m = 56 * s
     x0 = pw + W * 0.03
     cw = W - x0 - m
@@ -331,14 +356,17 @@ def layout_professional(spec, t, tok, fmt: Fmt) -> str:
         body.append(text_html(tok, "sub", "identity", t["sub"], x0, y, cw * 0.95, label, color="mist", line=1.45))
     py = H * 0.585
     if t.get("pipeline"):
-        body.append(metro_html(tok, t["pipeline"], t.get("gates", []), x0 + label * 0.2, py, cw - label * 0.4, label))
-        if t.get("legend"):
+        legend = t.get("legend")
+        body.append(metro_html(tok, t["pipeline"], t.get("gates", []), x0 + label * 0.2, py, cw - label * 0.4, label,
+                               note_y=None if legend else py + label * 2.9))
+        if legend:
             gl = t["gates"][0]["label"] if t.get("gates") else None
-            body.append(legend_html(tok, t["legend"], x0, py + label * 3.0, label * 0.92, gl))
+            body.append(legend_html(tok, legend, x0, py + label * 3.0, label * 0.92, gl))
     ev = t.get("evidence", [])
-    ey = H - m - (label * 2.2) * len(ev) - label * 0.4 * (len(ev) - 1)
+    # Плашки — размером подписей (три размера текста; минимум формата), без значка: куб — узел «Продукт».
+    ey = H - m - (label * 2.25) * len(ev) - label * 0.45 * (len(ev) - 1)
     for i, e in enumerate(ev):
-        body.append(chip_html(tok, e, x0, ey + i * label * 2.6, label * 0.92, cube=(i == 0)))
+        body.append(chip_html(tok, e, x0, ey + i * label * 2.7, label))
     return "".join(body)
 
 
@@ -347,17 +375,24 @@ def layout_banner(spec, t, tok, fmt: Fmt) -> str:
     sa = fmt.safe_area
     sx, sy, sw, sh = sa["x"], sa["y"], sa["w"], sa["h"]
     unit = sh / 423
-    disp, title, label = 92 * unit, 34 * unit, 22 * unit
-    ps = sh  # портрет — квадрат высотой зоны
-    por = portrait_html(spec, tok, ps, ps, target=(0.5, 0.40), vignette=1.05, fade_right=False, radius=14 * unit)
-    body = [f'<div style="position:absolute;left:{sx:.1f}px;top:{sy:.1f}px;width:{ps:.1f}px;height:{ps:.1f}px">{por}</div>']
-    x0 = sx + ps + 56 * unit
-    cw = sx + sw - x0
-    body.append(name_html(tok, t["name"], x0, sy + 40 * unit, disp))
-    body.append(text_html(tok, "role", "identity", t["role"], x0, sy + 40 * unit + disp * 1.22, cw, title, weight=500, line=1.2))
+    # Минимум текста формата — 16 px на 720 высоты (tokens.limits): у шапки 2560×1440 это 32 px.
+    label = max(32 * unit, tok["limits"]["min_text_px_at_720"] * fmt.height / 720)
+    disp, title = 80 * unit, 42 * unit
+    # Портрет выше зоны: лицо — в зоне (видно везде), макушка и плечи за ней — только на ТВ.
+    # Так человек крупнее имени, а кадр остаётся естественным (голова с плечами, а не «лицо в темноте»).
+    pw_, ph_ = 520 * unit, 760 * unit
+    ptop = sy + sh / 2 - 0.40 * ph_
+    por = portrait_html(spec, tok, pw_, ph_, target=(0.5, 0.40), vignette=1.0, fade_right=True)
+    body = [f'<div style="position:absolute;left:{sx:.1f}px;top:{ptop:.1f}px;width:{pw_:.1f}px;height:{ph_:.1f}px">{por}</div>']
+    x0 = sx + pw_ + 40 * unit
+    cw = sx + sw - x0 - 24 * unit  # отступ от края безопасной зоны
+    body.append(name_html(tok, t["name"], x0, sy + 22 * unit, disp))
+    ry = sy + 22 * unit + disp * 1.2
+    body.append(text_html(tok, "role", "identity", t["role"], x0, ry, cw, title, weight=500, line=1.2))
     if t.get("pipeline"):
-        py = sy + sh - 92 * unit
-        body.append(metro_html(tok, t["pipeline"], t.get("gates", []), x0 + label * 0.2, py, cw - label * 0.4, label))
+        py = sy + sh - 78 * unit
+        body.append(metro_html(tok, t["pipeline"], t.get("gates", []), x0 + label * 0.2, py, cw - label * 0.4, label,
+                               note_y=ry + title * 1.45))
     # продолжение линии за пределы зоны — декор (видно на ТВ)
     line = _rgba(_c(tok, "line"), 0.9)
     body.append(f'<div style="position:absolute;left:0;top:{sy + sh - 92 * unit - 2 * unit:.1f}px;width:{sx:.1f}px;'
@@ -439,13 +474,27 @@ def layout_cinematic(spec, t, tok, fmt: Fmt) -> str:
 def layout_minimal(spec, t, tok, fmt: Fmt) -> str:
     W, H = fmt.width, fmt.height
     ts = tok["type_scale"]
-    disp, title, label = ts["display"] * H * 1.6, ts["title"] * H, ts["label"] * H
-    x0 = W * 0.12
-    cw = W * 0.76
-    body = [name_html(tok, t["name"], x0, H * 0.22, disp)]
-    body.append(text_html(tok, "role", "identity", t["role"], x0, H * 0.22 + disp * 1.2, cw, title, weight=500))
+    if fmt.safe_area:  # шапка: всё смысловое — в безопасной зоне (D-3)
+        sa = fmt.safe_area
+        unit = sa["h"] / 423
+        label = max(32 * unit, tok["limits"]["min_text_px_at_720"] * H / 720)
+        disp, title = 96 * unit, 42 * unit
+        x0, cw = sa["x"] + 40 * unit, sa["w"] - 80 * unit
+        top = sa["y"] + 20 * unit
+        py = sa["y"] + sa["h"] - 78 * unit
+    else:
+        disp, title, label = ts["display"] * H * 1.6, ts["title"] * H, ts["label"] * H
+        x0, cw = W * 0.12, W * 0.76
+        top = H * 0.22
+        py = H * 0.70
+    body = [name_html(tok, t["name"], x0, top, disp)]
+    ry = top + disp * 1.2
+    body.append(text_html(tok, "role", "identity", t["role"], x0, ry, cw, title, weight=500))
     if t.get("pipeline"):
-        body.append(metro_html(tok, t["pipeline"], t.get("gates", []), x0 + label * 0.2, H * 0.70, cw, label))
+        # Подпись ворот у ромба (D-2): над цепочкой на шапке, под ней — в остальных форматах.
+        note_y = ry + title * 1.5 if fmt.safe_area else py + label * 2.9
+        body.append(metro_html(tok, t["pipeline"], t.get("gates", []), x0 + label * 0.2, py, cw - label * 0.4, label,
+                               note_y=note_y))
     return "".join(body)
 
 
@@ -490,6 +539,14 @@ def render_one(spec_path: Path, lang: str, fmt: Fmt, out: Path, quality: int = 9
     layout["format"] = fmt.name
     layout_path.write_text(json.dumps(layout, ensure_ascii=False, indent=1), encoding="utf-8")
     return layout
+
+
+def tool_sha256() -> str:
+    """Хэш кода рендера: правка макета меняет картинку — запись должна это видеть."""
+    h = hashlib.sha256()
+    for f in (Path(__file__), RENDER_JS):
+        h.update(f.read_bytes())
+    return h.hexdigest()
 
 
 def asset_inputs(spec: dict) -> list[str]:
@@ -547,6 +604,7 @@ def record_output(item: Item, out: Path, spec_path: Path, spec: dict, lang: str,
         "spec": rel(spec_path),
         "spec_sha256": sha256_file(spec_path),
         "tool": "tools/cs/render.py + tools/render/render.js (Playwright, Chromium)",
+        "tool_sha256": tool_sha256(),
         "modifications": mods,
         "layout": rel(out.with_suffix(".layout.json")),
         "date": today().isoformat(),

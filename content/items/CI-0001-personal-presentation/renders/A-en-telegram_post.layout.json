@@ -13,7 +13,7 @@
    "text": null,
    "x": 0,
    "y": 0,
-   "w": 563.1875,
+   "w": 537.59375,
    "h": 720,
    "text_box": null,
    "font_px": 16,
@@ -28,10 +28,10 @@
    "role": "face",
    "group": "person",
    "text": null,
-   "x": 264.6875,
-   "y": 165.59375,
-   "w": 101.359375,
-   "h": 172.796875,
+   "x": 188.1875,
+   "y": 122.390625,
+   "w": 225.6875,
+   "h": 273.59375,
    "text_box": null,
    "font_px": 16,
    "font_weight": 400,
@@ -45,12 +45,12 @@
    "role": "name",
    "group": "name",
    "text": "dpsmpx",
-   "x": 601.59375,
+   "x": 576,
    "y": 122.390625,
    "w": 234.71875,
    "h": 61.203125,
    "text_box": {
-    "x": 601.59375,
+    "x": 576,
     "y": 112.390625,
     "w": 234.71875,
     "h": 80
@@ -70,12 +70,12 @@
    "role": "role",
    "group": "identity",
    "text": "Native systems developer",
-   "x": 601.59375,
+   "x": 576,
    "y": 198.890625,
-   "w": 622.390625,
+   "w": 648,
    "h": 31.078125,
    "text_box": {
-    "x": 601.59375,
+    "x": 576,
     "y": 196.890625,
     "w": 304.71875,
     "h": 34
@@ -87,22 +87,22 @@
    "bg": "ink",
    "overflow": false,
    "bg_luminance": {
-    "p95": 0.009781599966895574,
+    "p95": 0.009906429889086002,
     "max": 0.015753018331957032
    }
   },
   {
    "role": "sub",
    "group": "identity",
-   "text": "A game, an engine and a language — built with AI as an instrument. Architecture and decisions are mine.",
-   "x": 601.59375,
+   "text": "A game, an engine and my own language (in development).\nAI is the instrument; architecture and decisions are mine.",
+   "x": 576,
    "y": 239.09375,
-   "w": 591.296875,
+   "w": 615.59375,
    "h": 50.15625,
    "text_box": {
-    "x": 601.59375,
+    "x": 576,
     "y": 240.09375,
-    "w": 400.34375,
+    "w": 454.28125,
     "h": 48.078125
    },
    "font_px": 17.3,
@@ -112,7 +112,7 @@
    "bg": "ink",
    "overflow": false,
    "bg_luminance": {
-    "p95": 0.011024070005553395,
+    "p95": 0.01084276497082785,
     "max": 0.018405560002963586
    }
   },
@@ -120,12 +120,12 @@
    "role": "pipeline-label",
    "group": "pipeline",
    "text": "Intent",
-   "x": 603.296875,
+   "x": 577.6875,
    "y": 383.6875,
-   "w": 233.890625,
+   "w": 243.59375,
    "h": 21.609375,
    "text_box": {
-    "x": 603.296875,
+    "x": 577.6875,
     "y": 382.6875,
     "w": 62.21875,
     "h": 23
@@ -137,20 +137,20 @@
    "bg": "ink",
    "overflow": false,
    "bg_luminance": {
-    "p95": 0.010216874770250649,
-    "max": 0.013566769601091693
+    "p95": 0.009906429889086002,
+    "max": 0.012909160437325484
    }
   },
   {
    "role": "pipeline-label",
    "group": "pipeline",
    "text": "Architecture",
-   "x": 615.59375,
+   "x": 590.1875,
    "y": 436.1875,
-   "w": 233.890625,
+   "w": 243.59375,
    "h": 21.609375,
    "text_box": {
-    "x": 670.3125,
+    "x": 649.765625,
     "y": 435.1875,
     "w": 124.4375,
     "h": 23
@@ -162,7 +162,7 @@
    "bg": "ink",
    "overflow": false,
    "bg_luminance": {
-    "p95": 0.010471094266257197,
+    "p95": 0.010391995168176644,
     "max": 0.014517048909840506
    }
   },
@@ -170,12 +170,12 @@
    "role": "pipeline-label",
    "group": "pipeline",
    "text": "AI implementation",
-   "x": 735.796875,
+   "x": 715.5,
    "y": 383.6875,
-   "w": 233.890625,
+   "w": 243.59375,
    "h": 21.609375,
    "text_box": {
-    "x": 764.59375,
+    "x": 749.15625,
     "y": 382.6875,
     "w": 176.28125,
     "h": 23
@@ -187,7 +187,7 @@
    "bg": "ink",
    "overflow": false,
    "bg_luminance": {
-    "p95": 0.011733248479666525,
+    "p95": 0.01167803924597011,
     "max": 0.01731569026909384
    }
   },
@@ -195,12 +195,12 @@
    "role": "pipeline-label",
    "group": "pipeline",
    "text": "Verification",
-   "x": 856,
+   "x": 840.890625,
    "y": 436.1875,
-   "w": 233.890625,
+   "w": 243.59375,
    "h": 21.609375,
    "text_box": {
-    "x": 910.71875,
+    "x": 900.46875,
     "y": 435.1875,
     "w": 124.4375,
     "h": 23
@@ -212,7 +212,7 @@
    "bg": "ink",
    "overflow": false,
    "bg_luminance": {
-    "p95": 0.011211620726857677,
+    "p95": 0.011490488524665828,
     "max": 0.01584702605681078
    }
   },
@@ -220,12 +220,12 @@
    "role": "pipeline-label",
    "group": "pipeline",
    "text": "Git",
-   "x": 976.09375,
+   "x": 966.1875,
    "y": 383.6875,
-   "w": 233.890625,
+   "w": 243.59375,
    "h": 21.609375,
    "text_box": {
-    "x": 1077.484375,
+    "x": 1072.421875,
     "y": 382.6875,
     "w": 31.109375,
     "h": 23
@@ -245,9 +245,9 @@
    "role": "pipeline-label",
    "group": "pipeline",
    "text": "Product",
-   "x": 988.390625,
+   "x": 978.6875,
    "y": 436.1875,
-   "w": 233.890625,
+   "w": 243.59375,
    "h": 21.609375,
    "text_box": {
     "x": 1149.6875,
@@ -270,9 +270,9 @@
    "role": "gate",
    "group": "pipeline",
    "text": null,
-   "x": 1025.3802490234375,
+   "x": 1017.7865600585938,
    "y": 413.58343505859375,
-   "w": 15.114501953125,
+   "w": 15.11444091796875,
    "h": 15.1143798828125,
    "text_box": null,
    "font_px": 16,
@@ -284,98 +284,23 @@
    "bg_luminance": null
   },
   {
-   "role": "legend",
-   "group": "pipeline",
-   "text": "human",
-   "x": 601.59375,
-   "y": 473,
-   "w": 64.359375,
-   "h": 20,
-   "text_box": {
-    "x": 601.59375,
-    "y": 473,
-    "w": 64.359375,
-    "h": 20
-   },
-   "font_px": 15.9,
-   "font_weight": 400,
-   "font_family": "\"IBM Plex Mono\", monospace",
-   "fg": "mist",
-   "bg": "ink",
-   "overflow": false,
-   "bg_luminance": {
-    "p95": 0.009732919609503758,
-    "max": 0.012354114539414079
-   }
-  },
-  {
-   "role": "legend",
-   "group": "pipeline",
-   "text": "AI",
-   "x": 693.796875,
-   "y": 473,
-   "w": 35.765625,
-   "h": 20,
-   "text_box": {
-    "x": 693.796875,
-    "y": 473,
-    "w": 35.765625,
-    "h": 20
-   },
-   "font_px": 15.9,
-   "font_weight": 400,
-   "font_family": "\"IBM Plex Mono\", monospace",
-   "fg": "mist",
-   "bg": "ink",
-   "overflow": false,
-   "bg_luminance": {
-    "p95": 0.010341704692441077,
-    "max": 0.01311106468516092
-   }
-  },
-  {
-   "role": "legend",
-   "group": "pipeline",
-   "text": "verified",
-   "x": 756.390625,
-   "y": 473,
-   "w": 92.96875,
-   "h": 20,
-   "text_box": {
-    "x": 756.390625,
-    "y": 473,
-    "w": 92.96875,
-    "h": 20
-   },
-   "font_px": 15.9,
-   "font_weight": 400,
-   "font_family": "\"IBM Plex Mono\", monospace",
-   "fg": "mist",
-   "bg": "ink",
-   "overflow": false,
-   "bg_luminance": {
-    "p95": 0.01084276497082785,
-    "max": 0.014911071305274482
-   }
-  },
-  {
-   "role": "legend",
+   "role": "gate-label",
    "group": "pipeline",
    "text": "I approve every merge",
-   "x": 878.1875,
-   "y": 473,
-   "w": 216.8125,
-   "h": 20,
+   "x": -2969.296875,
+   "y": 471.296875,
+   "w": 4000,
+   "h": 21.609375,
    "text_box": {
-    "x": 876.5532836914062,
-    "y": 473,
-    "w": 218.44671630859375,
-    "h": 20
+    "x": 792.96875,
+    "y": 470.296875,
+    "w": 238.51416015625,
+    "h": 23
    },
-   "font_px": 15.9,
-   "font_weight": 400,
+   "font_px": 17.3,
+   "font_weight": 500,
    "font_family": "\"IBM Plex Mono\", monospace",
-   "fg": "mist",
+   "fg": "human",
    "bg": "ink",
    "overflow": false,
    "bg_luminance": {
@@ -387,17 +312,17 @@
    "role": "evidence",
    "group": "evidence",
    "text": "Galdhold — voxel action-RPG · C++20 · Vulkan",
-   "x": 601.59375,
-   "y": 581.09375,
-   "w": 467.484375,
-   "h": 33.453125,
+   "x": 576,
+   "y": 578.5,
+   "w": 480.609375,
+   "h": 36.125,
    "text_box": {
-    "x": 612.890625,
-    "y": 587.28125,
-    "w": 444.890625,
-    "h": 20
+    "x": 588.1875,
+    "y": 584.1875,
+    "w": 456.234375,
+    "h": 23
    },
-   "font_px": 15.9,
+   "font_px": 17.3,
    "font_weight": 400,
    "font_family": "\"IBM Plex Mono\", monospace",
    "fg": "paper",
@@ -412,17 +337,17 @@
    "role": "evidence",
    "group": "evidence",
    "text": "150,000+ lines of C++ · 5,000+ automated checks · Oct 2026",
-   "x": 601.59375,
-   "y": 626,
-   "w": 575.59375,
-   "h": 33.453125,
+   "x": 576,
+   "y": 625.09375,
+   "w": 625.765625,
+   "h": 36.125,
    "text_box": {
-    "x": 612.890625,
-    "y": 632.1875,
-    "w": 553,
-    "h": 20
+    "x": 588.1875,
+    "y": 630.78125,
+    "w": 601.390625,
+    "h": 23
    },
-   "font_px": 15.9,
+   "font_px": 17.3,
    "font_weight": 400,
    "font_family": "\"IBM Plex Mono\", monospace",
    "fg": "paper",

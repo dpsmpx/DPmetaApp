@@ -54,6 +54,14 @@ class VisualTest(unittest.TestCase):
         res = layout_checks(layout(e), fmt, TOK, "t")
         self.assertTrue(res["platform"] and res["legal"])
 
+    def test_margin(self):
+        res = layout_checks(layout(el("ev", "evidence", "у края", 1240, 300, 30, 20)), FMT, TOK, "t")
+        self.assertTrue(any("к краю" in m for m in errors(res)))
+
+    def test_more_than_three_sizes(self):
+        els = [el("r", "g", f"т{i}", 10, 50 * i, 100, 30, 20 + 4 * i) for i in range(4)]
+        self.assertTrue(any("размеров текста 4" in m for m in errors(layout_checks(layout(*els), FMT, TOK, "t"))))
+
     def test_rejected_variant_is_soft(self):
         res = layout_checks(layout(el("sub", "identity", "мелко", 10, 10, 100, 14, 12)), FMT, TOK, "t", soft=True)
         self.assertEqual(errors(res), [])

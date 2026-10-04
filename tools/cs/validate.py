@@ -21,6 +21,7 @@ from .schema import errors as schema_errors
 SCHEMA_MAP = [
     ("data/facts/facts.yaml", "facts"),
     ("data/facts/forbidden.yaml", "forbidden"),
+    ("data/facts/claim_keywords.yaml", "claim_keywords"),
     ("data/provenance/assets.yaml", "assets"),
     ("data/platforms/export_specs.yaml", "export_specs"),
     ("data/identity/links.yaml", "links"),
@@ -171,7 +172,8 @@ def item_findings(item: Item) -> list[Finding]:
         issues = (d.get("review") or {}).get("issues") or {}
         for sev in ("fatal", "major"):
             for i in issues.get(sev, []):
-                if i["status"] == "open":
+                # Блокируют проблемы утверждаемого варианта и общие; у отклонённых — история выбора.
+                if i["status"] == "open" and i.get("variant") in (None, sel):
                     E(f"APPROVED: открытая проблема {sev} {i['id']}")
         if (d.get("approval") or {}).get("by") != "author":
             E("APPROVED без approval автора (Д12)")

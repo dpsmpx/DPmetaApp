@@ -32,4 +32,4 @@ text:
       - {label: Product, kind: product}
     gates:
       - {after: 3, label: approval}
-claims: [AU-HANDLE, AU-ROLE, AU-METHOD, ME-NO-CI]
+claims: [AU-HANDLE, AU-ROLE, AU-METHOD, AU-MEMORY, ME-NO-CI]

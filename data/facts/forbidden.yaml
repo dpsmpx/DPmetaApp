@@ -55,6 +55,11 @@ rules:
     pattern: '(?i)(работает\s+на\s+(windows|пк|компьютере)|runs\s+on\s+windows)'
     reason: На настоящей Windows игра не запускалась (GH-WINDOWS).
     instead: «готовится версия для Windows»
+  - id: CL-PLATFORM-ARROW
+    severity: fatal
+    pattern: '(?i)android\s*(→|->|—>|=>)\s*(windows|steam|пк)'
+    reason: Стрелка платформ читается как «уже вышла и переходит на Windows» (GH-WINDOWS, GH-RELEASE-PLAN; критика CI-0001, B-1).
+    instead: «выпуск планируется на Android и Windows (Steam)»
   - id: CL-ANY-ANDROID
     severity: fatal
     pattern: '(?i)(на\s+любом\s+android|any\s+android\s+(phone|device))'

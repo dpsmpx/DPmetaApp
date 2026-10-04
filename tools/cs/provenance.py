@@ -77,6 +77,8 @@ def item_findings(item: Item, variant: str | None = None) -> list[Finding]:
     prov = load_yaml(prov_path) if prov_path.is_file() else {"outputs": []}
     if d.get("provenance") and not item.path(d["provenance"]).is_file():
         out.append(Finding("error", f"{item.id}: {d['provenance']} не найден"))
+    from .render import tool_sha256
+    current_tool = tool_sha256()
     recorded = set()
     for o in prov.get("outputs", []):
         recorded.add(o["file"])
@@ -94,6 +96,8 @@ def item_findings(item: Item, variant: str | None = None) -> list[Finding]:
             out.append(Finding("error", f"{item.id}: {name} — спецификации {o['spec']} нет"))
         elif sha256_file(sp) != o["spec_sha256"]:
             out.append(Finding("error", f"{item.id}: {name} — спецификация изменена после рендера, перерендерить"))
+        if o.get("tool_sha256") and o["tool_sha256"] != current_tool:
+            out.append(Finding("warn", f"{item.id}: {name} — код рендера изменился после рендера; перерендерить, если менялся макет"))
         for aid in o.get("inputs", []):
             if aid not in reg:
                 out.append(Finding("error", f"{item.id}: {name} — вход {aid} нет в реестре"))

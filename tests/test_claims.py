@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 
 from tools.cs.claims import numbers, scan
 from tools.cs.facts import registry, rules
@@ -41,6 +42,7 @@ class ForbiddenTest(unittest.TestCase):
         self.assertIn("AH-SPEEDUP", hit_ids("в 10 раз быстрее"))
         self.assertIn("CL-CI", hit_ids("каждую правку проверяет CI"))
         self.assertIn("CL-OPEN-SOURCE", hit_ids("open-source движок"))
+        self.assertIn("CL-PLATFORM-ARROW", hit_ids("Galdhold · Android → Windows (Steam)"))
 
     def test_old_name_allowed_with_marker(self):
         self.assertIn("CL-OLD-NAME", hit_ids("Новая сборка VoxelRPG"))
@@ -48,6 +50,19 @@ class ForbiddenTest(unittest.TestCase):
 
     def test_clean_text(self):
         self.assertEqual(hit_ids("Разработчик нативных систем · ИИ как инструмент"), set())
+
+
+class KeywordsTest(unittest.TestCase):
+    def findings(self, text, fids):
+        from tools.cs.claims import text_findings
+        from tools.cs.common import Item
+        item = Item(Path("."), {"id": "CI-0000"})
+        return [f.msg for f in text_findings(item, text, fids, "t", False, registry(), rules()) if f.level == "error"]
+
+    def test_word_needs_fact(self):
+        self.assertTrue(any("GH-ENGINE" in m for m in self.findings("Игра и движок", [])))
+        self.assertEqual(self.findings("Игра и движок", ["GH-ENGINE"]), [])
+        self.assertTrue(any("KW-WINDOWS" in m for m in self.findings("версия для Windows", ["GH-NAME"])))
 
 
 if __name__ == "__main__":

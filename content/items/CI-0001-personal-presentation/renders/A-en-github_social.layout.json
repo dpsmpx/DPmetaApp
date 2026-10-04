@@ -28,10 +28,10 @@
    "role": "face",
    "group": "person",
    "text": null,
-   "x": 240.625,
-   "y": 147.1875,
-   "w": 92.15625,
-   "h": 153.59375,
+   "x": 179.6875,
+   "y": 100.6875,
+   "w": 214,
+   "h": 259.390625,
    "text_box": null,
    "font_px": 16,
    "font_weight": 400,
@@ -94,7 +94,7 @@
   {
    "role": "sub",
    "group": "identity",
-   "text": "A game, an engine and a language — built with AI as an instrument. Architecture and decisions are mine.",
+   "text": "A game, an engine and my own language (in development).\nAI is the instrument; architecture and decisions are mine.",
    "x": 550.390625,
    "y": 212.5,
    "w": 645.796875,
@@ -102,7 +102,7 @@
    "text_box": {
     "x": 550.390625,
     "y": 213.5,
-    "w": 356.546875,
+    "w": 404.578125,
     "h": 42.328125
    },
    "font_px": 15.4,
@@ -112,7 +112,7 @@
    "bg": "ink",
    "overflow": false,
    "bg_luminance": {
-    "p95": 0.01084276497082785,
+    "p95": 0.010894680431737275,
     "max": 0.018405560002963586
    }
   },
@@ -284,98 +284,23 @@
    "bg_luminance": null
   },
   {
-   "role": "legend",
-   "group": "pipeline",
-   "text": "human",
-   "x": 550.390625,
-   "y": 420.5,
-   "w": 57.171875,
-   "h": 18,
-   "text_box": {
-    "x": 550.390625,
-    "y": 420.5,
-    "w": 57.171875,
-    "h": 18
-   },
-   "font_px": 14.1,
-   "font_weight": 400,
-   "font_family": "\"IBM Plex Mono\", monospace",
-   "fg": "mist",
-   "bg": "ink",
-   "overflow": false,
-   "bg_luminance": {
-    "p95": 0.00919266639220735,
-    "max": 0.011490488524665828
-   }
-  },
-  {
-   "role": "legend",
-   "group": "pipeline",
-   "text": "AI",
-   "x": 632.390625,
-   "y": 420.5,
-   "w": 31.8125,
-   "h": 18,
-   "text_box": {
-    "x": 632.390625,
-    "y": 420.5,
-    "w": 31.8125,
-    "h": 18
-   },
-   "font_px": 14.1,
-   "font_weight": 400,
-   "font_family": "\"IBM Plex Mono\", monospace",
-   "fg": "mist",
-   "bg": "ink",
-   "overflow": false,
-   "bg_luminance": {
-    "p95": 0.010168194412858832,
-    "max": 0.012354114539414079
-   }
-  },
-  {
-   "role": "legend",
-   "group": "pipeline",
-   "text": "verified",
-   "x": 688,
-   "y": 420.5,
-   "w": 82.546875,
-   "h": 18,
-   "text_box": {
-    "x": 688,
-    "y": 420.5,
-    "w": 82.546875,
-    "h": 18
-   },
-   "font_px": 14.1,
-   "font_weight": 400,
-   "font_family": "\"IBM Plex Mono\", monospace",
-   "fg": "mist",
-   "bg": "ink",
-   "overflow": false,
-   "bg_luminance": {
-    "p95": 0.010341704692441077,
-    "max": 0.013773415000726034
-   }
-  },
-  {
-   "role": "legend",
+   "role": "gate-label",
    "group": "pipeline",
    "text": "I approve every merge",
-   "x": 796.296875,
-   "y": 420.5,
-   "w": 192.484375,
-   "h": 18,
+   "x": -2972.796875,
+   "y": 418.890625,
+   "w": 4000,
+   "h": 19.25,
    "text_box": {
-    "x": 794.8276977539062,
-    "y": 420.5,
-    "w": 193.95355224609375,
-    "h": 18
+    "x": 815.515625,
+    "y": 417.890625,
+    "w": 212.388916015625,
+    "h": 20
    },
-   "font_px": 14.1,
-   "font_weight": 400,
+   "font_px": 15.4,
+   "font_weight": 500,
    "font_family": "\"IBM Plex Mono\", monospace",
-   "fg": "mist",
+   "fg": "human",
    "bg": "ink",
    "overflow": false,
    "bg_luminance": {
@@ -388,16 +313,16 @@
    "group": "evidence",
    "text": "Galdhold — voxel action-RPG · C++20 · Vulkan",
    "x": 550.390625,
-   "y": 516.5,
-   "w": 415.046875,
-   "h": 29.90625,
+   "y": 514.1875,
+   "w": 428.3125,
+   "h": 32.484375,
    "text_box": {
-    "x": 560.578125,
-    "y": 522,
-    "w": 394.671875,
-    "h": 18
+    "x": 561.390625,
+    "y": 520.1875,
+    "w": 406.3125,
+    "h": 20
    },
-   "font_px": 14.1,
+   "font_px": 15.4,
    "font_weight": 400,
    "font_family": "\"IBM Plex Mono\", monospace",
    "fg": "paper",
@@ -413,16 +338,16 @@
    "group": "evidence",
    "text": "150,000+ lines of C++ · 5,000+ automated checks · Oct 2026",
    "x": 550.390625,
-   "y": 556.390625,
-   "w": 510.84375,
-   "h": 29.90625,
+   "y": 555.6875,
+   "w": 557.59375,
+   "h": 32.484375,
    "text_box": {
-    "x": 560.578125,
-    "y": 561.890625,
-    "w": 490.46875,
-    "h": 18
+    "x": 561.390625,
+    "y": 561.6875,
+    "w": 535.59375,
+    "h": 20
    },
-   "font_px": 14.1,
+   "font_px": 15.4,
    "font_weight": 400,
    "font_family": "\"IBM Plex Mono\", monospace",
    "fg": "paper",
