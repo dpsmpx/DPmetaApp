@@ -4,5 +4,8 @@
     "codes": [
       "DNS_LEAK_RISK"
     ]
+  },
+  "xray": {
+    "outcome": "compiled"
   }
 }

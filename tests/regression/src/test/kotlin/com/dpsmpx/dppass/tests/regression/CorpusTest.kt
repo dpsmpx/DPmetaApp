@@ -1,5 +1,6 @@
 package com.dpsmpx.dppass.tests.regression
 
+import com.dpsmpx.dppass.config.ConfigIr
 import com.dpsmpx.dppass.config.ConfigLoader
 import com.dpsmpx.dppass.config.transportClass
 import com.dpsmpx.dppass.connection.ActivationResult
@@ -18,20 +19,25 @@ import com.dpsmpx.dppass.core.JsonNull
 import com.dpsmpx.dppass.core.JsonNumber
 import com.dpsmpx.dppass.core.JsonObject
 import com.dpsmpx.dppass.core.JsonString
+import com.dpsmpx.dppass.core.JsonValue
 import com.dpsmpx.dppass.core.ManualClock
 import com.dpsmpx.dppass.core.SubscriptionId
 import com.dpsmpx.dppass.diagnostics.Diagnostic
 import com.dpsmpx.dppass.diagnostics.Outcome
 import com.dpsmpx.dppass.diagnostics.Secret
+import com.dpsmpx.dppass.engine.CompilePlan
 import com.dpsmpx.dppass.engine.EngineCapabilities
 import com.dpsmpx.dppass.engine.mock.MockBackend
 import com.dpsmpx.dppass.engine.mock.MockBackendCompiler
 import com.dpsmpx.dppass.engine.mock.MockProxyEngine
+import com.dpsmpx.dppass.engine.xray.XrayBackend
+import com.dpsmpx.dppass.engine.xray.XrayCompiler
 import com.dpsmpx.dppass.network.NetworkAssessor
 import com.dpsmpx.dppass.network.NetworkType
 import com.dpsmpx.dppass.network.ProbeBudget
 import com.dpsmpx.dppass.network.simulation.NetworkCondition
 import com.dpsmpx.dppass.network.simulation.SimulatedNetwork
+import com.dpsmpx.dppass.routing.AppLowering
 import com.dpsmpx.dppass.routing.RouteEvaluator
 import com.dpsmpx.dppass.routing.RouteQuery
 import com.dpsmpx.dppass.routing.TableGeoResolver
@@ -56,9 +62,17 @@ import kotlin.test.fail
  * Корпус регрессий (`docs/TESTING.md`): каждый файл в `tests/data/` с
  * ожиданием `*.expect.json` — отдельный тест. Новый баг — новый файл
  * корпуса, а не правка кода без следа.
+ *
+ * Эталоны компилятора Xray (`tests/data/xray/`, D-24) пишет и сверяет
+ * этот же тест; принимает их само ядро — шаг hostcheck «Xray»
+ * (`docs/TESTING.md`, «Эталоны Xray»).
  */
 class CorpusTest {
     private val data = File(System.getProperty("dppass.repoRoot"), "tests/data")
+    private val goldens = File(data, "xray")
+
+    /** Перезапись эталонов вместо сверки — только намеренно, с обзором разницы в git. */
+    private val updateGoldens = System.getProperty("dppass.golden.update") == "true"
 
     private fun json(f: File): JsonObject = Json.parse(f.readText()) as JsonObject
     private fun str(o: JsonObject, k: String): String? = (o[k] as? JsonString)?.value
@@ -89,15 +103,60 @@ class CorpusTest {
                     val unexpected = r.diagnostics.filter { it.severity.name != "INFO" }.map { it.code.name }.toSet() - codes(load).toSet()
                     assertTrue(unexpected.isEmpty(), "$name: неожиданные находки $unexpected")
                 }
-                val act = expect["activate"] as? JsonObject ?: return@dynamicTest
-                runBlocking {
-                    val res = core(backend(str(act, "backend"))).importAndActivate(text).valueOrNull() ?: fail("$name: не разобран")
-                    val ok = res is ActivationResult.Activated
-                    assertEquals(str(act, "outcome") == "activated", ok, "$name: ${res.diagnostics.map { it.render() }}")
-                    val gotA = allCodes(res.diagnostics)
-                    for (c in codes(act)) assertTrue(c in gotA, "$name: активация без кода $c, есть $gotA")
+                (expect["activate"] as? JsonObject)?.let { act ->
+                    runBlocking {
+                        val res = core(backend(str(act, "backend"))).importAndActivate(text).valueOrNull() ?: fail("$name: не разобран")
+                        val ok = res is ActivationResult.Activated
+                        assertEquals(str(act, "outcome") == "activated", ok, "$name: ${res.diagnostics.map { it.render() }}")
+                        val gotA = allCodes(res.diagnostics)
+                        for (c in codes(act)) assertTrue(c in gotA, "$name: активация без кода $c, есть $gotA")
+                    }
+                }
+                (expect["xray"] as? JsonObject)?.let { xray ->
+                    checkXray("$dir/$name", r.valueOrNull()?.ir ?: fail("$name: не разобран"), xray)
                 }
             }
+        }
+    }
+
+    /**
+     * Компиляция для Xray: каждый профиль — с TUN, как на устройстве.
+     * `compiled` — все профили скомпилированы без находок сверх `codes`, и
+     * результат совпал с эталонами `tests/data/xray/<каталог>/<имя>/<профиль>.json`;
+     * `rejected` — хотя бы один профиль отвергнут, коды — в находках компиляции.
+     */
+    private fun checkXray(where: String, ir: ConfigIr, expect: JsonObject) {
+        val results = ir.profiles.map { it.id.value to XrayCompiler().compile(ir, CompilePlan(it.id, withTun = true)) }
+        val diagnostics = results.flatMap { it.second.diagnostics }
+        val got = allCodes(diagnostics)
+        val compiled = results.all { it.second.isSuccess }
+        assertEquals(str(expect, "outcome") == "compiled", compiled, "Xray, $where: ${diagnostics.map { it.render() }}")
+        for (c in codes(expect)) assertTrue(c in got, "Xray, $where: нет кода $c, есть $got")
+        val dir = File(goldens, where)
+        if (updateGoldens) dir.deleteRecursively()
+        if (!compiled) return
+        val unexpected = got - codes(expect).toSet()
+        assertTrue(unexpected.isEmpty(), "Xray, $where: неожиданные находки $unexpected")
+        for ((id, outcome) in results) golden(File(dir, "$id.json"), outcome.valueOrNull()!!.payloadForEngine())
+    }
+
+    /** Эталон совпадает с тем, что выдал компилятор; в режиме перезаписи — записывается. */
+    private fun golden(file: File, actual: String) {
+        val rel = file.relativeTo(data)
+        if (updateGoldens) {
+            file.parentFile.mkdirs()
+            file.writeText(actual)
+            return
+        }
+        if (!file.isFile) fail("нет эталона tests/data/$rel — CorpusTest с -Ddppass.golden.update=true")
+        val want = file.readText().lines()
+        val have = actual.lines()
+        val i = want.indices.firstOrNull { it >= have.size || want[it] != have[it] } ?: want.size
+        if (want != have) {
+            fail(
+                "эталон tests/data/$rel разошёлся с компилятором в строке ${i + 1}: «${want.getOrNull(i)}» → «${have.getOrNull(i)}»; " +
+                    "намеренное изменение — CorpusTest с -Ddppass.golden.update=true и обзор разницы",
+            )
         }
     }
 
@@ -126,33 +185,83 @@ class CorpusTest {
             }
         }
 
+    private fun routeQuery(q: JsonObject) = RouteQuery(
+        domain = str(q, "domain"),
+        ip = str(q, "ip")?.let(IpAddress::parse),
+        port = (q["port"] as? JsonNumber)?.toIntOrNull(),
+        protocol = str(q, "protocol")?.let { TransportProtocol.valueOf(it.uppercase()) },
+        packageName = str(q, "package"),
+    )
+
     @TestFactory
     fun routing(): List<DynamicTest> =
         File(data, "routing").listFiles { f -> f.name.endsWith(".cases.json") }!!.sorted().flatMap { casesFile ->
             val cases = json(casesFile)
             val ir = ConfigLoader().load(File(casesFile.parentFile, str(cases, "config")!!).readText()).valueOrNull()
                 ?: fail("${casesFile.name}: конфигурация не разобрана")
-            val geoIps = ((cases["geo"] as? JsonObject)?.get("geoip") as? JsonObject)?.fields.orEmpty()
-                .mapValues { (_, v) -> (v as JsonArray).items.map { Cidr.parse((it as JsonString).value)!!.cidr } }
+            val geoIp = ((cases["geo"] as? JsonObject)?.get("geoip") as? JsonObject) ?: JsonObject(emptyMap())
+            val geoIps = geoIp.fields.mapValues { (_, v) -> (v as JsonArray).items.map { Cidr.parse((it as JsonString).value)!!.cidr } }
             val evaluator = RouteEvaluator(ir.ir.routing, TableGeoResolver(ips = geoIps))
-            (cases["cases"] as JsonArray).items.mapIndexed { i, item ->
-                val c = item as JsonObject
+            val items = (cases["cases"] as JsonArray).items.map { it as JsonObject }
+            items.mapIndexed { i, c ->
                 val q = c["query"] as JsonObject
                 DynamicTest.dynamicTest("routing/${casesFile.name}#$i ${Json.write(q, pretty = false)}") {
-                    val query = RouteQuery(
-                        domain = str(q, "domain"),
-                        ip = str(q, "ip")?.let(IpAddress::parse),
-                        port = (q["port"] as? JsonNumber)?.toIntOrNull(),
-                        protocol = str(q, "protocol")?.let { TransportProtocol.valueOf(it.uppercase()) },
-                        packageName = str(q, "package"),
-                    )
-                    val d = evaluator.decide(query)
+                    val d = evaluator.decide(routeQuery(q))
                     assertEquals(str(c, "action")!!.uppercase(), d.action.name, d.reason)
                     val rule = c["rule"]
                     assertEquals(if (rule == null || rule == JsonNull) null else (rule as JsonString).value, d.ruleId?.value)
                 }
+            } + DynamicTest.dynamicTest("xray/routing/${casesFile.name.removeSuffix(".cases.json")}.probe.json") {
+                xrayProbe(casesFile, ir.ir, evaluator, geoIp, items)
             }
         }
+
+    /**
+     * Те же случаи — для сверки с Xray (шаг hostcheck «Xray»): эталон
+     * конфигурации и `*.probe.json`, где ожидание — решение
+     * `RouteEvaluator` в тегах Xray (исходящий и правило). Ядро видит
+     * соединение из TUN без приложения-владельца; решение, принятое до
+     * ядра (приложение вне туннеля — уровень VpnService, D-09), в сверку
+     * не идёт и записывается в `skipped` с причиной.
+     */
+    private fun xrayProbe(casesFile: File, ir: ConfigIr, evaluator: RouteEvaluator, geoIp: JsonObject, items: List<JsonObject>) {
+        val base = casesFile.name.removeSuffix(".cases.json")
+        val compiled = XrayCompiler().compile(ir, CompilePlan(ir.profiles.first().id, withTun = true))
+        val config = compiled.valueOrNull() ?: fail("$base: не компилируется для Xray: ${compiled.diagnostics.map { it.render() }}")
+        val tunnelApps = AppLowering.lower(ir.routing).tunnelApps
+        val checked = mutableListOf<JsonValue>()
+        val skipped = mutableListOf<JsonValue>()
+        for ((i, c) in items.withIndex()) {
+            val query = routeQuery(c["query"] as JsonObject)
+            val pkg = query.packageName
+            if (pkg != null && !tunnelApps.includes(pkg)) {
+                skipped += Json.obj("case" to Json.num(i), "reason" to Json.str("приложение $pkg вне туннеля: решает VpnService, до ядра"))
+                continue
+            }
+            val d = evaluator.decide(query)
+            checked += Json.obj(
+                "case" to Json.num(i),
+                "query" to Json.obj(
+                    "domain" to Json.str(query.domain),
+                    "ip" to Json.str(query.ip?.toString()),
+                    "port" to query.port?.let(Json::num),
+                    "network" to Json.str(query.protocol?.name?.lowercase()),
+                ),
+                "outbound" to Json.str(XrayBackend.outboundTag(d.action)),
+                "rule" to (d.ruleId?.value?.let(::JsonString) ?: JsonNull),
+            )
+        }
+        val probe = Json.obj(
+            "source" to Json.str("routing/${casesFile.name}"),
+            "config" to Json.str("$base.config.json"),
+            "inbound" to Json.str(XrayBackend.TAG_TUN_IN),
+            "geo" to Json.obj("geoip" to geoIp, "geosite" to JsonObject(emptyMap())),
+            "cases" to Json.arr(checked),
+            "skipped" to Json.arr(skipped),
+        )
+        golden(File(goldens, "routing/$base.config.json"), config.payloadForEngine())
+        golden(File(goldens, "routing/$base.probe.json"), Json.write(probe, pretty = true) + "\n")
+    }
 
     @TestFactory
     fun networkConditions(): List<DynamicTest> {

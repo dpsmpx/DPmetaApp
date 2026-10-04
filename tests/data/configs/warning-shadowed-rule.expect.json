@@ -4,5 +4,8 @@
     "codes": [
       "RULE_SHADOWED"
     ]
+  },
+  "xray": {
+    "outcome": "compiled"
   }
 }

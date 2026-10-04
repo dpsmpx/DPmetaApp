@@ -11,5 +11,8 @@
       "CAPABILITY_TRANSPORT_UNSUPPORTED",
       "CAPABILITY_FEATURE_UNSUPPORTED"
     ]
+  },
+  "xray": {
+    "outcome": "compiled"
   }
 }
