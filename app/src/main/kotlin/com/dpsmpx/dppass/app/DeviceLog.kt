@@ -83,13 +83,15 @@ object DeviceLog {
     }
 
     /**
-     * Работа закончена (оболочка ушла с экрана, сервис остановлен):
-     * журнал — в буфер обмена, если он ведётся.
+     * Работа закончена: состояние фиксируется только локально.
+     *
+     * Automatic clipboard export was removed in 0.5.0: clipboard contents can
+     * be observed by other foreground components, so log export is now strictly
+     * user initiated by the explicit Copy button.
      */
     fun onWorkFinished(context: Context, reason: String) {
         if (file == null) return
         log.info("work_finished", "reason" to Safe(reason))
-        copyToClipboard(context, reason) {}
     }
 
     /**
