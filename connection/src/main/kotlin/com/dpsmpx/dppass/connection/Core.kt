@@ -5,6 +5,7 @@ import com.dpsmpx.dppass.config.ConfigLoader
 import com.dpsmpx.dppass.config.LoadedConfig
 import com.dpsmpx.dppass.config.ServerProfile
 import com.dpsmpx.dppass.core.Clock
+import com.dpsmpx.dppass.core.ProfileId
 import com.dpsmpx.dppass.diagnostics.DiagCode
 import com.dpsmpx.dppass.diagnostics.Diagnostic
 import com.dpsmpx.dppass.diagnostics.DiagnosticReport
@@ -92,6 +93,9 @@ class DPpassCore(
     val health: HealthBook = HealthBook(policy)
     private val loader = ConfigLoader()
 
+    /** Сохранённые подписки: загрузка, идентификатор устройства, применение (D-33, D-36). */
+    val subscriptions: SubscriptionService = SubscriptionService(SubscriptionBook(store, quarantine), this, clock)
+
     fun restore(): List<Diagnostic> = activation.restore().also { it.forEach(log::diagnostic) }
 
     /**
@@ -157,14 +161,21 @@ class DPpassCore(
 
     fun profileFilter(): ProfileFilter = EngineProfileFilter(compiler.capabilities)
 
-    fun plan(assessment: NetworkAssessment?): ConnectionPlan? {
+    /** План подключения; [preferred] — сервер, выбранный пользователем: первым в плане (D-34). */
+    fun plan(assessment: NetworkAssessment?, preferred: ProfileId? = null): ConnectionPlan? {
         val ir = activation.state.activeConfig ?: return null
-        return CandidatePlanner.plan(ir, compiler.capabilities, assessment, health, health.lastGood(), clock.nowMillis(), policy)
+        return CandidatePlanner.plan(ir, compiler.capabilities, assessment, health, health.lastGood(), clock.nowMillis(), policy, preferred)
     }
 
-    suspend fun connect(assessment: NetworkAssessment?, checker: HealthChecker, tun: TunInput?, pause: suspend (Long) -> Unit): ConnectionReport? {
+    suspend fun connect(
+        assessment: NetworkAssessment?,
+        checker: HealthChecker,
+        tun: TunInput?,
+        preferred: ProfileId? = null,
+        pause: suspend (Long) -> Unit,
+    ): ConnectionReport? {
         val ir = activation.state.activeConfig ?: return null
-        val plan = plan(assessment) ?: return null
+        val plan = plan(assessment, preferred) ?: return null
         val orchestrator = ConnectionOrchestrator(compiler, engine, checker, health, clock, log, policy, pause)
         return orchestrator.connect(ir, plan, tun)
     }

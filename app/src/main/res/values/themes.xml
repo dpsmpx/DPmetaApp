@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Тема DPpass (D-34): встроенная тема платформы без AndroidX, цвета — токены
+  values*/colors.xml. Системные панели прозрачные: на Android 15+ приложение
+  рисуется под ними (edge-to-edge), отступы задаёт MainActivity по вставкам окна.
+-->
+<resources>
+    <style name="Base.DPpass" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:colorBackground">@color/bg</item>
+        <item name="android:colorPrimary">@color/primary</item>
+        <item name="android:colorAccent">@color/primary</item>
+        <item name="android:textColorPrimary">@color/text</item>
+        <item name="android:textColorSecondary">@color/text_secondary</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+
+    <style name="Theme.DPpass" parent="Base.DPpass" />
+</resources>
