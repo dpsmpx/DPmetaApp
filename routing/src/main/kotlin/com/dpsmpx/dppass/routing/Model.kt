@@ -101,4 +101,10 @@ data class RoutingPolicy(
     val domainResolution: DomainResolution = DomainResolution.NEVER,
     /** Локальные сети (RFC 1918, link-local, ULA) — мимо туннеля. */
     val bypassLan: Boolean = true,
+    /**
+     * Automatically send domestic destinations (geosite/geoip "ru") DIRECT
+     * after explicit user rules. This is destination-based, so apps need
+     * no manual package selection.
+     */
+    val automaticDomestic: Boolean = true,
 )
