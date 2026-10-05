@@ -20,6 +20,10 @@
   * Gradle: версия дистрибутива и его SHA-256 из
     `gradle-wrapper.properties` и SHA-256 `gradle-wrapper.jar` совпадают
     с записанными в PROVENANCE.md (сверены с services.gradle.org);
+  * источники геоданных (D-27, D-31): версии `geodata-dlc` и `geodata-dbip`
+    из каталога — строки матрицы («разрешён») и PROVENANCE (§2 «Геоданные»:
+    версия и сумма `h1:` модуля dlc; выпуск DB-IP); файл выпуска DB-IP —
+    в `tools/xray/geodata/sources/`, других файлов там нет;
   * каждый двоичный файл в репозитории записан в PROVENANCE.md с SHA-256;
   * workflow GitHub Actions нет: CI не используется и не запускается,
     сторонних действий в цепочке поставки нет (D-23).
@@ -43,6 +47,8 @@ WRAPPER_PROPS = os.path.join(PROJ, "gradle", "wrapper", "gradle-wrapper.properti
 GOMOD = os.path.join(PROJ, "tools", "xray", "go.mod")
 GOSUM = os.path.join(PROJ, "tools", "xray", "go.sum")
 XRAY_MODULE = "github.com/xtls/xray-core"
+DLC_MODULE = "github.com/v2fly/domain-list-community"
+GEODATA_SOURCES = os.path.join(PROJ, "tools", "xray", "geodata", "sources")
 # Директивы go.mod, которые проверка понимает; любая другая (replace, exclude,
 # retract, godebug, …) меняет то, что соберётся, мимо записей — ошибка.
 GOMOD_DIRECTIVES = {"module", "go", "toolchain", "require", "tool"}
@@ -115,6 +121,31 @@ def has_version(rows, ver):
     return any(re.search(r"(?<![\w.])" + re.escape(ver) + r"(?![\w.])", r) for r in rows)
 
 
+def check_geodata(versions, mrows, provenance, problems):
+    """Источники набора геоданных (D-27, D-31): каталог ↔ матрица, PROVENANCE, файл DB-IP."""
+    dlc, dbip = versions.get("geodata-dlc"), versions.get("geodata-dbip")
+    if not dlc or not dbip:
+        problems.append("libs.versions.toml: нет версий geodata-dlc и geodata-dbip (источники геоданных закрепляются в каталоге, D-27)")
+        return
+    grows = section_rows(provenance, "Геоданные")
+    if not any(has_version([r], dlc) and "разрешён" in r for r in row_with(mrows, DLC_MODULE)):
+        problems.append(f"THIRD_PARTY_MATRIX.md: нет строки `{DLC_MODULE}` с версией {dlc} и статусом «разрешён»")
+    if not any(re.search(r"`h1:[A-Za-z0-9+/=]+`", r) for r in row_with(grows, DLC_MODULE) if f"`{dlc}`" in r):
+        problems.append(f"PROVENANCE.md, «Геоданные»: нет строки `{DLC_MODULE}` `{dlc}` с суммой h1 архива")
+    if not any("DB-IP" in r and f"`{dbip}`" in r and "разрешён" in r for r in mrows):
+        problems.append(f"THIRD_PARTY_MATRIX.md: нет строки DB-IP с выпуском `{dbip}` и статусом «разрешён»")
+    if not any("DB-IP" in r and f"`{dbip}`" in r for r in grows):
+        problems.append(f"PROVENANCE.md, «Геоданные»: нет строки DB-IP с выпуском `{dbip}`")
+    want = f"dbip-country-lite-{dbip}.csv.gz"
+    present = sorted(os.listdir(GEODATA_SOURCES)) if os.path.isdir(GEODATA_SOURCES) else []
+    if want not in present:
+        problems.append(f"tools/xray/geodata/sources/{want}: нет файла выпуска DB-IP {dbip} из каталога (D-31)")
+    for name in present:
+        if name != want:
+            problems.append(f"tools/xray/geodata/sources/{name}: источник не из каталога (устарел?) — "
+                            "в наборе только закреплённый выпуск")
+
+
 def check_go(versions, matrix, mrows, prows, problems):
     """Ядро прокси и модули Go его сборки на хосте (D-24): go.mod ↔ каталог, матрица, PROVENANCE."""
     if not os.path.isfile(GOMOD):
@@ -175,8 +206,10 @@ def check_go(versions, matrix, mrows, prows, problems):
 
     # Строки модулей, которых в go.mod больше нет: запись о том, чего не собирается, вводит в заблуждение.
     module_ref = re.compile(r"^\|\s*`([^`]+)`")
+    # Источники геоданных — не модули сборки (у dlc тоже сумма h1): их сверяет check_geodata.
+    geodata_rows = set(section_rows(read(PROVENANCE), "Геоданные")) if os.path.isfile(PROVENANCE) else set()
     for name, rows in (("THIRD_PARTY_MATRIX.md", section_rows(matrix, "`tools/xray`")),
-                       ("PROVENANCE.md", [r for r in prows if "`h1:" in r])):
+                       ("PROVENANCE.md", [r for r in prows if "`h1:" in r and r not in geodata_rows])):
         for r in rows:
             m = module_ref.match(r.strip())
             if m and "/" in m.group(1) and m.group(1) not in requires:
@@ -238,6 +271,7 @@ def main():
                 problems.append(f"{name}: строка `{coord}` не с версией {ver} (каталог изменён без записи)")
 
     go_modules = check_go(versions, matrix, mrows, prows, problems)
+    check_geodata(versions, mrows, provenance, problems)
 
     for call, (coord, vref) in IMPLICIT.items():
         ver = versions.get(vref)
@@ -292,7 +326,7 @@ def main():
         print("  Новая зависимость или версия — по чек-листу D-18 вместе со строками THIRD_PARTY_MATRIX.md и PROVENANCE.md (docs/PROCESS.md).")
         return 1
     print(f"✓ Зависимости: {checked} записей каталога и {go_modules} модулей Go (tools/xray, Xray {versions.get('xray')}) "
-          f"сверены с матрицей лицензий и PROVENANCE.md; "
+          f"сверены с матрицей лицензий и PROVENANCE.md; геоданные — dlc {versions.get('geodata-dlc')} и DB-IP {versions.get('geodata-dbip')}; "
           f"Gradle {gradle_version} и {binaries} двоичный файл — с записанными SHA-256; workflow CI нет")
     return 0
 

@@ -26,6 +26,14 @@ android-minSdk = "26"
 # xrayNative<Вариант>). Инструмент сборки: в APK из NDK ничего не попадает.
 android-ndk = "30.0.16248370"
 
+# Геоданные (D-27, D-31): источники набора, который tools/xray/geodata.py
+# собирает своим кодом (в assets APK — следующий шаг, TODO.md). dlc — Go-модуль
+# github.com/v2fly/domain-list-community (псевдоверсия с коммитом); DB-IP —
+# месяц выпуска «IP to Country Lite», файл — tools/xray/geodata/sources/.
+# Суммы — docs/PROVENANCE.md; сверяют check_dependencies.py и geodata.py.
+geodata-dlc = "v0.0.0-20261004053103-63777333b7dd"
+geodata-dbip = "2026-10"
+
 [libraries]
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }

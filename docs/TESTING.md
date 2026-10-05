@@ -158,6 +158,35 @@ python3 tools/xray/native.py host
 собирает `native.py android`; она проверяется на устройстве (этап 2,
 работа 6) и шагом «Android: APK» (там же — размер APK одного ABI, D-28).
 
+### Набор геоданных
+
+Набор (D-27, D-31) собирает свой сборщик `tools/xray/geodata` из
+закреплённых источников. Проверяется он в трёх местах:
+
+1. **`go test` сборщика** — на синтетических данных: перевод диапазонов в
+   подсети и вычитание (`TestRangesBecomeTheFewestAlignedPrefixes`),
+   таблица `private` по самому узкому блоку реестра IANA
+   (`TestPrivateFollowsTheNarrowestRegistryBlock`), строгий разбор DB-IP и
+   dlc (`TestDbipRejectsWhatItCannotRead`, `TestDlcRejectsWhatItCannotRead`),
+   `include` с фильтрами и аффилиации
+   (`TestDlcResolvesIncludesFiltersAndAffiliations`), детерминизм
+   (`TestBuildIsDeterministicAndManifestDescribesFiles`), приём набора
+   ядром (`TestXrayAcceptsTheSet`).
+2. **Эталон оглавления** `geodata/manifest.json` в корпусе. Go-тест
+   `TestManifestMatchesGolden` сверяет с ним оглавление синтетического
+   набора, а Kotlin-тест `GeodataTest.builderManifestParses` его
+   разбирает: договор «сборщик → приложение» не разойдётся молча.
+   Обновить эталон: `DPPASS_GOLDEN_UPDATE=1 go test ./geodata` в
+   `tools/xray`.
+3. **Шаг hostcheck «Xray: геоданные»** (`geodata.py --test`): настоящий
+   набор из закреплённых источников, суммы источников сверены с
+   PROVENANCE, ядро Xray загружает каждый код набора.
+
+Перенос набора на устройстве (`GeodataInstaller`) проверяет `GeodataTest`:
+файл, не совпавший с оглавлением, не ставится; прерванный перенос не
+оставляет набора; тот же набор второй раз не переносится; новый набор
+заменяет старый; имена файлов с путём отвергаются.
+
 ### `network/conditions.json` — модель сети
 
 Для каждого условия модели (§3) — ожидаемый класс сети, доступности

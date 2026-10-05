@@ -8,7 +8,9 @@
 Сверку делает `tools/provenance/check_dependencies.py` (шаг hostcheck):
 каждая запись `gradle/libs.versions.toml` — строка в §2 с той же
 версией; каждый модуль `tools/xray/go.mod` — строка в §2 с той же
-версией и суммой из `go.sum`; SHA-256 дистрибутива Gradle и
+версией и суммой из `go.sum`; источники геоданных (`geodata-dlc`,
+`geodata-dbip`) — строки «Геоданные» в §2 с той же версией и суммой;
+SHA-256 дистрибутива Gradle и
 `gradle-wrapper.jar` — как в §3; каждый двоичный файл репозитория —
 строка в §4 с его SHA-256.
 
@@ -134,6 +136,26 @@ sum.golang.org прошла, лицензии прочитаны в архива
 | `gvisor.dev/gvisor` | `v0.0.0-20260122175437-89a5d21be8f0` | `h1:Lk6hARj5UPY47dBep70OD/TIMwikJ5fGUGX0Rm3Xigk=` |
 | `lukechampine.com/blake3` | `v1.4.1` | `h1:I3Smz7gso8w4/TunLKec6K2fn+kyKtDxr/xcQEN84Wg=` |
 
+### Геоданные (D-27, D-31)
+
+Источники набора геоданных — данные, а не код. Набор собирает свой
+сборщик `tools/xray/geodata` (Go, тот же `tools/xray/go.mod`); сборку
+запускает `tools/xray/geodata.py`, на хосте — шаг hostcheck «Xray:
+геоданные». В APK набор попадёт с задачей сборки `:app` (следующий шаг,
+`TODO.md`). Версии — в каталоге (`geodata-dlc`, `geodata-dbip`). Суммы
+ниже сверяют `geodata.py` при сборке и `check_dependencies.py`.
+
+| Источник | Версия | Откуда и сумма |
+|---|---|---|
+| `github.com/v2fly/domain-list-community` | `v0.0.0-20261004053103-63777333b7dd` | Go-модуль с proxy.golang.org: `go mod download` со сверкой sum.golang.org (`goenv.py`); коммит `63777333b7dd1ac57f790e466c0f6a647b9c7281` upstream `v2fly/domain-list-community`; сумма архива `h1:xgYZcK6tuBB3nhq/Wg7sHax7SDjGD+XGFDDZaj/By0I=`; лицензия — `LICENSE` в архиве (MIT) |
+| DB-IP «IP to Country Lite» | `2026-10` | `download.db-ip.com/free/dbip-country-lite-2026-10.csv.gz` (выпуск 1 октября 2026), загружен 5 октября 2026; лежит в репозитории без изменений — `tools/xray/geodata/sources/dbip-country-lite-2026-10.csv.gz`, SHA-256 — §4. Лицензия CC BY 4.0: IP Geolocation by DB-IP (https://db-ip.com) |
+| Таблица `private` | — | своя: реестры особых адресов IANA (IPv4, IPv6; RFC 6890), сверено 5 октября 2026 по www.iana.org/assignments, и групповые адреса (RFC 5771, RFC 4291); записана своими словами в `tools/xray/geodata/private.go` |
+
+Проверено 5 октября 2026: набор собран (`geodata.py --test`), ядро
+Xray 26.9.30 его принимает и выбирает по его кодам
+(`TestXrayAcceptsTheSet`, ручная проверка `dppass-xray-probe route` на
+полном наборе).
+
 ## 3. Gradle
 
 | Что | Значение |
@@ -152,6 +174,7 @@ sum.golang.org прошла, лицензии прочитаны в архива
 | Файл | SHA-256 | Откуда |
 |---|---|---|
 | `gradle/wrapper/gradle-wrapper.jar` | `238e777fcddd7e34f9708186085def2abd6e08e658505b38718d79d74c21abd5` | Gradle 9.8.0 (§3) |
+| `tools/xray/geodata/sources/dbip-country-lite-2026-10.csv.gz` | `097426b8ddae89157d444a59ac1847e873f7943c32d52becc4371c8b0273af80` | DB-IP «IP to Country Lite» 2026-10 (§2, «Геоданные»), без изменений; IP Geolocation by DB-IP (https://db-ip.com), CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/) |
 
 Других двоичных файлов в репозитории нет. Новый — строка здесь с
 источником и SHA-256 в том же изменении, иначе `check_dependencies.py`

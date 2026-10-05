@@ -160,9 +160,11 @@ if [ "$MODE" != quick ]; then
   if command -v go >/dev/null 2>&1; then
     step "Xray: корпус и маршрутизация" "$PY" tools/xray/check_xray.py
     step "Xray: мост и JNI" xray_bridge
+    step "Xray: геоданные" "$PY" tools/xray/geodata.py --test
   else
     skip "Xray: корпус и маршрутизация" "нет Go (Xray собирается из tools/xray/go.mod)"
     skip "Xray: мост и JNI" "нет Go (библиотека ядра собирается из tools/xray/go.mod)"
+    skip "Xray: геоданные" "нет Go (набор собирается своим сборщиком из tools/xray/go.mod, D-27)"
   fi
 
   # ---- 4. Android ----
