@@ -12,6 +12,9 @@ import com.dpsmpx.dppass.engine.mock.MockBackend
 import com.dpsmpx.dppass.engine.mock.MockBackendCompiler
 import com.dpsmpx.dppass.engine.mock.MockBehavior
 import com.dpsmpx.dppass.engine.mock.MockProxyEngine
+import com.dpsmpx.dppass.network.LatencyFailure
+import com.dpsmpx.dppass.network.LatencyProbe
+import com.dpsmpx.dppass.network.LatencyResult
 import com.dpsmpx.dppass.network.NetworkAssessor
 import com.dpsmpx.dppass.network.NetworkType
 import com.dpsmpx.dppass.network.ProbeBudget
@@ -183,6 +186,24 @@ class CandidatePlannerTest {
         assertTrue(udp.attempts.none { it.profile.id == ProfileId("hy2") })
     }
 
+    /** D-41: задержка — порядок среди равных по здоровью, классу и приоритету; неизмеренные — после. */
+    @Test
+    fun latencyOrdersEquallyHealthyCandidates() {
+        val v2 = ir("valid-format-v2.json")
+        val ms = mapOf(ProfileId("trojan-ios") to 40L, ProfileId("reality-qq") to 180L, ProfileId("ws-edge") to 90L)
+        val plan = CandidatePlanner.plan(v2, MockBackend.FULL, null, HealthBook(), null, 0, latency = { ms[it] })
+        assertEquals(ProfileId("trojan-ios"), plan.attempts.first().profile.id)
+        assertTrue("задержка 40 мс" in plan.attempts.first().reasons)
+        val order = plan.attempts.map { it.profile.id }
+        // Того же класса (TCP): измеренный reality-qq раньше; HTTP/CDN: измеренный ws-edge раньше неизмеренного xhttp-extra.
+        assertTrue(ProfileId("xhttp-extra") !in order || order.indexOf(ProfileId("ws-edge")) < order.indexOf(ProfileId("xhttp-extra")), "$order")
+        // Без замеров — прежний порядок по id.
+        assertEquals(
+            CandidatePlanner.plan(v2, MockBackend.FULL, null, HealthBook(), null, 0).attempts.map { it.profile.id },
+            CandidatePlanner.plan(v2, MockBackend.FULL, null, HealthBook(), null, 0, latency = { null }).attempts.map { it.profile.id },
+        )
+    }
+
     @Test
     fun deterministicAndBounded() {
         val a = plan(NetworkCondition.NORMAL)
@@ -293,5 +314,28 @@ class OrchestratorTest {
         assertEquals(DiagCode.NETWORK_OFFLINE, assertIs<ConnectionReport.Failed>(r).reason.code)
         assertTrue(engine.startedProfiles.isEmpty())
         assertNotNull(r.plan.verdictMessage)
+    }
+}
+
+class LatencyBookTest {
+    @Test
+    fun measuresTcpOneByOneAndSkipsUdp() = runBlocking {
+        val v2 = ir("valid-format-v2.json")
+        val probed = mutableListOf<String>()
+        val pauses = mutableListOf<Long>()
+        val probe = LatencyProbe { host, port, _ ->
+            probed += "$host:$port"
+            if (port == 443 && host.toString() == "203.0.113.26") LatencyResult.Failed(LatencyFailure.TIMEOUT) else LatencyResult.Measured(42)
+        }
+        val book = LatencyBook()
+        val seen = mutableListOf<ProfileId>()
+        book.measureAll(v2.profiles, probe, { pauses += it }) { id, _ -> seen += id }
+        assertEquals(v2.profiles.map { it.id }, seen)
+        assertEquals(LatencyResult.NotTcp, book.of(ProfileId("hy2-bbr")))
+        assertTrue(probed.none { it.startsWith("192.0.2.30") }, "UDP не мерится TCP")
+        assertEquals(LatencyResult.Failed(LatencyFailure.TIMEOUT), book.of(ProfileId("xhttp-extra")))
+        assertNull(book.millis(ProfileId("xhttp-extra")), "тайм-аут — не задержка")
+        assertEquals(42L, book.millis(ProfileId("trojan-ios")))
+        assertTrue(pauses.isNotEmpty() && pauses.all { it == LatencyBook.PACING_MILLIS }, "по одному, с паузой")
     }
 }

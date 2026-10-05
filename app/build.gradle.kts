@@ -1,5 +1,6 @@
 // Android-приложение DPpass: оболочка над DPpassCore (D-02, D-17).
 // Подключается, только если найден Android SDK (settings.gradle.kts).
+import com.dpsmpx.dppass.build.LegalNoticesTask
 import com.dpsmpx.dppass.build.XrayGeodataTask
 import com.dpsmpx.dppass.build.XrayNativeTask
 
@@ -105,6 +106,19 @@ androidComponents {
             script.set(xray.file("geodata.py"))
         }
         variant.sources.assets?.addGeneratedSourceDirectory(geodata, XrayGeodataTask::outputDir)
+
+        // Уведомления о сторонних компонентах (D-43): из матрицы лицензий и лицензий модулей Go.
+        val notices = tasks.register<LegalNoticesTask>("legalNotices" + variant.name.replaceFirstChar { it.uppercase() }) {
+            description = "уведомления о лицензиях для ${variant.name}: tools/legal/notices.py"
+            sources.from(
+                rootProject.layout.projectDirectory.file("docs/legal/THIRD_PARTY_MATRIX.md"),
+                rootProject.layout.projectDirectory.file("tools/xray/go.mod"),
+                rootProject.layout.projectDirectory.file("tools/xray/go.sum"),
+                rootProject.layout.projectDirectory.file("tools/legal/notices.py"),
+            )
+            script.set(rootProject.layout.projectDirectory.file("tools/legal/notices.py"))
+        }
+        variant.sources.assets?.addGeneratedSourceDirectory(notices, LegalNoticesTask::outputDir)
     }
 }
 

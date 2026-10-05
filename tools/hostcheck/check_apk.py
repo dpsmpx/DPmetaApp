@@ -29,6 +29,9 @@ Android SDK: aapt2 и dexdump):
     DB-IP на месте; оглавление побайтно совпадает с набором шага «Xray:
     геоданные» (`build/xray/geodata-set`), если шаг был, — две независимые
     сборки дали одно и то же (D-27: сборка детерминирована);
+  * уведомления о сторонних компонентах (D-43): `assets/notices/NOTICES.txt`
+    есть и называет каждый компонент APK из матрицы лицензий
+    (`tools/legal/notices.py --list`) с его версией;
   * размер: APK одного ABI (D-28: выпуск — по APK на ABI) оценивается
     как содержимое этого APK без библиотек других ABI (пустоты, которые
     оставляет пошаговая упаковка AGP, не считаются) и не превышает
@@ -302,6 +305,27 @@ def abi_apk_sizes(apk):
     return {abi: used - sum(c for other, c in per_abi.items() if other != abi) for abi in per_abi}, holes
 
 
+NOTICES_ASSET = "assets/notices/NOTICES.txt"
+
+
+def check_notices(apk, problems):
+    """Уведомления о компонентах (D-43): каждый компонент APK из матрицы — с версией. Строка итога или None."""
+    sys.path.insert(0, os.path.join(PROJ, "tools", "legal"))
+    import notices  # noqa: E402 — тот же разбор матрицы, что у сборщика уведомлений
+    with zipfile.ZipFile(apk) as z:
+        if NOTICES_ASSET not in z.namelist():
+            problems.append(f"нет {NOTICES_ASSET}: уведомлений о сторонних компонентах в APK нет (D-43; задача legalNotices<Вариант>)")
+            return None
+        text = z.read(NOTICES_ASSET).decode("utf-8", errors="replace")
+    expected = [(name, version) for kind, name, version, _ in notices.components() if kind != "data"]
+    missing = [f"{n} {v}" for n, v in expected if f"* {n} {v} —" not in text]
+    for m in missing:
+        problems.append(f"{NOTICES_ASSET}: нет уведомления о {m} из матрицы лицензий (D-43)")
+    if "Go (среда выполнения)" not in text:
+        problems.append(f"{NOTICES_ASSET}: нет уведомления о среде выполнения Go (она в библиотеке ядра)")
+    return f"уведомления — {len(expected)} компонентов матрицы с текстами лицензий"
+
+
 def main():
     a = argparse.ArgumentParser(description="Проверка собранного APK")
     a.add_argument("apk", nargs="?", default=APK)
@@ -385,6 +409,7 @@ def main():
     # ---- нативные библиотеки и размер ----
     native_sizes = check_natives(apk, problems, args.abi)
     geodata = check_geodata(apk, problems)
+    legal = check_notices(apk, problems)
     size = os.path.getsize(apk)
     per_abi, holes = abi_apk_sizes(apk)
     for abi, n in sorted(per_abi.items()):
@@ -404,7 +429,7 @@ def main():
     print(f"✓ APK {os.path.relpath(apk, PROJ)}: {size / 1024 / 1024:.1f} МиБ; манифест — утверждённые разрешения и компоненты; "
           f"{len(classes)} классов только из утверждённых корней ({roots}); "
           f"нативный код — только {native.LIBRARY} ({native_sizes}), несжатая, выровнена по 16 КБ в zip и ELF, экспорт JNI = XrayJni; "
-          f"{geodata}; "
+          f"{geodata}; {legal}; "
           f"APK одного ABI (D-28) — {abi_sizes} МиБ, предел {ABI_APK_BUDGET_MIB}"
           + (f"; пустоты пошаговой упаковки AGP — {holes / 1024 / 1024:.1f} МиБ, в оценку не входят" if holes > 1024 * 1024 else ""))
     return 0

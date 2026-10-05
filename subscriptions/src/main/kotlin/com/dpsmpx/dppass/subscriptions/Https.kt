@@ -34,7 +34,8 @@ class HttpsSubscriptionFetcher(
     private val open: (URL) -> HttpURLConnection = { it.openConnection() as HttpURLConnection },
 ) : SubscriptionFetcher {
     override suspend fun fetch(request: SubscriptionRequest, policy: FetchPolicy): Outcome<FetchedPayload> {
-        val source = request.source as SubscriptionSource.Url
+        val source = request.source as? SubscriptionSource.Url
+            ?: return Outcome.failure(DiagCode.SUBSCRIPTION_FETCH_FAILED, "у своих серверов адреса нет — загружать нечего")
         var url = try {
             URL(source.url.reveal())
         } catch (e: MalformedURLException) {

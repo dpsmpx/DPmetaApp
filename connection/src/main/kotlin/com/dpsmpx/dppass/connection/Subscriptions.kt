@@ -3,20 +3,19 @@ package com.dpsmpx.dppass.connection
 import com.dpsmpx.dppass.config.ConfigIr
 import com.dpsmpx.dppass.core.Clock
 import com.dpsmpx.dppass.core.Ids
+import com.dpsmpx.dppass.core.ProfileId
 import com.dpsmpx.dppass.core.SubscriptionId
 import com.dpsmpx.dppass.diagnostics.DiagCode
 import com.dpsmpx.dppass.diagnostics.Diagnostic
 import com.dpsmpx.dppass.diagnostics.Outcome
 import com.dpsmpx.dppass.diagnostics.Secret
 import com.dpsmpx.dppass.diagnostics.map
-import com.dpsmpx.dppass.routing.DnsPolicy
-import com.dpsmpx.dppass.routing.DnsRoute
-import com.dpsmpx.dppass.routing.DnsServer
-import com.dpsmpx.dppass.routing.DnsTransport
-import com.dpsmpx.dppass.routing.RoutingPolicy
 import com.dpsmpx.dppass.storage.BlobStore
 import com.dpsmpx.dppass.storage.Quarantine
 import com.dpsmpx.dppass.subscriptions.DeviceId
+import com.dpsmpx.dppass.subscriptions.FetchPolicy
+import com.dpsmpx.dppass.subscriptions.InlineSubscriptionFetcher
+import com.dpsmpx.dppass.subscriptions.SourceFetcher
 import com.dpsmpx.dppass.subscriptions.Subscription
 import com.dpsmpx.dppass.subscriptions.SubscriptionCodec
 import com.dpsmpx.dppass.subscriptions.SubscriptionFetcher
@@ -24,27 +23,7 @@ import com.dpsmpx.dppass.subscriptions.SubscriptionSource
 import com.dpsmpx.dppass.subscriptions.SubscriptionUpdater
 import com.dpsmpx.dppass.subscriptions.SubscriptionsState
 import com.dpsmpx.dppass.subscriptions.UpdateResult
-
-/**
- * Базовая политика подписки без своей конфигурации пользователя (D-36):
- * всё через туннель, локальные сети мимо него, DNS — DoH через туннель
- * по IP-адресу (имя самого резолвера резолвить нечем). Серверов в ней
- * нет — их даёт подписка.
- */
-object BasePolicy {
-    const val DNS_ID: String = "remote"
-    const val DOH_URL: String = "https://1.1.1.1/dns-query"
-
-    val ir: ConfigIr = ConfigIr(
-        name = null,
-        profiles = emptyList(),
-        routing = RoutingPolicy(),
-        dns = DnsPolicy(
-            servers = listOf(DnsServer(DNS_ID, DnsTransport.Https(DOH_URL), DnsRoute.TUNNEL)),
-            defaultServerId = DNS_ID,
-        ),
-    )
-}
+import com.dpsmpx.dppass.subscriptions.UpdateSchedule
 
 /**
  * Хранение подписок одной записью `subscriptions/state` (D-36):
@@ -84,10 +63,30 @@ class SubscriptionBook(private val blobs: BlobStore, private val quarantine: Qua
     }
 }
 
-/** Итог обновления подписки: что вернул конвейер и, если дошло, как прошла активация. */
-data class SubscriptionRun(val subscription: Subscription, val update: UpdateResult, val activation: ActivationResult?) {
+/**
+ * Итог обновления подписки: что вернул конвейер и, если дошло, как прошла
+ * активация; [before] и [after] — активная конфигурация до и после.
+ */
+data class SubscriptionRun(
+    val subscription: Subscription,
+    val update: UpdateResult,
+    val activation: ActivationResult?,
+    val before: ConfigIr? = null,
+    val after: ConfigIr? = null,
+) {
     val applied: Boolean get() = activation is ActivationResult.Activated
     val diagnostics: List<Diagnostic> get() = update.diagnostics + activation?.diagnostics.orEmpty()
+
+    /**
+     * Нужно ли переподключать поднятый туннель (D-39): только если новые
+     * серверы применены, а подключённого сервера больше нет или он
+     * изменился. Неизменный сервер — соединения не рвутся.
+     */
+    fun needsReconnect(connected: ProfileId?): Boolean {
+        if (!applied || connected == null) return false
+        val now = after?.profile(connected) ?: return true
+        return before?.profile(connected) != now
+    }
 }
 
 /**
@@ -115,18 +114,51 @@ class SubscriptionService(
     /** Новая подписка по адресу `https://…`. Ничего не загружает: это делает [refresh]. */
     fun add(url: String, name: String?): Outcome<Subscription> {
         val trimmed = url.trim()
-        if (!trimmed.startsWith("https://") || trimmed.length > MAX_URL || trimmed.any { it.isWhitespace() }) {
+        if (!isSubscriptionUrl(trimmed)) {
             return Outcome.failure(DiagCode.SUBSCRIPTION_FETCH_FAILED, "адрес подписки — только https:// без пробелов, до $MAX_URL символов")
         }
+        return insert(name?.trim()?.takeIf { it.isNotEmpty() }?.take(MAX_NAME) ?: hostOf(trimmed), SubscriptionSource.Url(Secret(trimmed)))
+    }
+
+    /**
+     * «Свои серверы» (D-42): ссылки или их список в base64, вставленные
+     * пользователем. Хранятся как тело подписки и разбираются тем же
+     * конвейером без сети; [refresh] применяет их.
+     */
+    fun addInline(body: String, name: String): Outcome<Subscription> {
+        val text = body.trim()
+        if (text.isEmpty()) return Outcome.failure(DiagCode.SUBSCRIPTION_EMPTY, "нечего добавить: текст пуст")
+        if (text.toByteArray(Charsets.UTF_8).size > FetchPolicy().maxBytes) {
+            return Outcome.failure(DiagCode.SUBSCRIPTION_TOO_LARGE, "больше ${FetchPolicy().maxBytes} байт")
+        }
+        // Без сети обновлять нечего: автообновление своим серверам не нужно.
+        return insert(name.trim().ifEmpty { "DPpass" }.take(MAX_NAME), SubscriptionSource.Inline(Secret(text)), autoUpdate = false)
+    }
+
+    private fun insert(name: String, source: SubscriptionSource, autoUpdate: Boolean = true): Outcome<Subscription> {
         val current = when (val s = state()) {
             is Outcome.Failure -> return s
             is Outcome.Success -> s.value
         }
+        if (current.items.size >= MAX_SUBSCRIPTIONS) {
+            return Outcome.failure(DiagCode.LIMIT_EXCEEDED, "подписок больше $MAX_SUBSCRIPTIONS")
+        }
         val n = (current.items.mapNotNull { it.id.value.removePrefix("s").toIntOrNull() }.maxOrNull() ?: 0) + 1
         val id = SubscriptionId("s$n").also { require(Ids.isValid(it.value)) }
-        val title = name?.trim()?.takeIf { it.isNotEmpty() }?.take(MAX_NAME) ?: hostOf(trimmed)
-        val sub = Subscription(id, title, SubscriptionSource.Url(Secret(trimmed)))
+        val base = Subscription(id, name, source)
+        val sub = if (autoUpdate) base else base.copy(updatePolicy = base.updatePolicy.copy(intervalMinutes = null))
         return commit(current.copy(items = current.items + sub)).map { sub }
+    }
+
+    fun rename(id: SubscriptionId, name: String): Outcome<SubscriptionsState> {
+        val n = name.trim().take(MAX_NAME)
+        if (n.isEmpty() || n.any { it.code < 0x20 }) return Outcome.failure(DiagCode.NAME_INVALID, "имя пустое или с управляющими символами")
+        return edit { st -> st.copy(items = st.items.map { if (it.id == id) it.copy(name = n) else it }) }
+    }
+
+    /** Срок автообновления (D-39): null — только вручную. */
+    fun setUpdateInterval(id: SubscriptionId, minutes: Long?): Outcome<SubscriptionsState> = edit { st ->
+        st.copy(items = st.items.map { if (it.id == id) it.copy(updatePolicy = it.updatePolicy.copy(intervalMinutes = minutes)) else it })
     }
 
     fun remove(id: SubscriptionId): Outcome<SubscriptionsState> = edit { st ->
@@ -150,10 +182,11 @@ class SubscriptionService(
 
     /**
      * Загрузить и применить подписку: её серверы становятся серверами
-     * активной конфигурации, маршрутизация и DNS — пользователя или
-     * [BasePolicy] (D-36). Подписка, которая сейчас не применена,
-     * загружается заново, даже если тело не изменилось: её серверов нигде,
-     * кроме ответа поставщика, нет.
+     * активной конфигурации, маршрутизация и DNS — своего документа, если он
+     * действует, иначе политики пользователя (D-38). Подписка, которая
+     * сейчас не применена, загружается заново, даже если тело не
+     * изменилось: её серверов нигде, кроме ответа поставщика, нет. Свои
+     * серверы (D-42) разбираются без сети.
      */
     suspend fun refresh(id: SubscriptionId, fetcher: SubscriptionFetcher, appVersion: String): Outcome<SubscriptionRun> {
         val st = when (val s = state()) {
@@ -162,15 +195,18 @@ class SubscriptionService(
         }
         val sub = st.find(id) ?: return Outcome.failure(DiagCode.SUBSCRIPTION_FETCH_FAILED, "нет подписки $id")
         val forUpdate = if (st.activeId == id) sub else sub.copy(lastSuccessful = null)
-        val update = SubscriptionUpdater(fetcher, clock, appVersion).update(forUpdate, core.profileFilter())
+        val source = SourceFetcher(network = fetcher, inline = InlineSubscriptionFetcher(clock))
+        val update = SubscriptionUpdater(source, clock, appVersion).update(forUpdate, core.profileFilter())
         core.subscriptionNotes(update)
+        val before = core.activation.state.activeConfig
         val (next, activation) = when (update) {
             is UpdateResult.Ready -> {
-                val base = core.activation.state.activeConfig ?: BasePolicy.ir
+                // Маршрутизация и DNS — своего документа, если он действует, иначе — политики (D-38).
+                val base = core.userPolicy.baseFor(core.activation.state)
                 val (s, a) = core.activateSubscription(base, update.candidate)
-                s to a
+                (if (a is ActivationResult.Activated) s.copy(lastCheckedMillis = clock.nowMillis()) else s) to a
             }
-            is UpdateResult.Unchanged -> update.subscription to null
+            is UpdateResult.Unchanged -> update.subscription.copy(lastCheckedMillis = clock.nowMillis()) to null
             is UpdateResult.Failed -> update.subscription to null
         }
         // Неудача не стирает прошлую удачную ревизию (D-08): у переданной копии её могло не быть.
@@ -178,13 +214,35 @@ class SubscriptionService(
         val activeId = if (activation is ActivationResult.Activated) id else st.activeId
         val saved = commit(st.copy(items = st.items.map { if (it.id == id) kept else it }, activeId = activeId))
         if (saved is Outcome.Failure) return saved
-        return Outcome.Success(SubscriptionRun(kept, update, activation))
+        return Outcome.Success(SubscriptionRun(kept, update, activation, before, core.activation.state.activeConfig))
     }
 
-    private companion object {
-        const val MAX_URL = 2048
-        const val MAX_NAME = 64
+    /**
+     * Фоновое обновление (D-39): только применённая подписка и только если
+     * пора ([UpdateSchedule.due]). null — обновлять нечего.
+     */
+    suspend fun refreshDue(fetcher: SubscriptionFetcher, appVersion: String): Outcome<SubscriptionRun>? {
+        val st = state().valueOrNull() ?: return null
+        val active = st.activeId?.let(st::find) ?: return null
+        if (active.source !is SubscriptionSource.Url || !UpdateSchedule.due(active, clock.nowMillis())) return null
+        return refresh(active.id, fetcher, appVersion)
+    }
 
-        fun hostOf(url: String): String = url.removePrefix("https://").substringBefore('/').substringBefore('?').substringAfterLast('@').take(MAX_NAME)
+    /** Ближайший срок фонового обновления, мс от сейчас; null — автообновления нет. */
+    fun nextDueMillis(): Long? {
+        val st = state().valueOrNull() ?: return null
+        val active = st.activeId?.let(st::find)?.takeIf { it.source is SubscriptionSource.Url } ?: return null
+        return UpdateSchedule.waitMillis(active, clock.nowMillis())
+    }
+
+    companion object {
+        const val MAX_URL: Int = 2048
+        const val MAX_NAME: Int = 64
+        const val MAX_SUBSCRIPTIONS: Int = 64
+
+        fun isSubscriptionUrl(text: String): Boolean = text.startsWith("https://") && text.length in 9..MAX_URL && text.none { it.isWhitespace() }
+
+        private fun hostOf(url: String): String =
+            url.removePrefix("https://").substringBefore('/').substringBefore('?').substringAfterLast('@').take(MAX_NAME)
     }
 }

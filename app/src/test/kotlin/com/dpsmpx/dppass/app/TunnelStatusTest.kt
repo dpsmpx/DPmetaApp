@@ -27,3 +27,25 @@ class TunnelStatusTest {
         assertEquals(TunnelStatus.Idle, TunnelState.status.value)
     }
 }
+
+/** Скорость по счётчикам ядра (D-40). */
+class TrafficMeterTest {
+    @Test
+    fun speedIsDeltaOverTimeAndNewSessionRestarts() {
+        val m = TrafficMeter()
+        assertEquals(Traffic(100, 1000, 0, 0), m.sample(com.dpsmpx.dppass.engine.TrafficStats(100, 1000), 0))
+        assertEquals(Traffic(600, 3000, 250, 1000), m.sample(com.dpsmpx.dppass.engine.TrafficStats(600, 3000), 2000))
+        // Счётчики уменьшились — новая сессия ядра: скорость с нуля, а не отрицательная.
+        assertEquals(Traffic(10, 20, 0, 0), m.sample(com.dpsmpx.dppass.engine.TrafficStats(10, 20), 3000))
+        // Время не прошло — без деления на ноль.
+        assertEquals(Traffic(10, 20, 0, 0), m.sample(com.dpsmpx.dppass.engine.TrafficStats(10, 20), 3000))
+    }
+
+    @Test
+    fun trafficResetsWhenTunnelGoesAway() {
+        TunnelState.set(TunnelStatus.Connected(ProfileId("a"), "A", 0))
+        TunnelState.traffic(Traffic(1, 2, 3, 4))
+        TunnelState.set(TunnelStatus.Idle)
+        assertEquals(Traffic.ZERO, TunnelState.traffic.value)
+    }
+}

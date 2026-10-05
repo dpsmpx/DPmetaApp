@@ -10,6 +10,8 @@ import com.dpsmpx.dppass.core.ProfileId
 import com.dpsmpx.dppass.core.SubscriptionId
 import com.dpsmpx.dppass.diagnostics.Diagnostic
 import com.dpsmpx.dppass.diagnostics.FailureKind
+import com.dpsmpx.dppass.network.LatencyResult
+import com.dpsmpx.dppass.subscriptions.SubscriptionSource
 import com.dpsmpx.dppass.subscriptions.SubscriptionsState
 import java.util.Locale
 import kotlin.math.roundToLong
@@ -31,7 +33,61 @@ data class ServerRow(
     val lastFailure: FailureKind?,
     val selected: Boolean,
     val connected: Boolean,
+    /** Последний замер задержки (D-41). */
+    val latency: LatencyLabel = LatencyLabel.UNKNOWN,
+    /** Флаг из начала имени или первая буква — для кружка в строке. */
+    val avatar: String = Avatar.of(name),
 )
+
+/** Уровень задержки для цвета значка (D-41): не «работает», а «далеко ли». */
+enum class LatencyLevel { GOOD, FAIR, POOR, FAILED, UDP, UNKNOWN }
+
+data class LatencyLabel(val level: LatencyLevel, val millis: Long? = null) {
+    companion object {
+        val UNKNOWN: LatencyLabel = LatencyLabel(LatencyLevel.UNKNOWN)
+        const val GOOD_MILLIS: Long = 150
+        const val FAIR_MILLIS: Long = 400
+
+        fun of(r: LatencyResult?): LatencyLabel = when (r) {
+            null -> UNKNOWN
+            LatencyResult.NotTcp -> LatencyLabel(LatencyLevel.UDP)
+            is LatencyResult.Failed -> LatencyLabel(LatencyLevel.FAILED)
+            is LatencyResult.Measured -> LatencyLabel(
+                when {
+                    r.millis < GOOD_MILLIS -> LatencyLevel.GOOD
+                    r.millis < FAIR_MILLIS -> LatencyLevel.FAIR
+                    else -> LatencyLevel.POOR
+                },
+                r.millis,
+            )
+        }
+    }
+}
+
+/**
+ * Кружок сервера: флаг, если имя с него начинается (два символа
+ * региональных индикаторов, как у поставщиков: «🇩🇪 Германия»), иначе
+ * первая буква или цифра имени.
+ */
+object Avatar {
+    fun of(name: String): String {
+        val t = name.trim()
+        if (t.length >= 4 && isRegional(t.codePointAt(0))) {
+            val second = t.codePointAt(Character.charCount(t.codePointAt(0)))
+            if (isRegional(second)) return String(Character.toChars(t.codePointAt(0))) + String(Character.toChars(second))
+        }
+        val first = t.firstOrNull { it.isLetterOrDigit() } ?: return "•"
+        return first.uppercaseChar().toString()
+    }
+
+    /** Имя без флага в начале — флаг уже в кружке. */
+    fun stripFlag(name: String): String {
+        val a = of(name)
+        return if (a.length == 4 && name.trim().startsWith(a)) name.trim().removePrefix(a).trim().ifEmpty { name } else name
+    }
+
+    private fun isRegional(cp: Int): Boolean = cp in 0x1F1E6..0x1F1FF
+}
 
 object ServerList {
     /**
@@ -44,6 +100,7 @@ object ServerList {
         selected: ProfileId?,
         connected: ProfileId?,
         nowMillis: Long,
+        latency: (ProfileId) -> LatencyResult? = { null },
     ): List<ServerRow> {
         val chosen = effectiveSelection(profiles, selected)
         return profiles.map { p ->
@@ -63,9 +120,22 @@ object ServerList {
                 lastFailure = h.lastFailure?.kind,
                 selected = p.id == chosen,
                 connected = p.id == connected,
+                latency = LatencyLabel.of(latency(p.id)),
             )
         }
     }
+
+    /** Поиск: подстрока имени или описания, без учёта регистра. */
+    fun filter(rows: List<ServerRow>, query: String): List<ServerRow> {
+        val q = query.trim().lowercase()
+        if (q.isEmpty()) return rows
+        return rows.filter { q in it.name.lowercase() || q in it.summary.lowercase() }
+    }
+
+    /** По задержке: измеренные — по возрастанию, остальные — после, в прежнем порядке. */
+    fun byLatency(rows: List<ServerRow>): List<ServerRow> = rows.withIndex()
+        .sortedWith(compareBy({ it.value.latency.millis ?: Long.MAX_VALUE }, { it.index }))
+        .map { it.value }
 
     /** Выбор, которого в конфигурации больше нет (подписка обновилась), — «автоматически». */
     fun effectiveSelection(profiles: List<ServerProfile>, selected: ProfileId?): ProfileId? =
@@ -125,6 +195,19 @@ sealed interface ConfigSource {
 data class SubscriptionRow(
     val id: SubscriptionId,
     val name: String,
+    /** Свои серверы (D-42), а не подписка по адресу. */
+    val inline: Boolean = false,
+    /** Срок автообновления, минуты (D-39); null — только вручную. */
+    val autoUpdateMinutes: Long? = null,
+    /** Доля использованного трафика, 0…100; null — предела нет или неизвестен. */
+    val usedPercent: Int? = null,
+    /** Сколько дней до конца срока (0 — сегодня); null — срока нет или он прошёл. */
+    val daysLeft: Long? = null,
+    /** Страница и поддержка поставщика — только https:// (`MetadataParser`). */
+    val pageUrl: String? = null,
+    val supportUrl: String? = null,
+    /** Подсказка поставщика об интервале обновления, часы — показывается, не применяется (D-11, D-39). */
+    val providerIntervalHours: Int? = null,
     /** Её серверы — серверы активной конфигурации сейчас. */
     val active: Boolean,
     val profileCount: Int?,
@@ -141,6 +224,7 @@ data class SubscriptionRow(
 )
 
 const val ANNOUNCE_LIMIT: Int = 300
+private const val DAY_MILLIS: Long = 24 * 60 * 60_000L
 
 object SubscriptionList {
     fun rows(state: SubscriptionsState, source: ConfigSource, nowMillis: Long): List<SubscriptionRow> = state.items.map { s ->
@@ -149,9 +233,17 @@ object SubscriptionList {
         val traffic = s.metadata.traffic
         val used = traffic?.let { t -> if (t.uploadBytes == null && t.downloadBytes == null) null else (t.uploadBytes ?: 0) + (t.downloadBytes ?: 0) }
         val expire = traffic?.expireEpochSeconds?.takeIf { it > 0 }?.let { it * 1000 }
+        val total = traffic?.totalBytes?.takeIf { it > 0 }
         SubscriptionRow(
             id = s.id,
             name = s.metadata.title?.takeIf { it.isNotBlank() } ?: s.name,
+            inline = s.source is SubscriptionSource.Inline,
+            autoUpdateMinutes = s.updatePolicy.intervalMinutes,
+            usedPercent = if (used != null && total != null) ((used * 100) / total).coerceIn(0, 100).toInt() else null,
+            daysLeft = expire?.takeIf { it > nowMillis }?.let { (it - nowMillis) / DAY_MILLIS },
+            pageUrl = s.metadata.webPageUrl,
+            supportUrl = s.metadata.supportUrl,
+            providerIntervalHours = s.metadata.updateIntervalHours,
             active = source == ConfigSource.FromSubscription(s.id),
             profileCount = ok?.profileCount,
             updatedAtMillis = ok?.fetchedAtMillis,
@@ -174,6 +266,18 @@ object SubscriptionList {
 }
 
 object Formats {
+    /** Скорость: «1.2 МБ/с». */
+    fun speed(bytesPerSecond: Long, units: List<String>, locale: Locale, perSecond: String): String = bytes(bytesPerSecond, units, locale) + perSecond
+
+    /** Длительность: «4:05», «1:02:03». */
+    fun duration(millis: Long): String {
+        val total = (millis / 1000).coerceAtLeast(0)
+        val h = total / 3600
+        val m = (total % 3600) / 60
+        val sec = total % 60
+        return if (h > 0) "%d:%02d:%02d".format(Locale.ROOT, h, m, sec) else "%d:%02d".format(Locale.ROOT, m, sec)
+    }
+
     /**
      * Байты в единицах [units] (Б, КБ, МБ, ГБ, ТБ — по 1024): до 10 —
      * с одним знаком после запятой, дальше — целым.

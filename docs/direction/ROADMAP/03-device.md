@@ -23,13 +23,16 @@
    (`docs/research/REMNAWAVE_SUBSCRIPTIONS.md`). Загрузка по HTTPS
    сделана раньше, вместе с интерфейсом (D-36): `HttpsSubscriptionFetcher`,
    хранение подписок и обновление вручную; без AndroidX вместо
-   `WorkManager` — `JobScheduler`.
+   `WorkManager` — `JobScheduler`: обновление по расписанию сделано
+   (D-39, `SubscriptionJobService`), на устройстве не проверялось.
 3. **Пробы сети на Android** (D-14): `Prober` поверх реальных сокетов
    (DNS, TCP, TLS, UDP, страница входа, крупная передача) с бюджетом;
    `NetworkCallback` → переоценка без залпов.
 4. **Жизненный цикл сервиса**: смерть процесса и `START_STICKY`/always-on
    поднимают last-known-good, а не пустую конфигурацию; перезагрузка;
-   lockdown; `onRevoke`.
+   lockdown; `onRevoke`. Написано (D-40): `START_STICKY`, постоянный VPN,
+   плитка быстрых настроек, `setUnderlyingNetworks`; на устройстве не
+   проверялось.
 5. **Бюджет производительности на устройстве**
    (`docs/PERFORMANCE_BUDGET.md`): пороги вместо ориентиров хоста.
 

@@ -38,7 +38,14 @@ object AppGraph {
      * Ядро DPpass и ядро прокси под ним (проверку здоровья, D-32, умеет только
      * Xray); загрузка подписок и версия приложения для её `User-Agent` (D-33).
      */
-    class Graph(val core: DPpassCore, val engine: XrayProxyEngine, val fetcher: SubscriptionFetcher, val appVersion: String)
+    class Graph(
+        val core: DPpassCore,
+        val engine: XrayProxyEngine,
+        val fetcher: SubscriptionFetcher,
+        val appVersion: String,
+        /** Из чего собран набор геоданных (D-27) — для «О программе». */
+        val geodata: String,
+    )
 
     @Volatile
     private var instance: Graph? = null
@@ -95,7 +102,7 @@ object AppGraph {
             logSink = DeviceLog.sink,
             engineDetails = listOf("geodata" to geodataSummary),
         )
-        return Graph(core, engine, HttpsSubscriptionFetcher(Clock.SYSTEM), appVersion(context))
+        return Graph(core, engine, HttpsSubscriptionFetcher(Clock.SYSTEM), appVersion(context), geodataSummary)
     }
 
     /** `versionName` из манифеста: в журнале и в `User-Agent` подписки (D-33). */

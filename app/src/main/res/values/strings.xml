@@ -1,30 +1,56 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Тексты интерфейса DPpass (D-34): английский — по умолчанию, русский — values-ru. -->
+<!-- Тексты интерфейса DPpass (D-34): английский — по умолчанию, русский — values-ru. Без обещаний «незаметности» (D-13). -->
 <resources>
     <string name="app_name" translatable="false">DPpass</string>
     <string name="tab_connect">Connect</string>
     <string name="tab_servers">Servers</string>
     <string name="tab_subscriptions">Subscriptions</string>
+    <string name="tab_settings">Settings</string>
     <string name="tab_log">Log</string>
+
     <string name="status_off">Not connected</string>
     <string name="status_connecting">Connecting…</string>
     <string name="status_checking">Checking “%1$s”</string>
     <string name="status_connected">Connected</string>
     <string name="status_stopping">Disconnecting…</string>
     <string name="status_failed">Couldn’t connect</string>
-    <string name="connected_since">%1$s · since %2$s</string>
     <string name="action_connect">Connect</string>
     <string name="action_disconnect">Disconnect</string>
+    <string name="action_back">Back</string>
+    <string name="action_apply">Apply</string>
+    <string name="action_save">Save</string>
+    <string name="action_done">Done</string>
+    <string name="paste">Paste</string>
+    <string name="not_ready">Starting up — try again in a second</string>
+    <string name="no_browser">No browser to open the link</string>
+    <string name="no_system_screen">This Android version has no such screen</string>
+    <string name="error_with_reason">%1$s\n%2$s</string>
+
+    <string name="traffic_down">Download</string>
+    <string name="traffic_up">Upload</string>
+    <string name="traffic_total">%1$s total</string>
+    <string name="per_second">/s</string>
+    <string name="a11y_traffic">Download %1$s, upload %2$s</string>
+
     <string name="server_label">Server</string>
     <string name="server_auto">Automatic</string>
-    <string name="server_auto_hint">The one that worked last, then the healthiest</string>
-    <string name="source_none">No configuration yet</string>
+    <string name="server_auto_hint">Last working, then healthiest and fastest</string>
+    <string name="source_none">No servers yet</string>
     <string name="source_own">Own configuration</string>
     <string name="source_subscription">Subscription “%1$s”</string>
-    <string name="empty_title">Add a subscription — servers come from it.</string>
-    <string name="empty_action">Add subscription</string>
+    <string name="empty_title">No servers yet</string>
+    <string name="empty_text">Add your provider’s subscription link or paste server links.</string>
     <string name="open_log">Open log</string>
     <string name="notification_permission_note">Without notifications the tunnel works, but its state isn’t shown in the shade.</string>
+
+    <string name="routing_title">Routing</string>
+    <string name="routing_all">Everything via VPN</string>
+    <string name="routing_ru_direct">Russian sites direct</string>
+    <string name="routing_own_document">From your DPpass document</string>
+    <string name="routing_all_note">All apps’ traffic goes through the server, except local networks if allowed below.</string>
+    <string name="routing_ru_direct_note">Russian sites and addresses go directly, past the server; their names are resolved by your network’s DNS. Everything else goes through the server.</string>
+    <string name="routing_own_document_note">Your DPpass document’s routing is in effect now. Changing these settings will replace it.</string>
+
     <string name="kind_network_unreachable">No network</string>
     <string name="kind_dns_resolution_failed">Name not resolved</string>
     <string name="kind_config_parse_failed">Configuration can’t be read</string>
@@ -43,58 +69,171 @@
     <string name="kind_subscription_invalid">Subscription not understood</string>
     <string name="kind_storage_failed">Saved data unavailable</string>
     <string name="kind_internal">Internal error</string>
+
     <string name="server_state_ok">Worked</string>
     <string name="server_state_failed">Failed: %1$s</string>
     <string name="server_state_paused">Retry in %1$d s: %2$s</string>
     <string name="server_connected">Connected</string>
     <string name="a11y_selected">Selected</string>
-    <string name="servers_empty">No servers. Add a subscription or paste a DPpass document.</string>
-    <string name="import_clipboard">Paste DPpass document</string>
-    <string name="clipboard_empty">Clipboard has no text</string>
+    <string name="a11y_checked">Checked</string>
+    <string name="a11y_unchecked">Not checked</string>
+    <string name="servers_empty">No servers. Add a subscription or paste server links.</string>
+    <string name="servers_search">Search servers</string>
+    <string name="servers_not_found">Nothing found</string>
+    <string name="sort_provider">In order</string>
+    <string name="sort_latency">By latency</string>
+    <string name="latency_check">Check latency</string>
+        <string name="latency_note">Latency is the time to reach the server, not a guarantee it works: a connection may get through while encrypted traffic is cut.</string>
+    <string name="latency_progress">%1$s · checking latency %2$d of %3$d</string>
+    <string name="latency_ms">%1$d ms</string>
+    <string name="latency_failed">no reply</string>
+    <string name="latency_udp">UDP</string>
+
+    <string name="add_title">Add</string>
+    <string name="add_subscription_note">Your provider’s https:// link</string>
+    <string name="add_clipboard_note">Server links, a subscription link or a DPpass document</string>
+    <string name="add_file_note">A text file with links or a DPpass document</string>
+    <string name="import_clipboard">Paste from clipboard</string>
+    <string name="import_file">Open file</string>
+    <string name="import_file_failed">The file couldn’t be read or is larger than 1 MB</string>
+    <string name="clipboard_empty">Nothing to import</string>
     <string name="import_done">Configuration applied</string>
     <string name="import_failed">Not applied: %1$s</string>
+    <string name="import_unrecognized">Not recognized</string>
+    <string name="import_unrecognized_text">This is not a DPpass document, an https:// subscription link or server links.</string>
+    <string name="import_document_title">DPpass document</string>
+    <string name="import_document_text">Servers, routing and DNS from the document will replace the current ones. Apply?</string>
+    <string name="import_links_title">Your servers</string>
+    <string name="import_links_note">Saved encrypted on this phone as “your servers” — they work like a subscription, without a network source.</string>
+    <string name="import_links_add">Add and apply</string>
+    <string name="import_no_usable">No usable servers in the links</string>
+    <string name="own_servers_default_name">My servers</string>
     <string name="reconnecting">Reconnecting…</string>
-    <string name="subs_add">Add</string>
+
+    <string name="subs_add">Add subscription</string>
     <string name="subs_empty">No subscriptions. Add the https:// link from your provider.</string>
     <string name="subs_dialog_title">New subscription</string>
-    <string name="subs_url_hint">Subscription link (https://…)</string>
+    <string name="subs_url_hint">https://…</string>
     <string name="subs_name_hint">Name (optional)</string>
     <string name="subs_dialog_note">The link is stored encrypted on this phone and sent only to its own server.</string>
+    <string name="subs_menu">Options for “%1$s”</string>
     <string name="subs_active">Active</string>
-    <string name="subs_updated">Updated %1$s</string>
-    <string name="subs_never">Not loaded yet</string>
+    <string name="subs_inline">Your servers</string>
+    <string name="subs_updated">updated %1$s</string>
+    <string name="subs_never">not loaded yet</string>
     <string name="subs_traffic">Traffic: %1$s of %2$s</string>
-    <string name="subs_traffic_unlimited">Traffic: %1$s</string>
+    <string name="subs_traffic_unlimited">Traffic: %1$s, no limit</string>
     <string name="subs_expires">Valid until %1$s</string>
+    <string name="subs_expires_in">Valid until %1$s · %2$s left</string>
     <string name="subs_expired">Expired %1$s</string>
     <string name="subs_failed">Last update failed: %1$s</string>
-    <string name="subs_refresh">Update and apply</string>
-    <string name="subs_refreshing">Updating…</string>
-    <string name="subs_applied">Servers from “%1$s” applied</string>
+    <string name="subs_refresh">Update</string>
+    <string name="subs_apply">Load and apply</string>
+    <string name="subs_refreshing">Loading…</string>
     <string name="subs_not_applied">Not applied: %1$s</string>
     <string name="subs_unchanged">No changes</string>
+    <string name="subs_rename">Rename</string>
     <string name="subs_remove">Remove</string>
     <string name="subs_remove_confirm">Remove “%1$s”? Its link and device ID will be erased.</string>
-    <string name="subs_device_id">Send device ID</string>
-    <string name="subs_device_id_note">Some providers limit devices and require an ID. DPpass sends a random value not tied to the phone; when off, nothing is sent.</string>
-    <string name="subs_device_id_needed">The provider requires a device ID — turn it on below.</string>
+    <string name="subs_auto_title">Auto-update</string>
+    <string name="subs_auto_every">every %1$d h</string>
+    <string name="subs_auto_off">manual only</string>
+    <string name="subs_auto_note">Only the active subscription updates in the background, when there’s a network. If the server you’re connected to stays the same, the connection isn’t interrupted.</string>
+    <string name="subs_provider_interval">The provider suggests every %1$d h</string>
+    <string name="subs_device_id">Device ID</string>
+    <string name="subs_device_id_on">Device ID on</string>
+    <string name="subs_device_id_off">Off — nothing is sent</string>
+    <string name="subs_device_id_enable">Send device ID</string>
+    <string name="subs_device_id_note">Some providers limit devices and require an ID. DPpass sends a random value not tied to the phone, its own for each subscription; when off, nothing is sent.</string>
+    <string name="subs_device_id_needed">The provider requires a device ID.</string>
     <string name="subs_device_id_reset">New device ID</string>
     <string name="subs_device_id_reset_confirm">The provider will see a new device. The old one may still count toward the limit.</string>
     <string name="subs_announce">From the provider: %1$s</string>
+    <string name="subs_open_page">Provider’s page</string>
+    <string name="subs_open_support">Provider’s support</string>
+
+    <string name="settings_routing">Routing</string>
+    <string name="settings_block_ads">Block ads</string>
+    <string name="settings_block_ads_note">By the open list of ad domains</string>
+    <string name="settings_bypass_lan">Local networks past VPN</string>
+    <string name="settings_bypass_lan_note">Printers, routers and other devices at home</string>
+    <string name="settings_apps">Apps</string>
+    <string name="settings_dns">DNS</string>
+    <string name="settings_dns_note">DNS over HTTPS through the server: your network doesn’t see which names you look up.</string>
+    <string name="settings_connection">Connection</string>
+    <string name="settings_always_on">Always-on VPN</string>
+    <string name="settings_always_on_note">In Android settings: VPN → DPpass → Always-on. It also starts DPpass after a reboot.</string>
+    <string name="settings_notifications">Notifications</string>
+    <string name="settings_notifications_note">Tunnel state and speed in the shade</string>
+    <string name="settings_theme">Theme</string>
+    <string name="theme_system">System</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="settings_app">App</string>
+    <string name="settings_log_note">Log and local report — stay on the phone</string>
+    <string name="settings_not_applied">Settings not applied</string>
+
+    <string name="apps_all">All apps</string>
+    <string name="apps_loading">Loading…</string>
+    <string name="apps_search">Search apps</string>
+    <string name="apps_mode_all">All</string>
+    <string name="apps_mode_except">All except</string>
+    <string name="apps_mode_only">Only selected</string>
+    <string name="apps_mode_all_note">All apps go through the tunnel. DPpass itself never does.</string>
+    <string name="apps_mode_except_note">Selected apps go past the tunnel — for example, banking apps.</string>
+    <string name="apps_mode_only_note">Only selected apps go through the tunnel; the rest go directly.</string>
+    <string name="apps_only_empty">Select at least one app</string>
+
     <string name="log_switch">Keep a log on this phone</string>
-    <string name="log_note">The log stays on the phone and leaves it only through the clipboard.</string>
+    <string name="log_note">Leaves the phone only through the clipboard</string>
     <string name="copy_log">Copy log</string>
     <string name="log_copy_failed">Log not copied</string>
     <string name="report_title">Local report</string>
-    <string name="report_refresh">Refresh</string>
+    <string name="report_note">Assembled on the phone, without secrets. Nothing is sent anywhere.</string>
+
+    <string name="about_title">About</string>
+    <string name="about_version">Version %1$s</string>
+    <string name="about_not_release">Test build for the author’s devices — not a release</string>
+    <string name="about_engine">Proxy core</string>
+    <string name="about_geodata">Geodata</string>
+    <string name="about_dbip">IP Geolocation by DB-IP</string>
+    <string name="about_licenses">Third-party licenses</string>
+    <string name="about_licenses_note">Components inside DPpass and their licenses</string>
+    <string name="about_privacy">Privacy</string>
+    <string name="about_privacy_text">DPpass has no telemetry, analytics or crash reports and doesn’t read device identifiers. Subscriptions get only their link, DPpass’s own User-Agent and — if you turn it on — a random device ID. The log and report stay on the phone.</string>
+    <string name="about_notice_missing">%1$s is missing from this build.</string>
+
     <string name="notification_channel">Tunnel</string>
     <string name="notification_connecting">Connecting…</string>
     <string name="notification_checking">Checking “%1$s”</string>
-    <string name="notification_connected">Connected · %1$s</string>
+    <string name="notification_connected">%1$s</string>
+    <string name="notification_connected_traffic">%1$s · ↓ %2$s ↑ %3$s</string>
+    <string name="notification_title_connected">DPpass · connected</string>
     <string name="notification_public_connected">Connected</string>
+
     <plurals name="servers_count">
         <item quantity="one">%d server</item>
         <item quantity="other">%d servers</item>
+    </plurals>
+    <plurals name="subs_applied">
+        <item quantity="one">“%1$s”: %2$d server applied</item>
+        <item quantity="other">“%1$s”: %2$d servers applied</item>
+    </plurals>
+    <plurals name="days">
+        <item quantity="one">%d day</item>
+        <item quantity="other">%d days</item>
+    </plurals>
+    <plurals name="apps_except">
+        <item quantity="one">All except %d app</item>
+        <item quantity="other">All except %d apps</item>
+    </plurals>
+    <plurals name="apps_only">
+        <item quantity="one">Only %d app</item>
+        <item quantity="other">Only %d apps</item>
+    </plurals>
+    <plurals name="import_links_summary">
+        <item quantity="one">%1$d of %2$d link is usable.</item>
+        <item quantity="other">%1$d of %2$d links are usable.</item>
     </plurals>
     <plurals name="log_copied">
         <item quantity="one">Log copied to clipboard: %d character</item>

@@ -382,3 +382,56 @@ class SubscriptionUpdaterTest {
         assertEquals(DiagCode.SUBSCRIPTION_TOO_LARGE, r.subscription.lastFailed!!.reason.code)
     }
 }
+
+/** Когда пора обновлять подписку в фоне (D-39). */
+class UpdateScheduleTest {
+    private val hour = 60 * 60_000L
+    private val base = Subscription(SubscriptionId("s1"), "S", SubscriptionSource.Url(Secret("https://sub.example.com/t")))
+    private fun failure(at: Long) = FailedRevision(null, at, com.dpsmpx.dppass.diagnostics.Diagnostic.error(DiagCode.SUBSCRIPTION_FETCH_FAILED, "x"))
+
+    @Test
+    fun intervalsFailuresAndOff() {
+        assertTrue(UpdateSchedule.due(base, 0), "ни разу не проверялась — пора")
+        val checked = base.copy(lastCheckedMillis = 10 * hour)
+        assertFalse(UpdateSchedule.due(checked, 21 * hour))
+        assertTrue(UpdateSchedule.due(checked, 22 * hour), "12 часов по умолчанию")
+        assertEquals(hour, UpdateSchedule.waitMillis(checked, 21 * hour))
+        // После неудачи — не раньше чем через 30 минут.
+        val failed = checked.copy(lastFailed = failure(22 * hour))
+        assertFalse(UpdateSchedule.due(failed, 22 * hour + 29 * 60_000))
+        assertTrue(UpdateSchedule.due(failed, 22 * hour + 30 * 60_000))
+        // Удачная ревизия без отметки проверки (версия 1 хранения) — срок от неё.
+        val legacy = base.copy(lastSuccessful = SubscriptionRevision(1, "c", 5 * hour, 3))
+        assertFalse(UpdateSchedule.due(legacy, 16 * hour))
+        assertTrue(UpdateSchedule.due(legacy, 17 * hour))
+        // Выключено — никогда.
+        val off = checked.copy(updatePolicy = UpdatePolicy(intervalMinutes = null))
+        assertFalse(UpdateSchedule.due(off, 1000 * hour))
+        assertNull(UpdateSchedule.waitMillis(off, 0))
+    }
+}
+
+/** Хранение версии 2 (D-39, D-42) и чтение версии 1. */
+class SubscriptionCodecTest {
+    @Test
+    fun inlineSourceIntervalAndCheckRoundTrip() {
+        val items = listOf(
+            Subscription(SubscriptionId("s1"), "Url", SubscriptionSource.Url(Secret("https://sub.example.com/t")), lastCheckedMillis = 42),
+            Subscription(SubscriptionId("s2"), "Мои", SubscriptionSource.Inline(Secret("trojan://p@198.51.100.1:443#A")), updatePolicy = UpdatePolicy(null)),
+            Subscription(SubscriptionId("s3"), "Daily", SubscriptionSource.Url(Secret("https://sub.example.com/u")), updatePolicy = UpdatePolicy(24 * 60)),
+        )
+        val state = SubscriptionsState(items, SubscriptionId("s2"))
+        assertEquals(state, SubscriptionCodec.read(SubscriptionCodec.write(state)).valueOrNull())
+    }
+
+    @Test
+    fun version1ReadsWithDefaults() {
+        val v1 = """{"format":"dppass.subscriptions","format_version":1,"items":[{"id":"s1","name":"S","url":"https://sub.example.com/t","binding":"user","revision_counter":0,"metadata":{}}]}"""
+        val s = SubscriptionCodec.read(v1).valueOrNull()!!.items.single()
+        assertEquals(UpdatePolicy(), s.updatePolicy)
+        assertNull(s.lastCheckedMillis)
+        // Ровно один источник.
+        val both = v1.replace("\"url\":\"https://sub.example.com/t\"", "\"url\":\"https://sub.example.com/t\",\"inline\":\"x\"")
+        assertIs<Outcome.Failure>(SubscriptionCodec.read(both))
+    }
+}

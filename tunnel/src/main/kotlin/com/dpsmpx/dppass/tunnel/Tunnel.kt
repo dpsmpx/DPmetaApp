@@ -3,6 +3,7 @@ package com.dpsmpx.dppass.tunnel
 import com.dpsmpx.dppass.config.ConfigIr
 import com.dpsmpx.dppass.core.Cidr
 import com.dpsmpx.dppass.core.IpAddress
+import com.dpsmpx.dppass.diagnostics.DiagCode
 import com.dpsmpx.dppass.diagnostics.Outcome
 import com.dpsmpx.dppass.routing.AppLowering
 import com.dpsmpx.dppass.routing.AppPolicy
@@ -59,6 +60,15 @@ object TunnelSpecBuilder {
     fun build(ir: ConfigIr, selfPackage: String, platform: PlatformTraits, mtu: Int = DEFAULT_MTU): Outcome<TunnelSpec> {
         val lowered = AppLowering.lower(ir.routing)
         val apps = withoutSelf(lowered.tunnelApps, selfPackage)
+        // Пустой список «только этих» VpnService.Builder понимает как «все приложения» —
+        // смысл перевернулся бы молча (D-05). Туннель не для кого — отказ.
+        if (apps is AppPolicy.OnlyApps && apps.packages.isEmpty()) {
+            return Outcome.failure(
+                DiagCode.APP_POLICY_CONFLICT,
+                "туннель только для выбранных приложений, а ни одного не выбрано",
+                "$.routing.apps",
+            )
+        }
 
         val lan = if (ir.routing.bypassLan) LAN else emptyList()
         val (routes, excluded) = when {

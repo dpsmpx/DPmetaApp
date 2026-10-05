@@ -12,6 +12,15 @@
     <style name="Text.DPpass.Headline">
         <item name="android:textSize">26sp</item>
         <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:letterSpacing">-0.01</item>
+    </style>
+
+    <!-- Заголовок раздела над карточкой: мелкий, акцентный. -->
+    <style name="Text.DPpass.Section">
+        <item name="android:textSize">13sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textColor">@color/primary</item>
+        <item name="android:letterSpacing">0.02</item>
     </style>
 
     <style name="Text.DPpass.Title">

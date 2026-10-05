@@ -28,7 +28,13 @@
 | Значения во всех правилах | 100 000 | `ConfigLimits.maxRuleValues` | нет |
 | Тело подписки | 2 МиБ | `FetchPolicy.maxBytes` | `SubscriptionUpdaterTest` (`SUBSCRIPTION_TOO_LARGE`) |
 | Записи подписки | 1000; остальные не читаются (`SUBSCRIPTION_ENTRY_SKIPPED`) | `FetchPolicy.maxEntries` | нет |
-| Загрузка подписки | 20 с | `FetchPolicy.timeoutMillis` | загрузки по сети ещё нет — этап 3 |
+| Загрузка подписки | 20 с | `FetchPolicy.timeoutMillis` (соединение и чтение; в `HttpsSubscriptionFetcher` — от 1 до 120 с) | нет (тайм-аут не моделируется) |
+| Подписок в приложении | 64; адрес — 2048 символов, имя — 64 | `SubscriptionService.MAX_SUBSCRIPTIONS`, `MAX_URL`, `MAX_NAME` | нет |
+| Обновление по расписанию | задание раз в час; подписка — по своему интервалу (по умолчанию 12 ч); после отказа — не раньше чем через 30 мин; только активная | `SubscriptionJobService`, `UpdateSchedule` (D-39) | `UpdateScheduleTest.intervalsFailuresAndOff` |
+| Импорт (буфер, файл, «Поделиться») | 1 МиБ | `ImportClassifier.MAX_BYTES` | `ImportClassifierTest.plainHttpAndOversizedTextAreRefusedWithReason` |
+| Приложения в политике | 1000 | `UserPolicy.MAX_APPS` | нет |
+| Проверка задержки | по одному серверу, пауза 150 мс, тайм-аут 3 с, не больше 128 за прогон | `LatencyBook` (D-41) | `LatencyBookTest.measuresTcpOneByOneAndSkipsUdp` |
+| Обновление уведомления туннеля | раз в 2 с и только при включённом экране | `DPpassVpnService` (D-40) | нет (на устройстве) |
 | История активаций | 32 записи | `ActivationStore` | нет |
 | Пробы сети | 1 на ориентир за 1,5 с; не больше 12 за 60 с | `ProbeBudget` | `ProbeBudgetTest` (механизм — на своих параметрах) |
 | Кандидаты за подключение | 4, пауза 2 с между попытками | `ConnectionPolicy` | `CandidatePlannerTest`, `OrchestratorTest` |

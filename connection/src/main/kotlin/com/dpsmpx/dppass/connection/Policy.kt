@@ -8,6 +8,8 @@ import com.dpsmpx.dppass.core.ProfileId
 import com.dpsmpx.dppass.diagnostics.DiagCode
 import com.dpsmpx.dppass.engine.CapabilityChecker
 import com.dpsmpx.dppass.engine.EngineCapabilities
+import com.dpsmpx.dppass.network.LatencyProbe
+import com.dpsmpx.dppass.network.LatencyResult
 import com.dpsmpx.dppass.network.NetworkAssessment
 import com.dpsmpx.dppass.network.Reachability
 import com.dpsmpx.dppass.network.RestrictionClass
@@ -67,6 +69,62 @@ class HealthBook(private val policy: ConnectionPolicy = ConnectionPolicy()) {
     }
 }
 
+/**
+ * Задержка до серверов (D-41): последний замер каждого, только в памяти
+ * процесса. Пишет замер по действию пользователя, читают интерфейс и
+ * план — доступ под замком объекта.
+ */
+class LatencyBook {
+    private val map = HashMap<ProfileId, LatencyResult>()
+
+    @Synchronized
+    fun of(id: ProfileId): LatencyResult? = map[id]
+
+    /** Задержка, если замер удался (для плана); иначе null. */
+    @Synchronized
+    fun millis(id: ProfileId): Long? = (map[id] as? LatencyResult.Measured)?.millis
+
+    @Synchronized
+    fun record(id: ProfileId, result: LatencyResult) {
+        map[id] = result
+    }
+
+    @Synchronized
+    fun clear() {
+        map.clear()
+    }
+
+    /**
+     * Замер серверов по одному с паузой (D-14, D-41: без залпов); UDP
+     * (Hysteria2) — не мерится. [onEach] — после каждого: интерфейс
+     * показывает итоги по мере появления.
+     */
+    suspend fun measureAll(
+        profiles: List<ServerProfile>,
+        probe: LatencyProbe,
+        pause: suspend (Long) -> Unit,
+        timeoutMillis: Int = TIMEOUT_MILLIS,
+        onEach: (ProfileId, LatencyResult) -> Unit = { _, _ -> },
+    ) {
+        for ((i, p) in profiles.take(MAX_PER_RUN).withIndex()) {
+            val r = if (p.transportClass == TransportClass.UDP_QUIC) {
+                LatencyResult.NotTcp
+            } else {
+                if (i > 0) pause(PACING_MILLIS)
+                probe.measure(p.endpoint.host, p.endpoint.port, timeoutMillis)
+            }
+            record(p.id, r)
+            onEach(p.id, r)
+        }
+    }
+
+    companion object {
+        const val TIMEOUT_MILLIS: Int = 3_000
+        const val PACING_MILLIS: Long = 150
+        const val MAX_PER_RUN: Int = 128
+    }
+}
+
 /** Попытка в плане — всегда с причинами, почему она здесь и на этом месте. */
 data class PlannedAttempt(val profile: ServerProfile, val reasons: List<String>)
 
@@ -87,7 +145,7 @@ data class ConnectionPlan(
  * Шаги: сеть (нет сети, страница входа) → возможности ядра → пригодность
  * для класса сети (белый список, UDP) → backoff → порядок
  * (выбор пользователя, last-known-good, здоровье, класс транспорта,
- * приоритет, id) → разнообразие классов → предел попыток. Выбор
+ * приоритет, задержка (D-41), id) → разнообразие классов → предел попыток. Выбор
  * пользователя (D-34) — первая попытка; остальные — запасные по D-15.
  */
 object CandidatePlanner {
@@ -101,6 +159,8 @@ object CandidatePlanner {
         policy: ConnectionPolicy = ConnectionPolicy(),
         /** Выбор пользователя (D-34): первым; пауза после отказа для него не действует. */
         preferred: ProfileId? = null,
+        /** Задержка по замеру (D-41): порядок среди равных по здоровью, классу и приоритету. */
+        latency: (ProfileId) -> Long? = { null },
     ): ConnectionPlan {
         when (assessment?.restriction) {
             RestrictionClass.OFFLINE -> return ConnectionPlan(emptyList(), emptyList(), DiagCode.NETWORK_OFFLINE, "нет сети — попытки не делаются")
@@ -154,6 +214,8 @@ object CandidatePlanner {
                 { healthRank(it) },
                 { classPenalty(it) },
                 { -it.hints.priority },
+                // Неизмеренные — после измеренных; тайм-аут — как неизмеренный, а не как отказ (D-41).
+                { latency(it.id) ?: Long.MAX_VALUE },
                 { it.id.value },
             ),
         )
@@ -181,6 +243,7 @@ object CandidatePlanner {
             if (classPenalty(pick) > 0) reasons += "TCP-поток ниже: в этой сети режутся TLS или крупные передачи"
             if (pick !== head) reasons += "другой класс транспорта, чем у предыдущей попытки"
             if (pick.hints.priority != 0) reasons += "приоритет ${pick.hints.priority}"
+            latency(pick.id)?.let { reasons += "задержка $it мс" }
             reasons += "класс ${pick.transportClass}"
             ordered += PlannedAttempt(pick, reasons)
         }

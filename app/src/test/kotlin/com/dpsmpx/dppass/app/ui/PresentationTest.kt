@@ -150,4 +150,61 @@ class PresentationTest {
         assertEquals("2048 ТБ", Formats.bytes(2048L shl 40, units, ru))
         assertEquals("0 Б", Formats.bytes(-5, units, ru))
     }
+
+    @Test
+    fun avatarIsFlagOrFirstLetter() {
+        assertEquals("🇩🇪", Avatar.of("🇩🇪 Германия · 1"))
+        assertEquals("Германия · 1", Avatar.stripFlag("🇩🇪 Германия · 1"))
+        assertEquals("N", Avatar.of("  nl-amsterdam"))
+        assertEquals("•", Avatar.of("—"))
+        // Один региональный символ — не флаг.
+        assertEquals("X", Avatar.of("\uD83C\uDDE9 x"))
+        assertEquals("plain", Avatar.stripFlag("plain"))
+    }
+
+    @Test
+    fun latencyLevelsSearchAndOrder() {
+        val ms = { n: Long -> com.dpsmpx.dppass.network.LatencyResult.Measured(n) }
+        assertEquals(LatencyLevel.GOOD, LatencyLabel.of(ms(80)).level)
+        assertEquals(LatencyLevel.FAIR, LatencyLabel.of(ms(150)).level)
+        assertEquals(LatencyLevel.POOR, LatencyLabel.of(ms(400)).level)
+        assertEquals(LatencyLevel.FAILED, LatencyLabel.of(com.dpsmpx.dppass.network.LatencyResult.Failed(com.dpsmpx.dppass.network.LatencyFailure.TIMEOUT)).level)
+        assertEquals(LatencyLevel.UDP, LatencyLabel.of(com.dpsmpx.dppass.network.LatencyResult.NotTcp).level)
+        assertEquals(LatencyLevel.UNKNOWN, LatencyLabel.of(null).level)
+
+        val latency = mapOf(reality.id to ms(300), trojanWs.id to ms(40))
+        val rows = ServerList.rows(listOf(reality, trojanWs, hy2, ss), { CandidateHealth() }, null, null, 0) { latency[it] }
+        assertEquals(listOf("b", "a", "c", "d"), ServerList.byLatency(rows).map { it.id.value }, "измеренные — по возрастанию, остальные — в прежнем порядке")
+        assertEquals(listOf("c"), ServerList.filter(rows, "quic").map { it.id.value }, "поиск и по описанию")
+        assertEquals(listOf("a", "b", "c", "d"), ServerList.filter(rows, "  ").map { it.id.value })
+        assertEquals(listOf("b"), ServerList.filter(rows, "СЕРВЕР B").map { it.id.value }, "без учёта регистра")
+    }
+
+    @Test
+    fun durationAndSpeed() {
+        assertEquals("0:05", Formats.duration(5_400))
+        assertEquals("12:34", Formats.duration((12 * 60 + 34) * 1000L))
+        assertEquals("1:02:03", Formats.duration((3600 + 2 * 60 + 3) * 1000L))
+        assertEquals("0:00", Formats.duration(-1))
+        assertEquals("1.5 MB/s", Formats.speed(1536L * 1024, listOf("B", "KB", "MB", "GB", "TB"), Locale.ENGLISH, "/s"))
+    }
+
+    @Test
+    fun trafficShareDaysLeftAndKind() {
+        val day = 24 * 60 * 60_000L
+        val s = Subscription(
+            SubscriptionId("s1"), "a", SubscriptionSource.Url(Secret("https://a.example.net/s")),
+            metadata = SubscriptionMetadata(traffic = TrafficInfo(10, 40, 100, (10 * day + 1000) / 1000), webPageUrl = "https://a.example.net/page", updateIntervalHours = 6),
+        )
+        val inline = Subscription(SubscriptionId("s2"), "b", SubscriptionSource.Inline(Secret("trojan://p@198.51.100.1:443")), updatePolicy = com.dpsmpx.dppass.subscriptions.UpdatePolicy(null))
+        val rows = SubscriptionList.rows(SubscriptionsState(listOf(s, inline), null), ConfigSource.None, 0)
+        assertEquals(50, rows[0].usedPercent)
+        assertEquals(10L, rows[0].daysLeft)
+        assertEquals("https://a.example.net/page", rows[0].pageUrl)
+        assertEquals(6, rows[0].providerIntervalHours)
+        assertEquals(12 * 60L, rows[0].autoUpdateMinutes)
+        assertTrue(rows[1].inline)
+        assertNull(rows[1].autoUpdateMinutes)
+        assertNull(rows[1].usedPercent)
+    }
 }
