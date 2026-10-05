@@ -4,56 +4,98 @@ item: CI-0001
 platform: website
 lang: en
 format: page
-source_version: 1
-version: 1
+source_version: 2
+version: 2
 status: ready
 trust: validated
 title: About
-summary: I build complex native systems — a game, an engine, a language — with AI as an engineering instrument
-  and architecture under my own control.
+summary: 'Native systems developer: from one game to an ecosystem of 9 repositories in 24 days; AI is
+  the instrument, architecture and decisions are mine.'
 media:
-- exports/A-en-github_social.png
+- exports/E-en-github_social.png
 media_alt:
-- 'Presentation card. On the left, a photo of the author. On the right: dpsmpx, {{fact:AU-ROLE#1}}; the
-  workflow from intent through architecture, AI implementation and verification to Git and the product,
-  marked “I approve every merge”. Below: {{fact:GH-NAME}}, {{fact:GH-GENRE}}, {{fact:GH-TECH}}; {{fact:GH-LOC}},
-  {{fact:GH-CHECKS}}.'
+- 'dpsmpx card without a photo. On the left, a map of the ecosystem core by layers: products (Galdhold
+  — a game, DPlang), engineering foundation (DP-Verify), knowledge and publishing (SocialMediaImage, DPprofile,
+  DPlearn, DP_game_market), meta layer (DPmeta), plus one project without a public name. On the right:
+  dpsmpx, {{fact:AU-ROLE#1}}; “{{fact:CORE-SCALE-2026-10-05}}”; “AI is the instrument; architecture and
+  decisions are mine”; below — {{fact:CORE-SCALE-2026-10-05#3}}; {{fact:CORE-SCALE-2026-10-05#1}}; {{fact:CORE-SCALE-2026-10-05#4}}.'
 link: null
 generation:
   provider: session
-  note: английский вариант канона v1 (Д21, Д22) — тот же смысл, формулировки фактов на en; без имени автора — только dpsmpx (Д37)
+  note: английский вариант канона v2 (Д21, Д22); без имени автора — только dpsmpx (Д37); роли репозиториев
+    — условие ОР-12
+approval: null
+claims:
+- AU-HANDLE
+- AU-ROLE
+- AU-METHOD
+- AU-MEMORY
+- GH-NAME
+- GH-GENRE
+- GH-TECH
+- GH-ENGINE
+- GH-ANDROID
+- GH-LOC
+- GH-CHECKS
+- DP-WHAT
+- DP-STAGE
+- CORE-SCALE-2026-10-05
+- META-NO-DEPS
+- VRF-WHAT
+- SMI-WHAT
+- PRF-WHAT
+- LRN-WHAT
+- MKT-WHAT
+- META-WHAT
 deps:
   facts:
     AU-ROLE: 0d84826a46110966
+    CORE-SCALE-2026-10-05: ddb54a064dc78fd7
+    META-NO-DEPS: 538aa32a19a5c5ea
     GH-NAME: 18e9e8bc34f1c9f0
     GH-GENRE: 87840cd38160c9f1
+    DP-STAGE: 0d8aced210be861e
+    VRF-WHAT: 917a8dae29da7eb5
+    SMI-WHAT: cbf16ce5b6f07403
+    PRF-WHAT: 774e3cfe896d3a27
+    LRN-WHAT: bab936f8c2f8776c
+    MKT-WHAT: d7cee6de6f534b61
+    META-WHAT: d86fda377e1113a5
     GH-TECH: 885bae9eed2b037d
     GH-ENGINE: 3ae43184e26a50af
     GH-ANDROID: 3ae50de8a7427f5c
     GH-LOC: ac29b63c2833e291
     GH-CHECKS: 5b1aac0836af0098
-    DP-WHAT: 091c2d23907bb1fb
-    DP-STAGE: 0d8aced210be861e
     AU-METHOD: 95e9ba70d576890a
     AU-MEMORY: 823f4b5a22945aae
+    AU-HANDLE: 0535a93f2279e87d
+    DP-WHAT: 091c2d23907bb1fb
   links: {}
   releases: {}
+  datasets: {}
   canonical:
-    version: 1
-    sha256: 4645db6c929c320b4da7da3a7a683295be6243520e53268973610d20b57acee5
+    version: 2
+    sha256: 03f173c39329111c7c55f04e9cf74fb79bb86db1778b3294dc5330fe6d88f36e
   media:
-    exports/A-en-github_social.png: 3624a2a23687ffe2ceff23b766aa5030a47f1e808280b8b088619b0bb8142749
+    exports/E-en-github_social.png: ec1dece8a067ae21ba950233f8c4c5656279b32adcb1f2bbad4f1501a5a2aaec
 ---
-I'm dpsmpx, a {{fact:AU-ROLE#1}}.
+I'm dpsmpx, a {{fact:AU-ROLE#1}}: {{fact:CORE-SCALE-2026-10-05#9}}.
+
+## The ecosystem
+
+The repositories are independent: {{fact:META-NO-DEPS}}. Decisions, contracts and facts tie them together.
+
+- Products. {{fact:GH-NAME}} — {{fact:GH-GENRE}} ([project page](/en/projects/galdhold/)). DPlang — {{fact:DP-STAGE}} ([project page](/en/projects/dplang/)).
+- Engineering foundation. DP-Verify — {{fact:VRF-WHAT}}.
+- Knowledge and publishing. SocialMediaImage — {{fact:SMI-WHAT}}; DPprofile — {{fact:PRF-WHAT}}; DPlearn — {{fact:LRN-WHAT}}; DP_game_market — {{fact:MKT-WHAT}}.
+- Meta layer. DPmeta — {{fact:META-WHAT}}.
+
+One more project has no public name. The core main branches hold {{fact:CORE-SCALE-2026-10-05#8}}.
 
 ## Galdhold
 
-{{fact:GH-NAME#1}} — {{fact:GH-GENRE}}. {{fact:GH-TECH}}; {{fact:GH-ENGINE}}. It has been {{fact:GH-ANDROID}}. The project has {{fact:GH-LOC}} and {{fact:GH-CHECKS}}. More on the [project page](/en/projects/galdhold/).
-
-## DPlang
-
-{{fact:DP-WHAT}}. Status — {{fact:DP-STAGE}}. More on the [project page](/en/projects/dplang/).
+{{fact:GH-NAME#1}}: {{fact:GH-TECH}}, {{fact:GH-ENGINE}}. It has been {{fact:GH-ANDROID}}. The project has {{fact:GH-LOC}} and {{fact:GH-CHECKS}}.
 
 ## How I work
 
-{{fact:AU-METHOD}}. In short: {{fact:AU-MEMORY}}.
+{{fact:AU-METHOD}}. The AI share shows in the history: {{fact:CORE-SCALE-2026-10-05#6}}. In short, {{fact:AU-MEMORY}}: the decision logs hold {{fact:CORE-SCALE-2026-10-05#7}}.
