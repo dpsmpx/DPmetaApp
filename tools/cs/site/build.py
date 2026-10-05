@@ -544,8 +544,8 @@ class SiteBuild:
 
     def htaccess(self) -> str:
         """Apache (Beget): 404, кодировка, без списка файлов каталогов, типы, заголовки.
-        mod_headers для статики и Options в .htaccess на Beget — не подтверждено (Д35):
-        проверка curl -I после первой выгрузки."""
+        Заголовки к статике Beget применяет (05.10.2026); Options в .htaccess на Beget —
+        не подтверждено (Д35): проверка curl -I после выгрузки."""
         lines = ["# Создаёт tools/cs/site/build.py (Д35); на сервере не править — перезапишет выгрузка.",
                  "Options -Indexes",
                  "AddDefaultCharset utf-8",
