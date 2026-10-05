@@ -81,8 +81,9 @@ data class ConnectionPlan(
  *
  * Шаги: сеть (нет сети, страница входа) → возможности ядра → пригодность
  * для класса сети (белый список, UDP) → backoff → порядок
- * (last-known-good, здоровье, класс транспорта, приоритет, id) →
- * разнообразие классов → предел попыток.
+ * (выбор пользователя, last-known-good, здоровье, класс транспорта,
+ * приоритет, id) → разнообразие классов → предел попыток. Выбор
+ * пользователя (D-34) — первая попытка; остальные — запасные по D-15.
  */
 object CandidatePlanner {
     fun plan(
@@ -93,6 +94,8 @@ object CandidatePlanner {
         lastKnownGood: ProfileId?,
         nowMillis: Long,
         policy: ConnectionPolicy = ConnectionPolicy(),
+        /** Выбор пользователя (D-34): первым; пауза после отказа для него не действует. */
+        preferred: ProfileId? = null,
     ): ConnectionPlan {
         when (assessment?.restriction) {
             RestrictionClass.OFFLINE -> return ConnectionPlan(emptyList(), emptyList(), DiagCode.NETWORK_OFFLINE, "нет сети — попытки не делаются")
@@ -111,7 +114,7 @@ object CandidatePlanner {
                     excluded += Exclusion(p.id, "сеть похожа на белый список, а кандидат не отмечен как доступный из неё")
                 assessment?.udp == Reachability.BLOCKED && p.transportClass == TransportClass.UDP_QUIC ->
                     excluded += Exclusion(p.id, "UDP в этой сети не проходит, а кандидат — UDP/QUIC")
-                health.of(p.id).backoffUntilMillis > nowMillis -> {
+                p.id != preferred && health.of(p.id).backoffUntilMillis > nowMillis -> {
                     val left = (health.of(p.id).backoffUntilMillis - nowMillis + 999) / 1000
                     excluded += Exclusion(p.id, "пауза после отказа ${health.of(p.id).lastFailure}: ещё $left с")
                 }
@@ -141,6 +144,7 @@ object CandidatePlanner {
 
         val sorted = viable.sortedWith(
             compareBy<ServerProfile>(
+                { if (it.id == preferred) 0 else 1 },
                 { if (it.id == lastKnownGood) 0 else 1 },
                 { healthRank(it) },
                 { classPenalty(it) },
@@ -154,13 +158,15 @@ object CandidatePlanner {
         while (pool.isNotEmpty()) {
             val prevClass = ordered.lastOrNull()?.profile?.transportClass
             val head = pool.first()
-            val pick = if (prevClass != null && head.transportClass == prevClass) {
+            // Выбор пользователя — всегда первая попытка, разнообразие классов его не сдвигает.
+            val pick = if (prevClass != null && head.transportClass == prevClass && head.id != preferred) {
                 pool.firstOrNull { it.transportClass != prevClass && healthRank(it) <= healthRank(head) } ?: head
             } else {
                 head
             }
             pool.remove(pick)
             val reasons = mutableListOf<String>()
+            if (pick.id == preferred) reasons += "выбран пользователем"
             if (pick.id == lastKnownGood) reasons += "последний удачный кандидат"
             when (health.of(pick.id).state) {
                 HealthState.HEALTHY -> reasons += "был здоров"

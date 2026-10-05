@@ -75,8 +75,12 @@ RULES = [
          "config/src/main/kotlin/com/dpsmpx/dppass/config/ConfigWriter.kt",
          "engine/src/main/",
          "storage/src/main/",
+         # Подписка (D-36): запись в зашифрованное хранилище и уровень HTTP загрузки —
+         # адрес и x-hwid (D-33) нужны там значением.
+         "subscriptions/src/main/kotlin/com/dpsmpx/dppass/subscriptions/Codec.kt",
+         "subscriptions/src/main/kotlin/com/dpsmpx/dppass/subscriptions/Https.kt",
      )(p),
-     "значение секрета — только разбор/запись конфигурации, компиляторы ядер, хранилище"),
+     "значение секрета — только разбор/запись конфигурации, компиляторы ядер, хранилище, запись и загрузка подписки"),
     ("stack-trace", r"\bprintStackTrace\s*\(", lambda p: False,
      "стек может нести секреты; причина — Diagnostic.fromThrowable"),
     ("console", r"(?<![\w.])(println|print)\s*\(|\bSystem\.(out|err)\b",

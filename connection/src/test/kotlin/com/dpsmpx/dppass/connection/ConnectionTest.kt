@@ -2,6 +2,7 @@ package com.dpsmpx.dppass.connection
 
 import com.dpsmpx.dppass.config.ConfigIr
 import com.dpsmpx.dppass.config.ConfigLoader
+import com.dpsmpx.dppass.config.transportClass
 import com.dpsmpx.dppass.core.ManualClock
 import com.dpsmpx.dppass.core.ProfileId
 import com.dpsmpx.dppass.diagnostics.DiagCode
@@ -158,6 +159,29 @@ class CandidatePlannerTest {
 
     private fun plan(c: NetworkCondition?, book: HealthBook = HealthBook(), now: Long = 0, lkg: ProfileId? = null) =
         CandidatePlanner.plan(multi, MockBackend.FULL, c?.let(::assess), book, lkg, now)
+
+    @Test
+    fun userChoiceGoesFirstAndIgnoresBackoff() {
+        val book = HealthBook()
+        // ss2022 только что отказал и стоит на паузе; пользователь всё равно выбрал его.
+        book.recordFailure(ProfileId("ss2022"), DiagCode.ENDPOINT_UNREACHABLE, 0)
+        val auto = plan(NetworkCondition.NORMAL, book, now = 1, lkg = ProfileId("reality-1"))
+        assertTrue(auto.excluded.any { it.profileId == ProfileId("ss2022") }, "без выбора — пауза действует")
+        val chosen = CandidatePlanner.plan(
+            multi, MockBackend.FULL, assess(NetworkCondition.NORMAL), book, ProfileId("reality-1"), 1, preferred = ProfileId("ss2022"),
+        )
+        assertEquals(ProfileId("ss2022"), chosen.attempts.first().profile.id)
+        assertTrue("выбран пользователем" in chosen.attempts.first().reasons)
+        // Остальные — запасные по D-15: последний удачный среди них, соседние попытки — разных классов.
+        val lkg = chosen.attempts.drop(1).single { it.profile.id == ProfileId("reality-1") }
+        assertTrue("последний удачный кандидат" in lkg.reasons)
+        assertTrue(chosen.attempts[1].profile.transportClass != chosen.attempts[0].profile.transportClass)
+        // Исключения по сети действуют и для выбора: UDP не проходит — hy2 не пробуется.
+        val udp = CandidatePlanner.plan(
+            multi, MockBackend.FULL, assess(NetworkCondition.TCP_REACHABLE_UDP_BLOCKED), HealthBook(), null, 0, preferred = ProfileId("hy2"),
+        )
+        assertTrue(udp.attempts.none { it.profile.id == ProfileId("hy2") })
+    }
 
     @Test
     fun deterministicAndBounded() {
