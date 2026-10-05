@@ -282,7 +282,7 @@ IR, известный «по умолчанию» принимается, **л�
 ```json
 {
   "format": "dppass.config",
-  "format_version": 1,
+  "format_version": 2,
   "name": "Пример",
   "profiles": [
     {
