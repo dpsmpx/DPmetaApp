@@ -189,29 +189,30 @@ CS_PROD_YOUTUBE_OAUTH: {rotated: 2026-10-05, expires: 2026-10-12}
    сборкой.
 
 #### Ярлык Termux:Widget
-Ярлык только вызывает систему: rsync, адресов и путей в нём нет. Файл —
-`~/.shortcuts/dpsmpx-site-deploy.sh`, права `chmod 700`. Каталог —
-`~/.shortcuts/`, а не `~/.shortcuts/tasks/`: оттуда ярлык идёт без
-терминала, и подтверждение не спросить.
+Готовый ярлык — `tools/termux/dpsmpx-site-deploy.sh` (тесты —
+`tests/test_termux_shortcut.py`). Он только вызывает систему: rsync,
+адресов и путей сервера в нём нет. Нужно приложение Termux:Widget из
+того же источника, что и Termux (F-Droid или GitHub), и виджет на
+главном экране. Установка — из каталога репозитория:
 ```bash
-#!/data/data/com.termux/files/usr/bin/bash
-# Выгрузка сайта — только командой системы (Д35)
-set -eu
-. "$HOME/.config/dpsmpx/deploy.env"
-cd "$HOME/SocialMediaImage"
-[ "$(git branch --show-current)" = main ] || { echo "не main — отказ"; exit 1; }
-[ -z "$(git status --porcelain)" ] || { echo "есть незакоммиченное — отказ"; exit 1; }
-git pull --ff-only
-PY=/data/data/com.termux/files/usr/bin/python3   # Python из pkg (шаг 3), не ~/.local/bin/python
-"$PY" -m tools.cs site deploy --dry-run
-printf 'Выгрузить на хостинг? Наберите да: '
-read -r ok
-[ "$ok" = да ] || { echo "отменено"; exit 1; }
-"$PY" -m tools.cs site deploy
+mkdir -p ~/.shortcuts && chmod 700 ~/.shortcuts
+install -m 700 ~/SocialMediaImage/tools/termux/dpsmpx-site-deploy.sh ~/.shortcuts/
 ```
-Отказ системы (нет адреса, сборка с ошибками, выпуск закрыт) завершает
-ярлык до выгрузки (`set -e`). Перед «да» — прочитать строки `*deleting`:
-удаляться должно только старое содержимое сайта.
+Каталог — `~/.shortcuts/`, а не `~/.shortcuts/tasks/`: оттуда ярлык идёт
+без терминала, и подтверждение не спросить. Ярлык — копия: после
+изменения файла в репозитории снова выполнить `install`.
+
+Что делает нажатие:
+1. Отказывает, если нет `~/.config/dpsmpx/deploy.env`, ветка не `main` или
+   есть незакоммиченное; затем `git pull --ff-only`.
+2. `python3 -m tools.cs site deploy --dry-run` (Python из `pkg`, шаг 3).
+   Ошибка — выгрузки нет. «изменений: 0» — «выгружать нечего», конец.
+   Есть строки `*deleting` — предупреждает: удаляться должно только
+   старое содержимое сайта.
+3. Спрашивает «да». Любой другой ответ — отмена.
+4. `python3 -m tools.cs site deploy` и проверка `http://dpsmpx.com/`:
+   не 200 — сообщение (500 — Beget не принимает строку `.htaccess`).
+Окно не закрывается, пока не нажать Enter: вывод можно прочитать.
 
 #### Проверка сервера (только чтение)
 Адрес и путь — из `CS_PROD_SITE_DEPLOY_TARGET` (шаг 6), подставлять в
