@@ -1,6 +1,6 @@
 {
   "outcome": "ready",
-  "profiles": 5,
+  "profiles": 9,
   "codes": [
     "SUBSCRIPTION_DIRECTIVE_IGNORED",
     "SUBSCRIPTION_ENTRY_SKIPPED",

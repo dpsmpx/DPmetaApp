@@ -1,12 +1,17 @@
 package com.dpsmpx.dppass.subscriptions
 
 import com.dpsmpx.dppass.config.ConfigValidator
+import com.dpsmpx.dppass.config.CountRange
+import com.dpsmpx.dppass.config.Hysteria2Congestion
 import com.dpsmpx.dppass.config.ProtocolSpec
 import com.dpsmpx.dppass.config.SecuritySpec
 import com.dpsmpx.dppass.config.ShadowsocksMethod
+import com.dpsmpx.dppass.config.TlsFingerprint
 import com.dpsmpx.dppass.config.TransportSpec
 import com.dpsmpx.dppass.config.VlessFlow
+import com.dpsmpx.dppass.config.XHttpExtra
 import com.dpsmpx.dppass.config.XHttpMode
+import com.dpsmpx.dppass.config.Xmux
 import com.dpsmpx.dppass.core.ManualClock
 import com.dpsmpx.dppass.core.SubscriptionId
 import com.dpsmpx.dppass.diagnostics.DiagCode
@@ -129,9 +134,9 @@ class ShareLinkParserTest {
     @Test
     fun hysteria2RejectsWhatIrCannotExpress() {
         val base = "hysteria2://test-password-2@192.0.2.30:8443/?sni=hy2.example.com"
-        // fm — finalmask Xray (управление перегрузкой и др.), pinSHA256 — пиннинг: IR их не выражает.
-        val names = unsupportedNames(ShareLinkParser.parse("$base&fm=%7B%7D&pinSHA256=AA", "s"))
-        assertTrue("fm" in names && "pinsha256" in names, names)
+        // Маски finalmask (кроме quicParams.congestion, D-37) и pinSHA256 (пиннинг) IR не выражает.
+        assertTrue("pinsha256" in unsupportedNames(ShareLinkParser.parse("$base&pinSHA256=AA", "s")))
+        assertTrue("fm.udp" in unsupportedNames(ShareLinkParser.parse("$base&fm=%7B%22udp%22%3A%5B%5D%7D", "s")))
         val obfs = unsupportedNames(ShareLinkParser.parse("$base&obfs=gecko&obfs-password=x", "s"))
         assertTrue("obfs" in obfs && "gecko" !in obfs, obfs)
         assertEquals(DiagCode.INSECURE_TLS_REJECTED, ShareLinkParser.parse("$base&insecure=1", "s").errors.single().code)
@@ -169,6 +174,47 @@ class ShareLinkParserTest {
         // Неизвестный «метод» не повторяется: в испорченной ссылке там бывает секрет.
         val r = ShareLinkParser.parse("ss://test-password-9:x@192.0.2.40:8388", "s")
         assertFalse(r.diagnostics.flatMap { it.renderWithCauses() }.any { "test-password-9" in it }, unsupportedNames(r))
+    }
+
+    /** Формат 2 (D-37): отпечатки, `extra` XHTTP и `fm` Hysteria2 из ссылок панели. */
+    @Test
+    fun formatV2LinkParameters() {
+        val qq = ShareLinkParser.parse("vless://$UUID1@203.0.113.11:443?security=reality&sni=www.example.com&pbk=$KEY&fp=qq&flow=xtls-rprx-vision", "s")
+        assertEquals(TlsFingerprint.QQ, (qq.valueOrNull()!!.security as SecuritySpec.Reality).fingerprint)
+        val edge = ShareLinkParser.parse("vless://$UUID1@cdn.example.net:443?type=ws&security=tls&sni=cdn.example.net&path=%2Fws&fp=edge", "s")
+        assertEquals(TlsFingerprint.EDGE, (edge.valueOrNull()!!.security as SecuritySpec.Tls).fingerprint)
+
+        val extra = "%7B%22xPaddingBytes%22%3A%22100-1000%22%2C%22noGRPCHeader%22%3Atrue%2C%22xmux%22%3A" +
+            "%7B%22maxConcurrency%22%3A%2216-32%22%2C%22maxConnections%22%3A0%2C%22hKeepAlivePeriod%22%3A0%7D%7D"
+        val x = ShareLinkParser.parse("vless://$UUID1@203.0.113.26:443?type=xhttp&security=reality&sni=www.example.com&pbk=$KEY&path=%2Fx&extra=$extra", "s")
+        val e = (x.valueOrNull()!!.transport as TransportSpec.XHttp).extra
+        assertEquals(XHttpExtra(xPaddingBytes = CountRange(100, 1000), noGrpcHeader = true, xmux = Xmux(maxConcurrency = CountRange(16, 32))), e)
+        assertTrue(ConfigValidator.validateProfile(x.valueOrNull()!!, "p").none { it.isError })
+
+        val hy2 = ShareLinkParser.parse("hysteria2://test-password-2@192.0.2.30:8443/?sni=hy2.example.com&fm=%7B%22quicParams%22%3A%7B%22congestion%22%3A%22bbr%22%7D%7D", "s")
+        assertEquals(Hysteria2Congestion.BBR, (hy2.valueOrNull()!!.protocol as ProtocolSpec.Hysteria2).congestion)
+
+        // Незнакомый ключ — отказ с названием, без значения.
+        val headers = unsupportedNames(
+            ShareLinkParser.parse("vless://$UUID1@203.0.113.26:443?type=xhttp&security=tls&sni=a.example.com&extra=%7B%22headers%22%3A%7B%22x%22%3A%22secret-9%22%7D%7D", "s"),
+        )
+        assertTrue("extra.headers" in headers && "secret-9" !in headers, headers)
+        val brutal = unsupportedNames(
+            ShareLinkParser.parse("hysteria2://test-password-2@192.0.2.30:8443/?fm=%7B%22quicParams%22%3A%7B%22congestion%22%3A%22brutal%22%7D%7D", "s"),
+        )
+        assertTrue("congestion" in brutal, brutal)
+        // extra у другого транспорта и не-JSON — отказ.
+        assertTrue("extra" in unsupportedNames(ShareLinkParser.parse("vless://$UUID1@203.0.113.1:443?security=tls&sni=a.example.com&extra=%7B%7D", "s")))
+        assertEquals(
+            DiagCode.SHARE_LINK_INVALID,
+            ShareLinkParser.parse("vless://$UUID1@203.0.113.1:443?type=xhttp&security=tls&sni=a.example.com&extra=nope", "s").errors.single().code,
+        )
+        // Оба предела xmux — ссылка разбирается, профиль отвергает проверка (как у документа).
+        val both = ShareLinkParser.parse(
+            "vless://$UUID1@203.0.113.1:443?type=xhttp&security=tls&sni=a.example.com&extra=%7B%22xmux%22%3A%7B%22maxConcurrency%22%3A2%2C%22maxConnections%22%3A3%7D%7D",
+            "s",
+        )
+        assertEquals(listOf(DiagCode.TRANSPORT_SETTING_INVALID), ConfigValidator.validateProfile(both.valueOrNull()!!, "p").map { it.code })
     }
 
     @Test

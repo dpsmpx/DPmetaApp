@@ -1,11 +1,13 @@
 package com.dpsmpx.dppass.engine.xray
 
 import com.dpsmpx.dppass.config.ConfigIr
+import com.dpsmpx.dppass.config.CountRange
 import com.dpsmpx.dppass.config.ProtocolSpec
 import com.dpsmpx.dppass.config.SecuritySpec
 import com.dpsmpx.dppass.config.ServerProfile
 import com.dpsmpx.dppass.config.TransportSpec
 import com.dpsmpx.dppass.config.VlessFlow
+import com.dpsmpx.dppass.config.XHttpExtra
 import com.dpsmpx.dppass.core.Checksums
 import com.dpsmpx.dppass.core.Host
 import com.dpsmpx.dppass.core.Json
@@ -236,9 +238,14 @@ class XrayCompiler(
                 "hysteriaSettings" to Json.obj("version" to Json.num(2), "auth" to Json.str(proto.password.reveal())),
                 "security" to Json.str("tls"),
                 "tlsSettings" to Json.obj("serverName" to Json.str(tls?.serverName)),
-                "finalmask" to obfs?.let {
-                    Json.obj("udp" to Json.arr(listOf(Json.obj("type" to Json.str("salamander"), "settings" to Json.obj("password" to Json.str(it))))))
-                },
+                // Salamander — маска UDP; управление перегрузкой (формат 2, D-37) — quicParams.
+                // Без congestion поле не пишется: Xray без скорости Brutal и так берёт BBR.
+                "finalmask" to Json.obj(
+                    "udp" to obfs?.let {
+                        Json.arr(listOf(Json.obj("type" to Json.str("salamander"), "settings" to Json.obj("password" to Json.str(it)))))
+                    },
+                    "quicParams" to proto.congestion?.let { Json.obj("congestion" to Json.str(it.wire)) },
+                ).takeIf { it.fields.isNotEmpty() },
             )
             return Json.obj(
                 "tag" to Json.str(XrayBackend.TAG_PROXY),
@@ -271,8 +278,9 @@ class XrayCompiler(
             when (val t = p.transport) {
                 is TransportSpec.WebSocket -> out["wsSettings"] = Json.obj("path" to Json.str(t.path), "host" to Json.str(t.host))
                 is TransportSpec.Grpc -> out["grpcSettings"] = Json.obj("serviceName" to Json.str(t.serviceName))
-                is TransportSpec.XHttp ->
-                    out["xhttpSettings"] = Json.obj("path" to Json.str(t.path), "host" to Json.str(t.host), "mode" to Json.str(t.mode.wire))
+                is TransportSpec.XHttp -> out["xhttpSettings"] = JsonObject(
+                    Json.obj("path" to Json.str(t.path), "host" to Json.str(t.host), "mode" to Json.str(t.mode.wire)).fields + xhttpExtra(t.extra).fields,
+                )
                 is TransportSpec.HttpUpgrade -> out["httpupgradeSettings"] = Json.obj("path" to Json.str(t.path), "host" to Json.str(t.host))
                 TransportSpec.Tcp, TransportSpec.Native -> Unit
             }
@@ -300,6 +308,33 @@ class XrayCompiler(
                 }
             }
             return JsonObject(out)
+        }
+
+        /**
+         * Настройки XHTTP формата 2 (D-37) — прямо в `xhttpSettings`, а не в
+         * `extra`: Xray заменяет настройку содержимым `extra` целиком
+         * (`infra/conf/transport_method.go`). Пишутся только заданные; `xmux`
+         * — только целиком, как у поставщика: заданный заменяет значения
+         * ядра по умолчанию все сразу.
+         */
+        private fun xhttpExtra(e: XHttpExtra): JsonObject {
+            fun range(r: CountRange?): JsonValue? = r?.let { Json.str(it.toString()) }
+            return Json.obj(
+                "xPaddingBytes" to range(e.xPaddingBytes),
+                "scMaxEachPostBytes" to range(e.scMaxEachPostBytes),
+                "scMinPostsIntervalMs" to range(e.scMinPostsIntervalMs),
+                "noGRPCHeader" to Json.bool(true).takeIf { e.noGrpcHeader },
+                "xmux" to e.xmux?.let { x ->
+                    Json.obj(
+                        "maxConcurrency" to range(x.maxConcurrency),
+                        "maxConnections" to range(x.maxConnections),
+                        "cMaxReuseTimes" to range(x.cMaxReuseTimes),
+                        "hMaxRequestTimes" to range(x.hMaxRequestTimes),
+                        "hMaxReusableSecs" to range(x.hMaxReusableSecs),
+                        "hKeepAlivePeriod" to x.hKeepAlivePeriod?.let(Json::num),
+                    )
+                },
+            )
         }
 
         // ---- маршрутизация ----

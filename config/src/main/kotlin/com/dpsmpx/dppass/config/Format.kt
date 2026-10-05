@@ -14,7 +14,16 @@ import com.dpsmpx.dppass.diagnostics.Outcome
  */
 object ConfigFormat {
     const val MARKER: String = "dppass.config"
-    const val CURRENT_VERSION: Int = 1
+    const val CURRENT_VERSION: Int = 2
+
+    /**
+     * Производственные миграции. 1 → 2 (D-37) — тождественная: версия 2
+     * только добавляет значения и поля, а прежние понимает так же. Её
+     * ждут документы, сохранённые на устройстве до версии 2 (D-07).
+     */
+    val MIGRATIONS: Map<Int, ConfigMigration> = mapOf(
+        1 to ConfigMigration { doc -> Outcome.Success(JsonObject(doc.fields + ("format_version" to JsonNumber("2")))) },
+    )
 }
 
 /** Пределы, после которых документ отвергается до разбора вглубь. */
@@ -46,13 +55,12 @@ fun interface ConfigMigration {
  * умолчанию взамен — исходник сохраняется вызывающим и возвращается
  * пользователю вместе с причиной.
  *
- * До первого выпуска для посторонних (D-06) производственных миграций
- * нет: старые черновые версии формата отвергаются. Механизм проверен
- * тестами на синтетической цепочке.
+ * Производственные миграции — [ConfigFormat.MIGRATIONS]; первая — 1 → 2
+ * (D-37). Механизм проверен ещё и тестами на синтетической цепочке.
  */
 class Migrator(
     private val currentVersion: Int = ConfigFormat.CURRENT_VERSION,
-    private val migrations: Map<Int, ConfigMigration> = emptyMap(),
+    private val migrations: Map<Int, ConfigMigration> = ConfigFormat.MIGRATIONS,
 ) {
     data class Result(val document: JsonObject, val fromVersion: Int)
 

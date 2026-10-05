@@ -39,6 +39,7 @@ object ConfigWriter {
                     "type" to Json.str("hysteria2"),
                     "password" to secret(pr.password),
                     "obfs_password" to secret(pr.obfsPassword),
+                    "congestion" to Json.str(pr.congestion?.wire),
                 )
             }
             val transport = when (val t = p.transport) {
@@ -47,11 +48,13 @@ object ConfigWriter {
                 is TransportSpec.WebSocket -> Json.obj("type" to Json.str("websocket"), "path" to Json.str(t.path), "host" to Json.str(t.host))
                 is TransportSpec.HttpUpgrade -> Json.obj("type" to Json.str("httpupgrade"), "path" to Json.str(t.path), "host" to Json.str(t.host))
                 is TransportSpec.Grpc -> Json.obj("type" to Json.str("grpc"), "service_name" to Json.str(t.serviceName))
-                is TransportSpec.XHttp -> Json.obj(
-                    "type" to Json.str("xhttp"),
-                    "path" to Json.str(t.path),
-                    "host" to Json.str(t.host),
-                    "mode" to Json.str(t.mode.wire),
+                is TransportSpec.XHttp -> JsonObject(
+                    Json.obj(
+                        "type" to Json.str("xhttp"),
+                        "path" to Json.str(t.path),
+                        "host" to Json.str(t.host),
+                        "mode" to Json.str(t.mode.wire),
+                    ).fields + xhttpExtra(t.extra).fields,
                 )
             }
             val security = when (val s = p.security) {
@@ -139,6 +142,27 @@ object ConfigWriter {
             "profiles" to Json.arr(profiles),
             "routing" to routing,
             "dns" to dns,
+        )
+    }
+
+    /** Настройки XHTTP формата 2 (D-37): только заданные — значения по умолчанию ядра не пишутся. */
+    private fun xhttpExtra(e: XHttpExtra): JsonObject {
+        fun range(r: CountRange?): JsonValue? = r?.let { if (it.from == it.to) Json.num(it.from) else Json.str(it.toString()) }
+        return Json.obj(
+            "x_padding_bytes" to range(e.xPaddingBytes),
+            "sc_max_each_post_bytes" to range(e.scMaxEachPostBytes),
+            "sc_min_posts_interval_ms" to range(e.scMinPostsIntervalMs),
+            "no_grpc_header" to Json.bool(true).takeIf { e.noGrpcHeader },
+            "xmux" to e.xmux?.let { x ->
+                Json.obj(
+                    "max_concurrency" to range(x.maxConcurrency),
+                    "max_connections" to range(x.maxConnections),
+                    "c_max_reuse_times" to range(x.cMaxReuseTimes),
+                    "h_max_request_times" to range(x.hMaxRequestTimes),
+                    "h_max_reusable_secs" to range(x.hMaxReusableSecs),
+                    "h_keep_alive_period" to x.hKeepAlivePeriod?.let(Json::num),
+                )
+            },
         )
     }
 

@@ -28,7 +28,8 @@ import com.dpsmpx.dppass.routing.Rule
 import com.dpsmpx.dppass.routing.TransportProtocol
 
 /**
- * Документ формата 1 → IR. Значения нормализуются при чтении (домены в
+ * Документ текущего формата (2, D-37; версию 1 до него доводит миграция) → IR.
+ * Значения нормализуются при чтении (домены в
  * нижнем регистре, подсети канонически) с пометкой там, где запись
  * отличалась; всё, что не укладывается в IR, — ошибка с путём.
  */
@@ -90,7 +91,8 @@ internal class DocumentMapper(private val diags: DiagnosticCollector, private va
             ProtocolKind.HYSTERIA2 -> {
                 val password = r.secret("password")
                 val obfs = r.secret("obfs_password", required = false)
-                password?.let { ProtocolSpec.Hysteria2(it, obfs) }
+                val congestion = r.enum("congestion", CONGESTIONS, required = false)
+                password?.let { ProtocolSpec.Hysteria2(it, obfs, congestion) }
             }
         }
         r.finish()
@@ -108,7 +110,8 @@ internal class DocumentMapper(private val diags: DiagnosticCollector, private va
                 val p = path(r)
                 val h = hostHeader(r)
                 val mode = r.enum("mode", XHTTP_MODES, required = false, default = XHttpMode.AUTO)
-                if (p == null || mode == null) null else TransportSpec.XHttp(p, h, mode)
+                val extra = xhttpExtra(r)
+                if (p == null || mode == null) null else TransportSpec.XHttp(p, h, mode, extra)
             }
             TransportKind.GRPC -> r.string("service_name")?.let { s ->
                 if (!ConfigValidator.isValidServiceName(s)) {
@@ -121,6 +124,29 @@ internal class DocumentMapper(private val diags: DiagnosticCollector, private va
         }
         r.finish()
         return spec
+    }
+
+    /** Настройки XHTTP формата 2 (D-37) — поля того же объекта `transport`. */
+    private fun xhttpExtra(r: ObjReader): XHttpExtra {
+        val xmux = r.obj("xmux", required = false)?.let { x ->
+            val m = Xmux(
+                maxConcurrency = x.range("max_concurrency"),
+                maxConnections = x.range("max_connections"),
+                cMaxReuseTimes = x.range("c_max_reuse_times"),
+                hMaxRequestTimes = x.range("h_max_request_times"),
+                hMaxReusableSecs = x.range("h_max_reusable_secs"),
+                hKeepAlivePeriod = x.int("h_keep_alive_period", required = false, range = -1..86_400)?.takeIf { it != 0 },
+            )
+            x.finish()
+            m.takeUnless { it.isEmpty }
+        }
+        return XHttpExtra(
+            xPaddingBytes = r.range("x_padding_bytes"),
+            scMaxEachPostBytes = r.range("sc_max_each_post_bytes"),
+            scMinPostsIntervalMs = r.range("sc_min_posts_interval_ms"),
+            noGrpcHeader = r.bool("no_grpc_header", false),
+            xmux = xmux,
+        )
     }
 
     private fun path(r: ObjReader): String? = r.string("path")?.let { p ->
@@ -376,6 +402,7 @@ internal class DocumentMapper(private val diags: DiagnosticCollector, private va
             "native" to TransportKind.NATIVE,
         )
         val XHTTP_MODES = XHttpMode.entries.associateBy { it.wire }
+        val CONGESTIONS = Hysteria2Congestion.entries.associateBy { it.wire }
         val SECURITIES = mapOf("none" to SecurityKind.NONE, "tls" to SecurityKind.TLS, "reality" to SecurityKind.REALITY)
         val FINGERPRINTS = TlsFingerprint.entries.associateBy { it.wire }
         val ACTIONS = mapOf("direct" to RouteAction.DIRECT, "proxy" to RouteAction.PROXY, "block" to RouteAction.BLOCK)

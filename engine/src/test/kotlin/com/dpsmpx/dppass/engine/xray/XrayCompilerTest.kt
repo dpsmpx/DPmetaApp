@@ -467,4 +467,32 @@ class XrayCompilerTest {
             assertTrue(r.isSuccess && r.diagnostics.isEmpty(), "${multi.profiles[i].id}: ${r.diagnostics.map { it.render() }}")
         }
     }
+
+    /** Формат 2 (D-37): отпечатки, настройки XHTTP прямо в xhttpSettings (не через extra), перегрузка Hysteria2. */
+    @Test
+    fun formatV2FieldsReachXray() {
+        val v2 = corpus("valid-format-v2.json")
+        fun proxy(id: String) = outbound(payload(v2, profile = v2.profiles.indexOfFirst { it.id.value == id }), "proxy")
+        assertEquals("qq", proxy("reality-qq")["streamSettings"]["realitySettings"]["fingerprint"].text)
+        assertEquals("edge", proxy("ws-edge")["streamSettings"]["tlsSettings"]["fingerprint"].text)
+
+        val xhttp = proxy("xhttp-extra")["streamSettings"]["xhttpSettings"]
+        assertEquals(null, xhttp["extra"], "extra заменил бы настройку целиком")
+        assertEquals("100-1000", xhttp["xPaddingBytes"].text)
+        assertEquals("1000000", xhttp["scMaxEachPostBytes"].text)
+        assertEquals(Json.bool(true), xhttp["noGRPCHeader"])
+        assertEquals("16-32", xhttp["xmux"]["maxConcurrency"].text)
+        assertEquals(null, xhttp["xmux"]["maxConnections"])
+        assertEquals(30, xhttp["xmux"]["hKeepAlivePeriod"].int)
+
+        val hy2 = proxy("hy2-bbr")["streamSettings"]
+        assertEquals("bbr", hy2["finalmask"]["quicParams"]["congestion"].text)
+        assertEquals(null, hy2["finalmask"]["udp"], "без obfs — без Salamander")
+        // Без congestion и obfs finalmask не пишется вовсе.
+        val plain = ir(
+            profile = """{"id": "h", "name": "H", "server": "192.0.2.30", "port": 8443, "protocol": {"type": "hysteria2", "password": "test-password-2"},
+              "transport": {"type": "native"}, "security": {"type": "tls", "server_name": "hy2.example.com"}}""",
+        )
+        assertEquals(null, outbound(payload(plain), "proxy")["streamSettings"]["finalmask"])
+    }
 }

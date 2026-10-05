@@ -1,10 +1,11 @@
-# Формат конфигурации DPpass, версия 1
+# Формат конфигурации DPpass, версия 2
 
 Собственный документ DPpass (D-06): JSON с маркером
 `"format": "dppass.config"` и версией формата, не связанной с версиями
 ядер, геоданных и приложения. Разбор — `config/` (`ConfigLoader`,
 `DocumentMapper`, `ConfigValidator`), запись — `ConfigWriter`. Набор
-протоколов — IR v1 (D-16).
+протоколов — IR v1 (D-16); версия 2 формата (D-37) добавила отпечатки
+TLS, управление перегрузкой Hysteria2 и настройки XHTTP.
 
 ## 1. Общие правила
 
@@ -35,7 +36,7 @@
 | Поле | Тип | Обяз. | Смысл |
 |---|---|---|---|
 | `format` | строка | да | ровно `dppass.config`, иначе `FORMAT_NOT_DPPASS` |
-| `format_version` | целое | да | `1`; новее — `FORMAT_VERSION_UNSUPPORTED` «создано более новой версией» |
+| `format_version` | целое | да | `2`; `1` — через миграцию (§8); новее — `FORMAT_VERSION_UNSUPPORTED` «создано более новой версией» |
 | `name` | строка | нет | 1…128 символов после обрезки пробелов, без управляющих (`NAME_INVALID`) |
 | `profiles` | массив объектов | да | профили серверов, хотя бы один (`PROFILES_EMPTY`) |
 | `routing` | объект | нет | маршрутизация (§4); нет — всё через прокси, локальные сети мимо туннеля |
@@ -61,7 +62,7 @@
 | `vless` | `id` — UUID (секрет); `flow` — `none` (по умолчанию) или `vision` | нужна защита `tls` или `reality` (`SECURITY_REQUIRED`); `vision` — только транспорт `tcp` с `tls`/`reality` (`FLOW_REQUIRES_TCP_TLS`) |
 | `trojan` | `password` (секрет) | только с `tls` |
 | `shadowsocks` | `method` — `2022-blake3-aes-128-gcm`, `2022-blake3-aes-256-gcm`, `2022-blake3-chacha20-poly1305`; `password` — ключ base64 (16 байт для aes-128, иначе 32; секрет) | защита `none`, транспорт `tcp` (`TRANSPORT_PROTOCOL_MISMATCH`); неверная длина ключа — `PASSWORD_FORMAT_INVALID`. Старые AEAD-методы не поддерживаются (D-16) |
-| `hysteria2` | `password` (секрет); `obfs_password` — необязательный (секрет) | транспорт `native`, защита `tls` |
+| `hysteria2` | `password` (секрет); `obfs_password` — необязательный (секрет); `congestion` — `bbr` или `reno` (формат 2; нет — по умолчанию ядра: Xray без скоростей Brutal берёт BBR) | транспорт `native`, защита `tls` |
 
 Секрет не может быть пустым (`PASSWORD_EMPTY`) и не может быть меткой
 `<redacted>` из отредактированного экспорта (`SECRET_PLACEHOLDER`: такой
@@ -74,19 +75,32 @@
 | `tcp` | — |
 | `websocket` | `path` (обяз.), `host` (домен, необяз.) |
 | `httpupgrade` | `path` (обяз.), `host` (необяз.) |
-| `xhttp` | `path` (обяз.), `host` (необяз.), `mode` — `auto` (по умолчанию), `packet-up`, `stream-up`, `stream-one` |
+| `xhttp` | `path` (обяз.), `host` (необяз.), `mode` — `auto` (по умолчанию), `packet-up`, `stream-up`, `stream-one`; формат 2 — необязательные настройки ниже |
 | `grpc` | `service_name` — 1…256 символов без пробелов |
 | `native` | — (свой транспорт протокола; только `hysteria2`) |
 
 `path` начинается с `/`, до 1024 символов, без пробелов и управляющих
 (`PATH_INVALID`); `host` — доменное имя (`DOMAIN_INVALID`).
 
+Настройки `xhttp` формата 2 (D-37) — то, что поставщики передают в
+`extra` Xray. Диапазон — целое `N` или строка `"N-M"` с N ≤ M (без
+знака); `0` — то же, что поля нет (так понимает Xray). Неверное —
+`TRANSPORT_SETTING_INVALID` с путём.
+
+| Поле | Значение |
+|---|---|
+| `x_padding_bytes` | диапазон, начало ≥ 1 — размер заполнения запросов |
+| `sc_max_each_post_bytes` | диапазон, начало ≥ 1 — наибольший размер одного POST (`packet-up`) |
+| `sc_min_posts_interval_ms` | диапазон, начало ≥ 1 — наименьший промежуток между POST, мс |
+| `no_grpc_header` | логическое, по умолчанию `false` |
+| `xmux` | объект: `max_concurrency` или `max_connections` (не вместе), `c_max_reuse_times`, `h_max_request_times`, `h_max_reusable_secs` — диапазоны; `h_keep_alive_period` — секунды −1…86400 (отрицательное — без keep-alive). Заданный `xmux` заменяет значения ядра по умолчанию целиком, как в Xray |
+
 ### 3.3. Защита (`security.type`)
 
 | `type` | Поля |
 |---|---|
 | `none` | — (только `shadowsocks`) |
-| `tls` | `server_name` (домен, необяз.); `alpn` (массив строк 1…32 символа, необяз.); `fingerprint` — `chrome`, `firefox`, `safari`, `randomized` (необяз.; без него — отпечаток ядра по умолчанию, у Xray 26.9.30 — `chrome`). У Hysteria2 в Xray отпечатка нет, а ALPN всегда `h3`: профиль Hysteria2 с `fingerprint` или с `alpn`, отличным от `h3`, компилятор Xray отвергает, а не применяет молча иначе; `allow_insecure`: `true` — ошибка `INSECURE_TLS_REJECTED` (D-11), `false` допускается |
+| `tls` | `server_name` (домен, необяз.); `alpn` (массив строк 1…32 символа, необяз.); `fingerprint` — `chrome`, `firefox`, `safari`, `randomized`; с формата 2 ещё `ios`, `android`, `edge`, `360`, `qq`, `random` (один из современных, ядро выбирает при каждом запуске), `randomizednoalpn` (необяз.; без него — отпечаток ядра по умолчанию, у Xray 26.9.30 — `chrome`; `unsafe` — TLS Go без подделки — не принимается). У Hysteria2 в Xray отпечатка нет, а ALPN всегда `h3`: профиль Hysteria2 с `fingerprint` или с `alpn`, отличным от `h3`, компилятор Xray отвергает, а не применяет молча иначе; `allow_insecure`: `true` — ошибка `INSECURE_TLS_REJECTED` (D-11), `false` допускается |
 | `reality` | `server_name` (домен, обяз.); `public_key` — 32 байта X25519 в base64url без `=` (43 символа, `REALITY_PUBLIC_KEY_INVALID`); `short_id` — 0…16 шестнадцатеричных цифр в нижнем регистре, чётное число (секрет, `REALITY_SHORT_ID_INVALID`); `fingerprint` (по умолчанию `chrome`); `spider_x` (необяз.) |
 
 REALITY — только с `vless` и транспортом `tcp`, `xhttp` или `grpc`.
@@ -241,8 +255,12 @@ REALITY — только с `vless` и транспортом `tcp`, `xhttp` и�
 По D-06: версия новее текущей — отказ; версия, для которой нет цепочки
 миграций, — отказ; миграции — явные шаги «N → N+1» над деревом JSON, у
 каждой — тест; ни в каком случае не создаётся конфигурация по
-умолчанию взамен. До первого выпуска для посторонних производственных
-миграций нет: черновые версии формата отвергаются.
+умолчанию взамен.
+
+| Версия | Что изменилось | Миграция |
+|---|---|---|
+| 1 | первая (D-06, D-16) | — |
+| 2 | новые отпечатки TLS, `congestion` у Hysteria2, настройки `xhttp` (D-37) | 1 → 2 — тождественная: версия 2 только добавляет; её ждут документы, сохранённые на устройстве до версии 2 (D-07). Отсутствие конструкций версии 2 в документе версии 1 она не проверяет |
 
 Новое поле, новое значение в закрытом наборе, изменение смысла поля —
 это **новая версия формата**: `ConfigFormat.CURRENT_VERSION`, миграция с
@@ -259,9 +277,9 @@ IR, известный «по умолчанию» принимается, **л�
 
 | Схема | Параметры |
 |---|---|
-| `vless://UUID@хост:порт?…#имя` | `type` (`tcp`/`raw`, `ws`, `httpupgrade`, `grpc` + `serviceName`, `xhttp`/`splithttp` + `mode`), `security` (`none`, `tls`, `reality` + `pbk`, `sid`, `spx`), `sni`, `fp`, `alpn`, `flow` (`xtls-rprx-vision`), `path`, `host`, `encryption` (только `none`), `headerType` (только `none`) |
+| `vless://UUID@хост:порт?…#имя` | `type` (`tcp`/`raw`, `ws`, `httpupgrade`, `grpc` + `serviceName`, `xhttp`/`splithttp` + `mode` и `extra`), `security` (`none`, `tls`, `reality` + `pbk`, `sid`, `spx`), `sni`, `fp`, `alpn`, `flow` (`xtls-rprx-vision`), `path`, `host`, `encryption` (только `none`), `headerType` (только `none`) |
 | `trojan://пароль@хост:порт?…#имя` | те же, кроме `pbk`/`sid`/`spx`/`flow`/`encryption`; `security` по умолчанию `tls` |
-| `hysteria2://пароль@хост:порт/?…#имя` (и `hy2://`) | `sni`, `obfs` (только `salamander`) вместе с `obfs-password`, `insecure` (только `0`); пароль — вся часть до `@`; порт — один (диапазоны портов IR не выражает); защита — TLS без `alpn` и `fingerprint` (§3) |
+| `hysteria2://пароль@хост:порт/?…#имя` (и `hy2://`) | `sni`, `obfs` (только `salamander`) вместе с `obfs-password`, `insecure` (только `0`), `fm` (только `{"quicParams":{"congestion":…}}` со значением `bbr` или `reno`); пароль — вся часть до `@`; порт — один (диапазоны портов IR не выражает); защита — TLS без `alpn` и `fingerprint` (§3) |
 | `ss://ДАННЫЕ@хост:порт#имя` | без параметров (`plugin` и др. — отказ); ДАННЫЕ — `метод:пароль` в base64 (стандартный или для URL, с `=` или без) либо открыто с %-кодированием (SIP002); метод — только `2022-blake3-*` (D-16): старый AEAD (`chacha20-ietf-poly1305`, `aes-*-gcm`) отвергается с причиной |
 
 `allowInsecure=1`/`insecure=1` — профиль отвергается
@@ -269,9 +287,17 @@ IR, известный «по умолчанию» принимается, **л�
 отвергается. Другие схемы (`vmess`, `tuic`, …) —
 `SHARE_LINK_SCHEME_UNSUPPORTED` («ещё не поддерживается» или
 «неизвестна»). Что выдаёт панель Remnawave и что из этого DPpass
-сейчас выражает — `docs/research/REMNAWAVE_SUBSCRIPTIONS.md`; например,
-отпечатков `edge`/`qq`, `extra` у XHTTP и `fm` нет в IR, и такие ссылки
-отвергаются с названием параметра.
+выражает — `docs/research/REMNAWAVE_SUBSCRIPTIONS.md`.
+
+`extra` у `xhttp` (формат 2, D-37) — JSON только с ключами
+`xPaddingBytes`, `scMaxEachPostBytes`, `scMinPostsIntervalMs`,
+`noGRPCHeader`, `xmux` (`maxConcurrency`, `maxConnections`,
+`cMaxReuseTimes`, `hMaxRequestTimes`, `hMaxReusableSecs`,
+`hKeepAlivePeriod`); значения — как в §3.2, `0` — «не задано». Другой
+ключ (`headers`, `downloadSettings`…) — `SHARE_LINK_PARAM_UNSUPPORTED`
+с именем `extra.<ключ>`, без значения; у другого транспорта `extra` —
+отказ. `fm` у Hysteria2 — маски и прочие параметры QUIC — отказ с именем
+`fm.<ключ>`. Корпус — `tests/data/subscriptions/remnawave-format-v2`.
 
 Запрос подписки (D-33): собственный `User-Agent` `DPpass/<версия>` и
 `x-hwid` — только если пользователь включил идентификатор для этой
@@ -295,7 +321,7 @@ IR, известный «по умолчанию» принимается, **л�
 ```json
 {
   "format": "dppass.config",
-  "format_version": 1,
+  "format_version": 2,
   "name": "Пример",
   "profiles": [
     {

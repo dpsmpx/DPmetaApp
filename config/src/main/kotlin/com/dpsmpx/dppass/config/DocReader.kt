@@ -89,6 +89,25 @@ internal class ObjReader(private val obj: JsonObject, val path: String, private 
         }
     }
 
+    /**
+     * Диапазон (формат 2, D-37): целое «N» или строка «N» / «N-M», N ≤ M.
+     * «0» — то же, что поля нет (так понимает Xray): null. Смысл значения
+     * (например, начало не меньше 1) — `ConfigValidator`.
+     */
+    fun range(key: String): CountRange? {
+        val v = field(key, required = false) ?: return null
+        val parsed = when (v) {
+            is JsonNumber -> v.toIntOrNull()?.takeIf { it >= 0 }?.let { CountRange(it, it) }
+            is JsonString -> CountRange.parse(v.value)
+            else -> return typeError(key, "целое или строка «N-M»")
+        }
+        if (parsed == null) {
+            diags.error(DiagCode.TRANSPORT_SETTING_INVALID, "«$key» — целое «N» или «N-M» с N ≤ M, без знака", "$path.$key")
+            return null
+        }
+        return parsed.takeUnless { it.from == 0 && it.to == 0 }
+    }
+
     /** Значение из закрытого набора: неизвестное — ошибка, не «ближайшее похожее». */
     fun <E> enum(key: String, values: Map<String, E>, required: Boolean = true, default: E? = null): E? {
         val s = string(key, required) ?: return default

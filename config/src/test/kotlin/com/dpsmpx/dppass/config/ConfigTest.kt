@@ -214,3 +214,62 @@ class WriterAndNormalizerTest {
         assertEquals(listOf("bank-app-direct", "ads-block", "ru-direct", "ru-ip-direct", "quic-block"), ir.routing.rules.map { it.id.value })
     }
 }
+
+/** Формат 2 (D-37): новые значения и поля, миграция 1 → 2. */
+class ConfigFormatV2Test {
+    private val loader = ConfigLoader()
+
+    @Test
+    fun newValuesAndFieldsRoundTrip() {
+        val r = loader.load(Fixtures.text("configs/valid-format-v2.json"))
+        val ir = assertNotNull(r.valueOrNull()).ir
+        fun profile(id: String) = ir.profiles.first { it.id.value == id }
+        assertEquals(TlsFingerprint.QQ, (profile("reality-qq").security as SecuritySpec.Reality).fingerprint)
+        assertEquals(TlsFingerprint.EDGE, (profile("ws-edge").security as SecuritySpec.Tls).fingerprint)
+        assertEquals(TlsFingerprint.IOS, (profile("trojan-ios").security as SecuritySpec.Tls).fingerprint)
+        assertEquals(Hysteria2Congestion.BBR, (profile("hy2-bbr").protocol as ProtocolSpec.Hysteria2).congestion)
+        val extra = (profile("xhttp-extra").transport as TransportSpec.XHttp).extra
+        assertEquals(CountRange(100, 1000), extra.xPaddingBytes)
+        assertEquals(CountRange(1_000_000, 1_000_000), extra.scMaxEachPostBytes)
+        assertTrue(extra.noGrpcHeader)
+        assertEquals(Xmux(CountRange(16, 32), null, CountRange(64, 128), CountRange(600, 900), CountRange(1800, 3000), 30), extra.xmux)
+
+        val written = ConfigWriter.write(ir, ConfigWriter.Mode.FULL)
+        assertTrue("\"format_version\": 2" in written || "\"format_version\":2" in written, "пишется текущая версия")
+        assertEquals(ir, loader.load(written).valueOrNull()!!.ir)
+    }
+
+    @Test
+    fun version1IsMigratedNotRejected() {
+        val r = loader.load(Fixtures.text("configs/valid-minimal.json"))
+        val loaded = assertNotNull(r.valueOrNull())
+        assertEquals(1, loaded.sourceVersion)
+        assertTrue(r.diagnostics.any { it.code == DiagCode.MIGRATION_APPLIED })
+        assertTrue(r.errors.isEmpty())
+    }
+
+    @Test
+    fun badRangesAndConflictingXmuxAreRejectedWithPaths() {
+        val base = Fixtures.text("configs/valid-format-v2.json")
+        fun codesAt(text: String) = loader.load(text).errors.map { it.code to it.path }
+        assertEquals(
+            listOf(DiagCode.TRANSPORT_SETTING_INVALID to "$.profiles[2].transport.x_padding_bytes"),
+            codesAt(base.replace("\"x_padding_bytes\": \"100-1000\"", "\"x_padding_bytes\": \"1000-100\"")),
+        )
+        assertEquals(
+            listOf(DiagCode.TRANSPORT_SETTING_INVALID to "$.profiles[2].transport.x_padding_bytes"),
+            codesAt(base.replace("\"x_padding_bytes\": \"100-1000\"", "\"x_padding_bytes\": \"0-1000\"")),
+        )
+        assertEquals(
+            listOf(DiagCode.TRANSPORT_SETTING_INVALID to "$.profiles[2].transport.xmux.max_connections"),
+            codesAt(base.replace("\"max_concurrency\": \"16-32\",", "\"max_concurrency\": \"16-32\", \"max_connections\": 4,")),
+        )
+        assertEquals(
+            listOf(DiagCode.VALUE_UNKNOWN to "$.profiles[3].protocol.congestion"),
+            codesAt(base.replace("\"congestion\": \"bbr\"", "\"congestion\": \"brutal\"")),
+        )
+        // «0» — то же, что поля нет: так понимает Xray.
+        val zero = loader.load(base.replace("\"sc_min_posts_interval_ms\": \"10-50\"", "\"sc_min_posts_interval_ms\": 0")).valueOrNull()!!.ir
+        assertEquals(null, (zero.profiles[2].transport as TransportSpec.XHttp).extra.scMinPostsIntervalMs)
+    }
+}
