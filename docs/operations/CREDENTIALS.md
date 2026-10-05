@@ -176,6 +176,18 @@ CS_PROD_YOUTUBE_OAUTH: {rotated: 2026-10-05, expires: 2026-10-12}
    `~/.config/dpsmpx/deploy.conf` и прочие самодельные настройки
    выгрузки (`SITE_DIR` и т. п.) — прочитать и удалить, адрес в чат не
    вставлять. Затем — новая вкладка Termux.
+   Если переменная уже задана в профиле, файл создаётся из неё: адрес
+   не набирать и не выводить на экран (05.10.2026 ярлык отказал: файла
+   не было, адрес был только в профиле):
+   ```bash
+   mkdir -p ~/.config/dpsmpx && chmod 700 ~/.config/dpsmpx
+   printf "export CS_PROD_SITE_DEPLOY_TARGET='%s'\n" "$CS_PROD_SITE_DEPLOY_TARGET" > ~/.config/dpsmpx/deploy.env
+   chmod 600 ~/.config/dpsmpx/deploy.env
+   ( . ~/.config/dpsmpx/deploy.env; case "$CS_PROD_SITE_DEPLOY_TARGET" in *@*:*public_html/) echo "формат верный";; *) echo "формат неверный";; esac )
+   grep -l CS_PROD_SITE_DEPLOY_TARGET ~/.zshrc ~/.bashrc ~/.profile ~/.zprofile ~/.config/dpsmpx/* 2>/dev/null
+   ```
+   Последняя строка — только имена файлов, где ещё записан адрес; в
+   профиле строку `export` заменить на `. ~/.config/dpsmpx/deploy.env`.
 7. Проверки: `tools/check.sh --quick`, `python3 -m tools.cs health`,
    `python3 -m tools.cs site deploy --dry-run` — ничего не выкладывает,
    последняя строка «изменений: N».
