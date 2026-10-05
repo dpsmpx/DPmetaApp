@@ -17,7 +17,7 @@ rules:
   - {id: KW-GALDHOLD, pattern: '\bGaldhold\b', any_of: [GH-NAME]}
   - {id: KW-GENRE, pattern: '(?i)воксел|\bvoxel\b|action-RPG|процедурн|\bprocedural\b', any_of: [GH-GENRE, GH-ASSETS]}
   - {id: KW-TECH, pattern: '(?i)C\+\+|\bVulkan\b', any_of: [GH-TECH, AU-STACK]}
-  - {id: KW-LOC, pattern: '(?i)\bстрок\b|\blines of\b', any_of: [GH-LOC], progress: [lines_start, lines_end, tests_start, tests_end]}
+  - {id: KW-LOC, pattern: '(?i)\bстрок\b|\blines of\b', any_of: [GH-LOC, CORE-SCALE-2026-10-05], progress: [lines_start, lines_end, tests_start, tests_end]}
   - {id: KW-CHECKS, pattern: '(?i)\bпроверок\b|\bautomated checks\b', any_of: [GH-CHECKS], progress: [hostcheck_start, hostcheck_end]}
   - {id: KW-VERIFY, pattern: '(?i)\bПроверка\b|\bVerification\b', any_of: [ME-NO-CI]}
   - {id: KW-AI, pattern: '\bИИ\b|\bAI\b', any_of: [AU-METHOD], progress: [ai_share, commits_ai]}

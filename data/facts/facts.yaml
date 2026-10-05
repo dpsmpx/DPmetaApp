@@ -618,6 +618,33 @@ facts:
       en: ["two passes over the ecosystem on 5 October 2026"]
     evidence:
       - {kind: doc, source: "dpsmpx/DPmeta docs/reports/2026-10-05-ECOSYSTEM_HEALTH.md, 2026-10-05-2-ECOSYSTEM_HEALTH.md", ref: "b03e9bc", date: 2026-10-05, verification: reported}
+  - id: CORE-SCALE-2026-10-05
+    subject: ecosystem
+    class: FACT
+    risk: high
+    public: true
+    statement: >-
+      С 11 сентября по 5 октября 2026 (24 дня, срез 5 октября) ядро экосистемы выросло из
+      одного репозитория — игры Galdhold — до 9 репозиториев с работой; 8 из них созданы за
+      период, один закрыт и не называется. За период — 981 коммит автора и Claude во всех
+      ветках, из них 819 (83 %) — сессии Claude; 225 слияний PR в основные ветки. В основных
+      ветках ядра на момент среза — 344 тыс. строк кода, тестов и документов (81 тыс. — тесты)
+      и 210 записей в журналах решений.
+    allowed_wording:
+      ru: ["из одной игры за 24 дня — экосистема из 9 репозиториев", "981 коммит", "83 % коммитов — сессии ИИ",
+           "225 слияний PR", "344 тыс. строк кода, тестов и документов", "210 записей в журналах решений",
+           "+ 1 закрытый проект без имени"]
+      en: ["from one game to an ecosystem of 9 repositories in 24 days", "981 commits", "83% of commits by AI sessions",
+           "225 merged pull requests", "344k lines of code, tests and docs", "210 decision records",
+           "+ 1 undisclosed private project"]
+    recheck_by: 2026-11-05
+    notes: >-
+      Величины посчитаны в сессии 05.10.2026 по сохранённому набору прогресса формулами METRICS
+      (repos_core, repos_core_new, span_days, commits, commits_ai, ai_share, merges, lines_end,
+      tests_end, decisions_end); клоны не пересобирались. В первый день периода в ядре был один
+      репозиторий — Galdhold. Закрытый репозиторий без имени — только в суммах (Д38, Д39).
+    evidence:
+      - {kind: measurement, source: "data/progress/datasets/2026-10-05.json; формулы — tools/cs/progress/dataset.py, METRICS", ref: "34e4681", date: 2026-10-05, verification: reported}
 
   # ---------------------------------------------------------------- площадки (внутреннее)
   - id: CH-AUDIENCE-2026-10-04

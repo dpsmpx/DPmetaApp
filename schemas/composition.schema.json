@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "composition/v1",
   "title": "Спецификация композиции изображения",
-  "description": "Вход рендера (tools/cs/render.py): макет, портрет, тексты по языкам, схема, доказательства с фактами.",
+  "description": "Вход рендера (tools/cs/render.py): макет, портрет, тексты по языкам, схема, карта экосистемы, доказательства с фактами.",
   "type": "object",
   "required": ["schema", "variant", "label", "layout", "text", "claims"],
   "additionalProperties": false,
@@ -10,7 +10,7 @@
     "schema": {"const": "composition/v1"},
     "variant": {"type": "string"},
     "label": {"type": "string"},
-    "layout": {"enum": ["professional", "technical", "cinematic", "minimal"]},
+    "layout": {"enum": ["professional", "technical", "cinematic", "minimal", "ecosystem"]},
     "rationale": {"type": "string"},
     "portrait": {
       "type": ["object", "null"],
@@ -41,7 +41,11 @@
             "pipeline": {"type": "array", "items": {"type": "object", "required": ["label", "kind"], "additionalProperties": false, "properties": {"label": {"type": "string"}, "kind": {"enum": ["intent", "architecture", "implementation", "verification", "git", "product"]}}}},
             "gates": {"type": "array", "items": {"type": "object", "required": ["after", "label"], "additionalProperties": false, "properties": {"after": {"type": "integer", "minimum": 0}, "label": {"type": "string"}}}},
             "legend": {"type": "array", "items": {"type": "object", "required": ["token", "label"], "additionalProperties": false, "properties": {"token": {"type": "string"}, "label": {"type": "string"}}}},
-            "evidence": {"type": "array", "items": {"type": "string"}}
+            "evidence": {"type": "array", "items": {"type": "string"}},
+            "ecosystem": {"type": "object", "required": ["layers"], "additionalProperties": false, "description": "карта экосистемы для макета ecosystem: слои и узлы из data/progress/scope.yaml (Д38); закрытый проект без имени — только в note", "properties": {
+              "layers": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["label", "nodes"], "additionalProperties": false, "properties": {"label": {"type": "string"}, "nodes": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["name"], "additionalProperties": false, "properties": {"name": {"type": "string"}, "product": {"type": "boolean"}}}}}}},
+              "note": {"type": "string"}
+            }}
           }
         }
       }
