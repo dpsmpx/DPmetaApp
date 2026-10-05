@@ -30,7 +30,8 @@ Android SDK: aapt2 и dexdump):
     геоданные» (`build/xray/geodata-set`), если шаг был, — две независимые
     сборки дали одно и то же (D-27: сборка детерминирована);
   * размер: APK одного ABI (D-28: выпуск — по APK на ABI) оценивается
-    как этот APK без библиотек других ABI и не превышает
+    как содержимое этого APK без библиотек других ABI (пустоты, которые
+    оставляет пошаговая упаковка AGP, не считаются) и не превышает
     `ABI_APK_BUDGET_MIB` (docs/PERFORMANCE_BUDGET.md, §4).
 
     python3 tools/hostcheck/check_apk.py [APK]
@@ -245,25 +246,55 @@ def check_geodata(apk, problems):
             f"{unpacked / 1024 / 1024:.1f} → {packed / 1024 / 1024:.1f} МиБ в APK, сверен с оглавлением, {step}")
 
 
-def abi_apk_sizes(apk):
-    """{ABI: байт} — сколько весил бы APK только с этим ABI (D-28).
+def entry_span(f, i):
+    """Байты записи в файле: локальный заголовок (30 байт, имя, его extra — там
+    выравнивание), данные и дескриптор данных (если есть)."""
+    f.seek(i.header_offset + 26)
+    name_len, extra_len = struct.unpack("<HH", f.read(4))
+    return 30 + name_len + extra_len + i.compress_size + (16 if i.flag_bits & 0x08 else 0)
 
-    Из размера APK вычитаются записи `lib/<другой ABI>/`: данные,
-    локальный заголовок (30 байт, имя, его extra — там выравнивание) и
-    запись центрального каталога (46 байт, имя, extra, комментарий).
+
+def apk_layout(apk):
+    """(байт содержимого, байт пустот, {ABI: байт записей lib/<ABI>/}).
+
+    Содержимое — записи, центральный каталог, конец каталога и блок
+    подписи. Пустоты — то, что между записями: пошаговая упаковка AGP
+    переписывает APK на месте и оставляет дыры от прежних версий записей.
+    В выпускаемый APK они не попадают, поэтому размер оценивается по
+    содержимому, а не по размеру файла.
     """
+    size = os.path.getsize(apk)
     per_abi = {}
     with zipfile.ZipFile(apk) as z, open(apk, "rb") as f:
+        used = 0
         for i in z.infolist():
+            span = entry_span(f, i)
+            used += span
             parts = i.filename.split("/")
             if len(parts) > 2 and parts[0] == "lib":
-                f.seek(i.header_offset + 26)
-                name_len, extra_len = struct.unpack("<HH", f.read(4))
-                local = 30 + name_len + extra_len
                 central = 46 + len(i.orig_filename.encode()) + len(i.extra) + len(i.comment)
-                per_abi[parts[1]] = per_abi.get(parts[1], 0) + i.compress_size + local + central
-    total = os.path.getsize(apk)
-    return {abi: total - sum(c for other, c in per_abi.items() if other != abi) for abi in per_abi}
+                per_abi[parts[1]] = per_abi.get(parts[1], 0) + span + central
+        f.seek(-22, 2)
+        eocd = f.read(22)
+        if eocd[:4] != b"PK\x05\x06":
+            raise RuntimeError("конец центрального каталога не в последних 22 байтах (комментарий zip?)")
+        cd_size, cd_offset = struct.unpack("<II", eocd[12:20])
+        f.seek(cd_offset - 24)
+        tail = f.read(24)
+        signing = struct.unpack("<Q", tail[:8])[0] + 8 if tail[8:] == b"APK Sig Block 42" else 0
+    used += cd_size + len(eocd) + signing
+    return used, size - used, per_abi
+
+
+def abi_apk_sizes(apk):
+    """{ABI: байт} — сколько весил бы APK только с этим ABI (D-28), и байт пустот файла.
+
+    Из содержимого APK вычитаются записи `lib/<другой ABI>/`: данные,
+    локальный заголовок и запись центрального каталога (46 байт, имя,
+    extra, комментарий).
+    """
+    used, holes, per_abi = apk_layout(apk)
+    return {abi: used - sum(c for other, c in per_abi.items() if other != abi) for abi in per_abi}, holes
 
 
 def main():
@@ -346,7 +377,7 @@ def main():
     native_sizes = check_natives(apk, problems)
     geodata = check_geodata(apk, problems)
     size = os.path.getsize(apk)
-    per_abi = abi_apk_sizes(apk)
+    per_abi, holes = abi_apk_sizes(apk)
     for abi, n in sorted(per_abi.items()):
         if n > ABI_APK_BUDGET_MIB * 1024 * 1024:
             problems.append(f"APK для {abi} — {n / 1024 / 1024:.1f} МиБ, предел {ABI_APK_BUDGET_MIB} МиБ "
@@ -365,7 +396,8 @@ def main():
           f"{len(classes)} классов только из утверждённых корней ({roots}); "
           f"нативный код — только {native.LIBRARY} ({native_sizes}), несжатая, выровнена по 16 КБ в zip и ELF, экспорт JNI = XrayJni; "
           f"{geodata}; "
-          f"APK одного ABI (D-28) — {abi_sizes} МиБ, предел {ABI_APK_BUDGET_MIB}")
+          f"APK одного ABI (D-28) — {abi_sizes} МиБ, предел {ABI_APK_BUDGET_MIB}"
+          + (f"; пустоты пошаговой упаковки AGP — {holes / 1024 / 1024:.1f} МиБ, в оценку не входят" if holes > 1024 * 1024 else ""))
     return 0
 
 
