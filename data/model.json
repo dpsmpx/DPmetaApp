@@ -1,0 +1,2510 @@
+{
+ "allow": {
+  "hosts": [
+   "dpsmpx.com",
+   "www.dpsmpx.com"
+  ]
+ },
+ "as_of": "2026-10-05",
+ "catalog": {
+  "drivers": [
+   {
+    "id": "human",
+    "name": "решает автор"
+   },
+   {
+    "id": "ai",
+    "name": "ИИ и автоматика"
+   },
+   {
+    "id": "check",
+    "name": "проверка"
+   },
+   {
+    "id": "data",
+    "name": "данные и знание"
+   }
+  ],
+  "flow_kinds": [
+   {
+    "driver": "ai",
+    "id": "work",
+    "name": "работа сессий"
+   },
+   {
+    "driver": "human",
+    "id": "decision",
+    "name": "решение автора"
+   },
+   {
+    "driver": "data",
+    "id": "knowledge",
+    "name": "знание и правила"
+   },
+   {
+    "driver": "data",
+    "id": "facts",
+    "name": "факты о проектах"
+   },
+   {
+    "driver": "data",
+    "id": "metrics",
+    "name": "числа и счётчики"
+   },
+   {
+    "driver": "data",
+    "id": "format",
+    "name": "формат данных"
+   },
+   {
+    "driver": "check",
+    "id": "delivery",
+    "name": "поставка копией"
+   },
+   {
+    "driver": "check",
+    "id": "check",
+    "name": "проверка и сверка"
+   },
+   {
+    "driver": "ai",
+    "id": "read",
+    "name": "чтение для показа"
+   },
+   {
+    "driver": "human",
+    "id": "deploy",
+    "name": "выгрузка и установка"
+   },
+   {
+    "driver": "human",
+    "id": "publish",
+    "name": "публикация"
+   },
+   {
+    "driver": "data",
+    "id": "service",
+    "name": "сетевой сервис"
+   },
+   {
+    "driver": "ai",
+    "id": "notify",
+    "name": "уведомления"
+   },
+   {
+    "driver": "data",
+    "id": "build",
+    "name": "внешнее при сборке"
+   },
+   {
+    "driver": "data",
+    "id": "host",
+    "name": "где живёт"
+   }
+  ],
+  "groups": [
+   {
+    "id": "core",
+    "name": "ядро"
+   },
+   {
+    "id": "new",
+    "name": "новый"
+   },
+   {
+    "id": "periphery",
+    "name": "периферия"
+   }
+  ],
+  "node_kinds": [
+   {
+    "id": "repo",
+    "name": "репозиторий"
+   },
+   {
+    "id": "actor",
+    "name": "участник"
+   },
+   {
+    "id": "service",
+    "name": "сервис"
+   },
+   {
+    "id": "device",
+    "name": "устройство"
+   },
+   {
+    "id": "platform",
+    "name": "площадка"
+   },
+   {
+    "id": "upstream",
+    "name": "внешний источник"
+   }
+  ],
+  "statuses": [
+   {
+    "id": "active",
+    "name": "работает"
+   },
+   {
+    "id": "planned",
+    "name": "план"
+   },
+   {
+    "id": "blocked",
+    "name": "заблокирован"
+   },
+   {
+    "id": "off",
+    "name": "выключен"
+   }
+  ],
+  "transports": [
+   {
+    "id": "git",
+    "name": "git: ветки, PR, вливание"
+   },
+   {
+    "id": "clone",
+    "name": "чтение клона"
+   },
+   {
+    "id": "copy",
+    "name": "копия файлов"
+   },
+   {
+    "id": "http",
+    "name": "HTTP"
+   },
+   {
+    "id": "rsync",
+    "name": "rsync"
+   },
+   {
+    "id": "intent",
+    "name": "вызов приложения Android"
+   },
+   {
+    "id": "push",
+    "name": "мгновенный канал"
+   },
+   {
+    "id": "api",
+    "name": "API площадки"
+   },
+   {
+    "id": "manual",
+    "name": "руками автора"
+   },
+   {
+    "id": "knowledge",
+    "name": "решение, записанное с двух сторон"
+   }
+  ],
+  "visibility": [
+   {
+    "id": "public",
+    "name": "открытый"
+   },
+   {
+    "id": "private",
+    "name": "закрытый"
+   },
+   {
+    "id": "undisclosed",
+    "name": "закрытый, имя не публикуется"
+   }
+  ]
+ },
+ "flows": [
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "ai",
+   "from": "claude",
+   "id": "work.galdhold",
+   "kind": "work",
+   "refs": [
+    "DPmeta:E-08"
+   ],
+   "signal": {
+    "repo": "galdhold",
+    "scope": "all",
+    "type": "git-commits",
+    "who": "ai"
+   },
+   "status": "active",
+   "to": "galdhold",
+   "transport": "git",
+   "trigger": "поручение автора сессии",
+   "what": "ветки, коммиты и PR сессий"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "ai",
+   "from": "claude",
+   "id": "work.dplang",
+   "kind": "work",
+   "refs": [
+    "DPmeta:E-08"
+   ],
+   "signal": {
+    "repo": "dplang",
+    "scope": "all",
+    "type": "git-commits",
+    "who": "ai"
+   },
+   "status": "active",
+   "to": "dplang",
+   "transport": "git",
+   "trigger": "поручение автора сессии",
+   "what": "ветки, коммиты и PR сессий"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "ai",
+   "from": "claude",
+   "id": "work.dppass",
+   "kind": "work",
+   "refs": [
+    "DPmeta:E-08"
+   ],
+   "signal": {
+    "repo": "dppass",
+    "scope": "all",
+    "type": "git-commits",
+    "who": "ai"
+   },
+   "status": "active",
+   "to": "dppass",
+   "transport": "git",
+   "trigger": "поручение автора сессии",
+   "what": "ветки, коммиты и PR сессий"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "ai",
+   "from": "claude",
+   "id": "work.dpverify",
+   "kind": "work",
+   "refs": [
+    "DPmeta:E-08"
+   ],
+   "signal": {
+    "repo": "dpverify",
+    "scope": "all",
+    "type": "git-commits",
+    "who": "ai"
+   },
+   "status": "active",
+   "to": "dpverify",
+   "transport": "git",
+   "trigger": "поручение автора сессии",
+   "what": "ветки, коммиты и PR сессий"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "ai",
+   "from": "claude",
+   "id": "work.dpprofile",
+   "kind": "work",
+   "refs": [
+    "DPmeta:E-08"
+   ],
+   "signal": {
+    "repo": "dpprofile",
+    "scope": "all",
+    "type": "git-commits",
+    "who": "ai"
+   },
+   "status": "active",
+   "to": "dpprofile",
+   "transport": "git",
+   "trigger": "поручение автора сессии",
+   "what": "ветки, коммиты и PR сессий"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "ai",
+   "from": "claude",
+   "id": "work.smi",
+   "kind": "work",
+   "refs": [
+    "DPmeta:E-08"
+   ],
+   "signal": {
+    "repo": "smi",
+    "scope": "all",
+    "type": "git-commits",
+    "who": "ai"
+   },
+   "status": "active",
+   "to": "smi",
+   "transport": "git",
+   "trigger": "поручение автора сессии",
+   "what": "ветки, коммиты и PR сессий"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "ai",
+   "from": "claude",
+   "id": "work.dplearn",
+   "kind": "work",
+   "refs": [
+    "DPmeta:E-08"
+   ],
+   "signal": {
+    "repo": "dplearn",
+    "scope": "all",
+    "type": "git-commits",
+    "who": "ai"
+   },
+   "status": "active",
+   "to": "dplearn",
+   "transport": "git",
+   "trigger": "поручение автора сессии",
+   "what": "ветки, коммиты и PR сессий"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "ai",
+   "from": "claude",
+   "id": "work.market",
+   "kind": "work",
+   "refs": [
+    "DP_game_market_analytic_system:docs/HANDOFF.md"
+   ],
+   "signal": {
+    "repo": "market",
+    "scope": "all",
+    "type": "git-commits",
+    "who": "ai"
+   },
+   "status": "active",
+   "to": "market",
+   "transport": "git",
+   "trigger": "поручение автора сессии",
+   "what": "ветки, коммиты и PR сессий"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "ai",
+   "from": "claude",
+   "id": "work.dpmonetization",
+   "kind": "work",
+   "refs": [
+    "DPmeta:docs/ECOSYSTEM.md"
+   ],
+   "signal": {
+    "repo": "dpmonetization",
+    "scope": "all",
+    "type": "git-commits",
+    "who": "ai"
+   },
+   "status": "active",
+   "to": "dpmonetization",
+   "transport": "git",
+   "trigger": "поручение автора сессии",
+   "what": "ветки, коммиты и PR сессий"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "ai",
+   "from": "claude",
+   "id": "work.dpmeta",
+   "kind": "work",
+   "refs": [
+    "DPmeta:docs/PROCESS.md",
+    "DPmeta:M-04"
+   ],
+   "signal": {
+    "repo": "dpmeta",
+    "scope": "all",
+    "type": "git-commits",
+    "who": "ai"
+   },
+   "status": "active",
+   "to": "dpmeta",
+   "transport": "git",
+   "trigger": "поручение автора: проход DPmeta",
+   "what": "мета-проходы и аудит документации"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "ai",
+   "from": "claude",
+   "id": "work.dpmetaapp",
+   "kind": "work",
+   "refs": [
+    "DPmetaApp:README.md"
+   ],
+   "signal": {
+    "repo": "dpmetaapp",
+    "scope": "all",
+    "type": "git-commits",
+    "who": "ai"
+   },
+   "status": "active",
+   "to": "dpmetaapp",
+   "transport": "git",
+   "trigger": "поручение автора сессии",
+   "what": "ветки, коммиты и PR сессий"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "ai",
+   "from": "claude",
+   "id": "work.dpvisualisation",
+   "kind": "work",
+   "refs": [
+    "DPvisualisation:docs/direction/REQUEST.md"
+   ],
+   "signal": {
+    "repo": "dpvisualisation",
+    "scope": "all",
+    "type": "git-commits",
+    "who": "ai"
+   },
+   "status": "active",
+   "to": "dpvisualisation",
+   "transport": "git",
+   "trigger": "поручение автора сессии",
+   "what": "ветки, коммиты и PR сессий"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "ai",
+   "from": "claude",
+   "id": "work.andors_love",
+   "kind": "work",
+   "refs": [
+    "DPmeta:docs/ECOSYSTEM.md"
+   ],
+   "signal": {
+    "repo": "andors_love",
+    "scope": "all",
+    "type": "git-commits",
+    "who": "ai"
+   },
+   "status": "active",
+   "to": "andors_love",
+   "transport": "git",
+   "trigger": "поручение автора сессии",
+   "what": "ветки, коммиты и PR сессий"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "ai",
+   "from": "claude",
+   "id": "work.tjtm",
+   "kind": "work",
+   "refs": [
+    "TrueJointTileMaker:docs/porting.md"
+   ],
+   "signal": {
+    "repo": "tjtm",
+    "scope": "all",
+    "type": "git-commits",
+    "who": "ai"
+   },
+   "status": "active",
+   "to": "tjtm",
+   "transport": "git",
+   "trigger": "поручение автора сессии",
+   "what": "ветки, коммиты и PR сессий: перенос на C++ и SDL2"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "ai",
+   "from": "claude",
+   "id": "work.background",
+   "kind": "work",
+   "refs": [
+    "SocialMediaImage:data/progress/scope.yaml"
+   ],
+   "signal": {
+    "repo": "repeated",
+    "scope": "all",
+    "type": "git-commits",
+    "who": "ai"
+   },
+   "status": "active",
+   "to": "repeated",
+   "transport": "git",
+   "trigger": "поручение автора сессии",
+   "what": "ветки и коммиты сессий в ранних проектах"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "human",
+   "from": "author",
+   "id": "decide.galdhold",
+   "kind": "decision",
+   "refs": [
+    "DPmeta:E-01",
+    "DPmeta:E-02"
+   ],
+   "signal": {
+    "repo": "galdhold",
+    "scope": "main",
+    "type": "git-commits",
+    "who": "merge"
+   },
+   "status": "active",
+   "to": "galdhold",
+   "transport": "git",
+   "trigger": "PR сессии готов к вливанию",
+   "what": "решения, ответы на вопросы, вливание PR"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "human",
+   "from": "author",
+   "id": "decide.dplang",
+   "kind": "decision",
+   "refs": [
+    "DPmeta:E-01",
+    "DPmeta:E-02"
+   ],
+   "signal": {
+    "repo": "dplang",
+    "scope": "main",
+    "type": "git-commits",
+    "who": "merge"
+   },
+   "status": "active",
+   "to": "dplang",
+   "transport": "git",
+   "trigger": "PR сессии готов к вливанию",
+   "what": "решения, ответы на вопросы, вливание PR"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "human",
+   "from": "author",
+   "id": "decide.dppass",
+   "kind": "decision",
+   "refs": [
+    "DPmeta:E-01",
+    "DPmeta:E-02"
+   ],
+   "signal": {
+    "repo": "dppass",
+    "scope": "main",
+    "type": "git-commits",
+    "who": "merge"
+   },
+   "status": "active",
+   "to": "dppass",
+   "transport": "git",
+   "trigger": "PR сессии готов к вливанию",
+   "what": "решения, ответы на вопросы, вливание PR"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "human",
+   "from": "author",
+   "id": "decide.dpverify",
+   "kind": "decision",
+   "refs": [
+    "DPmeta:E-01",
+    "DPmeta:E-02"
+   ],
+   "signal": {
+    "repo": "dpverify",
+    "scope": "main",
+    "type": "git-commits",
+    "who": "merge"
+   },
+   "status": "active",
+   "to": "dpverify",
+   "transport": "git",
+   "trigger": "PR сессии готов к вливанию",
+   "what": "решения, ответы на вопросы, вливание PR"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "human",
+   "from": "author",
+   "id": "decide.dpprofile",
+   "kind": "decision",
+   "refs": [
+    "DPmeta:E-01",
+    "DPmeta:E-02"
+   ],
+   "signal": {
+    "repo": "dpprofile",
+    "scope": "main",
+    "type": "git-commits",
+    "who": "merge"
+   },
+   "status": "active",
+   "to": "dpprofile",
+   "transport": "git",
+   "trigger": "PR сессии готов к вливанию",
+   "what": "решения, ответы на вопросы, вливание PR"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "human",
+   "from": "author",
+   "id": "decide.smi",
+   "kind": "decision",
+   "refs": [
+    "DPmeta:E-01",
+    "SocialMediaImage:Д12"
+   ],
+   "signal": {
+    "repo": "smi",
+    "scope": "main",
+    "type": "git-commits",
+    "who": "merge"
+   },
+   "status": "active",
+   "to": "smi",
+   "transport": "git",
+   "trigger": "PR сессии готов; одобрение — в терминале автора",
+   "what": "решения, одобрение версий контента, вливание PR"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "human",
+   "from": "author",
+   "id": "decide.dplearn",
+   "kind": "decision",
+   "refs": [
+    "DPmeta:E-01",
+    "DPlearn:README.md"
+   ],
+   "signal": {
+    "repo": "dplearn",
+    "scope": "main",
+    "type": "git-commits",
+    "who": "merge"
+   },
+   "status": "active",
+   "to": "dplearn",
+   "transport": "git",
+   "trigger": "PR сессии готов к вливанию",
+   "what": "решения, вливание PR; данные учащегося — только автора"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "human",
+   "from": "author",
+   "id": "decide.market",
+   "kind": "decision",
+   "refs": [
+    "DP_game_market_analytic_system:docs/HANDOFF.md"
+   ],
+   "signal": {
+    "repo": "market",
+    "scope": "main",
+    "type": "git-commits",
+    "who": "merge"
+   },
+   "status": "active",
+   "to": "market",
+   "transport": "git",
+   "trigger": "PR сессии готов к вливанию",
+   "what": "решения, вливание PR"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "human",
+   "from": "author",
+   "id": "decide.dpmonetization",
+   "kind": "decision",
+   "refs": [
+    "DPmeta:docs/ECOSYSTEM.md"
+   ],
+   "signal": {
+    "repo": "dpmonetization",
+    "scope": "main",
+    "type": "git-commits",
+    "who": "merge"
+   },
+   "status": "active",
+   "to": "dpmonetization",
+   "transport": "git",
+   "trigger": "PR сессии готов к вливанию",
+   "what": "решения, вливание PR; место проекта в экосистеме — вопрос автору"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "human",
+   "from": "author",
+   "id": "decide.dpmeta",
+   "kind": "decision",
+   "refs": [
+    "DPmeta:M-03",
+    "DPmeta:docs/RISKS.md"
+   ],
+   "signal": {
+    "repo": "dpmeta",
+    "scope": "main",
+    "type": "git-commits",
+    "who": "merge"
+   },
+   "status": "active",
+   "to": "dpmeta",
+   "transport": "git",
+   "trigger": "срез прохода готов",
+   "what": "постановка, выбор вариантов, ответы на RISK-NN, вливание PR"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "human",
+   "from": "author",
+   "id": "decide.dpmetaapp",
+   "kind": "decision",
+   "refs": [
+    "DPmetaApp:TODO.md"
+   ],
+   "signal": {
+    "repo": "dpmetaapp",
+    "scope": "main",
+    "type": "git-commits",
+    "who": "merge"
+   },
+   "status": "active",
+   "to": "dpmetaapp",
+   "transport": "git",
+   "trigger": "ТЗ готово к вливанию",
+   "what": "постановка, ответы на Q-NN ТЗ, вливание ТЗ"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "human",
+   "from": "author",
+   "id": "decide.dpvisualisation",
+   "kind": "decision",
+   "refs": [
+    "DPvisualisation:docs/direction/REQUEST.md"
+   ],
+   "signal": {
+    "repo": "dpvisualisation",
+    "scope": "main",
+    "type": "git-commits",
+    "who": "merge"
+   },
+   "status": "active",
+   "to": "dpvisualisation",
+   "transport": "git",
+   "trigger": "PR готов к вливанию",
+   "what": "постановка, ответы на Q-NN ТЗ, вливание PR"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "human",
+   "from": "author",
+   "id": "decide.background",
+   "kind": "decision",
+   "refs": [
+    "DPmeta:docs/ECOSYSTEM.md"
+   ],
+   "signal": {
+    "repo": "andors_love",
+    "scope": "main",
+    "type": "git-commits",
+    "who": "merge"
+   },
+   "status": "active",
+   "to": "andors_love",
+   "transport": "git",
+   "trigger": "PR сессии готов к вливанию",
+   "what": "вливание PR в ранних проектах"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "human",
+   "from": "author",
+   "id": "decide.tjtm",
+   "kind": "decision",
+   "refs": [
+    "TrueJointTileMaker:docs/porting.md"
+   ],
+   "signal": {
+    "repo": "tjtm",
+    "scope": "main",
+    "type": "git-commits",
+    "who": "merge"
+   },
+   "status": "active",
+   "to": "tjtm",
+   "transport": "git",
+   "trigger": "PR сессии готов к вливанию",
+   "what": "вливание PR переноса"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [
+    "DPmeta:C-07"
+   ],
+   "driver": "human",
+   "from": "author",
+   "id": "decide.profile",
+   "kind": "decision",
+   "refs": [],
+   "signal": {
+    "repo": "profile",
+    "scope": "main",
+    "type": "git-commits",
+    "who": "human"
+   },
+   "status": "active",
+   "to": "profile",
+   "transport": "manual",
+   "what": "правки README профиля — только руками автора"
+  },
+  {
+   "bidirectional": true,
+   "contracts": [
+    "DPmeta:C-01"
+   ],
+   "driver": "data",
+   "from": "galdhold",
+   "id": "c01.galdhold.dplang",
+   "kind": "knowledge",
+   "refs": [
+    "Galdhold:Р18",
+    "DPlang:Р22"
+   ],
+   "signal": {
+    "paths": [
+     "docs/direction/DECISIONS.md"
+    ],
+    "repo": "dplang",
+    "type": "git-path"
+   },
+   "status": "active",
+   "to": "dplang",
+   "transport": "knowledge",
+   "what": "решения, повторённые с обеих сторон: Galdhold не зависит от DPlang ни при сборке, ни при исполнении"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [
+    "DPmeta:C-02"
+   ],
+   "driver": "data",
+   "from": "galdhold",
+   "id": "c02.galdhold.dplang",
+   "kind": "knowledge",
+   "note": "открытый вопрос автору (DPmeta:RISK-02)",
+   "refs": [
+    "DPmeta:RISK-02",
+    "Galdhold:Р17",
+    "DPlang:Р27"
+   ],
+   "status": "blocked",
+   "to": "dplang",
+   "transport": "knowledge",
+   "what": "ожидание встраиваемого детерминированного исполнителя DPlang для скриптов Galdhold — DPlang такой режим исключает"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "data",
+   "from": "galdhold",
+   "id": "proc.galdhold.dplang",
+   "kind": "knowledge",
+   "refs": [
+    "DPmeta:docs/ECOSYSTEM.md",
+    "DPlang:Р3"
+   ],
+   "status": "active",
+   "to": "dplang",
+   "transport": "copy",
+   "what": "инженерная культура и правила процесса — перенесены копированием с указанием источника"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [
+    "DPmeta:C-03"
+   ],
+   "driver": "check",
+   "format": "report.json, схема 1",
+   "from": "dpverify",
+   "id": "c03.dpverify.dppass",
+   "kind": "delivery",
+   "refs": [
+    "DPmeta:RISK-01",
+    "DPmeta:RISK-03"
+   ],
+   "status": "planned",
+   "to": "dppass",
+   "transport": "copy",
+   "trigger": "этап 6 DP-Verify и решение принимающего репозитория",
+   "what": "копия проверок в tools/dpv/, профиль tools/dpverify.toml, report.json — пилот"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [
+    "DPmeta:C-03"
+   ],
+   "driver": "check",
+   "format": "report.json, схема 1",
+   "from": "dpverify",
+   "id": "c03.dpverify.galdhold",
+   "kind": "delivery",
+   "refs": [],
+   "status": "planned",
+   "to": "galdhold",
+   "transport": "copy",
+   "trigger": "этап 7 DP-Verify",
+   "what": "копия проверок в tools/dpv/"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [
+    "DPmeta:C-03"
+   ],
+   "driver": "check",
+   "format": "report.json, схема 1",
+   "from": "dpverify",
+   "id": "c03.dpverify.dplang",
+   "kind": "delivery",
+   "refs": [],
+   "status": "planned",
+   "to": "dplang",
+   "transport": "copy",
+   "trigger": "DPlang 1.1",
+   "what": "копия проверок в tools/dpv/"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [
+    "DPmeta:C-03"
+   ],
+   "driver": "check",
+   "from": "dpverify",
+   "id": "c03.dpverify.dplearn",
+   "kind": "delivery",
+   "refs": [
+    "DPlearn:README.md"
+   ],
+   "status": "planned",
+   "to": "dplearn",
+   "transport": "copy",
+   "trigger": "выпуск DP-Verify 1.0",
+   "what": "образец процесса сейчас; поставка — после DP-Verify 1.0"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "data",
+   "from": "galdhold",
+   "id": "proc.galdhold.dpverify",
+   "kind": "knowledge",
+   "refs": [
+    "DPmeta:docs/ECOSYSTEM.md",
+    "DP-Verify:README.md"
+   ],
+   "status": "active",
+   "to": "dpverify",
+   "transport": "copy",
+   "what": "правила процесса и проверок, обобщённые в process-kit"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "data",
+   "from": "dppass",
+   "id": "proc.dppass.dpverify",
+   "kind": "knowledge",
+   "refs": [
+    "DPmeta:docs/ECOSYSTEM.md"
+   ],
+   "status": "active",
+   "to": "dpverify",
+   "transport": "copy",
+   "what": "правила процесса и проверок, обобщённые в process-kit"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "data",
+   "from": "dplang",
+   "id": "proc.dplang.dpverify",
+   "kind": "knowledge",
+   "refs": [
+    "DPmeta:docs/ECOSYSTEM.md"
+   ],
+   "status": "active",
+   "to": "dpverify",
+   "transport": "copy",
+   "what": "правила процесса и проверок, обобщённые в process-kit"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [
+    "DPmeta:C-04",
+    "DPmeta:C-05"
+   ],
+   "driver": "data",
+   "format": "путь@sha",
+   "from": "galdhold",
+   "id": "c04.galdhold.dpprofile",
+   "kind": "facts",
+   "refs": [
+    "DPprofile:README.md"
+   ],
+   "signal": {
+    "paths": [
+     "docs/facts/",
+     "docs/sources/",
+     "docs/timeline/"
+    ],
+    "repo": "dpprofile",
+    "type": "git-path"
+   },
+   "status": "active",
+   "to": "dpprofile",
+   "transport": "clone",
+   "trigger": "сессия DPprofile",
+   "what": "факты о проекте со ссылкой на путь@sha; без кода, выжимки до 300 знаков"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [
+    "DPmeta:C-04",
+    "DPmeta:C-05"
+   ],
+   "driver": "data",
+   "format": "путь@sha",
+   "from": "dplang",
+   "id": "c04.dplang.dpprofile",
+   "kind": "facts",
+   "refs": [],
+   "signal": {
+    "paths": [
+     "docs/facts/",
+     "docs/sources/",
+     "docs/timeline/"
+    ],
+    "repo": "dpprofile",
+    "type": "git-path"
+   },
+   "status": "active",
+   "to": "dpprofile",
+   "transport": "clone",
+   "trigger": "сессия DPprofile",
+   "what": "факты о проекте со ссылкой на путь@sha; без кода"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [
+    "DPmeta:C-04",
+    "DPmeta:C-05"
+   ],
+   "driver": "data",
+   "format": "путь@sha",
+   "from": "dppass",
+   "id": "c04.dppass.dpprofile",
+   "kind": "facts",
+   "refs": [],
+   "signal": {
+    "paths": [
+     "docs/facts/",
+     "docs/sources/",
+     "docs/timeline/"
+    ],
+    "repo": "dpprofile",
+    "type": "git-path"
+   },
+   "status": "active",
+   "to": "dpprofile",
+   "transport": "clone",
+   "trigger": "сессия DPprofile",
+   "what": "факты о проекте со ссылкой на путь@sha; без кода"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [
+    "DPmeta:C-04"
+   ],
+   "driver": "data",
+   "from": "profile",
+   "id": "c04.profile.dpprofile",
+   "kind": "facts",
+   "refs": [],
+   "signal": {
+    "paths": [
+     "docs/facts/",
+     "docs/sources/"
+    ],
+    "repo": "dpprofile",
+    "type": "git-path"
+   },
+   "status": "active",
+   "to": "dpprofile",
+   "transport": "clone",
+   "trigger": "сессия DPprofile",
+   "what": "факты из README профиля"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [
+    "DPmeta:C-04"
+   ],
+   "driver": "data",
+   "from": "andors_love",
+   "id": "c04.background.dpprofile",
+   "kind": "facts",
+   "refs": [
+    "DPprofile:D-13"
+   ],
+   "signal": {
+    "paths": [
+     "docs/facts/",
+     "docs/sources/"
+    ],
+    "repo": "dpprofile",
+    "type": "git-path"
+   },
+   "status": "active",
+   "to": "dpprofile",
+   "transport": "clone",
+   "trigger": "сессия DPprofile",
+   "what": "факты о ранних публичных проектах (Andors-Love, TrueJointTileMaker, PixRogue и другие)"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [
+    "DPmeta:C-04",
+    "DPmeta:C-05"
+   ],
+   "driver": "data",
+   "from": "galdhold",
+   "id": "c04.galdhold.smi",
+   "kind": "facts",
+   "refs": [
+    "SocialMediaImage:data/facts/facts.yaml"
+   ],
+   "signal": {
+    "paths": [
+     "data/facts/"
+    ],
+    "repo": "smi",
+    "type": "git-path"
+   },
+   "status": "active",
+   "to": "smi",
+   "transport": "clone",
+   "trigger": "сессия SocialMediaImage",
+   "what": "факты и вехи для публикаций: класс, источник, коммит, срок перепроверки"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [
+    "DPmeta:C-04",
+    "DPmeta:C-05"
+   ],
+   "driver": "data",
+   "from": "dplang",
+   "id": "c04.dplang.smi",
+   "kind": "facts",
+   "refs": [
+    "SocialMediaImage:data/facts/facts.yaml"
+   ],
+   "signal": {
+    "paths": [
+     "data/facts/"
+    ],
+    "repo": "smi",
+    "type": "git-path"
+   },
+   "status": "active",
+   "to": "smi",
+   "transport": "clone",
+   "trigger": "сессия SocialMediaImage",
+   "what": "факты и вехи для публикаций"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [
+    "DPmeta:C-04"
+   ],
+   "driver": "data",
+   "from": "profile",
+   "id": "c04.profile.smi",
+   "kind": "facts",
+   "refs": [
+    "SocialMediaImage:IC-04"
+   ],
+   "signal": {
+    "paths": [
+     "data/identity/",
+     "docs/identity/"
+    ],
+    "repo": "smi",
+    "type": "git-path"
+   },
+   "status": "active",
+   "to": "smi",
+   "transport": "clone",
+   "trigger": "сессия SocialMediaImage",
+   "what": "публичные ссылки и описание профиля — сверка идентичности"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "human",
+   "from": "smi",
+   "id": "deploy.smi.phone",
+   "kind": "deploy",
+   "refs": [
+    "SocialMediaImage:tools/termux/dpsmpx-site-deploy.sh"
+   ],
+   "signal": {
+    "paths": [
+     "website/",
+     "tools/cs/site/",
+     "data/website/"
+    ],
+    "repo": "smi",
+    "type": "git-path"
+   },
+   "status": "active",
+   "to": "phone",
+   "transport": "git",
+   "trigger": "git pull в Termux перед выгрузкой",
+   "what": "клон SocialMediaImage на телефоне: тема, код и записи сайта"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [
+    "DPmeta:C-07",
+    "DPmeta:C-05"
+   ],
+   "driver": "human",
+   "from": "phone",
+   "id": "deploy.phone.site",
+   "kind": "deploy",
+   "note": "журнал выгрузок не в git — поток наблюдается только пробой сайта",
+   "refs": [
+    "SocialMediaImage:Д35",
+    "SocialMediaImage:Д36",
+    "DPmeta:RISK-08"
+   ],
+   "signal": {
+    "node": "site",
+    "type": "probe"
+   },
+   "status": "active",
+   "to": "site",
+   "transport": "rsync",
+   "trigger": "ярлык Termux:Widget на телефоне автора",
+   "what": "production-сборка сайта — только командами site deploy и publish, после «да» автора"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [
+    "DPmeta:C-07"
+   ],
+   "driver": "human",
+   "from": "author",
+   "id": "decide.deploy",
+   "kind": "decision",
+   "refs": [
+    "SocialMediaImage:Д36",
+    "SocialMediaImage:Д12"
+   ],
+   "status": "active",
+   "to": "phone",
+   "transport": "manual",
+   "what": "«да» в терминале на выгрузку сайта и одобрение публикаций"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [
+    "DPmeta:C-07"
+   ],
+   "driver": "human",
+   "from": "smi",
+   "id": "publish.smi.profile",
+   "kind": "publish",
+   "note": "правки ждут автора (DPmeta:SQ-17)",
+   "refs": [
+    "SocialMediaImage:IC-04"
+   ],
+   "status": "blocked",
+   "to": "profile",
+   "transport": "manual",
+   "what": "подготовленный текст правок README профиля — применяет только автор"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "human",
+   "from": "smi",
+   "id": "publish.smi.telegram",
+   "kind": "publish",
+   "note": "адресат tg-devlog: not_connected — id канала и бота записывает автор",
+   "refs": [
+    "SocialMediaImage:data/platforms/destinations.yaml",
+    "SocialMediaImage:Д25"
+   ],
+   "status": "planned",
+   "to": "telegram",
+   "transport": "api",
+   "trigger": "publish после одобрения автора",
+   "what": "записи канала-дневника Galdhold через бота-публикатора"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "human",
+   "from": "smi",
+   "id": "publish.smi.youtube",
+   "kind": "publish",
+   "note": "адресат yt-channel: not_connected",
+   "refs": [
+    "SocialMediaImage:data/platforms/destinations.yaml"
+   ],
+   "status": "planned",
+   "to": "youtube",
+   "transport": "api",
+   "trigger": "publish после одобрения автора",
+   "what": "описания и обложки видео"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "human",
+   "from": "smi",
+   "id": "publish.smi.vk",
+   "kind": "publish",
+   "note": "ждёт автора: страница или сообщество; VK: право wall",
+   "refs": [
+    "SocialMediaImage:data/platforms/destinations.yaml"
+   ],
+   "status": "blocked",
+   "to": "vk",
+   "transport": "api",
+   "what": "записи на странице или в сообществе VK"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "human",
+   "from": "smi",
+   "id": "publish.smi.tiktok",
+   "kind": "publish",
+   "note": "ждёт аудита клиента API TikTok",
+   "refs": [
+    "SocialMediaImage:data/platforms/destinations.yaml",
+    "SocialMediaImage:Д19"
+   ],
+   "status": "blocked",
+   "to": "tiktok",
+   "transport": "api",
+   "what": "вертикальные клипы"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "human",
+   "from": "smi",
+   "id": "publish.smi.discord",
+   "kind": "publish",
+   "note": "сервера нет (ОР-6 SocialMediaImage)",
+   "refs": [
+    "SocialMediaImage:data/platforms/destinations.yaml"
+   ],
+   "status": "blocked",
+   "to": "discord",
+   "transport": "api",
+   "what": "объявления сервера сообщества"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "human",
+   "from": "site",
+   "id": "publish.site.platforms",
+   "kind": "publish",
+   "refs": [
+    "SocialMediaImage:docs/platforms/WEBSITE.md"
+   ],
+   "status": "planned",
+   "to": "telegram",
+   "transport": "http",
+   "what": "площадки ссылаются на канонический адрес записи на сайте (POSSE)"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [
+    "DPmeta:C-08"
+   ],
+   "driver": "data",
+   "format": "data/maps/*.map",
+   "from": "andors_love",
+   "id": "c08.andors_love.tjtm",
+   "kind": "format",
+   "refs": [
+    "TrueJointTileMaker:docs/porting.md"
+   ],
+   "signal": {
+    "paths": [
+     "data/maps/",
+     "src/types.h",
+     "src/gfx/tiles.cpp"
+    ],
+    "repo": "andors_love",
+    "type": "git-path"
+   },
+   "status": "active",
+   "to": "tjtm",
+   "transport": "clone",
+   "trigger": "тесты переноса TrueJointTileMaker на клоне игры",
+   "what": "формат карт data/maps/*.map и имена тайлов; перенос читает и пишет карты байт в байт"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [
+    "DPmeta:C-09",
+    "DPmeta:C-05"
+   ],
+   "driver": "data",
+   "from": "dplang",
+   "id": "c09.dplang.compiler",
+   "kind": "host",
+   "refs": [
+    "DPlang:Р49"
+   ],
+   "status": "planned",
+   "to": "compiler",
+   "transport": "copy",
+   "trigger": "решение автора по DPlang:Р5 и DoD сервиса",
+   "what": "компилятор работает на сервере; код и сборка наружу не уходят"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [
+    "DPmeta:C-09"
+   ],
+   "driver": "data",
+   "from": "compiler",
+   "id": "c09.compiler.site",
+   "kind": "service",
+   "note": "адрес /api/v1/ сайта занят статическим API; CSP connect-src 'self' — не сойдётся без решения",
+   "refs": [
+    "DPmeta:RISK-09"
+   ],
+   "status": "planned",
+   "to": "site",
+   "transport": "http",
+   "what": "программа → диагностика (JSON, /api/v1/…); только компиляция, без исполнения"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [
+    "DPmeta:C-10"
+   ],
+   "driver": "data",
+   "format": "progress/v1",
+   "from": "github",
+   "id": "c10.github.smi",
+   "kind": "metrics",
+   "refs": [
+    "SocialMediaImage:data/progress/scope.yaml"
+   ],
+   "signal": {
+    "paths": [
+     "data/progress/datasets/"
+    ],
+    "repo": "smi",
+    "type": "git-path"
+   },
+   "status": "active",
+   "to": "smi",
+   "transport": "clone",
+   "trigger": "progress collect при сборе нового набора",
+   "what": "история git всех репозиториев из scope.yaml: коммиты по дням, ИИ и человек, строки, решения"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [
+    "DPmeta:C-10"
+   ],
+   "driver": "data",
+   "format": "progress/v1",
+   "from": "dpmeta",
+   "id": "c10.dpmeta.smi",
+   "kind": "metrics",
+   "refs": [],
+   "signal": {
+    "paths": [
+     "data/progress/datasets/"
+    ],
+    "repo": "smi",
+    "type": "git-path"
+   },
+   "status": "active",
+   "to": "smi",
+   "transport": "clone",
+   "trigger": "progress collect",
+   "what": "счётчики заголовков C-, RISK-, SQ-, E- и срезов docs/reports/"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [
+    "DPmeta:C-10"
+   ],
+   "driver": "data",
+   "format": "progress/v1",
+   "from": "dpprofile",
+   "id": "c10.dpprofile.smi",
+   "kind": "metrics",
+   "refs": [],
+   "signal": {
+    "paths": [
+     "data/progress/datasets/"
+    ],
+    "repo": "smi",
+    "type": "git-path"
+   },
+   "status": "active",
+   "to": "smi",
+   "transport": "clone",
+   "trigger": "progress collect",
+   "what": "счётчики фактов, выводов, источников и хронологии"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [
+    "DPmeta:C-10",
+    "DPmeta:C-05"
+   ],
+   "driver": "data",
+   "from": "smi",
+   "id": "c10.smi.site",
+   "kind": "metrics",
+   "note": "страница ждёт одобрения автора (DPmeta:SQ-23 — DPmonetization не учтён)",
+   "refs": [
+    "SocialMediaImage:Д38",
+    "SocialMediaImage:Д39"
+   ],
+   "status": "planned",
+   "to": "site",
+   "transport": "rsync",
+   "trigger": "одобрение автором вариантов website.ru и website.en",
+   "what": "страница /progress/ — числа из сохранённого набора, без имени DPpass"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [
+    "DPmeta:C-06"
+   ],
+   "driver": "check",
+   "from": "github",
+   "id": "meta.github.dpmeta",
+   "kind": "check",
+   "refs": [
+    "DPmeta:M-07",
+    "DPmeta:M-08"
+   ],
+   "signal": {
+    "paths": [
+     "docs/reports/"
+    ],
+    "repo": "dpmeta",
+    "type": "git-path"
+   },
+   "status": "active",
+   "to": "dpmeta",
+   "transport": "clone",
+   "trigger": "мета-проход по поручению автора",
+   "what": "клоны всех репозиториев: сверка ссылок Проект:номер и Проект:путь, признаки работы"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "ai",
+   "from": "github",
+   "id": "vis.github.dpvisualisation",
+   "kind": "read",
+   "refs": [
+    "DPvisualisation:D-03"
+   ],
+   "signal": {
+    "paths": [
+     "data/state/"
+    ],
+    "repo": "dpvisualisation",
+    "type": "git-path"
+   },
+   "status": "active",
+   "to": "dpvisualisation",
+   "transport": "clone",
+   "trigger": "collect; в живом режиме — по расписанию",
+   "what": "клоны всех репозиториев модели: история основной ветки, ветки, вливания"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "ai",
+   "format": "ecosystem.toml schema 1; ## C-NN",
+   "from": "dpmeta",
+   "id": "vis.dpmeta.dpvisualisation",
+   "kind": "read",
+   "refs": [
+    "DPvisualisation:D-11"
+   ],
+   "signal": {
+    "paths": [
+     "tools/ecosystem.toml",
+     "docs/CONTRACTS.md"
+    ],
+    "repo": "dpmeta",
+    "type": "git-path"
+   },
+   "status": "active",
+   "to": "dpvisualisation",
+   "transport": "clone",
+   "trigger": "collect",
+   "what": "реестр tools/ecosystem.toml и заголовки контрактов — сверка модели"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "check",
+   "from": "site",
+   "id": "vis.site.dpvisualisation",
+   "kind": "check",
+   "refs": [
+    "DPvisualisation:D-14"
+   ],
+   "signal": {
+    "node": "site",
+    "type": "probe"
+   },
+   "status": "active",
+   "to": "dpvisualisation",
+   "transport": "http",
+   "trigger": "collect --online",
+   "what": "проба главной и /api/v1/index.json: код, время ответа, заголовки безопасности"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "ai",
+   "format": "dpvis-model/1, dpvis-state/1",
+   "from": "dpvisualisation",
+   "id": "vis.dpvisualisation.dpmetaapp",
+   "kind": "read",
+   "note": "разбор Т15 — за DPmetaApp (ТЗ DPvisualisation, Q-04)",
+   "refs": [
+    "DPmetaApp:docs/direction/REQUEST.md",
+    "DPvisualisation:D-07"
+   ],
+   "status": "planned",
+   "to": "dpmetaapp",
+   "transport": "http",
+   "what": "модель и срез (dpvis-model/1, dpvis-state/1) или сборка просмотрщика в WebView"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "ai",
+   "format": "ecosystem.toml schema 1",
+   "from": "dpmeta",
+   "id": "app.dpmeta.dpmetaapp",
+   "kind": "read",
+   "refs": [
+    "DPmetaApp:docs/direction/TECHNICAL_TASK.md"
+   ],
+   "status": "planned",
+   "to": "dpmetaapp",
+   "transport": "http",
+   "what": "реестр проектов, заголовки C-, RISK-, SQ-, срезы"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "ai",
+   "from": "github",
+   "id": "app.github.dpmetaapp",
+   "kind": "read",
+   "refs": [
+    "DPmetaApp:docs/direction/TECHNICAL_TASK.md"
+   ],
+   "status": "planned",
+   "to": "dpmetaapp",
+   "transport": "api",
+   "what": "PR, ветки, проверки, файлы процесса всех проектов; действия — по уровням"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "ai",
+   "from": "site",
+   "id": "app.site.dpmetaapp",
+   "kind": "read",
+   "refs": [
+    "DPmetaApp:docs/direction/TECHNICAL_TASK.md",
+    "SocialMediaImage:docs/platforms/WEBSITE.md"
+   ],
+   "status": "planned",
+   "to": "dpmetaapp",
+   "transport": "http",
+   "what": "/api/v1/*.json, пробы и заголовки сайта"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "data",
+   "from": "dpmetaapp",
+   "id": "app.dpmetaapp.phone",
+   "kind": "host",
+   "refs": [
+    "DPmetaApp:D-24"
+   ],
+   "status": "planned",
+   "to": "phone",
+   "transport": "manual",
+   "what": "личное приложение — только на устройствах автора, нигде не публикуется"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "ai",
+   "from": "claude",
+   "id": "notify.claude.ntfy",
+   "kind": "notify",
+   "refs": [
+    "DPmetaApp:docs/direction/TECHNICAL_TASK.md"
+   ],
+   "status": "planned",
+   "to": "ntfy",
+   "transport": "push",
+   "trigger": "конец хода сессии",
+   "what": "хуки Stop и Notification: «Claude закончил ответ», «ждёт ввода» — подписанный минимум без текста"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "ai",
+   "from": "ntfy",
+   "id": "notify.ntfy.phone",
+   "kind": "notify",
+   "refs": [
+    "DPmetaApp:docs/direction/TECHNICAL_TASK.md"
+   ],
+   "status": "planned",
+   "to": "phone",
+   "transport": "push",
+   "what": "события — на телефон автора через дистрибьютор UnifiedPush"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "ai",
+   "from": "dpmeta",
+   "id": "mon.dpmeta.dpmonetization",
+   "kind": "read",
+   "refs": [
+    "DPmeta:docs/ECOSYSTEM.md"
+   ],
+   "status": "planned",
+   "to": "dpmonetization",
+   "transport": "clone",
+   "what": "реестр проектов по фактам DPmeta; зависимости по контрактам C-01, C-03, C-08, C-09"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "ai",
+   "format": "report.json, схема 1",
+   "from": "dpverify",
+   "id": "mon.dpverify.dpmonetization",
+   "kind": "read",
+   "refs": [
+    "DPmeta:docs/ECOSYSTEM.md"
+   ],
+   "status": "planned",
+   "to": "dpmonetization",
+   "transport": "clone",
+   "what": "адаптер к report.json DP-Verify"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "ai",
+   "from": "market",
+   "id": "mon.market.dpmonetization",
+   "kind": "read",
+   "refs": [
+    "DPmeta:docs/ECOSYSTEM.md"
+   ],
+   "status": "planned",
+   "to": "dpmonetization",
+   "transport": "clone",
+   "what": "адаптер к DecisionReport анализа рынка"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "data",
+   "from": "xray",
+   "id": "build.xray.dppass",
+   "kind": "build",
+   "refs": [
+    "DPpass:README.md"
+   ],
+   "status": "active",
+   "to": "dppass",
+   "transport": "http",
+   "trigger": "сборка APK (задачи xrayNative, xrayGeodata)",
+   "what": "Xray-core 26.9.30 как модуль Go и наборы геоданных — собираются своим кодом в APK"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "human",
+   "from": "galdhold",
+   "id": "build.galdhold.phone",
+   "kind": "deploy",
+   "refs": [
+    "Galdhold:README.md"
+   ],
+   "status": "active",
+   "to": "phone",
+   "transport": "manual",
+   "what": "APK для проверки на устройстве и замеры"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "human",
+   "from": "dppass",
+   "id": "build.dppass.phone",
+   "kind": "deploy",
+   "refs": [
+    "DPpass:README.md"
+   ],
+   "status": "planned",
+   "to": "phone",
+   "transport": "manual",
+   "what": "отладочный APK; подключение через туннель на устройстве ещё не проверено"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "human",
+   "from": "galdhold",
+   "id": "release.galdhold.steam",
+   "kind": "deploy",
+   "refs": [
+    "Galdhold:README.md"
+   ],
+   "status": "planned",
+   "to": "steam",
+   "transport": "manual",
+   "trigger": "этап 5 — версия 1",
+   "what": "первый выпуск на Windows"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "data",
+   "from": "github",
+   "id": "host.github.repos",
+   "kind": "host",
+   "refs": [
+    "DPmeta:E-08"
+   ],
+   "status": "active",
+   "to": "claude",
+   "transport": "git",
+   "what": "сессии получают репозиторий клоном и пушат ветки; PR открываются на GitHub"
+  }
+ ],
+ "layers": [
+  {
+   "id": "actors",
+   "name": "Участники"
+  },
+  {
+   "id": "product",
+   "name": "Продукты"
+  },
+  {
+   "id": "background",
+   "name": "Ранние и малые проекты"
+  },
+  {
+   "id": "engineering",
+   "name": "Инженерная основа"
+  },
+  {
+   "id": "knowledge",
+   "name": "Знание и публикация"
+  },
+  {
+   "id": "meta",
+   "name": "Мета-уровень"
+  },
+  {
+   "id": "infra",
+   "name": "Инфраструктура"
+  },
+  {
+   "id": "outside",
+   "name": "Площадки и внешнее"
+  }
+ ],
+ "nodes": [
+  {
+   "id": "author",
+   "kind": "actor",
+   "layer": "actors",
+   "name": "Автор",
+   "refs": [
+    "DPmeta:E-02",
+    "DPmeta:C-07",
+    "SocialMediaImage:Д36"
+   ],
+   "role": "замысел, решения, ответы на вопросы, вливание PR, одобрение публикаций и «да» на выгрузку сайта",
+   "status": "active",
+   "visibility": "private"
+  },
+  {
+   "id": "claude",
+   "kind": "actor",
+   "layer": "actors",
+   "name": "Сессии Claude Code",
+   "refs": [
+    "DPmeta:E-07",
+    "DPmeta:E-08",
+    "DPmetaApp:docs/direction/TECHNICAL_TASK.md"
+   ],
+   "role": "облачные сессии ИИ: ветки, коммиты и PR во всех репозиториях; проверка — командой в сессии, без CI",
+   "status": "active",
+   "visibility": "private"
+  },
+  {
+   "group": "core",
+   "id": "galdhold",
+   "kind": "repo",
+   "layer": "product",
+   "name": "Galdhold",
+   "refs": [
+    "DPmeta:docs/ECOSYSTEM.md",
+    "Galdhold:README.md"
+   ],
+   "repo": "dpsmpx/Galdhold",
+   "role": "воксельная action-RPG и её движок; Android и Windows",
+   "stage": "этапы 1–4 закрыты, идёт этап 5 — версия 1 и выпуск",
+   "status": "active",
+   "visibility": "private"
+  },
+  {
+   "group": "core",
+   "id": "dplang",
+   "kind": "repo",
+   "layer": "product",
+   "name": "DPlang",
+   "refs": [
+    "DPmeta:docs/ECOSYSTEM.md",
+    "DPlang:README.md"
+   ],
+   "repo": "dpsmpx/DPlang",
+   "role": "системный язык общего назначения, компилятор в C11 и toolchain",
+   "stage": "v0.1 — шаги 1–8 из 13, C-бэкенд готов",
+   "status": "active",
+   "visibility": "private"
+  },
+  {
+   "group": "core",
+   "id": "dppass",
+   "kind": "repo",
+   "layer": "product",
+   "name": "DPpass",
+   "refs": [
+    "DPmeta:docs/ECOSYSTEM.md",
+    "DPpass:README.md",
+    "SocialMediaImage:data/progress/scope.yaml"
+   ],
+   "repo": "dpsmpx/DPpass",
+   "role": "клиент прокси/VPN для Android: своя модель конфигурации, маршрутизации и подписок",
+   "stage": "этап 1 из 5 выполнен, идёт этап 2",
+   "status": "active",
+   "visibility": "undisclosed"
+  },
+  {
+   "group": "periphery",
+   "id": "andors_love",
+   "kind": "repo",
+   "layer": "background",
+   "name": "Andors-Love",
+   "refs": [
+    "DPmeta:docs/ECOSYSTEM.md",
+    "DPmeta:C-08"
+   ],
+   "repo": "dpsmpx/Andors-Love",
+   "role": "пошаговая RPG на C++ (терминал и SDL); владелец формата карт",
+   "status": "active",
+   "visibility": "public"
+  },
+  {
+   "group": "periphery",
+   "id": "tjtm",
+   "kind": "repo",
+   "layer": "background",
+   "name": "TrueJointTileMaker",
+   "refs": [
+    "DPmeta:docs/ECOSYSTEM.md",
+    "TrueJointTileMaker:docs/porting.md"
+   ],
+   "repo": "dpsmpx/TrueJointTileMaker",
+   "role": "редактор пиксельной графики и карт; переносится с PascalABC.NET на C++ и SDL2",
+   "status": "active",
+   "visibility": "public"
+  },
+  {
+   "group": "periphery",
+   "id": "profile",
+   "kind": "repo",
+   "layer": "background",
+   "name": "Профиль GitHub",
+   "refs": [
+    "DPmeta:docs/ECOSYSTEM.md",
+    "DPmeta:C-07"
+   ],
+   "repo": "dpsmpx/dpsmpx",
+   "role": "README страницы профиля GitHub; правит только автор",
+   "status": "active",
+   "visibility": "public"
+  },
+  {
+   "group": "periphery",
+   "id": "pixrogue",
+   "kind": "repo",
+   "layer": "background",
+   "name": "PixRogue",
+   "refs": [
+    "DPmeta:docs/ECOSYSTEM.md",
+    "SocialMediaImage:data/progress/scope.yaml"
+   ],
+   "repo": "dpsmpx/PixRogue",
+   "role": "ранний малый проект; источник фактов DPprofile",
+   "status": "active",
+   "visibility": "public"
+  },
+  {
+   "group": "periphery",
+   "id": "dp_ecosystem",
+   "kind": "repo",
+   "layer": "background",
+   "name": "DP_Ecosystem",
+   "refs": [
+    "DPmeta:docs/ECOSYSTEM.md",
+    "SocialMediaImage:data/progress/scope.yaml"
+   ],
+   "repo": "dpsmpx/DP_Ecosystem",
+   "role": "ранний малый проект; источник фактов DPprofile",
+   "status": "active",
+   "visibility": "public"
+  },
+  {
+   "group": "periphery",
+   "id": "repeated",
+   "kind": "repo",
+   "layer": "background",
+   "name": "DP_Repeated_Tasks",
+   "refs": [
+    "DPmeta:docs/ECOSYSTEM.md",
+    "SocialMediaImage:data/progress/scope.yaml"
+   ],
+   "repo": "dpsmpx/DP_Repeated_Tasks",
+   "role": "ранний малый проект; источник фактов DPprofile",
+   "status": "active",
+   "visibility": "public"
+  },
+  {
+   "group": "periphery",
+   "id": "tanks",
+   "kind": "repo",
+   "layer": "background",
+   "name": "tanks_blitz_stat_chat",
+   "refs": [
+    "SocialMediaImage:data/progress/scope.yaml"
+   ],
+   "repo": "dpsmpx/tanks_blitz_stat_chat",
+   "role": "ранний малый проект",
+   "status": "active",
+   "visibility": "public"
+  },
+  {
+   "group": "core",
+   "id": "dpverify",
+   "kind": "repo",
+   "layer": "engineering",
+   "name": "DP-Verify",
+   "refs": [
+    "DPmeta:docs/ECOSYSTEM.md",
+    "DP-Verify:README.md"
+   ],
+   "repo": "dpsmpx/DP-Verify",
+   "role": "общий каркас инженерных проверок и process-kit для репозиториев автора",
+   "stage": "0.3.0: этапы 0–3; потребителей ещё нет",
+   "status": "active",
+   "visibility": "private"
+  },
+  {
+   "group": "core",
+   "id": "dpprofile",
+   "kind": "repo",
+   "layer": "knowledge",
+   "name": "DPprofile",
+   "refs": [
+    "DPmeta:docs/ECOSYSTEM.md",
+    "DPprofile:README.md"
+   ],
+   "repo": "dpsmpx/DPprofile",
+   "role": "проверяемая история пути автора: источники, факты, хронология, выводы",
+   "stage": "этап 4 из 6",
+   "status": "active",
+   "visibility": "private"
+  },
+  {
+   "group": "core",
+   "id": "smi",
+   "kind": "repo",
+   "layer": "knowledge",
+   "name": "SocialMediaImage",
+   "refs": [
+    "DPmeta:docs/ECOSYSTEM.md",
+    "SocialMediaImage:README.md"
+   ],
+   "repo": "dpsmpx/SocialMediaImage",
+   "role": "производство, проверка и публикация контента автора; сайт dpsmpx.com и страница прогресса",
+   "stage": "сайт выпущен 05.10.2026; фаза «Сайт MVP»",
+   "status": "active",
+   "visibility": "private"
+  },
+  {
+   "group": "core",
+   "id": "dplearn",
+   "kind": "repo",
+   "layer": "knowledge",
+   "name": "DPlearn",
+   "refs": [
+    "DPmeta:docs/ECOSYSTEM.md",
+    "DPlearn:README.md"
+   ],
+   "repo": "dpsmpx/DPlearn",
+   "role": "персональная система обучения: «освоено» вычисляется из доказательств",
+   "stage": "0.1.0",
+   "status": "active",
+   "visibility": "private"
+  },
+  {
+   "group": "core",
+   "id": "market",
+   "kind": "repo",
+   "layer": "knowledge",
+   "name": "DP_game_market_analytic_system",
+   "refs": [
+    "DPmeta:docs/ECOSYSTEM.md",
+    "DP_game_market_analytic_system:docs/ARCHITECTURE.md"
+   ],
+   "repo": "dpsmpx/DP_game_market_analytic_system",
+   "role": "воспроизводимый анализ рынка игр: наблюдения → факты → метрики → гипотезы → решения",
+   "stage": "0.1.0; CLI нет",
+   "status": "active",
+   "visibility": "private"
+  },
+  {
+   "group": "new",
+   "id": "dpmonetization",
+   "kind": "repo",
+   "layer": "knowledge",
+   "name": "DPmonetization",
+   "refs": [
+    "DPmeta:docs/ECOSYSTEM.md",
+    "DPmonetization:tools/dpmon/__init__.py"
+   ],
+   "repo": "dpsmpx/DPmonetization",
+   "role": "Strategic Project Intelligence — анализ портфеля проектов; место в экосистеме не определено",
+   "stage": "каркас ядра без тестов",
+   "status": "active",
+   "visibility": "private"
+  },
+  {
+   "group": "core",
+   "id": "dpmeta",
+   "kind": "repo",
+   "layer": "meta",
+   "name": "DPmeta",
+   "refs": [
+    "DPmeta:README.md",
+    "DPmeta:M-01"
+   ],
+   "repo": "dpsmpx/DPmeta",
+   "role": "мета-уровень: карта репозиториев, контракты, имена, принципы, риски, очередь согласований",
+   "stage": "три прохода 5.10.2026",
+   "status": "active",
+   "visibility": "private"
+  },
+  {
+   "group": "new",
+   "id": "dpmetaapp",
+   "kind": "repo",
+   "layer": "meta",
+   "name": "DPmetaApp",
+   "refs": [
+    "DPmetaApp:README.md",
+    "DPmetaApp:docs/direction/TECHNICAL_TASK.md"
+   ],
+   "repo": "dpsmpx/DPmetaApp",
+   "role": "Android-пульт автора над экосистемой: проекты, ход разработки, сайт, аккаунты Claude, статистика",
+   "stage": "этап 0 — ТЗ в работе, черновой PR",
+   "status": "active",
+   "visibility": "private"
+  },
+  {
+   "group": "new",
+   "id": "dpvisualisation",
+   "kind": "repo",
+   "layer": "meta",
+   "name": "DPvisualisation",
+   "refs": [
+    "DPvisualisation:docs/direction/REQUEST.md",
+    "DPvisualisation:D-01"
+   ],
+   "repo": "dpsmpx/DPvisualisation",
+   "role": "эта модель: потоки информации и онлайн-работа инфраструктуры на реальных данных",
+   "stage": "1.0.0",
+   "status": "active",
+   "visibility": "private"
+  },
+  {
+   "id": "github",
+   "kind": "service",
+   "layer": "infra",
+   "name": "GitHub",
+   "refs": [
+    "DPmeta:E-07",
+    "DPmeta:E-08"
+   ],
+   "role": "хранилище репозиториев, ветки и PR; GitHub Actions не используются",
+   "status": "active",
+   "visibility": "private"
+  },
+  {
+   "id": "site",
+   "kind": "service",
+   "layer": "infra",
+   "name": "Сайт dpsmpx.com",
+   "probes": [
+    {
+     "expect": 200,
+     "headers": [
+      "Content-Security-Policy",
+      "X-Content-Type-Options",
+      "Referrer-Policy",
+      "Permissions-Policy",
+      "X-Frame-Options",
+      "Cross-Origin-Opener-Policy"
+     ],
+     "url": "http://dpsmpx.com/"
+    },
+    {
+     "expect": 200,
+     "headers": [],
+     "url": "http://dpsmpx.com/api/v1/index.json"
+    }
+   ],
+   "refs": [
+    "SocialMediaImage:docs/platforms/WEBSITE.md",
+    "SocialMediaImage:Д32",
+    "SocialMediaImage:Д35"
+   ],
+   "role": "статический сайт на хостинге Beget: главная, проекты, лента, /api/v1/; пока по http, сертификата нет",
+   "status": "active",
+   "visibility": "public"
+  },
+  {
+   "id": "phone",
+   "kind": "device",
+   "layer": "infra",
+   "name": "Телефон автора (Termux)",
+   "refs": [
+    "SocialMediaImage:tools/termux/dpsmpx-site-deploy.sh",
+    "Galdhold:README.md",
+    "DPmetaApp:docs/direction/TECHNICAL_TASK.md"
+   ],
+   "role": "Android с Termux: ярлык выгрузки сайта, проверка сборок Galdhold; здесь будет DPmetaApp",
+   "status": "active",
+   "visibility": "private"
+  },
+  {
+   "id": "compiler",
+   "kind": "service",
+   "layer": "infra",
+   "name": "Онлайн-компилятор DPlang",
+   "note": "вторая сторона и инфраструктура не определены (DPmeta:RISK-09)",
+   "refs": [
+    "DPmeta:C-09",
+    "DPmeta:RISK-09"
+   ],
+   "role": "компиляция программ на сервере по HTTP, только диагностика, без исполнения; запуск выключен",
+   "status": "planned",
+   "visibility": "private"
+  },
+  {
+   "id": "ntfy",
+   "kind": "service",
+   "layer": "infra",
+   "name": "Мгновенный канал (ntfy)",
+   "refs": [
+    "DPmetaApp:docs/direction/TECHNICAL_TASK.md"
+   ],
+   "role": "UnifiedPush через ntfy: события «Claude закончил ответ» и другие — на телефон",
+   "status": "planned",
+   "visibility": "private"
+  },
+  {
+   "id": "telegram",
+   "kind": "platform",
+   "layer": "outside",
+   "name": "Telegram",
+   "refs": [
+    "SocialMediaImage:data/platforms/destinations.yaml",
+    "SocialMediaImage:data/identity/links.yaml"
+   ],
+   "role": "личный канал и канал-дневник Galdhold",
+   "status": "active",
+   "visibility": "public"
+  },
+  {
+   "id": "youtube",
+   "kind": "platform",
+   "layer": "outside",
+   "name": "YouTube",
+   "refs": [
+    "SocialMediaImage:data/platforms/destinations.yaml",
+    "SocialMediaImage:data/identity/links.yaml"
+   ],
+   "role": "канал @dpsmpx",
+   "status": "active",
+   "visibility": "public"
+  },
+  {
+   "id": "vk",
+   "kind": "platform",
+   "layer": "outside",
+   "name": "VK",
+   "refs": [
+    "SocialMediaImage:data/platforms/destinations.yaml",
+    "SocialMediaImage:data/identity/links.yaml"
+   ],
+   "role": "страница автора",
+   "status": "active",
+   "visibility": "public"
+  },
+  {
+   "id": "tiktok",
+   "kind": "platform",
+   "layer": "outside",
+   "name": "TikTok",
+   "refs": [
+    "SocialMediaImage:data/platforms/destinations.yaml",
+    "SocialMediaImage:data/identity/links.yaml"
+   ],
+   "role": "короткие вертикальные видео",
+   "status": "active",
+   "visibility": "public"
+  },
+  {
+   "id": "discord",
+   "kind": "platform",
+   "layer": "outside",
+   "name": "Discord",
+   "refs": [
+    "SocialMediaImage:data/platforms/destinations.yaml"
+   ],
+   "role": "сервер сообщества — ещё не создан",
+   "status": "planned",
+   "visibility": "public"
+  },
+  {
+   "id": "steam",
+   "kind": "platform",
+   "layer": "outside",
+   "name": "Steam",
+   "refs": [
+    "Galdhold:README.md"
+   ],
+   "role": "магазин первого выпуска Galdhold на Windows",
+   "status": "planned",
+   "visibility": "public"
+  },
+  {
+   "id": "xray",
+   "kind": "upstream",
+   "layer": "outside",
+   "name": "Xray-core",
+   "refs": [
+    "DPpass:README.md"
+   ],
+   "role": "внешнее ядро прокси (XTLS), собирается в процесс приложения с набором геоданных",
+   "status": "active",
+   "visibility": "public"
+  }
+ ],
+ "registry": {
+  "contracts": "docs/CONTRACTS.md",
+  "node": "dpmeta",
+  "path": "tools/ecosystem.toml"
+ },
+ "schema": "dpvis-model/1",
+ "source": {
+  "path": "model/ecosystem.toml",
+  "sha256": "b909826c3564d0f74ccebc37afe32457f438ed091d1c651eb2565dd18ce58a57"
+ },
+ "sources": [
+  "DPmeta:docs/ECOSYSTEM.md",
+  "DPmeta:docs/CONTRACTS.md",
+  "DPmeta:tools/ecosystem.toml",
+  "DPmetaApp:docs/direction/TECHNICAL_TASK.md",
+  "SocialMediaImage:docs/platforms/WEBSITE.md",
+  "SocialMediaImage:data/platforms/destinations.yaml",
+  "SocialMediaImage:data/progress/scope.yaml"
+ ],
+ "timezone": "+03:00",
+ "title": "Экосистема dpsmpx"
+}
