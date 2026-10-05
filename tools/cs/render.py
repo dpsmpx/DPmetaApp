@@ -508,23 +508,34 @@ def layout_minimal(spec, t, tok, fmt: Fmt) -> str:
     return "".join(body)
 
 
+def accent_html(tok: dict, text: str, accents: list[str] | None) -> str:
+    """Текст с выделенным фрагментом: первый из accents, найденный в тексте, — токеном human
+    («цвет = смысл»: решение человека, как ромб ворот схемы)."""
+    for a in accents or []:
+        if a in text:
+            pre, _, post = text.partition(a)
+            return f'{_e(pre)}<span style="color:{_c(tok, "human")}">{_e(a)}</span>{_e(post)}'
+    return _e(text)
+
+
 def ecosystem_html(tok: dict, eco: dict, size: float, labels: bool = True) -> str:
     """Карта экосистемы слоями: строка — слой, плашка — репозиторий (Plex Mono).
 
-    Стрелок нет: репозитории не зависят друг от друга (META-NO-DEPS). Продукты — с вокселем,
-    как узел «Продукт» схемы. labels=False — без подписей слоёв, плашки одной строкой с переносом
-    (шапка). Закрытый проект без имени — только строкой note (Д38, Д39).
+    Стрелок нет: репозитории не зависят друг от друга (META-NO-DEPS). origin — исток экосистемы
+    (рамка ярче, подпись caption). Заливка line, а не graphite: при миниатюре плашки читаются как
+    форма (E-12). labels=False — без подписей слоёв, плашки одной строкой с переносом (шапка).
+    Закрытый проект без публичного имени — только строкой note (Д38, Д39).
     """
     gap = size * 0.5
 
     def pill(n: dict) -> str:
-        icon = (f'<span style="display:inline-block;vertical-align:{-size * 0.16:.1f}px;margin-right:{size * 0.45:.1f}px">'
-                f'{_cube_svg(size * 0.95, tok)}</span>') if n.get("product") else ""
+        edge = _c(tok, "mist") if n.get("origin") else _c(tok, "line")
+        cap = (f'<span style="color:{_c(tok, "mist")}"> · {_e(n["caption"])}</span>') if n.get("caption") else ""
         return (
-            f'<div class="mono" data-role="eco-node" data-group="ecosystem" data-fg="paper" data-bg="graphite" '
-            f'style="font-size:{size:.1f}px;line-height:1.2;white-space:nowrap;padding:{size * 0.32:.1f}px {size * 0.6:.1f}px;'
-            f'background:{_c(tok, "graphite")};border:1px solid {_c(tok, "line")};border-radius:{size * 0.3:.1f}px;'
-            f'color:{_c(tok, "paper")}">{icon}{_e(n["name"])}</div>'
+            f'<div class="mono" data-role="eco-node" data-group="ecosystem" data-fg="paper" data-bg="line" '
+            f'style="font-size:{size:.1f}px;line-height:1.2;white-space:nowrap;padding:{size * 0.3:.1f}px {size * 0.6:.1f}px;'
+            f'background:{_c(tok, "line")};border:1px solid {edge};border-radius:{size * 0.3:.1f}px;'
+            f'color:{_c(tok, "paper")}">{_e(n["name"])}{cap}</div>'
         )
 
     def row(nodes: list[dict], extra: str = "") -> str:
@@ -543,24 +554,47 @@ def ecosystem_html(tok: dict, eco: dict, size: float, labels: bool = True) -> st
         parts.append(
             f'<div><div class="mono" data-role="eco-layer" data-group="ecosystem" data-fg="mist" data-bg="ink" '
             f'style="font-size:{size:.1f}px;line-height:1.25;white-space:nowrap;color:{_c(tok, "mist")};'
-            f'margin-bottom:{size * 0.45:.1f}px">{_e(layer["label"])}</div>{row(layer["nodes"])}</div>'
+            f'margin-bottom:{size * 0.5:.1f}px">{_e(layer["label"])}</div>{row(layer["nodes"])}</div>'
         )
     return "".join(parts) + note_html
 
 
+def evidence_lines_html(tok: dict, lines: list[str], x, y, w, size) -> str:
+    """Доказательства строками, не плашками (E-3: плашки — узлы карты). «база:» — mist, величины — paper;
+    над блоком — линия."""
+    parts = [f'<div style="position:absolute;left:{x:.1f}px;top:{y:.1f}px;width:{w * 0.5:.1f}px;height:1px;'
+             f'background:{_c(tok, "line")}"></div>']
+    for i, s in enumerate(lines):
+        base, sep, rest = s.partition(": ")
+        inner = (f'<span style="color:{_c(tok, "mist")}">{_e(base)}:</span> {_e(rest)}' if sep else _e(s))
+        parts.append(
+            f'<div class="mono" data-role="evidence" data-group="evidence" data-fg="mist" data-bg="ink" '
+            f'style="position:absolute;left:{x:.1f}px;top:{y + size * 0.9 + i * size * 1.65:.1f}px;width:{w:.1f}px;'
+            f'font-size:{size:.1f}px;line-height:1.3;white-space:nowrap;color:{_c(tok, "paper")}">{inner}</div>'
+        )
+    return "".join(parts)
+
+
+# Имя в макетах без портрета крупнее токена display — тот же множитель, что у minimal (D-10, E-12).
+NAME_NO_PORTRAIT = 1.6
+# Строка под именем — ниже рамки глифов имени (выносной «p»), иначе рамки текста пересекаются.
+NAME_GAP = 1.32
+
+
 def layout_ecosystem(spec, t, tok, fmt: Fmt) -> str:
-    """Вариант без лица: на месте портрета — карта экосистемы; справа имя, роль, подзаголовок, доказательства."""
+    """Вариант без лица: на месте портрета — карта экосистемы; справа имя, роль, ключевая фраза, метод,
+    доказательства (ревизия по критике v2: E-2, E-3, E-6, E-12, E-13)."""
     W, H = fmt.width, fmt.height
     if fmt.safe_area:
         return layout_ecosystem_banner(spec, t, tok, fmt)
     s = H / 720
     ts = tok["type_scale"]
-    disp, title, label = ts["display"] * H, ts["title"] * H, ts["label"] * H
-    pw = W * (0.42 if W / H < 1.9 else 0.40)
+    disp, title, label = ts["display"] * H * NAME_NO_PORTRAIT, ts["title"] * H, ts["label"] * H
+    pw = W * 0.40
     m = 56 * s
     body = [
         f'<div style="position:absolute;left:{m:.1f}px;top:{m:.1f}px;width:{pw - m - W * 0.015:.1f}px;'
-        f'height:{H - 2 * m:.1f}px;display:flex;flex-direction:column;justify-content:center;gap:{label * 1.1:.1f}px">'
+        f'height:{H - 2 * m:.1f}px;display:flex;flex-direction:column;justify-content:center;gap:{label * 1.3:.1f}px">'
         f'{ecosystem_html(tok, t["ecosystem"], label)}</div>',
         # граница карты и текста — декор, не группа текста
         f'<div style="position:absolute;left:{pw + W * 0.012:.1f}px;top:{H * 0.14:.1f}px;width:1px;'
@@ -568,43 +602,57 @@ def layout_ecosystem(spec, t, tok, fmt: Fmt) -> str:
     ]
     x0 = pw + W * 0.03
     cw = W - x0 - m
-    # Правая колонка — один блок по центру высоты, как карта слева: без схемы работы v1 середина
-    # иначе пустеет между подзаголовком и доказательствами.
     ev = t.get("evidence", [])
-    sub_h = label * 1.45 * (t["sub"].count("\n") + 1) if t.get("sub") else 0
-    ev_h = (label * 2.0 + label * 2.7 * (len(ev) - 1) + label * 1.98) if ev else 0
-    y = max(m, (H - (disp * 1.25 + title * 1.55 + sub_h + ev_h)) / 2)
+    claim_lines = 2  # ключевая фраза размером title в колонку не помещается одной строкой
+    ev_h = (label * 0.9 + label * 1.65 * len(ev)) if ev else 0
+    block = disp * NAME_GAP + title * 1.5 + title * 1.3 * claim_lines + title * 0.5 + label * 1.45 + label * 1.9 + ev_h
+    y = max(m, (H - block) / 2)
     body.append(name_html(tok, t["name"], x0, y, disp))
-    y += disp * 1.25
+    y += disp * NAME_GAP
     body.append(text_html(tok, "role", "identity", t["role"], x0, y, cw, title, weight=500, line=1.2))
-    y += title * 1.55
-    if t.get("sub"):
-        body.append(text_html(tok, "sub", "identity", t["sub"], x0, y, cw * 0.95, label, color="mist", line=1.45))
-        y += sub_h
-    y += label * 2.0
-    for i, e in enumerate(ev):
-        body.append(chip_html(tok, e, x0, y + i * label * 2.7, label))
+    y += title * 1.5
+    body.append(text_html(tok, "claim", "identity", t["claim"], x0, y, cw, title, line=1.3))
+    y += title * 1.3 * claim_lines + title * 0.5
+    body.append(
+        f'<div data-role="method" data-group="identity" data-fg="mist" data-bg="ink" '
+        f'style="position:absolute;left:{x0:.1f}px;top:{y:.1f}px;width:{cw:.1f}px;font-size:{label:.1f}px;'
+        f'line-height:1.45;color:{_c(tok, "mist")}">{accent_html(tok, t["method"], t.get("accent"))}</div>'
+    )
+    y += label * 1.45 + label * 1.9
+    if ev:
+        body.append(evidence_lines_html(tok, ev, x0, y, cw, label))
     return "".join(body)
 
 
 def layout_ecosystem_banner(spec, t, tok, fmt: Fmt) -> str:
-    """Шапка YouTube варианта ecosystem: имя, роль, первая строка подзаголовка и узлы — в безопасной зоне."""
+    """Шапка YouTube варианта ecosystem: имя, роль с методом (E-10), ключевая фраза и узлы — в безопасной
+    зоне с полями не меньше 24 px (E-11); блок — по центру зоны."""
     sa = fmt.safe_area
     sx, sy, sw, sh = sa["x"], sa["y"], sa["w"], sa["h"]
     unit = sh / 423
+    pad = 24 * unit
     label = max(32 * unit, tok["limits"]["min_text_px_at_720"] * fmt.height / 720)
     disp, title = 80 * unit, 42 * unit
-    x0, cw = sx + 24 * unit, sw - 48 * unit
-    y = sy + 14 * unit
+    x0, cw = sx + pad, sw - 2 * pad
+    pill_h = label * 1.2 + 2 * label * 0.3 + 2
+    nodes_h = 2 * pill_h + label * 0.5
+    block = disp * NAME_GAP + title * 1.2 + 8 * unit + label * 1.3 + 22 * unit + nodes_h
+    # рамка глифов имени выше строки (line-height 1) примерно на 0,15 кегля — поле считается от неё
+    y = sy + pad + disp * 0.15 + max(0.0, (sh - 2 * pad - disp * 0.15 - block) / 2)
     body = [name_html(tok, t["name"], x0, y, disp)]
-    y += disp * 1.2
-    body.append(text_html(tok, "role", "identity", t["role"], x0, y, cw, title, weight=500, line=1.2, nowrap=True))
-    y += title * 1.45
-    if t.get("sub"):
-        body.append(text_html(tok, "sub", "identity", t["sub"].split("\n")[0], x0, y, cw, label, color="mist",
-                              line=1.3, nowrap=True))
-    body.append(f'<div style="position:absolute;left:{x0:.1f}px;bottom:{fmt.height - sy - sh + 14 * unit:.1f}px;'
-                f'width:{cw:.1f}px">{ecosystem_html(tok, t["ecosystem"], label, labels=False)}</div>')
+    y += disp * NAME_GAP
+    role = f'{_e(t["role"])}<span style="color:{_c(tok, "mist")}"> · </span>' + \
+        f'<span style="color:{_c(tok, "mist")}">{accent_html(tok, t.get("method_short") or t["method"], t.get("accent"))}</span>'
+    body.append(
+        f'<div data-role="role" data-group="identity" data-fg="mist" data-bg="ink" '
+        f'style="position:absolute;left:{x0:.1f}px;top:{y:.1f}px;width:{cw:.1f}px;font-size:{title:.1f}px;'
+        f'font-weight:500;line-height:1.2;white-space:nowrap;color:{_c(tok, "paper")}">{role}</div>'
+    )
+    y += title * 1.2 + 8 * unit
+    body.append(text_html(tok, "claim", "identity", t["claim"], x0, y, cw, label, line=1.3, nowrap=True))
+    y += label * 1.3 + 22 * unit
+    body.append(f'<div style="position:absolute;left:{x0:.1f}px;top:{y:.1f}px;width:{cw:.1f}px">'
+                f'{ecosystem_html(tok, t["ecosystem"], label, labels=False)}</div>')
     return "".join(body)
 
 

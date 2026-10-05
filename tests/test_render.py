@@ -36,14 +36,18 @@ class EcosystemLayoutTest(unittest.TestCase):
     def setUp(self):
         self.spec = load_yaml(self.SPEC_E)
 
-    def test_map_has_named_nodes_and_product_marks(self):
+    def test_map_has_named_nodes_origin_and_accent(self):
         for lang in ("ru", "en"):
-            page = build_html(self.spec, lang, formats()["telegram_post"])
-            nodes = [n for layer in self.spec["text"][lang]["ecosystem"]["layers"] for n in layer["nodes"]]
-            for n in nodes:
-                self.assertIn(f">{n['name']}</div>", page)
-            self.assertEqual(page.count("<polygon"), 3 * sum(1 for n in nodes if n.get("product")))
-            self.assertNotIn('data-role="portrait"', page)
+            t = self.spec["text"][lang]
+            for fmt in ("telegram_post", "youtube_banner"):
+                page = build_html(self.spec, lang, formats()[fmt])
+                nodes = [n for layer in t["ecosystem"]["layers"] for n in layer["nodes"]]
+                for n in nodes:
+                    self.assertIn(f">{n['name']}", page)
+                self.assertEqual(page.count('data-role="eco-node"'), len(nodes))
+                self.assertNotIn('data-role="portrait"', page)
+                # решение человека — токеном human (E-2, E-10): и в карточке, и в строке роли шапки
+                self.assertRegex(page, r'<span style="color:#FF7A59">[^<]*(мои|mine)</span>')
 
     def test_undisclosed_project_name_never_rendered(self):
         scope = load_yaml(ROOT / "data/progress/scope.yaml")

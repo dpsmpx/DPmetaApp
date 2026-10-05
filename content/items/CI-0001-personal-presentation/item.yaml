@@ -138,8 +138,11 @@ variants:
   status: candidate
   renders:
   - renders/E-en-github_social.png
+  - renders/E-en-master.png
   - renders/E-en-telegram_post.jpg
+  - renders/E-ru-master.png
   - renders/E-ru-telegram_post.jpg
+  - renders/E-ru-vk_post.jpg
   - renders/E-ru-youtube_banner.jpg
 selected_variant: null
 provenance: provenance.yaml
@@ -293,23 +296,31 @@ review:
       variant: E
       text: карта называет шесть новых репозиториев ядра — расходится с правилом ОР-12 до решения («только
         на странице прогресса… в других объектах не упоминаются»); роли *-WHAT на изображении не выражены
-      status: open
+      status: fixed
+      resolution: 'решение автора 05.10.2026: ОР-12 — исключение для CI-0001, на карточке новые репозитории
+        называются по имени (DECISIONS, ОР-12 и история)'
     - id: E-2
       variant: E
       text: ключевая строка и метод — label 17,3 px цветом mist, тусклее плашек доказательств; при 320
         px — 4,3 px; из коралла — только точка знака
-      status: open
+      status: fixed
+      resolution: ключевая фраза — отдельной строкой размером title цветом paper; «архитектура и решения
+        — мои» — токеном human
     - id: E-6
       variant: E
       text: первая плашка без даты; «344 тыс. строк» (срез) под «за 24 дня» читается как «написано за
         24 дня» (первый коммит Galdhold — 30 801 строка, GH-REPO-START); на одной плашке величины среза
         и периода
-      status: open
+      status: fixed
+      resolution: 'три строки с базой: «на 05.10.2026: 344 тыс. строк…», «за 24 дня: 981 коммит, 83 %
+        из них — сессии ИИ», «на 05.10.2026: 210 записей…»'
     - id: E-10
       variant: E
       text: 'шапка YouTube без метода: берётся только первая строка подзаголовка, «ИИ — инструмент; решения
         — мои» нет'
-      status: open
+      status: fixed
+      resolution: 'шапка: метод в строке роли — «… · ИИ — инструмент, решения — мои», «решения — мои»
+        токеном human'
     - id: D-9
       variant: D
       text: под цель v2 нет экосистемы и масштаба
@@ -442,42 +453,57 @@ review:
     - id: E-3
       variant: E
       text: плашки доказательств неотличимы от плашек узлов карты
-      status: open
+      status: fixed
+      resolution: 'доказательства — строками без плашек: база mist, величины paper, линия сверху'
     - id: E-4
       variant: E
       text: не видно, какая плашка — «одна игра»; воксель на DPlang читается как готовый продукт (DP-STAGE,
         прецедент A-4)
-      status: open
+      status: fixed
+      resolution: 'Galdhold — исток: подпись «игра», рамка mist; вокселей на узлах нет — DPlang без знака
+        продукта'
     - id: E-7
       variant: E
       text: 'формулировки короче разрешённых: «210 записей решений», EN «by AI» вместо «by AI sessions»'
-      status: open
+      status: fixed
+      resolution: формулировки — из allowed_wording CORE-SCALE-2026-10-05 (обновлены вместе с разбивкой
+        по базам)
     - id: E-8
       variant: E
       text: AU-METHOD доказан для Galdhold, на E «решения — мои» — обо всей экосистеме
-      status: open
+      status: accepted
+      resolution: '«архитектура и решения — мои» — самоописание автора (allowed_wording AU-METHOD, как
+        на A); по экосистеме это видно в этом репозитории: решения записывает и PR сливает автор'
     - id: E-9
       variant: E
       text: RU «+ 1 закрытый проект без имени» намекает, что остальные открыты (все закрыты); EN «undisclosed»
         верно
-      status: open
+      status: fixed
+      resolution: RU «+ 1 проект без публичного имени», EN «+ 1 project without a public name»; в CI-0002
+        подпись плитки та же старая — предложение в TODO
     - id: E-11
       variant: E
       text: поля шапки 14 px до границы зоны (нужно ≥ 24 px, A-10); узлы прижаты к низу, текст — к верху
-      status: open
+      status: fixed
+      resolution: 'шапка: блок по центру зоны с полями ≥ 24 px — замер 24 сверху и 33 снизу'
     - id: E-12
       variant: E
       text: имя на миниатюре 15,3 px против 24,5 px у D; заливка плашек graphite к ink ≈ 1,09:1 — карта
         при 320 px не читается как форма
-      status: open
+      status: fixed
+      resolution: 'имя — display × 1,6, как у D (NAME_NO_PORTRAIT): 24,5 px при 320 px; заливка узлов
+        line вместо graphite'
     - id: E-13
       variant: E
       text: пустые полосы сверху и снизу по 163 px (45 % высоты) при второстепенном тексте на минимуме
-      status: open
+      status: accepted
+      resolution: пустые поля сверху и снизу — часть композиции (VISUAL_SYSTEM §4); текст колонки крупнее
+        и занимает больше высоты
     - id: E-14
       variant: E
       text: не отрендерены vk_post RU и мастер RU/EN
-      status: open
+      status: fixed
+      resolution: отрендерены vk_post RU и мастер RU/EN
     - id: D-10
       variant: D
       text: 'имя 13,6 % высоты при токене display 8,5 %: множитель ×1,6 в layout_minimal нигде не записан'
@@ -607,7 +633,7 @@ targets:
   na: шапка канала загружается в Studio без текста (OUTPUTS.md)
 - variant: discord.ru
   na: 'ОР-6: сервер не подтверждён'
-state: UNDER_REVIEW
+state: REVISED
 history:
 - date: 2026-10-04
   state: IDEA
@@ -664,3 +690,10 @@ history:
   note: 'критика v2 отдельным проходом (агент только для чтения): CRITIQUE.md, «Версия 2». E — Communication
     3, Identity fit 4, Strategic value 4; D — 2 / 4 / 2. Цель v2 лучше выполняет E, D — запасной; fatal
     нет; major E-1 (ОР-12 — решение автора), E-2, E-6, E-10'
+- date: 2026-10-05
+  state: REVISED
+  note: 'ревизия E по критике v2: E-1 — решение автора по ОР-12 (исключение CI-0001); E-2 ключевая фраза
+    title/paper, решение человека — human; E-6 доказательства по базам с датой; E-10 метод на шапке; E-3,
+    E-4, E-7, E-9, E-11, E-12, E-14 исправлены; E-8, E-13 приняты с причиной. Макет ecosystem переписан
+    (render.py), имя без портрета — display × 1,6. Выходы A–D и прежние форматы E совпали с новым кодом
+    байт в байт'
