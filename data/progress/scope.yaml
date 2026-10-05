@@ -8,7 +8,8 @@
 # visibility: public      — открытый репозиторий, имя и роль публичны
 #             private     — закрытый репозиторий, имя и роль публичны (Д17: только факты и вехи)
 #             undisclosed — закрытый, имя не публикуется (PROJECT_MAP: «не упоминать»);
-#                           на сайте — только в общих суммах как «закрытый проект»
+#                           на сайте — только числа в общих суммах: ни строки, ни узла карты,
+#                           ни отдельной даты (фильтр Д39)
 # group:      core | background (Д5, docs/identity/PROJECT_MAP.md)
 # what:       id факта с публичной ролью (data/facts/facts.yaml)
 # layer:      слой на карте экосистемы
@@ -145,13 +146,15 @@ repos:
     layer: background
     what: AL-WHAT
 excluded:                          # с работой в периоде, но вне счёта — и почему
-  - {slug: dpsmpx/gravitydefied, reason: форк чужого проекта — вне иерархии проектов (Д5)}
-  - {slug: dpsmpx/andors-trail-load, reason: форк чужого проекта — вне иерархии проектов (Д5)}
-  - {slug: dpsmpx/dpsmpx, reason: README профиля GitHub — не проект; правит только автор (DPmeta C-07)}
-  - {slug: dpsmpx/MAIN_OBSIDIAN_PC_works, reason: личные заметки (Д2)}
-  - {slug: dpsmpx/dayplan_neocities, reason: личный планировщик и резюме (Д2)}
-  - {slug: dpsmpx/Mobile-Basic-set-line-numbers, reason: одиночный скрипт вне карты проектов}
-  - {slug: dpsmpx/DP_3D_Works, reason: одиночный скрипт вне карты проектов}
+                                   # kind: fork | profile | script — имя на странице есть;
+                                   #       personal — имени нет, только число (Д2, ОР-8; фильтр Д39)
+  - {slug: dpsmpx/gravitydefied, kind: fork, reason: форк чужого проекта — вне иерархии проектов (Д5)}
+  - {slug: dpsmpx/andors-trail-load, kind: fork, reason: форк чужого проекта — вне иерархии проектов (Д5)}
+  - {slug: dpsmpx/dpsmpx, kind: profile, reason: README профиля GitHub — не проект; правит только автор (DPmeta C-07)}
+  - {slug: dpsmpx/MAIN_OBSIDIAN_PC_works, kind: personal, reason: личные заметки (Д2)}
+  - {slug: dpsmpx/dayplan_neocities, kind: personal, reason: личный планировщик и резюме (Д2)}
+  - {slug: dpsmpx/Mobile-Basic-set-line-numbers, kind: script, reason: одиночный скрипт вне карты проектов}
+  - {slug: dpsmpx/DP_3D_Works, kind: script, reason: одиночный скрипт вне карты проектов}
 relations:                         # связи между репозиториями — из контрактов DPmeta (docs/CONTRACTS.md)
   - from: galdhold
     to: dplang
@@ -178,14 +181,14 @@ relations:                         # связи между репозитори�
     to: galdhold
     planned: true
     source: DPmeta C-03
-    ru: "поставка общих проверок копией — план"
-    en: "shared checks delivered as a copy — planned"
+    ru: "поставка общих проверок копией"
+    en: "shared checks delivered as a copy"
   - from: dpverify
     to: dplang
     planned: true
     source: DPmeta C-03
-    ru: "поставка общих проверок копией — план"
-    en: "shared checks delivered as a copy — planned"
+    ru: "поставка общих проверок копией"
+    en: "shared checks delivered as a copy"
   - from: andors_love
     to: tjtm
     source: DPmeta C-08

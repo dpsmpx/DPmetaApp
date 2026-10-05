@@ -28,7 +28,8 @@ tools/cs/
 │   ├── repo.py          чтение данных с подменяемым корнем (тесты на временном репозитории)
 │   ├── textdoc.py       файлы «заголовок YAML + текст» (каноны, варианты)
 │   ├── markup.py        разметка канона и рендеры: HTML, HTML Telegram, Markdown, текст
-│   ├── inject.py        подстановки {{fact|link|site|release:…}}, отпечатки зависимостей
+│   ├── inject.py        подстановки {{fact|link|site|release|progress|figure:…}}, отпечатки зависимостей
+│   ├── sensitive.py     фильтр чувствительных данных на выходе сайта (Д39)
 │   ├── content.py       ContentItem v2: версии канона, варианты, хэш содержимого, одобрение, устаревание
 │   ├── validator.py     ContentValidator (§46)
 │   ├── ledger.py        журнал публикаций: события, переходы, ключ идемпотентности, целостность
@@ -47,6 +48,8 @@ tools/cs/
 │   ├── telegram.py      Bot API через транспорт (urllib; в тестах — имитация API)
 │   ├── manual.py        VK, YouTube, Discord, GitHub, TikTok — отрисовка и лимиты; публикация — ручной путь (Д33)
 │   └── mock.py          имитации всех площадок с внедрением отказов (§102)
+├── progress/        ПРОГРЕСС ЭКОСИСТЕМЫ (Д38) — сбор набора из клонов (collect.py), величины и публичная выжимка
+│                    (dataset.py), графики SVG (charts.py), фигуры (figures.py), проверка (check.py)
 ├── site/            САЙТ — генератор (build.py), фиды и API (feeds.py), подписи (i18n.py), предпросмотр (preview.py), локальный сервер (serve.py), снимки страниц (shots.py), выгрузка на Beget (deploy.py)
 ├── platform_cli.py  команды платформы;  platform_checks.py  проверки платформы;  capabilities.py  матрица
 └── claims.py facts.py validate.py visual.py exports.py provenance.py render.py …   конвейер изображений и гейты (v1)
@@ -138,7 +141,8 @@ renders/ и exports/: PNG/JPEG + *.layout.json → provenance.yaml (хэши, в
 | `destinations` | явные id, границы учётных данных, близнецы, бренды | configuration, credentials |
 | `campaigns`, `projects` | ссылки на объекты, адресаты, факты страниц | configuration |
 | `capabilities` | матрица = данные; данные = адаптеры | adapters |
-| `site` | сборка staging и production, фиды, JSON, внутренние ссылки | build, website |
+| `progress` | набор прогресса: ряды и суммы, границы `scope.yaml`, вехи, величины, фигуры на ru и en, публичная выжимка через фильтр Д39 | data, website |
+| `site` | сборка staging и production, фиды, JSON, внутренние ссылки; фильтр чувствительных данных по каждому файлу (Д39) | build, website, secrets |
 | `siteshots` | страницы staging в Chromium на 390 и 1280 px: прокрутка вбок, край экрана, изображения, CSP, консоль, запросы, шрифт, `h1`, цели касания (`--fast` — пропуск) | website (визуальная регрессия, П2-17) |
 | тесты | `tests/` — модульные, контрактные, интеграционные, сквозной, свойства, регрессия | tests |
 
@@ -152,6 +156,7 @@ renders/ и exports/: PNG/JPEG + *.layout.json → provenance.yaml (хэши, в
 | свойства | `tests/test_publishing.py`, `Properties`: случайные сбои — не больше одного поста |
 | сквозной | `tests/test_platform_e2e.py`: новость → сайт → Telegram → проверка → аналитика → production-сборка |
 | регрессия | рендер (хэши), миграция, неизменность канона, граница модулей; снимки сайта — `tests/test_site_shots.py` (правила ловят поломки, staging фикстуры чистый) |
+| прогресс и фильтр | `tests/test_progress.py` (величины, фигуры, границы, валидатор, страница на staging и её отсутствие на production без одобрения), `tests/test_sensitive.py` (каждый вид утечки ловится, чистое и публичное проходит, метаданные изображений) |
 
 Реальные площадки в тестах не используются; рабочая проверка —
 безопасный режим на тестовом канале автора (§104).
@@ -166,7 +171,8 @@ python3 -m tools.cs preview <объект|кампания> | approve <объе�
 python3 -m tools.cs publish <объект> <вариант> --to <адресат> [--dev|--safe|--production] [--at ISO]
 python3 -m tools.cs publish --due | --record-manual | --reconcile | --cancel | --delete
 python3 -m tools.cs campaign status|list | calendar | search | stale
-python3 -m tools.cs site build|serve|shots|deploy | health | bundle | capabilities [--write] | events
+python3 -m tools.cs site build|serve|shots|scan [каталог]|deploy | health | bundle | capabilities [--write] | events
+python3 -m tools.cs progress collect --start … --end … [--cutoff …] | progress show --id <набор>
 ```
 
 ## 9. Окружение

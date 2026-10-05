@@ -121,6 +121,17 @@ class Progress:
     def core(self) -> list[str]:
         return [k for k in self.keys if self.specs[k]["group"] == "core"]
 
+    def listed(self, keys: list[str] | None = None) -> list[str]:
+        """Кого можно показывать по отдельности (строка, узел карты, дата): все, кроме закрытых
+        проектов без публичного имени — они только в общих суммах (Д38, фильтр Д39)."""
+        keys = self.keys if keys is None else keys
+        return [k for k in keys if self.specs[k]["visibility"] != "undisclosed"]
+
+    def hidden_count(self, keys: list[str] | None = None) -> int:
+        """Сколько репозиториев с работой в периоде входит только в суммы."""
+        keys = self.keys if keys is None else keys
+        return sum(1 for k in keys if k not in self.listed(keys) and any(self.daily(k, "commits")))
+
     def daily(self, key: str, field: str) -> list[int]:
         return self.data["repos"][key]["daily"][field]
 
@@ -197,13 +208,23 @@ class Progress:
         return fmt_value(self.value(metric), METRICS[metric].unit, lang)
 
     def public(self) -> dict:
-        """Публичная выжимка для /api/v1/progress.json: то же, что на странице, без служебного."""
+        """Публичная выжимка для /api/v1/progress.json — белый список полей (фильтр Д39).
+
+        Только то, что видно на странице: ряды по дням, суммы, величины с формулами.
+        Нет: head-коммитов, имён веток, состояния истории, счётчиков документов по
+        файлам. Закрытый проект без имени — только в общих суммах: ни строки, ни ключа,
+        ни даты появления (Д38).
+        """
+        per = self.data["period"]
         return {
-            "version": 1, "dataset": self.id, "period": self.data["period"], "method_version": self.data["method"]["version"],
+            "version": 1, "dataset": self.id,
+            "period": {k: per[k] for k in ("start", "end", "timezone", "cutoff")},
+            "method_version": self.data["method"]["version"],
             "days": self.days,
-            "repositories": [{"key": k, "name": self.specs[k].get("name"), "group": self.specs[k]["group"],
+            "repositories": [{"name": self.specs[k]["name"], "group": self.specs[k]["group"],
                               "visibility": self.specs[k]["visibility"], "first_day": self.first_day(k),
-                              "commits": self.daily(k, "commits"), "merges": self.daily(k, "merges")} for k in self.keys],
+                              "commits": self.daily(k, "commits"), "merges": self.daily(k, "merges")} for k in self.listed()],
+            "only_in_totals": self.hidden_count(),
             "commits": {"total": self.total("commits"), "ai": self.total("ai"), "author": self.total("human"),
                         "mainline": self.total("mainline"), "branch_only": self.total("branch_only"),
                         "docs_only": self.total("docs_only")},
@@ -232,7 +253,10 @@ METRICS: dict[str, Metric] = {
     "period_end": Metric("date", "последний день периода", "last day of the period", lambda p: p.days[-1]),
     "cutoff": Metric("datetime", "момент среза: позже коммиты не учтены", "snapshot time: later commits are not counted",
                      lambda p: p.data["period"]["cutoff"]),
-    "days": Metric("count", "дней в периоде", "days in the period", lambda p: p.n),
+    "days": Metric("count", "календарных дат в периоде (последняя — до среза)", "calendar dates in the period (the last one until the snapshot)",
+                   lambda p: p.n),
+    "span_days": Metric("count", "дней от первого дня периода до последнего", "days from the first day of the period to the last",
+                        lambda p: (dt.date.fromisoformat(p.days[-1]) - dt.date.fromisoformat(p.days[0])).days),
     "active_days": Metric("count", "дней хотя бы с одним коммитом", "days with at least one commit",
                           lambda p: sum(1 for x in p.total("commits") if x)),
     "commits": Metric("count", "Σ коммитов автора и Claude во всех ветках всех репозиториев; копия изменения — один раз",
@@ -256,8 +280,12 @@ METRICS: dict[str, Metric] = {
                            lambda p: max(p.total("commits"))),
     "peak_merges": Metric("count", "слияний PR в день пика коммитов", "merges on the peak day",
                           lambda p: p.total("merges")[_peak(p, p.total("commits"))]),
-    "peak_branches": Metric("count", "наибольшее число разных веток с коммитами за день",
-                            "the most distinct branches with commits in one day", lambda p: max(p.total("branches"))),
+    "peak_branches": Metric("count", "наибольшее число рабочих веток (PR и сохранившиеся ветки, без основных) с коммитами за день",
+                            "the most working branches (pull request and surviving branches, not main) with commits in one day",
+                            lambda p: max(p.total("branches"))),
+    "branches_first_weeks": Metric("count", "то же за первые три недели периода (21 день)",
+                                   "the same over the first three weeks of the period (21 days)",
+                                   lambda p: max(p.total("branches")[:21])),
     "repos_active": Metric("count", "репозиториев в счёте хотя бы с одним коммитом", "repositories in scope with at least one commit",
                            lambda p: sum(1 for k in p.keys if any(p.daily(k, "commits")))),
     "repos_core": Metric("count", "репозиториев ядра (Д5) с работой в периоде", "core repositories with work in the period",

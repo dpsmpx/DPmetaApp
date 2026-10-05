@@ -28,6 +28,7 @@ DATE_RE = re.compile(
     rf"|\b(?:19|20)\d{{2}}\b",
     re.IGNORECASE,
 )
+FIGURE_REF = re.compile(r"\{\{\s*figure\s*:[^}]*\}\}")
 NUM_RE = re.compile(
     r"(?<![\w+#.,])(\d{1,3}(?:[   ,]\d{3})+|\d+(?:[.,]\d+)?)(?![\w])"
     r"(?:\s*(тыс\w*|thousand|k\b))?",
@@ -120,8 +121,15 @@ def keywords() -> list[dict]:
 
 
 def text_findings(item: Item, text: str, fids: list[str], where: str, soft: bool, reg: dict,
-                  rule_list: list[dict]) -> list[Finding]:
-    """Запреты и числа в одном публикуемом тексте. soft — отклонённый вариант: только предупреждения."""
+                  rule_list: list[dict], progress=None) -> list[Finding]:
+    """Запреты и числа в одном публикуемом тексте. soft — отклонённый вариант: только предупреждения.
+
+    progress — результат подстановки (Resolved) с величинами наборов прогресса (Д38): их
+    значения — источник чисел, а сами величины подкрепляют слова-утверждения (progress в
+    claim_keywords.yaml), как факты из claims.
+    """
+    used = set(getattr(progress, "progress_used", None) or [])
+    text = FIGURE_REF.sub(" ", text)  # {{figure:…}} — место графика, не слова текста; данные фигур проверяет progress
     out = []
     hard = "warn" if soft else "error"
     for rule, frag in scan(text, rule_list):
@@ -134,9 +142,11 @@ def text_findings(item: Item, text: str, fids: list[str], where: str, soft: bool
             out.append(Finding("warn", msg))
     for kw in keywords():
         m = re.search(kw["pattern"], text)
-        if m and not set(kw["any_of"]) & set(fids):
+        if m and not set(kw["any_of"]) & set(fids) and not set(kw.get("progress") or []) & used:
             out.append(Finding(hard, f"{where}: «{m.group(0)}» — нужен факт из {', '.join(kw['any_of'])} в claims ({kw['id']})"))
     allowed = fact_numbers(fids, reg)
+    for v in getattr(progress, "progress_values", None) or []:
+        allowed |= numbers(v)
     for n in sorted(numbers(text)):
         if n >= 10 and n not in allowed:
             shown = int(n) if n == int(n) else n
@@ -177,8 +187,8 @@ def item_findings(item: Item, variant: str | None = None) -> list[Finding]:
             doc = textdoc.load(p)
             res = resolve(doc.body, doc.meta.get("lang", "ru"), repo, repo.canonical_base())
             fids = sorted(set(item_claims + res.facts_used))
-            text = "\n".join(x for x in (doc.meta.get("title"), res.text, doc.meta.get("cta")) if x)
-            out += text_findings(item, text, fids, rel(p), doc.meta.get("status") == "rejected", reg, rule_list)
+            text = "\n".join(x for x in (doc.meta.get("title"), doc.meta.get("summary"), res.text, doc.meta.get("cta")) if x)
+            out += text_findings(item, text, fids, rel(p), doc.meta.get("status") == "rejected", reg, rule_list, res)
     copy_dir = item.dir / "copy"
     if copy_dir.is_dir():
         for p in sorted(copy_dir.glob("*.md")):

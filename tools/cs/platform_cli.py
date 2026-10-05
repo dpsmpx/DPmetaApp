@@ -11,7 +11,7 @@
     publish ITEM VARIANT --to DEST [--dev|--safe|--production] [--at ISO]
     publish --due | --record-manual | --reconcile PUB-…
     campaign status CMP-… | campaign list ; calendar ; search ; stale
-    site build|serve|deploy [--dry-run] ; health ; bundle ; capabilities [--write] ; events release …
+    site build|serve|shots|scan [каталог]|deploy [--dry-run] ; health ; bundle ; capabilities [--write] ; events release …
 """
 from __future__ import annotations
 
@@ -397,6 +397,19 @@ def cmd_site(a) -> int:
             build(repo, a.env)
         serve(root, a.port, a.env)
         return 0
+    if a.action == "scan":
+        from pathlib import Path
+        from .core.sensitive import scan
+        root = Path(a.path).resolve() if a.path else repo.path("build", "site", a.env)
+        if not root.is_dir():
+            print(f"нет каталога {root}: сначала site build --env {a.env} или укажите каталог", file=sys.stderr)
+            return 2
+        hits = scan(repo, root)
+        for h in hits:
+            print(f"  ✗ {h.msg}")
+        n = sum(1 for x in root.rglob("*") if x.is_file())
+        print(f"фильтр чувствительных данных (Д39): {root} — файлов {n}, находок {len(hits)}")
+        return 1 if hits else 0
     if a.action == "shots":
         from .site import shots
         r = shots.check(repo, repo.path(a.out) if a.out else None)
@@ -501,7 +514,9 @@ def cmd_progress(a) -> int:
 
 
 AFFECTED = [  # префикс пути → проверки (tools/check.sh --affected)
-    ("data/facts/", ["facts", "claims", "canonical", "projects", "site", "siteshots"]),
+    ("data/facts/", ["facts", "claims", "canonical", "projects", "progress", "site", "siteshots"]),
+    ("data/progress/", ["progress", "canonical", "claims", "site", "siteshots"]),
+    ("data/policy/sensitive", ["progress", "site"]),
     ("content/items/", ["items", "claims", "provenance", "visual", "exports", "canonical", "campaigns", "site", "siteshots"]),
     ("data/publications/", ["publications", "site", "siteshots"]),
     ("data/platforms/destinations", ["destinations", "campaigns", "capabilities"]),
@@ -626,7 +641,8 @@ def register(sub) -> None:
     p = sub.add_parser("stale", help="устаревшие каноны и варианты")
     p.set_defaults(fn=cmd_stale)
     p = sub.add_parser("site", help="сайт: сборка, локальный staging, снимки страниц, выгрузка на хостинг")
-    p.add_argument("action", choices=["build", "serve", "shots", "deploy"])
+    p.add_argument("action", choices=["build", "serve", "shots", "scan", "deploy"])
+    p.add_argument("path", nargs="?", help="scan: каталог с сайтом (по умолчанию — сборка --env)")
     p.add_argument("--dry-run", action="store_true", help="deploy: только показать изменения (rsync --dry-run)")
     p.add_argument("--env", default="staging", choices=["staging", "production"])
     p.add_argument("--out")

@@ -21,7 +21,7 @@ from tools.cs.core.repo import Repo
 
 COPY = [
     "data/facts", "data/identity", "data/platforms/capabilities.yaml", "data/platforms/export_specs.yaml",
-    "data/policy", "data/projects", "data/provenance/assets.yaml", "assets/brand", "website",
+    "data/policy", "data/projects", "data/provenance/assets.yaml", "data/progress", "assets/brand", "website",
 ]
 
 DESTINATIONS = {

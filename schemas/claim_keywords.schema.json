@@ -17,7 +17,8 @@
         "properties": {
           "id": {"type": "string", "pattern": "^KW-[A-Z0-9-]+$"},
           "pattern": {"type": "string", "minLength": 1},
-          "any_of": {"type": "array", "items": {"type": "string"}, "minItems": 1}
+          "any_of": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+          "progress": {"type": "array", "items": {"type": "string"}, "minItems": 1}
         }
       }
     }

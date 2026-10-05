@@ -16,7 +16,7 @@ import re
 import statistics
 
 from . import charts
-from .dataset import (LINE_KINDS, METRICS, MONTHS_SHORT, UNDISCLOSED, Progress, fmt_date, fmt_int, fmt_short,
+from .dataset import (LINE_KINDS, METRICS, MONTHS_SHORT, Progress, fmt_date, fmt_int, fmt_short,
                       fmt_value)
 
 E = html.escape
@@ -42,7 +42,7 @@ L = {
         "cum_commits": "Коммитов с начала периода", "cum_merges": "PR влито с начала периода",
         "core_est": "Репозиториев ядра с работой",
         "grp_core": "Ядро", "grp_bg": "Ранние и малые проекты", "commits_prs": "коммиты · PR", "sum": "Σ",
-        "branches_day": "Разных веток с коммитами", "cycle": "От первого коммита порции до слияния PR",
+        "branches_day": "Рабочих веток с коммитами (без основных)", "cycle": "От первого коммита порции до слияния PR",
         "cycle_buckets": ["до 15 мин", "15–30 мин", "30–60 мин", "1–3 ч", "3–12 ч", "дольше 12 ч"],
         "now": "Невлитая работа на момент среза",
         "states": {"in_review": "на ревью (открытый PR)", "active": "активная ветка", "docs": "только документы",
@@ -65,6 +65,8 @@ L = {
                   "decisions_end": "записей в журналах решений", "hostcheck_end": "автопроверок Galdhold (README)",
                   "unmerged_branches": "веток с невлитой работой"},
         "core_note": "из них один закрытый проект без имени",
+        "only_totals": "Закрытый проект без публичного имени здесь не показан отдельно — он входит только в общие суммы.",
+        "personal_n": "личные репозитории — {n}: заметки и планы; имена не публикуются",
         "ms_kind": {"decision": "решение автора", "verification": "проверки", "device": "замер на устройстве",
                     "release": "релиз", "start": "начало", "build": "сборка", "world": "мир игры", "graphics": "графика",
                     "process": "процесс", "platform": "платформы", "repository": "новый репозиторий",
@@ -98,7 +100,7 @@ L = {
         "cum_commits": "Commits since the start", "cum_merges": "PRs merged since the start",
         "core_est": "Core repositories with work",
         "grp_core": "Core", "grp_bg": "Earlier and smaller projects", "commits_prs": "commits · PRs", "sum": "Σ",
-        "branches_day": "Distinct branches with commits", "cycle": "From a batch's first commit to the PR merge",
+        "branches_day": "Working branches with commits (main not counted)", "cycle": "From a batch's first commit to the PR merge",
         "cycle_buckets": ["under 15 min", "15–30 min", "30–60 min", "1–3 h", "3–12 h", "over 12 h"],
         "now": "Unmerged work at snapshot time",
         "states": {"in_review": "in review (open PR)", "active": "active branch", "docs": "documents only",
@@ -121,6 +123,8 @@ L = {
                   "decisions_end": "decision log entries", "hostcheck_end": "Galdhold automated checks (README)",
                   "unmerged_branches": "branches with unmerged work"},
         "core_note": "including one undisclosed private project",
+        "only_totals": "A private project without a public name is not shown separately — it is counted only in totals.",
+        "personal_n": "personal repositories — {n}: notes and plans; names are not published",
         "ms_kind": {"decision": "author's decision", "verification": "checks", "device": "device measurement",
                     "release": "release", "start": "start", "build": "build", "world": "game world", "graphics": "graphics",
                     "process": "process", "platform": "platforms", "repository": "new repository",
@@ -222,6 +226,10 @@ class Fig:
         return (f'<details class="fdata"><summary>{E(self.t["table"])}</summary><div class="tscroll">'
                 f'<table class="facts num-table"><thead><tr>{th}</tr></thead><tbody>{"".join(trs)}</tbody></table></div></details>')
 
+    def totals_note(self) -> str:
+        """Пояснение у фигур по репозиториям: закрытый проект без имени — только в суммах."""
+        return self.t["only_totals"] if self.p.hidden_count() else ""
+
     def figure(self, fid: str, body: str, wide: bool = True) -> str:
         cls = "pfig" + (" pfig-full" if wide else "")
         return f'<figure class="{cls}" id="fig-{fid}">{body}</figure>'
@@ -321,8 +329,8 @@ class Fig:
     def repos(self) -> str:
         p, t = self.p, self.t
         groups = []
-        for gname, keys in ((t["grp_core"], [k for k in p.keys if p.specs[k]["group"] == "core"]),
-                            (t["grp_bg"], [k for k in p.keys if p.specs[k]["group"] == "background"])):
+        for gname, keys in ((t["grp_core"], p.listed([k for k in p.keys if p.specs[k]["group"] == "core"])),
+                            (t["grp_bg"], p.listed([k for k in p.keys if p.specs[k]["group"] == "background"]))):
             rows = []
             for k in keys:
                 vals = p.daily(k, "commits")
@@ -345,7 +353,8 @@ class Fig:
         rows = [[r["label"], r["total"], r["extra"], fmt_short(r["first"], self.lang) if r["first"] else "—"]
                 for _, rs in groups for r in rs]
         head = [t["project"], t["commits_n"], t["merges_n"], t["first_seen"]]
-        return self.figure("repos", svg + self.caption(["measured"], t["src_git"], legend) + self.table(head, rows))
+        return self.figure("repos", svg + self.caption(["measured"], t["src_git"], legend, self.totals_note())
+                           + self.table(head, rows))
 
     def authorship(self) -> str:
         p, t = self.p, self.t
@@ -388,7 +397,7 @@ class Fig:
                         charts.hbars("pf-cyc-n", charts.NARROW, t["cycle"], cdesc, crow, self.lang, label_w=96))
         bn = p.branches_now()
         srow = [{"label": t["states"][s].split(" (")[0], "segs": [(f"c-st-{s}", bn.get(s, 0), s)],
-                 "value": f"{bn.get(s, 0)} · {bn.get(s + '_commits', 0)} {t['commits_in']}",
+                 "value": f"{t['branches_n']} {bn.get(s, 0)} · {t['commits_in']} {bn.get(s + '_commits', 0)}",
                  "tip": f"{t['states'][s]}: {bn.get(s, 0)} {t['branches_n']}, {bn.get(s + '_commits', 0)} {t['commits_in']}"}
                 for s in ("in_review", "active", "docs", "deferred")]
         sdesc = "; ".join(r["tip"] for r in srow)
@@ -409,24 +418,25 @@ class Fig:
     def codebase(self) -> str:
         p, t = self.p, self.t
         cl = p.core_lines()
-        layers = [("c-ver" if k == "tests" else "c-ai" if k == "code" else "c-human", cl[k], t["lines"][k]) for k in LINE_KINDS]
+        order = ("tests", "docs", "code")  # зелёный и бирюзовый не соседи: обычным зрением различимы плохо (dataviz)
+        layers = [("c-ver" if k == "tests" else "c-ai" if k == "code" else "c-human", cl[k], t["lines"][k]) for k in order]
         tot = [sum(cl[k][i] for k in LINE_KINDS) for i in range(p.n)]
-        tips = [f"{self.day_long(i)}: {self.k(tot[i])} — " + ", ".join(f"{t['lines'][k]} {self.k(cl[k][i])}" for k in LINE_KINDS)
+        tips = [f"{self.day_long(i)}: {self.k(tot[i])} — " + ", ".join(f"{t['lines'][k]} {self.k(cl[k][i])}" for k in order)
                 for i in range(p.n)]
         title = t["lines_title"]
         desc = f"{title}: {self.k(tot[0])} → {self.k(tot[-1])}; " + ", ".join(f"{t['lines'][k]} {self.k(cl[k][-1])}" for k in LINE_KINDS)
-        ends = [self.k(cl[k][-1]) for k in LINE_KINDS]
+        ends = [self.k(cl[k][-1]) for k in order]
         area = self.both(
             charts.stacked_area("pf-loc-w", charts.WIDE, title, desc, self.labels(), self.months(), layers, self.lang, 300, tips, ends),
             charts.stacked_area("pf-loc-n", charts.NARROW, title, desc, self.labels(), self.months(), layers, self.lang, 240, tips))
         rows = []
-        for k in p.core():
+        for k in p.listed(p.core()):
             snap = p.lines(k, p.n - 1)
             if not snap:
                 continue
             total = sum(snap[x] for x in LINE_KINDS)
             name = p.name(k, self.lang)
-            rows.append({"label": name, "segs": [(c, snap[x], t["lines"][x]) for (c, _, _), x in zip(layers, LINE_KINDS)],
+            rows.append({"label": name, "segs": [(c, snap[x], t["lines"][x]) for (c, _, _), x in zip(layers, order)],
                          "value": self.k(total), "tip": f"{name}: " + ", ".join(f"{t['lines'][x]} {self.k(snap[x])}" for x in LINE_KINDS),
                          "_t": total})
         rows.sort(key=lambda r: -r["_t"])
@@ -435,7 +445,7 @@ class Fig:
                          charts.hbars("pf-locp-n", charts.NARROW, t["per_project"], bdesc, rows, self.lang))
         trows = [[fmt_short(d, self.lang)] + [self.n(cl[k][i]) for k in LINE_KINDS] + [self.n(tot[i])] for i, d in enumerate(p.days)]
         body = (area + f'<p class="mult-t">{E(t["per_project"])}</p>' + bars
-                + self.caption(["measured"], t["src_git_main"], [(c, nm) for c, _, nm in layers])
+                + self.caption(["measured"], t["src_git_main"], [(c, nm) for c, _, nm in layers], self.totals_note())
                 + self.table([t["date"]] + [t["lines"][k] for k in LINE_KINDS] + [t["total"]], trows))
         return self.figure("codebase", body)
 
@@ -448,7 +458,7 @@ class Fig:
             charts.points("pf-chk-w", {"w": 560}, t["hostcheck"], desc, p.days, self.labels(), self.months(), idx, "c-ver", self.lang, 220),
             charts.points("pf-chk-n", charts.NARROW, t["hostcheck"], desc, p.days, self.labels(), self.months(), idx, "c-ver", self.lang, 200))
         rows = []
-        for k in p.core():
+        for k in p.listed(p.core()):
             snap = p.lines(k, p.n - 1)
             if not snap:
                 continue
@@ -476,7 +486,7 @@ class Fig:
             charts.stacked_area("pf-dec-n", charts.NARROW, t["decisions_title"], desc, self.labels(), self.months(),
                                 [("c-human", dec, t["decisions_title"])], self.lang, 200, tips))
         rows = []
-        for k in p.core():
+        for k in p.listed(p.core()):
             v = p.counter(k, "decisions")[-1] or 0
             name = p.name(k, self.lang)
             rows.append({"label": name, "segs": [("c-human", v, "")], "value": self.n(v), "tip": f"{name}: {v}", "_t": v})
@@ -485,7 +495,7 @@ class Fig:
         bars = self.both(charts.hbars("pf-decp-w", {"w": 380}, t["decisions_per"], bdesc, rows, self.lang, label_w=120, row_h=26),
                          charts.hbars("pf-decp-n", charts.NARROW, t["decisions_per"], bdesc, rows, self.lang, row_h=26))
         items = []
-        for key in p.core():
+        for key in p.listed(p.core()):
             for cid in t["counters"]:
                 vals = p.counter(key, cid)
                 if cid in p.data["repos"][key]["counters"] and vals[-1] is not None:
@@ -494,7 +504,7 @@ class Fig:
         body = (f'<div class="pgrid pgrid-wide"><div><p class="mult-t">{E(t["decisions_title"])}</p>{area}</div>'
                 f'<div><p class="mult-t">{E(t["decisions_per"])}</p>{bars}</div></div>'
                 f'<p class="mult-t">{E(t["doc_counters"])}</p><div class="tiles">{"".join(items)}</div>'
-                + self.caption(["measured"], t["src_git_main"], [("c-human", t["decisions_title"])])
+                + self.caption(["measured"], t["src_git_main"], [("c-human", t["decisions_title"])], self.totals_note())
                 + self.table([t["date"], t["decisions_title"]], [[fmt_short(d, self.lang), self.n(dec[i])] for i, d in enumerate(p.days)]))
         return self.figure("knowledge", body)
 
@@ -507,8 +517,7 @@ class Fig:
                 spec = p.specs[k]
                 if spec["layer"] != layer["id"]:
                     continue
-                if spec["visibility"] == "undisclosed":
-                    chips.append(f'<li class="node node-hidden"><b>{E(UNDISCLOSED[self.lang])}</b></li>')
+                if spec["visibility"] == "undisclosed":  # только в суммах (Д38, Д39): ни узла, ни слоя
                     continue
                 what = self.fact(spec["what"]) if spec.get("what") else None
                 first = p.first_day(k)
@@ -520,14 +529,15 @@ class Fig:
                 layers.append(f'<div class="layer"><p class="layer-t">{E(layer[self.lang])}</p><ul class="nodes">{"".join(chips)}</ul></div>')
         rels = []
         for r in p.scope.get("relations", []):
-            if r["from"] not in p.specs or r["to"] not in p.specs:
+            if r["from"] not in p.listed() or r["to"] not in p.listed():
                 continue
             arrow = "⇄" if r.get("both") else "→"
             plan = f' <span class="meta">({E(t["planned"])})</span>' if r.get("planned") else ""
             rels.append(f'<li><b>{E(p.name(r["from"], self.lang))} {arrow} {E(p.name(r["to"], self.lang))}</b> — '
                         f'{E(r[self.lang])}{plan} <span class="meta">{E(r["source"])}</span></li>')
         body = (f'<div class="layers">{"".join(layers)}</div><p class="mult-t">{E(t["relations"])}</p>'
-                f'<ul class="rels">{"".join(rels)}</ul>' + self.caption(["facts"], f'{t["src_scope"]}; {t["src_facts"]}'))
+                f'<ul class="rels">{"".join(rels)}</ul>'
+                + self.caption(["facts"], f'{t["src_scope"]}; {t["src_facts"]}', note=self.totals_note()))
         return self.figure("ecosystem", body)
 
     def timeline(self) -> str:
@@ -538,7 +548,7 @@ class Fig:
             cls = MS_CLASS.get(ms["kind"], "c-paper")
             ev = ms["evidence"][0]
             src = f'{t["ev_kind"][ev["kind"]]} · {t["ev_ver"][ev["verification"]]}'
-            names = ", ".join(p.name(k, self.lang) for k in ms["repos"] if k in p.specs)
+            names = ", ".join(p.name(k, self.lang) for k in p.listed([k for k in ms["repos"] if k in p.specs]))
             items.append(f'<li><time datetime="{d}">{E(fmt_short(d, self.lang))}</time><span class="mk {cls}" aria-hidden="true"></span>'
                          f'<div class="ev"><span class="evk">{E(t["ms_kind"][ms["kind"]])}</span> {E(ms[self.lang])}'
                          f'<span class="meta">{E(names)} · {E(src)}</span></div></li>')
@@ -553,7 +563,12 @@ class Fig:
         for mid, m in METRICS.items():
             rows.append(f'<tr><th scope="row"><code>{E(mid)}</code></th><td>{E(getattr(m, self.lang))}</td>'
                         f'<td class="num">{E(p.formatted(mid, self.lang))}</td></tr>')
-        excl = "".join(f'<li><code>{E(x["slug"].split("/")[-1])}</code> — {E(x["reason"])}</li>' for x in p.scope.get("excluded", []))
+        excluded = p.scope.get("excluded", [])
+        excl = "".join(f'<li><code>{E(x["slug"].split("/")[-1])}</code> — {E(x["reason"])}</li>'
+                       for x in excluded if x.get("kind") != "personal")
+        personal = sum(1 for x in excluded if x.get("kind") == "personal")
+        if personal:  # личные репозитории — без имён (Д2, ОР-8; фильтр Д39)
+            excl += f'<li>{E(t["personal_n"].format(n=personal))}</li>'
         hidden = "".join(f"<li>{E(h)}</li>" for h in t["hidden"])
         head = (f'<dl class="facts-dl"><dt>{E(t["m_period"])}</dt><dd>{E(fmt_date(per["start"], self.lang))} — '
                 f'{E(fmt_date(per["end"], self.lang))} (UTC{E(per["timezone"])})</dd>'
