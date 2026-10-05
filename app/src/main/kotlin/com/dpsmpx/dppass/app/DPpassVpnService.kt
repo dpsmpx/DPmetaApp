@@ -8,8 +8,10 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.net.VpnService
 import android.os.Build
+import android.os.SystemClock
 import com.dpsmpx.dppass.R
 import com.dpsmpx.dppass.connection.ConnectionReport
+import com.dpsmpx.dppass.connection.StabilitySample
 import com.dpsmpx.dppass.connection.HealthChecker
 import com.dpsmpx.dppass.connection.toTunInput
 import com.dpsmpx.dppass.diagnostics.DiagCode
@@ -56,6 +58,7 @@ class DPpassVpnService : VpnService() {
     private var connecting: Job? = null
     private var session: EngineSession? = null
     private var tunnel: TunnelHandle? = null
+    private var supervisor: Job? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
@@ -127,6 +130,8 @@ class DPpassVpnService : VpnService() {
                 if (accepted) {
                     core.log.info("connected", "profile" to Safe(report.profileId.value), "attempts" to report.attempts.size)
                     startInForeground(getString(R.string.notification_connected))
+                    supervisor?.cancel()
+                    supervisor = scope.launch { superviseSession(report.session, handle, report.profileId, ir.dns) }
                 } else {
                     report.session.stop()
                     handle.close()
@@ -147,6 +152,8 @@ class DPpassVpnService : VpnService() {
 
     /** Ядро — потом TUN; повторный вызов ничего не делает. */
     private suspend fun shutdown() {
+        supervisor?.cancel()
+        supervisor = null
         state.withLock {
             connecting?.cancel()
             connecting = null
@@ -154,6 +161,71 @@ class DPpassVpnService : VpnService() {
             session = null
             tunnel?.close()
             tunnel = null
+        }
+        AppGraph.graph(this).core.stability.persist()
+    }
+
+    /**
+     * Long-lived stability loop (0.5.0): measure useful-path RTT, derive jitter
+     * from consecutive samples, learn the profile, and reconnect only after
+     * hysteresis confirms real degradation. No packet payload or destination is stored.
+     */
+    private suspend fun superviseSession(
+        expectedSession: EngineSession,
+        expectedTunnel: TunnelHandle,
+        profileId: com.dpsmpx.dppass.core.ProfileId,
+        dns: com.dpsmpx.dppass.routing.DnsPolicy,
+    ) {
+        val graph = AppGraph.graph(this)
+        var samples = 0
+        while (currentCoroutineContext().isActive) {
+            delay(SUPERVISION_INTERVAL_MILLIS)
+            val stillCurrent = state.withLock { session === expectedSession && tunnel === expectedTunnel }
+            if (!stillCurrent) return
+            val started = SystemClock.elapsedRealtime()
+            val result = graph.engine.probeHealth(dns, SUPERVISION_TIMEOUT_MILLIS.toInt())
+            val elapsed = (SystemClock.elapsedRealtime() - started).coerceIn(1L, SUPERVISION_TIMEOUT_MILLIS + 2_000L)
+            val failed = result is Outcome.Failure
+            graph.core.stability.observe(
+                profileId,
+                StabilitySample(
+                    success = !failed,
+                    rttMillis = elapsed,
+                    stalled = failed && result.errors.any { it.code == DiagCode.PAYLOAD_STALLED },
+                    timestampMillis = System.currentTimeMillis(),
+                ),
+            )
+            samples++
+            if (samples % PERSIST_EVERY_SAMPLES == 0) graph.core.stability.persist()
+            if (failed) {
+                graph.core.log.warning("adaptive_probe_failed", "profile" to Safe(profileId.value), "elapsed_ms" to elapsed)
+            }
+            if (graph.core.stability.shouldRecover(profileId)) {
+                graph.core.log.warning("adaptive_recovery", "profile" to Safe(profileId.value))
+                val removed = state.withLock {
+                    if (session === expectedSession && tunnel === expectedTunnel) {
+                        session = null
+                        tunnel = null
+                        true
+                    } else false
+                }
+                if (!removed) return
+                expectedSession.stop()
+                expectedTunnel.close()
+                graph.core.stability.persist()
+                startConnection()
+                return
+            }
+        }
+    }
+
+    /** Starts one new connection attempt only when no session/attempt is active. */
+    private fun startConnection() {
+        scope.launch {
+            state.withLock {
+                if (connecting?.isActive == true || session != null) return@withLock
+                connecting = scope.launch { connect() }
+            }
         }
     }
 
@@ -196,6 +268,9 @@ class DPpassVpnService : VpnService() {
         private const val CHANNEL = "tunnel"
         private const val NOTIFICATION_ID = 1
         private const val PROBE_MARGIN_MILLIS = 2_000L
+        private const val SUPERVISION_INTERVAL_MILLIS = 15_000L
+        private const val SUPERVISION_TIMEOUT_MILLIS = 5_000L
+        private const val PERSIST_EVERY_SAMPLES = 4
 
         fun stop(context: Context) {
             context.startService(Intent(context, DPpassVpnService::class.java).setAction(ACTION_STOP))
