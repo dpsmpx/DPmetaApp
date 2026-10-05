@@ -20,6 +20,6 @@ object ConfigMigrations {
         } else {
             routing
         }
-        Outcome.Success(JsonObject(document.fields + ("routing" to newRouting)))
+        Outcome.Success(JsonObject(document.fields + ("format_version" to Json.num(2)) + ("routing" to newRouting)))
     }
 }
