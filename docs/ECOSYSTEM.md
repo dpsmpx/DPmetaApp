@@ -1,0 +1,95 @@
+# Карта экосистемы
+
+Какие репозитории есть, за что каждый отвечает, чего не делает и как они
+связаны. О себе прав сам репозиторий (M-02): у каждого строка ссылается
+на его документы; при расхождении исправляется эта карта. Состояние — на
+5 октября 2026 (коммиты — в срезе `docs/reports/2026-10-05-xref.md`).
+
+## 1. Ядро экосистемы
+
+Восемь репозиториев, которые ведутся одним способом (`docs/PRINCIPLES.md`):
+журнал решений, `CLAUDE.md`, `TODO.md`, своя команда проверок, сессии ИИ
+под правилами автора. Все закрытые (private).
+
+| репозиторий | отвечает за | не делает | стадия | проверки | вход |
+|---|---|---|---|---|---|
+| **Galdhold** | воксельная action-RPG и её движок (`voxel_engine`) с полигоном в одном репозитории (`Galdhold:Р1`); Android и Windows (`Galdhold:Р2`) | не зависит от DPlang (`Galdhold:Р18`); движок не зависит от игры и полигона (`Galdhold:Р1`); GitHub Actions не использует (`Galdhold:Р12`) | этапы 1–4 закрыты, идёт этап 5 — версия 1 и выпуск (`Galdhold:README.md`) | `tools/hostcheck/run.sh` (полный — около 12 минут) | `Galdhold:CLAUDE.md`, `Galdhold:docs/direction/DECISIONS.md` |
+| **DPlang** | системный язык общего назначения, компилятор в C11 и toolchain (`DPlang:Р27`, `DPlang:Р16`) | не DSL и не скриптовый слой (`DPlang:Р27`); решений за Galdhold не принимает (`DPlang:Р22`) | v0.0 сделана; v0.1 — шаги 1–8 из 13, C-бэкенд готов (`DPlang:README.md`, `DPlang:ROADMAP/IMPLEMENTATION.md`) | `tools/check/run.sh` | `DPlang:docs/README.md` |
+| **DP-Verify** | общий каркас инженерных проверок и process-kit для репозиториев автора (`DP-Verify:README.md`) | предметное — командами проекта, в ядро — только нужное двум репозиториям (`DP-Verify:V-04`); код проверяемых репозиториев не правит (`DP-Verify:docs/audits/STAGE2_TRIAL.md`) | 0.3.0: этапы 0–3 сделаны, выпуск 1.0 — этап 8; потребителей ещё нет (`DP-Verify:ROADMAP/ROADMAP.md`) | `./dpv run full` | `DP-Verify:README.md`, `DP-Verify:docs/direction/TECHNICAL_TASK.md` |
+| **DPpass** | клиент прокси/VPN для Android: своя модель конфигурации, маршрутизации и подписок; ядро Xray в процессе (`DPpass:D-02`, `DPpass:D-24`, `DPpass:D-25`) | без телеметрии (`DPpass:D-12`); не обещает «обход» (`DPpass:D-13`); код других клиентов не берёт (`DPpass:D-20`) | этап 1 из 5 выполнен, идёт этап 2 (`DPpass:README.md`, «Прогресс») | `tools/hostcheck/run.sh` (`--quick`, `--full`) | `DPpass:CLAUDE.md` |
+| **DPprofile** | проверяемая история пути автора и его проектов: источники, факты, хронология, выводы, структура будущей книги (`DPprofile:D-01`) | книгу не пишет до шлюза `DPprofile:D-02`; решений о проектах не принимает; код и большие фрагменты не копирует (`DPprofile:D-05`) | этап 4 из 6 (`DPprofile:README.md`) | `tools/verify/run.sh --quick`; полный — с клонами источников | `DPprofile:CLAUDE.md` |
+| **DPlearn** | персональная система обучения: статус «освоено» вычисляется из доказательств (`DPlearn:D-01`) | сессия разработки не трогает данные учащегося `learner/` (`DPlearn:CLAUDE.md`) | 0.1.0 (`DPlearn:README.md`) | `tools/check/run.sh full` | `DPlearn:README.md` |
+| **SocialMediaImage** | производство, проверка и публикация контента автора; сайт `dpsmpx.com` (`SocialMediaImage:README.md`) | решения закрытых проектов не переписывает; их код не переносит; не публикует без одобрения автора (`SocialMediaImage:CLAUDE.md`) | первый продукт `CI-0001` на ревью; сайт в работе (`SocialMediaImage:ROADMAP/ROADMAP.md`) | `tools/check.sh` | `SocialMediaImage:README.md` |
+| **DP_game_market_analytic_system** | воспроизводимый анализ рынка игр с явной неопределённостью: наблюдения → факты → метрики → гипотезы → решения (`DP_game_market_analytic_system:docs/ARCHITECTURE.md`) | не скрейпер, не агрегатор новостей, не обёртка над LLM (там же) | 0.1.0; фазы 0–4 с тестами, 5–6 без тестов, CLI нет (`DP_game_market_analytic_system:docs/HANDOFF.md`) | `python3 -m pytest` | `DP_game_market_analytic_system:docs/ARCHITECTURE.md` |
+
+DPmeta — девятый, мета-уровень (M-01): `README.md`.
+
+## 2. Периферия
+
+Самостоятельные проекты вне общего процесса. Связаны с ядром только как
+источники фактов (DPprofile, SocialMediaImage) — кроме одной пары.
+
+| репозиторий | что это | связи |
+|---|---|---|
+| `dpsmpx/dpsmpx` (публичный) | README страницы профиля GitHub | читают DPprofile (`DPprofile:docs/sources/REGISTRY.md`, S-04) и SocialMediaImage (`SocialMediaImage:IC-04`…`SocialMediaImage:IC-06`); правит только автор (C-07) |
+| `dpsmpx/Andors-Love` (публичный) | пошаговая RPG на C++ (терминал и SDL) | владелец формата карт `data/maps/*.map` (C-08) |
+| `dpsmpx/TrueJointTileMaker` (публичный) | редактор пиксельной графики и карт на PascalABC.NET | читает и пишет карты Andors-Love (C-08) |
+| DP_Ecosystem, DP_Repeated_Tasks, PixRogue и другие публичные | ранние и малые проекты | источники DPprofile (`DPprofile:D-13`) |
+| форки (`andors-trail-load`, `gravitydefied`, `CreepyCodeCollection`, `pascalabcnet`) | чужие проекты | вне предмета, кроме коммитов автора (`DPprofile:D-13`) |
+| репозитории 2023–2024 (`day_plan`, `rnd_day` и другие) | архив | не упоминаются (`SocialMediaImage:docs/identity/PROJECT_MAP.md`) |
+
+## 3. Связи
+
+```
+Решения, повторённые с обеих сторон (C-01; расхождение — C-02)
+  Galdhold ◄────────────────► DPlang
+
+Поставка проверок копией в tools/dpv/ (C-03; план, поставок ещё нет)
+  DP-Verify ──► DPpass          этап 6, пилот
+            ──► Galdhold        этап 7
+            ──► DPlang          версия 1.1
+            ┄┄► DPlearn         пока — образец процесса; поставка — после DP-Verify 1.0
+
+Факты о проектах со ссылкой на коммит, без кода (C-04, C-05)
+  Galdhold, DPlang, DPpass, профиль, публичные ──► DPprofile          история
+  Galdhold, DPlang, профиль ─────────────────────► SocialMediaImage   публичное ──► dpsmpx.com, площадки
+                                                   (правки профиля и площадок — только автор, C-07)
+
+Формат данных (C-08)
+  Andors-Love ── data/maps/*.map ──► TrueJointTileMaker
+
+Без связей: DP_game_market_analytic_system
+```
+
+Наблюдения:
+
+- **Зависимостей сборки и исполнения между репозиториями нет.**
+  Единственная запланированная — поставка DP-Verify копией в
+  `tools/dpv/` (C-03): копия, а не ссылка на другой репозиторий, и
+  только по решению принимающего репозитория.
+- **Остальные связи — знание:** решения, которые повторяют друг друга
+  (C-01), факты о проектах (C-04), правила обращения с закрытым кодом
+  (C-05), общий способ ведения проектов (`docs/PRINCIPLES.md`).
+- **Связность по ссылкам** (сколько файлов называют другой проект,
+  `tools/xref.py`): больше всего о других пишут DPprofile (о Galdhold —
+  59 файлов) и SocialMediaImage (64), что совпадает с их назначением; о
+  DPlang пишет Galdhold (6), о Galdhold — DPlang (38) и DP-Verify (19).
+  DP_game_market_analytic_system не называет ни одного проекта, и его
+  не называет никто.
+
+## 4. Происхождение общего процесса
+
+Наблюдение: правила ведения репозитория сложились в Galdhold и
+переносились копированием с указанием источника —
+
+- DPlang: «инженерная культура VoxelRPG» (`DPlang:Р3`,
+  `DPlang:docs/policy/ENGINEERING.md`);
+- DP-Verify: обобщает правила DPpass, Galdhold и DPlang в process-kit
+  (`DP-Verify:docs/direction/TECHNICAL_TASK.md`, §10);
+- DPlearn: таблица «что взято из Galdhold и DP-Verify»
+  (`DPlearn:docs/ARCHITECTURE.md`, `DPlearn:docs/PROCESS.md`);
+- SocialMediaImage, DPprofile — те же правила своими словами.
+
+Копирование без общего источника — причина мелких расхождений
+(`docs/PRINCIPLES.md`, «Различия»). Общий источник, который уже
+строится, — process-kit DP-Verify (этап 5); DPmeta его не дублирует.
