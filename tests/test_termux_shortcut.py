@@ -55,12 +55,17 @@ class TermuxShortcut(unittest.TestCase):
         self.stub.chmod(0o755)
         self.log = self.tmp / "calls.log"
 
-    def shortcut(self, answer="", **stub):
+    def shortcut(self, answer="", stdin=None, session="", **stub):
+        """answer — ответ с переводом строки; stdin — сырой ввод (subprocess.DEVNULL — без ввода);
+        session — CLAUDECODE (по умолчанию — терминал автора, не сессия ИИ)."""
         env = {**os.environ, **GIT_ENV, "HOME": str(self.home), "DPSMPX_PY": str(self.stub),
                "DPSMPX_REPO": str(self.repo), "STUB_LOG": str(self.log), "STUB_CHANGES": "1",
+               "CLAUDECODE": session, "CLAUDE_CODE_REMOTE": "",
                **{f"STUB_{k.upper()}": str(v) for k, v in stub.items()}}
-        r = subprocess.run(["bash", str(SCRIPT)], input=answer + "\n", env=env, capture_output=True,
-                           text=True, timeout=60)
+        feed = {"stdin": stdin} if stdin is not None else {"input": answer + "\n" if stdin is None else None}
+        if isinstance(stdin, str):
+            feed = {"input": stdin}
+        r = subprocess.run(["bash", str(SCRIPT)], env=env, capture_output=True, text=True, timeout=60, **feed)
         calls = self.log.read_text().splitlines() if self.log.exists() else []
         return r.returncode, r.stdout + r.stderr, calls
 
@@ -83,6 +88,20 @@ class TermuxShortcut(unittest.TestCase):
             self.assertEqual(rc, 1, (answer, out))
             self.assertNotIn("-m tools.cs site deploy", calls, answer)
             self.log.unlink()
+
+    def test_no_input_or_cut_input_is_no(self):
+        """Без терминала (как в сессии ИИ) и при оборванном вводе «да» без перевода строки — отказ."""
+        for feed in (subprocess.DEVNULL, "да"):
+            rc, out, calls = self.shortcut(stdin=feed)
+            self.assertEqual(rc, 1, (feed, out))
+            self.assertNotIn("-m tools.cs site deploy", calls, feed)
+            self.log.unlink(missing_ok=True)
+
+    def test_refuses_in_ai_session(self):
+        """Д36: сессия ИИ выгружает только `python3 -m tools.cs site deploy` (ask), не ярлыком."""
+        rc, out, calls = self.shortcut("да", session="1")
+        self.assertEqual((rc, calls), (1, []), out)
+        self.assertIn("только для автора", out)
 
     def test_failed_dry_run_stops(self):
         rc, out, calls = self.shortcut("да", dry_rc=2)

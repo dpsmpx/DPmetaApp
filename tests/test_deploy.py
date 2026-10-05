@@ -216,10 +216,17 @@ class Htaccess(unittest.TestCase):
         self.assertIn("ErrorDocument 404 /404.html", h)
         self.assertIn("Header always set Content-Security-Policy \"default-src 'self';", h)
         self.assertIn("<IfModule mod_headers.c>", h, "нет модуля — блок пропускается, а не ошибка 500")
-        self.assertIn("Options -Indexes", h, "без списка файлов каталогов (инцидент 05.10.2026)")
-        self.assertNotIn("Require all denied", h, "сайт должен отдаваться")
+        active = _directives(h)
+        self.assertIn("Options -Indexes", active, "без списка файлов каталогов (инцидент 05.10.2026)")
+        self.assertFalse([d for d in active if d.startswith("Options") and "+Indexes" in d])
+        self.assertNotIn("Require all denied", active, "сайт должен отдаваться")
         self.assertNotIn("X-Robots-Tag", h, "production открыт")
         self.assertFalse((out / "_headers").exists())
+
+
+def _directives(text: str) -> list[str]:
+    """Строки .htaccess без комментариев и пустых."""
+    return [s for s in (ln.strip() for ln in text.splitlines()) if s and not s.startswith("#")]
 
 
 class RealConfig(unittest.TestCase):
@@ -260,9 +267,33 @@ class RealConfig(unittest.TestCase):
 
     def test_repo_root_is_not_servable(self):
         """Корень репозитория по ошибке в каталоге сайта (инцидент 05.10.2026) — Apache не отдаёт ничего."""
-        h = self.repo.path(".htaccess").read_text(encoding="utf-8")
-        self.assertIn("Require all denied", h)
-        self.assertIn("Deny from all", h, "Apache 2.2 без mod_authz_core")
+        active = _directives(self.repo.path(".htaccess").read_text(encoding="utf-8"))
+        self.assertIn("Require all denied", active)
+        self.assertIn("Deny from all", active, "Apache 2.2 без mod_authz_core")
+        self.assertFalse([d for d in active if d.startswith(("Require all granted", "Allow from"))])
+
+    def test_session_asks_before_deploy(self):
+        """Д36: выгрузку из сессии Claude Code — только после «да»; любой порядок опций и ярлык."""
+        import json
+        perms = json.loads(self.repo.path(".claude/settings.json").read_text(encoding="utf-8"))["permissions"]
+        for rule in ("Bash(python3 -m tools.cs publish *)", "Bash(python3 -m tools.cs site deploy *)",
+                     "Bash(python -m tools.cs publish *)", "Bash(python -m tools.cs site deploy *)",
+                     "Bash(*tools.cs site*deploy*)", "Bash(*tools.cs publish*)", "Bash(*dpsmpx-site-deploy*)",
+                     "Bash(rsync *)", "Bash(ssh *)", "Bash(scp *)", "Bash(sftp *)"):
+            self.assertIn(rule, perms["ask"])
+        self.assertIn("Read(~/.ssh/**)", perms["deny"])
+
+    def test_backup_keeps_every_tracked_file(self):
+        """bundle — восстановление без GitHub (DISASTER_RECOVERY): в архиве и защиты (.htaccess, .claude/)."""
+        from tools.cs.core.bundle import PARTS, tracked
+        prefixes = [p for ps in PARTS.values() for p in ps]
+        lost = [f for f in tracked(self.repo) if not any(f == p or f.startswith(p) for p in prefixes)]
+        self.assertEqual(lost, [])
+
+    def test_protection_changes_run_all_checks(self):
+        from tools.cs.platform_cli import affected_checks
+        for f in (".htaccess", ".claude/settings.json"):
+            self.assertTrue(affected_checks([f])[1], f)
 
 
 if __name__ == "__main__":
