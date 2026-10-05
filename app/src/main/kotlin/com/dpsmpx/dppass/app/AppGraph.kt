@@ -18,6 +18,9 @@ import com.dpsmpx.dppass.storage.StorageReset
 import com.dpsmpx.dppass.storage.WrappedKeyProvider
 import com.dpsmpx.dppass.tunnel.PlatformTraits
 import java.io.File
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 
 /**
  * Сборка зависимостей приложения — единственное место, где Android
@@ -27,14 +30,25 @@ import java.io.File
  * Набор геоданных ядра (D-27) переносится из assets APK до загрузки ядра.
  */
 object AppGraph {
-    @Volatile
-    private var instance: DPpassCore? = null
+    /** Ядро DPpass и ядро прокси под ним: проверку здоровья (D-32) умеет только Xray. */
+    class Graph(val core: DPpassCore, val engine: XrayProxyEngine)
 
-    fun core(context: Context): DPpassCore = instance ?: synchronized(this) {
+    @Volatile
+    private var instance: Graph? = null
+
+    /**
+     * Работа, которая должна пережить свой компонент: остановка ядра и TUN
+     * после `onDestroy` сервиса. Живёт столько же, сколько процесс.
+     */
+    val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    fun core(context: Context): DPpassCore = graph(context).core
+
+    fun graph(context: Context): Graph = instance ?: synchronized(this) {
         instance ?: build(context.applicationContext).also { instance = it }
     }
 
-    private fun build(context: Context): DPpassCore {
+    private fun build(context: Context): Graph {
         val data = FileBlobStore(File(context.noBackupFilesDir, "state"))
         // Ключ данных — конвертом в своём каталоге (D-19); поверх существующих записей новый не создаётся.
         val keys = WrappedKeyProvider(
@@ -61,9 +75,10 @@ object AppGraph {
             is Outcome.Success -> DeviceLog.log.info("engine_loaded", "backend" to Safe(XrayBackend.ID), "version" to Safe(runtime.value.version()))
             is Outcome.Failure -> runtime.errors.forEach(DeviceLog.log::diagnostic)
         }
-        return DPpassCore(
+        val engine = XrayProxyEngine(runtime)
+        val core = DPpassCore(
             compiler = XrayCompiler(geodata = geoCodes),
-            engine = XrayProxyEngine(runtime),
+            engine = engine,
             store = EncryptingBlobStore(data, keys),
             clock = Clock.SYSTEM,
             selfPackage = context.packageName,
@@ -73,5 +88,6 @@ object AppGraph {
             logSink = DeviceLog.sink,
             engineDetails = listOf("geodata" to geodataSummary),
         )
+        return Graph(core, engine)
     }
 }

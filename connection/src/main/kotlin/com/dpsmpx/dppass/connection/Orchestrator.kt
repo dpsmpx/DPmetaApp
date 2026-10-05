@@ -133,6 +133,8 @@ class ConnectionOrchestrator(
             session.stop()
             return Try.Fail(result.errors.first())
         }
+        // Успех с оговоркой (например, здоровье не проверено, D-32) — в журнал, а не мимо.
+        result.diagnostics.forEach(log::diagnostic)
         return Try.Ok(session)
     }
 }

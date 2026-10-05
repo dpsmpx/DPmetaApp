@@ -136,6 +136,13 @@ enum class DiagCode(val kind: FailureKind, val defaultSeverity: Severity) {
     NO_VIABLE_CANDIDATE(FailureKind.ENDPOINT_UNREACHABLE, Severity.ERROR),
     ATTEMPTS_EXHAUSTED(FailureKind.ENDPOINT_UNREACHABLE, Severity.ERROR),
 
+    /**
+     * Здоровье не проверено (D-32): в DNS конфигурации нет сервера через
+     * туннель, через который прошла бы проба. Подключение не отвергается,
+     * но и не считается проверенным.
+     */
+    HEALTH_CHECK_SKIPPED(FailureKind.HEALTH_CHECK_FAILED, Severity.WARNING),
+
     // --- активация ---
     ACTIVATION_REJECTED(FailureKind.CONFIG_VALIDATION_FAILED, Severity.ERROR),
     ROLLED_BACK_TO_LAST_KNOWN_GOOD(FailureKind.HEALTH_CHECK_FAILED, Severity.WARNING),
