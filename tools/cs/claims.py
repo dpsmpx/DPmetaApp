@@ -9,7 +9,8 @@
 
 Числа: каждое число от 10 в публикуемом тексте должно встречаться в
 утверждении или допустимой формулировке заявленного факта (CLAIM_POLICY
-§3). Даты и годы не считаются; «150 тысяч» = «150 000» = «150,000».
+§3). Даты, годы и номера разделов в заголовках («## 10. …») не считаются;
+«150 тысяч» = «150 000» = «150,000».
 """
 from __future__ import annotations
 
@@ -29,6 +30,7 @@ DATE_RE = re.compile(
     re.IGNORECASE,
 )
 FIGURE_REF = re.compile(r"\{\{\s*figure\s*:[^}]*\}\}")
+HEADING_NO = re.compile(r"(?m)^(#{2,3}\s+)\d{1,3}\.(?=\s)")  # номер раздела в заголовке — не утверждение
 NUM_RE = re.compile(
     r"(?<![\w+#.,])(\d{1,3}(?:[   ,]\d{3})+|\d+(?:[.,]\d+)?)(?![\w])"
     r"(?:\s*(тыс\w*|thousand|k\b))?",
@@ -130,6 +132,7 @@ def text_findings(item: Item, text: str, fids: list[str], where: str, soft: bool
     """
     used = set(getattr(progress, "progress_used", None) or [])
     text = FIGURE_REF.sub(" ", text)  # {{figure:…}} — место графика, не слова текста; данные фигур проверяет progress
+    text = HEADING_NO.sub(r"\1", text)
     out = []
     hard = "warn" if soft else "error"
     for rule, frag in scan(text, rule_list):

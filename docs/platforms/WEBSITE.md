@@ -37,9 +37,11 @@ Claude Code после его «да» (Д36). Домен зарегистрир
 /projects/              проекты                   /en/projects/
 /projects/<id>/         страница проекта (факты)  /en/projects/<id>/
 /progress/              прогресс экосистемы (Д38, CI-0002)  /en/progress/
-/news/                  лента: новости, дневник, статьи, релизы — категории
+/articles/              статьи автора (Д42)     /en/articles/ — когда есть английские
+/articles/<slug>/       статья (адрес не меняется)
+/news/                  лента: новости, дневник, релизы — категории
 /news/<slug>/           запись (адрес не меняется)
-/tags/<метка>/          записи по метке
+/tags/<метка>/          записи и статьи по метке
 /feed.xml /rss.xml /feed.json   фиды
 /sitemap.xml /robots.txt /404.html /en/404.html
 /api/v1/index.json /api/v1/projects.json /api/v1/news.json /api/v1/progress.json (если страница прогресса видна)
@@ -49,9 +51,32 @@ Claude Code после его «да» (Д36). Домен зарегистрир
 ```
 
 Отличия от предварительной схемы §5 — `docs/research/publishing/WEBSITE.md`,
-§5: «devlog», «articles», «releases» — категории одной ленты; «media»,
+§5: «devlog», «releases» — категории одной ленты, «articles» — свой
+раздел (Д42); «media»,
 «downloads» — появятся, когда будет что показать (снимки игры в
 реестре, выпуск); «contact» — блок на главной и в «обо мне».
+
+## Статьи (Д42)
+
+- Статья — объект контента с `category: article`; адрес —
+  `/articles/<slug>/` (`CItem.url_path`), бриф и исследование —
+  `docs/content/products/articles/<slug>/`. Текст автора — канон без
+  генерации (`generation.provider: human`); сессия меняет только разметку
+  и подстановки.
+- Раздел `/articles/` и пункт меню «Статьи» появляются, когда на сайте
+  есть хотя бы одна статья (на production — одобренная и опубликованная,
+  Д12). На главной — блок трёх последних статей. Лента `/news/` статей не
+  показывает; фиды, метки и страницы проектов («Записи о проекте») — да.
+- Страница статьи: подзаголовок (`summary` варианта), время чтения
+  (180 слов в минуту), оглавление по `##`, навигационная цепочка
+  «Главная / Статьи», JSON-LD `Article` (`wordCount`, `keywords` из меток)
+  и `BreadcrumbList`.
+- Схемы и диаграммы — блоки кода в каноне (строки ```` ``` ````):
+  моноширинный шрифт, отступы сохраняются, длинная строка прокручивается
+  внутри блока; длинные имена в `коде` переносятся — страница не уходит
+  вбок на 390 px (`siteshots`).
+- Статья — на языке написания: на `/en/` пункт «Articles (RU)» ведёт на
+  `/articles/`, пока английских нет.
 
 ## Главная (§6, §117)
 
@@ -147,7 +172,7 @@ JSON-LD (`Person`, `CreativeWork`, `BlogPosting`), фиды и API. Имени
 
 Канонический адрес — `https://dpsmpx.com` + путь; на площадках —
 он же (`link: canonical` в варианте), без меток отслеживания (`utm.enabled:
-false`, §80). Адрес записи (`/news/<slug>/`) не меняется после
+false`, §80). Адрес записи (`/news/<slug>/`) и статьи (`/articles/<slug>/`) не меняется после
 публикации; смена — только с перенаправлением со старого.
 
 ## Язык (П2-18)
@@ -172,7 +197,8 @@ false`, §80). Адрес записи (`/news/<slug>/`) не меняется �
 `<title>`, `description`, `rel=canonical`, `hreflang` RU/EN, Open Graph
 (`og:title`, `og:type`, `og:image`, `og:url`, `og:description`,
 `og:locale`), `twitter:card`, JSON-LD (`Person`, `WebSite`,
-`BlogPosting`, `CreativeWork` проекта), `/sitemap.xml` с `lastmod` и
+`BlogPosting`, `Article` и `BreadcrumbList` статьи, `CollectionPage`
+раздела статей, `CreativeWork` проекта), `/sitemap.xml` с `lastmod` и
 парами `hreflang` (`xhtml:link` у каждого адреса пары и `x-default`),
 `/robots.txt`, фиды. `lastmod` — дата самого нового источника страницы:
 записи или свидетельства факта, который на ней выведен; источника с

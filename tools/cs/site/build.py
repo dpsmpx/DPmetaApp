@@ -78,6 +78,10 @@ class Entry:
     def is_post(self) -> bool:
         return self.category in POST_CATEGORIES
 
+    @property
+    def is_article(self) -> bool:
+        return self.category == "article"
+
 
 @dataclass
 class Page:
@@ -125,6 +129,7 @@ class SiteBuild:
         self._used: set = set()  # факты текущей страницы — для lastmod
         self._pages: list = []  # страницы из вариантов кроме «Обо мне» (category: page, website.path)
         self._progress: set = set()  # наборы прогресса на видимых страницах — для /api/v1/progress.json
+        self._articles: list = []  # статьи (category: article) — раздел /articles/
         self._tokens: dict | None = None
 
     # ------------------------------------------------------- данные
@@ -225,10 +230,12 @@ class SiteBuild:
         pre = "/en" if lang == "en" else ""
         items = [("home", f"{pre}/"), ("projects", f"{pre}/projects/")]
         items += [(k, path) for k, path in self.nav_pages(lang)]
-        items += [("news", "/news/"), ("about", f"{pre}/about/")]
+        items += [("articles", self.articles_path(lang)), ("news", "/news/"), ("about", f"{pre}/about/")]
         out = []
         for key, href in items:
             if key == "about" and not self._about.get(lang):
+                continue
+            if key == "articles" and not self._articles:
                 continue
             cls = ' class="current" aria-current="page"' if key == current else ""
             out.append(f'<a href="{href}"{cls}>{E(t(lang, key))}</a>')
@@ -301,8 +308,12 @@ class SiteBuild:
         if rest:
             parts.append(f'<h2>{E(t(lang, "other_projects"))}</h2><div class="cards">'
                          + "".join(self.project_card(p, lang, False) for p in rest) + "</div>")
-        posts = [e for e in entries if e.is_post and e.lang == "ru"][:3]
-        dates = [e.date for e in posts + ([about] if about else [])]
+        arts = self.articles_for(lang)[:3]
+        if arts:
+            parts.append(f'<h2>{E(t(lang, "latest_articles"))}</h2>' + self.post_list(arts, lang)
+                         + f'<p><a href="{self.articles_path(lang)}">{E(t(lang, "all_articles"))} →</a></p>')
+        posts = [e for e in entries if e.is_post and not e.is_article and e.lang == "ru"][:3]
+        dates = [e.date for e in posts + arts + ([about] if about else [])]
         if posts:
             parts.append(f'<h2>{E(t(lang, "latest"))}</h2>' + self.post_list(posts, lang)
                          + f'<p><a href="/news/">{E(t(lang, "all_posts"))} →</a></p>')
@@ -426,12 +437,13 @@ class SiteBuild:
         for e in posts:
             cat = t(lang, "cat").get(e.category, e.category)
             mark = " · черновик" if e.draft and lang == "ru" else (" · draft" if e.draft else "")
-            lis.append(f'<li><time datetime="{E(e.date)}">{E(e.date)}</time> · <span class="muted">{E(cat)}{mark}</span><br>'
+            mins = f" · {self.minutes(e)} {t(lang, 'minutes')}" if e.is_article else ""
+            lis.append(f'<li><time datetime="{E(e.date)}">{E(e.date)}</time> · <span class="muted">{E(cat)}{E(mins)}{mark}</span><br>'
                        f'<a href="{e.path}">{E(e.title)}</a><br><span class="muted">{E(e.summary)}</span></li>')
         return f'<ul class="posts">{"".join(lis)}</ul>'
 
     def page_news(self, entries: list[Entry]) -> Page:
-        posts = [e for e in entries if e.is_post and e.lang == "ru"]
+        posts = [e for e in entries if e.is_post and not e.is_article and e.lang == "ru"]
         if posts:
             body = self.post_list(posts, "ru")
         else:
@@ -449,28 +461,85 @@ class SiteBuild:
     def page_post(self, e: Entry) -> Page:
         cat = t(e.lang, "cat").get(e.category, e.category)
         meta = f'<p class="meta">{E(e.date)} · {E(cat)}'
+        if e.is_article:
+            meta += f" · {self.minutes(e)} {E(t(e.lang, 'minutes'))}"
         projects = self.repo.projects()
         for pid in e.item.data.get("source_projects") or []:
             if pid in projects and projects[pid].get("page"):
                 meta += f' · <a href="/projects/{pid}/">{E(projects[pid]["name"])}</a>'
         meta += "</p>"
         tags = "".join(f'<a class="tag" href="/tags/{E(tg)}/">#{E(tg)}</a>' for tg in e.item.data.get("tags") or [])
-        main = f"<article><h1>{E(e.title)}</h1>{meta}{self.draft_note(e)}"
+        body, lead = e.html, ""
+        if e.is_article:  # подзаголовок (summary) и оглавление по h2
+            toc, body = self.toc(body, e.lang)
+            lead = (f'<p class="lead">{E(e.summary)}</p>' if e.summary else "") + toc
+        crumbs = self.breadcrumbs(e)
+        main = (f'<article class="{"article" if e.is_article else "post"}">{crumbs[0]}<h1>{E(e.title)}</h1>'
+                f"{meta}{self.draft_note(e)}")
         if e.image:
             main += f'<img class="cover" src="{e.image}" alt="{E(e.image_alt or "")}">'
-        main += e.html + (f"<p>{tags}</p>" if tags else "")
+        main += lead + body + (f"<p>{tags}</p>" if tags else "")
         if e.social:
             main += f'<h3>{E(t(e.lang, "discuss"))}</h3><ul class="links">' + "".join(
                 f'<li><a href="{E(u)}">{E(PLATFORM_NAMES.get(pl, pl))}</a></li>' for pl, u in e.social) + "</ul>"
         main += "</article>"
-        ld = {"@context": "https://schema.org", "@type": "BlogPosting", "headline": e.title,
+        ld = {"@context": "https://schema.org", "@type": "Article" if e.is_article else "BlogPosting", "headline": e.title,
               "datePublished": e.date, "dateModified": e.date, "inLanguage": e.lang,
               "mainEntityOfPage": self.base + e.path, "description": e.summary,
               "author": {"@type": "Person", "name": self.author(e.lang), "url": self.base + "/"}}
+        if e.is_article:
+            ld["wordCount"] = self.words(e)
+        if e.item.data.get("tags"):
+            ld["keywords"] = ", ".join(e.item.data["tags"])
         img = e.image or self.og_default()
         if img:
             ld["image"] = self.base + img
-        return Page(e.path, e.lang, e.title, e.summary, main, "article", image=img, jsonld=[ld], draft=e.draft, lastmod=e.date)
+        return Page(e.path, e.lang, e.title, e.summary, main, "article", image=img, jsonld=[ld, crumbs[1]],
+                    draft=e.draft, lastmod=e.date)
+
+    # ------------------------------------------------------- статьи
+    def articles_for(self, lang: str) -> list[Entry]:
+        """Статьи на языке страницы; на английской, пока английских нет, — русские (как записи)."""
+        own = [e for e in self._articles if e.lang == lang]
+        return own or ([e for e in self._articles if e.lang == "ru"] if lang == "en" else [])
+
+    def articles_path(self, lang: str) -> str:
+        return "/en/articles/" if lang == "en" and any(e.lang == "en" for e in self._articles) else "/articles/"
+
+    @staticmethod
+    def words(e: Entry) -> int:
+        return len(re.sub(r"<[^>]+>", " ", e.html).split())
+
+    def minutes(self, e: Entry) -> int:
+        """Время чтения: 180 слов в минуту — медленное чтение длинного текста со схемами."""
+        return max(1, round(self.words(e) / 180))
+
+    def breadcrumbs(self, e: Entry) -> tuple[str, dict]:
+        """Цепочка «Главная → раздел → запись»: (HTML, BreadcrumbList для поисковиков)."""
+        home = "/en/" if e.lang == "en" else "/"
+        sec = (self.articles_path(e.lang), t(e.lang, "articles_title")) if e.is_article else ("/news/", t(e.lang, "news"))
+        chain = [(home, t(e.lang, "home")), sec]
+        html_ = (f'<nav class="crumbs" aria-label="{E(t(e.lang, "breadcrumbs"))}">'
+                 + " / ".join(f'<a href="{h}">{E(n)}</a>' for h, n in chain) + "</nav>")
+        ld = {"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [
+            {"@type": "ListItem", "position": i, "name": n, "item": self.base + h} for i, (h, n) in enumerate(chain, 1)]
+            + [{"@type": "ListItem", "position": len(chain) + 1, "name": e.title, "item": self.base + e.path}]}
+        return html_, ld
+
+    def page_articles(self, lang: str) -> Page | None:
+        arts = [e for e in self._articles if e.lang == lang]
+        if not arts:
+            return None
+        path = "/en/articles/" if lang == "en" else "/articles/"
+        main = (f"<h1>{E(t(lang, 'articles_title'))}</h1><p class=\"lead\">{E(t(lang, 'articles_lead'))}</p>"
+                + self.post_list(arts, lang))
+        ld = {"@context": "https://schema.org", "@type": "CollectionPage", "name": t(lang, "articles_title"),
+              "url": self.base + path, "inLanguage": lang,
+              "hasPart": [{"@type": "Article", "headline": e.title, "url": self.base + e.path} for e in arts]}
+        en = "/en/articles/" if any(e.lang == "en" for e in self._articles) else None
+        return Page(path, lang, t(lang, "articles_title"), t(lang, "articles_lead"), main,
+                    alternates=self._alt("/articles/", en), image=self.og_default(), jsonld=[ld],
+                    lastmod=max((e.date for e in arts), default=None))
 
     def page_tag(self, tag: str, posts: list[Entry]) -> Page:
         return Page(f"/tags/{tag}/", "ru", f"#{tag}", f"#{tag}", f"<h1>#{E(tag)}</h1>" + self.post_list(posts, "ru"),
@@ -537,6 +606,7 @@ class SiteBuild:
         navs = {path: key for lg in ("ru", "en") for key, path in self.nav_pages(lg)}
         current = {"/": "home", "/en/": "home"}.get(page.path) or navs.get(page.path) or ("projects" if "/projects/" in page.path else
                                                                     "news" if page.path.startswith("/news/") else
+                                                                    "articles" if "/articles/" in page.path else
                                                                     "about" if "/about/" in page.path else "")
         footer = (f'<p>{E(self.signature(page.lang))} · '
                   f'<a href="/feed.xml">Atom</a> · <a href="/rss.xml">RSS</a> · <a href="/feed.json">JSON Feed</a></p>'
@@ -638,9 +708,14 @@ class SiteBuild:
         self._pages = [e for e in entries if e.category == "page" and not e.path.rstrip("/").endswith("/about")
                        and (e.item.data.get("website") or {}).get("path")]
         self._progress = set()
+        self._articles = [e for e in entries if e.is_article]
         langs = self.cfg.get("languages") or ["ru"]
         pg = self._page
         pages = [pg(self.page_home, "ru", entries), pg(self.page_projects, "ru"), pg(self.page_news, entries)]
+        for lang in ("ru", "en"):
+            ap = pg(self.page_articles, lang)
+            if ap:
+                pages.append(ap)
         if "en" in langs:
             pages += [pg(self.page_home, "en", entries), pg(self.page_projects, "en")]
         for lang in langs:

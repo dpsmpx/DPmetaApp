@@ -1,0 +1,94 @@
+# Объект контента (docs/content/CANONICAL_MODEL.md). Схема — schemas/content_item.schema.json.
+# Статья автора (раздел /articles/, Д42): текст — канон и вариант website.ru; период — {{progress:…}}.
+schema: content_item/v2
+id: CI-0003
+slug: neyroseti-i-neyroplastichnost
+title: Нейросети и нейропластичность
+type: article
+pillar: AI_DEVELOPMENT
+category: article
+brand:
+  mode: PERSONAL
+  brands:
+  - author
+website:
+  toc: true
+topic: как долгая работа в связке с нейросетями меняет когнитивную среду и рабочие привычки — на опыте
+  24 дней и экосистемы проектов
+objective: Показать читателю, что главный эффект работы с ИИ — не скорость написания кода, а смена уровня
+  абстракции и рабочих привычек мышления, — на опыте 24 дней и экосистемы проектов, с явной границей между
+  наблюдением и гипотезой о нейропластичности.
+audiences:
+- ai_developers
+- developers
+- professional
+- technical
+platforms:
+- website
+languages:
+- ru
+tone: размышление от первого лица; спокойно и точно; наблюдение отделено от гипотезы; без эпитетов о себе
+owner: author
+created: '2026-10-05'
+tags:
+- ai
+- method
+- neuroplasticity
+- ecosystem
+claims:
+- fact: AU-METHOD
+- fact: AU-MEMORY
+- fact: GH-NAME
+- fact: GH-GENRE
+- fact: GH-ENGINE
+- fact: GH-LOC
+- fact: DP-WHAT
+- fact: LRN-WHAT
+- fact: VRF-WHAT
+- fact: PRF-WHAT
+- fact: PRF-STAGE
+- fact: META-WHAT
+- fact: META-NO-DEPS
+- fact: SMI-WHAT
+- fact: MKT-WHAT
+- fact: TJTM-WHAT
+canonical:
+  lang: ru
+  current: 1
+  versions:
+  - version: 1
+    file: canonical/v1.md
+    date: '2026-10-05'
+    note: текст автора 05.10.2026 с разметкой; закрытый прикладной проект — без имени и подробностей (Д42)
+    sha256: 89f69ce00f489b03f39e1afe212d5d78664f7547384f9e79815eced77aa12a10
+    deps:
+      facts: {}
+      links: {}
+      releases: {}
+      datasets:
+        '2026-10-05': b4eb09f271093055
+source_projects:
+- galdhold
+- dplang
+brief: docs/content/products/articles/neyroseti-i-neyroplastichnost/BRIEF.md
+provenance: provenance.yaml
+targets:
+- variant: website.ru
+  destination: site-production
+state: GENERATED
+history:
+- date: '2026-10-05'
+  state: IDEA
+  note: 'объект заведён по поручению автора: первая статья раздела «Статьи» — текст автора «Нейросети
+    и нейропластичность»'
+- date: '2026-10-05'
+  state: RESEARCHED
+  note: 'утверждения статьи сверены с реестром фактов: 11 подтверждены, 5 без факта или расходятся (бриф, §2);
+    решения автора: закрытый прикладной проект — без имени и подробностей, репозитории называть можно (Д42)'
+- date: '2026-10-05'
+  state: BRIEFED
+  note: бриф — docs/content/products/articles/neyroseti-i-neyroplastichnost/BRIEF.md
+- date: '2026-10-05'
+  state: GENERATED
+  note: 'генерации нет — текст автора: канон v1 с разметкой (заголовки, списки, схемы — блоки кода), период — подстановкой;
+    вариант website.ru — тот же текст. Дальше — критика отдельным проходом, ревизия по решениям автора (бриф, §2)'
