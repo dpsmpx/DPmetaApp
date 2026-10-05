@@ -6,6 +6,8 @@ import com.dpsmpx.dppass.connection.DPpassCore
 import com.dpsmpx.dppass.core.Clock
 import com.dpsmpx.dppass.diagnostics.Outcome
 import com.dpsmpx.dppass.diagnostics.Safe
+import com.dpsmpx.dppass.engine.xray.GeodataCodes
+import com.dpsmpx.dppass.engine.xray.GeodataInstaller
 import com.dpsmpx.dppass.engine.xray.JniXrayRuntime
 import com.dpsmpx.dppass.engine.xray.XrayBackend
 import com.dpsmpx.dppass.engine.xray.XrayCompiler
@@ -22,6 +24,7 @@ import java.io.File
  * встречается с ядром DPpass. Ядро прокси — Xray в процессе приложения
  * (D-25): библиотека `libdppassxray` из APK; не загрузилась или не той
  * версии — каждый вызов ядра отвечает `BACKEND_NOT_AVAILABLE` с причиной.
+ * Набор геоданных ядра (D-27) переносится из assets APK до загрузки ядра.
  */
 object AppGraph {
     @Volatile
@@ -39,16 +42,27 @@ object AppGraph {
             KeystoreKeyWrapper(),
             dataPresent = { StorageReset.hasData(data) },
         )
-        // Каталог геоданных ядра пуст, пока набор D-27 не собирается в APK
-        // (TODO.md): конфигурации с geoip/geosite ядро отвергает при проверке.
-        val geodata = File(context.noBackupFilesDir, "geodata").apply { mkdirs() }
-        val runtime = JniXrayRuntime.load({ System.loadLibrary(JniXrayRuntime.LIBRARY) }, geodata.path)
+        // Набор геоданных (D-27): из assets APK в noBackupFilesDir со сверкой SHA-256.
+        // Не перенёсся — ядро работает, а правила с geoip/geosite компилятор отвергает
+        // с причиной (GEODATA_UNAVAILABLE), а не молча.
+        val geodataRoot = File(context.noBackupFilesDir, "geodata")
+        val (assetDir, geoCodes, geodataSummary) = when (val g = GeodataInstaller({ context.assets.open(it) }, geodataRoot).install()) {
+            is Outcome.Success -> {
+                DeviceLog.log.info("geodata_ready", "set" to Safe(g.value.manifest.summary), "installed_now" to g.value.installedNow)
+                Triple(g.value.dir, GeodataCodes.Installed(g.value.manifest), g.value.manifest.summary)
+            }
+            is Outcome.Failure -> {
+                g.errors.forEach(DeviceLog.log::diagnostic)
+                Triple(geodataRoot.apply { mkdirs() }, GeodataCodes.Missing(g.errors.first().message), "none")
+            }
+        }
+        val runtime = JniXrayRuntime.load({ System.loadLibrary(JniXrayRuntime.LIBRARY) }, assetDir.path)
         when (runtime) {
             is Outcome.Success -> DeviceLog.log.info("engine_loaded", "backend" to Safe(XrayBackend.ID), "version" to Safe(runtime.value.version()))
             is Outcome.Failure -> runtime.errors.forEach(DeviceLog.log::diagnostic)
         }
         return DPpassCore(
-            compiler = XrayCompiler(),
+            compiler = XrayCompiler(geodata = geoCodes),
             engine = XrayProxyEngine(runtime),
             store = EncryptingBlobStore(data, keys),
             clock = Clock.SYSTEM,
@@ -57,6 +71,7 @@ object AppGraph {
             storageRecovery = StorageReset(data, keys, Clock.SYSTEM),
             // Журнал устройства (D-26): кольцо для отчёта и файл в фоне.
             logSink = DeviceLog.sink,
+            engineDetails = listOf("geodata" to geodataSummary),
         )
     }
 }
