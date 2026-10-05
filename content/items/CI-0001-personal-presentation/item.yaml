@@ -174,11 +174,18 @@ review:
       strategic_value: 2
     D:
       factuality: 4
-      identity_fit: 3
+      identity_fit: 4
       visual_quality: 4
       communication: 2
       platform_fit: 4
       strategic_value: 2
+    E:
+      factuality: 4
+      identity_fit: 4
+      visual_quality: 3
+      communication: 3
+      platform_fit: 4
+      strategic_value: 4
   issues:
     fatal:
     - id: B-1
@@ -282,6 +289,32 @@ review:
       text: нет доказательства
       status: accepted
       resolution: та же причина, что D-1
+    - id: E-1
+      variant: E
+      text: карта называет шесть новых репозиториев ядра — расходится с правилом ОР-12 до решения («только
+        на странице прогресса… в других объектах не упоминаются»); роли *-WHAT на изображении не выражены
+      status: open
+    - id: E-2
+      variant: E
+      text: ключевая строка и метод — label 17,3 px цветом mist, тусклее плашек доказательств; при 320
+        px — 4,3 px; из коралла — только точка знака
+      status: open
+    - id: E-6
+      variant: E
+      text: первая плашка без даты; «344 тыс. строк» (срез) под «за 24 дня» читается как «написано за
+        24 дня» (первый коммит Galdhold — 30 801 строка, GH-REPO-START); на одной плашке величины среза
+        и периода
+      status: open
+    - id: E-10
+      variant: E
+      text: 'шапка YouTube без метода: берётся только первая строка подзаголовка, «ИИ — инструмент; решения
+        — мои» нет'
+      status: open
+    - id: D-9
+      variant: D
+      text: под цель v2 нет экосистемы и масштаба
+      status: accepted
+      resolution: D — запасной вариант (превью репозитория); цель v2 несёт E
     minor:
     - id: О-2
       text: 'Д9 «янтарный» против токена human #FF7A59 (коралловый)'
@@ -368,7 +401,8 @@ review:
     - id: D-5
       variant: D
       text: пустая нижняя треть
-      status: open
+      status: fixed
+      resolution: 'критика v2: пустые полосы симметричны — 143 и 144 px'
     - id: D-6
       variant: D
       text: цвета без расшифровки
@@ -405,6 +439,53 @@ review:
       text: подпись ворот на шапке читалась как часть роли
       status: fixed
       resolution: как A-16
+    - id: E-3
+      variant: E
+      text: плашки доказательств неотличимы от плашек узлов карты
+      status: open
+    - id: E-4
+      variant: E
+      text: не видно, какая плашка — «одна игра»; воксель на DPlang читается как готовый продукт (DP-STAGE,
+        прецедент A-4)
+      status: open
+    - id: E-7
+      variant: E
+      text: 'формулировки короче разрешённых: «210 записей решений», EN «by AI» вместо «by AI sessions»'
+      status: open
+    - id: E-8
+      variant: E
+      text: AU-METHOD доказан для Galdhold, на E «решения — мои» — обо всей экосистеме
+      status: open
+    - id: E-9
+      variant: E
+      text: RU «+ 1 закрытый проект без имени» намекает, что остальные открыты (все закрыты); EN «undisclosed»
+        верно
+      status: open
+    - id: E-11
+      variant: E
+      text: поля шапки 14 px до границы зоны (нужно ≥ 24 px, A-10); узлы прижаты к низу, текст — к верху
+      status: open
+    - id: E-12
+      variant: E
+      text: имя на миниатюре 15,3 px против 24,5 px у D; заливка плашек graphite к ink ≈ 1,09:1 — карта
+        при 320 px не читается как форма
+      status: open
+    - id: E-13
+      variant: E
+      text: пустые полосы сверху и снизу по 163 px (45 % высоты) при второстепенном тексте на минимуме
+      status: open
+    - id: E-14
+      variant: E
+      text: не отрендерены vk_post RU и мастер RU/EN
+      status: open
+    - id: D-10
+      variant: D
+      text: 'имя 13,6 % высоты при токене display 8,5 %: множитель ×1,6 в layout_minimal нигде не записан'
+      status: open
+    - id: D-11
+      variant: D
+      text: 'шапка: подписи «Архитектура» и «Продукт» в ≈ 9 px от нижней границы зоны (нужно ≥ 24 px)'
+      status: open
 exports:
 - format: github_social
   file: exports/A-en-github_social.png
@@ -526,7 +607,7 @@ targets:
   na: шапка канала загружается в Studio без текста (OUTPUTS.md)
 - variant: discord.ru
   na: 'ОР-6: сервер не подтверждён'
-state: GENERATED
+state: UNDER_REVIEW
 history:
 - date: 2026-10-04
   state: IDEA
@@ -578,3 +659,8 @@ history:
   note: 'вариант E отрендерен по промпту image/presentation-composition v1, макет ecosystem (новый, tools/cs/render.py):
     renders/E — telegram_post RU и EN, github_social EN, youtube_banner RU. Выходы A–D перерендерены во
     временный каталог — совпали байт в байт; в provenance обновлён только хэш инструмента'
+- date: 2026-10-05
+  state: UNDER_REVIEW
+  note: 'критика v2 отдельным проходом (агент только для чтения): CRITIQUE.md, «Версия 2». E — Communication
+    3, Identity fit 4, Strategic value 4; D — 2 / 4 / 2. Цель v2 лучше выполняет E, D — запасной; fatal
+    нет; major E-1 (ОР-12 — решение автора), E-2, E-6, E-10'
