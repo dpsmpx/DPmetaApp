@@ -495,7 +495,7 @@ def layout_minimal(spec, t, tok, fmt: Fmt) -> str:
     else:
         # без портрета знак — главный объект: display × display_no_portrait (Д9, VISUAL_SYSTEM §3)
         disp, title, label = ts["display"] * H * ts["display_no_portrait"], ts["title"] * H, ts["label"] * H
-        x0, cw = W * 0.12, W * 0.76
+        x0, cw = W * 0.12, W * 0.78  # роль title 5,5 % — в одну строку (D-12)
         top = H * 0.22
         py = H * 0.70
     body = [name_html(tok, t["name"], x0, top, disp)]
@@ -618,7 +618,8 @@ def layout_ecosystem(spec, t, tok, fmt: Fmt) -> str:
     )
     col = [
         name,
-        _flow_text(tok, "role", "identity", _e(t["role"]), title, weight=500, line=1.2, after=title * 0.3),
+        # роль и фраза одного размера: зазор больше межстрочного, иначе читаются одним абзацем (E-18)
+        _flow_text(tok, "role", "identity", _e(t["role"]), title, weight=500, line=1.2, after=title * 0.55),
         _flow_text(tok, "claim", "identity", _e(t["claim"]), title, line=1.3, after=title * 0.5),
         _flow_text(tok, "method", "identity", accent_html(tok, t["method"], t.get("accent")), label,
                    color="mist", line=1.45, after=label * 1.6),

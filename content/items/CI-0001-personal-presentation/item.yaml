@@ -532,6 +532,16 @@ review:
       text: BRIEF_V2 и CREATIVE_DIRECTION_V2 описывают композицию до ревизии
       status: fixed
       resolution: оба документа дополнены разделом о ревизии
+    - id: E-18
+      variant: E
+      text: роль и ключевая фраза одного размера и цвета, зазор ≈ 10 px — читаются одним абзацем
+      status: fixed
+      resolution: 'зазор после роли — 0,55 title: 19 px в ленте, 17 px на GitHub'
+    - id: D-12
+      variant: D
+      text: роль D-ru в ленте при title 5,5 % переносится посреди фразы (977 px при колонке 973 px)
+      status: fixed
+      resolution: 'колонка minimal — 0,78 ширины: роль в одну строку'
 exports:
 - format: github_social
   file: exports/A-en-github_social.png
@@ -740,3 +750,11 @@ history:
     5,5 % (О-1), display_no_portrait 1,6 (D-10) — Д9, VISUAL_SYSTEM §3, tokens.json, хэш A-003. Перерендерены
     E (кроме шапки) и запасной D (кроме шапки); шапки E и D совпали байт в байт; A, B, C отклонены — рендеры
     до изменения оставлены историей'
+- date: &id004 2026-10-05
+  state: UNDER_REVIEW
+  note: 'проверка критика после изменения основ: О-1 и D-10 закрыты, наложений и переполнений нет, оценки
+    E — все 4; новые minor E-18, D-12'
+- date: *id004
+  state: REVISED
+  note: E-18 — зазор после роли 0,55 title; D-12 — колонка minimal 0,78 W. Перерендерены E и D (кроме
+    шапок; шапки совпали байт в байт)
