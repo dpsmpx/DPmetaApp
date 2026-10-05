@@ -666,7 +666,7 @@ targets:
   na: шапка канала загружается в Studio без текста (OUTPUTS.md)
 - variant: discord.ru
   na: 'ОР-6: сервер не подтверждён'
-state: REVISED
+state: UNDER_REVIEW
 history:
 - date: 2026-10-04
   state: IDEA
@@ -758,3 +758,7 @@ history:
   state: REVISED
   note: E-18 — зазор после роли 0,55 title; D-12 — колонка minimal 0,78 W. Перерендерены E и D (кроме
     шапок; шапки совпали байт в байт)
+- date: 2026-10-05
+  state: UNDER_REVIEW
+  note: 'последняя проверка критика: E-18 и D-12 закрыты, новых проблем нет, оценки E — все 4; E готов
+    к утверждению автором (Brand)'
