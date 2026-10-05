@@ -5,7 +5,6 @@ import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.pm.ApplicationInfo
-import android.content.pm.PackageManager
 import android.os.Build
 import android.os.PersistableBundle
 import com.dpsmpx.dppass.core.Clock
@@ -129,16 +128,7 @@ object DeviceLog {
 
     /** Условия запуска — без идентификаторов устройства (D-12): ни модели, ни серийного номера. */
     private fun header(context: Context): List<String> {
-        val version = runCatching {
-            val pm = context.packageManager
-            val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                pm.getPackageInfo(context.packageName, PackageManager.PackageInfoFlags.of(0))
-            } else {
-                @Suppress("DEPRECATION") // замена — PackageInfoFlags, только с API 33
-                pm.getPackageInfo(context.packageName, 0)
-            }
-            info.versionName ?: "?"
-        }.getOrDefault("?")
+        val version = AppGraph.appVersion(context)
         val stamp = FileLogSink.stamp(Clock.SYSTEM.nowMillis())
         return listOf(
             "$stamp INFO app session_start version=$version api=${Build.VERSION.SDK_INT} " +

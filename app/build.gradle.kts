@@ -23,9 +23,23 @@ android {
 
     buildTypes {
         release {
-            // Подпись и R8 — к этапу выпуска (ROADMAP, этап 5); до него
-            // релизная сборка не публикуется (CLAUDE.md, «Чего не делать»).
+            // Не выпуск (CLAUDE.md, «Чего не делать»: выпуск — этап 5): сборка
+            // для устройств автора (D-35). Без R8; подписи в Gradle нет — APK
+            // подписывает tools/release/sign_apks.py ключом разработчика из
+            // переменных окружения, ключ в демон Gradle не попадает.
             isMinifyEnabled = false
+        }
+    }
+
+    // APK на каждый ABI (D-28) — только по свойству dppass.abiSplit
+    // (tools/release/sign_apks.py): отладочная сборка и check_apk.py остаются
+    // одним APK со всеми ABI.
+    splits {
+        abi {
+            isEnable = providers.gradleProperty("dppass.abiSplit").map(String::toBoolean).getOrElse(false)
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86_64")
+            isUniversalApk = false
         }
     }
 
@@ -97,4 +111,21 @@ androidComponents {
 dependencies {
     implementation(project(":connection"))
     implementation(libs.kotlinx.coroutines.core)
+
+    // Логика экранов без Android (D-34) — тестами на хосте, как модули ядра.
+    // Модулям ядра вариант JUnit 5 у kotlin-test выбирает плагин kotlin-jvm; у
+    // встроенного в AGP Kotlin этого нет — вариант задан явно (тот же артефакт).
+    // kotlin("test") здесь — строка координат (тип Any): нужен явный тип для блока настройки.
+    testImplementation(kotlin("test") as String) {
+        capabilities { requireCapability("org.jetbrains.kotlin:kotlin-test-framework-junit5") }
+    }
+    testImplementation(platform(libs.junit.bom))
+    testImplementation(libs.junit.jupiter)
+    testRuntimeOnly(libs.junit.platform.launcher)
+}
+
+tasks.withType<Test>().configureEach {
+    useJUnitPlatform()
+    // Тест, который JUnit не смог запустить, — ошибка прогона (как в модулях ядра).
+    systemProperty("junit.platform.discovery.issue.severity.critical", "WARNING")
 }

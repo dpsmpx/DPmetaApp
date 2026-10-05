@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Тексты интерфейса DPpass по-русски (D-34): те же имена, что в values/strings.xml. -->
+<resources>
+    <string name="tab_connect">Подключение</string>
+    <string name="tab_servers">Серверы</string>
+    <string name="tab_subscriptions">Подписки</string>
+    <string name="tab_log">Журнал</string>
+    <string name="status_off">Не подключено</string>
+    <string name="status_connecting">Подключение…</string>
+    <string name="status_checking">Проверяю «%1$s»</string>
+    <string name="status_connected">Подключено</string>
+    <string name="status_stopping">Отключение…</string>
+    <string name="status_failed">Не удалось подключиться</string>
+    <string name="connected_since">%1$s · с %2$s</string>
+    <string name="action_connect">Подключить</string>
+    <string name="action_disconnect">Отключить</string>
+    <string name="server_label">Сервер</string>
+    <string name="server_auto">Автоматически</string>
+    <string name="server_auto_hint">Сначала тот, что работал последним, затем самый здоровый</string>
+    <string name="source_none">Конфигурации пока нет</string>
+    <string name="source_own">Своя конфигурация</string>
+    <string name="source_subscription">Подписка «%1$s»</string>
+    <string name="empty_title">Добавьте подписку — из неё придут серверы.</string>
+    <string name="empty_action">Добавить подписку</string>
+    <string name="open_log">Открыть журнал</string>
+    <string name="notification_permission_note">Без уведомлений туннель работает, но его состояние не видно в шторке.</string>
+    <string name="kind_network_unreachable">Нет сети</string>
+    <string name="kind_dns_resolution_failed">Имя не разрешилось</string>
+    <string name="kind_config_parse_failed">Конфигурация не читается</string>
+    <string name="kind_config_format_unsupported">Формат конфигурации не поддерживается</string>
+    <string name="kind_config_validation_failed">В конфигурации ошибки</string>
+    <string name="kind_capability_unsupported">Ядро прокси этого не умеет</string>
+    <string name="kind_route_compilation_failed">Правила маршрутизации не применились</string>
+    <string name="kind_backend_validation_failed">Ядро прокси отвергло конфигурацию</string>
+    <string name="kind_backend_start_failed">Ядро прокси не запустилось</string>
+    <string name="kind_tun_start_failed">Интерфейс VPN не поднялся</string>
+    <string name="kind_endpoint_unreachable">Сервер недоступен</string>
+    <string name="kind_tls_handshake_failed">Защищённое соединение не установлено</string>
+    <string name="kind_authentication_failed">Сервер не принял ключ</string>
+    <string name="kind_health_check_failed">Через сервер не идут данные</string>
+    <string name="kind_subscription_fetch_failed">Подписка не загрузилась</string>
+    <string name="kind_subscription_invalid">Содержимое подписки не распознано</string>
+    <string name="kind_storage_failed">Сохранённые данные недоступны</string>
+    <string name="kind_internal">Внутренняя ошибка</string>
+    <string name="server_state_ok">Работал</string>
+    <string name="server_state_failed">Отказ: %1$s</string>
+    <string name="server_state_paused">Повтор через %1$d с: %2$s</string>
+    <string name="server_connected">Подключён</string>
+    <string name="a11y_selected">Выбран</string>
+    <string name="servers_empty">Серверов нет. Добавьте подписку или вставьте документ DPpass.</string>
+    <string name="import_clipboard">Вставить документ DPpass</string>
+    <string name="clipboard_empty">В буфере обмена нет текста</string>
+    <string name="import_done">Конфигурация применена</string>
+    <string name="import_failed">Не применена: %1$s</string>
+    <string name="reconnecting">Переподключаюсь…</string>
+    <string name="subs_add">Добавить</string>
+    <string name="subs_empty">Подписок нет. Добавьте ссылку https:// от поставщика.</string>
+    <string name="subs_dialog_title">Новая подписка</string>
+    <string name="subs_url_hint">Ссылка подписки (https://…)</string>
+    <string name="subs_name_hint">Название (необязательно)</string>
+    <string name="subs_dialog_note">Ссылка хранится на телефоне в зашифрованном виде и отправляется только своему серверу.</string>
+    <string name="subs_active">Активна</string>
+    <string name="subs_updated">Обновлена %1$s</string>
+    <string name="subs_never">Ещё не загружалась</string>
+    <string name="subs_traffic">Трафик: %1$s из %2$s</string>
+    <string name="subs_traffic_unlimited">Трафик: %1$s</string>
+    <string name="subs_expires">Действует до %1$s</string>
+    <string name="subs_expired">Истекла %1$s</string>
+    <string name="subs_failed">Последнее обновление не удалось: %1$s</string>
+    <string name="subs_refresh">Обновить и применить</string>
+    <string name="subs_refreshing">Обновляю…</string>
+    <string name="subs_applied">Применены серверы из «%1$s»</string>
+    <string name="subs_not_applied">Не применена: %1$s</string>
+    <string name="subs_unchanged">Без изменений</string>
+    <string name="subs_remove">Удалить</string>
+    <string name="subs_remove_confirm">Удалить «%1$s»? Ссылка и идентификатор устройства будут стёрты.</string>
+    <string name="subs_device_id">Отправлять идентификатор устройства</string>
+    <string name="subs_device_id_note">Некоторые поставщики ограничивают число устройств и требуют идентификатор. DPpass отправляет случайное значение, не связанное с телефоном; выключено — не отправляется ничего.</string>
+    <string name="subs_device_id_needed">Поставщик требует идентификатор устройства — включите его ниже.</string>
+    <string name="subs_device_id_reset">Новый идентификатор</string>
+    <string name="subs_device_id_reset_confirm">Поставщик увидит новое устройство. Старое может ещё занимать место в лимите.</string>
+    <string name="subs_announce">От поставщика: %1$s</string>
+    <string name="log_switch">Вести журнал на телефоне</string>
+    <string name="log_note">Журнал остаётся на телефоне и выходит только через буфер обмена.</string>
+    <string name="copy_log">Копировать журнал</string>
+    <string name="log_copy_failed">Журнал не скопирован</string>
+    <string name="report_title">Локальный отчёт</string>
+    <string name="report_refresh">Обновить</string>
+    <string name="notification_channel">Туннель</string>
+    <string name="notification_connecting">Подключение…</string>
+    <string name="notification_checking">Проверяю «%1$s»</string>
+    <string name="notification_connected">Подключено · %1$s</string>
+    <plurals name="servers_count">
+        <item quantity="one">%d сервер</item>
+        <item quantity="few">%d сервера</item>
+        <item quantity="many">%d серверов</item>
+        <item quantity="other">%d сервера</item>
+    </plurals>
+    <plurals name="log_copied">
+        <item quantity="one">Журнал скопирован в буфер обмена: %d символ</item>
+        <item quantity="few">Журнал скопирован в буфер обмена: %d символа</item>
+        <item quantity="many">Журнал скопирован в буфер обмена: %d символов</item>
+        <item quantity="other">Журнал скопирован в буфер обмена: %d символа</item>
+    </plurals>
+    <string-array name="units_bytes">
+        <item>Б</item>
+        <item>КБ</item>
+        <item>МБ</item>
+        <item>ГБ</item>
+        <item>ТБ</item>
+    </string-array>
+</resources>

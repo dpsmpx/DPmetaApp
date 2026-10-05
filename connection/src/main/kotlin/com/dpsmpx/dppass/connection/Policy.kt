@@ -38,22 +38,27 @@ data class CandidateHealth(
 
 /**
  * Журнал здоровья кандидатов: экспоненциальный backoff после отказов,
- * сброс после успеха. Детерминирован: время — снаружи.
+ * сброс после успеха. Детерминирован: время — снаружи. Пишет оркестратор
+ * в потоке сервиса, читает и интерфейс (D-34) — доступ под замком объекта.
  */
 class HealthBook(private val policy: ConnectionPolicy = ConnectionPolicy()) {
     private val map = HashMap<ProfileId, CandidateHealth>()
 
+    @Synchronized
     fun of(id: ProfileId): CandidateHealth = map[id] ?: CandidateHealth()
 
+    @Synchronized
     fun recordSuccess(id: ProfileId, now: Long) {
         map[id] = CandidateHealth(HealthState.HEALTHY, 0, null, 0, now)
     }
 
     /** Кандидат, который последним реально передал данные (а не просто был активирован). */
+    @Synchronized
     fun lastGood(): ProfileId? = map.entries
         .filter { it.value.state == HealthState.HEALTHY && it.value.lastSuccessMillis != null }
         .maxByOrNull { it.value.lastSuccessMillis!! }?.key
 
+    @Synchronized
     fun recordFailure(id: ProfileId, code: DiagCode, now: Long) {
         val prev = of(id)
         val n = prev.consecutiveFailures + 1
