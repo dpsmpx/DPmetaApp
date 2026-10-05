@@ -162,6 +162,16 @@ enum class DiagCode(val kind: FailureKind, val defaultSeverity: Severity) {
     SHARE_LINK_SCHEME_UNSUPPORTED(FailureKind.SUBSCRIPTION_INVALID, Severity.WARNING),
     SHARE_LINK_PARAM_UNSUPPORTED(FailureKind.SUBSCRIPTION_INVALID, Severity.WARNING),
 
+    /**
+     * Поставщик не отдаёт серверы без идентификатора устройства
+     * (`x-hwid-not-supported`, лимит устройств Remnawave): в ответе —
+     * заглушка. Идентификатор подписки включает только пользователь (D-33).
+     */
+    SUBSCRIPTION_DEVICE_ID_REQUIRED(FailureKind.SUBSCRIPTION_FETCH_FAILED, Severity.ERROR),
+
+    /** Лимит устройств у поставщика исчерпан (`x-hwid-max-devices-reached`): удалить устройство у поставщика (D-33). */
+    SUBSCRIPTION_DEVICE_LIMIT_REACHED(FailureKind.SUBSCRIPTION_FETCH_FAILED, Severity.ERROR),
+
     // --- хранение ---
     STORAGE_READ_FAILED(FailureKind.STORAGE_FAILED, Severity.ERROR),
     STORAGE_WRITE_FAILED(FailureKind.STORAGE_FAILED, Severity.ERROR),

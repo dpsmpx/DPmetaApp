@@ -92,7 +92,7 @@ class SubscriptionActivationTest {
         val base = ConfigLoader().load(data("configs/valid-minimal.json")).valueOrNull()!!.ir
         var sub = Subscription(SubscriptionId("prov"), "Provider", SubscriptionSource.Url(Secret("https://sub.example.com/abc")))
 
-        val first = SubscriptionUpdater(fetcher(data("subscriptions/links-plain.txt"), env.clock), env.clock).update(sub, env.core.profileFilter())
+        val first = SubscriptionUpdater(fetcher(data("subscriptions/links-plain.txt"), env.clock), env.clock, "test").update(sub, env.core.profileFilter())
         val (afterFirst, act) = env.core.activateSubscription(base, (first as UpdateResult.Ready).candidate)
         assertIs<ActivationResult.Activated>(act)
         sub = afterFirst
@@ -101,7 +101,7 @@ class SubscriptionActivationTest {
         // маршрутизация — пользователя, не поставщика
         assertEquals(base.routing, env.core.activation.state.activeConfig!!.routing)
 
-        val bad = SubscriptionUpdater(fetcher(data("subscriptions/garbage.txt"), env.clock), env.clock).update(sub, env.core.profileFilter())
+        val bad = SubscriptionUpdater(fetcher(data("subscriptions/garbage.txt"), env.clock), env.clock, "test").update(sub, env.core.profileFilter())
         val failed = assertIs<UpdateResult.Failed>(bad)
         assertEquals(sub.lastSuccessful, failed.subscription.lastSuccessful)
         assertEquals(3, env.core.activation.state.activeConfig!!.profiles.size, "действующая конфигурация не тронута")
@@ -112,7 +112,7 @@ class SubscriptionActivationTest {
         val env = Env(MockProxyEngine(behavior = MockBehavior(rejectConfig = true)))
         val base = ConfigLoader().load(data("configs/valid-minimal.json")).valueOrNull()!!.ir
         val sub = Subscription(SubscriptionId("prov"), "Provider", SubscriptionSource.Url(Secret("https://sub.example.com/abc")))
-        val ready = SubscriptionUpdater(fetcher(data("subscriptions/links-plain.txt"), env.clock), env.clock).update(sub, env.core.profileFilter()) as UpdateResult.Ready
+        val ready = SubscriptionUpdater(fetcher(data("subscriptions/links-plain.txt"), env.clock), env.clock, "test").update(sub, env.core.profileFilter()) as UpdateResult.Ready
         val (after, act) = env.core.activateSubscription(base, ready.candidate)
         assertIs<ActivationResult.Rejected>(act)
         assertEquals(null, after.lastSuccessful)
@@ -153,7 +153,7 @@ class BackendLifecycleTest {
         val env = Env(MockProxyEngine(MockBackend.LIMITED))
         val sub = Subscription(SubscriptionId("prov"), "Provider", SubscriptionSource.Url(Secret("https://sub.example.com/abc")))
         val f = SubscriptionFetcher { _, _ -> Outcome.Success(FetchedPayload(data("subscriptions/links-plain.txt").toByteArray(), emptyMap(), 0)) }
-        val r = SubscriptionUpdater(f, env.clock).update(sub, env.core.profileFilter()) as UpdateResult.Ready
+        val r = SubscriptionUpdater(f, env.clock, "test").update(sub, env.core.profileFilter()) as UpdateResult.Ready
         assertEquals(2, r.candidate.profiles.size)
         assertTrue(r.diagnostics.any { it.code == DiagCode.PROFILE_EXCLUDED_UNSUPPORTED })
     }
@@ -182,7 +182,7 @@ class SecretLeakTest {
 
         val sub = Subscription(SubscriptionId("prov"), "Provider", SubscriptionSource.Url(Secret("https://sub.example.com/abc")))
         val f = SubscriptionFetcher { _, _ -> Outcome.Success(FetchedPayload(data("subscriptions/links-with-directives.txt").toByteArray(), emptyMap(), 0)) }
-        val u = SubscriptionUpdater(f, env.clock).update(sub, env.core.profileFilter())
+        val u = SubscriptionUpdater(f, env.clock, "test").update(sub, env.core.profileFilter())
         texts += u.diagnostics.map(Diagnostic::render)
         texts += u.toString()
 

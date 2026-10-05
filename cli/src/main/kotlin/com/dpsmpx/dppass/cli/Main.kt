@@ -69,6 +69,9 @@ private const val USAGE = """dppass-cli <команда> [параметры]
   bench [--rules N]
         замер разбора, проверки, компиляции и решений маршрутизации"""
 
+/** Версия в `User-Agent` запроса подписки (D-33); `cli` подписку по сети не загружает — тело берётся из файла. */
+private const val CLI_VERSION = "cli"
+
 fun main(args: Array<String>) {
     val code = try {
         run(args.toList())
@@ -288,7 +291,7 @@ private fun subscription(a: Args): Int = runBlocking {
     } ?: emptyMap()
     val fetcher = com.dpsmpx.dppass.subscriptions.SubscriptionFetcher { _, _ -> Outcome.Success(FetchedPayload(bytes, headers, clock.nowMillis())) }
     val sub = Subscription(SubscriptionId("cli"), "cli", SubscriptionSource.Url(Secret("https://sub.example.com/token")))
-    val r = SubscriptionUpdater(fetcher, clock).update(sub, core.profileFilter())
+    val r = SubscriptionUpdater(fetcher, clock, CLI_VERSION).update(sub, core.profileFilter())
     printDiagnostics(r.diagnostics)
     when (r) {
         is UpdateResult.Ready -> {

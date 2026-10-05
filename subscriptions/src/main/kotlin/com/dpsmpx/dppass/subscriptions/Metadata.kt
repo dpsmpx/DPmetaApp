@@ -38,7 +38,10 @@ object MetadataParser {
         val notes = mutableListOf<Diagnostic>()
         val values = LinkedHashMap<String, String>()
         val ignored = sortedSetOf<String>()
+        // Пустое значение — «не задано», а не неверное значение и не директива: панели
+        // (Remnawave) шлют незаполненные поля пустыми заголовками.
         for ((rawKey, value) in headers) {
+            if (value.isBlank()) continue
             val key = rawKey.lowercase()
             when {
                 key in SAFE -> values[key] = value
@@ -47,6 +50,7 @@ object MetadataParser {
         }
         // В теле поставщик может передать то же, что в заголовках; тело не перекрывает заголовок.
         for ((rawKey, value) in bodyDirectives) {
+            if (value.isBlank()) continue
             val key = rawKey.lowercase()
             if (key in SAFE) values.putIfAbsent(key, value) else ignored += key
         }
