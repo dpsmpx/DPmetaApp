@@ -39,11 +39,28 @@ function measure() {
   };
   const label = (el) => {
     const t = (el.innerText || el.getAttribute('alt') || '').trim().replace(/\s+/g, ' ').slice(0, 40);
-    return el.tagName.toLowerCase() + (el.className && typeof el.className === 'string' ? '.' + el.className.split(' ')[0] : '') + (t ? ` «${t}»` : '');
+    const svg = el.closest && el.closest('svg');  // элемент графика — назвать график
+    const where = svg && svg !== el ? `svg#${(svg.getAttribute('aria-labelledby') || '').split(' ')[0].replace(/-t$/, '')} ` : '';
+    const cls = el.getAttribute && el.getAttribute('class');
+    return where + el.tagName.toLowerCase() + (cls ? '.' + cls.split(' ')[0] : '') + (t ? ` «${t}»` : '');
+  };
+  // скрыто от глаз: внутри закрытого <details> (кроме summary) или в контейнере со своей
+  // прокруткой вбок, который сам не выходит за экран, — такой элемент страницу не раздвигает
+  const clipped = (el) => {
+    const d = el.closest('details:not([open])');
+    if (d && !el.closest('summary')) return true;
+    for (let a = el.parentElement; a && a !== document.body; a = a.parentElement) {
+      const ox = getComputedStyle(a).overflowX;
+      if (ox === 'auto' || ox === 'scroll' || ox === 'hidden' || ox === 'clip') {
+        const ar = a.getBoundingClientRect();
+        return ar.right <= vw + 1 && ar.left >= -1;
+      }
+    }
+    return false;
   };
   const overflow = [];
   for (const el of document.body.querySelectorAll('*')) {
-    if (!visible(el)) continue;
+    if (!visible(el) || clipped(el)) continue;
     const r = el.getBoundingClientRect();
     if (r.right > vw + 1 || r.left < -1) {
       // предок уже за краем — достаточно его

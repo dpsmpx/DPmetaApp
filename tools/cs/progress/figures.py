@@ -397,7 +397,7 @@ class Fig:
                         charts.hbars("pf-cyc-n", charts.NARROW, t["cycle"], cdesc, crow, self.lang, label_w=96))
         bn = p.branches_now()
         srow = [{"label": t["states"][s].split(" (")[0], "segs": [(f"c-st-{s}", bn.get(s, 0), s)],
-                 "value": f"{bn.get(s, 0)} · {bn.get(s + '_commits', 0)} {t['commits_in']}",
+                 "value": f"{t['branches_n']} {bn.get(s, 0)} · {t['commits_in']} {bn.get(s + '_commits', 0)}",
                  "tip": f"{t['states'][s]}: {bn.get(s, 0)} {t['branches_n']}, {bn.get(s + '_commits', 0)} {t['commits_in']}"}
                 for s in ("in_review", "active", "docs", "deferred")]
         sdesc = "; ".join(r["tip"] for r in srow)
@@ -418,13 +418,14 @@ class Fig:
     def codebase(self) -> str:
         p, t = self.p, self.t
         cl = p.core_lines()
-        layers = [("c-ver" if k == "tests" else "c-ai" if k == "code" else "c-human", cl[k], t["lines"][k]) for k in LINE_KINDS]
+        order = ("tests", "docs", "code")  # зелёный и бирюзовый не соседи: обычным зрением различимы плохо (dataviz)
+        layers = [("c-ver" if k == "tests" else "c-ai" if k == "code" else "c-human", cl[k], t["lines"][k]) for k in order]
         tot = [sum(cl[k][i] for k in LINE_KINDS) for i in range(p.n)]
-        tips = [f"{self.day_long(i)}: {self.k(tot[i])} — " + ", ".join(f"{t['lines'][k]} {self.k(cl[k][i])}" for k in LINE_KINDS)
+        tips = [f"{self.day_long(i)}: {self.k(tot[i])} — " + ", ".join(f"{t['lines'][k]} {self.k(cl[k][i])}" for k in order)
                 for i in range(p.n)]
         title = t["lines_title"]
         desc = f"{title}: {self.k(tot[0])} → {self.k(tot[-1])}; " + ", ".join(f"{t['lines'][k]} {self.k(cl[k][-1])}" for k in LINE_KINDS)
-        ends = [self.k(cl[k][-1]) for k in LINE_KINDS]
+        ends = [self.k(cl[k][-1]) for k in order]
         area = self.both(
             charts.stacked_area("pf-loc-w", charts.WIDE, title, desc, self.labels(), self.months(), layers, self.lang, 300, tips, ends),
             charts.stacked_area("pf-loc-n", charts.NARROW, title, desc, self.labels(), self.months(), layers, self.lang, 240, tips))
@@ -435,7 +436,7 @@ class Fig:
                 continue
             total = sum(snap[x] for x in LINE_KINDS)
             name = p.name(k, self.lang)
-            rows.append({"label": name, "segs": [(c, snap[x], t["lines"][x]) for (c, _, _), x in zip(layers, LINE_KINDS)],
+            rows.append({"label": name, "segs": [(c, snap[x], t["lines"][x]) for (c, _, _), x in zip(layers, order)],
                          "value": self.k(total), "tip": f"{name}: " + ", ".join(f"{t['lines'][x]} {self.k(snap[x])}" for x in LINE_KINDS),
                          "_t": total})
         rows.sort(key=lambda r: -r["_t"])

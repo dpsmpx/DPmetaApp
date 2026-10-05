@@ -234,7 +234,10 @@ def hbars(uid: str, lay: dict, title: str, desc: str, rows: list[dict], lang: st
     w = lay["w"]
     narrow = w < 500
     lw = label_w or (110 if narrow else 170)
-    rw = 64 if narrow else 90
+    # подпись строки не должна наезжать на полосу: ~0,53 em на знак при 13 px, не шире 45 % графика
+    lw = max(lw, min(int(w * 0.45), 10 + int(max((len(r["label"]) for r in rows), default=0) * 6.9)))
+    # место справа — под самую длинную подпись значения (~0,55 em на знак), чтобы она не уходила за край
+    rw = max(64 if narrow else 90, 12 + int(max((len(r["value"]) for r in rows), default=0) * 6.6))
     h = len(rows) * row_h + 4
     s = Svg(w, h, uid, title, desc)
     vmax = max((sum(v for _, v, _ in r["segs"]) for r in rows), default=1) or 1

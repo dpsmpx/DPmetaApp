@@ -181,14 +181,14 @@ relations:                         # связи между репозитори�
     to: galdhold
     planned: true
     source: DPmeta C-03
-    ru: "поставка общих проверок копией — план"
-    en: "shared checks delivered as a copy — planned"
+    ru: "поставка общих проверок копией"
+    en: "shared checks delivered as a copy"
   - from: dpverify
     to: dplang
     planned: true
     source: DPmeta C-03
-    ru: "поставка общих проверок копией — план"
-    en: "shared checks delivered as a copy — planned"
+    ru: "поставка общих проверок копией"
+    en: "shared checks delivered as a copy"
   - from: andors_love
     to: tjtm
     source: DPmeta C-08

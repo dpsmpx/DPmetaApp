@@ -40,6 +40,8 @@ class Resolved:
     deps: dict = field(default_factory=lambda: {"facts": {}, "links": {}, "releases": {}, "datasets": {}})
     errors: list = field(default_factory=list)
     facts_used: list = field(default_factory=list)
+    progress_used: list = field(default_factory=list)    # величины наборов прогресса в тексте (Д38)
+    progress_values: list = field(default_factory=list)  # их подставленные значения — для проверки чисел
 
 
 def latest_release(repo: Repo, project: str) -> dict | None:
@@ -72,10 +74,14 @@ def _progress(m: re.Match, kind: str, key: str, lang: str, repo: Repo, res: "Res
                 res.deps["facts"][fid] = fact_fp(facts[fid])
         return m.group(0)  # абзац с фигурой заменяет генератор сайта
     try:
-        return p.formatted(name, lang)
+        value = p.formatted(name, lang)
     except KeyError:
         res.errors.append(f"{{{{progress:{key}}}}} — нет величины {name} (tools/cs/progress/dataset.py, METRICS)")
         return m.group(0)
+    if name not in res.progress_used:
+        res.progress_used.append(name)
+    res.progress_values.append(value)
+    return value
 
 
 def resolve(text: str, lang: str, repo: Repo, site_base: str = "") -> Resolved:

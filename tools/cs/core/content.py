@@ -180,8 +180,8 @@ def resolved_alt(v: Variant, base: str = "") -> list[Resolved]:
 def variant_sha(v: Variant) -> str:
     """Хэш содержимого варианта — то, что одобряет автор (Д12).
 
-    Входят: площадка, язык, формат, версия канона, ссылка, CTA, медиа с
-    хэшами файлов и их alt, текст после подстановки фактов с каноническим адресом.
+    Входят: площадка, язык, формат, версия канона, ссылка, CTA, подводка (summary),
+    медиа с хэшами файлов и их alt, текст после подстановки фактов с каноническим адресом.
     Не входят: статус, доверие, одобрение, зависимости, номер версии.
     """
     repo = v.item.repo
@@ -197,6 +197,8 @@ def variant_sha(v: Variant) -> str:
     }
     if v.m("media_alt"):  # без alt хэш прежний — одобрения вариантов без медиа не сбиваются
         payload["media_alt"] = [r.text for r in resolved_alt(v, base)]
+    if v.m("summary"):  # подводка страницы и описание для поиска и превью — тоже то, что одобряет автор
+        payload["summary"] = v.m("summary")
     raw = json.dumps(payload, ensure_ascii=False, sort_keys=True)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 

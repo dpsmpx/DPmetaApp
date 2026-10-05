@@ -38,9 +38,9 @@ def _brand_findings(item: CItem) -> list[Finding]:
     return out
 
 
-def _claim_findings(item: CItem, text: str, fids: list[str], where: str) -> list[Finding]:
+def _claim_findings(item: CItem, text: str, fids: list[str], where: str, progress=None) -> list[Finding]:
     rules = (item.repo.yaml("data/facts/forbidden.yaml") or {}).get("rules", [])
-    return claims.text_findings(item, text, fids, where, False, item.repo.facts(), rules)
+    return claims.text_findings(item, text, fids, where, False, item.repo.facts(), rules, progress)
 
 
 def _link_findings(repo, urls: list[str], where: str) -> list[Finding]:
@@ -65,7 +65,8 @@ def validate_canon(item: CItem, cv: CanonVersion) -> list[Finding]:
     res = resolve(cv.doc.body, lang, item.repo)
     out += [Finding("error", f"{where}: {e}") for e in res.errors]
     fids = sorted(set([c["fact"] for c in item.data.get("claims", [])] + res.facts_used))
-    out += _claim_findings(item, res.text, fids, where)
+    text = "\n".join(x for x in (cv.doc.meta.get("title"), cv.doc.meta.get("summary"), res.text) if x)
+    out += _claim_findings(item, text, fids, where, res)
     if PLATFORM_MARKUP.search(cv.doc.body):
         out.append(Finding("warn", f"{where}: похоже на разметку площадки (HTML, #метка, @упоминание) — канон без неё (§9)"))
     blocks = markup.parse(res.text)
@@ -100,8 +101,8 @@ def validate_variant(v: Variant, adapter=None, destination: dict | None = None) 
         out.append(Finding("error", f"{where}: media_alt — {len(alts)} строк на {len(v.m('media') or [])} файлов media"))
     fids = sorted(set([c["fact"] for c in item.data.get("claims", [])] + res.facts_used
                       + [f for a in alts for f in a.facts_used]))
-    text = "\n".join(x for x in (v.m("title"), res.text, v.m("cta"), *[a.text for a in alts]) if x)
-    out += _claim_findings(item, text, fids, where)
+    text = "\n".join(x for x in (v.m("title"), v.m("summary"), res.text, v.m("cta"), *[a.text for a in alts]) if x)
+    out += _claim_findings(item, text, fids, where, res)
     out += _link_findings(repo, markup.links(markup.parse(res.text)), where)
     # медиа — только записанные в происхождении (гейт Provenance)
     known = {o.get("file"): o.get("sha256") for o in (repo.yaml(f"content/items/{item.dir.name}/provenance.yaml") or {}).get("outputs", [])}
