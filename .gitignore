@@ -1,0 +1,24 @@
+# Сборка и кэши
+build/
+.gradle/
+.kotlin/
+__pycache__/
+*.pyc
+
+# Локальное окружение: путь к Android SDK, настройки IDE
+local.properties
+.idea/
+*.iml
+
+# Ключи и секреты — никогда в репозиторий (CLAUDE.md, «Секреты и подпись»)
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.key
+.env
+.env.*
+
+# Сборки приложения
+*.apk
+*.aab
