@@ -143,9 +143,10 @@ PR #166, обновлён 5 октября 2026) — только чтение.
 - **Где:** `docs/direction/TECHNICAL_TASK.md` ссылается на файлы в корне
   чужих репозиториев, которые лежат в `docs/`: строки 1148 и 1161 —
   `PROVENANCE.md` DPpass (есть `DPpass:docs/PROVENANCE.md`); 774 и 1228 —
-  `PROVENANCE.md` VoxelRPG (есть `Galdhold:docs/PROVENANCE.md`); 1681 —
-  `ARCHITECTURE.md` DPpass (есть `DPpass:docs/ARCHITECTURE.md`); 698 —
-  `CHANGELOG.md` VoxelRPG (есть `Galdhold:docs/CHANGELOG.md`).
+  `PROVENANCE.md` Galdhold, в ТЗ — VoxelRPG (есть
+  `Galdhold:docs/PROVENANCE.md`); 1681 — `ARCHITECTURE.md` DPpass (есть
+  `DPpass:docs/ARCHITECTURE.md`); 698 — `CHANGELOG.md` Galdhold (есть
+  `Galdhold:docs/CHANGELOG.md`).
 - **Что не так:** DP-Verify не сверяет чужие пути (`DP-Verify:V-17`), и по
   плану в эти файлы шаги поставки должны дописывать строки (I-09).
 - **Предложение:** поправить пути при следующей правке ТЗ.
