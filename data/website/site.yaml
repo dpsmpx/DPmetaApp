@@ -29,4 +29,5 @@ home:
     - {link: L-TT-PROFILE, ru: короткие видео, en: short videos}
     - {link: L-TG-AUTHOR, ru: личные сообщения, en: direct messages}
   contact: L-TG-AUTHOR
-og_default: {item: CI-0001, file: exports/E-en-github_social.png}   # v2, вариант E без лица (утверждён 05.10.2026)
+# og_default снят до П2-20 (Д41): изображения контента на сайт — только с меткой.
+# Вернуть: og_default: {item: CI-0001, file: exports/E-en-github_social.png}

@@ -61,14 +61,14 @@ destinations:
   - id: vk-author
     platform: vk
     environment: production
-    purpose: VK автора — страница или сообщество (решает автор, docs/platforms/VK.md)
+    purpose: "VK автора — сообщество dpsmpx (Д40: у личной страницы поля «имя + фамилия»)"
     accepts_brands: [author, galdhold]
     language: ru
     link: L-VK
     target: {id: null}
     credential_ref: null
     status: blocked
-    blocked_by: ["автор: страница или сообщество", "VK: право wall"]
+    blocked_by: ["автор: сообщество dpsmpx в VK", "VK: право wall"]
   - id: yt-channel
     platform: youtube
     environment: production
