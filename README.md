@@ -42,4 +42,6 @@ python3 tools/xref.py --root ..      # сверка ссылок между кл
 ## Состояние
 
 Первый проход консолидации — 5 октября 2026
-([`docs/reports/2026-10-05-ECOSYSTEM_HEALTH.md`](docs/reports/2026-10-05-ECOSYSTEM_HEALTH.md)).
+([`docs/reports/2026-10-05-ECOSYSTEM_HEALTH.md`](docs/reports/2026-10-05-ECOSYSTEM_HEALTH.md));
+повторный — в тот же день, по работе, влитой за час между проходами
+([`docs/reports/2026-10-05-2-ECOSYSTEM_HEALTH.md`](docs/reports/2026-10-05-2-ECOSYSTEM_HEALTH.md)).
