@@ -39,6 +39,9 @@ SCHEMA_MAP = [
     ("data/website/site.yaml", "site"),
     ("data/releases/*.yaml", "releases"),
     ("data/campaigns/*.yaml", "campaign"),
+    ("data/progress/scope.yaml", "progress_scope"),
+    ("data/progress/milestones.yaml", "progress_milestones"),
+    ("data/progress/datasets/*.json", "progress_dataset"),
 ]
 
 

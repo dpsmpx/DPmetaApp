@@ -30,9 +30,11 @@ from string import Template
 from ..core import markup
 from ..core.content import (POST_CATEGORIES, CItem, Variant, approval_state, load_items, resolved_alt, resolved_body,
                             stale_reasons)
-from ..core.inject import resolve
+from ..core.inject import progress_set, resolve
 from ..core.ledger import Ledger
 from ..core.repo import Repo
+from ..progress.figures import FIGURE_MARK
+from ..progress.figures import render as render_figure
 from . import feeds
 from .i18n import PLATFORM_NAMES, t
 
@@ -120,6 +122,8 @@ class SiteBuild:
         self._warned: set = set()
         self._og: str | None = None
         self._used: set = set()  # факты текущей страницы — для lastmod
+        self._pages: list = []  # страницы из вариантов кроме «Обо мне» (category: page, website.path)
+        self._progress: set = set()  # наборы прогресса на видимых страницах — для /api/v1/progress.json
         self._tokens: dict | None = None
 
     # ------------------------------------------------------- данные
@@ -229,7 +233,9 @@ class SiteBuild:
     # ------------------------------------------------------- страницы
     def nav(self, lang: str, current: str, alt: dict) -> str:
         pre = "/en" if lang == "en" else ""
-        items = [("home", f"{pre}/"), ("projects", f"{pre}/projects/"), ("news", "/news/"), ("about", f"{pre}/about/")]
+        items = [("home", f"{pre}/"), ("projects", f"{pre}/projects/")]
+        items += [(k, path) for k, path in self.nav_pages(lang)]
+        items += [("news", "/news/"), ("about", f"{pre}/about/")]
         out = []
         for key, href in items:
             if key == "about" and not self._about.get(lang):
@@ -339,6 +345,58 @@ class SiteBuild:
                 + f'<h2>{E(t(lang, "follow"))}</h2>' + self.link_list(home.get("social_links", []), lang))
         return Page(e.path, lang, e.title, e.summary, main, "profile", self._alt(self._about_path("ru"), self._about_path("en")),
                     e.image or self.og_default(), [self.person_jsonld(lang)], e.draft, lastmod=e.date)
+
+    def nav_pages(self, lang: str) -> list[tuple[str, str]]:
+        """Пункты меню страниц из вариантов: website.nav в объекте (например, progress)."""
+        out = []
+        for e in self._pages:
+            key = (e.item.data.get("website") or {}).get("nav")
+            if key and e.lang == lang:
+                out.append((key, e.path))
+        return out
+
+    def figures(self, body: str, lang: str) -> str:
+        """Абзацы {{figure:<набор>.<фигура>}} → фигуры набора прогресса (Д38)."""
+        def sub(m: re.Match) -> str:
+            ds, _, name = m.group(1).partition(".")
+            try:
+                html_, facts = render_figure(progress_set(self.repo, ds), name, lang)
+            except (FileNotFoundError, KeyError) as e:
+                self.report.errors.append(f"фигура {m.group(1)}: {e}")
+                return ""
+            self._used.update(facts)
+            self._progress.add(ds)
+            return html_
+        return FIGURE_MARK.sub(sub, body)
+
+    @staticmethod
+    def toc(body: str, lang: str) -> tuple[str, str]:
+        """Оглавление по заголовкам h2 длинной страницы (website.toc): (оглавление, текст с якорями)."""
+        heads = []
+
+        def anchor(m: re.Match) -> str:
+            heads.append(m.group(1))
+            return f'<h2 id="s{len(heads)}">{m.group(1)}</h2>'
+        body = re.sub(r"<h2>(.*?)</h2>", anchor, body)
+        if len(heads) < 3:
+            return "", body
+        items = "".join(f'<a href="#s{i}">{h}</a>' for i, h in enumerate(heads, 1))
+        return f'<nav class="toc" aria-label="{E(t(lang, "toc"))}">{items}</nav>', body
+
+    def page_entry(self, e: Entry) -> Page:
+        """Страница из варианта website.* с website.path (кроме «Обо мне»): текст, фигуры, оглавление."""
+        body = self.figures(e.html, e.lang)
+        web = e.item.data.get("website") or {}
+        toc, body = self.toc(body, e.lang) if web.get("toc") else ("", body)
+        lead = f'<p class="lead">{E(e.summary)}</p>' if e.summary else ""
+        main = f'<article class="page-{E(web.get("nav") or "plain")}"><h1>{E(e.title)}</h1>{self.draft_note(e)}{lead}{toc}{body}</article>'
+        langs = {x.lang: x.path for x in self._pages if x.item.id == e.item.id}
+        used = sorted({m.split(".")[0] for m in FIGURE_MARK.findall(e.html)})
+        dates = [e.date] + [progress_set(self.repo, ds).data["period"]["cutoff"][:10] for ds in used]
+        ld = {"@context": "https://schema.org", "@type": "WebPage", "name": e.title, "description": e.summary,
+              "inLanguage": e.lang, "url": self.base + e.path, "author": {"@type": "Person", "name": self.author(e.lang)}}
+        return Page(e.path, e.lang, e.title, e.summary, main, "website", self._alt(langs.get("ru"), langs.get("en")),
+                    e.image or self.og_default(), [ld], e.draft, lastmod=max(d for d in dates if d))
 
     def _about_path(self, lang):
         e = self._about.get(lang)
@@ -492,7 +550,8 @@ class SiteBuild:
         for ld in page.jsonld:
             head.append('<script type="application/ld+json">' + json.dumps(ld, ensure_ascii=False).replace("</", "<\\/") + "</script>")
         banner = f'<div class="banner" role="note">{E(t(page.lang, "staging"))}</div>' if self.noindex else ""
-        current = {"/": "home", "/en/": "home"}.get(page.path) or ("projects" if "/projects/" in page.path else
+        navs = {path: key for lg in ("ru", "en") for key, path in self.nav_pages(lg)}
+        current = {"/": "home", "/en/": "home"}.get(page.path) or navs.get(page.path) or ("projects" if "/projects/" in page.path else
                                                                     "news" if page.path.startswith("/news/") else
                                                                     "about" if "/about/" in page.path else "")
         footer = (f'<p>{E(self.signature(page.lang))} · '
@@ -568,6 +627,9 @@ class SiteBuild:
         entries = sorted(self.entries(), key=lambda e: (e.date, e.item.id), reverse=True)
         self.report.entries = entries
         self._about = {e.lang: e for e in entries if e.category == "page" and e.path.rstrip("/").endswith("/about")}
+        self._pages = [e for e in entries if e.category == "page" and not e.path.rstrip("/").endswith("/about")
+                       and (e.item.data.get("website") or {}).get("path")]
+        self._progress = set()
         langs = self.cfg.get("languages") or ["ru"]
         pg = self._page
         pages = [pg(self.page_home, "ru", entries), pg(self.page_projects, "ru"), pg(self.page_news, entries)]
@@ -581,6 +643,8 @@ class SiteBuild:
             if p.get("page"):
                 for lang in langs:
                     pages.append(pg(self.page_project, p, lang, entries))
+        for e in self._pages:
+            pages.append(pg(self.page_entry, e))
         posts = [e for e in entries if e.is_post]
         for e in posts:
             pages.append(pg(self.page_post, e))
@@ -624,7 +688,11 @@ class SiteBuild:
         self.write(out, "/sitemap.xml", feeds.sitemap(self, [p for p in pages if not p.draft]))
         robots = "User-agent: *\nDisallow: /\n" if self.noindex else f"User-agent: *\nAllow: /\nSitemap: {self.base}/sitemap.xml\n"
         self.write(out, "/robots.txt", robots)
-        for name, data in feeds.api(self, entries).items():
+        api = feeds.api(self, entries)
+        if self._progress:  # данные графиков страницы прогресса — только если страница видна в этом окружении
+            api["progress.json"] = {"version": 1, "datasets": [progress_set(self.repo, ds).public() for ds in sorted(self._progress)]}
+            api["index.json"]["resources"]["progress"] = "/api/v1/progress.json"
+        for name, data in api.items():
             self.write(out, f"/api/v1/{name}", json.dumps(data, ensure_ascii=False, indent=1))
         if not self.cfg.get("real_name"):
             self.check_no_name(out)

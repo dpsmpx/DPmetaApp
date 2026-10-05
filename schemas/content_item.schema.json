@@ -564,6 +564,16 @@
         "path": {
           "type": "string",
           "pattern": "^/[a-z0-9/-]*/$"
+        },
+        "nav": {
+          "enum": [
+            "progress"
+          ],
+          "description": "пункт меню сайта для страницы (i18n.py)"
+        },
+        "toc": {
+          "type": "boolean",
+          "description": "оглавление по заголовкам h2"
         }
       }
     },
