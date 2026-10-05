@@ -97,7 +97,7 @@ class Guard(unittest.TestCase):
         store = EnvCredentialStore({})
         with mock.patch.dict(os.environ, REMOTE):
             why = " ".join(deploy.guard(repo, store=store))
-        self.assertIn("сайт готов", why)
+        self.assertIn("live: false", why)
         self.assertIn("облачной сессии", why)
         self.assertIn("CS_PROD_SITE_DEPLOY_TARGET", why)
         with mock.patch.dict(os.environ, REMOTE):
@@ -183,7 +183,7 @@ class PublishToBeget(unittest.TestCase):
         self.assertEqual(fake.calls, [], "rsync не запускался")
         _, o, fake = self.publish(AUTHOR, live=False)
         self.assertEqual(o.status, "blocked")
-        self.assertTrue(any("сайт готов" in n for n in o.notes))
+        self.assertTrue(any("live: false" in n for n in o.notes))
         self.assertEqual(fake.calls, [])
 
 
