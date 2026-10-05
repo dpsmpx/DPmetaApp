@@ -112,6 +112,13 @@ enum class DiagCode(val kind: FailureKind, val defaultSeverity: Severity) {
     /** Ядро занято: проверены сборка и политика, полная проверка — при запуске (D-25). */
     BACKEND_VALIDATION_PARTIAL(FailureKind.BACKEND_VALIDATION_FAILED, Severity.INFO),
 
+    /**
+     * Набор геоданных ядра не установлен (D-27): в APK его нет, он не
+     * совпал со своим оглавлением или не записался. Ядро работает, но
+     * конфигурации с geoip/geosite отвергает.
+     */
+    GEODATA_UNAVAILABLE(FailureKind.BACKEND_START_FAILED, Severity.ERROR),
+
     // --- подключение и здоровье ---
     NETWORK_OFFLINE(FailureKind.NETWORK_UNREACHABLE, Severity.ERROR),
     DNS_FAILED(FailureKind.DNS_RESOLUTION_FAILED, Severity.ERROR),
