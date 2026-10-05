@@ -4,7 +4,7 @@ item: CI-0002
 platform: website
 lang: en
 format: page
-source_version: 1
+source_version: 2
 version: 1
 status: ready
 trust: validated
@@ -45,8 +45,8 @@ deps:
   datasets:
     '2026-10-05': b4eb09f271093055
   canonical:
-    version: 1
-    sha256: 5859b00b4688c5dc9bfef5d3b8ad4b3a74d380eb7b7b1f9f9c900a7017181007
+    version: 2
+    sha256: 910ca5429bc43369cd015b5c53bcbbce64f4c242aeef55ceacacb2880c56cf1d
   media: {}
 ---
 The period runs from {{progress:2026-10-05.period_start}} to {{progress:2026-10-05.period_end}}, from the first commit of {{fact:GH-NAME#1}} to the snapshot at {{progress:2026-10-05.cutoff}}. That is {{progress:2026-10-05.span_days}} days; the charts show {{progress:2026-10-05.days}} calendar dates, and the last one is partial.
@@ -87,7 +87,7 @@ Most commits are made by Claude sessions: {{progress:2026-10-05.ai_share}}. Comm
 
 ## Parallel work in branches
 
-Each AI session works in its own branch and merges the result into the main branch through a pull request in small batches. In the first three weeks commits went into no more than {{progress:2026-10-05.branches_first_weeks}} branches a day; at the peak, into {{progress:2026-10-05.peak_branches}}. The median time from a batch's first commit to the merge is {{progress:2026-10-05.pr_median_minutes}}; {{progress:2026-10-05.pr_within_hour}} of pull requests were merged within an hour.
+Each AI session works in its own branch and merges the result into the main branch through a pull request in small batches. In the first three weeks commits went into no more than {{progress:2026-10-05.branches_first_weeks}} working branches a day; at the peak, into {{progress:2026-10-05.peak_branches}}. A commit made directly on the main branch does not count as a working branch. The median time from a batch's first commit to the merge is {{progress:2026-10-05.pr_median_minutes}}; {{progress:2026-10-05.pr_within_hour}} of pull requests were merged within an hour.
 
 An unmerged branch is not a result yet, so it is shown separately, as of the snapshot. Branch history can only be reconstructed from merges and surviving branches: deleted unmerged branches are not counted.
 

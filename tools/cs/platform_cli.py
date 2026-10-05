@@ -514,7 +514,9 @@ def cmd_progress(a) -> int:
 
 
 AFFECTED = [  # префикс пути → проверки (tools/check.sh --affected)
-    ("data/facts/", ["facts", "claims", "canonical", "projects", "site", "siteshots"]),
+    ("data/facts/", ["facts", "claims", "canonical", "projects", "progress", "site", "siteshots"]),
+    ("data/progress/", ["progress", "canonical", "claims", "site", "siteshots"]),
+    ("data/policy/sensitive", ["progress", "site"]),
     ("content/items/", ["items", "claims", "provenance", "visual", "exports", "canonical", "campaigns", "site", "siteshots"]),
     ("data/publications/", ["publications", "site", "siteshots"]),
     ("data/platforms/destinations", ["destinations", "campaigns", "capabilities"]),
