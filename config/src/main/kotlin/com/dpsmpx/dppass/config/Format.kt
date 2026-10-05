@@ -14,7 +14,7 @@ import com.dpsmpx.dppass.diagnostics.Outcome
  */
 object ConfigFormat {
     const val MARKER: String = "dppass.config"
-    const val CURRENT_VERSION: Int = 1
+    const val CURRENT_VERSION: Int = 2
 }
 
 /** Пределы, после которых документ отвергается до разбора вглубь. */
