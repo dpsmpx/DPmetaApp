@@ -129,18 +129,25 @@ sealed interface UpdateResult {
  * Ни на одном шаге старая удачная ревизия не меняется: при отказе
  * возвращается подписка с [Subscription.lastFailed], и только.
  */
-class SubscriptionUpdater(private val fetcher: SubscriptionFetcher, private val clock: Clock) {
+class SubscriptionUpdater(
+    private val fetcher: SubscriptionFetcher,
+    private val clock: Clock,
+    /** Версия приложения — для собственного `User-Agent` (D-33). */
+    private val appVersion: String,
+) {
     suspend fun update(subscription: Subscription, filter: ProfileFilter): UpdateResult {
         val notes = mutableListOf<Diagnostic>()
         fun fail(d: Diagnostic, checksum: String? = null): UpdateResult.Failed =
             UpdateResult.Failed(subscription.recordFailure(FailedRevision(checksum, clock.nowMillis(), d)), notes + d)
 
-        val payload = when (val f = fetcher.fetch(subscription.source, subscription.fetchPolicy)) {
+        val request = SubscriptionRequest.of(subscription, appVersion)
+        val payload = when (val f = fetcher.fetch(request, subscription.fetchPolicy)) {
             is Outcome.Failure -> return fail(
                 Diagnostic.error(DiagCode.SUBSCRIPTION_FETCH_FAILED, "подписка «${subscription.name}» не загружена").copy(causes = f.diagnostics),
             )
             is Outcome.Success -> f.value
         }
+        deviceRefusal(payload.headers, subscription)?.let { return fail(it) }
         if (payload.bytes.size > subscription.fetchPolicy.maxBytes) {
             return fail(Diagnostic.error(DiagCode.SUBSCRIPTION_TOO_LARGE, "больше ${subscription.fetchPolicy.maxBytes} байт"))
         }
@@ -187,5 +194,32 @@ class SubscriptionUpdater(private val fetcher: SubscriptionFetcher, private val 
             decoded.providerDns.takeIf { useProvider },
         )
         return UpdateResult.Ready(candidate, notes)
+    }
+
+    /**
+     * Отказ поставщика из-за лимита устройств (Remnawave, D-33). Тело
+     * такого ответа — заглушка («App not supported»), а не серверы: в
+     * ревизию оно не идёт, удачная ревизия остаётся прежней (D-08).
+     */
+    private fun deviceRefusal(headers: Map<String, String>, subscription: Subscription): Diagnostic? {
+        val lower = headers.mapKeys { it.key.lowercase() }
+        fun flag(name: String) = lower[name]?.trim()?.lowercase() == "true"
+        val who = "поставщик подписки «${subscription.name}»"
+        return when {
+            flag("x-hwid-max-devices-reached") -> Diagnostic.error(
+                DiagCode.SUBSCRIPTION_DEVICE_LIMIT_REACHED,
+                "$who: лимит устройств исчерпан — удалите неиспользуемое устройство у поставщика; вместо серверов прислана заглушка",
+            )
+            flag("x-hwid-not-supported") -> Diagnostic.error(
+                DiagCode.SUBSCRIPTION_DEVICE_ID_REQUIRED,
+                if (subscription.deviceId == null) {
+                    "$who отдаёт серверы только с идентификатором устройства; его можно включить для этой подписки — " +
+                        "случайный, свой у каждой подписки, без данных устройства"
+                } else {
+                    "$who не принял идентификатор устройства этой подписки; вместо серверов прислана заглушка"
+                },
+            )
+            else -> null
+        }
     }
 }

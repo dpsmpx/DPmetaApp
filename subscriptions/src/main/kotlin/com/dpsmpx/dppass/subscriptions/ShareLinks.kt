@@ -3,6 +3,7 @@ package com.dpsmpx.dppass.subscriptions
 import com.dpsmpx.dppass.config.CandidateHints
 import com.dpsmpx.dppass.config.ProtocolSpec
 import com.dpsmpx.dppass.config.SecuritySpec
+import com.dpsmpx.dppass.config.ShadowsocksMethod
 import com.dpsmpx.dppass.config.ServerProfile
 import com.dpsmpx.dppass.config.TlsFingerprint
 import com.dpsmpx.dppass.config.TransportSpec
@@ -16,9 +17,11 @@ import com.dpsmpx.dppass.diagnostics.DiagCode
 import com.dpsmpx.dppass.diagnostics.Diagnostic
 import com.dpsmpx.dppass.diagnostics.Outcome
 import com.dpsmpx.dppass.diagnostics.Secret
+import java.util.Base64
 
 /**
- * Ссылки вида `vless://…` и `trojan://…` → профиль IR.
+ * Ссылки вида `vless://…`, `trojan://…`, `hysteria2://…` (`hy2://…`) и
+ * `ss://…` (только Shadowsocks-2022, D-16) → профиль IR.
  *
  * Это чужой формат без строгой спецификации, поэтому правило строже
  * обычного: известный параметр переводится в IR; известный «по
@@ -31,8 +34,16 @@ import com.dpsmpx.dppass.diagnostics.Secret
  * UUID и ключи.
  */
 object ShareLinkParser {
-    private val SUPPORTED = setOf("vless", "trojan")
-    private val KNOWN_OTHER = setOf("vmess", "ss", "hysteria2", "hy2", "tuic", "wireguard", "wg", "socks", "http", "https", "anytls", "naive+https")
+    private val SUPPORTED = setOf("vless", "trojan", "hysteria2", "hy2", "ss")
+    private val KNOWN_OTHER = setOf("vmess", "tuic", "wireguard", "wg", "socks", "http", "https", "anytls", "naive+https")
+
+    private val HYSTERIA2_PARAMS = setOf("sni", "obfs", "obfs-password", "insecure")
+
+    /** Старые AEAD Shadowsocks: без защиты от повтора, в IR v1 их нет (D-16). */
+    private val SS_LEGACY = setOf(
+        "aes-128-gcm", "aes-192-gcm", "aes-256-gcm", "chacha20-ietf-poly1305", "chacha20-poly1305",
+        "xchacha20-ietf-poly1305", "xchacha20-poly1305",
+    )
 
     private val VLESS_PARAMS = setOf("type", "security", "sni", "fp", "pbk", "sid", "spx", "flow", "path", "host", "servicename", "mode", "alpn", "encryption", "headertype", "allowinsecure", "insecure")
     private val TROJAN_PARAMS = setOf("type", "security", "sni", "fp", "path", "host", "servicename", "mode", "alpn", "headertype", "allowinsecure", "insecure")
@@ -55,6 +66,11 @@ object ShareLinkParser {
         val host = Host.parse(parts.host) ?: return Outcome.failure(DiagCode.SHARE_LINK_INVALID, "адрес сервера — не домен и не IP")
         val port = parts.port.toIntOrNull()?.takeIf { it in 1..65535 }
             ?: return Outcome.failure(DiagCode.SHARE_LINK_INVALID, "порт вне 1..65535")
+        val endpoint = Endpoint(host, port)
+        when (scheme) {
+            "hysteria2", "hy2" -> return hysteria2(text, parts, endpoint, idPrefix)
+            "ss" -> return shadowsocks(text, parts, endpoint, idPrefix)
+        }
         val q = parts.query
         val known = if (scheme == "vless") VLESS_PARAMS else TROJAN_PARAMS
         val unknown = q.keys.filter { it !in known }
@@ -107,11 +123,85 @@ object ShareLinkParser {
         } else {
             ProtocolSpec.Trojan(secret)
         }
+        return Outcome.Success(profile(text, parts, endpoint, idPrefix, protocol, transport, security))
+    }
+
+    /**
+     * `hysteria2://пароль@хост:порт/?sni=…&obfs=salamander&obfs-password=…#имя`.
+     * Пароль — вся часть до «@» (в нём бывает «:»). Защита — всегда TLS;
+     * ALPN и отпечаток у Hysteria2 не задаются (`docs/CONFIG_FORMAT.md`, §3).
+     * Порт — один: диапазоны портов IR не выражает.
+     */
+    private fun hysteria2(text: String, parts: Parts, endpoint: Endpoint, idPrefix: String): Outcome<ServerProfile> {
+        val q = parts.query
+        val unknown = q.keys.filter { it !in HYSTERIA2_PARAMS }
+        if (unknown.isNotEmpty()) return unsupported(unknown.sorted().joinToString())
+        if (q["insecure"] in setOf("1", "true")) {
+            return Outcome.failure(DiagCode.INSECURE_TLS_REJECTED, "ссылка отключает проверку сертификата — такой профиль не принимается")
+        }
+        if (q["insecure"].let { it != null && it !in setOf("0", "false") }) return unsupported("insecure (кроме 0)")
+        val obfs = q["obfs"]?.takeIf { it.isNotEmpty() }
+        val obfsPassword = q["obfs-password"]?.takeIf { it.isNotEmpty() }
+        if (obfs != null && obfs != "salamander") return unsupported("obfs (кроме salamander)")
+        if ((obfs == null) != (obfsPassword == null)) {
+            return Outcome.failure(DiagCode.SHARE_LINK_INVALID, "obfs и obfs-password задаются только вместе")
+        }
+        val protocol = ProtocolSpec.Hysteria2(Secret(parts.user), obfsPassword?.let(::Secret))
+        val security = SecuritySpec.Tls(domainParam(q["sni"]), emptyList(), null)
+        return Outcome.Success(profile(text, parts, endpoint, idPrefix, protocol, TransportSpec.Native, security))
+    }
+
+    /**
+     * `ss://ДАННЫЕ@хост:порт#имя`, где ДАННЫЕ — `метод:пароль` в base64
+     * (стандартный или для URL, с дополнением или без) либо открыто с
+     * %-кодированием (SIP002). Только методы Shadowsocks-2022; старый AEAD
+     * и параметры (`plugin` и др.) — отказ с названием (D-16, D-05).
+     */
+    private fun shadowsocks(text: String, parts: Parts, endpoint: Endpoint, idPrefix: String): Outcome<ServerProfile> {
+        if (parts.query.isNotEmpty()) return unsupported(parts.query.keys.sorted().joinToString())
+        val credentials = if (':' in parts.user) parts.user else decodeBase64(parts.user)
+            ?: return Outcome.failure(DiagCode.SHARE_LINK_INVALID, "ss:// без «метод:пароль» (ни открыто, ни в base64)")
+        val method = credentials.substringBefore(':')
+        val password = credentials.substringAfter(':', "")
+        if (method == credentials || password.isEmpty()) {
+            return Outcome.failure(DiagCode.SHARE_LINK_INVALID, "ss:// без «метод:пароль»")
+        }
+        // Имя метода повторяется в сообщении, только если оно известно: в испорченной
+        // ссылке до «:» может стоять секрет, а сообщения значений из ссылки не содержат.
+        val ss = ShadowsocksMethod.entries.firstOrNull { it.wire == method.lowercase() }
+            ?: return unsupported(
+                if (method.lowercase() in SS_LEGACY) "method=${method.lowercase()} (старый AEAD без защиты от повтора, D-16)" else "method (неизвестный метод)",
+            )
+        val protocol = ProtocolSpec.Shadowsocks(ss, Secret(password))
+        return Outcome.Success(profile(text, parts, endpoint, idPrefix, protocol, TransportSpec.Tcp, SecuritySpec.None))
+    }
+
+    private fun profile(
+        text: String,
+        parts: Parts,
+        endpoint: Endpoint,
+        idPrefix: String,
+        protocol: ProtocolSpec,
+        transport: TransportSpec,
+        security: SecuritySpec,
+    ): ServerProfile {
         // Устойчивый id: от всего, кроме имени-фрагмента. Хеш — не секрет, но и не обратим.
         val id = "$idPrefix.${Checksums.sha256(text.substringBefore('#')).take(12)}"
         val name = parts.fragment?.takeIf { it.isNotBlank() && it.length <= 128 && it.none { c -> c.code < 0x20 } }?.trim()
-            ?: "${host}:$port"
-        return Outcome.Success(ServerProfile(ProfileId(id), name, Endpoint(host, port), protocol, transport, security, CandidateHints()))
+            ?: "${endpoint.host}:${endpoint.port}"
+        return ServerProfile(ProfileId(id), name, endpoint, protocol, transport, security, CandidateHints())
+    }
+
+    private fun decodeBase64(s: String): String? {
+        val compact = s.trim().trimEnd('=')
+        if (compact.isEmpty()) return null
+        val padded = compact + "=".repeat((4 - compact.length % 4) % 4)
+        for (d in listOf(Base64.getDecoder(), Base64.getUrlDecoder())) {
+            val bytes = runCatching { d.decode(padded) }.getOrNull() ?: continue
+            val text = runCatching { Charsets.UTF_8.newDecoder().decode(java.nio.ByteBuffer.wrap(bytes)).toString() }.getOrNull() ?: continue
+            if (text.none { it.code < 0x20 }) return text
+        }
+        return null
     }
 
     /**

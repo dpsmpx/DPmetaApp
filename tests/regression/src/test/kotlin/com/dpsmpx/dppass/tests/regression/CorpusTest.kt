@@ -172,7 +172,7 @@ class CorpusTest {
                 val clock = ManualClock(0)
                 val fetcher = SubscriptionFetcher { _, _ -> Outcome.Success(FetchedPayload(body, headers, 0)) }
                 val sub = Subscription(SubscriptionId("corpus"), name, SubscriptionSource.Url(Secret("https://sub.example.com/corpus")))
-                val r = runBlocking { SubscriptionUpdater(fetcher, clock).update(sub, EngineProfileFilter(MockBackend.FULL)) }
+                val r = runBlocking { SubscriptionUpdater(fetcher, clock, "test").update(sub, EngineProfileFilter(MockBackend.FULL)) }
                 val got = allCodes(r.diagnostics)
                 when (str(expect, "outcome")) {
                     "ready" -> {

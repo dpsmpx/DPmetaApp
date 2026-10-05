@@ -37,6 +37,10 @@ dependencies {
 
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
+    // Предупреждение обнаружения тестов — ошибка прогона: метод @Test, который
+    // возвращает значение (`= runBlocking { … assertIs(…) }`), JUnit иначе молча
+    // не запускает, и тест выглядит существующим, не проверяя ничего.
+    systemProperty("junit.platform.discovery.issue.severity.critical", "WARNING")
     // Корень репозитория — для тестов, читающих tests/data.
     systemProperty("dppass.repoRoot", rootDir.absolutePath)
     // Корпус читается по пути, мимо classpath: без явного входа Gradle считал

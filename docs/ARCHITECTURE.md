@@ -113,7 +113,8 @@ D8), инструменты — JDK 21, предупреждения компи�
 
 ```
 SubscriptionUpdater.update
-  fetch (SubscriptionFetcher) → размер ≤ maxBytes → SHA-256
+  SubscriptionRequest (адрес, User-Agent DPpass, x-hwid — только с согласия, D-33)
+  fetch (SubscriptionFetcher) → отказ по лимиту устройств? (x-hwid-*) → размер ≤ maxBytes → SHA-256
   → совпала с последней удачной? → Unchanged
   → PayloadDecoder: документ DPpass | список ссылок | base64 списка
   → MetadataParser: информационные поля применяются, директивы — нет (D-11)

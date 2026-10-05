@@ -247,12 +247,24 @@ IR, известный «по умолчанию» принимается, **л�
 |---|---|
 | `vless://UUID@хост:порт?…#имя` | `type` (`tcp`/`raw`, `ws`, `httpupgrade`, `grpc` + `serviceName`, `xhttp`/`splithttp` + `mode`), `security` (`none`, `tls`, `reality` + `pbk`, `sid`, `spx`), `sni`, `fp`, `alpn`, `flow` (`xtls-rprx-vision`), `path`, `host`, `encryption` (только `none`), `headerType` (только `none`) |
 | `trojan://пароль@хост:порт?…#имя` | те же, кроме `pbk`/`sid`/`spx`/`flow`/`encryption`; `security` по умолчанию `tls` |
+| `hysteria2://пароль@хост:порт/?…#имя` (и `hy2://`) | `sni`, `obfs` (только `salamander`) вместе с `obfs-password`, `insecure` (только `0`); пароль — вся часть до `@`; порт — один (диапазоны портов IR не выражает); защита — TLS без `alpn` и `fingerprint` (§3) |
+| `ss://ДАННЫЕ@хост:порт#имя` | без параметров (`plugin` и др. — отказ); ДАННЫЕ — `метод:пароль` в base64 (стандартный или для URL, с `=` или без) либо открыто с %-кодированием (SIP002); метод — только `2022-blake3-*` (D-16): старый AEAD (`chacha20-ietf-poly1305`, `aes-*-gcm`) отвергается с причиной |
 
 `allowInsecure=1`/`insecure=1` — профиль отвергается
 (`INSECURE_TLS_REJECTED`). Повторный параметр — ссылка неоднозначна и
-отвергается. Другие схемы (`vmess`, `ss`, `hysteria2`, `tuic`, …) —
+отвергается. Другие схемы (`vmess`, `tuic`, …) —
 `SHARE_LINK_SCHEME_UNSUPPORTED` («ещё не поддерживается» или
-«неизвестна»). id профиля — `<id подписки>.<первые 12 символов SHA-256
+«неизвестна»). Что выдаёт панель Remnawave и что из этого DPpass
+сейчас выражает — `docs/research/REMNAWAVE_SUBSCRIPTIONS.md`; например,
+отпечатков `edge`/`qq`, `extra` у XHTTP и `fm` нет в IR, и такие ссылки
+отвергаются с названием параметра.
+
+Запрос подписки (D-33): собственный `User-Agent` `DPpass/<версия>` и
+`x-hwid` — только если пользователь включил идентификатор для этой
+подписки. Ответ с `x-hwid-not-supported` или `x-hwid-max-devices-reached`
+— заглушка, а не серверы: `SUBSCRIPTION_DEVICE_ID_REQUIRED` или
+`SUBSCRIPTION_DEVICE_LIMIT_REACHED`, удачная ревизия не меняется.
+Пустой заголовок метаданных — «не задано». id профиля — `<id подписки>.<первые 12 символов SHA-256
 ссылки без имени>`: устойчив между обновлениями и не раскрывает
 секрет; имя — фрагмент `#…` (до 128 символов) или `хост:порт`.
 

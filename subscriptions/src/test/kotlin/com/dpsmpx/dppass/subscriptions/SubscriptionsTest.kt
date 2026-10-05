@@ -3,6 +3,7 @@ package com.dpsmpx.dppass.subscriptions
 import com.dpsmpx.dppass.config.ConfigValidator
 import com.dpsmpx.dppass.config.ProtocolSpec
 import com.dpsmpx.dppass.config.SecuritySpec
+import com.dpsmpx.dppass.config.ShadowsocksMethod
 import com.dpsmpx.dppass.config.TransportSpec
 import com.dpsmpx.dppass.config.VlessFlow
 import com.dpsmpx.dppass.config.XHttpMode
@@ -12,12 +13,15 @@ import com.dpsmpx.dppass.diagnostics.DiagCode
 import com.dpsmpx.dppass.diagnostics.Outcome
 import com.dpsmpx.dppass.diagnostics.Secret
 import kotlinx.coroutines.runBlocking
+import java.lang.reflect.Modifier
+import java.util.Base64
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.test.fail
 
 private const val KEY = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
 private const val UUID1 = "00000000-0000-4000-8000-000000000011"
@@ -100,6 +104,73 @@ class ShareLinkParserTest {
         assertTrue("xyz" in e.causes.single().message)
     }
 
+    private fun unsupportedNames(r: Outcome<*>): String {
+        val e = r.errors.single()
+        assertEquals(DiagCode.SHARE_LINK_INVALID, e.code)
+        return e.causes.single { it.code == DiagCode.SHARE_LINK_PARAM_UNSUPPORTED }.message
+    }
+
+    @Test
+    fun hysteria2Link() {
+        val link = "hysteria2://test-password-2@192.0.2.30:8443/?sni=hy2.example.com&obfs=salamander&obfs-password=test-obfs-1#HY2"
+        val p = ShareLinkParser.parse(link, "s").valueOrNull()!!
+        val proto = assertIs<ProtocolSpec.Hysteria2>(p.protocol)
+        assertEquals("test-password-2", proto.password.reveal())
+        assertEquals("test-obfs-1", proto.obfsPassword?.reveal())
+        assertEquals(TransportSpec.Native, p.transport)
+        assertEquals(SecuritySpec.Tls("hy2.example.com", emptyList(), null), p.security)
+        assertEquals("HY2", p.name)
+        assertTrue(ConfigValidator.validateProfile(p, "p").none { it.isError })
+        // hy2:// — то же самое; без obfs — без Salamander.
+        val short = ShareLinkParser.parse("hy2://test-password-2@192.0.2.30:8443?sni=hy2.example.com", "s").valueOrNull()!!
+        assertEquals(null, (short.protocol as ProtocolSpec.Hysteria2).obfsPassword)
+    }
+
+    @Test
+    fun hysteria2RejectsWhatIrCannotExpress() {
+        val base = "hysteria2://test-password-2@192.0.2.30:8443/?sni=hy2.example.com"
+        // fm — finalmask Xray (управление перегрузкой и др.), pinSHA256 — пиннинг: IR их не выражает.
+        val names = unsupportedNames(ShareLinkParser.parse("$base&fm=%7B%7D&pinSHA256=AA", "s"))
+        assertTrue("fm" in names && "pinsha256" in names, names)
+        val obfs = unsupportedNames(ShareLinkParser.parse("$base&obfs=gecko&obfs-password=x", "s"))
+        assertTrue("obfs" in obfs && "gecko" !in obfs, obfs)
+        assertEquals(DiagCode.INSECURE_TLS_REJECTED, ShareLinkParser.parse("$base&insecure=1", "s").errors.single().code)
+        assertTrue(ShareLinkParser.parse("$base&insecure=0", "s").isSuccess)
+        for (bad in listOf("$base&obfs=salamander", "$base&obfs-password=x", "hysteria2://test-password-2@192.0.2.30:443,8443/?sni=hy2.example.com")) {
+            assertEquals(DiagCode.SHARE_LINK_INVALID, ShareLinkParser.parse(bad, "s").errors.single().code, bad)
+        }
+    }
+
+    @Test
+    fun shadowsocks2022LinkInEveryUserinfoForm() {
+        val key = "AAECAwQFBgcICQoLDA0ODw=="
+        val plain = "2022-blake3-aes-128-gcm:$key"
+        val forms = listOf(
+            Base64.getEncoder().encodeToString(plain.toByteArray()),
+            Base64.getUrlEncoder().withoutPadding().encodeToString(plain.toByteArray()),
+            "2022-blake3-aes-128-gcm:" + key.replace("=", "%3D"),
+        )
+        for (userinfo in forms) {
+            val p = ShareLinkParser.parse("ss://$userinfo@192.0.2.40:8388#SS", "s").valueOrNull() ?: fail(userinfo)
+            val proto = assertIs<ProtocolSpec.Shadowsocks>(p.protocol)
+            assertEquals(ShadowsocksMethod.BLAKE3_AES_128_GCM to key, proto.method to proto.password.reveal(), userinfo)
+            assertEquals(TransportSpec.Tcp to SecuritySpec.None, p.transport to p.security)
+            assertTrue(ConfigValidator.validateProfile(p, "p").none { it.isError }, userinfo)
+        }
+    }
+
+    @Test
+    fun shadowsocksLegacyMethodsAndPluginsAreExplicitlyUnsupported() {
+        val legacy = Base64.getEncoder().encodeToString("chacha20-ietf-poly1305:test-password-3".toByteArray())
+        assertTrue("D-16" in unsupportedNames(ShareLinkParser.parse("ss://$legacy@192.0.2.40:8388#Old", "s")))
+        val key = Base64.getEncoder().encodeToString("2022-blake3-aes-128-gcm:AAECAwQFBgcICQoLDA0ODw==".toByteArray())
+        assertTrue("plugin" in unsupportedNames(ShareLinkParser.parse("ss://$key@192.0.2.40:8388?plugin=obfs-local#P", "s")))
+        assertEquals(DiagCode.SHARE_LINK_INVALID, ShareLinkParser.parse("ss://bm9jb2xvbg@192.0.2.40:8388", "s").errors.single().code)
+        // Неизвестный «метод» не повторяется: в испорченной ссылке там бывает секрет.
+        val r = ShareLinkParser.parse("ss://test-password-9:x@192.0.2.40:8388", "s")
+        assertFalse(r.diagnostics.flatMap { it.renderWithCauses() }.any { "test-password-9" in it }, unsupportedNames(r))
+    }
+
     @Test
     fun insecureIsRejected() {
         val r = ShareLinkParser.parse("vless://$UUID1@203.0.113.1:443?security=tls&allowInsecure=1", "s")
@@ -117,6 +188,19 @@ class ShareLinkParserTest {
 }
 
 class MetadataParserTest {
+    @Test
+    fun blankValuesMeanNotSet() {
+        // Так Remnawave присылает незаполненные поля: пустой заголовок — не ошибка и не директива.
+        val r = MetadataParser.parse(
+            mapOf("support-url" to "", "profile-update-interval" to " ", "subscription-userinfo" to "", "routing" to "", "hide-settings" to "1"),
+            emptyMap(),
+        )
+        assertTrue(r.notes.none { it.code == DiagCode.SUBSCRIPTION_METADATA_INVALID }, r.notes.joinToString { it.message })
+        val ignored = r.notes.single { it.code == DiagCode.SUBSCRIPTION_DIRECTIVE_IGNORED }.message
+        assertTrue("hide-settings" in ignored && "routing" !in ignored, ignored)
+        assertEquals(SubscriptionMetadata(), r.metadata)
+    }
+
     @Test
     fun safeFieldsApplyControlDirectivesDoNot() {
         val r = MetadataParser.parse(
@@ -151,18 +235,19 @@ class SubscriptionUpdaterTest {
 
     @Test
     fun readyThenUnchanged() = runBlocking {
-        val r = SubscriptionUpdater(fetcher(links), clock).update(sub(), passAll)
+        val r = SubscriptionUpdater(fetcher(links), clock, "test").update(sub(), passAll)
         val ready = assertIs<UpdateResult.Ready>(r)
         assertEquals(2, ready.candidate.profiles.size)
         val updated = ready.candidate.subscription.recordSuccess(ready.candidate.revision, ready.candidate.metadata)
-        assertIs<UpdateResult.Unchanged>(SubscriptionUpdater(fetcher(links), clock).update(updated, passAll))
+        val again = SubscriptionUpdater(fetcher(links), clock, "test").update(updated, passAll)
+        assertTrue(again is UpdateResult.Unchanged, "ожидалось Unchanged, есть $again")
     }
 
     @Test
     fun failureKeepsLastSuccessfulRevision() = runBlocking {
-        val ready = SubscriptionUpdater(fetcher(links), clock).update(sub(), passAll) as UpdateResult.Ready
+        val ready = SubscriptionUpdater(fetcher(links), clock, "test").update(sub(), passAll) as UpdateResult.Ready
         val good = ready.candidate.subscription.recordSuccess(ready.candidate.revision, ready.candidate.metadata)
-        val r = SubscriptionUpdater(fetcher("<html>oops</html>"), clock).update(good, passAll)
+        val r = SubscriptionUpdater(fetcher("<html>oops</html>"), clock, "test").update(good, passAll)
         val failed = assertIs<UpdateResult.Failed>(r)
         assertEquals(good.lastSuccessful, failed.subscription.lastSuccessful)
         assertEquals(DiagCode.SUBSCRIPTION_FORMAT_UNKNOWN, failed.subscription.lastFailed!!.reason.code)
@@ -173,7 +258,7 @@ class SubscriptionUpdaterTest {
         val onlyTrojan = ProfileFilter { ps ->
             FilterResult(ps.filter { it.protocol is ProtocolSpec.Trojan }, listOf(com.dpsmpx.dppass.diagnostics.Diagnostic.warning(DiagCode.PROFILE_EXCLUDED_UNSUPPORTED, "x")))
         }
-        val r = SubscriptionUpdater(fetcher(links), clock).update(sub(), onlyTrojan) as UpdateResult.Ready
+        val r = SubscriptionUpdater(fetcher(links), clock, "test").update(sub(), onlyTrojan) as UpdateResult.Ready
         assertEquals(1, r.candidate.profiles.size)
         assertTrue(r.diagnostics.any { it.code == DiagCode.PROFILE_EXCLUDED_UNSUPPORTED })
     }
@@ -181,16 +266,73 @@ class SubscriptionUpdaterTest {
     @Test
     fun fetchFailureKeepsCause() = runBlocking {
         val f = SubscriptionFetcher { _, _ -> Outcome.failure(DiagCode.ENDPOINT_UNREACHABLE, "timeout") }
-        val r = SubscriptionUpdater(f, clock).update(sub(), passAll) as UpdateResult.Failed
+        val r = SubscriptionUpdater(f, clock, "test").update(sub(), passAll) as UpdateResult.Failed
         val reason = r.subscription.lastFailed!!.reason
         assertEquals(DiagCode.SUBSCRIPTION_FETCH_FAILED, reason.code)
         assertEquals(DiagCode.ENDPOINT_UNREACHABLE, reason.causes.single().code)
     }
 
+    /** Заглушка Remnawave при лимите устройств — синтетическая: нулевой UUID на 0.0.0.0. */
+    private val placeholder = "vless://00000000-0000-0000-0000-000000000000@0.0.0.0:1?encryption=none&type=tcp&security=none#App%20not%20supported\n"
+
+    private fun recording(sent: MutableList<SubscriptionRequest>, body: String, headers: Map<String, String> = emptyMap()) =
+        SubscriptionFetcher { request, _ ->
+            sent += request
+            Outcome.Success(FetchedPayload(body.toByteArray(), headers, clock.nowMillis()))
+        }
+
+    @Test
+    fun requestHasNoDeviceIdUnlessEnabled() = runBlocking {
+        val sent = mutableListOf<SubscriptionRequest>()
+        SubscriptionUpdater(recording(sent, links), clock, "1.2.3").update(sub(), passAll)
+        val request = sent.single()
+        assertNull(request.deviceId, "без согласия идентификатор не отправляется (D-12, D-33)")
+        assertEquals("DPpass/1.2.3", request.userAgent)
+        assertEquals(sub().source, request.source)
+
+        val id = DeviceId.generate()
+        SubscriptionUpdater(recording(sent, links), clock, "1.2.3").update(sub().copy(deviceId = id), passAll)
+        assertEquals(id, sent.last().deviceId)
+        // Больше ничего об устройстве в запросе нет: только адрес, User-Agent и идентификатор подписки.
+        assertEquals(setOf("source", "userAgent", "deviceId"), SubscriptionRequest::class.java.declaredFields.filter { !Modifier.isStatic(it.modifiers) }.map { it.name }.toSet())
+    }
+
+    @Test
+    fun deviceIdsAreRandomPerSubscription() {
+        val ids = List(200) { DeviceId.generate().reveal() }
+        assertEquals(ids.size, ids.toSet().size, "значения повторились")
+        for (v in ids) {
+            assertTrue(DeviceId.FORMAT.matches(v) && v.length == 32 && v.all { it in "0123456789abcdef" }, "не 32 шестнадцатеричные цифры")
+        }
+        assertFalse(ids.first() in DeviceId.generate().toString(), "Secret печатает значение")
+    }
+
+    @Test
+    fun deviceRefusalsAreNamedAndPlaceholderIsNotImported() = runBlocking {
+        val ready = SubscriptionUpdater(fetcher(links), clock, "test").update(sub(), passAll) as UpdateResult.Ready
+        val good = ready.candidate.subscription.recordSuccess(ready.candidate.revision, ready.candidate.metadata)
+        val cases = listOf(
+            mapOf("X-Hwid-Active" to "true", "X-Hwid-Not-Supported" to "true") to DiagCode.SUBSCRIPTION_DEVICE_ID_REQUIRED,
+            mapOf("x-hwid-active" to "true", "x-hwid-max-devices-reached" to "true") to DiagCode.SUBSCRIPTION_DEVICE_LIMIT_REACHED,
+        )
+        for ((headers, code) in cases) {
+            val r = SubscriptionUpdater(recording(mutableListOf(), placeholder, headers), clock, "test").update(good, passAll)
+            val failed = assertIs<UpdateResult.Failed>(r, "$code")
+            assertEquals(code, failed.subscription.lastFailed!!.reason.code)
+            assertEquals(good.lastSuccessful, failed.subscription.lastSuccessful, "удачная ревизия не тронута (D-08)")
+            // Заглушка не разбиралась: ни одной находки о её «сервере».
+            assertTrue(failed.diagnostics.none { it.code == DiagCode.SUBSCRIPTION_ENTRY_SKIPPED }, "$code: заглушка разобрана как сервер")
+        }
+        // С включённым идентификатором — другая подсказка: идентификатор не принят, а не «включите его».
+        val withId = good.copy(deviceId = DeviceId.generate())
+        val r = SubscriptionUpdater(recording(mutableListOf(), placeholder, cases[0].first), clock, "test").update(withId, passAll) as UpdateResult.Failed
+        assertTrue("не принял" in r.subscription.lastFailed!!.reason.message)
+    }
+
     @Test
     fun oversizedPayloadIsRejected() = runBlocking {
         val s = sub().copy(fetchPolicy = FetchPolicy(maxBytes = 10))
-        val r = SubscriptionUpdater(fetcher(links), clock).update(s, passAll) as UpdateResult.Failed
+        val r = SubscriptionUpdater(fetcher(links), clock, "test").update(s, passAll) as UpdateResult.Failed
         assertEquals(DiagCode.SUBSCRIPTION_TOO_LARGE, r.subscription.lastFailed!!.reason.code)
     }
 }
