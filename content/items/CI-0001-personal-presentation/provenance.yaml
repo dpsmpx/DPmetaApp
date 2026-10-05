@@ -398,7 +398,7 @@ outputs:
   date: '2026-10-04'
   prompt: prompts/image/presentation-composition.v1.md
 - file: content/items/CI-0001-personal-presentation/renders/D-en-github_social.png
-  sha256: d6a0b786c98679b321f73e77bfc03f677b026f01ce90a4f85936bd675f1b8349
+  sha256: 8fa9876a58b8e9de8de6e75b11887b9036182520fc056939e12cae46981abbb6
   variant: D
   format: github_social
   lang: en
@@ -410,13 +410,13 @@ outputs:
   spec: content/items/CI-0001-personal-presentation/spec/variant-d.yaml
   spec_sha256: 94ad11e8f023369eb94c3a4f14116bddcd3c2545cd247819f0f17fffb92b9b1c
   tool: tools/cs/render.py + tools/render/render.js (Playwright, Chromium)
-  tool_sha256: 92861603adb02fd2854aa4bb358fb97dee4b15b9dbb8ac7bce14ac8bd46963d0
+  tool_sha256: 17337531ce0a5513d8b1e76644a0b8da00ad4bd0acabbad0938655741353cc5f
   modifications: []
   layout: content/items/CI-0001-personal-presentation/renders/D-en-github_social.layout.json
-  date: '2026-10-04'
+  date: '2026-10-05'
   prompt: prompts/image/presentation-composition.v1.md
 - file: content/items/CI-0001-personal-presentation/renders/D-en-telegram_post.jpg
-  sha256: cd2e05b921e95160d9e83dd6aa4de0e0ddeff4adfa478ec23bdd2f2240d2c0d8
+  sha256: f3e73cfcf3d4d595fd9b5170a9a2299db019d3493cb119c2309b58c29c3b286b
   variant: D
   format: telegram_post
   lang: en
@@ -428,13 +428,13 @@ outputs:
   spec: content/items/CI-0001-personal-presentation/spec/variant-d.yaml
   spec_sha256: 94ad11e8f023369eb94c3a4f14116bddcd3c2545cd247819f0f17fffb92b9b1c
   tool: tools/cs/render.py + tools/render/render.js (Playwright, Chromium)
-  tool_sha256: 92861603adb02fd2854aa4bb358fb97dee4b15b9dbb8ac7bce14ac8bd46963d0
+  tool_sha256: 17337531ce0a5513d8b1e76644a0b8da00ad4bd0acabbad0938655741353cc5f
   modifications: []
   layout: content/items/CI-0001-personal-presentation/renders/D-en-telegram_post.layout.json
-  date: '2026-10-04'
+  date: '2026-10-05'
   prompt: prompts/image/presentation-composition.v1.md
 - file: content/items/CI-0001-personal-presentation/renders/D-ru-telegram_post.jpg
-  sha256: a2d1716dbb6cefb7c70df52955c499db6a6f27128859ea0f8bf3879074ca6900
+  sha256: 453be52a4e7a7a32a845b5ca51a27a47e2439b8ac779d19fc1ab0b9b872fb1a4
   variant: D
   format: telegram_post
   lang: ru
@@ -446,10 +446,10 @@ outputs:
   spec: content/items/CI-0001-personal-presentation/spec/variant-d.yaml
   spec_sha256: 94ad11e8f023369eb94c3a4f14116bddcd3c2545cd247819f0f17fffb92b9b1c
   tool: tools/cs/render.py + tools/render/render.js (Playwright, Chromium)
-  tool_sha256: 92861603adb02fd2854aa4bb358fb97dee4b15b9dbb8ac7bce14ac8bd46963d0
+  tool_sha256: 17337531ce0a5513d8b1e76644a0b8da00ad4bd0acabbad0938655741353cc5f
   modifications: []
   layout: content/items/CI-0001-personal-presentation/renders/D-ru-telegram_post.layout.json
-  date: '2026-10-04'
+  date: '2026-10-05'
   prompt: prompts/image/presentation-composition.v1.md
 - file: content/items/CI-0001-personal-presentation/renders/D-ru-youtube_banner.jpg
   sha256: cc43690b9e0264f25631e027b442fe85e0c48345f0d1732db8e00ffa1deb45c2
@@ -464,13 +464,13 @@ outputs:
   spec: content/items/CI-0001-personal-presentation/spec/variant-d.yaml
   spec_sha256: 94ad11e8f023369eb94c3a4f14116bddcd3c2545cd247819f0f17fffb92b9b1c
   tool: tools/cs/render.py + tools/render/render.js (Playwright, Chromium)
-  tool_sha256: 92861603adb02fd2854aa4bb358fb97dee4b15b9dbb8ac7bce14ac8bd46963d0
+  tool_sha256: 17337531ce0a5513d8b1e76644a0b8da00ad4bd0acabbad0938655741353cc5f
   modifications: []
   layout: content/items/CI-0001-personal-presentation/renders/D-ru-youtube_banner.layout.json
   date: '2026-10-04'
   prompt: prompts/image/presentation-composition.v1.md
 - file: content/items/CI-0001-personal-presentation/renders/E-en-github_social.png
-  sha256: a2a7478f0ccd50885634a8b4e38a35a5b185f4ac6899ee97ff87cbcf371a04e1
+  sha256: e3089d4ee042160930708b61d646197971e84ae1ec13ca99ac5442af1c662c53
   variant: E
   format: github_social
   lang: en
@@ -482,13 +482,13 @@ outputs:
   spec: content/items/CI-0001-personal-presentation/spec/variant-e.yaml
   spec_sha256: 29ca56873e15d77c81343f15873d8e699f49aa9f94470ad9951648aad4e32dee
   tool: tools/cs/render.py + tools/render/render.js (Playwright, Chromium)
-  tool_sha256: 92861603adb02fd2854aa4bb358fb97dee4b15b9dbb8ac7bce14ac8bd46963d0
+  tool_sha256: 17337531ce0a5513d8b1e76644a0b8da00ad4bd0acabbad0938655741353cc5f
   modifications: []
   layout: content/items/CI-0001-personal-presentation/renders/E-en-github_social.layout.json
   date: '2026-10-05'
   prompt: prompts/image/presentation-composition.v1.md
 - file: content/items/CI-0001-personal-presentation/renders/E-en-master.png
-  sha256: e0e9e982bb63d0aae2ce1a67e0291004011add0ddcadbd3e94162b18b96d9c68
+  sha256: 042f9af16459749b98da69c8086b1dc6fe6aa7cc3a8bc45569aed86bea08a735
   variant: E
   format: master
   lang: en
@@ -500,13 +500,13 @@ outputs:
   spec: content/items/CI-0001-personal-presentation/spec/variant-e.yaml
   spec_sha256: 29ca56873e15d77c81343f15873d8e699f49aa9f94470ad9951648aad4e32dee
   tool: tools/cs/render.py + tools/render/render.js (Playwright, Chromium)
-  tool_sha256: 92861603adb02fd2854aa4bb358fb97dee4b15b9dbb8ac7bce14ac8bd46963d0
+  tool_sha256: 17337531ce0a5513d8b1e76644a0b8da00ad4bd0acabbad0938655741353cc5f
   modifications: []
   layout: content/items/CI-0001-personal-presentation/renders/E-en-master.layout.json
   date: '2026-10-05'
   prompt: prompts/image/presentation-composition.v1.md
 - file: content/items/CI-0001-personal-presentation/renders/E-en-telegram_post.jpg
-  sha256: 4c77779754746550ba09309389417f98b692b830d702d8e220000dee72c92bde
+  sha256: 127832a1fad714a05555bceee9f417c213b7d3100a6315ad9e45bce427cd5e01
   variant: E
   format: telegram_post
   lang: en
@@ -518,13 +518,13 @@ outputs:
   spec: content/items/CI-0001-personal-presentation/spec/variant-e.yaml
   spec_sha256: 29ca56873e15d77c81343f15873d8e699f49aa9f94470ad9951648aad4e32dee
   tool: tools/cs/render.py + tools/render/render.js (Playwright, Chromium)
-  tool_sha256: 92861603adb02fd2854aa4bb358fb97dee4b15b9dbb8ac7bce14ac8bd46963d0
+  tool_sha256: 17337531ce0a5513d8b1e76644a0b8da00ad4bd0acabbad0938655741353cc5f
   modifications: []
   layout: content/items/CI-0001-personal-presentation/renders/E-en-telegram_post.layout.json
   date: '2026-10-05'
   prompt: prompts/image/presentation-composition.v1.md
 - file: content/items/CI-0001-personal-presentation/renders/E-ru-master.png
-  sha256: e5deebf52c5a55c3664edb0723627d9d08a9b74bac756969be035dd1e0ee8eb6
+  sha256: fbbaf798aa8e48cdaeeb491c48fcce094bfa515fd5a6f34dea4f20c3158a1cc8
   variant: E
   format: master
   lang: ru
@@ -536,13 +536,13 @@ outputs:
   spec: content/items/CI-0001-personal-presentation/spec/variant-e.yaml
   spec_sha256: 29ca56873e15d77c81343f15873d8e699f49aa9f94470ad9951648aad4e32dee
   tool: tools/cs/render.py + tools/render/render.js (Playwright, Chromium)
-  tool_sha256: 92861603adb02fd2854aa4bb358fb97dee4b15b9dbb8ac7bce14ac8bd46963d0
+  tool_sha256: 17337531ce0a5513d8b1e76644a0b8da00ad4bd0acabbad0938655741353cc5f
   modifications: []
   layout: content/items/CI-0001-personal-presentation/renders/E-ru-master.layout.json
   date: '2026-10-05'
   prompt: prompts/image/presentation-composition.v1.md
 - file: content/items/CI-0001-personal-presentation/renders/E-ru-telegram_post.jpg
-  sha256: 3e5742e528698ba4f0d70b38e59828ee4e2eb31ae19d57261945990bac806d78
+  sha256: 758d3b7111c83b83a2a176171648d190bc6ddeb946db88745ad2070dac5b2aa1
   variant: E
   format: telegram_post
   lang: ru
@@ -554,13 +554,13 @@ outputs:
   spec: content/items/CI-0001-personal-presentation/spec/variant-e.yaml
   spec_sha256: 29ca56873e15d77c81343f15873d8e699f49aa9f94470ad9951648aad4e32dee
   tool: tools/cs/render.py + tools/render/render.js (Playwright, Chromium)
-  tool_sha256: 92861603adb02fd2854aa4bb358fb97dee4b15b9dbb8ac7bce14ac8bd46963d0
+  tool_sha256: 17337531ce0a5513d8b1e76644a0b8da00ad4bd0acabbad0938655741353cc5f
   modifications: []
   layout: content/items/CI-0001-personal-presentation/renders/E-ru-telegram_post.layout.json
   date: '2026-10-05'
   prompt: prompts/image/presentation-composition.v1.md
 - file: content/items/CI-0001-personal-presentation/renders/E-ru-vk_post.jpg
-  sha256: 3e5742e528698ba4f0d70b38e59828ee4e2eb31ae19d57261945990bac806d78
+  sha256: 758d3b7111c83b83a2a176171648d190bc6ddeb946db88745ad2070dac5b2aa1
   variant: E
   format: vk_post
   lang: ru
@@ -572,7 +572,7 @@ outputs:
   spec: content/items/CI-0001-personal-presentation/spec/variant-e.yaml
   spec_sha256: 29ca56873e15d77c81343f15873d8e699f49aa9f94470ad9951648aad4e32dee
   tool: tools/cs/render.py + tools/render/render.js (Playwright, Chromium)
-  tool_sha256: 92861603adb02fd2854aa4bb358fb97dee4b15b9dbb8ac7bce14ac8bd46963d0
+  tool_sha256: 17337531ce0a5513d8b1e76644a0b8da00ad4bd0acabbad0938655741353cc5f
   modifications: []
   layout: content/items/CI-0001-personal-presentation/renders/E-ru-vk_post.layout.json
   date: '2026-10-05'
@@ -590,7 +590,7 @@ outputs:
   spec: content/items/CI-0001-personal-presentation/spec/variant-e.yaml
   spec_sha256: 29ca56873e15d77c81343f15873d8e699f49aa9f94470ad9951648aad4e32dee
   tool: tools/cs/render.py + tools/render/render.js (Playwright, Chromium)
-  tool_sha256: 92861603adb02fd2854aa4bb358fb97dee4b15b9dbb8ac7bce14ac8bd46963d0
+  tool_sha256: 17337531ce0a5513d8b1e76644a0b8da00ad4bd0acabbad0938655741353cc5f
   modifications: []
   layout: content/items/CI-0001-personal-presentation/renders/E-ru-youtube_banner.layout.json
   date: '2026-10-05'

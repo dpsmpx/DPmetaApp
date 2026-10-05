@@ -147,9 +147,7 @@ variants:
 selected_variant: E
 provenance: provenance.yaml
 blocked_by:
-- 'автор: утверждение и гейт Brand'
-- 'автор: О-1 — размер роли на миниатюре'
-- 'автор: D-10 — правило «без портрета имя × 1,6» в VISUAL_SYSTEM.md (изменение основ)'
+- 'автор: подтвердить утверждение E на итоговом рендере (роль крупнее) — гейт Brand'
 - 'сессия: канон v2 и тексты площадок с ролями новых репозиториев (условие исключения ОР-12) — после утверждения'
 review:
   file: docs/content/products/personal_presentation/CRITIQUE.md
@@ -204,8 +202,9 @@ review:
     - id: О-1
       text: 'роль не читается на миниатюре (≈ 6,5 px при 320 px): роль ≈ 5,5 % высоты или критерий «лицо
         и имя»'
-      status: open
-      resolution: 'решает автор: токен title ≈ 5,5 % (изменение основ) или критерий «лицо и имя»'
+      status: fixed
+      resolution: 'решение автора 05.10.2026 («роль увеличь»): токен title 5,5 % вместо 3,6 % (Д9) — роль
+        при 320 px 9,9 px (лента), 8,8 px (GitHub)'
     - id: A-1
       variant: A
       text: 'интерьер читается: обои справа от головы, окно со шторой за плечом и слева от головы (Д18)'
@@ -509,7 +508,9 @@ review:
     - id: D-10
       variant: D
       text: 'имя 13,6 % высоты при токене display 8,5 %: множитель ×1,6 в layout_minimal нигде не записан'
-      status: open
+      status: fixed
+      resolution: 'решение автора 05.10.2026 («правило ×1,6 запиши»): display_no_portrait 1,6 в tokens.json,
+        VISUAL_SYSTEM §3, Д9'
     - id: D-11
       variant: D
       text: 'шапка: подписи «Архитектура» и «Продукт» в ≈ 9 px от нижней границы зоны (нужно ≥ 24 px)'
@@ -655,7 +656,7 @@ targets:
   na: шапка канала загружается в Studio без текста (OUTPUTS.md)
 - variant: discord.ru
   na: 'ОР-6: сервер не подтверждён'
-state: UNDER_REVIEW
+state: REVISED
 history:
 - date: 2026-10-04
   state: IDEA
@@ -733,3 +734,9 @@ history:
   note: 'проверка того же критика после правок: E-15…E-17 закрыты, новых проблем нет, оценки E — все 4.
     Выбор сессии — E (DECISION.md, «Версия 2»); гейты Factual, Visual, Platform, Provenance, Safety, Legal
     — pass; Brand — автор'
+- date: 2026-10-05
+  state: REVISED
+  note: 'изменение основ по решению автора («Утверждаю E, роль увеличь, правило ×1,6 запиши»): токен title
+    5,5 % (О-1), display_no_portrait 1,6 (D-10) — Д9, VISUAL_SYSTEM §3, tokens.json, хэш A-003. Перерендерены
+    E (кроме шапки) и запасной D (кроме шапки); шапки E и D совпали байт в байт; A, B, C отклонены — рендеры
+    до изменения оставлены историей'
