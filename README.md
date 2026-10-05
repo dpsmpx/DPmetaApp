@@ -24,6 +24,7 @@ DPmeta — **не зависимость**: ни один репозиторий
 | найденные расхождения по репозиториям и что с ними сделано | [`docs/SYNC_QUEUE.md`](docs/SYNC_QUEUE.md) |
 | решения о самом DPmeta | [`docs/DECISIONS.md`](docs/DECISIONS.md) |
 | как идёт мета-проход и как он не мешает разработке | [`docs/PROCESS.md`](docs/PROCESS.md) |
+| аудит согласованности документации проектов — задача для периодического вызова | [`docs/doc-audit/TASK.md`](docs/doc-audit/TASK.md) |
 | срезы состояния экосистемы на дату | [`docs/reports/`](docs/reports/) |
 | правила для сессий в этом репозитории | [`CLAUDE.md`](CLAUDE.md) |
 
@@ -44,4 +45,8 @@ python3 tools/xref.py --root ..      # сверка ссылок между кл
 Первый проход консолидации — 5 октября 2026
 ([`docs/reports/2026-10-05-ECOSYSTEM_HEALTH.md`](docs/reports/2026-10-05-ECOSYSTEM_HEALTH.md));
 повторный — в тот же день, по работе, влитой за час между проходами
-([`docs/reports/2026-10-05-2-ECOSYSTEM_HEALTH.md`](docs/reports/2026-10-05-2-ECOSYSTEM_HEALTH.md)).
+([`docs/reports/2026-10-05-2-ECOSYSTEM_HEALTH.md`](docs/reports/2026-10-05-2-ECOSYSTEM_HEALTH.md));
+третий — частичный, по изменившимся SocialMediaImage, DPpass и новому
+DPmonetization
+([`docs/reports/2026-10-05-3-ECOSYSTEM_HEALTH.md`](docs/reports/2026-10-05-3-ECOSYSTEM_HEALTH.md)).
+Аудит согласованности документации (M-09) ещё не запускался.

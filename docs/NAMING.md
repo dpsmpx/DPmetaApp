@@ -16,7 +16,8 @@
 | **DPprofile** — проверяемая история пути | `dpsmpx/DPprofile` | — | тег проекта `voxelrpg` — устойчивый идентификатор игры под любым именем | `DPprofile:D-03` |
 | **DPlearn** — система обучения | `dpsmpx/DPlearn` | — | — | — |
 | **SocialMediaImage** — контент и сайт `dpsmpx.com` | `dpsmpx/SocialMediaImage` | — | — | — |
-| **DP_game_market_analytic_system** — анализ рынка игр | `dpsmpx/DP_game_market_analytic_system` | — (пакет `dpmarket`, команда `dpm` — ещё не написана) | — | — |
+| **DP_game_market_analytic_system** — анализ рынка игр | `dpsmpx/DP_game_market_analytic_system` | — (пакет `dpmarket`, команда `dpm` — ещё не написана; на странице прогресса сайта — «DP_game_market», `SocialMediaImage:data/progress/scope.yaml`) | — | — |
+| **DPmonetization** — Strategic Project Intelligence | `dpsmpx/DPmonetization` | — (пакет `dpmon`, команда `tools/spi` — ещё не написана) | — | — |
 | **DPmeta** — этот репозиторий | `dpsmpx/DPmeta` | — | — | `DPmeta:M-01` |
 
 Наблюдение: в Galdhold дата смены имени языка записана как 4 октября
@@ -54,18 +55,20 @@
 | Galdhold | `Р0`…`Р20` — `docs/direction/DECISIONS.md` | — | кириллица |
 | DPlang | `Р0`…`Р49` — `docs/direction/DECISIONS.md` | открытые решения `О1`… (`docs/direction/OPEN_DECISIONS.md`), пункты постановки `П1`… | кириллица |
 | DP-Verify | `V-01`…`V-19` | ТЗ: `F-`, `N-`, `I-`, `A-`, `L-`, `R-`, `Q-`, `TR-` | латиница |
-| DPpass | `D-01`…`D-30` | угрозы `T1`… (`docs/SECURITY_MODEL.md`) | латиница |
+| DPpass | `D-01`…`D-31` | угрозы `T1`… (`docs/SECURITY_MODEL.md`) | латиница |
 | DPprofile | `D-01`…`D-15` | источники `S-NN`, заметки `N-NNNN`, факты `F-NNNN`, выводы `I-NNNN`, гипотезы `H-NNNN` | латиница |
 | DPlearn | `D-01`…`D-18` | — | латиница |
-| SocialMediaImage | `Д0`…`Д37` | открытые решения `ОР-N`, конфликты идентичности `IC-NN`, фазы `П0`…`П11`, `К1`…`К7` | смешанный |
+| SocialMediaImage | `Д0`…`Д39` | открытые решения `ОР-N`, конфликты идентичности `IC-NN`, фазы `П0`…`П11`, `К1`…`К7`, объекты контента `CI-NNNN` | смешанный |
 | DP_game_market_analytic_system | `ADR-001`…`ADR-010` (`docs/DECISIONS.md`) | инварианты `INV-NN` | латиница |
-| DPmeta | `M-NN` | `C-NN`, `RISK-NN`, `SQ-NN`, `E-NN` | латиница |
+| DPmonetization | журнала нет; код ссылается на `D-04`…`D-09` (SQ-22) | критерии готовности `tech.core_loop`… (`config/tracks.toml`) | латиница |
+| DPmeta | `M-NN` | `C-NN`, `RISK-NN`, `SQ-NN`, `E-NN`; находки аудита документации `DOC-AUDIT-NNN` (у каждого проекта свой счёт) и `CROSS-DOC-NNN` (M-09) | латиница |
 
 Диапазоны — на 5 октября 2026; растут, и это нормально.
 
 **Наблюдения:**
 
-- `D-NN` — у трёх репозиториев, `Р18` — у двух с разным смыслом
+- `D-NN` — у трёх репозиториев (и в коде DPmonetization, где журнала ещё
+  нет), `Р18` — у двух с разным смыслом
   (`Galdhold:Р18` — независимость от DPlang, `DPlang:Р18` — эволюция
   языка), `F-` — и факты DPprofile, и требования ТЗ DP-Verify. Номер без
   имени проекта однозначен только внутри своего репозитория.

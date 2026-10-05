@@ -71,6 +71,14 @@ clone = "dp_game_market_analytic_system"
 names = ["dpmarket"]
 decisions = { path = "docs/DECISIONS.md", id = "ADR-\\d+" }
 
+# Новый (5 октября 2026), место в экосистеме не определено (docs/ECOSYSTEM.md, §2).
+# Журнала решений ещё нет: код ссылается на D-NN, которых негде сверить.
+
+[[repo]]
+name = "DPmonetization"
+slug = "dpsmpx/DPmonetization"
+clone = "dpmonetization"
+
 # Периферия: вне общего процесса, но с контрактом C-08 (формат карт).
 
 [[repo]]
