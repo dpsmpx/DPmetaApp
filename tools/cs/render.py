@@ -493,8 +493,9 @@ def layout_minimal(spec, t, tok, fmt: Fmt) -> str:
         top = sa["y"] + 20 * unit
         py = sa["y"] + sa["h"] - 78 * unit
     else:
-        disp, title, label = ts["display"] * H * 1.6, ts["title"] * H, ts["label"] * H
-        x0, cw = W * 0.12, W * 0.76
+        # без портрета знак — главный объект: display × display_no_portrait (Д9, VISUAL_SYSTEM §3)
+        disp, title, label = ts["display"] * H * ts["display_no_portrait"], ts["title"] * H, ts["label"] * H
+        x0, cw = W * 0.12, W * 0.78  # роль title 5,5 % — в одну строку (D-12)
         top = H * 0.22
         py = H * 0.70
     body = [name_html(tok, t["name"], x0, top, disp)]
@@ -575,8 +576,6 @@ def evidence_lines_html(tok: dict, lines: list[str], size) -> str:
             + "".join(rows))
 
 
-# Имя в макетах без портрета крупнее токена display — тот же множитель, что у minimal (D-10, E-12).
-NAME_NO_PORTRAIT = 1.6
 # Строка под именем — ниже рамки глифов имени (выносной «p»), иначе рамки текста пересекаются.
 NAME_GAP = 1.32
 
@@ -604,7 +603,7 @@ def layout_ecosystem(spec, t, tok, fmt: Fmt) -> str:
         return layout_ecosystem_banner(spec, t, tok, fmt)
     s = H / 720
     ts = tok["type_scale"]
-    disp, title, label = ts["display"] * H * NAME_NO_PORTRAIT, ts["title"] * H, ts["label"] * H
+    disp, title, label = ts["display"] * H * ts["display_no_portrait"], ts["title"] * H, ts["label"] * H
     pw = W * 0.40
     m = 56 * s
     x0 = pw + W * 0.03
@@ -619,7 +618,8 @@ def layout_ecosystem(spec, t, tok, fmt: Fmt) -> str:
     )
     col = [
         name,
-        _flow_text(tok, "role", "identity", _e(t["role"]), title, weight=500, line=1.2, after=title * 0.3),
+        # роль и фраза одного размера: зазор больше межстрочного, иначе читаются одним абзацем (E-18)
+        _flow_text(tok, "role", "identity", _e(t["role"]), title, weight=500, line=1.2, after=title * 0.55),
         _flow_text(tok, "claim", "identity", _e(t["claim"]), title, line=1.3, after=title * 0.5),
         _flow_text(tok, "method", "identity", accent_html(tok, t["method"], t.get("accent")), label,
                    color="mist", line=1.45, after=label * 1.6),

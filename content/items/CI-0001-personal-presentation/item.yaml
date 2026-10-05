@@ -147,9 +147,7 @@ variants:
 selected_variant: E
 provenance: provenance.yaml
 blocked_by:
-- 'автор: утверждение и гейт Brand'
-- 'автор: О-1 — размер роли на миниатюре'
-- 'автор: D-10 — правило «без портрета имя × 1,6» в VISUAL_SYSTEM.md (изменение основ)'
+- 'автор: подтвердить утверждение E на итоговом рендере (роль крупнее) — гейт Brand'
 - 'сессия: канон v2 и тексты площадок с ролями новых репозиториев (условие исключения ОР-12) — после утверждения'
 review:
   file: docs/content/products/personal_presentation/CRITIQUE.md
@@ -204,8 +202,9 @@ review:
     - id: О-1
       text: 'роль не читается на миниатюре (≈ 6,5 px при 320 px): роль ≈ 5,5 % высоты или критерий «лицо
         и имя»'
-      status: open
-      resolution: 'решает автор: токен title ≈ 5,5 % (изменение основ) или критерий «лицо и имя»'
+      status: fixed
+      resolution: 'решение автора 05.10.2026 («роль увеличь»): токен title 5,5 % вместо 3,6 % (Д9) — роль
+        при 320 px 9,9 px (лента), 8,8 px (GitHub)'
     - id: A-1
       variant: A
       text: 'интерьер читается: обои справа от головы, окно со шторой за плечом и слева от головы (Д18)'
@@ -509,7 +508,9 @@ review:
     - id: D-10
       variant: D
       text: 'имя 13,6 % высоты при токене display 8,5 %: множитель ×1,6 в layout_minimal нигде не записан'
-      status: open
+      status: fixed
+      resolution: 'решение автора 05.10.2026 («правило ×1,6 запиши»): display_no_portrait 1,6 в tokens.json,
+        VISUAL_SYSTEM §3, Д9'
     - id: D-11
       variant: D
       text: 'шапка: подписи «Архитектура» и «Продукт» в ≈ 9 px от нижней границы зоны (нужно ≥ 24 px)'
@@ -531,6 +532,16 @@ review:
       text: BRIEF_V2 и CREATIVE_DIRECTION_V2 описывают композицию до ревизии
       status: fixed
       resolution: оба документа дополнены разделом о ревизии
+    - id: E-18
+      variant: E
+      text: роль и ключевая фраза одного размера и цвета, зазор ≈ 10 px — читаются одним абзацем
+      status: fixed
+      resolution: 'зазор после роли — 0,55 title: 19 px в ленте, 17 px на GitHub'
+    - id: D-12
+      variant: D
+      text: роль D-ru в ленте при title 5,5 % переносится посреди фразы (977 px при колонке 973 px)
+      status: fixed
+      resolution: 'колонка minimal — 0,78 ширины: роль в одну строку'
 exports:
 - format: github_social
   file: exports/A-en-github_social.png
@@ -733,3 +744,21 @@ history:
   note: 'проверка того же критика после правок: E-15…E-17 закрыты, новых проблем нет, оценки E — все 4.
     Выбор сессии — E (DECISION.md, «Версия 2»); гейты Factual, Visual, Platform, Provenance, Safety, Legal
     — pass; Brand — автор'
+- date: 2026-10-05
+  state: REVISED
+  note: 'изменение основ по решению автора («Утверждаю E, роль увеличь, правило ×1,6 запиши»): токен title
+    5,5 % (О-1), display_no_portrait 1,6 (D-10) — Д9, VISUAL_SYSTEM §3, tokens.json, хэш A-003. Перерендерены
+    E (кроме шапки) и запасной D (кроме шапки); шапки E и D совпали байт в байт; A, B, C отклонены — рендеры
+    до изменения оставлены историей'
+- date: &id004 2026-10-05
+  state: UNDER_REVIEW
+  note: 'проверка критика после изменения основ: О-1 и D-10 закрыты, наложений и переполнений нет, оценки
+    E — все 4; новые minor E-18, D-12'
+- date: *id004
+  state: REVISED
+  note: E-18 — зазор после роли 0,55 title; D-12 — колонка minimal 0,78 W. Перерендерены E и D (кроме
+    шапок; шапки совпали байт в байт)
+- date: 2026-10-05
+  state: UNDER_REVIEW
+  note: 'последняя проверка критика: E-18 и D-12 закрыты, новых проблем нет, оценки E — все 4; E готов
+    к утверждению автором (Brand)'
