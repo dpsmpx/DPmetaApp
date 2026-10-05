@@ -8,6 +8,20 @@
   "properties": {
     "schema": {"const": "facts/v1"},
     "as_of": {"type": "string", "format": "date"},
+    "retired": {
+      "type": "array",
+      "description": "Выведенные из реестра id: ссылки в документах — история; подстановка в контент их не знает",
+      "items": {
+        "type": "object",
+        "required": ["id", "date", "reason"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string", "pattern": "^[A-Z]{2,5}(-[A-Z0-9]+)+$"},
+          "date": {"type": "string", "format": "date"},
+          "reason": {"type": "string"}
+        }
+      }
+    },
     "facts": {
       "type": "array",
       "items": {

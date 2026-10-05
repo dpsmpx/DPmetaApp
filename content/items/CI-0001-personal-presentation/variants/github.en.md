@@ -53,7 +53,7 @@ deps:
   datasets: {}
   canonical:
     version: 2
-    sha256: 03f173c39329111c7c55f04e9cf74fb79bb86db1778b3294dc5330fe6d88f36e
+    sha256: fe64888b48a31219079069bf4113cd66b4cfcf99d2719761072c7d8cbd7d9d86
   media:
     exports/E-en-github_social.png: ec1dece8a067ae21ba950233f8c4c5656279b32adcb1f2bbad4f1501a5a2aaec
 ---

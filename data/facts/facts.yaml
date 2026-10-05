@@ -13,6 +13,10 @@
 # recheck_by:   дата, после которой число/состояние перепроверяется перед использованием
 schema: facts/v1
 as_of: 2026-10-05
+# Выведенные из реестра id: ссылки на них в документах — история; в контент
+# они не подставляются (подстановка их не знает).
+retired:
+  - {id: AU-NAME, date: 2026-10-05, reason: "Д40: имени автора нет нигде — факт удалён вместе с именем"}
 facts:
   # ---------------------------------------------------------------- автор
   - id: AU-HANDLE
@@ -26,19 +30,6 @@ facts:
       en: ["dpsmpx (aka DP, DearPixel)"]
     evidence:
       - {kind: platform_page, source: "github.com/dpsmpx — README dpsmpx/dpsmpx", ref: "433f627", date: 2026-10-04, verification: observed}
-  - id: AU-NAME
-    subject: author
-    class: FACT
-    risk: medium
-    public: true
-    statement: Имя автора — Борис Давыдов (Boris Davydov); публично используется рядом с псевдонимом dpsmpx (Д20).
-    allowed_wording:
-      ru: ["Борис Давыдов", "Борис Давыдов (dpsmpx)", "Борис Давыдов / dpsmpx"]
-      en: ["Boris Davydov", "Boris Davydov (dpsmpx)", "Boris Davydov / dpsmpx"]
-    evidence:
-      - {kind: platform_page, source: "api.telegra.ph getPage — статья «Почему разработка с ИИ для меня оказалась намного сильнее обычной», author_name со ссылкой на t.me/dpsmpx", date: 2026-10-04, verification: observed}
-      - {kind: decision, source: "DECISIONS.md Д20 — решение автора открыть имя (ОР-1)", date: 2026-10-04, verification: decision}
-    notes: Латинское написание — из постановки автора (docs/direction/PLATFORM_VISION.md). Имя не разрешает личное (ОР-8).
   - id: AU-ROLE
     subject: author
     class: FACT
