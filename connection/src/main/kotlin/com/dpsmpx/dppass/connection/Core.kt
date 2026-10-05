@@ -178,7 +178,7 @@ class DPpassCore(
     ): ConnectionReport? {
         val ir = activation.state.activeConfig ?: return null
         val plan = plan(assessment, preferred) ?: return null
-        val orchestrator = ConnectionOrchestrator(compiler, engine, checker, health, clock, log, policy, pause)
+        val orchestrator = ConnectionOrchestrator(compiler, engine, checker, health, clock, log, policy, pause, stability)
         return orchestrator.connect(ir, plan, tun)
     }
 
