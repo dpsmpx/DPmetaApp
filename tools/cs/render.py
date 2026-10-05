@@ -559,20 +559,20 @@ def ecosystem_html(tok: dict, eco: dict, size: float, labels: bool = True) -> st
     return "".join(parts) + note_html
 
 
-def evidence_lines_html(tok: dict, lines: list[str], x, y, w, size) -> str:
+def evidence_lines_html(tok: dict, lines: list[str], size) -> str:
     """Доказательства строками, не плашками (E-3: плашки — узлы карты). «база:» — mist, величины — paper;
-    над блоком — линия."""
-    parts = [f'<div style="position:absolute;left:{x:.1f}px;top:{y:.1f}px;width:{w * 0.5:.1f}px;height:1px;'
-             f'background:{_c(tok, "line")}"></div>']
-    for i, s in enumerate(lines):
+    над блоком — линия. Блок в потоке колонки."""
+    rows = []
+    for s in lines:
         base, sep, rest = s.partition(": ")
         inner = (f'<span style="color:{_c(tok, "mist")}">{_e(base)}:</span> {_e(rest)}' if sep else _e(s))
-        parts.append(
+        rows.append(
             f'<div class="mono" data-role="evidence" data-group="evidence" data-fg="mist" data-bg="ink" '
-            f'style="position:absolute;left:{x:.1f}px;top:{y + size * 0.9 + i * size * 1.65:.1f}px;width:{w:.1f}px;'
-            f'font-size:{size:.1f}px;line-height:1.3;white-space:nowrap;color:{_c(tok, "paper")}">{inner}</div>'
+            f'style="font-size:{size:.1f}px;line-height:1.3;white-space:nowrap;color:{_c(tok, "paper")};'
+            f'margin-top:{size * 0.35:.1f}px">{inner}</div>'
         )
-    return "".join(parts)
+    return (f'<div style="width:50%;height:1px;background:{_c(tok, "line")};margin-bottom:{size * 0.55:.1f}px"></div>'
+            + "".join(rows))
 
 
 # Имя в макетах без портрета крупнее токена display — тот же множитель, что у minimal (D-10, E-12).
@@ -581,9 +581,24 @@ NAME_NO_PORTRAIT = 1.6
 NAME_GAP = 1.32
 
 
+def _flow_text(tok: dict, role: str, group: str, html_text: str, size, color="paper", weight=400, line=1.3,
+               after=0.0, fg: str | None = None, nowrap=False) -> str:
+    """Текст в потоке колонки: высота — по настоящим строкам, отступ после — after (E-15)."""
+    ws = "white-space:nowrap;" if nowrap else ""
+    return (
+        f'<div data-role="{role}" data-group="{group}" data-fg="{fg or color}" data-bg="ink" '
+        f'style="font-size:{size:.1f}px;font-weight:{weight};line-height:{line};color:{_c(tok, color)};'
+        f'text-wrap:balance;{ws}margin-bottom:{after:.1f}px">{html_text}</div>'
+    )
+
+
 def layout_ecosystem(spec, t, tok, fmt: Fmt) -> str:
     """Вариант без лица: на месте портрета — карта экосистемы; справа имя, роль, ключевая фраза, метод,
-    доказательства (ревизия по критике v2: E-2, E-3, E-6, E-12, E-13)."""
+    доказательства (ревизия по критике v2: E-2, E-3, E-6, E-12, E-13, E-15).
+
+    Обе колонки — в потоке и по центру высоты: отступы считаются по настоящему числу строк, а не по
+    заданному заранее, поэтому длинная фраза не наползает на метод (E-15).
+    """
     W, H = fmt.width, fmt.height
     if fmt.safe_area:
         return layout_ecosystem_banner(spec, t, tok, fmt)
@@ -592,36 +607,35 @@ def layout_ecosystem(spec, t, tok, fmt: Fmt) -> str:
     disp, title, label = ts["display"] * H * NAME_NO_PORTRAIT, ts["title"] * H, ts["label"] * H
     pw = W * 0.40
     m = 56 * s
-    body = [
-        f'<div style="position:absolute;left:{m:.1f}px;top:{m:.1f}px;width:{pw - m - W * 0.015:.1f}px;'
-        f'height:{H - 2 * m:.1f}px;display:flex;flex-direction:column;justify-content:center;gap:{label * 1.3:.1f}px">'
-        f'{ecosystem_html(tok, t["ecosystem"], label)}</div>',
-        # граница карты и текста — декор, не группа текста
-        f'<div style="position:absolute;left:{pw + W * 0.012:.1f}px;top:{H * 0.14:.1f}px;width:1px;'
-        f'height:{H * 0.72:.1f}px;background:linear-gradient(180deg,transparent,{_c(tok, "line")},transparent)"></div>',
-    ]
     x0 = pw + W * 0.03
     cw = W - x0 - m
-    ev = t.get("evidence", [])
-    claim_lines = 2  # ключевая фраза размером title в колонку не помещается одной строкой
-    ev_h = (label * 0.9 + label * 1.65 * len(ev)) if ev else 0
-    block = disp * NAME_GAP + title * 1.5 + title * 1.3 * claim_lines + title * 0.5 + label * 1.45 + label * 1.9 + ev_h
-    y = max(m, (H - block) / 2)
-    body.append(name_html(tok, t["name"], x0, y, disp))
-    y += disp * NAME_GAP
-    body.append(text_html(tok, "role", "identity", t["role"], x0, y, cw, title, weight=500, line=1.2))
-    y += title * 1.5
-    body.append(text_html(tok, "claim", "identity", t["claim"], x0, y, cw, title, line=1.3))
-    y += title * 1.3 * claim_lines + title * 0.5
-    body.append(
-        f'<div data-role="method" data-group="identity" data-fg="mist" data-bg="ink" '
-        f'style="position:absolute;left:{x0:.1f}px;top:{y:.1f}px;width:{cw:.1f}px;font-size:{label:.1f}px;'
-        f'line-height:1.45;color:{_c(tok, "mist")}">{accent_html(tok, t["method"], t.get("accent"))}</div>'
+    dot = disp * 0.16
+    name = (
+        f'<div data-role="name" data-group="name" data-fg="paper" data-bg="ink" '
+        f'style="font-size:{disp:.1f}px;font-weight:600;letter-spacing:-0.02em;line-height:1;white-space:nowrap;'
+        f'color:{_c(tok, "paper")};margin-bottom:{disp * (NAME_GAP - 1):.1f}px">{_e(t["name"])}'
+        f'<span style="display:inline-block;width:{dot:.1f}px;height:{dot:.1f}px;margin-left:{dot * 0.5:.1f}px;'
+        f'background:{_c(tok, "human")};border-radius:1px"></span></div>'
     )
-    y += label * 1.45 + label * 1.9
-    if ev:
-        body.append(evidence_lines_html(tok, ev, x0, y, cw, label))
-    return "".join(body)
+    col = [
+        name,
+        _flow_text(tok, "role", "identity", _e(t["role"]), title, weight=500, line=1.2, after=title * 0.3),
+        _flow_text(tok, "claim", "identity", _e(t["claim"]), title, line=1.3, after=title * 0.5),
+        _flow_text(tok, "method", "identity", accent_html(tok, t["method"], t.get("accent")), label,
+                   color="mist", line=1.45, after=label * 1.6),
+    ]
+    if t.get("evidence"):
+        col.append(evidence_lines_html(tok, t["evidence"], label))
+    return (
+        f'<div style="position:absolute;left:{m:.1f}px;top:{m:.1f}px;width:{pw - m - W * 0.015:.1f}px;'
+        f'height:{H - 2 * m:.1f}px;display:flex;flex-direction:column;justify-content:center;gap:{label * 1.3:.1f}px">'
+        f'{ecosystem_html(tok, t["ecosystem"], label)}</div>'
+        # граница карты и текста — декор, не группа текста
+        f'<div style="position:absolute;left:{pw + W * 0.012:.1f}px;top:{H * 0.14:.1f}px;width:1px;'
+        f'height:{H * 0.72:.1f}px;background:linear-gradient(180deg,transparent,{_c(tok, "line")},transparent)"></div>'
+        f'<div style="position:absolute;left:{x0:.1f}px;top:{m:.1f}px;width:{cw:.1f}px;height:{H - 2 * m:.1f}px;'
+        f'display:flex;flex-direction:column;justify-content:center">{"".join(col)}</div>'
+    )
 
 
 def layout_ecosystem_banner(spec, t, tok, fmt: Fmt) -> str:
