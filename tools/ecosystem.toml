@@ -1,0 +1,94 @@
+# Реестр репозиториев экосистемы dpsmpx — машинная часть docs/ECOSYSTEM.md.
+#
+# Читает tools/xref.py. Поля:
+#   name       — каноническое имя проекта (docs/NAMING.md);
+#   slug       — репозиторий GitHub сейчас;
+#   clone      — каталог клона относительно --root (переопределяется --clone);
+#   aliases    — прежние и рабочие имена: ссылка через них сверяется так же,
+#                но считается устаревшим именем (docs/NAMING.md);
+#   names      — другие написания того же имени (не устаревшие);
+#   decisions  — журнал решений: путь и шаблон номера (регулярное выражение);
+#   defs       — где ещё определены номера, на которые ссылаются другие
+#                репозитории (ТЗ, реестры); шаблон — тот же формат.
+# Порядок записей — порядок строк и столбцов в отчёте.
+
+schema = 1
+
+[[repo]]
+name = "Galdhold"
+slug = "dpsmpx/Galdhold"
+clone = "galdhold"
+aliases = ["VoxelRPG", "3D_Voxel_OpenWorld_RPG", "3DOWVRPG"]
+decisions = { path = "docs/direction/DECISIONS.md", id = "Р\\d+" }
+
+[[repo]]
+name = "DPlang"
+slug = "dpsmpx/DPlang"
+clone = "dplang"
+aliases = ["dpsmpx/C-"]
+decisions = { path = "docs/direction/DECISIONS.md", id = "Р\\d+" }
+defs = [{ path = "docs/direction/OPEN_DECISIONS.md", id = "О\\d+" }]
+
+[[repo]]
+name = "DP-Verify"
+slug = "dpsmpx/DP-Verify"
+clone = "dp-verify"
+names = ["DP Verify"]
+decisions = { path = "docs/direction/DECISIONS.md", id = "V-\\d+" }
+defs = [{ path = "docs/direction/TECHNICAL_TASK.md", id = "(?:TR|[FNIALRQ])-\\d+" }]
+
+[[repo]]
+name = "DPpass"
+slug = "dpsmpx/DPpass"
+clone = "dppass"
+decisions = { path = "docs/direction/DECISIONS.md", id = "D-\\d+" }
+
+[[repo]]
+name = "DPprofile"
+slug = "dpsmpx/DPprofile"
+clone = "dpprofile"
+decisions = { path = "docs/direction/DECISIONS.md", id = "D-\\d+" }
+
+[[repo]]
+name = "DPlearn"
+slug = "dpsmpx/DPlearn"
+clone = "dplearn"
+decisions = { path = "docs/direction/DECISIONS.md", id = "D-\\d+" }
+
+[[repo]]
+name = "SocialMediaImage"
+slug = "dpsmpx/SocialMediaImage"
+clone = "socialmediaimage"
+decisions = { path = "docs/direction/DECISIONS.md", id = "Д\\d+" }
+defs = [{ path = "docs/identity/IDENTITY_CONFLICTS.md", id = "IC-\\d+" }]
+
+[[repo]]
+name = "DP_game_market_analytic_system"
+slug = "dpsmpx/DP_game_market_analytic_system"
+clone = "dp_game_market_analytic_system"
+names = ["dpmarket"]
+decisions = { path = "docs/DECISIONS.md", id = "ADR-\\d+" }
+
+# Периферия: вне общего процесса, но с контрактом C-08 (формат карт).
+
+[[repo]]
+name = "Andors-Love"
+slug = "dpsmpx/Andors-Love"
+clone = "andors-love"
+
+[[repo]]
+name = "TrueJointTileMaker"
+slug = "dpsmpx/TrueJointTileMaker"
+clone = "dpsmpx/truejointtilemaker"
+
+[[repo]]
+name = "DPmeta"
+slug = "dpsmpx/DPmeta"
+clone = "DPmeta"
+decisions = { path = "docs/DECISIONS.md", id = "M-\\d+" }
+defs = [
+  { path = "docs/CONTRACTS.md", id = "C-\\d+" },
+  { path = "docs/RISKS.md", id = "RISK-\\d+" },
+  { path = "docs/SYNC_QUEUE.md", id = "SQ-\\d+" },
+  { path = "docs/PRINCIPLES.md", id = "E-\\d+" },
+]
