@@ -6,11 +6,14 @@ import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.VpnService
 import android.os.Build
 import android.os.SystemClock
 import com.dpsmpx.dppass.R
 import com.dpsmpx.dppass.connection.ConnectionReport
+import com.dpsmpx.dppass.connection.StabilityContext
 import com.dpsmpx.dppass.connection.StabilitySample
 import com.dpsmpx.dppass.connection.HealthChecker
 import com.dpsmpx.dppass.connection.toTunInput
@@ -200,7 +203,7 @@ class DPpassVpnService : VpnService() {
             if (failed) {
                 graph.core.log.warning("adaptive_probe_failed", "profile" to Safe(profileId.value), "elapsed_ms" to elapsed)
             }
-            if (graph.core.stability.shouldRecover(profileId)) {
+            if (graph.core.stability.shouldRecover(profileId, currentNetworkContext())) {
                 graph.core.log.warning("adaptive_recovery", "profile" to Safe(profileId.value))
                 val removed = state.withLock {
                     if (session === expectedSession && tunnel === expectedTunnel) {
@@ -217,6 +220,42 @@ class DPpassVpnService : VpnService() {
                 return
             }
         }
+    }
+
+    /**
+     * Obtain a coarse non-VPN transport context. Android exposes the VPN itself
+     * as a network, so the learner deliberately ignores TRANSPORT_VPN and uses
+     * the underlying transport when available. No SSID, BSSID, address or
+     * destination is persisted.
+     */
+    private fun currentNetworkContext(): StabilityContext {
+        val cm = getSystemService(ConnectivityManager::class.java)
+        val networks = runCatching { cm.allNetworks.asList() }.getOrDefault(emptyList())
+        val candidate = networks.asSequence()
+            .mapNotNull { network ->
+                cm.getNetworkCapabilities(network)?.takeIf { caps ->
+                    !caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+                }?.let { network to it }
+            }
+            .firstOrNull { (_, caps) ->
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+                    caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) ||
+                    caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+            }
+        val caps = candidate?.second
+        val type = when {
+            caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true -> "WIFI"
+            caps?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true -> "MOBILE"
+            caps?.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) == true -> "ETHERNET"
+            else -> "UNKNOWN"
+        }
+        return StabilityContext(
+            network = type,
+            restriction = com.dpsmpx.dppass.network.RestrictionClass.UNKNOWN,
+            tls = com.dpsmpx.dppass.network.Reachability.UNKNOWN,
+            udp = com.dpsmpx.dppass.network.Reachability.UNKNOWN,
+            bulk = com.dpsmpx.dppass.network.Reachability.UNKNOWN,
+        )
     }
 
     /** Starts one new connection attempt only when no session/attempt is active. */
@@ -241,7 +280,7 @@ class DPpassVpnService : VpnService() {
     override fun onDestroy() {
         // Сервис уходит: уборка — в области процесса, она переживёт этот объект.
         AppGraph.scope.launch { shutdown() }
-        // Сервис остановлен — работа закончена: журнал в буфер обмена (D-26).
+        // Сервис остановлен — фиксируем завершение локально; внешней передачи журнала нет.
         DeviceLog.onWorkFinished(this, "service_stop")
         scope.cancel()
         super.onDestroy()
