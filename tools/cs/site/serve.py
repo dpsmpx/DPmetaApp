@@ -3,7 +3,7 @@
 Сайт ссылается на свои файлы от корня (`/style.css`, `/fonts/…`), поэтому
 открывается только через сервер, корень которого — корень сборки; из
 `file://` страницы без стилей. Отсутствующий адрес отдаёт `/404.html` с
-кодом 404 — как хостинг статики (Cloudflare Pages, Netlify).
+кодом 404 (в разделе `/en/` — `/en/404.html`) — как хостинг статики.
 """
 from __future__ import annotations
 
@@ -24,7 +24,11 @@ class _Handler(http.server.SimpleHTTPRequestHandler):
         super().end_headers()
 
     def send_error(self, code, message=None, explain=None):
-        page = Path(self.directory) / "404.html"
+        # 404 на языке раздела, как на хостинге (П2-18): /en/… → /en/404.html
+        section = self.path.split("?", 1)[0].lstrip("/").split("/", 1)[0]
+        page = Path(self.directory) / section / "404.html"
+        if not section or not page.is_file():
+            page = Path(self.directory) / "404.html"
         if code == 404 and page.is_file():
             body = page.read_bytes()
             self.send_response(404)

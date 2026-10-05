@@ -67,7 +67,7 @@ def shoot(root: Path, pages: list[str], out: Path, headers: dict | None = None,
         srv.server_close()
 
 
-def findings(results: list[dict], expect_404: set[str] = frozenset({"/404.html"})) -> list[Finding]:
+def findings(results: list[dict], expect_404: set[str] = frozenset({"/404.html", "/en/404.html"})) -> list[Finding]:
     out: list[Finding] = []
     for m in results:
         where = f"{m['path']} @{m['width']}"
@@ -110,7 +110,7 @@ def check(repo: Repo | None = None, out: Path | None = None) -> Report:
     with tempfile.TemporaryDirectory() as tmp:
         sb = SiteBuild(repo, "staging")
         rep = sb.build(Path(tmp) / "site")
-        pages = sorted(set(rep.pages)) + ["/404.html"]
+        pages = sorted(set(rep.pages)) + [p for p in ("/404.html", "/en/404.html") if (Path(tmp) / "site" / p[1:]).is_file()]
         if out.exists():
             shutil.rmtree(out)
         try:

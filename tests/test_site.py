@@ -84,6 +84,10 @@ class Preview(unittest.TestCase):
                 urllib.request.urlopen(f"{base}/no-such-page/")
             self.assertEqual(cm.exception.code, 404)
             self.assertIn("Страница не найдена", cm.exception.read().decode("utf-8"))
+            with self.assertRaises(urllib.error.HTTPError) as cm:
+                urllib.request.urlopen(f"{base}/en/no-such-page/?x=1")
+            self.assertEqual(cm.exception.code, 404)
+            self.assertIn("Page not found", cm.exception.read().decode("utf-8"), "в /en/ — английская 404 (П2-18)")
         finally:
             srv.shutdown()
             srv.server_close()
