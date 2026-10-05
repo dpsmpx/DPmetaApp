@@ -251,5 +251,13 @@ Python в Termux). Команды без заполнителей — `docs/oper
   берёт `~/.ssh/beget_dpsmpx` (`ssh -G`); второй ключ ей не нужен. Его
   строку автор с сервера убрал: в `authorized_keys` один ключ,
   `dpsmpx deploy termux`.
+- Первая штатная выгрузка — ярлыком `tools/termux/dpsmpx-site-deploy.sh`
+  (`site deploy`, запись в `build/logs/deploy.jsonl` на телефоне): одно
+  изменение, `.htaccess` с `Options -Indexes`; ярлык — `http://dpsmpx.com/`
+  200. Снаружи (04:26 UTC): `/`, `/en/`, `/projects/`, `/news/` — 200,
+  `/fonts/`, `/api/` — 403, `/.htaccess` — 403, ошибки 500 нет — **Beget
+  `Options` в `.htaccess` принимает**; все 27 отдаваемых файлов байт в
+  байт совпадают со сборкой `main` (`f174ae1`). Выгрузки в обход системы
+  после этого не нужны.
 - `ssh` предупреждает, что сервер не поддерживает постквантовый обмен
   ключами. Это свойство сервера Beget; на выгрузку не влияет.
