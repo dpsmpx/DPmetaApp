@@ -91,6 +91,7 @@
     <string name="notification_connecting">Connecting…</string>
     <string name="notification_checking">Checking “%1$s”</string>
     <string name="notification_connected">Connected · %1$s</string>
+    <string name="notification_public_connected">Connected</string>
     <plurals name="servers_count">
         <item quantity="one">%d server</item>
         <item quantity="other">%d servers</item>

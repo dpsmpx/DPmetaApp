@@ -25,7 +25,7 @@
    `tools/hostcheck/diag_codes.txt` (D-22).
 5. **hostcheck зелёный** (§2) — только тогда изменение готово.
 6. **PR** — в `main`; описание: что сделано, что осталось, что найдено
-   и записано в `TODO.md`; итог полного прогона hostcheck (§4).
+   и записано в `TODO.md`; итог полного прогона hostcheck (§5).
 
 ## 2. Проверки
 
@@ -34,7 +34,7 @@
 ```sh
 tools/hostcheck/run.sh            # всё, что можно на этой машине; пропуск — громко, но не ошибка
 tools/hostcheck/run.sh --quick    # только быстрые проверки (без Gradle), секунды
-tools/hostcheck/run.sh --full     # перед слиянием (§4): пропуск (нет Android SDK) — ошибка
+tools/hostcheck/run.sh --full     # перед слиянием (§5): пропуск (нет Android SDK) — ошибка
 ```
 
 Код возврата: 0 — всё прошло (в обычном режиме — кроме названных
@@ -128,7 +128,28 @@ tools/hostcheck/run.sh --full     # перед слиянием (§4): проп�
 8. **Полный прогон**: `tools/hostcheck/run.sh --full` зелёный,
    корпус и fuzz — без новых находок.
 
-## 4. Перед слиянием
+## 4. Тестовые сборки
+
+Сборки для устройств автора (D-35) — не выпуск (выпуск — этап 5):
+`release` без R8, версия с `-dev`, подпись ключом разработчика.
+
+1. Ключ — только из окружения: `DPPASS_SIGNING_KEYSTORE_BASE64` (или
+   путь `DPPASS_SIGNING_KEYSTORE`), `DPPASS_SIGNING_STORE_PASSWORD`,
+   `DPPASS_SIGNING_KEY_ALIAS`, `DPPASS_SIGNING_KEY_PASSWORD`. В облачной
+   сессии — секреты окружения, которые задаёт автор.
+2. `python3 tools/release/sign_apks.py` собирает APK на каждый ABI
+   (`-Pdppass.abiSplit=true`, D-28), подписывает `apksigner` (пароли —
+   по имени переменной, не в командной строке), сверяет сертификат с
+   отпечатком из `docs/PROVENANCE.md`, §7, проверяет каждый APK
+   `check_apk.py --abi` и пишет `SHA256SUMS` и `CERTIFICATE.txt`. Без
+   ключа или без записанного отпечатка — отказ, отладочный ключ не
+   подставляется.
+3. APK кладутся в ветку `apk` без истории `main` (двоичных файлов в
+   `main` нет, `docs/PROVENANCE.md`, §4): APK, `SHA256SUMS`,
+   `CERTIFICATE.txt` и `README.md` с коммитом `main`, из которого собраны.
+   В `main` ветка `apk` не вливается.
+
+## 5. Перед слиянием
 
 CI нет: GitHub Actions в DPpass не используется и не запускается
 (D-23), workflow в `.github/workflows/` не добавляются — шаг

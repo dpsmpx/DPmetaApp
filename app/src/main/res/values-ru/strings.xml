@@ -90,6 +90,7 @@
     <string name="notification_connecting">Подключение…</string>
     <string name="notification_checking">Проверяю «%1$s»</string>
     <string name="notification_connected">Подключено · %1$s</string>
+    <string name="notification_public_connected">Подключено</string>
     <plurals name="servers_count">
         <item quantity="one">%d сервер</item>
         <item quantity="few">%d сервера</item>

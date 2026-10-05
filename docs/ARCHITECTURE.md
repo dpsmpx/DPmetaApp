@@ -64,7 +64,7 @@
 | `tunnel` | `TunnelSpec` из IR, черты платформы, интерфейс платформы TUN | `config` |
 | `connection` | `DPpassCore`: активация с last-known-good, план кандидатов, оркестратор подключения, здоровье, отчёт | `engine`, `network`, `storage`, `subscriptions`, `tunnel` |
 | `cli` | оболочка JVM: команды, модель сети, замеры | `connection` |
-| `app` | оболочка Android: сборка зависимостей, `VpnService`, Keystore, оболочка разработки | `connection` |
+| `app` | оболочка Android: сборка зависимостей, `VpnService`, Keystore, интерфейс (пакет `app.ui`, D-34) | `connection` |
 | `tests/integration` | межмодульные сценарии | `connection` |
 | `tests/regression` | корпус регрессий `tests/data/` | `connection` |
 | `tests/fuzz` | мутационный fuzz разбора | `connection` |
@@ -387,7 +387,13 @@ DEGRADED; `SKIPPED` или нет пробы → UNKNOWN; прочее → BLOCK
 останавливается действием «Остановить», при `onRevoke` и в `onDestroy`
 (уборка — в области процесса `AppGraph.scope`). `AndroidTunnelProvider` — `TunnelSpec` → `Builder`;
 адреса — `InetAddress.getByAddress` (без DNS). `MainActivity` —
-оболочка разработки с `FLAG_SECURE`. `DPpassApplication` первым делом
+интерфейс (D-34): одна `Activity` с `FLAG_SECURE`, экраны — классы
+`Screen` пакета `app.ui` на встроенных Views, логика экранов без Android —
+`ui/Presentation.kt` (тесты на хосте в `app/src/test`). Состояние туннеля
+для экранов и уведомления — `TunnelState` (одно на процесс, его меняет
+только сервис); выбранный сервер — `AppPrefs`, сервис ставит его первым
+в план (D-34). Уведомление сервиса — состояние, сервер и кнопка
+«Отключить»; на заблокированном экране — без имени сервера (T9). `DPpassApplication` первым делом
 включает журнал устройства `DeviceLog` (D-26): файл в фоне, запись о
 падении, копия журнала в буфер обмена при уходе оболочки с экрана, при
 остановке сервиса и кнопкой; переключатель журнала — в оболочке. Манифест и сетевые настройки

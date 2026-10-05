@@ -1,6 +1,6 @@
 # Этап 3 — Устройство
 
-Состояние: —
+Состояние: в работе
 
 ## Цель
 
@@ -20,7 +20,10 @@
    железа (D-12), `x-hwid` подписки — только с согласия пользователя
    (D-33); обновление по расписанию через `WorkManager` или эквивалент с
    учётом `UpdatePolicy`. Цель автора — подписка панели Remnawave
-   (`docs/research/REMNAWAVE_SUBSCRIPTIONS.md`).
+   (`docs/research/REMNAWAVE_SUBSCRIPTIONS.md`). Загрузка по HTTPS
+   сделана раньше, вместе с интерфейсом (D-36): `HttpsSubscriptionFetcher`,
+   хранение подписок и обновление вручную; без AndroidX вместо
+   `WorkManager` — `JobScheduler`.
 3. **Пробы сети на Android** (D-14): `Prober` поверх реальных сокетов
    (DNS, TCP, TLS, UDP, страница входа, крупная передача) с бюджетом;
    `NetworkCallback` → переоценка без залпов.

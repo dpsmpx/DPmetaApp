@@ -237,12 +237,21 @@ class DPpassVpnService : VpnService() {
             Intent(this, DPpassVpnService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
+        // На заблокированном экране — только «DPpass подключён», без имени сервера (T9):
+        // имя часто называет страну и поставщика.
+        val public = Notification.Builder(this, CHANNEL)
+            .setContentTitle(getString(R.string.app_name))
+            .setContentText(getString(if (status is TunnelStatus.Connected) R.string.notification_public_connected else R.string.notification_connecting))
+            .setSmallIcon(R.drawable.ic_stat_tunnel)
+            .build()
         val n = Notification.Builder(this, CHANNEL)
             .setContentTitle(getString(R.string.app_name))
             .setContentText(text)
             .setSmallIcon(R.drawable.ic_stat_tunnel)
             .setContentIntent(open)
             .addAction(Notification.Action.Builder(Icon.createWithResource(this, R.drawable.ic_power), getString(R.string.action_disconnect), stop).build())
+            .setVisibility(Notification.VISIBILITY_PRIVATE)
+            .setPublicVersion(public)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .build()
