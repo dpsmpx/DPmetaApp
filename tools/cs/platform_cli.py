@@ -465,6 +465,41 @@ def cmd_events(a) -> int:
     return 0
 
 
+def cmd_progress(a) -> int:
+    """Набор данных прогресса (Д38): collect — из клонов репозиториев; show — производные величины набора."""
+    import datetime as _dt
+    import json as _json
+    import re as _re
+    from pathlib import Path
+    from .progress import collect as pc
+    from .progress.dataset import METRICS, Progress
+    repo = Repo()
+    if a.action == "collect":
+        scope = repo.yaml("data/progress/scope.yaml")
+        clones = {}
+        for c in a.clone or []:
+            k, _, path = c.partition("=")
+            spec = next((r for r in scope["repos"] if r["key"] == k), None)
+            if spec is None:
+                print(f"--clone {c}: нет ключа {k} в scope.yaml", file=sys.stderr)
+                return 2
+            clones[spec["slug"]] = Path(path).resolve()
+        cutoff = _dt.datetime.fromisoformat(a.cutoff) if a.cutoff else None
+        data = pc.collect(scope, Path(a.root).resolve(), _dt.date.fromisoformat(a.start), _dt.date.fromisoformat(a.end),
+                          cutoff, clones, a.open_pr or [], a.id)
+        text = _json.dumps(data, ensure_ascii=False, indent=1)
+        text = _re.sub(r"\[\s+([^\[\]{}]*?)\s+\]", lambda m: "[" + _re.sub(r"\s+", " ", m.group(1)) + "]", text)
+        out = repo.path("data", "progress", "datasets", f"{data['id']}.json")
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(text + "\n", encoding="utf-8")
+        print(f"набор {data['id']}: {len(data['repos'])} репозиториев, {len(data['days'])} дней, срез {data['period']['cutoff']} → {out.relative_to(repo.root)}")
+        return 0
+    p = Progress(repo, a.id)
+    for k, m in METRICS.items():
+        print(f"{k:20s} {p.formatted(k, 'ru'):>24s}   {m.ru}")
+    return 0
+
+
 AFFECTED = [  # префикс пути → проверки (tools/check.sh --affected)
     ("data/facts/", ["facts", "claims", "canonical", "projects", "site", "siteshots"]),
     ("content/items/", ["items", "claims", "provenance", "visual", "exports", "canonical", "campaigns", "site", "siteshots"]),
@@ -599,6 +634,16 @@ def register(sub) -> None:
     p.add_argument("--port", type=int, default=8000)
     p.add_argument("--rebuild", action="store_true")
     p.set_defaults(fn=cmd_site)
+    p = sub.add_parser("progress", help="прогресс экосистемы: сбор набора данных из клонов, величины набора (Д38)")
+    p.add_argument("action", choices=["collect", "show"])
+    p.add_argument("--id", help="id набора (по умолчанию — последний день периода)")
+    p.add_argument("--root", default="..", help="collect: каталог с клонами репозиториев")
+    p.add_argument("--start", help="collect: первый день периода, ГГГГ-ММ-ДД")
+    p.add_argument("--end", help="collect: последний день периода")
+    p.add_argument("--cutoff", help="collect: момент среза, ISO с поясом (по умолчанию — сейчас)")
+    p.add_argument("--clone", action="append", help="collect: ключ=путь к клону, если он не рядом")
+    p.add_argument("--open-pr", action="append", help="collect: ключ:ветка открытого PR на момент среза (из GitHub)")
+    p.set_defaults(fn=cmd_progress)
     p = sub.add_parser("preview", help="предпросмотр объекта или кампании")
     p.add_argument("id")
     p.add_argument("--serve", action="store_true", help="открыть на локальном сервере (сайт — от корня)")
