@@ -95,6 +95,21 @@ def collect_ids(root: Path, specs: list[dict]) -> set[str]:
     return ids
 
 
+def find_clone(root: Path, repo: Repo) -> Path:
+    """Клон по пути из реестра, иначе — по имени репозитория из slug.
+
+    Сессии кладут клоны по-разному: `galdhold`, `Andors-Love`,
+    `dpsmpx/truejointtilemaker`. Ни один вариант не находится — путь из
+    реестра (его и покажет отчёт как «нет клона»).
+    """
+    name = repo.slug.split("/")[-1]
+    cands = [repo.clone, name, name.lower(), repo.slug, repo.slug.lower()]
+    for c in dict.fromkeys(cands):
+        if (root / c / ".git").exists():
+            return root / c
+    return root / repo.clone
+
+
 def git(root: Path, *args: str) -> str:
     out = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True)
     return out.stdout if out.returncode == 0 else ""
@@ -284,7 +299,7 @@ def main(argv: list[str] | None = None) -> int:
             return 2
 
     for r in repos:
-        root = overrides.get(r.name, a.root / r.clone)
+        root = overrides.get(r.name) or find_clone(a.root, r)
         if (root / ".git").exists():
             r.root = root.resolve()
             r.head = git(r.root, "rev-parse", "--short", "HEAD").strip()

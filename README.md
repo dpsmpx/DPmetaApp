@@ -31,14 +31,17 @@ DPmeta — **не зависимость**: ни один репозиторий
 
 ```sh
 tools/check.sh                       # самопроверка DPmeta: ссылки, реестр, тесты
+python3 tools/activity.py --root ..  # кто работает: свежие коммиты, невлитые ветки
 python3 tools/xref.py --root ..      # сверка ссылок между клонами экосистемы
 ```
 
-`tools/xref.py` читает клоны репозиториев, лежащие рядом с DPmeta
-(каталоги — `tools/ecosystem.toml`), и ничего в них не пишет. Нужен только
-Python ≥ 3.11.
+Оба инструмента читают клоны репозиториев, лежащие рядом с DPmeta
+(каталоги — `tools/ecosystem.toml`, или по имени репозитория), и ничего в
+них не пишут. Нужен только Python ≥ 3.11.
 
 ## Состояние
 
 Первый проход консолидации — 5 октября 2026
-([`docs/reports/2026-10-05-ECOSYSTEM_HEALTH.md`](docs/reports/2026-10-05-ECOSYSTEM_HEALTH.md)).
+([`docs/reports/2026-10-05-ECOSYSTEM_HEALTH.md`](docs/reports/2026-10-05-ECOSYSTEM_HEALTH.md));
+повторный — в тот же день, по работе, влитой за час между проходами
+([`docs/reports/2026-10-05-2-ECOSYSTEM_HEALTH.md`](docs/reports/2026-10-05-2-ECOSYSTEM_HEALTH.md)).

@@ -26,14 +26,16 @@ python3 -c 'import sys; sys.exit(sys.version_info < (3, 11))' || {
   echo "✗ нужен Python ≥ 3.11 (tomllib)"; exit 1; }
 
 step "документы: ссылки, свои номера, корень" python3 "$ROOT/tools/check_docs.py"
-step "самотесты xref" python3 -B -m unittest discover -s "$ROOT/tests"
+step "самотесты инструментов" python3 -B -m unittest discover -s "$ROOT/tests"
 
 # Ссылки DPmeta на другие репозитории — только если клоны рядом есть.
-others=$(python3 - "$ROOT/tools/ecosystem.toml" "$CLONES" <<'EOF'
-import sys, tomllib, pathlib
-reg = tomllib.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+others=$(python3 -B - "$ROOT/tools" "$CLONES" <<'EOF'
+import sys, pathlib
+sys.path.insert(0, sys.argv[1])
+import xref
 root = pathlib.Path(sys.argv[2])
-print(sum((root / r["clone"] / ".git").exists() for r in reg["repo"] if r["name"] != "DPmeta"))
+repos = xref.load_registry(pathlib.Path(sys.argv[1]) / "ecosystem.toml")
+print(sum((xref.find_clone(root, r) / ".git").exists() for r in repos if r.name != "DPmeta"))
 EOF
 )
 if [ "${others:-0}" -gt 0 ]; then
