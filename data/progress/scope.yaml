@@ -153,20 +153,41 @@ excluded:                          # с работой в периоде, но �
   - {slug: dpsmpx/Mobile-Basic-set-line-numbers, reason: одиночный скрипт вне карты проектов}
   - {slug: dpsmpx/DP_3D_Works, reason: одиночный скрипт вне карты проектов}
 relations:                         # связи между репозиториями — из контрактов DPmeta (docs/CONTRACTS.md)
-  - {from: galdhold, to: dplang, both: true, source: DPmeta C-01,
-     ru: решения повторены с обеих сторон; Galdhold от DPlang не зависит,
-     en: decisions are mirrored on both sides; Galdhold does not depend on DPlang}
-  - {from: galdhold, to: dpprofile, source: DPmeta C-04,
-     ru: факты о проекте — со ссылкой на коммит, без кода,
-     en: facts about the project, citing commits, without code}
-  - {from: galdhold, to: smi, source: DPmeta C-04,
-     ru: факты и вехи для публикаций, en: facts and milestones for publishing}
-  - {from: dplang, to: dpprofile, source: DPmeta C-04,
-     ru: факты о проекте — со ссылкой на коммит, без кода,
-     en: facts about the project, citing commits, without code}
-  - {from: dpverify, to: galdhold, planned: true, source: DPmeta C-03,
-     ru: поставка общих проверок копией — план, en: shared checks delivered as a copy — planned}
-  - {from: dpverify, to: dplang, planned: true, source: DPmeta C-03,
-     ru: поставка общих проверок копией — план, en: shared checks delivered as a copy — planned}
-  - {from: andors_love, to: tjtm, source: DPmeta C-08,
-     ru: формат карт и имена тайлов, en: map format and tile names}
+  - from: galdhold
+    to: dplang
+    both: true
+    source: DPmeta C-01
+    ru: "решения повторены с обеих сторон; Galdhold от DPlang не зависит"
+    en: "decisions are mirrored on both sides; Galdhold does not depend on DPlang"
+  - from: galdhold
+    to: dpprofile
+    source: DPmeta C-04
+    ru: "факты о проекте со ссылкой на коммит, без кода"
+    en: "facts about the project, citing commits, without code"
+  - from: galdhold
+    to: smi
+    source: DPmeta C-04
+    ru: "факты и вехи для публикаций"
+    en: "facts and milestones for publishing"
+  - from: dplang
+    to: dpprofile
+    source: DPmeta C-04
+    ru: "факты о проекте со ссылкой на коммит, без кода"
+    en: "facts about the project, citing commits, without code"
+  - from: dpverify
+    to: galdhold
+    planned: true
+    source: DPmeta C-03
+    ru: "поставка общих проверок копией — план"
+    en: "shared checks delivered as a copy — planned"
+  - from: dpverify
+    to: dplang
+    planned: true
+    source: DPmeta C-03
+    ru: "поставка общих проверок копией — план"
+    en: "shared checks delivered as a copy — planned"
+  - from: andors_love
+    to: tjtm
+    source: DPmeta C-08
+    ru: "формат карт и имена тайлов"
+    en: "map format and tile names"

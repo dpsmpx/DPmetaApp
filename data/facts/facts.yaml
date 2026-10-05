@@ -12,7 +12,7 @@
 #               decision (записанное решение) | self-reported (сказано автором)
 # recheck_by:   дата, после которой число/состояние перепроверяется перед использованием
 schema: facts/v1
-as_of: 2026-10-04
+as_of: 2026-10-05
 facts:
   # ---------------------------------------------------------------- автор
   - id: AU-HANDLE
@@ -425,6 +425,9 @@ facts:
     risk: low
     public: true
     statement: Andors-Love — пошаговая RPG на C++11 с двумя оболочками над одной логикой — терминальной и на SDL2.
+    allowed_wording:
+      ru: ["пошаговая RPG на C++"]
+      en: ["turn-based RPG in C++"]
     evidence:
       - {kind: code, source: "github.com/dpsmpx/Andors-Love README.md", date: 2026-10-04, verification: observed}
   - id: TJTM-WHAT
@@ -433,6 +436,9 @@ facts:
     risk: low
     public: true
     statement: TrueJointTileMaker — редактор пиксельной графики и карт локаций для Andors-Love на PascalABC.NET.
+    allowed_wording:
+      ru: ["редактор пиксельной графики и карт для Andors-Love"]
+      en: ["pixel-art and map editor for Andors-Love"]
     evidence:
       - {kind: code, source: "github.com/dpsmpx/TrueJointTileMaker README.md", date: 2026-10-04, verification: observed}
   - id: PIX-WHAT
@@ -441,6 +447,9 @@ facts:
     risk: low
     public: true
     statement: PixRogue — классический Rogue в пиксельном стиле для вертикального экрана и касаний, Python + Pygame, GPLv3.
+    allowed_wording:
+      ru: ["классический Rogue в пиксельном стиле, Python"]
+      en: ["a pixel-art classic Rogue in Python"]
     evidence:
       - {kind: code, source: "github.com/dpsmpx/PixRogue README.md", date: 2026-10-04, verification: observed}
   - id: ECO-WHAT
@@ -449,8 +458,166 @@ facts:
     risk: low
     public: true
     statement: DP_Ecosystem — пошаговая клеточная симуляция экосистемы (вода, растения, травоядные, хищники), Python + Pygame.
+    allowed_wording:
+      ru: ["клеточная симуляция экосистемы, Python"]
+      en: ["a cellular ecosystem simulation in Python"]
     evidence:
       - {kind: code, source: "github.com/dpsmpx/DP_Ecosystem README.md", date: 2026-10-04, verification: observed}
+
+  # ---------------------------------------------------------------- экосистема (страница прогресса, Д38)
+  - id: SMI-WHAT
+    subject: socialmediaimage
+    class: FACT
+    risk: low
+    public: true
+    statement: SocialMediaImage — система исследования, создания, проверки и публикации контента автора; сайт dpsmpx.com собирает её генератор.
+    allowed_wording:
+      ru: ["система контента и сайт dpsmpx.com"]
+      en: ["the content system behind dpsmpx.com"]
+    evidence:
+      - {kind: doc, source: "dpsmpx/SocialMediaImage README.md, docs/platforms/WEBSITE.md", ref: "e286ff8", date: 2026-10-05, verification: observed}
+  - id: SMI-SITE
+    subject: socialmediaimage
+    class: FACT
+    risk: medium
+    public: true
+    statement: Домен dpsmpx.com зарегистрирован 5 октября 2026; в тот же день — первая штатная выгрузка сайта на хостинг. HTTPS — после сертификата.
+    allowed_wording:
+      ru: ["сайт выгружен на хостинг 5 октября 2026"]
+      en: ["the site went live on its host on 5 October 2026"]
+    recheck_by: 2026-11-05
+    evidence:
+      - {kind: doc, source: "dpsmpx/SocialMediaImage ROADMAP/ROADMAP.md, П2-01 и П2-02", ref: "e286ff8", date: 2026-10-05, verification: reported}
+  - id: VRF-WHAT
+    subject: dp_verify
+    class: FACT
+    risk: low
+    public: true
+    statement: DP-Verify — общий каркас инженерных проверок и проектной дисциплины для репозиториев автора.
+    allowed_wording:
+      ru: ["общий каркас проверок для репозиториев автора"]
+      en: ["a shared engineering-checks framework for the author's repositories"]
+    evidence:
+      - {kind: doc, source: "dpsmpx/DP-Verify README.md", ref: "c3d3d3e", date: 2026-10-05, verification: reported}
+  - id: VRF-STAGE
+    subject: dp_verify
+    class: FACT
+    risk: medium
+    public: true
+    statement: >-
+      Версия 0.3.0 на 5 октября 2026: этапы 0–3 из 0–8 сделаны — каркас, обязательный набор из
+      десяти проверок, выбор проверок по изменениям; другие репозитории его пока не подключили.
+    allowed_wording:
+      ru: ["версия 0.3.0: этапы 0–3 из 0–8; другие репозитории его пока не подключили"]
+      en: ["version 0.3.0: stages 0–3 of 0–8; not yet adopted by other repositories"]
+    recheck_by: 2026-10-19
+    evidence:
+      - {kind: doc, source: "dpsmpx/DP-Verify ROADMAP/ROADMAP.md, README.md", ref: "c3d3d3e", date: 2026-10-05, verification: reported}
+  - id: PRF-WHAT
+    subject: dpprofile
+    class: FACT
+    risk: low
+    public: true
+    statement: DPprofile — проверяемая история пути разработки автора и его проектов — источники, атомарные факты со ссылками на коммиты и файлы, хронология, выводы.
+    allowed_wording:
+      ru: ["проверяемая история пути разработки — источники, факты, хронология"]
+      en: ["a verifiable history of the development path — sources, facts, timeline"]
+    evidence:
+      - {kind: doc, source: "dpsmpx/DPprofile README.md", ref: "3e76c10", date: 2026-10-04, verification: reported}
+  - id: PRF-STAGE
+    subject: dpprofile
+    class: FACT
+    risk: medium
+    public: true
+    statement: На 5 октября 2026 выполнено 4 этапа из 6; идёт этап 4 — структура будущей книги без прозы. Текст книги не пишется (шлюз D-02).
+    allowed_wording:
+      ru: ["выполнено 4 этапа из 6; текст книги не пишется"]
+      en: ["4 of 6 stages complete; the book itself is not being written"]
+    recheck_by: 2026-10-19
+    evidence:
+      - {kind: doc, source: "dpsmpx/DPprofile README.md, блок состояния (строит tools/verify/readme_status.py)", ref: "3e76c10", date: 2026-10-04, verification: reported}
+  - id: LRN-WHAT
+    subject: dplearn
+    class: FACT
+    risk: low
+    public: true
+    statement: DPlearn — персональная система обучения, где статус «освоено» не записывают, а вычисляют из доказательств.
+    allowed_wording:
+      ru: ["система обучения, где «освоено» вычисляется из доказательств"]
+      en: ["a learning system where “mastered” is computed from evidence"]
+    evidence:
+      - {kind: doc, source: "dpsmpx/DPlearn README.md", ref: "d2565dd", date: 2026-10-04, verification: reported}
+  - id: LRN-STAGE
+    subject: dplearn
+    class: FACT
+    risk: medium
+    public: true
+    statement: Версия 0.1.0 — ядро, протоколы, роли ИИ, проверки и пилотный домен готовы; своих целей и карты у автора в системе пока нет.
+    allowed_wording:
+      ru: ["версия 0.1.0: ядро и пилотный домен готовы"]
+      en: ["version 0.1.0: the core and a pilot domain are ready"]
+    recheck_by: 2026-10-19
+    evidence:
+      - {kind: doc, source: "dpsmpx/DPlearn README.md, «Состояние»", ref: "d2565dd", date: 2026-10-04, verification: reported}
+  - id: MKT-WHAT
+    subject: dp_game_market
+    class: FACT
+    risk: low
+    public: true
+    statement: DP_game_market_analytic_system — воспроизводимый анализ рынка игр с явной неопределённостью — наблюдения, факты, метрики, гипотезы, решения.
+    allowed_wording:
+      ru: ["воспроизводимый анализ рынка игр"]
+      en: ["reproducible game market analysis"]
+    evidence:
+      - {kind: doc, source: "dpsmpx/DP_game_market_analytic_system docs/ARCHITECTURE.md", ref: "2fd2abe", date: 2026-10-04, verification: reported}
+  - id: MKT-STAGE
+    subject: dp_game_market
+    class: FACT
+    risk: medium
+    public: true
+    statement: На 4 октября 2026 написаны фазы 0–6 из 0–10; тесты есть у фаз 0–4; интерфейса командной строки пока нет.
+    allowed_wording:
+      ru: ["написаны фазы 0–6 из 0–10, тесты — у 0–4"]
+      en: ["phases 0–6 of 0–10 written, 0–4 with tests"]
+    recheck_by: 2026-10-19
+    evidence:
+      - {kind: doc, source: "dpsmpx/DP_game_market_analytic_system docs/HANDOFF.md", ref: "2fd2abe", date: 2026-10-04, verification: reported}
+  - id: META-WHAT
+    subject: dpmeta
+    class: FACT
+    risk: low
+    public: true
+    statement: DPmeta — мета-репозиторий — карта репозиториев и их границ, контракты между ними, общие принципы, риски на суд автора; ни один репозиторий от него не зависит.
+    allowed_wording:
+      ru: ["карта экосистемы, контракты между репозиториями и риски"]
+      en: ["the ecosystem map, contracts between repositories and risks"]
+    evidence:
+      - {kind: doc, source: "dpsmpx/DPmeta README.md, docs/DECISIONS.md M-01", ref: "b03e9bc", date: 2026-10-05, verification: reported}
+  - id: META-NO-DEPS
+    subject: dpmeta
+    class: FACT
+    risk: medium
+    public: true
+    statement: >-
+      На 5 октября 2026 зависимостей сборки и исполнения между репозиториями экосистемы нет:
+      каждый собирается и проверяется сам; связи — решения, контракты и факты.
+    allowed_wording:
+      ru: ["зависимостей сборки и исполнения между репозиториями нет"]
+      en: ["no repository depends on another to build or run"]
+    recheck_by: 2026-11-05
+    evidence:
+      - {kind: doc, source: "dpsmpx/DPmeta docs/ECOSYSTEM.md, §3 «Связи», наблюдения", ref: "b03e9bc", date: 2026-10-05, verification: reported}
+  - id: META-STAGE
+    subject: dpmeta
+    class: FACT
+    risk: low
+    public: true
+    statement: Первый и повторный проходы консолидации экосистемы — 5 октября 2026.
+    allowed_wording:
+      ru: ["два прохода по экосистеме — 5 октября 2026"]
+      en: ["two passes over the ecosystem on 5 October 2026"]
+    evidence:
+      - {kind: doc, source: "dpsmpx/DPmeta docs/reports/2026-10-05-ECOSYSTEM_HEALTH.md, 2026-10-05-2-ECOSYSTEM_HEALTH.md", ref: "b03e9bc", date: 2026-10-05, verification: reported}
 
   # ---------------------------------------------------------------- площадки (внутреннее)
   - id: CH-AUDIENCE-2026-10-04

@@ -8,6 +8,9 @@
     {{link:L-YT-CHANNEL}}    адрес из data/identity/links.yaml
     {{site:/projects/galdhold/}}   адрес на сайте (канонический для площадок)
     {{release:galdhold.latest.version}}   поле последнего релиза проекта
+    {{progress:2026-10-05.commits}}       величина набора прогресса (Д38, tools/cs/progress/dataset.py)
+    {{figure:2026-10-05.activity}}        фигура набора прогресса — только на сайте; генератор
+                                          заменяет абзац с ней на график (tools/cs/progress/figures.py)
 
 resolve() возвращает текст, зависимости с отпечатками (для устаревания)
 и ошибки (неизвестный id, непубличный факт, гипотеза, битая ссылка).
@@ -19,7 +22,7 @@ from dataclasses import dataclass, field
 
 from .repo import Repo, fingerprint
 
-PLACEHOLDER = re.compile(r"\{\{\s*(fact|link|site|release)\s*:\s*([^}#\s]+)(?:#(\d+))?\s*\}\}")
+PLACEHOLDER = re.compile(r"\{\{\s*(fact|link|site|release|progress|figure)\s*:\s*([^}#\s]+)(?:#(\d+))?\s*\}\}")
 BAD_LINK = {"broken_for_public", "stale"}
 
 
@@ -34,7 +37,7 @@ def link_fp(l: dict) -> str:
 @dataclass
 class Resolved:
     text: str
-    deps: dict = field(default_factory=lambda: {"facts": {}, "links": {}, "releases": {}})
+    deps: dict = field(default_factory=lambda: {"facts": {}, "links": {}, "releases": {}, "datasets": {}})
     errors: list = field(default_factory=list)
     facts_used: list = field(default_factory=list)
 
@@ -42,6 +45,37 @@ class Resolved:
 def latest_release(repo: Repo, project: str) -> dict | None:
     rels = [r for r in repo.releases().get(project, []) if r.get("status", "published") == "published"]
     return sorted(rels, key=lambda r: str(r.get("date")))[-1] if rels else None
+
+
+def progress_set(repo: Repo, ds: str):
+    """Набор прогресса по id (кэш в Repo); нет файла — FileNotFoundError."""
+    from ..progress.dataset import Progress
+    return repo._memo(f"progress:{ds}", lambda: Progress(repo, ds))
+
+
+def _progress(m: re.Match, kind: str, key: str, lang: str, repo: Repo, res: "Resolved") -> str:
+    ds, _, name = key.partition(".")
+    try:
+        p = progress_set(repo, ds)
+    except FileNotFoundError:
+        res.errors.append(f"{{{{{kind}:{key}}}}} — нет набора прогресса {ds} (data/progress/datasets/)")
+        return m.group(0)
+    res.deps["datasets"][ds] = p.fingerprint
+    if kind == "figure":
+        from ..progress.figures import FIGURES, facts_of
+        if name not in FIGURES:
+            res.errors.append(f"{{{{figure:{key}}}}} — нет фигуры {name}; есть: {', '.join(FIGURES)}")
+            return m.group(0)
+        facts = repo.facts()
+        for fid in facts_of(p, name):
+            if fid in facts:
+                res.deps["facts"][fid] = fact_fp(facts[fid])
+        return m.group(0)  # абзац с фигурой заменяет генератор сайта
+    try:
+        return p.formatted(name, lang)
+    except KeyError:
+        res.errors.append(f"{{{{progress:{key}}}}} — нет величины {name} (tools/cs/progress/dataset.py, METRICS)")
+        return m.group(0)
 
 
 def resolve(text: str, lang: str, repo: Repo, site_base: str = "") -> Resolved:
@@ -76,6 +110,8 @@ def resolve(text: str, lang: str, repo: Repo, site_base: str = "") -> Resolved:
                 res.errors.append(f"{key} — ссылка со статусом {l['status']}")
             res.deps["links"][key] = link_fp(l)
             return l["url"]
+        if kind in ("progress", "figure"):
+            return _progress(m, kind, key, lang, repo, res)
         if kind == "site":
             path = key if key.startswith("/") else "/" + key
             return (site_base.rstrip("/") + path) if site_base else path
@@ -106,7 +142,7 @@ def resolve(text: str, lang: str, repo: Repo, site_base: str = "") -> Resolved:
 def current_deps(recorded: dict, repo: Repo) -> dict:
     """Текущие отпечатки тех же зависимостей, что записаны (для сравнения)."""
     facts, links = repo.facts(), repo.links()
-    out = {"facts": {}, "links": {}, "releases": {}}
+    out = {"facts": {}, "links": {}, "releases": {}, "datasets": {}}
     for k in (recorded.get("facts") or {}):
         out["facts"][k] = fact_fp(facts[k]) if k in facts else None
     for k in (recorded.get("links") or {}):
@@ -115,15 +151,20 @@ def current_deps(recorded: dict, repo: Repo) -> dict:
         proj, ver = k.split("@", 1)
         rel = next((r for r in repo.releases().get(proj, []) if str(r.get("version")) == ver), None)
         out["releases"][k] = fingerprint(rel) if rel else None
+    for k in (recorded.get("datasets") or {}):
+        try:
+            out["datasets"][k] = progress_set(repo, k).fingerprint
+        except FileNotFoundError:
+            out["datasets"][k] = None
     return out
 
 
 def changed(recorded: dict, repo: Repo) -> list[str]:
     """Что из записанных зависимостей изменилось: ['факт GH-LOC', …]."""
     cur = current_deps(recorded, repo)
-    names = {"facts": "факт", "links": "ссылка", "releases": "релиз"}
+    names = {"facts": "факт", "links": "ссылка", "releases": "релиз", "datasets": "набор прогресса"}
     out = []
-    for kind in ("facts", "links", "releases"):
+    for kind in ("facts", "links", "releases", "datasets"):
         for k, fp in (recorded.get(kind) or {}).items():
             if cur[kind].get(k) != fp:
                 out.append(f"{names[kind]} {k}")

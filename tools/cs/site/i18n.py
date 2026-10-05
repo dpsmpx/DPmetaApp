@@ -3,7 +3,8 @@ from __future__ import annotations
 
 LABELS = {
     "ru": {
-        "home": "Главная", "projects": "Проекты", "news": "Записи", "about": "Обо мне",
+        "home": "Главная", "projects": "Проекты", "news": "Записи", "about": "Обо мне", "progress": "Прогресс",
+        "toc": "Разделы страницы",
         "main_project": "Главный проект", "other_projects": "Другие проекты",
         "latest": "Последние записи", "all_posts": "Все записи", "follow": "Где следить",
         "contact": "Связаться", "what": "Что это", "technology": "Технологии", "platforms": "Платформы",
@@ -22,7 +23,8 @@ LABELS = {
         "cat": {"news": "Новость", "devlog": "Дневник", "article": "Статья", "release": "Релиз", "page": "Страница"},
     },
     "en": {
-        "home": "Home", "projects": "Projects", "news": "Posts (RU)", "about": "About",
+        "home": "Home", "projects": "Projects", "news": "Posts (RU)", "about": "About", "progress": "Progress",
+        "toc": "On this page",
         "main_project": "Main project", "other_projects": "Other projects",
         "latest": "Latest posts", "all_posts": "All posts", "follow": "Follow",
         "contact": "Contact", "what": "What it is", "technology": "Technology", "platforms": "Platforms",

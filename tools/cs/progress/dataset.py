@@ -63,7 +63,10 @@ def fmt_value(v, unit: str, lang: str) -> str:
         return f"{int(v)} %" if lang == "ru" else f"{int(v)}%"
     if unit == "minutes":
         return f"{fmt_int(v, lang)} мин" if lang == "ru" else f"{fmt_int(v, lang)} min"
-    if unit == "kilolines":  # вниз до тысяч (CLAIM_POLICY, §3)
+    if unit == "kilolines":  # вниз до тысяч, меньше 10 тысяч — до десятых (CLAIM_POLICY, §3)
+        if v < 10000:
+            s = f"{int(v // 100) / 10:.1f}"
+            return f"{s.replace('.', ',')} тыс." if lang == "ru" else f"{s}k"
         k = int(v // 1000)
         return f"{fmt_int(k, lang)} тыс." if lang == "ru" else f"{fmt_int(k, lang)}k"
     if unit == "date":
