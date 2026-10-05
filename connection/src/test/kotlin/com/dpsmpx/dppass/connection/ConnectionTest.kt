@@ -161,6 +161,34 @@ class CandidatePlannerTest {
         CandidatePlanner.plan(multi, MockBackend.FULL, c?.let(::assess), book, lkg, now)
 
     @Test
+    fun learnedStabilityChangesCandidateOrder() {
+        val bad = multi.profiles[0]
+        val good = multi.profiles[1]
+        val stability = StabilityBook()
+        repeat(5) {
+            stability.observe(
+                bad.id,
+                StabilitySample(success = false, rttMillis = 5_000, timestampMillis = it + 1L),
+            )
+            stability.observe(
+                good.id,
+                StabilitySample(success = true, rttMillis = 100, timestampMillis = it + 1L),
+            )
+        }
+
+        val plan = CandidatePlanner.plan(
+            multi,
+            MockBackend.FULL,
+            assess(NetworkCondition.NORMAL),
+            HealthBook(),
+            null,
+            nowMillis = 0,
+            stability = stability,
+        )
+        assertEquals(good.id, plan.attempts.first().profile.id)
+    }
+
+    @Test
     fun userChoiceGoesFirstAndIgnoresBackoff() {
         val book = HealthBook()
         // ss2022 только что отказал и стоит на паузе; пользователь всё равно выбрал его.
