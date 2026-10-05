@@ -92,7 +92,7 @@ class DPpassCore(
     val activation: ActivationService = ActivationService(compiler, engine, ActivationStore(store, quarantine), clock)
     val health: HealthBook = HealthBook(policy)
     /** Persistent, encrypted aggregate learner for profile stability (0.5.0). */
-    val stability: StabilityBook = StabilityBook(store, clock)
+    val stability: StabilityBook = StabilityBook(store)
     private val loader = ConfigLoader()
 
     /** Сохранённые подписки: загрузка, идентификатор устройства, применение (D-33, D-36). */
