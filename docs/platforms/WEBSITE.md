@@ -197,6 +197,11 @@ commit → python3 -m tools.cs check → site build --env staging → предп
 - Первая выгрузка — сначала `site deploy --dry-run`: в `public_html/`
   Beget кладёт `cgi-bin/` и `index.php` — выгрузка их удалит;
   `/.well-known/` не трогается.
+- Выгружают только `site deploy` и `publish` (Д35): все запреты ниже
+  стоят внутри них, а источник — всегда свежая сборка. Ярлыки и скрипты
+  только вызывают эти команды; прямой rsync в `public_html/` в обход
+  системы запрещён — 05.10.2026 так ушёл корень репозитория
+  (`docs/audits/2026-10-05-SITE_LEAK_INCIDENT.md`).
 - Запреты: выпуск закрывает `production.live: false` (сейчас `true`,
   Д34) и статус адресата `site-production`, отличный от `active`; нет
   адреса или путь не на `public_html/` — отказ; сборка с ошибками

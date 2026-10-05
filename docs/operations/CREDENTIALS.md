@@ -77,6 +77,12 @@ CS_PROD_YOUTUBE_OAUTH: {rotated: 2026-10-05, expires: 2026-10-12}
    `destinations.yaml`. Сначала `site deploy --dry-run` — что изменится
    и удалится (`/.well-known/` под защитой), затем `site deploy` или
    `publish … --to site-production --production`.
+7. **Выгружают только эти команды** (Д35): источник у них — свежая
+   production-сборка, проверки идут до rsync. Свои скрипты и ярлыки
+   только вызывают их (шаблон — «Ярлык Termux:Widget» ниже). Прямой
+   rsync, scp или sftp в `public_html/` не запускать — даже для
+   «починки» и по совету другого помощника: 05.10.2026 так на хостинг
+   ушёл весь репозиторий (`docs/audits/2026-10-05-SITE_LEAK_INCIDENT.md`).
 
 `rsync` — Linux, macOS, WSL на Windows, Android (Termux — ниже).
 Локальный Claude Code запускает выгрузку только после «да» на запрос
@@ -150,19 +156,49 @@ CS_PROD_YOUTUBE_OAUTH: {rotated: 2026-10-05, expires: 2026-10-12}
      ServerAliveInterval 30
    ```
    Проверка без пароля: `ssh -o BatchMode=yes СЕРВЕР 'echo ok'`.
-6. Адрес выгрузки — в профиль своей оболочки (`echo $0`: `bash` →
-   `~/.bashrc`, `zsh` → `~/.zshrc`; в Termux по умолчанию bash):
-   `export CS_PROD_SITE_DEPLOY_TARGET='ЛОГИН@СЕРВЕР:dpsmpx.com/public_html/'`;
-   новая вкладка Termux.
+6. Адрес выгрузки — в отдельный файл вне репозитория:
+   `mkdir -p ~/.config/dpsmpx`, в `~/.config/dpsmpx/deploy.env` одна
+   строка `export CS_PROD_SITE_DEPLOY_TARGET='ЛОГИН@СЕРВЕР:dpsmpx.com/public_html/'`,
+   `chmod 600 ~/.config/dpsmpx/deploy.env`. Его подключают и профиль
+   оболочки (`echo $0`: `bash` → `~/.bashrc`, `zsh` → `~/.zshrc`; в
+   Termux по умолчанию bash) строкой `. ~/.config/dpsmpx/deploy.env`,
+   и ярлык ниже. Ярлык виджета `~/.bashrc` не читает: bash там не
+   интерактивный. Других переменных для выгрузки не нужно. Затем — новая
+   вкладка Termux.
 7. Проверки: `tools/check.sh --quick`, `python -m tools.cs health`,
    `python -m tools.cs site deploy --dry-run` — ничего не выкладывает,
    последняя строка «изменений: N».
 8. Выгрузка (разрешена, Д34): `git pull` в `~/SocialMediaImage`, снова
    `python -m tools.cs site deploy --dry-run` — сверить, что удаляется,
-   затем `python -m tools.cs site deploy`. В конце — проверка `/`,
+   затем `python -m tools.cs site deploy` — или ярлыком ниже. В конце — проверка `/`,
    `/en/`, `/projects/` по HTTP: `✓` — страница на месте, `?` — адрес не
    открывается (домен не в реестре, ОР-11), `✗` — 404 или чужая
    страница.
+
+#### Ярлык Termux:Widget
+Ярлык только вызывает систему: rsync, адресов и путей в нём нет. Файл —
+`~/.shortcuts/dpsmpx-site-deploy.sh`, права `chmod 700`. Каталог —
+`~/.shortcuts/`, а не `~/.shortcuts/tasks/`: оттуда ярлык идёт без
+терминала, и подтверждение не спросить.
+```bash
+#!/data/data/com.termux/files/usr/bin/bash
+# Выгрузка сайта — только командой системы (Д35)
+set -eu
+. "$HOME/.config/dpsmpx/deploy.env"
+cd "$HOME/SocialMediaImage"
+[ "$(git branch --show-current)" = main ] || { echo "не main — отказ"; exit 1; }
+[ -z "$(git status --porcelain)" ] || { echo "есть незакоммиченное — отказ"; exit 1; }
+git pull --ff-only
+PY=python   # полный путь — вывод `command -v python` во вкладке, где работает `python -m tools.cs health`
+"$PY" -m tools.cs site deploy --dry-run
+printf 'Выгрузить на хостинг? Наберите да: '
+read -r ok
+[ "$ok" = да ] || { echo "отменено"; exit 1; }
+"$PY" -m tools.cs site deploy
+```
+Отказ системы (нет адреса, сборка с ошибками, выпуск закрыт) завершает
+ярлык до выгрузки (`set -e`). Перед «да» — прочитать строки `*deleting`:
+удаляться должно только старое содержимое сайта.
 
 Ключ на телефоне отзывается удалением его строки из
 `~/.ssh/authorized_keys` на сервере (§3 «Ротация и отказ»); потерян
