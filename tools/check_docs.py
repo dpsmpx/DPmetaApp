@@ -22,7 +22,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-ROOT_ALLOW = {"README.md", "CLAUDE.md", ".gitignore", "docs", "tools", "tests", ".git"}
+# .claude holds project skills (e.g. the periodic documentation audit task).
+ROOT_ALLOW = {"README.md", "CLAUDE.md", ".gitignore", "docs", "tools", "tests", ".git", ".claude"}
 OWN = {
     "M": "docs/DECISIONS.md",
     "C": "docs/CONTRACTS.md",
