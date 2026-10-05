@@ -25,7 +25,7 @@ Author / Projects → Research / Facts → Canonical content → Adaptation → 
 | модель контента | v2: канон с версиями, варианты площадок, подстановка фактов, зависимости и устаревание, кампании, проекты, релизы |
 | публикация | движок: журнал, идемпотентность, повторы, структурные ошибки, dry-run / safe / production, одобрение автора по хэшу; адаптеры — сайт, Telegram (Bot API), имитации всех площадок; VK, YouTube, Discord, GitHub, TikTok — ручной путь (Д33) |
 | сайт | генератор, staging (`site serve`), предпросмотр (`preview --serve`), главная, «обо мне», проекты RU/EN, лента, фиды Atom/RSS/JSON, sitemap с `lastmod`/`hreflang`, `/api/v1/`, значок, заголовки (CSP), доступность и телефон (390 px); хостинг — Beget, выгрузка rsync (`site deploy`, Д35, Д36) — разрешена (Д34); домен в реестре не найден — ОР-11 |
-| проверки | `tools/check.sh` (quick / affected / full / release) — 18 проверок (в том числе страницы сайта в браузере) и тесты: модульные, контрактные, движок, сквозной |
+| проверки | `tools/check.sh` (quick / affected / full / release) — 19 проверок (в том числе страницы сайта в браузере и данные прогресса) и тесты: модульные, контрактные, движок, сквозной |
 | первый продукт CI-0001 | `UNDER_REVIEW`, переведён в v2 (канон, варианты сайта RU/EN, Telegram, VK, GitHub), кампания CMP-0001; ждёт ревизии подписи по Д20 и утверждения автора |
 
 Что дальше — `ROADMAP/ROADMAP.md` (фазы П0–П11 платформы и К1–К7
@@ -91,6 +91,8 @@ python3 -m tools.cs campaign status CMP-0001       # сводка кампани
 python3 -m tools.cs preview CI-0001 --serve        # предпросмотр всех вариантов: http://localhost:8001/_preview/
 python3 -m tools.cs site build && python3 -m tools.cs site serve   # staging сайта: http://localhost:8000
 python3 -m tools.cs site shots       # страницы сайта в браузере (390 и 1280 px), снимки — в build/
+python3 -m tools.cs site scan        # фильтр чувствительных данных по сборке или любой копии сайта (Д39)
+python3 -m tools.cs progress show --id 2026-10-05   # величины набора прогресса с формулами (Д38)
 python3 -m tools.cs publish CI-0001 telegram.ru --to tg-devlog     # пробный прогон публикации
 python3 -m tools.cs health           # площадки, учётные данные, сайт, хранилище
 python3 -m tools.cs bundle           # выгрузка всей базы (резервная копия)
