@@ -41,10 +41,11 @@ Claude Code после его «да» (Д36). Домен зарегистрир
 /news/<slug>/           запись (адрес не меняется)
 /tags/<метка>/          записи по метке
 /feed.xml /rss.xml /feed.json   фиды
-/sitemap.xml /robots.txt /404.html
+/sitemap.xml /robots.txt /404.html /en/404.html
 /api/v1/index.json /api/v1/projects.json /api/v1/news.json /api/v1/progress.json (если страница прогресса видна)
 /media/<объект>/…  /fonts/…  /style.css  /favicon.svg
-/.htaccess              заголовки и 404 для Apache (Beget, Д35); /_headers — для Cloudflare Pages и Netlify
+/.htaccess              заголовки, 404 и выбор языка для Apache (Beget, Д35); /en/.htaccess — своя 404;
+                        /_headers — для Cloudflare Pages и Netlify
 ```
 
 Отличия от предварительной схемы §5 — `docs/research/publishing/WEBSITE.md`,
@@ -148,6 +149,23 @@ AU-NAME (RU и EN) в каждом файле сайта; совпадение �
 false`, §80). Адрес записи (`/news/<slug>/`) не меняется после
 публикации; смена — только с перенаправлением со старого.
 
+## Язык (П2-18)
+
+- Вход на `/` **извне**, когда первым в `Accept-Language` стоит английский,
+  — временное перенаправление (302) на `/en/` (`mod_rewrite` в
+  `/.htaccess`; нет модуля — блок пропускается). Свои переходы не
+  перенаправляются: `Referer` с `dpsmpx.com` или `www.dpsmpx.com` — так
+  кнопка «RU» на `/en/` оставляет на `/`. Без заголовка (поисковые роботы
+  его обычно не шлют) и с русским первым — `/`. Другие адреса не
+  перенаправляются: ссылка на страницу — это выбор языка.
+- `/en/…`, которого нет, — `/en/404.html` (свой `ErrorDocument` в
+  `/en/.htaccess`; заголовки и `Options -Indexes` наследуются из корня);
+  остальное — `/404.html`. Локальный сервер отдаёт так же.
+- `Vary: Accept-Language` Apache на ответ «/» не ставит (проверено на
+  2.4): без CDN и общего кэша это безопасно; появится CDN — добавить.
+- Проверено на Apache 2.4 (05.10.2026): все случаи выше, 404 на обоих
+  языках, CSP на `/en/…`, `/fonts/` — 403.
+
 ## SEO и вид в соцсетях (§81–82)
 
 `<title>`, `description`, `rel=canonical`, `hreflang` RU/EN, Open Graph
@@ -210,7 +228,7 @@ nginx, `.htaccess` всё равно действует). Список файл�
 Проверка `siteshots` (`tools/cs/site/shots.py`, съёмщик
 `tools/render/site_shots.js`) — как проверка изображений: собирает
 staging, поднимает локальный сервер с заголовками сайта (CSP и др.) и
-снимает в Chromium каждую страницу (и `/404.html`) на ширине **390** и
+снимает в Chromium каждую страницу (и обе 404) на ширине **390** и
 **1280 px**. По раскладке:
 
 | Уровень | Что |
@@ -233,7 +251,7 @@ Chromium). Попиксельного сравнения с эталоном н�
 staging-сборка в корне `build/preview/<id>/`, страница со всеми
 вариантами — `/_preview/`; сайт ссылается на свои файлы от корня, поэтому
 открывается через локальный сервер (`site serve`, `preview --serve`;
-нет адреса — `/404.html` с кодом 404, как на хостинге), а не из `file://`.
+нет адреса — 404 на языке раздела, как на хостинге), а не из `file://`.
 
 ```
 commit → python3 -m tools.cs check → site build --env staging → предпросмотр (site serve, preview --serve)

@@ -23,6 +23,7 @@ import html
 import json
 import re
 import shutil
+import urllib.parse
 from dataclasses import dataclass, field
 from pathlib import Path
 from string import Template
@@ -602,10 +603,34 @@ class SiteBuild:
                  "<IfModule mod_mime.c>",
                  "  AddType font/woff2 .woff2",
                  "  AddType image/svg+xml .svg",
-                 "</IfModule>",
-                 "<IfModule mod_headers.c>"]
+                 "</IfModule>"]
+        lines += self.lang_redirect()
+        lines += ["<IfModule mod_headers.c>"]
         lines += [f'  Header always set {k} "{v}"' for k, v in self._headers().items()]
         return "\n".join(lines + ["</IfModule>"]) + "\n"
+
+    def lang_redirect(self) -> list[str]:
+        """Выбор языка на хостинге (П2-18): вход на «/» извне, когда первым в Accept-Language
+        стоит английский, — на «/en/» (302). Свои переходы (Referer — этот сайт) не
+        перенаправляются: кнопка «RU» на /en/ ведёт на «/» и должна там остаться.
+        Поисковые роботы Accept-Language обычно не шлют — видят «/». Без mod_rewrite блок
+        пропускается."""
+        if "en" not in (self.cfg.get("languages") or []):
+            return []
+        host = re.escape(urllib.parse.urlsplit(self.repo.canonical_base()).hostname or "")
+        return ["<IfModule mod_rewrite.c>",
+                "  RewriteEngine On",
+                "  RewriteCond %{HTTP:Accept-Language} ^en [NC]",
+                f"  RewriteCond %{{HTTP_REFERER}} !^https?://(www\\.)?{host}(/|$) [NC]",
+                "  RewriteRule ^$ /en/ [R=302,L]",
+                "</IfModule>"]
+
+    def not_found_page(self, lang: str) -> Page:
+        """Страница 404 на языке раздела (П2-18): ссылка — на главную того же языка."""
+        home, path = ("/en/", "/en/404.html") if lang == "en" else ("/", "/404.html")
+        return Page(path, lang, t(lang, "not_found"), t(lang, "not_found"),
+                    f"<h1>{E(t(lang, 'not_found'))}</h1><p>{E(t(lang, 'not_found_text'))} "
+                    f"<a href=\"{home}\">{E(t(lang, 'not_found_home'))}</a>.</p>")
 
     def build(self, out: Path) -> BuildReport:
         self.report = BuildReport(self.env, out)
@@ -647,9 +672,9 @@ class SiteBuild:
         for page in pages:
             self.write(out, page.path, self.render(page))
             self.report.pages.append(page.path)
-        self.write(out, "/404.html", self.render(Page("/404.html", "ru", t("ru", "not_found"), t("ru", "not_found"),
-                                                       f"<h1>{E(t('ru', 'not_found'))}</h1><p>{E(t('ru', 'not_found_text'))} "
-                                                       f"<a href=\"/\">{E(t('ru', 'not_found_home'))}</a>.</p>")))
+        for lang in ("ru", "en") if "en" in langs else ("ru",):
+            nf = self.not_found_page(lang)
+            self.write(out, nf.path, self.render(nf))
         # медиа вариантов и изображение по умолчанию
         for e in entries:
             for ref in e.variant.m("media") or []:
@@ -668,6 +693,10 @@ class SiteBuild:
         self.write(out, "/style.css", self.css())
         self.write(out, "/favicon.svg", self.favicon())
         self.write(out, *self.headers_file())
+        if self.cfg.get("hosting") == "beget" and "en" in langs:
+            # Apache: своя 404 для /en/ (П2-18); заголовки и Options наследуются из корня
+            self.write(out, "/en/.htaccess", "# Создаёт tools/cs/site/build.py (П2-18); на сервере не править.\n"
+                                             "ErrorDocument 404 /en/404.html\n")
         for f in sorted(self.repo.path("assets", "brand", "fonts").glob("*")):
             if f.suffix in (".woff2", ".txt"):
                 self.write(out, f"/fonts/{f.name}", f.read_bytes())
