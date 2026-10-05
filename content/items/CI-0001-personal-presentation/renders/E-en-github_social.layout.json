@@ -1,0 +1,464 @@
+{
+ "width": 1280,
+ "height": 640,
+ "fonts_loaded": [
+  "IBM Plex Sans",
+  "IBM Plex Mono"
+ ],
+ "external_requests": [],
+ "elements": [
+  {
+   "role": "eco-layer",
+   "group": "ecosystem",
+   "text": "Products",
+   "x": 49.796875,
+   "y": 144.796875,
+   "w": 443,
+   "h": 19.25,
+   "text_box": {
+    "x": 49.796875,
+    "y": 143.796875,
+    "w": 73.875,
+    "h": 20
+   },
+   "font_px": 15.4,
+   "font_weight": 400,
+   "font_family": "\"IBM Plex Mono\", monospace",
+   "fg": "mist",
+   "bg": "ink",
+   "overflow": false,
+   "bg_luminance": {
+    "p95": 0.006022900252773424,
+    "max": 0.006484859349043907
+   }
+  },
+  {
+   "role": "eco-node",
+   "group": "ecosystem",
+   "text": "Galdhold",
+   "x": 49.796875,
+   "y": 170.9375,
+   "w": 115.734375,
+   "h": 30.265625,
+   "text_box": {
+    "x": 59.984375,
+    "y": 175.828125,
+    "w": 95.359375,
+    "h": 20
+   },
+   "font_px": 15.4,
+   "font_weight": 400,
+   "font_family": "\"IBM Plex Mono\", monospace",
+   "fg": "paper",
+   "bg": "graphite",
+   "overflow": false,
+   "bg_luminance": {
+    "p95": 0.01097215454464397,
+    "max": 0.01097215454464397
+   }
+  },
+  {
+   "role": "eco-node",
+   "group": "ecosystem",
+   "text": "DPlang",
+   "x": 173.21875,
+   "y": 170.9375,
+   "w": 97.265625,
+   "h": 30.265625,
+   "text_box": {
+    "x": 183.40625,
+    "y": 175.828125,
+    "w": 76.890625,
+    "h": 20
+   },
+   "font_px": 15.4,
+   "font_weight": 400,
+   "font_family": "\"IBM Plex Mono\", monospace",
+   "fg": "paper",
+   "bg": "graphite",
+   "overflow": false,
+   "bg_luminance": {
+    "p95": 0.01097215454464397,
+    "max": 0.01097215454464397
+   }
+  },
+  {
+   "role": "eco-layer",
+   "group": "ecosystem",
+   "text": "Engineering foundation",
+   "x": 49.796875,
+   "y": 218.09375,
+   "w": 443,
+   "h": 19.25,
+   "text_box": {
+    "x": 49.796875,
+    "y": 217.09375,
+    "w": 203.15625,
+    "h": 20
+   },
+   "font_px": 15.4,
+   "font_weight": 400,
+   "font_family": "\"IBM Plex Mono\", monospace",
+   "fg": "mist",
+   "bg": "ink",
+   "overflow": false,
+   "bg_luminance": {
+    "p95": 0.006022900252773424,
+    "max": 0.007469150592752586
+   }
+  },
+  {
+   "role": "eco-node",
+   "group": "ecosystem",
+   "text": "DP-Verify",
+   "x": 49.796875,
+   "y": 244.234375,
+   "w": 103.484375,
+   "h": 30.265625,
+   "text_box": {
+    "x": 59.984375,
+    "y": 249.125,
+    "w": 83.109375,
+    "h": 20
+   },
+   "font_px": 15.4,
+   "font_weight": 400,
+   "font_family": "\"IBM Plex Mono\", monospace",
+   "fg": "paper",
+   "bg": "graphite",
+   "overflow": false,
+   "bg_luminance": {
+    "p95": 0.01097215454464397,
+    "max": 0.01097215454464397
+   }
+  },
+  {
+   "role": "eco-layer",
+   "group": "ecosystem",
+   "text": "Knowledge and publishing",
+   "x": 49.796875,
+   "y": 291.390625,
+   "w": 443,
+   "h": 19.25,
+   "text_box": {
+    "x": 49.796875,
+    "y": 290.390625,
+    "w": 221.625,
+    "h": 20
+   },
+   "font_px": 15.4,
+   "font_weight": 400,
+   "font_family": "\"IBM Plex Mono\", monospace",
+   "fg": "mist",
+   "bg": "ink",
+   "overflow": false,
+   "bg_luminance": {
+    "p95": 0.006022900252773424,
+    "max": 0.007469150592752586
+   }
+  },
+  {
+   "role": "eco-node",
+   "group": "ecosystem",
+   "text": "SocialMediaImage",
+   "x": 49.796875,
+   "y": 317.53125,
+   "w": 168.125,
+   "h": 30.265625,
+   "text_box": {
+    "x": 59.984375,
+    "y": 322.421875,
+    "w": 147.75,
+    "h": 20
+   },
+   "font_px": 15.4,
+   "font_weight": 400,
+   "font_family": "\"IBM Plex Mono\", monospace",
+   "fg": "paper",
+   "bg": "graphite",
+   "overflow": false,
+   "bg_luminance": {
+    "p95": 0.01097215454464397,
+    "max": 0.01097215454464397
+   }
+  },
+  {
+   "role": "eco-node",
+   "group": "ecosystem",
+   "text": "DPprofile",
+   "x": 225.609375,
+   "y": 317.53125,
+   "w": 103.484375,
+   "h": 30.265625,
+   "text_box": {
+    "x": 235.796875,
+    "y": 322.421875,
+    "w": 83.109375,
+    "h": 20
+   },
+   "font_px": 15.4,
+   "font_weight": 400,
+   "font_family": "\"IBM Plex Mono\", monospace",
+   "fg": "paper",
+   "bg": "graphite",
+   "overflow": false,
+   "bg_luminance": {
+    "p95": 0.01097215454464397,
+    "max": 0.01097215454464397
+   }
+  },
+  {
+   "role": "eco-node",
+   "group": "ecosystem",
+   "text": "DPlearn",
+   "x": 336.78125,
+   "y": 317.53125,
+   "w": 85.015625,
+   "h": 30.265625,
+   "text_box": {
+    "x": 346.96875,
+    "y": 322.421875,
+    "w": 64.640625,
+    "h": 20
+   },
+   "font_px": 15.4,
+   "font_weight": 400,
+   "font_family": "\"IBM Plex Mono\", monospace",
+   "fg": "paper",
+   "bg": "graphite",
+   "overflow": false,
+   "bg_luminance": {
+    "p95": 0.01097215454464397,
+    "max": 0.01097215454464397
+   }
+  },
+  {
+   "role": "eco-node",
+   "group": "ecosystem",
+   "text": "DP_game_market",
+   "x": 49.796875,
+   "y": 355.484375,
+   "w": 149.65625,
+   "h": 30.265625,
+   "text_box": {
+    "x": 59.984375,
+    "y": 360.375,
+    "w": 129.28125,
+    "h": 20
+   },
+   "font_px": 15.4,
+   "font_weight": 400,
+   "font_family": "\"IBM Plex Mono\", monospace",
+   "fg": "paper",
+   "bg": "graphite",
+   "overflow": false,
+   "bg_luminance": {
+    "p95": 0.01097215454464397,
+    "max": 0.01097215454464397
+   }
+  },
+  {
+   "role": "eco-layer",
+   "group": "ecosystem",
+   "text": "Meta layer",
+   "x": 49.796875,
+   "y": 402.640625,
+   "w": 443,
+   "h": 19.25,
+   "text_box": {
+    "x": 49.796875,
+    "y": 401.640625,
+    "w": 92.34375,
+    "h": 20
+   },
+   "font_px": 15.4,
+   "font_weight": 400,
+   "font_family": "\"IBM Plex Mono\", monospace",
+   "fg": "mist",
+   "bg": "ink",
+   "overflow": false,
+   "bg_luminance": {
+    "p95": 0.006022900252773424,
+    "max": 0.006059261750773793
+   }
+  },
+  {
+   "role": "eco-node",
+   "group": "ecosystem",
+   "text": "DPmeta",
+   "x": 49.796875,
+   "y": 428.78125,
+   "w": 75.78125,
+   "h": 30.265625,
+   "text_box": {
+    "x": 59.984375,
+    "y": 433.671875,
+    "w": 55.40625,
+    "h": 20
+   },
+   "font_px": 15.4,
+   "font_weight": 400,
+   "font_family": "\"IBM Plex Mono\", monospace",
+   "fg": "paper",
+   "bg": "graphite",
+   "overflow": false,
+   "bg_luminance": {
+    "p95": 0.01097215454464397,
+    "max": 0.01097215454464397
+   }
+  },
+  {
+   "role": "eco-note",
+   "group": "ecosystem",
+   "text": "+ 1 undisclosed private project",
+   "x": 49.796875,
+   "y": 475.9375,
+   "w": 443,
+   "h": 19.25,
+   "text_box": {
+    "x": 49.796875,
+    "y": 474.9375,
+    "w": 286.265625,
+    "h": 20
+   },
+   "font_px": 15.4,
+   "font_weight": 400,
+   "font_family": "\"IBM Plex Mono\", monospace",
+   "fg": "mist",
+   "bg": "ink",
+   "overflow": false,
+   "bg_luminance": {
+    "p95": 0.006022900252773424,
+    "max": 0.007469150592752586
+   }
+  },
+  {
+   "role": "name",
+   "group": "name",
+   "text": "dpsmpx",
+   "x": 550.390625,
+   "y": 194.59375,
+   "w": 208.671875,
+   "h": 54.40625,
+   "text_box": {
+    "x": 550.390625,
+    "y": 185.59375,
+    "w": 208.671875,
+    "h": 71
+   },
+   "font_px": 54.4,
+   "font_weight": 600,
+   "font_family": "\"IBM Plex Sans\", sans-serif",
+   "fg": "paper",
+   "bg": "ink",
+   "overflow": false,
+   "bg_luminance": {
+    "p95": 0.010168194412858832,
+    "max": 0.01591071662463252
+   }
+  },
+  {
+   "role": "role",
+   "group": "identity",
+   "text": "Native systems developer",
+   "x": 550.390625,
+   "y": 262.59375,
+   "w": 679.796875,
+   "h": 27.59375,
+   "text_box": {
+    "x": 550.390625,
+    "y": 260.59375,
+    "w": 270.6875,
+    "h": 30
+   },
+   "font_px": 23,
+   "font_weight": 500,
+   "font_family": "\"IBM Plex Sans\", sans-serif",
+   "fg": "paper",
+   "bg": "ink",
+   "overflow": false,
+   "bg_luminance": {
+    "p95": 0.010341704692441077,
+    "max": 0.016785977853923755
+   }
+  },
+  {
+   "role": "sub",
+   "group": "identity",
+   "text": "From one game to an ecosystem of 9 repositories in 24 days.\nAI is the instrument; architecture and decisions are mine.",
+   "x": 550.390625,
+   "y": 298.296875,
+   "w": 645.796875,
+   "h": 44.65625,
+   "text_box": {
+    "x": 550.390625,
+    "y": 299.296875,
+    "w": 417.375,
+    "h": 42.328125
+   },
+   "font_px": 15.4,
+   "font_weight": 400,
+   "font_family": "\"IBM Plex Sans\", sans-serif",
+   "fg": "mist",
+   "bg": "ink",
+   "overflow": false,
+   "bg_luminance": {
+    "p95": 0.006022900252773424,
+    "max": 0.018405560002963586
+   }
+  },
+  {
+   "role": "evidence",
+   "group": "evidence",
+   "text": "344k lines of code, tests and docs · 981 commits",
+   "x": 550.390625,
+   "y": 373.5,
+   "w": 465.25,
+   "h": 32.484375,
+   "text_box": {
+    "x": 561.390625,
+    "y": 379.5,
+    "w": 443.25,
+    "h": 20
+   },
+   "font_px": 15.4,
+   "font_weight": 400,
+   "font_family": "\"IBM Plex Mono\", monospace",
+   "fg": "paper",
+   "bg": "graphite",
+   "overflow": false,
+   "bg_luminance": {
+    "p95": 0.01097215454464397,
+    "max": 0.01097215454464397
+   }
+  },
+  {
+   "role": "evidence",
+   "group": "evidence",
+   "text": "83% of commits by AI · 210 decision records · Oct 2026",
+   "x": 550.390625,
+   "y": 415,
+   "w": 520.65625,
+   "h": 32.484375,
+   "text_box": {
+    "x": 561.390625,
+    "y": 421,
+    "w": 498.65625,
+    "h": 20
+   },
+   "font_px": 15.4,
+   "font_weight": 400,
+   "font_family": "\"IBM Plex Mono\", monospace",
+   "fg": "paper",
+   "bg": "graphite",
+   "overflow": false,
+   "bg_luminance": {
+    "p95": 0.01097215454464397,
+    "max": 0.01097215454464397
+   }
+  }
+ ],
+ "spec": "content/items/CI-0001-personal-presentation/spec/variant-e.yaml",
+ "lang": "en",
+ "format": "github_social"
+}

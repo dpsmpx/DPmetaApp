@@ -14,9 +14,9 @@ campaign: CMP-0001
 website:
   path: /about/
 topic: кто такой dpsmpx и как он работает
-objective: 'За 2–3 секунды показать, кто такой dpsmpx: человек, который строит сложные нативные системы
-  — игру, движок и язык — с ИИ как инструментом и сам принимает архитектурные решения; за этим есть настоящий
-  результат.'
+objective: 'За 2–3 секунды показать, кто такой dpsmpx: разработчик нативных систем, у которого из одной
+  игры за 24 дня выросла экосистема из 9 репозиториев; ИИ — инструмент, архитектура и решения — его; за
+  этим есть измеримый результат.'
 audiences:
 - professional
 - collaborators
@@ -56,11 +56,33 @@ claims:
 - fact: DP-WHAT
 - fact: DP-STAGE
   note: «язык — в разработке» (вариант A, copy/telegram.md)
+- fact: CORE-SCALE-2026-10-05
+  note: 'v2: масштаб ядра экосистемы на 05.10.2026 (вариант E)'
+- fact: VRF-WHAT
+  note: 'v2: узел карты'
+- fact: SMI-WHAT
+  note: 'v2: узел карты'
+- fact: PRF-WHAT
+  note: 'v2: узел карты'
+- fact: LRN-WHAT
+  note: 'v2: узел карты'
+- fact: MKT-WHAT
+  note: 'v2: узел карты'
+- fact: META-WHAT
+  note: 'v2: узел карты'
+- fact: META-NO-DEPS
+  note: 'v2: на карте нет стрелок зависимостей'
 source_projects:
 - galdhold
 - dplang
-brief: docs/content/products/personal_presentation/BRIEF.md
-visual_direction: docs/content/products/personal_presentation/CREATIVE_DIRECTION.md
+- dp_verify
+- dpprofile
+- dpmeta
+- dplearn
+- socialmediaimage
+- dp_game_market
+brief: docs/content/products/personal_presentation/BRIEF_V2.md
+visual_direction: docs/content/products/personal_presentation/CREATIVE_DIRECTION_V2.md
 prompt:
   id: image/presentation-composition
   version: 1
@@ -72,12 +94,14 @@ variants:
 - id: A
   label: professional
   spec: spec/variant-a.yaml
-  status: selected
+  status: rejected
   renders:
   - renders/A-en-github_social.png
   - renders/A-en-telegram_post.jpg
   - renders/A-ru-telegram_post.jpg
   - renders/A-ru-youtube_banner.jpg
+  rejection_reason: 'v2 (05.10.2026): автор выбрал образ без лица; цель v2 — экосистема. Как вариант v1
+    (с лицом) прошёл ревизию — CRITIQUE.md, DECISION.md'
 - id: B
   label: technical
   spec: spec/variant-b.yaml
@@ -108,13 +132,22 @@ variants:
   - renders/D-en-telegram_post.jpg
   - renders/D-ru-telegram_post.jpg
   - renders/D-ru-youtube_banner.jpg
-selected_variant: A
+- id: E
+  label: ecosystem
+  spec: spec/variant-e.yaml
+  status: candidate
+  renders:
+  - renders/E-en-github_social.png
+  - renders/E-en-telegram_post.jpg
+  - renders/E-ru-telegram_post.jpg
+  - renders/E-ru-youtube_banner.jpg
+selected_variant: null
 provenance: provenance.yaml
 blocked_by:
-- 'сессия: ревизия подписи по Д20 (имя рядом с dpsmpx)'
+- 'сессия: критика v2 (вариант E против D) отдельным проходом'
 - 'автор: утверждение и гейт Brand'
-- 'автор: права фотографа A-001 (гейт Legal)'
 - 'автор: О-1 — размер роли на миниатюре'
+- 'сессия: канон v2 и тексты площадок после выбора изображения'
 review:
   file: docs/content/products/personal_presentation/CRITIQUE.md
   scores:
@@ -411,41 +444,41 @@ exports:
   status: preview
 gates:
   factual:
-    status: pass
+    status: pending
     by: tool
-    date: &id001 2026-10-04
-    note: 'claims: факты, слова-утверждения, запреты, числа — вариант A и copy/; повторная критика — Factuality
-      4'
+    date: &id001 2026-10-05
+    note: 'v2 (вариант E): заново после критики; проверка tools/check.sh'
   brand:
     status: pending
     by: author
     date: *id001
-    note: образ и сходство утверждает автор (Д18); показать A-14 — плотная виньетка
+    note: 'v2 (вариант E): заново после критики; утверждает автор'
   visual:
-    status: pass
+    status: pending
     by: tool
     date: *id001
-    note: 'visual: размер, контраст по фону, группы, три размера, поля; повторная критика — Visual 4'
+    note: 'v2 (вариант E): заново после критики; проверка tools/check.sh'
   platform:
-    status: pass
+    status: pending
     by: tool
     date: *id001
-    note: размеры, вес, безопасная зона шапки; vk_post — размеры VK официально не подтверждены
+    note: 'v2 (вариант E): заново после критики; проверка tools/check.sh'
   safety:
-    status: pass
+    status: pending
     by: session
     date: *id001
-    note: интерьер не читается (замеры 2-го прохода и после A-14); EXIF/XMP нет в фото и экспорте
+    note: 'v2 (вариант E): заново после критики; проверка tools/check.sh'
   legal:
     status: pending
-    by: author
+    by: session
     date: *id001
-    note: права фотографа A-001 не подтверждены; шрифты OFL; внешних запросов при рендере нет
+    note: 'v2 (вариант E): заново после критики; портрета нет — права фотографа A-001 к v2 не относятся;
+      шрифты OFL'
   provenance:
-    status: pass
+    status: pending
     by: tool
     date: *id001
-    note: входы A-001…A-003 в реестре; все рендеры и экспорт записаны с хэшами
+    note: 'v2 (вариант E): заново после критики; проверка tools/check.sh'
 canonical:
   lang: ru
   current: 1
@@ -493,7 +526,7 @@ targets:
   na: шапка канала загружается в Studio без текста (OUTPUTS.md)
 - variant: discord.ru
   na: 'ОР-6: сервер не подтверждён'
-state: UNDER_REVIEW
+state: GENERATED
 history:
 - date: 2026-10-04
   state: IDEA
@@ -505,15 +538,15 @@ history:
 - date: 2026-10-04
   state: BRIEFED
   note: бриф BRIEF.md и творческое направление CREATIVE_DIRECTION.md; спецификации вариантов A–D
-- date: *id001
+- date: &id002 2026-10-04
   state: GENERATED
   note: 'варианты A–D отрендерены по промпту image/presentation-composition v1: renders/, RU и EN, формат
     telegram_post'
-- date: *id001
+- date: *id002
   state: UNDER_REVIEW
   note: 'критика отдельным проходом (агент только для чтения): CRITIQUE.md; B и C отклонены по fatal,
     D — запасной, A — к ревизии'
-- date: *id001
+- date: *id002
   state: REVISED
   note: 'ревизия A по критике: плотный кадр (zoom 1.9, vignette 0.8) — интерьер не читается (A-1); лицо
     крупнее, шапка — портрет выше зоны, человек крупнее имени (A-2); GH-ENGINE и DP-STAGE в claims, «свой
@@ -522,7 +555,7 @@ history:
     легенды — «каждое изменение принимаю сам» (A-7, A-8); перенос подзаголовка (A-11); плашки без куба
     (A-12). D: шапка в безопасной зоне, подпись ворот, AU-MEMORY (D-2, D-3). Д9 приведено к токенам (О-2).
     Инструменты: слова-утверждения, размеры текста, поля, маркер лица по настоящему размеру'
-- date: *id001
+- date: *id002
   state: UNDER_REVIEW
   note: 'повторный проход критики: прежние major A исправлены, кроме О-1 (решает автор); новые minor A-14…A-17,
     D-7, D-8 исправлены после прохода (проверено инструментами и замерами); A выбран сессией для проверки
@@ -535,3 +568,13 @@ history:
   state: UNDER_REVIEW
   note: 'миграция content_item/v1 → v2 (Д31): copy/github.md → variants/github.en.md; copy/telegram.md
     → variants/telegram.ru.md; copy/vk.md → variants/vk.ru.md; без текста, не перенесено: copy/youtube.md'
+- date: *id001
+  state: BRIEFED
+  note: 'v2 по поручению автора «образ разработчика в свете текущей экосистемы»; ответы автора: новая
+    версия CI-0001, без лица. Новая цель, бриф BRIEF_V2.md, направление CREATIVE_DIRECTION_V2.md; факт
+    CORE-SCALE-2026-10-05; вариант E (ecosystem), A отклонён решением автора для v2, D — запасной'
+- date: 2026-10-05
+  state: GENERATED
+  note: 'вариант E отрендерен по промпту image/presentation-composition v1, макет ecosystem (новый, tools/cs/render.py):
+    renders/E — telegram_post RU и EN, github_social EN, youtube_banner RU. Выходы A–D перерендерены во
+    временный каталог — совпали байт в байт; в provenance обновлён только хэш инструмента'

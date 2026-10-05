@@ -5,7 +5,7 @@
 изменения геометрии. Каждый формат рендерится заново под свой размер и
 безопасную зону, а не масштабируется из мастера.
 
-Макеты: professional (A), technical (B), cinematic (C), minimal (D).
+Макеты: professional (A), technical (B), cinematic (C), minimal (D), ecosystem (E — без лица, карта экосистемы).
 """
 from __future__ import annotations
 
@@ -508,11 +508,112 @@ def layout_minimal(spec, t, tok, fmt: Fmt) -> str:
     return "".join(body)
 
 
+def ecosystem_html(tok: dict, eco: dict, size: float, labels: bool = True) -> str:
+    """Карта экосистемы слоями: строка — слой, плашка — репозиторий (Plex Mono).
+
+    Стрелок нет: репозитории не зависят друг от друга (META-NO-DEPS). Продукты — с вокселем,
+    как узел «Продукт» схемы. labels=False — без подписей слоёв, плашки одной строкой с переносом
+    (шапка). Закрытый проект без имени — только строкой note (Д38, Д39).
+    """
+    gap = size * 0.5
+
+    def pill(n: dict) -> str:
+        icon = (f'<span style="display:inline-block;vertical-align:{-size * 0.16:.1f}px;margin-right:{size * 0.45:.1f}px">'
+                f'{_cube_svg(size * 0.95, tok)}</span>') if n.get("product") else ""
+        return (
+            f'<div class="mono" data-role="eco-node" data-group="ecosystem" data-fg="paper" data-bg="graphite" '
+            f'style="font-size:{size:.1f}px;line-height:1.2;white-space:nowrap;padding:{size * 0.32:.1f}px {size * 0.6:.1f}px;'
+            f'background:{_c(tok, "graphite")};border:1px solid {_c(tok, "line")};border-radius:{size * 0.3:.1f}px;'
+            f'color:{_c(tok, "paper")}">{icon}{_e(n["name"])}</div>'
+        )
+
+    def row(nodes: list[dict], extra: str = "") -> str:
+        return (f'<div style="display:flex;flex-wrap:wrap;align-items:center;gap:{gap:.1f}px">'
+                + "".join(pill(n) for n in nodes) + extra + "</div>")
+
+    note = eco.get("note")
+    note_html = (
+        f'<div class="mono" data-role="eco-note" data-group="ecosystem" data-fg="mist" data-bg="ink" '
+        f'style="font-size:{size:.1f}px;line-height:1.25;white-space:nowrap;color:{_c(tok, "mist")}">{_e(note)}</div>'
+    ) if note else ""
+    if not labels:
+        return row([n for layer in eco["layers"] for n in layer["nodes"]], note_html)
+    parts = []
+    for layer in eco["layers"]:
+        parts.append(
+            f'<div><div class="mono" data-role="eco-layer" data-group="ecosystem" data-fg="mist" data-bg="ink" '
+            f'style="font-size:{size:.1f}px;line-height:1.25;white-space:nowrap;color:{_c(tok, "mist")};'
+            f'margin-bottom:{size * 0.45:.1f}px">{_e(layer["label"])}</div>{row(layer["nodes"])}</div>'
+        )
+    return "".join(parts) + note_html
+
+
+def layout_ecosystem(spec, t, tok, fmt: Fmt) -> str:
+    """Вариант без лица: на месте портрета — карта экосистемы; справа имя, роль, подзаголовок, доказательства."""
+    W, H = fmt.width, fmt.height
+    if fmt.safe_area:
+        return layout_ecosystem_banner(spec, t, tok, fmt)
+    s = H / 720
+    ts = tok["type_scale"]
+    disp, title, label = ts["display"] * H, ts["title"] * H, ts["label"] * H
+    pw = W * (0.42 if W / H < 1.9 else 0.40)
+    m = 56 * s
+    body = [
+        f'<div style="position:absolute;left:{m:.1f}px;top:{m:.1f}px;width:{pw - m - W * 0.015:.1f}px;'
+        f'height:{H - 2 * m:.1f}px;display:flex;flex-direction:column;justify-content:center;gap:{label * 1.1:.1f}px">'
+        f'{ecosystem_html(tok, t["ecosystem"], label)}</div>',
+        # граница карты и текста — декор, не группа текста
+        f'<div style="position:absolute;left:{pw + W * 0.012:.1f}px;top:{H * 0.14:.1f}px;width:1px;'
+        f'height:{H * 0.72:.1f}px;background:linear-gradient(180deg,transparent,{_c(tok, "line")},transparent)"></div>',
+    ]
+    x0 = pw + W * 0.03
+    cw = W - x0 - m
+    # Правая колонка — один блок по центру высоты, как карта слева: без схемы работы v1 середина
+    # иначе пустеет между подзаголовком и доказательствами.
+    ev = t.get("evidence", [])
+    sub_h = label * 1.45 * (t["sub"].count("\n") + 1) if t.get("sub") else 0
+    ev_h = (label * 2.0 + label * 2.7 * (len(ev) - 1) + label * 1.98) if ev else 0
+    y = max(m, (H - (disp * 1.25 + title * 1.55 + sub_h + ev_h)) / 2)
+    body.append(name_html(tok, t["name"], x0, y, disp))
+    y += disp * 1.25
+    body.append(text_html(tok, "role", "identity", t["role"], x0, y, cw, title, weight=500, line=1.2))
+    y += title * 1.55
+    if t.get("sub"):
+        body.append(text_html(tok, "sub", "identity", t["sub"], x0, y, cw * 0.95, label, color="mist", line=1.45))
+        y += sub_h
+    y += label * 2.0
+    for i, e in enumerate(ev):
+        body.append(chip_html(tok, e, x0, y + i * label * 2.7, label))
+    return "".join(body)
+
+
+def layout_ecosystem_banner(spec, t, tok, fmt: Fmt) -> str:
+    """Шапка YouTube варианта ecosystem: имя, роль, первая строка подзаголовка и узлы — в безопасной зоне."""
+    sa = fmt.safe_area
+    sx, sy, sw, sh = sa["x"], sa["y"], sa["w"], sa["h"]
+    unit = sh / 423
+    label = max(32 * unit, tok["limits"]["min_text_px_at_720"] * fmt.height / 720)
+    disp, title = 80 * unit, 42 * unit
+    x0, cw = sx + 24 * unit, sw - 48 * unit
+    y = sy + 14 * unit
+    body = [name_html(tok, t["name"], x0, y, disp)]
+    y += disp * 1.2
+    body.append(text_html(tok, "role", "identity", t["role"], x0, y, cw, title, weight=500, line=1.2, nowrap=True))
+    y += title * 1.45
+    if t.get("sub"):
+        body.append(text_html(tok, "sub", "identity", t["sub"].split("\n")[0], x0, y, cw, label, color="mist",
+                              line=1.3, nowrap=True))
+    body.append(f'<div style="position:absolute;left:{x0:.1f}px;bottom:{fmt.height - sy - sh + 14 * unit:.1f}px;'
+                f'width:{cw:.1f}px">{ecosystem_html(tok, t["ecosystem"], label, labels=False)}</div>')
+    return "".join(body)
+
+
 LAYOUTS = {
     "professional": layout_professional,
     "technical": layout_technical,
     "cinematic": layout_cinematic,
     "minimal": layout_minimal,
+    "ecosystem": layout_ecosystem,
 }
 
 

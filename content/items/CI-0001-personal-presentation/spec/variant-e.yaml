@@ -1,0 +1,43 @@
+# Вариант E — ecosystem (версия 2 объекта, без лица). Обоснование —
+# docs/content/products/personal_presentation/BRIEF_V2.md, CREATIVE_DIRECTION_V2.md.
+schema: composition/v1
+variant: E
+label: ecosystem
+layout: ecosystem
+rationale: >-
+  Без лица (решение автора 05.10.2026): на месте портрета — карта ядра экосистемы слоями, без
+  стрелок зависимостей (META-NO-DEPS); справа — имя, роль, подзаголовок «из одной игры за 24 дня —
+  экосистема из 9 репозиториев; ИИ — инструмент, решения — мои» и два доказательства с датой.
+  Закрытый проект без имени — только в сумме и строкой под картой (Д38, Д39). Четыре группы
+  текста, три размера.
+portrait: null
+text:
+  ru:
+    name: dpsmpx
+    role: Разработчик нативных систем
+    sub: "Из одной игры за 24 дня — экосистема из 9 репозиториев.\nИИ — инструмент; архитектура и решения — мои."
+    ecosystem:
+      layers:
+        - {label: Продукты, nodes: [{name: Galdhold, product: true}, {name: DPlang, product: true}]}
+        - {label: Инженерная основа, nodes: [{name: DP-Verify}]}
+        - {label: Знание и публикация, nodes: [{name: SocialMediaImage}, {name: DPprofile}, {name: DPlearn}, {name: DP_game_market}]}
+        - {label: Мета-уровень, nodes: [{name: DPmeta}]}
+      note: + 1 закрытый проект без имени
+    evidence:
+      - 344 тыс. строк кода, тестов и документов · 981 коммит
+      - 83 % коммитов — сессии ИИ · 210 записей решений · 10.2026
+  en:
+    name: dpsmpx
+    role: Native systems developer
+    sub: "From one game to an ecosystem of 9 repositories in 24 days.\nAI is the instrument; architecture and decisions are mine."
+    ecosystem:
+      layers:
+        - {label: Products, nodes: [{name: Galdhold, product: true}, {name: DPlang, product: true}]}
+        - {label: Engineering foundation, nodes: [{name: DP-Verify}]}
+        - {label: Knowledge and publishing, nodes: [{name: SocialMediaImage}, {name: DPprofile}, {name: DPlearn}, {name: DP_game_market}]}
+        - {label: Meta layer, nodes: [{name: DPmeta}]}
+      note: + 1 undisclosed private project
+    evidence:
+      - 344k lines of code, tests and docs · 981 commits
+      - 83% of commits by AI · 210 decision records · Oct 2026
+claims: [AU-HANDLE, AU-ROLE, AU-METHOD, CORE-SCALE-2026-10-05, GH-NAME, DP-WHAT, VRF-WHAT, SMI-WHAT, PRF-WHAT, LRN-WHAT, MKT-WHAT, META-WHAT, META-NO-DEPS]
