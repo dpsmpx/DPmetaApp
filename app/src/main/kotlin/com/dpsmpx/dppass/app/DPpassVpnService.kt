@@ -190,6 +190,7 @@ class DPpassVpnService : VpnService() {
             val result = graph.engine.probeHealth(dns, SUPERVISION_TIMEOUT_MILLIS.toInt())
             val elapsed = (SystemClock.elapsedRealtime() - started).coerceIn(1L, SUPERVISION_TIMEOUT_MILLIS + 2_000L)
             val failed = result is Outcome.Failure
+            val networkContext = currentNetworkContext()
             graph.core.stability.observe(
                 profileId,
                 StabilitySample(
@@ -198,13 +199,14 @@ class DPpassVpnService : VpnService() {
                     stalled = failed && result.errors.any { it.code == DiagCode.PAYLOAD_STALLED },
                     timestampMillis = System.currentTimeMillis(),
                 ),
+                networkContext,
             )
             samples++
             if (samples % PERSIST_EVERY_SAMPLES == 0) graph.core.stability.persist()
             if (failed) {
                 graph.core.log.warning("adaptive_probe_failed", "profile" to Safe(profileId.value), "elapsed_ms" to elapsed)
             }
-            if (graph.core.stability.shouldRecover(profileId, currentNetworkContext())) {
+            if (graph.core.stability.shouldRecover(profileId, networkContext)) {
                 graph.core.log.warning("adaptive_recovery", "profile" to Safe(profileId.value))
                 val removed = state.withLock {
                     if (session === expectedSession && tunnel === expectedTunnel) {
