@@ -543,9 +543,11 @@ class SiteBuild:
         return "/_headers", "\n".join(["/*"] + [f"  {k}: {v}" for k, v in self._headers().items()]) + "\n"
 
     def htaccess(self) -> str:
-        """Apache (Beget): 404, кодировка, типы, заголовки. mod_headers для статики на Beget —
-        не подтверждено (Д35): проверка curl -I после первой выгрузки."""
+        """Apache (Beget): 404, кодировка, без списка файлов каталогов, типы, заголовки.
+        mod_headers для статики и Options в .htaccess на Beget — не подтверждено (Д35):
+        проверка curl -I после первой выгрузки."""
         lines = ["# Создаёт tools/cs/site/build.py (Д35); на сервере не править — перезапишет выгрузка.",
+                 "Options -Indexes",
                  "AddDefaultCharset utf-8",
                  "ErrorDocument 404 /404.html",
                  "<IfModule mod_mime.c>",

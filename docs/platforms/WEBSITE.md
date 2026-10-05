@@ -125,6 +125,7 @@ false`, §80). Адрес записи (`/news/<slug>/`) не меняется �
 
 Файл — по `hosting` в `site.yaml`: для Beget (Apache) — `/.htaccess`
 (`Header always set …` внутри `<IfModule mod_headers.c>`,
+`Options -Indexes` — без списка файлов каталогов, где нет своей страницы,
 `ErrorDocument 404 /404.html`, `AddDefaultCharset utf-8`, типы
 `woff2`/`svg`); для Cloudflare Pages и Netlify — `/_headers`, правило
 для `/*`. Набор один: `Content-Security-Policy` (только свои файлы: `script-src 'none'`,
@@ -197,6 +198,11 @@ commit → python3 -m tools.cs check → site build --env staging → предп
 - Первая выгрузка — сначала `site deploy --dry-run`: в `public_html/`
   Beget кладёт `cgi-bin/` и `index.php` — выгрузка их удалит;
   `/.well-known/` не трогается.
+- Корень репозитория — не сайт: его `.htaccess` запрещает отдачу всего
+  (Д35). Если корень по ошибке окажется в `public_html/`, Apache ответит
+  403 (проверено на Apache 2.4; если хостинг запрещает `Require` в
+  `.htaccess` — 500, файлы тоже не отдаются). Если статику отдаёт не
+  Apache (nginx перед ним), запрет её не закроет — UNKNOWN для Beget.
 - Выгружают только `site deploy` и `publish` (Д35): все запреты ниже
   стоят внутри них, а источник — всегда свежая сборка. Ярлыки и скрипты
   только вызывают эти команды; прямой rsync в `public_html/` в обход
