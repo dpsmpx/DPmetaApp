@@ -147,8 +147,8 @@ variants:
 selected_variant: E
 provenance: provenance.yaml
 blocked_by:
-- 'автор: подтвердить утверждение E на итоговом рендере (роль крупнее) — гейт Brand'
-- 'сессия: канон v2 и тексты площадок с ролями новых репозиториев (условие исключения ОР-12) — после утверждения'
+- 'сессия: канон v2 и тексты площадок с ролями новых репозиториев (условие исключения ОР-12)'
+- 'автор: одобрить варианты площадок (approve, в своём терминале)'
 review:
   file: docs/content/products/personal_presentation/CRITIQUE.md
   scores:
@@ -579,6 +579,42 @@ exports:
   variant: A
   sha256: 48572f03ad55dc12dbac6e77942c7d668b864b85d1d1998db44ab994ddb430e4
   status: preview
+- format: github_social
+  file: exports/E-en-github_social.png
+  lang: en
+  variant: E
+  sha256: ec1dece8a067ae21ba950233f8c4c5656279b32adcb1f2bbad4f1501a5a2aaec
+  status: final
+- format: master
+  file: exports/E-en-master.png
+  lang: en
+  variant: E
+  sha256: fb19f51781c07226dedb47537381e3028f1dd4d727e5eadd4ae3de9ba6b5fc35
+  status: final
+- format: master
+  file: exports/E-ru-master.png
+  lang: ru
+  variant: E
+  sha256: ba92c0b723d32a5389a3aec6a393a3c8eb2086fb2e158281c5bbcf1d63163d2c
+  status: final
+- format: telegram_post
+  file: exports/E-ru-telegram_post.jpg
+  lang: ru
+  variant: E
+  sha256: ff5618dbbd10154834da6dedcc76a7155654d2d05480633fb993c3af6260ae1d
+  status: final
+- format: vk_post
+  file: exports/E-ru-vk_post.jpg
+  lang: ru
+  variant: E
+  sha256: ff5618dbbd10154834da6dedcc76a7155654d2d05480633fb993c3af6260ae1d
+  status: final
+- format: youtube_banner
+  file: exports/E-ru-youtube_banner.jpg
+  lang: ru
+  variant: E
+  sha256: 3741b727c19e12d1c47dba699ea0b7eacf21c38ad08091c44cc2a154a19a937a
+  status: final
 gates:
   factual:
     status: pass
@@ -587,10 +623,10 @@ gates:
     note: 'claims: факты, слова-утверждения, запреты, числа — вариант E; числа дословно из CORE-SCALE-2026-10-05
       (повторная критика — Factuality 4)'
   brand:
-    status: pending
+    status: pass
     by: author
-    date: *id001
-    note: 'утверждает автор: образ v2 без лица, карта экосистемы; имя без портрета — display × 1,6 (D-10)'
+    date: &id005 2026-10-05
+    note: 'автор утвердил E: «Утверждаю» на итоговый рендер (роль title 5,5 %, имя × 1,6)'
   visual:
     status: pass
     by: tool
@@ -666,7 +702,7 @@ targets:
   na: шапка канала загружается в Studio без текста (OUTPUTS.md)
 - variant: discord.ru
   na: 'ОР-6: сервер не подтверждён'
-state: UNDER_REVIEW
+state: APPROVED
 history:
 - date: 2026-10-04
   state: IDEA
@@ -762,3 +798,13 @@ history:
   state: UNDER_REVIEW
   note: 'последняя проверка критика: E-18 и D-12 закрыты, новых проблем нет, оценки E — все 4; E готов
     к утверждению автором (Brand)'
+- date: *id005
+  state: APPROVED
+  note: 'автор утвердил E: «Утверждаю» на итоговые рендеры (E-ru-telegram_post.jpg ff5618dbbd10, E-en-github_social.png
+    ec1dece8a067, E-ru-youtube_banner.jpg 3741b727c19e); гейт Brand — pass'
+approval:
+  by: author
+  date: *id005
+  note: '«Утверждаю» (автор, 05.10.2026) — на итоговые рендеры E, показанные в сессии: E-ru-telegram_post.jpg
+    ff5618dbbd10, E-en-github_social.png ec1dece8a067, E-ru-youtube_banner.jpg 3741b727c19e. Утверждение
+    изображения (гейт Brand); тексты площадок одобряет автор командой approve (Д12, Д26)'
