@@ -32,7 +32,10 @@ claims:
 - META-WHAT
 source_version: 2
 link: null
-approval: null
+approval:
+  by: author
+  date: 2026-10-05
+  sha256: 77659481177b436fa99dc87add99b9456160ad0cf5b06e856afd3855cc87e439
 deps:
   facts:
     AU-ROLE: 0d84826a46110966

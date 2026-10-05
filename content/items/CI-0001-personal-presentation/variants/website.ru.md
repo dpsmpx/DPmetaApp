@@ -24,7 +24,10 @@ generation:
   provider: session
   note: из канона v2 для страницы «Обо мне» и главной (summary — первая строка главной); без имени автора
     — только dpsmpx (Д37); роли репозиториев — условие ОР-12
-approval: null
+approval:
+  by: author
+  date: 2026-10-05
+  sha256: d980aba30479b723e84a41ddd73065b5b20bdee4152bfe62059ee30456efbeb0
 claims:
 - AU-HANDLE
 - AU-ROLE

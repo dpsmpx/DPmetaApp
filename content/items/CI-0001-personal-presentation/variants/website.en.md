@@ -24,7 +24,10 @@ generation:
   provider: session
   note: английский вариант канона v2 (Д21, Д22); без имени автора — только dpsmpx (Д37); роли репозиториев
     — условие ОР-12
-approval: null
+approval:
+  by: author
+  date: 2026-10-05
+  sha256: a78294d9820c588cd9c802c9fb82f0cfec830ed9c7539c51188eb76408f898f0
 claims:
 - AU-HANDLE
 - AU-ROLE
