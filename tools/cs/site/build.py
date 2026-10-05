@@ -23,6 +23,7 @@ import html
 import json
 import re
 import shutil
+import urllib.parse
 from dataclasses import dataclass, field
 from pathlib import Path
 from string import Template
@@ -204,21 +205,20 @@ class SiteBuild:
         return words[idx]
 
     def author(self, lang: str) -> str:
-        """Как сайт называет автора: dpsmpx; имя (AU-NAME) — только при real_name: true в site.yaml (Д37)."""
-        return (self.fact("AU-NAME", lang) or "dpsmpx") if self.cfg.get("real_name") else "dpsmpx"
+        """Как сайт называет автора: только dpsmpx — имени нет нигде (Д37, Д40)."""
+        return "dpsmpx"
 
     def signature(self, lang: str) -> str:
-        name = self.author(lang)
-        return name if name == "dpsmpx" else f"{name} / dpsmpx"
-
-    def name_forms(self) -> list[str]:
-        """Слова имени автора из AU-NAME (все языки) — при real_name: false их нет ни в одном файле сайта (Д37)."""
-        return sensitive.name_words(self.facts)
+        return self.author(lang)
 
     def check_sensitive(self, out: Path) -> None:
         """Фильтр чувствительных данных (Д39): каждый файл выхода; совпадение — ошибка сборки."""
-        for h in sensitive.scan(self.repo, out, bool(self.cfg.get("real_name"))):
+        f = sensitive.Filter(self.repo)
+        for h in f.scan_tree(out):
             self.report.errors.append(h.msg)
+        if f.private_limited and self.env == "production":
+            self.report.warnings.append("списка личных слов нет — имя автора на сайте не проверено "
+                                        "(Д40, docs/SECURITY.md)")
 
     # ------------------------------------------------------- страницы
     def nav(self, lang: str, current: str, alt: dict) -> str:
@@ -241,11 +241,8 @@ class SiteBuild:
     def person_jsonld(self, lang: str) -> dict:
         ids = [(x if isinstance(x, str) else x.get("link")) for x in (self.cfg.get("home") or {}).get("social_links", [])]
         same = [self.links[i]["url"] for i in ids if i in self.links and self.links[i].get("status") in ("ok", "limited")]
-        name = self.author(lang)
-        ld = {"@context": "https://schema.org", "@type": "Person", "name": name}
-        if name != "dpsmpx":
-            ld["alternateName"] = "dpsmpx"
-        return {**ld, "url": self.base + ("/en/" if lang == "en" else "/"), "sameAs": same}
+        return {"@context": "https://schema.org", "@type": "Person", "name": self.author(lang),
+                "url": self.base + ("/en/" if lang == "en" else "/"), "sameAs": same}
 
     def project_card(self, p: dict, lang: str, primary: bool) -> str:
         pre = "/en" if lang == "en" else ""
@@ -287,10 +284,7 @@ class SiteBuild:
         name = self.author(lang)
         role = self.fact("AU-ROLE", lang, 1 if lang == "ru" else 1)
         about = self._about.get(lang)
-        if name == "dpsmpx":  # Д37: без имени h1 — сам dpsmpx, строка роли — отдельным предложением
-            line = E((role or "")[:1].upper() + (role or "")[1:])
-        else:
-            line = f'<span class="handle">dpsmpx</span> · {E(role or "")}'
+        line = E((role or "")[:1].upper() + (role or "")[1:])  # Д37, Д40: h1 — dpsmpx, роль — отдельной строкой
         parts = ['<section class="hero">', f"<h1>{E(name)}</h1>", f'<p class="role">{line}</p>']
         if about:
             parts.append(self.draft_note(about))
@@ -602,10 +596,34 @@ class SiteBuild:
                  "<IfModule mod_mime.c>",
                  "  AddType font/woff2 .woff2",
                  "  AddType image/svg+xml .svg",
-                 "</IfModule>",
-                 "<IfModule mod_headers.c>"]
+                 "</IfModule>"]
+        lines += self.lang_redirect()
+        lines += ["<IfModule mod_headers.c>"]
         lines += [f'  Header always set {k} "{v}"' for k, v in self._headers().items()]
         return "\n".join(lines + ["</IfModule>"]) + "\n"
+
+    def lang_redirect(self) -> list[str]:
+        """Выбор языка на хостинге (П2-18): вход на «/» извне, когда первым в Accept-Language
+        стоит английский, — на «/en/» (302). Свои переходы (Referer — этот сайт) не
+        перенаправляются: кнопка «RU» на /en/ ведёт на «/» и должна там остаться.
+        Поисковые роботы Accept-Language обычно не шлют — видят «/». Без mod_rewrite блок
+        пропускается."""
+        if "en" not in (self.cfg.get("languages") or []):
+            return []
+        host = re.escape(urllib.parse.urlsplit(self.repo.canonical_base()).hostname or "")
+        return ["<IfModule mod_rewrite.c>",
+                "  RewriteEngine On",
+                "  RewriteCond %{HTTP:Accept-Language} ^en [NC]",
+                f"  RewriteCond %{{HTTP_REFERER}} !^https?://(www\\.)?{host}(/|$) [NC]",
+                "  RewriteRule ^$ /en/ [R=302,L]",
+                "</IfModule>"]
+
+    def not_found_page(self, lang: str) -> Page:
+        """Страница 404 на языке раздела (П2-18): ссылка — на главную того же языка."""
+        home, path = ("/en/", "/en/404.html") if lang == "en" else ("/", "/404.html")
+        return Page(path, lang, t(lang, "not_found"), t(lang, "not_found"),
+                    f"<h1>{E(t(lang, 'not_found'))}</h1><p>{E(t(lang, 'not_found_text'))} "
+                    f"<a href=\"{home}\">{E(t(lang, 'not_found_home'))}</a>.</p>")
 
     def build(self, out: Path) -> BuildReport:
         self.report = BuildReport(self.env, out)
@@ -647,9 +665,9 @@ class SiteBuild:
         for page in pages:
             self.write(out, page.path, self.render(page))
             self.report.pages.append(page.path)
-        self.write(out, "/404.html", self.render(Page("/404.html", "ru", t("ru", "not_found"), t("ru", "not_found"),
-                                                       f"<h1>{E(t('ru', 'not_found'))}</h1><p>{E(t('ru', 'not_found_text'))} "
-                                                       f"<a href=\"/\">{E(t('ru', 'not_found_home'))}</a>.</p>")))
+        for lang in ("ru", "en") if "en" in langs else ("ru",):
+            nf = self.not_found_page(lang)
+            self.write(out, nf.path, self.render(nf))
         # медиа вариантов и изображение по умолчанию
         for e in entries:
             for ref in e.variant.m("media") or []:
@@ -668,6 +686,10 @@ class SiteBuild:
         self.write(out, "/style.css", self.css())
         self.write(out, "/favicon.svg", self.favicon())
         self.write(out, *self.headers_file())
+        if self.cfg.get("hosting") == "beget" and "en" in langs:
+            # Apache: своя 404 для /en/ (П2-18); заголовки и Options наследуются из корня
+            self.write(out, "/en/.htaccess", "# Создаёт tools/cs/site/build.py (П2-18); на сервере не править.\n"
+                                             "ErrorDocument 404 /en/404.html\n")
         for f in sorted(self.repo.path("assets", "brand", "fonts").glob("*")):
             if f.suffix in (".woff2", ".txt"):
                 self.write(out, f"/fonts/{f.name}", f.read_bytes())

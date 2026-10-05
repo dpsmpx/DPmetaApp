@@ -223,6 +223,23 @@ class Htaccess(unittest.TestCase):
         self.assertNotIn("X-Robots-Tag", h, "production открыт")
         self.assertFalse((out / "_headers").exists())
 
+    def test_language_choice_and_en_404(self):
+        """П2-18: «/» → «/en/» только при входе извне с английским первым; своя 404 в /en/."""
+        repo = site_repo()
+        out = repo.path("build", "lang")
+        build(repo, "production", out)
+        active = _directives((out / ".htaccess").read_text(encoding="utf-8"))
+        self.assertIn("RewriteCond %{HTTP:Accept-Language} ^en [NC]", active)
+        self.assertIn(r"RewriteCond %{HTTP_REFERER} !^https?://(www\.)?dpsmpx\.com(/|$) [NC]", active,
+                      "свои переходы (кнопка «RU» на /en/) не перенаправляются")
+        self.assertIn("RewriteRule ^$ /en/ [R=302,L]", active, "только «/» и временно")
+        self.assertEqual(_directives((out / "en" / ".htaccess").read_text(encoding="utf-8")),
+                         ["ErrorDocument 404 /en/404.html"])
+        en404 = (out / "en" / "404.html").read_text(encoding="utf-8")
+        self.assertIn('<html lang="en"', en404)
+        self.assertIn('<a href="/en/">', en404)
+        self.assertIn('<html lang="ru"', (out / "404.html").read_text(encoding="utf-8"))
+
 
 def _directives(text: str) -> list[str]:
     """Строки .htaccess без комментариев и пустых."""

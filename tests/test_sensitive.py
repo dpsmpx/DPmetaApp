@@ -2,14 +2,17 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import tempfile
 import unittest
 import zlib
 from pathlib import Path
+from unittest import mock
 
 import yaml
 
+from tools.cs import secrets
 from tools.cs.core import sensitive, textdoc
 from tools.cs.core.content import find
 from tools.cs.progress.dataset import Progress
@@ -34,7 +37,7 @@ class Filter(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.repo = make_repo(git=False)
-        cls.f = sensitive.Filter(cls.repo, real_name=False)
+        cls.f = sensitive.Filter(cls.repo, private_words=["zqxprivat"])  # заглушка, не имя (Д40)
         data = json.loads(cls.repo.path("data/progress/datasets/2026-10-05.json").read_text(encoding="utf-8"))
         cls.head = data["repos"]["galdhold"]["head"]
         cls.public_head = data["repos"]["tanks"]["head"]  # открытый репозиторий — не секрет
@@ -53,7 +56,7 @@ class Filter(unittest.TestCase):
             "SD-SESSION": "<p>https://claude.ai/code/session_01ABCDEFGHIJKLMNOPQRSTUV</p>",
             "SD-BRANCH": "<p>ветка ccr-16a9602f-9ogizk</p>",
             "SD-SECRET": f"<p>{token}</p>",
-            "SD-NAME": "<h1>Борис</h1>",
+            "SD-PRIVATE": "<h1>ZQXPRIVAT</h1>",
             "SD-UNDISCLOSED": "<li>DPpass</li>",
             "SD-PERSONAL": "<code>dayplan_neocities</code>",
             "SD-REF": f"<p>коммит {self.head[:7]}</p>",
@@ -72,8 +75,18 @@ class Filter(unittest.TestCase):
                 '<a href="https://github.com/dpsmpx">GitHub</a> <a href="http://localhost:8000/">staging</a>')
         self.assertEqual(self.f.scan_text(text, "x.html"), [])
 
-    def test_real_name_switch(self):
-        self.assertEqual({h.rule for h in sensitive.Filter(self.repo, real_name=True).scan_text("<h1>Борис</h1>", "x")}, set())
+    def test_private_word_not_printed(self):
+        hit = next(h for h in self.f.scan_text("<p>Zqxprivatа</p>", "x.html") if h.rule == "SD-PRIVATE")
+        self.assertNotIn("zqxprivat", hit.msg.lower())
+        self.assertIn("x.html: слово из списка личных слов", hit.msg)
+
+    def test_without_list_private_check_is_limited(self):
+        missing = Path(tempfile.mkdtemp(prefix="cs-words-")) / "нет.txt"
+        with mock.patch.dict(os.environ, {"DPSMPX_PRIVATE_WORDS": str(missing)}):
+            f = sensitive.Filter(self.repo)
+        self.assertTrue(f.private_limited)
+        self.assertEqual(f.scan_text("<h1>zqxprivat</h1>", "x"), [])
+        self.assertFalse(sensitive.Filter(self.repo, private_words=[]).private_limited)
 
     def test_allow_list(self):
         repo = make_repo(git=False)

@@ -1,8 +1,9 @@
 """Сайт: предпросмотр и сервер (П2-09), доступность (П2-10), значок (П2-11), _headers (П2-12), sitemap (П2-13),
-имени автора на сайте нет (Д37)."""
+имени автора на сайте нет (Д37, Д40)."""
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import tempfile
@@ -84,6 +85,10 @@ class Preview(unittest.TestCase):
                 urllib.request.urlopen(f"{base}/no-such-page/")
             self.assertEqual(cm.exception.code, 404)
             self.assertIn("Страница не найдена", cm.exception.read().decode("utf-8"))
+            with self.assertRaises(urllib.error.HTTPError) as cm:
+                urllib.request.urlopen(f"{base}/en/no-such-page/?x=1")
+            self.assertEqual(cm.exception.code, 404)
+            self.assertIn("Page not found", cm.exception.read().decode("utf-8"), "в /en/ — английская 404 (П2-18)")
         finally:
             srv.shutdown()
             srv.server_close()
@@ -182,24 +187,25 @@ class HostFiles(unittest.TestCase):
 
 
 class AuthorName(unittest.TestCase):
-    """Д37: на сайте только dpsmpx; имя (AU-NAME) — только при real_name: true; утечка — ошибка сборки."""
+    """Д37, Д40: на сайте только dpsmpx; имени нет в данных, а слово из списка личных слов — ошибка сборки."""
 
-    def built(self, repo, env="staging"):
+    WORD = "zqxprivat"  # заглушка, не имя (Д40: в тестах нет ни настоящих, ни выдуманных имён)
+
+    def built(self, repo, env="staging", words: str | None = None):
         out = Path(tempfile.mkdtemp(prefix="cs-name-")) / env
-        sb = SiteBuild(repo, env)
-        return sb, sb.build(out), out
+        lst = Path(tempfile.mkdtemp(prefix="cs-words-")) / "private-words.txt"
+        if words is not None:
+            lst.write_text(words, encoding="utf-8")
+        with mock.patch.dict(os.environ, {"DPSMPX_PRIVATE_WORDS": str(lst)}):
+            sb = SiteBuild(repo, env)
+            return sb, sb.build(out), out
 
-    def test_no_name_anywhere_by_default(self):
+    def test_only_dpsmpx(self):
         repo = make_repo(git=False)
+        self.assertNotIn("AU-NAME", repo.facts())
         for env in ("staging", "production"):
-            sb, rep, out = self.built(repo, env)
+            sb, rep, out = self.built(repo, env, words=f"# список\n{self.WORD}\n")
             self.assertEqual(rep.errors, [], env)
-            forms = sb.name_forms()
-            self.assertTrue({"Борис", "Давыдов", "Boris", "Davydov"} <= set(forms))
-            for f in out.rglob("*"):
-                if f.is_file():
-                    text = f.read_bytes().decode("utf-8", "ignore").lower()
-                    self.assertFalse([w for w in forms if w.lower() in text], f"{env}: {f.relative_to(out)}")
         home = (out / "index.html").read_text(encoding="utf-8")
         self.assertIn("<h1>dpsmpx</h1>", home)
         person = next(json.loads(m) for m in re.findall(r'<script type="application/ld\+json">(.*?)</script>', home)
@@ -208,25 +214,32 @@ class AuthorName(unittest.TestCase):
         self.assertNotIn("alternateName", person)
         self.assertEqual(json.loads((out / "feed.json").read_text(encoding="utf-8"))["authors"][0]["name"], "dpsmpx")
 
-    def test_name_in_content_is_a_build_error(self):
+    def test_private_word_is_a_build_error_and_not_printed(self):
         repo = make_repo(git=False)
         v = find(repo, "CI-0101").variants()["website.ru"]
-        v.doc.body = "Автор — {{fact:AU-NAME}}.\n\n" + v.doc.body
+        v.doc.body = f"Автор — {self.WORD.upper()}.\n\n" + v.doc.body
         textdoc.save(v.doc, v.path)
         repo.reset()
-        _, rep, _ = self.built(repo)
-        self.assertTrue(any("news/test-news/index.html: имя автора на сайте" in e for e in rep.errors), rep.errors)
+        _, rep, _ = self.built(repo, words=self.WORD + "\n")
+        self.assertTrue(any("news/test-news/index.html: слово из списка личных слов" in e for e in rep.errors),
+                        rep.errors)
+        self.assertFalse([e for e in rep.errors if self.WORD in e.lower()], "слово из списка не печатается")
 
-    def test_real_name_only_by_explicit_switch(self):
+    def test_production_warns_without_list(self):
         repo = make_repo(git=False)
-        site = repo.path("data/website/site.yaml")
-        cfg = yaml.safe_load(site.read_text(encoding="utf-8"))
-        cfg["real_name"] = True
-        site.write_text(yaml.safe_dump(cfg, allow_unicode=True), encoding="utf-8")
-        repo.reset()
-        _, rep, out = self.built(repo)
+        _, rep, _ = self.built(repo, "production")
         self.assertEqual(rep.errors, [])
-        self.assertIn("<h1>Борис Давыдов</h1>", (out / "index.html").read_text(encoding="utf-8"))
+        self.assertTrue(any("списка личных слов нет" in w for w in rep.warnings), rep.warnings)
+        _, rep, _ = self.built(repo, "staging")
+        self.assertFalse(any("списка личных слов нет" in w for w in rep.warnings))
+
+    def test_real_name_switch_is_gone(self):
+        import jsonschema
+        schema = json.loads((ROOT / "schemas/site.schema.json").read_text(encoding="utf-8"))
+        cfg = yaml.safe_load((ROOT / "data/website/site.yaml").read_text(encoding="utf-8"))
+        jsonschema.validate(cfg, schema)
+        with self.assertRaises(jsonschema.ValidationError):
+            jsonschema.validate({**cfg, "real_name": True}, schema)
 
 
 if __name__ == "__main__":

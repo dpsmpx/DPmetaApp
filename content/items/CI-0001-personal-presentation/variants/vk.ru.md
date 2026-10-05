@@ -11,11 +11,10 @@ media:
 - exports/E-ru-vk_post.jpg
 generation:
   provider: session
-  note: из канона v2; имя — по Д20
+  note: из канона v2; автор — только dpsmpx (Д40)
 note: 'Короткая запись VK, RU, с изображением vk_post. Шаблон — templates/vk_post.md. facts: AU-HANDLE,
   AU-METHOD, GH-NAME, GH-GENRE, GH-TECH, GH-ENGINE, GH-ANDROID'
 claims:
-- AU-NAME
 - AU-HANDLE
 - AU-ROLE
 - AU-METHOD
@@ -29,7 +28,6 @@ link: null
 approval: null
 deps:
   facts:
-    AU-NAME: 5d083e3db9612d37
     AU-ROLE: 0d84826a46110966
     CORE-SCALE-2026-10-05: ddb54a064dc78fd7
     GH-NAME: 18e9e8bc34f1c9f0
@@ -44,11 +42,11 @@ deps:
   datasets: {}
   canonical:
     version: 2
-    sha256: 03f173c39329111c7c55f04e9cf74fb79bb86db1778b3294dc5330fe6d88f36e
+    sha256: fe64888b48a31219079069bf4113cd66b4cfcf99d2719761072c7d8cbd7d9d86
   media:
     exports/E-ru-vk_post.jpg: ff5618dbbd10154834da6dedcc76a7155654d2d05480633fb993c3af6260ae1d
 ---
-Я — {{fact:AU-NAME#1}}, {{fact:AU-ROLE#2}}: {{fact:CORE-SCALE-2026-10-05#9}}. Игра — {{fact:GH-NAME}}, {{fact:GH-GENRE}}: {{fact:GH-TECH}}, {{fact:GH-ENGINE}}.
+Я — dpsmpx, {{fact:AU-ROLE#2}}: {{fact:CORE-SCALE-2026-10-05#9}}. Игра — {{fact:GH-NAME}}, {{fact:GH-GENRE}}: {{fact:GH-TECH}}, {{fact:GH-ENGINE}}.
 
 {{fact:AU-METHOD}}.
 

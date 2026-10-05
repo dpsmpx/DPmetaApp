@@ -69,8 +69,12 @@ def check() -> Report:
                 except re.error as e:
                     r.error(f"{FORBIDDEN_PATH} {x['id']}: {key} — неверное выражение: {e}")
 
-    # id в документах: префиксы — из реестра фактов и правил запретов.
-    known = seen | set(rule_ids)
+    retired = {x["id"] for x in data.get("retired") or []}
+    for fid in sorted(retired & seen):
+        r.error(f"{fid}: и в реестре, и среди выведенных (retired)")
+
+    # id в документах: префиксы — из реестра фактов, выведенных id и правил запретов.
+    known = seen | retired | set(rule_ids)
     prefixes = {i.split("-")[0] for i in known}
     pat = _id_pattern(prefixes)
     docs = [p for p in repo_files() if p.suffix == ".md"

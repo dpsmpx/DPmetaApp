@@ -8,10 +8,10 @@
     правила политики   почта, телефон, IP, локальные пути, технический адрес
                        хостинга, сессии ИИ, имена веток (data/policy/sensitive.yaml)
     секреты            те же шаблоны, что проверка `secrets` (tools/cs/secrets.py)
-    слова из данных    имя автора при real_name: false (Д37); имена закрытых
-                       проектов без публичного имени и личных репозиториев
-                       (data/progress/scope.yaml); коммиты закрытых репозиториев
-                       (наборы прогресса и вехи, Д17); ручной список terms
+    слова из данных    список личных слов автора вне Git (Д37, Д40; не печатаются);
+                       имена закрытых проектов без публичного имени и личных
+                       репозиториев (data/progress/scope.yaml); коммиты закрытых
+                       репозиториев (наборы прогресса и вехи, Д17); ручной список terms
     метаданные         EXIF, XMP, IPTC и текстовые блоки PNG в изображениях
 
 Filter(repo).scan_tree(каталог) → список Hit. Найденный секрет в отчёт не
@@ -25,6 +25,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..secrets import norm as secrets_norm
 from .repo import Repo
 
 TEXT_SUFFIXES = {".html", ".xml", ".json", ".txt", ".css", ".svg", ".js", ".webmanifest", ".htaccess", ""}
@@ -55,15 +56,6 @@ class Rule:
     where: str
     show: bool
     pattern: re.Pattern
-
-
-def name_words(facts: dict) -> list[str]:
-    """Слова имени автора из AU-NAME, все языки (Д37)."""
-    words = set()
-    for ws in ((facts.get("AU-NAME") or {}).get("allowed_wording") or {}).values():
-        for w in ws:
-            words.update(x for x in re.findall(r"\w+", w) if x != "dpsmpx" and len(x) > 2)
-    return sorted(words)
 
 
 def image_metadata(data: bytes, suffix: str) -> list[str]:
@@ -107,33 +99,35 @@ def image_metadata(data: bytes, suffix: str) -> list[str]:
 
 
 class Filter:
-    def __init__(self, repo: Repo, real_name: bool | None = None):
+    def __init__(self, repo: Repo, private_words: list[str] | None = None):
+        """private_words — список личных слов; None — взять у автора (secrets.private_words)."""
         self.repo = repo
         policy = repo.yaml("data/policy/sensitive.yaml") or {}
-        if real_name is None:
-            real_name = bool(repo.site().get("real_name"))
+        from .. import secrets
+        if private_words is None:
+            private_words = secrets.private_words()
+        self.private_limited = private_words is None  # списка нет — имя автора не проверяется
         self.rules = [Rule(r["id"], r["label"], r["basis"], r["where"], r["show"], re.compile(r["pattern"], re.I))
                       for r in policy.get("rules", [])]
-        from .. import secrets
         self.rules += [Rule("SD-SECRET", f"секрет: {name}", "секретов на сайте нет (docs/SECURITY.md)", "raw", False, pat)
                        for name, pat in secrets.PATTERNS]
         self.allow = {(a["rule"], a["value"]) for a in policy.get("allow", [])}
-        # (правило, слово, подпись, основание, печатать)
-        self.terms: list[tuple[str, str, str, str]] = []
-        if not real_name:
-            for w in name_words(repo.facts()):
-                self.terms.append(("SD-NAME", w, "имя автора на сайте", "по Д37 только dpsmpx"))
+        # (правило, слово, подпись, основание, печатать найденное)
+        self.terms: list[tuple[str, str, str, str, bool]] = []
+        for w in private_words or []:
+            self.terms.append(("SD-PRIVATE", w, "слово из списка личных слов автора",
+                               "Д37, Д40: автор — только dpsmpx", False))
         scope = repo.yaml("data/progress/scope.yaml") or {}
         for r in scope.get("repos", []):
             if r.get("visibility") == "undisclosed":
                 for w in {r["slug"].split("/")[-1], r.get("key", "")} - {"", "undisclosed"}:
                     self.terms.append(("SD-UNDISCLOSED", w, "имя закрытого проекта, не названного публично",
-                                       "Д38: только числа в общих суммах"))
+                                       "Д38: только числа в общих суммах", True))
         for x in scope.get("excluded", []):
             if x.get("kind") == "personal":
-                self.terms.append(("SD-PERSONAL", x["slug"].split("/")[-1], "личный репозиторий", "Д2, ОР-8"))
+                self.terms.append(("SD-PERSONAL", x["slug"].split("/")[-1], "личный репозиторий", "Д2, ОР-8", True))
         for t in policy.get("terms", []):
-            self.terms.append(("SD-TERM", t["term"], t["label"], t["basis"]))
+            self.terms.append(("SD-TERM", t["term"], t["label"], t["basis"], True))
         self.refs = self._private_refs(scope)
 
     def _private_refs(self, scope: dict) -> set[str]:
@@ -170,11 +164,11 @@ class Filter:
         return hits
 
     def _terms(self, text: str, where: str) -> list[Hit]:
-        low = text.lower()
+        low = secrets_norm(text)
         out = []
-        for rule, term, label, basis in self.terms:
-            if term.lower() in low and (rule, term) not in self.allow:
-                out.append(Hit(rule, where, label, basis, term))
+        for rule, term, label, basis, show in self.terms:
+            if secrets_norm(term) in low and (rule, term) not in self.allow:
+                out.append(Hit(rule, where, label, basis, term if show else None))
         return out
 
     def scan_file(self, path: Path, where: str) -> list[Hit]:
@@ -199,5 +193,5 @@ class Filter:
         return hits
 
 
-def scan(repo: Repo, root: Path, real_name: bool | None = None) -> list[Hit]:
-    return Filter(repo, real_name).scan_tree(root)
+def scan(repo: Repo, root: Path, private_words: list[str] | None = None) -> list[Hit]:
+    return Filter(repo, private_words).scan_tree(root)

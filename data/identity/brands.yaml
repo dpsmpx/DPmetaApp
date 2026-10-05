@@ -9,7 +9,7 @@ schema: brands/v1
 brands:
   - id: author
     kind: PERSONAL
-    name: {ru: Борис Давыдов / dpsmpx, en: Boris Davydov / dpsmpx}
+    name: {ru: dpsmpx, en: dpsmpx}            # Д40: имени автора нет нигде
     tone: спокойный, конкретный, от первого лица; без рекламных штампов (AUTHOR_MASTER_CONTEXT, «Голос»)
     visual: docs/brand/VISUAL_SYSTEM.md — графит, коралловый человек, бирюзовый ИИ, IBM Plex (Д9)
     topics_allowed: [PERSON, PROJECT, ENGINEERING, AI_DEVELOPMENT, RESULT, PROCESS, RESEARCH, EDUCATION, MILESTONE, RELEASE, OPINION, COMMUNITY]

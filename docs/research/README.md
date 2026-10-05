@@ -12,5 +12,6 @@
 | API площадок для публикации | `docs/research/publishing/PLATFORM_APIS.md` | что можно автоматизировать в Telegram, VK, YouTube, Discord, GitHub, TikTok |
 | Сайт автора | `docs/research/publishing/WEBSITE.md` | статика, CMS или бэкенд; хостинг; фиды; SEO |
 | Устройство системы | `docs/research/publishing/SYSTEM_DESIGN.md` | монолит или модули; события; учётные данные; надёжность |
+| Водяной знак и доказательство авторства (П2-20) | `docs/research/watermark/WATERMARK.md` | как пометить контент сайта невидимо и доказать, что он автора; где ключ; метки времени |
 
 Срезы состояния площадок автора — не здесь, а в `docs/audits/`.
