@@ -23,6 +23,12 @@ Android SDK: aapt2 и dexdump):
     машина ELF — та, что у ABI, экспорт JNI — ровно `external` объекта
     `XrayJni` (страницы 16 КБ — Android 15+; иначе загрузка с mmap из APK
     невозможна);
+  * набор геоданных (D-27): `assets/geodata/` — ровно файлы своего
+    оглавления и само оглавление; `.dat` сжаты; SHA-256 и размер каждого
+    файла — как в оглавлении; источники — те, что в каталоге; атрибуция
+    DB-IP на месте; оглавление побайтно совпадает с набором шага «Xray:
+    геоданные» (`build/xray/geodata-set`), если шаг был, — две независимые
+    сборки дали одно и то же (D-27: сборка детерминирована);
   * размер: APK одного ABI (D-28: выпуск — по APK на ABI) оценивается
     как этот APK без библиотек других ABI и не превышает
     `ABI_APK_BUDGET_MIB` (docs/PERFORMANCE_BUDGET.md, §4).
@@ -33,12 +39,15 @@ Android SDK: aapt2 и dexdump):
 Код возврата: 0 — чисто; 1 — нарушения; 2 — нет APK или build-tools
 (в полном режиме hostcheck это ошибка, а не пропуск — docs/PROCESS.md).
 """
+import hashlib
+import json
 import os
 import re
 import struct
 import subprocess
 import sys
 import tempfile
+import tomllib
 import zipfile
 import xml.etree.ElementTree as ET
 
@@ -54,6 +63,9 @@ SOURCE_MANIFEST = os.path.join(PROJ, "app", "src", "main", "AndroidManifest.xml"
 ANDROID_NS = "http://schemas.android.com/apk/res/android"
 A = "{" + ANDROID_NS + "}"
 SPECIAL_USE = 0x40000000  # ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+CATALOG = os.path.join(PROJ, "gradle", "libs.versions.toml")
+GEODATA_ASSETS = "assets/geodata/"
+GEODATA_STEP = os.path.join(PROJ, "build", "xray", "geodata-set", "geodata", "manifest.json")
 
 # Корни пакетов, чьи классы могут быть в APK, — с причиной (строка матрицы лицензий).
 CODE_ROOTS = {
@@ -70,10 +82,10 @@ SYNTHETIC_ONLY_ROOTS = ("android/", "dalvik/")
 # Нативные библиотеки: ровно ядро Xray (D-25) для каждого ABI — {путь в APK: ABI}.
 NATIVE_OK = {f"lib/{abi}/{native.LIBRARY}": abi for abi in native.ABIS}
 PAGE_16K = native.PAGE_16K
-# Предел APK одного ABI (D-28), МиБ: замер 4 октября 2026 — 34,9…38,3 МиБ
-# (больше всех x86_64) плюс запас; новое значение — вместе с замером
-# (docs/PERFORMANCE_BUDGET.md, §4).
-ABI_APK_BUDGET_MIB = 40
+# Предел APK одного ABI (D-28), МиБ: замер 5 октября 2026 с набором
+# геоданных (D-27) — 40,8…44,2 МиБ (больше всех x86_64) плюс запас; до
+# набора было 40. Новое значение — вместе с замером (docs/PERFORMANCE_BUDGET.md, §4).
+ABI_APK_BUDGET_MIB = 46
 
 
 def sdk_dir():
@@ -184,6 +196,55 @@ def check_natives(apk, problems):
     return ", ".join(sizes)
 
 
+def check_geodata(apk, problems):
+    """Набор геоданных в APK (D-27) — строка итога или None при ошибке."""
+    with zipfile.ZipFile(apk) as z:
+        infos = {i.filename[len(GEODATA_ASSETS):]: i for i in z.infolist() if i.filename.startswith(GEODATA_ASSETS)}
+        if "manifest.json" not in infos:
+            problems.append(f"нет {GEODATA_ASSETS}manifest.json: набора геоданных в APK нет — правила с geoip/geosite "
+                            "на устройстве отвергаются (D-27; задача xrayGeodata<Вариант>)")
+            return None
+        raw = z.read(GEODATA_ASSETS + "manifest.json")
+        try:
+            m = json.loads(raw)
+            files = {f["name"]: f for f in m["files"]}
+            dlc, dbip = m["sources"]["dlc"]["version"], m["sources"]["dbip"]["release"]
+        except (ValueError, KeyError, TypeError) as e:
+            problems.append(f"{GEODATA_ASSETS}manifest.json не читается: {e}")
+            return None
+        for name in sorted(set(infos) - set(files) - {"manifest.json"}):
+            problems.append(f"{GEODATA_ASSETS}{name}: файла нет в оглавлении набора")
+        packed = unpacked = 0
+        for name, f in sorted(files.items()):
+            info = infos.get(name)
+            if info is None:
+                problems.append(f"нет {GEODATA_ASSETS}{name} из оглавления набора")
+                continue
+            data = z.read(info)
+            if hashlib.sha256(data).hexdigest() != f["sha256"] or len(data) != f["size"]:
+                problems.append(f"{GEODATA_ASSETS}{name}: SHA-256 или размер не совпали с оглавлением")
+            if name.endswith(".dat") and info.compress_type != zipfile.ZIP_DEFLATED:
+                problems.append(f"{GEODATA_ASSETS}{name}: не сжат — набор лежит в APK сжатым (D-27)")
+            if name == "NOTICE.txt" and b"IP Geolocation by DB-IP" not in data:
+                problems.append(f"{GEODATA_ASSETS}NOTICE.txt: нет атрибуции «IP Geolocation by DB-IP» (CC BY 4.0, D-27)")
+            packed += info.compress_size
+            unpacked += info.file_size
+    with open(CATALOG, "rb") as fh:
+        versions = tomllib.load(fh).get("versions", {})
+    if (dlc, dbip) != (versions.get("geodata-dlc"), versions.get("geodata-dbip")):
+        problems.append(f"набор в APK собран из dlc {dlc} и DB-IP {dbip}, а в каталоге — "
+                        f"{versions.get('geodata-dlc')} и {versions.get('geodata-dbip')}")
+    step = "шаг «Xray: геоданные» не запускался — с ним не сверено"
+    if os.path.isfile(GEODATA_STEP):
+        with open(GEODATA_STEP, "rb") as fh:
+            if fh.read() != raw:
+                problems.append("оглавление набора в APK не совпало с набором шага «Xray: геоданные» "
+                                "из тех же источников — сборка набора не детерминирована (D-27)")
+        step = "совпадает с набором шага «Xray: геоданные»"
+    return (f"набор геоданных — dlc {m['sources']['dlc']['commit']}, DB-IP {dbip}, "
+            f"{unpacked / 1024 / 1024:.1f} → {packed / 1024 / 1024:.1f} МиБ в APK, сверен с оглавлением, {step}")
+
+
 def abi_apk_sizes(apk):
     """{ABI: байт} — сколько весил бы APK только с этим ABI (D-28).
 
@@ -283,6 +344,7 @@ def main():
 
     # ---- нативные библиотеки и размер ----
     native_sizes = check_natives(apk, problems)
+    geodata = check_geodata(apk, problems)
     size = os.path.getsize(apk)
     per_abi = abi_apk_sizes(apk)
     for abi, n in sorted(per_abi.items()):
@@ -302,6 +364,7 @@ def main():
     print(f"✓ APK {os.path.relpath(apk, PROJ)}: {size / 1024 / 1024:.1f} МиБ; манифест — утверждённые разрешения и компоненты; "
           f"{len(classes)} классов только из утверждённых корней ({roots}); "
           f"нативный код — только {native.LIBRARY} ({native_sizes}), несжатая, выровнена по 16 КБ в zip и ELF, экспорт JNI = XrayJni; "
+          f"{geodata}; "
           f"APK одного ABI (D-28) — {abi_sizes} МиБ, предел {ABI_APK_BUDGET_MIB}")
     return 0
 

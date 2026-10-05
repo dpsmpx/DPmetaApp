@@ -102,6 +102,12 @@ enum class DiagCode(val kind: FailureKind, val defaultSeverity: Severity) {
     ROUTE_COMPILE_FAILED(FailureKind.ROUTE_COMPILATION_FAILED, Severity.ERROR),
     PROFILE_NOT_FOUND(FailureKind.ROUTE_COMPILATION_FAILED, Severity.ERROR),
 
+    /**
+     * Кода geoip/geosite или атрибута списка нет в наборе геоданных ядра
+     * (D-27): правило с ним молча не сработало бы никогда (D-05).
+     */
+    GEO_CODE_UNKNOWN(FailureKind.ROUTE_COMPILATION_FAILED, Severity.ERROR),
+
     // --- ядро ---
     BACKEND_REJECTED_CONFIG(FailureKind.BACKEND_VALIDATION_FAILED, Severity.ERROR),
     BACKEND_START_FAILED(FailureKind.BACKEND_START_FAILED, Severity.ERROR),
