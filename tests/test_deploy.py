@@ -216,6 +216,8 @@ class Htaccess(unittest.TestCase):
         self.assertIn("ErrorDocument 404 /404.html", h)
         self.assertIn("Header always set Content-Security-Policy \"default-src 'self';", h)
         self.assertIn("<IfModule mod_headers.c>", h, "нет модуля — блок пропускается, а не ошибка 500")
+        self.assertIn("Options -Indexes", h, "без списка файлов каталогов (инцидент 05.10.2026)")
+        self.assertNotIn("Require all denied", h, "сайт должен отдаваться")
         self.assertNotIn("X-Robots-Tag", h, "production открыт")
         self.assertFalse((out / "_headers").exists())
 
@@ -255,6 +257,12 @@ class RealConfig(unittest.TestCase):
         argv = deploy.rsync_argv(Path("/b/site"), TARGET, self.cfg, dry_run=True)
         for flag in ("--dry-run", "--filter=P /.well-known/", "ssh -o BatchMode=yes", "--delete-delay"):
             self.assertIn(flag, argv)
+
+    def test_repo_root_is_not_servable(self):
+        """Корень репозитория по ошибке в каталоге сайта (инцидент 05.10.2026) — Apache не отдаёт ничего."""
+        h = self.repo.path(".htaccess").read_text(encoding="utf-8")
+        self.assertIn("Require all denied", h)
+        self.assertIn("Deny from all", h, "Apache 2.2 без mod_authz_core")
 
 
 if __name__ == "__main__":

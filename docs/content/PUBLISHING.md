@@ -143,8 +143,9 @@ python3 -m tools.cs publish --due --production                # запланир
 - Сайт недоступен → публикация в соцсети допускается, только если канон
   сохранён в Git (`outage.require_canonical_in_git: true`); после запуска
   рабочего сайта — ещё и «сначала сайт»
-  (`require_website_published_before_social`, сейчас `false` — рабочий
-  сайт ещё не выгружен; домен — ОР-11).
+  (`require_website_published_before_social`, сейчас `false` — штатной
+  выгрузки ещё не было, HTTPS у домена нет; домен зарегистрирован,
+  ОР-11 закрыт).
 
 ## 10. Наблюдаемость (§106–107)
 

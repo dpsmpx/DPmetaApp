@@ -51,8 +51,9 @@ CS_PROD_YOUTUBE_OAUTH: {rotated: 2026-10-05, expires: 2026-10-12}
    пароль — те же, что для панели; порт 22. Проверить: `ssh
    логин@сервер`, затем на сервере `rsync --version`. rsync на сервере
    Beget есть: `site deploy --dry-run` у автора прошёл (05.10.2026);
-   пропадёт — сообщить сессии: выгрузка перейдёт на `kind: command`
-   (например, `lftp mirror` по SFTP). Источник — база знаний Beget, «Как подключиться к серверу по
+   пропадёт — сообщить сессии: нужен другой способ выгрузки и новое
+   решение по Д35 (у `kind: command` нет проверок адреса и источника).
+   Источник — база знаний Beget, «Как подключиться к серверу по
    SSH» и «Что такое SSH» (04.10.2026). В мобильной версии панели —
    значок ⓘ справа от имени на главной: «Тариф», «Сервер» и
    переключатель «SSH-доступ» (снимок автора, 04.10.2026: SSH включён,
@@ -68,7 +69,8 @@ CS_PROD_YOUTUBE_OAUTH: {rotated: 2026-10-05, expires: 2026-10-12}
    ~/.ssh/beget_dpsmpx`. Пароль панели после этого сессиям ИИ не нужен и
    не передаётся.
 4. `export CS_PROD_SITE_DEPLOY_TARGET='логин@сервер:dpsmpx.com/public_html/'`
-   — в профиле оболочки, не в репозитории. Путь обязан кончаться на
+   — в профиле оболочки или в файле, который он подключает (Termux —
+   шаг 6 ниже), в одном месте и не в репозитории. Путь обязан кончаться на
    `public_html/` (`guard_suffix`), иначе выгрузка откажет.
 5. `python3 -m tools.cs health` — строка «сайт / выгрузка»;
    `python3 -m tools.cs site deploy --dry-run` — что изменится.
@@ -112,12 +114,13 @@ CS_PROD_YOUTUBE_OAUTH: {rotated: 2026-10-05, expires: 2026-10-12}
 перед запуском их **заменить**. Остальное вводится буквально; где
 команда идёт на сервере, а не в Termux, — сказано (после входа меняется
 приглашение строки). Команды репозитория — только из его каталога и
-только через `python -m tools.cs …`: просто `site deploy` оболочка не
-знает.
+только через `python3 -m tools.cs …`: просто `site deploy` оболочка не
+знает. Заполнителей в командах проверки сервера нет: адрес они берут из
+`CS_PROD_SITE_DEPLOY_TARGET` (шаг 6, «Проверка сервера» ниже).
 1. Termux — с F-Droid или из релизов `termux/termux-app` на GitHub,
    не вперемешку с другими источниками. Затем:
    `pkg update && pkg upgrade`,
-   `pkg install openssh rsync git gh python python-pip clang rust`.
+   `pkg install openssh rsync git gh python python-pip clang rust diffutils`.
    `pip` в Termux не обновлять через `pip` — им управляет `pkg`.
 2. Репозиторий — в домашний каталог Termux, не в `/sdcard` (там нет
    прав на исполнение): `gh auth login` (GitHub.com, HTTPS, вход через
@@ -126,18 +129,23 @@ CS_PROD_YOUTUBE_OAUTH: {rotated: 2026-10-05, expires: 2026-10-12}
    ключей: токен `gh` лежит открытым текстом в `~/.config/gh/hosts.yml`
    (`gh` так и предупреждает); потерян телефон — отозвать на GitHub,
    Settings → Applications.
-3. Зависимости: `export ANDROID_API_LEVEL="$(getprop
+3. Зависимости — одним интерпретатором, Python из `pkg`
+   (`$PREFIX/bin/python3`): `export ANDROID_API_LEVEL="$(getprop
    ro.build.version.sdk)"` (без неё maturin не соберёт `rpds-py`), затем
-   `python -m pip install -r tools/requirements.txt` — несколько минут;
-   проверка — `python -c "import yaml, jsonschema; print(jsonschema.__version__)"`.
-   Именно `python -m pip`, а не `pip`: 04.10.2026 у автора `pip` поставил
-   `jsonschema` не в тот интерпретатор, которым запускается
-   `python -m tools.cs` (`ModuleNotFoundError: No module named
-   'jsonschema'` после «Successfully installed»): `which -a python pip`
-   показал первым `~/.local/bin/python` (Python 3.14), а `pip` — от
-   Python 3.13 из `pkg`. `rpds-py` собирается под каждую версию Python
-   отдельно — повторная сборка в несколько минут нормальна, прерывать её
-   не нужно.
+   `"$PREFIX/bin/python3" -m pip install -r tools/requirements.txt` —
+   несколько минут. У автора в Termux два Python: `~/.local/bin/python`
+   (3.14) стоит в `PATH` первым, а `pip` — от Python из `pkg` (04.10.2026,
+   `which -a python pip`). Поэтому `python -m tools.cs` падает с
+   `ModuleNotFoundError: No module named 'jsonschema'` (04.10 и снова
+   05.10.2026), и все команды здесь — через `python3`, как в остальном
+   репозитории и в `tools/check.sh`. Проверка — какое имя видит
+   `jsonschema`:
+   `for p in python python3 "$PREFIX/bin/python3"; do printf '%s: ' "$p"; "$p" -c 'import sys, jsonschema; print(sys.version.split()[0], jsonschema.__version__)' 2>&1 | tail -1; done`.
+   Нужно, чтобы работал `python3`. Если работает только
+   `$PREFIX/bin/python3` — `python3` в `PATH` перехвачен вторым Python:
+   `command -v python3` покажет, где он, и решать, убрать ли его, —
+   автору. `rpds-py` собирается под каждую версию Python отдельно —
+   повторная сборка в несколько минут нормальна, прерывать её не нужно.
 4. Первый вход паролем, шаги 1–2 выше:
    `ssh ЛОГИН@СЕРВЕР`, `yes` на отпечаток, пароль панели
    (на экране не виден). На сервере: `rsync --version | head -1`,
@@ -163,17 +171,22 @@ CS_PROD_YOUTUBE_OAUTH: {rotated: 2026-10-05, expires: 2026-10-12}
    оболочки (`echo $0`: `bash` → `~/.bashrc`, `zsh` → `~/.zshrc`; в
    Termux по умолчанию bash) строкой `. ~/.config/dpsmpx/deploy.env`,
    и ярлык ниже. Ярлык виджета `~/.bashrc` не читает: bash там не
-   интерактивный. Других переменных для выгрузки не нужно. Затем — новая
-   вкладка Termux.
-7. Проверки: `tools/check.sh --quick`, `python -m tools.cs health`,
-   `python -m tools.cs site deploy --dry-run` — ничего не выкладывает,
+   интерактивный. Других переменных для выгрузки не нужно: прежнюю
+   строку `export` из `~/.bashrc` заменить подключением файла;
+   `~/.config/dpsmpx/deploy.conf` и прочие самодельные настройки
+   выгрузки (`SITE_DIR` и т. п.) — прочитать и удалить, адрес в чат не
+   вставлять. Затем — новая вкладка Termux.
+7. Проверки: `tools/check.sh --quick`, `python3 -m tools.cs health`,
+   `python3 -m tools.cs site deploy --dry-run` — ничего не выкладывает,
    последняя строка «изменений: N».
 8. Выгрузка (разрешена, Д34): `git pull` в `~/SocialMediaImage`, снова
-   `python -m tools.cs site deploy --dry-run` — сверить, что удаляется,
-   затем `python -m tools.cs site deploy` — или ярлыком ниже. В конце — проверка `/`,
-   `/en/`, `/projects/` по HTTP: `✓` — страница на месте, `?` — адрес не
-   открывается (домен не в реестре, ОР-11), `✗` — 404 или чужая
-   страница.
+   `python3 -m tools.cs site deploy --dry-run` — сверить, что удаляется,
+   затем `python3 -m tools.cs site deploy` — или ярлыком ниже. В конце —
+   проверка `/`, `/en/`, `/projects/` по `https://dpsmpx.com`: `✓` —
+   страница на месте, `?` — адрес не открывается (пока у домена нет
+   сертификата, HTTPS не отвечает — `TODO.md`), `✗` — 404 или чужая
+   страница. Изменений 0 — выгружать нечего: сервер уже совпадает со
+   сборкой.
 
 #### Ярлык Termux:Widget
 Ярлык только вызывает систему: rsync, адресов и путей в нём нет. Файл —
@@ -189,7 +202,7 @@ cd "$HOME/SocialMediaImage"
 [ "$(git branch --show-current)" = main ] || { echo "не main — отказ"; exit 1; }
 [ -z "$(git status --porcelain)" ] || { echo "есть незакоммиченное — отказ"; exit 1; }
 git pull --ff-only
-PY=python   # полный путь — вывод `command -v python` во вкладке, где работает `python -m tools.cs health`
+PY=/data/data/com.termux/files/usr/bin/python3   # Python из pkg (шаг 3), не ~/.local/bin/python
 "$PY" -m tools.cs site deploy --dry-run
 printf 'Выгрузить на хостинг? Наберите да: '
 read -r ok
@@ -199,6 +212,29 @@ read -r ok
 Отказ системы (нет адреса, сборка с ошибками, выпуск закрыт) завершает
 ярлык до выгрузки (`set -e`). Перед «да» — прочитать строки `*deleting`:
 удаляться должно только старое содержимое сайта.
+
+#### Проверка сервера (только чтение)
+Адрес и путь — из `CS_PROD_SITE_DEPLOY_TARGET` (шаг 6), подставлять в
+команды ничего не нужно, и адрес в вывод не попадает. Сначала шаг 8 до
+`--dry-run` включительно: он заново собирает `build/site/production`,
+с которой сравнивается сервер. Ошибку `ssh` с именем сервера в чат —
+только заменив имя на `СЕРВЕР`.
+```bash
+cd ~/SocialMediaImage
+[ -f ~/.config/dpsmpx/deploy.env ] && . ~/.config/dpsmpx/deploy.env
+T="${CS_PROD_SITE_DEPLOY_TARGET:-}"; H="${T%%:*}"; P="${T#*:}"
+[ -n "$T" ] && echo "адрес задан" || echo "адрес не задан — шаг 6"
+ssh -o BatchMode=yes "$H" "cd '$P' && grep -c '<h1>dpsmpx</h1>' index.html en/index.html"
+ssh -o BatchMode=yes "$H" "cd '$P' && find . -mindepth 1 | LC_ALL=C sort" > ~/server-files.txt
+(cd build/site/production && find . -mindepth 1 | LC_ALL=C sort) > ~/build-files.txt
+diff ~/build-files.txt ~/server-files.txt && echo "списки совпадают: $(wc -l < ~/server-files.txt)"
+ssh -o BatchMode=yes "$H" 'cut -d" " -f1,3- ~/.ssh/authorized_keys'
+```
+Ожидается: `index.html:1` и `en/index.html:1` (сборка без имени, Д37);
+«списки совпадают: 39» — без строк `<` и `>` от `diff` (лишнее на
+сервере, в том числе `.~tmp~`, видно здесь, а не в `--dry-run`); ключи —
+только свои (`ssh-ed25519 … dpsmpx deploy termux`). Разбор адреса —
+конструкции POSIX: годится для bash и zsh.
 
 Ключ на телефоне отзывается удалением его строки из
 `~/.ssh/authorized_keys` на сервере (§3 «Ротация и отказ»); потерян
@@ -216,7 +252,7 @@ read -r ok
 | `Could not resolve hostname` | опечатка в имени сервера | имя — из панели |
 | `Host key verification failed` | первый вход был с `BatchMode` или отпечаток сменился | первый вход — вручную; сменился — сверить с поддержкой Beget, только потом `ssh-keygen -R СЕРВЕР` |
 | `Permission denied (publickey,password)` с `BatchMode=yes` | ключ не принят | `ssh -v`: какой файл ключа предложен; на сервере `chmod 711 ~/.ssh`, `chmod 600 ~/.ssh/authorized_keys`; строка `.pub` целиком, одной строкой |
-| `rsync: command not found` на сервере | rsync у Beget нет | сообщить сессии: выгрузка — `kind: command` (`lftp mirror` по SFTP; в Termux — `pkg install lftp`) |
+| `rsync: command not found` на сервере | rsync у Beget нет | сообщить сессии: нужен другой способ выгрузки — новым решением по Д35; самому `lftp`/`scp` не выгружать |
 
 Много неудачных попыток подряд сервер может временно блокировать
 адрес — подождать перед новой попыткой (как именно у Beget —
