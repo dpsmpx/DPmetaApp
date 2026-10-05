@@ -122,6 +122,20 @@ class ActivityTest(unittest.TestCase):
         self.assertNotIn("**свежая**", report)
         self.assertIn("2 ч | признаков нет |", report)
 
+    def test_single_branch_clone_is_not_quiet(self):
+        # `git clone --single-branch` (и `--depth` без `--no-single-branch`)
+        # не скачивает других веток: невлитой работы не видно, и «признаков
+        # нет» было бы неправдой.
+        git(self.root, "clone", "-q", "--single-branch", "--branch", "main",
+            str(self.root / "up-alpha"), str(self.root / "alpha-one"))
+        _, report = self.run_activity("--clone", f"Alpha={self.root / 'alpha-one'}",
+                                      "--main-hours", "1")
+        self.assertIn("2 ч | ветки не видны — клон с одной веткой |", report)
+        self.assertNotIn("`work`", report)
+        self.assertIn("Клоны с одной веткой: Alpha.", report)
+        # Полный клон Beta — как раньше.
+        self.assertIn("7 дн | признаков нет |", report)
+
     def test_missing_clone_and_bad_call(self):
         code, report = self.run_activity("--clone", f"Beta={self.root / 'nowhere'}")
         self.assertEqual(code, 0)

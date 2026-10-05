@@ -22,8 +22,10 @@
 Читает только то, что уже скачано в клоны (`git fetch` — шаг 1 прохода):
 без сети, ничего не пишет, кроме файла из --out. В неполном клоне
 (`--depth`) старая влитая ветка может выглядеть невлитой — отчёт это
-помечает. Коды возврата: 0 — отчёт построен; 2 — неверный вызов или
-реестр.
+помечает. В клоне с одной веткой (`--single-branch`; его же даёт
+`git clone --depth` без `--no-single-branch`) других веток нет вовсе —
+итог по нему не «признаков нет», а «ветки не видны». Коды возврата:
+0 — отчёт построен; 2 — неверный вызов или реестр.
 """
 
 from __future__ import annotations
@@ -57,6 +59,7 @@ class State:
     head: str = ""
     head_when: datetime | None = None
     shallow: bool = False
+    single: bool = False  # скачана только основная ветка: других не видно
     branches: list[Branch] = field(default_factory=list)
 
 
@@ -90,6 +93,10 @@ def read_state(name: str, root: Path) -> State:
     st = State(name, root)
     st.base = default_branch(root)
     st.shallow = xref.git(root, "rev-parse", "--is-shallow-repository").strip() == "true"
+    # `+refs/heads/*:refs/remotes/origin/*` — все ветки; refspec без маски
+    # (`--single-branch`, `--depth`) скачивает только одну.
+    specs = xref.git(root, "config", "--get-all", "remote.origin.fetch").split()
+    st.single = not any(spec.endswith("/*") for spec in specs)
     if not st.base:
         return st
     line = xref.git(root, "log", "-1", "--format=%h %cI", st.base).strip()
@@ -133,7 +140,9 @@ def verdict(st: State, now: datetime, hours: float, main_hours: float) -> str:
             and not b.name.startswith("dpmeta/")]
     if live:
         signs.append(f"невлитые ветки: {len(live)}")
-    return "активен — " + ", ".join(signs) if signs else "признаков нет"
+    if signs:
+        return "активен — " + ", ".join(signs)
+    return "ветки не видны — клон с одной веткой" if st.single else "признаков нет"
 
 
 def render(states: list[State], now: datetime, hours: float, main_hours: float) -> str:
@@ -181,6 +190,13 @@ def render(states: list[State], now: datetime, hours: float, main_hours: float) 
     if shallow:
         out += ["", "Неполные клоны: " + ", ".join(shallow) + ". В них старая влитая",
                 "ветка может выглядеть невлитой; свежие ветки это не затрагивает."]
+    single = [st.name for st in states if st.single]
+    if single:
+        out += ["", "Клоны с одной веткой: " + ", ".join(single) + ". Других веток в них",
+                "нет — невлитая работа и ветки DPmeta не видны. Нужен клон без",
+                "`--single-branch` (`git clone --depth N --no-single-branch`) или",
+                "`git config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'`",
+                "и `git fetch`."]
     out.append("")
     return "\n".join(out)
 
