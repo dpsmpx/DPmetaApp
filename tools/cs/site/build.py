@@ -205,21 +205,20 @@ class SiteBuild:
         return words[idx]
 
     def author(self, lang: str) -> str:
-        """Как сайт называет автора: dpsmpx; имя (AU-NAME) — только при real_name: true в site.yaml (Д37)."""
-        return (self.fact("AU-NAME", lang) or "dpsmpx") if self.cfg.get("real_name") else "dpsmpx"
+        """Как сайт называет автора: только dpsmpx — имени нет нигде (Д37, Д40)."""
+        return "dpsmpx"
 
     def signature(self, lang: str) -> str:
-        name = self.author(lang)
-        return name if name == "dpsmpx" else f"{name} / dpsmpx"
-
-    def name_forms(self) -> list[str]:
-        """Слова имени автора из AU-NAME (все языки) — при real_name: false их нет ни в одном файле сайта (Д37)."""
-        return sensitive.name_words(self.facts)
+        return self.author(lang)
 
     def check_sensitive(self, out: Path) -> None:
         """Фильтр чувствительных данных (Д39): каждый файл выхода; совпадение — ошибка сборки."""
-        for h in sensitive.scan(self.repo, out, bool(self.cfg.get("real_name"))):
+        f = sensitive.Filter(self.repo)
+        for h in f.scan_tree(out):
             self.report.errors.append(h.msg)
+        if f.private_limited and self.env == "production":
+            self.report.warnings.append("списка личных слов нет — имя автора на сайте не проверено "
+                                        "(Д40, docs/SECURITY.md)")
 
     # ------------------------------------------------------- страницы
     def nav(self, lang: str, current: str, alt: dict) -> str:
@@ -242,11 +241,8 @@ class SiteBuild:
     def person_jsonld(self, lang: str) -> dict:
         ids = [(x if isinstance(x, str) else x.get("link")) for x in (self.cfg.get("home") or {}).get("social_links", [])]
         same = [self.links[i]["url"] for i in ids if i in self.links and self.links[i].get("status") in ("ok", "limited")]
-        name = self.author(lang)
-        ld = {"@context": "https://schema.org", "@type": "Person", "name": name}
-        if name != "dpsmpx":
-            ld["alternateName"] = "dpsmpx"
-        return {**ld, "url": self.base + ("/en/" if lang == "en" else "/"), "sameAs": same}
+        return {"@context": "https://schema.org", "@type": "Person", "name": self.author(lang),
+                "url": self.base + ("/en/" if lang == "en" else "/"), "sameAs": same}
 
     def project_card(self, p: dict, lang: str, primary: bool) -> str:
         pre = "/en" if lang == "en" else ""
@@ -288,10 +284,7 @@ class SiteBuild:
         name = self.author(lang)
         role = self.fact("AU-ROLE", lang, 1 if lang == "ru" else 1)
         about = self._about.get(lang)
-        if name == "dpsmpx":  # Д37: без имени h1 — сам dpsmpx, строка роли — отдельным предложением
-            line = E((role or "")[:1].upper() + (role or "")[1:])
-        else:
-            line = f'<span class="handle">dpsmpx</span> · {E(role or "")}'
+        line = E((role or "")[:1].upper() + (role or "")[1:])  # Д37, Д40: h1 — dpsmpx, роль — отдельной строкой
         parts = ['<section class="hero">', f"<h1>{E(name)}</h1>", f'<p class="role">{line}</p>']
         if about:
             parts.append(self.draft_note(about))
