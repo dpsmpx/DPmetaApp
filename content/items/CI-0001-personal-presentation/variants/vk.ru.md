@@ -4,47 +4,52 @@ item: CI-0001
 platform: vk
 lang: ru
 format: post
-version: 1
+version: 2
 status: ready
 trust: validated
 media:
-- exports/A-ru-vk_post.jpg
+- exports/E-ru-vk_post.jpg
 generation:
   provider: session
-  note: перенесено из copy/ миграцией v1→v2; имя — по Д20
+  note: из канона v2; имя — по Д20
 note: 'Короткая запись VK, RU, с изображением vk_post. Шаблон — templates/vk_post.md. facts: AU-HANDLE,
   AU-METHOD, GH-NAME, GH-GENRE, GH-TECH, GH-ENGINE, GH-ANDROID'
 claims:
 - AU-NAME
 - AU-HANDLE
+- AU-ROLE
 - AU-METHOD
 - GH-NAME
 - GH-GENRE
 - GH-TECH
 - GH-ENGINE
-- GH-ANDROID
-source_version: 1
+- CORE-SCALE-2026-10-05
+source_version: 2
 link: null
+approval: null
 deps:
   facts:
     AU-NAME: 5d083e3db9612d37
-    AU-HANDLE: 0535a93f2279e87d
-    AU-METHOD: 95e9ba70d576890a
+    AU-ROLE: 0d84826a46110966
+    CORE-SCALE-2026-10-05: ddb54a064dc78fd7
     GH-NAME: 18e9e8bc34f1c9f0
     GH-GENRE: 87840cd38160c9f1
     GH-TECH: 885bae9eed2b037d
     GH-ENGINE: 3ae43184e26a50af
-    GH-ANDROID: 3ae50de8a7427f5c
-  links: {}
+    AU-METHOD: 95e9ba70d576890a
+    AU-HANDLE: 0535a93f2279e87d
+  links:
+    L-TG-DEVLOG: e4702bf8299c4509
   releases: {}
+  datasets: {}
   canonical:
-    version: 1
-    sha256: 4645db6c929c320b4da7da3a7a683295be6243520e53268973610d20b57acee5
+    version: 2
+    sha256: 03f173c39329111c7c55f04e9cf74fb79bb86db1778b3294dc5330fe6d88f36e
   media:
-    exports/A-ru-vk_post.jpg: f5d778d09184b31aac3c19a9b2256e78fabbec96e3d0ce3df9c05e6e0a262c16
+    exports/E-ru-vk_post.jpg: ff5618dbbd10154834da6dedcc76a7155654d2d05480633fb993c3af6260ae1d
 ---
-Я — Борис Давыдов (dpsmpx). Делаю Galdhold — воксельную action-RPG с открытым процедурным миром: собственный движок, отделённый от игры, C++20 и Vulkan. Игра проверялась на Android-телефонах.
+Я — {{fact:AU-NAME#1}}, {{fact:AU-ROLE#2}}: {{fact:CORE-SCALE-2026-10-05#9}}. Игра — {{fact:GH-NAME}}, {{fact:GH-GENRE}}: {{fact:GH-TECH}}, {{fact:GH-ENGINE}}.
 
-ИИ пишет большую часть кода, архитектуру и решения определяю я.
+{{fact:AU-METHOD}}.
 
-Снимки и подробности — в дневнике разработки: https://t.me/gh_3D_Voxel_OpenWorld_RPG
+Снимки и подробности — в дневнике разработки: {{link:L-TG-DEVLOG}}

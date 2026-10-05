@@ -41,3 +41,17 @@ EN), шапка YouTube (RU), 2:1 GitHub (EN) — для A, B, C, D. Ренде�
 `variants/website.en.md`; шапка YouTube — без текста. Канон —
 `canonical/v1.md`; кампания — `data/campaigns/CMP-0001.yaml`.
 Проверены `tools/check.sh` (`claims`): факты, запреты, числа.
+
+## Версия 2 (05.10.2026): вариант E, утверждён автором
+
+| Файл | Формат | Размер | Язык | Назначение |
+|---|---|---|---|---|
+| `exports/E-ru-master.png`, `exports/E-en-master.png` | `master` | 2560×1440 PNG | RU, EN | мастер-файлы |
+| `exports/E-ru-youtube_banner.jpg` | `youtube_banner` | 2560×1440 JPEG, смысл в зоне 1544×423 | RU | шапка канала YouTube |
+| `exports/E-ru-telegram_post.jpg` | `telegram_post` | 1280×720 JPEG | RU | закреплённая запись канала-дневника; «Обо мне» на сайте (RU) |
+| `exports/E-ru-vk_post.jpg` | `vk_post` | 1280×720 JPEG (размеры VK не подтверждены) | RU | запись VK |
+| `exports/E-en-github_social.png` | `github_social` | 1280×640 PNG | EN | баннер README профиля; «About» (EN) и изображение превью ссылок сайта (`og_default`) |
+
+Тексты площадок — `variants/*.md` из канона v2; одобряет автор
+(`python3 -m tools.cs approve CI-0001 <вариант>`). Экспорт A (v1, с портретом)
+— история: на сайте и в вариантах больше не используется.

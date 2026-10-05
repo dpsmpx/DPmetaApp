@@ -4,14 +4,15 @@ item: CI-0001
 platform: telegram
 lang: ru
 format: photo_post
-version: 1
+version: 2
 status: ready
 trust: validated
 media:
-- exports/A-ru-telegram_post.jpg
+- exports/E-ru-telegram_post.jpg
 generation:
   provider: session
-  note: перенесено из copy/ миграцией v1→v2; имя — по Д20
+  note: 'из канона v2: закреплённая запись-вход канала-дневника (IC-09); имя — по Д20; роли репозиториев
+    — условие ОР-12'
 note: 'Закреплённая запись-вход канала-дневника (IC-09), RU, с изображением telegram_post. Шаблон — templates/telegram_devlog.md;
   промпт — prompts/text/post.v1.md. facts: AU-HANDLE, AU-ROLE, AU-METHOD, AU-MEMORY, GH-NAME, GH-GENRE,
   GH-TECH, GH-ENGINE, GH-ANDROID, GH-LOC, GH-CHECKS, DP-WHAT, DP-STAGE'
@@ -20,48 +21,56 @@ claims:
 - AU-HANDLE
 - AU-ROLE
 - AU-METHOD
-- AU-MEMORY
 - GH-NAME
 - GH-GENRE
 - GH-TECH
 - GH-ENGINE
-- GH-ANDROID
-- GH-LOC
-- GH-CHECKS
 - DP-WHAT
 - DP-STAGE
-source_version: 1
+- CORE-SCALE-2026-10-05
+- META-NO-DEPS
+- VRF-WHAT
+- SMI-WHAT
+- PRF-WHAT
+- LRN-WHAT
+- MKT-WHAT
+- META-WHAT
+source_version: 2
 link: null
+approval: null
 deps:
   facts:
     AU-NAME: 5d083e3db9612d37
-    AU-HANDLE: 0535a93f2279e87d
     AU-ROLE: 0d84826a46110966
-    AU-METHOD: 95e9ba70d576890a
-    AU-MEMORY: 823f4b5a22945aae
+    CORE-SCALE-2026-10-05: ddb54a064dc78fd7
     GH-NAME: 18e9e8bc34f1c9f0
     GH-GENRE: 87840cd38160c9f1
     GH-TECH: 885bae9eed2b037d
     GH-ENGINE: 3ae43184e26a50af
-    GH-ANDROID: 3ae50de8a7427f5c
-    GH-LOC: ac29b63c2833e291
-    GH-CHECKS: 5b1aac0836af0098
-    DP-WHAT: 091c2d23907bb1fb
     DP-STAGE: 0d8aced210be861e
+    META-NO-DEPS: 538aa32a19a5c5ea
+    AU-METHOD: 95e9ba70d576890a
+    AU-HANDLE: 0535a93f2279e87d
+    DP-WHAT: 091c2d23907bb1fb
+    VRF-WHAT: 917a8dae29da7eb5
+    SMI-WHAT: cbf16ce5b6f07403
+    PRF-WHAT: 774e3cfe896d3a27
+    LRN-WHAT: bab936f8c2f8776c
+    MKT-WHAT: d7cee6de6f534b61
+    META-WHAT: d86fda377e1113a5
   links: {}
   releases: {}
+  datasets: {}
   canonical:
-    version: 1
-    sha256: 4645db6c929c320b4da7da3a7a683295be6243520e53268973610d20b57acee5
+    version: 2
+    sha256: 03f173c39329111c7c55f04e9cf74fb79bb86db1778b3294dc5330fe6d88f36e
   media:
-    exports/A-ru-telegram_post.jpg: f5d778d09184b31aac3c19a9b2256e78fabbec96e3d0ce3df9c05e6e0a262c16
+    exports/E-ru-telegram_post.jpg: ff5618dbbd10154834da6dedcc76a7155654d2d05480633fb993c3af6260ae1d
 ---
-Я — Борис Давыдов (dpsmpx), независимый разработчик: разрабатываю игру, движок и язык программирования.
+Я — {{fact:AU-NAME#1}}, {{fact:AU-ROLE#2}}: {{fact:CORE-SCALE-2026-10-05#9}}.
 
-Galdhold — воксельная action-RPG с открытым процедурным миром. C++20 и Vulkan, собственный движок, отделённый от игры. Игра проверялась на Android-телефонах (Redmi Note 13, Poco X7 Pro 5G). Больше 150 тысяч строк C++ и больше 5 000 автоматических проверок (октябрь 2026).
+{{fact:GH-NAME}} — {{fact:GH-GENRE}}: {{fact:GH-TECH}}, {{fact:GH-ENGINE}}. DPlang — {{fact:DP-STAGE}}. Остальное ядро — каркас проверок DP-Verify, знание и публикация (SocialMediaImage, DPprofile, DPlearn, DP_game_market) и карта экосистемы DPmeta; {{fact:META-NO-DEPS}}.
 
-DPlang — мой язык программирования. Ранняя стадия: выбран синтаксис, начат компилятор.
+Как работаю: {{fact:AU-METHOD}}; {{fact:AU-METHOD#1}}. {{fact:CORE-SCALE-2026-10-05#6}}.
 
-Как работаю: ИИ пишет большую часть кода, архитектуру и решения определяю я, каждое изменение принимаю сам. ИИ может забывать сессию — проект не обязан забывать: память проекта — в Git, решениях и проверках.
-
-Здесь — дневник разработки Galdhold: что сделано, почему так и что дальше. Видео — https://www.youtube.com/@dpsmpx
+Здесь — дневник разработки Galdhold: что сделано, почему так и что дальше.

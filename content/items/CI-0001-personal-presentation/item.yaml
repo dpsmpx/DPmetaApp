@@ -657,7 +657,7 @@ gates:
     note: входы — шрифты и токены (A-002, A-003), портрета нет; все рендеры E записаны с хэшами
 canonical:
   lang: ru
-  current: 1
+  current: 2
   versions:
   - version: 1
     file: canonical/v1.md
@@ -683,6 +683,37 @@ canonical:
         L-TG-DEVLOG: e4702bf8299c4509
         L-YT-CHANNEL: 47b36d944006ecd3
       releases: {}
+  - version: 2
+    file: canonical/v2.md
+    date: 2026-10-05
+    sha256: 03f173c39329111c7c55f04e9cf74fb79bb86db1778b3294dc5330fe6d88f36e
+    deps:
+      facts:
+        AU-NAME: 5d083e3db9612d37
+        AU-ROLE: 0d84826a46110966
+        CORE-SCALE-2026-10-05: ddb54a064dc78fd7
+        META-NO-DEPS: 538aa32a19a5c5ea
+        GH-NAME: 18e9e8bc34f1c9f0
+        GH-GENRE: 87840cd38160c9f1
+        DP-STAGE: 0d8aced210be861e
+        VRF-WHAT: 917a8dae29da7eb5
+        SMI-WHAT: cbf16ce5b6f07403
+        PRF-WHAT: 774e3cfe896d3a27
+        LRN-WHAT: bab936f8c2f8776c
+        MKT-WHAT: d7cee6de6f534b61
+        META-WHAT: d86fda377e1113a5
+        GH-TECH: 885bae9eed2b037d
+        GH-ENGINE: 3ae43184e26a50af
+        GH-ANDROID: 3ae50de8a7427f5c
+        GH-LOC: ac29b63c2833e291
+        GH-CHECKS: 5b1aac0836af0098
+        AU-METHOD: 95e9ba70d576890a
+        AU-MEMORY: 823f4b5a22945aae
+      links:
+        L-TG-DEVLOG: e4702bf8299c4509
+        L-YT-CHANNEL: 47b36d944006ecd3
+      releases: {}
+      datasets: {}
 targets:
 - variant: website.ru
   destination: site-production
