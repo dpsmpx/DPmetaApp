@@ -25,7 +25,7 @@ platforms:
     adapter_status: implemented
     automation: FULLY_AUTOMATED
     auth: хостинг Beget, rsync по SSH с машины автора — ключ и адрес у автора (Д35, Д36)
-    blocked_by: ["ОР-11: домен", "Д34: «сайт готов»"]
+    blocked_by: []
     operations:
       read: {status: "own"}
       create: {status: "own"}

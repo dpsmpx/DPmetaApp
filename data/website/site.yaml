@@ -15,7 +15,7 @@ environments:
     base_url: https://dpsmpx.com
     noindex: false
     drafts: false
-    live: false                          # Д34: выгрузка — только после слов автора «сайт готов»
+    live: true                           # Д34: выпуск разрешён автором 05.10.2026; false — выгрузка отказывает
     deploy:                              # Д35: rsync по SSH на Beget (tools/cs/site/deploy.py)
       kind: rsync
       target_ref: CS_PROD_SITE_DEPLOY_TARGET   # логин@сервер:dpsmpx.com/public_html/ — у автора, не в Git

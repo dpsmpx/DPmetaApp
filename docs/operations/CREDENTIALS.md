@@ -49,11 +49,14 @@ CS_PROD_YOUTUBE_OAUTH: {rotated: 2026-10-05, expires: 2026-10-12}
    общей / технической информацией об аккаунте: переключатель **SSH**
    (по умолчанию выключен) и **имя сервера** для подключения. Логин и
    пароль — те же, что для панели; порт 22. Проверить: `ssh
-   логин@сервер`, затем на сервере `rsync --version` — **есть ли rsync
-   на сервере Beget, не подтверждено** (UNKNOWN); нет — сообщить сессии:
-   выгрузка перейдёт на `kind: command` (например, `lftp mirror` по
-   SFTP). Источник — база знаний Beget, «Как подключиться к серверу по
-   SSH» и «Что такое SSH» (04.10.2026).
+   логин@сервер`, затем на сервере `rsync --version`. rsync на сервере
+   Beget есть: `site deploy --dry-run` у автора прошёл (05.10.2026);
+   пропадёт — сообщить сессии: выгрузка перейдёт на `kind: command`
+   (например, `lftp mirror` по SFTP). Источник — база знаний Beget, «Как подключиться к серверу по
+   SSH» и «Что такое SSH» (04.10.2026). В мобильной версии панели —
+   значок ⓘ справа от имени на главной: «Тариф», «Сервер» и
+   переключатель «SSH-доступ» (снимок автора, 04.10.2026: SSH включён,
+   сервер — вида `<логин>.beget.tech`).
 2. Первый вход — вручную: подтвердить отпечаток ключа сервера
    (`known_hosts`). Выгрузка идёт с `BatchMode=yes` и без этого шага
    откажет, а не спросит.
@@ -69,10 +72,11 @@ CS_PROD_YOUTUBE_OAUTH: {rotated: 2026-10-05, expires: 2026-10-12}
    `public_html/` (`guard_suffix`), иначе выгрузка откажет.
 5. `python3 -m tools.cs health` — строка «сайт / выгрузка»;
    `python3 -m tools.cs site deploy --dry-run` — что изменится.
-6. Выгрузка — после слов «сайт готов» (Д34): `production.live: true` в
-   `data/website/site.yaml` и `site-production` → `status: active` в
-   `destinations.yaml` (сессия правит по слову автора), затем
-   `site deploy` или `publish … --to site-production --production`.
+6. Выгрузка разрешена (Д34): `production.live: true` в
+   `data/website/site.yaml`, `site-production` — `status: active` в
+   `destinations.yaml`. Сначала `site deploy --dry-run` — что изменится
+   и удалится (`/.well-known/` под защитой), затем `site deploy` или
+   `publish … --to site-production --production`.
 
 `rsync` — Linux, macOS, WSL на Windows, Android (Termux — ниже).
 Локальный Claude Code запускает выгрузку только после «да» на запрос
@@ -97,9 +101,13 @@ CS_PROD_YOUTUBE_OAUTH: {rotated: 2026-10-05, expires: 2026-10-12}
 - `rpds-py` (зависимость `jsonschema` ≥ 4.18) собирается из исходников
   компилятором Rust: готовых колёс для Termux нет.
 
-Шаги. `ЛОГИН` и `СЕРВЕР` — из «Общей информации» на главной странице
-панели; по Д35 адрес выгрузки в Git не записывается, поэтому здесь —
-заполнители:
+Шаги. `ЛОГИН` и `СЕРВЕР` — из окна ⓘ на главной странице панели; по
+Д35 адрес выгрузки в Git не записывается, поэтому здесь — заполнители:
+перед запуском их **заменить**. Остальное вводится буквально; где
+команда идёт на сервере, а не в Termux, — сказано (после входа меняется
+приглашение строки). Команды репозитория — только из его каталога и
+только через `python -m tools.cs …`: просто `site deploy` оболочка не
+знает.
 1. Termux — с F-Droid или из релизов `termux/termux-app` на GitHub,
    не вперемешку с другими источниками. Затем:
    `pkg update && pkg upgrade`,
@@ -107,11 +115,23 @@ CS_PROD_YOUTUBE_OAUTH: {rotated: 2026-10-05, expires: 2026-10-12}
    `pip` в Termux не обновлять через `pip` — им управляет `pkg`.
 2. Репозиторий — в домашний каталог Termux, не в `/sdcard` (там нет
    прав на исполнение): `gh auth login` (GitHub.com, HTTPS, вход через
-   браузер), `gh repo clone dpsmpx/SocialMediaImage ~/SocialMediaImage`.
+   браузер; код вида `XXXX-XXXX` печатает Termux), `gh repo clone
+   dpsmpx/SocialMediaImage ~/SocialMediaImage`. В Termux нет хранилища
+   ключей: токен `gh` лежит открытым текстом в `~/.config/gh/hosts.yml`
+   (`gh` так и предупреждает); потерян телефон — отозвать на GitHub,
+   Settings → Applications.
 3. Зависимости: `export ANDROID_API_LEVEL="$(getprop
    ro.build.version.sdk)"` (без неё maturin не соберёт `rpds-py`), затем
-   `pip install -r tools/requirements.txt` — несколько минут; проверка —
-   `python -c "import yaml, jsonschema; print(jsonschema.__version__)"`.
+   `python -m pip install -r tools/requirements.txt` — несколько минут;
+   проверка — `python -c "import yaml, jsonschema; print(jsonschema.__version__)"`.
+   Именно `python -m pip`, а не `pip`: 04.10.2026 у автора `pip` поставил
+   `jsonschema` не в тот интерпретатор, которым запускается
+   `python -m tools.cs` (`ModuleNotFoundError: No module named
+   'jsonschema'` после «Successfully installed»): `which -a python pip`
+   показал первым `~/.local/bin/python` (Python 3.14), а `pip` — от
+   Python 3.13 из `pkg`. `rpds-py` собирается под каждую версию Python
+   отдельно — повторная сборка в несколько минут нормальна, прерывать её
+   не нужно.
 4. Первый вход паролем, шаги 1–2 выше:
    `ssh ЛОГИН@СЕРВЕР`, `yes` на отпечаток, пароль панели
    (на экране не виден). На сервере: `rsync --version | head -1`,
@@ -137,6 +157,12 @@ CS_PROD_YOUTUBE_OAUTH: {rotated: 2026-10-05, expires: 2026-10-12}
 7. Проверки: `tools/check.sh --quick`, `python -m tools.cs health`,
    `python -m tools.cs site deploy --dry-run` — ничего не выкладывает,
    последняя строка «изменений: N».
+8. Выгрузка (разрешена, Д34): `git pull` в `~/SocialMediaImage`, снова
+   `python -m tools.cs site deploy --dry-run` — сверить, что удаляется,
+   затем `python -m tools.cs site deploy`. В конце — проверка `/`,
+   `/en/`, `/projects/` по HTTP: `✓` — страница на месте, `?` — адрес не
+   открывается (домен не в реестре, ОР-11), `✗` — 404 или чужая
+   страница.
 
 Ключ на телефоне отзывается удалением его строки из
 `~/.ssh/authorized_keys` на сервере (§3 «Ротация и отказ»); потерян

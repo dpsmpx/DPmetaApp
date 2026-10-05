@@ -22,8 +22,7 @@ destinations:
     target: {id: dpsmpx.com, base_url: "https://dpsmpx.com"}
     credential_ref: CS_PROD_SITE_DEPLOY_TARGET   # адрес выгрузки rsync на Beget (Д35) — у автора
     staging_twin: site-staging
-    status: blocked
-    blocked_by: ["ОР-11: домена нет в реестре .com", "Д34: «сайт готов»"]
+    status: active                       # Д34: выпуск разрешён 05.10.2026; SSH и --dry-run проверены автором
   - id: site-staging
     platform: website
     environment: staging

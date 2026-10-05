@@ -220,5 +220,42 @@ class Htaccess(unittest.TestCase):
         self.assertFalse((out / "_headers").exists())
 
 
+class RealConfig(unittest.TestCase):
+    """Настоящие site.yaml и destinations.yaml: выпуск разрешён (Д34), запреты выгрузки на месте (Д35, Д36)."""
+
+    def setUp(self):
+        from tools.cs.core.repo import Repo
+        self.repo = Repo()
+        self.cfg = deploy.config(self.repo)
+        self.store = EnvCredentialStore({"CS_PROD_SITE_DEPLOY_TARGET": TARGET})
+
+    def test_production_is_deployable(self):
+        self.assertIs(deploy.env_config(self.repo).get("live"), True, "Д34: выпуск разрешён")
+        dest = self.repo.destinations()["site-production"]
+        self.assertEqual(dest["status"], "active", "live и адресат согласованы — иначе site deploy и publish откажут")
+        self.assertEqual(dest["target"]["base_url"], self.repo.site_base("production"))
+        self.assertEqual(self.repo.site_base("production"), self.repo.site()["canonical_base"])
+        for env in (AUTHOR, LOCAL):
+            with mock.patch.dict(os.environ, env):
+                self.assertEqual(deploy.guard(self.repo, store=self.store), [])
+
+    def test_guards_stay(self):
+        self.assertEqual(self.cfg["kind"], "rsync")
+        self.assertEqual(self.cfg["target_ref"], "CS_PROD_SITE_DEPLOY_TARGET", "в Git — имя переменной, не адрес")
+        self.assertEqual(self.cfg["guard_suffix"], "public_html/")
+        self.assertIn("/.well-known/", self.cfg["protect"])
+        self.assertEqual(self.repo.policy().get("local_session_production"), ["website"])
+        with mock.patch.dict(os.environ, REMOTE):
+            self.assertTrue(any("облачной сессии" in p for p in deploy.guard(self.repo, store=self.store)))
+        with mock.patch.dict(os.environ, AUTHOR):
+            self.assertTrue(any("CS_PROD_SITE_DEPLOY_TARGET" in p for p in deploy.guard(self.repo, store=EnvCredentialStore({}))))
+            wrong = EnvCredentialStore({"CS_PROD_SITE_DEPLOY_TARGET": "u@h:dpsmpx.com/"})
+            self.assertTrue(any("public_html" in p for p in deploy.guard(self.repo, store=wrong)))
+        from pathlib import Path
+        argv = deploy.rsync_argv(Path("/b/site"), TARGET, self.cfg, dry_run=True)
+        for flag in ("--dry-run", "--filter=P /.well-known/", "ssh -o BatchMode=yes", "--delete-delay"):
+            self.assertIn(flag, argv)
+
+
 if __name__ == "__main__":
     unittest.main()
