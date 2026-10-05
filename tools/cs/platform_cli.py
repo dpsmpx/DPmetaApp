@@ -542,7 +542,7 @@ def affected_checks(files: list[str]) -> tuple[list[str], bool]:
     names = {"schemas", "secrets"}
     tests = False
     for f in files:
-        if f.startswith(("tools/", "tests/")):
+        if f.startswith(("tools/", "tests/", ".claude/")) or f == ".htaccess":   # защиты выгрузки (Д35, Д36)
             return list(CHECKS), True
         for prefix, checks in AFFECTED:
             if f.startswith(prefix):

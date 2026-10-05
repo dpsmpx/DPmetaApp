@@ -24,10 +24,11 @@ PARTS = {
     "provenance": ["data/provenance/", "docs/PROVENANCE.md"],
     "publications": ["data/publications/"],
     "data": ["data/facts/", "data/identity/", "data/platforms/", "data/projects/", "data/policy/",
-             "data/website/", "data/releases/", "data/campaigns/", "data/metrics/", "data/experiments/"],
+             "data/website/", "data/releases/", "data/campaigns/", "data/metrics/", "data/experiments/",
+             "data/progress/"],
     "decisions": ["docs/", "ROADMAP/", "README.md", "CLAUDE.md", "TODO.md"],
     "schemas": ["schemas/"],
-    "code": ["tools/", "tests/", "website/", "templates/", "prompts/", ".gitignore"],
+    "code": ["tools/", "tests/", "website/", "templates/", "prompts/", ".gitignore", ".htaccess", ".claude/"],
 }
 
 

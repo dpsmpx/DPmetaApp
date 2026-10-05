@@ -16,6 +16,7 @@ SITE="http://dpsmpx.com/"   # http, пока у домена нет сертиф
 
 [ -t 0 ] && trap 'printf "\nEnter — закрыть "; read -r _' EXIT
 fail() { echo "✗ $*"; exit 1; }
+[ -z "${CLAUDECODE:-}${CLAUDE_CODE_REMOTE:-}" ] || fail "ярлык — только для автора; сессия ИИ выгружает python3 -m tools.cs site deploy после «да» (Д36)"
 
 [ -f "$ENVF" ] || fail "нет $ENVF — CREDENTIALS.md, Termux, шаг 6"
 . "$ENVF"
