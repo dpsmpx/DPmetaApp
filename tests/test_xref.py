@@ -113,6 +113,16 @@ class XrefTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("| Alpha | нет клона | — |", report)
 
+    def test_clone_is_found_by_repo_name(self):
+        # Реестр ждёт `alpha`, а клон лежит как `o/Alpha` — так сессии кладут
+        # публичные репозитории.
+        (self.root / "o").mkdir()
+        (self.root / "alpha").rename(self.root / "o" / "Alpha")
+        code, report = self.run_xref()
+        self.assertEqual(code, 0)
+        self.assertNotIn("нет клона", report)
+        self.assertIn("Ссылок распознано: 4; нет такого номера: 1.", report)
+
     def test_bad_registry_and_unknown_name_give_code_2(self):
         self.registry.write_text("schema = 2\n", encoding="utf-8")
         self.assertEqual(xref.main(["--registry", str(self.registry)]), 2)

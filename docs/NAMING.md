@@ -52,7 +52,7 @@
 | проект | решения | другие номера | алфавит |
 |---|---|---|---|
 | Galdhold | `Р0`…`Р20` — `docs/direction/DECISIONS.md` | — | кириллица |
-| DPlang | `Р0`…`Р48` — `docs/direction/DECISIONS.md` | открытые решения `О1`… (`docs/direction/OPEN_DECISIONS.md`), пункты постановки `П1`… | кириллица |
+| DPlang | `Р0`…`Р49` — `docs/direction/DECISIONS.md` | открытые решения `О1`… (`docs/direction/OPEN_DECISIONS.md`), пункты постановки `П1`… | кириллица |
 | DP-Verify | `V-01`…`V-19` | ТЗ: `F-`, `N-`, `I-`, `A-`, `L-`, `R-`, `Q-`, `TR-` | латиница |
 | DPpass | `D-01`…`D-30` | угрозы `T1`… (`docs/SECURITY_MODEL.md`) | латиница |
 | DPprofile | `D-01`…`D-15` | источники `S-NN`, заметки `N-NNNN`, факты `F-NNNN`, выводы `I-NNNN`, гипотезы `H-NNNN` | латиница |

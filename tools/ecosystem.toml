@@ -1,9 +1,11 @@
 # Реестр репозиториев экосистемы dpsmpx — машинная часть docs/ECOSYSTEM.md.
 #
-# Читает tools/xref.py. Поля:
+# Читают tools/xref.py и tools/activity.py. Поля:
 #   name       — каноническое имя проекта (docs/NAMING.md);
 #   slug       — репозиторий GitHub сейчас;
 #   clone      — каталог клона относительно --root (переопределяется --clone);
+#                нет такого — ищется по имени из slug: `Andors-Love`,
+#                `andors-love`, `dpsmpx/andors-love`;
 #   aliases    — прежние и рабочие имена: ссылка через них сверяется так же,
 #                но считается устаревшим именем (docs/NAMING.md);
 #   names      — другие написания того же имени (не устаревшие);
@@ -79,7 +81,7 @@ clone = "andors-love"
 [[repo]]
 name = "TrueJointTileMaker"
 slug = "dpsmpx/TrueJointTileMaker"
-clone = "dpsmpx/truejointtilemaker"
+clone = "truejointtilemaker"
 
 [[repo]]
 name = "DPmeta"
