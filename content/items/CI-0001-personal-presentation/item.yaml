@@ -135,7 +135,7 @@ variants:
 - id: E
   label: ecosystem
   spec: spec/variant-e.yaml
-  status: candidate
+  status: selected
   renders:
   - renders/E-en-github_social.png
   - renders/E-en-master.png
@@ -144,13 +144,13 @@ variants:
   - renders/E-ru-telegram_post.jpg
   - renders/E-ru-vk_post.jpg
   - renders/E-ru-youtube_banner.jpg
-selected_variant: null
+selected_variant: E
 provenance: provenance.yaml
 blocked_by:
-- 'сессия: критика v2 (вариант E против D) отдельным проходом'
 - 'автор: утверждение и гейт Brand'
 - 'автор: О-1 — размер роли на миниатюре'
-- 'сессия: канон v2 и тексты площадок после выбора изображения'
+- 'автор: D-10 — правило «без портрета имя × 1,6» в VISUAL_SYSTEM.md (изменение основ)'
+- 'сессия: канон v2 и тексты площадок с ролями новых репозиториев (условие исключения ОР-12) — после утверждения'
 review:
   file: docs/content/products/personal_presentation/CRITIQUE.md
   scores:
@@ -570,41 +570,44 @@ exports:
   status: preview
 gates:
   factual:
-    status: pending
+    status: pass
     by: tool
     date: &id001 2026-10-05
-    note: 'v2 (вариант E): заново после критики; проверка tools/check.sh'
+    note: 'claims: факты, слова-утверждения, запреты, числа — вариант E; числа дословно из CORE-SCALE-2026-10-05
+      (повторная критика — Factuality 4)'
   brand:
     status: pending
     by: author
     date: *id001
-    note: 'v2 (вариант E): заново после критики; утверждает автор'
+    note: 'утверждает автор: образ v2 без лица, карта экосистемы; имя без портрета — display × 1,6 (D-10)'
   visual:
-    status: pending
+    status: pass
     by: tool
     date: *id001
-    note: 'v2 (вариант E): заново после критики; проверка tools/check.sh'
+    note: 'visual: размер, контраст по фону, группы (4), три размера, поля, наложения — 7 форматов E (повторная
+      критика — Visual 4)'
   platform:
-    status: pending
+    status: pass
     by: tool
     date: *id001
-    note: 'v2 (вариант E): заново после критики; проверка tools/check.sh'
+    note: размеры форматов, безопасная зона шапки, поля ≥ 24 px; vk_post — размеры VK официально не подтверждены
   safety:
-    status: pending
+    status: pass
     by: session
     date: *id001
-    note: 'v2 (вариант E): заново после критики; проверка tools/check.sh'
+    note: лица и интерьера нет; имени закрытого проекта без публичного имени нет ни в рендерах, ни в раскладках
+      (критик сверил с scope.yaml)
   legal:
-    status: pending
+    status: pass
     by: session
     date: *id001
-    note: 'v2 (вариант E): заново после критики; портрета нет — права фотографа A-001 к v2 не относятся;
-      шрифты OFL'
+    note: портрета нет — права фотографа A-001 к v2 не относятся; шрифты OFL; внешних запросов при рендере
+      нет
   provenance:
-    status: pending
+    status: pass
     by: tool
     date: *id001
-    note: 'v2 (вариант E): заново после критики; проверка tools/check.sh'
+    note: входы — шрифты и токены (A-002, A-003), портрета нет; все рендеры E записаны с хэшами
 canonical:
   lang: ru
   current: 1
@@ -652,7 +655,7 @@ targets:
   na: шапка канала загружается в Studio без текста (OUTPUTS.md)
 - variant: discord.ru
   na: 'ОР-6: сервер не подтверждён'
-state: REVISED
+state: UNDER_REVIEW
 history:
 - date: 2026-10-04
   state: IDEA
@@ -694,7 +697,7 @@ history:
   state: UNDER_REVIEW
   note: 'миграция content_item/v1 → v2 (Д31): copy/github.md → variants/github.en.md; copy/telegram.md
     → variants/telegram.ru.md; copy/vk.md → variants/vk.ru.md; без текста, не перенесено: copy/youtube.md'
-- date: *id001
+- date: 2026-10-05
   state: BRIEFED
   note: 'v2 по поручению автора «образ разработчика в свете текущей экосистемы»; ответы автора: новая
     версия CI-0001, без лица. Новая цель, бриф BRIEF_V2.md, направление CREATIVE_DIRECTION_V2.md; факт
@@ -725,3 +728,8 @@ history:
   state: REVISED
   note: E-15 — правая колонка в потоке (отступы по настоящим строкам); E-16 — причина E-8; E-17 — бриф
     и направление v2 дополнены ревизией. Выходы A–D и шапка E совпали с новым кодом байт в байт
+- date: *id001
+  state: UNDER_REVIEW
+  note: 'проверка того же критика после правок: E-15…E-17 закрыты, новых проблем нет, оценки E — все 4.
+    Выбор сессии — E (DECISION.md, «Версия 2»); гейты Factual, Visual, Platform, Provenance, Safety, Legal
+    — pass; Brand — автор'
