@@ -54,6 +54,7 @@ object XrayBackend {
     const val TAG_BLOCK: String = "block"
     const val TAG_DNS_OUT: String = "dns-out"
     const val TAG_TUN_IN: String = "tun-in"
+    const val TAG_AUTO_DOMESTIC: String = "dppass:auto-domestic"
 
     /** Префикс служебных тегов: в id DPpass двоеточия не бывает (`Ids`), совпасть с id пользователя они не могут. */
     const val SYSTEM_PREFIX: String = "dppass:"
