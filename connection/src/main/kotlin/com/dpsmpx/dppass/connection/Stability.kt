@@ -3,7 +3,6 @@ package com.dpsmpx.dppass.connection
 import com.dpsmpx.dppass.config.ServerProfile
 import com.dpsmpx.dppass.config.TransportClass
 import com.dpsmpx.dppass.config.transportClass
-import com.dpsmpx.dppass.core.Clock
 import com.dpsmpx.dppass.core.ProfileId
 import com.dpsmpx.dppass.diagnostics.Outcome
 import com.dpsmpx.dppass.network.NetworkAssessment
@@ -86,7 +85,6 @@ data class StabilityContext(
  */
 class StabilityBook(
     private val store: BlobStore? = null,
-    private val clock: Clock = Clock.SYSTEM,
 ) {
     private val map = LinkedHashMap<String, StabilityStats>()
 
@@ -151,14 +149,18 @@ class StabilityBook(
     @Synchronized
     fun score(profile: ServerProfile, assessment: NetworkAssessment?): Double {
         val context = StabilityContext.from(assessment)
-        val learned = stats(profile.id, context)
+        val learned = exactOrLatest(profile.id, context)
         return (learned.stabilityScore() + contextBias(profile, assessment)).coerceIn(0.0, 1.0)
     }
 
     @Synchronized
-    fun shouldRecover(profileId: ProfileId, assessment: NetworkAssessment? = null): Boolean {
-        val s = stats(profileId, StabilityContext.from(assessment))
-        return s.hasObservation && s.badStreak >= 2 && s.stabilityScore() < RECOVERY_SCORE
+    fun shouldRecover(profileId: ProfileId, assessment: NetworkAssessment? = null): Boolean =
+        shouldRecover(profileId, StabilityContext.from(assessment))
+
+    @Synchronized
+    fun shouldRecover(profileId: ProfileId, context: StabilityContext): Boolean {
+        val s = stats(profileId, context)
+        return s.hasObservation && s.badStreak >= 2 && (s.stabilityScore() < RECOVERY_SCORE || (s.badStreak >= 1 && s.stabilityScore() < SEVERE_RECOVERY_SCORE))
     }
 
     @Synchronized
@@ -212,6 +214,17 @@ class StabilityBook(
         }
     }
 
+    private fun exactOrLatest(profileId: ProfileId, context: StabilityContext): StabilityStats {
+        val exact = map[key(profileId, context)]
+        if (exact != null) return exact
+        val prefix = profileId.value + "|"
+        return map.asSequence()
+            .filter { it.key.startsWith(prefix) }
+            .maxByOrNull { it.value.lastUpdatedMillis }
+            ?.value
+            ?: StabilityStats()
+    }
+
     private fun trim() {
         if (map.size <= MAX_RECORDS) return
         val stale = map.entries.sortedBy { it.value.lastUpdatedMillis }.take(map.size - MAX_RECORDS)
@@ -243,6 +256,7 @@ class StabilityBook(
         private const val MAX_BAD_STREAK = 64
         private const val BAD_JITTER_MILLIS = 150.0
         private const val BAD_RTT_MILLIS = 3_000.0
-        private const val RECOVERY_SCORE = 0.42
+        private const val RECOVERY_SCORE = 0.50
+        private const val SEVERE_RECOVERY_SCORE = 0.30
     }
 }
