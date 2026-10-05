@@ -145,7 +145,9 @@ strict-origin-when-cross-origin`, `Permissions-Policy` (камера,
 заголовки отдаёт хостинг. Beget `Header` к статике применяет: на `/`
 приходит весь набор (05.10.2026, `http://dpsmpx.com/`; впереди стоит
 nginx, `.htaccess` всё равно действует). Список файлов каталогов у Beget
-выключен и без `Options -Indexes` (`/fonts/`, `/api/` — 403).
+выключен и без `Options -Indexes` (`/fonts/`, `/api/` — 403); строку
+`Options -Indexes` Beget принимает — после выгрузки с ней сайт отвечает
+200 (05.10.2026).
 
 ## Визуальная регрессия (П2-17)
 
