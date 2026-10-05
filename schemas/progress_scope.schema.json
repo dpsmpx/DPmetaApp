@@ -185,11 +185,20 @@
     "additionalProperties": false,
     "required": [
      "slug",
+     "kind",
      "reason"
     ],
     "properties": {
      "slug": {
       "type": "string"
+     },
+     "kind": {
+      "enum": [
+       "fork",
+       "profile",
+       "personal",
+       "script"
+      ]
      },
      "reason": {
       "type": "string"

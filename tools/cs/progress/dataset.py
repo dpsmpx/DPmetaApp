@@ -121,6 +121,17 @@ class Progress:
     def core(self) -> list[str]:
         return [k for k in self.keys if self.specs[k]["group"] == "core"]
 
+    def listed(self, keys: list[str] | None = None) -> list[str]:
+        """Кого можно показывать по отдельности (строка, узел карты, дата): все, кроме закрытых
+        проектов без публичного имени — они только в общих суммах (Д38, фильтр Д39)."""
+        keys = self.keys if keys is None else keys
+        return [k for k in keys if self.specs[k]["visibility"] != "undisclosed"]
+
+    def hidden_count(self, keys: list[str] | None = None) -> int:
+        """Сколько репозиториев с работой в периоде входит только в суммы."""
+        keys = self.keys if keys is None else keys
+        return sum(1 for k in keys if k not in self.listed(keys) and any(self.daily(k, "commits")))
+
     def daily(self, key: str, field: str) -> list[int]:
         return self.data["repos"][key]["daily"][field]
 
@@ -197,13 +208,23 @@ class Progress:
         return fmt_value(self.value(metric), METRICS[metric].unit, lang)
 
     def public(self) -> dict:
-        """Публичная выжимка для /api/v1/progress.json: то же, что на странице, без служебного."""
+        """Публичная выжимка для /api/v1/progress.json — белый список полей (фильтр Д39).
+
+        Только то, что видно на странице: ряды по дням, суммы, величины с формулами.
+        Нет: head-коммитов, имён веток, состояния истории, счётчиков документов по
+        файлам. Закрытый проект без имени — только в общих суммах: ни строки, ни ключа,
+        ни даты появления (Д38).
+        """
+        per = self.data["period"]
         return {
-            "version": 1, "dataset": self.id, "period": self.data["period"], "method_version": self.data["method"]["version"],
+            "version": 1, "dataset": self.id,
+            "period": {k: per[k] for k in ("start", "end", "timezone", "cutoff")},
+            "method_version": self.data["method"]["version"],
             "days": self.days,
-            "repositories": [{"key": k, "name": self.specs[k].get("name"), "group": self.specs[k]["group"],
+            "repositories": [{"name": self.specs[k]["name"], "group": self.specs[k]["group"],
                               "visibility": self.specs[k]["visibility"], "first_day": self.first_day(k),
-                              "commits": self.daily(k, "commits"), "merges": self.daily(k, "merges")} for k in self.keys],
+                              "commits": self.daily(k, "commits"), "merges": self.daily(k, "merges")} for k in self.listed()],
+            "only_in_totals": self.hidden_count(),
             "commits": {"total": self.total("commits"), "ai": self.total("ai"), "author": self.total("human"),
                         "mainline": self.total("mainline"), "branch_only": self.total("branch_only"),
                         "docs_only": self.total("docs_only")},

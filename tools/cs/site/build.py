@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from string import Template
 
-from ..core import markup
+from ..core import markup, sensitive
 from ..core.content import (POST_CATEGORIES, CItem, Variant, approval_state, load_items, resolved_alt, resolved_body,
                             stale_reasons)
 from ..core.inject import progress_set, resolve
@@ -213,22 +213,12 @@ class SiteBuild:
 
     def name_forms(self) -> list[str]:
         """Слова имени автора из AU-NAME (все языки) — при real_name: false их нет ни в одном файле сайта (Д37)."""
-        forms = set()
-        for words in ((self.facts.get("AU-NAME") or {}).get("allowed_wording") or {}).values():
-            for w in words:
-                forms.update(x for x in re.findall(r"\w+", w) if x != "dpsmpx" and len(x) > 2)
-        return sorted(forms)
+        return sensitive.name_words(self.facts)
 
-    def check_no_name(self, out: Path) -> None:
-        forms = [(f, f.lower()) for f in self.name_forms()]
-        for p in sorted(out.rglob("*")):
-            if not p.is_file():
-                continue
-            text = p.read_bytes().decode("utf-8", "ignore").lower()
-            hit = [f for f, low in forms if low in text]
-            if hit:
-                self.report.errors.append(f"{p.relative_to(out)}: имя автора на сайте ({', '.join(hit)}) — "
-                                          f"по Д37 только dpsmpx")
+    def check_sensitive(self, out: Path) -> None:
+        """Фильтр чувствительных данных (Д39): каждый файл выхода; совпадение — ошибка сборки."""
+        for h in sensitive.scan(self.repo, out, bool(self.cfg.get("real_name"))):
+            self.report.errors.append(h.msg)
 
     # ------------------------------------------------------- страницы
     def nav(self, lang: str, current: str, alt: dict) -> str:
@@ -694,8 +684,7 @@ class SiteBuild:
             api["index.json"]["resources"]["progress"] = "/api/v1/progress.json"
         for name, data in api.items():
             self.write(out, f"/api/v1/{name}", json.dumps(data, ensure_ascii=False, indent=1))
-        if not self.cfg.get("real_name"):
-            self.check_no_name(out)
+        self.check_sensitive(out)
         return self.report
 
 

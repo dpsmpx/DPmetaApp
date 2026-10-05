@@ -36,6 +36,7 @@ SCHEMA_MAP = [
     ("data/platforms/destinations.yaml", "destinations"),
     ("data/platforms/capabilities.yaml", "capabilities"),
     ("data/policy/publication.yaml", "policy"),
+    ("data/policy/sensitive.yaml", "sensitive"),
     ("data/website/site.yaml", "site"),
     ("data/releases/*.yaml", "releases"),
     ("data/campaigns/*.yaml", "campaign"),
