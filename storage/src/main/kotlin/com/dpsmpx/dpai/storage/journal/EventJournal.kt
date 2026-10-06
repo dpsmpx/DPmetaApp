@@ -84,6 +84,55 @@ class EventJournal private constructor(private val vfs: Vfs, private val path: S
         }
     }
 
+    /**
+     * Групповая запись (этап 17, `docs/PERFORMANCE.md`): пачка событий —
+     * одно дописывание и один fsync. Подтверждение — после fsync, для
+     * всей пачки сразу; при сбое до него на диске остаётся префикс целых
+     * записей или ничего — неподтверждённое, как у [append]. Повтор
+     * события, уже лежащего в журнале, пропускается; конфликт — отказ всей
+     * пачки до записи.
+     */
+    @Synchronized
+    fun appendAll(events: List<EventEnvelope>): Outcome<List<Long>> {
+        if (broken) return Outcome.failure(DiagCode.STORAGE_UNAVAILABLE, "журнал закрыт после отказа записи: нужно открыть заново", path)
+        val positions = ArrayList<Long>(events.size)
+        val fresh = ArrayList<JournalRecord>()
+        val seen = HashMap<EventId, Long>()
+        val bytes = java.io.ByteArrayOutputStream()
+        var prev = lastHash
+        for (event in events) {
+            val known = positionOf[event.id] ?: seen[event.id]
+            if (known != null) {
+                val existing = records.getOrNull((known - 1).toInt())?.event ?: fresh[(known - position - 1).toInt()].event
+                if (existing != event) return Outcome.failure(DiagCode.EVENT_SEQUENCE_CONFLICT, "идентификатор события уже занят другим содержимым", path)
+                positions += known
+                continue
+            }
+            val record = build(position + fresh.size + 1, prev, event)
+            bytes.write((CanonicalJson.write(record.second) + "\n").toByteArray(Charsets.UTF_8))
+            fresh += record.first
+            seen[event.id] = record.first.position
+            prev = record.first.hash
+            positions += record.first.position
+        }
+        if (fresh.isEmpty()) return Outcome.success(positions)
+        return try {
+            val created = !vfs.exists(path)
+            vfs.mkdirs(Vfs.parentOf(path))
+            vfs.append(path, bytes.toByteArray())
+            vfs.fsync(path)
+            if (created) vfs.fsyncDir(Vfs.parentOf(path))
+            for (r in fresh) {
+                records += r
+                positionOf[r.event.id] = r.position
+            }
+            Outcome.success(positions)
+        } catch (e: IOException) {
+            broken = true
+            Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "пачка записей не подтверждена", e, path))
+        }
+    }
+
     companion object {
         const val FORMAT = "dpai.journal-record"
         const val VERSION = 1

@@ -139,7 +139,33 @@ class Orchestrator(
 
     // ---- журнал ----
 
-    private fun write(envs: List<EventEnvelope>) = envs.forEach { e -> check(journal.append(e).isSuccess) { "журнал не принял ${e.type}" } }
+    /** Конверты, ждущие записи внутри [batch]; вне пачки — `null`, запись сразу. */
+    private var pending: MutableList<EventEnvelope>? = null
+
+    /** Пачка событий одного шага — одна групповая запись: один fsync (этап 17, `docs/PERFORMANCE.md`). */
+    private fun write(envs: List<EventEnvelope>) {
+        if (envs.isEmpty()) return
+        pending?.let { it += envs; return }
+        val r = journal.appendAll(envs)
+        check(r.isSuccess) { "журнал не принял пачку: ${r.diagnostics}" }
+    }
+
+    /**
+     * Все записи [body] — одной пачкой в конце. Внешних действий внутри
+     * пачки нет: всё, что должно лечь в журнал раньше вызова target (id
+     * сессии провайдера, аренда), пишется отдельной пачкой до него.
+     */
+    private fun <T> batch(body: () -> T): T {
+        check(pending == null) { "пачки не вкладываются" }
+        val acc = mutableListOf<EventEnvelope>()
+        pending = acc
+        try {
+            return body()
+        } finally {
+            pending = null
+            write(acc)
+        }
+    }
 
     fun commitAccounts(es: List<AccountEvent>) {
         write(recorder.accountEnvelopes(es))
@@ -190,24 +216,29 @@ class Orchestrator(
         val session = ids.next(IdKinds.SESSION)
         val lease = accountsLogic.lease(accounts, session, task, clock.now(), target)
         if (lease is Outcome.Failure) return // свободного слота нет: задача ждёт следующего такта
-        commitAccounts(lease.valueOrNull()!!.events)
         val slot = lease.valueOrNull()!!.slot
         // Продолжение — прерванная сессия той же задачи: та же сессия провайдера.
         val previous = sessions.sessions.values.filter { it.task == task }.maxByOrNull { it.createdAt.epochMillis * 1000 + it.turn }
         val continues = previous?.takeIf { it.state == SessionState.CANCELLED && it.lastReason == DiagCode.SESSION_HANDED_OFF }
         val provider = continues?.provider ?: ProviderSessionId.newUuid(random)
         val attempt = sessions.sessions.values.count { it.task == task } + 1
-        val created = ok(sessionsLogic.create(sessions, accounts, session, "task:${task.value}:attempt:$attempt", task, slot, target, provider, clock.now(), continues?.id), "сессия задачи $task не создана")
-            ?: return releaseLease(session)
-        commitSessions(created.events)
+        // Пачка 1 — до вызова target: аренда и сессия с id провайдера (сверка после сбоя узнаёт поток).
+        batch {
+            commitAccounts(lease.valueOrNull()!!.events)
+            ok(sessionsLogic.create(sessions, accounts, session, "task:${task.value}:attempt:$attempt", task, slot, target, provider, clock.now(), continues?.id), "сессия задачи $task не создана")
+                ?.also { commitSessions(it.events) }
+        } ?: return releaseLease(session)
         val workDir = prepareWorktree(task, session) ?: return failLaunch(task, session, DiagCode.WORKTREE_MISSING)
         val bundle = context(task, t.objective)
         val budget = t.policy.maxBudgetUsdCents?.let { BigDecimal(it).movePointLeft(2) }
         val request = ClaudeRequest(PromptRenderer.render(bundle), workDir = workDir, timeout = t.policy.turnTimeout, maxBudgetUsd = budget)
         val step = ok(driver.launch(sessions, accounts, session, request), "сессия $session не запущена") ?: return failLaunch(task, session, DiagCode.SESSION_FAILED)
-        commitSessions(step.events)
-        applyFacts(step.facts)
-        commitTasks(tasksLogic.start(tasks, task, clock.now()).valueOrNull().orEmpty())
+        // Пачка 2 — после вызова: состояние сессии, факты аккаунтов, задача в работе.
+        batch {
+            commitSessions(step.events)
+            applyFacts(step.facts)
+            commitTasks(tasksLogic.start(tasks, task, clock.now()).valueOrNull().orEmpty())
+        }
     }
 
     private fun failLaunch(task: TaskId, session: SessionId, code: DiagCode) {
@@ -250,8 +281,10 @@ class Orchestrator(
     private fun poll(session: SessionId) {
         val before = sessions.sessions.getValue(session).state
         val step = driver.poll(sessions, session).valueOrNull() ?: return
-        commitSessions(step.events)
-        applyFacts(step.facts)
+        batch {
+            commitSessions(step.events)
+            applyFacts(step.facts)
+        }
         val after = sessions.sessions.getValue(session)
         if (after.state != before) react(after.task, session, after.state)
     }

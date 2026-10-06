@@ -27,8 +27,8 @@
 | Notifications complete | 12 | ◐ | агрегация, эскалация, предел частоты и сводка, deep links, кнопки одобрения с хешем предложения; уведомления аккаунтов; каналы Android — этап 11 |
 | Recovery complete | 13 | ✓ | перезапуск со сверкой (`STATE_CONFLICT`, исходы ТЗ, §55), подхват идущего хода, сироты, проба рабочего дерева; матрица `docs/RECOVERY.md` покрыта тестами |
 | Security audit complete | 18 | — | модель угроз: `docs/SECURITY_MODEL.md` |
-| Performance audit complete | 17 | — | бюджеты: `docs/PERFORMANCE.md` |
-| Stress test complete | 17, 19 | — | |
+| Performance audit complete | 17 | ◐ | бюджеты хоста измерены и соблюдены, групповая запись журнала по замеру; устройство — этапы 11, 19 |
+| Stress test complete | 17, 19 | ◐ | ТЗ, §93 и §94 на хосте с записанными пределами; на устройстве — этап 19 |
 | Chaos test complete | 13, 19 | ◐ | хаос-тест `RecoveryTest` на сценариях ТЗ, §95 с mock target; на устройстве — этап 19 |
 | Endurance test complete | 19 | — | |
 | Mobile lifecycle audit complete | 11, 19 | — | |

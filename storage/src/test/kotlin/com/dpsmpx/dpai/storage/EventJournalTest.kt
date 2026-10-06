@@ -42,6 +42,34 @@ class EventJournalTest {
         assertEquals(DiagCode.EVENT_SEQUENCE_CONFLICT, assertIs<Outcome.Failure>(conflict).errors.single().code)
     }
 
+    /** Групповая запись: та же цепочка, что поштучная; повтор пропускается; при сбое — подтверждённое цело, пачка — префиксом или никак. */
+    @Test
+    fun groupCommitKeepsChainAndSurvivesCrashes() {
+        val f = EventFactory()
+        val events = List(6) { f.next() }
+        val single = SimulatedVfs()
+        open(single).let { j -> events.forEach { j.append(it) } }
+        val grouped = SimulatedVfs()
+        val g = open(grouped)
+        assertEquals((1L..6L).toList(), g.appendAll(events).valueOrNull())
+        assertEquals((1L..6L).toList(), g.appendAll(events).valueOrNull(), "повтор пачки идемпотентен")
+        assertEquals(open(single).records(), open(grouped).records(), "цепочка хешей та же")
+
+        val first = List(2) { f.next() }
+        val batch = List(4) { f.next("пачка ".repeat(30)) }
+        var acknowledged = false
+        crashEverywhere(
+            setup = { vfs -> acknowledged = false; open(vfs).appendAll(first) },
+            action = { vfs -> acknowledged = open(vfs).appendAll(batch).isSuccess },
+        ) { vfs, k ->
+            val j = assertIs<Outcome.Success<EventJournal>>(EventJournal.open(vfs, path), "сбой на операции $k").value
+            val got = j.records().map { it.event }
+            assertEquals(first, got.take(2), "подтверждённое до пачки цело (операция $k)")
+            assertEquals(batch.take(got.size - 2), got.drop(2), "из пачки — только префикс (операция $k)")
+            if (acknowledged) assertEquals(first + batch, got, "подтверждённая пачка цела (операция $k)")
+        }
+    }
+
     /** Подтверждённые записи переживают сбой на любой операции; неподтверждённая — либо целиком, либо нет. */
     @Test
     fun crashAtEveryStepKeepsAcknowledgedRecords() {
