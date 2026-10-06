@@ -132,3 +132,27 @@ CLI (ТЗ, §86; `docs/research/CLAUDE_CODE_CLI.md`).
 - Зависимость упала или отменена — зависимые `BLOCKED`
   (`DEPENDENCY_FAILED`).
 
+## 8. Проверка и завершение
+
+`IMPLEMENTED` — заявление исполнителя (D-23); `CompletionFlow` модуля
+`orchestrator` сразу проверяет рабочее дерево по профилю проекта
+(`verification.Verifier`) и записывает итог `Tasks.recordVerification`:
+
+| Итог проверки | Задача |
+|---|---|
+| `PASSED` (падения из базовой линии названы, но не регрессия) | `VERIFIED` |
+| `FAILED` — новая ошибка обязательного шага | `READY` — нужна работа |
+| `INCOMPLETE` — нет профиля, шаг не выполнен, тайм-аут | `COMPLETION_UNVERIFIED` |
+
+В `DONE` — только `Tasks.complete`: из `VERIFIED` — с записанной успешной
+проверкой, из `COMPLETION_UNVERIFIED` — с исключением политики (кто и
+почему, `VERIFICATION_WAIVED`). Прямой переход в `DONE` отвергается
+(`VERIFICATION_REQUIRED`).
+
+Профили `FAST`/`NORMAL`/`FULL` (static/affected/full, ТЗ, §33) задаёт
+пользователь в настройках оркестратора, а не репозиторий (T4); внешний
+DP-Verify — шаг профиля со своей командой (D-16). Уровни: `plan` —
+`Verifier.plan`, `baseline` — `Verifier.baseline`, `report` —
+`VerificationReport.render` и формат `dpai.verification-report` v1;
+`doctor` target — `docs/EXECUTION_MODEL.md`, §1.2.
+

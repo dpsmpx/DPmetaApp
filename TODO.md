@@ -16,8 +16,12 @@
       -Ddpai.test.ssh=пользователь@хост:порт:posix|windows:команда-агента`
       на Linux и на Windows с OpenSSH Server (критерий
       `03-execution-target.md`) — нужен хост, вопрос автору.
-- [ ] `Т` Этап 10: проверка — профили FAST/NORMAL/FULL, static,
-      affected, full, doctor, plan, report, baseline.
+- [ ] `Т` Этап 11: мониторинг — сводка, временная шкала, ресурсы,
+      здоровье, устаревание; интерфейс Android (решение о фреймворке,
+      нужен Android SDK — см. «Окружение»).
+- [ ] `М` Шаги проверки на удалённом target идут через `ProcessHost` с
+      рабочим каталогом — по SSH это `UNSUPPORTED`; для SSH-target шаг
+      нужно запускать через агента (`RunSpec.workDir`) — этап 14.
 
 ## Известные долги
 

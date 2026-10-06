@@ -160,6 +160,66 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
         return next.let { r -> if (r is Outcome.Success) Outcome.success(listOf(failed) + r.value) else r }
     }
 
+    /**
+     * Итог проверки (ТЗ, §32; D-23): из `IMPLEMENTED` или `VERIFYING` —
+     * `PASSED` → `VERIFIED`, `FAILED` → `READY` (нужна работа),
+     * `INCOMPLETE` → `COMPLETION_UNVERIFIED`. Из `IMPLEMENTED` сначала
+     * `VERIFYING`.
+     */
+    fun recordVerification(state: TasksState, id: TaskId, verdict: String, reportHash: String?, now: Timestamp): Outcome<List<TaskEvent>> {
+        val t = state.tasks[id] ?: return notFound(id)
+        val to = when (verdict) {
+            "PASSED" -> TaskState.VERIFIED
+            "FAILED" -> TaskState.READY
+            "INCOMPLETE" -> TaskState.COMPLETION_UNVERIFIED
+            else -> return Outcome.failure(DiagCode.VALUE_INVALID, "итог проверки — PASSED, FAILED или INCOMPLETE", "task $id")
+        }
+        val events = mutableListOf<TaskEvent>()
+        var s = state
+        if (t.state == TaskState.IMPLEMENTED || t.state == TaskState.COMPLETION_UNVERIFIED) {
+            when (val v = move(s, id, TaskState.VERIFYING, now)) {
+                is Outcome.Failure -> return v
+                is Outcome.Success -> { events += v.value; s = applyAll(s, v.value) }
+            }
+        }
+        val record = TaskEvent.VerificationRecorded(id, VerificationRecord(verdict, reportHash), now)
+        val reason = when (verdict) {
+            "FAILED" -> DiagCode.VERIFICATION_FAILED
+            "INCOMPLETE" -> DiagCode.VERIFICATION_STEP_UNAVAILABLE
+            else -> null
+        }
+        return when (val m = move(apply(s, record), id, to, now, reason)) {
+            is Outcome.Failure -> m
+            is Outcome.Success -> Outcome.success(events + record + m.value)
+        }
+    }
+
+    /**
+     * Завершение (D-23; инвариант `docs/DATA_MODEL.md`, §5): `VERIFIED` —
+     * только с записанной успешной проверкой; `COMPLETION_UNVERIFIED` —
+     * только с исключением политики: кто и почему ([waiver]).
+     */
+    fun complete(state: TasksState, id: TaskId, now: Timestamp, waiver: Pair<String, String>? = null): Outcome<List<TaskEvent>> {
+        val t = state.tasks[id] ?: return notFound(id)
+        return when (t.state) {
+            TaskState.VERIFIED ->
+                if (t.verification?.verdict == "PASSED") {
+                    move(state, id, TaskState.DONE, now)
+                } else {
+                    Outcome.failure(DiagCode.VERIFICATION_REQUIRED, "нет записанной успешной проверки", "task $id")
+                }
+            TaskState.COMPLETION_UNVERIFIED -> {
+                val (who, why) = waiver ?: return Outcome.failure(DiagCode.VERIFICATION_REQUIRED, "без проверки DONE — только с исключением политики", "task $id")
+                if (who.isBlank() || why.isBlank()) return Outcome.failure(DiagCode.VALUE_INVALID, "у исключения — кто и почему", "task $id")
+                val waived = TaskEvent.VerificationRecorded(id, VerificationRecord("WAIVED", t.verification?.reportHash, who, why), now)
+                move(apply(state, waived), id, TaskState.DONE, now, DiagCode.VERIFICATION_WAIVED).let { r ->
+                    if (r is Outcome.Success) Outcome.success(listOf(waived) + r.value) else r
+                }
+            }
+            else -> Outcome.failure(DiagCode.INVALID_TRANSITION, "в DONE — из VERIFIED или COMPLETION_UNVERIFIED, а задача ${t.state}", "task $id")
+        }
+    }
+
     /** Явная операция пользователя (D-11): повтор упавшей, возобновление отменённой, переоткрытие. */
     fun explicit(state: TasksState, id: TaskId, to: TaskState, now: Timestamp): Outcome<List<TaskEvent>> =
         move(state, id, to, now, mode = TransitionMode.EXPLICIT)
@@ -174,6 +234,9 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
         mode: TransitionMode = TransitionMode.ORDINARY,
     ): Outcome<List<TaskEvent>> {
         val t = state.tasks[id] ?: return notFound(id)
+        if (to == TaskState.DONE && t.state != TaskState.DONE && reason == null && t.verification?.verdict != "PASSED") {
+            return Outcome.failure(DiagCode.VERIFICATION_REQUIRED, "в DONE — через complete: нужна проверка или исключение", "task $id")
+        }
         return when (val r = TaskLifecycle.table.transition(t.state, to, mode, "task $id")) {
             is Outcome.Failure -> r
             is Outcome.Success -> Outcome.success(if (r.value.changed) listOf(TaskEvent.StateChanged(id, t.state, to, reason, notBefore, now)) else emptyList())
@@ -203,6 +266,7 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
                     t.copy(retries = t.retries + 1, failures = t.failures + (e.loopKey to (t.failures[e.loopKey] ?: 0) + 1), lastReason = e.code, updatedAt = e.at)
                 }
                 is TaskEvent.Continued -> tasks.computeIfPresent(e.task) { _, t -> t.copy(continuations = t.continuations + 1, updatedAt = e.at) }
+                is TaskEvent.VerificationRecorded -> tasks.computeIfPresent(e.task) { _, t -> t.copy(verification = e.record, updatedAt = e.at) }
             }
             return TasksState(tasks)
         }

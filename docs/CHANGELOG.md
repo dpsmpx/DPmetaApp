@@ -3,6 +3,15 @@
 Вехи проекта: этапы, форматы, публичные контракты. Подробности — в git
 и PR; что решено — `docs/direction/DECISIONS.md`.
 
+## 6 октября 2026 — проверка (этап 10 выполнен)
+
+- Модуль `verification`: профили, `Verifier` (plan, baseline, verify),
+  отчёт `dpai.verification-report` v1.
+- Задачи: `recordVerification`, `complete` — `DONE` только с проверкой
+  или исключением политики; событие `TASK_VERIFICATION_RECORDED`.
+- `orchestrator.verification.CompletionFlow`, `ProcessStepRunner`.
+- Контракты: 6 кодов диагностики, 1 тип событий.
+
 ## 6 октября 2026 — Git и worktree (этап 9 выполнен)
 
 - Модуль `git`: реестр деревьев с одним владельцем, политика

@@ -51,7 +51,9 @@ class TasksTest {
         val plan = tasks.plan(state, clock.now(), listOf(Tasks.TargetOffer(target, emptySet(), capacity)))
         for (a in plan) {
             ok(tasks.start(state, a.task, clock.now()))
-            for (to in listOf(TaskState.IMPLEMENTED, TaskState.VERIFYING, TaskState.VERIFIED, TaskState.DONE)) ok(tasks.move(state, a.task, to, clock.now()))
+            ok(tasks.implemented(state, a.task, clock.now()))
+            ok(tasks.recordVerification(state, a.task, "PASSED", null, clock.now()))
+            ok(tasks.complete(state, a.task, clock.now()))
         }
         clock.advance(1.minutes)
         return plan.map { it.task }

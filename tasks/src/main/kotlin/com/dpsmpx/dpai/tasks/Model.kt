@@ -57,6 +57,8 @@ data class TaskRecord(
     val notBefore: Timestamp? = null,
     val lastReason: DiagCode? = null,
     val failures: Map<String, Int> = emptyMap(),
+    /** Последний записанный итог проверки и, если проверки не было, — исключение политики (D-23). */
+    val verification: VerificationRecord? = null,
 ) {
     val terminal: Boolean get() = state in TaskLifecycle.table.terminal
 }
@@ -69,6 +71,13 @@ data class TasksState(val tasks: Map<TaskId, TaskRecord> = emptyMap()) {
         val EMPTY = TasksState()
     }
 }
+
+/**
+ * Итог проверки задачи (ТЗ, §32): `PASSED`, `FAILED`, `INCOMPLETE` и хеш
+ * отчёта; [waivedBy] — кто записал исключение политики, разрешив `DONE`
+ * без проверки, и [reason] — почему.
+ */
+data class VerificationRecord(val verdict: String, val reportHash: String?, val waivedBy: String? = null, val reason: String? = null)
 
 /** Факт о задаче (D-12). */
 sealed interface TaskEvent {
@@ -101,6 +110,8 @@ sealed interface TaskEvent {
 
     /** Неудачная попытка: ключ петли и код причины; повторы и петли считаются по ним. */
     data class AttemptFailed(override val task: TaskId, val loopKey: String, val code: DiagCode, override val at: Timestamp) : TaskEvent
+
+    data class VerificationRecorded(override val task: TaskId, val record: VerificationRecord, override val at: Timestamp) : TaskEvent
 
     /** Продолжение в новой сессии (handoff, ТЗ, §28): счётчик против бесконечного продолжения. */
     data class Continued(override val task: TaskId, override val at: Timestamp) : TaskEvent

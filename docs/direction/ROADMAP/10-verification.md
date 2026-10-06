@@ -1,6 +1,6 @@
 # Этап 10 — Проверка
 
-Состояние: —.
+Состояние: выполнен (6 октября 2026).
 
 ## Цель
 
@@ -17,6 +17,7 @@
 
 ## Критерии выхода
 
-- [ ] Задача, о которой Claude сказал «готово», автоматически
-      проверяется до `VERIFIED` (ТЗ, §139, Phase 10).
-- [ ] Без проверки — `COMPLETION_UNVERIFIED`, а не `DONE`.
+- [x] Задача, о которой Claude сказал «готово», автоматически
+      проверяется до `VERIFIED` (ТЗ, §139, Phase 10): `CompletionFlowTest`.
+- [x] Без проверки — `COMPLETION_UNVERIFIED`, а не `DONE`:
+      `CompletionFlowTest`, `withoutVerificationNoDone`.

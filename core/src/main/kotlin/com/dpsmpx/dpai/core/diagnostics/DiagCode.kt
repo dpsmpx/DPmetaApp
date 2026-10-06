@@ -161,6 +161,14 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     FILE_OVERLAP_SERIALIZE(Category.STATE, Severity.WARNING, Retryability.RETRYABLE),
     FILE_OVERLAP_REJECTED(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
 
+    // --- проверка (этап 10) ---
+    VERIFICATION_PROFILE_MISSING(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
+    VERIFICATION_STEP_UNAVAILABLE(Category.EXECUTION, Severity.ERROR, Retryability.UNKNOWN),
+    VERIFICATION_FAILED(Category.EXECUTION, Severity.ERROR, Retryability.NON_RETRYABLE),
+    VERIFICATION_BASELINE_FAILURE(Category.EXECUTION, Severity.WARNING, Retryability.NON_RETRYABLE),
+    VERIFICATION_REQUIRED(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
+    VERIFICATION_WAIVED(Category.STATE, Severity.WARNING, Retryability.NON_RETRYABLE),
+
     // --- общее ---
     /** Строгая семантика (D-05): неподдержанное — явный отказ, а не «похожее». */
     UNSUPPORTED(Category.UNSUPPORTED, Severity.ERROR, Retryability.NON_RETRYABLE),

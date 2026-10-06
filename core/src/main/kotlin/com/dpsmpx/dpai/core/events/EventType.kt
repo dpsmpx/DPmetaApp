@@ -36,6 +36,7 @@ enum class EventType {
     VERIFICATION_STARTED,
     VERIFICATION_PASSED,
     VERIFICATION_FAILED,
+    TASK_VERIFICATION_RECORDED,
 
     // --- handoff и продолжение ---
     HANDOFF_CREATED,

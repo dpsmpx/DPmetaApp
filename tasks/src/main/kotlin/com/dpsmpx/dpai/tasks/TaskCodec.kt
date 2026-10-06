@@ -36,6 +36,7 @@ object TaskCodec {
         is TaskEvent.PriorityChanged -> EventType.TASK_PRIORITY_CHANGED
         is TaskEvent.AttemptFailed -> EventType.TASK_ATTEMPT_FAILED
         is TaskEvent.Continued -> EventType.TASK_CONTINUED
+        is TaskEvent.VerificationRecorded -> EventType.TASK_VERIFICATION_RECORDED
     }
 
     fun stream(e: TaskEvent): StreamRef = StreamRef.of(e.task)
@@ -56,6 +57,7 @@ object TaskCodec {
         )
         is TaskEvent.AttemptFailed -> obj("task" to id(e.task), "loopKey" to JsonString(e.loopKey), "code" to JsonString(e.code.name))
         is TaskEvent.Continued -> obj("task" to id(e.task))
+        is TaskEvent.VerificationRecorded -> obj("task" to id(e.task)).let { JsonObject(it.fields + verification(e.record).fields) }
     }
 
     fun decode(type: EventType, at: Timestamp, payload: JsonObject): Outcome<TaskEvent>? {
@@ -103,6 +105,11 @@ object TaskCodec {
                 if (task != null && key != null && c != null) TaskEvent.AttemptFailed(task, key, c, at) else null
             }
             EventType.TASK_CONTINUED -> f.taskId("task")?.let { TaskEvent.Continued(it, at) }
+            EventType.TASK_VERIFICATION_RECORDED -> {
+                val task = f.taskId("task")
+                val record = readVerification(f)
+                if (task != null && record != null) TaskEvent.VerificationRecorded(task, record, at) else null
+            }
             else -> return null
         }
         f.finish()
@@ -127,6 +134,7 @@ object TaskCodec {
         "updatedAt" to JsonNumber.of(t.updatedAt.epochMillis), "retries" to JsonNumber.of(t.retries), "continuations" to JsonNumber.of(t.continuations),
         "notBefore" to time(t.notBefore), "lastReason" to (t.lastReason?.let { JsonString(it.name) } ?: JsonNull),
         "failures" to JsonObject(t.failures.toSortedMap().mapValues { JsonNumber.of(it.value) }),
+        "verification" to (t.verification?.let(::verification) ?: JsonNull),
     )
 
     fun decodeState(json: JsonObject): Outcome<TasksState> {
@@ -155,6 +163,7 @@ object TaskCodec {
                     notBefore = r.optLong("notBefore")?.let(::Timestamp),
                     lastReason = r.optString("lastReason")?.let { n -> DiagCode.entries.first { it.name == n } },
                     failures = (r.raw("failures") as JsonObject).fields.mapValues { (it.value as JsonNumber).toLongExact()!!.toInt() },
+                    verification = r.optObj("verification")?.let { v -> readVerification(v).also { v.finish() } },
                 )
             }.getOrNull()
             r.finish()
@@ -181,6 +190,19 @@ object TaskCodec {
         if (maxRetries == null || backoff == null || maxCont == null || timeout == null) return null
         return runCatching { TaskPolicy(maxRetries, backoff.milliseconds, maxCont, timeout.milliseconds, budget) }.getOrNull()
             ?: null.also { f.diagnostics.error(DiagCode.VALUE_INVALID, "политика задачи недопустима", f.path) }
+    }
+
+    private fun verification(v: VerificationRecord): JsonObject = obj(
+        "verdict" to JsonString(v.verdict),
+        "reportHash" to (v.reportHash?.let(::JsonString) ?: JsonNull),
+        "waivedBy" to (v.waivedBy?.let(::JsonString) ?: JsonNull),
+        "reason" to (v.reason?.let(::JsonString) ?: JsonNull),
+    )
+
+    /** Поля записи проверки в [f]; закрывает чтение полей вызывающий. */
+    private fun readVerification(f: JsonFields): VerificationRecord? {
+        val verdict = f.string("verdict") ?: return null
+        return VerificationRecord(verdict, f.optString("reportHash"), f.optString("waivedBy"), f.optString("reason"))
     }
 
     private fun code(name: String, d: DiagnosticCollector): DiagCode? =

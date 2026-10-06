@@ -1,6 +1,6 @@
 # Архитектура DP_AI_Orcestrator
 
-Срез на 6 октября 2026 (этапы 0–9). Решения, на которых держится
+Срез на 6 октября 2026 (этапы 0–10). Решения, на которых держится
 архитектура, — `docs/direction/DECISIONS.md`; здесь — как они разложены
 по модулям и как через модули идут данные. Модели подсистем —
 отдельными документами (§5).
@@ -252,6 +252,10 @@ target:     start ─► Detacher ─► supervise ─► процесс; выв
 `OverlapPolicy` (ТЗ, §31), `GitCommands` (безопасные команды, одобрения
 `security.ApprovalLedger`), `GitStatus` (разбор porcelain v2). Исполнение —
 `orchestrator.git.GitService` через `ProcessHost`.
+
+Модуль `verification` (этап 10; `docs/SCHEDULER.md`, §8): `Verifier`,
+профили, `VerificationReport`; поток завершения —
+`orchestrator.verification.CompletionFlow`.
 
 ## 8. Модели подсистем
 
