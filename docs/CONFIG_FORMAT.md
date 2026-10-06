@@ -99,7 +99,7 @@ REALITY — только с `vless` и транспортом `tcp`, `xhttp` и�
 |---|---|---|---|
 | `default` | `direct` / `proxy` / `block` | `proxy` | действие, если ни одно правило не сработало |
 | `domain_resolution` | `never` / `if_no_domain_match` | `never` | применять ли IP-правила к домену после резолва |
-| `automatic_domestic` | boolean | `true` | автоматически направлять отечественные назначения DIRECT после явных правил; используется geosite/geoip `ru` |
+| `automatic_domestic` | boolean | `true` | автоматически направлять отечественные назначения DIRECT после явных правил: `geosite:category-ru` и `geoip:ru` (D-38) |
 | `bypass_lan` | логическое | `true` | локальные сети (RFC 1918, link-local, CGNAT, ULA) мимо туннеля |
 | `apps` | объект | `{"mode": "all"}` | кто в туннеле: `mode` — `all`, `only`, `except`; `packages` — имена пакетов Android (`PACKAGE_INVALID`) |
 | `rules` | массив | `[]` | правила по порядку; первое сработавшее решает |

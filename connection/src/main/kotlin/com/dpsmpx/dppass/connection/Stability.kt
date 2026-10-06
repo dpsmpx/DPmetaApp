@@ -150,6 +150,8 @@ class StabilityBook(
     fun score(profile: ServerProfile, assessment: NetworkAssessment?): Double {
         val context = StabilityContext.from(assessment)
         val learned = exactOrLatest(profile.id, context)
+        // D-37: без наблюдений оценка у всех одна, без надбавки по классу — порядок решает D-15.
+        if (!learned.hasObservation) return learned.stabilityScore()
         return (learned.stabilityScore() + contextBias(profile, assessment)).coerceIn(0.0, 1.0)
     }
 

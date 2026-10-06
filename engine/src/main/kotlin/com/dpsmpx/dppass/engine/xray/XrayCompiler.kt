@@ -30,6 +30,7 @@ import com.dpsmpx.dppass.routing.DnsTransport
 import com.dpsmpx.dppass.routing.DomainMatcher
 import com.dpsmpx.dppass.routing.DomainResolution
 import com.dpsmpx.dppass.routing.RouteAction
+import com.dpsmpx.dppass.routing.RoutingPolicy
 import com.dpsmpx.dppass.routing.TransportProtocol
 import java.util.Base64
 
@@ -329,16 +330,16 @@ class XrayCompiler(
                 rules += userRule(rule.id.value, rule.conditions, XrayBackend.outboundTag(rule.action), at)
             }
             if (ir.routing.automaticDomestic) {
-                // Коды сверяет userRule (checkGeo): путь — «$.routing.automatic_domestic.geosite|geoip».
+                // D-38. Коды сверяет userRule (checkGeo): путь — «$.routing.automatic_domestic.geosite|geoip».
                 rules += userRule(
                     XrayBackend.TAG_AUTO_DOMESTIC + ":site",
-                    Conditions(geoSites = listOf("ru")),
+                    Conditions(geoSites = listOf(RoutingPolicy.DOMESTIC_GEOSITE)),
                     XrayBackend.TAG_DIRECT,
                     "$.routing.automatic_domestic",
                 )
                 rules += userRule(
                     XrayBackend.TAG_AUTO_DOMESTIC + ":ip",
-                    Conditions(geoIps = listOf("ru")),
+                    Conditions(geoIps = listOf(RoutingPolicy.DOMESTIC_GEOIP)),
                     XrayBackend.TAG_DIRECT,
                     "$.routing.automatic_domestic",
                 )

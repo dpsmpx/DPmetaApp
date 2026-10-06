@@ -438,7 +438,7 @@ class XrayCompilerTest {
                 DiagCode.GEO_CODE_UNKNOWN to "$.routing.rules[2].geosite",
                 DiagCode.GEO_CODE_UNKNOWN to "$.routing.rules[3].geosite",
                 DiagCode.GEO_CODE_UNKNOWN to "$.dns.rules[0].geosite",
-                // внутреннее разделение (по умолчанию с формата v2): в наборе нет `ru`
+                // внутреннее разделение (D-38): в наборе нет `category-ru` и `ru`
                 DiagCode.GEO_CODE_UNKNOWN to "$.routing.automatic_domestic.geosite",
                 DiagCode.GEO_CODE_UNKNOWN to "$.routing.automatic_domestic.geoip",
             ),
@@ -450,8 +450,8 @@ class XrayCompilerTest {
         assertTrue(compileWith(GeodataCodes.Unchecked).isSuccess, "без набора коды проверяет само ядро")
         val known = ir(routing = """{"rules": [{"id": "known", "action": "direct", "geoip": ["aa"], "geosite": ["example-a@ads"]}]}""")
         // известные коды — и коды внутреннего разделения тоже
-        val withRu = set.copy(geoIp = set.geoIp + "ru", geoSite = set.geoSite + ("ru" to emptySet()))
-        assertTrue(XrayCompiler(geodata = GeodataCodes.Installed(withRu)).compile(known, CompilePlan(known.profiles[0].id, true)).isSuccess)
+        val withDomestic = set.copy(geoIp = set.geoIp + "ru", geoSite = set.geoSite + ("category-ru" to emptySet()))
+        assertTrue(XrayCompiler(geodata = GeodataCodes.Installed(withDomestic)).compile(known, CompilePlan(known.profiles[0].id, true)).isSuccess)
     }
 
     @Test
