@@ -245,15 +245,15 @@ heartbeat и предохранителя заданы таблицами пер
 описания PR. GitHub Actions не используется и не добавляется — как во
 всей экосистеме (`DPmeta:docs/PRINCIPLES.md`, E-07).
 
-**Проверка.** `check_dependencies.py` считает `.github/workflows/`
-ошибкой.
+**Проверка.** `check_dependencies.py` считает каталог workflow GitHub
+Actions ошибкой.
 
 ### D-16 — Своя система проверок, а не поставка DP-Verify
 
 **Решение.** Репозиторий публичный (Apache-2.0, выбор автора при
 создании), DP-Verify — закрытый и проприетарный (`DP-Verify:V-15`).
 Поэтому код DP-Verify сюда не переносится и не поставляется
-(`tools/vendor.py` не применяется). Берётся словарь и устройство (ТЗ,
+(`DP-Verify:tools/vendor.py` не применяется). Берётся словарь и устройство (ТЗ,
 §5.2): уровни `static`/`affected`/`full`, `plan`, `report`, позже —
 `baseline`, `explain`, `doctor`. Интеграция с DP-Verify как с
 инструментом проверки проектов, над которыми работает Claude, — адаптер

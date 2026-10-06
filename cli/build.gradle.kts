@@ -13,3 +13,8 @@ application {
     applicationName = "dpai"
     mainClass.set("com.dpsmpx.dpai.cli.MainKt")
 }
+
+// Версия для `dpai version` — из манифеста jar (gradle.properties, `version`).
+tasks.jar {
+    manifest { attributes("Implementation-Version" to project.version.toString()) }
+}
