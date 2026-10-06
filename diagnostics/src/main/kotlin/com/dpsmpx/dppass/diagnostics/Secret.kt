@@ -6,7 +6,7 @@ package com.dpsmpx.dppass.diagnostics
  * `toString()` никогда не показывает значение, поэтому секрет не утечёт
  * через журнал, сообщение исключения или `toString()` объемлющего
  * data-класса. Достать значение можно только явным [reveal] — его вызовы
- * разрешены в немногих файлах (`tools/security/check_forbidden_apis.py`):
+ * разрешены в немногих файлах (`code.forbidden`, правило `secret-reveal`, `tools/dpverify.toml`):
  * компилятор под ядро, хранилище, разбор и запись конфигурации.
  */
 class Secret(private val value: String) {

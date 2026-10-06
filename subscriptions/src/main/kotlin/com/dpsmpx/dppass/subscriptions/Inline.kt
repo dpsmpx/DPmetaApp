@@ -9,7 +9,7 @@ import com.dpsmpx.dppass.diagnostics.Outcome
  * Предел размера — тот же, что у загрузки по сети; дальше — тот же
  * конвейер (разбор, проверка, фильтр ядра, ревизия, D-08).
  *
- * Здесь `reveal()` разрешён (`check_forbidden_apis.py`): тело — секрет,
+ * Здесь `reveal()` разрешён (`code.forbidden`, `secret-reveal`): тело — секрет,
  * а конвейеру нужны его байты.
  */
 class InlineSubscriptionFetcher(private val clock: Clock) : SubscriptionFetcher {

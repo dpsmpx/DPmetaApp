@@ -7,7 +7,7 @@
 Правила журнала:
 
 - Номер не переиспользуется и не меняется. Новое решение — следующий
-  свободный номер (сейчас — **48**).
+  свободный номер (сейчас — **51**).
 - Решение не переписывается задним числом: если оно меняется, старое
   получает статус «заменено D-NN», новое объясняет, что изменилось и
   почему.
@@ -175,7 +175,8 @@ DPpass хранил сам и не смог прочитать, уходит в 
 - Зашифрованные «чтобы пользователь не видел» ссылки не поддерживаются.
 
 **Проверка.** `RedactorTest`, `LoggerTest`, `SecretLeakTest.noSecretsInLogsReportsDiagnosticsOrDisk`,
-`MetadataParserTest`, `ShareLinkParserTest`, `tools/security/check_forbidden_apis.py` (`reveal()`).
+`MetadataParserTest`, `ShareLinkParserTest`, `code.forbidden` — правило `secret-reveal`
+(`reveal()`; до D-50 — `check_forbidden_apis.py`).
 
 ### D-12 — Без телеметрии и идентификаторов устройства
 
@@ -1677,6 +1678,58 @@ TLS и на выбор алгоритма он не влияет.
 `com.radamome.fasohol` «Opal» (дважды подряд) и `com.hikih.rehilum`
 «Compass»; первая попытка (зерно через окружение) дала одно случайное
 имя для обоих ключей — так ошибка и найдена.
+
+### D-50 — Проверки — через DP Verify; hostcheck — обёртка
+
+Принято 6 октября 2026 по решению автора — пилот DP Verify (этап 6 его плана).
+
+**Почему.** Общие проверки DPpass — секреты, ссылки в документах,
+запрещённые API, формат, происхождение — написаны в трёх проектах автора
+по отдельности и разошлись. DP Verify — общий каркас этих проверок: один
+вход с уровнями `static`, `affected`, `full`, один вывод, одни коды
+возврата, итог для PR одной командой. Предметные проверки DPpass остаются
+своими и подключаются командами.
+
+**Решение.**
+- Проверки идут через DP Verify: копия — `tools/dpv/` (руками не
+  правится; правка — в DP-Verify и новой поставкой), профиль —
+  `tools/dpverify.toml`.
+- `tools/hostcheck/run.sh` — обёртка с прежними ключами: `--quick` →
+  `tools/dpv/dpv run static`, без ключа → `tools/dpv/dpv run full`,
+  `--full` → `tools/dpv/dpv run full --ci`.
+- Дубли общих проверок удаляются только вместе с таблицей соответствия и
+  внесёнными ошибками: сила проверок не уменьшается (`docs/PROCESS.md`).
+- Известная поломка на момент подключения — в базовой линии DP Verify
+  с причиной и пунктом `TODO.md`, пока не исправлена.
+
+**Следствия.**
+- Хук начала сессии ставит Android SDK и NDK: без них `--full` падает,
+  пропуск не разрешается.
+- В веб-сессии хук направляет Gradle к Maven Central через его зеркало у
+  Google (`maven-central.storage-download.googleapis.com`; решение автора
+  6 октября 2026): прокси веб-сессии отвечает 429 на холодную сборку.
+  Init-скрипт хука действует только на сборку DPpass и `build-logic`;
+  репозиторий тот же по содержанию, его артефакты сверяет
+  `gradle/verification-metadata.xml` (D-18, T10). Вне веб-сессии сборка
+  берёт Maven Central как обычно.
+- Решения D-11, D-18, D-20, D-21, D-23 по-прежнему держатся проверками —
+  теперь через профиль. Имена прежних скриптов в «Проверке» решений до
+  D-50 читаются так:
+  - `check_forbidden_apis.py` — `code.forbidden` (те же правила и
+    `nested-comment`);
+  - `check_secrets.py` — `security.secrets`, `data.synthetic`,
+    `repo.layout` (файлы `*.pem`);
+  - `cli_smoke` — `smoke.cli`;
+  - `check_dependencies.py`, `check_docs.py`, `check_fixtures.py`,
+    `check_modules.py`, `check_format.py` — общая часть ушла в
+    `provenance.deps`, `provenance.binaries`, `code.forbidden`,
+    `docs.links`, `docs.refs`, `data.synthetic`, `format.text`,
+    предметная осталась в скриптах (`docs/PROCESS.md`, «Проверки»).
+
+**Проверка.**
+- `tools/dpv/dpv run full --ci` перед слиянием; итог —
+  `tools/dpv/dpv report --md` в описании PR (`docs/PROCESS.md`, §4);
+- `dpv.integrity` — копия `tools/dpv/` совпадает с манифестом.
 
 ## Отложено
 

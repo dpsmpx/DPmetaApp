@@ -15,7 +15,7 @@ captures/
 *.class
 *.so
 
-# Ключи и секреты — никогда в репозитории (tools/security/check_secrets.py)
+# Ключи и секреты — никогда в репозитории (security.secrets DP Verify, tools/dpverify.toml)
 *.keystore
 *.jks
 *.p12

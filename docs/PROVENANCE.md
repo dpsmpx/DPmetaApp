@@ -5,14 +5,15 @@
 здесь, с проверяемой контрольной суммой (D-20). Лицензии тех же
 компонентов — `docs/legal/THIRD_PARTY_MATRIX.md`.
 
-Сверку делает `tools/provenance/check_dependencies.py` (шаг hostcheck):
-каждая запись `gradle/libs.versions.toml` — строка в §2 с той же
-версией; каждый модуль `tools/xray/go.mod` — строка в §2 с той же
-версией и суммой из `go.sum`; источники геоданных (`geodata-dlc`,
-`geodata-dbip`) — строки «Геоданные» в §2 с той же версией и суммой;
-SHA-256 дистрибутива Gradle и
-`gradle-wrapper.jar` — как в §3; каждый двоичный файл репозитория —
-строка в §4 с его SHA-256.
+Сверку делают проверки DP Verify (D-50, `tools/dpverify.toml`) и
+`tools/provenance/check_dependencies.py`: каждая запись
+`gradle/libs.versions.toml` и версия Gradle — строка в §2 и §3 с той же
+версией, SHA-256 дистрибутива Gradle — как в §3 (`provenance.deps`);
+каждый двоичный файл репозитория, в том числе `gradle-wrapper.jar`, —
+строка в §4 с его SHA-256 (`provenance.binaries`); каждый модуль
+`tools/xray/go.mod` — строка в §2 с той же версией и суммой из `go.sum`;
+источники геоданных (`geodata-dlc`, `geodata-dbip`) — строки «Геоданные»
+в §2 с той же версией и суммой (`check_dependencies.py`).
 
 ## 1. Правила
 
@@ -30,7 +31,7 @@ SHA-256 дистрибутива Gradle и
   ссылками на источники; чужие формулировки не переносятся, результаты
   чужой обратной разработки не используются (`docs/direction/RESEARCH_SCOPE.md`, §4).
 - **Данные корпуса** (`tests/data/`) — синтетические (`docs/TESTING.md`,
-  «Данные корпуса»), проверяют `check_fixtures.py` и `check_secrets.py`.
+  «Данные корпуса»), проверяют `data.synthetic` и `security.secrets`.
 - **Двоичные файлы** — только записанные в §4. Значки приложения —
   векторные XML собственного рисунка (D-01), растровых изображений нет.
 
@@ -38,7 +39,7 @@ SHA-256 дистрибутива Gradle и
 
 Откуда сборка берёт каждую запись каталога. Репозитории —
 только `google()`, `mavenCentral()` и (для плагинов сборки)
-`gradlePluginPortal()`; другие запрещает `check_dependencies.py`.
+`gradlePluginPortal()`; другие запрещает `code.forbidden` (правило `repositories`).
 
 | Компонент | Версия | Откуда | Проверено (4 октября 2026) |
 |---|---|---|---|
@@ -161,6 +162,7 @@ Xray 26.9.30 его принимает и выбирает по его кода�
 
 | Что | Значение |
 |---|---|
+| `gradle` | 9.8.0 — версия дистрибутива из `gradle-wrapper.properties`; её сверяет `provenance.deps` DP Verify (D-50) |
 | Дистрибутив | `gradle-9.8.0-bin.zip` с `services.gradle.org/distributions/` |
 | SHA-256 дистрибутива | `bafd5ce9cfaea0fbccfdc8439a1ac42fbd4cd9c89dc9a988228d8a2639a58e6c` — совпадает с опубликованным `gradle-9.8.0-bin.zip.sha256`; записан в `gradle/wrapper/gradle-wrapper.properties` (`distributionSha256Sum`), wrapper сверяет его при загрузке |
 | SHA-256 `gradle-wrapper.jar` | `238e777fcddd7e34f9708186085def2abd6e08e658505b38718d79d74c21abd5` — совпадает с опубликованным `gradle-9.8.0-wrapper.jar.sha256` |
@@ -178,7 +180,7 @@ Xray 26.9.30 его принимает и выбирает по его кода�
 | `tools/xray/geodata/sources/dbip-country-lite-2026-10.csv.gz` | `097426b8ddae89157d444a59ac1847e873f7943c32d52becc4371c8b0273af80` | DB-IP «IP to Country Lite» 2026-10 (§2, «Геоданные»), без изменений; IP Geolocation by DB-IP (https://db-ip.com), CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/) |
 
 Других двоичных файлов в репозитории нет. Новый — строка здесь с
-источником и SHA-256 в том же изменении, иначе `check_dependencies.py`
+источником и SHA-256 в том же изменении, иначе `provenance.binaries`
 не пропустит.
 
 ## 5. Тексты
@@ -199,7 +201,7 @@ Xray 26.9.30 его принимает и выбирает по его кода�
 
 Тестовые сборки для устройств автора (D-35) подписываются ключом
 разработчика `dppass-dev` (RSA 4096, хранилище PKCS12). Ключ — у автора,
-в репозитории его нет (`check_secrets.py` не пропускает файлы ключей).
+в репозитории его нет (`security.secrets` не пропускает файлы ключей).
 Сборка получает его из переменных окружения, подписывает
 `tools/release/sign_apks.py` и сверяет сертификат подписи с отпечатком
 ниже: APK, подписанный другим ключом, не выходит.
@@ -213,3 +215,14 @@ Xray 26.9.30 его принимает и выбирает по его кода�
 | Ключ | SHA-256 сертификата |
 |---|---|
 | `dppass-dev` | 807cc957c376a09c9363d99ce05a1f5b9005f213ca3a1923db58b646a761e64f |
+
+## 8. Копия DP Verify (`tools/dpv/`)
+
+Общий каркас проверок автора (D-50) — свой код автора из его репозитория
+DP-Verify, поставлен копией; руками не правится, правка — в DP-Verify и
+новой поставкой. Каждый файл копии сверяет с манифестом проверка
+`dpv.integrity`.
+
+| Копия | Версия | Источник | SHA-256 манифеста |
+|---|---|---|---|
+| `tools/dpv/` | 1.0.0-rc2 | `dpsmpx/DP-Verify@938f68017a970049596b76892cb4f06be8e621fe` | `a2fae9e34198a01ad50c2768eb7839194fdbd4e367c61cfbfbc4eb50fbab1fac` |
