@@ -1,6 +1,6 @@
 # Архитектура DP_AI_Orcestrator
 
-Срез на 6 октября 2026 (этапы 0–4). Решения, на которых держится
+Срез на 6 октября 2026 (этапы 0–6). Решения, на которых держится
 архитектура, — `docs/direction/DECISIONS.md`; здесь — как они разложены
 по модулям и как через модули идут данные. Модели подсистем —
 отдельными документами (§5).
@@ -231,6 +231,15 @@ RECOVERY_PENDING ─► проба target и процесса ─► сверк�
 контроллер: AgentClient ─► ProcessHost (local | ssh | mock) ─► dpai agent <команда>
 target:     start ─► Detacher ─► supervise ─► процесс; вывод ─► Redactor ─► events.jsonl
 контроллер: RunChannel.poll ─► events --after N ─► SequenceTracker ─► принято | сверка
+```
+
+Модуль `sessions` (этап 6; `docs/SESSION_MODEL.md`, §6): `Sessions`
+(решения), `SessionCodec`, `SessionDriver` (сессия поверх `ClaudeRunner`,
+факты для аккаунтов). Проекция журнала — `orchestrator.sessions`.
+
+```
+задача ─► Accounts.lease ─► Sessions.create ─► bindingFor (сверка слота)
+   ─► SessionDriver.launch ─► ClaudeRunner ─► poll ─► события сессии + факты аккаунтов
 ```
 
 ## 8. Модели подсистем
