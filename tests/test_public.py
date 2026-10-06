@@ -37,16 +37,18 @@ def model() -> dict:
         "allow": {"hosts": ["example.org"]}, "registry": {"node": "meta"}, "source": {"sha256": HASH},
         "nodes": [
             n("bot", "actor"),
-            n("alpha", "repo", repo="owner/Alpha", role="продукт", group="core"),
+            n("alpha", "repo", repo="owner/Alpha", role="продукт; рабочие подробности", group="core",
+              stage="шаг 7 из 13, бэкенд готов", public_role="продукт", public_stage="ранняя стадия"),
             {**n("open", "repo", "public", repo="owner/Open"), "layer": "background"},
             n("secret", "repo", "undisclosed", repo="owner/Secret", role="клиент закрытой сети"),
             n("lib", "upstream", "public", role="внешняя библиотека секретного"),
             n("dev", "device", role="устройство автора"),
             n("ntfy", "service"),
-            n("site", "service", "public", role="сайт на хостинге Beget", probes=[{"url": "https://example.org/"}]),
+            n("site", "service", "public", role="сайт на хостинге Beget", public_role="сайт",
+              probes=[{"url": "https://example.org/"}]),
         ],
         "flows": [
-            f("work.alpha", "bot", "alpha"),
+            f("work.alpha", "bot", "alpha", what="ветки, коммиты; см. tools/x.toml", public_what="коммиты сессий"),
             f("work.secret", "bot", "secret"),
             f("build.lib", "lib", "secret", kind="build", tr="http"),
             f("clone.alpha", "alpha", "dev", kind="deploy", tr="git", trigger="клон на устройстве"),
@@ -123,9 +125,16 @@ class PublicBundle(unittest.TestCase):
         self.assertEqual(self.doc["state"]["flows"]["work.alpha"]["last"], "2026-10-06")
         self.assertNotIn("T16:00", json.dumps(self.doc["state"]["nodes"]))
 
-    def test_text_rules(self):
-        site = next(n for n in self.doc["model"]["nodes"] if n["id"] == "site")
-        self.assertEqual(site["role"], "сайт на хостинге")
+    def test_texts_only_from_public_fields(self):
+        nodes = {n["id"]: n for n in self.doc["model"]["nodes"]}
+        self.assertEqual((nodes["alpha"]["role"], nodes["alpha"]["stage"]), ("продукт", "ранняя стадия"))
+        self.assertEqual(nodes["site"]["role"], "сайт")
+        self.assertNotIn("role", nodes["bot"], "нет публичной формулировки — нет текста")
+        flows = {f["id"]: f for f in self.doc["model"]["flows"]}
+        self.assertEqual(flows["work.alpha"]["what"], "коммиты сессий")
+        self.assertNotIn("what", flows["deploy.alpha.site"])
+        for word in ("рабочие подробности", "бэкенд", "tools/x.toml", "что-то", "public_"):
+            self.assertNotIn(word, self.text, "рабочие тексты модели в выжимку не попадают")
 
     def test_check_catches_each_leak(self):
         cases = {

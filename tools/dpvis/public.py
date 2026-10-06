@@ -18,6 +18,12 @@
 Закрытые репозитории остаются — с ролью, стадией и прогрессом: коммиты по
 дням (ИИ и человек), первый и последний коммит, итог за окно.
 
+Тексты — только публичные формулировки модели (`public_role`, `public_stage`
+узла, `public_what` потока; уточнение автора: «без лишних деталей и
+подробностей»). Рабочие `role`, `stage`, `what` пишутся для автора и сессий и
+в выжимку не попадают никогда: нет публичной формулировки — нет текста, узел и
+поток видны по имени, виду и числам.
+
 После сборки весь текст выжимки проверяется по FORBIDDEN: находка — отказ
 сборки (PublicError), а не тихая правка. Второй слой — фильтр сайта
 (SocialMediaImage:Д39).
@@ -34,8 +40,11 @@ DROP_VISIBILITY = {"undisclosed"}
 DROP_KINDS = {"device"}
 PERSONAL_NODES = {"ntfy"}             # личный канал уведомлений автора на его устройства
 
-NODE_FIELDS = ("id", "kind", "layer", "name", "group", "role", "stage", "status", "visibility")
-FLOW_FIELDS = ("id", "from", "to", "kind", "driver", "status", "what", "bidirectional")
+NODE_FIELDS = ("id", "kind", "layer", "name", "group", "status", "visibility")
+FLOW_FIELDS = ("id", "from", "to", "kind", "driver", "status", "bidirectional")
+# Публичный текст: поле выжимки ← поле модели. Рабочие role/stage/what — никогда.
+NODE_TEXT = {"role": "public_role", "stage": "public_stage"}
+FLOW_TEXT = {"what": "public_what"}
 MODEL_FIELDS = ("title", "as_of", "timezone")
 CATALOG_KEYS = ("node_kinds", "flow_kinds", "drivers", "statuses", "visibility", "groups")
 
@@ -51,12 +60,6 @@ FORBIDDEN = [
 ]
 TIME_IN_NODES = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}")
 
-# Правки текста ролей и описаний для выжимки: смысл тот же, закрытого нет.
-TEXT_RULES = [
-    (re.compile(r",?\s*без имени DPpass"), ""),
-    (re.compile(r"\s*на хостинге Beget"), " на хостинге"),
-]
-TEXT_FIELDS = ("role", "stage", "what", "name")
 
 
 class PublicError(Exception):
@@ -69,17 +72,11 @@ def _date(iso: str | None) -> str | None:
     return iso[:10] if iso else None
 
 
-def _clean(text: str) -> str:
-    for pat, repl in TEXT_RULES:
-        text = pat.sub(repl, text)
-    return text
-
-
-def _pick(src: dict, fields: tuple[str, ...]) -> dict:
+def _pick(src: dict, fields: tuple[str, ...], text: dict | None = None) -> dict:
     out = {k: src[k] for k in fields if k in src and src[k] not in (None, "", [])}
-    for k in TEXT_FIELDS:
-        if isinstance(out.get(k), str):
-            out[k] = _clean(out[k])
+    for k, pub in (text or {}).items():
+        if src.get(pub):
+            out[k] = src[pub]
     return out
 
 
@@ -151,11 +148,11 @@ def _flow_state(st: dict | None) -> dict | None:
 
 def public_bundle(model: dict, state: dict | None) -> dict:
     drop = dropped_nodes(model)
-    nodes = [_pick(n, NODE_FIELDS) for n in model["nodes"] if n["id"] not in drop]
+    nodes = [_pick(n, NODE_FIELDS, NODE_TEXT) for n in model["nodes"] if n["id"] not in drop]
     kept = {n["id"] for n in nodes}
     flows_src = [f for f in model["flows"] if f["from"] in kept and f["to"] in kept] + \
                 [f for f in _collapse(model, drop) if f["from"] in kept and f["to"] in kept]
-    flows = [_pick(f, FLOW_FIELDS) for f in flows_src]
+    flows = [_pick(f, FLOW_FIELDS, FLOW_TEXT) for f in flows_src]
 
     used = {"node_kinds": {n["kind"] for n in nodes}, "flow_kinds": {f["kind"] for f in flows},
             "visibility": {n["visibility"] for n in nodes}, "groups": {n["group"] for n in nodes if n.get("group")},

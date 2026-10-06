@@ -75,6 +75,17 @@ class ValidationCatchesTest(unittest.TestCase):
     def test_duplicate_id(self):
         self.assertCatches(lambda s: s["node"].append(copy.deepcopy(node(s, "alpha"))), "повтор id 'alpha'")
 
+    def test_public_text_must_be_text(self):
+        self.assertCatches(lambda s: node(s, "alpha").update(public_role=""), "public_role — непустая строка")
+        self.assertCatches(lambda s: flow(s, "work.alpha").update(public_what=3), "public_what — непустая строка")
+
+    def test_real_public_texts_cover_shown_nodes(self):
+        from tools.dpvis import public
+        m = json.loads(modelmod.expected_text(SOURCE))
+        doc = public.public_bundle(m, None)
+        bare = [n["id"] for n in doc["model"]["nodes"] if "role" not in n]
+        self.assertEqual(bare, [], "у каждого узла на сайте — публичная роль (public_role)")
+
     def test_ref_to_unknown_project(self):
         self.assertCatches(lambda s: node(s, "alpha").update(refs=["Nope:README.md"]), "проекта 'Nope'")
 

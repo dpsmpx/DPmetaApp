@@ -95,6 +95,8 @@
     "stage": {"type": "string"},
     "note": {"type": "string"},
     "row": {"type": "number"},
+    "public_role": {"type": "string", "minLength": 1},
+    "public_stage": {"type": "string", "minLength": 1},
     "probes": {"type": "array", "items": {"$ref": "#/$defs/probe"}}
    }
   },
@@ -129,6 +131,7 @@
     "format": {"type": "string"},
     "note": {"type": "string"},
     "via": {"$ref": "#/$defs/id"},
+    "public_what": {"type": "string", "minLength": 1},
     "signal": {"$ref": "#/$defs/signal"}
    }
   }

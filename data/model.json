@@ -225,6 +225,7 @@
    "from": "claude",
    "id": "work.galdhold",
    "kind": "work",
+   "public_what": "коммиты и PR сессий ИИ",
    "refs": [
     "DPmeta:E-08"
    ],
@@ -247,6 +248,7 @@
    "from": "claude",
    "id": "work.dplang",
    "kind": "work",
+   "public_what": "коммиты и PR сессий ИИ",
    "refs": [
     "DPmeta:E-08"
    ],
@@ -291,6 +293,7 @@
    "from": "claude",
    "id": "work.dpverify",
    "kind": "work",
+   "public_what": "коммиты и PR сессий ИИ",
    "refs": [
     "DPmeta:E-08"
    ],
@@ -313,6 +316,7 @@
    "from": "claude",
    "id": "work.dpprofile",
    "kind": "work",
+   "public_what": "коммиты и PR сессий ИИ",
    "refs": [
     "DPmeta:E-08"
    ],
@@ -335,6 +339,7 @@
    "from": "claude",
    "id": "work.smi",
    "kind": "work",
+   "public_what": "коммиты и PR сессий ИИ",
    "refs": [
     "DPmeta:E-08"
    ],
@@ -357,6 +362,7 @@
    "from": "claude",
    "id": "work.dplearn",
    "kind": "work",
+   "public_what": "коммиты и PR сессий ИИ",
    "refs": [
     "DPmeta:E-08"
    ],
@@ -379,6 +385,7 @@
    "from": "claude",
    "id": "work.market",
    "kind": "work",
+   "public_what": "коммиты и PR сессий ИИ",
    "refs": [
     "DP_game_market_analytic_system:docs/HANDOFF.md"
    ],
@@ -401,6 +408,7 @@
    "from": "claude",
    "id": "work.dpmonetization",
    "kind": "work",
+   "public_what": "коммиты и PR сессий ИИ",
    "refs": [
     "DPmeta:docs/ECOSYSTEM.md"
    ],
@@ -423,6 +431,7 @@
    "from": "claude",
    "id": "work.dpmeta",
    "kind": "work",
+   "public_what": "проходы по экосистеме и аудит документации",
    "refs": [
     "DPmeta:docs/PROCESS.md",
     "DPmeta:M-04"
@@ -446,6 +455,7 @@
    "from": "claude",
    "id": "work.dpmetaapp",
    "kind": "work",
+   "public_what": "коммиты и PR сессий ИИ",
    "refs": [
     "DPmetaApp:README.md"
    ],
@@ -468,6 +478,7 @@
    "from": "claude",
    "id": "work.dpvisualisation",
    "kind": "work",
+   "public_what": "коммиты и PR сессий ИИ",
    "refs": [
     "DPvisualisation:docs/direction/REQUEST.md"
    ],
@@ -556,6 +567,7 @@
    "from": "author",
    "id": "decide.galdhold",
    "kind": "decision",
+   "public_what": "решения автора и вливание PR",
    "refs": [
     "DPmeta:E-01",
     "DPmeta:E-02"
@@ -579,6 +591,7 @@
    "from": "author",
    "id": "decide.dplang",
    "kind": "decision",
+   "public_what": "решения автора и вливание PR",
    "refs": [
     "DPmeta:E-01",
     "DPmeta:E-02"
@@ -625,6 +638,7 @@
    "from": "author",
    "id": "decide.dpverify",
    "kind": "decision",
+   "public_what": "решения автора и вливание PR",
    "refs": [
     "DPmeta:E-01",
     "DPmeta:E-02"
@@ -648,6 +662,7 @@
    "from": "author",
    "id": "decide.dpprofile",
    "kind": "decision",
+   "public_what": "решения автора и вливание PR",
    "refs": [
     "DPmeta:E-01",
     "DPmeta:E-02"
@@ -671,6 +686,7 @@
    "from": "author",
    "id": "decide.smi",
    "kind": "decision",
+   "public_what": "решения, одобрение публикаций, вливание PR",
    "refs": [
     "DPmeta:E-01",
     "SocialMediaImage:Д12"
@@ -694,6 +710,7 @@
    "from": "author",
    "id": "decide.dplearn",
    "kind": "decision",
+   "public_what": "решения автора и вливание PR",
    "refs": [
     "DPmeta:E-01",
     "DPlearn:README.md"
@@ -717,6 +734,7 @@
    "from": "author",
    "id": "decide.market",
    "kind": "decision",
+   "public_what": "решения автора и вливание PR",
    "refs": [
     "DP_game_market_analytic_system:docs/HANDOFF.md"
    ],
@@ -739,6 +757,7 @@
    "from": "author",
    "id": "decide.dpmonetization",
    "kind": "decision",
+   "public_what": "решения автора и вливание PR",
    "refs": [
     "DPmeta:docs/ECOSYSTEM.md"
    ],
@@ -761,6 +780,7 @@
    "from": "author",
    "id": "decide.dpmeta",
    "kind": "decision",
+   "public_what": "решения автора и вливание PR",
    "refs": [
     "DPmeta:M-03",
     "DPmeta:docs/RISKS.md"
@@ -784,6 +804,7 @@
    "from": "author",
    "id": "decide.dpmetaapp",
    "kind": "decision",
+   "public_what": "решения автора и вливание PR",
    "refs": [
     "DPmetaApp:TODO.md"
    ],
@@ -806,6 +827,7 @@
    "from": "author",
    "id": "decide.dpvisualisation",
    "kind": "decision",
+   "public_what": "решения автора и вливание PR",
    "refs": [
     "DPvisualisation:docs/direction/REQUEST.md"
    ],
@@ -938,6 +960,7 @@
    "from": "galdhold",
    "id": "proc.galdhold.dplang",
    "kind": "knowledge",
+   "public_what": "правила процесса и проверок",
    "refs": [
     "DPmeta:docs/ECOSYSTEM.md",
     "DPlang:Р3"
@@ -977,6 +1000,7 @@
    "from": "dpverify",
    "id": "c03.dpverify.galdhold",
    "kind": "delivery",
+   "public_what": "проверки — копией в репозиторий",
    "refs": [],
    "status": "planned",
    "to": "galdhold",
@@ -994,6 +1018,7 @@
    "from": "dpverify",
    "id": "c03.dpverify.dplang",
    "kind": "delivery",
+   "public_what": "проверки — копией в репозиторий",
    "refs": [],
    "status": "planned",
    "to": "dplang",
@@ -1010,6 +1035,7 @@
    "from": "dpverify",
    "id": "c03.dpverify.dplearn",
    "kind": "delivery",
+   "public_what": "проверки — копией в репозиторий",
    "refs": [
     "DPlearn:README.md"
    ],
@@ -1026,6 +1052,7 @@
    "from": "galdhold",
    "id": "proc.galdhold.dpverify",
    "kind": "knowledge",
+   "public_what": "правила процесса и проверок",
    "refs": [
     "DPmeta:docs/ECOSYSTEM.md",
     "DP-Verify:README.md"
@@ -1057,6 +1084,7 @@
    "from": "dplang",
    "id": "proc.dplang.dpverify",
    "kind": "knowledge",
+   "public_what": "правила процесса и проверок",
    "refs": [
     "DPmeta:docs/ECOSYSTEM.md"
    ],
@@ -1076,6 +1104,7 @@
    "from": "galdhold",
    "id": "c04.galdhold.dpprofile",
    "kind": "facts",
+   "public_what": "факты о проекте со ссылкой на источник",
    "refs": [
     "DPprofile:README.md"
    ],
@@ -1105,6 +1134,7 @@
    "from": "dplang",
    "id": "c04.dplang.dpprofile",
    "kind": "facts",
+   "public_what": "факты о проекте со ссылкой на источник",
    "refs": [],
    "signal": {
     "paths": [
@@ -1208,6 +1238,7 @@
    "from": "galdhold",
    "id": "c04.galdhold.smi",
    "kind": "facts",
+   "public_what": "факты и вехи для публикаций",
    "refs": [
     "SocialMediaImage:data/facts/facts.yaml"
    ],
@@ -1234,6 +1265,7 @@
    "from": "dplang",
    "id": "c04.dplang.smi",
    "kind": "facts",
+   "public_what": "факты и вехи для публикаций",
    "refs": [
     "SocialMediaImage:data/facts/facts.yaml"
    ],
@@ -1312,6 +1344,7 @@
    "id": "deploy.phone.site",
    "kind": "deploy",
    "note": "журнал выгрузок не в git — поток наблюдается только пробой сайта",
+   "public_what": "выгрузка сайта — только после «да» автора",
    "refs": [
     "SocialMediaImage:Д35",
     "SocialMediaImage:Д36",
@@ -1371,6 +1404,7 @@
    "id": "publish.smi.telegram",
    "kind": "publish",
    "note": "адресат tg-devlog: not_connected — id канала и бота записывает автор",
+   "public_what": "публикации — только одобренные автором",
    "refs": [
     "SocialMediaImage:data/platforms/destinations.yaml",
     "SocialMediaImage:Д25"
@@ -1389,6 +1423,7 @@
    "id": "publish.smi.youtube",
    "kind": "publish",
    "note": "адресат yt-channel: not_connected",
+   "public_what": "публикации — только одобренные автором",
    "refs": [
     "SocialMediaImage:data/platforms/destinations.yaml"
    ],
@@ -1406,6 +1441,7 @@
    "id": "publish.smi.vk",
    "kind": "publish",
    "note": "ждёт автора: страница или сообщество; VK: право wall",
+   "public_what": "публикации — только одобренные автором",
    "refs": [
     "SocialMediaImage:data/platforms/destinations.yaml"
    ],
@@ -1422,6 +1458,7 @@
    "id": "publish.smi.tiktok",
    "kind": "publish",
    "note": "ждёт аудита клиента API TikTok",
+   "public_what": "публикации — только одобренные автором",
    "refs": [
     "SocialMediaImage:data/platforms/destinations.yaml",
     "SocialMediaImage:Д19"
@@ -1439,6 +1476,7 @@
    "id": "publish.smi.discord",
    "kind": "publish",
    "note": "сервера нет (ОР-6 SocialMediaImage)",
+   "public_what": "публикации — только одобренные автором",
    "refs": [
     "SocialMediaImage:data/platforms/destinations.yaml"
    ],
@@ -1454,6 +1492,7 @@
    "from": "site",
    "id": "publish.site.platforms",
    "kind": "publish",
+   "public_what": "площадки ссылаются на запись на сайте",
    "refs": [
     "SocialMediaImage:docs/platforms/WEBSITE.md"
    ],
@@ -1500,6 +1539,7 @@
    "from": "dplang",
    "id": "c09.dplang.compiler",
    "kind": "host",
+   "public_what": "компилятор на сервере — в плане",
    "refs": [
     "DPlang:Р49"
    ],
@@ -1519,6 +1559,7 @@
    "id": "c09.compiler.site",
    "kind": "service",
    "note": "адрес /api/v1/ сайта занят статическим API; CSP connect-src 'self' — не сойдётся без решения",
+   "public_what": "диагностика программ на сайте — в плане",
    "refs": [
     "DPmeta:RISK-09"
    ],
@@ -1537,6 +1578,7 @@
    "from": "github",
    "id": "c10.github.smi",
    "kind": "metrics",
+   "public_what": "история git: коммиты по дням, ИИ и человек",
    "refs": [
     "SocialMediaImage:data/progress/scope.yaml"
    ],
@@ -1563,6 +1605,7 @@
    "from": "dpmeta",
    "id": "c10.dpmeta.smi",
    "kind": "metrics",
+   "public_what": "счётчики для страницы прогресса",
    "refs": [],
    "signal": {
     "paths": [
@@ -1587,6 +1630,7 @@
    "from": "dpprofile",
    "id": "c10.dpprofile.smi",
    "kind": "metrics",
+   "public_what": "счётчики для страницы прогресса",
    "refs": [],
    "signal": {
     "paths": [
@@ -1612,6 +1656,7 @@
    "id": "c10.smi.site",
    "kind": "metrics",
    "note": "страница ждёт одобрения автора (DPmeta:SQ-23 — DPmonetization не учтён)",
+   "public_what": "страница прогресса на сайте",
    "refs": [
     "SocialMediaImage:Д38",
     "SocialMediaImage:Д39"
@@ -1631,6 +1676,7 @@
    "from": "github",
    "id": "meta.github.dpmeta",
    "kind": "check",
+   "public_what": "сверка ссылок между репозиториями",
    "refs": [
     "DPmeta:M-07",
     "DPmeta:M-08"
@@ -1655,6 +1701,7 @@
    "from": "github",
    "id": "vis.github.dpvisualisation",
    "kind": "read",
+   "public_what": "история основных веток всех репозиториев",
    "refs": [
     "DPvisualisation:D-03"
    ],
@@ -1679,6 +1726,7 @@
    "from": "dpmeta",
    "id": "vis.dpmeta.dpvisualisation",
    "kind": "read",
+   "public_what": "сверка модели с картой экосистемы",
    "refs": [
     "DPvisualisation:D-11"
    ],
@@ -1703,6 +1751,7 @@
    "from": "site",
    "id": "vis.site.dpvisualisation",
    "kind": "check",
+   "public_what": "проверка доступности сайта",
    "refs": [
     "DPvisualisation:D-14"
    ],
@@ -1725,6 +1774,7 @@
    "id": "vis.dpvisualisation.dpmetaapp",
    "kind": "read",
    "note": "разбор Т15 — за DPmetaApp (ТЗ DPvisualisation, Q-04)",
+   "public_what": "схема для пульта",
    "refs": [
     "DPmetaApp:docs/direction/REQUEST.md",
     "DPvisualisation:D-07"
@@ -1742,6 +1792,7 @@
    "from": "dpmeta",
    "id": "app.dpmeta.dpmetaapp",
    "kind": "read",
+   "public_what": "данные для пульта",
    "refs": [
     "DPmetaApp:docs/direction/TECHNICAL_TASK.md"
    ],
@@ -1757,6 +1808,7 @@
    "from": "github",
    "id": "app.github.dpmetaapp",
    "kind": "read",
+   "public_what": "данные для пульта",
    "refs": [
     "DPmetaApp:docs/direction/TECHNICAL_TASK.md"
    ],
@@ -1772,6 +1824,7 @@
    "from": "site",
    "id": "app.site.dpmetaapp",
    "kind": "read",
+   "public_what": "данные для пульта",
    "refs": [
     "DPmetaApp:docs/direction/TECHNICAL_TASK.md",
     "SocialMediaImage:docs/platforms/WEBSITE.md"
@@ -1834,6 +1887,7 @@
    "from": "dpmeta",
    "id": "mon.dpmeta.dpmonetization",
    "kind": "read",
+   "public_what": "данные для анализа портфеля",
    "refs": [
     "DPmeta:docs/ECOSYSTEM.md"
    ],
@@ -1850,6 +1904,7 @@
    "from": "dpverify",
    "id": "mon.dpverify.dpmonetization",
    "kind": "read",
+   "public_what": "данные для анализа портфеля",
    "refs": [
     "DPmeta:docs/ECOSYSTEM.md"
    ],
@@ -1865,6 +1920,7 @@
    "from": "market",
    "id": "mon.market.dpmonetization",
    "kind": "read",
+   "public_what": "данные для анализа портфеля",
    "refs": [
     "DPmeta:docs/ECOSYSTEM.md"
    ],
@@ -1926,6 +1982,7 @@
    "from": "galdhold",
    "id": "release.galdhold.steam",
    "kind": "deploy",
+   "public_what": "первый выпуск на Windows",
    "refs": [
     "Galdhold:README.md"
    ],
@@ -1942,6 +1999,7 @@
    "from": "github",
    "id": "host.github.repos",
    "kind": "host",
+   "public_what": "сессии работают с клоном репозитория",
    "refs": [
     "DPmeta:E-08"
    ],
@@ -1991,6 +2049,7 @@
    "kind": "actor",
    "layer": "actors",
    "name": "Автор",
+   "public_role": "замысел и решения: задачи, ответы на вопросы, вливание PR, одобрение публикаций",
    "refs": [
     "DPmeta:E-02",
     "DPmeta:C-07",
@@ -2005,12 +2064,13 @@
    "kind": "actor",
    "layer": "actors",
    "name": "Сессии Claude Code",
+   "public_role": "облачные сессии ИИ: ветки, коммиты и PR во всех репозиториях",
    "refs": [
     "DPmeta:E-07",
     "DPmeta:E-08",
     "DPmetaApp:docs/direction/TECHNICAL_TASK.md"
    ],
-   "role": "облачные сессии ИИ: ветки, коммиты и PR во всех репозиториях; проверка — командой в сессии, без CI",
+   "role": "облачные сессии ИИ: ветки, коммиты и PR во всех репозиториях; проверки — командой в сессии, без GitHub Actions",
    "status": "active",
    "visibility": "private"
   },
@@ -2020,6 +2080,8 @@
    "kind": "repo",
    "layer": "product",
    "name": "Galdhold",
+   "public_role": "воксельная action-RPG с открытым процедурным миром",
+   "public_stage": "закрыты этапы: движок, живое поселение, регионы; идёт подготовка версии 1",
    "refs": [
     "DPmeta:docs/ECOSYSTEM.md",
     "Galdhold:README.md"
@@ -2036,6 +2098,8 @@
    "kind": "repo",
    "layer": "product",
    "name": "DPlang",
+   "public_role": "собственный язык программирования",
+   "public_stage": "ранняя стадия: выбран синтаксис, начат компилятор",
    "refs": [
     "DPmeta:docs/ECOSYSTEM.md",
     "DPlang:README.md"
@@ -2173,6 +2237,8 @@
    "kind": "repo",
    "layer": "engineering",
    "name": "DP-Verify",
+   "public_role": "общий каркас проверок для репозиториев автора",
+   "public_stage": "версия 0.3.0: этапы 0–3 из 0–8",
    "refs": [
     "DPmeta:docs/ECOSYSTEM.md",
     "DP-Verify:README.md"
@@ -2189,6 +2255,8 @@
    "kind": "repo",
    "layer": "knowledge",
    "name": "DPprofile",
+   "public_role": "проверяемая история пути разработки — источники, факты, хронология",
+   "public_stage": "выполнено 4 этапа из 6",
    "refs": [
     "DPmeta:docs/ECOSYSTEM.md",
     "DPprofile:README.md"
@@ -2205,6 +2273,8 @@
    "kind": "repo",
    "layer": "knowledge",
    "name": "SocialMediaImage",
+   "public_role": "система контента и сайт dpsmpx.com",
+   "public_stage": "сайт выгружен на хостинг 5 октября 2026",
    "refs": [
     "DPmeta:docs/ECOSYSTEM.md",
     "SocialMediaImage:README.md"
@@ -2221,6 +2291,8 @@
    "kind": "repo",
    "layer": "knowledge",
    "name": "DPlearn",
+   "public_role": "система обучения, где «освоено» вычисляется из доказательств",
+   "public_stage": "версия 0.1.0: ядро и пилотный домен",
    "refs": [
     "DPmeta:docs/ECOSYSTEM.md",
     "DPlearn:README.md"
@@ -2237,6 +2309,8 @@
    "kind": "repo",
    "layer": "knowledge",
    "name": "DP_game_market_analytic_system",
+   "public_role": "воспроизводимый анализ рынка игр",
+   "public_stage": "написаны фазы 0–6 из 0–10",
    "refs": [
     "DPmeta:docs/ECOSYSTEM.md",
     "DP_game_market_analytic_system:docs/ARCHITECTURE.md"
@@ -2253,6 +2327,8 @@
    "kind": "repo",
    "layer": "knowledge",
    "name": "DPmonetization",
+   "public_role": "анализ портфеля проектов: от доказательств к решению",
+   "public_stage": "каркас ядра",
    "refs": [
     "DPmeta:docs/ECOSYSTEM.md",
     "DPmonetization:tools/dpmon/__init__.py"
@@ -2269,6 +2345,8 @@
    "kind": "repo",
    "layer": "meta",
    "name": "DPmeta",
+   "public_role": "карта экосистемы, контракты между репозиториями и риски",
+   "public_stage": "два прохода по экосистеме — 5 октября 2026",
    "refs": [
     "DPmeta:README.md",
     "DPmeta:M-01"
@@ -2285,6 +2363,8 @@
    "kind": "repo",
    "layer": "meta",
    "name": "DPmetaApp",
+   "public_role": "пульт автора над экосистемой для Android",
+   "public_stage": "этап ТЗ",
    "refs": [
     "DPmetaApp:README.md",
     "DPmetaApp:docs/direction/TECHNICAL_TASK.md"
@@ -2301,6 +2381,8 @@
    "kind": "repo",
    "layer": "meta",
    "name": "DPvisualisation",
+   "public_role": "интерактивная модель экосистемы на реальных данных — эта схема",
+   "public_stage": "просмотрщик и сборка для сайта; дальше — живой режим",
    "refs": [
     "DPvisualisation:docs/direction/REQUEST.md",
     "DPvisualisation:D-01",
@@ -2317,6 +2399,7 @@
    "kind": "service",
    "layer": "infra",
    "name": "GitHub",
+   "public_role": "хранилище репозиториев, ветки и PR",
    "refs": [
     "DPmeta:E-07",
     "DPmeta:E-08"
@@ -2349,6 +2432,7 @@
      "url": "https://dpsmpx.com/api/v1/index.json"
     }
    ],
+   "public_role": "статический сайт: главная, проекты, лента, экосистема, открытый API",
    "refs": [
     "SocialMediaImage:docs/platforms/WEBSITE.md",
     "SocialMediaImage:Д32",
@@ -2379,6 +2463,7 @@
    "layer": "infra",
    "name": "Онлайн-компилятор DPlang",
    "note": "вторая сторона и инфраструктура не определены (DPmeta:RISK-09)",
+   "public_role": "компиляция программ на сервере — в плане",
    "refs": [
     "DPmeta:C-09",
     "DPmeta:RISK-09"
@@ -2404,6 +2489,7 @@
    "kind": "platform",
    "layer": "outside",
    "name": "Telegram",
+   "public_role": "канал автора и канал-дневник Galdhold",
    "refs": [
     "SocialMediaImage:data/platforms/destinations.yaml",
     "SocialMediaImage:data/identity/links.yaml"
@@ -2417,6 +2503,7 @@
    "kind": "platform",
    "layer": "outside",
    "name": "YouTube",
+   "public_role": "канал @dpsmpx",
    "refs": [
     "SocialMediaImage:data/platforms/destinations.yaml",
     "SocialMediaImage:data/identity/links.yaml"
@@ -2430,6 +2517,7 @@
    "kind": "platform",
    "layer": "outside",
    "name": "VK",
+   "public_role": "сообщество dpsmpx",
    "refs": [
     "SocialMediaImage:data/platforms/destinations.yaml",
     "SocialMediaImage:data/identity/links.yaml",
@@ -2444,6 +2532,7 @@
    "kind": "platform",
    "layer": "outside",
    "name": "TikTok",
+   "public_role": "короткие вертикальные видео",
    "refs": [
     "SocialMediaImage:data/platforms/destinations.yaml",
     "SocialMediaImage:data/identity/links.yaml"
@@ -2457,6 +2546,7 @@
    "kind": "platform",
    "layer": "outside",
    "name": "Discord",
+   "public_role": "сервер сообщества — ещё не создан",
    "refs": [
     "SocialMediaImage:data/platforms/destinations.yaml"
    ],
@@ -2469,6 +2559,7 @@
    "kind": "platform",
    "layer": "outside",
    "name": "Steam",
+   "public_role": "магазин первого выпуска Galdhold",
    "refs": [
     "Galdhold:README.md"
    ],
@@ -2497,7 +2588,7 @@
  "schema": "dpvis-model/1",
  "source": {
   "path": "model/ecosystem.toml",
-  "sha256": "91e12e953581ad698c8a10b98fe36e6cd5433fd84b229a115335b0184e54b533"
+  "sha256": "3b7f6a404edd7e25c3fb8917ef38b7d96f6b8677b738a4a668ffd8d4957d34ef"
  },
  "sources": [
   "DPmeta:docs/ECOSYSTEM.md",

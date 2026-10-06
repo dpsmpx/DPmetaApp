@@ -99,11 +99,12 @@ SLUG_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 NODE_KEYS = {
     "id", "name", "kind", "layer", "role", "refs", "repo", "clone", "group",
     "visibility", "stage", "status", "note", "probes", "row",
+    "public_role", "public_stage",
 }
 FLOW_KEYS = {
     "id", "from", "to", "kind", "what", "transport", "refs", "contracts",
     "status", "driver", "trigger", "format", "note", "bidirectional", "via",
-    "signal",
+    "signal", "public_what",
 }
 TOP_KEYS = {
     "schema", "title", "as_of", "timezone", "sources", "allow", "registry",
@@ -207,6 +208,9 @@ def validate(src: dict) -> list[str]:
             bad(place, "нет name")
         if not node.get("role"):
             bad(place, "нет role")
+        for key in ("public_role", "public_stage"):
+            if key in node and not (isinstance(node[key], str) and node[key].strip()):
+                bad(place, f"{key} — непустая строка (публичная формулировка, D-15)")
         kind = node.get("kind")
         if kind not in NODE_KINDS:
             bad(place, f"неизвестный вид {kind!r}")
@@ -284,6 +288,8 @@ def validate(src: dict) -> list[str]:
             bad(place, f"неизвестный транспорт {flow.get('transport')!r}")
         if not flow.get("what"):
             bad(place, "нет what — что передаётся")
+        if "public_what" in flow and not (isinstance(flow["public_what"], str) and flow["public_what"].strip()):
+            bad(place, "public_what — непустая строка (публичная формулировка, D-15)")
         if not isinstance(flow.get("bidirectional", False), bool):
             bad(place, "bidirectional — да или нет")
         refs = flow.get("refs", [])
@@ -371,7 +377,7 @@ def compile_model(src: dict, raw: bytes, source_path: str = "model/ecosystem.tom
             "visibility": node.get("visibility", "private"),
             "refs": list(node.get("refs", [])),
         }
-        for key in ("repo", "clone", "group", "stage", "note", "row"):
+        for key in ("repo", "clone", "group", "stage", "note", "row", "public_role", "public_stage"):
             if key in node:
                 out[key] = node[key]
         if node.get("probes"):
@@ -395,7 +401,7 @@ def compile_model(src: dict, raw: bytes, source_path: str = "model/ecosystem.tom
             "contracts": list(flow.get("contracts", [])),
             "refs": list(flow.get("refs", [])),
         }
-        for key in ("trigger", "format", "note", "via"):
+        for key in ("trigger", "format", "note", "via", "public_what"):
             if key in flow:
                 out[key] = flow[key]
         if "signal" in flow:
