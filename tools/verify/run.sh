@@ -112,12 +112,10 @@ gradle_step() { # gradle_step <имя> <аргументы gradlew…>
       [ "$attempt" -gt 0 ] && echo "    ✓ прошло после повторов загрузки: $attempt"
       return 0
     fi
-    if [ "$attempt" -lt 5 ] \
-       && grep -qE 'status code 429|Could not (GET|HEAD|download|resolve)' "$log" \
-       && ! grep -qE '^e: |There were failing tests|Compilation error|FAILED$' "$log"; then
+    if [ "$attempt" -lt 5 ] && "$PY" -B tools/verify/gradle_log.py "$log"; then
       attempt=$((attempt + 1))
-      echo "    ○ загрузка зависимостей не удалась (повтор $attempt из 5)"
-      sleep 5
+      echo "    ○ загрузка зависимостей не удалась (повтор $attempt из 5, пауза $((5 << attempt)) с)"
+      sleep $((5 << attempt))
       continue
     fi
     record fail "$name" "$log" "$attempt"

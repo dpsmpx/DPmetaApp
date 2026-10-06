@@ -127,6 +127,24 @@ CASES = [
       ".github/workflows/ci.yml": "on: push\n"},
      {"gradle/libs.versions.toml": "[versions]\n", "docs/PROVENANCE.md": "<!-- provenance: begin -->\n<!-- provenance: end -->\n",
       "a/build.gradle.kts": "dependencies { implementation(libs.x) }\n"}, []),
+    # gradle_log.py: «нарушение» — сбой кода, который нельзя повторять; «чисто» —
+    # отказ загрузки, в том числе со строкой `> Task :x FAILED`.
+    ("gradle_log.py",
+     {"build.log": "> Task :core:compileKotlin FAILED\n"
+                   "e: file:///core/A.kt:1:5 Unresolved reference 'x'.\n"
+                   "> Could not resolve all files for configuration ':core:testRuntimeClasspath'.\n"},
+     {"build.log": "> Task :build-logic:compilePluginsBlocks FAILED\n"
+                   "> Could not resolve all files for configuration ':build-logic:compileClasspath'.\n"
+                   "   > Could not download a-1.0.jar (org.x:a:1.0)\n"
+                   "            > Received status code 429 from server: Too Many Requests\n"},
+     ["build.log"]),
+    ("gradle_log.py",
+     {"build.log": "CliTest > version() FAILED\n    org.opentest4j.AssertionFailedError\n"
+                   "There were failing tests. See the report at: file:///cli/build/index.html\n"
+                   "> Could not GET 'https://repo.maven.apache.org/maven2/org/x/a/1.0/a-1.0.pom'.\n"},
+     {"build.log": "> Could not GET 'https://repo.maven.apache.org/maven2/org/x/a/1.0/a-1.0.pom'.\n"
+                   "> Task :cli:test FAILED\n"},
+     ["build.log"]),
     ("readme_progress.py",
      {**BASE, "TODO.md": "## Раздел\n\n- [ ] пункт\n",
       "README.md": "<!-- progress:begin -->\nстарое\n<!-- progress:end -->\n"},
