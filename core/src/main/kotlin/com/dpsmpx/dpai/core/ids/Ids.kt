@@ -1,5 +1,6 @@
 package com.dpsmpx.dpai.core.ids
 
+import com.dpsmpx.dpai.core.clock.RandomSource
 import com.dpsmpx.dpai.core.clock.Timestamp
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.result.Outcome
@@ -147,6 +148,19 @@ value class ProviderSessionId internal constructor(val value: String) {
 
     companion object {
         private val SAFE = Regex("[A-Za-z0-9._:-]{1,128}")
+
+        /**
+         * Новый UUID версии 4 из [random] (D-07): оркестратор сам назначает id
+         * сессии Claude Code (`--session-id`) и пишет его в журнал до запуска
+         * (`docs/research/CLAUDE_CODE_CLI.md`, §3).
+         */
+        fun newUuid(random: RandomSource): ProviderSessionId {
+            val b = random.nextBytes(16)
+            b[6] = ((b[6].toInt() and 0x0f) or 0x40).toByte()
+            b[8] = ((b[8].toInt() and 0x3f) or 0x80).toByte()
+            val hex = b.joinToString("") { "%02x".format(it.toInt() and 0xff) }
+            return ProviderSessionId("${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}")
+        }
 
         fun parse(text: String): Outcome<ProviderSessionId> =
             if (SAFE.matches(text)) {

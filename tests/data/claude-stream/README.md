@@ -1,0 +1,26 @@
+# Корпус `stream-json` Claude Code
+
+Образцы вывода `claude -p --verbose --output-format stream-json` для
+разбора `ClaudeStreamParser` (этап 4; `docs/TESTING.md`, §6). Новый баг
+разбора — новый файл здесь.
+
+Записано **6 октября 2026**, Claude Code **2.1.291**, Windows 11. Перед
+записью в репозиторий из образцов убраны пути, имена подключений, списки
+команд и подписи; идентификаторы сессий и событий заменены
+(`docs/research/CLAUDE_CODE_CLI.md`, §7).
+
+| Файл | Откуда | Что |
+|---|---|---|
+| `success-structured.jsonl` | записан: `--json-schema`, `--tools ""`, модель Haiku 4.5 | `system/init`, `system/thinking_tokens`, ответ через `StructuredOutput`, `rate_limit_event` с окнами пяти часов и недели, `result` с `structured_output` и стоимостью |
+| `auth-failed.jsonl` | записан: пустой `CLAUDE_CONFIG_DIR` | `assistant` с `error: authentication_failed`, `result` с `is_error: true` при `subtype: success`; код выхода 1 |
+| `truncated-result.jsonl` | построен из записанного | последняя строка оборвана посередине |
+| `garbage-line.jsonl` | построен | строка не JSON посреди потока |
+| `duplicate-event.jsonl` | построен | то же событие (тот же `uuid`) дважды |
+| `no-result.jsonl` | построен | поток кончился без `result` — процесс упал |
+| `session-mismatch.jsonl` | построен | `session_id` в `init` не тот, что назначил оркестратор |
+| `rate-limited.jsonl` | построен по полям записанных `rate_limit_event` и ошибки входа | `rate_limit_event` со `status: rejected`, `assistant` с `error: rate_limit` |
+
+Построенный по догадке `rate-limited.jsonl` — не факт о Claude Code:
+как на деле выглядит отказ по пределу подписки, не проверено
+(`docs/research/CLAUDE_CODE_CLI.md`, §7). Появится настоящий образец —
+он ляжет рядом, а этот файл уйдёт.

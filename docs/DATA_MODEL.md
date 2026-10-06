@@ -78,8 +78,9 @@ Code — UUID, `docs/research/CLAUDE_CODE_CLI.md`): непрозрачная с�
 | `dpai.backup-manifest` | 1 | манифест копии: `createdAt`, `schemaVersion`, `files` (`path`, `size`, `sha256`), `hash` (ТЗ, §60) | 2 |
 | `dpai.restore-marker` | 1 | маркер начатого восстановления: `backup`, `manifest` | 2 |
 | `dpai.accounts-state` | 1 | состояние аккаунтов в снимке: подписки с окнами пределов, слоты, подписка задачи, переходы задач (`docs/ACCOUNT_MODEL.md`, §8) | 5 |
-| `dpai.agent-reply` | 1 | ответ агента target одной строкой: `command`, `ok`, `diagnostics`, необязательные `run`, `events`, `stop`, `doctor` (`docs/EXECUTION_MODEL.md`, §1.3; D-31) | 3 |
-| `dpai.agent-run` | 1 | запуск на target: команда, каталог, правка окружения, тайм-аут, состояние, идентификаторы и время старта супервизора и процесса | 3 |
+| `dpai.agent-reply` | 1 | ответ агента target одной строкой: `command`, `ok`, `diagnostics`, необязательные `run` (с номером хода `turn`, этап 4), `events`, `stop`, `doctor` (`docs/EXECUTION_MODEL.md`, §1.3; D-31) | 3 |
+| `dpai.agent-run` | 2 | запуск на target: `spec` (`dpai.run-spec`), номер хода `turn`, состояние, идентификаторы и время старта супервизора и процесса; v1 этапа 3 заменён до выпуска и не читается | 4 |
+| `dpai.run-spec` | 1 | что запустить под агентом: команда, каталог, правка окружения, тайм-аут, вход процесса (prompt); передаётся агенту на стандартный вход | 4 |
 | `dpai.context` | — | версия контекста | 8 |
 | `dpai.handoff` | — | handoff | 8 |
 

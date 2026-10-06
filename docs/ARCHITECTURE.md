@@ -1,6 +1,6 @@
 # Архитектура DP_AI_Orcestrator
 
-Срез на 6 октября 2026 (этапы 0–3). Решения, на которых держится
+Срез на 6 октября 2026 (этапы 0–4). Решения, на которых держится
 архитектура, — `docs/direction/DECISIONS.md`; здесь — как они разложены
 по модулям и как через модули идут данные. Модели подсистем —
 отдельными документами (§5).
@@ -221,7 +221,8 @@ RECOVERY_PENDING ─► проба target и процесса ─► сверк�
 | `target` | `ExecutionTarget`, `SshEndpoint`, `TargetHealthTracker` (пороги и предохранитель), `TargetDoctor`, `ExecutionTargetManager` |
 | `process` | `ProcessHost`, `LocalProcessHost`, `ProcessTree` (остановка дерева), `Detacher` (процесс, переживающий сессию SSH), `run` с тайм-аутом |
 | `ssh` | `SshProcessHost` (системный OpenSSH), `RemoteShell` (кавычки POSIX и Windows) |
-| `agent` | протокол `dpai.agent-reply`, `AgentClient`, `RunChannel` (номера и сверка), `MockAgentHost` |
+| `agent` | протокол `dpai.agent-reply`, `RunSpec`, `AgentClient`, `RunChannel` (номера и сверка), `MockAgentHost` |
+| `claude` | `ClaudeRunner`, `ClaudeCodeCliRunner`, `MockRunner`, `ClaudeCodeCli` (команда), `ClaudeStreamParser` и `ClaudeTurnAssembler` (поток → итог хода) |
 
 Сторона target — `orchestrator.agent.AgentRuntime` (журнал запуска через
 `storage`), команда — `dpai agent` модуля `cli`.

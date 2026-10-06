@@ -147,9 +147,7 @@ glibc или musl там может не запуститься — провер
 
 ## 7. Не проверено
 
-- Формат событий `stream-json` (поля, типы, итоговое событие с
-  использованием токенов и стоимостью) — нужен записанный образец вывода
-  в корпус `tests/data/` (этап 4).
+- ~~Формат событий `stream-json`~~ — проверен 6 октября 2026, §8.
 - Коды выхода CLI при rate limit, ошибке аутентификации, превышении
   бюджета.
 - Ведут ли себя два `CLAUDE_CONFIG_DIR` с разными подписками на одном
@@ -158,3 +156,45 @@ glibc или musl там может не запуститься — провер
   вход — нужен образец для `RATE_LIMITED` и `AUTH_REQUIRED`.
 - Запуск Claude Code в Termux на Redmi Note 13 (D-26).
 - Claude Agent SDK: интерфейс запуска с JVM (решение этапа 4).
+
+## 8. Проверено запуском
+
+**6 октября 2026**, Claude Code **2.1.291**, Windows 11; образцы — корпус
+`tests/data/claude-stream/` (пути и имена подключений убраны).
+
+| Флаг | Что даёт оркестратору | Проверено |
+|---|---|---|
+| `--verbose` | обязателен вместе с `-p --output-format stream-json`: без него CLI выходит с кодом 1 и «Error: When using --print, --output-format=stream-json requires --verbose» | запуск без `--verbose` |
+| `--append-system-prompt` | дополнение к системному prompt хода (правила оркестратора) | справка 2.1.291 |
+
+События `stream-json` (поля, на которых строится состояние):
+
+- `system`/`init` — `session_id` (совпадает с `--session-id`), `model`,
+  `claude_code_version`, `apiKeySource` (`none` при входе формой Claude).
+- `system`/`thinking_tokens` — оценка токенов размышления.
+- `assistant` — `message.content[]` (`text`, `thinking`, `tool_use`);
+  ошибка API оформлена сообщением: `error: "authentication_failed"`,
+  `is_api_error_message: true`, текст «Not logged in · Please run /login».
+- `user` — результаты инструментов.
+- `rate_limit_event` — `rate_limit_info`: `status` (`allowed`),
+  `rateLimitType` (`five_hour`), `resetsAt` (секунды эпохи),
+  `unifiedWindows.five_hour` и `.seven_day` с `utilization` (0…1) и
+  `resetsAt`. Это загрузка пределов подписки прямо из потока (D-30).
+- `result` — `is_error`, `subtype`, `terminal_reason` (`completed`,
+  `api_error`), `result` (текст), `structured_output` (при
+  `--json-schema`), `total_cost_usd`, `usage`, `modelUsage` с
+  `costBasis: "list"` — стоимость по прейскуранту, а не списание.
+  **При ошибке входа `subtype` — `success`, а `is_error` — `true`**: судить
+  по `subtype` нельзя. Код выхода при ошибке входа — 1, при успехе — 0.
+- `--json-schema` даёт ответ через инструмент `StructuredOutput`; итог —
+  в `structured_output`.
+
+Prompt без аргумента читается со стандартного входа: проверено
+запуском с текстом на входе (поток дошёл до ответа); с пустым входом —
+«Error: Input must be provided either through stdin or as a prompt
+argument when using --print».
+
+Не проверено по-прежнему: отказ по пределу подписки (`status` не
+`allowed`) и истёкший вход — образец `rate-limited.jsonl` построен, а не
+записан.
+

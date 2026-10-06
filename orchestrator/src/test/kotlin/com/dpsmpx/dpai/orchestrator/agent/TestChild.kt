@@ -14,6 +14,7 @@ import kotlin.system.exitProcess
  * запускаемый агентом отдельным процессом.
  *
  * - `child hang` — строка `ready` и ожидание без конца;
+ * - `child secret` — напечатать строку с поддельным ключом API и выйти;
  * - `child spawn-hang` — запустить внука `child hang`, напечатать
  *   `grandchild <pid>`, ждать без конца;
  * - `agent supervise --home H --run R` — супервизор запуска, как у `dpai`.
@@ -39,6 +40,10 @@ object TestChild {
                 println("ready")
                 CountDownLatch(1).await()
             }
+            "secret" -> {
+                println("ключ: $FAKE_KEY")
+                exitProcess(0)
+            }
             "spawn-hang" -> {
                 val started = LocalProcessHost().start(ProcessSpec(command("child", "hang")))
                 println("grandchild ${(started as Outcome.Success).value.pid}")
@@ -47,6 +52,9 @@ object TestChild {
             else -> exitProcess(64)
         }
     }
+
+    /** Похож на ключ API Anthropic; собран из частей, чтобы исходник не выглядел секретом. */
+    val FAKE_KEY: String = "sk-" + "ant-" + "api03-" + "Zx9".repeat(12)
 
     fun command(vararg args: String): List<String> = selfCommand() + args
 

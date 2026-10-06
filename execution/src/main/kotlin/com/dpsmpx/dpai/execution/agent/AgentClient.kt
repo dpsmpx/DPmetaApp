@@ -5,46 +5,13 @@ import com.dpsmpx.dpai.core.diagnostics.Diagnostic
 import com.dpsmpx.dpai.core.ids.SessionId
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.result.then
+import com.dpsmpx.dpai.core.serialization.CanonicalJson
 import com.dpsmpx.dpai.execution.process.ProcessHost
 import com.dpsmpx.dpai.execution.process.ProcessSpec
 import com.dpsmpx.dpai.execution.process.run
 import com.dpsmpx.dpai.execution.ssh.SshProcessHost
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
-
-/**
- * Что запустить под агентом. Окружение — правка окружения агента:
- * [unsetEnv] удаляются, [setEnv] задаются (D-29: окружение слота).
- * Значения [setEnv] идут аргументами командной строки, поэтому секретов в
- * них нет (D-14): `CLAUDE_CONFIG_DIR` — путь, а не учётные данные (D-27).
- */
-data class RunSpec(
-    val command: List<String>,
-    val workDir: String? = null,
-    val setEnv: Map<String, String> = emptyMap(),
-    val unsetEnv: List<String> = emptyList(),
-    val timeout: Duration? = null,
-) {
-    init {
-        require(command.isNotEmpty()) { "пустая команда" }
-        require(setEnv.keys.all { ENV_NAME.matches(it) } && unsetEnv.all { ENV_NAME.matches(it) }) { "имя переменной окружения недопустимо" }
-        require(timeout == null || timeout.isPositive()) { "тайм-аут — положительный" }
-    }
-
-    /** Аргументы `dpai agent start` после `--home` и `--run`. */
-    fun toArgs(): List<String> = buildList {
-        workDir?.let { add("--dir"); add(it) }
-        timeout?.let { add("--timeout-seconds"); add(it.inWholeSeconds.coerceAtLeast(1).toString()) }
-        for ((k, v) in setEnv.toSortedMap()) { add("--env"); add("$k=$v") }
-        for (k in unsetEnv.sorted()) { add("--unset"); add(k) }
-        add("--")
-        addAll(command)
-    }
-
-    companion object {
-        val ENV_NAME = Regex("[A-Za-z_][A-Za-z0-9_]{0,127}")
-    }
-}
 
 /** Откуда канал запуска берёт события: агент на target или подделка в тестах. */
 fun interface RunEventSource {
@@ -65,8 +32,13 @@ class AgentClient(
     private val subject: String,
     private val callTimeout: Duration = 60.seconds,
 ) : RunEventSource {
+    /**
+     * Запуск или следующий ход того же запуска (у завершённого запуска —
+     * новый ход в том же журнале, номера событий продолжаются).
+     * Спецификация — на стандартный вход агента (`--spec-stdin`).
+     */
     fun start(run: SessionId, spec: RunSpec): Outcome<RunStatus> =
-        call("start", runArgs(run) + spec.toArgs()).then { r -> require(r, "run") { it.run } }
+        call("start", runArgs(run) + "--spec-stdin", stdin = CanonicalJson.write(spec.toJson())).then { r -> require(r, "run") { it.run } }
 
     fun status(run: SessionId): Outcome<RunStatus> = call("status", runArgs(run)).then { r -> require(r, "run") { it.run } }
 
@@ -82,9 +54,9 @@ class AgentClient(
 
     private fun runArgs(run: SessionId): List<String> = homeArgs() + listOf("--run", run.value)
 
-    private fun call(command: String, args: List<String>): Outcome<AgentReply> {
+    private fun call(command: String, args: List<String>, stdin: String? = null): Outcome<AgentReply> {
         val argv = agentCommand + listOf("agent", command) + args
-        return host.run(ProcessSpec(argv), callTimeout).then { done ->
+        return host.run(ProcessSpec(argv, stdin = stdin), callTimeout).then { done ->
             SshProcessHost.classify(done, subject)?.let { return@then Outcome.failure(it) }
             when (val reply = AgentReply.parseOutput(done.stdout, subject)) {
                 is Outcome.Success -> reply.value.toOutcome()

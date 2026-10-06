@@ -67,8 +67,12 @@ class LocalProcessHost(private val clock: Clock = Clock.SYSTEM) : ProcessHost {
     }
 
     companion object {
-        /** Предел длины строки вывода: длиннее — обрезается с отметкой (память, ТЗ, §116). */
-        const val MAX_LINE: Int = 64 * 1024
+        /**
+         * Предел длины строки вывода: длиннее — обрезается с отметкой (память,
+         * ТЗ, §116). Строка `stream-json` Claude несёт результат инструмента
+         * целиком — поэтому мегабайт, а не килобайты.
+         */
+        const val MAX_LINE: Int = 1024 * 1024
 
         private val READER_DRAIN = 1.seconds
 

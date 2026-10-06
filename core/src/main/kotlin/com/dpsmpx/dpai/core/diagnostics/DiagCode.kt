@@ -118,6 +118,19 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     TARGET_CHECK_WARNING(Category.EXECUTION, Severity.WARNING, Retryability.NON_RETRYABLE),
     TARGET_DISABLED(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
 
+    // --- Claude Code CLI (этап 4, D-32) ---
+    CLAUDE_AUTH_REQUIRED(Category.EXECUTION, Severity.ERROR, Retryability.NON_RETRYABLE),
+    CLAUDE_RATE_LIMITED(Category.EXECUTION, Severity.ERROR, Retryability.RETRYABLE),
+    CLAUDE_API_ERROR(Category.EXECUTION, Severity.ERROR, Retryability.UNKNOWN),
+    CLAUDE_RESULT_ERROR(Category.EXECUTION, Severity.ERROR, Retryability.UNKNOWN),
+    CLAUDE_BUDGET_EXCEEDED(Category.EXECUTION, Severity.ERROR, Retryability.NON_RETRYABLE),
+    CLAUDE_MAX_TURNS(Category.EXECUTION, Severity.ERROR, Retryability.NON_RETRYABLE),
+    CLAUDE_STREAM_MALFORMED(Category.FORMAT, Severity.WARNING, Retryability.NON_RETRYABLE),
+    CLAUDE_STREAM_INCOMPLETE(Category.EXECUTION, Severity.ERROR, Retryability.UNKNOWN),
+    CLAUDE_SESSION_MISMATCH(Category.INTEGRITY, Severity.ERROR, Retryability.NON_RETRYABLE),
+    CLAUDE_EVENT_UNKNOWN(Category.FORMAT, Severity.INFO, Retryability.NON_RETRYABLE),
+    RUNNER_TURN_ACTIVE(Category.STATE, Severity.ERROR, Retryability.RETRYABLE),
+
     // --- общее ---
     /** Строгая семантика (D-05): неподдержанное — явный отказ, а не «похожее». */
     UNSUPPORTED(Category.UNSUPPORTED, Severity.ERROR, Retryability.NON_RETRYABLE),

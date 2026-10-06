@@ -31,8 +31,9 @@ enum class ExitReason { EXITED, TIMEOUT, STOPPED, START_FAILED, LOST }
 
 /**
  * Запуск на target: [id] — сессия, которой он принадлежит (каждый процесс
- * привязан к сессии, `docs/EXECUTION_MODEL.md`, §5); [lastSequence] —
- * номер последнего записанного события потока запуска.
+ * привязан к сессии, `docs/EXECUTION_MODEL.md`, §5); [turn] — номер хода
+ * (каждый `start` завершённого запуска — новый ход в том же журнале);
+ * [lastSequence] — номер последнего записанного события потока запуска.
  */
 data class RunStatus(
     val id: SessionId,
@@ -41,6 +42,7 @@ data class RunStatus(
     val exitCode: Int? = null,
     val reason: ExitReason? = null,
     val lastSequence: Long = 0,
+    val turn: Int = 1,
 ) {
     val finished: Boolean get() = state == RunState.EXITED || state == RunState.LOST
 
@@ -50,6 +52,7 @@ data class RunStatus(
         exitCode?.let { f["exitCode"] = JsonNumber.of(it) }
         reason?.let { f["reason"] = JsonString(it.name) }
         f["lastSequence"] = JsonNumber.of(lastSequence)
+        f["turn"] = JsonNumber.of(turn)
         return JsonObject(f)
     }
 
@@ -62,9 +65,11 @@ data class RunStatus(
             val exit = f.optLong("exitCode")?.toInt()
             val reason = f.optString("reason")?.let { enumOf<ExitReason>(it, JsonPath.field(f.path, "reason"), d) }
             val last = f.long("lastSequence")
+            // Ход появился на этапе 4; ответ агента этапа 3 без него — первый ход.
+            val turn = if (f.has("turn")) f.int("turn") else 1
             f.finish()
-            if (id == null || state == null || last == null) return null
-            return RunStatus(id, state, pid, exit, reason, last)
+            if (id == null || state == null || last == null || turn == null) return null
+            return RunStatus(id, state, pid, exit, reason, last, turn)
         }
     }
 }

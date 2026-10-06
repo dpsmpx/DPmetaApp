@@ -5,6 +5,7 @@ import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.Diagnostic
 import com.dpsmpx.dpai.core.ids.IdKinds
 import com.dpsmpx.dpai.core.ids.SessionId
+import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.serialization.CanonicalJson
 import com.dpsmpx.dpai.execution.agent.AgentReply
 import com.dpsmpx.dpai.execution.agent.RunSpec
@@ -24,6 +25,7 @@ class AgentCommand(
     private val version: String,
     private val clock: Clock = Clock.SYSTEM,
     private val selfCommand: List<String> = selfCommand(),
+    private val stdin: () -> String = { System.`in`.readBytes().toString(Charsets.UTF_8) },
 ) {
     fun run(args: List<String>): Int {
         val command = args.firstOrNull() ?: return usage("нет команды агента")
@@ -44,7 +46,12 @@ class AgentCommand(
 
     private fun runFor(command: String, run: SessionId, opts: Options, runtime: AgentRuntime): AgentReply? = when (command) {
         "start" -> {
-            if (opts.tail.isEmpty()) {
+            if (opts.flag("spec-stdin")) {
+                when (val spec = RunSpec.parse(stdin())) {
+                    is Outcome.Success -> runtime.start(run, spec.value)
+                    is Outcome.Failure -> AgentReply.failure("start", spec.diagnostics)
+                }
+            } else if (opts.tail.isEmpty()) {
                 null
             } else {
                 val env = opts.all("env").map { it.substringBefore('=') to it.substringAfter('=', "") }
@@ -78,28 +85,37 @@ class AgentCommand(
         return Cli.USAGE_ERROR
     }
 
-    /** Параметры `--имя значение`; всё после `--` — команда запуска. */
-    private class Options(private val values: Map<String, List<String>>, val tail: List<String>) {
+    /** Параметры `--имя значение` и флаги `--имя`; всё после `--` — команда запуска. */
+    private class Options(private val values: Map<String, List<String>>, private val flags: Set<String>, val tail: List<String>) {
+        fun flag(name: String): Boolean = name in flags
+
         fun single(name: String): String? = values[name]?.lastOrNull()
 
         fun all(name: String): List<String> = values[name].orEmpty()
 
         companion object {
             private val KNOWN = setOf("home", "run", "dir", "env", "unset", "timeout-seconds", "after", "limit", "grace-seconds")
+            private val FLAGS = setOf("spec-stdin")
 
             fun parse(args: List<String>): Options? {
                 val values = LinkedHashMap<String, MutableList<String>>()
+                val flags = mutableSetOf<String>()
                 var i = 0
                 while (i < args.size) {
                     val a = args[i]
-                    if (a == "--") return Options(values, args.drop(i + 1))
+                    if (a == "--") return Options(values, flags, args.drop(i + 1))
                     if (!a.startsWith("--")) return null
                     val name = a.removePrefix("--")
+                    if (name in FLAGS) {
+                        flags += name
+                        i += 1
+                        continue
+                    }
                     if (name !in KNOWN || i + 1 >= args.size) return null
                     values.getOrPut(name) { mutableListOf() } += args[i + 1]
                     i += 2
                 }
-                return Options(values, emptyList())
+                return Options(values, flags, emptyList())
             }
         }
     }
@@ -113,6 +129,7 @@ class AgentCommand(
             |  dpai agent doctor   [--home DIR]
             |  dpai agent start    --run ID [--home DIR] [--dir DIR] [--timeout-seconds N]
             |                      [--env NAME=VALUE]... [--unset NAME]... -- КОМАНДА…
+            |  dpai agent start    --run ID [--home DIR] --spec-stdin   (dpai.run-spec на входе)
             |  dpai agent status   --run ID [--home DIR]
             |  dpai agent events   --run ID [--home DIR] [--after N] [--limit N]
             |  dpai agent stop     --run ID [--home DIR] [--grace-seconds N]

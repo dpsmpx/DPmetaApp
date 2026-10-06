@@ -142,4 +142,33 @@ class AgentRuntimeTest {
         assertFalse(alive(grandchild))
         assertEquals(RunState.EXITED, rt.status(run).run!!.state)
     }
+
+    /** Вывод Claude проходит `Redactor` до журнала: ключ в выводе не попадает на диск (D-14, T8; критерий этапа 4). */
+    @Test
+    fun secretInOutputNeverReachesDisk() {
+        val rt = runtime()
+        val run = ids.next(IdKinds.SESSION)
+        assertTrue(rt.start(run, RunSpec(TestChild.command("child", "secret"))).ok)
+        val status = RealTime.await(60.seconds, "процесс вышел") { rt.status(run).run!!.takeIf { it.state == RunState.EXITED } }
+        assertEquals(0, status.exitCode)
+        val texts = outputs(rt.events(run, 0, 1000).events)
+        assertTrue(texts.any { "<redacted>" in it }, "строка с ключом есть, но ключ скрыт: $texts")
+        val onDisk = dir.toFile().walkTopDown().filter { it.isFile }.joinToString(" ") { it.readText(Charsets.UTF_8) }
+        assertFalse(TestChild.FAKE_KEY in onDisk, "ключ попал на диск")
+    }
+
+    @Test
+    fun nextTurnContinuesTheSameJournal() {
+        val rt = runtime()
+        val run = ids.next(IdKinds.SESSION)
+        assertTrue(rt.start(run, RunSpec(TestChild.command("child", "secret"))).ok)
+        RealTime.await(60.seconds, "первый ход") { rt.status(run).run!!.takeIf { it.state == RunState.EXITED } }
+        val firstLast = rt.status(run).run!!.lastSequence
+        assertTrue(rt.start(run, RunSpec(TestChild.command("child", "secret"))).ok)
+        val second = RealTime.await(60.seconds, "второй ход") { rt.status(run).run!!.takeIf { it.state == RunState.EXITED && it.turn == 2 } }
+        assertTrue(second.lastSequence > firstLast)
+        val events = rt.events(run, 0, 1000).events
+        assertEquals((1L..events.size).toList(), events.map { it.sequence }, "номера подряд через ходы")
+        assertEquals(2, events.count { it.type == EventType.TARGET_PROCESS_STARTED })
+    }
 }

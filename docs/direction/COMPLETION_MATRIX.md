@@ -15,7 +15,7 @@
 | Persistent state reliable | 2 | ✓ | журнал с цепочкой хешей, атомарные документы с LKG, снимки, миграции; тесты по модели сбоев (этап 2) |
 | Accounts complete | 5 | ◐ | подписки и слоты, вывод состояния из фактов, пределы окна пяти часов и недели, защиты от пересечения, выбор слота, журнал и снимок (D-27, D-29, D-30); сверка перед запуском — с этапами 3, 4, 6 |
 | Execution targets complete | 3 | ◐ | модель target, здоровье с порогами и предохранителем, `doctor`, процессы без сирот, SSH через OpenSSH (D-31), агент `dpai agent` с журналом и сверкой пропусков; mock и локально проверено, SSH на настоящем хосте и Termux на устройстве — открыты |
-| Claude runner complete | 4 | — | факты CLI собраны: `docs/research/CLAUDE_CODE_CLI.md` |
+| Claude runner complete | 4 | ✓ | `ClaudeRunner` через CLI (D-32): ходы с `--resume`, строгий разбор `stream-json` на записанном корпусе, `MockRunner` со сценариями ТЗ, §89, вывод через `Redactor` |
 | Sessions complete | 6 | ◐ | автомат жизненного цикла и свежесть heartbeat (этап 1) |
 | Scheduler complete | 7 | ◐ | автомат задачи с цепочкой проверки (этап 1) |
 | Task DAG complete | 7 | — | |

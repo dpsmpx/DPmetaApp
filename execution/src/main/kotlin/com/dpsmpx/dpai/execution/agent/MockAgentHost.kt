@@ -29,14 +29,21 @@ import kotlin.time.Duration
  * Нужен, чтобы ядро проверялось целиком без target и Claude.
  *
  * [reachable] = false — target недоступен: вызовы падают, как упавший SSH.
+ * [onStart] вызывается после каждого хода `start` — так сценарий
+ * `MockRunner` пишет вывод «процесса».
  */
 class MockAgentHost(private val clock: Clock, private val ids: IdGenerator) : ProcessHost {
-    private class Run(val id: SessionId, val spec: List<String>) {
+    private class Run(val id: SessionId) {
         val events = mutableListOf<EventEnvelope>()
+        var spec: RunSpec? = null
+        var turn = 0
         var state = RunState.RUNNING
         var exitCode: Int? = null
         var reason: ExitReason? = null
     }
+
+    /** Ход начат: запуск, его спецификация и номер хода. */
+    var onStart: (SessionId, RunSpec, Int) -> Unit = { _, _, _ -> }
 
     private val runs = LinkedHashMap<SessionId, Run>()
 
@@ -55,9 +62,13 @@ class MockAgentHost(private val clock: Clock, private val ids: IdGenerator) : Pr
         return e
     }
 
-    /** Процесс запуска вышел сам с кодом [code]. */
+    /** Процесс хода вышел сам с кодом [code] или по [reason] (тайм-аут агента). */
     @Synchronized
-    fun exit(run: SessionId, code: Int) = finish(runs.getValue(run), code, ExitReason.EXITED)
+    fun exit(run: SessionId, code: Int?, reason: ExitReason = ExitReason.EXITED) = finish(runs.getValue(run), code, reason)
+
+    /** Строка вывода процесса хода. */
+    fun output(run: SessionId, text: String, stream: OutputStream = OutputStream.STDOUT): EventEnvelope =
+        emit(run, EventType.TARGET_PROCESS_OUTPUT, JsonObject.of("stream" to JsonString(stream.name.lowercase()), "text" to JsonString(text), "truncated" to com.dpsmpx.dpai.core.serialization.JsonBool(false)))
 
     @Synchronized
     fun state(run: SessionId): RunState? = runs[run]?.state
@@ -82,14 +93,27 @@ class MockAgentHost(private val clock: Clock, private val ids: IdGenerator) : Pr
                     ToolProbe(true, "mock (Claude Code)", null), ToolProbe(true, "git version mock", null),
                 ),
             )
-            "start" -> when {
-                run == null -> failure("start", DiagCode.VALUE_INVALID, "нет --run")
-                run in runs -> failure("start", DiagCode.VALUE_INVALID, "запуск уже есть")
-                else -> {
-                    val r = Run(run, args.dropWhile { it != "--" }.drop(1))
-                    runs[run] = r
-                    emit(run, EventType.TARGET_PROCESS_STARTED, JsonObject.of("program" to JsonString(r.spec.firstOrNull() ?: "")))
-                    AgentReply("start", true, run = status(r))
+            "start" -> {
+                val runSpec = if ("--spec-stdin" in args) {
+                    spec.stdin?.let { RunSpec.parse(it).valueOrNull() }
+                } else {
+                    args.dropWhile { it != "--" }.drop(1).takeIf { it.isNotEmpty() }?.let { RunSpec(it) }
+                }
+                val existing = run?.let { runs[it] }
+                when {
+                    run == null || runSpec == null -> failure("start", DiagCode.VALUE_INVALID, "нет --run или спецификации")
+                    existing != null && existing.state != RunState.EXITED -> failure("start", DiagCode.INVALID_TRANSITION, "ход ещё идёт")
+                    else -> {
+                        val r = existing ?: Run(run).also { runs[run] = it }
+                        r.spec = runSpec
+                        r.turn++
+                        r.state = RunState.RUNNING
+                        r.exitCode = null
+                        r.reason = null
+                        emit(run, EventType.TARGET_PROCESS_STARTED, JsonObject.of("program" to JsonString(runSpec.command.first()), "turn" to json(r.turn)))
+                        onStart(run, runSpec, r.turn)
+                        AgentReply("start", true, run = status(r))
+                    }
                 }
             }
             "status" -> runs[run]?.let { AgentReply("status", true, run = status(it)) } ?: failure("status", DiagCode.ENTITY_NOT_FOUND, "нет такого запуска")
@@ -110,6 +134,7 @@ class MockAgentHost(private val clock: Clock, private val ids: IdGenerator) : Pr
     private fun finish(r: Run, code: Int?, reason: ExitReason) {
         val payload = JsonObject(buildMap {
             put("reason", JsonString(reason.name))
+            put("turn", json(r.turn))
             code?.let { put("exitCode", json(it)) }
         })
         emit(r.id, EventType.TARGET_PROCESS_EXITED, payload)
@@ -118,7 +143,7 @@ class MockAgentHost(private val clock: Clock, private val ids: IdGenerator) : Pr
         r.reason = reason
     }
 
-    private fun status(r: Run) = RunStatus(r.id, r.state, null, r.exitCode, r.reason, r.events.size.toLong())
+    private fun status(r: Run) = RunStatus(r.id, r.state, null, r.exitCode, r.reason, r.events.size.toLong(), r.turn)
 
     private fun failure(command: String, code: DiagCode, message: String) = AgentReply.failure(command, listOf(Diagnostic.error(code, message)))
 
