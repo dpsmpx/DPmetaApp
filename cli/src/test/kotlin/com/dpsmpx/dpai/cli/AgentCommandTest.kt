@@ -108,7 +108,8 @@ class AgentCommandTest {
         val manager = ExecutionTargetManager(Clock.SYSTEM, local = LocalProcessHost())
         val target = ExecutionTarget(ids.next(IdKinds.TARGET), type, "ssh", p, endpoint, listOf(agent))
         manager.register(target)
-        assertEquals(CheckStatus.OK, manager.doctor(target.id).valueOrNull()!!.checks.first { it.name == "связь" }.status)
+        val link = manager.doctor(target.id).valueOrNull()!!.checks.first { it.name == "связь" }
+        assertEquals(CheckStatus.OK, link.status, link.detail)
         val client = manager.client(target.id).valueOrNull()!!
         val run = ids.next(IdKinds.SESSION)
         val cmd = if (p == TargetPlatform.WINDOWS) listOf("ping", "-n", "600", "127.0.0.1") else listOf("sleep", "600")

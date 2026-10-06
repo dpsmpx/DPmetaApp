@@ -2,8 +2,8 @@
 
 Состояние: в работе.
 
-Сделано по D-31, проверено на mock, локально и по SSH на Windows.
-Открыто — Linux-target по SSH и Claude Code в Termux (`TODO.md`).
+Сделано по D-31, проверено на mock, локально и по SSH на Windows и
+Linux. Открыто — Claude Code в Termux на телефоне (`TODO.md`).
 
 ## Цель
 
@@ -31,8 +31,8 @@
       7 октября 2026): `AgentCommandTest`,
       `sshTargetStartsAndStopsThroughUnifiedInterface` с `dpai.test.ssh`
       (`docs/TESTING.md`, §8); супервизор через WMI пережил сессию SSH.
-- [ ] То же по SSH на Linux-target — нужен Linux-хост (на машине автора
-      WSL2 и Docker не запускаются: выключена виртуализация).
+- [x] То же по SSH на Linux-target (Ubuntu 24.04 в WSL2, OpenSSH 9.6,
+      7 октября 2026): `AgentCommandTest`; супервизор под `setsid`.
 - [x] Недоступный target переходит в `OFFLINE` по проверке здоровья, а
       не по одному пропуску (несколько порогов): `TargetHealthTest`.
 - [x] Пропуск номера события на канале обнаруживается и ведёт к сверке:

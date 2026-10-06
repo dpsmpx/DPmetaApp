@@ -110,6 +110,22 @@ PowerShell `-N '""'` даёт ключу пароль из двух кавыче
   -Ddpai.test.ssh.knownHosts=C:/Users/dpu/.ssh/dpai_known_hosts
 ```
 
+Linux-target — Ubuntu 24.04 в WSL2 на той же машине: `openssh-server` и
+`openjdk-21-jre-headless`; порт 2223 (`/etc/ssh/sshd_config.d/dpai.conf`,
+вход только ключом); в Ubuntu 24.04 порт задаёт `ssh.socket`, поэтому он
+выключен, а включена `ssh.service`; агент — копия `dpai` в
+`/home/dpu/dpai`. WSL гасит дистрибутив без открытых сессий: на время
+проверки его держит `wsl.exe -d Ubuntu-24.04 -u root -- bash -c
+"systemctl start ssh.service; exec sleep infinity"`. Из Git Bash —
+`MSYS_NO_PATHCONV=1`, иначе путь `/home/…` в свойстве переписывается.
+
+```sh
+MSYS_NO_PATHCONV=1 ./gradlew :cli:test --tests '*AgentCommandTest*' \
+  -Ddpai.test.ssh=dpu@127.0.0.1:2223:posix:/home/dpu/dpai/bin/dpai \
+  -Ddpai.test.ssh.identity=C:/Users/dpu/.ssh/dpai_test \
+  -Ddpai.test.ssh.knownHosts=C:/Users/dpu/.ssh/dpai_known_hosts_wsl
+```
+
 ## 9. Что тесты пока не покрывают
 
 Всё, что требует настоящего SSH-хоста, устройства Android или Claude, —
