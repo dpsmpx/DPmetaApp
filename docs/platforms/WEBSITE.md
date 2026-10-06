@@ -37,6 +37,7 @@ Claude Code после его «да» (Д36). Домен зарегистрир
 /projects/              проекты                   /en/projects/
 /projects/<id>/         страница проекта (факты)  /en/projects/<id>/
 /progress/              прогресс экосистемы (Д38, CI-0002)  /en/progress/
+/ecosystem/             интерактивная схема экосистемы (Д43) — только RU; свой .htaccess (CSP со своими скриптами)
 /articles/              статьи автора (Д42)     /en/articles/ — когда есть английские
 /articles/<slug>/       статья (адрес не меняется)
 /news/                  лента: новости, дневник, релизы — категории
@@ -44,7 +45,8 @@ Claude Code после его «да» (Д36). Домен зарегистрир
 /tags/<метка>/          записи и статьи по метке
 /feed.xml /rss.xml /feed.json   фиды
 /sitemap.xml /robots.txt /404.html /en/404.html
-/api/v1/index.json /api/v1/projects.json /api/v1/news.json /api/v1/progress.json (если страница прогресса видна)
+/api/v1/index.json /api/v1/projects.json /api/v1/news.json /api/v1/progress.json (если страница прогресса видна);
+                        данные схемы — /ecosystem/dpvis-data.json (resources.ecosystem в index.json)
 /media/<объект>/…  /fonts/…  /style.css  /favicon.svg
 /.htaccess              заголовки, 404 и выбор языка для Apache (Beget, Д35); /en/.htaccess — своя 404;
                         /_headers — для Cloudflare Pages и Netlify
@@ -135,6 +137,45 @@ JSON-LD (`Person`, `CreativeWork`, `BlogPosting`), фиды и API. Имени
   версия текста; одобренный вариант при этом устаревает (Д28). На рабочий
   сайт — после одобрения автором (Д12) и П2-20.
 
+## Экосистема (Д43)
+
+Раздел `/ecosystem/` — интерактивная схема системы проектов из
+репозитория DPvisualisation (его D-15): слои, проекты, потоки работы,
+прогресс по истории git. Пункт меню «Экосистема», только русский.
+
+- **Комплект.** `website/ecosystem/`: `dpvis.js` (просмотрщик одним
+  файлом, без зависимостей), `dpvis.css`, `dpvis-data.json` (публичная
+  выжимка `dpvis-public/1`) и `MANIFEST.json` с sha256. Сборка сайта
+  сверяет хэши и формат; правка руками — ошибка сборки.
+- **Что видно.** Закрытые репозитории — имя, роль, стадия, коммиты по
+  дням (ИИ и человек), первый и последний коммит; потоки между ними — по
+  виду и «кто движет». Нет: старых открытых проектов, проекта без
+  публичного имени (только «ещё 1 проект…»), устройств, личных каналов,
+  веток, путей, кодов контрактов, времени точнее даты. Это обеспечивает
+  выжимка в DPvisualisation: белый список полей, тексты — только
+  публичные формулировки модели, отказ сборки по списку запретов.
+- **Роли и стадии** репозиториев на странице заменяются формулировками
+  реестра фактов (`ecosystem.roles`, `ecosystem.stages` в `site.yaml`);
+  репозиторий без факта — без роли и стадии, с предупреждением сборки.
+  Все тексты схемы проходят anti-hype; выход — фильтр Д39.
+- **Без JavaScript** — та же система списком по слоям (из тех же данных).
+- **CSP.** Только в каталоге `/ecosystem/` — `script-src 'self'`: свой
+  `/ecosystem/.htaccess` (Beget) или правило `/ecosystem/*` в `_headers`.
+  Остальной сайт — `script-src 'none'`. Проверка `site` разрешает
+  `<script src="/ecosystem/dpvis.js">` (пустой, без встроенного кода)
+  только на страницах раздела; `site serve` и `siteshots` отдают тот же
+  заголовок по пути.
+
+Обновить схему:
+1. В клоне DPvisualisation: `python3 -m tools.dpvis collect --root <клоны>`,
+   затем `python3 -m tools.dpvis build --site dist/site`.
+2. Здесь: `python3 -m tools.cs site ecosystem-import <клон>/dist/site` —
+   проверка хэшей до и после копирования.
+3. `tools/check.sh`, `git diff`, коммит; выгрузка — по Д35, Д36.
+
+После выгрузки — проверить по HTTPS: `/ecosystem/` отдаёт
+`script-src 'self'`, а `/` — `script-src 'none'`.
+
 ## Фильтр чувствительных данных (Д39)
 
 Каждый файл сборки проверяет `tools/cs/core/sensitive.py` по
@@ -150,6 +191,7 @@ JSON-LD (`Person`, `CreativeWork`, `BlogPosting`), фиды и API. Имени
 | `SD-SECRET` | шаблоны проверки `secrets` (ключи, токены, подписанные адреса) — значение не печатается |
 | `SD-PRIVATE` | слова из списка личных слов автора вне Git (Д37, Д40) — значение не печатается |
 | `SD-UNDISCLOSED`, `SD-PERSONAL` | имя закрытого проекта без публичного имени; имена личных репозиториев (`scope.yaml`) |
+| `SD-UNDISCLOSED-WHAT` | признаки назначения проекта без публичного имени — словом в видимом тексте (подстрокой «vpn» встречается в шрифтах) |
 | `SD-REF` | коммиты закрытых репозиториев: head из наборов прогресса и ref вех |
 | `SD-META` | метаданные изображений: EXIF, XMP, IPTC, текстовые блоки PNG |
 | `SD-TERM` | ручной список слов в политике (`terms`) |
@@ -232,7 +274,8 @@ false`, §80). Адрес записи (`/news/<slug>/`) и статьи (`/arti
 `woff2`/`svg`); для Cloudflare Pages и Netlify — `/_headers`, правило
 для `/*`. Набор один: `Content-Security-Policy` (только свои файлы: `script-src 'none'`,
 `style-src 'self'`, `img-src 'self'`, `font-src 'self'`,
-`frame-ancestors 'none'`; JSON-LD — блок данных, не исполняется),
+`frame-ancestors 'none'`; JSON-LD — блок данных, не исполняется;
+исключение — каталог `/ecosystem/`, `script-src 'self'`, Д43),
 `X-Content-Type-Options: nosniff`, `Referrer-Policy:
 strict-origin-when-cross-origin`, `Permissions-Policy` (камера,
 микрофон, геолокация, оплата, USB — выключены), `X-Frame-Options: DENY`,

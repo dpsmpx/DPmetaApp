@@ -245,3 +245,10 @@ article.article h2 { margin-top: 2em; scroll-margin-top: 16px; }
 article.article h3 { margin-top: 1.4em; }
 nav.crumbs { font-size: 14px; column-gap: 6px; color: var(--mist); }
 nav.crumbs a { padding: 4px 0; }
+
+/* ---------- экосистема (Д43): схема DPvisualisation шире колонки текста ----------
+   Ширина — до 1440px, с полями 16px от края окна; стили самой схемы — dpvis.css комплекта. */
+.page-ecosystem .lead { font-size: 19px; color: var(--paper); }
+.page-ecosystem .dpvis-host { width: min(1440px, calc(100vw - 32px)); margin: 24px 0 32px calc(50% - min(720px, 50vw - 16px)); }
+.page-ecosystem .eco-static h3 { margin-top: 1.4em; }
+.page-ecosystem .eco-static ul { padding-left: 1.2em; }

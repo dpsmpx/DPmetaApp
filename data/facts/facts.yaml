@@ -584,6 +584,41 @@ facts:
       en: ["the ecosystem map, contracts between repositories and risks"]
     evidence:
       - {kind: doc, source: "dpsmpx/DPmeta README.md, docs/DECISIONS.md M-01", ref: "b03e9bc", date: 2026-10-05, verification: reported}
+  - id: APP-WHAT
+    subject: dpmetaapp
+    class: FACT
+    risk: low
+    public: true
+    statement: "DPmetaApp — личное приложение автора для Android — пульт над экосистемой (проекты, ход разработки, сайт); на 06.10.2026 — этап ТЗ, черновой PR."
+    allowed_wording:
+      ru: ["личный пульт автора над экосистемой для Android — на этапе ТЗ"]
+      en: ["the author's personal Android control app for the ecosystem — at the specification stage"]
+    evidence:
+      - {kind: doc, source: "dpsmpx/DPmetaApp docs/direction/TECHNICAL_TASK.md (ветка claude/vigilant-franklin-61x8kq, черновик этапа 0)", ref: "2812482", date: 2026-10-06, verification: reported}
+    recheck_by: 2026-11-06
+  - id: MON-WHAT
+    subject: dpmonetization
+    class: FACT
+    risk: low
+    public: true
+    statement: "DPmonetization — Strategic Project Intelligence — слой анализа портфеля проектов (доказательства → состояние → готовность → ценность → риск → решение); на 06.10.2026 — каркас ядра."
+    allowed_wording:
+      ru: ["анализ портфеля проектов: от доказательств к решению — каркас ядра"]
+      en: ["project portfolio analysis: from evidence to decision — core skeleton"]
+    evidence:
+      - {kind: doc, source: "dpsmpx/DPmonetization tools/dpmon/__init__.py", ref: "f6d30fe", date: 2026-10-06, verification: reported}
+    recheck_by: 2026-11-06
+  - id: VIS-WHAT
+    subject: dpvisualisation
+    class: FACT
+    risk: low
+    public: true
+    statement: "DPvisualisation — интерактивная модель экосистемы: потоки информации и работа инфраструктуры на реальных данных истории git; её публичная выжимка — раздел «Экосистема» сайта (Д43)."
+    allowed_wording:
+      ru: ["интерактивная модель экосистемы на реальных данных — эта схема"]
+      en: ["an interactive model of the ecosystem on real data — this diagram"]
+    evidence:
+      - {kind: doc, source: "dpsmpx/DPvisualisation docs/direction/REQUEST.md, docs/direction/DECISIONS.md D-01, D-15", ref: "4bbe5ac", date: 2026-10-06, verification: reported}
   - id: META-NO-DEPS
     subject: dpmeta
     class: FACT

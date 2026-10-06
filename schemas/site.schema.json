@@ -18,6 +18,18 @@
     "title": {
       "type": "object"
     },
+    "ecosystem": {
+      "type": "object",
+      "description": "Д43: раздел с интерактивной моделью экосистемы; комплект DPvisualisation (build --site)",
+      "required": ["path", "kit"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {"type": "string", "pattern": "^/[a-z][a-z0-9-]*/$"},
+        "kit": {"type": "string", "pattern": "^[A-Za-z0-9_./-]+$"},
+        "roles": {"type": "object", "additionalProperties": {"type": "string", "pattern": "^[A-Z]{2,5}(-[A-Z0-9]+)+$"}},
+        "stages": {"type": "object", "additionalProperties": {"type": "string", "pattern": "^[A-Z]{2,5}(-[A-Z0-9]+)+$"}}
+      }
+    },
     "canonical_base": {
       "type": "string",
       "pattern": "^https://"

@@ -58,11 +58,20 @@ class Filter(unittest.TestCase):
             "SD-SECRET": f"<p>{token}</p>",
             "SD-PRIVATE": "<h1>ZQXPRIVAT</h1>",
             "SD-UNDISCLOSED": "<li>DPpass</li>",
+            "SD-UNDISCLOSED-WHAT": "<p>клиент VPN для Android</p>",
             "SD-PERSONAL": "<code>dayplan_neocities</code>",
             "SD-REF": f"<p>коммит {self.head[:7]}</p>",
         }
         for rule, text in cases.items():
             self.assertIn(rule, self.rules(text), rule)
+
+    def test_undisclosed_what_by_word_not_substring(self):
+        for text in ("<p>свой прокси-сервер</p>", "<p>XRAY core</p>", "<p>туннелирование</p>"):
+            self.assertIn("SD-UNDISCLOSED-WHAT", self.rules(text), text)
+        self.assertNotIn("SD-UNDISCLOSED-WHAT", self.rules('<p>openvpnx svpn3</p><i data-x="vpn">ok</i>'),
+                         "подстрока и атрибуты — не находка: «vpn» случайно встречается в шрифтах")
+        font = next(self.repo.path("assets/brand/fonts").glob("*.woff2"))
+        self.assertFalse([h for h in self.f.scan_file(font, font.name) if h.rule == "SD-UNDISCLOSED-WHAT"])
 
     def test_secret_value_not_printed(self):
         hit = next(h for h in self.f.scan_text("a someone.private" + "@mail.ru b", "x.html") if h.rule == "SD-EMAIL")

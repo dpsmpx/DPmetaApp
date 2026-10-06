@@ -6,6 +6,15 @@
 
 ## За автором
 
+- [ ] **Выгрузить сайт с разделом «Экосистема» (Д43, П2-26).** Сборка
+  готова в PR #24. Порядок: влить PR #24 (и PR DPvisualisation#1 — там
+  исходник схемы) → на своей машине `git pull`, `tools/check.sh` →
+  `python3 -m tools.cs site deploy --dry-run` (покажет `ecosystem/` и
+  `ecosystem/.htaccess`) → «да» → `site deploy` (Д35, Д36). После выгрузки
+  проверить: `curl -sI https://dpsmpx.com/ecosystem/ | grep -i content-security`
+  — `script-src 'self'`; то же для `/` — `script-src 'none'`. Если на
+  `/ecosystem/` пришло `'none'` — Beget не применил `.htaccess` каталога:
+  схема не запустится, но список по слоям виден; прислать вывод сессии.
 - [ ] **HTTPS для `dpsmpx.com` — срочно (П2-01).** **Наблюдение сессии 05.10.2026, ~18:00 UTC:** `https://dpsmpx.com/`, `/en/` и `https://www.dpsmpx.com/` отвечают 200, HTTP → HTTPS — 301 (сертификат, видимо, выпущен). Подтвердить и закрыть — автор. Домен зарегистрирован
   (RDAP: 05.10.2026, 03:41:54 UTC, регистратор Beget, до 05.10.2028; NS
   Beget) и по HTTP отдаёт сайт. HTTPS не отвечает: соединение обрывается
@@ -155,6 +164,11 @@
 
 ## За сессией
 
+- [ ] **Экосистема (Д43) после выгрузки:** сверить по HTTPS CSP каталога
+  `/ecosystem/` и корня, снимки 390 и 1366 px с рабочего сайта; новый срез
+  схемы — в DPvisualisation (`collect`, `build --site`), затем
+  `site ecosystem-import`. Стадии DPmetaApp, DPmonetization и
+  DPvisualisation на схеме — внутри ролей (фактов `*-STAGE` для них нет).
 - [ ] **CI-0003 «Нейросети и нейропластичность» — критика отдельным
   проходом** (`templates/critique.md`; вход — бриф, §2). Сейчас
   `GENERATED`: канон v1 (текст автора) и `website.ru` зафиксированы, на

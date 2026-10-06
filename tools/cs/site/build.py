@@ -36,7 +36,7 @@ from ..core.ledger import Ledger
 from ..core.repo import Repo
 from ..progress.figures import FIGURE_MARK
 from ..progress.figures import render as render_figure
-from . import feeds
+from . import ecosystem, feeds
 from .i18n import PLATFORM_NAMES, t
 
 E = html.escape
@@ -96,6 +96,7 @@ class Page:
     jsonld: list = field(default_factory=list)
     draft: bool = False
     lastmod: str | None = None
+    head: list = field(default_factory=list)  # свои стили и скрипты страницы (только раздел «Экосистема», Д43)
 
 
 @dataclass
@@ -107,6 +108,7 @@ class BuildReport:
     warnings: list = field(default_factory=list)
     errors: list = field(default_factory=list)
     entries: list = field(default_factory=list)
+    eco_path: str | None = None  # раздел «Экосистема» в этой сборке (Д43)
 
 
 class SiteBuild:
@@ -229,6 +231,8 @@ class SiteBuild:
     def nav(self, lang: str, current: str, alt: dict) -> str:
         pre = "/en" if lang == "en" else ""
         items = [("home", f"{pre}/"), ("projects", f"{pre}/projects/")]
+        if self.eco_cfg() and lang == "ru":
+            items.append(("ecosystem", self.eco_cfg()["path"]))
         items += [(k, path) for k, path in self.nav_pages(lang)]
         items += [("articles", self.articles_path(lang)), ("news", "/news/"), ("about", f"{pre}/about/")]
         out = []
@@ -602,8 +606,11 @@ class SiteBuild:
             head.append(f'<link rel="alternate" hreflang="x-default" href="{E(self.base + page.alternates.get("ru", page.path))}">')
         for ld in page.jsonld:
             head.append('<script type="application/ld+json">' + json.dumps(ld, ensure_ascii=False).replace("</", "<\\/") + "</script>")
+        head += page.head
         banner = f'<div class="banner" role="note">{E(t(page.lang, "staging"))}</div>' if self.noindex else ""
         navs = {path: key for lg in ("ru", "en") for key, path in self.nav_pages(lg)}
+        if self.eco_cfg():
+            navs[self.eco_cfg()["path"]] = "ecosystem"
         current = {"/": "home", "/en/": "home"}.get(page.path) or navs.get(page.path) or ("projects" if "/projects/" in page.path else
                                                                     "news" if page.path.startswith("/news/") else
                                                                     "articles" if "/articles/" in page.path else
@@ -653,7 +660,10 @@ class SiteBuild:
         """Файл заголовков хостинга (П2-12, Д35): (путь, текст)."""
         if self.cfg.get("hosting") == "beget":
             return "/.htaccess", self.htaccess()
-        return "/_headers", "\n".join(["/*"] + [f"  {k}: {v}" for k, v in self._headers().items()]) + "\n"
+        lines = ["/*"] + [f"  {k}: {v}" for k, v in self._headers().items()]
+        for prefix, hdrs in self.path_headers().items():
+            lines += [f"{prefix}*"] + [f"  {k}: {v}" for k, v in hdrs.items()]
+        return "/_headers", "\n".join(lines) + "\n"
 
     def htaccess(self) -> str:
         """Apache (Beget): 404, кодировка, без списка файлов каталогов, типы, заголовки.
@@ -687,6 +697,48 @@ class SiteBuild:
                 f"  RewriteCond %{{HTTP_REFERER}} !^https?://(www\\.)?{host}(/|$) [NC]",
                 "  RewriteRule ^$ /en/ [R=302,L]",
                 "</IfModule>"]
+
+    # ------------------------------------------------------- раздел «Экосистема» (Д43)
+    def eco_cfg(self) -> dict | None:
+        c = self.cfg.get("ecosystem")
+        return c if c and c.get("path") and c.get("kit") else None
+
+    def eco_kit(self) -> Path:
+        return self.repo.path(*self.eco_cfg()["kit"].split("/"))
+
+    def page_ecosystem(self) -> Page | None:
+        """Интерактивная модель экосистемы из комплекта DPvisualisation; без комплекта — ошибка сборки."""
+        c = self.eco_cfg()
+        kit = self.eco_kit()
+        bad = ecosystem.kit_problems(kit)
+        if bad:
+            self.report.errors += bad
+            return None
+        data, warn = ecosystem.apply_facts(ecosystem.load(kit), c.get("roles") or {}, c.get("stages") or {},
+                                           lambda fid: self.fact(fid, "ru"))
+        self.report.warnings += warn
+        from ..claims import scan
+        from ..facts import rules
+        for text in ecosystem.texts(data):
+            for rule, frag in scan(text, rules()):
+                self.report.errors.append(f"экосистема: «{frag}» — {rule['id']}: {rule.get('why') or rule.get('reason') or 'запрещённая формулировка'}")
+        self._eco_data = data
+        as_of = (data.get("state") or {}).get("as_of") or data["model"].get("as_of") or ""
+        day = as_of[:10]
+        as_of_text = f"{day[8:10]}.{day[5:7]}.{day[:4]}" if len(day) == 10 else "—"
+        path = c["path"]
+        page = Page(path, "ru", t("ru", "ecosystem"),
+                    "Интерактивная схема системы проектов dpsmpx: слои, потоки работы и прогресс по истории git.",
+                    ecosystem.page_main(data, path, as_of_text), lastmod=day or None)
+        page.head = [f'<link rel="stylesheet" href="{path}dpvis.css">', f'<script src="{path}dpvis.js" defer></script>']
+        return page
+
+    def path_headers(self) -> dict:
+        """Заголовки по пути: раздел «Экосистема» — CSP со своими скриптами (Д43)."""
+        c = self.eco_cfg()
+        if not c:
+            return {}
+        return {c["path"]: {"Content-Security-Policy": ecosystem.csp_with_scripts(self._headers()["Content-Security-Policy"])}}
 
     def not_found_page(self, lang: str) -> Page:
         """Страница 404 на языке раздела (П2-18): ссылка — на главную того же языка."""
@@ -726,6 +778,10 @@ class SiteBuild:
             if p.get("page"):
                 for lang in langs:
                     pages.append(pg(self.page_project, p, lang, entries))
+        eco_page = pg(self.page_ecosystem) if self.eco_cfg() else None
+        if eco_page:
+            pages.append(eco_page)
+            self.report.eco_path = eco_page.path
         for e in self._pages:
             pages.append(pg(self.page_entry, e))
         posts = [e for e in entries if e.is_post]
@@ -761,6 +817,21 @@ class SiteBuild:
         self.write(out, "/style.css", self.css())
         self.write(out, "/favicon.svg", self.favicon())
         self.write(out, *self.headers_file())
+        if eco_page:
+            # комплект и CSP раздела: только этот каталог — со своими скриптами (Д43)
+            kit = self.eco_kit()
+            for name in ("dpvis.js", "dpvis.css"):
+                self.write(out, f"{eco_page.path}{name}", (kit / name).read_bytes())
+            # данные — с ролями и стадиями из реестра фактов (apply_facts), не байт в байт с комплектом
+            self.write(out, f"{eco_page.path}dpvis-data.json",
+                       json.dumps(self._eco_data, ensure_ascii=False, separators=(",", ":")) + "\n")
+            if self.cfg.get("hosting") == "beget":
+                csp = self.path_headers()[eco_page.path]["Content-Security-Policy"]
+                self.write(out, f"{eco_page.path}.htaccess",
+                           "# Создаёт tools/cs/site/build.py (Д43); на сервере не править.\n"
+                           "<IfModule mod_headers.c>\n"
+                           f'  Header always set Content-Security-Policy "{csp}"\n'
+                           "</IfModule>\n")
         if self.cfg.get("hosting") == "beget" and "en" in langs:
             # Apache: своя 404 для /en/ (П2-18); заголовки и Options наследуются из корня
             self.write(out, "/en/.htaccess", "# Создаёт tools/cs/site/build.py (П2-18); на сервере не править.\n"
@@ -776,6 +847,8 @@ class SiteBuild:
         robots = "User-agent: *\nDisallow: /\n" if self.noindex else f"User-agent: *\nAllow: /\nSitemap: {self.base}/sitemap.xml\n"
         self.write(out, "/robots.txt", robots)
         api = feeds.api(self, entries)
+        if eco_page:
+            api["index.json"]["resources"]["ecosystem"] = f"{eco_page.path}dpvis-data.json"
         if self._progress:  # данные графиков страницы прогресса — только если страница видна в этом окружении
             api["progress.json"] = {"version": 1, "datasets": [progress_set(self.repo, ds).public() for ds in sorted(self._progress)]}
             api["index.json"]["resources"]["progress"] = "/api/v1/progress.json"

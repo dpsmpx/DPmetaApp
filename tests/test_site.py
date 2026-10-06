@@ -242,5 +242,148 @@ class AuthorName(unittest.TestCase):
             jsonschema.validate({**cfg, "real_name": True}, schema)
 
 
+class Ecosystem(unittest.TestCase):
+    """Д43: раздел «Экосистема» — комплект DPvisualisation, свой CSP каталога, роли из реестра фактов."""
+
+    @staticmethod
+    def repo(hosting: str | None = None, mutate=None):
+        repo = make_repo(git=False)
+        p = repo.path("data", "website", "site.yaml")
+        cfg = yaml.safe_load(p.read_text(encoding="utf-8"))
+        cfg["ecosystem"] = yaml.safe_load((ROOT / "data/website/site.yaml").read_text(encoding="utf-8"))["ecosystem"]
+        if hosting:
+            cfg["hosting"] = hosting
+        if mutate:
+            mutate(cfg, repo)
+        p.write_text(yaml.safe_dump(cfg, allow_unicode=True), encoding="utf-8")
+        repo.reset()
+        return repo
+
+    @staticmethod
+    def build(repo, env="staging"):
+        out = Path(tempfile.mkdtemp(prefix="cs-eco-")) / env
+        sb = SiteBuild(repo, env)
+        return sb, sb.build(out), out
+
+    @classmethod
+    def setUpClass(cls):
+        cls.sb, cls.rep, cls.out = cls.build(cls.repo())
+
+    @staticmethod
+    def reseal(repo, name: str, edit):
+        """Правка файла комплекта с пересчётом MANIFEST — как будто так собрал DPvisualisation."""
+        import hashlib
+        kit = repo.path("website", "ecosystem")
+        edit(kit / name)
+        man = json.loads((kit / "MANIFEST.json").read_text(encoding="utf-8"))
+        man["files"][name] = hashlib.sha256((kit / name).read_bytes()).hexdigest()
+        (kit / "MANIFEST.json").write_text(json.dumps(man), encoding="utf-8")
+
+    def test_page_nav_and_script_only_here(self):
+        self.assertEqual(self.rep.errors, [])
+        page = (self.out / "ecosystem/index.html").read_text(encoding="utf-8")
+        self.assertIn('<script src="/ecosystem/dpvis.js" defer></script>', page)
+        self.assertIn('<link rel="stylesheet" href="/ecosystem/dpvis.css">', page)
+        self.assertIn('data-src="/ecosystem/dpvis-data.json"', page)
+        self.assertIn("Система по слоям", page, "без JavaScript — та же система списком")
+        for name in ("dpvis.js", "dpvis.css", "dpvis-data.json"):
+            self.assertTrue((self.out / "ecosystem" / name).is_file(), name)
+        self.assertIn('href="/ecosystem/"', (self.out / "index.html").read_text(encoding="utf-8"))
+        self.assertNotIn("/ecosystem/", (self.out / "en/index.html").read_text(encoding="utf-8"), "раздел только на русском")
+        others = [f for f in self.out.rglob("*.html") if "<script src=" in f.read_text(encoding="utf-8")]
+        self.assertEqual([f.relative_to(self.out).as_posix() for f in others], ["ecosystem/index.html"])
+        self.assertEqual(page_csp(page, ("/ecosystem/dpvis.js",)), [])
+        self.assertTrue(page_csp(page), "без разрешения каталога скрипт — нарушение")
+        api = json.loads((self.out / "api/v1/index.json").read_text(encoding="utf-8"))
+        self.assertEqual(api["resources"]["ecosystem"], "/ecosystem/dpvis-data.json")
+
+    def test_csp_by_path(self):
+        root = "script-src 'none'"
+        eco = self.sb.path_headers()["/ecosystem/"]["Content-Security-Policy"]
+        self.assertIn("script-src 'self'", eco)
+        self.assertNotIn("unsafe", eco)
+        h = (self.out / "_headers").read_text(encoding="utf-8")
+        self.assertIn(root, h.split("/ecosystem/*", 1)[0])
+        self.assertIn("script-src 'self'", h.split("/ecosystem/*", 1)[1])
+        sb, rep, out = self.build(self.repo("beget"), "production")
+        self.assertEqual(rep.errors, [])
+        self.assertIn(root, (out / ".htaccess").read_text(encoding="utf-8"))
+        self.assertIn(f'Content-Security-Policy "{eco}"', (out / "ecosystem/.htaccess").read_text(encoding="utf-8"))
+
+    @mock.patch.object(_Handler, "log_request", lambda *a, **k: None)
+    def test_server_sends_path_csp(self):
+        srv = server(self.out, 0, self.sb._headers(), quiet=True, path_headers=self.sb.path_headers())
+        port = srv.server_address[1]
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            def get(path):
+                with urllib.request.urlopen(f"http://127.0.0.1:{port}{path}") as r:
+                    r.read()  # дочитать тело: иначе сервер пишет в закрытое соединение
+                    return r.headers["Content-Security-Policy"]
+            self.assertIn("script-src 'none'", get("/"))
+            self.assertIn("script-src 'self'", get("/ecosystem/"))
+            self.assertIn("script-src 'self'", get("/ecosystem/dpvis.js"))
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+    def test_roles_and_stages_only_from_facts(self):
+        data = json.loads((self.out / "ecosystem/dpvis-data.json").read_text(encoding="utf-8"))
+        repos = {n["id"]: n for n in data["model"]["nodes"] if n["kind"] == "repo"}
+        self.assertEqual(repos["galdhold"]["role"], self.sb.fact("GH-GENRE", "ru"))
+        self.assertEqual(repos["galdhold"]["stage"], self.sb.fact("GH-STAGES", "ru"))
+
+        def drop(cfg, repo):
+            del cfg["ecosystem"]["roles"]["market"]
+            del cfg["ecosystem"]["stages"]["market"]
+        _, rep, out = self.build(self.repo(mutate=drop))
+        market = next(n for n in json.loads((out / "ecosystem/dpvis-data.json").read_text(encoding="utf-8"))["model"]["nodes"]
+                      if n["id"] == "market")
+        self.assertNotIn("role", market, "нет факта — нет утверждения о проекте")
+        self.assertNotIn("stage", market)
+        self.assertTrue(any("market" in w for w in rep.warnings), rep.warnings)
+
+    def test_kit_must_match_manifest(self):
+        repo = self.repo()
+        css = repo.path("website", "ecosystem", "dpvis.css")
+        css.write_text(css.read_text(encoding="utf-8") + "\n/* правка руками */\n", encoding="utf-8")
+        _, rep, _ = self.build(repo)
+        self.assertTrue(any("dpvis.css не совпадает с MANIFEST.json" in e for e in rep.errors), rep.errors)
+
+    def test_only_public_extract(self):
+        repo = self.repo()
+
+        def full(p):
+            d = json.loads(p.read_text(encoding="utf-8"))
+            d["schema"] = "dpvis-model/1"
+            p.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+        self.reseal(repo, "dpvis-data.json", full)
+        _, rep, _ = self.build(repo)
+        self.assertTrue(any("только публичная выжимка" in e for e in rep.errors), rep.errors)
+
+    def test_anti_hype_on_texts(self):
+        repo = self.repo()
+
+        def hype(p):
+            d = json.loads(p.read_text(encoding="utf-8"))
+            next(n for n in d["model"]["nodes"] if n["kind"] == "service")["role"] = "сервис с CI"
+            p.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+        self.reseal(repo, "dpvis-data.json", hype)
+        _, rep, _ = self.build(repo)
+        self.assertTrue(any(e.startswith("экосистема: «CI» — CL-CI") for e in rep.errors), rep.errors)
+
+    def test_import_checks_kit(self):
+        from tools.cs.site import ecosystem
+        repo = make_repo(git=False)
+        src = Path(tempfile.mkdtemp(prefix="cs-kit-"))
+        for name in ("dpvis.js", "dpvis.css", "dpvis-data.json", "MANIFEST.json"):
+            shutil.copyfile(ROOT / "website/ecosystem" / name, src / name)
+        shutil.rmtree(repo.path("website", "ecosystem"))
+        self.assertEqual(ecosystem.import_kit(repo, src), [])
+        (src / "dpvis.js").write_text("// не та сборка\n", encoding="utf-8")
+        self.assertTrue(ecosystem.import_kit(repo, src), "несовпадение с MANIFEST — отказ до копирования")
+        self.assertEqual(ecosystem.kit_problems(repo.path("website", "ecosystem")), [], "прежний комплект не тронут")
+
+
 if __name__ == "__main__":
     unittest.main()
