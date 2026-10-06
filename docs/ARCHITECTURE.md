@@ -1,6 +1,6 @@
 # Архитектура DP_AI_Orcestrator
 
-Срез на 6 октября 2026 (этапы 0–7). Решения, на которых держится
+Срез на 6 октября 2026 (этапы 0–8). Решения, на которых держится
 архитектура, — `docs/direction/DECISIONS.md`; здесь — как они разложены
 по модулям и как через модули идут данные. Модели подсистем —
 отдельными документами (§5).
@@ -244,6 +244,9 @@ target:     start ─► Detacher ─► supervise ─► процесс; выв
 
 Модуль `tasks` (этап 7; `docs/SCHEDULER.md`, §7): `Tasks` (решения и
 план назначений), `TaskCodec`; проекция журнала — `orchestrator.tasks`.
+
+Модуль `contexts` (этап 8; `docs/CONTEXT_MODEL.md`, §7):
+`ContextAssembler`, `PromptRenderer`, `Handoff`, `Compaction`.
 
 ## 8. Модели подсистем
 

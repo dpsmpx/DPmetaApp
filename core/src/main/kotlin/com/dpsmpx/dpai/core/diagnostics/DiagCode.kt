@@ -142,6 +142,13 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     RETRY_LIMIT_REACHED(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
     CONTINUATION_LIMIT_REACHED(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
 
+    // --- контекст и handoff (этап 8) ---
+    CONTEXT_PROJECT_BOUNDARY(Category.STATE, Severity.WARNING, Retryability.NON_RETRYABLE),
+    CONTEXT_SECRET_EXCLUDED(Category.STATE, Severity.INFO, Retryability.NON_RETRYABLE),
+    CONTEXT_SECRET_INCLUDED(Category.STATE, Severity.WARNING, Retryability.NON_RETRYABLE),
+    CONTEXT_TRUNCATED(Category.STATE, Severity.WARNING, Retryability.NON_RETRYABLE),
+    HANDOFF_ALREADY_EXISTS(Category.STATE, Severity.INFO, Retryability.NON_RETRYABLE),
+
     // --- общее ---
     /** Строгая семантика (D-05): неподдержанное — явный отказ, а не «похожее». */
     UNSUPPORTED(Category.UNSUPPORTED, Severity.ERROR, Retryability.NON_RETRYABLE),
