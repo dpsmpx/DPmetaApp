@@ -36,6 +36,8 @@ PERMISSIONS = {
     "android.permission.FOREGROUND_SERVICE": "сервис туннеля работает в foreground",
     "android.permission.FOREGROUND_SERVICE_SPECIAL_USE": "тип foreground-сервиса specialUse (Android 14+)",
     "android.permission.POST_NOTIFICATIONS": "постоянное уведомление, пока туннель поднят (Android 13+)",
+    "android.permission.ACCESS_NETWORK_STATE": "контекст сети для адаптивного выбора: тип и возможности сети вне "
+                                               "туннеля (docs/ADAPTIVE_ENGINE.md)",
 }
 BACKUP_DOMAINS = {"root", "file", "database", "sharedpref", "external"}
 EXPORTED_OK = {

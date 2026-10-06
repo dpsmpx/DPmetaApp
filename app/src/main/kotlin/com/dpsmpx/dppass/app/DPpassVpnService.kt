@@ -197,7 +197,7 @@ class DPpassVpnService : VpnService() {
                     success = !failed,
                     rttMillis = elapsed,
                     stalled = failed && result.errors.any { it.code == DiagCode.PAYLOAD_STALLED },
-                    timestampMillis = System.currentTimeMillis(),
+                    timestampMillis = graph.core.clock.nowMillis(),
                 ),
                 networkContext,
             )

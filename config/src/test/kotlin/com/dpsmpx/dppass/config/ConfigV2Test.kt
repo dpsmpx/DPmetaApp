@@ -23,7 +23,7 @@ class ConfigV2Test {
         )
         val migrated = ConfigMigrations.ONE_TO_TWO.migrate(source)
         assertTrue(migrated is Outcome.Success)
-        val doc = (migrated as Outcome.Success<JsonObject>).value
+        val doc = migrated.value
         assertEquals(2, (doc["format_version"] as com.dpsmpx.dppass.core.JsonNumber).toIntOrNull())
         assertEquals(true, (doc["routing"] as JsonObject)["automatic_domestic"]?.let {
             (it as com.dpsmpx.dppass.core.JsonBool).value
@@ -41,7 +41,7 @@ class ConfigV2Test {
                 "name": "p1",
                 "server": "example.com",
                 "port": 443,
-                "protocol": {"type": "vless", "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"},
+                "protocol": {"type": "vless", "id": "00000000-0000-4000-8000-000000000001"},
                 "transport": {"type": "tcp"},
                 "security": {"type": "tls", "server_name": "example.com"}
               }],
