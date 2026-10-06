@@ -1,10 +1,12 @@
 package com.dpsmpx.dppass.subscriptions
 
 import com.dpsmpx.dppass.config.ConfigLoader
+import com.dpsmpx.dppass.config.ConfigLimits
 import com.dpsmpx.dppass.config.ConfigValidator
 import com.dpsmpx.dppass.config.ServerProfile
 import com.dpsmpx.dppass.core.Checksums
 import com.dpsmpx.dppass.core.Clock
+import com.dpsmpx.dppass.core.ProfileId
 import com.dpsmpx.dppass.diagnostics.DiagCode
 import com.dpsmpx.dppass.diagnostics.Diagnostic
 import com.dpsmpx.dppass.diagnostics.Outcome
@@ -167,13 +169,30 @@ class SubscriptionUpdater(
         notes += meta.notes
 
         val valid = mutableListOf<ServerProfile>()
+        val seen = HashMap<ProfileId, ServerProfile>()
+        val limit = ConfigLimits().maxProfiles
         for ((i, p) in decoded.profiles.withIndex()) {
             val problems = ConfigValidator.validateProfile(p, "profiles[$i]")
-            if (problems.any { it.isError }) {
-                notes += Diagnostic.warning(DiagCode.SUBSCRIPTION_ENTRY_SKIPPED, "сервер «${p.name}» пропущен: не прошёл проверку", "profiles[$i]")
-                    .copy(causes = problems)
-            } else {
-                valid += p
+            val first = seen[p.id]
+            when {
+                problems.any { it.isError } ->
+                    notes += Diagnostic.warning(DiagCode.SUBSCRIPTION_ENTRY_SKIPPED, "сервер «${p.name}» пропущен: не прошёл проверку", "profiles[$i]")
+                        .copy(causes = problems)
+                // id ссылки — от всего, кроме имени: тот же id — тот же сервер с теми же
+                // настройками. Второй такой профиль сделал бы конфигурацию нечитаемой (ID_DUPLICATE).
+                first != null ->
+                    notes += Diagnostic.warning(
+                        DiagCode.SUBSCRIPTION_ENTRY_SKIPPED,
+                        "сервер «${p.name}» пропущен: та же запись, что «${first.name}», отличается только именем",
+                        "profiles[$i]",
+                    )
+                // Больше профилей, чем принимает документ, — конфигурация не прочиталась бы.
+                valid.size >= limit ->
+                    notes += Diagnostic.warning(DiagCode.SUBSCRIPTION_ENTRY_SKIPPED, "сервер «${p.name}» пропущен: серверов больше $limit", "profiles[$i]")
+                else -> {
+                    valid += p
+                    seen[p.id] = p
+                }
             }
         }
         val filtered = filter.filter(valid)

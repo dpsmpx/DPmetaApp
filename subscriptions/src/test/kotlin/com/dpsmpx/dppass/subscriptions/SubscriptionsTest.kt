@@ -316,6 +316,24 @@ class SubscriptionUpdaterTest {
         assertTrue(again is UpdateResult.Unchanged, "ожидалось Unchanged, есть $again")
     }
 
+    /**
+     * 6 октября 2026, телефон автора: одна и та же ссылка под двумя именами дала два
+     * профиля с одним id; конфигурация активировалась, а при перезапуске не прочиталась
+     * (ID_DUPLICATE) и ушла в карантин. Второй профиль с тем же id — пропуск с находкой.
+     */
+    @Test
+    fun sameLinkUnderTwoNamesIsOneServer() = runBlocking {
+        val body = "vless://$UUID1@203.0.113.11:443?security=tls&sni=a.example.com#Первый\n" +
+            "vless://$UUID1@203.0.113.11:443?security=tls&sni=a.example.com#Второй\n" +
+            "trojan://p@198.51.100.2:443#B\n"
+        val ready = assertIs<UpdateResult.Ready>(SubscriptionUpdater(fetcher(body), clock, "test").update(sub(), passAll))
+        assertEquals(listOf("Первый", "B"), ready.candidate.profiles.map { it.name })
+        assertEquals(ready.candidate.profiles.map { it.id }.distinct(), ready.candidate.profiles.map { it.id })
+        val skipped = ready.diagnostics.single { it.code == DiagCode.SUBSCRIPTION_ENTRY_SKIPPED }
+        assertTrue("Второй" in skipped.message && "Первый" in skipped.message, skipped.message)
+        assertEquals(2, ready.candidate.revision.profileCount)
+    }
+
     @Test
     fun failureKeepsLastSuccessfulRevision() = runBlocking {
         val ready = SubscriptionUpdater(fetcher(links), clock, "test").update(sub(), passAll) as UpdateResult.Ready

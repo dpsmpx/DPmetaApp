@@ -77,6 +77,21 @@ class ActivationServiceTest {
         assertEquals(ActivationStatus.REJECTED, s.state.history.last().status)
     }
 
+    /** Сохраняется только то, что прочитается при следующем запуске (D-07): повтор id — отказ до записи. */
+    @Test
+    fun configThatWouldNotReloadIsRejectedBeforeCommit() = runBlocking {
+        val s = service()
+        s.activate(ir("valid-minimal.json"), "test", "good")
+        val multi = ir("valid-multi.json")
+        val twin = multi.copy(profiles = multi.profiles + multi.profiles.first().copy(name = "двойник"))
+        val r = assertIs<ActivationResult.Rejected>(s.activate(twin, "test", "twin"))
+        assertEquals(ActivationStep.VALIDATION, r.record.failedStep)
+        assertEquals(DiagCode.ID_DUPLICATE, r.diagnostics.first().causes.first().code)
+        assertEquals("good", s.state.active!!.sourceChecksum, "действующая конфигурация на месте")
+        val again = service()
+        assertTrue(again.restore().isEmpty(), "после отказа состояние читается без находок")
+    }
+
     @Test
     fun capabilityRejectionHappensBeforeCompile() = runBlocking {
         val s = ActivationService(MockBackendCompiler(MockBackend.LIMITED), MockProxyEngine(MockBackend.LIMITED), ActivationStore(blobs, Quarantine(blobs, clock)), clock)

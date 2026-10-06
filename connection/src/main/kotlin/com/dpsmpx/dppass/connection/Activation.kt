@@ -25,7 +25,11 @@ import com.dpsmpx.dppass.storage.Quarantine
 
 enum class ActivationStatus { ACTIVE, SUPERSEDED, REJECTED, ROLLED_BACK }
 
-enum class ActivationStep { CAPABILITY, COMPILE, BACKEND_VALIDATION, HEALTH_CHECK, COMMIT }
+/**
+ * Шаги активации. [VALIDATION] — сохранённая конфигурация прочитается при
+ * следующем запуске: та же проверка, что при восстановлении (D-07).
+ */
+enum class ActivationStep { VALIDATION, CAPABILITY, COMPILE, BACKEND_VALIDATION, HEALTH_CHECK, COMMIT }
 
 /**
  * Запись истории активаций (D-07): версия, время, источник, контрольная
@@ -156,6 +160,11 @@ class ActivationService(
         }
 
         if (pid == null) return reject(ActivationStep.CAPABILITY, listOf(Diagnostic.error(DiagCode.PROFILES_EMPTY, "нет ни одного профиля")))
+        // Сохраняется только то, что прочитается при следующем запуске (restore —
+        // тот же ConfigLoader). Иначе конфигурация работала бы до перезапуска, а
+        // потом всё состояние ушло бы в карантин (6 октября 2026 — повтор id в подписке).
+        val loadable = ConfigLoader().load(ConfigWriter.write(ir, ConfigWriter.Mode.FULL))
+        if (loadable is Outcome.Failure) return reject(ActivationStep.VALIDATION, loadable.diagnostics)
         val plan = CompilePlan(pid, withTun)
         val caps = CapabilityChecker.check(ir, compiler.capabilities, plan)
         if (caps.any { it.isError }) return reject(ActivationStep.CAPABILITY, caps)
