@@ -2,6 +2,7 @@ package com.dpsmpx.dppass.routing
 
 import com.dpsmpx.dppass.core.Cidr
 import com.dpsmpx.dppass.core.IpAddress
+import com.dpsmpx.dppass.core.RuleId
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -20,7 +21,7 @@ class AutomaticDomesticRoutingTest {
             automaticDomestic = true,
         )
         val geo = TableGeoResolver(
-            sites = mapOf("ru" to listOf(DomainMatcher.Suffix("ru"))),
+            sites = mapOf("category-ru" to listOf(DomainMatcher.Suffix("ru"))),
             ips = mapOf("ru" to listOf(Cidr.parse("95.0.0.0/8")!!.cidr)),
         )
         val domain = RouteEvaluator(policy, geo).decide(RouteQuery(domain = "example.ru"))

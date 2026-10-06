@@ -150,6 +150,8 @@ class StabilityBook(
     fun score(profile: ServerProfile, assessment: NetworkAssessment?): Double {
         val context = StabilityContext.from(assessment)
         val learned = exactOrLatest(profile.id, context)
+        // D-37: без наблюдений оценка у всех одна, без надбавки по классу — порядок решает D-15.
+        if (!learned.hasObservation) return learned.stabilityScore()
         return (learned.stabilityScore() + contextBias(profile, assessment)).coerceIn(0.0, 1.0)
     }
 
@@ -197,20 +199,21 @@ class StabilityBook(
         if (lines.firstOrNull() != "dppass-adaptive-v1") return
         for (line in lines.drop(1).take(MAX_RECORDS)) {
             val p = line.split('|')
-            if (p.size != 9) continue
+            // Ключ записи — «профиль|контекст», сам содержит '|': полей 10, не 9.
+            if (p.size != 10) continue
             val stats = runCatching {
                 StabilityStats(
-                    attempts = p[1].toLong().coerceIn(0, MAX_ATTEMPTS),
-                    successes = p[2].toLong().coerceIn(0, MAX_ATTEMPTS),
-                    ewmaRttMillis = p[3].toDouble().coerceIn(0.0, 60_000.0),
-                    ewmaJitterMillis = p[4].toDouble().coerceIn(0.0, 60_000.0),
-                    ewmaStall = p[5].toDouble().coerceIn(0.0, 1.0),
-                    lastRttMillis = p[6].toDouble().takeIf { it >= 0.0 }?.coerceAtMost(60_000.0),
-                    badStreak = p[7].toInt().coerceIn(0, MAX_BAD_STREAK),
-                    lastUpdatedMillis = p[8].toLong(),
+                    attempts = p[2].toLong().coerceIn(0, MAX_ATTEMPTS),
+                    successes = p[3].toLong().coerceIn(0, MAX_ATTEMPTS),
+                    ewmaRttMillis = p[4].toDouble().coerceIn(0.0, 60_000.0),
+                    ewmaJitterMillis = p[5].toDouble().coerceIn(0.0, 60_000.0),
+                    ewmaStall = p[6].toDouble().coerceIn(0.0, 1.0),
+                    lastRttMillis = p[7].toDouble().takeIf { it >= 0.0 }?.coerceAtMost(60_000.0),
+                    badStreak = p[8].toInt().coerceIn(0, MAX_BAD_STREAK),
+                    lastUpdatedMillis = p[9].toLong(),
                 )
             }.getOrNull() ?: continue
-            if (p[0].count { it == '~' } == 4 && p[0].isNotEmpty()) map[p[0]] = stats
+            if (p[0].isNotEmpty() && p[1].count { it == '~' } == 4) map[p[0] + "|" + p[1]] = stats
         }
     }
 

@@ -61,15 +61,16 @@ class RouteEvaluator(private val policy: RoutingPolicy, private val geo: GeoReso
             firstMatch(query.copy(ip = query.resolvedIp))?.let {
                 return it.copy(reason = it.reason + " (по IP после резолва домена)")
             }
-            if (policy.automaticDomestic && geo.ipMatches("ru", query.resolvedIp)) {
-                return RouteDecision(RouteAction.DIRECT, null, "автоматический domestic split: geoip:ru")
+            if (policy.automaticDomestic && geo.ipMatches(RoutingPolicy.DOMESTIC_GEOIP, query.resolvedIp)) {
+                return RouteDecision(RouteAction.DIRECT, null, "внутреннее разделение: geoip:${RoutingPolicy.DOMESTIC_GEOIP}")
             }
         }
         if (policy.automaticDomestic) {
-            val domainDomestic = query.domain?.let { geo.siteMatches("ru", it) } == true
-            val ipDomestic = query.ip?.let { geo.ipMatches("ru", it) } == true
-            if (domainDomestic || ipDomestic) {
-                return RouteDecision(RouteAction.DIRECT, null, "автоматический domestic split: geosite/geoip:ru")
+            if (query.domain?.let { geo.siteMatches(RoutingPolicy.DOMESTIC_GEOSITE, it) } == true) {
+                return RouteDecision(RouteAction.DIRECT, null, "внутреннее разделение: geosite:${RoutingPolicy.DOMESTIC_GEOSITE}")
+            }
+            if (query.ip?.let { geo.ipMatches(RoutingPolicy.DOMESTIC_GEOIP, it) } == true) {
+                return RouteDecision(RouteAction.DIRECT, null, "внутреннее разделение: geoip:${RoutingPolicy.DOMESTIC_GEOIP}")
             }
         }
         return RouteDecision(policy.defaultAction, null, "ни одно правило не сработало — действие по умолчанию")

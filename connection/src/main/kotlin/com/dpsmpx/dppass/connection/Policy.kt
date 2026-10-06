@@ -96,7 +96,7 @@ object CandidatePlanner {
         policy: ConnectionPolicy = ConnectionPolicy(),
         /** Выбор пользователя (D-34): первым; пауза после отказа для него не действует. */
         preferred: ProfileId? = null,
-        /** Learned stability model; it breaks ties and adapts order without overriding explicit choice. */
+        /** Выученная стабильность (D-37): после здоровья, перед штрафом класса; только по наблюдениям. */
         stability: StabilityBook = StabilityBook(),
     ): ConnectionPlan {
         when (assessment?.restriction) {

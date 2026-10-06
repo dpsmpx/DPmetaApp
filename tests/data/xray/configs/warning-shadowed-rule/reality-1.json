@@ -72,6 +72,20 @@
           "domain:mail.ads.example.com"
         ],
         "outboundTag": "proxy"
+      },
+      {
+        "ruleTag": "dppass:auto-domestic:site",
+        "domain": [
+          "geosite:category-ru"
+        ],
+        "outboundTag": "direct"
+      },
+      {
+        "ruleTag": "dppass:auto-domestic:ip",
+        "ip": [
+          "geoip:ru"
+        ],
+        "outboundTag": "direct"
       }
     ]
   },

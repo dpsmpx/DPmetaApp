@@ -4,7 +4,9 @@
   values*/colors.xml. Системные панели прозрачные: на Android 15+ приложение
   рисуется под ними (edge-to-edge), отступы задаёт MainActivity по вставкам окна.
 -->
-<resources>
+<!-- Задел интерфейса D-34 (этап 4): тема подключается в манифесте вместе с экранами;
+     до тех пор Lint не должен считать её ресурсы лишними (TODO.md). -->
+<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="UnusedResources">
     <style name="Base.DPpass" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:windowBackground">@color/bg</item>
         <item name="android:colorBackground">@color/bg</item>
