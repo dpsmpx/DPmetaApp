@@ -12,8 +12,12 @@
   * открытый HTTP запрещён (`usesCleartextTraffic=false` и
     network_security_config), доверие — только системным CA;
   * нет `debuggable`; экспортировано только то, что нужно: запуск
-    Activity и VpnService под `BIND_VPN_SERVICE`; у экспортированного
-    сервиса всегда есть `android:permission`;
+    Activity (фильтры — только запуск и «Поделиться» текстом, D-42),
+    VpnService под `BIND_VPN_SERVICE`, плитка под
+    `BIND_QUICK_SETTINGS_TILE` и служба задач под `BIND_JOB_SERVICE`
+    (D-39, D-40): каждый сервис — под своим системным разрешением;
+  * видимость пакетов (`<queries>`) — только приложения с ярлыком
+    запуска (D-38), без `QUERY_ALL_PACKAGES`;
   * один процесс (D-30): ни у приложения, ни у компонентов нет
     `android:process` — ядро, хранилище и журнал рассчитаны на один
     процесс.
@@ -36,11 +40,20 @@ PERMISSIONS = {
     "android.permission.FOREGROUND_SERVICE": "сервис туннеля работает в foreground",
     "android.permission.FOREGROUND_SERVICE_SPECIAL_USE": "тип foreground-сервиса specialUse (Android 14+)",
     "android.permission.POST_NOTIFICATIONS": "постоянное уведомление, пока туннель поднят (Android 13+)",
+    "android.permission.ACCESS_NETWORK_STATE": "сеть под туннелем — setUnderlyingNetworks по сети по умолчанию (D-40)",
 }
 BACKUP_DOMAINS = {"root", "file", "database", "sharedpref", "external"}
+# Экспортированный компонент → разрешение, которое обязан требовать (None — Activity без разрешения).
 EXPORTED_OK = {
-    ".app.MainActivity": "точка входа (LAUNCHER)",
-    ".app.DPpassVpnService": "VpnService, связывает только система",
+    ".app.MainActivity": None,
+    ".app.DPpassVpnService": "android.permission.BIND_VPN_SERVICE",
+    ".app.DPpassTileService": "android.permission.BIND_QUICK_SETTINGS_TILE",
+    ".app.SubscriptionJobService": "android.permission.BIND_JOB_SERVICE",
+}
+# Фильтры MainActivity: запуск и «Поделиться» текстом (D-42) — и ничего больше.
+MAIN_FILTERS = {
+    (("android.intent.action.MAIN",), ("android.intent.category.LAUNCHER",), ()),
+    (("android.intent.action.SEND",), ("android.intent.category.DEFAULT",), ("text/plain",)),
 }
 
 
@@ -126,18 +139,42 @@ def main():
                     continue
                 if name not in EXPORTED_OK:
                     problems.append(f"<{kind} {name}> экспортирован без причины (список — tools/hostcheck/check_manifest.py)")
+                elif EXPORTED_OK[name] is not None and el.get(A + "permission") != EXPORTED_OK[name]:
+                    problems.append(f"<{kind} {name}> должен требовать {EXPORTED_OK[name]}")
                 if kind in ("service", "receiver", "provider") and not el.get(A + "permission"):
                     problems.append(f"<{kind} {name}> экспортирован без android:permission")
+                if name == ".app.MainActivity":
+                    filters = {
+                        (
+                            tuple(sorted(a.get(A + "name") for a in f.findall("action"))),
+                            tuple(sorted(c.get(A + "name") for c in f.findall("category"))),
+                            tuple(sorted(d.get(A + "mimeType") for d in f.findall("data") if d.get(A + "mimeType"))),
+                        )
+                        for f in el.findall("intent-filter")
+                    }
+                    for extra in sorted(filters - MAIN_FILTERS):
+                        problems.append(f"<activity {name}>: фильтр {extra} не утверждён (D-42: только запуск и SEND text/plain)")
+                    for f in el.findall("intent-filter"):
+                        if any(d.get(A + "scheme") or d.get(A + "host") for d in f.findall("data")):
+                            problems.append(f"<activity {name}>: фильтр со схемой или хостом — ссылки снаружи не принимаются")
                 actions = {a.get(A + "name") for f in el.findall("intent-filter") for a in f.findall("action")}
                 if "android.net.VpnService" in actions and el.get(A + "permission") != "android.permission.BIND_VPN_SERVICE":
                     problems.append(f"<{kind} {name}>: VpnService должен требовать BIND_VPN_SERVICE")
+
+    queries = root.find("queries")
+    if queries is not None:
+        for child in queries:
+            ok = child.tag == "intent" and {a.get(A + "name") for a in child.findall("action")} == {"android.intent.action.MAIN"} \
+                and {c.get(A + "name") for c in child.findall("category")} == {"android.intent.category.LAUNCHER"}
+            if not ok:
+                problems.append(f"<queries>: <{child.tag}> — видимость пакетов только по ярлыку запуска (D-38)")
 
     if problems:
         print("✗ Манифест:")
         for p in problems:
             print("    " + p)
         return 1
-    print(f"✓ Манифест: {len(PERMISSIONS)} утверждённых разрешения, без резервных копий и открытого HTTP, один процесс, экспорт — только {', '.join(EXPORTED_OK)}")
+    print(f"✓ Манифест: {len(PERMISSIONS)} утверждённых разрешений, без резервных копий и открытого HTTP, один процесс, экспорт — только {', '.join(EXPORTED_OK)} (сервисы — под системными разрешениями), видимость пакетов — только ярлыки запуска")
     return 0
 
 

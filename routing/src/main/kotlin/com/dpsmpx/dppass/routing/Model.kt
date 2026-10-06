@@ -102,9 +102,11 @@ data class RoutingPolicy(
     /** Локальные сети (RFC 1918, link-local, ULA) — мимо туннеля. */
     val bypassLan: Boolean = true,
     /**
-     * Automatically send domestic destinations (geosite/geoip "ru") DIRECT
-     * after explicit user rules. This is destination-based, so apps need
-     * no manual package selection.
+     * Автоматический раздельный маршрут (D-45): после всех явных правил
+     * отечественное назначение (`geosite:category-ru`, `geoip:ru`) идёт
+     * `DIRECT`. По умолчанию выключено — документ пользователя значит
+     * ровно то, что в нём написано (D-05); включает политика (режим
+     * `AUTO`, D-38).
      */
-    val automaticDomestic: Boolean = true,
+    val automaticDomestic: Boolean = false,
 )

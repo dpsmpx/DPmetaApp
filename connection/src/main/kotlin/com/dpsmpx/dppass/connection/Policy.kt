@@ -8,6 +8,8 @@ import com.dpsmpx.dppass.core.ProfileId
 import com.dpsmpx.dppass.diagnostics.DiagCode
 import com.dpsmpx.dppass.engine.CapabilityChecker
 import com.dpsmpx.dppass.engine.EngineCapabilities
+import com.dpsmpx.dppass.network.LatencyProbe
+import com.dpsmpx.dppass.network.LatencyResult
 import com.dpsmpx.dppass.network.NetworkAssessment
 import com.dpsmpx.dppass.network.Reachability
 import com.dpsmpx.dppass.network.RestrictionClass
@@ -38,27 +40,88 @@ data class CandidateHealth(
 
 /**
  * Журнал здоровья кандидатов: экспоненциальный backoff после отказов,
- * сброс после успеха. Детерминирован: время — снаружи.
+ * сброс после успеха. Детерминирован: время — снаружи. Пишет оркестратор
+ * в потоке сервиса, читает и интерфейс (D-34) — доступ под замком объекта.
  */
 class HealthBook(private val policy: ConnectionPolicy = ConnectionPolicy()) {
     private val map = HashMap<ProfileId, CandidateHealth>()
 
+    @Synchronized
     fun of(id: ProfileId): CandidateHealth = map[id] ?: CandidateHealth()
 
+    @Synchronized
     fun recordSuccess(id: ProfileId, now: Long) {
         map[id] = CandidateHealth(HealthState.HEALTHY, 0, null, 0, now)
     }
 
     /** Кандидат, который последним реально передал данные (а не просто был активирован). */
+    @Synchronized
     fun lastGood(): ProfileId? = map.entries
         .filter { it.value.state == HealthState.HEALTHY && it.value.lastSuccessMillis != null }
         .maxByOrNull { it.value.lastSuccessMillis!! }?.key
 
+    @Synchronized
     fun recordFailure(id: ProfileId, code: DiagCode, now: Long) {
         val prev = of(id)
         val n = prev.consecutiveFailures + 1
         val backoff = (policy.baseBackoffMillis shl (n - 1).coerceAtMost(20)).coerceAtMost(policy.maxBackoffMillis)
         map[id] = prev.copy(state = HealthState.FAILED, consecutiveFailures = n, lastFailure = code, backoffUntilMillis = now + backoff)
+    }
+}
+
+/**
+ * Задержка до серверов (D-41): последний замер каждого, только в памяти
+ * процесса. Пишет замер по действию пользователя, читают интерфейс и
+ * план — доступ под замком объекта.
+ */
+class LatencyBook {
+    private val map = HashMap<ProfileId, LatencyResult>()
+
+    @Synchronized
+    fun of(id: ProfileId): LatencyResult? = map[id]
+
+    /** Задержка, если замер удался (для плана); иначе null. */
+    @Synchronized
+    fun millis(id: ProfileId): Long? = (map[id] as? LatencyResult.Measured)?.millis
+
+    @Synchronized
+    fun record(id: ProfileId, result: LatencyResult) {
+        map[id] = result
+    }
+
+    @Synchronized
+    fun clear() {
+        map.clear()
+    }
+
+    /**
+     * Замер серверов по одному с паузой (D-14, D-41: без залпов); UDP
+     * (Hysteria2) — не мерится. [onEach] — после каждого: интерфейс
+     * показывает итоги по мере появления.
+     */
+    suspend fun measureAll(
+        profiles: List<ServerProfile>,
+        probe: LatencyProbe,
+        pause: suspend (Long) -> Unit,
+        timeoutMillis: Int = TIMEOUT_MILLIS,
+        onEach: (ProfileId, LatencyResult) -> Unit = { _, _ -> },
+    ) {
+        for ((i, p) in profiles.take(MAX_PER_RUN).withIndex()) {
+            val r = if (p.transportClass == TransportClass.UDP_QUIC) {
+                LatencyResult.NotTcp
+            } else {
+                if (i > 0) pause(PACING_MILLIS)
+                probe.measure(p.endpoint.host, p.endpoint.port, timeoutMillis)
+            }
+            record(p.id, r)
+            onEach(p.id, r)
+        }
+    }
+
+    companion object {
+        const val TIMEOUT_MILLIS: Int = 3_000
+        const val PACING_MILLIS: Long = 150
+        const val MAX_PER_RUN: Int = 128
     }
 }
 
@@ -82,7 +145,7 @@ data class ConnectionPlan(
  * Шаги: сеть (нет сети, страница входа) → возможности ядра → пригодность
  * для класса сети (белый список, UDP) → backoff → порядок
  * (выбор пользователя, last-known-good, здоровье, класс транспорта,
- * приоритет, id) → разнообразие классов → предел попыток. Выбор
+ * приоритет, задержка (D-41), id) → разнообразие классов → предел попыток. Выбор
  * пользователя (D-34) — первая попытка; остальные — запасные по D-15.
  */
 object CandidatePlanner {
@@ -96,8 +159,10 @@ object CandidatePlanner {
         policy: ConnectionPolicy = ConnectionPolicy(),
         /** Выбор пользователя (D-34): первым; пауза после отказа для него не действует. */
         preferred: ProfileId? = null,
-        /** Learned stability model; it breaks ties and adapts order without overriding explicit choice. */
-        stability: StabilityBook = StabilityBook(),
+        /** Задержка по замеру (D-41): порядок среди равных по здоровью, классу и приоритету. */
+        latency: (ProfileId) -> Long? = { null },
+        /** Выученная устойчивость (D-44): порядок среди годных; жёсткие исключения не трогает. */
+        stability: StabilityModel? = null,
     ): ConnectionPlan {
         when (assessment?.restriction) {
             RestrictionClass.OFFLINE -> return ConnectionPlan(emptyList(), emptyList(), DiagCode.NETWORK_OFFLINE, "нет сети — попытки не делаются")
@@ -143,15 +208,21 @@ object CandidatePlanner {
             HealthState.FAILED -> 2
         }
         fun classPenalty(p: ServerProfile) = if (tcpPenalized && p.transportClass == TransportClass.TCP_STREAM) 1 else 0
+        // Выученная устойчивость (D-44): выше — раньше. Квантуется до сотых,
+        // чтобы порядок был детерминирован и мелкий шум не правил план.
+        // Нет модели — ноль у всех: порядок как прежде (существующие тесты).
+        fun stabilityRank(p: ServerProfile) = if (stability == null) 0 else -(stability.score(p, assessment) * 100).toInt()
 
         val sorted = viable.sortedWith(
             compareBy<ServerProfile>(
                 { if (it.id == preferred) 0 else 1 },
                 { if (it.id == lastKnownGood) 0 else 1 },
                 { healthRank(it) },
-                { -stability.score(it, assessment) },
+                { stabilityRank(it) },
                 { classPenalty(it) },
                 { -it.hints.priority },
+                // Неизмеренные — после измеренных; тайм-аут — как неизмеренный, а не как отказ (D-41).
+                { latency(it.id) ?: Long.MAX_VALUE },
                 { it.id.value },
             ),
         )
@@ -178,9 +249,10 @@ object CandidatePlanner {
             }
             if (classPenalty(pick) > 0) reasons += "TCP-поток ниже: в этой сети режутся TLS или крупные передачи"
             if (pick !== head) reasons += "другой класс транспорта, чем у предыдущей попытки"
-            if (pick.hints.priority != 0) reasons += "приоритет " + pick.hints.priority
-            reasons += "стабильность " + "%.2f".format(java.util.Locale.ROOT, stability.score(pick, assessment))
-            reasons += "класс " + pick.transportClass
+            if (pick.hints.priority != 0) reasons += "приоритет ${pick.hints.priority}"
+            latency(pick.id)?.let { reasons += "задержка $it мс" }
+            stability?.let { reasons += "устойчивость ${(it.score(pick, assessment) * 100).toInt()}%" }
+            reasons += "класс ${pick.transportClass}"
             ordered += PlannedAttempt(pick, reasons)
         }
         val attempts = ordered.take(policy.maxAttempts)

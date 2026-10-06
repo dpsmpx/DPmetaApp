@@ -20,6 +20,7 @@ import com.dpsmpx.dppass.subscriptions.SubscriptionRequest
 import com.dpsmpx.dppass.subscriptions.SubscriptionSource
 import com.dpsmpx.dppass.subscriptions.SubscriptionsState
 import com.dpsmpx.dppass.subscriptions.TrafficInfo
+import com.dpsmpx.dppass.subscriptions.UpdateResult
 import com.dpsmpx.dppass.tunnel.PlatformTraits
 import kotlinx.coroutines.runBlocking
 import java.util.Base64
@@ -86,15 +87,15 @@ class SubscriptionFlowTest {
     private fun added(core: DPpassCore): SubscriptionId = core.subscriptions.add(URL, null).valueOrNull()!!.id
 
     @Test
-    fun refreshAppliesServersWithBasePolicyWhenNoUserConfig() = runBlocking {
+    fun refreshAppliesServersWithDefaultPolicyWhenNoUserConfig() = runBlocking {
         val core = core()
         val id = added(core)
         val run = core.subscriptions.refresh(id, Fetcher(Base64.getEncoder().encodeToString(LINKS.toByteArray())), "test").valueOrNull()!!
         assertTrue(run.applied, run.diagnostics.joinToString { it.render() })
         val active = core.activation.state.activeConfig!!
         assertEquals(2, active.profiles.size)
-        assertEquals(BasePolicy.ir.dns, active.dns)
-        assertEquals(DnsTransport.Https(BasePolicy.DOH_URL), active.dns.servers.single().transport)
+        assertEquals(PolicyBuilder.dns(UserPolicy.DEFAULT), active.dns)
+        assertEquals(DnsTransport.Https(DnsProvider.CLOUDFLARE.url), active.dns.servers.single().transport)
         val st = core.subscriptions.state().valueOrNull()!!
         assertEquals(id, st.activeId)
         assertTrue(st.find(id)!!.lastSuccessful != null, "нет удачной ревизии")
@@ -149,6 +150,72 @@ class SubscriptionFlowTest {
         core.subscriptions.setDeviceId(id, false)
         core.subscriptions.refresh(id, fetcher, "1.0")
         assertNull(fetcher.requests.last().deviceId)
+    }
+
+    /** D-38: без своего документа — маршрутизация и DNS политики пользователя. */
+    @Test
+    fun refreshUsesUserPolicyWhenNoOwnDocument() = runBlocking {
+        val core = core()
+        core.userPolicy.change(UserPolicy(mode = RoutingMode.RU_DIRECT, blockAds = true))
+        val run = core.subscriptions.refresh(added(core), Fetcher(LINKS), "test").valueOrNull()!!
+        assertTrue(run.applied)
+        assertEquals(PolicyBuilder.routing(UserPolicy(mode = RoutingMode.RU_DIRECT, blockAds = true)), core.activation.state.activeConfig!!.routing)
+    }
+
+    /** D-42: свои серверы — подписка без сети, тот же конвейер и ревизии. */
+    @Test
+    fun inlineLinksBecomeOwnServers() = runBlocking {
+        val core = core()
+        val sub = core.subscriptions.addInline(LINKS, "Мои").valueOrNull()!!
+        assertIs<SubscriptionSource.Inline>(sub.source)
+        assertNull(sub.updatePolicy.intervalMinutes, "своим серверам автообновление не нужно")
+        val network = Fetcher("не должно понадобиться")
+        val run = core.subscriptions.refresh(sub.id, network, "test").valueOrNull()!!
+        assertTrue(run.applied, run.diagnostics.joinToString { it.render() })
+        assertTrue(network.requests.isEmpty(), "свои серверы не загружаются по сети")
+        assertEquals(2, core.activation.state.activeConfig!!.profiles.size)
+        // Переживает перезапуск, тело — секрет и на диске не открытым текстом (хранилище зашифровано на устройстве).
+        val again = core().subscriptions.state().valueOrNull()!!.find(sub.id)!!
+        assertEquals(sub.source, again.source)
+        assertTrue(core.subscriptions.addInline("   ", "x") is Outcome.Failure)
+    }
+
+    /** D-39: фоновое обновление — только применённая подписка, по сроку; неизменный сервер не переподключается. */
+    @Test
+    fun backgroundRefreshKeepsUnchangedConnection() = runBlocking {
+        val clock = ManualClock(1_000_000)
+        val core = DPpassCore(MockBackendCompiler(), MockProxyEngine(), blobs, clock, "com.dpsmpx.dppass", PlatformTraits(true))
+        val id = added(core)
+        val fetcher = Fetcher(LINKS)
+        assertNull(core.subscriptions.refreshDue(fetcher, "test"), "неприменённая подписка в фоне не обновляется")
+        core.subscriptions.refresh(id, fetcher, "test")
+        val connected = core.activation.state.activeConfig!!.profiles.first().id
+        assertNull(core.subscriptions.refreshDue(fetcher, "test"), "срок не вышел")
+        assertEquals(12 * 60 * 60_000L, core.subscriptions.nextDueMillis())
+
+        clock.advance(12 * 60 * 60_000L)
+        // Поставщик добавил сервер, подключённый не изменился.
+        fetcher.body = LINKS + "vless://00000000-0000-4000-8000-000000000033@203.0.113.33:443?security=tls&sni=c.example.com#C\n"
+        val run = core.subscriptions.refreshDue(fetcher, "test")!!.valueOrNull()!!
+        assertTrue(run.applied)
+        assertEquals(3, core.activation.state.activeConfig!!.profiles.size)
+        assertFalse(run.needsReconnect(connected), "подключённый сервер тот же — соединения не рвутся")
+
+        clock.advance(12 * 60 * 60_000L)
+        // Подключённого сервера больше нет — переподключение.
+        fetcher.body = "trojan://test-password-1@198.51.100.32:443?sni=b.example.com#B\n"
+        val gone = core.subscriptions.refreshDue(fetcher, "test")!!.valueOrNull()!!
+        assertTrue(gone.needsReconnect(connected))
+
+        // Неизменённое тело — проверка засчитана, срок отодвинут.
+        clock.advance(12 * 60 * 60_000L)
+        val same = core.subscriptions.refreshDue(fetcher, "test")!!.valueOrNull()!!
+        assertIs<UpdateResult.Unchanged>(same.update)
+        assertEquals(12 * 60 * 60_000L, core.subscriptions.nextDueMillis())
+        // Выключенное автообновление — фона нет.
+        core.subscriptions.setUpdateInterval(id, null)
+        clock.advance(48 * 60 * 60_000L)
+        assertNull(core.subscriptions.refreshDue(fetcher, "test"))
     }
 
     @Test

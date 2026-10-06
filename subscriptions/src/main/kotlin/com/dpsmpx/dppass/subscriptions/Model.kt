@@ -31,6 +31,12 @@ data class Subscription(
      * значение — [DeviceId.generate], своё у каждой подписки.
      */
     val deviceId: Secret? = null,
+    /**
+     * Когда источник последний раз ответил без отказа — с изменениями или
+     * без (`Unchanged`). По нему — срок автообновления (D-39): неизменённое
+     * тело не двигает удачную ревизию, но проверкой считается.
+     */
+    val lastCheckedMillis: Long? = null,
 ) {
     fun recordSuccess(revision: SubscriptionRevision, metadata: SubscriptionMetadata): Subscription =
         copy(lastSuccessful = revision, metadata = metadata, revisionCounter = revision.number)
@@ -38,9 +44,17 @@ data class Subscription(
     fun recordFailure(failure: FailedRevision): Subscription = copy(lastFailed = failure)
 }
 
-/** Адрес подписки — секрет: в нём обычно токен доступа. */
+/** Откуда тело подписки. */
 sealed interface SubscriptionSource {
+    /** Адрес подписки — секрет: в нём обычно токен доступа. */
     data class Url(val url: Secret) : SubscriptionSource
+
+    /**
+     * «Свои серверы» (D-42): ссылки или их список, которые пользователь
+     * вставил сам. Тело хранится как есть (секрет: в ссылках — ключи) и
+     * разбирается тем же конвейером, без сети.
+     */
+    data class Inline(val body: Secret) : SubscriptionSource
 }
 
 /**
@@ -71,8 +85,12 @@ data class SubscriptionRequest(val source: SubscriptionSource, val userAgent: St
     companion object {
         const val DEVICE_ID_HEADER: String = "x-hwid"
 
-        fun of(subscription: Subscription, appVersion: String): SubscriptionRequest =
-            SubscriptionRequest(subscription.source, "DPpass/$appVersion", subscription.deviceId)
+        fun of(subscription: Subscription, appVersion: String): SubscriptionRequest = SubscriptionRequest(
+            subscription.source,
+            "DPpass/$appVersion",
+            // У своих серверов поставщика нет — идентификатор некому отправлять.
+            subscription.deviceId.takeIf { subscription.source is SubscriptionSource.Url },
+        )
     }
 }
 
@@ -87,10 +105,41 @@ data class FetchPolicy(
 )
 
 data class UpdatePolicy(
-    /** Интервал автообновления; null — только вручную. */
-    val intervalMinutes: Long? = 12 * 60,
+    /** Интервал автообновления (D-39); null — только вручную. */
+    val intervalMinutes: Long? = DEFAULT_INTERVAL_MINUTES,
     val onlyUnmetered: Boolean = false,
-)
+) {
+    companion object {
+        const val DEFAULT_INTERVAL_MINUTES: Long = 12 * 60
+
+        /** Что предлагает интерфейс: выкл, 6, 12, 24 часа. */
+        val CHOICES_MINUTES: List<Long?> = listOf(null, 6 * 60, 12 * 60, 24 * 60)
+    }
+}
+
+/**
+ * Когда пора обновлять подписку в фоне (D-39). Решает ядро, а не
+ * Android: правило одно и проверяется на хосте.
+ */
+object UpdateSchedule {
+    /** После неудачи — не чаще, чем раз в 30 минут: поставщик мог лечь надолго. */
+    const val RETRY_AFTER_FAILURE_MILLIS: Long = 30 * 60_000
+
+    fun due(s: Subscription, nowMillis: Long): Boolean {
+        val interval = s.updatePolicy.intervalMinutes ?: return false
+        val failedAt = s.lastFailed?.failedAtMillis
+        val checkedAt = s.lastCheckedMillis ?: s.lastSuccessful?.fetchedAtMillis
+        if (failedAt != null && (checkedAt == null || failedAt >= checkedAt) && nowMillis - failedAt < RETRY_AFTER_FAILURE_MILLIS) return false
+        return checkedAt == null || nowMillis - checkedAt >= interval * 60_000
+    }
+
+    /** Сколько ждать до срока (0 — пора; null — автообновление выключено). */
+    fun waitMillis(s: Subscription, nowMillis: Long): Long? {
+        val interval = s.updatePolicy.intervalMinutes ?: return null
+        val checkedAt = s.lastCheckedMillis ?: s.lastSuccessful?.fetchedAtMillis ?: return 0
+        return (checkedAt + interval * 60_000 - nowMillis).coerceAtLeast(0)
+    }
+}
 
 enum class RoutingBinding {
     /** Маршрутизация и DNS — пользователя; из подписки — только серверы (по умолчанию). */
@@ -129,9 +178,9 @@ data class FetchedPayload(val bytes: ByteArray, val headers: Map<String, String>
 }
 
 /**
- * Загрузка. Настоящая HTTP-загрузка — этап 3 `ROADMAP` (с ограничением
- * размера во время чтения, таймаутом и ровно с заголовками [request]);
- * в тестах и `cli` — из памяти или файла.
+ * Загрузка. По сети — `HttpsSubscriptionFetcher` (D-36); свои серверы —
+ * `InlineSubscriptionFetcher` (D-42); в тестах и `cli` — из памяти или
+ * файла.
  */
 fun interface SubscriptionFetcher {
     suspend fun fetch(request: SubscriptionRequest, policy: FetchPolicy): Outcome<FetchedPayload>

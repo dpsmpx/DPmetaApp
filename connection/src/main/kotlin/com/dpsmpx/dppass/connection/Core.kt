@@ -91,12 +91,22 @@ class DPpassCore(
     private val quarantine = Quarantine(store, clock)
     val activation: ActivationService = ActivationService(compiler, engine, ActivationStore(store, quarantine), clock)
     val health: HealthBook = HealthBook(policy)
-    /** Persistent, encrypted aggregate learner for profile stability (0.5.0). */
-    val stability: StabilityBook = StabilityBook(store)
+
+    /** Задержка до серверов по последнему замеру (D-41). */
+    val latency: LatencyBook = LatencyBook()
+
+    /** Хранение адаптивной модели (D-44). */
+    private val stabilityStore = StabilityBook(store, quarantine)
+
+    /** Адаптивная модель устойчивости (D-44): читается из хранилища один раз. */
+    val stability: StabilityModel = stabilityStore.load().also { it.diagnostics.forEach(log::diagnostic) }.valueOrNull() ?: StabilityModel()
     private val loader = ConfigLoader()
 
-    /** Сохранённые подписки: загрузка, идентификатор устройства, применение (D-33, D-36). */
+    /** Сохранённые подписки: загрузка, идентификатор устройства, применение (D-33, D-36, D-39, D-42). */
     val subscriptions: SubscriptionService = SubscriptionService(SubscriptionBook(store, quarantine), this, clock)
+
+    /** Политика пользователя: маршрутизация, DNS, приложения (D-38). */
+    val userPolicy: PolicyService = PolicyService(PolicyStore(store, quarantine), this)
 
     fun restore(): List<Diagnostic> = activation.restore().also { it.forEach(log::diagnostic) }
 
@@ -133,8 +143,8 @@ class DPpassCore(
             is Outcome.Failure -> return l
             is Outcome.Success -> l.value
         }
-        val r = activation.activate(loaded.ir, "user-import", loaded.sourceChecksum, preCheck = preCheck)
-        logResult(r)
+        val r = activation.activate(loaded.ir, PolicyService.OWN_DOCUMENT, loaded.sourceChecksum, preCheck = preCheck)
+        logActivation(r)
         return Outcome.Success(r)
     }
 
@@ -151,7 +161,7 @@ class DPpassCore(
             dns = candidate.providerDns ?: base.dns,
         )
         val r = activation.activate(ir, "subscription:${candidate.subscription.id}#${candidate.revision.number}", candidate.revision.checksum)
-        logResult(r)
+        logActivation(r)
         val sub = when (r) {
             is ActivationResult.Activated -> candidate.subscription.recordSuccess(candidate.revision, candidate.metadata)
             is ActivationResult.Rejected -> candidate.subscription.recordFailure(
@@ -166,7 +176,9 @@ class DPpassCore(
     /** План подключения; [preferred] — сервер, выбранный пользователем: первым в плане (D-34). */
     fun plan(assessment: NetworkAssessment?, preferred: ProfileId? = null): ConnectionPlan? {
         val ir = activation.state.activeConfig ?: return null
-        return CandidatePlanner.plan(ir, compiler.capabilities, assessment, health, health.lastGood(), clock.nowMillis(), policy, preferred, stability)
+        return CandidatePlanner.plan(
+            ir, compiler.capabilities, assessment, health, health.lastGood(), clock.nowMillis(), policy, preferred, latency::millis, stability,
+        )
     }
 
     suspend fun connect(
@@ -178,9 +190,16 @@ class DPpassCore(
     ): ConnectionReport? {
         val ir = activation.state.activeConfig ?: return null
         val plan = plan(assessment, preferred) ?: return null
-        val orchestrator = ConnectionOrchestrator(compiler, engine, checker, health, clock, log, policy, pause, stability)
+        val orchestrator = ConnectionOrchestrator(compiler, engine, checker, health, clock, log, policy, stability, assessment, pause)
         return orchestrator.connect(ir, plan, tun)
     }
+
+    /** Наблюдатель сессии (D-44): Android-слой кормит его пробами (D-32). */
+    fun supervisor(profileId: ProfileId, assessment: NetworkAssessment?): SessionSupervisor =
+        SessionSupervisor(stability, profileId, NetworkContext.of(assessment))
+
+    /** Сохранить адаптивную модель (D-44): вызывает сервис при остановке и периодически. */
+    fun persistStability(): Outcome<Unit> = stabilityStore.save(stability)
 
     fun tunnelSpec(): Outcome<TunnelSpec>? = activation.state.activeConfig?.let { TunnelSpecBuilder.build(it, selfPackage, platform) }
 
@@ -211,7 +230,7 @@ class DPpassCore(
             .build()
     }
 
-    private fun logResult(r: ActivationResult) {
+    internal fun logActivation(r: ActivationResult) {
         when (r) {
             is ActivationResult.Activated -> log.info("activated", "revision" to r.record.revision, "source" to Safe(r.record.source.substringBefore('#')))
             is ActivationResult.Rejected -> {

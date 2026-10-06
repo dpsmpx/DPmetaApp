@@ -18,6 +18,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -103,6 +104,12 @@ func ProbeDNS(target string, timeout time.Duration) ProbeResult {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
+	// Причину отказа сервера профиля видит только исходящий proxy: проба
+	// получает лишь закрытый канал («io: read/write on closed pipe»). Ядро
+	// передаёт ошибку исходящего тому, кто открыл соединение, — так же
+	// узнаёт её наблюдатель самого Xray (app/observatory).
+	tracked := &outboundError{}
+	ctx = session.TrackedConnectionError(ctx, tracked)
 	start := time.Now()
 	c := &countingConn{}
 	var answer []byte
@@ -116,9 +123,47 @@ func ProbeDNS(target string, timeout time.Duration) ProbeResult {
 	if err == nil {
 		err = checkAnswer(answer, id)
 	}
-	res.Outcome, res.Err = classify(err, ctx.Err() != nil, res.Received), err
+	res.Outcome = classify(err, ctx.Err() != nil, res.Received)
+	if oe := tracked.get(); err != nil && oe != nil {
+		err = &outboundFailure{err: err, outbound: oe}
+	}
+	res.Err = err
 	return res
 }
+
+// outboundError — первая ошибка исходящего proxy для соединения пробы.
+type outboundError struct {
+	mu  sync.Mutex
+	err error
+}
+
+// SubmitError — session.TrackedRequestErrorFeedback: ядро сообщает ошибку исходящего.
+func (o *outboundError) SubmitError(err error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.err == nil {
+		o.err = err
+	}
+}
+
+func (o *outboundError) get() error {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.err
+}
+
+// outboundFailure — отказ пробы вместе с причиной от исходящего proxy.
+// Исход считается по отказу пробы (Unwrap), причина — для человека.
+type outboundFailure struct {
+	err      error
+	outbound error
+}
+
+func (e *outboundFailure) Error() string {
+	return "исходящий proxy: " + e.outbound.Error() + "; проба: " + e.err.Error()
+}
+
+func (e *outboundFailure) Unwrap() error { return e.err }
 
 // classify — исход по ошибке, истёкшему сроку и числу пришедших байт.
 // Ни байта через сервер профиля — недоступен, на каком бы этапе ни

@@ -9,6 +9,8 @@
   dns-resolve      InetAddress.getByName/getAllByName/getLocalHost — для
                    не-литерала идёт в DNS мимо туннеля (утечка, T4);
                    IP разбирается core.IpAddress, адрес — getByAddress.
+                   Исключение — замер задержки (TcpLatencyProbe, D-41):
+                   имя сервера резолвит система, как и для ядра (D-29).
   secret-reveal    Secret.reveal() — только там, где секрет нужен как
                    значение: разбор и запись конфигурации, компиляторы
                    ядер, хранилище (D-11). Тесты — можно.
@@ -66,8 +68,10 @@ def under(*prefixes):
 
 # (имя, регулярное выражение, где разрешено (path → bool), причина)
 RULES = [
-    ("dns-resolve", r"\b(getByName|getAllByName|getLocalHost)\s*\(", lambda p: False,
-     "резолв имени мимо туннеля; IP — core.IpAddress, байты → InetAddress.getByAddress"),
+    ("dns-resolve", r"\b(getByName|getAllByName|getLocalHost)\s*\(",
+     # Замер задержки (D-41) резолвит имя сервера системой — как ядро (D-29); больше нигде.
+     under("network/src/main/kotlin/com/dpsmpx/dppass/network/Latency.kt"),
+     "резолв имени мимо туннеля; IP — core.IpAddress, байты → InetAddress.getByAddress; имя сервера — только TcpLatencyProbe (D-41)"),
     ("secret-reveal", r"\.reveal\s*\(\s*\)",
      lambda p: test_code(p) or under(
          "diagnostics/src/main/kotlin/com/dpsmpx/dppass/diagnostics/Secret.kt",
@@ -79,6 +83,8 @@ RULES = [
          # адрес и x-hwid (D-33) нужны там значением.
          "subscriptions/src/main/kotlin/com/dpsmpx/dppass/subscriptions/Codec.kt",
          "subscriptions/src/main/kotlin/com/dpsmpx/dppass/subscriptions/Https.kt",
+         # Свои серверы (D-42): конвейеру нужны байты тела.
+         "subscriptions/src/main/kotlin/com/dpsmpx/dppass/subscriptions/Inline.kt",
      )(p),
      "значение секрета — только разбор/запись конфигурации, компиляторы ядер, хранилище, запись и загрузка подписки"),
     ("stack-trace", r"\bprintStackTrace\s*\(", lambda p: False,
@@ -93,7 +99,10 @@ RULES = [
      )(p),
      "время — только через core.Clock"),
     ("weak-random", r"\bkotlin\.random\b|\bjava\.util\.Random\b|\bMath\.random\s*\(|(?<![\w.])Random\s*\(",
-     lambda p: not main_code(p),
+     # Личность личной сборки (D-47): java.util.Random только для зерна —
+     # воспроизводимость по требованию (это и есть «решения — детерминированно»);
+     # по умолчанию без зерна — SecureRandom. Инструмент сборки, не ключи.
+     lambda p: not main_code(p) or under("build-logic/src/main/kotlin/com/dpsmpx/dppass/build/AppIdentity.kt")(p),
      "ключи — SecureRandom; решения — детерминированно"),
     ("weak-crypto", r'"(MD5|SHA-?1|DES|DESede|RC4|ARCFOUR)"|"[A-Za-z0-9]+/ECB/|Cipher\.getInstance\s*\(\s*"AES"\s*\)',
      lambda p: False,

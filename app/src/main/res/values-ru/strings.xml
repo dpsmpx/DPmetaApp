@@ -1,0 +1,262 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Тексты интерфейса DPpass на русском (D-34). Без обещаний «незаметности» (D-13). -->
+<resources>
+    <string name="tab_connect">Подключение</string>
+    <string name="tab_servers">Серверы</string>
+    <string name="tab_subscriptions">Подписки</string>
+    <string name="tab_settings">Настройки</string>
+    <string name="tab_log">Журнал</string>
+
+    <string name="status_off">Не подключено</string>
+    <string name="status_connecting">Подключение…</string>
+    <string name="status_checking">Проверяю «%1$s»</string>
+    <string name="status_connected">Подключено</string>
+    <string name="status_stopping">Отключение…</string>
+    <string name="status_failed">Не удалось подключиться</string>
+    <string name="action_connect">Подключить</string>
+    <string name="action_disconnect">Отключить</string>
+    <string name="action_back">Назад</string>
+    <string name="action_apply">Применить</string>
+    <string name="action_save">Сохранить</string>
+    <string name="action_done">Готово</string>
+    <string name="paste">Вставить</string>
+    <string name="not_ready">Приложение запускается — повторите через секунду</string>
+    <string name="no_browser">Нет браузера, чтобы открыть ссылку</string>
+    <string name="no_system_screen">В этой версии Android такого экрана нет</string>
+    <string name="error_with_reason">%1$s\n%2$s</string>
+
+    <string name="traffic_down">Загрузка</string>
+    <string name="traffic_up">Отдача</string>
+    <string name="traffic_total">всего %1$s</string>
+    <string name="per_second">/с</string>
+    <string name="a11y_traffic">Загрузка %1$s, отдача %2$s</string>
+
+    <string name="server_label">Сервер</string>
+    <string name="server_auto">Автоматически</string>
+    <string name="server_auto_hint">Последний рабочий, затем здоровый и быстрый</string>
+    <string name="source_none">Серверов пока нет</string>
+    <string name="source_own">Своя конфигурация</string>
+    <string name="source_subscription">Подписка «%1$s»</string>
+    <string name="empty_title">Серверов пока нет</string>
+    <string name="empty_text">Добавьте ссылку подписки от поставщика или вставьте ссылки на серверы.</string>
+    <string name="open_log">Открыть журнал</string>
+    <string name="notification_permission_note">Без уведомлений туннель работает, но его состояние не видно в шторке.</string>
+
+    <string name="routing_title">Маршрутизация</string>
+    <string name="routing_all">Всё через VPN</string>
+    <string name="routing_ru_direct">Российское напрямую</string>
+    <string name="routing_own_document">Из вашего документа DPpass</string>
+    <string name="routing_all_note">Трафик всех приложений идёт через сервер, кроме локальных сетей, если это разрешено ниже.</string>
+    <string name="routing_ru_direct_note">Российские сайты и адреса — напрямую, мимо сервера; их имена резолвит DNS вашей сети. Остальное — через сервер.</string>
+    <string name="routing_own_document_note">Сейчас действует маршрутизация вашего документа DPpass. Изменение этих настроек заменит её.</string>
+
+    <string name="kind_network_unreachable">Нет сети</string>
+    <string name="kind_dns_resolution_failed">Имя не резолвится</string>
+    <string name="kind_config_parse_failed">Конфигурация не читается</string>
+    <string name="kind_config_format_unsupported">Формат конфигурации не поддерживается</string>
+    <string name="kind_config_validation_failed">В конфигурации ошибки</string>
+    <string name="kind_capability_unsupported">Ядро прокси этого не умеет</string>
+    <string name="kind_route_compilation_failed">Правила маршрутизации не применены</string>
+    <string name="kind_backend_validation_failed">Ядро прокси отвергло конфигурацию</string>
+    <string name="kind_backend_start_failed">Ядро прокси не запустилось</string>
+    <string name="kind_tun_start_failed">Интерфейс VPN не поднялся</string>
+    <string name="kind_endpoint_unreachable">Сервер недоступен</string>
+    <string name="kind_tls_handshake_failed">Не удалось защищённое соединение</string>
+    <string name="kind_authentication_failed">Сервер не принял ключ</string>
+    <string name="kind_health_check_failed">Данные через сервер не идут</string>
+    <string name="kind_subscription_fetch_failed">Подписка не загрузилась</string>
+    <string name="kind_subscription_invalid">Подписка не распознана</string>
+    <string name="kind_storage_failed">Сохранённое недоступно</string>
+    <string name="kind_internal">Внутренняя ошибка</string>
+
+    <string name="server_state_ok">Работал</string>
+    <string name="server_state_failed">Отказ: %1$s</string>
+    <string name="server_state_paused">Повтор через %1$d с: %2$s</string>
+    <string name="server_connected">Подключён</string>
+    <string name="a11y_selected">Выбрано</string>
+    <string name="a11y_checked">Отмечено</string>
+    <string name="a11y_unchecked">Не отмечено</string>
+    <string name="servers_empty">Серверов нет. Добавьте подписку или вставьте ссылки на серверы.</string>
+    <string name="servers_search">Поиск серверов</string>
+    <string name="servers_not_found">Ничего не найдено</string>
+    <string name="sort_provider">По порядку</string>
+    <string name="sort_latency">По задержке</string>
+    <string name="latency_check">Проверить задержку</string>
+        <string name="latency_note">Задержка — время до сервера, а не гарантия работы: соединение может проходить, а защищённый трафик — нет.</string>
+    <string name="latency_progress">%1$s · проверяю задержку: %2$d из %3$d</string>
+    <string name="latency_ms">%1$d мс</string>
+    <string name="latency_failed">нет ответа</string>
+    <string name="latency_udp">UDP</string>
+
+    <string name="add_title">Добавить</string>
+    <string name="add_subscription_note">Ссылка https:// от поставщика</string>
+    <string name="add_clipboard_note">Ссылки на серверы, ссылка подписки или документ DPpass</string>
+    <string name="add_file_note">Текстовый файл со ссылками или документ DPpass</string>
+    <string name="import_clipboard">Вставить из буфера обмена</string>
+    <string name="import_file">Открыть файл</string>
+    <string name="import_file_failed">Файл не прочитан или больше 1 МБ</string>
+    <string name="clipboard_empty">Нечего импортировать</string>
+    <string name="import_done">Конфигурация применена</string>
+    <string name="import_failed">Не применено: %1$s</string>
+    <string name="import_unrecognized">Не распознано</string>
+    <string name="import_unrecognized_text">Это не документ DPpass, не ссылка подписки https:// и не ссылки на серверы.</string>
+    <string name="import_document_title">Документ DPpass</string>
+    <string name="import_document_text">Серверы, маршрутизация и DNS из документа заменят текущие. Применить?</string>
+    <string name="import_links_title">Свои серверы</string>
+    <string name="import_links_note">Сохраняются зашифрованными на телефоне как «свои серверы» — работают как подписка, только без источника в сети.</string>
+    <string name="import_links_add">Добавить и применить</string>
+    <string name="import_no_usable">В ссылках нет пригодных серверов</string>
+    <string name="own_servers_default_name">Мои серверы</string>
+    <string name="reconnecting">Переподключение…</string>
+
+    <string name="subs_add">Добавить подписку</string>
+    <string name="subs_empty">Подписок нет. Добавьте ссылку https:// от поставщика.</string>
+    <string name="subs_dialog_title">Новая подписка</string>
+    <string name="subs_url_hint">https://…</string>
+    <string name="subs_name_hint">Название (необязательно)</string>
+    <string name="subs_dialog_note">Ссылка хранится на телефоне зашифрованной и отправляется только своему серверу.</string>
+    <string name="subs_menu">Действия с «%1$s»</string>
+    <string name="subs_active">Применена</string>
+    <string name="subs_inline">Свои серверы</string>
+    <string name="subs_updated">обновлено %1$s</string>
+    <string name="subs_never">ещё не загружена</string>
+    <string name="subs_traffic">Трафик: %1$s из %2$s</string>
+    <string name="subs_traffic_unlimited">Трафик: %1$s, без ограничений</string>
+    <string name="subs_expires">Действует до %1$s</string>
+    <string name="subs_expires_in">Действует до %1$s · осталось %2$s</string>
+    <string name="subs_expired">Срок истёк %1$s</string>
+    <string name="subs_failed">Последнее обновление не удалось: %1$s</string>
+    <string name="subs_refresh">Обновить</string>
+    <string name="subs_apply">Загрузить и применить</string>
+    <string name="subs_refreshing">Загрузка…</string>
+    <string name="subs_not_applied">Не применено: %1$s</string>
+    <string name="subs_unchanged">Изменений нет</string>
+    <string name="subs_rename">Переименовать</string>
+    <string name="subs_remove">Удалить</string>
+    <string name="subs_remove_confirm">Удалить «%1$s»? Ссылка и идентификатор устройства будут стёрты.</string>
+    <string name="subs_auto_title">Автообновление</string>
+    <string name="subs_auto_every">каждые %1$d ч</string>
+    <string name="subs_auto_off">только вручную</string>
+    <string name="subs_auto_note">В фоне обновляется только применённая подписка и только при сети. Если подключённый сервер не изменился, соединение не прерывается.</string>
+    <string name="subs_provider_interval">Поставщик советует каждые %1$d ч</string>
+    <string name="subs_device_id">Идентификатор устройства</string>
+    <string name="subs_device_id_on">Идентификатор включён</string>
+    <string name="subs_device_id_off">Выключен — ничего не отправляется</string>
+    <string name="subs_device_id_enable">Отправлять идентификатор</string>
+    <string name="subs_device_id_note">Некоторые поставщики ограничивают число устройств и требуют идентификатор. DPpass отправляет случайное значение, не связанное с телефоном, своё у каждой подписки; выключено — не отправляется ничего.</string>
+    <string name="subs_device_id_needed">Поставщик требует идентификатор устройства.</string>
+    <string name="subs_device_id_reset">Новый идентификатор</string>
+    <string name="subs_device_id_reset_confirm">Поставщик увидит новое устройство. Старое может ещё занимать место в лимите.</string>
+    <string name="subs_announce">От поставщика: %1$s</string>
+    <string name="subs_open_page">Страница поставщика</string>
+    <string name="subs_open_support">Поддержка поставщика</string>
+
+    <string name="settings_routing">Маршрутизация</string>
+    <string name="settings_block_ads">Блокировать рекламу</string>
+    <string name="settings_block_ads_note">По открытому списку рекламных доменов</string>
+    <string name="settings_bypass_lan">Локальные сети мимо VPN</string>
+    <string name="settings_bypass_lan_note">Принтеры, роутеры и другие устройства дома</string>
+    <string name="settings_apps">Приложения</string>
+    <string name="settings_dns">DNS</string>
+    <string name="settings_dns_note">DNS через HTTPS через сервер: сеть не видит, какие имена вы спрашиваете.</string>
+    <string name="settings_connection">Подключение</string>
+    <string name="settings_always_on">Постоянный VPN</string>
+    <string name="settings_always_on_note">В настройках Android: VPN → DPpass → Постоянный VPN. Он же запускает DPpass после перезагрузки.</string>
+    <string name="settings_notifications">Уведомления</string>
+    <string name="settings_notifications_note">Состояние туннеля и скорость в шторке</string>
+    <string name="settings_theme">Тема</string>
+    <string name="theme_system">Системная</string>
+    <string name="theme_light">Светлая</string>
+    <string name="theme_dark">Тёмная</string>
+    <string name="settings_app">Приложение</string>
+    <string name="settings_log_note">Журнал и локальный отчёт — остаются на телефоне</string>
+    <string name="settings_not_applied">Настройки не применены</string>
+
+    <string name="apps_all">Все приложения</string>
+    <string name="apps_loading">Загрузка…</string>
+    <string name="apps_search">Поиск приложений</string>
+    <string name="apps_mode_all">Все</string>
+    <string name="apps_mode_except">Все, кроме</string>
+    <string name="apps_mode_only">Только выбранные</string>
+    <string name="apps_mode_all_note">Все приложения идут через туннель. Сам DPpass — никогда.</string>
+    <string name="apps_mode_except_note">Выбранные приложения идут мимо туннеля — например, банковские.</string>
+    <string name="apps_mode_only_note">Через туннель — только выбранные приложения, остальные — напрямую.</string>
+    <string name="apps_only_empty">Выберите хотя бы одно приложение</string>
+
+    <string name="log_switch">Вести журнал на телефоне</string>
+    <string name="log_note">Покидает телефон только через буфер обмена</string>
+    <string name="copy_log">Копировать журнал</string>
+    <string name="log_copy_failed">Журнал не скопирован</string>
+    <string name="report_title">Локальный отчёт</string>
+    <string name="report_note">Собирается на телефоне, без секретов. Никуда не отправляется.</string>
+
+    <string name="about_title">О программе</string>
+    <string name="about_version">Версия %1$s</string>
+    <string name="about_not_release">Тестовая сборка для устройств автора — не выпуск</string>
+    <string name="about_engine">Ядро прокси</string>
+    <string name="about_geodata">Геоданные</string>
+    <string name="about_dbip">IP Geolocation by DB-IP</string>
+    <string name="about_licenses">Лицензии компонентов</string>
+    <string name="about_licenses_note">Что внутри DPpass и под какими лицензиями</string>
+    <string name="about_privacy">Приватность</string>
+    <string name="about_privacy_text">В DPpass нет телеметрии, аналитики и отчётов о падениях, идентификаторы устройства он не читает. Подписке уходят только её адрес, собственный User-Agent DPpass и — если вы включите — случайный идентификатор устройства. Журнал и отчёт остаются на телефоне.</string>
+    <string name="about_notice_missing">В этой сборке нет %1$s.</string>
+
+    <string name="notification_channel">Туннель</string>
+    <string name="notification_connecting">Подключение…</string>
+    <string name="notification_checking">Проверяю «%1$s»</string>
+    <string name="notification_connected">%1$s</string>
+    <string name="notification_connected_traffic">%1$s · ↓ %2$s ↑ %3$s</string>
+    <string name="notification_title_connected">DPpass · подключено</string>
+    <string name="notification_public_connected">Подключено</string>
+
+    <plurals name="servers_count">
+        <item quantity="one">%d сервер</item>
+        <item quantity="few">%d сервера</item>
+        <item quantity="many">%d серверов</item>
+        <item quantity="other">%d сервера</item>
+    </plurals>
+    <plurals name="subs_applied">
+        <item quantity="one">«%1$s»: применён %2$d сервер</item>
+        <item quantity="few">«%1$s»: применено %2$d сервера</item>
+        <item quantity="many">«%1$s»: применено %2$d серверов</item>
+        <item quantity="other">«%1$s»: применено %2$d сервера</item>
+    </plurals>
+    <plurals name="days">
+        <item quantity="one">%d день</item>
+        <item quantity="few">%d дня</item>
+        <item quantity="many">%d дней</item>
+        <item quantity="other">%d дня</item>
+    </plurals>
+    <plurals name="apps_except">
+        <item quantity="one">Все, кроме %d приложения</item>
+        <item quantity="few">Все, кроме %d приложений</item>
+        <item quantity="many">Все, кроме %d приложений</item>
+        <item quantity="other">Все, кроме %d приложения</item>
+    </plurals>
+    <plurals name="apps_only">
+        <item quantity="one">Только %d приложение</item>
+        <item quantity="few">Только %d приложения</item>
+        <item quantity="many">Только %d приложений</item>
+        <item quantity="other">Только %d приложения</item>
+    </plurals>
+    <plurals name="import_links_summary">
+        <item quantity="one">Пригодно %1$d из %2$d ссылки.</item>
+        <item quantity="few">Пригодно %1$d из %2$d ссылок.</item>
+        <item quantity="many">Пригодно %1$d из %2$d ссылок.</item>
+        <item quantity="other">Пригодно %1$d из %2$d ссылки.</item>
+    </plurals>
+    <plurals name="log_copied">
+        <item quantity="one">Журнал скопирован в буфер обмена: %d символ</item>
+        <item quantity="few">Журнал скопирован в буфер обмена: %d символа</item>
+        <item quantity="many">Журнал скопирован в буфер обмена: %d символов</item>
+        <item quantity="other">Журнал скопирован в буфер обмена: %d символа</item>
+    </plurals>
+    <string-array name="units_bytes">
+        <item>Б</item>
+        <item>КБ</item>
+        <item>МБ</item>
+        <item>ГБ</item>
+        <item>ТБ</item>
+    </string-array>
+</resources>

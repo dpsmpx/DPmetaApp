@@ -22,6 +22,7 @@ import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.test.fail
 
@@ -443,6 +444,35 @@ class XrayCompilerTest {
     }
 
     @Test
+    fun automaticDomesticAddsCheckedRuRulesAfterUserRules() {
+        // D-45: отечественное — напрямую, ПОСЛЕ правил пользователя, и
+        // geosite/geoip — отдельными правилами (в одном Xray соединил бы их И).
+        val routing = """{"rules": [{"id": "net", "action": "proxy", "domain": ["net.example.com"]}], "automatic_domestic": true}"""
+        val gi = ir(routing = routing)
+        // Коды ru сверяются с набором (D-27): нет в наборе — отказ с путём.
+        val noRu = GeodataManifest("v0.0.0-20260101000000-0123456789ab", "0123456789ab", "2026-01", emptyList(), emptySet(), emptyMap())
+        assertTrue(
+            errors(XrayCompiler(geodata = GeodataCodes.Installed(noRu)).compile(gi, CompilePlan(gi.profiles[0].id, true)))
+                .all { it.first == DiagCode.GEO_CODE_UNKNOWN },
+            "кодов ru нет в наборе — GEO_CODE_UNKNOWN",
+        )
+        val withRu = GeodataManifest("v0.0.0-20260101000000-0123456789ab", "0123456789ab", "2026-01", emptyList(), setOf("ru"), mapOf("category-ru" to emptySet()))
+        val p = Json.parse(
+            XrayCompiler(geodata = GeodataCodes.Installed(withRu)).compile(gi, CompilePlan(gi.profiles[0].id, true)).valueOrNull()!!.payloadForEngine(),
+        ) as JsonObject
+        val tags = ruleTags(p)
+        assertTrue(tags.indexOf("net") < tags.indexOf("dppass:auto-domestic-site"), "автосплит — после правил пользователя")
+        assertEquals(listOf("dppass:auto-domestic-site", "dppass:auto-domestic-ip"), tags.filter { it.startsWith("dppass:auto-domestic") })
+        val site = rules(p).single { it["ruleTag"].text == "dppass:auto-domestic-site" }
+        val ip = rules(p).single { it["ruleTag"].text == "dppass:auto-domestic-ip" }
+        assertEquals(listOf("geosite:category-ru"), site["domain"].items.map { it.text })
+        assertNull(site["ip"], "site-правило без geoip: иначе Xray соединил бы через И (D-31)")
+        assertEquals(listOf("geoip:ru"), ip["ip"].items.map { it.text })
+        assertEquals("direct", site["outboundTag"].text)
+        assertEquals("direct", ip["outboundTag"].text)
+    }
+
+    @Test
     fun serverNameIsLeftToTheSystemResolver() {
         // D-29: имя сервера ядро отдаёт системному dialer — система резолвит его вне
         // туннеля (пакет DPpass вне туннеля), а не DNS ядра, чьи серверы сами могут идти
@@ -466,5 +496,33 @@ class XrayCompilerTest {
             val r = compile(multi, profile = i)
             assertTrue(r.isSuccess && r.diagnostics.isEmpty(), "${multi.profiles[i].id}: ${r.diagnostics.map { it.render() }}")
         }
+    }
+
+    /** Формат 2 (D-37): отпечатки, настройки XHTTP прямо в xhttpSettings (не через extra), перегрузка Hysteria2. */
+    @Test
+    fun formatV2FieldsReachXray() {
+        val v2 = corpus("valid-format-v2.json")
+        fun proxy(id: String) = outbound(payload(v2, profile = v2.profiles.indexOfFirst { it.id.value == id }), "proxy")
+        assertEquals("qq", proxy("reality-qq")["streamSettings"]["realitySettings"]["fingerprint"].text)
+        assertEquals("edge", proxy("ws-edge")["streamSettings"]["tlsSettings"]["fingerprint"].text)
+
+        val xhttp = proxy("xhttp-extra")["streamSettings"]["xhttpSettings"]
+        assertEquals(null, xhttp["extra"], "extra заменил бы настройку целиком")
+        assertEquals("100-1000", xhttp["xPaddingBytes"].text)
+        assertEquals("1000000", xhttp["scMaxEachPostBytes"].text)
+        assertEquals(Json.bool(true), xhttp["noGRPCHeader"])
+        assertEquals("16-32", xhttp["xmux"]["maxConcurrency"].text)
+        assertEquals(null, xhttp["xmux"]["maxConnections"])
+        assertEquals(30, xhttp["xmux"]["hKeepAlivePeriod"].int)
+
+        val hy2 = proxy("hy2-bbr")["streamSettings"]
+        assertEquals("bbr", hy2["finalmask"]["quicParams"]["congestion"].text)
+        assertEquals(null, hy2["finalmask"]["udp"], "без obfs — без Salamander")
+        // Без congestion и obfs finalmask не пишется вовсе.
+        val plain = ir(
+            profile = """{"id": "h", "name": "H", "server": "192.0.2.30", "port": 8443, "protocol": {"type": "hysteria2", "password": "test-password-2"},
+              "transport": {"type": "native"}, "security": {"type": "tls", "server_name": "hy2.example.com"}}""",
+        )
+        assertEquals(null, outbound(payload(plain), "proxy")["streamSettings"]["finalmask"])
     }
 }

@@ -26,9 +26,6 @@ CorpusTest читает корпус по соглашениям об имена
     `.invalid` (исключения ниже — с причиной), UUID — вида
     `00000000-0000-…`. Так в корпус не попадёт настоящий сервер или ключ.
 
-Те же правила о данных — для примера в приложении
-(`app/src/main/assets/sample/`).
-
     python3 tools/hostcheck/check_fixtures.py
 
 Код возврата: 0 — чисто; 1 — нарушения.
@@ -41,7 +38,6 @@ import sys
 
 PROJ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DATA = os.path.join(PROJ, "tests", "data")
-SAMPLES = [os.path.join(PROJ, "app", "src", "main", "assets", "sample")]
 SRC = os.path.join(PROJ, "{m}", "src", "main", "kotlin", "com", "dpsmpx", "dppass", "{m}")
 
 RESERVED_NETS = [ipaddress.ip_network(n) for n in (
@@ -493,8 +489,7 @@ def main():
     check_xray_routing()
     check_network()
     check_registry()
-    for root in [DATA] + SAMPLES:
-        check_synthetic(root)
+    check_synthetic(DATA)
     if problems:
         print("✗ Корпус tests/data:")
         for p in problems:

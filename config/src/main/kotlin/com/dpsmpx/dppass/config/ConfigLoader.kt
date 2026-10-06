@@ -31,7 +31,7 @@ data class LoadedConfig(
  */
 class ConfigLoader(
     private val limits: ConfigLimits = ConfigLimits(),
-    private val migrator: Migrator = Migrator(migrations = mapOf(1 to ConfigMigrations.ONE_TO_TWO)),
+    private val migrator: Migrator = Migrator(),
 ) {
     fun load(text: String): Outcome<LoadedConfig> {
         if (text.isBlank()) return Outcome.failure(DiagCode.DOCUMENT_EMPTY, "документ пуст")

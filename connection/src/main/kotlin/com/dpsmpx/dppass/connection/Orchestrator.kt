@@ -82,9 +82,14 @@ class ConnectionOrchestrator(
     private val clock: Clock,
     private val log: Logger,
     private val policy: ConnectionPolicy = ConnectionPolicy(),
+    /** Адаптивная модель (D-44): каждая попытка — наблюдение. */
+    private val stability: StabilityModel? = null,
+    private val assessment: com.dpsmpx.dppass.network.NetworkAssessment? = null,
+    // pause — последним: вызывается замыкающей лямбдой у вызывающего.
     private val pause: suspend (Long) -> Unit,
-    private val stability: StabilityBook = StabilityBook(),
 ) {
+    private val context = NetworkContext.of(assessment)
+
     suspend fun connect(ir: ConfigIr, plan: ConnectionPlan, tun: TunInput?): ConnectionReport {
         if (plan.attempts.isEmpty()) {
             val d = Diagnostic.error(plan.verdict ?: DiagCode.NO_VIABLE_CANDIDATE, plan.verdictMessage ?: "нет кандидатов")
@@ -96,15 +101,18 @@ class ConnectionOrchestrator(
             if (n > 0) pause(policy.pacingMillis)
             val p = attempt.profile
             log.info("attempt", "profile" to Safe(p.id.value), "class" to p.transportClass, "reasons" to Safe(attempt.reasons.joinToString("; ")))
+            val startedAt = clock.nowMillis()
             val failure = when (val t = tryOne(ir, p, tun)) {
                 is Try.Ok -> {
                     book.recordSuccess(p.id, clock.nowMillis())
+                    observe(p, startedAt, success = true, stalled = false)
                     records += AttemptRecord(p.id, attempt.reasons, true, null)
                     return ConnectionReport.Connected(p.id, t.session, records, plan)
                 }
                 is Try.Fail -> t.reason
             }
             book.recordFailure(p.id, failure.code, clock.nowMillis())
+            observe(p, startedAt, success = false, stalled = failure.code == DiagCode.PAYLOAD_STALLED)
             log.diagnostic(failure)
             records += AttemptRecord(p.id, attempt.reasons, false, failure)
         }
@@ -115,6 +123,19 @@ class ConnectionOrchestrator(
         )
             .copy(causes = records.mapNotNull { it.failure })
         return ConnectionReport.Failed(d, records, plan)
+    }
+
+    /** Исход попытки — наблюдение адаптивной модели (D-44); обучает и обобщение. */
+    private fun observe(p: ServerProfile, startedAt: Long, success: Boolean, stalled: Boolean) {
+        val model = stability ?: return
+        val now = clock.nowMillis()
+        model.observe(
+            p.id,
+            context,
+            StabilityObservation(success, (now - startedAt).coerceAtLeast(1), stalled, now),
+            p,
+            assessment,
+        )
     }
 
     private sealed interface Try {
@@ -132,19 +153,8 @@ class ConnectionOrchestrator(
             is Outcome.Failure -> return Try.Fail(s.errors.first())
             is Outcome.Success -> s.value
         }
-        val startedAt = clock.nowMillis()
         val result = withTimeoutOrNull(policy.healthTimeoutMillis) { health.check(session, p) }
             ?: Outcome.failure(DiagCode.HEALTH_CHECK_FAILED, "проверка здоровья не уложилась в ${policy.healthTimeoutMillis} мс")
-        val elapsed = (clock.nowMillis() - startedAt).coerceIn(1L, policy.healthTimeoutMillis + 1_000L)
-        stability.observe(
-            p.id,
-            StabilitySample(
-                success = result is Outcome.Success,
-                rttMillis = elapsed,
-                stalled = result is Outcome.Failure && result.errors.any { it.code == DiagCode.PAYLOAD_STALLED },
-                timestampMillis = clock.nowMillis(),
-            ),
-        )
         if (result is Outcome.Failure) {
             session.stop()
             return Try.Fail(result.errors.first())
