@@ -99,6 +99,68 @@ ref = '`([A-Z]\w*Test)(?:\.\w+)?`'
 defined_in = ["**/src/test/**/*.kt", "**/src/xrayJni/**/*.kt"]
 definition = '^class\s+(\w+Test)\b'
 
+# ---- необязательные встроенные ----
+
+[checks."code.forbidden"]
+enabled = true
+rule = [
+  { id = "dns-resolve", regex = '\b(getByName|getAllByName|getLocalHost)\s*\(', files = ["**/*.kt", "**/*.kts"], reason = "резолв имени мимо туннеля (T4); IP — core.IpAddress, байты — InetAddress.getByAddress" },
+  { id = "secret-reveal", regex = '\.reveal\s*\(\s*\)', files = ["**/*.kt", "**/*.kts"], allow = ["**/src/test/**", "**/src/xrayJni/**", "diagnostics/src/main/kotlin/com/dpsmpx/dppass/diagnostics/Secret.kt", "config/src/main/kotlin/com/dpsmpx/dppass/config/ConfigValidator.kt", "config/src/main/kotlin/com/dpsmpx/dppass/config/ConfigWriter.kt", "engine/src/main/**", "storage/src/main/**", "subscriptions/src/main/kotlin/com/dpsmpx/dppass/subscriptions/Codec.kt", "subscriptions/src/main/kotlin/com/dpsmpx/dppass/subscriptions/Https.kt"], reason = "значение секрета — только разбор и запись конфигурации, компиляторы ядер, хранилище, запись и загрузка подписки (D-11, D-36)" },
+  { id = "stack-trace", regex = '\bprintStackTrace\s*\(', files = ["**/*.kt", "**/*.kts"], reason = "стек может нести секреты; причина — Diagnostic.fromThrowable (D-22)" },
+  { id = "console", regex = '(?<![\w.])(println|print)\s*\(|\bSystem\.(out|err)\b', files = ["**/src/main/**/*.{kt,kts}"], allow = ["module:cli"], reason = "вывод в консоль — только cli/; остальное — Logger" },
+  { id = "wall-clock", regex = '\bSystem\.(currentTimeMillis|nanoTime)\s*\(|\b(Instant|LocalDateTime|LocalDate|ZonedDateTime|OffsetDateTime)\.now\s*\(|\bDate\s*\(\s*\)', files = ["**/src/main/**/*.{kt,kts}"], allow = ["core/src/main/kotlin/com/dpsmpx/dppass/core/Support.kt", "cli/src/main/kotlin/com/dpsmpx/dppass/cli/Bench.kt"], reason = "время — только через core.Clock (D-21)" },
+  { id = "weak-random", regex = '\bkotlin\.random\b|\bjava\.util\.Random\b|\bMath\.random\s*\(|(?<![\w.])Random\s*\(', files = ["**/src/main/**/*.{kt,kts}"], reason = "ключи — SecureRandom; решения — детерминированно (D-15)" },
+  { id = "weak-crypto", regex = '"(MD5|SHA-?1|DES|DESede|RC4|ARCFOUR)"|"[A-Za-z0-9]+/ECB/|Cipher\.getInstance\s*\(\s*"AES"\s*\)', files = ["**/*.kt", "**/*.kts"], reason = "слабый алгоритм или режим шифрования" },
+  { id = "trust-override", regex = '\b(X509TrustManager|X509ExtendedTrustManager|HostnameVerifier|setHostnameVerifier|setDefaultHostnameVerifier|TrustAllCerts|ALLOW_ALL_HOSTNAME_VERIFIER)\b', files = ["**/*.kt", "**/*.kts"], reason = "своя проверка сертификата — её отключение (T5); запрещено и в тестах" },
+  { id = "android-log", regex = '\bandroid\.util\.Log\b|(?<![\w.])Log\.(v|d|i|w|e|wtf)\s*\(', files = ["**/*.kt", "**/*.kts"], reason = "журнал — только Logger с редактированием (D-11)" },
+  { id = "blocking", regex = '\bThread\.sleep\s*\(|\bGlobalScope\b|\brunBlocking\b', files = ["**/src/main/**/*.{kt,kts}"], allow = ["module:cli"], reason = "ожидание — через pause и Clock; корутины — в своём scope" },
+  { id = "native-load", regex = '\bSystem\.load(Library)?\s*\(|\bRuntime\.getRuntime\(\)\.load|\bexternal\s+fun\b', files = ["**/*.kt", "**/*.kts"], allow = ["app/src/main/kotlin/com/dpsmpx/dppass/app/AppGraph.kt", "engine/src/main/kotlin/com/dpsmpx/dppass/engine/xray/XrayRuntime.kt", "tests/integration/src/xrayJni/**"], reason = "нативный код — только мост ядра (D-25): JNI — XrayRuntime, загрузка — AppGraph и тест JNI" },
+  { id = "android-import", regex = '^\s*import\s+android\.', files = ["**/src/main/**/*.kt"], allow = ["module:app"], reason = "Android только в app/: ядро собирается и проверяется на JVM (D-02, D-21)" },
+  { id = "simulation-import", regex = '^\s*import\s+com\.dpsmpx\.dppass\.network\.simulation\.', files = ["**/src/main/**/*.kt"], allow = ["network/**", "module:cli", "connection/src/main/kotlin/com/dpsmpx/dppass/connection/Orchestrator.kt"], reason = "модель сети — инструмент тестов и cli; в connection — только SimulatedHealthChecker" },
+  { id = "mock-engine-import", regex = '^\s*import\s+com\.dpsmpx\.dppass\.engine\.mock\.', files = ["**/src/main/**/*.kt"], allow = ["engine/**", "module:cli"], reason = "фиктивное ядро — второй бэкенд тестов и cli (D-25)" },
+  { id = "inline-coordinates", regex = '"[\w.-]+:[\w.-]+:[\w.${}-]+"|\bid\s*\(\s*"[^"]+"\s*\)\s*version\b', files = ["**/*.gradle.kts"], reason = "зависимости и плагины — только через gradle/libs.versions.toml (D-18)" },
+  { id = "repositories", regex = '\b(maven|ivy|jcenter|mavenLocal|flatDir)\s*[({]', files = ["**/*.gradle.kts"], reason = "репозитории — только google(), mavenCentral(), gradlePluginPortal() (D-18)" },
+]
+
+[checks."data.synthetic"]
+enabled = true
+rule = [
+  { kind = "link-host", paths = ["**"], schemes = ["vless", "vmess", "trojan", "ss", "ssr", "hysteria2", "hy2", "tuic", "anytls", "wireguard", "wg", "socks", "socks5"] },
+  { kind = "uuid", paths = ["**"], synthetic = '^00000000-0000-' },
+  { kind = "ip", paths = ["tests/data/**", "app/src/main/assets/sample/**"], keys = ["ip_cidr", "ip"] },
+  { kind = "domain", paths = ["tests/data/**", "app/src/main/assets/sample/**"], keys = ["server", "host", "server_name", "address", "domain", "domain_suffix", "sni", "serverName", "blocked_endpoints"], allow = [{ value = "example.ru", reason = "образец «отечественного» домена для правил DIRECT и DNS по суффиксу .ru" }] },
+]
+
+[checks."provenance.deps"]
+enabled = true
+registries = ["docs/legal/THIRD_PARTY_MATRIX.md", "docs/PROVENANCE.md"]
+source = [
+  { type = "gradle-catalog", catalog = "gradle/libs.versions.toml", wrapper = "gradle/wrapper/gradle-wrapper.properties" },
+]
+
+[checks."smoke.cli"]
+enabled = true
+binary = "cli/build/install/dppass-cli/bin/dppass-cli"
+# CLI собирает project.build (:cli:installDist); прежний cli_smoke из run.sh
+after = ["project.build"]
+case = [
+  { args = ["check", "tests/data/configs/valid-multi.json"], code = 0, contains = ["ACTIVATED"] },
+  { args = ["check", "tests/data/configs/limited-backend-xhttp.json", "--backend", "mock-limited"], code = 1, contains = ["CAPABILITY_TRANSPORT_UNSUPPORTED"] },
+  { args = ["check", "tests/data/configs/invalid-allow-insecure.json"], code = 1, contains = ["INSECURE_TLS_REJECTED"] },
+  { args = ["route", "tests/data/configs/valid-multi.json", "--domain", "www.example.ru"], code = 0, contains = ["DIRECT (ru-direct)"], not_contains = ["примечание"] },
+  { args = ["route", "tests/data/configs/valid-multi.json", "--ip", "198.51.100.7"], code = 0, contains = ["geoip/geosite не проверены"] },
+  { args = ["classify", "--condition", "ALLOWLIST_LIKE"], code = 0, contains = ["restriction=ALLOWLIST_LIKE"] },
+  { args = ["plan", "tests/data/configs/valid-multi.json", "--condition", "TLS_DEGRADED"], code = 0, contains = ["1. xhttp-cdn [HTTP_CDN]"] },
+  { args = ["connect", "tests/data/configs/valid-multi.json", "--condition", "ALLOWLIST_LIKE"], code = 0, contains = ["CONNECTED via domestic-relay"] },
+  { args = ["connect", "tests/data/configs/valid-multi.json", "--condition", "OFFLINE"], code = 1, contains = ["NETWORK_OFFLINE"] },
+  { args = ["subscription", "tests/data/subscriptions/links-with-directives.txt", "--headers", "tests/data/subscriptions/links-with-directives.headers.json"], code = 0, contains = ["READY revision=1 profiles=3"], not_contains = ["evil.example.com"] },
+  { args = ["subscription", "tests/data/subscriptions/links-invalid-names.txt"], code = 0, contains = ["SERVER_NAME_INVALID at profiles[1].security.server_name"], not_contains = ["test-password"] },
+  { args = ["export", "tests/data/configs/valid-minimal.json"], code = 0, contains = ['"id": "<redacted>"'], not_contains = ["00000000-0000-4000-8000-000000000001"] },
+  { args = ["report", "tests/data/configs/valid-minimal.json"], code = 0, contains = ["active_profile: reality-1"], not_contains = ["00000000-0000-4000-8000-000000000001"] },
+  { args = ["bench", "--rules", "200"], code = 0, contains = ["route decisions:"] },
+  { args = ["no-such-command"], code = 2 },
+]
+
 # ---- быстрые шаги run.sh (без сборки) ----
 
 [[command]]

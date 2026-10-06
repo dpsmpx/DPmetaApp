@@ -160,6 +160,7 @@ Xray 26.9.30 его принимает и выбирает по его кода�
 
 | Что | Значение |
 |---|---|
+| `gradle` | 9.8.0 — версия дистрибутива из `gradle-wrapper.properties`; её сверяет `provenance.deps` DP Verify (D-39) |
 | Дистрибутив | `gradle-9.8.0-bin.zip` с `services.gradle.org/distributions/` |
 | SHA-256 дистрибутива | `bafd5ce9cfaea0fbccfdc8439a1ac42fbd4cd9c89dc9a988228d8a2639a58e6c` — совпадает с опубликованным `gradle-9.8.0-bin.zip.sha256`; записан в `gradle/wrapper/gradle-wrapper.properties` (`distributionSha256Sum`), wrapper сверяет его при загрузке |
 | SHA-256 `gradle-wrapper.jar` | `238e777fcddd7e34f9708186085def2abd6e08e658505b38718d79d74c21abd5` — совпадает с опубликованным `gradle-9.8.0-wrapper.jar.sha256` |
