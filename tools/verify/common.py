@@ -44,7 +44,7 @@ def files(base=None):
 
 def is_text(rel):
     name = os.path.basename(rel)
-    return rel.endswith(TEXT_EXT) or name in ("gradlew", "LICENSE", ".gitignore")
+    return rel.endswith(TEXT_EXT) or name in ("gradlew", "LICENSE", ".gitignore", ".gitattributes")
 
 
 def read(rel, base=None):
