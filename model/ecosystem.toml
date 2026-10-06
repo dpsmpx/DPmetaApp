@@ -341,11 +341,11 @@ name = "Сайт dpsmpx.com"
 kind = "service"
 layer = "infra"
 visibility = "public"
-role = "статический сайт на хостинге Beget: главная, проекты, лента, /api/v1/; пока по http, сертификата нет"
-refs = ["SocialMediaImage:docs/platforms/WEBSITE.md", "SocialMediaImage:Д32", "SocialMediaImage:Д35"]
+role = "статический сайт на хостинге Beget: главная, проекты, лента, /api/v1/; HTTPS, с HTTP — перенаправление"
+refs = ["SocialMediaImage:docs/platforms/WEBSITE.md", "SocialMediaImage:Д32", "SocialMediaImage:Д35", "SocialMediaImage:TODO.md"]
 probes = [
-  { url = "http://dpsmpx.com/", expect = 200, headers = ["Content-Security-Policy", "X-Content-Type-Options", "Referrer-Policy", "Permissions-Policy", "X-Frame-Options", "Cross-Origin-Opener-Policy"] },
-  { url = "http://dpsmpx.com/api/v1/index.json", expect = 200 },
+  { url = "https://dpsmpx.com/", expect = 200, headers = ["Content-Security-Policy", "X-Content-Type-Options", "Referrer-Policy", "Permissions-Policy", "X-Frame-Options", "Cross-Origin-Opener-Policy"] },
+  { url = "https://dpsmpx.com/api/v1/index.json", expect = 200 },
 ]
 
 [[node]]

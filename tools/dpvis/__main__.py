@@ -119,14 +119,25 @@ def cmd_validate(args) -> int:
 
 
 def cmd_build(args) -> int:
-    from . import build
+    from . import build, public
 
     try:
-        out = build.build_bundle(args.model, args.state, args.out)
+        if args.site:
+            sums = build.build_site(args.model, args.state, args.site)
+            print(f"✓ комплект для сайта (публичная выжимка, D-15) → {args.site}")
+            for name, sha in sums.items():
+                print(f"  {name}  {sha[:12]}")
+            return 0
+        out = build.build_bundle(args.model, args.state, args.out, public_only=args.public)
     except build.BuildError as exc:
         print(f"✗ {exc}", file=sys.stderr)
         return 1
-    print(f"✓ {out} ({out.stat().st_size // 1024} КБ)")
+    except public.PublicError as exc:
+        print("✗ в публичной выжимке осталось закрытое — сборка остановлена:", file=sys.stderr)
+        for p in exc.problems:
+            print(f"  ✗ {p}", file=sys.stderr)
+        return 1
+    print(f"✓ {out} ({out.stat().st_size // 1024} КБ){' — публичная выжимка' if args.public else ''}")
     return 0
 
 
@@ -170,6 +181,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--model", type=Path, default=MODEL_OUT)
     p.add_argument("--state", type=Path, default=STATE_OUT)
     p.add_argument("--out", type=Path, default=REPO / "dist" / "dpvisualisation.html")
+    p.add_argument("--public", action="store_true", help="только публичная выжимка (D-15)")
+    p.add_argument("--site", type=Path, help="комплект для сайта в каталог: dpvis.js, dpvis.css, dpvis-data.json (всегда публичный)")
     p.set_defaults(func=cmd_build)
 
     p = sub.add_parser("serve", help="живой режим: сервер и пересборка среза")

@@ -2340,20 +2340,21 @@
       "X-Frame-Options",
       "Cross-Origin-Opener-Policy"
      ],
-     "url": "http://dpsmpx.com/"
+     "url": "https://dpsmpx.com/"
     },
     {
      "expect": 200,
      "headers": [],
-     "url": "http://dpsmpx.com/api/v1/index.json"
+     "url": "https://dpsmpx.com/api/v1/index.json"
     }
    ],
    "refs": [
     "SocialMediaImage:docs/platforms/WEBSITE.md",
     "SocialMediaImage:Д32",
-    "SocialMediaImage:Д35"
+    "SocialMediaImage:Д35",
+    "SocialMediaImage:TODO.md"
    ],
-   "role": "статический сайт на хостинге Beget: главная, проекты, лента, /api/v1/; пока по http, сертификата нет",
+   "role": "статический сайт на хостинге Beget: главная, проекты, лента, /api/v1/; HTTPS, с HTTP — перенаправление",
    "status": "active",
    "visibility": "public"
   },
@@ -2494,7 +2495,7 @@
  "schema": "dpvis-model/1",
  "source": {
   "path": "model/ecosystem.toml",
-  "sha256": "b909826c3564d0f74ccebc37afe32457f438ed091d1c651eb2565dd18ce58a57"
+  "sha256": "b6a6f2238c9aea7f1c0f69f4e962f4e2c86257e281b48963184d6451136514c6"
  },
  "sources": [
   "DPmeta:docs/ECOSYSTEM.md",

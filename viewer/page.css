@@ -1,0 +1,10 @@
+/* Страница просмотрщика вне сайта: живой режим, сборка одного файла, DPmetaApp. */
+html { background: #111214; }
+body {
+  margin: 0;
+  padding: 12px;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: #111214;
+  color: #eeeeec;
+}
+main { max-width: 1600px; margin: 0 auto; }
