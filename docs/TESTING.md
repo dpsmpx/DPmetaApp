@@ -66,7 +66,10 @@
 - `xray` — компиляция для Xray (обязательно, если `load.outcome` — `ok`):
   `outcome` — `compiled` (каждый профиль скомпилирован без находок
   сверх `codes`, результат совпал с эталоном) или `rejected` (хотя бы
-  один профиль отвергнут), `codes` — в находках компиляции.
+  один профиль отвергнут), `codes` — в находках компиляции. `geodata`
+  (необязательно) — оглавление набора геоданных в корпусе
+  (`geodata/manifest.json`): коды и атрибуты сверяются с ним, как на
+  устройстве (D-27); без него не сверяются, как на хосте.
 
 Имя файла начинается с ожидаемого исхода: `valid-…`, `invalid-…`,
 `warning-…`, `info-…`, `limited-backend-…` (ядро не умеет: фиктивное
@@ -192,7 +195,9 @@ python3 tools/xray/native.py host
    `include` с фильтрами и аффилиации
    (`TestDlcResolvesIncludesFiltersAndAffiliations`), детерминизм
    (`TestBuildIsDeterministicAndManifestDescribesFiles`), приём набора
-   ядром (`TestXrayAcceptsTheSet`).
+   ядром (`TestXrayAcceptsTheSet`), сочетания атрибутов в оглавлении —
+   ровно те, по которым ядро находит имена
+   (`TestManifestAttrSetsAreWhatXrayMatches`).
 2. **Эталон оглавления** `geodata/manifest.json` в корпусе. Go-тест
    `TestManifestMatchesGolden` сверяет с ним оглавление синтетического
    набора, а Kotlin-тест `GeodataTest.builderManifestParses` его
@@ -208,7 +213,8 @@ python3 tools/xray/native.py host
 каталога, атрибуция DB-IP на месте, оглавление побайтно совпадает с
 набором шага «Xray: геоданные». Коды конфигурации компилятор сверяет с
 оглавлением установленного набора
-(`XrayCompilerTest.geoCodesAreCheckedAgainstTheInstalledSet`).
+(`XrayCompilerTest.geoCodesAreCheckedAgainstTheInstalledSet`; в корпусе —
+`configs/limited-backend-xray-geosite-attrs` с `xray.geodata`).
 
 Перенос набора на устройстве (`GeodataInstaller`) проверяет `GeodataTest`:
 файл, не совпавший с оглавлением, не ставится; прерванный перенос не

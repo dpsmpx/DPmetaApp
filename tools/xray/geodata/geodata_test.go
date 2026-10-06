@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
+	"errors"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -11,9 +12,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/xtls/xray-core/common"
 	"github.com/xtls/xray-core/common/geodata"
+	xnet "github.com/xtls/xray-core/common/net"
 	"github.com/xtls/xray-core/common/platform"
+	"github.com/xtls/xray-core/common/session"
 	"github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/features/routing"
+	routingsession "github.com/xtls/xray-core/features/routing/session"
 	"github.com/xtls/xray-core/infra/conf/serial"
 	"google.golang.org/protobuf/proto"
 
@@ -202,6 +208,10 @@ example.com @cn
 	"example-all": `include:example-a
 include:example-b @cn
 `,
+	// Атрибуты есть, но не у одного правила: @ads@cn не выберет ничего.
+	"example-split": `example.org @ads
+example.net @cn
+`,
 }
 
 func rendered(rules []domainRule) []string {
@@ -221,7 +231,7 @@ func TestDlcResolvesIncludesFiltersAndAffiliations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st.files != 3 || st.lowercased != 1 {
+	if st.files != 4 || st.lowercased != 1 {
 		t.Errorf("статистика %+v", st)
 	}
 	want := map[string][]string{
@@ -229,7 +239,8 @@ func TestDlcResolvesIncludesFiltersAndAffiliations(t *testing.T) {
 		"example-b":   {"Regex:^cdn[0-9]\\.example\\.net$", "Substr:example", "Domain:example.com @ads @cn", "Domain:example.com @cn", "Domain:example.net", "Full:www.example.org"},
 		"example-all": {"Regex:^cdn[0-9]\\.example\\.net$", "Substr:example", "Domain:example.com @ads @cn", "Domain:example.com @cn", "Domain:example.net", "Domain:example.org @ads", "Full:www.example.org"},
 		// Список только из аффилиаций — тоже список (файла у него нет).
-		"example-c": {"Domain:example.org @ads"},
+		"example-c":     {"Domain:example.org @ads"},
+		"example-split": {"Domain:example.net @cn", "Domain:example.org @ads"},
 	}
 	if len(lists) != len(want) {
 		t.Errorf("списки %v", sortedKeys(lists))
@@ -300,8 +311,14 @@ func TestBuildIsDeterministicAndManifestDescribesFiles(t *testing.T) {
 	if !slices.Equal(m.GeoIP, []string{"aa", "ab", "private"}) {
 		t.Errorf("коды geoip %v", m.GeoIP)
 	}
-	if got := m.GeoSite["example-b"]; !slices.Equal(got, []string{"ads", "cn"}) {
-		t.Errorf("атрибуты example-b %v", got)
+	for code, want := range map[string][][]string{
+		"example-a":     {{"ads"}},
+		"example-b":     {{"ads", "cn"}}, // @cn входит в @ads@cn
+		"example-split": {{"ads"}, {"cn"}},
+	} {
+		if got := m.GeoSite[code]; !slices.EqualFunc(got, want, slices.Equal) {
+			t.Errorf("сочетания атрибутов %s: %v, ожидалось %v", code, got, want)
+		}
 	}
 	if m.Sources.Dlc.Commit != "0123456789ab" || m.Sources.Dbip.Release != "2026-01" {
 		t.Errorf("источники %+v", m.Sources)
@@ -385,4 +402,87 @@ func TestXrayAcceptsTheSet(t *testing.T) {
 			t.Errorf("код %q не в верхнем регистре — Xray его не найдёт", e.Code)
 		}
 	}
+}
+
+// Оглавление говорит о сочетаниях атрибутов то же, что выбирает само ядро
+// (D-05): по geosite:список@a@b Xray находит имя, только если у одного
+// правила списка есть все атрибуты сразу, — ровно когда сочетание покрыто
+// оглавлением. Проверяется каждое сочетание атрибутов каждого списка
+// синтетического набора, в том числе @ads@cn у example-split, где эти
+// атрибуты есть только врозь.
+func TestManifestAttrSetsAreWhatXrayMatches(t *testing.T) {
+	out, m := buildSample(t)
+	t.Setenv(platform.AssetLocation, out)
+	names := []string{"example.org", "www.example.org", "example.net", "cdn1.example.net", "example.com"}
+	uncovered := 0
+	for _, code := range sortedKeys(m.GeoSite) {
+		var attrs []string
+		for _, set := range m.GeoSite[code] {
+			attrs = append(attrs, set...)
+		}
+		slices.Sort(attrs)
+		attrs = slices.Compact(attrs)
+		for mask := 1; mask < 1<<len(attrs); mask++ {
+			var query []string
+			for i, a := range attrs {
+				if mask&(1<<i) != 0 {
+					query = append(query, a)
+				}
+			}
+			rule := "geosite:" + code + "@" + strings.Join(query, "@")
+			covered := slices.ContainsFunc(m.GeoSite[code], func(set []string) bool { return containsAll(set, query) })
+			if !covered {
+				uncovered++
+			}
+			if got := xrayMatchesAny(t, rule, names); got != covered {
+				t.Errorf("%s: ядро находит имя — %v, оглавление покрывает сочетание — %v", rule, got, covered)
+			}
+		}
+	}
+	if uncovered == 0 {
+		t.Error("в примере нет непокрытого сочетания атрибутов — отказ не проверен")
+	}
+}
+
+// xrayMatchesAny — сработает ли правило маршрутизации Xray с условием
+// domain: [rule] хотя бы для одного из имён (Router.PickRoute без запуска
+// ядра и без сети, как dppass-xray-probe route).
+func xrayMatchesAny(t *testing.T, rule string, names []string) bool {
+	t.Helper()
+	cfg := `{"log": {"loglevel": "none"},
+		"outbounds": [{"tag": "direct", "protocol": "freedom"}, {"tag": "hit", "protocol": "freedom"}],
+		"routing": {"rules": [{"domain": [` + strconvQuote(rule) + `], "outboundTag": "hit"}]}}`
+	jc, err := serial.DecodeJSONConfig(strings.NewReader(cfg))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pb, err := jc.Build()
+	if err != nil {
+		t.Fatalf("%s: %v", rule, err)
+	}
+	inst, err := core.New(pb)
+	if err != nil {
+		t.Fatalf("%s: %v", rule, err)
+	}
+	defer inst.Close()
+	router := inst.GetFeature(routing.RouterType()).(routing.Router)
+	for _, name := range names {
+		ctx := &routingsession.Context{
+			Outbound: &session.Outbound{Target: xnet.TCPDestination(xnet.DomainAddress(name), 443)},
+			Content:  &session.Content{SkipDNSResolve: true},
+		}
+		route, err := router.PickRoute(ctx)
+		switch {
+		case err == nil && route.GetOutboundTag() == "hit":
+			return true
+		case err != nil && !errors.Is(err, common.ErrNoClue):
+			t.Fatalf("%s, %s: %v", rule, name, err)
+		}
+	}
+	return false
+}
+
+func strconvQuote(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
 }

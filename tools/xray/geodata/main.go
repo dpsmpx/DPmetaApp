@@ -12,8 +12,8 @@
 //
 // В DIR — geoip.dat, geosite.dat, NOTICE.txt (атрибуция DB-IP и
 // уведомление MIT dlc) и manifest.json: источники, SHA-256 файлов и
-// оглавление (коды geoip, коды geosite с их атрибутами). Сборка
-// детерминирована: из тех же источников — те же байты.
+// оглавление (коды geoip, коды geosite с сочетаниями атрибутов их
+// правил). Сборка детерминирована: из тех же источников — те же байты.
 //
 // -verify: ядро Xray закреплённой версии (тот же go.mod) загружает каждый
 // код набора — так проверяется весь набор, а не выборка.
@@ -47,9 +47,11 @@ import (
 
 // manifestFormat — формат оглавления набора; новая версия — при любом
 // несовместимом изменении (его читает приложение, engine.xray.GeodataManifest).
+// Версия 2: у кода geosite — сочетания атрибутов правил, а не атрибуты
+// списка вразбивку (attrSets).
 const (
 	manifestFormat  = "dppass.geodata"
-	manifestVersion = 1
+	manifestVersion = 2
 	noticeFile      = "NOTICE.txt"
 	manifestFile    = "manifest.json"
 )
@@ -93,12 +95,13 @@ func main() {
 
 // manifest — оглавление набора (manifest.json).
 type manifest struct {
-	Format        string              `json:"format"`
-	FormatVersion int                 `json:"format_version"`
-	Sources       manifestSources     `json:"sources"`
-	Files         []manifestEntry     `json:"files"`
-	GeoIP         []string            `json:"geoip"`
-	GeoSite       map[string][]string `json:"geosite"`
+	Format        string          `json:"format"`
+	FormatVersion int             `json:"format_version"`
+	Sources       manifestSources `json:"sources"`
+	Files         []manifestEntry `json:"files"`
+	GeoIP         []string        `json:"geoip"`
+	// GeoSite — код → наибольшие сочетания атрибутов его правил (attrSets).
+	GeoSite map[string][][]string `json:"geosite"`
 }
 
 type manifestSources struct {
@@ -238,28 +241,65 @@ func geoIPList(countries map[string]map[family]*ipSet) (*geodata.GeoIPList, []st
 
 // geoSiteList — записи по коду (верхний регистр), правила — в порядке
 // resolve; атрибут — ключ со значением true (Xray выбирает по наличию ключа).
-// Оглавление — код → атрибуты, встречающиеся в списке.
-func geoSiteList(lists map[string][]domainRule) (*geodata.GeoSiteList, map[string][]string, int) {
+// Оглавление — код → сочетания атрибутов его правил (attrSets).
+func geoSiteList(lists map[string][]domainRule) (*geodata.GeoSiteList, map[string][][]string, int) {
 	list := &geodata.GeoSiteList{}
-	codes := map[string][]string{}
+	codes := map[string][][]string{}
 	total := 0
 	for _, name := range sortedKeys(lists) {
 		entry := &geodata.GeoSite{Code: strings.ToUpper(name)}
-		attrs := []string{}
 		for _, r := range lists[name] {
 			d := &geodata.Domain{Type: r.kind, Value: r.value}
 			for _, a := range r.attrs {
 				d.Attribute = append(d.Attribute, &geodata.Domain_Attribute{Key: a, TypedValue: &geodata.Domain_Attribute_BoolValue{BoolValue: true}})
-				attrs = append(attrs, a)
 			}
 			entry.Domain = append(entry.Domain, d)
 		}
 		total += len(entry.Domain)
-		slices.Sort(attrs)
-		codes[name] = slices.Compact(attrs)
+		codes[name] = attrSets(lists[name])
 		list.Entry = append(list.Entry, entry)
 	}
 	return list, codes, total
+}
+
+// attrSets — наибольшие сочетания атрибутов правил списка, по алфавиту.
+// По geosite:список@a@b Xray берёт правила, у которых есть каждый из
+// атрибутов сразу (common/geodata/geodat_loader.go, siteDecoder), поэтому
+// условие не пусто, только если сочетание входит в атрибуты хотя бы одного
+// правила. Сочетание, которое целиком входит в другое, лишнее: его
+// покрывает большее. Список без атрибутов — пустой массив.
+func attrSets(rules []domainRule) [][]string {
+	seen := map[string][]string{}
+	for _, r := range rules {
+		if len(r.attrs) > 0 {
+			seen[strings.Join(r.attrs, "@")] = r.attrs
+		}
+	}
+	out := [][]string{}
+	for _, k := range sortedKeys(seen) {
+		a := seen[k]
+		covered := false
+		for _, b := range seen {
+			if len(b) > len(a) && containsAll(b, a) {
+				covered = true
+				break
+			}
+		}
+		if !covered {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// containsAll — в set есть каждый элемент sub.
+func containsAll(set, sub []string) bool {
+	for _, x := range sub {
+		if !slices.Contains(set, x) {
+			return false
+		}
+	}
+	return true
 }
 
 // verifyWithXray — конфигурация с правилом на каждый код набора проходит

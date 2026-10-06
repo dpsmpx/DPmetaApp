@@ -25,10 +25,16 @@ import kotlin.test.assertTrue
  * байты: установщику всё равно, что внутри файлов.
  */
 class GeodataTest {
-    private fun manifestJson(files: Map<String, ByteArray>, release: String = "2026-01"): String = Json.write(
+    private fun attrSets(vararg sets: List<String>): JsonArray = JsonArray(sets.map { set -> JsonArray(set.map(::JsonString)) })
+
+    private fun manifestJson(
+        files: Map<String, ByteArray>,
+        release: String = "2026-01",
+        geosite: JsonArray = attrSets(listOf("ads")),
+    ): String = Json.write(
         Json.obj(
             "format" to JsonString("dppass.geodata"),
-            "format_version" to Json.num(1),
+            "format_version" to Json.num(2),
             "sources" to Json.obj(
                 "dlc" to Json.obj("module" to JsonString("dlc"), "version" to JsonString("v0.0.0-20260101000000-0123456789ab"), "commit" to JsonString("0123456789ab")),
                 "dbip" to Json.obj("release" to JsonString(release), "sha256" to JsonString("0".repeat(64))),
@@ -39,7 +45,7 @@ class GeodataTest {
                 },
             ),
             "geoip" to JsonArray(listOf(JsonString("aa"), JsonString("private"))),
-            "geosite" to Json.obj("example-a" to JsonArray(listOf(JsonString("ads")))),
+            "geosite" to Json.obj("example-a" to geosite),
         ),
     )
 
@@ -136,7 +142,12 @@ class GeodataTest {
             "оглавление в списке" to manifestJson(files + ("manifest.json" to byteArrayOf(1))),
             "нет geosite.dat" to manifestJson(files - "geosite.dat"),
             "чужой формат" to manifestJson(files).replace("dppass.geodata", "other"),
-            "версия формата" to manifestJson(files).replace("\"format_version\": 1", "\"format_version\": 2"),
+            "новая версия формата" to manifestJson(files).replace("\"format_version\": 2", "\"format_version\": 3"),
+            // Версия 1: атрибуты списка вразбивку, без сочетаний.
+            "прежняя версия формата" to manifestJson(files).replace("\"format_version\": 2", "\"format_version\": 1"),
+            "атрибуты не сочетаниями" to manifestJson(files, geosite = JsonArray(listOf(JsonString("ads")))),
+            "пустое сочетание" to manifestJson(files, geosite = attrSets(emptyList())),
+            "повтор в сочетании" to manifestJson(files, geosite = attrSets(listOf("ads", "ads"))),
             "не JSON" to "{",
         )
         for ((name, text) in cases) {
@@ -154,7 +165,13 @@ class GeodataTest {
         assertEquals("dlc 0123456789ab, DB-IP 2026-01", m.summary)
         assertEquals(setOf("geoip.dat", "geosite.dat", "NOTICE.txt"), m.files.map { it.name }.toSet())
         assertEquals(setOf("aa", "ab", "private"), m.geoIp)
-        assertEquals(setOf("ads", "cn"), m.geoSite["example-b"])
-        assertEquals(emptySet(), m.geoSite.keys - setOf("example-a", "example-b", "example-all", "example-c"))
+        assertEquals(listOf(setOf("ads", "cn")), m.geoSite["example-b"])
+        assertEquals(listOf(setOf("ads"), setOf("cn")), m.geoSite["example-split"])
+        assertEquals(setOf("ads", "cn"), m.siteAttributes("example-split"))
+        assertFalse(m.siteHasRuleWithAll("example-split", listOf("ads", "cn")), "@ads и @cn — у разных правил")
+        assertTrue(m.siteHasRuleWithAll("example-b", listOf("cn", "ads")))
+        assertTrue(m.siteHasRuleWithAll("example-b", emptyList()), "без атрибутов — весь список")
+        assertFalse(m.siteHasRuleWithAll("example-d", emptyList()), "списка нет")
+        assertEquals(setOf("example-a", "example-b", "example-all", "example-c", "example-split"), m.geoSite.keys)
     }
 }

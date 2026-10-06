@@ -413,14 +413,25 @@ class XrayCompilerTest {
 
     @Test
     fun geoCodesAreCheckedAgainstTheInstalledSet() {
-        // D-27: кода или атрибута нет в наборе геоданных ядра — отказ с путём правила,
-        // а не условие, которое молча никогда не сработает (D-05).
-        val set = GeodataManifest("v0.0.0-20260101000000-0123456789ab", "0123456789ab", "2026-01", emptyList(), setOf("aa", "private"), mapOf("example-a" to setOf("ads")))
+        // D-27: кода, атрибута или сочетания атрибутов нет в наборе геоданных ядра —
+        // отказ с путём правила, а не условие, которое молча никогда не сработает (D-05).
+        val set = GeodataManifest(
+            "v0.0.0-20260101000000-0123456789ab", "0123456789ab", "2026-01", emptyList(), setOf("aa", "private"),
+            mapOf(
+                "example-a" to listOf(setOf("ads")),
+                "example-plain" to emptyList(),
+                "example-both" to listOf(setOf("ads", "cn")),
+                // @ads и @cn есть, но у разных правил: @ads@cn ядро не выберет ни одного.
+                "example-split" to listOf(setOf("ads"), setOf("cn")),
+            ),
+        )
         val routing = """{"rules": [
-            {"id": "known", "action": "direct", "geoip": ["aa", "private"], "geosite": ["example-a", "example-a@ads"]},
+            {"id": "known", "action": "direct", "geoip": ["aa", "private"],
+             "geosite": ["example-a", "example-a@ads", "example-plain", "example-both@cn@ads", "example-both@cn", "example-split@ads", "example-split@cn"]},
             {"id": "unknown-ip", "action": "direct", "geoip": ["zz"]},
             {"id": "unknown-site", "action": "block", "geosite": ["example-b"]},
-            {"id": "unknown-attr", "action": "block", "geosite": ["example-a@cn"]}]}"""
+            {"id": "unknown-attr", "action": "block", "geosite": ["example-a@cn"]},
+            {"id": "split-attrs", "action": "block", "geosite": ["example-split@ads@cn"]}]}"""
         val dns = """{"servers": [{"id": "remote", "type": "https", "url": "https://dns.example.net/dns-query", "route": "tunnel"}],
             "default": "remote", "rules": [{"geosite": ["example-z"], "server": "remote"}]}"""
         val geo = ir(routing = routing, dns = dns)
@@ -431,13 +442,16 @@ class XrayCompilerTest {
                 DiagCode.GEO_CODE_UNKNOWN to "$.routing.rules[1].geoip",
                 DiagCode.GEO_CODE_UNKNOWN to "$.routing.rules[2].geosite",
                 DiagCode.GEO_CODE_UNKNOWN to "$.routing.rules[3].geosite",
+                DiagCode.GEO_CODE_UNKNOWN to "$.routing.rules[4].geosite",
                 DiagCode.GEO_CODE_UNKNOWN to "$.dns.rules[0].geosite",
             ),
             errors(compileWith(GeodataCodes.Installed(set))).toSet(),
         )
+        val split = compileWith(GeodataCodes.Installed(set)).diagnostics.single { it.path == "$.routing.rules[4].geosite" }
+        assertTrue("нет правила со всеми атрибутами @ads@cn сразу" in split.message, split.message)
         val missing = errors(compileWith(GeodataCodes.Missing("в приложении нет набора")))
         assertTrue(missing.all { it.first == DiagCode.GEODATA_UNAVAILABLE }, "$missing")
-        assertEquals(6, missing.size, "каждое условие geoip/geosite — с путём: $missing")
+        assertEquals(7, missing.size, "каждое условие geoip/geosite — с путём: $missing")
         assertTrue(compileWith(GeodataCodes.Unchecked).isSuccess, "без набора коды проверяет само ядро")
         val known = ir(routing = """{"rules": [{"id": "known", "action": "direct", "geoip": ["aa"], "geosite": ["example-a@ads"]}]}""")
         assertTrue(XrayCompiler(geodata = GeodataCodes.Installed(set)).compile(known, CompilePlan(known.profiles[0].id, true)).isSuccess)
@@ -456,7 +470,7 @@ class XrayCompilerTest {
                 .all { it.first == DiagCode.GEO_CODE_UNKNOWN },
             "кодов ru нет в наборе — GEO_CODE_UNKNOWN",
         )
-        val withRu = GeodataManifest("v0.0.0-20260101000000-0123456789ab", "0123456789ab", "2026-01", emptyList(), setOf("ru"), mapOf("category-ru" to emptySet()))
+        val withRu = GeodataManifest("v0.0.0-20260101000000-0123456789ab", "0123456789ab", "2026-01", emptyList(), setOf("ru"), mapOf("category-ru" to emptyList()))
         val p = Json.parse(
             XrayCompiler(geodata = GeodataCodes.Installed(withRu)).compile(gi, CompilePlan(gi.profiles[0].id, true)).valueOrNull()!!.payloadForEngine(),
         ) as JsonObject

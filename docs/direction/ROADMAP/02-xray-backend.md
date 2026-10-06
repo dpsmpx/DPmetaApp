@@ -54,8 +54,8 @@
    перенос в `noBackupFilesDir/geodata`, сверка кодов компилятором.
    Сделано для геоданных: сборщик `tools/xray/geodata` (D-31), набор в
    APK (`xrayGeodata<Вариант>`, `check_apk.py`), перенос в `AppGraph`
-   (`GeodataInstaller`), сверка кодов (`GEO_CODE_UNKNOWN`); на
-   устройстве не проверено (`TODO.md`).
+   (`GeodataInstaller`), сверка кодов, атрибутов и их сочетаний
+   (`GEO_CODE_UNKNOWN`); на устройстве не проверено (`TODO.md`).
 7. **Проверки**: выравнивание нативных библиотек по 16 КБ — шаг
    hostcheck; размер APK по ABI — в `docs/PERFORMANCE_BUDGET.md`.
    Сделано: `check_apk.py` (только библиотека ядра трёх ABI, без
