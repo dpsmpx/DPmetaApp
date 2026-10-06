@@ -63,9 +63,9 @@ RULES = [
      "в хранилище секретов нет: только ссылки (D-25)", False),
     ("provider-private",
      r"claude\.ai/(?:api|chat|login|oauth)|\bsessionKey\b|\bCookieManager\b|\bCookieHandler\b|"
-     r"\bHttpCookie\b",
+     r"\bHttpCookie\b|\.credentials\.json|CLAUDE_CODE_OAUTH_TOKEN|setup-token",
      [],
-     "приватные адреса и cookies провайдера запрещены (D-04)", True),
+     "приватные адреса, cookies и вход claude.ai провайдера запрещены (D-04, D-27)", True),
 ]
 
 

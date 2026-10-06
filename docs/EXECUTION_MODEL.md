@@ -10,11 +10,19 @@
 Mobile Controller (android/ или cli/)
         │  протокол событий с номерами (транспорт — этап 3)
         ▼
-Execution Target  ── TERMUX_LOCAL · LOCAL_DAEMON · LINUX_SSH · WINDOWS_REMOTE · MOCK
+Execution Target  ── TERMUX_LOCAL · LINUX_SSH · WINDOWS_REMOTE · MOCK  (V1, D-26)
         │  агент оркестратора на target (оболочка cli)
         ▼
 Claude runtime    ── Claude Code CLI (print, stream-json), Claude Agent SDK
 ```
+
+Транспорт к любому target — SSH (D-26): к Termux — на `127.0.0.1` того
+же телефона, к Linux и Windows — с проверкой ключа хоста. На target —
+агент `dpai agent`: запускает `claude` с каталогом настроек слота
+(D-27), пишет события в свой журнал с номерами, переживает обрыв SSH и
+отдаёт пропущенное при переподключении. Работает ли Claude Code в
+Termux на Redmi Note 13 — проверка в начале этапа 3
+(`docs/research/CLAUDE_CODE_CLI.md`, §5).
 
 Поля — `docs/DATA_MODEL.md`, §3. Здоровье target — по пробам с
 несколькими порогами, а не по одному пропуску (ТЗ, §14): связь,
