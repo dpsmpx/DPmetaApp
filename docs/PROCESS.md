@@ -111,7 +111,9 @@ Verify. Журнал каждой проверки — `build/dpv/last/<пров
 `.claude/hooks/session-start.sh` (D-50): ставит command-line tools
 Android SDK (архив сверяется по SHA-256), платформу, build-tools,
 platform-tools и NDK версии из каталога, записывает путь к SDK в
-`ANDROID_HOME` сессии и в `local.properties`, вызывает
+`ANDROID_HOME` сессии и в `local.properties`, направляет Gradle к
+Maven Central через его зеркало у Google (только сборку DPpass; суммы
+сверяет `gradle/verification-metadata.xml`, D-50), вызывает
 `tools/dpv/dpv doctor` и показывает ветки с невлитой работой.
 
 ### Правила

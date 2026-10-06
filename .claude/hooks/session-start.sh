@@ -3,7 +3,8 @@
 #
 #   * проектная часть — JDK 21 и Android SDK с NDK: без них шаги Android
 #     и мост Xray в tools/hostcheck/run.sh --full падают, пропуск не
-#     разрешается (docs/PROCESS.md, «Окружение»);
+#     разрешается (docs/PROCESS.md, «Окружение»); зеркало Maven Central
+#     для Gradle;
 #   * общая — dpv doctor (чего не хватает) и ветки с невлитой работой.
 #
 # Только в веб-сессии; повторный запуск ничего не ставит заново.
@@ -58,6 +59,30 @@ fi
 # Путь к SDK — для сессии и для Gradle (local.properties не в репозитории).
 [ -n "${CLAUDE_ENV_FILE:-}" ] && echo "export ANDROID_HOME=\"$SDK\"" >> "$CLAUDE_ENV_FILE"
 grep -qs '^sdk\.dir=' local.properties || echo "sdk.dir=$SDK" >> local.properties
+
+# Maven Central — через его зеркало у Google (D-50): прокси веб-сессии отвечает 429
+# на холодную сборку. Только для сборки DPpass и build-logic (каталог настроек — в
+# этом репозитории); суммы артефактов сверяет gradle/verification-metadata.xml.
+INIT_DIR="${GRADLE_USER_HOME:-$HOME/.gradle}/init.d"
+mkdir -p "$INIT_DIR"
+cat > "$INIT_DIR/dppass-maven-mirror.gradle" <<GRADLE
+// Пишет .claude/hooks/session-start.sh DPpass (D-50). Руками не править.
+def mirror = "https://maven-central.storage-download.googleapis.com/maven2/"
+def root = new File("$PROJ").canonicalPath
+beforeSettings { settings ->
+    def dir = settings.settingsDir.canonicalPath
+    if (dir != root && !dir.startsWith(root + File.separator)) return
+    settings.pluginManagement.repositories {
+        maven { url mirror }
+        google()
+        gradlePluginPortal()
+    }
+    settings.dependencyResolutionManagement.repositories {
+        maven { url mirror }
+        google()
+    }
+}
+GRADLE
 
 # ---- Окружение для DP Verify ----
 python3 "$PROJ/tools/dpv/dpv" doctor || true
