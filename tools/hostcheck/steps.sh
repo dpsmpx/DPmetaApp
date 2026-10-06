@@ -5,6 +5,8 @@
 #
 #   tools/hostcheck/steps.sh build         сборка и тесты ядра и build-logic (с Android SDK — без :app:build: APK — шаг Android)
 #   tools/hostcheck/steps.sh xray-bridge   мост Xray: библиотека для JVM хоста и тест JNI в этой JVM (D-25)
+#   tools/hostcheck/steps.sh android-sdk   есть ли Android SDK (проба [[tool]] профиля)
+#   tools/hostcheck/steps.sh android-ndk   есть ли NDK версии из каталога (проба [[tool]] профиля)
 #
 # Код возврата: 0 — шаг прошёл; 1 — нет; 2 — неверный вызов.
 set -u
@@ -50,8 +52,17 @@ build() {
   "${GRADLE[@]}" "${tasks[@]}"
 }
 
+android_ndk() { # NDK версии из каталога: им собирается libdppassxray.so для APK (D-25)
+  local sdk ver
+  sdk="$(sdk_dir)" || return 1
+  ver="$(sed -n 's/^android-ndk *= *"\(.*\)"/\1/p' gradle/libs.versions.toml)"
+  [ -n "$ver" ] && [ -f "$sdk/ndk/$ver/source.properties" ]
+}
+
 case "${1:-}" in
   build) build ;;
   xray-bridge) xray_bridge ;;
-  *) echo "steps.sh: шаг build или xray-bridge, а не «${1:-}»"; exit 2 ;;
+  android-sdk) android_sdk ;;
+  android-ndk) android_ndk ;;
+  *) echo "steps.sh: шаг build, xray-bridge, android-sdk или android-ndk, а не «${1:-}»"; exit 2 ;;
 esac

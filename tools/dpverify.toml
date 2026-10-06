@@ -50,12 +50,12 @@ min = "1.21"
 [[tool]]
 # тот же признак, что в settings.gradle.kts и run.sh: ANDROID_HOME, ANDROID_SDK_ROOT или sdk.dir
 name = "android-sdk"
-probe = ["bash", "-c", 'd="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"; [ -n "$d" ] && [ -d "$d" ] || { d="$(sed -n "s/^sdk\.dir=//p" local.properties 2>/dev/null | head -1)"; [ -n "$d" ] && [ -d "$d" ]; }']
+probe = ["bash", "tools/hostcheck/steps.sh", "android-sdk"]
 
 [[tool]]
 # NDK версии из каталога: им собирается libdppassxray.so для APK (D-25)
 name = "android-ndk"
-probe = ["bash", "-c", 'v="$(sed -n "s/^android-ndk *= *\"\(.*\)\"/\1/p" gradle/libs.versions.toml)"; d="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$(sed -n "s/^sdk\.dir=//p" local.properties 2>/dev/null | head -1)}}"; [ -n "$v" ] && [ -f "$d/ndk/$v/source.properties" ]']
+probe = ["bash", "tools/hostcheck/steps.sh", "android-ndk"]
 
 # ---- обязательный набор ----
 

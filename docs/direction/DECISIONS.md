@@ -1728,7 +1728,7 @@ TLS и на выбор алгоритма он не влияет.
 
 **Проверка.**
 - `tools/dpv/dpv run full --ci` перед слиянием; итог —
-  `tools/dpv/dpv report --md` в описании PR (`docs/PROCESS.md`, §4);
+  `tools/dpv/dpv report --md` в описании PR (`docs/PROCESS.md`, §5 «Перед слиянием»);
 - `dpv.integrity` — копия `tools/dpv/` совпадает с манифестом.
 
 ## Отложено
