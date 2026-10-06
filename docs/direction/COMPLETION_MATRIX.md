@@ -17,8 +17,8 @@
 | Execution targets complete | 3 | ◐ | модель target, здоровье с порогами и предохранителем, `doctor`, процессы без сирот, SSH через OpenSSH (D-31), агент `dpai agent` с журналом и сверкой пропусков; mock и локально проверено, SSH на настоящем хосте и Termux на устройстве — открыты |
 | Claude runner complete | 4 | ✓ | `ClaudeRunner` через CLI (D-32): ходы с `--resume`, строгий разбор `stream-json` на записанном корпусе, `MockRunner` со сценариями ТЗ, §89, вывод через `Redactor` |
 | Sessions complete | 6 | ✓ | реестр, идемпотентное создание и продолжение, сверка слота перед ходом, heartbeat без поспешного «упала», драйвер поверх `ClaudeRunner`, журнал и снимок |
-| Scheduler complete | 7 | ◐ | автомат задачи с цепочкой проверки (этап 1) |
-| Task DAG complete | 7 | — | |
+| Scheduler complete | 7 | ✓ | детерминированный порядок со старением и ручным приоритетом, план по возможностям target, повтор по классу причины, петли и предел продолжений |
+| Task DAG complete | 7 | ✓ | зависимости, обнаружение цикла с перечнем, блокировка зависимых при отказе |
 | Context manager complete | 8 | — | |
 | Handoff complete | 8 | — | |
 | Git/worktree isolation complete | 9 | — | |

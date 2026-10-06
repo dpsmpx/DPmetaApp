@@ -108,3 +108,27 @@
 Для каждой задачи: максимальная длительность, повторы, продолжения и
 (где провайдер поддерживает) расход — `--max-budget-usd` у Claude Code
 CLI (ТЗ, §86; `docs/research/CLAUDE_CODE_CLI.md`).
+
+## 7. Код
+
+Модуль `tasks` (этап 7): `Tasks` — решения над состоянием (`create`,
+`addDependency` с обнаружением цикла, `enqueue`, `promote`, `ready`,
+`plan`, `start`, `implemented`, `continueLater`, `attemptFailed`,
+`explicit`), `apply` сворачивает события в `TasksState`; `TaskCodec` —
+события в `dpai.event` (поток — задача) и снимок `dpai.tasks-state` v1;
+проекция журнала — `orchestrator.tasks.TasksProjection`.
+
+- Старение: каждый `SchedulerPolicy.agingStep` ожидания с постановки в
+  очередь поднимает уровень на один, вплоть до `CRITICAL` (ТЗ, §84).
+- План назначений: задачи по порядку, каждой — первый target с нужными
+  возможностями и свободным местом (`Tasks.TargetOffer`); задача без
+  подходящего target ждёт, не занимая места других.
+- Повтор: `RETRYABLE` — пауза `retryBackoff · 2^(n−1)`, не больше
+  `maxRetries`, затем `FAILED` (`RETRY_LIMIT_REACHED`); `UNKNOWN` — один
+  повтор, затем `BLOCKED`; `NON_RETRYABLE` и ошибка входа — `BLOCKED`.
+- Петля: тот же ключ отказа `loopThreshold` раз — `BLOCKED`
+  (`LOOP_DETECTED`); продолжений больше `maxContinuations` — `BLOCKED`
+  (`CONTINUATION_LIMIT_REACHED`).
+- Зависимость упала или отменена — зависимые `BLOCKED`
+  (`DEPENDENCY_FAILED`).
+

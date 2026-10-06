@@ -135,6 +135,13 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     SESSION_BINDING_MISMATCH(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
     SESSION_ALREADY_EXISTS(Category.STATE, Severity.INFO, Retryability.NON_RETRYABLE),
 
+    // --- задачи и планировщик (этап 7) ---
+    DEPENDENCY_CYCLE(Category.INPUT, Severity.ERROR, Retryability.NON_RETRYABLE),
+    DEPENDENCY_FAILED(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
+    LOOP_DETECTED(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
+    RETRY_LIMIT_REACHED(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
+    CONTINUATION_LIMIT_REACHED(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
+
     // --- общее ---
     /** Строгая семантика (D-05): неподдержанное — явный отказ, а не «похожее». */
     UNSUPPORTED(Category.UNSUPPORTED, Severity.ERROR, Retryability.NON_RETRYABLE),
