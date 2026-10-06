@@ -149,6 +149,18 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     CONTEXT_TRUNCATED(Category.STATE, Severity.WARNING, Retryability.NON_RETRYABLE),
     HANDOFF_ALREADY_EXISTS(Category.STATE, Severity.INFO, Retryability.NON_RETRYABLE),
 
+    // --- одобрения, Git и рабочие деревья (этап 9) ---
+    APPROVAL_REQUIRED(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
+    APPROVAL_INVALID(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
+    WORKTREE_OWNED(Category.STATE, Severity.ERROR, Retryability.RETRYABLE),
+    WORKTREE_NOT_OWNED(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
+    WORKTREE_PATH_IN_USE(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
+    BRANCH_IN_USE(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
+    GIT_COMMAND_FAILED(Category.EXECUTION, Severity.ERROR, Retryability.UNKNOWN),
+    GIT_OUTPUT_INVALID(Category.FORMAT, Severity.ERROR, Retryability.NON_RETRYABLE),
+    FILE_OVERLAP_SERIALIZE(Category.STATE, Severity.WARNING, Retryability.RETRYABLE),
+    FILE_OVERLAP_REJECTED(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
+
     // --- общее ---
     /** Строгая семантика (D-05): неподдержанное — явный отказ, а не «похожее». */
     UNSUPPORTED(Category.UNSUPPORTED, Severity.ERROR, Retryability.NON_RETRYABLE),
