@@ -111,13 +111,18 @@ class SubscriptionService(
         is Outcome.Success -> Outcome.Success(next.also { cached = it })
     }
 
-    /** Новая подписка по адресу `https://…`. Ничего не загружает: это делает [refresh]. */
+    /**
+     * Новая подписка по адресу `https://…`. Ничего не загружает: это делает
+     * [refresh]. Без имени — имя по хосту адреса.
+     */
     fun add(url: String, name: String?): Outcome<Subscription> {
         val trimmed = url.trim()
         if (!isSubscriptionUrl(trimmed)) {
             return Outcome.failure(DiagCode.SUBSCRIPTION_FETCH_FAILED, "адрес подписки — только https:// без пробелов, до $MAX_URL символов")
         }
-        return insert(name?.trim()?.takeIf { it.isNotEmpty() }?.take(MAX_NAME) ?: hostOf(trimmed), SubscriptionSource.Url(Secret(trimmed)))
+        val given = name?.let(::cleanName)
+        if (given != null && !isValidName(given)) return invalidName()
+        return insert(given?.takeIf { it.isNotEmpty() } ?: hostOf(trimmed), SubscriptionSource.Url(Secret(trimmed)))
     }
 
     /**
@@ -131,8 +136,10 @@ class SubscriptionService(
         if (text.toByteArray(Charsets.UTF_8).size > FetchPolicy().maxBytes) {
             return Outcome.failure(DiagCode.SUBSCRIPTION_TOO_LARGE, "больше ${FetchPolicy().maxBytes} байт")
         }
+        val n = cleanName(name).ifEmpty { "DPpass" }
+        if (!isValidName(n)) return invalidName()
         // Без сети обновлять нечего: автообновление своим серверам не нужно.
-        return insert(name.trim().ifEmpty { "DPpass" }.take(MAX_NAME), SubscriptionSource.Inline(Secret(text)), autoUpdate = false)
+        return insert(n, SubscriptionSource.Inline(Secret(text)), autoUpdate = false)
     }
 
     private fun insert(name: String, source: SubscriptionSource, autoUpdate: Boolean = true): Outcome<Subscription> {
@@ -151,8 +158,8 @@ class SubscriptionService(
     }
 
     fun rename(id: SubscriptionId, name: String): Outcome<SubscriptionsState> {
-        val n = name.trim().take(MAX_NAME)
-        if (n.isEmpty() || n.any { it.code < 0x20 }) return Outcome.failure(DiagCode.NAME_INVALID, "имя пустое или с управляющими символами")
+        val n = cleanName(name)
+        if (n.isEmpty() || !isValidName(n)) return invalidName()
         return edit { st -> st.copy(items = st.items.map { if (it.id == id) it.copy(name = n) else it }) }
     }
 
@@ -240,9 +247,20 @@ class SubscriptionService(
         const val MAX_NAME: Int = 64
         const val MAX_SUBSCRIPTIONS: Int = 64
 
-        fun isSubscriptionUrl(text: String): Boolean = text.startsWith("https://") && text.length in 9..MAX_URL && text.none { it.isWhitespace() }
+        /** Без пробелов и управляющих символов: из адреса берётся имя подписки по умолчанию. */
+        fun isSubscriptionUrl(text: String): Boolean =
+            text.startsWith("https://") && text.length in 9..MAX_URL && text.none { it.isWhitespace() || it.isISOControl() }
 
         private fun hostOf(url: String): String =
             url.removePrefix("https://").substringBefore('/').substringBefore('?').substringAfterLast('@').take(MAX_NAME)
+
+        // Одно правило имени для добавления, «своих серверов» и переименования:
+        // без краевых пробелов, не длиннее MAX_NAME, без управляющих символов —
+        // имя видно в списке, в уведомлении и в журнале.
+        private fun cleanName(name: String): String = name.trim().take(MAX_NAME)
+
+        private fun isValidName(name: String): Boolean = name.none { it.isISOControl() }
+
+        private fun <T> invalidName(): Outcome<T> = Outcome.failure(DiagCode.NAME_INVALID, "имя пустое или с управляющими символами")
     }
 }

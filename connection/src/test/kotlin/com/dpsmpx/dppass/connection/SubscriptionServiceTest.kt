@@ -233,9 +233,26 @@ class SubscriptionFlowTest {
     }
 
     @Test
+    fun namesWithControlCharactersAreRefusedEverywhere() {
+        val core = core()
+        val subs = core.subscriptions
+        for (bad in listOf("две\nстроки", "звонок\u0007", "del\u007f")) {
+            assertEquals(DiagCode.NAME_INVALID, subs.add(URL, bad).errors.single().code, bad)
+            assertEquals(DiagCode.NAME_INVALID, subs.addInline("свои серверы", bad).errors.single().code, bad)
+        }
+        assertTrue(subs.state().valueOrNull()!!.items.isEmpty(), "ни одна не сохранена")
+        val id = added(core)
+        assertEquals(DiagCode.NAME_INVALID, subs.rename(id, "a\tb").errors.single().code)
+        assertEquals(DiagCode.NAME_INVALID, subs.rename(id, "   ").errors.single().code)
+        assertEquals("sub.example.com", subs.state().valueOrNull()!!.find(id)!!.name, "имя не изменилось")
+        // Краевые пробелы — не управляющие символы внутри имени: они убираются.
+        assertEquals("Дом", subs.add(URL, "  Дом\t").valueOrNull()!!.name)
+    }
+
+    @Test
     fun onlyHttpsAddressesAreAccepted() {
         val core = core()
-        for (bad in listOf("http://sub.example.com/x", "ftp://sub.example.com", "https://sub.example.com/ x", "")) {
+        for (bad in listOf("http://sub.example.com/x", "ftp://sub.example.com", "https://sub.example.com/ x", "https://sub\u0001.example.com/s", "")) {
             assertIs<Outcome.Failure>(core.subscriptions.add(bad, null), bad)
         }
         assertEquals("sub.example.com", core.subscriptions.add(URL, null).valueOrNull()!!.name)
