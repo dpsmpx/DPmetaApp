@@ -29,7 +29,7 @@
 | Тело подписки | 2 МиБ | `FetchPolicy.maxBytes` | `SubscriptionUpdaterTest` (`SUBSCRIPTION_TOO_LARGE`) |
 | Записи подписки | 1000; остальные не читаются (`SUBSCRIPTION_ENTRY_SKIPPED`) | `FetchPolicy.maxEntries` | `PayloadLimitsTest.entriesUpToLimitAreReadTheRestAreSkippedLoudly` |
 | Загрузка подписки | 20 с | `FetchPolicy.timeoutMillis` (соединение и чтение; в `HttpsSubscriptionFetcher` — от 1 до 120 с) | нет (тайм-аут не моделируется) |
-| Подписок в приложении | 64; адрес — 2048 символов, имя — 64 | `SubscriptionService.MAX_SUBSCRIPTIONS`, `MAX_URL`, `MAX_NAME` | `LimitsTest.subscriptionsUpTo64` (число подписок; длины — нет) |
+| Подписок в приложении | 64; адрес — 2048 символов, имя — 64 | `SubscriptionService.MAX_SUBSCRIPTIONS`, `MAX_URL`, `MAX_NAME` | `LimitsTest.subscriptionsUpTo64`, `LimitsTest.subscriptionUrlUpTo2048NameUpTo64` |
 | Обновление по расписанию | задание раз в час; подписка — по своему интервалу (по умолчанию 12 ч); после отказа — не раньше чем через 30 мин; только активная | `SubscriptionJobService`, `UpdateSchedule` (D-39) | `UpdateScheduleTest.intervalsFailuresAndOff` |
 | Импорт (буфер, файл, «Поделиться») | 1 МиБ | `ImportClassifier.MAX_BYTES` | `ImportClassifierTest.plainHttpAndOversizedTextAreRefusedWithReason` |
 | Приложения в политике | 1000 | `UserPolicy.MAX_APPS` | `LimitsTest.policyAppsUpTo1000` |

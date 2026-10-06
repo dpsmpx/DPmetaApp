@@ -71,6 +71,29 @@ class LimitsTest {
     }
 
     @Test
+    fun subscriptionUrlUpTo2048NameUpTo64() {
+        val core = DPpassCore(MockBackendCompiler(), MockProxyEngine(), InMemoryBlobStore(), ManualClock(1_000), "com.dpsmpx.dppass", PlatformTraits(true))
+        val subs = core.subscriptions
+        assertEquals(2048, SubscriptionService.MAX_URL, "как в PERFORMANCE_BUDGET §2")
+        assertEquals(64, SubscriptionService.MAX_NAME, "как в PERFORMANCE_BUDGET §2")
+        val prefix = "https://sub.example.com/"
+        val atLimit = prefix + "a".repeat(SubscriptionService.MAX_URL - prefix.length)
+        assertTrue(subs.add(atLimit, null).isSuccess, "адрес ровно на пределе")
+        assertEquals(DiagCode.SUBSCRIPTION_FETCH_FAILED, subs.add(atLimit + "a", null).errors.single().code)
+
+        // Имя длиннее предела обрезается: при добавлении, у «своих серверов», при переименовании и по хосту адреса.
+        val long = "и".repeat(SubscriptionService.MAX_NAME + 10)
+        val named = subs.add("https://named.example.com/s", long).valueOrNull()!!
+        assertEquals("и".repeat(SubscriptionService.MAX_NAME), named.name)
+        assertEquals(SubscriptionService.MAX_NAME, subs.addInline("свои серверы", long).valueOrNull()!!.name.length)
+        val renamed = subs.rename(named.id, long + "ж").valueOrNull()!!.find(named.id)!!
+        assertEquals("и".repeat(SubscriptionService.MAX_NAME), renamed.name)
+        val host = "h".repeat(SubscriptionService.MAX_NAME) + ".example.com"
+        assertEquals("h".repeat(SubscriptionService.MAX_NAME), subs.add("https://$host/s", null).valueOrNull()!!.name)
+        assertEquals(4, subs.state().valueOrNull()!!.items.size, "отвергнутый адрес не сохранён")
+    }
+
+    @Test
     fun policyAppsUpTo1000() {
         fun apps(n: Int) = UserPolicy(appMode = AppMode.EXCEPT, apps = (1..n).map { "com.example.app$it" }.toSet())
         assertEquals(1000, UserPolicy.MAX_APPS, "как в PERFORMANCE_BUDGET §2")
