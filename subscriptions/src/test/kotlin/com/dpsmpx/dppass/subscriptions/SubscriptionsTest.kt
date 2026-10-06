@@ -176,6 +176,33 @@ class ShareLinkParserTest {
         assertFalse(r.diagnostics.flatMap { it.renderWithCauses() }.any { "test-password-9" in it }, unsupportedNames(r))
     }
 
+    /**
+     * D-48: `fm.quicParams.debug` в Xray только включает отладочный журнал
+     * перегрузки во всём процессе — запись не теряется, флаг отбрасывается с
+     * находкой. Не true/false — отказ; соседние неизвестные ключи — отказ, как раньше.
+     */
+    @Test
+    fun quicDebugFlagIsDroppedWithNote() {
+        val base = "hysteria2://test-password-2@192.0.2.30:8443/?sni=hy2.example.com&fm="
+        val r = ShareLinkParser.parse(base + "%7B%22quicParams%22%3A%7B%22congestion%22%3A%22bbr%22%2C%22debug%22%3Atrue%7D%7D", "s")
+        val p = r.valueOrNull()!!
+        assertEquals(Hysteria2Congestion.BBR, (p.protocol as ProtocolSpec.Hysteria2).congestion)
+        val note = r.diagnostics.single()
+        assertEquals(DiagCode.SHARE_LINK_PARAM_IGNORED, note.code)
+        assertFalse(note.isError)
+        assertTrue("fm.quicParams.debug" in note.message, note.message)
+        // Только debug — без перегрузки.
+        val only = ShareLinkParser.parse(base + "%7B%22quicParams%22%3A%7B%22debug%22%3Afalse%7D%7D", "s")
+        assertEquals(null, (only.valueOrNull()!!.protocol as ProtocolSpec.Hysteria2).congestion)
+        assertEquals(DiagCode.SHARE_LINK_PARAM_IGNORED, only.diagnostics.single().code)
+        assertEquals(
+            DiagCode.SHARE_LINK_INVALID,
+            ShareLinkParser.parse(base + "%7B%22quicParams%22%3A%7B%22debug%22%3A%22yes%22%7D%7D", "s").errors.single().code,
+        )
+        val other = unsupportedNames(ShareLinkParser.parse(base + "%7B%22quicParams%22%3A%7B%22debug%22%3Atrue%2C%22disableGSO%22%3Atrue%7D%7D", "s"))
+        assertTrue("fm.quicParams.disableGSO" in other && "debug" !in other, other)
+    }
+
     /** Формат 2 (D-37): отпечатки, `extra` XHTTP и `fm` Hysteria2 из ссылок панели. */
     @Test
     fun formatV2LinkParameters() {

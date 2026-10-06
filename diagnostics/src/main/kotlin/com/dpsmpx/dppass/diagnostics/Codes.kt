@@ -170,6 +170,12 @@ enum class DiagCode(val kind: FailureKind, val defaultSeverity: Severity) {
     SHARE_LINK_PARAM_UNSUPPORTED(FailureKind.SUBSCRIPTION_INVALID, Severity.WARNING),
 
     /**
+     * Параметр ссылки отброшен: проверено по исходникам закреплённого ядра,
+     * что на соединение он не влияет (D-48). Только поимённо, с находкой.
+     */
+    SHARE_LINK_PARAM_IGNORED(FailureKind.SUBSCRIPTION_INVALID, Severity.INFO),
+
+    /**
      * Поставщик не отдаёт серверы без идентификатора устройства
      * (`x-hwid-not-supported`, лимит устройств Remnawave): в ответе —
      * заглушка. Идентификатор подписки включает только пользователь (D-33).

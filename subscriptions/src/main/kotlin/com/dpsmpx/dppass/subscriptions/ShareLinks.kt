@@ -63,6 +63,13 @@ object ShareLinkParser {
         "type", "security", "sni", "fp", "path", "host", "servicename", "mode", "alpn", "headertype", "allowinsecure", "insecure", "extra",
     )
 
+    /**
+     * Ключи `fm.quicParams`, которые отбрасываются с находкой (D-48): по
+     * исходникам Xray 26.9.30 на соединение не влияют. Только поимённо —
+     * всё прочее по-прежнему отказ (D-05).
+     */
+    private val QUIC_IGNORED = listOf("debug")
+
     /** Ключи `extra` XHTTP, которые выражает IR (формат 2, D-37); прочие — отказ с названием. */
     private val XHTTP_EXTRA = setOf("xPaddingBytes", "scMaxEachPostBytes", "scMinPostsIntervalMs", "noGRPCHeader", "xmux")
     private val XMUX = setOf("maxConcurrency", "maxConnections", "cMaxReuseTimes", "hMaxRequestTimes", "hMaxReusableSecs", "hKeepAlivePeriod")
@@ -171,14 +178,14 @@ object ShareLinkParser {
         if ((obfs == null) != (obfsPassword == null)) {
             return Outcome.failure(DiagCode.SHARE_LINK_INVALID, "obfs и obfs-password задаются только вместе")
         }
-        val congestion = when (val c = q["fm"]?.takeIf { it.isNotEmpty() }?.let(::finalMask)) {
+        val mask = when (val c = q["fm"]?.takeIf { it.isNotEmpty() }?.let(::finalMask)) {
             null -> null
             is Outcome.Failure -> return c
-            is Outcome.Success -> c.value
+            is Outcome.Success -> c
         }
-        val protocol = ProtocolSpec.Hysteria2(Secret(parts.user), obfsPassword?.let(::Secret), congestion)
+        val protocol = ProtocolSpec.Hysteria2(Secret(parts.user), obfsPassword?.let(::Secret), mask?.value)
         val security = SecuritySpec.Tls(domainParam(q["sni"]), emptyList(), null)
-        return Outcome.Success(profile(text, parts, endpoint, idPrefix, protocol, TransportSpec.Native, security))
+        return Outcome.Success(profile(text, parts, endpoint, idPrefix, protocol, TransportSpec.Native, security), mask?.diagnostics.orEmpty())
     }
 
     /**
@@ -268,20 +275,28 @@ object ShareLinkParser {
     /**
      * `fm` у Hysteria2 — finalmask Xray в JSON. Выражается только
      * `{"quicParams":{"congestion":"bbr"|"reno"}}` (формат 2, D-37); маски
-     * и прочие параметры QUIC — отказ с названием.
+     * и прочие параметры QUIC — отказ с названием. `quicParams.debug`
+     * отбрасывается с находкой (D-48): в Xray он только включает отладочный
+     * журнал управления перегрузкой во всём процессе.
      */
     private fun finalMask(text: String): Outcome<Hysteria2Congestion?> {
         val root = json(text) ?: return Outcome.failure(DiagCode.SHARE_LINK_INVALID, "fm — не объект JSON")
         val unknown = root.fields.keys.filter { it != "quicParams" }.map { "fm.$it" }.toMutableList()
         val quic = root["quicParams"]
         if (quic != null && quic !is JsonObject) return Outcome.failure(DiagCode.SHARE_LINK_INVALID, "fm.quicParams — не объект")
-        quic?.fields?.keys?.filter { it != "congestion" }?.forEach { unknown += "fm.quicParams.$it" }
+        quic?.fields?.keys?.filter { it != "congestion" && it !in QUIC_IGNORED }?.forEach { unknown += "fm.quicParams.$it" }
         if (unknown.isNotEmpty()) return unsupported(unknown.sorted().joinToString())
-        val value = quic?.get("congestion") ?: return Outcome.Success(null)
+        val notes = mutableListOf<Diagnostic>()
+        for (key in QUIC_IGNORED) {
+            val v = quic?.get(key) ?: continue
+            if (v !is JsonBool) return Outcome.failure(DiagCode.SHARE_LINK_INVALID, "fm.quicParams.$key — не true/false")
+            notes += Diagnostic.info(DiagCode.SHARE_LINK_PARAM_IGNORED, "fm.quicParams.$key отброшен: на соединение не влияет (D-48)")
+        }
+        val value = quic?.get("congestion") ?: return Outcome.Success(null, notes)
         val name = (value as? JsonString)?.value?.lowercase()
         val congestion = Hysteria2Congestion.entries.firstOrNull { it.wire == name }
             ?: return unsupported("fm.quicParams.congestion (кроме bbr и reno)")
-        return Outcome.Success(congestion)
+        return Outcome.Success(congestion, notes)
     }
 
     /** Объект JSON из параметра ссылки; не JSON или не объект — null (без цитаты значения: в нём бывают секреты). */

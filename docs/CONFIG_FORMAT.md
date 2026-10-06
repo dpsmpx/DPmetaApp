@@ -280,7 +280,7 @@ IR, известный «по умолчанию» принимается, **л�
 |---|---|
 | `vless://UUID@хост:порт?…#имя` | `type` (`tcp`/`raw`, `ws`, `httpupgrade`, `grpc` + `serviceName`, `xhttp`/`splithttp` + `mode` и `extra`), `security` (`none`, `tls`, `reality` + `pbk`, `sid`, `spx`), `sni`, `fp`, `alpn`, `flow` (`xtls-rprx-vision`), `path`, `host`, `encryption` (только `none`), `headerType` (только `none`) |
 | `trojan://пароль@хост:порт?…#имя` | те же, кроме `pbk`/`sid`/`spx`/`flow`/`encryption`; `security` по умолчанию `tls` |
-| `hysteria2://пароль@хост:порт/?…#имя` (и `hy2://`) | `sni`, `obfs` (только `salamander`) вместе с `obfs-password`, `insecure` (только `0`), `fm` (только `{"quicParams":{"congestion":…}}` со значением `bbr` или `reno`); пароль — вся часть до `@`; порт — один (диапазоны портов IR не выражает); защита — TLS без `alpn` и `fingerprint` (§3) |
+| `hysteria2://пароль@хост:порт/?…#имя` (и `hy2://`) | `sni`, `obfs` (только `salamander`) вместе с `obfs-password`, `insecure` (только `0`), `fm` (только `{"quicParams":{"congestion":…}}` со значением `bbr` или `reno`; `quicParams.debug` отбрасывается с находкой `SHARE_LINK_PARAM_IGNORED` — на соединение не влияет, D-48); пароль — вся часть до `@`; порт — один (диапазоны портов IR не выражает); защита — TLS без `alpn` и `fingerprint` (§3) |
 | `ss://ДАННЫЕ@хост:порт#имя` | без параметров (`plugin` и др. — отказ); ДАННЫЕ — `метод:пароль` в base64 (стандартный или для URL, с `=` или без) либо открыто с %-кодированием (SIP002); метод — только `2022-blake3-*` (D-16): старый AEAD (`chacha20-ietf-poly1305`, `aes-*-gcm`) отвергается с причиной |
 
 `allowInsecure=1`/`insecure=1` — профиль отвергается
