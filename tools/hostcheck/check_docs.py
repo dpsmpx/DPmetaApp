@@ -81,7 +81,8 @@ def main():
     by_name = {}
     for rel in all_files:
         by_name.setdefault(os.path.basename(rel), []).append(rel)
-    text_files = [p for p in all_files if p.endswith(TEXT) and not p.startswith("tests/data/")]
+    # tools/dpv/ — копия DP Verify (D-39): её сверяет dpv.integrity, а пути в её коде — о DP-Verify.
+    text_files = [p for p in all_files if p.endswith(TEXT) and not p.startswith(("tests/data/", "tools/dpv/"))]
 
     dec_heads = headings(DECISIONS) or []
     decisions = {m.group(1) for h in dec_heads for m in [re.match(r"D-(\d{2})\b", h)] if m}

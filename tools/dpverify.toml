@@ -1,0 +1,201 @@
+# tools/dpverify.toml — профиль DP Verify для DPpass (D-39).
+# Шаг 1 подключения (I-04 ТЗ DP Verify): все шаги прежнего tools/hostcheck/run.sh — командами;
+# итог tools/dpv/dpv run full равен итогу run.sh.
+schema = 1
+dpv = ">=1.0.0-rc1, <2"
+
+[project]
+name = "DPpass"
+languages = ["kotlin", "python", "shell", "markdown"]
+main_branch = "main"
+
+[modules]
+app = ["app/**"]
+cli = ["cli/**"]
+
+[process]
+agent_rules = "CLAUDE.md"
+todo = "TODO.md"
+roadmap = "docs/direction/ROADMAP/README.md"
+decisions = "docs/direction/DECISIONS.md"
+decision_heading = '^### D-(\d{2})\b'
+decision_ref = '\bD-(\d{2})\b'
+decision_required_fields = ["**Проверка.**"]
+provenance = "docs/PROVENANCE.md"
+foreign_projects = ["VoxelRPG", "Galdhold", "DPlang"]
+
+[budget]
+static = "10s"
+affected = "5m"
+full = "30m"
+
+[affected]
+on_unmapped = "full"
+static_only = ["**/*.md"]
+full_on = ["build-logic/**", "gradle/**", "*.gradle.kts", "**/build.gradle.kts", "gradle.properties"]
+
+[[tool]]
+name = "jdk"
+probe = ["java", "-version"]
+version_regex = 'version "(\d+)'
+min = "21"
+
+[[tool]]
+name = "go"
+probe = ["go", "version"]
+version_regex = 'go(\d+\.\d+)'
+min = "1.21"
+
+[[tool]]
+# тот же признак, что в settings.gradle.kts и run.sh: ANDROID_HOME, ANDROID_SDK_ROOT или sdk.dir
+name = "android-sdk"
+probe = ["bash", "-c", 'd="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"; [ -n "$d" ] && [ -d "$d" ] || { d="$(sed -n "s/^sdk\.dir=//p" local.properties 2>/dev/null | head -1)"; [ -n "$d" ] && [ -d "$d" ]; }']
+
+[[tool]]
+# NDK версии из каталога: им собирается libdppassxray.so для APK (D-25)
+name = "android-ndk"
+probe = ["bash", "-c", 'v="$(sed -n "s/^android-ndk *= *\"\(.*\)\"/\1/p" gradle/libs.versions.toml)"; d="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$(sed -n "s/^sdk\.dir=//p" local.properties 2>/dev/null | head -1)}}"; [ -n "$v" ] && [ -f "$d/ndk/$v/source.properties" ]']
+
+# ---- обязательный набор ----
+
+[checks."repo.layout"]
+root_allow = [".gitignore", "CLAUDE.md", "LICENSE", "README.md", "TODO.md",
+              "build.gradle.kts", "gradle.properties", "gradlew", "gradlew.bat", "settings.gradle.kts"]
+required = ["docs/ARCHITECTURE.md", "docs/CONFIG_FORMAT.md", "docs/SECURITY_MODEL.md", "docs/TESTING.md"]
+# выпуск DB-IP — источник набора геоданных в репозитории (D-31)
+large_allow = ["tools/xray/geodata/sources/*.csv.gz"]
+forbid = [
+  { glob = "**/*.pem", reason = "ключи и сертификаты — вне репозитория (check_secrets.py)" },
+  { glob = ".github/workflows/**", reason = "CI не используется и не запускается (D-23)" },
+]
+
+[checks."format.text"]
+# корпус — байты как есть, предмет теста (check_format.py)
+skip = ["tests/data/**"]
+trailing_space = true
+
+[checks."docs.links"]
+path_prefixes = ["docs/", "tools/"]
+historical = ["docs/research/**"]
+skip = ["tests/data/**"]
+
+[[checks."docs.refs".kind]]
+name = "threat"
+ref = '\bT(\d{1,2})\b'
+context = 'SECURITY_MODEL|угроз|\((?:[^()]*,\s*)?T\d{1,2}\)'
+defined_in = ["docs/SECURITY_MODEL.md"]
+definition = '^(?:#{2,4}\s+|\|\s*\*{0,2})T(\d{1,2})\b'
+
+[[checks."docs.refs".kind]]
+name = "stage"
+ref = '[Ээ]тап\w*\s+(\d+)'
+context = 'ROADMAP'
+defined_in = ["docs/direction/ROADMAP/README.md"]
+definition = '^#{1,6}\s+Этап\s+(\d+)'
+
+[[checks."docs.refs".kind]]
+name = "test-class"
+ref = '`([A-Z]\w*Test)(?:\.\w+)?`'
+defined_in = ["**/src/test/**/*.kt", "**/src/xrayJni/**/*.kt"]
+definition = '^class\s+(\w+Test)\b'
+
+# ---- быстрые шаги run.sh (без сборки) ----
+
+[[command]]
+id = "project.modules"
+run = ["python3", "tools/hostcheck/check_modules.py"]
+level = "static"
+
+[[command]]
+id = "project.forbidden-apis"
+run = ["python3", "tools/security/check_forbidden_apis.py"]
+level = "static"
+
+[[command]]
+id = "project.secrets"
+run = ["python3", "tools/security/check_secrets.py"]
+level = "static"
+
+[[command]]
+id = "project.fixtures"
+run = ["python3", "tools/hostcheck/check_fixtures.py"]
+level = "static"
+
+[[command]]
+id = "project.docs"
+run = ["python3", "tools/hostcheck/check_docs.py"]
+level = "static"
+
+[[command]]
+id = "project.deps"
+run = ["python3", "tools/provenance/check_dependencies.py"]
+level = "static"
+
+[[command]]
+id = "project.manifest"
+run = ["python3", "tools/hostcheck/check_manifest.py"]
+level = "static"
+
+[[command]]
+id = "project.format"
+run = ["python3", "tools/hostcheck/check_format.py"]
+level = "static"
+
+[[command]]
+id = "project.readme"
+run = ["python3", "tools/hostcheck/readme_progress.py", "--check"]
+level = "static"
+
+# ---- сборка, тесты, Xray, Android ----
+
+[[command]]
+id = "project.build"
+run = ["bash", "tools/hostcheck/steps.sh", "build"]
+paths = ["**/*.kt", "**/*.kts", "gradle/**", "tests/**", "cli/**"]
+requires = ["jdk"]
+timeout = "30m"
+
+[[command]]
+id = "project.cli-smoke"
+run = ["bash", "tools/hostcheck/steps.sh", "cli-smoke"]
+paths = ["**/*.kt", "**/*.kts", "tests/data/**"]
+after = ["project.build"]
+
+[[command]]
+id = "project.xray"
+run = ["python3", "tools/xray/check_xray.py"]
+paths = ["tools/xray/**", "engine/**", "tests/data/**", "gradle/libs.versions.toml"]
+requires = ["go"]
+
+[[command]]
+id = "project.xray-bridge"
+run = ["bash", "tools/hostcheck/steps.sh", "xray-bridge"]
+paths = ["tools/xray/**", "engine/**", "tests/integration/**"]
+requires = ["jdk", "go"]
+
+[[command]]
+id = "project.geodata"
+run = ["python3", "tools/xray/geodata.py", "--test"]
+paths = ["tools/xray/**", "gradle/libs.versions.toml"]
+requires = ["go"]
+
+[[command]]
+id = "project.android"
+run = ["./gradlew", "--console=plain", "--warning-mode=summary", ":app:build", ":app:lint"]
+paths = ["module:app", "**/src/main/**/*.kt", "tools/xray/**"]
+requires = ["jdk", "go", "android-sdk", "android-ndk"]
+timeout = "40m"
+
+[[command]]
+id = "project.android-api"
+run = ["python3", "tools/hostcheck/check_android_api.py"]
+paths = ["**/src/main/**/*.kt"]
+requires = ["android-sdk"]
+after = ["project.build"]
+
+[[command]]
+id = "project.apk"
+run = ["python3", "tools/hostcheck/check_apk.py"]
+paths = ["module:app", "tools/xray/**"]
+requires = ["android-sdk"]
+after = ["project.android"]
