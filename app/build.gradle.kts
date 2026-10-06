@@ -45,9 +45,9 @@ android {
             // APK подписывает tools/release/sign_apks.py ключом разработчика из
             // переменных окружения, ключ в демон Gradle не попадает.
             isMinifyEnabled = false
-            // Случайная личность личной сборки (D-47): пакет и ярлык не выдают
-            // назначение. Отпечаток подписи (D-35) от applicationId не зависит.
-            applicationId = releaseIdentity.applicationId
+            // Случайный ярлык личной сборки (D-47): не выдаёт назначение. Сам
+            // applicationId задаётся per-variant ниже (на buildType его ставить
+            // нельзя — у типа сборки только applicationIdSuffix).
             manifestPlaceholders["appLabel"] = releaseIdentity.label
         }
     }
@@ -97,6 +97,10 @@ kotlin {
 // компилятор. Без Go или NDK сборка APK падает с причиной.
 androidComponents {
     onVariants { variant ->
+        // Случайный applicationId личной сборки (D-47) — через variant API:
+        // на buildType его ставить нельзя. Отладочная сборка — стабильный id.
+        if (variant.buildType == "release") variant.applicationId.set(releaseIdentity.applicationId)
+
         val name = "xrayNative" + variant.name.replaceFirstChar { it.uppercase() }
         val task = tasks.register<XrayNativeTask>(name) {
             description = "libdppassxray.so для ${variant.name}: tools/xray/native.py android"
