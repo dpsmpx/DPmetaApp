@@ -1,6 +1,6 @@
 # Архитектура DP_AI_Orcestrator
 
-Срез на 6 октября 2026 (этапы 0–10). Решения, на которых держится
+Срез на 6 октября 2026 (этапы 0–11). Решения, на которых держится
 архитектура, — `docs/direction/DECISIONS.md`; здесь — как они разложены
 по модулям и как через модули идут данные. Модели подсистем —
 отдельными документами (§5).
@@ -256,6 +256,11 @@ target:     start ─► Detacher ─► supervise ─► процесс; выв
 Модуль `verification` (этап 10; `docs/SCHEDULER.md`, §8): `Verifier`,
 профили, `VerificationReport`; поток завершения —
 `orchestrator.verification.CompletionFlow`.
+
+Модуль `monitoring` (этап 11): `Dashboard` (сводка ТЗ, §38; `STALE` по
+свежести, ТЗ, §122), `Timeline` (ТЗ, §40), `SelfDiagnostics` (ТЗ, §79,
+§80: что разрешено в деградации). Модуль `ui`: `DashboardText` — экраны
+текстом для `cli` и будущего Android.
 
 ## 8. Модели подсистем
 
