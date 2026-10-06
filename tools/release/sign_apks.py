@@ -21,6 +21,12 @@
 Без ключа сборка не подписывается вовсе: отладочный ключ контейнера
 молча не подставляется — APK с ним не встал бы поверх установленного.
 
+Личность пакета (D-47, D-49): случайные на вид `applicationId` и ярлык, но
+постоянные для ключа — зерно `dppass.identitySeed` выводится из отпечатка
+сертификата и пароля хранилища (без пароля его не вычислить). Тот же ключ —
+тот же пакет: следующая сборка ставится поверх прежней. Пакет APK сверяется
+с ожидаемым (повтор `AppIdentity` на Python).
+
 Шаги: `:app:assembleRelease -Pdppass.abiSplit=true` (APK на ABI, D-28) →
 выравнивание zip (4 байта, библиотеки — 16 КБ) → `apksigner sign` →
 `apksigner verify`: подпись v2/v3 и сертификат = отпечаток из
@@ -113,6 +119,69 @@ def recorded(alias):
          "(отпечаток — то, с чем автор сверяет APK)")
 
 
+def identity_seed(cert_sha256):
+    """Зерно личности пакета (D-49): постоянное для ключа и пароля, без пароля не вычисляется."""
+    material = f"dppass-identity:{cert_sha256}:{os.environ[ENV_STORE_PASS]}"
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+APP_IDENTITY = os.path.join(PROJ, "build-logic", "src", "main", "kotlin", "com", "dpsmpx", "dppass", "build", "AppIdentity.kt")
+
+
+class JavaRandom:
+    """java.util.Random: та же последовательность, что у AppIdentity.random (Kotlin)."""
+
+    def __init__(self, seed):
+        self.s = (seed ^ 0x5DEECE66D) & ((1 << 48) - 1)
+
+    def next(self, bits):
+        self.s = (self.s * 0x5DEECE66D + 0xB) & ((1 << 48) - 1)
+        return self.s >> (48 - bits)
+
+    def next_int(self, bound):
+        r, m = self.next(31), bound - 1
+        if bound & m == 0:
+            return (bound * r) >> 31
+        u = r
+        while True:
+            r = u % bound
+            if u - r + m <= 0x7FFFFFFF:
+                return r
+            u = self.next(31)
+
+
+def expected_identity(seed):
+    """(applicationId, ярлык) по зерну — повтор AppIdentity.seedOf и AppIdentity.random; списки — из исходника."""
+    src = read_text(APP_IDENTITY)
+    labels = re.findall(r'"([A-Z][a-z]+)"', re.search(r"LABELS = listOf\((.*?)\)", src, re.S).group(1))
+    cons = re.search(r'CONSONANTS = "([a-z]+)"', src).group(1)
+    vow = re.search(r'VOWELS = "([a-z]+)"', src).group(1)
+    h = 1125899906842597
+    for c in seed:
+        h = (31 * h + ord(c)) & ((1 << 64) - 1)
+    rnd = JavaRandom(h)
+
+    def segment():
+        n = 5 + rnd.next_int(4)
+        return "".join((cons if i % 2 == 0 else vow)[rnd.next_int(len(cons if i % 2 == 0 else vow))] for i in range(n))
+
+    app = "com." + segment() + "." + segment()
+    return app, labels[rnd.next_int(len(labels))]
+
+
+def read_text(path):
+    with open(path, encoding="utf-8") as f:
+        return f.read()
+
+
+def package_of(tools, apk):
+    """Имя пакета и ярлык APK (`aapt2 dump badging`)."""
+    out = run([os.path.join(tools, "aapt2"), "dump", "badging", apk], "aapt2 dump badging")
+    name = re.search(r"^package: name='([^']+)'", out, re.M)
+    label = re.search(r"^application-label:'([^']*)'", out, re.M)
+    return (name.group(1) if name else None), (label.group(1) if label else None)
+
+
 def version_name():
     with open(GRADLE_APP, encoding="utf-8") as f:
         m = re.search(r'versionName\s*=\s*"([^"]+)"', f.read())
@@ -185,18 +254,24 @@ def main():
         if actual != expected:
             fail(f"ключ из окружения ({actual}) — не тот, что записан в docs/PROVENANCE.md, §7 ({expected})")
         version = version_name()
+        seed = identity_seed(actual)
+        want = expected_identity(seed)
         sdk = sdk_dir()
         tools = build_tools(sdk) if sdk else None
         if not tools or not all(os.path.isfile(os.path.join(tools, t)) for t in ("apksigner", "zipalign")):
             fail("нет build-tools Android SDK с apksigner и zipalign (ANDROID_HOME)")
 
         if not args.skip_build:
-            gradle = [os.path.join(PROJ, "gradlew"), "--quiet", "-p", PROJ, ":app:assembleRelease", "-Pdppass.abiSplit=true"]
-            print("… " + " ".join(gradle[3:]), flush=True)
-            subprocess.run(gradle, check=True)
+            # Без кеша конфигурации: личность считается при конфигурации, и кеш отдал бы
+            # прежнюю (6 октября 2026: переменная окружения до Gradle не дошла, а кеш
+            # закрепил случайную личность — поэтому зерно через -P и пакет сверяется ниже).
+            gradle = [os.path.join(PROJ, "gradlew"), "--quiet", "--no-configuration-cache", "-p", PROJ,
+                      ":app:assembleRelease", "-Pdppass.abiSplit=true"]
+            print("… " + " ".join(gradle[4:]) + " -Pdppass.identitySeed=…", flush=True)
+            subprocess.run(gradle + [f"-Pdppass.identitySeed={seed}"], check=True)
         os.makedirs(args.out, exist_ok=True)
         rev = revision()
-        problems, made = [], []
+        problems, made, packages = [], [], set()
         for abi in ABIS:
             unsigned = os.path.join(OUTPUTS, f"app-{abi}-release-unsigned.apk")
             if not os.path.isfile(unsigned):
@@ -215,6 +290,12 @@ def main():
             if check.returncode != 0:
                 problems.append(f"{abi}: check_apk.py\n    " + "\n    ".join((check.stdout + check.stderr).strip().splitlines()))
             made.append(name)
+            packages.add(package_of(tools, out))
+        if len(packages) > 1:
+            problems.append(f"у APK разные пакеты: {sorted(packages)} — сборка по ABI должна дать один пакет (D-49)")
+        elif packages and next(iter(packages)) != want:
+            problems.append(f"пакет APK {next(iter(packages))} ≠ ожидаемому для ключа {want} — личность не из зерна ключа "
+                            "(кеш конфигурации, свойство не дошло до Gradle?), D-49")
         if problems:
             print("✗ sign_apks:")
             for p in problems:
@@ -223,10 +304,13 @@ def main():
         with open(os.path.join(args.out, "SHA256SUMS"), "w", encoding="utf-8") as f:
             for name in made:
                 f.write(f"{sha256(os.path.join(args.out, name))}  {name}\n")
+        package, label = next(iter(packages))
         with open(os.path.join(args.out, "CERTIFICATE.txt"), "w", encoding="utf-8") as f:
             f.write(f"SHA-256 сертификата ключа {os.environ[ENV_ALIAS]} (docs/PROVENANCE.md, §7):\n{expected}\n")
+            f.write(f"Пакет и ярлык (D-49, постоянные для ключа): {package} «{label}»\n")
         print(f"✓ {len(made)} APK ({version}, {rev}) подписаны ключом {os.environ[ENV_ALIAS]} ({expected[:16]}…), "
-              f"сертификат сверен с docs/PROVENANCE.md, §7, check_apk.py --abi пройден: {os.path.relpath(args.out, PROJ)}")
+              f"сертификат сверен с docs/PROVENANCE.md, §7, check_apk.py --abi пройден; пакет {package} «{label}»: "
+              f"{os.path.relpath(args.out, PROJ)}")
         return 0
     except Refusal as e:
         print(f"✗ sign_apks: {e}")

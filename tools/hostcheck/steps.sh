@@ -3,7 +3,7 @@
 # профиля tools/dpverify.toml (D-50). Перенесены из tools/hostcheck/run.sh без
 # изменения поведения; дым CLI — проверка smoke.cli DP Verify.
 #
-#   tools/hostcheck/steps.sh build         сборка и тесты ядра (с Android SDK — без :app:build: APK — шаг Android)
+#   tools/hostcheck/steps.sh build         сборка и тесты ядра и build-logic (с Android SDK — без :app:build: APK — шаг Android)
 #   tools/hostcheck/steps.sh xray-bridge   мост Xray: библиотека для JVM хоста и тест JNI в этой JVM (D-25)
 #   tools/hostcheck/steps.sh android-sdk   есть ли Android SDK (проба [[tool]] профиля)
 #   tools/hostcheck/steps.sh android-ndk   есть ли NDK версии из каталога (проба [[tool]] профиля)
@@ -45,7 +45,9 @@ PYEOF
 }
 
 build() {
-  local tasks=(build :cli:installDist)
+  # :build-logic:test — логика сборки (личность пакета, D-47, D-49): `build`
+  # корня включённую сборку не проверяет.
+  local tasks=(build :cli:installDist :build-logic:test)
   android_sdk && tasks+=(-x :app:build)
   "${GRADLE[@]}" "${tasks[@]}"
 }

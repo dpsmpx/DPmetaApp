@@ -38,5 +38,5 @@ cat > gradle/verification-metadata.xml <<'XML'
 XML
 
 ./gradlew --console=plain --warning-mode=summary --write-verification-metadata sha256 \
-  build :app:lint :app:assembleRelease -Pdppass.abiSplit=true
+  build :build-logic:test :app:lint :app:assembleRelease -Pdppass.abiSplit=true
 python3 tools/provenance/check_dependencies.py

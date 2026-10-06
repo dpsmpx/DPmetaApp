@@ -101,6 +101,20 @@ class SubscriptionFlowTest {
         assertTrue(st.find(id)!!.lastSuccessful != null, "нет удачной ревизии")
     }
 
+    /** Сквозной случай с телефона (6 октября 2026): подписка с повтором ссылки переживает перезапуск. */
+    @Test
+    fun subscriptionWithRepeatedLinkSurvivesRestart() = runBlocking {
+        val core = core()
+        val id = added(core)
+        val repeated = LINKS + LINKS.lines().first { it.isNotBlank() }.substringBefore('#') + "#Повтор\n"
+        val run = core.subscriptions.refresh(id, Fetcher(repeated), "test").valueOrNull()!!
+        assertTrue(run.applied, run.diagnostics.joinToString { it.render() })
+        assertEquals(2, core.activation.state.activeConfig!!.profiles.size)
+        val restarted = core()
+        assertTrue(restarted.restore().none { it.code == DiagCode.STORAGE_CORRUPTED }, "состояние читается после перезапуска")
+        assertEquals(core.activation.state.activeConfig, restarted.activation.state.activeConfig)
+    }
+
     @Test
     fun userRoutingStaysWhenUserConfigIsActive() = runBlocking {
         val core = core()

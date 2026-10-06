@@ -103,7 +103,8 @@ D8), инструменты — JDK 21, предупреждения компи�
           → ConfigValidator (смысл, не зависящий от ядра)
        ─► LoadedConfig(ir, sha256 исходника, версия исходника)
        ─► ActivationService.activate
-          CAPABILITY (матрица ядра) → COMPILE → BACKEND_VALIDATION
+          VALIDATION (прочитается ли при следующем запуске: ConfigLoader)
+          → CAPABILITY (матрица ядра) → COMPILE → BACKEND_VALIDATION
           → [HEALTH_CHECK] → COMMIT (одна атомарная запись)
        ─► ActivationResult.Activated | Rejected(шаг, причины)
 ```

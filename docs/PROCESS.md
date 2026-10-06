@@ -83,7 +83,7 @@ Verify. Журнал каждой проверки — `build/dpv/last/<пров
 | `project.manifest` — `tools/hostcheck/check_manifest.py` | неутверждённые разрешения, резервные копии, открытый HTTP, лишний экспорт компонентов, экспортированный сервис без своего разрешения, фильтры Activity сверх запуска и «Поделиться» текстом, схемы и адреса в фильтрах, видимость пакетов сверх приложений с ярлыком | D-17, D-19, D-40, D-42 |
 | `project.format` — `tools/hostcheck/check_format.py` | невидимые и двунаправленные символы (Trojan Source), табуляции в отступе, одиночный CR | — |
 | `project.readme` — `tools/hostcheck/readme_progress.py --check` | раздел «Прогресс» в `README.md` отстал от плана, критериев выхода, решений, `TODO.md`, аудитов; противоречия между ними (этап «выполнен» при открытых критериях, разное состояние в плане и в файле этапа) | — |
-| `project.build` — `tools/hostcheck/steps.sh build` (`./gradlew build :cli:installDist`, с Android SDK — `-x :app:build`: APK собирается шагом Android) | ошибки и **предупреждения** компилятора (они — ошибки), модульные и межмодульные тесты, корпус, fuzz | D-05 … D-22 |
+| `project.build` — `tools/hostcheck/steps.sh build` (`./gradlew build :cli:installDist :build-logic:test`, с Android SDK — `-x :app:build`: APK собирается шагом Android) | ошибки и **предупреждения** компилятора (они — ошибки), модульные и межмодульные тесты, тесты `build-logic` (личность пакета, D-47, D-49), корпус, fuzz | D-05 … D-22 |
 | `project.xray` — `tools/xray/check_xray.py` | эталон компилятора, который Xray закреплённой версии не принимает (`xray run -test`); решение маршрутизации Xray, не совпавшее с `RouteEvaluator`; собранное ядро не той версии, что в каталоге (`docs/TESTING.md`, «Эталоны Xray») | D-05, D-09, D-24 |
 | `project.xray-bridge` — `tools/hostcheck/steps.sh xray-bridge` (`tools/xray/native.py host` и `:tests:integration:xrayJniTest`) | `go vet` и `go test` моста ядра в обеих сборках (с тестовым входом и без); библиотека для JVM хоста, экспорт JNI которой не совпал с `external` объекта `XrayJni`; нарушение договора JNI в JVM хоста — версия, проверка, один экземпляр, защитник сокетов, счётчики (`docs/TESTING.md`, «Мост Xray и JNI») | D-25 |
 | `project.geodata` — `tools/xray/geodata.py --test` | `go vet` и `go test` сборщика набора геоданных; источник, чья сумма не совпала с PROVENANCE (DB-IP — файл в репозитории, dlc — Go-модуль со сверкой sum.golang.org); строка источника, которую сборщик не понял; код собранного набора, который ядро Xray не загрузило (`docs/TESTING.md`, «Набор геоданных»); нет кодов, которые компилятор подставляет сам | D-27, D-31, D-38 |
@@ -190,7 +190,9 @@ Maven Central через его зеркало у Google (только сбор�
    отпечатком из `docs/PROVENANCE.md`, §7, проверяет каждый APK
    `check_apk.py --abi` и пишет `SHA256SUMS` и `CERTIFICATE.txt`. Без
    ключа или без записанного отпечатка — отказ, отладочный ключ не
-   подставляется.
+   подставляется. Имя пакета и ярлык — случайные на вид, но постоянные
+   для ключа (D-49): зерно выводится из отпечатка и пароля, у всех APK
+   один пакет, он записан в `CERTIFICATE.txt`.
 3. APK кладутся в ветку `apk` без истории `main` (двоичных файлов в
    `main` нет, `docs/PROVENANCE.md`, §4): APK, `SHA256SUMS`,
    `CERTIFICATE.txt` и `README.md` с коммитом `main`, из которого собраны.
