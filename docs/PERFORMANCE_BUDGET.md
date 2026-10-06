@@ -23,22 +23,22 @@
 |---|---|---|---|
 | Документ конфигурации | 1 МиБ | `ConfigLimits.maxBytes` | `ConfigLoaderTest`, `FuzzTest.hugeAndDeepDocumentsAreRejectedQuickly` (`DOCUMENT_TOO_LARGE`) |
 | Вложенность JSON документа | 32 | `ConfigLimits.maxDepth`; разбор останавливается, не дойдя до дна | `JsonTest.depthIsBoundedWithoutStackOverflow`, `FuzzTest.hugeAndDeepDocumentsAreRejectedQuickly` (`DOCUMENT_TOO_DEEP`) |
-| Профили в документе | 512 | `ConfigLimits.maxProfiles` | нет |
+| Профили в документе | 512 | `ConfigLimits.maxProfiles` | `ConfigLimitsTest.profilesUpToLimitPassOneMoreIsRejected` |
 | Правила маршрутизации | 4096 | `ConfigLimits.maxRules` | `FuzzTest.ruleLimitsAndDuplicatesStayFast` (4097 правил — `LIMIT_EXCEEDED` быстрее 2 с) |
-| Значения во всех правилах | 100 000 | `ConfigLimits.maxRuleValues` | нет |
+| Значения во всех правилах | 100 000 | `ConfigLimits.maxRuleValues` | `ConfigLimitsTest.ruleValuesUpToLimitPassOneMoreIsRejected` |
 | Тело подписки | 2 МиБ | `FetchPolicy.maxBytes` | `SubscriptionUpdaterTest` (`SUBSCRIPTION_TOO_LARGE`) |
-| Записи подписки | 1000; остальные не читаются (`SUBSCRIPTION_ENTRY_SKIPPED`) | `FetchPolicy.maxEntries` | нет |
+| Записи подписки | 1000; остальные не читаются (`SUBSCRIPTION_ENTRY_SKIPPED`) | `FetchPolicy.maxEntries` | `PayloadLimitsTest.entriesUpToLimitAreReadTheRestAreSkippedLoudly` |
 | Загрузка подписки | 20 с | `FetchPolicy.timeoutMillis` (соединение и чтение; в `HttpsSubscriptionFetcher` — от 1 до 120 с) | нет (тайм-аут не моделируется) |
-| Подписок в приложении | 64; адрес — 2048 символов, имя — 64 | `SubscriptionService.MAX_SUBSCRIPTIONS`, `MAX_URL`, `MAX_NAME` | нет |
+| Подписок в приложении | 64; адрес — 2048 символов, имя — 64 | `SubscriptionService.MAX_SUBSCRIPTIONS`, `MAX_URL`, `MAX_NAME` | `LimitsTest.subscriptionsUpTo64` (число подписок; длины — нет) |
 | Обновление по расписанию | задание раз в час; подписка — по своему интервалу (по умолчанию 12 ч); после отказа — не раньше чем через 30 мин; только активная | `SubscriptionJobService`, `UpdateSchedule` (D-39) | `UpdateScheduleTest.intervalsFailuresAndOff` |
 | Импорт (буфер, файл, «Поделиться») | 1 МиБ | `ImportClassifier.MAX_BYTES` | `ImportClassifierTest.plainHttpAndOversizedTextAreRefusedWithReason` |
-| Приложения в политике | 1000 | `UserPolicy.MAX_APPS` | нет |
+| Приложения в политике | 1000 | `UserPolicy.MAX_APPS` | `LimitsTest.policyAppsUpTo1000` |
 | Проверка задержки | по одному серверу, пауза 150 мс, тайм-аут 3 с, не больше 128 за прогон | `LatencyBook` (D-41) | `LatencyBookTest.measuresTcpOneByOneAndSkipsUdp` |
 | Обновление уведомления туннеля | раз в 2 с и только при включённом экране | `DPpassVpnService` (D-40) | нет (на устройстве) |
-| История активаций | 32 записи | `ActivationStore` | нет |
+| История активаций | 32 записи | `ActivationStore` | `LimitsTest.activationHistoryKeepsLast32` |
 | Пробы сети | 1 на ориентир за 1,5 с; не больше 12 за 60 с | `ProbeBudget` | `ProbeBudgetTest` (механизм — на своих параметрах) |
 | Кандидаты за подключение | 4, пауза 2 с между попытками | `ConnectionPolicy` | `CandidatePlannerTest`, `OrchestratorTest` |
-| Проверка здоровья | 10 с | `ConnectionPolicy.healthTimeoutMillis` | нет (тайм-аут не моделируется) |
+| Проверка здоровья | 10 с | `ConnectionPolicy.healthTimeoutMillis` | `LimitsTest.healthCheckThatNeverAnswersFailsTheAttemptAtTimeout` (значение; механизм — на сроке 50 мс) |
 | Пауза кандидата после отказа | 30 с × 2ⁿ⁻¹, не больше 30 мин | `ConnectionPolicy` | `CandidatePlannerTest.backoffExcludesUntilItExpires` |
 | Один вход fuzz | < 2 с | `FuzzTest` | каждый прогон hostcheck |
 

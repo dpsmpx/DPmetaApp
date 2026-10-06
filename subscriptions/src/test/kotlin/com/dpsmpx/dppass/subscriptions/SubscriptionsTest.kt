@@ -462,3 +462,23 @@ class SubscriptionCodecTest {
         assertIs<Outcome.Failure>(SubscriptionCodec.read(both))
     }
 }
+
+/** Предел записей подписки (docs/PERFORMANCE_BUDGET.md, §2): лишние не читаются, и это видно. */
+class PayloadLimitsTest {
+    private fun links(n: Int) = (1..n).joinToString("\n") { i ->
+        "trojan://test-password-$i@203.0.113.${i % 250 + 1}:443?security=tls&sni=t$i.example.com#T$i"
+    }
+
+    @Test
+    fun entriesUpToLimitAreReadTheRestAreSkippedLoudly() {
+        val max = FetchPolicy().maxEntries
+        assertEquals(1000, max, "как в PERFORMANCE_BUDGET §2")
+        val exact = PayloadDecoder.decode(links(max).toByteArray(), "s", max).valueOrNull()!!
+        assertEquals(max, exact.profiles.size)
+        val over = PayloadDecoder.decode(links(max + 5).toByteArray(), "s", max)
+        assertEquals(max, over.valueOrNull()!!.profiles.size)
+        val skipped = over.diagnostics.single { it.code == DiagCode.SUBSCRIPTION_ENTRY_SKIPPED }
+        assertTrue("$max" in skipped.message, skipped.message)
+        assertFalse(skipped.isError)
+    }
+}

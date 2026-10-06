@@ -4,9 +4,15 @@ import com.dpsmpx.dppass.core.Json
 import com.dpsmpx.dppass.core.JsonNumber
 import com.dpsmpx.dppass.core.JsonObject
 import com.dpsmpx.dppass.core.JsonString
+import com.dpsmpx.dppass.core.ProfileId
+import com.dpsmpx.dppass.core.RuleId
 import com.dpsmpx.dppass.diagnostics.DiagCode
 import com.dpsmpx.dppass.diagnostics.Outcome
 import com.dpsmpx.dppass.diagnostics.Secret
+import com.dpsmpx.dppass.routing.Conditions
+import com.dpsmpx.dppass.routing.DomainMatcher
+import com.dpsmpx.dppass.routing.RouteAction
+import com.dpsmpx.dppass.routing.Rule
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -283,5 +289,42 @@ class ConfigFormatV2Test {
         // «0» — то же, что поля нет: так понимает Xray.
         val zero = loader.load(base.replace("\"sc_min_posts_interval_ms\": \"10-50\"", "\"sc_min_posts_interval_ms\": 0")).valueOrNull()!!.ir
         assertEquals(null, (zero.profiles[2].transport as TransportSpec.XHttp).extra.scMinPostsIntervalMs)
+    }
+}
+
+/**
+ * Пределы документа (docs/PERFORMANCE_BUDGET.md, §2): ровно на пределе —
+ * принимается, на один больше — `LIMIT_EXCEEDED` с путём. Регрессия в
+ * сравнении (`>=` вместо `>`, снятая проверка) так не пройдёт молча.
+ */
+class ConfigLimitsTest {
+    private val limits = ConfigLimits()
+    private val base = assertNotNull(ConfigLoader().load(Fixtures.text("configs/valid-minimal.json")).valueOrNull()).ir
+
+    private fun limitPaths(ir: ConfigIr) = ConfigValidator.validate(ir, limits).filter { it.code == DiagCode.LIMIT_EXCEEDED }.map { it.path }
+
+    @Test
+    fun profilesUpToLimitPassOneMoreIsRejected() {
+        val p = base.profiles.first()
+        fun many(n: Int) = base.copy(profiles = (1..n).map { p.copy(id = ProfileId("p$it")) })
+        assertEquals(512, limits.maxProfiles, "как в PERFORMANCE_BUDGET §2")
+        assertEquals(emptyList(), limitPaths(many(limits.maxProfiles)))
+        assertEquals(listOf("$.profiles"), limitPaths(many(limits.maxProfiles + 1)))
+    }
+
+    @Test
+    fun ruleValuesUpToLimitPassOneMoreIsRejected() {
+        fun rules(values: Int): ConfigIr {
+            // Значения поровну в правилах, не больше предела числа правил.
+            val perRule = values / 100
+            val list = (0 until 100).map { r ->
+                val n = if (r == 99) values - perRule * 99 else perRule
+                Rule(RuleId("r$r"), Conditions(domains = (0 until n).map { DomainMatcher.Full("h$r-$it.example.com") }), RouteAction.DIRECT)
+            }
+            return base.copy(routing = base.routing.copy(rules = list))
+        }
+        assertEquals(100_000, limits.maxRuleValues, "как в PERFORMANCE_BUDGET §2")
+        assertEquals(emptyList(), limitPaths(rules(limits.maxRuleValues)))
+        assertEquals(listOf("$.routing.rules"), limitPaths(rules(limits.maxRuleValues + 1)))
     }
 }
