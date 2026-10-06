@@ -237,7 +237,8 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
                 )
             }
         }
-        val chosen = pool.minWith(compareBy<SlotState>({ s1.activeSessions(it.subscriptionId) }, { it.sessions.size }, { it.id.value }))
+        val active = activeBySubscription(s1)
+        val chosen = pool.minWith(compareBy<SlotState>({ active[it.subscriptionId] ?: 0 }, { it.sessions.size }, { it.id.value }))
         val facts = buildList {
             add(SessionLeased(chosen.id, session, task, now))
             if (switching) add(SubscriptionSwitched(task, previous, chosen.subscriptionId, now))
@@ -288,12 +289,21 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
     }
 
     /** Смены состояний слотов, которые следуют из фактов; путь — только по таблице `AccountLifecycle`. */
+    /** Активные сессии каждой подписки — за один проход по слотам. */
+    private fun activeBySubscription(state: AccountsState): Map<SubscriptionId, Int> {
+        val m = HashMap<SubscriptionId, Int>()
+        for (slot in state.slots.values) m.merge(slot.subscriptionId, slot.sessions.size, Int::plus)
+        return m
+    }
+
     fun normalize(state: AccountsState, now: Timestamp): List<AccountEvent> {
         var s = state
         val out = mutableListOf<AccountEvent>()
+        // Смена состояния слота не меняет числа сессий: считается один раз (этап 17, замер выбора слота).
+        val active = activeBySubscription(state)
         for (id in s.slots.keys.sortedBy { it.value }) {
             val slot = s.slots.getValue(id)
-            val want = desired(slot, s, now)
+            val want = desired(slot, s, now, active)
             if (want == slot.state) continue
             for ((a, b) in path(slot.state, want).zipWithNext()) {
                 val e = SlotStateChanged(id, a, b, now)
@@ -304,7 +314,7 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
         return out
     }
 
-    private fun desired(slot: SlotState, state: AccountsState, now: Timestamp): AccountState {
+    private fun desired(slot: SlotState, state: AccountsState, now: Timestamp, active: Map<SubscriptionId, Int>): AccountState {
         if (slot.disabled) return AccountState.DISABLED
         return when (slot.login) {
             LoginStatus.UNKNOWN, LoginStatus.REQUIRED -> AccountState.AUTH_REQUIRED
@@ -314,7 +324,7 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
                 when {
                     sub.limitedAt(now) -> AccountState.RATE_LIMITED
                     slot.cooldownUntil != null && now < slot.cooldownUntil -> AccountState.COOLDOWN
-                    state.activeSessions(sub.id) >= sub.maxParallelSessions -> AccountState.BUSY
+                    (active[sub.id] ?: 0) >= sub.maxParallelSessions -> AccountState.BUSY
                     else -> AccountState.AVAILABLE
                 }
             }

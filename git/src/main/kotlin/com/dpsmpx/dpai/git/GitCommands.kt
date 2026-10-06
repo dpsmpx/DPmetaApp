@@ -76,10 +76,18 @@ class GitCommands(private val approvals: ApprovalLedger, private val git: String
             GitOp.BRANCH_DELETE_FORCE -> listOf("branch", "-D", "--") + args
             GitOp.WORKTREE_REMOVE_FORCE -> listOf("worktree", "remove", "--force", "--", args.single())
         }
-        return Outcome.success(listOf(git, "-C", worktree) + tail)
+        return Outcome.success(listOf(git) + HARDENING + listOf("-C", worktree) + tail)
     }
 
     companion object {
+        /**
+         * Каждая команда — без исполнения кода из настроек репозитория (T4;
+         * аудит 2026-10-07, A-2): `core.fsmonitor` исполнил бы программу уже
+         * при `git status`, хуки — при слиянии и коммите. Каталог хуков —
+         * несуществующий: Git его пропускает.
+         */
+        val HARDENING: List<String> = listOf("-c", "core.fsmonitor=false", "-c", "core.hooksPath=.dpai-no-hooks")
+
         /**
          * Хуки проекта при коммите оркестратора не исполняются (`--no-verify`, T4):
          * проверка проекта — отдельный шаг профиля (этап 10), а не побочный эффект коммита.

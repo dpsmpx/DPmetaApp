@@ -26,7 +26,7 @@
 | Monitoring complete | 11 | ◐ | сводка ТЗ, §38 с `STALE` (§122), внимание, временная шкала (§40), самодиагностика и деградация (§79, §80), текстовые экраны; интерфейс Android — нет |
 | Notifications complete | 12 | ◐ | агрегация, эскалация, предел частоты и сводка, deep links, кнопки одобрения с хешем предложения; уведомления аккаунтов; каналы Android — этап 11 |
 | Recovery complete | 13 | ✓ | перезапуск со сверкой (`STATE_CONFLICT`, исходы ТЗ, §55), подхват идущего хода, сироты, проба рабочего дерева; матрица `docs/RECOVERY.md` покрыта тестами |
-| Security audit complete | 18 | — | модель угроз: `docs/SECURITY_MODEL.md` |
+| Security audit complete | 18 | ✓ | `docs/audits/2026-10-07-security.md`: HIGH и MEDIUM исправлены с тестами, LOW — в `TODO.md` |
 | Performance audit complete | 17 | ◐ | бюджеты хоста измерены и соблюдены, групповая запись журнала по замеру; устройство — этапы 11, 19 |
 | Stress test complete | 17, 19 | ◐ | ТЗ, §93 и §94 на хосте с записанными пределами; на устройстве — этап 19 |
 | Chaos test complete | 13, 19 | ◐ | хаос-тест `RecoveryTest` на сценариях ТЗ, §95 с mock target; на устройстве — этап 19 |
@@ -36,7 +36,7 @@
 | All invariants verified | 19 | — | список: `docs/DATA_MODEL.md`, «Инварианты» |
 | Documentation complete | все | ◐ | документы ТЗ, §138 ведутся вместе с кодом этапов 0–16 |
 | Final deep audit PASS | 19 | — | |
-| No critical findings | 19 | — | |
+| No critical findings | 19 | ◐ | аудит безопасности — нет; финальный аудит — этап 19 |
 | No unresolved high-severity stability findings | 19 | — | |
 | Reproducible build | 0, 20 | ◐ | wrapper и версии закреплены со сверкой сумм |
 | Release checkpoint | 20 | — | |

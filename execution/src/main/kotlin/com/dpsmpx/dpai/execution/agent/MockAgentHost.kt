@@ -99,6 +99,14 @@ class MockAgentHost(private val clock: Clock, private val ids: IdGenerator) : Pr
     @Synchronized
     fun state(run: SessionId): RunState? = runs[run]?.state
 
+    /** Спецификация последнего хода запуска — что target получил (prompt, окружение): для проверок изоляции. */
+    @Synchronized
+    fun spec(run: SessionId): RunSpec? = runs[run]?.spec
+
+    /** Все известные target запуски. */
+    @Synchronized
+    fun runIds(): Set<SessionId> = runs.keys.toSet()
+
     @Synchronized
     override fun start(spec: ProcessSpec, onOutput: (OutputLine) -> Unit): Outcome<RunningProcess> {
         calls++

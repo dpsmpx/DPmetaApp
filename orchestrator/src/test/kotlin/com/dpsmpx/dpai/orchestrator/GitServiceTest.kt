@@ -158,6 +158,30 @@ class GitServiceTest {
         assertEquals(DiagCode.VALUE_INVALID, (out as Outcome.Failure).errors.single().code)
     }
 
+    /** T4 (аудит 2026-10-07, A-2): настройки и хуки репозитория не исполняют код при командах оркестратора. */
+    @Test
+    fun repositoryHooksAndFsmonitorDoNotRun() {
+        val r = repo()
+        val marker = dir.resolve("pwned").toFile()
+        val script = dir.resolve("evil.sh").toFile()
+        script.writeText("#!/bin/sh\necho pwned > '${marker.path.replace('\\', '/')}'\n")
+        script.setExecutable(true)
+        val hooks = File(r.root, ".git/hooks").apply { mkdirs() }
+        for (h in listOf("post-merge", "pre-commit", "post-commit", "post-checkout")) {
+            File(hooks, h).apply { writeText(script.readText()); setExecutable(true) }
+        }
+        sh("-C", r.root, "config", "core.fsmonitor", script.path.replace('\\', '/'))
+        sh("-C", r.root, "checkout", "-q", "-b", "side")
+        File(r.root, "side.txt").writeText("x\n")
+        sh("-C", r.root, "-c", "core.hooksPath=.none", "add", "side.txt")
+        sh("-C", r.root, "-c", "core.hooksPath=.none", "-c", "core.fsmonitor=false", "commit", "-q", "-m", "side")
+        sh("-C", r.root, "-c", "core.hooksPath=.none", "-c", "core.fsmonitor=false", "checkout", "-q", "main")
+        marker.delete()
+        assertTrue(git.status(r.root).isSuccess)
+        assertTrue(git.run(GitOp.MERGE, r.root, listOf("side")).isSuccess)
+        assertTrue(!marker.exists(), "хук или fsmonitor репозитория исполнился")
+    }
+
     /** Строки матрицы восстановления «конфликт Git» и «worktree удалён» (`docs/RECOVERY.md`, §4). */
     @Test
     fun probeFindsConflictAndMissingWorktree() {

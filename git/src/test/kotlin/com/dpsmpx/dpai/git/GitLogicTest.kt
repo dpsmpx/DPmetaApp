@@ -75,7 +75,7 @@ class GitLogicTest {
     fun commandsAreSafeByConstruction() {
         val c = GitCommands(ApprovalLedger())
         val add = c.argv(GitOp.ADD, "/w", listOf("a.txt"), clock.now()).valueOrNull()!!
-        assertEquals(listOf("git", "-C", "/w", "add", "--", "a.txt"), add)
+        assertEquals(listOf("git") + GitCommands.HARDENING + listOf("-C", "/w", "add", "--", "a.txt"), add)
         assertEquals(DiagCode.VALUE_INVALID, (c.argv(GitOp.STATUS, "-oops", emptyList(), clock.now()) as Outcome.Failure).errors.single().code)
         for (op in GitOp.entries.filter { it.destructive }) {
             val r = c.argv(op, "/w", if (op == GitOp.BRANCH_DELETE_FORCE || op == GitOp.WORKTREE_REMOVE_FORCE || op == GitOp.PUSH_FORCE) listOf("x") else emptyList(), clock.now())

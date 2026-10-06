@@ -149,6 +149,16 @@ class AgentRuntimeTest {
         assertEquals(RunState.EXITED, rt.status(run).run!!.state)
     }
 
+    /** Аудит 2026-10-07, A-4: каталог агента закрыт для других пользователей (на POSIX). */
+    @Test
+    fun agentHomeIsOwnerOnly() {
+        val home = dir.resolve("home")
+        AgentRuntime(home.toString(), Clock.SYSTEM, "test", TestChild.selfCommand())
+        val posix = java.nio.file.Files.getFileAttributeView(home, java.nio.file.attribute.PosixFileAttributeView::class.java)
+        org.junit.jupiter.api.Assumptions.assumeTrue(posix != null, "POSIX-прав нет (Windows): каталог в профиле пользователя")
+        assertEquals("rwx------", java.nio.file.attribute.PosixFilePermissions.toString(posix!!.readAttributes().permissions()))
+    }
+
     /** Вывод Claude проходит `Redactor` до журнала: ключ в выводе не попадает на диск (D-14, T8; критерий этапа 4). */
     @Test
     fun secretInOutputNeverReachesDisk() {

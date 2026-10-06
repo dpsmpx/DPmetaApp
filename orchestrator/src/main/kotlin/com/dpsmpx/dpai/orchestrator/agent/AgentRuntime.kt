@@ -83,6 +83,10 @@ class AgentRuntime(
     private val vfs = NioVfs(Path.of(home))
     private val ids = IdGenerator(clock, RandomSource.secure())
 
+    init {
+        restrictHome(Path.of(home))
+    }
+
     private fun runDir(id: SessionId) = "runs/${id.value}"
 
     private fun docs(id: SessionId) = DocumentStore(vfs, runDir(id))
@@ -364,6 +368,18 @@ class AgentRuntime(
     }
 
     companion object {
+        /**
+         * Каталог агента — только владельцу (T8; аудит 2026-10-07, A-4): в нём
+         * prompt и вывод Claude, а на общем Linux-хосте права по умолчанию
+         * (umask 022) открыли бы их другим пользователям. Где POSIX-прав нет
+         * (Windows), каталог наследует права профиля пользователя.
+         */
+        fun restrictHome(home: Path) {
+            java.nio.file.Files.createDirectories(home)
+            val posix = java.nio.file.Files.getFileAttributeView(home, java.nio.file.attribute.PosixFileAttributeView::class.java) ?: return
+            posix.setPermissions(java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"))
+        }
+
         const val RUN_KEY = "run"
         const val INPUT_KEY = "input"
         const val STOP_KEY = "stop-request"

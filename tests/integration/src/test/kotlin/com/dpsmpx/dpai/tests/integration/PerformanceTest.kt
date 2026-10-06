@@ -125,6 +125,11 @@ class PerformanceTest {
         val offers = List(50) { Tasks.TargetOffer(ids.next(IdKinds.TARGET), emptySet(), 2) }
         // Аккаунты: 100 слотов — выбор слота для каждого назначения.
         val (accountsLogic, accounts) = accounts(100, offers.map { it.target })
+        val ready = Tasks.applyAll(st, tasks.promote(st, clock.now()))
+        measure("  из них: promote", 200) { tasks.promote(st, clock.now()) }
+        measure("  из них: план назначений", 200) { tasks.plan(ready, clock.now(), offers) }
+        val plan0 = tasks.plan(ready, clock.now(), offers)
+        measure("  из них: выбор слотов", 200) { for (a in plan0) accountsLogic.lease(accounts, ids.next(IdKinds.SESSION), a.task, clock.now(), a.target) }
         val s = measure("такт планировщика", 200) {
             val plan = tasks.plan(Tasks.applyAll(st, tasks.promote(st, clock.now())), clock.now(), offers)
             for (a in plan) accountsLogic.lease(accounts, ids.next(IdKinds.SESSION), a.task, clock.now(), a.target)

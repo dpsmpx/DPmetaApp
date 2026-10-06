@@ -72,19 +72,30 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
         }
 
     /** Ключ упорядочивания (`docs/SCHEDULER.md`, §3): меньше — раньше. */
-    fun orderKey(state: TasksState, t: TaskRecord, now: Timestamp): List<Comparable<*>> {
+    fun orderKey(state: TasksState, t: TaskRecord, now: Timestamp): List<Comparable<*>> = orderKey(t, now, state.blockingImpact(t.id))
+
+    private fun orderKey(t: TaskRecord, now: Timestamp, impact: Int): List<Comparable<*>> {
         val waited = t.queuedAt?.let { now - it }?.takeIf { it.isPositive() }
         val steps = waited?.let { (it.inWholeMilliseconds / policy.agingStep.inWholeMilliseconds).toInt() } ?: 0
         val level = (t.priority.ordinal - steps).coerceAtLeast(0)
         val manual = if (policy.manualPriorityAllowed && t.manualPriority != null) -t.manualPriority.toLong() else Long.MAX_VALUE
-        return listOf(manual, level, -state.blockingImpact(t.id), t.queuedAt?.epochMillis ?: Long.MAX_VALUE, t.id.value)
+        return listOf(manual, level, -impact, t.queuedAt?.epochMillis ?: Long.MAX_VALUE, t.id.value)
     }
 
-    /** Готовые к назначению задачи в порядке планировщика (пауза перед повтором учтена). */
-    fun ready(state: TasksState, now: Timestamp): List<TaskRecord> =
-        state.tasks.values
+    /**
+     * Готовые к назначению задачи в порядке планировщика (пауза перед
+     * повтором учтена). Влияние на блокировку и ключи считаются один раз за
+     * вызов, а не при каждом сравнении (этап 17: O(n) вместо O(n² log n)).
+     */
+    fun ready(state: TasksState, now: Timestamp): List<TaskRecord> {
+        val impact = HashMap<TaskId, Int>()
+        for (t in state.tasks.values) if (!t.terminal) for (d in t.dependencies) impact.merge(d, 1, Int::plus)
+        return state.tasks.values
             .filter { it.state == TaskState.READY && (it.notBefore == null || it.notBefore <= now) }
-            .sortedWith { a, b -> compareKeys(orderKey(state, a, now), orderKey(state, b, now)) }
+            .map { it to orderKey(it, now, impact[it.id] ?: 0) }
+            .sortedWith { a, b -> compareKeys(a.second, b.second) }
+            .map { it.first }
+    }
 
     /** Свободная ёмкость target: сколько сессий ещё можно и что он умеет (ТЗ, §51). */
     data class TargetOffer(val target: ExecutionTargetId, val capabilities: Set<String>, val free: Int)

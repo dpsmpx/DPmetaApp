@@ -1,13 +1,16 @@
 package com.dpsmpx.dpai.contexts
 
+import com.dpsmpx.dpai.core.diagnostics.Redactor
 import com.dpsmpx.dpai.security.Origin
 
 /**
  * Prompt хода из версии контекста (ТЗ, §23, §64; T3). Указания — только
  * от оркестратора; всё остальное (файлы репозитория, прошлый handoff,
  * текст пользователя) — блоки данных с пометкой происхождения. Маркер
- * блока внутри данных обезвреживается: содержимое файла не может «закрыть»
- * блок и продолжить как указание.
+ * блока внутри данных и в ключе источника обезвреживается: содержимое
+ * файла не может «закрыть» блок и продолжить как указание. Данные проходят
+ * `Redactor`: ключ, случайно лежащий в документе, не уходит провайдеру
+ * (T1, T8; аудит 2026-10-07, A-3).
  */
 object PromptRenderer {
     const val OPEN = "<<<DPAI-DATA"
@@ -32,8 +35,9 @@ object PromptRenderer {
                 appendLine("# ${s.key}")
                 appendLine(s.content)
             } else {
-                appendLine("$OPEN source=${s.key} level=${s.level} origin=${s.origin} hash=${s.hash}>>>")
-                appendLine(neutralize(s.content))
+                // Ключ тоже из данных (имя файла, манифест): обезвреживается, как содержимое.
+                appendLine("$OPEN source=${neutralize(s.key).replace(">>>", "> > >")} level=${s.level} origin=${s.origin} hash=${s.hash}>>>")
+                appendLine(neutralize(Redactor.STANDARD.redact(s.content)))
                 appendLine(CLOSE)
             }
         }
