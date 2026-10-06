@@ -138,7 +138,7 @@
 .dpvis .kind-actor .node-box { stroke: var(--text-2); stroke-width: 1.6; }
 .dpvis .kind-platform .node-box, .dpvis .kind-upstream .node-box { fill: var(--surface); }
 .dpvis .node-name { fill: var(--text); font-size: 13.5px; font-weight: 600; }
-.dpvis .node-sub { fill: var(--muted); font-size: 11.5px; }
+.dpvis .node-sub { fill: var(--muted); font-size: 12px; }
 .dpvis .node-ring { fill: none; stroke: none; }
 .dpvis .act-working .node-ring {
   stroke: var(--pulse); stroke-width: 1.5; transform-box: fill-box; transform-origin: center;
@@ -204,7 +204,7 @@
 .dpvis .chart figcaption { font-size: 13px; color: var(--text-2); margin-bottom: 4px; }
 .dpvis .daychart { width: 100%; height: auto; display: block; }
 .dpvis .daychart .axis { stroke: var(--line); stroke-width: 1; }
-.dpvis .daychart .tick { fill: var(--muted); font-size: 9.5px; }
+.dpvis .daychart .tick { fill: var(--muted); font-size: 12px; }
 .dpvis .bar { fill: var(--data); }
 .dpvis .bar.drv-human { fill: var(--human); }
 .dpvis .bar.drv-ai { fill: var(--ai); }
