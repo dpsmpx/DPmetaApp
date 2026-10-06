@@ -296,16 +296,49 @@ class ActivationStore(private val blobs: BlobStore, private val quarantine: Quar
         if (active is Outcome.Failure) return active
         val previous = config("previous_config")
         if (previous is Outcome.Failure) return previous
-        val history = (root["history"] as? JsonArray)?.items?.mapNotNull { (it as? JsonObject)?.let(::record) }.orEmpty()
+        // Запись об активной или предыдущей конфигурации есть, но не читается —
+        // состояние не цельное: отказ целиком (карантин, D-06), а не конфигурация
+        // без записи о ней. Отсутствие записи (null не пишется) — норма.
+        fun pinned(key: String): Outcome<ActivationRecord?> {
+            val v = root[key] ?: return Outcome.Success(null)
+            return (v as? JsonObject)?.let(::record)?.let { Outcome.Success(it) }
+                ?: Outcome.failure(DiagCode.STORAGE_CORRUPTED, "запись $key не читается", "$.$key")
+        }
+        val activeRecord = pinned("active")
+        if (activeRecord is Outcome.Failure) return activeRecord
+        val previousRecord = pinned("previous")
+        if (previousRecord is Outcome.Failure) return previousRecord
+        // История — справка: нечитаемая запись пропускается, но с находкой.
+        val found = mutableListOf<Diagnostic>()
+        val history = (root["history"] as? JsonArray)?.items.orEmpty().mapIndexedNotNull { i, item ->
+            val r = (item as? JsonObject)?.let(::record)
+            if (r == null) found += Diagnostic.warning(DiagCode.STORAGE_CORRUPTED, "запись истории активаций не читается — пропущена", "$.history[$i]")
+            r
+        }
+        // Номер ревизии не повторяется: без читаемого next_revision (или с меньшим,
+        // чем уже выданные) счёт продолжается после самой поздней записи, а не с 1.
+        val latest = listOfNotNull(activeRecord.valueOrNull(), previousRecord.valueOrNull()).plus(history).maxOfOrNull { it.revision } ?: 0
+        val stored = (root["next_revision"] as? JsonNumber)?.toLongOrNull()
+        val nextRevision = if (stored != null && stored > latest) {
+            stored
+        } else {
+            found += Diagnostic.warning(
+                DiagCode.STORAGE_CORRUPTED,
+                "next_revision ${if (stored == null) "не читается" else "не больше выданных ревизий"} — счёт продолжен с ${latest + 1}",
+                "$.next_revision",
+            )
+            latest + 1
+        }
         return Outcome.Success(
             ActivationState(
-                active = (root["active"] as? JsonObject)?.let(::record),
+                active = activeRecord.valueOrNull(),
                 activeConfig = active.valueOrNull(),
-                previous = (root["previous"] as? JsonObject)?.let(::record),
+                previous = previousRecord.valueOrNull(),
                 previousConfig = previous.valueOrNull(),
                 history = history,
-                nextRevision = (root["next_revision"] as? JsonNumber)?.toLongOrNull() ?: 1,
+                nextRevision = nextRevision,
             ),
+            found,
         )
     }
 

@@ -3,6 +3,9 @@ package com.dpsmpx.dppass.connection
 import com.dpsmpx.dppass.config.ConfigIr
 import com.dpsmpx.dppass.config.ConfigLoader
 import com.dpsmpx.dppass.config.transportClass
+import com.dpsmpx.dppass.core.Json
+import com.dpsmpx.dppass.core.JsonArray
+import com.dpsmpx.dppass.core.JsonObject
 import com.dpsmpx.dppass.core.ManualClock
 import com.dpsmpx.dppass.core.ProfileId
 import com.dpsmpx.dppass.diagnostics.DiagCode
@@ -148,6 +151,37 @@ class ActivationServiceTest {
         val d = broken.restore()
         assertEquals(DiagCode.STORAGE_CORRUPTED, d.single().code)
         assertNull(broken.state.activeConfig, "повреждённое — не заменяется конфигурацией по умолчанию")
+        assertEquals(1, Quarantine(blobs, clock).list().valueOrNull()!!.size)
+    }
+
+    /** Повреждение части состояния — находка с местом, а не молчание (D-06, CLAUDE.md «ничего молча»). */
+    @Test
+    fun partialCorruptionIsReportedNotSilent() = runBlocking {
+        val s = service()
+        s.activate(ir("valid-multi.json"), "t", "a")
+        s.activate(ir("valid-minimal.json"), "t", "b")
+        val stored = Json.parse(String(blobs.read(ActivationStore.KEY).valueOrNull()!!)) as JsonObject
+        val history = stored["history"] as JsonArray
+
+        // Испорченная запись истории пропускается с находкой; ревизия после неё не повторяется.
+        val brokenHistory = JsonArray(history.items + Json.obj("revision" to Json.str("x")))
+        blobs.write(ActivationStore.KEY, Json.write(JsonObject(stored.fields + ("history" to brokenHistory) - "next_revision")).toByteArray())
+        val again = service()
+        val notes = again.restore()
+        assertEquals(listOf("$.history[${history.items.size}]", "$.next_revision"), notes.map { it.path }, notes.toString())
+        assertTrue(notes.all { it.code == DiagCode.STORAGE_CORRUPTED && !it.isError })
+        assertEquals(history.items.size, again.state.history.size)
+        assertEquals("b", again.state.active!!.sourceChecksum, "активная конфигурация на месте")
+        val latest = (listOfNotNull(again.state.active, again.state.previous) + again.state.history).maxOf { it.revision }
+        assertEquals(latest + 1, again.state.nextRevision, "без next_revision счёт — после самой поздней записи, не с 1")
+
+        // Нечитаемая запись об активной конфигурации — состояние не цельное: карантин, а не конфигурация без записи.
+        blobs.write(ActivationStore.KEY, Json.write(JsonObject(stored.fields + ("active" to Json.obj("revision" to Json.num(1))))).toByteArray())
+        val broken = service()
+        val d = broken.restore()
+        assertEquals(DiagCode.STORAGE_CORRUPTED, d.single().code)
+        assertEquals("$.active", d.single().causes.single().path)
+        assertNull(broken.state.activeConfig)
         assertEquals(1, Quarantine(blobs, clock).list().valueOrNull()!!.size)
     }
 }
