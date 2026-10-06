@@ -1,5 +1,6 @@
 // Android-приложение DPpass: оболочка над DPpassCore (D-02, D-17).
 // Подключается, только если найден Android SDK (settings.gradle.kts).
+import com.dpsmpx.dppass.build.AppIdentity
 import com.dpsmpx.dppass.build.LegalNoticesTask
 import com.dpsmpx.dppass.build.XrayGeodataTask
 import com.dpsmpx.dppass.build.XrayNativeTask
@@ -8,27 +9,46 @@ plugins {
     id("dppass.android-app")
 }
 
+// Личность устанавливаемого приложения (D-47). Пространство имён кода —
+// всегда `com.dpsmpx.dppass` (ниже `namespace`): меняется только личность.
+//   * отладочная сборка и проверки — стабильная личность (детерминизм);
+//   * личная сборка release — случайные applicationId и ярлык, чтобы по
+//     имени пакета и ярлыку приложение не отличалось от обычного.
+// Зерно `dppass.identitySeed` делает личную сборку воспроизводимой.
+val stableIdentity = providers.gradleProperty("dppass.stableIdentity").map(String::toBoolean).getOrElse(false)
+val identitySeed = AppIdentity.seedOf(providers.gradleProperty("dppass.identitySeed").orNull)
+val releaseIdentity = if (stableIdentity) AppIdentity.STABLE else AppIdentity.random(identitySeed)
+
 android {
     namespace = "com.dpsmpx.dppass"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
 
     defaultConfig {
-        // applicationId фиксируется окончательно перед первым выпуском (D-01,
-        // отложенное решение «название»): после выпуска его не сменить.
-        applicationId = "com.dpsmpx.dppass"
+        // Личность по умолчанию — стабильная (отладка, проверки); release её
+        // переопределяет (D-47). Публичный applicationId фиксируется перед
+        // выпуском (D-01, этап 5) — рандомизация туда не идёт.
+        applicationId = AppIdentity.STABLE.applicationId
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 1
-        versionName = "0.0.1-dev"
+        versionCode = 50
+        versionName = "0.5.0-dev"
+        // Ярлык приложения — через placeholder: стабильный для отладки,
+        // случайный для личного release (D-47). Внутреннее имя «DPpass»
+        // (экран «О программе», уведомление на своём экране) — @string/app_name.
+        manifestPlaceholders["appLabel"] = AppIdentity.STABLE.label
     }
 
     buildTypes {
         release {
-            // Не выпуск (CLAUDE.md, «Чего не делать»: выпуск — этап 5): сборка
-            // для устройств автора (D-35). Без R8; подписи в Gradle нет — APK
-            // подписывает tools/release/sign_apks.py ключом разработчика из
+            // Не выпуск (CLAUDE.md, «Чего не делать»: выпуск — этап 5): личная
+            // сборка для устройств автора (D-35). Без R8; подписи в Gradle нет —
+            // APK подписывает tools/release/sign_apks.py ключом разработчика из
             // переменных окружения, ключ в демон Gradle не попадает.
             isMinifyEnabled = false
+            // Случайная личность личной сборки (D-47): пакет и ярлык не выдают
+            // назначение. Отпечаток подписи (D-35) от applicationId не зависит.
+            applicationId = releaseIdentity.applicationId
+            manifestPlaceholders["appLabel"] = releaseIdentity.label
         }
     }
 

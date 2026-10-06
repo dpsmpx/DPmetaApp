@@ -22,6 +22,7 @@ import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.test.fail
 
@@ -440,6 +441,35 @@ class XrayCompilerTest {
         assertTrue(compileWith(GeodataCodes.Unchecked).isSuccess, "без набора коды проверяет само ядро")
         val known = ir(routing = """{"rules": [{"id": "known", "action": "direct", "geoip": ["aa"], "geosite": ["example-a@ads"]}]}""")
         assertTrue(XrayCompiler(geodata = GeodataCodes.Installed(set)).compile(known, CompilePlan(known.profiles[0].id, true)).isSuccess)
+    }
+
+    @Test
+    fun automaticDomesticAddsCheckedRuRulesAfterUserRules() {
+        // D-45: отечественное — напрямую, ПОСЛЕ правил пользователя, и
+        // geosite/geoip — отдельными правилами (в одном Xray соединил бы их И).
+        val routing = """{"rules": [{"id": "net", "action": "proxy", "domain": ["net.example.com"]}], "automatic_domestic": true}"""
+        val gi = ir(routing = routing)
+        // Коды ru сверяются с набором (D-27): нет в наборе — отказ с путём.
+        val noRu = GeodataManifest("v0.0.0-20260101000000-0123456789ab", "0123456789ab", "2026-01", emptyList(), emptySet(), emptyMap())
+        assertTrue(
+            errors(XrayCompiler(geodata = GeodataCodes.Installed(noRu)).compile(gi, CompilePlan(gi.profiles[0].id, true)))
+                .all { it.first == DiagCode.GEO_CODE_UNKNOWN },
+            "кодов ru нет в наборе — GEO_CODE_UNKNOWN",
+        )
+        val withRu = GeodataManifest("v0.0.0-20260101000000-0123456789ab", "0123456789ab", "2026-01", emptyList(), setOf("ru"), mapOf("category-ru" to emptySet()))
+        val p = Json.parse(
+            XrayCompiler(geodata = GeodataCodes.Installed(withRu)).compile(gi, CompilePlan(gi.profiles[0].id, true)).valueOrNull()!!.payloadForEngine(),
+        ) as JsonObject
+        val tags = ruleTags(p)
+        assertTrue(tags.indexOf("net") < tags.indexOf("dppass:auto-domestic-site"), "автосплит — после правил пользователя")
+        assertEquals(listOf("dppass:auto-domestic-site", "dppass:auto-domestic-ip"), tags.filter { it.startsWith("dppass:auto-domestic") })
+        val site = rules(p).single { it["ruleTag"].text == "dppass:auto-domestic-site" }
+        val ip = rules(p).single { it["ruleTag"].text == "dppass:auto-domestic-ip" }
+        assertEquals(listOf("geosite:category-ru"), site["domain"].items.map { it.text })
+        assertNull(site["ip"], "site-правило без geoip: иначе Xray соединил бы через И (D-31)")
+        assertEquals(listOf("geoip:ru"), ip["ip"].items.map { it.text })
+        assertEquals("direct", site["outboundTag"].text)
+        assertEquals("direct", ip["outboundTag"].text)
     }
 
     @Test

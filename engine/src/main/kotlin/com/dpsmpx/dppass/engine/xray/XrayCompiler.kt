@@ -32,6 +32,7 @@ import com.dpsmpx.dppass.routing.DnsTransport
 import com.dpsmpx.dppass.routing.DomainMatcher
 import com.dpsmpx.dppass.routing.DomainResolution
 import com.dpsmpx.dppass.routing.RouteAction
+import com.dpsmpx.dppass.routing.RouteEvaluator
 import com.dpsmpx.dppass.routing.TransportProtocol
 import java.util.Base64
 
@@ -365,6 +366,19 @@ class XrayCompiler(
             for ((i, rule) in lowered.engineRules.withIndex()) {
                 val at = "$.routing.rules[${ir.routing.rules.indexOf(rule).takeIf { it >= 0 } ?: i}]"
                 rules += userRule(rule.id.value, rule.conditions, XrayBackend.outboundTag(rule.action), at)
+            }
+            // Автоматический раздельный маршрут (D-45): отечественное — напрямую,
+            // ПОСЛЕ явных правил пользователя. geosite и geoip — отдельными
+            // правилами: в одном правиле Xray соединяет их через И (D-31), а
+            // смысл D-45 — ИЛИ (имя ИЛИ адрес отечественные). Коды сверяются с
+            // набором (D-27).
+            if (ir.routing.automaticDomestic) {
+                val site = RouteEvaluator.SITE_RU
+                val ip = RouteEvaluator.IP_RU
+                checkGeo(listOf(site), emptyList(), "$.routing.automatic_domestic")
+                checkGeo(emptyList(), listOf(ip), "$.routing.automatic_domestic")
+                rules += userRule("${XrayBackend.SYSTEM_PREFIX}auto-domestic-site", Conditions(geoSites = listOf(site)), XrayBackend.TAG_DIRECT, "$.routing.automatic_domestic")
+                rules += userRule("${XrayBackend.SYSTEM_PREFIX}auto-domestic-ip", Conditions(geoIps = listOf(ip)), XrayBackend.TAG_DIRECT, "$.routing.automatic_domestic")
             }
             return Json.obj(
                 "domainStrategy" to Json.str(domainStrategy(ir.routing.domainResolution, withTun)),

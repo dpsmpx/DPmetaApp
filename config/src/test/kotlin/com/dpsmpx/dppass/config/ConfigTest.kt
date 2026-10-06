@@ -190,6 +190,18 @@ class WriterAndNormalizerTest {
     }
 
     @Test
+    fun automaticDomesticRoundTrips() {
+        // D-45: поле читается и пишется; по умолчанию выключено — документ значит
+        // ровно то, что в нём написано (D-05).
+        val base = loader.load(Fixtures.text("configs/valid-multi.json")).valueOrNull()!!.ir
+        assertFalse(base.routing.automaticDomestic, "по умолчанию выключено")
+        val on = base.copy(routing = base.routing.copy(automaticDomestic = true))
+        val again = loader.load(ConfigWriter.write(on, ConfigWriter.Mode.FULL)).valueOrNull()!!.ir
+        assertTrue(again.routing.automaticDomestic)
+        assertEquals(on, again)
+    }
+
+    @Test
     fun redactedExportHasNoSecretsAndCannotActivate() {
         val text = Fixtures.text("configs/valid-multi.json")
         val ir = loader.load(text).valueOrNull()!!.ir

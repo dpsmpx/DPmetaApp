@@ -207,10 +207,12 @@ internal class DocumentMapper(private val diags: DiagnosticCollector, private va
         val resolution = r.enum("domain_resolution", RESOLUTIONS, required = false, default = DomainResolution.NEVER)
             ?: DomainResolution.NEVER
         val bypassLan = r.bool("bypass_lan", true)
+        // Автосплит (D-45): по умолчанию false — документ значит ровно то, что в нём (D-05).
+        val automaticDomestic = r.bool("automatic_domestic", false)
         val apps = r.obj("apps", required = false)?.let(::apps) ?: AppPolicy.AllApps
         val rules = r.objects("rules", required = false).mapNotNull(::rule)
         r.finish()
-        return RoutingPolicy(rules, default, apps, resolution, bypassLan)
+        return RoutingPolicy(rules, default, apps, resolution, bypassLan, automaticDomestic)
     }
 
     private fun apps(r: ObjReader): AppPolicy? {

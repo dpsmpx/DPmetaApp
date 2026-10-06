@@ -78,7 +78,8 @@ internal object ImportFlow {
 
     private fun confirmDocument(host: Host, text: String) {
         val c = host.activity
-        AlertDialog.Builder(c)
+        Ui.secure(
+            AlertDialog.Builder(c)
             .setTitle(R.string.import_document_title)
             .setMessage(R.string.import_document_text)
             .setPositiveButton(R.string.action_apply) { _, _ ->
@@ -99,7 +100,8 @@ internal object ImportFlow {
                 }
             }
             .setNegativeButton(android.R.string.cancel, null)
-            .show()
+            .show(),
+        )
     }
 
     private fun confirmLinks(host: Host, text: String, kind: ImportKind.Links) {

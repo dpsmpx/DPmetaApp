@@ -94,6 +94,12 @@ class DPpassCore(
 
     /** Задержка до серверов по последнему замеру (D-41). */
     val latency: LatencyBook = LatencyBook()
+
+    /** Хранение адаптивной модели (D-44). */
+    private val stabilityStore = StabilityBook(store, quarantine)
+
+    /** Адаптивная модель устойчивости (D-44): читается из хранилища один раз. */
+    val stability: StabilityModel = stabilityStore.load().also { it.diagnostics.forEach(log::diagnostic) }.valueOrNull() ?: StabilityModel()
     private val loader = ConfigLoader()
 
     /** Сохранённые подписки: загрузка, идентификатор устройства, применение (D-33, D-36, D-39, D-42). */
@@ -170,7 +176,9 @@ class DPpassCore(
     /** План подключения; [preferred] — сервер, выбранный пользователем: первым в плане (D-34). */
     fun plan(assessment: NetworkAssessment?, preferred: ProfileId? = null): ConnectionPlan? {
         val ir = activation.state.activeConfig ?: return null
-        return CandidatePlanner.plan(ir, compiler.capabilities, assessment, health, health.lastGood(), clock.nowMillis(), policy, preferred, latency::millis)
+        return CandidatePlanner.plan(
+            ir, compiler.capabilities, assessment, health, health.lastGood(), clock.nowMillis(), policy, preferred, latency::millis, stability,
+        )
     }
 
     suspend fun connect(
@@ -182,9 +190,16 @@ class DPpassCore(
     ): ConnectionReport? {
         val ir = activation.state.activeConfig ?: return null
         val plan = plan(assessment, preferred) ?: return null
-        val orchestrator = ConnectionOrchestrator(compiler, engine, checker, health, clock, log, policy, pause)
+        val orchestrator = ConnectionOrchestrator(compiler, engine, checker, health, clock, log, policy, stability, assessment, pause)
         return orchestrator.connect(ir, plan, tun)
     }
+
+    /** Наблюдатель сессии (D-44): Android-слой кормит его пробами (D-32). */
+    fun supervisor(profileId: ProfileId, assessment: NetworkAssessment?): SessionSupervisor =
+        SessionSupervisor(stability, profileId, NetworkContext.of(assessment))
+
+    /** Сохранить адаптивную модель (D-44): вызывает сервис при остановке и периодически. */
+    fun persistStability(): Outcome<Unit> = stabilityStore.save(stability)
 
     fun tunnelSpec(): Outcome<TunnelSpec>? = activation.state.activeConfig?.let { TunnelSpecBuilder.build(it, selfPackage, platform) }
 

@@ -99,7 +99,10 @@ RULES = [
      )(p),
      "время — только через core.Clock"),
     ("weak-random", r"\bkotlin\.random\b|\bjava\.util\.Random\b|\bMath\.random\s*\(|(?<![\w.])Random\s*\(",
-     lambda p: not main_code(p),
+     # Личность личной сборки (D-47): java.util.Random только для зерна —
+     # воспроизводимость по требованию (это и есть «решения — детерминированно»);
+     # по умолчанию без зерна — SecureRandom. Инструмент сборки, не ключи.
+     lambda p: not main_code(p) or under("build-logic/src/main/kotlin/com/dpsmpx/dppass/build/AppIdentity.kt")(p),
      "ключи — SecureRandom; решения — детерминированно"),
     ("weak-crypto", r'"(MD5|SHA-?1|DES|DESede|RC4|ARCFOUR)"|"[A-Za-z0-9]+/ECB/|Cipher\.getInstance\s*\(\s*"AES"\s*\)',
      lambda p: False,

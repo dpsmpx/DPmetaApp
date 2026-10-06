@@ -161,6 +161,8 @@ object CandidatePlanner {
         preferred: ProfileId? = null,
         /** Задержка по замеру (D-41): порядок среди равных по здоровью, классу и приоритету. */
         latency: (ProfileId) -> Long? = { null },
+        /** Выученная устойчивость (D-44): порядок среди годных; жёсткие исключения не трогает. */
+        stability: StabilityModel? = null,
     ): ConnectionPlan {
         when (assessment?.restriction) {
             RestrictionClass.OFFLINE -> return ConnectionPlan(emptyList(), emptyList(), DiagCode.NETWORK_OFFLINE, "нет сети — попытки не делаются")
@@ -206,12 +208,17 @@ object CandidatePlanner {
             HealthState.FAILED -> 2
         }
         fun classPenalty(p: ServerProfile) = if (tcpPenalized && p.transportClass == TransportClass.TCP_STREAM) 1 else 0
+        // Выученная устойчивость (D-44): выше — раньше. Квантуется до сотых,
+        // чтобы порядок был детерминирован и мелкий шум не правил план.
+        // Нет модели — ноль у всех: порядок как прежде (существующие тесты).
+        fun stabilityRank(p: ServerProfile) = if (stability == null) 0 else -(stability.score(p, assessment) * 100).toInt()
 
         val sorted = viable.sortedWith(
             compareBy<ServerProfile>(
                 { if (it.id == preferred) 0 else 1 },
                 { if (it.id == lastKnownGood) 0 else 1 },
                 { healthRank(it) },
+                { stabilityRank(it) },
                 { classPenalty(it) },
                 { -it.hints.priority },
                 // Неизмеренные — после измеренных; тайм-аут — как неизмеренный, а не как отказ (D-41).
@@ -244,6 +251,7 @@ object CandidatePlanner {
             if (pick !== head) reasons += "другой класс транспорта, чем у предыдущей попытки"
             if (pick.hints.priority != 0) reasons += "приоритет ${pick.hints.priority}"
             latency(pick.id)?.let { reasons += "задержка $it мс" }
+            stability?.let { reasons += "устойчивость ${(it.score(pick, assessment) * 100).toInt()}%" }
             reasons += "класс ${pick.transportClass}"
             ordered += PlannedAttempt(pick, reasons)
         }

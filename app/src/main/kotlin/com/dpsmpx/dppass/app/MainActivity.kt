@@ -287,11 +287,13 @@ class MainActivity : Activity(), Host {
 
     override fun problem(title: CharSequence, reason: Diagnostic) {
         // Причина целиком, с текстом ядра: на устройстве её больше негде увидеть (D-22).
-        AlertDialog.Builder(this)
-            .setTitle(title)
-            .setMessage(reason.renderWithCauses().joinToString("\n"))
-            .setPositiveButton(android.R.string.ok, null)
-            .show()
+        Ui.secure(
+            AlertDialog.Builder(this)
+                .setTitle(title)
+                .setMessage(reason.renderWithCauses().joinToString("\n"))
+                .setPositiveButton(android.R.string.ok, null)
+                .show(),
+        )
     }
 
     override fun connect() {
@@ -398,7 +400,7 @@ class MainActivity : Activity(), Host {
 
     override fun onStop() {
         super.onStop()
-        // Интерфейс ушёл с экрана — работа закончена: журнал в буфер обмена (D-26).
+        // Интерфейс ушёл с экрана — отмечаем в журнале; наружу ничего не копируется (D-47).
         // Поворот экрана — не уход.
         if (!isChangingConfigurations) DeviceLog.onWorkFinished(this, "activity_stop")
     }

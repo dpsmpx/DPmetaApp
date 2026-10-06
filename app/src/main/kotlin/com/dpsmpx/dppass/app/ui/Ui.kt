@@ -445,6 +445,16 @@ internal object Ui {
         return dialog
     }
 
+    /**
+     * Запретить снимки и запись окна диалога (T9, D-47): у `AlertDialog` своё
+     * окно, и `FLAG_SECURE` активности его не закрывает — ставим на нём.
+     * Возвращает тот же диалог для цепочки.
+     */
+    fun <T : Dialog> secure(dialog: T): T {
+        dialog.window?.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+        return dialog
+    }
+
     fun matchWidth(): LinearLayout.LayoutParams =
         LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
 

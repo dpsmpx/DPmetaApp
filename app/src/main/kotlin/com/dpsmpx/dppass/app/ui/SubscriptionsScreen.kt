@@ -233,12 +233,14 @@ class SubscriptionsScreen(host: Host) : Screen(host) {
             setPadding(p, Ui.dp(context, 8), p, 0)
             addView(field, Ui.matchWidth())
         }
-        AlertDialog.Builder(context)
-            .setTitle(R.string.subs_rename)
-            .setView(form)
-            .setPositiveButton(R.string.action_save) { _, _ -> edit { host.graph?.core?.subscriptions?.rename(r.id, field.text.toString()) } }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
+        Ui.secure(
+            AlertDialog.Builder(context)
+                .setTitle(R.string.subs_rename)
+                .setView(form)
+                .setPositiveButton(R.string.action_save) { _, _ -> edit { host.graph?.core?.subscriptions?.rename(r.id, field.text.toString()) } }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show(),
+        )
     }
 
     /** Страница поставщика — во внешнем браузере; адрес только `https://` (`MetadataParser`). */
@@ -263,10 +265,12 @@ class SubscriptionsScreen(host: Host) : Screen(host) {
     }
 
     private fun confirm(message: String, action: () -> Unit) {
-        AlertDialog.Builder(context)
-            .setMessage(message)
-            .setPositiveButton(android.R.string.ok) { _, _ -> action() }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
+        Ui.secure(
+            AlertDialog.Builder(context)
+                .setMessage(message)
+                .setPositiveButton(android.R.string.ok) { _, _ -> action() }
+                .setNegativeButton(android.R.string.cancel, null)
+                .show(),
+        )
     }
 }

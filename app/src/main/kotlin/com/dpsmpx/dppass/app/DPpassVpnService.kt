@@ -20,6 +20,8 @@ import com.dpsmpx.dppass.R
 import com.dpsmpx.dppass.app.ui.Formats
 import com.dpsmpx.dppass.connection.ConnectionReport
 import com.dpsmpx.dppass.connection.HealthChecker
+import com.dpsmpx.dppass.connection.SessionSupervisor
+import com.dpsmpx.dppass.connection.StabilityObservation
 import com.dpsmpx.dppass.connection.toTunInput
 import com.dpsmpx.dppass.core.Clock
 import com.dpsmpx.dppass.diagnostics.DiagCode
@@ -81,6 +83,7 @@ class DPpassVpnService : VpnService() {
     private var session: EngineSession? = null
     private var tunnel: TunnelHandle? = null
     private var ticker: Job? = null
+    private var supervisor: Job? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -186,6 +189,7 @@ class DPpassVpnService : VpnService() {
                     progress(TunnelStatus.Connected(report.profileId, name, core.clock.nowMillis(), Clock.MONOTONIC.nowMillis()))
                     watchNetwork()
                     startTicker(report.session)
+                    startSupervisor(core, graph.engine, ir, report.profileId)
                 } else {
                     report.session.stop()
                     handle.close()
@@ -223,6 +227,50 @@ class DPpassVpnService : VpnService() {
                     meter.reset()
                 }
                 delay(1_000)
+            }
+        }
+    }
+
+    /**
+     * Наблюдатель сессии (D-44): раз в [SUPERVISION_INTERVAL_MILLIS] проба
+     * здоровья (D-32), наблюдение в адаптивную модель и, при подтверждённой
+     * деградации (гистерезис, не один сбой — T14), переподключение. Модель
+     * периодически сохраняется, чтобы опыт пережил перезапуск процесса.
+     *
+     * Переподключение идёт через [ACTION_RECONNECT] — проверенный путь
+     * жизненного цикла; модель к этому моменту уже понизила отказавший
+     * сервер, поэтому новый план возьмёт другого кандидата (D-15, D-44).
+     */
+    private fun startSupervisor(core: com.dpsmpx.dppass.connection.DPpassCore, engine: com.dpsmpx.dppass.engine.xray.XrayProxyEngine, ir: com.dpsmpx.dppass.config.ConfigIr, profileId: com.dpsmpx.dppass.core.ProfileId) {
+        supervisor?.cancel()
+        supervisor = scope.launch {
+            val sup = core.supervisor(profileId, null)
+            val profile = ir.profiles.firstOrNull { it.id == profileId }
+            val probeTimeout = (core.policy.healthTimeoutMillis - PROBE_MARGIN_MILLIS).toInt()
+            var samples = 0
+            while (isActive) {
+                delay(SUPERVISION_INTERVAL_MILLIS)
+                // Наша ли ещё сессия: остановка или переподключение могли её сменить.
+                if (state.withLock { session } == null) return@launch
+                val started = Clock.MONOTONIC.nowMillis()
+                val result = withContext(Dispatchers.IO) { engine.probeHealth(ir.dns, probeTimeout) }
+                val elapsed = (Clock.MONOTONIC.nowMillis() - started).coerceAtLeast(1)
+                val failed = result is Outcome.Failure
+                val stalled = failed && (result as Outcome.Failure).errors.any { it.code == DiagCode.PAYLOAD_STALLED }
+                val decision = sup.onObservation(
+                    StabilityObservation(success = !failed, rttMillis = elapsed, stalled = stalled, timestampMillis = core.clock.nowMillis()),
+                    profile,
+                    null,
+                )
+                if (failed) core.log.warning("adaptive_probe_failed", "profile" to Safe(profileId.value), "elapsed_ms" to elapsed)
+                if (++samples % PERSIST_EVERY_SAMPLES == 0 || decision == SessionSupervisor.Decision.RECONNECT) {
+                    withContext(NonCancellable) { core.persistStability() }
+                }
+                if (decision == SessionSupervisor.Decision.RECONNECT) {
+                    core.log.warning("adaptive_reconnect", "profile" to Safe(profileId.value))
+                    reconnect(this@DPpassVpnService)
+                    return@launch
+                }
             }
         }
     }
@@ -277,6 +325,8 @@ class DPpassVpnService : VpnService() {
 
     /** Ядро — потом TUN; повторный вызов ничего не делает. */
     private suspend fun shutdown() {
+        supervisor?.cancel()
+        supervisor = null
         state.withLock {
             ticker?.cancel()
             ticker = null
@@ -288,6 +338,8 @@ class DPpassVpnService : VpnService() {
             tunnel?.close()
             tunnel = null
         }
+        // Опыт адаптивной модели — на диск, чтобы пережил остановку (D-44).
+        withContext(NonCancellable) { AppGraph.graph(this@DPpassVpnService).core.persistStability() }
     }
 
     override fun onRevoke() {
@@ -307,7 +359,7 @@ class DPpassVpnService : VpnService() {
         // Отказ остаётся на экране; всё остальное без сервиса — «не подключено».
         if (TunnelState.status.value !is TunnelStatus.Failed) TunnelState.set(TunnelStatus.Idle)
         announce()
-        // Сервис остановлен — работа закончена: журнал в буфер обмена (D-26).
+        // Сервис остановлен — отмечаем в журнале; экспорт только по кнопке (D-47).
         DeviceLog.onWorkFinished(this, "service_stop")
         scope.cancel()
         super.onDestroy()
@@ -414,6 +466,10 @@ class DPpassVpnService : VpnService() {
 
         /** Уведомление со скоростью — раз в столько секунд (только при включённом экране). */
         private const val NOTIFY_EVERY = 2
+
+        /** Наблюдатель сессии (D-44): период пробы здоровья и как часто сохранять модель. */
+        private const val SUPERVISION_INTERVAL_MILLIS = 15_000L
+        private const val PERSIST_EVERY_SAMPLES = 8
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, DPpassVpnService::class.java))

@@ -26,13 +26,21 @@ import com.dpsmpx.dppass.routing.Rule
 import com.dpsmpx.dppass.storage.BlobStore
 import com.dpsmpx.dppass.storage.Quarantine
 
-/** Режим маршрутизации политики пользователя (D-38). */
+/** Режим маршрутизации политики пользователя (D-38, D-45). */
 enum class RoutingMode(val wire: String) {
     /** Всё через туннель, кроме локальных сетей (если включено). */
     ALL_TUNNEL("all_tunnel"),
 
     /** Российские сайты и адреса — мимо туннеля, их имена — системным резолвером. */
     RU_DIRECT("ru_direct"),
+
+    /**
+     * Автоматический раздельный маршрут (D-45, рекомендуемый): как
+     * [RU_DIRECT], но с запасным правилом `automatic_domestic` — любое
+     * отечественное назначение идёт напрямую само, без выбора сайтов и
+     * приложений.
+     */
+    AUTO("auto"),
 }
 
 /** Кто идёт в туннель (D-09, D-38). */
@@ -104,11 +112,15 @@ object PolicyBuilder {
         return out
     }
 
+    /** Отечественное идёт напрямую: явными правилами (RU_DIRECT) или автосплитом (AUTO). */
+    private fun domesticDirect(p: UserPolicy): Boolean = p.mode == RoutingMode.RU_DIRECT || p.mode == RoutingMode.AUTO
+
     fun routing(p: UserPolicy): RoutingPolicy {
         val rules = mutableListOf<Rule>()
         // Реклама — первой: и на российских сайтах тоже.
         if (p.blockAds) rules += Rule(RuleId(RULE_ADS), Conditions(geoSites = listOf(GEOSITE_ADS)), RouteAction.BLOCK)
         if (p.mode == RoutingMode.RU_DIRECT) {
+            // Явные правила: отечественное напрямую до любых запасных.
             rules += Rule(RuleId(RULE_RU_SITES), Conditions(geoSites = listOf(GEOSITE_RU)), RouteAction.DIRECT)
             rules += Rule(RuleId(RULE_RU_IP), Conditions(geoIps = listOf(GEOIP_RU)), RouteAction.DIRECT)
         }
@@ -117,18 +129,26 @@ object PolicyBuilder {
             AppMode.EXCEPT -> if (p.apps.isEmpty()) AppPolicy.AllApps else AppPolicy.ExceptApps(p.apps)
             AppMode.ONLY -> AppPolicy.OnlyApps(p.apps)
         }
-        return RoutingPolicy(rules = rules, defaultAction = RouteAction.PROXY, apps = apps, bypassLan = p.bypassLan)
+        // AUTO (D-45): отечественное уводит напрямую запасное правило автосплита,
+        // само, без выбора сайтов и приложений.
+        return RoutingPolicy(
+            rules = rules,
+            defaultAction = RouteAction.PROXY,
+            apps = apps,
+            bypassLan = p.bypassLan,
+            automaticDomestic = p.mode == RoutingMode.AUTO,
+        )
     }
 
     /**
-     * DNS: всё — DoH выбранного резолвера через туннель. В режиме
-     * [RoutingMode.RU_DIRECT] российские имена — системному резолверу мимо
-     * туннеля: соединение с ними и так идёт мимо туннеля, а ответ
-     * зарубежного резолвера указывал бы на зарубежные узлы CDN.
+     * DNS: всё — DoH выбранного резолвера через туннель. В режимах
+     * [RoutingMode.RU_DIRECT] и [RoutingMode.AUTO] российские имена —
+     * системному резолверу мимо туннеля: соединение с ними и так идёт мимо
+     * туннеля, а ответ зарубежного резолвера указывал бы на зарубежные узлы CDN.
      */
     fun dns(p: UserPolicy): DnsPolicy {
         val remote = DnsServer(DNS_REMOTE, DnsTransport.Https(p.dns.url), DnsRoute.TUNNEL)
-        return if (p.mode == RoutingMode.RU_DIRECT) {
+        return if (domesticDirect(p)) {
             DnsPolicy(
                 servers = listOf(remote, DnsServer(DNS_LOCAL, DnsTransport.System, DnsRoute.DIRECT)),
                 defaultServerId = DNS_REMOTE,

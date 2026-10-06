@@ -62,6 +62,14 @@ class RouteEvaluator(private val policy: RoutingPolicy, private val geo: GeoReso
                 return it.copy(reason = it.reason + " (по IP после резолва домена)")
             }
         }
+        // Автоматический раздельный маршрут (D-45): после явных правил
+        // отечественное назначение — напрямую. Явные правила выше по порядку,
+        // поэтому смысл документа не меняется (D-05).
+        if (policy.automaticDomestic) {
+            val domestic = query.domain?.let { geo.siteMatches(SITE_RU, it) } == true ||
+                (query.ip ?: query.resolvedIp)?.let { geo.ipMatches(IP_RU, it) } == true
+            if (domestic) return RouteDecision(RouteAction.DIRECT, null, "автоматический раздельный маршрут: отечественное напрямую (geosite/geoip:ru)")
+        }
         return RouteDecision(policy.defaultAction, null, "ни одно правило не сработало — действие по умолчанию")
     }
 
@@ -94,5 +102,11 @@ class RouteEvaluator(private val policy: RoutingPolicy, private val geo: GeoReso
         if (c.ports.isNotEmpty() && (q.port == null || c.ports.none { q.port in it })) return false
         if (c.networks.isNotEmpty() && (q.network == null || q.network !in c.networks)) return false
         return true
+    }
+
+    companion object {
+        /** Коды набора геоданных (D-27) для автосплита (D-45); те же, что в PolicyBuilder. */
+        const val SITE_RU: String = "category-ru"
+        const val IP_RU: String = "ru"
     }
 }

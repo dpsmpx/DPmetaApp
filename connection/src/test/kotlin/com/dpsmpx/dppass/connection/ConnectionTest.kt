@@ -164,6 +164,27 @@ class CandidatePlannerTest {
         CandidatePlanner.plan(multi, MockBackend.FULL, c?.let(::assess), book, lkg, now)
 
     @Test
+    fun learnedStabilityOrdersViableCandidates() {
+        val assessment = assess(NetworkCondition.NORMAL)
+        val context = NetworkContext.of(assessment)
+        val good = ProfileId("ss2022")
+        val bad = ProfileId("reality-1")
+        val model = StabilityModel()
+        for (i in 1..12L) {
+            model.observe(good, context, StabilityObservation(true, 80, timestampMillis = i * 1_000), multi.profiles.first { it.id == good }, assessment)
+            model.observe(bad, context, StabilityObservation(false, 5_000, timestampMillis = i * 1_000), multi.profiles.first { it.id == bad }, assessment)
+        }
+        // С моделью устойчивый кандидат идёт первым; без неё порядок прежний (по id/приоритету).
+        val withModel = CandidatePlanner.plan(multi, MockBackend.FULL, assessment, HealthBook(), null, 0, stability = model)
+        val without = CandidatePlanner.plan(multi, MockBackend.FULL, assessment, HealthBook(), null, 0)
+        assertEquals(good, withModel.attempts.first().profile.id)
+        assertEquals(bad, without.attempts.first().profile.id, "без модели первым — reality-1 (как прежде)")
+        // Жёсткие исключения модель не трогает: выбор пользователя всё равно первый.
+        val preferredWins = CandidatePlanner.plan(multi, MockBackend.FULL, assessment, HealthBook(), null, 0, preferred = bad, stability = model)
+        assertEquals(bad, preferredWins.attempts.first().profile.id, "выбор пользователя (D-34) выше выученной устойчивости")
+    }
+
+    @Test
     fun userChoiceGoesFirstAndIgnoresBackoff() {
         val book = HealthBook()
         // ss2022 только что отказал и стоит на паузе; пользователь всё равно выбрал его.

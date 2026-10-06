@@ -67,6 +67,10 @@ import native  # noqa: E402 — разбор ELF и договор JNI — те 
 PROJ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 APK = os.path.join(PROJ, "app", "build", "outputs", "apk", "debug", "app-debug.apk")
 SOURCE_MANIFEST = os.path.join(PROJ, "app", "src", "main", "AndroidManifest.xml")
+# Пространство имён кода (app/build.gradle.kts `namespace`): по нему AGP
+# раскрывает относительные имена компонентов. У личной сборки applicationId
+# случаен (D-47), а namespace постоянен — сверяемся по нему.
+NAMESPACE = "com.dpsmpx.dppass"
 ANDROID_NS = "http://schemas.android.com/apk/res/android"
 A = "{" + ANDROID_NS + "}"
 SPECIAL_USE = 0x40000000  # ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
@@ -364,8 +368,11 @@ def main():
         if app.get(A + "process") is not None:
             problems.append("манифест APK: <application android:process> — приложение работает в одном процессе (D-30)")
 
+        # Имена компонентов, относительные (.app.X), AGP раскрывает по
+        # пространству имён кода, не по applicationId: у личной сборки они
+        # различаются (D-47). Поэтому раскрываем по namespace, не по package.
         def full(name):
-            return package + name if name.startswith(".") else name
+            return NAMESPACE + name if name.startswith(".") else name
 
         source = ET.parse(SOURCE_MANIFEST).getroot().find("application")
         own = {full(el.get(A + "name")) for el in source} if source is not None else set()

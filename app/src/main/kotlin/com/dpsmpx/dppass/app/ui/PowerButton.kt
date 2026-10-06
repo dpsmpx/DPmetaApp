@@ -61,6 +61,9 @@ class PowerButton(context: Context) : View(context) {
     init {
         isClickable = true
         isFocusable = true
+        // Tapjacking (T13, D-47): нажатие «подключить/отключить» не проходит
+        // через чужое окно поверх — согласие на туннель нельзя подтвердить вслепую.
+        filterTouchesWhenObscured = true
         ring.strokeWidth = Ui.dpF(context, 3f)
         arc.strokeWidth = Ui.dpF(context, 4f)
         apply(Mode.OFF, animate = false)

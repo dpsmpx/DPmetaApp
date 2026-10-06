@@ -98,6 +98,7 @@ object ConfigWriter {
             "default" to Json.str(r.defaultAction.name.lowercase()),
             "domain_resolution" to Json.str(r.domainResolution.name.lowercase()),
             "bypass_lan" to Json.bool(r.bypassLan),
+            "automatic_domestic" to Json.bool(r.automaticDomestic),
             "apps" to apps,
             "rules" to Json.arr(r.rules.map(::rule)),
         )

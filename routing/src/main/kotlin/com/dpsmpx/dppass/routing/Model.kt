@@ -101,4 +101,12 @@ data class RoutingPolicy(
     val domainResolution: DomainResolution = DomainResolution.NEVER,
     /** Локальные сети (RFC 1918, link-local, ULA) — мимо туннеля. */
     val bypassLan: Boolean = true,
+    /**
+     * Автоматический раздельный маршрут (D-45): после всех явных правил
+     * отечественное назначение (`geosite:category-ru`, `geoip:ru`) идёт
+     * `DIRECT`. По умолчанию выключено — документ пользователя значит
+     * ровно то, что в нём написано (D-05); включает политика (режим
+     * `AUTO`, D-38).
+     */
+    val automaticDomestic: Boolean = false,
 )

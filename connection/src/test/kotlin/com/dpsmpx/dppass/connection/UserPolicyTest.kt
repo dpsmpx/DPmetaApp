@@ -90,6 +90,23 @@ class PolicyBuilderTest {
     }
 
     @Test
+    fun autoModeEnablesDomesticSplit() {
+        val p = UserPolicy(mode = RoutingMode.AUTO)
+        val routing = PolicyBuilder.routing(p)
+        // Автосплит включён; явных ru-правил нет — отечественное уводит запасное правило (D-45).
+        assertTrue(routing.automaticDomestic)
+        assertTrue(routing.rules.none { it.id.value == PolicyBuilder.RULE_RU_SITES })
+        // Отечественное — напрямую само, без выбора сайтов; зарубежное — в туннель.
+        assertEquals(RouteAction.DIRECT, decide(p, RouteQuery(domain = "shop.example.ru")))
+        assertEquals(RouteAction.DIRECT, decide(p, RouteQuery(ip = IpAddress.parse("198.51.100.7"))))
+        assertEquals(RouteAction.PROXY, decide(p, RouteQuery(domain = "www.example.com", ip = IpAddress.parse("203.0.113.1"))))
+        // Имена российских сайтов — системным резолвером, как в RU_DIRECT; утечки нет.
+        val dns = PolicyBuilder.dns(p)
+        assertEquals(listOf(PolicyBuilder.GEOSITE_RU), dns.rules.single().geoSites)
+        assertTrue(DnsValidator.validate(dns).isEmpty())
+    }
+
+    @Test
     fun dnsProviderIsDohByIpThroughTunnel() {
         for (provider in DnsProvider.entries) {
             val dns = PolicyBuilder.dns(UserPolicy(dns = provider))
