@@ -262,6 +262,10 @@ target:     start ─► Detacher ─► supervise ─► процесс; выв
 §80: что разрешено в деградации). Модуль `ui`: `DashboardText` — экраны
 текстом для `cli` и будущего Android.
 
+Одобрения из уведомлений: `notifications.ApprovalAction` (ссылки
+`dpai://approve|deny/<apr_…>?hash=…`), `orchestrator.ApprovalDesk` —
+одобрение только по кнопке текущего запроса с тем же хешем предложения.
+
 ## 8. Модели подсистем
 
 | Подсистема | Документ |

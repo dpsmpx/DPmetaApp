@@ -20,7 +20,14 @@ enum class NotificationCategory(val rank: Int) {
     SECURITY(5),
 }
 
-/** Что сообщить. [key] — один предмет: повторы по нему агрегируются (ТЗ, §36). */
+/** Кнопка уведомления: подпись и ссылка `dpai://…`, которую оркестратор разберёт строго. */
+data class NotificationAction(val label: String, val uri: String)
+
+/**
+ * Что сообщить. [key] — один предмет: повторы по нему агрегируются (ТЗ,
+ * §36). [actions] — кнопки (ТЗ, §37); у обновлённого уведомления — кнопки
+ * последнего запроса, чтобы старая кнопка не действовала на новое.
+ */
 data class NotificationRequest(
     val key: String,
     val category: NotificationCategory,
@@ -28,6 +35,7 @@ data class NotificationRequest(
     val body: String,
     val link: DeepLink?,
     val at: Timestamp,
+    val actions: List<NotificationAction> = emptyList(),
 )
 
 /** Показанное уведомление; [count] — сколько раз случилось с момента показа. */
@@ -40,6 +48,7 @@ data class Notification(
     val count: Int,
     val firstAt: Timestamp,
     val lastAt: Timestamp,
+    val actions: List<NotificationAction> = emptyList(),
 )
 
 sealed interface NotificationDecision {
@@ -88,7 +97,7 @@ class NotificationEngine(private val policy: NotificationPolicy = NotificationPo
     fun submit(r: NotificationRequest): NotificationDecision {
         val prev = shown[r.key]
         if (prev != null && r.at - prev.second < policy.aggregationWindow && r.category.rank <= prev.first.category.rank) {
-            val updated = prev.first.copy(count = prev.first.count + 1, lastAt = r.at)
+            val updated = prev.first.copy(count = prev.first.count + 1, lastAt = r.at, body = r.body, actions = r.actions)
             shown[r.key] = updated to prev.second
             return NotificationDecision.Update(updated)
         }
@@ -96,7 +105,7 @@ class NotificationEngine(private val policy: NotificationPolicy = NotificationPo
             held += r
             return NotificationDecision.Held(r)
         }
-        val n = Notification(r.key, r.category, r.title, r.body, r.link, 1, r.at, r.at)
+        val n = Notification(r.key, r.category, r.title, r.body, r.link, 1, r.at, r.at, r.actions)
         shown[r.key] = n to r.at
         recentPosts += r.at
         return NotificationDecision.Post(n)
