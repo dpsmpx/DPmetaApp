@@ -5,11 +5,13 @@ package bridge
 import (
 	"crypto/x509"
 	"encoding/binary"
+	"errors"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -175,9 +177,16 @@ func TestProbeTellsBadAnswerFromSilence(t *testing.T) {
 		t.Errorf("сервер молчит, ни байта: ожидался ProbeUnreachable, получено %v", r)
 	}
 	closed := freeTCPPort(t)
-	if r := ProbeDNS("tcp://127.0.0.1:"+strconv.Itoa(closed), 3*time.Second); r.Outcome != ProbeUnreachable {
+	r := ProbeDNS("tcp://127.0.0.1:"+strconv.Itoa(closed), 3*time.Second)
+	if r.Outcome != ProbeUnreachable {
 		t.Errorf("порт закрыт: ожидался ProbeUnreachable, получено %v", r)
 	}
+	// Причина — от исходящего proxy, а не только «закрытый канал» пробы.
+	var of *outboundFailure
+	if !errors.As(r.Err, &of) || !strings.Contains(r.Err.Error(), "исходящий proxy: ") || !strings.Contains(r.Err.Error(), "refused") {
+		t.Errorf("порт закрыт: в причине нет ошибки исходящего proxy, получено %v", r)
+	}
+	t.Logf("причина отказа: %v", r.Err)
 }
 
 // Рукопожатие TLS прошло, ответа HTTP нет — данные не идут (L7).
