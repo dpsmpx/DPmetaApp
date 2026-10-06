@@ -11,6 +11,10 @@ import com.dpsmpx.dppass.engine.ProxyEngine
 import com.dpsmpx.dppass.engine.TrafficStats
 import com.dpsmpx.dppass.engine.TunInput
 import com.dpsmpx.dppass.routing.DnsPolicy
+import com.dpsmpx.dppass.routing.RouteDecision
+import com.dpsmpx.dppass.routing.RouteEvaluator
+import com.dpsmpx.dppass.routing.RouteQuery
+import com.dpsmpx.dppass.routing.RoutingPolicy
 
 /**
  * [ProxyEngine] поверх моста Xray (D-25). Как и мост, держит одну сессию:
@@ -81,6 +85,20 @@ class XrayProxyEngine(private val runtime: Outcome<XrayRuntime>) : ProxyEngine {
         }
         val (server, target) = XrayHealth.target(dns) ?: return XrayHealth.skipped()
         return XrayHealth.outcome(server, rt.probeDns(target, timeoutMillis))
+    }
+
+    /**
+     * Объяснение решения (D-09) на наборе геоданных ядра ([XrayGeoResolver],
+     * D-27). Ядро не запускается и не трогается; запущенному не мешает.
+     */
+    override fun explain(policy: RoutingPolicy, query: RouteQuery): Outcome<RouteDecision> {
+        val rt = when (runtime) {
+            is Outcome.Failure -> return unavailable()
+            is Outcome.Success -> runtime.value
+        }
+        val geo = XrayGeoResolver(rt)
+        val decision = RouteEvaluator(policy, geo).decide(query)
+        return geo.failure?.let { Outcome.failure(it) } ?: Outcome.Success(decision)
     }
 
     /** Отказ моста → диагностика с кодом по виду отказа и текстом ядра в причине. */

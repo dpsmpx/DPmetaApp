@@ -608,6 +608,11 @@ GeoLite2 — «запрещён».
   по которым само ядро находит имена; файл корпуса
   `limited-backend-xray-geosite-attrs` — отказ на сочетании, которого
   нет ни у одной записи.
+- `go test` моста, `TestGeoMatchAgreesWithRouter`: `GeoResolver`
+  объяснения решений (`bridge.GeoMatch`) отвечает так же, как
+  маршрутизатор ядра с правилом на тот же код;
+  `XrayProxyEngineTest.explanationIsRefusedWhenGeodataDoesNotAnswer`:
+  отказ набора — отказ объяснения, а не «условие не сработало».
 
 ### D-28 — Выпуск: отдельный APK на каждый ABI, универсального нет
 

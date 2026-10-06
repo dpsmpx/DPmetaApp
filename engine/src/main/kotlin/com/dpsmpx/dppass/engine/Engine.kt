@@ -10,6 +10,10 @@ import com.dpsmpx.dppass.core.IpAddress
 import com.dpsmpx.dppass.core.ProfileId
 import com.dpsmpx.dppass.diagnostics.Outcome
 import com.dpsmpx.dppass.diagnostics.Secret
+import com.dpsmpx.dppass.routing.RouteDecision
+import com.dpsmpx.dppass.routing.RouteEvaluator
+import com.dpsmpx.dppass.routing.RouteQuery
+import com.dpsmpx.dppass.routing.RoutingPolicy
 
 /** Возможности, которые бывают не у каждого ядра. */
 enum class EngineFeature {
@@ -188,4 +192,17 @@ interface ProxyEngine {
     suspend fun validate(config: CompiledConfig): Outcome<Unit>
 
     suspend fun start(config: CompiledConfig, tun: TunInput?): Outcome<EngineSession>
+
+    /**
+     * Объяснение решения маршрутизации (D-09): [RouteEvaluator] на
+     * геоданных этого ядра (D-27), чтобы объяснение не расходилось с тем,
+     * что ядро делает с трафиком. Отказ — геоданные не ответили: решение с
+     * geosite или geoip тогда не объясняется, а не подменяется ответом «не
+     * сработало» (D-05). Блокирует поток: ядро может читать файлы набора.
+     *
+     * По умолчанию геоданных у ядра нет ([com.dpsmpx.dppass.routing.GeoResolver.None]) —
+     * так у фиктивного ядра.
+     */
+    fun explain(policy: RoutingPolicy, query: RouteQuery): Outcome<RouteDecision> =
+        Outcome.Success(RouteEvaluator(policy).decide(query))
 }

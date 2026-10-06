@@ -24,7 +24,6 @@ import com.dpsmpx.dppass.engine.SocketProtector
 import com.dpsmpx.dppass.engine.TunInput
 import com.dpsmpx.dppass.network.NetworkAssessment
 import com.dpsmpx.dppass.routing.RouteDecision
-import com.dpsmpx.dppass.routing.RouteEvaluator
 import com.dpsmpx.dppass.routing.RouteQuery
 import com.dpsmpx.dppass.storage.BlobStore
 import com.dpsmpx.dppass.storage.Quarantine
@@ -209,7 +208,13 @@ class DPpassCore(
 
     fun tunnelSpec(): Outcome<TunnelSpec>? = activation.state.activeConfig?.let { TunnelSpecBuilder.build(it, selfPackage, platform) }
 
-    fun explain(query: RouteQuery): RouteDecision? = activation.state.activeConfig?.let { RouteEvaluator(it.routing).decide(query) }
+    /**
+     * Почему соединение пошло бы так (D-09): решение по активной
+     * конфигурации на геоданных ядра (D-27). null — активной конфигурации
+     * нет; отказ — геоданные ядра не ответили. Блокирует поток: первое
+     * обращение к коду geosite или geoip читает файл набора.
+     */
+    fun explain(query: RouteQuery): Outcome<RouteDecision>? = activation.state.activeConfig?.let { engine.explain(it.routing, query) }
 
     fun subscriptionNotes(result: UpdateResult): List<Diagnostic> = result.diagnostics.also { it.forEach(log::diagnostic) }
 

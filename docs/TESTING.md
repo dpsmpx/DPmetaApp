@@ -146,7 +146,13 @@
    наборе геоданных, — отказ проверки, а не условие, которое молча не
    выполняется (D-27). Вход раздачи (D-51) проходит, только если это
    SOCKS с тегом раздачи, паролем, частным IPv4 и портом от 1024
-   (`TestPolicyAllowsOnlyAuthenticatedShareInbound`).
+   (`TestPolicyAllowsOnlyAuthenticatedShareInbound`). Сопоставление с
+   геоданными для объяснения решений (`GeoMatch`, D-27) отвечает так же,
+   как маршрутизатор Xray с правилом на тот же код: домен, полное имя,
+   подстрока, regexp, регистр имени, сочетание атрибутов, которого нет ни
+   у одной записи, IPv4 и IPv6 (`TestGeoMatchAgreesWithRouter`); кода нет
+   в наборе — отказ, как у проверки конфигурации, и после смены каталога
+   тоже (`TestGeoMatchFollowsAssetDir`).
 2. **`XrayJniTest`** (`tests/integration/src/xrayJni`, задача
    `xrayJniTest`): тот же мост, собранный `tools/xray/native.py host`
    как `libdppassxray.so` для JVM хоста, загружается в JVM теста через
@@ -159,7 +165,9 @@
    работающем ядре — неполная; TUN без защитника или без fd — `CONTRACT`;
    защитник вызывается из потоков Go, его отказ и исключение в нём
    закрывают путь, а не роняют JVM; счётчики и `XrayProxyEngine` поверх
-   JNI.
+   JNI; сопоставление с геоданными — по синтетическому набору
+   (`XrayJniTest.geoMatchAnswersFromTheSet`) и отказ без набора, с
+   отказом объяснения решения (`XrayJniTest.geoMatchWithoutSetIsRefused`).
 
 Без библиотеки задача `xrayJniTest` падает с подсказкой, а не
 пропускается; в `check` входит только компиляция этого набора. Запуск
@@ -218,6 +226,12 @@ python3 tools/xray/native.py host
 оглавлением установленного набора
 (`XrayCompilerTest.geoCodesAreCheckedAgainstTheInstalledSet`; в корпусе —
 `configs/limited-backend-xray-geosite-attrs` с `xray.geodata`).
+
+Объяснение решений (`ProxyEngine.explain`, D-09) у Xray идёт на наборе
+ядра: geosite и geoip спрашиваются у моста, правило без геоданных мост не
+трогает, а отказ моста — отказ объяснения, а не «условие не сработало»
+(`XrayProxyEngineTest.explanationAsksTheCoreGeodata`,
+`XrayProxyEngineTest.explanationIsRefusedWhenGeodataDoesNotAnswer`).
 
 Перенос набора на устройстве (`GeodataInstaller`) проверяет `GeodataTest`:
 файл, не совпавший с оглавлением, не ставится; прерванный перенос не

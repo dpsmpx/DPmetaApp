@@ -93,3 +93,20 @@
 | Вход TUN на Android берёт fd из переменной окружения `xray.tun.fd`; без неё — fd 0. Устройство открывается в `Handler.Start`, а не в `core.New` | `common/platform/platform.go`, `TunFdKey`; `proxy/tun/tun_android.go`, `NewTun`; `proxy/tun/handler.go`, `Start` | вход TUN ⇔ передан fd; `xray run -test` и проверка fd не трогают |
 | Вход TUN без `name`: при сборке конфигурации Xray подбирает свободное имя `utunN` через `net.Interfaces()`. На Android 11+ этот запрос netlink приложениям запрещён — сборка входа падает с «fail to get system interface information: route ip+net: netlinkrib: permission denied». Найдено на устройстве: Android 15 (API 35), arm64, 4 октября 2026; на хосте Linux не воспроизводится | `infra/conf/tun.go`, `TunConfig.Build` и `GetAvailableTunName` | компилятор всегда пишет `name` (`XrayBackend.TUN_NAME`); на Android имя ни на что не влияет — интерфейс создаёт `VpnService` |
 | Ядро fd TUN не закрывает (`AndroidTun.Close` пустой); остановка стека отсоединяет fd-канал gVisor, а `Attach(nil)` ждёт, пока циклы чтения fd завершатся | `proxy/tun/stack_gvisor.go`, `Close`; `gvisor.dev/gvisor`: `pkg/tcpip/link/fdbased/endpoint.go`, `Attach` | fd остаётся у платформы; закрывать — после остановки ядра |
+
+## 7. Xray 26.9.30: сопоставители геоданных
+
+Дата: **6 октября 2026**. Источник — те же исходники upstream
+(`v26.9.30`, коммит `b26a91de4f32`), прочитанные при выборе
+`GeoResolver` для объяснения решений (D-27); проверено `go test` моста
+(`tools/xray/bridge`, `TestGeoMatchAgreesWithRouter`,
+`TestGeoMatchFollowsAssetDir`). Пути — внутри модуля
+`github.com/xtls/xray-core`.
+
+| Свойство | Где | Что из этого следует для DPpass |
+|---|---|---|
+| Условия `geosite:` и `geoip:` маршрутизатор строит через общие реестры пакета: `geodata.DomainReg.BuildDomainMatcher` и `geodata.IPReg.BuildIPMatcher`; правило разбирают `ParseDomainRules` (тип по умолчанию — подстрока) и `ParseIPRules` | `app/router/condition.go`, `NewDomainMatcher` и `NewIPMatcher`; `infra/conf/router.go`; `common/geodata/rule_parser.go` | мост сопоставляет теми же вызовами (`bridge.GeoMatch`) — объяснение решения не расходится с ядром |
+| Имя маршрутизатор приводит к нижнему регистру перед сопоставлением, пустое имя не сопоставляет | `app/router/condition.go`, `DomainMatcher.Apply` и `ApplyDomain` | мост зовёт `ApplyDomain` и сам отвечает «нет» на пустое имя |
+| Построенные сопоставители фабрика держит в `WeakCacheMap` по имени файла, коду и атрибутам, а не по каталогу, пока на них есть ссылки; проверка кода (`checkFile`) при разборе правила читает файл текущего каталога | `common/geodata/domain_matcher.go`, `buildDomainRulesKey`; `ip_matcher.go`, `buildGeoIPRulesKey`; `geodat_loader.go`, `checkFile` | набор — один на процесс; кеш моста сбрасывается при смене каталога, чтобы код снова проверялся по файлам, как у ядра |
+| Фабрика доменов зависит от платформы: на Android и iOS — `CompactMphDomainMatcherFactory`, на остальных — `MphDomainMatcherFactory` | `common/geodata/domain_matcher.go`, `newDomainMatcherFactory` | сопоставитель через общий реестр на устройстве — тот же, что у ядра на устройстве; на хосте проверяется хостовый |
+| Файл кода читается потоком, с `runtime.GC()` до и после загрузки, ради пика памяти | `common/geodata/geodat_loader.go`, `loadFile`, `loadSite` | первое обращение к коду блокирует поток на чтение файла набора; потом сопоставитель берётся из памяти |

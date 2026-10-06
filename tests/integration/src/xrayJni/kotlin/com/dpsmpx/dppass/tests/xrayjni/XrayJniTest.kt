@@ -12,6 +12,8 @@ import com.dpsmpx.dppass.engine.EngineState
 import com.dpsmpx.dppass.engine.ShareSpec
 import com.dpsmpx.dppass.engine.SocketProtector
 import com.dpsmpx.dppass.engine.xray.DnsProbeOutcome
+import com.dpsmpx.dppass.engine.xray.GeoKind
+import com.dpsmpx.dppass.engine.xray.GeoMatchResult
 import com.dpsmpx.dppass.engine.xray.JniXrayRuntime
 import com.dpsmpx.dppass.engine.xray.XrayBackend
 import com.dpsmpx.dppass.engine.xray.XrayCompiler
@@ -19,6 +21,7 @@ import com.dpsmpx.dppass.engine.xray.XrayFailureKind
 import com.dpsmpx.dppass.engine.xray.XrayProxyEngine
 import com.dpsmpx.dppass.engine.xray.XrayResult
 import com.dpsmpx.dppass.engine.xray.XrayRuntime
+import com.dpsmpx.dppass.routing.RouteQuery
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeAll
@@ -51,7 +54,8 @@ import kotlin.test.fail
  * устройстве увидеть уже поздно: версия ядра, проверка и её неполнота
  * при работе, запуск и остановка, один экземпляр, вызов защитника из
  * потоков Go и закрытие пути при его отказе (в том числе исключением),
- * счётчики, отказ конфигурации с геоданными без каталога.
+ * счётчики, отказ конфигурации с геоданными без каталога, сопоставление с
+ * геоданными для объяснения решений (D-27).
  *
  * Соединения идут через тестовый вход на loopback (`dokodemo-door`):
  * TUN на хосте не поднять, а путь «ядро → защитник → сервер» тот же.
@@ -59,16 +63,21 @@ import kotlin.test.fail
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class XrayJniTest {
     private lateinit var runtime: XrayRuntime
+    private lateinit var lib: String
+    private lateinit var assets: File
 
     @BeforeAll
     fun load() {
-        val lib = System.getProperty("dppass.xray.lib").orEmpty()
+        lib = System.getProperty("dppass.xray.lib").orEmpty()
         if (lib.isEmpty() || !File(lib).isFile) fail("нет библиотеки ядра: -Pdppass.xray.lib (tools/xray/native.py host)")
-        val assets = Files.createTempDirectory("dppass-xray-assets").toFile().also { it.deleteOnExit() }
-        runtime = when (val r = JniXrayRuntime.load({ System.load(lib) }, assets.path)) {
-            is Outcome.Failure -> fail("библиотека не загрузилась: ${r.diagnostics.map { it.render() }}")
-            is Outcome.Success -> r.value
-        }
+        assets = Files.createTempDirectory("dppass-xray-assets").toFile().also { it.deleteOnExit() }
+        runtime = loadWith(assets)
+    }
+
+    /** Загрузка библиотеки (повторная — ничего не делает) и каталог геоданных моста. */
+    private fun loadWith(dir: File): XrayRuntime = when (val r = JniXrayRuntime.load({ System.load(lib) }, dir.path)) {
+        is Outcome.Failure -> fail("библиотека не загрузилась: ${r.diagnostics.map { it.render() }}")
+        is Outcome.Success -> r.value
     }
 
     @AfterEach
@@ -227,6 +236,56 @@ class XrayJniTest {
         server.join(1000)
         dns.close()
         assertEquals(DnsProbeOutcome.CONTRACT, runtime.probeDns("dns://127.0.0.1", 1000).outcome)
+    }
+
+    // ---- геоданные для объяснения решений (D-27) ----
+
+    /** Каталог геоданных пуст: код не сопоставляется — отказ, как у проверки конфигурации, а не «не попадает». */
+    @Test
+    fun geoMatchWithoutSetIsRefused() {
+        val r = assertIs<XrayResult.Failed>(runtime.geoMatch(GeoKind.SITE, "zz", "example.org".encodeToByteArray()))
+        assertEquals(XrayFailureKind.CONFIG, r.kind)
+        val bad = assertIs<XrayResult.Failed>(runtime.geoMatch(GeoKind.IP, "zz", byteArrayOf(1, 2, 3)))
+        assertEquals(XrayFailureKind.CONTRACT, bad.kind)
+        val engine = XrayProxyEngine(Outcome.Success(runtime))
+        val policy = ir("valid-multi.json").routing
+        assertTrue(policy.rules.any { it.conditions.geoIps.isNotEmpty() }, "в корпусе valid-multi должно быть правило geoip")
+        val explained = engine.explain(policy, RouteQuery(ip = IpAddress.parse("198.51.100.1")))
+        assertEquals(DiagCode.GEO_CODE_UNKNOWN, explained.errors.single().code)
+    }
+
+    /** Синтетический набор: geosite DPPASS-JNI — домен example.org, geoip DPPASS-JNI — 192.0.2.0/24 и 2001:db8::/32. */
+    @Test
+    fun geoMatchAnswersFromTheSet() {
+        val dir = Files.createTempDirectory("dppass-xray-geo").toFile().also { it.deleteOnExit() }
+        writeGeoSet(dir)
+        val rt = loadWith(dir)
+        try {
+            fun site(name: String) = rt.geoMatch(GeoKind.SITE, "dppass-jni", name.encodeToByteArray())
+            fun ip(text: String) = rt.geoMatch(GeoKind.IP, "dppass-jni", IpAddress.parse(text)!!.toBytes())
+            assertEquals(GeoMatchResult.Answer(true), site("www.Example.org"))
+            assertEquals(GeoMatchResult.Answer(false), site("example.org.test"))
+            assertEquals(GeoMatchResult.Answer(true), ip("192.0.2.200"))
+            assertEquals(GeoMatchResult.Answer(true), ip("2001:db8::1"))
+            assertEquals(GeoMatchResult.Answer(false), ip("198.51.100.1"))
+        } finally {
+            loadWith(assets)
+        }
+    }
+
+    /** geosite.dat и geoip.dat в формате Xray (common/geodata/geodat.proto) — байтами, без библиотеки protobuf. */
+    private fun writeGeoSet(dir: File) {
+        fun field(number: Int, body: ByteArray): ByteArray {
+            require(body.size < 128) { "длина — один байт varint" }
+            return byteArrayOf(((number shl 3) or 2).toByte(), body.size.toByte()) + body
+        }
+        fun varint(number: Int, value: Int): ByteArray = byteArrayOf((number shl 3).toByte(), value.toByte())
+        val code = field(1, "DPPASS-JNI".encodeToByteArray())
+        val domain = varint(1, 2) + field(2, "example.org".encodeToByteArray()) // Domain.Type.Domain
+        File(dir, "geosite.dat").writeBytes(field(1, code + field(2, domain)))
+        val v4 = field(1, IpAddress.parse("192.0.2.0")!!.toBytes()) + varint(2, 24)
+        val v6 = field(1, IpAddress.parse("2001:db8::")!!.toBytes()) + varint(2, 32)
+        File(dir, "geoip.dat").writeBytes(field(1, code + field(2, v4) + field(2, v6)))
     }
 
     // ---- ProxyEngine поверх JNI ----
