@@ -34,7 +34,7 @@
 | Mobile lifecycle audit complete | 11, 19 | — | |
 | Backup/restore verified | 2 | ✓ | набор ТЗ, §61 на модели сбоев (этап 2); на устройстве — этап 19 |
 | All invariants verified | 19 | — | список: `docs/DATA_MODEL.md`, «Инварианты» |
-| Documentation complete | все | ◐ | документы ТЗ, §138 заведены (этап 0) |
+| Documentation complete | все | ◐ | документы ТЗ, §138 ведутся вместе с кодом этапов 0–14 |
 | Final deep audit PASS | 19 | — | |
 | No critical findings | 19 | — | |
 | No unresolved high-severity stability findings | 19 | — | |

@@ -134,6 +134,7 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     // --- сессии (этап 6) ---
     SESSION_BINDING_MISMATCH(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
     SESSION_ALREADY_EXISTS(Category.STATE, Severity.INFO, Retryability.NON_RETRYABLE),
+    SESSION_HANDED_OFF(Category.STATE, Severity.INFO, Retryability.NON_RETRYABLE),
 
     // --- задачи и планировщик (этап 7) ---
     DEPENDENCY_CYCLE(Category.INPUT, Severity.ERROR, Retryability.NON_RETRYABLE),
