@@ -63,12 +63,6 @@ Xray, проверки `check_apk.py` (16 КБ), `code.forbidden`
 
 Подробности и обоснование — `docs/audits/INITIAL_ARCHITECTURE_AUDIT.md`.
 
-- [ ] В D-45 ссылка «§4.4» на `docs/research/RUSSIA_NETWORK_RESTRICTIONS.md`
-      ведёт на пункт 4 нумерованного списка раздела 4, а не на заголовок:
-      `docs.refs` DP Verify (D-50) её не находит, прежний `check_docs.py`
-      сверял только «§4». Находка — в базовой линии
-      `tools/dpverify.baseline.json`; снять, когда ссылка станет «§4,
-      п. 4» или у пункта появится заголовок.
 - [ ] DP Verify (D-50): `process.files` не сверяет «следующий свободный
       номер» в шапке `docs/direction/DECISIONS.md` с журналом — после
       D-51 шапка отстала на номер (исправлено 6 октября 2026). Правило —
