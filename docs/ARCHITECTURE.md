@@ -1,6 +1,6 @@
 # Архитектура DP_AI_Orcestrator
 
-Срез на 6 октября 2026 (этапы 0–14). Решения, на которых держится
+Срез на 7 октября 2026 (этапы 0–16). Решения, на которых держится
 архитектура, — `docs/direction/DECISIONS.md`; здесь — как они разложены
 по модулям и как через модули идут данные. Модели подсистем —
 отдельными документами (§5).
@@ -275,6 +275,10 @@ target:     start ─► Detacher ─► supervise ─► процесс; выв
 одобрение слияния; прерванный ход → handoff → продолжение той же сессии
 провайдера; упавший — повтор по классу. Сценарии V1 1–4 —
 `tests/integration`, `V1ScenariosTest`.
+
+Экосистема (этапы 15, 16; `docs/ECOSYSTEM.md`): `ecosystem` —
+`EcosystemProvider`, `ManifestEcosystem`; `connectors` — `GitHubCommands`;
+`orchestrator.ecosystem.EcosystemRun` — глобальный прогон с ограничителями.
 
 ## 8. Модели подсистем
 

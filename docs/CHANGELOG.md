@@ -3,6 +3,14 @@
 Вехи проекта: этапы, форматы, публичные контракты. Подробности — в git
 и PR; что решено — `docs/direction/DECISIONS.md`.
 
+## 7 октября 2026 — экосистема и глобальный режим (этапы 15, 16 выполнены)
+
+- `ecosystem`: `EcosystemProvider`, манифест `dpai.ecosystem` v1.
+- `connectors`: `GitHubCommands` (`gh pr create`, `gh pr view`).
+- `orchestrator.ecosystem.EcosystemRun`: осмотр → выбор → исполнение →
+  проверка → запись `dpai.ecosystem-results` v1, ограничители ТЗ, §46.
+- Контракты: 5 кодов диагностики.
+
 ## 6 октября 2026 — полуавтономная оркестрация (этап 14 выполнен)
 
 - `orchestrator.Orchestrator`: такт контура от очереди до `DONE`,

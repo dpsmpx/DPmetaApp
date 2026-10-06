@@ -177,6 +177,13 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     WORKTREE_MISSING(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
     MERGE_CONFLICT(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
 
+    // --- экосистема и внешние сервисы (этапы 15, 16) ---
+    ECOSYSTEM_DISABLED(Category.STATE, Severity.INFO, Retryability.NON_RETRYABLE),
+    ECOSYSTEM_UNAVAILABLE(Category.EXECUTION, Severity.ERROR, Retryability.RETRYABLE),
+    CONNECTOR_REPLY_INVALID(Category.FORMAT, Severity.ERROR, Retryability.NON_RETRYABLE),
+    OPERATION_NOT_ALLOWED(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
+    RUN_BUDGET_EXHAUSTED(Category.STATE, Severity.WARNING, Retryability.NON_RETRYABLE),
+
     // --- общее ---
     /** Строгая семантика (D-05): неподдержанное — явный отказ, а не «похожее». */
     UNSUPPORTED(Category.UNSUPPORTED, Severity.ERROR, Retryability.NON_RETRYABLE),

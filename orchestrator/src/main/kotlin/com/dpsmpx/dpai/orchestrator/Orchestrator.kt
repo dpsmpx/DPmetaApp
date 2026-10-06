@@ -385,6 +385,9 @@ class Orchestrator(
         posted += notifications.submit(r)
     }
 
+    /** Последняя версия контекста задачи — что видел Claude в последнем ходе. */
+    fun lastContext(task: TaskId): ContextBundle? = contextOf[task]
+
     fun dashboard(): DashboardView =
         Dashboard.build(sessions, tasks, accounts, emptyMap(), Measure.observed(approvals.pending()), sessionsLogic, clock.now())
 
