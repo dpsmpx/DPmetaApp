@@ -207,6 +207,8 @@ run = ["bash", "tools/hostcheck/steps.sh", "build"]
 paths = ["**/*.kt", "**/*.kts", "gradle/**", "tests/**", "cli/**"]
 requires = ["jdk"]
 timeout = "30m"
+# итог Gradle — строка BUILD SUCCESSFUL, а не последняя строка вывода
+summary = '^BUILD SUCCESSFUL.*'
 
 [[command]]
 id = "project.xray"
@@ -232,6 +234,8 @@ run = ["./gradlew", "--console=plain", "--warning-mode=summary", ":app:build", "
 paths = ["module:app", "**/src/main/**/*.kt", "tools/xray/**"]
 requires = ["jdk", "go", "android-sdk", "android-ndk"]
 timeout = "40m"
+# итог Gradle — строка BUILD SUCCESSFUL, а не последняя строка вывода
+summary = '^BUILD SUCCESSFUL.*'
 
 [[command]]
 id = "project.android-api"

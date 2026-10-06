@@ -5,4 +5,4 @@ docs/direction/DECISIONS.md. Только стандартная библиот�
 (V-01).
 """
 
-VERSION = "1.0.0-rc1"
+VERSION = "1.0.0-rc2"

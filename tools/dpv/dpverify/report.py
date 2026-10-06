@@ -122,7 +122,7 @@ def screen(rep, verbose=False, logdir="build/dpv/last"):
     loud = verbose or rep["result"] != "pass" or rep["partial"]
     sel = rep.get("selection")
     if loud:
-        sha = (rep["commit"] or "без коммита")[:7]
+        sha = rep["commit"][:7] if rep["commit"] else "без коммита"
         head = f"dpv {rep['dpv']} · {rep['project']} · {rep['level']} · {rep['mode']} · {sha}"
         if rep["dirty"]:
             head += " · грязное дерево"
@@ -217,6 +217,8 @@ def _row_result(c, meta):
         first = _fmt(found[0]) if found else ""
         return f"{sym} " + (f"находок {len(found)}: {first}" if c["kind"] == "builtin" else first)
     summary = meta["summaries"].get(c["id"], "") if c["kind"] == "command" else ""
+    if summary.startswith(sym):  # итог команды сам начинается с ✓ — без «✓ ✓»
+        summary = summary[len(sym):].lstrip()
     warn = f" (предупреждений: {len(_warnings(c))})" if _warnings(c) else ""
     return f"{sym} {summary}".rstrip() + warn
 
@@ -232,7 +234,7 @@ def _is_mandatory(c):
 def md(rep):
     """Итог прогона — для раздела «Проверки» описания PR."""
     meta, checks = rep["meta"], rep["checks"]
-    sha = (rep["commit"] or "без коммита")[:7]
+    sha = rep["commit"][:7] if rep["commit"] else "без коммита"
     inv = meta.get("invocation") or f"dpv run {rep['level']}"
     if rep["result"] == "error":
         verdict = "! итог неполон: сбой DP Verify"

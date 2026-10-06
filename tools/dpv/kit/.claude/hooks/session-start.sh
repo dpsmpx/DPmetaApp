@@ -32,7 +32,8 @@ PROJ="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "$0")/../.." && pwd)}"
 {
     MAIN="$(sed -n 's/^main_branch *= *"\(.*\)"/\1/p' "$PROJ/tools/dpverify.toml" 2>/dev/null | head -1)"
     MAIN="${MAIN:-main}"
-    git -C "$PROJ" fetch -q origin 2>/dev/null || true
+    # refspec явно: клон с одной веткой (--single-branch, --depth) другие ветки не видит
+    git -C "$PROJ" fetch -q origin '+refs/heads/*:refs/remotes/origin/*' 2>/dev/null || true
     echo "session-start: ветки с работой, не влитой в $MAIN (свежие первыми):"
     found=0
     while read -r ref; do

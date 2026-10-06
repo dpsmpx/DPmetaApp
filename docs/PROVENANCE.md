@@ -224,4 +224,4 @@ DP-Verify, поставлен копией; руками не правится, 
 
 | Копия | Версия | Источник | SHA-256 манифеста |
 |---|---|---|---|
-| `tools/dpv/` | 1.0.0-rc1 | `dpsmpx/DP-Verify@e62ca5f863ce238e6023981c7091e9484e9aeba9` | `6d2c5ffb7e75d59dd9d6bd7877748a8d5da40acfd342d50242837b9d851f0dda` |
+| `tools/dpv/` | 1.0.0-rc2 | `dpsmpx/DP-Verify@938f68017a970049596b76892cb4f06be8e621fe` | `a2fae9e34198a01ad50c2768eb7839194fdbd4e367c61cfbfbc4eb50fbab1fac` |
