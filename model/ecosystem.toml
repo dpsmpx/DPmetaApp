@@ -309,7 +309,7 @@ layer = "meta"
 repo = "dpsmpx/DPmetaApp"
 group = "new"
 visibility = "private"
-role = "Android-пульт автора над экосистемой: проекты, ход разработки, сайт, аккаунты Claude, статистика"
+role = "Android-пульт автора над экосистемой: проекты, ход разработки, сайт, статистика"
 stage = "этап 0 — ТЗ в работе, черновой PR"
 refs = ["DPmetaApp:README.md", "DPmetaApp:docs/direction/TECHNICAL_TASK.md"]
 
@@ -322,8 +322,8 @@ repo = "dpsmpx/DPvisualisation"
 group = "new"
 visibility = "private"
 role = "эта модель: потоки информации и онлайн-работа инфраструктуры на реальных данных"
-stage = "1.0.0"
-refs = ["DPvisualisation:docs/direction/REQUEST.md", "DPvisualisation:D-01"]
+stage = "этапы 0–3 и сборка для сайта; живой режим — этап 4"
+refs = ["DPvisualisation:docs/direction/REQUEST.md", "DPvisualisation:D-01", "DPvisualisation:ROADMAP/ROADMAP.md"]
 
 # ------------------------------------------------------ инфраструктура
 
@@ -401,8 +401,8 @@ name = "VK"
 kind = "platform"
 layer = "outside"
 visibility = "public"
-role = "страница автора"
-refs = ["SocialMediaImage:data/platforms/destinations.yaml", "SocialMediaImage:data/identity/links.yaml"]
+role = "сообщество dpsmpx — публикации только там; личная страница — не канал"
+refs = ["SocialMediaImage:data/platforms/destinations.yaml", "SocialMediaImage:data/identity/links.yaml", "SocialMediaImage:Д40"]
 
 [[node]]
 id = "tiktok"

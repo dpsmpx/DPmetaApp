@@ -2290,7 +2290,7 @@
     "DPmetaApp:docs/direction/TECHNICAL_TASK.md"
    ],
    "repo": "dpsmpx/DPmetaApp",
-   "role": "Android-пульт автора над экосистемой: проекты, ход разработки, сайт, аккаунты Claude, статистика",
+   "role": "Android-пульт автора над экосистемой: проекты, ход разработки, сайт, статистика",
    "stage": "этап 0 — ТЗ в работе, черновой PR",
    "status": "active",
    "visibility": "private"
@@ -2303,11 +2303,12 @@
    "name": "DPvisualisation",
    "refs": [
     "DPvisualisation:docs/direction/REQUEST.md",
-    "DPvisualisation:D-01"
+    "DPvisualisation:D-01",
+    "DPvisualisation:ROADMAP/ROADMAP.md"
    ],
    "repo": "dpsmpx/DPvisualisation",
    "role": "эта модель: потоки информации и онлайн-работа инфраструктуры на реальных данных",
-   "stage": "1.0.0",
+   "stage": "этапы 0–3 и сборка для сайта; живой режим — этап 4",
    "status": "active",
    "visibility": "private"
   },
@@ -2431,9 +2432,10 @@
    "name": "VK",
    "refs": [
     "SocialMediaImage:data/platforms/destinations.yaml",
-    "SocialMediaImage:data/identity/links.yaml"
+    "SocialMediaImage:data/identity/links.yaml",
+    "SocialMediaImage:Д40"
    ],
-   "role": "страница автора",
+   "role": "сообщество dpsmpx — публикации только там; личная страница — не канал",
    "status": "active",
    "visibility": "public"
   },
@@ -2495,7 +2497,7 @@
  "schema": "dpvis-model/1",
  "source": {
   "path": "model/ecosystem.toml",
-  "sha256": "b6a6f2238c9aea7f1c0f69f4e962f4e2c86257e281b48963184d6451136514c6"
+  "sha256": "91e12e953581ad698c8a10b98fe36e6cd5433fd84b229a115335b0184e54b533"
  },
  "sources": [
   "DPmeta:docs/ECOSYSTEM.md",

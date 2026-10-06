@@ -1,5 +1,5 @@
 {
- "as_of": "2026-10-06T17:17:57Z",
+ "as_of": "2026-10-06T17:42:33Z",
  "diagnostics": [
   {
    "code": "CLONE_NOT_FOUND",
@@ -1896,7 +1896,7 @@
  },
  "model": {
   "as_of": "2026-10-05",
-  "sha256": "b6a6f2238c9aea7f1c0f69f4e962f4e2c86257e281b48963184d6451136514c6"
+  "sha256": "91e12e953581ad698c8a10b98fe36e6cd5433fd84b229a115335b0184e54b533"
  },
  "nodes": {
   "andors_love": {
@@ -2095,7 +2095,7 @@
     "last": "2026-10-06T12:28:06Z",
     "reasons": [
      {
-      "hours": 4.83,
+      "hours": 5.24,
       "rule": "author"
      }
     ],
@@ -2139,7 +2139,7 @@
     "last": "2026-10-06T16:41:58Z",
     "reasons": [
      {
-      "hours": 0.6,
+      "hours": 1.01,
       "rule": "claude"
      }
     ],
@@ -2934,7 +2934,7 @@
     "reasons": [
      {
       "branch": "claude/vigilant-franklin-61x8kq",
-      "hours": 22.53,
+      "hours": 22.94,
       "rule": "branch"
      }
     ],
@@ -3515,12 +3515,12 @@
     "last": "2026-10-06T16:20:25Z",
     "reasons": [
      {
-      "hours": 4.83,
+      "hours": 5.24,
       "rule": "main"
      },
      {
       "branch": "ccr-7383aef4-f5kzg5",
-      "hours": 0.96,
+      "hours": 1.37,
       "rule": "branch"
      }
     ],
@@ -3901,7 +3901,7 @@
     "reasons": [
      {
       "branch": "ccr-7383aef4-dpverify-pilot",
-      "hours": 0.99,
+      "hours": 1.4,
       "rule": "branch"
      }
     ],
@@ -4891,7 +4891,7 @@
     "reasons": [
      {
       "branch": "claude/termux-safe-site-deploy-sa0ls8",
-      "hours": 0.6,
+      "hours": 1.01,
       "rule": "branch"
      }
     ],
