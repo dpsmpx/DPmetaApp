@@ -126,8 +126,16 @@ MSYS_NO_PATHCONV=1 ./gradlew :cli:test --tests '*AgentCommandTest*' \
   -Ddpai.test.ssh.knownHosts=C:/Users/dpu/.ssh/dpai_known_hosts_wsl
 ```
 
+Termux-target — Realme C21Y по USB (D-33): в Termux `openssh`, `sshd`
+слушает 8022, ключ `dpai_test` — в `~/.ssh/authorized_keys`; с ПК —
+`adb forward tcp:8022 tcp:8022`, затем вход на `127.0.0.1:8022`, ключ
+хоста — в отдельном known_hosts. На время проверки —
+`adb shell settings put global stay_on_while_plugged_in 2`. Claude Code —
+внутри `proot-distro login alpine` (`docs/research/CLAUDE_CODE_CLI.md`, §9).
+
 ## 9. Что тесты пока не покрывают
 
-Всё, что требует настоящего SSH-хоста, устройства Android или Claude, —
-пока его нет рядом с прогоном (этапы 3, 4 и 11). Это не «пропущено
+Всё, что требует устройства Android или Claude, — пока его нет рядом с
+прогоном (этапы 4, 11 и 19): агент `dpai` в Termux и ход сессии в proot
+ещё не проверены (`TODO.md`). Это не «пропущено
 молча»: такие критерии выхода записаны в файлах этапов и в `TODO.md`.
