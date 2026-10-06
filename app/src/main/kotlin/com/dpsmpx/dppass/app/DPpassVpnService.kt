@@ -19,6 +19,7 @@ import android.service.quicksettings.TileService
 import com.dpsmpx.dppass.R
 import com.dpsmpx.dppass.app.ui.Formats
 import com.dpsmpx.dppass.connection.ConnectionReport
+import com.dpsmpx.dppass.connection.DPpassCore
 import com.dpsmpx.dppass.connection.HealthChecker
 import com.dpsmpx.dppass.connection.SessionSupervisor
 import com.dpsmpx.dppass.connection.StabilityObservation
@@ -29,6 +30,7 @@ import com.dpsmpx.dppass.diagnostics.Diagnostic
 import com.dpsmpx.dppass.diagnostics.Outcome
 import com.dpsmpx.dppass.diagnostics.Safe
 import com.dpsmpx.dppass.engine.EngineSession
+import com.dpsmpx.dppass.engine.ShareSpec
 import com.dpsmpx.dppass.tunnel.TunnelHandle
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -69,6 +71,11 @@ import kotlinx.coroutines.withContext
  * ядра раз в секунду → [TunnelState.traffic], уведомление — раз в
  * [NOTIFY_EVERY] секунды и только при включённом экране.
  *
+ * Раздача другим устройствам (D-51), если пользователь её включил: входы
+ * ядра на адресах интерфейсов раздачи ([TetherInterfaces]); пока туннель
+ * поднят, набор интерфейсов опрашивается, и при смене туннель
+ * переподключается с новыми входами.
+ *
  * Остановка — сначала ядро, потом fd TUN (fd принадлежит платформе, D-25):
  * действием [ACTION_STOP], при `onRevoke` (пользователь отозвал VPN или
  * включил другой) и в `onDestroy`. [ACTION_RECONNECT] — остановка и новый
@@ -84,6 +91,7 @@ class DPpassVpnService : VpnService() {
     private var tunnel: TunnelHandle? = null
     private var ticker: Job? = null
     private var supervisor: Job? = null
+    private var shareWatch: Job? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -162,9 +170,12 @@ class DPpassVpnService : VpnService() {
             withContext(Dispatchers.IO) { graph.engine.probeHealth(ir.dns, probeTimeout) }
         }
         val preferred = AppPrefs(this).selectedServer
+        // Раздача (D-51): входы — на адресах интерфейсов раздачи, если пользователь её включил.
+        val shareSettings = core.share.current().also { r -> r.diagnostics.forEach(core.log::diagnostic) }.valueOrNull()
+        val share = if (shareSettings?.enabled == true) shareSettings.spec(TetherInterfaces.find(this)) else null
         val job = currentCoroutineContext().job
         val report = try {
-            core.connect(null, checker, handle.toTunInput(), preferred) { delay(it) }
+            core.connect(null, checker, handle.toTunInput(), preferred, share) { delay(it) }
         } catch (e: CancellationException) {
             // Остановка во время паузы между попытками: сеансов нет, остаётся TUN.
             handle.close()
@@ -190,6 +201,12 @@ class DPpassVpnService : VpnService() {
                     watchNetwork()
                     startTicker(report.session)
                     startSupervisor(core, graph.engine, ir, report.profileId)
+                    if (shareSettings?.enabled == true) {
+                        val endpoints = share?.endpoints.orEmpty()
+                        TunnelState.share(endpoints)
+                        core.log.info("share", "endpoints" to endpoints.size)
+                        startShareWatch(core, endpoints)
+                    }
                 } else {
                     report.session.stop()
                     handle.close()
@@ -275,6 +292,32 @@ class DPpassVpnService : VpnService() {
         }
     }
 
+    /**
+     * Раздача (D-51): раз в [SHARE_POLL_MILLIS] — какие интерфейсы раздачи
+     * есть сейчас. Набор изменился (точку доступа или модем включили,
+     * выключили, сменился адрес) — переподключение через [ACTION_RECONNECT]:
+     * конфигурация ядра во время работы не меняется, новые входы — только
+     * новым запуском.
+     */
+    private fun startShareWatch(core: DPpassCore, current: List<ShareSpec.Endpoint>) {
+        shareWatch?.cancel()
+        shareWatch = scope.launch {
+            var previous: List<ShareSpec.Endpoint>? = null
+            while (isActive) {
+                delay(SHARE_POLL_MILLIS)
+                // Наша ли ещё сессия: остановка или переподключение могли её сменить.
+                if (state.withLock { session } == null) return@launch
+                val wanted = TetherInterfaces.find(this@DPpassVpnService)
+                if (TetherInterfaces.shouldReconnect(current, wanted, previous)) {
+                    core.log.info("share_interfaces_changed", "was" to current.size, "now" to wanted.size)
+                    reconnect(this@DPpassVpnService)
+                    return@launch
+                }
+                previous = wanted
+            }
+        }
+    }
+
     /** Сеть под туннелем — сеть по умолчанию (D-40): её тип и тарификацию видят система и приложения. */
     private fun watchNetwork() {
         val cm = getSystemService(ConnectivityManager::class.java) ?: return
@@ -327,6 +370,9 @@ class DPpassVpnService : VpnService() {
     private suspend fun shutdown() {
         supervisor?.cancel()
         supervisor = null
+        shareWatch?.cancel()
+        shareWatch = null
+        TunnelState.share(emptyList())
         state.withLock {
             ticker?.cancel()
             ticker = null
@@ -470,6 +516,9 @@ class DPpassVpnService : VpnService() {
         /** Наблюдатель сессии (D-44): период пробы здоровья и как часто сохранять модель. */
         private const val SUPERVISION_INTERVAL_MILLIS = 15_000L
         private const val PERSIST_EVERY_SAMPLES = 8
+
+        /** Раздача (D-51): как часто проверять интерфейсы раздачи (docs/PERFORMANCE_BUDGET.md). */
+        private const val SHARE_POLL_MILLIS = 5_000L
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, DPpassVpnService::class.java))

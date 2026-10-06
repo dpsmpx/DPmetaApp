@@ -8,7 +8,7 @@
 
 | Слой | Где | Что проверяет |
 |---|---|---|
-| Модульные тесты | `<модуль>/src/test` | каждый модуль отдельно: разбор, проверка, нормализация, маршрутизация, DNS, классификация сети, бюджет проб, хранилище, подписки, активация, план, оркестратор, спецификация TUN; журнал устройства (D-26): запись в фоне, части, прошлый сеанс, текст для буфера обмена, запись о падении (`FileLogSinkTest`, `LogExportTest`, `CrashRecordTest`); политика пользователя (D-38: `PolicyBuilderTest` — решения `RouteEvaluator` по набору геоданных, `PolicyStoreTest`, `PolicyServiceTest`), расписание и хранение подписок (D-39: `UpdateScheduleTest`, `SubscriptionCodecTest`), задержка (D-41: `LatencyBookTest`), импорт (D-42: `ImportClassifierTest`), подписки в хранилище (`SubscriptionBookTest`, `SubscriptionFlowTest`); адаптивная устойчивость (D-44: `StabilityModelTest` — пессимизм, джиттер, смена режима, гистерезис, устойчивость к одиночному сбою; `TransportAdvisorTest` — перенос опыта; `SessionSupervisorTest`; `StabilityBookTest` — хранение без секретов; `CandidatePlannerTest.learnedStabilityOrdersViableCandidates`); автосплит (D-45: `AutomaticDomesticRoutingTest`, `PolicyBuilderTest.autoModeEnablesDomesticSplit`, `XrayCompilerTest.automaticDomesticAddsCheckedRuRulesAfterUserRules`); личность сборки (D-47: `IdentityTest`) |
+| Модульные тесты | `<модуль>/src/test` | каждый модуль отдельно: разбор, проверка, нормализация, маршрутизация, DNS, классификация сети, бюджет проб, хранилище, подписки, активация, план, оркестратор, спецификация TUN; журнал устройства (D-26): запись в фоне, части, прошлый сеанс, текст для буфера обмена, запись о падении (`FileLogSinkTest`, `LogExportTest`, `CrashRecordTest`); политика пользователя (D-38: `PolicyBuilderTest` — решения `RouteEvaluator` по набору геоданных, `PolicyStoreTest`, `PolicyServiceTest`), расписание и хранение подписок (D-39: `UpdateScheduleTest`, `SubscriptionCodecTest`), задержка (D-41: `LatencyBookTest`), импорт (D-42: `ImportClassifierTest`), подписки в хранилище (`SubscriptionBookTest`, `SubscriptionFlowTest`); адаптивная устойчивость (D-44: `StabilityModelTest` — пессимизм, джиттер, смена режима, гистерезис, устойчивость к одиночному сбою; `TransportAdvisorTest` — перенос опыта; `SessionSupervisorTest`; `StabilityBookTest` — хранение без секретов; `CandidatePlannerTest.learnedStabilityOrdersViableCandidates`); автосплит (D-45: `AutomaticDomesticRoutingTest`, `PolicyBuilderTest.autoModeEnablesDomesticSplit`, `XrayCompilerTest.automaticDomesticAddsCheckedRuRulesAfterUserRules`); личность сборки (D-47: `IdentityTest`); раздача туннеля (D-51: `ShareSettingsTest` — выключена по умолчанию, случайные порт и пароль, карантин; `TetherInterfacesTest` — что считается интерфейсом раздачи и когда переподключаться; `XrayCompilerTest.shareInboundsListenOnlyOnTetherAddressesWithAuth` — входы только на адресах раздачи, с паролем, и только для клиентов раздачи) |
 | Интерфейс без Android | `app/src/test` | логика экранов (D-34): строки серверов и подписок, поиск и порядок по задержке, уровни задержки, значок сервера, трафик и срок подписки, длительность и скорость, источник конфигурации, состояние туннеля и счётчик скорости (`PresentationTest`, `TunnelStatusTest`, `TrafficMeterTest`) — тестами JVM, без устройства |
 | Межмодульные | `tests/integration` | сквозные сценарии через `DPpassCore`: документ → активная конфигурация → подключение; подписка → атомарная активация; откат к last-known-good; отказ запуска кандидата; секреты нигде не всплывают |
 | Корпус регрессий | `tests/regression` + `tests/data/` | файлы-примеры с ожиданиями (§2); эталоны компилятора Xray (§2, «Эталоны Xray») |
@@ -144,13 +144,16 @@
    ядра, его отказ закрывает путь, счётчики считают трафик, после
    остановки вход освобождается. Код `geoip`/`geosite`, которого нет в
    наборе геоданных, — отказ проверки, а не условие, которое молча не
-   выполняется (D-27).
+   выполняется (D-27). Вход раздачи (D-51) проходит, только если это
+   SOCKS с тегом раздачи, паролем, частным IPv4 и портом от 1024
+   (`TestPolicyAllowsOnlyAuthenticatedShareInbound`).
 2. **`XrayJniTest`** (`tests/integration/src/xrayJni`, задача
    `xrayJniTest`): тот же мост, собранный `tools/xray/native.py host`
    как `libdppassxray.so` для JVM хоста, загружается в JVM теста через
    `JniXrayRuntime`. Проверяется договор JNI: версия ядра равна
    `XrayBackend.VERSION`; эталон компилятора проходит полную проверку,
-   битый JSON и чужой вход (SOCKS) — отказ `CONFIG`; конфигурация с
+   битый JSON и чужой вход (SOCKS) — отказ `CONFIG`, а входы раздачи
+   компилятора (D-51) с правилом-ограничителем — проходят; конфигурация с
    `geoip` без каталога геоданных — отказ (так ядро ведёт себя, если
    набор на устройстве не перенёсся, D-27); второй запуск — `RUNNING`, проверка при
    работающем ядре — неполная; TUN без защитника или без fd — `CONTRACT`;

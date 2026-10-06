@@ -35,6 +35,7 @@
 | Приложения в политике | 1000 | `UserPolicy.MAX_APPS` | `LimitsTest.policyAppsUpTo1000` |
 | Проверка задержки | по одному серверу, пауза 150 мс, тайм-аут 3 с, не больше 128 за прогон | `LatencyBook` (D-41) | `LatencyBookTest.measuresTcpOneByOneAndSkipsUdp` |
 | Обновление уведомления туннеля | раз в 2 с и только при включённом экране | `DPpassVpnService` (D-40) | нет (на устройстве) |
+| Опрос интерфейсов раздачи | раз в 5 с, только пока раздача включена и туннель поднят; новый интерфейс — после двух опросов подряд | `DPpassVpnService.SHARE_POLL_MILLIS`, `TetherInterfaces.shouldReconnect` (D-51) | `TetherInterfacesTest.goneInterfaceReconnectsAtOnceNewOneAfterTwoPolls` (решение; период — на устройстве) |
 | История активаций | 32 записи | `ActivationStore` | `LimitsTest.activationHistoryKeepsLast32` |
 | Пробы сети | 1 на ориентир за 1,5 с; не больше 12 за 60 с | `ProbeBudget` | `ProbeBudgetTest` (механизм — на своих параметрах) |
 | Кандидаты за подключение | 4, пауза 2 с между попытками | `ConnectionPolicy` | `CandidatePlannerTest`, `OrchestratorTest` |

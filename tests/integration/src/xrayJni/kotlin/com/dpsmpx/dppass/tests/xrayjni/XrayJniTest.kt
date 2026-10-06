@@ -2,11 +2,14 @@ package com.dpsmpx.dppass.tests.xrayjni
 
 import com.dpsmpx.dppass.config.ConfigLoader
 import com.dpsmpx.dppass.config.ConfigIr
+import com.dpsmpx.dppass.core.IpAddress
 import com.dpsmpx.dppass.diagnostics.DiagCode
 import com.dpsmpx.dppass.diagnostics.Outcome
+import com.dpsmpx.dppass.diagnostics.Secret
 import com.dpsmpx.dppass.engine.CompilePlan
 import com.dpsmpx.dppass.engine.CompiledConfig
 import com.dpsmpx.dppass.engine.EngineState
+import com.dpsmpx.dppass.engine.ShareSpec
 import com.dpsmpx.dppass.engine.SocketProtector
 import com.dpsmpx.dppass.engine.xray.DnsProbeOutcome
 import com.dpsmpx.dppass.engine.xray.JniXrayRuntime
@@ -106,6 +109,20 @@ class XrayJniTest {
         val r = assertIs<XrayResult.Failed>(runtime.validate(config(socks)))
         assertEquals(XrayFailureKind.CONFIG, r.kind)
         assertTrue("T11" in r.text, "отказ политики моста: ${r.text}")
+    }
+
+    /** D-51: входы раздачи компилятора (SOCKS с паролем на адресах раздачи) мост пропускает. */
+    @Test
+    fun shareInboundPassesBridgePolicy() {
+        val ir = ir("valid-minimal.json")
+        val share = ShareSpec(
+            listOf(ShareSpec.Endpoint(IpAddress.parse("192.168.43.1")!!, 24), ShareSpec.Endpoint(IpAddress.parse("10.42.0.1")!!, 24)),
+            41234,
+            Secret("u-test"),
+            Secret("p-test-0123456789"),
+        )
+        val compiled = XrayCompiler().compile(ir, CompilePlan(ir.profiles.first().id, true, share)).valueOrNull() ?: fail("раздача не скомпилирована")
+        assertEquals(XrayResult.Ok, runtime.validate(compiled.bytes()))
     }
 
     // ---- запуск, один экземпляр, договор ----

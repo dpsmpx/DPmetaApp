@@ -4,7 +4,9 @@ import com.dpsmpx.dppass.config.ConfigIr
 import com.dpsmpx.dppass.config.ConfigLoader
 import com.dpsmpx.dppass.config.SecuritySpec
 import com.dpsmpx.dppass.config.TransportSpec
+import com.dpsmpx.dppass.core.Cidr
 import com.dpsmpx.dppass.core.Host
+import com.dpsmpx.dppass.core.IpAddress
 import com.dpsmpx.dppass.core.Json
 import com.dpsmpx.dppass.core.JsonArray
 import com.dpsmpx.dppass.core.JsonNumber
@@ -13,14 +15,17 @@ import com.dpsmpx.dppass.core.JsonString
 import com.dpsmpx.dppass.core.JsonValue
 import com.dpsmpx.dppass.diagnostics.DiagCode
 import com.dpsmpx.dppass.diagnostics.Outcome
+import com.dpsmpx.dppass.diagnostics.Secret
 import com.dpsmpx.dppass.engine.CompilePlan
 import com.dpsmpx.dppass.engine.CompiledConfig
+import com.dpsmpx.dppass.engine.ShareSpec
 import com.dpsmpx.dppass.engine.capabilityDiff
 import com.dpsmpx.dppass.engine.mock.MockBackend
 import com.dpsmpx.dppass.routing.RouteAction
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -455,6 +460,56 @@ class XrayCompilerTest {
         assertTrue(compileWith(GeodataCodes.Unchecked).isSuccess, "без набора коды проверяет само ядро")
         val known = ir(routing = """{"rules": [{"id": "known", "action": "direct", "geoip": ["aa"], "geosite": ["example-a@ads"]}]}""")
         assertTrue(XrayCompiler(geodata = GeodataCodes.Installed(set)).compile(known, CompilePlan(known.profiles[0].id, true)).isSuccess)
+    }
+
+    /** D-51: раздача — вход SOCKS/HTTP с паролем только на адресах раздачи и только для клиентов раздачи. */
+    @Test
+    fun shareInboundsListenOnlyOnTetherAddressesWithAuth() {
+        val gi = ir(routing = """{"rules": [{"id": "net", "action": "direct", "domain": ["net.example.com"]}]}""")
+        val hotspot = ShareSpec.Endpoint(IpAddress.parse("192.168.43.1")!!, 24)
+        val usb = ShareSpec.Endpoint(IpAddress.parse("192.168.42.129")!!, 24)
+        val share = ShareSpec(listOf(hotspot, usb), 41234, Secret("u-test"), Secret("p-test-0123456789"))
+        val p = Json.parse(XrayCompiler().compile(gi, CompilePlan(gi.profiles[0].id, true, share)).valueOrNull()!!.payloadForEngine()) as JsonObject
+        val inbounds = p["inbounds"].items
+        assertEquals(listOf("tun-in", "dppass:share-0", "dppass:share-1"), inbounds.map { it["tag"].text })
+        for ((i, e) in share.endpoints.withIndex()) {
+            val inb = inbounds[i + 1]
+            assertEquals("socks", inb["protocol"].text)
+            assertEquals(e.address.toString(), inb["listen"].text, "только адрес раздачи — не 0.0.0.0")
+            assertEquals(41234, inb["port"].int)
+            assertEquals("password", inb["settings"]["auth"].text)
+            assertEquals("u-test", inb["settings"]["accounts"].items.single()["user"].text)
+            assertEquals("p-test-0123456789", inb["settings"]["accounts"].items.single()["pass"].text)
+        }
+        // Первое правило: на вход раздачи — только клиенты из подсетей раздачи, не сам телефон.
+        val first = rules(p).first()
+        assertEquals("dppass:share-guard", first["ruleTag"].text)
+        assertEquals(listOf("dppass:share-0", "dppass:share-1"), first["inboundTag"].items.map { it.text })
+        assertEquals("block", first["outboundTag"].text)
+        val refused = first["source"].items.map { Cidr.parse(it.text)!!.cidr }
+        fun refused(ip: String) = refused.any { IpAddress.parse(ip)!! in it }
+        assertFalse(refused("192.168.43.17"), "клиент точки доступа")
+        assertFalse(refused("192.168.42.200"), "клиент USB-модема")
+        assertTrue(refused("192.168.43.1"), "адрес самого телефона")
+        assertTrue(refused("192.168.42.129"), "адрес самого телефона")
+        assertTrue(refused("192.168.1.5"), "адрес телефона в домашнем Wi-Fi")
+        assertTrue(refused("127.0.0.1"))
+        assertTrue(refused("10.0.0.2"))
+        assertTrue(refused("203.0.113.5"))
+        assertTrue(refused("fd00::1"))
+        // Правила пользователя действуют и для раздачи (правило без inboundTag).
+        assertNull(rules(p).single { it["ruleTag"].text == "net" }["inboundTag"])
+        // Без раздачи — ни входа, ни правила.
+        val plain = payload(gi)
+        assertEquals(listOf("tun-in"), plain["inbounds"].items.map { it["tag"].text })
+        assertTrue(ruleTags(plain).none { it.startsWith("dppass:share") })
+        // Адрес или подсеть не частные, подсеть без места для клиентов, порт ниже 1024 — раздачу не построить.
+        assertFailsWith<IllegalArgumentException> { ShareSpec.Endpoint(IpAddress.parse("203.0.113.5")!!, 24) }
+        assertFailsWith<IllegalArgumentException> { ShareSpec.Endpoint(IpAddress.parse("127.0.0.1")!!, 8) }
+        assertFailsWith<IllegalArgumentException> { ShareSpec.Endpoint(IpAddress.parse("192.168.43.1")!!, 8) }
+        assertFailsWith<IllegalArgumentException> { ShareSpec.Endpoint(IpAddress.parse("192.168.43.1")!!, 32) }
+        assertFailsWith<IllegalArgumentException> { ShareSpec(listOf(hotspot), 80, Secret("u"), Secret("p")) }
+        assertFailsWith<IllegalArgumentException> { ShareSpec(listOf(hotspot, hotspot), 41234, Secret("u"), Secret("p")) }
     }
 
     @Test

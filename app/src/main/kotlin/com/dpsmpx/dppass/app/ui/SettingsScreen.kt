@@ -21,8 +21,9 @@ import kotlinx.coroutines.withContext
 
 /**
  * «Настройки» (D-38, D-40): политика пользователя — маршрутизация, DNS,
- * приложения; постоянный VPN и уведомления — в настройках Android; тема;
- * журнал (D-26) и «О программе» (D-43).
+ * приложения; постоянный VPN и уведомления — в настройках Android;
+ * раздача другим устройствам (D-51); тема; журнал (D-26) и «О программе»
+ * (D-43).
  *
  * Смена политики — новая активация действующих серверов (D-07): при
  * отказе остаётся прежнее, и это видно. Туннель поднят — переподключение.
@@ -131,6 +132,14 @@ class SettingsScreen(host: Host) : Screen(host) {
                         .onClick {
                             openSystem(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))
                         },
+                    Ui.matchWidth(),
+                )
+                addView(Ui.divider(context))
+                addView(
+                    Ui.ListRow(context, R.drawable.ic_lan, context.getString(R.string.share_title))
+                        .subtitle(context.getString(R.string.settings_share_note))
+                        .trailing(Ui.icon(context, R.drawable.ic_chevron, R.color.text_secondary))
+                        .onClick { host.push(ShareScreen(host)) },
                     Ui.matchWidth(),
                 )
             },

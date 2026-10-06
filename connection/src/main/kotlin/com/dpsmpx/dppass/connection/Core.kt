@@ -19,6 +19,7 @@ import com.dpsmpx.dppass.engine.BackendCompiler
 import com.dpsmpx.dppass.engine.CapabilityChecker
 import com.dpsmpx.dppass.engine.EngineCapabilities
 import com.dpsmpx.dppass.engine.ProxyEngine
+import com.dpsmpx.dppass.engine.ShareSpec
 import com.dpsmpx.dppass.engine.SocketProtector
 import com.dpsmpx.dppass.engine.TunInput
 import com.dpsmpx.dppass.network.NetworkAssessment
@@ -108,6 +109,9 @@ class DPpassCore(
     /** Политика пользователя: маршрутизация, DNS, приложения (D-38). */
     val userPolicy: PolicyService = PolicyService(PolicyStore(store, quarantine), this)
 
+    /** Раздача туннеля другим устройствам (D-51): включена ли, порт, логин и пароль. */
+    val share: ShareService = ShareService(ShareStore(store, quarantine))
+
     fun restore(): List<Diagnostic> = activation.restore().also { it.forEach(log::diagnostic) }
 
     /**
@@ -186,12 +190,14 @@ class DPpassCore(
         checker: HealthChecker,
         tun: TunInput?,
         preferred: ProfileId? = null,
+        /** Раздача туннеля другим устройствам (D-51); null — без раздачи. */
+        share: ShareSpec? = null,
         pause: suspend (Long) -> Unit,
     ): ConnectionReport? {
         val ir = activation.state.activeConfig ?: return null
         val plan = plan(assessment, preferred) ?: return null
         val orchestrator = ConnectionOrchestrator(compiler, engine, checker, health, clock, log, policy, stability, assessment, pause)
-        return orchestrator.connect(ir, plan, tun)
+        return orchestrator.connect(ir, plan, tun, share)
     }
 
     /** Наблюдатель сессии (D-44): Android-слой кормит его пробами (D-32). */
