@@ -48,6 +48,9 @@ DEFAULT_OUT = os.path.join(PROJ, "build", "xray", "geodata-set")
 BUILDER = os.path.join(PROJ, "build", "xray", "dppass-geodata")
 DLC_MODULE = "github.com/v2fly/domain-list-community"
 SET_DIR = "geodata"
+# Коды, которые компилятор подставляет сам, — автоматический раздельный маршрут (D-45); в наборе обязаны быть.
+ROUTING_MODEL = os.path.join(PROJ, "routing", "src", "main", "kotlin", "com", "dpsmpx", "dppass", "routing", "RouteEvaluator.kt")
+BUILTIN_CODES = {"geosite": "SITE_RU", "geoip": "IP_RU"}
 
 
 class Missing(Exception):
@@ -91,6 +94,19 @@ def recorded_sums(dlc, dbip_rel):
     if sha is None:
         raise RuntimeError(f"PROVENANCE.md: нет строки `{dbip_rel}` с SHA-256 (§4)")
     return h1, sha
+
+
+def builtin_codes():
+    """Коды встроенных правил — из констант RouteEvaluator, чтобы не разойтись с компилятором."""
+    with open(ROUTING_MODEL, encoding="utf-8") as f:
+        text = f.read()
+    codes = {}
+    for kind, name in BUILTIN_CODES.items():
+        m = re.search(rf'const val {name}: String = "([^"]+)"', text)
+        if not m:
+            raise RuntimeError(f"{rel(ROUTING_MODEL)}: нет константы {name} (D-45)")
+        codes[kind] = m.group(1)
+    return codes
 
 
 def go(args, env, what):
@@ -145,6 +161,11 @@ def main():
         r = subprocess.run(cmd + (["-verify"] if a.test else []), capture_output=True, text=True)
         if r.returncode != 0:
             raise RuntimeError(f"сборка набора: {(r.stdout + r.stderr).strip()}")
+        with open(os.path.join(out, "manifest.json"), encoding="utf-8") as f:
+            manifest = json.load(f)
+        lost = [f"{kind}:{code}" for kind, code in builtin_codes().items() if code not in manifest.get(kind, ())]
+        if lost:
+            raise RuntimeError(f"в наборе нет кодов, которые компилятор подставляет сам (D-45): {', '.join(lost)}")
         tested = "go vet и go test сборщика; " if a.test else ""
         print(f"{r.stdout.strip()}; {tested}набор — {rel(out) if out.startswith(PROJ) else out}")
         return 0
