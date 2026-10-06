@@ -183,8 +183,9 @@ internal class DocumentMapper(private val diags: DiagnosticCollector, private va
         val bypassLan = r.bool("bypass_lan", true)
         val apps = r.obj("apps", required = false)?.let(::apps) ?: AppPolicy.AllApps
         val rules = r.objects("rules", required = false).mapNotNull(::rule)
+        val automaticDomestic = r.bool("automatic_domestic", true)
         r.finish()
-        return RoutingPolicy(rules, default, apps, resolution, bypassLan)
+        return RoutingPolicy(rules, default, apps, resolution, bypassLan, automaticDomestic)
     }
 
     private fun apps(r: ObjReader): AppPolicy? {

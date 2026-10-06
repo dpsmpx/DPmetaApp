@@ -96,6 +96,8 @@ object CandidatePlanner {
         policy: ConnectionPolicy = ConnectionPolicy(),
         /** Выбор пользователя (D-34): первым; пауза после отказа для него не действует. */
         preferred: ProfileId? = null,
+        /** Learned stability model; it breaks ties and adapts order without overriding explicit choice. */
+        stability: StabilityBook = StabilityBook(),
     ): ConnectionPlan {
         when (assessment?.restriction) {
             RestrictionClass.OFFLINE -> return ConnectionPlan(emptyList(), emptyList(), DiagCode.NETWORK_OFFLINE, "нет сети — попытки не делаются")
@@ -147,6 +149,7 @@ object CandidatePlanner {
                 { if (it.id == preferred) 0 else 1 },
                 { if (it.id == lastKnownGood) 0 else 1 },
                 { healthRank(it) },
+                { -stability.score(it, assessment) },
                 { classPenalty(it) },
                 { -it.hints.priority },
                 { it.id.value },
@@ -175,8 +178,9 @@ object CandidatePlanner {
             }
             if (classPenalty(pick) > 0) reasons += "TCP-поток ниже: в этой сети режутся TLS или крупные передачи"
             if (pick !== head) reasons += "другой класс транспорта, чем у предыдущей попытки"
-            if (pick.hints.priority != 0) reasons += "приоритет ${pick.hints.priority}"
-            reasons += "класс ${pick.transportClass}"
+            if (pick.hints.priority != 0) reasons += "приоритет " + pick.hints.priority
+            reasons += "стабильность " + "%.2f".format(java.util.Locale.ROOT, stability.score(pick, assessment))
+            reasons += "класс " + pick.transportClass
             ordered += PlannedAttempt(pick, reasons)
         }
         val attempts = ordered.take(policy.maxAttempts)

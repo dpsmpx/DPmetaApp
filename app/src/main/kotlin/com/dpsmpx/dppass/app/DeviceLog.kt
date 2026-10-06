@@ -23,9 +23,9 @@ import java.util.concurrent.Executors
 
 /**
  * Журнал на устройстве (D-26): кольцо в памяти для локального отчёта и
- * файл в `noBackupFilesDir/log`, который пишется в фоне. Наружу — только
- * через буфер обмена: при уходе из оболочки, при остановке сервиса
- * туннеля и кнопкой «Копировать журнал». Ничего не отправляется (D-12).
+ * файл в `noBackupFilesDir/log`, который пишется в фоне. Наружу журнал
+ * попадает только по явному действию через кнопку «Копировать журнал».
+ * Ничего не отправляется (D-12).
  *
  * Падение записывается всегда, даже с выключенным журналом: выключатель
  * отказывается от рутинных строк, а не от причины падения.
@@ -83,13 +83,15 @@ object DeviceLog {
     }
 
     /**
-     * Работа закончена (оболочка ушла с экрана, сервис остановлен):
-     * журнал — в буфер обмена, если он ведётся.
+     * Работа закончена: состояние фиксируется только локально.
+     *
+     * Automatic clipboard export was removed in 0.5.0: clipboard contents can
+     * be observed by other foreground components, so log export is now strictly
+     * user initiated by the explicit Copy button.
      */
     fun onWorkFinished(context: Context, reason: String) {
         if (file == null) return
         log.info("work_finished", "reason" to Safe(reason))
-        copyToClipboard(context, reason) {}
     }
 
     /**

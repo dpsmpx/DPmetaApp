@@ -84,7 +84,7 @@ class MainActivity : Activity() {
 
     override fun onStop() {
         super.onStop()
-        // Оболочка ушла с экрана — работа закончена: журнал в буфер обмена (D-26).
+        // Оболочка ушла с экрана — фиксируем завершение без внешней передачи журнала.
         // Поворот экрана — не уход.
         if (!isChangingConfigurations) DeviceLog.onWorkFinished(this, "activity_stop")
     }

@@ -91,6 +91,8 @@ class DPpassCore(
     private val quarantine = Quarantine(store, clock)
     val activation: ActivationService = ActivationService(compiler, engine, ActivationStore(store, quarantine), clock)
     val health: HealthBook = HealthBook(policy)
+    /** Persistent, encrypted aggregate learner for profile stability (0.5.0). */
+    val stability: StabilityBook = StabilityBook(store)
     private val loader = ConfigLoader()
 
     /** Сохранённые подписки: загрузка, идентификатор устройства, применение (D-33, D-36). */
@@ -164,7 +166,7 @@ class DPpassCore(
     /** План подключения; [preferred] — сервер, выбранный пользователем: первым в плане (D-34). */
     fun plan(assessment: NetworkAssessment?, preferred: ProfileId? = null): ConnectionPlan? {
         val ir = activation.state.activeConfig ?: return null
-        return CandidatePlanner.plan(ir, compiler.capabilities, assessment, health, health.lastGood(), clock.nowMillis(), policy, preferred)
+        return CandidatePlanner.plan(ir, compiler.capabilities, assessment, health, health.lastGood(), clock.nowMillis(), policy, preferred, stability)
     }
 
     suspend fun connect(
@@ -176,7 +178,7 @@ class DPpassCore(
     ): ConnectionReport? {
         val ir = activation.state.activeConfig ?: return null
         val plan = plan(assessment, preferred) ?: return null
-        val orchestrator = ConnectionOrchestrator(compiler, engine, checker, health, clock, log, policy, pause)
+        val orchestrator = ConnectionOrchestrator(compiler, engine, checker, health, clock, log, policy, pause, stability)
         return orchestrator.connect(ir, plan, tun)
     }
 

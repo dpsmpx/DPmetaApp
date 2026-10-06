@@ -83,6 +83,7 @@ class ConnectionOrchestrator(
     private val log: Logger,
     private val policy: ConnectionPolicy = ConnectionPolicy(),
     private val pause: suspend (Long) -> Unit,
+    private val stability: StabilityBook = StabilityBook(),
 ) {
     suspend fun connect(ir: ConfigIr, plan: ConnectionPlan, tun: TunInput?): ConnectionReport {
         if (plan.attempts.isEmpty()) {
@@ -131,8 +132,19 @@ class ConnectionOrchestrator(
             is Outcome.Failure -> return Try.Fail(s.errors.first())
             is Outcome.Success -> s.value
         }
+        val startedAt = clock.nowMillis()
         val result = withTimeoutOrNull(policy.healthTimeoutMillis) { health.check(session, p) }
             ?: Outcome.failure(DiagCode.HEALTH_CHECK_FAILED, "проверка здоровья не уложилась в ${policy.healthTimeoutMillis} мс")
+        val elapsed = (clock.nowMillis() - startedAt).coerceIn(1L, policy.healthTimeoutMillis + 1_000L)
+        stability.observe(
+            p.id,
+            StabilitySample(
+                success = result is Outcome.Success,
+                rttMillis = elapsed,
+                stalled = result is Outcome.Failure && result.errors.any { it.code == DiagCode.PAYLOAD_STALLED },
+                timestampMillis = clock.nowMillis(),
+            ),
+        )
         if (result is Outcome.Failure) {
             session.stop()
             return Try.Fail(result.errors.first())

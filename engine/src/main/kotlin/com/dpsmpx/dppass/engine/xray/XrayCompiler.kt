@@ -328,6 +328,22 @@ class XrayCompiler(
                 val at = "$.routing.rules[${ir.routing.rules.indexOf(rule).takeIf { it >= 0 } ?: i}]"
                 rules += userRule(rule.id.value, rule.conditions, XrayBackend.outboundTag(rule.action), at)
             }
+            if (ir.routing.automaticDomestic) {
+                checkGeo(listOf("ru"), emptyList(), "$.routing.automatic_domestic.geosite")
+                checkGeo(emptyList(), listOf("ru"), "$.routing.automatic_domestic.geoip")
+                rules += userRule(
+                    XrayBackend.TAG_AUTO_DOMESTIC + ":site",
+                    Conditions(geoSites = listOf("ru")),
+                    XrayBackend.TAG_DIRECT,
+                    "$.routing.automatic_domestic.geosite",
+                )
+                rules += userRule(
+                    XrayBackend.TAG_AUTO_DOMESTIC + ":ip",
+                    Conditions(geoIps = listOf("ru")),
+                    XrayBackend.TAG_DIRECT,
+                    "$.routing.automatic_domestic.geoip",
+                )
+            }
             return Json.obj(
                 "domainStrategy" to Json.str(domainStrategy(ir.routing.domainResolution, withTun)),
                 "rules" to Json.arr(rules),
