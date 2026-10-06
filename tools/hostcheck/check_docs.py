@@ -3,7 +3,7 @@
 
 Пути `docs/…` и `tools/…`, имена документов, решения D-NN, разделы и §,
 угрозы T-N, этапы плана и классы тестов проверяет DP Verify — `docs.links`
-и `docs.refs` (`tools/dpverify.toml`, D-39). Здесь — то, чего у DP Verify
+и `docs.refs` (`tools/dpverify.toml`, D-50). Здесь — то, чего у DP Verify
 до 1.x нет: ссылка `ИмяTest.метод` — у класса теста есть такой метод.
 Проверяются все текстовые файлы репозитория, кроме корпуса tests/data и
 копии DP Verify.
@@ -50,7 +50,7 @@ def test_classes(all_files):
 def main():
     all_files = files()
     tests = test_classes(all_files)
-    # tools/dpv/ — копия DP Verify (D-39): её сверяет dpv.integrity.
+    # tools/dpv/ — копия DP Verify (D-50): её сверяет dpv.integrity.
     text_files = [p for p in all_files if p.endswith(TEXT) and not p.startswith(("tests/data/", "tools/dpv/"))]
     problems, count = [], 0
     for rel in text_files:

@@ -24,7 +24,10 @@ data class SubscriptionsState(val items: List<Subscription>, val activeId: Subsc
 }
 
 /**
- * Документ хранения подписок `dppass.subscriptions` версии 1 (D-36).
+ * Документ хранения подписок `dppass.subscriptions` (D-36). Версия 2
+ * (D-39, D-42) добавляет свои серверы (`inline` вместо `url`), срок
+ * автообновления и время последней проверки; версия 1 читается с
+ * значениями по умолчанию — её записал телефон до версии 2.
  *
  * В нём секреты — адрес подписки и идентификатор устройства (D-33):
  * документ пишется только в зашифрованное хранилище (D-19) и наружу не
@@ -37,7 +40,8 @@ data class SubscriptionsState(val items: List<Subscription>, val activeId: Subsc
  */
 object SubscriptionCodec {
     const val FORMAT: String = "dppass.subscriptions"
-    const val VERSION: Int = 1
+    const val VERSION: Int = 2
+    private val READABLE = setOf(1, 2)
 
     fun write(state: SubscriptionsState): String = Json.write(
         Json.obj(
@@ -50,12 +54,16 @@ object SubscriptionCodec {
     )
 
     private fun item(s: Subscription): JsonObject {
-        val url = (s.source as SubscriptionSource.Url).url.reveal()
         val m = s.metadata
         return Json.obj(
             "id" to Json.str(s.id.value),
             "name" to Json.str(s.name),
-            "url" to Json.str(url),
+            "url" to (s.source as? SubscriptionSource.Url)?.let { Json.str(it.url.reveal()) },
+            "inline" to (s.source as? SubscriptionSource.Inline)?.let { Json.str(it.body.reveal()) },
+            // 0 — автообновление выключено; поля нет (версия 1) — по умолчанию.
+            "auto_update_minutes" to Json.num(s.updatePolicy.intervalMinutes ?: 0),
+            "only_unmetered" to Json.bool(s.updatePolicy.onlyUnmetered),
+            "last_checked_at" to s.lastCheckedMillis?.let(Json::num),
             "device_id" to s.deviceId?.let { Json.str(it.reveal()) },
             "binding" to Json.str(if (s.binding == RoutingBinding.PROVIDER_ROUTING) "provider" else "user"),
             "revision_counter" to Json.num(s.revisionCounter),
@@ -99,7 +107,7 @@ object SubscriptionCodec {
         } catch (e: JsonParseException) {
             null
         } ?: return Outcome.failure(DiagCode.STORAGE_CORRUPTED, "подписки: не JSON-объект")
-        if ((root["format"] as? JsonString)?.value != FORMAT || (root["format_version"] as? JsonNumber)?.toIntOrNull() != VERSION) {
+        if ((root["format"] as? JsonString)?.value != FORMAT || (root["format_version"] as? JsonNumber)?.toIntOrNull() !in READABLE) {
             return Outcome.failure(DiagCode.FORMAT_VERSION_UNSUPPORTED, "подписки: неизвестный формат хранения")
         }
         return try {
@@ -126,10 +134,24 @@ object SubscriptionCodec {
             val code = DiagCode.entries.firstOrNull { it.name == f.str("code") } ?: DiagCode.SUBSCRIPTION_FETCH_FAILED
             FailedRevision(f.str("checksum"), f.long("failed_at") ?: bad("failed_at"), Diagnostic.error(code, f.str("message") ?: ""))
         }
+        val url = o.str("url")
+        val inline = o.str("inline")
+        require((url == null) != (inline == null)) { "у подписки ровно один источник: url или inline" }
+        val interval = o.long("auto_update_minutes")
+        require(interval == null || interval in 0..(30L * 24 * 60)) { "срок автообновления вне 0..30 суток" }
         return Subscription(
             id = id(o.str("id") ?: bad("id")),
             name = o.str("name") ?: bad("name"),
-            source = SubscriptionSource.Url(Secret(o.str("url") ?: bad("url"))),
+            source = if (url != null) SubscriptionSource.Url(Secret(url)) else SubscriptionSource.Inline(Secret(inline!!)),
+            updatePolicy = UpdatePolicy(
+                intervalMinutes = when (interval) {
+                    null -> UpdatePolicy.DEFAULT_INTERVAL_MINUTES
+                    0L -> null
+                    else -> interval
+                },
+                onlyUnmetered = o.bool("only_unmetered") ?: false,
+            ),
+            lastCheckedMillis = o.long("last_checked_at"),
             binding = if (o.str("binding") == "provider") RoutingBinding.PROVIDER_ROUTING else RoutingBinding.USER_ROUTING,
             metadata = SubscriptionMetadata(
                 title = m.str("title"),
@@ -159,6 +181,12 @@ object SubscriptionCodec {
     private fun JsonObject.str(key: String): String? = when (val v = this[key]) {
         null -> null
         is JsonString -> v.value
+        else -> bad(key)
+    }
+
+    private fun JsonObject.bool(key: String): Boolean? = when (val v = this[key]) {
+        null -> null
+        is com.dpsmpx.dppass.core.JsonBool -> v.value
         else -> bad(key)
     }
 

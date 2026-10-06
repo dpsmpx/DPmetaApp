@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "entries": [
+    {
+      "fingerprint": "sha256:eb351410b940af9fa5b6a88cd423d14701867a9dbd541d0fc497e9ba802177ef",
+      "check": "docs.refs",
+      "rule": "missing-paragraph",
+      "path": "docs/direction/DECISIONS.md",
+      "message": "в docs/research/RUSSIA_NETWORK_RESTRICTIONS.md нет раздела §4.4",
+      "reason": "ссылка §4.4 в D-45 — пункт 4 списка раздела 4, не заголовок; пункт TODO.md «Ссылка … §4.4»",
+      "date": "2026-10-06"
+    }
+  ]
+}

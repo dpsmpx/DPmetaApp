@@ -4,9 +4,15 @@ import com.dpsmpx.dppass.core.Json
 import com.dpsmpx.dppass.core.JsonNumber
 import com.dpsmpx.dppass.core.JsonObject
 import com.dpsmpx.dppass.core.JsonString
+import com.dpsmpx.dppass.core.ProfileId
+import com.dpsmpx.dppass.core.RuleId
 import com.dpsmpx.dppass.diagnostics.DiagCode
 import com.dpsmpx.dppass.diagnostics.Outcome
 import com.dpsmpx.dppass.diagnostics.Secret
+import com.dpsmpx.dppass.routing.Conditions
+import com.dpsmpx.dppass.routing.DomainMatcher
+import com.dpsmpx.dppass.routing.RouteAction
+import com.dpsmpx.dppass.routing.Rule
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -190,6 +196,18 @@ class WriterAndNormalizerTest {
     }
 
     @Test
+    fun automaticDomesticRoundTrips() {
+        // D-45: поле читается и пишется; по умолчанию выключено — документ значит
+        // ровно то, что в нём написано (D-05).
+        val base = loader.load(Fixtures.text("configs/valid-multi.json")).valueOrNull()!!.ir
+        assertFalse(base.routing.automaticDomestic, "по умолчанию выключено")
+        val on = base.copy(routing = base.routing.copy(automaticDomestic = true))
+        val again = loader.load(ConfigWriter.write(on, ConfigWriter.Mode.FULL)).valueOrNull()!!.ir
+        assertTrue(again.routing.automaticDomestic)
+        assertEquals(on, again)
+    }
+
+    @Test
     fun redactedExportHasNoSecretsAndCannotActivate() {
         val text = Fixtures.text("configs/valid-multi.json")
         val ir = loader.load(text).valueOrNull()!!.ir
@@ -212,5 +230,101 @@ class WriterAndNormalizerTest {
         assertEquals(ir, once.ir)
         assertTrue(once.notes.isEmpty())
         assertEquals(listOf("bank-app-direct", "ads-block", "ru-direct", "ru-ip-direct", "quic-block"), ir.routing.rules.map { it.id.value })
+    }
+}
+
+/** Формат 2 (D-37): новые значения и поля, миграция 1 → 2. */
+class ConfigFormatV2Test {
+    private val loader = ConfigLoader()
+
+    @Test
+    fun newValuesAndFieldsRoundTrip() {
+        val r = loader.load(Fixtures.text("configs/valid-format-v2.json"))
+        val ir = assertNotNull(r.valueOrNull()).ir
+        fun profile(id: String) = ir.profiles.first { it.id.value == id }
+        assertEquals(TlsFingerprint.QQ, (profile("reality-qq").security as SecuritySpec.Reality).fingerprint)
+        assertEquals(TlsFingerprint.EDGE, (profile("ws-edge").security as SecuritySpec.Tls).fingerprint)
+        assertEquals(TlsFingerprint.IOS, (profile("trojan-ios").security as SecuritySpec.Tls).fingerprint)
+        assertEquals(Hysteria2Congestion.BBR, (profile("hy2-bbr").protocol as ProtocolSpec.Hysteria2).congestion)
+        val extra = (profile("xhttp-extra").transport as TransportSpec.XHttp).extra
+        assertEquals(CountRange(100, 1000), extra.xPaddingBytes)
+        assertEquals(CountRange(1_000_000, 1_000_000), extra.scMaxEachPostBytes)
+        assertTrue(extra.noGrpcHeader)
+        assertEquals(Xmux(CountRange(16, 32), null, CountRange(64, 128), CountRange(600, 900), CountRange(1800, 3000), 30), extra.xmux)
+
+        val written = ConfigWriter.write(ir, ConfigWriter.Mode.FULL)
+        assertTrue("\"format_version\": 2" in written || "\"format_version\":2" in written, "пишется текущая версия")
+        assertEquals(ir, loader.load(written).valueOrNull()!!.ir)
+    }
+
+    @Test
+    fun version1IsMigratedNotRejected() {
+        val r = loader.load(Fixtures.text("configs/valid-minimal.json"))
+        val loaded = assertNotNull(r.valueOrNull())
+        assertEquals(1, loaded.sourceVersion)
+        assertTrue(r.diagnostics.any { it.code == DiagCode.MIGRATION_APPLIED })
+        assertTrue(r.errors.isEmpty())
+    }
+
+    @Test
+    fun badRangesAndConflictingXmuxAreRejectedWithPaths() {
+        val base = Fixtures.text("configs/valid-format-v2.json")
+        fun codesAt(text: String) = loader.load(text).errors.map { it.code to it.path }
+        assertEquals(
+            listOf(DiagCode.TRANSPORT_SETTING_INVALID to "$.profiles[2].transport.x_padding_bytes"),
+            codesAt(base.replace("\"x_padding_bytes\": \"100-1000\"", "\"x_padding_bytes\": \"1000-100\"")),
+        )
+        assertEquals(
+            listOf(DiagCode.TRANSPORT_SETTING_INVALID to "$.profiles[2].transport.x_padding_bytes"),
+            codesAt(base.replace("\"x_padding_bytes\": \"100-1000\"", "\"x_padding_bytes\": \"0-1000\"")),
+        )
+        assertEquals(
+            listOf(DiagCode.TRANSPORT_SETTING_INVALID to "$.profiles[2].transport.xmux.max_connections"),
+            codesAt(base.replace("\"max_concurrency\": \"16-32\",", "\"max_concurrency\": \"16-32\", \"max_connections\": 4,")),
+        )
+        assertEquals(
+            listOf(DiagCode.VALUE_UNKNOWN to "$.profiles[3].protocol.congestion"),
+            codesAt(base.replace("\"congestion\": \"bbr\"", "\"congestion\": \"brutal\"")),
+        )
+        // «0» — то же, что поля нет: так понимает Xray.
+        val zero = loader.load(base.replace("\"sc_min_posts_interval_ms\": \"10-50\"", "\"sc_min_posts_interval_ms\": 0")).valueOrNull()!!.ir
+        assertEquals(null, (zero.profiles[2].transport as TransportSpec.XHttp).extra.scMinPostsIntervalMs)
+    }
+}
+
+/**
+ * Пределы документа (docs/PERFORMANCE_BUDGET.md, §2): ровно на пределе —
+ * принимается, на один больше — `LIMIT_EXCEEDED` с путём. Регрессия в
+ * сравнении (`>=` вместо `>`, снятая проверка) так не пройдёт молча.
+ */
+class ConfigLimitsTest {
+    private val limits = ConfigLimits()
+    private val base = assertNotNull(ConfigLoader().load(Fixtures.text("configs/valid-minimal.json")).valueOrNull()).ir
+
+    private fun limitPaths(ir: ConfigIr) = ConfigValidator.validate(ir, limits).filter { it.code == DiagCode.LIMIT_EXCEEDED }.map { it.path }
+
+    @Test
+    fun profilesUpToLimitPassOneMoreIsRejected() {
+        val p = base.profiles.first()
+        fun many(n: Int) = base.copy(profiles = (1..n).map { p.copy(id = ProfileId("p$it")) })
+        assertEquals(512, limits.maxProfiles, "как в PERFORMANCE_BUDGET §2")
+        assertEquals(emptyList(), limitPaths(many(limits.maxProfiles)))
+        assertEquals(listOf("$.profiles"), limitPaths(many(limits.maxProfiles + 1)))
+    }
+
+    @Test
+    fun ruleValuesUpToLimitPassOneMoreIsRejected() {
+        fun rules(values: Int): ConfigIr {
+            // Значения поровну в правилах, не больше предела числа правил.
+            val perRule = values / 100
+            val list = (0 until 100).map { r ->
+                val n = if (r == 99) values - perRule * 99 else perRule
+                Rule(RuleId("r$r"), Conditions(domains = (0 until n).map { DomainMatcher.Full("h$r-$it.example.com") }), RouteAction.DIRECT)
+            }
+            return base.copy(routing = base.routing.copy(rules = list))
+        }
+        assertEquals(100_000, limits.maxRuleValues, "как в PERFORMANCE_BUDGET §2")
+        assertEquals(emptyList(), limitPaths(rules(limits.maxRuleValues)))
+        assertEquals(listOf("$.routing.rules"), limitPaths(rules(limits.maxRuleValues + 1)))
     }
 }

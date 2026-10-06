@@ -237,15 +237,8 @@ class XrayJniTest {
         return ConfigLoader().load(text).valueOrNull()?.ir ?: fail("$name не разобран")
     }
 
-    /**
-     * Каталог геоданных в тесте пуст, поэтому внутреннее разделение
-     * (`automatic_domestic`, с формата v2 включено по умолчанию: geosite и
-     * geoip `ru`) здесь выключено; отказ без геоданных —
-     * [geodataWithoutAssetsIsRejected].
-     */
     private fun compiled(name: String, withTun: Boolean): CompiledConfig {
-        val parsed = ir(name)
-        val ir = parsed.copy(routing = parsed.routing.copy(automaticDomestic = false))
+        val ir = ir(name)
         val plan = CompilePlan(ir.profiles.first().id, withTun)
         return when (val r = XrayCompiler().compile(ir, plan)) {
             is Outcome.Failure -> fail("$name не скомпилирован: ${r.diagnostics.map { it.render() }}")

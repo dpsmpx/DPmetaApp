@@ -1,11 +1,13 @@
 package com.dpsmpx.dppass.engine.xray
 
 import com.dpsmpx.dppass.config.ConfigIr
+import com.dpsmpx.dppass.config.CountRange
 import com.dpsmpx.dppass.config.ProtocolSpec
 import com.dpsmpx.dppass.config.SecuritySpec
 import com.dpsmpx.dppass.config.ServerProfile
 import com.dpsmpx.dppass.config.TransportSpec
 import com.dpsmpx.dppass.config.VlessFlow
+import com.dpsmpx.dppass.config.XHttpExtra
 import com.dpsmpx.dppass.core.Checksums
 import com.dpsmpx.dppass.core.Host
 import com.dpsmpx.dppass.core.Json
@@ -30,7 +32,7 @@ import com.dpsmpx.dppass.routing.DnsTransport
 import com.dpsmpx.dppass.routing.DomainMatcher
 import com.dpsmpx.dppass.routing.DomainResolution
 import com.dpsmpx.dppass.routing.RouteAction
-import com.dpsmpx.dppass.routing.RoutingPolicy
+import com.dpsmpx.dppass.routing.RouteEvaluator
 import com.dpsmpx.dppass.routing.TransportProtocol
 import java.util.Base64
 
@@ -60,8 +62,10 @@ import java.util.Base64
  * Коды geoip/geosite и атрибуты списков сверяются с набором геоданных
  * ядра ([geodata], D-27): кода нет — отказ с путём правила
  * (`GEO_CODE_UNKNOWN`), набора нет — отказ `GEODATA_UNAVAILABLE`. Без
- * набора ([GeodataCodes.Unchecked]: хост, `cli`, эталоны) коды проверяет
- * само ядро.
+ * набора ([GeodataCodes.Unchecked]: хост) коды не сверяются: в `cli` ядра
+ * нет, эталоны ядро проверяет на синтетическом наборе со всеми их кодами.
+ * Несколько атрибутов сверяются по одному: сочетание, которого нет ни у
+ * одной записи списка, не ловится (`docs/CONFIG_FORMAT.md`, §4).
  *
  * Конфигурация содержит секреты: наружу — только через
  * [CompiledConfig.payloadForEngine].
@@ -139,7 +143,8 @@ class XrayCompiler(
                             continue
                         }
                         // Xray выбирает правила списка по атрибутам; атрибута, которого в списке
-                        // нет, не найдёт ни одно правило — условие молча пустое.
+                        // нет, не найдёт ни одно правило — условие молча пустое. Сочетание
+                        // атрибутов не сверяется: в оглавлении — только атрибуты списка (TODO.md).
                         for (a in attrs.filter { it !in known }) {
                             reject(DiagCode.GEO_CODE_UNKNOWN, "geosite:$entry — у списка $code нет атрибута @$a (${m.summary})", "$path.geosite")
                         }
@@ -234,9 +239,14 @@ class XrayCompiler(
                 "hysteriaSettings" to Json.obj("version" to Json.num(2), "auth" to Json.str(proto.password.reveal())),
                 "security" to Json.str("tls"),
                 "tlsSettings" to Json.obj("serverName" to Json.str(tls?.serverName)),
-                "finalmask" to obfs?.let {
-                    Json.obj("udp" to Json.arr(listOf(Json.obj("type" to Json.str("salamander"), "settings" to Json.obj("password" to Json.str(it))))))
-                },
+                // Salamander — маска UDP; управление перегрузкой (формат 2, D-37) — quicParams.
+                // Без congestion поле не пишется: Xray без скорости Brutal и так берёт BBR.
+                "finalmask" to Json.obj(
+                    "udp" to obfs?.let {
+                        Json.arr(listOf(Json.obj("type" to Json.str("salamander"), "settings" to Json.obj("password" to Json.str(it)))))
+                    },
+                    "quicParams" to proto.congestion?.let { Json.obj("congestion" to Json.str(it.wire)) },
+                ).takeIf { it.fields.isNotEmpty() },
             )
             return Json.obj(
                 "tag" to Json.str(XrayBackend.TAG_PROXY),
@@ -269,8 +279,9 @@ class XrayCompiler(
             when (val t = p.transport) {
                 is TransportSpec.WebSocket -> out["wsSettings"] = Json.obj("path" to Json.str(t.path), "host" to Json.str(t.host))
                 is TransportSpec.Grpc -> out["grpcSettings"] = Json.obj("serviceName" to Json.str(t.serviceName))
-                is TransportSpec.XHttp ->
-                    out["xhttpSettings"] = Json.obj("path" to Json.str(t.path), "host" to Json.str(t.host), "mode" to Json.str(t.mode.wire))
+                is TransportSpec.XHttp -> out["xhttpSettings"] = JsonObject(
+                    Json.obj("path" to Json.str(t.path), "host" to Json.str(t.host), "mode" to Json.str(t.mode.wire)).fields + xhttpExtra(t.extra).fields,
+                )
                 is TransportSpec.HttpUpgrade -> out["httpupgradeSettings"] = Json.obj("path" to Json.str(t.path), "host" to Json.str(t.host))
                 TransportSpec.Tcp, TransportSpec.Native -> Unit
             }
@@ -298,6 +309,33 @@ class XrayCompiler(
                 }
             }
             return JsonObject(out)
+        }
+
+        /**
+         * Настройки XHTTP формата 2 (D-37) — прямо в `xhttpSettings`, а не в
+         * `extra`: Xray заменяет настройку содержимым `extra` целиком
+         * (`infra/conf/transport_method.go`). Пишутся только заданные; `xmux`
+         * — только целиком, как у поставщика: заданный заменяет значения
+         * ядра по умолчанию все сразу.
+         */
+        private fun xhttpExtra(e: XHttpExtra): JsonObject {
+            fun range(r: CountRange?): JsonValue? = r?.let { Json.str(it.toString()) }
+            return Json.obj(
+                "xPaddingBytes" to range(e.xPaddingBytes),
+                "scMaxEachPostBytes" to range(e.scMaxEachPostBytes),
+                "scMinPostsIntervalMs" to range(e.scMinPostsIntervalMs),
+                "noGRPCHeader" to Json.bool(true).takeIf { e.noGrpcHeader },
+                "xmux" to e.xmux?.let { x ->
+                    Json.obj(
+                        "maxConcurrency" to range(x.maxConcurrency),
+                        "maxConnections" to range(x.maxConnections),
+                        "cMaxReuseTimes" to range(x.cMaxReuseTimes),
+                        "hMaxRequestTimes" to range(x.hMaxRequestTimes),
+                        "hMaxReusableSecs" to range(x.hMaxReusableSecs),
+                        "hKeepAlivePeriod" to x.hKeepAlivePeriod?.let(Json::num),
+                    )
+                },
+            )
         }
 
         // ---- маршрутизация ----
@@ -329,20 +367,18 @@ class XrayCompiler(
                 val at = "$.routing.rules[${ir.routing.rules.indexOf(rule).takeIf { it >= 0 } ?: i}]"
                 rules += userRule(rule.id.value, rule.conditions, XrayBackend.outboundTag(rule.action), at)
             }
+            // Автоматический раздельный маршрут (D-45): отечественное — напрямую,
+            // ПОСЛЕ явных правил пользователя. geosite и geoip — отдельными
+            // правилами: в одном правиле Xray соединяет их через И (D-31), а
+            // смысл D-45 — ИЛИ (имя ИЛИ адрес отечественные). Коды сверяются с
+            // набором (D-27).
             if (ir.routing.automaticDomestic) {
-                // D-38. Коды сверяет userRule (checkGeo): путь — «$.routing.automatic_domestic.geosite|geoip».
-                rules += userRule(
-                    XrayBackend.TAG_AUTO_DOMESTIC + ":site",
-                    Conditions(geoSites = listOf(RoutingPolicy.DOMESTIC_GEOSITE)),
-                    XrayBackend.TAG_DIRECT,
-                    "$.routing.automatic_domestic",
-                )
-                rules += userRule(
-                    XrayBackend.TAG_AUTO_DOMESTIC + ":ip",
-                    Conditions(geoIps = listOf(RoutingPolicy.DOMESTIC_GEOIP)),
-                    XrayBackend.TAG_DIRECT,
-                    "$.routing.automatic_domestic",
-                )
+                val site = RouteEvaluator.SITE_RU
+                val ip = RouteEvaluator.IP_RU
+                checkGeo(listOf(site), emptyList(), "$.routing.automatic_domestic")
+                checkGeo(emptyList(), listOf(ip), "$.routing.automatic_domestic")
+                rules += userRule("${XrayBackend.SYSTEM_PREFIX}auto-domestic-site", Conditions(geoSites = listOf(site)), XrayBackend.TAG_DIRECT, "$.routing.automatic_domestic")
+                rules += userRule("${XrayBackend.SYSTEM_PREFIX}auto-domestic-ip", Conditions(geoIps = listOf(ip)), XrayBackend.TAG_DIRECT, "$.routing.automatic_domestic")
             }
             return Json.obj(
                 "domainStrategy" to Json.str(domainStrategy(ir.routing.domainResolution, withTun)),

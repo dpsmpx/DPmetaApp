@@ -23,7 +23,7 @@ CorpusTest читает корпус по соглашениям об имена
     `xray/routing/` нет файлов без случаев;
 Синтетичность данных корпуса и примера в приложении (IP, домены, UUID,
 ссылки, в том числе в base64-телах подписок) проверяет DP Verify —
-`data.synthetic` в `tools/dpverify.toml` (D-39).
+`data.synthetic` в `tools/dpverify.toml` (D-50).
 
     python3 tools/hostcheck/check_fixtures.py
 
@@ -244,7 +244,7 @@ def check_routing():
         if keys(path, geo, {"geoip"}):
             for code, nets in geo.get("geoip", {}).items():
                 for net in nets:
-                    # синтетичность адреса — data.synthetic (D-39); здесь — что это подсеть
+                    # синтетичность адреса — data.synthetic (D-50); здесь — что это подсеть
                     try:
                         ipaddress.ip_network(net, strict=False)
                     except ValueError:

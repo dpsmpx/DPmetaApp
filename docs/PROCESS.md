@@ -25,13 +25,13 @@
    `tools/hostcheck/diag_codes.txt` (D-22).
 5. **hostcheck зелёный** (§2) — только тогда изменение готово.
 6. **PR** — в `main`; описание: что сделано, что осталось, что найдено
-   и записано в `TODO.md`; итог полного прогона hostcheck (§4).
+   и записано в `TODO.md`; итог полного прогона hostcheck (§5).
 
 ## 2. Проверки
 
 ### Запуск
 
-Проверки идут через DP Verify (D-39): копия — `tools/dpv/` (руками не
+Проверки идут через DP Verify (D-50): копия — `tools/dpv/` (руками не
 правится; правка — в репозитории DP-Verify и новой поставкой), профиль —
 `tools/dpverify.toml`. `tools/hostcheck/run.sh` — обёртка с прежними
 ключами.
@@ -39,7 +39,7 @@
 ```sh
 tools/hostcheck/run.sh            # dpv run full — всё, что можно на этой машине; пропуск — громко, но не ошибка
 tools/hostcheck/run.sh --quick    # dpv run static — быстрые проверки (без Gradle), секунды
-tools/hostcheck/run.sh --full     # dpv run full --ci — перед слиянием (§4): закоммиченное дерево, пропуск — ошибка
+tools/hostcheck/run.sh --full     # dpv run full --ci — перед слиянием (§5): закоммиченное дерево, пропуск — ошибка
 tools/dpv/dpv run affected        # после задачи: статика и шаги, выбранные по изменениям
 tools/dpv/dpv plan affected       # что будет запущено и почему, без запуска
 tools/dpv/dpv report --md         # итог последнего прогона — в описание PR
@@ -58,7 +58,7 @@ Verify. Журнал каждой проверки — `build/dpv/last/<пров
 
 | Проверка | Что ловит | Решения |
 |---|---|---|
-| `dpv.integrity`, `dpv.profile` | копия `tools/dpv/` разошлась с манифестом; ошибка профиля, исключение без причины или просроченное | D-39 |
+| `dpv.integrity`, `dpv.profile` | копия `tools/dpv/` разошлась с манифестом; ошибка профиля, исключение без причины или просроченное | D-50 |
 | `repo.layout` | лишнее в корне, нет обязательных документов, файлы ключей `*.pem` и workflow CI, большие файлы (кроме выпуска DB-IP) | D-23, D-31, D-35 |
 | `format.text` | не UTF-8, BOM, CRLF (кроме `*.bat`), нет перевода строки в конце, хвостовые пробелы, маркеры конфликта; корпус не проверяется | — |
 | `format.scripts` | синтаксис скриптов bash и Python | — |
@@ -68,7 +68,7 @@ Verify. Журнал каждой проверки — `build/dpv/last/<пров
 | `process.files` | файлы процесса, журнал решений (номера, поле «Проверка»), `TODO.md` | — |
 | `provenance.binaries` | двоичный файл без записи в PROVENANCE или с другим SHA-256 (и `gradle-wrapper.jar`) | D-12, D-18, D-20 |
 | `code.forbidden` | DNS мимо туннеля, `reveal()` вне разрешённых мест, стек исключения, печать вне `cli/`, системное время, слабая случайность и криптография, свои `TrustManager`, `android.util.Log`, сон и `runBlocking`, нативный код вне моста; `android.*` вне `app/`, модель сети и фиктивное ядро не на своих местах; координаты и репозитории мимо каталога; «/*» внутри комментария (в Kotlin — вложенный комментарий) | D-02, D-03, D-11, D-18, D-21, D-22, D-25 |
-| `data.synthetic` | ссылки прокси на настоящие адреса, несинтетические UUID, IP и домены корпуса и примера — и в открытом виде, и внутри base64 | D-05, D-11, D-20 |
+| `data.synthetic` | ссылки прокси на настоящие адреса, несинтетические UUID, IP и домены корпуса — и в открытом виде, и внутри base64 | D-05, D-11, D-20 |
 | `provenance.deps` | библиотека или плагин каталога, Gradle из wrapper без строки с той же версией в матрице лицензий и PROVENANCE; SHA-256 дистрибутива Gradle | D-18, D-20 |
 | `smoke.cli` | весь конвейер через оболочку JVM: 15 сценариев, коды выхода, вывод, секреты не печатаются | D-11, D-21 |
 
@@ -79,8 +79,8 @@ Verify. Журнал каждой проверки — `build/dpv/last/<пров
 | `project.modules` — `tools/hostcheck/check_modules.py` | модули и направления зависимостей не по таблице `docs/ARCHITECTURE.md`, §2 | D-02, D-03 |
 | `project.fixtures` — `tools/hostcheck/check_fixtures.py` | непарные файлы корпуса, нестрогие ожидания, несуществующие коды и условия сети, реестр кодов | D-05, D-22 |
 | `project.docs` — `tools/hostcheck/check_docs.py` | ссылка `ИмяTest.метод` на несуществующий метод теста | — |
-| `project.deps` — `tools/provenance/check_dependencies.py` | модуль Go ядра (`tools/xray/go.mod`) без строки или с другой суммой `go.sum`, Xray не той версии, что в каталоге, `replace`; toolchain Go; `kotlin("test")`; источники геоданных | D-18, D-24, D-27, D-31 |
-| `project.manifest` — `tools/hostcheck/check_manifest.py` | неутверждённые разрешения, резервные копии, открытый HTTP, лишний экспорт компонентов | D-17, D-19 |
+| `project.deps` — `tools/provenance/check_dependencies.py` | модуль Go ядра (`tools/xray/go.mod`) без строки или с другой суммой `go.sum`, Xray не той версии, что в каталоге, `replace`; toolchain Go; проверка сумм артефактов Gradle выключена или неполна (`gradle/verification-metadata.xml`); `kotlin("test")`; источники геоданных | D-18, D-24, D-27, D-31; T10 |
+| `project.manifest` — `tools/hostcheck/check_manifest.py` | неутверждённые разрешения, резервные копии, открытый HTTP, лишний экспорт компонентов, экспортированный сервис без своего разрешения, фильтры Activity сверх запуска и «Поделиться» текстом, схемы и адреса в фильтрах, видимость пакетов сверх приложений с ярлыком | D-17, D-19, D-40, D-42 |
 | `project.format` — `tools/hostcheck/check_format.py` | невидимые и двунаправленные символы (Trojan Source), табуляции в отступе, одиночный CR | — |
 | `project.readme` — `tools/hostcheck/readme_progress.py --check` | раздел «Прогресс» в `README.md` отстал от плана, критериев выхода, решений, `TODO.md`, аудитов; противоречия между ними (этап «выполнен» при открытых критериях, разное состояние в плане и в файле этапа) | — |
 | `project.build` — `tools/hostcheck/steps.sh build` (`./gradlew build :cli:installDist`, с Android SDK — `-x :app:build`: APK собирается шагом Android) | ошибки и **предупреждения** компилятора (они — ошибки), модульные и межмодульные тесты, корпус, fuzz | D-05 … D-22 |
@@ -89,7 +89,7 @@ Verify. Журнал каждой проверки — `build/dpv/last/<пров
 | `project.geodata` — `tools/xray/geodata.py --test` | `go vet` и `go test` сборщика набора геоданных; источник, чья сумма не совпала с PROVENANCE (DB-IP — файл в репозитории, dlc — Go-модуль со сверкой sum.golang.org); строка источника, которую сборщик не понял; код собранного набора, который ядро Xray не загрузило (`docs/TESTING.md`, «Набор геоданных»); нет кодов, которые компилятор подставляет сам | D-27, D-31, D-38 |
 | `project.android` — `:app:build :app:lint` (нужны Go и NDK) | сборка APK вместе с `libdppassxray.so` трёх ABI (задачи `xrayNative<Вариант>` → `tools/xray/native.py android`) и набором геоданных (задачи `xrayGeodata<Вариант>` → `tools/xray/geodata.py`); Lint с `warningsAsErrors`, и для модулей ядра (`checkDependencies`) | D-17, D-25 |
 | `project.android-api` — `tools/hostcheck/check_android_api.py` | вызовы Java API в модулях ядра, которых нет на Android 8.0 (Lint их в JVM-модулях не видит) | D-02, D-17 |
-| `project.apk` — `tools/hostcheck/check_apk.py` | в собранном APK: разрешения и компоненты из зависимостей в итоговом манифесте, код не из утверждённых корней пакетов (SDK телеметрии и прочее чужое); нативный код — не ровно `libdppassxray.so` трёх ABI (`arm64-v8a`, `armeabi-v7a`, `x86_64`), сжатая библиотека, смещение в zip или сегменты ELF не выровнены по 16 КБ, нет экспорта JNI; набор геоданных не по своему оглавлению (файлы, SHA-256, сжатие, атрибуция DB-IP), не из источников каталога или не тот, что собрал шаг «Xray: геоданные»; APK одного ABI больше предела (`docs/PERFORMANCE_BUDGET.md`, §4) | D-12, D-17, D-20, D-25, D-27, D-28 |
+| `project.apk` — `tools/hostcheck/check_apk.py` | в собранном APK: разрешения и компоненты из зависимостей в итоговом манифесте, код не из утверждённых корней пакетов (SDK телеметрии и прочее чужое); нативный код — не ровно `libdppassxray.so` трёх ABI (`arm64-v8a`, `armeabi-v7a`, `x86_64`), сжатая библиотека, смещение в zip или сегменты ELF не выровнены по 16 КБ, нет экспорта JNI; набор геоданных не по своему оглавлению (файлы, SHA-256, сжатие, атрибуция DB-IP), не из источников каталога или не тот, что собрал шаг «Xray: геоданные»; APK одного ABI больше предела (`docs/PERFORMANCE_BUDGET.md`, §4); тексты лицензий (`assets/notices/NOTICES.txt`, задача `legalNotices<Вариант>` → `tools/legal/notices.py`) без компонента из матрицы лицензий или без среды выполнения Go | D-12, D-17, D-20, D-25, D-27, D-28, D-43 |
 
 Проверки уровня `static` (встроенные, кроме `smoke.cli`, и первые семь
 команд) работают без сборки и без сети — их стоит запускать перед каждым
@@ -155,10 +155,39 @@ Verify. Журнал каждой проверки — `build/dpv/last/<пров
    `capabilityDiff` старой и новой матрицы возможностей — в описании
    изменения; эталоны перезаписаны (`docs/TESTING.md`, «Эталоны Xray»)
    и их разница просмотрена; шаг «Xray» зелёный.
-8. **Полный прогон**: `tools/hostcheck/run.sh --full` зелёный,
+8. **Суммы артефактов** (T10): `tools/provenance/update_verification.sh`
+   с Android SDK пересоздаёт `gradle/verification-metadata.xml` — SHA-256
+   каждого артефакта, который берёт сборка (задачи полного прогона и
+   release по ABI). Разница файла просматривается: новые суммы — только у
+   новых версий, у старых ничего не меняется. Сборка с подменённым
+   артефактом той же версии падает на проверке Gradle;
+   `check_dependencies.py` следит, что проверка включена и у каждой
+   библиотеки каталога есть суммы.
+9. **Полный прогон**: `tools/hostcheck/run.sh --full` зелёный,
    корпус и fuzz — без новых находок.
 
-## 4. Перед слиянием
+## 4. Тестовые сборки
+
+Сборки для устройств автора (D-35) — не выпуск (выпуск — этап 5):
+`release` без R8, версия с `-dev`, подпись ключом разработчика.
+
+1. Ключ — только из окружения: `DPPASS_SIGNING_KEYSTORE_BASE64` (или
+   путь `DPPASS_SIGNING_KEYSTORE`), `DPPASS_SIGNING_STORE_PASSWORD`,
+   `DPPASS_SIGNING_KEY_ALIAS`, `DPPASS_SIGNING_KEY_PASSWORD`. В облачной
+   сессии — секреты окружения, которые задаёт автор.
+2. `python3 tools/release/sign_apks.py` собирает APK на каждый ABI
+   (`-Pdppass.abiSplit=true`, D-28), подписывает `apksigner` (пароли —
+   по имени переменной, не в командной строке), сверяет сертификат с
+   отпечатком из `docs/PROVENANCE.md`, §7, проверяет каждый APK
+   `check_apk.py --abi` и пишет `SHA256SUMS` и `CERTIFICATE.txt`. Без
+   ключа или без записанного отпечатка — отказ, отладочный ключ не
+   подставляется.
+3. APK кладутся в ветку `apk` без истории `main` (двоичных файлов в
+   `main` нет, `docs/PROVENANCE.md`, §4): APK, `SHA256SUMS`,
+   `CERTIFICATE.txt` и `README.md` с коммитом `main`, из которого собраны.
+   В `main` ветка `apk` не вливается.
+
+## 5. Перед слиянием
 
 CI нет: GitHub Actions в DPpass не используется и не запускается
 (D-23), workflow в `.github/workflows/` не добавляются — `repo.layout`

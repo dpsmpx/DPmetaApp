@@ -59,6 +59,33 @@ object ConfigValidator {
     }
 
     /**
+     * Настройки XHTTP формата 2 (D-37) — то, что Xray 26.9.30 отвергает
+     * или понимает иначе (`infra/conf/transport_method.go`): нулевое начало
+     * у размеров и интервала, `xmux` с обоими пределами. Результат —
+     * пары «путь → сообщение».
+     */
+    internal fun validateXHttpExtra(e: XHttpExtra, path: String): List<Pair<String, String>> {
+        val out = mutableListOf<Pair<String, String>>()
+        for ((name, r) in listOf(
+            "x_padding_bytes" to e.xPaddingBytes,
+            "sc_max_each_post_bytes" to e.scMaxEachPostBytes,
+            "sc_min_posts_interval_ms" to e.scMinPostsIntervalMs,
+        )) {
+            if (r != null && r.from < 1) out += "$path.$name" to "«$name» — диапазон с началом не меньше 1"
+        }
+        val x = e.xmux
+        if (x != null) {
+            if (x.maxConcurrency != null && x.maxConnections != null) {
+                out += "$path.xmux.max_connections" to "max_concurrency и max_connections не задаются вместе (Xray отвергает такую настройку)"
+            }
+            if (x.hKeepAlivePeriod != null && x.hKeepAlivePeriod !in -1..86_400) {
+                out += "$path.xmux.h_keep_alive_period" to "h_keep_alive_period — секунды от -1 до 86400"
+            }
+        }
+        return out
+    }
+
+    /**
      * Проверка одного профиля — и для документа, и для записи подписки.
      *
      * Запись подписки приходит мимо `DocumentMapper` (ссылка → IR напрямую),
@@ -167,6 +194,7 @@ object ConfigValidator {
             }
             TransportSpec.Tcp, TransportSpec.Native -> null to null
         }
+        (p.transport as? TransportSpec.XHttp)?.extra?.let { e -> validateXHttpExtra(e, "$path.transport").forEach { err(DiagCode.TRANSPORT_SETTING_INVALID, it.second, it.first) } }
         if (transportPath != null && !isValidPath(transportPath)) {
             err(DiagCode.PATH_INVALID, PATH_MESSAGE, "$path.transport.path")
         }

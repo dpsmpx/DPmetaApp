@@ -1,6 +1,7 @@
 package com.dpsmpx.dppass.app
 
 import android.content.Context
+import android.content.pm.PackageManager
 import android.os.Build
 import com.dpsmpx.dppass.connection.DPpassCore
 import com.dpsmpx.dppass.core.Clock
@@ -16,6 +17,8 @@ import com.dpsmpx.dppass.storage.EncryptingBlobStore
 import com.dpsmpx.dppass.storage.FileBlobStore
 import com.dpsmpx.dppass.storage.StorageReset
 import com.dpsmpx.dppass.storage.WrappedKeyProvider
+import com.dpsmpx.dppass.subscriptions.HttpsSubscriptionFetcher
+import com.dpsmpx.dppass.subscriptions.SubscriptionFetcher
 import com.dpsmpx.dppass.tunnel.PlatformTraits
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
@@ -28,10 +31,21 @@ import kotlinx.coroutines.SupervisorJob
  * (D-25): библиотека `libdppassxray` из APK; не загрузилась или не той
  * версии — каждый вызов ядра отвечает `BACKEND_NOT_AVAILABLE` с причиной.
  * Набор геоданных ядра (D-27) переносится из assets APK до загрузки ядра.
+ * Подписки загружаются по HTTPS с системными CA (D-36).
  */
 object AppGraph {
-    /** Ядро DPpass и ядро прокси под ним: проверку здоровья (D-32) умеет только Xray. */
-    class Graph(val core: DPpassCore, val engine: XrayProxyEngine)
+    /**
+     * Ядро DPpass и ядро прокси под ним (проверку здоровья, D-32, умеет только
+     * Xray); загрузка подписок и версия приложения для её `User-Agent` (D-33).
+     */
+    class Graph(
+        val core: DPpassCore,
+        val engine: XrayProxyEngine,
+        val fetcher: SubscriptionFetcher,
+        val appVersion: String,
+        /** Из чего собран набор геоданных (D-27) — для «О программе». */
+        val geodata: String,
+    )
 
     @Volatile
     private var instance: Graph? = null
@@ -88,6 +102,18 @@ object AppGraph {
             logSink = DeviceLog.sink,
             engineDetails = listOf("geodata" to geodataSummary),
         )
-        return Graph(core, engine)
+        return Graph(core, engine, HttpsSubscriptionFetcher(Clock.SYSTEM), appVersion(context), geodataSummary)
     }
+
+    /** `versionName` из манифеста: в журнале и в `User-Agent` подписки (D-33). */
+    fun appVersion(context: Context): String = runCatching {
+        val pm = context.packageManager
+        val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            pm.getPackageInfo(context.packageName, PackageManager.PackageInfoFlags.of(0))
+        } else {
+            @Suppress("DEPRECATION") // замена — PackageInfoFlags, только с API 33
+            pm.getPackageInfo(context.packageName, 0)
+        }
+        info.versionName
+    }.getOrNull() ?: "?"
 }

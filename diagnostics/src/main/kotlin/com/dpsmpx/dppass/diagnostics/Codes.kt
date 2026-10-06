@@ -92,6 +92,13 @@ enum class DiagCode(val kind: FailureKind, val defaultSeverity: Severity) {
     DNS_SERVERS_EMPTY(FailureKind.CONFIG_VALIDATION_FAILED, Severity.ERROR),
     DNS_LEAK_RISK(FailureKind.CONFIG_VALIDATION_FAILED, Severity.WARNING),
 
+    /**
+     * Настройка транспорта вне допустимого (формат 2, D-37): диапазон не
+     * «N» или «N-M», ноль там, где Xray его не принимает, `xmux` с обоими
+     * пределами мультиплексирования.
+     */
+    TRANSPORT_SETTING_INVALID(FailureKind.CONFIG_VALIDATION_FAILED, Severity.ERROR),
+
     // --- возможности ядра и компиляция ---
     CAPABILITY_PROTOCOL_UNSUPPORTED(FailureKind.CAPABILITY_UNSUPPORTED, Severity.ERROR),
     CAPABILITY_TRANSPORT_UNSUPPORTED(FailureKind.CAPABILITY_UNSUPPORTED, Severity.ERROR),
@@ -161,6 +168,12 @@ enum class DiagCode(val kind: FailureKind, val defaultSeverity: Severity) {
     SHARE_LINK_INVALID(FailureKind.SUBSCRIPTION_INVALID, Severity.ERROR),
     SHARE_LINK_SCHEME_UNSUPPORTED(FailureKind.SUBSCRIPTION_INVALID, Severity.WARNING),
     SHARE_LINK_PARAM_UNSUPPORTED(FailureKind.SUBSCRIPTION_INVALID, Severity.WARNING),
+
+    /**
+     * Параметр ссылки отброшен: проверено по исходникам закреплённого ядра,
+     * что на соединение он не влияет (D-48). Только поимённо, с находкой.
+     */
+    SHARE_LINK_PARAM_IGNORED(FailureKind.SUBSCRIPTION_INVALID, Severity.INFO),
 
     /**
      * Поставщик не отдаёт серверы без идентификатора устройства

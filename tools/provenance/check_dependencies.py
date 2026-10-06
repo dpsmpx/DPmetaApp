@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Ядро прокси, модули Go и источники геоданных — с лицензией и происхождением (D-18, D-20).
+"""Ядро прокси, модули Go, суммы артефактов Gradle и геоданные — с лицензией и происхождением (D-18, D-20).
 
-Каталог Gradle, дистрибутив и wrapper, двоичные файлы, координаты и
-репозитории мимо каталога, workflow CI проверяет DP Verify (D-39):
-`provenance.deps`, `provenance.binaries`, `code.forbidden`
-(`inline-coordinates`, `repositories`), `repo.layout` (`tools/dpverify.toml`).
-Здесь — то, чего у DP Verify нет:
+Строки каталога Gradle и версии Gradle в матрице и PROVENANCE, SHA-256
+дистрибутива, двоичные файлы, координаты и репозитории мимо каталога,
+workflow CI проверяет DP Verify (D-50): `provenance.deps`,
+`provenance.binaries`, `code.forbidden` (`inline-coordinates`,
+`repositories`), `repo.layout` (`tools/dpverify.toml`). Здесь — то, чего у
+DP Verify нет:
 
   * ядро прокси и его сборка на хосте (D-24): `tools/xray/go.mod` требует
     Xray той версии, что в каталоге (`xray-go-module`), каждый модуль
@@ -14,6 +15,11 @@
     в `go.mod` больше нет, — тоже ошибка; toolchain Go из директивы `go`
     записан; `replace` и неизвестные директивы запрещены (подмена
     модуля форком прошла бы мимо записей);
+  * содержимое артефактов Gradle сверяется (T10, аудит A-7):
+    `gradle/verification-metadata.xml` есть, проверка включена, у каждого
+    артефакта — SHA-256, доверие без сумм — только javadoc и исходники
+    (их качает IDE), у каждой библиотеки каталога — суммы той же версии
+    (`tools/provenance/update_verification.sh`);
   * `kotlin("test")` — строка матрицы с версией Kotlin (версию задаёт
     плагин, а не каталог);
   * источники геоданных (D-27, D-31): версии `geodata-dlc` и `geodata-dbip`
@@ -29,11 +35,16 @@ import os
 import re
 import sys
 import tomllib
+import xml.etree.ElementTree as ET
 
 PROJ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 CATALOG = os.path.join(PROJ, "gradle", "libs.versions.toml")
 MATRIX = os.path.join(PROJ, "docs", "legal", "THIRD_PARTY_MATRIX.md")
 PROVENANCE = os.path.join(PROJ, "docs", "PROVENANCE.md")
+VERIFICATION = os.path.join(PROJ, "gradle", "verification-metadata.xml")
+VERIFICATION_NS = "{https://schema.gradle.org/dependency-verification}"
+# Доверие без сумм — только то, что сборка не берёт (javadoc и исходники для IDE).
+TRUSTED_WITHOUT_SUMS = {".*-javadoc[.]jar", ".*-sources[.]jar"}
 GOMOD = os.path.join(PROJ, "tools", "xray", "go.mod")
 GOSUM = os.path.join(PROJ, "tools", "xray", "go.sum")
 XRAY_MODULE = "github.com/xtls/xray-core"
@@ -195,10 +206,42 @@ def check_go(versions, matrix, mrows, prows, problems):
     return len(requires)
 
 
+def check_verification(resolved, problems):
+    """Суммы артефактов Gradle (T10, аудит A-7); resolved — [(где, группа:имя, версия)] библиотек каталога. Возвращает число компонентов."""
+    rel = os.path.relpath(VERIFICATION, PROJ)
+    if not os.path.isfile(VERIFICATION):
+        problems.append(f"нет {rel}: содержимое артефактов Gradle не сверяется (T10) — tools/provenance/update_verification.sh")
+        return 0
+    try:
+        root = ET.parse(VERIFICATION).getroot()
+    except ET.ParseError as e:
+        problems.append(f"{rel}: не XML ({e})")
+        return 0
+    v = VERIFICATION_NS
+    conf = root.find(v + "configuration")
+    if conf is None or (conf.findtext(v + "verify-metadata") or "").strip() != "true":
+        problems.append(f"{rel}: verify-metadata не true — суммы записаны, но не сверяются")
+    for t in (conf.iter(v + "trust") if conf is not None else ()):
+        if not (t.get("regex") == "true" and t.get("file") in TRUSTED_WITHOUT_SUMS and set(t.attrib) == {"file", "regex"}):
+            problems.append(f"{rel}: доверие без сумм {dict(t.attrib)} — допустимы только javadoc и исходники")
+    components = {}
+    for c in root.iter(v + "component"):
+        components[(c.get("group"), c.get("name"), c.get("version"))] = c
+        for a in c.iter(v + "artifact"):
+            if a.find(v + "sha256") is None:
+                problems.append(f"{rel}: {c.get('group')}:{c.get('name')}:{c.get('version')} {a.get('name')} — без SHA-256")
+    for where, coord, ver in resolved:
+        group, name = coord.split(":", 1)
+        if (group, name, ver) not in components:
+            problems.append(f"{rel}: нет сумм {group}:{name}:{ver} ({where}) — tools/provenance/update_verification.sh")
+    return len(components)
+
+
 def main():
     problems = []
     with open(CATALOG, "rb") as f:
-        versions = tomllib.load(f).get("versions", {})
+        catalog = tomllib.load(f)
+    versions = catalog.get("versions", {})
     matrix = read(MATRIX) if os.path.isfile(MATRIX) else ""
     provenance = read(PROVENANCE) if os.path.isfile(PROVENANCE) else ""
     if not matrix:
@@ -207,6 +250,44 @@ def main():
         problems.append("нет docs/PROVENANCE.md")
     mrows, prows = table_rows(matrix), table_rows(provenance)
 
+    def version_of(entry):
+        if isinstance(entry, str):
+            return entry.rsplit(":", 1)[1] if entry.count(":") == 2 else None
+        v = entry.get("version")
+        if isinstance(v, dict):
+            return versions.get(v.get("ref")) if "ref" in v else v.get("strictly") or v.get("require")
+        if isinstance(v, str):
+            return v
+        return versions.get(entry["version.ref"]) if "version.ref" in entry else None
+
+    boms = {}
+    entries = []
+    for alias, lib in catalog.get("libraries", {}).items():
+        coord = lib if isinstance(lib, str) and lib.count(":") >= 1 else lib.get("module") or f"{lib['group']}:{lib['name']}"
+        coord = ":".join(coord.split(":")[:2])
+        ver = version_of(lib)
+        if coord.endswith("-bom") and ver:
+            boms[coord.rsplit(":", 1)[0]] = ver
+        entries.append((f"libraries.{alias}", coord, ver))
+    for alias, plugin in catalog.get("plugins", {}).items():
+        pid = plugin if isinstance(plugin, str) else plugin["id"]
+        entries.append((f"plugins.{alias}", pid.split(":")[0], version_of(plugin)))
+
+    resolved = []
+    for where, coord, ver in entries:
+        if ver is None:
+            # Версия — из BOM той же группы (junit-bom → junit-jupiter).
+            group = coord.split(":")[0]
+            ver = next((v for g, v in boms.items() if group == g or group.startswith(g + ".")), None)
+            if ver is None:
+                problems.append(f"libs.versions.toml {where}: {coord} без версии и без BOM своей группы")
+                continue
+        # Маркеры плагинов сборка не берёт: плагины приходят в build-logic библиотеками каталога.
+        # Строки матрицы и PROVENANCE для каталога сверяет provenance.deps (D-50).
+        if where.startswith("libraries."):
+            resolved.append((where, coord, ver))
+
+    verified = check_verification(resolved, problems)
     go_modules = check_go(versions, matrix, mrows, prows, problems)
     check_geodata(versions, mrows, provenance, problems)
 
@@ -222,7 +303,8 @@ def main():
         print("  Новая зависимость или версия — по чек-листу D-18 вместе со строками THIRD_PARTY_MATRIX.md и PROVENANCE.md (docs/PROCESS.md).")
         return 1
     print(f"✓ Зависимости: {go_modules} модулей Go (tools/xray, Xray {versions.get('xray')}) и kotlin(\"test\") "
-          f"сверены с матрицей лицензий и PROVENANCE.md; геоданные — dlc {versions.get('geodata-dlc')} и DB-IP {versions.get('geodata-dbip')}")
+          f"сверены с матрицей лицензий и PROVENANCE.md; геоданные — dlc {versions.get('geodata-dlc')} и DB-IP {versions.get('geodata-dbip')}; "
+          f"артефакты Gradle — по SHA-256 ({verified} компонентов в verification-metadata.xml)")
     return 0
 
 

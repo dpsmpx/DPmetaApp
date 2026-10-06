@@ -13,7 +13,7 @@
 Импорты, которых Gradle не выражает (`android.*` только в `app/`, модель
 сети и фиктивное ядро — только там, где разрешено), проверяет DP Verify:
 `code.forbidden`, правила `android-import`, `simulation-import`,
-`mock-engine-import` в `tools/dpverify.toml` (D-39).
+`mock-engine-import` в `tools/dpverify.toml` (D-50).
 
     python3 tools/hostcheck/check_modules.py
 

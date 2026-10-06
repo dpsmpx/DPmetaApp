@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # hostcheck — все проверки DPpass одной командой (docs/PROCESS.md, «Проверки»).
-# Обёртка над DP Verify (D-39): прежние ключи, проверки — tools/dpv/dpv по
+# Обёртка над DP Verify (D-50): прежние ключи, проверки — tools/dpv/dpv по
 # профилю tools/dpverify.toml.
 #
 #   tools/hostcheck/run.sh            dpv run full — всё, что можно на этой машине; пропуск — громко, но не ошибка

@@ -3,6 +3,9 @@ package com.dpsmpx.dppass.connection
 import com.dpsmpx.dppass.config.ConfigIr
 import com.dpsmpx.dppass.config.ConfigLoader
 import com.dpsmpx.dppass.config.transportClass
+import com.dpsmpx.dppass.core.Json
+import com.dpsmpx.dppass.core.JsonArray
+import com.dpsmpx.dppass.core.JsonObject
 import com.dpsmpx.dppass.core.ManualClock
 import com.dpsmpx.dppass.core.ProfileId
 import com.dpsmpx.dppass.diagnostics.DiagCode
@@ -12,6 +15,9 @@ import com.dpsmpx.dppass.engine.mock.MockBackend
 import com.dpsmpx.dppass.engine.mock.MockBackendCompiler
 import com.dpsmpx.dppass.engine.mock.MockBehavior
 import com.dpsmpx.dppass.engine.mock.MockProxyEngine
+import com.dpsmpx.dppass.network.LatencyFailure
+import com.dpsmpx.dppass.network.LatencyProbe
+import com.dpsmpx.dppass.network.LatencyResult
 import com.dpsmpx.dppass.network.NetworkAssessor
 import com.dpsmpx.dppass.network.NetworkType
 import com.dpsmpx.dppass.network.ProbeBudget
@@ -147,6 +153,37 @@ class ActivationServiceTest {
         assertNull(broken.state.activeConfig, "повреждённое — не заменяется конфигурацией по умолчанию")
         assertEquals(1, Quarantine(blobs, clock).list().valueOrNull()!!.size)
     }
+
+    /** Повреждение части состояния — находка с местом, а не молчание (D-06, CLAUDE.md «ничего молча»). */
+    @Test
+    fun partialCorruptionIsReportedNotSilent() = runBlocking {
+        val s = service()
+        s.activate(ir("valid-multi.json"), "t", "a")
+        s.activate(ir("valid-minimal.json"), "t", "b")
+        val stored = Json.parse(String(blobs.read(ActivationStore.KEY).valueOrNull()!!)) as JsonObject
+        val history = stored["history"] as JsonArray
+
+        // Испорченная запись истории пропускается с находкой; ревизия после неё не повторяется.
+        val brokenHistory = JsonArray(history.items + Json.obj("revision" to Json.str("x")))
+        blobs.write(ActivationStore.KEY, Json.write(JsonObject(stored.fields + ("history" to brokenHistory) - "next_revision")).toByteArray())
+        val again = service()
+        val notes = again.restore()
+        assertEquals(listOf("$.history[${history.items.size}]", "$.next_revision"), notes.map { it.path }, notes.toString())
+        assertTrue(notes.all { it.code == DiagCode.STORAGE_CORRUPTED && !it.isError })
+        assertEquals(history.items.size, again.state.history.size)
+        assertEquals("b", again.state.active!!.sourceChecksum, "активная конфигурация на месте")
+        val latest = (listOfNotNull(again.state.active, again.state.previous) + again.state.history).maxOf { it.revision }
+        assertEquals(latest + 1, again.state.nextRevision, "без next_revision счёт — после самой поздней записи, не с 1")
+
+        // Нечитаемая запись об активной конфигурации — состояние не цельное: карантин, а не конфигурация без записи.
+        blobs.write(ActivationStore.KEY, Json.write(JsonObject(stored.fields + ("active" to Json.obj("revision" to Json.num(1))))).toByteArray())
+        val broken = service()
+        val d = broken.restore()
+        assertEquals(DiagCode.STORAGE_CORRUPTED, d.single().code)
+        assertEquals("$.active", d.single().causes.single().path)
+        assertNull(broken.state.activeConfig)
+        assertEquals(1, Quarantine(blobs, clock).list().valueOrNull()!!.size)
+    }
 }
 
 class CandidatePlannerTest {
@@ -161,31 +198,24 @@ class CandidatePlannerTest {
         CandidatePlanner.plan(multi, MockBackend.FULL, c?.let(::assess), book, lkg, now)
 
     @Test
-    fun learnedStabilityChangesCandidateOrder() {
-        val bad = multi.profiles[0]
-        val good = multi.profiles[1]
-        val stability = StabilityBook()
-        repeat(5) {
-            stability.observe(
-                bad.id,
-                StabilitySample(success = false, rttMillis = 5_000, timestampMillis = it + 1L),
-            )
-            stability.observe(
-                good.id,
-                StabilitySample(success = true, rttMillis = 100, timestampMillis = it + 1L),
-            )
+    fun learnedStabilityOrdersViableCandidates() {
+        val assessment = assess(NetworkCondition.NORMAL)
+        val context = NetworkContext.of(assessment)
+        val good = ProfileId("ss2022")
+        val bad = ProfileId("reality-1")
+        val model = StabilityModel()
+        for (i in 1..12L) {
+            model.observe(good, context, StabilityObservation(true, 80, timestampMillis = i * 1_000), multi.profiles.first { it.id == good }, assessment)
+            model.observe(bad, context, StabilityObservation(false, 5_000, timestampMillis = i * 1_000), multi.profiles.first { it.id == bad }, assessment)
         }
-
-        val plan = CandidatePlanner.plan(
-            multi,
-            MockBackend.FULL,
-            assess(NetworkCondition.NORMAL),
-            HealthBook(),
-            null,
-            nowMillis = 0,
-            stability = stability,
-        )
-        assertEquals(good.id, plan.attempts.first().profile.id)
+        // С моделью устойчивый кандидат идёт первым; без неё порядок прежний (по id/приоритету).
+        val withModel = CandidatePlanner.plan(multi, MockBackend.FULL, assessment, HealthBook(), null, 0, stability = model)
+        val without = CandidatePlanner.plan(multi, MockBackend.FULL, assessment, HealthBook(), null, 0)
+        assertEquals(good, withModel.attempts.first().profile.id)
+        assertEquals(bad, without.attempts.first().profile.id, "без модели первым — reality-1 (как прежде)")
+        // Жёсткие исключения модель не трогает: выбор пользователя всё равно первый.
+        val preferredWins = CandidatePlanner.plan(multi, MockBackend.FULL, assessment, HealthBook(), null, 0, preferred = bad, stability = model)
+        assertEquals(bad, preferredWins.attempts.first().profile.id, "выбор пользователя (D-34) выше выученной устойчивости")
     }
 
     @Test
@@ -209,6 +239,24 @@ class CandidatePlannerTest {
             multi, MockBackend.FULL, assess(NetworkCondition.TCP_REACHABLE_UDP_BLOCKED), HealthBook(), null, 0, preferred = ProfileId("hy2"),
         )
         assertTrue(udp.attempts.none { it.profile.id == ProfileId("hy2") })
+    }
+
+    /** D-41: задержка — порядок среди равных по здоровью, классу и приоритету; неизмеренные — после. */
+    @Test
+    fun latencyOrdersEquallyHealthyCandidates() {
+        val v2 = ir("valid-format-v2.json")
+        val ms = mapOf(ProfileId("trojan-ios") to 40L, ProfileId("reality-qq") to 180L, ProfileId("ws-edge") to 90L)
+        val plan = CandidatePlanner.plan(v2, MockBackend.FULL, null, HealthBook(), null, 0, latency = { ms[it] })
+        assertEquals(ProfileId("trojan-ios"), plan.attempts.first().profile.id)
+        assertTrue("задержка 40 мс" in plan.attempts.first().reasons)
+        val order = plan.attempts.map { it.profile.id }
+        // Того же класса (TCP): измеренный reality-qq раньше; HTTP/CDN: измеренный ws-edge раньше неизмеренного xhttp-extra.
+        assertTrue(ProfileId("xhttp-extra") !in order || order.indexOf(ProfileId("ws-edge")) < order.indexOf(ProfileId("xhttp-extra")), "$order")
+        // Без замеров — прежний порядок по id.
+        assertEquals(
+            CandidatePlanner.plan(v2, MockBackend.FULL, null, HealthBook(), null, 0).attempts.map { it.profile.id },
+            CandidatePlanner.plan(v2, MockBackend.FULL, null, HealthBook(), null, 0, latency = { null }).attempts.map { it.profile.id },
+        )
     }
 
     @Test
@@ -284,7 +332,7 @@ class OrchestratorTest {
         val engine = MockProxyEngine()
         val pauses = mutableListOf<Long>()
         val log = com.dpsmpx.dppass.diagnostics.Logger("t", com.dpsmpx.dppass.diagnostics.MemoryLogSink(), clock::nowMillis)
-        val report = ConnectionOrchestrator(MockBackendCompiler(), engine, SimulatedHealthChecker(net), book, clock, log, pause = { pauses += it; clock.advance(it) })
+        val report = ConnectionOrchestrator(MockBackendCompiler(), engine, SimulatedHealthChecker(net), book, clock, log) { pauses += it; clock.advance(it) }
             .connect(multi, plan, null)
         assertEquals((report.attempts.size - 1).coerceAtLeast(0), pauses.size, "пауза между каждой парой попыток")
         report to engine
@@ -321,5 +369,28 @@ class OrchestratorTest {
         assertEquals(DiagCode.NETWORK_OFFLINE, assertIs<ConnectionReport.Failed>(r).reason.code)
         assertTrue(engine.startedProfiles.isEmpty())
         assertNotNull(r.plan.verdictMessage)
+    }
+}
+
+class LatencyBookTest {
+    @Test
+    fun measuresTcpOneByOneAndSkipsUdp() = runBlocking {
+        val v2 = ir("valid-format-v2.json")
+        val probed = mutableListOf<String>()
+        val pauses = mutableListOf<Long>()
+        val probe = LatencyProbe { host, port, _ ->
+            probed += "$host:$port"
+            if (port == 443 && host.toString() == "203.0.113.26") LatencyResult.Failed(LatencyFailure.TIMEOUT) else LatencyResult.Measured(42)
+        }
+        val book = LatencyBook()
+        val seen = mutableListOf<ProfileId>()
+        book.measureAll(v2.profiles, probe, { pauses += it }) { id, _ -> seen += id }
+        assertEquals(v2.profiles.map { it.id }, seen)
+        assertEquals(LatencyResult.NotTcp, book.of(ProfileId("hy2-bbr")))
+        assertTrue(probed.none { it.startsWith("192.0.2.30") }, "UDP не мерится TCP")
+        assertEquals(LatencyResult.Failed(LatencyFailure.TIMEOUT), book.of(ProfileId("xhttp-extra")))
+        assertNull(book.millis(ProfileId("xhttp-extra")), "тайм-аут — не задержка")
+        assertEquals(42L, book.millis(ProfileId("trojan-ios")))
+        assertTrue(pauses.isNotEmpty() && pauses.all { it == LatencyBook.PACING_MILLIS }, "по одному, с паузой")
     }
 }

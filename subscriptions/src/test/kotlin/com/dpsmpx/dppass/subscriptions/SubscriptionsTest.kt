@@ -1,12 +1,17 @@
 package com.dpsmpx.dppass.subscriptions
 
 import com.dpsmpx.dppass.config.ConfigValidator
+import com.dpsmpx.dppass.config.CountRange
+import com.dpsmpx.dppass.config.Hysteria2Congestion
 import com.dpsmpx.dppass.config.ProtocolSpec
 import com.dpsmpx.dppass.config.SecuritySpec
 import com.dpsmpx.dppass.config.ShadowsocksMethod
+import com.dpsmpx.dppass.config.TlsFingerprint
 import com.dpsmpx.dppass.config.TransportSpec
 import com.dpsmpx.dppass.config.VlessFlow
+import com.dpsmpx.dppass.config.XHttpExtra
 import com.dpsmpx.dppass.config.XHttpMode
+import com.dpsmpx.dppass.config.Xmux
 import com.dpsmpx.dppass.core.ManualClock
 import com.dpsmpx.dppass.core.SubscriptionId
 import com.dpsmpx.dppass.diagnostics.DiagCode
@@ -129,9 +134,9 @@ class ShareLinkParserTest {
     @Test
     fun hysteria2RejectsWhatIrCannotExpress() {
         val base = "hysteria2://test-password-2@192.0.2.30:8443/?sni=hy2.example.com"
-        // fm — finalmask Xray (управление перегрузкой и др.), pinSHA256 — пиннинг: IR их не выражает.
-        val names = unsupportedNames(ShareLinkParser.parse("$base&fm=%7B%7D&pinSHA256=AA", "s"))
-        assertTrue("fm" in names && "pinsha256" in names, names)
+        // Маски finalmask (кроме quicParams.congestion, D-37) и pinSHA256 (пиннинг) IR не выражает.
+        assertTrue("pinsha256" in unsupportedNames(ShareLinkParser.parse("$base&pinSHA256=AA", "s")))
+        assertTrue("fm.udp" in unsupportedNames(ShareLinkParser.parse("$base&fm=%7B%22udp%22%3A%5B%5D%7D", "s")))
         val obfs = unsupportedNames(ShareLinkParser.parse("$base&obfs=gecko&obfs-password=x", "s"))
         assertTrue("obfs" in obfs && "gecko" !in obfs, obfs)
         assertEquals(DiagCode.INSECURE_TLS_REJECTED, ShareLinkParser.parse("$base&insecure=1", "s").errors.single().code)
@@ -169,6 +174,74 @@ class ShareLinkParserTest {
         // Неизвестный «метод» не повторяется: в испорченной ссылке там бывает секрет.
         val r = ShareLinkParser.parse("ss://test-password-9:x@192.0.2.40:8388", "s")
         assertFalse(r.diagnostics.flatMap { it.renderWithCauses() }.any { "test-password-9" in it }, unsupportedNames(r))
+    }
+
+    /**
+     * D-48: `fm.quicParams.debug` в Xray только включает отладочный журнал
+     * перегрузки во всём процессе — запись не теряется, флаг отбрасывается с
+     * находкой. Не true/false — отказ; соседние неизвестные ключи — отказ, как раньше.
+     */
+    @Test
+    fun quicDebugFlagIsDroppedWithNote() {
+        val base = "hysteria2://test-password-2@192.0.2.30:8443/?sni=hy2.example.com&fm="
+        val r = ShareLinkParser.parse(base + "%7B%22quicParams%22%3A%7B%22congestion%22%3A%22bbr%22%2C%22debug%22%3Atrue%7D%7D", "s")
+        val p = r.valueOrNull()!!
+        assertEquals(Hysteria2Congestion.BBR, (p.protocol as ProtocolSpec.Hysteria2).congestion)
+        val note = r.diagnostics.single()
+        assertEquals(DiagCode.SHARE_LINK_PARAM_IGNORED, note.code)
+        assertFalse(note.isError)
+        assertTrue("fm.quicParams.debug" in note.message, note.message)
+        // Только debug — без перегрузки.
+        val only = ShareLinkParser.parse(base + "%7B%22quicParams%22%3A%7B%22debug%22%3Afalse%7D%7D", "s")
+        assertEquals(null, (only.valueOrNull()!!.protocol as ProtocolSpec.Hysteria2).congestion)
+        assertEquals(DiagCode.SHARE_LINK_PARAM_IGNORED, only.diagnostics.single().code)
+        assertEquals(
+            DiagCode.SHARE_LINK_INVALID,
+            ShareLinkParser.parse(base + "%7B%22quicParams%22%3A%7B%22debug%22%3A%22yes%22%7D%7D", "s").errors.single().code,
+        )
+        val other = unsupportedNames(ShareLinkParser.parse(base + "%7B%22quicParams%22%3A%7B%22debug%22%3Atrue%2C%22disableGSO%22%3Atrue%7D%7D", "s"))
+        assertTrue("fm.quicParams.disableGSO" in other && "debug" !in other, other)
+    }
+
+    /** Формат 2 (D-37): отпечатки, `extra` XHTTP и `fm` Hysteria2 из ссылок панели. */
+    @Test
+    fun formatV2LinkParameters() {
+        val qq = ShareLinkParser.parse("vless://$UUID1@203.0.113.11:443?security=reality&sni=www.example.com&pbk=$KEY&fp=qq&flow=xtls-rprx-vision", "s")
+        assertEquals(TlsFingerprint.QQ, (qq.valueOrNull()!!.security as SecuritySpec.Reality).fingerprint)
+        val edge = ShareLinkParser.parse("vless://$UUID1@cdn.example.net:443?type=ws&security=tls&sni=cdn.example.net&path=%2Fws&fp=edge", "s")
+        assertEquals(TlsFingerprint.EDGE, (edge.valueOrNull()!!.security as SecuritySpec.Tls).fingerprint)
+
+        val extra = "%7B%22xPaddingBytes%22%3A%22100-1000%22%2C%22noGRPCHeader%22%3Atrue%2C%22xmux%22%3A" +
+            "%7B%22maxConcurrency%22%3A%2216-32%22%2C%22maxConnections%22%3A0%2C%22hKeepAlivePeriod%22%3A0%7D%7D"
+        val x = ShareLinkParser.parse("vless://$UUID1@203.0.113.26:443?type=xhttp&security=reality&sni=www.example.com&pbk=$KEY&path=%2Fx&extra=$extra", "s")
+        val e = (x.valueOrNull()!!.transport as TransportSpec.XHttp).extra
+        assertEquals(XHttpExtra(xPaddingBytes = CountRange(100, 1000), noGrpcHeader = true, xmux = Xmux(maxConcurrency = CountRange(16, 32))), e)
+        assertTrue(ConfigValidator.validateProfile(x.valueOrNull()!!, "p").none { it.isError })
+
+        val hy2 = ShareLinkParser.parse("hysteria2://test-password-2@192.0.2.30:8443/?sni=hy2.example.com&fm=%7B%22quicParams%22%3A%7B%22congestion%22%3A%22bbr%22%7D%7D", "s")
+        assertEquals(Hysteria2Congestion.BBR, (hy2.valueOrNull()!!.protocol as ProtocolSpec.Hysteria2).congestion)
+
+        // Незнакомый ключ — отказ с названием, без значения.
+        val headers = unsupportedNames(
+            ShareLinkParser.parse("vless://$UUID1@203.0.113.26:443?type=xhttp&security=tls&sni=a.example.com&extra=%7B%22headers%22%3A%7B%22x%22%3A%22secret-9%22%7D%7D", "s"),
+        )
+        assertTrue("extra.headers" in headers && "secret-9" !in headers, headers)
+        val brutal = unsupportedNames(
+            ShareLinkParser.parse("hysteria2://test-password-2@192.0.2.30:8443/?fm=%7B%22quicParams%22%3A%7B%22congestion%22%3A%22brutal%22%7D%7D", "s"),
+        )
+        assertTrue("congestion" in brutal, brutal)
+        // extra у другого транспорта и не-JSON — отказ.
+        assertTrue("extra" in unsupportedNames(ShareLinkParser.parse("vless://$UUID1@203.0.113.1:443?security=tls&sni=a.example.com&extra=%7B%7D", "s")))
+        assertEquals(
+            DiagCode.SHARE_LINK_INVALID,
+            ShareLinkParser.parse("vless://$UUID1@203.0.113.1:443?type=xhttp&security=tls&sni=a.example.com&extra=nope", "s").errors.single().code,
+        )
+        // Оба предела xmux — ссылка разбирается, профиль отвергает проверка (как у документа).
+        val both = ShareLinkParser.parse(
+            "vless://$UUID1@203.0.113.1:443?type=xhttp&security=tls&sni=a.example.com&extra=%7B%22xmux%22%3A%7B%22maxConcurrency%22%3A2%2C%22maxConnections%22%3A3%7D%7D",
+            "s",
+        )
+        assertEquals(listOf(DiagCode.TRANSPORT_SETTING_INVALID), ConfigValidator.validateProfile(both.valueOrNull()!!, "p").map { it.code })
     }
 
     @Test
@@ -334,5 +407,78 @@ class SubscriptionUpdaterTest {
         val s = sub().copy(fetchPolicy = FetchPolicy(maxBytes = 10))
         val r = SubscriptionUpdater(fetcher(links), clock, "test").update(s, passAll) as UpdateResult.Failed
         assertEquals(DiagCode.SUBSCRIPTION_TOO_LARGE, r.subscription.lastFailed!!.reason.code)
+    }
+}
+
+/** Когда пора обновлять подписку в фоне (D-39). */
+class UpdateScheduleTest {
+    private val hour = 60 * 60_000L
+    private val base = Subscription(SubscriptionId("s1"), "S", SubscriptionSource.Url(Secret("https://sub.example.com/t")))
+    private fun failure(at: Long) = FailedRevision(null, at, com.dpsmpx.dppass.diagnostics.Diagnostic.error(DiagCode.SUBSCRIPTION_FETCH_FAILED, "x"))
+
+    @Test
+    fun intervalsFailuresAndOff() {
+        assertTrue(UpdateSchedule.due(base, 0), "ни разу не проверялась — пора")
+        val checked = base.copy(lastCheckedMillis = 10 * hour)
+        assertFalse(UpdateSchedule.due(checked, 21 * hour))
+        assertTrue(UpdateSchedule.due(checked, 22 * hour), "12 часов по умолчанию")
+        assertEquals(hour, UpdateSchedule.waitMillis(checked, 21 * hour))
+        // После неудачи — не раньше чем через 30 минут.
+        val failed = checked.copy(lastFailed = failure(22 * hour))
+        assertFalse(UpdateSchedule.due(failed, 22 * hour + 29 * 60_000))
+        assertTrue(UpdateSchedule.due(failed, 22 * hour + 30 * 60_000))
+        // Удачная ревизия без отметки проверки (версия 1 хранения) — срок от неё.
+        val legacy = base.copy(lastSuccessful = SubscriptionRevision(1, "c", 5 * hour, 3))
+        assertFalse(UpdateSchedule.due(legacy, 16 * hour))
+        assertTrue(UpdateSchedule.due(legacy, 17 * hour))
+        // Выключено — никогда.
+        val off = checked.copy(updatePolicy = UpdatePolicy(intervalMinutes = null))
+        assertFalse(UpdateSchedule.due(off, 1000 * hour))
+        assertNull(UpdateSchedule.waitMillis(off, 0))
+    }
+}
+
+/** Хранение версии 2 (D-39, D-42) и чтение версии 1. */
+class SubscriptionCodecTest {
+    @Test
+    fun inlineSourceIntervalAndCheckRoundTrip() {
+        val items = listOf(
+            Subscription(SubscriptionId("s1"), "Url", SubscriptionSource.Url(Secret("https://sub.example.com/t")), lastCheckedMillis = 42),
+            Subscription(SubscriptionId("s2"), "Мои", SubscriptionSource.Inline(Secret("trojan://p@198.51.100.1:443#A")), updatePolicy = UpdatePolicy(null)),
+            Subscription(SubscriptionId("s3"), "Daily", SubscriptionSource.Url(Secret("https://sub.example.com/u")), updatePolicy = UpdatePolicy(24 * 60)),
+        )
+        val state = SubscriptionsState(items, SubscriptionId("s2"))
+        assertEquals(state, SubscriptionCodec.read(SubscriptionCodec.write(state)).valueOrNull())
+    }
+
+    @Test
+    fun version1ReadsWithDefaults() {
+        val v1 = """{"format":"dppass.subscriptions","format_version":1,"items":[{"id":"s1","name":"S","url":"https://sub.example.com/t","binding":"user","revision_counter":0,"metadata":{}}]}"""
+        val s = SubscriptionCodec.read(v1).valueOrNull()!!.items.single()
+        assertEquals(UpdatePolicy(), s.updatePolicy)
+        assertNull(s.lastCheckedMillis)
+        // Ровно один источник.
+        val both = v1.replace("\"url\":\"https://sub.example.com/t\"", "\"url\":\"https://sub.example.com/t\",\"inline\":\"x\"")
+        assertIs<Outcome.Failure>(SubscriptionCodec.read(both))
+    }
+}
+
+/** Предел записей подписки (docs/PERFORMANCE_BUDGET.md, §2): лишние не читаются, и это видно. */
+class PayloadLimitsTest {
+    private fun links(n: Int) = (1..n).joinToString("\n") { i ->
+        "trojan://test-password-$i@203.0.113.${i % 250 + 1}:443?security=tls&sni=t$i.example.com#T$i"
+    }
+
+    @Test
+    fun entriesUpToLimitAreReadTheRestAreSkippedLoudly() {
+        val max = FetchPolicy().maxEntries
+        assertEquals(1000, max, "как в PERFORMANCE_BUDGET §2")
+        val exact = PayloadDecoder.decode(links(max).toByteArray(), "s", max).valueOrNull()!!
+        assertEquals(max, exact.profiles.size)
+        val over = PayloadDecoder.decode(links(max + 5).toByteArray(), "s", max)
+        assertEquals(max, over.valueOrNull()!!.profiles.size)
+        val skipped = over.diagnostics.single { it.code == DiagCode.SUBSCRIPTION_ENTRY_SKIPPED }
+        assertTrue("$max" in skipped.message, skipped.message)
+        assertFalse(skipped.isError)
     }
 }

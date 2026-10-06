@@ -11,6 +11,13 @@ fun interface Clock {
 
     companion object {
         val SYSTEM: Clock = Clock { System.currentTimeMillis() }
+
+        /**
+         * Монотонные миллисекунды — для длительностей (задержка, скорость,
+         * D-40, D-41): часы устройства могут прыгнуть, а длительность — нет.
+         * Не время суток.
+         */
+        val MONOTONIC: Clock = Clock { System.nanoTime() / 1_000_000 }
     }
 }
 

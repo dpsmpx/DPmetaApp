@@ -1,6 +1,6 @@
-# tools/dpverify.toml — профиль DP Verify для DPpass (D-39).
+# tools/dpverify.toml — профиль DP Verify для DPpass (D-50).
 # Общие проверки — встроенные DP Verify (обязательный набор и необязательные ниже); предметные
-# шаги DPpass — командами project.*. Соответствие прежним скриптам и внесённые ошибки — D-39 и
+# шаги DPpass — командами project.*. Соответствие прежним скриптам и внесённые ошибки — D-50 и
 # описание PR пилота; вход — tools/hostcheck/run.sh (обёртка) или tools/dpv/dpv.
 schema = 1
 dpv = ">=1.0.0-rc1, <2"
@@ -105,12 +105,12 @@ definition = '^class\s+(\w+Test)\b'
 [checks."code.forbidden"]
 enabled = true
 rule = [
-  { id = "dns-resolve", regex = '\b(getByName|getAllByName|getLocalHost)\s*\(', files = ["**/*.kt", "**/*.kts"], reason = "резолв имени мимо туннеля (T4); IP — core.IpAddress, байты — InetAddress.getByAddress" },
-  { id = "secret-reveal", regex = '\.reveal\s*\(\s*\)', files = ["**/*.kt", "**/*.kts"], allow = ["**/src/test/**", "**/src/xrayJni/**", "diagnostics/src/main/kotlin/com/dpsmpx/dppass/diagnostics/Secret.kt", "config/src/main/kotlin/com/dpsmpx/dppass/config/ConfigValidator.kt", "config/src/main/kotlin/com/dpsmpx/dppass/config/ConfigWriter.kt", "engine/src/main/**", "storage/src/main/**", "subscriptions/src/main/kotlin/com/dpsmpx/dppass/subscriptions/Codec.kt", "subscriptions/src/main/kotlin/com/dpsmpx/dppass/subscriptions/Https.kt"], reason = "значение секрета — только разбор и запись конфигурации, компиляторы ядер, хранилище, запись и загрузка подписки (D-11, D-36)" },
+  { id = "dns-resolve", regex = '\b(getByName|getAllByName|getLocalHost)\s*\(', files = ["**/*.kt", "**/*.kts"], allow = ["network/src/main/kotlin/com/dpsmpx/dppass/network/Latency.kt"], reason = "резолв имени мимо туннеля (T4); IP — core.IpAddress, байты — InetAddress.getByAddress; имя сервера — только TcpLatencyProbe, системой, как ядро (D-41, D-29)" },
+  { id = "secret-reveal", regex = '\.reveal\s*\(\s*\)', files = ["**/*.kt", "**/*.kts"], allow = ["**/src/test/**", "**/src/xrayJni/**", "diagnostics/src/main/kotlin/com/dpsmpx/dppass/diagnostics/Secret.kt", "config/src/main/kotlin/com/dpsmpx/dppass/config/ConfigValidator.kt", "config/src/main/kotlin/com/dpsmpx/dppass/config/ConfigWriter.kt", "engine/src/main/**", "storage/src/main/**", "subscriptions/src/main/kotlin/com/dpsmpx/dppass/subscriptions/Codec.kt", "subscriptions/src/main/kotlin/com/dpsmpx/dppass/subscriptions/Https.kt", "subscriptions/src/main/kotlin/com/dpsmpx/dppass/subscriptions/Inline.kt"], reason = "значение секрета — только разбор и запись конфигурации, компиляторы ядер, хранилище, запись и загрузка подписки, свои серверы (D-11, D-36, D-42)" },
   { id = "stack-trace", regex = '\bprintStackTrace\s*\(', files = ["**/*.kt", "**/*.kts"], reason = "стек может нести секреты; причина — Diagnostic.fromThrowable (D-22)" },
   { id = "console", regex = '(?<![\w.])(println|print)\s*\(|\bSystem\.(out|err)\b', files = ["**/src/main/**/*.{kt,kts}"], allow = ["module:cli"], reason = "вывод в консоль — только cli/; остальное — Logger" },
   { id = "wall-clock", regex = '\bSystem\.(currentTimeMillis|nanoTime)\s*\(|\b(Instant|LocalDateTime|LocalDate|ZonedDateTime|OffsetDateTime)\.now\s*\(|\bDate\s*\(\s*\)', files = ["**/src/main/**/*.{kt,kts}"], allow = ["core/src/main/kotlin/com/dpsmpx/dppass/core/Support.kt", "cli/src/main/kotlin/com/dpsmpx/dppass/cli/Bench.kt"], reason = "время — только через core.Clock (D-21)" },
-  { id = "weak-random", regex = '\bkotlin\.random\b|\bjava\.util\.Random\b|\bMath\.random\s*\(|(?<![\w.])Random\s*\(', files = ["**/src/main/**/*.{kt,kts}"], reason = "ключи — SecureRandom; решения — детерминированно (D-15)" },
+  { id = "weak-random", regex = '\bkotlin\.random\b|\bjava\.util\.Random\b|\bMath\.random\s*\(|(?<![\w.])Random\s*\(', files = ["**/src/main/**/*.{kt,kts}"], allow = ["build-logic/src/main/kotlin/com/dpsmpx/dppass/build/AppIdentity.kt"], reason = "ключи — SecureRandom; решения — детерминированно (D-15); зерно личности личной сборки — инструмент сборки (D-47)" },
   { id = "weak-crypto", regex = '"(MD5|SHA-?1|DES|DESede|RC4|ARCFOUR)"|"[A-Za-z0-9]+/ECB/|Cipher\.getInstance\s*\(\s*"AES"\s*\)', files = ["**/*.kt", "**/*.kts"], reason = "слабый алгоритм или режим шифрования" },
   { id = "trust-override", regex = '\b(X509TrustManager|X509ExtendedTrustManager|HostnameVerifier|setHostnameVerifier|setDefaultHostnameVerifier|TrustAllCerts|ALLOW_ALL_HOSTNAME_VERIFIER)\b', files = ["**/*.kt", "**/*.kts"], reason = "своя проверка сертификата — её отключение (T5); запрещено и в тестах" },
   { id = "android-log", regex = '\bandroid\.util\.Log\b|(?<![\w.])Log\.(v|d|i|w|e|wtf)\s*\(', files = ["**/*.kt", "**/*.kts"], reason = "журнал — только Logger с редактированием (D-11)" },
@@ -128,8 +128,8 @@ enabled = true
 rule = [
   { kind = "link-host", paths = ["**"], schemes = ["vless", "vmess", "trojan", "ss", "ssr", "hysteria2", "hy2", "tuic", "anytls", "wireguard", "wg", "socks", "socks5"] },
   { kind = "uuid", paths = ["**"], synthetic = '^00000000-0000-' },
-  { kind = "ip", paths = ["tests/data/**", "app/src/main/assets/sample/**"], keys = ["ip_cidr", "ip"] },
-  { kind = "domain", paths = ["tests/data/**", "app/src/main/assets/sample/**"], keys = ["server", "host", "server_name", "address", "domain", "domain_suffix", "sni", "serverName", "blocked_endpoints"], allow = [{ value = "example.ru", reason = "образец «отечественного» домена для правил DIRECT и DNS по суффиксу .ru" }] },
+  { kind = "ip", paths = ["tests/data/**"], keys = ["ip_cidr", "ip"] },
+  { kind = "domain", paths = ["tests/data/**"], keys = ["server", "host", "server_name", "address", "domain", "domain_suffix", "sni", "serverName", "blocked_endpoints"], allow = [{ value = "example.ru", reason = "образец «отечественного» домена для правил DIRECT и DNS по суффиксу .ru" }] },
 ]
 
 [checks."provenance.deps"]

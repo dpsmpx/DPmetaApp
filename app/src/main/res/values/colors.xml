@@ -4,9 +4,7 @@
   с теми же именами. Текст на фоне и на поверхности — контраст не ниже
   WCAG AA (4,5:1); вторичный текст — тоже.
 -->
-<!-- Задел интерфейса D-34 (этап 4): тема подключается в манифесте вместе с экранами;
-     до тех пор Lint не должен считать её ресурсы лишними (TODO.md). -->
-<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="UnusedResources">
+<resources>
     <color name="bg">#FFF4F6FA</color>
     <color name="surface">#FFFFFFFF</color>
     <color name="surface_variant">#FFEBEEF5</color>

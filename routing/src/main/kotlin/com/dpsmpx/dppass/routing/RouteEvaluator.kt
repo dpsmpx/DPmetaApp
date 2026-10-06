@@ -61,17 +61,14 @@ class RouteEvaluator(private val policy: RoutingPolicy, private val geo: GeoReso
             firstMatch(query.copy(ip = query.resolvedIp))?.let {
                 return it.copy(reason = it.reason + " (по IP после резолва домена)")
             }
-            if (policy.automaticDomestic && geo.ipMatches(RoutingPolicy.DOMESTIC_GEOIP, query.resolvedIp)) {
-                return RouteDecision(RouteAction.DIRECT, null, "внутреннее разделение: geoip:${RoutingPolicy.DOMESTIC_GEOIP}")
-            }
         }
+        // Автоматический раздельный маршрут (D-45): после явных правил
+        // отечественное назначение — напрямую. Явные правила выше по порядку,
+        // поэтому смысл документа не меняется (D-05).
         if (policy.automaticDomestic) {
-            if (query.domain?.let { geo.siteMatches(RoutingPolicy.DOMESTIC_GEOSITE, it) } == true) {
-                return RouteDecision(RouteAction.DIRECT, null, "внутреннее разделение: geosite:${RoutingPolicy.DOMESTIC_GEOSITE}")
-            }
-            if (query.ip?.let { geo.ipMatches(RoutingPolicy.DOMESTIC_GEOIP, it) } == true) {
-                return RouteDecision(RouteAction.DIRECT, null, "внутреннее разделение: geoip:${RoutingPolicy.DOMESTIC_GEOIP}")
-            }
+            val domestic = query.domain?.let { geo.siteMatches(SITE_RU, it) } == true ||
+                (query.ip ?: query.resolvedIp)?.let { geo.ipMatches(IP_RU, it) } == true
+            if (domestic) return RouteDecision(RouteAction.DIRECT, null, "автоматический раздельный маршрут: отечественное напрямую (geosite/geoip:ru)")
         }
         return RouteDecision(policy.defaultAction, null, "ни одно правило не сработало — действие по умолчанию")
     }
@@ -105,5 +102,11 @@ class RouteEvaluator(private val policy: RoutingPolicy, private val geo: GeoReso
         if (c.ports.isNotEmpty() && (q.port == null || c.ports.none { q.port in it })) return false
         if (c.networks.isNotEmpty() && (q.network == null || q.network !in c.networks)) return false
         return true
+    }
+
+    companion object {
+        /** Коды набора геоданных (D-27) для автосплита (D-45); те же, что в PolicyBuilder. */
+        const val SITE_RU: String = "category-ru"
+        const val IP_RU: String = "ru"
     }
 }

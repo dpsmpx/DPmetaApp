@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Шаги проверки DPpass, которые не одна программа: их зовёт DP Verify командами
-# профиля tools/dpverify.toml (D-39). Перенесены из tools/hostcheck/run.sh без
+# профиля tools/dpverify.toml (D-50). Перенесены из tools/hostcheck/run.sh без
 # изменения поведения; дым CLI — проверка smoke.cli DP Verify.
 #
 #   tools/hostcheck/steps.sh build         сборка и тесты ядра (с Android SDK — без :app:build: APK — шаг Android)

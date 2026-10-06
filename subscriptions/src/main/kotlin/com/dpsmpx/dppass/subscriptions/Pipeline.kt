@@ -73,7 +73,11 @@ object PayloadDecoder {
             val path = "entry[$entry]"
             entry++
             when (val r = ShareLinkParser.parse(line, idPrefix)) {
-                is Outcome.Success -> profiles += r.value
+                is Outcome.Success -> {
+                    profiles += r.value
+                    // Находки принятой записи (отброшенный параметр, D-48) — с местом записи.
+                    notes += r.diagnostics.map { it.copy(path = it.path ?: path) }
+                }
                 is Outcome.Failure -> notes += Diagnostic.warning(DiagCode.SUBSCRIPTION_ENTRY_SKIPPED, "запись пропущена", path).copy(causes = r.diagnostics)
             }
         }

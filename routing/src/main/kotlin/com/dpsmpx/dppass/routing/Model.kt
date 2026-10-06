@@ -102,15 +102,11 @@ data class RoutingPolicy(
     /** Локальные сети (RFC 1918, link-local, ULA) — мимо туннеля. */
     val bypassLan: Boolean = true,
     /**
-     * Внутреннее разделение (D-38): после правил пользователя отечественные
-     * назначения — [DOMESTIC_GEOSITE], [DOMESTIC_GEOIP] — идут напрямую.
-     * По назначению, а не по приложению: перечислять приложения не нужно.
+     * Автоматический раздельный маршрут (D-45): после всех явных правил
+     * отечественное назначение (`geosite:category-ru`, `geoip:ru`) идёт
+     * `DIRECT`. По умолчанию выключено — документ пользователя значит
+     * ровно то, что в нём написано (D-05); включает политика (режим
+     * `AUTO`, D-38).
      */
-    val automaticDomestic: Boolean = true,
-) {
-    companion object {
-        /** Список dlc: `tld-ru`, `ru.com`, `ru.net` и российские сервисы на других доменах (D-38). */
-        const val DOMESTIC_GEOSITE: String = "category-ru"
-        const val DOMESTIC_GEOIP: String = "ru"
-    }
-}
+    val automaticDomestic: Boolean = false,
+)

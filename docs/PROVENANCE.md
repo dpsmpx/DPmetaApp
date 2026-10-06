@@ -5,7 +5,7 @@
 здесь, с проверяемой контрольной суммой (D-20). Лицензии тех же
 компонентов — `docs/legal/THIRD_PARTY_MATRIX.md`.
 
-Сверку делают проверки DP Verify (D-39, `tools/dpverify.toml`) и
+Сверку делают проверки DP Verify (D-50, `tools/dpverify.toml`) и
 `tools/provenance/check_dependencies.py`: каждая запись
 `gradle/libs.versions.toml` и версия Gradle — строка в §2 и §3 с той же
 версией, SHA-256 дистрибутива Gradle — как в §3 (`provenance.deps`);
@@ -56,9 +56,10 @@
 | `org.jetbrains.kotlin:kotlin-stdlib` | 2.4.20 | Maven Central | POM: Apache-2.0; версию задаёт плагин Kotlin |
 | `org.jetbrains:annotations` | 23.0.0 | Maven Central | POM: Apache-2.0; транзитивно (`./gradlew :cli:dependencies`) |
 
-Версии закреплены, а содержимое артефактов Gradle пока не сверяет с
-записанными суммами (нет `gradle/verification-metadata.xml`) — долг
-в `TODO.md`.
+Версии закреплены, содержимое артефактов Gradle сверяет по SHA-256:
+`gradle/verification-metadata.xml` (с 6 октября 2026), пересоздаётся
+`tools/provenance/update_verification.sh` по чек-листу D-18
+(`docs/PROCESS.md`, «Зависимости»).
 
 ### Ядро прокси и модули Go (`tools/xray`)
 
@@ -161,7 +162,7 @@ Xray 26.9.30 его принимает и выбирает по его кода�
 
 | Что | Значение |
 |---|---|
-| `gradle` | 9.8.0 — версия дистрибутива из `gradle-wrapper.properties`; её сверяет `provenance.deps` DP Verify (D-39) |
+| `gradle` | 9.8.0 — версия дистрибутива из `gradle-wrapper.properties`; её сверяет `provenance.deps` DP Verify (D-50) |
 | Дистрибутив | `gradle-9.8.0-bin.zip` с `services.gradle.org/distributions/` |
 | SHA-256 дистрибутива | `bafd5ce9cfaea0fbccfdc8439a1ac42fbd4cd9c89dc9a988228d8a2639a58e6c` — совпадает с опубликованным `gradle-9.8.0-bin.zip.sha256`; записан в `gradle/wrapper/gradle-wrapper.properties` (`distributionSha256Sum`), wrapper сверяет его при загрузке |
 | SHA-256 `gradle-wrapper.jar` | `238e777fcddd7e34f9708186085def2abd6e08e658505b38718d79d74c21abd5` — совпадает с опубликованным `gradle-9.8.0-wrapper.jar.sha256` |
@@ -196,9 +197,27 @@ Xray 26.9.30 его принимает и выбирает по его кода�
 (`.gitignore`). Оттуда в DPpass ничего не копируется: опись печатает
 состав, выводы записываются своими словами в `docs/research/` с датой.
 
-## 7. Копия DP Verify (`tools/dpv/`)
+## 7. Ключ подписи тестовых сборок
 
-Общий каркас проверок автора (D-39) — свой код автора из его репозитория
+Тестовые сборки для устройств автора (D-35) подписываются ключом
+разработчика `dppass-dev` (RSA 4096, хранилище PKCS12). Ключ — у автора,
+в репозитории его нет (`security.secrets` не пропускает файлы ключей).
+Сборка получает его из переменных окружения, подписывает
+`tools/release/sign_apks.py` и сверяет сертификат подписи с отпечатком
+ниже: APK, подписанный другим ключом, не выходит.
+
+Автор проверяет APK так: `apksigner verify --print-certs <APK>` —
+строка `Signer #1 certificate SHA-256 digest` совпадает с отпечатком
+(без двоеточий, строчными буквами). Ключ для магазинов (этап 5) —
+другой.
+
+| Ключ | SHA-256 сертификата |
+|---|---|
+| `dppass-dev` | ещё не записан — ключ не создан |
+
+## 8. Копия DP Verify (`tools/dpv/`)
+
+Общий каркас проверок автора (D-50) — свой код автора из его репозитория
 DP-Verify, поставлен копией; руками не правится, правка — в DP-Verify и
 новой поставкой. Каждый файл копии сверяет с манифестом проверка
 `dpv.integrity`.

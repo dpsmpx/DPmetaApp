@@ -1,6 +1,8 @@
 package com.dpsmpx.dppass.subscriptions
 
 import com.dpsmpx.dppass.config.CandidateHints
+import com.dpsmpx.dppass.config.CountRange
+import com.dpsmpx.dppass.config.Hysteria2Congestion
 import com.dpsmpx.dppass.config.ProtocolSpec
 import com.dpsmpx.dppass.config.SecuritySpec
 import com.dpsmpx.dppass.config.ShadowsocksMethod
@@ -8,10 +10,18 @@ import com.dpsmpx.dppass.config.ServerProfile
 import com.dpsmpx.dppass.config.TlsFingerprint
 import com.dpsmpx.dppass.config.TransportSpec
 import com.dpsmpx.dppass.config.VlessFlow
+import com.dpsmpx.dppass.config.XHttpExtra
 import com.dpsmpx.dppass.config.XHttpMode
+import com.dpsmpx.dppass.config.Xmux
 import com.dpsmpx.dppass.core.Checksums
 import com.dpsmpx.dppass.core.Endpoint
 import com.dpsmpx.dppass.core.Host
+import com.dpsmpx.dppass.core.Json
+import com.dpsmpx.dppass.core.JsonBool
+import com.dpsmpx.dppass.core.JsonNumber
+import com.dpsmpx.dppass.core.JsonObject
+import com.dpsmpx.dppass.core.JsonParseException
+import com.dpsmpx.dppass.core.JsonString
 import com.dpsmpx.dppass.core.ProfileId
 import com.dpsmpx.dppass.diagnostics.DiagCode
 import com.dpsmpx.dppass.diagnostics.Diagnostic
@@ -37,7 +47,7 @@ object ShareLinkParser {
     private val SUPPORTED = setOf("vless", "trojan", "hysteria2", "hy2", "ss")
     private val KNOWN_OTHER = setOf("vmess", "tuic", "wireguard", "wg", "socks", "http", "https", "anytls", "naive+https")
 
-    private val HYSTERIA2_PARAMS = setOf("sni", "obfs", "obfs-password", "insecure")
+    private val HYSTERIA2_PARAMS = setOf("sni", "obfs", "obfs-password", "insecure", "fm")
 
     /** Старые AEAD Shadowsocks: без защиты от повтора, в IR v1 их нет (D-16). */
     private val SS_LEGACY = setOf(
@@ -45,8 +55,24 @@ object ShareLinkParser {
         "xchacha20-ietf-poly1305", "xchacha20-poly1305",
     )
 
-    private val VLESS_PARAMS = setOf("type", "security", "sni", "fp", "pbk", "sid", "spx", "flow", "path", "host", "servicename", "mode", "alpn", "encryption", "headertype", "allowinsecure", "insecure")
-    private val TROJAN_PARAMS = setOf("type", "security", "sni", "fp", "path", "host", "servicename", "mode", "alpn", "headertype", "allowinsecure", "insecure")
+    private val VLESS_PARAMS = setOf(
+        "type", "security", "sni", "fp", "pbk", "sid", "spx", "flow", "path", "host", "servicename", "mode", "alpn", "encryption",
+        "headertype", "allowinsecure", "insecure", "extra",
+    )
+    private val TROJAN_PARAMS = setOf(
+        "type", "security", "sni", "fp", "path", "host", "servicename", "mode", "alpn", "headertype", "allowinsecure", "insecure", "extra",
+    )
+
+    /**
+     * Ключи `fm.quicParams`, которые отбрасываются с находкой (D-48): по
+     * исходникам Xray 26.9.30 на соединение не влияют. Только поимённо —
+     * всё прочее по-прежнему отказ (D-05).
+     */
+    private val QUIC_IGNORED = listOf("debug")
+
+    /** Ключи `extra` XHTTP, которые выражает IR (формат 2, D-37); прочие — отказ с названием. */
+    private val XHTTP_EXTRA = setOf("xPaddingBytes", "scMaxEachPostBytes", "scMinPostsIntervalMs", "noGRPCHeader", "xmux")
+    private val XMUX = setOf("maxConcurrency", "maxConnections", "cMaxReuseTimes", "hMaxRequestTimes", "hMaxReusableSecs", "hKeepAlivePeriod")
 
     fun isLink(line: String): Boolean = SCHEME.find(line.trim())?.range?.first == 0
 
@@ -94,10 +120,16 @@ object ShareLinkParser {
             )
             "xhttp", "splithttp" -> {
                 val mode = XHttpMode.entries.firstOrNull { it.wire == (q["mode"] ?: "auto") } ?: return unsupported("mode=${q["mode"]}")
-                TransportSpec.XHttp(path, hostHeader, mode)
+                val extra = when (val e = q["extra"]?.takeIf { it.isNotEmpty() }?.let(::xhttpExtra)) {
+                    null -> XHttpExtra.NONE
+                    is Outcome.Failure -> return e
+                    is Outcome.Success -> e.value
+                }
+                TransportSpec.XHttp(path, hostHeader, mode, extra)
             }
             else -> return unsupported("type=$type")
         }
+        if (q["extra"].let { !it.isNullOrEmpty() } && transport !is TransportSpec.XHttp) return unsupported("extra (только у xhttp)")
         val fp = q["fp"]?.let { f -> TlsFingerprint.entries.firstOrNull { it.wire == f } ?: return unsupported("fp=$f") }
         val sni = domainParam(q["sni"])
         val security = when (val s = q["security"] ?: if (scheme == "trojan") "tls" else "none") {
@@ -146,9 +178,14 @@ object ShareLinkParser {
         if ((obfs == null) != (obfsPassword == null)) {
             return Outcome.failure(DiagCode.SHARE_LINK_INVALID, "obfs и obfs-password задаются только вместе")
         }
-        val protocol = ProtocolSpec.Hysteria2(Secret(parts.user), obfsPassword?.let(::Secret))
+        val mask = when (val c = q["fm"]?.takeIf { it.isNotEmpty() }?.let(::finalMask)) {
+            null -> null
+            is Outcome.Failure -> return c
+            is Outcome.Success -> c
+        }
+        val protocol = ProtocolSpec.Hysteria2(Secret(parts.user), obfsPassword?.let(::Secret), mask?.value)
         val security = SecuritySpec.Tls(domainParam(q["sni"]), emptyList(), null)
-        return Outcome.Success(profile(text, parts, endpoint, idPrefix, protocol, TransportSpec.Native, security))
+        return Outcome.Success(profile(text, parts, endpoint, idPrefix, protocol, TransportSpec.Native, security), mask?.diagnostics.orEmpty())
     }
 
     /**
@@ -174,6 +211,99 @@ object ShareLinkParser {
             )
         val protocol = ProtocolSpec.Shadowsocks(ss, Secret(password))
         return Outcome.Success(profile(text, parts, endpoint, idPrefix, protocol, TransportSpec.Tcp, SecuritySpec.None))
+    }
+
+    /**
+     * `extra` XHTTP — JSON настроек Xray (`SplitHTTPConfig`). Принимаются
+     * только ключи [XHTTP_EXTRA] и [XMUX]; значение диапазона — целое или
+     * строка «N-M», «0» — то же, что ключа нет (так понимает Xray). Смысл
+     * значений (не меньше 1, `xmux` без обоих пределов) проверяет
+     * `ConfigValidator.validateProfile`, как у документа.
+     */
+    private fun xhttpExtra(text: String): Outcome<XHttpExtra> {
+        val root = json(text) ?: return Outcome.failure(DiagCode.SHARE_LINK_INVALID, "extra — не объект JSON")
+        val unknown = root.fields.keys.filter { it !in XHTTP_EXTRA }.map { "extra.$it" }.toMutableList()
+        val xmuxObj = root["xmux"]
+        if (xmuxObj != null && xmuxObj !is JsonObject) return Outcome.failure(DiagCode.SHARE_LINK_INVALID, "extra.xmux — не объект")
+        xmuxObj?.fields?.keys?.filter { it !in XMUX }?.forEach { unknown += "extra.xmux.$it" }
+        if (unknown.isNotEmpty()) return unsupported(unknown.sorted().joinToString())
+
+        var bad: String? = null
+        fun range(o: JsonObject, key: String, at: String): CountRange? {
+            val r = when (val v = o[key]) {
+                null -> return null
+                is JsonNumber -> v.toIntOrNull()?.takeIf { it >= 0 }?.let { CountRange(it, it) }
+                is JsonString -> CountRange.parse(v.value)
+                else -> null
+            }
+            if (r == null) bad = bad ?: at
+            return r?.takeUnless { it.from == 0 && it.to == 0 }
+        }
+        val xmux = xmuxObj?.let { x ->
+            val keepAlive = when (val v = x["hKeepAlivePeriod"]) {
+                null -> null
+                is JsonNumber -> v.toIntOrNull()?.takeIf { it in -1..86_400 } ?: null.also { bad = bad ?: "extra.xmux.hKeepAlivePeriod" }
+                else -> null.also { bad = bad ?: "extra.xmux.hKeepAlivePeriod" }
+            }
+            Xmux(
+                maxConcurrency = range(x, "maxConcurrency", "extra.xmux.maxConcurrency"),
+                maxConnections = range(x, "maxConnections", "extra.xmux.maxConnections"),
+                cMaxReuseTimes = range(x, "cMaxReuseTimes", "extra.xmux.cMaxReuseTimes"),
+                hMaxRequestTimes = range(x, "hMaxRequestTimes", "extra.xmux.hMaxRequestTimes"),
+                hMaxReusableSecs = range(x, "hMaxReusableSecs", "extra.xmux.hMaxReusableSecs"),
+                hKeepAlivePeriod = keepAlive?.takeIf { it != 0 },
+            ).takeUnless { it.isEmpty }
+        }
+        val noGrpc = when (val v = root["noGRPCHeader"]) {
+            null -> false
+            is JsonBool -> v.value
+            else -> false.also { bad = bad ?: "extra.noGRPCHeader" }
+        }
+        val extra = XHttpExtra(
+            xPaddingBytes = range(root, "xPaddingBytes", "extra.xPaddingBytes"),
+            scMaxEachPostBytes = range(root, "scMaxEachPostBytes", "extra.scMaxEachPostBytes"),
+            scMinPostsIntervalMs = range(root, "scMinPostsIntervalMs", "extra.scMinPostsIntervalMs"),
+            noGrpcHeader = noGrpc,
+            xmux = xmux,
+        )
+        bad?.let {
+            return Outcome.failure(DiagCode.SHARE_LINK_INVALID, "$it — не диапазон «N» или «N-M» (или не того типа)")
+        }
+        return Outcome.Success(extra)
+    }
+
+    /**
+     * `fm` у Hysteria2 — finalmask Xray в JSON. Выражается только
+     * `{"quicParams":{"congestion":"bbr"|"reno"}}` (формат 2, D-37); маски
+     * и прочие параметры QUIC — отказ с названием. `quicParams.debug`
+     * отбрасывается с находкой (D-48): в Xray он только включает отладочный
+     * журнал управления перегрузкой во всём процессе.
+     */
+    private fun finalMask(text: String): Outcome<Hysteria2Congestion?> {
+        val root = json(text) ?: return Outcome.failure(DiagCode.SHARE_LINK_INVALID, "fm — не объект JSON")
+        val unknown = root.fields.keys.filter { it != "quicParams" }.map { "fm.$it" }.toMutableList()
+        val quic = root["quicParams"]
+        if (quic != null && quic !is JsonObject) return Outcome.failure(DiagCode.SHARE_LINK_INVALID, "fm.quicParams — не объект")
+        quic?.fields?.keys?.filter { it != "congestion" && it !in QUIC_IGNORED }?.forEach { unknown += "fm.quicParams.$it" }
+        if (unknown.isNotEmpty()) return unsupported(unknown.sorted().joinToString())
+        val notes = mutableListOf<Diagnostic>()
+        for (key in QUIC_IGNORED) {
+            val v = quic?.get(key) ?: continue
+            if (v !is JsonBool) return Outcome.failure(DiagCode.SHARE_LINK_INVALID, "fm.quicParams.$key — не true/false")
+            notes += Diagnostic.info(DiagCode.SHARE_LINK_PARAM_IGNORED, "fm.quicParams.$key отброшен: на соединение не влияет (D-48)")
+        }
+        val value = quic?.get("congestion") ?: return Outcome.Success(null, notes)
+        val name = (value as? JsonString)?.value?.lowercase()
+        val congestion = Hysteria2Congestion.entries.firstOrNull { it.wire == name }
+            ?: return unsupported("fm.quicParams.congestion (кроме bbr и reno)")
+        return Outcome.Success(congestion, notes)
+    }
+
+    /** Объект JSON из параметра ссылки; не JSON или не объект — null (без цитаты значения: в нём бывают секреты). */
+    private fun json(text: String): JsonObject? = try {
+        Json.parse(text, maxDepth = 8) as? JsonObject
+    } catch (e: JsonParseException) {
+        null
     }
 
     private fun profile(
@@ -213,7 +343,7 @@ object ShareLinkParser {
      */
     private fun domainParam(value: String?): String? = value?.takeIf { it.isNotEmpty() }?.let { Host.normalizeDomain(it) ?: it }
 
-    private fun unsupported(what: String): Outcome<ServerProfile> = Outcome.Failure(
+    private fun unsupported(what: String): Outcome.Failure = Outcome.Failure(
         listOf(
             Diagnostic.error(DiagCode.SHARE_LINK_INVALID, "ссылка содержит то, что DPpass пока не выражает без потери смысла")
                 .withCause(Diagnostic.warning(DiagCode.SHARE_LINK_PARAM_UNSUPPORTED, "неподдержанные параметры: $what")),
