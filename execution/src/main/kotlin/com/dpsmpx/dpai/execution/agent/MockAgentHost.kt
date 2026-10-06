@@ -45,6 +45,25 @@ class MockAgentHost(private val clock: Clock, private val ids: IdGenerator) : Pr
     /** Ход начат: запуск, его спецификация и номер хода. */
     var onStart: (SessionId, RunSpec, Int) -> Unit = { _, _, _ -> }
 
+    /** Ещё не выполненные шаги «процесса» хода: живут на target и переживают перезапуск оркестратора. */
+    private val pending = HashMap<SessionId, ArrayDeque<() -> Unit>>()
+
+    @Synchronized
+    fun schedule(run: SessionId, steps: List<() -> Unit>) {
+        pending.getOrPut(run) { ArrayDeque() }.addAll(steps)
+    }
+
+    /** Следующий шаг процесса хода; шагов нет — `false`. */
+    @Synchronized
+    fun advance(run: SessionId): Boolean {
+        val step = pending[run]?.removeFirstOrNull() ?: return false
+        step()
+        return true
+    }
+
+    @Synchronized
+    fun hasPending(run: SessionId): Boolean = pending[run]?.isNotEmpty() == true
+
     private val runs = LinkedHashMap<SessionId, Run>()
 
     @Volatile
@@ -65,6 +84,13 @@ class MockAgentHost(private val clock: Clock, private val ids: IdGenerator) : Pr
     /** Процесс хода вышел сам с кодом [code] или по [reason] (тайм-аут агента). */
     @Synchronized
     fun exit(run: SessionId, code: Int?, reason: ExitReason = ExitReason.EXITED) = finish(runs.getValue(run), code, reason)
+
+    /** Супервизор хода умер, не записав выхода (`LOST`): что с процессом — решает сверка. */
+    @Synchronized
+    fun lose(run: SessionId) {
+        runs.getValue(run).state = RunState.LOST
+        pending.remove(run)
+    }
 
     /** Строка вывода процесса хода. */
     fun output(run: SessionId, text: String, stream: OutputStream = OutputStream.STDOUT): EventEnvelope =
@@ -123,7 +149,7 @@ class MockAgentHost(private val clock: Clock, private val ids: IdGenerator) : Pr
                 AgentReply("events", true, run = status(r), events = r.events.filter { it.sequence > after }.take(limit))
             } ?: failure("events", DiagCode.ENTITY_NOT_FOUND, "нет такого запуска")
             "stop" -> runs[run]?.let { r ->
-                if (r.state == RunState.RUNNING) finish(r, null, ExitReason.STOPPED)
+                if (r.state == RunState.RUNNING || r.state == RunState.LOST) finish(r, null, ExitReason.STOPPED)
                 AgentReply("stop", true, run = status(r), stop = StopResult(false, emptyList()))
             } ?: failure("stop", DiagCode.ENTITY_NOT_FOUND, "нет такого запуска")
             else -> failure(command ?: "", DiagCode.UNSUPPORTED, "неизвестная команда агента")
@@ -132,6 +158,7 @@ class MockAgentHost(private val clock: Clock, private val ids: IdGenerator) : Pr
     }
 
     private fun finish(r: Run, code: Int?, reason: ExitReason) {
+        if (reason != ExitReason.EXITED) pending.remove(r.id)
         val payload = JsonObject(buildMap {
             put("reason", JsonString(reason.name))
             put("turn", json(r.turn))

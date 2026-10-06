@@ -169,6 +169,13 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     VERIFICATION_REQUIRED(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
     VERIFICATION_WAIVED(Category.STATE, Severity.WARNING, Retryability.NON_RETRYABLE),
 
+    // --- восстановление (этап 13) ---
+    STATE_CONFLICT(Category.INTEGRITY, Severity.WARNING, Retryability.RETRYABLE),
+    RECOVERY_RESTARTED(Category.STATE, Severity.INFO, Retryability.NON_RETRYABLE),
+    ORPHAN_FOUND(Category.STATE, Severity.WARNING, Retryability.NON_RETRYABLE),
+    WORKTREE_MISSING(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
+    MERGE_CONFLICT(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
+
     // --- общее ---
     /** Строгая семантика (D-05): неподдержанное — явный отказ, а не «похожее». */
     UNSUPPORTED(Category.UNSUPPORTED, Severity.ERROR, Retryability.NON_RETRYABLE),

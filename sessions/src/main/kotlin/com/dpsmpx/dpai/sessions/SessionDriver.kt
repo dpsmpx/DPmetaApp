@@ -67,8 +67,10 @@ class SessionDriver(private val sessions: Sessions, private val runner: ClaudeRu
             is Outcome.Failure -> return t
             is Outcome.Success -> t.value
         }
-        val resumeProvider = r.continues?.let { prev -> state.sessions[prev]?.provider?.takeIf { it == r.provider } }
-        val started = runner.start(id, request.copy(setEnv = request.setEnv + binding.setEnv, unsetEnv = (request.unsetEnv + binding.unsetEnv).distinct()), resumeProvider)
+        // id сессии провайдера — тот, что в журнале (D-08): по нему сверка после перезапуска узнаёт поток.
+        val resume = r.continues?.let { prev -> state.sessions[prev]?.provider == r.provider } ?: false
+        val req = request.copy(setEnv = request.setEnv + binding.setEnv, unsetEnv = (request.unsetEnv + binding.unsetEnv).distinct())
+        val started = runner.start(id, req, r.provider, resume)
         return when (started) {
             is Outcome.Success -> Outcome.success(Step(starting), started.diagnostics)
             is Outcome.Failure -> {
@@ -143,6 +145,8 @@ class SessionDriver(private val sessions: Sessions, private val runner: ClaudeRu
                 }
             }
         }
+        // Позиция в потоке агента — в журнал: после перезапуска сессия продолжается с неё.
+        runner.position(id)?.let { pos -> emit(sessions.heartbeat(current, id, clock.now(), pos)) }
         if (current.sessions.getValue(id).terminal && state.sessions[id]?.terminal == false) facts += AccountFact.Release(id)
         return Outcome.success(Step(events, facts), updates.diagnostics)
     }

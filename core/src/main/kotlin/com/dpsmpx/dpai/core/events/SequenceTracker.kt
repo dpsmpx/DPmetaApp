@@ -54,6 +54,17 @@ class SequenceTracker {
     /** Номер, который поток ждёт следующим. */
     fun expected(stream: StreamRef): Long = next[stream] ?: 1
 
+    /**
+     * Продолжить поток после перезапуска: события до [after] включительно уже
+     * применены (их номер записан в журнале оркестратора). Сдвиг только
+     * вперёд: назад — это потеря принятого.
+     */
+    @Synchronized
+    fun resumeAfter(stream: StreamRef, after: Long) {
+        require(after >= expected(stream) - 1) { "поток $stream уже принял больше №$after" }
+        next[stream] = after + 1
+    }
+
     @Synchronized
     fun offer(event: EventEnvelope): Verdict {
         val stream = event.stream

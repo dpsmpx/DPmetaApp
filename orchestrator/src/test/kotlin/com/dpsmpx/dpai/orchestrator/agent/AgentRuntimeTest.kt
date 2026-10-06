@@ -64,6 +64,12 @@ class AgentRuntimeTest {
     fun cleanup() {
         // Тест, упавший посередине, не оставляет процессов на машине.
         started.forEach { pid -> ProcessHandle.of(pid).ifPresent { it.destroyForcibly() } }
+        // Супервизор пишет EXITED и только потом выходит; пока он жив, Windows не даст удалить его журнал.
+        val runs = dir.resolve("runs").toFile().listFiles().orEmpty()
+        for (run in runs) {
+            val doc = DocumentStore(NioVfs(dir), "runs/${run.name}").read(AgentRuntime.RUN_KEY).valueOrNull()?.let { RunDoc.read(it.content) } ?: continue
+            doc.supervisorPid?.let { pid -> ProcessHandle.of(pid).ifPresent { h -> runCatching { h.onExit().get(30, java.util.concurrent.TimeUnit.SECONDS) } } }
+        }
     }
 
     private fun alive(pid: Long) = ProcessHandle.of(pid).map { it.isAlive }.orElse(false)

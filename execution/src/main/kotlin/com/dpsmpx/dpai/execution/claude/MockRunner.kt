@@ -40,20 +40,22 @@ enum class MockScenario {
  */
 class MockRunner private constructor(
     private val runner: ClaudeCodeCliRunner,
-    private val pending: HashMap<SessionId, ArrayDeque<() -> Unit>>,
+    val host: MockAgentHost,
 ) : ClaudeRunner by runner {
     /** Следующий шаг медленных сценариев: одна строка вывода или выход. */
-    fun advance(session: SessionId): Boolean {
-        val step = pending[session]?.removeFirstOrNull() ?: return false
-        step()
-        return true
-    }
+    fun advance(session: SessionId): Boolean = host.advance(session)
 
     companion object {
-        fun create(clock: Clock, random: RandomSource, scenarioFor: (SessionId, Int) -> MockScenario): MockRunner {
-            val ids = IdGenerator(clock, random)
-            val host = MockAgentHost(clock, ids)
-            val pending = HashMap<SessionId, ArrayDeque<() -> Unit>>()
+        /**
+         * [host] — target; передать тот же хост новому раннеру — значит
+         * перезапустить оркестратор, а target с его запусками оставить.
+         */
+        fun create(
+            clock: Clock,
+            random: RandomSource,
+            host: MockAgentHost = MockAgentHost(clock, IdGenerator(clock, random)),
+            scenarioFor: (SessionId, Int) -> MockScenario,
+        ): MockRunner {
             var dropOnce = HashSet<SessionId>()
             val client = AgentClient(host, listOf("dpai"), null, "target mock")
             // Пропуск событий: первый ответ агента для такой сессии теряет третье событие.
@@ -83,12 +85,12 @@ class MockRunner private constructor(
                 steps.addLast { host.exit(run, exitCode, reason) }
                 if (scenario == MockScenario.MISSING_EVENTS) dropOnce = HashSet(dropOnce + run)
                 if (scenario == MockScenario.SLOW_OUTPUT) {
-                    pending[run] = steps
+                    host.schedule(run, steps)
                 } else {
                     while (steps.isNotEmpty()) steps.removeFirst()()
                 }
             }
-            return MockRunner(runner, pending)
+            return MockRunner(runner, host)
         }
 
         private fun sessionOf(spec: RunSpec): String {

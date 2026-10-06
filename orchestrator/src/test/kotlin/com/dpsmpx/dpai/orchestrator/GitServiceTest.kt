@@ -158,6 +158,27 @@ class GitServiceTest {
         assertEquals(DiagCode.VALUE_INVALID, (out as Outcome.Failure).errors.single().code)
     }
 
+    /** Строки матрицы восстановления «конфликт Git» и «worktree удалён» (`docs/RECOVERY.md`, §4). */
+    @Test
+    fun probeFindsConflictAndMissingWorktree() {
+        val r = repo()
+        val s = ids.next(IdKinds.SESSION)
+        val tree = worktree(r, "c", s)
+        val path = state.worktrees.getValue(tree).path
+        val probe = com.dpsmpx.dpai.orchestrator.recovery.WorktreeProbe(git)
+        assertEquals(null, probe.check(path))
+        // Одна строка изменена по-разному в main и в ветке задачи.
+        File(r.root, "README.md").writeText("из main\n")
+        sh("-C", r.root, "commit", "-q", "-am", "main")
+        File(path, "README.md").writeText("из задачи\n")
+        assertTrue(git.write(state, tree, s, GitOp.ADD, listOf("README.md")).isSuccess)
+        assertTrue(git.write(state, tree, s, GitOp.COMMIT, listOf("задача")).isSuccess)
+        assertTrue(git.write(state, tree, s, GitOp.MERGE, listOf("main")) is Outcome.Failure)
+        assertEquals(DiagCode.MERGE_CONFLICT, probe.check(path)!!.code)
+        File(path).deleteRecursively()
+        assertEquals(DiagCode.WORKTREE_MISSING, probe.check(path)!!.code)
+    }
+
     private fun approval(hash: com.dpsmpx.dpai.core.hashing.ContentHash) =
         Approval(ids.next(IdKinds.APPROVAL), hash, "автор", clock.now(), clock.now() + 10.minutes)
 }

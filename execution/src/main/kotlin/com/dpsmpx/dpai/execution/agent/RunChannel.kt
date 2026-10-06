@@ -21,9 +21,13 @@ import com.dpsmpx.dpai.core.result.Outcome
  * `EVENT_SEQUENCE_GAP`: применять события через дыру нельзя (D-12).
  * Тот же номер с другим событием — `EVENT_SEQUENCE_CONFLICT`.
  */
-class RunChannel(private val source: RunEventSource, val run: SessionId, private val pageSize: Int = 500) {
+class RunChannel(private val source: RunEventSource, val run: SessionId, private val pageSize: Int = 500, startAfter: Long = 0) {
     private val tracker = SequenceTracker()
     private val stream = StreamRef.of(run)
+
+    init {
+        if (startAfter > 0) tracker.resumeAfter(stream, startAfter)
+    }
 
     /** Сколько раз канал сверялся с агентом из-за пропуска. */
     var reconciliations: Int = 0

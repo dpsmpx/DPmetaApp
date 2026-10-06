@@ -37,6 +37,8 @@ data class SessionRecord(
     val lastHeartbeat: Timestamp? = null,
     val turn: Int = 0,
     val lastReason: DiagCode? = null,
+    /** Номер последнего применённого события агента: с него сессия продолжается после перезапуска. */
+    val agentSequence: Long = 0,
 ) {
     val terminal: Boolean get() = state in SessionLifecycle.table.terminal
 }
@@ -95,7 +97,7 @@ sealed interface SessionEvent {
         override val at: Timestamp,
     ) : SessionEvent
 
-    data class Heartbeat(override val session: SessionId, override val at: Timestamp) : SessionEvent
+    data class Heartbeat(override val session: SessionId, override val at: Timestamp, val agentSequence: Long? = null) : SessionEvent
 
     data class TurnStarted(override val session: SessionId, val turn: Int, override val at: Timestamp) : SessionEvent
 

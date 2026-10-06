@@ -102,11 +102,17 @@ class Sessions(val policy: SessionPolicy = SessionPolicy()) {
         }
     }
 
-    /** Heartbeat живой сессии; у конечной — ничего (D-12: поздний heartbeat не воскрешает). */
-    fun heartbeat(state: SessionsState, id: SessionId, now: Timestamp): List<SessionEvent> {
+    /**
+     * Heartbeat живой сессии; у конечной — ничего (D-12: поздний heartbeat
+     * не воскрешает). [agentSequence] — позиция в потоке агента: новая
+     * позиция пишется всегда, даже в ту же миллисекунду.
+     */
+    fun heartbeat(state: SessionsState, id: SessionId, now: Timestamp, agentSequence: Long? = null): List<SessionEvent> {
         val r = state.sessions[id] ?: return emptyList()
-        if (r.terminal || (r.lastHeartbeat != null && r.lastHeartbeat >= now)) return emptyList()
-        return listOf(SessionEvent.Heartbeat(id, now))
+        if (r.terminal) return emptyList()
+        val advanced = agentSequence != null && agentSequence > r.agentSequence
+        if (!advanced && r.lastHeartbeat != null && r.lastHeartbeat >= now) return emptyList()
+        return listOf(SessionEvent.Heartbeat(id, now, agentSequence?.takeIf { advanced }))
     }
 
     /**
@@ -146,7 +152,9 @@ class Sessions(val policy: SessionPolicy = SessionPolicy()) {
                     check(SessionLifecycle.table.isAllowed(r.state, e.to, TransitionMode.EXPLICIT)) { "сессия ${e.session}: ${r.state} → ${e.to}" }
                     r.copy(state = e.to, updatedAt = e.at, lastReason = e.reason ?: r.lastReason)
                 }
-                is SessionEvent.Heartbeat -> sessions.computeIfPresent(e.session) { _, r -> r.copy(lastHeartbeat = e.at, updatedAt = e.at) }
+                is SessionEvent.Heartbeat -> sessions.computeIfPresent(e.session) { _, r ->
+                    r.copy(lastHeartbeat = e.at, updatedAt = e.at, agentSequence = maxOf(r.agentSequence, e.agentSequence ?: 0))
+                }
                 is SessionEvent.TurnStarted -> sessions.computeIfPresent(e.session) { _, r -> r.copy(turn = e.turn, lastHeartbeat = e.at, updatedAt = e.at) }
                 is SessionEvent.TurnFinished -> sessions.computeIfPresent(e.session) { _, r -> r.copy(lastHeartbeat = e.at, updatedAt = e.at) }
                 is SessionEvent.Output, is SessionEvent.ToolStarted -> sessions.computeIfPresent(e.session) { _, r -> r.copy(lastHeartbeat = e.at, updatedAt = e.at) }

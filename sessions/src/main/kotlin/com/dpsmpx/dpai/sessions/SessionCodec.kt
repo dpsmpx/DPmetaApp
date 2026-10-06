@@ -52,7 +52,7 @@ object SessionCodec {
             "session" to id(e.session), "from" to JsonString(e.from.name), "to" to JsonString(e.to.name),
             "reason" to (e.reason?.let { JsonString(it.name) } ?: JsonNull),
         )
-        is SessionEvent.Heartbeat -> obj("session" to id(e.session))
+        is SessionEvent.Heartbeat -> obj("session" to id(e.session), "agentSequence" to (e.agentSequence?.let { JsonNumber.of(it) } ?: JsonNull))
         is SessionEvent.TurnStarted -> obj("session" to id(e.session), "turn" to JsonNumber.of(e.turn))
         is SessionEvent.TurnFinished -> obj(
             "session" to id(e.session), "turn" to JsonNumber.of(e.turn), "status" to JsonString(e.status),
@@ -93,7 +93,7 @@ object SessionCodec {
                 val reason = f.optString("reason")?.let { r -> DiagCode.entries.firstOrNull { it.name == r } ?: null.also { d.error(DiagCode.VALUE_INVALID, "неизвестный код", "$.payload.reason") } }
                 if (s != null && from != null && to != null) SessionEvent.StateChanged(s, from, to, reason, at) else null
             }
-            EventType.SESSION_HEARTBEAT -> session()?.let { SessionEvent.Heartbeat(it, at) }
+            EventType.SESSION_HEARTBEAT -> session()?.let { SessionEvent.Heartbeat(it, at, f.optLong("agentSequence")) }
             EventType.SESSION_TURN_STARTED -> {
                 val s = session()
                 val turn = f.int("turn")
@@ -147,6 +147,7 @@ object SessionCodec {
         "createdAt" to JsonNumber.of(r.createdAt.epochMillis), "updatedAt" to JsonNumber.of(r.updatedAt.epochMillis),
         "lastHeartbeat" to (r.lastHeartbeat?.let { JsonNumber.of(it.epochMillis) } ?: JsonNull), "turn" to JsonNumber.of(r.turn),
         "lastReason" to (r.lastReason?.let { JsonString(it.name) } ?: JsonNull),
+        "agentSequence" to JsonNumber.of(r.agentSequence),
     )
 
     fun decodeState(json: JsonObject): Outcome<SessionsState> {
@@ -173,6 +174,7 @@ object SessionCodec {
                     lastHeartbeat = r.optLong("lastHeartbeat")?.let(::Timestamp),
                     turn = r.int("turn")!!,
                     lastReason = r.optString("lastReason")?.let { n -> DiagCode.entries.first { it.name == n } },
+                    agentSequence = r.long("agentSequence")!!,
                 )
             }.getOrNull()
             r.finish()

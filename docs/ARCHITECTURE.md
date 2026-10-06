@@ -1,6 +1,6 @@
 # Архитектура DP_AI_Orcestrator
 
-Срез на 6 октября 2026 (этапы 0–11). Решения, на которых держится
+Срез на 6 октября 2026 (этапы 0–13). Решения, на которых держится
 архитектура, — `docs/direction/DECISIONS.md`; здесь — как они разложены
 по модулям и как через модули идут данные. Модели подсистем —
 отдельными документами (§5).
@@ -265,6 +265,9 @@ target:     start ─► Detacher ─► supervise ─► процесс; выв
 Одобрения из уведомлений: `notifications.ApprovalAction` (ссылки
 `dpai://approve|deny/<apr_…>?hash=…`), `orchestrator.ApprovalDesk` —
 одобрение только по кнопке текущего запроса с тем же хешем предложения.
+
+Восстановление (этап 13; `docs/RECOVERY.md`, §7): `orchestrator.recovery`
+— `Reconciler`, `OrphanScan`, `WorktreeProbe`.
 
 ## 8. Модели подсистем
 

@@ -45,12 +45,13 @@ data class RunnerState(val session: SessionId, val provider: ProviderSessionId, 
  */
 interface ClaudeRunner {
     /**
-     * Первый ход сессии оркестратора. [resumeProvider] — продолжить
-     * существующую сессию провайдера (`--resume`): так продолжение —
-     * новая сессия оркестратора над той же сессией Claude
-     * (`docs/SESSION_MODEL.md`, §2).
+     * Первый ход сессии оркестратора. [provider] — id сессии провайдера,
+     * который оркестратор уже записал в журнал (`null` — раннер назначит
+     * сам); [resume] — эта сессия провайдера уже есть и продолжается
+     * (`--resume`): так продолжение — новая сессия оркестратора над той же
+     * сессией Claude (`docs/SESSION_MODEL.md`, §2).
      */
-    fun start(session: SessionId, request: ClaudeRequest, resumeProvider: ProviderSessionId? = null): Outcome<RunnerState>
+    fun start(session: SessionId, request: ClaudeRequest, provider: ProviderSessionId? = null, resume: Boolean = false): Outcome<RunnerState>
 
     /** Следующее сообщение в сессию — новый ход; пока идёт прежний — `RUNNER_TURN_ACTIVE`. */
     fun send(session: SessionId, request: ClaudeRequest): Outcome<RunnerState>
@@ -71,6 +72,16 @@ interface ClaudeRunner {
 
     /** Полная остановка с уборкой процессов; сессия раннером больше не ведётся. */
     fun terminate(session: SessionId): Outcome<RunnerState>
+
+    /** Номер последнего принятого события агента — его оркестратор пишет в журнал, чтобы продолжить после перезапуска. */
+    fun position(session: SessionId): Long?
+
+    /**
+     * Подхватить сессию после перезапуска оркестратора (`docs/RECOVERY.md`,
+     * §1): события агента после [afterSequence]; [turnRunning] — ход ещё
+     * идёт, его итог будет собран из оставшихся событий.
+     */
+    fun adopt(session: SessionId, provider: ProviderSessionId, afterSequence: Long, turnRunning: Boolean): Outcome<RunnerState>
 }
 
 /**
@@ -96,9 +107,10 @@ class ClaudeCodeCliRunner(
     private val live = HashMap<SessionId, Live>()
 
     @Synchronized
-    override fun start(session: SessionId, request: ClaudeRequest, resumeProvider: ProviderSessionId?): Outcome<RunnerState> {
+    override fun start(session: SessionId, request: ClaudeRequest, provider: ProviderSessionId?, resume: Boolean): Outcome<RunnerState> {
         if (session in live) return Outcome.failure(DiagCode.VALUE_INVALID, "сессия уже начата: продолжение — send или resume", "session $session")
-        val l = Live(session, resumeProvider ?: newProviderSession(), RunChannel(eventSource, session), providerStarted = resumeProvider != null)
+        if (resume && provider == null) return Outcome.failure(DiagCode.VALUE_INVALID, "возобновить можно только известную сессию провайдера", "session $session")
+        val l = Live(session, provider ?: newProviderSession(), RunChannel(eventSource, session), providerStarted = resume)
         live[session] = l
         return turn(l, request)
     }
@@ -198,6 +210,18 @@ class ClaudeCodeCliRunner(
                 }
             }
         }
+    }
+
+    @Synchronized
+    override fun position(session: SessionId): Long? = live[session]?.channel?.lastAccepted
+
+    @Synchronized
+    override fun adopt(session: SessionId, provider: ProviderSessionId, afterSequence: Long, turnRunning: Boolean): Outcome<RunnerState> {
+        if (session in live) return Outcome.failure(DiagCode.VALUE_INVALID, "сессия уже ведётся раннером", "session $session")
+        val l = Live(session, provider, RunChannel(eventSource, session, startAfter = afterSequence), providerStarted = true)
+        if (turnRunning) l.assembler = ClaudeTurnAssembler(provider)
+        live[session] = l
+        return Outcome.success(state(l))
     }
 
     @Synchronized
