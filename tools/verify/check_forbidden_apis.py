@@ -51,12 +51,36 @@ RULES = [
          "core/src/test/kotlin/com/dpsmpx/dpai/core/diagnostics/SecretTest.kt",
      ],
      "reveal() — только в разрешённых местах (D-14)", False),
+    ("file-write",
+     r"\bFileOutputStream\b|\bRandomAccessFile\b|\bFileChannel\b|\bFileWriter\b|"
+     r"\bFiles\.(?:write\w*|newOutputStream|newByteChannel|newBufferedWriter|move|copy|delete\w*|createFile|"
+     r"createTemp\w*)\s*\(|\.(?:writeText|writeBytes|appendText|appendBytes)\s*\(",
+     # Запись в файлы — через Vfs хранилища (D-24); тесты пишут во временные каталоги.
+     ["storage/src/main/", "*/src/test/"],
+     "запись в файлы — только через Vfs модуля storage (D-24)", False),
+    ("storage-secret", r"\bSecret\b",
+     [],  # правило действует только в storage (см. ONLY_IN)
+     "в хранилище секретов нет: только ссылки (D-25)", False),
     ("provider-private",
      r"claude\.ai/(?:api|chat|login|oauth)|\bsessionKey\b|\bCookieManager\b|\bCookieHandler\b|"
      r"\bHttpCookie\b",
      [],
      "приватные адреса и cookies провайдера запрещены (D-04)", True),
 ]
+
+
+# Правила, которые действуют только в части дерева.
+ONLY_IN = {"storage-secret": ["storage/src/main/"]}
+
+
+def allowed_here(rel, allowed):
+    for a in allowed:
+        if a.startswith("*/"):
+            if a[2:] in rel:
+                return True
+        elif rel.startswith(a):
+            return True
+    return False
 
 
 def check():
@@ -66,7 +90,9 @@ def check():
         raw = read(rel)
         code = strip_kotlin_comments_and_strings(raw)
         for rule, pattern, allowed, why, in_strings in RULES:
-            if any(rel.startswith(a) for a in allowed):
+            if allowed_here(rel, allowed):
+                continue
+            if rule in ONLY_IN and not any(rel.startswith(p) for p in ONLY_IN[rule]):
                 continue
             text = raw if in_strings else code
             for m in re.finditer(pattern, text):

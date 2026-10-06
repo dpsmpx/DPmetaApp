@@ -170,7 +170,31 @@ RECOVERY_PENDING ─► проба target и процесса ─► сверк�
 Коды диагностики и типы событий — публичный контракт: только
 добавляются (`tools/verify/registry/`).
 
-## 5. Модели подсистем
+## 5. Хранилище (`storage`)
+
+Пакеты `com.dpsmpx.dpai.storage.…` (этап 2, D-24, D-25):
+
+| Пакет | Содержимое |
+|---|---|
+| `vfs` | `Vfs` — единственный путь к файлам: запись, дописывание, fsync, атомарное переименование, fsync каталога; `NioVfs` на `java.nio` |
+| `document` | `DocumentStore`: документы «ключ → JSON» в конверте `dpai.stored` с хешем; атомарная замена; last known good; миграция при чтении |
+| `journal` | `EventJournal`: `dpai.journal-record` с цепочкой хешей; подтверждение после fsync; восстановление хвоста; карантин |
+| `snapshot` | `Projection`, `SnapshotStore` (`dpai.snapshot`), `StateRecovery`: снимок + хвост журнала |
+| `migration` | `Migration`, `Migrator`: цепочка соседних версий формата, отказ без изменения документа |
+| `backup` | `BackupService`: копия с манифестом `dpai.backup-manifest`, проверка, возобновляемое восстановление |
+
+```
+команда ─► событие ─► EventJournal.append ─► fsync ─► подтверждение
+                                   │
+              производное состояние (Projection) ─► снимок (DocumentStore)
+запуск ─► BackupService.resumeIfInterrupted ─► EventJournal.open (хвост, карантин)
+       ─► StateRecovery.recover: снимок, если сходится с журналом, + хвост
+```
+
+Транзакция — одна запись журнала: изменение состояния либо записано и
+подтверждено, либо нет; производное состояние пересчитывается (D-12).
+
+## 6. Модели подсистем
 
 | Подсистема | Документ |
 |---|---|

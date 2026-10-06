@@ -1,0 +1,64 @@
+package com.dpsmpx.dpai.storage.vfs
+
+import java.io.IOException
+
+/**
+ * Файловая система хранилища (D-24): всё, что оркестратор пишет на диск,
+ * идёт через этот интерфейс. Пути — относительные, с `/`, внутри корня.
+ *
+ * Модель долговечности — как у POSIX: данные файла переживают сбой только
+ * после [fsync], а создание, переименование и удаление записи каталога —
+ * после [fsyncDir] её каталога. Тесты проверяют хранилище моделью, которая
+ * при «сбое» теряет всё незафиксированное (`SimulatedVfs` в тестах storage).
+ *
+ * Отказ — `IOException`; хранилище превращает его в диагностику
+ * `STORAGE_IO_FAILED` и не продолжает запись вслепую.
+ */
+interface Vfs {
+    @Throws(IOException::class)
+    fun read(path: String): ByteArray?
+
+    fun exists(path: String): Boolean
+
+    /** Имена файлов прямо в каталоге [dir] (без подкаталогов), по порядку. */
+    @Throws(IOException::class)
+    fun list(dir: String): List<String>
+
+    /** Создать или усечь файл и записать [bytes]. Не долговечно до [fsync]. */
+    @Throws(IOException::class)
+    fun write(path: String, bytes: ByteArray)
+
+    @Throws(IOException::class)
+    fun append(path: String, bytes: ByteArray)
+
+    @Throws(IOException::class)
+    fun truncate(path: String, size: Long)
+
+    @Throws(IOException::class)
+    fun fsync(path: String)
+
+    /** Атомарная замена: после переименования [to] — целиком новый файл или целиком прежний. */
+    @Throws(IOException::class)
+    fun rename(from: String, to: String)
+
+    @Throws(IOException::class)
+    fun delete(path: String)
+
+    @Throws(IOException::class)
+    fun fsyncDir(dir: String)
+
+    @Throws(IOException::class)
+    fun mkdirs(dir: String)
+
+    companion object {
+        /** Каталог пути: `a/b/c` → `a/b`, `c` → `` (корень). */
+        fun parentOf(path: String): String = path.substringBeforeLast('/', "")
+
+        fun join(dir: String, name: String): String = if (dir.isEmpty()) name else "$dir/$name"
+
+        /** Безопасный относительный путь: без `..`, без абсолютного начала, без пустых частей. */
+        fun isSafeRelative(path: String): Boolean =
+            path.isNotEmpty() && !path.startsWith("/") && '\\' !in path && ':' !in path &&
+                path.split('/').none { it.isEmpty() || it == "." || it == ".." }
+    }
+}

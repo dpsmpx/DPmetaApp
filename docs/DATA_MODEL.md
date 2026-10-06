@@ -71,8 +71,11 @@ Code — UUID, `docs/research/CLAUDE_CODE_CLI.md`): непрозрачная с�
 | Формат | Версия | Что | Этап |
 |---|---|---|---|
 | `dpai.event` | 1 | событие в журнале (`docs/ARCHITECTURE.md`, §4) | 1 |
-| `dpai.snapshot` | — | снимок производного состояния | 2 |
-| `dpai.backup-manifest` | — | манифест резервной копии (ТЗ, §60) | 2 |
+| `dpai.journal-record` | 1 | строка журнала: `position`, `prev` (хеш предыдущей), `event`, `hash` | 2 |
+| `dpai.stored` | 1 | конверт документа: `sha256` содержимого и `content` | 2 |
+| `dpai.snapshot` | 1 | снимок: `projection`, `position`, `recordHash`, `state` | 2 |
+| `dpai.backup-manifest` | 1 | манифест копии: `createdAt`, `schemaVersion`, `files` (`path`, `size`, `sha256`), `hash` (ТЗ, §60) | 2 |
+| `dpai.restore-marker` | 1 | маркер начатого восстановления: `backup`, `manifest` | 2 |
 | `dpai.context` | — | версия контекста | 8 |
 | `dpai.handoff` | — | handoff | 8 |
 

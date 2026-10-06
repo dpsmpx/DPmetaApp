@@ -14,6 +14,7 @@ enum class Category {
     INTEGRITY,
     EXECUTION,
     NETWORK,
+    STORAGE,
     UNSUPPORTED,
     INTERNAL,
 }
@@ -77,6 +78,19 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     EXECUTION_HOST_UNAVAILABLE(Category.EXECUTION, Severity.ERROR, Retryability.RETRYABLE),
     SSH_CONNECTION_FAILED(Category.NETWORK, Severity.ERROR, Retryability.RETRYABLE),
     NETWORK_UNREACHABLE(Category.NETWORK, Severity.ERROR, Retryability.RETRYABLE),
+
+    // --- хранилище (D-24, D-25) ---
+    STORAGE_IO_FAILED(Category.STORAGE, Severity.ERROR, Retryability.RETRYABLE),
+    STORAGE_UNAVAILABLE(Category.STORAGE, Severity.ERROR, Retryability.NON_RETRYABLE),
+    STORAGE_CORRUPTED(Category.INTEGRITY, Severity.ERROR, Retryability.NON_RETRYABLE),
+    STORAGE_RECOVERED_LKG(Category.INTEGRITY, Severity.WARNING, Retryability.NON_RETRYABLE),
+    JOURNAL_TAIL_TRUNCATED(Category.INTEGRITY, Severity.WARNING, Retryability.NON_RETRYABLE),
+    JOURNAL_CORRUPTED(Category.INTEGRITY, Severity.ERROR, Retryability.NON_RETRYABLE),
+    SNAPSHOT_INVALID(Category.INTEGRITY, Severity.WARNING, Retryability.NON_RETRYABLE),
+    MIGRATION_APPLIED(Category.FORMAT, Severity.INFO, Retryability.NON_RETRYABLE),
+    MIGRATION_FAILED(Category.FORMAT, Severity.ERROR, Retryability.NON_RETRYABLE),
+    BACKUP_INVALID(Category.INTEGRITY, Severity.ERROR, Retryability.NON_RETRYABLE),
+    RESTORE_RESUMED(Category.INTEGRITY, Severity.WARNING, Retryability.NON_RETRYABLE),
 
     // --- общее ---
     /** Строгая семантика (D-05): неподдержанное — явный отказ, а не «похожее». */

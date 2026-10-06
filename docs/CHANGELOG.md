@@ -3,6 +3,17 @@
 Вехи проекта: этапы, форматы, публичные контракты. Подробности — в git
 и PR; что решено — `docs/direction/DECISIONS.md`.
 
+## 6 октября 2026 — этап 2 выполнен
+
+- Решения D-24 (файлы журнала и документов — источник истины, индексы —
+  производные) и D-25 (копия без секретов).
+- Модуль `storage`: `Vfs`, `DocumentStore`, `EventJournal`, снимки и
+  восстановление, `Migrator`, `BackupService`; форматы `dpai.stored`,
+  `dpai.journal-record`, `dpai.snapshot`, `dpai.backup-manifest`,
+  `dpai.restore-marker` версии 1.
+- 11 новых кодов диагностики хранилища; правила `file-write` и
+  `storage-secret`.
+
 ## 6 октября 2026 — этап 1 выполнен
 
 - Модуль `core`: `Outcome` и `OperationResult`, диагностика с причинами

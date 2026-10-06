@@ -12,7 +12,7 @@
 | Пункт ТЗ, §158 | Этап | Состояние | Сейчас |
 |---|---|---|---|
 | Core architecture complete | 0, 1 | ✓ | DoD ТЗ, §126: ID, результаты, диагностика, время, хеши, JSON, автоматы, версии форматов, события, детерминированные тесты (этап 1) |
-| Persistent state reliable | 2 | — | |
+| Persistent state reliable | 2 | ✓ | журнал с цепочкой хешей, атомарные документы с LKG, снимки, миграции; тесты по модели сбоев (этап 2) |
 | Accounts complete | 5 | — | |
 | Execution targets complete | 3 | — | |
 | Claude runner complete | 4 | — | факты CLI собраны: `docs/research/CLAUDE_CODE_CLI.md` |
@@ -25,14 +25,14 @@
 | Verification integration complete | 10 | — | |
 | Monitoring complete | 11 | — | |
 | Notifications complete | 12 | — | |
-| Recovery complete | 13 | ◐ | обнаружение пропусков и конфликтов событий (этап 1) |
+| Recovery complete | 13 | ◐ | пропуски и конфликты событий (этап 1); восстановление хранилища, карантин, возобновление копии (этап 2) |
 | Security audit complete | 18 | — | модель угроз: `docs/SECURITY_MODEL.md` |
 | Performance audit complete | 17 | — | бюджеты: `docs/PERFORMANCE.md` |
 | Stress test complete | 17, 19 | — | |
 | Chaos test complete | 13, 19 | — | |
 | Endurance test complete | 19 | — | |
 | Mobile lifecycle audit complete | 11, 19 | — | |
-| Backup/restore verified | 2 | — | |
+| Backup/restore verified | 2 | ✓ | набор ТЗ, §61 на модели сбоев (этап 2); на устройстве — этап 19 |
 | All invariants verified | 19 | — | список: `docs/DATA_MODEL.md`, «Инварианты» |
 | Documentation complete | все | ◐ | документы ТЗ, §138 заведены (этап 0) |
 | Final deep audit PASS | 19 | — | |
