@@ -64,8 +64,8 @@ import java.util.Base64
  * (`GEO_CODE_UNKNOWN`), набора нет — отказ `GEODATA_UNAVAILABLE`. Без
  * набора ([GeodataCodes.Unchecked]: хост) коды не сверяются: в `cli` ядра
  * нет, эталоны ядро проверяет на синтетическом наборе со всеми их кодами.
- * Несколько атрибутов сверяются по одному: сочетание, которого нет ни у
- * одной записи списка, не ловится (`docs/CONFIG_FORMAT.md`, §4).
+ * Несколько атрибутов сверяются сочетанием: ни у одного правила списка
+ * нет их всех сразу — тоже отказ (`docs/CONFIG_FORMAT.md`, §4).
  *
  * Конфигурация содержит секреты: наружу — только через
  * [CompiledConfig.payloadForEngine].
@@ -137,16 +137,25 @@ class XrayCompiler(
                     for (entry in geoSites) {
                         val code = entry.substringBefore('@')
                         val attrs = entry.split('@').drop(1)
-                        val known = m.geoSite[code]
+                        val known = m.siteAttributes(code)
                         if (known == null) {
                             reject(DiagCode.GEO_CODE_UNKNOWN, "geosite:$code — такого списка нет в наборе геоданных (${m.summary})", "$path.geosite")
                             continue
                         }
-                        // Xray выбирает правила списка по атрибутам; атрибута, которого в списке
-                        // нет, не найдёт ни одно правило — условие молча пустое. Сочетание
-                        // атрибутов не сверяется: в оглавлении — только атрибуты списка (TODO.md).
-                        for (a in attrs.filter { it !in known }) {
+                        // Xray берёт правила списка, у которых есть каждый из атрибутов сразу
+                        // (common/geodata, siteDecoder): атрибута нет в списке или нет правила
+                        // со всеми ними — условие молча пустое (D-05).
+                        val absent = attrs.filter { it !in known }
+                        for (a in absent) {
                             reject(DiagCode.GEO_CODE_UNKNOWN, "geosite:$entry — у списка $code нет атрибута @$a (${m.summary})", "$path.geosite")
+                        }
+                        if (absent.isEmpty() && !m.siteHasRuleWithAll(code, attrs)) {
+                            reject(
+                                DiagCode.GEO_CODE_UNKNOWN,
+                                "geosite:$entry — в списке $code нет правила со всеми атрибутами ${attrs.distinct().joinToString("") { "@$it" }} " +
+                                    "сразу: ядро берёт только такие, и условие не сработало бы ни разу (${m.summary})",
+                                "$path.geosite",
+                            )
                         }
                     }
                 }

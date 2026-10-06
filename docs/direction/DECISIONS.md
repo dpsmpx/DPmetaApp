@@ -600,9 +600,14 @@ GeoLite2 — «запрещён».
 - `check_apk.py`: набор в APK сжат, совпадает со своим оглавлением и с
   набором шага «Xray: геоданные» по SHA-256; `check_dependencies.py`:
   источники есть в каталоге, матрице и PROVENANCE (D-31).
-- `XrayCompilerTest.geoCodesAreCheckedAgainstTheInstalledSet`: кода или
-  атрибута нет в наборе — отказ `GEO_CODE_UNKNOWN` с путём правила,
-  набора нет — `GEODATA_UNAVAILABLE`.
+- `XrayCompilerTest.geoCodesAreCheckedAgainstTheInstalledSet`: кода,
+  атрибута или сочетания атрибутов нет в наборе — отказ
+  `GEO_CODE_UNKNOWN` с путём правила, набора нет — `GEODATA_UNAVAILABLE`.
+- `go test` сборщика, `TestManifestAttrSetsAreWhatXrayMatches`:
+  сочетания атрибутов в оглавлении (с версии 2 его формата) — ровно те,
+  по которым само ядро находит имена; файл корпуса
+  `limited-backend-xray-geosite-attrs` — отказ на сочетании, которого
+  нет ни у одной записи.
 
 ### D-28 — Выпуск: отдельный APK на каждый ABI, универсального нет
 

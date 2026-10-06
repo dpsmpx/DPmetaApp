@@ -30,6 +30,8 @@ import com.dpsmpx.dppass.engine.EngineCapabilities
 import com.dpsmpx.dppass.engine.mock.MockBackend
 import com.dpsmpx.dppass.engine.mock.MockBackendCompiler
 import com.dpsmpx.dppass.engine.mock.MockProxyEngine
+import com.dpsmpx.dppass.engine.xray.GeodataCodes
+import com.dpsmpx.dppass.engine.xray.GeodataManifest
 import com.dpsmpx.dppass.engine.xray.XrayBackend
 import com.dpsmpx.dppass.engine.xray.XrayCompiler
 import com.dpsmpx.dppass.network.NetworkAssessor
@@ -124,9 +126,16 @@ class CorpusTest {
      * `compiled` — все профили скомпилированы без находок сверх `codes`, и
      * результат совпал с эталонами `tests/data/xray/<каталог>/<имя>/<профиль>.json`;
      * `rejected` — хотя бы один профиль отвергнут, коды — в находках компиляции.
+     * `geodata` — оглавление набора в корпусе: коды и атрибуты сверяются с ним,
+     * как на устройстве (D-27); без него — не сверяются, как на хосте.
      */
     private fun checkXray(where: String, ir: ConfigIr, expect: JsonObject) {
-        val results = ir.profiles.map { it.id.value to XrayCompiler().compile(ir, CompilePlan(it.id, withTun = true)) }
+        val geodata = str(expect, "geodata")?.let { rel ->
+            val manifest = GeodataManifest.parse(File(data, rel).readText())
+            GeodataCodes.Installed(manifest.valueOrNull() ?: fail("Xray, $where: оглавление $rel не разобрано: ${manifest.diagnostics.map { it.render() }}"))
+        } ?: GeodataCodes.Unchecked
+        val compiler = XrayCompiler(geodata = geodata)
+        val results = ir.profiles.map { it.id.value to compiler.compile(ir, CompilePlan(it.id, withTun = true)) }
         val diagnostics = results.flatMap { it.second.diagnostics }
         val got = allCodes(diagnostics)
         val compiled = results.all { it.second.isSuccess }
