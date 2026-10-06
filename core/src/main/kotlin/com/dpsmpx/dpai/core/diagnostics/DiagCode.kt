@@ -131,6 +131,10 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     CLAUDE_EVENT_UNKNOWN(Category.FORMAT, Severity.INFO, Retryability.NON_RETRYABLE),
     RUNNER_TURN_ACTIVE(Category.STATE, Severity.ERROR, Retryability.RETRYABLE),
 
+    // --- сессии (этап 6) ---
+    SESSION_BINDING_MISMATCH(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
+    SESSION_ALREADY_EXISTS(Category.STATE, Severity.INFO, Retryability.NON_RETRYABLE),
+
     // --- общее ---
     /** Строгая семантика (D-05): неподдержанное — явный отказ, а не «похожее». */
     UNSUPPORTED(Category.UNSUPPORTED, Severity.ERROR, Retryability.NON_RETRYABLE),

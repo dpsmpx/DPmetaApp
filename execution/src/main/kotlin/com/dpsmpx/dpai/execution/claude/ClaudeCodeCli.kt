@@ -10,7 +10,9 @@ import kotlin.time.Duration
  * Запрос хода Claude (ТЗ, §12). Prompt уходит на стандартный вход, а не
  * аргументом (D-14; длина командной строки ограничена). [permissionMode],
  * инструменты, бюджет, схема — документированные флаги
- * (`docs/research/CLAUDE_CODE_CLI.md`, §2, §8).
+ * (`docs/research/CLAUDE_CODE_CLI.md`, §2, §8). [setEnv] и [unsetEnv] —
+ * правка окружения агента для слота сессии: `CLAUDE_CONFIG_DIR` слота и
+ * удаление переменных, перекрывающих вход (D-27, D-29).
  */
 data class ClaudeRequest(
     val prompt: String,
@@ -25,6 +27,8 @@ data class ClaudeRequest(
     val appendSystemPrompt: String? = null,
     val workDir: String? = null,
     val timeout: Duration? = null,
+    val setEnv: Map<String, String> = emptyMap(),
+    val unsetEnv: List<String> = emptyList(),
 ) {
     init {
         require(prompt.isNotBlank()) { "пустой prompt" }

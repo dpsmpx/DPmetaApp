@@ -38,9 +38,9 @@
       (`docs/ACCOUNT_MODEL.md`, §7): `AccountNotificationsTest`.
 - [x] Состояние аккаунтов восстанавливается из журнала и снимка:
       `AccountsJournalTest`.
-- [ ] Перед запуском сессия сверяет `accountId`, `credentialRef`,
+- [x] Перед запуском сессия сверяет `accountId`, `credentialRef`,
       `executionTargetId`; учётные данные B не попадают в сессию A
-      (ТЗ, §66, §109) — с запуском процессов (этапы 3, 4, 6).
+      (ТЗ, §66, §109): `SessionsTest`, `sessionCannotUseAnotherSessionsSlot`.
 - [ ] Два `CLAUDE_CONFIG_DIR` с разными подписками на одном target
       работают независимо при параллельных сессиях — замер
       (`docs/research/CLAUDE_CODE_CLI.md`, §7).

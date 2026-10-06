@@ -44,8 +44,13 @@ data class RunnerState(val session: SessionId, val provider: ProviderSessionId, 
  * следующий ход с `--resume` того же `providerSessionId` (D-32).
  */
 interface ClaudeRunner {
-    /** Первый ход сессии. */
-    fun start(session: SessionId, request: ClaudeRequest): Outcome<RunnerState>
+    /**
+     * Первый ход сессии оркестратора. [resumeProvider] — продолжить
+     * существующую сессию провайдера (`--resume`): так продолжение —
+     * новая сессия оркестратора над той же сессией Claude
+     * (`docs/SESSION_MODEL.md`, §2).
+     */
+    fun start(session: SessionId, request: ClaudeRequest, resumeProvider: ProviderSessionId? = null): Outcome<RunnerState>
 
     /** Следующее сообщение в сессию — новый ход; пока идёт прежний — `RUNNER_TURN_ACTIVE`. */
     fun send(session: SessionId, request: ClaudeRequest): Outcome<RunnerState>
@@ -70,18 +75,17 @@ interface ClaudeRunner {
 
 /**
  * Claude Code CLI на target через агента (D-26, D-31, D-32). Окружение
- * слота ([environment]) задаёт вызывающий: `CLAUDE_CONFIG_DIR` слота и
- * удаление перекрывающих вход переменных (D-29, `SlotEnvironment`).
+ * слота приходит в каждом запросе хода ([ClaudeRequest.setEnv]): у каждой
+ * сессии свой слот.
  */
 class ClaudeCodeCliRunner(
     private val agent: AgentClient,
     private val newProviderSession: () -> ProviderSessionId,
     private val claudeCommand: List<String> = listOf("claude"),
-    private val environment: Pair<Map<String, String>, List<String>> = emptyMap<String, String>() to emptyList(),
     private val stopGrace: Duration = 5.seconds,
     private val eventSource: RunEventSource = agent,
 ) : ClaudeRunner {
-    private class Live(val session: SessionId, val provider: ProviderSessionId, val channel: RunChannel) {
+    private class Live(val session: SessionId, val provider: ProviderSessionId, val channel: RunChannel, var providerStarted: Boolean) {
         var turn = 0
         var assembler: ClaudeTurnAssembler? = null
         var lastTurn: ClaudeTurn? = null
@@ -92,33 +96,35 @@ class ClaudeCodeCliRunner(
     private val live = HashMap<SessionId, Live>()
 
     @Synchronized
-    override fun start(session: SessionId, request: ClaudeRequest): Outcome<RunnerState> {
+    override fun start(session: SessionId, request: ClaudeRequest, resumeProvider: ProviderSessionId?): Outcome<RunnerState> {
         if (session in live) return Outcome.failure(DiagCode.VALUE_INVALID, "сессия уже начата: продолжение — send или resume", "session $session")
-        val l = Live(session, newProviderSession(), RunChannel(eventSource, session))
+        val l = Live(session, resumeProvider ?: newProviderSession(), RunChannel(eventSource, session), providerStarted = resumeProvider != null)
         live[session] = l
-        return turn(l, request, resume = false)
+        return turn(l, request)
     }
 
     @Synchronized
-    override fun send(session: SessionId, request: ClaudeRequest): Outcome<RunnerState> = withLive(session) { turn(it, request, resume = true) }
+    override fun send(session: SessionId, request: ClaudeRequest): Outcome<RunnerState> = withLive(session) { turn(it, request) }
 
     @Synchronized
-    override fun resume(session: SessionId, request: ClaudeRequest): Outcome<RunnerState> = withLive(session) { turn(it, request, resume = true) }
+    override fun resume(session: SessionId, request: ClaudeRequest): Outcome<RunnerState> = withLive(session) { turn(it, request) }
 
-    private fun turn(l: Live, request: ClaudeRequest, resume: Boolean): Outcome<RunnerState> {
+    /** Ход: первый для сессии провайдера — `--session-id`, следующие — `--resume`. */
+    private fun turn(l: Live, request: ClaudeRequest): Outcome<RunnerState> {
         if (l.terminated) return Outcome.failure(DiagCode.INVALID_TRANSITION, "сессия остановлена полностью", "session ${l.session}")
         if (l.assembler != null || l.run?.finished == false) return Outcome.failure(DiagCode.RUNNER_TURN_ACTIVE, "ход ${l.turn} ещё идёт", "session ${l.session}")
         val spec = RunSpec(
-            command = ClaudeCodeCli.argv(claudeCommand, request, l.provider, resume),
+            command = ClaudeCodeCli.argv(claudeCommand, request, l.provider, resume = l.providerStarted),
             workDir = request.workDir,
-            setEnv = environment.first,
-            unsetEnv = environment.second,
+            setEnv = request.setEnv,
+            unsetEnv = request.unsetEnv,
             timeout = request.timeout,
             stdin = request.prompt,
         )
         return when (val r = agent.start(l.session, spec)) {
             is Outcome.Failure -> r
             is Outcome.Success -> {
+                l.providerStarted = true
                 l.run = r.value
                 Outcome.success(state(l), r.diagnostics)
             }
