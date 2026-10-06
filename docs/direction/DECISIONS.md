@@ -278,7 +278,9 @@ kotlin-test и JUnit Jupiter. Версии — только в
 SHA-256 дистрибутива и `gradle-wrapper.jar`.
 
 **Проверка.** `tools/verify/check_dependencies.py` (координаты мимо
-каталога, версия без строки PROVENANCE, сумма wrapper не та).
+каталога, версия без строки PROVENANCE, сумма wrapper не та);
+`tools/verify/check_modules.py` (библиотека каталога вне тестовой
+конфигурации модуля).
 
 ### D-18 — Тексты по-русски, идентификаторы латиницей
 

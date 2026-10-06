@@ -56,7 +56,7 @@ tools/verify/run.sh doctor     # окружение проверок: JDK, Pytho
 |---|---|---|
 | формат — `tools/verify/check_format.py` | не UTF-8, CR/CRLF, нет перевода строки в конце, хвостовые пробелы, табуляции, невидимые и двунаправленные символы | D-18 |
 | ссылки — `tools/verify/check_docs.py` | ссылки на несуществующие документы, разделы, решения, угрозы, этапы, разделы ТЗ и тесты | D-19, все |
-| модули — `tools/verify/check_modules.py` | модули и направления зависимостей не по таблице `docs/ARCHITECTURE.md`, §2; `android.*` вне `android`; `testkit` вне тестовых конфигураций | D-02, D-21 |
+| модули — `tools/verify/check_modules.py` | модули и направления зависимостей не по таблице `docs/ARCHITECTURE.md`, §2; `android.*` вне `android`; `testkit` вне тестовых конфигураций; сторонняя библиотека во время выполнения; пакет исходника вне пакета модуля | D-02, D-17, D-21 |
 | запрещённые API — `tools/verify/check_forbidden_apis.py` | системное время и случайность мимо `Clock`/`RandomSource`, сон, `GlobalScope`, `runBlocking` и печать вне `cli`, `printStackTrace`, запуск процессов вне `execution`, `reveal()` вне разрешённых мест, приватные адреса провайдера | D-03, D-04, D-07, D-14 |
 | секреты — `tools/verify/check_secrets.py` | файлы ключей, закрытые ключи, токены провайдеров и сервисов | D-14 |
 | контракты — `tools/verify/check_contracts.py` | код диагностики или тип события удалён, переименован или не записан в реестр | D-05, D-12 |

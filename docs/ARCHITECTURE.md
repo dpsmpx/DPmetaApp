@@ -149,16 +149,20 @@ RECOVERY_PENDING ─► проба target и процесса ─► сверк�
 
 ## 4. Ядро (`core`)
 
-Пакеты `com.dpsmpx.dpai.core.…` (этап 1, `docs/direction/ROADMAP/01-core.md`):
+Пакеты `com.dpsmpx.dpai.core.…` (этап 1, `docs/direction/ROADMAP/01-core.md`).
+Пакеты не образуют циклов: `diagnostics` ← `result` ← `ids` ← `operation`;
+`OperationResult` отделён от `Outcome`, потому что ссылается на
+идентификаторы, а разбор идентификаторов возвращает `Outcome`.
 
 | Пакет | Содержимое |
 |---|---|
-| `result` | `Outcome<T>` (`Success` с предупреждениями, `Failure` с ошибками), `then`/`map`; `OperationResult<T>` с `operationId`, временем и `Provenance` |
+| `result` | `Outcome<T>` (`Success` с предупреждениями, `Failure` с ошибками), `then`, `map`, `wrapFailure`, `combine` |
+| `operation` | `OperationResult<T>` с `operationId`, временем и `Provenance`; `Actor` |
 | `diagnostics` | `Diagnostic` (код, серьёзность, место, причины, сводка исключения), `DiagCode` с категорией и классом повтора, `Secret`, `Redactor` |
 | `ids` | `TypedId`, виды идентификаторов с префиксами, `IdGenerator`, `ProviderSessionId` |
 | `clock` | `Clock`, `ManualClock`, `Timestamp`, `RandomSource` |
 | `hashing` | `ContentHash`, `Hashing.sha256` |
-| `serialization` | `JsonValue`, строгий `JsonParser`, `CanonicalJson`, `JsonFields` (чтение с путём), `FormatHeader` |
+| `serialization` | `JsonValue`, строгий `JsonParser`, `CanonicalJson`, `JsonFields` (чтение с путём), `JsonPath`, `FormatHeader` |
 | `state` | `TransitionTable`, `Transition`; таблицы `SessionLifecycle`, `TaskLifecycle`, `AccountLifecycle`, `CircuitLifecycle`; `HeartbeatFreshness` |
 | `events` | `EventEnvelope`, `EventType`, `StreamRef`, `SequenceTracker` |
 | `measure` | `Measure` (`Known` с источником, `Unknown` с причиной) |

@@ -4,3 +4,9 @@
 plugins {
     id("dpai.kotlin-library")
 }
+
+dependencies {
+    // Средства тестов (property-тесты): только тестовая конфигурация,
+    // docs/ARCHITECTURE.md, §2.
+    testImplementation(project(":testkit"))
+}

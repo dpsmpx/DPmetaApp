@@ -3,6 +3,17 @@
 Вехи проекта: этапы, форматы, публичные контракты. Подробности — в git
 и PR; что решено — `docs/direction/DECISIONS.md`.
 
+## 6 октября 2026 — этап 1 выполнен
+
+- Модуль `core`: `Outcome` и `OperationResult`, диагностика с причинами
+  и классом повтора, `Secret` и `Redactor`, типизированные ID с
+  генератором, `Clock` и `RandomSource`, SHA-256, строгий и канонический
+  JSON, автоматы сессии, задачи, аккаунта и предохранителя, свежесть
+  heartbeat, события `dpai.event` v1 и `SequenceTracker`, `Measure`.
+- Публичные контракты: 30 кодов диагностики, 29 типов событий
+  (`tools/verify/registry/`).
+- Модуль `testkit`: свои property-тесты с зерном.
+
 ## 6 октября 2026 — этапы 0 и 1 начаты
 
 - ТЗ перенесено в `docs/direction/MASTER_TECHNICAL_TASK.md` (D-19).

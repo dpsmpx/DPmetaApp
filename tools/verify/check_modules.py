@@ -10,7 +10,10 @@
     «Может зависеть от»; `testkit` — только в тестовых конфигурациях;
   * `android.*` и `androidx.*` — только в модуле `android` (D-02);
   * пакет исходника — `com.dpsmpx.dpai.<модуль>` (`tests/integration` —
-    `com.dpsmpx.dpai.tests.integration`).
+    `com.dpsmpx.dpai.tests.integration`);
+  * у модулей нет сторонних зависимостей времени выполнения (`libs.…` не в
+    тестовой конфигурации) — только Kotlin stdlib (D-17); исключение —
+    модуль из RUNTIME_DEPS_ALLOWED с причиной.
 
     python3 tools/verify/check_modules.py
 
@@ -26,6 +29,9 @@ TEST_ONLY = {"testkit"}
 TABLE = re.compile(r"<!-- check_modules: begin -->(.*?)<!-- check_modules: end -->", re.S)
 INCLUDE_ARG = re.compile(r'"(:[\w:-]+)"')
 PROJECT_DEP = re.compile(r'^\s*(\w+)\(\s*project\(\s*"(:[\w:-]+)"\s*\)\s*\)', re.M)
+LIB_DEP = re.compile(r'^\s*(\w+)\(\s*(?:platform\()?\s*libs\.([\w.]+)', re.M)
+# Модуль → причина, по которой ему можно стороннюю библиотеку во время выполнения (D-17).
+RUNTIME_DEPS_ALLOWED = {}
 PACKAGE = re.compile(r"^\s*package\s+([\w.]+)", re.M)
 ANDROID_IMPORT = re.compile(r"^\s*import\s+(androidx?\.[\w.]+)", re.M)
 
@@ -83,6 +89,9 @@ def check():
         if not os.path.isfile(os.path.join(root(), build)):
             f.add(build, "нет файла сборки модуля")
             continue
+        for cfg, lib in LIB_DEP.findall(read(build)):
+            if not cfg.startswith("test") and m not in RUNTIME_DEPS_ALLOWED:
+                f.add(build, f"{cfg}(libs.{lib}) — сторонняя библиотека во время выполнения (D-17)")
         for cfg, dep in PROJECT_DEP.findall(read(build)):
             d = gradle_to_dir(dep)
             is_test = cfg.startswith("test")

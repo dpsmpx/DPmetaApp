@@ -11,13 +11,13 @@
 
 | Пункт ТЗ, §158 | Этап | Состояние | Сейчас |
 |---|---|---|---|
-| Core architecture complete | 0, 1 | ◐ | скелет модулей и проверки; примитивы `core` — этап 1 |
+| Core architecture complete | 0, 1 | ✓ | DoD ТЗ, §126: ID, результаты, диагностика, время, хеши, JSON, автоматы, версии форматов, события, детерминированные тесты (этап 1) |
 | Persistent state reliable | 2 | — | |
 | Accounts complete | 5 | — | |
 | Execution targets complete | 3 | — | |
 | Claude runner complete | 4 | — | факты CLI собраны: `docs/research/CLAUDE_CODE_CLI.md` |
-| Sessions complete | 6 | ◐ | автомат жизненного цикла (этап 1) |
-| Scheduler complete | 7 | — | |
+| Sessions complete | 6 | ◐ | автомат жизненного цикла и свежесть heartbeat (этап 1) |
+| Scheduler complete | 7 | ◐ | автомат задачи с цепочкой проверки (этап 1) |
 | Task DAG complete | 7 | — | |
 | Context manager complete | 8 | — | |
 | Handoff complete | 8 | — | |
@@ -25,7 +25,7 @@
 | Verification integration complete | 10 | — | |
 | Monitoring complete | 11 | — | |
 | Notifications complete | 12 | — | |
-| Recovery complete | 13 | — | |
+| Recovery complete | 13 | ◐ | обнаружение пропусков и конфликтов событий (этап 1) |
 | Security audit complete | 18 | — | модель угроз: `docs/SECURITY_MODEL.md` |
 | Performance audit complete | 17 | — | бюджеты: `docs/PERFORMANCE.md` |
 | Stress test complete | 17, 19 | — | |
