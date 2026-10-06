@@ -143,8 +143,12 @@ class XrayCompilerTest {
                    "port": ["443", "8000-8080"], "protocol": ["tcp"]}]}""",
             ),
         )
-        assertEquals(listOf("dppass:dns-hijack", "dppass:dns:remote", "ads", "net"), ruleTags(p))
-        val (ads, net) = rules(p).takeLast(2)
+        // Внутреннее разделение (automatic_domestic, по умолчанию с формата v2) — после правил пользователя.
+        assertEquals(
+            listOf("dppass:dns-hijack", "dppass:dns:remote", "ads", "net", "dppass:auto-domestic:site", "dppass:auto-domestic:ip"),
+            ruleTags(p),
+        )
+        val (ads, net) = rules(p).filter { it["ruleTag"].text in setOf("ads", "net") }
         assertEquals(
             setOf("full:exact.example.com", "domain:ads.example.com", "keyword:tracker", "geosite:category-ads"),
             ads["domain"].items.map { it.text }.toSet(),
@@ -255,7 +259,10 @@ class XrayCompilerTest {
         // Через диспетчер — правило по тегу сервера раньше правил пользователя: «всё напрямую»
         // не уводит запросы туннельного DNS мимо туннеля (T4).
         assertEquals(
-            listOf("dppass:dns-hijack", "dppass:dns:remote", "dppass:dns:remote-tcp", "dppass:dns:udp-direct", "all-direct"),
+            listOf(
+                "dppass:dns-hijack", "dppass:dns:remote", "dppass:dns:remote-tcp", "dppass:dns:udp-direct", "all-direct",
+                "dppass:auto-domestic:site", "dppass:auto-domestic:ip",
+            ),
             ruleTags(p),
         )
         val byTag = rules(p).associateBy { it["ruleTag"].text }
@@ -431,15 +438,20 @@ class XrayCompilerTest {
                 DiagCode.GEO_CODE_UNKNOWN to "$.routing.rules[2].geosite",
                 DiagCode.GEO_CODE_UNKNOWN to "$.routing.rules[3].geosite",
                 DiagCode.GEO_CODE_UNKNOWN to "$.dns.rules[0].geosite",
+                // внутреннее разделение (по умолчанию с формата v2): в наборе нет `ru`
+                DiagCode.GEO_CODE_UNKNOWN to "$.routing.automatic_domestic.geosite",
+                DiagCode.GEO_CODE_UNKNOWN to "$.routing.automatic_domestic.geoip",
             ),
             errors(compileWith(GeodataCodes.Installed(set))).toSet(),
         )
         val missing = errors(compileWith(GeodataCodes.Missing("в приложении нет набора")))
         assertTrue(missing.all { it.first == DiagCode.GEODATA_UNAVAILABLE }, "$missing")
-        assertEquals(6, missing.size, "каждое условие geoip/geosite — с путём: $missing")
+        assertEquals(8, missing.size, "каждое условие geoip/geosite — с путём: $missing")
         assertTrue(compileWith(GeodataCodes.Unchecked).isSuccess, "без набора коды проверяет само ядро")
         val known = ir(routing = """{"rules": [{"id": "known", "action": "direct", "geoip": ["aa"], "geosite": ["example-a@ads"]}]}""")
-        assertTrue(XrayCompiler(geodata = GeodataCodes.Installed(set)).compile(known, CompilePlan(known.profiles[0].id, true)).isSuccess)
+        // известные коды — и коды внутреннего разделения тоже
+        val withRu = set.copy(geoIp = set.geoIp + "ru", geoSite = set.geoSite + ("ru" to emptySet()))
+        assertTrue(XrayCompiler(geodata = GeodataCodes.Installed(withRu)).compile(known, CompilePlan(known.profiles[0].id, true)).isSuccess)
     }
 
     @Test

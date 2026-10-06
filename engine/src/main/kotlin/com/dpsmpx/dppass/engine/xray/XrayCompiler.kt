@@ -329,19 +329,18 @@ class XrayCompiler(
                 rules += userRule(rule.id.value, rule.conditions, XrayBackend.outboundTag(rule.action), at)
             }
             if (ir.routing.automaticDomestic) {
-                checkGeo(listOf("ru"), emptyList(), "$.routing.automatic_domestic.geosite")
-                checkGeo(emptyList(), listOf("ru"), "$.routing.automatic_domestic.geoip")
+                // Коды сверяет userRule (checkGeo): путь — «$.routing.automatic_domestic.geosite|geoip».
                 rules += userRule(
                     XrayBackend.TAG_AUTO_DOMESTIC + ":site",
                     Conditions(geoSites = listOf("ru")),
                     XrayBackend.TAG_DIRECT,
-                    "$.routing.automatic_domestic.geosite",
+                    "$.routing.automatic_domestic",
                 )
                 rules += userRule(
                     XrayBackend.TAG_AUTO_DOMESTIC + ":ip",
                     Conditions(geoIps = listOf("ru")),
                     XrayBackend.TAG_DIRECT,
-                    "$.routing.automatic_domestic.geoip",
+                    "$.routing.automatic_domestic",
                 )
             }
             return Json.obj(

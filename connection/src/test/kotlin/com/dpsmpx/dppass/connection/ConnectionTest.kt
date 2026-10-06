@@ -284,7 +284,7 @@ class OrchestratorTest {
         val engine = MockProxyEngine()
         val pauses = mutableListOf<Long>()
         val log = com.dpsmpx.dppass.diagnostics.Logger("t", com.dpsmpx.dppass.diagnostics.MemoryLogSink(), clock::nowMillis)
-        val report = ConnectionOrchestrator(MockBackendCompiler(), engine, SimulatedHealthChecker(net), book, clock, log) { pauses += it; clock.advance(it) }
+        val report = ConnectionOrchestrator(MockBackendCompiler(), engine, SimulatedHealthChecker(net), book, clock, log, pause = { pauses += it; clock.advance(it) })
             .connect(multi, plan, null)
         assertEquals((report.attempts.size - 1).coerceAtLeast(0), pauses.size, "пауза между каждой парой попыток")
         report to engine
