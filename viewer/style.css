@@ -194,10 +194,10 @@
 .dpvis .ln.st-flowing { border-top-color: var(--text-2); }
 .dpvis .ln.st-planned { border-top: 2.5px dashed var(--text-2); }
 .dpvis .ln.st-blocked { border-top: 2.5px dotted var(--text-2); }
-.dpvis .nd { display: inline-grid; place-items: center; width: 22px; height: 14px; border: 1.2px solid var(--line-strong); border-radius: 4px; font-size: 10px; font-style: normal; font-weight: 700; color: var(--muted); }
+.dpvis .nd { display: inline-grid; place-items: center; width: 24px; height: 16px; border: 1.2px solid var(--line-strong); border-radius: 4px; font-size: 12px; font-style: normal; font-weight: 700; color: var(--muted); }
 .dpvis .nd.act-working { border-color: var(--text); box-shadow: 0 0 0 2px var(--surface), 0 0 0 3px var(--pulse); }
 .dpvis .nd.act-unobserved { opacity: 0.55; }
-.dpvis .bd { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; background: var(--text-2); color: var(--bg); font-size: 10px; font-style: normal; font-weight: 700; }
+.dpvis .bd { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--text-2); color: var(--bg); font-size: 12px; font-style: normal; font-weight: 700; }
 
 /* графики по дням и таблицы */
 .dpvis .chart { margin: 12px 0 4px; }
