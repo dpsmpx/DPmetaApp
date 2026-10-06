@@ -45,7 +45,7 @@ def report(repo: Repo, remote: bool = False) -> list[tuple[str, str, str]]:
         from ..site import deploy
         cfg, ecfg = deploy.config(repo), deploy.env_config(repo)
         out.append(("сайт", "выгрузка", "не настроена" if not cfg else
-                    f"{cfg.get('kind')}; выпуск: {'да' if ecfg.get('live') else 'нет — ждёт «сайт готов» (Д34)'}; "
+                    f"{cfg.get('kind')}; выпуск: {'да' if ecfg.get('live') else 'нет — production.live: false (Д34)'}; "
                     f"адрес {cfg.get('target_ref')}: {store.health(cfg.get('target_ref')) if cfg.get('target_ref') else '—'}"))
     except Exception as e:  # noqa: BLE001
         out.append(("сайт", "сборка", f"ошибка: {e}"))

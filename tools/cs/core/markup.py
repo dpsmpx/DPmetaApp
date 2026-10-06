@@ -2,7 +2,8 @@
 
 Канон не содержит разметки площадок (PLATFORM_VISION §9, Д22) — только
 смысловую: заголовки `##`/`###`, абзацы, списки `- `, **жирный**, *курсив*,
-`код`, ссылки [текст](адрес) и голые https-адреса. Всё остальное — просто
+`код`, блоки кода между строками ```` ``` ```` (схемы, отступы сохраняются),
+ссылки [текст](адрес) и голые https-адреса. Всё остальное — просто
 текст. Рендеры: HTML (сайт), HTML Telegram, Markdown Discord, обычный
 текст (VK, YouTube, пакеты для ручной публикации).
 
@@ -34,9 +35,9 @@ class Span:
 
 @dataclass(frozen=True)
 class Block:
-    kind: str  # heading | para | list
+    kind: str  # heading | para | list | pre
     level: int = 0
-    lines: tuple = ()  # para: (spans,), list: (spans per item,), heading: (spans,)
+    lines: tuple = ()  # para, heading, pre: (spans,), list: (spans per item,); pre — один текстовый span
 
 
 def inline(s: str) -> tuple[Span, ...]:
@@ -75,8 +76,20 @@ def parse(text: str) -> list[Block]:
             blocks.append(Block("list", 0, tuple(inline(i) for i in items)))
             items = []
 
+    fence: list[str] | None = None
     for raw in text.splitlines():
         line = raw.rstrip()
+        if fence is not None:
+            if re.match(r"^\s*```\s*$", line):
+                blocks.append(Block("pre", 0, ((Span("text", "\n".join(fence).strip("\n")),),)))
+                fence = None
+            else:
+                fence.append(line)
+            continue
+        if re.match(r"^\s*```[\w-]*\s*$", line):
+            flush()
+            fence = []
+            continue
         if not line.strip():
             flush()
             continue
@@ -96,6 +109,8 @@ def parse(text: str) -> list[Block]:
                 flush()
             para.append(line)
     flush()
+    if fence is not None:  # незакрытый блок — текст до конца, а не потеря строк
+        blocks.append(Block("pre", 0, ((Span("text", "\n".join(fence).strip("\n")),),)))
     return blocks
 
 
@@ -131,6 +146,8 @@ def to_html(blocks: list[Block], base: str = "") -> str:
             out.append(f"<h{b.level}>{_spans_html(b.lines[0], base)}</h{b.level}>")
         elif b.kind == "para":
             out.append(f"<p>{_spans_html(b.lines[0], base)}</p>")
+        elif b.kind == "pre":
+            out.append(f"<pre><code>{html.escape(b.lines[0][0].text, quote=False)}</code></pre>")
         else:
             out.append("<ul>" + "".join(f"<li>{_spans_html(i, base)}</li>" for i in b.lines) + "</ul>")
     return "\n".join(out)
@@ -144,6 +161,8 @@ def to_telegram_html(blocks: list[Block], base: str) -> str:
             out.append(f"<b>{_spans_html(b.lines[0], base, tg=True)}</b>")
         elif b.kind == "para":
             out.append(_spans_html(b.lines[0], base, tg=True))
+        elif b.kind == "pre":
+            out.append(f"<pre>{html.escape(b.lines[0][0].text, quote=False)}</pre>")
         else:
             out.append("\n".join(f"• {_spans_html(i, base, tg=True)}" for i in b.lines))
     return "\n\n".join(out)
@@ -177,6 +196,8 @@ def to_discord_md(blocks: list[Block], base: str) -> str:
             out.append("#" * b.level + " " + _spans_md(b.lines[0], base))
         elif b.kind == "para":
             out.append(_spans_md(b.lines[0], base))
+        elif b.kind == "pre":
+            out.append(f"```\n{b.lines[0][0].text}\n```")
         else:
             out.append("\n".join(f"- {_spans_md(i, base)}" for i in b.lines))
     return "\n\n".join(out)
@@ -196,7 +217,7 @@ def _spans_plain(spans, base: str) -> str:
 def to_plain(blocks: list[Block], base: str) -> str:
     out = []
     for b in blocks:
-        if b.kind in ("heading", "para"):
+        if b.kind in ("heading", "para", "pre"):
             out.append(_spans_plain(b.lines[0], base))
         else:
             out.append("\n".join(f"• {_spans_plain(i, base)}" for i in b.lines))

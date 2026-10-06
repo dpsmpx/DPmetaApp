@@ -233,3 +233,15 @@ g:hover > .c-hit { fill: var(--paper); fill-opacity: .06; }
   .facts.stages th { color: var(--paper); font-weight: 600; }
   .facts.stages td + td { color: var(--mist); }
 }
+
+/* Статьи (раздел /articles/): блоки кода — схемы со стрелками, отступы сохраняются; длинная строка
+   прокручивается внутри блока, а не ломает страницу на телефоне */
+pre { background: var(--graphite); border: 1px solid var(--line); border-radius: 6px; padding: 12px 16px;
+  overflow-x: auto; font-size: 14px; line-height: 1.45; }
+pre code { font-family: "IBM Plex Mono", ui-monospace, monospace; white-space: pre; overflow-wrap: normal; }
+article :not(pre) > code { overflow-wrap: anywhere; }  /* длинные имена файлов не выталкивают страницу вбок */
+article.article .lead { font-size: 19px; color: var(--mist); margin-top: 0; }
+article.article h2 { margin-top: 2em; scroll-margin-top: 16px; }
+article.article h3 { margin-top: 1.4em; }
+nav.crumbs { font-size: 14px; column-gap: 6px; color: var(--mist); }
+nav.crumbs a { padding: 4px 0; }

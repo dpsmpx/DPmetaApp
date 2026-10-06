@@ -1,9 +1,10 @@
-"""Подписи интерфейса сайта (Д21: RU основной, EN — главная, «обо мне», проекты)."""
+"""Подписи интерфейса сайта (Д21: RU основной, EN — главная, «обо мне», проекты; статьи — на языке написания)."""
 from __future__ import annotations
 
 LABELS = {
     "ru": {
-        "home": "Главная", "projects": "Проекты", "news": "Записи", "about": "Обо мне", "progress": "Прогресс",
+        "home": "Главная", "projects": "Проекты", "news": "Записи", "articles": "Статьи", "about": "Обо мне",
+        "progress": "Прогресс",
         "toc": "Разделы страницы",
         "main_project": "Главный проект", "other_projects": "Другие проекты",
         "latest": "Последние записи", "all_posts": "Все записи", "follow": "Где следить",
@@ -17,13 +18,18 @@ LABELS = {
         "published": "Опубликовано", "discuss": "Эта запись на площадках",
         "feeds": "Подписаться", "not_found": "Страница не найдена",
         "not_found_text": "Такой страницы нет.", "not_found_home": "Начать с главной",
-        "news_title": "Записи: новости, дневник, статьи, релизы",
+        "news_title": "Записи: новости, дневник, релизы",
+        "articles_title": "Статьи",
+        "articles_lead": "Длинные тексты о методе и проектах.",
+        "latest_articles": "Статьи", "all_articles": "Все статьи", "minutes": "мин чтения",
+        "breadcrumbs": "Навигационная цепочка",
         "projects_title": "Проекты",
         "skip": "К содержимому", "nav_label": "Разделы сайта", "other_lang": "Русская версия",
         "cat": {"news": "Новость", "devlog": "Дневник", "article": "Статья", "release": "Релиз", "page": "Страница"},
     },
     "en": {
-        "home": "Home", "projects": "Projects", "news": "Posts (RU)", "about": "About", "progress": "Progress",
+        "home": "Home", "projects": "Projects", "news": "Posts (RU)", "articles": "Articles (RU)", "about": "About",
+        "progress": "Progress",
         "toc": "On this page",
         "main_project": "Main project", "other_projects": "Other projects",
         "latest": "Latest posts", "all_posts": "All posts", "follow": "Follow",
@@ -38,6 +44,10 @@ LABELS = {
         "feeds": "Subscribe", "not_found": "Page not found",
         "not_found_text": "There is no such page.", "not_found_home": "Start from the home page",
         "news_title": "Posts", "projects_title": "Projects",
+        "articles_title": "Articles",
+        "articles_lead": "Long reads on method and projects.",
+        "latest_articles": "Articles", "all_articles": "All articles", "minutes": "min read",
+        "breadcrumbs": "Breadcrumbs",
         "skip": "Skip to content", "nav_label": "Site sections", "other_lang": "English version",
         "cat": {"news": "News", "devlog": "Devlog", "article": "Article", "release": "Release", "page": "Page"},
     },

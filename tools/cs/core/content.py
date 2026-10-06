@@ -115,9 +115,11 @@ class CItem:
         return out
 
     def url_path(self, lang: str) -> str:
-        """Путь на сайте: страница — website.path, запись — /news/<slug>/; английский — /en/…"""
+        """Путь на сайте: страница — website.path, статья — /articles/<slug>/, другая запись —
+        /news/<slug>/; английский — /en/…"""
         web = self.data.get("website") or {}
-        base = web.get("path") or f"/news/{self.data.get('slug')}/"
+        section = "articles" if self.data.get("category") == "article" else "news"
+        base = web.get("path") or f"/{section}/{self.data.get('slug')}/"
         return ("/en" + base) if lang == "en" else base
 
 
