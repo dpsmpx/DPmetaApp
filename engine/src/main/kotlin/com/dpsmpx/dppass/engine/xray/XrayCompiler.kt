@@ -9,6 +9,7 @@ import com.dpsmpx.dppass.config.TransportSpec
 import com.dpsmpx.dppass.config.VlessFlow
 import com.dpsmpx.dppass.config.XHttpExtra
 import com.dpsmpx.dppass.core.Checksums
+import com.dpsmpx.dppass.core.Cidr
 import com.dpsmpx.dppass.core.Host
 import com.dpsmpx.dppass.core.Json
 import com.dpsmpx.dppass.core.JsonObject
@@ -22,6 +23,7 @@ import com.dpsmpx.dppass.engine.CapabilityChecker
 import com.dpsmpx.dppass.engine.CompilePlan
 import com.dpsmpx.dppass.engine.CompiledConfig
 import com.dpsmpx.dppass.engine.EngineCapabilities
+import com.dpsmpx.dppass.engine.ShareSpec
 import com.dpsmpx.dppass.routing.AppLowering
 import com.dpsmpx.dppass.routing.Conditions
 import com.dpsmpx.dppass.routing.DnsPolicy
@@ -83,7 +85,7 @@ class XrayCompiler(
 
         val proxy = build.proxyOutbound(profile, "$.profiles[$index]")
         val dns = build.dns(ir.dns)
-        val routing = build.routing(ir, plan.withTun)
+        val routing = build.routing(ir, plan.withTun, plan.share)
         if (problems.any { it.isError }) return Outcome.Failure(problems)
 
         val terminal = mapOf(
@@ -99,7 +101,7 @@ class XrayCompiler(
             "log" to Json.obj("loglevel" to Json.str("none"), "dnsLog" to Json.bool(false)),
             "dns" to dns,
             "routing" to routing,
-            "inbounds" to Json.arr(listOfNotNull(tunInbound().takeIf { plan.withTun })),
+            "inbounds" to Json.arr(listOfNotNull(tunInbound().takeIf { plan.withTun }) + plan.share?.let(::shareInbounds).orEmpty()),
             "outbounds" to Json.arr(outbounds),
             // Счётчики исходящих (`outbound>>>proxy>>>traffic>>>…`): по ним мост отдаёт
             // TrafficStats сессии (D-25); без них запуск отвергается, а не врёт нулями.
@@ -340,9 +342,22 @@ class XrayCompiler(
 
         // ---- маршрутизация ----
 
-        fun routing(ir: ConfigIr, withTun: Boolean): JsonObject {
+        fun routing(ir: ConfigIr, withTun: Boolean, share: ShareSpec? = null): JsonObject {
             val lowered = AppLowering.lower(ir.routing)
             val rules = mutableListOf<JsonValue>()
+            if (share != null) {
+                // Раздача (D-51) — только другим устройствам: на входы раздачи пускаются
+                // лишь клиенты из подсетей раздачи. Адрес самого телефона и всё вне
+                // этих подсетей — приложение телефона (оно может привязать сокет к
+                // любому своему адресу); ему отказ, иначе оно обошло бы через прокси
+                // политику приложений (D-38).
+                rules += Json.obj(
+                    "ruleTag" to Json.str("${XrayBackend.SYSTEM_PREFIX}share-guard"),
+                    "inboundTag" to Json.strings(shareTags(share)),
+                    "source" to Json.strings(shareRefused(share).map { it.toString() }),
+                    "outboundTag" to Json.str(XrayBackend.TAG_BLOCK),
+                )
+            }
             if (withTun) {
                 // Приложения в туннеле спрашивают DNS у адреса TUN; ответ — по DnsPolicy.
                 rules += Json.obj(
@@ -561,6 +576,44 @@ class XrayCompiler(
                 ),
             ),
         )
+
+        /**
+         * Входы раздачи (D-51): SOCKS5 с паролем (и HTTP-прокси на том же порту —
+         * так устроен вход socks Xray), по одному на адрес интерфейса раздачи;
+         * никогда не `0.0.0.0` и не loopback. UDP — для SOCKS5 UDP ASSOCIATE.
+         */
+        fun shareInbounds(share: ShareSpec): List<JsonObject> = share.endpoints.map { it.address }.mapIndexed { i, addr ->
+            Json.obj(
+                "tag" to Json.str(XrayBackend.SHARE_TAG_PREFIX + i),
+                "protocol" to Json.str("socks"),
+                "listen" to Json.str(addr.toString()),
+                "port" to Json.num(share.port),
+                "settings" to Json.obj(
+                    "auth" to Json.str("password"),
+                    "accounts" to Json.arr(listOf(Json.obj("user" to Json.str(share.user.reveal()), "pass" to Json.str(share.password.reveal())))),
+                    "udp" to Json.bool(true),
+                    "ip" to Json.str(addr.toString()),
+                ),
+                "sniffing" to Json.obj(
+                    "enabled" to Json.bool(true),
+                    "destOverride" to Json.strings(listOf("http", "tls", "quic")),
+                    "routeOnly" to Json.bool(true),
+                ),
+            )
+        }
+
+        private fun shareTags(share: ShareSpec): List<String> = share.endpoints.indices.map { XrayBackend.SHARE_TAG_PREFIX + it }
+
+        /**
+         * Источники, которым вход раздачи закрыт (D-51): адреса самого телефона
+         * на интерфейсах раздачи, весь IPv4 вне подсетей раздачи и весь IPv6
+         * (входы слушают только IPv4). Правила Xray не умеют «кроме», поэтому
+         * «всё, кроме подсетей» — дополнение набором подсетей.
+         */
+        fun shareRefused(share: ShareSpec): List<Cidr> =
+            share.endpoints.map { Cidr.of(it.address, it.address.bitLength) } +
+                Cidr.complement(Cidr.ALL_V4, share.endpoints.map { it.subnet }) +
+                Cidr.ALL_V6
 
         fun tunInbound(): JsonObject = Json.obj(
             "tag" to Json.str(XrayBackend.TAG_TUN_IN),

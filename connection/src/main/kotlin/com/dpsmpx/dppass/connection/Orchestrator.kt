@@ -15,6 +15,7 @@ import com.dpsmpx.dppass.engine.BackendCompiler
 import com.dpsmpx.dppass.engine.CompilePlan
 import com.dpsmpx.dppass.engine.EngineSession
 import com.dpsmpx.dppass.engine.ProxyEngine
+import com.dpsmpx.dppass.engine.ShareSpec
 import com.dpsmpx.dppass.engine.TunInput
 import com.dpsmpx.dppass.network.ProbeOutcome
 import com.dpsmpx.dppass.network.simulation.PathClass
@@ -90,7 +91,8 @@ class ConnectionOrchestrator(
 ) {
     private val context = NetworkContext.of(assessment)
 
-    suspend fun connect(ir: ConfigIr, plan: ConnectionPlan, tun: TunInput?): ConnectionReport {
+    /** [share] — раздача туннеля другим устройствам (D-51): входы ядра на адресах раздачи. */
+    suspend fun connect(ir: ConfigIr, plan: ConnectionPlan, tun: TunInput?, share: ShareSpec? = null): ConnectionReport {
         if (plan.attempts.isEmpty()) {
             val d = Diagnostic.error(plan.verdict ?: DiagCode.NO_VIABLE_CANDIDATE, plan.verdictMessage ?: "нет кандидатов")
             log.diagnostic(d)
@@ -102,7 +104,7 @@ class ConnectionOrchestrator(
             val p = attempt.profile
             log.info("attempt", "profile" to Safe(p.id.value), "class" to p.transportClass, "reasons" to Safe(attempt.reasons.joinToString("; ")))
             val startedAt = clock.nowMillis()
-            val failure = when (val t = tryOne(ir, p, tun)) {
+            val failure = when (val t = tryOne(ir, p, tun, share)) {
                 is Try.Ok -> {
                     book.recordSuccess(p.id, clock.nowMillis())
                     observe(p, startedAt, success = true, stalled = false)
@@ -143,8 +145,8 @@ class ConnectionOrchestrator(
         data class Fail(val reason: Diagnostic) : Try
     }
 
-    private suspend fun tryOne(ir: ConfigIr, p: ServerProfile, tun: TunInput?): Try {
-        val compiled = when (val c = compiler.compile(ir, CompilePlan(p.id, tun != null))) {
+    private suspend fun tryOne(ir: ConfigIr, p: ServerProfile, tun: TunInput?, share: ShareSpec?): Try {
+        val compiled = when (val c = compiler.compile(ir, CompilePlan(p.id, tun != null, share))) {
             is Outcome.Failure -> return Try.Fail(c.errors.first())
             is Outcome.Success -> c.value
         }
