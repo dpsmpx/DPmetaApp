@@ -24,6 +24,11 @@
     из каталога — строки матрицы («разрешён») и PROVENANCE (§2 «Геоданные»:
     версия и сумма `h1:` модуля dlc; выпуск DB-IP); файл выпуска DB-IP —
     в `tools/xray/geodata/sources/`, других файлов там нет;
+  * содержимое артефактов Gradle сверяется (T10, аудит A-7):
+    `gradle/verification-metadata.xml` есть, проверка включена, у каждого
+    артефакта — SHA-256, доверие без сумм — только javadoc и исходники
+    (их качает IDE), у каждой библиотеки каталога — суммы той же версии
+    (`tools/provenance/update_verification.sh`);
   * каждый двоичный файл в репозитории записан в PROVENANCE.md с SHA-256;
   * workflow GitHub Actions нет: CI не используется и не запускается,
     сторонних действий в цепочке поставки нет (D-23).
@@ -38,12 +43,17 @@ import re
 import subprocess
 import sys
 import tomllib
+import xml.etree.ElementTree as ET
 
 PROJ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 CATALOG = os.path.join(PROJ, "gradle", "libs.versions.toml")
 MATRIX = os.path.join(PROJ, "docs", "legal", "THIRD_PARTY_MATRIX.md")
 PROVENANCE = os.path.join(PROJ, "docs", "PROVENANCE.md")
 WRAPPER_PROPS = os.path.join(PROJ, "gradle", "wrapper", "gradle-wrapper.properties")
+VERIFICATION = os.path.join(PROJ, "gradle", "verification-metadata.xml")
+VERIFICATION_NS = "{https://schema.gradle.org/dependency-verification}"
+# Доверие без сумм — только то, что сборка не берёт (javadoc и исходники для IDE).
+TRUSTED_WITHOUT_SUMS = {".*-javadoc[.]jar", ".*-sources[.]jar"}
 GOMOD = os.path.join(PROJ, "tools", "xray", "go.mod")
 GOSUM = os.path.join(PROJ, "tools", "xray", "go.sum")
 XRAY_MODULE = "github.com/xtls/xray-core"
@@ -217,6 +227,37 @@ def check_go(versions, matrix, mrows, prows, problems):
     return len(requires)
 
 
+def check_verification(resolved, problems):
+    """Суммы артефактов Gradle (T10, аудит A-7); resolved — [(где, группа:имя, версия)] библиотек каталога. Возвращает число компонентов."""
+    rel = os.path.relpath(VERIFICATION, PROJ)
+    if not os.path.isfile(VERIFICATION):
+        problems.append(f"нет {rel}: содержимое артефактов Gradle не сверяется (T10) — tools/provenance/update_verification.sh")
+        return 0
+    try:
+        root = ET.parse(VERIFICATION).getroot()
+    except ET.ParseError as e:
+        problems.append(f"{rel}: не XML ({e})")
+        return 0
+    v = VERIFICATION_NS
+    conf = root.find(v + "configuration")
+    if conf is None or (conf.findtext(v + "verify-metadata") or "").strip() != "true":
+        problems.append(f"{rel}: verify-metadata не true — суммы записаны, но не сверяются")
+    for t in (conf.iter(v + "trust") if conf is not None else ()):
+        if not (t.get("regex") == "true" and t.get("file") in TRUSTED_WITHOUT_SUMS and set(t.attrib) == {"file", "regex"}):
+            problems.append(f"{rel}: доверие без сумм {dict(t.attrib)} — допустимы только javadoc и исходники")
+    components = {}
+    for c in root.iter(v + "component"):
+        components[(c.get("group"), c.get("name"), c.get("version"))] = c
+        for a in c.iter(v + "artifact"):
+            if a.find(v + "sha256") is None:
+                problems.append(f"{rel}: {c.get('group')}:{c.get('name')}:{c.get('version')} {a.get('name')} — без SHA-256")
+    for where, coord, ver in resolved:
+        group, name = coord.split(":", 1)
+        if (group, name, ver) not in components:
+            problems.append(f"{rel}: нет сумм {group}:{name}:{ver} ({where}) — tools/provenance/update_verification.sh")
+    return len(components)
+
+
 def main():
     problems = []
     with open(CATALOG, "rb") as f:
@@ -254,6 +295,7 @@ def main():
         entries.append((f"plugins.{alias}", pid.split(":")[0], version_of(plugin)))
 
     checked = 0
+    resolved = []
     for where, coord, ver in entries:
         if ver is None:
             # Версия — из BOM той же группы (junit-bom → junit-jupiter).
@@ -263,6 +305,9 @@ def main():
                 problems.append(f"libs.versions.toml {where}: {coord} без версии и без BOM своей группы")
                 continue
         checked += 1
+        # Маркеры плагинов сборка не берёт: плагины приходят в build-logic библиотеками каталога.
+        if where.startswith("libraries."):
+            resolved.append((where, coord, ver))
         for name, rows in (("THIRD_PARTY_MATRIX.md", mrows), ("PROVENANCE.md", prows)):
             found = row_with(rows, coord)
             if not found:
@@ -270,6 +315,7 @@ def main():
             elif not any(re.search(r"(?<![\w.])" + re.escape(ver) + r"(?![\w.])", r) for r in found):
                 problems.append(f"{name}: строка `{coord}` не с версией {ver} (каталог изменён без записи)")
 
+    verified = check_verification(resolved, problems)
     go_modules = check_go(versions, matrix, mrows, prows, problems)
     check_geodata(versions, mrows, provenance, problems)
 
@@ -327,7 +373,8 @@ def main():
         return 1
     print(f"✓ Зависимости: {checked} записей каталога и {go_modules} модулей Go (tools/xray, Xray {versions.get('xray')}) "
           f"сверены с матрицей лицензий и PROVENANCE.md; геоданные — dlc {versions.get('geodata-dlc')} и DB-IP {versions.get('geodata-dbip')}; "
-          f"Gradle {gradle_version} и {binaries} двоичный файл — с записанными SHA-256; workflow CI нет")
+          f"Gradle {gradle_version} и {binaries} двоичный файл — с записанными SHA-256; "
+          f"артефакты Gradle — по SHA-256 ({verified} компонентов в verification-metadata.xml); workflow CI нет")
     return 0
 
 

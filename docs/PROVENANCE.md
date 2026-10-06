@@ -55,9 +55,10 @@ SHA-256 дистрибутива Gradle и
 | `org.jetbrains.kotlin:kotlin-stdlib` | 2.4.20 | Maven Central | POM: Apache-2.0; версию задаёт плагин Kotlin |
 | `org.jetbrains:annotations` | 23.0.0 | Maven Central | POM: Apache-2.0; транзитивно (`./gradlew :cli:dependencies`) |
 
-Версии закреплены, а содержимое артефактов Gradle пока не сверяет с
-записанными суммами (нет `gradle/verification-metadata.xml`) — долг
-в `TODO.md`.
+Версии закреплены, содержимое артефактов Gradle сверяет по SHA-256:
+`gradle/verification-metadata.xml` (с 6 октября 2026), пересоздаётся
+`tools/provenance/update_verification.sh` по чек-листу D-18
+(`docs/PROCESS.md`, «Зависимости»).
 
 ### Ядро прокси и модули Go (`tools/xray`)
 

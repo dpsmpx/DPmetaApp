@@ -272,7 +272,9 @@ Android Lint (`warningsAsErrors`).
 (`capabilityDiff`), полный прогон корпуса и hostcheck, запись в
 матрице лицензий и PROVENANCE.
 
-**Проверка.** `tools/provenance/check_dependencies.py`.
+**Проверка.** `tools/provenance/check_dependencies.py`; содержимое
+артефактов Gradle — суммы SHA-256 в `gradle/verification-metadata.xml`
+(с 6 октября 2026, аудит A-7).
 
 ### D-19 — Хранение: атомарно, зашифровано, без резервных копий
 
