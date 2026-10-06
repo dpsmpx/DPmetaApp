@@ -175,7 +175,8 @@ DPpass хранил сам и не смог прочитать, уходит в 
 - Зашифрованные «чтобы пользователь не видел» ссылки не поддерживаются.
 
 **Проверка.** `RedactorTest`, `LoggerTest`, `SecretLeakTest.noSecretsInLogsReportsDiagnosticsOrDisk`,
-`MetadataParserTest`, `ShareLinkParserTest`, `tools/security/check_forbidden_apis.py` (`reveal()`).
+`MetadataParserTest`, `ShareLinkParserTest`, `code.forbidden` — правило `secret-reveal`
+(`reveal()`; до D-39 — `check_forbidden_apis.py`).
 
 ### D-12 — Без телеметрии и идентификаторов устройства
 
@@ -1126,9 +1127,22 @@ D-15 («здоровье — по полезной нагрузке») для я
 - Известная поломка на момент подключения — в базовой линии DP Verify
   с причиной и пунктом `TODO.md`, пока не исправлена.
 
-**Следствия.** Хук начала сессии ставит Android SDK и NDK: без них
-`--full` падает, пропуск не разрешается. Решения D-11, D-18, D-20, D-21,
-D-23 по-прежнему держатся проверками — теперь через профиль.
+**Следствия.**
+- Хук начала сессии ставит Android SDK и NDK: без них `--full` падает,
+  пропуск не разрешается.
+- Решения D-11, D-18, D-20, D-21, D-23 по-прежнему держатся проверками —
+  теперь через профиль. Имена прежних скриптов в «Проверке» решений до
+  D-39 читаются так:
+  - `check_forbidden_apis.py` — `code.forbidden` (те же правила и
+    `nested-comment`);
+  - `check_secrets.py` — `security.secrets`, `data.synthetic`,
+    `repo.layout` (файлы `*.pem`);
+  - `cli_smoke` — `smoke.cli`;
+  - `check_dependencies.py`, `check_docs.py`, `check_fixtures.py`,
+    `check_modules.py`, `check_format.py` — общая часть ушла в
+    `provenance.deps`, `provenance.binaries`, `code.forbidden`,
+    `docs.links`, `docs.refs`, `data.synthetic`, `format.text`,
+    предметная осталась в скриптах (`docs/PROCESS.md`, «Проверки»).
 
 **Проверка.**
 - `tools/dpv/dpv run full --ci` перед слиянием; итог —

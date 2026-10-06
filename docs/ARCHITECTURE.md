@@ -70,7 +70,9 @@
 | `tests/fuzz` | мутационный fuzz разбора | `connection` |
 <!-- check_modules: end -->
 
-Правила, которые Gradle не выражает (тоже `check_modules.py`):
+Правила, которые Gradle не выражает (`code.forbidden` DP Verify, правила
+`android-import`, `simulation-import`, `mock-engine-import`, `native-load` —
+`tools/dpverify.toml`, D-39):
 
 - `android.*` — только в `app/`.
 - Синтетическая модель сети (`network.simulation`) — инструмент тестов и
@@ -80,7 +82,7 @@
   `app/` — нельзя: приложение работает на Xray (D-25).
 - Нативный код (`external fun`, `System.load*`) — только мост ядра:
   объявления JNI — `engine.xray.XrayRuntime`, загрузка — `AppGraph` и тест
-  JNI на хосте (`check_forbidden_apis.py`, правило `native-load`).
+  JNI на хосте.
 
 Сборка: convention-плагины в `build-logic/` (`dppass.kotlin-library`,
 `dppass.kotlin-application`, `dppass.test-suite`, `dppass.android-app`),

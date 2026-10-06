@@ -5,14 +5,15 @@
 здесь, с проверяемой контрольной суммой (D-20). Лицензии тех же
 компонентов — `docs/legal/THIRD_PARTY_MATRIX.md`.
 
-Сверку делает `tools/provenance/check_dependencies.py` (шаг hostcheck):
-каждая запись `gradle/libs.versions.toml` — строка в §2 с той же
-версией; каждый модуль `tools/xray/go.mod` — строка в §2 с той же
-версией и суммой из `go.sum`; источники геоданных (`geodata-dlc`,
-`geodata-dbip`) — строки «Геоданные» в §2 с той же версией и суммой;
-SHA-256 дистрибутива Gradle и
-`gradle-wrapper.jar` — как в §3; каждый двоичный файл репозитория —
-строка в §4 с его SHA-256.
+Сверку делают проверки DP Verify (D-39, `tools/dpverify.toml`) и
+`tools/provenance/check_dependencies.py`: каждая запись
+`gradle/libs.versions.toml` и версия Gradle — строка в §2 и §3 с той же
+версией, SHA-256 дистрибутива Gradle — как в §3 (`provenance.deps`);
+каждый двоичный файл репозитория, в том числе `gradle-wrapper.jar`, —
+строка в §4 с его SHA-256 (`provenance.binaries`); каждый модуль
+`tools/xray/go.mod` — строка в §2 с той же версией и суммой из `go.sum`;
+источники геоданных (`geodata-dlc`, `geodata-dbip`) — строки «Геоданные»
+в §2 с той же версией и суммой (`check_dependencies.py`).
 
 ## 1. Правила
 
@@ -30,7 +31,7 @@ SHA-256 дистрибутива Gradle и
   ссылками на источники; чужие формулировки не переносятся, результаты
   чужой обратной разработки не используются (`docs/direction/RESEARCH_SCOPE.md`, §4).
 - **Данные корпуса** (`tests/data/`) — синтетические (`docs/TESTING.md`,
-  «Данные корпуса»), проверяют `check_fixtures.py` и `check_secrets.py`.
+  «Данные корпуса»), проверяют `data.synthetic` и `security.secrets`.
 - **Двоичные файлы** — только записанные в §4. Значки приложения —
   векторные XML собственного рисунка (D-01), растровых изображений нет.
 
@@ -38,7 +39,7 @@ SHA-256 дистрибутива Gradle и
 
 Откуда сборка берёт каждую запись каталога. Репозитории —
 только `google()`, `mavenCentral()` и (для плагинов сборки)
-`gradlePluginPortal()`; другие запрещает `check_dependencies.py`.
+`gradlePluginPortal()`; другие запрещает `code.forbidden` (правило `repositories`).
 
 | Компонент | Версия | Откуда | Проверено (4 октября 2026) |
 |---|---|---|---|
@@ -178,7 +179,7 @@ Xray 26.9.30 его принимает и выбирает по его кода�
 | `tools/xray/geodata/sources/dbip-country-lite-2026-10.csv.gz` | `097426b8ddae89157d444a59ac1847e873f7943c32d52becc4371c8b0273af80` | DB-IP «IP to Country Lite» 2026-10 (§2, «Геоданные»), без изменений; IP Geolocation by DB-IP (https://db-ip.com), CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/) |
 
 Других двоичных файлов в репозитории нет. Новый — строка здесь с
-источником и SHA-256 в том же изменении, иначе `check_dependencies.py`
+источником и SHA-256 в том же изменении, иначе `provenance.binaries`
 не пропустит.
 
 ## 5. Тексты

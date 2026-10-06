@@ -43,7 +43,7 @@ import kotlin.system.exitProcess
 /**
  * dppass-cli — оболочка DPpass на JVM. Делает то же, что приложение,
  * только без UI и с фиктивным ядром: так весь конвейер проверяется на
- * хосте (`tools/hostcheck/run.sh`, шаг «cli smoke»).
+ * хосте (`smoke.cli` DP Verify, `tools/dpverify.toml`).
  *
  * Код выхода: 0 — успех; 1 — отказ по существу (ошибки диагностики);
  * 2 — неверный вызов.

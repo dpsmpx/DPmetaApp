@@ -29,7 +29,7 @@ data class SubscriptionsState(val items: List<Subscription>, val activeId: Subsc
  * В нём секреты — адрес подписки и идентификатор устройства (D-33):
  * документ пишется только в зашифрованное хранилище (D-19) и наружу не
  * отдаётся. Поэтому здесь — одно из немногих мест, где разрешён
- * `reveal()` (`tools/security/check_forbidden_apis.py`).
+ * `reveal()` (`code.forbidden`, правило `secret-reveal`, `tools/dpverify.toml`).
  *
  * Чтение строгое: неизвестная версия, неверный id или поле не того типа —
  * отказ целиком; повреждённое хранилище уходит в карантин вызывающим, а

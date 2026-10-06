@@ -11,8 +11,8 @@
 хосте: мост `tools/xray/bridge` и экспорт JNI `tools/xray/jni`,
 `XrayProxyEngine`, сборка библиотеки (`tools/xray/native.py`, задача
 `xrayNative<Вариант>`), тест JNI на хосте (`XrayJniTest`), `AppGraph` на
-Xray, проверки `check_apk.py` (16 КБ), `check_forbidden_apis.py`
-(`native-load`), `check_modules.py` (`engine.mock`). Решения о
+Xray, проверки `check_apk.py` (16 КБ), `code.forbidden`
+(`native-load`, `mock-engine-import`). Решения о
 геоданных, выпуске по ABI, имени сервера и процессе приняты (D-27…D-30).
 Дальше — работы 5–6:
 
@@ -92,8 +92,8 @@ Xray, проверки `check_apk.py` (16 КБ), `check_forbidden_apis.py`
       уведомление сервиса не будет видно без разрешения (этап 4 —
       вместе с интерфейсом; до этого — запись здесь).
 - [ ] `SimulatedHealthChecker` лежит в основном коде `connection/` и
-      попадает в APK; не используется приложением (`check_modules.py`
-      это охраняет). Перенести в тестовую фикстуру, когда у `cli`
+      попадает в APK; не используется приложением (`code.forbidden`,
+      правило `simulation-import`, это охраняет). Перенести в тестовую фикстуру, когда у `cli`
       появится своя модель сети.
 - [ ] `RouteEvaluator` перебирает правила линейно: ~120 мкс на решение
       при 2000 правил на хосте (`docs/PERFORMANCE_BUDGET.md`, §3). Для
@@ -114,8 +114,9 @@ Xray, проверки `check_apk.py` (16 КБ), `check_forbidden_apis.py`
       AGP 10), `Configuration.setVisible` из плагина `com.android.lint`
       (удаляется в Gradle 11) — разобрать при обновлении по D-18.
 - [ ] Форматтер Kotlin не выбран: 78 строк длиннее 160 символов
-      (самая длинная — 257); `check_format.py` проверяет только
-      минимумы (кодировка, переводы строк, пробелы, невидимые символы).
+      (самая длинная — 257); `format.text` и `check_format.py` проверяют
+      только минимумы (кодировка, переводы строк, пробелы, невидимые
+      символы).
       Форматтер — новая зависимость сборки, выбор по чек-листу D-18.
 - [ ] D-12 для сборки: проверить, что `fus-statistics-gradle-plugin`
       (у Kotlin Gradle Plugin) и `analytics-library` (у AGP) ничего не

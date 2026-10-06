@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
-"""Текстовые файлы — в одном виде, без невидимых символов.
+"""Текстовые файлы — без невидимых символов и табуляций в отступе.
 
 Жёсткие минимумы формата; стиль кода (длина строк, переносы) — дело
-форматтера, его выбор — долг в TODO.md. Проверяются все текстовые файлы,
-которые попадут в коммит:
+форматтера, его выбор — долг в TODO.md. UTF-8, LF (`*.bat` — CRLF, так их
+генерирует Gradle), перевод строки в конце и хвостовые пробелы проверяет
+DP Verify — `format.text` в `tools/dpverify.toml` (D-39). Здесь — то, чего
+у него нет, во всех текстовых файлах, которые попадут в коммит:
 
-  * UTF-8;
-  * переводы строк — LF (исключение — `*.bat`: так их генерирует Gradle,
-    docs/PROVENANCE.md);
-  * перевод строки в конце файла, без пробелов и табуляций в конце строк,
-    без табуляций для отступа (исключение — исходники Go `*.go`, `go.mod`:
+  * без одиночного CR (старый перевод строки Mac);
+  * без табуляций для отступа (исключение — исходники Go `*.go`, `go.mod`:
     их вид задаёт `gofmt`, а он отступает табуляцией; `tools/xray/`);
   * без невидимых и управляющих направлением письма символов: BOM
     (U+FEFF), нулевой ширины (U+200B…U+200F), мягкий перенос (U+00AD),
@@ -31,7 +30,6 @@ import sys
 
 PROJ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SKIP_PREFIXES = ("tests/data/",)
-CRLF_ALLOWED = (".bat",)
 # gofmt — единственный формат исходников Go, и отступ в нём — табуляция.
 TAB_INDENT_ALLOWED = (".go", "/go.mod")
 INVISIBLE = re.compile("[\ufeff\u200b-\u200f\u00ad\u2028\u2029\u202a-\u202e\u2066-\u2069]")
@@ -68,20 +66,15 @@ def main():
         scanned += 1
         try:
             text = raw.decode("utf-8")
-        except UnicodeDecodeError as e:
-            problems.append(f"{rel}: не UTF-8 (байт {e.start})")
-            continue
-        if "\r" in text and not rel.endswith(CRLF_ALLOWED):
-            problems.append(f"{rel}: переводы строк CR/CRLF — нужен LF")
-        if text and not text.endswith("\n"):
-            problems.append(f"{rel}: нет перевода строки в конце файла")
+        except UnicodeDecodeError:
+            continue  # не UTF-8 — находка format.text
+        if re.search("\r(?!\n)", text):
+            problems.append(f"{rel}: одиночный CR — нужен LF")
         for n, line in enumerate(text.split("\n"), 1):
-            line = line.rstrip("\r") if rel.endswith(CRLF_ALLOWED) else line
+            line = line.rstrip("\r")
             m = INVISIBLE.search(line)
             if m:
                 problems.append(f"{rel}:{n}: {describe(m.group(0))}, столбец {m.start() + 1}")
-            if line != line.rstrip(" \t"):
-                problems.append(f"{rel}:{n}: пробелы или табуляция в конце строки")
             if (line.startswith("\t") or re.match(r"^ *\t", line)) and not rel.endswith(TAB_INDENT_ALLOWED):
                 problems.append(f"{rel}:{n}: табуляция в отступе")
     if problems:
@@ -90,8 +83,7 @@ def main():
             print("    " + p)
         print("  Минимумы формата — tools/hostcheck/check_format.py; корпус tests/data не проверяется.")
         return 1
-    print(f"✓ Формат: {scanned} текстовых файлов — UTF-8, LF, перевод строки в конце, без хвостовых пробелов, "
-          "табуляций и невидимых символов")
+    print(f"✓ Формат: {scanned} текстовых файлов — без невидимых символов, одиночного CR и табуляций в отступе")
     return 0
 
 

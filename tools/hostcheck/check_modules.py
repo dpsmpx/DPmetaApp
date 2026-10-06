@@ -8,11 +8,12 @@
   * `settings.gradle.kts` — подключены ровно модули из таблицы;
   * `project(":…")` в каждом `build.gradle.kts` — только разрешённые
     направления (компилятор ловит отсутствующую зависимость, но не
-    лишнюю: «удобная» зависимость `routing → engine` скомпилируется);
-  * импорты в основном коде (`src/main`) — правила, которых Gradle не
-    выражает: `android.*` только в `app/`; модель сети
-    (`network.simulation`) и фиктивное ядро (`engine.mock`) — только там,
-    где это записано ниже с причиной.
+    лишнюю: «удобная» зависимость `routing → engine` скомпилируется).
+
+Импорты, которых Gradle не выражает (`android.*` только в `app/`, модель
+сети и фиктивное ядро — только там, где разрешено), проверяет DP Verify:
+`code.forbidden`, правила `android-import`, `simulation-import`,
+`mock-engine-import` в `tools/dpverify.toml` (D-39).
 
     python3 tools/hostcheck/check_modules.py
 
@@ -24,18 +25,6 @@ import sys
 
 PROJ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DOC = os.path.join(PROJ, "docs", "ARCHITECTURE.md")
-PKG = "com.dpsmpx.dppass"
-
-# Импорты, которые компилятор пропустит, а архитектура — нет.
-# (префикс пакета, кому можно в src/main — модули или файлы, причина)
-RESTRICTED_IMPORTS = [
-    ("android.", {"app"},
-     "Android только в app/: ядро собирается и проверяется на JVM (D-02, D-21)"),
-    (f"{PKG}.network.simulation.", {"network", "cli", "connection/src/main/kotlin/com/dpsmpx/dppass/connection/Orchestrator.kt"},
-     "модель сети — инструмент тестов и cli; в connection — только SimulatedHealthChecker; в app/ — нельзя"),
-    (f"{PKG}.engine.mock.", {"engine", "cli"},
-     "фиктивное ядро — второй бэкенд тестов и cli; приложение работает на Xray (D-25), engine.mock в app/ — нельзя"),
-]
 
 
 def read(path):
@@ -77,18 +66,6 @@ def project_deps(module):
     return {p.lstrip(":").replace(":", "/") for p in re.findall(r'project\("(:[a-z:]+)"\)', read(path))}
 
 
-def main_sources(module):
-    root = os.path.join(PROJ, module, "src", "main")
-    for dirpath, _, files in os.walk(root):
-        for fn in files:
-            if fn.endswith(".kt"):
-                yield os.path.join(dirpath, fn)
-
-
-def allowed(rel, module, who):
-    return module in who or rel in who
-
-
 def main():
     table = load_table()
     if not table:
@@ -113,27 +90,13 @@ def main():
         for d in sorted(deps - table[m]):
             problems.append(f"{m}/build.gradle.kts: зависимость {gradle_path(d)} не разрешена (ARCHITECTURE.md §2: {m} → {', '.join(sorted(table[m])) or '—'})")
 
-    files = 0
-    for m in sorted(table):
-        for path in main_sources(m):
-            files += 1
-            rel = os.path.relpath(path, PROJ)
-            for n, line in enumerate(read(path).splitlines(), 1):
-                im = re.match(r"\s*import\s+([\w.]+)", line)
-                if not im:
-                    continue
-                name = im.group(1) + "."
-                for prefix, who, why in RESTRICTED_IMPORTS:
-                    if name.startswith(prefix) and not allowed(rel, m, who):
-                        problems.append(f"{rel}:{n}: импорт {im.group(1)} — {why}")
-
     if problems:
         print("✗ Границы модулей нарушены:")
         for p in problems:
             print("    " + p)
         print("  Направления зависимостей меняются только вместе с docs/ARCHITECTURE.md §2 (и причиной в DECISIONS.md, если меняется слой).")
         return 1
-    print(f"✓ Модули: {len(table)} модулей, зависимости по ARCHITECTURE.md §2, {files} файлов src/main без запрещённых импортов")
+    print(f"✓ Модули: {len(table)} модулей, подключение и зависимости — по ARCHITECTURE.md §2")
     return 0
 
 

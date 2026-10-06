@@ -1,6 +1,7 @@
 # tools/dpverify.toml — профиль DP Verify для DPpass (D-39).
-# Шаг 1 подключения (I-04 ТЗ DP Verify): все шаги прежнего tools/hostcheck/run.sh — командами;
-# итог tools/dpv/dpv run full равен итогу run.sh.
+# Общие проверки — встроенные DP Verify (обязательный набор и необязательные ниже); предметные
+# шаги DPpass — командами project.*. Соответствие прежним скриптам и внесённые ошибки — D-39 и
+# описание PR пилота; вход — tools/hostcheck/run.sh (обёртка) или tools/dpv/dpv.
 schema = 1
 dpv = ">=1.0.0-rc1, <2"
 
@@ -65,12 +66,12 @@ required = ["docs/ARCHITECTURE.md", "docs/CONFIG_FORMAT.md", "docs/SECURITY_MODE
 # выпуск DB-IP — источник набора геоданных в репозитории (D-31)
 large_allow = ["tools/xray/geodata/sources/*.csv.gz"]
 forbid = [
-  { glob = "**/*.pem", reason = "ключи и сертификаты — вне репозитория (check_secrets.py)" },
+  { glob = "**/*.pem", reason = "ключи и сертификаты — вне репозитория (D-35)" },
   { glob = ".github/workflows/**", reason = "CI не используется и не запускается (D-23)" },
 ]
 
 [checks."format.text"]
-# корпус — байты как есть, предмет теста (check_format.py)
+# корпус — байты как есть, предмет теста
 skip = ["tests/data/**"]
 trailing_space = true
 
@@ -161,21 +162,11 @@ case = [
   { args = ["no-such-command"], code = 2 },
 ]
 
-# ---- быстрые шаги run.sh (без сборки) ----
+# ---- предметные шаги DPpass без сборки (остаток прежних скриптов — в их описании) ----
 
 [[command]]
 id = "project.modules"
 run = ["python3", "tools/hostcheck/check_modules.py"]
-level = "static"
-
-[[command]]
-id = "project.forbidden-apis"
-run = ["python3", "tools/security/check_forbidden_apis.py"]
-level = "static"
-
-[[command]]
-id = "project.secrets"
-run = ["python3", "tools/security/check_secrets.py"]
 level = "static"
 
 [[command]]
@@ -216,12 +207,6 @@ run = ["bash", "tools/hostcheck/steps.sh", "build"]
 paths = ["**/*.kt", "**/*.kts", "gradle/**", "tests/**", "cli/**"]
 requires = ["jdk"]
 timeout = "30m"
-
-[[command]]
-id = "project.cli-smoke"
-run = ["bash", "tools/hostcheck/steps.sh", "cli-smoke"]
-paths = ["**/*.kt", "**/*.kts", "tests/data/**"]
-after = ["project.build"]
 
 [[command]]
 id = "project.xray"

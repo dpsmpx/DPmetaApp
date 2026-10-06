@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Корпус регрессий `tests/data/` — целый, строгий и синтетический.
+"""Корпус регрессий `tests/data/` — целый и строгий.
 
 CorpusTest читает корпус по соглашениям об именах; то, что соглашению не
 следует, тест молча не увидит. Эта проверка закрывает такие дыры
@@ -21,13 +21,9 @@ CorpusTest читает корпус по соглашениям об имена
     эталону на каждый профиль и ничего лишнего; у каждого файла случаев
     маршрутизации — `*.probe.json` и эталон его конфигурации, а в
     `xray/routing/` нет файлов без случаев;
-  * данные синтетические (и внутри base64-тел подписок): IP только из
-    документационных и служебных диапазонов, домены — `example.com/.net/.org`, `.example`, `.test`,
-    `.invalid` (исключения ниже — с причиной), UUID — вида
-    `00000000-0000-…`. Так в корпус не попадёт настоящий сервер или ключ.
-
-Те же правила о данных — для примера в приложении
-(`app/src/main/assets/sample/`).
+Синтетичность данных корпуса и примера в приложении (IP, домены, UUID,
+ссылки, в том числе в base64-телах подписок) проверяет DP Verify —
+`data.synthetic` в `tools/dpverify.toml` (D-39).
 
     python3 tools/hostcheck/check_fixtures.py
 
@@ -41,27 +37,8 @@ import sys
 
 PROJ = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DATA = os.path.join(PROJ, "tests", "data")
-SAMPLES = [os.path.join(PROJ, "app", "src", "main", "assets", "sample")]
 SRC = os.path.join(PROJ, "{m}", "src", "main", "kotlin", "com", "dpsmpx", "dppass", "{m}")
 
-RESERVED_NETS = [ipaddress.ip_network(n) for n in (
-    "192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24", "198.18.0.0/15",
-    "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "0.0.0.0/8", "100.64.0.0/10", "169.254.0.0/16",
-    "2001:db8::/32", "fc00::/7", "fe80::/10", "::1/128", "::/128",
-)]
-RESERVED_DOMAINS = ("example.com", "example.net", "example.org", "example", "test", "invalid", "localhost")
-# Домены вне RFC 2606 — только с причиной. Трафик к ним не отправляется:
-# тесты лишь сравнивают строки правил.
-EXTRA_DOMAINS = {
-    "example.ru": "образец «отечественного» домена для правил DIRECT и DNS по суффиксу .ru",
-}
-UUID = re.compile(r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b")
-LINK = re.compile(r"^([a-z][a-z0-9+.-]*)://(.*)$", re.I)
-HOST_KEYS = {"server", "host", "server_name", "address", "domain", "domain_suffix", "sni", "serverName"}
-# Префиксы правил Xray в эталонах компилятора (tests/data/xray/): имя после
-# `full:`/`domain:` — домен; после `keyword:`, `geosite:`, `geoip:` — не адрес.
-XRAY_NAME_PREFIXES = ("full:", "domain:")
-XRAY_NOT_HOST_PREFIXES = ("keyword:", "geosite:", "geoip:", "regexp:")
 XRAY = os.path.join(DATA, "xray")
 
 
@@ -267,12 +244,11 @@ def check_routing():
         if keys(path, geo, {"geoip"}):
             for code, nets in geo.get("geoip", {}).items():
                 for net in nets:
+                    # синтетичность адреса — data.synthetic (D-39); здесь — что это подсеть
                     try:
                         ipaddress.ip_network(net, strict=False)
                     except ValueError:
                         bad(path, f"geo.geoip.{code}: не подсеть {net!r}")
-                        continue
-                    check_cidr(path, net, f"geo.geoip.{code}")
         for i, case in enumerate(c.get("cases", [])):
             where = f"{n}#{i}"
             if not keys(path, case, {"query", "action", "rule"}, ("query", "action")):
@@ -356,136 +332,6 @@ def check_registry():
             bad(REGISTRY, f"{enum}.{name} нет в реестре: новый код — строка «{what} {name}» в реестре")
 
 
-# ---- синтетичность данных ----
-
-def check_host(path, host, where):
-    h = host.strip().strip("[]").lower().rstrip(".")
-    if not h:
-        return
-    try:
-        ip = ipaddress.ip_address(h)
-        if not any(ip in n for n in RESERVED_NETS):
-            bad(path, f"{where}: IP {h} не из документационных/служебных диапазонов")
-        return
-    except ValueError:
-        pass
-    if "." not in h:
-        return  # не доменное имя (заведомо неверный ввод теста)
-    if any(h == d or h.endswith("." + d) for d in RESERVED_DOMAINS):
-        return
-    if any(h == d or h.endswith("." + d) for d in EXTRA_DOMAINS):
-        return
-    bad(path, f"{where}: домен {h} не зарезервирован для примеров (RFC 2606) и не в списке исключений check_fixtures.py")
-
-
-def check_cidr(path, value, where):
-    try:
-        net = ipaddress.ip_network(value.strip(), strict=False)
-    except ValueError:
-        return  # неверная подсеть — предмет теста, а не утечка
-    if not any(net.subnet_of(n) for n in RESERVED_NETS if n.version == net.version):
-        bad(path, f"{where}: подсеть {value} не из документационных/служебных диапазонов")
-
-
-def check_link(path, text, where):
-    m = LINK.match(text.strip())
-    if not m:
-        return
-    rest = m.group(2)
-    authority = re.split(r"[/?#]", rest, maxsplit=1)[0]
-    hostport = authority.rsplit("@", 1)[-1]
-    if hostport.startswith("["):
-        host = hostport[:hostport.find("]") + 1]
-    else:
-        host = hostport.rsplit(":", 1)[0] if hostport.count(":") == 1 else hostport
-    check_host(path, host, where)
-    query = rest.split("?", 1)[1].split("#", 1)[0] if "?" in rest else ""
-    for pair in query.split("&"):
-        k, _, v = pair.partition("=")
-        if k.lower() in ("sni", "host") and v:
-            check_host(path, v, f"{where} ({k})")
-
-
-def walk_json(path, value, key=None, where="$"):
-    if isinstance(value, dict):
-        for k, v in value.items():
-            walk_json(path, v, k, f"{where}.{k}")
-    elif isinstance(value, list):
-        for i, v in enumerate(value):
-            walk_json(path, v, key, f"{where}[{i}]")
-    elif isinstance(value, str):
-        if LINK.match(value):
-            check_link(path, value, where)
-        elif key in HOST_KEYS and value.startswith(XRAY_NOT_HOST_PREFIXES):
-            pass
-        elif key in HOST_KEYS:
-            host = value
-            for prefix in XRAY_NAME_PREFIXES:
-                if host.startswith(prefix):
-                    host = host[len(prefix):]
-            if key == "address" and value.count(":") == 1:
-                host = value.split(":", 1)[0]
-            elif key == "address" and value.startswith("["):
-                host = value[:value.find("]") + 1]
-            check_host(path, host, where)
-        elif key in ("ip_cidr", "ip") and value.startswith(XRAY_NOT_HOST_PREFIXES):
-            pass
-        elif key in ("ip_cidr", "ip"):
-            check_cidr(path, value, where)
-        elif key == "blocked_endpoints":
-            check_host(path, value.rsplit(":", 1)[0], where)
-        for u in UUID.findall(value):
-            if not u.startswith("00000000-0000-"):
-                bad(path, f"{where}: UUID {u[:8]}… не синтетический")
-
-
-def base64_links(line):
-    """Строки ссылок, спрятанные в base64 (тело подписки), — или пусто."""
-    import base64
-    import binascii
-    s = line.strip()
-    if len(s) < 24 or not re.fullmatch(r"[A-Za-z0-9+/_-]+=*", s):
-        return []
-    padded = s + "=" * (-len(s) % 4)
-    for decode in (base64.b64decode, base64.urlsafe_b64decode):
-        try:
-            text = decode(padded.encode("ascii")).decode("utf-8")
-        except (binascii.Error, ValueError, UnicodeDecodeError):
-            continue
-        if "://" in text:
-            return text.splitlines()
-    return []
-
-
-def check_synthetic(root):
-    for dirpath, _, files in os.walk(root):
-        for fn in sorted(files):
-            path = os.path.join(dirpath, fn)
-            if fn.endswith(".json"):
-                try:
-                    with open(path, encoding="utf-8") as f:
-                        doc = json.load(f)
-                except ValueError:
-                    doc = None  # битый JSON — сам предмет теста; строки проверяются ниже
-                if doc is not None:
-                    walk_json(path, doc)
-                    continue
-            with open(path, encoding="utf-8", errors="replace") as f:
-                for n, line in enumerate(f, 1):
-                    s = line.strip()
-                    if s.startswith("#") and ":" in s:
-                        s = s.split(":", 1)[1].strip()  # «#ключ: значение» в теле подписки
-                    # Строка и ссылки, спрятанные в ней в base64, — по одним правилам.
-                    views = [(f"строка {n}", s)] + [(f"строка {n}, base64 → {k}", d) for k, d in enumerate(base64_links(s), 1)]
-                    for where, view in views:
-                        check_link(path, view, where)
-                        for u in UUID.findall(view):
-                            if not u.startswith("00000000-0000-"):
-                                bad(path, f"{where}: UUID {u[:8]}… не синтетический")
-                        for ip in re.findall(r"\b(?:\d{1,3}\.){3}\d{1,3}\b", view):
-                            check_host(path, ip, where)
-
-
 def main():
     check_config_dirs()
     check_subscriptions()
@@ -493,8 +339,6 @@ def main():
     check_xray_routing()
     check_network()
     check_registry()
-    for root in [DATA] + SAMPLES:
-        check_synthetic(root)
     if problems:
         print("✗ Корпус tests/data:")
         for p in problems:
@@ -502,7 +346,7 @@ def main():
         return 1
     count = sum(len(f) for _, _, f in os.walk(DATA))
     print(f"✓ Корпус: {count} файлов — пары полные, ожидания строгие, {len(CONDITIONS)} условий сети покрыты, "
-          f"{len(CODES)} кодов диагностики по реестру, данные синтетические")
+          f"{len(CODES)} кодов диагностики по реестру")
     return 0
 
 
