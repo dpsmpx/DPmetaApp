@@ -1,9 +1,9 @@
 # Этап 3 — Execution target
 
-Состояние: в работе.
+Состояние: выполнен (7 октября 2026).
 
-Сделано по D-31, проверено на mock, локально и по SSH на Windows и
-Linux. Открыто — Claude Code в Termux на телефоне (`TODO.md`).
+Сделано по D-31, проверено на mock, локально, по SSH на Windows и
+Linux и на телефоне (Termux + proot, D-33).
 
 ## Цель
 
@@ -39,5 +39,6 @@ Linux. Открыто — Claude Code в Termux на телефоне (`TODO.md`
       `RunChannelTest`.
 - [x] Тайм-аут и обрыв связи не оставляют процессов-сирот (тест):
       `LocalProcessHostTest`, `AgentRuntimeTest`.
-- [ ] Claude Code в Termux на Redmi Note 13: нативно, в окружении Linux
-      поверх Termux или телефон — только контроллер (D-26; `TODO.md`).
+- [x] Claude Code в Termux: нативно — нет, в окружении Linux поверх
+      Termux (proot-distro, Alpine) — да; проверено на Realme C21Y
+      (D-33; `docs/research/CLAUDE_CODE_CLI.md`, §9).

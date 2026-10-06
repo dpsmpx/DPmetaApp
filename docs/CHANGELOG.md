@@ -3,6 +3,13 @@
 Вехи проекта: этапы, форматы, публичные контракты. Подробности — в git
 и PR; что решено — `docs/direction/DECISIONS.md`.
 
+## 7 октября 2026 — execution target (этап 3 выполнен)
+
+- Проверка по SSH на Windows и Linux (WSL2) пройдена.
+- Claude Code на телефоне: только в proot поверх Termux (D-33;
+  `docs/research/CLAUDE_CODE_CLI.md`, §9). Realme C21Y — устройство
+  автоматических проверок.
+
 ## 7 октября 2026 — аудит безопасности (этап 18 выполнен)
 
 - Отчёт `docs/audits/2026-10-07-security.md`.

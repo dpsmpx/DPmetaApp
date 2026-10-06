@@ -154,7 +154,7 @@ glibc или musl там может не запуститься — провер
   target независимо при параллельных сессиях (замер на этапе 5).
 - Как выглядит в stream-json достижение предела подписки и истёкший
   вход — нужен образец для `RATE_LIMITED` и `AUTH_REQUIRED`.
-- Запуск Claude Code в Termux на Redmi Note 13 (D-26).
+- ~~Запуск Claude Code в Termux~~ — проверен 7 октября 2026, §9 (на Realme C21Y; Redmi Note 13 — нет).
 - Claude Agent SDK: интерфейс запуска с JVM (решение этапа 4).
 
 ## 8. Проверено запуском
@@ -197,4 +197,25 @@ argument when using --print».
 Не проверено по-прежнему: отказ по пределу подписки (`status` не
 `allowed`) и истёкший вход — образец `rate-limited.jsonl` построен, а не
 записан.
+
+## 9. Claude Code в Termux
+
+Проверено **7 октября 2026** на Realme C21Y (RMX3263, Android 11, arm64),
+Termux 0.118 (F-Droid, `com.termux`, код версии 1002), Node.js 24.18,
+Claude Code **2.1.292**:
+
+- `npm i -g @anthropic-ai/claude-code` ставит пакет, но без нативного
+  двоичного файла: для платформы `android` его нет, `claude --version` —
+  «Error: claude native binary not installed».
+- Сборка `@anthropic-ai/claude-code-linux-arm64-musl` напрямую в Termux не
+  запускается: «cannot execute: required file not found» — в Android нет
+  загрузчика musl.
+- Та же сборка внутри `proot-distro` с Alpine (`proot-distro login alpine
+  -- …/claude --version`) отвечает «2.1.292 (Claude Code)».
+
+Вывод для D-26: на телефоне Claude Code работает только в окружении Linux
+поверх Termux (proot), нативно — нет. Вход формой Claude и ход сессии в
+proot не проверены; на Redmi Note 13 (HyperOS 2.0) проверка через adb
+невозможна — ввод и настройки закрыты переключателем «Отладка по USB
+(Настройки безопасности)».
 
