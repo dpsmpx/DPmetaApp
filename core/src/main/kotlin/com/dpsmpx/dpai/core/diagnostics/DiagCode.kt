@@ -104,6 +104,20 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     ACCOUNT_NONE_AVAILABLE(Category.STATE, Severity.ERROR, Retryability.RETRYABLE),
     ACCOUNT_SWITCH_LOOP(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
 
+    // --- execution target и процессы (этап 3, D-26, D-31) ---
+    PROCESS_START_FAILED(Category.EXECUTION, Severity.ERROR, Retryability.UNKNOWN),
+    PROCESS_TIMEOUT(Category.EXECUTION, Severity.ERROR, Retryability.RETRYABLE),
+    PROCESS_EXIT_NONZERO(Category.EXECUTION, Severity.ERROR, Retryability.UNKNOWN),
+    PROCESS_ORPHANS_LEFT(Category.EXECUTION, Severity.ERROR, Retryability.NON_RETRYABLE),
+    SSH_HOST_KEY_REJECTED(Category.NETWORK, Severity.ERROR, Retryability.NON_RETRYABLE),
+    SSH_AUTH_FAILED(Category.NETWORK, Severity.ERROR, Retryability.NON_RETRYABLE),
+    AGENT_REPLY_INVALID(Category.FORMAT, Severity.ERROR, Retryability.NON_RETRYABLE),
+    AGENT_RUN_LOST(Category.EXECUTION, Severity.ERROR, Retryability.NON_RETRYABLE),
+    RUN_RECONCILIATION_REQUIRED(Category.INTEGRITY, Severity.ERROR, Retryability.RETRYABLE),
+    TARGET_CHECK_FAILED(Category.EXECUTION, Severity.ERROR, Retryability.UNKNOWN),
+    TARGET_CHECK_WARNING(Category.EXECUTION, Severity.WARNING, Retryability.NON_RETRYABLE),
+    TARGET_DISABLED(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
+
     // --- общее ---
     /** Строгая семантика (D-05): неподдержанное — явный отказ, а не «похожее». */
     UNSUPPORTED(Category.UNSUPPORTED, Severity.ERROR, Retryability.NON_RETRYABLE),

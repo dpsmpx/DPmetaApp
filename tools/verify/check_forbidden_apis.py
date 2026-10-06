@@ -37,7 +37,12 @@ RULES = [
      ["cli/"],  # точка входа процесса
      "runBlocking — только в cli", False),
     ("print", r"(?<![\w.])(?:println|print)\s*\(|\bSystem\.(?:out|err)\b",
-     ["cli/"],  # вывод пользователю — дело оболочки
+     [
+         "cli/",  # вывод пользователю — дело оболочки
+         # Программа-потомок тестов процессов: её вывод и есть то, что проверяется.
+         "execution/src/test/kotlin/com/dpsmpx/dpai/execution/TestChild.kt",
+         "orchestrator/src/test/kotlin/com/dpsmpx/dpai/orchestrator/agent/TestChild.kt",
+     ],
      "печать — только в cli; остальное — диагностика и журнал", False),
     ("stack-trace", r"\.printStackTrace\s*\(", [],
      "стек не печатается: исключение — сводка в Diagnostic (D-05)", False),

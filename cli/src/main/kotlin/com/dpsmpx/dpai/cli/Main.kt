@@ -5,8 +5,9 @@ import kotlin.system.exitProcess
 /**
  * Точка входа `dpai` — оболочка JVM над ядром (D-02).
  *
- * Сейчас — версия и справка (этап 0). `doctor`, сценарии на MockRunner и
- * режим без интерфейса появляются вместе с подсистемами (этапы 3–14).
+ * Версия, справка (этап 0) и агент target `dpai agent` (этап 3). Сценарии
+ * на MockRunner и режим без интерфейса появляются вместе с подсистемами
+ * (этапы 4–14).
  */
 fun main(args: Array<String>) {
     val code = Cli(out = { println(it) }, err = { System.err.println(it) }).run(args.toList())
@@ -27,6 +28,7 @@ class Cli(
             out("dpai $version")
             OK
         }
+        "agent" -> AgentCommand(out, err, version).run(args.drop(1))
         "help", "--help", "-h" -> {
             out(USAGE)
             OK
@@ -50,6 +52,7 @@ class Cli(
             |dpai — DP_AI_Orcestrator (docs/direction/ROADMAP/README.md)
             |
             |  dpai version   версия
+            |  dpai agent     агент на execution target (dpai agent без параметров — справка)
             |  dpai help      эта справка
             |
             |Коды выхода: 0 — успех, 2 — неверный вызов.

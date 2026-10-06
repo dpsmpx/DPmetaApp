@@ -96,29 +96,11 @@ class EventJournal private constructor(private val vfs: Vfs, private val path: S
                 return Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "журнал не прочитан", e, path))
             } ?: return Outcome.success(EventJournal(vfs, path, emptyList()))
 
-            val loaded = ArrayList<JournalRecord>()
-            var validEnd = 0 // байт после последней целой записи
-            var start = 0
-            var badLine: Int? = null
-            var linesAfterBad = 0
-            var lineNo = 0
-            while (start < bytes.size) {
-                val nl = indexOf(bytes, '\n'.code.toByte(), start)
-                if (nl < 0) break // оборванная строка без перевода строки — хвост
-                lineNo++
-                if (badLine == null) {
-                    val rec = parseRecord(bytes.copyOfRange(start, nl), loaded.size + 1L, loaded.lastOrNull()?.hash ?: GENESIS)
-                    if (rec != null) {
-                        loaded += rec
-                        validEnd = nl + 1
-                    } else {
-                        badLine = lineNo
-                    }
-                } else {
-                    linesAfterBad++
-                }
-                start = nl + 1
-            }
+            val scan = scan(bytes)
+            val loaded = scan.loaded
+            val validEnd = scan.validEnd
+            val badLine = scan.badLine
+            val linesAfterBad = scan.linesAfterBad
             val diags = mutableListOf<Diagnostic>()
             if (badLine != null && linesAfterBad > 0 && !quarantineCorruption) {
                 return Outcome.failure(
@@ -143,6 +125,55 @@ class EventJournal private constructor(private val vfs: Vfs, private val path: S
                 }
             }
             return Outcome.success(EventJournal(vfs, path, loaded), diags)
+        }
+
+        /**
+         * Подтверждённые записи без восстановления — для читателя, пока в
+         * журнал пишет другой процесс (агент target, D-26): незаконченная
+         * последняя строка — запись, которая ещё пишется, она пропускается, а
+         * не отрезается. Испорченная запись, за которой есть целые, —
+         * `JOURNAL_CORRUPTED`, как у [open].
+         */
+        fun readCommitted(vfs: Vfs, path: String): Outcome<List<JournalRecord>> {
+            val bytes = try {
+                vfs.read(path)
+            } catch (e: IOException) {
+                return Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "журнал не прочитан", e, path))
+            } ?: return Outcome.success(emptyList())
+            val scan = scan(bytes)
+            if (scan.badLine != null && scan.linesAfterBad > 0) {
+                return Outcome.failure(DiagCode.JOURNAL_CORRUPTED, "запись №${scan.badLine} испорчена, за ней ещё ${scan.linesAfterBad}", path)
+            }
+            return Outcome.success(scan.loaded)
+        }
+
+        private class Scan(val loaded: List<JournalRecord>, val validEnd: Int, val badLine: Int?, val linesAfterBad: Int)
+
+        private fun scan(bytes: ByteArray): Scan {
+            val loaded = ArrayList<JournalRecord>()
+            var validEnd = 0 // байт после последней целой записи
+            var start = 0
+            var badLine: Int? = null
+            var linesAfterBad = 0
+            var lineNo = 0
+            while (start < bytes.size) {
+                val nl = indexOf(bytes, '\n'.code.toByte(), start)
+                if (nl < 0) break // оборванная строка без перевода строки — хвост
+                lineNo++
+                if (badLine == null) {
+                    val rec = parseRecord(bytes.copyOfRange(start, nl), loaded.size + 1L, loaded.lastOrNull()?.hash ?: GENESIS)
+                    if (rec != null) {
+                        loaded += rec
+                        validEnd = nl + 1
+                    } else {
+                        badLine = lineNo
+                    }
+                } else {
+                    linesAfterBad++
+                }
+                start = nl + 1
+            }
+            return Scan(loaded, validEnd, badLine, linesAfterBad)
         }
 
         private fun build(position: Long, prev: ContentHash, event: EventEnvelope): Pair<JournalRecord, JsonObject> {

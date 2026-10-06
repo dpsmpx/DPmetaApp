@@ -56,6 +56,14 @@ enum class EventType {
     ACCOUNT_SESSION_RELEASED,
     ACCOUNT_SWITCHED,
 
+    // --- execution target и процессы на нём (этап 3) ---
+    EXECUTION_TARGET_REGISTERED,
+    EXECUTION_TARGET_STATE_CHANGED,
+    TARGET_PROCESS_STARTED,
+    TARGET_PROCESS_OUTPUT,
+    TARGET_PROCESS_HEARTBEAT,
+    TARGET_PROCESS_EXITED,
+
     // --- Git ---
     GIT_DIRTY,
     GIT_COMMIT_CREATED,
