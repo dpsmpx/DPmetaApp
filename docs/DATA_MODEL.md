@@ -26,6 +26,7 @@
 | `OperationId` | `op` | команда оркестратора |
 | `CorrelationId` | `cor` | цепочка связанных событий и команд |
 | `ApprovalId` | `apr` | запрос одобрения |
+| `SubscriptionId` | `sub` | подписка Claude (`docs/ACCOUNT_MODEL.md`, §1) |
 
 `ProviderSessionId` — идентификатор, выданный провайдером (у Claude
 Code — UUID, `docs/research/CLAUDE_CODE_CLI.md`): непрозрачная строка
@@ -44,7 +45,7 @@ Code — UUID, `docs/research/CLAUDE_CODE_CLI.md`): непрозрачная с�
 
 | Сущность | Модуль | Поля ТЗ, §7 | Сверх ТЗ |
 |---|---|---|---|
-| `AIAccount` | `accounts` | id, provider, label, authenticationRef, status, capabilities, usagePolicy, limits, health, createdAt, updatedAt | `status` — автомат `AccountLifecycle` (`docs/ACCOUNT_MODEL.md`) |
+| `AIAccount` (слот) | `accounts` | id, provider, label, authenticationRef, status, capabilities, usagePolicy, limits, health, createdAt, updatedAt | слот принадлежит подписке (`SubscriptionId`), пределы — у подписки; `authenticationRef` — каталог настроек Claude Code на target; `status` выводится из фактов (`docs/ACCOUNT_MODEL.md`, §2) |
 | `ExecutionTarget` | `execution` | id, type, host, platform, runtime, capabilities, workspaceRoot, connection, health, lastSeen | `lastSeen` — `Measure` (D-13) |
 | `Session` | `sessions` | id, provider, accountId, executionTargetId, taskId, projectId, repositoryId, branch, worktree, providerSessionId, state, startedAt, updatedAt, lastHeartbeat, usage, failure | `continuesSessionId` — прежняя сессия при продолжении; `contextId` + версия |
 | `Task` | `tasks` | id, title, objective, project, priority, status, dependencies, constraints, executionPolicy, verificationPolicy, contextPolicy, assignedAccount, assignedTarget, sessionId, createdAt, updatedAt | `status` — автомат `TaskLifecycle` (`docs/SCHEDULER.md`) |
@@ -76,6 +77,7 @@ Code — UUID, `docs/research/CLAUDE_CODE_CLI.md`): непрозрачная с�
 | `dpai.snapshot` | 1 | снимок: `projection`, `position`, `recordHash`, `state` | 2 |
 | `dpai.backup-manifest` | 1 | манифест копии: `createdAt`, `schemaVersion`, `files` (`path`, `size`, `sha256`), `hash` (ТЗ, §60) | 2 |
 | `dpai.restore-marker` | 1 | маркер начатого восстановления: `backup`, `manifest` | 2 |
+| `dpai.accounts-state` | 1 | состояние аккаунтов в снимке: подписки с окнами пределов, слоты, подписка задачи, переходы задач (`docs/ACCOUNT_MODEL.md`, §8) | 5 |
 | `dpai.context` | — | версия контекста | 8 |
 | `dpai.handoff` | — | handoff | 8 |
 
@@ -85,7 +87,7 @@ Code — UUID, `docs/research/CLAUDE_CODE_CLI.md`): непрозрачная с�
 |---|---|---|
 | `id` | `EventId` | идентичность события; повтор с тем же id — идемпотентен |
 | `type` | строка `EventType` | вид события; имена — публичный контракт |
-| `stream` | `{"kind", "id"}` | поток (сущность): `task`, `session`, `account`, `target`, `system` |
+| `stream` | `{"kind", "id"}` | поток (сущность): `task`, `session`, `account`, `target`, `subscription`, `system` |
 | `sequence` | целое ≥ 1 | номер в потоке без пропусков |
 | `occurredAt` | `Timestamp` | когда произошло (по часам источника) |
 | `recordedAt` | `Timestamp` | когда записано оркестратором |

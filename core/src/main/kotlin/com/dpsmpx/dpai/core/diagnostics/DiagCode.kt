@@ -92,6 +92,18 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     BACKUP_INVALID(Category.INTEGRITY, Severity.ERROR, Retryability.NON_RETRYABLE),
     RESTORE_RESUMED(Category.INTEGRITY, Severity.WARNING, Retryability.NON_RETRYABLE),
 
+    // --- аккаунты и подписки (D-29, D-30) ---
+    ENTITY_NOT_FOUND(Category.INPUT, Severity.ERROR, Retryability.NON_RETRYABLE),
+    ACCOUNT_CONFIG_DIR_IN_USE(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
+    ACCOUNT_AUTH_METHOD_FORBIDDEN(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
+    ACCOUNT_IDENTITY_MISMATCH(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
+    ACCOUNT_DUPLICATE_SUBSCRIPTION(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
+    ACCOUNT_IDENTITY_UNKNOWN(Category.STATE, Severity.WARNING, Retryability.NON_RETRYABLE),
+    ACCOUNT_ENVIRONMENT_SANITIZED(Category.STATE, Severity.WARNING, Retryability.NON_RETRYABLE),
+    ACCOUNT_LEASE_CONFLICT(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
+    ACCOUNT_NONE_AVAILABLE(Category.STATE, Severity.ERROR, Retryability.RETRYABLE),
+    ACCOUNT_SWITCH_LOOP(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
+
     // --- общее ---
     /** Строгая семантика (D-05): неподдержанное — явный отказ, а не «похожее». */
     UNSUPPORTED(Category.UNSUPPORTED, Severity.ERROR, Retryability.NON_RETRYABLE),

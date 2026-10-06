@@ -80,7 +80,7 @@ class IdsTest {
     @Test
     fun prefixesAreUnique() {
         assertEquals(IdKinds.ALL.size, IdKinds.ALL.map { it.prefix }.toSet().size)
-        assertEquals(13, IdKinds.ALL.size)
+        assertEquals(14, IdKinds.ALL.size)
     }
 
     @Test

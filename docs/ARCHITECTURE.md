@@ -194,7 +194,25 @@ RECOVERY_PENDING ─► проба target и процесса ─► сверк�
 Транзакция — одна запись журнала: изменение состояния либо записано и
 подтверждено, либо нет; производное состояние пересчитывается (D-12).
 
-## 6. Модели подсистем
+## 6. Аккаунты и уведомления
+
+Логика аккаунтов не зависит от транспорта и начата раньше этапов 3–4
+(D-30): решения — чистые функции над состоянием, состояние — свёртка
+событий.
+
+| Модуль, пакет | Содержимое |
+|---|---|
+| `accounts` | `Accounts`: решения (`registerSlot`, `observeAuthStatus`, `observeLimit`, `lease`, `tick`…) возвращают события `AccountEvent`; `apply` сворачивает их в `AccountsState` с проверкой переходов `AccountLifecycle`. `AuthStatus` — разбор `claude auth status --json`; `SlotEnvironment` — окружение процесса `claude` для слота (D-29); `AccountCodec` — события в `dpai.event` и состояние в `dpai.accounts-state` |
+| `notifications` | `NotificationEngine`: ключ предмета, окно агрегации, эскалация, предел частоты и сводка, `resolve`; `DeepLink` — `dpai://вид/id` |
+| `orchestrator` | `EventRecorder` — конверты событий с номерами по потокам; `accounts.AccountsProjection` — проекция для снимков и восстановления (§5); `accounts.AccountNotifications` — какие события аккаунтов становятся уведомлениями |
+
+```
+факт (claude auth status, ответ сессии, такт) ─► Accounts.решение ─► события
+   ─► EventRecorder ─► EventJournal ─► AccountsProjection (снимок)
+   ─► AccountNotifications ─► NotificationEngine ─► показ / обновление / сводка
+```
+
+## 7. Модели подсистем
 
 | Подсистема | Документ |
 |---|---|

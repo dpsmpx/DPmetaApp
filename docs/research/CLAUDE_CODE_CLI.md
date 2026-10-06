@@ -75,6 +75,25 @@ Code **2.1.291** (среда облачной сессии). Это первич
 - **Истекающий вход** предупреждает за три дня; истёкший — каждый запрос
   к модели падает с «Login expired · Please run /login».
 
+**`claude auth status`** — проверено **6 октября 2026**: справка Claude
+Code 2.1.291 (`--json` — по умолчанию, `--text` — для человека); запуск
+2.1.291 с пустым `CLAUDE_CONFIG_DIR`; код команды в пакете npm
+`@anthropic-ai/claude-code` 2.1.42 (среда облачной сессии).
+
+| Поле | Значение |
+|---|---|
+| `loggedIn` | есть ли учётные данные; код выхода — `0`, если да, иначе `1` |
+| `authMethod` | `claude.ai` (вход формой Claude), `oauth_token` (токен из окружения или файла), `api_key_helper`, `api_key`, `third_party` (облачный провайдер), `none` |
+| `apiProvider` | `firstParty` — Anthropic напрямую |
+| `apiKeySource` | только при ключе: откуда он (`ANTHROPIC_API_KEY` и т. п.) |
+| `email`, `orgId`, `orgName`, `subscriptionType` | только при `authMethod = "claude.ai"`; могут быть `null` |
+| `configDirectory`, `projectsDirectory`, `analyticsDisabled` | есть в 2.1.291 |
+
+Токенов в выводе нет. `AuthStatus` читает его терпимо: обязательны
+`loggedIn` и `authMethod`, неизвестные поля пропускаются — новые версии
+Claude Code добавляют поля (2.1.42 → 2.1.291). `email` и `orgId` сразу
+превращаются в отпечаток аккаунта; email не хранится (D-30).
+
 ## 5. Платформы
 
 Там же (`code.claude.com/docs/en/setup`, «System requirements»), 6

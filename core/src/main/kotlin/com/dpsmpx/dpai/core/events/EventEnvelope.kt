@@ -22,6 +22,7 @@ enum class StreamKind(internal val idKind: IdKind<*>?) {
     SESSION(IdKinds.SESSION),
     ACCOUNT(IdKinds.ACCOUNT),
     TARGET(IdKinds.TARGET),
+    SUBSCRIPTION(IdKinds.SUBSCRIPTION),
     SYSTEM(null),
 }
 

@@ -64,7 +64,11 @@ RULES = [
     ("provider-private",
      r"claude\.ai/(?:api|chat|login|oauth)|\bsessionKey\b|\bCookieManager\b|\bCookieHandler\b|"
      r"\bHttpCookie\b|\.credentials\.json|CLAUDE_CODE_OAUTH_TOKEN|setup-token",
-     [],
+     [
+         # Список переменных, которые оркестратор УДАЛЯЕТ из окружения слота (D-29), и его тест.
+         "accounts/src/main/kotlin/com/dpsmpx/dpai/accounts/SlotEnvironment.kt",
+         "accounts/src/test/kotlin/com/dpsmpx/dpai/accounts/SlotEnvironmentTest.kt",
+     ],
      "приватные адреса, cookies и вход claude.ai провайдера запрещены (D-04, D-27)", True),
 ]
 

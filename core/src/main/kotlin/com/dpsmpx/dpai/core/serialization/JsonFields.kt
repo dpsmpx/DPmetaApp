@@ -13,6 +13,9 @@ import com.dpsmpx.dpai.core.diagnostics.DiagnosticCollector
  * за один проход собрать все находки.
  */
 class JsonFields(private val obj: JsonObject, val path: String, private val diags: DiagnosticCollector) {
+    /** Сборщик находок — для расширений, читающих свои типы полей (кодеки модулей). */
+    val diagnostics: DiagnosticCollector get() = diags
+
     private val known = mutableSetOf<String>()
 
     fun has(name: String): Boolean = obj.fields.containsKey(name)
