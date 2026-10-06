@@ -107,6 +107,13 @@ Verify. Журнал каждой проверки — `build/dpv/last/<пров
 | Android NDK | версия из `gradle/libs.versions.toml` (`android-ndk`, сейчас `30.0.16248370`) в `$ANDROID_HOME/ndk/<версия>`; ставится `sdkmanager "ndk;30.0.16248370"` | сборка `libdppassxray.so` для APK (D-25); без NDK (или без Go) шаги Android пропускаются, а `--full` падает |
 | Сеть | при первом запуске | Gradle скачивает дистрибутив (сверяя SHA-256) и зависимости из Maven Central и Google Maven; Go — toolchain и модули с proxy.golang.org (сверяя с `go.sum` и sum.golang.org) |
 
+В веб-сессии Claude Code окружение готовит хук начала сессии
+`.claude/hooks/session-start.sh` (D-50): ставит command-line tools
+Android SDK (архив сверяется по SHA-256), платформу, build-tools,
+platform-tools и NDK версии из каталога, записывает путь к SDK в
+`ANDROID_HOME` сессии и в `local.properties`, вызывает
+`tools/dpv/dpv doctor` и показывает ветки с невлитой работой.
+
 ### Правила
 
 - **Падающая проверка не ослабляется.** Тест и проверку чинят или
