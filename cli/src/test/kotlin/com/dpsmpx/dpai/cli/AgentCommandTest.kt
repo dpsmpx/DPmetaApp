@@ -90,14 +90,19 @@ class AgentCommandTest {
      * Настоящий target по SSH. Задаётся системным свойством
      * `dpai.test.ssh` = `пользователь@хост:порт:posix|windows:команда агента`,
      * например `dev@build:22:posix:/opt/dpai/bin/dpai`. На target установлен
-     * `dpai`, ключ хоста — в known_hosts, вход — ключом.
+     * `dpai`, ключ хоста — в known_hosts, вход — ключом; необязательные
+     * `dpai.test.ssh.identity` и `dpai.test.ssh.knownHosts` — свой ключ и
+     * свой файл известных хостов.
      */
     @Test
     fun sshTargetStartsAndStopsThroughUnifiedInterface() {
         val spec = System.getProperty("dpai.test.ssh")
         assumeTrue(spec != null, "dpai.test.ssh не задан: проверка SSH — на настоящем target")
         val (userHost, port, platform, agent) = spec!!.split(":", limit = 4)
-        val endpoint = SshEndpoint.of(userHost.substringAfter('@'), userHost.substringBefore('@'), port.toInt()).valueOrNull()!!
+        val endpoint = SshEndpoint.of(
+            userHost.substringAfter('@'), userHost.substringBefore('@'), port.toInt(),
+            identityFile = System.getProperty("dpai.test.ssh.identity"), knownHostsFile = System.getProperty("dpai.test.ssh.knownHosts"),
+        ).valueOrNull()!!
         val p = if (platform == "windows") TargetPlatform.WINDOWS else TargetPlatform.POSIX
         val type = if (p == TargetPlatform.WINDOWS) TargetType.WINDOWS_REMOTE else TargetType.LINUX_SSH
         val manager = ExecutionTargetManager(Clock.SYSTEM, local = LocalProcessHost())

@@ -86,6 +86,19 @@ Property-тесты — свои, без сторонних библиотек (
 
 ## 7. Настоящие процессы
 
+Проверка по SSH на этой же машине Windows (7 октября 2026): OpenSSH
+Server слушает только `127.0.0.1`; агент — копия `cli/build/install/dpai`
+и обёртка, задающая JDK 21; ключ — без пароля (`ssh-keygen -N ""`: в
+PowerShell `-N '""'` даёт ключу пароль из двух кавычек, и `BatchMode`
+молча отказывается подписывать); для учётной записи администратора ключ —
+в `C:\ProgramData\sshdministrators_authorized_keys`. Запуск:
+
+```sh
+./gradlew :cli:test --tests '*AgentCommandTest*'   -Ddpai.test.ssh=dpu@127.0.0.1:22:windows:C:/Users/dpu/.dpai/dpai-agent.cmd   -Ddpai.test.ssh.identity=C:/Users/dpu/.ssh/dpai_test   -Ddpai.test.ssh.knownHosts=C:/Users/dpu/.ssh/dpai_known_hosts
+```
+
+## 8. Процессы ОС в тестах
+
 Процессы, агент и остановка дерева проверяются на настоящих процессах ОС
 (`LocalProcessHostTest`, `AgentRuntimeTest`, `AgentCommandTest`):
 программа-потомок `TestChild` — та же JVM с известным поведением
@@ -94,7 +107,23 @@ Windows. Внешний мир ждут `RealTime.await` из `testkit` — ог
 с описанием, чего не дождались; логика со временем по-прежнему — на
 `ManualClock`. Каждый тест убирает запущенные процессы, даже упав.
 
-## 8. Что тесты пока не покрывают
+## 8. Проверка по SSH
+
+На машине автора (7 октября 2026) — Windows-target на ней же: OpenSSH
+Server слушает только `127.0.0.1`; агент — копия `cli/build/install/dpai`
+и обёртка, задающая JDK 21; ключ — без пароля (`ssh-keygen -N ""`; в
+PowerShell `-N '""'` даёт ключу пароль из двух кавычек, и `BatchMode`
+молча отказывается подписывать); для учётной записи администратора ключ —
+в `C:\ProgramData\ssh\administrators_authorized_keys`. Запуск:
+
+```sh
+./gradlew :cli:test --tests '*AgentCommandTest*' \
+  -Ddpai.test.ssh=dpu@127.0.0.1:22:windows:C:/Users/dpu/.dpai/dpai-agent.cmd \
+  -Ddpai.test.ssh.identity=C:/Users/dpu/.ssh/dpai_test \
+  -Ddpai.test.ssh.knownHosts=C:/Users/dpu/.ssh/dpai_known_hosts
+```
+
+## 9. Что тесты пока не покрывают
 
 Всё, что требует настоящего SSH-хоста, устройства Android или Claude, —
 пока его нет рядом с прогоном (этапы 3, 4 и 11). Это не «пропущено
