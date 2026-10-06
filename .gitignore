@@ -1,0 +1,35 @@
+# Сборка
+build/
+# …но не пакеты исходников с именем build.
+!**/src/**/build/
+.gradle/
+.kotlin/
+local.properties
+*.class
+*.apk
+*.aab
+
+# Ключи и секреты — никогда в репозитории (tools/verify/check_secrets.py)
+*.keystore
+*.jks
+*.p12
+*.pfx
+.env
+*.env
+credentials.json
+
+# Локальное состояние оркестратора при ручных прогонах cli
+.dpai/
+
+# Редакторы и ОС
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# Python
+__pycache__/
+*.pyc
