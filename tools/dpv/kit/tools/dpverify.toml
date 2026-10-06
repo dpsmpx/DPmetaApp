@@ -1,0 +1,26 @@
+# tools/dpverify.toml — профиль DP Verify для @@NAME@@ (создан dpv init; ключи — ТЗ DP Verify, §7).
+# Проверки обязательного набора идут всегда; их настройки и команды проекта — здесь.
+schema = 1
+dpv = "@@DPV@@"
+
+[project]
+name = "@@NAME@@"
+languages = @@LANGUAGES@@
+main_branch = "main"
+
+[process]
+agent_rules = "CLAUDE.md"
+todo = "TODO.md"
+todo_item = '^- `[МСТК]` '
+roadmap = "ROADMAP/ROADMAP.md"
+decisions = "docs/direction/DECISIONS.md"
+decision_heading = '^### D-(\d{2})\b'
+decision_ref = '\bD-(\d{2})\b'
+decision_required_fields = ["**Проверка.**"]
+
+[checks."repo.layout"]
+# в корне — только точки входа; новый файл в корне — сюда, с причиной
+root_allow = @@ROOT@@
+
+# ---- команды проекта: сборка, тесты, предметные проверки ----
+@@COMMANDS@@

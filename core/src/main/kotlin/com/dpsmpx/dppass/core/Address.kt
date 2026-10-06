@@ -3,7 +3,7 @@ package com.dpsmpx.dppass.core
 /**
  * IP-адрес как байты. Разбор — собственный и чисто текстовый:
  * `java.net.InetAddress.getByName` для литералов запрещён
- * (`tools/security/check_forbidden_apis.py`), потому что для
+ * (`code.forbidden`, правило `dns-resolve`, `tools/dpverify.toml`), потому что для
  * не-литерала он молча идёт в DNS — утечка запроса мимо туннеля.
  */
 class IpAddress private constructor(private val bytes: ByteArray) {
