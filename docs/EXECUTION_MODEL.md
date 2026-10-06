@@ -17,16 +17,73 @@ Claude runtime    ── Claude Code CLI (print, stream-json), Claude Agent SDK
 ```
 
 Транспорт к любому target — SSH (D-26): к Termux — на `127.0.0.1` того
-же телефона, к Linux и Windows — с проверкой ключа хоста. На target —
-агент `dpai agent`: запускает `claude` с каталогом настроек слота
-(D-27), пишет события в свой журнал с номерами, переживает обрыв SSH и
-отдаёт пропущенное при переподключении. Работает ли Claude Code в
-Termux на Redmi Note 13 — проверка в начале этапа 3
-(`docs/research/CLAUDE_CODE_CLI.md`, §5).
+же телефона, к Linux и Windows — с проверкой ключа хоста. На JVM — системный
+клиент OpenSSH (D-31); вид `LOCAL` — машина самого контроллера, тот же
+агент без SSH; `MOCK` — `MockAgentHost` без процессов (ТЗ, §89). Работает
+ли Claude Code в Termux на Redmi Note 13 — проверка на устройстве
+(`docs/research/CLAUDE_CODE_CLI.md`, §5; `TODO.md`).
 
-Поля — `docs/DATA_MODEL.md`, §3. Здоровье target — по пробам с
-несколькими порогами, а не по одному пропуску (ТЗ, §14): связь,
-задержка, CPU, память, диск, число процессов, доступность Claude.
+Поля — `docs/DATA_MODEL.md`, §3. Код — пакет `execution.target`:
+`ExecutionTarget`, `ExecutionTargetManager`, `TargetHealthTracker`,
+`TargetDoctor`.
+
+### 1.1. Здоровье target
+
+Здоровье — по пробам с несколькими порогами, а не по одному пропуску
+(ТЗ, §14): проба — вызов `dpai agent doctor`. Первый пропуск — только
+`DEGRADED`; `OFFLINE` — когда подряд не меньше `offlineAfterFailures`
+неудачных проб **и** с первой из них прошло не меньше `offlineAfter`
+(по умолчанию 3 пробы и минута); возврат — после
+`recoverAfterSuccesses` удачных проб подряд. Медленный ответ — тоже
+`DEGRADED`. Автомат — `core`, `TargetLifecycle`:
+
+| Из | В |
+|---|---|
+| `UNKNOWN` | `ONLINE`, `DEGRADED`, `OFFLINE`, `DISABLED` |
+| `ONLINE` | `DEGRADED`, `DISABLED` |
+| `DEGRADED` | `ONLINE`, `OFFLINE`, `DISABLED` |
+| `OFFLINE` | `ONLINE`, `DEGRADED`, `DISABLED` |
+| `DISABLED` | (явно: `UNKNOWN`) |
+
+`ONLINE` → `OFFLINE` за одну пробу невозможен по таблице. Время
+последнего ответа — `Measure` (D-13): target, который ни разу не ответил,
+«неизвестно когда», а не «в начале эпохи».
+
+### 1.2. `doctor` для target
+
+`dpai agent doctor` сообщает версию агента, ОС, Java, время, Termux,
+свободный диск и память, `claude --version`, `git --version` (ТЗ, §34).
+Контроллер оценивает (`TargetDoctor`): связь; Claude Code нет — FAIL
+(D-26); Git нет — WARN; диск меньше 1 ГиБ — WARN, меньше 200 МиБ — FAIL;
+память меньше 256 МиБ — WARN; расхождение часов (время target минус
+середина интервала запроса, за вычетом половины задержки) больше 30 с —
+WARN, больше 5 мин — FAIL. Неизвестное — UNKNOWN, а не OK.
+
+### 1.3. Агент на target
+
+`dpai agent` (модуль `cli`, логика — `orchestrator.agent.AgentRuntime`):
+
+| Команда | Что делает |
+|---|---|
+| `start --run ID [--dir] [--timeout-seconds] [--env K=V]… [--unset K]… -- КОМАНДА…` | записывает запуск (`dpai.agent-run`) и запускает отдельный супервизор |
+| `supervise --run ID` | единственный писатель журнала запуска: процесс, вывод через `Redactor`, heartbeat, тайм-аут, просьба остановиться, выход |
+| `events --run ID --after N --limit M` | подтверждённые события с номером больше N и состояние запуска |
+| `status --run ID` | состояние запуска; супервизор умер, не записав выхода, — `LOST` |
+| `stop --run ID [--grace-seconds]` | просьба супервизору; потерянный супервизор — остановка процесса по идентификатору и времени старта |
+| `doctor` | §1.2 |
+
+Каталог агента: `runs/<SessionId>/run` (документ запуска),
+`events.jsonl` (журнал), `stop-request`. Поток событий запуска — поток
+сессии (`StreamRef` вида `session`): `TARGET_PROCESS_STARTED`,
+`TARGET_PROCESS_OUTPUT`, `TARGET_PROCESS_HEARTBEAT`,
+`TARGET_PROCESS_EXITED` (причина: `EXITED`, `TIMEOUT`, `STOPPED`,
+`START_FAILED`).
+
+Контроллер читает события каналом `RunChannel`: с номера, следующего за
+последним принятым, поэтому обрыв связи ничего не теряет. Пропуск номера
+— повторный запрос с первого непринятого (сверка); пропуск, который
+сверка не закрыла, — `RUN_RECONCILIATION_REQUIRED`, события через дыру
+не применяются (D-12; `docs/ARCHITECTURE.md`, §3.2).
 
 ## 2. Предохранитель
 
@@ -75,10 +132,14 @@ Claude — успех, отказ, тайм-аут, падение, медлен
 
 ## 5. Процессы
 
-Запуск процессов — только в модуле `execution` (D-03). Каждый процесс
+Запуск процессов — только в модуле `execution` (D-03): `ProcessHost` —
+`LocalProcessHost`, `SshProcessHost`, `MockAgentHost`. Каждый процесс
 привязан к сессии; тайм-аут, остановка и обрыв связи не оставляют
-сирот (ТЗ, §119). Аргументы командной строки не содержат секретов:
-секрет — в окружении процесса (D-14).
+сирот (ТЗ, §119): остановка снимает список потомков до сигнала корню
+(`ProcessTree`) — после смерти корня связь «родитель — потомок» у ОС
+теряется, — сначала мягко, через паузу принудительно; пережившие —
+`PROCESS_ORPHANS_LEFT`, а не тишина. Аргументы командной строки не
+содержат секретов: секрет — в окружении процесса (D-14).
 
 ## 6. Android
 

@@ -40,9 +40,10 @@ tasks.withType<Test>().configureEach {
     systemProperty("junit.platform.discovery.issue.severity.critical", "WARNING")
     // Корень репозитория — для тестов, читающих tests/data.
     systemProperty("dpai.repoRoot", rootDir.absolutePath)
-    // Параметры property-тестов из командной строки (docs/TESTING.md,
-    // «Свойства»): без проброса они остались бы в JVM Gradle.
-    for (key in listOf("dpai.property.iterations", "dpai.property.seed")) {
+    // Параметры property-тестов и адрес настоящего SSH target из командной
+    // строки (docs/TESTING.md, «Свойства», «Слои»): без проброса они
+    // остались бы в JVM Gradle.
+    for (key in listOf("dpai.property.iterations", "dpai.property.seed", "dpai.test.ssh")) {
         providers.systemProperty(key).orNull?.let { systemProperty(key, it) }
     }
     testLogging {

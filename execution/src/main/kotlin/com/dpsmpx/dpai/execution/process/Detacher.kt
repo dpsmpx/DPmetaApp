@@ -67,32 +67,29 @@ class Detacher(private val windows: Boolean = isWindows(), private val shellHost
 
         /**
          * Строка команды Windows по правилам разбора `CommandLineToArgvW`:
-         * аргумент с пробелом или кавычкой — в кавычках, обратные косые перед
-         * кавычкой удваиваются.
+         * аргумент с пробелом или кавычкой — в кавычках ([quoteWindows]).
          */
-        fun windowsCommandLine(argv: List<String>): String = argv.joinToString(" ") { a ->
-            if (a.isNotEmpty() && a.none { it == ' ' || it == '\t' || it == '"' }) {
-                a
-            } else {
-                buildString {
-                    append('"')
-                    var slashes = 0
-                    for (c in a) {
-                        when (c) {
-                            '\\' -> slashes++
-                            '"' -> {
-                                append("\\".repeat(slashes * 2 + 1)).append('"')
-                                slashes = 0
-                            }
-                            else -> {
-                                append("\\".repeat(slashes)).append(c)
-                                slashes = 0
-                            }
-                        }
+        fun windowsCommandLine(argv: List<String>): String =
+            argv.joinToString(" ") { a -> if (a.isNotEmpty() && a.none { it == ' ' || it == '\t' || it == '"' }) a else quoteWindows(a) }
+
+        /** Аргумент в кавычках: обратные косые перед кавычкой и в конце удваиваются. */
+        fun quoteWindows(a: String): String = buildString {
+            append('"')
+            var slashes = 0
+            for (c in a) {
+                when (c) {
+                    '\\' -> slashes++
+                    '"' -> {
+                        append("\\".repeat(slashes * 2 + 1)).append('"')
+                        slashes = 0
                     }
-                    append("\\".repeat(slashes * 2)).append('"')
+                    else -> {
+                        append("\\".repeat(slashes)).append(c)
+                        slashes = 0
+                    }
                 }
             }
+            append("\\".repeat(slashes * 2)).append('"')
         }
     }
 }

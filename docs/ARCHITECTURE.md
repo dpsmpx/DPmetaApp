@@ -1,6 +1,6 @@
 # Архитектура DP_AI_Orcestrator
 
-Срез на 6 октября 2026 (этапы 0–1). Решения, на которых держится
+Срез на 6 октября 2026 (этапы 0–3). Решения, на которых держится
 архитектура, — `docs/direction/DECISIONS.md`; здесь — как они разложены
 по модулям и как через модули идут данные. Модели подсистем —
 отдельными документами (§5).
@@ -162,8 +162,8 @@ RECOVERY_PENDING ─► проба target и процесса ─► сверк�
 | `ids` | `TypedId`, виды идентификаторов с префиксами, `IdGenerator`, `ProviderSessionId` |
 | `clock` | `Clock`, `ManualClock`, `Timestamp`, `RandomSource` |
 | `hashing` | `ContentHash`, `Hashing.sha256` |
-| `serialization` | `JsonValue`, строгий `JsonParser`, `CanonicalJson`, `JsonFields` (чтение с путём), `JsonPath`, `FormatHeader` |
-| `state` | `TransitionTable`, `Transition`; таблицы `SessionLifecycle`, `TaskLifecycle`, `AccountLifecycle`, `CircuitLifecycle`; `HeartbeatFreshness` |
+| `serialization` | `JsonValue`, строгий `JsonParser`, `CanonicalJson`, `JsonFields` (чтение с путём), `JsonPath`, `FormatHeader`, `DiagnosticJson` (диагностика между процессами) |
+| `state` | `TransitionTable`, `Transition`; таблицы `SessionLifecycle`, `TaskLifecycle`, `AccountLifecycle`, `CircuitLifecycle`, `TargetLifecycle`; `HeartbeatFreshness` |
 | `events` | `EventEnvelope`, `EventType`, `StreamRef`, `SequenceTracker` |
 | `measure` | `Measure` (`Known` с источником, `Unknown` с причиной) |
 
@@ -212,7 +212,27 @@ RECOVERY_PENDING ─► проба target и процесса ─► сверк�
    ─► AccountNotifications ─► NotificationEngine ─► показ / обновление / сводка
 ```
 
-## 7. Модели подсистем
+## 7. Исполнение и агент target
+
+Модуль `execution` (этап 3, D-26, D-31; `docs/EXECUTION_MODEL.md`):
+
+| Пакет | Содержимое |
+|---|---|
+| `target` | `ExecutionTarget`, `SshEndpoint`, `TargetHealthTracker` (пороги и предохранитель), `TargetDoctor`, `ExecutionTargetManager` |
+| `process` | `ProcessHost`, `LocalProcessHost`, `ProcessTree` (остановка дерева), `Detacher` (процесс, переживающий сессию SSH), `run` с тайм-аутом |
+| `ssh` | `SshProcessHost` (системный OpenSSH), `RemoteShell` (кавычки POSIX и Windows) |
+| `agent` | протокол `dpai.agent-reply`, `AgentClient`, `RunChannel` (номера и сверка), `MockAgentHost` |
+
+Сторона target — `orchestrator.agent.AgentRuntime` (журнал запуска через
+`storage`), команда — `dpai agent` модуля `cli`.
+
+```
+контроллер: AgentClient ─► ProcessHost (local | ssh | mock) ─► dpai agent <команда>
+target:     start ─► Detacher ─► supervise ─► процесс; вывод ─► Redactor ─► events.jsonl
+контроллер: RunChannel.poll ─► events --after N ─► SequenceTracker ─► принято | сверка
+```
+
+## 8. Модели подсистем
 
 | Подсистема | Документ |
 |---|---|

@@ -14,7 +14,7 @@
 | Core architecture complete | 0, 1 | ✓ | DoD ТЗ, §126: ID, результаты, диагностика, время, хеши, JSON, автоматы, версии форматов, события, детерминированные тесты (этап 1) |
 | Persistent state reliable | 2 | ✓ | журнал с цепочкой хешей, атомарные документы с LKG, снимки, миграции; тесты по модели сбоев (этап 2) |
 | Accounts complete | 5 | ◐ | подписки и слоты, вывод состояния из фактов, пределы окна пяти часов и недели, защиты от пересечения, выбор слота, журнал и снимок (D-27, D-29, D-30); сверка перед запуском — с этапами 3, 4, 6 |
-| Execution targets complete | 3 | — | |
+| Execution targets complete | 3 | ◐ | модель target, здоровье с порогами и предохранителем, `doctor`, процессы без сирот, SSH через OpenSSH (D-31), агент `dpai agent` с журналом и сверкой пропусков; mock и локально проверено, SSH на настоящем хосте и Termux на устройстве — открыты |
 | Claude runner complete | 4 | — | факты CLI собраны: `docs/research/CLAUDE_CODE_CLI.md` |
 | Sessions complete | 6 | ◐ | автомат жизненного цикла и свежесть heartbeat (этап 1) |
 | Scheduler complete | 7 | ◐ | автомат задачи с цепочкой проверки (этап 1) |
@@ -25,7 +25,7 @@
 | Verification integration complete | 10 | — | |
 | Monitoring complete | 11 | — | |
 | Notifications complete | 12 | ◐ | агрегация, эскалация, предел частоты и сводка, deep links; уведомления аккаунтов; каналы Android — этап 11 |
-| Recovery complete | 13 | ◐ | пропуски и конфликты событий (этап 1); восстановление хранилища, карантин, возобновление копии (этап 2) |
+| Recovery complete | 13 | ◐ | пропуски и конфликты событий (этап 1); восстановление хранилища, карантин, возобновление копии (этап 2); сверка канала запуска и потерянный супервизор (этап 3) |
 | Security audit complete | 18 | — | модель угроз: `docs/SECURITY_MODEL.md` |
 | Performance audit complete | 17 | — | бюджеты: `docs/PERFORMANCE.md` |
 | Stress test complete | 17, 19 | — | |

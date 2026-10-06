@@ -5,6 +5,7 @@ import com.dpsmpx.dpai.core.diagnostics.Diagnostic
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.result.map
 import com.dpsmpx.dpai.execution.process.Completed
+import com.dpsmpx.dpai.execution.process.Detacher
 import com.dpsmpx.dpai.execution.process.OutputLine
 import com.dpsmpx.dpai.execution.process.ProcessHost
 import com.dpsmpx.dpai.execution.process.ProcessSpec
@@ -40,7 +41,7 @@ object RemoteShell {
                 if (bad != null) {
                     Outcome.failure(DiagCode.UNSUPPORTED, "аргумент с \", %, ^, ! или управляющими знаками не передаётся на Windows по SSH")
                 } else {
-                    Outcome.success(args.joinToString(" ") { if (WINDOWS_SAFE.matches(it)) it else "\"$it\"" })
+                    Outcome.success(args.joinToString(" ") { if (WINDOWS_SAFE.matches(it)) it else Detacher.quoteWindows(it) })
                 }
             }
         }

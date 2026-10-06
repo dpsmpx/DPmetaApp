@@ -146,7 +146,7 @@ def check():
         if check_only:
             f.add(README, "раздел «Прогресс» отстал: python3 tools/verify/readme_progress.py")
         else:
-            with open(os.path.join(root(), README), "w", encoding="utf-8") as fh:
+            with open(os.path.join(root(), README), "w", encoding="utf-8", newline="\n") as fh:
                 fh.write(text.replace(current, block))
             print("README.md: раздел «Прогресс» переписан")
     return f.finish("раздел «Прогресс» актуален")

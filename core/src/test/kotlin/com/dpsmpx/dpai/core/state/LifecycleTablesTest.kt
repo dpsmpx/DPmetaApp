@@ -15,7 +15,7 @@ import kotlin.test.assertTrue
  */
 class LifecycleTablesTest {
     private val tables: List<TransitionTable<*>> =
-        listOf(SessionLifecycle.table, TaskLifecycle.table, AccountLifecycle.table, CircuitLifecycle.table)
+        listOf(SessionLifecycle.table, TaskLifecycle.table, AccountLifecycle.table, CircuitLifecycle.table, TargetLifecycle.table)
 
     @Test
     fun everyPairIsEitherInTableOrRejected() {
@@ -76,13 +76,16 @@ class LifecycleTablesTest {
         assertDoc("docs/SESSION_MODEL.md", SessionLifecycle.table)
         assertDoc("docs/SCHEDULER.md", TaskLifecycle.table)
         assertDoc("docs/ACCOUNT_MODEL.md", AccountLifecycle.table)
-        assertDoc("docs/EXECUTION_MODEL.md", CircuitLifecycle.table)
+        assertDoc("docs/EXECUTION_MODEL.md", CircuitLifecycle.table, after = "## 2. Предохранитель")
+        assertDoc("docs/EXECUTION_MODEL.md", TargetLifecycle.table, after = "### 1.1. Здоровье target")
     }
 
-    private fun <S : Enum<S>> assertDoc(rel: String, table: TransitionTable<S>) {
+    /** Таблица «Из | В» документа — первая после заголовка [after], если он задан. */
+    private fun <S : Enum<S>> assertDoc(rel: String, table: TransitionTable<S>, after: String? = null) {
         val root = System.getProperty("dpai.repoRoot") ?: error("нет dpai.repoRoot")
         val lines = File(root, rel).readLines()
-        val start = lines.indexOfFirst { it.startsWith("| Из |") }
+        val from = after?.let { h -> lines.indexOf(h).also { assertTrue(it >= 0, "$rel: нет заголовка $h") } } ?: 0
+        val start = lines.withIndex().indexOfFirst { (i, l) -> i >= from && l.startsWith("| Из |") }
         assertTrue(start >= 0, "$rel: нет таблицы переходов")
         val byName = table.states.associateBy { it.name }
         val ordinary = mutableMapOf<S, Set<S>>()
