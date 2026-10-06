@@ -99,8 +99,10 @@ step() { # step <имя> <команда…>: вывод — в журнал, п
   fi
 }
 
-# Шаг Gradle с повтором только при отказе загрузки до компиляции (docs/PROCESS.md,
-# «Правила»: 429 от Maven Central через прокси — сбой инструмента, а не кода).
+# Шаг Gradle с повтором только при временном отказе загрузки — 429, 5xx, обрыв
+# соединения — без постоянного отказа и признаков сбоя кода (gradle_log.py;
+# docs/PROCESS.md, «Правила»: 429 от Maven Central через прокси — сбой
+# инструмента, а не кода).
 gradle_step() { # gradle_step <имя> <аргументы gradlew…>
   local name="$1"; shift
   local log="$OUT/$(echo "$name" | tr ' /:' '___').log"
@@ -112,9 +114,10 @@ gradle_step() { # gradle_step <имя> <аргументы gradlew…>
       [ "$attempt" -gt 0 ] && echo "    ✓ прошло после повторов загрузки: $attempt"
       return 0
     fi
-    if [ "$attempt" -lt 5 ] && "$PY" -B tools/verify/gradle_log.py "$log"; then
+    # Путь — абсолютный: относительный gradle_log.py читает от DPAI_VERIFY_ROOT (самотесты).
+    if [ "$attempt" -lt 5 ] && "$PY" -B tools/verify/gradle_log.py "$ROOT/$log"; then
       attempt=$((attempt + 1))
-      echo "    ○ загрузка зависимостей не удалась (повтор $attempt из 5, пауза $((5 << attempt)) с)"
+      echo "    ○ временный отказ загрузки зависимостей (повтор $attempt из 5, пауза $((5 << attempt)) с)"
       sleep $((5 << attempt))
       continue
     fi

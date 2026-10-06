@@ -48,6 +48,43 @@ def secret_sample():
     return "AKIA" + "ABCDEFGHIJKLMNOP"
 
 
+# gradle_log.py: каждый «плохой» журнал — временный отказ (429) и ровно одна
+# причина не повторять (или нет временной причины вовсе); каждый «чистый» —
+# обёртки Gradle и ровно одна временная причина. Так каждое правило разбора
+# доказывает себя отдельно: убрать любое — какой-то случай покраснеет.
+GRADLE_WRAP = ("> Task :core:compileKotlin FAILED\n* What went wrong:\n"
+               "> Could not resolve all files for configuration ':core:compileClasspath'.\n"
+               "   > Could not GET 'https://repo.maven.apache.org/maven2/org/x/a/1.0/a-1.0.pom'.\n")
+GRADLE_429 = "      > Received status code 429 from server: Too Many Requests\n"
+GRADLE_NO_RETRY = [GRADLE_WRAP + GRADLE_429 + line for line in [
+    "e: file:///core/A.kt:1:5 Unresolved reference 'x'.\n",
+    "> Compilation error. See log for more details\n",
+    "> Compilation failed; see the compiler output below.\n",
+    "> There were failing tests. See the report at: file:///cli/build/index.html\n",
+    "CliTest > version() FAILED\n    org.opentest4j.AssertionFailedError\n",
+    "> Test process encountered an unexpected problem.\n",
+    "    org.gradle.process.ProcessExecutionException: Process 'Gradle Test Executor 2' finished with non-zero exit value 137\n",
+    "> There are test sources present and no filters are applied, but the test task did not discover any tests to execute.\n",
+    "A problem occurred evaluating project ':tasks'.\n",
+    "   > Could not find org.typo:junit-bomm:6.1.3.\n",
+    "      > Received status code 403 from server: Forbidden\n",
+    "      > PKIX path building failed: sun.security.provider.certpath.SunCertPathBuilderException\n",
+    "      > unable to find valid certification path to requested target\n",
+    "   > No matching variant of org.x:a:1.0 was found.\n",
+]] + [GRADLE_WRAP + "      > Gradle build daemon disappeared unexpectedly\n"]
+GRADLE_RETRY = [GRADLE_WRAP + line for line in [
+    GRADLE_429,
+    "      > Received status code 502 from server: Bad Gateway\n",
+    "      > Unable to tunnel through proxy. Proxy returns \"HTTP/1.1 429 Too Many Requests\"\n",
+    "      > Unable to tunnel through proxy. Proxy returns \"HTTP/1.1 502 Bad Gateway\"\n",
+    "java.io.IOException: Server returned HTTP response code: 503 for URL: https://services.gradle.org/g.zip\n",
+    "java.io.IOException: Server returned HTTP response code: 429 for URL: https://services.gradle.org/g.zip\n",
+    "      > Connection reset\n",
+    "      > Read timed out\n",
+    "      > Connect to 127.0.0.1:35523 [/127.0.0.1] failed: Connect timed out\n",
+    "      > java.net.SocketTimeoutException: timeout\n",
+]]
+
 CASES = [
     # (проверка, плохое дерево, чистое дерево, аргументы)
     ("check_format.py",
@@ -127,29 +164,15 @@ CASES = [
       ".github/workflows/ci.yml": "on: push\n"},
      {"gradle/libs.versions.toml": "[versions]\n", "docs/PROVENANCE.md": "<!-- provenance: begin -->\n<!-- provenance: end -->\n",
       "a/build.gradle.kts": "dependencies { implementation(libs.x) }\n"}, []),
-    # gradle_log.py: «нарушение» — сбой кода, который нельзя повторять; «чисто» —
-    # отказ загрузки, в том числе со строкой `> Task :x FAILED`.
-    ("gradle_log.py",
-     {"build.log": "> Task :core:compileKotlin FAILED\n"
-                   "e: file:///core/A.kt:1:5 Unresolved reference 'x'.\n"
-                   "> Could not resolve all files for configuration ':core:testRuntimeClasspath'.\n"},
-     {"build.log": "> Task :build-logic:compilePluginsBlocks FAILED\n"
-                   "> Could not resolve all files for configuration ':build-logic:compileClasspath'.\n"
-                   "   > Could not download a-1.0.jar (org.x:a:1.0)\n"
-                   "            > Received status code 429 from server: Too Many Requests\n"},
-     ["build.log"]),
-    ("gradle_log.py",
-     {"build.log": "CliTest > version() FAILED\n    org.opentest4j.AssertionFailedError\n"
-                   "There were failing tests. See the report at: file:///cli/build/index.html\n"
-                   "> Could not GET 'https://repo.maven.apache.org/maven2/org/x/a/1.0/a-1.0.pom'.\n"},
-     {"build.log": "> Could not GET 'https://repo.maven.apache.org/maven2/org/x/a/1.0/a-1.0.pom'.\n"
-                   "> Task :cli:test FAILED\n"},
-     ["build.log"]),
     ("readme_progress.py",
      {**BASE, "TODO.md": "## Раздел\n\n- [ ] пункт\n",
       "README.md": "<!-- progress:begin -->\nстарое\n<!-- progress:end -->\n"},
      None, ["--check"]),
 ]
+
+# Плохих образцов больше, чем чистых: чистые идут по кругу, каждый встречается.
+CASES += [("gradle_log.py", {"build.log": bad}, {"build.log": GRADLE_RETRY[i % len(GRADLE_RETRY)]}, ["build.log"])
+          for i, bad in enumerate(GRADLE_NO_RETRY)]
 
 
 def write_tree(base, tree):
