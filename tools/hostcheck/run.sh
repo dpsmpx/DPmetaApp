@@ -146,7 +146,9 @@ PYEOF
 
 if [ "$MODE" != quick ]; then
   # Ядро — без :app: APK собирается только с Go и NDK (D-25), это шаг Android ниже.
-  CORE_TASKS=(build :cli:installDist)
+  # :build-logic:test — логика сборки (личность пакета, D-47, D-49): `build`
+  # корня включённую сборку не проверяет.
+  CORE_TASKS=(build :cli:installDist :build-logic:test)
   android_sdk && CORE_TASKS+=(-x :app:build)
   step "сборка и тесты ядра" "${GRADLE[@]}" "${CORE_TASKS[@]}"
   if [ -x "$CLI" ]; then
