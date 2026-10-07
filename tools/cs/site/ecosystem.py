@@ -132,8 +132,11 @@ def static_summary(data: dict) -> str:
     return "".join(parts)
 
 
-def page_main(data: dict, base_path: str, as_of_text: str) -> str:
+def page_main(data: dict, base_path: str, as_of_text: str, path_href: str | None = None) -> str:
+    """path_href — раздел «Путь» (Д44): откуда система выросла и к какой цели идёт."""
     src = f"{base_path}dpvis-data.json"
+    see_path = (f'<p>Откуда эта система выросла и к какой цели идёт — <a href="{E(path_href)}">Путь</a>.</p>'
+                if path_href else "")
     return (
         '<article class="page page-ecosystem">'
         "<h1>Экосистема</h1>"
@@ -146,5 +149,5 @@ def page_main(data: dict, base_path: str, as_of_text: str) -> str:
         f'<section class="eco-static" aria-label="Система списком"><h2>Система по слоям</h2>{static_summary(data)}'
         f'<p class="muted">Срез {E(as_of_text)}. Старые открытые проекты, личные устройства и подробности '
         "рабочих веток в эту схему не входят.</p></section>"
-        "</article>"
+        f"{see_path}</article>"
     )

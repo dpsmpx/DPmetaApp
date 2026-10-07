@@ -738,7 +738,8 @@ class SiteBuild:
         path = c["path"]
         page = Page(path, "ru", t("ru", "ecosystem"),
                     "Интерактивная схема системы проектов dpsmpx: слои, потоки работы и прогресс по истории git.",
-                    ecosystem.page_main(data, path, as_of_text), lastmod=day or None)
+                    ecosystem.page_main(data, path, as_of_text, self.path_href("ru") if self.path_cfg() else None),
+                    lastmod=day or None)
         page.head = [f'<link rel="stylesheet" href="{path}dpvis.css">', f'<script src="{path}dpvis.js" defer></script>']
         return page
 

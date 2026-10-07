@@ -322,8 +322,8 @@ nav.crumbs a { padding: 4px 0; }
 .path-src { font-size: 14px; margin-top: 28px; }
 /* главная: маршрут одной строкой */
 .route-strip { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-wrap: wrap; row-gap: 10px; }
-.route-strip li { position: relative; display: flex; flex-direction: column; margin-right: 30px; font-size: 15px; font-weight: 600; }
-.route-strip li:not(:last-child)::after { content: "→"; position: absolute; right: -21px; bottom: 0; color: var(--mist); font-weight: 400; }
+.route-strip li { display: flex; flex-direction: column; margin-right: 16px; font-size: 15px; font-weight: 600; }
+.route-strip li:not(:last-child) .rs-t::after { content: " →"; color: var(--mist); font-weight: 400; }
 .rs-when { font: 12px/1.6 "IBM Plex Mono", monospace; color: var(--mist); }
 .route-strip .rs-now { color: var(--human); }
 .route-strip .rs-plan { color: var(--mist); }
@@ -336,6 +336,5 @@ nav.crumbs a { padding: 4px 0; }
 @media (max-width: 600px) {
   .page-path .lead { font-size: 17px; }
   .route h3 { font-size: 17px; }
-  .route-strip li { margin-right: 26px; font-size: 14px; }
-  .route-strip li:not(:last-child)::after { right: -19px; }
+  .route-strip li { margin-right: 12px; font-size: 14px; }
 }

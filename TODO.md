@@ -6,11 +6,14 @@
 
 ## За автором
 
-- [ ] **Выгрузить сайт с разделом «Экосистема» (Д43, П2-26).** Сборка
-  готова в PR #24. Порядок: влить PR #24 (и PR DPvisualisation#1 — там
-  исходник схемы) → на своей машине `git pull`, `tools/check.sh` →
-  `python3 -m tools.cs site deploy --dry-run` (покажет `ecosystem/` и
-  `ecosystem/.htaccess`) → «да» → `site deploy` (Д35, Д36). После выгрузки
+- [ ] **Выгрузить сайт с разделами «Путь» (Д44, П2-27) и «Экосистема» (Д43,
+  П2-26).** Сборка готова в PR #25 (он включает PR #24; `tools/check.sh
+  --release` — зелёный, 07.10.2026). Порядок: влить PR #25 (и PR
+  DPvisualisation#1 — там исходник схемы) → на своей машине `git pull`,
+  `tools/check.sh` → `python3 -m tools.cs site deploy --dry-run` (новые:
+  `path/`, `en/path/`, `ecosystem/` и `ecosystem/.htaccess`; изменятся все
+  страницы — пункты меню «Путь» и «Экосистема», маршрут на главной,
+  `style.css`) → «да» → `site deploy` (Д35, Д36). После выгрузки
   проверить: `curl -sI https://dpsmpx.com/ecosystem/ | grep -i content-security`
   — `script-src 'self'`; то же для `/` — `script-src 'none'`. Если на
   `/ecosystem/` пришло `'none'` — Beget не применил `.htaccess` каталога:
@@ -145,7 +148,8 @@
   (шлюз, worker-ы — Beget только статика). Задачу в ROADMAP сайта — по
   этому решению.
 - [ ] **Новые репозитории в счёте прогресса (DPmeta SQ-23).**
-  DPmonetization, DPmetaApp, DPvisualisation (все с 05.10.2026) — нет ни
+  DPmonetization, DPmetaApp, DPvisualisation (все с 05.10.2026) и
+  DP_AI_Orcestrator (с 06.10.2026, ECO-NEW-2026-10-06) — нет ни
   в `repos`, ни в `excluded` `data/progress/scope.yaml`: следующий набор
   молча их пропустит. До П2-24 — решить: в счёт (с именем или без) или
   в `excluded` с причиной.
@@ -164,6 +168,12 @@
 
 ## За сессией
 
+- [ ] **Путь (Д44) после выгрузки:** снимки `/path/` и `/en/path/` с рабочего
+  сайта (390 и 1280 px). Перепроверить ORC-STAGE до 21.10.2026 и при каждом
+  новом шаге плана — `as_of` и станции в `data/website/path.yaml`.
+  DP_AI_Orcestrator (с 06.10.2026) нет в модели DPvisualisation — схема
+  «Экосистема» его не показывает; добавить — сессией DPvisualisation (новый
+  срез, затем `site ecosystem-import`).
 - [ ] **Экосистема (Д43) после выгрузки:** сверить по HTTPS CSP каталога
   `/ecosystem/` и корня, снимки 390 и 1366 px с рабочего сайта; новый срез
   схемы — в DPvisualisation (`collect`, `build --site`), затем

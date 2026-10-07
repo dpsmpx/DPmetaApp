@@ -394,7 +394,8 @@ class JourneyPath(unittest.TestCase):
         shutil.copyfile(ROOT / "data/website/path.yaml", repo.path("data", "website", "path.yaml"))
         p = repo.path("data", "website", "site.yaml")
         cfg = yaml.safe_load(p.read_text(encoding="utf-8"))
-        cfg["path_section"] = yaml.safe_load((ROOT / "data/website/site.yaml").read_text(encoding="utf-8"))["path_section"]
+        real = yaml.safe_load((ROOT / "data/website/site.yaml").read_text(encoding="utf-8"))
+        cfg["path_section"], cfg["ecosystem"] = real["path_section"], real["ecosystem"]
         p.write_text(yaml.safe_dump(cfg, allow_unicode=True), encoding="utf-8")
         if mutate:
             dp = repo.path("data", "website", "path.yaml")
@@ -428,6 +429,7 @@ class JourneyPath(unittest.TestCase):
         self.assertIn('<a href="/path/">Путь</a>', home, "пункт меню — на всех страницах")
         self.assertIn('class="route-strip"', home, "на главной — маршрут одной строкой")
         self.assertIn('href="/en/path/"', self.page("en/index.html"))
+        self.assertIn('<a href="/path/">Путь</a>.</p>', self.page("ecosystem/index.html"), "из «Экосистемы» — ссылка на путь")
 
     def test_route_and_goal_drawings(self):
         from tools.cs.site.path import W_NARROW, W_WIDE

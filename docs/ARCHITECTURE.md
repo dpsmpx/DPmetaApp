@@ -80,6 +80,7 @@ website/             тема сайта: templates/base.html, static/style.css 
 | `data/platforms/export_specs.yaml` | `export_specs` | размеры экспорта (Д13) |
 | `data/policy/publication.yaml` | `policy` | одобрение, автопубликация (пусто), роли, повторы, отказы, хранение |
 | `data/website/site.yaml` | `site` | сайт: адреса окружений, языки, главная |
+| `data/website/path.yaml` | `path` | раздел «Путь» (Д44): станции пути и схема конечной цели — ссылки на факты и вехи |
 | `data/publications/<окружение>.jsonl` | `publication` | журнал публикаций (только дописывание) |
 | `data/provenance/assets.yaml` | `assets` | входные ассеты (MediaAsset) |
 | `data/metrics/…`, `data/experiments/…` | `metrics`, `experiment` | метрики (Д15) и эксперименты (Д14) |

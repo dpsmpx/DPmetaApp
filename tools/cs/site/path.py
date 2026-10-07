@@ -581,9 +581,10 @@ def home_block(data: dict, lang: str, href: str) -> str:
     for kind, st in _slots(data["stations"]):
         if kind == "now":
             items.append(f'<li class="rs-now"><span class="rs-when">{E(day_text(data["as_of"], lang))}</span>'
-                         f'{E(lab["now"])}</li>')
+                         f'<span class="rs-t">{E(lab["now"])}</span></li>')
             continue
         cls = ' class="rs-plan"' if st.get("plan") else ""
-        items.append(f'<li{cls}><span class="rs-when">{E(when(st, lang))}</span>{E(label(st["title"], lang))}</li>')
+        items.append(f'<li{cls}><span class="rs-when">{E(when(st, lang))}</span>'
+                     f'<span class="rs-t">{E(label(st["title"], lang))}</span></li>')
     return (f'<h2>{E(lab["home_h2"])}</h2><ol class="route-strip">{"".join(items)}</ol>'
             f'<p><a href="{E(href)}">{E(lab["home_link"])} →</a></p>')
