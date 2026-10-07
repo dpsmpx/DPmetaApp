@@ -124,6 +124,8 @@ class V1ScenariosTest {
             orchestrator.tick()
             orchestrator.sessions.sessions.keys.forEach { s -> while (runner.advance(s)) continue }
             orchestrator.tick()
+            // Инварианты ТЗ, §118 — после каждого такта, а не только в конце.
+            assertEquals(emptyList(), orchestrator.invariants(), "инварианты после такта")
             clock.advance(2.minutes)
         }
     }
@@ -194,5 +196,6 @@ class V1ScenariosTest {
         assertEquals(true, orchestrator.respond(request.actions.first().uri, "автор").valueOrNull())
         assertTrue(File(repo.root, "feature.txt").exists(), "после одобрения — слито")
         assertEquals(listOf(t), orchestrator.merged)
+        assertEquals(emptyList(), orchestrator.invariants(), "слияние — с записью одобрения")
     }
 }

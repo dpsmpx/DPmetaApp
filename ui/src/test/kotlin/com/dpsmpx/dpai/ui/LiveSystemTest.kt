@@ -55,6 +55,7 @@ class LiveSystemTest {
 
     private fun steps(s: LiveSystem, n: Int) = repeat(n) {
         s.step()
+        assertEquals(emptyList(), s.orchestrator.invariants(), "инварианты ТЗ, §118")
         clock.advance(1.seconds)
     }
 

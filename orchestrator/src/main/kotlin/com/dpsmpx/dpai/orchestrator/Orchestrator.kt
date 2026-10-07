@@ -141,6 +141,9 @@ class Orchestrator(
     private val contextOf = HashMap<TaskId, ContextBundle>()
     private val merges = HashMap<ApprovalId, Pair<TaskId, Proposal>>()
     val merged = mutableListOf<TaskId>()
+
+    /** Одобрение каждого слияния — запись для инварианта «разрушительное — с одобрением» (ТЗ, §118). */
+    val mergeApprovals = HashMap<TaskId, ApprovalId>()
     val problems = mutableListOf<Diagnostic>()
 
     init {
@@ -390,7 +393,10 @@ class Orchestrator(
         val g = git ?: return Outcome.failure(DiagCode.UNSUPPORTED, "нет Git")
         return when (val m = g.run(GitOp.MERGE, repo.root, proposal.arguments)) {
             is Outcome.Failure -> m
-            is Outcome.Success -> Outcome.success(true).also { merged += task }
+            is Outcome.Success -> Outcome.success(true).also {
+                merged += task
+                mergeApprovals[task] = approval.id
+            }
         }
     }
 
@@ -471,6 +477,14 @@ class Orchestrator(
         }
         return out
     }
+
+    /** Инварианты ТЗ, §118 над текущим состоянием и журналом; пусто — держатся. */
+    fun invariants(): List<Diagnostic> = Invariants.check(
+        InvariantInput(
+            accounts, sessions, tasks, worktrees, targets.map { it.id }.toSet(), journal.records().map { it.event },
+            merged.toList(), mergeApprovals.toMap(), problems.toList(),
+        ),
+    )
 
     /** Последняя версия контекста задачи — что видел Claude в последнем ходе. */
     fun lastContext(task: TaskId): ContextBundle? = contextOf[task]

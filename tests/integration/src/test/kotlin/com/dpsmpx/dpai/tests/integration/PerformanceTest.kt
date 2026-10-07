@@ -327,6 +327,7 @@ class PerformanceTest {
         assertTrue(all.all { o.tasks.tasks.getValue(it).state == TaskState.DONE }, "$name: не все задачи DONE")
         assertTrue(maxParallel >= minOf(slots, targets * perTarget, 20), "$name: параллельно только $maxParallel")
         assertTrue(o.problems.isEmpty(), o.problems.toString())
+        assertEquals(emptyList(), o.invariants(), "$name: инварианты ТЗ, §118")
         assertTrue(perLaunch <= launchBudgetMs, "$name: на запуск сессии $perLaunch мс > $launchBudgetMs (все такты / число сессий)")
     }
 
