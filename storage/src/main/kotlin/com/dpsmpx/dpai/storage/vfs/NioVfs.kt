@@ -49,6 +49,13 @@ class NioVfs(private val root: Path) : Vfs {
         }
     }
 
+    override fun appendDurably(path: String, bytes: ByteArray) {
+        FileChannel.open(p(path), StandardOpenOption.CREATE, StandardOpenOption.APPEND, StandardOpenOption.WRITE).use {
+            writeFully(it, bytes)
+            it.force(true)
+        }
+    }
+
     override fun truncate(path: String, size: Long) {
         FileChannel.open(p(path), StandardOpenOption.WRITE).use { it.truncate(size) }
     }

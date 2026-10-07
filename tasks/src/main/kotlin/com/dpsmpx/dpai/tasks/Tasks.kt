@@ -278,11 +278,27 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
                 }
                 is TaskEvent.Continued -> tasks.computeIfPresent(e.task) { _, t -> t.copy(continuations = t.continuations + 1, updatedAt = e.at) }
                 is TaskEvent.VerificationRecorded -> tasks.computeIfPresent(e.task) { _, t -> t.copy(verification = e.record, updatedAt = e.at) }
+                is TaskEvent.ScopeChanged -> tasks.computeIfPresent(e.task) { _, t -> t.copy(scope = e.scope, updatedAt = e.at) }
             }
             return TasksState(tasks)
         }
 
         fun applyAll(state: TasksState, events: List<TaskEvent>): TasksState = events.fold(state, ::apply)
+
+        private val SCOPE_PATH = Regex("[A-Za-z0-9._@+-]+(/[A-Za-z0-9._@+-]+)*")
+
+        /**
+         * Заявить область задачи (ТЗ, §31): относительные пути внутри
+         * репозитория, без `..` и абсолютных путей, не больше 500.
+         */
+        fun setScope(state: TasksState, task: TaskId, scope: Set<String>, now: Timestamp): Outcome<List<TaskEvent>> {
+            val t = state.tasks[task] ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой задачи", "task $task")
+            if (t.terminal) return Outcome.failure(DiagCode.INVALID_TRANSITION, "задача завершена", "task $task")
+            val bad = scope.firstOrNull { p -> !SCOPE_PATH.matches(p) || p.split('/').any { it == ".." || it == "." } }
+            if (bad != null || scope.size > 500) return Outcome.failure(DiagCode.VALUE_INVALID, "область — относительные пути внутри репозитория, не больше 500", "task $task")
+            if (t.scope == scope) return Outcome.success(emptyList())
+            return Outcome.success(listOf(TaskEvent.ScopeChanged(task, scope, now)))
+        }
 
         /** Цикл в графе «задача → зависимости» или `null`; перечень — задачи цикла по порядку. */
         fun findCycle(graph: Map<TaskId, Set<TaskId>>): List<TaskId>? {

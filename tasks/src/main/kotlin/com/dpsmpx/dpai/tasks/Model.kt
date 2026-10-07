@@ -59,6 +59,12 @@ data class TaskRecord(
     val failures: Map<String, Int> = emptyMap(),
     /** Последний записанный итог проверки и, если проверки не было, — исключение политики (D-23). */
     val verification: VerificationRecord? = null,
+    /**
+     * Заявленная область задачи — пути файлов, которые она затронет (ТЗ,
+     * §31): по ней контур решает о пересечении с идущими задачами.
+     * `null` — неизвестна, пересечения не проверяются (D-13).
+     */
+    val scope: Set<String>? = null,
 ) {
     val terminal: Boolean get() = state in TaskLifecycle.table.terminal
 }
@@ -112,6 +118,9 @@ sealed interface TaskEvent {
     data class AttemptFailed(override val task: TaskId, val loopKey: String, val code: DiagCode, override val at: Timestamp) : TaskEvent
 
     data class VerificationRecorded(override val task: TaskId, val record: VerificationRecord, override val at: Timestamp) : TaskEvent
+
+    /** Заявленная область задачи (ТЗ, §31). */
+    data class ScopeChanged(override val task: TaskId, val scope: Set<String>, override val at: Timestamp) : TaskEvent
 
     /** Продолжение в новой сессии (handoff, ТЗ, §28): счётчик против бесконечного продолжения. */
     data class Continued(override val task: TaskId, override val at: Timestamp) : TaskEvent

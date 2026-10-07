@@ -237,12 +237,32 @@ class TasksTest {
         ok(tasks.continueLater(state, a, clock.now()).let { if (it is Outcome.Failure) Outcome.success(emptyList()) else it })
         val c = task()
         ok(tasks.addDependency(state, c, b, clock.now()))
+        ok(Tasks.setScope(state, c, setOf("src/a.kt", "manual/b.md"), clock.now()))
         val decoded = log.map { TaskCodec.decode(TaskCodec.type(it), it.at, TaskCodec.payload(it))!!.valueOrNull()!! }
         assertEquals(log, decoded)
         assertEquals(state, Tasks.applyAll(TasksState.EMPTY, decoded))
         val json = com.dpsmpx.dpai.core.serialization.CanonicalJson.write(TaskCodec.encodeState(state))
         val parsed = com.dpsmpx.dpai.core.serialization.JsonParser().parse(json).valueOrNull() as com.dpsmpx.dpai.core.serialization.JsonObject
         assertEquals(state, TaskCodec.decodeState(parsed).valueOrNull())
+    }
+
+    /** Область задачи (ТЗ, §31): только относительные пути внутри репозитория; снимок v1 читается без неё. */
+    @Test
+    fun scopeIsValidatedAndOldSnapshotStillReads() {
+        val t = task()
+        assertEquals(DiagCode.VALUE_INVALID, (Tasks.setScope(state, t, setOf("../etc/passwd"), clock.now()) as Outcome.Failure).diagnostics.first().code)
+        assertEquals(DiagCode.VALUE_INVALID, (Tasks.setScope(state, t, setOf("/abs/path"), clock.now()) as Outcome.Failure).diagnostics.first().code)
+        ok(Tasks.setScope(state, t, setOf("src/main/A.kt"), clock.now()))
+        assertEquals(setOf("src/main/A.kt"), state.tasks.getValue(t).scope)
+        assertEquals(emptyList(), ok(Tasks.setScope(state, t, setOf("src/main/A.kt"), clock.now())), "повтор — без события")
+        val v2 = TaskCodec.encodeState(state)
+        val v1 = com.dpsmpx.dpai.core.serialization.JsonObject(
+            v2.fields + ("version" to com.dpsmpx.dpai.core.serialization.JsonNumber.of(1)) +
+                ("tasks" to com.dpsmpx.dpai.core.serialization.JsonArray(
+                    (v2["tasks"] as com.dpsmpx.dpai.core.serialization.JsonArray).items.map { com.dpsmpx.dpai.core.serialization.JsonObject((it as com.dpsmpx.dpai.core.serialization.JsonObject).fields - "scope") },
+                )),
+        )
+        assertEquals(null, TaskCodec.decodeState(v1).valueOrNull()!!.tasks.getValue(t).scope)
     }
 
     @Test

@@ -27,7 +27,8 @@ import kotlin.time.Duration.Companion.milliseconds
  */
 object TaskCodec {
     const val STATE_FORMAT = "dpai.tasks-state"
-    const val STATE_VERSION = 1
+    /** v2 — заявленная область задачи (`scope`); v1 читается, область неизвестна. */
+    const val STATE_VERSION = 2
 
     fun type(e: TaskEvent): EventType = when (e) {
         is TaskEvent.Created -> EventType.TASK_CREATED
@@ -37,6 +38,7 @@ object TaskCodec {
         is TaskEvent.AttemptFailed -> EventType.TASK_ATTEMPT_FAILED
         is TaskEvent.Continued -> EventType.TASK_CONTINUED
         is TaskEvent.VerificationRecorded -> EventType.TASK_VERIFICATION_RECORDED
+        is TaskEvent.ScopeChanged -> EventType.TASK_SCOPE_CHANGED
     }
 
     fun stream(e: TaskEvent): StreamRef = StreamRef.of(e.task)
@@ -58,6 +60,7 @@ object TaskCodec {
         is TaskEvent.AttemptFailed -> obj("task" to id(e.task), "loopKey" to JsonString(e.loopKey), "code" to JsonString(e.code.name))
         is TaskEvent.Continued -> obj("task" to id(e.task))
         is TaskEvent.VerificationRecorded -> obj("task" to id(e.task)).let { JsonObject(it.fields + verification(e.record).fields) }
+        is TaskEvent.ScopeChanged -> obj("task" to id(e.task), "scope" to paths(e.scope))
     }
 
     fun decode(type: EventType, at: Timestamp, payload: JsonObject): Outcome<TaskEvent>? {
@@ -110,6 +113,11 @@ object TaskCodec {
                 val record = readVerification(f)
                 if (task != null && record != null) TaskEvent.VerificationRecorded(task, record, at) else null
             }
+            EventType.TASK_SCOPE_CHANGED -> {
+                val task = f.taskId("task")
+                val scope = f.paths("scope")
+                if (task != null && scope != null) TaskEvent.ScopeChanged(task, scope, at) else null
+            }
             else -> return null
         }
         f.finish()
@@ -135,12 +143,13 @@ object TaskCodec {
         "notBefore" to time(t.notBefore), "lastReason" to (t.lastReason?.let { JsonString(it.name) } ?: JsonNull),
         "failures" to JsonObject(t.failures.toSortedMap().mapValues { JsonNumber.of(it.value) }),
         "verification" to (t.verification?.let(::verification) ?: JsonNull),
+        "scope" to (t.scope?.let(::paths) ?: JsonNull),
     )
 
     fun decodeState(json: JsonObject): Outcome<TasksState> {
         val d = DiagnosticCollector()
         val f = JsonFields(json, "$", d)
-        FormatHeader.read(f, STATE_FORMAT, STATE_VERSION..STATE_VERSION, d) ?: return Outcome.Failure(d.all)
+        val version = FormatHeader.read(f, STATE_FORMAT, 1..STATE_VERSION, d) ?: return Outcome.Failure(d.all)
         val records = f.array("tasks")?.items.orEmpty().mapIndexedNotNull { i, item ->
             val o = item as? JsonObject ?: return@mapIndexedNotNull null.also { d.error(DiagCode.FIELD_TYPE, "ожидался объект", "$.tasks[$i]") }
             val r = JsonFields(o, "$.tasks[$i]", d)
@@ -164,6 +173,7 @@ object TaskCodec {
                     lastReason = r.optString("lastReason")?.let { n -> DiagCode.entries.first { it.name == n } },
                     failures = (r.raw("failures") as JsonObject).fields.mapValues { (it.value as JsonNumber).toLongExact()!!.toInt() },
                     verification = r.optObj("verification")?.let { v -> readVerification(v).also { v.finish() } },
+                    scope = if (version >= 2 && r.has("scope")) r.paths("scope") else null,
                 )
             }.getOrNull()
             r.finish()
@@ -211,6 +221,13 @@ object TaskCodec {
     private fun obj(vararg pairs: Pair<String, JsonValue>): JsonObject = JsonObject(linkedMapOf(*pairs).filterValues { it != JsonNull })
 
     private fun id(v: TaskId) = JsonString(v.value)
+
+    private fun paths(v: Set<String>) = JsonArray(v.sorted().map(::JsonString))
+
+    private fun JsonFields.paths(name: String): Set<String>? = array(name)?.items?.let { items ->
+        val out = items.map { (it as? JsonString)?.value }
+        if (out.any { it == null }) null.also { diagnostics.error(DiagCode.FIELD_TYPE, "ожидались строки", "$path.$name") } else out.filterNotNull().toSet()
+    }
 
     private fun ids(v: Set<TaskId>) = JsonArray(v.map { it.value }.sorted().map(::JsonString))
 

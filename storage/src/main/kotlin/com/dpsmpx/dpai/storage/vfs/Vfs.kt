@@ -37,6 +37,17 @@ interface Vfs {
     @Throws(IOException::class)
     fun fsync(path: String)
 
+    /**
+     * Дописать и сделать долговечным — то же, что [append] и [fsync] подряд.
+     * Реализация может обойтись одним открытием файла (журнал дописывает на
+     * каждое событие, и лишнее открытие на Windows стоит дорого).
+     */
+    @Throws(IOException::class)
+    fun appendDurably(path: String, bytes: ByteArray) {
+        append(path, bytes)
+        fsync(path)
+    }
+
     /** Атомарная замена: после переименования [to] — целиком новый файл или целиком прежний. */
     @Throws(IOException::class)
     fun rename(from: String, to: String)

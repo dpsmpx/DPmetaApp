@@ -56,6 +56,22 @@ class EventJournal private constructor(private val vfs: Vfs, private val path: S
     /** Записи с номера [from] включительно. */
     fun records(from: Long = 1): List<JournalRecord> = records.drop((from - 1).coerceAtLeast(0).toInt())
 
+    /** Файл журнала уже есть на диске: проверять каталог и делать fsync каталога больше не нужно. */
+    private var onDisk = false
+
+    /** Дописать и сделать долговечным; при первой записи — каталог и его fsync (файл мог быть новым). */
+    private fun write(bytes: ByteArray) {
+        if (onDisk) {
+            vfs.appendDurably(path, bytes)
+            return
+        }
+        val created = !vfs.exists(path)
+        vfs.mkdirs(Vfs.parentOf(path))
+        vfs.appendDurably(path, bytes)
+        if (created) vfs.fsyncDir(Vfs.parentOf(path))
+        onDisk = true
+    }
+
     @Synchronized
     fun append(event: EventEnvelope): Outcome<Long> {
         if (broken) return Outcome.failure(DiagCode.STORAGE_UNAVAILABLE, "журнал закрыт после отказа записи: нужно открыть заново", path)
@@ -70,11 +86,7 @@ class EventJournal private constructor(private val vfs: Vfs, private val path: S
         val record = build(position + 1, lastHash, event)
         val line = (CanonicalJson.write(record.second) + "\n").toByteArray(Charsets.UTF_8)
         return try {
-            val created = !vfs.exists(path)
-            vfs.mkdirs(Vfs.parentOf(path))
-            vfs.append(path, line)
-            vfs.fsync(path)
-            if (created) vfs.fsyncDir(Vfs.parentOf(path))
+            write(line)
             records += record.first
             positionOf[event.id] = record.first.position
             Outcome.success(record.first.position)
@@ -117,11 +129,7 @@ class EventJournal private constructor(private val vfs: Vfs, private val path: S
         }
         if (fresh.isEmpty()) return Outcome.success(positions)
         return try {
-            val created = !vfs.exists(path)
-            vfs.mkdirs(Vfs.parentOf(path))
-            vfs.append(path, bytes.toByteArray())
-            vfs.fsync(path)
-            if (created) vfs.fsyncDir(Vfs.parentOf(path))
+            write(bytes.toByteArray())
             for (r in fresh) {
                 records += r
                 positionOf[r.event.id] = r.position

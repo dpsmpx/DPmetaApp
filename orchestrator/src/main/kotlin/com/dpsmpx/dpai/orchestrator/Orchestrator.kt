@@ -33,6 +33,8 @@ import com.dpsmpx.dpai.execution.claude.ClaudeRequest
 import com.dpsmpx.dpai.execution.claude.ClaudeRunner
 import com.dpsmpx.dpai.git.GitOp
 import com.dpsmpx.dpai.git.Repository
+import com.dpsmpx.dpai.git.OverlapPolicy
+import com.dpsmpx.dpai.git.OverlapVerdict
 import com.dpsmpx.dpai.git.WorktreeEvent
 import com.dpsmpx.dpai.git.Worktrees
 import com.dpsmpx.dpai.git.WorktreesState
@@ -125,6 +127,7 @@ class Orchestrator(
     private val driver = SessionDriver(sessionsLogic, runner, clock)
     private val completion = CompletionFlow(tasksLogic, verifier, git, clock)
     val handoffs = Handoffs()
+    private val overlap = OverlapPolicy()
     val approvals = ApprovalDesk()
     val notifications = NotificationEngine()
     val posted = mutableListOf<NotificationDecision>()
@@ -220,11 +223,28 @@ class Orchestrator(
 
     // ---- команды ----
 
-    fun addTask(title: String, objective: String, priority: Priority = Priority.NORMAL, dependencies: Set<TaskId> = emptySet(), capabilities: Set<String> = emptySet()): Outcome<TaskId> {
+    /**
+     * [scope] — заявленные пути, которые задача затронет (ТЗ, §31); `null` —
+     * неизвестно, пересечения с другими задачами не проверяются.
+     */
+    fun addTask(
+        title: String,
+        objective: String,
+        priority: Priority = Priority.NORMAL,
+        dependencies: Set<TaskId> = emptySet(),
+        capabilities: Set<String> = emptySet(),
+        scope: Set<String>? = null,
+    ): Outcome<TaskId> {
         val id = ids.next(IdKinds.TASK)
         val created = tasksLogic.create(tasks, id, title, objective, priority, clock.now(), dependencies, capabilities)
         if (created is Outcome.Failure) return created
-        commitTasks(created.valueOrNull()!!)
+        val withScope = scope?.let { s ->
+            when (val r = Tasks.setScope(Tasks.applyAll(tasks, created.valueOrNull()!!), id, s, clock.now())) {
+                is Outcome.Failure -> return r
+                is Outcome.Success -> r.value
+            }
+        }.orEmpty()
+        commitTasks(created.valueOrNull()!! + withScope)
         commitTasks(tasksLogic.enqueue(tasks, id, clock.now()).valueOrNull()!!)
         return Outcome.success(id)
     }
@@ -236,13 +256,40 @@ class Orchestrator(
             val active = sessions.sessions.values.count { !it.terminal && it.target == t.id }
             Tasks.TargetOffer(t.id, t.capabilities, (t.maxSessions - active).coerceAtLeast(0))
         }
-        for (a in tasksLogic.plan(tasks, clock.now(), offers)) launch(a.task, a.target)
+        for (a in tasksLogic.plan(tasks, clock.now(), offers)) if (overlapAllows(a.task)) launch(a.task, a.target)
         for (s in sessions.sessions.values.filter { it.state !in WAIT_STATES && !it.terminal }.map { it.id }.sorted()) poll(s)
         // Придержанное пределом частоты — сводкой, когда предел позволяет (ТЗ, §36).
         notifications.flush(clock.now())?.let { posted += it }
     }
 
     private fun List<SessionId>.sorted() = sortedBy { it.value }
+
+    /**
+     * Пересечение области задачи с идущими (ТЗ, §31; `OverlapPolicy`): общий
+     * файл — задача ждёт (`SERIALIZE`; критичный файл — `REJECT`, тоже
+     * ждёт, но с предупреждением о риске), общий каталог — запуск с
+     * предупреждением (`WARN`). Неизвестная область — без проверки.
+     */
+    private fun overlapAllows(task: TaskId): Boolean {
+        val touched = tasks.tasks[task]?.scope ?: return true
+        val others = sessions.sessions.values.filter { !it.terminal && it.state !in WAIT_STATES && it.task != task }
+            .mapNotNull { s -> tasks.tasks[s.task]?.scope?.let { s.id to it } }.toMap()
+        val r = overlap.evaluate(touched, others)
+        // Уведомление — при смене вердикта, а не на каждом такте ожидания.
+        if (lastOverlap.put(task, r.verdict) != r.verdict) {
+            val files = r.with.values.flatten().toSortedSet().take(5).joinToString()
+            val key = "task:${task.value}:overlap"
+            when (r.verdict) {
+                OverlapVerdict.ALLOW -> Unit
+                OverlapVerdict.WARN -> notify(key, NotificationCategory.WARNING, "Возможный конфликт", "общий каталог с идущей задачей: $files")
+                OverlapVerdict.SERIALIZE -> notify(key, NotificationCategory.INFO, "Задача ждёт", "те же файлы правит идущая задача: $files")
+                OverlapVerdict.REJECT -> notify(key, NotificationCategory.WARNING, "Задача ждёт: критичный файл", "критичный файл правит идущая задача: $files")
+            }
+        }
+        return r.verdict == OverlapVerdict.ALLOW || r.verdict == OverlapVerdict.WARN
+    }
+
+    private val lastOverlap = HashMap<TaskId, OverlapVerdict>()
 
     private fun launch(task: TaskId, target: ExecutionTargetId) {
         val t = tasks.tasks.getValue(task)
