@@ -61,4 +61,18 @@ class RedactorTest {
         val text = "Задача #184: тесты 559/559, ветка feature/gameplay-42, время 10:15"
         assertEquals(text, r.redact(text))
     }
+
+    /** STRICT (A-6): ключ без цифр и путь с длинным сегментом прячутся; id, UUID, хеши и обычный текст — нет. */
+    @Test
+    fun strictCatchesWhatStandardMisses() {
+        val strict = Redactor.STRICT
+        val lettersOnly = "AbCdEfGhIjKlMnOpQrStUvWxYz"
+        assertEquals("ключ $lettersOnly", r.redact("ключ $lettersOnly"), "обычный уровень пропускает ключ без цифр")
+        assertFalse(lettersOnly in strict.redact("ключ $lettersOnly"))
+        val base64Path = "aGVsbG8gd29ybGQgdGhpcyBpcyBsb25n/x"
+        assertFalse("aGVsbG8gd29ybGQgdGhpcyBpcyBsb25n" in strict.redact("секрет $base64Path"))
+        val text = "сессия 0f8fad5b-d9cb-469f-a165-70867728950e, задача tsk_01J9Z3M4N5P6Q7R8S9T0V1W2X3, " +
+            "хеш sha256:" + "0123456789abcdef".repeat(4) + ", файл core/src/main/kotlin/Thing.kt, нужно вмешательство"
+        assertEquals(text, strict.redact(text))
+    }
 }

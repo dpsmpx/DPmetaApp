@@ -15,22 +15,29 @@ package com.dpsmpx.dpai.core.diagnostics
  * - длинные последовательности букв и цифр (32+), кроме UUID (идентификаторы
  *   сессий провайдера, `docs/DATA_MODEL.md`, §1), путей и хешей вида
  *   `sha256:…` (D-10).
+ *
+ * [STRICT] — для текста, который покидает приложение и виден посторонним
+ * (уведомления на экране блокировки, отчёты, которыми делятся; аудит
+ * 2026-10-07, A-6): длинной считается последовательность от 24 знаков, и
+ * цифра в ней не нужна; путь прячется, если в нём есть длинный сегмент.
+ * Лишнее вырезается чаще — это цена.
  */
-class Redactor private constructor() {
+class Redactor private constructor(private val strict: Boolean) {
     fun redact(text: String): String {
         var out = PRIVATE_KEY.replace(text, PRIVATE_KEY_MARK)
         for (re in KNOWN_TOKENS) out = re.replace(out, MARK)
         out = BEARER.replace(out) { m -> m.groupValues[1] + MARK }
         out = SECRET_PAIR.replace(out) { m -> m.groupValues[1] + m.groupValues[2] + m.groupValues[3] + MARK }
         out = URL_USERINFO.replace(out) { m -> m.groupValues[1] + MARK + "@" }
-        out = LONG_TOKEN.replace(out) { m -> if (looksLikeToken(out, m)) MARK else m.value }
+        out = (if (strict) STRICT_LONG_TOKEN else LONG_TOKEN).replace(out) { m -> if (looksLikeToken(out, m)) MARK else m.value }
         return out
     }
 
     private fun looksLikeToken(text: String, m: MatchResult): Boolean {
         val v = m.value
-        if (!(v.any(Char::isDigit) && v.any(Char::isLetter))) return false
-        if (UUID.matches(v)) return false
+        if (!v.any(Char::isLetter)) return false
+        if (!strict && !v.any(Char::isDigit)) return false
+        if (UUID.matches(v) || TYPED_ID.matches(v)) return false
         if (m.range.first >= 7 && text.startsWith("sha256:", m.range.first - 7)) return false
         // Путь из коротких сегментов — не токен; base64 со «/» — токен.
         if ('/' in v && v.split('/').all { it.length < 24 }) return false
@@ -41,7 +48,10 @@ class Redactor private constructor() {
         const val MARK: String = "<redacted>"
         const val PRIVATE_KEY_MARK: String = "<redacted:private-key>"
 
-        val STANDARD: Redactor = Redactor()
+        val STANDARD: Redactor = Redactor(strict = false)
+
+        /** Для текста, видимого вне приложения (A-6). */
+        val STRICT: Redactor = Redactor(strict = true)
 
         private val PRIVATE_KEY = Regex(
             "-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----[\\s\\S]*?(?:-----END (?:[A-Z]+ )?PRIVATE KEY-----|$)",
@@ -63,6 +73,9 @@ class Redactor private constructor() {
         )
         private val URL_USERINFO = Regex("\\b([a-zA-Z][a-zA-Z0-9+.-]{1,15}://)[^\\s/@\"'<>]+@")
         private val LONG_TOKEN = Regex("(?<![A-Za-z0-9+/_=-])[A-Za-z0-9+/_=-]{32,}(?![A-Za-z0-9+/_=-])")
+        private val STRICT_LONG_TOKEN = Regex("(?<![A-Za-z0-9+/_=-])[A-Za-z0-9+/_=-]{24,}(?![A-Za-z0-9+/_=-])")
+        /** Идентификаторы оркестратора (`ses_` + ULID, `docs/DATA_MODEL.md`, §1) — не секреты. */
+        private val TYPED_ID = Regex("[a-z]{3}_[0-9A-HJKMNP-TV-Z]{26}")
         private val UUID = Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
     }
 }

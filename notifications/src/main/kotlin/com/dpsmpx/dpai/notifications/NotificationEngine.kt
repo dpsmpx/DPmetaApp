@@ -1,5 +1,6 @@
 package com.dpsmpx.dpai.notifications
 
+import com.dpsmpx.dpai.core.diagnostics.Redactor
 import com.dpsmpx.dpai.core.clock.Timestamp
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
@@ -94,7 +95,9 @@ class NotificationEngine(private val policy: NotificationPolicy = NotificationPo
     private val held = mutableListOf<NotificationRequest>()
 
     @Synchronized
-    fun submit(r: NotificationRequest): NotificationDecision {
+    fun submit(raw: NotificationRequest): NotificationDecision {
+        // Уведомление видно на экране блокировки: текст — через строгий редактор (A-6).
+        val r = raw.copy(title = Redactor.STRICT.redact(raw.title), body = Redactor.STRICT.redact(raw.body))
         val prev = shown[r.key]
         if (prev != null && r.at - prev.second < policy.aggregationWindow && r.category.rank <= prev.first.category.rank) {
             val updated = prev.first.copy(count = prev.first.count + 1, lastAt = r.at, body = r.body, actions = r.actions)

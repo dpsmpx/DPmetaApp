@@ -9,6 +9,7 @@ import com.dpsmpx.dpai.testkit.Gen
 import com.dpsmpx.dpai.testkit.Property
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -20,6 +21,15 @@ class NotificationEngineTest {
 
     private fun req(key: String, cat: NotificationCategory = NotificationCategory.WARNING, title: String = key) =
         NotificationRequest(key, cat, title, "тело", null, clock.now())
+
+    /** Уведомление видно на экране блокировки: текст — через строгий редактор (A-6). */
+    @Test
+    fun textIsStrictlyRedacted() {
+        val key = "AbCdEfGhIjKlMnOpQrStUvWxYz"
+        val d = NotificationEngine().submit(NotificationRequest("k", NotificationCategory.BLOCKED, "вход $key", "ключ $key в выводе", null, clock.now()))
+        val n = (d as NotificationDecision.Post).notification
+        assertFalse(key in n.title || key in n.body, n.toString())
+    }
 
     /** Критерий этапа 12: 20 одинаковых событий — одно уведомление с числом повторов. */
     @Test
