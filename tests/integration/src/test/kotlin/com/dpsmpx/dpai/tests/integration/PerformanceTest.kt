@@ -167,20 +167,34 @@ class PerformanceTest {
         assertTrue(s.p99Ms <= 20.0, "такт планировщика p99 ${s.p99Ms} мс > 20 (1000 задач, 100 слотов, 50 targets)")
     }
 
+    /** Приём события с fsync каждого — рядом с той же операцией ОС, как [storageWrite]. */
     @Test
     fun eventIngest() {
         val j = journal("ingest")
         val tracker = SequenceTracker()
         val session = ids.next(IdKinds.SESSION)
         var seq = 0L
-        val s = measure("приём события", 1000) {
-            seq++
-            val e = EventEnvelope(ids.next(IdKinds.EVENT), EventType.SESSION_OUTPUT, StreamRef.of(session), seq, clock.now(), clock.now(),
-                payload = JsonObject.of("text" to JsonString("строка вывода $seq")))
-            tracker.offer(e)
-            check(j.append(e).isSuccess)
+        // Нижняя граница ОС в тех же условиях: дописать строку того же размера и fsync.
+        val raw = FileChannel.open(Files.createTempDirectory(dir, "raw").resolve("log"), StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.APPEND)
+        val line = ByteArray(400) { 'x'.code.toByte() }
+        val (os, s) = raw.use { ch ->
+            measurePair(
+                "ОС: дописать+fsync", "приём события", 1000,
+                bodyA = {
+                    ch.write(ByteBuffer.wrap(line))
+                    ch.force(true)
+                },
+                bodyB = {
+                    seq++
+                    val e = EventEnvelope(ids.next(IdKinds.EVENT), EventType.SESSION_OUTPUT, StreamRef.of(session), seq, clock.now(), clock.now(),
+                        payload = JsonObject.of("text" to JsonString("строка вывода $seq")))
+                    tracker.offer(e)
+                    check(j.append(e).isSuccess)
+                },
+            )
         }
-        assertTrue(s.avgMs <= 2.0 && s.p99Ms <= 20.0, "приём события avg ${s.avgMs}, p99 ${s.p99Ms} (с fsync каждого)")
+        assertTrue(s.avgMs <= 2.0, "приём события в среднем ${s.avgMs} мс > 2 (с fsync каждого)")
+        assertTrue(s.p99Ms <= 20.0 || s.p99Ms - os.p99Ms <= 20.0, "приём события p99 ${s.p99Ms} мс, ОС p99 ${os.p99Ms} мс: доля кода > 20 мс")
     }
 
     /**

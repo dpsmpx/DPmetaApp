@@ -27,6 +27,8 @@ import com.dpsmpx.dpai.orchestrator.git.GitService
 import com.dpsmpx.dpai.orchestrator.verification.ProcessStepRunner
 import com.dpsmpx.dpai.security.ApprovalLedger
 import com.dpsmpx.dpai.storage.journal.EventJournal
+import com.dpsmpx.dpai.storage.snapshot.StateRecovery
+import com.dpsmpx.dpai.orchestrator.git.WorktreesProjection
 import com.dpsmpx.dpai.storage.vfs.NioVfs
 import com.dpsmpx.dpai.verification.VerificationProfile
 import com.dpsmpx.dpai.verification.Verifier
@@ -58,6 +60,7 @@ class V1ScenariosTest {
     private lateinit var orchestrator: Orchestrator
     private lateinit var runner: MockRunner
     private lateinit var repo: Repository
+    private lateinit var journal: EventJournal
 
     private fun sh(vararg argv: String) {
         val r = host.run(ProcessSpec(listOf("git", *argv)), 1.minutes).valueOrNull()!!
@@ -95,7 +98,7 @@ class V1ScenariosTest {
             val plan = scenarios[title] ?: listOf(MockScenario.SUCCESS)
             plan[(attemptOf(session) - 1).coerceAtMost(plan.size - 1)].also { check(turn >= 1) }
         }
-        val journal = (EventJournal.open(NioVfs(dir), "data/journal.log") as Outcome.Success).value
+        journal = (EventJournal.open(NioVfs(dir), "data/journal.log") as Outcome.Success).value
         val git = GitService(host, GitCommands(ApprovalLedger()), clock)
         orchestrator = Orchestrator(
             clock, ids, RandomSource.seeded(103), journal, runner,
@@ -139,7 +142,10 @@ class V1ScenariosTest {
         val owners = orchestrator.worktrees.worktrees.values.filter { it.owner != null }
         assertEquals(10, owners.map { it.path }.toSet().size, "у каждой сессии своё дерево")
         assertEquals(running.map { it.id }.toSet(), owners.map { it.owner }.toSet())
+        // Владельцы деревьев — в журнале: после перезапуска те же (ТЗ, §118).
+        assertEquals(orchestrator.worktrees, StateRecovery(WorktreesProjection).replayAll(journal))
         runUntilQuiet()
+        assertEquals(orchestrator.worktrees, StateRecovery(WorktreesProjection).replayAll(journal))
         assertTrue(all.all { state(it) == TaskState.DONE }, all.map(::state).toString())
         assertTrue(orchestrator.problems.isEmpty(), orchestrator.problems.toString())
     }

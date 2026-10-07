@@ -33,6 +33,7 @@ import com.dpsmpx.dpai.execution.claude.ClaudeRequest
 import com.dpsmpx.dpai.execution.claude.ClaudeRunner
 import com.dpsmpx.dpai.git.GitOp
 import com.dpsmpx.dpai.git.Repository
+import com.dpsmpx.dpai.git.WorktreeEvent
 import com.dpsmpx.dpai.git.Worktrees
 import com.dpsmpx.dpai.git.WorktreesState
 import com.dpsmpx.dpai.monitoring.Dashboard
@@ -53,6 +54,8 @@ import com.dpsmpx.dpai.orchestrator.recovery.Reconciler
 import com.dpsmpx.dpai.orchestrator.recovery.Resolution
 import com.dpsmpx.dpai.orchestrator.sessions.SessionsProjection
 import com.dpsmpx.dpai.orchestrator.tasks.TasksProjection
+import com.dpsmpx.dpai.orchestrator.git.WorktreesProjection
+import com.dpsmpx.dpai.orchestrator.git.worktreeEnvelopes
 import com.dpsmpx.dpai.execution.agent.AgentClient
 import com.dpsmpx.dpai.storage.snapshot.StateRecovery
 import com.dpsmpx.dpai.sessions.SessionDriver
@@ -147,8 +150,13 @@ class Orchestrator(
             accounts = StateRecovery(AccountsProjection).replayAll(journal).takeIf { it.slots.isNotEmpty() } ?: initialAccounts
             sessions = StateRecovery(SessionsProjection).replayAll(journal)
             tasks = StateRecovery(TasksProjection).replayAll(journal)
+            worktrees = StateRecovery(WorktreesProjection).replayAll(journal)
+            // Дерево задачи узнаётся по её ветке (`prepareWorktree`): владельцы и пути — из журнала.
+            for (w in worktrees.worktrees.values.filter { !it.removed }) {
+                w.branch.removePrefix(TASK_BRANCH).takeIf { it != w.branch }?.let { IdKinds.TASK.parse(it).valueOrNull() }?.let { treeOf[it] = w.id }
+            }
         }
-        config.repository?.let { repo -> worktrees = Worktrees.applyAll(worktrees, Worktrees.register(worktrees, repo, clock.now()).valueOrNull().orEmpty()) }
+        config.repository?.let { repo -> commitWorktrees(Worktrees.register(worktrees, repo, clock.now()).valueOrNull().orEmpty()) }
     }
 
     // ---- журнал ----
@@ -189,6 +197,11 @@ class Orchestrator(
     private fun commitSessions(es: List<SessionEvent>) {
         write(recorder.sessionEnvelopes(es))
         sessions = Sessions.applyAll(sessions, es)
+    }
+
+    private fun commitWorktrees(es: List<WorktreeEvent>) {
+        write(recorder.worktreeEnvelopes(es))
+        worktrees = Worktrees.applyAll(worktrees, es)
     }
 
     private fun commitTasks(es: List<TaskEvent>) {
@@ -270,14 +283,14 @@ class Orchestrator(
         val tree = treeOf[task] ?: run {
             val id = ids.next(IdKinds.WORKTREE)
             val path = "${config.worktreeRoot}/${task.value}"
-            val branch = "task/${task.value}"
+            val branch = "$TASK_BRANCH${task.value}"
             val ev = ok(Worktrees.create(worktrees, id, repo.id, path, branch, clock.now()), "дерево задачи не зарегистрировано") ?: return null
             if (ok(g.run(GitOp.WORKTREE_ADD, repo.root, listOf(path, branch)), "git worktree add") == null) return null
-            worktrees = Worktrees.applyAll(worktrees, ev)
+            commitWorktrees(ev)
             treeOf[task] = id
             id
         }
-        worktrees = Worktrees.applyAll(worktrees, ok(Worktrees.claim(worktrees, tree, session, clock.now()), "дерево занято") ?: return null)
+        commitWorktrees(ok(Worktrees.claim(worktrees, tree, session, clock.now()), "дерево занято") ?: return null)
         return worktrees.worktrees.getValue(tree).path
     }
 
@@ -408,7 +421,7 @@ class Orchestrator(
 
     private fun releaseTree(task: TaskId, session: SessionId) {
         val tree = treeOf[task] ?: return
-        worktrees = Worktrees.applyAll(worktrees, Worktrees.release(worktrees, tree, session, clock.now()).valueOrNull().orEmpty())
+        commitWorktrees(Worktrees.release(worktrees, tree, session, clock.now()).valueOrNull().orEmpty())
     }
 
     private fun applyFacts(facts: List<AccountFact>) {
@@ -465,6 +478,9 @@ class Orchestrator(
 
     companion object {
         /** Сессии, которые не опрашиваются: ждут человека или сверки. */
+        /** Ветка дерева задачи: по ней дерево узнаётся после перезапуска. */
+        private const val TASK_BRANCH = "task/"
+
         private val WAIT_STATES = setOf(SessionState.PAUSED, SessionState.BLOCKED, SessionState.RECOVERY_PENDING)
     }
 }
