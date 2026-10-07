@@ -51,4 +51,21 @@ class TargetsTest {
         assertEquals("pc ecdsa-sha2-nistp256 BBBB\n[127.0.0.1]:8022 ecdsa-sha2-nistp256 AAAA2\n", text)
         assertEquals(setOf("pc", "[127.0.0.1]:8022"), KnownHosts.names(text))
     }
+
+    @Test
+    fun configDirMustBeAbsoluteOnItsPlatform() {
+        val id = ids.next(IdKinds.TARGET)
+        assertTrue(TargetForm.validate(id, "x", "h", "22", "u", false, "/a/dpai", "relative/dir") is Outcome.Failure)
+        assertTrue(TargetForm.validate(id, "x", "h", "22", "u", true, "C:/dpai.cmd", """C:\Users\u\.claude-1""") is Outcome.Success)
+        assertEquals("/root/.claude-1", TargetForm.validate(id, "x", "h", "22", "u", false, "/a/dpai", " /root/.claude-1 ").valueOrNull()!!.configDir)
+    }
+
+    /** Документ v1 (до каталога Claude) читается; у его targets каталога нет. */
+    @Test
+    fun versionOneBookIsStillRead() {
+        val id = ids.next(IdKinds.TARGET).value
+        val v1 = """{"format":"dpai.app-targets","version":1,"targets":[{"id":"$id","label":"t","host":"127.0.0.1","port":8022,"user":"u","platform":"posix","agent":"/a/dpai"}]}"""
+        val read = TargetBook.fromJson(JsonParser().parse(v1).valueOrNull()!!).valueOrNull()!!
+        assertEquals(null, read.single().configDir)
+    }
 }

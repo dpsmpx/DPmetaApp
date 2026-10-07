@@ -32,6 +32,13 @@ data class TargetEntry(
     val user: String,
     val platform: TargetPlatform,
     val agent: String,
+    /**
+     * Каталог конфигурации Claude слота на target (`CLAUDE_CONFIG_DIR`,
+     * D-29) — абсолютный путь; вход в Claude делается сразу в него.
+     * `null` — target заведён до v2 формата: только проверка агента, без
+     * сессий.
+     */
+    val configDir: String? = null,
 ) {
     /** Target того же телефона — Termux на `127.0.0.1` (D-26). */
     val type: TargetType
@@ -47,7 +54,16 @@ data class TargetEntry(
 
 /** Форма нового target: проверки — те же, что у `SshEndpoint` (параметр `ssh` не подставить, T2). */
 object TargetForm {
-    fun validate(id: ExecutionTargetId, label: String, host: String, port: String, user: String, windows: Boolean, agent: String): Outcome<TargetEntry> {
+    fun validate(
+        id: ExecutionTargetId,
+        label: String,
+        host: String,
+        port: String,
+        user: String,
+        windows: Boolean,
+        agent: String,
+        configDir: String? = null,
+    ): Outcome<TargetEntry> {
         val p = port.trim().toIntOrNull()?.takeIf { it in 1..65535 }
             ?: return Outcome.failure(DiagCode.VALUE_INVALID, "порт — число от 1 до 65535", "port")
         if (label.isBlank() || label.length > 60) return Outcome.failure(DiagCode.VALUE_INVALID, "имя — от 1 до 60 знаков", "label")
@@ -55,19 +71,27 @@ object TargetForm {
         if (a.isEmpty() || a.startsWith("-") || a.any { it.isISOControl() }) {
             return Outcome.failure(DiagCode.VALUE_INVALID, "команда агента — путь к dpai на target", "agent")
         }
+        val dir = configDir?.trim()?.takeIf { it.isNotEmpty() }
+        if (dir != null && (!absolute(dir, windows) || dir.any { it.isISOControl() })) {
+            return Outcome.failure(DiagCode.VALUE_INVALID, "каталог Claude — абсолютный путь на target", "configDir")
+        }
         return when (val e = SshEndpoint.of(host.trim(), user.trim(), p)) {
             is Outcome.Failure -> e
             is Outcome.Success -> Outcome.success(
-                TargetEntry(id, label.trim(), e.value.host, p, e.value.user, if (windows) TargetPlatform.WINDOWS else TargetPlatform.POSIX, a),
+                TargetEntry(id, label.trim(), e.value.host, p, e.value.user, if (windows) TargetPlatform.WINDOWS else TargetPlatform.POSIX, a, dir),
             )
         }
     }
+
+    private fun absolute(path: String, windows: Boolean): Boolean =
+        if (windows) Regex("""[A-Za-z]:[\\/].*""").matches(path) else path.startsWith("/")
 }
 
-/** Список targets приложения — документ `dpai.app-targets` v1 (`docs/DATA_MODEL.md`). */
+/** Список targets приложения — документ `dpai.app-targets` (`docs/DATA_MODEL.md`). */
 object TargetBook {
     const val FORMAT = "dpai.app-targets"
-    const val VERSION = 1
+    /** v2 — каталог Claude слота (`configDir`); v1 читается, у его targets каталога нет. */
+    const val VERSION = 2
 
     fun toJson(entries: List<TargetEntry>): JsonObject = JsonObject(
         linkedMapOf(
@@ -79,7 +103,7 @@ object TargetBook {
                             "id" to JsonString(e.id.value), "label" to JsonString(e.label), "host" to JsonString(e.host),
                             "port" to JsonNumber.of(e.port.toLong()), "user" to JsonString(e.user),
                             "platform" to JsonString(e.platform.name.lowercase()), "agent" to JsonString(e.agent),
-                        ),
+                        ).also { m -> e.configDir?.let { m["configDir"] = JsonString(it) } },
                     )
                 },
             ),
@@ -89,7 +113,7 @@ object TargetBook {
     fun fromJson(value: JsonValue): Outcome<List<TargetEntry>> {
         val d = DiagnosticCollector()
         val f = JsonFields.root(value, d) ?: return Outcome.Failure(d.all)
-        FormatHeader.read(f, FORMAT, VERSION..VERSION, d) ?: return Outcome.Failure(d.all)
+        val version = FormatHeader.read(f, FORMAT, 1..VERSION, d) ?: return Outcome.Failure(d.all)
         val items = f.array("targets")?.items.orEmpty()
         f.finish()
         val out = items.mapIndexedNotNull { i, item ->
@@ -106,12 +130,13 @@ object TargetBook {
             val user = t.string("user").orEmpty()
             val windows = t.string("platform") == "windows"
             val agent = t.string("agent").orEmpty()
+            val configDir = if (version >= 2) t.optString("configDir") else null
             t.finish()
             if (id == null) {
                 d.error(DiagCode.VALUE_INVALID, "id target недопустим", "$.targets[$i].id")
                 return@mapIndexedNotNull null
             }
-            val entry = TargetForm.validate(id, label, host, port, user, windows, agent)
+            val entry = TargetForm.validate(id, label, host, port, user, windows, agent, configDir)
             when (entry) {
                 is Outcome.Success -> entry.value
                 is Outcome.Failure -> null.also { entry.diagnostics.forEach { x -> d.error(x.code, x.message, "$.targets[$i]") } }

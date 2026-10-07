@@ -44,7 +44,8 @@ class DemoSystem(
     vfs: Vfs,
     sessions: Int = 25,
     seed: Long = 11,
-) {
+) : ControlView {
+    override val mode: String = "демо"
     private val random = RandomSource.seeded(seed)
     private val ids = IdGenerator(clock, random)
     private val journal: EventJournal = EventJournal.open(vfs, "demo.journal", quarantineCorruption = true).valueOrNull()
@@ -99,7 +100,7 @@ class DemoSystem(
      * такт контура. Завершённые задачи заменяются новыми — сессий всегда
      * много.
      */
-    fun step() {
+    override fun step() {
         for (run in runner.host.runIds().sortedBy { it.value }) {
             if (runner.host.hasPending(run) && random.nextInt(3) == 0) runner.advance(run)
         }
@@ -117,9 +118,9 @@ class DemoSystem(
         ),
     )
 
-    fun dashboard(): DashboardScreen = Screens.dashboard(orchestrator.dashboard(), diagnosis())
+    override fun dashboard(): DashboardScreen = Screens.dashboard(orchestrator.dashboard(), diagnosis())
 
-    fun session(id: SessionId): SessionScreen = Screens.session(orchestrator.dashboard(), id, events())
+    override fun session(id: SessionId): SessionScreen = Screens.session(orchestrator.dashboard(), id, events())
 
-    fun board(): TaskBoard = Screens.board(orchestrator.tasks)
+    override fun board(): TaskBoard = Screens.board(orchestrator.tasks)
 }
