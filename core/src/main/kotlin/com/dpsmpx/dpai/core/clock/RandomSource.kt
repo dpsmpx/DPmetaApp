@@ -30,7 +30,31 @@ private class SeededRandomSource(seed: Long) : RandomSource {
 
     override fun nextInt(bound: Int): Int = random.nextInt(bound)
 
-    override fun nextBytes(size: Int): ByteArray = ByteArray(size).also(random::nextBytes)
+    /**
+     * Как `SplittableRandom.nextBytes` из JDK 10+ — та же
+     * последовательность при том же зерне, — но своими силами: в Android 11
+     * (minSdk 30, D-28) у `SplittableRandom` этого метода нет, и вызов
+     * падал с `NoSuchMethodError` на устройстве.
+     */
+    override fun nextBytes(size: Int): ByteArray {
+        val bytes = ByteArray(size)
+        var i = 0
+        repeat(size ushr 3) {
+            var rnd = random.nextLong()
+            repeat(8) {
+                bytes[i++] = rnd.toByte()
+                rnd = rnd ushr 8
+            }
+        }
+        if (i < size) {
+            var rnd = random.nextLong()
+            while (i < size) {
+                bytes[i++] = rnd.toByte()
+                rnd = rnd ushr 8
+            }
+        }
+        return bytes
+    }
 }
 
 private class SecureRandomSource : RandomSource {

@@ -145,6 +145,12 @@ adb shell am start -n com.dpsmpx.dpai/com.dpsmpx.dpai.android.MainActivity
 adb shell dumpsys gfxinfo com.dpsmpx.dpai   # кадры: Janky frames, перцентили
 ```
 
+Кадры меряются на release (`:android:assembleRelease`, пока подписан
+отладочным ключом): debug-сборка Compose в разы медленнее. На устройствах
+с выключенным системным журналом (Realme C21Y) причина падения — в
+`files/last-crash.txt` приложения: `adb shell run-as com.dpsmpx.dpai cat
+files/last-crash.txt` (только debug).
+
 Модуль подключается, только если найден Android SDK (`local.properties`
 или `ANDROID_HOME`); без SDK `tools/verify/run.sh full` проверяет ядро
 как прежде.

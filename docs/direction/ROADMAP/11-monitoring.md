@@ -29,8 +29,10 @@
 - [x] Модель сводки для 20+ одновременных сессий строится в бюджете
       кадра (`docs/PERFORMANCE.md`): `MonitoringTest`,
       `twentyFiveSessionsBuildWithinFrameBudget`.
-- [ ] 20+ одновременных сессий наблюдаемы без деградации интерфейса
-      Android (ТЗ, §139, Phase 11) — на Redmi Note 13 (D-28).
+- [x] 20+ одновременных сессий наблюдаемы без деградации интерфейса
+      Android (ТЗ, §139, Phase 11): замер на Realme C21Y — release, после
+      прогрева p95 кадра 11 мс (`docs/PERFORMANCE.md`, §5; D-33).
+- [ ] То же на Redmi Note 13 вручную (D-28, D-33).
 - [x] Модуль `android` собирается и проходит lint в
       `tools/verify/run.sh full` (D-34); экраны строятся из `ui`
       (`ScreensTest`, `demoSystemShowsTwentyPlusSessions`).

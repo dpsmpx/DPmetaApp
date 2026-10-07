@@ -51,4 +51,13 @@ class ClockTest {
         assertNotEquals(RandomSource.secure().nextBytes(16).toList(), RandomSource.secure().nextBytes(16).toList())
         repeat(100) { assertEquals(true, a.nextInt(7) in 0 until 7) }
     }
+
+    /** Свои байты — те же, что у JDK: последовательности с зерном не поменялись (в Android метода нет). */
+    @Test
+    fun seededBytesMatchJdkSplittableRandom() {
+        for (size in listOf(0, 1, 7, 8, 9, 16, 21)) {
+            val jdk = ByteArray(size).also(java.util.SplittableRandom(42)::nextBytes)
+            assertEquals(jdk.toList(), RandomSource.seeded(42).nextBytes(size).toList(), "размер $size")
+        }
+    }
 }

@@ -21,6 +21,14 @@ android {
         versionName = project.version.toString()
     }
 
+    buildTypes {
+        release {
+            // Ключа выпуска пока нет: release подписан отладочным ключом —
+            // только для замеров кадров на устройстве (docs/TESTING.md, §9).
+            signingConfig = signingConfigs.getByName("debug")
+        }
+    }
+
     buildFeatures {
         compose = true
     }

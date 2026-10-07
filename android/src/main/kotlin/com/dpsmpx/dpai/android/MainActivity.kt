@@ -18,6 +18,7 @@ import androidx.compose.ui.platform.LocalContext
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        CrashRecord.install(filesDir)
         enableEdgeToEdge()
         val model = DemoModel.get(cacheDir)
         setContent {
