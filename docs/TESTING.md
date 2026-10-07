@@ -133,7 +133,23 @@ Termux-target — Realme C21Y по USB (D-33): в Termux `openssh`, `sshd`
 `adb shell settings put global stay_on_while_plugged_in 2`. Claude Code —
 внутри `proot-distro login alpine` (`docs/research/CLAUDE_CODE_CLI.md`, §9).
 
-## 9. Что тесты пока не покрывают
+## 9. Приложение Android
+
+Логика экранов проверяется на хосте (`ScreensTest` в `ui`); модуль
+`android` только рисует (D-34). Сборка и установка на устройство по USB:
+
+```sh
+./gradlew :android:assembleDebug
+adb install -r android/build/outputs/apk/debug/android-debug.apk
+adb shell am start -n com.dpsmpx.dpai/com.dpsmpx.dpai.android.MainActivity
+adb shell dumpsys gfxinfo com.dpsmpx.dpai   # кадры: Janky frames, перцентили
+```
+
+Модуль подключается, только если найден Android SDK (`local.properties`
+или `ANDROID_HOME`); без SDK `tools/verify/run.sh full` проверяет ядро
+как прежде.
+
+## 10. Что тесты пока не покрывают
 
 Всё, что требует устройства Android или Claude, — пока его нет рядом с
 прогоном (этапы 4, 11 и 19): агент `dpai` в Termux и ход сессии в proot

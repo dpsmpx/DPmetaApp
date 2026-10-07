@@ -259,8 +259,15 @@ target:     start ─► Detacher ─► supervise ─► процесс; выв
 
 Модуль `monitoring` (этап 11): `Dashboard` (сводка ТЗ, §38; `STALE` по
 свежести, ТЗ, §122), `Timeline` (ТЗ, §40), `SelfDiagnostics` (ТЗ, §79,
-§80: что разрешено в деградации). Модуль `ui`: `DashboardText` — экраны
-текстом для `cli` и будущего Android.
+§80: что разрешено в деградации). Модуль `ui`: `Screens` — состояния
+экранов (сводка, экран сессии, доска задач с уровнями DAG) и смысл цвета
+`Tone`; `DashboardText` — те же экраны текстом для `cli`; `DemoSystem` —
+настоящий `Orchestrator` на `MockRunner` для показа и замеров.
+
+Модуль `android` (этап 11, D-34): Jetpack Compose рисует снимок `ui`;
+шаг системы — вне главного потока. Сторонние библиотеки во время
+выполнения (Compose, AndroidX) разрешены только ему (D-17,
+`check_modules.py`).
 
 Одобрения из уведомлений: `notifications.ApprovalAction` (ссылки
 `dpai://approve|deny/<apr_…>?hash=…`), `orchestrator.ApprovalDesk` —
