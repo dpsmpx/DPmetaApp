@@ -147,10 +147,11 @@ class Orchestrator(
     val problems = mutableListOf<Diagnostic>()
 
     init {
-        // Перезапуск (ТЗ, §54; D-24): аккаунты, сессии и задачи — из журнала;
-        // [initialAccounts] — только пока в журнале нет ни одного слота.
+        // Перезапуск (ТЗ, §54; D-24): состояние — из журнала. [initialAccounts] —
+        // исходное состояние до журнала (его регистрация в журнал не пишется),
+        // поэтому события аккаунтов проигрываются поверх него, а не поверх пустого.
         if (journal.records().isNotEmpty()) {
-            accounts = StateRecovery(AccountsProjection).replayAll(journal).takeIf { it.slots.isNotEmpty() } ?: initialAccounts
+            accounts = journal.records().fold(initialAccounts) { s, r -> AccountsProjection.apply(s, r.event) }
             sessions = StateRecovery(SessionsProjection).replayAll(journal)
             tasks = StateRecovery(TasksProjection).replayAll(journal)
             worktrees = StateRecovery(WorktreesProjection).replayAll(journal)
@@ -477,6 +478,9 @@ class Orchestrator(
         }
         return out
     }
+
+    /** Сколько записей в журнале контура (рост хранилища, ТЗ, §116). */
+    fun eventCount(): Long = journal.position
 
     /** Инварианты ТЗ, §118 над текущим состоянием и журналом; пусто — держатся. */
     fun invariants(): List<Diagnostic> = Invariants.check(

@@ -14,7 +14,14 @@ import kotlin.time.Duration.Companion.seconds
  * появляются новые потомки.
  */
 object ProcessTree {
-    private val FORCE_WAIT = 2.seconds
+    /**
+     * Сколько ждать выхода после принудительного завершения. Ожидание
+     * кончается, как только все вышли; верхняя граница — для нагруженной
+     * машины: на Windows завершение JVM под нагрузкой полного прогона
+     * занимало больше 2 с, и умирающие процессы считались выжившими
+     * (7 октября 2026, `AgentRuntimeTest`).
+     */
+    private val FORCE_WAIT = 10.seconds
 
     /** Итог: [forced] — понадобилось принудительное завершение; [survivors] — кто выжил. */
     data class Result(val forced: Boolean, val survivors: List<Long>)
