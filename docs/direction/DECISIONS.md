@@ -642,8 +642,8 @@ proot.
 ### D-34 — Интерфейс Android — Jetpack Compose; модуль собирается при Android SDK
 
 **Решение.** Интерфейс приложения — Jetpack Compose с Material 3
-(выбор автора 7 октября 2026). minSdk 30 (D-28), compileSdk и targetSdk
-36. Сборка — Android Gradle Plugin со встроенной поддержкой Kotlin и
+(выбор автора 7 октября 2026). minSdk 30 (D-28), targetSdk 36,
+compileSdk 37. Сборка — Android Gradle Plugin со встроенной поддержкой Kotlin и
 плагин компилятора Compose той же версии, что Kotlin. Модуль `android`
 подключается в `settings.gradle.kts` только при найденном Android SDK
 (`local.properties` или `ANDROID_HOME`); репозиторий Google Maven — с
@@ -657,7 +657,10 @@ proot.
 строит `ui`. Фильтр групп сужает поверхность цепочки поставок.
 
 **Следствия.** Новые зависимости — AGP, Compose BOM, Activity Compose —
-строками в `docs/PROVENANCE.md`; ядро по-прежнему собирается без SDK.
+строками в `docs/PROVENANCE.md`; это исключение из D-17 только для
+оболочки `android` (`check_modules.py`), ядро по-прежнему — только
+Kotlin stdlib и собирается без SDK. Compose BOM 2026.09.00 требует
+compileSdk 37; targetSdk — 36.
 Пока на телефоне нет настоящего источника данных, приложение показывает
 демо-систему на `MockRunner` и называет режим «демо».
 

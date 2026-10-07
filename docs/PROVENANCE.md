@@ -20,11 +20,18 @@ D-17). `tools/verify/check_dependencies.py` сверяет таблицу §2 с
 |---|---|---|---|---|---|
 | `kotlin` (Kotlin Gradle Plugin, stdlib, kotlin-test) | 2.4.20 | Apache-2.0 | stdlib — во время выполнения; остальное — сборка и тесты | Maven Central, `org.jetbrains.kotlin` | 6 октября 2026 |
 | `junit` (JUnit BOM, Jupiter, Platform Launcher) | 6.1.3 | EPL-2.0 | только тесты | Maven Central, `org.junit` | 6 октября 2026 |
+| `agp` (Android Gradle Plugin) | 9.4.1 | Apache-2.0 | только сборка модуля `android` | Google Maven, `com.android.tools.build` | 7 октября 2026 |
+| `compose-bom` (Compose BOM: Material 3, UI, Foundation, Runtime) | 2026.09.00 | Apache-2.0 | приложение Android во время выполнения | Google Maven, `androidx.compose` | 7 октября 2026 |
+| `activity-compose` (AndroidX Activity Compose) | 1.13.0 | Apache-2.0 | приложение Android во время выполнения | Google Maven, `androidx.activity` | 7 октября 2026 |
 <!-- provenance: end -->
 
 Версии совпадают с теми, что закреплены в `DPpass:gradle/libs.versions.toml`
 на 6 октября 2026: одна связка Kotlin и JUnit на экосистему проще в
 сопровождении.
+
+Зависимости модуля `android` (D-34) — последние стабильные на 7 октября
+2026; ядро от них не зависит. Compose BOM 2026.09.00 требует compileSdk 37
+(платформа `android-37.0`); targetSdk остаётся 36.
 
 ## 3. Gradle
 

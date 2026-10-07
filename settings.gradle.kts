@@ -4,6 +4,15 @@
 pluginManagement {
     includeBuild("build-logic")
     repositories {
+        // Google Maven — только для групп Android (D-34, T11): ничего
+        // другого оттуда не приходит.
+        google {
+            content {
+                includeGroupByRegex("""com\.android(\..*)?""")
+                includeGroupByRegex("""androidx\..*""")
+                includeGroupByRegex("""com\.google\.(android|testing)\..*""")
+            }
+        }
         mavenCentral()
         gradlePluginPortal()
     }
@@ -12,6 +21,13 @@ pluginManagement {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
+        google {
+            content {
+                includeGroupByRegex("""com\.android(\..*)?""")
+                includeGroupByRegex("""androidx\..*""")
+                includeGroupByRegex("""com\.google\.(android|testing)\..*""")
+            }
+        }
         mavenCentral()
     }
 }
@@ -44,7 +60,12 @@ include(
 // Межмодульные тесты.
 include(":tests:integration")
 
-// Модуль android (оболочка приложения) подключается на этапе 11, когда
-// появится интерфейс, и только при найденном Android SDK — как в DPpass
-// (docs/ARCHITECTURE.md, §2). До этого его здесь нет: непроверяемой
-// сборки в репозитории не держим.
+// Модуль android (оболочка приложения, D-34) — только при найденном
+// Android SDK, как в DPpass (docs/ARCHITECTURE.md, §2): без SDK ядро
+// собирается и проверяется как прежде.
+val androidSdk = run {
+    val local = file("local.properties").takeIf { it.isFile }?.readLines()
+        ?.firstOrNull { it.startsWith("sdk.dir=") }?.substringAfter("=")?.replace("""\:""", ":")?.replace("""\\""", "/")
+    (local ?: System.getenv("ANDROID_HOME") ?: System.getenv("ANDROID_SDK_ROOT"))?.takeIf { file(it).isDirectory }
+}
+if (androidSdk != null) include(":android")
