@@ -50,6 +50,14 @@ class JschProcessHostTest {
         assertEquals(DiagCode.SSH_CONNECTION_FAILED, code(JschProcessHost(e, TargetPlatform.POSIX, connectTimeout = 3.seconds).start(ProcessSpec(listOf("true")))))
     }
 
+    /** Аудит F (ТЗ, §105): имя хоста не разрешается (DNS) — отказ связи, а не зависание. */
+    @Test
+    fun unresolvableHostIsConnectionFailure() {
+        val known = dir.resolve("known_hosts").createFile().toString()
+        val e = SshEndpoint.of("no-such-host.invalid", "u", 22, knownHostsFile = known).valueOrNull()!!
+        assertEquals(DiagCode.SSH_CONNECTION_FAILED, code(JschProcessHost(e, TargetPlatform.POSIX, connectTimeout = 3.seconds).start(ProcessSpec(listOf("true")))))
+    }
+
     @Test
     fun environmentIsNotSentOverSsh() {
         val e = SshEndpoint.of("127.0.0.1", "u", 22).valueOrNull()!!

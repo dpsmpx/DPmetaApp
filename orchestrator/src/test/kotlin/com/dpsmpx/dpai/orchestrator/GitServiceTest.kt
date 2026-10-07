@@ -205,4 +205,21 @@ class GitServiceTest {
 
     private fun approval(hash: com.dpsmpx.dpai.core.hashing.ContentHash) =
         Approval(ids.next(IdKinds.APPROVAL), hash, "автор", clock.now(), clock.now() + 10.minutes)
+
+    /**
+     * Аудит I (ТЗ, §108): удалённая ветка и сбой push — отказ
+     * `GIT_COMMAND_FAILED` с причиной, а репозиторий и ветка интеграции
+     * не тронуты (полуслияния нет).
+     */
+    @Test
+    fun deletedBranchAndPushFailureAreReportedAndRepositoryIsIntact() {
+        val r = repo()
+        val head = host.run(ProcessSpec(listOf("git", "-C", r.root, "rev-parse", "HEAD")), 1.minutes).valueOrNull()!!.stdout
+        val merge = git.run(GitOp.MERGE, r.root, listOf("task/удалена"))
+        assertEquals(DiagCode.GIT_COMMAND_FAILED, (merge as Outcome.Failure).diagnostics.first().code)
+        val push = git.run(GitOp.PUSH, r.root, listOf("нет-такого-remote", "main"))
+        assertEquals(DiagCode.GIT_COMMAND_FAILED, (push as Outcome.Failure).diagnostics.first().code)
+        assertEquals(head, host.run(ProcessSpec(listOf("git", "-C", r.root, "rev-parse", "HEAD")), 1.minutes).valueOrNull()!!.stdout)
+        assertEquals(emptyList(), host.run(ProcessSpec(listOf("git", "-C", r.root, "status", "--porcelain")), 1.minutes).valueOrNull()!!.stdout)
+    }
 }
