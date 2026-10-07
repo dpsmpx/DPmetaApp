@@ -7,6 +7,7 @@ plugins {
 
 dependencies {
     api(project(":execution"))
-    implementation(libs.jsch)
+    // api: EcdsaSignerIdentity — это com.jcraft.jsch.Identity.
+    api(libs.jsch)
     testImplementation(project(":testkit"))
 }

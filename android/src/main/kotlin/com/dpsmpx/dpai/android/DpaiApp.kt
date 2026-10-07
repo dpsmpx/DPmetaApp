@@ -61,7 +61,7 @@ private const val STEP_MS = 1000L
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DpaiApp(model: DemoModel) {
+fun DpaiApp(model: DemoModel, controller: Controller) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
     var snapshot by remember { mutableStateOf<Snapshot?>(null) }
@@ -79,7 +79,7 @@ fun DpaiApp(model: DemoModel) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (selectedId != null) "Сессия" else "DP AI · демо") },
+                title = { Text(if (selectedId != null) "Сессия" else if (tab == 2) "DP AI · targets" else "DP AI · демо") },
                 navigationIcon = {
                     if (selectedId != null) TextButton(onClick = { selectedId = null }) { Text("←") }
                 },
@@ -90,6 +90,7 @@ fun DpaiApp(model: DemoModel) {
                 NavigationBar {
                     NavigationBarItem(selected = tab == 0, onClick = { tab = 0 }, icon = { Text("◉") }, label = { Text("Сводка") })
                     NavigationBarItem(selected = tab == 1, onClick = { tab = 1 }, icon = { Text("▦") }, label = { Text("Задачи") })
+                    NavigationBarItem(selected = tab == 2, onClick = { tab = 2 }, icon = { Text("⇄") }, label = { Text("Targets") })
                 }
             }
         },
@@ -97,6 +98,7 @@ fun DpaiApp(model: DemoModel) {
         val s = snapshot
         Box(Modifier.padding(padding).fillMaxSize()) {
             when {
+                selectedId == null && tab == 2 -> TargetsPane(controller)
                 s == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                 selectedId != null -> SessionPane(s.session)
                 tab == 0 -> DashboardPane(s.dashboard) { selectedId = it.value }

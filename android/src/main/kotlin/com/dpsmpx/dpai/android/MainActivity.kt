@@ -21,9 +21,10 @@ class MainActivity : ComponentActivity() {
         CrashRecord.install(filesDir)
         enableEdgeToEdge()
         val model = DemoModel.get(cacheDir)
+        val controller = Controller.get(filesDir)
         setContent {
             DpaiTheme {
-                DpaiApp(model)
+                DpaiApp(model, controller)
             }
         }
     }

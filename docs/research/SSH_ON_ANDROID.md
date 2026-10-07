@@ -27,3 +27,14 @@ ECDSA (D-35). Отказы приходят нужными кодами, без 
 
 На JVM (JDK 21) тот же `JschProcessHost` работает с ed25519 против
 Windows- и Linux-targets (`JschProcessHostTest`, `docs/TESTING.md`, §8).
+
+## 2. Контроллер приложения против Termux
+
+Проверено **7 октября 2026** на том же Realme C21Y: приложение (debug)
+с ключом ECDSA P-256 в Android Keystore (`EcdsaSignerIdentity`) — экран
+targets → ключ хоста Termux (`ecdsa-sha2-nistp256`, отпечаток совпал с
+`ssh-keygen -l` на target) → «Проверить»: `dpai agent doctor` по SSH
+через JSch ответил за 960 мс — агент 0.1.0-dev, Linux aarch64, Java
+21.0.12 (`pkg install openjdk-21` в Termux). Claude Code и Git в самом
+Termux не найдены — Claude там работает только в proot (D-33).
+

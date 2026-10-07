@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Разрешений нет: демо работает без сети и без фоновой работы (D-34). -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- SSH к targets из контроллера приложения (D-35). Других разрешений нет. -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:allowBackup="false"
