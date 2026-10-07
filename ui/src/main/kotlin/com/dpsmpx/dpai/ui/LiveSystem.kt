@@ -68,13 +68,14 @@ class LiveSystem(
     sshHost: (SshEndpoint, TargetPlatform) -> ProcessHost,
     knownHostsFile: String,
     random: RandomSource = RandomSource.secure(),
+    controllerVersion: String? = null,
 ) : ControlView {
     override val mode: String = "контроллер"
     private val ids = IdGenerator(clock, random)
     private val journal: EventJournal = EventJournal.open(vfs, "live.journal", quarantineCorruption = true).valueOrNull()
         ?: error("журнал контроллера не открылся")
     private val usable = entries.filter { it.configDir != null }
-    private val manager = ExecutionTargetManager(clock, sshHost = sshHost)
+    private val manager = ExecutionTargetManager(clock, sshHost = sshHost, controllerVersion = controllerVersion)
     private val runners = HashMap<ExecutionTargetId, ClaudeRunner>()
     private val probes = HashMap<AccountId, Pair<SlotAuthProbe, SessionId>>()
     private val slotOf = HashMap<ExecutionTargetId, AccountId>()

@@ -40,6 +40,8 @@ data class DoctorPolicy(
  * память, часы. Расхождение часов — время target минус середина интервала
  * запроса по часам контроллера; ошибка оценки — половина задержки.
  * Отсутствие Claude Code — FAIL: target без Claude не исполнитель (D-26).
+ * Версия агента не та, что у контроллера, — WARN: протокол
+ * `dpai.agent-reply` строгий, и новое поле одной стороны — отказ другой.
  */
 object TargetDoctor {
     fun evaluate(
@@ -47,6 +49,7 @@ object TargetDoctor {
         sentAt: Timestamp,
         receivedAt: Timestamp,
         policy: DoctorPolicy = DoctorPolicy(),
+        controllerVersion: String? = null,
     ): DoctorResult {
         val r = when (report) {
             is Outcome.Failure -> return DoctorResult(
@@ -58,7 +61,12 @@ object TargetDoctor {
         val checks = mutableListOf<DoctorCheck>()
         val rtt = receivedAt - sentAt
         checks += DoctorCheck("связь", CheckStatus.OK, "ответ за ${rtt.inWholeMilliseconds} мс")
-        checks += DoctorCheck("агент", CheckStatus.OK, "dpai ${r.agentVersion}; ${r.os} ${r.arch}; Java ${r.javaVersion}" + if (r.termux) "; Termux" else "")
+        val agentLine = "dpai ${r.agentVersion}; ${r.os} ${r.arch}; Java ${r.javaVersion}" + if (r.termux) "; Termux" else ""
+        checks += if (controllerVersion != null && controllerVersion != r.agentVersion) {
+            DoctorCheck("агент", CheckStatus.WARN, "$agentLine; контроллер $controllerVersion — обновить агента")
+        } else {
+            DoctorCheck("агент", CheckStatus.OK, agentLine)
+        }
         checks += tool("Claude Code", r.claude.found, r.claude.version, r.claude.detail, CheckStatus.FAIL)
         checks += tool("Git", r.git.found, r.git.version, r.git.detail, CheckStatus.WARN)
         checks += when (val free = r.diskFreeBytes) {

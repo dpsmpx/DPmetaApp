@@ -22,6 +22,7 @@ import com.dpsmpx.dpai.execution.target.TargetType
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -80,6 +81,17 @@ class ExecutionTargetManagerTest {
         mock.reachable = false
         val down = manager.doctor(target.id).valueOrNull()!!
         assertEquals(CheckStatus.FAIL, down.overall)
+    }
+
+    /** Агент другой версии — WARN: протокол строгий, расхождение видно до отказа. */
+    @Test
+    fun agentVersionDifferentFromControllerIsWarning() {
+        val same = ExecutionTargetManager(clock, policy, mockHost = mock, controllerVersion = "mock").also { it.register(target) }
+        assertEquals(CheckStatus.OK, same.doctor(target.id).valueOrNull()!!.checks.first { it.name == "агент" }.status)
+        val newer = ExecutionTargetManager(clock, policy, mockHost = mock, controllerVersion = "0.2.0").also { it.register(target) }
+        val agent = newer.doctor(target.id).valueOrNull()!!.checks.first { it.name == "агент" }
+        assertEquals(CheckStatus.WARN, agent.status)
+        assertTrue("0.2.0" in agent.detail)
     }
 
     @Test

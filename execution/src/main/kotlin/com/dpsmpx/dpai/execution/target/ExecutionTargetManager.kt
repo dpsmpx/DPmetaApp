@@ -32,6 +32,8 @@ class ExecutionTargetManager(
      * Android, где его нет, — клиент на JVM (D-35, модуль `jsch`).
      */
     private val sshHost: (SshEndpoint, TargetPlatform) -> ProcessHost = { e, p -> SshProcessHost(e, p, local) },
+    /** Версия контроллера: `doctor` сверяет с ней версию агента (`null` — не сверять). */
+    private val controllerVersion: String? = null,
 ) {
     private val targets = LinkedHashMap<ExecutionTargetId, ExecutionTarget>()
     private val health = HashMap<ExecutionTargetId, TargetHealth>()
@@ -95,7 +97,7 @@ class ExecutionTargetManager(
         }
         val sent = clock.now()
         val report = client.doctor()
-        return Outcome.success(TargetDoctor.evaluate(report, sent, clock.now()))
+        return Outcome.success(TargetDoctor.evaluate(report, sent, clock.now(), controllerVersion = controllerVersion))
     }
 
     /** Выключить (явно) или включить target: включённый начинает с `UNKNOWN`. */

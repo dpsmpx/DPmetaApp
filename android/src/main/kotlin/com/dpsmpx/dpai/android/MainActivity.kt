@@ -20,7 +20,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         CrashRecord.install(filesDir)
         enableEdgeToEdge()
-        val controller = Controller.get(filesDir)
+        val controller = Controller.get(filesDir, packageManager.getPackageInfo(packageName, 0).versionName)
         val model = DemoModel.get(cacheDir, controller)
         setContent {
             DpaiTheme {

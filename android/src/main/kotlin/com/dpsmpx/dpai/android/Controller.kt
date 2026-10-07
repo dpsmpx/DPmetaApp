@@ -76,7 +76,7 @@ object KeystoreKey {
  * `dpai.app-targets` через `DocumentStore` (атомарная замена, D-24).
  * Вызовы сети — с фонового потока.
  */
-class Controller(private val root: File) {
+class Controller(private val root: File, private val version: String?) {
     private val vfs = NioVfs(root.toPath())
     private val docs = DocumentStore(vfs, "docs")
     val knownHostsFile: String = File(root, KNOWN_HOSTS).path
@@ -99,6 +99,7 @@ class Controller(private val root: File) {
     fun live(targets: List<TargetEntry>): LiveSystem = LiveSystem(
         Clock.SYSTEM, NioVfs(File(root, "live").apply { mkdirs() }.toPath()), targets,
         { e, p -> JschProcessHost(e, p, identities = listOf(KeystoreKey.identity())) }, knownHostsFile,
+        controllerVersion = version,
     )
 
     /**
@@ -140,7 +141,11 @@ class Controller(private val root: File) {
 
     /** `dpai agent doctor` на target — по SSH с ключом приложения. */
     fun doctor(entry: TargetEntry): Outcome<DoctorResult> {
-        val manager = ExecutionTargetManager(Clock.SYSTEM, sshHost = { e, p -> JschProcessHost(e, p, identities = listOf(KeystoreKey.identity())) })
+        val manager = ExecutionTargetManager(
+            Clock.SYSTEM,
+            sshHost = { e, p -> JschProcessHost(e, p, identities = listOf(KeystoreKey.identity())) },
+            controllerVersion = version,
+        )
         manager.register(entry.toTarget(knownHostsFile))
         return manager.doctor(entry.id)
     }
@@ -153,8 +158,9 @@ class Controller(private val root: File) {
         @Volatile
         private var instance: Controller? = null
 
-        fun get(filesDir: File): Controller = instance ?: synchronized(this) {
-            instance ?: Controller(File(filesDir, "controller")).also { instance = it }
+        /** [version] — версия приложения: `doctor` сверяет с ней версию агента. */
+        fun get(filesDir: File, version: String?): Controller = instance ?: synchronized(this) {
+            instance ?: Controller(File(filesDir, "controller"), version).also { instance = it }
         }
     }
 }
