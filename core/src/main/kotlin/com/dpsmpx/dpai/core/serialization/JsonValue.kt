@@ -35,9 +35,13 @@ class JsonNumber(val literal: String) : JsonValue {
 
     fun toBigDecimal(): BigDecimal = BigDecimal(literal)
 
-    /** Точное целое в пределах Long; дробное или слишком большое — `null`. */
+    /**
+     * Точное целое в пределах Long; дробное или слишком большое — `null`.
+     * `BigDecimal.longValueExact`, а не `BigInteger.longValueExact`: второго
+     * в Android 11 нет (`check_android_api.py`).
+     */
     fun toLongExact(): Long? = try {
-        toBigDecimal().stripTrailingZeros().let { if (it.scale() > 0) null else it.toBigIntegerExact().longValueExact() }
+        toBigDecimal().stripTrailingZeros().let { if (it.scale() > 0) null else it.longValueExact() }
     } catch (_: ArithmeticException) {
         null
     }

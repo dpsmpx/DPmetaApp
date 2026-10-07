@@ -59,6 +59,7 @@ tools/verify/run.sh doctor     # окружение проверок: JDK, Pytho
 | модули — `tools/verify/check_modules.py` | модули и направления зависимостей не по таблице `docs/ARCHITECTURE.md`, §2; `android.*` вне `android`; `testkit` вне тестовых конфигураций; сторонняя библиотека во время выполнения; пакет исходника вне пакета модуля | D-02, D-17, D-21 |
 | запрещённые API — `tools/verify/check_forbidden_apis.py` | системное время и случайность мимо `Clock`/`RandomSource`, сон, `GlobalScope`, `runBlocking` и печать вне `cli`, `printStackTrace`, запуск процессов вне `execution`, `reveal()` вне разрешённых мест, приватные адреса провайдера | D-03, D-04, D-07, D-14 |
 | секреты — `tools/verify/check_secrets.py` | файлы ключей, закрытые ключи, токены провайдеров и сервисов | D-14 |
+| API Android — `tools/verify/check_android_api.py` (`full`, при Android SDK) | вызов, поле или класс JDK из модулей приложения, которых нет в Android minSdk (`android.jar` 30); исключения — `tools/verify/registry/android_api_allow.txt` с причиной | D-28, D-34 |
 | контракты — `tools/verify/check_contracts.py` | код диагностики или тип события удалён, переименован или не записан в реестр | D-05, D-12 |
 | зависимости — `tools/verify/check_dependencies.py` | координаты и версии мимо каталога, версия без строки `docs/PROVENANCE.md`, сумма Gradle не та, workflow GitHub Actions | D-15, D-17 |
 | README — `tools/verify/readme_progress.py --check` | раздел «Прогресс» отстал от плана, критериев, решений, `TODO.md`; этап «выполнен» при открытых критериях | — |

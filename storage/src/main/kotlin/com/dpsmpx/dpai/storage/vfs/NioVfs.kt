@@ -33,7 +33,8 @@ class NioVfs(private val root: Path) : Vfs {
     override fun list(dir: String): List<String> {
         val d = p(dir)
         if (!Files.isDirectory(d)) return emptyList()
-        return Files.list(d).use { s -> s.filter { Files.isRegularFile(it) }.map { it.fileName.toString() }.sorted().toList() }
+        // Не Stream.toList(): его (Java 16) нет в Android 11 (`check_android_api.py`).
+        return Files.list(d).use { s -> s.iterator().asSequence().filter { Files.isRegularFile(it) }.map { it.fileName.toString() }.sorted().toList() }
     }
 
     override fun write(path: String, bytes: ByteArray) {

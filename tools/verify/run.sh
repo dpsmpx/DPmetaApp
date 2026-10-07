@@ -68,7 +68,8 @@ if [ "$LEVEL" = plan ]; then
   case "$target" in
     affected) "$PY" -B tools/verify/affected.py --plan | sed 's/^/  /' ;;
     full) echo "  full: ./gradlew build :cli:installDist — все модули, тесты, предупреждения как ошибки"
-          echo "  full: dpai — собранная команда запускается, коды выхода" ;;
+          echo "  full: dpai — собранная команда запускается, коды выхода"
+          echo "  full: API Android — tools/verify/check_android_api.py (при Android SDK)" ;;
   esac
   exit 0
 fi
@@ -161,6 +162,14 @@ case "$LEVEL" in
   full)
     if gradle_step "сборка и тесты (full)" build :cli:installDist; then
       step "dpai" smoke_cli
+      # API JDK в модулях приложения против Android minSdk (D-34) — только
+      # там, где модуль android собирается (есть Android SDK, D-34).
+      if [ -n "${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}" ] || grep -qs '^sdk.dir=' local.properties; then
+        step "API Android" "$PY" -B tools/verify/check_android_api.py
+      else
+        echo "… API Android: нет Android SDK — модуль android не собирается, сверка не нужна"
+        record skip "API Android" "-" 0
+      fi
     else
       record fail "dpai" "-" 0
     fi ;;
