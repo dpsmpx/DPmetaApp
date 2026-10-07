@@ -149,6 +149,13 @@ musl-сборка `@anthropic-ai/claude-code-linux-arm64-musl` распаков�
 модуле `jsch` с теми же свойствами `dpai.test.ssh*`; без них идут только
 проверки отказов.
 
+Финальный аудит (ТЗ, §99–§125): после `tools/verify/run.sh full` —
+`python3 tools/audit/final_stability.py --endurance <отчёт EnduranceTest>`.
+Он сопоставляет пункты аудитов A–S с тестами и берёт статусы из
+результатов JUnit; пункт без доказательства — `GAP`, на устройстве —
+`DEVICE`, тест не запускался — `SKIPPED`; отчёт —
+`build/audits/final-stability/`.
+
 ## 9. Приложение Android
 
 Логика экранов проверяется на хосте (`ScreensTest` в `ui`); модуль
