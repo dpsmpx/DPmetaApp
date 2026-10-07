@@ -105,7 +105,8 @@ class EnduranceTest {
         while (elapsedMin() < total) {
             val minute = elapsedMin()
             // Поток работы: держим ~20 открытых задач.
-            while (o.tasks.tasks.values.count { !it.terminal } < 20) o.addTask("задача ${created++}", "синтетическая работа")
+            // BLOCKED ждёт человека и не занимает места потока работы.
+            while (o.tasks.tasks.values.count { !it.terminal && it.state != TaskState.BLOCKED } < 20) o.addTask("задача ${created++}", "синтетическая работа")
             for (s in host.runIds()) if (host.hasPending(s) && random.nextInt(4) == 0) runner.advance(s)
             o.tick()
             // Хаос (ТЗ, §117): перезапуск приложения ~раз в 20 мин, потеря target на 30 с ~раз в 15 мин.

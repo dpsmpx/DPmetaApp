@@ -53,6 +53,7 @@ import com.dpsmpx.dpai.orchestrator.verification.CompletionFlow
 import com.dpsmpx.dpai.security.Proposal
 import com.dpsmpx.dpai.sessions.AccountFact
 import com.dpsmpx.dpai.orchestrator.accounts.AccountsProjection
+import com.dpsmpx.dpai.orchestrator.recovery.OrphanScan
 import com.dpsmpx.dpai.orchestrator.recovery.Reconciler
 import com.dpsmpx.dpai.orchestrator.recovery.Resolution
 import com.dpsmpx.dpai.orchestrator.sessions.SessionsProjection
@@ -404,6 +405,10 @@ class Orchestrator(
             applyFacts(step.facts)
             commitTasks(tasksLogic.start(tasks, task, clock.now()).valueOrNull().orEmpty())
         }
+        // Сессия могла умереть уже при старте (target недоступен): задача не должна остаться
+        // RUNNING без живой сессии — реакция как при опросе (прогон выносливости 7 октября 2026).
+        val after = sessions.sessions.getValue(session)
+        if (after.state != SessionState.RUNNING && after.state != SessionState.STARTING) react(task, session, after.state)
     }
 
     private fun failLaunch(task: TaskId, session: SessionId, code: DiagCode) {
@@ -615,6 +620,16 @@ class Orchestrator(
             if (after.terminal) applyFacts(listOf(AccountFact.Release(r.id)))
             if (after.state != SessionState.RECOVERY_PENDING) react(after.task, r.id, after.state)
         }
+        // Сироты (ТЗ, §119; `docs/RECOVERY.md`, §5): аренды и деревья завершённых сессий, задачи
+        // RUNNING без живой сессии — безопасные починки сразу, остальное — вопросом.
+        val orphans = OrphanScan(accountsLogic, tasksLogic).scan(sessions, accounts, tasks, worktrees, emptySet(), clock.now())
+        batch {
+            commitAccounts(orphans.accountFixes)
+            commitWorktrees(orphans.worktreeFixes)
+            commitTasks(orphans.taskFixes)
+        }
+        problems += orphans.questions
+        maybeSnapshot()
         return out
     }
 
