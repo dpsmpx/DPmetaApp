@@ -183,6 +183,7 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     CONNECTOR_REPLY_INVALID(Category.FORMAT, Severity.ERROR, Retryability.NON_RETRYABLE),
     OPERATION_NOT_ALLOWED(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
     RUN_BUDGET_EXHAUSTED(Category.STATE, Severity.WARNING, Retryability.NON_RETRYABLE),
+    CLAUDE_AUTH_STATUS_INVALID(Category.FORMAT, Severity.ERROR, Retryability.NON_RETRYABLE),
 
     // --- общее ---
     /** Строгая семантика (D-05): неподдержанное — явный отказ, а не «похожее». */

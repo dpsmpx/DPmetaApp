@@ -55,6 +55,13 @@
 | у подписки занято `maxParallelSessions` сессий | `BUSY` |
 | иначе | `AVAILABLE` |
 
+Вход проверяет `SlotAuthProbe` (модуль `orchestrator`): `claude auth
+status --json` под агентом target с окружением слота (`CLAUDE_CONFIG_DIR`
+слота, без перекрывающих вход переменных); итог — `observeAuthStatus`.
+Вход делается сразу в каталог слота: при входе без него у Claude Code
+нет файла настроек в каталоге слота, и отпечаток аккаунта неизвестен
+(`docs/research/CLAUDE_CODE_CLI.md`, §10).
+
 Если прямого перехода нет (например, `RATE_LIMITED` → `BUSY`),
 выбирается кратчайший путь по таблице; каждый шаг — событие
 `ACCOUNT_STATE_CHANGED`. Так история состояний всегда допустима.

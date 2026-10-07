@@ -231,3 +231,12 @@ proot не проверены; на Redmi Note 13 (HyperOS 2.0) проверка
 и 2449 мс, весь тест с запуском JVM агента и proot — 38,7 с. Поток
 stream-json из proot разбирается тем же `ClaudeStreamParser`.
 
+**`CLAUDE_CONFIG_DIR` после входа без него** — проверено **7 октября
+2026** там же (2.1.292, proot): вход сделан без переменной (каталог
+`/root/.claude`, файл `~/.claude.json`). `claude auth status --json` с
+`CLAUDE_CONFIG_DIR=/root/.claude` — `loggedIn: true`, `claude.ai`, но
+`email` и `orgId` — `null`, а в stderr — «Claude configuration file not
+found at: /root/.claude/.claude.json»: файл настроек ищется в каталоге
+конфигурации. Вывод: вход слота делается сразу с `CLAUDE_CONFIG_DIR`
+слота (D-29), иначе отпечаток аккаунта неизвестен.
+
