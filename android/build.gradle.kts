@@ -53,6 +53,7 @@ kotlin {
 
 dependencies {
     implementation(project(":ui"))
+    implementation(project(":jsch"))
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.material3)
     implementation(libs.activity.compose)

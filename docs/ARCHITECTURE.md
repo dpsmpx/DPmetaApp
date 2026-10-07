@@ -84,7 +84,8 @@
 | `orchestrator` | сборка системы: команды, сверка, восстановление, продолжение, полуавтономный режим | `storage`, `security`, `execution`, `accounts`, `git`, `contexts`, `tasks`, `sessions`, `verification`, `monitoring`, `notifications`, `ecosystem`, `connectors`, `analytics` | 13, 14, 16 |
 | `ui` | представление без платформы: состояния экранов, форматирование, разбор `dpai://` | `orchestrator` | 11 |
 | `cli` | оболочка JVM: команда `dpai` | `orchestrator` | 0 |
-| `android` | оболочка Android: интерфейс, Keystore, WorkManager, уведомления; подключается при Android SDK | `ui` | 11 |
+| `jsch` | SSH-хост на JVM (JSch) для targets там, где нет системного OpenSSH — приложение Android (D-35) | `execution` | 11 |
+| `android` | оболочка Android: интерфейс, Keystore, WorkManager, уведомления; подключается при Android SDK | `ui`, `jsch` | 11 |
 | `tests/integration` | межмодульные сценарии | `orchestrator` | 1 |
 <!-- check_modules: end -->
 

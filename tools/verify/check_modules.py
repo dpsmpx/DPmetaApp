@@ -31,7 +31,10 @@ INCLUDE_ARG = re.compile(r'"(:[\w:-]+)"')
 PROJECT_DEP = re.compile(r'^\s*(\w+)\(\s*project\(\s*"(:[\w:-]+)"\s*\)\s*\)', re.M)
 LIB_DEP = re.compile(r'^\s*(\w+)\(\s*(?:platform\()?\s*libs\.([\w.]+)', re.M)
 # Модуль → причина, по которой ему можно стороннюю библиотеку во время выполнения (D-17).
-RUNTIME_DEPS_ALLOWED = {"android": "оболочка Android: Compose и AndroidX (D-34)"}
+RUNTIME_DEPS_ALLOWED = {
+    "android": "оболочка Android: Compose и AndroidX (D-34)",
+    "jsch": "SSH-клиент на JVM для Android (D-35)",
+}
 PACKAGE = re.compile(r"^\s*package\s+([\w.]+)", re.M)
 ANDROID_IMPORT = re.compile(r"^\s*import\s+(androidx?\.[\w.]+)", re.M)
 

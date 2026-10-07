@@ -27,6 +27,11 @@ class ExecutionTargetManager(
     private val policy: TargetHealthPolicy = TargetHealthPolicy(),
     private val local: ProcessHost = LocalProcessHost(clock),
     private val mockHost: ProcessHost? = null,
+    /**
+     * Хост SSH-targets: на JVM — системный OpenSSH (D-31); в приложении
+     * Android, где его нет, — клиент на JVM (D-35, модуль `jsch`).
+     */
+    private val sshHost: (SshEndpoint, TargetPlatform) -> ProcessHost = { e, p -> SshProcessHost(e, p, local) },
 ) {
     private val targets = LinkedHashMap<ExecutionTargetId, ExecutionTarget>()
     private val health = HashMap<ExecutionTargetId, TargetHealth>()
@@ -112,6 +117,6 @@ class ExecutionTargetManager(
     private fun hostFor(t: ExecutionTarget): ProcessHost = when (t.type) {
         TargetType.LOCAL -> local
         TargetType.MOCK -> mockHost!!
-        TargetType.TERMUX_LOCAL, TargetType.LINUX_SSH, TargetType.WINDOWS_REMOTE -> SshProcessHost(t.ssh!!, t.platform, local)
+        TargetType.TERMUX_LOCAL, TargetType.LINUX_SSH, TargetType.WINDOWS_REMOTE -> sshHost(t.ssh!!, t.platform)
     }
 }

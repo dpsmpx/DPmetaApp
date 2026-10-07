@@ -23,6 +23,7 @@ D-17). `tools/verify/check_dependencies.py` сверяет таблицу §2 с
 | `agp` (Android Gradle Plugin) | 9.4.1 | Apache-2.0 | только сборка модуля `android` | Google Maven, `com.android.tools.build` | 7 октября 2026 |
 | `compose-bom` (Compose BOM: Material 3, UI, Foundation, Runtime) | 2026.09.00 | Apache-2.0 | приложение Android во время выполнения | Google Maven, `androidx.compose` | 7 октября 2026 |
 | `activity-compose` (AndroidX Activity Compose) | 1.13.0 | Apache-2.0 | приложение Android во время выполнения | Google Maven, `androidx.activity` | 7 октября 2026 |
+| `jsch` (JSch, форк mwiede) | 2.28.7 | BSD-3-Clause, ISC | модуль `jsch` → приложение Android во время выполнения | Maven Central, `com.github.mwiede` | 7 октября 2026 |
 <!-- provenance: end -->
 
 Версии совпадают с теми, что закреплены в `DPpass:gradle/libs.versions.toml`

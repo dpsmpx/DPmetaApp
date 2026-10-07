@@ -133,6 +133,10 @@ Termux-target — Realme C21Y по USB (D-33): в Termux `openssh`, `sshd`
 `adb shell settings put global stay_on_while_plugged_in 2`. Claude Code —
 внутри `proot-distro login alpine` (`docs/research/CLAUDE_CODE_CLI.md`, §9).
 
+Тот же путь через SSH-клиент на JVM (D-35) — `JschProcessHostTest` в
+модуле `jsch` с теми же свойствами `dpai.test.ssh*`; без них идут только
+проверки отказов.
+
 ## 9. Приложение Android
 
 Логика экранов проверяется на хосте (`ScreensTest` в `ui`); модуль
