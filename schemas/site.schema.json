@@ -18,6 +18,16 @@
     "title": {
       "type": "object"
     },
+    "path_section": {
+      "type": "object",
+      "description": "Д44: раздел «Путь» — путь автора по датам и конечная цель экосистемы (данные — path.yaml)",
+      "required": ["path", "data"],
+      "additionalProperties": false,
+      "properties": {
+        "path": {"type": "string", "pattern": "^/[a-z][a-z0-9-]*/$"},
+        "data": {"type": "string", "pattern": "^[A-Za-z0-9_./-]+$"}
+      }
+    },
     "ecosystem": {
       "type": "object",
       "description": "Д43: раздел с интерактивной моделью экосистемы; комплект DPvisualisation (build --site)",

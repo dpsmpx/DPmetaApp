@@ -31,6 +31,9 @@ home:
   contact: L-TG-AUTHOR
 # og_default снят до П2-20 (Д41): изображения контента на сайт — только с меткой.
 # Вернуть: og_default: {item: CI-0001, file: exports/E-en-github_social.png}
+path_section:                            # Д44: путь автора по датам и конечная цель экосистемы (/path/, /en/path/)
+  path: /path/                           # EN — /en/path/
+  data: data/website/path.yaml           # тексты — только факты реестра и вехи прогресса
 ecosystem:                               # Д43: интерактивная модель экосистемы (комплект DPvisualisation, его D-15)
   path: /ecosystem/
   kit: website/ecosystem                 # dpvis.js, dpvis.css, dpvis-data.json, MANIFEST.json — сверка по sha256

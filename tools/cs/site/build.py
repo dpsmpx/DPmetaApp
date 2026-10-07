@@ -37,6 +37,7 @@ from ..core.repo import Repo
 from ..progress.figures import FIGURE_MARK
 from ..progress.figures import render as render_figure
 from . import ecosystem, feeds
+from . import path as journey
 from .i18n import PLATFORM_NAMES, t
 
 E = html.escape
@@ -133,6 +134,7 @@ class SiteBuild:
         self._progress: set = set()  # наборы прогресса на видимых страницах — для /api/v1/progress.json
         self._articles: list = []  # статьи (category: article) — раздел /articles/
         self._tokens: dict | None = None
+        self._path_data: dict | None = None
 
     # ------------------------------------------------------- данные
     def _published(self) -> dict[tuple, dict]:
@@ -230,7 +232,10 @@ class SiteBuild:
     # ------------------------------------------------------- страницы
     def nav(self, lang: str, current: str, alt: dict) -> str:
         pre = "/en" if lang == "en" else ""
-        items = [("home", f"{pre}/"), ("projects", f"{pre}/projects/")]
+        items = [("home", f"{pre}/")]
+        if self.path_cfg():
+            items.append(("path", self.path_href(lang)))
+        items.append(("projects", f"{pre}/projects/"))
         if self.eco_cfg() and lang == "ru":
             items.append(("ecosystem", self.eco_cfg()["path"]))
         items += [(k, path) for k, path in self.nav_pages(lang)]
@@ -312,6 +317,8 @@ class SiteBuild:
         if rest:
             parts.append(f'<h2>{E(t(lang, "other_projects"))}</h2><div class="cards">'
                          + "".join(self.project_card(p, lang, False) for p in rest) + "</div>")
+        if self.path_cfg() and self.path_data():
+            parts.append(journey.home_block(self.path_data(), lang, self.path_href(lang)))
         arts = self.articles_for(lang)[:3]
         if arts:
             parts.append(f'<h2>{E(t(lang, "latest_articles"))}</h2>' + self.post_list(arts, lang)
@@ -611,6 +618,8 @@ class SiteBuild:
         navs = {path: key for lg in ("ru", "en") for key, path in self.nav_pages(lg)}
         if self.eco_cfg():
             navs[self.eco_cfg()["path"]] = "ecosystem"
+        if self.path_cfg():
+            navs.update({self.path_href(lg): "path" for lg in ("ru", "en")})
         current = {"/": "home", "/en/": "home"}.get(page.path) or navs.get(page.path) or ("projects" if "/projects/" in page.path else
                                                                     "news" if page.path.startswith("/news/") else
                                                                     "articles" if "/articles/" in page.path else
@@ -740,6 +749,67 @@ class SiteBuild:
             return {}
         return {c["path"]: {"Content-Security-Policy": ecosystem.csp_with_scripts(self._headers()["Content-Security-Policy"])}}
 
+    # ------------------------------------------------------- раздел «Путь» (Д44)
+    def path_cfg(self) -> dict | None:
+        c = self.cfg.get("path_section")
+        return c if c and c.get("path") and c.get("data") else None
+
+    def path_href(self, lang: str) -> str:
+        return ("/en" if lang == "en" else "") + self.path_cfg()["path"]
+
+    def path_data(self) -> dict | None:
+        if self._path_data is None:
+            self._path_data = self.repo.yaml(self.path_cfg()["data"]) or {}
+        return self._path_data or None
+
+    def _path_fact_ok(self, fid: str, idx: int, lang: str) -> str | None:
+        f = self.facts.get(fid)
+        if not f or not f.get("public"):
+            return f"факт {fid} не найден или не публичный"
+        if len((f.get("allowed_wording") or {}).get(lang) or []) <= idx:
+            return f"у факта {fid} нет формулировки {lang} № {idx}"
+        return None
+
+    def page_path(self, lang: str) -> Page | None:
+        """Путь по датам и конечная цель (Д44): тексты — факты реестра и вехи прогресса; рисунки — SVG без скриптов."""
+        data = self.path_data()
+        if not data:
+            self.report.errors.append(f"раздел «Путь»: нет данных {self.path_cfg()['data']}")
+            return None
+        milestones = {m["id"]: m for m in (self.repo.yaml("data/progress/milestones.yaml") or {}).get("milestones", [])}
+        bad = journey.problems(data, self._path_fact_ok, milestones)
+        if bad:
+            if lang == "ru":
+                self.report.errors += bad
+            return None
+
+        def say(src: dict) -> str | None:
+            if "milestone" in src:
+                return milestones[src["milestone"]][lang]
+            return self.fact(src["fact"], lang, src.get("idx", 0))
+
+        def role_of(n: dict) -> tuple:
+            return tuple(say(n[k]) if n.get(k) else None for k in ("role", "stage"))
+
+        from ..claims import scan
+        from ..facts import rules
+        texts = journey.labels(data) + [say(t) or "" for st in data["stations"] for t in st["texts"]]
+        for text in texts:
+            for rule, frag in scan(text, rules()):
+                self.report.errors.append(f"путь: «{frag}» — {rule['id']}: {rule.get('why') or rule.get('reason') or 'запрещённая формулировка'}")
+        links = []
+        if self.eco_cfg():
+            links.append((journey.L[lang]["see_eco"], self.eco_cfg()["path"], journey.L[lang]["eco"]))
+        prog = dict(self.nav_pages(lang)).get("progress")
+        if prog:
+            links.append((journey.L[lang]["see_progress"], prog, journey.L[lang]["progress"]))
+        rule_ev = (self.facts.get((data["goal"].get("rule") or {}).get("fact", "")) or {}).get("evidence") or []
+        rule_date = str(rule_ev[0]["date"]) if rule_ev else None
+        main = journey.page_main(data, lang, say, role_of, rule_date, links)
+        href = self.path_href(lang)
+        return Page(href, lang, journey.L[lang]["title"], journey.L[lang]["description"], main,
+                    alternates=self._alt(self.path_href("ru"), self.path_href("en")), lastmod=str(data.get("as_of") or "") or None)
+
     def not_found_page(self, lang: str) -> Page:
         """Страница 404 на языке раздела (П2-18): ссылка — на главную того же языка."""
         home, path = ("/en/", "/en/404.html") if lang == "en" else ("/", "/404.html")
@@ -778,6 +848,11 @@ class SiteBuild:
             if p.get("page"):
                 for lang in langs:
                     pages.append(pg(self.page_project, p, lang, entries))
+        if self.path_cfg():
+            for lang in langs:
+                pp = pg(self.page_path, lang)
+                if pp:
+                    pages.append(pp)
         eco_page = pg(self.page_ecosystem) if self.eco_cfg() else None
         if eco_page:
             pages.append(eco_page)

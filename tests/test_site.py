@@ -1,5 +1,5 @@
 """Сайт: предпросмотр и сервер (П2-09), доступность (П2-10), значок (П2-11), _headers (П2-12), sitemap (П2-13),
-имени автора на сайте нет (Д37, Д40)."""
+имени автора на сайте нет (Д37, Д40), «Экосистема» (Д43), «Путь» (Д44)."""
 from __future__ import annotations
 
 import json
@@ -383,6 +383,131 @@ class Ecosystem(unittest.TestCase):
         (src / "dpvis.js").write_text("// не та сборка\n", encoding="utf-8")
         self.assertTrue(ecosystem.import_kit(repo, src), "несовпадение с MANIFEST — отказ до копирования")
         self.assertEqual(ecosystem.kit_problems(repo.path("website", "ecosystem")), [], "прежний комплект не тронут")
+
+
+class JourneyPath(unittest.TestCase):
+    """Д44: раздел «Путь» — станции пути и конечная цель; тексты только из фактов реестра и вех прогресса."""
+
+    @staticmethod
+    def repo(mutate=None):
+        repo = make_repo(git=False)
+        shutil.copyfile(ROOT / "data/website/path.yaml", repo.path("data", "website", "path.yaml"))
+        p = repo.path("data", "website", "site.yaml")
+        cfg = yaml.safe_load(p.read_text(encoding="utf-8"))
+        cfg["path_section"] = yaml.safe_load((ROOT / "data/website/site.yaml").read_text(encoding="utf-8"))["path_section"]
+        p.write_text(yaml.safe_dump(cfg, allow_unicode=True), encoding="utf-8")
+        if mutate:
+            dp = repo.path("data", "website", "path.yaml")
+            data = yaml.safe_load(dp.read_text(encoding="utf-8"))
+            mutate(data)
+            dp.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+        repo.reset()
+        return repo
+
+    @staticmethod
+    def build(repo, env="staging"):
+        out = Path(tempfile.mkdtemp(prefix="cs-path-")) / env
+        rep = SiteBuild(repo, env).build(out)
+        return rep, out
+
+    @classmethod
+    def setUpClass(cls):
+        cls.rep, cls.out = cls.build(cls.repo())
+
+    def page(self, rel="path/index.html"):
+        return (self.out / rel).read_text(encoding="utf-8")
+
+    def test_pages_nav_and_home_block(self):
+        self.assertEqual(self.rep.errors, [])
+        for rel, href, word in (("path/index.html", "/path/", "Путь"), ("en/path/index.html", "/en/path/", "Path")):
+            page = self.page(rel)
+            self.assertIn(f'<a href="{href}" class="current" aria-current="page">{word}</a>', page)
+            self.assertEqual(page_a11y(page) + page_csp(page), [], "без скриптов и встроенных стилей, один h1")
+            self.assertIn('hreflang="en" href="http://localhost:8000/en/path/"', page)
+        home = self.page("index.html")
+        self.assertIn('<a href="/path/">Путь</a>', home, "пункт меню — на всех страницах")
+        self.assertIn('class="route-strip"', home, "на главной — маршрут одной строкой")
+        self.assertIn('href="/en/path/"', self.page("en/index.html"))
+
+    def test_route_and_goal_drawings(self):
+        from tools.cs.site.path import W_NARROW, W_WIDE
+        page = self.page()
+        self.assertEqual(page.count('class="chart route-svg"'), 1)
+        self.assertIn(f'viewBox="0 0 {W_WIDE} ', page)
+        self.assertIn(f'viewBox="0 0 {W_NARROW} ', page, "у цели — узкий рисунок для телефона")
+        self.assertEqual(page.count('class="chart goal-svg"'), 2)
+        self.assertEqual(page.count('<li class="st st-now">'), 1, "«сейчас» — между пройденным и планом")
+        self.assertIn("DPmetaApp", page)
+        self.assertIn("«Сначала построить качественные самостоятельные системы.", page)
+
+    def test_texts_only_from_facts_and_milestones(self):
+        import html as _html
+        facts = {f["id"]: f for f in yaml.safe_load((ROOT / "data/facts/facts.yaml").read_text(encoding="utf-8"))["facts"]}
+        ms = {m["id"]: m for m in yaml.safe_load((ROOT / "data/progress/milestones.yaml").read_text(encoding="utf-8"))["milestones"]}
+        data = yaml.safe_load((ROOT / "data/website/path.yaml").read_text(encoding="utf-8"))
+        page = _html.unescape(self.page())
+        for st in data["stations"]:
+            for src in st["texts"]:
+                text = ms[src["milestone"]]["ru"] if "milestone" in src else \
+                    facts[src["fact"]]["allowed_wording"]["ru"][src.get("idx", 0)]
+                self.assertIn(text[1:-1], page, f"станция {st['id']}: текст источника на странице")
+
+    def test_undisclosed_project_never_named(self):
+        scope = yaml.safe_load((ROOT / "data/progress/scope.yaml").read_text(encoding="utf-8"))
+        hidden = [r["slug"].split("/")[1] for r in scope["repos"] if r.get("visibility") == "undisclosed"]
+        self.assertTrue(hidden)
+        for rel in ("path/index.html", "en/path/index.html", "index.html"):
+            for name in hidden:
+                self.assertNotIn(name.lower(), self.page(rel).lower())
+        self.assertIn("ещё 1 проект без публичного имени", self.page())
+
+    def test_production_has_the_section(self):
+        rep, out = self.build(self.repo(), "production")
+        self.assertEqual(rep.errors, [])
+        self.assertIn("/path/", rep.pages)
+        self.assertIn("/en/path/", rep.pages)
+        self.assertNotIn('name="robots" content="noindex', (out / "path/index.html").read_text(encoding="utf-8"))
+
+    def test_bad_sources_are_build_errors(self):
+        def unknown_fact(d):
+            d["stations"][0]["texts"] = [{"fact": "AU-NOPE"}]
+
+        def ms_outside(d):
+            d["stations"][1]["texts"].append({"milestone": "M-19"})
+
+        def no_en(d):
+            d["stations"][0]["texts"] = [{"fact": "AU-ORIGIN", "idx": 5}]
+
+        def unknown_node(d):
+            d["goal"]["domains"][0]["nodes"].append("nobody")
+
+        def plan_before_past(d):
+            d["stations"][0]["plan"] = True
+
+        for mutate, word in ((unknown_fact, "AU-NOPE"), (ms_outside, "M-19"), (no_en, "AU-ORIGIN"),
+                             (unknown_node, "nobody"), (plan_before_past, "после станций плана")):
+            rep, out = self.build(self.repo(mutate))
+            self.assertTrue(any(word in e for e in rep.errors), (word, rep.errors))
+            self.assertFalse((out / "path/index.html").exists(), "страница с ошибкой данных не собирается")
+
+    def test_anti_hype_on_labels(self):
+        def boast(d):
+            d["stations"][1]["title"]["ru"] = "Лучший разработчик в мире"
+        rep, _ = self.build(self.repo(boast))
+        self.assertTrue(any("AH-SUPERLATIVE" in e for e in rep.errors), rep.errors)
+
+    def test_dates_and_wrap(self):
+        from tools.cs.site.path import sentence, when, when_short, wrap
+        st = {"date": "2026-09-25", "date_to": "2026-09-29"}
+        self.assertEqual(when(st, "ru"), "25–29.09.2026")
+        self.assertEqual(when(st, "en"), "25–29 Sep 2026")
+        self.assertEqual(when_short(st, "ru"), "25–29.09")
+        self.assertEqual(when_short({"date": "2023-03-03"}, "ru"), "2023")
+        self.assertEqual(when_short({"date": "2026-10-05"}, "en"), "Oct 5")
+        self.assertEqual(sentence("проекты остаются самостоятельными"), "Проекты остаются самостоятельными.")
+        self.assertEqual(sentence("Готово."), "Готово.")
+        self.assertEqual(wrap("Новые системы", 60, 13), ["Новые", "системы"])
+        self.assertEqual(wrap("Экосистема", 100, 13), ["Экосистема"])
 
 
 if __name__ == "__main__":

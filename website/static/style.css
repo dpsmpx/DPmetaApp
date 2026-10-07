@@ -252,3 +252,90 @@ nav.crumbs a { padding: 4px 0; }
 .page-ecosystem .dpvis-host { width: min(1440px, calc(100vw - 32px)); margin: 24px 0 32px calc(50% - min(720px, 50vw - 16px)); }
 .page-ecosystem .eco-static h3 { margin-top: 1.4em; }
 .page-ecosystem .eco-static ul { padding-left: 1.2em; }
+
+/* ---------- путь (Д44): маршрут и конечная цель — SVG без скриптов, цвета — классы ----------
+   Группы репозиториев на маршруте — шаги той же проверенной палитры, что у страницы прогресса:
+   игра, ядро на срезе 5 октября, новые после среза; без публичного имени — нейтральный. */
+.page-path .lead { font-size: 19px; color: var(--paper); }
+.page-path h2 { scroll-margin-top: 16px; }
+.pv-game { fill: #c98500; background: #c98500; }
+.pv-core { fill: #3987e5; background: #3987e5; }
+.pv-new { fill: #9085e9; background: #9085e9; }
+.pv-hidden { fill: #6b6e75; background: #6b6e75; }
+.sq-new { stroke: var(--paper); stroke-width: 1.5; }
+.sq-fin { fill-opacity: .45; stroke: var(--verified); stroke-width: 1.2; stroke-dasharray: 2 2; }
+.r-year { fill: none; stroke: var(--line); stroke-width: 1.5; }
+.sw-fin { border: 1.5px dashed var(--verified); }
+.r-line { stroke: var(--paper); stroke-width: 2; }
+.r-gap { stroke-dasharray: 1 6; stroke-linecap: round; }
+.r-plan { stroke: var(--mist); stroke-dasharray: 6 5; }
+.r-dot { fill: var(--human); stroke: var(--graphite); stroke-width: 3; }
+.r-dot-plan { fill: var(--graphite); stroke: var(--mist); stroke-width: 2; stroke-dasharray: 3 2; }
+.r-now { fill: var(--graphite); stroke: var(--human); stroke-width: 2; }
+.r-nowdot { fill: var(--human); }
+.r-nowline { stroke: var(--human); stroke-width: 1; stroke-dasharray: 3 4; }
+.r-nowt { fill: var(--human); font-weight: 600; }
+.r-title { font-weight: 600; }
+.r-frame { fill: none; stroke: var(--human); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.r-framet { fill: var(--human); font-weight: 600; }
+/* маршрут списком: линия и станции — псевдоэлементы, на телефоне это и есть рисунок пути */
+.route { list-style: none; margin: 12px 0 0; padding: 0 0 0 28px; }
+.route > li { position: relative; padding: 0 0 20px; }
+.route > li::before { content: ""; position: absolute; left: -28px; top: 5px; width: 14px; height: 14px;
+  border-radius: 50%; background: var(--human); box-sizing: border-box; }
+.route > li::after { content: ""; position: absolute; left: -22px; top: 22px; bottom: 0; border-left: 2px solid var(--paper); }
+.route > li:first-child::after { border-left-style: dotted; }
+.route > li:last-child { padding-bottom: 0; }
+.route > li:last-child::after { display: none; }
+.route > li.st-now::before { background: var(--ink); border: 3px solid var(--human); }
+.route > li.st-now::after, .route > li.st-plan::after { border-left: 2px dashed var(--mist); }
+.route > li.st-plan::before { background: var(--ink); border: 2px dashed var(--mist); }
+.st-when { margin: 0; color: var(--mist); font: 13px/1.6 "IBM Plex Mono", monospace; }
+.route h3 { margin: 0 0 4px; font-size: 18px; }
+.route p { margin: 0 0 6px; }
+.route .st-nowt { color: var(--human); font-weight: 600; }
+.st-plan h3 { color: var(--mist); }
+.chips { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border: 1px solid var(--line);
+  border-radius: 4px; font-size: 14px; background: var(--graphite); }
+/* конечная цель */
+.goal-rule { margin: 8px 0 20px; padding: 12px 16px; border-left: 3px solid var(--human); background: var(--graphite);
+  border-radius: 0 6px 6px 0; }
+.goal-rule p { margin: 0 0 6px; font-size: 18px; }
+.goal-rule footer { color: var(--mist); font-size: 14px; }
+.g-box { fill: var(--ink); stroke: var(--mist); stroke-width: 1.2; }
+.g-box.g-plan { stroke: var(--human); stroke-dasharray: 5 4; }
+.g-boxt { font-weight: 600; }
+.g-appt { font-size: 16px; font-weight: 600; }
+.g-tag { fill: var(--human); }
+.g-link { fill: none; stroke: var(--mist); stroke-width: 1.2; stroke-dasharray: 4 4; }
+.g-dom { fill: var(--paper); fill-opacity: .03; stroke: var(--line); stroke-width: 1; }
+.g-domt { font-size: 14px; font-weight: 600; }
+.g-chip { fill: var(--ink); stroke: var(--line); stroke-width: 1; }
+.g-chip.g-plan { stroke: var(--mist); stroke-dasharray: 4 3; }
+.g-chipt { font-size: 12px; }
+.dirs-d { margin-top: 4px; }
+.dirs-d summary { font-size: 15px; }
+.dirs { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 0 28px; }
+.dir h3 { font-size: 16px; margin: 12px 0 4px; }
+.dir ul { margin: 0; padding-left: 1.1em; font-size: 15px; }
+.path-src { font-size: 14px; margin-top: 28px; }
+/* главная: маршрут одной строкой */
+.route-strip { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-wrap: wrap; row-gap: 10px; }
+.route-strip li { position: relative; display: flex; flex-direction: column; margin-right: 30px; font-size: 15px; font-weight: 600; }
+.route-strip li:not(:last-child)::after { content: "→"; position: absolute; right: -21px; bottom: 0; color: var(--mist); font-weight: 400; }
+.rs-when { font: 12px/1.6 "IBM Plex Mono", monospace; color: var(--mist); }
+.route-strip .rs-now { color: var(--human); }
+.route-strip .rs-plan { color: var(--mist); }
+
+@media (max-width: 760px) {
+  .page-path .fig-wide { display: none; }
+  .page-path .fig-narrow { display: block; }
+  .page-path .fig-narrow svg { max-width: 440px; margin: 0 auto; }
+}
+@media (max-width: 600px) {
+  .page-path .lead { font-size: 17px; }
+  .route h3 { font-size: 17px; }
+  .route-strip li { margin-right: 26px; font-size: 14px; }
+  .route-strip li:not(:last-child)::after { right: -19px; }
+}

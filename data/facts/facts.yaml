@@ -12,7 +12,7 @@
 #               decision (записанное решение) | self-reported (сказано автором)
 # recheck_by:   дата, после которой число/состояние перепроверяется перед использованием
 schema: facts/v1
-as_of: 2026-10-05
+as_of: 2026-10-07
 # Выведенные из реестра id: ссылки на них в документах — история; в контент
 # они не подставляются (подстановка их не знает).
 retired:
@@ -91,7 +91,8 @@ facts:
       Игру автор начал ради интереса: братья сказали, что было бы классно поиграть в воксельную
       RPG на телефоне; проект вырос дальше планов.
     allowed_wording:
-      ru: ["начал игру ради интереса — братья хотели воксельную RPG на телефоне"]
+      ru: ["начал игру ради интереса — братья хотели воксельную RPG на телефоне", "игру начал ради интереса — проект вырос дальше планов"]
+      en: ["I started the game out of interest — my brothers wanted a voxel RPG on their phones", "I started the game out of interest — the project grew beyond the plans"]
     notes: >-
       В оригинале названа чужая игра (Cube World). По правилу оригинальности Galdhold чужое имя —
       только как история, не в заголовке и не как сравнение.
@@ -615,8 +616,8 @@ facts:
     public: true
     statement: "DPvisualisation — интерактивная модель экосистемы: потоки информации и работа инфраструктуры на реальных данных истории git; её публичная выжимка — раздел «Экосистема» сайта (Д43)."
     allowed_wording:
-      ru: ["интерактивная модель экосистемы на реальных данных — эта схема"]
-      en: ["an interactive model of the ecosystem on real data — this diagram"]
+      ru: ["интерактивная модель экосистемы на реальных данных — эта схема", "интерактивная модель экосистемы на реальных данных"]
+      en: ["an interactive model of the ecosystem on real data — this diagram", "an interactive model of the ecosystem on real data"]
     evidence:
       - {kind: doc, source: "dpsmpx/DPvisualisation docs/direction/REQUEST.md, docs/direction/DECISIONS.md D-01, D-15", ref: "4bbe5ac", date: 2026-10-06, verification: reported}
   - id: META-NO-DEPS
@@ -677,6 +678,131 @@ facts:
       репозиторий — Galdhold. Закрытый репозиторий без имени — только в суммах (Д38, Д39).
     evidence:
       - {kind: measurement, source: "data/progress/datasets/2026-10-05.json; формулы — tools/cs/progress/dataset.py, METRICS", ref: "34e4681", date: 2026-10-05, verification: reported}
+
+  # ---------------------------------------------------------------- путь и конечная цель (Д44)
+  - id: AU-START
+    subject: author
+    class: FACT
+    risk: low
+    public: true
+    statement: >-
+      Аккаунт GitHub dpsmpx создан 3 марта 2023 года; первый открытый проект — пошаговая RPG на C++
+      (первый коммит — 13 апреля 2023 года). До сентября 2026 года — малые открытые проекты: игры,
+      редактор пиксельной графики и утилиты на C++, Python и PascalABC.NET.
+    allowed_wording:
+      ru: ["аккаунт GitHub и первые открытые проекты: игры, редактор и утилиты на C++, Python и PascalABC.NET"]
+      en: ["a GitHub account and the first open projects: games, an editor and utilities in C++, Python and PascalABC.NET"]
+    evidence:
+      - {kind: doc, source: "dpsmpx/DPprofile docs/facts/F-0001.md (created_at аккаунта — 2023-03-03), F-0008, F-0009 (первые коммиты Andors-Love — 2023-04-13, TrueJointTileMaker — 2024-02-21)", ref: "3e76c10", date: 2026-10-04, verification: reported}
+      - {kind: code, source: "открытые репозитории: Andors-Love (C++11), PixRogue (Python), TrueJointTileMaker (PascalABC.NET)", date: 2026-10-04, verification: observed}
+  - id: ECO-NEW-2026-10-06
+    subject: ecosystem
+    class: FACT
+    risk: low
+    public: true
+    statement: >-
+      После среза 5 октября 2026 года к ядру добавились новые закрытые репозитории: 5 октября —
+      DPmetaApp, DPmonetization и DPvisualisation, 6 октября — DP_AI_Orcestrator. В счёт страницы
+      прогресса они ещё не входят (DPmeta SQ-23, `TODO.md`).
+    allowed_wording:
+      ru: ["5 октября начаты DPmetaApp, DPmonetization и DPvisualisation", "6 октября начат DP_AI_Orcestrator"]
+      en: ["DPmetaApp, DPmonetization and DPvisualisation started on 5 October", "DP_AI_Orcestrator started on 6 October"]
+    evidence:
+      - {kind: code, source: "первые коммиты: DPmetaApp 31ffc56 (05.10.2026), DPvisualisation 9769a94 (05.10.2026), DP_AI_Orcestrator 3ea2aea (06.10.2026)", date: 2026-10-07, verification: re-measured}
+      - {kind: doc, source: "dpsmpx/DPmeta docs/ECOSYSTEM.md §2 — DPmonetization с 5 октября 2026", ref: "fec807c", date: 2026-10-05, verification: reported}
+  - id: ORC-WHAT
+    subject: dp_ai_orcestrator
+    class: FACT
+    risk: low
+    public: true
+    statement: >-
+      DP_AI_Orcestrator — управляющий слой для параллельных сессий ИИ (Claude Code): задачи и их
+      зависимости, контекст и передача между сессиями, проверка результата, продолжение работы после
+      смены сессии; управление — из Android-приложения. По ТЗ автора — первый специализированный
+      управляющий слой будущего DPmetaApp, а не конечный продукт экосистемы.
+    allowed_wording:
+      ru: ["управляющий слой для параллельных сессий ИИ: задачи, контекст, проверка результата, продолжение после смены сессии"]
+      en: ["a control layer for parallel AI sessions: tasks, context, result checks, continuing after a session ends"]
+    notes: Тема нескольких аккаунтов сервиса ИИ в публичные формулировки не входит (ОР-9).
+    evidence:
+      - {kind: doc, source: "dpsmpx/DP_AI_Orcestrator MASTER_TECHNICAL_TASK.md §0–§3, §156", ref: "2f3d55e", date: 2026-10-06, verification: self-reported}
+  - id: ORC-STAGE
+    subject: dp_ai_orcestrator
+    class: FACT
+    risk: medium
+    public: true
+    statement: >-
+      На 7 октября 2026 года первая версия DP_AI_Orcestrator в разработке: в рабочей ветке записаны
+      выполненными 14 этапов из 21; в основной ветке — ТЗ автора.
+    allowed_wording:
+      ru: ["первая версия в разработке"]
+      en: ["the first version is in development"]
+    recheck_by: 2026-10-21
+    evidence:
+      - {kind: doc, source: "dpsmpx/DP_AI_Orcestrator README.md, раздел «Прогресс» (рабочая ветка)", ref: "a2434cd", date: 2026-10-07, verification: reported}
+  - id: GOAL-PLAN
+    subject: ecosystem
+    class: FACT
+    risk: medium
+    public: true
+    statement: >-
+      6 октября 2026 года автор записал долгосрочный план экосистемы в две фазы. Фаза A — довести
+      каждый проект до законченной самостоятельной системы: реализация, тесты, документация, решения,
+      проверенное состояние, известные ограничения и контракт интеграции. Фаза B — после этого
+      построить DPmetaApp: одно мобильное приложение над законченными системами с общей моделью
+      состояния, событий, знаний, проверок и инструментов; проекты при этом остаются самостоятельными.
+      Порядок работ задан базовый и меняется по фактическому состоянию.
+    allowed_wording:
+      ru: ["довести каждый проект до законченной самостоятельной системы: тесты, документация, решения, контракт интеграции",
+           "DPmetaApp — одно мобильное приложение над законченными системами: общая модель состояния, событий и знаний",
+           "проекты остаются самостоятельными",
+           "записан план экосистемы: сначала законченные системы, затем одно приложение над ними"]
+      en: ["bring every project to a finished standalone system: tests, documentation, decisions, an integration contract",
+           "DPmetaApp — one mobile app over the finished systems: a shared model of state, events and knowledge",
+           "the projects stay standalone",
+           "the ecosystem plan is written down: finished systems first, then one app over them"]
+    evidence:
+      - {kind: doc, source: "dpsmpx/DPmetaApp MESTER_TECHNICAL_TASK_ROADMAP.md §0, §1.1, §1.3, §7, §49", ref: "4dcc27a", date: 2026-10-06, verification: self-reported}
+  - id: GOAL-ARCH
+    subject: ecosystem
+    class: FACT
+    risk: medium
+    public: true
+    statement: >-
+      Конечная архитектура по плану автора (6 октября 2026 года): DPmetaApp — общее ядро экосистемы
+      (состояние, события, происхождение данных) и локальное ядро ИИ (поиск, рассуждение,
+      маршрутизация); под ними направления: разработка (GitHub, DPmeta, DP-Verify, DPlang и среда
+      разработки для него, Galdhold и движок, проект без публичного имени), знание (заметки и
+      инструменты к ним, DPprofile, DPlearn), ИИ (DP_AI_Orcestrator и сессии Claude), аналитика
+      (анализ рынка игр, DPmonetization), контент (SocialMediaImage и сайт); визуализация
+      (DPvisualisation) показывает всю систему. DP_AI_Orcestrator — первый управляющий слой, после
+      завершения остальных систем — одна из центральных подсистем DPmetaApp.
+    allowed_wording:
+      ru: ["состояние, события, происхождение данных", "поиск, рассуждение, маршрутизация",
+           "визуализация видит всю систему"]
+      en: ["state, events, data provenance", "search, reasoning, routing",
+           "visualisation sees the whole system"]
+    notes: >-
+      Схема раздела «Путь» (data/website/path.yaml, goal) повторяет эту запись. Личные заметки — без
+      имени репозитория (Д2, ОР-8); проект без публичного имени — только так (Д42).
+    evidence:
+      - {kind: doc, source: "dpsmpx/DPmetaApp MESTER_TECHNICAL_TASK_ROADMAP.md §11, §33", ref: "4dcc27a", date: 2026-10-06, verification: self-reported}
+      - {kind: doc, source: "dpsmpx/DP_AI_Orcestrator MASTER_TECHNICAL_TASK.md §156", ref: "2f3d55e", date: 2026-10-06, verification: self-reported}
+  - id: GOAL-RULE
+    subject: ecosystem
+    class: FACT
+    risk: low
+    public: true
+    statement: >-
+      Принцип плана автора (DPmetaApp, §50): «Сначала построить качественные самостоятельные системы.
+      Затем заставить их корректно понимать друг друга. И только после этого построить единое
+      приложение…»
+    allowed_wording:
+      ru: ["Сначала построить качественные самостоятельные системы. Затем заставить их корректно понимать друг друга. И только после этого построить единое приложение"]
+      en: ["First build solid standalone systems. Then make them understand each other correctly. Only after that, build a single application"]
+    notes: Английская формулировка — перевод сессии.
+    evidence:
+      - {kind: doc, source: "dpsmpx/DPmetaApp MESTER_TECHNICAL_TASK_ROADMAP.md §50", ref: "4dcc27a", date: 2026-10-06, verification: self-reported}
 
   # ---------------------------------------------------------------- площадки (внутреннее)
   - id: CH-AUDIENCE-2026-10-04
