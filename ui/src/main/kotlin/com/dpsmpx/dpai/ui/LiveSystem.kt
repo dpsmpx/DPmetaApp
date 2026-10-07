@@ -1,7 +1,6 @@
 package com.dpsmpx.dpai.ui
 
 import com.dpsmpx.dpai.accounts.Accounts
-import com.dpsmpx.dpai.accounts.AccountsState
 import com.dpsmpx.dpai.core.clock.Clock
 import com.dpsmpx.dpai.core.clock.RandomSource
 import com.dpsmpx.dpai.core.diagnostics.Diagnostic
@@ -85,26 +84,31 @@ class LiveSystem(
     val problems = mutableListOf<Diagnostic>()
 
     init {
-        var acc = AccountsState.EMPTY
-        val sub = ids.next(IdKinds.SUBSCRIPTION)
-        acc = Accounts.applyAll(acc, accountsLogic.registerSubscription(acc, sub, "основная", clock.now(), maxParallelSessions = usable.size.coerceAtLeast(1)).valueOrNull()!!)
         for (e in usable) {
             manager.register(e.toTarget(knownHostsFile))
-            val client = manager.client(e.id).valueOrNull()!!
-            runners[e.id] = ClaudeCodeCliRunner(client, { ProviderSessionId.newUuid(random) })
-            val slot = ids.next(IdKinds.ACCOUNT)
-            acc = Accounts.applyAll(acc, accountsLogic.registerSlot(acc, slot, sub, e.id, e.configDir!!, clock.now()).valueOrNull()!!)
-            slotOf[e.id] = slot
+            runners[e.id] = ClaudeCodeCliRunner(manager.client(e.id).valueOrNull()!!, { ProviderSessionId.newUuid(random) })
         }
         lateinit var o: Orchestrator
         val router = RoutingRunner({ o.sessions.sessions[it]?.target }, { runners[it] })
+        // Состояние — из журнала (перезапуск приложения); подписка и слоты
+        // регистрируются событиями, чтобы журнал знал их после перезапуска.
         o = Orchestrator(
             clock, ids, random, journal, router,
             ProjectConfig(ids.next(IdKinds.PROJECT), null, null, null),
             usable.map { TargetSlot(it.id, emptySet(), maxSessions = 1) }, null,
-            Verifier({ _, _, _ -> Outcome.success(Completed(0, emptyList(), emptyList())) }, clock), acc,
+            Verifier({ _, _, _ -> Outcome.success(Completed(0, emptyList(), emptyList())) }, clock),
         )
         orchestrator = o
+        val sub = o.accounts.subscriptions.keys.minByOrNull { it.value } ?: ids.next(IdKinds.SUBSCRIPTION).also { s ->
+            o.commitAccounts(accountsLogic.registerSubscription(o.accounts, s, "основная", clock.now(), maxParallelSessions = MAX_PARALLEL).valueOrNull()!!)
+        }
+        for (e in usable) {
+            val known = o.accounts.slots.values.firstOrNull { it.targetId == e.id && it.configDir == e.configDir }?.id
+            slotOf[e.id] = known ?: ids.next(IdKinds.ACCOUNT).also { slot ->
+                o.commitAccounts(accountsLogic.registerSlot(o.accounts, slot, sub, e.id, e.configDir!!, clock.now()).valueOrNull()!!)
+            }
+        }
+        for (r in o.recover { t -> manager.client(t).valueOrNull() }) problems += r.diagnostics.filter { it.isError }
         for (e in usable) probeSlot(e.id)
     }
 
@@ -161,5 +165,8 @@ class LiveSystem(
 
     companion object {
         private const val MAX_PROBLEMS = 50
+
+        /** Предел одновременных сессий подписки контроллера; на target — по одной (`TargetSlot`). */
+        private const val MAX_PARALLEL = 8
     }
 }

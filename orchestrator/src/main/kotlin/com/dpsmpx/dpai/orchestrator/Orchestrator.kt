@@ -48,6 +48,13 @@ import com.dpsmpx.dpai.orchestrator.tasks.taskEnvelopes
 import com.dpsmpx.dpai.orchestrator.verification.CompletionFlow
 import com.dpsmpx.dpai.security.Proposal
 import com.dpsmpx.dpai.sessions.AccountFact
+import com.dpsmpx.dpai.orchestrator.accounts.AccountsProjection
+import com.dpsmpx.dpai.orchestrator.recovery.Reconciler
+import com.dpsmpx.dpai.orchestrator.recovery.Resolution
+import com.dpsmpx.dpai.orchestrator.sessions.SessionsProjection
+import com.dpsmpx.dpai.orchestrator.tasks.TasksProjection
+import com.dpsmpx.dpai.execution.agent.AgentClient
+import com.dpsmpx.dpai.storage.snapshot.StateRecovery
 import com.dpsmpx.dpai.sessions.SessionDriver
 import com.dpsmpx.dpai.sessions.SessionEvent
 import com.dpsmpx.dpai.sessions.Sessions
@@ -134,6 +141,13 @@ class Orchestrator(
     val problems = mutableListOf<Diagnostic>()
 
     init {
+        // Перезапуск (ТЗ, §54; D-24): аккаунты, сессии и задачи — из журнала;
+        // [initialAccounts] — только пока в журнале нет ни одного слота.
+        if (journal.records().isNotEmpty()) {
+            accounts = StateRecovery(AccountsProjection).replayAll(journal).takeIf { it.slots.isNotEmpty() } ?: initialAccounts
+            sessions = StateRecovery(SessionsProjection).replayAll(journal)
+            tasks = StateRecovery(TasksProjection).replayAll(journal)
+        }
         config.repository?.let { repo -> worktrees = Worktrees.applyAll(worktrees, Worktrees.register(worktrees, repo, clock.now()).valueOrNull().orEmpty()) }
     }
 
@@ -416,6 +430,31 @@ class Orchestrator(
 
     private fun notify(r: NotificationRequest) {
         posted += notifications.submit(r)
+    }
+
+    /**
+     * Сверка после перезапуска (ТЗ, §54, §55; `docs/RECOVERY.md`, §1):
+     * сессии, которые по журналу работали, — в `RECOVERY_PENDING`, затем
+     * проба агента их target. Подтверждённо идущий ход подхватывает раннер
+     * с записанной позиции; завершённые освобождают слот, и задача
+     * реагирует на исход как при опросе. Target без агента ([agentFor] —
+     * `null`) или не ответивший — сессия ждёт следующей сверки.
+     */
+    fun recover(agentFor: (ExecutionTargetId) -> AgentClient?): List<Reconciler.Result> {
+        val reconciler = Reconciler(sessionsLogic, clock)
+        commitSessions(reconciler.markPending(sessions))
+        val out = mutableListOf<Reconciler.Result>()
+        for (r in sessions.sessions.values.filter { it.state == SessionState.RECOVERY_PENDING }.sortedBy { it.id.value }) {
+            val agent = agentFor(r.target) ?: continue
+            val res = reconciler.reconcile(sessions, r.id, agent)
+            out += res
+            commitSessions(res.events)
+            val after = sessions.sessions.getValue(r.id)
+            if (res.resolution == Resolution.RESOLVED_RUNNING) runner.adopt(r.id, r.provider, r.agentSequence, turnRunning = true)
+            if (after.terminal) applyFacts(listOf(AccountFact.Release(r.id)))
+            if (after.state != SessionState.RECOVERY_PENDING) react(after.task, r.id, after.state)
+        }
+        return out
     }
 
     /** Последняя версия контекста задачи — что видел Claude в последнем ходе. */

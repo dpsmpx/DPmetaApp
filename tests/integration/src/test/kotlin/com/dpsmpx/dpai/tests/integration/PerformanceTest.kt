@@ -90,6 +90,36 @@ class PerformanceTest {
         return s
     }
 
+    /**
+     * Две операции попеременно в одном цикле: всплеск диска или
+     * планировщика ОС приходится на обе серии, а не на одну — сравнение
+     * «код против ОС» не зависит от того, какая серия шла во время всплеска.
+     */
+    private fun measurePair(a: String, b: String, n: Int, warmup: Int = 20, bodyA: () -> Unit, bodyB: () -> Unit): Pair<Stat, Stat> {
+        repeat(warmup) {
+            bodyA()
+            bodyB()
+        }
+        val xa = DoubleArray(n)
+        val xb = DoubleArray(n)
+        for (i in 0 until n) {
+            val t0 = real.monotonicNanos()
+            bodyA()
+            val t1 = real.monotonicNanos()
+            bodyB()
+            val t2 = real.monotonicNanos()
+            xa[i] = (t1 - t0) / 1_000_000.0
+            xb[i] = (t2 - t1) / 1_000_000.0
+        }
+        fun stat(name: String, xs: DoubleArray): Stat {
+            xs.sort()
+            val s = Stat(name, xs.average(), xs[((n - 1) * 0.99).toInt()], xs.last(), n)
+            stats += "%-28s n=%-6d avg=%8.3f мс  p99=%8.3f мс  max=%8.3f мс".format(s.name, s.n, s.avgMs, s.p99Ms, s.maxMs)
+            return s
+        }
+        return stat(a, xa) to stat(b, xb)
+    }
+
     private fun note(line: String) {
         stats += line
     }
@@ -165,15 +195,18 @@ class PerformanceTest {
         val doc = JsonObject.of("payload" to JsonString("x".repeat(4096)))
         val raw = Files.createTempDirectory(dir, "raw")
         val bytes = ByteArray(4200) { 'x'.code.toByte() }
-        val os = measure("ОС: создать+fsync+rename", 300) {
-            val tmp = raw.resolve("doc.tmp")
-            FileChannel.open(tmp, StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING).use {
-                it.write(ByteBuffer.wrap(bytes))
-                it.force(true)
-            }
-            Files.move(tmp, raw.resolve("doc"), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
-        }
-        val s = measure("запись в хранилище", 300) { check(store.write("doc", doc).isSuccess) }
+        val (os, s) = measurePair(
+            "ОС: создать+fsync+rename", "запись в хранилище", 300,
+            bodyA = {
+                val tmp = raw.resolve("doc.tmp")
+                FileChannel.open(tmp, StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING).use {
+                    it.write(ByteBuffer.wrap(bytes))
+                    it.force(true)
+                }
+                Files.move(tmp, raw.resolve("doc"), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+            },
+            bodyB = { check(store.write("doc", doc).isSuccess) },
+        )
         assertTrue(s.p99Ms <= 10.0 || s.p99Ms - os.p99Ms <= 10.0, "атомарная запись p99 ${s.p99Ms} мс, ОС p99 ${os.p99Ms} мс: доля кода > 10 мс")
         assertTrue(s.avgMs <= 10.0, "атомарная запись в среднем ${s.avgMs} мс > 10")
     }

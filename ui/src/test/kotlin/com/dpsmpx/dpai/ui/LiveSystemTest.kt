@@ -29,6 +29,9 @@ class LiveSystemTest {
     private val host = MockAgentHost(clock, ids)
     private var loggedIn = true
 
+    /** Ход идёт, пока тест не продвинет его шаги (`host.advance`). */
+    private var slow = false
+
     private fun entry(label: String, configDir: String?) =
         TargetForm.validate(ids.next(IdKinds.TARGET), label, "build.lan", "22", "dev", false, "/opt/dpai/bin/dpai", configDir).valueOrNull()!!
 
@@ -40,8 +43,9 @@ class LiveSystemTest {
             } else {
                 val c = spec.command
                 val sid = c[c.indexOfFirst { it == "--session-id" || it == "--resume" } + 1]
-                MockRunner.script(MockScenario.SUCCESS, sid).forEach { host.output(run, it) }
-                host.exit(run, 0, ExitReason.EXITED)
+                val steps = MockRunner.script(MockScenario.SUCCESS, sid).map { l -> { host.output(run, l); Unit } } +
+                    listOf({ host.exit(run, 0, ExitReason.EXITED) })
+                if (slow) host.schedule(run, steps) else steps.forEach { it() }
             }
         }
     }
@@ -86,5 +90,29 @@ class LiveSystemTest {
         s.probeSlot(s.orchestrator.accounts.slots.values.single().targetId)
         steps(s, 4)
         assertTrue(s.orchestrator.sessions.sessions.values.any { it.task == task })
+    }
+
+    /**
+     * Перезапуск приложения посреди хода (ТЗ, §54): новый контроллер над тем
+     * же журналом знает задачу, сессию и слот, сверяет сессию с агентом и
+     * подхватывает идущий ход; второго слота не появляется.
+     */
+    @Test
+    fun restartAdoptsRunningTurnFromJournal() {
+        slow = true
+        val t = entry("сервер", "/home/dev/.claude-dpai")
+        val first = system(t)
+        steps(first, 1)
+        val task = first.addTask("Долгая", "ход идёт через перезапуск").valueOrNull()!!
+        steps(first, 2)
+        val session = first.orchestrator.sessions.sessions.values.single { it.task == task }.id
+        assertTrue(host.hasPending(session), "ход должен ещё идти")
+
+        val second = system(t)
+        assertEquals(1, second.orchestrator.accounts.slots.size)
+        assertEquals(TaskState.RUNNING, second.orchestrator.tasks.tasks.getValue(task).state)
+        do { val more = host.advance(session) } while (more)
+        steps(second, 4)
+        assertEquals(TaskState.COMPLETION_UNVERIFIED, second.orchestrator.tasks.tasks.getValue(task).state, second.problems.toString())
     }
 }
