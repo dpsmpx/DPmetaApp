@@ -14,6 +14,7 @@ import com.dpsmpx.dpai.execution.ssh.RemoteShell
 import com.dpsmpx.dpai.execution.target.SshEndpoint
 import com.dpsmpx.dpai.execution.target.TargetPlatform
 import com.jcraft.jsch.ChannelExec
+import com.jcraft.jsch.Identity
 import com.jcraft.jsch.JSch
 import com.jcraft.jsch.JSchChangedHostKeyException
 import com.jcraft.jsch.JSchException
@@ -49,6 +50,8 @@ class JschProcessHost(
     private val platform: TargetPlatform,
     private val clock: Clock = Clock.SYSTEM,
     private val connectTimeout: Duration = 10.seconds,
+    /** Ключи входа без файла — в приложении ключ Android Keystore ([EcdsaSignerIdentity]); пусто — файлы. */
+    private val identities: List<Identity> = emptyList(),
 ) : ProcessHost {
     private val subject = "ssh ${endpoint.user}@${endpoint.host}:${endpoint.port}"
 
@@ -87,9 +90,13 @@ class JschProcessHost(
         }
         return try {
             jsch.setKnownHosts(knownHosts)
-            val identities = endpoint.identityFile?.let(::listOf)
-                ?: DEFAULT_IDENTITIES.mapNotNull { n -> home?.let { File(it, ".ssh/$n").takeIf(File::isFile)?.path } }
-            identities.forEach(jsch::addIdentity)
+            if (identities.isNotEmpty()) {
+                identities.forEach { jsch.addIdentity(it, null) }
+            } else {
+                val files = endpoint.identityFile?.let(::listOf)
+                    ?: DEFAULT_IDENTITIES.mapNotNull { n -> home?.let { File(it, ".ssh/$n").takeIf(File::isFile)?.path } }
+                files.forEach(jsch::addIdentity)
+            }
             val session = jsch.getSession(endpoint.user, endpoint.host, endpoint.port)
             session.setConfig("StrictHostKeyChecking", "yes")
             session.setConfig("PreferredAuthentications", "publickey")
