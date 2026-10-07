@@ -19,6 +19,7 @@ import com.dpsmpx.dpai.jsch.SshKeys
 import com.dpsmpx.dpai.storage.document.DocumentStore
 import com.dpsmpx.dpai.storage.vfs.NioVfs
 import com.dpsmpx.dpai.ui.KnownHosts
+import com.dpsmpx.dpai.ui.LiveSystem
 import com.dpsmpx.dpai.ui.TargetBook
 import com.dpsmpx.dpai.ui.TargetEntry
 import com.dpsmpx.dpai.ui.TargetForm
@@ -75,14 +76,14 @@ object KeystoreKey {
  * `dpai.app-targets` через `DocumentStore` (атомарная замена, D-24).
  * Вызовы сети — с фонового потока.
  */
-class Controller(dir: File) {
-    private val vfs = NioVfs(dir.toPath())
+class Controller(private val root: File) {
+    private val vfs = NioVfs(root.toPath())
     private val docs = DocumentStore(vfs, "docs")
-    val knownHostsFile: String = File(dir, KNOWN_HOSTS).path
+    val knownHostsFile: String = File(root, KNOWN_HOSTS).path
     private val ids = IdGenerator(Clock.SYSTEM, RandomSource.secure())
 
     init {
-        dir.mkdirs()
+        root.mkdirs()
     }
 
     @Synchronized
@@ -91,8 +92,14 @@ class Controller(dir: File) {
         return TargetBook.fromJson(doc.content).valueOrNull().orEmpty()
     }
 
-    fun form(label: String, host: String, port: String, user: String, windows: Boolean, agent: String): Outcome<TargetEntry> =
-        TargetForm.validate(ids.next(IdKinds.TARGET), label, host, port, user, windows, agent)
+    fun form(label: String, host: String, port: String, user: String, windows: Boolean, agent: String, configDir: String): Outcome<TargetEntry> =
+        TargetForm.validate(ids.next(IdKinds.TARGET), label, host, port, user, windows, agent, configDir)
+
+    /** Настоящий контроллер над [targets]: SSH — JSch с ключом Keystore, журнал — в каталоге контроллера. */
+    fun live(targets: List<TargetEntry>): LiveSystem = LiveSystem(
+        Clock.SYSTEM, NioVfs(File(root, "live").apply { mkdirs() }.toPath()), targets,
+        { e, p -> JschProcessHost(e, p, identities = listOf(KeystoreKey.identity())) }, knownHostsFile,
+    )
 
     /**
      * Строка открытого ключа приложения; копия — в `app_key.pub` каталога

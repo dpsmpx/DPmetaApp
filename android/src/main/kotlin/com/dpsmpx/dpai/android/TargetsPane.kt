@@ -44,7 +44,7 @@ import kotlinx.coroutines.withContext
  * проверка агента. Всё сетевое — вне главного потока.
  */
 @Composable
-fun TargetsPane(controller: Controller) {
+fun TargetsPane(controller: Controller, model: DemoModel) {
     val scope = rememberCoroutineScope()
     var targets by remember { mutableStateOf(controller.targets()) }
     var publicKey by remember { mutableStateOf<String?>(null) }
@@ -79,11 +79,15 @@ fun TargetsPane(controller: Controller) {
                 Column(Modifier.padding(12.dp)) {
                     Text(t.label, style = MaterialTheme.typography.titleSmall)
                     Text("${t.user}@${t.host}:${t.port} · ${t.type.name}", style = MaterialTheme.typography.bodySmall)
+                    Text(t.configDir?.let { "каталог Claude: $it" } ?: "без каталога Claude — только проверка агента", style = MaterialTheme.typography.bodySmall)
                     Row {
                         TextButton(onClick = {
                             checks[t.id.value] = listOf(CheckLine("проверка", "идёт…", Tone.NEUTRAL))
                             scope.launch { checks[t.id.value] = withContext(Dispatchers.IO) { TargetScreens.doctor(controller.doctor(t)) } }
                         }) { Text("Проверить") }
+                        if (t.configDir != null) {
+                            TextButton(onClick = { scope.launch { withContext(Dispatchers.IO) { model.probe(t.id) } } }) { Text("Вход Claude") }
+                        }
                         TextButton(onClick = {
                             scope.launch {
                                 withContext(Dispatchers.IO) { controller.remove(t) }
@@ -133,6 +137,7 @@ private fun AddTargetDialog(controller: Controller, onDone: () -> Unit) {
     var port by remember { mutableStateOf("8022") }
     var user by remember { mutableStateOf("") }
     var agent by remember { mutableStateOf("") }
+    var configDir by remember { mutableStateOf("") }
     var windows by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var pending by remember { mutableStateOf<Pair<TargetEntry, ProbedHostKey>?>(null) }
@@ -150,6 +155,7 @@ private fun AddTargetDialog(controller: Controller, onDone: () -> Unit) {
                     OutlinedTextField(port, { port = it }, label = { Text("Порт") }, singleLine = true)
                     OutlinedTextField(user, { user = it }, label = { Text("Пользователь") }, singleLine = true)
                     OutlinedTextField(agent, { agent = it }, label = { Text("Команда агента dpai") }, singleLine = true)
+                    OutlinedTextField(configDir, { configDir = it }, label = { Text("Каталог Claude слота (для сессий)") }, singleLine = true)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(windows, { windows = it })
                         Text("Windows")
@@ -169,7 +175,7 @@ private fun AddTargetDialog(controller: Controller, onDone: () -> Unit) {
         confirmButton = {
             if (probed == null) {
                 TextButton(enabled = !busy, onClick = {
-                    when (val f = controller.form(label, host, port, user, windows, agent)) {
+                    when (val f = controller.form(label, host, port, user, windows, agent, configDir)) {
                         is Outcome.Failure -> error = f.diagnostics.first().message
                         is Outcome.Success -> {
                             busy = true

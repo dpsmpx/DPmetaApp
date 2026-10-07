@@ -14,14 +14,14 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 
-/** Единственная activity: экраны — Compose (D-34), данные — демо-система. */
+/** Единственная activity: экраны — Compose (D-34), данные — контроллер или демо (D-35). */
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         CrashRecord.install(filesDir)
         enableEdgeToEdge()
-        val model = DemoModel.get(cacheDir)
         val controller = Controller.get(filesDir)
+        val model = DemoModel.get(cacheDir, controller)
         setContent {
             DpaiTheme {
                 DpaiApp(model, controller)

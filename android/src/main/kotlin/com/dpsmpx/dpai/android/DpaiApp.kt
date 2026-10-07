@@ -14,7 +14,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -31,6 +34,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -41,6 +45,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.dpsmpx.dpai.core.ids.SessionId
+import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.ui.DashboardScreen
 import com.dpsmpx.dpai.ui.SessionLine
 import com.dpsmpx.dpai.ui.SessionScreen
@@ -49,10 +54,14 @@ import com.dpsmpx.dpai.ui.TaskCard
 import com.dpsmpx.dpai.ui.Tone
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** Период шага демо и обновления экрана. */
 private const val STEP_MS = 1000L
+
+/** Период шага контроллера: каждый шаг — вызовы агентов по SSH. */
+private const val LIVE_STEP_MS = 3000L
 
 /**
  * Приложение: сводка и доска задач, экран сессии по нажатию (ТЗ, §38–§41).
@@ -70,8 +79,9 @@ fun DpaiApp(model: DemoModel, controller: Controller) {
     LaunchedEffect(model) {
         while (true) {
             val s = selected
-            snapshot = withContext(Dispatchers.Default) { model.step(s) }
-            delay(STEP_MS)
+            val next = withContext(Dispatchers.IO) { model.step(s) }
+            snapshot = next
+            delay(if (next.live) LIVE_STEP_MS else STEP_MS)
         }
     }
     BackHandler(enabled = selectedId != null) { selectedId = null }
@@ -79,7 +89,7 @@ fun DpaiApp(model: DemoModel, controller: Controller) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (selectedId != null) "Сессия" else if (tab == 2) "DP AI · targets" else "DP AI · демо") },
+                title = { Text(if (selectedId != null) "Сессия" else if (tab == 2) "DP AI · targets" else "DP AI · ${snapshot?.mode ?: "…"}") },
                 navigationIcon = {
                     if (selectedId != null) TextButton(onClick = { selectedId = null }) { Text("←") }
                 },
@@ -98,11 +108,11 @@ fun DpaiApp(model: DemoModel, controller: Controller) {
         val s = snapshot
         Box(Modifier.padding(padding).fillMaxSize()) {
             when {
-                selectedId == null && tab == 2 -> TargetsPane(controller)
+                selectedId == null && tab == 2 -> TargetsPane(controller, model)
                 s == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                 selectedId != null -> SessionPane(s.session)
                 tab == 0 -> DashboardPane(s.dashboard) { selectedId = it.value }
-                else -> BoardPane(s.board)
+                else -> BoardPane(s.board, s.live, model)
             }
         }
     }
@@ -191,13 +201,49 @@ private fun SessionPane(screen: SessionScreen?) {
 }
 
 @Composable
-private fun BoardPane(board: TaskBoard) {
+private fun BoardPane(board: TaskBoard, live: Boolean, model: DemoModel) {
+    var creating by remember { mutableStateOf(false) }
     LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (live) {
+            item(key = "new") { Button(onClick = { creating = true }) { Text("Новая задача") } }
+        }
         board.columns.forEach { col ->
             item(key = "h:${col.title}") { Text("${col.title} (${col.cards.size})", style = MaterialTheme.typography.titleMedium) }
             items(col.cards, key = { it.id.value }) { TaskRow(it) }
         }
     }
+    if (creating) NewTaskDialog(model) { creating = false }
+}
+
+/** Новая задача контроллеру: название и цель — что Claude должен сделать (ТЗ, §21). */
+@Composable
+private fun NewTaskDialog(model: DemoModel, onDone: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var title by remember { mutableStateOf("") }
+    var objective by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = onDone,
+        title = { Text("Новая задача") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                OutlinedTextField(title, { title = it }, label = { Text("Название") }, singleLine = true)
+                OutlinedTextField(objective, { objective = it }, label = { Text("Что сделать") }, minLines = 3)
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                scope.launch {
+                    when (val r = withContext(Dispatchers.IO) { model.addTask(title, objective) }) {
+                        is Outcome.Failure -> error = r.diagnostics.first().message
+                        is Outcome.Success -> onDone()
+                    }
+                }
+            }) { Text("Поставить") }
+        },
+        dismissButton = { TextButton(onClick = onDone) { Text("Отмена") } },
+    )
 }
 
 @Composable
