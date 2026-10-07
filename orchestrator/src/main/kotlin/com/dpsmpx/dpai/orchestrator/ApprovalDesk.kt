@@ -19,7 +19,7 @@ import kotlin.time.Duration.Companion.minutes
  * запрос не истёк. Новое предложение по предмету заменяет прежнее: его
  * кнопки больше ничего не одобряют.
  */
-class ApprovalDesk(private val ttl: Duration = 30.minutes) {
+class ApprovalDesk(val ttl: Duration = 30.minutes) {
     private data class Pending(val id: ApprovalId, val proposal: Proposal, val expiresAt: Timestamp)
 
     private val bySubject = HashMap<String, Pending>()
@@ -59,4 +59,10 @@ class ApprovalDesk(private val ttl: Duration = 30.minutes) {
 
     @Synchronized
     fun pending(): Int = bySubject.size
+
+    /** Запрос, ждавший ответа до перезапуска, — снова ждёт, с прежним сроком: старая кнопка действует. */
+    @Synchronized
+    fun restore(id: ApprovalId, proposal: Proposal, expiresAt: Timestamp) {
+        bySubject[proposal.subject] = Pending(id, proposal, expiresAt)
+    }
 }

@@ -98,14 +98,20 @@ class V1ScenariosTest {
             val plan = scenarios[title] ?: listOf(MockScenario.SUCCESS)
             plan[(attemptOf(session) - 1).coerceAtMost(plan.size - 1)].also { check(turn >= 1) }
         }
-        journal = (EventJournal.open(NioVfs(dir), "data/journal.log") as Outcome.Success).value
-        val git = GitService(host, GitCommands(ApprovalLedger()), clock)
-        orchestrator = Orchestrator(
-            clock, ids, RandomSource.seeded(103), journal, runner,
-            ProjectConfig(profile.project, repo, dir.resolve("trees").toString(), profile),
-            targets, git, Verifier(ProcessStepRunner(host), clock), accounts,
-        )
+        boot = {
+            journal = (EventJournal.open(NioVfs(dir), "data/journal.log") as Outcome.Success).value
+            val git = GitService(host, GitCommands(ApprovalLedger()), clock)
+            orchestrator = Orchestrator(
+                clock, ids, RandomSource.seeded(103), journal, runner,
+                ProjectConfig(profile.project, repo, dir.resolve("trees").toString(), profile),
+                targets, git, Verifier(ProcessStepRunner(host), clock), accounts,
+            )
+        }
+        boot()
     }
+
+    /** Создать контур заново над тем же журналом, репозиторием и target — перезапуск приложения. */
+    private var boot: () -> Unit = {}
 
     /** Номер попытки задачи для сессии: первая сессия задачи — 1, следующая — 2… */
     private fun attemptOf(session: com.dpsmpx.dpai.core.ids.SessionId): Int {
@@ -197,5 +203,31 @@ class V1ScenariosTest {
         assertTrue(File(repo.root, "feature.txt").exists(), "после одобрения — слито")
         assertEquals(listOf(t), orchestrator.merged)
         assertEquals(emptyList(), orchestrator.invariants(), "слияние — с записью одобрения")
+    }
+
+    /**
+     * Сценарий 4 с перезапуском между запросом одобрения и ответом (ТЗ, §54,
+     * §68): запрос переживает перезапуск, старая кнопка сливает ветку; после
+     * ещё одного перезапуска задача слита, а не предлагается снова.
+     */
+    @Test
+    fun scenario4ApprovalSurvivesRestart() {
+        setUp(slots = 1)
+        val t = task("фича", MockScenario.SLOW_OUTPUT)
+        orchestrator.tick()
+        val tree = orchestrator.worktrees.worktrees.values.single { it.owner != null }
+        File(tree.path, "feature.txt").writeText("новая возможность\n")
+        runUntilQuiet(3)
+        val request = orchestrator.posted.filterIsInstance<NotificationDecision.Post>().single { it.notification.actions.isNotEmpty() }.notification
+
+        boot()
+        assertEquals(1, orchestrator.dashboard().waitingApproval.orNull(), "запрос ждёт ответа и после перезапуска")
+        assertEquals(true, orchestrator.respond(request.actions.first().uri, "автор").valueOrNull())
+        assertTrue(File(repo.root, "feature.txt").exists())
+
+        boot()
+        assertEquals(listOf(t), orchestrator.merged, "слитое — из журнала")
+        assertEquals(0, orchestrator.dashboard().waitingApproval.orNull())
+        assertEquals(emptyList(), orchestrator.invariants())
     }
 }

@@ -40,6 +40,7 @@ import com.dpsmpx.dpai.git.Worktrees
 import com.dpsmpx.dpai.git.WorktreesState
 import com.dpsmpx.dpai.monitoring.Dashboard
 import com.dpsmpx.dpai.monitoring.DashboardView
+import com.dpsmpx.dpai.notifications.ApprovalAction
 import com.dpsmpx.dpai.notifications.NotificationCategory
 import com.dpsmpx.dpai.notifications.NotificationDecision
 import com.dpsmpx.dpai.notifications.NotificationEngine
@@ -159,11 +160,15 @@ class Orchestrator(
         private set
     private val treeOf = HashMap<TaskId, WorktreeId>()
     private val contextOf = HashMap<TaskId, ContextBundle>()
-    private val merges = HashMap<ApprovalId, Pair<TaskId, Proposal>>()
-    val merged = mutableListOf<TaskId>()
+    /** Ожидающие и выполненные слияния — из журнала (`MergesProjection`). */
+    var mergesState: MergesState = MergesState.EMPTY
+        private set
+
+    /** Слитые задачи по порядку. */
+    val merged: List<TaskId> get() = mergesState.merged.keys.toList()
 
     /** Одобрение каждого слияния — запись для инварианта «разрушительное — с одобрением» (ТЗ, §118). */
-    val mergeApprovals = HashMap<TaskId, ApprovalId>()
+    val mergeApprovals: Map<TaskId, ApprovalId> get() = mergesState.merged
     val problems = mutableListOf<Diagnostic>()
 
     init {
@@ -176,6 +181,9 @@ class Orchestrator(
             tasks = restore(TasksProjection, TasksState.EMPTY)
             worktrees = restore(WorktreesProjection, WorktreesState.EMPTY)
             recorder.resumeFromLast(restore(StreamsProjection, emptyMap()))
+            mergesState = restore(MergesProjection, MergesState.EMPTY)
+            // Неистёкшие запросы одобрения снова ждут ответа; истёкшие отвергнет сам ApprovalDesk.
+            for (m in mergesState.pending.values) approvals.restore(m.approval, m.proposal, m.expiresAt)
             lastSnapshotAt = journal.position
             // Дерево задачи узнаётся по её ветке (`prepareWorktree`): владельцы и пути — из журнала.
             for (w in worktrees.worktrees.values.filter { !it.removed }) {
@@ -233,6 +241,7 @@ class Orchestrator(
         save(TasksProjection, tasks)
         save(WorktreesProjection, worktrees)
         save(StreamsProjection, recorder.lastSequences())
+        save(MergesProjection, mergesState)
         lastSnapshotAt = journal.position
     }
 
@@ -279,6 +288,11 @@ class Orchestrator(
     private fun commitWorktrees(es: List<WorktreeEvent>) {
         write(recorder.worktreeEnvelopes(es))
         worktrees = Worktrees.applyAll(worktrees, es)
+    }
+
+    private fun commitMerges(es: List<MergeEvent>) {
+        write(recorder.mergeEnvelopes(es))
+        mergesState = es.fold(mergesState, MergesProjection::applyEvent)
     }
 
     private fun commitTasks(es: List<TaskEvent>) {
@@ -494,7 +508,8 @@ class Orchestrator(
         val target = config.integrationBranch ?: return
         val proposal = Proposal("git.merge", "${repo.root}#$target", listOf(branch))
         val id = ids.next(IdKinds.APPROVAL)
-        merges[id] = task to proposal
+        // Сначала журнал: после перезапуска запрос снова ждёт ответа.
+        commitMerges(listOf(MergeEvent.Requested(PendingMerge(task, id, proposal, clock.now() + approvals.ttl), clock.now())))
         notify(approvals.request(id, proposal, clock.now()))
     }
 
@@ -505,18 +520,22 @@ class Orchestrator(
     fun respond(uri: String, by: String): Outcome<Boolean> {
         val approval = when (val r = approvals.respond(uri, by, clock.now())) {
             is Outcome.Failure -> return r
-            is Outcome.Success -> r.value ?: return Outcome.success(false)
+            is Outcome.Success -> r.value
         }
-        val (task, proposal) = merges.remove(approval.id) ?: return Outcome.failure(DiagCode.APPROVAL_INVALID, "одобрение не к слиянию")
-        if (proposal.hash != approval.proposalHash) return Outcome.failure(DiagCode.APPROVAL_INVALID, "одобрено другое предложение")
+        if (approval == null) {
+            // Отказ: запрос снят — и в журнале, чтобы после перезапуска он не ждал ответа снова.
+            ApprovalAction.parse(uri).valueOrNull()?.let { a -> mergesState.pending[a.request] }?.let { m ->
+                commitMerges(listOf(MergeEvent.Declined(m.task, m.approval, clock.now())))
+            }
+            return Outcome.success(false)
+        }
+        val pending = mergesState.pending[approval.id] ?: return Outcome.failure(DiagCode.APPROVAL_INVALID, "одобрение не к слиянию")
+        if (pending.proposal.hash != approval.proposalHash) return Outcome.failure(DiagCode.APPROVAL_INVALID, "одобрено другое предложение")
         val repo = config.repository!!
         val g = git ?: return Outcome.failure(DiagCode.UNSUPPORTED, "нет Git")
-        return when (val m = g.run(GitOp.MERGE, repo.root, proposal.arguments)) {
+        return when (val m = g.run(GitOp.MERGE, repo.root, pending.proposal.arguments)) {
             is Outcome.Failure -> m
-            is Outcome.Success -> Outcome.success(true).also {
-                merged += task
-                mergeApprovals[task] = approval.id
-            }
+            is Outcome.Success -> Outcome.success(true).also { commitMerges(listOf(MergeEvent.Merged(pending.task, approval.id, clock.now()))) }
         }
     }
 
@@ -606,7 +625,7 @@ class Orchestrator(
     fun invariants(): List<Diagnostic> = Invariants.check(
         InvariantInput(
             accounts, sessions, tasks, worktrees, targets.map { it.id }.toSet(), journal.records(journal.activeFrom).map { it.event }, journal.activeFrom == 1L,
-            merged.toList(), mergeApprovals.toMap(), problems.toList(),
+            merged, mergeApprovals.toMap(), problems.toList(),
         ),
     )
 

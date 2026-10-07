@@ -74,6 +74,7 @@ Code — UUID, `docs/research/CLAUDE_CODE_CLI.md`): непрозрачная с�
 | `dpai.event` | 1 | событие в журнале (`docs/ARCHITECTURE.md`, §4) | 1 |
 | `dpai.journal-record` | 1 | строка журнала: `position`, `prev` (хеш предыдущей), `event`, `hash`; журнал контроллера — сегментами `<журнал>.seg-<номер первой записи>`, номера и цепочка сквозные (D-37) | 2, 19 |
 | `dpai.streams-state` | 1 | снимок последних номеров потоков событий: `kind`, `id`, `last` — нумерация после перезапуска без чтения всей истории (D-37) | 19 |
+| `dpai.merges-state` | 1 | ожидающие слияния (задача, запрос одобрения, предложение, срок) и слитые задачи с одобрением каждой; события — `TASK_MERGE_REQUESTED`, `TASK_MERGE_DECLINED`, `TASK_MERGED` в потоке задачи | 14, 19 |
 | `dpai.stored` | 1 | конверт документа: `sha256` содержимого и `content` | 2 |
 | `dpai.snapshot` | 1 | снимок: `projection`, `position`, `recordHash`, `state` | 2 |
 | `dpai.backup-manifest` | 1 | манифест копии: `createdAt`, `schemaVersion`, `files` (`path`, `size`, `sha256`), `hash` (ТЗ, §60) | 2 |

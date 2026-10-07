@@ -45,3 +45,7 @@ class EventRecorder(private val ids: IdGenerator, private val clock: Clock) {
         return EventEnvelope(ids.next(IdKinds.EVENT), type, stream, seq, occurredAt, clock.now(), correlation, null, payload)
     }
 }
+
+/** Конверты для событий слияний: тип, поток и полезная нагрузка — из [MergesProjection]. */
+fun EventRecorder.mergeEnvelopes(events: List<MergeEvent>): List<EventEnvelope> =
+    events.map { envelope(MergesProjection.type(it), MergesProjection.stream(it), it.at, MergesProjection.payload(it)) }
