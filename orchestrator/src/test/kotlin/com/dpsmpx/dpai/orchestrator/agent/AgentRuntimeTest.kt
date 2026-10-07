@@ -23,6 +23,7 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 import org.junit.jupiter.api.io.TempDir
@@ -171,6 +172,21 @@ class AgentRuntimeTest {
         assertTrue(texts.any { "<redacted>" in it }, "строка с ключом есть, но ключ скрыт: $texts")
         val onDisk = dir.toFile().walkTopDown().filter { it.isFile }.joinToString(" ") { it.readText(Charsets.UTF_8) }
         assertFalse(TestChild.FAKE_KEY in onDisk, "ключ попал на диск")
+    }
+
+    /** Вход хода (prompt) доходит до процесса и после запуска на target не хранится (аудит 2026-10-07, A-5). */
+    @Test
+    fun turnInputIsDeliveredThenDeleted() {
+        val rt = runtime()
+        val run = ids.next(IdKinds.SESSION)
+        val prompt = "сделай задачу: секретный план"
+        assertTrue(rt.start(run, RunSpec(TestChild.command("child", "stdin-length"), stdin = prompt)).ok)
+        RealTime.await(60.seconds, "процесс вышел") { rt.status(run).run!!.takeIf { it.state == RunState.EXITED } }
+        val out = outputs(rt.events(run, 0, 1000).events)
+        assertTrue(out.any { it == "stdin chars: ${prompt.length}" }, out.toString())
+        assertNull(DocumentStore(NioVfs(dir), "runs/${run.value}").read(AgentRuntime.INPUT_KEY).valueOrNull())
+        val onDisk = dir.toFile().walkTopDown().filter { it.isFile }.joinToString(" ") { it.readText(Charsets.UTF_8) }
+        assertFalse("секретный план" in onDisk, "вход хода остался на диске")
     }
 
     @Test

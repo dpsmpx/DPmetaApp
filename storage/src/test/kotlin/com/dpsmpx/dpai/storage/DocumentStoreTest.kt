@@ -42,6 +42,28 @@ class DocumentStoreTest {
         }
     }
 
+    /** Удаление убирает все версии; прерванное — документ прежний или его нет, но не старее (D-24). */
+    @Test
+    fun deleteRemovesAllVersionsAndNeverResurrects() {
+        val vfs = SimulatedVfs()
+        val store = DocumentStore(vfs, "data")
+        store.write("settings", v1)
+        store.write("settings", v2)
+        assertTrue(store.delete("settings").isSuccess)
+        assertNull(store.read("settings").valueOrNull())
+        assertEquals(emptyList(), vfs.list("data"))
+        crashEverywhere(
+            setup = {
+                DocumentStore(it, "data").write("settings", v1)
+                DocumentStore(it, "data").write("settings", v2)
+            },
+            action = { DocumentStore(it, "data").delete("settings") },
+        ) { after, k ->
+            val doc = DocumentStore(after, "data").read("settings").valueOrNull()?.content
+            assertTrue(doc == null || doc == v2, "сбой на операции $k: $doc")
+        }
+    }
+
     /** Подтверждённая запись переживает сбой сразу после подтверждения (D-24). */
     @Test
     fun acknowledgedWriteSurvivesCrash() {

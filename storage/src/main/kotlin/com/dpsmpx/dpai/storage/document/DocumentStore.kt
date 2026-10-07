@@ -86,6 +86,23 @@ class DocumentStore(private val vfs: Vfs, private val dir: String) {
     }
 
     /**
+     * Удалить документ со всеми версиями. Сначала прежняя и недописанная,
+     * основная — последней: прерванное удаление оставляет документ
+     * читаемым, а не воскрешает прежнюю версию (D-24).
+     */
+    fun delete(key: String): Outcome<Unit> {
+        checkKey(key)?.let { return it }
+        val main = Vfs.join(dir, key)
+        return try {
+            for (p in listOf("$main$PREV", "$main$TMP", main)) if (vfs.exists(p)) vfs.delete(p)
+            vfs.fsyncDir(dir)
+            Outcome.success(Unit)
+        } catch (e: IOException) {
+            Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "удаление документа не завершено", e, key))
+        }
+    }
+
+    /**
      * Чтение с миграцией до текущей версии формата (ТЗ, §62): старый документ
      * переводится по цепочке, проверяется и атомарно заменяется; прежняя
      * версия остаётся `.prev` — точкой отката.

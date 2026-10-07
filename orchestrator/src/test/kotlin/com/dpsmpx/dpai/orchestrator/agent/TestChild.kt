@@ -44,6 +44,12 @@ object TestChild {
                 println("ключ: $FAKE_KEY")
                 exitProcess(0)
             }
+            "stdin-length" -> {
+                // Только длина входа: сам вход в вывод (и в журнал) не попадает; латиницей —
+                // вывод Java на Windows идёт в кодировке консоли (долг в `TODO.md`).
+                println("stdin chars: ${System.`in`.readBytes().toString(Charsets.UTF_8).length}")
+                exitProcess(0)
+            }
             "spawn-hang" -> {
                 val started = LocalProcessHost().start(ProcessSpec(command("child", "hang")))
                 println("grandchild ${(started as Outcome.Success).value.pid}")

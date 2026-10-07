@@ -187,6 +187,8 @@ class AgentRuntime(
                 }
             }
         }
+        // Вход хода (prompt) отдан процессу — на target он больше не хранится (аудит 2026-10-07, A-5).
+        if (stdin != null) store.delete(INPUT_KEY)
         val handle = process.pid?.let { ProcessHandle.of(it).orElse(null) }
         current = current.copy(state = RunState.RUNNING, pid = process.pid, pidStartedAt = handle?.let(ProcessTree::startedAtMillis))
         store.write(RUN_KEY, current.toJson())
