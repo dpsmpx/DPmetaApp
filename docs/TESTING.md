@@ -130,8 +130,14 @@ Termux-target — Realme C21Y по USB (D-33): в Termux `openssh`, `sshd`
 слушает 8022, ключ `dpai_test` — в `~/.ssh/authorized_keys`; с ПК —
 `adb forward tcp:8022 tcp:8022`, затем вход на `127.0.0.1:8022`, ключ
 хоста — в отдельном known_hosts. На время проверки —
-`adb shell settings put global stay_on_while_plugged_in 2`. Claude Code —
-внутри `proot-distro login alpine` (`docs/research/CLAUDE_CODE_CLI.md`, §9).
+`adb shell settings put global stay_on_while_plugged_in 2`. Агент — копия
+`dpai` в `~/dpai` и `pkg install openjdk-21`. Claude Code — внутри
+`proot-distro login alpine` (`docs/research/CLAUDE_CODE_CLI.md`, §9):
+musl-сборка `@anthropic-ai/claude-code-linux-arm64-musl` распакована в
+`~/.local/share/claude-musl`, а `tools/termux/claude-proot.sh` поставлен
+как `$PREFIX/bin/claude` — агент и `doctor` вызывают `claude` как на
+любом target. Места нужно с запасом: JDK — около 260 МиБ, Claude — около
+230 МиБ.
 
 Тот же путь через SSH-клиент на JVM (D-35) — `JschProcessHostTest` в
 модуле `jsch` с теми же свойствами `dpai.test.ssh*`; без них идут только
