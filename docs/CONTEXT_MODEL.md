@@ -66,7 +66,7 @@ target, исчерпании аккаунта, остановке приложе
 Модуль `contexts` (этап 8); уровни секретности и происхождение —
 `security` (`Sensitivity`, `Origin`).
 
-- `ContextAssembler.assemble` — версия `dpai.context` v1: источники по
+- `ContextAssembler.assemble` — версия `dpai.context` v2: источники по
   уровню, затем по ключу; источник другого проекта не включается никогда
   (`CONTEXT_PROJECT_BOUNDARY`); `SECRET` — только по разрешению политики
   и с предупреждением (`CONTEXT_SECRET_EXCLUDED`,

@@ -59,6 +59,8 @@ import com.dpsmpx.dpai.orchestrator.tasks.TasksProjection
 import com.dpsmpx.dpai.orchestrator.git.WorktreesProjection
 import com.dpsmpx.dpai.orchestrator.git.worktreeEnvelopes
 import com.dpsmpx.dpai.execution.agent.AgentClient
+import com.dpsmpx.dpai.contexts.ContextCodec
+import com.dpsmpx.dpai.storage.document.DocumentStore
 import com.dpsmpx.dpai.storage.snapshot.Projection
 import com.dpsmpx.dpai.storage.snapshot.SnapshotStore
 import com.dpsmpx.dpai.storage.snapshot.StateRecovery
@@ -127,6 +129,12 @@ class Orchestrator(
      */
     private val snapshots: SnapshotStore? = null,
     private val snapshotEvery: Long = 20_000,
+    /**
+     * Документы задач: последняя версия контекста и последний handoff
+     * (`dpai.context`, `dpai.handoff`) — чтобы продолжение после перезапуска
+     * шло с тем же контекстом и следующим действием. `null` — только в памяти.
+     */
+    private val documents: DocumentStore? = null,
 ) {
     private val recorder = EventRecorder(ids, clock)
     private var lastSnapshotAt = 0L
@@ -174,7 +182,35 @@ class Orchestrator(
                 w.branch.removePrefix(TASK_BRANCH).takeIf { it != w.branch }?.let { IdKinds.TASK.parse(it).valueOrNull() }?.let { treeOf[it] = w.id }
             }
         }
+        documents?.let(::loadTaskDocuments)
         config.repository?.let { repo -> commitWorktrees(Worktrees.register(worktrees, repo, clock.now()).valueOrNull().orEmpty()) }
+    }
+
+    /** Ключ документа задачи: id в нижнем регистре — ключи документов строчные. */
+    private fun docKey(kind: String, task: TaskId) = "$kind-${task.value.lowercase()}"
+
+    /** Контексты и handoff незавершённых задач — из документов (после перезапуска). */
+    private fun loadTaskDocuments(store: DocumentStore) {
+        for (t in tasks.tasks.values.filter { !it.terminal }) {
+            store.read(docKey("context", t.id)).valueOrNull()?.let { d ->
+                when (val c = ContextCodec.readContext(d.content)) {
+                    is Outcome.Success -> contextOf[t.id] = c.value
+                    is Outcome.Failure -> problems += Diagnostic.of(DiagCode.STORAGE_CORRUPTED, "контекст задачи ${t.id} не читается", causes = c.errors)
+                }
+            }
+            store.read(docKey("handoff", t.id)).valueOrNull()?.let { d ->
+                when (val h = ContextCodec.readHandoff(d.content)) {
+                    is Outcome.Success -> handoffs.create(h.value)
+                    is Outcome.Failure -> problems += Diagnostic.of(DiagCode.STORAGE_CORRUPTED, "handoff задачи ${t.id} не читается", causes = h.errors)
+                }
+            }
+        }
+    }
+
+    /** Документ задачи — до того, как журнал запишет шаг, который на него опирается. */
+    private fun saveTaskDocument(kind: String, task: TaskId, json: com.dpsmpx.dpai.core.serialization.JsonObject) {
+        val r = documents?.write(docKey(kind, task), json) ?: return
+        if (r is Outcome.Failure) problems += Diagnostic.of(DiagCode.STORAGE_IO_FAILED, "документ $kind задачи $task не записан", causes = r.errors)
     }
 
     /** Проекция из снимка и хвоста журнала, а без снимка — из всей истории потоком (D-37). */
@@ -389,6 +425,7 @@ class Orchestrator(
         val bundle = ContextAssembler.assemble(
             previous?.id ?: ids.next(IdKinds.CONTEXT), task, config.project, objective, handoff?.nextAction, sources, clock.now(), previous,
         ).valueOrNull()!!
+        if (contextOf[task] !== bundle) saveTaskDocument("context", task, bundle.toJson())
         contextOf[task] = bundle
         return bundle
     }
@@ -504,6 +541,7 @@ class Orchestrator(
             workspace = treeOf[task]?.let { worktrees.worktrees[it]?.path }, createdAt = clock.now(),
         )
         handoffs.create(handoff)
+        saveTaskDocument("handoff", task, handoff.toJson())
         commitSessions(sessionsLogic.transition(sessions, session, SessionState.CANCELLED, clock.now(), DiagCode.SESSION_HANDED_OFF).valueOrNull().orEmpty())
         releaseLease(session)
         releaseTree(task, session)

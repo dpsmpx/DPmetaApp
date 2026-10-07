@@ -61,17 +61,20 @@ class RestartTest {
     }
     private val project = ids.next(IdKinds.PROJECT)
 
+    /** Сценарий хода по его номеру; по умолчанию — медленный успех. */
+    private var scenario: (Int) -> MockScenario = { MockScenario.SLOW_OUTPUT }
+
     /** [segmented] — маленькие сегменты журнала и частые снимки (D-37): перезапуск — из снимка и хвоста. */
     private fun boot(segmented: Boolean = false): Pair<Orchestrator, MockRunner> {
         val vfs = NioVfs(dir)
         val journal = (EventJournal.open(vfs, "journal.log", segmentSize = if (segmented) 40 else EventJournal.NO_SEGMENTS) as Outcome.Success).value
         val snapshots = if (segmented) SnapshotStore(DocumentStore(vfs, "snapshots")) else null
-        val runner = MockRunner.create(clock, RandomSource.seeded(clock.now().epochMillis), host) { _, _ -> MockScenario.SLOW_OUTPUT }
+        val runner = MockRunner.create(clock, RandomSource.seeded(clock.now().epochMillis), host) { _, turn -> scenario(turn) }
         val profile = VerificationProfile(project, mapOf(VerifyLevel.NORMAL to listOf(VerifyStep("ок", listOf("ok")))))
         val o = Orchestrator(
             clock, ids, RandomSource.seeded(56), journal, runner, ProjectConfig(project, null, dir.toString(), profile), targets, null,
             Verifier({ _, _, _ -> Outcome.success(Completed(0, emptyList(), emptyList())) }, clock), accounts,
-            snapshots = snapshots, snapshotEvery = 30,
+            snapshots = snapshots, snapshotEvery = 30, documents = if (segmented) DocumentStore(vfs, "docs") else null,
         )
         o.recover { AgentClient(host, listOf("dpai"), null, "target mock") }
         return o to runner
@@ -127,5 +130,42 @@ class RestartTest {
             clock.advance(1.minutes)
         }
         assertTrue(tasks.all { second.tasks.tasks.getValue(it).state == TaskState.DONE }, tasks.map { second.tasks.tasks.getValue(it).state }.toString())
+    }
+
+    /**
+     * Ход прерван (предел), handoff записан, контроллер перезапущен:
+     * продолжение идёт с тем же контекстом (новая версия, связанная с
+     * прежней) и с handoff среди источников — документы задач переживают
+     * перезапуск.
+     */
+    @Test
+    fun continuationAfterRestartKeepsContextAndHandoff() {
+        // Номер хода считается внутри сессии; прерван только самый первый запуск.
+        var launches = 0
+        scenario = { if (launches++ == 0) MockScenario.PARTIAL_COMPLETION else MockScenario.SUCCESS }
+        val (first, firstRunner) = boot(segmented = true)
+        val t = first.addTask("продолжение", "довести до конца").valueOrNull()!!
+        // Такт за тактом, пока прерванный ход не превратится в handoff и задача не станет ждать продолжения.
+        var guard = 0
+        while (first.handoffs.latest(t) == null && guard++ < 10) {
+            first.tick()
+            for (s in host.runIds()) while (firstRunner.advance(s)) continue
+        }
+        assertEquals(TaskState.READY, first.tasks.tasks.getValue(t).state, "перезапуск — пока задача ждёт продолжения")
+        val before = first.lastContext(t)!!
+
+        val (second, runner) = boot(segmented = true)
+        assertEquals(before, second.lastContext(t), "контекст задачи — из документа")
+        assertEquals(first.handoffs.latest(t), second.handoffs.latest(t), "handoff — из документа")
+        repeat(10) {
+            second.tick()
+            for (s in host.runIds()) while (runner.advance(s)) continue
+            clock.advance(1.minutes)
+        }
+        val after = second.lastContext(t)!!
+        assertEquals(before.version + 1, after.version)
+        assertEquals(before.hash, after.previous)
+        assertTrue(after.sources.any { it.key.startsWith("handoff:") }, after.sources.map { it.key }.toString())
+        assertEquals(TaskState.DONE, second.tasks.tasks.getValue(t).state)
     }
 }

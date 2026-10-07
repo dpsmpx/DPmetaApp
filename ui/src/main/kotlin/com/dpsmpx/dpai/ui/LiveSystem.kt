@@ -103,7 +103,7 @@ class LiveSystem(
             ProjectConfig(ids.next(IdKinds.PROJECT), null, null, null),
             usable.map { TargetSlot(it.id, emptySet(), maxSessions = 1) }, null,
             Verifier({ _, _, _ -> Outcome.success(Completed(0, emptyList(), emptyList())) }, clock),
-            snapshots = snapshots, snapshotEvery = SEGMENT.toLong(),
+            snapshots = snapshots, snapshotEvery = SEGMENT.toLong(), documents = DocumentStore(vfs, "docs"),
         )
         orchestrator = o
         val sub = o.accounts.subscriptions.keys.minByOrNull { it.value } ?: ids.next(IdKinds.SUBSCRIPTION).also { s ->

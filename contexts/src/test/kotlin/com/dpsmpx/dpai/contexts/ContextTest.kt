@@ -62,6 +62,13 @@ class ContextTest {
         assertEquals(first.version + 1, second.version)
         assertEquals(first.hash, second.previous)
         assertEquals(first.objective, second.objective)
+        // Строгое чтение после перезапуска: версия контекста и handoff — те же, порча — отказ.
+        fun parse(o: com.dpsmpx.dpai.core.serialization.JsonObject) =
+            com.dpsmpx.dpai.core.serialization.JsonParser().parse(com.dpsmpx.dpai.core.serialization.CanonicalJson.write(o)).valueOrNull() as com.dpsmpx.dpai.core.serialization.JsonObject
+        assertEquals(second, ContextCodec.readContext(parse(second.toJson())).valueOrNull())
+        assertEquals(handoff, ContextCodec.readHandoff(parse(handoff.toJson())).valueOrNull())
+        val tampered = com.dpsmpx.dpai.core.serialization.JsonObject(second.toJson().fields + ("objective" to com.dpsmpx.dpai.core.serialization.JsonString("другое")))
+        assertEquals(DiagCode.HASH_MISMATCH, (ContextCodec.readContext(tampered) as Outcome.Failure).diagnostics.first().code)
         val prompt = PromptRenderer.render(second)
         for (needle in listOf("добавить парсер", "дописать разбор чисел с экспонентой", "лексер", "числа с экспонентой", "core/Lexer.kt", "task/parser", "модуль parser в core")) {
             assertTrue(needle in prompt, "в prompt нет «$needle»")

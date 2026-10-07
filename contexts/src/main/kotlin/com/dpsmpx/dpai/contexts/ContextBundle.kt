@@ -91,7 +91,7 @@ data class ContextBundle(
         linkedMapOf(
             *FormatHeader.write(FORMAT, VERSION),
             "id" to JsonString(id.value),
-            "version" to JsonNumber.of(version),
+            "contextVersion" to JsonNumber.of(version),
             "task" to JsonString(task.value),
             "project" to JsonString(project.value),
             "objective" to JsonString(objective),
@@ -108,7 +108,8 @@ data class ContextBundle(
 
     companion object {
         const val FORMAT = "dpai.context"
-        const val VERSION = 1
+        /** v2: номер версии контекста — `contextVersion`; в v1 он затирал версию формата (ключ `version`), и v1 не читается. */
+        const val VERSION = 2
 
         private fun sourceJson(s: IncludedSource): JsonValue = JsonObject.of(
             "key" to JsonString(s.key), "level" to JsonString(s.level.name), "sensitivity" to JsonString(s.sensitivity.name),
