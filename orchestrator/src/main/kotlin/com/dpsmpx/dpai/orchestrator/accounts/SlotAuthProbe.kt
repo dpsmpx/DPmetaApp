@@ -25,10 +25,13 @@ import kotlin.time.Duration.Companion.seconds
  * процесс вышел, и `null`, пока идёт (D-07: время — у вызывающего).
  */
 class SlotAuthProbe(private val agent: AgentClient) {
-    fun start(run: SessionId, slot: SlotState): Outcome<SessionId> {
+    fun start(run: SessionId, slot: SlotState): Outcome<SessionId> = start(run, slot.configDir)
+
+    /** Проба каталога, у которого слота ещё нет: по итогу выбирается подписка слота. */
+    fun start(run: SessionId, configDir: String): Outcome<SessionId> {
         val spec = RunSpec(
             listOf("claude", "auth", "status", "--json"),
-            setEnv = mapOf(SlotEnvironment.CONFIG_DIR to slot.configDir),
+            setEnv = mapOf(SlotEnvironment.CONFIG_DIR to configDir),
             unsetEnv = SlotEnvironment.OVERRIDING,
             timeout = 60.seconds,
         )

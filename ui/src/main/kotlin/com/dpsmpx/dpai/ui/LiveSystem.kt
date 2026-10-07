@@ -95,7 +95,10 @@ class LiveSystem(
     private val working = project?.let { p -> usable.filter { it.id == p.target } } ?: usable
     private val manager = ExecutionTargetManager(clock, sshHost = sshHost, controllerVersion = controllerVersion)
     private val runners = HashMap<ExecutionTargetId, ClaudeRunner>()
-    private val probes = HashMap<AccountId, Pair<SlotAuthProbe, SessionId>>()
+    private val probes = HashMap<ExecutionTargetId, Pair<SlotAuthProbe, SessionId>>()
+
+    /** Targets, где Claude ещё не вошёл: слота нет, задачи туда не идут. */
+    private val waitingLogin = HashSet<ExecutionTargetId>()
     private val slotOf = HashMap<ExecutionTargetId, AccountId>()
     private val accountsLogic = Accounts()
     val orchestrator: Orchestrator
@@ -129,14 +132,9 @@ class LiveSystem(
             snapshots = snapshots, snapshotEvery = SEGMENT.toLong(), documents = DocumentStore(vfs, "docs"),
         )
         orchestrator = o
-        val sub = o.accounts.subscriptions.keys.minByOrNull { it.value } ?: ids.next(IdKinds.SUBSCRIPTION).also { s ->
-            o.commitAccounts(accountsLogic.registerSubscription(o.accounts, s, "основная", clock.now(), maxParallelSessions = MAX_PARALLEL).valueOrNull()!!)
-        }
+        // Слот target — после первой пробы входа: подписка выбирается по аккаунту (см. [placeSlot]).
         for (e in usable) {
-            val known = o.accounts.slots.values.firstOrNull { it.targetId == e.id && it.configDir == e.configDir }?.id
-            slotOf[e.id] = known ?: ids.next(IdKinds.ACCOUNT).also { slot ->
-                o.commitAccounts(accountsLogic.registerSlot(o.accounts, slot, sub, e.id, e.configDir!!, clock.now()).valueOrNull()!!)
-            }
+            o.accounts.slots.values.firstOrNull { it.targetId == e.id && it.configDir == e.configDir }?.let { slotOf[e.id] = it.id }
         }
         for (r in o.recover { t -> manager.client(t).valueOrNull() }) problems += r.diagnostics.filter { it.isError }
         for (e in usable) probeSlot(e.id)
@@ -144,11 +142,39 @@ class LiveSystem(
 
     /** Проверить вход слота target заново — после того как автор вошёл в Claude. */
     fun probeSlot(target: ExecutionTargetId) {
-        val slot = slotOf[target] ?: return
+        val entry = usable.firstOrNull { it.id == target } ?: return
         val probe = SlotAuthProbe(manager.client(target).valueOrNull()!!)
-        when (val s = probe.start(ids.next(IdKinds.SESSION), orchestrator.accounts.slots.getValue(slot))) {
+        when (val s = probe.start(ids.next(IdKinds.SESSION), entry.configDir!!)) {
             is Outcome.Failure -> problems += s.diagnostics
-            is Outcome.Success -> probes[slot] = probe to s.value
+            is Outcome.Success -> probes[target] = probe to s.value
+        }
+    }
+
+    /**
+     * Слот для target по итогу первой пробы (D-29, D-30): вошли аккаунтом,
+     * чей отпечаток уже у подписки, — слот в ней (несколько targets одной
+     * подписки); иначе — новая подписка. Отпечаток неизвестен — своя
+     * подписка: смешать два разных аккаунта в одной нельзя. Не вошли —
+     * слота нет, target ждёт входа.
+     */
+    private fun placeSlot(e: TargetEntry, status: com.dpsmpx.dpai.accounts.AuthStatus) {
+        if (!status.loggedIn) {
+            waitingLogin += e.id
+            return
+        }
+        waitingLogin -= e.id
+        val o = orchestrator
+        val sub = status.identity?.let { id -> o.accounts.subscriptions.values.firstOrNull { it.identity == id }?.id }
+            ?: ids.next(IdKinds.SUBSCRIPTION).also { s ->
+                val label = status.plan?.let { "подписка $it (${e.label})" } ?: "подписка ${e.label}"
+                o.commitAccounts(accountsLogic.registerSubscription(o.accounts, s, label, clock.now(), maxParallelSessions = MAX_PARALLEL).valueOrNull()!!)
+            }
+        val slot = ids.next(IdKinds.ACCOUNT)
+        o.commitAccounts(accountsLogic.registerSlot(o.accounts, slot, sub, e.id, e.configDir!!, clock.now()).valueOrNull()!!)
+        slotOf[e.id] = slot
+        when (val ev = accountsLogic.observeAuthStatus(o.accounts, slot, status, clock.now())) {
+            is Outcome.Failure -> problems += ev.diagnostics
+            is Outcome.Success -> o.commitAccounts(ev.value)
         }
     }
 
@@ -173,17 +199,22 @@ class LiveSystem(
     fun respond(uri: String): Outcome<Boolean> = orchestrator.respond(uri, "автор")
 
     override fun step() {
-        for ((slot, p) in probes.entries.toList()) {
+        for ((target, p) in probes.entries.toList()) {
             when (val r = p.first.poll(p.second)) {
                 is Outcome.Failure -> {
                     problems += r.diagnostics
-                    probes.remove(slot)
+                    probes.remove(target)
                 }
                 is Outcome.Success -> r.value?.let { status ->
-                    probes.remove(slot)
-                    when (val ev = accountsLogic.observeAuthStatus(orchestrator.accounts, slot, status, clock.now())) {
-                        is Outcome.Failure -> problems += ev.diagnostics
-                        is Outcome.Success -> orchestrator.commitAccounts(ev.value)
+                    probes.remove(target)
+                    val slot = slotOf[target]
+                    if (slot == null) {
+                        usable.firstOrNull { it.id == target }?.let { placeSlot(it, status) }
+                    } else {
+                        when (val ev = accountsLogic.observeAuthStatus(orchestrator.accounts, slot, status, clock.now())) {
+                            is Outcome.Failure -> problems += ev.diagnostics
+                            is Outcome.Success -> orchestrator.commitAccounts(ev.value)
+                        }
                     }
                 }
             }
@@ -204,7 +235,8 @@ class LiveSystem(
 
     override fun dashboard(): DashboardScreen {
         val base = Screens.dashboard(orchestrator.dashboard(), diagnosis())
-        val extra = notes + (problems + orchestrator.problems).takeLast(5).map { "${it.code}: ${it.message}" }
+        val login = usable.filter { it.id in waitingLogin }.map { "${it.label}: войдите в Claude в каталоге ${it.configDir}, затем «Вход Claude»" }
+        val extra = notes + login + (problems + orchestrator.problems).takeLast(5).map { "${it.code}: ${it.message}" }
         return base.copy(attention = base.attention + extra)
     }
 

@@ -29,6 +29,9 @@ class LiveSystemTest {
     private val host = MockAgentHost(clock, ids)
     private var loggedIn = true
 
+    /** Аккаунт, вошедший на target (по каталогу Claude); `null` — без отпечатка. */
+    private val account = HashMap<String, String>()
+
     /** Ход идёт, пока тест не продвинет его шаги (`host.advance`). */
     private var slow = false
 
@@ -38,7 +41,8 @@ class LiveSystemTest {
     init {
         host.onStart = { run, spec, _ ->
             if (spec.command.take(3) == listOf("claude", "auth", "status")) {
-                host.output(run, if (loggedIn) """{"loggedIn":true,"authMethod":"claude.ai","apiProvider":"firstParty","subscriptionType":"pro"}""" else """{"loggedIn":false,"authMethod":"none"}""")
+                val email = account[spec.setEnv["CLAUDE_CONFIG_DIR"]]?.let { ",\"email\":\"$it\",\"orgId\":\"org-$it\"" }.orEmpty()
+                host.output(run, if (loggedIn) """{"loggedIn":true,"authMethod":"claude.ai","apiProvider":"firstParty","subscriptionType":"pro"$email}""" else """{"loggedIn":false,"authMethod":"none"}""")
                 host.exit(run, if (loggedIn) 0 else 1)
             } else {
                 val c = spec.command
@@ -84,14 +88,16 @@ class LiveSystemTest {
     @Test
     fun slotWithoutLoginKeepsTasksWaiting() {
         loggedIn = false
-        val s = system(entry("сервер", "/home/dev/.claude-dpai"))
+        val target = entry("сервер", "/home/dev/.claude-dpai")
+        val s = system(target)
         steps(s, 1)
-        assertEquals(AccountState.AUTH_REQUIRED, s.orchestrator.accounts.slots.values.single().state)
+        assertTrue(s.orchestrator.accounts.slots.isEmpty(), "без входа слота нет")
+        assertTrue(s.dashboard().attention.any { "войдите в Claude" in it }, s.dashboard().attention.toString())
         val task = s.addTask("Ждёт", "ждать входа").valueOrNull()!!
         steps(s, 3)
         assertTrue(s.orchestrator.sessions.sessions.values.none { it.task == task })
         loggedIn = true
-        s.probeSlot(s.orchestrator.accounts.slots.values.single().targetId)
+        s.probeSlot(target.id)
         steps(s, 4)
         assertTrue(s.orchestrator.sessions.sessions.values.any { it.task == task })
     }
@@ -118,5 +124,23 @@ class LiveSystemTest {
         do { val more = host.advance(session) } while (more)
         steps(second, 4)
         assertEquals(TaskState.COMPLETION_UNVERIFIED, second.orchestrator.tasks.tasks.getValue(task).state, second.problems.toString())
+    }
+
+    /**
+     * Подписка слота — по аккаунту (D-29, D-30): два targets, вошедшие одним
+     * аккаунтом, — одна подписка; другим аккаунтом — своя.
+     */
+    @Test
+    fun slotsJoinSubscriptionsByAccount() {
+        account["/home/dev/.claude-a"] = "a@example.org"
+        account["/home/dev/.claude-a2"] = "a@example.org"
+        account["/home/dev/.claude-b"] = "b@example.org"
+        val s = system(entry("один", "/home/dev/.claude-a"), entry("два", "/home/dev/.claude-a2"), entry("три", "/home/dev/.claude-b"))
+        steps(s, 1)
+        val slots = s.orchestrator.accounts.slots.values
+        assertEquals(3, slots.size)
+        assertTrue(slots.all { it.state == AccountState.AVAILABLE }, slots.map { it.state }.toString())
+        val bySub = slots.groupBy { it.subscriptionId }.values.map { g -> g.map { it.configDir }.toSet() }.toSet()
+        assertEquals(setOf(setOf("/home/dev/.claude-a", "/home/dev/.claude-a2"), setOf("/home/dev/.claude-b")), bySub)
     }
 }
