@@ -43,7 +43,7 @@ tasks.withType<Test>().configureEach {
     // Параметры property-тестов и адрес настоящего SSH target из командной
     // строки (docs/TESTING.md, «Свойства», «Слои»): без проброса они
     // остались бы в JVM Gradle.
-    for (key in listOf("dpai.property.iterations", "dpai.property.seed", "dpai.test.ssh", "dpai.test.ssh.identity", "dpai.test.ssh.knownHosts")) {
+    for (key in listOf("dpai.property.iterations", "dpai.property.seed", "dpai.test.ssh", "dpai.test.ssh.identity", "dpai.test.ssh.knownHosts", "dpai.test.claude")) {
         providers.systemProperty(key).orNull?.let { systemProperty(key, it) }
     }
     testLogging {

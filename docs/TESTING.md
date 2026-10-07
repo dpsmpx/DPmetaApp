@@ -139,6 +139,11 @@ musl-сборка `@anthropic-ai/claude-code-linux-arm64-musl` распаков�
 любом target. Места нужно с запасом: JDK — около 260 МиБ, Claude — около
 230 МиБ.
 
+Настоящий Claude Code — `RealClaudeTest` в `cli`: два хода через агента,
+второй — `--resume`. Тратит лимит подписки, поэтому включается только
+вместе с `-Ddpai.test.claude=true`; вход в Claude Code на target делает
+человек (D-27).
+
 Тот же путь через SSH-клиент на JVM (D-35) — `JschProcessHostTest` в
 модуле `jsch` с теми же свойствами `dpai.test.ssh*`; без них идут только
 проверки отказов.

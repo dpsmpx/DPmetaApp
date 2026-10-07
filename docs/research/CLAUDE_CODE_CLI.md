@@ -219,3 +219,15 @@ proot не проверены; на Redmi Note 13 (HyperOS 2.0) проверка
 невозможна — ввод и настройки закрыты переключателем «Отладка по USB
 (Настройки безопасности)».
 
+## 10. Ход Claude Code в proot на телефоне
+
+Проверено **7 октября 2026** на том же Realme C21Y: Claude Code 2.1.292
+(musl-сборка) в `proot-distro` Alpine через обёртку
+`tools/termux/claude-proot.sh`; вход подпиской сделал автор в Termux
+(`claude`, D-27). `RealClaudeTest` с ПК по SSH (`adb forward`) через
+агента `dpai` в Termux (JDK 21): ход «Ответь ровно одним словом: готово»
+с `--session-id` и второй ход с `--resume` той же сессии — оба
+`COMPLETED`, второй ответ помнит первый; `duration_ms` в `result` — 4671
+и 2449 мс, весь тест с запуском JVM агента и proot — 38,7 с. Поток
+stream-json из proot разбирается тем же `ClaudeStreamParser`.
+

@@ -106,8 +106,8 @@
 
 ## На устройстве (Redmi Note 13)
 
-- [ ] `С` Ход сессии Claude в proot на телефоне: вход формой Claude в
-      `CLAUDE_CONFIG_DIR` внутри proot, `claude -p` и агент `dpai` с JDK в
-      Termux (D-33, этап 19).
+- [ ] `М` Слоты аккаунтов на Termux-target: вход в `CLAUDE_CONFIG_DIR`
+      слота внутри proot (сейчас проверен вход в каталог по умолчанию;
+      ход в proot — `docs/research/CLAUDE_CODE_CLI.md`, §10).
 - [ ] `С` Фоновая работа на HyperOS: автозапуск, экономия батареи,
       смерть процесса — проверки этапов 11 и 19 (D-28).
