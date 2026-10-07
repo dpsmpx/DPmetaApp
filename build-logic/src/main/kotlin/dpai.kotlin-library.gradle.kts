@@ -51,3 +51,11 @@ tasks.withType<Test>().configureEach {
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
     }
 }
+
+// Воспроизводимая сборка (этап 20): архивы без отметок времени файлов и с
+// устойчивым порядком записей — две сборки одного коммита дают побайтно
+// одинаковые jar и дистрибутивы (tools/verify/reproducible.sh).
+tasks.withType<AbstractArchiveTask>().configureEach {
+    isPreserveFileTimestamps = false
+    isReproducibleFileOrder = true
+}
