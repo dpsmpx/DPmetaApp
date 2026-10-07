@@ -3,6 +3,8 @@
 
     <!-- SSH к targets из контроллера приложения (D-35). Других разрешений нет. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Уведомления контроллера (D-36); на Android 13+ разрешение спрашивается при запуске. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:allowBackup="false"
@@ -17,5 +19,9 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- Кнопки уведомлений — только через PendingIntent своего уведомления (A-7). -->
+        <receiver
+            android:name=".ApprovalReceiver"
+            android:exported="false" />
     </application>
 </manifest>

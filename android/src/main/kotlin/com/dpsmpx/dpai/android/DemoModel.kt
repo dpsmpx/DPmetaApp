@@ -6,6 +6,7 @@ import com.dpsmpx.dpai.core.ids.ExecutionTargetId
 import com.dpsmpx.dpai.core.ids.IdKinds
 import com.dpsmpx.dpai.core.ids.TaskId
 import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.notifications.Notification
 import com.dpsmpx.dpai.storage.vfs.NioVfs
 import com.dpsmpx.dpai.ui.ControlView
 import com.dpsmpx.dpai.ui.DashboardScreen
@@ -17,7 +18,15 @@ import com.dpsmpx.dpai.ui.TaskBoard
 import java.io.File
 
 /** Снимок для отрисовки: всё, что показывает приложение в один кадр. */
-data class Snapshot(val mode: String, val live: Boolean, val dashboard: DashboardScreen, val board: TaskBoard, val session: SessionScreen?)
+data class Snapshot(
+    val mode: String,
+    val live: Boolean,
+    val dashboard: DashboardScreen,
+    val board: TaskBoard,
+    val session: SessionScreen?,
+    /** Новые уведомления контроллера; у демо их нет — телефон не шумит демо-событиями. */
+    val notifications: List<Notification> = emptyList(),
+)
 
 /**
  * Какая система сейчас показывается (D-34, D-35): есть target с каталогом
@@ -54,7 +63,7 @@ class DemoModel(private val cacheDir: File, private val controller: Controller) 
         val v = current()
         v.step()
         val session = selected?.let { IdKinds.SESSION.parse(it).valueOrNull() }
-        return Snapshot(v.mode, v is LiveSystem, v.dashboard(), v.board(), session?.let(v::session))
+        return Snapshot(v.mode, v is LiveSystem, v.dashboard(), v.board(), session?.let(v::session), (v as? LiveSystem)?.drainNotifications().orEmpty())
     }
 
     @Synchronized
@@ -63,6 +72,11 @@ class DemoModel(private val cacheDir: File, private val controller: Controller) 
             ?: return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "задачи ставятся только контроллеру: заведите target с каталогом Claude")
         return v.addTask(title.trim(), objective.trim())
     }
+
+    /** Кнопка уведомления; без контроллера — отказ. */
+    @Synchronized
+    fun respond(uri: String): Outcome<Boolean> = (current() as? LiveSystem)?.respond(uri)
+        ?: Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "одобрения — только у контроллера")
 
     /** Проверить вход слота target заново — после входа автора в Claude. */
     @Synchronized

@@ -234,6 +234,8 @@ class Orchestrator(
         }
         for (a in tasksLogic.plan(tasks, clock.now(), offers)) launch(a.task, a.target)
         for (s in sessions.sessions.values.filter { it.state !in WAIT_STATES && !it.terminal }.map { it.id }.sorted()) poll(s)
+        // Придержанное пределом частоты — сводкой, когда предел позволяет (ТЗ, §36).
+        notifications.flush(clock.now())?.let { posted += it }
     }
 
     private fun List<SessionId>.sorted() = sortedBy { it.value }

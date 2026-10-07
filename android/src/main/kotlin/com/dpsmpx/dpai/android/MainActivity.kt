@@ -1,6 +1,9 @@
 package com.dpsmpx.dpai.android
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.os.Build
+import androidx.activity.result.contract.ActivityResultContracts
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -20,6 +23,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         CrashRecord.install(filesDir)
         enableEdgeToEdge()
+        // Android 13+: без разрешения уведомления не показываются; отказ — не ошибка, сводка видна в приложении.
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            registerForActivityResult(ActivityResultContracts.RequestPermission()) {}.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
         val controller = Controller.get(filesDir, packageManager.getPackageInfo(packageName, 0).versionName)
         val model = DemoModel.get(cacheDir, controller)
         setContent {

@@ -75,6 +75,9 @@ class LiveSystemTest {
         // Профиля проверки нет: ход завершён, но завершение не проверено (D-23).
         assertEquals(TaskState.COMPLETION_UNVERIFIED, state, s.problems.toString())
         assertTrue(s.session(session.id).timeline.isNotEmpty())
+        // Уведомление о завершении без проверки — оболочке один раз (ТЗ, §36; D-23).
+        assertTrue(s.drainNotifications().any { it.title == "Задача без проверки" })
+        assertEquals(emptyList(), s.drainNotifications())
     }
 
     @Test

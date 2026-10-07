@@ -24,6 +24,8 @@ import com.dpsmpx.dpai.execution.target.TargetPlatform
 import com.dpsmpx.dpai.monitoring.SelfDiagnosis
 import com.dpsmpx.dpai.monitoring.SelfDiagnostics
 import com.dpsmpx.dpai.monitoring.SystemSignals
+import com.dpsmpx.dpai.notifications.Notification
+import com.dpsmpx.dpai.notifications.NotificationDecision
 import com.dpsmpx.dpai.orchestrator.Orchestrator
 import com.dpsmpx.dpai.orchestrator.ProjectConfig
 import com.dpsmpx.dpai.orchestrator.TargetSlot
@@ -123,6 +125,24 @@ class LiveSystem(
     }
 
     fun addTask(title: String, objective: String): Outcome<TaskId> = orchestrator.addTask(title, objective, Priority.NORMAL)
+
+    private var delivered = 0
+
+    /** Уведомления, которые оболочка ещё не показала: новые и обновлённые (ТЗ, §36). */
+    fun drainNotifications(): List<Notification> {
+        val fresh = orchestrator.posted.drop(delivered)
+        delivered = orchestrator.posted.size
+        return fresh.mapNotNull {
+            when (it) {
+                is NotificationDecision.Post -> it.notification
+                is NotificationDecision.Update -> it.notification
+                is NotificationDecision.Held -> null
+            }
+        }
+    }
+
+    /** Кнопка уведомления (`dpai://approve|deny/…`): одобрение — только с хешем текущего предложения (D-10). */
+    fun respond(uri: String): Outcome<Boolean> = orchestrator.respond(uri, "автор")
 
     override fun step() {
         for ((slot, p) in probes.entries.toList()) {

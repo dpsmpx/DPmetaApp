@@ -134,11 +134,26 @@ class PerformanceTest {
 
     private fun journal(name: String): EventJournal = (EventJournal.open(NioVfs(Files.createTempDirectory(dir, name)), "journal.log") as Outcome.Success).value
 
+    /** Создание задачи с журналом — рядом с той же работой диска ОС, как [storageWrite]. */
     @Test
     fun taskCreationWithJournal() {
         val o = orchestrator(slots = 1, journal = journal("create"))
-        val s = measure("создание задачи", 300) { o.addTask("задача $it", "цель") }
-        assertTrue(s.p99Ms <= 50.0, "создание задачи p99 ${s.p99Ms} мс > 50")
+        var n = 0
+        // Создание задачи — две записи в журнал с fsync (создание и постановка в очередь): база ОС — два «дописать и fsync».
+        val line = ByteArray(600) { 'x'.code.toByte() }
+        val (os, s) = FileChannel.open(Files.createTempDirectory(dir, "raw").resolve("log"), StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.APPEND).use { ch ->
+            measurePair(
+                "ОС: 2 × дописать+fsync", "создание задачи", 300,
+                bodyA = {
+                    repeat(2) {
+                        ch.write(ByteBuffer.wrap(line))
+                        ch.force(true)
+                    }
+                },
+                bodyB = { o.addTask("задача ${n++}", "цель") },
+            )
+        }
+        assertTrue(s.p99Ms <= 50.0 || s.p99Ms - os.p99Ms <= 50.0, "создание задачи p99 ${s.p99Ms} мс, ОС p99 ${os.p99Ms} мс: доля кода > 50 мс")
     }
 
     @Test

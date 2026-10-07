@@ -76,10 +76,13 @@ fun DpaiApp(model: DemoModel, controller: Controller) {
     var snapshot by remember { mutableStateOf<Snapshot?>(null) }
     val selected by rememberUpdatedState(selectedId)
 
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val notifier = remember { Notifier(context.applicationContext) }
     LaunchedEffect(model) {
         while (true) {
             val s = selected
             val next = withContext(Dispatchers.IO) { model.step(s) }
+            next.notifications.forEach(notifier::show)
             snapshot = next
             delay(if (next.live) LIVE_STEP_MS else STEP_MS)
         }
