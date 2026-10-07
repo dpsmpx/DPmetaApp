@@ -1,0 +1,144 @@
+package com.dpsmpx.dpai.ui
+
+import com.dpsmpx.dpai.core.events.EventEnvelope
+import com.dpsmpx.dpai.core.events.StreamRef
+import com.dpsmpx.dpai.core.ids.SessionId
+import com.dpsmpx.dpai.core.ids.TaskId
+import com.dpsmpx.dpai.core.measure.Measure
+import com.dpsmpx.dpai.core.state.TaskState
+import com.dpsmpx.dpai.monitoring.DashboardView
+import com.dpsmpx.dpai.monitoring.DisplayState
+import com.dpsmpx.dpai.monitoring.SelfDiagnosis
+import com.dpsmpx.dpai.monitoring.SystemHealth
+import com.dpsmpx.dpai.monitoring.Timeline
+import com.dpsmpx.dpai.tasks.TasksState
+import kotlin.time.Duration
+
+/**
+ * Смысл цвета, а не сам цвет: оболочка (Android, `cli`) сама выбирает
+ * оттенок по теме. `WARNING` — нужно внимание, `ERROR` — отказ.
+ */
+enum class Tone { NEUTRAL, ACTIVE, WARNING, ERROR, DONE }
+
+data class Counter(val label: String, val value: String, val tone: Tone)
+
+data class SessionLine(val session: SessionId, val task: String, val state: String, val tone: Tone, val silent: String, val next: String)
+
+/** Сводка (ТЗ, §38): состояние приложения, счётчики, сессии, что требует внимания. */
+data class DashboardScreen(
+    val health: String,
+    val healthTone: Tone,
+    val reasons: List<String>,
+    val counters: List<Counter>,
+    val sessions: List<SessionLine>,
+    val attention: List<String>,
+)
+
+data class TimelineLine(val time: String, val text: String)
+
+/** Экран сессии (ТЗ, §39, §40): строка сводки и временная шкала её потока. */
+data class SessionScreen(val line: SessionLine?, val session: SessionId, val timeline: List<TimelineLine>)
+
+/** Карточка задачи; [level] — глубина в DAG: 0 — без зависимостей, иначе 1 + наибольшая у зависимостей. */
+data class TaskCard(val id: TaskId, val title: String, val state: String, val tone: Tone, val priority: String, val dependsOn: List<String>, val level: Int)
+
+data class BoardColumn(val title: String, val cards: List<TaskCard>)
+
+/** Доска задач и DAG (ТЗ, §41): колонки по смыслу состояния, внутри — по уровню DAG и id. */
+data class TaskBoard(val columns: List<BoardColumn>)
+
+/**
+ * Состояния экранов без платформы (`docs/ARCHITECTURE.md`, §2: `ui`):
+ * Android только рисует их (D-02), тесты проверяют на хосте. Чистые
+ * функции — одинаковый вход даёт одинаковый экран (D-22); неизвестное —
+ * «?», а не ноль (D-13).
+ */
+object Screens {
+    fun dashboard(view: DashboardView, health: SelfDiagnosis): DashboardScreen = DashboardScreen(
+        health = health.health.name,
+        healthTone = when (health.health) {
+            SystemHealth.HEALTHY -> Tone.DONE
+            SystemHealth.DEGRADED, SystemHealth.RECOVERY -> Tone.WARNING
+            else -> Tone.ERROR
+        },
+        reasons = health.reasons,
+        counters = listOf(
+            Counter("Активных сессий", view.activeSessions.toString(), if (view.activeSessions > 0) Tone.ACTIVE else Tone.NEUTRAL),
+            Counter("В очереди", view.queuedTasks.toString(), Tone.NEUTRAL),
+            Counter("Заблокировано", view.blocked.toString(), if (view.blocked > 0) Tone.WARNING else Tone.NEUTRAL),
+            Counter("Упало", view.failed.toString(), if (view.failed > 0) Tone.ERROR else Tone.NEUTRAL),
+            Counter("Ждут одобрения", count(view.waitingApproval), if ((view.waitingApproval.orNull() ?: 0) > 0) Tone.WARNING else Tone.NEUTRAL),
+            Counter("Аккаунтов доступно", view.availableAccounts.toString(), Tone.NEUTRAL),
+        ),
+        sessions = view.rows.map { r ->
+            SessionLine(r.session, r.task, r.state.name, tone(r.state), silent(r.silentFor), r.next ?: "—")
+        },
+        attention = view.attention.map { "${it.subject}: ${it.detail}" },
+    )
+
+    fun session(view: DashboardView, session: SessionId, events: List<EventEnvelope>): SessionScreen {
+        val stream = StreamRef.of(session)
+        val own = events.filter { it.stream == stream }
+        return SessionScreen(
+            line = dashboard(view, OK).sessions.firstOrNull { it.session == session },
+            session = session,
+            timeline = Timeline.of(own).map { TimelineLine(it.at.toIsoString().substring(11, 19), it.text) },
+        )
+    }
+
+    fun board(tasks: TasksState): TaskBoard {
+        val level = HashMap<TaskId, Int>()
+        fun levelOf(id: TaskId, path: Set<TaskId>): Int = level[id] ?: run {
+            // Цикл в DAG планировщик не пропускает (DEPENDENCY_CYCLE); здесь — только защита от зацикливания отрисовки.
+            val deps = tasks.tasks[id]?.dependencies.orEmpty().filter { it in tasks.tasks && it !in path }
+            (if (deps.isEmpty()) 0 else 1 + deps.maxOf { levelOf(it, path + id) }).also { level[id] = it }
+        }
+        val cards = tasks.tasks.values.map { t ->
+            TaskCard(
+                t.id, t.title, t.state.name, tone(t.state), t.priority.name,
+                t.dependencies.mapNotNull { tasks.tasks[it]?.title }.sorted(), levelOf(t.id, emptySet()),
+            )
+        }
+        return TaskBoard(
+            COLUMNS.map { (title, states) ->
+                BoardColumn(title, cards.filter { TaskState.valueOf(it.state) in states }.sortedWith(compareBy({ it.level }, { it.id.value })))
+            },
+        )
+    }
+
+    fun tone(s: DisplayState): Tone = when (s) {
+        DisplayState.STARTING, DisplayState.RUNNING, DisplayState.WAITING, DisplayState.VERIFYING -> Tone.ACTIVE
+        DisplayState.STALE, DisplayState.BLOCKED, DisplayState.NEAR_LIMIT, DisplayState.PAUSED, DisplayState.RECOVERY_PENDING -> Tone.WARNING
+        DisplayState.FAILED -> Tone.ERROR
+        DisplayState.COMPLETED -> Tone.DONE
+        DisplayState.CREATED, DisplayState.QUEUED, DisplayState.CANCELLED -> Tone.NEUTRAL
+    }
+
+    fun tone(s: TaskState): Tone = when (s) {
+        TaskState.RUNNING, TaskState.WAITING, TaskState.IMPLEMENTED, TaskState.VERIFYING, TaskState.VERIFIED -> Tone.ACTIVE
+        TaskState.BLOCKED, TaskState.COMPLETION_UNVERIFIED -> Tone.WARNING
+        TaskState.FAILED -> Tone.ERROR
+        TaskState.DONE -> Tone.DONE
+        TaskState.BACKLOG, TaskState.QUEUED, TaskState.READY, TaskState.CANCELLED -> Tone.NEUTRAL
+    }
+
+    private val COLUMNS = listOf(
+        "Очередь" to setOf(TaskState.BACKLOG, TaskState.QUEUED, TaskState.READY),
+        "В работе" to setOf(TaskState.RUNNING, TaskState.WAITING, TaskState.IMPLEMENTED, TaskState.VERIFYING, TaskState.VERIFIED),
+        "Внимание" to setOf(TaskState.BLOCKED, TaskState.COMPLETION_UNVERIFIED, TaskState.FAILED),
+        "Готово" to setOf(TaskState.DONE, TaskState.CANCELLED),
+    )
+
+    private val OK = SelfDiagnosis(SystemHealth.HEALTHY, emptySet(), emptyList())
+
+    private fun count(m: Measure<Int>): String = m.orNull()?.toString() ?: "?"
+
+    private fun silent(m: Measure<Duration>): String {
+        val d = m.orNull() ?: return "?"
+        return when {
+            d.inWholeSeconds < 60 -> "${d.inWholeSeconds} с"
+            d.inWholeMinutes < 60 -> "${d.inWholeMinutes} мин"
+            else -> "${d.inWholeHours} ч"
+        }
+    }
+}
