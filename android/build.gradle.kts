@@ -21,11 +21,24 @@ android {
         versionName = project.version.toString()
     }
 
+    // Ключ выпуска — у автора вне репозитория (docs/PROCESS.md, §6): путь и
+    // пароли — свойства dpai.release.* в ~/.gradle/gradle.properties или
+    // ORG_GRADLE_PROJECT_*. Нет их — release подписан отладочным ключом (для
+    // замеров на устройстве, docs/TESTING.md, §9), не для раздачи.
+    val releaseKey = listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
+        .associateWith { providers.gradleProperty("dpai.release.$it").orNull }
+    if (releaseKey.values.all { it != null }) {
+        signingConfigs.create("release") {
+            storeFile = file(releaseKey.getValue("storeFile")!!)
+            storePassword = releaseKey.getValue("storePassword")
+            keyAlias = releaseKey.getValue("keyAlias")
+            keyPassword = releaseKey.getValue("keyPassword")
+        }
+    }
+
     buildTypes {
         release {
-            // Ключа выпуска пока нет: release подписан отладочным ключом —
-            // только для замеров кадров на устройстве (docs/TESTING.md, §9).
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
 

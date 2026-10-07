@@ -137,3 +137,18 @@ SHA-256 каждого jar модуля, дистрибутива `dpai` и со
 (`tools/verify/apk_digest.py`): подпись ECDSA от сборки к сборке разная.
 Список хешей последней проверки — `build/reproducible/release.sha256`;
 его прикладывают к контрольной точке выпуска.
+
+Подпись выпуска Android: ключ (`.jks`) хранится у автора вне
+репозитория и никуда не пересылается (ни в чат, ни в PR). Сборка берёт
+его из свойств Gradle автора — `~/.gradle/gradle.properties`:
+
+```properties
+dpai.release.storeFile=C:/путь/к/ключу.jks
+dpai.release.storePassword=…
+dpai.release.keyAlias=…
+dpai.release.keyPassword=…
+```
+
+Без этих свойств `assembleRelease` подписывает отладочным ключом — такой
+APK только для замеров, не для раздачи.
+
