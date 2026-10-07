@@ -60,6 +60,7 @@ class DemoModel(private val cacheDir: File, private val controller: Controller) 
         }
     }
 
+    /** Такт и снимок; новые уведомления контроллера — в снимке, один раз. */
     @Synchronized
     fun step(selected: String?): Snapshot {
         val v = current()
@@ -67,6 +68,17 @@ class DemoModel(private val cacheDir: File, private val controller: Controller) 
         val session = selected?.let { IdKinds.SESSION.parse(it).valueOrNull() }
         return Snapshot(v.mode, v is LiveSystem, v.dashboard(), v.board(), session?.let(v::session), (v as? LiveSystem)?.drainNotifications().orEmpty())
     }
+
+    /** Снимок без такта — когда такт делает служба контроллера (D-36). */
+    @Synchronized
+    fun view(selected: String?): Snapshot {
+        val v = current()
+        val session = selected?.let { IdKinds.SESSION.parse(it).valueOrNull() }
+        return Snapshot(v.mode, v is LiveSystem, v.dashboard(), v.board(), session?.let(v::session))
+    }
+
+    /** Есть ли настоящий контроллер: тогда такт — в службе переднего плана. */
+    fun hasLive(): Boolean = controller.targets().any { it.configDir != null }
 
     @Synchronized
     fun addTask(title: String, objective: String): Outcome<TaskId> {

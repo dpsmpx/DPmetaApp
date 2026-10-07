@@ -81,7 +81,10 @@ fun DpaiApp(model: DemoModel, controller: Controller) {
     LaunchedEffect(model) {
         while (true) {
             val s = selected
-            val next = withContext(Dispatchers.IO) { model.step(s) }
+            // Контроллер шагает в службе (D-36): экран только рисует; демо шагает здесь.
+            val background = withContext(Dispatchers.IO) { model.hasLive() }
+            if (background && !ControllerService.running) ControllerService.start(context)
+            val next = withContext(Dispatchers.IO) { if (background) model.view(s) else model.step(s) }
             next.notifications.forEach(notifier::show)
             snapshot = next
             delay(if (next.live) LIVE_STEP_MS else STEP_MS)
