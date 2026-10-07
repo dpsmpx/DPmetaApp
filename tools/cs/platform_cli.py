@@ -11,7 +11,7 @@
     publish ITEM VARIANT --to DEST [--dev|--safe|--production] [--at ISO]
     publish --due | --record-manual | --reconcile PUB-…
     campaign status CMP-… | campaign list ; calendar ; search ; stale
-    site build|serve|shots|scan [каталог]|deploy [--dry-run] ; health ; bundle ; capabilities [--write] ; events release …
+    site build|serve|shots|scan [каталог]|deploy [--dry-run]|ecosystem-import КАТАЛОГ ; health ; bundle ; capabilities [--write] ; events release …
 """
 from __future__ import annotations
 
@@ -410,6 +410,19 @@ def cmd_site(a) -> int:
         n = sum(1 for x in root.rglob("*") if x.is_file())
         print(f"фильтр чувствительных данных (Д39): {root} — файлов {n}, находок {len(hits)}")
         return 1 if hits else 0
+    if a.action == "ecosystem-import":
+        from pathlib import Path
+        from .site import ecosystem
+        if not a.path:
+            print("укажите каталог комплекта: сборка DPvisualisation `build --site КАТАЛОГ` (Д43)", file=sys.stderr)
+            return 2
+        kit = (repo.site().get("ecosystem") or {}).get("kit") or "website/ecosystem"
+        bad = ecosystem.import_kit(repo, Path(a.path).resolve(), kit)
+        for b in bad:
+            print(f"  ✗ {b}")
+        if not bad:
+            print(f"комплект экосистемы: {a.path} → {kit} — файлы сверены с MANIFEST.json; дальше site build и git diff")
+        return 1 if bad else 0
     if a.action == "shots":
         from .site import shots
         r = shots.check(repo, repo.path(a.out) if a.out else None)
@@ -641,8 +654,9 @@ def register(sub) -> None:
     p = sub.add_parser("stale", help="устаревшие каноны и варианты")
     p.set_defaults(fn=cmd_stale)
     p = sub.add_parser("site", help="сайт: сборка, локальный staging, снимки страниц, выгрузка на хостинг")
-    p.add_argument("action", choices=["build", "serve", "shots", "scan", "deploy"])
-    p.add_argument("path", nargs="?", help="scan: каталог с сайтом (по умолчанию — сборка --env)")
+    p.add_argument("action", choices=["build", "serve", "shots", "scan", "deploy", "ecosystem-import"])
+    p.add_argument("path", nargs="?", help="scan: каталог с сайтом (по умолчанию — сборка --env); "
+                   "ecosystem-import: каталог комплекта DPvisualisation (build --site)")
     p.add_argument("--dry-run", action="store_true", help="deploy: только показать изменения (rsync --dry-run)")
     p.add_argument("--env", default="staging", choices=["staging", "production"])
     p.add_argument("--out")

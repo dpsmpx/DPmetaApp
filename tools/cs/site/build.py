@@ -36,7 +36,8 @@ from ..core.ledger import Ledger
 from ..core.repo import Repo
 from ..progress.figures import FIGURE_MARK
 from ..progress.figures import render as render_figure
-from . import feeds
+from . import ecosystem, feeds
+from . import path as journey
 from .i18n import PLATFORM_NAMES, t
 
 E = html.escape
@@ -78,6 +79,10 @@ class Entry:
     def is_post(self) -> bool:
         return self.category in POST_CATEGORIES
 
+    @property
+    def is_article(self) -> bool:
+        return self.category == "article"
+
 
 @dataclass
 class Page:
@@ -92,6 +97,7 @@ class Page:
     jsonld: list = field(default_factory=list)
     draft: bool = False
     lastmod: str | None = None
+    head: list = field(default_factory=list)  # свои стили и скрипты страницы (только раздел «Экосистема», Д43)
 
 
 @dataclass
@@ -103,6 +109,7 @@ class BuildReport:
     warnings: list = field(default_factory=list)
     errors: list = field(default_factory=list)
     entries: list = field(default_factory=list)
+    eco_path: str | None = None  # раздел «Экосистема» в этой сборке (Д43)
 
 
 class SiteBuild:
@@ -125,7 +132,9 @@ class SiteBuild:
         self._used: set = set()  # факты текущей страницы — для lastmod
         self._pages: list = []  # страницы из вариантов кроме «Обо мне» (category: page, website.path)
         self._progress: set = set()  # наборы прогресса на видимых страницах — для /api/v1/progress.json
+        self._articles: list = []  # статьи (category: article) — раздел /articles/
         self._tokens: dict | None = None
+        self._path_data: dict | None = None
 
     # ------------------------------------------------------- данные
     def _published(self) -> dict[tuple, dict]:
@@ -223,12 +232,19 @@ class SiteBuild:
     # ------------------------------------------------------- страницы
     def nav(self, lang: str, current: str, alt: dict) -> str:
         pre = "/en" if lang == "en" else ""
-        items = [("home", f"{pre}/"), ("projects", f"{pre}/projects/")]
+        items = [("home", f"{pre}/")]
+        if self.path_cfg():
+            items.append(("path", self.path_href(lang)))
+        items.append(("projects", f"{pre}/projects/"))
+        if self.eco_cfg() and lang == "ru":
+            items.append(("ecosystem", self.eco_cfg()["path"]))
         items += [(k, path) for k, path in self.nav_pages(lang)]
-        items += [("news", "/news/"), ("about", f"{pre}/about/")]
+        items += [("articles", self.articles_path(lang)), ("news", "/news/"), ("about", f"{pre}/about/")]
         out = []
         for key, href in items:
             if key == "about" and not self._about.get(lang):
+                continue
+            if key == "articles" and not self._articles:
                 continue
             cls = ' class="current" aria-current="page"' if key == current else ""
             out.append(f'<a href="{href}"{cls}>{E(t(lang, key))}</a>')
@@ -301,8 +317,14 @@ class SiteBuild:
         if rest:
             parts.append(f'<h2>{E(t(lang, "other_projects"))}</h2><div class="cards">'
                          + "".join(self.project_card(p, lang, False) for p in rest) + "</div>")
-        posts = [e for e in entries if e.is_post and e.lang == "ru"][:3]
-        dates = [e.date for e in posts + ([about] if about else [])]
+        if self.path_cfg() and self.path_data():
+            parts.append(journey.home_block(self.path_data(), lang, self.path_href(lang)))
+        arts = self.articles_for(lang)[:3]
+        if arts:
+            parts.append(f'<h2>{E(t(lang, "latest_articles"))}</h2>' + self.post_list(arts, lang)
+                         + f'<p><a href="{self.articles_path(lang)}">{E(t(lang, "all_articles"))} →</a></p>')
+        posts = [e for e in entries if e.is_post and not e.is_article and e.lang == "ru"][:3]
+        dates = [e.date for e in posts + arts + ([about] if about else [])]
         if posts:
             parts.append(f'<h2>{E(t(lang, "latest"))}</h2>' + self.post_list(posts, lang)
                          + f'<p><a href="/news/">{E(t(lang, "all_posts"))} →</a></p>')
@@ -426,12 +448,13 @@ class SiteBuild:
         for e in posts:
             cat = t(lang, "cat").get(e.category, e.category)
             mark = " · черновик" if e.draft and lang == "ru" else (" · draft" if e.draft else "")
-            lis.append(f'<li><time datetime="{E(e.date)}">{E(e.date)}</time> · <span class="muted">{E(cat)}{mark}</span><br>'
+            mins = f" · {self.minutes(e)} {t(lang, 'minutes')}" if e.is_article else ""
+            lis.append(f'<li><time datetime="{E(e.date)}">{E(e.date)}</time> · <span class="muted">{E(cat)}{E(mins)}{mark}</span><br>'
                        f'<a href="{e.path}">{E(e.title)}</a><br><span class="muted">{E(e.summary)}</span></li>')
         return f'<ul class="posts">{"".join(lis)}</ul>'
 
     def page_news(self, entries: list[Entry]) -> Page:
-        posts = [e for e in entries if e.is_post and e.lang == "ru"]
+        posts = [e for e in entries if e.is_post and not e.is_article and e.lang == "ru"]
         if posts:
             body = self.post_list(posts, "ru")
         else:
@@ -449,28 +472,85 @@ class SiteBuild:
     def page_post(self, e: Entry) -> Page:
         cat = t(e.lang, "cat").get(e.category, e.category)
         meta = f'<p class="meta">{E(e.date)} · {E(cat)}'
+        if e.is_article:
+            meta += f" · {self.minutes(e)} {E(t(e.lang, 'minutes'))}"
         projects = self.repo.projects()
         for pid in e.item.data.get("source_projects") or []:
             if pid in projects and projects[pid].get("page"):
                 meta += f' · <a href="/projects/{pid}/">{E(projects[pid]["name"])}</a>'
         meta += "</p>"
         tags = "".join(f'<a class="tag" href="/tags/{E(tg)}/">#{E(tg)}</a>' for tg in e.item.data.get("tags") or [])
-        main = f"<article><h1>{E(e.title)}</h1>{meta}{self.draft_note(e)}"
+        body, lead = e.html, ""
+        if e.is_article:  # подзаголовок (summary) и оглавление по h2
+            toc, body = self.toc(body, e.lang)
+            lead = (f'<p class="lead">{E(e.summary)}</p>' if e.summary else "") + toc
+        crumbs = self.breadcrumbs(e)
+        main = (f'<article class="{"article" if e.is_article else "post"}">{crumbs[0]}<h1>{E(e.title)}</h1>'
+                f"{meta}{self.draft_note(e)}")
         if e.image:
             main += f'<img class="cover" src="{e.image}" alt="{E(e.image_alt or "")}">'
-        main += e.html + (f"<p>{tags}</p>" if tags else "")
+        main += lead + body + (f"<p>{tags}</p>" if tags else "")
         if e.social:
             main += f'<h3>{E(t(e.lang, "discuss"))}</h3><ul class="links">' + "".join(
                 f'<li><a href="{E(u)}">{E(PLATFORM_NAMES.get(pl, pl))}</a></li>' for pl, u in e.social) + "</ul>"
         main += "</article>"
-        ld = {"@context": "https://schema.org", "@type": "BlogPosting", "headline": e.title,
+        ld = {"@context": "https://schema.org", "@type": "Article" if e.is_article else "BlogPosting", "headline": e.title,
               "datePublished": e.date, "dateModified": e.date, "inLanguage": e.lang,
               "mainEntityOfPage": self.base + e.path, "description": e.summary,
               "author": {"@type": "Person", "name": self.author(e.lang), "url": self.base + "/"}}
+        if e.is_article:
+            ld["wordCount"] = self.words(e)
+        if e.item.data.get("tags"):
+            ld["keywords"] = ", ".join(e.item.data["tags"])
         img = e.image or self.og_default()
         if img:
             ld["image"] = self.base + img
-        return Page(e.path, e.lang, e.title, e.summary, main, "article", image=img, jsonld=[ld], draft=e.draft, lastmod=e.date)
+        return Page(e.path, e.lang, e.title, e.summary, main, "article", image=img, jsonld=[ld, crumbs[1]],
+                    draft=e.draft, lastmod=e.date)
+
+    # ------------------------------------------------------- статьи
+    def articles_for(self, lang: str) -> list[Entry]:
+        """Статьи на языке страницы; на английской, пока английских нет, — русские (как записи)."""
+        own = [e for e in self._articles if e.lang == lang]
+        return own or ([e for e in self._articles if e.lang == "ru"] if lang == "en" else [])
+
+    def articles_path(self, lang: str) -> str:
+        return "/en/articles/" if lang == "en" and any(e.lang == "en" for e in self._articles) else "/articles/"
+
+    @staticmethod
+    def words(e: Entry) -> int:
+        return len(re.sub(r"<[^>]+>", " ", e.html).split())
+
+    def minutes(self, e: Entry) -> int:
+        """Время чтения: 180 слов в минуту — медленное чтение длинного текста со схемами."""
+        return max(1, round(self.words(e) / 180))
+
+    def breadcrumbs(self, e: Entry) -> tuple[str, dict]:
+        """Цепочка «Главная → раздел → запись»: (HTML, BreadcrumbList для поисковиков)."""
+        home = "/en/" if e.lang == "en" else "/"
+        sec = (self.articles_path(e.lang), t(e.lang, "articles_title")) if e.is_article else ("/news/", t(e.lang, "news"))
+        chain = [(home, t(e.lang, "home")), sec]
+        html_ = (f'<nav class="crumbs" aria-label="{E(t(e.lang, "breadcrumbs"))}">'
+                 + " / ".join(f'<a href="{h}">{E(n)}</a>' for h, n in chain) + "</nav>")
+        ld = {"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": [
+            {"@type": "ListItem", "position": i, "name": n, "item": self.base + h} for i, (h, n) in enumerate(chain, 1)]
+            + [{"@type": "ListItem", "position": len(chain) + 1, "name": e.title, "item": self.base + e.path}]}
+        return html_, ld
+
+    def page_articles(self, lang: str) -> Page | None:
+        arts = [e for e in self._articles if e.lang == lang]
+        if not arts:
+            return None
+        path = "/en/articles/" if lang == "en" else "/articles/"
+        main = (f"<h1>{E(t(lang, 'articles_title'))}</h1><p class=\"lead\">{E(t(lang, 'articles_lead'))}</p>"
+                + self.post_list(arts, lang))
+        ld = {"@context": "https://schema.org", "@type": "CollectionPage", "name": t(lang, "articles_title"),
+              "url": self.base + path, "inLanguage": lang,
+              "hasPart": [{"@type": "Article", "headline": e.title, "url": self.base + e.path} for e in arts]}
+        en = "/en/articles/" if any(e.lang == "en" for e in self._articles) else None
+        return Page(path, lang, t(lang, "articles_title"), t(lang, "articles_lead"), main,
+                    alternates=self._alt("/articles/", en), image=self.og_default(), jsonld=[ld],
+                    lastmod=max((e.date for e in arts), default=None))
 
     def page_tag(self, tag: str, posts: list[Entry]) -> Page:
         return Page(f"/tags/{tag}/", "ru", f"#{tag}", f"#{tag}", f"<h1>#{E(tag)}</h1>" + self.post_list(posts, "ru"),
@@ -533,10 +613,16 @@ class SiteBuild:
             head.append(f'<link rel="alternate" hreflang="x-default" href="{E(self.base + page.alternates.get("ru", page.path))}">')
         for ld in page.jsonld:
             head.append('<script type="application/ld+json">' + json.dumps(ld, ensure_ascii=False).replace("</", "<\\/") + "</script>")
+        head += page.head
         banner = f'<div class="banner" role="note">{E(t(page.lang, "staging"))}</div>' if self.noindex else ""
         navs = {path: key for lg in ("ru", "en") for key, path in self.nav_pages(lg)}
+        if self.eco_cfg():
+            navs[self.eco_cfg()["path"]] = "ecosystem"
+        if self.path_cfg():
+            navs.update({self.path_href(lg): "path" for lg in ("ru", "en")})
         current = {"/": "home", "/en/": "home"}.get(page.path) or navs.get(page.path) or ("projects" if "/projects/" in page.path else
                                                                     "news" if page.path.startswith("/news/") else
+                                                                    "articles" if "/articles/" in page.path else
                                                                     "about" if "/about/" in page.path else "")
         footer = (f'<p>{E(self.signature(page.lang))} · '
                   f'<a href="/feed.xml">Atom</a> · <a href="/rss.xml">RSS</a> · <a href="/feed.json">JSON Feed</a></p>'
@@ -583,7 +669,10 @@ class SiteBuild:
         """Файл заголовков хостинга (П2-12, Д35): (путь, текст)."""
         if self.cfg.get("hosting") == "beget":
             return "/.htaccess", self.htaccess()
-        return "/_headers", "\n".join(["/*"] + [f"  {k}: {v}" for k, v in self._headers().items()]) + "\n"
+        lines = ["/*"] + [f"  {k}: {v}" for k, v in self._headers().items()]
+        for prefix, hdrs in self.path_headers().items():
+            lines += [f"{prefix}*"] + [f"  {k}: {v}" for k, v in hdrs.items()]
+        return "/_headers", "\n".join(lines) + "\n"
 
     def htaccess(self) -> str:
         """Apache (Beget): 404, кодировка, без списка файлов каталогов, типы, заголовки.
@@ -618,6 +707,110 @@ class SiteBuild:
                 "  RewriteRule ^$ /en/ [R=302,L]",
                 "</IfModule>"]
 
+    # ------------------------------------------------------- раздел «Экосистема» (Д43)
+    def eco_cfg(self) -> dict | None:
+        c = self.cfg.get("ecosystem")
+        return c if c and c.get("path") and c.get("kit") else None
+
+    def eco_kit(self) -> Path:
+        return self.repo.path(*self.eco_cfg()["kit"].split("/"))
+
+    def page_ecosystem(self) -> Page | None:
+        """Интерактивная модель экосистемы из комплекта DPvisualisation; без комплекта — ошибка сборки."""
+        c = self.eco_cfg()
+        kit = self.eco_kit()
+        bad = ecosystem.kit_problems(kit)
+        if bad:
+            self.report.errors += bad
+            return None
+        data, warn = ecosystem.apply_facts(ecosystem.load(kit), c.get("roles") or {}, c.get("stages") or {},
+                                           lambda fid: self.fact(fid, "ru"))
+        self.report.warnings += warn
+        from ..claims import scan
+        from ..facts import rules
+        for text in ecosystem.texts(data):
+            for rule, frag in scan(text, rules()):
+                self.report.errors.append(f"экосистема: «{frag}» — {rule['id']}: {rule.get('why') or rule.get('reason') or 'запрещённая формулировка'}")
+        self._eco_data = data
+        as_of = (data.get("state") or {}).get("as_of") or data["model"].get("as_of") or ""
+        day = as_of[:10]
+        as_of_text = f"{day[8:10]}.{day[5:7]}.{day[:4]}" if len(day) == 10 else "—"
+        path = c["path"]
+        page = Page(path, "ru", t("ru", "ecosystem"),
+                    "Интерактивная схема системы проектов dpsmpx: слои, потоки работы и прогресс по истории git.",
+                    ecosystem.page_main(data, path, as_of_text, self.path_href("ru") if self.path_cfg() else None),
+                    lastmod=day or None)
+        page.head = [f'<link rel="stylesheet" href="{path}dpvis.css">', f'<script src="{path}dpvis.js" defer></script>']
+        return page
+
+    def path_headers(self) -> dict:
+        """Заголовки по пути: раздел «Экосистема» — CSP со своими скриптами (Д43)."""
+        c = self.eco_cfg()
+        if not c:
+            return {}
+        return {c["path"]: {"Content-Security-Policy": ecosystem.csp_with_scripts(self._headers()["Content-Security-Policy"])}}
+
+    # ------------------------------------------------------- раздел «Путь» (Д44)
+    def path_cfg(self) -> dict | None:
+        c = self.cfg.get("path_section")
+        return c if c and c.get("path") and c.get("data") else None
+
+    def path_href(self, lang: str) -> str:
+        return ("/en" if lang == "en" else "") + self.path_cfg()["path"]
+
+    def path_data(self) -> dict | None:
+        if self._path_data is None:
+            self._path_data = self.repo.yaml(self.path_cfg()["data"]) or {}
+        return self._path_data or None
+
+    def _path_fact_ok(self, fid: str, idx: int, lang: str) -> str | None:
+        f = self.facts.get(fid)
+        if not f or not f.get("public"):
+            return f"факт {fid} не найден или не публичный"
+        if len((f.get("allowed_wording") or {}).get(lang) or []) <= idx:
+            return f"у факта {fid} нет формулировки {lang} № {idx}"
+        return None
+
+    def page_path(self, lang: str) -> Page | None:
+        """Путь по датам и конечная цель (Д44): тексты — факты реестра и вехи прогресса; рисунки — SVG без скриптов."""
+        data = self.path_data()
+        if not data:
+            self.report.errors.append(f"раздел «Путь»: нет данных {self.path_cfg()['data']}")
+            return None
+        milestones = {m["id"]: m for m in (self.repo.yaml("data/progress/milestones.yaml") or {}).get("milestones", [])}
+        bad = journey.problems(data, self._path_fact_ok, milestones)
+        if bad:
+            if lang == "ru":
+                self.report.errors += bad
+            return None
+
+        def say(src: dict) -> str | None:
+            if "milestone" in src:
+                return milestones[src["milestone"]][lang]
+            return self.fact(src["fact"], lang, src.get("idx", 0))
+
+        def role_of(n: dict) -> tuple:
+            return tuple(say(n[k]) if n.get(k) else None for k in ("role", "stage"))
+
+        from ..claims import scan
+        from ..facts import rules
+        texts = journey.labels(data) + [say(t) or "" for st in data["stations"] for t in st["texts"]]
+        for text in texts:
+            for rule, frag in scan(text, rules()):
+                self.report.errors.append(f"путь: «{frag}» — {rule['id']}: {rule.get('why') or rule.get('reason') or 'запрещённая формулировка'}")
+        links = []
+        if self.eco_cfg():
+            links.append((journey.L[lang]["see_eco"], self.eco_cfg()["path"], journey.L[lang]["eco"]))
+        prog = dict(self.nav_pages(lang)).get("progress")
+        if prog:
+            links.append((journey.L[lang]["see_progress"], prog, journey.L[lang]["progress"]))
+        rule_ev = (self.facts.get((data["goal"].get("rule") or {}).get("fact", "")) or {}).get("evidence") or []
+        rule_date = str(rule_ev[0]["date"]) if rule_ev else None
+        main = journey.page_main(data, lang, say, role_of, rule_date, links)
+        href = self.path_href(lang)
+        return Page(href, lang, journey.L[lang]["title"], journey.L[lang]["description"], main,
+                    alternates=self._alt(self.path_href("ru"), self.path_href("en")), lastmod=str(data.get("as_of") or "") or None)
+
     def not_found_page(self, lang: str) -> Page:
         """Страница 404 на языке раздела (П2-18): ссылка — на главную того же языка."""
         home, path = ("/en/", "/en/404.html") if lang == "en" else ("/", "/404.html")
@@ -638,9 +831,14 @@ class SiteBuild:
         self._pages = [e for e in entries if e.category == "page" and not e.path.rstrip("/").endswith("/about")
                        and (e.item.data.get("website") or {}).get("path")]
         self._progress = set()
+        self._articles = [e for e in entries if e.is_article]
         langs = self.cfg.get("languages") or ["ru"]
         pg = self._page
         pages = [pg(self.page_home, "ru", entries), pg(self.page_projects, "ru"), pg(self.page_news, entries)]
+        for lang in ("ru", "en"):
+            ap = pg(self.page_articles, lang)
+            if ap:
+                pages.append(ap)
         if "en" in langs:
             pages += [pg(self.page_home, "en", entries), pg(self.page_projects, "en")]
         for lang in langs:
@@ -651,6 +849,15 @@ class SiteBuild:
             if p.get("page"):
                 for lang in langs:
                     pages.append(pg(self.page_project, p, lang, entries))
+        if self.path_cfg():
+            for lang in langs:
+                pp = pg(self.page_path, lang)
+                if pp:
+                    pages.append(pp)
+        eco_page = pg(self.page_ecosystem) if self.eco_cfg() else None
+        if eco_page:
+            pages.append(eco_page)
+            self.report.eco_path = eco_page.path
         for e in self._pages:
             pages.append(pg(self.page_entry, e))
         posts = [e for e in entries if e.is_post]
@@ -686,6 +893,21 @@ class SiteBuild:
         self.write(out, "/style.css", self.css())
         self.write(out, "/favicon.svg", self.favicon())
         self.write(out, *self.headers_file())
+        if eco_page:
+            # комплект и CSP раздела: только этот каталог — со своими скриптами (Д43)
+            kit = self.eco_kit()
+            for name in ("dpvis.js", "dpvis.css"):
+                self.write(out, f"{eco_page.path}{name}", (kit / name).read_bytes())
+            # данные — с ролями и стадиями из реестра фактов (apply_facts), не байт в байт с комплектом
+            self.write(out, f"{eco_page.path}dpvis-data.json",
+                       json.dumps(self._eco_data, ensure_ascii=False, separators=(",", ":")) + "\n")
+            if self.cfg.get("hosting") == "beget":
+                csp = self.path_headers()[eco_page.path]["Content-Security-Policy"]
+                self.write(out, f"{eco_page.path}.htaccess",
+                           "# Создаёт tools/cs/site/build.py (Д43); на сервере не править.\n"
+                           "<IfModule mod_headers.c>\n"
+                           f'  Header always set Content-Security-Policy "{csp}"\n'
+                           "</IfModule>\n")
         if self.cfg.get("hosting") == "beget" and "en" in langs:
             # Apache: своя 404 для /en/ (П2-18); заголовки и Options наследуются из корня
             self.write(out, "/en/.htaccess", "# Создаёт tools/cs/site/build.py (П2-18); на сервере не править.\n"
@@ -701,6 +923,8 @@ class SiteBuild:
         robots = "User-agent: *\nDisallow: /\n" if self.noindex else f"User-agent: *\nAllow: /\nSitemap: {self.base}/sitemap.xml\n"
         self.write(out, "/robots.txt", robots)
         api = feeds.api(self, entries)
+        if eco_page:
+            api["index.json"]["resources"]["ecosystem"] = f"{eco_page.path}dpvis-data.json"
         if self._progress:  # данные графиков страницы прогресса — только если страница видна в этом окружении
             api["progress.json"] = {"version": 1, "datasets": [progress_set(self.repo, ds).public() for ds in sorted(self._progress)]}
             api["index.json"]["resources"]["progress"] = "/api/v1/progress.json"

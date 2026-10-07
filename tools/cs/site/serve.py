@@ -15,11 +15,17 @@ from pathlib import Path
 
 class _Handler(http.server.SimpleHTTPRequestHandler):
     extra_headers: dict = {}
+    path_headers: dict = {}  # префикс пути → заголовки поверх общих (раздел «Экосистема», Д43)
 
     def end_headers(self):
         # Заголовки сайта (CSP и др., П2-12) — как их отдаст хостинг: браузер проверки
         # тогда ловит нарушения политики так же, как на рабочем сайте (П2-17).
-        for k, v in self.extra_headers.items():
+        headers = dict(self.extra_headers)
+        path = self.path.split("?", 1)[0]
+        for prefix, extra in self.path_headers.items():
+            if path.startswith(prefix):
+                headers.update(extra)
+        for k, v in headers.items():
             self.send_header(k, v)
         super().end_headers()
 
@@ -49,10 +55,11 @@ class _Server(socketserver.TCPServer):
     allow_reuse_address = True
 
 
-def server(root: Path, port: int = 8000, headers: dict | None = None, quiet: bool = False) -> socketserver.TCPServer:
+def server(root: Path, port: int = 8000, headers: dict | None = None, quiet: bool = False,
+           path_headers: dict | None = None) -> socketserver.TCPServer:
     """Сервер на 127.0.0.1:port (0 — свободный порт); корень — root; headers — заголовки сайта;
-    quiet — без журнала запросов (проверки)."""
-    attrs = {"extra_headers": dict(headers or {})}
+    path_headers — заголовки по префиксу пути, как .htaccess каталога; quiet — без журнала запросов."""
+    attrs = {"extra_headers": dict(headers or {}), "path_headers": dict(path_headers or {})}
     if quiet:
         attrs["log_message"] = lambda self, *a: None
     handler = type("Handler", (_Handler,), attrs)

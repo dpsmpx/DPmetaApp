@@ -18,8 +18,8 @@ rules:
   - {id: KW-GENRE, pattern: '(?i)воксел|\bvoxel\b|action-RPG|процедурн|\bprocedural\b', any_of: [GH-GENRE, GH-ASSETS]}
   - {id: KW-TECH, pattern: '(?i)C\+\+|\bVulkan\b', any_of: [GH-TECH, AU-STACK]}
   - {id: KW-LOC, pattern: '(?i)\bстрок\b|\blines of\b', any_of: [GH-LOC, CORE-SCALE-2026-10-05], progress: [lines_start, lines_end, tests_start, tests_end]}
-  - {id: KW-CHECKS, pattern: '(?i)\bпроверок\b|\bautomated checks\b', any_of: [GH-CHECKS], progress: [hostcheck_start, hostcheck_end]}
-  - {id: KW-VERIFY, pattern: '(?i)\bПроверка\b|\bVerification\b', any_of: [ME-NO-CI]}
+  - {id: KW-CHECKS, pattern: '(?i)\bпроверок\b|\bautomated checks\b', any_of: [GH-CHECKS, VRF-WHAT], progress: [hostcheck_start, hostcheck_end]}
+  - {id: KW-VERIFY, pattern: '(?i)\bПроверка\b|\bVerification\b', any_of: [ME-NO-CI, VRF-WHAT]}
   - {id: KW-AI, pattern: '\bИИ\b|\bAI\b', any_of: [AU-METHOD], progress: [ai_share, commits_ai]}
   - {id: KW-MERGE, pattern: '(?i)слияни|\bmerges?\b|принимаю сам', any_of: [AU-METHOD, GH-COMMITS], progress: [merges, pr_median_minutes, pr_within_hour]}
   - {id: KW-GIT, pattern: '\bGit\b', any_of: [AU-MEMORY]}

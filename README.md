@@ -60,7 +60,8 @@ docs/
   identity/    идентичность, конфликты, карта проектов
   context/     мастер-контекст автора, факты по проектам
   platforms/   модель каждой площадки, сайт, матрица возможностей
-  content/     модель (v1, v2), конвейер, публикация, управление, качество, утверждения
+  content/     модель (v1, v2), конвейер, публикация, управление, качество, утверждения;
+               products/ — брифы и решения объектов, products/articles/ — статьи автора (Д42)
   operations/  окружения, учётные данные, резервирование, восстановление
   research/    исследования по темам (в том числе publishing/)
   audits/      срезы на дату
@@ -72,7 +73,7 @@ data/
   provenance/ metrics/ experiments/
 schemas/                           JSON Schema всех данных
 content/items/<id>/                объекты: item.yaml, canonical/, variants/, spec/, renders/, exports/
-website/                           тема сайта (шаблон, стили)
+website/                           тема сайта (шаблон, стили); ecosystem/ — комплект схемы DPvisualisation (Д43)
 prompts/ templates/                промпты и шаблоны публикаций
 assets/                            шрифты (OFL), токены, REFERENCE_IMAGE
 tools/

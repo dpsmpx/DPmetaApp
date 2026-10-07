@@ -227,7 +227,10 @@ def _site_findings(rep, out: Path, r: Report, label: str) -> None:
             target = out / href.lstrip("/")
             if not (target.is_file() or (target / "index.html").is_file()):
                 r.error(f"{label}: {page.relative_to(out)} → {href} — нет такого файла")
-        for msg in page_a11y(text) + page_csp(text):
+        rel = page.relative_to(out).as_posix()
+        eco = (rep.eco_path or "").strip("/")
+        allow = (f"/{eco}/dpvis.js",) if eco and rel.startswith(f"{eco}/") else ()
+        for msg in page_a11y(text) + page_csp(text, allow):
             r.error(f"{label}: {page.relative_to(out)}: {msg}")
     headers = out / ".htaccess" if (out / ".htaccess").is_file() else out / "_headers"
     if not headers.is_file() or "Content-Security-Policy" not in headers.read_text(encoding="utf-8"):
@@ -256,11 +259,14 @@ def page_a11y(text: str) -> list[str]:
     return out
 
 
-def page_csp(text: str) -> list[str]:
-    """Страница не нарушает CSP из _headers (П2-12): нет встроенных скриптов, стилей и обработчиков."""
+def page_csp(text: str, allow_scripts: tuple = ()) -> list[str]:
+    """Страница не нарушает CSP из _headers (П2-12): нет встроенных скриптов, стилей и обработчиков.
+    allow_scripts — свои внешние скрипты, разрешённые CSP каталога (раздел «Экосистема», Д43)."""
     out = []
-    if re.search(r"<script(?![^>]*type=\"application/ld\+json\")[^>]*>", text):
-        out.append("встроенный или внешний скрипт — CSP script-src 'none'")
+    for m in re.finditer(r"<script(?![^>]*type=\"application/ld\+json\")[^>]*>(.*?)(?:</script>|$)", text, re.S):
+        src = re.search(r'\ssrc="([^"]+)"', m.group(0))
+        if not (src and src.group(1) in allow_scripts and not m.group(1).strip()):
+            out.append("встроенный или внешний скрипт — CSP script-src 'none'")
     if re.search(r"<style[\s>]", text) or re.search(r'\sstyle="', text):
         out.append("встроенный стиль — CSP style-src 'self'")
     if re.search(r"\son[a-z]+=\"", text):

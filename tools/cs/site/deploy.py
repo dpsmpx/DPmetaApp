@@ -10,8 +10,8 @@
 
 Кто может выгружать (Д36): автор; из сессии Claude Code — только
 локальной и только для сайта (`local_session_production` политики);
-облачная — никогда. До слов автора «сайт готов» (Д34) выгрузки нет:
-`environments.production.live: false`.
+облачная — никогда. Выпуск открывает автор (Д34, с 05.10.2026 —
+`environments.production.live: true`); при `false` рабочая выгрузка отказывает.
 """
 from __future__ import annotations
 
@@ -67,7 +67,7 @@ def guard(repo: Repo, env: str = "production", store: EnvCredentialStore | None 
         return [f"выгрузка {env} не настроена (data/website/site.yaml, deploy)"]
     if not dry_run:
         if env == "production" and not ecfg.get("live"):
-            out.append("выпуск сайта — после слов автора «сайт готов» (Д34): environments.production.live: false")
+            out.append("выпуск сайта закрыт: environments.production.live: false (Д34 — открывает автор)")
         why = session_may_deploy(repo)
         if why:
             out.append(why)

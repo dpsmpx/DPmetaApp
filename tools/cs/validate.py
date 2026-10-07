@@ -38,6 +38,7 @@ SCHEMA_MAP = [
     ("data/policy/publication.yaml", "policy"),
     ("data/policy/sensitive.yaml", "sensitive"),
     ("data/website/site.yaml", "site"),
+    ("data/website/path.yaml", "path"),
     ("data/releases/*.yaml", "releases"),
     ("data/campaigns/*.yaml", "campaign"),
     ("data/progress/scope.yaml", "progress_scope"),

@@ -45,9 +45,10 @@ def available() -> str | None:
 
 
 def shoot(root: Path, pages: list[str], out: Path, headers: dict | None = None,
-          widths: tuple = WIDTHS) -> list[dict]:
-    """Снять страницы каталога root (корень сайта) через локальный сервер с заголовками headers."""
-    srv = server(root, 0, headers, quiet=True)
+          widths: tuple = WIDTHS, path_headers: dict | None = None) -> list[dict]:
+    """Снять страницы каталога root (корень сайта) через локальный сервер с заголовками headers
+    (и заголовками по пути — как .htaccess каталога)."""
+    srv = server(root, 0, headers, quiet=True, path_headers=path_headers)
     th = threading.Thread(target=srv.serve_forever, daemon=True)
     th.start()
     try:
@@ -114,7 +115,7 @@ def check(repo: Repo | None = None, out: Path | None = None) -> Report:
         if out.exists():
             shutil.rmtree(out)
         try:
-            results = shoot(Path(tmp) / "site", pages, out, sb._headers())
+            results = shoot(Path(tmp) / "site", pages, out, sb._headers(), path_headers=sb.path_headers())
         except (RuntimeError, subprocess.TimeoutExpired) as e:
             r.warn(f"снимки не сняты: {e}")
             return r

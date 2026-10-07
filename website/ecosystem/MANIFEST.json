@@ -1,0 +1,10 @@
+{
+ "schema": "dpvis-site-kit/1",
+ "data_as_of": "2026-10-06T17:42:33Z",
+ "model_as_of": "2026-10-05",
+ "files": {
+  "dpvis.js": "cf9cff6438851eebfe7d99835129ec976e37f05c43d433fe95b2812bf2c2851f",
+  "dpvis.css": "b69b2b924bb45ae4b977cceadf5b5c9169ff7d9379f869b6db65ee9265d801d5",
+  "dpvis-data.json": "c7e89afe06d561c0e63da04cf91b1c065d1ce86f00ff5fe67a9c372d44e44045"
+ }
+}
