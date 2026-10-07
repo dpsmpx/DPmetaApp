@@ -189,6 +189,26 @@ class AgentRuntimeTest {
         assertFalse("секретный план" in onDisk, "вход хода остался на диске")
     }
 
+    /** Хранение (A-5): завершённый запуск старше срока удаляется целиком, идущий — нет. */
+    @Test
+    fun oldFinishedRunsArePrunedRunningAreKept() {
+        val rt = runtime()
+        val done = ids.next(IdKinds.SESSION)
+        assertTrue(rt.start(done, RunSpec(TestChild.command("child", "secret"))).ok)
+        RealTime.await(60.seconds, "процесс вышел") { rt.status(done).run!!.takeIf { it.state == RunState.EXITED } }
+        // Супервизор пишет EXITED и только потом выходит: на Windows живой держит свой журнал.
+        val supervisor = RunDoc.read(DocumentStore(NioVfs(dir), "runs/${done.value}").read(AgentRuntime.RUN_KEY).valueOrNull()!!.content)!!.supervisorPid!!
+        ProcessHandle.of(supervisor).ifPresent { it.onExit().get(30, java.util.concurrent.TimeUnit.SECONDS) }
+        val running = ids.next(IdKinds.SESSION)
+        startTree(rt, running)
+        started += rt.status(running).run!!.pid!!
+        val later = AgentRuntime(dir.toString(), com.dpsmpx.dpai.core.clock.ManualClock(com.dpsmpx.dpai.core.clock.Timestamp(Clock.SYSTEM.now().epochMillis + 8 * 86_400_000L)), "test", TestChild.selfCommand())
+        assertEquals(1, later.prune(AgentRuntime.RETENTION))
+        assertFalse(dir.resolve("runs/${done.value}").toFile().exists(), "завершённый запуск удалён")
+        assertTrue(dir.resolve("runs/${running.value}").toFile().exists(), "идущий запуск на месте")
+        assertTrue(rt.stop(running, 2.seconds).ok)
+    }
+
     @Test
     fun nextTurnContinuesTheSameJournal() {
         val rt = runtime()

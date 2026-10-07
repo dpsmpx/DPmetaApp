@@ -46,6 +46,7 @@ import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -94,6 +95,7 @@ class AgentRuntime(
     private fun journalPath(id: SessionId) = "${runDir(id)}/events.jsonl"
 
     fun start(id: SessionId, spec: RunSpec): AgentReply {
+        prune(RETENTION, keep = id)
         val store = docs(id)
         val previous = when (val r = store.read(RUN_KEY)) {
             is Outcome.Failure -> return AgentReply.failure("start", r.diagnostics)
@@ -369,7 +371,37 @@ class AgentRuntime(
         return JsonObject(f)
     }
 
+    /**
+     * Хранение журналов запусков (аудит 2026-10-07, A-5): завершённый
+     * запуск, последний ход которого начат раньше [olderThan], удаляется
+     * целиком — документы, журнал событий, журнал супервизора. Идущие и
+     * потерянные (`LOST`: процесс может быть жив) не трогаются. Вызывается
+     * при каждом `start`; возвращает, сколько удалено.
+     */
+    fun prune(olderThan: Duration, keep: SessionId? = null): Int {
+        val dirs = File(home, "runs").listFiles { f -> f.isDirectory }.orEmpty()
+        var removed = 0
+        for (d in dirs.sortedBy { it.name }) {
+            val id = IdKinds.SESSION.parse(d.name).valueOrNull() ?: continue
+            if (id == keep) continue
+            val doc = (docs(id).read(RUN_KEY) as? Outcome.Success)?.value?.let { RunDoc.read(it.content) } ?: continue
+            if (doc.state != RunState.EXITED || clock.now() - doc.createdAt < olderThan) continue
+            try {
+                for (f in vfs.list(runDir(id))) vfs.delete("${runDir(id)}/$f")
+                vfs.delete(runDir(id))
+                removed++
+            } catch (_: java.io.IOException) {
+                // Не удалилось (файл занят) — попробуем при следующем start.
+            }
+        }
+        if (removed > 0) runCatching { vfs.fsyncDir("runs") }
+        return removed
+    }
+
     companion object {
+        /** Сколько хранить завершённые запуски на target (A-5). */
+        val RETENTION: Duration = 7.days
+
         /**
          * Каталог агента — только владельцу (T8; аудит 2026-10-07, A-4): в нём
          * prompt и вывод Claude, а на общем Linux-хосте права по умолчанию
