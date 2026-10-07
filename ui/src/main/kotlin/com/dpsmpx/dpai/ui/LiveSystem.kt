@@ -30,7 +30,9 @@ import com.dpsmpx.dpai.orchestrator.Orchestrator
 import com.dpsmpx.dpai.orchestrator.ProjectConfig
 import com.dpsmpx.dpai.orchestrator.TargetSlot
 import com.dpsmpx.dpai.orchestrator.accounts.SlotAuthProbe
+import com.dpsmpx.dpai.storage.document.DocumentStore
 import com.dpsmpx.dpai.storage.journal.EventJournal
+import com.dpsmpx.dpai.storage.snapshot.SnapshotStore
 import com.dpsmpx.dpai.storage.vfs.Vfs
 import com.dpsmpx.dpai.tasks.Priority
 import com.dpsmpx.dpai.verification.Verifier
@@ -73,8 +75,10 @@ class LiveSystem(
 ) : ControlView {
     override val mode: String = "контроллер"
     private val ids = IdGenerator(clock, random)
-    private val journal: EventJournal = EventJournal.open(vfs, "live.journal", quarantineCorruption = true).valueOrNull()
+    // Сегменты и снимки (D-37): контроллер живёт неделями, память журнала не растёт с историей.
+    private val journal: EventJournal = EventJournal.open(vfs, "live.journal", quarantineCorruption = true, segmentSize = SEGMENT).valueOrNull()
         ?: error("журнал контроллера не открылся")
+    private val snapshots = SnapshotStore(DocumentStore(vfs, "snapshots"))
     private val usable = entries.filter { it.configDir != null }
     private val manager = ExecutionTargetManager(clock, sshHost = sshHost, controllerVersion = controllerVersion)
     private val runners = HashMap<ExecutionTargetId, ClaudeRunner>()
@@ -99,6 +103,7 @@ class LiveSystem(
             ProjectConfig(ids.next(IdKinds.PROJECT), null, null, null),
             usable.map { TargetSlot(it.id, emptySet(), maxSessions = 1) }, null,
             Verifier({ _, _, _ -> Outcome.success(Completed(0, emptyList(), emptyList())) }, clock),
+            snapshots = snapshots, snapshotEvery = SEGMENT.toLong(),
         )
         orchestrator = o
         val sub = o.accounts.subscriptions.keys.minByOrNull { it.value } ?: ids.next(IdKinds.SUBSCRIPTION).also { s ->
@@ -164,7 +169,8 @@ class LiveSystem(
         if (problems.size > MAX_PROBLEMS) problems.subList(0, problems.size - MAX_PROBLEMS).clear()
     }
 
-    fun events(): List<EventEnvelope> = journal.records().map { it.event }
+    /** События активного сегмента журнала — для временной шкалы (D-37). */
+    fun events(): List<EventEnvelope> = journal.records(journal.activeFrom).map { it.event }
 
     fun diagnosis(): SelfDiagnosis = SelfDiagnostics.evaluate(
         SystemSignals(
@@ -188,5 +194,8 @@ class LiveSystem(
 
         /** Предел одновременных сессий подписки контроллера; на target — по одной (`TargetSlot`). */
         private const val MAX_PARALLEL = 8
+
+        /** Записей в сегменте журнала контроллера и между снимками. */
+        private const val SEGMENT = 20_000
     }
 }

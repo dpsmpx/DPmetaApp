@@ -18,6 +18,8 @@ import com.dpsmpx.dpai.orchestrator.Orchestrator
 import com.dpsmpx.dpai.orchestrator.ProjectConfig
 import com.dpsmpx.dpai.orchestrator.TargetSlot
 import com.dpsmpx.dpai.storage.journal.EventJournal
+import com.dpsmpx.dpai.storage.document.DocumentStore
+import com.dpsmpx.dpai.storage.snapshot.SnapshotStore
 import com.dpsmpx.dpai.storage.vfs.NioVfs
 import com.dpsmpx.dpai.verification.VerificationProfile
 import com.dpsmpx.dpai.verification.Verifier
@@ -59,13 +61,17 @@ class RestartTest {
     }
     private val project = ids.next(IdKinds.PROJECT)
 
-    private fun boot(): Pair<Orchestrator, MockRunner> {
-        val journal = (EventJournal.open(NioVfs(dir), "journal.log") as Outcome.Success).value
+    /** [segmented] — маленькие сегменты журнала и частые снимки (D-37): перезапуск — из снимка и хвоста. */
+    private fun boot(segmented: Boolean = false): Pair<Orchestrator, MockRunner> {
+        val vfs = NioVfs(dir)
+        val journal = (EventJournal.open(vfs, "journal.log", segmentSize = if (segmented) 40 else EventJournal.NO_SEGMENTS) as Outcome.Success).value
+        val snapshots = if (segmented) SnapshotStore(DocumentStore(vfs, "snapshots")) else null
         val runner = MockRunner.create(clock, RandomSource.seeded(clock.now().epochMillis), host) { _, _ -> MockScenario.SLOW_OUTPUT }
         val profile = VerificationProfile(project, mapOf(VerifyLevel.NORMAL to listOf(VerifyStep("ок", listOf("ok")))))
         val o = Orchestrator(
             clock, ids, RandomSource.seeded(56), journal, runner, ProjectConfig(project, null, dir.toString(), profile), targets, null,
             Verifier({ _, _, _ -> Outcome.success(Completed(0, emptyList(), emptyList())) }, clock), accounts,
+            snapshots = snapshots, snapshotEvery = 30,
         )
         o.recover { AgentClient(host, listOf("dpai"), null, "target mock") }
         return o to runner
@@ -86,6 +92,38 @@ class RestartTest {
             for (s in host.runIds()) while (runner.advance(s)) continue
             second.tick()
             assertEquals(emptyList(), second.invariants(), "инварианты после перезапуска")
+            clock.advance(1.minutes)
+        }
+        assertTrue(tasks.all { second.tasks.tasks.getValue(it).state == TaskState.DONE }, tasks.map { second.tasks.tasks.getValue(it).state }.toString())
+    }
+
+    /**
+     * Журнал из многих сегментов и снимки (D-37): после перезапуска состояние
+     * то же, нумерация потоков продолжается без пропусков, работа доходит до
+     * конца; инварианты держатся на окне активного сегмента.
+     */
+    @Test
+    fun restartFromSnapshotsAndSegmentedJournal() {
+        val (first, firstRunner) = boot(segmented = true)
+        val tasks = (1..6).map { first.addTask("задача $it", "цель").valueOrNull()!! }
+        repeat(6) {
+            first.tick()
+            for (s in host.runIds()) if (firstRunner.advance(s)) firstRunner.advance(s)
+            clock.advance(1.minutes)
+        }
+        assertTrue(dir.toFile().listFiles().orEmpty().count { it.name.startsWith("journal.log.seg-") } >= 2, "журнал разбит на сегменты")
+        assertTrue(dir.resolve("snapshots").toFile().listFiles().orEmpty().isNotEmpty(), "снимки записаны")
+
+        val (second, runner) = boot(segmented = true)
+        assertEquals(first.accounts, second.accounts)
+        // Работавшие сессии сверка переводит через RECOVERY_PENDING; завершённые — те же записи.
+        assertEquals(first.sessions.sessions.keys, second.sessions.sessions.keys)
+        for (r in first.sessions.sessions.values.filter { it.terminal }) assertEquals(r, second.sessions.sessions[r.id])
+        assertEquals(first.tasks.tasks.keys, second.tasks.tasks.keys)
+        repeat(30) {
+            for (s in host.runIds()) while (runner.advance(s)) continue
+            second.tick()
+            assertEquals(emptyList(), second.invariants(), "инварианты после перезапуска из снимка")
             clock.advance(1.minutes)
         }
         assertTrue(tasks.all { second.tasks.tasks.getValue(it).state == TaskState.DONE }, tasks.map { second.tasks.tasks.getValue(it).state }.toString())

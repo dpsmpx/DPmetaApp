@@ -59,6 +59,8 @@ import com.dpsmpx.dpai.orchestrator.tasks.TasksProjection
 import com.dpsmpx.dpai.orchestrator.git.WorktreesProjection
 import com.dpsmpx.dpai.orchestrator.git.worktreeEnvelopes
 import com.dpsmpx.dpai.execution.agent.AgentClient
+import com.dpsmpx.dpai.storage.snapshot.Projection
+import com.dpsmpx.dpai.storage.snapshot.SnapshotStore
 import com.dpsmpx.dpai.storage.snapshot.StateRecovery
 import com.dpsmpx.dpai.sessions.SessionDriver
 import com.dpsmpx.dpai.sessions.SessionEvent
@@ -119,8 +121,15 @@ class Orchestrator(
     private val git: GitService?,
     private val verifier: Verifier,
     initialAccounts: AccountsState = AccountsState.EMPTY,
+    /**
+     * Снимки проекций (D-37): после перезапуска состояние — из снимка и
+     * хвоста журнала, а не из всей истории. `null` — без снимков.
+     */
+    private val snapshots: SnapshotStore? = null,
+    private val snapshotEvery: Long = 20_000,
 ) {
-    private val recorder = EventRecorder(ids, clock).also { it.resumeFrom(journal.records()) }
+    private val recorder = EventRecorder(ids, clock)
+    private var lastSnapshotAt = 0L
     private val accountsLogic = Accounts()
     private val sessionsLogic = Sessions()
     private val tasksLogic = Tasks()
@@ -153,17 +162,42 @@ class Orchestrator(
         // Перезапуск (ТЗ, §54; D-24): состояние — из журнала. [initialAccounts] —
         // исходное состояние до журнала (его регистрация в журнал не пишется),
         // поэтому события аккаунтов проигрываются поверх него, а не поверх пустого.
-        if (journal.records().isNotEmpty()) {
-            accounts = journal.records().fold(initialAccounts) { s, r -> AccountsProjection.apply(s, r.event) }
-            sessions = StateRecovery(SessionsProjection).replayAll(journal)
-            tasks = StateRecovery(TasksProjection).replayAll(journal)
-            worktrees = StateRecovery(WorktreesProjection).replayAll(journal)
+        if (journal.position > 0) {
+            accounts = restore(AccountsProjection, initialAccounts)
+            sessions = restore(SessionsProjection, SessionsState.EMPTY)
+            tasks = restore(TasksProjection, TasksState.EMPTY)
+            worktrees = restore(WorktreesProjection, WorktreesState.EMPTY)
+            recorder.resumeFromLast(restore(StreamsProjection, emptyMap()))
+            lastSnapshotAt = journal.position
             // Дерево задачи узнаётся по её ветке (`prepareWorktree`): владельцы и пути — из журнала.
             for (w in worktrees.worktrees.values.filter { !it.removed }) {
                 w.branch.removePrefix(TASK_BRANCH).takeIf { it != w.branch }?.let { IdKinds.TASK.parse(it).valueOrNull() }?.let { treeOf[it] = w.id }
             }
         }
         config.repository?.let { repo -> commitWorktrees(Worktrees.register(worktrees, repo, clock.now()).valueOrNull().orEmpty()) }
+    }
+
+    /** Проекция из снимка и хвоста журнала, а без снимка — из всей истории потоком (D-37). */
+    private fun <S> restore(p: Projection<S>, initial: S): S =
+        snapshots?.let { StateRecovery(p).recover(journal, it, initial).valueOrNull()?.state } ?: StateRecovery(p).replayAll(journal, initial)
+
+    /**
+     * Снимки всех проекций, если с прошлого прошло [snapshotEvery] записей.
+     * Зовётся между шагами, когда память совпадает с журналом (пачек нет).
+     */
+    private fun maybeSnapshot() {
+        val store = snapshots ?: return
+        if (pending != null || journal.position - lastSnapshotAt < snapshotEvery) return
+        fun <S> save(p: Projection<S>, state: S) {
+            val r = store.save(StateRecovery(p).snapshotOf(journal, state))
+            if (r is Outcome.Failure) problems += Diagnostic.of(DiagCode.STORAGE_IO_FAILED, "снимок ${p.name} не записан", causes = r.errors)
+        }
+        save(AccountsProjection, accounts)
+        save(SessionsProjection, sessions)
+        save(TasksProjection, tasks)
+        save(WorktreesProjection, worktrees)
+        save(StreamsProjection, recorder.lastSequences())
+        lastSnapshotAt = journal.position
     }
 
     // ---- журнал ----
@@ -260,6 +294,7 @@ class Orchestrator(
         for (s in sessions.sessions.values.filter { it.state !in WAIT_STATES && !it.terminal }.map { it.id }.sorted()) poll(s)
         // Придержанное пределом частоты — сводкой, когда предел позволяет (ТЗ, §36).
         notifications.flush(clock.now())?.let { posted += it }
+        maybeSnapshot()
     }
 
     private fun List<SessionId>.sorted() = sortedBy { it.value }
@@ -532,7 +567,7 @@ class Orchestrator(
     /** Инварианты ТЗ, §118 над текущим состоянием и журналом; пусто — держатся. */
     fun invariants(): List<Diagnostic> = Invariants.check(
         InvariantInput(
-            accounts, sessions, tasks, worktrees, targets.map { it.id }.toSet(), journal.records().map { it.event },
+            accounts, sessions, tasks, worktrees, targets.map { it.id }.toSet(), journal.records(journal.activeFrom).map { it.event }, journal.activeFrom == 1L,
             merged.toList(), mergeApprovals.toMap(), problems.toList(),
         ),
     )

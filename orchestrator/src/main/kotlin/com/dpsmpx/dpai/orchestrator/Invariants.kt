@@ -22,6 +22,8 @@ data class InvariantInput(
     val worktrees: WorktreesState,
     val targets: Set<ExecutionTargetId>,
     val events: List<EventEnvelope>,
+    /** [events] — вся история с первой записи; иначе — окно (активный сегмент журнала, D-37). */
+    val eventsFromStart: Boolean,
     val merged: List<TaskId>,
     val mergeApprovals: Map<TaskId, ApprovalId>,
     val diagnostics: List<Diagnostic>,
@@ -61,7 +63,8 @@ object Invariants {
         for (e in i.events) if (!seen.add(e.id.value)) fail("event-stable-id", "event ${e.id}", "id повторяется")
         for ((stream, es) in i.events.groupBy { it.stream }) {
             val seqs = es.map { it.sequence }
-            if (seqs != (1L..seqs.size).toList()) fail("event-sequence", "stream $stream", "номера не подряд с 1")
+            val first = if (i.eventsFromStart) 1L else seqs.first()
+            if (seqs != (first until first + seqs.size).toList()) fail("event-sequence", "stream $stream", if (i.eventsFromStart) "номера не подряд с 1" else "номера не подряд")
         }
         // В выданной диагностике нет секретов.
         for (d in i.diagnostics) if (Redactor.STANDARD.redact(d.message) != d.message) fail("no-secret-in-diagnostics", d.subject ?: "diagnostic", "в сообщении похожее на секрет")

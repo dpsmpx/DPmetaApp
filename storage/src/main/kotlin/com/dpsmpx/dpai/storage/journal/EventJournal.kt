@@ -29,6 +29,14 @@ data class JournalRecord(val position: Long, val event: EventEnvelope, val hash:
  * перестановку, и потерю записи в середине. [append] возвращает успех
  * только после fsync: подтверждённая запись переживает сбой.
  *
+ * Сегменты (D-37): активный сегмент — файл [path]; когда в нём
+ * [segmentSize] записей, он атомарно переименовывается в
+ * `<path>.seg-<номер первой записи>`, и следующая запись начинает новый
+ * активный сегмент — номера и цепочка хешей сквозные. В памяти — только
+ * активный сегмент: память журнала не растёт с его историей. Старые
+ * сегменты читаются потоково ([forEachRecord]); идемпотентность повтора
+ * события (тот же id) — в пределах активного сегмента.
+ *
  * Открытие ([open]) — восстановление:
  *
  * - оборванный хвост (последняя строка без перевода строки или испорченная
@@ -36,25 +44,76 @@ data class JournalRecord(val position: Long, val event: EventEnvelope, val hash:
  *   байты сохраняются в карантин, предупреждение `JOURNAL_TAIL_TRUNCATED`;
  * - испорченная запись, за которой есть целые, — `JOURNAL_CORRUPTED`:
  *   журнал не открывается, пока пользователь явно не подтвердит карантин
- *   хвоста (`quarantineCorruption = true`, `docs/RECOVERY.md`, §4).
+ *   хвоста (`quarantineCorruption = true`, `docs/RECOVERY.md`, §4);
+ * - стык с запечатанным сегментом проверяется по его последней записи.
  *
  * После отказа записи журнал не принимает новых записей до повторного
  * открытия: что именно легло на диск, неизвестно (ТЗ, §80).
  */
-class EventJournal private constructor(private val vfs: Vfs, private val path: String, loaded: List<JournalRecord>) {
+class EventJournal private constructor(
+    private val vfs: Vfs,
+    private val path: String,
+    private val segmentSize: Int,
+    private val sealed: MutableList<String>,
+    private var offset: Long,
+    private var baseHash: ContentHash,
+    loaded: List<JournalRecord>,
+) {
     private val records = ArrayList(loaded)
     private val positionOf = HashMap<EventId, Long>().apply { loaded.forEach { put(it.event.id, it.position) } }
     private var broken = false
 
-    val position: Long get() = records.size.toLong()
+    /** Номер последней записи (0 — журнал пуст). */
+    val position: Long get() = offset + records.size
 
-    val lastHash: ContentHash get() = records.lastOrNull()?.hash ?: GENESIS
+    val lastHash: ContentHash get() = records.lastOrNull()?.hash ?: baseHash
 
-    fun hashAt(position: Long): ContentHash? =
-        if (position == 0L) GENESIS else records.getOrNull((position - 1).toInt())?.hash
+    /** Номер первой записи активного сегмента: всё раньше — в запечатанных сегментах. */
+    val activeFrom: Long get() = offset + 1
 
-    /** Записи с номера [from] включительно. */
-    fun records(from: Long = 1): List<JournalRecord> = records.drop((from - 1).coerceAtLeast(0).toInt())
+    /** Сколько сегментов запечатано. */
+    val sealedSegments: Int get() = sealed.size
+
+    fun hashAt(position: Long): ContentHash? = when {
+        position == 0L -> GENESIS
+        position == offset -> baseHash
+        position > offset -> records.getOrNull((position - offset - 1).toInt())?.hash
+        else -> {
+            var found: ContentHash? = null
+            forEachRecord(position) { r -> if (r.position == position) found = r.hash; false }
+            found
+        }
+    }
+
+    /**
+     * Записи с номера [from] включительно — списком. Для чтения всей истории
+     * длинного журнала — [forEachRecord]: список держит её в памяти.
+     */
+    fun records(from: Long = 1): List<JournalRecord> {
+        if (from > offset) return records.drop((from - offset - 1).coerceAtLeast(0).toInt())
+        val out = ArrayList<JournalRecord>()
+        forEachRecord(from) { out += it; true }
+        return out
+    }
+
+    /**
+     * Записи с номера [from] по порядку, по одному сегменту в памяти;
+     * [body] возвращает `false`, чтобы остановиться. Запечатанный сегмент,
+     * который не читается, — `IllegalStateException`: его записи когда-то
+     * были подтверждены (D-24), молча их пропустить нельзя.
+     */
+    fun forEachRecord(from: Long = 1, body: (JournalRecord) -> Boolean) {
+        val names = sealed.toList()
+        for ((i, name) in names.withIndex()) {
+            val nextFirst = names.getOrNull(i + 1)?.let(::firstOf) ?: (offset + 1)
+            if (nextFirst <= from) continue
+            val bytes = checkNotNull(vfs.read(name)) { "запечатанный сегмент $name пропал" }
+            val scan = scan(bytes, null)
+            check(scan.badLine == null) { "запечатанный сегмент $name испорчен (запись №${scan.badLine})" }
+            for (r in scan.loaded) if (r.position >= from && !body(r)) return
+        }
+        for (r in records) if (r.position >= from && !body(r)) return
+    }
 
     /** Файл журнала уже есть на диске: проверять каталог и делать fsync каталога больше не нужно. */
     private var onDisk = false
@@ -72,11 +131,34 @@ class EventJournal private constructor(private val vfs: Vfs, private val path: S
         onDisk = true
     }
 
+    /**
+     * Активный сегмент полон — запечатать: переименование атомарно, сбой
+     * посередине оставляет либо прежний активный, либо запечатанный и пустой
+     * активный — оба открываются. Неудача — не отказ записи: попробуем после
+     * следующей.
+     */
+    private fun rotateIfFull() {
+        if (records.size < segmentSize) return
+        val name = segmentName(path, offset + 1)
+        try {
+            vfs.rename(path, name)
+        } catch (_: IOException) {
+            return
+        }
+        sealed += name
+        baseHash = lastHash
+        offset = position
+        records.clear()
+        positionOf.clear()
+        onDisk = false
+        runCatching { vfs.fsyncDir(Vfs.parentOf(path)) }
+    }
+
     @Synchronized
     fun append(event: EventEnvelope): Outcome<Long> {
         if (broken) return Outcome.failure(DiagCode.STORAGE_UNAVAILABLE, "журнал закрыт после отказа записи: нужно открыть заново", path)
         positionOf[event.id]?.let { known ->
-            val same = records[(known - 1).toInt()].event == event
+            val same = records[(known - offset - 1).toInt()].event == event
             return if (same) {
                 Outcome.success(known, listOf(Diagnostic.info(DiagCode.EVENT_DUPLICATE, "событие уже в журнале под №$known", path)))
             } else {
@@ -89,6 +171,7 @@ class EventJournal private constructor(private val vfs: Vfs, private val path: S
             write(line)
             records += record.first
             positionOf[event.id] = record.first.position
+            rotateIfFull()
             Outcome.success(record.first.position)
         } catch (e: IOException) {
             broken = true
@@ -102,7 +185,7 @@ class EventJournal private constructor(private val vfs: Vfs, private val path: S
      * всей пачки сразу; при сбое до него на диске остаётся префикс целых
      * записей или ничего — неподтверждённое, как у [append]. Повтор
      * события, уже лежащего в журнале, пропускается; конфликт — отказ всей
-     * пачки до записи.
+     * пачки до записи. Пачка не делится между сегментами.
      */
     @Synchronized
     fun appendAll(events: List<EventEnvelope>): Outcome<List<Long>> {
@@ -115,7 +198,7 @@ class EventJournal private constructor(private val vfs: Vfs, private val path: S
         for (event in events) {
             val known = positionOf[event.id] ?: seen[event.id]
             if (known != null) {
-                val existing = records.getOrNull((known - 1).toInt())?.event ?: fresh[(known - position - 1).toInt()].event
+                val existing = records.getOrNull((known - offset - 1).toInt())?.event ?: fresh[(known - position - 1).toInt()].event
                 if (existing != event) return Outcome.failure(DiagCode.EVENT_SEQUENCE_CONFLICT, "идентификатор события уже занят другим содержимым", path)
                 positions += known
                 continue
@@ -134,6 +217,7 @@ class EventJournal private constructor(private val vfs: Vfs, private val path: S
                 records += r
                 positionOf[r.event.id] = r.position
             }
+            rotateIfFull()
             Outcome.success(positions)
         } catch (e: IOException) {
             broken = true
@@ -146,14 +230,48 @@ class EventJournal private constructor(private val vfs: Vfs, private val path: S
         const val VERSION = 1
         val GENESIS: ContentHash = Hashing.sha256("dpai.journal genesis")
 
-        fun open(vfs: Vfs, path: String, quarantineCorruption: Boolean = false): Outcome<EventJournal> {
+        /** Без сегментов: журнал запуска агента короткий и читается другим процессом ([readCommitted]). */
+        const val NO_SEGMENTS: Int = Int.MAX_VALUE
+
+        private const val SEGMENT_MARK = ".seg-"
+
+        private fun segmentName(path: String, first: Long) = "$path$SEGMENT_MARK${first.toString().padStart(12, '0')}"
+
+        private fun firstOf(name: String): Long = name.substringAfterLast(SEGMENT_MARK).toLong()
+
+        fun open(vfs: Vfs, path: String, quarantineCorruption: Boolean = false, segmentSize: Int = NO_SEGMENTS): Outcome<EventJournal> {
+            require(segmentSize > 0) { "размер сегмента — положительный" }
+            val dir = Vfs.parentOf(path)
+            val prefix = path.substringAfterLast('/') + SEGMENT_MARK
+            val sealed = try {
+                vfs.list(dir).filter { it.startsWith(prefix) && it.removePrefix(prefix).all(Char::isDigit) }.sorted().map { Vfs.join(dir, it) }
+            } catch (e: IOException) {
+                return Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "каталог журнала не прочитан", e, path))
+            }.toMutableList()
+            // Стык: последняя запись последнего запечатанного сегмента — начало цепочки активного.
+            var offset = 0L
+            var baseHash = GENESIS
+            sealed.lastOrNull()?.let { last ->
+                val bytes = try {
+                    vfs.read(last)
+                } catch (e: IOException) {
+                    return Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "сегмент журнала не прочитан", e, last))
+                } ?: return Outcome.failure(DiagCode.JOURNAL_CORRUPTED, "запечатанный сегмент пропал", last)
+                val scan = scan(bytes, null)
+                val tail = scan.loaded.lastOrNull()
+                if (scan.badLine != null || tail == null || scan.validEnd < bytes.size) {
+                    return Outcome.failure(DiagCode.JOURNAL_CORRUPTED, "запечатанный сегмент испорчен или пуст", last)
+                }
+                offset = tail.position
+                baseHash = tail.hash
+            }
             val bytes = try {
                 vfs.read(path)
             } catch (e: IOException) {
                 return Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "журнал не прочитан", e, path))
-            } ?: return Outcome.success(EventJournal(vfs, path, emptyList()))
+            } ?: return Outcome.success(EventJournal(vfs, path, segmentSize, sealed, offset, baseHash, emptyList()))
 
-            val scan = scan(bytes)
+            val scan = scan(bytes, offset + 1 to baseHash)
             val loaded = scan.loaded
             val validEnd = scan.validEnd
             val badLine = scan.badLine
@@ -174,14 +292,14 @@ class EventJournal private constructor(private val vfs: Vfs, private val path: S
                     vfs.fsync(path)
                     diags += Diagnostic.warning(
                         DiagCode.JOURNAL_TAIL_TRUNCATED,
-                        "отрезан неподтверждённый или испорченный хвост (${removed.size} байт) после записи №${loaded.size}; сохранён в $q",
+                        "отрезан неподтверждённый или испорченный хвост (${removed.size} байт) после записи №${offset + loaded.size}; сохранён в $q",
                         path,
                     )
                 } catch (e: IOException) {
                     return Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "хвост журнала не отрезан", e, path))
                 }
             }
-            return Outcome.success(EventJournal(vfs, path, loaded), diags)
+            return Outcome.success(EventJournal(vfs, path, segmentSize, sealed, offset, baseHash, loaded), diags)
         }
 
         /**
@@ -189,7 +307,7 @@ class EventJournal private constructor(private val vfs: Vfs, private val path: S
          * журнал пишет другой процесс (агент target, D-26): незаконченная
          * последняя строка — запись, которая ещё пишется, она пропускается, а
          * не отрезается. Испорченная запись, за которой есть целые, —
-         * `JOURNAL_CORRUPTED`, как у [open].
+         * `JOURNAL_CORRUPTED`, как у [open]. Только для журналов без сегментов.
          */
         fun readCommitted(vfs: Vfs, path: String): Outcome<List<JournalRecord>> {
             val bytes = try {
@@ -197,7 +315,7 @@ class EventJournal private constructor(private val vfs: Vfs, private val path: S
             } catch (e: IOException) {
                 return Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "журнал не прочитан", e, path))
             } ?: return Outcome.success(emptyList())
-            val scan = scan(bytes)
+            val scan = scan(bytes, 1L to GENESIS)
             if (scan.badLine != null && scan.linesAfterBad > 0) {
                 return Outcome.failure(DiagCode.JOURNAL_CORRUPTED, "запись №${scan.badLine} испорчена, за ней ещё ${scan.linesAfterBad}", path)
             }
@@ -206,19 +324,26 @@ class EventJournal private constructor(private val vfs: Vfs, private val path: S
 
         private class Scan(val loaded: List<JournalRecord>, val validEnd: Int, val badLine: Int?, val linesAfterBad: Int)
 
-        private fun scan(bytes: ByteArray): Scan {
+        /**
+         * Записи файла по порядку. [start] — ожидаемые номер и хеш перед первой
+         * записью; `null` — взять их из первой записи (запечатанный сегмент,
+         * начало которого проверялось, пока он был активным).
+         */
+        private fun scan(bytes: ByteArray, start: Pair<Long, ContentHash>?): Scan {
             val loaded = ArrayList<JournalRecord>()
             var validEnd = 0 // байт после последней целой записи
-            var start = 0
+            var from = 0
             var badLine: Int? = null
             var linesAfterBad = 0
             var lineNo = 0
-            while (start < bytes.size) {
-                val nl = indexOf(bytes, '\n'.code.toByte(), start)
+            while (from < bytes.size) {
+                val nl = indexOf(bytes, '\n'.code.toByte(), from)
                 if (nl < 0) break // оборванная строка без перевода строки — хвост
                 lineNo++
                 if (badLine == null) {
-                    val rec = parseRecord(bytes.copyOfRange(start, nl), loaded.size + 1L, loaded.lastOrNull()?.hash ?: GENESIS)
+                    val line = bytes.copyOfRange(from, nl)
+                    val expected = loaded.lastOrNull()?.let { it.position + 1 to it.hash } ?: start ?: firstHeader(line)
+                    val rec = expected?.let { parseRecord(line, it.first, it.second) }
                     if (rec != null) {
                         loaded += rec
                         validEnd = nl + 1
@@ -228,9 +353,17 @@ class EventJournal private constructor(private val vfs: Vfs, private val path: S
                 } else {
                     linesAfterBad++
                 }
-                start = nl + 1
+                from = nl + 1
             }
             return Scan(loaded, validEnd, badLine, linesAfterBad)
+        }
+
+        /** Номер и хеш предыдущей из самой записи — для начала запечатанного сегмента. */
+        private fun firstHeader(line: ByteArray): Pair<Long, ContentHash>? {
+            val value = JsonParser().parse(line.toString(Charsets.UTF_8)).valueOrNull() as? JsonObject ?: return null
+            val position = (value["position"] as? JsonNumber)?.toLongExact() ?: return null
+            val prev = (value["prev"] as? JsonString)?.value?.let { ContentHash.parse(it).valueOrNull() } ?: return null
+            return position to prev
         }
 
         private fun build(position: Long, prev: ContentHash, event: EventEnvelope): Pair<JournalRecord, JsonObject> {

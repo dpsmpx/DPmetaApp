@@ -34,7 +34,7 @@ class InvariantsTest {
         events: List<EventEnvelope> = emptyList(),
         merged: List<com.dpsmpx.dpai.core.ids.TaskId> = emptyList(),
         diagnostics: List<Diagnostic> = emptyList(),
-    ) = InvariantInput(AccountsState.EMPTY, SessionsState.EMPTY, tasks, worktrees, emptySet(), events, merged, emptyMap(), diagnostics)
+    ) = InvariantInput(AccountsState.EMPTY, SessionsState.EMPTY, tasks, worktrees, emptySet(), events, true, merged, emptyMap(), diagnostics)
 
     private fun names(i: InvariantInput) = Invariants.check(i).map {
         assertEquals(DiagCode.INVARIANT_VIOLATED, it.code)

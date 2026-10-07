@@ -22,6 +22,16 @@ class EventRecorder(private val ids: IdGenerator, private val clock: Clock) {
         for (r in records) next[r.event.stream] = maxOf(next[r.event.stream] ?: 1, r.event.sequence + 1)
     }
 
+    /** Продолжить по последним номерам потоков (`StreamsProjection`, D-37). */
+    @Synchronized
+    fun resumeFromLast(last: Map<StreamRef, Long>) {
+        for ((s, n) in last) next[s] = maxOf(next[s] ?: 1, n + 1)
+    }
+
+    /** Последний выданный номер каждого потока — для снимка. */
+    @Synchronized
+    fun lastSequences(): Map<StreamRef, Long> = next.mapValues { it.value - 1 }
+
     @Synchronized
     fun envelope(
         type: EventType,

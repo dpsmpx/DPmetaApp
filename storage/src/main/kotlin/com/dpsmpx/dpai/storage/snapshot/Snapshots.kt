@@ -87,9 +87,17 @@ class StateRecovery<S>(private val projection: Projection<S>) {
     fun snapshotOf(journal: EventJournal, state: S): Snapshot =
         Snapshot(projection.name, journal.position, journal.lastHash, projection.encode(state))
 
-    fun replayAll(journal: EventJournal): S = journal.records().fold(projection.initial()) { s, r -> projection.apply(s, r.event) }
+    /** Состояние из всей истории — потоком, по сегменту в памяти (D-37). */
+    fun replayAll(journal: EventJournal, initial: S = projection.initial()): S {
+        var s = initial
+        journal.forEachRecord { r ->
+            s = projection.apply(s, r.event)
+            true
+        }
+        return s
+    }
 
-    fun recover(journal: EventJournal, snapshots: SnapshotStore): Outcome<Recovered<S>> {
+    fun recover(journal: EventJournal, snapshots: SnapshotStore, initial: S = projection.initial()): Outcome<Recovered<S>> {
         val notes = mutableListOf<Diagnostic>()
         val loaded = snapshots.load(projection.name)
         val snapshot = when (loaded) {
@@ -114,8 +122,12 @@ class StateRecovery<S>(private val projection: Projection<S>) {
                 }
             }
         }
-        val (start, from) = base ?: (projection.initial() to 0L)
-        val state = journal.records(from + 1).fold(start) { s, r -> projection.apply(s, r.event) }
+        val (start, from) = base ?: (initial to 0L)
+        var state = start
+        journal.forEachRecord(from + 1) { r ->
+            state = projection.apply(state, r.event)
+            true
+        }
         return Outcome.success(Recovered(state, journal.position, base != null), notes)
     }
 

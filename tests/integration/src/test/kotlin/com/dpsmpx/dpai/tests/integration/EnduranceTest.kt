@@ -20,7 +20,9 @@ import com.dpsmpx.dpai.monitoring.DisplayState
 import com.dpsmpx.dpai.orchestrator.Orchestrator
 import com.dpsmpx.dpai.orchestrator.ProjectConfig
 import com.dpsmpx.dpai.orchestrator.TargetSlot
+import com.dpsmpx.dpai.storage.document.DocumentStore
 import com.dpsmpx.dpai.storage.journal.EventJournal
+import com.dpsmpx.dpai.storage.snapshot.SnapshotStore
 import com.dpsmpx.dpai.storage.vfs.NioVfs
 import com.dpsmpx.dpai.verification.VerificationProfile
 import com.dpsmpx.dpai.verification.Verifier
@@ -69,7 +71,8 @@ class EnduranceTest {
         val profile = VerificationProfile(project, mapOf(VerifyLevel.NORMAL to listOf(VerifyStep("ок", listOf("ok")))))
 
         fun boot(): Pair<Orchestrator, MockRunner> {
-            val journal = (EventJournal.open(NioVfs(root.toPath()), "journal.log") as Outcome.Success).value
+            val vfs = NioVfs(root.toPath())
+            val journal = (EventJournal.open(vfs, "journal.log", segmentSize = 20_000) as Outcome.Success).value
             val runner = MockRunner.create(clock, RandomSource.seeded(clock.now().epochMillis), host) { _, _ ->
                 when (random.nextInt(40)) {
                     0 -> MockScenario.FAILURE
@@ -81,6 +84,7 @@ class EnduranceTest {
             val o = Orchestrator(
                 clock, ids, random, journal, runner, ProjectConfig(project, null, root.path, profile), targets, null,
                 Verifier({ _, _, _ -> Outcome.success(Completed(0, emptyList(), emptyList())) }, clock), accounts,
+                snapshots = SnapshotStore(DocumentStore(vfs, "snapshots")),
             )
             o.recover { AgentClient(host, listOf("dpai"), null, "target mock") }
             return o to runner
@@ -160,7 +164,8 @@ class EnduranceTest {
         return Sample(
             minute = minute,
             heapMiB = (rt.totalMemory() - rt.freeMemory()) shr 20,
-            journalKiB = File(root, "journal.log").length() shr 10,
+            // Весь журнал на диске — все сегменты (рост хранилища, ТЗ, §116).
+            journalKiB = root.listFiles().orEmpty().filter { it.name.startsWith("journal.log") }.sumOf { it.length() } shr 10,
             events = o.eventCount(),
             done = o.tasks.tasks.values.count { it.state == TaskState.DONE },
             open = o.tasks.tasks.values.count { !it.terminal },
