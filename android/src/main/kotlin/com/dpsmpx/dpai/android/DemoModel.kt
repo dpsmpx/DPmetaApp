@@ -12,6 +12,7 @@ import com.dpsmpx.dpai.ui.ControlView
 import com.dpsmpx.dpai.ui.DashboardScreen
 import com.dpsmpx.dpai.ui.DemoSystem
 import com.dpsmpx.dpai.ui.LiveSystem
+import com.dpsmpx.dpai.ui.ProjectEntry
 import com.dpsmpx.dpai.ui.SessionScreen
 import com.dpsmpx.dpai.ui.TargetEntry
 import com.dpsmpx.dpai.ui.TaskBoard
@@ -38,14 +39,15 @@ data class Snapshot(
 class DemoModel(private val cacheDir: File, private val controller: Controller) {
     private var demo: DemoSystem? = null
     private var live: LiveSystem? = null
-    private var liveFor: List<TargetEntry>? = null
+    private var liveFor: Pair<List<TargetEntry>, ProjectEntry?>? = null
 
     private fun current(): ControlView {
         val targets = controller.targets()
         if (targets.any { it.configDir != null }) {
-            if (live == null || liveFor != targets) {
-                live = controller.live(targets)
-                liveFor = targets
+            val key = targets to controller.project()
+            if (live == null || liveFor != key) {
+                live = controller.live(key.first, key.second)
+                liveFor = key
             }
             return live!!
         }

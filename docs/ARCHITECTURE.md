@@ -265,7 +265,10 @@ target:     start ─► Detacher ─► supervise ─► процесс; выв
 `Tone`; `DashboardText` — те же экраны текстом для `cli`; `DemoSystem` —
 настоящий `Orchestrator` на `MockRunner` для показа и замеров;
 `LiveSystem` — контроллер приложения (D-35) над targets из
-`dpai.app-targets`: слот на target, `SlotAuthProbe`, `RoutingRunner`.
+`dpai.app-targets`: слот на target, `SlotAuthProbe`, `RoutingRunner`;
+с проектом (`dpai.app-project`) — репозиторий на target, `GitService`
+поверх SSH-хоста (`git -C`), проверка через агента (`AgentStepRunner`),
+слияние по одобрению.
 Обе — `ControlView`: оболочка рисует любую.
 
 Модуль `android` (этап 11, D-34): Jetpack Compose рисует снимок `ui`;

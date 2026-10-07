@@ -30,6 +30,10 @@ import com.dpsmpx.dpai.orchestrator.Orchestrator
 import com.dpsmpx.dpai.orchestrator.ProjectConfig
 import com.dpsmpx.dpai.orchestrator.TargetSlot
 import com.dpsmpx.dpai.orchestrator.accounts.SlotAuthProbe
+import com.dpsmpx.dpai.orchestrator.git.GitService
+import com.dpsmpx.dpai.orchestrator.verification.AgentStepRunner
+import com.dpsmpx.dpai.git.GitCommands
+import com.dpsmpx.dpai.security.ApprovalLedger
 import com.dpsmpx.dpai.storage.document.DocumentStore
 import com.dpsmpx.dpai.storage.journal.EventJournal
 import com.dpsmpx.dpai.storage.snapshot.SnapshotStore
@@ -72,6 +76,12 @@ class LiveSystem(
     knownHostsFile: String,
     random: RandomSource = RandomSource.secure(),
     controllerVersion: String? = null,
+    /**
+     * Проект с репозиторием на одном из targets: задачи идут туда, в свои
+     * рабочие деревья, проверка — через агента target, слияние — по
+     * одобрению. `null` — задачи в каталоге агента, без Git и проверки.
+     */
+    private val project: ProjectEntry? = null,
 ) : ControlView {
     override val mode: String = "контроллер"
     private val ids = IdGenerator(clock, random)
@@ -80,13 +90,17 @@ class LiveSystem(
         ?: error("журнал контроллера не открылся")
     private val snapshots = SnapshotStore(DocumentStore(vfs, "snapshots"))
     private val usable = entries.filter { it.configDir != null }
+
+    /** Targets, на которых идут сессии: при проекте — только его target (деревья — на его диске). */
+    private val working = project?.let { p -> usable.filter { it.id == p.target } } ?: usable
     private val manager = ExecutionTargetManager(clock, sshHost = sshHost, controllerVersion = controllerVersion)
     private val runners = HashMap<ExecutionTargetId, ClaudeRunner>()
     private val probes = HashMap<AccountId, Pair<SlotAuthProbe, SessionId>>()
     private val slotOf = HashMap<ExecutionTargetId, AccountId>()
     private val accountsLogic = Accounts()
     val orchestrator: Orchestrator
-    val notes: List<String> = entries.filter { it.configDir == null }.map { "${it.label}: нет каталога Claude — только проверка агента" }
+    val notes: List<String> = entries.filter { it.configDir == null }.map { "${it.label}: нет каталога Claude — только проверка агента" } +
+        (project?.takeIf { p -> usable.none { it.id == p.target } }?.let { listOf("проект: его target без каталога Claude — задачи не запускаются") }.orEmpty())
     val problems = mutableListOf<Diagnostic>()
 
     init {
@@ -98,11 +112,20 @@ class LiveSystem(
         val router = RoutingRunner({ o.sessions.sessions[it]?.target }, { runners[it] })
         // Состояние — из журнала (перезапуск приложения); подписка и слоты
         // регистрируются событиями, чтобы журнал знал их после перезапуска.
+        val projectTarget = project?.let { p -> usable.firstOrNull { it.id == p.target } }
+        val config = if (project != null) {
+            ProjectConfig(project.project, project.repository(), project.worktreeRoot, project.profile(), integrationBranch = project.integrationBranch)
+        } else {
+            ProjectConfig(ids.next(IdKinds.PROJECT), null, null, null)
+        }
+        // Git на target — по SSH: команды `git -C <путь>` рабочего каталога не требуют (GitService).
+        val git = projectTarget?.let { t -> GitService(sshHost(t.toTarget(knownHostsFile).ssh!!, t.platform), GitCommands(ApprovalLedger()), clock) }
+        // Шаги проверки — через агента target: по SSH рабочий каталог задаёт он (AgentStepRunner).
+        val verifier = projectTarget?.let { t -> Verifier(AgentStepRunner(manager.client(t.id).valueOrNull()!!, ids, clock), clock) }
+            ?: Verifier({ _, _, _ -> Outcome.success(Completed(0, emptyList(), emptyList())) }, clock)
         o = Orchestrator(
-            clock, ids, random, journal, router,
-            ProjectConfig(ids.next(IdKinds.PROJECT), null, null, null),
-            usable.map { TargetSlot(it.id, emptySet(), maxSessions = 1) }, null,
-            Verifier({ _, _, _ -> Outcome.success(Completed(0, emptyList(), emptyList())) }, clock),
+            clock, ids, random, journal, router, config,
+            working.map { TargetSlot(it.id, emptySet(), maxSessions = 1) }, git, verifier,
             snapshots = snapshots, snapshotEvery = SEGMENT.toLong(), documents = DocumentStore(vfs, "docs"),
         )
         orchestrator = o

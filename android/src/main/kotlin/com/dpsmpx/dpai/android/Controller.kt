@@ -20,6 +20,9 @@ import com.dpsmpx.dpai.storage.document.DocumentStore
 import com.dpsmpx.dpai.storage.vfs.NioVfs
 import com.dpsmpx.dpai.ui.KnownHosts
 import com.dpsmpx.dpai.ui.LiveSystem
+import com.dpsmpx.dpai.ui.ProjectBook
+import com.dpsmpx.dpai.ui.ProjectEntry
+import com.dpsmpx.dpai.ui.ProjectForm
 import com.dpsmpx.dpai.ui.TargetBook
 import com.dpsmpx.dpai.ui.TargetEntry
 import com.dpsmpx.dpai.ui.TargetForm
@@ -95,11 +98,25 @@ class Controller(private val root: File, private val version: String?) {
     fun form(label: String, host: String, port: String, user: String, windows: Boolean, agent: String, configDir: String): Outcome<TargetEntry> =
         TargetForm.validate(ids.next(IdKinds.TARGET), label, host, port, user, windows, agent, configDir)
 
+    /** Проект контроллера (один): репозиторий на target, деревья задач, проверка. */
+    @Synchronized
+    fun project(): ProjectEntry? = docs.read(PROJECT).valueOrNull()?.let { ProjectBook.fromJson(it.content).valueOrNull() }
+
+    fun projectForm(target: TargetEntry, root: String, worktreeRoot: String, branch: String, check: String): Outcome<ProjectEntry> =
+        ProjectForm.validate(ids, target, root, worktreeRoot, branch, check)
+
+    @Synchronized
+    fun setProject(p: ProjectEntry?): Outcome<Unit> {
+        val r = if (p == null) docs.delete(PROJECT) else docs.write(PROJECT, ProjectBook.toJson(p)).let { w -> if (w is Outcome.Failure) w else Outcome.success(Unit) }
+        return r
+    }
+
     /** Настоящий контроллер над [targets]: SSH — JSch с ключом Keystore, журнал — в каталоге контроллера. */
-    fun live(targets: List<TargetEntry>): LiveSystem = LiveSystem(
+    fun live(targets: List<TargetEntry>, project: ProjectEntry?): LiveSystem = LiveSystem(
         Clock.SYSTEM, NioVfs(File(root, "live").apply { mkdirs() }.toPath()), targets,
         { e, p -> JschProcessHost(e, p, identities = listOf(KeystoreKey.identity())) }, knownHostsFile,
         controllerVersion = version,
+        project = project,
     )
 
     /**
@@ -152,6 +169,7 @@ class Controller(private val root: File, private val version: String?) {
 
     companion object {
         private const val BOOK = "targets"
+        private const val PROJECT = "project"
         private const val KNOWN_HOSTS = "known_hosts"
         private const val APP_KEY = "app_key.pub"
 

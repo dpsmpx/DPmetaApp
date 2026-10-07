@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.jsch.ProbedHostKey
 import com.dpsmpx.dpai.ui.CheckLine
+import com.dpsmpx.dpai.ui.ProjectEntry
 import com.dpsmpx.dpai.ui.TargetEntry
 import com.dpsmpx.dpai.ui.TargetScreens
 import com.dpsmpx.dpai.ui.Tone
@@ -50,6 +51,8 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
     var publicKey by remember { mutableStateOf<String?>(null) }
     val checks = remember { mutableStateMapOf<String, List<CheckLine>>() }
     var form by remember { mutableStateOf(false) }
+    var project by remember { mutableStateOf(controller.project()) }
+    var projectFor by remember { mutableStateOf<TargetEntry?>(null) }
 
     LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
@@ -64,6 +67,21 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
                         }
                     } else {
                         SelectionContainer { Text(key, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall) }
+                    }
+                }
+            }
+        }
+        item {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp)) {
+                    Text("Проект", style = MaterialTheme.typography.titleMedium)
+                    val p = project
+                    if (p == null) {
+                        Text("Нет: задачи идут в каталоге агента, без Git и проверки. Задайте у target с каталогом Claude.", style = MaterialTheme.typography.bodySmall)
+                    } else {
+                        Text("репозиторий ${p.root}; деревья ${p.worktreeRoot}; ветка ${p.integrationBranch}", style = MaterialTheme.typography.bodySmall)
+                        Text(p.checks.firstOrNull()?.let { "проверка: ${it.command.joinToString(" ")}" } ?: "без проверки", style = MaterialTheme.typography.bodySmall)
+                        TextButton(onClick = { scope.launch { withContext(Dispatchers.IO) { controller.setProject(null) }; project = null } }) { Text("Убрать проект") }
                     }
                 }
             }
@@ -87,6 +105,7 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
                         }) { Text("Проверить") }
                         if (t.configDir != null) {
                             TextButton(onClick = { scope.launch { withContext(Dispatchers.IO) { model.probe(t.id) } } }) { Text("Вход Claude") }
+                            TextButton(onClick = { projectFor = t }) { Text("Проект") }
                         }
                         TextButton(onClick = {
                             scope.launch {
@@ -98,6 +117,13 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
                     checks[t.id.value]?.forEach { c -> CheckRow(c) }
                 }
             }
+        }
+    }
+
+    projectFor?.let { t ->
+        ProjectDialog(controller, t) { saved ->
+            projectFor = null
+            if (saved != null) project = saved
         }
     }
 
@@ -206,3 +232,42 @@ private fun AddTargetDialog(controller: Controller, onDone: () -> Unit) {
         dismissButton = { TextButton(onClick = onDone) { Text("Отмена") } },
     )
 }
+
+/** Проект на target: репозиторий, каталог деревьев задач, ветка интеграции, команда проверки. */
+@Composable
+private fun ProjectDialog(controller: Controller, target: TargetEntry, onDone: (ProjectEntry?) -> Unit) {
+    val scope = rememberCoroutineScope()
+    var root by remember { mutableStateOf("") }
+    var trees by remember { mutableStateOf("") }
+    var branch by remember { mutableStateOf("main") }
+    var check by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = { onDone(null) },
+        title = { Text("Проект на ${target.label}") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                OutlinedTextField(root, { root = it }, label = { Text("Каталог репозитория") }, singleLine = true)
+                OutlinedTextField(trees, { trees = it }, label = { Text("Каталог деревьев задач") }, singleLine = true)
+                OutlinedTextField(branch, { branch = it }, label = { Text("Ветка интеграции") }, singleLine = true)
+                OutlinedTextField(check, { check = it }, label = { Text("Команда проверки (необязательно)") }, singleLine = true)
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                when (val f = controller.projectForm(target, root, trees, branch, check)) {
+                    is Outcome.Failure -> error = f.diagnostics.first().message
+                    is Outcome.Success -> scope.launch {
+                        when (val w = withContext(Dispatchers.IO) { controller.setProject(f.value) }) {
+                            is Outcome.Failure -> error = w.diagnostics.first().message
+                            is Outcome.Success -> onDone(f.value)
+                        }
+                    }
+                }
+            }) { Text("Сохранить") }
+        },
+        dismissButton = { TextButton(onClick = { onDone(null) }) { Text("Отмена") } },
+    )
+}
+
