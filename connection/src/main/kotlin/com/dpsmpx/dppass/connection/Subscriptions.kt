@@ -118,7 +118,7 @@ class SubscriptionService(
     fun add(url: String, name: String?): Outcome<Subscription> {
         val trimmed = url.trim()
         if (!isSubscriptionUrl(trimmed)) {
-            return Outcome.failure(DiagCode.SUBSCRIPTION_FETCH_FAILED, "адрес подписки — только https:// без пробелов, до $MAX_URL символов")
+            return Outcome.failure(DiagCode.SUBSCRIPTION_FETCH_FAILED, URL_RULE)
         }
         val given = name?.let(::cleanName)
         if (given != null && !isValidName(given)) return invalidName()
@@ -246,6 +246,9 @@ class SubscriptionService(
         const val MAX_URL: Int = 2048
         const val MAX_NAME: Int = 64
         const val MAX_SUBSCRIPTIONS: Int = 64
+
+        /** Что не так с адресом, который не [isSubscriptionUrl], — для отказа и для импорта. */
+        const val URL_RULE: String = "адрес подписки — только https:// без пробелов и управляющих символов, до $MAX_URL символов"
 
         /** Без пробелов и управляющих символов: из адреса берётся имя подписки по умолчанию. */
         fun isSubscriptionUrl(text: String): Boolean =

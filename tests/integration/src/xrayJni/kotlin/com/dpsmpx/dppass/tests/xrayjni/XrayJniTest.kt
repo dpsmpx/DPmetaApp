@@ -241,18 +241,22 @@ class XrayJniTest {
 
     // ---- геоданные для объяснения решений (D-27) ----
 
-    /** Каталог геоданных пуст: код не сопоставляется — отказ, как у проверки конфигурации, а не «не попадает». */
+    /**
+     * Каталог геоданных пуст (перенос набора не удался, D-27): код не
+     * сопоставляется — отказ «набора нет», а не «не попадает» и не «такого
+     * кода нет».
+     */
     @Test
     fun geoMatchWithoutSetIsRefused() {
         val r = assertIs<XrayResult.Failed>(runtime.geoMatch(GeoKind.SITE, "zz", "example.org".encodeToByteArray()))
-        assertEquals(XrayFailureKind.CONFIG, r.kind)
+        assertEquals(XrayFailureKind.CONTRACT, r.kind)
         val bad = assertIs<XrayResult.Failed>(runtime.geoMatch(GeoKind.IP, "zz", byteArrayOf(1, 2, 3)))
         assertEquals(XrayFailureKind.CONTRACT, bad.kind)
         val engine = XrayProxyEngine(Outcome.Success(runtime))
         val policy = ir("valid-multi.json").routing
         assertTrue(policy.rules.any { it.conditions.geoIps.isNotEmpty() }, "в корпусе valid-multi должно быть правило geoip")
         val explained = engine.explain(policy, RouteQuery(ip = IpAddress.parse("198.51.100.1")))
-        assertEquals(DiagCode.GEO_CODE_UNKNOWN, explained.errors.single().code)
+        assertEquals(DiagCode.GEODATA_UNAVAILABLE, explained.errors.single().code)
     }
 
     /** Синтетический набор: geosite DPPASS-JNI — домен example.org, geoip DPPASS-JNI — 192.0.2.0/24 и 2001:db8::/32. */
@@ -269,6 +273,9 @@ class XrayJniTest {
             assertEquals(GeoMatchResult.Answer(true), ip("192.0.2.200"))
             assertEquals(GeoMatchResult.Answer(true), ip("2001:db8::1"))
             assertEquals(GeoMatchResult.Answer(false), ip("198.51.100.1"))
+            // Набор есть, а кода в нём нет — «такого кода нет», как у проверки конфигурации.
+            val unknown = assertIs<XrayResult.Failed>(rt.geoMatch(GeoKind.SITE, "zz", "example.org".encodeToByteArray()))
+            assertEquals(XrayFailureKind.CONFIG, unknown.kind)
         } finally {
             loadWith(assets)
         }

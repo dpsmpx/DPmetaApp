@@ -4,6 +4,8 @@ package bridge
 
 import (
 	"net"
+	"os"
+	"path/filepath"
 	"regexp"
 	"sync"
 
@@ -64,9 +66,11 @@ var (
 )
 
 // GeoMatch — попадает ли value в geosite:code (value — имя) или в
-// geoip:code (value — адрес). Кода, атрибута или сочетания атрибутов нет в
-// наборе — KindConfig, как у Validate; неверный вид, код или адрес —
-// KindContract.
+// geoip:code (value — адрес). Кода нет в наборе — KindConfig, как у
+// Validate; атрибута или их сочетания нет — «не попадает», как у ядра
+// (сочетания сверяет компилятор по оглавлению, D-27). Файла набора в
+// каталоге нет (набор не перенёсся), неверный вид, код или адрес —
+// KindContract: это не «такого кода нет».
 func GeoMatch(kind GeoKind, code string, value []byte) (bool, error) {
 	if !geoCode.MatchString(code) {
 		return false, fail(KindContract, "%q — не код набора геоданных", code)
@@ -89,6 +93,13 @@ func GeoMatch(kind GeoKind, code string, value []byte) (bool, error) {
 	key := geoKey{kind, code}
 	m, ok := geoCache[key]
 	if !ok {
+		file := geodata.DefaultGeoSiteDat
+		if kind == GeoIP {
+			file = geodata.DefaultGeoIPDat
+		}
+		if _, err := os.Stat(filepath.Join(dir, file)); err != nil {
+			return false, fail(KindContract, "набора геоданных нет: %v", err)
+		}
 		var err error
 		if m, err = buildGeoMatcher(kind, code); err != nil {
 			return false, err

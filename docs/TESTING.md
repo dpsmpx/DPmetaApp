@@ -152,7 +152,8 @@
    подстрока, regexp, регистр имени, сочетание атрибутов, которого нет ни
    у одной записи, IPv4 и IPv6 (`TestGeoMatchAgreesWithRouter`); кода нет
    в наборе — отказ, как у проверки конфигурации, и после смены каталога
-   тоже (`TestGeoMatchFollowsAssetDir`).
+   тоже (`TestGeoMatchFollowsAssetDir`); набора нет — отказ договора, а
+   не «такого кода нет» (`TestGeoMatchWithoutSetIsContractNotUnknownCode`).
 2. **`XrayJniTest`** (`tests/integration/src/xrayJni`, задача
    `xrayJniTest`): тот же мост, собранный `tools/xray/native.py host`
    как `libdppassxray.so` для JVM хоста, загружается в JVM теста через

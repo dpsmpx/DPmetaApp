@@ -130,11 +130,15 @@ internal object ImportFlow {
             addView(
                 Ui.button(c, R.string.import_links_add, Ui.Style.PRIMARY, R.drawable.ic_check).apply {
                     setOnClickListener {
-                        sheet.dismiss()
                         val core = host.graph?.core ?: return@setOnClickListener
+                        // Отказ (например, имя с управляющим символом) — окно остаётся: имя
+                        // можно исправить, не начиная импорт заново.
                         when (val r = core.subscriptions.addInline(text, name.text.toString())) {
                             is Outcome.Failure -> host.problem(c.getString(Ui.kind(r.errors.first().kind)), r.errors.first())
-                            is Outcome.Success -> refresh(host, r.value.id, r.value.name)
+                            is Outcome.Success -> {
+                                sheet.dismiss()
+                                refresh(host, r.value.id, r.value.name)
+                            }
                         }
                         host.changed()
                     }

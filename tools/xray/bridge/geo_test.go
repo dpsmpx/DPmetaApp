@@ -182,6 +182,25 @@ func TestGeoMatchFollowsAssetDir(t *testing.T) {
 	}
 }
 
+// Набора нет (каталог пуст: перенос не удался) — это не «такого кода нет»:
+// объяснение отказывает с GEODATA_UNAVAILABLE, а не с GEO_CODE_UNKNOWN.
+func TestGeoMatchWithoutSetIsContractNotUnknownCode(t *testing.T) {
+	setup(t)
+	for _, kind := range []GeoKind{GeoSite, GeoIP} {
+		value := []byte("example.org")
+		if kind == GeoIP {
+			value = netip.MustParseAddr("192.0.2.1").AsSlice()
+		}
+		_, err := GeoMatch(kind, "aa", value)
+		if err == nil {
+			t.Fatalf("вид %d: набора нет, а мост ответил", kind)
+		}
+		if k := kindOf(t, err); k != KindContract {
+			t.Errorf("вид %d: %v, ожидался KindContract (%v)", kind, k, err)
+		}
+	}
+}
+
 // routerMatches — сработало ли у маршрутизатора Xray правило с одним кодом c.
 func routerMatches(t *testing.T, c geoCase) bool {
 	t.Helper()
