@@ -512,6 +512,56 @@ class XrayCompilerTest {
         assertFailsWith<IllegalArgumentException> { ShareSpec(listOf(hotspot, hotspot), 41234, Secret("u"), Secret("p")) }
     }
 
+    /**
+     * D-51, T11: «напрямую» для клиентов раздачи — свой исходящий, закрытый для
+     * loopback телефона; правила те же, что у телефона. Без раздачи
+     * конфигурация не меняется.
+     */
+    @Test
+    fun shareDirectIsClosedToPhoneLoopback() {
+        val routing = """{"default": "direct", "rules": [{"id": "net", "action": "direct", "domain": ["net.example.com"]}, """ +
+            """{"id": "ads", "action": "block", "domain": ["ads.example.com"]}, {"id": "far", "action": "proxy", "domain": ["far.example.com"]}]}"""
+        val gi = ir(routing = routing)
+        val share = ShareSpec(listOf(ShareSpec.Endpoint(IpAddress.parse("192.168.43.1")!!, 24)), 41234, Secret("u-test"), Secret("p-test-0123456789"))
+        val p = Json.parse(XrayCompiler().compile(gi, CompilePlan(gi.profiles[0].id, true, share)).valueOrNull()!!.payloadForEngine()) as JsonObject
+        val outbounds = p["outbounds"].items
+        val direct = outbounds.single { it["tag"].text == "direct" }
+        val forShare = outbounds.single { it["tag"].text == XrayBackend.TAG_DIRECT_SHARE }
+        assertEquals("freedom", forShare["protocol"].text)
+        assertEquals(direct["streamSettings"], forShare["streamSettings"], "имя резолвится так же, как у direct (T4)")
+        val closed = forShare["settings"]["finalRules"].items.single()
+        assertEquals("block", closed["action"].text)
+        assertEquals(listOf("127.0.0.0/8", "0.0.0.0/8", "::1/128", "::/128"), closed["ip"].items.map { it.text })
+        assertNull(direct["settings"], "у direct телефона ограничений нет: DNS-сервер на 127.0.0.1 остаётся рабочим")
+        // Перед правилом direct — его копия только для раздачи (свой ruleTag: Xray не
+        // принимает повторов); block и proxy — общие.
+        val r = rules(p)
+        val net = r.indexOfFirst { it["ruleTag"].text == "dppass:share:net" }
+        assertEquals(listOf("dppass:share-0"), r[net]["inboundTag"].items.map { it.text })
+        assertEquals(XrayBackend.TAG_DIRECT_SHARE, r[net]["outboundTag"].text)
+        assertEquals("net", r[net + 1]["ruleTag"].text)
+        assertEquals(r[net]["domain"], r[net + 1]["domain"])
+        assertNull(r[net + 1]["inboundTag"])
+        assertEquals("direct", r[net + 1]["outboundTag"].text)
+        assertEquals(ruleTags(p).size, ruleTags(p).toSet().size, "ruleTag не повторяются")
+        assertEquals(1, r.count { it["ruleTag"].text == "ads" })
+        assertEquals(1, r.count { it["ruleTag"].text == "far" })
+        // Действие по умолчанию direct: раздаче — последним правилом свой исходящий.
+        val last = r.last()
+        assertEquals("dppass:share-default", last["ruleTag"].text)
+        assertEquals(XrayBackend.TAG_DIRECT_SHARE, last["outboundTag"].text)
+        // Без раздачи — ни исходящего, ни копий правил.
+        val plain = payload(gi)
+        assertTrue(plain["outbounds"].items.none { it["tag"].text == XrayBackend.TAG_DIRECT_SHARE })
+        assertEquals(1, rules(plain).count { it["ruleTag"].text == "net" })
+        assertTrue(ruleTags(plain).none { it == "dppass:share-default" })
+        // По умолчанию proxy: правила для раздачи в конце нет — её клиентов ведёт первый исходящий.
+        val viaProxy = ir(routing = """{"rules": [{"id": "net", "action": "direct", "domain": ["net.example.com"]}]}""")
+        val pp = Json.parse(XrayCompiler().compile(viaProxy, CompilePlan(viaProxy.profiles[0].id, true, share)).valueOrNull()!!.payloadForEngine()) as JsonObject
+        assertTrue(ruleTags(pp).none { it == "dppass:share-default" })
+        assertEquals("proxy", pp["outbounds"].items.first()["tag"].text)
+    }
+
     @Test
     fun automaticDomesticAddsCheckedRuRulesAfterUserRules() {
         // D-45: отечественное — напрямую, ПОСЛЕ правил пользователя, и

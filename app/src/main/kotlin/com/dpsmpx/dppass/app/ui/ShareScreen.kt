@@ -19,6 +19,7 @@ import com.dpsmpx.dppass.diagnostics.Diagnostic
 import com.dpsmpx.dppass.diagnostics.Outcome
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -67,6 +68,7 @@ class ShareScreen(host: Host) : SubScreen(host, R.string.share_title) {
         val endpoints = TunnelState.share.value
         when {
             !status.busy -> body.addView(note(R.string.share_needs_tunnel))
+            endpoints.isEmpty() && status is TunnelStatus.Connected && TunnelState.shareRefused.value -> body.addView(note(R.string.share_refused))
             endpoints.isEmpty() && status is TunnelStatus.Connected -> body.addView(note(R.string.share_no_interfaces))
             endpoints.isEmpty() -> body.addView(note(R.string.share_waiting))
         }
@@ -132,8 +134,8 @@ class ShareScreen(host: Host) : SubScreen(host, R.string.share_title) {
         watch?.cancel()
         watch = host.scope.launch {
             if (settings == null) load()
-            // Набор адресов раздачи меняет сервис туннеля: пока экран виден — перерисовка.
-            TunnelState.share.collect { render(TunnelState.status.value) }
+            // Набор адресов раздачи и отказ раздачи меняет сервис туннеля: пока экран виден — перерисовка.
+            combine(TunnelState.share, TunnelState.shareRefused) { _, _ -> }.collect { render(TunnelState.status.value) }
         }
     }
 

@@ -131,7 +131,8 @@ class XrayJniTest {
             Secret("p-test-0123456789"),
         )
         val compiled = XrayCompiler().compile(ir, CompilePlan(ir.profiles.first().id, true, share)).valueOrNull() ?: fail("раздача не скомпилирована")
-        assertEquals(XrayResult.Ok, runtime.validate(compiled.bytes()))
+        val r = runtime.validate(compiled.bytes())
+        assertEquals(XrayResult.Ok, r, (r as? XrayResult.Failed)?.text)
     }
 
     // ---- запуск, один экземпляр, договор ----

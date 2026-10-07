@@ -67,6 +67,15 @@ object TetherInterfaces {
         return current.containsAll(wanted) || wanted.toSet() == previous?.toSet()
     }
 
+    /**
+     * Адреса для подключения (D-51) — из двух снимков подряд: только те, что
+     * есть в обоих. По той же причине, что в [shouldReconnect]: сеть
+     * Wi-Fi-клиента на миг может выглядеть интерфейсом раздачи, и вход
+     * встал бы на её адрес.
+     */
+    fun confirmed(first: List<ShareSpec.Endpoint>, second: List<ShareSpec.Endpoint>): List<ShareSpec.Endpoint> =
+        first.filter { it in second }
+
     /** Имена интерфейсов сетей устройства; null — узнать не удалось. */
     private fun upstream(context: Context): Set<String>? {
         val cm = context.getSystemService(ConnectivityManager::class.java) ?: return null

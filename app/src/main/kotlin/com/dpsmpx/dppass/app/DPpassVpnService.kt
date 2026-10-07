@@ -172,12 +172,14 @@ class DPpassVpnService : VpnService() {
         val preferred = AppPrefs(this).selectedServer
         // Раздача (D-51): входы — на адресах интерфейсов раздачи, если пользователь её включил.
         val shareSettings = core.share.current().also { r -> r.diagnostics.forEach(core.log::diagnostic) }.valueOrNull()
-        val share = if (shareSettings?.enabled == true) shareSettings.spec(TetherInterfaces.find(this)) else null
+        val share = if (shareSettings?.enabled == true) shareSettings.spec(tetherForConnect()) else null
         val job = currentCoroutineContext().job
         val report = try {
             core.connect(null, checker, handle.toTunInput(), preferred, share) { delay(it) }
         } catch (e: CancellationException) {
-            // Остановка во время паузы между попытками: сеансов нет, остаётся TUN.
+            // Остановка во время подключения: сеанс, запущенный посреди проверки
+            // здоровья, оркестратор уже остановил (ConnectionOrchestrator.tryOne);
+            // остаётся TUN.
             handle.close()
             throw e
         }
@@ -202,10 +204,14 @@ class DPpassVpnService : VpnService() {
                     startTicker(report.session)
                     startSupervisor(core, graph.engine, ir, report.profileId)
                     if (shareSettings?.enabled == true) {
-                        val endpoints = share?.endpoints.orEmpty()
-                        TunnelState.share(endpoints)
-                        core.log.info("share", "endpoints" to endpoints.size)
-                        startShareWatch(core, endpoints)
+                        // Ядро с входами раздачи не запустилось — туннель без неё (D-51).
+                        // Опрос сравнивает с предложенными адресами: тот же набор — без
+                        // переподключения по кругу; набор сменился — новая попытка.
+                        val offered = share?.endpoints.orEmpty()
+                        val refused = report.shareRefused != null
+                        TunnelState.share(if (refused) emptyList() else offered, refused)
+                        core.log.info("share", "endpoints" to offered.size, "refused" to refused)
+                        startShareWatch(core, offered)
                     }
                 } else {
                     report.session.stop()
@@ -316,6 +322,18 @@ class DPpassVpnService : VpnService() {
                 previous = wanted
             }
         }
+    }
+
+    /**
+     * Адреса раздачи для подключения (D-51): новый интерфейс — только виденный
+     * двумя снимками подряд, как в опросе ([TetherInterfaces.confirmed]).
+     * Пауза — только если раздавать есть на что.
+     */
+    private suspend fun tetherForConnect(): List<ShareSpec.Endpoint> {
+        val first = TetherInterfaces.find(this)
+        if (first.isEmpty()) return first
+        delay(SHARE_CONFIRM_MILLIS)
+        return TetherInterfaces.confirmed(first, TetherInterfaces.find(this))
     }
 
     /** Сеть под туннелем — сеть по умолчанию (D-40): её тип и тарификацию видят система и приложения. */
@@ -519,6 +537,9 @@ class DPpassVpnService : VpnService() {
 
         /** Раздача (D-51): как часто проверять интерфейсы раздачи (docs/PERFORMANCE_BUDGET.md). */
         private const val SHARE_POLL_MILLIS = 5_000L
+
+        /** Между двумя снимками интерфейсов раздачи при подключении (D-51): короче опроса — подключение не ждёт 5 с. */
+        private const val SHARE_CONFIRM_MILLIS = 1_500L
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, DPpassVpnService::class.java))

@@ -57,4 +57,13 @@ class TetherInterfacesTest {
         assertTrue(TetherInterfaces.shouldReconnect(emptyList(), listOf(hotspot), listOf(hotspot)), "виден второй опрос подряд")
         assertFalse(TetherInterfaces.shouldReconnect(emptyList(), listOf(hotspot), listOf(usb)), "прошлый опрос видел другое")
     }
+
+    @Test
+    fun connectUsesOnlyAddressesSeenTwice() {
+        val hotspot = ep("192.168.43.1")
+        val wlanBlink = ep("192.168.1.50") // сеть Wi-Fi-клиента на миг не значилась в ConnectivityManager
+        assertEquals(listOf(hotspot), TetherInterfaces.confirmed(listOf(hotspot, wlanBlink), listOf(hotspot)))
+        assertEquals(emptyList(), TetherInterfaces.confirmed(listOf(hotspot), emptyList()), "точку доступа выключили между снимками")
+        assertEquals(emptyList(), TetherInterfaces.confirmed(emptyList(), listOf(hotspot)), "новый — только со следующего опроса")
+    }
 }

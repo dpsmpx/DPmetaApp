@@ -20,6 +20,8 @@ import com.dpsmpx.dppass.engine.TunInput
 import com.dpsmpx.dppass.network.ProbeOutcome
 import com.dpsmpx.dppass.network.simulation.PathClass
 import com.dpsmpx.dppass.network.simulation.SimulatedNetwork
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
@@ -64,6 +66,12 @@ sealed interface ConnectionReport {
         val session: EngineSession,
         override val attempts: List<AttemptRecord>,
         override val plan: ConnectionPlan,
+        /**
+         * Раздача (D-51) не поднялась: ядро с её входами не запустилось
+         * (адрес пропал, порт занят), без них — запустилось. Туннель работает
+         * без раздачи; null — раздача поднята или не просилась.
+         */
+        val shareRefused: Diagnostic? = null,
     ) : ConnectionReport
 
     data class Failed(val reason: Diagnostic, override val attempts: List<AttemptRecord>, override val plan: ConnectionPlan) : ConnectionReport
@@ -99,17 +107,26 @@ class ConnectionOrchestrator(
             return ConnectionReport.Failed(d, emptyList(), plan)
         }
         val records = mutableListOf<AttemptRecord>()
+        var offered = share
+        var shareRefused: Diagnostic? = null
         for ((n, attempt) in plan.attempts.withIndex()) {
             if (n > 0) pause(policy.pacingMillis)
             val p = attempt.profile
             log.info("attempt", "profile" to Safe(p.id.value), "class" to p.transportClass, "reasons" to Safe(attempt.reasons.joinToString("; ")))
             val startedAt = clock.nowMillis()
-            val failure = when (val t = tryOne(ir, p, tun, share)) {
+            val t = tryOne(ir, p, tun, offered)
+            // Раздачу отверг запуск, а не сервер: следующие попытки — без неё (D-51).
+            t.shareRefused?.let {
+                log.diagnostic(it)
+                shareRefused = it
+                offered = null
+            }
+            val failure = when (t) {
                 is Try.Ok -> {
                     book.recordSuccess(p.id, clock.nowMillis())
                     observe(p, startedAt, success = true, stalled = false)
                     records += AttemptRecord(p.id, attempt.reasons, true, null)
-                    return ConnectionReport.Connected(p.id, t.session, records, plan)
+                    return ConnectionReport.Connected(p.id, t.session, records, plan, shareRefused)
                 }
                 is Try.Fail -> t.reason
             }
@@ -140,9 +157,12 @@ class ConnectionOrchestrator(
         )
     }
 
+    /** [shareRefused] — раздача не поднялась, и попытка шла без неё (D-51). */
     private sealed interface Try {
-        data class Ok(val session: EngineSession) : Try
-        data class Fail(val reason: Diagnostic) : Try
+        val shareRefused: Diagnostic?
+
+        data class Ok(val session: EngineSession, override val shareRefused: Diagnostic? = null) : Try
+        data class Fail(val reason: Diagnostic, override val shareRefused: Diagnostic? = null) : Try
     }
 
     private suspend fun tryOne(ir: ConfigIr, p: ServerProfile, tun: TunInput?, share: ShareSpec?): Try {
@@ -152,11 +172,31 @@ class ConnectionOrchestrator(
         }
         (engine.validate(compiled) as? Outcome.Failure)?.let { return Try.Fail(it.errors.first()) }
         val session = when (val s = engine.start(compiled, tun)) {
-            is Outcome.Failure -> return Try.Fail(s.errors.first())
+            is Outcome.Failure -> {
+                val reason = s.errors.first()
+                // Вход раздачи не встал (адрес пропал, порт занят — D-51): это отказ
+                // запуска, а не сервера. Та же попытка без раздачи; запустилась —
+                // туннель работает без неё, и сервер не наказывается.
+                if (share == null || reason.code != DiagCode.BACKEND_START_FAILED) return Try.Fail(reason)
+                val refused = Diagnostic.warning(DiagCode.BACKEND_START_FAILED, "раздача не поднялась: ядро с её входами не запустилось — туннель без раздачи")
+                    .withCause(reason)
+                return when (val t = tryOne(ir, p, tun, null)) {
+                    is Try.Ok -> t.copy(shareRefused = refused)
+                    is Try.Fail -> t.copy(shareRefused = refused)
+                }
+            }
             is Outcome.Success -> s.value
         }
-        val result = withTimeoutOrNull(policy.healthTimeoutMillis) { health.check(session, p) }
-            ?: Outcome.failure(DiagCode.HEALTH_CHECK_FAILED, "проверка здоровья не уложилась в ${policy.healthTimeoutMillis} мс")
+        // Сеанс запущен и до передачи вызывающему — наш. Отмена посреди проверки
+        // здоровья («Отключить», onRevoke, переподключение) иначе оставила бы ядро
+        // работать: TUN уже закрыт, а вход раздачи (D-51) — открыт, со старым паролем.
+        val result = try {
+            withTimeoutOrNull(policy.healthTimeoutMillis) { health.check(session, p) }
+                ?: Outcome.failure(DiagCode.HEALTH_CHECK_FAILED, "проверка здоровья не уложилась в ${policy.healthTimeoutMillis} мс")
+        } catch (e: Throwable) {
+            withContext(NonCancellable) { session.stop() }
+            throw e
+        }
         if (result is Outcome.Failure) {
             session.stop()
             return Try.Fail(result.errors.first())

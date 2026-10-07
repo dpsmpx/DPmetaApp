@@ -172,6 +172,7 @@
     <string name="share_where">Адрес прокси</string>
     <string name="share_needs_tunnel">Подключите DPpass: раздача работает только через туннель.</string>
     <string name="share_no_interfaces">Нет точки доступа, USB- или Bluetooth-модема. Включите их в настройках Android — DPpass заметит это за несколько секунд и переподключится.</string>
+    <string name="share_refused">Прокси не открылся на адресе раздачи: точку доступа или модем выключили во время подключения, или порт занят другим приложением. Туннель работает без раздачи. Включите раздачу в Android заново или нажмите «Новые логин, пароль и порт».</string>
     <string name="share_waiting">Адреса появятся, когда DPpass подключится.</string>
     <string name="share_address_note">Прокси SOCKS5 или HTTP — для другого устройства</string>
     <string name="share_copy_address">Скопировать адрес</string>

@@ -58,6 +58,12 @@ object XrayBackend {
     /** Вход раздачи (D-51) — по одному на адрес интерфейса: `dppass:share-0`, `dppass:share-1`… */
     const val SHARE_TAG_PREFIX: String = "dppass:share-"
 
+    /**
+     * «Напрямую» для клиентов раздачи (D-51, T11): как `direct`, но не на
+     * loopback телефона. Тег — не с [SHARE_TAG_PREFIX]: так помечены только входы.
+     */
+    const val TAG_DIRECT_SHARE: String = "dppass:direct-share"
+
     /** Префикс служебных тегов: в id DPpass двоеточия не бывает (`Ids`), совпасть с id пользователя они не могут. */
     const val SYSTEM_PREFIX: String = "dppass:"
 

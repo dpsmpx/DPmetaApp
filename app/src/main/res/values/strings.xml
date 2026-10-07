@@ -173,6 +173,7 @@
     <string name="share_where">Proxy address</string>
     <string name="share_needs_tunnel">Connect DPpass: sharing works only through the tunnel.</string>
     <string name="share_no_interfaces">No hotspot, USB or Bluetooth tethering. Turn one on in Android settings: DPpass will notice within a few seconds and reconnect.</string>
+    <string name="share_refused">The proxy did not open on the tethering address: the hotspot or modem was turned off while connecting, or another app holds the port. The tunnel works without sharing. Turn tethering on again in Android or tap “New username, password and port”.</string>
     <string name="share_waiting">Addresses will appear once DPpass connects.</string>
     <string name="share_address_note">SOCKS5 or HTTP proxy for the other device</string>
     <string name="share_copy_address">Copy address</string>

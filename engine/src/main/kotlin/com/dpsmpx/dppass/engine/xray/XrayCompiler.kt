@@ -95,7 +95,10 @@ class XrayCompiler(
         )
         // Первый исходящий — действие по умолчанию (см. KDoc класса).
         val order = listOf(ir.routing.defaultAction) + RouteAction.entries.filter { it != ir.routing.defaultAction }
-        val outbounds = order.map { terminal.getValue(it) } + listOfNotNull(dnsOutbound().takeIf { plan.withTun })
+        val outbounds = order.map { terminal.getValue(it) } + listOfNotNull(
+            dnsOutbound().takeIf { plan.withTun },
+            build.directShareOutbound(ir.dns.strategy).takeIf { plan.share != null },
+        )
 
         val doc = Json.obj(
             "log" to Json.obj("loglevel" to Json.str("none"), "dnsLog" to Json.bool(false)),
@@ -387,9 +390,10 @@ class XrayCompiler(
                     "outboundTag" to Json.str(if (s.route == DnsRoute.TUNNEL) XrayBackend.TAG_PROXY else XrayBackend.TAG_DIRECT),
                 )
             }
+            val user = mutableListOf<JsonObject>()
             for ((i, rule) in lowered.engineRules.withIndex()) {
                 val at = "$.routing.rules[${ir.routing.rules.indexOf(rule).takeIf { it >= 0 } ?: i}]"
-                rules += userRule(rule.id.value, rule.conditions, XrayBackend.outboundTag(rule.action), at)
+                user += userRule(rule.id.value, rule.conditions, XrayBackend.outboundTag(rule.action), at)
             }
             // Автоматический раздельный маршрут (D-45): отечественное — напрямую,
             // ПОСЛЕ явных правил пользователя. geosite и geoip — отдельными
@@ -401,8 +405,33 @@ class XrayCompiler(
                 val ip = RouteEvaluator.IP_RU
                 checkGeo(listOf(site), emptyList(), "$.routing.automatic_domestic")
                 checkGeo(emptyList(), listOf(ip), "$.routing.automatic_domestic")
-                rules += userRule("${XrayBackend.SYSTEM_PREFIX}auto-domestic-site", Conditions(geoSites = listOf(site)), XrayBackend.TAG_DIRECT, "$.routing.automatic_domestic")
-                rules += userRule("${XrayBackend.SYSTEM_PREFIX}auto-domestic-ip", Conditions(geoIps = listOf(ip)), XrayBackend.TAG_DIRECT, "$.routing.automatic_domestic")
+                user += userRule("${XrayBackend.SYSTEM_PREFIX}auto-domestic-site", Conditions(geoSites = listOf(site)), XrayBackend.TAG_DIRECT, "$.routing.automatic_domestic")
+                user += userRule("${XrayBackend.SYSTEM_PREFIX}auto-domestic-ip", Conditions(geoIps = listOf(ip)), XrayBackend.TAG_DIRECT, "$.routing.automatic_domestic")
+            }
+            // Раздача (D-51, T11): «напрямую» для её клиентов — через свой исходящий,
+            // закрытый для loopback телефона. Правила те же, что у телефона: перед
+            // каждым правилом direct — его копия только для входов раздачи (ruleTag у
+            // Xray не повторяется: `dppass:share:<id>`, в id пользователя двоеточий нет);
+            // действие по умолчанию direct — последним правилом для них же. Без
+            // раздачи конфигурация не меняется.
+            for (r in user) {
+                if (share != null && (r["outboundTag"] as? JsonString)?.value == XrayBackend.TAG_DIRECT) {
+                    rules += JsonObject(
+                        r.fields + mapOf(
+                            "ruleTag" to JsonString("${XrayBackend.SYSTEM_PREFIX}share:${(r["ruleTag"] as JsonString).value}"),
+                            "inboundTag" to Json.strings(shareTags(share)),
+                            "outboundTag" to JsonString(XrayBackend.TAG_DIRECT_SHARE),
+                        ),
+                    )
+                }
+                rules += r
+            }
+            if (share != null && ir.routing.defaultAction == RouteAction.DIRECT) {
+                rules += Json.obj(
+                    "ruleTag" to Json.str("${XrayBackend.SYSTEM_PREFIX}share-default"),
+                    "inboundTag" to Json.strings(shareTags(share)),
+                    "outboundTag" to Json.str(XrayBackend.TAG_DIRECT_SHARE),
+                )
             }
             return Json.obj(
                 "domainStrategy" to Json.str(domainStrategy(ir.routing.domainResolution, withTun)),
@@ -533,6 +562,22 @@ class XrayCompiler(
          * отказе не уходит к системному резолверу (`ForceIP*`; `AsIs` и
          * `UseIP*` молча спросили бы систему — T4).
          */
+        /**
+         * `direct` для клиентов раздачи (D-51, T11): адрес назначения — не loopback
+         * и не «ноль» телефона. Устройству в раздаче службы, которые слушают
+         * только 127.0.0.1, недоступны, как и без прокси; из TUN такие адреса не
+         * приходят. `finalRules` Xray проверяет и адрес, полученный из имени, — до
+         * соединения и после (`proxy/freedom`).
+         */
+        fun directShareOutbound(s: DnsStrategy): JsonObject = JsonObject(
+            directOutbound(s).fields + mapOf(
+                "tag" to JsonString(XrayBackend.TAG_DIRECT_SHARE),
+                "settings" to Json.obj(
+                    "finalRules" to Json.arr(listOf(Json.obj("action" to Json.str("block"), "ip" to Json.strings(SHARE_CLOSED)))),
+                ),
+            ),
+        )
+
         fun directOutbound(s: DnsStrategy): JsonObject = Json.obj(
             "tag" to Json.str(XrayBackend.TAG_DIRECT),
             "protocol" to Json.str("freedom"),
@@ -553,6 +598,13 @@ class XrayCompiler(
     }
 
     private companion object {
+        /**
+         * Куда «напрямую» клиентам раздачи нельзя (T11): loopback и «ноль» (на
+         * Linux соединение с 0.0.0.0 приходит на loopback). Адреса IPv4 в виде
+         * IPv6 (`::ffff:127.0.0.1`) Xray приводит к IPv4 (`common/net`, `IPAddress`).
+         */
+        val SHARE_CLOSED: List<String> = listOf("127.0.0.0/8", "0.0.0.0/8", "::1/128", "::/128")
+
         fun domainRule(m: DomainMatcher): String = when (m) {
             is DomainMatcher.Full -> "full:${m.name}"
             is DomainMatcher.Suffix -> "domain:${m.suffix}"
