@@ -288,6 +288,15 @@ commander.js; образца отказа с target нет). На это опи�
 Инструмент субагентов в Claude Code 2.1.294 называется `Agent` (список
 инструментов этой облачной сессии Claude Code).
 
+Вызовы инструментов в потоке (образец 2.1.291, D-41): блок `tool_use`
+сообщения `assistant` — `id`, `name`, `input`; результат — сообщение
+`user` с блоком `tool_result` (`tool_use_id`, `content` строкой; по
+справке API — и массивом блоков `text`, `is_error` при ошибке) и полем
+`tool_use_result` — сырой итог для клиента, в контекст модели он не
+идёт. У сообщений субагента `parent_tool_use_id` — id вызова `Agent`.
+Ход с инструментами разработки (`Read`, `Edit`, `Bash`) не записан —
+`tool-calls.jsonl` построен по этой форме.
+
 Не проверено (образцов нет): событие сжатия истории — `system` с
 `subtype: "compact_boundary"` (описание `SDKCompactBoundaryMessage` в
 Agent SDK); отказ по размеру prompt — итог с ошибкой и текстом «Prompt is
