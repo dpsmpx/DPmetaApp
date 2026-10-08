@@ -182,6 +182,30 @@ class GitServiceTest {
         assertTrue(!marker.exists(), "хук или fsmonitor репозитория исполнился")
     }
 
+    /**
+     * Ревью 8 октября 2026 (security-1): относительный `core.hooksPath` Git
+     * считает от корня рабочего дерева — хук, закоммиченный в ветку в этот
+     * каталог, исполнился бы при слиянии. Каталог хуков — вне любого дерева.
+     */
+    @Test
+    fun hooksCommittedInTheTreeDoNotRun() {
+        val r = repo()
+        val marker = dir.resolve("pwned-tree").toFile()
+        val evil = "#!/bin/sh\necho pwned > '${marker.path.replace('\\', '/')}'\n"
+        sh("-C", r.root, "checkout", "-q", "-b", "side")
+        for (d in listOf(".dpai-no-hooks", ".none")) {
+            for (h in listOf("post-merge", "post-checkout", "post-commit", "pre-merge-commit")) {
+                File(r.root, "$d/$h").apply { parentFile.mkdirs(); writeText(evil); setExecutable(true) }
+            }
+        }
+        sh("-C", r.root, "-c", "core.hooksPath=/dev/null", "add", "-A")
+        sh("-C", r.root, "-c", "core.hooksPath=/dev/null", "commit", "-q", "-m", "хуки в дереве")
+        sh("-C", r.root, "-c", "core.hooksPath=/dev/null", "checkout", "-q", "main")
+        marker.delete()
+        assertTrue(git.run(GitOp.MERGE, r.root, listOf("side")).isSuccess)
+        assertTrue(!marker.exists(), "хук из содержимого ветки исполнился при слиянии")
+    }
+
     /** Строки матрицы восстановления «конфликт Git» и «worktree удалён» (`docs/RECOVERY.md`, §4). */
     @Test
     fun probeFindsConflictAndMissingWorktree() {

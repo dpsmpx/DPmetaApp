@@ -84,9 +84,11 @@ class GitCommands(private val approvals: ApprovalLedger, private val git: String
          * Каждая команда — без исполнения кода из настроек репозитория (T4;
          * аудит 2026-10-07, A-2): `core.fsmonitor` исполнил бы программу уже
          * при `git status`, хуки — при слиянии и коммите. Каталог хуков —
-         * несуществующий: Git его пропускает.
+         * абсолютный и вне любого дерева (`/dev/null`): относительный путь Git
+         * считает от корня рабочего дерева, и хук, закоммиченный в ветку в
+         * этот каталог, исполнился бы при слиянии (ревью 8 октября 2026).
          */
-        val HARDENING: List<String> = listOf("-c", "core.fsmonitor=false", "-c", "core.hooksPath=.dpai-no-hooks")
+        val HARDENING: List<String> = listOf("-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null")
 
         /**
          * Хуки проекта при коммите оркестратора не исполняются (`--no-verify`, T4):
