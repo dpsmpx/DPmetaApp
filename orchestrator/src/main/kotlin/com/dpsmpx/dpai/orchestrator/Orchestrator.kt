@@ -55,6 +55,7 @@ import com.dpsmpx.dpai.git.WorktreesState
 import com.dpsmpx.dpai.monitoring.Dashboard
 import com.dpsmpx.dpai.monitoring.DashboardView
 import com.dpsmpx.dpai.notifications.ApprovalAction
+import com.dpsmpx.dpai.notifications.DeepLink
 import com.dpsmpx.dpai.notifications.NotificationCategory
 import com.dpsmpx.dpai.notifications.NotificationDecision
 import com.dpsmpx.dpai.notifications.NotificationEngine
@@ -92,7 +93,29 @@ import com.dpsmpx.dpai.tasks.TasksState
 import com.dpsmpx.dpai.verification.VerificationProfile
 import com.dpsmpx.dpai.verification.Verifier
 import com.dpsmpx.dpai.verification.VerifyLevel
+import com.dpsmpx.dpai.core.ids.RequestId
+import com.dpsmpx.dpai.core.hashing.ContentHash
+import com.dpsmpx.dpai.core.operation.Actor
+import com.dpsmpx.dpai.core.operation.ActorKind
+import com.dpsmpx.dpai.core.operation.OperationResult
+import com.dpsmpx.dpai.core.operation.Provenance
+import com.dpsmpx.dpai.notifications.AnswerCheck
+import com.dpsmpx.dpai.notifications.OptionRole
+import com.dpsmpx.dpai.notifications.RequestAction
+import com.dpsmpx.dpai.notifications.RequestAnswer
+import com.dpsmpx.dpai.notifications.RequestEvent
+import com.dpsmpx.dpai.notifications.RequestKind
+import com.dpsmpx.dpai.notifications.RequestNotifications
+import com.dpsmpx.dpai.notifications.RequestOption
+import com.dpsmpx.dpai.notifications.UserRequest
+import com.dpsmpx.dpai.notifications.UserRequests
+import com.dpsmpx.dpai.notifications.UserRequestsState
+import com.dpsmpx.dpai.orchestrator.requests.RequestPurpose
+import com.dpsmpx.dpai.orchestrator.requests.UserRequestsProjection
+import com.dpsmpx.dpai.orchestrator.requests.requestEnvelopes
 import java.math.BigDecimal
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.hours
 
 /** Target для планировщика: его возможности (ТЗ, §51) и предел одновременных сессий. */
 data class TargetSlot(val id: ExecutionTargetId, val capabilities: Set<String>, val maxSessions: Int = 4)
@@ -153,6 +176,8 @@ class Orchestrator(
     private val documents: DocumentStore? = null,
     /** Слой экономии контекста и токенов (D-40); [EfficiencyPolicy.LEGACY] — как до него. */
     private val efficiency: EfficiencyPolicy = EfficiencyPolicy.DEFAULT,
+    /** Срок запроса человеку (D-44): не ответили — `EXPIRED`, предмет остаётся видным на экране. */
+    val requestTtl: Duration = 24.hours,
 ) {
     private val recorder = EventRecorder(ids, clock)
     private var lastSnapshotAt = 0L
@@ -199,6 +224,10 @@ class Orchestrator(
     val mergeApprovals: Map<TaskId, ApprovalId> get() = mergesState.merged
     val problems = mutableListOf<Diagnostic>()
 
+    /** Запросы человеку (D-44) — из журнала. */
+    var requests: UserRequestsState = UserRequestsState.EMPTY
+        private set
+
     init {
         // Перезапуск (ТЗ, §54; D-24): состояние — из журнала. [initialAccounts] —
         // исходное состояние до журнала (его регистрация в журнал не пишется),
@@ -210,6 +239,7 @@ class Orchestrator(
             worktrees = restore(WorktreesProjection, WorktreesState.EMPTY)
             recorder.resumeFromLast(restore(StreamsProjection, emptyMap()))
             mergesState = restore(MergesProjection, MergesState.EMPTY)
+            requests = restore(UserRequestsProjection, UserRequestsState.EMPTY)
             // Неистёкшие запросы одобрения снова ждут ответа; истёкшие отвергнет сам ApprovalDesk.
             for (m in mergesState.pending.values) approvals.restore(m.approval, m.proposal, m.expiresAt)
             lastSnapshotAt = journal.position
@@ -291,6 +321,7 @@ class Orchestrator(
         save(WorktreesProjection, worktrees)
         save(StreamsProjection, recorder.lastSequences())
         save(MergesProjection, mergesState)
+        save(UserRequestsProjection, requests)
         lastSnapshotAt = journal.position
     }
 
@@ -342,6 +373,13 @@ class Orchestrator(
     private fun commitMerges(es: List<MergeEvent>) {
         write(recorder.mergeEnvelopes(es))
         mergesState = es.fold(mergesState, MergesProjection::applyEvent)
+    }
+
+    private fun commitRequests(es: List<RequestEvent>) {
+        write(recorder.requestEnvelopes(es))
+        requests = UserRequests.applyAll(requests, es)
+        // Закрытый запрос: следующий по тому же предмету — новое уведомление, а не обновление старого.
+        for (e in es) if (requests.requests[e.request]?.terminal == true) requests.requests[e.request]?.let { notifications.resolve(RequestNotifications.key(it)) }
     }
 
     private fun commitTasks(es: List<TaskEvent>) {
@@ -411,6 +449,7 @@ class Orchestrator(
         }
         for (a in tasksLogic.plan(tasks, clock.now(), offers)) if (overlapAllows(a.task)) launch(a.task, a.target)
         for (s in sessions.sessions.values.filter { it.state !in WAIT_STATES && !it.terminal }.map { it.id }.sorted()) poll(s)
+        settleRequests()
         // Придержанное пределом частоты — сводкой, когда предел позволяет (ТЗ, §36).
         notifications.flush(clock.now())?.let { posted += it }
         maybeSnapshot()
@@ -522,6 +561,7 @@ class Orchestrator(
         // RUNNING без живой сессии — реакция как при опросе (прогон выносливости 7 октября 2026).
         val after = sessions.sessions.getValue(session)
         if (after.state != SessionState.RUNNING && after.state != SessionState.STARTING) react(task, session, after.state)
+        else progress(task, NotificationCategory.PROGRESS, "Задача начата", "попытка $attempt")
     }
 
     /** Метка версии контекста в `SESSION_PROMPT_PREPARED`: по ней узнаётся, что видела сессия. */
@@ -554,7 +594,7 @@ class Orchestrator(
         if (failure.errors.none { it.code == DiagCode.CONTEXT_BUDGET_EXCEEDED }) return failLaunch(task, session, DiagCode.VALUE_INVALID)
         failLaunch(task, session, DiagCode.CONTEXT_BUDGET_EXCEEDED)
         commitTasks(tasksLogic.move(tasks, task, TaskState.BLOCKED, clock.now(), DiagCode.CONTEXT_BUDGET_EXCEEDED).valueOrNull().orEmpty())
-        notify("task:${task.value}:blocked", NotificationCategory.BLOCKED, "Задача остановлена", "правила или требования задачи не влезают в бюджет контекста")
+        askBlocked(task, null, "правила или требования задачи не влезают в бюджет контекста")
     }
 
     private fun failLaunch(task: TaskId, session: SessionId, code: DiagCode) {
@@ -631,10 +671,16 @@ class Orchestrator(
                 releaseTree(task, session)
                 val code = sessions.sessions.getValue(session).lastReason ?: DiagCode.SESSION_FAILED
                 commitTasks(ok(tasksLogic.attemptFailed(tasks, task, code, code.retry, "${task.value}:${code.name}", clock.now()), "повтор задачи").orEmpty())
+                when (tasks.tasks[task]?.state) {
+                    TaskState.BLOCKED -> askBlocked(task, session, "попытка не удалась: ${tasks.tasks[task]?.lastReason ?: code}")
+                    TaskState.FAILED -> progress(task, NotificationCategory.FAILURE, "Задача не выполнена", "попытки кончились: $code")
+                    else -> Unit
+                }
             }
             SessionState.BLOCKED -> {
-                commitTasks(tasksLogic.move(tasks, task, TaskState.BLOCKED, clock.now(), sessions.sessions.getValue(session).lastReason).valueOrNull().orEmpty())
-                notify("task:${task.value}:blocked", NotificationCategory.BLOCKED, "Задача остановлена", "нужно вмешательство: ${sessions.sessions.getValue(session).lastReason}")
+                val reason = sessions.sessions.getValue(session).lastReason
+                commitTasks(tasksLogic.move(tasks, task, TaskState.BLOCKED, clock.now(), reason).valueOrNull().orEmpty())
+                askBlocked(task, session, if (reason == DiagCode.CLAUDE_AUTH_REQUIRED) "нужен вход в Claude на target" else "нужно вмешательство: ${reason ?: "без причины"}")
             }
             else -> Unit
         }
@@ -651,11 +697,12 @@ class Orchestrator(
                 if (tree != null && git != null) commitWork(task, session, path)
                 commitTasks(ok(tasksLogic.complete(tasks, task, clock.now()), "завершение задачи").orEmpty())
                 releaseTree(task, session)
+                progress(task, NotificationCategory.SUCCESS, "Задача выполнена", "проверка прошла")
                 if (tree != null) requestMerge(task, tree.branch)
             }
             TaskState.COMPLETION_UNVERIFIED -> {
                 releaseTree(task, session)
-                notify("task:${task.value}:unverified", NotificationCategory.WARNING, "Задача без проверки", "решите: проверить вручную или записать исключение")
+                askUnverified(task, session)
             }
             else -> {
                 // READY: проверка не прошла — следующий исполнитель с тем же деревом; что упало — ему (D-40).
@@ -786,14 +833,14 @@ class Orchestrator(
     }
 
     /** Ход прерван: handoff, прежняя сессия снята, задача ждёт продолжения (сценарий V1 2). */
-    private fun handOff(task: TaskId, session: SessionId) {
+    private fun handOff(task: TaskId, session: SessionId, by: HandoffReason? = null, next: String? = null) {
         val s = sessions.sessions.getValue(session)
         val bundle = contextOf[task]
         val modified = treePath(task)?.let(::changedFiles).orEmpty()
         val handoff = Handoff(
             id = ids.next(IdKinds.HANDOFF),
-            key = "${session.value}:handoff",
-            reason = when (s.lastReason) {
+            key = "${session.value}:${if (by == null) "handoff" else "user"}",
+            reason = by ?: when (s.lastReason) {
                 DiagCode.CLAUDE_RATE_LIMITED -> HandoffReason.ACCOUNT_EXHAUSTED
                 DiagCode.CLAUDE_CONTEXT_OVERFLOW -> if (efficiency.resume.enabled) HandoffReason.CONTEXT_OVERFLOW else HandoffReason.NEAR_LIMIT
                 else -> HandoffReason.NEAR_LIMIT
@@ -806,7 +853,7 @@ class Orchestrator(
             state = "ход ${s.turn} прерван: ${s.lastReason ?: "без причины"}",
             completed = emptyList(), verified = emptyList(), failed = emptyList(),
             warnings = listOfNotNull(s.lastReason?.name), openProblems = emptyList(), currentAction = null,
-            nextAction = "продолжить с места остановки в той же сессии",
+            nextAction = next ?: "продолжить с места остановки в той же сессии",
             modifiedFiles = modified,
             commit = null, branch = treeOf[task]?.let { worktrees.worktrees[it]?.branch },
             workspace = treePath(task), createdAt = clock.now(),
@@ -877,8 +924,227 @@ class Orchestrator(
             commitTasks(orphans.taskFixes)
         }
         problems += orphans.questions
+        for (q in orphans.questions) askRecovery(q)
         maybeSnapshot()
         return out
+    }
+
+    // ---- запросы человеку (D-44) ----
+
+    /**
+     * Сведения о ходе задачи — одно уведомление на задачу: «начата»,
+     * «выполнена», «не выполнена» заменяют друг друга, а не копятся (ТЗ, §36).
+     */
+    private fun progress(task: TaskId, category: NotificationCategory, title: String, body: String) {
+        val t = tasks.tasks[task] ?: return
+        notify(NotificationRequest("task:${task.value}:progress", category, "$title: ${t.title}", body, DeepLink.of(DeepLink.Kind.TASK, task), clock.now()))
+    }
+
+    /**
+     * Запрос человеку: в журнал, затем уведомлением. По предмету уже ждёт
+     * такой же — нового нет. Отказ сборки — в [problems], контур идёт дальше.
+     */
+    private fun ask(
+        purpose: RequestPurpose,
+        kind: RequestKind,
+        subject: String,
+        title: String,
+        body: String,
+        options: List<RequestOption>,
+        task: TaskId?,
+        session: SessionId?,
+        ttl: Duration? = requestTtl,
+    ): Outcome<RequestId> {
+        val now = clock.now()
+        val r = when (val c = UserRequest.create(ids.next(IdKinds.REQUEST), kind, purpose.code, subject, title, body, options, task, session, now, ttl?.let { now + it })) {
+            is Outcome.Failure -> return c.also { problems += Diagnostic.of(DiagCode.INTERNAL_ERROR, "запрос $subject не создан", causes = c.errors) }
+            is Outcome.Success -> c.value
+        }
+        val es = when (val c = UserRequests.create(requests, r)) {
+            is Outcome.Failure -> return c
+            is Outcome.Success -> c.value
+        }
+        if (es.isEmpty()) return Outcome.success(requests.pendingFor(subject)!!.id)
+        commitRequests(es)
+        notify(RequestNotifications.of(r))
+        return Outcome.success(r.id)
+    }
+
+    private fun taskTitle(task: TaskId) = tasks.tasks[task]?.title ?: task.value
+
+    private fun askBlocked(task: TaskId, session: SessionId?, why: String) {
+        ask(
+            RequestPurpose.TASK_BLOCKED, RequestKind.USER_RESOLUTION, "task:${task.value}:blocked",
+            "Задача остановлена: ${taskTitle(task)}", "$why. Что делать?",
+            listOf(
+                RequestOption(RETRY, "Повторить", OptionRole.ACCEPT),
+                RequestOption(REPLY, "Ответить", OptionRole.NEUTRAL, needsText = true),
+                RequestOption(CANCEL, "Отменить задачу", OptionRole.DESTRUCTIVE),
+            ),
+            task, session,
+        )
+    }
+
+    private fun askUnverified(task: TaskId, session: SessionId?) {
+        ask(
+            RequestPurpose.TASK_UNVERIFIED, RequestKind.USER_RESOLUTION, "task:${task.value}:unverified",
+            "Задача без проверки: ${taskTitle(task)}", "Ход заявил «готово», а проверки нет (D-23). Принять без проверки — записать исключение.",
+            listOf(
+                RequestOption(WAIVE, "Принять без проверки", OptionRole.DESTRUCTIVE),
+                RequestOption(CANCEL, "Отменить задачу", OptionRole.DESTRUCTIVE),
+                RequestOption(LATER, "Решу позже", OptionRole.NEUTRAL),
+            ),
+            task, session,
+        )
+    }
+
+    private fun askRecovery(q: Diagnostic) {
+        ask(
+            RequestPurpose.RECOVERY, RequestKind.ACKNOWLEDGEMENT, "recovery:${q.code.name}:${q.subject ?: "-"}",
+            "Сверка после перезапуска: нужен человек", "${q.code}: ${q.message}",
+            listOf(RequestOption(ACK, "Понятно", OptionRole.ACCEPT)), null, null,
+        )
+    }
+
+    /**
+     * Проверочный запрос (экран «Проверка запросов», `docs/DEVICE_CHECK.md`):
+     * любой вид с вариантами по шаблону; ответ только записывается в журнал.
+     * Каждый — свой предмет: одновременные проверочные запросы не смешиваются.
+     */
+    fun probe(kind: RequestKind, ttl: Duration? = requestTtl): Outcome<RequestId> {
+        val options = when (kind) {
+            RequestKind.QUESTION -> listOf(RequestOption("a", "Вариант A"), RequestOption("b", "Вариант B"), RequestOption("c", "Вариант C"))
+            RequestKind.CHOICE -> listOf(RequestOption("fast", "Быстро"), RequestOption("normal", "Обычно"), RequestOption("full", "Полностью"))
+            RequestKind.CONFIRMATION -> listOf(RequestOption("yes", "Подтвердить", OptionRole.ACCEPT), RequestOption("no", "Отклонить", OptionRole.REJECT))
+            RequestKind.DESTRUCTIVE_CONFIRMATION -> listOf(RequestOption("do", "Удалить", OptionRole.DESTRUCTIVE), RequestOption("no", "Отмена", OptionRole.REJECT))
+            RequestKind.TEXT_INPUT -> listOf(RequestOption("send", "Ответить", OptionRole.ACCEPT, needsText = true), RequestOption("no", "Отказаться", OptionRole.REJECT))
+            RequestKind.ACKNOWLEDGEMENT -> listOf(RequestOption(ACK, "Понятно", OptionRole.ACCEPT))
+            RequestKind.USER_RESOLUTION -> listOf(RequestOption("keep", "Оставить", OptionRole.NEUTRAL), RequestOption("drop", "Сбросить", OptionRole.DESTRUCTIVE))
+        }
+        val n = requests.requests.values.count { it.purpose == RequestPurpose.PROBE.code } + 1
+        return ask(RequestPurpose.PROBE, kind, "probe:$n", "Проверка запросов №$n: $kind", "Проверочный запрос: ответ только записывается в журнал.", options, null, null, ttl)
+    }
+
+    /** Канал показал запрос (`notification`, `overlay`, `app`): факт в журнал; закрытый — без записи. */
+    fun delivered(id: RequestId, channel: String): Outcome<Unit> = when (val r = UserRequests.delivered(requests, id, channel, clock.now())) {
+        is Outcome.Failure -> r
+        is Outcome.Success -> Outcome.success(Unit).also { commitRequests(r.value) }
+    }
+
+    /** Ждущие запросы — для экрана и окна поверх приложений. */
+    fun pendingRequests(): List<UserRequest> = requests.pending
+
+    /** Кнопка уведомления `dpai://answer/…` и текст поля ввода, если он есть (D-44). */
+    fun answer(uri: String, text: String?, by: String): OperationResult<RequestAnswer> = when (val a = RequestAction.parse(uri)) {
+        is Outcome.Failure -> OperationResult.record("request.answer", Provenance(Actor(ActorKind.USER, by)), ids, clock, a)
+        is Outcome.Success -> answer(a.value.request, a.value.option, text, a.value.hash, by)
+    }
+
+    /**
+     * Ответ на запрос (D-44, D-06): проверка — запрос ждёт, не истёк, хеш и
+     * вариант его; затем действие по назначению запроса и запись исхода.
+     * Повтор тем же вариантом — прежний ответ, без второго действия.
+     */
+    fun answer(id: RequestId, option: String, text: String?, hash: ContentHash, by: String): OperationResult<RequestAnswer> {
+        val r = requests.requests[id]
+        val provenance = Provenance(Actor(ActorKind.USER, by), taskId = r?.task, sessionId = r?.session)
+        val outcome: Outcome<RequestAnswer> = when (val c = UserRequests.check(requests, id, option, text, hash, clock.now())) {
+            is Outcome.Failure -> c.also { if (r != null && !r.terminal && r.expired(clock.now())) commitRequests(listOf(RequestEvent.Expired(id, clock.now()))) }
+            is Outcome.Success -> when (val v = c.value) {
+                is AnswerCheck.Repeat -> Outcome.success(v.request.answer!!)
+                is AnswerCheck.Apply -> applyAnswer(v, by)
+            }
+        }
+        return OperationResult.record("request.answer", provenance, ids, clock, outcome)
+    }
+
+    private fun applyAnswer(a: AnswerCheck.Apply, by: String): Outcome<RequestAnswer> {
+        val r = a.request
+        val effect: Outcome<String> = when (RequestPurpose.of(r.purpose)) {
+            RequestPurpose.PROBE, RequestPurpose.RECOVERY -> Outcome.success("записано")
+            RequestPurpose.TASK_BLOCKED -> resolveBlocked(r.task!!, a.option.id, a.text)
+            RequestPurpose.TASK_UNVERIFIED -> resolveUnverified(r.task!!, a.option.id, by)
+            null -> Outcome.failure(DiagCode.UNSUPPORTED, "назначение запроса неизвестно: ${r.purpose}")
+        }
+        return when (effect) {
+            is Outcome.Failure -> effect.also {
+                commitRequests(listOf(RequestEvent.Failed(r.id, a.option.id, effect.errors.first().code, clock.now())))
+            }
+            is Outcome.Success -> {
+                val answer = RequestAnswer(a.option.id, a.text, by, clock.now(), effect.value)
+                commitRequests(listOf(RequestEvent.Answered(r.id, answer)))
+                Outcome.success(answer)
+            }
+        }
+    }
+
+    /** Ждущие (не конечные) сессии задачи — их снимает решение человека. */
+    private fun openSessions(task: TaskId) = sessions.sessions.values.filter { it.task == task && !it.terminal }.sortedBy { it.id.value }
+
+    private fun resolveBlocked(task: TaskId, option: String, text: String?): Outcome<String> {
+        val t = tasks.tasks[task] ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой задачи", "task $task")
+        if (t.state != TaskState.BLOCKED) return Outcome.failure(DiagCode.REQUEST_NOT_PENDING, "задача уже не BLOCKED: ${t.state}", "task $task")
+        val open = openSessions(task)
+        return when (option) {
+            RETRY, REPLY -> {
+                // Сессия остановлена — продолжение той же сессии провайдера с ответом человека (handoff MANUAL).
+                val next = text?.let { "ответ пользователя: $it" } ?: "пользователь снял блок: продолжить с места остановки"
+                for (s in open) if (s.state in WAIT_STATES) handOff(task, s.id, HandoffReason.MANUAL, next) else closeSession(task, s.id)
+                if (tasks.tasks.getValue(task).state == TaskState.BLOCKED) {
+                    commitTasks(ok(tasksLogic.move(tasks, task, TaskState.READY, clock.now(), DiagCode.CANCELLED_BY_USER), "задача снова в очереди").orEmpty())
+                }
+                Outcome.success(if (text != null) "задача снова в очереди с ответом" else "задача снова в очереди")
+            }
+            CANCEL -> {
+                for (s in open) closeSession(task, s.id)
+                commitTasks(ok(tasksLogic.move(tasks, task, TaskState.CANCELLED, clock.now(), DiagCode.CANCELLED_BY_USER), "отмена задачи").orEmpty())
+                Outcome.success("задача отменена")
+            }
+            else -> Outcome.failure(DiagCode.REQUEST_ANSWER_INVALID, "вариант «$option» не к этому запросу")
+        }
+    }
+
+    private fun resolveUnverified(task: TaskId, option: String, by: String): Outcome<String> {
+        val t = tasks.tasks[task] ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой задачи", "task $task")
+        if (t.state != TaskState.COMPLETION_UNVERIFIED) return Outcome.failure(DiagCode.REQUEST_NOT_PENDING, "задача уже не COMPLETION_UNVERIFIED: ${t.state}", "task $task")
+        return when (option) {
+            WAIVE -> when (val c = tasksLogic.complete(tasks, task, clock.now(), by to "принято без проверки ответом на запрос")) {
+                is Outcome.Failure -> c
+                is Outcome.Success -> Outcome.success("задача принята без проверки").also { commitTasks(c.value) }
+            }
+            CANCEL -> when (val c = tasksLogic.move(tasks, task, TaskState.CANCELLED, clock.now(), DiagCode.CANCELLED_BY_USER)) {
+                is Outcome.Failure -> c
+                is Outcome.Success -> Outcome.success("задача отменена").also { commitTasks(c.value) }
+            }
+            LATER -> Outcome.success("решение отложено")
+            else -> Outcome.failure(DiagCode.REQUEST_ANSWER_INVALID, "вариант «$option» не к этому запросу")
+        }
+    }
+
+    /** Сессия задачи снята человеком: `CANCELLED`, аренда и дерево свободны. */
+    private fun closeSession(task: TaskId, session: SessionId) {
+        commitSessions(sessionsLogic.transition(sessions, session, SessionState.CANCELLED, clock.now(), DiagCode.CANCELLED_BY_USER).valueOrNull().orEmpty())
+        releaseLease(session)
+        releaseTree(task, session)
+    }
+
+    /**
+     * Такт запросов: истёкшие — `EXPIRED`; запросы о задаче, которая ушла из
+     * того состояния, о котором спрашивали, — сняты (ответ больше ничего
+     * не решает, кнопка не должна действовать).
+     */
+    private fun settleRequests() {
+        val now = clock.now()
+        val stale = requests.pending.filter { r ->
+            val state = r.task?.let { tasks.tasks[it]?.state }
+            when (RequestPurpose.of(r.purpose)) {
+                RequestPurpose.TASK_BLOCKED -> state != TaskState.BLOCKED
+                RequestPurpose.TASK_UNVERIFIED -> state != TaskState.COMPLETION_UNVERIFIED
+                else -> false
+            }
+        }
+        val es = UserRequests.expire(requests, now) + stale.filter { !it.expired(now) }.map { RequestEvent.Cancelled(it.id, DiagCode.REQUEST_NOT_PENDING, now) }
+        if (es.isNotEmpty()) commitRequests(es)
     }
 
     /** Сколько записей в журнале контура (рост хранилища, ТЗ, §116). */
@@ -916,5 +1182,13 @@ class Orchestrator(
         private const val MAX_HANDOFF_FILES = 200
 
         private val WAIT_STATES = setOf(SessionState.PAUSED, SessionState.BLOCKED, SessionState.RECOVERY_PENDING)
+
+        /** Варианты ответов на запросы оркестратора (D-44). */
+        const val RETRY = "retry"
+        const val REPLY = "reply"
+        const val CANCEL = "cancel"
+        const val WAIVE = "waive"
+        const val LATER = "later"
+        const val ACK = "ack"
     }
 }

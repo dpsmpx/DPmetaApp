@@ -203,6 +203,14 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     /** Нарушен машинно проверяемый инвариант (ТЗ, §118): ошибка ядра, а не входа. */
     INVARIANT_VIOLATED(Category.INTEGRITY, Severity.ERROR, Retryability.NON_RETRYABLE),
 
+    // --- запросы человеку (D-44) ---
+    /** Запрос уже не ждёт ответа: отвечен иначе, истёк, снят или неизвестен. */
+    REQUEST_NOT_PENDING(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
+    /** Ответ не подходит запросу: чужой вариант, другой хеш, нет обязательного текста. */
+    REQUEST_ANSWER_INVALID(Category.INPUT, Severity.ERROR, Retryability.NON_RETRYABLE),
+    /** Задачу или сессию остановил человек (ответ на запрос, команда D-42): не сбой и не повод для повтора. */
+    CANCELLED_BY_USER(Category.STATE, Severity.INFO, Retryability.NON_RETRYABLE),
+
     // --- общее ---
     /** Строгая семантика (D-05): неподдержанное — явный отказ, а не «похожее». */
     UNSUPPORTED(Category.UNSUPPORTED, Severity.ERROR, Retryability.NON_RETRYABLE),
