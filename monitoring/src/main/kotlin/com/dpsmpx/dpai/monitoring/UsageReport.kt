@@ -2,7 +2,10 @@ package com.dpsmpx.dpai.monitoring
 
 import com.dpsmpx.dpai.core.ids.TaskId
 import com.dpsmpx.dpai.core.state.TaskState
+import com.dpsmpx.dpai.execution.claude.ToolCount
+import com.dpsmpx.dpai.execution.claude.TurnTools
 import com.dpsmpx.dpai.sessions.PromptMode
+import com.dpsmpx.dpai.sessions.ToolTotals
 import com.dpsmpx.dpai.sessions.SessionsState
 import com.dpsmpx.dpai.tasks.TasksState
 import java.math.BigDecimal
@@ -13,6 +16,12 @@ import java.math.RoundingMode
  * задач, без отдельного хранилища. Наблюдаемое (со слов провайдера) и
  * оценка оркестратора разделены и так и подписаны; ходы без итога —
  * [unknownTurns]: суммы тогда — нижняя граница (D-13).
+ *
+ * D-41: [tools] — замер инструментов по потоку (байты точные, токены —
+ * оценка); [toolCallsByMode] — вызовов инструментов на сессию по режиму
+ * prompt: так видно, сколько исследования экономит рабочий набор
+ * контрольной точки. [contextTokensAtEnd] — контекст в конце последнего
+ * хода сессий (наблюдаемое).
  */
 data class UsageReport(
     val sessions: Int,
@@ -41,6 +50,10 @@ data class UsageReport(
     val continuations: Int,
     val topTasks: List<Pair<TaskId, Long>>,
     val expensive: Set<String>,
+    val tools: ToolTotals = ToolTotals.EMPTY,
+    val toolCallsByMode: Map<PromptMode, Double> = emptyMap(),
+    val contextTokensAtEnd: List<Long> = emptyList(),
+    val durationMs: Long = 0,
 ) {
     /** Вход модели целиком: без кеша, чтение и запись кеша. */
     val totalInput: Long get() = inputTokens + cacheReadTokens + cacheCreationTokens
@@ -59,6 +72,28 @@ data class UsageReport(
      * `--resume` и не вошедшее по бюджету против всего, что было бы послано.
      */
     val contextSavedShare: Double? get() = ratio(reusedTokens + omittedTokens, promptTokens + reusedTokens + omittedTokens)
+
+    /** Вывод инструментов в контексте ходов, оценка в токенах (байты точные). */
+    val toolTokens: Long get() = TurnTools.tokens(tools.total.resultBytes)
+
+    /** Доля вывода инструментов, полученная повторными вызовами без изменений между ними (нижняя граница). */
+    val duplicateShare: Double? get() = ratio(tools.total.duplicateBytes, tools.total.resultBytes)
+
+    /**
+     * Сколько входа модели — вывод инструментов: оценка против
+     * наблюдаемого. Каждый вызов API перечитывает историю, поэтому это
+     * доля впервые пришедшего, а не всего прочитанного.
+     */
+    val toolShareOfInput: Double? get() = ratio(toolTokens, totalInput)
+
+    /** Средний контекст в конце хода (наблюдаемое). */
+    val avgContextTokens: Long? get() = if (contextTokensAtEnd.isEmpty()) null else contextTokensAtEnd.sum() / contextTokensAtEnd.size
+
+    /** Доля выполненных среди завершённых задач. */
+    val successShare: Double? get() = ratio(tasksDone.toLong(), (tasksDone + tasksFailed).toLong())
+
+    /** Средняя длительность хода, мс (наблюдаемое). */
+    val avgTurnMs: Long? get() = if (turns == 0) null else durationMs / turns
 
     /** Средний prompt хода (оценка). */
     val avgPromptTokens: Long? get() = if (prompts == 0) null else promptTokens / prompts
@@ -96,9 +131,35 @@ data class UsageReport(
         appendLine("|---|---|")
         appendLine("| выполнено / провалено | $tasksDone / $tasksFailed |")
         appendLine("| повторов / продолжений | $retries / $continuations |")
+        appendLine("| выполненных среди завершённых | ${pct(successShare)} |")
+        appendLine("| средний ход, с | ${avgTurnMs?.let { "%.1f".format(it / 1000.0) } ?: "—"} |")
+        appendLine("| средний контекст в конце хода | ${avgContextTokens ?: "—"} |")
         appendLine("| модели, токенов | ${models.entries.sortedByDescending { it.value }.joinToString { "${it.key} ${it.value}" }.ifEmpty { "—" }} |")
         append("| больше всех расходуют | ${topTasks.joinToString { "${it.first.value} ${it.second}" }.ifEmpty { "—" }} |")
+        if (tools.turns > 0) {
+            val t = tools.total
+            appendLine()
+            appendLine()
+            appendLine("## Инструменты в ходе (замер оркестратора по потоку)")
+            appendLine()
+            appendLine("| Мера | Значение |")
+            appendLine("|---|---|")
+            appendLine("| ходов с замером / вызовов / с ошибкой | ${tools.turns} / ${t.calls} / ${t.errors} |")
+            appendLine("| вывод в контекст, байт (≈токенов, оценка) | ${t.resultBytes} (≈$toolTokens) |")
+            appendLine("| доля входа модели — вывод инструментов (оценка) | ${pct(toolShareOfInput)} |")
+            appendLine("| повторов без изменений между вызовами (нижняя граница) / их вывод, байт | ${t.duplicates} / ${t.duplicateBytes} (${pct(duplicateShare)}) |")
+            appendLine("| файлов прочитано / изменено (по ходам) | ${tools.filesRead} / ${tools.filesEdited} |")
+            appendLine("| наибольший результат, байт | ${tools.largestResultBytes} |")
+            appendLine("| субагенты: вызовов / вывод, байт | ${tools.subagentCalls} / ${tools.subagentResultBytes} |")
+            appendLine("| больше всего вывода | ${topTools().joinToString { "${it.key} ${it.value.calls}× ${it.value.resultBytes} Б" }} |")
+            append("| вызовов на сессию по режиму prompt | ${toolCallsByMode.entries.sortedBy { it.key }.joinToString { "${it.key} %.1f".format(it.value) }.ifEmpty { "—" }} |")
+            if (tools.unmatchedResults > 0) append("\n\nРезультатов без известного вызова: ${tools.unmatchedResults} — суммы инструментов — нижняя граница.")
+        }
     }
+
+    /** Инструменты с наибольшим выводом в контекст. */
+    fun topTools(n: Int = 5): List<Map.Entry<String, ToolCount>> =
+        tools.byTool.entries.sortedWith(compareByDescending<Map.Entry<String, ToolCount>> { it.value.resultBytes }.thenBy { it.key }).take(n)
 
     companion object {
         private fun ratio(a: Long, b: Long): Double? = if (b <= 0) null else a.toDouble() / b
@@ -135,7 +196,25 @@ data class UsageReport(
                 continuations = tasks.tasks.values.sumOf { it.continuations },
                 topTasks = byTask.entries.filter { it.value > 0 }.sortedWith(compareByDescending<Map.Entry<TaskId, Long>> { it.value }.thenBy { it.key.value }).take(top).map { it.key to it.value },
                 expensive = expensive,
+                tools = all.fold(ToolTotals.EMPTY) { acc, r -> acc.merge(r.usage.tools) },
+                toolCallsByMode = all.filter { it.usage.tools.turns > 0 && it.usage.lastPrompt != null }
+                    .groupBy { it.usage.lastPrompt!!.mode }
+                    .mapValues { (_, ss) -> ss.sumOf { it.usage.tools.total.calls }.toDouble() / ss.size },
+                contextTokensAtEnd = u.mapNotNull { it.lastContextTokens },
+                durationMs = u.sumOf { it.durationMs },
             )
         }
     }
 }
+
+/** Сумма замеров двух наборов сессий (`turns` складываются). */
+private fun ToolTotals.merge(o: ToolTotals): ToolTotals = ToolTotals(
+    turns = turns + o.turns,
+    byTool = o.byTool.entries.fold(byTool) { acc, (k, v) -> acc + (k to (acc[k] ?: ToolCount.ZERO) + v) },
+    subagentCalls = subagentCalls + o.subagentCalls,
+    subagentResultBytes = subagentResultBytes + o.subagentResultBytes,
+    filesRead = filesRead + o.filesRead,
+    filesEdited = filesEdited + o.filesEdited,
+    largestResultBytes = maxOf(largestResultBytes, o.largestResultBytes),
+    unmatchedResults = unmatchedResults + o.unmatchedResults,
+)

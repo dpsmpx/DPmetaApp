@@ -53,8 +53,16 @@ sealed interface AccountFact {
  * | прочие ошибки | `FAILED` |
  */
 class SessionDriver(private val sessions: Sessions, private val runner: ClaudeRunner, private val clock: Clock) {
-    /** [unsupportedFlags] — флаги, которых не знает Claude Code target («unknown option» в stderr, D-40). */
-    data class Step(val events: List<SessionEvent>, val facts: List<AccountFact> = emptyList(), val unsupportedFlags: Set<String> = emptySet())
+    /**
+     * [unsupportedFlags] — флаги, которых не знает Claude Code target («unknown option» в stderr, D-40);
+     * [turns] — завершённые ходы опроса целиком: файлы и итог хода нужны оркестратору для handoff (D-41).
+     */
+    data class Step(
+        val events: List<SessionEvent>,
+        val facts: List<AccountFact> = emptyList(),
+        val unsupportedFlags: Set<String> = emptySet(),
+        val turns: List<ClaudeTurn> = emptyList(),
+    )
 
     /** Первый ход: сверка слота, `QUEUED → STARTING`, запуск. Продолжение прежней — `--resume` её сессии провайдера. */
     fun launch(state: SessionsState, accounts: AccountsState, id: SessionId, request: ClaudeRequest): Outcome<Step> {
@@ -115,6 +123,7 @@ class SessionDriver(private val sessions: Sessions, private val runner: ClaudeRu
             emit(sessions.transition(current, id, target, clock.now(), reason).valueOrNull().orEmpty())
         }
         val unsupported = linkedSetOf<String>()
+        val turns = mutableListOf<ClaudeTurn>()
         for (u in updates.value) {
             val now = clock.now()
             when (u) {
@@ -141,9 +150,11 @@ class SessionDriver(private val sessions: Sessions, private val runner: ClaudeRu
                 }
                 is RunnerUpdate.TurnFinished -> {
                     val t = u.result
+                    turns += t
                     emit(
                         listOf(
                             SessionEvent.TurnUsage(id, u.turn, t.usage.recorded(), now),
+                            SessionEvent.TurnTools(id, u.turn, t.tools, now),
                             SessionEvent.TurnFinished(id, u.turn, t.status.name, t.diagnostics.filter { it.isError }.map { it.code }.distinct(), now),
                         ),
                     )
@@ -161,7 +172,7 @@ class SessionDriver(private val sessions: Sessions, private val runner: ClaudeRu
         // Позиция в потоке агента — в журнал: после перезапуска сессия продолжается с неё.
         runner.position(id)?.let { pos -> emit(sessions.heartbeat(current, id, clock.now(), pos)) }
         if (current.sessions.getValue(id).terminal && state.sessions[id]?.terminal == false) facts += AccountFact.Release(id)
-        return Outcome.success(Step(events, facts, unsupported), updates.diagnostics)
+        return Outcome.success(Step(events, facts, unsupported, turns), updates.diagnostics)
     }
 
     /** Приостановить: остановить ход; сессия провайдера остаётся для `resume`. */

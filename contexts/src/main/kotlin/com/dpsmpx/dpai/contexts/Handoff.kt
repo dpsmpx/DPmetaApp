@@ -29,10 +29,17 @@ import com.dpsmpx.dpai.security.Sensitivity
 enum class HandoffReason { NEAR_LIMIT, MANUAL, TARGET_FAILED, ACCOUNT_EXHAUSTED, APP_STOPPED, PAUSED, TURN_FINISHED, VERIFICATION_FAILED, CONTEXT_OVERFLOW }
 
 /**
- * Handoff (`dpai.handoff` v1; ТЗ, §27; `docs/CONTEXT_MODEL.md`, §5):
+ * Handoff (`dpai.handoff` v3; ТЗ, §27; `docs/CONTEXT_MODEL.md`, §5):
  * неизменяемый, хешируемый; минимум полей ТЗ. Всё, что в нём «сделано»
  * или «проверено», — заявление исполнителя, пока его не подтвердила
  * проверка (D-23).
+ *
+ * D-41: [relevantFiles] — рабочий набор задачи: файлы, которые прежние
+ * сессии читали и правили (замер по потоку, а не слова модели), кроме уже
+ * названных в [modifiedFiles]; [summary] — итог последнего завершённого
+ * хода, как его написал исполнитель (заявление). Оба нужны свежей сессии
+ * (контрольная точка): она начинает с известных файлов, а не с поиска по
+ * репозиторию.
  */
 data class Handoff(
     val id: HandoffId,
@@ -56,6 +63,8 @@ data class Handoff(
     val branch: String?,
     val workspace: String?,
     val createdAt: Timestamp,
+    val relevantFiles: List<String> = emptyList(),
+    val summary: String? = null,
 ) {
     val hash: ContentHash get() = Hashing.sha256(toJson().fields.filterKeys { it != "hash" }.let(::JsonObject))
 
@@ -75,7 +84,12 @@ data class Handoff(
                 "openProblems" to list(openProblems), "currentAction" to opt(currentAction), "nextAction" to JsonString(nextAction),
                 "modifiedFiles" to list(modifiedFiles), "commit" to opt(commit), "branch" to opt(branch), "workspace" to opt(workspace),
                 "createdAt" to JsonNumber.of(createdAt.epochMillis),
-            ),
+            ).apply {
+                if (format >= 3) {
+                    put("relevantFiles", list(relevantFiles))
+                    put("summary", opt(summary))
+                }
+            },
         )
         return JsonObject(LinkedHashMap(body.fields).apply { put("hash", JsonString(Hashing.sha256(body).toString())) })
     }
@@ -84,8 +98,10 @@ data class Handoff(
      * Handoff как источник контекста следующей сессии (уровень `HANDOFF`):
      * текст для Claude — со всеми полями ТЗ, §27. Происхождение — `MODEL`:
      * это заявления прошлой сессии, а не указания оркестратора (T3).
+     * [workingSet] = `false` — без итога хода и рабочего набора: сессия
+     * провайдера продолжается (`--resume`) и помнит их сама (D-41).
      */
-    fun asSource(): ContextSource = ContextSource(
+    fun asSource(workingSet: Boolean = true): ContextSource = ContextSource(
         key = "handoff:${id.value}",
         level = SourceLevel.HANDOFF,
         project = project,
@@ -101,6 +117,10 @@ data class Handoff(
             currentAction?.let { appendLine("Текущее действие: $it") }
             appendLine("Следующее действие: $nextAction")
             section("Изменённые файлы", modifiedFiles)
+            if (workingSet) {
+                section("Файлы, с которыми работали прежние сессии (читать по необходимости, а не искать заново)", relevantFiles)
+                summary?.let { appendLine("Итог прошлого хода (со слов исполнителя):"); appendLine(it) }
+            }
             listOfNotNull(branch?.let { "ветка $it" }, commit?.let { "коммит $it" }, workspace?.let { "рабочий каталог $it" })
                 .takeIf { it.isNotEmpty() }?.let { appendLine("Git: ${it.joinToString(", ")}") }
             append("Сессия: ${session.value}; контекст: ${context.value} ($contextHash)")
@@ -115,8 +135,12 @@ data class Handoff(
 
     companion object {
         const val FORMAT = "dpai.handoff"
-        /** v2: причины `VERIFICATION_FAILED`, `CONTEXT_OVERFLOW` (D-40); v1 читается. */
-        const val VERSION = 2
+        /**
+         * v3: рабочий набор `relevantFiles` и итог хода `summary` (D-41); v2:
+         * причины `VERIFICATION_FAILED`, `CONTEXT_OVERFLOW` (D-40); v1 и v2
+         * читаются.
+         */
+        const val VERSION = 3
     }
 }
 

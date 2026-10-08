@@ -10,6 +10,7 @@ import com.dpsmpx.dpai.orchestrator.efficiency.BudgetMode
 import com.dpsmpx.dpai.orchestrator.efficiency.Continuation
 import com.dpsmpx.dpai.orchestrator.efficiency.EfficiencyPolicy
 import com.dpsmpx.dpai.orchestrator.efficiency.ModelRouter
+import com.dpsmpx.dpai.orchestrator.efficiency.WorkingSet
 import com.dpsmpx.dpai.security.Origin
 import com.dpsmpx.dpai.security.Sensitivity
 import com.dpsmpx.dpai.sessions.PromptFacts
@@ -182,6 +183,9 @@ class Orchestrator(
     /** Флаги, которых не знает Claude Code target (D-40): следующие ходы идут без них. */
     private val unsupportedFlags = HashMap<ExecutionTargetId, MutableSet<String>>()
 
+    /** Рабочий набор задачи: файлы её сессий и итог хода — для handoff свежей сессии (D-41); только в памяти. */
+    private val workingOf = HashMap<TaskId, WorkingSet>()
+
     /** Версия контекста, ушедшая в последний ход задачи, — основа разницы при `--resume` (D-40). */
     private val sentOf = HashMap<TaskId, ContextBundle>()
     /** Ожидающие и выполненные слияния — из журнала (`MergesProjection`). */
@@ -353,6 +357,7 @@ class Orchestrator(
                 lastOverlap.remove(id)
                 toolOf.remove(id)
                 sentOf.remove(id)
+                workingOf.remove(id)
             }
         }
     }
@@ -479,7 +484,8 @@ class Orchestrator(
         val seen = if (plan.mode == PromptMode.DELTA) continues?.let { sentContext(task, it) } else null
         val promptMode = if (plan.mode == PromptMode.DELTA && seen == null) PromptMode.FULL else plan.mode
         val why = if (promptMode != plan.mode) "версия, которую видела сессия, неизвестна — полный prompt" else plan.why
-        val bundle = when (val c = context(task, t.objective, efficiency.context.policy(window, budgetMode))) {
+        // Сессия провайдера продолжается — рабочий набор и итог хода она помнит сама (D-41).
+        val bundle = when (val c = context(task, t.objective, efficiency.context.policy(window, budgetMode), workingSet = !plan.reuseProvider)) {
             is Outcome.Success -> c.value
             is Outcome.Failure -> return contextFailed(task, session, c)
         }
@@ -580,10 +586,10 @@ class Orchestrator(
     }
 
     /** Контекст хода (`docs/CONTEXT_MODEL.md`, §2; `docs/EFFICIENCY.md`, §3): источники проекта, handoff, итог проверки. */
-    private fun context(task: TaskId, objective: String, policy: ContextPolicy): Outcome<ContextBundle> {
+    private fun context(task: TaskId, objective: String, policy: ContextPolicy, workingSet: Boolean = true): Outcome<ContextBundle> {
         val previous = contextOf[task] ?: storedContext(task)
         val handoff = handoffs.latest(task)
-        val sources = config.sources(task) + listOfNotNull(environment(), handoff?.asSource(), toolOf[task])
+        val sources = config.sources(task) + listOfNotNull(environment(), handoff?.asSource(workingSet), toolOf[task])
         val out = ContextAssembler.assemble(
             previous?.id ?: ids.next(IdKinds.CONTEXT), task, config.project, objective, handoff?.nextAction, sources, clock.now(), previous, policy,
         )
@@ -596,6 +602,11 @@ class Orchestrator(
     private fun poll(session: SessionId) {
         val before = sessions.sessions.getValue(session).state
         val step = driver.poll(sessions, session).valueOrNull() ?: return
+        if (efficiency.workingSet.enabled && step.turns.isNotEmpty()) {
+            val task = sessions.sessions.getValue(session).task
+            val ws = workingOf.getOrPut(task) { WorkingSet(treePath(task) ?: config.worktreeRoot ?: ".") }
+            step.turns.forEach { ws.add(it, efficiency.workingSet.maxSummaryChars) }
+        }
         if (step.unsupportedFlags.isNotEmpty()) {
             val target = sessions.sessions.getValue(session).target
             unsupportedFlags.getOrPut(target) { linkedSetOf() } += step.unsupportedFlags
@@ -664,6 +675,7 @@ class Orchestrator(
         val failed = report.steps.filter { it.required && it.result == com.dpsmpx.dpai.verification.StepResult.FAILED }
         val passed = report.steps.filter { it.result == com.dpsmpx.dpai.verification.StepResult.PASSED }
         val bundle = contextOf[task]
+        val modified = changedFiles(path)
         val handoff = Handoff(
             id = ids.next(IdKinds.HANDOFF),
             key = "${session.value}:verification",
@@ -678,8 +690,9 @@ class Orchestrator(
             failed = failed.map { "шаг ${it.name}: код ${it.exitCode ?: "?"}" },
             warnings = emptyList(), openProblems = emptyList(), currentAction = null,
             nextAction = "исправить то, что не прошло в проверке (выжимка — источник $VERIFICATION_SOURCE), и снова проверить",
-            modifiedFiles = changedFiles(path), commit = null, branch = treeOf[task]?.let { worktrees.worktrees[it]?.branch },
+            modifiedFiles = modified, commit = null, branch = treeOf[task]?.let { worktrees.worktrees[it]?.branch },
             workspace = treeOf[task]?.let { worktrees.worktrees[it]?.path }, createdAt = clock.now(),
+            relevantFiles = relevantFiles(task, modified), summary = workingOf[task]?.summary,
         )
         handoffs.create(handoff)
         saveTaskDocument("handoff", task, handoff.toJson())
@@ -708,6 +721,13 @@ class Orchestrator(
         }
         return ContextSource(ENVIRONMENT_SOURCE, SourceLevel.PROJECT, config.project, Sensitivity.INTERNAL, Origin.ORCHESTRATOR, text)
     }
+
+    /** Путь рабочего дерева задачи; дерева нет — `null`. */
+    private fun treePath(task: TaskId): String? = treeOf[task]?.let { worktrees.worktrees[it]?.path }
+
+    /** Рабочий набор для handoff (D-41): без файлов, уже названных изменёнными. */
+    private fun relevantFiles(task: TaskId, modified: List<String>): List<String> =
+        if (!efficiency.workingSet.enabled) emptyList() else workingOf[task]?.files(efficiency.workingSet.maxFiles, modified).orEmpty()
 
     /** Изменённые и новые файлы рабочего дерева — факт `git status`, а не заявление хода (D-23). */
     private fun changedFiles(path: String): List<String> {
@@ -766,6 +786,7 @@ class Orchestrator(
     private fun handOff(task: TaskId, session: SessionId) {
         val s = sessions.sessions.getValue(session)
         val bundle = contextOf[task]
+        val modified = treePath(task)?.let(::changedFiles).orEmpty()
         val handoff = Handoff(
             id = ids.next(IdKinds.HANDOFF),
             key = "${session.value}:handoff",
@@ -783,9 +804,10 @@ class Orchestrator(
             completed = emptyList(), verified = emptyList(), failed = emptyList(),
             warnings = listOfNotNull(s.lastReason?.name), openProblems = emptyList(), currentAction = null,
             nextAction = "продолжить с места остановки в той же сессии",
-            modifiedFiles = treeOf[task]?.let { worktrees.worktrees[it]?.path }?.let(::changedFiles).orEmpty(),
+            modifiedFiles = modified,
             commit = null, branch = treeOf[task]?.let { worktrees.worktrees[it]?.branch },
-            workspace = treeOf[task]?.let { worktrees.worktrees[it]?.path }, createdAt = clock.now(),
+            workspace = treePath(task), createdAt = clock.now(),
+            relevantFiles = relevantFiles(task, modified), summary = workingOf[task]?.summary,
         )
         handoffs.create(handoff)
         saveTaskDocument("handoff", task, handoff.toJson())

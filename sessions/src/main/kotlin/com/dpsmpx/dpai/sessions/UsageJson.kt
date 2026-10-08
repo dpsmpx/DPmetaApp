@@ -12,6 +12,8 @@ import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.core.serialization.JsonValue
 import com.dpsmpx.dpai.execution.claude.ModelTokens
+import com.dpsmpx.dpai.execution.claude.ToolCount
+import com.dpsmpx.dpai.execution.claude.TurnTools
 import com.dpsmpx.dpai.execution.claude.TurnUsage
 import java.math.BigDecimal
 
@@ -97,6 +99,7 @@ internal object UsageJson {
         "compacted" to JsonBool(t.compacted), "prompts" to JsonNumber.of(t.prompts), "promptTokens" to JsonNumber.of(t.promptTokens),
         "omittedTokens" to JsonNumber.of(t.omittedTokens), "reusedTokens" to JsonNumber.of(t.reusedTokens),
         "lastPrompt" to (t.lastPrompt?.let(::prompt) ?: JsonNull),
+        "tools" to (t.tools.takeIf { it != ToolTotals.EMPTY }?.let(::toolTotals) ?: JsonNull),
     )
 
     fun readTotals(f: JsonFields): UsageTotals? {
@@ -121,9 +124,12 @@ internal object UsageJson {
         val omitted = f.long("omittedTokens")
         val reused = f.long("reusedTokens")
         val last = f.optObj("lastPrompt")?.let { lf -> readPrompt(lf).also { lf.finish() } }
+        val toolsField = f.optObj("tools")
+        val tools = toolsField?.let(::readToolTotals)
         f.finish()
         if (turns == null || unknown == null || longs.values.any { it == null } || cost == null || estimated == null || models == null ||
-            models.values.any { it == null } || compacted == null || prompts == null || promptTokens == null || omitted == null || reused == null
+            models.values.any { it == null } || compacted == null || prompts == null || promptTokens == null || omitted == null || reused == null ||
+            (toolsField != null && tools == null)
         ) {
             return null
         }
@@ -131,9 +137,66 @@ internal object UsageJson {
             turns, unknown, longs.getValue("inputTokens")!!, longs.getValue("outputTokens")!!, longs.getValue("cacheReadTokens")!!,
             longs.getValue("cacheCreationTokens")!!, longs.getValue("thinkingTokens")!!, longs.getValue("apiCalls")!!, longs.getValue("subagents")!!,
             longs.getValue("durationMs")!!, cost, estimated, models.mapValues { it.value!! }, lastContext, window, compacted,
-            prompts, promptTokens, omitted, reused, last,
+            prompts, promptTokens, omitted, reused, last, tools ?: ToolTotals.EMPTY,
         )
     }
+
+    /** Инструменты хода (D-41): счётчики, без путей файлов. */
+    fun tools(t: TurnTools): JsonObject = obj(
+        "byTool" to byTool(t.byTool), "subagentCalls" to JsonNumber.of(t.subagentCalls),
+        "subagentResultBytes" to JsonNumber.of(t.subagentResultBytes), "filesRead" to JsonNumber.of(t.filesRead),
+        "filesEdited" to JsonNumber.of(t.filesEdited), "largestResultBytes" to JsonNumber.of(t.largestResultBytes),
+        "unmatchedResults" to JsonNumber.of(t.unmatchedResults),
+    )
+
+    /** Поля [tools] в [f]; закрывает чтение сам. */
+    fun readTools(f: JsonFields): TurnTools? {
+        val c = readToolCommon(f)
+        f.finish()
+        return c?.let { TurnTools(it.byTool, it.subagentCalls, it.subagentResultBytes, it.filesRead, it.filesEdited, it.largestResultBytes, it.unmatchedResults) }
+    }
+
+    private fun toolTotals(t: ToolTotals): JsonObject = JsonObject(
+        linkedMapOf<String, JsonValue>("turns" to JsonNumber.of(t.turns)).apply {
+            putAll(tools(TurnTools(t.byTool, t.subagentCalls, t.subagentResultBytes, t.filesRead, t.filesEdited, t.largestResultBytes, t.unmatchedResults)).fields)
+        },
+    )
+
+    private fun readToolTotals(f: JsonFields): ToolTotals? {
+        val turns = f.int("turns")
+        val c = readToolCommon(f)
+        f.finish()
+        return if (turns == null || c == null) null else c.copy(turns = turns)
+    }
+
+    /** Общие поля замера хода и сумм сессии; [ToolTotals.turns] — у вызывающего. */
+    private fun readToolCommon(f: JsonFields): ToolTotals? {
+        val items = f.array("byTool")?.items
+        val byTool = items?.mapIndexed { i, v ->
+            val o = v as? JsonObject ?: return@mapIndexed null.also { f.diagnostics.error(DiagCode.FIELD_TYPE, "ожидался объект", "${f.path}.byTool[$i]") }
+            val tf = JsonFields(o, "${f.path}.byTool[$i]", f.diagnostics)
+            val name = tf.string("tool")
+            val n = listOf("calls", "resultBytes", "errors", "duplicates", "duplicateBytes").map { tf.long(it) }
+            tf.finish()
+            if (name == null || n.any { it == null || it < 0 }) null else name to ToolCount(n[0]!!, n[1]!!, n[2]!!, n[3]!!, n[4]!!)
+        }
+        val longs = listOf("subagentCalls", "subagentResultBytes", "filesRead", "filesEdited", "largestResultBytes", "unmatchedResults").map { f.long(it) }
+        if (byTool == null || byTool.any { it == null } || longs.any { it == null || it < 0 }) {
+            return null.also { f.diagnostics.error(DiagCode.VALUE_INVALID, "замер инструментов недопустим", f.path) }
+        }
+        val names = byTool.map { it!!.first }
+        if (names.toSet().size != names.size) return null.also { f.diagnostics.error(DiagCode.VALUE_INVALID, "инструмент назван дважды", "${f.path}.byTool") }
+        return ToolTotals(0, byTool.associate { it!! }, longs[0]!!, longs[1]!!, longs[2]!!, longs[3]!!, longs[4]!!, longs[5]!!)
+    }
+
+    private fun byTool(m: Map<String, ToolCount>): JsonArray = JsonArray(
+        m.entries.sortedBy { it.key }.map { (k, c) ->
+            obj(
+                "tool" to JsonString(k), "calls" to JsonNumber.of(c.calls), "resultBytes" to JsonNumber.of(c.resultBytes),
+                "errors" to JsonNumber.of(c.errors), "duplicates" to JsonNumber.of(c.duplicates), "duplicateBytes" to JsonNumber.of(c.duplicateBytes),
+            )
+        },
+    )
 
     private fun model(m: ModelTokens): JsonObject = obj(
         "model" to JsonString(m.model), "inputTokens" to opt(m.inputTokens), "outputTokens" to opt(m.outputTokens),

@@ -2,6 +2,8 @@ package com.dpsmpx.dpai.sessions
 
 import com.dpsmpx.dpai.core.measure.Measure
 import com.dpsmpx.dpai.core.measure.MeasureSource
+import com.dpsmpx.dpai.execution.claude.ToolCount
+import com.dpsmpx.dpai.execution.claude.TurnTools
 import com.dpsmpx.dpai.execution.claude.TurnUsage
 import java.math.BigDecimal
 
@@ -41,6 +43,38 @@ data class PromptFacts(
 }
 
 /**
+ * Инструменты сессии (D-41): суммы замеров её ходов ([TurnTools]).
+ * [turns] — ходов с замером; [largestResultBytes] — наибольший результат.
+ */
+data class ToolTotals(
+    val turns: Int = 0,
+    val byTool: Map<String, ToolCount> = emptyMap(),
+    val subagentCalls: Long = 0,
+    val subagentResultBytes: Long = 0,
+    val filesRead: Long = 0,
+    val filesEdited: Long = 0,
+    val largestResultBytes: Long = 0,
+    val unmatchedResults: Long = 0,
+) {
+    val total: ToolCount get() = byTool.values.fold(ToolCount.ZERO, ToolCount::plus)
+
+    fun plus(t: TurnTools): ToolTotals = ToolTotals(
+        turns = turns + 1,
+        byTool = t.byTool.entries.fold(byTool) { acc, (k, v) -> acc + (k to (acc[k] ?: ToolCount.ZERO) + v) },
+        subagentCalls = subagentCalls + t.subagentCalls,
+        subagentResultBytes = subagentResultBytes + t.subagentResultBytes,
+        filesRead = filesRead + t.filesRead,
+        filesEdited = filesEdited + t.filesEdited,
+        largestResultBytes = maxOf(largestResultBytes, t.largestResultBytes),
+        unmatchedResults = unmatchedResults + t.unmatchedResults,
+    )
+
+    companion object {
+        val EMPTY = ToolTotals()
+    }
+}
+
+/**
  * Накопленный расход сессии оркестратора (D-40): суммы по ходам, о которых
  * провайдер сообщил расход. [unknownTurns] — ходы без итога: суммы тогда —
  * нижняя граница, и отчёт так и говорит (D-13). [models] — токены по
@@ -68,6 +102,8 @@ data class UsageTotals(
     val omittedTokens: Long = 0,
     val reusedTokens: Long = 0,
     val lastPrompt: PromptFacts? = null,
+    /** Инструменты ходов — замер оркестратора (D-41), отдельно от слов провайдера. */
+    val tools: ToolTotals = ToolTotals.EMPTY,
 ) {
     /** Свёртка расхода хода: известное — в суммы, неизвестного хода — счётчик. */
     fun plus(u: TurnUsage): UsageTotals {
@@ -97,6 +133,8 @@ data class UsageTotals(
             compacted = compacted || u.compacted,
         )
     }
+
+    fun plus(t: TurnTools): UsageTotals = copy(tools = tools.plus(t))
 
     fun plus(p: PromptFacts): UsageTotals = copy(
         prompts = prompts + 1,

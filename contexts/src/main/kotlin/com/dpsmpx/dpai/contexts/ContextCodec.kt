@@ -95,17 +95,20 @@ object ContextCodec {
         val branch = f.optString("branch")
         val workspace = f.optString("workspace")
         val createdAt = f.long("createdAt")?.let(::Timestamp)
+        val relevant = if (format >= 3) f.strings("relevantFiles") else emptyList()
+        val summary = if (format >= 3) f.optString("summary") else null
         val hash = f.hash("hash")
         f.finish()
         if (d.hasErrors || id == null || key == null || reason == null || session == null || task == null || project == null || context == null ||
-            contextHash == null || state == null || lists.values.any { it == null } || nextAction == null || modified == null || createdAt == null || hash == null
+            contextHash == null || state == null || lists.values.any { it == null } || nextAction == null || modified == null || createdAt == null || hash == null ||
+            relevant == null
         ) {
             return Outcome.Failure(d.all.ifEmpty { listOf(com.dpsmpx.dpai.core.diagnostics.Diagnostic.error(DiagCode.FIELD_MISSING, "handoff неполон", "$")) })
         }
         val h = Handoff(
             id, key, reason, session, task, project, context, contextHash, state,
             lists.getValue("completed")!!, lists.getValue("verified")!!, lists.getValue("failed")!!, lists.getValue("warnings")!!,
-            lists.getValue("openProblems")!!, currentAction, nextAction, modified, commit, branch, workspace, createdAt,
+            lists.getValue("openProblems")!!, currentAction, nextAction, modified, commit, branch, workspace, createdAt, relevant, summary,
         )
         if ((h.toJson(format)["hash"] as JsonString).value != hash.toString()) {
             return Outcome.failure(DiagCode.HASH_MISMATCH, "хеш handoff не совпал с содержимым", "handoff $id")

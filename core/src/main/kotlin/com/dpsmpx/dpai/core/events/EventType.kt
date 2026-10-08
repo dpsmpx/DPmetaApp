@@ -35,6 +35,8 @@ enum class EventType {
     SESSION_PROMPT_PREPARED,
     /** Расход хода со слов провайдера (D-40). */
     SESSION_TURN_USAGE,
+    /** Инструменты хода — замер оркестратора по потоку: вызовы, вывод, повторы (D-41). */
+    SESSION_TURN_TOOLS,
 
     // --- проверка ---
     VERIFICATION_STARTED,

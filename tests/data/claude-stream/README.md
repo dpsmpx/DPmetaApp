@@ -19,8 +19,10 @@
 | `no-result.jsonl` | построен | поток кончился без `result` — процесс упал |
 | `session-mismatch.jsonl` | построен | `session_id` в `init` не тот, что назначил оркестратор |
 | `rate-limited.jsonl` | построен по полям записанных `rate_limit_event` и ошибки входа | `rate_limit_event` со `status: rejected`, `assistant` с `error: rate_limit` |
+| `tool-calls.jsonl` | построен по форме `tool_use` и `tool_result` записанного `success-structured.jsonl` (D-41) | чтение, поиск, правка, команда с ошибкой, повторное чтение до и после правки, субагент со своим вызовом (`parent_tool_use_id`), `content` строкой и блоками `text` |
 
-Построенный по догадке `rate-limited.jsonl` — не факт о Claude Code:
-как на деле выглядит отказ по пределу подписки, не проверено
-(`docs/research/CLAUDE_CODE_CLI.md`, §7). Появится настоящий образец —
-он ляжет рядом, а этот файл уйдёт.
+Построенные по догадке `rate-limited.jsonl` и `tool-calls.jsonl` — не
+факт о Claude Code: как на деле выглядит отказ по пределу подписки и
+поток хода с инструментами разработки, не проверено
+(`docs/research/CLAUDE_CODE_CLI.md`, §7, §11). Появится настоящий
+образец — он ляжет рядом, а построенный файл уйдёт.

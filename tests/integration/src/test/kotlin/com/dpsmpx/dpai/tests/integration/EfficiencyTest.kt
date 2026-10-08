@@ -22,7 +22,13 @@ import com.dpsmpx.dpai.execution.claude.ClaudeRunner
 import com.dpsmpx.dpai.execution.claude.MockRunner
 import com.dpsmpx.dpai.execution.claude.RunnerState
 import com.dpsmpx.dpai.execution.claude.RunnerUpdate
+import com.dpsmpx.dpai.execution.claude.ModelTokens
+import com.dpsmpx.dpai.execution.claude.ToolCount
+import com.dpsmpx.dpai.execution.claude.TurnFiles
 import com.dpsmpx.dpai.execution.claude.TurnStatus
+import com.dpsmpx.dpai.execution.claude.TurnTools
+import com.dpsmpx.dpai.core.measure.Measure
+import com.dpsmpx.dpai.core.result.map
 import com.dpsmpx.dpai.execution.process.Completed
 import com.dpsmpx.dpai.execution.process.LocalProcessHost
 import com.dpsmpx.dpai.execution.process.ProcessSpec
@@ -188,5 +194,84 @@ class EfficiencyTest {
         assertEquals(DiagCode.CLAUDE_FLAG_UNSUPPORTED, h.orchestrator.sessions.sessions.getValue(h.starts[0].session).lastReason)
         // Отказ флага — не вина аккаунта: слот доступен.
         assertTrue(h.orchestrator.accounts.slots.values.all { it.state == com.dpsmpx.dpai.core.state.AccountState.AVAILABLE }, h.orchestrator.accounts.slots.toString())
+    }
+
+    /**
+     * Ход «изнутри» (D-41): заглушка дописывает в итог файлы, которые ход
+     * читал и правил (в дереве задачи и вне его), замер инструментов и
+     * историю [context] токенов из окна 200 000.
+     */
+    private class WithTools(private val inner: ClaudeRunner, private val context: Long) : ClaudeRunner by inner {
+        private val dirs = HashMap<SessionId, String>()
+
+        override fun start(session: SessionId, request: ClaudeRequest, provider: ProviderSessionId?, resume: Boolean): Outcome<RunnerState> {
+            dirs[session] = request.workDir!!
+            return inner.start(session, request, provider, resume)
+        }
+
+        override fun stream(session: SessionId): Outcome<List<RunnerUpdate>> = inner.stream(session).map { ups ->
+            ups.map { u ->
+                if (u !is RunnerUpdate.TurnFinished) return@map u
+                val d = dirs.getValue(session)
+                val files = TurnFiles(read = listOf("$d/src/Parser.kt", "$d/src/Main.kt", "/home/dev/.gradle/caches/lib.jar"), edited = listOf("$d/src/Parser.kt"))
+                val tools = TurnTools(byTool = mapOf("Read" to ToolCount(4, 2_000, 0, 1, 500), "Edit" to ToolCount(1, 40)), filesRead = 3, filesEdited = 1)
+                val usage = u.result.usage.copy(
+                    contextTokens = Measure.observed(context),
+                    models = listOf(ModelTokens("mock", 10, 5, 0, 0, 200_000, null)),
+                )
+                u.copy(result = u.result.copy(files = files, tools = tools, usage = usage, text = "Поправил разбор в src/Parser.kt; тест падал до правки."))
+            }
+        }
+    }
+
+    private fun withTools(policy: EfficiencyPolicy, context: Long): EfficiencyHarness =
+        EfficiencyHarness(dir.resolve("h${n++}"), policy, verify = failOnce, wrap = { WithTools(it, context) })
+
+    @Test
+    fun checkpointAfterFailedCheckCarriesTheWorkingSetNotTheSearch() {
+        // История 150 000 из 200 000 — выше порога: свежая сессия с handoff (D-40, п. 4) и рабочим набором (D-41).
+        val h = withTools(EfficiencyPolicy.DEFAULT, 150_000)
+        val t = h.orchestrator.addTask("парсер", "поддержать экспоненту").valueOrNull()!!
+        h.run()
+        assertEquals(TaskState.DONE, h.orchestrator.tasks.tasks.getValue(t).state)
+        val (first, second) = h.starts
+        assertFalse(second.resume)
+        assertEquals(PromptMode.CHECKPOINT, h.prompts(t)[1].mode)
+        val p = second.request.prompt
+        assertTrue("Файлы, с которыми работали прежние сессии" in p, p)
+        // Изменённый — первым, пути — от рабочего дерева; файл вне дерева не уходит в prompt.
+        assertTrue(p.indexOf("- src/Parser.kt") in 0 until p.indexOf("- src/Main.kt"), p)
+        assertFalse(".gradle" in p, p)
+        assertTrue("Поправил разбор в src/Parser.kt" in p, p)
+        val handoff = h.orchestrator.handoffs.latest(t)!!
+        assertEquals(listOf("src/Parser.kt", "src/Main.kt"), handoff.relevantFiles)
+        // Замер инструментов — в расходе сессии (журнал), без путей.
+        val first1 = h.orchestrator.sessions.sessions.getValue(first.session).usage.tools
+        assertEquals(1, first1.turns)
+        assertEquals(ToolCount(5, 2_040, 0, 1, 500), first1.total)
+        assertTrue("## Инструменты в ходе" in h.orchestrator.usage().render())
+    }
+
+    @Test
+    fun resumedSessionDoesNotGetTheWorkingSetAgain() {
+        // История мала — та же сессия провайдера (`--resume`): она помнит файлы и итог сама.
+        val h = withTools(EfficiencyPolicy.DEFAULT, 20_000)
+        val t = h.orchestrator.addTask("парсер", "поддержать экспоненту").valueOrNull()!!
+        h.run()
+        val second = h.starts[1]
+        assertTrue(second.resume)
+        assertFalse("Файлы, с которыми работали прежние сессии" in second.request.prompt, second.request.prompt)
+        assertFalse("Поправил разбор" in second.request.prompt)
+        // Handoff всё равно хранит рабочий набор — на случай контрольной точки позже.
+        assertEquals(listOf("src/Parser.kt", "src/Main.kt"), h.orchestrator.handoffs.latest(t)!!.relevantFiles)
+    }
+
+    @Test
+    fun legacyHasNoWorkingSet() {
+        val h = withTools(EfficiencyPolicy.LEGACY, 150_000)
+        val t = h.orchestrator.addTask("парсер", "поддержать экспоненту").valueOrNull()!!
+        h.run()
+        assertTrue(h.starts.none { "Файлы, с которыми работали прежние сессии" in it.request.prompt })
+        assertTrue(h.orchestrator.handoffs.all().filter { it.task == t }.all { it.relevantFiles.isEmpty() && it.summary == null })
     }
 }

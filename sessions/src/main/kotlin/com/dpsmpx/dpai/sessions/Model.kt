@@ -127,4 +127,12 @@ sealed interface SessionEvent {
         val usage: com.dpsmpx.dpai.execution.claude.TurnUsage,
         override val at: Timestamp,
     ) : SessionEvent
+
+    /** Инструменты хода — замер оркестратора по потоку (D-41); пишется перед [TurnFinished] того же хода. */
+    data class TurnTools(
+        override val session: SessionId,
+        val turn: Int,
+        val tools: com.dpsmpx.dpai.execution.claude.TurnTools,
+        override val at: Timestamp,
+    ) : SessionEvent
 }

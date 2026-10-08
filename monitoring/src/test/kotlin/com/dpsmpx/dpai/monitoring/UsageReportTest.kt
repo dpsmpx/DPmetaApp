@@ -7,7 +7,9 @@ import com.dpsmpx.dpai.core.ids.IdKinds
 import com.dpsmpx.dpai.core.ids.ProviderSessionId
 import com.dpsmpx.dpai.core.state.SessionState
 import com.dpsmpx.dpai.core.state.TaskState
+import com.dpsmpx.dpai.execution.claude.ToolCount
 import com.dpsmpx.dpai.sessions.PromptFacts
+import com.dpsmpx.dpai.sessions.ToolTotals
 import com.dpsmpx.dpai.sessions.PromptMode
 import com.dpsmpx.dpai.sessions.SessionRecord
 import com.dpsmpx.dpai.sessions.SessionsState
@@ -66,6 +68,47 @@ class UsageReportTest {
         assertNull(r.cacheReadShare)
         assertNull(r.tokensPerDoneTask)
         assertNull(r.contextSavedShare)
+        assertNull(r.duplicateShare)
+        assertNull(r.avgContextTokens)
+        assertNull(r.successShare)
         assertTrue("—" in r.render())
+        // Без замера инструментов — нет и раздела о них, а не нули.
+        assertTrue("## Инструменты в ходе" !in r.render())
+    }
+
+    @Test
+    fun toolsSectionSumsSessionsAndSplitsByMode() {
+        // D-41: замер инструментов по сессиям; повторы — доля вывода; вызовы на сессию — по режиму prompt.
+        val a = ids.next(IdKinds.TASK)
+        fun tools(read: ToolCount, bash: ToolCount) = ToolTotals(turns = 1, byTool = mapOf("Read" to read, "Bash" to bash), filesRead = 3, largestResultBytes = bash.resultBytes)
+        val full = session(
+            a,
+            UsageTotals(
+                turns = 1, inputTokens = 100, cacheReadTokens = 2_900, durationMs = 4_000, lastContextTokens = 30_000,
+                lastPrompt = PromptFacts(PromptMode.FULL, 10, 4, 1), tools = tools(ToolCount(6, 3_000, 0, 2, 1_000), ToolCount(4, 3_000, 1)),
+            ),
+        )
+        val checkpoint = session(
+            a,
+            UsageTotals(
+                turns = 1, inputTokens = 100, durationMs = 2_000, lastContextTokens = 10_000,
+                lastPrompt = PromptFacts(PromptMode.CHECKPOINT, 10, 4, 1), tools = tools(ToolCount(2, 300), ToolCount(0, 0)),
+            ),
+        )
+        val done = TaskRecord(a, "a", "a", Priority.NORMAL, emptySet(), emptySet(), TaskPolicy(), clock.now(), state = TaskState.DONE)
+        val r = UsageReport.build(SessionsState(listOf(full, checkpoint).associateBy { it.id }), TasksState(mapOf(a to done)))
+        assertEquals(ToolCount(12, 6_300, 1, 2, 1_000), r.tools.total)
+        assertEquals(2, r.tools.turns)
+        assertEquals(1_000.0 / 6_300, r.duplicateShare)
+        assertEquals(2_100, r.toolTokens)
+        assertEquals(2_100.0 / 3_100, r.toolShareOfInput)
+        assertEquals(mapOf(PromptMode.FULL to 10.0, PromptMode.CHECKPOINT to 2.0), r.toolCallsByMode)
+        assertEquals(20_000, r.avgContextTokens)
+        assertEquals(3_000, r.avgTurnMs)
+        assertEquals(1.0, r.successShare)
+        assertEquals(listOf("Read", "Bash"), r.topTools().map { it.key })
+        val text = r.render()
+        assertTrue("## Инструменты в ходе (замер оркестратора по потоку)" in text, text)
+        assertTrue("нижняя граница" in text && "(≈2100)" in text, text)
     }
 }

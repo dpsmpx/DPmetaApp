@@ -26,10 +26,21 @@ import java.math.BigDecimal
 sealed interface ClaudeEvent {
     data class Init(val sessionId: String?, val model: String?, val version: String?, val apiKeySource: String?) : ClaudeEvent
 
-    data class ToolUse(val id: String?, val name: String)
+    /** Вызов инструмента; [input] — его вход (для замера повторов и рабочего набора файлов, D-41). */
+    data class ToolUse(val id: String?, val name: String, val input: JsonObject? = null)
 
-    /** Сообщение модели: текст, вызовы инструментов; [error] — ошибка API, оформленная сообщением. */
-    data class Assistant(val texts: List<String>, val toolUses: List<ToolUse>, val error: String?) : ClaudeEvent
+    /**
+     * Сообщение модели: текст, вызовы инструментов; [error] — ошибка API,
+     * оформленная сообщением. [subagent] — сообщение субагента
+     * (`parent_tool_use_id`), а не самого хода.
+     */
+    data class Assistant(val texts: List<String>, val toolUses: List<ToolUse>, val error: String?, val subagent: Boolean = false) : ClaudeEvent
+
+    /** Результат инструмента: [bytes] — UTF-8 текста, который получила модель; изображения не считаются. */
+    data class ToolResult(val id: String?, val bytes: Long, val isError: Boolean)
+
+    /** Результаты инструментов (`user` с блоками `tool_result`); [subagent] — в контексте субагента. */
+    data class ToolResults(val results: List<ToolResult>, val subagent: Boolean) : ClaudeEvent
 
     /** Окно предела подписки: загрузка (0…1) и время сброса. */
     data class Window(val utilization: Measure<Double>, val resetsAt: Timestamp?)
@@ -115,7 +126,8 @@ class ClaudeStreamParser(private val expectedSession: ProviderSessionId?) {
                 if (it.status !in ClaudeEvent.RateLimit.KNOWN) notes += malformed("неизвестный статус предела: ${it.status}")
             }
             "result" -> result(obj) ?: return Parsed(null, notes + malformed("result без is_error или subtype"))
-            "user", "stream_event" -> ClaudeEvent.Other(type, obj.str("subtype"))
+            "user" -> toolResults(obj) ?: ClaudeEvent.Other(type, obj.str("subtype"))
+            "stream_event" -> ClaudeEvent.Other(type, obj.str("subtype"))
             else -> {
                 notes += Diagnostic.info(DiagCode.CLAUDE_EVENT_UNKNOWN, "неизвестный тип события $type", SUBJECT)
                 ClaudeEvent.Other(type, obj.str("subtype"))
@@ -127,9 +139,30 @@ class ClaudeStreamParser(private val expectedSession: ProviderSessionId?) {
     private fun assistant(obj: JsonObject): ClaudeEvent.Assistant {
         val content = ((obj["message"] as? JsonObject)?.get("content") as? JsonArray)?.items.orEmpty().filterIsInstance<JsonObject>()
         val texts = content.filter { it.str("type") == "text" }.mapNotNull { it.str("text") }
-        val tools = content.filter { it.str("type") == "tool_use" }.map { ClaudeEvent.ToolUse(it.str("id"), it.str("name") ?: "?") }
-        return ClaudeEvent.Assistant(texts, tools, obj.str("error"))
+        val tools = content.filter { it.str("type") == "tool_use" }.map { ClaudeEvent.ToolUse(it.str("id"), it.str("name") ?: "?", it["input"] as? JsonObject) }
+        return ClaudeEvent.Assistant(texts, tools, obj.str("error"), subagent = obj.str("parent_tool_use_id") != null)
     }
+
+    /**
+     * Блоки `tool_result` сообщения `user`: размер — UTF-8 текста
+     * (`content` строкой или блоками `text`). Поле `tool_use_result` — сырой
+     * итог инструмента для клиента, в контекст модели оно не идёт и не
+     * считается. Нет блоков — `null`.
+     */
+    private fun toolResults(obj: JsonObject): ClaudeEvent.ToolResults? {
+        val content = ((obj["message"] as? JsonObject)?.get("content") as? JsonArray)?.items.orEmpty().filterIsInstance<JsonObject>()
+        val results = content.filter { it.str("type") == "tool_result" }.map { b ->
+            val bytes = when (val c = b["content"]) {
+                is JsonString -> utf8(c.value)
+                is JsonArray -> c.items.filterIsInstance<JsonObject>().filter { it.str("type") == "text" }.sumOf { utf8(it.str("text").orEmpty()) }
+                else -> 0L
+            }
+            ClaudeEvent.ToolResult(b.str("tool_use_id"), bytes, (b["is_error"] as? JsonBool)?.value == true)
+        }
+        return results.takeIf { it.isNotEmpty() }?.let { ClaudeEvent.ToolResults(it, subagent = obj.str("parent_tool_use_id") != null) }
+    }
+
+    private fun utf8(s: String): Long = s.toByteArray(Charsets.UTF_8).size.toLong()
 
     private fun rateLimit(info: JsonObject?): ClaudeEvent.RateLimit? {
         info ?: return null

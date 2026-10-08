@@ -23,13 +23,16 @@ import com.dpsmpx.dpai.core.state.SessionState
 
 /**
  * События сессий в конвертах `dpai.event` (поток — сессия) и состояние
- * сессий в снимке `dpai.sessions-state` v2 (`docs/DATA_MODEL.md`, §4).
+ * сессий в снимке `dpai.sessions-state` v3 (`docs/DATA_MODEL.md`, §4).
  * Чтение строгое: неизвестное поле, чужой идентификатор — ошибка (D-09).
  */
 object SessionCodec {
     const val STATE_FORMAT = "dpai.sessions-state"
-    /** v2: расход сессии `usage` (D-40); v1 читается — расхода в нём нет. */
-    const val STATE_VERSION = 2
+    /**
+     * v3: инструменты ходов `usage.tools` (D-41); v2 — расход сессии `usage`
+     * (D-40); v1 и v2 читаются — чего в них нет, того нет и в состоянии.
+     */
+    const val STATE_VERSION = 3
 
     fun type(e: SessionEvent): EventType = when (e) {
         is SessionEvent.Created -> EventType.SESSION_CREATED
@@ -41,6 +44,7 @@ object SessionCodec {
         is SessionEvent.ToolStarted -> EventType.SESSION_TOOL_STARTED
         is SessionEvent.PromptPrepared -> EventType.SESSION_PROMPT_PREPARED
         is SessionEvent.TurnUsage -> EventType.SESSION_TURN_USAGE
+        is SessionEvent.TurnTools -> EventType.SESSION_TURN_TOOLS
     }
 
     fun stream(e: SessionEvent): StreamRef = StreamRef.of(e.session)
@@ -65,6 +69,7 @@ object SessionCodec {
         is SessionEvent.ToolStarted -> obj("session" to id(e.session), "tool" to JsonString(e.tool))
         is SessionEvent.PromptPrepared -> JsonObject(linkedMapOf<String, JsonValue>("session" to id(e.session)).apply { putAll(UsageJson.prompt(e.facts).fields) })
         is SessionEvent.TurnUsage -> obj("session" to id(e.session), "turn" to JsonNumber.of(e.turn), "usage" to UsageJson.turn(e.usage))
+        is SessionEvent.TurnTools -> obj("session" to id(e.session), "turn" to JsonNumber.of(e.turn), "tools" to UsageJson.tools(e.tools))
     }
 
     /** Событие сессии из типа, времени и полезной нагрузки; чужой тип — `null`. */
@@ -136,6 +141,12 @@ object SessionCodec {
                 val turn = f.int("turn")
                 val usage = f.obj("usage")?.let(UsageJson::readTurn)
                 if (s != null && turn != null && usage != null) SessionEvent.TurnUsage(s, turn, usage, at) else null
+            }
+            EventType.SESSION_TURN_TOOLS -> {
+                val s = session()
+                val turn = f.int("turn")
+                val tools = f.obj("tools")?.let(UsageJson::readTools)
+                if (s != null && turn != null && tools != null) SessionEvent.TurnTools(s, turn, tools, at) else null
             }
             else -> return null
         }

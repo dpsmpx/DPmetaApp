@@ -28,6 +28,8 @@ data class EfficiencyPolicy(
      * коммит, handoff): модель не тратит ход на механическую работу (§1).
      */
     val environmentFacts: Boolean = true,
+    /** Рабочий набор файлов и итог хода — в handoff свежей сессии (§4, D-41). */
+    val workingSet: WorkingSetPolicy = WorkingSetPolicy(),
 ) {
     companion object {
         val DEFAULT = EfficiencyPolicy()
@@ -41,6 +43,7 @@ data class EfficiencyPolicy(
             shareSystemPromptCache = false,
             rejectDuplicateTasks = false,
             environmentFacts = false,
+            workingSet = WorkingSetPolicy(enabled = false),
         )
     }
 }
@@ -139,6 +142,18 @@ data class RoutingPolicy(
             TaskClass.ARCHITECTURE to Route("opus", "high"),
             TaskClass.CRITICAL_REVIEW to Route("opus", "high"),
         )
+    }
+}
+
+/**
+ * Рабочий набор задачи (§4, D-41): файлы, которые её сессии читали и
+ * правили (по потоку, внутри рабочего дерева), — до [maxFiles] путей;
+ * итог последнего завершённого хода — до [maxSummaryChars] знаков. Идут
+ * в handoff и в prompt свежей сессии; продолжению `--resume` не нужны.
+ */
+data class WorkingSetPolicy(val enabled: Boolean = true, val maxFiles: Int = 40, val maxSummaryChars: Int = 2_000) {
+    init {
+        require(maxFiles in 0..1_000 && maxSummaryChars in 0..20_000) { "maxFiles — 0…1000, maxSummaryChars — 0…20000" }
     }
 }
 
