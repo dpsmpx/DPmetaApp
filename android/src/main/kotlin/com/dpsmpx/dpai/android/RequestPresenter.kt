@@ -42,9 +42,6 @@ object RequestPresenter {
     /** Смахнутые человеком: до перезапуска процесса уведомление не возвращается само. */
     private val dismissed = ConcurrentHashMap.newKeySet<String>()
 
-    /** Показанные в этом процессе — факт `delivered` пишется один раз на канал. */
-    private val deliveredHere = ConcurrentHashMap.newKeySet<String>()
-
     /** Последние карточки — для повторного показа, если ответ не принят. */
     private val cards = ConcurrentHashMap<String, RequestCard>()
 
@@ -74,7 +71,7 @@ object RequestPresenter {
             cards[id.value] = card
             if (id.value in shown || id.value in dismissed) continue
             show(context, card)
-            if (deliveredHere.add("notification:${id.value}")) model.delivered(id, "notification")
+            model.delivered(id, "notification")
         }
         cards.keys.retainAll(pending.keys.map { it.value }.toSet())
         RequestOverlay.sync(context, model, pending)
@@ -194,7 +191,7 @@ class RequestReceiver : BroadcastReceiver() {
         if (detached) pending.finish()
         worker.execute {
             try {
-                Answers.apply(app, id, uri, text, label)
+                Answers.apply(app, id, uri, text, label, "notification")
             } finally {
                 if (!detached) pending.finish()
             }
@@ -214,10 +211,10 @@ class RequestReceiver : BroadcastReceiver() {
 
 /** Применение ответа с любого канала (уведомление, окно, экран) и показ итога. */
 object Answers {
-    fun apply(context: Context, id: String, uri: String, text: String?, label: String): Outcome<*> {
+    fun apply(context: Context, id: String, uri: String, text: String?, label: String, channel: String): Outcome<*> {
         val controller = Controller.get(context.filesDir, context.packageManager.getPackageInfo(context.packageName, 0).versionName)
         val model = DemoModel.get(context.cacheDir, controller)
-        val r = model.answer(uri, text)
+        val r = model.answer(uri, text, channel)
         when (r) {
             is Outcome.Success -> {
                 context.getSystemService(NotificationManager::class.java).cancel(RequestPresenter.TAG, RequestPresenter.notificationId(id))

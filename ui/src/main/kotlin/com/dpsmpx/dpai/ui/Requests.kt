@@ -59,15 +59,7 @@ object RequestScreens {
     fun cards(requests: List<UserRequest>, tasks: TasksState, now: Timestamp): List<RequestCard> =
         requests.filter { !it.terminal }.sortedBy { it.createdAt.epochMillis }.map { card(it, tasks, now) }
 
-    fun kindLabel(k: RequestKind): String = when (k) {
-        RequestKind.QUESTION -> "вопрос"
-        RequestKind.CONFIRMATION -> "подтверждение"
-        RequestKind.DESTRUCTIVE_CONFIRMATION -> "опасное действие"
-        RequestKind.TEXT_INPUT -> "нужен текст"
-        RequestKind.CHOICE -> "выбор"
-        RequestKind.ACKNOWLEDGEMENT -> "к сведению"
-        RequestKind.USER_RESOLUTION -> "нужно решение"
-    }
+    fun kindLabel(k: RequestKind): String = k.label
 
     /** Остаток срока: «истёк», минуты, часы. */
     fun left(ms: Long): String = when {

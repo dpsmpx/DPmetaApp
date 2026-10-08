@@ -43,6 +43,19 @@ enum class RequestKind {
 
     /** Автоматика не решила (проверка, сверка, конфликт): варианты решения, любые роли. */
     USER_RESOLUTION,
+    ;
+
+    /** Подпись для человека: в тексте запроса — она, а не имя перечисления (строгий редактор скрыл бы длинное имя). */
+    val label: String
+        get() = when (this) {
+            QUESTION -> "вопрос"
+            CONFIRMATION -> "подтверждение"
+            DESTRUCTIVE_CONFIRMATION -> "опасное действие"
+            TEXT_INPUT -> "нужен текст"
+            CHOICE -> "выбор"
+            ACKNOWLEDGEMENT -> "к сведению"
+            USER_RESOLUTION -> "нужно решение"
+        }
 }
 
 /** Роль варианта: от неё — вид кнопки и требование подтверждения. */
@@ -84,8 +97,12 @@ object RequestLifecycle {
     )
 }
 
-/** Принятый ответ: вариант, текст (если нужен), кто и когда; [effect] — что сделал оркестратор. */
-data class RequestAnswer(val option: String, val text: String?, val by: String, val at: Timestamp, val effect: String?)
+/**
+ * Принятый ответ: вариант, текст (если нужен), кто и когда; [effect] — что
+ * сделал оркестратор; [channel] — где ответили (`notification`, `overlay`,
+ * `app`, `cli`), для разбора; неизвестно — `null`.
+ */
+data class RequestAnswer(val option: String, val text: String?, val by: String, val at: Timestamp, val effect: String?, val channel: String? = null)
 
 /**
  * Запрос человеку (D-44): устойчивый id, назначение ([purpose] — закрытый

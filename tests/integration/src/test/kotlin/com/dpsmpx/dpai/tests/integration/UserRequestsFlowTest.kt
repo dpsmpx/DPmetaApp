@@ -131,10 +131,11 @@ class UserRequestsFlowTest {
 
         assertTrue(o.delivered(r.id, "notification").isSuccess)
         relogin(o)
-        val first = o.answer(uri(r, "reply"), "используй gradle 9", "автор")
+        val first = o.answer(uri(r, "reply"), "используй gradle 9", "автор", "notification")
         assertEquals(OperationStatus.SUCCEEDED, first.status, first.diagnostics.toString())
         assertEquals(TaskState.READY, o.tasks.tasks.getValue(task).state, "ответ меняет состояние задачи")
         assertEquals(RequestState.ANSWERED, o.requests.requests.getValue(r.id).state)
+        assertEquals("notification", o.requests.requests.getValue(r.id).answer?.channel, "канал ответа записан")
 
         // Повтор нажатия: тот же ответ, второго действия нет.
         val events = journal.position
@@ -226,6 +227,7 @@ class UserRequestsFlowTest {
             assertTrue(id.isSuccess, "$k: ${id.diagnostics}")
         }
         assertEquals(RequestKind.entries.size, o.pendingRequests().size, "проверочные запросы не смешиваются")
+        assertTrue(o.pendingRequests().none { "<redacted>" in it.title }, o.pendingRequests().map { it.title }.toString())
         val text = o.pendingRequests().single { it.kind == RequestKind.TEXT_INPUT }
         assertEquals(DiagCode.REQUEST_ANSWER_INVALID, o.answer(uri(text, "send"), null, "автор").diagnostics.single().code, "без текста — отказ")
         assertEquals("проверка", o.answer(uri(text, "send"), "проверка", "автор").value?.text)

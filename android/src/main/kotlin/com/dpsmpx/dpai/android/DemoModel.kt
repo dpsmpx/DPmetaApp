@@ -100,10 +100,9 @@ class DemoModel(private val cacheDir: File, private val controller: Controller) 
     private fun snapshot(v: ControlView, selected: String?, notifications: List<Notification>): Snapshot {
         val session = selected?.let { IdKinds.SESSION.parse(it).valueOrNull() }
         val o = v.orchestrator
-        val shown = if (v is LiveSystem) o.pendingRequests() else o.pendingRequests().filter { it.purpose == RequestPurpose.PROBE.code }
         return Snapshot(
             v.mode, v is LiveSystem, v.dashboard(), v.board(), session?.let(v::session), notifications,
-            RequestScreens.cards(shown, o.tasks, Clock.SYSTEM.now()),
+            RequestScreens.cards(shown(v), o.tasks, Clock.SYSTEM.now()),
         )
     }
 
@@ -124,32 +123,40 @@ class DemoModel(private val cacheDir: File, private val controller: Controller) 
      * приложений или экрана; ссылку и хеш проверяет оркестратор.
      */
     @Synchronized
-    fun answer(uri: String, text: String?): Outcome<RequestAnswer> = try {
-        current().orchestrator.answer(uri, text, ACTOR).outcome
+    fun answer(uri: String, text: String?, channel: String): Outcome<RequestAnswer> = try {
+        current().orchestrator.answer(uri, text, ACTOR, channel).outcome
     } catch (e: Exception) {
         Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.INTERNAL_ERROR, "контроллер не принял ответ", e)))
     }
 
-    /** Проверочный запрос вида [kind] (экран «Запросы», `docs/DEVICE_CHECK.md`). */
+    /** Проверочный запрос вида [kind] (экран «Запросы», `docs/DEVICE_CHECK.md`); [ttl] `null` — срок контура по умолчанию. */
     @Synchronized
     fun probe(kind: RequestKind, ttl: Duration?): Outcome<RequestId> = try {
-        current().orchestrator.probe(kind, ttl)
+        val o = current().orchestrator
+        o.probe(kind, ttl ?: o.requestTtl)
     } catch (e: Exception) {
         Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.INTERNAL_ERROR, "контроллер не создал запрос", e)))
     }
 
-    /** Канал показал запрос: факт в журнал (D-44). */
+    /** Показанные в этом процессе по каналам: факт показа — один на канал, а не на каждую перерисовку. */
+    private val deliveredHere = HashSet<String>()
+
+    /** Канал показал запрос: факт в журнал (D-44), один раз на канал за процесс. */
     @Synchronized
     fun delivered(id: RequestId, channel: String) {
-        runCatching { current().orchestrator.delivered(id, channel) }
+        if (deliveredHere.add("$channel:${id.value}")) runCatching { current().orchestrator.delivered(id, channel) }
     }
 
     /** Ждёт ли запрос ответа — оболочка снимает уведомление и окно закрытого. */
     @Synchronized
     fun pending(): Map<RequestId, RequestCard> = runCatching {
-        val o = current().orchestrator
-        RequestScreens.cards(o.pendingRequests(), o.tasks, Clock.SYSTEM.now()).associateBy { it.id }
+        val v = current()
+        RequestScreens.cards(shown(v), v.orchestrator.tasks, Clock.SYSTEM.now()).associateBy { it.id }
     }.getOrDefault(emptyMap())
+
+    /** Запросы, которые оболочка показывает: у контроллера — все, у демо — только проверочные (демо не шумит). */
+    private fun shown(v: ControlView) =
+        if (v is LiveSystem) v.orchestrator.pendingRequests() else v.orchestrator.pendingRequests().filter { it.purpose == RequestPurpose.PROBE.code }
 
     /** Последняя сессия задачи — куда ведёт ссылка `dpai://task/…` из уведомления. */
     @Synchronized

@@ -162,6 +162,7 @@ object UserRequestCodec {
         linkedMapOf<String, JsonValue>("option" to JsonString(a.option), "by" to JsonString(a.by), "at" to JsonNumber.of(a.at.epochMillis)).apply {
             a.text?.let { put("text", JsonString(it)) }
             a.effect?.let { put("effect", JsonString(it)) }
+            a.channel?.let { put("channel", JsonString(it)) }
         },
     )
 
@@ -185,9 +186,10 @@ object UserRequestCodec {
             val at = a.long("at")?.let(::Timestamp)
             val text = a.optString("text")
             val effect = a.optString("effect")
+            val channel = a.optString("channel")
             a.finish()
             if (opt == null || by == null || at == null) return null
-            RequestAnswer(opt, text, by, at, effect)
+            RequestAnswer(opt, text, by, at, effect, channel)
         }
         val reason = f.optString("reason")?.let { r -> DiagCode.entries.firstOrNull { it.name == r } ?: return null }
         if (id == null || kind == null || purpose == null || subject == null || title == null || body == null || options == null ||
@@ -236,8 +238,9 @@ object UserRequestCodec {
                     val aat = a.long("at")?.let(::Timestamp)
                     val text = a.optString("text")
                     val effect = a.optString("effect")
+                    val channel = a.optString("channel")
                     a.finish()
-                    if (opt != null && by != null && aat != null) RequestEvent.Answered(r, RequestAnswer(opt, text, by, aat, effect)) else null
+                    if (opt != null && by != null && aat != null) RequestEvent.Answered(r, RequestAnswer(opt, text, by, aat, effect, channel)) else null
                 }
             }
             "EXPIRED" -> id()?.let { RequestEvent.Expired(it, at) }

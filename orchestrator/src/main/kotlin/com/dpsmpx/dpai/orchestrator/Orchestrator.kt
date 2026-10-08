@@ -1022,7 +1022,7 @@ class Orchestrator(
             RequestKind.USER_RESOLUTION -> listOf(RequestOption("keep", "Оставить", OptionRole.NEUTRAL), RequestOption("drop", "Сбросить", OptionRole.DESTRUCTIVE))
         }
         val n = requests.requests.values.count { it.purpose == RequestPurpose.PROBE.code } + 1
-        return ask(RequestPurpose.PROBE, kind, "probe:$n", "Проверка запросов №$n: $kind", "Проверочный запрос: ответ только записывается в журнал.", options, null, null, ttl)
+        return ask(RequestPurpose.PROBE, kind, "probe:$n", "Проверка запросов №$n: ${kind.label}", "Проверочный запрос: ответ только записывается в журнал.", options, null, null, ttl)
     }
 
     /** Канал показал запрос (`notification`, `overlay`, `app`): факт в журнал; закрытый — без записи. */
@@ -1035,9 +1035,9 @@ class Orchestrator(
     fun pendingRequests(): List<UserRequest> = requests.pending
 
     /** Кнопка уведомления `dpai://answer/…` и текст поля ввода, если он есть (D-44). */
-    fun answer(uri: String, text: String?, by: String): OperationResult<RequestAnswer> = when (val a = RequestAction.parse(uri)) {
+    fun answer(uri: String, text: String?, by: String, channel: String? = null): OperationResult<RequestAnswer> = when (val a = RequestAction.parse(uri)) {
         is Outcome.Failure -> OperationResult.record("request.answer", Provenance(Actor(ActorKind.USER, by)), ids, clock, a)
-        is Outcome.Success -> answer(a.value.request, a.value.option, text, a.value.hash, by)
+        is Outcome.Success -> answer(a.value.request, a.value.option, text, a.value.hash, by, channel)
     }
 
     /**
@@ -1045,20 +1045,20 @@ class Orchestrator(
      * вариант его; затем действие по назначению запроса и запись исхода.
      * Повтор тем же вариантом — прежний ответ, без второго действия.
      */
-    fun answer(id: RequestId, option: String, text: String?, hash: ContentHash, by: String): OperationResult<RequestAnswer> {
+    fun answer(id: RequestId, option: String, text: String?, hash: ContentHash, by: String, channel: String? = null): OperationResult<RequestAnswer> {
         val r = requests.requests[id]
         val provenance = Provenance(Actor(ActorKind.USER, by), taskId = r?.task, sessionId = r?.session)
         val outcome: Outcome<RequestAnswer> = when (val c = UserRequests.check(requests, id, option, text, hash, clock.now())) {
             is Outcome.Failure -> c.also { if (r != null && !r.terminal && r.expired(clock.now())) commitRequests(listOf(RequestEvent.Expired(id, clock.now()))) }
             is Outcome.Success -> when (val v = c.value) {
                 is AnswerCheck.Repeat -> Outcome.success(v.request.answer!!)
-                is AnswerCheck.Apply -> applyAnswer(v, by)
+                is AnswerCheck.Apply -> applyAnswer(v, by, channel)
             }
         }
         return OperationResult.record("request.answer", provenance, ids, clock, outcome)
     }
 
-    private fun applyAnswer(a: AnswerCheck.Apply, by: String): Outcome<RequestAnswer> {
+    private fun applyAnswer(a: AnswerCheck.Apply, by: String, channel: String?): Outcome<RequestAnswer> {
         val r = a.request
         val effect: Outcome<String> = when (RequestPurpose.of(r.purpose)) {
             RequestPurpose.PROBE, RequestPurpose.RECOVERY -> Outcome.success("записано")
@@ -1071,7 +1071,7 @@ class Orchestrator(
                 commitRequests(listOf(RequestEvent.Failed(r.id, a.option.id, effect.errors.first().code, clock.now())))
             }
             is Outcome.Success -> {
-                val answer = RequestAnswer(a.option.id, a.text, by, clock.now(), effect.value)
+                val answer = RequestAnswer(a.option.id, a.text, by, clock.now(), effect.value, channel?.takeIf { CHANNEL.matches(it) })
                 commitRequests(listOf(RequestEvent.Answered(r.id, answer)))
                 Outcome.success(answer)
             }
@@ -1190,5 +1190,8 @@ class Orchestrator(
         const val WAIVE = "waive"
         const val LATER = "later"
         const val ACK = "ack"
+
+        /** Канал ответа — короткое слово латиницей (`notification`, `overlay`, `app`, `cli`). */
+        private val CHANNEL = Regex("[a-z]{1,16}")
     }
 }

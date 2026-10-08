@@ -138,6 +138,8 @@ class UserRequestsTest {
         val r = request()
         assertTrue(r.hash != r.copy(body = "другой текст").hash)
         assertTrue(r.hash != r.copy(options = r.options.reversed()).hash)
+        // Имя вида в тексте не нужно: строгий редактор скрыл бы длинное (DESTRUCTIVE_CONFIRMATION — 24 знака).
+        assertTrue(RequestKind.entries.all { it.label.isNotBlank() && it.label != it.name })
         // Состояние и доставки хеш не меняют: кнопка действует после показа и перезапуска.
         assertEquals(r.hash, r.copy(state = RequestState.DELIVERED, deliveries = 3).hash)
     }
@@ -178,7 +180,7 @@ class UserRequestsTest {
         var s = created(r)
         val events = listOf(
             RequestEvent.Delivered(r.id, "notification", clock.now()),
-            RequestEvent.Answered(r.id, RequestAnswer("send", "текст", "автор", clock.now(), "записано")),
+            RequestEvent.Answered(r.id, RequestAnswer("send", "текст", "автор", clock.now(), "записано", "notification")),
         )
         s = UserRequests.applyAll(s, events)
         for (e in listOf(RequestEvent.Created(r)) + events + listOf(RequestEvent.Expired(r.id, clock.now()), RequestEvent.Cancelled(r.id, null, clock.now()), RequestEvent.Failed(r.id, "send", DiagCode.INTERNAL_ERROR, clock.now()))) {

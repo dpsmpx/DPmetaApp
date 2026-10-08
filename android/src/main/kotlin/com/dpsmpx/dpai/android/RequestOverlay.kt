@@ -146,7 +146,7 @@ object RequestOverlay {
                     isEnabled = false
                     status.text = "Отправляю…"
                     worker.execute {
-                        val r = Answers.apply(context, card.id.value, b.uri, typed, b.label)
+                        val r = Answers.apply(context, card.id.value, b.uri, typed, b.label, "overlay")
                         main.post {
                             when (r) {
                                 is Outcome.Success -> hide()
