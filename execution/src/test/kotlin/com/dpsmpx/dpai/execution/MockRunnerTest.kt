@@ -151,6 +151,15 @@ class MockRunnerTest {
         }.toSet()
     }
 
+    /** D-38: режим разрешений хода — одно из документированных значений `--permission-mode`. */
+    @Test
+    fun turnPermissionModeIsDocumented() {
+        val root = System.getProperty("dpai.repoRoot") ?: error("нет dpai.repoRoot")
+        val row = File(root, "docs/research/CLAUDE_CODE_CLI.md").readLines().single { it.startsWith("| `--permission-mode`") }
+        val values = Regex("`([A-Za-z]+)`").findAll(row.split('|')[2]).map { it.groupValues[1] }.toSet()
+        assertTrue(ClaudeCodeCli.TURN_PERMISSION_MODE in values, "$values")
+    }
+
     @Test
     fun uuidIsVersion4() {
         val id = ProviderSessionId.newUuid(RandomSource.seeded(5)).value

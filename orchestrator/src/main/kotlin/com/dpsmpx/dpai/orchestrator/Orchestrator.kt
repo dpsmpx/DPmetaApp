@@ -29,6 +29,7 @@ import com.dpsmpx.dpai.core.measure.Measure
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.state.SessionState
 import com.dpsmpx.dpai.core.state.TaskState
+import com.dpsmpx.dpai.execution.claude.ClaudeCodeCli
 import com.dpsmpx.dpai.execution.claude.ClaudeRequest
 import com.dpsmpx.dpai.execution.claude.ClaudeRunner
 import com.dpsmpx.dpai.git.GitOp
@@ -423,7 +424,10 @@ class Orchestrator(
         val workDir = prepareWorktree(task, session) ?: return failLaunch(task, session, DiagCode.WORKTREE_MISSING)
         val bundle = context(task, t.objective)
         val budget = t.policy.maxBudgetUsdCents?.let { BigDecimal(it).movePointLeft(2) }
-        val request = ClaudeRequest(PromptRenderer.render(bundle), workDir = workDir, timeout = t.policy.turnTimeout, maxBudgetUsd = budget)
+        val request = ClaudeRequest(
+            PromptRenderer.render(bundle), permissionMode = ClaudeCodeCli.TURN_PERMISSION_MODE,
+            workDir = workDir, timeout = t.policy.turnTimeout, maxBudgetUsd = budget,
+        )
         val step = ok(driver.launch(sessions, accounts, session, request), "сессия $session не запущена") ?: return failLaunch(task, session, DiagCode.SESSION_FAILED)
         // Пачка 2 — после вызова: состояние сессии, факты аккаунтов, задача в работе.
         batch {

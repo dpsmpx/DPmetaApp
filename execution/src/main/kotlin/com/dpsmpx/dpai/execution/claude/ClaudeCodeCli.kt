@@ -44,6 +44,13 @@ data class ClaudeRequest(
  * `--resume` того же id (`docs/research/CLAUDE_CODE_CLI.md`, §3).
  */
 object ClaudeCodeCli {
+    /**
+     * Режим разрешений хода оркестратора (D-38): в `-p` спросить человека
+     * некому, и без режима правки и команды отклоняются — ход «завершается»
+     * без изменений. Какие действия безопасны, решает Claude Code (`auto`).
+     */
+    const val TURN_PERMISSION_MODE: String = "auto"
+
     val DOCUMENTED_FLAGS: Set<String> = setOf(
         "-p", "--verbose", "--output-format", "--session-id", "--resume", "--model", "--permission-mode",
         "--tools", "--allowedTools", "--disallowedTools", "--max-budget-usd", "--json-schema", "--add-dir",

@@ -84,6 +84,12 @@ class ApprovalReceiver : BroadcastReceiver() {
         val key = intent.getStringExtra(KEY) ?: return
         val pending = goAsync()
         val app = context.applicationContext
+        // Ответ ждёт конца такта (DemoModel — один замок на такт с вызовами по
+        // SSH), а такт идёт минутами. Пока работает служба контроллера, процесс
+        // жив и без приёмника: широковещание отпускается сразу, иначе система
+        // объявит ANR и убьёт процесс вместе со службой.
+        val detached = ControllerService.running
+        if (detached) pending.finish()
         worker.execute {
             try {
                 val controller = Controller.get(app.filesDir, app.packageManager.getPackageInfo(app.packageName, 0).versionName)
@@ -98,7 +104,7 @@ class ApprovalReceiver : BroadcastReceiver() {
                     Notification("$key:answer", NotificationCategory.INFO, "Ответ на запрос", text, null, 1, nowStamp(), nowStamp()),
                 )
             } finally {
-                pending.finish()
+                if (!detached) pending.finish()
             }
         }
     }

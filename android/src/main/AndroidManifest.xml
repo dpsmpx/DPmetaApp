@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- SSH к targets из контроллера приложения (D-35). Других разрешений нет. -->
+    <!-- SSH к targets из контроллера приложения (D-35). -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Такт контроллера при выключенном экране — частичный wakelock службы (D-39). -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Уведомления контроллера (D-36); на Android 13+ разрешение спрашивается при запуске. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Контроллер в фоне — служба переднего плана (D-36). -->

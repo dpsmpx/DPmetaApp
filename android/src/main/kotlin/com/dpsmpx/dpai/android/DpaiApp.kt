@@ -74,7 +74,10 @@ fun DpaiApp(model: DemoModel, controller: Controller) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
     var snapshot by remember { mutableStateOf<Snapshot?>(null) }
+    // Контроллер остановлен кнопкой «Остановить»: экран его не поднимает сам (D-39).
+    var stopped by remember { mutableStateOf(false) }
     val selected by rememberUpdatedState(selectedId)
+    val scope = rememberCoroutineScope()
 
     val context = androidx.compose.ui.platform.LocalContext.current
     val notifier = remember { Notifier(context.applicationContext) }
@@ -84,6 +87,7 @@ fun DpaiApp(model: DemoModel, controller: Controller) {
             // Контроллер шагает в службе (D-36): экран только рисует; демо шагает здесь.
             val background = withContext(Dispatchers.IO) { model.hasLive() }
             if (background && !ControllerService.running) ControllerService.start(context)
+            stopped = background && !ControllerService.running && withContext(Dispatchers.IO) { ControllerService.stoppedByUser(context) }
             val next = withContext(Dispatchers.IO) { if (background) model.view(s) else model.step(s) }
             next.notifications.forEach(notifier::show)
             snapshot = next
@@ -112,13 +116,21 @@ fun DpaiApp(model: DemoModel, controller: Controller) {
         },
     ) { padding ->
         val s = snapshot
-        Box(Modifier.padding(padding).fillMaxSize()) {
-            when {
-                selectedId == null && tab == 2 -> TargetsPane(controller, model)
-                s == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-                selectedId != null -> SessionPane(s.session)
-                tab == 0 -> DashboardPane(s.dashboard) { selectedId = it.value }
-                else -> BoardPane(s.board, s.live, model)
+        Column(Modifier.padding(padding).fillMaxSize()) {
+            if (stopped) {
+                Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Контроллер остановлен: такты не идут, уведомлений нет.", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                    Button(onClick = { scope.launch(Dispatchers.IO) { ControllerService.resume(context) }; stopped = false }) { Text("Запустить") }
+                }
+            }
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                when {
+                    selectedId == null && tab == 2 -> TargetsPane(controller, model)
+                    s == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
+                    selectedId != null -> SessionPane(s.session)
+                    tab == 0 -> DashboardPane(s.dashboard) { selectedId = it.value }
+                    else -> BoardPane(s.board, s.live, model)
+                }
             }
         }
     }

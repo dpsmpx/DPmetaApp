@@ -7,12 +7,18 @@ import com.dpsmpx.dpai.core.clock.ManualClock
 import com.dpsmpx.dpai.core.clock.RandomSource
 import com.dpsmpx.dpai.core.ids.IdGenerator
 import com.dpsmpx.dpai.core.ids.IdKinds
+import com.dpsmpx.dpai.core.ids.ProviderSessionId
+import com.dpsmpx.dpai.core.ids.SessionId
 import com.dpsmpx.dpai.core.ids.TaskId
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.state.SessionState
 import com.dpsmpx.dpai.core.state.TaskState
+import com.dpsmpx.dpai.execution.claude.ClaudeCodeCli
+import com.dpsmpx.dpai.execution.claude.ClaudeRequest
+import com.dpsmpx.dpai.execution.claude.ClaudeRunner
 import com.dpsmpx.dpai.execution.claude.MockRunner
 import com.dpsmpx.dpai.execution.claude.MockScenario
+import com.dpsmpx.dpai.execution.claude.RunnerState
 import com.dpsmpx.dpai.execution.process.LocalProcessHost
 import com.dpsmpx.dpai.execution.process.ProcessSpec
 import com.dpsmpx.dpai.execution.process.run
@@ -24,11 +30,11 @@ import com.dpsmpx.dpai.orchestrator.Orchestrator
 import com.dpsmpx.dpai.orchestrator.ProjectConfig
 import com.dpsmpx.dpai.orchestrator.TargetSlot
 import com.dpsmpx.dpai.orchestrator.git.GitService
+import com.dpsmpx.dpai.orchestrator.git.WorktreesProjection
 import com.dpsmpx.dpai.orchestrator.verification.ProcessStepRunner
 import com.dpsmpx.dpai.security.ApprovalLedger
 import com.dpsmpx.dpai.storage.journal.EventJournal
 import com.dpsmpx.dpai.storage.snapshot.StateRecovery
-import com.dpsmpx.dpai.orchestrator.git.WorktreesProjection
 import com.dpsmpx.dpai.storage.vfs.NioVfs
 import com.dpsmpx.dpai.verification.VerificationProfile
 import com.dpsmpx.dpai.verification.Verifier
@@ -59,6 +65,8 @@ class V1ScenariosTest {
     private val scenarios = HashMap<String, List<MockScenario>>()
     private lateinit var orchestrator: Orchestrator
     private lateinit var runner: MockRunner
+    /** Запросы ходов, которые оркестратор передал Claude (D-38). */
+    private val started = mutableListOf<ClaudeRequest>()
     private lateinit var repo: Repository
     private lateinit var journal: EventJournal
 
@@ -102,7 +110,7 @@ class V1ScenariosTest {
             journal = (EventJournal.open(NioVfs(dir), "data/journal.log") as Outcome.Success).value
             val git = GitService(host, GitCommands(ApprovalLedger()), clock)
             orchestrator = Orchestrator(
-                clock, ids, RandomSource.seeded(103), journal, runner,
+                clock, ids, RandomSource.seeded(103), journal, Recording(runner, started),
                 ProjectConfig(profile.project, repo, dir.resolve("trees").toString(), profile),
                 targets, git, Verifier(ProcessStepRunner(host), clock), accounts,
             )
@@ -146,6 +154,7 @@ class V1ScenariosTest {
         orchestrator.tick()
         val running = orchestrator.sessions.sessions.values.filter { it.state == SessionState.RUNNING }
         assertEquals(10, running.size, "10 задач — 10 сессий")
+        assertTrue(started.size >= 10 && started.all { it.permissionMode == ClaudeCodeCli.TURN_PERMISSION_MODE }, "ход — с режимом разрешений D-38")
         assertEquals(10, orchestrator.dashboard().activeSessions)
         val owners = orchestrator.worktrees.worktrees.values.filter { it.owner != null }
         assertEquals(10, owners.map { it.path }.toSet().size, "у каждой сессии своё дерево")
@@ -229,5 +238,13 @@ class V1ScenariosTest {
         assertEquals(listOf(t), orchestrator.merged, "слитое — из журнала")
         assertEquals(0, orchestrator.dashboard().waitingApproval.orNull())
         assertEquals(emptyList(), orchestrator.invariants())
+    }
+}
+
+/** Раннер, запоминающий запросы ходов: что оркестратор передаёт Claude. */
+private class Recording(private val inner: ClaudeRunner, private val requests: MutableList<ClaudeRequest>) : ClaudeRunner by inner {
+    override fun start(session: SessionId, request: ClaudeRequest, provider: ProviderSessionId?, resume: Boolean): Outcome<RunnerState> {
+        requests += request
+        return inner.start(session, request, provider, resume)
     }
 }
