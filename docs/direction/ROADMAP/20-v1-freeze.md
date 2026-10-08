@@ -16,4 +16,6 @@
       артефакта двух сборок с нуля совпали (7 октября 2026;
       `docs/PROCESS.md`, §6).
 - [ ] Контрольная точка выпуска: метка и `release.sha256` — при заморозке.
-- [ ] Integration Contract для DPmetaApp (ТЗ, §157, п. 19).
+- [ ] Integration Contract для DPmetaApp (ТЗ, §157, п. 19): срез до
+      заморозки — `docs/INTEGRATION_CONTRACT.md` (8 октября 2026, поля —
+      по шаблону DPmetaApp); отмечается, когда в нём стабильная ревизия.
