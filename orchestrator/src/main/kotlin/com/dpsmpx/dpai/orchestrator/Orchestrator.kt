@@ -418,6 +418,7 @@ class Orchestrator(
         // документов контекст живёт только в памяти — и остаётся там.
         for (id in es.map { it.task }.toSet()) {
             if (tasks.tasks[id]?.terminal == true) {
+                sessions.sessions.values.filter { it.task == id }.forEach { driver.forget(it.id) }
                 if (documents != null) contextOf.remove(id)
                 lastOverlap.remove(id)
                 toolOf.remove(id)
@@ -543,6 +544,8 @@ class Orchestrator(
         val handoff = handoffs.latest(task)
         val continues = previous?.takeIf {
             (it.state == SessionState.CANCELLED && it.lastReason == DiagCode.SESSION_HANDED_OFF) ||
+                // Запрос человека в эту сессию (D-42): новый ход той же сессии провайдера или свежая с handoff.
+                (handoff?.session == it.id && (handoff.reason == HandoffReason.MANUAL || handoff.reason == HandoffReason.TURN_FINISHED)) ||
                 (efficiency.feedVerification && it.state == SessionState.COMPLETED && handoff?.session == it.id && handoff.reason == HandoffReason.VERIFICATION_FAILED)
         }
         val plan = Continuation.plan(
@@ -873,12 +876,26 @@ class Orchestrator(
 
     /** Ход прерван: handoff, прежняя сессия снята, задача ждёт продолжения (сценарий V1 2). */
     private fun handOff(task: TaskId, session: SessionId, by: HandoffReason? = null, next: String? = null) {
+        writeHandoff(task, session, by, next)
+        commitSessions(sessionsLogic.transition(sessions, session, SessionState.CANCELLED, clock.now(), DiagCode.SESSION_HANDED_OFF).valueOrNull().orEmpty())
+        releaseLease(session)
+        releaseTree(task, session)
+        commitTasks(ok(tasksLogic.continueLater(tasks, task, clock.now()), "продолжение задачи").orEmpty())
+    }
+
+    /**
+     * Handoff сессии: что сделано и изменено, что дальше. Причина по
+     * умолчанию — по коду остановки хода; от человека — своя, и ключ
+     * уникален: второй запрос в ту же сессию — второй handoff, а не повтор.
+     */
+    private fun writeHandoff(task: TaskId, session: SessionId, by: HandoffReason?, next: String?): Handoff {
         val s = sessions.sessions.getValue(session)
         val bundle = contextOf[task]
         val modified = treePath(task)?.let(::changedFiles).orEmpty()
+        val id = ids.next(IdKinds.HANDOFF)
         val handoff = Handoff(
-            id = ids.next(IdKinds.HANDOFF),
-            key = "${session.value}:${if (by == null) "handoff" else "user"}",
+            id = id,
+            key = if (by == null) "${session.value}:handoff" else "${session.value}:user:${id.value}",
             reason = by ?: when (s.lastReason) {
                 DiagCode.CLAUDE_RATE_LIMITED -> HandoffReason.ACCOUNT_EXHAUSTED
                 DiagCode.CLAUDE_CONTEXT_OVERFLOW -> if (efficiency.resume.enabled) HandoffReason.CONTEXT_OVERFLOW else HandoffReason.NEAR_LIMIT
@@ -900,10 +917,7 @@ class Orchestrator(
         )
         handoffs.create(handoff)
         saveTaskDocument("handoff", task, handoff.toJson())
-        commitSessions(sessionsLogic.transition(sessions, session, SessionState.CANCELLED, clock.now(), DiagCode.SESSION_HANDED_OFF).valueOrNull().orEmpty())
-        releaseLease(session)
-        releaseTree(task, session)
-        commitTasks(ok(tasksLogic.continueLater(tasks, task, clock.now()), "продолжение задачи").orEmpty())
+        return handoff
     }
 
     private fun releaseTree(task: TaskId, session: SessionId) {
@@ -1010,6 +1024,10 @@ class Orchestrator(
             is Command.Resume -> record(command, provenance) { taskEdit(command.task) { tasksLogic.hold(tasks, command.task, false, clock.now()) } }
             is Command.Cancel -> record(command, provenance) { cancelTask(command.task) }
             is Command.Retry -> record(command, provenance) { retryTask(command.task, command.text) }
+            is Command.StopSession -> record(command, provenance) {
+                sessions.sessions[command.session]?.let { holdTask(it.task) } ?: Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой сессии", "session ${command.session}")
+            }
+            is Command.SendToSession -> record(command, provenance) { sendToSession(command.session, command.text, command.model, command.effort, command.fresh) }
             is Command.Waive -> record(command, provenance) {
                 if (command.reason.isBlank()) Outcome.failure(DiagCode.VALUE_INVALID, "исключение — с причиной") else resolveUnverified(command.task, WAIVE, command.by, command.reason.trim())
             }
@@ -1112,6 +1130,79 @@ class Orchestrator(
         }
         if (text != null) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "ответ к ходу — у заблокированной задачи", "task $task")
         return taskEdit(task) { tasksLogic.retry(tasks, task, clock.now()) }
+    }
+
+    // ---- действия с сессиями (D-42, п. 3) ----
+
+    /** Ход идёт (не ждёт человека и не завершён): в него не вмешиваются (D-04). */
+    private fun turnRunning(task: TaskId) = openSessions(task).any { it.state !in WAIT_STATES }
+
+    /**
+     * Запрос в сессию (D-42; ТЗ, §12 `send`): новый ход той же сессии
+     * провайдера с текстом человека — handoff `MANUAL` к последней сессии
+     * задачи, задача снова в плане, счётчики сброшены, удержание снято.
+     * [fresh] — свежая сессия с handoff (контрольная точка, D-40), а не
+     * `--resume`. Модель и усилие запроса — в политику задачи (видно на
+     * листе задачи). Пока ход идёт — отказ: в идущий процесс не пишут.
+     */
+    fun sendToSession(session: SessionId, text: String?, model: String?, effort: String?, fresh: Boolean): Outcome<TaskState> {
+        val s = sessions.sessions[session] ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой сессии", "session $session")
+        val task = s.task
+        val clean = text?.trim()?.takeIf { it.isNotEmpty() }?.take(UserRequest.MAX_TEXT)
+        if (clean == null && !fresh) return Outcome.failure(DiagCode.VALUE_INVALID, "запрос без текста")
+        if (turnRunning(task)) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "ход идёт: остановите его или дождитесь конца", "session $session")
+        val last = sessions.sessions.values.filter { it.task == task }.maxWithOrNull(compareBy({ it.createdAt.epochMillis }, { it.id.value }))!!
+        if (last.id != session) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "запрос — в последнюю сессию задачи ${last.id}", "session $session")
+        reopenForTurn(task)?.let { return it }
+        val reason = if (fresh) HandoffReason.TURN_FINISHED else HandoffReason.MANUAL
+        val next = clean?.let { "запрос пользователя: $it" } ?: "продолжить работу в свежей сессии с этого места"
+        if (!last.terminal) handOff(task, last.id, reason, next) else writeHandoff(task, last.id, reason, next)
+        if (model != null || effort != null) {
+            val t = tasks.tasks.getValue(task)
+            val policy = try {
+                t.policy.copy(model = model?.trim()?.ifEmpty { null } ?: t.policy.model, effort = effort?.trim()?.ifEmpty { null } ?: t.policy.effort)
+            } catch (e: IllegalArgumentException) {
+                return Outcome.failure(DiagCode.VALUE_INVALID, e.message ?: "модель или усилие недопустимы", "task $task")
+            }
+            commitTasks(ok(tasksLogic.setPolicy(tasks, task, policy, clock.now()), "модель запроса").orEmpty())
+        }
+        return Outcome.success(tasks.tasks.getValue(task).state)
+    }
+
+    /**
+     * Задача снова в плане для хода по запросу человека: из любого
+     * незанятого состояния — в `READY` или очередь; счётчики сброшены,
+     * удержание снято. `null` — получилось, иначе отказ.
+     */
+    private fun reopenForTurn(task: TaskId): Outcome.Failure? {
+        val t = tasks.tasks.getValue(task)
+        val now = clock.now()
+        val route: List<Pair<TaskState, com.dpsmpx.dpai.core.state.TransitionMode>> = when (t.state) {
+            TaskState.READY, TaskState.QUEUED, TaskState.BACKLOG -> emptyList()
+            TaskState.BLOCKED, TaskState.WAITING -> listOf(TaskState.READY to com.dpsmpx.dpai.core.state.TransitionMode.ORDINARY)
+            TaskState.FAILED -> listOf(TaskState.QUEUED to com.dpsmpx.dpai.core.state.TransitionMode.EXPLICIT)
+            TaskState.CANCELLED, TaskState.DONE -> listOf(
+                TaskState.BACKLOG to com.dpsmpx.dpai.core.state.TransitionMode.EXPLICIT, TaskState.QUEUED to com.dpsmpx.dpai.core.state.TransitionMode.ORDINARY,
+            )
+            TaskState.COMPLETION_UNVERIFIED -> listOf(
+                TaskState.VERIFYING to com.dpsmpx.dpai.core.state.TransitionMode.ORDINARY, TaskState.READY to com.dpsmpx.dpai.core.state.TransitionMode.ORDINARY,
+            )
+            else -> return Outcome.Failure(listOf(Diagnostic.error(DiagCode.OPERATION_NOT_ALLOWED, "задача ${t.state}: дождитесь конца проверки", "task $task")))
+        }
+        val es = mutableListOf<TaskEvent>(TaskEvent.CountersReset(task, now))
+        if (t.held) es += TaskEvent.HoldChanged(task, false, now)
+        var st = Tasks.applyAll(tasks, es)
+        for ((to, mode) in route) {
+            when (val r = tasksLogic.move(st, task, to, now, DiagCode.CANCELLED_BY_USER.takeIf { to == TaskState.READY && t.state == TaskState.BLOCKED }, mode = mode)) {
+                is Outcome.Failure -> return r
+                is Outcome.Success -> {
+                    es += r.value
+                    st = Tasks.applyAll(st, r.value)
+                }
+            }
+        }
+        commitTasks(es)
+        return null
     }
 
     // ---- запросы человеку (D-44) ----
@@ -1345,6 +1436,9 @@ class Orchestrator(
 
     /** Последняя версия контекста задачи — что видел Claude в последнем ходе. */
     fun lastContext(task: TaskId): ContextBundle? = contextOf[task] ?: storedContext(task, report = false)
+
+    /** Что ход сессии делает сейчас (D-42): только в памяти, для экрана. */
+    fun live(session: SessionId): com.dpsmpx.dpai.sessions.LiveTurn? = driver.live(session)
 
     /** Отчёт расхода (D-40; `docs/EFFICIENCY.md`, §9). */
     fun usage(): com.dpsmpx.dpai.monitoring.UsageReport = com.dpsmpx.dpai.monitoring.UsageReport.build(sessions, tasks)

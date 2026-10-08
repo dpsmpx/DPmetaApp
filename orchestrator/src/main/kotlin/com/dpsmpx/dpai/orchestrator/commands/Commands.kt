@@ -100,6 +100,26 @@ sealed interface Command {
         override val operation: String get() = "task.waive"
     }
 
+    /** Остановить ход сессии (D-42): ход остановлен, handoff записан, задача приостановлена. */
+    data class StopSession(val session: com.dpsmpx.dpai.core.ids.SessionId, override val key: String? = null) : Command {
+        override val operation: String get() = "session.stop"
+    }
+
+    /**
+     * Запрос в сессию (D-42; ТЗ, §12): новый ход той же сессии провайдера
+     * с [text], моделью и усилием; [fresh] — свежая сессия с handoff.
+     */
+    data class SendToSession(
+        val session: com.dpsmpx.dpai.core.ids.SessionId,
+        val text: String?,
+        val model: String? = null,
+        val effort: String? = null,
+        val fresh: Boolean = false,
+        override val key: String? = null,
+    ) : Command {
+        override val operation: String get() = if (fresh) "session.fresh" else "session.send"
+    }
+
     companion object {
         /** Ключ идемпотентности — короткая латиница: его пишет оболочка (UUID нажатия), а не человек. */
         val KEY = Regex("[A-Za-z0-9_.:-]{8,80}")

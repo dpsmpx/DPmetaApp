@@ -139,6 +139,17 @@ class SessionDriver(private val sessions: Sessions, private val runner: ClaudeRu
                         val text = e.texts.joinToString("\n").take(sessions.policy.maxOutputChars)
                         if (text.isNotBlank()) emit(listOf(SessionEvent.Output(id, text, now)))
                         e.toolUses.forEach { emit(listOf(SessionEvent.ToolStarted(id, it.name, now))) }
+                        // Живой вид (D-42): последний текст и текущий инструмент с целью — в памяти, не в журнале.
+                        if (!e.subagent) {
+                            val prev = live[id]
+                            val use = e.toolUses.lastOrNull()
+                            live[id] = LiveTurn(
+                                text = text.takeIf { it.isNotBlank() }?.let { com.dpsmpx.dpai.core.diagnostics.Redactor.STANDARD.redact(it.takeLast(LiveTurn.MAX_TEXT)) } ?: prev?.text,
+                                tool = use?.name ?: prev?.tool,
+                                target = if (use != null) com.dpsmpx.dpai.execution.claude.ToolTarget.of(use) else prev?.target,
+                                at = now,
+                            )
+                        }
                     }
                     is ClaudeEvent.RateLimit -> {
                         val limits = limitFacts(id, e)
@@ -173,6 +184,16 @@ class SessionDriver(private val sessions: Sessions, private val runner: ClaudeRu
         runner.position(id)?.let { pos -> emit(sessions.heartbeat(current, id, clock.now(), pos)) }
         if (current.sessions.getValue(id).terminal && state.sessions[id]?.terminal == false) facts += AccountFact.Release(id)
         return Outcome.success(Step(events, facts, unsupported, turns), updates.diagnostics)
+    }
+
+    /** Что ход делает сейчас (D-42): только в памяти процесса — после перезапуска пусто, пока не придёт новое. */
+    private val live = java.util.concurrent.ConcurrentHashMap<SessionId, LiveTurn>()
+
+    fun live(id: SessionId): LiveTurn? = live[id]
+
+    /** Сессия завершена — её живой вид больше не нужен (память не растёт с числом сессий, ТЗ, §116). */
+    fun forget(id: SessionId) {
+        live.remove(id)
     }
 
     /** Приостановить: остановить ход; сессия провайдера остаётся для `resume`. */

@@ -227,6 +227,8 @@ class LiveSystem(
                 }
                 is Outcome.Success -> r.value?.let { status ->
                     probes.remove(target)
+                    // Target ответил: прежние сетевые отказы (SSH до добавления ключа и т. п.) — уже не правда, на «Внимание» их не держать.
+                    problems.removeAll { it.category == com.dpsmpx.dpai.core.diagnostics.Category.NETWORK }
                     val slot = slotOf[target]
                     if (slot == null) {
                         usable.firstOrNull { it.id == target }?.let { placeSlot(it, status) }
@@ -262,7 +264,9 @@ class LiveSystem(
 
     override fun board(): TaskBoard = Screens.board(orchestrator.tasks)
 
-    override fun session(id: SessionId): SessionScreen = Screens.session(orchestrator.dashboard(), id, events())
+    override fun session(id: SessionId): SessionScreen = Screens.session(
+        orchestrator.dashboard(), id, events(), orchestrator.live(id), clock.now(), Screens.sessionActions(id, orchestrator.sessions, orchestrator.tasks),
+    )
 
     companion object {
         private const val MAX_PROBLEMS = 50

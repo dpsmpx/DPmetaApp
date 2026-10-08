@@ -136,3 +136,13 @@ sealed interface SessionEvent {
         override val at: Timestamp,
     ) : SessionEvent
 }
+
+/**
+ * Живой вид хода (D-42): последний текст модели, последний инструмент и
+ * его цель (файл, команда, шаблон) и когда это было. Только в памяти.
+ */
+data class LiveTurn(val text: String?, val tool: String?, val target: String?, val at: com.dpsmpx.dpai.core.clock.Timestamp) {
+    companion object {
+        const val MAX_TEXT = 600
+    }
+}

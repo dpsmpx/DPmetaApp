@@ -198,7 +198,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                         screen == 3 -> RequestsPane(model, s)
                         screen == 4 -> LogPane()
                         s == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-                        screen == SESSION_SCREEN -> SessionPane(s.session)
+                        screen == SESSION_SCREEN -> SessionPane(s.session, model)
                         screen == 0 -> DashboardPane(s.dashboard) { selectedId = it.value }
                         else -> BoardPane(s.board, s.live, model) { selectedId = it }
                     }
@@ -270,7 +270,7 @@ private fun SessionRow(line: SessionLine, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun SessionPane(screen: SessionScreen?) {
+private fun SessionPane(screen: SessionScreen?, model: DemoModel) {
     if (screen == null) {
         Box(Modifier.fillMaxSize()) { CircularProgressIndicator(Modifier.align(Alignment.Center)) }
         return
@@ -278,6 +278,17 @@ private fun SessionPane(screen: SessionScreen?) {
     LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         item {
             screen.line?.let { SessionRow(it) } ?: Text(screen.session.value)
+            // Живой вид хода (D-42): что модель делает сейчас.
+            screen.live?.let { l ->
+                Card(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                    Column(Modifier.padding(10.dp)) {
+                        Text("Сейчас · ${l.ago}", style = MaterialTheme.typography.labelSmall)
+                        l.tool?.let { t -> Text("$t${l.target?.let { " · $it" } ?: ""}", fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                        l.text?.let { Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 6, overflow = TextOverflow.Ellipsis) }
+                    }
+                }
+            }
+            if (screen.actions.isNotEmpty()) SessionActions(screen, model)
             HorizontalDivider()
             Text("Временная шкала", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
         }
@@ -403,5 +414,61 @@ private fun TaskRow(card: TaskCard, modifier: Modifier = Modifier) {
                 style = MaterialTheme.typography.labelSmall,
             )
         }
+    }
+}
+
+/**
+ * Действия с сессией (D-42, п. 3): остановить ход; запрос — новый ход той
+ * же сессии Claude с моделью и усилием; свежая сессия с handoff.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun SessionActions(screen: SessionScreen, model: DemoModel) {
+    val scope = rememberCoroutineScope()
+    val keys = remember { com.dpsmpx.dpai.core.ids.IdGenerator(com.dpsmpx.dpai.core.clock.Clock.SYSTEM, com.dpsmpx.dpai.core.clock.RandomSource.secure()) }
+    var text by remember(screen.session) { mutableStateOf("") }
+    var modelName by remember(screen.session) { mutableStateOf("") }
+    var effort by remember(screen.session) { mutableStateOf("") }
+    var status by remember(screen.session) { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    fun send(c: (String) -> com.dpsmpx.dpai.orchestrator.commands.Command) {
+        busy = true
+        val key = keys.next(com.dpsmpx.dpai.core.ids.IdKinds.OPERATION).value
+        scope.launch {
+            status = when (val r = withContext(Dispatchers.IO) { model.command(c(key)) }) {
+                is Outcome.Success -> "Принято".also { text = "" }
+                is Outcome.Failure -> "Не принято: ${r.diagnostics.first().message}"
+            }
+            busy = false
+        }
+    }
+    Column(Modifier.padding(vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (com.dpsmpx.dpai.ui.SessionAction.STOP in screen.actions) {
+            Button(enabled = !busy, onClick = { send { com.dpsmpx.dpai.orchestrator.commands.Command.StopSession(screen.session, it) } }) { Text("Остановить ход") }
+        }
+        if (com.dpsmpx.dpai.ui.SessionAction.SEND in screen.actions) {
+            OutlinedTextField(text, { text = it }, label = { Text("Запрос в сессию") }, minLines = 2, modifier = Modifier.fillMaxWidth())
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                for (m in listOf("", "haiku", "sonnet", "opus")) {
+                    androidx.compose.material3.FilterChip(selected = modelName == m, onClick = { modelName = m }, label = { Text(m.ifEmpty { "модель задачи" }) })
+                }
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                for (e in listOf("", "low", "medium", "high")) {
+                    androidx.compose.material3.FilterChip(selected = effort == e, onClick = { effort = e }, label = { Text(e.ifEmpty { "усилие задачи" }) })
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(enabled = !busy && text.isNotBlank(), onClick = {
+                    send { com.dpsmpx.dpai.orchestrator.commands.Command.SendToSession(screen.session, text, modelName.ifEmpty { null }, effort.ifEmpty { null }, key = it) }
+                }) { Text("Отправить") }
+                if (com.dpsmpx.dpai.ui.SessionAction.FRESH in screen.actions) {
+                    TextButton(enabled = !busy, onClick = {
+                        send { com.dpsmpx.dpai.orchestrator.commands.Command.SendToSession(screen.session, text.ifBlank { null }, modelName.ifEmpty { null }, effort.ifEmpty { null }, fresh = true, key = it) }
+                    }) { Text("Свежая сессия") }
+                }
+            }
+        }
+        status?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
     }
 }

@@ -12,6 +12,8 @@ import com.dpsmpx.dpai.monitoring.SelfDiagnosis
 import com.dpsmpx.dpai.monitoring.SystemHealth
 import com.dpsmpx.dpai.monitoring.Timeline
 import com.dpsmpx.dpai.monitoring.UsageReport
+import com.dpsmpx.dpai.sessions.LiveTurn
+import com.dpsmpx.dpai.sessions.SessionsState
 import com.dpsmpx.dpai.tasks.TasksState
 import kotlin.time.Duration
 
@@ -37,8 +39,24 @@ data class DashboardScreen(
 
 data class TimelineLine(val time: String, val text: String)
 
-/** Экран сессии (ТЗ, §39, §40): строка сводки и временная шкала её потока. */
-data class SessionScreen(val line: SessionLine?, val session: SessionId, val timeline: List<TimelineLine>)
+/** Что ход делает сейчас (D-42): инструмент и его цель, последний текст модели, как давно. */
+data class LiveLine(val tool: String?, val target: String?, val text: String?, val ago: String)
+
+/** Экран сессии (ТЗ, §39, §40): строка сводки, живой вид хода и временная шкала её потока. */
+data class SessionScreen(
+    val line: SessionLine?,
+    val session: SessionId,
+    val timeline: List<TimelineLine>,
+    val live: LiveLine? = null,
+    val actions: List<SessionAction> = emptyList(),
+)
+
+/** Действие человека с сессией (D-42, п. 3). */
+enum class SessionAction(val label: String) {
+    STOP("Остановить ход"),
+    SEND("Запрос"),
+    FRESH("Свежая сессия"),
+}
 
 /** Карточка задачи; [level] — глубина в DAG: 0 — без зависимостей, иначе 1 + наибольшая у зависимостей. */
 data class TaskCard(val id: TaskId, val title: String, val state: String, val tone: Tone, val priority: String, val dependsOn: List<String>, val level: Int, val held: Boolean = false)
@@ -89,14 +107,54 @@ object Screens {
         )
     }
 
-    fun session(view: DashboardView, session: SessionId, events: List<EventEnvelope>): SessionScreen {
+    fun session(
+        view: DashboardView,
+        session: SessionId,
+        events: List<EventEnvelope>,
+        live: LiveTurn? = null,
+        now: com.dpsmpx.dpai.core.clock.Timestamp? = null,
+        actions: List<SessionAction> = emptyList(),
+    ): SessionScreen {
         val stream = StreamRef.of(session)
         val own = events.filter { it.stream == stream }
         return SessionScreen(
             line = dashboard(view, OK).sessions.firstOrNull { it.session == session },
             session = session,
             timeline = Timeline.of(own).map { TimelineLine(it.at.toIsoString().substring(11, 19), it.text) },
+            live = live?.let { l -> LiveLine(l.tool, l.target, l.text, now?.let { ago(it.epochMillis - l.at.epochMillis) } ?: "?") },
+            actions = actions,
         )
+    }
+
+    /**
+     * Действия с сессией (D-42): остановить — идущий ход; запрос и свежая
+     * сессия — последней сессии задачи, когда ход не идёт и задача не на
+     * проверке. Оркестратор проверяет каждую команду сам.
+     */
+    fun sessionActions(session: SessionId, sessions: SessionsState, tasks: TasksState): List<SessionAction> {
+        val s = sessions.sessions[session] ?: return emptyList()
+        val own = sessions.sessions.values.filter { it.task == s.task }
+        val running = own.any { !it.terminal && it.state !in WAIT }
+        val last = own.maxWithOrNull(compareBy({ it.createdAt.epochMillis }, { it.id.value }))?.id == session
+        val taskState = tasks.tasks[s.task]?.state
+        return buildList {
+            if (!s.terminal && s.state !in WAIT) add(SessionAction.STOP)
+            if (last && !running && taskState !in BUSY) {
+                add(SessionAction.SEND)
+                add(SessionAction.FRESH)
+            }
+        }
+    }
+
+    private val WAIT = setOf(com.dpsmpx.dpai.core.state.SessionState.PAUSED, com.dpsmpx.dpai.core.state.SessionState.BLOCKED, com.dpsmpx.dpai.core.state.SessionState.RECOVERY_PENDING)
+    private val BUSY = setOf(TaskState.RUNNING, TaskState.IMPLEMENTED, TaskState.VERIFYING, TaskState.VERIFIED)
+
+    /** «3 с назад», «2 мин назад»; будущее (часы разошлись) — «только что». */
+    fun ago(ms: Long): String = when {
+        ms < 1_000 -> "только что"
+        ms < 60_000 -> "${ms / 1_000} с назад"
+        ms < 3_600_000 -> "${ms / 60_000} мин назад"
+        else -> "${ms / 3_600_000} ч назад"
     }
 
     fun board(tasks: TasksState): TaskBoard {

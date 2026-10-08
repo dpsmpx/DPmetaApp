@@ -189,3 +189,21 @@ class ToolTracker {
         private val SPACES = Regex("\\s+")
     }
 }
+
+/**
+ * Цель вызова инструмента для живого вида хода (D-42): файл, команда,
+ * шаблон поиска, адрес — коротко и через редактор (D-14). Только для
+ * экрана: в журнал не пишется — в команде может быть что угодно.
+ */
+object ToolTarget {
+    private const val MAX = 120
+    private val KEYS = listOf("file_path", "notebook_path", "command", "pattern", "path", "url", "query", "description")
+
+    fun of(use: ClaudeEvent.ToolUse): String? {
+        val input = use.input ?: return null
+        val v = KEYS.firstNotNullOfOrNull { k -> (input[k] as? com.dpsmpx.dpai.core.serialization.JsonString)?.value?.takeIf { it.isNotBlank() } } ?: return null
+        val one = v.trim().replace(Regex("\\s+"), " ")
+        val short = if (one.length <= MAX) one else one.take(MAX - 1) + "…"
+        return com.dpsmpx.dpai.core.diagnostics.Redactor.STANDARD.redact(short)
+    }
+}
