@@ -240,6 +240,8 @@ private fun NewTaskDialog(model: DemoModel, onDone: () -> Unit) {
     var title by remember { mutableStateOf("") }
     var objective by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
+    // Второе нажатие, пока первое ставит задачу, не создаёт дубль (два хода Claude с одной целью).
+    var busy by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDone,
         title = { Text("Новая задача") },
@@ -251,14 +253,16 @@ private fun NewTaskDialog(model: DemoModel, onDone: () -> Unit) {
             }
         },
         confirmButton = {
-            TextButton(onClick = {
+            TextButton(enabled = !busy, onClick = {
+                busy = true
                 scope.launch {
                     when (val r = withContext(Dispatchers.IO) { model.addTask(title, objective) }) {
                         is Outcome.Failure -> error = r.diagnostics.first().message
                         is Outcome.Success -> onDone()
                     }
+                    busy = false
                 }
-            }) { Text("Поставить") }
+            }) { Text(if (busy) "Ставлю…" else "Поставить") }
         },
         dismissButton = { TextButton(onClick = onDone) { Text("Отмена") } },
     )

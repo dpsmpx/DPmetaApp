@@ -49,7 +49,7 @@ class ControllerService : Service() {
         }
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(CHANNEL, "Контроллер работает", NotificationManager.IMPORTANCE_MIN))
-        val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+        val open = Notifier.openApp(this)
         val stop = PendingIntent.getService(this, 1, Intent(this, ControllerService::class.java).setAction(STOP), PendingIntent.FLAG_IMMUTABLE)
         val n = Notification.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.stat_notify_sync)
@@ -59,10 +59,17 @@ class ControllerService : Service() {
             .addAction(Notification.Action.Builder(null, "Остановить", stop).build())
             .setOngoing(true)
             .build()
-        if (Build.VERSION.SDK_INT >= 34) {
-            startForeground(ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-        } else {
-            startForeground(ID, n)
+        // Перезапуск по START_STICKY после смерти процесса идёт из фона: система может
+        // отказать службе переднего плана — тогда служба уходит, а не падает по кругу.
+        try {
+            if (Build.VERSION.SDK_INT >= 34) {
+                startForeground(ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+            } else {
+                startForeground(ID, n)
+            }
+        } catch (_: IllegalStateException) {
+            stopSelf()
+            return START_NOT_STICKY
         }
         if (timer == null) {
             val app = applicationContext
