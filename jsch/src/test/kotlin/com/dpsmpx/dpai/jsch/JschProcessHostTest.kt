@@ -38,7 +38,7 @@ class JschProcessHostTest {
 
     @Test
     fun withoutKnownHostsNothingConnects() {
-        val e = SshEndpoint.of("127.0.0.1", "u", 22, knownHostsFile = dir.resolve("нет").toString()).valueOrNull()!!
+        val e = SshEndpoint.of("127.0.0.1", "u", 22, knownHostsFile = dir.resolve("missing_known_hosts").toString()).valueOrNull()!!
         assertEquals(DiagCode.SSH_HOST_KEY_REJECTED, code(JschProcessHost(e, TargetPlatform.POSIX).start(ProcessSpec(listOf("true")))))
     }
 
