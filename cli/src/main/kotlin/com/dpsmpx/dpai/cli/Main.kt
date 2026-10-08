@@ -1,5 +1,6 @@
 package com.dpsmpx.dpai.cli
 
+import java.io.PrintStream
 import kotlin.system.exitProcess
 
 /**
@@ -10,7 +11,19 @@ import kotlin.system.exitProcess
  * (этапы 4–14).
  */
 fun main(args: Array<String>) {
-    val code = Cli(out = { println(it) }, err = { System.err.println(it) }).run(args.toList())
+    // Ответ агента — строки JSON в UTF-8 при любой локали target: System.out
+    // кодирует в кодировку консоли или локали (POSIX — `?` вместо кириллицы,
+    // русская Windows — cp1251), а контроллер читает UTF-8 (ревью 8 октября
+    // 2026). Команды для человека — в кодировке его консоли, как прежде.
+    val (out, err) = if (args.firstOrNull() == "agent") {
+        // Внешний PrintStream кодирует в UTF-8, внутренний пропускает байты как есть.
+        PrintStream(System.out, true, Charsets.UTF_8) to PrintStream(System.err, true, Charsets.UTF_8)
+    } else {
+        System.out to System.err
+    }
+    val code = Cli(out = { out.println(it) }, err = { err.println(it) }).run(args.toList())
+    out.flush()
+    err.flush()
     exitProcess(code)
 }
 

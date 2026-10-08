@@ -75,4 +75,18 @@ class RedactorTest {
             "хеш sha256:" + "0123456789abcdef".repeat(4) + ", файл core/src/main/kotlin/Thing.kt, нужно вмешательство"
         assertEquals(text, strict.redact(text))
     }
+
+    /** Ревью 8 октября 2026: строка stream-json после правки остаётся JSON, секреты скрыты. */
+    @Test
+    fun jsonLineStaysParsable() {
+        val key = "sk-" + "ant-" + "api03-" + "Zx9".repeat(12)
+        val line = """{"type":"assistant","message":{"content":[{"type":"text","text":"password: \"hunter2-x\" и $key"}]}}"""
+        assertTrue(com.dpsmpx.dpai.core.serialization.JsonParser().parse(r.redact(line)) is com.dpsmpx.dpai.core.result.Outcome.Failure, "правка как текста ломает JSON — поэтому redactLine")
+        val out = r.redactLine(line)
+        assertTrue(com.dpsmpx.dpai.core.serialization.JsonParser().parse(out).isSuccess, out)
+        assertFalse("hunter2" in out, out)
+        assertFalse(key in out, out)
+        assertEquals(r.redact("token=abc обычный текст"), r.redactLine("token=abc обычный текст"))
+        assertEquals(r.redact("{ не json"), r.redactLine("{ не json"))
+    }
 }

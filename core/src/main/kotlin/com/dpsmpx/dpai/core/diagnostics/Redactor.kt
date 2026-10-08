@@ -1,5 +1,13 @@
 package com.dpsmpx.dpai.core.diagnostics
 
+import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.core.serialization.CanonicalJson
+import com.dpsmpx.dpai.core.serialization.JsonArray
+import com.dpsmpx.dpai.core.serialization.JsonObject
+import com.dpsmpx.dpai.core.serialization.JsonParser
+import com.dpsmpx.dpai.core.serialization.JsonString
+import com.dpsmpx.dpai.core.serialization.JsonValue
+
 /**
  * Редактирование свободного текста перед журналом и диагностикой (D-14, T8).
  *
@@ -31,6 +39,30 @@ class Redactor private constructor(private val strict: Boolean) {
         out = URL_USERINFO.replace(out) { m -> m.groupValues[1] + MARK + "@" }
         out = (if (strict) STRICT_LONG_TOKEN else LONG_TOKEN).replace(out) { m -> if (looksLikeToken(out, m)) MARK else m.value }
         return out
+    }
+
+    /**
+     * Строка вывода, которая может быть JSON (поток `stream-json` Claude):
+     * правятся только строковые значения, а структура и экранирование
+     * остаются целы. Правка сырой строки как текста съедала `\` перед
+     * кавычкой (`password: \"x\"` → `password: <redacted>"x\"`), и строка
+     * переставала разбираться — итог хода терялся (ревью 8 октября 2026).
+     * Не JSON — правка как текста.
+     */
+    fun redactLine(line: String): String {
+        val head = line.trimStart()
+        if (head.startsWith("{") || head.startsWith("[")) {
+            val parsed = JsonParser().parse(line)
+            if (parsed is Outcome.Success) return CanonicalJson.write(redactValues(parsed.value))
+        }
+        return redact(line)
+    }
+
+    private fun redactValues(v: JsonValue): JsonValue = when (v) {
+        is JsonString -> JsonString(redact(v.value))
+        is JsonArray -> JsonArray(v.items.map(::redactValues))
+        is JsonObject -> JsonObject(v.fields.mapValues { redactValues(it.value) })
+        else -> v
     }
 
     private fun looksLikeToken(text: String, m: MatchResult): Boolean {

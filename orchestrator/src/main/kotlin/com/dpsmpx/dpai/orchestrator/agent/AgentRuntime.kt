@@ -165,7 +165,7 @@ class AgentRuntime(
                     EventType.TARGET_PROCESS_OUTPUT,
                     JsonObject.of(
                         "stream" to JsonString(line.stream.name.lowercase()),
-                        "text" to JsonString(Redactor.STANDARD.redact(line.text)),
+                        "text" to JsonString(Redactor.STANDARD.redactLine(line.text)),
                         "truncated" to JsonBool(line.truncated),
                     ),
                 )
