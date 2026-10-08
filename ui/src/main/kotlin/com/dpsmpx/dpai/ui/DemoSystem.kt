@@ -118,7 +118,7 @@ class DemoSystem(
         ),
     )
 
-    override fun dashboard(): DashboardScreen = Screens.dashboard(orchestrator.dashboard(), diagnosis())
+    override fun dashboard(): DashboardScreen = Screens.dashboard(orchestrator.dashboard(), diagnosis(), orchestrator.usage())
 
     override fun session(id: SessionId): SessionScreen = Screens.session(orchestrator.dashboard(), id, events())
 

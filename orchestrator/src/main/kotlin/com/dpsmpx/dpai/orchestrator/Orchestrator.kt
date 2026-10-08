@@ -855,6 +855,9 @@ class Orchestrator(
     /** Последняя версия контекста задачи — что видел Claude в последнем ходе. */
     fun lastContext(task: TaskId): ContextBundle? = contextOf[task] ?: storedContext(task, report = false)
 
+    /** Отчёт расхода (D-40; `docs/EFFICIENCY.md`, §9). */
+    fun usage(): com.dpsmpx.dpai.monitoring.UsageReport = com.dpsmpx.dpai.monitoring.UsageReport.build(sessions, tasks)
+
     fun dashboard(): DashboardView =
         Dashboard.build(sessions, tasks, accounts, emptyMap(), Measure.observed(approvals.pending()), sessionsLogic, clock.now())
 

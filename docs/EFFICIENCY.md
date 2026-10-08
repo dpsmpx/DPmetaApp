@@ -193,7 +193,25 @@ ANSI-цвета убираются, длинные строки обрезают
 
 ## 9. Отчёт
 
-В работе (фаза 8).
+`UsageReport` (`monitoring`) строится из состояния сессий и задач —
+отдельного хранилища нет: `Orchestrator.usage()`, текст — `render()`.
+Наблюдаемое и оценка — в разных разделах и так подписаны:
+
+| Вопрос | Мера |
+|---|---|
+| Сколько ходов и вызовов API | `turns`, `apiCalls`; ходы без итога — `unknownTurns` (суммы — нижняя граница) |
+| Сколько токенов входа, выхода, кеша | `inputTokens`, `outputTokens`, `cacheReadTokens`, `cacheCreationTokens`, `thinkingTokens` |
+| Работает ли кеш prompt | `cacheReadShare` — доля входа из кеша |
+| Какие модели и какая доля дорогих | `models`, `expensiveShare` |
+| Сколько контекста слой не послал | `reusedTokens` (разница при `--resume`), `omittedTokens` (бюджет), `contextSavedShare` — оценка |
+| Как часто контрольные точки и разница | `modes` (`FULL`, `DELTA`, `CHECKPOINT`) |
+| Как маршрутизировались задачи | `routes` (`class`, `escalated`, `budget`, `pinned`, `legacy`) |
+| Повторы, продолжения, сжатия, субагенты | `retries`, `continuations`, `compactedSessions`, `subagents` |
+| Кто расходует больше всех | `topTasks` |
+| Работа на расход | `tokensPerDoneTask` — грубая мера: задачи разные |
+
+Сводка приложения показывает три меры — токенов на задачу, вход из
+кеша, контекст не послан (оценка), — когда ходы уже были.
 
 ## 10. Настройка
 
