@@ -186,9 +186,11 @@ class SessionDriver(private val sessions: Sessions, private val runner: ClaudeRu
         val out = mutableListOf<AccountFact.Limit>()
         for ((name, window) in names) {
             val w = e.windows[name]
-            val rejectedHere = e.rejected && (e.type == null || e.type == name)
+            val here = e.type == null || e.type == name
+            val rejectedHere = e.rejected && here
             val level = when {
                 rejectedHere -> LimitLevel.REACHED
+                e.warning && here -> LimitLevel.NEAR
                 (w?.utilization?.orNull() ?: 0.0) >= sessions.policy.nearLimitUtilization -> LimitLevel.NEAR
                 else -> null
             } ?: continue

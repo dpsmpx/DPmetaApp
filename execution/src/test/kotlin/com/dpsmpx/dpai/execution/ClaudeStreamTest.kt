@@ -17,6 +17,7 @@ import com.dpsmpx.dpai.testkit.Property
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -92,6 +93,28 @@ class ClaudeStreamTest {
         assertEquals(TurnStatus.FAILED, limited.status)
         assertTrue(DiagCode.CLAUDE_RATE_LIMITED in limited.codes())
         assertTrue(limited.rateLimit!!.rejected)
+    }
+
+    /**
+     * Ревью 8 октября 2026: `allowed_warning` — предупреждение, а не отказ;
+     * принятое за отказ, оно держало бы слот в RATE_LIMITED до сброса окна.
+     * Неизвестный статус — не отказ, но и не тишина (D-05).
+     */
+    @Test
+    fun limitWarningIsNotRejection() {
+        fun withStatus(status: String): ClaudeTurn {
+            val a = ClaudeTurnAssembler(recorded)
+            corpus("success-structured.jsonl").forEach { a.feed(it.replace("\"status\":\"allowed\"", "\"status\":\"$status\"")) }
+            return a.finish(0, ExitReason.EXITED)
+        }
+        val warned = withStatus("allowed_warning")
+        assertTrue(warned.rateLimit!!.warning)
+        assertFalse(warned.rateLimit.rejected)
+        assertEquals(TurnStatus.COMPLETED, warned.status)
+        assertFalse(DiagCode.CLAUDE_RATE_LIMITED in warned.codes())
+        val unknown = withStatus("throttled_somehow")
+        assertFalse(unknown.rateLimit!!.rejected)
+        assertTrue(unknown.diagnostics.any { it.code == DiagCode.CLAUDE_STREAM_MALFORMED && "throttled_somehow" in it.message }, unknown.diagnostics.toString())
     }
 
     @Test

@@ -34,9 +34,23 @@ sealed interface ClaudeEvent {
     /** Окно предела подписки: загрузка (0…1) и время сброса. */
     data class Window(val utilization: Measure<Double>, val resetsAt: Timestamp?)
 
-    /** Сведения о пределах подписки (`rate_limit_event`): `allowed` или отказ. */
+    /**
+     * Сведения о пределах подписки (`rate_limit_event`). Статусы
+     * (`docs/research/CLAUDE_CODE_CLI.md`, §8): `allowed`, `allowed_warning` —
+     * предел близко, но запрос прошёл, `rejected` — отказ. Отказ — только
+     * `rejected`: предупреждение, принятое за отказ, держало бы слот в
+     * `RATE_LIMITED` до сброса окна, вплоть до недели.
+     */
     data class RateLimit(val status: String, val type: String?, val resetsAt: Timestamp?, val windows: Map<String, Window>) : ClaudeEvent {
-        val rejected: Boolean get() = status != "allowed"
+        val rejected: Boolean get() = status == REJECTED
+        val warning: Boolean get() = status == WARNING
+
+        companion object {
+            const val ALLOWED = "allowed"
+            const val WARNING = "allowed_warning"
+            const val REJECTED = "rejected"
+            val KNOWN: Set<String> = setOf(ALLOWED, WARNING, REJECTED)
+        }
     }
 
     /** Итог хода. [isError] — у провайдера; `subtype` бывает `success` и при ошибке (корпус `auth-failed.jsonl`). */
@@ -96,8 +110,13 @@ class ClaudeStreamParser(private val expectedSession: ProviderSessionId?) {
                 else -> ClaudeEvent.Other(type, sub)
             }
             "assistant" -> assistant(obj)
-            "rate_limit_event" -> rateLimit(obj["rate_limit_info"] as? JsonObject)
-                ?: return Parsed(null, notes + malformed("rate_limit_event без rate_limit_info"))
+            "rate_limit_event" -> (
+                rateLimit(obj["rate_limit_info"] as? JsonObject)
+                    ?: return Parsed(null, notes + malformed("rate_limit_event без rate_limit_info"))
+                ).also {
+                // Неизвестный статус — не отказ и не догадка (D-05): запись, чтобы его увидели.
+                if (it.status !in ClaudeEvent.RateLimit.KNOWN) notes += malformed("неизвестный статус предела: ${it.status}")
+            }
             "result" -> result(obj) ?: return Parsed(null, notes + malformed("result без is_error или subtype"))
             "user", "stream_event" -> ClaudeEvent.Other(type, obj.str("subtype"))
             else -> {
