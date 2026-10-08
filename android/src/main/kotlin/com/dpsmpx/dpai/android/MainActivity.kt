@@ -42,6 +42,18 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Приложение на экране — окно запроса поверх него не нужно (D-44).
+        RequestOverlay.appVisible = true
+        RequestOverlay.hide()
+    }
+
+    override fun onPause() {
+        RequestOverlay.appVisible = false
+        super.onPause()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         take(intent)

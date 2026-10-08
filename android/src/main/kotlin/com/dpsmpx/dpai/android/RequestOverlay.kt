@@ -30,13 +30,21 @@ import java.util.concurrent.Executors
  * разрешение системы «поверх других приложений». Нет одного из двух —
  * окна нет, запрос приходит уведомлением; ничего не ломается.
  *
- * Окно компактное, сверху экрана: текст запроса, чья задача, варианты.
- * Касания вне окна идут приложению под ним. Опасный вариант — вторым
+ * Окно компактное: текст запроса, чья задача, варианты. Пока открыто
+ * само приложение, окна нет — запрос виден на вкладке «Запросы». Окно
+ * перетаскивается за верхнюю строку и запоминает место: в любом
+ * постоянном месте оно что-то закрывает — шапку, клавиатуру (проверка на
+ * Redmi Note 13, 8 октября 2026). Касания вне окна идут приложению под ним. Опасный вариант — вторым
  * нажатием; вариант с текстом — с полем ввода. «Позже» убирает окно, а
  * запрос остаётся в уведомлении и на экране «Запросы».
  */
 object RequestOverlay {
     private const val FLAG = "overlay-enabled"
+    private const val POSITION = "overlay-y"
+
+    /** Приложение на экране (`MainActivity` между `onResume` и `onPause`): окно не нужно. */
+    @Volatile
+    var appVisible: Boolean = false
     private val main = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor()
 
@@ -63,7 +71,7 @@ object RequestOverlay {
         Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
     fun sync(context: Context, model: DemoModel, pending: Map<RequestId, RequestCard>) {
-        if (!enabled(context) || !permitted(context)) return hide()
+        if (!enabled(context) || !permitted(context) || appVisible) return hide()
         val current = shown?.first
         if (current != null && pending.keys.none { it.value == current }) hide()
         if (shown != null) return
@@ -72,6 +80,13 @@ object RequestOverlay {
             if (shown != null) return@post
             if (runCatching { show(context.applicationContext, next) }.isSuccess) worker.execute { model.delivered(next.id, "overlay") }
         }
+    }
+
+    private fun position(context: Context): Int? =
+        runCatching { NioVfs(context.filesDir.toPath()).read(POSITION)?.toString(Charsets.UTF_8)?.trim()?.toIntOrNull() }.getOrNull()
+
+    private fun savePosition(context: Context, y: Int) {
+        runCatching { NioVfs(context.filesDir.toPath()).write(POSITION, "$y\n".toByteArray()) }
     }
 
     /** Запрос закрыт ответом: его окно убирается. */
@@ -109,7 +124,41 @@ object RequestOverlay {
             setTextColor(fg)
             if (bold) setTypeface(typeface, android.graphics.Typeface.BOLD)
         }
-        root.addView(text("DP AI · ${card.kind} · ${card.origin}", 12f))
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            // Касания вне окна — приложению под ним; клавиатуру окно получает только с полем ввода.
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or (if (card.buttons.none { it.needsText }) WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE else 0),
+            PixelFormat.TRANSLUCENT,
+        ).apply {
+            gravity = Gravity.TOP
+            y = position(context) ?: (48 * dp).toInt()
+            horizontalMargin = 0.03f
+        }
+        // Верхняя строка — ручка: перетаскивание по вертикали, место запоминается.
+        root.addView(text("⠿ DP AI · ${card.kind} · ${card.origin}", 12f).apply {
+            var startY = 0f
+            var startParam = 0
+            setOnTouchListener { v, e ->
+                when (e.actionMasked) {
+                    android.view.MotionEvent.ACTION_DOWN -> {
+                        startY = e.rawY
+                        startParam = params.y
+                    }
+                    android.view.MotionEvent.ACTION_MOVE -> {
+                        val max = context.resources.displayMetrics.heightPixels - root.height
+                        params.y = (startParam + (e.rawY - startY).toInt()).coerceIn(0, maxOf(0, max))
+                        runCatching { wm.updateViewLayout(root, params) }
+                    }
+                    android.view.MotionEvent.ACTION_UP -> {
+                        savePosition(context, params.y)
+                        v.performClick()
+                    }
+                }
+                true
+            }
+        })
         root.addView(text(card.title, 16f, bold = true))
         root.addView(text(card.body, 14f))
         val status = text("", 12f).apply { setTextColor(0xFFC62828.toInt()) }
@@ -169,18 +218,6 @@ object RequestOverlay {
             }
         })
         root.addView(row)
-        val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            // Касания вне окна — приложению под ним; поле ввода получает клавиатуру только при нём.
-            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or (if (input == null) WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE else 0),
-            PixelFormat.TRANSLUCENT,
-        ).apply {
-            gravity = Gravity.TOP
-            y = (32 * dp).toInt()
-            horizontalMargin = 0.03f
-        }
         wm.addView(root, params)
         shown = card.id.value to root
     }
