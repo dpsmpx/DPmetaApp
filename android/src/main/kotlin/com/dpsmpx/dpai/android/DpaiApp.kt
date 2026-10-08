@@ -199,7 +199,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                         screen == 4 -> LogPane()
                         s == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                         screen == SESSION_SCREEN -> SessionPane(s.session, model)
-                        screen == 0 -> DashboardPane(s.dashboard) { selectedId = it.value }
+                        screen == 0 -> DashboardPane(s.dashboard, model) { selectedId = it.value }
                         else -> BoardPane(s.board, s.live, model) { selectedId = it }
                     }
                 }
@@ -221,12 +221,13 @@ private fun toneColor(t: Tone): Color {
 }
 
 @Composable
-private fun DashboardPane(screen: DashboardScreen, onSession: (SessionId) -> Unit) {
+private fun DashboardPane(screen: DashboardScreen, model: DemoModel, onSession: (SessionId) -> Unit) {
     LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
             Text("Состояние: ${screen.health}", color = toneColor(screen.healthTone), fontWeight = FontWeight.Bold)
             screen.reasons.forEach { Text("· $it", style = MaterialTheme.typography.bodySmall) }
         }
+        items(screen.limits, key = { "limits:${it.subscription.value}" }) { LimitsCard(it, model) }
         item { Counters(screen) }
         if (screen.attention.isNotEmpty()) {
             item { Text("Внимание", style = MaterialTheme.typography.titleMedium) }
@@ -470,5 +471,39 @@ private fun SessionActions(screen: SessionScreen, model: DemoModel) {
             }
         }
         status?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
+    }
+}
+
+/**
+ * Подписка на сводке (D-42, D-45): загрузка окон «5 ч» и «неделя» со
+ * временем сброса и порог «у предела» — выше него несрочные задачи ждут
+ * сброса окна, а контур экономит (D-40).
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun LimitsCard(l: com.dpsmpx.dpai.ui.SubscriptionLimits, model: DemoModel) {
+    val scope = rememberCoroutineScope()
+    var status by remember { mutableStateOf<String?>(null) }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(l.label + if (l.near) " · у предела" else "", fontWeight = FontWeight.Bold, color = if (l.near) toneColor(Tone.WARNING) else Color.Unspecified)
+            for (w in l.windows) {
+                Text("${w.window}: ${w.percent}${w.reset?.let { " · сброс $it" } ?: ""}", color = toneColor(w.tone), style = MaterialTheme.typography.bodySmall)
+            }
+            Text("Порог «у предела»: выше — несрочные задачи ждут сброса окна", style = MaterialTheme.typography.labelSmall)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                for (p in listOf(70, 80, 90, 95, 100)) {
+                    androidx.compose.material3.FilterChip(selected = l.nearPercent == p, onClick = {
+                        scope.launch {
+                            status = when (val r = withContext(Dispatchers.IO) { model.command(com.dpsmpx.dpai.orchestrator.commands.Command.SetNearPercent(l.subscription, p)) }) {
+                                is Outcome.Success -> null
+                                is Outcome.Failure -> "Не принято: ${r.diagnostics.first().message}"
+                            }
+                        }
+                    }, label = { Text("$p %") })
+                }
+            }
+            status?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall) }
+        }
     }
 }

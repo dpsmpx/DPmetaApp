@@ -40,6 +40,8 @@ data class TaskDetail(
     val reason: String?,
     val lastSession: SessionId?,
     val actions: List<TaskAction>,
+    /** Почему готовая задача не начинается (нет слота, подписка у предела) — если оркестратор знает. */
+    val waiting: String? = null,
 )
 
 /**
@@ -61,12 +63,13 @@ object TaskScreens {
         if (!t.terminal && t.state != TaskState.VERIFIED) add(TaskAction.CANCEL)
     }
 
-    fun detail(t: TaskRecord, sessions: SessionsState): TaskDetail = TaskDetail(
+    fun detail(t: TaskRecord, sessions: SessionsState, waiting: String? = null): TaskDetail = TaskDetail(
         id = t.id, title = t.title, objective = t.objective,
         state = t.state.name, tone = Screens.tone(t.state), held = t.held, priority = t.priority.name,
         taskClass = t.policy.taskClass, model = t.policy.model, effort = t.policy.effort, budgetCents = t.policy.maxBudgetUsdCents,
         retries = t.retries, reason = t.lastReason?.name,
         lastSession = sessions.sessions.values.filter { it.task == t.id }.maxByOrNull { it.createdAt.epochMillis }?.id,
         actions = actions(t),
+        waiting = waiting?.takeIf { t.state == TaskState.READY },
     )
 }

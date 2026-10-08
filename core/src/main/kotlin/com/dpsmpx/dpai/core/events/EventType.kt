@@ -106,4 +106,8 @@ enum class EventType {
     TASK_POLICY_CHANGED,
     TASK_HOLD_CHANGED,
     TASK_COUNTERS_RESET,
+
+    // --- загрузка окон подписки и порог (D-42, D-45) ---
+    ACCOUNT_USAGE_OBSERVED,
+    ACCOUNT_NEAR_THRESHOLD_SET,
 }

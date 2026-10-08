@@ -50,6 +50,18 @@ sealed interface AccountEvent {
 
     data class LimitReset(val subscription: SubscriptionId, val window: LimitWindow, val evidence: ResetEvidence, override val at: Timestamp) : AccountEvent
 
+    /** Загрузка окна (D-42, D-45): доля 0…1 и время сброса, как их сообщил Claude Code. */
+    data class UsageObserved(
+        val subscription: SubscriptionId,
+        val window: LimitWindow,
+        val utilization: Double,
+        val resetAt: Timestamp?,
+        override val at: Timestamp,
+    ) : AccountEvent
+
+    /** Порог «у предела» подписки задан человеком (D-45), процентов. */
+    data class NearThresholdSet(val subscription: SubscriptionId, val percent: Int, override val at: Timestamp) : AccountEvent
+
     data class LoginExpiring(val slot: AccountId, val expiresAt: Timestamp?, override val at: Timestamp) : AccountEvent
 
     /** Ошибка слота; [cooldownUntil] — пауза, если серия достигла порога политики. */

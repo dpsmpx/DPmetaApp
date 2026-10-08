@@ -35,6 +35,20 @@ data class DashboardScreen(
     val counters: List<Counter>,
     val sessions: List<SessionLine>,
     val attention: List<String>,
+    /** Загрузка окон подписок и порог «у предела» (D-42, D-45). */
+    val limits: List<SubscriptionLimits> = emptyList(),
+)
+
+/** Окно подписки на экране: «5 ч — 42 % · сброс 15:00»; загрузка неизвестна — «?» (D-13). */
+data class WindowLine(val window: String, val percent: String, val reset: String?, val tone: Tone)
+
+/** Подписка на сводке: окна, порог и у предела ли она сейчас. */
+data class SubscriptionLimits(
+    val subscription: com.dpsmpx.dpai.core.ids.SubscriptionId,
+    val label: String,
+    val windows: List<WindowLine>,
+    val nearPercent: Int,
+    val near: Boolean,
 )
 
 data class TimelineLine(val time: String, val text: String)
@@ -148,6 +162,36 @@ object Screens {
 
     private val WAIT = setOf(com.dpsmpx.dpai.core.state.SessionState.PAUSED, com.dpsmpx.dpai.core.state.SessionState.BLOCKED, com.dpsmpx.dpai.core.state.SessionState.RECOVERY_PENDING)
     private val BUSY = setOf(TaskState.RUNNING, TaskState.IMPLEMENTED, TaskState.VERIFYING, TaskState.VERIFIED)
+
+    /**
+     * Пределы подписок (D-45): загрузка окон «5 ч» и «неделя», время сброса
+     * в поясе [zone], порог; тон окна — по порогу.
+     */
+    fun limits(accounts: com.dpsmpx.dpai.accounts.AccountsState, now: com.dpsmpx.dpai.core.clock.Timestamp, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): List<SubscriptionLimits> =
+        accounts.subscriptions.values.sortedBy { it.id.value }.map { sub ->
+            SubscriptionLimits(
+                sub.id, sub.label,
+                com.dpsmpx.dpai.accounts.LimitWindow.entries.map { w ->
+                    val ws = sub.window(w)
+                    val u = ws.utilization
+                    WindowLine(
+                        if (w == com.dpsmpx.dpai.accounts.LimitWindow.SESSION) "5 ч" else "неделя",
+                        u?.let { "${Math.round(it * 100)} %" } ?: "?",
+                        ws.resetAt?.takeIf { it > now }?.let { r ->
+                            val t = java.time.Instant.ofEpochMilli(r.epochMillis).atZone(zone)
+                            if (r.epochMillis - now.epochMillis < 86_400_000) "%02d:%02d".format(t.hour, t.minute) else "%02d.%02d %02d:%02d".format(t.dayOfMonth, t.monthValue, t.hour, t.minute)
+                        },
+                        when {
+                            ws.limitedAt(now) -> Tone.ERROR
+                            ws.nearAt(now, sub.nearPercent / 100.0) -> Tone.WARNING
+                            u == null -> Tone.NEUTRAL
+                            else -> Tone.DONE
+                        },
+                    )
+                },
+                sub.nearPercent, sub.nearAt(now),
+            )
+        }
 
     /** «3 с назад», «2 мин назад»; будущее (часы разошлись) — «только что». */
     fun ago(ms: Long): String = when {

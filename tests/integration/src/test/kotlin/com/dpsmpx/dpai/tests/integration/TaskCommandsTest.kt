@@ -206,4 +206,57 @@ class TaskCommandsTest {
         assertEquals(TaskState.DONE, state(o, t))
         assertEquals("проверил руками", o.tasks.tasks.getValue(t).verification?.reason)
     }
+
+    /**
+     * Подписка у предела окна (D-30, D-40): несрочная задача ждёт сброса
+     * и человек видит почему; срочная (HIGH) начинается.
+     */
+    @Test
+    fun nearLimitDefersNormalTasksWithReasonButStartsUrgent() {
+        val (o, runner) = boot()
+        val logic = Accounts()
+        val slot = o.accounts.slots.keys.first()
+        o.commitAccounts(
+            logic.observeLimit(o.accounts, slot, com.dpsmpx.dpai.accounts.LimitWindow.WEEKLY, com.dpsmpx.dpai.accounts.LimitLevel.NEAR, clock.now() + kotlin.time.Duration.parse("5d"), clock.now()).valueOrNull()!!,
+        )
+        val t = o.addTask("обычная", "цель").valueOrNull()!!
+        o.tick()
+        assertEquals(TaskState.READY, state(o, t), "у предела несрочная ждёт")
+        val why = o.waitingReason(t)
+        assertTrue(why != null && "близко к пределу" in why, why.toString())
+        assertTrue(o.posted.any { it is com.dpsmpx.dpai.notifications.NotificationDecision.Post && it.notification.key == "task:${t.value}:waiting" }, "причина — уведомлением")
+        val posts = o.posted.size
+        o.tick()
+        assertEquals(posts, o.posted.size, "та же причина — без нового уведомления")
+        assertEquals(OperationStatus.SUCCEEDED, o.run(Command.SetPriority(t, Priority.HIGH)).status)
+        o.tick()
+        assertEquals(TaskState.RUNNING, state(o, t), "срочная начинается и у предела")
+        advance(o, runner, 2)
+    }
+
+    /**
+     * Порог «у предела» в процентах (D-45): загрузка окна 85 % при пороге
+     * 80 % — несрочное ждёт; порог 90 % — задача начинается сразу.
+     */
+    @Test
+    fun nearThresholdPercentDecides() {
+        val (o, runner) = boot()
+        val slot = o.accounts.slots.keys.first()
+        val sub = o.accounts.slots.getValue(slot).subscriptionId
+        o.commitAccounts(Accounts().observeUsage(o.accounts, slot, com.dpsmpx.dpai.accounts.LimitWindow.WEEKLY, 0.85, clock.now() + kotlin.time.Duration.parse("3d"), clock.now()).valueOrNull()!!)
+        assertEquals(emptyList(), Accounts().observeUsage(o.accounts, slot, com.dpsmpx.dpai.accounts.LimitWindow.WEEKLY, 0.853, null, clock.now()).valueOrNull(), "меньше процента — без события")
+        val t = o.addTask("обычная", "цель").valueOrNull()!!
+        o.tick()
+        assertEquals(TaskState.READY, state(o, t), "85 % ≥ 80 %: ждёт")
+        assertEquals(DiagCode.VALUE_INVALID, o.run(Command.SetNearPercent(sub, 30)).diagnostics.single().code)
+        assertEquals(OperationStatus.SUCCEEDED, o.run(Command.SetNearPercent(sub, 90)).status)
+        assertEquals(90, o.accounts.subscriptions.getValue(sub).nearPercent)
+        o.tick()
+        assertEquals(TaskState.RUNNING, state(o, t), "85 % < 90 %: начинается")
+        advance(o, runner, 2)
+        // Порог и загрузка — в журнале: после перезапуска те же.
+        val (second, _) = boot()
+        assertEquals(90, second.accounts.subscriptions.getValue(sub).nearPercent)
+        assertEquals(0.85, second.accounts.subscriptions.getValue(sub).window(com.dpsmpx.dpai.accounts.LimitWindow.WEEKLY).utilization)
+    }
 }

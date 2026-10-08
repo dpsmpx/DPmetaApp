@@ -421,6 +421,7 @@ class Orchestrator(
                 sessions.sessions.values.filter { it.task == id }.forEach { driver.forget(it.id) }
                 if (documents != null) contextOf.remove(id)
                 lastOverlap.remove(id)
+                lastWaiting.remove(id)
                 toolOf.remove(id)
                 sentOf.remove(id)
                 workingOf.remove(id)
@@ -524,11 +525,29 @@ class Orchestrator(
 
     private val lastOverlap = HashMap<TaskId, OverlapVerdict>()
 
+    /** Почему готовая задача не начинается — последняя сказанная причина; уведомление — при её смене. */
+    private val lastWaiting = HashMap<TaskId, String>()
+
+    /** Задача ждёт: причина — уведомлением и на сводке, один раз на смену причины (ТЗ, §36). */
+    private fun waiting(task: TaskId, why: String) {
+        if (lastWaiting.put(task, why) == why) return
+        notify("task:${task.value}:waiting", NotificationCategory.INFO, "Задача ждёт: ${taskTitle(task)}", why)
+        problems += Diagnostic.warning(DiagCode.ACCOUNT_NONE_AVAILABLE, "${taskTitle(task)}: $why", "task $task")
+    }
+
+    /** Почему задача ждёт, если известно (лист задачи). */
+    fun waitingReason(task: TaskId): String? = lastWaiting[task]
+
     private fun launch(task: TaskId, target: ExecutionTargetId) {
         val t = tasks.tasks.getValue(task)
         val session = ids.next(IdKinds.SESSION)
-        val lease = accountsLogic.lease(accounts, session, task, clock.now(), target)
-        if (lease is Outcome.Failure) return // свободного слота нет: задача ждёт следующего такта
+        val lease = accountsLogic.lease(accounts, session, task, clock.now(), target, urgent = t.priority.ordinal <= Priority.HIGH.ordinal)
+        if (lease is Outcome.Failure) {
+            // Свободного слота нет: задача ждёт следующего такта — и человек видит почему (раньше — молча).
+            waiting(task, lease.errors.first().message)
+            return
+        }
+        lastWaiting.remove(task)
         val slot = lease.valueOrNull()!!.slot
         val budgetMode = budgetMode(slot)
         if (budgetMode == BudgetMode.FRUGAL && efficiency.budget.deferBelow?.let { t.priority.ordinal > it.ordinal } == true) {
@@ -934,6 +953,7 @@ class Orchestrator(
                 is AccountFact.AuthFailure -> accountsLogic.observeAuthFailure(accounts, slot, clock.now())
                 is AccountFact.Error -> accountsLogic.observeError(accounts, slot, f.code, clock.now())
                 is AccountFact.Limit -> accountsLogic.observeLimit(accounts, slot, f.window, f.level, f.resetAt, clock.now())
+                is AccountFact.Usage -> accountsLogic.observeUsage(accounts, slot, f.window, f.utilization, f.resetAt, clock.now())
             }
             commitAccounts(out.valueOrNull().orEmpty())
         }
@@ -1028,6 +1048,12 @@ class Orchestrator(
                 sessions.sessions[command.session]?.let { holdTask(it.task) } ?: Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой сессии", "session ${command.session}")
             }
             is Command.SendToSession -> record(command, provenance) { sendToSession(command.session, command.text, command.model, command.effort, command.fresh) }
+            is Command.SetNearPercent -> record(command, provenance) {
+                when (val r = accountsLogic.setNearPercent(accounts, command.subscription, command.percent, clock.now())) {
+                    is Outcome.Failure -> r
+                    is Outcome.Success -> Outcome.success(command.percent).also { commitAccounts(r.value) }
+                }
+            }
             is Command.Waive -> record(command, provenance) {
                 if (command.reason.isBlank()) Outcome.failure(DiagCode.VALUE_INVALID, "исключение — с причиной") else resolveUnverified(command.task, WAIVE, command.by, command.reason.trim())
             }

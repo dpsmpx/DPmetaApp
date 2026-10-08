@@ -96,6 +96,7 @@ class SessionsTest {
                 is AccountFact.AuthFailure -> acc(accountsLogic.observeAuthFailure(accounts, slot, clock.now()))
                 is AccountFact.Error -> acc(accountsLogic.observeError(accounts, slot, f.code, clock.now()))
                 is AccountFact.Limit -> acc(accountsLogic.observeLimit(accounts, slot, f.window, f.level, f.resetAt, clock.now()))
+                is AccountFact.Usage -> acc(accountsLogic.observeUsage(accounts, slot, f.window, f.utilization, f.resetAt, clock.now()))
             }
         }
     }

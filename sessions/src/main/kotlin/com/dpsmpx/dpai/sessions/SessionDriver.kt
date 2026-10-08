@@ -27,6 +27,9 @@ sealed interface AccountFact {
 
     data class Limit(override val session: SessionId, val window: LimitWindow, val level: LimitLevel, val resetAt: Timestamp?) : AccountFact
 
+    /** Загрузка окна подписки 0…1 и время сброса (D-42, D-45) — из `rate_limit_event`. */
+    data class Usage(override val session: SessionId, val window: LimitWindow, val utilization: Double, val resetAt: Timestamp?) : AccountFact
+
     data class AuthFailure(override val session: SessionId) : AccountFact
 
     data class Success(override val session: SessionId) : AccountFact
@@ -154,6 +157,10 @@ class SessionDriver(private val sessions: Sessions, private val runner: ClaudeRu
                     is ClaudeEvent.RateLimit -> {
                         val limits = limitFacts(id, e)
                         facts += limits
+                        for ((name, window) in mapOf("five_hour" to LimitWindow.SESSION, "seven_day" to LimitWindow.WEEKLY)) {
+                            val w = e.windows[name] ?: continue
+                            w.utilization.orNull()?.let { u -> facts += AccountFact.Usage(id, window, u, w.resetsAt) }
+                        }
                         val near = limits.any { it.level != LimitLevel.OK }
                         if (near && current.sessions.getValue(id).state == SessionState.RUNNING) moveTo(SessionState.NEAR_LIMIT, DiagCode.CLAUDE_RATE_LIMITED)
                     }

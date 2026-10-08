@@ -120,6 +120,11 @@ sealed interface Command {
         override val operation: String get() = if (fresh) "session.fresh" else "session.send"
     }
 
+    /** Порог «у предела» подписки в процентах загрузки окна (D-45): на нём — откладывание несрочного и экономия D-40. */
+    data class SetNearPercent(val subscription: com.dpsmpx.dpai.core.ids.SubscriptionId, val percent: Int, override val key: String? = null) : Command {
+        override val operation: String get() = "subscription.near-percent"
+    }
+
     companion object {
         /** Ключ идемпотентности — короткая латиница: его пишет оболочка (UUID нажатия), а не человек. */
         val KEY = Regex("[A-Za-z0-9_.:-]{8,80}")
