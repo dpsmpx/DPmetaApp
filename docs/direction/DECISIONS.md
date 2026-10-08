@@ -851,8 +851,8 @@ D-36.
 нужного для решения.
 
 **Следствия.** Новые типы событий сессии (только дописываются);
-`dpai.handoff` v2 (причина `VERIFICATION_FAILED`), `dpai.verification-report`
-v2 (выжимка). Флаги Claude Code — из справки 2.1.294
+`dpai.sessions-state` v2 (расход сессии), `dpai.context` v3 (не вошедшие
+источники), `dpai.handoff` v2 (причина `VERIFICATION_FAILED`). Флаги Claude Code — из справки 2.1.294
 (`docs/research/CLAUDE_CODE_CLI.md`, §11). Выигрыш на настоящей модели —
 замер на устройстве и ПК; в облаке — сравнение на сценариях с моделью-
 заглушкой, помеченное как симуляция.

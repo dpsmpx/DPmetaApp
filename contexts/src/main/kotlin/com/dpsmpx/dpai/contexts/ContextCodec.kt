@@ -25,7 +25,7 @@ object ContextCodec {
     fun readContext(json: JsonObject): Outcome<ContextBundle> {
         val d = DiagnosticCollector()
         val f = JsonFields(json, "$", d)
-        FormatHeader.read(f, ContextBundle.FORMAT, ContextBundle.VERSION..ContextBundle.VERSION, d) ?: return Outcome.Failure(d.all)
+        val format = FormatHeader.read(f, ContextBundle.FORMAT, 2..ContextBundle.VERSION, d) ?: return Outcome.Failure(d.all)
         val id = f.typed("id", IdKinds.CONTEXT)
         val number = f.int("contextVersion")
         val task = f.typed("task", IdKinds.TASK)
@@ -48,6 +48,20 @@ object ContextCodec {
                 null
             }
         }
+        val omitted = if (format < 3) {
+            emptyList()
+        } else {
+            f.array("omitted")?.items.orEmpty().mapIndexedNotNull { i, v ->
+                val o = v as? JsonObject ?: return@mapIndexedNotNull null.also { d.error(DiagCode.FIELD_TYPE, "ожидался объект", "$.omitted[$i]") }
+                val s = JsonFields(o, "$.omitted[$i]", d)
+                val key = s.string("key")
+                val level = s.enumOf<SourceLevel>("level")
+                val tokens = s.long("estimatedTokens")
+                val sameAs = s.optString("sameAs")
+                s.finish()
+                if (key != null && level != null && tokens != null) OmittedSource(key, level, tokens, sameAs) else null
+            }
+        }
         val previous = f.optString("previous")?.let { ContentHash.parse(it).valueOrNull() ?: null.also { _ -> d.error(DiagCode.VALUE_INVALID, "неверный хеш", "$.previous") } }
         val createdAt = f.long("createdAt")?.let(::Timestamp)
         val hash = f.hash("hash")
@@ -55,8 +69,8 @@ object ContextCodec {
         if (d.hasErrors || id == null || number == null || task == null || project == null || objective == null || createdAt == null || hash == null) {
             return Outcome.Failure(d.all.ifEmpty { listOf(com.dpsmpx.dpai.core.diagnostics.Diagnostic.error(DiagCode.FIELD_MISSING, "версия контекста неполна", "$")) })
         }
-        val bundle = ContextBundle(id, number, task, project, objective, nextAction, sources, previous, createdAt)
-        if (bundle.hash != hash) return Outcome.failure(DiagCode.HASH_MISMATCH, "хеш версии контекста не совпал с содержимым", "context $id")
+        val bundle = ContextBundle(id, number, task, project, objective, nextAction, sources, previous, createdAt, omitted)
+        if (bundle.hashAt(format) != hash) return Outcome.failure(DiagCode.HASH_MISMATCH, "хеш версии контекста не совпал с содержимым", "context $id")
         return Outcome.success(bundle)
     }
 

@@ -60,6 +60,8 @@ data class StepEvidence(
     val duration: Duration,
     val startedAt: Timestamp,
     val tail: List<String>,
+    /** Выжимка вывода непрошедшего шага ([OutputDigest]) — то, что увидит следующий исполнитель (D-40). */
+    val digest: List<String> = emptyList(),
 )
 
 /**
@@ -98,6 +100,27 @@ data class VerificationReport(
     )
 
     val hash: ContentHash get() = Hashing.sha256(toJson())
+
+    /**
+     * Что упало — для следующего исполнителя (D-40, п. 3;
+     * `docs/EFFICIENCY.md`, §5): непрошедшие обязательные шаги с командой,
+     * кодом выхода и выжимкой вывода. Всё прошло — `null`.
+     */
+    fun failureDigest(): String? {
+        val failed = steps.filter { it.required && it.result == StepResult.FAILED }
+        if (failed.isEmpty()) return null
+        return buildString {
+            append("Проверка ($level) не прошла")
+            commit?.let { append(" на коммите ").append(it.take(12)) }
+            appendLine(".")
+            for (s in failed) {
+                appendLine()
+                appendLine("## Шаг ${s.name}: код ${s.exitCode ?: "?"}")
+                appendLine("Команда: ${s.command.joinToString(" ")}")
+                s.digest.forEach { appendLine(it) }
+            }
+        }.trimEnd()
+    }
 
     /** Отчёт для человека и описания PR (уровень `report`). */
     fun render(): String = buildString {
@@ -166,7 +189,9 @@ class Verifier(private val runner: StepRunner, private val clock: Clock) {
                     if (result == StepResult.PRE_EXISTING) {
                         notes += Diagnostic.warning(DiagCode.VERIFICATION_BASELINE_FAILURE, "шаг ${step.name} падал и до правки (${baseline?.commit ?: "базовая линия"})", step.name)
                     }
-                    StepEvidence(step.name, step.command, step.required, result, done.exitCode, Hashing.sha256(output), duration, startedAt, (done.stdout + done.stderr).takeLast(20))
+                    val all = done.stdout + done.stderr
+                    val digest = if (result == StepResult.PASSED) emptyList() else OutputDigest.digest(all).lines
+                    StepEvidence(step.name, step.command, step.required, result, done.exitCode, Hashing.sha256(output), duration, startedAt, all.takeLast(20), digest)
                 }
             }
         }
