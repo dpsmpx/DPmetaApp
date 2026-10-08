@@ -127,6 +127,14 @@ MSYS_NO_PATHCONV=1 ./gradlew :cli:test --tests '*AgentCommandTest*' \
   -Ddpai.test.ssh.knownHosts=C:/Users/dpu/.ssh/dpai_known_hosts_wsl
 ```
 
+Linux-target в облачной сессии (8 октября 2026) — Ubuntu 24.04 в
+контейнере, локаль `POSIX` (у процессов по SSH `LANG` пуст — так бывает
+на серверах): `openssh-server` на `127.0.0.1:2223`, вход только ключом,
+отдельный пользователь с агентом в `~/dpai`. `AgentCommandTest`,
+`JschProcessHostTest`, `SshKeysTest` прошли с теми же свойствами
+`dpai.test.ssh*`; кириллица в аргументах на такой локали —
+`PROCESS_ARGUMENT_UNENCODABLE`, а не `?` (`docs/EXECUTION_MODEL.md`, §5).
+
 Termux-target — Realme C21Y по USB (D-33): в Termux `openssh`, `sshd`
 слушает 8022, ключ `dpai_test` — в `~/.ssh/authorized_keys`; с ПК —
 `adb forward tcp:8022 tcp:8022`, затем вход на `127.0.0.1:8022`, ключ
