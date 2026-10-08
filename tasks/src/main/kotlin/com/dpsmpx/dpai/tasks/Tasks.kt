@@ -196,6 +196,12 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
             }
         }
         val record = TaskEvent.VerificationRecorded(id, VerificationRecord(verdict, reportHash), now)
+        if (verdict == "FAILED") {
+            return when (val f = verificationFailed(apply(s, record), t, id, reportHash, now)) {
+                is Outcome.Failure -> f
+                is Outcome.Success -> Outcome.success(events + record + f.value)
+            }
+        }
         val reason = when (verdict) {
             "FAILED" -> DiagCode.VERIFICATION_FAILED
             "INCOMPLETE" -> DiagCode.VERIFICATION_STEP_UNAVAILABLE
@@ -204,6 +210,36 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
         return when (val m = move(apply(s, record), id, to, now, reason)) {
             is Outcome.Failure -> m
             is Outcome.Success -> Outcome.success(events + record + m.value)
+        }
+    }
+
+    /**
+     * Проверка не прошла — неудачная попытка, а не бесплатный повтор (ревью
+     * 8 октября 2026): счётчик попыток, пауза перед следующим ходом и ключ
+     * петли по хешу отчёта. Тот же провал [SchedulerPolicy.loopThreshold] раз
+     * — `LOOP_DETECTED` (`BLOCKED`), предел попыток — `FAILED`. Раньше каждый
+     * провал сразу запускал новый ход Claude с тем же промптом, расходуя
+     * подписку без конца, если проверка падала стабильно.
+     */
+    private fun verificationFailed(s: TasksState, t: TaskRecord, id: TaskId, reportHash: String?, now: Timestamp): Outcome<List<TaskEvent>> {
+        val loopKey = "verification:${reportHash ?: "?"}"
+        val failed = TaskEvent.AttemptFailed(id, loopKey, DiagCode.VERIFICATION_FAILED, now)
+        val s1 = apply(s, failed)
+        val attempt = t.retries + 1
+        if (attempt > t.policy.maxRetries) {
+            return move(s1, id, TaskState.FAILED, now, DiagCode.RETRY_LIMIT_REACHED).let { r ->
+                if (r is Outcome.Success) Outcome.success(listOf(failed) + r.value) else r
+            }
+        }
+        val backoff = t.policy.retryBackoff * (1 shl (attempt - 1).coerceAtMost(10))
+        val ready = when (val r = move(s1, id, TaskState.READY, now, DiagCode.VERIFICATION_FAILED, notBefore = now + backoff)) {
+            is Outcome.Failure -> return r
+            is Outcome.Success -> r.value
+        }
+        if ((t.failures[loopKey] ?: 0) + 1 < policy.loopThreshold) return Outcome.success(listOf(failed) + ready)
+        return when (val b = move(applyAll(s1, ready), id, TaskState.BLOCKED, now, DiagCode.LOOP_DETECTED)) {
+            is Outcome.Failure -> b
+            is Outcome.Success -> Outcome.success(listOf(failed) + ready + b.value)
         }
     }
 

@@ -185,6 +185,31 @@ class TasksTest {
         assertEquals(DiagCode.LOOP_DETECTED, state.tasks.getValue(t).lastReason)
     }
 
+    /**
+     * Ревью 8 октября 2026: провал проверки — неудачная попытка с паузой; тот
+     * же провал раз за разом — LOOP_DETECTED, а не новый ход Claude каждый такт.
+     */
+    @Test
+    fun repeatedVerificationFailureIsCountedAndStopsAsLoop() {
+        val t = task(policy = TaskPolicy(maxRetries = 10, retryBackoff = 1.minutes))
+        runTickUntilReady(t)
+        ok(tasks.start(state, t, clock.now()))
+        ok(tasks.implemented(state, t, clock.now()))
+        ok(tasks.recordVerification(state, t, "FAILED", "sha256:abc", clock.now()))
+        val first = state.tasks.getValue(t)
+        assertEquals(TaskState.READY, first.state)
+        assertEquals(1, first.retries, "провал проверки — попытка")
+        assertTrue(log.filterIsInstance<TaskEvent.StateChanged>().last().notBefore != null, "следующий ход — после паузы")
+        repeat(2) {
+            clock.advance(10.minutes)
+            ok(tasks.start(state, t, clock.now()))
+            ok(tasks.implemented(state, t, clock.now()))
+            ok(tasks.recordVerification(state, t, "FAILED", "sha256:abc", clock.now()))
+        }
+        assertEquals(TaskState.BLOCKED, state.tasks.getValue(t).state)
+        assertEquals(DiagCode.LOOP_DETECTED, state.tasks.getValue(t).lastReason)
+    }
+
     @Test
     fun nonRetryableBlocksImmediately() {
         val t = task()
