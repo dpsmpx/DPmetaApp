@@ -1,11 +1,15 @@
 package com.dpsmpx.dpai.cli
 
+import com.dpsmpx.dpai.execution.process.LocalProcessHost
+import com.dpsmpx.dpai.execution.process.ProcessSpec
+import com.dpsmpx.dpai.execution.process.run
 import java.io.File
 import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 import org.junit.jupiter.api.io.TempDir
 
 class CliTest {
@@ -45,16 +49,13 @@ class CliTest {
     @Test
     fun agentRepliesInUtf8UnderPosixLocale(@TempDir home: Path) {
         val java = File(File(System.getProperty("java.home"), "bin"), if (File.separatorChar == '\\') "java.exe" else "java").path
-        val p = ProcessBuilder(
+        val env = System.getenv() - setOf("LANG", "LC_ALL", "LC_CTYPE", "JAVA_TOOL_OPTIONS") + ("LC_ALL" to "POSIX")
+        val cmd = listOf(
             java, "-cp", System.getProperty("java.class.path"), "com.dpsmpx.dpai.cli.MainKt",
             "agent", "status", "--run", "ses_01J00000000000000000000000", "--home", home.toString(),
-        ).apply {
-            environment()["LC_ALL"] = "POSIX"
-            environment().remove("LANG")
-            environment().remove("JAVA_TOOL_OPTIONS")
-        }.redirectErrorStream(true).start()
-        val text = p.inputStream.readBytes().toString(Charsets.UTF_8)
-        p.waitFor()
+        )
+        val done = LocalProcessHost().run(ProcessSpec(cmd, environment = env), 60.seconds).valueOrNull()!!
+        val text = (done.stdout + done.stderr).joinToString("\n")
         assertTrue(text.any { it in '\u0400'..'\u04FF' }, "в ответе нет кириллицы: $text")
         assertFalse('?' in text, "кириллица стала `?`: $text")
     }
