@@ -48,7 +48,8 @@ import kotlinx.coroutines.withContext
 @Composable
 fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDone: () -> Unit) {
     val scope = rememberCoroutineScope()
-    var detail by remember { mutableStateOf<TaskDetail?>(null) }
+    // Сразу с данными (чтение неизменяемого состояния, без замка): лист не меняет размер после «Загружаю…».
+    var detail by remember { mutableStateOf(model.taskDetail(task)) }
     var status by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var confirm by remember { mutableStateOf<TaskAction?>(null) }

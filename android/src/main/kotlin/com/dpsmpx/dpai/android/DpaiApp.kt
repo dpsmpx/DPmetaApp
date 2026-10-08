@@ -1,7 +1,10 @@
 package com.dpsmpx.dpai.android
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.clickable
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -62,6 +65,9 @@ import kotlinx.coroutines.withContext
 /** Период шага демо и обновления экрана. */
 private const val STEP_MS = 1000L
 
+/** Экран сессии в переходе между экранами (вкладки — 0…4). */
+private const val SESSION_SCREEN = -1
+
 /** Период шага контроллера: каждый шаг — вызовы агентов по SSH. */
 private const val LIVE_STEP_MS = 3000L
 
@@ -86,7 +92,8 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
 
     val context = androidx.compose.ui.platform.LocalContext.current
     val notifier = remember { Notifier(context.applicationContext) }
-    LaunchedEffect(model) {
+    // Ключ — и выбранная сессия: её экран грузится сразу, а не через такт (раньше — до 3 с крутилки).
+    LaunchedEffect(model, selectedId) {
         while (true) {
             val s = selected
             // Контроллер шагает в службе (D-36): экран только рисует; демо шагает здесь.
@@ -104,7 +111,10 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
             if (next != null) {
                 failure = null
                 next.notifications.forEach(notifier::show)
-                snapshot = next
+                // Такт держит замок — снимок опубликован службой без экрана сессии: прежний экран остаётся,
+                // а не сменяется крутилкой и обратно (экран «прыгал», проверка на Redmi Note 13).
+                val keep = snapshot?.session?.takeIf { next.session == null && s != null && it.session.value == s }
+                snapshot = if (keep != null) next.copy(session = keep) else next
                 // Запросы демо и контроллера без службы — сверка здесь; со службой её делает служба (D-44).
                 if (!ControllerService.running) withContext(Dispatchers.IO) { runCatching { RequestPresenter.sync(context.applicationContext, model, model.pending()) } }
             }
@@ -144,15 +154,23 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
             )
         },
         bottomBar = {
-            if (selectedId == null) {
-                NavigationBar {
-                    NavigationBarItem(selected = tab == 0, onClick = { tab = 0 }, icon = { Text("◉") }, label = { Text("Сводка") })
-                    NavigationBarItem(selected = tab == 1, onClick = { tab = 1 }, icon = { Text("▦") }, label = { Text("Задачи") })
-                    NavigationBarItem(selected = tab == 2, onClick = { tab = 2 }, icon = { Text("⇄") }, label = { Text("Targets") })
-                    val waiting = snapshot?.requests?.size ?: 0
-                    NavigationBarItem(selected = tab == 3, onClick = { tab = 3 }, icon = { Text(if (waiting > 0) "?$waiting" else "?") }, label = { Text("Запросы") })
-                    NavigationBarItem(selected = tab == 4, onClick = { tab = 4 }, icon = { Text("≡") }, label = { Text("Журнал") })
+            // Панель — всегда: её исчезновение на экране сессии сдвигало всё содержимое.
+            NavigationBar {
+                fun go(t: Int) {
+                    tab = t
+                    selectedId = null
                 }
+                NavigationBarItem(selected = tab == 0 && selectedId == null, onClick = { go(0) }, icon = { Text("◉") }, label = { Text("Сводка") })
+                NavigationBarItem(selected = tab == 1 && selectedId == null, onClick = { go(1) }, icon = { Text("▦") }, label = { Text("Задачи") })
+                NavigationBarItem(selected = tab == 2 && selectedId == null, onClick = { go(2) }, icon = { Text("⇄") }, label = { Text("Targets") })
+                val waiting = snapshot?.requests?.size ?: 0
+                // Число — значком поверх: ширина пункта не меняется с числом запросов.
+                NavigationBarItem(
+                    selected = tab == 3 && selectedId == null, onClick = { go(3) },
+                    icon = { BadgedBox(badge = { if (waiting > 0) Badge { Text("$waiting") } }) { Text("?") } },
+                    label = { Text("Запросы") },
+                )
+                NavigationBarItem(selected = tab == 4 && selectedId == null, onClick = { go(4) }, icon = { Text("≡") }, label = { Text("Журнал") })
             }
         },
     ) { padding ->
@@ -172,15 +190,18 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                     Button(onClick = { scope.launch(Dispatchers.IO) { ControllerService.resume(context) }; stopped = false }) { Text("Запустить") }
                 }
             }
-            Box(Modifier.weight(1f).fillMaxWidth()) {
-                when {
-                    selectedId == null && tab == 2 -> TargetsPane(controller, model)
-                    selectedId == null && tab == 3 -> RequestsPane(model, s)
-                    selectedId == null && tab == 4 -> LogPane()
-                    s == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-                    selectedId != null -> SessionPane(s.session)
-                    tab == 0 -> DashboardPane(s.dashboard) { selectedId = it.value }
-                    else -> BoardPane(s.board, s.live, model) { selectedId = it }
+            // Смена вкладки или экрана — плавно, без скачка содержимого; кадр перехода рисует свой экран.
+            Crossfade(targetState = if (selectedId != null) SESSION_SCREEN else tab, label = "screen", modifier = Modifier.weight(1f).fillMaxWidth()) { screen ->
+                Box(Modifier.fillMaxSize()) {
+                    when {
+                        screen == 2 -> TargetsPane(controller, model)
+                        screen == 3 -> RequestsPane(model, s)
+                        screen == 4 -> LogPane()
+                        s == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
+                        screen == SESSION_SCREEN -> SessionPane(s.session)
+                        screen == 0 -> DashboardPane(s.dashboard) { selectedId = it.value }
+                        else -> BoardPane(s.board, s.live, model) { selectedId = it }
+                    }
                 }
             }
         }
