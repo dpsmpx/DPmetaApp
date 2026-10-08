@@ -38,6 +38,7 @@ DP_AI_Orcestrator — control plane для множества сессий Claud
 | Экосистема и глобальный прогон | `docs/ECOSYSTEM.md` |
 | Модель безопасности (угрозы T1…) | `docs/SECURITY_MODEL.md` |
 | Тесты, производительность | `docs/TESTING.md`, `docs/PERFORMANCE.md` |
+| Экономия контекста и токенов | `docs/EFFICIENCY.md` |
 | Процесс, проверки, зависимости | `docs/PROCESS.md` |
 | Происхождение зависимостей и идей | `docs/PROVENANCE.md` |
 | Исследования (датированные факты) | `docs/research/` |

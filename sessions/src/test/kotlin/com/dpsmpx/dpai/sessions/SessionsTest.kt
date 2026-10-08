@@ -230,4 +230,35 @@ class SessionsTest {
         val json = CanonicalJson.write(SessionCodec.encodeState(state))
         assertEquals(state, SessionCodec.decodeState(JsonParser().parse(json).valueOrNull() as JsonObject).valueOrNull())
     }
+
+    @Test
+    fun usageOfPromptAndTurnIsRecordedAndSurvivesSnapshot() {
+        // D-40, п. 1: prompt — оценка оркестратора, ход — со слов провайдера; оба в журнале и снимке.
+        slots(1)
+        val s = newSession()
+        scenarios[s] = MockScenario.SUCCESS
+        apply(listOf(SessionEvent.PromptPrepared(s, PromptFacts(PromptMode.FULL, 1200, 400, 3, omittedSources = 1, omittedTokens = 900, context = "ctx@v1", taskClass = "NORMAL_ENGINEERING"), clock.now())))
+        step(driver.launch(state, accounts, s, ClaudeRequest("x")))
+        clock.advance(10.seconds)
+        step(driver.poll(state, s))
+        val usageEvents = log.filterIsInstance<SessionEvent.TurnUsage>()
+        assertEquals(1, usageEvents.size)
+        // Расход — перед итогом хода того же номера.
+        assertEquals(log.indexOfFirst { it is SessionEvent.TurnFinished } - 1, log.indexOf(usageEvents.single()))
+        val u = state.sessions.getValue(s).usage
+        assertEquals(1, u.turns)
+        assertEquals(10, u.inputTokens)
+        assertEquals(5, u.outputTokens)
+        assertEquals(400, u.promptTokens)
+        assertEquals(900, u.omittedTokens)
+        assertEquals(PromptMode.FULL, u.lastPrompt?.mode)
+        val decoded = log.map { e -> SessionCodec.decode(SessionCodec.type(e), e.at, SessionCodec.payload(e))!!.valueOrNull()!! }
+        assertEquals(log, decoded)
+        val json = CanonicalJson.write(SessionCodec.encodeState(state))
+        assertEquals(state, SessionCodec.decodeState(JsonParser().parse(json).valueOrNull() as JsonObject).valueOrNull())
+        // Снимок v1 (до D-40) читается: расхода в нём нет.
+        val bare = SessionsState(state.sessions.mapValues { it.value.copy(usage = UsageTotals.EMPTY) })
+        val v1 = CanonicalJson.write(SessionCodec.encodeState(bare)).replace("\"version\":2", "\"version\":1")
+        assertEquals(bare, SessionCodec.decodeState(JsonParser().parse(v1).valueOrNull() as JsonObject).valueOrNull())
+    }
 }

@@ -31,6 +31,10 @@ enum class EventType {
     SESSION_CREATED,
     SESSION_TURN_STARTED,
     SESSION_TURN_FINISHED,
+    /** Как собран запрос хода: оценка размера, режим, маршрут модели (D-40). */
+    SESSION_PROMPT_PREPARED,
+    /** Расход хода со слов провайдера (D-40). */
+    SESSION_TURN_USAGE,
 
     // --- проверка ---
     VERIFICATION_STARTED,

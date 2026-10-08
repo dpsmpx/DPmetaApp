@@ -138,7 +138,12 @@ class SessionDriver(private val sessions: Sessions, private val runner: ClaudeRu
                 }
                 is RunnerUpdate.TurnFinished -> {
                     val t = u.result
-                    emit(listOf(SessionEvent.TurnFinished(id, u.turn, t.status.name, t.diagnostics.filter { it.isError }.map { it.code }.distinct(), now)))
+                    emit(
+                        listOf(
+                            SessionEvent.TurnUsage(id, u.turn, t.usage.recorded(), now),
+                            SessionEvent.TurnFinished(id, u.turn, t.status.name, t.diagnostics.filter { it.isError }.map { it.code }.distinct(), now),
+                        ),
+                    )
                     val (to, reason, fact) = outcomeOf(id, t)
                     fact?.let { facts += it }
                     moveTo(to, reason)

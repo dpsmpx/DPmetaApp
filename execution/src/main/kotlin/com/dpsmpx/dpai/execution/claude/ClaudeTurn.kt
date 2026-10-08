@@ -21,13 +21,15 @@ data class ClaudeTurn(
     val providerSession: ProviderSessionId,
     val text: String?,
     val structured: JsonValue?,
-    val costUsd: Measure<BigDecimal>,
-    val inputTokens: Measure<Long>,
-    val outputTokens: Measure<Long>,
+    val usage: TurnUsage,
     val rateLimit: ClaudeEvent.RateLimit?,
     val exitCode: Int?,
     val diagnostics: List<Diagnostic>,
-)
+) {
+    val costUsd: Measure<BigDecimal> get() = usage.costUsd
+    val inputTokens: Measure<Long> get() = usage.inputTokens
+    val outputTokens: Measure<Long> get() = usage.outputTokens
+}
 
 /**
  * Сборка итога хода из событий потока и выхода процесса (ТЗ, §53, §106).
@@ -42,6 +44,7 @@ class ClaudeTurnAssembler(private val session: ProviderSessionId) {
     private var rateLimit: ClaudeEvent.RateLimit? = null
     private val apiErrors = mutableListOf<String>()
     private var eventsAfterResult = 0
+    private var compacted = false
 
     /** Строка вывода; возвращает событие, если строка его несёт. */
     fun feed(line: String, truncated: Boolean = false): ClaudeEvent? {
@@ -51,6 +54,11 @@ class ClaudeTurnAssembler(private val session: ProviderSessionId) {
             is ClaudeEvent.Result -> if (result == null) result = e else eventsAfterResult++
             is ClaudeEvent.RateLimit -> rateLimit = e
             is ClaudeEvent.Assistant -> e.error?.let { apiErrors += it }
+            // Сжатие истории самим Claude Code (`docs/research/CLAUDE_CODE_CLI.md`, §11).
+            is ClaudeEvent.Other -> {
+                if (e.type == "system" && e.subtype == COMPACT_BOUNDARY) compacted = true
+                if (result != null) eventsAfterResult++
+            }
             else -> if (result != null && e != null) eventsAfterResult++
         }
         return p.event
@@ -86,9 +94,7 @@ class ClaudeTurnAssembler(private val session: ProviderSessionId) {
             providerSession = session,
             text = r?.text,
             structured = r?.structured,
-            costUsd = r?.costUsd ?: Measure.unknown("нет итога хода"),
-            inputTokens = r?.inputTokens ?: Measure.unknown("нет итога хода"),
-            outputTokens = r?.outputTokens ?: Measure.unknown("нет итога хода"),
+            usage = (r?.usage ?: TurnUsage.unknown("нет итога хода")).copy(compacted = compacted),
             rateLimit = rateLimit,
             exitCode = exitCode,
             diagnostics = diags,
@@ -99,6 +105,8 @@ class ClaudeTurnAssembler(private val session: ProviderSessionId) {
     private fun classify(r: ClaudeEvent.Result): Pair<DiagCode, Boolean> = when {
         "authentication_failed" in apiErrors -> DiagCode.CLAUDE_AUTH_REQUIRED to false
         "rate_limit" in apiErrors || rateLimit?.rejected == true -> DiagCode.CLAUDE_RATE_LIMITED to false
+        // Переполнение — продолжаемо, но не тем же объёмом (D-40, п. 4): решает оркестратор.
+        r.text?.contains(PROMPT_TOO_LONG, ignoreCase = true) == true -> DiagCode.CLAUDE_CONTEXT_OVERFLOW to true
         r.subtype == "error_max_turns" -> DiagCode.CLAUDE_MAX_TURNS to true
         "budget" in r.subtype -> DiagCode.CLAUDE_BUDGET_EXCEEDED to true
         apiErrors.isNotEmpty() -> DiagCode.CLAUDE_API_ERROR to false
@@ -121,5 +129,13 @@ class ClaudeTurnAssembler(private val session: ProviderSessionId) {
             else -> "процесс вышел с кодом ${exitCode ?: "?"}"
         }
         return Diagnostic.error(DiagCode.CLAUDE_STREAM_INCOMPLETE, "поток кончился без итога: $why", ClaudeStreamParser.SUBJECT)
+    }
+
+    companion object {
+        /** Сжатие истории Claude Code: `system`, `subtype` — это значение (Agent SDK, `SDKCompactBoundaryMessage`). */
+        const val COMPACT_BOUNDARY = "compact_boundary"
+
+        /** Отказ API по размеру prompt: «prompt is too long: N tokens > M maximum» (`invalid_request_error`). */
+        const val PROMPT_TOO_LONG = "prompt is too long"
     }
 }

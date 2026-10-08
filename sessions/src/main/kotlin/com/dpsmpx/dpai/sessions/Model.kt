@@ -39,6 +39,8 @@ data class SessionRecord(
     val lastReason: DiagCode? = null,
     /** Номер последнего применённого события агента: с него сессия продолжается после перезапуска. */
     val agentSequence: Long = 0,
+    /** Расход сессии: prompt (оценка) и ходы (со слов провайдера), D-40. */
+    val usage: UsageTotals = UsageTotals.EMPTY,
 ) {
     val terminal: Boolean get() = state in SessionLifecycle.table.terminal
 }
@@ -114,4 +116,15 @@ sealed interface SessionEvent {
     data class Output(override val session: SessionId, val text: String, override val at: Timestamp) : SessionEvent
 
     data class ToolStarted(override val session: SessionId, val tool: String, override val at: Timestamp) : SessionEvent
+
+    /** Запрос хода собран: размер (оценка), режим, маршрут модели (D-40). */
+    data class PromptPrepared(override val session: SessionId, val facts: PromptFacts, override val at: Timestamp) : SessionEvent
+
+    /** Расход хода со слов провайдера (D-40); пишется перед [TurnFinished] того же хода. */
+    data class TurnUsage(
+        override val session: SessionId,
+        val turn: Int,
+        val usage: com.dpsmpx.dpai.execution.claude.TurnUsage,
+        override val at: Timestamp,
+    ) : SessionEvent
 }

@@ -248,3 +248,41 @@ found at: /root/.claude/.claude.json»: файл настроек ищется �
 конфигурации. Вывод: вход слота делается сразу с `CLAUDE_CONFIG_DIR`
 слота (D-29), иначе отпечаток аккаунта неизвестен.
 
+
+## 11. Расход и управление расходом
+
+Проверено **8 октября 2026** по `claude --help` Claude Code **2.1.294**
+(среда облачной сессии) и образцу `success-structured.jsonl` (2.1.291).
+Для D-40 (`docs/EFFICIENCY.md`).
+
+Флаги из справки 2.1.294:
+
+| Флаг | Справка | Для оркестратора |
+|---|---|---|
+| `--effort <level>` | «Effort level for the current session (low, medium, high, xhigh, max)» | усилие по классу задачи |
+| `--model <model>` | алиас последней модели («'fable', 'opus', or 'sonnet'») или полное имя | модель по классу задачи |
+| `--fallback-model <model>` | запасные модели при перегрузке или недоступности, список через запятую | — |
+| `--exclude-dynamic-system-prompt-sections` | каталог, окружение, пути памяти и `git status` уходят из системного prompt в первое сообщение: «Improves cross-user prompt-cache reuse»; игнорируется с `--system-prompt`, по умолчанию выключен | кеш prompt между сессиями разных рабочих деревьев |
+| `--autocompact <auto\|tokens>` | размер окна автосжатия: `auto` или 100k–1M токенов | не используется |
+| `--max-turns` | в справке 2.1.294 нет | предел длины хода — `--max-budget-usd` и тайм-аут |
+
+Поля итога `result` (образец 2.1.291): `usage` — `input_tokens`,
+`output_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens`,
+`output_tokens_details.thinking_tokens`, `cache_creation` (запись на 5
+минут и на час), `iterations` — по вызову API с тем же набором токенов;
+`modelUsage` — по модели: `inputTokens`, `outputTokens`,
+`cacheReadInputTokens`, `cacheCreationInputTokens`, `costUSD`,
+`contextWindow` (200 000), `maxOutputTokens` (32 000), `costBasis`;
+`num_turns`, `duration_ms`, `duration_api_ms`; `subagent_stats` — `spawned`,
+отказы по глубине, параллельности и бюджету. В образце первый ход
+записал в кеш 9 844 токена (`ephemeral_1h_input_tokens`) — системный
+prompt и инструменты.
+
+Инструмент субагентов в Claude Code 2.1.294 называется `Agent` (список
+инструментов этой облачной сессии Claude Code).
+
+Не проверено (образцов нет): событие сжатия истории — `system` с
+`subtype: "compact_boundary"` (описание `SDKCompactBoundaryMessage` в
+Agent SDK); отказ по размеру prompt — итог с ошибкой и текстом «Prompt is
+too long» (текст `invalid_request_error` API). Разбор узнаёт оба, строки в
+тестах построены; записать образцы, когда случатся.
