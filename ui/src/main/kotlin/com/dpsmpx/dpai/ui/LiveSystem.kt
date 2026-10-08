@@ -248,7 +248,7 @@ class LiveSystem(
     )
 
     override fun dashboard(): DashboardScreen {
-        val base = Screens.dashboard(orchestrator.dashboard(), diagnosis())
+        val base = Screens.dashboard(orchestrator.dashboard(), diagnosis(), orchestrator.usage())
         val login = usable.filter { it.id in waitingLogin }.map { "${it.label}: войдите в Claude в каталоге ${it.configDir}, затем «Вход Claude»" }
         val extra = notes + login + (problems + orchestrator.problems).takeLast(5).map { "${it.code}: ${it.message}" }
         return base.copy(attention = base.attention + extra)

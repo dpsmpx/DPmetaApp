@@ -60,10 +60,7 @@ sealed interface ClaudeEvent {
         val terminalReason: String?,
         val text: String?,
         val structured: JsonValue?,
-        val costUsd: Measure<BigDecimal>,
-        val inputTokens: Measure<Long>,
-        val outputTokens: Measure<Long>,
-        val numTurns: Int?,
+        val usage: TurnUsage,
     ) : ClaudeEvent
 
     /** Известное, но не нужное состоянию событие (`user`, `system/thinking_tokens`, частичные сообщения). */
@@ -151,22 +148,13 @@ class ClaudeStreamParser(private val expectedSession: ProviderSessionId?) {
     private fun result(obj: JsonObject): ClaudeEvent.Result? {
         val subtype = obj.str("subtype") ?: return null
         val isError = (obj["is_error"] as? JsonBool)?.value ?: return null
-        val usage = obj["usage"] as? JsonObject
-        // Стоимость при подписке — расчёт по прейскуранту (costBasis = list), а не списание: оценка (D-13).
-        val listBasis = (obj["modelUsage"] as? JsonObject)?.fields?.values.orEmpty()
-            .any { (it as? JsonObject)?.str("costBasis") == "list" }
-        val cost = obj.decimal("total_cost_usd")?.let { if (listBasis) Measure.estimated(it) else Measure.observed(it) }
-            ?: Measure.unknown("нет total_cost_usd")
         return ClaudeEvent.Result(
             subtype = subtype,
             isError = isError,
             terminalReason = obj.str("terminal_reason"),
             text = obj.str("result"),
             structured = obj["structured_output"]?.takeIf { it != JsonNull },
-            costUsd = cost,
-            inputTokens = usage?.long("input_tokens")?.let { Measure.observed(it) } ?: Measure.unknown("нет usage.input_tokens"),
-            outputTokens = usage?.long("output_tokens")?.let { Measure.observed(it) } ?: Measure.unknown("нет usage.output_tokens"),
-            numTurns = obj.long("num_turns")?.toInt(),
+            usage = TurnUsage.fromResult(obj),
         )
     }
 

@@ -37,6 +37,20 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
         return Outcome.success(listOf(TaskEvent.Created(id, title.trim(), objective, priority, dependencies, capabilities, taskPolicy, now)))
     }
 
+    /**
+     * Повтор постановки (D-40; аудит, W10): незавершённая задача с тем же
+     * заголовком и целью — без различия регистра и пробелов. Вторая такая
+     * задача — второй ход с той же работой (двойное нажатие, повтор из
+     * оболочки); разные заголовки при одной цели — разные задачи.
+     */
+    fun duplicateOf(state: TasksState, title: String, objective: String): TaskId? {
+        val t = normalize(title)
+        val o = normalize(objective)
+        return state.tasks.values.filter { !it.terminal && normalize(it.title) == t && normalize(it.objective) == o }.minByOrNull { it.id.value }?.id
+    }
+
+    private fun normalize(s: String) = s.trim().lowercase().replace(Regex("\\s+"), " ")
+
     /** Новая зависимость; если она замыкает цикл — `DEPENDENCY_CYCLE` с перечнем задач цикла (ТЗ, §120). */
     fun addDependency(state: TasksState, task: TaskId, dependsOn: TaskId, now: Timestamp): Outcome<List<TaskEvent>> {
         val t = state.tasks[task] ?: return notFound(task)

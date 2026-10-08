@@ -11,6 +11,7 @@ import com.dpsmpx.dpai.monitoring.DisplayState
 import com.dpsmpx.dpai.monitoring.SelfDiagnosis
 import com.dpsmpx.dpai.monitoring.SystemHealth
 import com.dpsmpx.dpai.monitoring.Timeline
+import com.dpsmpx.dpai.monitoring.UsageReport
 import com.dpsmpx.dpai.tasks.TasksState
 import kotlin.time.Duration
 
@@ -54,7 +55,8 @@ data class TaskBoard(val columns: List<BoardColumn>)
  * «?», а не ноль (D-13).
  */
 object Screens {
-    fun dashboard(view: DashboardView, health: SelfDiagnosis): DashboardScreen = DashboardScreen(
+    /** [usage] — отчёт расхода (D-40): три меры на сводке, когда ходы уже были. */
+    fun dashboard(view: DashboardView, health: SelfDiagnosis, usage: UsageReport? = null): DashboardScreen = DashboardScreen(
         health = health.health.name,
         healthTone = when (health.health) {
             SystemHealth.HEALTHY -> Tone.DONE
@@ -69,12 +71,23 @@ object Screens {
             Counter("Упало", view.failed.toString(), if (view.failed > 0) Tone.ERROR else Tone.NEUTRAL),
             Counter("Ждут одобрения", count(view.waitingApproval), if ((view.waitingApproval.orNull() ?: 0) > 0) Tone.WARNING else Tone.NEUTRAL),
             Counter("Аккаунтов доступно", view.availableAccounts.toString(), Tone.NEUTRAL),
-        ),
+        ) + usageCounters(usage),
         sessions = view.rows.map { r ->
             SessionLine(r.session, r.task, r.state.name, tone(r.state), silent(r.silentFor), r.next ?: "—")
         },
         attention = view.attention.map { "${it.subject}: ${it.detail}" },
     )
+
+    /** Расход на сводке (`docs/EFFICIENCY.md`, §9): работа на расход, кеш prompt, сэкономленный контекст (оценка). */
+    private fun usageCounters(u: UsageReport?): List<Counter> {
+        if (u == null || u.turns + u.unknownTurns + u.prompts == 0) return emptyList()
+        fun pct(v: Double?) = v?.let { "${(it * 100).toInt()} %" } ?: "—"
+        return listOf(
+            Counter("Токенов на задачу", u.tokensPerDoneTask?.toString() ?: "—", Tone.NEUTRAL),
+            Counter("Вход из кеша", pct(u.cacheReadShare), Tone.NEUTRAL),
+            Counter("Контекст не послан (оценка)", pct(u.contextSavedShare), Tone.NEUTRAL),
+        )
+    }
 
     fun session(view: DashboardView, session: SessionId, events: List<EventEnvelope>): SessionScreen {
         val stream = StreamRef.of(session)

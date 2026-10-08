@@ -21,8 +21,12 @@ import com.dpsmpx.dpai.core.serialization.JsonValue
 import com.dpsmpx.dpai.security.Origin
 import com.dpsmpx.dpai.security.Sensitivity
 
-/** Почему создан handoff (ТЗ, §27). */
-enum class HandoffReason { NEAR_LIMIT, MANUAL, TARGET_FAILED, ACCOUNT_EXHAUSTED, APP_STOPPED, PAUSED, TURN_FINISHED }
+/**
+ * Почему создан handoff (ТЗ, §27). D-40: `VERIFICATION_FAILED` — ход
+ * заявил «готово», проверка не прошла; `CONTEXT_OVERFLOW` — контекст не
+ * влез в окно модели.
+ */
+enum class HandoffReason { NEAR_LIMIT, MANUAL, TARGET_FAILED, ACCOUNT_EXHAUSTED, APP_STOPPED, PAUSED, TURN_FINISHED, VERIFICATION_FAILED, CONTEXT_OVERFLOW }
 
 /**
  * Handoff (`dpai.handoff` v1; ТЗ, §27; `docs/CONTEXT_MODEL.md`, §5):
@@ -55,12 +59,15 @@ data class Handoff(
 ) {
     val hash: ContentHash get() = Hashing.sha256(toJson().fields.filterKeys { it != "hash" }.let(::JsonObject))
 
-    fun toJson(): JsonObject {
+    fun toJson(): JsonObject = toJson(VERSION)
+
+    /** Документ в виде формата [format]: handoff v1 сверяется со своим хешем (`ContextCodec`). */
+    internal fun toJson(format: Int): JsonObject {
         fun list(v: List<String>) = JsonArray(v.map(::JsonString))
         fun opt(v: String?): JsonValue = v?.let(::JsonString) ?: JsonNull
         val body = JsonObject(
             linkedMapOf(
-                *FormatHeader.write(FORMAT, VERSION),
+                *FormatHeader.write(FORMAT, format),
                 "id" to JsonString(id.value), "key" to JsonString(key), "reason" to JsonString(reason.name),
                 "session" to JsonString(session.value), "task" to JsonString(task.value), "project" to JsonString(project.value),
                 "context" to JsonString(context.value), "contextHash" to JsonString(contextHash.toString()), "state" to JsonString(state),
@@ -108,7 +115,8 @@ data class Handoff(
 
     companion object {
         const val FORMAT = "dpai.handoff"
-        const val VERSION = 1
+        /** v2: причины `VERIFICATION_FAILED`, `CONTEXT_OVERFLOW` (D-40); v1 читается. */
+        const val VERSION = 2
     }
 }
 
@@ -129,7 +137,9 @@ class Handoffs {
     }
 
     @Synchronized
-    fun latest(task: TaskId): Handoff? = byKey.values.filter { it.task == task }.maxByOrNull { it.createdAt }
+    fun latest(task: TaskId): Handoff? =
+        // При равном времени решает id (монотонен): два handoff в одну миллисекунду — не наугад.
+        byKey.values.filter { it.task == task }.maxWithOrNull(compareBy<Handoff>({ it.createdAt.epochMillis }, { it.id.value }))
 
     @Synchronized
     fun all(): List<Handoff> = byKey.values.toList()

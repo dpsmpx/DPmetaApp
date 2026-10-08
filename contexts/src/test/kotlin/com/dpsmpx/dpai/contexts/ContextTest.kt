@@ -201,4 +201,87 @@ class ContextTest {
         assertFalse("читаю код" in s.render())
         assertTrue("evt:5" in s.render(), "у факта — ссылки на источник")
     }
+
+    // ---- бюджет D-40 (`docs/EFFICIENCY.md`, §3) ----
+
+    private fun src(key: String, level: SourceLevel, text: String, origin: Origin = Origin.REPOSITORY) =
+        ContextSource(key, level, if (level == SourceLevel.GLOBAL) null else projectA, Sensitivity.INTERNAL, origin, text)
+
+    private fun budgeted(sources: List<ContextSource>, policy: ContextPolicy) =
+        ContextAssembler.assemble(ctx, task, projectA, "добавить парсер", null, sources, clock.now(), policy = policy)
+
+    @Test
+    fun underPressureDocumentsGoFirstAndHandoffStays() {
+        val sources = listOf(
+            src("rules", SourceLevel.GLOBAL, "правило ".repeat(50), Origin.ORCHESTRATOR),
+            src("handoff:h1", SourceLevel.HANDOFF, "сделано: лексер ".repeat(100), Origin.MODEL),
+            src("doc:big.md", SourceLevel.DOCUMENT, "текст ".repeat(2_000)),
+        )
+        val tokens = sources.dropLast(1).sumOf { TokenEstimate.of(it.content) } + 100
+        // До D-40 (порядок уровней): документ раньше handoff — выпадает handoff (аудит, W9).
+        val legacy = assertIs<Outcome.Success<ContextBundle>>(budgeted(sources, ContextPolicy(maxChars = 13_000))).value
+        assertFalse(legacy.sources.any { it.key == "handoff:h1" })
+        val b = assertIs<Outcome.Success<ContextBundle>>(budgeted(sources, ContextPolicy.budgeted(tokens))).value
+        assertEquals(listOf("rules", "handoff:h1"), b.sources.map { it.key })
+        assertEquals(listOf("doc:big.md"), b.omitted.map { it.key })
+        assertEquals(TokenEstimate.of("текст ".repeat(2_000)), b.omitted.single().estimatedTokens)
+        val prompt = PromptRenderer.render(b)
+        assertTrue("# Не вошло в контекст" in prompt && "doc:big.md" in prompt, prompt)
+        assertFalse("текст текст" in prompt)
+    }
+
+    @Test
+    fun criticalOverBudgetIsRefusalNotSilentCut() {
+        val sources = listOf(src("rules", SourceLevel.GLOBAL, "правило ".repeat(2_000), Origin.ORCHESTRATOR))
+        val out = budgeted(sources, ContextPolicy.budgeted(1_000))
+        assertIs<Outcome.Failure>(out)
+        assertTrue(out.diagnostics.any { it.code == DiagCode.CONTEXT_BUDGET_EXCEEDED && "rules" in it.message }, out.diagnostics.toString())
+    }
+
+    @Test
+    fun sameTextUnderTwoKeysIsIncludedOnce() {
+        val sources = listOf(src("doc:a.md", SourceLevel.DOCUMENT, "одно и то же"), src("doc:b.md", SourceLevel.DOCUMENT, "одно и то же"))
+        val out = budgeted(sources, ContextPolicy.budgeted(10_000))
+        val b = assertIs<Outcome.Success<ContextBundle>>(out).value
+        assertEquals(listOf("doc:a.md"), b.sources.map { it.key })
+        assertEquals("doc:a.md", b.omitted.single().sameAs)
+        assertTrue(out.diagnostics.any { it.code == DiagCode.CONTEXT_DEDUPLICATED })
+    }
+
+    @Test
+    fun resumedSessionGetsOnlyChangedSources() {
+        val sources = listOf(src("rules", SourceLevel.GLOBAL, "правило ".repeat(100), Origin.ORCHESTRATOR), src("doc:a.md", SourceLevel.DOCUMENT, "описание ".repeat(300)))
+        val b = assertIs<Outcome.Success<ContextBundle>>(budgeted(sources, ContextPolicy.budgeted(10_000))).value
+        val full = PromptRenderer.compose(b)
+        val delta = PromptRenderer.compose(b, mapOf("doc:a.md" to b.sources.first { it.key == "doc:a.md" }.hash, "rules" to Hashing.sha256("другое")))
+        assertEquals(0, full.reused)
+        assertEquals(1, delta.reused)
+        assertTrue(delta.estimatedTokens < full.estimatedTokens / 2, "${delta.estimatedTokens} против ${full.estimatedTokens}")
+        assertEquals(TokenEstimate.of("описание ".repeat(300)), delta.reusedTokens)
+        assertTrue("# Без изменений с прошлого хода этой сессии" in delta.text && "doc:a.md" in delta.text)
+        // Источник с другим хешем — шлётся целиком.
+        assertTrue("правило правило" in delta.text)
+    }
+
+    @Test
+    fun formatV3KeepsOmittedAndV2StillReads() {
+        val sources = listOf(src("doc:a.md", SourceLevel.DOCUMENT, "a"), src("doc:b.md", SourceLevel.DOCUMENT, "b ".repeat(3_000)))
+        val b = assertIs<Outcome.Success<ContextBundle>>(budgeted(sources, ContextPolicy.budgeted(500))).value
+        fun parse(o: JsonObject) = com.dpsmpx.dpai.core.serialization.JsonParser().parse(com.dpsmpx.dpai.core.serialization.CanonicalJson.write(o)).valueOrNull() as JsonObject
+        assertEquals(b, ContextCodec.readContext(parse(b.toJson())).valueOrNull())
+        val bare = b.copy(omitted = emptyList())
+        val v2 = JsonObject(
+            bare.toJson().fields.filterKeys { it != "omitted" } +
+                mapOf("version" to com.dpsmpx.dpai.core.serialization.JsonNumber.of(2), "hash" to com.dpsmpx.dpai.core.serialization.JsonString(bare.hashAt(2).toString())),
+        )
+        assertEquals(bare, ContextCodec.readContext(parse(v2)).valueOrNull())
+    }
+
+    @Test
+    fun tokenEstimateIsConservativeForLatinAndCyrillic() {
+        assertEquals(100, TokenEstimate.of("a".repeat(300)))
+        assertEquals(4, TokenEstimate.of("привет"))
+        assertEquals(2, TokenEstimate.of("\uD83D\uDE00"))
+        assertEquals(0, TokenEstimate.of(""))
+    }
 }

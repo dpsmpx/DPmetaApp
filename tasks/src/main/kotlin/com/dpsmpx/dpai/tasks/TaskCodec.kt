@@ -27,8 +27,12 @@ import kotlin.time.Duration.Companion.milliseconds
  */
 object TaskCodec {
     const val STATE_FORMAT = "dpai.tasks-state"
-    /** v2 — заявленная область задачи (`scope`); v1 читается, область неизвестна. */
-    const val STATE_VERSION = 2
+    /**
+     * v3 — класс задачи, модель и усилие в политике (D-40; пишутся, только
+     * если заданы); v2 — заявленная область задачи (`scope`); v1 читается,
+     * область неизвестна.
+     */
+    const val STATE_VERSION = 3
 
     fun type(e: TaskEvent): EventType = when (e) {
         is TaskEvent.Created -> EventType.TASK_CREATED
@@ -188,6 +192,10 @@ object TaskCodec {
         "maxRetries" to JsonNumber.of(p.maxRetries), "retryBackoffMs" to JsonNumber.of(p.retryBackoff.inWholeMilliseconds),
         "maxContinuations" to JsonNumber.of(p.maxContinuations), "turnTimeoutMs" to JsonNumber.of(p.turnTimeout.inWholeMilliseconds),
         "maxBudgetUsdCents" to (p.maxBudgetUsdCents?.let { JsonNumber.of(it) } ?: JsonNull),
+        // D-40: пишется, только если отлично от умолчания, — записи до D-40 читаются как прежде.
+        "taskClass" to (p.taskClass.takeIf { it != TaskClass.NORMAL_ENGINEERING }?.let { JsonString(it.name) } ?: JsonNull),
+        "model" to (p.model?.let(::JsonString) ?: JsonNull),
+        "effort" to (p.effort?.let(::JsonString) ?: JsonNull),
     )
 
     private fun readPolicy(f: JsonFields): TaskPolicy? {
@@ -196,9 +204,14 @@ object TaskCodec {
         val maxCont = f.int("maxContinuations")
         val timeout = f.long("turnTimeoutMs")
         val budget = f.optLong("maxBudgetUsdCents")
+        val taskClass = f.optString("taskClass")?.let { c ->
+            TaskClass.entries.firstOrNull { it.name == c } ?: null.also { f.diagnostics.error(DiagCode.VALUE_INVALID, "неизвестный класс задачи", "${f.path}.taskClass") }
+        } ?: TaskClass.NORMAL_ENGINEERING
+        val model = f.optString("model")
+        val effort = f.optString("effort")
         f.finish()
         if (maxRetries == null || backoff == null || maxCont == null || timeout == null) return null
-        return runCatching { TaskPolicy(maxRetries, backoff.milliseconds, maxCont, timeout.milliseconds, budget) }.getOrNull()
+        return runCatching { TaskPolicy(maxRetries, backoff.milliseconds, maxCont, timeout.milliseconds, budget, taskClass, model, effort) }.getOrNull()
             ?: null.also { f.diagnostics.error(DiagCode.VALUE_INVALID, "политика задачи недопустима", f.path) }
     }
 

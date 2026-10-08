@@ -76,6 +76,13 @@ Property-тесты — свои, без сторонних библиотек (
 цепочку «агент → канал → разбор → итог хода» (`MockRunnerTest`). Ядро
 тестируется на нём целиком.
 
+Слой экономии D-40 — `EfficiencyTest` (контур с настоящим Git: выжимка
+проверки, продолжение той же сессии, маршрут, повтор постановки, бюджет)
+и `EfficiencyBenchmarkTest`: восемь сценариев «до» (`EfficiencyPolicy.LEGACY`)
+и «после» с моделью стоимости поверх `MockRunner` — симуляция, отчёт —
+`build/audits/efficiency/benchmark.md` и ход за ходом —
+`build/audits/efficiency/benchmark-turns.md` (`docs/EFFICIENCY.md`, §12).
+
 ## 6. Корпус и fuzz
 
 Образцы вывода Claude Code CLI (stream-json) — `tests/data/claude-stream/`:

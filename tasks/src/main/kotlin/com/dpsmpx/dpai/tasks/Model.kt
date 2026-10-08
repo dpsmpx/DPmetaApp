@@ -13,9 +13,21 @@ import kotlin.time.Duration.Companion.minutes
 enum class Priority { CRITICAL, HIGH, NORMAL, LOW, BACKGROUND }
 
 /**
+ * Класс задачи (D-40, п. 5; `docs/EFFICIENCY.md`, §7): по нему выбираются
+ * модель, усилие и право на субагентов. По умолчанию — `NORMAL_ENGINEERING`
+ * с моделью аккаунта, как до D-40.
+ */
+enum class TaskClass {
+    TRIVIAL, CLASSIFICATION, EXTRACTION, SUMMARIZATION, REPOSITORY_RECON,
+    NORMAL_ENGINEERING, COMPLEX_DEBUGGING, ARCHITECTURE, CRITICAL_REVIEW,
+}
+
+/**
  * Политика задачи (ТЗ, §20, §86): повторы, пауза перед повтором,
  * продолжения, длительность хода, бюджет. Только целые и явные пороги
- * (`docs/SCHEDULER.md`, §3).
+ * (`docs/SCHEDULER.md`, §3). [taskClass] — маршрут модели (D-40); [model]
+ * и [effort] — явный выбор автора: сильнее маршрута, без эскалации и
+ * удешевления.
  */
 data class TaskPolicy(
     val maxRetries: Int = 3,
@@ -23,12 +35,22 @@ data class TaskPolicy(
     val maxContinuations: Int = 10,
     val turnTimeout: Duration = 2.hours,
     val maxBudgetUsdCents: Long? = null,
+    val taskClass: TaskClass = TaskClass.NORMAL_ENGINEERING,
+    val model: String? = null,
+    val effort: String? = null,
 ) {
     init {
+        require(model == null || NAME.matches(model)) { "модель — 1…100 знаков: буквы, цифры, «.», «-», «_», «[», «]»" }
+        require(effort == null || NAME.matches(effort)) { "усилие — 1…100 знаков: буквы, цифры, «.», «-», «_»" }
         require(maxRetries in 0..100) { "maxRetries — 0…100" }
         require(maxContinuations in 0..1000) { "maxContinuations — 0…1000" }
         require(!retryBackoff.isNegative() && turnTimeout.isPositive()) { "пауза ≥ 0, тайм-аут > 0" }
         require(maxBudgetUsdCents == null || maxBudgetUsdCents > 0) { "бюджет — положительный" }
+    }
+
+    private companion object {
+        /** Имя модели или уровня усилия — аргумент командной строки: без пробелов и управляющих знаков. */
+        val NAME = Regex("[A-Za-z0-9._\\[\\]-]{1,100}")
     }
 }
 

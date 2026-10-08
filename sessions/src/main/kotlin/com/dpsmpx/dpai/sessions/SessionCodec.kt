@@ -23,12 +23,13 @@ import com.dpsmpx.dpai.core.state.SessionState
 
 /**
  * События сессий в конвертах `dpai.event` (поток — сессия) и состояние
- * сессий в снимке `dpai.sessions-state` v1 (`docs/DATA_MODEL.md`, §4).
+ * сессий в снимке `dpai.sessions-state` v2 (`docs/DATA_MODEL.md`, §4).
  * Чтение строгое: неизвестное поле, чужой идентификатор — ошибка (D-09).
  */
 object SessionCodec {
     const val STATE_FORMAT = "dpai.sessions-state"
-    const val STATE_VERSION = 1
+    /** v2: расход сессии `usage` (D-40); v1 читается — расхода в нём нет. */
+    const val STATE_VERSION = 2
 
     fun type(e: SessionEvent): EventType = when (e) {
         is SessionEvent.Created -> EventType.SESSION_CREATED
@@ -38,6 +39,8 @@ object SessionCodec {
         is SessionEvent.TurnFinished -> EventType.SESSION_TURN_FINISHED
         is SessionEvent.Output -> EventType.SESSION_OUTPUT
         is SessionEvent.ToolStarted -> EventType.SESSION_TOOL_STARTED
+        is SessionEvent.PromptPrepared -> EventType.SESSION_PROMPT_PREPARED
+        is SessionEvent.TurnUsage -> EventType.SESSION_TURN_USAGE
     }
 
     fun stream(e: SessionEvent): StreamRef = StreamRef.of(e.session)
@@ -60,6 +63,8 @@ object SessionCodec {
         )
         is SessionEvent.Output -> obj("session" to id(e.session), "text" to JsonString(e.text))
         is SessionEvent.ToolStarted -> obj("session" to id(e.session), "tool" to JsonString(e.tool))
+        is SessionEvent.PromptPrepared -> JsonObject(linkedMapOf<String, JsonValue>("session" to id(e.session)).apply { putAll(UsageJson.prompt(e.facts).fields) })
+        is SessionEvent.TurnUsage -> obj("session" to id(e.session), "turn" to JsonNumber.of(e.turn), "usage" to UsageJson.turn(e.usage))
     }
 
     /** Событие сессии из типа, времени и полезной нагрузки; чужой тип — `null`. */
@@ -121,6 +126,17 @@ object SessionCodec {
                 val tool = f.string("tool")
                 if (s != null && tool != null) SessionEvent.ToolStarted(s, tool, at) else null
             }
+            EventType.SESSION_PROMPT_PREPARED -> {
+                val s = session()
+                val facts = UsageJson.readPrompt(f)
+                if (s != null && facts != null) SessionEvent.PromptPrepared(s, facts, at) else null
+            }
+            EventType.SESSION_TURN_USAGE -> {
+                val s = session()
+                val turn = f.int("turn")
+                val usage = f.obj("usage")?.let(UsageJson::readTurn)
+                if (s != null && turn != null && usage != null) SessionEvent.TurnUsage(s, turn, usage, at) else null
+            }
             else -> return null
         }
         f.finish()
@@ -148,12 +164,13 @@ object SessionCodec {
         "lastHeartbeat" to (r.lastHeartbeat?.let { JsonNumber.of(it.epochMillis) } ?: JsonNull), "turn" to JsonNumber.of(r.turn),
         "lastReason" to (r.lastReason?.let { JsonString(it.name) } ?: JsonNull),
         "agentSequence" to JsonNumber.of(r.agentSequence),
+        "usage" to (r.usage.takeIf { it != UsageTotals.EMPTY }?.let(UsageJson::totals) ?: JsonNull),
     )
 
     fun decodeState(json: JsonObject): Outcome<SessionsState> {
         val d = DiagnosticCollector()
         val f = JsonFields(json, "$", d)
-        FormatHeader.read(f, STATE_FORMAT, STATE_VERSION..STATE_VERSION, d) ?: return Outcome.Failure(d.all)
+        FormatHeader.read(f, STATE_FORMAT, 1..STATE_VERSION, d) ?: return Outcome.Failure(d.all)
         val records = f.array("sessions")?.items.orEmpty().mapIndexedNotNull { i, item ->
             val o = item as? JsonObject ?: return@mapIndexedNotNull null.also { d.error(DiagCode.FIELD_TYPE, "ожидался объект", "$.sessions[$i]") }
             val r = JsonFields(o, "$.sessions[$i]", d)
@@ -175,6 +192,7 @@ object SessionCodec {
                     turn = r.int("turn")!!,
                     lastReason = r.optString("lastReason")?.let { n -> DiagCode.entries.first { it.name == n } },
                     agentSequence = r.long("agentSequence")!!,
+                    usage = r.optObj("usage")?.let { u -> UsageJson.readTotals(u) ?: error("расход не читается") } ?: UsageTotals.EMPTY,
                 )
             }.getOrNull()
             r.finish()

@@ -4,6 +4,18 @@ import com.dpsmpx.dpai.accounts.AccountEvent
 import com.dpsmpx.dpai.accounts.Accounts
 import com.dpsmpx.dpai.accounts.AccountsState
 import com.dpsmpx.dpai.contexts.ContextAssembler
+import com.dpsmpx.dpai.contexts.ContextPolicy
+import com.dpsmpx.dpai.contexts.SourceLevel
+import com.dpsmpx.dpai.orchestrator.efficiency.BudgetMode
+import com.dpsmpx.dpai.orchestrator.efficiency.Continuation
+import com.dpsmpx.dpai.orchestrator.efficiency.EfficiencyPolicy
+import com.dpsmpx.dpai.orchestrator.efficiency.ModelRouter
+import com.dpsmpx.dpai.security.Origin
+import com.dpsmpx.dpai.security.Sensitivity
+import com.dpsmpx.dpai.sessions.PromptFacts
+import com.dpsmpx.dpai.sessions.PromptMode
+import com.dpsmpx.dpai.tasks.TaskPolicy
+import com.dpsmpx.dpai.verification.VerificationReport
 import com.dpsmpx.dpai.contexts.ContextBundle
 import com.dpsmpx.dpai.contexts.ContextSource
 import com.dpsmpx.dpai.contexts.Handoff
@@ -138,6 +150,8 @@ class Orchestrator(
      * шло с тем же контекстом и следующим действием. `null` — только в памяти.
      */
     private val documents: DocumentStore? = null,
+    /** Слой экономии контекста и токенов (D-40); [EfficiencyPolicy.LEGACY] — как до него. */
+    private val efficiency: EfficiencyPolicy = EfficiencyPolicy.DEFAULT,
 ) {
     private val recorder = EventRecorder(ids, clock)
     private var lastSnapshotAt = 0L
@@ -146,6 +160,7 @@ class Orchestrator(
     private val tasksLogic = Tasks()
     private val driver = SessionDriver(sessionsLogic, runner, clock)
     private val completion = CompletionFlow(tasksLogic, verifier, git, clock)
+    private val router = ModelRouter(efficiency.routing)
     val handoffs = Handoffs()
     private val overlap = OverlapPolicy()
     val approvals = ApprovalDesk()
@@ -162,6 +177,13 @@ class Orchestrator(
         private set
     private val treeOf = HashMap<TaskId, WorktreeId>()
     private val contextOf = HashMap<TaskId, ContextBundle>()
+    /** Выжимка проваленной проверки задачи — источник `TOOL` следующей попытки (D-40); восстанавливается из версии контекста. */
+    private val toolOf = HashMap<TaskId, ContextSource>()
+    /** Флаги, которых не знает Claude Code target (D-40): следующие ходы идут без них. */
+    private val unsupportedFlags = HashMap<ExecutionTargetId, MutableSet<String>>()
+
+    /** Версия контекста, ушедшая в последний ход задачи, — основа разницы при `--resume` (D-40). */
+    private val sentOf = HashMap<TaskId, ContextBundle>()
     /** Ожидающие и выполненные слияния — из журнала (`MergesProjection`). */
     var mergesState: MergesState = MergesState.EMPTY
         private set
@@ -204,7 +226,12 @@ class Orchestrator(
         for (t in tasks.tasks.values.filter { !it.terminal }) {
             store.read(docKey("context", t.id)).valueOrNull()?.let { d ->
                 when (val c = ContextCodec.readContext(d.content)) {
-                    is Outcome.Success -> contextOf[t.id] = c.value
+                    is Outcome.Success -> {
+                        contextOf[t.id] = c.value
+                        c.value.sources.firstOrNull { it.key == VERIFICATION_SOURCE }?.let { s ->
+                            toolOf[t.id] = ContextSource(s.key, s.level, config.project, s.sensitivity, s.origin, s.content)
+                        }
+                    }
                     is Outcome.Failure -> problems += Diagnostic.of(DiagCode.STORAGE_CORRUPTED, "контекст задачи ${t.id} не читается", causes = c.errors)
                 }
             }
@@ -324,6 +351,8 @@ class Orchestrator(
             if (tasks.tasks[id]?.terminal == true) {
                 if (documents != null) contextOf.remove(id)
                 lastOverlap.remove(id)
+                toolOf.remove(id)
+                sentOf.remove(id)
             }
         }
     }
@@ -346,9 +375,16 @@ class Orchestrator(
         dependencies: Set<TaskId> = emptySet(),
         capabilities: Set<String> = emptySet(),
         scope: Set<String>? = null,
+        policy: TaskPolicy = TaskPolicy(),
     ): Outcome<TaskId> {
+        // Та же задача уже в очереди — второй ход с той же работой (D-40; аудит, W10).
+        if (efficiency.rejectDuplicateTasks) {
+            tasksLogic.duplicateOf(tasks, title, objective)?.let { other ->
+                return Outcome.failure(DiagCode.TASK_DUPLICATE, "та же задача уже в очереди: $other", "task $other")
+            }
+        }
         val id = ids.next(IdKinds.TASK)
-        val created = tasksLogic.create(tasks, id, title, objective, priority, clock.now(), dependencies, capabilities)
+        val created = tasksLogic.create(tasks, id, title, objective, priority, clock.now(), dependencies, capabilities, policy)
         if (created is Outcome.Failure) return created
         val withScope = scope?.let { s ->
             when (val r = Tasks.setScope(Tasks.applyAll(tasks, created.valueOrNull()!!), id, s, clock.now())) {
@@ -410,10 +446,26 @@ class Orchestrator(
         val lease = accountsLogic.lease(accounts, session, task, clock.now(), target)
         if (lease is Outcome.Failure) return // свободного слота нет: задача ждёт следующего такта
         val slot = lease.valueOrNull()!!.slot
-        // Продолжение — прерванная сессия той же задачи: та же сессия провайдера.
-        val previous = sessions.sessions.values.filter { it.task == task }.maxByOrNull { it.createdAt.epochMillis * 1000 + it.turn }
-        val continues = previous?.takeIf { it.state == SessionState.CANCELLED && it.lastReason == DiagCode.SESSION_HANDED_OFF }
-        val provider = continues?.provider ?: ProviderSessionId.newUuid(random)
+        val budgetMode = budgetMode(slot)
+        if (budgetMode == BudgetMode.FRUGAL && efficiency.budget.deferBelow?.let { t.priority.ordinal > it.ordinal } == true) {
+            // Подписка у предела (D-30): несрочное ждёт сброса окна (D-40, п. 5). Аренда не записана — снимать нечего.
+            notify("task:${task.value}:deferred", NotificationCategory.INFO, "Задача ждёт", "подписка у предела: приоритет ${t.priority} ждёт сброса окна")
+            return
+        }
+        // Продолжение — прерванная сессия той же задачи или сессия, чья работа не прошла проверку (D-40).
+        // Последняя сессия задачи: продолжение создаётся в ту же миллисекунду, что и handoff, — при равном
+        // времени решает id (монотонен), а не порядок обхода (разница при `--resume` теряла бы версию).
+        val previous = sessions.sessions.values.filter { it.task == task }
+            .maxWithOrNull(compareBy<com.dpsmpx.dpai.sessions.SessionRecord>({ it.createdAt.epochMillis }, { it.turn }, { it.id.value }))
+        val handoff = handoffs.latest(task)
+        val continues = previous?.takeIf {
+            (it.state == SessionState.CANCELLED && it.lastReason == DiagCode.SESSION_HANDED_OFF) ||
+                (efficiency.feedVerification && it.state == SessionState.COMPLETED && handoff?.session == it.id && handoff.reason == HandoffReason.VERIFICATION_FAILED)
+        }
+        val plan = Continuation.plan(
+            continues, handoff?.takeIf { it.session == continues?.id }, sessions, slot, target, efficiency.resume, efficiency.context.defaultWindow,
+        )
+        val provider = continues?.provider?.takeIf { plan.reuseProvider } ?: ProviderSessionId.newUuid(random)
         val attempt = sessions.sessions.values.count { it.task == task } + 1
         // Пачка 1 — до вызова target: аренда и сессия с id провайдера (сверка после сбоя узнаёт поток).
         batch {
@@ -422,12 +474,37 @@ class Orchestrator(
                 ?.also { commitSessions(it.events) }
         } ?: return releaseLease(session)
         val workDir = prepareWorktree(task, session) ?: return failLaunch(task, session, DiagCode.WORKTREE_MISSING)
-        val bundle = context(task, t.objective) ?: return failLaunch(task, session, DiagCode.VALUE_INVALID)
+        val window = sessions.sessions.values.filter { it.task == task }.mapNotNull { it.usage.contextWindow }.maxOrNull()
+        // Версия, которую видела продолжаемая сессия (а не последняя собранная); неизвестна — полный prompt.
+        val seen = if (plan.mode == PromptMode.DELTA) continues?.let { sentContext(task, it) } else null
+        val promptMode = if (plan.mode == PromptMode.DELTA && seen == null) PromptMode.FULL else plan.mode
+        val why = if (promptMode != plan.mode) "версия, которую видела сессия, неизвестна — полный prompt" else plan.why
+        val bundle = when (val c = context(task, t.objective, efficiency.context.policy(window, budgetMode))) {
+            is Outcome.Success -> c.value
+            is Outcome.Failure -> return contextFailed(task, session, c)
+        }
+        val composed = PromptRenderer.compose(bundle, seen?.sources?.associate { it.key to it.hash }.orEmpty())
+        sentOf[task] = bundle
+        val route = router.route(t, budgetMode)
         val budget = t.policy.maxBudgetUsdCents?.let { BigDecimal(it).movePointLeft(2) }
+        val unknown = unsupportedFlags[target].orEmpty()
         val request = ClaudeRequest(
-            PromptRenderer.render(bundle), permissionMode = ClaudeCodeCli.TURN_PERMISSION_MODE,
+            composed.text, model = route.model,
+            effort = route.effort.takeIf { "--effort" !in unknown },
+            fallbackModel = route.fallbackModel.takeIf { "--fallback-model" !in unknown },
+            shareSystemPromptCache = efficiency.shareSystemPromptCache && "--exclude-dynamic-system-prompt-sections" !in unknown,
+            permissionMode = ClaudeCodeCli.TURN_PERMISSION_MODE,
+            disallowedTools = if (route.subagents) emptyList() else listOf(ClaudeCodeCli.SUBAGENT_TOOL),
             workDir = workDir, timeout = t.policy.turnTimeout, maxBudgetUsd = budget,
         )
+        val facts = PromptFacts(
+            promptMode, composed.text.length.toLong(), composed.estimatedTokens, composed.sources, composed.omitted, composed.omittedTokens,
+            composed.reusedTokens, tag(bundle), t.policy.taskClass.name, route.model, route.effort, route.route, why,
+        )
+        commitSessions(listOf(SessionEvent.PromptPrepared(session, facts, clock.now())))
+        if (route.downgraded) {
+            notify("task:${task.value}:budget", NotificationCategory.WARNING, "Задача удешевлена", "подписка у предела: ${t.policy.taskClass} — ${route.model ?: "модель аккаунта"}, усилие ${route.effort ?: "по умолчанию"}")
+        }
         val step = ok(driver.launch(sessions, accounts, session, request), "сессия $session не запущена") ?: return failLaunch(task, session, DiagCode.SESSION_FAILED)
         // Пачка 2 — после вызова: состояние сессии, факты аккаунтов, задача в работе.
         batch {
@@ -441,9 +518,44 @@ class Orchestrator(
         if (after.state != SessionState.RUNNING && after.state != SessionState.STARTING) react(task, session, after.state)
     }
 
+    /** Метка версии контекста в `SESSION_PROMPT_PREPARED`: по ней узнаётся, что видела сессия. */
+    private fun tag(b: ContextBundle) = "${b.id.value}@v${b.version}"
+
+    /**
+     * Версия контекста, которую получила сессия [prev]: последняя посланная
+     * задачей или записанная в документе — если её метка совпала с меткой
+     * prompt сессии. Иначе `null`: что видела сессия, неизвестно.
+     */
+    private fun sentContext(task: TaskId, prev: com.dpsmpx.dpai.sessions.SessionRecord): ContextBundle? {
+        val want = prev.usage.lastPrompt?.context ?: return null
+        return sentOf[task]?.takeIf { tag(it) == want } ?: (contextOf[task] ?: storedContext(task, report = false))?.takeIf { tag(it) == want }
+    }
+
+    /** Режим бюджета (D-40, п. 5): подписка слота у предела — `FRUGAL`. */
+    private fun budgetMode(slot: com.dpsmpx.dpai.core.ids.AccountId): BudgetMode {
+        if (!efficiency.budget.enabled) return BudgetMode.NORMAL
+        val sub = accounts.slots[slot]?.subscriptionId?.let { accounts.subscriptions[it] } ?: return BudgetMode.NORMAL
+        return if (sub.nearAt(clock.now())) BudgetMode.FRUGAL else BudgetMode.NORMAL
+    }
+
+    /**
+     * Контекст не собрался. Критичное не влезает в бюджет — задача
+     * `BLOCKED` с уведомлением: повтор того же отказ не изменит (D-40);
+     * иначе — как прежде, запуск не идёт.
+     */
+    private fun contextFailed(task: TaskId, session: SessionId, failure: Outcome.Failure) {
+        problems += Diagnostic.of(DiagCode.INTERNAL_ERROR, "контекст задачи $task не собран", causes = failure.errors)
+        if (failure.errors.none { it.code == DiagCode.CONTEXT_BUDGET_EXCEEDED }) return failLaunch(task, session, DiagCode.VALUE_INVALID)
+        failLaunch(task, session, DiagCode.CONTEXT_BUDGET_EXCEEDED)
+        commitTasks(tasksLogic.move(tasks, task, TaskState.BLOCKED, clock.now(), DiagCode.CONTEXT_BUDGET_EXCEEDED).valueOrNull().orEmpty())
+        notify("task:${task.value}:blocked", NotificationCategory.BLOCKED, "Задача остановлена", "правила или требования задачи не влезают в бюджет контекста")
+    }
+
     private fun failLaunch(task: TaskId, session: SessionId, code: DiagCode) {
         commitSessions(sessionsLogic.transition(sessions, session, SessionState.CANCELLED, clock.now(), code).valueOrNull().orEmpty())
         releaseLease(session)
+        // Дерево могло быть уже захвачено этой сессией: завершённая сессия его не держит (инвариант worktree-owner).
+        releaseTree(task, session)
         problems += Diagnostic.error(code, "запуск задачи $task не удался", "task $task")
     }
 
@@ -467,25 +579,28 @@ class Orchestrator(
         return worktrees.worktrees.getValue(tree).path
     }
 
-    /** Контекст хода; `null` — не собрался (причина — в [problems]): запуск не идёт, а не падает посреди такта. */
-    private fun context(task: TaskId, objective: String): ContextBundle? {
+    /** Контекст хода (`docs/CONTEXT_MODEL.md`, §2; `docs/EFFICIENCY.md`, §3): источники проекта, handoff, итог проверки. */
+    private fun context(task: TaskId, objective: String, policy: ContextPolicy): Outcome<ContextBundle> {
         val previous = contextOf[task] ?: storedContext(task)
         val handoff = handoffs.latest(task)
-        val sources = config.sources(task) + listOfNotNull(handoff?.asSource())
-        val bundle = ok(
-            ContextAssembler.assemble(
-                previous?.id ?: ids.next(IdKinds.CONTEXT), task, config.project, objective, handoff?.nextAction, sources, clock.now(), previous,
-            ),
-            "контекст задачи $task не собран",
-        ) ?: return null
+        val sources = config.sources(task) + listOfNotNull(environment(), handoff?.asSource(), toolOf[task])
+        val out = ContextAssembler.assemble(
+            previous?.id ?: ids.next(IdKinds.CONTEXT), task, config.project, objective, handoff?.nextAction, sources, clock.now(), previous, policy,
+        )
+        val bundle = out.valueOrNull() ?: return out
         if (contextOf[task] !== bundle) saveTaskDocument("context", task, bundle.toJson())
         contextOf[task] = bundle
-        return bundle
+        return out
     }
 
     private fun poll(session: SessionId) {
         val before = sessions.sessions.getValue(session).state
         val step = driver.poll(sessions, session).valueOrNull() ?: return
+        if (step.unsupportedFlags.isNotEmpty()) {
+            val target = sessions.sessions.getValue(session).target
+            unsupportedFlags.getOrPut(target) { linkedSetOf() } += step.unsupportedFlags
+            problems += Diagnostic.warning(DiagCode.CLAUDE_FLAG_UNSUPPORTED, "Claude Code на target не знает ${step.unsupportedFlags.joinToString()}: дальше без них", "target $target")
+        }
         batch {
             commitSessions(step.events)
             applyFacts(step.facts)
@@ -528,8 +643,77 @@ class Orchestrator(
                 releaseTree(task, session)
                 notify("task:${task.value}:unverified", NotificationCategory.WARNING, "Задача без проверки", "решите: проверить вручную или записать исключение")
             }
-            else -> releaseTree(task, session) // READY: проверка не прошла — следующий исполнитель с тем же деревом
+            else -> {
+                // READY: проверка не прошла — следующий исполнитель с тем же деревом; что упало — ему (D-40).
+                if (efficiency.feedVerification) verificationFailed(task, session, flow.report, path)
+                releaseTree(task, session)
+            }
         }
+    }
+
+    /**
+     * Проверка не прошла (D-40, п. 3): выжимка — источник `TOOL` следующей
+     * попытки, handoff — что упало, что изменено, что делать; версия
+     * контекста записывается сразу — перезапуск между попытками выжимку не
+     * теряет. Следующая попытка продолжает ту же сессию провайдера, если
+     * это разумно (`Continuation`).
+     */
+    private fun verificationFailed(task: TaskId, session: SessionId, report: VerificationReport, path: String) {
+        val digest = report.failureDigest() ?: return
+        toolOf[task] = ContextSource(VERIFICATION_SOURCE, SourceLevel.TOOL, config.project, Sensitivity.INTERNAL, Origin.REPOSITORY, digest)
+        val failed = report.steps.filter { it.required && it.result == com.dpsmpx.dpai.verification.StepResult.FAILED }
+        val passed = report.steps.filter { it.result == com.dpsmpx.dpai.verification.StepResult.PASSED }
+        val bundle = contextOf[task]
+        val handoff = Handoff(
+            id = ids.next(IdKinds.HANDOFF),
+            key = "${session.value}:verification",
+            reason = HandoffReason.VERIFICATION_FAILED,
+            session = session,
+            task = task,
+            project = config.project,
+            context = bundle?.id ?: ids.next(IdKinds.CONTEXT),
+            contextHash = bundle?.hash ?: com.dpsmpx.dpai.core.hashing.Hashing.sha256(""),
+            state = "ход заявил «готово», проверка ${report.level} не прошла",
+            completed = emptyList(), verified = passed.map { "шаг ${it.name}" },
+            failed = failed.map { "шаг ${it.name}: код ${it.exitCode ?: "?"}" },
+            warnings = emptyList(), openProblems = emptyList(), currentAction = null,
+            nextAction = "исправить то, что не прошло в проверке (выжимка — источник $VERIFICATION_SOURCE), и снова проверить",
+            modifiedFiles = changedFiles(path), commit = null, branch = treeOf[task]?.let { worktrees.worktrees[it]?.branch },
+            workspace = treeOf[task]?.let { worktrees.worktrees[it]?.path }, createdAt = clock.now(),
+        )
+        handoffs.create(handoff)
+        saveTaskDocument("handoff", task, handoff.toJson())
+        context(task, tasks.tasks.getValue(task).objective, efficiency.context.policy(null))
+    }
+
+    /**
+     * Что среда делает после хода сама (D-40, п. 1; `docs/EFFICIENCY.md`,
+     * §1): модель принимает решения, а механическую работу — проверку,
+     * список изменений, коммит, handoff — делает оркестратор. Источник
+     * одинаков для всех задач проекта — устойчивое начало prompt.
+     */
+    private fun environment(): ContextSource? {
+        if (!efficiency.environmentFacts) return null
+        val steps = config.profile?.levels?.get(config.level).orEmpty()
+        val text = buildString {
+            appendLine("После хода оркестратор сам:")
+            if (steps.isNotEmpty()) {
+                appendLine("- запустит проверку (${config.level}): ${steps.joinToString("; ") { "${it.name} — `${it.command.joinToString(" ")}`" }};")
+                appendLine("  не прошла — следующий ход получит выжимку того, что упало;")
+            }
+            if (config.repository != null) appendLine("- узнает изменённые файлы из `git status` и закоммитит их после проверки;")
+            appendLine("- сохранит handoff, если ход прервётся.")
+            appendLine("Поэтому полный прогон проверки ради подтверждения и коммит не нужны: запускай то, что нужно для решения.")
+            append("Итог хода — коротко: что сделано, что нет и почему.")
+        }
+        return ContextSource(ENVIRONMENT_SOURCE, SourceLevel.PROJECT, config.project, Sensitivity.INTERNAL, Origin.ORCHESTRATOR, text)
+    }
+
+    /** Изменённые и новые файлы рабочего дерева — факт `git status`, а не заявление хода (D-23). */
+    private fun changedFiles(path: String): List<String> {
+        if (!efficiency.enrichHandoff) return emptyList()
+        val st = git?.status(path)?.valueOrNull() ?: return emptyList()
+        return (st.changed + st.untracked).distinct().sorted().take(MAX_HANDOFF_FILES)
     }
 
     private fun commitWork(task: TaskId, session: SessionId, path: String) {
@@ -585,7 +769,11 @@ class Orchestrator(
         val handoff = Handoff(
             id = ids.next(IdKinds.HANDOFF),
             key = "${session.value}:handoff",
-            reason = if (s.lastReason == DiagCode.CLAUDE_RATE_LIMITED) HandoffReason.ACCOUNT_EXHAUSTED else HandoffReason.NEAR_LIMIT,
+            reason = when (s.lastReason) {
+                DiagCode.CLAUDE_RATE_LIMITED -> HandoffReason.ACCOUNT_EXHAUSTED
+                DiagCode.CLAUDE_CONTEXT_OVERFLOW -> if (efficiency.resume.enabled) HandoffReason.CONTEXT_OVERFLOW else HandoffReason.NEAR_LIMIT
+                else -> HandoffReason.NEAR_LIMIT
+            },
             session = session,
             task = task,
             project = config.project,
@@ -595,7 +783,8 @@ class Orchestrator(
             completed = emptyList(), verified = emptyList(), failed = emptyList(),
             warnings = listOfNotNull(s.lastReason?.name), openProblems = emptyList(), currentAction = null,
             nextAction = "продолжить с места остановки в той же сессии",
-            modifiedFiles = emptyList(), commit = null, branch = treeOf[task]?.let { worktrees.worktrees[it]?.branch },
+            modifiedFiles = treeOf[task]?.let { worktrees.worktrees[it]?.path }?.let(::changedFiles).orEmpty(),
+            commit = null, branch = treeOf[task]?.let { worktrees.worktrees[it]?.branch },
             workspace = treeOf[task]?.let { worktrees.worktrees[it]?.path }, createdAt = clock.now(),
         )
         handoffs.create(handoff)
@@ -681,6 +870,9 @@ class Orchestrator(
     /** Последняя версия контекста задачи — что видел Claude в последнем ходе. */
     fun lastContext(task: TaskId): ContextBundle? = contextOf[task] ?: storedContext(task, report = false)
 
+    /** Отчёт расхода (D-40; `docs/EFFICIENCY.md`, §9). */
+    fun usage(): com.dpsmpx.dpai.monitoring.UsageReport = com.dpsmpx.dpai.monitoring.UsageReport.build(sessions, tasks)
+
     fun dashboard(): DashboardView =
         Dashboard.build(sessions, tasks, accounts, emptyMap(), Measure.observed(approvals.pending()), sessionsLogic, clock.now())
 
@@ -688,6 +880,15 @@ class Orchestrator(
         /** Сессии, которые не опрашиваются: ждут человека или сверки. */
         /** Ветка дерева задачи: по ней дерево узнаётся после перезапуска. */
         private const val TASK_BRANCH = "task/"
+
+        /** Ключ источника «что среда делает сама» (D-40). */
+        const val ENVIRONMENT_SOURCE = "orchestrator:environment"
+
+        /** Ключ источника с выжимкой проваленной проверки (D-40). */
+        const val VERIFICATION_SOURCE = "tool:verification"
+
+        /** Изменённых файлов в handoff — не больше: список, а не дамп рабочего дерева. */
+        private const val MAX_HANDOFF_FILES = 200
 
         private val WAIT_STATES = setOf(SessionState.PAUSED, SessionState.BLOCKED, SessionState.RECOVERY_PENDING)
     }

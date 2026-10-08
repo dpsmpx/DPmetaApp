@@ -118,6 +118,56 @@ class ClaudeStreamTest {
     }
 
     @Test
+    fun usageOfRecordedTurnIsReadInFull() {
+        // D-40, п. 1: расход хода — со слов провайдера, всё, что есть в итоге (Claude Code 2.1.291).
+        val u = turn("success-structured.jsonl").usage
+        assertEquals(Measure.observed(10L), u.inputTokens)
+        assertEquals(Measure.observed(196L), u.outputTokens)
+        assertEquals(Measure.observed(0L), u.cacheReadTokens)
+        assertEquals(Measure.observed(9844L), u.cacheCreationTokens)
+        assertEquals(Measure.observed(139L), u.thinkingTokens)
+        // Контекст в конце хода — вход последнего вызова API с кешем.
+        assertEquals(Measure.observed(9854L), u.contextTokens)
+        assertEquals(Measure.observed(1L), u.apiCalls)
+        assertEquals(Measure.observed(2L), u.numTurns)
+        assertEquals(Measure.observed(0L), u.subagents)
+        assertEquals(listOf("claude-haiku-4-5-20251001"), u.models.map { it.model })
+        assertEquals(200_000L, u.contextWindow)
+        assertFalse(u.compacted)
+    }
+
+    @Test
+    fun turnWithoutResultHasUnknownUsageNotZero() {
+        val a = ClaudeTurnAssembler(recorded)
+        corpus("success-structured.jsonl").dropLast(1).forEach { a.feed(it) }
+        val u = a.finish(null, ExitReason.TIMEOUT).usage
+        assertIs<Measure.Unknown>(u.inputTokens)
+        assertIs<Measure.Unknown>(u.contextTokens)
+    }
+
+    @Test
+    fun compactionInTurnIsNoted() {
+        // Событие сжатия истории — по описанию Agent SDK (образца нет): строка построена.
+        val a = ClaudeTurnAssembler(recorded)
+        val lines = corpus("success-structured.jsonl")
+        lines.dropLast(1).forEach { a.feed(it) }
+        a.feed("""{"type":"system","subtype":"compact_boundary","compact_metadata":{"trigger":"auto","pre_tokens":180000},"session_id":"${recorded.value}"}""")
+        a.feed(lines.last())
+        assertTrue(a.finish(0, ExitReason.EXITED).usage.compacted)
+    }
+
+    @Test
+    fun promptTooLongIsOverflowThatCanContinue() {
+        // Текст отказа API по размеру prompt (`invalid_request_error`); строка построена (D-40, п. 4).
+        val a = ClaudeTurnAssembler(recorded)
+        corpus("success-structured.jsonl").dropLast(1).forEach { a.feed(it) }
+        a.feed("""{"type":"result","subtype":"success","is_error":true,"result":"Prompt is too long: 213000 tokens > 200000 maximum","session_id":"${recorded.value}"}""")
+        val t = a.finish(1, ExitReason.EXITED)
+        assertTrue(DiagCode.CLAUDE_CONTEXT_OVERFLOW in t.codes(), t.diagnostics.toString())
+        assertEquals(TurnStatus.INCOMPLETE, t.status)
+    }
+
+    @Test
     fun textClaimWithoutResultIsNotCompletion() {
         // D-23: «готово» в тексте без итога потока — не завершение.
         val a = ClaudeTurnAssembler(recorded)

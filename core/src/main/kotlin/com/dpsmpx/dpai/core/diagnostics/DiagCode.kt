@@ -127,6 +127,10 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     CLAUDE_RESULT_ERROR(Category.EXECUTION, Severity.ERROR, Retryability.UNKNOWN),
     CLAUDE_BUDGET_EXCEEDED(Category.EXECUTION, Severity.ERROR, Retryability.NON_RETRYABLE),
     CLAUDE_MAX_TURNS(Category.EXECUTION, Severity.ERROR, Retryability.NON_RETRYABLE),
+    /** Контекст не влез в окно модели (D-40): продолжение — с меньшим, а не повтор того же. */
+    CLAUDE_CONTEXT_OVERFLOW(Category.EXECUTION, Severity.ERROR, Retryability.RETRYABLE),
+    /** Claude Code target не знает флаг хода: повтор — без него (D-40). */
+    CLAUDE_FLAG_UNSUPPORTED(Category.EXECUTION, Severity.ERROR, Retryability.RETRYABLE),
     CLAUDE_STREAM_MALFORMED(Category.FORMAT, Severity.WARNING, Retryability.NON_RETRYABLE),
     CLAUDE_STREAM_INCOMPLETE(Category.EXECUTION, Severity.ERROR, Retryability.UNKNOWN),
     CLAUDE_SESSION_MISMATCH(Category.INTEGRITY, Severity.ERROR, Retryability.NON_RETRYABLE),
@@ -151,6 +155,16 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     CONTEXT_SECRET_INCLUDED(Category.STATE, Severity.WARNING, Retryability.NON_RETRYABLE),
     CONTEXT_TRUNCATED(Category.STATE, Severity.WARNING, Retryability.NON_RETRYABLE),
     HANDOFF_ALREADY_EXISTS(Category.STATE, Severity.INFO, Retryability.NON_RETRYABLE),
+
+    // --- экономия контекста и токенов (D-40) ---
+    /** Критичный источник (правила, задача, handoff, итог проверки) не влез в бюджет: сборка — отказ, а не обрезка. */
+    CONTEXT_BUDGET_EXCEEDED(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
+    /** Тот же текст под вторым ключом — включён один раз, второй ключ ссылается на первый. */
+    CONTEXT_DEDUPLICATED(Category.STATE, Severity.INFO, Retryability.NON_RETRYABLE),
+    /** Режим бюджета удешевил маршрут задачи (только классы, где это допустимо). */
+    MODEL_DOWNGRADED_BY_BUDGET(Category.STATE, Severity.WARNING, Retryability.NON_RETRYABLE),
+    /** Та же цель уже стоит в очереди проекта: вторая задача не создаётся. */
+    TASK_DUPLICATE(Category.INPUT, Severity.ERROR, Retryability.NON_RETRYABLE),
 
     // --- одобрения, Git и рабочие деревья (этап 9) ---
     APPROVAL_REQUIRED(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
