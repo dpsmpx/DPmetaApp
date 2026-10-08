@@ -39,5 +39,8 @@
 - [x] Модуль `android` собирается и проходит lint в
       `tools/verify/run.sh full` (D-34); экраны строятся из `ui`
       (`ScreensTest`, `demoSystemShowsTwentyPlusSessions`).
+- [ ] Полный контроль процесса с экрана и командой `dpai` (D-42): задачи,
+      сессии (пауза, продолжение, остановка, сообщение в сессию), проверка,
+      слоты и targets; действие — событие, повтор — без второго действия.
 - [x] Сессия без событий дольше порога показывается `STALE`, а не
       `RUNNING`: `MonitoringTest`, `silentRunningSessionIsStaleNotRunning`.
