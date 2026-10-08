@@ -212,8 +212,7 @@ class RequestReceiver : BroadcastReceiver() {
 /** Применение ответа с любого канала (уведомление, окно, экран) и показ итога. */
 object Answers {
     fun apply(context: Context, id: String, uri: String, text: String?, label: String, channel: String): Outcome<*> {
-        val controller = Controller.get(context.filesDir, context.packageManager.getPackageInfo(context.packageName, 0).versionName)
-        val model = DemoModel.get(context.cacheDir, controller)
+        val model = DemoModel.get(context)
         val r = model.answer(uri, text, channel)
         when (r) {
             is Outcome.Success -> {

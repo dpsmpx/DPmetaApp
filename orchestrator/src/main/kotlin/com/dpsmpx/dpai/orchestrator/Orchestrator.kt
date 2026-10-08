@@ -110,6 +110,12 @@ import com.dpsmpx.dpai.notifications.RequestOption
 import com.dpsmpx.dpai.notifications.UserRequest
 import com.dpsmpx.dpai.notifications.UserRequests
 import com.dpsmpx.dpai.notifications.UserRequestsState
+import com.dpsmpx.dpai.orchestrator.commands.Command
+import com.dpsmpx.dpai.orchestrator.commands.CommandInbox
+import com.dpsmpx.dpai.orchestrator.commands.OperationRecord
+import com.dpsmpx.dpai.orchestrator.commands.OperationsProjection
+import com.dpsmpx.dpai.orchestrator.commands.OperationsState
+import com.dpsmpx.dpai.orchestrator.commands.operationEnvelopes
 import com.dpsmpx.dpai.orchestrator.requests.RequestPurpose
 import com.dpsmpx.dpai.orchestrator.requests.UserRequestsProjection
 import com.dpsmpx.dpai.orchestrator.requests.requestEnvelopes
@@ -178,6 +184,12 @@ class Orchestrator(
     private val efficiency: EfficiencyPolicy = EfficiencyPolicy.DEFAULT,
     /** Срок запроса человеку (D-44): не ответили — `EXPIRED`, предмет остаётся видным на экране. */
     val requestTtl: Duration = 24.hours,
+    /**
+     * Записанные в журнал события — наружу, после записи (D-43: строки
+     * журнала приложения через `EventLog`). Сбой получателя контур не
+     * останавливает.
+     */
+    private val onEvents: (List<EventEnvelope>) -> Unit = {},
 ) {
     private val recorder = EventRecorder(ids, clock)
     private var lastSnapshotAt = 0L
@@ -228,6 +240,13 @@ class Orchestrator(
     var requests: UserRequestsState = UserRequestsState.EMPTY
         private set
 
+    /** Исполненные команды с ключами идемпотентности (D-42) — из журнала. */
+    var operations: OperationsState = OperationsState.EMPTY
+        private set
+
+    /** Очередь команд (D-42, п. 1): кладёт любой поток, исполняет поток такта ([runCommands]). */
+    val inbox = CommandInbox()
+
     init {
         // Перезапуск (ТЗ, §54; D-24): состояние — из журнала. [initialAccounts] —
         // исходное состояние до журнала (его регистрация в журнал не пишется),
@@ -240,6 +259,7 @@ class Orchestrator(
             recorder.resumeFromLast(restore(StreamsProjection, emptyMap()))
             mergesState = restore(MergesProjection, MergesState.EMPTY)
             requests = restore(UserRequestsProjection, UserRequestsState.EMPTY)
+            operations = restore(OperationsProjection, OperationsState.EMPTY)
             // Неистёкшие запросы одобрения снова ждут ответа; истёкшие отвергнет сам ApprovalDesk.
             for (m in mergesState.pending.values) approvals.restore(m.approval, m.proposal, m.expiresAt)
             lastSnapshotAt = journal.position
@@ -322,6 +342,7 @@ class Orchestrator(
         save(StreamsProjection, recorder.lastSequences())
         save(MergesProjection, mergesState)
         save(UserRequestsProjection, requests)
+        save(OperationsProjection, operations)
         lastSnapshotAt = journal.position
     }
 
@@ -336,6 +357,11 @@ class Orchestrator(
         pending?.let { it += envs; return }
         val r = journal.appendAll(envs)
         check(r.isSuccess) { "журнал не принял пачку: ${r.diagnostics}" }
+        try {
+            onEvents(envs)
+        } catch (_: Exception) {
+            // Журнал приложения — наблюдение, а не состояние: его сбой контур не останавливает (D-43).
+        }
     }
 
     /**
@@ -440,15 +466,27 @@ class Orchestrator(
         return Outcome.success(id)
     }
 
-    /** Такт контура. */
+    /** Такт контура: команды — в начале и между вызовами target (D-42, п. 1). */
     fun tick() {
+        runCommands()
         commitTasks(tasksLogic.promote(tasks, clock.now()))
         val offers = targets.map { t ->
             val active = sessions.sessions.values.count { !it.terminal && it.target == t.id }
             Tasks.TargetOffer(t.id, t.capabilities, (t.maxSessions - active).coerceAtLeast(0))
         }
-        for (a in tasksLogic.plan(tasks, clock.now(), offers)) if (overlapAllows(a.task)) launch(a.task, a.target)
-        for (s in sessions.sessions.values.filter { it.state !in WAIT_STATES && !it.terminal }.map { it.id }.sorted()) poll(s)
+        for (a in tasksLogic.plan(tasks, clock.now(), offers)) {
+            runCommands()
+            // Команда могла снять задачу с очереди (отмена, ответ человека) — план уже не про неё.
+            if (tasks.tasks[a.task]?.state != TaskState.READY) continue
+            if (overlapAllows(a.task)) launch(a.task, a.target)
+        }
+        for (s in sessions.sessions.values.filter { it.state !in WAIT_STATES && !it.terminal }.map { it.id }.sorted()) {
+            runCommands()
+            val r = sessions.sessions[s] ?: continue
+            if (r.terminal || r.state in WAIT_STATES) continue
+            poll(s)
+        }
+        runCommands()
         settleRequests()
         // Придержанное пределом частоты — сводкой, когда предел позволяет (ТЗ, §36).
         notifications.flush(clock.now())?.let { posted += it }
@@ -927,6 +965,52 @@ class Orchestrator(
         for (q in orphans.questions) askRecovery(q)
         maybeSnapshot()
         return out
+    }
+
+    // ---- команды (D-42) ----
+
+    /** Положить команду в очередь; исполнит поток такта. Любой поток. */
+    fun submit(command: Command): java.util.concurrent.CompletableFuture<OperationResult<*>> = inbox.submit(command)
+
+    /**
+     * Исполнить пришедшие команды — только поток такта и только в
+     * безопасной точке: вне пачки, когда память совпадает с журналом.
+     */
+    fun runCommands(): Int = if (pending != null) 0 else inbox.drain(::execute)
+
+    /**
+     * Команда (D-06): с ключом — сначала по журналу ключей; уже была —
+     * записанный итог без второго действия (ТЗ, §5.4).
+     */
+    fun execute(command: Command): OperationResult<*> {
+        val key = command.key
+        val provenance = Provenance(Actor(ActorKind.USER, (command as? Command.AnswerRequest)?.by ?: "автор"))
+        if (key != null && !Command.KEY.matches(key)) {
+            return OperationResult.record(command.operation, provenance, ids, clock, Outcome.failure(DiagCode.VALUE_INVALID, "ключ команды — [A-Za-z0-9_.:-]{8,80}"))
+        }
+        key?.let { operations.byKey[it] }?.let { prior ->
+            val outcome: Outcome<String?> = if (prior.status == com.dpsmpx.dpai.core.operation.OperationStatus.FAILED) {
+                Outcome.failure(prior.code ?: DiagCode.INTERNAL_ERROR, "команда с этим ключом уже исполнена: отказ")
+            } else {
+                Outcome.success(prior.value)
+            }
+            return OperationResult.record(prior.operation, provenance, ids, clock, outcome)
+        }
+        val result: OperationResult<*> = when (command) {
+            is Command.AnswerRequest -> answer(command.uri, command.text, command.by, command.channel)
+            is Command.Delivered -> OperationResult.record(command.operation, provenance, ids, clock, delivered(command.request, command.channel))
+            is Command.Probe -> OperationResult.record(command.operation, provenance, ids, clock, probe(command.kind, command.ttl ?: requestTtl))
+            is Command.AddTask -> OperationResult.record(
+                command.operation, provenance, ids, clock, addTask(command.title, command.objective, command.priority, policy = command.policy),
+            )
+        }
+        if (key != null) {
+            val value = result.value?.let { v -> (v as? com.dpsmpx.dpai.core.ids.TypedId)?.value ?: v.toString() }
+            val rec = OperationRecord(key, command.operation, result.status, value, result.diagnostics.firstOrNull { it.isError }?.code, clock.now())
+            write(recorder.operationEnvelopes(listOf(rec)))
+            operations = OperationsProjection.applyRecord(operations, rec)
+        }
+        return result
     }
 
     // ---- запросы человеку (D-44) ----

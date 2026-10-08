@@ -288,6 +288,16 @@ target:     start ─► Detacher ─► supervise ─► процесс; выв
 поле ввода, окно поверх приложений `RequestOverlay`), ответ — тот же
 `answer` с любого канала.
 
+Команды (D-42, п. 1): `orchestrator.commands.Command` — действие
+человека или оболочки; `CommandInbox` — очередь с одним писателем:
+кладёт любой поток (`Orchestrator.submit`), исполняет поток такта
+(`runCommands`) в начале такта и между вызовами target, вне пачки.
+Ключ идемпотентности — `OperationsProjection` (`OPERATION_RECORDED`).
+Оболочка Android не держит замок на действие: команда исполняется тактом
+или, если такт не идёт, самим вызывающим; экран при занятом такте рисует
+последний опубликованный снимок. Журнал приложения (D-43) получает
+события контура через `Orchestrator(onEvents = …)` и `EventLog`.
+
 Восстановление (этап 13; `docs/RECOVERY.md`, §7): `orchestrator.recovery`
 — `Reconciler`, `OrphanScan`, `WorktreeProbe`.
 

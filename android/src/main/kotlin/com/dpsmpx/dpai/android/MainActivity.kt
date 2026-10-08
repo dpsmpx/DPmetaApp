@@ -63,13 +63,15 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         if (savedInstanceState == null) take(intent)
         CrashRecord.install(filesDir)
+        CrashRecord.onFatal = { text -> AppLogs.get(this).fatal("падение", com.dpsmpx.dpai.core.diagnostics.Redactor.STANDARD.redact(text)) }
         enableEdgeToEdge()
         // Android 13+: без разрешения уведомления не показываются; отказ — не ошибка, сводка видна в приложении.
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             registerForActivityResult(ActivityResultContracts.RequestPermission()) {}.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
         val controller = Controller.get(filesDir, packageManager.getPackageInfo(packageName, 0).versionName)
-        val model = DemoModel.get(cacheDir, controller)
+        val model = DemoModel.get(this)
+        AppLogs.get(this).step("экран открыт")
         setContent {
             DpaiTheme {
                 DpaiApp(model, controller, incoming.value) { incoming.value = Incoming() }

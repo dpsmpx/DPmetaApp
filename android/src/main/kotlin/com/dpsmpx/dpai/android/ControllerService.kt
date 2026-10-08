@@ -11,6 +11,8 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import com.dpsmpx.dpai.core.clock.Clock
+import com.dpsmpx.dpai.orchestrator.log.TickMeter
 import com.dpsmpx.dpai.storage.vfs.NioVfs
 import java.io.File
 import java.util.concurrent.Executors
@@ -73,26 +75,64 @@ class ControllerService : Service() {
         }
         if (timer == null) {
             val app = applicationContext
-            val controller = Controller.get(app.filesDir, app.packageManager.getPackageInfo(app.packageName, 0).versionName)
-            val model = DemoModel.get(app.cacheDir, controller)
+            val model = DemoModel.get(app)
             val notifier = Notifier(app)
+            val log = AppLogs.get(app)
             val lock = getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "dpai:controller")
                 .apply { setReferenceCounted(false) }
             wake = lock
             running = true
+            log.step("служба контроллера запущена")
+            val meter = TickMeter(Clock.SYSTEM)
+            val device = AppLogs.device(app) { wake?.isHeld }
+            var lastSummary = Clock.SYSTEM.monotonicNanos()
             timer = Executors.newSingleThreadScheduledExecutor().also { t ->
                 t.scheduleWithFixedDelay({
                     lock.acquire(TimeUnit.MINUTES.toMillis(WAKE_MINUTES))
-                    runCatching { model.step(null).notifications.forEach(notifier::show) }
+                    meter.begin()
+                    // Сбой такта — в журнал приложения, а не молча (D-43): контур идёт дальше.
+                    val ok = try {
+                        model.step(null).notifications.forEach(notifier::show)
+                        true
+                    } catch (e: Exception) {
+                        log.error("такт", AppLogs.describe(e))
+                        false
+                    }
+                    meter.end(ok)
                     // Запросы человеку — по ждущим в журнале: показать новые, убрать закрытые (D-44).
-                    runCatching { RequestPresenter.sync(app, model, model.pending()) }
+                    try {
+                        RequestPresenter.sync(app, model, model.pending())
+                    } catch (e: Exception) {
+                        log.error("запросы", AppLogs.describe(e))
+                    }
+                    val now = Clock.SYSTEM.monotonicNanos()
+                    if (now - lastSummary >= TimeUnit.MINUTES.toNanos(1)) {
+                        lastSummary = now
+                        summary(log, meter, model, device)
+                    }
                 }, 0, STEP_SECONDS, TimeUnit.SECONDS)
             }
         }
         return START_STICKY
     }
 
+    /**
+     * Сводка раз в минуту (D-43): такты и наибольший разрыв между ними (сон
+     * устройства), сессии, задачи, запросы, память и сведения платформы.
+     */
+    private fun summary(log: com.dpsmpx.dpai.orchestrator.log.AppLog, meter: TickMeter, model: DemoModel, device: com.dpsmpx.dpai.orchestrator.log.DeviceProbe) {
+        val t = meter.drain()
+        val snap = model.published
+        val tasks = snap?.board?.columns?.sumOf { it.cards.size }
+        val facts = listOf(
+            "такты" to "${t.count}", "ср_мс" to "${t.avgMs}", "макс_мс" to "${t.maxMs}", "разрыв_мс" to "${t.maxGapMs}", "сбои" to "${t.failures}",
+            "сессии" to "${snap?.dashboard?.sessions?.size ?: "?"}", "задачи" to "${tasks ?: "?"}", "запросы" to "${snap?.requests?.size ?: "?"}",
+        ) + runCatching { device.sample() }.getOrDefault(emptyList())
+        log.info("сводка", facts.joinToString(" ") { (k, v) -> "$k=$v" })
+    }
+
     override fun onDestroy() {
+        runCatching { AppLogs.get(applicationContext).step("служба контроллера остановлена") }
         running = false
         timer?.shutdownNow()
         timer = null

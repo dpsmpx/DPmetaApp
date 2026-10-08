@@ -118,8 +118,7 @@ class ApprovalReceiver : BroadcastReceiver() {
         if (detached) pending.finish()
         worker.execute {
             try {
-                val controller = Controller.get(app.filesDir, app.packageManager.getPackageInfo(app.packageName, 0).versionName)
-                val result = DemoModel.get(app.cacheDir, controller).respond(uri)
+                val result = DemoModel.get(app).respond(uri)
                 val notifier = Notifier(app)
                 notifier.cancel(key)
                 val text = when (result) {

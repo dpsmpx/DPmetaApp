@@ -81,6 +81,9 @@ class UserRequestsFlowTest {
 
     private lateinit var journal: EventJournal
 
+    /** Что контур отдал журналу приложения (D-43). */
+    private val logged = mutableListOf<EventType>()
+
     private fun boot(): Pair<Orchestrator, MockRunner> {
         val vfs = NioVfs(dir)
         journal = (EventJournal.open(vfs, "journal.log", segmentSize = 50) as Outcome.Success).value
@@ -90,7 +93,7 @@ class UserRequestsFlowTest {
             clock, ids, RandomSource.seeded(146), journal, runner, ProjectConfig(project, null, dir.toString(), null), targets, null,
             Verifier({ _, _, _ -> Outcome.success(Completed(0, emptyList(), emptyList())) }, clock), accounts,
             snapshots = SnapshotStore(DocumentStore(vfs, "snapshots")), snapshotEvery = 25, documents = DocumentStore(vfs, "docs"),
-            requestTtl = 2.hours,
+            requestTtl = 2.hours, onEvents = { es -> es.mapTo(logged) { it.type } },
         )
         o.recover { AgentClient(host, listOf("dpai"), null, "target mock") }
         return o to runner
@@ -231,5 +234,54 @@ class UserRequestsFlowTest {
         val text = o.pendingRequests().single { it.kind == RequestKind.TEXT_INPUT }
         assertEquals(DiagCode.REQUEST_ANSWER_INVALID, o.answer(uri(text, "send"), null, "автор").diagnostics.single().code, "без текста — отказ")
         assertEquals("проверка", o.answer(uri(text, "send"), "проверка", "автор").value?.text)
+    }
+
+    /**
+     * Очередь команд (D-42, п. 1): команда из другого потока исполняется
+     * тактом в безопасной точке, ждущий получает итог; ключ
+     * идемпотентности — вторая постановка той же задачи не создаёт её,
+     * и после перезапуска тоже; события уходят в журнал приложения.
+     */
+    @Test
+    fun commandsFromOtherThreadsRunInTickAndKeysAreIdempotent() {
+        val (o, runner) = boot()
+        val key = "tap-0001-new-task"
+        val first = java.util.concurrent.CompletableFuture.supplyAsync { o.submit(com.dpsmpx.dpai.orchestrator.commands.Command.AddTask("из очереди", "цель", key = key)).get() }
+        // Поток такта разбирает очередь; отправитель ждёт итог, не трогая контур сам.
+        while (!first.isDone) {
+            o.inbox.await(50)
+            o.runCommands()
+        }
+        val task = first.get().value as com.dpsmpx.dpai.core.ids.TaskId
+        assertEquals(OperationStatus.SUCCEEDED, first.get().status)
+        val again = o.submit(com.dpsmpx.dpai.orchestrator.commands.Command.AddTask("из очереди", "цель", key = key))
+        o.tick()
+        assertEquals(task.value, again.get().value, "повтор с тем же ключом — тот же итог")
+        assertEquals(1, o.tasks.tasks.values.count { it.title == "из очереди" })
+        assertTrue(EventType.OPERATION_RECORDED in logged && EventType.TASK_CREATED in logged, "события — в журнал приложения")
+
+        run(o, runner, 2)
+        val (second, _) = boot()
+        val afterRestart = second.submit(com.dpsmpx.dpai.orchestrator.commands.Command.AddTask("из очереди", "цель", key = key))
+        second.runCommands()
+        assertEquals(task.value, afterRestart.get().value, "ключ пережил перезапуск")
+        assertEquals(1, second.tasks.tasks.values.count { it.title == "из очереди" })
+
+        val bad = second.submit(com.dpsmpx.dpai.orchestrator.commands.Command.AddTask("x", "y", key = "плохой ключ"))
+        second.runCommands()
+        assertEquals(DiagCode.VALUE_INVALID, bad.get().diagnostics.single().code)
+    }
+
+    /** Ответ на запрос через очередь — тот же итог, что напрямую; такт исполняет его до опроса сессий. */
+    @Test
+    fun answerThroughInbox() {
+        val (o, _) = boot()
+        val id = o.probe(RequestKind.CONFIRMATION).valueOrNull()!!
+        val r = o.requests.requests.getValue(id)
+        val f = o.submit(com.dpsmpx.dpai.orchestrator.commands.Command.AnswerRequest(uri(r, "yes"), null, "автор", "overlay"))
+        assertTrue(!f.isDone, "до такта команда ждёт")
+        o.tick()
+        assertEquals(OperationStatus.SUCCEEDED, f.get().status)
+        assertEquals("overlay", o.requests.requests.getValue(id).answer?.channel)
     }
 }

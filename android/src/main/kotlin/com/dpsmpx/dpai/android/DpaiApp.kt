@@ -137,7 +137,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (selectedId != null) "Сессия" else if (tab == 2) "DP AI · targets" else if (tab == 3) "DP AI · запросы" else "DP AI · ${snapshot?.mode ?: "…"}") },
+                title = { Text(if (selectedId != null) "Сессия" else if (tab == 2) "DP AI · targets" else if (tab == 3) "DP AI · запросы" else if (tab == 4) "DP AI · журнал" else "DP AI · ${snapshot?.mode ?: "…"}") },
                 navigationIcon = {
                     if (selectedId != null) TextButton(onClick = { selectedId = null }) { Text("←") }
                 },
@@ -151,6 +151,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                     NavigationBarItem(selected = tab == 2, onClick = { tab = 2 }, icon = { Text("⇄") }, label = { Text("Targets") })
                     val waiting = snapshot?.requests?.size ?: 0
                     NavigationBarItem(selected = tab == 3, onClick = { tab = 3 }, icon = { Text(if (waiting > 0) "?$waiting" else "?") }, label = { Text("Запросы") })
+                    NavigationBarItem(selected = tab == 4, onClick = { tab = 4 }, icon = { Text("≡") }, label = { Text("Журнал") })
                 }
             }
         },
@@ -175,6 +176,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                 when {
                     selectedId == null && tab == 2 -> TargetsPane(controller, model)
                     selectedId == null && tab == 3 -> RequestsPane(model, s)
+                    selectedId == null && tab == 4 -> LogPane()
                     s == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                     selectedId != null -> SessionPane(s.session)
                     tab == 0 -> DashboardPane(s.dashboard) { selectedId = it.value }
@@ -288,6 +290,8 @@ private fun NewTaskDialog(model: DemoModel, onDone: () -> Unit) {
     val scope = rememberCoroutineScope()
     var title by remember { mutableStateOf("") }
     var objective by remember { mutableStateOf("") }
+    // Ключ нажатия (D-42): повтор «Поставить» в этом диалоге — та же задача, а не вторая.
+    val key = remember { com.dpsmpx.dpai.core.ids.IdGenerator(com.dpsmpx.dpai.core.clock.Clock.SYSTEM, com.dpsmpx.dpai.core.clock.RandomSource.secure()).next(com.dpsmpx.dpai.core.ids.IdKinds.OPERATION).value }
     var error by remember { mutableStateOf<String?>(null) }
     // Второе нажатие, пока первое ставит задачу, не создаёт дубль (два хода Claude с одной целью).
     var busy by remember { mutableStateOf(false) }
@@ -305,7 +309,7 @@ private fun NewTaskDialog(model: DemoModel, onDone: () -> Unit) {
             TextButton(enabled = !busy, onClick = {
                 busy = true
                 scope.launch {
-                    when (val r = withContext(Dispatchers.IO) { model.addTask(title, objective) }) {
+                    when (val r = withContext(Dispatchers.IO) { model.addTask(title, objective, key) }) {
                         is Outcome.Failure -> error = r.diagnostics.first().message
                         is Outcome.Success -> onDone()
                     }

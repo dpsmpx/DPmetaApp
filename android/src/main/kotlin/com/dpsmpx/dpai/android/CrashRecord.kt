@@ -14,11 +14,17 @@ import java.io.File
 object CrashRecord {
     const val FILE = "last-crash.txt"
 
+    /** Запись падения в журнал приложения; задаёт экран при запуске. */
+    @Volatile
+    var onFatal: ((String) -> Unit)? = null
+
     fun install(dir: File) {
         val vfs = NioVfs(dir.toPath())
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
             runCatching { vfs.write(FILE, describe(thread.name, error).toByteArray()) }
+            // И в журнал приложения — сразу и всегда (D-43): последняя строка файла — падение и этап запуска.
+            runCatching { onFatal?.invoke("${error.javaClass.name}: ${error.message}") }
             previous?.uncaughtException(thread, error)
         }
     }

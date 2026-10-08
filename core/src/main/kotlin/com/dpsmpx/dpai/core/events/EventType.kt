@@ -100,4 +100,7 @@ enum class EventType {
     USER_REQUEST_EXPIRED,
     USER_REQUEST_CANCELLED,
     USER_REQUEST_FAILED,
+
+    // --- команды оркестратора (D-42) ---
+    OPERATION_RECORDED,
 }

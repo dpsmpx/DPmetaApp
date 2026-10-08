@@ -85,6 +85,8 @@ class LiveSystem(
      * одобрению. `null` — задачи в каталоге агента, без Git и проверки.
      */
     private val project: ProjectEntry? = null,
+    /** События журнала контура — в журнал приложения (D-43). */
+    onEvents: (List<EventEnvelope>) -> Unit = {},
 ) : ControlView {
     override val mode: String = "контроллер"
     private val ids = IdGenerator(clock, random)
@@ -133,6 +135,7 @@ class LiveSystem(
             clock, ids, random, journal, router, config,
             working.map { TargetSlot(it.id, emptySet(), maxSessions = 1) }, git, verifier,
             snapshots = snapshots, snapshotEvery = SEGMENT.toLong(), documents = DocumentStore(vfs, "docs"),
+            onEvents = onEvents,
         )
         orchestrator = o
         // Слот target — после первой пробы входа: подписка выбирается по аккаунту (см. [placeSlot]).
