@@ -30,6 +30,8 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
     ): Outcome<List<TaskEvent>> {
         if (id in state.tasks) return Outcome.failure(DiagCode.VALUE_INVALID, "задача уже есть", "task $id")
         if (title.isBlank() || title.length > 200) return Outcome.failure(DiagCode.VALUE_INVALID, "заголовок — 1…200 знаков", "task $id")
+        // Без цели контекст хода не собирается (ContextAssembler): отказ — здесь, а не посреди такта.
+        if (objective.isBlank()) return Outcome.failure(DiagCode.VALUE_INVALID, "цель задачи пуста", "task $id")
         if (id in dependencies) return Outcome.failure(DiagCode.DEPENDENCY_CYCLE, "задача зависит от самой себя", "task $id")
         dependencies.firstOrNull { it !in state.tasks }?.let { return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет задачи-зависимости $it", "task $id") }
         return Outcome.success(listOf(TaskEvent.Created(id, title.trim(), objective, priority, dependencies, capabilities, taskPolicy, now)))

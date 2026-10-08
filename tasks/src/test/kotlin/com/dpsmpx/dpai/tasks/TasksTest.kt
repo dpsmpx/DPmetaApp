@@ -59,6 +59,13 @@ class TasksTest {
         return plan.map { it.task }
     }
 
+    /** Ревью 8 октября 2026: задача без цели — отказ при создании, а не падение такта при сборке контекста. */
+    @Test
+    fun blankObjectiveIsRejectedAtCreation() {
+        val r = tasks.create(state, ids.next(IdKinds.TASK), "заголовок", "   ", Priority.NORMAL, clock.now())
+        assertEquals(DiagCode.VALUE_INVALID, (r as Outcome.Failure).errors.single().code)
+    }
+
     @Test
     fun dependencyGraphRunsInOrder() {
         val a = task()

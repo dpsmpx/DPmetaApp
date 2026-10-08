@@ -422,7 +422,7 @@ class Orchestrator(
                 ?.also { commitSessions(it.events) }
         } ?: return releaseLease(session)
         val workDir = prepareWorktree(task, session) ?: return failLaunch(task, session, DiagCode.WORKTREE_MISSING)
-        val bundle = context(task, t.objective)
+        val bundle = context(task, t.objective) ?: return failLaunch(task, session, DiagCode.VALUE_INVALID)
         val budget = t.policy.maxBudgetUsdCents?.let { BigDecimal(it).movePointLeft(2) }
         val request = ClaudeRequest(
             PromptRenderer.render(bundle), permissionMode = ClaudeCodeCli.TURN_PERMISSION_MODE,
@@ -467,13 +467,17 @@ class Orchestrator(
         return worktrees.worktrees.getValue(tree).path
     }
 
-    private fun context(task: TaskId, objective: String): ContextBundle {
+    /** Контекст хода; `null` — не собрался (причина — в [problems]): запуск не идёт, а не падает посреди такта. */
+    private fun context(task: TaskId, objective: String): ContextBundle? {
         val previous = contextOf[task] ?: storedContext(task)
         val handoff = handoffs.latest(task)
         val sources = config.sources(task) + listOfNotNull(handoff?.asSource())
-        val bundle = ContextAssembler.assemble(
-            previous?.id ?: ids.next(IdKinds.CONTEXT), task, config.project, objective, handoff?.nextAction, sources, clock.now(), previous,
-        ).valueOrNull()!!
+        val bundle = ok(
+            ContextAssembler.assemble(
+                previous?.id ?: ids.next(IdKinds.CONTEXT), task, config.project, objective, handoff?.nextAction, sources, clock.now(), previous,
+            ),
+            "контекст задачи $task не собран",
+        ) ?: return null
         if (contextOf[task] !== bundle) saveTaskDocument("context", task, bundle.toJson())
         contextOf[task] = bundle
         return bundle
