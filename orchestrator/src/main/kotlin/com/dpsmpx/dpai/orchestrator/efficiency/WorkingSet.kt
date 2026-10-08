@@ -23,6 +23,16 @@ class WorkingSet(private val root: String) {
     var summary: String? = null
         private set
 
+    /**
+     * Начало с прежнего handoff задачи (после перезапуска набор в памяти
+     * пуст): его пути уже относительны и отобраны — они идут как
+     * прочитанные один раз, итог — как есть.
+     */
+    fun seed(files: List<String>, summary: String?) {
+        files.forEach { if (it !in reads) reads[it] = 1 }
+        if (this.summary == null) this.summary = summary
+    }
+
     fun add(turn: ClaudeTurn, maxSummaryChars: Int) {
         turn.files.edited.mapNotNull(::relative).forEach { edited += it }
         turn.files.read.mapNotNull(::relative).forEach { reads[it] = (reads[it] ?: 0) + 1 }

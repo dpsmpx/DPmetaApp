@@ -604,7 +604,10 @@ class Orchestrator(
         val step = driver.poll(sessions, session).valueOrNull() ?: return
         if (efficiency.workingSet.enabled && step.turns.isNotEmpty()) {
             val task = sessions.sessions.getValue(session).task
-            val ws = workingOf.getOrPut(task) { WorkingSet(treePath(task) ?: config.worktreeRoot ?: ".") }
+            val ws = workingOf.getOrPut(task) {
+                // После перезапуска — с рабочего набора последнего handoff: он не теряется при следующем.
+                WorkingSet(treePath(task) ?: config.worktreeRoot ?: ".").apply { handoffs.latest(task)?.let { seed(it.relevantFiles, it.summary) } }
+            }
             step.turns.forEach { ws.add(it, efficiency.workingSet.maxSummaryChars) }
         }
         if (step.unsupportedFlags.isNotEmpty()) {
