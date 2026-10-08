@@ -1,0 +1,181 @@
+package com.dpsmpx.dpai.android
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import com.dpsmpx.dpai.core.clock.Clock
+import com.dpsmpx.dpai.core.clock.RandomSource
+import com.dpsmpx.dpai.core.ids.IdGenerator
+import com.dpsmpx.dpai.core.ids.IdKinds
+import com.dpsmpx.dpai.core.ids.TaskId
+import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.orchestrator.commands.Command
+import com.dpsmpx.dpai.tasks.Priority
+import com.dpsmpx.dpai.tasks.TaskClass
+import com.dpsmpx.dpai.ui.TaskAction
+import com.dpsmpx.dpai.ui.TaskDetail
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+/**
+ * Лист задачи (D-42, п. 2): что с задачей, её модель и бюджет, действия.
+ * Каждое действие — команда контура с ключом нажатия (повтор нажатия не
+ * делает второго действия); опасное — после подтверждения (ТЗ, §68).
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDone: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var detail by remember { mutableStateOf<TaskDetail?>(null) }
+    var status by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    var confirm by remember { mutableStateOf<TaskAction?>(null) }
+    var editor by remember { mutableStateOf<TaskAction?>(null) }
+    val keys = remember { IdGenerator(Clock.SYSTEM, RandomSource.secure()) }
+    LaunchedEffect(task) {
+        while (true) {
+            detail = withContext(Dispatchers.IO) { model.taskDetail(task) }
+            delay(1500)
+        }
+    }
+    fun send(c: (String) -> Command) {
+        busy = true
+        val key = keys.next(IdKinds.OPERATION).value
+        scope.launch {
+            val r = withContext(Dispatchers.IO) { model.command(c(key)) }
+            status = when (r) {
+                is Outcome.Success -> "Принято"
+                is Outcome.Failure -> "Не принято: ${r.diagnostics.first().message}"
+            }
+            detail = withContext(Dispatchers.IO) { model.taskDetail(task) }
+            busy = false
+            editor = null
+            confirm = null
+        }
+    }
+    val d = detail
+    AlertDialog(
+        onDismissRequest = onDone,
+        title = { Text(d?.title ?: "Задача") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (d == null) {
+                    Text("Загружаю…")
+                    return@Column
+                }
+                Text("${d.state}${if (d.held) " · приостановлена" else ""} · приоритет ${d.priority}", fontWeight = FontWeight.Bold)
+                Text(d.objective, style = MaterialTheme.typography.bodySmall, maxLines = 4)
+                Text(
+                    "класс ${d.taskClass} · модель ${d.model ?: "по классу"} · усилие ${d.effort ?: "по классу"} · бюджет хода ${d.budgetCents?.let { "%.2f $".format(it / 100.0) } ?: "без предела"}",
+                    style = MaterialTheme.typography.labelSmall,
+                )
+                d.reason?.let { Text("причина: $it · повторов: ${d.retries}", style = MaterialTheme.typography.labelSmall) }
+                d.lastSession?.let { s -> TextButton(onClick = { onSession(s.value) }) { Text("Открыть последнюю сессию") } }
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    for (a in d.actions) {
+                        OutlinedButton(
+                            enabled = !busy,
+                            colors = if (a.dangerous) ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error) else ButtonDefaults.outlinedButtonColors(),
+                            onClick = {
+                                when (a) {
+                                    TaskAction.HOLD -> send { Command.Hold(task, it) }
+                                    TaskAction.RESUME -> send { Command.Resume(task, it) }
+                                    TaskAction.RETRY -> send { Command.Retry(task, null, it) }
+                                    TaskAction.CANCEL, TaskAction.WAIVE -> confirm = a
+                                    TaskAction.PRIORITY, TaskAction.POLICY, TaskAction.REPLY -> editor = a
+                                }
+                            },
+                        ) { Text(a.label) }
+                    }
+                }
+                when (editor) {
+                    TaskAction.PRIORITY -> FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        for (p in Priority.entries) FilterChip(selected = d.priority == p.name, onClick = { send { k -> Command.SetPriority(task, p, k) } }, label = { Text(p.name) })
+                    }
+                    TaskAction.POLICY -> PolicyEditor(d, busy) { cls, m, e, b -> send { k -> Command.SetPolicy(task, cls, m, e, b, k) } }
+                    TaskAction.REPLY -> ReplyEditor(busy) { text -> send { k -> Command.Retry(task, text, k) } }
+                    else -> Unit
+                }
+                status?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDone) { Text("Закрыть") } },
+    )
+    confirm?.let { a ->
+        var reason by remember(a) { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { confirm = null },
+            title = { Text("${a.label}?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        if (a == TaskAction.CANCEL) "Идущий ход будет остановлен, несохранённая работа хода пропадёт." else "Задача станет DONE без проверки — запишется исключение с причиной.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    if (a == TaskAction.WAIVE) OutlinedTextField(reason, { reason = it }, label = { Text("Почему") }, singleLine = true)
+                }
+            },
+            confirmButton = {
+                TextButton(enabled = !busy && (a != TaskAction.WAIVE || reason.isNotBlank()), onClick = {
+                    if (a == TaskAction.CANCEL) send { Command.Cancel(task, it) } else send { Command.Waive(task, reason, DemoModel.ACTOR, it) }
+                }) { Text(a.label, color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { confirm = null }) { Text("Отмена") } },
+        )
+    }
+}
+
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun PolicyEditor(d: TaskDetail, busy: Boolean, onSave: (TaskClass, String?, String?, Long?) -> Unit) {
+    var cls by remember { mutableStateOf(d.taskClass) }
+    var modelName by remember { mutableStateOf(d.model.orEmpty()) }
+    var effort by remember { mutableStateOf(d.effort.orEmpty()) }
+    var budget by remember { mutableStateOf(d.budgetCents?.let { "%.2f".format(it / 100.0) }.orEmpty()) }
+    var error by remember { mutableStateOf<String?>(null) }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("Класс задачи — маршрут модели (D-40)", style = MaterialTheme.typography.labelSmall)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            for (c in TaskClass.entries) FilterChip(selected = cls == c, onClick = { cls = c }, label = { Text(c.name.lowercase()) })
+        }
+        OutlinedTextField(modelName, { modelName = it }, label = { Text("Модель (пусто — по классу)") }, singleLine = true)
+        OutlinedTextField(effort, { effort = it }, label = { Text("Усилие: low, medium, high (пусто — по классу)") }, singleLine = true)
+        OutlinedTextField(budget, { budget = it }, label = { Text("Предел стоимости хода, $ (пусто — без предела)") }, singleLine = true)
+        error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall) }
+        TextButton(enabled = !busy, onClick = {
+            val cents = budget.trim().replace(',', '.').takeIf { it.isNotEmpty() }?.let { v -> v.toBigDecimalOrNull()?.movePointRight(2)?.toLong() ?: -1L }
+            if (cents != null && cents <= 0) error = "бюджет — положительное число долларов" else onSave(cls, modelName, effort, cents)
+        }) { Text("Сохранить") }
+    }
+}
+
+@Composable
+private fun ReplyEditor(busy: Boolean, onSend: (String) -> Unit) {
+    var text by remember { mutableStateOf("") }
+    Column {
+        OutlinedTextField(text, { text = it }, label = { Text("Ответ к следующему ходу") }, minLines = 2)
+        TextButton(enabled = !busy && text.isNotBlank(), onClick = { onSend(text) }) { Text("Отправить и повторить") }
+    }
+}

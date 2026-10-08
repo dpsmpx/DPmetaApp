@@ -112,6 +112,7 @@ import com.dpsmpx.dpai.notifications.UserRequests
 import com.dpsmpx.dpai.notifications.UserRequestsState
 import com.dpsmpx.dpai.orchestrator.commands.Command
 import com.dpsmpx.dpai.orchestrator.commands.CommandInbox
+import com.dpsmpx.dpai.orchestrator.commands.TaskCommand
 import com.dpsmpx.dpai.orchestrator.commands.OperationRecord
 import com.dpsmpx.dpai.orchestrator.commands.OperationsProjection
 import com.dpsmpx.dpai.orchestrator.commands.OperationsState
@@ -1003,6 +1004,15 @@ class Orchestrator(
             is Command.AddTask -> OperationResult.record(
                 command.operation, provenance, ids, clock, addTask(command.title, command.objective, command.priority, policy = command.policy),
             )
+            is Command.SetPriority -> record(command, provenance) { taskEdit(command.task) { tasksLogic.setPriority(tasks, command.task, command.priority, null, clock.now()) } }
+            is Command.SetPolicy -> record(command, provenance) { setPolicy(command) }
+            is Command.Hold -> record(command, provenance) { holdTask(command.task) }
+            is Command.Resume -> record(command, provenance) { taskEdit(command.task) { tasksLogic.hold(tasks, command.task, false, clock.now()) } }
+            is Command.Cancel -> record(command, provenance) { cancelTask(command.task) }
+            is Command.Retry -> record(command, provenance) { retryTask(command.task, command.text) }
+            is Command.Waive -> record(command, provenance) {
+                if (command.reason.isBlank()) Outcome.failure(DiagCode.VALUE_INVALID, "исключение — с причиной") else resolveUnverified(command.task, WAIVE, command.by, command.reason.trim())
+            }
         }
         if (key != null) {
             val value = result.value?.let { v -> (v as? com.dpsmpx.dpai.core.ids.TypedId)?.value ?: v.toString() }
@@ -1011,6 +1021,93 @@ class Orchestrator(
             operations = OperationsProjection.applyRecord(operations, rec)
         }
         return result
+    }
+
+    // ---- действия с задачами (D-42, п. 2) ----
+
+    private fun record(command: Command, provenance: Provenance, body: () -> Outcome<*>): OperationResult<*> =
+        OperationResult.record(command.operation, provenance.copy(taskId = (command as? TaskCommand)?.task), ids, clock, body())
+
+    /** Правка задачи событиями логики задач; итог — состояние задачи после правки. */
+    private fun taskEdit(task: TaskId, edit: () -> Outcome<List<TaskEvent>>): Outcome<TaskState> = when (val r = edit()) {
+        is Outcome.Failure -> r
+        is Outcome.Success -> Outcome.success(tasks.tasks.getValue(task).state).also { commitTasks(r.value) }
+    }
+
+    private fun setPolicy(c: Command.SetPolicy): Outcome<TaskState> {
+        val t = tasks.tasks[c.task] ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой задачи", "task ${c.task}")
+        val policy = try {
+            t.policy.copy(taskClass = c.taskClass, model = c.model?.trim()?.ifEmpty { null }, effort = c.effort?.trim()?.ifEmpty { null }, maxBudgetUsdCents = c.maxBudgetUsdCents)
+        } catch (e: IllegalArgumentException) {
+            return Outcome.failure(DiagCode.VALUE_INVALID, e.message ?: "политика недопустима", "task ${c.task}")
+        }
+        return taskEdit(c.task) { tasksLogic.setPolicy(tasks, c.task, policy, clock.now()) }
+    }
+
+    /**
+     * Приостановить (D-42): задача удержана — планировщик её не берёт;
+     * идущий ход остановлен, handoff `PAUSED` записан, сессия провайдера
+     * сохранена для продолжения. Не удалось остановить ход (target
+     * недоступен) — задача всё равно удержана, отказ — в итоге.
+     */
+    private fun holdTask(task: TaskId): Outcome<TaskState> {
+        val held = taskEdit(task) { tasksLogic.hold(tasks, task, true, clock.now()) }
+        if (held is Outcome.Failure) return held
+        val failures = mutableListOf<Diagnostic>()
+        for (s in openSessions(task).filter { it.state !in WAIT_STATES }) {
+            when (val step = driver.pause(sessions, s.id)) {
+                is Outcome.Failure -> failures += step.errors
+                is Outcome.Success -> {
+                    commitSessions(step.value.events)
+                    handOff(task, s.id, HandoffReason.PAUSED, "продолжить с места остановки: ход приостановлен человеком")
+                }
+            }
+        }
+        return if (failures.isEmpty()) Outcome.success(tasks.tasks.getValue(task).state) else Outcome.Failure(failures)
+    }
+
+    /**
+     * Отменить (D-42): идущий ход — остановка с уборкой процессов, ждущие
+     * сессии сняты, аренда и дерево свободны, задача `CANCELLED`.
+     */
+    private fun cancelTask(task: TaskId): Outcome<TaskState> {
+        val t = tasks.tasks[task] ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой задачи", "task $task")
+        if (t.terminal) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "задача уже завершена: ${t.state}", "task $task")
+        for (s in openSessions(task)) {
+            if (s.state in WAIT_STATES) {
+                closeSession(task, s.id)
+                continue
+            }
+            when (val step = driver.cancel(sessions, s.id)) {
+                is Outcome.Failure -> return step
+                is Outcome.Success -> {
+                    batch {
+                        commitSessions(step.value.events)
+                        applyFacts(step.value.facts)
+                    }
+                    releaseTree(task, s.id)
+                }
+            }
+        }
+        return taskEdit(task) { tasksLogic.move(tasks, task, TaskState.CANCELLED, clock.now(), DiagCode.CANCELLED_BY_USER) }
+    }
+
+    /**
+     * Повтор (D-42): заблокированная — как ответ на её запрос (продолжение
+     * той же сессии с ответом человека); упавшая и отменённая — снова в
+     * очередь; счётчики сброшены.
+     */
+    private fun retryTask(task: TaskId, text: String?): Outcome<TaskState> {
+        val t = tasks.tasks[task] ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой задачи", "task $task")
+        if (t.state == TaskState.BLOCKED) {
+            val clean = text?.trim()?.takeIf { it.isNotEmpty() }?.take(UserRequest.MAX_TEXT)
+            val r = resolveBlocked(task, if (clean != null) REPLY else RETRY, clean)
+            if (r is Outcome.Failure) return r
+            commitTasks(listOf(TaskEvent.CountersReset(task, clock.now())))
+            return Outcome.success(tasks.tasks.getValue(task).state)
+        }
+        if (text != null) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "ответ к ходу — у заблокированной задачи", "task $task")
+        return taskEdit(task) { tasksLogic.retry(tasks, task, clock.now()) }
     }
 
     // ---- запросы человеку (D-44) ----
@@ -1188,11 +1285,11 @@ class Orchestrator(
         }
     }
 
-    private fun resolveUnverified(task: TaskId, option: String, by: String): Outcome<String> {
+    private fun resolveUnverified(task: TaskId, option: String, by: String, why: String = "принято без проверки ответом на запрос"): Outcome<String> {
         val t = tasks.tasks[task] ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой задачи", "task $task")
         if (t.state != TaskState.COMPLETION_UNVERIFIED) return Outcome.failure(DiagCode.REQUEST_NOT_PENDING, "задача уже не COMPLETION_UNVERIFIED: ${t.state}", "task $task")
         return when (option) {
-            WAIVE -> when (val c = tasksLogic.complete(tasks, task, clock.now(), by to "принято без проверки ответом на запрос")) {
+            WAIVE -> when (val c = tasksLogic.complete(tasks, task, clock.now(), by to why)) {
                 is Outcome.Failure -> c
                 is Outcome.Success -> Outcome.success("задача принята без проверки").also { commitTasks(c.value) }
             }

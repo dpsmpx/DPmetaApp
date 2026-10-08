@@ -3,7 +3,9 @@ package com.dpsmpx.dpai.orchestrator.commands
 import com.dpsmpx.dpai.core.ids.RequestId
 import com.dpsmpx.dpai.core.operation.OperationResult
 import com.dpsmpx.dpai.notifications.RequestKind
+import com.dpsmpx.dpai.core.ids.TaskId
 import com.dpsmpx.dpai.tasks.Priority
+import com.dpsmpx.dpai.tasks.TaskClass
 import com.dpsmpx.dpai.tasks.TaskPolicy
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.LinkedBlockingDeque
@@ -47,6 +49,55 @@ sealed interface Command {
         override val key: String? = null,
     ) : Command {
         override val operation: String get() = "task.add"
+    }
+
+    /** Приоритет задачи (ТЗ, §21; D-42). */
+    data class SetPriority(override val task: TaskId, val priority: Priority, override val key: String? = null) : Command, TaskCommand {
+        override val operation: String get() = "task.priority"
+    }
+
+    /**
+     * Класс, модель, усилие и предел стоимости хода (D-40, D-42) — до
+     * запуска; `null` у модели и усилия — по маршруту класса, у бюджета —
+     * без предела.
+     */
+    data class SetPolicy(
+        override val task: TaskId,
+        val taskClass: TaskClass,
+        val model: String?,
+        val effort: String?,
+        val maxBudgetUsdCents: Long?,
+        override val key: String? = null,
+    ) : Command, TaskCommand {
+        override val operation: String get() = "task.policy"
+    }
+
+    /** Приостановить задачу: идущий ход останавливается с handoff, задача не запускается до [Resume]. */
+    data class Hold(override val task: TaskId, override val key: String? = null) : Command, TaskCommand {
+        override val operation: String get() = "task.hold"
+    }
+
+    /** Продолжить удержанную задачу: снова в план; продолжение — той же сессией провайдера. */
+    data class Resume(override val task: TaskId, override val key: String? = null) : Command, TaskCommand {
+        override val operation: String get() = "task.resume"
+    }
+
+    /** Отменить задачу: ход останавливается с уборкой процессов (опасно — подтверждает оболочка, ТЗ, §68). */
+    data class Cancel(override val task: TaskId, override val key: String? = null) : Command, TaskCommand {
+        override val operation: String get() = "task.cancel"
+    }
+
+    /**
+     * Повторить упавшую, отменённую или заблокированную задачу со сбросом
+     * счётчиков; [text] — ответ человека к следующему ходу (у заблокированной).
+     */
+    data class Retry(override val task: TaskId, val text: String? = null, override val key: String? = null) : Command, TaskCommand {
+        override val operation: String get() = "task.retry"
+    }
+
+    /** Принять непроверенное завершение с исключением политики (D-23): кто — оболочка, почему — [reason]. */
+    data class Waive(override val task: TaskId, val reason: String, val by: String, override val key: String? = null) : Command, TaskCommand {
+        override val operation: String get() = "task.waive"
     }
 
     companion object {
@@ -97,4 +148,9 @@ class CommandInbox {
         queue.putFirst(p)
         return true
     }
+}
+
+/** Команда о задаче: её id — в происхождении итога (ТЗ, §5.4). */
+interface TaskCommand {
+    val task: TaskId
 }

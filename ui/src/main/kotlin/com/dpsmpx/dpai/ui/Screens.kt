@@ -41,7 +41,7 @@ data class TimelineLine(val time: String, val text: String)
 data class SessionScreen(val line: SessionLine?, val session: SessionId, val timeline: List<TimelineLine>)
 
 /** Карточка задачи; [level] — глубина в DAG: 0 — без зависимостей, иначе 1 + наибольшая у зависимостей. */
-data class TaskCard(val id: TaskId, val title: String, val state: String, val tone: Tone, val priority: String, val dependsOn: List<String>, val level: Int)
+data class TaskCard(val id: TaskId, val title: String, val state: String, val tone: Tone, val priority: String, val dependsOn: List<String>, val level: Int, val held: Boolean = false)
 
 data class BoardColumn(val title: String, val cards: List<TaskCard>)
 
@@ -109,7 +109,7 @@ object Screens {
         val cards = tasks.tasks.values.map { t ->
             TaskCard(
                 t.id, t.title, t.state.name, tone(t.state), t.priority.name,
-                t.dependencies.mapNotNull { tasks.tasks[it]?.title }.sorted(), levelOf(t.id, emptySet()),
+                t.dependencies.mapNotNull { tasks.tasks[it]?.title }.sorted(), levelOf(t.id, emptySet()), t.held,
             )
         }
         return TaskBoard(

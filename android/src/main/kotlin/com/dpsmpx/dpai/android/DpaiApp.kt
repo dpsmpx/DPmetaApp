@@ -180,7 +180,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                     s == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                     selectedId != null -> SessionPane(s.session)
                     tab == 0 -> DashboardPane(s.dashboard) { selectedId = it.value }
-                    else -> BoardPane(s.board, s.live, model)
+                    else -> BoardPane(s.board, s.live, model) { selectedId = it }
                 }
             }
         }
@@ -270,18 +270,20 @@ private fun SessionPane(screen: SessionScreen?) {
 }
 
 @Composable
-private fun BoardPane(board: TaskBoard, live: Boolean, model: DemoModel) {
+private fun BoardPane(board: TaskBoard, live: Boolean, model: DemoModel, onSession: (String) -> Unit) {
     var creating by remember { mutableStateOf(false) }
+    var opened by remember { mutableStateOf<com.dpsmpx.dpai.core.ids.TaskId?>(null) }
     LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         if (live) {
             item(key = "new") { Button(onClick = { creating = true }) { Text("Новая задача") } }
         }
         board.columns.forEach { col ->
             item(key = "h:${col.title}") { Text("${col.title} (${col.cards.size})", style = MaterialTheme.typography.titleMedium) }
-            items(col.cards, key = { it.id.value }) { TaskRow(it) }
+            items(col.cards, key = { it.id.value }) { c -> TaskRow(c, Modifier.clickable { opened = c.id }) }
         }
     }
     if (creating) NewTaskDialog(model) { creating = false }
+    opened?.let { t -> TaskSheet(model, t, onSession = { s -> opened = null; onSession(s) }) { opened = null } }
 }
 
 /** Новая задача контроллеру: название и цель — что Claude должен сделать (ТЗ, §21). */
@@ -368,12 +370,12 @@ private fun ConfirmDialog(model: DemoModel, requests: List<RequestCard>, uri: St
 }
 
 @Composable
-private fun TaskRow(card: TaskCard) {
-    Card(Modifier.fillMaxWidth().padding(start = (card.level * 16).dp)) {
+private fun TaskRow(card: TaskCard, modifier: Modifier = Modifier) {
+    Card(modifier.fillMaxWidth().padding(start = (card.level * 16).dp)) {
         Column(Modifier.padding(10.dp)) {
             Row {
                 Text(card.title, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(card.state, color = toneColor(card.tone), style = MaterialTheme.typography.labelMedium)
+                Text(card.state + if (card.held) " · пауза" else "", color = toneColor(card.tone), style = MaterialTheme.typography.labelMedium)
             }
             Text(
                 "приоритет ${card.priority}" + if (card.dependsOn.isEmpty()) "" else " · ждёт: ${card.dependsOn.joinToString()}",

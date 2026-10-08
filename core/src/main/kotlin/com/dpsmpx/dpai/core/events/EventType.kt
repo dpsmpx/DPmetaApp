@@ -103,4 +103,7 @@ enum class EventType {
 
     // --- команды оркестратора (D-42) ---
     OPERATION_RECORDED,
+    TASK_POLICY_CHANGED,
+    TASK_HOLD_CHANGED,
+    TASK_COUNTERS_RESET,
 }

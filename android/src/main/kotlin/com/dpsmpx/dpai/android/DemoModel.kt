@@ -216,6 +216,12 @@ class DemoModel(private val cacheDir: File, private val controller: Controller, 
         built?.orchestrator?.sessions?.sessions?.values?.filter { it.task == task }?.maxByOrNull { it.createdAt.epochMillis }?.id
     }.getOrNull()
 
+    /** Лист задачи (D-42): состояние и доступные действия — из неизменяемого состояния контура, без замка. */
+    fun taskDetail(task: TaskId): com.dpsmpx.dpai.ui.TaskDetail? = runCatching {
+        val o = built?.orchestrator ?: return null
+        o.tasks.tasks[task]?.let { com.dpsmpx.dpai.ui.TaskScreens.detail(it, o.sessions) }
+    }.getOrNull()
+
     /** Есть ли настоящий контроллер: тогда такт — в службе переднего плана. */
     fun hasLive(): Boolean = controller.targets().any { it.configDir != null }
 

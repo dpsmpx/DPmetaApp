@@ -87,6 +87,11 @@ data class TaskRecord(
      * `null` — неизвестна, пересечения не проверяются (D-13).
      */
     val scope: Set<String>? = null,
+    /**
+     * Удержана человеком (D-42): планировщик её не запускает, пока
+     * удержание не снято; состояние задачи при этом прежнее.
+     */
+    val held: Boolean = false,
 ) {
     val terminal: Boolean get() = state in TaskLifecycle.table.terminal
 }
@@ -146,6 +151,15 @@ sealed interface TaskEvent {
 
     /** Продолжение в новой сессии (handoff, ТЗ, §28): счётчик против бесконечного продолжения. */
     data class Continued(override val task: TaskId, override val at: Timestamp) : TaskEvent
+
+    /** Политика задачи изменена человеком до запуска (D-42): класс, модель, усилие, бюджет хода. */
+    data class PolicyChanged(override val task: TaskId, val policy: TaskPolicy, override val at: Timestamp) : TaskEvent
+
+    /** Удержание задачи (D-42): `true` — не запускать, `false` — снова в план. */
+    data class HoldChanged(override val task: TaskId, val held: Boolean, override val at: Timestamp) : TaskEvent
+
+    /** Счётчики повторов, продолжений и петель сброшены явным повтором человека (D-42). */
+    data class CountersReset(override val task: TaskId, override val at: Timestamp) : TaskEvent
 }
 
 /**
