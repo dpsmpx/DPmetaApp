@@ -216,6 +216,22 @@ class Orchestrator(
         }
     }
 
+    /**
+     * Прежний контекст задачи из её документа — когда в памяти его нет: задача
+     * была завершена и открыта снова явной операцией (`commitTasks`) или
+     * приложение перезапускалось. Так у повтора — новая версия того же
+     * контекста, а не новый контекст (`docs/CONTEXT_MODEL.md`).
+     */
+    private fun storedContext(task: TaskId, report: Boolean = true): ContextBundle? {
+        val d = documents?.read(docKey("context", task))?.valueOrNull() ?: return null
+        return when (val c = ContextCodec.readContext(d.content)) {
+            is Outcome.Success -> c.value
+            is Outcome.Failure -> null.also {
+                if (report) problems += Diagnostic.of(DiagCode.STORAGE_CORRUPTED, "контекст задачи $task не читается", causes = c.errors)
+            }
+        }
+    }
+
     /** Документ задачи — до того, как журнал запишет шаг, который на него опирается. */
     private fun saveTaskDocument(kind: String, task: TaskId, json: com.dpsmpx.dpai.core.serialization.JsonObject) {
         val r = documents?.write(docKey(kind, task), json) ?: return
@@ -299,6 +315,16 @@ class Orchestrator(
     private fun commitTasks(es: List<TaskEvent>) {
         write(recorder.taskEnvelopes(es))
         tasks = Tasks.applyAll(tasks, es)
+        // Завершённая задача не держит контекст в памяти (ТЗ, §116: память не
+        // растёт с числом выполненных задач — EnduranceTest), если он есть в её
+        // документе: явный повтор продолжит его версии (`context`). Без хранилища
+        // документов контекст живёт только в памяти — и остаётся там.
+        for (id in es.map { it.task }.toSet()) {
+            if (tasks.tasks[id]?.terminal == true) {
+                if (documents != null) contextOf.remove(id)
+                lastOverlap.remove(id)
+            }
+        }
     }
 
     private fun <T> ok(o: Outcome<T>, what: String): T? = when (o) {
@@ -438,7 +464,7 @@ class Orchestrator(
     }
 
     private fun context(task: TaskId, objective: String): ContextBundle {
-        val previous = contextOf[task]
+        val previous = contextOf[task] ?: storedContext(task)
         val handoff = handoffs.latest(task)
         val sources = config.sources(task) + listOfNotNull(handoff?.asSource())
         val bundle = ContextAssembler.assemble(
@@ -645,7 +671,7 @@ class Orchestrator(
     )
 
     /** Последняя версия контекста задачи — что видел Claude в последнем ходе. */
-    fun lastContext(task: TaskId): ContextBundle? = contextOf[task]
+    fun lastContext(task: TaskId): ContextBundle? = contextOf[task] ?: storedContext(task, report = false)
 
     fun dashboard(): DashboardView =
         Dashboard.build(sessions, tasks, accounts, emptyMap(), Measure.observed(approvals.pending()), sessionsLogic, clock.now())

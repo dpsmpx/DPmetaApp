@@ -85,6 +85,9 @@ class EnduranceTest {
                 clock, ids, random, journal, runner, ProjectConfig(project, null, root.path, profile), targets, null,
                 Verifier({ _, _, _ -> Outcome.success(Completed(0, emptyList(), emptyList())) }, clock), accounts,
                 snapshots = SnapshotStore(DocumentStore(vfs, "snapshots")),
+                // Документы задач — как у контроллера в приложении (LiveSystem): без них
+                // контексты живут только в памяти, и стенд мерил бы другую конфигурацию.
+                documents = DocumentStore(vfs, "docs"),
             )
             o.recover { AgentClient(host, listOf("dpai"), null, "target mock") }
             return o to runner
