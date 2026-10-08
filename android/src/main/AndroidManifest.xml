@@ -10,6 +10,8 @@
     <!-- Контроллер в фоне — служба переднего плана (D-36). -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- Окно запроса поверх приложений (D-44): только если человек включил его и дал разрешение в настройках. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <application
         android:allowBackup="false"
@@ -18,15 +20,26 @@
         android:theme="@android:style/Theme.Material.NoActionBar">
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- Вход из своих уведомлений (ссылка на задачу, подтверждение опасного ответа, D-44):
+             не экспортируется — чужое приложение этим путём экран не откроет. -->
+        <activity-alias
+            android:name=".InternalEntry"
+            android:exported="false"
+            android:targetActivity=".MainActivity" />
         <!-- Кнопки уведомлений — только через PendingIntent своего уведомления (A-7). -->
         <receiver
             android:name=".ApprovalReceiver"
+            android:exported="false" />
+        <!-- Ответы на запросы — только через PendingIntent своего уведомления (D-44). -->
+        <receiver
+            android:name=".RequestReceiver"
             android:exported="false" />
         <service
             android:name=".ControllerService"

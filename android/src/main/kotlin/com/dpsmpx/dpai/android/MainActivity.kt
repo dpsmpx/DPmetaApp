@@ -4,7 +4,10 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.result.contract.ActivityResultContracts
+import android.content.Context
+import android.content.Intent
 import android.os.Bundle
+import androidx.compose.runtime.mutableStateOf
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -17,10 +20,36 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 
+/**
+ * Что пришло из своего уведомления: ссылка `dpai://…` или ответ, ждущий
+ * подтверждения на экране (D-44). Экран забирает и очищает.
+ */
+data class Incoming(val link: String? = null, val confirm: String? = null)
+
 /** Единственная activity: экраны — Compose (D-34), данные — контроллер или демо (D-35). */
 class MainActivity : ComponentActivity() {
+    private val incoming = mutableStateOf(Incoming())
+
+    /**
+     * Только через неэкспортируемый вход `InternalEntry`: чужое приложение
+     * может открыть экран, но не подсунуть ссылку или ответ на подтверждение.
+     */
+    private fun take(intent: Intent?) {
+        if (intent?.component?.className != INTERNAL_ENTRY) return
+        when (intent.action) {
+            OPEN -> intent.getStringExtra(EXTRA_LINK)?.let { incoming.value = Incoming(link = it) }
+            CONFIRM -> intent.getStringExtra(EXTRA_URI)?.let { incoming.value = Incoming(confirm = it) }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        take(intent)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (savedInstanceState == null) take(intent)
         CrashRecord.install(filesDir)
         enableEdgeToEdge()
         // Android 13+: без разрешения уведомления не показываются; отказ — не ошибка, сводка видна в приложении.
@@ -31,11 +60,24 @@ class MainActivity : ComponentActivity() {
         val model = DemoModel.get(cacheDir, controller)
         setContent {
             DpaiTheme {
-                DpaiApp(model, controller)
+                DpaiApp(model, controller, incoming.value) { incoming.value = Incoming() }
             }
         }
     }
+
+    companion object {
+        const val OPEN = "com.dpsmpx.dpai.OPEN_LINK"
+        const val CONFIRM = "com.dpsmpx.dpai.CONFIRM_ANSWER"
+        const val EXTRA_LINK = "link"
+        const val EXTRA_URI = "uri"
+
+        /** Намерение во внутренний вход экрана — для своих `PendingIntent`. */
+        fun internal(context: Context): Intent = Intent().setClassName(context, INTERNAL_ENTRY)
+    }
 }
+
+/** Имена внутренних действий и вход (D-44). */
+private const val INTERNAL_ENTRY = "com.dpsmpx.dpai.android.InternalEntry"
 
 /** Тема: цвета системы (Android 12+) или стандартные Material 3, светлая и тёмная. */
 @Composable

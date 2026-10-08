@@ -29,7 +29,7 @@ object EventLog {
     )
 
     /** Поля, которые не пишутся: тексты пользователя и модели, доказательства с выводом, аргументы команд. */
-    private val EXCLUDED = setOf("objective", "text", "evidence", "arguments", "prompt", "content", "message", "output")
+    private val EXCLUDED = setOf("objective", "text", "evidence", "arguments", "prompt", "content", "message", "output", "body")
 
     private const val MAX_VALUE = 80
 
@@ -39,6 +39,8 @@ object EventLog {
         val fields = when (e.type) {
             EventType.SESSION_TURN_USAGE -> usage(p["usage"] as? JsonObject) + scalars(p, skip = setOf("usage"))
             EventType.SESSION_TURN_TOOLS -> tools(p["tools"] as? JsonObject) + scalars(p, skip = setOf("tools"))
+            // Ответ на запрос (D-44): вариант и итог, без текста ответа человека.
+            EventType.USER_REQUEST_ANSWERED -> scalars(p) + (p["answer"] as? JsonObject)?.let { scalars(it, skip = setOf("at")) }.orEmpty()
             else -> scalars(p)
         }
         val text = (listOf(e.type.name) + fields.map { (k, v) -> "$k=$v" }).joinToString(" ")
@@ -53,6 +55,7 @@ object EventLog {
             e.type == EventType.TASK_STATE_CHANGED && to in setOf("FAILED", "BLOCKED", "COMPLETION_UNVERIFIED") -> LogLevel.WARN
             e.type in setOf(EventType.ACCOUNT_RATE_LIMITED, EventType.ACCOUNT_AUTH_REQUIRED, EventType.ACCOUNT_ERROR_RECORDED, EventType.ACCOUNT_NEAR_LIMIT) -> LogLevel.WARN
             e.type == EventType.SESSION_TURN_FINISHED && (e.payload["codes"] as? JsonArray)?.items?.isNotEmpty() == true -> LogLevel.WARN
+            e.type == EventType.USER_REQUEST_FAILED || e.type == EventType.USER_REQUEST_EXPIRED -> LogLevel.WARN
             else -> LogLevel.INFO
         }
     }
@@ -67,6 +70,7 @@ object EventLog {
             n.startsWith("EXECUTION_TARGET") || n.startsWith("TARGET_") -> "target"
             n.startsWith("VERIFICATION_") -> "проверка"
             n.startsWith("HANDOFF_") -> "handoff"
+            n.startsWith("USER_REQUEST_") -> "запрос"
             else -> "событие"
         }
     }

@@ -48,6 +48,7 @@ import com.dpsmpx.dpai.core.diagnostics.Redactor
 import com.dpsmpx.dpai.core.ids.SessionId
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.ui.DashboardScreen
+import com.dpsmpx.dpai.ui.RequestCard
 import com.dpsmpx.dpai.ui.SessionLine
 import com.dpsmpx.dpai.ui.SessionScreen
 import com.dpsmpx.dpai.ui.TaskBoard
@@ -71,7 +72,7 @@ private const val LIVE_STEP_MS = 3000L
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DpaiApp(model: DemoModel, controller: Controller) {
+fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incoming(), onIncoming: () -> Unit = {}) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
     var snapshot by remember { mutableStateOf<Snapshot?>(null) }
@@ -104,16 +105,39 @@ fun DpaiApp(model: DemoModel, controller: Controller) {
                 failure = null
                 next.notifications.forEach(notifier::show)
                 snapshot = next
+                // Запросы демо и контроллера без службы — сверка здесь; со службой её делает служба (D-44).
+                if (!ControllerService.running) withContext(Dispatchers.IO) { runCatching { RequestPresenter.sync(context.applicationContext, model, model.pending()) } }
             }
             delay(if (next?.live != false) LIVE_STEP_MS else STEP_MS)
         }
     }
     BackHandler(enabled = selectedId != null) { selectedId = null }
+    // Ссылка из уведомления (ТЗ, §76): сессия — её экран; задача — экран её последней сессии, иначе доска;
+    // запрос — вкладка «Запросы». Разбор строгий (DeepLink.parse): чужое ничего не открывает.
+    var confirmUri by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(incoming) {
+        incoming.link?.let { link ->
+            val parsed = com.dpsmpx.dpai.notifications.DeepLink.parse(link).valueOrNull()
+            when (parsed?.kind) {
+                com.dpsmpx.dpai.notifications.DeepLink.Kind.SESSION -> selectedId = parsed.id
+                com.dpsmpx.dpai.notifications.DeepLink.Kind.TASK -> {
+                    val task = com.dpsmpx.dpai.core.ids.IdKinds.TASK.parse(parsed.id).valueOrNull()
+                    val session = task?.let { withContext(Dispatchers.IO) { model.sessionOf(it) } }
+                    if (session != null) selectedId = session.value else { selectedId = null; tab = 1 }
+                }
+                com.dpsmpx.dpai.notifications.DeepLink.Kind.REQUEST -> { selectedId = null; tab = 3 }
+                else -> Unit
+            }
+        }
+        incoming.confirm?.let { confirmUri = it }
+        if (incoming != Incoming()) onIncoming()
+    }
+    confirmUri?.let { uri -> ConfirmDialog(model, snapshot?.requests.orEmpty(), uri) { confirmUri = null } }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (selectedId != null) "Сессия" else if (tab == 2) "DP AI · targets" else "DP AI · ${snapshot?.mode ?: "…"}") },
+                title = { Text(if (selectedId != null) "Сессия" else if (tab == 2) "DP AI · targets" else if (tab == 3) "DP AI · запросы" else "DP AI · ${snapshot?.mode ?: "…"}") },
                 navigationIcon = {
                     if (selectedId != null) TextButton(onClick = { selectedId = null }) { Text("←") }
                 },
@@ -125,6 +149,8 @@ fun DpaiApp(model: DemoModel, controller: Controller) {
                     NavigationBarItem(selected = tab == 0, onClick = { tab = 0 }, icon = { Text("◉") }, label = { Text("Сводка") })
                     NavigationBarItem(selected = tab == 1, onClick = { tab = 1 }, icon = { Text("▦") }, label = { Text("Задачи") })
                     NavigationBarItem(selected = tab == 2, onClick = { tab = 2 }, icon = { Text("⇄") }, label = { Text("Targets") })
+                    val waiting = snapshot?.requests?.size ?: 0
+                    NavigationBarItem(selected = tab == 3, onClick = { tab = 3 }, icon = { Text(if (waiting > 0) "?$waiting" else "?") }, label = { Text("Запросы") })
                 }
             }
         },
@@ -148,6 +174,7 @@ fun DpaiApp(model: DemoModel, controller: Controller) {
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when {
                     selectedId == null && tab == 2 -> TargetsPane(controller, model)
+                    selectedId == null && tab == 3 -> RequestsPane(model, s)
                     s == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                     selectedId != null -> SessionPane(s.session)
                     tab == 0 -> DashboardPane(s.dashboard) { selectedId = it.value }
@@ -285,6 +312,52 @@ private fun NewTaskDialog(model: DemoModel, onDone: () -> Unit) {
                     busy = false
                 }
             }) { Text(if (busy) "Ставлю…" else "Поставить") }
+        },
+        dismissButton = { TextButton(onClick = onDone) { Text("Отмена") } },
+    )
+}
+
+/**
+ * Подтверждение опасного ответа из уведомления (D-44): текст — из ждущего
+ * запроса оркестратора, а не из намерения; запрос уже закрыт — сказать.
+ */
+@Composable
+private fun ConfirmDialog(model: DemoModel, requests: List<RequestCard>, uri: String, onDone: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current.applicationContext
+    val action = com.dpsmpx.dpai.notifications.RequestAction.parse(uri).valueOrNull()
+    val card = requests.firstOrNull { it.id == action?.request }
+    val button = card?.buttons?.firstOrNull { it.uri == uri }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = onDone,
+        title = { Text(if (button != null) "Подтвердить: ${button.label}?" else "Запрос уже не ждёт ответа") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (card != null) {
+                    Text(card.title, fontWeight = FontWeight.Bold)
+                    Text(card.body, style = MaterialTheme.typography.bodySmall)
+                    Text(card.origin, style = MaterialTheme.typography.labelSmall)
+                } else {
+                    Text("Он отвечен, истёк или снят.", style = MaterialTheme.typography.bodySmall)
+                }
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            }
+        },
+        confirmButton = {
+            if (card != null && button != null) {
+                TextButton(enabled = !busy, onClick = {
+                    busy = true
+                    scope.launch {
+                        when (val r = withContext(Dispatchers.IO) { Answers.apply(context, card.id.value, uri, null, button.label) }) {
+                            is Outcome.Failure -> error = r.diagnostics.first().message
+                            is Outcome.Success -> onDone()
+                        }
+                        busy = false
+                    }
+                }) { Text(if (busy) "Применяю…" else button.label, color = MaterialTheme.colorScheme.error) }
+            }
         },
         dismissButton = { TextButton(onClick = onDone) { Text("Отмена") } },
     )

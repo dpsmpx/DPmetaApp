@@ -8,7 +8,16 @@ import com.dpsmpx.dpai.core.ids.IdKinds
 import com.dpsmpx.dpai.core.ids.TaskId
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.result.then
+import com.dpsmpx.dpai.core.ids.RequestId
+import com.dpsmpx.dpai.core.ids.SessionId
 import com.dpsmpx.dpai.notifications.Notification
+import com.dpsmpx.dpai.notifications.NotificationDecision
+import com.dpsmpx.dpai.notifications.RequestAnswer
+import com.dpsmpx.dpai.notifications.RequestKind
+import com.dpsmpx.dpai.orchestrator.requests.RequestPurpose
+import com.dpsmpx.dpai.ui.RequestCard
+import com.dpsmpx.dpai.ui.RequestScreens
+import kotlin.time.Duration
 import com.dpsmpx.dpai.storage.vfs.NioVfs
 import com.dpsmpx.dpai.ui.ControlView
 import com.dpsmpx.dpai.ui.DashboardScreen
@@ -27,8 +36,10 @@ data class Snapshot(
     val dashboard: DashboardScreen,
     val board: TaskBoard,
     val session: SessionScreen?,
-    /** Новые уведомления контроллера; у демо их нет — телефон не шумит демо-событиями. */
+    /** Новые уведомления контроллера; у демо — только проверочные запросы: телефон не шумит демо-событиями. */
     val notifications: List<Notification> = emptyList(),
+    /** Ждущие запросы человеку (D-44). */
+    val requests: List<RequestCard> = emptyList(),
 )
 
 /**
@@ -62,22 +73,89 @@ class DemoModel(private val cacheDir: File, private val controller: Controller) 
         }
     }
 
-    /** Такт и снимок; новые уведомления контроллера — в снимке, один раз. */
+    private var drainedOf: ControlView? = null
+    private var drained = 0
+
+    /**
+     * Уведомления, которые оболочка ещё не показала: у контроллера — все
+     * новые и обновлённые (ТЗ, §36), у демо — только проверочные запросы.
+     */
+    private fun drain(v: ControlView): List<Notification> {
+        val posted = v.orchestrator.posted
+        if (drainedOf !== v) {
+            drainedOf = v
+            drained = 0
+        }
+        val fresh = posted.drop(drained)
+        drained = posted.size
+        return fresh.mapNotNull {
+            when (it) {
+                is NotificationDecision.Post -> it.notification
+                is NotificationDecision.Update -> it.notification
+                is NotificationDecision.Held -> null
+            }
+        }.filter { n -> v is LiveSystem || n.request?.let { v.orchestrator.requests.requests[it]?.purpose } == RequestPurpose.PROBE.code }
+    }
+
+    private fun snapshot(v: ControlView, selected: String?, notifications: List<Notification>): Snapshot {
+        val session = selected?.let { IdKinds.SESSION.parse(it).valueOrNull() }
+        val o = v.orchestrator
+        val shown = if (v is LiveSystem) o.pendingRequests() else o.pendingRequests().filter { it.purpose == RequestPurpose.PROBE.code }
+        return Snapshot(
+            v.mode, v is LiveSystem, v.dashboard(), v.board(), session?.let(v::session), notifications,
+            RequestScreens.cards(shown, o.tasks, Clock.SYSTEM.now()),
+        )
+    }
+
+    /** Такт и снимок; новые уведомления — в снимке, один раз. */
     @Synchronized
     fun step(selected: String?): Snapshot {
         val v = current()
         v.step()
-        val session = selected?.let { IdKinds.SESSION.parse(it).valueOrNull() }
-        return Snapshot(v.mode, v is LiveSystem, v.dashboard(), v.board(), session?.let(v::session), (v as? LiveSystem)?.drainNotifications().orEmpty())
+        return snapshot(v, selected, drain(v))
     }
 
     /** Снимок без такта — когда такт делает служба контроллера (D-36). */
     @Synchronized
-    fun view(selected: String?): Snapshot {
-        val v = current()
-        val session = selected?.let { IdKinds.SESSION.parse(it).valueOrNull() }
-        return Snapshot(v.mode, v is LiveSystem, v.dashboard(), v.board(), session?.let(v::session))
+    fun view(selected: String?): Snapshot = snapshot(current(), selected, emptyList())
+
+    /**
+     * Ответ человека на запрос (D-44) — с кнопки уведомления, окна поверх
+     * приложений или экрана; ссылку и хеш проверяет оркестратор.
+     */
+    @Synchronized
+    fun answer(uri: String, text: String?): Outcome<RequestAnswer> = try {
+        current().orchestrator.answer(uri, text, ACTOR).outcome
+    } catch (e: Exception) {
+        Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.INTERNAL_ERROR, "контроллер не принял ответ", e)))
     }
+
+    /** Проверочный запрос вида [kind] (экран «Запросы», `docs/DEVICE_CHECK.md`). */
+    @Synchronized
+    fun probe(kind: RequestKind, ttl: Duration?): Outcome<RequestId> = try {
+        current().orchestrator.probe(kind, ttl)
+    } catch (e: Exception) {
+        Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.INTERNAL_ERROR, "контроллер не создал запрос", e)))
+    }
+
+    /** Канал показал запрос: факт в журнал (D-44). */
+    @Synchronized
+    fun delivered(id: RequestId, channel: String) {
+        runCatching { current().orchestrator.delivered(id, channel) }
+    }
+
+    /** Ждёт ли запрос ответа — оболочка снимает уведомление и окно закрытого. */
+    @Synchronized
+    fun pending(): Map<RequestId, RequestCard> = runCatching {
+        val o = current().orchestrator
+        RequestScreens.cards(o.pendingRequests(), o.tasks, Clock.SYSTEM.now()).associateBy { it.id }
+    }.getOrDefault(emptyMap())
+
+    /** Последняя сессия задачи — куда ведёт ссылка `dpai://task/…` из уведомления. */
+    @Synchronized
+    fun sessionOf(task: TaskId): SessionId? = runCatching {
+        current().orchestrator.sessions.sessions.values.filter { it.task == task }.maxByOrNull { it.createdAt.epochMillis }?.id
+    }.getOrNull()
 
     /** Есть ли настоящий контроллер: тогда такт — в службе переднего плана. */
     fun hasLive(): Boolean = controller.targets().any { it.configDir != null }
@@ -112,6 +190,9 @@ class DemoModel(private val cacheDir: File, private val controller: Controller) 
     }
 
     companion object {
+        /** Кто отвечает с телефона: владелец приложения. */
+        const val ACTOR = "автор"
+
         @Volatile
         private var instance: DemoModel? = null
 

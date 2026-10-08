@@ -53,6 +53,9 @@ interface ControlView {
     fun board(): TaskBoard
 
     fun session(id: SessionId): SessionScreen
+
+    /** Контур под оболочкой: запросы человеку и ответы на них (D-44) — его команды. */
+    val orchestrator: Orchestrator
 }
 
 /**
@@ -101,7 +104,7 @@ class LiveSystem(
     private val waitingLogin = HashSet<ExecutionTargetId>()
     private val slotOf = HashMap<ExecutionTargetId, AccountId>()
     private val accountsLogic = Accounts()
-    val orchestrator: Orchestrator
+    override val orchestrator: Orchestrator
     val notes: List<String> = entries.filter { it.configDir == null }.map { "${it.label}: нет каталога Claude — только проверка агента" } +
         (project?.takeIf { p -> usable.none { it.id == p.target } }?.let { listOf("проект: его target без каталога Claude — задачи не запускаются") }.orEmpty())
     val problems = mutableListOf<Diagnostic>()

@@ -77,7 +77,7 @@
 | `sessions` | реестр сессий, жизненный цикл, heartbeat, поток событий | `core`, `accounts`, `execution` | 6 |
 | `verification` | профили FAST/NORMAL/FULL, доказательства, адаптер DP-Verify | `core`, `execution`, `git` | 10 |
 | `monitoring` | сводки, временная шкала, свежесть, устаревание, ресурсы, самодиагностика | `core`, `accounts`, `execution`, `sessions`, `tasks` | 11 |
-| `notifications` | категории, дедупликация, агрегация, cooldown, deep links | `core` | 12 |
+| `notifications` | категории, дедупликация, агрегация, cooldown, deep links, запросы человеку (D-44) | `core` | 12 |
 | `ecosystem` | `EcosystemProvider`, адаптер DPmeta | `core` | 15 |
 | `connectors` | GitHub и другие внешние сервисы | `core`, `security` | 15 |
 | `analytics` | учёт использования провайдера; телеметрия приложения — отдельно | `core` | 11, 17 |
@@ -204,7 +204,7 @@ RECOVERY_PENDING ─► проба target и процесса ─► сверк�
 | Модуль, пакет | Содержимое |
 |---|---|
 | `accounts` | `Accounts`: решения (`registerSlot`, `observeAuthStatus`, `observeLimit`, `lease`, `tick`…) возвращают события `AccountEvent`; `apply` сворачивает их в `AccountsState` с проверкой переходов `AccountLifecycle`. `AuthStatus` — разбор `claude auth status --json`; `SlotEnvironment` — окружение процесса `claude` для слота (D-29); `AccountCodec` — события в `dpai.event` и состояние в `dpai.accounts-state` |
-| `notifications` | `NotificationEngine`: ключ предмета, окно агрегации, эскалация, предел частоты и сводка, `resolve`; `DeepLink` — `dpai://вид/id` |
+| `notifications` | `NotificationEngine`: ключ предмета, окно агрегации, эскалация, предел частоты и сводка, `resolve`; `DeepLink` — `dpai://вид/id`; `UserRequest`, `UserRequests` — запрос человеку, его автомат и проверка ответа, `RequestAction` — кнопка `dpai://answer/…` (D-44) |
 | `orchestrator` | `EventRecorder` — конверты событий с номерами по потокам; `accounts.AccountsProjection` — проекция для снимков и восстановления (§5); `accounts.AccountNotifications` — какие события аккаунтов становятся уведомлениями |
 
 ```
@@ -279,6 +279,14 @@ target:     start ─► Detacher ─► supervise ─► процесс; выв
 Одобрения из уведомлений: `notifications.ApprovalAction` (ссылки
 `dpai://approve|deny/<apr_…>?hash=…`), `orchestrator.ApprovalDesk` —
 одобрение только по кнопке текущего запроса с тем же хешем предложения.
+
+Запросы человеку (D-44): модель и автомат — `notifications.UserRequest`,
+`UserRequests`; журнал и снимок — `orchestrator.requests.UserRequestsProjection`;
+назначения и их действия — `orchestrator.requests.RequestPurpose` и
+`Orchestrator.answer`. Оболочка Android показывает ждущие запросы по
+состоянию, а не по потоку уведомлений (`RequestPresenter`: уведомление,
+поле ввода, окно поверх приложений `RequestOverlay`), ответ — тот же
+`answer` с любого канала.
 
 Восстановление (этап 13; `docs/RECOVERY.md`, §7): `orchestrator.recovery`
 — `Reconciler`, `OrphanScan`, `WorktreeProbe`.

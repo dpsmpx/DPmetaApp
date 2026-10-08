@@ -51,7 +51,7 @@ class DemoSystem(
     private val journal: EventJournal = EventJournal.open(vfs, "demo.journal", quarantineCorruption = true).valueOrNull()
         ?: error("журнал демо не открылся")
     private val runner: MockRunner
-    val orchestrator: Orchestrator
+    override val orchestrator: Orchestrator
     private val targets: Int = (sessions + 4) / 5
 
     init {

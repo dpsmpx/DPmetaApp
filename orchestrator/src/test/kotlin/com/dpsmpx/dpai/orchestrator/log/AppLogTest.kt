@@ -184,6 +184,16 @@ class AppLogTest {
         )!!
         assertTrue("toolCalls=3" in tools.text && "duplicates=1" in tools.text && "filesRead=2" in tools.text, tools.text)
         assertEquals(LogLevel.DEBUG, EventLog.line(env(EventType.SESSION_TOOL_STARTED, JsonObject.of("tool" to JsonString("Read"))))!!.level)
+        // Ответ на запрос (D-44): вариант и итог — да, текст ответа человека — нет.
+        val answered = EventLog.line(
+            env(
+                EventType.USER_REQUEST_ANSWERED,
+                JsonObject.of("request" to JsonString("req_1"), "answer" to JsonObject.of("option" to JsonString("reply"), "text" to JsonString("пароль 123"), "effect" to JsonString("задача снова в очереди"))),
+            ),
+        )!!
+        assertEquals("запрос", answered.tag)
+        assertTrue("option=reply" in answered.text && "request=req_1" in answered.text, answered.text)
+        assertFalse("пароль" in answered.text, answered.text)
     }
 
     @Test

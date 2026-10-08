@@ -29,6 +29,8 @@ class Notifier(private val context: Context) {
     }
 
     fun show(n: Notification) {
+        // Запрос человеку показывает RequestPresenter — по ждущим запросам, а не по потоку (D-44).
+        if (n.request != null) return
         val builder = AndroidNotification.Builder(context, channel(n.category))
             .setSmallIcon(android.R.drawable.stat_notify_more)
             .setContentTitle(n.title + if (n.count > 1) " (×${n.count})" else "")
@@ -36,8 +38,9 @@ class Notifier(private val context: Context) {
             .setStyle(AndroidNotification.BigTextStyle().bigText(n.body))
             .setOnlyAlertOnce(true)
             .setAutoCancel(true)
-            // Нажатие открывает приложение — то же окно, а не второе поверх (ревью 8 октября 2026).
-            .setContentIntent(openApp(context))
+            // Нажатие открывает приложение — то же окно, а не второе поверх (ревью 8 октября 2026);
+            // ссылка уведомления — к задаче или сессии (ТЗ, §76).
+            .setContentIntent(n.link?.let { openLink(context, it.toUri()) } ?: openApp(context))
         for ((i, a) in n.actions.withIndex()) {
             // Кнопка — только через свой неэкспортируемый приёмник (A-7, T10):
             // чужое приложение не пришлёт ссылку одобрения.
@@ -57,6 +60,20 @@ class Notifier(private val context: Context) {
             Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
+
+        /**
+         * Открыть приложение по ссылке `dpai://вид/id` (ТЗ, §76): явный
+         * компонент, неизменяемый `PendingIntent`; ссылку разбирает строгий
+         * `DeepLink.parse` на экране.
+         */
+        fun openLink(context: Context, link: String): PendingIntent = PendingIntent.getActivity(
+            context, link.hashCode(),
+            MainActivity.internal(context).setAction(MainActivity.OPEN).putExtra(MainActivity.EXTRA_LINK, link)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+
+        fun channelOf(c: NotificationCategory) = channel(c)
 
         private fun channel(c: NotificationCategory) = "dpai-${c.name.lowercase()}"
 

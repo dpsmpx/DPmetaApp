@@ -84,6 +84,8 @@ class ControllerService : Service() {
                 t.scheduleWithFixedDelay({
                     lock.acquire(TimeUnit.MINUTES.toMillis(WAKE_MINUTES))
                     runCatching { model.step(null).notifications.forEach(notifier::show) }
+                    // Запросы человеку — по ждущим в журнале: показать новые, убрать закрытые (D-44).
+                    runCatching { RequestPresenter.sync(app, model, model.pending()) }
                 }, 0, STEP_SECONDS, TimeUnit.SECONDS)
             }
         }
