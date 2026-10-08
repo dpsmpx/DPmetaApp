@@ -264,7 +264,9 @@ found at: /root/.claude/.claude.json»: файл настроек ищется �
 | `--fallback-model <model>` | запасные модели при перегрузке или недоступности, список через запятую | — |
 | `--exclude-dynamic-system-prompt-sections` | каталог, окружение, пути памяти и `git status` уходят из системного prompt в первое сообщение: «Improves cross-user prompt-cache reuse»; игнорируется с `--system-prompt`, по умолчанию выключен | кеш prompt между сессиями разных рабочих деревьев |
 | `--autocompact <auto\|tokens>` | размер окна автосжатия: `auto` или 100k–1M токенов | не используется |
-| `--max-turns` | в справке 2.1.294 нет | предел длины хода — `--max-budget-usd` и тайм-аут |
+
+Флага `--max-turns` в справке 2.1.294 нет: длину хода ограничивают
+`--max-budget-usd` и тайм-аут хода.
 
 Поля итога `result` (образец 2.1.291): `usage` — `input_tokens`,
 `output_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens`,

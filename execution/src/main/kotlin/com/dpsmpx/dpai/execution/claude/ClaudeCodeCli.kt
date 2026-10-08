@@ -17,6 +17,15 @@ import kotlin.time.Duration
 data class ClaudeRequest(
     val prompt: String,
     val model: String? = null,
+    /** Усилие хода (`--effort`: low … max) и запасная модель — маршрут D-40 (`docs/EFFICIENCY.md`, §7). */
+    val effort: String? = null,
+    val fallbackModel: String? = null,
+    /**
+     * Каталог, окружение и `git status` — из системного prompt в первое
+     * сообщение (`--exclude-dynamic-system-prompt-sections`): сессии разных
+     * рабочих деревьев делят кеш prompt (D-40, п. 6).
+     */
+    val shareSystemPromptCache: Boolean = false,
     val permissionMode: String? = null,
     val tools: List<String>? = null,
     val allowedTools: List<String> = emptyList(),
@@ -51,10 +60,13 @@ object ClaudeCodeCli {
      */
     const val TURN_PERMISSION_MODE: String = "auto"
 
+    /** Инструмент субагентов Claude Code (`docs/research/CLAUDE_CODE_CLI.md`, §11): запрет — `--disallowedTools` (D-40). */
+    const val SUBAGENT_TOOL: String = "Agent"
+
     val DOCUMENTED_FLAGS: Set<String> = setOf(
         "-p", "--verbose", "--output-format", "--session-id", "--resume", "--model", "--permission-mode",
         "--tools", "--allowedTools", "--disallowedTools", "--max-budget-usd", "--json-schema", "--add-dir",
-        "--append-system-prompt",
+        "--append-system-prompt", "--effort", "--fallback-model", "--exclude-dynamic-system-prompt-sections",
     )
 
     fun argv(claude: List<String>, request: ClaudeRequest, session: ProviderSessionId, resume: Boolean): List<String> = buildList {
@@ -67,6 +79,9 @@ object ClaudeCodeCli {
         add(if (resume) "--resume" else "--session-id")
         add(session.value)
         request.model?.let { add("--model"); add(it) }
+        request.fallbackModel?.let { add("--fallback-model"); add(it) }
+        request.effort?.let { add("--effort"); add(it) }
+        if (request.shareSystemPromptCache) add("--exclude-dynamic-system-prompt-sections")
         request.permissionMode?.let { add("--permission-mode"); add(it) }
         request.tools?.let { add("--tools"); add(it.joinToString(",")) }
         if (request.allowedTools.isNotEmpty()) { add("--allowedTools"); addAll(request.allowedTools) }

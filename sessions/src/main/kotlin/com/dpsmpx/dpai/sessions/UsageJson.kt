@@ -27,7 +27,7 @@ internal object UsageJson {
         "mode" to JsonString(p.mode.name), "chars" to JsonNumber.of(p.chars), "estimatedTokens" to JsonNumber.of(p.estimatedTokens),
         "sources" to JsonNumber.of(p.sources), "omittedSources" to JsonNumber.of(p.omittedSources),
         "omittedTokens" to JsonNumber.of(p.omittedTokens), "reusedTokens" to JsonNumber.of(p.reusedTokens),
-        "context" to str(p.context), "taskClass" to str(p.taskClass), "model" to str(p.model), "effort" to str(p.effort), "route" to str(p.route),
+        "context" to str(p.context), "taskClass" to str(p.taskClass), "model" to str(p.model), "effort" to str(p.effort), "route" to str(p.route), "why" to str(p.why),
     )
 
     /** Поля [prompt] в [f]; закрывает чтение полей вызывающий. */
@@ -44,8 +44,9 @@ internal object UsageJson {
         val model = f.optString("model")
         val effort = f.optString("effort")
         val route = f.optString("route")
+        val why = f.optString("why")
         if (mode == null || chars == null || tokens == null || sources == null || omittedSources == null || omittedTokens == null || reusedTokens == null) return null
-        return runCatching { PromptFacts(mode, chars, tokens, sources, omittedSources, omittedTokens, reusedTokens, context, taskClass, model, effort, route) }.getOrNull()
+        return runCatching { PromptFacts(mode, chars, tokens, sources, omittedSources, omittedTokens, reusedTokens, context, taskClass, model, effort, route, why) }.getOrNull()
             ?: null.also { f.diagnostics.error(DiagCode.VALUE_INVALID, "сведения о prompt недопустимы", f.path) }
     }
 

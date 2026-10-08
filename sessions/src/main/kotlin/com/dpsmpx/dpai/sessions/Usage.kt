@@ -17,7 +17,8 @@ enum class PromptMode { FULL, DELTA, CHECKPOINT }
  * (`ESTIMATED`, `docs/EFFICIENCY.md`, §2), а не счёт провайдера.
  * [omittedTokens] — не вошло по бюджету; [reusedTokens] — не послано
  * повторно, потому что уже есть в сессии провайдера. Маршрут: класс задачи,
- * модель и усилие (`null` — по умолчанию аккаунта) и почему ([route]).
+ * модель и усилие (`null` — по умолчанию аккаунта) и почему ([route]);
+ * [why] — почему такой режим (контрольная точка, разница, полный).
  */
 data class PromptFacts(
     val mode: PromptMode,
@@ -32,6 +33,7 @@ data class PromptFacts(
     val model: String? = null,
     val effort: String? = null,
     val route: String? = null,
+    val why: String? = null,
 ) {
     init {
         require(chars >= 0 && estimatedTokens >= 0 && sources >= 0 && omittedSources >= 0 && omittedTokens >= 0 && reusedTokens >= 0) { "размеры — не отрицательные" }

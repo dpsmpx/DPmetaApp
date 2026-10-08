@@ -77,7 +77,7 @@ object ContextCodec {
     fun readHandoff(json: JsonObject): Outcome<Handoff> {
         val d = DiagnosticCollector()
         val f = JsonFields(json, "$", d)
-        FormatHeader.read(f, Handoff.FORMAT, Handoff.VERSION..Handoff.VERSION, d) ?: return Outcome.Failure(d.all)
+        val format = FormatHeader.read(f, Handoff.FORMAT, 1..Handoff.VERSION, d) ?: return Outcome.Failure(d.all)
         val id = f.typed("id", IdKinds.HANDOFF)
         val key = f.string("key")
         val reason = f.enumOf<HandoffReason>("reason")
@@ -107,7 +107,7 @@ object ContextCodec {
             lists.getValue("completed")!!, lists.getValue("verified")!!, lists.getValue("failed")!!, lists.getValue("warnings")!!,
             lists.getValue("openProblems")!!, currentAction, nextAction, modified, commit, branch, workspace, createdAt,
         )
-        if ((h.toJson()["hash"] as JsonString).value != hash.toString()) {
+        if ((h.toJson(format)["hash"] as JsonString).value != hash.toString()) {
             return Outcome.failure(DiagCode.HASH_MISMATCH, "хеш handoff не совпал с содержимым", "handoff $id")
         }
         return Outcome.success(h)

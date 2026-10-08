@@ -159,10 +159,6 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     CONTEXT_BUDGET_EXCEEDED(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
     /** Тот же текст под вторым ключом — включён один раз, второй ключ ссылается на первый. */
     CONTEXT_DEDUPLICATED(Category.STATE, Severity.INFO, Retryability.NON_RETRYABLE),
-    /** Продолжение — свежей сессией провайдера с handoff, а не `--resume` (история велика, сжата или переполнена). */
-    CONTEXT_CHECKPOINT(Category.STATE, Severity.INFO, Retryability.NON_RETRYABLE),
-    /** Следующая попытка — на ступень сильнее (модель или усилие) после провала по качеству. */
-    MODEL_ESCALATED(Category.STATE, Severity.INFO, Retryability.NON_RETRYABLE),
     /** Режим бюджета удешевил маршрут задачи (только классы, где это допустимо). */
     MODEL_DOWNGRADED_BY_BUDGET(Category.STATE, Severity.WARNING, Retryability.NON_RETRYABLE),
     /** Та же цель уже стоит в очереди проекта: вторая задача не создаётся. */
