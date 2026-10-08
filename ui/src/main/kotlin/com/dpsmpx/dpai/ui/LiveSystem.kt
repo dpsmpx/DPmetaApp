@@ -144,7 +144,14 @@ class LiveSystem(
     /** Проверить вход слота target заново — после того как автор вошёл в Claude. */
     fun probeSlot(target: ExecutionTargetId) {
         val entry = usable.firstOrNull { it.id == target } ?: return
-        val probe = SlotAuthProbe(manager.client(target).valueOrNull()!!)
+        val client = when (val c = manager.client(target)) {
+            is Outcome.Failure -> {
+                problems += c.diagnostics
+                return
+            }
+            is Outcome.Success -> c.value
+        }
+        val probe = SlotAuthProbe(client)
         when (val s = probe.start(ids.next(IdKinds.SESSION), entry.configDir!!)) {
             is Outcome.Failure -> problems += s.diagnostics
             is Outcome.Success -> probes[target] = probe to s.value

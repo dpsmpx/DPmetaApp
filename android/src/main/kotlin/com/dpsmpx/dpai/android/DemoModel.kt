@@ -2,10 +2,12 @@ package com.dpsmpx.dpai.android
 
 import com.dpsmpx.dpai.core.clock.Clock
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
+import com.dpsmpx.dpai.core.diagnostics.Diagnostic
 import com.dpsmpx.dpai.core.ids.ExecutionTargetId
 import com.dpsmpx.dpai.core.ids.IdKinds
 import com.dpsmpx.dpai.core.ids.TaskId
 import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.core.result.then
 import com.dpsmpx.dpai.notifications.Notification
 import com.dpsmpx.dpai.storage.vfs.NioVfs
 import com.dpsmpx.dpai.ui.ControlView
@@ -80,22 +82,33 @@ class DemoModel(private val cacheDir: File, private val controller: Controller) 
     /** Есть ли настоящий контроллер: тогда такт — в службе переднего плана. */
     fun hasLive(): Boolean = controller.targets().any { it.configDir != null }
 
+    /**
+     * Контроллер для действия кнопки; сбой его сборки (журнал не открылся,
+     * target недоступен при запуске) — отказ с причиной, а не падение
+     * приложения из кнопки или уведомления (ревью 8 октября 2026).
+     */
+    private fun liveSystem(): Outcome<LiveSystem?> = try {
+        Outcome.success(current() as? LiveSystem)
+    } catch (e: Exception) {
+        Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.INTERNAL_ERROR, "контроллер не запустился", e)))
+    }
+
     @Synchronized
-    fun addTask(title: String, objective: String): Outcome<TaskId> {
-        val v = current() as? LiveSystem
-            ?: return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "задачи ставятся только контроллеру: заведите target с каталогом Claude")
-        return v.addTask(title.trim(), objective.trim())
+    fun addTask(title: String, objective: String): Outcome<TaskId> = liveSystem().then { v ->
+        v?.addTask(title.trim(), objective.trim())
+            ?: Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "задачи ставятся только контроллеру: заведите target с каталогом Claude")
     }
 
     /** Кнопка уведомления; без контроллера — отказ. */
     @Synchronized
-    fun respond(uri: String): Outcome<Boolean> = (current() as? LiveSystem)?.respond(uri)
-        ?: Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "одобрения — только у контроллера")
+    fun respond(uri: String): Outcome<Boolean> = liveSystem().then { v ->
+        v?.respond(uri) ?: Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "одобрения — только у контроллера")
+    }
 
     /** Проверить вход слота target заново — после входа автора в Claude. */
     @Synchronized
     fun probe(target: ExecutionTargetId) {
-        (current() as? LiveSystem)?.probeSlot(target)
+        liveSystem().valueOrNull()?.probeSlot(target)
     }
 
     companion object {

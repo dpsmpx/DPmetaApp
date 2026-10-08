@@ -44,6 +44,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.dpsmpx.dpai.core.diagnostics.Redactor
 import com.dpsmpx.dpai.core.ids.SessionId
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.ui.DashboardScreen
@@ -76,6 +77,9 @@ fun DpaiApp(model: DemoModel, controller: Controller) {
     var snapshot by remember { mutableStateOf<Snapshot?>(null) }
     // Контроллер остановлен кнопкой «Остановить»: экран его не поднимает сам (D-39).
     var stopped by remember { mutableStateOf(false) }
+    // Сбой контроллера (журнал не открылся, target недоступен при запуске): показать, а не упасть —
+    // иначе приложение падало бы при каждом запуске и target нельзя было бы исправить.
+    var failure by remember { mutableStateOf<String?>(null) }
     val selected by rememberUpdatedState(selectedId)
     val scope = rememberCoroutineScope()
 
@@ -88,10 +92,20 @@ fun DpaiApp(model: DemoModel, controller: Controller) {
             val background = withContext(Dispatchers.IO) { model.hasLive() }
             if (background && !ControllerService.running) ControllerService.start(context)
             stopped = background && !ControllerService.running && withContext(Dispatchers.IO) { ControllerService.stoppedByUser(context) }
-            val next = withContext(Dispatchers.IO) { if (background) model.view(s) else model.step(s) }
-            next.notifications.forEach(notifier::show)
-            snapshot = next
-            delay(if (next.live) LIVE_STEP_MS else STEP_MS)
+            val next = try {
+                withContext(Dispatchers.IO) { if (background) model.view(s) else model.step(s) }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                failure = Redactor.STANDARD.redact("${e.javaClass.simpleName}: ${e.message}")
+                null
+            }
+            if (next != null) {
+                failure = null
+                next.notifications.forEach(notifier::show)
+                snapshot = next
+            }
+            delay(if (next?.live != false) LIVE_STEP_MS else STEP_MS)
         }
     }
     BackHandler(enabled = selectedId != null) { selectedId = null }
@@ -117,6 +131,14 @@ fun DpaiApp(model: DemoModel, controller: Controller) {
     ) { padding ->
         val s = snapshot
         Column(Modifier.padding(padding).fillMaxSize()) {
+            failure?.let {
+                Text(
+                    "Контроллер не работает: $it. Проверьте targets на вкладке Targets.",
+                    Modifier.fillMaxWidth().padding(12.dp),
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
             if (stopped) {
                 Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("Контроллер остановлен: такты не идут, уведомлений нет.", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
