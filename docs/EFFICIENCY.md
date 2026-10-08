@@ -170,6 +170,13 @@ ANSI-цвета убираются, длинные строки обрезают
   `budget`, `pinned`, `legacy`) — в `SESSION_PROMPT_PREPARED`, модель хода
   по факту — в `SESSION_TURN_USAGE`.
 
+Флаги `--effort`, `--fallback-model` и
+`--exclude-dynamic-system-prompt-sections` проверены по справке 2.1.294;
+старый Claude Code на target отвечает на неизвестный флаг «unknown
+option» и выходит до вызова API — модель не тратится. Драйвер сессии
+узнаёт флаг из stderr: ход — `CLAUDE_FLAG_UNSUPPORTED` без вины аккаунта,
+оркестратор запоминает флаг для target, повтор идёт без него.
+
 Длину ответа Claude Code флагом не ограничивает (`--max-turns` в 2.1.294
 нет); пределы хода — усилие, `--max-budget-usd` политики задачи и
 тайм-аут хода.

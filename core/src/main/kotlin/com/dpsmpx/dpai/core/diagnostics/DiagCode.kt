@@ -129,6 +129,8 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     CLAUDE_MAX_TURNS(Category.EXECUTION, Severity.ERROR, Retryability.NON_RETRYABLE),
     /** Контекст не влез в окно модели (D-40): продолжение — с меньшим, а не повтор того же. */
     CLAUDE_CONTEXT_OVERFLOW(Category.EXECUTION, Severity.ERROR, Retryability.RETRYABLE),
+    /** Claude Code target не знает флаг хода: повтор — без него (D-40). */
+    CLAUDE_FLAG_UNSUPPORTED(Category.EXECUTION, Severity.ERROR, Retryability.RETRYABLE),
     CLAUDE_STREAM_MALFORMED(Category.FORMAT, Severity.WARNING, Retryability.NON_RETRYABLE),
     CLAUDE_STREAM_INCOMPLETE(Category.EXECUTION, Severity.ERROR, Retryability.UNKNOWN),
     CLAUDE_SESSION_MISMATCH(Category.INTEGRITY, Severity.ERROR, Retryability.NON_RETRYABLE),

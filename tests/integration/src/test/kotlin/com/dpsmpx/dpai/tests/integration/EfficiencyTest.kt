@@ -21,6 +21,8 @@ import com.dpsmpx.dpai.execution.claude.ClaudeRequest
 import com.dpsmpx.dpai.execution.claude.ClaudeRunner
 import com.dpsmpx.dpai.execution.claude.MockRunner
 import com.dpsmpx.dpai.execution.claude.RunnerState
+import com.dpsmpx.dpai.execution.claude.RunnerUpdate
+import com.dpsmpx.dpai.execution.claude.TurnStatus
 import com.dpsmpx.dpai.execution.process.Completed
 import com.dpsmpx.dpai.execution.process.LocalProcessHost
 import com.dpsmpx.dpai.execution.process.ProcessSpec
@@ -157,5 +159,34 @@ class EfficiencyTest {
         assertEquals(TaskState.BLOCKED, task.state)
         assertEquals(DiagCode.CONTEXT_BUDGET_EXCEEDED, task.lastReason)
         assertEquals(0, h.starts.size)
+    }
+
+    @Test
+    fun flagUnknownToTargetClaudeIsDroppedAndTurnRetried() {
+        // Старый Claude Code на target: «unknown option» и выход до вызова API (commander.js).
+        var first = true
+        val h = EfficiencyHarness(dir.resolve("flags"), EfficiencyPolicy.DEFAULT, verify = { _, _ -> null }) { inner ->
+            object : ClaudeRunner by inner {
+                override fun stream(session: SessionId): Outcome<List<RunnerUpdate>> = inner.stream(session).let { out ->
+                    val ups = out.valueOrNull() ?: return@let out
+                    if (!first || ups.none { it is RunnerUpdate.TurnFinished }) return@let out
+                    first = false
+                    val failed = ups.map { u ->
+                        if (u is RunnerUpdate.TurnFinished) u.copy(result = u.result.copy(status = TurnStatus.FAILED, text = null)) else u
+                    }
+                    val stderr = RunnerUpdate.Stderr("error: unknown option '--exclude-dynamic-system-prompt-sections'")
+                    Outcome.success(failed.filter { it !is RunnerUpdate.TurnFinished } + stderr + failed.filter { it is RunnerUpdate.TurnFinished })
+                }
+            }
+        }
+        val t = h.orchestrator.addTask("парсер", "поддержать экспоненту").valueOrNull()!!
+        h.run()
+        assertEquals(TaskState.DONE, h.orchestrator.tasks.tasks.getValue(t).state)
+        assertEquals(2, h.starts.size)
+        assertTrue(h.starts[0].request.shareSystemPromptCache)
+        assertFalse(h.starts[1].request.shareSystemPromptCache, "второй ход — без флага, которого target не знает")
+        assertEquals(DiagCode.CLAUDE_FLAG_UNSUPPORTED, h.orchestrator.sessions.sessions.getValue(h.starts[0].session).lastReason)
+        // Отказ флага — не вина аккаунта: слот доступен.
+        assertTrue(h.orchestrator.accounts.slots.values.all { it.state == com.dpsmpx.dpai.core.state.AccountState.AVAILABLE }, h.orchestrator.accounts.slots.toString())
     }
 }

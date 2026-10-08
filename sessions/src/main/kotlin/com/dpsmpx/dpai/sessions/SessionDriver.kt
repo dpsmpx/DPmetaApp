@@ -53,7 +53,8 @@ sealed interface AccountFact {
  * | прочие ошибки | `FAILED` |
  */
 class SessionDriver(private val sessions: Sessions, private val runner: ClaudeRunner, private val clock: Clock) {
-    data class Step(val events: List<SessionEvent>, val facts: List<AccountFact> = emptyList())
+    /** [unsupportedFlags] — флаги, которых не знает Claude Code target («unknown option» в stderr, D-40). */
+    data class Step(val events: List<SessionEvent>, val facts: List<AccountFact> = emptyList(), val unsupportedFlags: Set<String> = emptySet())
 
     /** Первый ход: сверка слота, `QUEUED → STARTING`, запуск. Продолжение прежней — `--resume` её сессии провайдера. */
     fun launch(state: SessionsState, accounts: AccountsState, id: SessionId, request: ClaudeRequest): Outcome<Step> {
@@ -113,6 +114,7 @@ class SessionDriver(private val sessions: Sessions, private val runner: ClaudeRu
             }
             emit(sessions.transition(current, id, target, clock.now(), reason).valueOrNull().orEmpty())
         }
+        val unsupported = linkedSetOf<String>()
         for (u in updates.value) {
             val now = clock.now()
             when (u) {
@@ -121,7 +123,8 @@ class SessionDriver(private val sessions: Sessions, private val runner: ClaudeRu
                     moveTo(SessionState.RUNNING, null)
                 }
                 is RunnerUpdate.Heartbeat -> emit(sessions.heartbeat(current, id, now))
-                is RunnerUpdate.Stderr -> Unit
+                // Неизвестный флаг (старый Claude Code на target): CLI выходит до вызова API — модель не тратится.
+                is RunnerUpdate.Stderr -> UNKNOWN_OPTION.findAll(u.text).forEach { unsupported += it.groupValues[1] }
                 is RunnerUpdate.Provider -> when (val e = u.event) {
                     is ClaudeEvent.Assistant -> {
                         val text = e.texts.joinToString("\n").take(sessions.policy.maxOutputChars)
@@ -145,15 +148,20 @@ class SessionDriver(private val sessions: Sessions, private val runner: ClaudeRu
                         ),
                     )
                     val (to, reason, fact) = outcomeOf(id, t)
-                    fact?.let { facts += it }
-                    moveTo(to, reason)
+                    if (unsupported.isNotEmpty() && t.status != TurnStatus.COMPLETED) {
+                        // Отказ из-за флага — не вина аккаунта: без факта ошибки слота, повтор — без флага.
+                        moveTo(SessionState.FAILED, DiagCode.CLAUDE_FLAG_UNSUPPORTED)
+                    } else {
+                        fact?.let { facts += it }
+                        moveTo(to, reason)
+                    }
                 }
             }
         }
         // Позиция в потоке агента — в журнал: после перезапуска сессия продолжается с неё.
         runner.position(id)?.let { pos -> emit(sessions.heartbeat(current, id, clock.now(), pos)) }
         if (current.sessions.getValue(id).terminal && state.sessions[id]?.terminal == false) facts += AccountFact.Release(id)
-        return Outcome.success(Step(events, facts), updates.diagnostics)
+        return Outcome.success(Step(events, facts, unsupported), updates.diagnostics)
     }
 
     /** Приостановить: остановить ход; сессия провайдера остаётся для `resume`. */
@@ -202,5 +210,10 @@ class SessionDriver(private val sessions: Sessions, private val runner: ClaudeRu
             out += AccountFact.Limit(id, window, level, w?.resetsAt ?: e.resetsAt.takeIf { rejectedHere })
         }
         return out
+    }
+
+    private companion object {
+        /** Отказ commander.js в Claude Code: «error: unknown option '--flag'». */
+        val UNKNOWN_OPTION = Regex("unknown option '(--[A-Za-z0-9-]+)'")
     }
 }

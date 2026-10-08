@@ -280,6 +280,11 @@ found at: /root/.claude/.claude.json»: файл настроек ищется �
 записал в кеш 9 844 токена (`ephemeral_1h_input_tokens`) — системный
 prompt и инструменты.
 
+Неизвестный флаг Claude Code (commander.js) отвергает строкой «error:
+unknown option '--…'» и кодом выхода 1 — до вызова API (поведение
+commander.js; образца отказа с target нет). На это опирается отказ без
+флага на старом Claude Code (`docs/EFFICIENCY.md`, §7).
+
 Инструмент субагентов в Claude Code 2.1.294 называется `Agent` (список
 инструментов этой облачной сессии Claude Code).
 

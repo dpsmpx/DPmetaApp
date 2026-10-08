@@ -179,6 +179,9 @@ class Orchestrator(
     private val contextOf = HashMap<TaskId, ContextBundle>()
     /** Выжимка проваленной проверки задачи — источник `TOOL` следующей попытки (D-40); восстанавливается из версии контекста. */
     private val toolOf = HashMap<TaskId, ContextSource>()
+    /** Флаги, которых не знает Claude Code target (D-40): следующие ходы идут без них. */
+    private val unsupportedFlags = HashMap<ExecutionTargetId, MutableSet<String>>()
+
     /** Версия контекста, ушедшая в последний ход задачи, — основа разницы при `--resume` (D-40). */
     private val sentOf = HashMap<TaskId, ContextBundle>()
     /** Ожидающие и выполненные слияния — из журнала (`MergesProjection`). */
@@ -484,9 +487,13 @@ class Orchestrator(
         sentOf[task] = bundle
         val route = router.route(t, budgetMode)
         val budget = t.policy.maxBudgetUsdCents?.let { BigDecimal(it).movePointLeft(2) }
+        val unknown = unsupportedFlags[target].orEmpty()
         val request = ClaudeRequest(
-            composed.text, model = route.model, effort = route.effort, fallbackModel = route.fallbackModel,
-            shareSystemPromptCache = efficiency.shareSystemPromptCache, permissionMode = ClaudeCodeCli.TURN_PERMISSION_MODE,
+            composed.text, model = route.model,
+            effort = route.effort.takeIf { "--effort" !in unknown },
+            fallbackModel = route.fallbackModel.takeIf { "--fallback-model" !in unknown },
+            shareSystemPromptCache = efficiency.shareSystemPromptCache && "--exclude-dynamic-system-prompt-sections" !in unknown,
+            permissionMode = ClaudeCodeCli.TURN_PERMISSION_MODE,
             disallowedTools = if (route.subagents) emptyList() else listOf(ClaudeCodeCli.SUBAGENT_TOOL),
             workDir = workDir, timeout = t.policy.turnTimeout, maxBudgetUsd = budget,
         )
@@ -589,6 +596,11 @@ class Orchestrator(
     private fun poll(session: SessionId) {
         val before = sessions.sessions.getValue(session).state
         val step = driver.poll(sessions, session).valueOrNull() ?: return
+        if (step.unsupportedFlags.isNotEmpty()) {
+            val target = sessions.sessions.getValue(session).target
+            unsupportedFlags.getOrPut(target) { linkedSetOf() } += step.unsupportedFlags
+            problems += Diagnostic.warning(DiagCode.CLAUDE_FLAG_UNSUPPORTED, "Claude Code на target не знает ${step.unsupportedFlags.joinToString()}: дальше без них", "target $target")
+        }
         batch {
             commitSessions(step.events)
             applyFacts(step.facts)
