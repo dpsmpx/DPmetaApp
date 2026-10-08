@@ -40,6 +40,11 @@ tasks.withType<Test>().configureEach {
     systemProperty("junit.platform.discovery.issue.severity.critical", "WARNING")
     // Корень репозитория — для тестов, читающих tests/data.
     systemProperty("dpai.repoRoot", rootDir.absolutePath)
+    // Локаль с UTF-8 при любой локали машины: иначе JVM тестов на POSIX
+    // кодирует кириллицу в аргументах процессов (git commit -m) как `?`, и
+    // результат тестов зависел бы от машины. Сама защита от этого —
+    // ArgumentEncoding (LocalProcessHostTest).
+    environment("LC_ALL", "C.UTF-8")
     // Параметры property-тестов и адрес настоящего SSH target из командной
     // строки (docs/TESTING.md, «Свойства», «Слои»): без проброса они
     // остались бы в JVM Gradle.

@@ -19,6 +19,8 @@ import kotlin.time.Duration.Companion.seconds
  */
 class LocalProcessHost(private val clock: Clock = Clock.SYSTEM) : ProcessHost {
     override fun start(spec: ProcessSpec, onOutput: (OutputLine) -> Unit): Outcome<RunningProcess> {
+        val encodable = ArgumentEncoding.check(spec.command)
+        if (encodable is Outcome.Failure) return encodable
         val builder = ProcessBuilder(spec.command)
         spec.workDir?.let { builder.directory(File(it)) }
         spec.environment?.let { env ->

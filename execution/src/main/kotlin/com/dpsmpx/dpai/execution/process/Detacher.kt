@@ -27,6 +27,8 @@ class Detacher(private val windows: Boolean = isWindows(), private val shellHost
     private fun spawnPosix(argv: List<String>, workDir: String, log: String): Outcome<Long> {
         val setsid = listOf("/usr/bin/setsid", "/bin/setsid", (System.getenv("PREFIX") ?: "") + "/bin/setsid").firstOrNull { File(it).canExecute() }
         val wrapped = if (setsid != null) listOf(setsid) + argv else listOf("nohup") + argv
+        val encodable = ArgumentEncoding.check(wrapped)
+        if (encodable is Outcome.Failure) return encodable
         return try {
             val p = ProcessBuilder(wrapped)
                 .directory(File(workDir))

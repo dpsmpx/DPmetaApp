@@ -2,6 +2,7 @@ package com.dpsmpx.dpai.execution
 
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.execution.process.ArgumentEncoding
 import com.dpsmpx.dpai.execution.process.LocalProcessHost
 import com.dpsmpx.dpai.execution.process.OutputLine
 import com.dpsmpx.dpai.execution.process.ProcessSpec
@@ -60,5 +61,17 @@ class LocalProcessHostTest {
         val d = r.errors.single()
         assertEquals(DiagCode.PROCESS_TIMEOUT, d.code)
         assertTrue(d.causes.isEmpty(), "сирот нет: ${d.causes}")
+    }
+
+    /** D-05: аргумент вне кодировки локали — отказ запуска, а не `?` вместо кириллицы в команде. */
+    @Test
+    fun unencodableArgumentIsRefusedNotMangled() {
+        val commit = listOf("git", "commit", "-m", "правка")
+        val refused = ArgumentEncoding.check(commit, Charsets.US_ASCII)
+        assertIs<Outcome.Failure>(refused)
+        assertEquals(DiagCode.PROCESS_ARGUMENT_UNENCODABLE, refused.errors.single().code)
+        assertTrue(ArgumentEncoding.check(commit, Charsets.UTF_8).isSuccess)
+        assertTrue(ArgumentEncoding.check(listOf("git", "status"), Charsets.US_ASCII).isSuccess)
+        assertTrue(ArgumentEncoding.check(commit, null).isSuccess, "Windows: аргументы — UTF-16, проверка не нужна")
     }
 }
