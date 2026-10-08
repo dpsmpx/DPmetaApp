@@ -128,14 +128,20 @@ class ContextTest {
         val root = System.getProperty("dpai.repoRoot") ?: error("нет dpai.repoRoot")
         val dir = File(root, "tests/data/context-injection")
         val files = dir.listFiles()!!.filter { it.name != "README.md" }.sortedBy { it.name }
-        assertTrue(files.size >= 4)
-        val sources = files.map { f ->
-            val secret = f.name.endsWith(".env")
-            doc("repo:${f.name}", f.readText(Charsets.UTF_8), sensitivity = if (secret) Sensitivity.SECRET else Sensitivity.INTERNAL)
+            .map { it.name to it.readText(Charsets.UTF_8) }
+        assertTrue(files.size >= 3)
+        // Секретный файл корпуса собирается здесь из частей: `*.env` в репозиторий не попадает
+        // (.gitignore, tools/verify/check_secrets.py), а тест должен идти на любом клоне.
+        val fakeKey = "sk-" + "ant-" + "api03-" + "Zx9".repeat(12)
+        val secretFile = "secret-in-repo.env" to "ANTHROPIC_API_KEY=$fakeKey\n"
+        val sources = (files + secretFile).map { (name, text) ->
+            val secret = name.endsWith(".env")
+            doc("repo:$name", text, sensitivity = if (secret) Sensitivity.SECRET else Sensitivity.INTERNAL)
         }
         val bundle = assemble(sources).valueOrNull()!!
         val prompt = PromptRenderer.render(bundle)
         assertFalse(bundle.sources.any { it.key.endsWith(".env") }, "секретный файл исключён")
+        assertFalse(fakeKey in prompt, "содержимое секретного файла не уходит провайдеру")
         // Настоящий маркер конца — по разу на блок данных и раз в правилах: подделка обезврежена.
         assertEquals(bundle.sources.size + 1, prompt.split(PromptRenderer.CLOSE).size - 1)
         assertEquals(1, Regex("^# Правила оркестратора$", RegexOption.MULTILINE).findAll(prompt).count() -
