@@ -37,7 +37,17 @@ class Redactor private constructor(private val strict: Boolean) {
         out = BEARER.replace(out) { m -> m.groupValues[1] + MARK }
         out = SECRET_PAIR.replace(out) { m -> m.groupValues[1] + m.groupValues[2] + m.groupValues[3] + MARK }
         out = URL_USERINFO.replace(out) { m -> m.groupValues[1] + MARK + "@" }
-        out = (if (strict) STRICT_LONG_TOKEN else LONG_TOKEN).replace(out) { m -> if (looksLikeToken(out, m)) MARK else m.value }
+        val long = if (strict) STRICT_LONG_TOKEN else LONG_TOKEN
+        out = long.replace(out) { m ->
+            // «имя=id» — одна последовательность алфавита токена (`=` в нём ради base64): id в значении
+            // не секрет, иначе `request=req_…` скрывался целиком (журнал приложения, 9 октября 2026).
+            val value = NAME_VALUE.matchEntire(m.value)?.groupValues?.get(2)
+            when {
+                value != null && (TYPED_ID.matches(value) || UUID.matches(value)) -> m.value
+                looksLikeToken(out, m) -> MARK
+                else -> m.value
+            }
+        }
         return out
     }
 
@@ -66,11 +76,14 @@ class Redactor private constructor(private val strict: Boolean) {
     }
 
     private fun looksLikeToken(text: String, m: MatchResult): Boolean {
-        val v = m.value
+        if (m.range.first >= 7 && text.startsWith("sha256:", m.range.first - 7)) return false
+        return looksLikeToken(m.value)
+    }
+
+    private fun looksLikeToken(v: String): Boolean {
         if (!v.any(Char::isLetter)) return false
         if (!strict && !v.any(Char::isDigit)) return false
         if (UUID.matches(v) || TYPED_ID.matches(v)) return false
-        if (m.range.first >= 7 && text.startsWith("sha256:", m.range.first - 7)) return false
         // Путь из коротких сегментов — не токен; base64 со «/» — токен.
         if ('/' in v && v.split('/').all { it.length < 24 }) return false
         return true
@@ -106,6 +119,9 @@ class Redactor private constructor(private val strict: Boolean) {
         private val URL_USERINFO = Regex("\\b([a-zA-Z][a-zA-Z0-9+.-]{1,15}://)[^\\s/@\"'<>]+@")
         private val LONG_TOKEN = Regex("(?<![A-Za-z0-9+/_=-])[A-Za-z0-9+/_=-]{32,}(?![A-Za-z0-9+/_=-])")
         private val STRICT_LONG_TOKEN = Regex("(?<![A-Za-z0-9+/_=-])[A-Za-z0-9+/_=-]{24,}(?![A-Za-z0-9+/_=-])")
+        /** «имя=значение»: имя — слово, значение — всё после первого `=`. */
+        private val NAME_VALUE = Regex("([A-Za-z][A-Za-z0-9_]{0,31}=)(.+)")
+
         /** Идентификаторы оркестратора (`ses_` + ULID, `docs/DATA_MODEL.md`, §1) — не секреты. */
         private val TYPED_ID = Regex("[a-z]{3}_[0-9A-HJKMNP-TV-Z]{26}")
         private val UUID = Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
