@@ -191,6 +191,8 @@ class Orchestrator(
      * останавливает.
      */
     private val onEvents: (List<EventEnvelope>) -> Unit = {},
+    /** Новая проблема контура — наружу (D-43: строка журнала приложения с причинами); сбой получателя контур не трогает. */
+    private val onProblem: (Diagnostic) -> Unit = {},
 ) {
     private val recorder = EventRecorder(ids, clock)
     private var lastSnapshotAt = 0L
@@ -235,7 +237,19 @@ class Orchestrator(
 
     /** Одобрение каждого слияния — запись для инварианта «разрушительное — с одобрением» (ТЗ, §118). */
     val mergeApprovals: Map<TaskId, ApprovalId> get() = mergesState.merged
-    val problems = mutableListOf<Diagnostic>()
+    val problems: MutableList<Diagnostic> = object : ArrayList<Diagnostic>() {
+        private fun tell(d: Diagnostic) {
+            try {
+                onProblem(d)
+            } catch (_: Exception) {
+                // Журнал приложения — наблюдение: его сбой контур не останавливает (D-43).
+            }
+        }
+
+        override fun add(element: Diagnostic): Boolean = super.add(element).also { tell(element) }
+
+        override fun addAll(elements: Collection<Diagnostic>): Boolean = super.addAll(elements).also { elements.forEach(::tell) }
+    }
 
     /** Запросы человеку (D-44) — из журнала. */
     var requests: UserRequestsState = UserRequestsState.EMPTY
@@ -753,6 +767,17 @@ class Orchestrator(
         val path = tree?.path ?: config.worktreeRoot ?: "."
         val flow = ok(completion.onClaimedDone(tasks, task, config.profile, config.level, path), "проверка задачи") ?: return
         commitTasks(flow.events)
+        afterVerification(task, session, flow.report, tree, path)
+    }
+
+    /**
+     * Итог проверки (D-23): прошла — коммит, `DONE`, запрос слияния; нет
+     * проверки — запрос человеку; не прошла — выжимка следующей попытке.
+     * Что пошло не так у шагов — в [problems] с причинами (журнал
+     * приложения, D-43), а не только в хеше отчёта.
+     */
+    private fun afterVerification(task: TaskId, session: SessionId, report: VerificationReport, tree: com.dpsmpx.dpai.git.Worktree?, path: String) {
+        if (report.verdict != com.dpsmpx.dpai.verification.Verdict.PASSED) problems += report.diagnostics.filter { it.isError || it.code == DiagCode.VERIFICATION_STEP_UNAVAILABLE }
         when (tasks.tasks.getValue(task).state) {
             TaskState.VERIFIED -> {
                 if (tree != null && git != null) commitWork(task, session, path)
@@ -767,7 +792,7 @@ class Orchestrator(
             }
             else -> {
                 // READY: проверка не прошла — следующий исполнитель с тем же деревом; что упало — ему (D-40).
-                if (efficiency.feedVerification) verificationFailed(task, session, flow.report, path)
+                if (efficiency.feedVerification) verificationFailed(task, session, report, path)
                 releaseTree(task, session)
             }
         }
@@ -1054,10 +1079,13 @@ class Orchestrator(
                     is Outcome.Success -> Outcome.success(command.percent).also { commitAccounts(r.value) }
                 }
             }
+            is Command.Verify -> record(command, provenance) { verifyTask(command.task) }
             is Command.Waive -> record(command, provenance) {
                 if (command.reason.isBlank()) Outcome.failure(DiagCode.VALUE_INVALID, "исключение — с причиной") else resolveUnverified(command.task, WAIVE, command.by, command.reason.trim())
             }
         }
+        // Команда могла решить предмет запроса (задача ушла из состояния) — запрос снимается сразу, а не в такте.
+        settleRequests()
         if (key != null) {
             val value = result.value?.let { v -> (v as? com.dpsmpx.dpai.core.ids.TypedId)?.value ?: v.toString() }
             val rec = OperationRecord(key, command.operation, result.status, value, result.diagnostics.firstOrNull { it.isError }?.code, clock.now())
@@ -1156,6 +1184,31 @@ class Orchestrator(
         }
         if (text != null) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "ответ к ходу — у заблокированной задачи", "task $task")
         return taskEdit(task) { tasksLogic.retry(tasks, task, clock.now()) }
+    }
+
+    /**
+     * Проверить вручную (D-42, п. 3 раздела «Проверка и Git»): задача без
+     * проверки — проверка в её дереве заново, без хода Claude. Дерево на
+     * время коммита — у последней сессии задачи и сразу освобождается
+     * (завершённая сессия дерево не держит, ТЗ, §118).
+     */
+    private fun verifyTask(task: TaskId): Outcome<TaskState> {
+        val t = tasks.tasks[task] ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой задачи", "task $task")
+        if (t.state != TaskState.COMPLETION_UNVERIFIED) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "проверяют задачу без проверки: задача ${t.state}", "task $task")
+        val session = sessions.sessions.values.filter { it.task == task }.maxWithOrNull(compareBy({ it.createdAt.epochMillis }, { it.id.value }))?.id
+            ?: return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "у задачи не было сессии", "task $task")
+        commitTasks(ok(tasksLogic.move(tasks, task, TaskState.VERIFYING, clock.now()), "проверка вручную") ?: return Outcome.failure(DiagCode.INVALID_TRANSITION, "не перейти в VERIFYING", "task $task"))
+        val tree = treeOf[task]?.let { worktrees.worktrees[it] }
+        val path = tree?.path ?: config.worktreeRoot ?: "."
+        val flow = when (val f = completion.onClaimedDone(tasks, task, config.profile, config.level, path)) {
+            is Outcome.Failure -> return f
+            is Outcome.Success -> f.value
+        }
+        commitTasks(flow.events)
+        if (tree != null) commitWorktrees(Worktrees.claim(worktrees, tree.id, session, clock.now()).valueOrNull().orEmpty())
+        afterVerification(task, session, flow.report, tree, path)
+        if (tree != null) releaseTree(task, session)
+        return Outcome.success(tasks.tasks.getValue(task).state)
     }
 
     // ---- действия с сессиями (D-42, п. 3) ----
@@ -1292,6 +1345,7 @@ class Orchestrator(
             RequestPurpose.TASK_UNVERIFIED, RequestKind.USER_RESOLUTION, "task:${task.value}:unverified",
             "Задача без проверки: ${taskTitle(task)}", "Ход заявил «готово», а проверки нет (D-23). Принять без проверки — записать исключение.",
             listOf(
+                RequestOption(VERIFY, "Проверить снова", OptionRole.ACCEPT),
                 RequestOption(WAIVE, "Принять без проверки", OptionRole.DESTRUCTIVE),
                 RequestOption(CANCEL, "Отменить задачу", OptionRole.DESTRUCTIVE),
                 RequestOption(LATER, "Решу позже", OptionRole.NEUTRAL),
@@ -1419,6 +1473,10 @@ class Orchestrator(
                 is Outcome.Success -> Outcome.success("задача отменена").also { commitTasks(c.value) }
             }
             LATER -> Outcome.success("решение отложено")
+            VERIFY -> when (val v = verifyTask(task)) {
+                is Outcome.Failure -> v
+                is Outcome.Success -> Outcome.success("проверка: задача ${v.value}")
+            }
             else -> Outcome.failure(DiagCode.REQUEST_ANSWER_INVALID, "вариант «$option» не к этому запросу")
         }
     }
@@ -1495,6 +1553,7 @@ class Orchestrator(
         const val WAIVE = "waive"
         const val LATER = "later"
         const val ACK = "ack"
+        const val VERIFY = "verify"
 
         /** Канал ответа — короткое слово латиницей (`notification`, `overlay`, `app`, `cli`). */
         private val CHANNEL = Regex("[a-z]{1,16}")

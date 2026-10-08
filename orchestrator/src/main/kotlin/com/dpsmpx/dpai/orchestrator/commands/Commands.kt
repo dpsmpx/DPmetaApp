@@ -95,6 +95,11 @@ sealed interface Command {
         override val operation: String get() = "task.retry"
     }
 
+    /** Проверить вручную задачу без проверки (D-42): проверка в её дереве заново, без хода Claude. */
+    data class Verify(override val task: TaskId, override val key: String? = null) : Command, TaskCommand {
+        override val operation: String get() = "task.verify"
+    }
+
     /** Принять непроверенное завершение с исключением политики (D-23): кто — оболочка, почему — [reason]. */
     data class Waive(override val task: TaskId, val reason: String, val by: String, override val key: String? = null) : Command, TaskCommand {
         override val operation: String get() = "task.waive"

@@ -61,6 +61,19 @@ object AppLogs {
         }
     }
 
+    /**
+     * Проблема контура — строкой журнала: код, сообщение и коренные причины
+     * цепочки (D-05) — их не видно на сводке, а по ним чинят.
+     */
+    fun problems(context: Context): (com.dpsmpx.dpai.core.diagnostics.Diagnostic) -> Unit {
+        val log = get(context)
+        return { d ->
+            val causes = d.rootCauses().filter { it !== d }.joinToString(" ← ") { "${it.code}: ${it.message}" }
+            val text = Redactor.STANDARD.redact("${d.code}: ${d.message}" + (d.subject?.let { " [$it]" } ?: "") + if (causes.isNotEmpty()) " ← $causes" else "")
+            if (d.isError) log.error("контур", text) else log.warn("контур", text)
+        }
+    }
+
     /** Сбой как строка журнала: тип и сообщение через редактор, без стека (D-05, D-14). */
     fun describe(e: Throwable): String = Redactor.STANDARD.redact("${e.javaClass.simpleName}: ${e.message}")
 

@@ -59,7 +59,12 @@ data class Snapshot(
  * сам вызывающий, взяв свободный замок. Экран при занятом такте читает
  * последний опубликованный снимок, а не ждёт замок весь такт (A-23).
  */
-class DemoModel(private val cacheDir: File, private val controller: Controller, private val onEvents: (List<EventEnvelope>) -> Unit = {}) {
+class DemoModel(
+    private val cacheDir: File,
+    private val controller: Controller,
+    private val onEvents: (List<EventEnvelope>) -> Unit = {},
+    private val onProblem: (Diagnostic) -> Unit = {},
+) {
     private val lock = ReentrantLock()
     private var demo: DemoSystem? = null
     private var live: LiveSystem? = null
@@ -79,7 +84,7 @@ class DemoModel(private val cacheDir: File, private val controller: Controller, 
         if (targets.any { it.configDir != null }) {
             val key = targets to controller.project()
             if (live == null || liveFor != key) {
-                live = controller.live(key.first, key.second, onEvents)
+                live = controller.live(key.first, key.second, onEvents, onProblem)
                 liveFor = key
             }
             return live!!.also { built = it }
@@ -279,7 +284,7 @@ class DemoModel(private val cacheDir: File, private val controller: Controller, 
             instance ?: run {
                 val app = context.applicationContext
                 val controller = Controller.get(app.filesDir, app.packageManager.getPackageInfo(app.packageName, 0).versionName)
-                DemoModel(app.cacheDir, controller, AppLogs.events(app)).also { instance = it }
+                DemoModel(app.cacheDir, controller, AppLogs.events(app), AppLogs.problems(app)).also { instance = it }
             }
         }
     }

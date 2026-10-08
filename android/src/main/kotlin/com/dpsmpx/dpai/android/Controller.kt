@@ -112,12 +112,18 @@ class Controller(private val root: File, private val version: String?) {
     }
 
     /** Настоящий контроллер над [targets]: SSH — JSch с ключом Keystore, журнал — в каталоге контроллера. */
-    fun live(targets: List<TargetEntry>, project: ProjectEntry?, onEvents: (List<com.dpsmpx.dpai.core.events.EventEnvelope>) -> Unit = {}): LiveSystem = LiveSystem(
+    fun live(
+        targets: List<TargetEntry>,
+        project: ProjectEntry?,
+        onEvents: (List<com.dpsmpx.dpai.core.events.EventEnvelope>) -> Unit = {},
+        onProblem: (Diagnostic) -> Unit = {},
+    ): LiveSystem = LiveSystem(
         Clock.SYSTEM, NioVfs(File(root, "live").apply { mkdirs() }.toPath()), targets,
         { e, p -> JschProcessHost(e, p, identities = listOf(KeystoreKey.identity())) }, knownHostsFile,
         controllerVersion = version,
         project = project,
         onEvents = onEvents,
+        onProblem = onProblem,
     )
 
     /**

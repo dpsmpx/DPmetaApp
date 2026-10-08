@@ -259,4 +259,40 @@ class TaskCommandsTest {
         assertEquals(90, second.accounts.subscriptions.getValue(sub).nearPercent)
         assertEquals(0.85, second.accounts.subscriptions.getValue(sub).window(com.dpsmpx.dpai.accounts.LimitWindow.WEEKLY).utilization)
     }
+
+    /**
+     * Проверить вручную (D-42): шаг проверки раз отказал (target на миг
+     * недоступен) — задача без проверки; «Проверить снова» без хода
+     * Claude — проверка прошла, задача DONE; причина отказа — в проблемах.
+     */
+    @Test
+    fun manualVerifyAfterUnavailableStep() {
+        var failOnce = true
+        val vfs = NioVfs(dir)
+        val journal = (EventJournal.open(vfs, "journal.log") as Outcome.Success).value
+        val runner = MockRunner.create(clock, RandomSource.seeded(1), host) { _, _ -> MockScenario.SUCCESS }
+        val profile = VerificationProfile(project, mapOf(VerifyLevel.NORMAL to listOf(VerifyStep("ок", listOf("ok")))))
+        val seen = mutableListOf<com.dpsmpx.dpai.core.diagnostics.Diagnostic>()
+        val o = Orchestrator(
+            clock, ids, RandomSource.seeded(9), journal, runner, ProjectConfig(project, null, dir.toString(), profile), targets, null,
+            Verifier({ _, _, _ ->
+                if (failOnce) {
+                    failOnce = false
+                    Outcome.failure(DiagCode.SSH_CONNECTION_FAILED, "обрыв")
+                } else {
+                    Outcome.success(Completed(0, emptyList(), emptyList()))
+                }
+            }, clock),
+            accounts, onProblem = { seen += it },
+        )
+        val t = o.addTask("задача", "цель").valueOrNull()!!
+        advance(o, runner, 2)
+        assertEquals(TaskState.COMPLETION_UNVERIFIED, state(o, t))
+        assertTrue(seen.any { it.code == DiagCode.VERIFICATION_STEP_UNAVAILABLE && it.rootCauses().any { c -> c.code == DiagCode.SSH_CONNECTION_FAILED } }, seen.toString())
+        val r = o.run(Command.Verify(t))
+        assertEquals(OperationStatus.SUCCEEDED, r.status, r.diagnostics.toString())
+        assertEquals(TaskState.DONE, state(o, t))
+        assertEquals(emptyList(), o.invariants())
+        assertTrue(o.requests.requests.values.filter { it.task == t }.all { it.terminal }, "запрос о непроверенной снят")
+    }
 }

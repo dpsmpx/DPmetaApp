@@ -87,6 +87,8 @@ class LiveSystem(
     private val project: ProjectEntry? = null,
     /** События журнала контура — в журнал приложения (D-43). */
     onEvents: (List<EventEnvelope>) -> Unit = {},
+    /** Проблемы контура — в журнал приложения с причинами (D-43). */
+    onProblem: (Diagnostic) -> Unit = {},
 ) : ControlView {
     override val mode: String = "контроллер"
     private val ids = IdGenerator(clock, random)
@@ -135,7 +137,7 @@ class LiveSystem(
             clock, ids, random, journal, router, config,
             working.map { TargetSlot(it.id, emptySet(), maxSessions = 1) }, git, verifier,
             snapshots = snapshots, snapshotEvery = SEGMENT.toLong(), documents = DocumentStore(vfs, "docs"),
-            onEvents = onEvents,
+            onEvents = onEvents, onProblem = onProblem,
         )
         orchestrator = o
         // Слот target — после первой пробы входа: подписка выбирается по аккаунту (см. [placeSlot]).

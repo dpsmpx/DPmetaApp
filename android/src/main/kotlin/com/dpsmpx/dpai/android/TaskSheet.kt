@@ -105,6 +105,7 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
                                     TaskAction.HOLD -> send { Command.Hold(task, it) }
                                     TaskAction.RESUME -> send { Command.Resume(task, it) }
                                     TaskAction.RETRY -> send { Command.Retry(task, null, it) }
+                                    TaskAction.VERIFY -> send { Command.Verify(task, it) }
                                     TaskAction.CANCEL, TaskAction.WAIVE -> confirm = a
                                     TaskAction.PRIORITY, TaskAction.POLICY, TaskAction.REPLY -> editor = a
                                 }

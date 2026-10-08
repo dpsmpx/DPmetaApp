@@ -19,6 +19,7 @@ enum class TaskAction(val label: String, val dangerous: Boolean = false) {
     RESUME("Продолжить"),
     RETRY("Повторить"),
     REPLY("Ответить и повторить"),
+    VERIFY("Проверить снова"),
     WAIVE("Принять без проверки", dangerous = true),
     CANCEL("Отменить задачу", dangerous = true),
 }
@@ -59,7 +60,10 @@ object TaskScreens {
         if (t.held) add(TaskAction.RESUME) else if (t.state in HOLDABLE) add(TaskAction.HOLD)
         if (t.state == TaskState.FAILED || t.state == TaskState.CANCELLED || t.state == TaskState.BLOCKED) add(TaskAction.RETRY)
         if (t.state == TaskState.BLOCKED) add(TaskAction.REPLY)
-        if (t.state == TaskState.COMPLETION_UNVERIFIED) add(TaskAction.WAIVE)
+        if (t.state == TaskState.COMPLETION_UNVERIFIED) {
+            add(TaskAction.VERIFY)
+            add(TaskAction.WAIVE)
+        }
         if (!t.terminal && t.state != TaskState.VERIFIED) add(TaskAction.CANCEL)
     }
 
