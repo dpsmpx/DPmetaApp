@@ -39,6 +39,8 @@ object EventLog {
         val fields = when (e.type) {
             EventType.SESSION_TURN_USAGE -> usage(p["usage"] as? JsonObject) + scalars(p, skip = setOf("usage"))
             EventType.SESSION_TURN_TOOLS -> tools(p["tools"] as? JsonObject) + scalars(p, skip = setOf("tools"))
+            // Политика задачи (D-42): что стало — класс, модель, усилие, бюджет.
+            EventType.TASK_POLICY_CHANGED, EventType.TASK_CREATED -> scalars(p, skip = setOf("policy")) + (p["policy"] as? JsonObject)?.let { scalars(it) }.orEmpty()
             // Ответ на запрос (D-44): вариант и итог, без текста ответа человека.
             EventType.USER_REQUEST_ANSWERED -> scalars(p) + (p["answer"] as? JsonObject)?.let { scalars(it, skip = setOf("at")) }.orEmpty()
             else -> scalars(p)

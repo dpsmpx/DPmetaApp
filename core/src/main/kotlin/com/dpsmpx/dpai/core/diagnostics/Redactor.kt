@@ -123,7 +123,7 @@ class Redactor private constructor(private val strict: Boolean) {
         private val NAME_VALUE = Regex("([A-Za-z][A-Za-z0-9_]{0,31}=)(.+)")
 
         /** Идентификаторы оркестратора (`ses_` + ULID, `docs/DATA_MODEL.md`, §1) — не секреты. */
-        private val TYPED_ID = Regex("[a-z]{3}_[0-9A-HJKMNP-TV-Z]{26}")
+        private val TYPED_ID = Regex("[a-z]{2,3}_[0-9A-HJKMNP-TV-Z]{26}")
         private val UUID = Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
     }
 }

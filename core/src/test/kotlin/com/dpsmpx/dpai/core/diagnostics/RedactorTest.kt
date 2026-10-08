@@ -96,6 +96,8 @@ class RedactorTest {
         val ids = com.dpsmpx.dpai.core.ids.IdGenerator(com.dpsmpx.dpai.core.clock.ManualClock(), com.dpsmpx.dpai.core.clock.RandomSource.seeded(1))
         val req = ids.next(com.dpsmpx.dpai.core.ids.IdKinds.REQUEST).value
         assertEquals("USER_REQUEST_DELIVERED request=$req channel=overlay", Redactor.STANDARD.redact("USER_REQUEST_DELIVERED request=$req channel=overlay"))
+        val op = ids.next(com.dpsmpx.dpai.core.ids.IdKinds.OPERATION).value
+        assertEquals("key=$op", Redactor.STANDARD.redact("key=$op"), "у OperationId приставка из двух букв")
         val token = "Ab3" + "x9".repeat(18)
         assertEquals(Redactor.MARK, Redactor.STANDARD.redact("value=$token"))
         val padded = "QUJD" + "a1".repeat(14) + "=="

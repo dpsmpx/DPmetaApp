@@ -1031,7 +1031,11 @@ class Orchestrator(
     /** Правка задачи событиями логики задач; итог — состояние задачи после правки. */
     private fun taskEdit(task: TaskId, edit: () -> Outcome<List<TaskEvent>>): Outcome<TaskState> = when (val r = edit()) {
         is Outcome.Failure -> r
-        is Outcome.Success -> Outcome.success(tasks.tasks.getValue(task).state).also { commitTasks(r.value) }
+        is Outcome.Success -> {
+            // Итог — состояние после правки: сначала журнал, потом ответ (в журнале ключей — то же).
+            commitTasks(r.value)
+            Outcome.success(tasks.tasks.getValue(task).state)
+        }
     }
 
     private fun setPolicy(c: Command.SetPolicy): Outcome<TaskState> {

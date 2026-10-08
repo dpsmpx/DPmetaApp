@@ -155,6 +155,7 @@ class TaskCommandsTest {
         assertEquals(TaskState.RUNNING, state(o, t))
         val r = o.run(Command.Cancel(t))
         assertEquals(OperationStatus.SUCCEEDED, r.status, r.diagnostics.toString())
+        assertEquals(TaskState.CANCELLED, r.value, "итог — состояние после действия")
         assertEquals(TaskState.CANCELLED, state(o, t))
         assertTrue(o.sessions.sessions.values.filter { it.task == t }.all { it.terminal })
         assertTrue(o.accounts.slots.values.all { it.sessions.isEmpty() })
