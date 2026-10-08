@@ -125,18 +125,24 @@ release, как в третьей команде.
 | `dpai-0.1.0-dev.1-release.apk` | приложение для проверки и замеров |
 | `dpai-0.1.0-dev.1-debug.apk` | только чтобы прочитать `last-crash.txt` (§0.4) |
 | `dpai-agent-0.1.0-dev.1.zip` | агент `dpai` для Termux и ПК: каталог `dpai/` с `bin/dpai` и `lib/` |
+| `claude-proot.sh` | обёртка Claude Code для Termux (§5.3) |
 | `SHA256SUMS` | хеши файлов |
 | `README.md` | описание ветки |
 
-На ПК:
+Репозиторий приватный: ссылки `raw` без входа в GitHub отвечают 404,
+поэтому `curl` из Termux не подходит. На ПК (вход в GitHub у `git` уже
+есть):
 
 ```sh
+git clone --depth 1 --branch apk-0.1.0-dev.1 https://github.com/dpsmpx/DP_AI_Orcestrator.git ~/dpai-device-check
 cd ~/dpai-device-check
-B=https://github.com/dpsmpx/DP_AI_Orcestrator/raw/apk-0.1.0-dev.1
-for f in SHA256SUMS dpai-0.1.0-dev.1-release.apk dpai-0.1.0-dev.1-debug.apk dpai-agent-0.1.0-dev.1.zip; do
-  curl -fLO "$B/$f"
-done
-sha256sum -c SHA256SUMS --ignore-missing
+sha256sum -c SHA256SUMS
+```
+
+Файлы для Termux — на телефон в «Загрузки»:
+
+```sh
+adb push dpai-agent-0.1.0-dev.1.zip claude-proot.sh SHA256SUMS /sdcard/Download/
 ```
 
 Ожидается `…: OK` для каждого файла. Любое `FAILED` — стоп: файл не тот,
@@ -474,8 +480,11 @@ cd ~
 Ожидается исполняемый файл `claude` (около 230 МиБ). Обёртка — как
 `$PREFIX/bin/claude`:
 
+Файл `claude-proot.sh` — из «Загрузок» (§1.1: `adb push` или браузер):
+
 ```sh
-curl -fL -o $PREFIX/bin/claude https://raw.githubusercontent.com/dpsmpx/DP_AI_Orcestrator/main/tools/termux/claude-proot.sh
+cd ~/storage/downloads && sha256sum -c SHA256SUMS --ignore-missing && cd ~
+cp ~/storage/downloads/claude-proot.sh $PREFIX/bin/claude
 chmod +x $PREFIX/bin/claude
 claude --version
 ```
@@ -493,13 +502,11 @@ claude --version
 
 ### 5.4. Агент `dpai`
 
+Архив — из «Загрузок» (§1.1):
+
 ```sh
-cd ~
-B=https://github.com/dpsmpx/DP_AI_Orcestrator/raw/apk-0.1.0-dev.1
-curl -fLO $B/dpai-agent-0.1.0-dev.1.zip
-curl -fLO $B/SHA256SUMS
-sha256sum -c SHA256SUMS --ignore-missing
-rm -rf ~/dpai && unzip -q dpai-agent-0.1.0-dev.1.zip -d ~
+cd ~/storage/downloads && sha256sum -c SHA256SUMS --ignore-missing && cd ~
+rm -rf ~/dpai && unzip -q ~/storage/downloads/dpai-agent-0.1.0-dev.1.zip -d ~
 chmod +x ~/dpai/bin/dpai
 ~/dpai/bin/dpai version
 ~/dpai/bin/dpai agent doctor
