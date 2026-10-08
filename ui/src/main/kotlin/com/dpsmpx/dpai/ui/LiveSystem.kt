@@ -134,7 +134,8 @@ class LiveSystem(
         orchestrator = o
         // Слот target — после первой пробы входа: подписка выбирается по аккаунту (см. [placeSlot]).
         for (e in usable) {
-            o.accounts.slots.values.firstOrNull { it.targetId == e.id && it.configDir == e.configDir }?.let { slotOf[e.id] = it.id }
+            val dir = e.configDir?.let(Accounts::normalizeDir)
+            o.accounts.slots.values.firstOrNull { it.targetId == e.id && it.configDir == dir }?.let { slotOf[e.id] = it.id }
         }
         for (r in o.recover { t -> manager.client(t).valueOrNull() }) problems += r.diagnostics.filter { it.isError }
         for (e in usable) probeSlot(e.id)
@@ -170,7 +171,13 @@ class LiveSystem(
                 o.commitAccounts(accountsLogic.registerSubscription(o.accounts, s, label, clock.now(), maxParallelSessions = MAX_PARALLEL).valueOrNull()!!)
             }
         val slot = ids.next(IdKinds.ACCOUNT)
-        o.commitAccounts(accountsLogic.registerSlot(o.accounts, slot, sub, e.id, e.configDir!!, clock.now()).valueOrNull()!!)
+        when (val r = accountsLogic.registerSlot(o.accounts, slot, sub, e.id, e.configDir!!, clock.now())) {
+            is Outcome.Failure -> {
+                problems += r.diagnostics
+                return
+            }
+            is Outcome.Success -> o.commitAccounts(r.value)
+        }
         slotOf[e.id] = slot
         when (val ev = accountsLogic.observeAuthStatus(o.accounts, slot, status, clock.now())) {
             is Outcome.Failure -> problems += ev.diagnostics

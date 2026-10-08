@@ -1,5 +1,6 @@
 package com.dpsmpx.dpai.ui
 
+import com.dpsmpx.dpai.accounts.Accounts
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.DiagnosticCollector
 import com.dpsmpx.dpai.core.ids.ExecutionTargetId
@@ -71,7 +72,12 @@ object TargetForm {
         if (a.isEmpty() || a.startsWith("-") || a.any { it.isISOControl() }) {
             return Outcome.failure(DiagCode.VALUE_INVALID, "команда агента — путь к dpai на target", "agent")
         }
-        val dir = configDir?.trim()?.takeIf { it.isNotEmpty() }
+        // Команда уходит на target одним аргументом в кавычках: `~` там не раскрывается (ревью 8 октября 2026).
+        if (a.startsWith("~")) {
+            return Outcome.failure(DiagCode.VALUE_INVALID, "команда агента — путь без «~»: полный путь, например /data/data/com.termux/files/home/dpai/bin/dpai", "agent")
+        }
+        // Каталог — как его хранит слот (без `/` в конце): иначе после перезапуска слот не найти.
+        val dir = configDir?.trim()?.takeIf { it.isNotEmpty() }?.let { Accounts.normalizeDir(it) ?: it }
         if (dir != null && (!absolute(dir, windows) || dir.any { it.isISOControl() })) {
             return Outcome.failure(DiagCode.VALUE_INVALID, "каталог Claude — абсолютный путь на target", "configDir")
         }

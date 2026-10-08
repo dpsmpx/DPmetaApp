@@ -435,7 +435,12 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
             return out.toList()
         }
 
-        internal fun normalizeDir(dir: String): String? {
+        /**
+         * Каталог настроек слота в том виде, в каком он хранится: без пробелов
+         * по краям и без `/` или `\` в конце. Сравнивать каталоги — только так:
+         * `/c/` и `/c` — один каталог (ревью 8 октября 2026).
+         */
+        fun normalizeDir(dir: String): String? {
             val d = dir.trim()
             if (d.isEmpty() || d.length > 512 || d.any { it < ' ' }) return null
             val trimmed = d.trimEnd('/', '\\')

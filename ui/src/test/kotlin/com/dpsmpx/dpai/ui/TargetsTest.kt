@@ -58,6 +58,16 @@ class TargetsTest {
         assertTrue(TargetForm.validate(id, "x", "h", "22", "u", false, "/a/dpai", "relative/dir") is Outcome.Failure)
         assertTrue(TargetForm.validate(id, "x", "h", "22", "u", true, "C:/dpai.cmd", """C:\Users\u\.claude-1""") is Outcome.Success)
         assertEquals("/root/.claude-1", TargetForm.validate(id, "x", "h", "22", "u", false, "/a/dpai", " /root/.claude-1 ").valueOrNull()!!.configDir)
+        // Ревью 8 октября 2026: каталог — как его хранит слот; иначе после перезапуска слот не найти.
+        assertEquals("/root/.claude-1", TargetForm.validate(id, "x", "h", "22", "u", false, "/a/dpai", "/root/.claude-1/").valueOrNull()!!.configDir)
+    }
+
+    /** Ревью 8 октября 2026: `~` в команде агента на target не раскрывается — форма это объясняет. */
+    @Test
+    fun agentCommandWithTildeIsRejected() {
+        val id = ids.next(IdKinds.TARGET)
+        val r = TargetForm.validate(id, "x", "h", "22", "u", false, "~/dpai/bin/dpai")
+        assertEquals(DiagCode.VALUE_INVALID, (r as Outcome.Failure).diagnostics.first().code)
     }
 
     /** Документ v1 (до каталога Claude) читается; у его targets каталога нет. */
