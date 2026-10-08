@@ -15,6 +15,7 @@ import kotlin.system.exitProcess
  *
  * - `child hang` — строка `ready` и ожидание без конца;
  * - `child secret` — напечатать строку с поддельным ключом API и выйти;
+ * - `child wide N W` — напечатать N строк по W знаков и выйти;
  * - `child spawn-hang` — запустить внука `child hang`, напечатать
  *   `grandchild <pid>`, ждать без конца;
  * - `agent supervise --home H --run R` — супервизор запуска, как у `dpai`.
@@ -42,6 +43,12 @@ object TestChild {
             }
             "secret" -> {
                 println("ключ: $FAKE_KEY")
+                exitProcess(0)
+            }
+            "wide" -> {
+                // [count] строк по [width] знаков: страницы ответа агента и предел текста события.
+                val (count, width) = args.drop(1).map { it.toInt() }
+                repeat(count) { i -> println("$i:" + "x".repeat(width)) }
                 exitProcess(0)
             }
             "stdin-length" -> {

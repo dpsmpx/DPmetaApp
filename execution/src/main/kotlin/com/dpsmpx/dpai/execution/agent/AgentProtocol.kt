@@ -167,10 +167,14 @@ data class DoctorReport(
 }
 
 /**
- * Ответ агента — одна строка JSON `dpai.agent-reply` v1 на стандартном
+ * Ответ агента — одна строка JSON `dpai.agent-reply` на стандартном
  * выводе (`docs/EXECUTION_MODEL.md`, §1). Неудача команды — `ok = false` и
  * диагностика; разбор строгий: чужой формат, неизвестное поле —
  * `AGENT_REPLY_INVALID` с находками причинами (D-09).
+ *
+ * v2 добавляет [more]: страница событий обрезана по объёму — за ней есть
+ * ещё (ответ — одна строка ограниченной длины). Ответ без [more] пишется
+ * как v1: так его читает и контроллер прежней версии; читаются v1 и v2.
  */
 data class AgentReply(
     val command: String,
@@ -180,9 +184,11 @@ data class AgentReply(
     val events: List<EventEnvelope> = emptyList(),
     val stop: StopResult? = null,
     val doctor: DoctorReport? = null,
+    /** Страница событий обрезана по объёму: за ней есть ещё (v2). */
+    val more: Boolean = false,
 ) {
     fun toJson(): JsonObject {
-        val f = linkedMapOf<String, JsonValue>(*FormatHeader.write(FORMAT, VERSION))
+        val f = linkedMapOf<String, JsonValue>(*FormatHeader.write(FORMAT, if (more) VERSION else 1))
         f["command"] = JsonString(command)
         f["ok"] = JsonBool(ok)
         f["diagnostics"] = DiagnosticJson.writeAll(diagnostics)
@@ -190,6 +196,7 @@ data class AgentReply(
         if (events.isNotEmpty()) f["events"] = JsonArray(events.map { it.toJson() })
         stop?.let { f["stop"] = it.toJson() }
         doctor?.let { f["doctor"] = it.toJson() }
+        if (more) f["more"] = JsonBool(true)
         return JsonObject(f)
     }
 
@@ -203,7 +210,7 @@ data class AgentReply(
 
     companion object {
         const val FORMAT = "dpai.agent-reply"
-        const val VERSION = 1
+        const val VERSION = 2
 
         fun failure(command: String, diagnostics: List<Diagnostic>): AgentReply = AgentReply(command, ok = false, diagnostics = diagnostics)
 
@@ -223,7 +230,7 @@ data class AgentReply(
             }
             val d = DiagnosticCollector()
             val f = JsonFields.root(value, d) ?: return Outcome.Failure(d.all)
-            FormatHeader.read(f, FORMAT, VERSION..VERSION, d) ?: return Outcome.Failure(d.all)
+            FormatHeader.read(f, FORMAT, 1..VERSION, d) ?: return Outcome.Failure(d.all)
             val command = f.string("command")
             val ok = f.boolean("ok")
             val diagnostics = f.array("diagnostics")?.let { DiagnosticJson.readAll(it, "$.diagnostics", d) }.orEmpty()
@@ -236,9 +243,10 @@ data class AgentReply(
             }
             val stop = f.optObj("stop")?.let(StopResult::read)
             val doctor = f.optObj("doctor")?.let(DoctorReport::read)
+            val more = (f.raw("more", required = false) as? JsonBool)?.value ?: false
             f.finish()
             if (d.hasErrors || command == null || ok == null) return Outcome.Failure(d.all.ifEmpty { listOf(Diagnostic.error(DiagCode.AGENT_REPLY_INVALID, "ответ неполон")) })
-            return Outcome.success(AgentReply(command, ok, diagnostics, run, events, stop, doctor))
+            return Outcome.success(AgentReply(command, ok, diagnostics, run, events, stop, doctor, more))
         }
     }
 }

@@ -9,12 +9,15 @@ import com.dpsmpx.dpai.core.ids.IdGenerator
 import com.dpsmpx.dpai.core.ids.IdKinds
 import com.dpsmpx.dpai.core.ids.SessionId
 import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.core.serialization.CanonicalJson
+import com.dpsmpx.dpai.core.serialization.JsonBool
 import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.execution.agent.ExitReason
 import com.dpsmpx.dpai.execution.agent.RunChannel
 import com.dpsmpx.dpai.execution.agent.RunEventSource
 import com.dpsmpx.dpai.execution.agent.RunSpec
 import com.dpsmpx.dpai.execution.agent.RunState
+import com.dpsmpx.dpai.execution.process.LocalProcessHost
 import com.dpsmpx.dpai.storage.document.DocumentStore
 import com.dpsmpx.dpai.storage.vfs.NioVfs
 import com.dpsmpx.dpai.testkit.RealTime
@@ -158,6 +161,45 @@ class AgentRuntimeTest {
         val posix = java.nio.file.Files.getFileAttributeView(home, java.nio.file.attribute.PosixFileAttributeView::class.java)
         org.junit.jupiter.api.Assumptions.assumeTrue(posix != null, "POSIX-прав нет (Windows): каталог в профиле пользователя")
         assertEquals("rwx------", java.nio.file.attribute.PosixFilePermissions.toString(posix!!.readAttributes().permissions()))
+    }
+
+    /**
+     * Ревью 8 октября 2026: ответ агента — одна строка не длиннее
+     * `LocalProcessHost.MAX_LINE`. Широкий вывод делится на страницы по объёму,
+     * а слишком длинная строка вывода — обрезается с пометкой; канал
+     * дочитывает всё, а не застревает на обрезанном ответе.
+     */
+    @Test
+    fun widePagesStayUnderLineLimitAndChannelReadsAll() {
+        val rt = runtime()
+        /** Все страницы запуска; каждая — строка короче предела чтения. */
+        fun pages(run: SessionId): List<List<EventEnvelope>> {
+            val out = mutableListOf<List<EventEnvelope>>()
+            var after = 0L
+            while (true) {
+                val p = rt.events(run, after, 500)
+                assertTrue(CanonicalJson.write(p.toJson()).length < LocalProcessHost.MAX_LINE, "ответ длиннее строки")
+                if (p.events.isEmpty()) return out
+                out += p.events
+                after = p.events.last().sequence
+            }
+        }
+        val run = ids.next(IdKinds.SESSION)
+        assertTrue(rt.start(run, RunSpec(TestChild.command("child", "wide", "12", "200000"))).ok)
+        RealTime.await(60.seconds, "процесс вышел") { rt.status(run).run!!.takeIf { it.state == RunState.EXITED } }
+        val wideRun = pages(run)
+        assertTrue(wideRun.size > 1, "страницы — по объёму, а не только по числу")
+        assertEquals(12, outputs(wideRun.flatten()).count { it.startsWith("") && it.length > 100_000 })
+        val big = ids.next(IdKinds.SESSION)
+        assertTrue(rt.start(big, RunSpec(TestChild.command("child", "wide", "1", "600000"))).ok)
+        RealTime.await(60.seconds, "процесс вышел") { rt.status(big).run!!.takeIf { it.state == RunState.EXITED } }
+        val wide = pages(big).flatten().single { it.type == EventType.TARGET_PROCESS_OUTPUT && (it.payload["text"] as JsonString).value.startsWith("0:") }
+        assertEquals(AgentRuntime.MAX_EVENT_TEXT, (wide.payload["text"] as JsonString).value.length)
+        assertEquals(JsonBool(true), wide.payload["truncated"])
+        val channel = RunChannel(source(rt), run)
+        val all = mutableListOf<EventEnvelope>()
+        repeat(20) { channel.poll().valueOrNull()?.let { all += it.events } }
+        assertEquals(12, outputs(all).count { it.length > 100_000 }, "канал дочитал все строки")
     }
 
     /** Вывод Claude проходит `Redactor` до журнала: ключ в выводе не попадает на диск (D-14, T8; критерий этапа 4). */

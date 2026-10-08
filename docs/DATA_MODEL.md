@@ -80,7 +80,7 @@ Code — UUID, `docs/research/CLAUDE_CODE_CLI.md`): непрозрачная с�
 | `dpai.backup-manifest` | 1 | манифест копии: `createdAt`, `schemaVersion`, `files` (`path`, `size`, `sha256`), `hash` (ТЗ, §60) | 2 |
 | `dpai.restore-marker` | 1 | маркер начатого восстановления: `backup`, `manifest` | 2 |
 | `dpai.accounts-state` | 1 | состояние аккаунтов в снимке: подписки с окнами пределов, слоты, подписка задачи, переходы задач (`docs/ACCOUNT_MODEL.md`, §8) | 5 |
-| `dpai.agent-reply` | 1 | ответ агента target одной строкой: `command`, `ok`, `diagnostics`, необязательные `run` (с номером хода `turn`, этап 4), `events`, `stop`, `doctor` (`docs/EXECUTION_MODEL.md`, §1.3; D-31) | 3 |
+| `dpai.agent-reply` | 2 | ответ агента target одной строкой: `command`, `ok`, `diagnostics`, необязательные `run` (с номером хода `turn`, этап 4), `events`, `stop`, `doctor`; v2 — `more`: страница событий обрезана по объёму, за ней есть ещё (ответ без `more` пишется как v1, читаются обе) (`docs/EXECUTION_MODEL.md`, §1.3; D-31) | 3 |
 | `dpai.agent-run` | 2 | запуск на target: `spec` (`dpai.run-spec`), номер хода `turn`, состояние, идентификаторы и время старта супервизора и процесса; v1 этапа 3 заменён до выпуска и не читается | 4 |
 | `dpai.app-targets` | 2 | targets приложения Android (D-35): `id`, имя, хост, порт, пользователь, платформа, команда агента, каталог Claude слота `configDir` (с v2; v1 читается без него); ключи хостов — в known_hosts приложения | 11 |
 | `dpai.app-project` | 1 | проект контроллера приложения (D-35): постоянные id проекта и репозитория, target, каталог репозитория и деревьев задач на нём, ветка интеграции, шаги проверки | 11 |

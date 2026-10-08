@@ -13,6 +13,7 @@ import com.dpsmpx.dpai.core.ids.IdGenerator
 import com.dpsmpx.dpai.core.ids.IdKinds
 import com.dpsmpx.dpai.core.ids.SessionId
 import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.core.serialization.CanonicalJson
 import com.dpsmpx.dpai.core.serialization.DiagnosticJson
 import com.dpsmpx.dpai.core.serialization.FormatHeader
 import com.dpsmpx.dpai.core.serialization.JsonBool
@@ -161,12 +162,16 @@ class AgentRuntime(
         // Вывод ждёт блокировки, пока не записано TARGET_PROCESS_STARTED: в журнале ход начинается с него.
         val process: RunningProcess = synchronized(lock) {
             val started = host.start(ProcessSpec(doc.spec.command, doc.spec.workDir, env, stdin)) { line ->
+                // Текст события — не длиннее MAX_EVENT_TEXT: с экранированием JSON одно событие
+                // помещается в строку ответа агента (см. events).
+                val text = Redactor.STANDARD.redactLine(line.text)
+                val cut = text.length > MAX_EVENT_TEXT
                 emit(
                     EventType.TARGET_PROCESS_OUTPUT,
                     JsonObject.of(
                         "stream" to JsonString(line.stream.name.lowercase()),
-                        "text" to JsonString(Redactor.STANDARD.redactLine(line.text)),
-                        "truncated" to JsonBool(line.truncated),
+                        "text" to JsonString(if (cut) text.take(MAX_EVENT_TEXT) else text),
+                        "truncated" to JsonBool(line.truncated || cut),
                     ),
                 )
             }
@@ -253,8 +258,17 @@ class AgentRuntime(
             is Outcome.Failure -> return AgentReply.failure("events", s.diagnostics)
             is Outcome.Success -> s.value
         }
-        val page = records.asSequence().map { it.event }.filter { it.sequence > after }.take(limit).toList()
-        return AgentReply("events", ok = true, run = status.first.status(status.second), events = page)
+        // Страница — не больше PAGE_CHARS знаков (и хотя бы одно событие): ответ — одна строка,
+        // а контроллер читает строку до LocalProcessHost.MAX_LINE; обрезанный ответ не разбирался,
+        // и канал запрашивал ту же страницу без конца (ревью 8 октября 2026).
+        val candidates = records.asSequence().map { it.event }.filter { it.sequence > after }.take(limit).toList()
+        var size = 0
+        val page = candidates.takeWhile { e ->
+            val first = size == 0
+            size += CanonicalJson.write(e.toJson()).length
+            first || size <= PAGE_CHARS
+        }
+        return AgentReply("events", ok = true, run = status.first.status(status.second), events = page, more = page.size < candidates.size)
     }
 
     fun stop(id: SessionId, grace: Duration): AgentReply {
@@ -401,6 +415,12 @@ class AgentRuntime(
     companion object {
         /** Сколько хранить завершённые запуски на target (A-5). */
         val RETENTION: Duration = 7.days
+
+        /** Предел знаков страницы событий: ответ агента — одна строка не длиннее `LocalProcessHost.MAX_LINE`. */
+        const val PAGE_CHARS: Int = 256 * 1024
+
+        /** Предел текста одного события вывода: даже с экранированием JSON оно меньше `LocalProcessHost.MAX_LINE`. */
+        const val MAX_EVENT_TEXT: Int = 256 * 1024
 
         /**
          * Каталог агента — только владельцу (T8; аудит 2026-10-07, A-4): в нём

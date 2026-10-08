@@ -88,7 +88,7 @@ API не включён. Граница — этот раздел и реест�
 | Идентификаторы | `core.ids`: `<префикс>_<26 знаков Crockford base32>`, префиксы — `docs/DATA_MODEL.md`, §1 | префикс вида не меняется (D-08) |
 | Канонический JSON и хеш | `CanonicalJson`, `ContentHash` (`sha256:<64 hex>`) | не меняется: на нём цепочка журнала, снимки, одобрения, версии контекста и handoff (D-09, D-10) |
 | Автоматы состояний | `core.state`: `SessionLifecycle`, `TaskLifecycle`, `AccountLifecycle`, `TargetLifecycle`, `CircuitLifecycle`; оценка `HeartbeatFreshness` | только новым решением (D-11, D-23) |
-| Протокол агента target | команда `dpai agent` (раздел 11.2); `dpai.agent-reply` v1, `dpai.run-spec` v1, `dpai.agent-run` v2 | новая версия формата; версии агента и контроллера сверяет `TargetDoctor` (расхождение — `WARN`) |
+| Протокол агента target | команда `dpai agent` (раздел 11.2); `dpai.agent-reply` v2, `dpai.run-spec` v1, `dpai.agent-run` v2 | новая версия формата; версии агента и контроллера сверяет `TargetDoctor` (расхождение — `WARN`) |
 | Ссылки | `dpai://<вид>/<id>`: `task`, `session`, `project`, `account`, `subscription`, `event` (`notifications.DeepLink`); `dpai://approve\|deny/<apr_…>?hash=sha256:…` (`notifications.ApprovalAction`) | вход из уведомлений (ТЗ, §76); изменение — новым решением |
 | Манифест экосистемы | `dpai.ecosystem` v1 (`docs/ECOSYSTEM.md`, §2) | внешний контракт с DPmeta; чтение строгое |
 
@@ -151,7 +151,7 @@ API не включён. Граница — этот раздел и реест�
 | Источник | Что | Как принимается |
 |---|---|---|
 | Пользователь | задачи (заголовок, цель, приоритет, зависимости, возможности, область путей), targets, проект, профили проверки, ответы на одобрения | формы с проверкой (`TargetForm`, `ProjectForm`); ключ хоста — после сверки отпечатка человеком (`HostKeyProbe`, T2) |
-| Агент target | `dpai.agent-reply` v1: состояние запуска, события с номерами, отчёт `doctor` | строгое чтение (D-09); номера — `RunChannel` и `SequenceTracker`, пропуск — сверка |
+| Агент target | `dpai.agent-reply` v2 (без `more` — v1): состояние запуска, события с номерами, отчёт `doctor` | строгое чтение (D-09); номера — `RunChannel` и `SequenceTracker`, пропуск — сверка |
 | Claude Code | stream-json хода (`system`, `assistant`, `rate_limit_event`, `result`); `claude auth status --json` | `ClaudeStreamParser` → `ClaudeTurn`: состояние — из машинных полей, не из текста (D-23, D-32); вход — `AuthStatus` |
 | Git на target | `git status --porcelain=v2`, коды выхода | `GitStatus`; команды строит только `GitCommands` |
 | Шаги проверки | код выхода, хеш вывода, длительность | `Verifier` → `VerificationReport` |
@@ -225,7 +225,7 @@ API не включён. Граница — этот раздел и реест�
 | `dpai.restore-marker` | 1 | `BackupService` | `restore.pending` — начатое восстановление |
 | `dpai.app-targets` | 2 (1–2) | `TargetBook` | документ `targets` приложения; v1 — без `configDir` |
 | `dpai.app-project` | 1 | `ProjectBook` | документ `project` приложения |
-| `dpai.agent-reply` | 1 | `AgentReply` | стандартный вывод агента; не хранится |
+| `dpai.agent-reply` | 2 | `AgentReply` | стандартный вывод агента; не хранится |
 | `dpai.run-spec` | 1 | `RunSpec` | стандартный вход `dpai agent start --spec-stdin`; внутри `dpai.agent-run` |
 | `dpai.agent-run` | 2 (только 2) | `AgentRuntime` | `runs/<SessionId>/run` на target |
 

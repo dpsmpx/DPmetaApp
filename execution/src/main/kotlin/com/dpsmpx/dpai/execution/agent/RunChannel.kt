@@ -44,6 +44,7 @@ class RunChannel(private val source: RunEventSource, val run: SessionId, private
         val notes = mutableListOf<Diagnostic>()
         var reconciled = false
         while (true) {
+            val acceptedBefore = accepted.size
             val reply = when (val r = source.events(run, lastAccepted, pageSize)) {
                 is Outcome.Failure -> return r
                 is Outcome.Success -> r.value
@@ -65,7 +66,12 @@ class RunChannel(private val source: RunEventSource, val run: SessionId, private
             }
             val fullPage = reply.events.size >= pageSize
             val reported = reply.run?.lastSequence ?: 0
-            if (gap == null && !fullPage && reported > lastAccepted) {
+            // Агент делит страницу и по объёму (ответ — одна строка ограниченной длины) и
+            // тогда говорит `more`: дочитать, а не объявлять пропуск. Без `more` короткая
+            // страница при отставании — пропуск и сверка, как прежде (критерий этапа 3).
+            // Страница, ничего не продвинувшая, не продолжается: так не зациклиться.
+            val more = fullPage || (gap == null && reply.more && accepted.size > acceptedBefore)
+            if (gap == null && !more && reported > lastAccepted) {
                 gap = Diagnostic.warning(
                     DiagCode.EVENT_SEQUENCE_GAP,
                     "агент сообщает №$reported, принято до №$lastAccepted",
@@ -90,8 +96,8 @@ class RunChannel(private val source: RunEventSource, val run: SessionId, private
                 reconciliations++
                 continue
             }
-            // Полная страница — за ней могут быть ещё события.
-            if (fullPage) continue
+            // Полная страница или продвинувшая приём при отставании — за ней ещё события.
+            if (more) continue
             // Закрытый сверкой пропуск остаётся предупреждением: он был, и это видно.
             return Outcome.success(Batch(accepted, reply.run, notes), notes)
         }
