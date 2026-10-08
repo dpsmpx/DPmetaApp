@@ -137,7 +137,9 @@ class Handoffs {
     }
 
     @Synchronized
-    fun latest(task: TaskId): Handoff? = byKey.values.filter { it.task == task }.maxByOrNull { it.createdAt }
+    fun latest(task: TaskId): Handoff? =
+        // При равном времени решает id (монотонен): два handoff в одну миллисекунду — не наугад.
+        byKey.values.filter { it.task == task }.maxWithOrNull(compareBy<Handoff>({ it.createdAt.epochMillis }, { it.id.value }))
 
     @Synchronized
     fun all(): List<Handoff> = byKey.values.toList()

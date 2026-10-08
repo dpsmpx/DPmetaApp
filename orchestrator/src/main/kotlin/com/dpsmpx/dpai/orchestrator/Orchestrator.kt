@@ -450,7 +450,10 @@ class Orchestrator(
             return
         }
         // Продолжение — прерванная сессия той же задачи или сессия, чья работа не прошла проверку (D-40).
-        val previous = sessions.sessions.values.filter { it.task == task }.maxByOrNull { it.createdAt.epochMillis * 1000 + it.turn }
+        // Последняя сессия задачи: продолжение создаётся в ту же миллисекунду, что и handoff, — при равном
+        // времени решает id (монотонен), а не порядок обхода (разница при `--resume` теряла бы версию).
+        val previous = sessions.sessions.values.filter { it.task == task }
+            .maxWithOrNull(compareBy<com.dpsmpx.dpai.sessions.SessionRecord>({ it.createdAt.epochMillis }, { it.turn }, { it.id.value }))
         val handoff = handoffs.latest(task)
         val continues = previous?.takeIf {
             (it.state == SessionState.CANCELLED && it.lastReason == DiagCode.SESSION_HANDED_OFF) ||

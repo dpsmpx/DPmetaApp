@@ -66,78 +66,20 @@ class EfficiencyTest {
     @TempDir
     lateinit var dir: Path
 
-    /** Старт хода глазами Claude: запрос, сессия провайдера, `--resume` ли. */
-    data class Start(val request: ClaudeRequest, val provider: ProviderSessionId?, val resume: Boolean)
+    private var n = 0
 
-    /** Контур с одним слотом; первая проверка падает с длинным выводом, следующие проходят. */
-    inner class Harness(efficiency: EfficiencyPolicy, sources: (com.dpsmpx.dpai.core.ids.ProjectId) -> List<ContextSource> = { emptyList() }, failures: Int = 1) {
-        val clock = ManualClock()
-        private val ids = IdGenerator(clock, RandomSource.seeded(301))
-        private val host = LocalProcessHost()
-        val starts = mutableListOf<Start>()
-        private var failuresLeft = failures
-        val orchestrator: Orchestrator
-        private val runner: MockRunner = MockRunner.create(clock, RandomSource.seeded(302)) { _, _ -> com.dpsmpx.dpai.execution.claude.MockScenario.SUCCESS }
-
-        private fun sh(vararg argv: String) {
-            val r = host.run(ProcessSpec(listOf("git", *argv)), 1.minutes).valueOrNull()!!
-            assertEquals(0, r.exitCode, (r.stderr + r.stdout).joinToString("\n"))
-        }
-
-        init {
-            val root = dir.resolve("repo-${efficiency.hashCode()}").toFile().apply { mkdirs() }.path
-            sh("init", "-q", "-b", "main", root)
-            sh("-C", root, "config", "user.email", "dpai-test@example.org")
-            sh("-C", root, "config", "user.name", "dpai test")
-            File(root, "README.md").writeText("проект\n")
-            sh("-C", root, "add", "README.md")
-            sh("-C", root, "commit", "-q", "-m", "начало")
-            val repo = Repository(ids.next(IdKinds.REPOSITORY), ids.next(IdKinds.TARGET), root)
-            val logic = Accounts()
-            var accounts = AccountsState.EMPTY
-            val sub = ids.next(IdKinds.SUBSCRIPTION)
-            accounts = Accounts.applyAll(accounts, logic.registerSubscription(accounts, sub, "основная", clock.now(), maxParallelSessions = 8).valueOrNull()!!)
-            val target = ids.next(IdKinds.TARGET)
-            val slot = ids.next(IdKinds.ACCOUNT)
-            accounts = Accounts.applyAll(accounts, logic.registerSlot(accounts, slot, sub, target, "/home/dev/.claude", clock.now()).valueOrNull()!!)
-            val status = AuthStatus(true, AuthStatus.CLAUDE_AI, AuthStatus.FIRST_PARTY, AuthStatus.fingerprint("org", "a@example.org"), "max")
-            accounts = Accounts.applyAll(accounts, logic.observeAuthStatus(accounts, slot, status, clock.now()).valueOrNull()!!)
-            val project = ids.next(IdKinds.PROJECT)
-            val profile = VerificationProfile(project, mapOf(VerifyLevel.NORMAL to listOf(VerifyStep("тесты", listOf("gradle", "test")))))
-            // Шаг проверки: первые [failures] раз — длинный вывод Gradle с одной ошибкой.
-            val steps = com.dpsmpx.dpai.verification.StepRunner { _, _, _ ->
-                if (failuresLeft-- > 0) {
-                    Outcome.success(Completed(1, List(3_000) { "> Task :m$it:compileKotlin UP-TO-DATE" } + listOf("ParserTest > exponent() FAILED", "    AssertionError: ожидалось 1000, получено 1", "40 tests completed, 1 failed", "BUILD FAILED in 9s"), emptyList()))
-                } else {
-                    Outcome.success(Completed(0, listOf("BUILD SUCCESSFUL"), emptyList()))
-                }
-            }
-            val journal = (EventJournal.open(NioVfs(dir), "data-${efficiency.hashCode()}/journal.log") as Outcome.Success).value
-            orchestrator = Orchestrator(
-                clock, ids, RandomSource.seeded(303), journal, Recorder(runner, starts),
-                ProjectConfig(project, repo, dir.resolve("trees-${efficiency.hashCode()}").toString(), profile, sources = { sources(project) }),
-                listOf(TargetSlot(target, emptySet(), 2)), GitService(host, GitCommands(ApprovalLedger()), clock), Verifier(steps, clock), accounts,
-                efficiency = efficiency,
-            )
-        }
-
-        fun run(maxTicks: Int = 20) = repeat(maxTicks) {
-            orchestrator.tick()
-            orchestrator.sessions.sessions.keys.forEach { s -> while (runner.advance(s)) continue }
-            orchestrator.tick()
-            assertEquals(emptyList(), orchestrator.invariants())
-            clock.advance(2.minutes)
-        }
-
-        fun prompts(task: TaskId) = orchestrator.sessions.sessions.values.filter { it.task == task }.sortedBy { it.createdAt.epochMillis * 1000 + it.turn }.mapNotNull { it.usage.lastPrompt }
-    }
-
-    private class Recorder(private val inner: ClaudeRunner, private val starts: MutableList<Start>) : ClaudeRunner by inner {
-        override fun start(session: SessionId, request: ClaudeRequest, provider: ProviderSessionId?, resume: Boolean): Outcome<RunnerState> {
-            starts += Start(request, provider, resume)
-            return inner.start(session, request, provider, resume)
+    /** Первая проверка падает длинным выводом Gradle с одной ошибкой, следующие проходят. */
+    private val failOnce: (Int, String) -> List<String>? = { attempt, _ ->
+        if (attempt > 1) {
+            null
+        } else {
+            List(3_000) { "> Task :m$it:compileKotlin UP-TO-DATE" } +
+                listOf("ParserTest > exponent() FAILED", "    AssertionError: ожидалось 1000, получено 1", "40 tests completed, 1 failed", "BUILD FAILED in 9s")
         }
     }
+
+    private fun Harness(efficiency: EfficiencyPolicy, sources: (com.dpsmpx.dpai.core.ids.ProjectId) -> List<ContextSource> = { emptyList() }) =
+        EfficiencyHarness(dir.resolve("h${n++}"), efficiency, sources, failOnce)
 
     private val guide = "руководство по проекту ".repeat(400)
 
