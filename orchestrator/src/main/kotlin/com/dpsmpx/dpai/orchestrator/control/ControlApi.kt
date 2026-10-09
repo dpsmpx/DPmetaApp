@@ -191,7 +191,8 @@ object ControlSnapshot {
                                 "priority" to JsonString(t.priority.name), "held" to JsonBool(t.held), "taskClass" to JsonString(t.policy.taskClass.name),
                             ).apply {
                                 t.policy.model?.let { put("model", JsonString(it)) }
-                                t.lastReason?.let { put("reason", JsonString(it.name)) }
+                                // Причина — пока что-то не так; у выполненной это уже история (отмена до повтора и т. п.).
+                                t.lastReason?.takeIf { t.state != com.dpsmpx.dpai.core.state.TaskState.DONE }?.let { put("reason", JsonString(it.name)) }
                                 o.waitingReason(t.id)?.let { put("waiting", JsonString(it)) }
                             },
                         )

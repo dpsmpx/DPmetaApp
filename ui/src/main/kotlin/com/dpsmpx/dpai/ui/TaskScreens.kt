@@ -71,7 +71,7 @@ object TaskScreens {
         id = t.id, title = t.title, objective = t.objective,
         state = t.state.name, tone = Screens.tone(t.state), held = t.held, priority = t.priority.name,
         taskClass = t.policy.taskClass, model = t.policy.model, effort = t.policy.effort, budgetCents = t.policy.maxBudgetUsdCents,
-        retries = t.retries, reason = t.lastReason?.name,
+        retries = t.retries, reason = t.lastReason?.takeIf { t.state != TaskState.DONE }?.name,
         lastSession = sessions.sessions.values.filter { it.task == t.id }.maxByOrNull { it.createdAt.epochMillis }?.id,
         actions = actions(t),
         waiting = waiting?.takeIf { t.state == TaskState.READY },
