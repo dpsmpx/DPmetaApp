@@ -911,7 +911,15 @@ class Orchestrator(
         val id = ids.next(IdKinds.APPROVAL)
         // Сначала журнал: после перезапуска запрос снова ждёт ответа.
         commitMerges(listOf(MergeEvent.Requested(PendingMerge(task, id, proposal, clock.now() + approvals.ttl), clock.now())))
-        notify(approvals.request(id, proposal, clock.now()))
+        // Подпись — для человека: какая задача и куда; одобряется по-прежнему предложение (хеш, ТЗ, §68).
+        notify(
+            approvals.request(
+                id, proposal, clock.now(),
+                title = "Слить в $target: ${taskTitle(task)}",
+                body = "Ветка задачи $branch → $target. Проверка прошла.",
+                link = DeepLink.of(DeepLink.Kind.TASK, task),
+            ),
+        )
     }
 
     /**
@@ -1596,6 +1604,9 @@ class Orchestrator(
     /** Итоговые сообщения ходов задачи по порядку — для окна задачи (D-42). */
     fun turnMessages(task: TaskId): List<TurnMessage> = messagesOf[task]
         ?: documents?.read(docKey("messages", task))?.valueOrNull()?.let { TurnMessages.fromJson(it.content).valueOrNull() }.orEmpty()
+
+    /** Время контура (D-07) — для снимков снаружи. */
+    fun now(): com.dpsmpx.dpai.core.clock.Timestamp = clock.now()
 
     /** Что ход сессии делает сейчас (D-42): только в памяти, для экрана. */
     fun live(session: SessionId): com.dpsmpx.dpai.sessions.LiveTurn? = driver.live(session)

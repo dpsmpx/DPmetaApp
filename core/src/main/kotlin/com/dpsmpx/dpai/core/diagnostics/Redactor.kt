@@ -85,7 +85,8 @@ class Redactor private constructor(private val strict: Boolean) {
         if (!strict && !v.any(Char::isDigit)) return false
         if (UUID.matches(v) || TYPED_ID.matches(v)) return false
         // Путь из коротких сегментов — не токен; base64 со «/» — токен.
-        if ('/' in v && v.split('/').all { it.length < 24 }) return false
+        // Сегмент-id оркестратора или UUID — тоже не токен: `task/tsk_…` (ветка задачи) скрывался в уведомлении слияния.
+        if ('/' in v && v.split('/').all { it.length < 24 || TYPED_ID.matches(it) || UUID.matches(it) }) return false
         return true
     }
 
