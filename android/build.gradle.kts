@@ -72,7 +72,9 @@ val packAgent by tasks.registering(Zip::class) {
 androidComponents {
     onVariants { v -> v.sources.assets?.addStaticSourceDirectory(layout.buildDirectory.dir("generated/dpai-setup-assets").get().asFile.path) }
 }
-tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.configureEach { dependsOn(packAgent) }
+// Каталог читают слияние ресурсов и lint (generate…LintReportModel и др.) — все зависят от упаковки явно.
+tasks.matching { it.name != packAgent.name && (it.name.startsWith("merge") && it.name.endsWith("Assets") || "Lint" in it.name) }
+    .configureEach { dependsOn(packAgent) }
 
 kotlin {
     jvmToolchain(21)
