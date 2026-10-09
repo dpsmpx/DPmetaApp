@@ -5,8 +5,7 @@ import { h } from "./dom.js";
 import { fmtAge, fmtDate, fmtDateTime, isStale } from "./format.js";
 import { classify, normalize, DataError } from "./data.js";
 import { decode, defaults, encode, focusSet, matches, visible, FLOW_STATES, STATE_NAMES } from "./filters.js";
-import { layout } from "./layout.js";
-import { createGraph } from "./graph.js";
+import { createGraph, ZOOM } from "./graph.js";
 import { flowPanel, nodePanel } from "./panel.js";
 import { reconView, tablesView } from "./tables.js";
 
@@ -64,7 +63,6 @@ export class Viewer {
     this.view = null;
     this.vis = null;
     this.playTimer = 0;
-    this.motion = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
     this.buildShell();
   }
 
@@ -101,12 +99,12 @@ export class Viewer {
     // схема
     e.filters = h("details", { class: "dv-filters" });
     e.graphBox = h("div", { class: "dv-graph" });
-    e.zoom = h("div", { class: "dv-zoom" },
-      h("button", { type: "button", class: "dv-btn", "aria-label": "Крупнее", on: { click: () => this.graph?.zoomBy(1.3) }, text: "+" }),
-      h("button", { type: "button", class: "dv-btn", "aria-label": "Мельче", on: { click: () => this.graph?.zoomBy(1 / 1.3) }, text: "−" }),
-      h("button", { type: "button", class: "dv-btn", on: { click: () => this.graph?.fit() }, text: "Вписать" }));
+    e.zoomIn = h("button", { type: "button", class: "dv-btn", "aria-label": "Крупнее", on: { click: () => this.graph?.zoomBy(ZOOM.step) }, text: "+" });
+    e.zoomOut = h("button", { type: "button", class: "dv-btn", "aria-label": "Мельче", on: { click: () => this.graph?.zoomBy(1 / ZOOM.step) }, text: "−" });
+    e.zoomFit = h("button", { type: "button", class: "dv-btn", on: { click: () => this.graph?.fit() }, text: "Вся схема" });
+    e.zoom = h("div", { class: "dv-zoom", role: "group", "aria-label": "Масштаб" }, e.zoomIn, e.zoomOut, e.zoomFit);
     e.panel = h("aside", { class: "dv-panel", "aria-live": "polite", "aria-label": "Подробности", hidden: true });
-    e.hint = h("p", { class: "dv-hint", text: "Нажмите узел или поток — справа (на телефоне — ниже) появятся подробности. Колесо или щипок — масштаб, перетаскивание — сдвиг. Клавиатура: Tab — по узлам, Enter — выбрать, Esc — снять, / — поиск, пробел — воспроизведение, стрелки — день." });
+    e.hint = h("p", { class: "dv-hint", text: "Нажмите проект или связь — появятся подробности. «+» и «−» — масштаб (увеличенную схему можно двигать), «Вся схема» — вернуть. Клавиши: Tab, Enter, Esc, / — поиск, ← → — день." });
     e.timeline = h("div", { class: "dv-timeline" });
     e.legend = h("div", { class: "dv-legend", "aria-label": "Легенда" });
     e.tabGraph = h("section", { class: "dv-tab", role: "tabpanel", "aria-labelledby": "dv-tab-graph" },
@@ -126,7 +124,6 @@ export class Viewer {
       this.render();
     });
     document.addEventListener("keydown", (ev) => this.onKey(ev));
-    this.motion?.addEventListener?.("change", () => this.rebuild());
     window.addEventListener("message", (ev) => {
       if (ev.source !== window.parent || window.parent === window) return;
       if (ev.data && ev.data.type === "dpvis:data") this.accept({ model: ev.data.model, state: ev.data.state || null });
@@ -226,18 +223,19 @@ export class Viewer {
       this.message(`Данные не прочитаны: ${err.message}`);
       return;
     }
-    const vb = keepView && this.graph ? this.graph.svg.getAttribute("viewBox") : null;
     this.view = view;
     this.f = decode(encode(this.f), view);
-    this.lay = layout(view);
-    this.graph?.destroy();
-    this.graph = createGraph(this.el.graphBox, view, this.lay, {
-      select: (sel) => this.select(sel),
-      selected: () => this.f.sel,
-      hover: (t, ev) => this.hover(t, ev),
-      reducedMotion: () => !!this.motion?.matches,
-    });
-    if (vb) this.graph.svg.setAttribute("viewBox", vb);
+    if (keepView && this.graph) {
+      this.graph.setView(view); // новый срез — тот же масштаб и сдвиг (F-45)
+    } else {
+      this.graph?.destroy();
+      this.graph = createGraph(this.el.graphBox, view, {
+        select: (sel) => this.select(sel),
+        selected: () => this.f.sel,
+        hover: (t, ev) => this.hover(t, ev),
+        zoomChanged: (k) => this.syncZoom(k),
+      });
+    }
     this.el.title.textContent = view.title;
     this.el.show.hidden = !view.nodes.some((n) => n.visibility === "undisclosed") && !this.f.show;
     this.el.tabs.recon.hidden = !(view.diagnostics || view.registry);
@@ -311,7 +309,7 @@ export class Viewer {
     p.hidden = false;
     p.classList.add("has-sel");
     this.el.main.classList.add("has-sel");
-    if (wasHidden && window.innerWidth <= 860) requestAnimationFrame(() => p.scrollIntoView({ block: "nearest", behavior: "smooth" }));
+    if (wasHidden && p.getBoundingClientRect().top > (window.innerHeight || 0)) p.scrollIntoView({ block: "nearest", behavior: "auto" });
     p.replaceChildren(
       h("div", { class: "dv-panel-head" },
         h("h2", { text: title }),
@@ -321,7 +319,8 @@ export class Viewer {
 
   hover(t, ev) {
     const tip = this.el.tip;
-    if (!t || !ev) {
+    // подсказка — только для мыши: на касание отвечает панель подробностей
+    if (!t || !ev || (ev.pointerType && ev.pointerType !== "mouse")) {
       tip.hidden = true;
       return;
     }
@@ -346,11 +345,18 @@ export class Viewer {
     tip.style.top = `${y}px`;
   }
 
+  syncZoom(k) {
+    const e = this.el;
+    e.zoomOut.disabled = k <= ZOOM.min + 1e-6;
+    e.zoomFit.disabled = k <= ZOOM.min + 1e-6;
+    e.zoomIn.disabled = k >= ZOOM.max - 1e-6;
+  }
+
   // ------------------------------------------------------------ фильтры (F-27)
   buildFilters() {
     const v = this.view;
     const e = this.el;
-    e.filters.open = !this.site && window.innerWidth > 760;
+    e.filters.open = false; // проще экран (D-16): фильтры — по нажатию
     const kinds = [...new Set(v.flows.map((f) => f.kind))];
     const states = FLOW_STATES.filter((s) => v.flows.some((f) => f.state === s));
     const layers = v.layers.filter((l) => v.nodes.some((n) => n.layer === l.id));
@@ -469,11 +475,11 @@ export class Viewer {
     this.el.legend.replaceChildren(
       h("div", { class: "lg-row" }, h("span", { class: "lg-ttl", text: "Кто движет:" }), ...drv),
       h("div", { class: "lg-row" }, h("span", { class: "lg-ttl", text: "Состояние:" }),
-        h("span", { class: "lg" }, h("i", { class: "ln st-flowing", "aria-hidden": "true" }), "идёт или тихо (частицы — события за неделю)"),
+        h("span", { class: "lg" }, h("i", { class: "ln st-flowing", "aria-hidden": "true" }), "идёт или тихо — чем толще, тем больше событий за неделю"),
         h("span", { class: "lg" }, h("i", { class: "ln st-planned", "aria-hidden": "true" }), "план"),
         h("span", { class: "lg" }, h("i", { class: "ln st-blocked", "aria-hidden": "true" }), "заблокирован или выключен")),
       h("div", { class: "lg-row" }, h("span", { class: "lg-ttl", text: "Узлы:" }),
-        h("span", { class: "lg" }, h("i", { class: "nd act-working", "aria-hidden": "true" }), "работает (пульс)"),
+        h("span", { class: "lg" }, h("i", { class: "nd act-working", "aria-hidden": "true" }), "работает (яркая рамка)"),
         h("span", { class: "lg" }, h("i", { class: "nd", "aria-hidden": "true" }), "без работы"),
         h("span", { class: "lg" }, h("i", { class: "nd act-unknown", "aria-hidden": "true" }, "?"), "неизвестно"),
         h("span", { class: "lg" }, h("i", { class: "nd act-unobserved", "aria-hidden": "true" }), "не наблюдается"),

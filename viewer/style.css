@@ -3,7 +3,10 @@
    (dataviz validate_palette.js, 06.10.2026): тёмная — все пары ΔE CVD ≥ 9,4,
    обычное зрение ≥ 20,9, контраст ≥ 3:1; светлая — CVD ≥ 9,2, обычное ≥ 24,0,
    контраст ниже 3:1 у двух — поэтому у каждого графика есть таблица и подписи.
-   «Данные» — нейтральный серый, как «прочее». Штрих — состояние, не цвет. */
+   «Данные» — нейтральный серый, как «прочее». Штрих — состояние, не цвет.
+   Без анимаций (D-16): работа узла — яркая рамка, интенсивность связи — толщина линии.
+   Ширина — по контейнеру, без прокрутки вбок: схема перестраивается, таблицы на узком
+   месте — карточками (@container; где его нет — @media). */
 
 .dpvis {
   --bg: #111214;
@@ -30,6 +33,9 @@
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 12px;
+  container-type: inline-size;
+  overflow-wrap: anywhere;
+  max-width: 100%;
 }
 .dpvis[data-theme="light"] {
   --bg: #ffffff;
@@ -67,6 +73,8 @@
   border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; min-height: 32px; cursor: pointer;
 }
 .dpvis .dv-btn:hover { border-color: var(--line-strong); }
+.dpvis .dv-btn:disabled { opacity: 0.45; cursor: default; }
+.dpvis .dv-btn:disabled:hover { border-color: var(--line); }
 .dpvis button:focus-visible,
 .dpvis input:focus-visible,
 .dpvis summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
@@ -100,9 +108,11 @@
 .dpvis .dv-main.has-sel { grid-template-columns: minmax(0, 1fr) 340px; }
 .dpvis .dv-hint { font-size: 12.5px; color: var(--muted); margin: 6px 2px 0; }
 .dpvis .dv-graph-wrap { position: relative; }
-.dpvis .dv-graph { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; touch-action: none; }
-.dpvis .dpvis-svg { display: block; width: 100%; height: 520px; user-select: none; cursor: grab; }
-.dpvis .dpvis-svg:active { cursor: grabbing; }
+.dpvis .dv-graph { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; touch-action: pan-y; }
+.dpvis .dv-graph.is-zoomed { touch-action: none; }
+.dpvis .dpvis-svg { display: block; width: 100%; height: auto; user-select: none; }
+.dpvis .dv-graph.is-zoomed .dpvis-svg { cursor: grab; }
+.dpvis .dv-graph.is-zoomed .dpvis-svg:active { cursor: grabbing; }
 .dpvis .dv-zoom { display: flex; justify-content: flex-end; gap: 4px; margin-bottom: 6px; }
 .dpvis .dv-panel { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; max-height: 82vh; overflow: auto; font-size: 14px; }
 .dpvis .dv-panel-head { display: flex; justify-content: space-between; gap: 8px; align-items: start; }
@@ -111,7 +121,7 @@
 .dpvis .dv-close { min-width: 32px; }
 .dpvis .lead { color: var(--text-2); margin: 0 0 8px; }
 .dpvis .kvs { margin: 6px 0; }
-.dpvis .kv { display: grid; grid-template-columns: 120px 1fr; gap: 8px; padding: 3px 0; border-bottom: 1px solid var(--line); }
+.dpvis .kv { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 8px; padding: 3px 0; border-bottom: 1px solid var(--line); }
 .dpvis .kv dt { color: var(--muted); font-size: 13px; }
 .dpvis .kv dd { margin: 0; }
 .dpvis .flowlist, .dpvis .branches, .dpvis .refs ul { list-style: none; padding: 0; margin: 0; }
@@ -132,7 +142,7 @@
 
 /* SVG: колонки и узлы */
 .dpvis .dpvis-bg { fill: transparent; }
-.dpvis .col-name { fill: var(--muted); font-size: 12px; letter-spacing: 0.03em; text-transform: uppercase; }
+.dpvis .col-name { fill: var(--muted); font-size: 12px; letter-spacing: 0.03em; text-transform: uppercase; paint-order: stroke; stroke: var(--surface); stroke-width: 5px; stroke-linejoin: round; }
 .dpvis .node { cursor: pointer; outline: none; }
 .dpvis .node-box { fill: var(--bg); stroke: var(--line-strong); stroke-width: 1.2; }
 .dpvis .kind-actor .node-box { stroke: var(--text-2); stroke-width: 1.6; }
@@ -140,12 +150,8 @@
 .dpvis .node-name { fill: var(--text); font-size: 13.5px; font-weight: 600; }
 .dpvis .node-sub { fill: var(--muted); font-size: 12px; }
 .dpvis .node-ring { fill: none; stroke: none; }
-.dpvis .act-working .node-ring {
-  stroke: var(--pulse); stroke-width: 1.5; transform-box: fill-box; transform-origin: center;
-  animation: dpvis-pulse 1.8s ease-out infinite;
-}
-@keyframes dpvis-pulse { 0% { opacity: 0.85; transform: scale(0.97); } 100% { opacity: 0; transform: scale(1.08); } }
-.dpvis .act-working .node-box { stroke: var(--text); }
+.dpvis .act-working .node-ring { stroke: var(--pulse); stroke-width: 1.5; opacity: 0.8; }
+.dpvis .act-working .node-box { stroke: var(--text); stroke-width: 1.6; }
 .dpvis .unknown-mark { display: none; fill: var(--muted); font-size: 14px; font-weight: 700; }
 .dpvis .act-unknown .unknown-mark, .dpvis .act-nodata .unknown-mark { display: inline; }
 .dpvis .act-unobserved { opacity: 0.6; }
@@ -157,10 +163,9 @@
 .dpvis .node:focus-visible .node-box, .dpvis .node.is-sel .node-box { stroke: var(--focus); stroke-width: 2.4; }
 .dpvis .is-hidden { display: none; }
 .dpvis .node.is-dim, .dpvis .flow.is-dim { opacity: 0.13; }
-.dpvis .particle.is-dim { opacity: 0.1; }
 
 /* SVG: потоки */
-.dpvis .flow-line { fill: none; stroke: var(--data); stroke-linecap: round; }
+.dpvis .flow-line { fill: none; stroke: var(--data); stroke-linecap: round; opacity: 0.8; }
 .dpvis .flow-line.drv-human { stroke: var(--human); }
 .dpvis .flow-line.drv-ai { stroke: var(--ai); }
 .dpvis .flow-line.drv-check { stroke: var(--check); }
@@ -169,15 +174,13 @@
 .dpvis .mk.drv-ai { fill: var(--ai); }
 .dpvis .mk.drv-check { fill: var(--check); }
 .dpvis .flow.st-quiet .flow-line { opacity: 0.75; }
+.dpvis .dpvis-svg[data-mode="bands"] .flow-line { opacity: 0.5; }
 .dpvis .flow.st-planned .flow-line { stroke-dasharray: 7 5; opacity: 0.75; }
 .dpvis .flow.st-blocked .flow-line, .dpvis .flow.st-off .flow-line { stroke-dasharray: 1.5 4.5; opacity: 0.7; }
 .dpvis .flow.st-unknown .flow-line, .dpvis .flow.st-unobserved .flow-line, .dpvis .flow.st-nodata .flow-line { opacity: 0.45; }
+.dpvis .flow.is-focus .flow-line { opacity: 1; }
 .dpvis .flow.is-sel .flow-line { stroke-width: 3.2; opacity: 1; }
 .dpvis .flow-hit { fill: none; stroke: transparent; stroke-width: 12; pointer-events: stroke; cursor: pointer; }
-.dpvis .particle { fill: var(--data); }
-.dpvis .particle.drv-human { fill: var(--human); }
-.dpvis .particle.drv-ai { fill: var(--ai); }
-.dpvis .particle.drv-check { fill: var(--check); }
 
 /* шкала времени и легенда */
 .dpvis .dv-timeline { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin: 10px 0 6px; }
@@ -212,12 +215,12 @@
 .dpvis .bar-hit { fill: transparent; }
 .dpvis .bar-hit:hover { fill: var(--text); fill-opacity: 0.06; }
 .dpvis .chart-legend { display: flex; gap: 12px; font-size: 12px; color: var(--text-2); margin-top: 4px; }
-.dpvis .vtable { border-collapse: collapse; font-size: 13px; margin: 6px 0; min-width: 100%; }
+.dpvis .vtable { border-collapse: collapse; font-size: 13px; margin: 6px 0; width: 100%; }
 .dpvis .vtable caption { text-align: left; color: var(--text-2); font-weight: 600; padding: 6px 0; }
 .dpvis .vtable th, .dpvis .vtable td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
 .dpvis .vtable thead th { color: var(--muted); font-weight: 500; }
 .dpvis .vtable td.num { text-align: right; font-variant-numeric: tabular-nums; }
-.dpvis .scroll { overflow-x: auto; }
+.dpvis .scroll { max-width: 100%; }
 .dpvis .tables, .dpvis .recon { font-size: 14px; }
 .dpvis code { font-family: ui-monospace, "IBM Plex Mono", monospace; font-size: 12.5px; }
 
@@ -228,21 +231,36 @@
 }
 .dpvis .dv-tip span { color: var(--text-2); }
 
-/* телефон: панель под схемой (F-33) */
+/* узкое место (телефон, узкая колонка страницы): панель под схемой, таблицы — карточками (F-33, D-16).
+   Одни и те же правила — для контейнера (@container) и, где его нет, для окна (@media). */
 @media (max-width: 860px) {
   .dpvis { padding: 8px; font-size: 14px; }
-  .dpvis .dv-main { grid-template-columns: 1fr; }
-  .dpvis .dv-main.has-sel { grid-template-columns: 1fr; }
+  .dpvis .dv-main, .dpvis .dv-main.has-sel { grid-template-columns: minmax(0, 1fr); }
   .dpvis .dv-panel { max-height: none; }
-  .dpvis .dv-panel:not(.has-sel) { padding: 8px 12px; }
-  .dpvis .kv { grid-template-columns: 104px 1fr; }
+  .dpvis .kv { grid-template-columns: 104px minmax(0, 1fr); }
   .dpvis .dv-search { min-width: 0; flex: 1 1 160px; }
   .dpvis .dv-chipttl { min-width: 0; width: 100%; }
+  .dpvis .dv-day { min-width: 0; }
 }
-
-/* меньше движения: без пульса и частиц — интенсивность толщиной линии (F-22) */
-@media (prefers-reduced-motion: reduce) {
-  .dpvis .act-working .node-ring { animation: none; opacity: 0.8; }
+@container (max-width: 900px) {
+  .dpvis .dv-main, .dpvis .dv-main.has-sel { grid-template-columns: minmax(0, 1fr); }
+  .dpvis .dv-panel { max-height: none; }
+  .dpvis .dv-search { min-width: 0; flex: 1 1 160px; }
+  .dpvis .dv-day { min-width: 0; }
+}
+@media (max-width: 760px) {
+  .dpvis .vtable.wide thead { display: none; }
+  .dpvis .vtable.wide tr { display: block; padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .dpvis .vtable.wide th[scope="row"], .dpvis .vtable.wide td { display: flex; gap: 12px; justify-content: space-between; border: 0; padding: 2px 4px; text-align: right; }
+  .dpvis .vtable.wide th[scope="row"] { text-align: left; }
+  .dpvis .vtable.wide td::before { content: attr(data-label); color: var(--muted); text-align: left; }
+}
+@container (max-width: 760px) {
+  .dpvis .vtable.wide thead { display: none; }
+  .dpvis .vtable.wide tr { display: block; padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .dpvis .vtable.wide th[scope="row"], .dpvis .vtable.wide td { display: flex; gap: 12px; justify-content: space-between; border: 0; padding: 2px 4px; text-align: right; }
+  .dpvis .vtable.wide th[scope="row"] { text-align: left; }
+  .dpvis .vtable.wide td::before { content: attr(data-label); color: var(--muted); text-align: left; }
 }
 
 /* печать и принудительные цвета: штрих и подписи несут смысл без цвета */

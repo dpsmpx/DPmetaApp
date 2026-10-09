@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { fmtAge, fmtDate, fmtDateTime, isStale, plural, windowDays } from "../src/format.js";
 import { classify, DataError, flowStateAt, nodeExistsAt, normalize } from "../src/data.js";
 import { decode, defaults, encode, focusSet, visible } from "../src/filters.js";
-import { arcTable, bezierPoint, layout, pointAtFraction } from "../src/layout.js";
+import { edgePoint, layout } from "../src/layout.js";
 import { model, state } from "./fixture.js";
 
 test("даты — по московскому времени, возраст и «устарел»", () => {
@@ -106,28 +106,53 @@ test("фильтры: виды, состояния, слои, «за 7 дней�
   assert.ok(fo.nodes.has("bot") && fo.nodes.has("author") && fo.flows.has("decide.alpha"));
 });
 
-test("раскладка: все узлы на местах, без наложений, потоки — кривые", () => {
-  const v = normalize(model(), state());
-  const lay = layout(v);
-  assert.equal(lay.nodes.size, v.nodes.length);
+function noOverlap(lay) {
   const boxes = [...lay.nodes.values()];
   for (let i = 0; i < boxes.length; i++) {
     for (let j = i + 1; j < boxes.length; j++) {
       const a = boxes[i];
       const b = boxes[j];
       const overlap = a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
-      assert.equal(overlap, false, "узлы не накладываются");
+      if (overlap) return false;
     }
   }
-  for (const f of v.flows) {
-    const g = lay.flows.get(f.id);
-    assert.match(g.d, /^M[\d.]+,[\d.]+ C/);
-    const p0 = bezierPoint(g, 0);
-    const p1 = bezierPoint(g, 1);
-    assert.ok(Math.abs(p0.x - g.x1) < 1e-6 && Math.abs(p1.y - g.y2) < 1e-6);
-    const t = arcTable(g);
-    const mid = pointAtFraction(g, t, 0.5);
-    assert.ok(Number.isFinite(mid.x) && Number.isFinite(mid.y));
+  return true;
+}
+
+test("раскладка по ширине (D-16): широко — колонки, узко — полосы; всё в пределах ширины", () => {
+  const v = normalize(model(), state());
+  for (const width of [1300, 600, 340, 200]) {
+    const lay = layout(v, width);
+    assert.equal(lay.nodes.size, v.nodes.length);
+    assert.ok(noOverlap(lay), `узлы не накладываются при ${width}`);
+    assert.ok(lay.width >= Math.min(width, 280) && lay.width <= Math.max(width, 280), "ширина схемы — ширина контейнера");
+    for (const p of lay.nodes.values()) {
+      assert.ok(p.x >= 0 && p.x + p.w <= lay.width, `узел в пределах ширины при ${width}`);
+      assert.ok(p.y >= 0 && p.y + p.h <= lay.height);
+    }
   }
-  assert.ok(lay.width > 0 && lay.height > 0);
+  assert.equal(layout(v, 1300).mode, "columns");
+  assert.equal(layout(v, 340).mode, "bands");
+  const narrow = layout(v, 340);
+  const ys = [...narrow.headers].map((c) => c.y);
+  assert.deepEqual(ys, [...ys].sort((a, b) => a - b), "полосы слоёв — сверху вниз по порядку слоёв");
+});
+
+test("связи — прямые отрезки от края до края; пара связей — рядом, не друг по другу", () => {
+  const v = normalize(model(), state());
+  for (const width of [1300, 340]) {
+    const lay = layout(v, width);
+    for (const f of v.flows) {
+      const g = lay.flows.get(f.id);
+      assert.match(g.d, /^M-?[\d.]+,-?[\d.]+ L-?[\d.]+,-?[\d.]+$/, "только прямой отрезок, без кривых");
+      for (const [x, y] of [[g.x1, g.y1], [g.x2, g.y2]]) {
+        assert.ok(Number.isFinite(x) && Number.isFinite(y));
+        assert.ok(x >= -1 && x <= lay.width + 1, "конец связи в пределах ширины");
+      }
+    }
+  }
+  const p = edgePoint({ x: 0, y: 0, w: 100, h: 40 }, 1, 0, 0);
+  assert.deepEqual(p, { x: 100, y: 20 });
+  const q = edgePoint({ x: 0, y: 0, w: 100, h: 40 }, 0, -1, 0);
+  assert.deepEqual(q, { x: 50, y: 0 });
 });

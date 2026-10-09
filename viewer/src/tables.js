@@ -4,6 +4,18 @@ import { h } from "./dom.js";
 import { fmtDate, fmtNum, sum } from "./format.js";
 import { STATE_NAMES } from "./filters.js";
 
+// Подпись столбца — у каждой ячейки: на узком месте строка таблицы становится карточкой
+// «подпись — значение», и прокрутки вбок нет (D-16, style.css).
+export function labelCells(table) {
+  const heads = [...table.querySelectorAll("thead th")].map((th) => th.textContent);
+  for (const tr of table.querySelectorAll("tbody tr")) {
+    [...tr.children].forEach((cell, i) => {
+      if (cell.tagName === "TD" && heads[i]) cell.setAttribute("data-label", heads[i]);
+    });
+  }
+  return table;
+}
+
 export function tablesView(view, vis, select) {
   const cat = view.catalog;
   const nodes = view.nodes.filter((n) => vis.nodes.has(n.id)).sort((a, b) => a.layerIndex - b.layerIndex || a.name.localeCompare(b.name, "ru"));
@@ -47,7 +59,7 @@ export function tablesView(view, vis, select) {
     ))),
   );
   const note = h("p", { class: "muted", text: "«Неизвестно» — сигнал есть, наблюдение не удалось; «не наблюдается» — сигнала нет по устройству; ни то, ни другое не ноль. Фильтры схемы действуют и здесь." });
-  return h("div", { class: "tables" }, note, h("div", { class: "scroll" }, nodeTable), h("div", { class: "scroll" }, flowTable));
+  return h("div", { class: "tables" }, note, h("div", { class: "scroll" }, labelCells(nodeTable)), h("div", { class: "scroll" }, labelCells(flowTable)));
 }
 
 export function reconView(view) {
