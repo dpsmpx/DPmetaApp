@@ -43,11 +43,36 @@ object ControlServer {
 
     val running: Boolean get() = socket?.isClosed == false
 
-    /** Запустить (повторный вызов — ничего); занятый порт — строка журнала, не падение. */
+    /** Почему канал не открылся — для карточки «Командная строка»; открыт — `null`. */
+    @Volatile
+    var problem: String? = null
+        private set
+
+    @Volatile
+    private var starting = false
+
+    /**
+     * Запустить (повторный вызов — ничего). Сокет открывается в своём
+     * потоке: в главном Android запрещает сеть (`NetworkOnMainThreadException`),
+     * а вызывают из `onStartCommand`. Отказ — на карточке и в журнале.
+     */
     @Synchronized
     fun start(context: Context) {
-        if (running) return
+        if (running || starting) return
+        starting = true
         val app = context.applicationContext
+        Thread({ open(app) }, "dpai-control-open").apply { isDaemon = true }.start()
+    }
+
+    private fun open(app: Context) {
+        try {
+            openNow(app)
+        } finally {
+            starting = false
+        }
+    }
+
+    private fun openNow(app: Context) {
         val log = AppLogs.get(app)
         val api = ControlApi(pairing(app), { DemoModel.get(app).liveOrchestrator() }) { c ->
             when (val r = DemoModel.get(app).commandResult(c)) {
@@ -58,9 +83,11 @@ object ControlServer {
         val s = try {
             ServerSocket(PORT, 8, InetAddress.getLoopbackAddress())
         } catch (e: Exception) {
-            log.warn("dpai", "канал не открыт на 127.0.0.1:$PORT: ${AppLogs.describe(e)}")
+            problem = AppLogs.describe(e)
+            log.warn("dpai", "канал не открыт на 127.0.0.1:$PORT: $problem")
             return
         }
+        problem = null
         socket = s
         log.info("dpai", "канал dpai — 127.0.0.1:$PORT")
         Thread({

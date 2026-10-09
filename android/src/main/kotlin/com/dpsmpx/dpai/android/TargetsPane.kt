@@ -441,10 +441,25 @@ private fun CliCard() {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
             Text("Командная строка dpai", style = MaterialTheme.typography.titleMedium)
+            var running by remember { mutableStateOf(ControlServer.running) }
+            var problem by remember { mutableStateOf(ControlServer.problem) }
+            LaunchedEffect(Unit) {
+                while (true) {
+                    running = ControlServer.running
+                    problem = ControlServer.problem
+                    kotlinx.coroutines.delay(2000)
+                }
+            }
             Text(
-                if (ControlServer.running) "Канал: 127.0.0.1:${ControlServer.PORT}" else "Канал закрыт: он работает вместе со службой контроллера",
+                when {
+                    running -> "Канал: 127.0.0.1:${ControlServer.PORT} — открыт"
+                    problem != null -> "Канал не открылся: $problem"
+                    else -> "Канал закрыт: он работает вместе со службой контроллера"
+                },
                 style = MaterialTheme.typography.bodySmall,
+                color = if (running) androidx.compose.ui.graphics.Color.Unspecified else MaterialTheme.colorScheme.error,
             )
+            if (!running) TextButton(onClick = { ControlServer.start(context) }) { Text("Открыть канал") }
             code?.let { c ->
                 Text("Код: $c", style = MaterialTheme.typography.headlineSmall)
                 Text("В Termux: dpai control pair $c  (код действует 2 минуты)", style = MaterialTheme.typography.bodySmall)
