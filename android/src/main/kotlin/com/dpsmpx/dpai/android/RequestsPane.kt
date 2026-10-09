@@ -39,19 +39,16 @@ import kotlinx.coroutines.withContext
 import kotlin.time.Duration.Companion.minutes
 
 /**
- * Вкладка «Запросы» (D-44): ждущие запросы с вариантами ответа, окно
- * поверх приложений (выключатель и разрешение системы) и проверка канала —
- * проверочные запросы каждого вида (`docs/DEVICE_CHECK.md`).
+ * Вкладка «Запросы» (D-44): ждущие запросы с вариантами ответа и окно
+ * поверх приложений (выключатель и разрешение системы); проверка канала —
+ * в «Журнал» → «Отладка» ([ProbePanel]).
  */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun RequestsPane(model: DemoModel, snapshot: Snapshot?) {
     val context = LocalContext.current.applicationContext
-    val scope = rememberCoroutineScope()
     var overlayOn by remember { mutableStateOf(RequestOverlay.enabled(context)) }
     var permitted by remember { mutableStateOf(RequestOverlay.permitted(context)) }
-    var shortTtl by remember { mutableStateOf(false) }
-    var note by remember { mutableStateOf<String?>(null) }
     // Разрешение даётся в настройках системы: перечитать с каждым снимком (раз в 1–3 с).
     LaunchedEffect(snapshot) { permitted = RequestOverlay.permitted(context) }
     val requests = snapshot?.requests.orEmpty()
@@ -83,33 +80,6 @@ fun RequestsPane(model: DemoModel, snapshot: Snapshot?) {
                     if (overlayOn && !permitted) {
                         OutlinedButton(onClick = { context.startActivity(RequestOverlay.permissionIntent(context)) }) { Text("Открыть настройку разрешения") }
                     }
-                }
-            }
-        }
-        item {
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Проверка запросов", fontWeight = FontWeight.Bold)
-                    Text("Проверочный запрос: ответ только записывается в журнал контура.", style = MaterialTheme.typography.bodySmall)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Короткий срок (1 мин) — проверить истечение", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                        Switch(checked = shortTtl, onCheckedChange = { shortTtl = it })
-                    }
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        for (k in RequestKind.entries) {
-                            OutlinedButton(onClick = {
-                                scope.launch {
-                                    val r = withContext(Dispatchers.IO) { model.probe(k, if (shortTtl) 1.minutes else null) }
-                                    note = when (r) {
-                                        is Outcome.Success -> "создан ${r.value.value}"
-                                        is Outcome.Failure -> "не создан: ${r.diagnostics.first().message}"
-                                    }
-                                    withContext(Dispatchers.IO) { runCatching { RequestPresenter.sync(context, model, model.pending()) } }
-                                }
-                            }) { Text(com.dpsmpx.dpai.ui.RequestScreens.kindLabel(k)) }
-                        }
-                    }
-                    note?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
                 }
             }
         }
@@ -166,3 +136,43 @@ private fun AnswerChip(b: AnswerButton, armed: Boolean, enabled: Boolean, onClic
     val colors = if (b.confirm) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error) else ButtonDefaults.buttonColors()
     Button(onClick = onClick, enabled = enabled, colors = colors) { Text(if (armed) "Точно: ${b.label}?" else b.label) }
 }
+
+/**
+ * Проверка канала запросов (D-44, `docs/DEVICE_CHECK.md`, §8.8): запрос
+ * каждого вида, ответ только записывается в журнал. Проверено на Redmi
+ * Note 13 — с экрана «Запросы» убрано, живёт в «Журнал» → «Отладка».
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+fun ProbePanel(model: DemoModel) {
+    val context = LocalContext.current.applicationContext
+    val scope = rememberCoroutineScope()
+    var shortTtl by remember { mutableStateOf(false) }
+    var note by remember { mutableStateOf<String?>(null) }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Проверка запросов", fontWeight = FontWeight.Bold)
+            Text("Проверочный запрос: ответ только записывается в журнал контура.", style = MaterialTheme.typography.bodySmall)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Короткий срок (1 мин) — проверить истечение", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                Switch(checked = shortTtl, onCheckedChange = { shortTtl = it })
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                for (k in RequestKind.entries) {
+                    OutlinedButton(onClick = {
+                        scope.launch {
+                            val r = withContext(Dispatchers.IO) { model.probe(k, if (shortTtl) 1.minutes else null) }
+                            note = when (r) {
+                                is Outcome.Success -> "создан ${r.value.value}"
+                                is Outcome.Failure -> "не создан: ${r.diagnostics.first().message}"
+                            }
+                            withContext(Dispatchers.IO) { runCatching { RequestPresenter.sync(context, model, model.pending()) } }
+                        }
+                    }) { Text(com.dpsmpx.dpai.ui.RequestScreens.kindLabel(k)) }
+                }
+            }
+            note?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
+        }
+    }
+}
+

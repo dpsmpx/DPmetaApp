@@ -196,11 +196,11 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                     when {
                         screen == 2 -> TargetsPane(controller, model)
                         screen == 3 -> RequestsPane(model, s)
-                        screen == 4 -> LogPane()
+                        screen == 4 -> LogPane(model)
                         s == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                         screen == SESSION_SCREEN -> SessionPane(s.session, model)
                         screen == 0 -> DashboardPane(s.dashboard, model) { selectedId = it.value }
-                        else -> BoardPane(s.board, s.live, model) { selectedId = it }
+                        else -> BoardPane(s.board, s.live, model, s.archived) { selectedId = it }
                     }
                 }
             }
@@ -303,12 +303,27 @@ private fun SessionPane(screen: SessionScreen?, model: DemoModel) {
 }
 
 @Composable
-private fun BoardPane(board: TaskBoard, live: Boolean, model: DemoModel, onSession: (String) -> Unit) {
+private fun BoardPane(board: TaskBoard, live: Boolean, model: DemoModel, archived: Int, onSession: (String) -> Unit) {
     var creating by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    var showArchived by remember { mutableStateOf(model.showArchived) }
     var opened by remember { mutableStateOf<com.dpsmpx.dpai.core.ids.TaskId?>(null) }
     LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         if (live) {
             item(key = "new") { Button(onClick = { creating = true }) { Text("Новая задача") } }
+        }
+        // Архив (D-42): завершённые — с доски, история в журнале остаётся.
+        item(key = "archive") {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = {
+                    scope.launch { withContext(Dispatchers.IO) { model.command(com.dpsmpx.dpai.orchestrator.commands.Command.ArchiveFinished()) } }
+                }) { Text("Убрать завершённые") }
+                Text("Показать архив ($archived)", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                androidx.compose.material3.Switch(checked = showArchived, onCheckedChange = {
+                    showArchived = it
+                    model.showArchived = it
+                })
+            }
         }
         board.columns.forEach { col ->
             item(key = "h:${col.title}") { Text("${col.title} (${col.cards.size})", style = MaterialTheme.typography.titleMedium) }

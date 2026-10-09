@@ -21,6 +21,8 @@ enum class TaskAction(val label: String, val dangerous: Boolean = false) {
     REPLY("Ответить и повторить"),
     VERIFY("Проверить снова"),
     WAIVE("Принять без проверки", dangerous = true),
+    ARCHIVE("В архив"),
+    UNARCHIVE("Из архива"),
     CANCEL("Отменить задачу", dangerous = true),
 }
 
@@ -65,6 +67,7 @@ object TaskScreens {
             add(TaskAction.WAIVE)
         }
         if (!t.terminal && t.state != TaskState.VERIFIED) add(TaskAction.CANCEL)
+        if (t.terminal) add(if (t.archived) TaskAction.UNARCHIVE else TaskAction.ARCHIVE)
     }
 
     fun detail(t: TaskRecord, sessions: SessionsState, waiting: String? = null): TaskDetail = TaskDetail(

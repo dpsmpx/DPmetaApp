@@ -64,7 +64,7 @@ class ControlCommand(
         val args = all.filter { it != "--json" }
         return when (cmd) {
             "control" -> control(args)
-            "status" -> status()
+            "status" -> status(args)
             "task" -> task(args)
             "session" -> session(args)
             "requests" -> requests()
@@ -104,11 +104,12 @@ class ControlCommand(
 
     // ---- чтение ----
 
-    private fun status(): Int {
+    private fun status(args: List<String>): Int {
         val s = state() ?: return FAILED
         if (json) return print(s)
-        val tasks = list(s, "tasks")
-        out("Задачи (${tasks.size}):")
+        val all = list(s, "tasks")
+        val tasks = all.filter { !bool(it, "archived") || "--all" in args }
+        out("Задачи (${tasks.size}${if (tasks.size < all.size) ", в архиве ещё ${all.size - tasks.size}: dpai status --all" else ""}):")
         for (t in tasks) {
             val extra = listOfNotNull(
                 "пауза".takeIf { bool(t, "held") }, str(t, "model"), str(t, "reason"), str(t, "waiting")?.let { "ждёт: $it" },
@@ -148,6 +149,7 @@ class ControlCommand(
     // ---- команды ----
 
     private fun task(args: List<String>): Int {
+        if (args.firstOrNull() == "archive-done") return send(linkedMapOf("command" to JsonString("tasks.archive-done")))
         if (args.firstOrNull() == "add") {
             val title = args.getOrNull(1) ?: return usage(TASK_USAGE)
             val objective = args.getOrNull(2)?.takeIf { !it.startsWith("--") } ?: return usage(TASK_USAGE)
@@ -166,6 +168,10 @@ class ControlCommand(
         val c = linkedMapOf<String, JsonValue>("task" to JsonString(task))
         when (action) {
             "hold", "resume", "cancel", "verify" -> c["command"] = JsonString("task.$action")
+            "archive", "unarchive" -> {
+                c["command"] = JsonString("task.archive")
+                c["archived"] = JsonBool(action == "archive")
+            }
             "retry" -> {
                 c["command"] = JsonString("task.retry")
                 opt(args, "--text")?.let { c["text"] = JsonString(it) }
@@ -342,13 +348,14 @@ class ControlCommand(
         const val USAGE_ERROR = 2
 
         private const val TASK_USAGE = "dpai task add «название» «что сделать» [--priority HIGH] [--class trivial] [--model haiku] [--effort low] [--budget 0.25]\n" +
-            "dpai task <id> hold|resume|retry [--text «…»]|verify|messages|priority <P>|policy --class <к> …|cancel --yes|waive --reason «…» --yes"
+            "dpai task <id> hold|resume|retry [--text «…»]|verify|messages|priority <P>|policy --class <к> …|archive|unarchive|cancel --yes|waive --reason «…» --yes\n" +
+            "dpai task archive-done   — все завершённые в архив"
         private const val SESSION_USAGE = "dpai session <id> stop | send «запрос» [--model m] [--effort e] | fresh [«запрос»]"
 
         val USAGE = """
             |  dpai control pair <код>   сопряжение с приложением (код — Targets → «Командная строка»)
-            |  dpai status               задачи, сессии, запросы, загрузка подписки
-            |  dpai task …               add | <id> hold|resume|cancel|retry|verify|waive|priority|policy|messages
+            |  dpai status [--all]       задачи (без архива), сессии, запросы, загрузка подписки
+            |  dpai task …               add | archive-done | <id> hold|resume|cancel|retry|verify|waive|priority|policy|archive|unarchive|messages
             |  dpai session <id> …       stop | send «запрос» | fresh
             |  dpai requests             ждущие запросы;  dpai answer <запрос> <вариант> [--text] [--yes]
             |  dpai limit <процент>      порог «у предела»;  dpai sessions-limit <n|off>

@@ -201,7 +201,10 @@ object Screens {
         else -> "${ms / 3_600_000} ч назад"
     }
 
-    fun board(tasks: TasksState): TaskBoard {
+    /** Доска (ТЗ, §41); архив (D-42) — только по [showArchived]. */
+    fun board(tasks: TasksState, showArchived: Boolean = false): TaskBoard = boardOf(if (showArchived) tasks else TasksState(tasks.tasks.filterValues { !it.archived }))
+
+    private fun boardOf(tasks: TasksState): TaskBoard {
         val level = HashMap<TaskId, Int>()
         fun levelOf(id: TaskId, path: Set<TaskId>): Int = level[id] ?: run {
             // Цикл в DAG планировщик не пропускает (DEPENDENCY_CYCLE); здесь — только защита от зацикливания отрисовки.

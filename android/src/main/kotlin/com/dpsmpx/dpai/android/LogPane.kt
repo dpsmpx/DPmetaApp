@@ -35,7 +35,7 @@ import kotlinx.coroutines.withContext
  * Выгрузка — только кнопкой человека: наружу журнал сам не уходит.
  */
 @Composable
-fun LogPane() {
+fun LogPane(model: DemoModel) {
     val context = LocalContext.current.applicationContext
     val log = remember { AppLogs.get(context) }
     var filter by remember { mutableStateOf(LogFilter.ALL) }
@@ -62,6 +62,10 @@ fun LogPane() {
             }) { Text("Копировать журнал") }
         }
         note?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
+        // Отладка: проверочные запросы (D-44) — с экрана «Запросы» убраны, здесь — по требованию.
+        var debug by remember { mutableStateOf(false) }
+        androidx.compose.material3.TextButton(onClick = { debug = !debug }) { Text(if (debug) "Отладка ▾" else "Отладка ▸") }
+        if (debug) ProbePanel(model)
         LazyColumn(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             items(lines, key = { it.seq }) { l ->
                 Text(l.render(), fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelSmall)

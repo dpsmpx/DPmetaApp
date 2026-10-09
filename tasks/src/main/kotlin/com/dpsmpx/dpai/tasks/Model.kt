@@ -92,6 +92,8 @@ data class TaskRecord(
      * удержание не снято; состояние задачи при этом прежнее.
      */
     val held: Boolean = false,
+    /** В архиве (D-42): завершённая задача спрятана с доски; история в журнале — как была (D-12). */
+    val archived: Boolean = false,
 ) {
     val terminal: Boolean get() = state in TaskLifecycle.table.terminal
 }
@@ -160,6 +162,9 @@ sealed interface TaskEvent {
 
     /** Счётчики повторов, продолжений и петель сброшены явным повтором человека (D-42). */
     data class CountersReset(override val task: TaskId, override val at: Timestamp) : TaskEvent
+
+    /** Завершённая задача спрятана в архив или возвращена (D-42). */
+    data class ArchiveChanged(override val task: TaskId, val archived: Boolean, override val at: Timestamp) : TaskEvent
 }
 
 /**

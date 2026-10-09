@@ -114,4 +114,7 @@ enum class EventType {
     // --- настройки контура: targets и предел сессий (D-42, п. 5, 6) ---
     CONTROL_TARGET_ENABLED_SET,
     CONTROL_SESSION_LIMIT_SET,
+
+    // --- архив задач (D-42) ---
+    TASK_ARCHIVE_CHANGED,
 }

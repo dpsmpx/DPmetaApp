@@ -145,6 +145,16 @@ sealed interface Command {
         override val operation: String get() = "control.session-limit"
     }
 
+    /** Спрятать завершённую задачу в архив или вернуть (D-42). */
+    data class Archive(override val task: TaskId, val archived: Boolean, override val key: String? = null) : Command, TaskCommand {
+        override val operation: String get() = "task.archive"
+    }
+
+    /** Все завершённые задачи — в архив (D-42); итог — сколько спрятано. */
+    data class ArchiveFinished(override val key: String? = null) : Command {
+        override val operation: String get() = "tasks.archive-done"
+    }
+
     companion object {
         /** Ключ идемпотентности — короткая латиница: его пишет оболочка (UUID нажатия), а не человек. */
         val KEY = Regex("[A-Za-z0-9_.:-]{8,80}")

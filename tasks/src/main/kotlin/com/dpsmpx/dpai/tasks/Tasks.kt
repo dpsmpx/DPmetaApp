@@ -77,6 +77,14 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
         return Outcome.success(listOf(TaskEvent.PolicyChanged(id, policy, now)))
     }
 
+    /** Спрятать завершённую задачу в архив или вернуть (D-42); незавершённую прятать нельзя — она ещё работает. */
+    fun archive(state: TasksState, id: TaskId, archived: Boolean, now: Timestamp): Outcome<List<TaskEvent>> {
+        val t = state.tasks[id] ?: return notFound(id)
+        if (archived && !t.terminal) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "в архив — только завершённую: задача ${t.state}", "task $id")
+        if (t.archived == archived) return Outcome.success(emptyList())
+        return Outcome.success(listOf(TaskEvent.ArchiveChanged(id, archived, now)))
+    }
+
     /** Удержать или отпустить задачу (D-42); конечную — нельзя. */
     fun hold(state: TasksState, id: TaskId, held: Boolean, now: Timestamp): Outcome<List<TaskEvent>> {
         val t = state.tasks[id] ?: return notFound(id)
@@ -362,6 +370,8 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
                     check(TaskLifecycle.table.isAllowed(t.state, e.to, TransitionMode.EXPLICIT)) { "задача ${e.task}: ${t.state} → ${e.to}" }
                     t.copy(
                         state = e.to,
+                        // Снова в работе (повтор, переоткрытие) — из архива: прятать идущее нельзя.
+                        archived = t.archived && e.to in TaskLifecycle.table.terminal,
                         updatedAt = e.at,
                         lastReason = e.reason ?: t.lastReason,
                         notBefore = e.notBefore,
@@ -378,6 +388,7 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
                 is TaskEvent.PolicyChanged -> tasks.computeIfPresent(e.task) { _, t -> t.copy(policy = e.policy, updatedAt = e.at) }
                 is TaskEvent.HoldChanged -> tasks.computeIfPresent(e.task) { _, t -> t.copy(held = e.held, updatedAt = e.at) }
                 is TaskEvent.CountersReset -> tasks.computeIfPresent(e.task) { _, t -> t.copy(retries = 0, continuations = 0, failures = emptyMap(), updatedAt = e.at) }
+                is TaskEvent.ArchiveChanged -> tasks.computeIfPresent(e.task) { _, t -> t.copy(archived = e.archived, updatedAt = e.at) }
             }
             return TasksState(tasks)
         }

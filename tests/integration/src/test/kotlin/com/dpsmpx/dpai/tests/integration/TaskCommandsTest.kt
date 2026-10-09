@@ -164,6 +164,27 @@ class TaskCommandsTest {
     }
 
     @Test
+    fun archiveHidesOnlyFinishedAndSurvivesRestart() {
+        val (o, _) = boot()
+        val done = o.addTask("отменить и спрятать", "цель").valueOrNull()!!
+        val live = o.addTask("идёт", "цель").valueOrNull()!!
+        o.tick()
+        assertEquals(DiagCode.OPERATION_NOT_ALLOWED, o.run(Command.Archive(live, true)).diagnostics.single().code, "идущую не прячут")
+        o.run(Command.Cancel(done))
+        val r = o.run(Command.ArchiveFinished())
+        assertEquals(1, r.value, "спрятана одна завершённая")
+        assertTrue(o.tasks.tasks.getValue(done).archived)
+        assertTrue(!o.tasks.tasks.getValue(live).archived)
+
+        // Перезапуск: архив — из журнала и снимка (dpai.tasks-state v5); повтор возвращает из архива.
+        val (second, _) = boot()
+        assertTrue(second.tasks.tasks.getValue(done).archived, "архив пережил перезапуск")
+        assertEquals(OperationStatus.SUCCEEDED, second.run(Command.Retry(done)).status)
+        assertTrue(!second.tasks.tasks.getValue(done).archived, "снова в работе — не в архиве")
+        assertEquals(emptyList(), second.invariants())
+    }
+
+    @Test
     fun retryResetsCountersForFailedCancelledAndBlocked() {
         scenario = { n -> if (n <= 4) MockScenario.FAILURE else MockScenario.SUCCESS }
         val (o, runner) = boot()

@@ -704,7 +704,7 @@ class Orchestrator(
             val path = "${config.worktreeRoot}/${task.value}"
             val branch = "$TASK_BRANCH${task.value}"
             val ev = ok(Worktrees.create(worktrees, id, repo.id, path, branch, clock.now()), "дерево задачи не зарегистрировано") ?: return null
-            if (ok(g.run(GitOp.WORKTREE_ADD, repo.root, listOf(path, branch)), "git worktree add") == null) return null
+            if (ok(g.run(GitOp.WORKTREE_ADD, repo.root, listOf(path, branch)), "git worktree add").also { gitOk = it != null } == null) return null
             commitWorktrees(ev)
             treeOf[task] = id
             id
@@ -901,7 +901,7 @@ class Orchestrator(
         if (files.isEmpty()) return
         val tree = treeOf.getValue(task)
         ok(g.write(worktrees, tree, session, GitOp.ADD, files), "git add")
-        ok(g.write(worktrees, tree, session, GitOp.COMMIT, listOf("dpai: ${tasks.tasks.getValue(task).title}")), "git commit")
+        gitOk = ok(g.write(worktrees, tree, session, GitOp.COMMIT, listOf("dpai: ${tasks.tasks.getValue(task).title}")), "git commit") != null
     }
 
     private fun requestMerge(task: TaskId, branch: String) {
@@ -1139,6 +1139,12 @@ class Orchestrator(
                     is Outcome.Failure -> r
                     is Outcome.Success -> Outcome.success(command.enabled).also { commitAccounts(r.value) }
                 }
+            }
+            is Command.Archive -> record(command, provenance) { taskEdit(command.task) { tasksLogic.archive(tasks, command.task, command.archived, clock.now()) } }
+            is Command.ArchiveFinished -> record(command, provenance) {
+                val es = tasks.tasks.values.filter { it.terminal && !it.archived }.sortedBy { it.id.value }.flatMap { tasksLogic.archive(tasks, it.id, true, clock.now()).valueOrNull().orEmpty() }
+                commitTasks(es)
+                Outcome.success(es.size)
             }
             is Command.Waive -> record(command, provenance) {
                 if (command.reason.isBlank()) Outcome.failure(DiagCode.VALUE_INVALID, "исключение — с причиной") else resolveUnverified(command.task, WAIVE, command.by, command.reason.trim())
@@ -1604,6 +1610,22 @@ class Orchestrator(
     /** Итоговые сообщения ходов задачи по порядку — для окна задачи (D-42). */
     fun turnMessages(task: TaskId): List<TurnMessage> = messagesOf[task]
         ?: documents?.read(docKey("messages", task))?.valueOrNull()?.let { TurnMessages.fromJson(it.content).valueOrNull() }.orEmpty()
+
+    /**
+     * Работает ли Git проекта (самодиагностика, ТЗ, §79): итог последней
+     * операции Git контура или проверки [checkGit]; неизвестно — `null`
+     * (D-13: не «здоров»).
+     */
+    @Volatile
+    var gitOk: Boolean? = null
+        private set
+
+    /** Проверить Git проекта: `git status` в каталоге репозитория. Без репозитория — ничего. */
+    fun checkGit() {
+        val repo = config.repository ?: return
+        val g = git ?: return
+        gitOk = g.status(repo.root) is Outcome.Success
+    }
 
     /** Время контура (D-07) — для снимков снаружи. */
     fun now(): com.dpsmpx.dpai.core.clock.Timestamp = clock.now()

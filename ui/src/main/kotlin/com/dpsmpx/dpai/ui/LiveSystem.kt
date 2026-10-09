@@ -89,6 +89,8 @@ class LiveSystem(
     onEvents: (List<EventEnvelope>) -> Unit = {},
     /** Проблемы контура — в журнал приложения с причинами (D-43). */
     onProblem: (Diagnostic) -> Unit = {},
+    /** Разрешены ли уведомления (у оболочки — Android); неизвестно — `null`. */
+    private val notificationsOk: () -> Boolean? = { null },
 ) : ControlView {
     override val mode: String = "контроллер"
     private val ids = IdGenerator(clock, random)
@@ -243,6 +245,11 @@ class LiveSystem(
                 }
             }
         }
+        // Git проекта — проверка один раз (дальше — по итогам операций контура) и снова, пока не работает, раз в минуту.
+        if (project != null && orchestrator.gitOk != true && clock.now().epochMillis - lastGitCheck >= GIT_RECHECK_MS) {
+            lastGitCheck = clock.now().epochMillis
+            orchestrator.checkGit()
+        }
         orchestrator.tick()
         if (problems.size > MAX_PROBLEMS) problems.subList(0, problems.size - MAX_PROBLEMS).clear()
     }
@@ -252,10 +259,12 @@ class LiveSystem(
 
     fun diagnosis(): SelfDiagnosis = SelfDiagnostics.evaluate(
         SystemSignals(
-            storageOk = true, recoveryInProgress = false, gitAvailable = null, notificationsOk = null,
-            targetsOnline = usable.size, targetsTotal = usable.size, securityAlert = false,
+            storageOk = true, recoveryInProgress = false, gitAvailable = orchestrator.gitOk, notificationsOk = notificationsOk(),
+            targetsOnline = usable.size, targetsTotal = usable.size, securityAlert = false, gitRequired = project != null,
         ),
     )
+
+    private var lastGitCheck = Long.MIN_VALUE / 2
 
     override fun dashboard(): DashboardScreen {
         val base = Screens.dashboard(orchestrator.dashboard(), diagnosis(), orchestrator.usage())
@@ -272,6 +281,9 @@ class LiveSystem(
 
     companion object {
         private const val MAX_PROBLEMS = 50
+
+        /** Как часто перепроверять Git, пока он не работает. */
+        private const val GIT_RECHECK_MS = 60_000L
 
         /** Предел одновременных сессий подписки контроллера; на target — по одной (`TargetSlot`). */
         private const val MAX_PARALLEL = 8

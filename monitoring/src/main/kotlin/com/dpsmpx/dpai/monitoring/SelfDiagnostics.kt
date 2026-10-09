@@ -16,6 +16,8 @@ data class SystemSignals(
     val targetsTotal: Int,
     val securityAlert: Boolean,
     val blockedByUser: Boolean = false,
+    /** Нужен ли Git: без проекта с репозиторием его отсутствие — не деградация. */
+    val gitRequired: Boolean = true,
 )
 
 data class SelfDiagnosis(val health: SystemHealth, val allowed: Set<Capability>, val reasons: List<String>)
@@ -40,7 +42,7 @@ object SelfDiagnostics {
             if (h.ordinal > health.ordinal) health = h
         }
         if (s.notificationsOk != true) worse(SystemHealth.DEGRADED, "уведомления недоступны", Capability.NOTIFY)
-        if (s.gitAvailable != true) worse(SystemHealth.DEGRADED, "Git недоступен", Capability.GIT, Capability.SCHEDULE)
+        if (s.gitRequired && s.gitAvailable != true) worse(SystemHealth.DEGRADED, "Git недоступен", Capability.GIT, Capability.SCHEDULE)
         if (s.blockedByUser) worse(SystemHealth.BLOCKED, "остановлено пользователем", Capability.SCHEDULE)
         if (s.recoveryInProgress) worse(SystemHealth.RECOVERY, "идёт восстановление и сверка", Capability.SCHEDULE, Capability.DESTRUCTIVE_WRITES)
         if (s.storageOk != true) worse(SystemHealth.STORAGE_ERROR, "хранилище повреждено или недоступно", Capability.SCHEDULE, Capability.DESTRUCTIVE_WRITES)

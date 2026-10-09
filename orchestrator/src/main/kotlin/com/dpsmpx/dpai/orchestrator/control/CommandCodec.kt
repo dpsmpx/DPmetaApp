@@ -64,6 +64,8 @@ object CommandCodec {
             is Command.SetTargetEnabled -> { id("target", c.target); f["enabled"] = JsonBool(c.enabled) }
             is Command.SetSlotEnabled -> { id("slot", c.slot); f["enabled"] = JsonBool(c.enabled) }
             is Command.SetSessionLimit -> c.limit?.let { f["limit"] = JsonNumber.of(it) }
+            is Command.Archive -> { id("task", c.task); f["archived"] = JsonBool(c.archived) }
+            is Command.ArchiveFinished -> Unit
         }
         str("key", c.key)
         if (confirmed) f["confirmed"] = JsonBool(true)
@@ -116,6 +118,8 @@ object CommandCodec {
             "target.enabled" -> f.string("target")?.let { IdKinds.TARGET.parse(it).valueOrNull() }?.let { t -> f.boolean("enabled")?.let { Command.SetTargetEnabled(t, it, key) } }
             "slot.enabled" -> f.string("slot")?.let { IdKinds.ACCOUNT.parse(it).valueOrNull() }?.let { s -> f.boolean("enabled")?.let { Command.SetSlotEnabled(s, it, key) } }
             "control.session-limit" -> Command.SetSessionLimit(f.optLong("limit")?.toInt(), key)
+            "task.archive" -> task()?.let { t -> f.boolean("archived")?.let { Command.Archive(t, it, key) } }
+            "tasks.archive-done" -> Command.ArchiveFinished(key)
             else -> null.also { d.error(DiagCode.UNSUPPORTED, "неизвестная команда: $name", "$.command") }
         }
         f.finish()

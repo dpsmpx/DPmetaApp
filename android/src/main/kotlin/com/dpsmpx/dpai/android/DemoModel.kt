@@ -46,6 +46,8 @@ data class Snapshot(
     val notifications: List<Notification> = emptyList(),
     /** Ждущие запросы человеку (D-44). */
     val requests: List<RequestCard> = emptyList(),
+    /** Сколько задач в архиве (D-42) — для переключателя на доске. */
+    val archived: Int = 0,
 )
 
 /**
@@ -73,6 +75,10 @@ class DemoModel(
     /** Система, собранная последней: команды кладутся в её очередь без замка. */
     @Volatile
     private var built: ControlView? = null
+
+    /** Показывать ли архив на доске (D-42) — выбор экрана, не состояние контура. */
+    @Volatile
+    var showArchived: Boolean = false
 
     /** Последний снимок — для экрана, пока такт держит замок. */
     @Volatile
@@ -128,8 +134,8 @@ class DemoModel(
         val session = selected?.let { IdKinds.SESSION.parse(it).valueOrNull() }
         val o = v.orchestrator
         return Snapshot(
-            v.mode, v is LiveSystem, v.dashboard(), v.board(), session?.let(v::session), notifications,
-            RequestScreens.cards(shown(v), o.tasks, Clock.SYSTEM.now()),
+            v.mode, v is LiveSystem, v.dashboard(), com.dpsmpx.dpai.ui.Screens.board(o.tasks, showArchived), session?.let(v::session), notifications,
+            RequestScreens.cards(shown(v), o.tasks, Clock.SYSTEM.now()), o.tasks.tasks.values.count { it.archived },
         ).also { published = it }
     }
 
@@ -317,6 +323,8 @@ class DemoModel(
             instance ?: run {
                 val app = context.applicationContext
                 val controller = Controller.get(app.filesDir, app.packageManager.getPackageInfo(app.packageName, 0).versionName)
+                // Уведомления — у Android: отключены человеком — «недоступны», иначе работают.
+                controller.notificationsOk = { app.getSystemService(android.app.NotificationManager::class.java).areNotificationsEnabled() }
                 DemoModel(app.cacheDir, controller, AppLogs.events(app), AppLogs.problems(app)).also { instance = it }
             }
         }

@@ -139,6 +139,7 @@ class ControlApiTest {
             Command.StopSession(s), Command.SendToSession(s, "ещё", "sonnet", "high"), Command.SendToSession(s, null, fresh = true),
             Command.SetNearPercent(ids.next(IdKinds.SUBSCRIPTION), 90), Command.SetTargetEnabled(ids.next(IdKinds.TARGET), false),
             Command.SetSlotEnabled(ids.next(IdKinds.ACCOUNT), true), Command.SetSessionLimit(4), Command.SetSessionLimit(null),
+            Command.Archive(t, true), Command.ArchiveFinished("k-00000003"),
         )
         for (c in commands) {
             val back = CommandCodec.decode(CommandCodec.encode(c), ControlApi.BY)

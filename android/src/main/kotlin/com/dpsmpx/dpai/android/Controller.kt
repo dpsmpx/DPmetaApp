@@ -112,6 +112,10 @@ class Controller(private val root: File, private val version: String?) {
     }
 
     /** Настоящий контроллер над [targets]: SSH — JSch с ключом Keystore, журнал — в каталоге контроллера. */
+    /** Разрешены ли уведомления приложения (D-36) — сигнал самодиагностики; задаёт экран. */
+    @Volatile
+    var notificationsOk: () -> Boolean? = { null }
+
     fun live(
         targets: List<TargetEntry>,
         project: ProjectEntry?,
@@ -124,6 +128,7 @@ class Controller(private val root: File, private val version: String?) {
         project = project,
         onEvents = onEvents,
         onProblem = onProblem,
+        notificationsOk = notificationsOk,
     )
 
     /**

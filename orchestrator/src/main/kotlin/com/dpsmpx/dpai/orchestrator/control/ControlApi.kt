@@ -189,6 +189,7 @@ object ControlSnapshot {
                             linkedMapOf<String, JsonValue>(
                                 "id" to JsonString(t.id.value), "title" to JsonString(t.title), "state" to JsonString(t.state.name),
                                 "priority" to JsonString(t.priority.name), "held" to JsonBool(t.held), "taskClass" to JsonString(t.policy.taskClass.name),
+                                "archived" to JsonBool(t.archived),
                             ).apply {
                                 t.policy.model?.let { put("model", JsonString(it)) }
                                 // Причина — пока что-то не так; у выполненной это уже история (отмена до повтора и т. п.).

@@ -113,7 +113,7 @@ class DemoSystem(
 
     fun diagnosis(): SelfDiagnosis = SelfDiagnostics.evaluate(
         SystemSignals(
-            storageOk = true, recoveryInProgress = false, gitAvailable = null, notificationsOk = null,
+            storageOk = true, recoveryInProgress = false, gitAvailable = null, notificationsOk = null, gitRequired = false,
             targetsOnline = targets, targetsTotal = targets, securityAlert = false,
         ),
     )
