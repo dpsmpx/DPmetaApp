@@ -102,8 +102,17 @@ class Controller(private val root: File, private val version: String?) {
     @Synchronized
     fun project(): ProjectEntry? = docs.read(PROJECT).valueOrNull()?.let { ProjectBook.fromJson(it.content).valueOrNull() }
 
-    fun projectForm(target: TargetEntry, root: String, worktreeRoot: String, branch: String, check: String): Outcome<ProjectEntry> =
-        ProjectForm.validate(ids, target, root, worktreeRoot, branch, check)
+    /** [claudeOn] — где идёт ход Claude, если не на [target] (D-50); ключ и known_hosts — пути на нём. */
+    fun projectForm(
+        target: TargetEntry,
+        root: String,
+        worktreeRoot: String,
+        branch: String,
+        check: String,
+        claudeOn: TargetEntry? = null,
+        identityFile: String = "",
+        knownHostsFile: String = "",
+    ): Outcome<ProjectEntry> = ProjectForm.validate(ids, target, root, worktreeRoot, branch, check, claudeOn, identityFile, knownHostsFile)
 
     @Synchronized
     fun setProject(p: ProjectEntry?): Outcome<Unit> {

@@ -34,6 +34,12 @@ data class ClaudeRequest(
     val jsonSchema: JsonObject? = null,
     val addDirs: List<String> = emptyList(),
     val appendSystemPrompt: String? = null,
+    /**
+     * Серверы MCP хода (`--mcp-config`, строка JSON) и только они
+     * (`--strict-mcp-config`): рабочее дерево на другом target (D-50).
+     */
+    val mcpConfig: JsonObject? = null,
+    val strictMcpConfig: Boolean = false,
     val workDir: String? = null,
     val timeout: Duration? = null,
     val setEnv: Map<String, String> = emptyMap(),
@@ -67,6 +73,7 @@ object ClaudeCodeCli {
         "-p", "--verbose", "--output-format", "--session-id", "--resume", "--model", "--permission-mode",
         "--tools", "--allowedTools", "--disallowedTools", "--max-budget-usd", "--json-schema", "--add-dir",
         "--append-system-prompt", "--effort", "--fallback-model", "--exclude-dynamic-system-prompt-sections",
+        "--mcp-config", "--strict-mcp-config",
     )
 
     fun argv(claude: List<String>, request: ClaudeRequest, session: ProviderSessionId, resume: Boolean): List<String> = buildList {
@@ -90,6 +97,8 @@ object ClaudeCodeCli {
         request.jsonSchema?.let { add("--json-schema"); add(CanonicalJson.write(it)) }
         for (d in request.addDirs) { add("--add-dir"); add(d) }
         request.appendSystemPrompt?.let { add("--append-system-prompt"); add(it) }
+        request.mcpConfig?.let { add("--mcp-config"); add(CanonicalJson.write(it)) }
+        if (request.strictMcpConfig) add("--strict-mcp-config")
     }
 
     /** Флаги в команде (без значений) — для сверки с [DOCUMENTED_FLAGS]. */

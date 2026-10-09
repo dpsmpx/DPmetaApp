@@ -226,7 +226,10 @@ RECOVERY_PENDING ─► проба target и процесса ─► сверк�
 | `claude` | `ClaudeRunner`, `ClaudeCodeCliRunner`, `MockRunner`, `ClaudeCodeCli` (команда), `ClaudeStreamParser` и `ClaudeTurnAssembler` (поток → итог хода) |
 
 Сторона target — `orchestrator.agent.AgentRuntime` (журнал запуска через
-`storage`), команда — `dpai agent` модуля `cli`.
+`storage`), команда — `dpai agent` модуля `cli`. Дерево задачи для хода на
+другом target — `orchestrator.agent.WorkspaceMcp` (`dpai agent mcp`), а
+запрос такого хода — `orchestrator.RemoteWorkspace` (D-50;
+`docs/EXECUTION_MODEL.md`, §7).
 
 ```
 контроллер: AgentClient ─► ProcessHost (local | ssh | mock) ─► dpai agent <команда>

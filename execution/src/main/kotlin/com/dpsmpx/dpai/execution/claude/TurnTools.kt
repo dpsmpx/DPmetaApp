@@ -109,7 +109,9 @@ class ToolTracker {
     private var largest = 0L
     private var unmatched = 0L
 
-    fun onUse(use: ClaudeEvent.ToolUse, subagent: Boolean) {
+    fun onUse(raw: ClaudeEvent.ToolUse, subagent: Boolean) {
+        // Инструменты рабочего дерева на другом target (D-50) считаются как встроенные того же действия.
+        val use = WorkspaceTools.asBuiltin(raw)
         val input = use.input
         val file = input?.let(::fileOf)
         if (file != null) {
@@ -187,6 +189,29 @@ class ToolTracker {
 
         private val FILE_KEYS = listOf("file_path", "notebook_path")
         private val SPACES = Regex("\\s+")
+    }
+}
+
+/**
+ * Инструменты MCP-сервера рабочего дерева (`dpai agent mcp`, D-50): ход
+ * Claude на одном target, дерево задачи — на другом. Имена у модели —
+ * `mcp__workspace__<имя>`; для замера (D-41) и рабочего набора они — те же
+ * действия, что встроенные `Read`, `Write`, `Edit`, `Glob`, `Grep`, `Bash`.
+ */
+object WorkspaceTools {
+    /** Имя сервера в `--mcp-config`. */
+    const val SERVER = "workspace"
+    private const val PREFIX = "mcp__${SERVER}__"
+    private val BUILTIN = mapOf("read" to "Read", "write" to "Write", "edit" to "Edit", "glob" to "Glob", "grep" to "Grep", "run" to "Bash")
+
+    /** Вызов инструмента дерева — как вызов встроенного: имя и путь файла (`path` → `file_path`). */
+    fun asBuiltin(use: ClaudeEvent.ToolUse): ClaudeEvent.ToolUse {
+        if (!use.name.startsWith(PREFIX)) return use
+        val builtin = BUILTIN[use.name.removePrefix(PREFIX)] ?: return use
+        val input = use.input?.takeIf { builtin in setOf("Read", "Write", "Edit") }?.let { i ->
+            (i["path"] as? JsonString)?.let { p -> JsonObject(i.fields - "path" + ("file_path" to p)) }
+        } ?: use.input
+        return use.copy(name = builtin, input = input)
     }
 }
 

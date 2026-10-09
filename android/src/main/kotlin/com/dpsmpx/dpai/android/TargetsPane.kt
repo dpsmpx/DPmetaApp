@@ -8,13 +8,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -99,9 +102,14 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
                     Text("Проект", style = MaterialTheme.typography.titleMedium)
                     val p = project
                     if (p == null) {
-                        Text("Нет: задачи идут в каталоге агента, без Git и проверки. Задайте у target с каталогом Claude.", style = MaterialTheme.typography.bodySmall)
+                        Text("Нет: задачи идут в каталоге агента, без Git и проверки. Задайте у target с репозиторием.", style = MaterialTheme.typography.bodySmall)
                     } else {
-                        Text("репозиторий ${p.root}; деревья ${p.worktreeRoot}; ветка ${p.integrationBranch}", style = MaterialTheme.typography.bodySmall)
+                        val place = targets.firstOrNull { it.id == p.target }?.label ?: "target удалён"
+                        Text("$place: репозиторий ${p.root}; деревья ${p.worktreeRoot}; ветка ${p.integrationBranch}", style = MaterialTheme.typography.bodySmall)
+                        p.claude?.let { c ->
+                            val on = targets.firstOrNull { it.id == c.target }?.label ?: "target удалён"
+                            Text("Claude — на $on (вход его слота), дерево — по SSH ключом ${c.identityFile}", style = MaterialTheme.typography.bodySmall)
+                        }
                         Text(p.checks.firstOrNull()?.let { "проверка: ${it.command.joinToString(" ")}" } ?: "без проверки", style = MaterialTheme.typography.bodySmall)
                         TextButton(onClick = { scope.launch { withContext(Dispatchers.IO) { controller.setProject(null) }; project = null } }) { Text("Убрать проект") }
                     }
@@ -130,8 +138,9 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
                         }) { Text("Проверить") }
                         if (t.configDir != null) {
                             TextButton(onClick = { scope.launch { withContext(Dispatchers.IO) { model.probe(t.id) } } }) { Text("Вход Claude") }
-                            TextButton(onClick = { projectFor = t }) { Text("Проект") }
                         }
+                        // Проект — у любого target: ход Claude может идти на другом, со своим входом (D-50).
+                        TextButton(onClick = { projectFor = t }) { Text("Проект") }
                         TextButton(onClick = {
                             scope.launch {
                                 withContext(Dispatchers.IO) { controller.remove(t) }
@@ -146,7 +155,7 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
     }
 
     projectFor?.let { t ->
-        ProjectDialog(controller, t) { saved ->
+        ProjectDialog(controller, t, targets.filter { it.configDir != null }) { saved ->
             projectFor = null
             if (saved != null) project = saved
         }
@@ -258,30 +267,49 @@ private fun AddTargetDialog(controller: Controller, onDone: () -> Unit) {
     )
 }
 
-/** Проект на target: репозиторий, каталог деревьев задач, ветка интеграции, команда проверки. */
+/**
+ * Проект на target: репозиторий, каталог деревьев задач, ветка интеграции,
+ * команда проверки и где идёт ход Claude — на этом target или на другом
+ * с каталогом Claude (D-50: дерево — по SSH ключом того target).
+ */
 @Composable
-private fun ProjectDialog(controller: Controller, target: TargetEntry, onDone: (ProjectEntry?) -> Unit) {
+private fun ProjectDialog(controller: Controller, target: TargetEntry, withClaude: List<TargetEntry>, onDone: (ProjectEntry?) -> Unit) {
     val scope = rememberCoroutineScope()
     var root by remember { mutableStateOf("") }
     var trees by remember { mutableStateOf("") }
     var branch by remember { mutableStateOf("main") }
     var check by remember { mutableStateOf("") }
+    var claudeOn by remember { mutableStateOf(withClaude.firstOrNull { it.id == target.id } ?: withClaude.firstOrNull { it.type == com.dpsmpx.dpai.execution.target.TargetType.TERMUX_LOCAL } ?: withClaude.firstOrNull()) }
+    var key by remember { mutableStateOf(com.dpsmpx.dpai.ui.ProjectForm.DEFAULT_IDENTITY) }
+    var known by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     AlertDialog(
         onDismissRequest = { onDone(null) },
         title = { Text("Проект на ${target.label}") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 OutlinedTextField(root, { root = it }, label = { Text("Каталог репозитория") }, singleLine = true)
                 OutlinedTextField(trees, { trees = it }, label = { Text("Каталог деревьев задач") }, singleLine = true)
                 OutlinedTextField(branch, { branch = it }, label = { Text("Ветка интеграции") }, singleLine = true)
                 OutlinedTextField(check, { check = it }, label = { Text("Команда проверки (необязательно)") }, singleLine = true)
+                Text("Где работает Claude", style = MaterialTheme.typography.labelLarge)
+                if (withClaude.isEmpty()) Text("Нет target с каталогом Claude", style = MaterialTheme.typography.bodySmall)
+                withClaude.forEach { c ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = claudeOn?.id == c.id, onClick = { claudeOn = c })
+                        Text(if (c.id == target.id) "${c.label} (здесь же)" else "${c.label} — дерево по SSH", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                if (claudeOn != null && claudeOn?.id != target.id) {
+                    OutlinedTextField(key, { key = it }, label = { Text("Ключ SSH на ${claudeOn?.label}") }, singleLine = true)
+                    OutlinedTextField(known, { known = it }, label = { Text("known_hosts на нём (необязательно)") }, singleLine = true)
+                }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
         },
         confirmButton = {
             TextButton(onClick = {
-                when (val f = controller.projectForm(target, root, trees, branch, check)) {
+                when (val f = controller.projectForm(target, root, trees, branch, check, claudeOn, key, known)) {
                     is Outcome.Failure -> error = f.diagnostics.first().message
                     is Outcome.Success -> scope.launch {
                         when (val w = withContext(Dispatchers.IO) { controller.setProject(f.value) }) {

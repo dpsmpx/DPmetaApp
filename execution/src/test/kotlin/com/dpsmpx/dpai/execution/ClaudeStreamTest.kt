@@ -268,6 +268,25 @@ class ClaudeStreamTest {
         assertEquals(1, r.unmatchedResults)
     }
 
+    /** D-50: инструменты дерева на другом target считаются как встроенные того же действия, с файлом из `path`. */
+    @Test
+    fun workspaceToolsCountAsBuiltins() {
+        fun use(id: String, name: String, input: String) = ClaudeEvent.ToolUse(id, name, JsonParser().parse(input).valueOrNull() as JsonObject)
+        val tr = ToolTracker()
+        tr.onUse(use("1", "mcp__workspace__read", """{"path":"src/a.kt"}"""), subagent = false)
+        tr.onUse(use("2", "mcp__workspace__read", """{"path":"src/a.kt"}"""), subagent = false)
+        tr.onUse(use("3", "mcp__workspace__edit", """{"path":"src/a.kt","old_string":"a","new_string":"b"}"""), subagent = false)
+        tr.onUse(use("4", "mcp__workspace__run", """{"command":"make test"}"""), subagent = false)
+        tr.onUse(use("5", "mcp__other__read", """{"path":"x"}"""), subagent = false)
+        val r = tr.result()
+        assertEquals(2, r.byTool.getValue("Read").calls)
+        assertEquals(1, r.byTool.getValue("Read").duplicates, "то же чтение без правки — повтор")
+        assertEquals(1, r.byTool.getValue("Edit").calls)
+        assertEquals(1, r.byTool.getValue("Bash").calls)
+        assertEquals(1, r.byTool.getValue("mcp__other__read").calls, "чужой сервер MCP — как есть")
+        assertEquals(com.dpsmpx.dpai.execution.claude.TurnFiles(listOf("src/a.kt"), listOf("src/a.kt")), tr.files())
+    }
+
     @Test
     fun malformedToolBlocksAreToleratedNotGuessed() {
         // Вход не объект, результат без id, содержимое не строка и не блоки — без исключений, с пометкой.

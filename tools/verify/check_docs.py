@@ -49,6 +49,8 @@ TEST_REF = re.compile(r"`([A-Z]\w*Test)(?:\.(\w+))?`")
 SKIP = {TZ, "tools/verify/selftest.py"}
 # Пути, которых быть не должно: ссылка на них — о запрете (D-15).
 ABSENT_BY_DESIGN = {".github/workflows"}
+# Не пути: имена методов протокола MCP с тем же началом, что у каталога tools/ (D-50).
+NOT_PATHS = {"tools/list", "tools/call"}
 HEADING = re.compile(r"^#{1,6}\s+(.*?)\s*$", re.M)
 
 
@@ -137,7 +139,7 @@ def check():
                 if any(ch in ref for ch in "*?["):
                     if not any(fnmatch.fnmatch(p, ref) or fnmatch.fnmatch(p, ref + "/*") for p in all_files):
                         f.add(where, f"маска {ref} ни с чем не совпадает")
-                elif ref not in ABSENT_BY_DESIGN and not os.path.exists(os.path.join(root(), ref)):
+                elif ref not in ABSENT_BY_DESIGN and ref not in NOT_PATHS and not os.path.exists(os.path.join(root(), ref)):
                     f.add(where, f"нет такого пути: {ref}")
             for m in NAME_REF.finditer(line):
                 if m.group(1) not in by_name and not os.path.exists(os.path.join(root(), m.group(1))):

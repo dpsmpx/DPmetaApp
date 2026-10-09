@@ -141,6 +141,8 @@ data class ProjectConfig(
     val level: VerifyLevel = VerifyLevel.NORMAL,
     val integrationBranch: String? = "main",
     val sources: (TaskId) -> List<ContextSource> = { emptyList() },
+    /** Деревья — на другом target, чем ход Claude: ход работает с ними по MCP (D-50). `null` — на том же target. */
+    val remote: RemoteWorkspace? = null,
 )
 
 /**
@@ -617,7 +619,7 @@ class Orchestrator(
         val route = router.route(t, budgetMode)
         val budget = t.policy.maxBudgetUsdCents?.let { BigDecimal(it).movePointLeft(2) }
         val unknown = unsupportedFlags[target].orEmpty()
-        val request = ClaudeRequest(
+        val local = ClaudeRequest(
             composed.text, model = route.model,
             effort = route.effort.takeIf { "--effort" !in unknown },
             fallbackModel = route.fallbackModel.takeIf { "--fallback-model" !in unknown },
@@ -626,6 +628,8 @@ class Orchestrator(
             disallowedTools = if (route.subagents) emptyList() else listOf(ClaudeCodeCli.SUBAGENT_TOOL),
             workDir = workDir, timeout = t.policy.turnTimeout, maxBudgetUsd = budget,
         )
+        // Дерево на target проекта, ход — на target слота: файлы и команды — через MCP-сервер дерева (D-50).
+        val request = config.remote?.let { r -> ok(r.apply(local, workDir), "ход с деревом на другом target") ?: return failLaunch(task, session, DiagCode.SESSION_FAILED) } ?: local
         val facts = PromptFacts(
             promptMode, composed.text.length.toLong(), composed.estimatedTokens, composed.sources, composed.omitted, composed.omittedTokens,
             composed.reusedTokens, tag(bundle), t.policy.taskClass.name, route.model, route.effort, route.route, why,

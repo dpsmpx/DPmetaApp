@@ -77,3 +77,45 @@ $env:CLAUDE_CONFIG_DIR = "$HOME\.claude-slot-1"; claude
 Войти аккаунтом с подпиской, `/exit`; в приложении — «Вход Claude».
 Проект: репозиторий Git на ПК, Targets → «Проект» (каталоги — пути
 `C:/Users/<пользователь>/…`).
+
+## 7. Без входа в Claude на ПК: Claude на телефоне (D-50)
+
+Claude Code работает в Termux на телефоне со входом телефона, а файлы и
+команды задачи — на ПК: Claude Code сам ходит на ПК по SSH к
+`dpai agent mcp`. Каталог Claude на ПК (§5) и вход в Claude на ПК (§6)
+тогда не нужны; Termux-target со входом в Claude — по «Инструкции» в
+приложении. Команды `run` идут через Git Bash (ставится с Git, §2).
+
+1. В Termux — клиент SSH и ключ внутри proot (там идёт Claude):
+
+```sh
+proot-distro login alpine -- sh -c 'apk add -q openssh-client && mkdir -p /root/.ssh && ssh-keygen -q -t ed25519 -N "" -f /root/.ssh/dpai_workspace && cat /root/.ssh/dpai_workspace.pub'
+```
+
+2. Напечатанную строку — на ПК (PowerShell от администратора), только из
+   сети Tailscale:
+
+```powershell
+Add-Content C:\ProgramData\ssh\administrators_authorized_keys 'from="100.64.0.0/10" СТРОКА_КЛЮЧА_ТЕЛЕФОНА'
+```
+
+3. Ключ хоста ПК — в known_hosts proot: на вопрос `ssh` сверить отпечаток
+   с выводом PowerShell из §5 и ответить `yes`:
+
+```sh
+proot-distro login alpine -- ssh -i /root/.ssh/dpai_workspace ПОЛЬЗОВАТЕЛЬ@100.x.y.z exit
+```
+
+4. Проверка сервера дерева: команда ниже ждёт строку на входе — вставьте
+   `{"jsonrpc":"2.0","id":1,"method":"ping"}`, ответ —
+   `{"id":1,"jsonrpc":"2.0","result":{}}`; выход — Ctrl+D.
+
+```sh
+proot-distro login alpine -- ssh -T -i /root/.ssh/dpai_workspace ПОЛЬЗОВАТЕЛЬ@100.x.y.z C:/Users/ПОЛЬЗОВАТЕЛЬ/dpai-agent.cmd agent mcp --root C:/Users/ПОЛЬЗОВАТЕЛЬ
+```
+
+5. В приложении: target ПК — как в §5, «Каталог Claude слота» — пусто.
+   Targets → «Проект» у ПК: каталоги — как в §6; «Где работает Claude» —
+   Termux; «Ключ SSH» — `/root/.ssh/dpai_workspace`. Задачи идут на
+   телефон, деревья, проверка и слияние — на ПК.
+

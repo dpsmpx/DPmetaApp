@@ -129,6 +129,8 @@ class MockRunnerTest {
             allowedTools = listOf("Read"), disallowedTools = listOf("Bash"), maxBudgetUsd = BigDecimal("1.50"),
             jsonSchema = com.dpsmpx.dpai.core.serialization.JsonObject.of("type" to com.dpsmpx.dpai.core.serialization.JsonString("object")),
             addDirs = listOf("/w"), appendSystemPrompt = "правила",
+            mcpConfig = com.dpsmpx.dpai.core.serialization.JsonObject.of("mcpServers" to com.dpsmpx.dpai.core.serialization.JsonObject(emptyMap())),
+            strictMcpConfig = true,
         )
         val sid = ProviderSessionId.newUuid(RandomSource.seeded(2))
         val documented = documentedFlags()
@@ -140,6 +142,17 @@ class MockRunnerTest {
             assertTrue((if (resume) "--resume" else "--session-id") in argv)
         }
         assertTrue(documented.containsAll(ClaudeCodeCli.DOCUMENTED_FLAGS), "список адаптера шире исследования: ${ClaudeCodeCli.DOCUMENTED_FLAGS - documented}")
+    }
+
+    /** D-50: ход без встроенных инструментов — `--tools ""`, серверы MCP — строкой JSON и только они. */
+    @Test
+    fun remoteWorkspaceTurnFlags() {
+        val config = com.dpsmpx.dpai.core.serialization.JsonObject.of("mcpServers" to com.dpsmpx.dpai.core.serialization.JsonObject(emptyMap()))
+        val argv = ClaudeCodeCli.argv(listOf("claude"), ClaudeRequest("p", tools = emptyList(), mcpConfig = config, strictMcpConfig = true), ProviderSessionId.newUuid(RandomSource.seeded(3)), false)
+        assertEquals("", argv[argv.indexOf("--tools") + 1])
+        assertEquals("{\"mcpServers\":{}}", argv[argv.indexOf("--mcp-config") + 1])
+        assertTrue("--strict-mcp-config" in argv)
+        assertTrue("--mcp-config" !in ClaudeCodeCli.argv(listOf("claude"), ClaudeRequest("p"), ProviderSessionId.newUuid(RandomSource.seeded(3)), false))
     }
 
     /** Флаги из таблиц `docs/research/CLAUDE_CODE_CLI.md` (§2 и §8). */

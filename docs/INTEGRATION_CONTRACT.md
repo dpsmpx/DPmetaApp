@@ -224,10 +224,11 @@ API не включён. Граница — этот раздел и реест�
 | `dpai.backup-manifest` | 1 | `BackupService` | `manifest.json` копии |
 | `dpai.restore-marker` | 1 | `BackupService` | `restore.pending` — начатое восстановление |
 | `dpai.app-targets` | 2 (1–2) | `TargetBook` | документ `targets` приложения; v1 — без `configDir` |
-| `dpai.app-project` | 1 | `ProjectBook` | документ `project` приложения |
+| `dpai.app-project` | 2 (1–2) | `ProjectBook` | документ `project` приложения; v1 — без маршрута `claude` (D-50) |
 | `dpai.agent-reply` | 2 | `AgentReply` | стандартный вывод агента; не хранится |
 | `dpai.run-spec` | 1 | `RunSpec` | стандартный вход `dpai agent start --spec-stdin`; внутри `dpai.agent-run` |
 | `dpai.agent-run` | 2 (только 2) | `AgentRuntime` | `runs/<SessionId>/run` на target |
+| `dpai.agent-pruned` | 1 | `AgentRuntime` | `runs/<SessionId>/pruned` на target — надгробие запуска, удалённого по сроку |
 
 Раскладка. Контроллер приложения (D-35) — `filesDir/controller/`:
 `docs/` (`targets`, `project`), `known_hosts`, `app_key.pub` (открытый
@@ -244,7 +245,8 @@ API не включён. Граница — этот раздел и реест�
   `Migrator`); отказ шага — `MIGRATION_FAILED`, документ не меняется;
   применённая — `MIGRATION_APPLIED`; чтение с миграцией —
   `DocumentStore.readMigrated`;
-- прежнюю версию напрямую читают `dpai.tasks-state` и `dpai.app-targets`;
+- прежнюю версию напрямую читают `dpai.tasks-state`, `dpai.app-targets` и
+  `dpai.app-project`;
   v1 `dpai.context` и `dpai.agent-run` заменены до выпуска и не читаются;
 - сегменты не изменили формат строки журнала (D-37).
 
@@ -286,11 +288,13 @@ API не включён. Граница — этот раздел и реест�
 | `dpai agent supervise --run ID` | супервизор — единственный писатель `events.jsonl` |
 | `dpai agent status --run ID` | состояние запуска; супервизор умер без записи выхода — `LOST` |
 | `dpai agent events --run ID [--after N] [--limit N]` | подтверждённые события с номером больше N |
-| `dpai agent stop --run ID [--grace-seconds N]` | просьба супервизору; потерянный — остановка по pid и времени старта |
+| `dpai agent stop --run ID [--grace-seconds N]` | просьба супервизору; потерянный — остановка по pid и времени старта; ход ещё без супервизора — только просьба (`AGENT_STOP_PENDING`) |
+| `dpai agent mcp --root DIR [--shell bash\|sh\|powershell\|cmd]` | MCP-сервер рабочего дерева по stdio (JSON-RPC 2.0 строками; `initialize`, `ping`, `tools/list`, `tools/call`; инструменты `run`, `read`, `write`, `edit`, `glob`, `grep`) — для хода Claude на другом target (D-50; `docs/EXECUTION_MODEL.md`, §7) |
 
 `ID` — `SessionId`. Каждая команда агента отвечает одной строкой
-`dpai.agent-reply`; коды выхода: 0 — успех, 1 — отказ (подробности в
-ответе), 2 — неверный вызов. Режима контроллера без интерфейса в `cli` нет
+`dpai.agent-reply`, кроме `mcp` — она отвечает строками JSON-RPC, пока
+открыт вход; коды выхода: 0 — успех, 1 — отказ (подробности в ответе), 2 —
+неверный вызов. Режима контроллера без интерфейса в `cli` нет
 (раздел 19).
 
 ### 11.3. Проверки репозитория

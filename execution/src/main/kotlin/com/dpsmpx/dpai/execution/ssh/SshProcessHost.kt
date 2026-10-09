@@ -72,41 +72,7 @@ class SshProcessHost(
     private val sshProgram: String = "ssh",
     private val connectTimeout: Duration = 10.seconds,
 ) : ProcessHost {
-    fun argv(remote: List<String>): Outcome<List<String>> =
-        RemoteShell.join(platform, remote).map { line ->
-            buildList {
-                add(sshProgram)
-                add("-T")
-                for (o in listOf(
-                    "BatchMode=yes",
-                    "StrictHostKeyChecking=yes",
-                    "ConnectTimeout=${connectTimeout.inWholeSeconds.coerceAtLeast(1)}",
-                    "ServerAliveInterval=15",
-                    "ServerAliveCountMax=3",
-                    "LogLevel=ERROR",
-                )) {
-                    add("-o")
-                    add(o)
-                }
-                endpoint.knownHostsFile?.let {
-                    add("-o")
-                    add("UserKnownHostsFile=$it")
-                }
-                endpoint.identityFile?.let {
-                    add("-i")
-                    add(it)
-                    add("-o")
-                    add("IdentitiesOnly=yes")
-                }
-                add("-p")
-                add(endpoint.port.toString())
-                add("-l")
-                add(endpoint.user)
-                add("--")
-                add(endpoint.host)
-                add(line)
-            }
-        }
+    fun argv(remote: List<String>): Outcome<List<String>> = command(endpoint, platform, remote, sshProgram, connectTimeout)
 
     override fun start(spec: ProcessSpec, onOutput: (OutputLine) -> Unit): Outcome<RunningProcess> {
         if (spec.workDir != null || spec.environment != null) {
@@ -120,6 +86,53 @@ class SshProcessHost(
     }
 
     companion object {
+        /**
+         * Команда клиента OpenSSH для [remote] на [endpoint]: те же параметры,
+         * что у вызовов агента, — и для MCP-сервера рабочего дерева, который
+         * Claude Code запускает сам (D-50).
+         */
+        fun command(
+            endpoint: SshEndpoint,
+            platform: TargetPlatform,
+            remote: List<String>,
+            sshProgram: String = "ssh",
+            connectTimeout: Duration = 10.seconds,
+        ): Outcome<List<String>> =
+            RemoteShell.join(platform, remote).map { line ->
+                buildList {
+                    add(sshProgram)
+                    add("-T")
+                    for (o in listOf(
+                        "BatchMode=yes",
+                        "StrictHostKeyChecking=yes",
+                        "ConnectTimeout=${connectTimeout.inWholeSeconds.coerceAtLeast(1)}",
+                        "ServerAliveInterval=15",
+                        "ServerAliveCountMax=3",
+                        "LogLevel=ERROR",
+                    )) {
+                        add("-o")
+                        add(o)
+                    }
+                    endpoint.knownHostsFile?.let {
+                        add("-o")
+                        add("UserKnownHostsFile=$it")
+                    }
+                    endpoint.identityFile?.let {
+                        add("-i")
+                        add(it)
+                        add("-o")
+                        add("IdentitiesOnly=yes")
+                    }
+                    add("-p")
+                    add(endpoint.port.toString())
+                    add("-l")
+                    add(endpoint.user)
+                    add("--")
+                    add(endpoint.host)
+                    add(line)
+                }
+            }
+
         /** Код выхода клиента `ssh` при ошибке самого SSH, а не удалённой команды. */
         const val SSH_ERROR_EXIT: Int = 255
 

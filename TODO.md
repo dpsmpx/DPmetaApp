@@ -227,6 +227,11 @@
 
 ## На устройстве (Redmi Note 13)
 
+- [ ] `С` D-50 — Claude на телефоне, дерево на ПК: `docs/DEVICE_CHECK.md`,
+      §10.1 — `ssh` из proot до ПК, разрешает ли режим `auto` инструменты
+      MCP в `-p`, Git Bash для `run`; затем через Tailscale
+      (`docs/SETUP_PC_WINDOWS.md`, §7).
+
 - [ ] `М` Слоты аккаунтов на Termux-target: вход в `CLAUDE_CONFIG_DIR`
       слота внутри proot (сейчас проверен вход в каталог по умолчанию;
       ход в proot — `docs/research/CLAUDE_CODE_CLI.md`, §10).

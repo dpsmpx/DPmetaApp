@@ -50,6 +50,25 @@ class AgentCommandTest {
         assertEquals(Cli.USAGE_ERROR, cli.run(listOf("agent", "nope")))
     }
 
+    /** D-50: `dpai agent mcp` — сервер дерева строками JSON-RPC, пока открыт вход; без --root или с чужой оболочкой — неверный вызов. */
+    @Test
+    fun mcpServesTheTreeOverStdio() {
+        val tree = dir.resolve("tree").toFile().apply { mkdirs() }
+        File(tree, "a.txt").writeText("строка\n")
+        val out = mutableListOf<String>()
+        val input = listOf(
+            """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}""",
+            """{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"read","arguments":{"path":"a.txt"}}}""",
+        ).joinToString("\n")
+        val cmd = AgentCommand(out = { out += it }, err = {}, version = "t", input = { input.reader().buffered() })
+        assertEquals(Cli.OK, cmd.run(listOf("mcp", "--root", tree.path)))
+        assertEquals(2, out.size)
+        assertTrue("строка" in out[1], out[1])
+        assertEquals(Cli.USAGE_ERROR, cmd.run(listOf("mcp")))
+        assertEquals(Cli.USAGE_ERROR, cmd.run(listOf("mcp", "--root", tree.path, "--shell", "fish")))
+        assertEquals(AgentCommand.FAILED, cmd.run(listOf("mcp", "--root", dir.resolve("нет").toString())))
+    }
+
     @Test
     fun doctorRepliesWithOneJsonLine() {
         val out = mutableListOf<String>()

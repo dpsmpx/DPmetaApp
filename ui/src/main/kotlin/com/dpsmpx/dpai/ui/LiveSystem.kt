@@ -28,6 +28,7 @@ import com.dpsmpx.dpai.notifications.Notification
 import com.dpsmpx.dpai.notifications.NotificationDecision
 import com.dpsmpx.dpai.orchestrator.Orchestrator
 import com.dpsmpx.dpai.orchestrator.ProjectConfig
+import com.dpsmpx.dpai.orchestrator.RemoteWorkspace
 import com.dpsmpx.dpai.orchestrator.TargetSlot
 import com.dpsmpx.dpai.orchestrator.accounts.SlotAuthProbe
 import com.dpsmpx.dpai.orchestrator.git.GitService
@@ -66,8 +67,10 @@ interface ControlView {
  * нём ждут. Targets без каталога Claude (формат v1) в сессиях не
  * участвуют — это видно в причинах.
  *
- * Проекта с репозиторием пока нет: задача идёт в домашнем каталоге агента,
- * профиля проверки нет — итог честно `COMPLETION_UNVERIFIED` (D-23).
+ * Без проекта задача идёт в домашнем каталоге агента, профиля проверки
+ * нет — итог честно `COMPLETION_UNVERIFIED` (D-23). С проектом — в своём
+ * дереве на target проекта; ход Claude — там же или на другом target, со
+ * входом его слота и деревом по MCP (D-50).
  * [sshHost] — хост SSH-targets: в приложении JSch с ключом Keystore, в
  * тестах — mock.
  */
@@ -100,8 +103,27 @@ class LiveSystem(
     private val snapshots = SnapshotStore(DocumentStore(vfs, "snapshots"))
     private val usable = entries.filter { it.configDir != null }
 
-    /** Targets, на которых идут сессии: при проекте — только его target (деревья — на его диске). */
-    private val working = project?.let { p -> usable.filter { it.id == p.target } } ?: usable
+    /** Target проекта: деревья, Git и проверка — на нём; каталог Claude ему нужен, только если ход тоже на нём. */
+    private val projectEntry = project?.let { p -> entries.firstOrNull { it.id == p.target } }
+
+    /**
+     * Дерево на target проекта, ход — на другом (D-50): Claude Code там
+     * ходит к дереву по SSH своим ключом. Target проекта удалён — `null`.
+     */
+    private val remote = project?.claude?.let { c ->
+        projectEntry?.let { t -> SshEndpoint.of(t.host, t.user, t.port, c.identityFile, c.knownHostsFile).valueOrNull()?.let { RemoteWorkspace(it, t.platform, t.agent) } }
+    }
+
+    /**
+     * Targets, на которых идут сессии: при проекте — только target хода
+     * (его же target или выбранный в маршруте D-50); маршрут без target
+     * проекта — ни одного.
+     */
+    private val working = when {
+        project == null -> usable
+        project.claude != null && remote == null -> emptyList()
+        else -> (project.claude?.target ?: project.target).let { id -> usable.filter { it.id == id } }
+    }
     private val manager = ExecutionTargetManager(clock, sshHost = sshHost, controllerVersion = controllerVersion)
     private val runners = HashMap<ExecutionTargetId, ClaudeRunner>()
     private val probes = HashMap<ExecutionTargetId, Pair<SlotAuthProbe, SessionId>>()
@@ -120,22 +142,23 @@ class LiveSystem(
     private val slotOf = HashMap<ExecutionTargetId, AccountId>()
     private val accountsLogic = Accounts()
     override val orchestrator: Orchestrator
-    val notes: List<String> = entries.filter { it.configDir == null }.map { "${it.label}: нет каталога Claude — только проверка агента" } +
-        (project?.takeIf { p -> usable.none { it.id == p.target } }?.let { listOf("проект: его target без каталога Claude — задачи не запускаются") }.orEmpty())
+    val notes: List<String> = entries.filter { it.configDir == null && it.id != project?.target }.map { "${it.label}: нет каталога Claude — только проверка агента" } +
+        listOfNotNull(
+            "проект: его target удалён — задачи не запускаются".takeIf { project != null && projectEntry == null },
+            "проект: у target хода нет каталога Claude — задачи не запускаются".takeIf { project != null && projectEntry != null && working.isEmpty() },
+        )
     val problems = mutableListOf<Diagnostic>()
 
     init {
-        for (e in usable) {
-            manager.register(e.toTarget(knownHostsFile))
-            runners[e.id] = ClaudeCodeCliRunner(manager.client(e.id).valueOrNull()!!, { ProviderSessionId.newUuid(random) })
-        }
+        for (e in (usable + listOfNotNull(projectEntry)).distinctBy { it.id }) manager.register(e.toTarget(knownHostsFile))
+        for (e in usable) runners[e.id] = ClaudeCodeCliRunner(manager.client(e.id).valueOrNull()!!, { ProviderSessionId.newUuid(random) })
         lateinit var o: Orchestrator
         val router = RoutingRunner({ o.sessions.sessions[it]?.target }, { runners[it] })
         // Состояние — из журнала (перезапуск приложения); подписка и слоты
         // регистрируются событиями, чтобы журнал знал их после перезапуска.
-        val projectTarget = project?.let { p -> usable.firstOrNull { it.id == p.target } }
+        val projectTarget = projectEntry
         val config = if (project != null) {
-            ProjectConfig(project.project, project.repository(), project.worktreeRoot, project.profile(), integrationBranch = project.integrationBranch)
+            ProjectConfig(project.project, project.repository(), project.worktreeRoot, project.profile(), integrationBranch = project.integrationBranch, remote = remote)
         } else {
             ProjectConfig(ids.next(IdKinds.PROJECT), null, null, null)
         }

@@ -10,6 +10,7 @@ import com.dpsmpx.dpai.core.serialization.CanonicalJson
 import com.dpsmpx.dpai.execution.agent.AgentReply
 import com.dpsmpx.dpai.execution.agent.RunSpec
 import com.dpsmpx.dpai.orchestrator.agent.AgentRuntime
+import com.dpsmpx.dpai.orchestrator.agent.WorkspaceMcp
 import java.io.File
 import kotlin.time.Duration.Companion.seconds
 
@@ -17,7 +18,8 @@ import kotlin.time.Duration.Companion.seconds
  * `dpai agent …` — агент оркестратора на target (D-26;
  * `docs/EXECUTION_MODEL.md`, §1). Каждая команда отвечает одной строкой
  * `dpai.agent-reply` на стандартном выводе; код выхода: 0 — успех, 1 —
- * отказ (подробности в ответе), 2 — неверный вызов.
+ * отказ (подробности в ответе), 2 — неверный вызов. Исключение — `mcp`:
+ * сервер MCP, отвечающий строками JSON-RPC, пока открыт вход (D-50).
  */
 class AgentCommand(
     private val out: (String) -> Unit,
@@ -26,10 +28,12 @@ class AgentCommand(
     private val clock: Clock = Clock.SYSTEM,
     private val selfCommand: List<String> = selfCommand(),
     private val stdin: () -> String = { System.`in`.readBytes().toString(Charsets.UTF_8) },
+    private val input: () -> java.io.BufferedReader = { System.`in`.bufferedReader(Charsets.UTF_8) },
 ) {
     fun run(args: List<String>): Int {
         val command = args.firstOrNull() ?: return usage("нет команды агента")
         val opts = Options.parse(args.drop(1)) ?: return usage("неверные параметры")
+        if (command == "mcp") return mcp(opts)
         val home = opts.single("home") ?: defaultHome()
         val runtime = AgentRuntime(home, clock, version, selfCommand)
         val reply = when (command) {
@@ -79,6 +83,22 @@ class AgentCommand(
         else -> null
     }
 
+    /**
+     * Рабочее дерево по MCP для хода Claude на другом target (D-50): строки
+     * JSON-RPC на входе и выходе, пока вход не закрыт.
+     */
+    private fun mcp(opts: Options): Int {
+        val root = opts.single("root") ?: return usage("--root <каталог> обязателен")
+        val dir = File(root)
+        if (!dir.isDirectory) {
+            err("нет каталога $root")
+            return FAILED
+        }
+        val shell = WorkspaceMcp.shellNamed(opts.single("shell"), File.separatorChar == '\\') ?: return usage("--shell: bash, sh, powershell или cmd")
+        WorkspaceMcp(dir.toPath(), shell, version).serve(input(), out)
+        return Cli.OK
+    }
+
     private fun usage(why: String): Int {
         err(why)
         err(USAGE)
@@ -94,7 +114,7 @@ class AgentCommand(
         fun all(name: String): List<String> = values[name].orEmpty()
 
         companion object {
-            private val KNOWN = setOf("home", "run", "dir", "env", "unset", "timeout-seconds", "after", "limit", "grace-seconds")
+            private val KNOWN = setOf("home", "run", "dir", "env", "unset", "timeout-seconds", "after", "limit", "grace-seconds", "root", "shell")
             private val FLAGS = setOf("spec-stdin")
 
             fun parse(args: List<String>): Options? {
@@ -133,6 +153,8 @@ class AgentCommand(
             |  dpai agent status   --run ID [--home DIR]
             |  dpai agent events   --run ID [--home DIR] [--after N] [--limit N]
             |  dpai agent stop     --run ID [--home DIR] [--grace-seconds N]
+            |  dpai agent mcp      --root DIR [--shell bash|sh|powershell|cmd]
+            |                      (MCP-сервер рабочего дерева по stdio, D-50)
             |
             |Ответ — одна строка JSON dpai.agent-reply. Коды выхода: 0 — успех, 1 — отказ, 2 — неверный вызов.
         """.trimMargin()
