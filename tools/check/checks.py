@@ -115,6 +115,8 @@ def _path_ref(token: str) -> str | None:
     token = re.sub(r":\d+(?:-\d+)?$", "", token.rstrip(".,;)"))
     if any(ch in token for ch in "*<>{}$|") or token.startswith("dist/"):
         return None
+    if any(pat.search(token) for pat, _ in FORBIDDEN_PATHS):
+        return None  # названо как то, чего быть не должно (repo.layout)
     if token in ROOT_FILES or token.startswith(PATH_ROOTS):
         return token.rstrip("/")
     return None

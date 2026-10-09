@@ -7,13 +7,11 @@
 
 from __future__ import annotations
 
-import re
-import tomllib
 from dataclasses import dataclass, field
 from datetime import date, datetime, time as dtime, timedelta, timezone
 from pathlib import Path
 
-from . import VERSION, gitlog, probe, rules
+from . import VERSION, gitlog, probe, registry, rules
 
 STATE_SCHEMA = "dpvis-state/1"
 
@@ -24,9 +22,6 @@ DIAG_CODES = (
     "CONTRACT_NOT_FOUND", "HOST_NOT_ALLOWED", "PROBE_FAILED",
     "PROBE_STATUS_UNEXPECTED", "PROBE_HEADER_MISSING", "SIGNAL_UNSUPPORTED",
 )
-
-CONTRACT_HEADING = re.compile(r"^#{2,3}\s+(C-\d+)\b", re.MULTILINE)
-
 
 def iso(moment: datetime | None) -> str | None:
     if moment is None:
@@ -293,64 +288,6 @@ def actor_state(name: str, times: list[datetime], win: Window) -> dict:
     }
 
 
-# -------------------------------------------------------------- реестр
-
-def check_registry(model: dict, repos: dict[str, RepoData], diags: Diagnostics) -> dict:
-    spec = model.get("registry")
-    if not spec:
-        return {"checked": False}
-    source = spec["node"]
-    data = repos.get(source)
-    if data is None:
-        diags.add("REGISTRY_NOT_FOUND", source, "нет клона репозитория с реестром — сверка пропущена")
-        return {"checked": False, "node": source}
-    out: dict = {"checked": True, "node": source, "ref": data.ref}
-    model_slugs = {n["repo"].lower(): n["id"] for n in model["nodes"] if n["kind"] == "repo"}
-    try:
-        reg = tomllib.loads(gitlog.show(data.path, data.ref, spec["path"]))
-    except gitlog.GitError:
-        diags.add("REGISTRY_NOT_FOUND", source, f"в основной ветке нет {spec['path']}")
-        reg = None
-    except tomllib.TOMLDecodeError as exc:
-        diags.add("REGISTRY_SCHEMA_UNSUPPORTED", source, f"{spec['path']} не читается: {exc}")
-        reg = None
-    if reg is not None:
-        if reg.get("schema") != 1:
-            diags.add("REGISTRY_SCHEMA_UNSUPPORTED", source,
-                      f"{spec['path']}: schema {reg.get('schema')!r}, ожидалась 1")
-        else:
-            slugs = sorted({r["slug"] for r in reg.get("repo", []) if isinstance(r, dict) and r.get("slug")})
-            missing = [s for s in slugs if s.lower() not in model_slugs]
-            for slug in missing:
-                diags.add("REGISTRY_DRIFT", slug, f"репозиторий есть в реестре {spec['path']}, а в модели нет узла")
-            reg_lower = {s.lower() for s in slugs}
-            out["registry_repos"] = len(slugs)
-            out["missing_in_model"] = missing
-            out["not_in_registry"] = sorted(n["repo"] for n in model["nodes"]
-                                            if n["kind"] == "repo" and n["repo"].lower() not in reg_lower)
-    try:
-        text = gitlog.show(data.path, data.ref, spec["contracts"])
-        known = sorted(set(CONTRACT_HEADING.findall(text)), key=lambda c: int(c.split("-")[1]))
-    except gitlog.GitError:
-        diags.add("REGISTRY_NOT_FOUND", source, f"в основной ветке нет {spec['contracts']}")
-        known = None
-    if known is not None:
-        cited: dict[str, list[str]] = {}
-        for flow in model["flows"]:
-            for c in flow["contracts"]:
-                cited.setdefault(c.split(":", 1)[1], []).append(flow["id"])
-        for c in known:
-            if c not in cited:
-                diags.add("CONTRACT_UNCOVERED", f"DPmeta:{c}", "контракт DPmeta не покрыт ни одним потоком модели")
-        for c, flows in sorted(cited.items()):
-            if c not in known:
-                diags.add("CONTRACT_NOT_FOUND", f"DPmeta:{c}",
-                          f"на контракт ссылаются потоки {', '.join(sorted(flows))}, а в {spec['contracts']} его нет")
-        out["contracts"] = known
-        out["contracts_covered"] = sorted(c for c in known if c in cited)
-    return out
-
-
 # --------------------------------------------------------------- сборка
 
 def collect(model: dict, root: Path | None, now: datetime, days: int = rules.WINDOW_DAYS,
@@ -410,7 +347,7 @@ def collect(model: dict, root: Path | None, now: datetime, days: int = rules.WIN
             nodes_state[node["id"]] = {"activity": {"state": "unobserved", "last": None, "reasons": []}}
 
     flows_state = {f["id"]: flow_state(f, nodes_state, repos, win, diags) for f in model["flows"]}
-    registry = check_registry(model, repos, diags)
+    reg = registry.check(model, repos, diags)
 
     return {
         "schema": STATE_SCHEMA,
@@ -429,6 +366,6 @@ def collect(model: dict, root: Path | None, now: datetime, days: int = rules.WIN
         },
         "nodes": nodes_state,
         "flows": flows_state,
-        "registry": registry,
+        "registry": reg,
         "diagnostics": diags.sorted(),
     }

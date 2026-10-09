@@ -5,7 +5,7 @@
    "www.dpsmpx.com"
   ]
  },
- "as_of": "2026-10-05",
+ "as_of": "2026-10-09",
  "catalog": {
   "drivers": [
    {
@@ -499,6 +499,29 @@
    "contracts": [],
    "driver": "ai",
    "from": "claude",
+   "id": "work.orchestrator",
+   "kind": "work",
+   "public_what": "коммиты и PR сессий ИИ",
+   "refs": [
+    "DP_AI_Orcestrator:README.md"
+   ],
+   "signal": {
+    "repo": "orchestrator",
+    "scope": "all",
+    "type": "git-commits",
+    "who": "ai"
+   },
+   "status": "active",
+   "to": "orchestrator",
+   "transport": "git",
+   "trigger": "поручение автора сессии",
+   "what": "ветки, коммиты и PR сессий"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "ai",
+   "from": "claude",
    "id": "work.andors_love",
    "kind": "work",
    "refs": [
@@ -842,6 +865,29 @@
    "transport": "git",
    "trigger": "PR готов к вливанию",
    "what": "постановка, ответы на Q-NN ТЗ, вливание PR"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "human",
+   "from": "author",
+   "id": "decide.orchestrator",
+   "kind": "decision",
+   "public_what": "решения автора и вливание PR",
+   "refs": [
+    "DP_AI_Orcestrator:README.md"
+   ],
+   "signal": {
+    "repo": "orchestrator",
+    "scope": "main",
+    "type": "git-commits",
+    "who": "merge"
+   },
+   "status": "active",
+   "to": "orchestrator",
+   "transport": "git",
+   "trigger": "PR готов к вливанию",
+   "what": "ТЗ автора, решения, вливание PR"
   },
   {
    "bidirectional": false,
@@ -1787,6 +1833,33 @@
   {
    "bidirectional": false,
    "contracts": [],
+   "driver": "data",
+   "format": "dpvis-public/1, dpvis-site-kit/1",
+   "from": "dpvisualisation",
+   "id": "vis.dpvisualisation.smi",
+   "kind": "format",
+   "note": "SocialMediaImage сверяет sha256 по MANIFEST.json и принимает только dpvis-public/1; в DPmeta связь ещё не записана (Q-03)",
+   "public_what": "эта схема для сайта",
+   "refs": [
+    "DPvisualisation:D-15",
+    "SocialMediaImage:Д43"
+   ],
+   "signal": {
+    "paths": [
+     "website/ecosystem/"
+    ],
+    "repo": "smi",
+    "type": "git-path"
+   },
+   "status": "active",
+   "to": "smi",
+   "transport": "copy",
+   "trigger": "build --site здесь, затем site ecosystem-import в SocialMediaImage",
+   "what": "комплект схемы для раздела /ecosystem/ сайта: dpvis.js, dpvis.css, публичная выжимка dpvis-data.json и MANIFEST.json с sha256"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
    "driver": "ai",
    "format": "ecosystem.toml schema 1",
    "from": "dpmeta",
@@ -1848,6 +1921,81 @@
    "to": "phone",
    "transport": "manual",
    "what": "личное приложение — только на устройствах автора, нигде не публикуется"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "ai",
+   "from": "orchestrator",
+   "id": "orc.orchestrator.claude",
+   "kind": "work",
+   "note": "V1 в разработке; работают ли сессии под оркестратором постоянно — неизвестно (по git не видно)",
+   "public_what": "управление сессиями ИИ",
+   "refs": [
+    "DP_AI_Orcestrator:D-01",
+    "DP_AI_Orcestrator:D-32",
+    "DP_AI_Orcestrator:D-23"
+   ],
+   "status": "planned",
+   "to": "claude",
+   "transport": "intent",
+   "trigger": "задача в очереди оркестратора",
+   "what": "запуск и продолжение сессий Claude Code через CLI: задача, контекст и handoff, проверка результата"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "data",
+   "format": "dpai.ecosystem v1",
+   "from": "dpmeta",
+   "id": "orc.dpmeta.orchestrator",
+   "kind": "format",
+   "note": "выгрузка манифеста из DPmeta — открытый вопрос к DPmeta (DP_AI_Orcestrator:TODO.md)",
+   "public_what": "карта экосистемы для управления сессиями",
+   "refs": [
+    "DP_AI_Orcestrator:docs/ECOSYSTEM.md",
+    "DP_AI_Orcestrator:docs/INTEGRATION_CONTRACT.md"
+   ],
+   "status": "planned",
+   "to": "orchestrator",
+   "transport": "copy",
+   "what": "манифест экосистемы dpai.ecosystem v1: проекты, состояние, документы, предложения задач"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "check",
+   "from": "orchestrator",
+   "id": "orc.orchestrator.dpmetaapp",
+   "kind": "delivery",
+   "note": "после заморозки V1 и завершения остальных систем (мастер-ТЗ DPmetaApp)",
+   "public_what": "управляющий слой войдёт в пульт",
+   "refs": [
+    "DP_AI_Orcestrator:docs/INTEGRATION_CONTRACT.md",
+    "DPmetaApp:MESTER_TECHNICAL_TASK_ROADMAP.md"
+   ],
+   "status": "planned",
+   "to": "dpmetaapp",
+   "transport": "copy",
+   "what": "ядро оркестратора как подсистема «AI» будущего DPmetaApp: модули Kotlin, события, протокол управления"
+  },
+  {
+   "bidirectional": false,
+   "contracts": [],
+   "driver": "data",
+   "from": "orchestrator",
+   "id": "orc.orchestrator.phone",
+   "kind": "host",
+   "refs": [
+    "DP_AI_Orcestrator:D-28",
+    "DP_AI_Orcestrator:D-46",
+    "DP_AI_Orcestrator:TODO.md"
+   ],
+   "status": "active",
+   "to": "phone",
+   "transport": "manual",
+   "trigger": "сборка APK и установка автором",
+   "what": "Android-приложение оркестратора: управление исполнителями, Termux-target на том же телефоне"
   },
   {
    "bidirectional": false,
@@ -2250,6 +2398,27 @@
    "visibility": "private"
   },
   {
+   "group": "new",
+   "id": "orchestrator",
+   "kind": "repo",
+   "layer": "engineering",
+   "name": "DP_AI_Orcestrator",
+   "note": "с 6 октября 2026; в реестре DPmeta на 9 октября 2026 его ещё нет (Q-03)",
+   "public_role": "управляющий слой для параллельных сессий ИИ: задачи, контекст, проверка результата",
+   "public_stage": "первая версия в разработке",
+   "refs": [
+    "DP_AI_Orcestrator:README.md",
+    "DP_AI_Orcestrator:D-01",
+    "DP_AI_Orcestrator:docs/ECOSYSTEM.md",
+    "SocialMediaImage:data/facts/facts.yaml"
+   ],
+   "repo": "dpsmpx/DP_AI_Orcestrator",
+   "role": "control plane для параллельных сессий Claude Code: задачи и их зависимости, аккаунты, исполнители (Termux, Linux, Windows), контекст и handoff, проверка результата; управление — из Android-приложения",
+   "stage": "V1: выполнено этапов 15 из 21 (README, «Прогресс»); приложение проверяется на телефоне автора",
+   "status": "active",
+   "visibility": "private"
+  },
+  {
    "group": "core",
    "id": "dpprofile",
    "kind": "repo",
@@ -2363,15 +2532,17 @@
    "kind": "repo",
    "layer": "meta",
    "name": "DPmetaApp",
+   "note": "ТЗ, решения D-NN и TODO приложения — в ветке claude/vigilant-franklin-61x8kq, в main их нет",
    "public_role": "пульт автора над экосистемой для Android",
    "public_stage": "этап ТЗ",
    "refs": [
     "DPmetaApp:README.md",
+    "DPmetaApp:MESTER_TECHNICAL_TASK_ROADMAP.md",
     "DPmetaApp:docs/direction/TECHNICAL_TASK.md"
    ],
    "repo": "dpsmpx/DPmetaApp",
-   "role": "Android-пульт автора над экосистемой: проекты, ход разработки, сайт, статистика",
-   "stage": "этап 0 — ТЗ в работе, черновой PR",
+   "role": "мета-приложение автора для Android над законченными системами экосистемы: общее состояние, события, знания, проверки",
+   "stage": "в main — мастер-ТЗ экосистемы: сначала довести каждый проект до законченной системы, затем строить приложение; ТЗ самого приложения — черновик в невлитой ветке",
    "status": "active",
    "visibility": "private"
   },
@@ -2382,7 +2553,7 @@
    "layer": "meta",
    "name": "DPvisualisation",
    "public_role": "интерактивная модель экосистемы на реальных данных — эта схема",
-   "public_stage": "просмотрщик и сборка для сайта; дальше — живой режим",
+   "public_stage": "версия 1.0",
    "refs": [
     "DPvisualisation:docs/direction/REQUEST.md",
     "DPvisualisation:D-01",
@@ -2390,7 +2561,7 @@
    ],
    "repo": "dpsmpx/DPvisualisation",
    "role": "эта модель: потоки информации и онлайн-работа инфраструктуры на реальных данных",
-   "stage": "этапы 0–3 и сборка для сайта; живой режим — этап 4",
+   "stage": "версия 1.0: модель, сборщик, просмотрщик без анимаций, живой режим, комплект для сайта",
    "status": "active",
    "visibility": "private"
   },
@@ -2477,6 +2648,7 @@
    "kind": "service",
    "layer": "infra",
    "name": "Мгновенный канал (ntfy)",
+   "note": "источник — ТЗ DPmetaApp в ветке claude/vigilant-franklin-61x8kq, в main его нет",
    "refs": [
     "DPmetaApp:docs/direction/TECHNICAL_TASK.md"
    ],
@@ -2588,13 +2760,16 @@
  "schema": "dpvis-model/1",
  "source": {
   "path": "model/ecosystem.toml",
-  "sha256": "3b7f6a404edd7e25c3fb8917ef38b7d96f6b8677b738a4a668ffd8d4957d34ef"
+  "sha256": "9eef61de2d620c0f86e4684df8cfaf8ae824bfdba70d9c87639854fc3108e130"
  },
  "sources": [
   "DPmeta:docs/ECOSYSTEM.md",
   "DPmeta:docs/CONTRACTS.md",
   "DPmeta:tools/ecosystem.toml",
   "DPmetaApp:docs/direction/TECHNICAL_TASK.md",
+  "DPmetaApp:MESTER_TECHNICAL_TASK_ROADMAP.md",
+  "DP_AI_Orcestrator:README.md",
+  "SocialMediaImage:Д43",
   "SocialMediaImage:docs/platforms/WEBSITE.md",
   "SocialMediaImage:data/platforms/destinations.yaml",
   "SocialMediaImage:data/progress/scope.yaml"

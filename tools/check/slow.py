@@ -120,10 +120,16 @@ def screenshot(browser: str, html: Path, out: Path, width: int, height: int) -> 
 # сборка открывается во фрейме нужной ширины; страница сама сообщает родителю, что нарисовала.
 PROBE = """<script>
 setTimeout(function () {
-  var d = document.documentElement;
-  parent.postMessage({ dpvisSmoke: 1, sw: d.scrollWidth, cw: d.clientWidth,
+  var d = document.documentElement, r = { dpvisSmoke: 1, sw: d.scrollWidth, cw: d.clientWidth,
     nodes: document.querySelectorAll("g.node").length, flows: document.querySelectorAll("g.flow").length,
-    error: !!document.querySelector(".dv-msg:not([hidden])") }, "*");
+    error: !!document.querySelector(".dv-msg:not([hidden])") };
+  var t = document.getElementById("dv-tab-tables");
+  if (t) t.click();
+  r.rows = document.querySelectorAll(".dv-tab:not([hidden]) .vtable tbody tr").length;
+  r.tsw = d.scrollWidth;
+  var c = document.getElementById("dv-tab-recon");
+  if (c && !c.hidden) { c.click(); r.recon = document.querySelectorAll(".recon h3").length; r.rsw = d.scrollWidth; }
+  parent.postMessage(r, "*");
 }, 1500);
 </script></body>"""
 HARNESS = """<!doctype html><html><body>
@@ -167,9 +173,15 @@ def browser_smoke(root: Path):
                 problems.append(f"Chromium {width} px: нарисовано узлов {r['nodes']} из {want_nodes}, потоков {r['flows']} из {want_flows}")
             if r["sw"] > r["cw"]:
                 problems.append(f"Chromium {width} px: страница шире окна ({r['sw']} > {r['cw']}) — прокрутка вбок (D-16)")
+            if r.get("rows", 0) < want_nodes + want_flows:
+                problems.append(f"Chromium {width} px: в «Таблицах» строк {r.get('rows')} из {want_nodes + want_flows} (F-29)")
+            if max(r.get("tsw", 0), r.get("rsw", 0)) > r["cw"]:
+                problems.append(f"Chromium {width} px: «Таблицы» или «Сверка» шире окна — прокрутка вбок (D-16)")
+            if not r.get("recon"):
+                problems.append(f"Chromium {width} px: вкладка «Сверка» пуста (F-30)")
             if r["error"]:
                 problems.append(f"Chromium {width} px: просмотрщик показал ошибку")
-    return problems, f"узлов {want_nodes}, потоков {want_flows}; 1366 и 390 px — без прокрутки вбок"
+    return problems, f"узлов {want_nodes}, потоков {want_flows}; схема, таблицы и сверка при 1366 и 390 px — без прокрутки вбок"
 
 
 FULL = (

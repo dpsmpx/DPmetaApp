@@ -184,7 +184,7 @@ export function flowStateAt(flow, dayIdx) {
 
 export function flowRateAt(flow, dayIdx, rateDays = 7) {
   if (dayIdx === null || dayIdx === undefined) return flow.week;
-  return flow.days[dayIdx] * rateDays; // день в масштабе недели — та же шкала частиц
+  return flow.days[dayIdx] * rateDays; // день в масштабе недели — та же шкала толщины линии
 }
 
 export function nodeActivityAt(node, dayIdx) {
