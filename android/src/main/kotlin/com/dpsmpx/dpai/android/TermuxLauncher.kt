@@ -52,6 +52,19 @@ object TermuxLauncher {
 
     fun permitted(context: Context): Boolean = context.checkSelfPermission(PERMISSION) == PackageManager.PERMISSION_GRANTED
 
+    /**
+     * Объявляет ли установленный Termux `RUN_COMMAND`. Сборка из Google Play
+     * (проверка на Redmi Note 13, 9 октября 2026) — нет: разрешения не
+     * выдать, и приложение не пытается; `sshd` — автозапуском
+     * `~/.termux/boot` или виджетом.
+     */
+    fun supportsRunCommand(context: Context): Boolean = try {
+        context.packageManager.getPermissionInfo(PERMISSION, 0)
+        true
+    } catch (_: PackageManager.NameNotFoundException) {
+        false
+    }
+
     /** Target на этом телефоне: `sshd` Termux слушает loopback. */
     fun local(t: TargetEntry): Boolean = t.host == "127.0.0.1" || t.host == "localhost" || t.host == "::1"
 
@@ -87,6 +100,12 @@ object TermuxLauncher {
     fun ensureSshd(context: Context, targets: List<TargetEntry>): String? {
         val local = targets.filter(::local)
         if (local.isEmpty() || local.all { listening(it.port) }) return null
+        if (!supportsRunCommand(context)) {
+            val now = nowMs()
+            if (now - lastNoteAt < RETRY_MS) return null
+            lastNoteAt = now
+            return "порт ${local.first().port} закрыт; этот Termux не принимает команды от приложений — sshd: автозапуск ~/.termux/boot или виджет"
+        }
         // Нет разрешения — не попытка: сказать (раз в паузу) и не задерживать первый настоящий запуск после выдачи.
         if (!permitted(context)) {
             val now = nowMs()

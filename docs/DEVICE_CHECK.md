@@ -553,6 +553,13 @@ target — «Разрешить» (запуск команд в среде Termu
 в Termux, через минуту на карточке «sshd на порту 8022: слушает», в
 журнале приложения — строка `[termux] … sshd запущен в Termux`.
 
+Termux из Google Play (`googleplay.*`) разрешения `RUN_COMMAND` не
+объявляет — приложение `sshd` не запустит (так и скажет на карточке).
+Тогда — автозапуск при загрузке телефона: Termux из Google Play сам
+выполняет скрипты `~/.termux/boot/`, например `~/.termux/boot/10-dpai-sshd`
+(права `700`) с двумя строками: `termux-wake-lock` и
+`pgrep -x sshd >/dev/null || sshd -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no`.
+
 ### 5.6. Ключ приложения в `authorized_keys`
 
 1. В приложении: «Targets» → карточка «Ключ приложения» → «Показать

@@ -313,6 +313,12 @@ private fun TermuxCard(port: Int) {
             )
             if (!TermuxLauncher.installed(context)) {
                 Text("Termux не найден", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            } else if (!TermuxLauncher.supportsRunCommand(context)) {
+                Text(
+                    "Этот Termux (из Google Play) не принимает команды от других приложений. sshd поднимается автозапуском при загрузке телефона " +
+                        "(~/.termux/boot/10-dpai-sshd) или вашим виджетом.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
             } else if (!permitted) {
                 Text(
                     "Чтобы приложение само запускало sshd, разрешите «Запуск команд в среде Termux» и добавьте в Termux строку allow-external-apps = true в ~/.termux/termux.properties.",
