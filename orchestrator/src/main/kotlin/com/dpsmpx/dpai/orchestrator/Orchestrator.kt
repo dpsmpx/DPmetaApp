@@ -875,7 +875,15 @@ class Orchestrator(
     private fun commitWork(task: TaskId, session: SessionId, path: String) {
         val g = git ?: return
         val status = g.status(path).valueOrNull() ?: return
-        val files = (status.changed + status.untracked).distinct().sorted()
+        val all = (status.changed + status.untracked).distinct().sorted()
+        // Кеши и артефакты (их создаёт и сама проверка: `python -m unittest` — `__pycache__`) — не работа хода:
+        // не коммитятся, и это видно, а не молча (D-05; проверка на Redmi Note 13, 9 октября 2026).
+        val files = committable(all)
+        (all - files.toSet()).takeIf { it.isNotEmpty() }?.let { skipped ->
+            problems += Diagnostic.warning(
+                DiagCode.VALUE_INVALID, "не закоммичены артефакты: ${skipped.take(5).joinToString()}${if (skipped.size > 5) " и ещё ${skipped.size - 5}" else ""}", "task $task",
+            )
+        }
         if (files.isEmpty()) return
         val tree = treeOf.getValue(task)
         ok(g.write(worktrees, tree, session, GitOp.ADD, files), "git add")
@@ -1534,6 +1542,14 @@ class Orchestrator(
         /** Сессии, которые не опрашиваются: ждут человека или сверки. */
         /** Ветка дерева задачи: по ней дерево узнаётся после перезапуска. */
         private const val TASK_BRANCH = "task/"
+
+        /** Каталоги и файлы, которые порождают сборка и запуск, а не автор: кеши байткода, зависимостей, проверок. */
+        private val ARTIFACT_DIRS = setOf("__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", "node_modules", ".gradle", ".tox", ".venv")
+        private val ARTIFACT_FILES = Regex(""".*\.(pyc|pyo)$|(^|.*/)\.DS_Store$""")
+
+        /** Что из изменённого коммитится: без кешей и артефактов ([ARTIFACT_DIRS], [ARTIFACT_FILES]). */
+        fun committable(files: List<String>): List<String> =
+            files.filter { f -> f.split('/').none { it in ARTIFACT_DIRS } && !ARTIFACT_FILES.matches(f) }
 
         /** Ключ источника «что среда делает сама» (D-40). */
         const val ENVIRONMENT_SOURCE = "orchestrator:environment"
