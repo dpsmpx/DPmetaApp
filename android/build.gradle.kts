@@ -73,7 +73,7 @@ androidComponents {
     onVariants { v -> v.sources.assets?.addStaticSourceDirectory(layout.buildDirectory.dir("generated/dpai-setup-assets").get().asFile.path) }
 }
 // Каталог читают слияние ресурсов и lint (generate…LintReportModel и др.) — все зависят от упаковки явно.
-tasks.matching { it.name != packAgent.name && (it.name.startsWith("merge") && it.name.endsWith("Assets") || "Lint" in it.name) }
+tasks.matching { it.name != packAgent.name && (it.name.startsWith("merge") && it.name.endsWith("Assets") || it.name.contains("lint", ignoreCase = true)) }
     .configureEach { dependsOn(packAgent) }
 
 kotlin {
