@@ -34,7 +34,14 @@ object TermuxLauncher {
     private const val RETRY_MS = 5 * 60_000L
 
     @Volatile
-    private var lastStartAt = 0L
+    private var lastStartAt = -RETRY_MS
+
+    @Volatile
+    private var lastNoteAt = -RETRY_MS
+
+    /** Страница приложения в настройках: там «Другие разрешения» — если HyperOS не показал окно запроса. */
+    fun appSettings(context: Context): Intent =
+        Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:${context.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
     fun installed(context: Context): Boolean = try {
         context.packageManager.getPackageInfo(PACKAGE, 0)
@@ -80,9 +87,14 @@ object TermuxLauncher {
     fun ensureSshd(context: Context, targets: List<TargetEntry>): String? {
         val local = targets.filter(::local)
         if (local.isEmpty() || local.all { listening(it.port) }) return null
-        val now = nowMs()
-        if (now - lastStartAt < RETRY_MS) return null
-        lastStartAt = now
+        // Нет разрешения — не попытка: сказать (раз в паузу) и не задерживать первый настоящий запуск после выдачи.
+        if (!permitted(context)) {
+            val now = nowMs()
+            if (now - lastNoteAt < RETRY_MS) return null
+            lastNoteAt = now
+            return "порт ${local.first().port} закрыт, sshd не запущен: нет разрешения «Запуск команд в среде Termux»"
+        }
+        if (nowMs() - lastStartAt < RETRY_MS) return null
         return when (val r = startSshd(context)) {
             is Outcome.Success -> "порт ${local.first().port} закрыт — sshd запущен в Termux"
             is Outcome.Failure -> "порт ${local.first().port} закрыт, sshd не запущен: ${r.diagnostics.first().message}"

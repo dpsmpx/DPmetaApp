@@ -285,7 +285,14 @@ private fun TermuxCard(port: Int) {
     var permitted by remember { mutableStateOf(TermuxLauncher.permitted(context)) }
     var listening by remember { mutableStateOf<Boolean?>(null) }
     var note by remember { mutableStateOf<String?>(null) }
-    val ask = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { permitted = it }
+    // HyperOS отклоняет запрос стороннего разрешения молча, без окна: отказ — открыть страницу приложения в настройках.
+    val ask = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { ok ->
+        permitted = ok
+        if (!ok) {
+            note = "Окно не появилось: в настройках приложения — «Разрешения» → «Запуск команд в среде Termux»"
+            context.startActivity(TermuxLauncher.appSettings(context))
+        }
+    }
     LaunchedEffect(port) {
         while (true) {
             listening = withContext(Dispatchers.IO) { TermuxLauncher.listening(port) }
