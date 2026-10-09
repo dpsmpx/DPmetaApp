@@ -227,6 +227,10 @@ class DemoModel(
         o.tasks.tasks[task]?.let { com.dpsmpx.dpai.ui.TaskScreens.detail(it, o.sessions, o.waitingReason(task)) }
     }.getOrNull()
 
+    /** Итоговые сообщения ходов задачи (D-42) — целиком; из памяти контура или документа задачи, без замка. */
+    fun taskMessages(task: TaskId): List<com.dpsmpx.dpai.orchestrator.TurnMessage> =
+        runCatching { built?.orchestrator?.turnMessages(task) }.getOrNull().orEmpty()
+
     /** Есть ли настоящий контроллер: тогда такт — в службе переднего плана. */
     fun hasLive(): Boolean = controller.targets().any { it.configDir != null }
 

@@ -436,6 +436,7 @@ class Orchestrator(
                 if (documents != null) contextOf.remove(id)
                 lastOverlap.remove(id)
                 lastWaiting.remove(id)
+                if (documents != null) messagesOf.remove(id)
                 toolOf.remove(id)
                 sentOf.remove(id)
                 workingOf.remove(id)
@@ -734,6 +735,7 @@ class Orchestrator(
             commitSessions(step.events)
             applyFacts(step.facts)
         }
+        recordTurnMessages(session, step.turns)
         val after = sessions.sessions.getValue(session)
         if (after.state != before) react(after.task, session, after.state)
     }
@@ -1528,6 +1530,30 @@ class Orchestrator(
 
     /** Последняя версия контекста задачи — что видел Claude в последнем ходе. */
     fun lastContext(task: TaskId): ContextBundle? = contextOf[task] ?: storedContext(task, report = false)
+
+    /** Итоги ходов задач в памяти — до завершения задачи; дальше — из документа. Читает и поток экрана. */
+    private val messagesOf = java.util.concurrent.ConcurrentHashMap<TaskId, List<TurnMessage>>()
+
+    /**
+     * Итоговые сообщения ходов (D-42): что модель сказала, остановившись, —
+     * целиком, в документ задачи `messages`, раньше реакции на исход хода.
+     */
+    private fun recordTurnMessages(session: SessionId, turns: List<com.dpsmpx.dpai.execution.claude.ClaudeTurn>) {
+        if (turns.isEmpty()) return
+        val rec = sessions.sessions.getValue(session)
+        var list = turnMessages(rec.task)
+        for ((i, t) in turns.withIndex()) {
+            val text = t.text?.takeIf { it.isNotBlank() } ?: continue
+            val turn = rec.turn - (turns.size - 1 - i)
+            list = TurnMessages.append(list, TurnMessage(session, turn, clock.now(), t.status.name, rec.usage.lastPrompt?.model, text))
+        }
+        messagesOf[rec.task] = list
+        saveTaskDocument("messages", rec.task, TurnMessages.toJson(list))
+    }
+
+    /** Итоговые сообщения ходов задачи по порядку — для окна задачи (D-42). */
+    fun turnMessages(task: TaskId): List<TurnMessage> = messagesOf[task]
+        ?: documents?.read(docKey("messages", task))?.valueOrNull()?.let { TurnMessages.fromJson(it.content).valueOrNull() }.orEmpty()
 
     /** Что ход сессии делает сейчас (D-42): только в памяти, для экрана. */
     fun live(session: SessionId): com.dpsmpx.dpai.sessions.LiveTurn? = driver.live(session)

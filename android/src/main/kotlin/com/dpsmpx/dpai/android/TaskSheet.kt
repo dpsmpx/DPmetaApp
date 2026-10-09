@@ -3,6 +3,8 @@ package com.dpsmpx.dpai.android
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -50,6 +52,7 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
     val scope = rememberCoroutineScope()
     // Сразу с данными (чтение неизменяемого состояния, без замка): лист не меняет размер после «Загружаю…».
     var detail by remember { mutableStateOf(model.taskDetail(task)) }
+    var messages by remember { mutableStateOf(model.taskMessages(task)) }
     var status by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var confirm by remember { mutableStateOf<TaskAction?>(null) }
@@ -58,6 +61,7 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
     LaunchedEffect(task) {
         while (true) {
             detail = withContext(Dispatchers.IO) { model.taskDetail(task) }
+            messages = withContext(Dispatchers.IO) { model.taskMessages(task) }
             delay(1500)
         }
     }
@@ -79,6 +83,9 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
     val d = detail
     AlertDialog(
         onDismissRequest = onDone,
+        // Почти во весь экран: итоги ходов бывают длинными (D-42).
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+        modifier = Modifier.fillMaxWidth(0.96f),
         title = { Text(d?.title ?: "Задача") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -122,6 +129,7 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
                     else -> Unit
                 }
                 status?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
+                TurnMessagesSection(messages)
             }
         },
         confirmButton = { TextButton(onClick = onDone) { Text("Закрыть") } },
@@ -180,5 +188,31 @@ private fun ReplyEditor(busy: Boolean, onSend: (String) -> Unit) {
     Column {
         OutlinedTextField(text, { text = it }, label = { Text("Ответ к следующему ходу") }, minLines = 2)
         TextButton(enabled = !busy && text.isNotBlank(), onClick = { onSend(text) }) { Text("Отправить и повторить") }
+    }
+}
+
+/**
+ * Итоговые сообщения ходов (D-42): на чём модель остановилась и ждёт
+ * ввода — целиком, по порядку, текст можно выделить и скопировать.
+ */
+@Composable
+private fun TurnMessagesSection(messages: List<com.dpsmpx.dpai.orchestrator.TurnMessage>) {
+    if (messages.isEmpty()) return
+    val zone = remember { java.time.ZoneId.systemDefault() }
+    androidx.compose.material3.HorizontalDivider()
+    Text("Сообщения модели (${messages.size})", style = MaterialTheme.typography.titleSmall)
+    for (m in messages) {
+        val t = java.time.Instant.ofEpochMilli(m.at.epochMillis).atZone(zone)
+        androidx.compose.material3.Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    "ход ${m.turn} · %02d.%02d %02d:%02d · ${m.status}${m.model?.let { " · $it" } ?: ""}".format(t.dayOfMonth, t.monthValue, t.hour, t.minute),
+                    style = MaterialTheme.typography.labelSmall,
+                )
+                androidx.compose.foundation.text.selection.SelectionContainer {
+                    Text(m.text, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
     }
 }

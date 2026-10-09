@@ -151,4 +151,18 @@ class SessionCommandsTest {
         assertEquals(s.provider, sessionsOf(o, t).last().provider)
         assertEquals(TaskState.DONE, o.tasks.tasks.getValue(t).state)
     }
+
+    /** Итоги ходов задачи (D-42) — в документе задачи: целиком и после перезапуска. */
+    @Test
+    fun turnMessagesSurviveRestart() {
+        val (o, runner) = boot()
+        val t = o.addTask("задача", "цель").valueOrNull()!!
+        advance(o, runner, 3)
+        val first = o.turnMessages(t)
+        assertEquals(1, first.size, first.toString())
+        assertTrue(first.single().text.isNotBlank())
+        assertEquals("COMPLETED", first.single().status)
+        val (second, _) = boot()
+        assertEquals(first, second.turnMessages(t), "итоги ходов пережили перезапуск")
+    }
 }
