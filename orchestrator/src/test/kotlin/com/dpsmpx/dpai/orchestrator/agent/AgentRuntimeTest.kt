@@ -28,6 +28,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 import org.junit.jupiter.api.io.TempDir
 
@@ -246,9 +247,85 @@ class AgentRuntimeTest {
         started += rt.status(running).run!!.pid!!
         val later = AgentRuntime(dir.toString(), com.dpsmpx.dpai.core.clock.ManualClock(com.dpsmpx.dpai.core.clock.Timestamp(Clock.SYSTEM.now().epochMillis + 8 * 86_400_000L)), "test", TestChild.selfCommand())
         assertEquals(1, later.prune(AgentRuntime.RETENTION))
-        assertFalse(dir.resolve("runs/${done.value}").toFile().exists(), "завершённый запуск удалён")
-        assertTrue(dir.resolve("runs/${running.value}").toFile().exists(), "идущий запуск на месте")
+        val left = dir.resolve("runs/${done.value}").toFile().list().orEmpty().toSet()
+        assertEquals(setOf(AgentRuntime.PRUNED_KEY), left, "от завершённого запуска осталось только надгробие (A-6)")
+        assertTrue(dir.resolve("runs/${running.value}/events.jsonl").toFile().exists(), "идущий запуск на месте")
+        assertEquals(0, later.prune(AgentRuntime.RETENTION), "надгробие не удаляется повторно")
         assertTrue(rt.stop(running, 2.seconds).ok)
+    }
+
+    /**
+     * A-6: сессия, удалённая по сроку (приостановлена недельным пределом),
+     * продолжается следующим ходом — ход и номера событий идут дальше, а не
+     * с №1: контроллер принимает новый ход, а не видит конфликт номеров.
+     */
+    @Test
+    fun prunedSessionContinuesTurnAndNumbering() {
+        val rt = runtime()
+        val run = ids.next(IdKinds.SESSION)
+        assertTrue(rt.start(run, RunSpec(TestChild.command("child", "secret"))).ok)
+        val channel = RunChannel(source(rt), run)
+        RealTime.await(60.seconds, "первый ход") { rt.status(run).run!!.takeIf { it.state == RunState.EXITED } }
+        val supervisor = RunDoc.read(DocumentStore(NioVfs(dir), "runs/${run.value}").read(AgentRuntime.RUN_KEY).valueOrNull()!!.content)!!.supervisorPid!!
+        ProcessHandle.of(supervisor).ifPresent { it.onExit().get(30, java.util.concurrent.TimeUnit.SECONDS) }
+        val firstLast = RealTime.await(30.seconds, "первый ход принят") {
+            channel.poll().valueOrNull()
+            channel.lastAccepted.takeIf { it == rt.status(run).run!!.lastSequence }
+        }
+        val later = AgentRuntime(dir.toString(), com.dpsmpx.dpai.core.clock.ManualClock(com.dpsmpx.dpai.core.clock.Timestamp(Clock.SYSTEM.now().epochMillis + 8 * 86_400_000L)), "test", TestChild.selfCommand())
+        assertEquals(1, later.prune(AgentRuntime.RETENTION))
+        assertTrue(later.start(run, RunSpec(TestChild.command("child", "secret"))).ok)
+        val second = RealTime.await(60.seconds, "второй ход") { later.status(run).run!!.takeIf { it.state == RunState.EXITED } }
+        assertEquals(2, second.turn, "ход продолжается после удаления")
+        val events = later.events(run, 0, 1000).events
+        assertEquals(firstLast + 1, events.first().sequence, "номера продолжаются, а не с №1")
+        val got = mutableListOf<EventEnvelope>()
+        RealTime.await(30.seconds, "второй ход принят каналом") {
+            got += channel.poll().valueOrNull()!!.events
+            got.takeIf { it.any { e -> e.type == EventType.TARGET_PROCESS_EXITED } }
+        }
+        assertEquals(events.map { it.id }, got.map { it.id }, "контроллер принял новый ход целиком")
+    }
+
+    /**
+     * A-4: остановка, пока супервизор ещё не взял ход. `stop` не пишет
+     * журнал сам (писатель один), а опоздавший супервизор видит просьбу и
+     * выходит, не запуская процесс.
+     */
+    @Test
+    fun stopBeforeSupervisorKeepsOneWriterAndNeverStartsProcess() {
+        // Супервизор не приходит: программа без режима `noop` сразу выходит.
+        val rt = AgentRuntime(dir.toString(), Clock.SYSTEM, "test", TestChild.selfCommand() + "noop", supervisorWait = 500.milliseconds, pollEvery = 50.milliseconds)
+        val run = ids.next(IdKinds.SESSION)
+        assertTrue(rt.start(run, RunSpec(TestChild.command("child", "hang"), stdin = "prompt")).ok)
+        val stop = rt.stop(run, 1.seconds)
+        assertTrue(stop.ok, stop.diagnostics.toString())
+        assertTrue(stop.diagnostics.any { it.code == DiagCode.AGENT_STOP_PENDING }, stop.diagnostics.toString())
+        assertEquals(RunState.STARTING, stop.run!!.state)
+        assertEquals(emptyList(), rt.events(run, 0, 1000).events, "stop журнал не пишет")
+        // Супервизор пришёл позже — видит просьбу, процесс не запускает.
+        val late = rt.supervise(run)
+        assertTrue(late.ok, late.diagnostics.toString())
+        val events = rt.events(run, 0, 1000).events
+        assertEquals(listOf(EventType.TARGET_PROCESS_EXITED), events.map { it.type })
+        assertEquals(JsonString(ExitReason.STOPPED.name), events.single().payload["reason"])
+        assertEquals(RunState.EXITED, rt.status(run).run!!.state)
+        assertNull(DocumentStore(NioVfs(dir), "runs/${run.value}").read(AgentRuntime.INPUT_KEY).valueOrNull(), "вход хода удалён")
+        // Повторная остановка — уже завершённый ход.
+        assertTrue(rt.stop(run, 1.seconds).ok)
+    }
+
+    /** A-4: супервизор, опоздавший дольше срока, хода не берёт — контроллер мог уже счесть его потерянным. */
+    @Test
+    fun lateSupervisorDoesNotTakeTheTurn() {
+        val rt = AgentRuntime(dir.toString(), Clock.SYSTEM, "test", TestChild.selfCommand() + "noop")
+        val run = ids.next(IdKinds.SESSION)
+        assertTrue(rt.start(run, RunSpec(TestChild.command("child", "hang"))).ok)
+        val clock = com.dpsmpx.dpai.core.clock.ManualClock(com.dpsmpx.dpai.core.clock.Timestamp(Clock.SYSTEM.now().epochMillis + 31_000))
+        val late = AgentRuntime(dir.toString(), clock, "test", TestChild.selfCommand()).supervise(run)
+        assertFalse(late.ok)
+        assertEquals(DiagCode.AGENT_RUN_LOST, late.diagnostics.single().code)
+        assertEquals(emptyList(), rt.events(run, 0, 1000).events)
     }
 
     @Test

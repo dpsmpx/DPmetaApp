@@ -2,6 +2,7 @@ package com.dpsmpx.dpai.execution.agent
 
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.Diagnostic
+import com.dpsmpx.dpai.core.diagnostics.Severity
 import com.dpsmpx.dpai.core.events.EventEnvelope
 import com.dpsmpx.dpai.core.events.SequenceTracker
 import com.dpsmpx.dpai.core.events.StreamRef
@@ -20,6 +21,12 @@ import com.dpsmpx.dpai.core.result.Outcome
  * не закрыла, — `RUN_RECONCILIATION_REQUIRED` с причиной
  * `EVENT_SEQUENCE_GAP`: применять события через дыру нельзя (D-12).
  * Тот же номер с другим событием — `EVENT_SEQUENCE_CONFLICT`.
+ *
+ * Принятое не теряется (A-2): трекер сдвигается при приёме, и если опрос
+ * сорвался после уже принятых страниц, они отдаются с отказом как
+ * предупреждением, а не выбрасываются вместе с ним — иначе следующий
+ * опрос начнётся после событий, которых никто не видел. Тот же отказ
+ * повторится в следующем опросе, уже без принятых событий.
  */
 class RunChannel(private val source: RunEventSource, val run: SessionId, private val pageSize: Int = 500, startAfter: Long = 0) {
     private val tracker = SequenceTracker()
@@ -46,18 +53,22 @@ class RunChannel(private val source: RunEventSource, val run: SessionId, private
         while (true) {
             val acceptedBefore = accepted.size
             val reply = when (val r = source.events(run, lastAccepted, pageSize)) {
-                is Outcome.Failure -> return r
+                is Outcome.Failure -> return stopped(accepted, notes, r.diagnostics)
                 is Outcome.Success -> r.value
             }
             var gap: Diagnostic? = null
             for (e in reply.events) {
                 if (e.stream != stream) {
-                    return Outcome.failure(DiagCode.EVENT_SEQUENCE_CONFLICT, "событие чужого потока ${e.stream} в канале запуска", stream.toString())
+                    return stopped(
+                        accepted,
+                        notes,
+                        listOf(Diagnostic.error(DiagCode.EVENT_SEQUENCE_CONFLICT, "событие чужого потока ${e.stream} в канале запуска", stream.toString())),
+                    )
                 }
                 when (val v = tracker.offer(e)) {
                     is SequenceTracker.Verdict.Accepted -> accepted += e
                     is SequenceTracker.Verdict.Duplicate -> Unit
-                    is SequenceTracker.Verdict.Conflict -> return Outcome.failure(v.diagnostic)
+                    is SequenceTracker.Verdict.Conflict -> return stopped(accepted, notes, listOf(v.diagnostic))
                     is SequenceTracker.Verdict.Gap -> {
                         gap = v.diagnostic
                         break
@@ -81,7 +92,9 @@ class RunChannel(private val source: RunEventSource, val run: SessionId, private
             if (gap != null) {
                 notes += gap
                 if (reconciled) {
-                    return Outcome.Failure(
+                    return stopped(
+                        accepted,
+                        notes,
                         listOf(
                             Diagnostic.of(
                                 DiagCode.RUN_RECONCILIATION_REQUIRED,
@@ -101,5 +114,16 @@ class RunChannel(private val source: RunEventSource, val run: SessionId, private
             // Закрытый сверкой пропуск остаётся предупреждением: он был, и это видно.
             return Outcome.success(Batch(accepted, reply.run, notes), notes)
         }
+    }
+
+    /**
+     * Опрос сорвался. Ничего не принято — отказ как есть; принятое — отдать
+     * без состояния запуска (оно из незаконченного опроса), отказ —
+     * предупреждением с теми же кодом и причинами.
+     */
+    private fun stopped(accepted: List<EventEnvelope>, notes: List<Diagnostic>, failure: List<Diagnostic>): Outcome<Batch> {
+        if (accepted.isEmpty()) return Outcome.Failure(failure)
+        val warnings = notes + failure.map { Diagnostic.of(it.code, it.message, it.subject, Severity.WARNING, it.causes) }
+        return Outcome.success(Batch(accepted, null, warnings), warnings)
     }
 }

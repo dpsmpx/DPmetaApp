@@ -116,6 +116,11 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     AGENT_REPLY_INVALID(Category.FORMAT, Severity.ERROR, Retryability.NON_RETRYABLE),
     AGENT_RUN_LOST(Category.EXECUTION, Severity.ERROR, Retryability.NON_RETRYABLE),
     RUN_RECONCILIATION_REQUIRED(Category.INTEGRITY, Severity.ERROR, Retryability.RETRYABLE),
+    /**
+     * Остановка хода запрошена до того, как супервизор взял ход (A-4): процесс
+     * ещё не запущен и не запустится — супервизор увидит просьбу и запишет выход.
+     */
+    AGENT_STOP_PENDING(Category.EXECUTION, Severity.WARNING, Retryability.RETRYABLE),
     TARGET_CHECK_FAILED(Category.EXECUTION, Severity.ERROR, Retryability.UNKNOWN),
     TARGET_CHECK_WARNING(Category.EXECUTION, Severity.WARNING, Retryability.NON_RETRYABLE),
     TARGET_DISABLED(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),

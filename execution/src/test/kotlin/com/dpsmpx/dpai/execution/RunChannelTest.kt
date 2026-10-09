@@ -87,12 +87,47 @@ class RunChannelTest {
     fun unclosedGapRequiresReconciliationInsteadOfApplying() {
         val agent = FakeAgent(run, events) { _, seq -> seq == 6L }
         val channel = RunChannel(agent, run)
+        // Принятые до дыры №1…5 отдаются, отказ сверки — предупреждением (A-2).
+        val first = channel.poll()
+        assertIs<Outcome.Success<RunChannel.Batch>>(first)
+        assertEquals((1L..5L).toList(), first.value.events.map { it.sequence })
+        assertTrue(first.warnings.any { it.code == DiagCode.RUN_RECONCILIATION_REQUIRED })
+        // Дыра осталась — следующий опрос отказывает, ничего не приняв.
         val r = channel.poll()
         assertIs<Outcome.Failure>(r)
         val d = r.errors.single()
         assertEquals(DiagCode.RUN_RECONCILIATION_REQUIRED, d.code)
         assertEquals(DiagCode.EVENT_SEQUENCE_GAP, d.causes.single().code)
         assertEquals(5L, channel.lastAccepted, "через дыру ничего не применено")
+    }
+
+    @Test
+    fun failureAfterAcceptedPageKeepsAcceptedEvents() {
+        // A-2: первая страница принята, вторая сорвалась (обрыв SSH) — принятое
+        // не пропадает, а следующий опрос продолжает с №11, а не после потерянных.
+        var calls = 0
+        val agent = FakeAgent(run, events)
+        val channel = RunChannel(
+            { r, after, limit ->
+                calls++
+                if (calls == 2) Outcome.failure(DiagCode.SSH_CONNECTION_FAILED, "обрыв", "target") else agent.events(r, after, limit)
+            },
+            run,
+            pageSize = 10,
+        )
+        val first = channel.poll()
+        assertIs<Outcome.Success<RunChannel.Batch>>(first)
+        assertEquals((1L..10L).toList(), first.value.events.map { it.sequence })
+        assertEquals(null, first.value.status, "состояние из сорванного опроса не отдаётся")
+        assertTrue(first.warnings.any { it.code == DiagCode.SSH_CONNECTION_FAILED })
+        assertEquals((11L..20L).toList(), channel.poll().valueOrNull()!!.events.map { it.sequence })
+    }
+
+    @Test
+    fun failureBeforeAnythingAcceptedIsFailure() {
+        val channel = RunChannel({ _, _, _ -> Outcome.failure(DiagCode.SSH_CONNECTION_FAILED, "обрыв", "target") }, run)
+        assertIs<Outcome.Failure>(channel.poll())
+        assertEquals(0L, channel.lastAccepted)
     }
 
     @Test
@@ -105,6 +140,11 @@ class RunChannelTest {
             run,
             pageSize = 5,
         )
+        // Первые пять приняты и отдаются, конфликт — предупреждением (A-2);
+        // следующий опрос упирается в конфликт, ничего не приняв.
+        val first = mixed.poll()
+        assertEquals((1L..5L).toList(), first.valueOrNull()!!.events.map { it.sequence })
+        assertTrue(first.warnings.any { it.code == DiagCode.EVENT_SEQUENCE_CONFLICT })
         val r = mixed.poll()
         assertIs<Outcome.Failure>(r)
         assertEquals(DiagCode.EVENT_SEQUENCE_CONFLICT, r.errors.single().code)

@@ -71,6 +71,12 @@ import kotlin.time.Duration.Companion.seconds
  * - `stop` просит супервизор остановить дерево процессов; если супервизор
  *   потерян — останавливает процесс сам по идентификатору и времени
  *   старта (чужой процесс с тем же идентификатором не трогается).
+ *   Пока супервизор не взял ход (`STARTING`), `stop` журнал не пишет:
+ *   писатель у журнала один (A-4), а супервизор увидит просьбу до запуска
+ *   процесса.
+ * - Удалённый по сроку запуск оставляет надгробие `pruned`
+ *   (`dpai.agent-pruned`): номер хода и последнего события. Следующий ход
+ *   той же сессии продолжает нумерацию, а не начинает с №1 (A-6).
  */
 class AgentRuntime(
     private val home: String,
@@ -81,9 +87,11 @@ class AgentRuntime(
     private val detacher: Detacher = Detacher(),
     private val heartbeatEvery: Duration = 30.seconds,
     private val pollEvery: Duration = 250.milliseconds,
+    private val supervisorWait: Duration = 10.seconds,
 ) {
     private val vfs = NioVfs(Path.of(home))
     private val ids = IdGenerator(clock, RandomSource.secure())
+    private val pace = java.util.concurrent.CountDownLatch(1)
 
     init {
         restrictHome(Path.of(home))
@@ -109,7 +117,7 @@ class AgentRuntime(
                 return AgentReply.failure("start", listOf(Diagnostic.error(DiagCode.INVALID_TRANSITION, why, "run $id")))
             }
         }
-        val turn = (previous?.turn ?: 0) + 1
+        val turn = (previous?.turn ?: pruned(id)?.turn ?: 0) + 1
         val input = JsonObject(buildMap {
             put("turn", JsonNumber.of(turn))
             spec.stdin?.let { put("text", JsonString(it)) }
@@ -140,6 +148,11 @@ class AgentRuntime(
         if (doc.state != RunState.STARTING) {
             return AgentReply.failure("supervise", listOf(Diagnostic.error(DiagCode.INVALID_TRANSITION, "ход уже под супервизором", "run $id")))
         }
+        // Опоздавший супервизор хода не берёт: контроллер мог уже счесть ход потерянным и записать
+        // выход сам (A-4). Запас до START_GRACE — чтобы проверка и решение контроллера не совпали.
+        if (clock.now() - doc.createdAt > SUPERVISOR_DEADLINE) {
+            return AgentReply.failure("supervise", listOf(Diagnostic.error(DiagCode.AGENT_RUN_LOST, "супервизор запущен позже ${SUPERVISOR_DEADLINE}: ход не взят", "run $id")))
+        }
         val stdin = (store.read(INPUT_KEY) as? Outcome.Success)?.value?.content
             ?.takeIf { (it["turn"] as? JsonNumber)?.toLongExact() == doc.turn.toLong() }
             ?.let { (it["text"] as? JsonString)?.value }
@@ -147,14 +160,27 @@ class AgentRuntime(
             is Outcome.Failure -> return AgentReply.failure("supervise", j.diagnostics)
             is Outcome.Success -> j.value
         }
-        val recorder = EventRecorder(ids, clock).apply { resumeFrom(journal.records()) }
         val stream = StreamRef.of(id)
+        val recorder = EventRecorder(ids, clock).apply {
+            resumeFrom(journal.records())
+            pruned(id)?.let { resumeFromLast(mapOf(stream to it.lastSequence)) }
+        }
         val lock = Any()
         fun emit(type: EventType, payload: JsonObject) = synchronized(lock) {
             journal.append(recorder.envelope(type, stream, clock.now(), payload))
         }
         val self = ProcessHandle.current()
         var current = doc.copy(supervisorPid = self.pid(), supervisorStartedAt = ProcessTree.startedAtMillis(self))
+        // Супервизор записывает себя до запуска процесса: так stop находит его и просит, а не пишет сам (A-4).
+        store.write(RUN_KEY, current.toJson()).let { if (it is Outcome.Failure) return AgentReply.failure("supervise", it.diagnostics) }
+        if (stopRequest(store, doc.turn) != null) {
+            // Остановку попросили раньше, чем ход начался: процесс не запускается.
+            if (stdin != null) store.delete(INPUT_KEY)
+            emit(EventType.TARGET_PROCESS_EXITED, exitPayload(doc.turn, null, ExitReason.STOPPED, emptyList()))
+            current = current.copy(state = RunState.EXITED, reason = ExitReason.STOPPED)
+            store.write(RUN_KEY, current.toJson())
+            return AgentReply("supervise", ok = true, run = current.status(journal.position))
+        }
         val env = HashMap(System.getenv()).apply {
             doc.spec.unsetEnv.forEach { remove(it) }
             putAll(doc.spec.setEnv)
@@ -278,23 +304,59 @@ class AgentRuntime(
             is Outcome.Success -> s.value
         }
         if (doc.state == RunState.EXITED) return AgentReply("stop", ok = true, run = doc.status(last), stop = StopResult(false, emptyList()))
+        if (doc.state == RunState.STARTING && doc.supervisorPid == null) return stopBeforeSupervisor(id, doc, last, grace, store)
         val supervisor = doc.supervisorPid?.let { ProcessTree.find(it, doc.supervisorStartedAt) }
-        if (supervisor != null) {
-            store.write(STOP_KEY, JsonObject.of("turn" to JsonNumber.of(doc.turn), "graceSeconds" to JsonNumber.of(grace.inWholeSeconds.coerceAtLeast(1))))
-            val waited = runCatching { supervisor.onExit().get((grace + SUPERVISOR_EXTRA).inWholeMilliseconds, TimeUnit.MILLISECONDS) }.isSuccess
-            if (waited) {
-                val after = observe(id)
-                if (after is Outcome.Success) {
-                    return AgentReply("stop", ok = true, run = after.value.first.status(after.value.second), stop = StopResult(false, emptyList()))
-                }
-            }
-            // Супервизор не уложился — останавливается он сам вместе со своим деревом.
-            return stopLost(id, doc, last, ProcessTree.stop(supervisor, grace, clock), store)
-        }
+        if (supervisor != null) return stopWithSupervisor(id, doc, last, supervisor, grace, store)
         // Супервизор потерян: процесс останавливается по идентификатору и времени старта.
         val child = doc.pid?.let { ProcessTree.find(it, doc.pidStartedAt) }
         val r = child?.let { ProcessTree.stop(it, grace, clock) } ?: ProcessTree.Result(false, emptyList())
         return stopLost(id, doc, last, r, store)
+    }
+
+    private fun requestStop(store: DocumentStore, turn: Int, grace: Duration) {
+        store.write(STOP_KEY, JsonObject.of("turn" to JsonNumber.of(turn), "graceSeconds" to JsonNumber.of(grace.inWholeSeconds.coerceAtLeast(1))))
+    }
+
+    private fun stopWithSupervisor(id: SessionId, doc: RunDoc, last: Long, supervisor: ProcessHandle, grace: Duration, store: DocumentStore): AgentReply {
+        requestStop(store, doc.turn, grace)
+        val waited = runCatching { supervisor.onExit().get((grace + SUPERVISOR_EXTRA).inWholeMilliseconds, TimeUnit.MILLISECONDS) }.isSuccess
+        if (waited) {
+            val after = observe(id)
+            if (after is Outcome.Success) {
+                return AgentReply("stop", ok = true, run = after.value.first.status(after.value.second), stop = StopResult(false, emptyList()))
+            }
+        }
+        // Супервизор не уложился — останавливается он сам вместе со своим деревом.
+        return stopLost(id, doc, last, ProcessTree.stop(supervisor, grace, clock), store)
+    }
+
+    /**
+     * Ход записан, а супервизор ещё не взял его (A-4): он запущен отдельно и
+     * может прийти в любой момент. Писать выход самому — значит завести
+     * второго писателя журнала, а супервизор потом запустил бы Claude без
+     * контроля. Просьба остановиться записывается, и `stop` ждёт, пока
+     * супервизор запишет себя или выход; не дождался — отвечает
+     * `AGENT_STOP_PENDING`: процесс не запущен и не запустится. Супервизор,
+     * опоздавший дольше [SUPERVISOR_DEADLINE], хода не берёт, а ход без
+     * супервизора дольше [START_GRACE] — `LOST`, его выход пишет `stop`.
+     */
+    private fun stopBeforeSupervisor(id: SessionId, doc: RunDoc, last: Long, grace: Duration, store: DocumentStore): AgentReply {
+        requestStop(store, doc.turn, grace)
+        val polls = (supervisorWait.inWholeMilliseconds / pollEvery.inWholeMilliseconds.coerceAtLeast(1)).coerceAtLeast(1)
+        repeat(polls.toInt()) {
+            pace.await(pollEvery.inWholeMilliseconds, TimeUnit.MILLISECONDS)
+            val (now, lastNow) = (observe(id) as? Outcome.Success)?.value ?: return@repeat
+            when {
+                now.state == RunState.EXITED -> return AgentReply("stop", ok = true, run = now.status(lastNow), stop = StopResult(false, emptyList()))
+                now.supervisorPid != null -> {
+                    val supervisor = ProcessTree.find(now.supervisorPid, now.supervisorStartedAt)
+                    return if (supervisor != null) stopWithSupervisor(id, now, lastNow, supervisor, grace, store) else stop(id, grace)
+                }
+                now.state == RunState.LOST -> return stop(id, grace)
+            }
+        }
+        val pending = Diagnostic.warning(DiagCode.AGENT_STOP_PENDING, "супервизор ещё не взял ход ${doc.turn}: остановка запрошена, процесс не запустится", "run $id")
+        return AgentReply("stop", ok = true, diagnostics = listOf(pending), run = doc.status(last), stop = StopResult(false, emptyList()))
     }
 
     private fun stopLost(id: SessionId, doc: RunDoc, last: Long, r: ProcessTree.Result, store: DocumentStore): AgentReply {
@@ -351,7 +413,11 @@ class AgentRuntime(
     }
 
     private fun lastSequence(id: SessionId): Long =
-        EventJournal.readCommitted(vfs, journalPath(id)).valueOrNull()?.lastOrNull()?.event?.sequence ?: 0
+        maxOf(EventJournal.readCommitted(vfs, journalPath(id)).valueOrNull()?.lastOrNull()?.event?.sequence ?: 0, pruned(id)?.lastSequence ?: 0)
+
+    /** Надгробие удалённого по сроку запуска (A-6): с какого хода и номера продолжать. */
+    private fun pruned(id: SessionId): PrunedDoc? =
+        (docs(id).read(PRUNED_KEY) as? Outcome.Success)?.value?.let { PrunedDoc.read(it.content) }
 
     private fun invalidDoc(command: String, id: SessionId) =
         AgentReply.failure(command, listOf(Diagnostic.error(DiagCode.STORAGE_CORRUPTED, "документ запуска не прочитан", "run $id")))
@@ -387,10 +453,17 @@ class AgentRuntime(
 
     /**
      * Хранение журналов запусков (аудит 2026-10-07, A-5): завершённый
-     * запуск, последний ход которого начат раньше [olderThan], удаляется
-     * целиком — документы, журнал событий, журнал супервизора. Идущие и
+     * запуск, последний ход которого начат раньше [olderThan], удаляется —
+     * документ запуска, вход, журнал событий, журнал супервизора. Идущие и
      * потерянные (`LOST`: процесс может быть жив) не трогаются. Вызывается
      * при каждом `start`; возвращает, сколько удалено.
+     *
+     * Остаётся надгробие `pruned` — номер хода и последнего события, без
+     * текста хода (A-6): сессия, приостановленная недельным пределом,
+     * продолжается позже срока, и её следующий ход должен продолжить
+     * нумерацию — иначе контроллер видит под принятыми номерами другие
+     * события и теряет весь ход. Надгробие пишется до удаления: прерванное
+     * удаление нумерацию не сбрасывает.
      */
     fun prune(olderThan: Duration, keep: SessionId? = null): Int {
         val dirs = File(home, "runs").listFiles { f -> f.isDirectory }.orEmpty()
@@ -400,9 +473,13 @@ class AgentRuntime(
             if (id == keep) continue
             val doc = (docs(id).read(RUN_KEY) as? Outcome.Success)?.value?.let { RunDoc.read(it.content) } ?: continue
             if (doc.state != RunState.EXITED || clock.now() - doc.createdAt < olderThan) continue
+            val tomb = PrunedDoc(doc.turn, lastSequence(id), clock.now())
+            if (docs(id).write(PRUNED_KEY, tomb.toJson()) is Outcome.Failure) continue
             try {
-                for (f in vfs.list(runDir(id))) vfs.delete("${runDir(id)}/$f")
-                vfs.delete(runDir(id))
+                for (f in vfs.list(runDir(id))) {
+                    if (f == PRUNED_KEY || f.startsWith("$PRUNED_KEY.")) continue
+                    vfs.delete("${runDir(id)}/$f")
+                }
                 removed++
             } catch (_: java.io.IOException) {
                 // Не удалилось (файл занят) — попробуем при следующем start.
@@ -437,11 +514,15 @@ class AgentRuntime(
         const val RUN_KEY = "run"
         const val INPUT_KEY = "input"
         const val STOP_KEY = "stop-request"
+        const val PRUNED_KEY = "pruned"
         private val TOOL_TIMEOUT = 20.seconds
         private val SUPERVISOR_EXTRA = 10.seconds
 
         /** Сколько ждать, пока супервизор запишет себя, прежде чем считать ход потерянным. */
         val START_GRACE: Duration = 60.seconds
+
+        /** Позже этого супервизор хода не берёт (A-4): запас до [START_GRACE], после которого ход — `LOST`. */
+        val SUPERVISOR_DEADLINE: Duration = 30.seconds
     }
 }
 
@@ -504,6 +585,39 @@ internal data class RunDoc(
             f.finish()
             if (d.hasErrors || id == null || spec == null || created == null || state == null || turn == null) return null
             return RunDoc(id, spec, created, state, turn, supervisorPid, supervisorStartedAt, pid, pidStartedAt, exitCode, reason)
+        }
+    }
+}
+
+/**
+ * Надгробие удалённого по сроку запуска `dpai.agent-pruned` v1
+ * (`docs/DATA_MODEL.md`, §4; A-6): номер последнего хода и последнего
+ * события потока сессии. Текста хода в нём нет — срок хранения A-5
+ * соблюдается.
+ */
+internal data class PrunedDoc(val turn: Int, val lastSequence: Long, val prunedAt: Timestamp) {
+    fun toJson(): JsonObject {
+        val f = linkedMapOf<String, JsonValue>(*FormatHeader.write(FORMAT, VERSION))
+        f["turn"] = JsonNumber.of(turn)
+        f["lastSequence"] = JsonNumber.of(lastSequence)
+        f["prunedAt"] = JsonNumber.of(prunedAt.epochMillis)
+        return JsonObject(f)
+    }
+
+    companion object {
+        const val FORMAT = "dpai.agent-pruned"
+        const val VERSION = 1
+
+        fun read(value: JsonObject): PrunedDoc? {
+            val d = DiagnosticCollector()
+            val f = JsonFields(value, "$", d)
+            FormatHeader.read(f, FORMAT, VERSION..VERSION, d) ?: return null
+            val turn = f.int("turn")
+            val last = f.long("lastSequence")
+            val at = f.long("prunedAt")?.let(::Timestamp)
+            f.finish()
+            if (d.hasErrors || turn == null || last == null || at == null) return null
+            return PrunedDoc(turn, last, at)
         }
     }
 }
