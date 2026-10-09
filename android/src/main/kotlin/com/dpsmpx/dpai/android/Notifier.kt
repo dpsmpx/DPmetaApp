@@ -41,13 +41,7 @@ class Notifier(private val context: Context) {
             // Нажатие открывает приложение — то же окно, а не второе поверх (ревью 8 октября 2026);
             // ссылка уведомления — к задаче или сессии (ТЗ, §76).
             .setContentIntent(n.link?.let { openLink(context, it.toUri()) } ?: openApp(context))
-        for ((i, a) in n.actions.withIndex()) {
-            // Кнопка — только через свой неэкспортируемый приёмник (A-7, T10):
-            // чужое приложение не пришлёт ссылку одобрения.
-            val intent = Intent(context, ApprovalReceiver::class.java).setAction(ApprovalReceiver.ACTION).putExtra(ApprovalReceiver.URI, a.uri).putExtra(ApprovalReceiver.KEY, n.key)
-            val pending = PendingIntent.getBroadcast(context, (n.key.hashCode() * 31) + i, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-            builder.addAction(AndroidNotification.Action.Builder(null as Icon?, a.label, pending).build())
-        }
+        // Кнопок у сведений нет: решения человека — запросы (D-44, D-49), их показывает RequestPresenter.
         manager.notify(n.key.hashCode(), builder.build())
     }
 
@@ -95,51 +89,5 @@ class Notifier(private val context: Context) {
             c.rank >= NotificationCategory.WARNING.rank -> NotificationManager.IMPORTANCE_DEFAULT
             else -> NotificationManager.IMPORTANCE_LOW
         }
-    }
-}
-
-/**
- * Нажатая кнопка уведомления (D-10, A-7): приёмник не экспортируется,
- * ссылку разбирает и проверяет хеш предложения оркестратор. Исход —
- * новым уведомлением в том же ключе: принято или почему нет.
- */
-class ApprovalReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action != ACTION) return
-        val uri = intent.getStringExtra(URI) ?: return
-        val key = intent.getStringExtra(KEY) ?: return
-        val pending = goAsync()
-        val app = context.applicationContext
-        // Ответ ждёт конца такта (DemoModel — один замок на такт с вызовами по
-        // SSH), а такт идёт минутами. Пока работает служба контроллера, процесс
-        // жив и без приёмника: широковещание отпускается сразу, иначе система
-        // объявит ANR и убьёт процесс вместе со службой.
-        val detached = ControllerService.running
-        if (detached) pending.finish()
-        worker.execute {
-            try {
-                val result = DemoModel.get(app).respond(uri)
-                val notifier = Notifier(app)
-                notifier.cancel(key)
-                val text = when (result) {
-                    is Outcome.Success -> if (result.value) "Принято." else "Запрос уже решён или заменён."
-                    is Outcome.Failure -> "Не принято: " + result.diagnostics.first().message
-                }
-                notifier.show(
-                    Notification("$key:answer", NotificationCategory.INFO, "Ответ на запрос", text, null, 1, nowStamp(), nowStamp()),
-                )
-            } finally {
-                if (!detached) pending.finish()
-            }
-        }
-    }
-
-    companion object {
-        const val ACTION = "com.dpsmpx.dpai.APPROVAL"
-        const val URI = "uri"
-        const val KEY = "key"
-        private val worker = Executors.newSingleThreadExecutor()
-
-        private fun nowStamp() = com.dpsmpx.dpai.core.clock.Clock.SYSTEM.now()
     }
 }

@@ -54,7 +54,6 @@ import com.dpsmpx.dpai.git.Worktrees
 import com.dpsmpx.dpai.git.WorktreesState
 import com.dpsmpx.dpai.monitoring.Dashboard
 import com.dpsmpx.dpai.monitoring.DashboardView
-import com.dpsmpx.dpai.notifications.ApprovalAction
 import com.dpsmpx.dpai.notifications.DeepLink
 import com.dpsmpx.dpai.notifications.NotificationCategory
 import com.dpsmpx.dpai.notifications.NotificationDecision
@@ -206,7 +205,6 @@ class Orchestrator(
     private val router = ModelRouter(efficiency.routing)
     val handoffs = Handoffs()
     private val overlap = OverlapPolicy()
-    val approvals = ApprovalDesk()
     val notifications = NotificationEngine()
     val posted = mutableListOf<NotificationDecision>()
 
@@ -282,8 +280,6 @@ class Orchestrator(
             requests = restore(UserRequestsProjection, UserRequestsState.EMPTY)
             operations = restore(OperationsProjection, OperationsState.EMPTY)
             control = restore(com.dpsmpx.dpai.orchestrator.commands.ControlProjection, com.dpsmpx.dpai.orchestrator.commands.ControlState.EMPTY)
-            // Неистёкшие запросы одобрения снова ждут ответа; истёкшие отвергнет сам ApprovalDesk.
-            for (m in mergesState.pending.values) approvals.restore(m.approval, m.proposal, m.expiresAt)
             lastSnapshotAt = journal.position
             // Дерево задачи узнаётся по её ветке (`prepareWorktree`): владельцы и пути — из журнала.
             for (w in worktrees.worktrees.values.filter { !it.removed }) {
@@ -908,43 +904,53 @@ class Orchestrator(
         val repo = config.repository ?: return
         val target = config.integrationBranch ?: return
         val proposal = Proposal("git.merge", "${repo.root}#$target", listOf(branch))
-        val id = ids.next(IdKinds.APPROVAL)
-        // Сначала журнал: после перезапуска запрос снова ждёт ответа.
-        commitMerges(listOf(MergeEvent.Requested(PendingMerge(task, id, proposal, clock.now() + approvals.ttl), clock.now())))
-        // Подпись — для человека: какая задача и куда; одобряется по-прежнему предложение (хеш, ТЗ, §68).
-        notify(
-            approvals.request(
-                id, proposal, clock.now(),
-                title = "Слить в $target: ${taskTitle(task)}",
-                body = "Ветка задачи $branch → $target. Проверка прошла.",
-                link = DeepLink.of(DeepLink.Kind.TASK, task),
-            ),
-        )
+        // Сначала журнал: после перезапуска слияние снова ждёт ответа (askMerges в такте).
+        commitMerges(listOf(MergeEvent.Requested(PendingMerge(task, ids.next(IdKinds.APPROVAL), proposal, clock.now() + requestTtl), clock.now())))
+        askMerge(mergesState.pending.values.first { it.task == task })
     }
 
     /**
-     * Ответ на кнопку одобрения (ТЗ, §37, §68): слияние ветки задачи в ветку
-     * интеграции — только по действительному одобрению своего предложения.
+     * Запрос «Слить?» (D-49) — обычный запрос человеку (D-44): уведомление,
+     * окно поверх приложений, вкладка «Запросы», `dpai answer`. Ветка и
+     * цель — в тексте, под хешем запроса: ответ на другое предложение не
+     * пройдёт. [failure] — почему прошлое слияние не удалось (A-30).
      */
-    fun respond(uri: String, by: String): Outcome<Boolean> {
-        val approval = when (val r = approvals.respond(uri, by, clock.now())) {
-            is Outcome.Failure -> return r
-            is Outcome.Success -> r.value
+    private fun askMerge(m: PendingMerge, failure: String? = null) {
+        val target = m.proposal.subject.substringAfterLast('#')
+        val branch = m.proposal.arguments.joinToString(" ")
+        val body = (failure?.let { "Слияние не удалось: $it. " } ?: "Проверка прошла. ") + "Ветка задачи $branch → $target."
+        ask(
+            RequestPurpose.TASK_MERGE, RequestKind.CONFIRMATION, "task:${m.task.value}:merge",
+            "Слить в $target: ${taskTitle(m.task)}", body,
+            listOf(RequestOption(MERGE, if (failure == null) "Слить" else "Повторить слияние", OptionRole.ACCEPT), RequestOption(DECLINE, "Не сливать", OptionRole.REJECT)),
+            m.task, null,
+        )
+    }
+
+    /** Ждущие слияния без ждущего запроса (истёк, перезапуск, прежний механизм одобрений) — спросить снова (A-51). */
+    private fun askMerges() {
+        for (m in mergesState.pending.values.sortedBy { it.approval.value }) {
+            if (requests.pendingFor("task:${m.task.value}:merge") == null) askMerge(m)
         }
-        if (approval == null) {
-            // Отказ: запрос снят — и в журнале, чтобы после перезапуска он не ждал ответа снова.
-            ApprovalAction.parse(uri).valueOrNull()?.let { a -> mergesState.pending[a.request] }?.let { m ->
-                commitMerges(listOf(MergeEvent.Declined(m.task, m.approval, clock.now())))
+    }
+
+    /** Ответ на запрос слияния: «Слить» — `git merge` предложения из журнала, «Не сливать» — отказ в журнал. */
+    private fun resolveMerge(task: TaskId, option: String): Outcome<String> {
+        val pending = mergesState.pending.values.firstOrNull { it.task == task }
+            ?: return Outcome.failure(DiagCode.REQUEST_NOT_PENDING, "слияние задачи уже не ждёт ответа", "task $task")
+        return when (option) {
+            DECLINE -> Outcome.success("слияние отклонено").also { commitMerges(listOf(MergeEvent.Declined(task, pending.approval, clock.now()))) }
+            MERGE -> {
+                val repo = config.repository ?: return Outcome.failure(DiagCode.UNSUPPORTED, "у проекта нет репозитория")
+                val g = git ?: return Outcome.failure(DiagCode.UNSUPPORTED, "нет Git")
+                when (val m = g.run(GitOp.MERGE, repo.root, pending.proposal.arguments)) {
+                    is Outcome.Failure -> m
+                    is Outcome.Success -> Outcome.success("слито в ${pending.proposal.subject.substringAfterLast('#')}").also {
+                        commitMerges(listOf(MergeEvent.Merged(task, pending.approval, clock.now())))
+                    }
+                }
             }
-            return Outcome.success(false)
-        }
-        val pending = mergesState.pending[approval.id] ?: return Outcome.failure(DiagCode.APPROVAL_INVALID, "одобрение не к слиянию")
-        if (pending.proposal.hash != approval.proposalHash) return Outcome.failure(DiagCode.APPROVAL_INVALID, "одобрено другое предложение")
-        val repo = config.repository!!
-        val g = git ?: return Outcome.failure(DiagCode.UNSUPPORTED, "нет Git")
-        return when (val m = g.run(GitOp.MERGE, repo.root, pending.proposal.arguments)) {
-            is Outcome.Failure -> m
-            is Outcome.Success -> Outcome.success(true).also { commitMerges(listOf(MergeEvent.Merged(pending.task, approval.id, clock.now()))) }
+            else -> Outcome.failure(DiagCode.REQUEST_ANSWER_INVALID, "вариант «$option» не к этому запросу")
         }
     }
 
@@ -1486,11 +1492,16 @@ class Orchestrator(
             RequestPurpose.PROBE, RequestPurpose.RECOVERY -> Outcome.success("записано")
             RequestPurpose.TASK_BLOCKED -> resolveBlocked(r.task!!, a.option.id, a.text)
             RequestPurpose.TASK_UNVERIFIED -> resolveUnverified(r.task!!, a.option.id, by)
+            RequestPurpose.TASK_MERGE -> resolveMerge(r.task!!, a.option.id)
             null -> Outcome.failure(DiagCode.UNSUPPORTED, "назначение запроса неизвестно: ${r.purpose}")
         }
         return when (effect) {
             is Outcome.Failure -> effect.also {
                 commitRequests(listOf(RequestEvent.Failed(r.id, a.option.id, effect.errors.first().code, clock.now())))
+                // Слияние не удалось (конфликт и т. п.) — сразу новый запрос с причиной, а не потерянная кнопка (A-30).
+                if (RequestPurpose.of(r.purpose) == RequestPurpose.TASK_MERGE) {
+                    mergesState.pending.values.firstOrNull { it.task == r.task }?.let { askMerge(it, effect.errors.first().message) }
+                }
             }
             is Outcome.Success -> {
                 val answer = RequestAnswer(a.option.id, a.text, by, clock.now(), effect.value, channel?.takeIf { CHANNEL.matches(it) })
@@ -1571,6 +1582,7 @@ class Orchestrator(
         }
         val es = UserRequests.expire(requests, now) + stale.filter { !it.expired(now) }.map { RequestEvent.Cancelled(it.id, DiagCode.REQUEST_NOT_PENDING, now) }
         if (es.isNotEmpty()) commitRequests(es)
+        askMerges()
     }
 
     /** Сколько записей в журнале контура (рост хранилища, ТЗ, §116). */
@@ -1637,7 +1649,7 @@ class Orchestrator(
     fun usage(): com.dpsmpx.dpai.monitoring.UsageReport = com.dpsmpx.dpai.monitoring.UsageReport.build(sessions, tasks)
 
     fun dashboard(): DashboardView =
-        Dashboard.build(sessions, tasks, accounts, emptyMap(), Measure.observed(approvals.pending()), sessionsLogic, clock.now())
+        Dashboard.build(sessions, tasks, accounts, emptyMap(), Measure.observed(mergesState.pending.size), sessionsLogic, clock.now())
 
     companion object {
         /** Сессии, которые не опрашиваются: ждут человека или сверки. */
@@ -1671,6 +1683,8 @@ class Orchestrator(
         const val LATER = "later"
         const val ACK = "ack"
         const val VERIFY = "verify"
+        const val MERGE = "merge"
+        const val DECLINE = "decline"
 
         /** Канал ответа — короткое слово латиницей (`notification`, `overlay`, `app`, `cli`). */
         private val CHANNEL = Regex("[a-z]{1,16}")

@@ -1,5 +1,6 @@
 package com.dpsmpx.dpai.tests.integration
 
+import com.dpsmpx.dpai.core.operation.OperationStatus
 import com.dpsmpx.dpai.accounts.Accounts
 import com.dpsmpx.dpai.accounts.AccountsState
 import com.dpsmpx.dpai.accounts.AuthStatus
@@ -46,6 +47,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
 import org.junit.jupiter.api.io.TempDir
 
@@ -204,11 +206,11 @@ class V1ScenariosTest {
         assertEquals("PASSED", orchestrator.tasks.tasks.getValue(t).verification!!.verdict)
         val log = host.run(ProcessSpec(listOf("git", "-C", tree.path, "log", "--format=%s", "-n", "1")), 1.minutes).valueOrNull()!!.stdout
         assertEquals(listOf("dpai: фича"), log, "коммит в ветке задачи")
-        // Слияние в main — чувствительно: ждёт одобрения.
+        // Слияние в main — чувствительно: ждёт ответа человека на запрос (D-49).
         assertFalse(File(repo.root, "feature.txt").exists(), "без одобрения main не тронут")
-        val request = orchestrator.posted.filterIsInstance<NotificationDecision.Post>().single { it.notification.actions.isNotEmpty() }.notification
+        val request = mergeRequest()
         assertEquals(1, orchestrator.dashboard().waitingApproval.orNull())
-        assertEquals(true, orchestrator.respond(request.actions.first().uri, "автор").valueOrNull())
+        assertEquals(OperationStatus.SUCCEEDED, orchestrator.answer(request.id, "merge", null, request.hash, "автор").status)
         assertTrue(File(repo.root, "feature.txt").exists(), "после одобрения — слито")
         assertEquals(listOf(t), orchestrator.merged)
         assertEquals(emptyList(), orchestrator.invariants(), "слияние — с записью одобрения")
@@ -227,11 +229,12 @@ class V1ScenariosTest {
         val tree = orchestrator.worktrees.worktrees.values.single { it.owner != null }
         File(tree.path, "feature.txt").writeText("новая возможность\n")
         runUntilQuiet(3)
-        val request = orchestrator.posted.filterIsInstance<NotificationDecision.Post>().single { it.notification.actions.isNotEmpty() }.notification
+        val request = mergeRequest()
 
         boot()
         assertEquals(1, orchestrator.dashboard().waitingApproval.orNull(), "запрос ждёт ответа и после перезапуска")
-        assertEquals(true, orchestrator.respond(request.actions.first().uri, "автор").valueOrNull())
+        assertEquals(request.id, mergeRequest().id, "тот же запрос, не второй")
+        assertEquals(OperationStatus.SUCCEEDED, orchestrator.answer(request.id, "merge", null, request.hash, "автор").status)
         assertTrue(File(repo.root, "feature.txt").exists())
 
         boot()
@@ -239,6 +242,52 @@ class V1ScenariosTest {
         assertEquals(0, orchestrator.dashboard().waitingApproval.orNull())
         assertEquals(emptyList(), orchestrator.invariants())
     }
+
+    /**
+     * Сбой слияния (A-30): запрос не теряется — приходит новый с причиной и
+     * «Повторить слияние»; «Не сливать» снимает слияние, main не тронут.
+     */
+    @Test
+    fun scenario4MergeFailureAsksAgainAndDeclineLeavesMain() {
+        setUp(slots = 1)
+        val t = task("фича", MockScenario.SLOW_OUTPUT)
+        orchestrator.tick()
+        val tree = orchestrator.worktrees.worktrees.values.single { it.owner != null }
+        File(tree.path, "feature.txt").writeText("новая возможность\n")
+        runUntilQuiet(3)
+        val first = mergeRequest()
+        // Ветку задачи удалили до ответа — git merge откажет.
+        host.run(ProcessSpec(listOf("git", "-C", repo.root, "worktree", "remove", "--force", tree.path)), 1.minutes)
+        host.run(ProcessSpec(listOf("git", "-C", repo.root, "branch", "-D", tree.branch)), 1.minutes)
+        assertEquals(OperationStatus.FAILED, orchestrator.answer(first.id, "merge", null, first.hash, "автор").status)
+        val again = mergeRequest()
+        assertTrue(again.id != first.id && "Слияние не удалось" in again.body, again.body)
+        assertEquals("Повторить слияние", again.options.first().label)
+        assertEquals(OperationStatus.SUCCEEDED, orchestrator.answer(again.id, "decline", null, again.hash, "автор").status)
+        assertEquals(0, orchestrator.dashboard().waitingApproval.orNull())
+        assertTrue(orchestrator.pendingRequests().none { it.purpose == "task.merge" }, "отказ — запрос не возвращается")
+        assertFalse(File(repo.root, "feature.txt").exists())
+        assertEquals(emptyList<TaskId>(), orchestrator.merged)
+    }
+
+    /** Запрос истёк, слияние ждёт (A-51): такт спрашивает снова, а не теряет слияние. */
+    @Test
+    fun expiredMergeRequestIsAskedAgain() {
+        setUp(slots = 1)
+        val t = task("фича", MockScenario.SLOW_OUTPUT)
+        orchestrator.tick()
+        File(orchestrator.worktrees.worktrees.values.single { it.owner != null }.path, "feature.txt").writeText("новая возможность\n")
+        runUntilQuiet(3)
+        val first = mergeRequest()
+        clock.advance(25.hours)
+        orchestrator.tick()
+        val again = mergeRequest()
+        assertTrue(again.id != first.id, "истёкший — заменён новым")
+        assertEquals(OperationStatus.SUCCEEDED, orchestrator.answer(again.id, "merge", null, again.hash, "автор").status)
+        assertEquals(listOf(t), orchestrator.merged)
+    }
+
+    private fun mergeRequest() = orchestrator.pendingRequests().single { it.purpose == "task.merge" }
 }
 
 /** Раннер, запоминающий запросы ходов: что оркестратор передаёт Claude. */

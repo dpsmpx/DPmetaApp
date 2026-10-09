@@ -96,8 +96,8 @@ class LiveProjectTest {
         assertTrue(tree.path.startsWith(worktrees), "дерево задачи — в каталоге деревьев проекта")
         // Слияние в main — только по одобрению.
         assertTrue(!File(root, "feature.txt").exists())
-        val request = s.drainNotifications().single { it.actions.isNotEmpty() }
-        assertEquals(true, s.respond(request.actions.first().uri).valueOrNull())
+        val request = s.orchestrator.pendingRequests().single { it.purpose == "task.merge" }
+        assertEquals(com.dpsmpx.dpai.core.operation.OperationStatus.SUCCEEDED, s.orchestrator.answer(request.id, "merge", null, request.hash, "автор").status)
         assertTrue(File(root, "feature.txt").exists(), "после одобрения — слито в main")
         assertEquals(listOf(task), s.orchestrator.merged)
         assertTrue(s.orchestrator.posted.none { it is NotificationDecision.Held })

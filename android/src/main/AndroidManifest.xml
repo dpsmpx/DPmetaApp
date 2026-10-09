@@ -42,10 +42,6 @@
             android:name=".InternalEntry"
             android:exported="false"
             android:targetActivity=".MainActivity" />
-        <!-- Кнопки уведомлений — только через PendingIntent своего уведомления (A-7). -->
-        <receiver
-            android:name=".ApprovalReceiver"
-            android:exported="false" />
         <!-- Ответы на запросы — только через PendingIntent своего уведомления (D-44). -->
         <receiver
             android:name=".RequestReceiver"
