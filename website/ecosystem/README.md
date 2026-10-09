@@ -12,8 +12,10 @@
 | `dpvis-data.json` | публичная выжимка `dpvis-public/1`: модель и срез без закрытых подробностей |
 | `MANIFEST.json` | sha256 файлов и даты модели и среза |
 
-Происхождение: DPvisualisation, ветка `claude/eager-wozniak-krzsx4`, коммит
-`48095ef`. Срез — 06.10.2026 (17:42 UTC), по клонам репозиториев экосистемы.
+Происхождение: DPvisualisation 1.0.0, ветка `claude/dreamy-bardeen-xe4k6r`,
+коммит `ce0ada3` (в `main` DPvisualisation ещё не влит). Срез — 09.10.2026
+(15:20 UTC), по клонам 20 репозиториев экосистемы. Схема без анимаций,
+связи — прямые, по ширине экрана без прокрутки вбок (DPvisualisation D-16).
 
 Обновить (сессия или автор):
 1. В клоне DPvisualisation: `python3 -m tools.dpvis collect --root <клоны>`.

@@ -2,7 +2,7 @@
  "schema": "dpvis-public/1",
  "model": {
   "title": "Экосистема dpsmpx",
-  "as_of": "2026-10-05",
+  "as_of": "2026-10-09",
   "timezone": "+03:00",
   "layers": [
    {
@@ -78,6 +78,11 @@
      "driver": "data",
      "id": "metrics",
      "name": "числа и счётчики"
+    },
+    {
+     "driver": "data",
+     "id": "format",
+     "name": "формат данных"
     },
     {
      "driver": "check",
@@ -221,6 +226,17 @@
     "stage": "версия 0.3.0: этапы 0–3 из 0–8"
    },
    {
+    "id": "orchestrator",
+    "kind": "repo",
+    "layer": "engineering",
+    "name": "DP_AI_Orcestrator",
+    "group": "new",
+    "status": "active",
+    "visibility": "private",
+    "role": "управляющий слой для параллельных сессий ИИ: задачи, контекст, проверка результата",
+    "stage": "первая версия в разработке"
+   },
+   {
     "id": "dpprofile",
     "kind": "repo",
     "layer": "knowledge",
@@ -306,7 +322,7 @@
     "status": "active",
     "visibility": "private",
     "role": "интерактивная модель экосистемы на реальных данных — эта схема",
-    "stage": "просмотрщик и сборка для сайта; дальше — живой режим"
+    "stage": "версия 1.0"
    },
    {
     "id": "github",
@@ -502,6 +518,16 @@
     "what": "коммиты и PR сессий ИИ"
    },
    {
+    "id": "work.orchestrator",
+    "from": "claude",
+    "to": "orchestrator",
+    "kind": "work",
+    "driver": "ai",
+    "status": "active",
+    "bidirectional": false,
+    "what": "коммиты и PR сессий ИИ"
+   },
+   {
     "id": "decide.galdhold",
     "from": "author",
     "to": "galdhold",
@@ -605,6 +631,16 @@
     "id": "decide.dpvisualisation",
     "from": "author",
     "to": "dpvisualisation",
+    "kind": "decision",
+    "driver": "human",
+    "status": "active",
+    "bidirectional": false,
+    "what": "решения автора и вливание PR"
+   },
+   {
+    "id": "decide.orchestrator",
+    "from": "author",
+    "to": "orchestrator",
     "kind": "decision",
     "driver": "human",
     "status": "active",
@@ -900,6 +936,16 @@
     "what": "схема для пульта"
    },
    {
+    "id": "vis.dpvisualisation.smi",
+    "from": "dpvisualisation",
+    "to": "smi",
+    "kind": "format",
+    "driver": "data",
+    "status": "active",
+    "bidirectional": false,
+    "what": "эта схема для сайта"
+   },
+   {
     "id": "app.dpmeta.dpmetaapp",
     "from": "dpmeta",
     "to": "dpmetaapp",
@@ -928,6 +974,36 @@
     "status": "planned",
     "bidirectional": false,
     "what": "данные для пульта"
+   },
+   {
+    "id": "orc.orchestrator.claude",
+    "from": "orchestrator",
+    "to": "claude",
+    "kind": "work",
+    "driver": "ai",
+    "status": "planned",
+    "bidirectional": false,
+    "what": "управление сессиями ИИ"
+   },
+   {
+    "id": "orc.dpmeta.orchestrator",
+    "from": "dpmeta",
+    "to": "orchestrator",
+    "kind": "format",
+    "driver": "data",
+    "status": "planned",
+    "bidirectional": false,
+    "what": "карта экосистемы для управления сессиями"
+   },
+   {
+    "id": "orc.orchestrator.dpmetaapp",
+    "from": "orchestrator",
+    "to": "dpmetaapp",
+    "kind": "delivery",
+    "driver": "check",
+    "status": "planned",
+    "bidirectional": false,
+    "what": "управляющий слой войдёт в пульт"
    },
    {
     "id": "mon.dpmeta.dpmonetization",
@@ -995,7 +1071,7 @@
   }
  },
  "state": {
-  "as_of": "2026-10-06T17:42:33Z",
+  "as_of": "2026-10-09T15:20:54Z",
   "generated_by": {
    "rules_version": 1,
    "tool": "DPvisualisation",
@@ -1003,8 +1079,8 @@
   },
   "window": {
    "days": 30,
-   "end": "2026-10-06",
-   "start": "2026-09-07",
+   "end": "2026-10-09",
+   "start": "2026-09-10",
    "timezone": "+03:00"
   },
   "rules": {
@@ -1026,15 +1102,12 @@
    },
    "galdhold": {
     "activity": {
-     "state": "working",
-     "last": "2026-10-06"
+     "state": "idle",
+     "last": "2026-10-08"
     },
     "git": {
      "days": {
       "ai": [
-       0,
-       0,
-       0,
        0,
        13,
        45,
@@ -1061,12 +1134,12 @@
        108,
        32,
        32,
+       9,
+       27,
+       19,
        0
       ],
       "human": [
-       0,
-       0,
-       0,
        0,
        2,
        0,
@@ -1093,21 +1166,24 @@
        0,
        1,
        0,
-       1
+       1,
+       0,
+       2,
+       0
       ]
      },
      "first_date": "2026-09-11",
-     "head_date": "2026-10-06",
+     "head_date": "2026-10-08",
      "window": {
-      "ai": 618,
-      "human": 67
+      "ai": 673,
+      "human": 69
      }
     }
    },
    "dplang": {
     "activity": {
      "state": "idle",
-     "last": "2026-10-05"
+     "last": "2026-10-07"
     },
     "git": {
      "days": {
@@ -1135,12 +1211,12 @@
        0,
        0,
        0,
-       0,
-       0,
-       0,
        34,
        33,
        13,
+       0,
+       6,
+       0,
        0
       ],
       "human": [
@@ -1167,26 +1243,26 @@
        0,
        0,
        0,
-       0,
-       0,
-       0,
        1,
+       0,
+       0,
+       0,
        0,
        0,
        0
       ]
      },
      "first_date": "2026-10-03",
-     "head_date": "2026-10-05",
+     "head_date": "2026-10-07",
      "window": {
-      "ai": 80,
+      "ai": 86,
       "human": 1
      }
     }
    },
    "dpverify": {
     "activity": {
-     "state": "working",
+     "state": "idle",
      "last": "2026-10-06"
     },
     "git": {
@@ -1216,12 +1292,92 @@
        0,
        0,
        0,
+       1,
+       18,
+       17,
+       0,
+       0,
+       0
+      ],
+      "human": [
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
        0,
        0,
        0,
        1,
-       18,
-       17
+       0,
+       0,
+       0,
+       0,
+       0
+      ]
+     },
+     "first_date": "2026-10-04",
+     "head_date": "2026-10-06",
+     "window": {
+      "ai": 36,
+      "human": 1
+     }
+    }
+   },
+   "orchestrator": {
+    "activity": {
+     "state": "working",
+     "last": "2026-10-09"
+    },
+    "git": {
+     "days": {
+      "ai": [
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       22,
+       46,
+       40,
+       44
       ],
       "human": [
        0,
@@ -1250,17 +1406,17 @@
        0,
        0,
        0,
+       2,
        0,
-       1,
        0,
        0
       ]
      },
-     "first_date": "2026-10-04",
-     "head_date": "2026-10-06",
+     "first_date": "2026-10-06",
+     "head_date": "2026-10-09",
      "window": {
-      "ai": 36,
-      "human": 1
+      "ai": 152,
+      "human": 2
      }
     }
    },
@@ -1296,10 +1452,10 @@
        0,
        0,
        0,
-       0,
-       0,
-       0,
        16,
+       0,
+       0,
+       0,
        0,
        0
       ],
@@ -1328,10 +1484,10 @@
        0,
        0,
        0,
-       0,
-       0,
-       0,
        1,
+       0,
+       0,
+       0,
        0,
        0
       ]
@@ -1346,8 +1502,8 @@
    },
    "smi": {
     "activity": {
-     "state": "working",
-     "last": "2026-10-06"
+     "state": "idle",
+     "last": "2026-10-07"
     },
     "git": {
      "days": {
@@ -1376,11 +1532,11 @@
        0,
        0,
        0,
-       0,
-       0,
-       0,
        26,
-       41,
+       44,
+       5,
+       2,
+       0,
        0
       ],
       "human": [
@@ -1408,18 +1564,18 @@
        0,
        0,
        0,
-       0,
-       0,
-       0,
        1,
        2,
-       1
+       1,
+       0,
+       0,
+       0
       ]
      },
      "first_date": "2026-10-04",
-     "head_date": "2026-10-05",
+     "head_date": "2026-10-07",
      "window": {
-      "ai": 67,
+      "ai": 77,
       "human": 4
      }
     }
@@ -1456,10 +1612,10 @@
        0,
        0,
        0,
-       0,
-       0,
-       0,
        3,
+       0,
+       0,
+       0,
        0,
        0
       ],
@@ -1488,10 +1644,10 @@
        0,
        0,
        0,
-       0,
-       0,
-       0,
        1,
+       0,
+       0,
+       0,
        0,
        0
       ]
@@ -1536,10 +1692,10 @@
        0,
        0,
        0,
-       0,
-       0,
-       0,
        7,
+       0,
+       0,
+       0,
        0,
        0
       ],
@@ -1568,10 +1724,10 @@
        0,
        0,
        0,
-       0,
-       0,
-       0,
        1,
+       0,
+       0,
+       0,
        0,
        0
       ]
@@ -1617,10 +1773,10 @@
        0,
        0,
        0,
-       0,
-       0,
-       0,
        1,
+       0,
+       0,
+       0,
        0
       ],
       "human": [
@@ -1649,10 +1805,10 @@
        0,
        0,
        0,
-       0,
-       0,
-       0,
        1,
+       0,
+       0,
+       0,
        0
       ]
      },
@@ -1697,10 +1853,10 @@
        0,
        0,
        0,
-       0,
-       0,
-       0,
        8,
+       0,
+       0,
+       0,
        0
       ],
       "human": [
@@ -1729,10 +1885,10 @@
        0,
        0,
        0,
-       0,
-       0,
-       0,
        1,
+       0,
+       0,
+       0,
        0
       ]
      },
@@ -1746,7 +1902,7 @@
    },
    "dpmetaapp": {
     "activity": {
-     "state": "working",
+     "state": "idle",
      "last": "2026-10-06"
     },
     "git": {
@@ -1809,11 +1965,11 @@
        0,
        0,
        0,
-       0,
-       0,
-       0,
        1,
-       3
+       3,
+       0,
+       0,
+       0
       ]
      },
      "first_date": "2026-10-05",
@@ -1826,8 +1982,8 @@
    },
    "dpvisualisation": {
     "activity": {
-     "state": "idle",
-     "last": "2026-10-05"
+     "state": "working",
+     "last": "2026-10-09"
     },
     "git": {
      "days": {
@@ -1889,10 +2045,10 @@
        0,
        0,
        0,
-       0,
-       0,
-       0,
        1,
+       0,
+       0,
+       0,
        0
       ]
      },
@@ -1964,9 +2120,6 @@
     "state": "flowing",
     "days": [
      0,
-     0,
-     0,
-     0,
      13,
      45,
      35,
@@ -1992,11 +2145,14 @@
      108,
      32,
      33,
-     14
+     15,
+     27,
+     25,
+     0
     ],
-    "week": 340,
-    "total": 634,
-    "last": "2026-10-06"
+    "week": 270,
+    "total": 687,
+    "last": "2026-10-08"
    },
    "work.dplang": {
     "state": "flowing",
@@ -2024,17 +2180,17 @@
      0,
      0,
      0,
-     0,
-     0,
-     0,
      34,
      33,
      13,
+     0,
+     7,
+     0,
      0
     ],
-    "week": 80,
-    "total": 80,
-    "last": "2026-10-05"
+    "week": 87,
+    "total": 87,
+    "last": "2026-10-07"
    },
    "work.dpverify": {
     "state": "flowing",
@@ -2063,19 +2219,19 @@
      0,
      0,
      0,
-     0,
-     0,
-     0,
      1,
      19,
-     20
+     20,
+     0,
+     0,
+     0
     ],
     "week": 40,
     "total": 40,
     "last": "2026-10-06"
    },
    "work.dpprofile": {
-    "state": "flowing",
+    "state": "quiet",
     "days": [
      0,
      0,
@@ -2101,10 +2257,10 @@
      0,
      0,
      0,
-     0,
-     0,
-     0,
      16,
+     0,
+     0,
+     0,
      0,
      0
     ],
@@ -2139,23 +2295,20 @@
      0,
      0,
      0,
-     0,
-     0,
-     0,
      27,
      44,
-     4
+     5,
+     2,
+     0,
+     0
     ],
-    "week": 75,
-    "total": 75,
-    "last": "2026-10-06"
+    "week": 78,
+    "total": 78,
+    "last": "2026-10-07"
    },
    "work.dplearn": {
-    "state": "flowing",
+    "state": "quiet",
     "days": [
-     0,
-     0,
-     0,
      0,
      0,
      0,
@@ -2182,6 +2335,9 @@
      0,
      3,
      0,
+     0,
+     0,
+     0,
      0
     ],
     "week": 3,
@@ -2189,11 +2345,8 @@
     "last": "2026-10-04"
    },
    "work.market": {
-    "state": "flowing",
+    "state": "quiet",
     "days": [
-     0,
-     0,
-     0,
      0,
      0,
      0,
@@ -2220,6 +2373,9 @@
      0,
      7,
      1,
+     0,
+     0,
+     0,
      0
     ],
     "week": 8,
@@ -2227,120 +2383,6 @@
     "last": "2026-10-05"
    },
    "work.dpmonetization": {
-    "state": "flowing",
-    "days": [
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     1,
-     0
-    ],
-    "week": 1,
-    "total": 1,
-    "last": "2026-10-05"
-   },
-   "work.dpmeta": {
-    "state": "flowing",
-    "days": [
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     8,
-     0
-    ],
-    "week": 8,
-    "total": 8,
-    "last": "2026-10-05"
-   },
-   "work.dpmetaapp": {
-    "state": "flowing",
-    "days": [
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     0,
-     3,
-     0
-    ],
-    "week": 3,
-    "total": 3,
-    "last": "2026-10-05"
-   },
-   "work.dpvisualisation": {
     "state": "quiet",
     "days": [
      0,
@@ -2368,21 +2410,171 @@
      0,
      0,
      0,
-     0,
+     1,
      0,
      0,
      0,
      0
     ],
-    "week": 0,
-    "total": 0
+    "week": 1,
+    "total": 1,
+    "last": "2026-10-05"
    },
-   "decide.galdhold": {
+   "work.dpmeta": {
+    "state": "quiet",
+    "days": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     8,
+     0,
+     0,
+     0,
+     0
+    ],
+    "week": 8,
+    "total": 8,
+    "last": "2026-10-05"
+   },
+   "work.dpmetaapp": {
+    "state": "quiet",
+    "days": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     3,
+     0,
+     0,
+     0,
+     0
+    ],
+    "week": 3,
+    "total": 3,
+    "last": "2026-10-05"
+   },
+   "work.dpvisualisation": {
     "state": "flowing",
     "days": [
      0,
      0,
      0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     7,
+     0,
+     0,
+     1
+    ],
+    "week": 8,
+    "total": 8,
+    "last": "2026-10-09"
+   },
+   "work.orchestrator": {
+    "state": "flowing",
+    "days": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     22,
+     46,
+     42,
+     50
+    ],
+    "week": 160,
+    "total": 160,
+    "last": "2026-10-09"
+   },
+   "decide.galdhold": {
+    "state": "flowing",
+    "days": [
      0,
      4,
      18,
@@ -2409,11 +2601,14 @@
      11,
      8,
      3,
+     0,
+     2,
+     1,
      0
     ],
-    "week": 49,
-    "total": 175,
-    "last": "2026-10-05"
+    "week": 29,
+    "total": 178,
+    "last": "2026-10-08"
    },
    "decide.dplang": {
     "state": "flowing",
@@ -2441,24 +2636,21 @@
      0,
      0,
      0,
-     0,
-     0,
-     0,
      3,
      5,
      3,
+     0,
+     1,
+     0,
      0
     ],
-    "week": 11,
-    "total": 11,
-    "last": "2026-10-05"
+    "week": 12,
+    "total": 12,
+    "last": "2026-10-07"
    },
    "decide.dpverify": {
-    "state": "flowing",
+    "state": "quiet",
     "days": [
-     0,
-     0,
-     0,
      0,
      0,
      0,
@@ -2485,14 +2677,17 @@
      0,
      1,
      6,
-     4
+     4,
+     0,
+     0,
+     0
     ],
     "week": 11,
     "total": 11,
     "last": "2026-10-06"
    },
    "decide.dpprofile": {
-    "state": "flowing",
+    "state": "quiet",
     "days": [
      0,
      0,
@@ -2518,10 +2713,10 @@
      0,
      0,
      0,
-     0,
-     0,
-     0,
      3,
+     0,
+     0,
+     0,
      0,
      0
     ],
@@ -2556,19 +2751,19 @@
      0,
      0,
      0,
-     0,
-     0,
-     0,
      5,
      14,
-     2
+     3,
+     1,
+     0,
+     0
     ],
-    "week": 21,
-    "total": 21,
-    "last": "2026-10-05"
+    "week": 23,
+    "total": 23,
+    "last": "2026-10-07"
    },
    "decide.dplearn": {
-    "state": "flowing",
+    "state": "quiet",
     "days": [
      0,
      0,
@@ -2594,10 +2789,10 @@
      0,
      0,
      0,
-     0,
-     0,
-     0,
      1,
+     0,
+     0,
+     0,
      0,
      0
     ],
@@ -2606,7 +2801,7 @@
     "last": "2026-10-04"
    },
    "decide.market": {
-    "state": "flowing",
+    "state": "quiet",
     "days": [
      0,
      0,
@@ -2632,10 +2827,10 @@
      0,
      0,
      0,
-     0,
-     0,
-     0,
      1,
+     0,
+     0,
+     0,
      0,
      0
     ],
@@ -2644,11 +2839,8 @@
     "last": "2026-10-04"
    },
    "decide.dpmonetization": {
-    "state": "flowing",
+    "state": "quiet",
     "days": [
-     0,
-     0,
-     0,
      0,
      0,
      0,
@@ -2675,6 +2867,9 @@
      0,
      0,
      1,
+     0,
+     0,
+     0,
      0
     ],
     "week": 1,
@@ -2682,11 +2877,8 @@
     "last": "2026-10-05"
    },
    "decide.dpmeta": {
-    "state": "flowing",
+    "state": "quiet",
     "days": [
-     0,
-     0,
-     0,
      0,
      0,
      0,
@@ -2713,6 +2905,9 @@
      0,
      0,
      4,
+     0,
+     0,
+     0,
      0
     ],
     "week": 4,
@@ -2793,7 +2988,7 @@
     "week": 0,
     "total": 0
    },
-   "c01.galdhold.dplang": {
+   "decide.orchestrator": {
     "state": "flowing",
     "days": [
      0,
@@ -2822,9 +3017,47 @@
      0,
      0,
      0,
+     0,
+     0,
+     1,
+     2
+    ],
+    "week": 3,
+    "total": 3,
+    "last": "2026-10-09"
+   },
+   "c01.galdhold.dplang": {
+    "state": "quiet",
+    "days": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
      7,
      5,
      2,
+     0,
+     0,
+     0,
      0
     ],
     "week": 14,
@@ -2853,7 +3086,7 @@
     "state": "unobserved"
    },
    "c04.galdhold.dpprofile": {
-    "state": "flowing",
+    "state": "quiet",
     "days": [
      0,
      0,
@@ -2879,10 +3112,10 @@
      0,
      0,
      0,
-     0,
-     0,
-     0,
      7,
+     0,
+     0,
+     0,
      0,
      0
     ],
@@ -2891,7 +3124,7 @@
     "last": "2026-10-04"
    },
    "c04.dplang.dpprofile": {
-    "state": "flowing",
+    "state": "quiet",
     "days": [
      0,
      0,
@@ -2917,10 +3150,10 @@
      0,
      0,
      0,
-     0,
-     0,
-     0,
      7,
+     0,
+     0,
+     0,
      0,
      0
     ],
@@ -2955,16 +3188,16 @@
      0,
      0,
      0,
-     0,
-     0,
-     0,
      7,
-     6,
+     7,
+     1,
+     1,
+     0,
      0
     ],
-    "week": 13,
-    "total": 13,
-    "last": "2026-10-05"
+    "week": 16,
+    "total": 16,
+    "last": "2026-10-07"
    },
    "c04.dplang.smi": {
     "state": "flowing",
@@ -2993,16 +3226,16 @@
      0,
      0,
      0,
-     0,
-     0,
-     0,
      7,
-     6,
+     7,
+     1,
+     1,
+     0,
      0
     ],
-    "week": 13,
-    "total": 13,
-    "last": "2026-10-05"
+    "week": 16,
+    "total": 16,
+    "last": "2026-10-07"
    },
    "publish.smi.telegram": {
     "state": "planned"
@@ -3029,7 +3262,7 @@
     "state": "planned"
    },
    "c10.github.smi": {
-    "state": "flowing",
+    "state": "quiet",
     "days": [
      0,
      0,
@@ -3056,10 +3289,10 @@
      0,
      0,
      0,
-     0,
-     0,
-     0,
      1,
+     0,
+     0,
+     0,
      0
     ],
     "week": 1,
@@ -3067,7 +3300,7 @@
     "last": "2026-10-05"
    },
    "c10.dpmeta.smi": {
-    "state": "flowing",
+    "state": "quiet",
     "days": [
      0,
      0,
@@ -3094,10 +3327,10 @@
      0,
      0,
      0,
-     0,
-     0,
-     0,
      1,
+     0,
+     0,
+     0,
      0
     ],
     "week": 1,
@@ -3105,7 +3338,7 @@
     "last": "2026-10-05"
    },
    "c10.dpprofile.smi": {
-    "state": "flowing",
+    "state": "quiet",
     "days": [
      0,
      0,
@@ -3132,10 +3365,10 @@
      0,
      0,
      0,
-     0,
-     0,
-     0,
      1,
+     0,
+     0,
+     0,
      0
     ],
     "week": 1,
@@ -3146,11 +3379,8 @@
     "state": "planned"
    },
    "meta.github.dpmeta": {
-    "state": "flowing",
+    "state": "quiet",
     "days": [
-     0,
-     0,
-     0,
      0,
      0,
      0,
@@ -3177,6 +3407,9 @@
      0,
      0,
      3,
+     0,
+     0,
+     0,
      0
     ],
     "week": 3,
@@ -3221,6 +3454,50 @@
     "total": 0
    },
    "vis.dpmeta.dpvisualisation": {
+    "state": "quiet",
+    "days": [
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     0,
+     6,
+     0,
+     0,
+     0,
+     0
+    ],
+    "week": 6,
+    "total": 6,
+    "last": "2026-10-05"
+   },
+   "vis.site.dpvisualisation": {
+    "state": "unknown"
+   },
+   "vis.dpvisualisation.dpmetaapp": {
+    "state": "planned"
+   },
+   "vis.dpvisualisation.smi": {
     "state": "flowing",
     "days": [
      0,
@@ -3249,20 +3526,14 @@
      0,
      0,
      0,
+     1,
      0,
      0,
-     6,
      0
     ],
-    "week": 6,
-    "total": 6,
-    "last": "2026-10-05"
-   },
-   "vis.site.dpvisualisation": {
-    "state": "unknown"
-   },
-   "vis.dpvisualisation.dpmetaapp": {
-    "state": "planned"
+    "week": 1,
+    "total": 1,
+    "last": "2026-10-06"
    },
    "app.dpmeta.dpmetaapp": {
     "state": "planned"
@@ -3271,6 +3542,15 @@
     "state": "planned"
    },
    "app.site.dpmetaapp": {
+    "state": "planned"
+   },
+   "orc.orchestrator.claude": {
+    "state": "planned"
+   },
+   "orc.dpmeta.orchestrator": {
+    "state": "planned"
+   },
+   "orc.orchestrator.dpmetaapp": {
     "state": "planned"
    },
    "mon.dpmeta.dpmonetization": {

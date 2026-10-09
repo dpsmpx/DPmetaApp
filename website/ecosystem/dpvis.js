@@ -280,7 +280,7 @@ function flowStateAt(flow, dayIdx) {
 
 function flowRateAt(flow, dayIdx, rateDays = 7) {
   if (dayIdx === null || dayIdx === undefined) return flow.week;
-  return flow.days[dayIdx] * rateDays; // день в масштабе недели — та же шкала частиц
+  return flow.days[dayIdx] * rateDays; // день в масштабе недели — та же шкала толщины линии
 }
 
 function nodeActivityAt(node, dayIdx) {
@@ -440,12 +440,13 @@ function focusSet(view, sel) {
 }
 
 // ---- layout.js
-// Раскладка графа (F-21): узлы по слоям — колонки слева направо; порядок в колонке —
-// по среднему положению соседей (меньше пересечений); у каждого потока — своё место
-// выхода и входа на узле; потоки — кубические кривые. Раскладка не зависит от фильтров:
-// при фильтрации узлы не прыгают.
+// Раскладка схемы (D-16): от ширины контейнера, единица схемы — пиксель экрана, поэтому
+// текст не мельчает и прокрутки вбок нет. Широко — слои колонками слева направо; узко —
+// слои полосами сверху вниз, узлы в полосе — сеткой по ширине. Связь — прямой отрезок от
+// края узла до края узла; несколько связей одной пары идут рядом, а не друг по другу.
+// Раскладка не зависит от фильтров: при фильтрации узлы не прыгают.
 
-const GEOM = { colW: 178, nodeW: 148, nodeH: 42, gapY: 24, headerH: 40, pad: 18 };
+const GEOM = { minNodeW: 136, maxNodeW: 190, nodeH: 44, gapX: 16, gapY: 16, headerH: 28, pad: 12, bandGap: 14, minWidth: 240 };
 
 const GROUP_ORDER = { core: 0, new: 1, periphery: 2 };
 
@@ -453,14 +454,12 @@ function degree(view, id) {
   return (view.outgoing.get(id) || []).length + (view.incoming.get(id) || []).length;
 }
 
-function layout(view, g = GEOM) {
+function groupsByLayer(view) {
   const cols = view.layers
     .map((l) => ({ layer: l, nodes: view.nodes.filter((n) => n.layer === l.id) }))
     .filter((c) => c.nodes.length > 0);
   const stray = view.nodes.filter((n) => !view.layers.some((l) => l.id === n.layer));
   if (stray.length) cols.push({ layer: { id: "other", name: "Прочее" }, nodes: stray });
-
-  // начальный порядок: группа, затем связность, затем имя
   for (const c of cols) {
     c.nodes.sort(
       (a, b) =>
@@ -469,146 +468,130 @@ function layout(view, g = GEOM) {
         a.name.localeCompare(b.name, "ru"),
     );
   }
+  return cols;
+}
+
+function neighbours(view, id) {
+  return [...(view.outgoing.get(id) || []), ...(view.incoming.get(id) || [])].map((f) => (f.from === id ? f.to : f.from));
+}
+
+// Колонки: порядок в колонке — по среднему положению соседей в других колонках
+// (меньше пересечений), несколько проходов туда и обратно.
+function columns(view, cols, W, g) {
+  const colW = (W - 2 * g.pad) / cols.length;
+  const nodeW = Math.min(g.maxNodeW, Math.floor(colW - g.gapX));
   const colOf = new Map();
   cols.forEach((c, i) => c.nodes.forEach((n) => colOf.set(n.id, i)));
   const maxRows = Math.max(...cols.map((c) => c.nodes.length));
   const fullH = maxRows * (g.nodeH + g.gapY) - g.gapY;
-
+  const top0 = g.pad + g.headerH;
   const yOf = new Map();
   const place = () => {
     for (const c of cols) {
       const h = c.nodes.length * (g.nodeH + g.gapY) - g.gapY;
-      const top = g.pad + g.headerH + (fullH - h) / 2;
+      const top = top0 + (fullH - h) / 2;
       c.nodes.forEach((n, i) => yOf.set(n.id, top + i * (g.nodeH + g.gapY)));
     }
   };
   place();
-  // барицентр: несколько проходов слева направо и обратно
   for (let pass = 0; pass < 6; pass++) {
     for (const c of pass % 2 ? [...cols].reverse() : cols) {
       const bc = new Map();
       for (const n of c.nodes) {
-        const nb = [...view.outgoing.get(n.id), ...view.incoming.get(n.id)]
-          .map((f) => (f.from === n.id ? f.to : f.from))
-          .filter((id) => colOf.get(id) !== colOf.get(n.id));
+        const nb = neighbours(view, n.id).filter((id) => colOf.has(id) && colOf.get(id) !== colOf.get(n.id));
         bc.set(n.id, nb.length ? nb.reduce((s, id) => s + yOf.get(id), 0) / nb.length : yOf.get(n.id));
       }
       c.nodes.sort((a, b) => bc.get(a.id) - bc.get(b.id) || a.name.localeCompare(b.name, "ru"));
     }
     place();
   }
-
   const nodes = new Map();
-  const columns = cols.map((c, i) => {
-    const x = g.pad + i * g.colW;
-    for (const n of c.nodes) nodes.set(n.id, { x, y: yOf.get(n.id), w: g.nodeW, h: g.nodeH, col: i });
-    return { id: c.layer.id, name: c.layer.name, x, w: g.nodeW };
+  const headers = cols.map((c, i) => {
+    const cx = g.pad + i * colW + colW / 2;
+    for (const n of c.nodes) nodes.set(n.id, { x: Math.round(cx - nodeW / 2), y: Math.round(yOf.get(n.id)), w: nodeW, h: g.nodeH, band: i });
+    return { id: c.layer.id, name: c.layer.name, x: Math.round(cx), y: g.pad + 12, anchor: "middle", w: colW };
   });
+  return { nodes, headers, height: top0 + fullH + g.pad, nodeW };
+}
 
-  // стороны: вперёд — справа налево-внутрь, назад — слева, в одной колонке — петля справа
-  const sides = new Map(); // flowId → {from: "r"|"l", to: "l"|"r"}
-  const ports = new Map(); // `${nodeId}:${side}` → [{flowId, otherY, end}]
-  const addPort = (nid, side, flowId, otherY, end) => {
-    const k = `${nid}:${side}`;
-    if (!ports.has(k)) ports.set(k, []);
-    ports.get(k).push({ flowId, otherY, end });
-  };
-  for (const f of view.flows) {
-    const a = nodes.get(f.from);
-    const b = nodes.get(f.to);
-    if (!a || !b) continue;
-    let s;
-    if (b.col > a.col) s = { from: "r", to: "l" };
-    else if (b.col < a.col) s = { from: "l", to: "r" };
-    else s = { from: "r", to: "r" };
-    sides.set(f.id, s);
-    addPort(f.from, s.from, f.id, b.y, "from");
-    addPort(f.to, s.to, f.id, a.y, "to");
-  }
-  const portY = new Map(); // `${flowId}:${end}` → y
-  for (const [k, list] of ports) {
-    const nid = k.slice(0, k.lastIndexOf(":"));
-    const n = nodes.get(nid);
-    list.sort((p, q) => p.otherY - q.otherY || (p.flowId < q.flowId ? -1 : 1));
-    const step = (n.h - 8) / (list.length + 1);
-    list.forEach((p, i) => portY.set(`${p.flowId}:${p.end}`, n.y + 4 + step * (i + 1)));
-  }
+// Полосы: слой — заголовок и сетка узлов по ширине; число узлов в ряду — сколько влезает.
+function bands(view, cols, W, g) {
+  const inner = W - 2 * g.pad;
+  const perRow = Math.max(1, Math.floor((inner + g.gapX) / (g.minNodeW + g.gapX)));
+  const nodeW = Math.min(g.maxNodeW * 1.4, Math.floor((inner - (perRow - 1) * g.gapX) / perRow));
+  const nodes = new Map();
+  const headers = [];
+  let y = g.pad;
+  cols.forEach((c, i) => {
+    headers.push({ id: c.layer.id, name: c.layer.name, x: g.pad, y: y + 12, anchor: "start", w: inner });
+    y += g.headerH;
+    c.nodes.forEach((n, j) => {
+      const row = Math.floor(j / perRow);
+      const col = j % perRow;
+      nodes.set(n.id, { x: g.pad + col * (nodeW + g.gapX), y: y + row * (g.nodeH + g.gapY), w: nodeW, h: g.nodeH, band: i });
+    });
+    const rows = Math.ceil(c.nodes.length / perRow);
+    y += rows * (g.nodeH + g.gapY) - g.gapY + g.bandGap;
+  });
+  return { nodes, headers, height: y - g.bandGap + g.pad, nodeW };
+}
 
-  const flows = new Map();
-  for (const f of view.flows) {
-    const s = sides.get(f.id);
-    if (!s) continue;
-    const a = nodes.get(f.from);
-    const b = nodes.get(f.to);
-    const x1 = s.from === "r" ? a.x + a.w : a.x;
-    const x2 = s.to === "r" ? b.x + b.w : b.x;
-    const y1 = portY.get(`${f.id}:from`);
-    const y2 = portY.get(`${f.id}:to`) - 0;
-    let c1x, c2x;
-    if (s.from === "r" && s.to === "l") {
-      const dx = Math.max(36, (x2 - x1) * 0.45);
-      c1x = x1 + dx;
-      c2x = x2 - dx;
-    } else if (s.from === "l" && s.to === "r") {
-      const dx = Math.max(36, (x1 - x2) * 0.45);
-      c1x = x1 - dx;
-      c2x = x2 + dx;
-    } else {
-      const bulge = 28 + Math.min(60, Math.abs(y2 - y1) * 0.35);
-      c1x = x1 + bulge;
-      c2x = x2 + bulge;
-    }
-    const d = `M${r(x1)},${r(y1)} C${r(c1x)},${r(y1)} ${r(c2x)},${r(y2)} ${r(x2)},${r(y2)}`;
-    flows.set(f.id, { d, x1, y1, x2, y2, c1x, c2x });
-  }
-
-  const width = g.pad * 2 + (cols.length - 1) * g.colW + g.nodeW + 40;
-  const height = g.pad * 2 + g.headerH + fullH;
-  return { width, height, nodes, flows, columns, geom: g };
+// Точка на краю прямоугольника по направлению от его центра (с зазором под стрелку).
+function edgePoint(box, dx, dy, gap = 3) {
+  const cx = box.x + box.w / 2;
+  const cy = box.y + box.h / 2;
+  if (dx === 0 && dy === 0) return { x: cx, y: cy };
+  const tx = dx === 0 ? Infinity : (box.w / 2 + gap) / Math.abs(dx);
+  const ty = dy === 0 ? Infinity : (box.h / 2 + gap) / Math.abs(dy);
+  const t = Math.min(tx, ty);
+  return { x: cx + dx * t, y: cy + dy * t };
 }
 
 function r(v) {
   return Math.round(v * 10) / 10;
 }
 
-// Точка кубической кривой при t ∈ [0, 1] — для частиц без обращения к DOM.
-function bezierPoint(fl, t) {
-  const u = 1 - t;
-  const x = u * u * u * fl.x1 + 3 * u * u * t * fl.c1x + 3 * u * t * t * fl.c2x + t * t * t * fl.x2;
-  const y = u * u * u * fl.y1 + 3 * u * u * t * fl.y1 + 3 * u * t * t * fl.y2 + t * t * t * fl.y2;
-  return { x, y };
-}
+function layout(view, width, g = GEOM) {
+  const W = Math.max(g.minWidth, Math.floor(width || 0));
+  const cols = groupsByLayer(view);
+  const colW = (W - 2 * g.pad) / Math.max(1, cols.length);
+  const mode = cols.length && colW >= g.minNodeW + g.gapX ? "columns" : "bands";
+  const placed = cols.length ? (mode === "columns" ? columns(view, cols, W, g) : bands(view, cols, W, g)) : { nodes: new Map(), headers: [], height: 2 * g.pad, nodeW: g.minNodeW };
 
-// Таблица равномерных по длине параметров t — частицы идут с постоянной скоростью.
-function arcTable(fl, samples = 48) {
-  const pts = [];
-  let len = 0;
-  let prev = bezierPoint(fl, 0);
-  pts.push({ t: 0, s: 0 });
-  for (let i = 1; i <= samples; i++) {
-    const t = i / samples;
-    const p = bezierPoint(fl, t);
-    len += Math.hypot(p.x - prev.x, p.y - prev.y);
-    pts.push({ t, s: len });
-    prev = p;
+  // пары узлов: связи одной пары (в любую сторону) — параллельно, с шагом 5 px
+  const pairs = new Map();
+  for (const f of view.flows) {
+    if (!placed.nodes.has(f.from) || !placed.nodes.has(f.to)) continue;
+    const key = f.from < f.to ? `${f.from}|${f.to}` : `${f.to}|${f.from}`;
+    if (!pairs.has(key)) pairs.set(key, []);
+    pairs.get(key).push(f);
   }
-  return { pts, len };
-}
-
-function pointAtFraction(fl, table, frac) {
-  const target = frac * table.len;
-  const pts = table.pts;
-  let lo = 0;
-  let hi = pts.length - 1;
-  while (hi - lo > 1) {
-    const mid = (lo + hi) >> 1;
-    if (pts[mid].s < target) lo = mid;
-    else hi = mid;
+  const flows = new Map();
+  for (const list of pairs.values()) {
+    list.sort((a, b) => (a.id < b.id ? -1 : 1));
+    list.forEach((f, i) => {
+      const a = placed.nodes.get(f.from);
+      const b = placed.nodes.get(f.to);
+      const ax = a.x + a.w / 2;
+      const ay = a.y + a.h / 2;
+      const dx = b.x + b.w / 2 - ax;
+      const dy = b.y + b.h / 2 - ay;
+      const len = Math.hypot(dx, dy) || 1;
+      // смещение поперёк линии — одно и то же для пары, как бы ни была направлена связь
+      const sign = f.from < f.to ? 1 : -1;
+      const off = (i - (list.length - 1) / 2) * 5 * sign;
+      const ox = (-dy / len) * off;
+      const oy = (dx / len) * off;
+      const p1 = edgePoint(a, dx, dy);
+      const p2 = edgePoint(b, -dx, -dy);
+      const x1 = p1.x + ox;
+      const y1 = p1.y + oy;
+      const x2 = p2.x + ox;
+      const y2 = p2.y + oy;
+      flows.set(f.id, { d: `M${r(x1)},${r(y1)} L${r(x2)},${r(y2)}`, x1, y1, x2, y2 });
+    });
   }
-  const a = pts[lo];
-  const b = pts[hi];
-  const k = b.s === a.s ? 0 : (target - a.s) / (b.s - a.s);
-  return bezierPoint(fl, a.t + (b.t - a.t) * k);
+  return { width: W, height: Math.ceil(placed.height), mode, nodes: placed.nodes, flows, headers: placed.headers, nodeW: placed.nodeW, geom: g };
 }
 
 // ---- dom.js
@@ -641,7 +624,10 @@ function svgEl(tag, attrs = {}, parent = null) {
 }
 
 // ---- graph.js
-// Граф в SVG (F-21…F-23, F-26, F-33): узлы, потоки, частицы, масштаб и сдвиг.
+// Схема в SVG (F-21, F-23, F-26, F-33; D-16): узлы, связи — прямые со стрелкой, без анимаций.
+// Интенсивность связи — толщина линии (события за неделю); масштаб — кнопками, сдвиг —
+// перетаскиванием, только когда схема увеличена; иначе страница прокручивается как обычно.
+// Ширина схемы — ширина контейнера: при её смене раскладка строится заново.
 // Без встроенных стилей и обработчиков в разметке — работает под строгой CSP (D-05, D-15).
 
 
@@ -655,150 +641,146 @@ function el(tag, attrs = {}, parent = null) {
   return e;
 }
 
-// Подпись колонки: длинная — в две строки по ближайшему к середине пробелу.
-function splitHeader(name, max = 18) {
-  if (name.length <= max || !name.includes(" ")) return [name];
-  const mid = name.length / 2;
-  let best = -1;
-  for (let i = 0; i < name.length; i++) if (name[i] === " " && (best < 0 || Math.abs(i - mid) < Math.abs(best - mid))) best = i;
-  return [name.slice(0, best), name.slice(best + 1)];
-}
-
-function short(name, max = 17) {
+// Подпись узла по ширине: примерно 7,6 px на знак при 13,5 px полужирным.
+function short(name, width) {
+  const max = Math.max(6, Math.floor((width - 30) / 7.6));
   return name.length > max ? name.slice(0, max - 1) + "…" : name;
 }
 
-// Частицы: число и скорость растут с событиями за неделю (F-22).
-function particlePlan(state, rate) {
-  if (state !== "flowing" && state !== "quiet") return { n: 0, speed: 0 };
-  if (state === "quiet" && rate <= 0) return { n: 1, speed: 14 };
-  const n = Math.max(1, Math.min(6, 1 + Math.floor(Math.log2(1 + rate))));
-  const speed = 26 + 10 * Math.log2(1 + rate);
-  return { n, speed };
-}
-
-// Толщина линии при «меньше движения»: интенсивность без анимации (F-22).
+// Толщина линии — интенсивность за неделю (вместо движения частиц, D-16).
 function strokeFor(state, rate) {
-  if (state !== "flowing" && state !== "quiet") return 1.4;
-  return Math.min(5, 1.4 + 0.7 * Math.log2(1 + rate));
+  if (state !== "flowing" && state !== "quiet") return 1.2;
+  return Math.min(3.2, 1.2 + 0.5 * Math.log2(1 + rate));
 }
 
-function createGraph(host, view, lay, handlers) {
+const ZOOM = { min: 1, max: 4, step: 1.4 };
+
+function createGraph(host, view, handlers) {
   const id = `dpv${++instance}`;
-  const reduced = () => handlers.reducedMotion();
-  const svg = el("svg", {
-    class: "dpvis-svg",
-    viewBox: `0 0 ${lay.width} ${lay.height}`,
-    preserveAspectRatio: "xMidYMid meet",
-    role: "group",
-    "aria-label": "Схема: узлы по слоям, потоки — кривые со стрелкой",
-  });
-  const defs = el("defs", {}, svg);
-  for (const drv of ["human", "ai", "check", "data"]) {
-    const m = el("marker", { id: `${id}-mk-${drv}`, viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 6, markerHeight: 6, orient: "auto-start-reverse" }, defs);
-    el("path", { d: "M0,1 L9,5 L0,9 z", class: `mk drv-${drv}` }, m);
-  }
-  const bg = el("rect", { class: "dpvis-bg", x: -5000, y: -5000, width: 10000 + lay.width, height: 10000 + lay.height }, svg);
-  const gCols = el("g", { class: "cols", "aria-hidden": "true" }, svg);
-  for (const c of lay.columns) {
-    const t = el("text", { x: c.x + c.w / 2, y: lay.geom.pad + 6, class: "col-name", "text-anchor": "middle" }, gCols);
-    for (const [i, line] of splitHeader(c.name).entries()) {
-      const s = el("tspan", { x: c.x + c.w / 2, dy: i ? 14 : 0 }, t);
-      s.textContent = line;
+  let lay = null;
+  let svg = null;
+  let flowEls = new Map();
+  let nodeEls = new Map();
+  let current = null;
+  let vb = null; // null — вся схема
+  let moved = false;
+
+  function draw(width, keepVb = false) {
+    const prevVb = keepVb ? vb : null;
+    lay = layout(view, width);
+    const old = svg;
+    svg = el("svg", {
+      class: "dpvis-svg",
+      "data-mode": lay.mode,
+      viewBox: `0 0 ${lay.width} ${lay.height}`,
+      width: lay.width,
+      height: lay.height,
+      role: "group",
+      "aria-label": "Схема: проекты по слоям, связи — линии со стрелкой",
+    });
+    const defs = el("defs", {}, svg);
+    for (const drv of ["human", "ai", "check", "data"]) {
+      // стрелка — одного размера при любой толщине линии
+      const m = el("marker", { id: `${id}-mk-${drv}`, viewBox: "0 0 10 10", refX: 9, refY: 5, markerWidth: 8, markerHeight: 8, orient: "auto-start-reverse", markerUnits: "userSpaceOnUse" }, defs);
+      el("path", { d: "M0,1 L9,5 L0,9 z", class: `mk drv-${drv}` }, m);
     }
-  }
-  const gFlows = el("g", { class: "flows" }, svg);
-  const gParticles = el("g", { class: "particles", "aria-hidden": "true" }, svg);
-  const gNodes = el("g", { class: "nodes" }, svg);
-
-  const flowEls = new Map();
-  for (const f of view.flows) {
-    const geo = lay.flows.get(f.id);
-    if (!geo) continue;
-    const g = el("g", { class: "flow", "data-id": f.id }, gFlows);
-    const path = el("path", { d: geo.d, class: `flow-line drv-${f.driver}`, "marker-end": `url(#${id}-mk-${f.driver})` }, g);
-    const hit = el("path", { d: geo.d, class: "flow-hit" }, g);
-    const from = view.nodeById.get(f.from).name;
-    const to = view.nodeById.get(f.to).name;
-    const label = `${from} → ${to}: ${view.catalog.flowKinds.get(f.kind)?.name || f.kind}`;
-    el("title", {}, hit).textContent = label;
-    hit.addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (!moved) handlers.select(`f:${f.id}`);
+    const bg = el("rect", { class: "dpvis-bg", x: 0, y: 0, width: lay.width, height: lay.height }, svg);
+    bg.addEventListener("click", () => {
+      if (!moved) handlers.select(null);
     });
-    hit.addEventListener("pointerenter", (e) => handlers.hover({ type: "flow", item: f }, e));
-    hit.addEventListener("pointermove", (e) => handlers.hover({ type: "flow", item: f }, e));
-    hit.addEventListener("pointerleave", () => handlers.hover(null));
-    flowEls.set(f.id, { g, path, hit, geo, table: arcTable(geo) });
-  }
-
-  const nodeEls = new Map();
-  for (const n of view.nodes) {
-    const p = lay.nodes.get(n.id);
-    if (!p) continue;
-    const g = el("g", { class: `node kind-${n.kind}`, transform: `translate(${p.x},${p.y})`, tabindex: 0, role: "button", "data-id": n.id }, gNodes);
-    el("rect", { class: "node-ring", x: -4, y: -4, width: p.w + 8, height: p.h + 8, rx: 10 }, g);
-    el("rect", { class: "node-box", width: p.w, height: p.h, rx: 7 }, g);
-    const name = el("text", { class: "node-name", x: 9, y: 18 }, g);
-    name.textContent = short(n.name);
-    const sub = el("text", { class: "node-sub", x: 9, y: 33 }, g);
-    const badge = el("g", { class: "badge", transform: `translate(${p.w - 2},2)` }, g);
-    el("circle", { r: 9 }, badge);
-    const bt = el("text", { "text-anchor": "middle", y: 4 }, badge);
-    const q = el("text", { class: "unknown-mark", x: p.w - 13, y: 28, "text-anchor": "middle" }, g);
-    q.textContent = "?";
-    const title = el("title", {}, g);
-    g.addEventListener("click", (e) => {
-      e.stopPropagation();
-      if (!moved) handlers.select(`n:${n.id}`);
-    });
-    g.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        handlers.select(`n:${n.id}`);
-      }
-    });
-    g.addEventListener("pointerenter", (e) => handlers.hover({ type: "node", item: n }, e));
-    g.addEventListener("pointermove", (e) => handlers.hover({ type: "node", item: n }, e));
-    g.addEventListener("pointerleave", () => handlers.hover(null));
-    g.addEventListener("focus", () => handlers.focusNode?.(n));
-    nodeEls.set(n.id, { g, sub, badge, bt, title, p });
-  }
-  host.appendChild(svg);
-
-  // высота схемы — по пропорциям графа (широкий граф не тонет в высоком окне)
-  const ratio = lay.height / lay.width;
-  const NARROW = 700; // уже — телефон: читаемый масштаб и сдвиг вместо «вписать всё»
-  let narrowView = false;
-  const sizeSvg = () => {
-    const w = host.clientWidth || lay.width;
-    const vh = window.innerHeight || 800;
-    const want = w < NARROW ? Math.max(380, vh * 0.62) : Math.max(340, Math.min(vh * 0.82, w * ratio * 1.05));
-    svg.style.height = `${Math.round(want)}px`;
-    if (w < NARROW && !narrowView && !userMoved) {
-      const k = 0.78; // экранных точек на единицу схемы
-      const vw = w / k;
-      const vhh = want / k;
-      vb = { x: 0, y: Math.max(0, (lay.height - vhh) / 2), w: vw, h: vhh };
-      applyVb();
-      narrowView = true;
+    const gFlows = el("g", { class: "flows" }, svg);
+    const gHead = el("g", { class: "cols", "aria-hidden": "true" }, svg);
+    for (const c of lay.headers) {
+      const t = el("text", { x: c.x, y: c.y, class: "col-name", "text-anchor": c.anchor }, gHead);
+      t.textContent = c.name;
     }
-  };
-  let userMoved = false;
+    const gNodes = el("g", { class: "nodes" }, svg);
 
-  // ---------------------------------------------------------------- обновление
-  let current = { vis: null, focus: null, dim: null, day: null };
-  let particles = [];
+    flowEls = new Map();
+    for (const f of view.flows) {
+      const geo = lay.flows.get(f.id);
+      if (!geo) continue;
+      const g = el("g", { class: "flow", "data-id": f.id }, gFlows);
+      const path = el("path", {
+        d: geo.d,
+        class: `flow-line drv-${f.driver}`,
+        "marker-end": `url(#${id}-mk-${f.driver})`,
+        "marker-start": f.bidirectional ? `url(#${id}-mk-${f.driver})` : null,
+      }, g);
+      const hit = el("path", { d: geo.d, class: "flow-hit" }, g);
+      const from = view.nodeById.get(f.from).name;
+      const to = view.nodeById.get(f.to).name;
+      el("title", {}, hit).textContent = `${from} → ${to}: ${view.catalog.flowKinds.get(f.kind)?.name || f.kind}`;
+      hit.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (!moved) handlers.select(`f:${f.id}`);
+      });
+      hit.addEventListener("pointerenter", (e) => handlers.hover({ type: "flow", item: f }, e));
+      hit.addEventListener("pointermove", (e) => handlers.hover({ type: "flow", item: f }, e));
+      hit.addEventListener("pointerleave", () => handlers.hover(null));
+      flowEls.set(f.id, { g, path });
+    }
 
+    nodeEls = new Map();
+    for (const n of view.nodes) {
+      const p = lay.nodes.get(n.id);
+      if (!p) continue;
+      const g = el("g", { class: `node kind-${n.kind}`, transform: `translate(${p.x},${p.y})`, tabindex: 0, role: "button", "data-id": n.id }, gNodes);
+      el("rect", { class: "node-ring", x: -3, y: -3, width: p.w + 6, height: p.h + 6, rx: 9 }, g);
+      el("rect", { class: "node-box", width: p.w, height: p.h, rx: 7 }, g);
+      el("text", { class: "node-name", x: 9, y: 18 }, g).textContent = short(n.name, p.w);
+      const sub = el("text", { class: "node-sub", x: 9, y: 34 }, g);
+      const badge = el("g", { class: "badge", transform: `translate(${p.w - 2},2)` }, g);
+      el("circle", { r: 9 }, badge);
+      const bt = el("text", { "text-anchor": "middle", y: 4 }, badge);
+      const q = el("text", { class: "unknown-mark", x: p.w - 13, y: 30, "text-anchor": "middle" }, g);
+      q.textContent = "?";
+      const title = el("title", {}, g);
+      g.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (!moved) handlers.select(`n:${n.id}`);
+      });
+      g.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          handlers.select(`n:${n.id}`);
+        }
+      });
+      g.addEventListener("pointerenter", (e) => handlers.hover({ type: "node", item: n }, e));
+      g.addEventListener("pointermove", (e) => handlers.hover({ type: "node", item: n }, e));
+      g.addEventListener("pointerleave", () => handlers.hover(null));
+      nodeEls.set(n.id, { g, sub, badge, bt, title });
+    }
+    attachPan(svg);
+    if (old) old.replaceWith(svg);
+    else host.appendChild(svg);
+    vb = prevVb && prevVb.w <= lay.width && prevVb.h <= lay.height ? clamp(prevVb) : null;
+    applyVb();
+    if (current) paint();
+  }
+
+  // Новые данные той же ширины: раскладка та же, масштаб и сдвиг сохраняются (F-45).
+  function setView(v) {
+    view = v;
+    draw(lastW, true);
+  }
+
+  // ------------------------------------------------------------ состояние (F-23, F-26)
   function update(vis, focus, dimSet, day) {
     current = { vis, focus, dim: dimSet, day };
+    paint();
+  }
+
+  function paint() {
+    const { vis, focus, dim, day } = current;
     for (const n of view.nodes) {
       const e = nodeEls.get(n.id);
       if (!e) continue;
       const act = nodeActivityAt(n, day);
       const shown = vis.nodes.has(n.id);
-      const faded = (focus && !focus.nodes.has(n.id)) || (dimSet && !dimSet.has(n.id));
-      e.g.setAttribute("class", `node kind-${n.kind} act-${act} st-${n.status}${shown ? "" : " is-hidden"}${faded ? " is-dim" : ""}${focus && focus.nodes.has(n.id) && handlers.selected() === `n:${n.id}` ? " is-sel" : ""}`);
+      const faded = (focus && !focus.nodes.has(n.id)) || (dim && !dim.has(n.id));
+      const sel = handlers.selected() === `n:${n.id}`;
+      e.g.setAttribute("class", `node kind-${n.kind} act-${act} st-${n.status}${shown ? "" : " is-hidden"}${faded ? " is-dim" : ""}${sel ? " is-sel" : ""}`);
       const kindName = view.catalog.nodeKinds.get(n.kind)?.name || n.kind;
       const actName = STATE_NAMES[act] || act;
       e.sub.textContent = n.kind === "repo" || n.kind === "actor" || act === "up" || act === "down" ? actName : n.status === "active" ? kindName : view.catalog.statuses.get(n.status)?.name || n.status;
@@ -817,65 +799,69 @@ function createGraph(host, view, lay, handlers) {
       const st = flowStateAt(f, day);
       const rate = flowRateAt(f, day, view.rateDays);
       const shown = vis.flows.has(f.id);
-      const faded = (focus && !focus.flows.has(f.id)) || (dimSet && !(dimSet.has(f.from) && dimSet.has(f.to)));
-      e.g.setAttribute("class", `flow st-${st}${shown ? "" : " is-hidden"}${faded ? " is-dim" : ""}${handlers.selected() === `f:${f.id}` ? " is-sel" : ""}`);
-      e.path.setAttribute("stroke-width", reduced() ? strokeFor(st, rate).toFixed(2) : st === "flowing" ? "1.8" : "1.4");
-    }
-    rebuildParticles();
-  }
-
-  function rebuildParticles() {
-    gParticles.replaceChildren();
-    particles = [];
-    if (reduced() || !current.vis) return;
-    for (const f of view.flows) {
-      if (!current.vis.flows.has(f.id)) continue;
-      const e = flowEls.get(f.id);
-      const st = flowStateAt(f, current.day);
-      const { n, speed } = particlePlan(st, flowRateAt(f, current.day, view.rateDays));
-      const faded = (current.focus && !current.focus.flows.has(f.id)) || (current.dim && !(current.dim.has(f.from) && current.dim.has(f.to)));
-      for (let i = 0; i < n; i++) {
-        const c = el("circle", { r: st === "quiet" ? 2 : 2.6, class: `particle drv-${f.driver}${faded ? " is-dim" : ""}` }, gParticles);
-        particles.push({ c, e, offset: i / n, speed });
-      }
+      const faded = (focus && !focus.flows.has(f.id)) || (dim && !(dim.has(f.from) && dim.has(f.to)));
+      const inFocus = focus && focus.flows.has(f.id);
+      e.g.setAttribute("class", `flow st-${st}${shown ? "" : " is-hidden"}${faded ? " is-dim" : ""}${inFocus ? " is-focus" : ""}${handlers.selected() === `f:${f.id}` ? " is-sel" : ""}`);
+      e.path.setAttribute("stroke-width", strokeFor(st, rate).toFixed(2));
     }
   }
 
-  let raf = 0;
-  let last = 0;
-  function frame(ts) {
-    raf = requestAnimationFrame(frame);
-    if (ts - last < 33) return; // ~30 кадров/с хватает и бережёт батарею телефона
-    last = ts;
-    const sec = ts / 1000;
-    for (const p of particles) {
-      const frac = (sec * p.speed / Math.max(1, p.e.table.len) + p.offset) % 1;
-      const pt = pointAtFraction(p.e.geo, p.e.table, frac);
-      p.c.setAttribute("cx", pt.x.toFixed(1));
-      p.c.setAttribute("cy", pt.y.toFixed(1));
+  // ------------------------------------------------------------ масштаб и сдвиг (F-33)
+  function zoomLevel() {
+    return vb ? lay.width / vb.w : 1;
+  }
+
+  function applyVb() {
+    const v = vb || { x: 0, y: 0, w: lay.width, h: lay.height };
+    svg.setAttribute("viewBox", `${v.x} ${v.y} ${v.w} ${v.h}`);
+    host.classList.toggle("is-zoomed", !!vb);
+    handlers.zoomChanged?.(zoomLevel());
+  }
+
+  function clamp(v) {
+    const x = Math.min(Math.max(0, v.x), lay.width - v.w);
+    const y = Math.min(Math.max(0, v.y), lay.height - v.h);
+    return { ...v, x, y };
+  }
+
+  function zoomTo(k, cx, cy) {
+    const z = Math.min(ZOOM.max, Math.max(ZOOM.min, k));
+    if (z <= ZOOM.min + 1e-6) {
+      vb = null;
+    } else {
+      const w = lay.width / z;
+      const h = lay.height / z;
+      vb = clamp({ x: cx - w / 2, y: cy - h / 2, w, h });
+    }
+    applyVb();
+  }
+
+  function center() {
+    const v = vb || { x: 0, y: 0, w: lay.width, h: lay.height };
+    return { x: v.x + v.w / 2, y: v.y + v.h / 2 };
+  }
+
+  function zoomBy(k) {
+    const c = center();
+    zoomTo(zoomLevel() * k, c.x, c.y);
+  }
+
+  function fit() {
+    vb = null;
+    applyVb();
+  }
+
+  function centerOn(nid) {
+    const p = lay.nodes.get(nid);
+    if (!p) return;
+    if (vb) {
+      vb = clamp({ ...vb, x: p.x + p.w / 2 - vb.w / 2, y: p.y + p.h / 2 - vb.h / 2 });
+      applyVb();
+    } else {
+      nodeEls.get(nid)?.g.scrollIntoView?.({ block: "center", behavior: "auto" });
     }
   }
-  function start() {
-    if (!raf && !reduced()) raf = requestAnimationFrame(frame);
-  }
-  function stop() {
-    if (raf) cancelAnimationFrame(raf);
-    raf = 0;
-  }
-  const onVis = () => (document.hidden ? stop() : start());
-  document.addEventListener("visibilitychange", onVis);
-  let io = null;
-  if ("IntersectionObserver" in window) {
-    io = new IntersectionObserver((entries) => (entries[0].isIntersecting ? start() : stop()));
-    io.observe(svg);
-  } else start();
 
-  // ---------------------------------------------------------------- масштаб и сдвиг (F-33)
-  let vb = { x: 0, y: 0, w: lay.width, h: lay.height };
-  const applyVb = () => svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
-  sizeSvg();
-  const ro = "ResizeObserver" in window ? new ResizeObserver(sizeSvg) : null;
-  ro?.observe(host);
   function toSvg(clientX, clientY) {
     const m = svg.getScreenCTM();
     if (!m) return { x: 0, y: 0 };
@@ -884,94 +870,75 @@ function createGraph(host, view, lay, handlers) {
     pt.y = clientY;
     return pt.matrixTransform(m.inverse());
   }
-  function zoomAt(k, cx, cy) {
-    const minW = lay.width / 8;
-    const maxW = lay.width * 1.6;
-    const w = Math.min(maxW, Math.max(minW, vb.w / k));
-    const real = vb.w / w;
-    vb = { x: cx - (cx - vb.x) / real, y: cy - (cy - vb.y) / real, w, h: vb.h / real };
-    applyVb();
-  }
-  function fit() {
-    userMoved = true;
-    vb = { x: 0, y: 0, w: lay.width, h: lay.height };
-    applyVb();
-  }
-  function zoomBy(k) {
-    zoomAt(k, vb.x + vb.w / 2, vb.y + vb.h / 2);
-  }
-  function centerOn(nid) {
-    const p = lay.nodes.get(nid);
-    if (!p) return;
-    vb = { ...vb, x: p.x + p.w / 2 - vb.w / 2, y: p.y + p.h / 2 - vb.h / 2 };
-    applyVb();
-  }
-  svg.addEventListener("wheel", (e) => {
-    e.preventDefault();
-    const pt = toSvg(e.clientX, e.clientY);
-    zoomAt(Math.exp(-e.deltaY * 0.0015), pt.x, pt.y);
-  }, { passive: false });
 
-  const pointers = new Map();
-  let moved = false;
-  let start0 = null;
-  let pinch0 = null;
-  svg.addEventListener("pointerdown", (e) => {
-    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    moved = false;
-    start0 = { x: e.clientX, y: e.clientY, vb: { ...vb } };
-    if (pointers.size === 2) {
-      const [a, b] = [...pointers.values()];
-      pinch0 = { d: Math.hypot(a.x - b.x, a.y - b.y), vb: { ...vb }, mid: toSvg((a.x + b.x) / 2, (a.y + b.y) / 2) };
-    }
-  });
-  svg.addEventListener("pointermove", (e) => {
-    if (!pointers.has(e.pointerId)) return;
-    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (pointers.size === 2 && pinch0) {
-      const [a, b] = [...pointers.values()];
-      const d = Math.hypot(a.x - b.x, a.y - b.y);
-      vb = { ...pinch0.vb };
-      zoomAt(d / Math.max(1, pinch0.d), pinch0.mid.x, pinch0.mid.y);
+  function attachPan(s) {
+    // колесо масштабирует только с Ctrl или ⌘ — иначе прокручивает страницу
+    s.addEventListener("wheel", (e) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      const pt = toSvg(e.clientX, e.clientY);
+      zoomTo(zoomLevel() * Math.exp(-e.deltaY * 0.0015), pt.x, pt.y);
+    }, { passive: false });
+    let start = null;
+    s.addEventListener("pointerdown", (e) => {
+      moved = false;
+      start = vb ? { x: e.clientX, y: e.clientY, vb: { ...vb }, id: e.pointerId } : null;
+    });
+    s.addEventListener("pointermove", (e) => {
+      if (!start || e.pointerId !== start.id) return;
+      const dx = e.clientX - start.x;
+      const dy = e.clientY - start.y;
+      if (!moved && Math.hypot(dx, dy) < 5) return;
+      if (!moved) s.setPointerCapture?.(e.pointerId);
       moved = true;
-      return;
-    }
-    if (!start0) return;
-    const dx = e.clientX - start0.x;
-    const dy = e.clientY - start0.y;
-    if (!moved && Math.hypot(dx, dy) < 5) return;
-    if (!moved) svg.setPointerCapture?.(e.pointerId);
-    moved = true;
-    userMoved = true;
-    const m = svg.getScreenCTM();
-    const scale = m ? m.a : 1;
-    vb = { ...start0.vb, x: start0.vb.x - dx / scale, y: start0.vb.y - dy / scale };
-    applyVb();
-    handlers.hover(null);
-  });
-  const end = (e) => {
-    pointers.delete(e.pointerId);
-    if (pointers.size < 2) pinch0 = null;
-    if (pointers.size === 0) {
-      start0 = null;
+      const m = s.getScreenCTM();
+      const scale = m ? m.a : 1;
+      vb = clamp({ ...start.vb, x: start.vb.x - dx / scale, y: start.vb.y - dy / scale });
+      applyVb();
+      handlers.hover(null);
+    });
+    const end = () => {
+      start = null;
       setTimeout(() => (moved = false), 0);
-    }
+    };
+    s.addEventListener("pointerup", end);
+    s.addEventListener("pointercancel", end);
+  }
+
+  // ------------------------------------------------------------ ширина
+  let lastW = 0;
+  let pending = 0;
+  const widthNow = () => Math.floor(host.clientWidth || 0);
+  const onResize = () => {
+    if (pending) return;
+    pending = setTimeout(() => {
+      pending = 0;
+      const w = widthNow();
+      if (w && Math.abs(w - lastW) > 1) {
+        lastW = w;
+        draw(w);
+      }
+    }, 60);
   };
-  svg.addEventListener("pointerup", end);
-  svg.addEventListener("pointercancel", end);
-  bg.addEventListener("click", () => {
-    if (!moved) handlers.select(null);
-  });
+  lastW = widthNow() || 960;
+  draw(lastW);
+  const ro = "ResizeObserver" in window ? new ResizeObserver(onResize) : null;
+  ro?.observe(host);
+  if (!ro) window.addEventListener("resize", onResize);
 
   function destroy() {
-    stop();
-    io?.disconnect();
     ro?.disconnect();
-    document.removeEventListener("visibilitychange", onVis);
+    window.removeEventListener("resize", onResize);
+    clearTimeout(pending);
     svg.remove();
   }
 
-  return { svg, update, fit, zoomBy, centerOn, destroy, start, stop, nodeEls };
+  return {
+    get svg() { return svg; },
+    get layout() { return lay; },
+    update, setView, fit, zoomBy, zoomLevel, centerOn, destroy,
+    nodeEls: () => nodeEls,
+  };
 }
 
 // ---- panel.js
@@ -1132,6 +1099,18 @@ function flowPanel(view, f, select) {
 // Вкладки «Таблицы» (F-29) и «Сверка» (F-30): всё, что видно на графе, читается без графа.
 
 
+// Подпись столбца — у каждой ячейки: на узком месте строка таблицы становится карточкой
+// «подпись — значение», и прокрутки вбок нет (D-16, style.css).
+function labelCells(table) {
+  const heads = [...table.querySelectorAll("thead th")].map((th) => th.textContent);
+  for (const tr of table.querySelectorAll("tbody tr")) {
+    [...tr.children].forEach((cell, i) => {
+      if (cell.tagName === "TD" && heads[i]) cell.setAttribute("data-label", heads[i]);
+    });
+  }
+  return table;
+}
+
 function tablesView(view, vis, select) {
   const cat = view.catalog;
   const nodes = view.nodes.filter((n) => vis.nodes.has(n.id)).sort((a, b) => a.layerIndex - b.layerIndex || a.name.localeCompare(b.name, "ru"));
@@ -1175,7 +1154,7 @@ function tablesView(view, vis, select) {
     ))),
   );
   const note = h("p", { class: "muted", text: "«Неизвестно» — сигнал есть, наблюдение не удалось; «не наблюдается» — сигнала нет по устройству; ни то, ни другое не ноль. Фильтры схемы действуют и здесь." });
-  return h("div", { class: "tables" }, note, h("div", { class: "scroll" }, nodeTable), h("div", { class: "scroll" }, flowTable));
+  return h("div", { class: "tables" }, note, h("div", { class: "scroll" }, labelCells(nodeTable)), h("div", { class: "scroll" }, labelCells(flowTable)));
 }
 
 function reconView(view) {
@@ -1265,7 +1244,6 @@ class Viewer {
     this.view = null;
     this.vis = null;
     this.playTimer = 0;
-    this.motion = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
     this.buildShell();
   }
 
@@ -1302,12 +1280,12 @@ class Viewer {
     // схема
     e.filters = h("details", { class: "dv-filters" });
     e.graphBox = h("div", { class: "dv-graph" });
-    e.zoom = h("div", { class: "dv-zoom" },
-      h("button", { type: "button", class: "dv-btn", "aria-label": "Крупнее", on: { click: () => this.graph?.zoomBy(1.3) }, text: "+" }),
-      h("button", { type: "button", class: "dv-btn", "aria-label": "Мельче", on: { click: () => this.graph?.zoomBy(1 / 1.3) }, text: "−" }),
-      h("button", { type: "button", class: "dv-btn", on: { click: () => this.graph?.fit() }, text: "Вписать" }));
+    e.zoomIn = h("button", { type: "button", class: "dv-btn", "aria-label": "Крупнее", on: { click: () => this.graph?.zoomBy(ZOOM.step) }, text: "+" });
+    e.zoomOut = h("button", { type: "button", class: "dv-btn", "aria-label": "Мельче", on: { click: () => this.graph?.zoomBy(1 / ZOOM.step) }, text: "−" });
+    e.zoomFit = h("button", { type: "button", class: "dv-btn", on: { click: () => this.graph?.fit() }, text: "Вся схема" });
+    e.zoom = h("div", { class: "dv-zoom", role: "group", "aria-label": "Масштаб" }, e.zoomIn, e.zoomOut, e.zoomFit);
     e.panel = h("aside", { class: "dv-panel", "aria-live": "polite", "aria-label": "Подробности", hidden: true });
-    e.hint = h("p", { class: "dv-hint", text: "Нажмите узел или поток — справа (на телефоне — ниже) появятся подробности. Колесо или щипок — масштаб, перетаскивание — сдвиг. Клавиатура: Tab — по узлам, Enter — выбрать, Esc — снять, / — поиск, пробел — воспроизведение, стрелки — день." });
+    e.hint = h("p", { class: "dv-hint", text: "Нажмите проект или связь — появятся подробности. «+» и «−» — масштаб (увеличенную схему можно двигать), «Вся схема» — вернуть. Клавиши: Tab, Enter, Esc, / — поиск, ← → — день." });
     e.timeline = h("div", { class: "dv-timeline" });
     e.legend = h("div", { class: "dv-legend", "aria-label": "Легенда" });
     e.tabGraph = h("section", { class: "dv-tab", role: "tabpanel", "aria-labelledby": "dv-tab-graph" },
@@ -1327,7 +1305,6 @@ class Viewer {
       this.render();
     });
     document.addEventListener("keydown", (ev) => this.onKey(ev));
-    this.motion?.addEventListener?.("change", () => this.rebuild());
     window.addEventListener("message", (ev) => {
       if (ev.source !== window.parent || window.parent === window) return;
       if (ev.data && ev.data.type === "dpvis:data") this.accept({ model: ev.data.model, state: ev.data.state || null });
@@ -1427,18 +1404,19 @@ class Viewer {
       this.message(`Данные не прочитаны: ${err.message}`);
       return;
     }
-    const vb = keepView && this.graph ? this.graph.svg.getAttribute("viewBox") : null;
     this.view = view;
     this.f = decode(encode(this.f), view);
-    this.lay = layout(view);
-    this.graph?.destroy();
-    this.graph = createGraph(this.el.graphBox, view, this.lay, {
-      select: (sel) => this.select(sel),
-      selected: () => this.f.sel,
-      hover: (t, ev) => this.hover(t, ev),
-      reducedMotion: () => !!this.motion?.matches,
-    });
-    if (vb) this.graph.svg.setAttribute("viewBox", vb);
+    if (keepView && this.graph) {
+      this.graph.setView(view); // новый срез — тот же масштаб и сдвиг (F-45)
+    } else {
+      this.graph?.destroy();
+      this.graph = createGraph(this.el.graphBox, view, {
+        select: (sel) => this.select(sel),
+        selected: () => this.f.sel,
+        hover: (t, ev) => this.hover(t, ev),
+        zoomChanged: (k) => this.syncZoom(k),
+      });
+    }
     this.el.title.textContent = view.title;
     this.el.show.hidden = !view.nodes.some((n) => n.visibility === "undisclosed") && !this.f.show;
     this.el.tabs.recon.hidden = !(view.diagnostics || view.registry);
@@ -1512,7 +1490,7 @@ class Viewer {
     p.hidden = false;
     p.classList.add("has-sel");
     this.el.main.classList.add("has-sel");
-    if (wasHidden && window.innerWidth <= 860) requestAnimationFrame(() => p.scrollIntoView({ block: "nearest", behavior: "smooth" }));
+    if (wasHidden && p.getBoundingClientRect().top > (window.innerHeight || 0)) p.scrollIntoView({ block: "nearest", behavior: "auto" });
     p.replaceChildren(
       h("div", { class: "dv-panel-head" },
         h("h2", { text: title }),
@@ -1522,7 +1500,8 @@ class Viewer {
 
   hover(t, ev) {
     const tip = this.el.tip;
-    if (!t || !ev) {
+    // подсказка — только для мыши: на касание отвечает панель подробностей
+    if (!t || !ev || (ev.pointerType && ev.pointerType !== "mouse")) {
       tip.hidden = true;
       return;
     }
@@ -1547,11 +1526,18 @@ class Viewer {
     tip.style.top = `${y}px`;
   }
 
+  syncZoom(k) {
+    const e = this.el;
+    e.zoomOut.disabled = k <= ZOOM.min + 1e-6;
+    e.zoomFit.disabled = k <= ZOOM.min + 1e-6;
+    e.zoomIn.disabled = k >= ZOOM.max - 1e-6;
+  }
+
   // ------------------------------------------------------------ фильтры (F-27)
   buildFilters() {
     const v = this.view;
     const e = this.el;
-    e.filters.open = !this.site && window.innerWidth > 760;
+    e.filters.open = false; // проще экран (D-16): фильтры — по нажатию
     const kinds = [...new Set(v.flows.map((f) => f.kind))];
     const states = FLOW_STATES.filter((s) => v.flows.some((f) => f.state === s));
     const layers = v.layers.filter((l) => v.nodes.some((n) => n.layer === l.id));
@@ -1670,11 +1656,11 @@ class Viewer {
     this.el.legend.replaceChildren(
       h("div", { class: "lg-row" }, h("span", { class: "lg-ttl", text: "Кто движет:" }), ...drv),
       h("div", { class: "lg-row" }, h("span", { class: "lg-ttl", text: "Состояние:" }),
-        h("span", { class: "lg" }, h("i", { class: "ln st-flowing", "aria-hidden": "true" }), "идёт или тихо (частицы — события за неделю)"),
+        h("span", { class: "lg" }, h("i", { class: "ln st-flowing", "aria-hidden": "true" }), "идёт или тихо — чем толще, тем больше событий за неделю"),
         h("span", { class: "lg" }, h("i", { class: "ln st-planned", "aria-hidden": "true" }), "план"),
         h("span", { class: "lg" }, h("i", { class: "ln st-blocked", "aria-hidden": "true" }), "заблокирован или выключен")),
       h("div", { class: "lg-row" }, h("span", { class: "lg-ttl", text: "Узлы:" }),
-        h("span", { class: "lg" }, h("i", { class: "nd act-working", "aria-hidden": "true" }), "работает (пульс)"),
+        h("span", { class: "lg" }, h("i", { class: "nd act-working", "aria-hidden": "true" }), "работает (яркая рамка)"),
         h("span", { class: "lg" }, h("i", { class: "nd", "aria-hidden": "true" }), "без работы"),
         h("span", { class: "lg" }, h("i", { class: "nd act-unknown", "aria-hidden": "true" }, "?"), "неизвестно"),
         h("span", { class: "lg" }, h("i", { class: "nd act-unobserved", "aria-hidden": "true" }), "не наблюдается"),
