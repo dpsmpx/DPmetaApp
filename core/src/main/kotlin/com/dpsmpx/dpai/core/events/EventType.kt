@@ -110,4 +110,8 @@ enum class EventType {
     // --- загрузка окон подписки и порог (D-42, D-45) ---
     ACCOUNT_USAGE_OBSERVED,
     ACCOUNT_NEAR_THRESHOLD_SET,
+
+    // --- настройки контура: targets и предел сессий (D-42, п. 5, 6) ---
+    CONTROL_TARGET_ENABLED_SET,
+    CONTROL_SESSION_LIMIT_SET,
 }
