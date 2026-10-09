@@ -18,6 +18,9 @@
 | **SocialMediaImage** — контент и сайт `dpsmpx.com` | `dpsmpx/SocialMediaImage` | — | — | — |
 | **DP_game_market_analytic_system** — анализ рынка игр | `dpsmpx/DP_game_market_analytic_system` | — (пакет `dpmarket`, команда `dpm` — ещё не написана; на странице прогресса сайта — «DP_game_market», `SocialMediaImage:data/progress/scope.yaml`) | — | — |
 | **DPmonetization** — Strategic Project Intelligence | `dpsmpx/DPmonetization` | — (пакет `dpmon`, команда `tools/spi` — ещё не написана) | — | — |
+| **DPmetaApp** — мета-приложение для Android | `dpsmpx/DPmetaApp` | — | — | — |
+| **DPvisualisation** — интерактивная модель экосистемы | `dpsmpx/DPvisualisation` | — (пакет `tools.dpvis`; на сайте автор называл его «DPvisualise», `DPvisualisation:D-15`) | — | — |
+| **DP_AI_Orcestrator** — управляющий слой для сессий ИИ | `dpsmpx/DP_AI_Orcestrator` | — (команда `dpai`; «Orcestrator» — так в имени репозитория) | имя репозитория | — |
 | **DPmeta** — этот репозиторий | `dpsmpx/DPmeta` | — | — | `DPmeta:M-01` |
 
 Наблюдение: в Galdhold дата смены имени языка записана как 4 октября
@@ -61,14 +64,19 @@
 | SocialMediaImage | `Д0`…`Д39` | открытые решения `ОР-N`, конфликты идентичности `IC-NN`, фазы `П0`…`П11`, `К1`…`К7`, объекты контента `CI-NNNN` | смешанный |
 | DP_game_market_analytic_system | `ADR-001`…`ADR-010` (`docs/DECISIONS.md`) | инварианты `INV-NN` | латиница |
 | DPmonetization | журнала нет; код ссылается на `D-04`…`D-09` (SQ-22) | критерии готовности `tech.core_loop`… (`config/tracks.toml`) | латиница |
+| DPmetaApp | в `main` журнала нет; `D-NN` — в невлитой ветке (SQ-27) | — | латиница |
+| DPvisualisation | `D-01`…`D-16` — `docs/direction/DECISIONS.md` | ТЗ: `G-`, `S-`, `F-`, `N-`, `I-`, `T-`, `A-`, `L-`, `R-`, `Q-` | латиница |
+| DP_AI_Orcestrator | `D-01`…`D-49` — `docs/direction/DECISIONS.md` | — | латиница |
 | DPmeta | `M-NN` | `C-NN`, `RISK-NN`, `SQ-NN`, `E-NN`; находки аудита документации `DOC-AUDIT-NNN` (у каждого проекта свой счёт) и `CROSS-DOC-NNN` (M-09) | латиница |
 
-Диапазоны — на 5 октября 2026; растут, и это нормально.
+Диапазоны — на 5 октября 2026, у новых репозиториев — на 9 октября 2026;
+растут, и это нормально.
 
 **Наблюдения:**
 
-- `D-NN` — у трёх репозиториев (и в коде DPmonetization, где журнала ещё
-  нет), `Р18` — у двух с разным смыслом
+- `D-NN` — у пяти репозиториев (DPpass, DPprofile, DPlearn,
+  DPvisualisation, DP_AI_Orcestrator; ещё в коде DPmonetization и в ветке
+  DPmetaApp, где журнала в `main` нет), `Р18` — у двух с разным смыслом
   (`Galdhold:Р18` — независимость от DPlang, `DPlang:Р18` — эволюция
   языка), `F-` — и факты DPprofile, и требования ТЗ DP-Verify. Номер без
   имени проекта однозначен только внутри своего репозитория.

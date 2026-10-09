@@ -48,5 +48,8 @@ python3 tools/xref.py --root ..      # сверка ссылок между кл
 ([`docs/reports/2026-10-05-2-ECOSYSTEM_HEALTH.md`](docs/reports/2026-10-05-2-ECOSYSTEM_HEALTH.md));
 третий — частичный, по изменившимся SocialMediaImage, DPpass и новому
 DPmonetization
-([`docs/reports/2026-10-05-3-ECOSYSTEM_HEALTH.md`](docs/reports/2026-10-05-3-ECOSYSTEM_HEALTH.md)).
+([`docs/reports/2026-10-05-3-ECOSYSTEM_HEALTH.md`](docs/reports/2026-10-05-3-ECOSYSTEM_HEALTH.md));
+четвёртый — частичный, 9 октября 2026: DPmetaApp, DPvisualisation,
+DP_AI_Orcestrator и связи схемы сайта
+([`docs/reports/2026-10-09-ECOSYSTEM_HEALTH.md`](docs/reports/2026-10-09-ECOSYSTEM_HEALTH.md)).
 Аудит согласованности документации (M-09) ещё не запускался.
