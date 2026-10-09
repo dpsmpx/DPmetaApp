@@ -41,6 +41,8 @@ class AgentStepRunner(
     private val pollEvery: Duration = 500.milliseconds,
     private val attempts: Int = 5,
     private val backoff: Duration = 1.seconds,
+    /** Повторённый отказ — наружу (журнал приложения, D-43): повтор спасает шаг, а причина не теряется. */
+    private val onRetry: (com.dpsmpx.dpai.core.diagnostics.Diagnostic) -> Unit = {},
 ) : StepRunner {
     private val pace = CountDownLatch(1)
 
@@ -82,6 +84,7 @@ class AgentStepRunner(
         var r = call()
         repeat(attempts - 1) {
             if (r !is Outcome.Failure || !retryable(r) || clock.monotonicNanos() + wait.inWholeNanoseconds >= deadline) return r
+            r.errors.forEach(onRetry)
             pace.await(wait.inWholeMilliseconds, TimeUnit.MILLISECONDS)
             wait *= 2
             r = call()

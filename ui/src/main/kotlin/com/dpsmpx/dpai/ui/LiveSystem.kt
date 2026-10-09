@@ -133,7 +133,7 @@ class LiveSystem(
         // Git на target — по SSH: команды `git -C <путь>` рабочего каталога не требуют (GitService).
         val git = projectTarget?.let { t -> GitService(sshHost(t.toTarget(knownHostsFile).ssh!!, t.platform), GitCommands(ApprovalLedger()), clock) }
         // Шаги проверки — через агента target: по SSH рабочий каталог задаёт он (AgentStepRunner).
-        val verifier = projectTarget?.let { t -> Verifier(AgentStepRunner(manager.client(t.id).valueOrNull()!!, ids, clock), clock) }
+        val verifier = projectTarget?.let { t -> Verifier(AgentStepRunner(manager.client(t.id).valueOrNull()!!, ids, clock, onRetry = { d -> onProblem(com.dpsmpx.dpai.core.diagnostics.Diagnostic.of(d.code, "вызов агента повторён: ${d.message}", d.subject, causes = d.causes)) }), clock) }
             ?: Verifier({ _, _, _ -> Outcome.success(Completed(0, emptyList(), emptyList())) }, clock)
         o = Orchestrator(
             clock, ids, random, journal, router, config,

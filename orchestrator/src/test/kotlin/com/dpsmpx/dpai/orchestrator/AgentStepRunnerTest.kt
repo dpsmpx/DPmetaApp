@@ -78,12 +78,14 @@ class AgentStepRunnerTest {
                 return if (call in failOn) Outcome.failure(DiagCode.SSH_CONNECTION_FAILED, "Connection reset", "ssh") else mock.start(spec, onOutput)
             }
         }
-        val r = AgentStepRunner(AgentClient(flaky, listOf("dpai"), null, "target mock"), ids, pollEvery = 1.milliseconds, backoff = 1.milliseconds)
+        val retried = mutableListOf<DiagCode>()
+        val r = AgentStepRunner(AgentClient(flaky, listOf("dpai"), null, "target mock"), ids, pollEvery = 1.milliseconds, backoff = 1.milliseconds, onRetry = { retried += it.code })
             .run(listOf("python", "-m", "unittest"), "/w", 30.seconds)
         val done = r.valueOrNull()
         assertEquals(0, done?.exitCode, r.diagnostics.toString())
         assertEquals(listOf("Ran 5 tests"), done!!.stdout)
         assertEquals(1, starts, "шаг запущен один раз")
+        assertEquals(List(3) { DiagCode.SSH_CONNECTION_FAILED }, retried, "каждый повтор — с причиной наружу")
     }
 
     @Test
