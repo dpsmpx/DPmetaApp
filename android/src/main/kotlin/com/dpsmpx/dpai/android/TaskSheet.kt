@@ -193,26 +193,71 @@ private fun ReplyEditor(busy: Boolean, onSend: (String) -> Unit) {
 
 /**
  * Итоговые сообщения ходов (D-42): на чём модель остановилась и ждёт
- * ввода — целиком, по порядку, текст можно выделить и скопировать.
+ * ввода — целиком, по порядку. Переключатель: оформление (Markdown без
+ * символов разметки) или исходный текст; «Копировать» берёт то, что
+ * видно, — оформленное копируется чисто, без `#`, `**` и `` ` ``.
  */
 @Composable
 private fun TurnMessagesSection(messages: List<com.dpsmpx.dpai.orchestrator.TurnMessage>) {
     if (messages.isEmpty()) return
+    val context = androidx.compose.ui.platform.LocalContext.current
     val zone = remember { java.time.ZoneId.systemDefault() }
+    var formatted by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(true) }
     androidx.compose.material3.HorizontalDivider()
-    Text("Сообщения модели (${messages.size})", style = MaterialTheme.typography.titleSmall)
+    androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        Text("Сообщения модели (${messages.size})", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+        FilterChip(selected = formatted, onClick = { formatted = true }, label = { Text("md") })
+        androidx.compose.foundation.layout.Spacer(Modifier.padding(2.dp))
+        FilterChip(selected = !formatted, onClick = { formatted = false }, label = { Text("txt") })
+    }
+    val codeBackground = MaterialTheme.colorScheme.surfaceVariant
+    val linkColor = MaterialTheme.colorScheme.primary
     for (m in messages) {
         val t = java.time.Instant.ofEpochMilli(m.at.epochMillis).atZone(zone)
+        val rendered = remember(m.text) { com.dpsmpx.dpai.ui.Markdown.render(m.text) }
         androidx.compose.material3.Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    "ход ${m.turn} · %02d.%02d %02d:%02d · ${m.status}${m.model?.let { " · $it" } ?: ""}".format(t.dayOfMonth, t.monthValue, t.hour, t.minute),
-                    style = MaterialTheme.typography.labelSmall,
-                )
+                androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Text(
+                        "ход ${m.turn} · %02d.%02d %02d:%02d · ${m.status}${m.model?.let { " · $it" } ?: ""}".format(t.dayOfMonth, t.monthValue, t.hour, t.minute),
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = {
+                        val text = if (formatted) rendered.text else m.text
+                        context.getSystemService(android.content.ClipboardManager::class.java)
+                            .setPrimaryClip(android.content.ClipData.newPlainText("dpai", text))
+                    }) { Text("Копировать") }
+                }
                 androidx.compose.foundation.text.selection.SelectionContainer {
-                    Text(m.text, style = MaterialTheme.typography.bodySmall)
+                    if (formatted) {
+                        Text(annotated(rendered, codeBackground, linkColor), style = MaterialTheme.typography.bodySmall)
+                    } else {
+                        Text(m.text, style = MaterialTheme.typography.bodySmall, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                    }
                 }
             }
         }
     }
+}
+
+/** Оформленный текст ([com.dpsmpx.dpai.ui.Markdown]) → стили Compose; символов разметки в нём уже нет. */
+private fun annotated(r: com.dpsmpx.dpai.ui.Rendered, code: androidx.compose.ui.graphics.Color, link: androidx.compose.ui.graphics.Color): androidx.compose.ui.text.AnnotatedString {
+    val b = androidx.compose.ui.text.AnnotatedString.Builder(r.text)
+    for (m in r.marks) {
+        val style = when (m.style) {
+            com.dpsmpx.dpai.ui.MarkStyle.BOLD -> androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold)
+            com.dpsmpx.dpai.ui.MarkStyle.ITALIC -> androidx.compose.ui.text.SpanStyle(fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+            com.dpsmpx.dpai.ui.MarkStyle.STRIKE -> androidx.compose.ui.text.SpanStyle(textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough)
+            com.dpsmpx.dpai.ui.MarkStyle.CODE, com.dpsmpx.dpai.ui.MarkStyle.CODE_BLOCK ->
+                androidx.compose.ui.text.SpanStyle(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, background = code)
+            com.dpsmpx.dpai.ui.MarkStyle.HEADING_1 -> androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold, fontSize = androidx.compose.ui.unit.TextUnit(1.35f, androidx.compose.ui.unit.TextUnitType.Em))
+            com.dpsmpx.dpai.ui.MarkStyle.HEADING_2 -> androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold, fontSize = androidx.compose.ui.unit.TextUnit(1.2f, androidx.compose.ui.unit.TextUnitType.Em))
+            com.dpsmpx.dpai.ui.MarkStyle.HEADING_3 -> androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold, fontSize = androidx.compose.ui.unit.TextUnit(1.08f, androidx.compose.ui.unit.TextUnitType.Em))
+            com.dpsmpx.dpai.ui.MarkStyle.QUOTE -> androidx.compose.ui.text.SpanStyle(fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, color = link.copy(alpha = 0.8f))
+            com.dpsmpx.dpai.ui.MarkStyle.LINK -> androidx.compose.ui.text.SpanStyle(color = link, textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline)
+        }
+        b.addStyle(style, m.start, m.end)
+    }
+    return b.toAnnotatedString()
 }
