@@ -179,6 +179,28 @@ class DemoModel(
         Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.INTERNAL_ERROR, "контроллер не принял команду", e)))
     }
 
+    /** Контроллер для канала `dpai` (D-47): только настоящий, не демо. */
+    fun liveOrchestrator(): com.dpsmpx.dpai.orchestrator.Orchestrator? =
+        (built as? LiveSystem)?.orchestrator ?: if (hasLive()) runCatching { lock.withLock { (current() as? LiveSystem)?.orchestrator } }.getOrNull() else null
+
+    /** Команда с полным итогом (`OperationResult`) — для канала `dpai`; как [command]. */
+    fun commandResult(c: Command, waitMs: Long = WAIT_MS): Outcome<com.dpsmpx.dpai.core.operation.OperationResult<*>> = try {
+        val v = built ?: lock.withLock { current() }
+        val f = v.orchestrator.submit(c)
+        if (lock.tryLock()) {
+            try {
+                v.orchestrator.runCommands()
+            } finally {
+                lock.unlock()
+            }
+        }
+        Outcome.success(f.get(waitMs, TimeUnit.MILLISECONDS))
+    } catch (_: TimeoutException) {
+        Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "контур занят вызовом target: команда в очереди и применится в ближайшем такте")
+    } catch (e: Exception) {
+        Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.INTERNAL_ERROR, "контроллер не принял команду", e)))
+    }
+
     /**
      * Ответ человека на запрос (D-44) — с кнопки уведомления, окна поверх
      * приложений или экрана; ссылку и хеш проверяет оркестратор.

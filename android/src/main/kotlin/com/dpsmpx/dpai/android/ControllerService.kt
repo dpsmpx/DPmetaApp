@@ -83,6 +83,8 @@ class ControllerService : Service() {
             wake = lock
             running = true
             log.step("служба контроллера запущена")
+            // Канал dpai (D-47) — пока работает служба контроллера.
+            ControlServer.start(app)
             val meter = TickMeter(Clock.SYSTEM)
             val device = AppLogs.device(app) { wake?.isHeld }
             // Первая сводка и проверка sshd — в первом такте (поток службы: сеть в главном потоке запрещена).
@@ -140,6 +142,7 @@ class ControllerService : Service() {
 
     override fun onDestroy() {
         runCatching { AppLogs.get(applicationContext).step("служба контроллера остановлена") }
+        ControlServer.stop()
         running = false
         timer?.shutdownNow()
         timer = null

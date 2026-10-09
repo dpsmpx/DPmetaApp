@@ -95,6 +95,7 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
             }
         }
         item(key = "control") { ControlCard(model) }
+        item(key = "cli") { CliCard() }
         items(targets, key = { it.id.value }) { t ->
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
@@ -422,6 +423,46 @@ private fun TargetSwitches(model: DemoModel, t: TargetEntry) {
                     slots = withContext(Dispatchers.IO) { model.slotsOf(t.id) }
                 }
             })
+        }
+    }
+}
+
+/**
+ * Командная строка (D-47): `dpai` в Termux на этом телефоне (или с ПК
+ * через SSH-туннель) управляет контуром через канал на 127.0.0.1; код
+ * сопряжения — здесь, на две минуты.
+ */
+@Composable
+private fun CliCard() {
+    val context = androidx.compose.ui.platform.LocalContext.current.applicationContext
+    var code by remember { mutableStateOf<String?>(null) }
+    var until by remember { mutableStateOf<Long?>(null) }
+    var note by remember { mutableStateOf<String?>(null) }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp)) {
+            Text("Командная строка dpai", style = MaterialTheme.typography.titleMedium)
+            Text(
+                if (ControlServer.running) "Канал: 127.0.0.1:${ControlServer.PORT}" else "Канал закрыт: он работает вместе со службой контроллера",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            code?.let { c ->
+                Text("Код: $c", style = MaterialTheme.typography.headlineSmall)
+                Text("В Termux: dpai control pair $c  (код действует 2 минуты)", style = MaterialTheme.typography.bodySmall)
+            }
+            Row {
+                TextButton(onClick = {
+                    val (c, u) = ControlServer.pairing(context).newCode()
+                    code = c
+                    until = u.epochMillis
+                    note = null
+                }) { Text("Показать код") }
+                TextButton(onClick = {
+                    ControlServer.pairing(context).revoke()
+                    code = null
+                    note = "Токен отозван: dpai нужно сопрячь заново"
+                }) { Text("Отозвать токен") }
+            }
+            note?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
         }
     }
 }

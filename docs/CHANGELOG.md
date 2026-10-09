@@ -3,6 +3,15 @@
 Вехи проекта: этапы, форматы, публичные контракты. Подробности — в git
 и PR; что решено — `docs/direction/DECISIONS.md`.
 
+## 9 октября 2026 — `dpai` как пульт приложения (D-47)
+
+- Канал на `127.0.0.1:47777` в службе контроллера; сопряжение кодом с
+  экрана (Targets → «Командная строка»), токен в `~/.config/dpai`.
+- Команды: `dpai status`, `task add|<id> hold|resume|cancel|retry|verify|
+  waive|priority|policy|messages`, `session <id> stop|send|fresh`,
+  `requests`, `answer`, `limit`, `sessions-limit`, `target|slot <id>
+  on|off`; опасное — с `--yes`, `--json` — ответ как есть.
+
 ## 9 октября 2026 — target, слот и предел сессий с экрана (D-42, п. 5, 6)
 
 - Выключенный target новых сессий не получает, идущие ходы доигрывают;
