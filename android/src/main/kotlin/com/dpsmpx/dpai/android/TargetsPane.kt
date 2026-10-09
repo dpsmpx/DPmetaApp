@@ -94,10 +94,12 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
                 Button(onClick = { form = true }) { Text("Добавить") }
             }
         }
+        item(key = "control") { ControlCard(model) }
         items(targets, key = { it.id.value }) { t ->
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
                     Text(t.label, style = MaterialTheme.typography.titleSmall)
+                    if (t.configDir != null) TargetSwitches(model, t)
                     Text("${t.user}@${t.host}:${t.port} · ${t.type.name}", style = MaterialTheme.typography.bodySmall)
                     Text(t.configDir?.let { "каталог Claude: $it" } ?: "без каталога Claude — только проверка агента", style = MaterialTheme.typography.bodySmall)
                     Row {
@@ -340,3 +342,87 @@ private fun TermuxCard(port: Int) {
         }
     }
 }
+
+/**
+ * Контур (D-42, п. 6): общий предел одновременных сессий — сверх
+ * предела каждого target; выше него новые задачи ждут.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun ControlCard(model: DemoModel) {
+    val scope = rememberCoroutineScope()
+    var limit by remember { mutableStateOf(model.control()?.maxSessions) }
+    var live by remember { mutableStateOf(model.control() != null) }
+    var note by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            val c = withContext(Dispatchers.IO) { model.control() }
+            live = c != null
+            limit = c?.maxSessions
+            kotlinx.coroutines.delay(3000)
+        }
+    }
+    if (!live) return
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp)) {
+            Text("Контур", style = MaterialTheme.typography.titleMedium)
+            Text("Сессий одновременно: ${limit ?: "без общего предела"}", style = MaterialTheme.typography.bodySmall)
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                for (v in listOf<Int?>(null, 1, 2, 4, 8)) {
+                    androidx.compose.material3.FilterChip(selected = limit == v, onClick = {
+                        scope.launch {
+                            note = when (val r = withContext(Dispatchers.IO) { model.command(com.dpsmpx.dpai.orchestrator.commands.Command.SetSessionLimit(v)) }) {
+                                is com.dpsmpx.dpai.core.result.Outcome.Success -> null.also { limit = v }
+                                is com.dpsmpx.dpai.core.result.Outcome.Failure -> "Не принято: ${r.diagnostics.first().message}"
+                            }
+                        }
+                    }, label = { Text(v?.toString() ?: "∞") })
+                }
+            }
+            note?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall) }
+        }
+    }
+}
+
+/**
+ * Target и его слоты (D-42, п. 5): выключенный target новых сессий не
+ * получает (идущие доигрывают); выключенный слот не арендуется, после
+ * включения — проба входа.
+ */
+@Composable
+private fun TargetSwitches(model: DemoModel, t: TargetEntry) {
+    val scope = rememberCoroutineScope()
+    var enabled by remember { mutableStateOf(model.control()?.let { t.id !in it.disabledTargets }) }
+    var slots by remember { mutableStateOf(model.slotsOf(t.id)) }
+    LaunchedEffect(t.id) {
+        while (true) {
+            enabled = withContext(Dispatchers.IO) { model.control()?.let { t.id !in it.disabledTargets } }
+            slots = withContext(Dispatchers.IO) { model.slotsOf(t.id) }
+            kotlinx.coroutines.delay(3000)
+        }
+    }
+    val on = enabled ?: return
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("Принимает новые задачи", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+        androidx.compose.material3.Switch(checked = on, onCheckedChange = { v ->
+            enabled = v
+            scope.launch { withContext(Dispatchers.IO) { model.command(com.dpsmpx.dpai.orchestrator.commands.Command.SetTargetEnabled(t.id, v)) } }
+        })
+    }
+    for (slot in slots) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("слот ${slot.configDir.substringAfterLast('/')} · ${slot.state}", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+            androidx.compose.material3.Switch(checked = !slot.disabled, onCheckedChange = { v ->
+                scope.launch {
+                    withContext(Dispatchers.IO) {
+                        model.command(com.dpsmpx.dpai.orchestrator.commands.Command.SetSlotEnabled(slot.id, v))
+                        // Включённый слот — вход неизвестен: проба, а не «как было» (D-13).
+                        if (v) model.probe(t.id)
+                    }
+                    slots = withContext(Dispatchers.IO) { model.slotsOf(t.id) }
+                }
+            })
+        }
+    }
+}
+

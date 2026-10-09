@@ -130,6 +130,21 @@ sealed interface Command {
         override val operation: String get() = "subscription.near-percent"
     }
 
+    /** Target принимает новые сессии или нет (D-42, п. 5); идущие на нём ходы доигрывают. */
+    data class SetTargetEnabled(val target: com.dpsmpx.dpai.core.ids.ExecutionTargetId, val enabled: Boolean, override val key: String? = null) : Command {
+        override val operation: String get() = "target.enabled"
+    }
+
+    /** Слот аккаунта включён или выключен (D-42, п. 5); после включения нужна проба входа. */
+    data class SetSlotEnabled(val slot: com.dpsmpx.dpai.core.ids.AccountId, val enabled: Boolean, override val key: String? = null) : Command {
+        override val operation: String get() = "slot.enabled"
+    }
+
+    /** Общий предел одновременных сессий контура (D-42, п. 6); `null` — без общего предела. */
+    data class SetSessionLimit(val limit: Int?, override val key: String? = null) : Command {
+        override val operation: String get() = "control.session-limit"
+    }
+
     companion object {
         /** Ключ идемпотентности — короткая латиница: его пишет оболочка (UUID нажатия), а не человек. */
         val KEY = Regex("[A-Za-z0-9_.:-]{8,80}")

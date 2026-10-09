@@ -78,6 +78,7 @@ Code — UUID, `docs/research/CLAUDE_CODE_CLI.md`): непрозрачная с�
 | `dpai.merges-state` | 1 | ожидающие слияния (задача, запрос одобрения, предложение, срок) и слитые задачи с одобрением каждой; события — `TASK_MERGE_REQUESTED`, `TASK_MERGE_DECLINED`, `TASK_MERGED` в потоке задачи | 14, 19 |
 | `dpai.user-requests-state` | 1 | запросы человеку (D-44): вид, назначение, предмет, текст, варианты, задача и сессия, срок, состояние, доставки, ответ; события — `USER_REQUEST_CREATED`, `_DELIVERED`, `_ANSWERED`, `_EXPIRED`, `_CANCELLED`, `_FAILED` в потоке запроса | 11, 12 |
 | `dpai.operations-state` | 1 | исполненные команды с ключом идемпотентности (D-42): ключ, операция, итог, значение, код отказа; событие — `OPERATION_RECORDED` в системном потоке | 11 |
+| `dpai.control-state` | 1 | настройки контура от человека (D-42, п. 5, 6): выключенные targets (новых сессий не получают) и общий предел одновременных сессий; события — `CONTROL_TARGET_ENABLED_SET` в потоке target, `CONTROL_SESSION_LIMIT_SET` в системном | 11 |
 | `dpai.task-messages` | 1 | итоговые сообщения ходов задачи (D-42) — документ задачи `messages-<задача>`: сессия, номер хода, время, итог хода, модель и полный текст (до 256 КиБ; в журнале событий текст модели урезан до `maxOutputChars`); последние 50 ходов | 11 |
 | `dpai.stored` | 1 | конверт документа: `sha256` содержимого и `content` | 2 |
 | `dpai.snapshot` | 1 | снимок: `projection`, `position`, `recordHash`, `state` | 2 |

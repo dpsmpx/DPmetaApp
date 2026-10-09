@@ -295,4 +295,35 @@ class TaskCommandsTest {
         assertEquals(emptyList(), o.invariants())
         assertTrue(o.requests.requests.values.filter { it.task == t }.all { it.terminal }, "запрос о непроверенной снят")
     }
+
+    /**
+     * Настройки контура (D-42, п. 5, 6): выключенный target не получает
+     * новых сессий (и после перезапуска), общий предел держит число
+     * одновременных сессий, выключенный слот не арендуется.
+     */
+    @Test
+    fun targetsSlotsAndSessionLimit() {
+        val (o, runner) = boot()
+        val (a, b) = targets.map { it.id }
+        assertEquals(OperationStatus.SUCCEEDED, o.run(Command.SetTargetEnabled(a, false)).status)
+        assertEquals(OperationStatus.SUCCEEDED, o.run(Command.SetSessionLimit(1)).status)
+        assertEquals(DiagCode.VALUE_INVALID, o.run(Command.SetSessionLimit(0)).diagnostics.single().code)
+        val tasks = (1..3).map { o.addTask("задача $it", "цель $it").valueOrNull()!! }
+        o.tick()
+        val running = o.sessions.sessions.values.filter { !it.terminal }
+        assertEquals(1, running.size, "общий предел — одна сессия")
+        assertTrue(running.all { it.target == b }, "выключенный target новых сессий не получает")
+
+        val (second, runner2) = boot()
+        assertTrue(a in second.control.disabledTargets, "выключение пережило перезапуск")
+        assertEquals(1, second.control.maxSessions)
+        assertEquals(OperationStatus.SUCCEEDED, second.run(Command.SetSessionLimit(null)).status)
+        val slotB = second.accounts.slots.values.single { it.targetId == b }.id
+        assertEquals(OperationStatus.SUCCEEDED, second.run(Command.SetSlotEnabled(slotB, false)).status)
+        repeat(3) { second.tick(); for (s in host.runIds()) while (runner2.advance(s)) continue; clock.advance(1.minutes) }
+        assertTrue(second.sessions.sessions.values.none { !it.terminal && it.target == b }, "выключенный слот не арендуется")
+        assertEquals(OperationStatus.SUCCEEDED, second.run(Command.SetTargetEnabled(a, true)).status)
+        advance(second, runner2, 4)
+        assertTrue(tasks.all { state(second, it) == TaskState.DONE }, tasks.map { state(second, it) }.toString())
+    }
 }

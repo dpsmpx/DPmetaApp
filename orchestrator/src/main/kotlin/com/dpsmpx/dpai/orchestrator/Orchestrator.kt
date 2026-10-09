@@ -117,6 +117,8 @@ import com.dpsmpx.dpai.orchestrator.commands.OperationRecord
 import com.dpsmpx.dpai.orchestrator.commands.OperationsProjection
 import com.dpsmpx.dpai.orchestrator.commands.OperationsState
 import com.dpsmpx.dpai.orchestrator.commands.operationEnvelopes
+import com.dpsmpx.dpai.orchestrator.commands.sessionLimitEnvelope
+import com.dpsmpx.dpai.orchestrator.commands.targetEnabledEnvelope
 import com.dpsmpx.dpai.orchestrator.requests.RequestPurpose
 import com.dpsmpx.dpai.orchestrator.requests.UserRequestsProjection
 import com.dpsmpx.dpai.orchestrator.requests.requestEnvelopes
@@ -255,6 +257,10 @@ class Orchestrator(
     var requests: UserRequestsState = UserRequestsState.EMPTY
         private set
 
+    /** Настройки контура от человека (D-42, п. 5, 6): выключенные targets, общий предел сессий — из журнала. */
+    var control: com.dpsmpx.dpai.orchestrator.commands.ControlState = com.dpsmpx.dpai.orchestrator.commands.ControlState.EMPTY
+        private set
+
     /** Исполненные команды с ключами идемпотентности (D-42) — из журнала. */
     var operations: OperationsState = OperationsState.EMPTY
         private set
@@ -275,6 +281,7 @@ class Orchestrator(
             mergesState = restore(MergesProjection, MergesState.EMPTY)
             requests = restore(UserRequestsProjection, UserRequestsState.EMPTY)
             operations = restore(OperationsProjection, OperationsState.EMPTY)
+            control = restore(com.dpsmpx.dpai.orchestrator.commands.ControlProjection, com.dpsmpx.dpai.orchestrator.commands.ControlState.EMPTY)
             // Неистёкшие запросы одобрения снова ждут ответа; истёкшие отвергнет сам ApprovalDesk.
             for (m in mergesState.pending.values) approvals.restore(m.approval, m.proposal, m.expiresAt)
             lastSnapshotAt = journal.position
@@ -358,6 +365,7 @@ class Orchestrator(
         save(MergesProjection, mergesState)
         save(UserRequestsProjection, requests)
         save(OperationsProjection, operations)
+        save(com.dpsmpx.dpai.orchestrator.commands.ControlProjection, control)
         lastSnapshotAt = journal.position
     }
 
@@ -488,11 +496,15 @@ class Orchestrator(
     fun tick() {
         runCommands()
         commitTasks(tasksLogic.promote(tasks, clock.now()))
+        // Выключенный target новых сессий не получает; идущие на нём доигрывают (D-42, п. 5).
         val offers = targets.map { t ->
             val active = sessions.sessions.values.count { !it.terminal && it.target == t.id }
-            Tasks.TargetOffer(t.id, t.capabilities, (t.maxSessions - active).coerceAtLeast(0))
+            val free = if (t.id in control.disabledTargets) 0 else (t.maxSessions - active).coerceAtLeast(0)
+            Tasks.TargetOffer(t.id, t.capabilities, free)
         }
-        for (a in tasksLogic.plan(tasks, clock.now(), offers)) {
+        // Общий предел сессий контура (D-42, п. 6) — поверх предела каждого target.
+        val room = control.maxSessions?.let { (it - sessions.sessions.values.count { s -> !s.terminal }).coerceAtLeast(0) } ?: Int.MAX_VALUE
+        for (a in tasksLogic.plan(tasks, clock.now(), offers).take(room)) {
             runCommands()
             // Команда могла снять задачу с очереди (отмена, ответ человека) — план уже не про неё.
             if (tasks.tasks[a.task]?.state != TaskState.READY) continue
@@ -1090,6 +1102,36 @@ class Orchestrator(
                 }
             }
             is Command.Verify -> record(command, provenance) { verifyTask(command.task) }
+            is Command.SetTargetEnabled -> record(command, provenance) {
+                when {
+                    targets.none { it.id == command.target } -> Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такого target у контура", "target ${command.target}")
+                    (command.target !in control.disabledTargets) == command.enabled -> Outcome.success(command.enabled)
+                    else -> {
+                        write(listOf(recorder.targetEnabledEnvelope(command.target, command.enabled, clock.now())))
+                        control = com.dpsmpx.dpai.orchestrator.commands.ControlProjection.setTarget(control, command.target, command.enabled)
+                        Outcome.success(command.enabled)
+                    }
+                }
+            }
+            is Command.SetSessionLimit -> record(command, provenance) {
+                when {
+                    command.limit != null && command.limit !in com.dpsmpx.dpai.orchestrator.commands.SESSION_LIMIT_RANGE ->
+                        Outcome.failure(DiagCode.VALUE_INVALID, "предел сессий — от 1 до 64 или без предела")
+                    control.maxSessions == command.limit -> Outcome.success(command.limit)
+                    else -> {
+                        write(listOf(recorder.sessionLimitEnvelope(command.limit, clock.now())))
+                        control = control.copy(maxSessions = command.limit)
+                        Outcome.success(command.limit)
+                    }
+                }
+            }
+            is Command.SetSlotEnabled -> record(command, provenance) {
+                val r = if (command.enabled) accountsLogic.enable(accounts, command.slot, clock.now()) else accountsLogic.disable(accounts, command.slot, clock.now())
+                when (r) {
+                    is Outcome.Failure -> r
+                    is Outcome.Success -> Outcome.success(command.enabled).also { commitAccounts(r.value) }
+                }
+            }
             is Command.Waive -> record(command, provenance) {
                 if (command.reason.isBlank()) Outcome.failure(DiagCode.VALUE_INVALID, "исключение — с причиной") else resolveUnverified(command.task, WAIVE, command.by, command.reason.trim())
             }
