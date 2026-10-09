@@ -112,7 +112,7 @@ class ControlCommand(
         out("Задачи (${tasks.size}${if (tasks.size < all.size) ", в архиве ещё ${all.size - tasks.size}: dpai status --all" else ""}):")
         for (t in tasks) {
             val extra = listOfNotNull(
-                "пауза".takeIf { bool(t, "held") }, str(t, "model"), str(t, "reason"), str(t, "waiting")?.let { "ждёт: $it" },
+                "архив".takeIf { bool(t, "archived") }, "пауза".takeIf { bool(t, "held") }, str(t, "model"), str(t, "reason"), str(t, "waiting")?.let { "ждёт: $it" },
             ).joinToString(" · ")
             out("  ${short(str(t, "id"))}  ${str(t, "state")}  ${str(t, "priority")}  ${str(t, "title")}${if (extra.isNotEmpty()) "  [$extra]" else ""}")
         }
