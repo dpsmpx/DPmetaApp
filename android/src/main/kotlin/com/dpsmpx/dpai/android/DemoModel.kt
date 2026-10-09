@@ -295,13 +295,6 @@ class DemoModel(
         Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.INTERNAL_ERROR, "контроллер не запустился", e)))
     }
 
-    /** Кнопка одобрения слияния; без контроллера — отказ. */
-    fun respond(uri: String): Outcome<Boolean> = lock.withLock {
-        liveSystem().then { v ->
-            v?.respond(uri) ?: Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "одобрения — только у контроллера")
-        }
-    }
-
     /** Обновить загрузку окон подписок через `/usage` (D-48): без хода, лимит не тратится. */
     fun refreshUsage() = lock.withLock {
         liveSystem().valueOrNull()?.refreshUsage()

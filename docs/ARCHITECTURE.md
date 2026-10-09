@@ -276,9 +276,9 @@ target:     start ─► Detacher ─► supervise ─► процесс; выв
 выполнения (Compose, AndroidX) разрешены только ему (D-17,
 `check_modules.py`).
 
-Одобрения из уведомлений: `notifications.ApprovalAction` (ссылки
-`dpai://approve|deny/<apr_…>?hash=…`), `orchestrator.ApprovalDesk` —
-одобрение только по кнопке текущего запроса с тем же хешем предложения.
+Одобрение слияния — запрос человеку `task.merge` (D-49): ответ только на
+ждущий запрос с тем же хешем; ссылки `dpai://approve|deny`
+(`notifications.ApprovalAction`) больше не создаются.
 
 Запросы человеку (D-44): модель и автомат — `notifications.UserRequest`,
 `UserRequests`; журнал и снимок — `orchestrator.requests.UserRequestsProjection`;

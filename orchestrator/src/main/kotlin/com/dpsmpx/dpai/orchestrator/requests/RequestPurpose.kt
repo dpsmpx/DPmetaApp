@@ -19,6 +19,13 @@ enum class RequestPurpose(val code: String) {
 
     /** Сверка после перезапуска оставила вопрос (`docs/RECOVERY.md`, §5): принять к сведению. */
     RECOVERY("recovery.question"),
+
+    /**
+     * Слияние ветки задачи в ветку интеграции (D-49): «Слить» — `git merge`
+     * по предложению, записанному в журнале; «Не сливать» — отказ. Сбой
+     * слияния — новый запрос с причиной (ревью A-30).
+     */
+    TASK_MERGE("task.merge"),
     ;
 
     companion object {

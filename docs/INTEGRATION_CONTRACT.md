@@ -107,7 +107,7 @@ API не включён. Граница — этот раздел и реест�
 | Решения подсистем | чистые функции над состоянием, итог — события: `Accounts`, `Sessions`, `Tasks`, `Worktrees`; события `AccountEvent`, `SessionEvent`, `TaskEvent`, `WorktreeEvent`, `MergeEvent`; кодеки `AccountCodec`, `SessionCodec`, `TaskCodec`, `WorktreeCodec`, `ContextCodec` |
 | Модели | `ExecutionTarget` (данные, не интерфейс), `SshEndpoint`, `ClaudeRequest`, `ClaudeTurn`, `RunnerUpdate`, `ContextBundle`, `Handoff`, `Proposal`, `Approval`, `VerificationProfile`, `VerificationReport` |
 | Хранилище | `EventJournal`, `DocumentStore`, `SnapshotStore`, `StateRecovery`, `Migration`, `Migrator`, `BackupService`, `NioVfs` |
-| Сборка системы | `Orchestrator`, `ProjectConfig`, `TargetSlot`, `EcosystemRun`, `RunPolicy`, `ApprovalDesk`, `Invariants` |
+| Сборка системы | `Orchestrator`, `ProjectConfig`, `TargetSlot`, `EcosystemRun`, `RunPolicy`, `Invariants` |
 
 ### 6.3. Внутреннее
 
@@ -262,7 +262,7 @@ API не включён. Граница — этот раздел и реест�
 |---|---|---|
 | создать задачу | `Orchestrator.addTask`, в приложении — `LiveSystem.addTask` | `Outcome<TaskId>`; `TASK_CREATED`, `TASK_SCOPE_CHANGED` (если область задана), `TASK_STATE_CHANGED` (в очередь) |
 | такт контура | `Orchestrator.tick`, в оболочке — `ControlView.step` | очередь → план → аренда слота → сессия → дерево → контекст → ход; опрос; проверка → коммит → `DONE` → запрос слияния |
-| ответ на одобрение | `Orchestrator.respond(uri, by)` | `Outcome<Boolean>`; действует только кнопка текущего запроса с тем же хешем (`ApprovalDesk`) |
+| ответ на запрос (в том числе слияние, D-49) | `Orchestrator.answer(uri, text, by)` | `OperationResult<RequestAnswer>`; действует только ответ на ждущий запрос с тем же хешем |
 | сверка после перезапуска | `Orchestrator.recover(agentFor)` | `Reconciler.Result` по сессиям, затем `OrphanScan` |
 | факты аккаунтов | `Orchestrator.commitAccounts`; проба входа — `LiveSystem.probeSlot` (`SlotAuthProbe`) | события аккаунтов |
 | чтение | `dashboard`, `invariants`, `lastContext`, `eventCount`; поиск по истории — `EventSearch` | без изменений |
@@ -379,7 +379,7 @@ targetSdk 36, compileSdk 37 (D-28, D-34).
 `destructive`: `RESET_HARD`, `CLEAN_FORCE`, `PUSH_FORCE`,
 `BRANCH_DELETE_FORCE`, `WORKTREE_REMOVE_FORCE`) строит только
 `GitCommands` и только с одобрением `ApprovalLedger`; слияние в ветку
-интеграции ждёт одобрения (`ApprovalDesk`). Одобрение — на хеш
+интеграции ждёт ответа на запрос `task.merge` (D-49). Одобрение — на хеш
 канонического `Proposal` (действие, предмет, аргументы), одноразовое, со
 сроком (D-10): нет — `APPROVAL_REQUIRED`; другое предложение, истёкшее или
 повторное — `APPROVAL_INVALID`.
@@ -406,7 +406,7 @@ targetSdk 36, compileSdk 37 (D-28, D-34).
 | Копия без секретов: в хранилище их нет | D-25 | правило `storage-secret`; `StorageLeakTest`, `BackupTest` |
 | Вход claude.ai не читается, не копируется, не хранится; `.credentials.json`, `setup-token`, `CLAUDE_CODE_OAUTH_TOKEN` в коде запрещены; `credentialRef` — путь к каталогу настроек | D-27 | правило `provider-private` |
 | Вход только формой Claude (`authMethod = "claude.ai"`), иначе слот в `ERROR` (`ACCOUNT_AUTH_METHOD_FORBIDDEN`); перекрывающие вход переменные удаляются | D-29 | `AccountsTest`, `SlotEnvironmentTest` |
-| Одобрение привязано к хешу предложения | D-10 | `ApprovalDeskTest`, `GitLogicTest`, `GitServiceTest` |
+| Одобрение привязано к хешу предложения | D-10, D-49 | `UserRequestsFlowTest`, `V1ScenariosTest`, `GitLogicTest`, `GitServiceTest` |
 | SSH — `BatchMode=yes`, `StrictHostKeyChecking=yes`; ключ хоста — только после сверки человеком; ключ приложения — ECDSA P-256 в Android Keystore | D-31, D-35 | `SshProcessHostTest`, `JschProcessHostTest`, `SshKeysTest` |
 
 Угрозы `docs/SECURITY_MODEL.md`, §4: T1 — кража учётных данных, T2 —
@@ -549,7 +549,7 @@ DP-Verify как шаг профиля проверки (D-16).
 | Notification Engine | `notifications`: `NotificationEngine`, `DeepLink`, `ApprovalAction` | библиотека; показ — оболочка |
 | Monitoring | `monitoring`: `Dashboard`, `Timeline`, `SelfDiagnostics`; `ui`: `Screens` | библиотека; экраны — оболочка |
 | Verification integration | `verification`: `Verifier`, `VerificationProfile`, `VerificationReport`, `StepRunner`; `orchestrator.verification`: `CompletionFlow`, `AgentStepRunner` | библиотека; шаги — процессы на target |
-| Approval Engine | `security`: `ApprovalLedger`, `Proposal`, `Approval`; `orchestrator`: `ApprovalDesk` | библиотека |
+| Approval Engine | `security`: `ApprovalLedger`, `Proposal`, `Approval`; слияние — запрос `task.merge` (D-49) | библиотека |
 | Storage | `storage`: `Vfs`, `NioVfs`, `EventJournal`, `DocumentStore`, `SnapshotStore`, `StateRecovery`, `Migrator`, `BackupService` | библиотека или адаптер к хранилищу DPmetaApp с паритетом форматов |
 | Recovery | `orchestrator.recovery`: `Reconciler`, `OrphanScan`, `WorktreeProbe`; `Orchestrator.recover` | библиотека |
 | Security | `core.diagnostics`: `Secret`, `Redactor`; `security`; `SlotEnvironment`; `jsch`: `SshKeys`, `HostKeyProbe`; `KnownHosts` (`ui`); `KeystoreKey` (`android`) | библиотека; Keystore — оболочка |
@@ -604,7 +604,7 @@ DP-Verify как шаг профиля проверки (D-16).
 | общее хранилище DPmetaApp | сейчас свои файлы (D-24); перенос — адаптер `Vfs` или перенос форматов с паритетом |
 | единая модель событий | `dpai.event` v1 отображается поле к полю (раздел 22) |
 | тесты | раздел 23 |
-| граница одобрений | `ApprovalLedger`, `ApprovalDesk` (D-10) |
+| граница одобрений | `ApprovalLedger` (D-10), запросы `UserRequests` (D-44, D-49) |
 | тесты переноса и паритета | раздел 23 |
 | связь с Integration Contract | этот документ |
 
@@ -682,7 +682,7 @@ DP-Verify как шаг профиля проверки (D-16).
 | Контекст и handoff | `ContextTest` | `tests/data/context-injection/` | детерминированный отбор и хеш версии, граница проекта, `SECRET` исключён по умолчанию, блоки данных с обезвреженными маркерами, идемпотентный handoff |
 | Git | `GitLogicTest`, `WorktreeCodecTest`, `GitServiceTest` | настоящий `git` | безопасные команды, разрушительное — только с одобрением, один владелец дерева |
 | Проверка и завершение | `CompletionFlowTest`, `AgentStepRunnerTest` | — | вердикт → состояние задачи; `DONE` только с проверкой или исключением |
-| Уведомления и одобрения | `NotificationEngineTest`, `ApprovalDeskTest` | шторм событий | агрегация, эскалация, предел частоты; кнопка другого предложения ничего не одобряет |
+| Уведомления и одобрения | `NotificationEngineTest`, `UserRequestsFlowTest` | шторм событий | агрегация, эскалация, предел частоты; ответ с чужим хешем ничего не одобряет |
 | Мониторинг и экраны | `MonitoringTest`, `ScreensTest` | — | `STALE` вместо «работает», деградация вместо остановки |
 | Восстановление и инварианты | `RecoveryTest`, `RestartTest`, `ChaosLoopTest`, `InvariantsTest` | хаос с зерном | исходы сверки ТЗ, §55; подъём из снимков и сегментов; инварианты ТЗ, §118 после каждого такта |
 | Сквозные сценарии V1 | `V1ScenariosTest` (сценарии 1–4), `EcosystemTest` (сценарий 5), `IsolationTest`, `LiveSystemTest`, `LiveProjectTest` | `MockRunner`, настоящий `git` | путь `docs/direction/V1_SCOPE.md`, §1 целиком |

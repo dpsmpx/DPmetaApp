@@ -268,9 +268,6 @@ class LiveSystem(
         }
     }
 
-    /** Кнопка уведомления (`dpai://approve|deny/…`): одобрение — только с хешем текущего предложения (D-10). */
-    fun respond(uri: String): Outcome<Boolean> = orchestrator.respond(uri, "автор")
-
     override fun step() {
         for ((target, p) in probes.entries.toList()) {
             when (val r = p.first.poll(p.second)) {
