@@ -388,7 +388,7 @@ class AgentRuntime(
             termux = System.getenv("PREFIX")?.contains("com.termux") == true,
             diskFreeBytes = File(home).usableSpace.takeIf { it > 0 },
             memoryTotalBytes = os?.totalMemorySize,
-            memoryFreeBytes = os?.freeMemorySize,
+            memoryFreeBytes = availableMemory(meminfo(), os?.freeMemorySize, os?.totalMemorySize),
             claude = probeTool(listOf("claude", "--version")),
             git = probeTool(listOf("git", "--version")),
         )
@@ -523,6 +523,37 @@ class AgentRuntime(
 
         /** Позже этого супервизор хода не берёт (A-4): запас до [START_GRACE], после которого ход — `LOST`. */
         val SUPERVISOR_DEADLINE: Duration = 30.seconds
+
+        /**
+         * Доступная память для `doctor` (ревью 8 октября 2026, A-20). На Linux и
+         * Android `freeMemorySize` JDK — это `MemFree`, без кеша страниц, который
+         * ядро отдаёт по первому требованию: на телефоне это сотни МиБ из 7,5 ГиБ,
+         * и `doctor` всегда предупреждал о памяти. Доступная — `MemAvailable` из
+         * `/proc/meminfo`. Если JDK видит предел контейнера ниже памяти машины,
+         * `MemAvailable` всей машины ограничивается свободным под пределом. Без
+         * `MemAvailable` (Windows, macOS, ядро до 3.14) — значение JDK: на
+         * Windows это уже доступная физическая память.
+         */
+        internal fun availableMemory(meminfo: String?, jvmFree: Long?, jvmTotal: Long?): Long? {
+            val kb = HashMap<String, Long>()
+            meminfo?.lineSequence()?.forEach { line ->
+                val m = MEMINFO_LINE.matchEntire(line.trim()) ?: return@forEach
+                m.groupValues[2].toLongOrNull()?.let { kb[m.groupValues[1]] = it }
+            }
+            val available = kb["MemAvailable"]?.let { it * 1024 } ?: return jvmFree
+            val machine = kb["MemTotal"]?.let { it * 1024 }
+            val limited = jvmTotal != null && machine != null && jvmTotal < machine
+            return if (limited && jvmFree != null) minOf(available, jvmFree) else available
+        }
+
+        /** Текст `/proc/meminfo`; нет файла (Windows, macOS) или он не читается — `null`. */
+        private fun meminfo(): String? = try {
+            File("/proc/meminfo").takeIf { it.isFile }?.readText()
+        } catch (_: java.io.IOException) {
+            null
+        }
+
+        private val MEMINFO_LINE = Regex("""(\w+):\s+(\d+) kB""")
     }
 }
 

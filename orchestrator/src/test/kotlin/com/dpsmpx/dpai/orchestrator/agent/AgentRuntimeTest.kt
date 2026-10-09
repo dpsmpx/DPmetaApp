@@ -165,6 +165,31 @@ class AgentRuntimeTest {
     }
 
     /**
+     * Ревью 8 октября 2026, A-20: `doctor` — доступная память, а не `MemFree`.
+     * Числа — как на Redmi Note 13 (8 октября 2026): свободно 159 МиБ из 7601,
+     * доступно ~3,3 ГиБ.
+     */
+    @Test
+    fun doctorMemoryIsAvailableNotMemFree() {
+        val meminfo = """
+            MemTotal:        7783712 kB
+            MemFree:          163104 kB
+            MemAvailable:    3460344 kB
+            Active(anon):    1520332 kB
+            HugePages_Total:       0
+        """.trimIndent()
+        val free = 163104L * 1024
+        val total = 7783712L * 1024
+        assertEquals(3460344L * 1024, AgentRuntime.availableMemory(meminfo, free, total))
+        // Предел контейнера ниже памяти машины: не больше свободного под пределом.
+        assertEquals(512L shl 20, AgentRuntime.availableMemory(meminfo, 512L shl 20, 2L shl 30))
+        // Без MemAvailable (ядро до 3.14) и без /proc/meminfo (Windows) — значение JDK.
+        assertEquals(free, AgentRuntime.availableMemory("MemTotal: 7783712 kB\nMemFree: 163104 kB", free, total))
+        assertEquals(free, AgentRuntime.availableMemory(null, free, total))
+        assertNull(AgentRuntime.availableMemory(null, null, null))
+    }
+
+    /**
      * Ревью 8 октября 2026: ответ агента — одна строка не длиннее
      * `LocalProcessHost.MAX_LINE`. Широкий вывод делится на страницы по объёму,
      * а слишком длинная строка вывода — обрезается с пометкой; канал

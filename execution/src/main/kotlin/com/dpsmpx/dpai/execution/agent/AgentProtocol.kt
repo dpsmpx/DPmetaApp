@@ -113,7 +113,8 @@ data class ToolProbe(val found: Boolean, val version: String?, val detail: Strin
 /**
  * Что агент знает о своей машине (ТЗ, §34): версия, ОС, Java, часы, диск,
  * память, Claude Code и Git. Неизвестное — отсутствующее поле, а не ноль
- * (D-13).
+ * (D-13). [memoryFreeBytes] — доступная память: что ОС отдаст без подкачки
+ * (на Linux и Android — `MemAvailable`, а не `MemFree`; ревью A-20).
  */
 data class DoctorReport(
     val agentVersion: String,
