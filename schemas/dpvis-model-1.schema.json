@@ -30,7 +30,10 @@
    "properties": {
     "node": {"$ref": "#/$defs/id"},
     "path": {"type": "string"},
-    "contracts": {"type": "string"}
+    "contracts": {"type": "string"},
+    "exclude": {"type": "array", "items": {"type": "string"}},
+    "exclude_contracts": {"type": "array", "items": {"type": "string"}},
+    "exclude_reason": {"type": "string", "minLength": 1}
    }
   },
   "catalog": {
@@ -91,7 +94,7 @@
     "refs": {"type": "array", "items": {"$ref": "#/$defs/ref"}},
     "repo": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"},
     "clone": {"type": "string"},
-    "group": {"enum": ["core", "new", "periphery"]},
+    "group": {"enum": ["control", "core", "support", "new", "periphery"]},
     "stage": {"type": "string"},
     "note": {"type": "string"},
     "row": {"type": "number"},

@@ -74,6 +74,9 @@ export function reconView(view) {
     const list = (title, items) => (items && items.length ? [h("h4", { text: `${title} · ${items.length}` }), h("ul", {}, items.map((x) => h("li", {}, h("code", { text: x }))))] : []);
     out.push(...list("В реестре есть, в модели нет", reg.missing_in_model));
     out.push(...list("В модели есть, в реестре нет", reg.not_in_registry));
+    const skipped = [...(reg.excluded || []), ...(reg.contracts_excluded || []).map((c) => `DPmeta:${c}`)];
+    out.push(...list("Вне сверки", skipped));
+    if (skipped.length && reg.exclude_reason) out.push(h("p", { class: "muted", text: `Почему: ${reg.exclude_reason}` }));
   }
   const diags = view.diagnostics || [];
   out.push(h("h3", { text: `Диагностика сборщика · ${diags.length}` }));

@@ -29,16 +29,14 @@ ACTOR_ACTIVE_HOURS = 6
 # как active_hours набора progress/v1 (SocialMediaImage:tools/cs/progress).
 FLOW_RECENT_HOURS = 72
 
-# Интенсивность движения на схеме — события за последние дни.
+# Интенсивность связи на схеме (толщина линии, D-16) — события за последние дни.
 RATE_DAYS = 7
 
 # Коммит ИИ: автор с таким именем или строка соавторства (F-12).
 AI_AUTHORS = ("Claude",)
 AI_TRAILER = re.compile(r"^co-authored-by:\s*claude\b", re.IGNORECASE | re.MULTILINE)
 
-# Сеть.
-PROBE_TIMEOUT_S = 10
-PROBE_MAX_BYTES = 65536
+# Время команд git (к сайту и сервисам сборщик не обращается — D-19).
 GIT_TIMEOUT_S = 60
 CHERRY_TIMEOUT_S = 20
 FETCH_TIMEOUT_S = 120

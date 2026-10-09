@@ -39,10 +39,15 @@ class RealModelTest(unittest.TestCase):
         committed = (REPO / "data" / "model.json").read_text(encoding="utf-8")
         self.assertEqual(committed, first, "data/model.json отстал: python3 -m tools.dpvis model build")
 
-    def test_every_dpmeta_contract_is_cited(self):
+    def test_every_dpmeta_contract_is_cited_or_excluded(self):
+        # C-01…C-10 на 5 октября 2026; контракт архива исключён с причиной (D-20)
         model = json.loads(modelmod.expected_text(SOURCE))
         cited = {c for f in model["flows"] for c in f["contracts"]}
-        self.assertEqual(cited, {f"DPmeta:C-{i:02d}" for i in range(1, 11)})
+        excluded = {f"DPmeta:{c}" for c in model["registry"].get("exclude_contracts", [])}
+        self.assertEqual(excluded, {"DPmeta:C-08"})
+        self.assertTrue(model["registry"].get("exclude_reason"))
+        self.assertEqual(cited | excluded, {f"DPmeta:C-{i:02d}" for i in range(1, 11)})
+        self.assertFalse(cited & excluded)
 
     def test_defaults_are_explicit(self):
         model = model_from(base_source())
@@ -101,9 +106,19 @@ class ValidationCatchesTest(unittest.TestCase):
     def test_bad_contract(self):
         self.assertCatches(lambda s: flow(s, "decide.alpha").update(contracts=["DPmeta:RISK-01"]), "DPmeta:C-NN")
 
-    def test_probe_host_not_allowed(self):
-        self.assertCatches(lambda s: node(s, "site")["probes"][0].update(url="http://evil.example/"),
-                           "не в [allow] hosts")
+    def test_probes_are_gone(self):
+        # D-19: к сайту и сервисам DPvisualisation не обращается
+        self.assertCatches(lambda s: node(s, "site").update(probes=[{"url": "http://site.example/"}]),
+                           "неизвестный ключ 'probes'")
+        self.assertCatches(lambda s: s["allow"].update(hosts=["site.example"]), "пустой список")
+        self.assertCatches(lambda s: flow(s, "work.alpha").update(signal={"type": "probe", "node": "site"}),
+                           "неизвестный сигнал")
+
+    def test_registry_exclusions_need_reason_and_no_node(self):
+        self.assertCatches(lambda s: s["registry"].update(exclude=["owner/Gamma"]), "exclude_reason")
+        self.assertCatches(lambda s: s["registry"].update(exclude=["owner/Alpha"], exclude_reason="архив"),
+                           "есть узлом модели")
+        self.assertCatches(lambda s: s["registry"].update(exclude_contracts=["9"], exclude_reason="x"), "C-NN")
 
     def test_signal_on_non_repo(self):
         self.assertCatches(lambda s: flow(s, "work.alpha")["signal"].update(repo="site"), "не узел-репозиторий")
@@ -111,8 +126,6 @@ class ValidationCatchesTest(unittest.TestCase):
     def test_signal_on_planned_flow(self):
         self.assertCatches(lambda s: flow(s, "work.alpha").update(status="planned"), "сигнал — только")
 
-    def test_probe_signal_without_probes(self):
-        self.assertCatches(lambda s: flow(s, "probe.site")["signal"].update(node="phone"), "нет проб")
 
     def test_unknown_key(self):
         self.assertCatches(lambda s: node(s, "alpha").update(colour="red"), "неизвестный ключ 'colour'")

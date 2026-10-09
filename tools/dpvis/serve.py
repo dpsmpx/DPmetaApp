@@ -1,6 +1,6 @@
 """Живой режим (D-12, F-43…F-46): локальный сервер и пересборка среза по расписанию.
 
-`python3 -m tools.dpvis serve --root <клоны> [--every 15] [--fetch] [--online]`
+`python3 -m tools.dpvis serve --root <клоны> [--every 15] [--fetch]`
 
 - Сервер слушает `127.0.0.1` (другой адрес — только явным `--host` и с
   предупреждением в журнале, F-46) и отдаёт только файлы `viewer/` и
@@ -69,13 +69,12 @@ def host_warning(host: str) -> str | None:
 class Rebuilder:
     """Собирает срез и заменяет файл одной операцией; прежний срез не портится."""
 
-    def __init__(self, load_model, root: Path | None, out: Path, *, days: int, online: bool,
+    def __init__(self, load_model, root: Path | None, out: Path, *, days: int,
                  fetch: bool, overrides: dict | None = None, now=None, stream=None):
         self.load_model = load_model        # () -> собранная модель dpvis-model/1
         self.root = root
         self.out = out
         self.days = days
-        self.online = online
         self.fetch = fetch
         self.overrides = overrides or {}
         self.now = now or (lambda: datetime.now(timezone.utc).replace(microsecond=0))
@@ -87,7 +86,7 @@ class Rebuilder:
         started = time.monotonic()
         try:
             model = self.load_model()
-            state = collect.collect(model, self.root, self.now(), days=self.days, online=self.online,
+            state = collect.collect(model, self.root, self.now(), days=self.days,
                                     fetch=self.fetch, overrides=self.overrides)
             self.out.parent.mkdir(parents=True, exist_ok=True)
             tmp = self.out.with_name(self.out.name + ".tmp")
@@ -211,8 +210,7 @@ def run(args) -> int:
     stop = threading.Event()
     worker = None
     if not args.no_collect:
-        rb = Rebuilder(load_model, root, out, days=args.days, online=args.online, fetch=args.fetch,
-                       overrides=overrides)
+        rb = Rebuilder(load_model, root, out, days=args.days, fetch=args.fetch, overrides=overrides)
         worker = threading.Thread(target=loop, args=(rb, args.every, stop), daemon=True)
     try:
         server = make_server(args.host, args.port, REPO, out)

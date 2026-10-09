@@ -68,7 +68,10 @@
     "missing_in_model": {"type": "array", "items": {"type": "string"}},
     "not_in_registry": {"type": "array", "items": {"type": "string"}},
     "contracts": {"type": "array", "items": {"type": "string"}},
-    "contracts_covered": {"type": "array", "items": {"type": "string"}}
+    "contracts_covered": {"type": "array", "items": {"type": "string"}},
+    "excluded": {"type": "array", "items": {"type": "string"}},
+    "contracts_excluded": {"type": "array", "items": {"type": "string"}},
+    "exclude_reason": {"type": "string", "minLength": 1}
    }
   },
   "diagnostics": {"type": "array", "items": {"$ref": "#/$defs/diagnostic"}}

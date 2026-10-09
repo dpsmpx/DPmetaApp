@@ -77,12 +77,12 @@ class CollectTest(unittest.TestCase):
         self.assertEqual([i for i, v in enumerate(f["facts.alpha.beta"]["days"]) if v], [14])
         self.assertEqual(f["plan.beta.site"], {"state": "planned"})
         self.assertEqual(f["manual.phone"], {"state": "unobserved"})
-        self.assertEqual(f["probe.site"]["state"], "unknown")
+        self.assertEqual(f["kit.beta.site"], {"state": "unobserved"})
 
     def test_nodes_without_clone_or_signal(self):
         nodes = self.state["nodes"]
         self.assertEqual(nodes["ghost"]["activity"]["state"], "unknown")
-        self.assertEqual(nodes["site"]["activity"]["state"], "unknown")
+        self.assertEqual(nodes["site"]["activity"]["state"], "unobserved", "сайт не опрашивается (D-19)")
         self.assertEqual(nodes["phone"]["activity"]["state"], "unobserved")
 
     def test_diagnostics_and_registry(self):
@@ -95,6 +95,22 @@ class CollectTest(unittest.TestCase):
         self.assertEqual(reg["missing_in_model"], ["owner/Gamma"])
         self.assertEqual(reg["not_in_registry"], ["owner/Ghost"])
         self.assertEqual(reg["contracts_covered"], ["C-01"])
+
+    def test_registry_exclusions_with_reason(self):
+        # архив вне текущей системы (D-20): не дрейф и не непокрытый контракт, но виден в сверке
+        src = base_source()
+        src["registry"].update(exclude=["owner/Gamma"], exclude_contracts=["C-02"],
+                               exclude_reason="архив — вне текущей системы")
+        state = collect.collect(model_from(src), self.root, NOW)
+        codes = {(d["code"], d["subject"]) for d in state["diagnostics"]}
+        self.assertNotIn(("REGISTRY_DRIFT", "owner/Gamma"), codes)
+        self.assertNotIn(("CONTRACT_UNCOVERED", "DPmeta:C-02"), codes)
+        reg = state["registry"]
+        self.assertEqual(reg["missing_in_model"], [])
+        self.assertEqual(reg["excluded"], ["owner/Gamma"])
+        self.assertEqual(reg["contracts_excluded"], ["C-02"])
+        self.assertEqual(reg["exclude_reason"], "архив — вне текущей системы")
+        self.assertEqual(formats.validate_document(state), [])
 
     def test_deterministic(self):
         again = collect.collect(self.model, self.root, NOW)

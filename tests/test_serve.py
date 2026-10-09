@@ -50,7 +50,7 @@ class ServeTest(unittest.TestCase):
 
     def rebuilder(self, load=None):
         model = model_from(base_source())
-        return serve.Rebuilder(load or (lambda: model), self.clones, self.state, days=30, online=False,
+        return serve.Rebuilder(load or (lambda: model), self.clones, self.state, days=30,
                                fetch=False, now=lambda: NOW, stream=self.log)
 
     def get(self, path, method="GET"):

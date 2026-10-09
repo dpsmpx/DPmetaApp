@@ -10,8 +10,9 @@
 # data/model.json; tools/check/run.sh сверяет, что сборка не отстала.
 #
 # Поля узла: id, name, kind, layer, role, refs; у репозитория — repo
-# (slug GitHub), group, visibility, stage; у сервиса — probes; status
-# (active | planned | blocked | off, по умолчанию active), note, row.
+# (slug GitHub), group, visibility, stage; status (active | planned |
+# blocked | off, по умолчанию active), note, row. Источник данных — только
+# история git клонов: сайт и сервисы не опрашиваются (D-19).
 #
 # Поля потока: id, from, to, kind, what, transport, refs и/или contracts;
 # status, driver, trigger, format, note, bidirectional, via, signal.
@@ -34,17 +35,25 @@ sources = [
 ]
 
 [allow]
-# Пробы — только к этим адресам (D-03, ТЗ T-04).
-hosts = ["dpsmpx.com", "www.dpsmpx.com"]
+# К сайту и сервисам DPvisualisation не обращается (D-19): адресов нет.
+hosts = []
 
 [registry]
 # Откуда сборщик берёт реестр и контракты DPmeta для сверки (D-11, F-18).
 node = "dpmeta"
 path = "tools/ecosystem.toml"
 contracts = "docs/CONTRACTS.md"
+# Архив вне текущей системы (D-20): в реестре DPmeta есть, в модели — нет.
+exclude = ["dpsmpx/Andors-Love", "dpsmpx/TrueJointTileMaker"]
+exclude_contracts = ["C-08"]
+exclude_reason = "архив: проекты до репозитория игры (11.09.2026) — в схеме только текущая система (решение автора 9 октября 2026)"
 
 # ------------------------------------------------------------------ слои
 # Порядок — порядок колонок схемы слева направо (ТЗ, §8.2).
+
+[[layer]]
+id = "control"
+name = "Управление"
 
 [[layer]]
 id = "actors"
@@ -55,12 +64,8 @@ id = "product"
 name = "Продукты"
 
 [[layer]]
-id = "background"
-name = "Ранние и малые проекты"
-
-[[layer]]
 id = "engineering"
-name = "Инженерная основа"
+name = "Инструменты и обеспечение"
 
 [[layer]]
 id = "knowledge"
@@ -143,83 +148,6 @@ refs = ["DPmeta:docs/ECOSYSTEM.md", "DPpass:README.md", "SocialMediaImage:data/p
 
 # ------------------------------------------- ранние и малые проекты
 
-[[node]]
-id = "andors_love"
-name = "Andors-Love"
-kind = "repo"
-layer = "background"
-repo = "dpsmpx/Andors-Love"
-group = "periphery"
-visibility = "public"
-role = "пошаговая RPG на C++ (терминал и SDL); владелец формата карт"
-refs = ["DPmeta:docs/ECOSYSTEM.md", "DPmeta:C-08"]
-
-[[node]]
-id = "tjtm"
-name = "TrueJointTileMaker"
-kind = "repo"
-layer = "background"
-repo = "dpsmpx/TrueJointTileMaker"
-group = "periphery"
-visibility = "public"
-role = "редактор пиксельной графики и карт; переносится с PascalABC.NET на C++ и SDL2"
-refs = ["DPmeta:docs/ECOSYSTEM.md", "TrueJointTileMaker:docs/porting.md"]
-
-[[node]]
-id = "profile"
-name = "Профиль GitHub"
-kind = "repo"
-layer = "background"
-repo = "dpsmpx/dpsmpx"
-group = "periphery"
-visibility = "public"
-role = "README страницы профиля GitHub; правит только автор"
-refs = ["DPmeta:docs/ECOSYSTEM.md", "DPmeta:C-07"]
-
-[[node]]
-id = "pixrogue"
-name = "PixRogue"
-kind = "repo"
-layer = "background"
-repo = "dpsmpx/PixRogue"
-group = "periphery"
-visibility = "public"
-role = "ранний малый проект; источник фактов DPprofile"
-refs = ["DPmeta:docs/ECOSYSTEM.md", "SocialMediaImage:data/progress/scope.yaml"]
-
-[[node]]
-id = "dp_ecosystem"
-name = "DP_Ecosystem"
-kind = "repo"
-layer = "background"
-repo = "dpsmpx/DP_Ecosystem"
-group = "periphery"
-visibility = "public"
-role = "ранний малый проект; источник фактов DPprofile"
-refs = ["DPmeta:docs/ECOSYSTEM.md", "SocialMediaImage:data/progress/scope.yaml"]
-
-[[node]]
-id = "repeated"
-name = "DP_Repeated_Tasks"
-kind = "repo"
-layer = "background"
-repo = "dpsmpx/DP_Repeated_Tasks"
-group = "periphery"
-visibility = "public"
-role = "ранний малый проект; источник фактов DPprofile"
-refs = ["DPmeta:docs/ECOSYSTEM.md", "SocialMediaImage:data/progress/scope.yaml"]
-
-[[node]]
-id = "tanks"
-name = "tanks_blitz_stat_chat"
-kind = "repo"
-layer = "background"
-repo = "dpsmpx/tanks_blitz_stat_chat"
-group = "periphery"
-visibility = "public"
-role = "ранний малый проект"
-refs = ["SocialMediaImage:data/progress/scope.yaml"]
-
 # ---------------------------------------------------- инженерная основа
 
 [[node]]
@@ -242,13 +170,13 @@ name = "DP_AI_Orcestrator"
 kind = "repo"
 layer = "engineering"
 repo = "dpsmpx/DP_AI_Orcestrator"
-group = "new"
+group = "core"
 visibility = "private"
 role = "control plane для параллельных сессий Claude Code: задачи и их зависимости, аккаунты, исполнители (Termux, Linux, Windows), контекст и handoff, проверка результата; управление — из Android-приложения"
 stage = "V1: выполнено этапов 15 из 21 (README, «Прогресс»); приложение проверяется на телефоне автора"
 public_role = "управляющий слой для параллельных сессий ИИ: задачи, контекст, проверка результата"
 public_stage = "первая версия в разработке"
-note = "с 6 октября 2026; в реестре DPmeta на 9 октября 2026 его ещё нет (Q-03)"
+note = "один из основных инструментов системы (решение автора 9 октября 2026); в реестре DPmeta — в его ветке (Q-03)"
 refs = ["DP_AI_Orcestrator:README.md", "DP_AI_Orcestrator:D-01", "DP_AI_Orcestrator:docs/ECOSYSTEM.md", "SocialMediaImage:data/facts/facts.yaml"]
 
 # -------------------------------------------------- знание и публикация
@@ -313,14 +241,15 @@ refs = ["DPmeta:docs/ECOSYSTEM.md", "DP_game_market_analytic_system:docs/ARCHITE
 id = "dpmonetization"
 name = "DPmonetization"
 kind = "repo"
-layer = "knowledge"
+layer = "engineering"
 repo = "dpsmpx/DPmonetization"
-group = "new"
+group = "support"
 visibility = "private"
 role = "Strategic Project Intelligence — анализ портфеля проектов; место в экосистеме не определено"
 stage = "каркас ядра без тестов"
 public_role = "анализ портфеля проектов: от доказательств к решению"
 public_stage = "каркас ядра"
+note = "поддерживающий слой (решение автора 9 октября 2026)"
 refs = ["DPmeta:docs/ECOSYSTEM.md", "DPmonetization:tools/dpmon/__init__.py"]
 
 # -------------------------------------------------------- мета-уровень
@@ -343,29 +272,30 @@ refs = ["DPmeta:README.md", "DPmeta:M-01"]
 id = "dpmetaapp"
 name = "DPmetaApp"
 kind = "repo"
-layer = "meta"
+layer = "control"
 repo = "dpsmpx/DPmetaApp"
-group = "new"
+group = "control"
 visibility = "private"
-role = "мета-приложение автора для Android над законченными системами экосистемы: общее состояние, события, знания, проверки"
+role = "управление экосистемой: мета-приложение автора для Android над законченными системами — общее состояние, события, знания, проверки; живой режим схемы DPvisualisation — здесь"
 stage = "в main — мастер-ТЗ экосистемы: сначала довести каждый проект до законченной системы, затем строить приложение; ТЗ самого приложения — черновик в невлитой ветке"
-public_role = "пульт автора над экосистемой для Android"
+public_role = "управление экосистемой: пульт автора для Android"
 public_stage = "этап ТЗ"
-note = "ТЗ, решения D-NN и TODO приложения — в ветке claude/vigilant-franklin-61x8kq, в main их нет"
+note = "управление экосистемой — выделено своим слоем (решение автора 9 октября 2026); ТЗ, решения и TODO приложения — в ветке claude/dreamy-bardeen-xe4k6r DPmetaApp, в main их нет"
 refs = ["DPmetaApp:README.md", "DPmetaApp:MESTER_TECHNICAL_TASK_ROADMAP.md", "DPmetaApp:docs/direction/TECHNICAL_TASK.md"]
 
 [[node]]
 id = "dpvisualisation"
 name = "DPvisualisation"
 kind = "repo"
-layer = "meta"
+layer = "engineering"
 repo = "dpsmpx/DPvisualisation"
-group = "new"
+group = "support"
 visibility = "private"
-role = "эта модель: потоки информации и онлайн-работа инфраструктуры на реальных данных"
+role = "поддерживающий слой: модель экосистемы — проекты, участники и потоки работы по истории git; публичная выжимка — схема сайта; живой режим — в DPmetaApp (D-18)"
 stage = "версия 1.0: модель, сборщик, просмотрщик без анимаций, живой режим, комплект для сайта"
 public_role = "интерактивная модель экосистемы на реальных данных — эта схема"
 public_stage = "версия 1.0"
+note = "поддерживающий слой (решение автора 9 октября 2026); данные только собирает, ничем не управляет"
 refs = ["DPvisualisation:docs/direction/REQUEST.md", "DPvisualisation:D-01", "DPvisualisation:ROADMAP/ROADMAP.md"]
 
 # ------------------------------------------------------ инфраструктура
@@ -388,10 +318,7 @@ visibility = "public"
 role = "статический сайт на хостинге Beget: главная, проекты, лента, /api/v1/; HTTPS, с HTTP — перенаправление"
 public_role = "статический сайт: главная, проекты, лента, экосистема, открытый API"
 refs = ["SocialMediaImage:docs/platforms/WEBSITE.md", "SocialMediaImage:Д32", "SocialMediaImage:Д35", "SocialMediaImage:TODO.md"]
-probes = [
-  { url = "https://dpsmpx.com/", expect = 200, headers = ["Content-Security-Policy", "X-Content-Type-Options", "Referrer-Policy", "Permissions-Policy", "X-Frame-Options", "Cross-Origin-Opener-Policy"] },
-  { url = "https://dpsmpx.com/api/v1/index.json", expect = 200 },
-]
+note = "DPvisualisation сайт не опрашивает (D-19): схему сайт забирает перед выгрузкой"
 
 [[node]]
 id = "phone"
@@ -654,39 +581,6 @@ trigger = "поручение автора сессии"
 refs = ["DP_AI_Orcestrator:README.md"]
 signal = { type = "git-commits", repo = "orchestrator", who = "ai", scope = "all" }
 
-[[flow]]
-id = "work.andors_love"
-from = "claude"
-to = "andors_love"
-kind = "work"
-what = "ветки, коммиты и PR сессий"
-transport = "git"
-trigger = "поручение автора сессии"
-refs = ["DPmeta:docs/ECOSYSTEM.md"]
-signal = { type = "git-commits", repo = "andors_love", who = "ai", scope = "all" }
-
-[[flow]]
-id = "work.tjtm"
-from = "claude"
-to = "tjtm"
-kind = "work"
-what = "ветки, коммиты и PR сессий: перенос на C++ и SDL2"
-transport = "git"
-trigger = "поручение автора сессии"
-refs = ["TrueJointTileMaker:docs/porting.md"]
-signal = { type = "git-commits", repo = "tjtm", who = "ai", scope = "all" }
-
-[[flow]]
-id = "work.background"
-from = "claude"
-to = "repeated"
-kind = "work"
-what = "ветки и коммиты сессий в ранних проектах"
-transport = "git"
-trigger = "поручение автора сессии"
-refs = ["SocialMediaImage:data/progress/scope.yaml"]
-signal = { type = "git-commits", repo = "repeated", who = "ai", scope = "all" }
-
 # --------------------------------------- решения автора и вливание PR
 # Сигнал — коммиты вливания в основной ветке (F-12).
 
@@ -844,38 +738,6 @@ transport = "git"
 trigger = "PR готов к вливанию"
 refs = ["DP_AI_Orcestrator:README.md"]
 signal = { type = "git-commits", repo = "orchestrator", who = "merge" }
-
-[[flow]]
-id = "decide.background"
-from = "author"
-to = "andors_love"
-kind = "decision"
-what = "вливание PR в ранних проектах"
-transport = "git"
-trigger = "PR сессии готов к вливанию"
-refs = ["DPmeta:docs/ECOSYSTEM.md"]
-signal = { type = "git-commits", repo = "andors_love", who = "merge" }
-
-[[flow]]
-id = "decide.tjtm"
-from = "author"
-to = "tjtm"
-kind = "decision"
-what = "вливание PR переноса"
-transport = "git"
-trigger = "PR сессии готов к вливанию"
-refs = ["TrueJointTileMaker:docs/porting.md"]
-signal = { type = "git-commits", repo = "tjtm", who = "merge" }
-
-[[flow]]
-id = "decide.profile"
-from = "author"
-to = "profile"
-kind = "decision"
-what = "правки README профиля — только руками автора"
-transport = "manual"
-contracts = ["DPmeta:C-07"]
-signal = { type = "git-commits", repo = "profile", who = "human" }
 
 # ----------------------------------------- C-01, C-02: Galdhold и DPlang
 
@@ -1039,29 +901,6 @@ contracts = ["DPmeta:C-04", "DPmeta:C-05"]
 signal = { type = "git-path", repo = "dpprofile", paths = ["docs/facts/", "docs/sources/", "docs/timeline/"] }
 
 [[flow]]
-id = "c04.profile.dpprofile"
-from = "profile"
-to = "dpprofile"
-kind = "facts"
-what = "факты из README профиля"
-transport = "clone"
-trigger = "сессия DPprofile"
-contracts = ["DPmeta:C-04"]
-signal = { type = "git-path", repo = "dpprofile", paths = ["docs/facts/", "docs/sources/"] }
-
-[[flow]]
-id = "c04.background.dpprofile"
-from = "andors_love"
-to = "dpprofile"
-kind = "facts"
-what = "факты о ранних публичных проектах (Andors-Love, TrueJointTileMaker, PixRogue и другие)"
-transport = "clone"
-trigger = "сессия DPprofile"
-contracts = ["DPmeta:C-04"]
-refs = ["DPprofile:D-13"]
-signal = { type = "git-path", repo = "dpprofile", paths = ["docs/facts/", "docs/sources/"] }
-
-[[flow]]
 id = "c04.galdhold.smi"
 from = "galdhold"
 to = "smi"
@@ -1087,18 +926,6 @@ contracts = ["DPmeta:C-04", "DPmeta:C-05"]
 refs = ["SocialMediaImage:data/facts/facts.yaml"]
 signal = { type = "git-path", repo = "smi", paths = ["data/facts/"] }
 
-[[flow]]
-id = "c04.profile.smi"
-from = "profile"
-to = "smi"
-kind = "facts"
-what = "публичные ссылки и описание профиля — сверка идентичности"
-transport = "clone"
-trigger = "сессия SocialMediaImage"
-contracts = ["DPmeta:C-04"]
-refs = ["SocialMediaImage:IC-04"]
-signal = { type = "git-path", repo = "smi", paths = ["data/identity/", "docs/identity/"] }
-
 # --------------------------- C-05, C-07: сайт и публичный образ, выгрузка
 
 [[flow]]
@@ -1123,8 +950,7 @@ transport = "rsync"
 trigger = "ярлык Termux:Widget на телефоне автора"
 contracts = ["DPmeta:C-07", "DPmeta:C-05"]
 refs = ["SocialMediaImage:Д35", "SocialMediaImage:Д36", "DPmeta:RISK-08"]
-note = "журнал выгрузок не в git — поток наблюдается только пробой сайта"
-signal = { type = "probe", node = "site" }
+note = "журнал выгрузок не в git, сайт не опрашивается (D-19) — поток не наблюдается"
 
 [[flow]]
 id = "decide.deploy"
@@ -1135,18 +961,6 @@ what = "«да» в терминале на выгрузку сайта и од�
 transport = "manual"
 contracts = ["DPmeta:C-07"]
 refs = ["SocialMediaImage:Д36", "SocialMediaImage:Д12"]
-
-[[flow]]
-id = "publish.smi.profile"
-from = "smi"
-to = "profile"
-kind = "publish"
-status = "blocked"
-what = "подготовленный текст правок README профиля — применяет только автор"
-transport = "manual"
-contracts = ["DPmeta:C-07"]
-refs = ["SocialMediaImage:IC-04"]
-note = "правки ждут автора (DPmeta:SQ-17)"
 
 # ----------------------------------------------- публикации на площадки
 
@@ -1224,19 +1038,6 @@ status = "planned"
 refs = ["SocialMediaImage:docs/platforms/WEBSITE.md"]
 
 # ----------------------------------------- C-08: формат карт Andors-Love
-
-[[flow]]
-id = "c08.andors_love.tjtm"
-from = "andors_love"
-to = "tjtm"
-kind = "format"
-what = "формат карт data/maps/*.map и имена тайлов; перенос читает и пишет карты байт в байт"
-transport = "clone"
-trigger = "тесты переноса TrueJointTileMaker на клоне игры"
-format = "data/maps/*.map"
-contracts = ["DPmeta:C-08"]
-refs = ["TrueJointTileMaker:docs/porting.md"]
-signal = { type = "git-path", repo = "andors_love", paths = ["data/maps/", "src/types.h", "src/gfx/tiles.cpp"] }
 
 # --------------------------------------- C-09: онлайн-компилятор DPlang
 
@@ -1365,29 +1166,17 @@ refs = ["DPvisualisation:D-11"]
 signal = { type = "git-path", repo = "dpmeta", paths = ["tools/ecosystem.toml", "docs/CONTRACTS.md"] }
 
 [[flow]]
-id = "vis.site.dpvisualisation"
-from = "site"
-to = "dpvisualisation"
-kind = "check"
-what = "проба главной и /api/v1/index.json: код, время ответа, заголовки безопасности"
-public_what = "проверка доступности сайта"
-transport = "http"
-trigger = "collect --online"
-refs = ["DPvisualisation:D-14"]
-signal = { type = "probe", node = "site" }
-
-[[flow]]
 id = "vis.dpvisualisation.dpmetaapp"
 from = "dpvisualisation"
 to = "dpmetaapp"
 kind = "read"
 status = "planned"
-what = "модель и срез (dpvis-model/1, dpvis-state/1) или сборка просмотрщика в WebView"
-public_what = "схема для пульта"
+what = "модель и срезы (dpvis-model/1, dpvis-state/1) — живой режим схемы в DPmetaApp: актуальная схема текущих процессов для управления и отслеживания, без архива"
+public_what = "схема для управления экосистемой"
 transport = "http"
 format = "dpvis-model/1, dpvis-state/1"
-refs = ["DPmetaApp:docs/direction/REQUEST.md", "DPvisualisation:D-07"]
-note = "разбор Т15 — за DPmetaApp (ТЗ DPvisualisation, Q-04)"
+refs = ["DPvisualisation:D-18", "DPvisualisation:D-07", "DPmetaApp:MESTER_TECHNICAL_TASK_ROADMAP.md"]
+note = "решение автора 9 октября 2026 (Q-01, Q-05); строится вместе с DPmetaApp — в фазе B мастер-ТЗ"
 
 [[flow]]
 id = "vis.dpvisualisation.smi"

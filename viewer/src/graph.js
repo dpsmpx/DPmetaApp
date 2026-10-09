@@ -69,7 +69,9 @@ export function createGraph(host, view, handlers) {
     const gHead = el("g", { class: "cols", "aria-hidden": "true" }, svg);
     for (const c of lay.headers) {
       const t = el("text", { x: c.x, y: c.y, class: "col-name", "text-anchor": c.anchor }, gHead);
-      t.textContent = c.name;
+      c.lines.forEach((line, i) => {
+        el("tspan", { x: c.x, dy: i ? 14 : 0 }, t).textContent = line;
+      });
     }
     const gNodes = el("g", { class: "nodes" }, svg);
 

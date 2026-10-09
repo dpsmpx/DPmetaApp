@@ -43,12 +43,15 @@ def check(model: dict, repos: dict, diags) -> dict:
                       f"{spec['path']}: schema {reg.get('schema')!r}, ожидалась 1")
         else:
             slugs = sorted({r["slug"] for r in reg.get("repo", []) if isinstance(r, dict) and r.get("slug")})
-            missing = [s for s in slugs if s.lower() not in model_slugs]
+            excluded = {s.lower() for s in spec.get("exclude", [])}
+            missing = [s for s in slugs if s.lower() not in model_slugs and s.lower() not in excluded]
             for slug in missing:
                 diags.add("REGISTRY_DRIFT", slug, f"репозиторий есть в реестре {spec['path']}, а в модели нет узла")
             reg_lower = {s.lower() for s in slugs}
             out["registry_repos"] = len(slugs)
             out["missing_in_model"] = missing
+            if excluded:
+                out["excluded"] = sorted(s for s in slugs if s.lower() in excluded)
             out["not_in_registry"] = sorted(n["repo"] for n in model["nodes"]
                                             if n["kind"] == "repo" and n["repo"].lower() not in reg_lower)
     try:
@@ -62,8 +65,9 @@ def check(model: dict, repos: dict, diags) -> dict:
         for flow in model["flows"]:
             for c in flow["contracts"]:
                 cited.setdefault(c.split(":", 1)[1], []).append(flow["id"])
+        skip = set(spec.get("exclude_contracts", []))
         for c in known:
-            if c not in cited:
+            if c not in cited and c not in skip:
                 diags.add("CONTRACT_UNCOVERED", f"DPmeta:{c}", "контракт DPmeta не покрыт ни одним потоком модели")
         for c, flows in sorted(cited.items()):
             if c not in known:
@@ -71,4 +75,8 @@ def check(model: dict, repos: dict, diags) -> dict:
                           f"на контракт ссылаются потоки {', '.join(sorted(flows))}, а в {spec['contracts']} его нет")
         out["contracts"] = known
         out["contracts_covered"] = sorted(c for c in known if c in cited)
+        if skip:
+            out["contracts_excluded"] = sorted(c for c in known if c in skip)
+    if spec.get("exclude_reason") and (spec.get("exclude") or spec.get("exclude_contracts")):
+        out["exclude_reason"] = spec["exclude_reason"]
     return out

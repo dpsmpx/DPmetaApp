@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { fmtAge, fmtDate, fmtDateTime, isStale, plural, windowDays } from "../src/format.js";
 import { classify, DataError, flowStateAt, nodeExistsAt, normalize } from "../src/data.js";
 import { decode, defaults, encode, focusSet, visible } from "../src/filters.js";
-import { edgePoint, layout } from "../src/layout.js";
+import { edgePoint, layout, splitHeader } from "../src/layout.js";
 import { model, state } from "./fixture.js";
 
 test("даты — по московскому времени, возраст и «устарел»", () => {
@@ -155,4 +155,10 @@ test("связи — прямые отрезки от края до края; п
   assert.deepEqual(p, { x: 100, y: 20 });
   const q = edgePoint({ x: 0, y: 0, w: 100, h: 40 }, 0, -1, 0);
   assert.deepEqual(q, { x: 50, y: 0 });
+});
+
+test("подпись колонки: длинная — в две строки, короткая — в одну", () => {
+  assert.deepEqual(splitHeader("Продукты", 160), ["Продукты"]);
+  assert.deepEqual(splitHeader("Инструменты и обеспечение", 161), ["Инструменты и", "обеспечение"]);
+  assert.deepEqual(splitHeader("Инструменты и обеспечение", 400), ["Инструменты и обеспечение"]);
 });

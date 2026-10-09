@@ -12,7 +12,6 @@ import json
 import re
 import tomllib
 from pathlib import Path
-from urllib.parse import urlsplit
 
 MODEL_SCHEMA = "dpvis-model/1"
 SOURCE_SCHEMA = 1
@@ -82,12 +81,15 @@ VISIBILITY = {
 }
 
 GROUPS = {
+    "control": "управление экосистемой",
     "core": "ядро",
-    "new": "новый",
+    "support": "поддерживающий слой",
+    "new": "новый, место не определено",
     "periphery": "периферия",
 }
 
-SIGNAL_TYPES = ("git-commits", "git-path", "probe")
+# Пробы сайта и сервисов сняты (D-19): DPvisualisation к ним не обращается.
+SIGNAL_TYPES = ("git-commits", "git-path")
 SIGNAL_WHO = ("ai", "human", "merge", "any")
 SIGNAL_SCOPES = ("main", "all")
 
@@ -98,9 +100,10 @@ SLUG_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
 NODE_KEYS = {
     "id", "name", "kind", "layer", "role", "refs", "repo", "clone", "group",
-    "visibility", "stage", "status", "note", "probes", "row",
+    "visibility", "stage", "status", "note", "row",
     "public_role", "public_stage",
 }
+REGISTRY_KEYS = {"node", "path", "contracts", "exclude", "exclude_contracts", "exclude_reason"}
 FLOW_KEYS = {
     "id", "from", "to", "kind", "what", "transport", "refs", "contracts",
     "status", "driver", "trigger", "format", "note", "bidirectional", "via",
@@ -159,9 +162,8 @@ def validate(src: dict) -> list[str]:
 
     allow = src.get("allow", {})
     hosts = allow.get("hosts", []) if isinstance(allow, dict) else []
-    if not isinstance(hosts, list) or not all(isinstance(h, str) for h in hosts):
-        bad("allow", "hosts — список строк")
-        hosts = []
+    if not isinstance(hosts, list) or hosts:
+        bad("allow", "hosts — пустой список: к сайту и сервисам DPvisualisation не обращается (D-19)")
 
     layers = src.get("layer", [])
     layer_ids: list[str] = []
@@ -236,28 +238,6 @@ def validate(src: dict) -> list[str]:
             bad(place, "repo и group — только у вида repo")
         if "row" in node and not isinstance(node["row"], (int, float)):
             bad(place, "row — число")
-        probes = node.get("probes", [])
-        if not isinstance(probes, list):
-            bad(place, "probes — список")
-            probes = []
-        for j, probe in enumerate(probes):
-            pplace = f"{place} probes[{j}]"
-            url = probe.get("url") if isinstance(probe, dict) else None
-            if not isinstance(url, str):
-                bad(pplace, "нет url")
-                continue
-            parts = urlsplit(url)
-            if parts.scheme not in ("http", "https"):
-                bad(pplace, f"схема {parts.scheme!r} — только http и https")
-            if parts.hostname not in hosts:
-                bad(pplace, f"адрес {parts.hostname!r} не в [allow] hosts")
-            if not isinstance(probe.get("expect", 200), int):
-                bad(pplace, "expect — код ответа")
-            headers = probe.get("headers", [])
-            if not isinstance(headers, list) or not all(isinstance(h, str) for h in headers):
-                bad(pplace, "headers — список строк")
-            for key in sorted(set(probe) - {"url", "expect", "headers"}):
-                bad(pplace, f"неизвестный ключ {key!r}")
 
     flow_ids: set[str] = set()
     for i, flow in enumerate(flows):
@@ -314,8 +294,20 @@ def validate(src: dict) -> list[str]:
         if not isinstance(registry, dict):
             bad("registry", "должна быть таблица")
         else:
-            for key in sorted(set(registry) - {"node", "path", "contracts"}):
+            for key in sorted(set(registry) - REGISTRY_KEYS):
                 bad("registry", f"неизвестный ключ {key!r}")
+            excl = registry.get("exclude", [])
+            if not isinstance(excl, list) or not all(isinstance(x, str) and SLUG_RE.match(x) for x in excl):
+                bad("registry", "exclude — список slug (владелец/имя)")
+            exc = registry.get("exclude_contracts", [])
+            if not isinstance(exc, list) or not all(isinstance(x, str) and re.fullmatch(r"C-\d{2}", x) for x in exc):
+                bad("registry", "exclude_contracts — список номеров C-NN")
+            if (excl or exc) and not (isinstance(registry.get("exclude_reason"), str) and registry["exclude_reason"].strip()):
+                bad("registry", "исключения — только с причиной exclude_reason")
+            in_model = {n.get("repo", "").lower() for n in nodes if isinstance(n, dict)}
+            for slug in excl if isinstance(excl, list) else []:
+                if isinstance(slug, str) and slug.lower() in in_model:
+                    bad("registry", f"{slug} исключён из сверки, но есть узлом модели")
             rnode = node_by_id.get(registry.get("node"))
             if rnode is None or rnode.get("kind") != "repo":
                 bad("registry", f"node: нет узла-репозитория {registry.get('node')!r}")
@@ -337,8 +329,7 @@ def _check_signal(place: str, signal: object, node_by_id: dict, bad) -> None:
         bad(place, f"неизвестный сигнал {stype!r}")
         return
     allowed = {"git-commits": {"type", "repo", "who", "scope"},
-               "git-path": {"type", "repo", "paths"},
-               "probe": {"type", "node"}}[stype]
+               "git-path": {"type", "repo", "paths"}}[stype]
     for key in sorted(set(signal) - allowed):
         bad(place, f"сигнал {stype}: неизвестный ключ {key!r}")
     if stype in ("git-commits", "git-path"):
@@ -354,10 +345,6 @@ def _check_signal(place: str, signal: object, node_by_id: dict, bad) -> None:
         paths = signal.get("paths")
         if not isinstance(paths, list) or not paths or not all(isinstance(p, str) and p for p in paths):
             bad(place, "сигнал git-path: paths — непустой список путей")
-    if stype == "probe":
-        target = node_by_id.get(signal.get("node"))
-        if target is None or not target.get("probes"):
-            bad(place, f"сигнал probe: у узла {signal.get('node')!r} нет проб")
 
 
 def compile_model(src: dict, raw: bytes, source_path: str = "model/ecosystem.toml") -> dict:
@@ -380,11 +367,6 @@ def compile_model(src: dict, raw: bytes, source_path: str = "model/ecosystem.tom
         for key in ("repo", "clone", "group", "stage", "note", "row", "public_role", "public_stage"):
             if key in node:
                 out[key] = node[key]
-        if node.get("probes"):
-            out["probes"] = [
-                {"url": p["url"], "expect": p.get("expect", 200), "headers": list(p.get("headers", []))}
-                for p in node["probes"]
-            ]
         nodes.append(out)
     flows = []
     for flow in src["flow"]:

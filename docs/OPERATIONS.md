@@ -27,7 +27,6 @@ python3 -m tools.dpvis build --public        # то же, только публ�
 ```sh
 python3 -m tools.dpvis collect --root ~/clones            # → data/state/latest.json
 python3 -m tools.dpvis collect --root ~/clones --fetch    # сначала git fetch каждого клона
-python3 -m tools.dpvis collect --root ~/clones --online   # ещё и пробы сайта (только GET)
 python3 -m tools.dpvis collect --root ~/clones --now 2026-10-09T12:00:00Z --out -   # для проверки
 ```
 
@@ -37,6 +36,10 @@ DPmeta (`REGISTRY_DRIFT`, `CONTRACT_UNCOVERED`, `CONTRACT_NOT_FOUND`) —
 срез. Новый срез — коммит «Срез …» (D-13).
 
 ## 3. Живой режим
+
+Живой режим схемы — в DPmetaApp (D-18): приложение читает модель и срез
+по `docs/FORMATS.md` и опрашивает срез так же, как просмотрщик ниже.
+Здесь — локальный живой просмотр без DPmetaApp:
 
 ```sh
 python3 -m tools.dpvis serve --root ~/clones                 # срез раз в 15 мин, http://127.0.0.1:8765/
@@ -55,7 +58,10 @@ python3 -m tools.dpvis serve --no-collect                    # только от
 
 ## 4. Обновить схему на сайте
 
-Сайт собирает и выгружает только SocialMediaImage (D-14, `SocialMediaImage:Д43`):
+Схема на сайте полустатичная (D-18): срез на дату, и обновляется он
+**перед каждой выгрузкой сайта**. Сам сайт DPvisualisation не опрашивает
+(D-19) — SocialMediaImage забирает комплект. Сайт собирает и выгружает
+только SocialMediaImage (D-14, `SocialMediaImage:Д43`):
 
 1. Здесь: свежий срез (раздел 2) и проверки `tools/check/run.sh full`.
 2. Здесь: `python3 -m tools.dpvis build --site dist/site` — комплект

@@ -76,7 +76,7 @@ def cmd_collect(args) -> int:
         print(f"✗ нет каталога клонов {root}", file=sys.stderr)
         return 2
     now = collect.parse_now(args.now)
-    state = collect.collect(model, root, now, days=args.days, online=args.online,
+    state = collect.collect(model, root, now, days=args.days,
                             fetch=args.fetch, overrides=_clone_overrides(args.clone))
     text = modelmod.dumps(state)
     if args.out == "-":
@@ -163,7 +163,6 @@ def main(argv: list[str] | None = None) -> int:
         q.add_argument("--clone", action="append", default=[], metavar="УЗЕЛ=ПУТЬ",
                        help="клон узла по явному пути (можно несколько раз)")
         q.add_argument("--days", type=int, default=rules.WINDOW_DAYS, help="окно истории, дней")
-        q.add_argument("--online", action="store_true", help="HTTP-пробы сервисов из модели")
         q.add_argument("--fetch", action="store_true", help="git fetch клонов перед сбором")
         q.add_argument("--model-source", type=Path, default=MODEL_SRC)
 

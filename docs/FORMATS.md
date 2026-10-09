@@ -17,9 +17,10 @@
 Один объект. Обязательные поля: `schema`, `title`, `as_of` (дата сверки
 модели с источниками), `timezone` (`+03:00` — пояс дней), `source`
 (`path` и `sha256` TOML-источника — по нему срез узнаёт «свою» модель),
-`allow` (`hosts` — куда разрешены пробы), `catalog`, `layers`, `nodes`,
+`allow` (`hosts` — с D-19 всегда пуст: к сайту и сервисам сборщик не обращается), `catalog`, `layers`, `nodes`,
 `flows`. Необязательные: `sources` (откуда сверена модель), `registry`
-(где читать реестр и контракты DPmeta).
+(где читать реестр и контракты DPmeta; `exclude`, `exclude_contracts` и
+`exclude_reason` — что из реестра исключено из сверки и почему, D-20).
 
 | Часть | Смысл |
 |---|---|
@@ -33,7 +34,7 @@
 
 Один объект: `schema`, `as_of` (время среза, UTC), `generated_by` (`tool`,
 `version`, `rules_version`), `model` (`sha256` и `as_of` модели, по
-которой собран), `options` (`online`, `fetch`, `days`), `window` (`start`,
+которой собран), `options` (`online` — всегда `false` с D-19, `fetch`, `days`), `window` (`start`,
 `end` — даты по `timezone`, `days`), `rules` (пороги), `nodes`, `flows`,
 `registry`, `diagnostics`.
 
@@ -42,9 +43,9 @@
 | `nodes.<id>.activity` | `state` — `working`, `idle`, `up`, `down`, `planned`, `blocked`, `off`, `unknown`, `unobserved`; `last` — время последнего события; `reasons` — какое правило сработало (`main`, `branch`, `probe`…) |
 | `nodes.<id>.git` | у репозитория с клоном: `ref`, `head`, `head_time`, `first_time`, `history` (`complete`, `shallow`, `partial`), `days` (`ai`, `human`, `merges` по дням окна основной ветки), `days_all` (`ai`, `human` по всем веткам), `window` (суммы), `branches` (`name`, `ahead`, `time`, `method`) |
 | `nodes.<id>.days` | у участника: события по дням окна |
-| `nodes.<id>.probe` | у сервиса при `--online`: `checked` и `results` (`url`, `status`, `ms`, `headers`, `error`) |
+| `nodes.<id>.probe` | только в срезах до 9 октября 2026: пробы сняты (D-19), новые срезы этого поля не пишут |
 | `flows.<id>` | `state` — `flowing`, `quiet`, `planned`, `blocked`, `off`, `down`, `unknown`, `unobserved`; при сигнале — `signal`, `days`, `total`, `week`, `last`; при `unknown` — `reason` |
-| `registry` | сверка с DPmeta: `checked`, `ref`, `registry_repos`, `missing_in_model`, `not_in_registry`, `contracts`, `contracts_covered` |
+| `registry` | сверка с DPmeta: `checked`, `ref`, `registry_repos`, `missing_in_model`, `not_in_registry`, `contracts`, `contracts_covered`; при исключениях — `excluded`, `contracts_excluded`, `exclude_reason` (D-20) |
 | `diagnostics` | `{code, subject, message}`; коды — ТЗ §6.7, только добавляются |
 
 «Неизвестно» (`unknown`) и «не наблюдается» (`unobserved`) — не ноль:
@@ -95,3 +96,4 @@
 | 6 октября 2026 | `dpvis-public/1` и `dpvis-site-kit/1` (D-15) |
 | 6 октября 2026 | модель: `public_role`, `public_stage`, `public_what`; тексты выжимки — только из них (D-15) |
 | 9 октября 2026 | пояснения к `dpvis-model/1` и `dpvis-state/1`; полей не изменилось |
+| 9 октября 2026 | группы `control` и `support` в каталоге; `registry.exclude`, `exclude_contracts`, `exclude_reason` в модели и `excluded`, `contracts_excluded`, `exclude_reason` в срезе (D-20); пробы больше не пишутся, поля остались (D-19) |

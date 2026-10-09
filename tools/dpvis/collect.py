@@ -1,4 +1,7 @@
-"""Срез `dpvis-state/1`: модель + клоны + пробы → наблюдения и состояние (ТЗ §6.3, §7.2).
+"""Срез `dpvis-state/1`: модель + клоны → наблюдения и состояние (ТЗ §6.3, §7.2).
+
+Источник — только история git клонов: к сайту и сервисам сборщик не
+обращается (D-19).
 
 Срез — функция модели, клонов, времени среза и правил (D-04): часы не
 читаются, если время задано; ключи и списки упорядочены. В срез попадают
@@ -11,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, time as dtime, timedelta, timezone
 from pathlib import Path
 
-from . import VERSION, gitlog, probe, registry, rules
+from . import VERSION, gitlog, registry, rules
 
 STATE_SCHEMA = "dpvis-state/1"
 
@@ -196,26 +199,6 @@ def observe_repo(node: dict, path: Path, win: Window, diags: Diagnostics) -> tup
     return {"git": git_data, "activity": activity}, RepoData(path, ref, main, every)
 
 
-# ---------------------------------------------------------------- пробы
-
-def observe_probes(node: dict, hosts: list[str], diags: Diagnostics, now: datetime,
-                   opener_factory=None) -> dict:
-    results = []
-    up = True
-    for spec in node["probes"]:
-        res = probe.probe(spec["url"], spec["expect"], spec["headers"], hosts, opener_factory)
-        if res.code:
-            diags.add(res.code, node["id"], f"{spec['url']}: {res.error}")
-        if res.status is None or res.status != spec["expect"]:
-            up = False
-        results.append(res.as_dict())
-    return {
-        "probe": {"checked": iso(now), "results": results},
-        "activity": {"state": "up" if up else "down", "last": iso(now) if up else None,
-                     "reasons": [{"rule": "probe"}]},
-    }
-
-
 # --------------------------------------------------------------- потоки
 
 def flow_state(flow: dict, nodes_state: dict, repos: dict[str, RepoData],
@@ -227,17 +210,6 @@ def flow_state(flow: dict, nodes_state: dict, repos: dict[str, RepoData],
     if signal is None:
         return {"state": "unobserved"}
     stype = signal["type"]
-    if stype == "probe":
-        target = nodes_state.get(signal["node"], {})
-        act = target.get("activity", {}).get("state")
-        if act == "up":
-            days = [0] * win.days
-            days[-1] = 1
-            return {"state": "flowing", "signal": stype, "days": days, "total": 1,
-                    "week": 1, "last": iso(win.now)}
-        if act == "down":
-            return {"state": "down", "signal": stype}
-        return {"state": "unknown", "signal": stype, "reason": "пробы не запускались (нужен --online)"}
     data = repos.get(signal["repo"])
     if data is None:
         return {"state": "unknown", "signal": stype, "reason": "нет клона репозитория сигнала"}
@@ -291,14 +263,12 @@ def actor_state(name: str, times: list[datetime], win: Window) -> dict:
 # --------------------------------------------------------------- сборка
 
 def collect(model: dict, root: Path | None, now: datetime, days: int = rules.WINDOW_DAYS,
-            online: bool = False, fetch: bool = False, overrides: dict[str, Path] | None = None,
-            opener_factory=None) -> dict:
+            fetch: bool = False, overrides: dict[str, Path] | None = None) -> dict:
     overrides = overrides or {}
     win = Window(now=now, days=days)
     diags = Diagnostics()
     nodes_state: dict[str, dict] = {}
     repos: dict[str, RepoData] = {}
-    hosts = model["allow"]["hosts"]
 
     for node in model["nodes"]:
         nid = node["id"]
@@ -320,12 +290,6 @@ def collect(model: dict, root: Path | None, now: datetime, days: int = rules.WIN
             nodes_state[nid] = state
             if data is not None:
                 repos[nid] = data
-        elif node.get("probes") and node["status"] == "active":
-            if online:
-                nodes_state[nid] = observe_probes(node, hosts, diags, win.now, opener_factory)
-            else:
-                nodes_state[nid] = {"activity": {"state": "unknown", "last": None,
-                                                 "reasons": [{"rule": "probes_off"}]}}
         elif node["kind"] != "actor":
             st = node["status"] if node["status"] != "active" else "unobserved"
             nodes_state[nid] = {"activity": {"state": st, "last": None, "reasons": []}}
@@ -354,7 +318,7 @@ def collect(model: dict, root: Path | None, now: datetime, days: int = rules.WIN
         "as_of": iso(win.now),
         "generated_by": {"tool": "DPvisualisation", "version": VERSION, "rules_version": rules.RULES_VERSION},
         "model": {"sha256": model["source"]["sha256"], "as_of": model["as_of"]},
-        "options": {"online": online, "fetch": fetch, "days": days},
+        "options": {"online": False, "fetch": fetch, "days": days},   # online — всегда false (D-19)
         "window": {"start": win.start.isoformat(), "end": win.end.isoformat(), "days": days,
                    "timezone": rules.TZ_NAME},
         "rules": {
