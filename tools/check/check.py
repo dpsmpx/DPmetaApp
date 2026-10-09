@@ -29,9 +29,11 @@ ROADMAP = "ROADMAP/ROADMAP.md"
 README = "README.md"
 TODO = "TODO.md"
 
-# В корне — только точки входа (`DPmeta:E-06`); файлы Gradle и модули — с этапа 1 (ТЗ, §6.2).
+# В корне — только точки входа (`DPmeta:E-06`) и мастер-ТЗ автора (D-25: на этот путь
+# ссылаются другие репозитории); файлы Gradle и модули — с этапа 1 (ТЗ, §6.2).
 ROOT_ALLOW = {
     "README.md", "CLAUDE.md", "TODO.md", "LICENSE", ".gitignore",
+    "MESTER_TECHNICAL_TASK_ROADMAP.md",
     ".claude", ".github", "docs", "ROADMAP", "tools", "tests",
     "settings.gradle.kts", "build.gradle.kts", "gradle.properties", "gradlew", "gradlew.bat",
     "gradle", "build-logic", "app", "core", "cli", "config",
@@ -50,6 +52,7 @@ PLANNED = {
     "docs/RELEASE.md": "отпечаток ключа и порядок выпуска — этап 8",
     "docs/audits/": "срезы на дату — с первого среза",
     "tools/release/": "сборка неподписанного APK — этап 8",
+    "tools/notify/": "набор хуков уведомлений Claude Code (F-56) — этап 8",
 }
 
 SECRETS = [

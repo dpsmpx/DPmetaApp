@@ -8,8 +8,11 @@
 
 DPmetaApp — Android-приложение, личный пульт автора над экосистемой его
 репозиториев (`DPmeta:docs/ECOSYSTEM.md`): проекты, ход разработки, сайт,
-аккаунты Claude, статистика (D-01). Что строится — ТЗ
-`docs/direction/TECHNICAL_TASK.md`; этапы — `ROADMAP/ROADMAP.md`.
+аккаунты Claude, статистика (D-01). В экосистеме — слой «Управление»;
+строится в фазе B мастер-ТЗ `MESTER_TECHNICAL_TASK_ROADMAP.md`, после
+законченных систем (D-25); схема экосистемы — из DPvisualisation (D-26).
+Что строится — ТЗ `docs/direction/TECHNICAL_TASK.md`; этапы —
+`ROADMAP/ROADMAP.md`.
 
 ## Источник истины
 
@@ -120,7 +123,9 @@ DPmetaApp — Android-приложение, личный пульт автора
 ## Где что лежит
 
 - В корне — только точки входа: `README.md`, `CLAUDE.md`, `TODO.md`,
-  `LICENSE`, `.gitignore`; с этапа 1 — ещё файлы Gradle.
+  `LICENSE`, `.gitignore`; мастер-ТЗ автора
+  `MESTER_TECHNICAL_TASK_ROADMAP.md` (D-25: на этот путь ссылаются
+  другие репозитории, имя не меняется); с этапа 1 — ещё файлы Gradle.
 - `docs/direction/` — постановка, ТЗ, решения; `docs/` — как устроено;
   `docs/audits/` — срезы на дату, задним числом не правятся;
   `ROADMAP/` — этапы; `tools/` — проверки и инструменты; `tests/` —
