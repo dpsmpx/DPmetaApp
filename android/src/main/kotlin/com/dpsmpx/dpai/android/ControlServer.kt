@@ -122,7 +122,8 @@ object ControlServer {
                 val headers = lines.drop(1).mapNotNull { l -> l.indexOf(':').takeIf { it > 0 }?.let { l.substring(0, it).trim().lowercase() to l.substring(it + 1).trim() } }.toMap()
                 val length = headers["content-length"]?.toIntOrNull() ?: 0
                 if (length > ControlApi.MAX_BODY) return respond(sock, error(413, "тело больше ${ControlApi.MAX_BODY} байт"))
-                val body = if (length > 0) String(input.readNBytes(length), Charsets.UTF_8) else null
+                // readNBytes — только с API 33 (lint NewApi): minSdk 30 — DataInputStream.readFully.
+                val body = if (length > 0) String(ByteArray(length).also { java.io.DataInputStream(input).readFully(it) }, Charsets.UTF_8) else null
                 api.handle(parts[0], parts[1].substringBefore('?'), headers["authorization"], body)
             } catch (e: Exception) {
                 error(500, AppLogs.describe(e))

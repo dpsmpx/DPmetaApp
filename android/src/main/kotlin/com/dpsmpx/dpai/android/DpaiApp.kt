@@ -225,7 +225,7 @@ private fun toneColor(t: Tone): Color {
 private fun DashboardPane(screen: DashboardScreen, model: DemoModel, onSession: (SessionId) -> Unit) {
     // Загрузка окон — из `/usage` раз в минуту, пока сводка видна (D-48). Цикл Compose сам не останавливается,
     // когда экран гаснет (Redmi Note 13: пробы шли при выключенном экране), — привязан к ON_START/ON_STOP активности.
-    val lifecycle = (androidx.compose.ui.platform.LocalContext.current as? androidx.activity.ComponentActivity)?.lifecycle
+    val lifecycle = (androidx.activity.compose.LocalActivity.current as? androidx.activity.ComponentActivity)?.lifecycle
     var visible by remember { mutableStateOf(lifecycle?.currentState?.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED) ?: true) }
     androidx.compose.runtime.DisposableEffect(lifecycle) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, e ->
