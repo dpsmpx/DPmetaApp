@@ -6,13 +6,19 @@
 5 октября 2026, третий проход (коммиты — в срезе
 `docs/reports/2026-10-05-3-xref.md`); DPmetaApp, DPvisualisation,
 DP_AI_Orcestrator и их связи — четвёртый, частичный проход 9 октября 2026
-(`docs/reports/2026-10-09-ECOSYSTEM_HEALTH.md`).
+(`docs/reports/2026-10-09-ECOSYSTEM_HEALTH.md`). Деление на ядро,
+управление, поддерживающий слой и архив — слово автора 9 октября 2026
+(M-10); место каждого проекта — поле `place` реестра
+`tools/ecosystem.toml`.
 
 ## 1. Ядро экосистемы
 
-Восемь репозиториев, которые ведутся одним способом (`docs/PRINCIPLES.md`):
-журнал решений, `CLAUDE.md`, `TODO.md`, своя команда проверок, сессии ИИ
-под правилами автора. Все закрытые (private).
+Девять репозиториев (`place = "core"`, M-10): восемь, которые с начала
+ведутся одним способом (`docs/PRINCIPLES.md`), и DP_AI_Orcestrator — по
+слову автора «один из основных инструментов системы». У всех — журнал
+решений, `CLAUDE.md`, `TODO.md`, своя команда проверок, сессии ИИ под
+правилами автора. Все закрытые (private); DP_AI_Orcestrator в своих
+документах называет себя публичным (SQ-28).
 
 | репозиторий | отвечает за | не делает | стадия | проверки | вход |
 |---|---|---|---|---|---|
@@ -25,29 +31,43 @@ DP_AI_Orcestrator и их связи — четвёртый, частичный 
 | **SocialMediaImage** | производство, проверка и публикация контента автора; сайт `dpsmpx.com` и его страница «Прогресс экосистемы» (`SocialMediaImage:README.md`, `SocialMediaImage:Д38`) | решения закрытых проектов не переписывает; их код не переносит; не публикует без одобрения автора (`SocialMediaImage:CLAUDE.md`) | сайт выпущен — выгрузка разрешена 5 октября 2026, первая штатная прошла (`SocialMediaImage:Д34`, `SocialMediaImage:TODO.md`); фаза «Сайт MVP» продолжается; `CI-0001` и страница прогресса `CI-0002` ждут одобрения автора (`SocialMediaImage:ROADMAP/ROADMAP.md`) | `tools/check.sh` | `SocialMediaImage:README.md` |
 | **DP_game_market_analytic_system** | воспроизводимый анализ рынка игр с явной неопределённостью: наблюдения → факты → метрики → гипотезы → решения (`DP_game_market_analytic_system:docs/ARCHITECTURE.md`) | не скрейпер, не агрегатор новостей, не обёртка над LLM (там же) | 0.1.0; фазы 0–4 с тестами, 5–6 без тестов, CLI нет (`DP_game_market_analytic_system:docs/HANDOFF.md`) | `python3 -m pytest` | `DP_game_market_analytic_system:docs/ARCHITECTURE.md` |
 
-DPmeta — девятый, мета-уровень (M-01): `README.md`.
+| **DP_AI_Orcestrator** | управляющий слой для параллельных сессий Claude Code и Agent SDK: задачи и зависимости, аккаунты, execution targets, контекст и handoff, проверка результата; управление — из Android-приложения (`DP_AI_Orcestrator:README.md`, `DP_AI_Orcestrator:D-01`) | код закрытых репозиториев не переносит — только идеи (`DP_AI_Orcestrator:D-16`); кода DPmeta не содержит — читает его манифест (C-13) | выполнено этапов 15 из 21, в работе — 5, 11, 12, 17 (`DP_AI_Orcestrator:README.md`, «Прогресс»); врезка README отстаёт (SQ-26) | `tools/verify/run.sh full` | `DP_AI_Orcestrator:CLAUDE.md` |
 
-## 2. Периферия
+DPmeta — мета-уровень (M-01, `place = "meta"`): `README.md`.
 
-Самостоятельные проекты вне общего процесса. Связаны с ядром только как
-источники фактов (DPprofile, SocialMediaImage) и чисел страницы прогресса
-(C-10) — кроме одной пары. Первые четыре строки — новые репозитории (5–6
-октября 2026), чьё место ещё не определено: три последних из них уже
-ведутся общим процессом (журнал решений, `CLAUDE.md`, `TODO.md`, своя
-команда проверок).
+## 2. Управление, поддерживающий слой, периферия и архив
+
+Места — слово автора 9 октября 2026 (M-10). Управление и поддерживающий
+слой — часть текущей системы наравне с ядром; периферия — источник фактов
+вне общего процесса; архив — вне текущей системы: проекты до репозитория
+игры (первый коммит Galdhold — 11 сентября 2026) и те, что автор убрал. В
+схеме DPvisualisation, на сайте и в DPmetaApp архива нет
+(`DPvisualisation:D-20`); в реестре DPmeta он остаётся ради контракта C-08
+и сверки ссылок, в манифест (M-11) не входит.
+
+### Управление (`control`)
 
 | репозиторий | что это | связи |
 |---|---|---|
-| `dpsmpx/DPmonetization` (закрытый) | с 5 октября 2026: «Strategic Project Intelligence» — анализ портфеля проектов: доказательства, стадии и шлюзы готовности, ценность, монетизация, решения (`DPmonetization:tools/dpmon/__init__.py`). В `main` — прерванный каркас ядра без тестов; README из одного заголовка, нет `CLAUDE.md` и журнала решений (SQ-22) | связей пока нет. **План** (описание PR #1 DPmonetization): реестр проектов по фактам DPmeta, зависимости по C-01, C-03, C-08, C-09, адаптеры к `report.json` DP-Verify и к `DecisionReport` DP_game_market_analytic_system, экспорт для сайта только одобренного автором. Ядро это или периферия — вопрос автору |
-| `dpsmpx/DPmetaApp` (закрытый) | мета-приложение автора для Android над законченными системами экосистемы; в `main` — мастер-ТЗ автора: сначала довести проекты до законченных систем (волна 1 — DPmeta), затем строить приложение (`DPmetaApp:MESTER_TECHNICAL_TASK_ROADMAP.md`); ТЗ и решения самого приложения — в невлитой ветке (SQ-27) | по плану — читатель всего: модели DPvisualisation, ядра DP_AI_Orcestrator, данных DPmeta; сейчас связей нет |
-| `dpsmpx/DPvisualisation` (закрытый) | интерактивная модель экосистемы: узлы, потоки и активность по истории git клонов; публичная выжимка — раздел «Экосистема» сайта (`DPvisualisation:D-01`, `DPvisualisation:D-15`); 1.0.0 — в невлитой ветке (SQ-25) | читает реестр и контракты DPmeta (C-11) и клоны всех репозиториев; отдаёт комплект схемы SocialMediaImage (C-12) |
-| `dpsmpx/DP_AI_Orcestrator` (закрытый) | управляющий слой для параллельных сессий Claude Code: задачи, контекст и handoff, проверка результата; управление — из Android-приложения (`DP_AI_Orcestrator:D-01`); V1 в работе | ждёт от DPmeta манифест `dpai.ecosystem` (RISK-10); по плану — подсистема DPmetaApp (`DP_AI_Orcestrator:docs/INTEGRATION_CONTRACT.md`) |
-| `dpsmpx/dpsmpx` (публичный) | README страницы профиля GitHub | читают DPprofile (`DPprofile:docs/sources/REGISTRY.md`, S-04) и SocialMediaImage (`SocialMediaImage:IC-04`…`SocialMediaImage:IC-06`); правит только автор (C-07) |
-| `dpsmpx/Andors-Love` (публичный) | пошаговая RPG на C++ (терминал и SDL) | владелец формата карт `data/maps/*.map` (C-08) |
-| `dpsmpx/TrueJointTileMaker` (публичный) | редактор пиксельной графики и карт на PascalABC.NET; с 5 октября 2026 переносится на C++ и SDL2, оригинал — эталон в `pascal/` (`TrueJointTileMaker:docs/porting.md`) | читает и пишет карты Andors-Love, берёт имена его тайлов; тесты переноса — на клоне игры (C-08) |
-| DP_Ecosystem, DP_Repeated_Tasks, PixRogue и другие публичные | ранние и малые проекты | источники DPprofile (`DPprofile:D-13`) |
-| форки (`andors-trail-load`, `gravitydefied`, `CreepyCodeCollection`, `pascalabcnet`) | чужие проекты | вне предмета, кроме коммитов автора (`DPprofile:D-13`) |
-| репозитории 2023–2024 (`day_plan`, `rnd_day` и другие) | архив | не упоминаются (`SocialMediaImage:docs/identity/PROJECT_MAP.md`) |
+| `dpsmpx/DPmetaApp` (закрытый) | управление экосистемой — Android-приложение автора над законченными системами; по мастер-ТЗ строится в фазе B, после того как проекты доведены до законченных систем (`DPmetaApp:MESTER_TECHNICAL_TASK_ROADMAP.md`). ТЗ, решения и процесс — в невлитой ветке `claude/dreamy-bardeen-xe4k6r` (SQ-27) | по плану — читатель всего: модель и срез DPvisualisation — его слой визуализации и живой режим схемы (`DPvisualisation:D-18`); DP_AI_Orcestrator — подсистемой; данные DPmeta. Кода пока нет, контрактов нет |
+
+### Поддерживающий слой (`support`)
+
+| репозиторий | что это | связи |
+|---|---|---|
+| `dpsmpx/DPvisualisation` (закрытый) | обеспечение системы: модель экосистемы — узлы, потоки и активность по истории git клонов (`DPvisualisation:D-01`); собирает данные в схему и ничем не управляет, к сайту не обращается (`DPvisualisation:D-19`); лицензия — «все права защищены» (`DPvisualisation:D-17`); 1.0.0 — в невлитой ветке (SQ-25) | читает реестр и контракты DPmeta (C-11) и клоны; отдаёт комплект схемы SocialMediaImage — на сайте полустатичная схема, обновляется при каждой выгрузке (C-12, `DPvisualisation:D-18`); по плану — слой визуализации DPmetaApp |
+| `dpsmpx/DPmonetization` (закрытый) | с 5 октября 2026: «Strategic Project Intelligence» — анализ портфеля проектов: доказательства, стадии и шлюзы готовности, ценность, монетизация, решения (`DPmonetization:tools/dpmon/__init__.py`). В `main` — прерванный каркас ядра без тестов; README из одного заголовка, нет `CLAUDE.md` и журнала решений (SQ-22) | связей пока нет. **План** (описание PR #1 DPmonetization): реестр проектов по фактам DPmeta, зависимости по C-01, C-03, C-08, C-09, адаптеры к `report.json` DP-Verify и к `DecisionReport` DP_game_market_analytic_system, экспорт для сайта только одобренного автором |
+
+### Периферия и архив
+
+| репозиторий | место | что это | связи |
+|---|---|---|---|
+| `dpsmpx/dpsmpx` (публичный) | периферия | README страницы профиля GitHub | читают DPprofile (`DPprofile:docs/sources/REGISTRY.md`, S-04) и SocialMediaImage (`SocialMediaImage:IC-04`…`SocialMediaImage:IC-06`); правит только автор (C-07) |
+| `dpsmpx/Andors-Love` (публичный) | архив | пошаговая RPG на C++ (терминал и SDL), с 2023 года | владелец формата карт `data/maps/*.map` (C-08) |
+| `dpsmpx/TrueJointTileMaker` (публичный) | архив | редактор пиксельной графики и карт на PascalABC.NET; с 5 октября 2026 переносится на C++ и SDL2 (`TrueJointTileMaker:docs/porting.md`) — по слову автора всё же вне текущей системы | читает и пишет карты Andors-Love, берёт имена его тайлов; тесты переноса — на клоне игры (C-08) |
+| DP_Ecosystem, DP_Repeated_Tasks, PixRogue, tanks_blitz_stat_chat и другие публичные | архив | ранние и малые проекты; DP_Ecosystem и DP_Repeated_Tasks начаты после Galdhold, но автор их убрал | источники DPprofile (`DPprofile:D-13`) |
+| форки (`andors-trail-load`, `gravitydefied`, `CreepyCodeCollection`, `pascalabcnet`) | — | чужие проекты | вне предмета, кроме коммитов автора (`DPprofile:D-13`) |
+| репозитории 2023–2024 (`day_plan`, `rnd_day` и другие) | архив | старые проекты | не упоминаются (`SocialMediaImage:docs/identity/PROJECT_MAP.md`) |
 
 ## 3. Связи
 
@@ -80,11 +100,11 @@ DPmeta — девятый, мета-уровень (M-01): `README.md`.
   DPmeta ── реестр, заголовки C-NN ──► DPvisualisation ── комплект схемы ──► SocialMediaImage ──► dpsmpx.com /ecosystem/
   клоны всех репозиториев ── история git ──►┘
 
-План, записан одной стороной (RISK-10)
-  DPmeta ┄┄ манифест dpai.ecosystem ┄┄► DP_AI_Orcestrator ┄┄► DPmetaApp (подсистема после V1)
+Манифест экосистемы (C-13, M-11; копия на устройстве автора, без зависимости)
+  DPmeta ── tools/manifest.py: проекты, места, открытые SQ ──► DP_AI_Orcestrator ┄┄► DPmetaApp (подсистема, план)
 
 Без связей, кроме счёта прогресса (C-10): DP_game_market_analytic_system
-Пока без связей (план — §2): DPmonetization, DPmetaApp
+Пока без связей (план — §2): DPmonetization, DPmetaApp (управление)
 ```
 
 Наблюдения:
@@ -105,7 +125,10 @@ DPmeta — девятый, мета-уровень (M-01): `README.md`.
   списка, включая DPmeta; сайт строится из сохранённого набора и без них
   (C-10). Срез DPvisualisation тоже собирается по клонам, но без любого
   клона не падает — пишет диагностику; комплект схемы на сайте — копия,
-  сайт строится и без DPvisualisation (C-11, C-12).
+  сайт строится и без DPvisualisation (C-11, C-12). Манифест для
+  DP_AI_Orcestrator (C-13) строится по клонам так же, а без клона проект
+  попадает в него без состояния ветки; оркестратор работает и без
+  манифеста.
 - **Остальные связи — знание:** решения, которые повторяют друг друга
   (C-01), факты о проектах (C-04), правила обращения с закрытым кодом
   (C-05), общий способ ведения проектов (`docs/PRINCIPLES.md`).

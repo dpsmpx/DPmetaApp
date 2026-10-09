@@ -1,7 +1,7 @@
 # Как идёт мета-проход
 
 Зачем и как устроены правила `CLAUDE.md`. Решения, на которых они
-стоят, — M-01…M-09 (`docs/DECISIONS.md`).
+стоят, — M-01…M-11 (`docs/DECISIONS.md`).
 
 ## 1. Порядок прохода
 
@@ -30,8 +30,9 @@
    противоречия между новыми записями DPmeta и репозиториями
    (`tools/check.sh` и xref ещё раз).
 8. **Срез** — `docs/reports/<дата>-ECOSYSTEM_HEALTH.md`, отчёт xref
-   `docs/reports/<дата>-xref.md` и отчёт `tools/activity.py`
-   `docs/reports/<дата>-activity.md`. Повторный проход за ту же дату — с
+   `docs/reports/<дата>-xref.md`, отчёт `tools/activity.py`
+   `docs/reports/<дата>-activity.md` и манифест `tools/manifest.py`
+   `docs/reports/<дата>-dpai.ecosystem.json` (M-11, без `--paths`). Повторный проход за ту же дату — с
    номером: `<дата>-2-…`. Срезы задним числом не правятся.
 
 Проход заканчивается, когда безопасных низкорисковых правок не осталось,

@@ -33,6 +33,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 MAX_BYTES = 2_000_000
+# Место проекта в экосистеме (M-10): управление, ядро, поддерживающий слой,
+# мета-уровень, архив — вне текущей системы.
+PLACES = {"control", "core", "support", "meta", "archive"}
 SAMPLES = 5
 
 
@@ -45,6 +48,7 @@ class Repo:
     names: list[str] = field(default_factory=list)
     decisions: dict | None = None
     defs: list[dict] = field(default_factory=list)
+    place: str = ""
     root: Path | None = None
     head: str = ""
     ids: set[str] = field(default_factory=set)
@@ -59,12 +63,15 @@ def load_registry(path: Path) -> list[Repo]:
     data = tomllib.loads(path.read_text(encoding="utf-8"))
     if data.get("schema") != 1:
         raise ValueError(f"{path}: schema должна быть 1")
-    known = {"name", "slug", "clone", "aliases", "names", "decisions", "defs"}
+    known = {"name", "slug", "clone", "aliases", "names", "decisions", "defs", "place"}
     repos = []
     for entry in data.get("repo", []):
         extra = set(entry) - known
         if extra:
             raise ValueError(f"{path}: неизвестные ключи {sorted(extra)} у {entry.get('name')}")
+        if "place" in entry and entry["place"] not in PLACES:
+            raise ValueError(f"{path}: place {entry['place']!r} у {entry.get('name')} — "
+                             f"одно из {', '.join(sorted(PLACES))} (M-10)")
         repos.append(Repo(**entry))
     names = [n for r in repos for n in r.all_names]
     if len(names) != len(set(names)):

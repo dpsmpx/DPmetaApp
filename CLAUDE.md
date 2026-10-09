@@ -53,7 +53,8 @@
 
 - `tools/check.sh` — перед каждым коммитом.
 - После прохода по клонам — `python3 tools/xref.py --root <каталог
-  клонов>` и `python3 tools/activity.py --root <каталог клонов>`; срез —
+  клонов>`, `python3 tools/activity.py --root <каталог клонов>` и
+  `python3 tools/manifest.py --root <каталог клонов>` (M-11); срез —
   в `docs/reports/` с датой.
 - GitHub Actions не используются — как во всей экосистеме
   (`docs/PRINCIPLES.md`, E-07).
