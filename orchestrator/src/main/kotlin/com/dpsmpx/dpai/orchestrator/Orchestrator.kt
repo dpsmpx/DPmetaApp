@@ -124,6 +124,7 @@ import com.dpsmpx.dpai.orchestrator.requests.requestEnvelopes
 import java.math.BigDecimal
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.minutes
 
 /** Target для планировщика: его возможности (ТЗ, §51) и предел одновременных сессий. */
 data class TargetSlot(val id: ExecutionTargetId, val capabilities: Set<String>, val maxSessions: Int = 4)
@@ -494,6 +495,13 @@ class Orchestrator(
     fun tick() {
         runCommands()
         commitTasks(tasksLogic.promote(tasks, clock.now()))
+        // Ждущие сверки сессии держат аренду и место target: сверить снова, когда target ответит (A-44, A-76).
+        agentFor?.let { a ->
+            val due = clock.now().epochMillis - lastReconcileAt >= RECONCILE_EVERY.inWholeMilliseconds
+            if (due && sessions.sessions.values.any { it.state == SessionState.RECOVERY_PENDING }) {
+                for (r in reconcilePending(a)) problems += r.diagnostics.filter { it.isError }
+            }
+        }
         // Выключенный target новых сессий не получает; идущие на нём доигрывают (D-42, п. 5).
         val offers = targets.map { t ->
             val active = sessions.sessions.values.count { !it.terminal && it.target == t.id }
@@ -1039,20 +1047,16 @@ class Orchestrator(
      * реагирует на исход как при опросе. Target без агента ([agentFor] —
      * `null`) или не ответивший — сессия ждёт следующей сверки.
      */
+    /** Агенты targets для сверки — запоминаются в [recover]: ждущие сессии сверяются и потом (A-44, A-76). */
+    private var agentFor: ((ExecutionTargetId) -> AgentClient?)? = null
+    private var lastReconcileAt = Long.MIN_VALUE / 2
+
     fun recover(agentFor: (ExecutionTargetId) -> AgentClient?): List<Reconciler.Result> {
-        val reconciler = Reconciler(sessionsLogic, clock)
-        commitSessions(reconciler.markPending(sessions))
-        val out = mutableListOf<Reconciler.Result>()
-        for (r in sessions.sessions.values.filter { it.state == SessionState.RECOVERY_PENDING }.sortedBy { it.id.value }) {
-            val agent = agentFor(r.target) ?: continue
-            val res = reconciler.reconcile(sessions, r.id, agent)
-            out += res
-            commitSessions(res.events)
-            val after = sessions.sessions.getValue(r.id)
-            if (res.resolution == Resolution.RESOLVED_RUNNING) runner.adopt(r.id, r.provider, r.agentSequence, turnRunning = true)
-            if (after.terminal) applyFacts(listOf(AccountFact.Release(r.id)))
-            if (after.state != SessionState.RECOVERY_PENDING) react(after.task, r.id, after.state)
-        }
+        this.agentFor = agentFor
+        commitSessions(Reconciler(sessionsLogic, clock).markPending(sessions))
+        val out = reconcilePending(agentFor)
+        // PAUSED без handoff: процесс умер между итогом хода и передачей (A-42) — передать сейчас.
+        for (r in sessions.sessions.values.filter { it.state == SessionState.PAUSED }.sortedBy { it.id.value }) react(r.task, r.id, SessionState.PAUSED)
         // Сироты (ТЗ, §119; `docs/RECOVERY.md`, §5): аренды и деревья завершённых сессий, задачи
         // RUNNING без живой сессии — безопасные починки сразу, остальное — вопросом.
         val orphans = OrphanScan(accountsLogic, tasksLogic).scan(sessions, accounts, tasks, worktrees, emptySet(), clock.now())
@@ -1064,6 +1068,37 @@ class Orchestrator(
         problems += orphans.questions
         for (q in orphans.questions) askRecovery(q)
         maybeSnapshot()
+        return out
+    }
+
+    /**
+     * Сверка сессий в `RECOVERY_PENDING` (ТЗ, §55): после старта и затем в
+     * такте, пока target не ответит (A-44, A-76), — и для хода, потерянного
+     * на target во время работы (A-43). Сессия, чей запуск не был записан до
+     * сбоя, но ход был, — задача в работе, как при обычном запуске (A-42).
+     */
+    private fun reconcilePending(agentFor: (ExecutionTargetId) -> AgentClient?): List<Reconciler.Result> {
+        lastReconcileAt = clock.now().epochMillis
+        val reconciler = Reconciler(sessionsLogic, clock)
+        val out = mutableListOf<Reconciler.Result>()
+        for (r in sessions.sessions.values.filter { it.state == SessionState.RECOVERY_PENDING }.sortedBy { it.id.value }) {
+            val agent = agentFor(r.target) ?: continue
+            val res = reconciler.reconcile(sessions, r.id, agent)
+            out += res
+            commitSessions(res.events)
+            val after = sessions.sessions.getValue(r.id)
+            if (res.resolution == Resolution.RESOLVED_RUNNING) runner.adopt(r.id, r.provider, r.agentSequence, turnRunning = true)
+            if (after.terminal) applyFacts(listOf(AccountFact.Release(r.id)))
+            when {
+                after.state == SessionState.RECOVERY_PENDING -> Unit
+                // Хода не было: дерево и аренда свободны, задача ждёт запуска, попытка не считается.
+                res.resolution == Resolution.RESOLVED_NOT_STARTED -> releaseTree(after.task, r.id)
+                else -> {
+                    if (tasks.tasks[after.task]?.state == TaskState.READY) commitTasks(tasksLogic.start(tasks, after.task, clock.now()).valueOrNull().orEmpty())
+                    react(after.task, r.id, after.state)
+                }
+            }
+        }
         return out
     }
 
@@ -1678,6 +1713,9 @@ class Orchestrator(
         private const val MAX_HANDOFF_FILES = 200
 
         private val WAIT_STATES = setOf(SessionState.PAUSED, SessionState.BLOCKED, SessionState.RECOVERY_PENDING)
+
+        /** Как часто такт сверяет сессии в `RECOVERY_PENDING` с target (A-44). */
+        val RECONCILE_EVERY: Duration = 1.minutes
 
         /** Варианты ответов на запросы оркестратора (D-44). */
         const val RETRY = "retry"

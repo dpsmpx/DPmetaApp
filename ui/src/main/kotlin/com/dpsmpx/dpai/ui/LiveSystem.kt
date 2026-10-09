@@ -160,7 +160,7 @@ class LiveSystem(
         val config = if (project != null) {
             ProjectConfig(project.project, project.repository(), project.worktreeRoot, project.profile(), integrationBranch = project.integrationBranch, remote = remote)
         } else {
-            ProjectConfig(ids.next(IdKinds.PROJECT), null, null, null)
+            ProjectConfig(HOME_PROJECT, null, null, null)
         }
         // Git на target — по SSH: команды `git -C <путь>` рабочего каталога не требуют (GitService).
         val git = projectTarget?.let { t -> GitService(sshHost(t.toTarget(knownHostsFile).ssh!!, t.platform), GitCommands(ApprovalLedger()), clock) }
@@ -350,6 +350,13 @@ class LiveSystem(
     )
 
     companion object {
+        /**
+         * Проект «без проекта» — задачи в каталоге агента. Id постоянный:
+         * сохранённый контекст задачи привязан к проекту, и с новым id после
+         * перезапуска контекст не собирался (найдено при исправлении A-42).
+         */
+        val HOME_PROJECT: com.dpsmpx.dpai.core.ids.ProjectId = IdKinds.PROJECT.trusted("prj_" + "0".repeat(26))
+
         private const val MAX_PROBLEMS = 50
 
         /** Как часто перепроверять Git, пока он не работает. */

@@ -33,6 +33,12 @@ sealed interface RunnerUpdate {
     data class Heartbeat(val sequence: Long) : RunnerUpdate
 
     data class TurnFinished(val turn: Int, val result: ClaudeTurn) : RunnerUpdate
+
+    /**
+     * Ход потерян на target: супервизор умер, не записав выхода (`LOST`,
+     * ревью A-7, A-43). Что с процессом — решает сверка, а не догадка (D-13).
+     */
+    data class RunLost(val turn: Int) : RunnerUpdate
 }
 
 /** Состояние сессии раннера без изменений (`inspect`). */
@@ -102,6 +108,8 @@ class ClaudeCodeCliRunner(
         var lastTurn: ClaudeTurn? = null
         var run: RunStatus? = null
         var terminated = false
+        /** Потеря хода уже передана: [RunnerUpdate.RunLost] — один раз на ход. */
+        var lostReported = false
     }
 
     private val live = HashMap<SessionId, Live>()
@@ -138,6 +146,7 @@ class ClaudeCodeCliRunner(
             is Outcome.Success -> {
                 l.providerStarted = true
                 l.run = r.value
+                l.lostReported = false
                 Outcome.success(state(l), r.diagnostics)
             }
         }
@@ -151,6 +160,10 @@ class ClaudeCodeCliRunner(
                 l.run = batch.value.status ?: l.run
                 val updates = mutableListOf<RunnerUpdate>()
                 for (e in batch.value.events) updates += translate(l, e)
+                if (l.run?.state == RunState.LOST && !l.lostReported) {
+                    l.lostReported = true
+                    updates += RunnerUpdate.RunLost(l.turn)
+                }
                 Outcome.success(updates, batch.diagnostics)
             }
         }

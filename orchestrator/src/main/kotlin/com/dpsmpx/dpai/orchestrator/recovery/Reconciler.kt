@@ -20,8 +20,12 @@ import com.dpsmpx.dpai.sessions.Sessions
 import com.dpsmpx.dpai.sessions.SessionsState
 import kotlin.time.Duration.Companion.seconds
 
-/** Исход сверки (ТЗ, §55). `UNKNOWN` — target не ответил: сессия остаётся `RECOVERY_PENDING`. */
-enum class Resolution { RESOLVED_RUNNING, RESOLVED_FAILED, RESOLVED_COMPLETED, UNKNOWN }
+/**
+ * Исход сверки (ТЗ, §55). `UNKNOWN` — target не ответил: сессия остаётся
+ * `RECOVERY_PENDING`. `RESOLVED_NOT_STARTED` — запуск хода не был
+ * подтверждён до сбоя, и target его не знает: хода не было (A-42).
+ */
+enum class Resolution { RESOLVED_RUNNING, RESOLVED_FAILED, RESOLVED_COMPLETED, RESOLVED_NOT_STARTED, UNKNOWN }
 
 /**
  * Восстановление после сбоя (ТЗ, §54, §55; `docs/RECOVERY.md`, §1, §2):
@@ -35,18 +39,38 @@ enum class Resolution { RESOLVED_RUNNING, RESOLVED_FAILED, RESOLVED_COMPLETED, U
  * | ход кончился, итог в журнале агента | `RESOLVED_COMPLETED` или `RESOLVED_FAILED` | по итогу хода |
  * | супервизор потерян | `RESOLVED_FAILED` после остановки процесса | `FAILED` |
  * | запуска нет | `RESOLVED_FAILED` (процесса нет — подтверждено) | `FAILED` |
+ * | запуска нет, а запуск и не был подтверждён | `RESOLVED_NOT_STARTED` | `CANCELLED` — попытка не считается |
  * | target не отвечает | `UNKNOWN` | остаётся `RECOVERY_PENDING` |
+ *
+ * Сессия `QUEUED` (создана, а запуск хода не записан, A-42) тоже
+ * сверяется: запуск мог дойти до агента до сбоя. Она проходит `STARTING` с
+ * причиной [DiagCode.RECOVERY_START_UNCONFIRMED] — по ней сверка и после
+ * следующего перезапуска знает, что хода могло не быть.
  */
 class Reconciler(private val sessions: Sessions, private val clock: Clock) {
     data class Result(val session: SessionId, val resolution: Resolution, val events: List<SessionEvent>, val diagnostics: List<Diagnostic>)
 
     private val working = setOf(SessionState.STARTING, SessionState.RUNNING, SessionState.WAITING, SessionState.NEAR_LIMIT, SessionState.VERIFYING)
 
-    /** Шаг 1 (ТЗ, §54): сессии, которые по журналу работали, — в `RECOVERY_PENDING`. */
-    fun markPending(state: SessionsState): List<SessionEvent> =
-        state.sessions.values.filter { it.state in working }.sortedBy { it.id.value }.flatMap { r ->
-            sessions.transition(state, r.id, SessionState.RECOVERY_PENDING, clock.now(), DiagCode.RECOVERY_RESTARTED).valueOrNull().orEmpty()
+    /** Шаг 1 (ТЗ, §54): сессии, которые по журналу работали или ждали запуска, — в `RECOVERY_PENDING`. */
+    fun markPending(state: SessionsState): List<SessionEvent> {
+        var s = state
+        val out = mutableListOf<SessionEvent>()
+        fun move(id: SessionId, to: SessionState, reason: DiagCode) {
+            val es = sessions.transition(s, id, to, clock.now(), reason).valueOrNull().orEmpty()
+            out += es
+            s = Sessions.applyAll(s, es)
         }
+        for (r in state.sessions.values.filter { it.state in working || it.state == SessionState.QUEUED }.sortedBy { it.id.value }) {
+            if (r.state == SessionState.QUEUED) {
+                move(r.id, SessionState.STARTING, DiagCode.RECOVERY_START_UNCONFIRMED)
+                move(r.id, SessionState.RECOVERY_PENDING, DiagCode.RECOVERY_START_UNCONFIRMED)
+            } else {
+                move(r.id, SessionState.RECOVERY_PENDING, DiagCode.RECOVERY_RESTARTED)
+            }
+        }
+        return out
+    }
 
     /** Шаг 2: проба агента и сверка одной сессии в `RECOVERY_PENDING`. */
     fun reconcile(state: SessionsState, id: SessionId, agent: AgentClient): Result {
@@ -60,7 +84,9 @@ class Reconciler(private val sessions: Sessions, private val clock: Clock) {
         val status = when (val s = agent.status(id)) {
             is Outcome.Success -> s.value
             is Outcome.Failure ->
-                return if (s.errors.any { it.code == DiagCode.ENTITY_NOT_FOUND }) {
+                return if (s.errors.any { it.code == DiagCode.ENTITY_NOT_FOUND } && r.lastReason == DiagCode.RECOVERY_START_UNCONFIRMED) {
+                    resolve(Resolution.RESOLVED_NOT_STARTED, SessionState.CANCELLED, DiagCode.RECOVERY_START_UNCONFIRMED, "запуск не дошёл до target: хода не было")
+                } else if (s.errors.any { it.code == DiagCode.ENTITY_NOT_FOUND }) {
                     resolve(Resolution.RESOLVED_FAILED, SessionState.FAILED, DiagCode.AGENT_RUN_LOST, "target не знает запуска: процесса нет")
                 } else {
                     Result(id, Resolution.UNKNOWN, emptyList(), listOf(Diagnostic.of(DiagCode.STATE_CONFLICT, "UNKNOWN: target не ответил", "session $id", com.dpsmpx.dpai.core.diagnostics.Severity.WARNING, s.errors)))

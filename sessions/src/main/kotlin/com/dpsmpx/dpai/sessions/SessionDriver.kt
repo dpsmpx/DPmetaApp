@@ -166,6 +166,8 @@ class SessionDriver(private val sessions: Sessions, private val runner: ClaudeRu
                     }
                     else -> emit(sessions.heartbeat(current, id, now))
                 }
+                // Супервизор на target умер, не записав выхода: что с ходом — решит сверка (A-43).
+                is RunnerUpdate.RunLost -> moveTo(SessionState.RECOVERY_PENDING, DiagCode.AGENT_RUN_LOST)
                 is RunnerUpdate.TurnFinished -> {
                     val t = u.result
                     turns += t
