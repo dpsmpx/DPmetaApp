@@ -1177,7 +1177,7 @@ proot-distro login alpine -- ssh -p 2222 -i /root/.ssh/dpai_workspace ПОЛЬЗ
    Termux; «Ключ SSH» — `/root/.ssh/dpai_workspace`.
 5. Задача `ПК 2`: «Добавь файл remote.txt со строкой готово». Ожидается:
    сессия на Termux; на экране сессии — инструменты
-   `mcp__workspace__write` и т. п.; `DONE`; «Слить» — файл в `main` на ПК
+   `mcp__dpai__write` и т. п.; `DONE`; «Слить» — файл в `main` на ПК
    (`git -C C:/Users/dpu/dpai-proj log --oneline -3 main`).
 6. Ход ответил, что инструментов нет или вызов не разрешён (режим `auto`,
    D-38), — текст ответа и вкладку «Журнал» в отчёт: это вопрос D-50,

@@ -195,12 +195,12 @@ class ToolTracker {
 /**
  * Инструменты MCP-сервера рабочего дерева (`dpai agent mcp`, D-50): ход
  * Claude на одном target, дерево задачи — на другом. Имена у модели —
- * `mcp__workspace__<имя>`; для замера (D-41) и рабочего набора они — те же
+ * `mcp__dpai__<имя>`; для замера (D-41) и рабочего набора они — те же
  * действия, что встроенные `Read`, `Write`, `Edit`, `Glob`, `Grep`, `Bash`.
  */
 object WorkspaceTools {
-    /** Имя сервера в `--mcp-config`. */
-    const val SERVER = "workspace"
+    /** Имя сервера в `--mcp-config`; `workspace` Claude Code держит за собой (2.1.295: «this name is reserved»). */
+    const val SERVER = "dpai"
     private const val PREFIX = "mcp__${SERVER}__"
     private val BUILTIN = mapOf("read" to "Read", "write" to "Write", "edit" to "Edit", "glob" to "Glob", "grep" to "Grep", "run" to "Bash")
 

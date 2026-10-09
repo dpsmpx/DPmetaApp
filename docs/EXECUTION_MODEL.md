@@ -200,7 +200,7 @@ target проекта, как обычно, а ход запускает на ta
 `--tools ""`, `--strict-mcp-config` и `--mcp-config` (`RemoteWorkspace`):
 
 ```json
-{"mcpServers":{"workspace":{"type":"stdio","command":"ssh",
+{"mcpServers":{"dpai":{"type":"stdio","command":"ssh",
   "args":["-T","-o","BatchMode=yes","-o","StrictHostKeyChecking=yes", "…",
           "-i","/root/.ssh/dpai_workspace","-p","22","-l","dev","--","100.64.1.2",
           "C:/Users/dev/dpai-agent.cmd agent mcp --root C:/dpai/trees/tsk_…"]}}}

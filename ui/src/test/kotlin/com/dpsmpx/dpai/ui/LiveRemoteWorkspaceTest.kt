@@ -68,7 +68,7 @@ class LiveRemoteWorkspaceTest {
         git("-C", root, "add", "README.md")
         git("-C", root, "commit", "-q", "-m", "начало")
 
-        val turns = mutableListOf<ProcessSpec>()
+        val turns = mutableListOf<com.dpsmpx.dpai.execution.agent.RunSpec>()
         phoneAgent.onStart = { run, spec, _ ->
             when {
                 spec.command.take(3) == listOf("claude", "auth", "status") -> {

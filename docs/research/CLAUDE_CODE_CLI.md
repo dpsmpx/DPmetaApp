@@ -326,3 +326,32 @@ Note 13 (автор, слот `~/.claude-dpai-check`):
   каталоге репозитория: до ответа идут `system` (`init`, `hook_*`,
   `dev_intent`) — на разбор не влияют. Использование — D-48.
 
+## 13. Ход без встроенных инструментов, с инструментами MCP
+
+Проверено **9 октября 2026** по `claude --help` Claude Code **2.1.295**
+(среда облачной сессии):
+
+- `--tools <tools...>` — «Specify the list of available tools from the
+  built-in set. Use "" to disable all tools, "default" to use all tools,
+  or specify tool names»: `--tools ""` отключает все встроенные
+  инструменты.
+- `--mcp-config <configs...>` — «Load MCP servers from JSON files or
+  strings (space-separated)»: конфигурация передаётся строкой JSON, без
+  файла.
+- `--strict-mcp-config` — «Only use MCP servers from --mcp-config,
+  ignoring all other MCP configurations».
+- `claude mcp list` и `claude mcp get <имя>` проверяют здоровье
+  подключённых серверов (подключение и рукопожатие), без запроса к модели.
+- Имя сервера `workspace` зарезервировано: `claude mcp add-json -s user
+  workspace …` — «Cannot add MCP server "workspace": this name is
+  reserved».
+- Рукопожатие с сервером дерева — проверено запуском там же: `claude mcp
+  add-json -s user dpai '{"type":"stdio","command":".../dpai","args":
+  ["agent","mcp","--root",…]}'` в пустом `CLAUDE_CONFIG_DIR` (без входа),
+  затем `claude mcp list` — «dpai: … - √ Connected».
+
+Использование — D-50: ход на телефоне с деревом на ПК через сервер
+`dpai agent mcp` по SSH. Разрешает ли режим `--permission-mode auto`
+вызовы инструментов MCP в `-p` — не проверено запуском (проверка на
+устройстве, `docs/DEVICE_CHECK.md`, §10.1).
+

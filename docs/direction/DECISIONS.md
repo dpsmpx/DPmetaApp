@@ -1212,10 +1212,10 @@ Claude на ПК. Проект может указать target хода, отл
    и слияние — на target проекта, как прежде (D-35). Каталог Claude
    target проекту не нужен.
 2. Ход — `claude -p` на target хода с `--tools ""` (встроенных
-   инструментов нет), `--mcp-config` с одним сервером `workspace` и
+   инструментов нет), `--mcp-config` с одним сервером `dpai` и
    `--strict-mcp-config`. Рабочий каталог процесса — каталог агента
    target хода: он один для всех ходов, и `--resume` находит сессию.
-3. Сервер `workspace` — `ssh … <пользователь>@<target проекта> <агент>
+3. Сервер `dpai` — `ssh … <пользователь>@<target проекта> <агент>
    agent mcp --root <дерево задачи>`: Claude Code запускает его сам и
    говорит с ним по stdio. Ключ SSH и known_hosts — свои у target хода (на
    телефоне — внутри proot, где идёт Claude), `StrictHostKeyChecking=yes`

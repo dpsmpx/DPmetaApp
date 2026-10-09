@@ -272,7 +272,7 @@ class WorkspaceMcp(
             throw ToolError("шаблон недопустим: ${e.message}")
         }
         val found = files(base).filter { matcher.matches(base.relativize(it)) }
-            .sortedByDescending { runCatching { Files.getLastModifiedTime(it).toMillis() }.getOrDefault(0) }
+            .sortedByDescending { runCatching { Files.getLastModifiedTime(it).toMillis() }.getOrDefault(0L) }
         val shownFiles = found.take(MAX_RESULTS).map(::shown)
         val more = if (found.size > MAX_RESULTS) "\n[ещё ${found.size - MAX_RESULTS}]" else ""
         return ToolResult(shownFiles.joinToString("\n").ifEmpty { "[ничего]" } + more)
@@ -297,7 +297,7 @@ class WorkspaceMcp(
         val out = ArrayList<String>()
         for (f in candidates) {
             if (only != null && !only.matches(f.fileName) && !only.matches(root.relativize(f))) continue
-            if (runCatching { Files.size(f) }.getOrDefault(0) > MAX_GREP_FILE) continue
+            if (runCatching { Files.size(f) }.getOrDefault(0L) > MAX_GREP_FILE) continue
             val text = text(f) ?: continue
             text.lineSequence().forEachIndexed { i, line ->
                 if (out.size < limit && regex.containsMatchIn(line)) out += "${shown(f)}:${i + 1}:${line.take(MAX_LINE / 4)}"
@@ -314,7 +314,7 @@ class WorkspaceMcp(
             s.filter { p -> Files.isRegularFile(p) && root.relativize(p).none { it.toString() == ".git" } }
                 .filter { p -> runCatching { p.toRealPath().startsWith(realRoot) }.getOrDefault(false) }
                 .limit(MAX_WALK.toLong())
-                .forEach { out += it }
+                .forEach { out.add(it) }
         }
         return out
     }
