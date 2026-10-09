@@ -22,6 +22,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -53,8 +54,29 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
     var form by remember { mutableStateOf(false) }
     var project by remember { mutableStateOf(controller.project()) }
     var projectFor by remember { mutableStateOf<TargetEntry?>(null) }
+    var guide by remember { mutableStateOf(false) }
+    if (guide) {
+        SetupPane(controller, model) {
+            guide = false
+            targets = controller.targets()
+            project = controller.project()
+        }
+        return
+    }
 
     LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        item(key = "guide") {
+            Card(Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        if (targets.isEmpty()) "Ещё не настроено: Termux, агент, вход в Claude — по шагам" else "Termux, агент, ключ, вход, проект, dpai — по шагам",
+                        Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
+                    )
+                    Button(onClick = { guide = true }) { Text("Инструкция") }
+                }
+            }
+        }
+        if (targets.any(TermuxLauncher::local)) item(key = "termux") { TermuxCard(targets.first(TermuxLauncher::local).port) }
         item {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
@@ -92,10 +114,13 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
                 Button(onClick = { form = true }) { Text("Добавить") }
             }
         }
+        item(key = "control") { ControlCard(model) }
+        item(key = "cli") { CliCard() }
         items(targets, key = { it.id.value }) { t ->
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
                     Text(t.label, style = MaterialTheme.typography.titleSmall)
+                    if (t.configDir != null) TargetSwitches(model, t)
                     Text("${t.user}@${t.host}:${t.port} · ${t.type.name}", style = MaterialTheme.typography.bodySmall)
                     Text(t.configDir?.let { "каталог Claude: $it" } ?: "без каталога Claude — только проверка агента", style = MaterialTheme.typography.bodySmall)
                     Row {
@@ -269,5 +294,211 @@ private fun ProjectDialog(controller: Controller, target: TargetEntry, onDone: (
         },
         dismissButton = { TextButton(onClick = { onDone(null) }) { Text("Отмена") } },
     )
+}
+
+/**
+ * Termux на этом телефоне (D-46): разрешение «Запуск команд в среде
+ * Termux», слушает ли `sshd`, запуск `sshd` кнопкой. Служба контроллера
+ * запускает его и сама, если порт закрыт.
+ */
+@Composable
+private fun TermuxCard(port: Int) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = rememberCoroutineScope()
+    var permitted by remember { mutableStateOf(TermuxLauncher.permitted(context)) }
+    var listening by remember { mutableStateOf<Boolean?>(null) }
+    var note by remember { mutableStateOf<String?>(null) }
+    // HyperOS отклоняет запрос стороннего разрешения молча, без окна: отказ — открыть страницу приложения в настройках.
+    val ask = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { ok ->
+        permitted = ok
+        if (!ok) {
+            note = "Окно не появилось: в настройках приложения — «Разрешения» → «Запуск команд в среде Termux»"
+            context.startActivity(TermuxLauncher.appSettings(context))
+        }
+    }
+    LaunchedEffect(port) {
+        while (true) {
+            listening = withContext(Dispatchers.IO) { TermuxLauncher.listening(port) }
+            permitted = TermuxLauncher.permitted(context)
+            kotlinx.coroutines.delay(3000)
+        }
+    }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp)) {
+            Text("Termux на этом телефоне", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "sshd на порту $port: " + when (listening) {
+                    true -> "слушает"
+                    false -> "не слушает"
+                    null -> "проверяю…"
+                },
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if (!TermuxLauncher.installed(context)) {
+                Text("Termux не найден", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            } else if (!TermuxLauncher.supportsRunCommand(context)) {
+                Text(
+                    "Этот Termux (из Google Play) не принимает команды от других приложений. sshd поднимается автозапуском при загрузке телефона " +
+                        "(~/.termux/boot/10-dpai-sshd) или вашим виджетом.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            } else if (!permitted) {
+                Text(
+                    "Чтобы приложение само запускало sshd, разрешите «Запуск команд в среде Termux» и добавьте в Termux строку allow-external-apps = true в ~/.termux/termux.properties.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                TextButton(onClick = { ask.launch(TermuxLauncher.PERMISSION) }) { Text("Разрешить") }
+            } else {
+                Text("Разрешение есть: контроллер сам запустит sshd, если порт закрыт (не чаще раза в 5 минут).", style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = {
+                    scope.launch {
+                        note = when (val r = withContext(Dispatchers.IO) { TermuxLauncher.startSshd(context) }) {
+                            is com.dpsmpx.dpai.core.result.Outcome.Success -> "Команда отправлена в Termux"
+                            is com.dpsmpx.dpai.core.result.Outcome.Failure -> "Не отправлена: ${r.diagnostics.first().message}"
+                        }
+                    }
+                }) { Text("Запустить sshd сейчас") }
+            }
+            note?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
+        }
+    }
+}
+
+/**
+ * Контур (D-42, п. 6): общий предел одновременных сессий — сверх
+ * предела каждого target; выше него новые задачи ждут.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun ControlCard(model: DemoModel) {
+    val scope = rememberCoroutineScope()
+    var limit by remember { mutableStateOf(model.control()?.maxSessions) }
+    var live by remember { mutableStateOf(model.control() != null) }
+    var note by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            val c = withContext(Dispatchers.IO) { model.control() }
+            live = c != null
+            limit = c?.maxSessions
+            kotlinx.coroutines.delay(3000)
+        }
+    }
+    if (!live) return
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp)) {
+            Text("Контур", style = MaterialTheme.typography.titleMedium)
+            Text("Сессий одновременно: ${limit ?: "без общего предела"}", style = MaterialTheme.typography.bodySmall)
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                for (v in listOf<Int?>(null, 1, 2, 4, 8)) {
+                    androidx.compose.material3.FilterChip(selected = limit == v, onClick = {
+                        scope.launch {
+                            note = when (val r = withContext(Dispatchers.IO) { model.command(com.dpsmpx.dpai.orchestrator.commands.Command.SetSessionLimit(v)) }) {
+                                is com.dpsmpx.dpai.core.result.Outcome.Success -> null.also { limit = v }
+                                is com.dpsmpx.dpai.core.result.Outcome.Failure -> "Не принято: ${r.diagnostics.first().message}"
+                            }
+                        }
+                    }, label = { Text(v?.toString() ?: "∞") })
+                }
+            }
+            note?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall) }
+        }
+    }
+}
+
+/**
+ * Target и его слоты (D-42, п. 5): выключенный target новых сессий не
+ * получает (идущие доигрывают); выключенный слот не арендуется, после
+ * включения — проба входа.
+ */
+@Composable
+private fun TargetSwitches(model: DemoModel, t: TargetEntry) {
+    val scope = rememberCoroutineScope()
+    var enabled by remember { mutableStateOf(model.control()?.let { t.id !in it.disabledTargets }) }
+    var slots by remember { mutableStateOf(model.slotsOf(t.id)) }
+    LaunchedEffect(t.id) {
+        while (true) {
+            enabled = withContext(Dispatchers.IO) { model.control()?.let { t.id !in it.disabledTargets } }
+            slots = withContext(Dispatchers.IO) { model.slotsOf(t.id) }
+            kotlinx.coroutines.delay(3000)
+        }
+    }
+    val on = enabled ?: return
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("Принимает новые задачи", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+        androidx.compose.material3.Switch(checked = on, onCheckedChange = { v ->
+            enabled = v
+            scope.launch { withContext(Dispatchers.IO) { model.command(com.dpsmpx.dpai.orchestrator.commands.Command.SetTargetEnabled(t.id, v)) } }
+        })
+    }
+    for (slot in slots) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("слот ${slot.configDir.substringAfterLast('/')} · ${slot.state}", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+            androidx.compose.material3.Switch(checked = !slot.disabled, onCheckedChange = { v ->
+                scope.launch {
+                    withContext(Dispatchers.IO) {
+                        model.command(com.dpsmpx.dpai.orchestrator.commands.Command.SetSlotEnabled(slot.id, v))
+                        // Включённый слот — вход неизвестен: проба, а не «как было» (D-13).
+                        if (v) model.probe(t.id)
+                    }
+                    slots = withContext(Dispatchers.IO) { model.slotsOf(t.id) }
+                }
+            })
+        }
+    }
+}
+
+/**
+ * Командная строка (D-47): `dpai` в Termux на этом телефоне (или с ПК
+ * через SSH-туннель) управляет контуром через канал на 127.0.0.1; код
+ * сопряжения — здесь, на две минуты.
+ */
+@Composable
+private fun CliCard() {
+    val context = androidx.compose.ui.platform.LocalContext.current.applicationContext
+    var code by remember { mutableStateOf<String?>(null) }
+    var until by remember { mutableStateOf<Long?>(null) }
+    var note by remember { mutableStateOf<String?>(null) }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp)) {
+            Text("Командная строка dpai", style = MaterialTheme.typography.titleMedium)
+            var running by remember { mutableStateOf(ControlServer.running) }
+            var problem by remember { mutableStateOf(ControlServer.problem) }
+            LaunchedEffect(Unit) {
+                while (true) {
+                    running = ControlServer.running
+                    problem = ControlServer.problem
+                    kotlinx.coroutines.delay(2000)
+                }
+            }
+            Text(
+                when {
+                    running -> "Канал: 127.0.0.1:${ControlServer.PORT} — открыт"
+                    problem != null -> "Канал не открылся: $problem"
+                    else -> "Канал закрыт: он работает вместе со службой контроллера"
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = if (running) androidx.compose.ui.graphics.Color.Unspecified else MaterialTheme.colorScheme.error,
+            )
+            if (!running) TextButton(onClick = { ControlServer.start(context) }) { Text("Открыть канал") }
+            code?.let { c ->
+                Text("Код: $c", style = MaterialTheme.typography.headlineSmall)
+                Text("В Termux: dpai control pair $c  (код действует 2 минуты)", style = MaterialTheme.typography.bodySmall)
+            }
+            Row {
+                TextButton(onClick = {
+                    val (c, u) = ControlServer.pairing(context).newCode()
+                    code = c
+                    until = u.epochMillis
+                    note = null
+                }) { Text("Показать код") }
+                TextButton(onClick = {
+                    ControlServer.pairing(context).revoke()
+                    code = null
+                    note = "Токен отозван: dpai нужно сопрячь заново"
+                }) { Text("Отозвать токен") }
+            }
+            note?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
+        }
+    }
 }
 

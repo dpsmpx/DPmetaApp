@@ -42,6 +42,9 @@ class Cli(
             OK
         }
         "agent" -> AgentCommand(out, err, version).run(args.drop(1))
+        // Пульт приложения (D-47): те же команды, что на экране, через канал на loopback.
+        "control", "status", "task", "session", "requests", "answer", "limit", "target", "slot", "sessions-limit" ->
+            ControlCommand(out, err).run(args.first(), args.drop(1))
         "help", "--help", "-h" -> {
             out(USAGE)
             OK
@@ -66,9 +69,10 @@ class Cli(
             |
             |  dpai version   версия
             |  dpai agent     агент на execution target (dpai agent без параметров — справка)
+            |${ControlCommand.USAGE}
             |  dpai help      эта справка
             |
-            |Коды выхода: 0 — успех, 2 — неверный вызов.
+            |Коды выхода: 0 — успех, 1 — отказ, 2 — неверный вызов.
         """.trimMargin()
     }
 }

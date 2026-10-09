@@ -6,11 +6,14 @@ import com.dpsmpx.dpai.core.ids.ProviderSessionId
 import com.dpsmpx.dpai.core.measure.Measure
 import com.dpsmpx.dpai.core.measure.MeasureSource
 import com.dpsmpx.dpai.core.serialization.JsonObject
+import com.dpsmpx.dpai.core.serialization.JsonParser
 import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.execution.agent.ExitReason
 import com.dpsmpx.dpai.execution.claude.ClaudeEvent
 import com.dpsmpx.dpai.execution.claude.ClaudeTurn
 import com.dpsmpx.dpai.execution.claude.ClaudeTurnAssembler
+import com.dpsmpx.dpai.execution.claude.ToolCount
+import com.dpsmpx.dpai.execution.claude.ToolTracker
 import com.dpsmpx.dpai.execution.claude.TurnStatus
 import com.dpsmpx.dpai.testkit.Gen
 import com.dpsmpx.dpai.testkit.Property
@@ -197,5 +200,85 @@ class ClaudeStreamTest {
             val t = a.finish(0, ExitReason.EXITED)
             assertTrue(t.status in TurnStatus.entries)
         }
+    }
+
+    @Test
+    fun toolCallsOfTurnAreMeasuredFromStream() {
+        // D-41: вызовы, байты результатов, повторы без правки между ними, файлы, субагент — по потоку.
+        val t = turn("tool-calls.jsonl")
+        assertEquals(TurnStatus.COMPLETED, t.status)
+        val by = t.tools.byTool
+        assertEquals(ToolCount(calls = 3, resultBytes = 57 + 57 + 68, duplicates = 1, duplicateBytes = 57), by["Read"])
+        // Второй поиск — после правки и команды: результат мог измениться, это не повтор.
+        assertEquals(ToolCount(calls = 2, resultBytes = 102), by["Grep"])
+        assertEquals(ToolCount(calls = 1, resultBytes = 46), by["Edit"])
+        assertEquals(ToolCount(calls = 1, resultBytes = 49, errors = 1), by["Bash"])
+        assertEquals(ToolCount(calls = 1, resultBytes = 34), by["Agent"])
+        assertEquals(1, t.tools.subagentCalls)
+        assertEquals(42, t.tools.subagentResultBytes)
+        assertEquals(2, t.tools.filesRead)
+        assertEquals(1, t.tools.filesEdited)
+        assertEquals(68, t.tools.largestResultBytes)
+        assertEquals(0, t.tools.unmatchedResults)
+        assertEquals(listOf("/work/src/Parser.kt", "/work/src/Main.kt"), t.files.read)
+        assertEquals(listOf("/work/src/Parser.kt"), t.files.edited)
+        assertEquals(ToolCount(calls = 8, resultBytes = 57 + 51 + 57 + 46 + 68 + 49 + 51 + 34, errors = 1, duplicates = 1, duplicateBytes = 57), t.tools.total)
+    }
+
+    @Test
+    fun recordedTurnHasOneStructuredOutputCall() {
+        val t = turn("success-structured.jsonl")
+        assertEquals(ToolCount(calls = 1, resultBytes = "Structured output provided successfully".length.toLong()), t.tools.byTool["StructuredOutput"])
+        assertEquals(0, t.tools.filesRead)
+    }
+
+    @Test
+    fun interruptedTurnKeepsToolMeasurement() {
+        // Расход провайдера неизвестен, а замер оркестратора по потоку — есть.
+        val a = ClaudeTurnAssembler(recorded)
+        corpus("tool-calls.jsonl").dropLast(1).forEach { a.feed(it) }
+        val t = a.finish(null, ExitReason.TIMEOUT)
+        assertEquals(TurnStatus.INCOMPLETE, t.status)
+        assertIs<Measure.Unknown>(t.usage.inputTokens)
+        assertEquals(8, t.tools.total.calls)
+    }
+
+    @Test
+    fun duplicateNeedsNoPossibleChangeBetweenCalls() {
+        fun use(id: String, name: String, input: String) = ClaudeEvent.ToolUse(id, name, JsonParser().parse(input).valueOrNull() as JsonObject)
+        val grep = """{"pattern":"x","path":"/w"}"""
+        val tr = ToolTracker()
+        tr.onUse(use("1", "Grep", grep), subagent = false)
+        tr.onUse(use("2", "TodoWrite", """{"todos":[]}"""), subagent = false)
+        // TodoWrite ничего не меняет: тот же поиск — повтор.
+        tr.onUse(use("3", "Grep", grep), subagent = false)
+        tr.onUse(use("4", "Bash", """{"command":"ls  -la","description":"a"}"""), subagent = false)
+        tr.onUse(use("5", "Bash", """{"command":"ls -la","description":"b"}"""), subagent = false)
+        // Команда и инструмент MCP могли что-то изменить: после них и та же команда, и тот же поиск — не повтор.
+        tr.onUse(use("6", "mcp__x__write", """{"a":1}"""), subagent = false)
+        tr.onUse(use("7", "Grep", grep), subagent = false)
+        // Субагент ведёт свой контекст: его вызов не сравнивается с вызовами хода.
+        tr.onUse(use("8", "Grep", grep), subagent = true)
+        tr.onResult(ClaudeEvent.ToolResult("3", 10, false))
+        tr.onResult(ClaudeEvent.ToolResult("missing", 5, false))
+        val r = tr.result()
+        assertEquals(ToolCount(calls = 3, resultBytes = 10, duplicates = 1, duplicateBytes = 10), r.byTool["Grep"])
+        assertEquals(0, r.byTool.getValue("Bash").duplicates)
+        assertEquals(1, r.subagentCalls)
+        assertEquals(1, r.unmatchedResults)
+    }
+
+    @Test
+    fun malformedToolBlocksAreToleratedNotGuessed() {
+        // Вход не объект, результат без id, содержимое не строка и не блоки — без исключений, с пометкой.
+        val a = ClaudeTurnAssembler(recorded)
+        val sid = recorded.value
+        a.feed("""{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Read","input":"oops"}]},"session_id":"$sid","uuid":"x1"}""")
+        a.feed("""{"type":"user","message":{"content":[{"type":"tool_result","content":42}]},"session_id":"$sid","uuid":"x2"}""")
+        a.feed("""{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":{"a":1}}]},"session_id":"$sid","uuid":"x3"}""")
+        val t = a.finish(0, ExitReason.EXITED)
+        assertEquals(ToolCount(calls = 1), t.tools.byTool["Read"])
+        assertEquals(1, t.tools.unmatchedResults)
+        assertEquals(0, t.tools.filesRead)
     }
 }

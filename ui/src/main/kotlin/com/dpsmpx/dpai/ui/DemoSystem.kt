@@ -51,7 +51,7 @@ class DemoSystem(
     private val journal: EventJournal = EventJournal.open(vfs, "demo.journal", quarantineCorruption = true).valueOrNull()
         ?: error("журнал демо не открылся")
     private val runner: MockRunner
-    val orchestrator: Orchestrator
+    override val orchestrator: Orchestrator
     private val targets: Int = (sessions + 4) / 5
 
     init {
@@ -113,14 +113,17 @@ class DemoSystem(
 
     fun diagnosis(): SelfDiagnosis = SelfDiagnostics.evaluate(
         SystemSignals(
-            storageOk = true, recoveryInProgress = false, gitAvailable = null, notificationsOk = null,
+            storageOk = true, recoveryInProgress = false, gitAvailable = null, notificationsOk = null, gitRequired = false,
             targetsOnline = targets, targetsTotal = targets, securityAlert = false,
         ),
     )
 
-    override fun dashboard(): DashboardScreen = Screens.dashboard(orchestrator.dashboard(), diagnosis(), orchestrator.usage())
+    override fun dashboard(): DashboardScreen =
+        Screens.dashboard(orchestrator.dashboard(), diagnosis(), orchestrator.usage()).copy(limits = Screens.limits(orchestrator.accounts, clock.now()))
 
-    override fun session(id: SessionId): SessionScreen = Screens.session(orchestrator.dashboard(), id, events())
+    override fun session(id: SessionId): SessionScreen = Screens.session(
+        orchestrator.dashboard(), id, events(), orchestrator.live(id), clock.now(), Screens.sessionActions(id, orchestrator.sessions, orchestrator.tasks),
+    )
 
     override fun board(): TaskBoard = Screens.board(orchestrator.tasks)
 }

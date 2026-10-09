@@ -183,6 +183,28 @@ class ContextTest {
     }
 
     @Test
+    fun handoffV3CarriesWorkingSetAndReadsOlderFormats() {
+        // D-41: рабочий набор и итог хода — в v3; v2 читается без них; в prompt — только для свежей сессии.
+        val bundle = assemble(listOf(doc("a", "x"))).valueOrNull()!!
+        val h = Handoff(
+            ids.next(IdKinds.HANDOFF), "key-ws", HandoffReason.VERIFICATION_FAILED, ids.next(IdKinds.SESSION), task, projectA, bundle.id, bundle.hash, "s",
+            emptyList(), emptyList(), listOf("шаг тесты: код 1"), emptyList(), emptyList(), null, "исправить", listOf("src/A.kt"), null, "task/x", "/t",
+            clock.now(), relevantFiles = listOf("src/B.kt", "src/C.kt"), summary = "поправил A, B не трогал",
+        )
+        fun parse(o: JsonObject) = com.dpsmpx.dpai.core.serialization.JsonParser().parse(com.dpsmpx.dpai.core.serialization.CanonicalJson.write(o)).valueOrNull() as JsonObject
+        assertEquals(h, ContextCodec.readHandoff(parse(h.toJson())).valueOrNull())
+        val v2 = h.copy(relevantFiles = emptyList(), summary = null)
+        assertEquals(v2, ContextCodec.readHandoff(parse(v2.toJson(2))).valueOrNull())
+        // Поле v3 в документе v2 — чужое поле, а не тихо принятое.
+        val mixed = JsonObject(v2.toJson(2).fields + ("relevantFiles" to com.dpsmpx.dpai.core.serialization.JsonArray(emptyList())))
+        assertIs<Outcome.Failure>(ContextCodec.readHandoff(mixed))
+        val fresh = h.asSource().content
+        assertTrue("- src/B.kt" in fresh && "поправил A, B не трогал" in fresh, fresh)
+        val resumed = h.asSource(workingSet = false).content
+        assertTrue("src/B.kt" !in resumed && "поправил" !in resumed && "- src/A.kt" in resumed, resumed)
+    }
+
+    @Test
     fun compactionKeepsSourcesAndDropsResolved() {
         val history = listOf(
             HistoryItem(HistoryKind.NOTE, "читаю код", "evt:1"),

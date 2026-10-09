@@ -44,7 +44,8 @@ import com.dpsmpx.dpai.core.state.AccountState
  */
 object AccountCodec {
     const val STATE_FORMAT = "dpai.accounts-state"
-    const val STATE_VERSION = 1
+    /** v2 — загрузка окон (`utilizationBp`) и порог «у предела» (`nearPercent`), D-45; v1 читается без них. */
+    const val STATE_VERSION = 2
 
     fun type(e: AccountEvent): EventType = when (e) {
         is SubscriptionRegistered -> EventType.ACCOUNT_SUBSCRIPTION_REGISTERED
@@ -54,6 +55,8 @@ object AccountCodec {
         is OverlapDetected -> EventType.ACCOUNT_OVERLAP_DETECTED
         is LimitObserved -> if (e.level == LimitLevel.REACHED) EventType.ACCOUNT_RATE_LIMITED else EventType.ACCOUNT_NEAR_LIMIT
         is LimitReset -> EventType.ACCOUNT_LIMIT_RESET
+        is AccountEvent.UsageObserved -> EventType.ACCOUNT_USAGE_OBSERVED
+        is AccountEvent.NearThresholdSet -> EventType.ACCOUNT_NEAR_THRESHOLD_SET
         is LoginExpiring -> EventType.ACCOUNT_LOGIN_EXPIRING
         is ErrorRecorded -> EventType.ACCOUNT_ERROR_RECORDED
         is ErrorsCleared -> EventType.ACCOUNT_ERRORS_CLEARED
@@ -72,6 +75,8 @@ object AccountCodec {
             is IdentityConfirmed -> e.subscription
             is LimitObserved -> e.subscription
             is LimitReset -> e.subscription
+            is AccountEvent.UsageObserved -> e.subscription
+            is AccountEvent.NearThresholdSet -> e.subscription
             is SubscriptionSwitched -> e.task
             is SlotRegistered -> e.slot
             is LoginObserved -> e.slot
@@ -102,6 +107,11 @@ object AccountCodec {
             "subscription" to id(e.subscription), "window" to name(e.window), "level" to name(e.level), "resetAt" to time(e.resetAt),
         )
         is LimitReset -> obj("subscription" to id(e.subscription), "window" to name(e.window), "evidence" to name(e.evidence))
+        // Доля — целыми базисными пунктами (0…10000): канонический JSON без дробей.
+        is AccountEvent.UsageObserved -> obj(
+            "subscription" to id(e.subscription), "window" to name(e.window), "utilizationBp" to JsonNumber.of(bp(e.utilization)), "resetAt" to time(e.resetAt),
+        )
+        is AccountEvent.NearThresholdSet -> obj("subscription" to id(e.subscription), "percent" to JsonNumber.of(e.percent))
         is LoginExpiring -> obj("slot" to id(e.slot), "expiresAt" to time(e.expiresAt))
         is ErrorRecorded -> obj("slot" to id(e.slot), "code" to JsonString(e.code.name), "cooldownUntil" to time(e.cooldownUntil))
         is ErrorsCleared -> obj("slot" to id(e.slot))
@@ -139,6 +149,10 @@ object AccountCodec {
             EventType.ACCOUNT_LIMIT_RESET -> build(
                 f.id("subscription", IdKinds.SUBSCRIPTION), f.enum<LimitWindow>("window"), f.enum<ResetEvidence>("evidence"),
             ) { a, b, c -> LimitReset(a, b, c, at) }
+            EventType.ACCOUNT_USAGE_OBSERVED -> build(f.id("subscription", IdKinds.SUBSCRIPTION), f.enum<LimitWindow>("window"), f.int("utilizationBp")) { a, b, c ->
+                AccountEvent.UsageObserved(a, b, c / 10_000.0, f.optTime("resetAt"), at)
+            }
+            EventType.ACCOUNT_NEAR_THRESHOLD_SET -> build(f.id("subscription", IdKinds.SUBSCRIPTION), f.int("percent")) { a, b -> AccountEvent.NearThresholdSet(a, b, at) }
             EventType.ACCOUNT_LOGIN_EXPIRING -> build(f.id("slot", IdKinds.ACCOUNT)) { a -> LoginExpiring(a, f.optTime("expiresAt"), at) }
             EventType.ACCOUNT_ERROR_RECORDED -> build(f.id("slot", IdKinds.ACCOUNT), f.enum<DiagCode>("code")) { a, b ->
                 ErrorRecorded(a, b, f.optTime("cooldownUntil"), at)
@@ -174,10 +188,14 @@ object AccountCodec {
                     obj(
                         "id" to id(sub.id), "label" to JsonString(sub.label), "maxParallelSessions" to JsonNumber.of(sub.maxParallelSessions),
                         "rotationAllowed" to JsonBool(sub.rotationAllowed), "identity" to opt(sub.identity?.toString()), "plan" to opt(sub.plan),
+                        "nearPercent" to sub.nearPercent.takeIf { it != DEFAULT_NEAR_PERCENT }?.let { JsonNumber.of(it) },
                         "windows" to JsonArray(
                             LimitWindow.entries.map { w ->
                                 val ws = sub.window(w)
-                                obj("window" to name(w), "level" to name(ws.level), "resetAt" to time(ws.resetAt), "observedAt" to time(ws.observedAt))
+                                obj(
+                                    "window" to name(w), "level" to name(ws.level), "resetAt" to time(ws.resetAt), "observedAt" to time(ws.observedAt),
+                                    "utilizationBp" to ws.utilization?.let { JsonNumber.of(bp(it)) },
+                                )
                             },
                         ),
                     )
@@ -211,14 +229,19 @@ object AccountCodec {
     fun decodeState(json: JsonObject): Outcome<AccountsState> {
         val d = DiagnosticCollector()
         val f = JsonFields(json, "$", d)
-        FormatHeader.read(f, STATE_FORMAT, STATE_VERSION..STATE_VERSION, d) ?: return Outcome.Failure(d.all)
+        FormatHeader.read(f, STATE_FORMAT, 1..STATE_VERSION, d) ?: return Outcome.Failure(d.all)
         val subs = f.objects("subscriptions").mapNotNull { s ->
             val windows = s.objects("windows").mapNotNull { w ->
-                build(w.enum<LimitWindow>("window"), w.enum<LimitLevel>("level")) { a, b -> a to WindowState(b, w.optTime("resetAt"), w.optTime("observedAt")) }
+                build(w.enum<LimitWindow>("window"), w.enum<LimitLevel>("level")) { a, b ->
+                    a to WindowState(b, w.optTime("resetAt"), w.optTime("observedAt"), w.optLong("utilizationBp")?.let { it / 10_000.0 })
+                }
                     .also { w.finish() }
             }.toMap()
             build(s.id("id", IdKinds.SUBSCRIPTION), s.string("label"), s.int("maxParallelSessions"), s.boolean("rotationAllowed")) { a, b, c, e ->
-                SubscriptionState(a, b, c, e, s.optHash("identity"), s.optString("plan"), LimitWindow.entries.associateWith { windows[it] ?: WindowState() })
+                SubscriptionState(
+                    a, b, c, e, s.optHash("identity"), s.optString("plan"), LimitWindow.entries.associateWith { windows[it] ?: WindowState() },
+                    s.optLong("nearPercent")?.toInt() ?: DEFAULT_NEAR_PERCENT,
+                )
             }.also { s.finish() }
         }
         val slots = f.objects("slots").mapNotNull { s ->
@@ -313,4 +336,6 @@ object AccountCodec {
 
     private inline fun <A, B, C, D, R> build(a: A?, b: B?, c: C?, e: D?, f: (A, B, C, D) -> R?): R? =
         if (a == null || b == null || c == null || e == null) null else f(a, b, c, e)
+
+    private fun bp(u: Double): Long = Math.round(u.coerceIn(0.0, 1.0) * 10_000)
 }

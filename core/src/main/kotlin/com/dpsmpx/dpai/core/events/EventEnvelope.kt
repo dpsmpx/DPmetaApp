@@ -28,6 +28,7 @@ enum class StreamKind(internal val idKind: IdKind<*>?) {
     // Виды потоков только дописываются (как типы событий, D-12).
     REPOSITORY(IdKinds.REPOSITORY),
     WORKTREE(IdKinds.WORKTREE),
+    REQUEST(IdKinds.REQUEST),
 }
 
 /**

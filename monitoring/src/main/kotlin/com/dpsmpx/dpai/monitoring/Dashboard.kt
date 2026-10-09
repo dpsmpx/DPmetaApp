@@ -7,13 +7,16 @@ import com.dpsmpx.dpai.core.events.EventType
 import com.dpsmpx.dpai.core.ids.ExecutionTargetId
 import com.dpsmpx.dpai.core.ids.SessionId
 import com.dpsmpx.dpai.core.measure.Measure
+import com.dpsmpx.dpai.core.serialization.JsonArray
 import com.dpsmpx.dpai.core.serialization.JsonNumber
+import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.core.state.AccountState
 import com.dpsmpx.dpai.core.state.HeartbeatFreshness
 import com.dpsmpx.dpai.core.state.SessionState
 import com.dpsmpx.dpai.core.state.TargetState
 import com.dpsmpx.dpai.core.state.TaskState
+import com.dpsmpx.dpai.execution.claude.TurnTools
 import com.dpsmpx.dpai.execution.target.TargetHealth
 import com.dpsmpx.dpai.sessions.SessionRecord
 import com.dpsmpx.dpai.sessions.Sessions
@@ -133,6 +136,7 @@ object Timeline {
         EventType.SESSION_TURN_STARTED -> "ход ${num(e, "turn")} начат"
         EventType.SESSION_TURN_FINISHED -> "ход ${num(e, "turn")}: ${str(e, "status")}"
         EventType.SESSION_TOOL_STARTED -> "инструмент ${str(e, "tool")}"
+        EventType.SESSION_TURN_TOOLS -> tools(e)
         EventType.TASK_ASSIGNED -> "задача назначена"
         EventType.TASK_STATE_CHANGED -> "задача: ${str(e, "from")} → ${str(e, "to")}"
         EventType.TASK_VERIFICATION_RECORDED -> "проверка: ${str(e, "verdict")}"
@@ -141,6 +145,16 @@ object Timeline {
         EventType.TARGET_PROCESS_STARTED -> "процесс запущен"
         EventType.TARGET_PROCESS_EXITED -> "процесс завершён: ${str(e, "reason")}" + (num(e, "exitCode")?.let { ", код $it" } ?: "")
         else -> null
+    }
+
+    /** Итог инструментов хода (D-41): вызовов, вывод в контекст (оценка), повторов. */
+    private fun tools(e: EventEnvelope): String? {
+        val t = e.payload["tools"] as? JsonObject ?: return null
+        val rows = (t["byTool"] as? JsonArray)?.items.orEmpty()
+            .filterIsInstance<JsonObject>()
+        fun sum(k: String) = rows.sumOf { (it[k] as? JsonNumber)?.toLongExact() ?: 0 }
+        if (rows.isEmpty()) return null
+        return "ход ${num(e, "turn")}: инструментов ${sum("calls")}, вывод ≈${TurnTools.tokens(sum("resultBytes"))} ток., повторов ${sum("duplicates")}"
     }
 
     private fun str(e: EventEnvelope, key: String): String? = (e.payload[key] as? JsonString)?.value

@@ -40,6 +40,9 @@ object Continuation {
         if (prev.slot != slot || prev.target != target) {
             return ContinuationPlan(PromptMode.CHECKPOINT, false, "другой слот или target: свежая сессия с handoff")
         }
+        if (handoff?.reason == HandoffReason.TURN_FINISHED) {
+            return ContinuationPlan(PromptMode.CHECKPOINT, false, "свежая сессия по запросу человека: handoff вместо --resume")
+        }
         if (policy.checkpointOnOverflow && handoff?.reason == HandoffReason.CONTEXT_OVERFLOW) {
             return ContinuationPlan(PromptMode.CHECKPOINT, false, "переполнение контекста: свежая сессия с handoff")
         }

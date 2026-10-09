@@ -1,0 +1,224 @@
+package com.dpsmpx.dpai.android
+
+import android.content.Context
+import android.content.Intent
+import android.graphics.PixelFormat
+import android.graphics.drawable.GradientDrawable
+import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import android.provider.Settings
+import android.text.InputType
+import android.view.Gravity
+import android.view.View
+import android.view.WindowManager
+import android.widget.Button
+import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.TextView
+import com.dpsmpx.dpai.core.ids.RequestId
+import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.storage.vfs.NioVfs
+import com.dpsmpx.dpai.ui.RequestCard
+import java.io.File
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+
+/**
+ * Окно поверх приложений (D-44) — второй, необязательный канал запросов:
+ * только если человек включил его в приложении ([enabled]) **и** дал
+ * разрешение системы «поверх других приложений». Нет одного из двух —
+ * окна нет, запрос приходит уведомлением; ничего не ломается.
+ *
+ * Окно компактное: текст запроса, чья задача, варианты. Пока открыто
+ * само приложение, окна нет — запрос виден на вкладке «Запросы». Окно
+ * перетаскивается за верхнюю строку и запоминает место: в любом
+ * постоянном месте оно что-то закрывает — шапку, клавиатуру (проверка на
+ * Redmi Note 13, 8 октября 2026). Касания вне окна идут приложению под ним. Опасный вариант — вторым
+ * нажатием; вариант с текстом — с полем ввода. «Позже» убирает окно, а
+ * запрос остаётся в уведомлении и на экране «Запросы».
+ */
+object RequestOverlay {
+    private const val FLAG = "overlay-enabled"
+    private const val POSITION = "overlay-y"
+
+    /** Приложение на экране (`MainActivity` между `onResume` и `onPause`): окно не нужно. */
+    @Volatile
+    var appVisible: Boolean = false
+    private val main = Handler(Looper.getMainLooper())
+    private val worker = Executors.newSingleThreadExecutor()
+
+    /** Убранные «Позже» в этом процессе — окно им не возвращается. */
+    private val later = ConcurrentHashMap.newKeySet<String>()
+
+    @Volatile
+    private var shown: Pair<String, View>? = null
+
+    /** Включил ли человек окно в приложении (флаг в каталоге файлов приложения). */
+    fun enabled(context: Context): Boolean = File(context.filesDir, FLAG).isFile
+
+    fun setEnabled(context: Context, on: Boolean) {
+        val vfs = NioVfs(context.filesDir.toPath())
+        runCatching { if (on) vfs.write(FLAG, "включено человеком\n".toByteArray()) else vfs.delete(FLAG) }
+        if (!on) hide()
+    }
+
+    /** Разрешение системы «поверх других приложений». */
+    fun permitted(context: Context): Boolean = Settings.canDrawOverlays(context)
+
+    /** Экран настройки разрешения для этого приложения: даёт только человек. */
+    fun permissionIntent(context: Context): Intent =
+        Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+    fun sync(context: Context, model: DemoModel, pending: Map<RequestId, RequestCard>) {
+        if (!enabled(context) || !permitted(context) || appVisible) return hide()
+        val current = shown?.first
+        if (current != null && pending.keys.none { it.value == current }) hide()
+        if (shown != null) return
+        val next = pending.values.firstOrNull { it.id.value !in later } ?: return
+        main.post {
+            if (shown != null) return@post
+            if (runCatching { show(context.applicationContext, next) }.isSuccess) worker.execute { model.delivered(next.id, "overlay") }
+        }
+    }
+
+    private fun position(context: Context): Int? =
+        runCatching { NioVfs(context.filesDir.toPath()).read(POSITION)?.toString(Charsets.UTF_8)?.trim()?.toIntOrNull() }.getOrNull()
+
+    private fun savePosition(context: Context, y: Int) {
+        runCatching { NioVfs(context.filesDir.toPath()).write(POSITION, "$y\n".toByteArray()) }
+    }
+
+    /** Запрос закрыт ответом: его окно убирается. */
+    fun closed(id: String) {
+        if (shown?.first == id) hide()
+    }
+
+    fun hide() {
+        main.post {
+            val s = shown ?: return@post
+            shown = null
+            runCatching { s.second.context.getSystemService(WindowManager::class.java).removeView(s.second) }
+        }
+    }
+
+    private fun show(context: Context, card: RequestCard) {
+        val wm = context.getSystemService(WindowManager::class.java)
+        val dp = context.resources.displayMetrics.density
+        val pad = (12 * dp).toInt()
+        val night = (context.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
+        val fg = if (night) 0xFFEDEDED.toInt() else 0xFF1B1B1B.toInt()
+        val root = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, pad, pad, pad)
+            background = GradientDrawable().apply {
+                cornerRadius = 16 * dp
+                setColor(if (night) 0xF0262626.toInt() else 0xF8FFFFFF.toInt())
+                setStroke((1 * dp).toInt(), 0x33888888)
+            }
+            elevation = 8 * dp
+        }
+        fun text(s: String, size: Float, bold: Boolean = false) = TextView(context).apply {
+            this.text = s
+            textSize = size
+            setTextColor(fg)
+            if (bold) setTypeface(typeface, android.graphics.Typeface.BOLD)
+        }
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            // Касания вне окна — приложению под ним; клавиатуру окно получает только с полем ввода.
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or (if (card.buttons.none { it.needsText }) WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE else 0),
+            PixelFormat.TRANSLUCENT,
+        ).apply {
+            gravity = Gravity.TOP
+            y = position(context) ?: (48 * dp).toInt()
+            horizontalMargin = 0.03f
+        }
+        // Верхняя строка — ручка: перетаскивание по вертикали, место запоминается.
+        root.addView(text("⠿ DP AI · ${card.kind} · ${card.origin}", 12f).apply {
+            var startY = 0f
+            var startParam = 0
+            setOnTouchListener { v, e ->
+                when (e.actionMasked) {
+                    android.view.MotionEvent.ACTION_DOWN -> {
+                        startY = e.rawY
+                        startParam = params.y
+                    }
+                    android.view.MotionEvent.ACTION_MOVE -> {
+                        val max = context.resources.displayMetrics.heightPixels - root.height
+                        params.y = (startParam + (e.rawY - startY).toInt()).coerceIn(0, maxOf(0, max))
+                        runCatching { wm.updateViewLayout(root, params) }
+                    }
+                    android.view.MotionEvent.ACTION_UP -> {
+                        savePosition(context, params.y)
+                        v.performClick()
+                    }
+                }
+                true
+            }
+        })
+        root.addView(text(card.title, 16f, bold = true))
+        root.addView(text(card.body, 14f))
+        val status = text("", 12f).apply { setTextColor(0xFFC62828.toInt()) }
+        val input = if (card.buttons.any { it.needsText }) {
+            EditText(context).apply {
+                hint = "ответ"
+                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                setTextColor(fg)
+                maxLines = 4
+            }.also { root.addView(it) }
+        } else {
+            null
+        }
+        root.addView(status)
+        val row = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.END }
+        for (b in card.buttons) {
+            var armed = false
+            row.addView(Button(context).apply {
+                text = b.label
+                isAllCaps = false
+                setOnClickListener {
+                    if (b.confirm && !armed) {
+                        // Опасное — вторым нажатием: одно касание по ошибке ничего не делает (D-44).
+                        armed = true
+                        text = "Точно: ${b.label}?"
+                        status.text = "Опасное действие: нажмите ещё раз, чтобы подтвердить"
+                        return@setOnClickListener
+                    }
+                    val typed = input?.text?.toString()?.takeIf { b.needsText }
+                    if (b.needsText && typed.isNullOrBlank()) {
+                        status.text = "Нужен текст ответа"
+                        return@setOnClickListener
+                    }
+                    isEnabled = false
+                    status.text = "Отправляю…"
+                    worker.execute {
+                        val r = Answers.apply(context, card.id.value, b.uri, typed, b.label, "overlay")
+                        main.post {
+                            when (r) {
+                                is Outcome.Success -> hide()
+                                is Outcome.Failure -> {
+                                    isEnabled = true
+                                    status.text = "Не принято: ${r.diagnostics.first().message}"
+                                }
+                            }
+                        }
+                    }
+                }
+            })
+        }
+        row.addView(Button(context).apply {
+            text = "Позже"
+            isAllCaps = false
+            setOnClickListener {
+                later += card.id.value
+                hide()
+            }
+        })
+        root.addView(row)
+        wm.addView(root, params)
+        shown = card.id.value to root
+    }
+}

@@ -127,4 +127,22 @@ sealed interface SessionEvent {
         val usage: com.dpsmpx.dpai.execution.claude.TurnUsage,
         override val at: Timestamp,
     ) : SessionEvent
+
+    /** Инструменты хода — замер оркестратора по потоку (D-41); пишется перед [TurnFinished] того же хода. */
+    data class TurnTools(
+        override val session: SessionId,
+        val turn: Int,
+        val tools: com.dpsmpx.dpai.execution.claude.TurnTools,
+        override val at: Timestamp,
+    ) : SessionEvent
+}
+
+/**
+ * Живой вид хода (D-42): последний текст модели, последний инструмент и
+ * его цель (файл, команда, шаблон) и когда это было. Только в памяти.
+ */
+data class LiveTurn(val text: String?, val tool: String?, val target: String?, val at: com.dpsmpx.dpai.core.clock.Timestamp) {
+    companion object {
+        const val MAX_TEXT = 600
+    }
 }

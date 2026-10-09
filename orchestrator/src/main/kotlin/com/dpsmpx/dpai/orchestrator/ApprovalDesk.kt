@@ -25,14 +25,26 @@ class ApprovalDesk(val ttl: Duration = 30.minutes) {
     private val bySubject = HashMap<String, Pending>()
 
     @Synchronized
-    fun request(id: ApprovalId, proposal: Proposal, now: Timestamp): NotificationRequest {
+    /**
+     * [title] и [body] — для человека (что и зачем); без них — само
+     * предложение. Хеш и кнопки — всегда от [proposal]: текст подписи
+     * одобряемое не меняет.
+     */
+    fun request(
+        id: ApprovalId,
+        proposal: Proposal,
+        now: Timestamp,
+        title: String? = null,
+        body: String? = null,
+        link: com.dpsmpx.dpai.notifications.DeepLink? = null,
+    ): NotificationRequest {
         bySubject[proposal.subject] = Pending(id, proposal, now + ttl)
         return NotificationRequest(
             key = "approval:${proposal.subject}",
             category = NotificationCategory.APPROVAL,
-            title = "Нужно одобрение: ${proposal.action}",
-            body = "${proposal.subject}\n${proposal.arguments.joinToString(" ")}".trim(),
-            link = null,
+            title = title ?: "Нужно одобрение: ${proposal.action}",
+            body = body ?: "${proposal.subject}\n${proposal.arguments.joinToString(" ")}".trim(),
+            link = link,
             at = now,
             actions = ApprovalAction.buttons(id, proposal.hash),
         )

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Иконка приложения: «dpai» строчными геометрическими штрихами; точка над i — акцент. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <!-- Слово в своих единицах (ось — середина строчных), уменьшено в безопасную зону 66 dp. -->
+    <group android:scaleX="0.78" android:scaleY="0.78" android:translateX="31.38" android:translateY="54">
+        <path android:pathData="M-7,0 a7,7 0 1,0 14,0 a7,7 0 1,0 -14,0 M7,-16 L7,7" android:strokeColor="@color/dpai_ink" android:strokeWidth="4.6" android:strokeLineCap="round" android:strokeLineJoin="round" />
+        <path android:pathData="M17,16 L17,-7 M17,0 a7,7 0 1,0 14,0 a7,7 0 1,0 -14,0" android:strokeColor="@color/dpai_ink" android:strokeWidth="4.6" android:strokeLineCap="round" android:strokeLineJoin="round" />
+        <path android:pathData="M41,0 a7,7 0 1,0 14,0 a7,7 0 1,0 -14,0 M55,-7 L55,7" android:strokeColor="@color/dpai_ink" android:strokeWidth="4.6" android:strokeLineCap="round" android:strokeLineJoin="round" />
+        <path android:pathData="M65,-7 L65,7" android:strokeColor="@color/dpai_ink" android:strokeWidth="4.6" android:strokeLineCap="round" android:strokeLineJoin="round" />
+        <path android:pathData="M65,-14 m-2.9,0 a2.9,2.9 0 1,0 5.8,0 a2.9,2.9 0 1,0 -5.8,0" android:fillColor="@color/dpai_accent" />
+    </group>
+</vector>

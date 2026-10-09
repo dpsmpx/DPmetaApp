@@ -35,6 +35,8 @@ enum class EventType {
     SESSION_PROMPT_PREPARED,
     /** Расход хода со слов провайдера (D-40). */
     SESSION_TURN_USAGE,
+    /** Инструменты хода — замер оркестратора по потоку: вызовы, вывод, повторы (D-41). */
+    SESSION_TURN_TOOLS,
 
     // --- проверка ---
     VERIFICATION_STARTED,
@@ -90,4 +92,29 @@ enum class EventType {
     TASK_MERGE_REQUESTED,
     TASK_MERGE_DECLINED,
     TASK_MERGED,
+
+    // --- запросы человеку (D-44) ---
+    USER_REQUEST_CREATED,
+    USER_REQUEST_DELIVERED,
+    USER_REQUEST_ANSWERED,
+    USER_REQUEST_EXPIRED,
+    USER_REQUEST_CANCELLED,
+    USER_REQUEST_FAILED,
+
+    // --- команды оркестратора (D-42) ---
+    OPERATION_RECORDED,
+    TASK_POLICY_CHANGED,
+    TASK_HOLD_CHANGED,
+    TASK_COUNTERS_RESET,
+
+    // --- загрузка окон подписки и порог (D-42, D-45) ---
+    ACCOUNT_USAGE_OBSERVED,
+    ACCOUNT_NEAR_THRESHOLD_SET,
+
+    // --- настройки контура: targets и предел сессий (D-42, п. 5, 6) ---
+    CONTROL_TARGET_ENABLED_SET,
+    CONTROL_SESSION_LIMIT_SET,
+
+    // --- архив задач (D-42) ---
+    TASK_ARCHIVE_CHANGED,
 }

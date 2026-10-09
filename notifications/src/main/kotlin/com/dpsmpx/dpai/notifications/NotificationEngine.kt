@@ -2,6 +2,7 @@ package com.dpsmpx.dpai.notifications
 
 import com.dpsmpx.dpai.core.diagnostics.Redactor
 import com.dpsmpx.dpai.core.clock.Timestamp
+import com.dpsmpx.dpai.core.ids.RequestId
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 
@@ -21,8 +22,13 @@ enum class NotificationCategory(val rank: Int) {
     SECURITY(5),
 }
 
-/** Кнопка уведомления: подпись и ссылка `dpai://…`, которую оркестратор разберёт строго. */
-data class NotificationAction(val label: String, val uri: String)
+/**
+ * Кнопка уведомления: подпись и ссылка `dpai://…`, которую оркестратор
+ * разберёт строго. [input] — ответ с текстом (поле ввода в уведомлении);
+ * [confirm] — опасное действие: только после разблокировки и явного
+ * подтверждения (D-44).
+ */
+data class NotificationAction(val label: String, val uri: String, val input: Boolean = false, val confirm: Boolean = false)
 
 /**
  * Что сообщить. [key] — один предмет: повторы по нему агрегируются (ТЗ,
@@ -37,6 +43,8 @@ data class NotificationRequest(
     val link: DeepLink?,
     val at: Timestamp,
     val actions: List<NotificationAction> = emptyList(),
+    /** Запрос человеку, если уведомление — его (D-44): оболочка показывает его и окном поверх приложений. */
+    val request: RequestId? = null,
 )
 
 /** Показанное уведомление; [count] — сколько раз случилось с момента показа. */
@@ -50,6 +58,7 @@ data class Notification(
     val firstAt: Timestamp,
     val lastAt: Timestamp,
     val actions: List<NotificationAction> = emptyList(),
+    val request: RequestId? = null,
 )
 
 sealed interface NotificationDecision {
@@ -100,7 +109,7 @@ class NotificationEngine(private val policy: NotificationPolicy = NotificationPo
         val r = raw.copy(title = Redactor.STRICT.redact(raw.title), body = Redactor.STRICT.redact(raw.body))
         val prev = shown[r.key]
         if (prev != null && r.at - prev.second < policy.aggregationWindow && r.category.rank <= prev.first.category.rank) {
-            val updated = prev.first.copy(count = prev.first.count + 1, lastAt = r.at, body = r.body, actions = r.actions)
+            val updated = prev.first.copy(count = prev.first.count + 1, lastAt = r.at, title = r.title, body = r.body, actions = r.actions, request = r.request)
             shown[r.key] = updated to prev.second
             return NotificationDecision.Update(updated)
         }
@@ -108,7 +117,7 @@ class NotificationEngine(private val policy: NotificationPolicy = NotificationPo
             held += r
             return NotificationDecision.Held(r)
         }
-        val n = Notification(r.key, r.category, r.title, r.body, r.link, 1, r.at, r.at, r.actions)
+        val n = Notification(r.key, r.category, r.title, r.body, r.link, 1, r.at, r.at, r.actions, r.request)
         shown[r.key] = n to r.at
         recentPosts += r.at
         return NotificationDecision.Post(n)

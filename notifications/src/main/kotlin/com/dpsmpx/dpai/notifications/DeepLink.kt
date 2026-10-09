@@ -17,6 +17,7 @@ data class DeepLink(val kind: Kind, val id: String) {
         ACCOUNT("account", IdKinds.ACCOUNT),
         SUBSCRIPTION("subscription", IdKinds.SUBSCRIPTION),
         EVENT("event", IdKinds.EVENT),
+        REQUEST("request", IdKinds.REQUEST),
     }
 
     fun toUri(): String = "$SCHEME://${kind.path}/$id"

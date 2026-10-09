@@ -110,6 +110,10 @@ class IdKind<T : TypedId> internal constructor(
     override fun toString(): String = value
 }
 
+@JvmInline value class RequestId internal constructor(override val value: String) : TypedId {
+    override fun toString(): String = value
+}
+
 /** Все виды идентификаторов; префиксы — `docs/DATA_MODEL.md`, §1. */
 object IdKinds {
     val TASK = IdKind("tsk", "TaskId", ::TaskId)
@@ -126,10 +130,11 @@ object IdKinds {
     val CORRELATION = IdKind("cor", "CorrelationId", ::CorrelationId)
     val APPROVAL = IdKind("apr", "ApprovalId", ::ApprovalId)
     val SUBSCRIPTION = IdKind("sub", "SubscriptionId", ::SubscriptionId)
+    val REQUEST = IdKind("req", "RequestId", ::RequestId)
 
     val ALL: List<IdKind<*>> = listOf(
         TASK, SESSION, ACCOUNT, TARGET, PROJECT, REPOSITORY, WORKTREE, CONTEXT, HANDOFF, EVENT, OPERATION,
-        CORRELATION, APPROVAL, SUBSCRIPTION,
+        CORRELATION, APPROVAL, SUBSCRIPTION, REQUEST,
     )
 
     init {

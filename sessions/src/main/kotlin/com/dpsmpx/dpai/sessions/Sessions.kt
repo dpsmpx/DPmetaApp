@@ -160,6 +160,7 @@ class Sessions(val policy: SessionPolicy = SessionPolicy()) {
                 is SessionEvent.Output, is SessionEvent.ToolStarted -> sessions.computeIfPresent(e.session) { _, r -> r.copy(lastHeartbeat = e.at, updatedAt = e.at) }
                 is SessionEvent.PromptPrepared -> sessions.computeIfPresent(e.session) { _, r -> r.copy(usage = r.usage.plus(e.facts), updatedAt = e.at) }
                 is SessionEvent.TurnUsage -> sessions.computeIfPresent(e.session) { _, r -> r.copy(usage = r.usage.plus(e.usage), updatedAt = e.at) }
+                is SessionEvent.TurnTools -> sessions.computeIfPresent(e.session) { _, r -> r.copy(usage = r.usage.plus(e.tools), updatedAt = e.at) }
             }
             return SessionsState(sessions)
         }

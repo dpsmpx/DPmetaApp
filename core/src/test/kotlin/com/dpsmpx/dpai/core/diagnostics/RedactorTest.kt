@@ -89,4 +89,22 @@ class RedactorTest {
         assertEquals(r.redact("token=abc обычный текст"), r.redactLine("token=abc обычный текст"))
         assertEquals(r.redact("{ не json"), r.redactLine("{ не json"))
     }
+
+    /** «имя=id» в строке журнала — id не скрывается; токен в значении и base64 с паддингом — скрываются. */
+    @Test
+    fun nameEqualsIdIsNotAToken() {
+        val ids = com.dpsmpx.dpai.core.ids.IdGenerator(com.dpsmpx.dpai.core.clock.ManualClock(), com.dpsmpx.dpai.core.clock.RandomSource.seeded(1))
+        val req = ids.next(com.dpsmpx.dpai.core.ids.IdKinds.REQUEST).value
+        assertEquals("USER_REQUEST_DELIVERED request=$req channel=overlay", Redactor.STANDARD.redact("USER_REQUEST_DELIVERED request=$req channel=overlay"))
+        val op = ids.next(com.dpsmpx.dpai.core.ids.IdKinds.OPERATION).value
+        assertEquals("key=$op", Redactor.STANDARD.redact("key=$op"), "у OperationId приставка из двух букв")
+        val branch = "task/" + ids.next(com.dpsmpx.dpai.core.ids.IdKinds.TASK).value
+        assertEquals("Ветка задачи $branch → main", Redactor.STRICT.redact("Ветка задачи $branch → main"), "ветка задачи в уведомлении слияния")
+        val secretInPath = "Zx9".repeat(10)
+        assertTrue(secretInPath !in Redactor.STRICT.redact("dir/$secretInPath"), "токен в сегменте пути по-прежнему скрыт")
+        val token = "Ab3" + "x9".repeat(18)
+        assertEquals(Redactor.MARK, Redactor.STANDARD.redact("value=$token"))
+        val padded = "QUJD" + "a1".repeat(14) + "=="
+        assertEquals(Redactor.MARK, Redactor.STANDARD.redact(padded))
+    }
 }

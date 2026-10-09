@@ -25,6 +25,10 @@ data class ClaudeTurn(
     val rateLimit: ClaudeEvent.RateLimit?,
     val exitCode: Int?,
     val diagnostics: List<Diagnostic>,
+    /** Инструменты хода — замер оркестратора по потоку (D-41), есть и у хода без итога. */
+    val tools: TurnTools = TurnTools.EMPTY,
+    /** Файлы, которые ход читал и правил (D-41); в журнал не пишутся. */
+    val files: TurnFiles = TurnFiles.EMPTY,
 ) {
     val costUsd: Measure<BigDecimal> get() = usage.costUsd
     val inputTokens: Measure<Long> get() = usage.inputTokens
@@ -45,6 +49,7 @@ class ClaudeTurnAssembler(private val session: ProviderSessionId) {
     private val apiErrors = mutableListOf<String>()
     private var eventsAfterResult = 0
     private var compacted = false
+    private val tools = ToolTracker()
 
     /** Строка вывода; возвращает событие, если строка его несёт. */
     fun feed(line: String, truncated: Boolean = false): ClaudeEvent? {
@@ -53,7 +58,15 @@ class ClaudeTurnAssembler(private val session: ProviderSessionId) {
         when (val e = p.event) {
             is ClaudeEvent.Result -> if (result == null) result = e else eventsAfterResult++
             is ClaudeEvent.RateLimit -> rateLimit = e
-            is ClaudeEvent.Assistant -> e.error?.let { apiErrors += it }
+            is ClaudeEvent.Assistant -> {
+                e.error?.let { apiErrors += it }
+                e.toolUses.forEach { tools.onUse(it, e.subagent) }
+                if (result != null) eventsAfterResult++
+            }
+            is ClaudeEvent.ToolResults -> {
+                e.results.forEach(tools::onResult)
+                if (result != null) eventsAfterResult++
+            }
             // Сжатие истории самим Claude Code (`docs/research/CLAUDE_CODE_CLI.md`, §11).
             is ClaudeEvent.Other -> {
                 if (e.type == "system" && e.subtype == COMPACT_BOUNDARY) compacted = true
@@ -98,6 +111,8 @@ class ClaudeTurnAssembler(private val session: ProviderSessionId) {
             rateLimit = rateLimit,
             exitCode = exitCode,
             diagnostics = diags,
+            tools = tools.result(),
+            files = tools.files(),
         )
     }
 

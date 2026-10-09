@@ -81,7 +81,7 @@ class LiveSystemTest {
         assertEquals(TaskState.COMPLETION_UNVERIFIED, state, s.problems.toString())
         assertTrue(s.session(session.id).timeline.isNotEmpty())
         // Уведомление о завершении без проверки — оболочке один раз (ТЗ, §36; D-23).
-        assertTrue(s.drainNotifications().any { it.title == "Задача без проверки" })
+        assertTrue(s.drainNotifications().any { it.title.startsWith("Задача без проверки") && it.request != null })
         assertEquals(emptyList(), s.drainNotifications())
     }
 

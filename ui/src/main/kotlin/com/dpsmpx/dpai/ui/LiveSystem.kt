@@ -53,6 +53,9 @@ interface ControlView {
     fun board(): TaskBoard
 
     fun session(id: SessionId): SessionScreen
+
+    /** Контур под оболочкой: запросы человеку и ответы на них (D-44) — его команды. */
+    val orchestrator: Orchestrator
 }
 
 /**
@@ -82,6 +85,12 @@ class LiveSystem(
      * одобрению. `null` — задачи в каталоге агента, без Git и проверки.
      */
     private val project: ProjectEntry? = null,
+    /** События журнала контура — в журнал приложения (D-43). */
+    onEvents: (List<EventEnvelope>) -> Unit = {},
+    /** Проблемы контура — в журнал приложения с причинами (D-43). */
+    onProblem: (Diagnostic) -> Unit = {},
+    /** Разрешены ли уведомления (у оболочки — Android); неизвестно — `null`. */
+    private val notificationsOk: () -> Boolean? = { null },
 ) : ControlView {
     override val mode: String = "контроллер"
     private val ids = IdGenerator(clock, random)
@@ -96,12 +105,21 @@ class LiveSystem(
     private val manager = ExecutionTargetManager(clock, sshHost = sshHost, controllerVersion = controllerVersion)
     private val runners = HashMap<ExecutionTargetId, ClaudeRunner>()
     private val probes = HashMap<ExecutionTargetId, Pair<SlotAuthProbe, SessionId>>()
+    private val usageProbes = HashMap<ExecutionTargetId, Pair<com.dpsmpx.dpai.orchestrator.accounts.UsageProbe, SessionId>>()
+
+    /** Когда загрузка окон последний раз пришла из `/usage` (D-48); не было — `null`. */
+    @Volatile
+    var usageRefreshedAt: com.dpsmpx.dpai.core.clock.Timestamp? = null
+        private set
+
+    /** Идёт ли обновление загрузки окон. */
+    val usageRefreshing: Boolean get() = synchronized(usageProbes) { usageProbes.isNotEmpty() }
 
     /** Targets, где Claude ещё не вошёл: слота нет, задачи туда не идут. */
     private val waitingLogin = HashSet<ExecutionTargetId>()
     private val slotOf = HashMap<ExecutionTargetId, AccountId>()
     private val accountsLogic = Accounts()
-    val orchestrator: Orchestrator
+    override val orchestrator: Orchestrator
     val notes: List<String> = entries.filter { it.configDir == null }.map { "${it.label}: нет каталога Claude — только проверка агента" } +
         (project?.takeIf { p -> usable.none { it.id == p.target } }?.let { listOf("проект: его target без каталога Claude — задачи не запускаются") }.orEmpty())
     val problems = mutableListOf<Diagnostic>()
@@ -124,12 +142,13 @@ class LiveSystem(
         // Git на target — по SSH: команды `git -C <путь>` рабочего каталога не требуют (GitService).
         val git = projectTarget?.let { t -> GitService(sshHost(t.toTarget(knownHostsFile).ssh!!, t.platform), GitCommands(ApprovalLedger()), clock) }
         // Шаги проверки — через агента target: по SSH рабочий каталог задаёт он (AgentStepRunner).
-        val verifier = projectTarget?.let { t -> Verifier(AgentStepRunner(manager.client(t.id).valueOrNull()!!, ids, clock), clock) }
+        val verifier = projectTarget?.let { t -> Verifier(AgentStepRunner(manager.client(t.id).valueOrNull()!!, ids, clock, onRetry = { d -> onProblem(com.dpsmpx.dpai.core.diagnostics.Diagnostic.of(d.code, "вызов агента повторён: ${d.message}", d.subject, causes = d.causes)) }), clock) }
             ?: Verifier({ _, _, _ -> Outcome.success(Completed(0, emptyList(), emptyList())) }, clock)
         o = Orchestrator(
             clock, ids, random, journal, router, config,
             working.map { TargetSlot(it.id, emptySet(), maxSessions = 1) }, git, verifier,
             snapshots = snapshots, snapshotEvery = SEGMENT.toLong(), documents = DocumentStore(vfs, "docs"),
+            onEvents = onEvents, onProblem = onProblem,
         )
         orchestrator = o
         // Слот target — после первой пробы входа: подписка выбирается по аккаунту (см. [placeSlot]).
@@ -139,6 +158,46 @@ class LiveSystem(
         }
         for (r in o.recover { t -> manager.client(t).valueOrNull() }) problems += r.diagnostics.filter { it.isError }
         for (e in usable) probeSlot(e.id)
+    }
+
+    /**
+     * Обновить загрузку окон подписок (D-48): `/usage` на каждом target со
+     * слотом — без хода и без траты лимита. Уже идёт — ничего.
+     */
+    fun refreshUsage() {
+        for (e in usable) {
+            val slot = slotOf[e.id] ?: continue
+            if (synchronized(usageProbes) { e.id in usageProbes }) continue
+            val dir = orchestrator.accounts.slots[slot]?.configDir ?: continue
+            val client = manager.client(e.id).valueOrNull() ?: continue
+            val probe = com.dpsmpx.dpai.orchestrator.accounts.UsageProbe(client)
+            when (val s = probe.start(ids.next(IdKinds.SESSION), dir)) {
+                is Outcome.Failure -> problems += s.diagnostics
+                is Outcome.Success -> synchronized(usageProbes) { usageProbes[e.id] = probe to s.value }
+            }
+        }
+    }
+
+    private fun pollUsage() {
+        for ((target, p) in synchronized(usageProbes) { usageProbes.entries.toList() }) {
+            val r = p.first.poll(p.second)
+            if (r is Outcome.Success && r.value == null) continue
+            synchronized(usageProbes) { usageProbes.remove(target) }
+            when (r) {
+                is Outcome.Failure -> problems += r.diagnostics
+                is Outcome.Success -> {
+                    val slot = slotOf[target] ?: continue
+                    for (w in r.value.orEmpty()) {
+                        val window = if (w.window == "session") com.dpsmpx.dpai.accounts.LimitWindow.SESSION else com.dpsmpx.dpai.accounts.LimitWindow.WEEKLY
+                        when (val ev = accountsLogic.observeUsage(orchestrator.accounts, slot, window, w.utilization, w.resetsAt, clock.now())) {
+                            is Outcome.Failure -> problems += ev.diagnostics
+                            is Outcome.Success -> orchestrator.commitAccounts(ev.value)
+                        }
+                    }
+                    usageRefreshedAt = clock.now()
+                }
+            }
+        }
     }
 
     /** Проверить вход слота target заново — после того как автор вошёл в Claude. */
@@ -221,6 +280,8 @@ class LiveSystem(
                 }
                 is Outcome.Success -> r.value?.let { status ->
                     probes.remove(target)
+                    // Target ответил: прежние сетевые отказы (SSH до добавления ключа и т. п.) — уже не правда, на «Внимание» их не держать.
+                    problems.removeAll { it.category == com.dpsmpx.dpai.core.diagnostics.Category.NETWORK }
                     val slot = slotOf[target]
                     if (slot == null) {
                         usable.firstOrNull { it.id == target }?.let { placeSlot(it, status) }
@@ -233,6 +294,12 @@ class LiveSystem(
                 }
             }
         }
+        pollUsage()
+        // Git проекта — проверка один раз (дальше — по итогам операций контура) и снова, пока не работает, раз в минуту.
+        if (project != null && orchestrator.gitOk != true && clock.now().epochMillis - lastGitCheck >= GIT_RECHECK_MS) {
+            lastGitCheck = clock.now().epochMillis
+            orchestrator.checkGit()
+        }
         orchestrator.tick()
         if (problems.size > MAX_PROBLEMS) problems.subList(0, problems.size - MAX_PROBLEMS).clear()
     }
@@ -242,24 +309,31 @@ class LiveSystem(
 
     fun diagnosis(): SelfDiagnosis = SelfDiagnostics.evaluate(
         SystemSignals(
-            storageOk = true, recoveryInProgress = false, gitAvailable = null, notificationsOk = null,
-            targetsOnline = usable.size, targetsTotal = usable.size, securityAlert = false,
+            storageOk = true, recoveryInProgress = false, gitAvailable = orchestrator.gitOk, notificationsOk = notificationsOk(),
+            targetsOnline = usable.size, targetsTotal = usable.size, securityAlert = false, gitRequired = project != null,
         ),
     )
+
+    private var lastGitCheck = Long.MIN_VALUE / 2
 
     override fun dashboard(): DashboardScreen {
         val base = Screens.dashboard(orchestrator.dashboard(), diagnosis(), orchestrator.usage())
         val login = usable.filter { it.id in waitingLogin }.map { "${it.label}: войдите в Claude в каталоге ${it.configDir}, затем «Вход Claude»" }
         val extra = notes + login + (problems + orchestrator.problems).takeLast(5).map { "${it.code}: ${it.message}" }
-        return base.copy(attention = base.attention + extra)
+        return base.copy(attention = base.attention + extra, limits = Screens.limits(orchestrator.accounts, clock.now()))
     }
 
     override fun board(): TaskBoard = Screens.board(orchestrator.tasks)
 
-    override fun session(id: SessionId): SessionScreen = Screens.session(orchestrator.dashboard(), id, events())
+    override fun session(id: SessionId): SessionScreen = Screens.session(
+        orchestrator.dashboard(), id, events(), orchestrator.live(id), clock.now(), Screens.sessionActions(id, orchestrator.sessions, orchestrator.tasks),
+    )
 
     companion object {
         private const val MAX_PROBLEMS = 50
+
+        /** Как часто перепроверять Git, пока он не работает. */
+        private const val GIT_RECHECK_MS = 60_000L
 
         /** Предел одновременных сессий подписки контроллера; на target — по одной (`TargetSlot`). */
         private const val MAX_PARALLEL = 8

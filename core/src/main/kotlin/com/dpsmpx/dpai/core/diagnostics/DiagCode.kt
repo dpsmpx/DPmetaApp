@@ -200,8 +200,19 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     OPERATION_NOT_ALLOWED(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
     RUN_BUDGET_EXHAUSTED(Category.STATE, Severity.WARNING, Retryability.NON_RETRYABLE),
     CLAUDE_AUTH_STATUS_INVALID(Category.FORMAT, Severity.ERROR, Retryability.NON_RETRYABLE),
+
+    /** Ответ `/usage` (D-48) без загрузки окон: не JSON, нет `usage_report` — версия Claude Code другая. */
+    CLAUDE_USAGE_REPORT_INVALID(Category.FORMAT, Severity.ERROR, Retryability.NON_RETRYABLE),
     /** Нарушен машинно проверяемый инвариант (ТЗ, §118): ошибка ядра, а не входа. */
     INVARIANT_VIOLATED(Category.INTEGRITY, Severity.ERROR, Retryability.NON_RETRYABLE),
+
+    // --- запросы человеку (D-44) ---
+    /** Запрос уже не ждёт ответа: отвечен иначе, истёк, снят или неизвестен. */
+    REQUEST_NOT_PENDING(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
+    /** Ответ не подходит запросу: чужой вариант, другой хеш, нет обязательного текста. */
+    REQUEST_ANSWER_INVALID(Category.INPUT, Severity.ERROR, Retryability.NON_RETRYABLE),
+    /** Задачу или сессию остановил человек (ответ на запрос, команда D-42): не сбой и не повод для повтора. */
+    CANCELLED_BY_USER(Category.STATE, Severity.INFO, Retryability.NON_RETRYABLE),
 
     // --- общее ---
     /** Строгая семантика (D-05): неподдержанное — явный отказ, а не «похожее». */

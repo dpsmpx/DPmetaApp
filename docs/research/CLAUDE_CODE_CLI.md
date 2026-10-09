@@ -288,8 +288,41 @@ commander.js; образца отказа с target нет). На это опи�
 Инструмент субагентов в Claude Code 2.1.294 называется `Agent` (список
 инструментов этой облачной сессии Claude Code).
 
+Вызовы инструментов в потоке (образец 2.1.291, D-41): блок `tool_use`
+сообщения `assistant` — `id`, `name`, `input`; результат — сообщение
+`user` с блоком `tool_result` (`tool_use_id`, `content` строкой; по
+справке API — и массивом блоков `text`, `is_error` при ошибке) и полем
+`tool_use_result` — сырой итог для клиента, в контекст модели он не
+идёт. У сообщений субагента `parent_tool_use_id` — id вызова `Agent`.
+Ход с инструментами разработки (`Read`, `Edit`, `Bash`) не записан —
+`tool-calls.jsonl` построен по этой форме.
+
 Не проверено (образцов нет): событие сжатия истории — `system` с
 `subtype: "compact_boundary"` (описание `SDKCompactBoundaryMessage` в
 Agent SDK); отказ по размеру prompt — итог с ошибкой и текстом «Prompt is
 too long» (текст `invalid_request_error` API). Разбор узнаёт оба, строки в
 тестах построены; записать образцы, когда случатся.
+
+## 12. Локальная команда `/usage` в режиме `-p`
+
+Проверено **9 октября 2026**, Claude Code **2.1.294**, Termux на Redmi
+Note 13 (автор, слот `~/.claude-dpai-check`):
+`echo /usage | claude -p --verbose --output-format stream-json`.
+
+- Ответ — сообщение `assistant` с моделью `<synthetic>` и нулевым
+  `usage`, полями `local_command_run: {command: "usage"}` и
+  `usage_report`, затем `result` с `total_cost_usd: 0`,
+  `duration_api_ms: 0`, `num_turns: 0`, `local_command: "usage"` — к
+  модели запроса нет, лимит не тратится.
+- `usage_report.rate_limits.limits` — массив: `kind` (`session`,
+  `weekly_all`), `group` (`session`, `weekly`), `percent` (целое),
+  `resets_at` (ISO 8601 с долями секунды; доли — шум от момента запроса:
+  `08:30:00.21` и `08:29:59.9` для одного окна), `severity` (`warning`,
+  `critical`), `is_active`. Есть и `extra_usage` (дополнительное
+  использование, у автора выключено).
+- Текст для человека — в `result` и в `content` (`Current session: 76%
+  used · resets …`).
+- Образец — `tests/data/claude-stream/usage-local.jsonl`. Записан в
+  каталоге репозитория: до ответа идут `system` (`init`, `hook_*`,
+  `dev_intent`) — на разбор не влияют. Использование — D-48.
+

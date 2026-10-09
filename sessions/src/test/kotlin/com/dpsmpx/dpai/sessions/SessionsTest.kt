@@ -17,6 +17,10 @@ import com.dpsmpx.dpai.core.ids.TaskId
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.serialization.CanonicalJson
 import com.dpsmpx.dpai.core.serialization.JsonObject
+import com.dpsmpx.dpai.core.serialization.JsonNumber
+import com.dpsmpx.dpai.core.events.EventType
+import com.dpsmpx.dpai.execution.claude.ToolCount
+import com.dpsmpx.dpai.execution.claude.TurnTools
 import com.dpsmpx.dpai.core.serialization.JsonParser
 import com.dpsmpx.dpai.core.state.HeartbeatFreshness
 import com.dpsmpx.dpai.core.state.SessionState
@@ -92,6 +96,7 @@ class SessionsTest {
                 is AccountFact.AuthFailure -> acc(accountsLogic.observeAuthFailure(accounts, slot, clock.now()))
                 is AccountFact.Error -> acc(accountsLogic.observeError(accounts, slot, f.code, clock.now()))
                 is AccountFact.Limit -> acc(accountsLogic.observeLimit(accounts, slot, f.window, f.level, f.resetAt, clock.now()))
+                is AccountFact.Usage -> acc(accountsLogic.observeUsage(accounts, slot, f.window, f.utilization, f.resetAt, clock.now()))
             }
         }
     }
@@ -243,8 +248,10 @@ class SessionsTest {
         step(driver.poll(state, s))
         val usageEvents = log.filterIsInstance<SessionEvent.TurnUsage>()
         assertEquals(1, usageEvents.size)
-        // Расход — перед итогом хода того же номера.
-        assertEquals(log.indexOfFirst { it is SessionEvent.TurnFinished } - 1, log.indexOf(usageEvents.single()))
+        // Расход и замер инструментов (D-41) — перед итогом хода того же номера.
+        val finished = log.indexOfFirst { it is SessionEvent.TurnFinished }
+        assertEquals(finished - 2, log.indexOf(usageEvents.single()))
+        assertIs<SessionEvent.TurnTools>(log[finished - 1])
         val u = state.sessions.getValue(s).usage
         assertEquals(1, u.turns)
         assertEquals(10, u.inputTokens)
@@ -258,7 +265,40 @@ class SessionsTest {
         assertEquals(state, SessionCodec.decodeState(JsonParser().parse(json).valueOrNull() as JsonObject).valueOrNull())
         // Снимок v1 (до D-40) читается: расхода в нём нет.
         val bare = SessionsState(state.sessions.mapValues { it.value.copy(usage = UsageTotals.EMPTY) })
-        val v1 = CanonicalJson.write(SessionCodec.encodeState(bare)).replace("\"version\":2", "\"version\":1")
+        val v1 = CanonicalJson.write(SessionCodec.encodeState(bare)).replace("\"version\":3", "\"version\":1")
         assertEquals(bare, SessionCodec.decodeState(JsonParser().parse(v1).valueOrNull() as JsonObject).valueOrNull())
+    }
+
+    @Test
+    fun toolMeasurementIsSummedAndSurvivesJournalAndSnapshot() {
+        // D-41: замер инструментов хода — отдельное событие; суммы — в расходе сессии и снимке v3.
+        slots(1)
+        val s = newSession()
+        val t1 = TurnTools(
+            byTool = mapOf("Read" to ToolCount(3, 900, 0, 1, 300), "Bash" to ToolCount(1, 5000, 1, 0, 0)),
+            subagentCalls = 2, subagentResultBytes = 700, filesRead = 2, filesEdited = 1, largestResultBytes = 5000,
+        )
+        val t2 = TurnTools(byTool = mapOf("Read" to ToolCount(1, 100)), filesRead = 1, largestResultBytes = 100, unmatchedResults = 1)
+        apply(listOf(SessionEvent.TurnTools(s, 1, t1, clock.now()), SessionEvent.TurnTools(s, 2, t2, clock.now())))
+        val tools = state.sessions.getValue(s).usage.tools
+        assertEquals(2, tools.turns)
+        assertEquals(ToolCount(4, 1000, 0, 1, 300), tools.byTool["Read"])
+        assertEquals(ToolCount(5, 6000, 1, 1, 300), tools.total)
+        assertEquals(3, tools.filesRead)
+        assertEquals(5000, tools.largestResultBytes)
+        assertEquals(1, tools.unmatchedResults)
+        val decoded = log.map { e -> SessionCodec.decode(SessionCodec.type(e), e.at, SessionCodec.payload(e))!!.valueOrNull()!! }
+        assertEquals(log, decoded)
+        val json = CanonicalJson.write(SessionCodec.encodeState(state))
+        assertEquals(state, SessionCodec.decodeState(JsonParser().parse(json).valueOrNull() as JsonObject).valueOrNull())
+        // Снимок v2 (D-40, до D-41) читается: инструментов в нём нет.
+        val noTools = SessionsState(state.sessions.mapValues { it.value.copy(usage = it.value.usage.copy(tools = ToolTotals.EMPTY)) })
+        val v2 = CanonicalJson.write(SessionCodec.encodeState(noTools)).replace("\"version\":3", "\"version\":2")
+        assertEquals(noTools, SessionCodec.decodeState(JsonParser().parse(v2).valueOrNull() as JsonObject).valueOrNull())
+        // Испорченный замер — ошибка чтения, а не нули.
+        val bad = SessionCodec.payload(SessionEvent.TurnTools(s, 3, t2, clock.now())).let { p ->
+            JsonObject(p.fields + ("tools" to JsonObject((p["tools"] as JsonObject).fields + ("filesRead" to JsonNumber.of(-1)))))
+        }
+        assertIs<Outcome.Failure>(SessionCodec.decode(EventType.SESSION_TURN_TOOLS, clock.now(), bad))
     }
 }

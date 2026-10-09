@@ -148,6 +148,29 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
         return Outcome.success(finish(state, listOf(LimitObserved(sub.id, window, level, resetAt, now)), now))
     }
 
+    /**
+     * Загрузка окна (D-42, D-45): событие — при изменении хотя бы на
+     * процент или при новом времени сброса; частые одинаковые сообщения
+     * потока журнал не раздувают.
+     */
+    fun observeUsage(state: AccountsState, slotId: AccountId, window: LimitWindow, utilization: Double, resetAt: Timestamp?, now: Timestamp): Outcome<List<AccountEvent>> {
+        val slot = state.slots[slotId] ?: return notFound(slotId)
+        if (utilization.isNaN() || utilization < 0.0 || utilization > 1.5) return Outcome.failure(DiagCode.VALUE_INVALID, "загрузка окна — 0…1")
+        val sub = state.subscriptions.getValue(slot.subscriptionId)
+        val cur = sub.window(window)
+        val same = cur.utilization != null && kotlin.math.abs(cur.utilization - utilization) < 0.01 && (resetAt == null || resetAt == cur.resetAt)
+        if (same) return Outcome.success(emptyList())
+        return Outcome.success(finish(state, listOf(AccountEvent.UsageObserved(sub.id, window, utilization.coerceAtMost(1.0), resetAt, now)), now))
+    }
+
+    /** Порог «у предела» подписки (D-45): 50…100 %. */
+    fun setNearPercent(state: AccountsState, subscription: SubscriptionId, percent: Int, now: Timestamp): Outcome<List<AccountEvent>> {
+        val sub = state.subscriptions[subscription] ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой подписки", "subscription $subscription")
+        if (percent !in NEAR_PERCENT_RANGE) return Outcome.failure(DiagCode.VALUE_INVALID, "порог — ${NEAR_PERCENT_RANGE.first}…${NEAR_PERCENT_RANGE.last} %", "subscription $subscription")
+        if (sub.nearPercent == percent) return Outcome.success(emptyList())
+        return Outcome.success(finish(state, listOf(AccountEvent.NearThresholdSet(subscription, percent, now)), now))
+    }
+
     /** Успешный запрос слота: предел подписки снят (доказано), серия ошибок слота сброшена. */
     fun observeSuccess(state: AccountsState, slotId: AccountId, now: Timestamp): Outcome<List<AccountEvent>> {
         val slot = state.slots[slotId] ?: return notFound(slotId)
@@ -202,6 +225,11 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
         task: TaskId,
         now: Timestamp,
         target: ExecutionTargetId? = null,
+        /**
+         * Срочная задача (D-40, D-42): у предела подписки начинается и она —
+         * человек отметил её высоким приоритетом; несрочное ждёт сброса окна.
+         */
+        urgent: Boolean = false,
     ): Outcome<Lease> {
         state.slotOf(session)?.let { s ->
             return if (s.sessions[session] == task) {
@@ -217,7 +245,7 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
             .filter { it.state == AccountState.AVAILABLE && (target == null || it.targetId == target) }
             .filter { slot ->
                 val sub = s1.subscriptions.getValue(slot.subscriptionId)
-                policy.startNewTasksWhenNear || !sub.nearAt(now) || previous == sub.id
+                policy.startNewTasksWhenNear || urgent || !sub.nearAt(now) || previous == sub.id
             }
         val own = if (previous == null) emptyList() else candidates.filter { it.subscriptionId == previous }
         val switching = previous != null && own.isEmpty()
@@ -226,7 +254,7 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
             own.isNotEmpty() -> own
             else -> candidates.filter { s1.subscriptions.getValue(it.subscriptionId).rotationAllowed }
         }
-        if (pool.isEmpty()) return Outcome.failure(DiagCode.ACCOUNT_NONE_AVAILABLE, explainNone(s1, now, previous, target), "task $task")
+        if (pool.isEmpty()) return Outcome.failure(DiagCode.ACCOUNT_NONE_AVAILABLE, explainNone(s1, now, previous, target, urgent), "task $task")
         if (switching) {
             val recent = s1.switches[task].orEmpty().count { it > now - policy.switchWindow }
             if (recent >= policy.maxSwitchesPerTask) {
@@ -331,7 +359,7 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
         }
     }
 
-    private fun explainNone(state: AccountsState, now: Timestamp, previous: SubscriptionId?, target: ExecutionTargetId?): String {
+    private fun explainNone(state: AccountsState, now: Timestamp, previous: SubscriptionId?, target: ExecutionTargetId?, urgent: Boolean = false): String {
         if (state.slots.isEmpty()) return "нет ни одного слота: зарегистрируйте подписку и войдите формой Claude"
         val parts = state.subscriptions.values.sortedBy { it.id.value }.map { sub ->
             val slots = state.slotsOf(sub.id).filter { target == null || it.targetId == target }
@@ -341,7 +369,8 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
                 slots.all { it.state == AccountState.AUTH_REQUIRED } -> "нужен вход формой Claude"
                 slots.all { it.state == AccountState.ERROR || it.state == AccountState.DISABLED } -> "слоты остановлены"
                 state.activeSessions(sub.id) >= sub.maxParallelSessions -> "заняты все ${sub.maxParallelSessions} сессии"
-                sub.nearAt(now) && !policy.startNewTasksWhenNear && previous != sub.id -> "близко к пределу — новые задачи отложены"
+                sub.nearAt(now) && !policy.startNewTasksWhenNear && !urgent && previous != sub.id ->
+                    "близко к пределу — новые задачи отложены до сброса окна (${resetPhrase(sub, now)}); срочная — приоритет HIGH"
                 slots.any { it.state == AccountState.COOLDOWN } -> "пауза после серии ошибок"
                 previous != null && previous != sub.id && !sub.rotationAllowed -> "продолжение чужих задач не разрешено"
                 else -> "нет свободного слота"
@@ -387,8 +416,13 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
             is IdentityConfirmed -> state.sub(event.subscription) { it.copy(identity = event.identity, plan = event.plan) }
             is OverlapDetected -> state
             is LimitObserved -> state.sub(event.subscription) {
-                it.copy(windows = it.windows + (event.window to WindowState(event.level, event.resetAt, event.at)))
+                it.copy(windows = it.windows + (event.window to WindowState(event.level, event.resetAt, event.at, it.window(event.window).utilization)))
             }
+            is AccountEvent.UsageObserved -> state.sub(event.subscription) {
+                val w = it.window(event.window)
+                it.copy(windows = it.windows + (event.window to w.copy(utilization = event.utilization, resetAt = event.resetAt ?: w.resetAt, observedAt = event.at)))
+            }
+            is AccountEvent.NearThresholdSet -> state.sub(event.subscription) { it.copy(nearPercent = event.percent) }
             is LimitReset -> state.sub(event.subscription) { it.copy(windows = it.windows + (event.window to WindowState())) }
             is LoginExpiring -> state.slot(event.slot) { it.copy(loginExpiring = true, loginExpiresAt = event.expiresAt) }
             is ErrorRecorded -> state.slot(event.slot) {

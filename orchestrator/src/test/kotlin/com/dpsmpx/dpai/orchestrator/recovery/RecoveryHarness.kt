@@ -133,6 +133,7 @@ class RecoveryHarness(private val dir: Path, seed: Long) {
                 is AccountFact.AuthFailure -> accountsLogic.observeAuthFailure(accounts, slot, clock.now())
                 is AccountFact.Error -> accountsLogic.observeError(accounts, slot, f.code, clock.now())
                 is AccountFact.Limit -> accountsLogic.observeLimit(accounts, slot, f.window, f.level, f.resetAt, clock.now())
+                is AccountFact.Usage -> accountsLogic.observeUsage(accounts, slot, f.window, f.utilization, f.resetAt, clock.now())
             }
             commitA(out.valueOrNull().orEmpty())
         }

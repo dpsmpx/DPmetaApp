@@ -65,6 +65,55 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
 
     fun enqueue(state: TasksState, id: TaskId, now: Timestamp): Outcome<List<TaskEvent>> = move(state, id, TaskState.QUEUED, now)
 
+    /**
+     * Политика задачи — только пока она не идёт (D-42): у идущей задачи
+     * ход уже запущен с прежней моделью и бюджетом, и молча поменять их
+     * нельзя (D-05). Конечная — тоже нет: менять нечего.
+     */
+    fun setPolicy(state: TasksState, id: TaskId, policy: TaskPolicy, now: Timestamp): Outcome<List<TaskEvent>> {
+        val t = state.tasks[id] ?: return notFound(id)
+        if (t.state !in EDITABLE) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "политику меняют до запуска: задача ${t.state}", "task $id")
+        if (t.policy == policy) return Outcome.success(emptyList())
+        return Outcome.success(listOf(TaskEvent.PolicyChanged(id, policy, now)))
+    }
+
+    /** Спрятать завершённую задачу в архив или вернуть (D-42); незавершённую прятать нельзя — она ещё работает. */
+    fun archive(state: TasksState, id: TaskId, archived: Boolean, now: Timestamp): Outcome<List<TaskEvent>> {
+        val t = state.tasks[id] ?: return notFound(id)
+        if (archived && !t.terminal) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "в архив — только завершённую: задача ${t.state}", "task $id")
+        if (t.archived == archived) return Outcome.success(emptyList())
+        return Outcome.success(listOf(TaskEvent.ArchiveChanged(id, archived, now)))
+    }
+
+    /** Удержать или отпустить задачу (D-42); конечную — нельзя. */
+    fun hold(state: TasksState, id: TaskId, held: Boolean, now: Timestamp): Outcome<List<TaskEvent>> {
+        val t = state.tasks[id] ?: return notFound(id)
+        if (t.terminal) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "задача завершена: ${t.state}", "task $id")
+        if (t.held == held) return Outcome.success(emptyList())
+        return Outcome.success(listOf(TaskEvent.HoldChanged(id, held, now)))
+    }
+
+    /**
+     * Повтор человеком (D-42): упавшая — снова в очередь (явный переход
+     * `FAILED → QUEUED`), отменённая — в очередь через `BACKLOG`,
+     * заблокированная — `READY`; счётчики повторов, продолжений и петель
+     * сброшены: решение человека — новый счёт, а не продолжение старого.
+     */
+    fun retry(state: TasksState, id: TaskId, now: Timestamp): Outcome<List<TaskEvent>> {
+        val t = state.tasks[id] ?: return notFound(id)
+        val reset = TaskEvent.CountersReset(id, now)
+        val s1 = apply(state, reset)
+        val moves: Outcome<List<TaskEvent>> = when (t.state) {
+            TaskState.FAILED -> move(s1, id, TaskState.QUEUED, now, mode = TransitionMode.EXPLICIT)
+            TaskState.CANCELLED -> move(s1, id, TaskState.BACKLOG, now, mode = TransitionMode.EXPLICIT).let { r ->
+                if (r is Outcome.Failure) r else move(applyAll(s1, r.valueOrNull()!!), id, TaskState.QUEUED, now).let { q -> if (q is Outcome.Failure) q else Outcome.success(r.valueOrNull()!! + q.valueOrNull()!!) }
+            }
+            TaskState.BLOCKED -> move(s1, id, TaskState.READY, now)
+            else -> return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "повторяют упавшую, отменённую или заблокированную: задача ${t.state}", "task $id")
+        }
+        return moves.let { r -> if (r is Outcome.Failure) r else Outcome.success(listOf(reset) + r.valueOrNull()!!) }
+    }
+
     fun setPriority(state: TasksState, id: TaskId, priority: Priority, manual: Int?, now: Timestamp): Outcome<List<TaskEvent>> {
         val t = state.tasks[id] ?: return notFound(id)
         if (t.priority == priority && t.manualPriority == manual) return Outcome.success(emptyList())
@@ -107,7 +156,7 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
         val impact = HashMap<TaskId, Int>()
         for (t in state.tasks.values) if (!t.terminal) for (d in t.dependencies) impact.merge(d, 1, Int::plus)
         return state.tasks.values
-            .filter { it.state == TaskState.READY && (it.notBefore == null || it.notBefore <= now) }
+            .filter { it.state == TaskState.READY && !it.held && (it.notBefore == null || it.notBefore <= now) }
             .map { it to orderKey(it, now, impact[it.id] ?: 0) }
             .sortedWith { a, b -> compareKeys(a.second, b.second) }
             .map { it.first }
@@ -309,6 +358,9 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
     private fun notFound(id: TaskId) = Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой задачи", "task $id")
 
     companion object {
+        /** Где политику задачи ещё можно менять: ход не идёт и не начат. */
+        private val EDITABLE = setOf(TaskState.BACKLOG, TaskState.QUEUED, TaskState.READY, TaskState.WAITING, TaskState.BLOCKED, TaskState.FAILED, TaskState.CANCELLED)
+
         fun apply(state: TasksState, e: TaskEvent): TasksState {
             val tasks = state.tasks.toMutableMap()
             when (e) {
@@ -318,6 +370,8 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
                     check(TaskLifecycle.table.isAllowed(t.state, e.to, TransitionMode.EXPLICIT)) { "задача ${e.task}: ${t.state} → ${e.to}" }
                     t.copy(
                         state = e.to,
+                        // Снова в работе (повтор, переоткрытие) — из архива: прятать идущее нельзя.
+                        archived = t.archived && e.to in TaskLifecycle.table.terminal,
                         updatedAt = e.at,
                         lastReason = e.reason ?: t.lastReason,
                         notBefore = e.notBefore,
@@ -331,6 +385,10 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
                 is TaskEvent.Continued -> tasks.computeIfPresent(e.task) { _, t -> t.copy(continuations = t.continuations + 1, updatedAt = e.at) }
                 is TaskEvent.VerificationRecorded -> tasks.computeIfPresent(e.task) { _, t -> t.copy(verification = e.record, updatedAt = e.at) }
                 is TaskEvent.ScopeChanged -> tasks.computeIfPresent(e.task) { _, t -> t.copy(scope = e.scope, updatedAt = e.at) }
+                is TaskEvent.PolicyChanged -> tasks.computeIfPresent(e.task) { _, t -> t.copy(policy = e.policy, updatedAt = e.at) }
+                is TaskEvent.HoldChanged -> tasks.computeIfPresent(e.task) { _, t -> t.copy(held = e.held, updatedAt = e.at) }
+                is TaskEvent.CountersReset -> tasks.computeIfPresent(e.task) { _, t -> t.copy(retries = 0, continuations = 0, failures = emptyMap(), updatedAt = e.at) }
+                is TaskEvent.ArchiveChanged -> tasks.computeIfPresent(e.task) { _, t -> t.copy(archived = e.archived, updatedAt = e.at) }
             }
             return TasksState(tasks)
         }

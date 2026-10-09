@@ -92,7 +92,9 @@ RUNNING` недопустимо). Продолжение — явная опер
   `onProbe` (только подтверждённое пробой отсутствие процесса ведёт в
   `RECOVERY_PENDING`); `apply` сворачивает события в `SessionsState`.
 - `SessionCodec` — события в `dpai.event` (поток — сессия) и снимок
-  `dpai.sessions-state` v1; проекция журнала — `orchestrator.sessions.SessionsProjection`.
+  `dpai.sessions-state` v3 (v2 — расход сессии, D-40; v3 — замер
+  инструментов, D-41; прежние читаются); проекция журнала —
+  `orchestrator.sessions.SessionsProjection`.
 - `SessionDriver` — сессия поверх `ClaudeRunner`: ход — после сверки
   слота; продолжение — `--resume` сессии провайдера прежней сессии.
 

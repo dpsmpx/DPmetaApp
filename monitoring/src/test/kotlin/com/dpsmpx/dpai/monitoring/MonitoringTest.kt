@@ -80,6 +80,9 @@ class MonitoringTest {
         val noGit = SelfDiagnostics.evaluate(ok.copy(gitAvailable = false))
         assertEquals(SystemHealth.DEGRADED, noGit.health)
         assertTrue(Capability.VIEW in noGit.allowed && Capability.SCHEDULE !in noGit.allowed)
+        // Без проекта Git не нужен: его отсутствие — не деградация; неизвестный уже нужный — недоступен (D-13).
+        assertEquals(SystemHealth.HEALTHY, SelfDiagnostics.evaluate(ok.copy(gitAvailable = null, gitRequired = false)).health)
+        assertEquals(SystemHealth.DEGRADED, SelfDiagnostics.evaluate(ok.copy(gitAvailable = null)).health)
         val noNotify = SelfDiagnostics.evaluate(ok.copy(notificationsOk = false))
         assertTrue(Capability.SCHEDULE in noNotify.allowed, "сломанные уведомления не останавливают планировщик (ТЗ, §80)")
         val storage = SelfDiagnostics.evaluate(ok.copy(storageOk = false))

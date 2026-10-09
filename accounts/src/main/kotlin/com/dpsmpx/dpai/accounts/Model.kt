@@ -32,11 +32,28 @@ enum class LoginStatus { UNKNOWN, OK, REQUIRED, FORBIDDEN_METHOD, IDENTITY_MISMA
 
 enum class OverlapKind { IDENTITY_MISMATCH, DUPLICATE_SUBSCRIPTION }
 
-/** Состояние окна предела. Время сброса неизвестно — `null`, а не ноль (D-13). */
-data class WindowState(val level: LimitLevel = LimitLevel.OK, val resetAt: Timestamp? = null, val observedAt: Timestamp? = null) {
+/**
+ * Состояние окна предела. Время сброса неизвестно — `null`, а не ноль
+ * (D-13). [utilization] — загрузка окна 0…1, как её сообщил Claude Code
+ * (`rate_limit_event`); неизвестна — `null` (D-45).
+ */
+data class WindowState(
+    val level: LimitLevel = LimitLevel.OK,
+    val resetAt: Timestamp? = null,
+    val observedAt: Timestamp? = null,
+    val utilization: Double? = null,
+) {
     fun limitedAt(now: Timestamp): Boolean = level == LimitLevel.REACHED && (resetAt == null || now < resetAt)
 
-    fun nearAt(now: Timestamp): Boolean = level == LimitLevel.NEAR && (resetAt == null || now < resetAt)
+    /**
+     * У предела (D-45): загрузка известна — она не меньше порога [threshold]
+     * (0…1, задаёт человек); неизвестна — по предупреждению Claude Code.
+     */
+    fun nearAt(now: Timestamp, threshold: Double = DEFAULT_NEAR_PERCENT / 100.0): Boolean {
+        if (resetAt != null && now >= resetAt) return false
+        val u = utilization ?: return level == LimitLevel.NEAR
+        return u >= threshold
+    }
 
     /** Когда окно точно сброшено по времени: известное время сброса или длина окна от наблюдения. */
     fun clearsAt(window: LimitWindow): Timestamp? = when {
@@ -56,13 +73,21 @@ data class SubscriptionState(
     val identity: ContentHash? = null,
     val plan: String? = null,
     val windows: Map<LimitWindow, WindowState> = LimitWindow.entries.associateWith { WindowState() },
+    /** Порог «у предела» в процентах загрузки окна (D-45): его задаёт человек, на нём — откладывание и экономия. */
+    val nearPercent: Int = DEFAULT_NEAR_PERCENT,
 ) {
     fun window(w: LimitWindow): WindowState = windows[w] ?: WindowState()
 
     fun limitedAt(now: Timestamp): Boolean = LimitWindow.entries.any { window(it).limitedAt(now) }
 
-    fun nearAt(now: Timestamp): Boolean = LimitWindow.entries.any { window(it).nearAt(now) }
+    fun nearAt(now: Timestamp): Boolean = LimitWindow.entries.any { window(it).nearAt(now, nearPercent / 100.0) }
 }
+
+/** Порог «у предела» по умолчанию (D-45), процентов загрузки окна. */
+const val DEFAULT_NEAR_PERCENT = 80
+
+/** Допустимые пороги (D-45): ниже половины окна предел ещё далеко, выше 100 % — не бывает. */
+val NEAR_PERCENT_RANGE = 50..100
 
 /**
  * Слот: подписка, вошедшая в Claude Code на [targetId] в каталоге настроек

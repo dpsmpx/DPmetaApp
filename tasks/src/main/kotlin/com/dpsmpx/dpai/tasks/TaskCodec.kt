@@ -28,11 +28,13 @@ import kotlin.time.Duration.Companion.milliseconds
 object TaskCodec {
     const val STATE_FORMAT = "dpai.tasks-state"
     /**
-     * v3 — класс задачи, модель и усилие в политике (D-40; пишутся, только
+     * v5 — архив (`archived`, пишется, только если в архиве; D-42); v4 —
+     * удержание задачи человеком (`held`, пишется, только если
+     * удержана; D-42); v3 — класс задачи, модель и усилие в политике (D-40; пишутся, только
      * если заданы); v2 — заявленная область задачи (`scope`); v1 читается,
      * область неизвестна.
      */
-    const val STATE_VERSION = 3
+    const val STATE_VERSION = 5
 
     fun type(e: TaskEvent): EventType = when (e) {
         is TaskEvent.Created -> EventType.TASK_CREATED
@@ -43,6 +45,10 @@ object TaskCodec {
         is TaskEvent.Continued -> EventType.TASK_CONTINUED
         is TaskEvent.VerificationRecorded -> EventType.TASK_VERIFICATION_RECORDED
         is TaskEvent.ScopeChanged -> EventType.TASK_SCOPE_CHANGED
+        is TaskEvent.PolicyChanged -> EventType.TASK_POLICY_CHANGED
+        is TaskEvent.HoldChanged -> EventType.TASK_HOLD_CHANGED
+        is TaskEvent.CountersReset -> EventType.TASK_COUNTERS_RESET
+        is TaskEvent.ArchiveChanged -> EventType.TASK_ARCHIVE_CHANGED
     }
 
     fun stream(e: TaskEvent): StreamRef = StreamRef.of(e.task)
@@ -65,6 +71,10 @@ object TaskCodec {
         is TaskEvent.Continued -> obj("task" to id(e.task))
         is TaskEvent.VerificationRecorded -> obj("task" to id(e.task)).let { JsonObject(it.fields + verification(e.record).fields) }
         is TaskEvent.ScopeChanged -> obj("task" to id(e.task), "scope" to paths(e.scope))
+        is TaskEvent.PolicyChanged -> obj("task" to id(e.task), "policy" to policy(e.policy))
+        is TaskEvent.HoldChanged -> obj("task" to id(e.task), "held" to com.dpsmpx.dpai.core.serialization.JsonBool(e.held))
+        is TaskEvent.CountersReset -> obj("task" to id(e.task))
+        is TaskEvent.ArchiveChanged -> obj("task" to id(e.task), "archived" to com.dpsmpx.dpai.core.serialization.JsonBool(e.archived))
     }
 
     fun decode(type: EventType, at: Timestamp, payload: JsonObject): Outcome<TaskEvent>? {
@@ -122,6 +132,22 @@ object TaskCodec {
                 val scope = f.paths("scope")
                 if (task != null && scope != null) TaskEvent.ScopeChanged(task, scope, at) else null
             }
+            EventType.TASK_POLICY_CHANGED -> {
+                val task = f.taskId("task")
+                val pol = f.obj("policy")?.let(::readPolicy)
+                if (task != null && pol != null) TaskEvent.PolicyChanged(task, pol, at) else null
+            }
+            EventType.TASK_HOLD_CHANGED -> {
+                val task = f.taskId("task")
+                val held = f.boolean("held")
+                if (task != null && held != null) TaskEvent.HoldChanged(task, held, at) else null
+            }
+            EventType.TASK_COUNTERS_RESET -> f.taskId("task")?.let { TaskEvent.CountersReset(it, at) }
+            EventType.TASK_ARCHIVE_CHANGED -> {
+                val task = f.taskId("task")
+                val archived = f.boolean("archived")
+                if (task != null && archived != null) TaskEvent.ArchiveChanged(task, archived, at) else null
+            }
             else -> return null
         }
         f.finish()
@@ -148,6 +174,8 @@ object TaskCodec {
         "failures" to JsonObject(t.failures.toSortedMap().mapValues { JsonNumber.of(it.value) }),
         "verification" to (t.verification?.let(::verification) ?: JsonNull),
         "scope" to (t.scope?.let(::paths) ?: JsonNull),
+        "held" to (if (t.held) com.dpsmpx.dpai.core.serialization.JsonBool(true) else JsonNull),
+        "archived" to (if (t.archived) com.dpsmpx.dpai.core.serialization.JsonBool(true) else JsonNull),
     )
 
     fun decodeState(json: JsonObject): Outcome<TasksState> {
@@ -178,6 +206,8 @@ object TaskCodec {
                     failures = (r.raw("failures") as JsonObject).fields.mapValues { (it.value as JsonNumber).toLongExact()!!.toInt() },
                     verification = r.optObj("verification")?.let { v -> readVerification(v).also { v.finish() } },
                     scope = if (version >= 2 && r.has("scope")) r.paths("scope") else null,
+                    held = if (version >= 4 && r.has("held")) r.boolean("held")!! else false,
+                    archived = if (version >= 5 && r.has("archived")) r.boolean("archived")!! else false,
                 )
             }.getOrNull()
             r.finish()

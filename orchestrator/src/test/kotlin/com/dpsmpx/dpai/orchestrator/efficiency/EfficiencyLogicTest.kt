@@ -10,6 +10,10 @@ import com.dpsmpx.dpai.core.ids.IdKinds
 import com.dpsmpx.dpai.core.ids.ProviderSessionId
 import com.dpsmpx.dpai.core.ids.SessionId
 import com.dpsmpx.dpai.core.state.SessionState
+import com.dpsmpx.dpai.execution.claude.ClaudeTurn
+import com.dpsmpx.dpai.execution.claude.TurnFiles
+import com.dpsmpx.dpai.execution.claude.TurnStatus
+import com.dpsmpx.dpai.execution.claude.TurnUsage
 import com.dpsmpx.dpai.sessions.PromptFacts
 import com.dpsmpx.dpai.sessions.PromptMode
 import com.dpsmpx.dpai.sessions.SessionRecord
@@ -152,5 +156,37 @@ class EfficiencyLogicTest {
         assertEquals(17_160, p.tokens(200_000, BudgetMode.FRUGAL))
         assertEquals(60_000, p.tokens(1_000_000))
         assertNull(ContextBudgetPolicy(enabled = false).policy(200_000).maxTokens)
+    }
+
+    private fun turn(read: List<String>, edited: List<String>, text: String?, status: TurnStatus = TurnStatus.COMPLETED) = ClaudeTurn(
+        status, ProviderSessionId.newUuid(RandomSource.seeded(5)), text, null, TurnUsage.unknown("тест"), null, 0, emptyList(),
+        files = TurnFiles(read, edited),
+    )
+
+    @Test
+    fun workingSetRanksEditedThenOftenReadInsideTheTreeOnly() {
+        // D-41: пути — от рабочего дерева; вне дерева — не берутся; изменённые — первыми; названные git status — нет.
+        val ws = WorkingSet("/t/task-1/")
+        ws.add(turn(listOf("/t/task-1/a.kt", "/t/task-1/b.kt", "/home/u/.gradle/x.jar", "/t/task-10/z.kt"), listOf("/t/task-1/c.kt"), "первый"), 100)
+        ws.add(turn(listOf("/t/task-1/b.kt"), emptyList(), null, TurnStatus.INCOMPLETE), 100)
+        assertEquals(listOf("c.kt", "b.kt", "a.kt"), ws.files(10, emptyList()))
+        assertEquals(listOf("b.kt"), ws.files(10, listOf("c.kt", "a.kt")))
+        assertEquals(listOf("c.kt"), ws.files(1, emptyList()))
+        // Итог — только завершённого хода; прерванный ход итог не меняет.
+        assertEquals("первый", ws.summary)
+        // Ключ в тексте модели не уходит дальше (D-14); длинный итог обрезан с пометкой.
+        ws.add(turn(emptyList(), emptyList(), "ключ sk-ant-api03-" + "A".repeat(40) + " " + "слово ".repeat(50)), 60)
+        val sum = ws.summary!!
+        assertFalse("sk-ant-api03-AAAA" in sum, sum)
+        assertTrue(sum.endsWith("… (обрезано)") && sum.length <= 60 + 13, sum)
+    }
+
+    @Test
+    fun workingSetSeedsFromHandoffAfterRestart() {
+        val ws = WorkingSet("/t/task-1")
+        ws.seed(listOf("x.kt", "y.kt"), "до перезапуска")
+        ws.add(turn(listOf("/t/task-1/y.kt"), emptyList(), null, TurnStatus.INCOMPLETE), 100)
+        assertEquals(listOf("y.kt", "x.kt"), ws.files(10, emptyList()))
+        assertEquals("до перезапуска", ws.summary)
     }
 }

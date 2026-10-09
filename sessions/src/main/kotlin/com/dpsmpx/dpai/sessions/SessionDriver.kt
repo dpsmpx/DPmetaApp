@@ -27,6 +27,9 @@ sealed interface AccountFact {
 
     data class Limit(override val session: SessionId, val window: LimitWindow, val level: LimitLevel, val resetAt: Timestamp?) : AccountFact
 
+    /** Загрузка окна подписки 0…1 и время сброса (D-42, D-45) — из `rate_limit_event`. */
+    data class Usage(override val session: SessionId, val window: LimitWindow, val utilization: Double, val resetAt: Timestamp?) : AccountFact
+
     data class AuthFailure(override val session: SessionId) : AccountFact
 
     data class Success(override val session: SessionId) : AccountFact
@@ -53,8 +56,16 @@ sealed interface AccountFact {
  * | прочие ошибки | `FAILED` |
  */
 class SessionDriver(private val sessions: Sessions, private val runner: ClaudeRunner, private val clock: Clock) {
-    /** [unsupportedFlags] — флаги, которых не знает Claude Code target («unknown option» в stderr, D-40). */
-    data class Step(val events: List<SessionEvent>, val facts: List<AccountFact> = emptyList(), val unsupportedFlags: Set<String> = emptySet())
+    /**
+     * [unsupportedFlags] — флаги, которых не знает Claude Code target («unknown option» в stderr, D-40);
+     * [turns] — завершённые ходы опроса целиком: файлы и итог хода нужны оркестратору для handoff (D-41).
+     */
+    data class Step(
+        val events: List<SessionEvent>,
+        val facts: List<AccountFact> = emptyList(),
+        val unsupportedFlags: Set<String> = emptySet(),
+        val turns: List<ClaudeTurn> = emptyList(),
+    )
 
     /** Первый ход: сверка слота, `QUEUED → STARTING`, запуск. Продолжение прежней — `--resume` её сессии провайдера. */
     fun launch(state: SessionsState, accounts: AccountsState, id: SessionId, request: ClaudeRequest): Outcome<Step> {
@@ -115,6 +126,7 @@ class SessionDriver(private val sessions: Sessions, private val runner: ClaudeRu
             emit(sessions.transition(current, id, target, clock.now(), reason).valueOrNull().orEmpty())
         }
         val unsupported = linkedSetOf<String>()
+        val turns = mutableListOf<ClaudeTurn>()
         for (u in updates.value) {
             val now = clock.now()
             when (u) {
@@ -130,10 +142,25 @@ class SessionDriver(private val sessions: Sessions, private val runner: ClaudeRu
                         val text = e.texts.joinToString("\n").take(sessions.policy.maxOutputChars)
                         if (text.isNotBlank()) emit(listOf(SessionEvent.Output(id, text, now)))
                         e.toolUses.forEach { emit(listOf(SessionEvent.ToolStarted(id, it.name, now))) }
+                        // Живой вид (D-42): последний текст и текущий инструмент с целью — в памяти, не в журнале.
+                        if (!e.subagent) {
+                            val prev = live[id]
+                            val use = e.toolUses.lastOrNull()
+                            live[id] = LiveTurn(
+                                text = text.takeIf { it.isNotBlank() }?.let { com.dpsmpx.dpai.core.diagnostics.Redactor.STANDARD.redact(it.takeLast(LiveTurn.MAX_TEXT)) } ?: prev?.text,
+                                tool = use?.name ?: prev?.tool,
+                                target = if (use != null) com.dpsmpx.dpai.execution.claude.ToolTarget.of(use) else prev?.target,
+                                at = now,
+                            )
+                        }
                     }
                     is ClaudeEvent.RateLimit -> {
                         val limits = limitFacts(id, e)
                         facts += limits
+                        for ((name, window) in mapOf("five_hour" to LimitWindow.SESSION, "seven_day" to LimitWindow.WEEKLY)) {
+                            val w = e.windows[name] ?: continue
+                            w.utilization.orNull()?.let { u -> facts += AccountFact.Usage(id, window, u, w.resetsAt) }
+                        }
                         val near = limits.any { it.level != LimitLevel.OK }
                         if (near && current.sessions.getValue(id).state == SessionState.RUNNING) moveTo(SessionState.NEAR_LIMIT, DiagCode.CLAUDE_RATE_LIMITED)
                     }
@@ -141,9 +168,11 @@ class SessionDriver(private val sessions: Sessions, private val runner: ClaudeRu
                 }
                 is RunnerUpdate.TurnFinished -> {
                     val t = u.result
+                    turns += t
                     emit(
                         listOf(
                             SessionEvent.TurnUsage(id, u.turn, t.usage.recorded(), now),
+                            SessionEvent.TurnTools(id, u.turn, t.tools, now),
                             SessionEvent.TurnFinished(id, u.turn, t.status.name, t.diagnostics.filter { it.isError }.map { it.code }.distinct(), now),
                         ),
                     )
@@ -161,7 +190,17 @@ class SessionDriver(private val sessions: Sessions, private val runner: ClaudeRu
         // Позиция в потоке агента — в журнал: после перезапуска сессия продолжается с неё.
         runner.position(id)?.let { pos -> emit(sessions.heartbeat(current, id, clock.now(), pos)) }
         if (current.sessions.getValue(id).terminal && state.sessions[id]?.terminal == false) facts += AccountFact.Release(id)
-        return Outcome.success(Step(events, facts, unsupported), updates.diagnostics)
+        return Outcome.success(Step(events, facts, unsupported, turns), updates.diagnostics)
+    }
+
+    /** Что ход делает сейчас (D-42): только в памяти процесса — после перезапуска пусто, пока не придёт новое. */
+    private val live = java.util.concurrent.ConcurrentHashMap<SessionId, LiveTurn>()
+
+    fun live(id: SessionId): LiveTurn? = live[id]
+
+    /** Сессия завершена — её живой вид больше не нужен (память не растёт с числом сессий, ТЗ, §116). */
+    fun forget(id: SessionId) {
+        live.remove(id)
     }
 
     /** Приостановить: остановить ход; сессия провайдера остаётся для `resume`. */
