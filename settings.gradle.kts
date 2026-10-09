@@ -68,6 +68,7 @@ include(":tests:integration")
 val androidSdk = run {
     val local = file("local.properties").takeIf { it.isFile }?.readLines()
         ?.firstOrNull { it.startsWith("sdk.dir=") }?.substringAfter("=")?.replace("""\:""", ":")?.replace("""\\""", "/")
-    (local ?: System.getenv("ANDROID_HOME") ?: System.getenv("ANDROID_SDK_ROOT"))?.takeIf { file(it).isDirectory }
+    // Пустая переменная — как её нет: демон Gradle держит окружение первого запуска, и `ANDROID_HOME=` ломал `file("")`.
+    listOf(local, System.getenv("ANDROID_HOME"), System.getenv("ANDROID_SDK_ROOT")).firstOrNull { !it.isNullOrBlank() }?.takeIf { file(it).isDirectory }
 }
 if (androidSdk != null) include(":android")
