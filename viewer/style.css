@@ -35,7 +35,6 @@
   padding: 12px;
   container-type: inline-size;
   overflow-wrap: anywhere;
-  max-width: 100%;
 }
 .dpvis[data-theme="light"] {
   --bg: #ffffff;
