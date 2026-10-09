@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -318,11 +319,17 @@ private fun BoardPane(board: TaskBoard, live: Boolean, model: DemoModel, archive
                 TextButton(onClick = {
                     scope.launch { withContext(Dispatchers.IO) { model.command(com.dpsmpx.dpai.orchestrator.commands.Command.ArchiveFinished()) } }
                 }) { Text("Убрать завершённые") }
-                Text("Показать архив ($archived)", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                androidx.compose.material3.Switch(checked = showArchived, onCheckedChange = {
-                    showArchived = it
-                    model.showArchived = it
-                })
+                // Вся надпись с переключателем — одна цель нажатия (на Redmi нажимали надпись — ничего).
+                Row(
+                    Modifier.weight(1f).toggleable(value = showArchived, role = androidx.compose.ui.semantics.Role.Switch) {
+                        showArchived = it
+                        model.showArchived = it
+                    },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Показать архив ($archived)", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                    androidx.compose.material3.Switch(checked = showArchived, onCheckedChange = null)
+                }
             }
         }
         board.columns.forEach { col ->
