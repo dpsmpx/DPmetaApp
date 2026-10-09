@@ -19,6 +19,7 @@
 | `no-result.jsonl` | построен | поток кончился без `result` — процесс упал |
 | `session-mismatch.jsonl` | построен | `session_id` в `init` не тот, что назначил оркестратор |
 | `rate-limited.jsonl` | построен по полям записанных `rate_limit_event` и ошибки входа | `rate_limit_event` со `status: rejected`, `assistant` с `error: rate_limit` |
+| `usage-local.jsonl` | записан 9 октября 2026, Claude Code 2.1.294, Termux на Redmi Note 13: `echo /usage \| claude -p --verbose --output-format stream-json`; без `system`-строк, id заменены | локальная команда `/usage`: `assistant` с моделью `<synthetic>` и нулевым `usage`, поле `usage_report.rate_limits.limits` (вид окна, процент, время сброса), `result` с `total_cost_usd: 0` — к модели запроса нет (D-48) |
 | `tool-calls.jsonl` | построен по форме `tool_use` и `tool_result` записанного `success-structured.jsonl` (D-41) | чтение, поиск, правка, команда с ошибкой, повторное чтение до и после правки, субагент со своим вызовом (`parent_tool_use_id`), `content` строкой и блоками `text` |
 
 Построенные по догадке `rate-limited.jsonl` и `tool-calls.jsonl` — не

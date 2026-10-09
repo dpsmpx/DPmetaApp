@@ -105,6 +105,15 @@ class LiveSystem(
     private val manager = ExecutionTargetManager(clock, sshHost = sshHost, controllerVersion = controllerVersion)
     private val runners = HashMap<ExecutionTargetId, ClaudeRunner>()
     private val probes = HashMap<ExecutionTargetId, Pair<SlotAuthProbe, SessionId>>()
+    private val usageProbes = HashMap<ExecutionTargetId, Pair<com.dpsmpx.dpai.orchestrator.accounts.UsageProbe, SessionId>>()
+
+    /** Когда загрузка окон последний раз пришла из `/usage` (D-48); не было — `null`. */
+    @Volatile
+    var usageRefreshedAt: com.dpsmpx.dpai.core.clock.Timestamp? = null
+        private set
+
+    /** Идёт ли обновление загрузки окон. */
+    val usageRefreshing: Boolean get() = synchronized(usageProbes) { usageProbes.isNotEmpty() }
 
     /** Targets, где Claude ещё не вошёл: слота нет, задачи туда не идут. */
     private val waitingLogin = HashSet<ExecutionTargetId>()
@@ -149,6 +158,46 @@ class LiveSystem(
         }
         for (r in o.recover { t -> manager.client(t).valueOrNull() }) problems += r.diagnostics.filter { it.isError }
         for (e in usable) probeSlot(e.id)
+    }
+
+    /**
+     * Обновить загрузку окон подписок (D-48): `/usage` на каждом target со
+     * слотом — без хода и без траты лимита. Уже идёт — ничего.
+     */
+    fun refreshUsage() {
+        for (e in usable) {
+            val slot = slotOf[e.id] ?: continue
+            if (synchronized(usageProbes) { e.id in usageProbes }) continue
+            val dir = orchestrator.accounts.slots[slot]?.configDir ?: continue
+            val client = manager.client(e.id).valueOrNull() ?: continue
+            val probe = com.dpsmpx.dpai.orchestrator.accounts.UsageProbe(client)
+            when (val s = probe.start(ids.next(IdKinds.SESSION), dir)) {
+                is Outcome.Failure -> problems += s.diagnostics
+                is Outcome.Success -> synchronized(usageProbes) { usageProbes[e.id] = probe to s.value }
+            }
+        }
+    }
+
+    private fun pollUsage() {
+        for ((target, p) in synchronized(usageProbes) { usageProbes.entries.toList() }) {
+            val r = p.first.poll(p.second)
+            if (r is Outcome.Success && r.value == null) continue
+            synchronized(usageProbes) { usageProbes.remove(target) }
+            when (r) {
+                is Outcome.Failure -> problems += r.diagnostics
+                is Outcome.Success -> {
+                    val slot = slotOf[target] ?: continue
+                    for (w in r.value.orEmpty()) {
+                        val window = if (w.window == "session") com.dpsmpx.dpai.accounts.LimitWindow.SESSION else com.dpsmpx.dpai.accounts.LimitWindow.WEEKLY
+                        when (val ev = accountsLogic.observeUsage(orchestrator.accounts, slot, window, w.utilization, w.resetsAt, clock.now())) {
+                            is Outcome.Failure -> problems += ev.diagnostics
+                            is Outcome.Success -> orchestrator.commitAccounts(ev.value)
+                        }
+                    }
+                    usageRefreshedAt = clock.now()
+                }
+            }
+        }
     }
 
     /** Проверить вход слота target заново — после того как автор вошёл в Claude. */
@@ -245,6 +294,7 @@ class LiveSystem(
                 }
             }
         }
+        pollUsage()
         // Git проекта — проверка один раз (дальше — по итогам операций контура) и снова, пока не работает, раз в минуту.
         if (project != null && orchestrator.gitOk != true && clock.now().epochMillis - lastGitCheck >= GIT_RECHECK_MS) {
             lastGitCheck = clock.now().epochMillis

@@ -302,6 +302,16 @@ class DemoModel(
         }
     }
 
+    /** Обновить загрузку окон подписок через `/usage` (D-48): без хода, лимит не тратится. */
+    fun refreshUsage() = lock.withLock {
+        liveSystem().valueOrNull()?.refreshUsage()
+        Unit
+    }
+
+    /** Идёт ли обновление окон и когда оно последний раз пришло (без замка: поля потокобезопасны). */
+    fun usageState(): Pair<Boolean, com.dpsmpx.dpai.core.clock.Timestamp?> =
+        live?.let { it.usageRefreshing to it.usageRefreshedAt } ?: (false to null)
+
     /** Проверить вход слота target заново — после входа автора в Claude. */
     fun probe(target: ExecutionTargetId) = lock.withLock {
         liveSystem().valueOrNull()?.probeSlot(target)

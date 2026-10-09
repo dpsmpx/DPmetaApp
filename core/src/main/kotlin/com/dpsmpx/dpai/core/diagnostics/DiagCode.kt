@@ -200,6 +200,9 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     OPERATION_NOT_ALLOWED(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
     RUN_BUDGET_EXHAUSTED(Category.STATE, Severity.WARNING, Retryability.NON_RETRYABLE),
     CLAUDE_AUTH_STATUS_INVALID(Category.FORMAT, Severity.ERROR, Retryability.NON_RETRYABLE),
+
+    /** Ответ `/usage` (D-48) без загрузки окон: не JSON, нет `usage_report` — версия Claude Code другая. */
+    CLAUDE_USAGE_REPORT_INVALID(Category.FORMAT, Severity.ERROR, Retryability.NON_RETRYABLE),
     /** Нарушен машинно проверяемый инвариант (ТЗ, §118): ошибка ядра, а не входа. */
     INVARIANT_VIOLATED(Category.INTEGRITY, Severity.ERROR, Retryability.NON_RETRYABLE),
 

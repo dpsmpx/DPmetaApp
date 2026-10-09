@@ -223,6 +223,26 @@ private fun toneColor(t: Tone): Color {
 
 @Composable
 private fun DashboardPane(screen: DashboardScreen, model: DemoModel, onSession: (SessionId) -> Unit) {
+    // Загрузка окон — из `/usage` раз в минуту, пока сводка видна (D-48). Цикл Compose сам не останавливается,
+    // когда экран гаснет (Redmi Note 13: пробы шли при выключенном экране), — привязан к ON_START/ON_STOP активности.
+    val lifecycle = (androidx.compose.ui.platform.LocalContext.current as? androidx.activity.ComponentActivity)?.lifecycle
+    var visible by remember { mutableStateOf(lifecycle?.currentState?.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED) ?: true) }
+    androidx.compose.runtime.DisposableEffect(lifecycle) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, e ->
+            if (e == androidx.lifecycle.Lifecycle.Event.ON_START) visible = true
+            if (e == androidx.lifecycle.Lifecycle.Event.ON_STOP) visible = false
+        }
+        lifecycle?.addObserver(observer)
+        onDispose { lifecycle?.removeObserver(observer) }
+    }
+    if (screen.limits.isNotEmpty() && visible) {
+        LaunchedEffect(Unit) {
+            while (true) {
+                withContext(Dispatchers.IO) { model.refreshUsage() }
+                kotlinx.coroutines.delay(60_000)
+            }
+        }
+    }
     LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
             Text("Состояние: ${screen.health}", color = toneColor(screen.healthTone), fontWeight = FontWeight.Bold)
@@ -511,6 +531,25 @@ private fun LimitsCard(l: com.dpsmpx.dpai.ui.SubscriptionLimits, model: DemoMode
             Text(l.label + if (l.near) " · у предела" else "", fontWeight = FontWeight.Bold, color = if (l.near) toneColor(Tone.WARNING) else Color.Unspecified)
             for (w in l.windows) {
                 Text("${w.window}: ${w.percent}${w.reset?.let { " · сброс $it" } ?: ""}", color = toneColor(w.tone), style = MaterialTheme.typography.bodySmall)
+            }
+            var usage by remember { mutableStateOf(model.usageState()) }
+            LaunchedEffect(Unit) {
+                while (true) {
+                    usage = model.usageState()
+                    kotlinx.coroutines.delay(1000)
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val (refreshing, at) = usage
+                Text(
+                    when {
+                        refreshing -> "Обновляю…"
+                        at != null -> "Обновлено в ${java.text.SimpleDateFormat("HH:mm", java.util.Locale.ROOT).format(java.util.Date(at.epochMillis))} · раз в минуту"
+                        else -> "Из последнего хода"
+                    },
+                    Modifier.weight(1f), style = MaterialTheme.typography.labelSmall,
+                )
+                TextButton(enabled = !refreshing, onClick = { scope.launch { withContext(Dispatchers.IO) { model.refreshUsage() } } }) { Text("Обновить") }
             }
             Text("Порог «у предела»: выше — несрочные задачи ждут сброса окна", style = MaterialTheme.typography.labelSmall)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
