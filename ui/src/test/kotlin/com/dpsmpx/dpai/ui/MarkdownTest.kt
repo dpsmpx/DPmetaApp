@@ -32,7 +32,7 @@ class MarkdownTest {
         val r = Markdown.render(md)
         val expected = listOf(
             "Итог", "", "Создал calc.py и тесты, всё проходит.", "", "• add — сложение", "☑ деление на ноль", "1. Первый шаг",
-            "Важно: см. документацию", "", "def add(a, b):\n    return a + b", "────────", "Функция  │  Тест", "add  │  ok",
+            "Важно: см. документацию", "", "def add(a, b):\n    return a + b", "────────", "Функция │ Тест", "───────" + "─┼─" + "────", "add     │ ok",
         ).joinToString("\n")
         assertEquals(expected, r.text)
         assertEquals(listOf("Итог"), marked(r, MarkStyle.HEADING_2))
@@ -52,5 +52,18 @@ class MarkdownTest {
         assertEquals(emptyList(), r.marks, "ни курсива в snake_case, ни звёздочки с пробелом")
         // Незакрытые маркеры — как текст.
         assertEquals("**без пары и `без пары", Markdown.render("**без пары и `без пары").text)
+    }
+
+    /**
+     * Настоящее сообщение Claude (Redmi Note 13, 9 октября 2026): текст без
+     * разметки — эталон `calc-explain.txt`; таблица выровнена.
+     */
+    @Test
+    fun realClaudeMessageMatchesGolden() {
+        val md = javaClass.getResource("/markdown/calc-explain.md")!!.readText()
+        val expected = javaClass.getResource("/markdown/calc-explain.txt")!!.readText()
+        val r = Markdown.render(md)
+        assertEquals(expected.trimEnd(), r.text.trimEnd())
+        assertTrue(r.marks.any { it.style == MarkStyle.TABLE } && r.marks.count { it.style == MarkStyle.CODE_BLOCK } == 4, r.marks.toString())
     }
 }

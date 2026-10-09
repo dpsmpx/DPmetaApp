@@ -1,7 +1,7 @@
 package com.dpsmpx.dpai.ui
 
 /** Вид участка оформленного текста. */
-enum class MarkStyle { BOLD, ITALIC, STRIKE, CODE, CODE_BLOCK, HEADING_1, HEADING_2, HEADING_3, QUOTE, LINK }
+enum class MarkStyle { BOLD, ITALIC, STRIKE, CODE, CODE_BLOCK, HEADING_1, HEADING_2, HEADING_3, QUOTE, LINK, TABLE }
 
 /** Участок [start, end) текста [Rendered.text] со стилем; у ссылки — [url]. */
 data class Mark(val start: Int, val end: Int, val style: MarkStyle, val url: String? = null)
@@ -88,21 +88,53 @@ object Markdown {
                     inline(m.groupValues[3], out, marks)
                 }
                 line.trimStart().startsWith("|") -> {
-                    if (!TABLE_SEPARATOR.matches(line)) {
-                        val cells = line.trim().trim('|').split('|').map { it.trim() }
-                        for ((k, c) in cells.withIndex()) {
-                            if (k > 0) out.append("  │  ")
-                            inline(c, out, marks)
-                        }
-                    } else if (out.endsWith('\n')) {
-                        out.setLength(out.length - 1) // разделитель шапки таблицы — без пустой строки
+                    // Таблица — все её строки разом: столбцы выровнены моноширинным шрифтом (и при копировании).
+                    val rows = mutableListOf<String>()
+                    while (i < lines.size && lines[i].trimStart().startsWith("|")) {
+                        if (!TABLE_SEPARATOR.matches(lines[i])) rows += lines[i]
+                        i++
                     }
+                    table(rows, out, marks)
+                    continue
                 }
                 else -> inline(line, out, marks)
             }
             i++
         }
         return Rendered(out.toString(), marks)
+    }
+
+    /**
+     * Строки таблицы: ячейки — через inline-разметку, столбцы дополнены
+     * пробелами до самой широкой ячейки, участок — `TABLE` (моноширинный).
+     */
+    private fun table(rows: List<String>, out: StringBuilder, marks: MutableList<Mark>) {
+        val cells = rows.map { row ->
+            row.trim().removePrefix("|").removeSuffix("|").split('|').map { c ->
+                val b = StringBuilder()
+                val m = mutableListOf<Mark>()
+                inline(c.trim(), b, m)
+                b.toString() to m
+            }
+        }
+        val columns = cells.maxOfOrNull { it.size } ?: 0
+        val width = (0 until columns).map { k -> cells.maxOf { it.getOrNull(k)?.first?.length ?: 0 } }
+        val start = out.length
+        for ((r, row) in cells.withIndex()) {
+            if (r > 0) out.append('\n')
+            for (k in 0 until columns) {
+                if (k > 0) out.append(" │ ")
+                val (text, m) = row.getOrNull(k) ?: ("" to emptyList<Mark>())
+                val at = out.length
+                out.append(text)
+                m.forEach { marks += it.copy(start = it.start + at, end = it.end + at) }
+                if (k < columns - 1) out.append(" ".repeat(width[k] - text.length))
+            }
+            if (r == 0 && cells.size > 1) {
+                out.append('\n').append(width.joinToString("─┼─") { "─".repeat(it) })
+            }
+        }
+        marks += Mark(start, out.length, MarkStyle.TABLE)
     }
 
     private fun indent(spaces: String) = "  ".repeat((spaces.replace("\t", "    ").length / 2).coerceAtMost(4))
