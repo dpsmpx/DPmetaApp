@@ -240,7 +240,18 @@ class Orchestrator(
 
     /** Одобрение каждого слияния — запись для инварианта «разрушительное — с одобрением» (ТЗ, §118). */
     val mergeApprovals: Map<TaskId, ApprovalId> get() = mergesState.merged
+
+    /**
+     * Последние [KEPT_PROBLEMS] отказов контура — для самодиагностики экрана.
+     * Каждый сразу уходит в `onProblem` (журнал приложения, D-43), поэтому
+     * старые отбрасываются: при недоступном target отказы шли каждый такт, и
+     * список рос без предела (ревью 8 октября 2026, A-33, A-83).
+     */
     val problems: MutableList<Diagnostic> = object : ArrayList<Diagnostic>() {
+        private fun trim() {
+            if (size > KEPT_PROBLEMS) removeRange(0, size - KEPT_PROBLEMS)
+        }
+
         private fun tell(d: Diagnostic) {
             try {
                 onProblem(d)
@@ -249,9 +260,15 @@ class Orchestrator(
             }
         }
 
-        override fun add(element: Diagnostic): Boolean = super.add(element).also { tell(element) }
+        override fun add(element: Diagnostic): Boolean = super.add(element).also {
+            trim()
+            tell(element)
+        }
 
-        override fun addAll(elements: Collection<Diagnostic>): Boolean = super.addAll(elements).also { elements.forEach(::tell) }
+        override fun addAll(elements: Collection<Diagnostic>): Boolean = super.addAll(elements).also {
+            trim()
+            elements.forEach(::tell)
+        }
     }
 
     /** Запросы человеку (D-44) — из журнала. */
@@ -1762,6 +1779,9 @@ class Orchestrator(
         private const val MAX_HANDOFF_FILES = 200
 
         private val WAIT_STATES = setOf(SessionState.PAUSED, SessionState.BLOCKED, SessionState.RECOVERY_PENDING)
+
+        /** Сколько последних отказов держит [problems]; все — в журнале приложения. */
+        const val KEPT_PROBLEMS = 200
 
         /** Как часто такт сверяет сессии в `RECOVERY_PENDING` с target (A-44). */
         val RECONCILE_EVERY: Duration = 1.minutes

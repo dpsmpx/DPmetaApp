@@ -3,6 +3,8 @@ package com.dpsmpx.dpai.ui
 import com.dpsmpx.dpai.accounts.SlotEnvironment
 import com.dpsmpx.dpai.core.clock.ManualClock
 import com.dpsmpx.dpai.core.clock.RandomSource
+import com.dpsmpx.dpai.core.diagnostics.DiagCode
+import com.dpsmpx.dpai.core.diagnostics.Diagnostic
 import com.dpsmpx.dpai.core.ids.IdGenerator
 import com.dpsmpx.dpai.core.ids.IdKinds
 import com.dpsmpx.dpai.core.state.AccountState
@@ -11,6 +13,7 @@ import com.dpsmpx.dpai.execution.agent.ExitReason
 import com.dpsmpx.dpai.execution.agent.MockAgentHost
 import com.dpsmpx.dpai.execution.claude.MockRunner
 import com.dpsmpx.dpai.execution.claude.MockScenario
+import com.dpsmpx.dpai.orchestrator.Orchestrator
 import com.dpsmpx.dpai.storage.vfs.NioVfs
 import java.nio.file.Path
 import kotlin.test.Test
@@ -83,6 +86,18 @@ class LiveSystemTest {
         // Уведомление о завершении без проверки — оболочке один раз (ТЗ, §36; D-23).
         assertTrue(s.drainNotifications().any { it.title.startsWith("Задача без проверки") && it.request != null })
         assertEquals(emptyList(), s.drainNotifications())
+    }
+
+    @Test
+    fun problemsKeepOnlyTheLatest() {
+        // Отказ каждый такт (target недоступен) не растит список без предела (ревью 8 октября 2026, A-33, A-83).
+        val s = system(entry("сервер", "/home/dev/.claude-dpai"))
+        val kept = Orchestrator.KEPT_PROBLEMS
+        repeat(kept + 50) { s.orchestrator.problems += Diagnostic.warning(DiagCode.INTERNAL_ERROR, "отказ $it") }
+        s.orchestrator.problems.addAll(listOf(Diagnostic.warning(DiagCode.INTERNAL_ERROR, "последний")))
+        assertEquals(kept, s.orchestrator.problems.size)
+        assertEquals("последний", s.orchestrator.problems.last().message)
+        assertEquals("отказ 51", s.orchestrator.problems.first().message)
     }
 
     @Test

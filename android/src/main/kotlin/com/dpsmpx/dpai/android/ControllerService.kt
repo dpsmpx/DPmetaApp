@@ -91,6 +91,13 @@ class ControllerService : Service() {
             var lastSummary = Clock.SYSTEM.monotonicNanos() - TimeUnit.MINUTES.toNanos(1)
             timer = Executors.newSingleThreadScheduledExecutor().also { t ->
                 t.scheduleWithFixedDelay({
+                    // Targets с каталогом Claude не осталось — контроллеру нечего опрашивать: служба уходит,
+                    // а не шагает демо в фоне (ревью 8 октября 2026, A-28). Экран поднимет её, когда target появится.
+                    if (!model.hasLive()) {
+                        log.step("служба контроллера: нет targets с каталогом Claude")
+                        stopSelf()
+                        return@scheduleWithFixedDelay
+                    }
                     lock.acquire(TimeUnit.MINUTES.toMillis(WAKE_MINUTES))
                     meter.begin()
                     // Сбой такта — в журнал приложения, а не молча (D-43): контур идёт дальше.
@@ -144,7 +151,10 @@ class ControllerService : Service() {
         runCatching { AppLogs.get(applicationContext).step("служба контроллера остановлена") }
         ControlServer.stop()
         running = false
-        timer?.shutdownNow()
+        // Без прерывания: идущий такт доходит до конца (ревью 8 октября 2026, A-26) — прерванный посреди
+        // вызова агента оставлял сессию без итога, занятые аренду и место target и открытую сессию SSH.
+        // Следующие такты отменены; после снятия wakelock идущий такт доделает работу, когда процессор проснётся.
+        timer?.shutdown()
         timer = null
         wake?.takeIf { it.isHeld }?.release()
         wake = null

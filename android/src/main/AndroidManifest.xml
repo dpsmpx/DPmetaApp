@@ -21,14 +21,18 @@
     </queries>
 
     <application
+        android:name=".DpaiApplication"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.NoActionBar">
+        <!-- Поворот, тема, размер окна — без пересоздания: экраны на Compose перерисовываются сами, а диалоги
+             и введённое (в том числе полученный ключ хоста) не теряются (ревью 8 октября 2026, A-39). -->
         <activity
             android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density|fontScale|locale|layoutDirection"
             android:exported="true"
             android:launchMode="singleTop">
             <intent-filter>

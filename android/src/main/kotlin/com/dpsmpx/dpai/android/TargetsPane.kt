@@ -24,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
@@ -58,6 +59,7 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
     var project by remember { mutableStateOf(controller.project()) }
     var projectFor by remember { mutableStateOf<TargetEntry?>(null) }
     var guide by remember { mutableStateOf(false) }
+    var removing by remember { mutableStateOf<TargetEntry?>(null) }
     if (guide) {
         SetupPane(controller, model) {
             guide = false
@@ -141,15 +143,20 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
                         }
                         // Проект — у любого target: ход Claude может идти на другом, со своим входом (D-50).
                         TextButton(onClick = { projectFor = t }) { Text("Проект") }
-                        TextButton(onClick = {
-                            scope.launch {
-                                withContext(Dispatchers.IO) { controller.remove(t) }
-                                targets = controller.targets()
-                            }
-                        }) { Text("Удалить") }
+                        TextButton(onClick = { removing = t }) { Text("Удалить") }
                     }
                     checks[t.id.value]?.forEach { c -> CheckRow(c) }
                 }
+            }
+        }
+    }
+
+    removing?.let { t ->
+        RemoveDialog(t, model, onCancel = { removing = null }) {
+            removing = null
+            scope.launch {
+                withContext(Dispatchers.IO) { controller.remove(t) }
+                targets = controller.targets()
             }
         }
     }
@@ -530,3 +537,30 @@ private fun CliCard() {
     }
 }
 
+/**
+ * Удаление target — с подтверждением (ревью 8 октября 2026, A-32). Пока на
+ * нём идут сессии, удалить нельзя: ход Claude на target удаление не
+ * останавливает, а сессии и задачи без target зависли бы навсегда.
+ * Сначала — выключить приём задач и дождаться конца сессий.
+ */
+@Composable
+private fun RemoveDialog(t: TargetEntry, model: DemoModel, onCancel: () -> Unit, onRemove: () -> Unit) {
+    val active by produceState<Int?>(null, t.id) { value = withContext(Dispatchers.IO) { model.activeSessionsOn(t.id) } ?: 0 }
+    val busy = (active ?: 0) > 0
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text("Удалить target «${t.label}»?") },
+        text = {
+            Text(
+                when {
+                    active == null -> "Проверка сессий на target…"
+                    busy -> "На target идут сессии: $active. Удаление их не остановит — ход Claude продолжится без контроля, " +
+                        "а задачи зависнут. Сначала выключите «Принимает новые задачи» и дождитесь конца сессий."
+                    else -> "Target уйдёт из списка; ключ хоста останется в known_hosts. Задачи на нём больше не запустятся."
+                },
+            )
+        },
+        confirmButton = { TextButton(onClick = onRemove, enabled = active != null && !busy) { Text("Удалить") } },
+        dismissButton = { TextButton(onClick = onCancel) { Text("Отмена") } },
+    )
+}

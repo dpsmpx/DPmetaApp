@@ -62,8 +62,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (savedInstanceState == null) take(intent)
-        CrashRecord.install(filesDir)
-        CrashRecord.onFatal = { text -> AppLogs.get(this).fatal("падение", com.dpsmpx.dpai.core.diagnostics.Redactor.STANDARD.redact(text)) }
         enableEdgeToEdge()
         // Android 13+: без разрешения уведомления не показываются; отказ — не ошибка, сводка видна в приложении.
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {

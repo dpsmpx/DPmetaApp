@@ -94,8 +94,11 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
     val context = androidx.compose.ui.platform.LocalContext.current
     val notifier = remember { Notifier(context.applicationContext) }
     // Ключ — и выбранная сессия: её экран грузится сразу, а не через такт (раньше — до 3 с крутилки).
-    LaunchedEffect(model, selectedId) {
-        while (true) {
+    // Только пока окно видно: свёрнутое приложение не шагает демо и не копит снимки (ревью 8 октября 2026, A-31);
+    // контроллер в это время шагает в службе.
+    val visible = rememberVisible()
+    LaunchedEffect(model, selectedId, visible) {
+        while (visible) {
             val s = selected
             // Контроллер шагает в службе (D-36): экран только рисует; демо шагает здесь.
             val background = withContext(Dispatchers.IO) { model.hasLive() }
@@ -221,10 +224,13 @@ private fun toneColor(t: Tone): Color {
     }
 }
 
+/**
+ * Видно ли окно (активность между ON_START и ON_STOP). Цикл Compose сам не
+ * останавливается, когда приложение свёрнуто или экран гаснет (Redmi Note 13:
+ * пробы `/usage` шли при выключенном экране), — циклы экрана привязаны к этому признаку.
+ */
 @Composable
-private fun DashboardPane(screen: DashboardScreen, model: DemoModel, onSession: (SessionId) -> Unit) {
-    // Загрузка окон — из `/usage` раз в минуту, пока сводка видна (D-48). Цикл Compose сам не останавливается,
-    // когда экран гаснет (Redmi Note 13: пробы шли при выключенном экране), — привязан к ON_START/ON_STOP активности.
+private fun rememberVisible(): Boolean {
     val lifecycle = (androidx.activity.compose.LocalActivity.current as? androidx.activity.ComponentActivity)?.lifecycle
     var visible by remember { mutableStateOf(lifecycle?.currentState?.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED) ?: true) }
     androidx.compose.runtime.DisposableEffect(lifecycle) {
@@ -235,7 +241,13 @@ private fun DashboardPane(screen: DashboardScreen, model: DemoModel, onSession: 
         lifecycle?.addObserver(observer)
         onDispose { lifecycle?.removeObserver(observer) }
     }
-    if (screen.limits.isNotEmpty() && visible) {
+    return visible
+}
+
+@Composable
+private fun DashboardPane(screen: DashboardScreen, model: DemoModel, onSession: (SessionId) -> Unit) {
+    // Загрузка окон — из `/usage` раз в минуту, пока сводка видна (D-48).
+    if (screen.limits.isNotEmpty() && rememberVisible()) {
         LaunchedEffect(Unit) {
             while (true) {
                 withContext(Dispatchers.IO) { model.refreshUsage() }

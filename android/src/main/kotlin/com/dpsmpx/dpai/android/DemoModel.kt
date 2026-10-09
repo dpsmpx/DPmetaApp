@@ -185,6 +185,15 @@ class DemoModel(
         Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.INTERNAL_ERROR, "контроллер не принял команду", e)))
     }
 
+    /**
+     * Незавершённые сессии на target — перед его удалением (ревью 8 октября
+     * 2026, A-32). Без замка модели: такт держит его минутами, а экран
+     * читает уже построенный контроллер; `null` — контроллер ещё не построен.
+     */
+    fun activeSessionsOn(target: ExecutionTargetId): Int? =
+        (built as? LiveSystem)?.orchestrator?.sessions?.sessions?.values
+            ?.count { it.target == target && it.state !in com.dpsmpx.dpai.core.state.SessionLifecycle.table.terminal }
+
     /** Контроллер для канала `dpai` (D-47): только настоящий, не демо. */
     fun liveOrchestrator(): com.dpsmpx.dpai.orchestrator.Orchestrator? =
         (built as? LiveSystem)?.orchestrator ?: if (hasLive()) runCatching { lock.withLock { (current() as? LiveSystem)?.orchestrator } }.getOrNull() else null
