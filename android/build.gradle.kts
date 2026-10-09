@@ -56,6 +56,24 @@ android {
     }
 }
 
+// Агент для Termux-target — вложение APK (инструкция «Настройка» сохраняет его в «Загрузки»):
+// свежий `dpai` из :cli и обёртка Claude Code для proot — версия агента всегда та же, что у приложения.
+val packAgent by tasks.registering(Zip::class) {
+    dependsOn(":cli:installDist")
+    from(rootProject.file("cli/build/install/dpai")) { into("dpai") }
+    from(rootProject.file("tools/termux/claude-proot.sh")) { into("dpai") }
+    archiveFileName.set("dpai-agent.zip")
+    destinationDirectory.set(layout.buildDirectory.dir("generated/dpai-setup-assets"))
+    isPreserveFileTimestamps = false
+    isReproducibleFileOrder = true
+}
+// addGeneratedSourceDirectory у ресурсов assets задачу в граф не включал (AGP, 9 октября 2026) — каталог и
+// зависимость слияния ресурсов заданы явно.
+androidComponents {
+    onVariants { v -> v.sources.assets?.addStaticSourceDirectory(layout.buildDirectory.dir("generated/dpai-setup-assets").get().asFile.path) }
+}
+tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.configureEach { dependsOn(packAgent) }
+
 kotlin {
     jvmToolchain(21)
     compilerOptions {

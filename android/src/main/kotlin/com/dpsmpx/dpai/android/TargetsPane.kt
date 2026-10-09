@@ -54,8 +54,28 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
     var form by remember { mutableStateOf(false) }
     var project by remember { mutableStateOf(controller.project()) }
     var projectFor by remember { mutableStateOf<TargetEntry?>(null) }
+    var guide by remember { mutableStateOf(false) }
+    if (guide) {
+        SetupPane(controller, model) {
+            guide = false
+            targets = controller.targets()
+            project = controller.project()
+        }
+        return
+    }
 
     LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        item(key = "guide") {
+            Card(Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        if (targets.isEmpty()) "Ещё не настроено: Termux, агент, вход в Claude — по шагам" else "Termux, агент, ключ, вход, проект, dpai — по шагам",
+                        Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
+                    )
+                    Button(onClick = { guide = true }) { Text("Инструкция") }
+                }
+            }
+        }
         if (targets.any(TermuxLauncher::local)) item(key = "termux") { TermuxCard(targets.first(TermuxLauncher::local).port) }
         item {
             Card(Modifier.fillMaxWidth()) {

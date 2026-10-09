@@ -70,6 +70,9 @@ class Pairing(private val vfs: Vfs, private val random: RandomSource, private va
         t
     }
 
+    /** Сопряжён ли `dpai` (токен выдаётся только сопряжением) — для отметки в инструкции «Настройка». */
+    fun paired(): Boolean = vfs.read(TOKEN) != null
+
     /** Отозвать: новый токен при следующем сопряжении, старые `dpai` — отказ. */
     @Synchronized
     fun revoke() {
