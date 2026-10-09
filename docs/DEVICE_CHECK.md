@@ -547,6 +547,12 @@ termux-wake-lock
 
 В уведомлении Termux появится отметка о wake lock.
 
+Приложение может запускать `sshd` само (D-46): в `~/.termux/termux.properties`
+строка `allow-external-apps = true`, на вкладке Targets у локального
+target — «Разрешить» (запуск команд в среде Termux). Проверка: `pkill sshd`
+в Termux, через минуту на карточке «sshd на порту 8022: слушает», в
+журнале приложения — строка `[termux] … sshd запущен в Termux`.
+
 ### 5.6. Ключ приложения в `authorized_keys`
 
 1. В приложении: «Targets» → карточка «Ключ приложения» → «Показать

@@ -85,7 +85,8 @@ class ControllerService : Service() {
             log.step("служба контроллера запущена")
             val meter = TickMeter(Clock.SYSTEM)
             val device = AppLogs.device(app) { wake?.isHeld }
-            var lastSummary = Clock.SYSTEM.monotonicNanos()
+            // Первая сводка и проверка sshd — в первом такте (поток службы: сеть в главном потоке запрещена).
+            var lastSummary = Clock.SYSTEM.monotonicNanos() - TimeUnit.MINUTES.toNanos(1)
             timer = Executors.newSingleThreadScheduledExecutor().also { t ->
                 t.scheduleWithFixedDelay({
                     lock.acquire(TimeUnit.MINUTES.toMillis(WAKE_MINUTES))
@@ -109,6 +110,12 @@ class ControllerService : Service() {
                     if (now - lastSummary >= TimeUnit.MINUTES.toNanos(1)) {
                         lastSummary = now
                         summary(log, meter, model, device)
+                        // Termux-target на этом телефоне: sshd не слушает — запустить его в Termux (D-46).
+                        try {
+                            TermuxLauncher.ensureSshd(app, Controller.get(app.filesDir, null).targets())?.let { log.info("termux", it) }
+                        } catch (e: Exception) {
+                            log.warn("termux", AppLogs.describe(e))
+                        }
                     }
                 }, 0, STEP_SECONDS, TimeUnit.SECONDS)
             }

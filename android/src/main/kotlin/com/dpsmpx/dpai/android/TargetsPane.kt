@@ -55,6 +55,7 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
     var projectFor by remember { mutableStateOf<TargetEntry?>(null) }
 
     LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (targets.any(TermuxLauncher::local)) item(key = "termux") { TermuxCard(targets.first(TermuxLauncher::local).port) }
         item {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
@@ -271,3 +272,57 @@ private fun ProjectDialog(controller: Controller, target: TargetEntry, onDone: (
     )
 }
 
+/**
+ * Termux на этом телефоне (D-46): разрешение «Запуск команд в среде
+ * Termux», слушает ли `sshd`, запуск `sshd` кнопкой. Служба контроллера
+ * запускает его и сама, если порт закрыт.
+ */
+@Composable
+private fun TermuxCard(port: Int) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = rememberCoroutineScope()
+    var permitted by remember { mutableStateOf(TermuxLauncher.permitted(context)) }
+    var listening by remember { mutableStateOf<Boolean?>(null) }
+    var note by remember { mutableStateOf<String?>(null) }
+    val ask = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { permitted = it }
+    LaunchedEffect(port) {
+        while (true) {
+            listening = withContext(Dispatchers.IO) { TermuxLauncher.listening(port) }
+            permitted = TermuxLauncher.permitted(context)
+            kotlinx.coroutines.delay(3000)
+        }
+    }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp)) {
+            Text("Termux на этом телефоне", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "sshd на порту $port: " + when (listening) {
+                    true -> "слушает"
+                    false -> "не слушает"
+                    null -> "проверяю…"
+                },
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if (!TermuxLauncher.installed(context)) {
+                Text("Termux не найден", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            } else if (!permitted) {
+                Text(
+                    "Чтобы приложение само запускало sshd, разрешите «Запуск команд в среде Termux» и добавьте в Termux строку allow-external-apps = true в ~/.termux/termux.properties.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                TextButton(onClick = { ask.launch(TermuxLauncher.PERMISSION) }) { Text("Разрешить") }
+            } else {
+                Text("Разрешение есть: контроллер сам запустит sshd, если порт закрыт (не чаще раза в 5 минут).", style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = {
+                    scope.launch {
+                        note = when (val r = withContext(Dispatchers.IO) { TermuxLauncher.startSshd(context) }) {
+                            is com.dpsmpx.dpai.core.result.Outcome.Success -> "Команда отправлена в Termux"
+                            is com.dpsmpx.dpai.core.result.Outcome.Failure -> "Не отправлена: ${r.diagnostics.first().message}"
+                        }
+                    }
+                }) { Text("Запустить sshd сейчас") }
+            }
+            note?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
+        }
+    }
+}

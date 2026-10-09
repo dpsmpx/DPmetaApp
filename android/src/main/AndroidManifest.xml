@@ -12,6 +12,13 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <!-- Окно запроса поверх приложений (D-44): только если человек включил его и дал разрешение в настройках. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- Запуск sshd Termux-target на этом телефоне (D-46): только эта команда; разрешение даёт человек. -->
+    <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
+
+    <!-- Android 11+: видеть Termux, чтобы послать ему RUN_COMMAND (D-46). -->
+    <queries>
+        <package android:name="com.termux" />
+    </queries>
 
     <application
         android:allowBackup="false"
