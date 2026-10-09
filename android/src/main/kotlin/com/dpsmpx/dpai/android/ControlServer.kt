@@ -81,7 +81,9 @@ object ControlServer {
             }
         }
         val s = try {
-            ServerSocket(PORT, 8, InetAddress.getLoopbackAddress())
+            // Явно IPv4 127.0.0.1: на Android getLoopbackAddress() — это ::1, а dpai стучится на 127.0.0.1
+            // (проверка на Redmi Note 13: канал открыт на [::1]:47777, dpai — ConnectException).
+            ServerSocket(PORT, 8, InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1)))
         } catch (e: Exception) {
             problem = AppLogs.describe(e)
             log.warn("dpai", "канал не открыт на 127.0.0.1:$PORT: $problem")
