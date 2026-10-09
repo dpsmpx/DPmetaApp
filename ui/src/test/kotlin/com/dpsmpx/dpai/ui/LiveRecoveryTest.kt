@@ -218,4 +218,63 @@ class LiveRecoveryTest {
         assertTrue(s.orchestrator.accounts.slots.values.none { session in it.sessions }, "аренда вернулась")
         assertTrue(s.orchestrator.tasks.tasks.getValue(task).state != TaskState.RUNNING, "задача не висит в работе без хода")
     }
+
+    /** A-45: ход упёрся во вход — задача BLOCKED; после «Вход Claude» задача продолжается сама, запрос снят. */
+    @Test
+    fun loginRestoredResumesTaskBlockedOnAuth() {
+        scenario = MockScenario.AUTH_ERROR
+        val s = system()
+        steps(s, 1)
+        val task = s.addTask("задача", "цель").valueOrNull()!!
+        steps(s, 3)
+        val blocked = s.orchestrator.sessions.sessions.values.single()
+        assertEquals(SessionState.BLOCKED, blocked.state)
+        assertEquals(TaskState.BLOCKED, s.orchestrator.tasks.tasks.getValue(task).state)
+        steps(s, 3)
+        assertEquals(TaskState.BLOCKED, s.orchestrator.tasks.tasks.getValue(task).state, "без входа — ждёт")
+        scenario = MockScenario.SUCCESS
+        s.probeSlot(target.id)
+        done(s, task)
+        assertEquals(SessionState.CANCELLED, s.orchestrator.sessions.sessions.getValue(blocked.id).state)
+        assertTrue(s.orchestrator.pendingRequests().none { it.purpose == "task.blocked" }, "запрос о блоке снят")
+    }
+
+    /** A-47: запуск не удаётся до хода (Git не создаёт дерево) — не каждый такт без конца: попытка, затем запрос человеку. */
+    @Test
+    fun launchFailureIsAnAttemptNotASpin() {
+        val local = com.dpsmpx.dpai.execution.process.LocalProcessHost()
+        val gitAndAgent = object : ProcessHost {
+            override fun start(spec: ProcessSpec, onOutput: (OutputLine) -> Unit) =
+                if (spec.command.first() == "git") local.start(spec, onOutput) else host.start(spec, onOutput)
+        }
+        // Каталог есть, а репозитория в нём нет: `git worktree add` отказывает каждый раз.
+        val root = dir.resolve("not-a-repo").toFile().apply { mkdirs() }.path.replace('\\', '/')
+        val project = ProjectForm.validate(ids, target, root, dir.resolve("trees").toString().replace('\\', '/'), "main", "").valueOrNull()!!
+        val s = LiveSystem(clock, NioVfs(dir.resolve("ctl").also { it.toFile().mkdirs() }), listOf(target), { _, _ -> gitAndAgent }, "/known_hosts", RandomSource.seeded(83), project = project)
+        steps(s, 1)
+        val task = s.addTask("задача", "цель").valueOrNull()!!
+        steps(s, 8)
+        val record = s.orchestrator.tasks.tasks.getValue(task)
+        assertEquals(TaskState.BLOCKED, record.state, s.orchestrator.problems.toString())
+        assertEquals(DiagCode.WORKTREE_MISSING, record.lastReason)
+        assertEquals(1, s.orchestrator.sessions.sessions.size, "запуск не повторяется каждый такт")
+        assertTrue(s.orchestrator.pendingRequests().any { it.purpose == "task.blocked" }, "человек спрошен")
+    }
+
+    /** A-50: target спит до начала хода — задача ждёт его, а не копит неудачные попытки до BLOCKED «петлёй». */
+    @Test
+    fun targetAsleepBeforeTurnIsWaitedNotCountedAsAttempt() {
+        val s = system()
+        steps(s, 1)
+        val task = s.addTask("задача", "цель").valueOrNull()!!
+        host.reachable = false
+        repeat(60) { steps(s, 1) } // 10 минут «сна»
+        val record = s.orchestrator.tasks.tasks.getValue(task)
+        assertEquals(TaskState.READY, record.state, "${record.lastReason}")
+        assertEquals(0, record.retries, "сон target — не неудачная попытка")
+        assertTrue(s.orchestrator.pendingRequests().none { it.purpose == "task.blocked" })
+        host.reachable = true
+        clock.advance(Orchestrator.TARGET_RETRY)
+        done(s, task)
+    }
 }

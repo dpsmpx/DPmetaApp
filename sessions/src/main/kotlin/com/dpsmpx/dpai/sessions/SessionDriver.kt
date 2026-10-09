@@ -228,10 +228,19 @@ class SessionDriver(private val sessions: Sessions, private val runner: ClaudeRu
         return when {
             t.status == TurnStatus.COMPLETED -> Triple(SessionState.COMPLETED, null, AccountFact.Success(id))
             DiagCode.CLAUDE_AUTH_REQUIRED in codes -> Triple(SessionState.BLOCKED, DiagCode.CLAUDE_AUTH_REQUIRED, AccountFact.AuthFailure(id))
-            DiagCode.CLAUDE_RATE_LIMITED in codes -> Triple(SessionState.PAUSED, DiagCode.CLAUDE_RATE_LIMITED, null)
+            // Ход упёрся в предел — это и есть факт предела, даже без `rate_limit_event` с отказом (A-49):
+            // иначе слот свободен, и задача тут же перезапускается в тот же предел.
+            DiagCode.CLAUDE_RATE_LIMITED in codes -> Triple(SessionState.PAUSED, DiagCode.CLAUDE_RATE_LIMITED, reachedLimit(id, t))
             t.status == TurnStatus.INCOMPLETE -> Triple(SessionState.PAUSED, codes.firstOrNull(), null)
             else -> Triple(SessionState.FAILED, codes.firstOrNull() ?: DiagCode.SESSION_FAILED, codes.firstOrNull()?.let { AccountFact.Error(id, it) })
         }
+    }
+
+    /** Предел, в который упёрся ход: окно — из последнего `rate_limit_event`, неизвестно — окно пяти часов; сброс — если известен. */
+    private fun reachedLimit(id: SessionId, t: ClaudeTurn): AccountFact.Limit {
+        val window = if (t.rateLimit?.type == "seven_day") LimitWindow.WEEKLY else LimitWindow.SESSION
+        val name = if (window == LimitWindow.WEEKLY) "seven_day" else "five_hour"
+        return AccountFact.Limit(id, window, LimitLevel.REACHED, t.rateLimit?.windows?.get(name)?.resetsAt ?: t.rateLimit?.resetsAt)
     }
 
     /** Окна `rate_limit_event` → факты пределов подписки (`docs/research/CLAUDE_CODE_CLI.md`, §8). */

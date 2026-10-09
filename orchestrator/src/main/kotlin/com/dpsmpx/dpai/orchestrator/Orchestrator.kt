@@ -495,6 +495,7 @@ class Orchestrator(
     fun tick() {
         runCommands()
         commitTasks(tasksLogic.promote(tasks, clock.now()))
+        resumeAfterLogin()
         // Ждущие сверки сессии держат аренду и место target: сверить снова, когда target ответит (A-44, A-76).
         agentFor?.let { a ->
             val due = clock.now().epochMillis - lastReconcileAt >= RECONCILE_EVERY.inWholeMilliseconds
@@ -688,17 +689,45 @@ class Orchestrator(
     private fun contextFailed(task: TaskId, session: SessionId, failure: Outcome.Failure) {
         problems += Diagnostic.of(DiagCode.INTERNAL_ERROR, "контекст задачи $task не собран", causes = failure.errors)
         if (failure.errors.none { it.code == DiagCode.CONTEXT_BUDGET_EXCEEDED }) return failLaunch(task, session, DiagCode.VALUE_INVALID)
-        failLaunch(task, session, DiagCode.CONTEXT_BUDGET_EXCEEDED)
+        failLaunch(task, session, DiagCode.CONTEXT_BUDGET_EXCEEDED, countAttempt = false)
         commitTasks(tasksLogic.move(tasks, task, TaskState.BLOCKED, clock.now(), DiagCode.CONTEXT_BUDGET_EXCEEDED).valueOrNull().orEmpty())
         askBlocked(task, null, "правила или требования задачи не влезают в бюджет контекста")
     }
 
-    private fun failLaunch(task: TaskId, session: SessionId, code: DiagCode) {
+    /**
+     * Запуск не удался до хода. [countAttempt] — это неудачная попытка
+     * задачи (A-47): повтор — с паузой по классу причины, та же причина
+     * снова — петля и запрос человеку; иначе такт повторял бы запуск без
+     * паузы, а сбои копились бы без предела.
+     */
+    private fun failLaunch(task: TaskId, session: SessionId, code: DiagCode, countAttempt: Boolean = true) {
         commitSessions(sessionsLogic.transition(sessions, session, SessionState.CANCELLED, clock.now(), code).valueOrNull().orEmpty())
         releaseLease(session)
         // Дерево могло быть уже захвачено этой сессией: завершённая сессия его не держит (инвариант worktree-owner).
         releaseTree(task, session)
         problems += Diagnostic.error(code, "запуск задачи $task не удался", "task $task")
+        if (!countAttempt || tasks.tasks[task]?.state != TaskState.READY) return
+        commitTasks(tasksLogic.start(tasks, task, clock.now()).valueOrNull().orEmpty())
+        commitTasks(ok(tasksLogic.attemptFailed(tasks, task, code, code.retry, "${task.value}:launch:${code.name}", clock.now()), "повтор задачи").orEmpty())
+        when (tasks.tasks[task]?.state) {
+            TaskState.BLOCKED -> askBlocked(task, null, "запуск не удался: ${tasks.tasks[task]?.lastReason ?: code}")
+            TaskState.FAILED -> progress(task, NotificationCategory.FAILURE, "Задача не выполнена", "попытки кончились: $code")
+            else -> Unit
+        }
+    }
+
+    /**
+     * Вход слота восстановлен (A-45): задача, остановленная из‑за входа,
+     * продолжается сама — как ответ «Повторить»: сессия передаёт handoff,
+     * аренда, место target и дерево свободны, запрос снимается.
+     */
+    private fun resumeAfterLogin() {
+        for (s in sessions.sessions.values.filter { it.state == SessionState.BLOCKED && it.lastReason == DiagCode.CLAUDE_AUTH_REQUIRED }.sortedBy { it.id.value }) {
+            if (accounts.slots[s.slot]?.state.let { it == null || it == com.dpsmpx.dpai.core.state.AccountState.AUTH_REQUIRED }) continue
+            if (tasks.tasks[s.task]?.state != TaskState.BLOCKED) continue
+            resolveBlocked(s.task, RETRY, null)
+            progress(s.task, NotificationCategory.PROGRESS, "Задача продолжается", "вход в Claude восстановлен")
+        }
     }
 
     private fun releaseLease(session: SessionId) = commitAccounts(accountsLogic.release(accounts, session, clock.now()).valueOrNull().orEmpty())
@@ -766,7 +795,15 @@ class Orchestrator(
             SessionState.PAUSED -> handOff(task, session)
             SessionState.FAILED -> {
                 releaseTree(task, session)
-                val code = sessions.sessions.getValue(session).lastReason ?: DiagCode.SESSION_FAILED
+                val record = sessions.sessions.getValue(session)
+                val code = record.lastReason ?: DiagCode.SESSION_FAILED
+                if (record.turn == 0 && code.category == com.dpsmpx.dpai.core.diagnostics.Category.NETWORK && code.retry == com.dpsmpx.dpai.core.diagnostics.Retryability.RETRYABLE) {
+                    // Target недоступен до начала хода (сон ПК, нет сети) — не неудачная попытка задачи, а
+                    // ожидание target (A-50): иначе за три отказа задача — BLOCKED «петлёй».
+                    commitTasks(tasksLogic.move(tasks, task, TaskState.READY, clock.now(), code, notBefore = clock.now() + TARGET_RETRY).valueOrNull().orEmpty())
+                    waiting(task, "target недоступен (${code.name}): повтор через $TARGET_RETRY")
+                    return
+                }
                 commitTasks(ok(tasksLogic.attemptFailed(tasks, task, code, code.retry, "${task.value}:${code.name}", clock.now()), "повтор задачи").orEmpty())
                 when (tasks.tasks[task]?.state) {
                     TaskState.BLOCKED -> askBlocked(task, session, "попытка не удалась: ${tasks.tasks[task]?.lastReason ?: code}")
@@ -802,7 +839,17 @@ class Orchestrator(
         if (report.verdict != com.dpsmpx.dpai.verification.Verdict.PASSED) problems += report.diagnostics.filter { it.isError || it.code == DiagCode.VERIFICATION_STEP_UNAVAILABLE }
         when (tasks.tasks.getValue(task).state) {
             TaskState.VERIFIED -> {
-                if (tree != null && git != null) commitWork(task, session, path)
+                val failed = if (tree != null && git != null) commitWork(task, session, path) else null
+                if (failed != null) {
+                    // Работа проверена, но не закоммичена (A-52): не DONE и не слияние ветки без неё — решает человек,
+                    // работа остаётся в дереве задачи.
+                    for (to in listOf(TaskState.READY, TaskState.BLOCKED)) {
+                        commitTasks(tasksLogic.move(tasks, task, to, clock.now(), DiagCode.GIT_COMMAND_FAILED).valueOrNull().orEmpty())
+                    }
+                    releaseTree(task, session)
+                    askBlocked(task, session, "$failed: работа проверена, но не закоммичена — она в дереве задачи")
+                    return
+                }
                 commitTasks(ok(tasksLogic.complete(tasks, task, clock.now()), "завершение задачи").orEmpty())
                 releaseTree(task, session)
                 progress(task, NotificationCategory.SUCCESS, "Задача выполнена", "проверка прошла")
@@ -894,9 +941,10 @@ class Orchestrator(
         return (st.changed + st.untracked).distinct().sorted().take(MAX_HANDOFF_FILES)
     }
 
-    private fun commitWork(task: TaskId, session: SessionId, path: String) {
-        val g = git ?: return
-        val status = g.status(path).valueOrNull() ?: return
+    /** Коммит работы задачи; отказ — его причина (A-52: раньше молча), `null` — закоммичено или нечего. */
+    private fun commitWork(task: TaskId, session: SessionId, path: String): String? {
+        val g = git ?: return null
+        val status = ok(g.status(path), "git status") ?: return "git status не удался"
         val all = (status.changed + status.untracked).distinct().sorted()
         // Кеши и артефакты (их создаёт и сама проверка: `python -m unittest` — `__pycache__`) — не работа хода:
         // не коммитятся, и это видно, а не молча (D-05; проверка на Redmi Note 13, 9 октября 2026).
@@ -906,10 +954,11 @@ class Orchestrator(
                 DiagCode.VALUE_INVALID, "не закоммичены артефакты: ${skipped.take(5).joinToString()}${if (skipped.size > 5) " и ещё ${skipped.size - 5}" else ""}", "task $task",
             )
         }
-        if (files.isEmpty()) return
+        if (files.isEmpty()) return null
         val tree = treeOf.getValue(task)
-        ok(g.write(worktrees, tree, session, GitOp.ADD, files), "git add")
+        ok(g.write(worktrees, tree, session, GitOp.ADD, files), "git add") ?: return "git add не удался"
         gitOk = ok(g.write(worktrees, tree, session, GitOp.COMMIT, listOf("dpai: ${tasks.tasks.getValue(task).title}")), "git commit") != null
+        return if (gitOk == true) null else "git commit не удался"
     }
 
     private fun requestMerge(task: TaskId, branch: String) {
@@ -1716,6 +1765,9 @@ class Orchestrator(
 
         /** Как часто такт сверяет сессии в `RECOVERY_PENDING` с target (A-44). */
         val RECONCILE_EVERY: Duration = 1.minutes
+
+        /** Пауза перед новым запуском, когда target недоступен до начала хода (A-50). */
+        val TARGET_RETRY: Duration = 1.minutes
 
         /** Варианты ответов на запросы оркестратора (D-44). */
         const val RETRY = "retry"

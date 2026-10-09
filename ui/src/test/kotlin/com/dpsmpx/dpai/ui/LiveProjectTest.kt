@@ -102,4 +102,57 @@ class LiveProjectTest {
         assertEquals(listOf(task), s.orchestrator.merged)
         assertTrue(s.orchestrator.posted.none { it is NotificationDecision.Held })
     }
+
+    /**
+     * A-52: работа проверена, а коммит не удался (индекс дерева занят) —
+     * задача не DONE и ветка без работы не предлагается к слиянию: задача
+     * BLOCKED, человек спрошен, работа — в дереве задачи.
+     */
+    @Test
+    fun failedCommitBlocksInsteadOfDoneWithoutWork() {
+        val root = dir.resolve("repo").toFile().apply { mkdirs() }.path.replace('\\', '/')
+        git("init", "-q", "-b", "main", root)
+        git("-C", root, "config", "user.email", "dpai-test@example.org")
+        git("-C", root, "config", "user.name", "dpai test")
+        File(root, "README.md").writeText("проект\n")
+        git("-C", root, "add", "README.md")
+        git("-C", root, "commit", "-q", "-m", "начало")
+        agent.onStart = { run, spec, _ ->
+            when {
+                spec.command.take(3) == listOf("claude", "auth", "status") -> {
+                    agent.output(run, """{"loggedIn":true,"authMethod":"claude.ai","apiProvider":"firstParty"}""")
+                    agent.exit(run, 0)
+                }
+                spec.command.first() == "claude" -> {
+                    File(spec.workDir!!, "feature.txt").writeText("новая возможность\n")
+                    // Индекс дерева занят чужим процессом: `git add` откажет.
+                    val gitdir = File(spec.workDir!!, ".git").readText().substringAfter("gitdir:").trim()
+                    File(gitdir, "index.lock").writeText("")
+                    val c = spec.command
+                    MockRunner.script(MockScenario.SUCCESS, c[c.indexOfFirst { it == "--session-id" || it == "--resume" } + 1]).forEach { agent.output(run, it) }
+                    agent.exit(run, 0, ExitReason.EXITED)
+                }
+                else -> {
+                    agent.output(run, "ok")
+                    agent.exit(run, 0)
+                }
+            }
+        }
+        val target = TargetForm.validate(ids.next(IdKinds.TARGET), "сервер", "build.lan", "22", "dev", false, "/opt/dpai/bin/dpai", "/home/dev/.claude-dpai").valueOrNull()!!
+        val project = ProjectEntry(ids.next(IdKinds.PROJECT), ids.next(IdKinds.REPOSITORY), target.id, root, dir.resolve("trees").toString().replace('\\', '/'), "main", listOf(com.dpsmpx.dpai.verification.VerifyStep("тесты", listOf("make", "test"))))
+        val s = LiveSystem(clock, NioVfs(dir.resolve("ctl").also { it.toFile().mkdirs() }), listOf(target), { _, _ -> targetHost }, "/known_hosts", RandomSource.seeded(95), project = project)
+        val task = s.addTask("фича", "добавить возможность").valueOrNull()!!
+        repeat(6) {
+            s.step()
+            assertEquals(emptyList(), s.orchestrator.invariants())
+            clock.advance(10.seconds)
+        }
+        val record = s.orchestrator.tasks.tasks.getValue(task)
+        assertEquals(TaskState.BLOCKED, record.state)
+        assertEquals(com.dpsmpx.dpai.core.diagnostics.DiagCode.GIT_COMMAND_FAILED, record.lastReason)
+        assertTrue(s.orchestrator.pendingRequests().none { it.purpose == "task.merge" }, "ветка без работы к слиянию не предложена")
+        assertTrue(s.orchestrator.pendingRequests().any { it.purpose == "task.blocked" })
+        val tree = s.orchestrator.worktrees.worktrees.values.single()
+        assertTrue(File(tree.path, "feature.txt").exists(), "работа — в дереве задачи")
+    }
 }

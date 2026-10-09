@@ -219,6 +219,33 @@ class SessionsTest {
         assertTrue(sub.limitedAt(clock.now()), "предел, замеченный сессией, — у подписки (D-30)")
     }
 
+    /**
+     * A-49: ход упёрся в предел (ошибка API `rate_limit`), а `rate_limit_event`
+     * с отказом не пришёл — предел всё равно у подписки: иначе слот свободен
+     * и задача тут же перезапускается в тот же предел.
+     */
+    @Test
+    fun rateLimitedTurnWithoutLimitEventStillFeedsAccounts() {
+        slots(1)
+        val s = newSession()
+        val plain = runner.host.onStart
+        runner.host.onStart = { run, spec, _ ->
+            val c = spec.command
+            val sid = c[c.indexOfFirst { it == "--session-id" || it == "--resume" } + 1]
+            MockRunner.script(MockScenario.RATE_LIMIT, sid).filterNot { "rate_limit_event" in it }.forEach { runner.host.output(run, it) }
+            runner.host.exit(run, 1)
+        }
+        try {
+            step(driver.launch(state, accounts, s, ClaudeRequest("x")))
+            step(driver.poll(state, s))
+        } finally {
+            runner.host.onStart = plain
+        }
+        assertEquals(SessionState.PAUSED, state.sessions.getValue(s).state)
+        assertEquals(DiagCode.CLAUDE_RATE_LIMITED, state.sessions.getValue(s).lastReason)
+        assertTrue(accounts.subscriptions.values.single().limitedAt(clock.now()), "предел хода — у подписки")
+    }
+
     @Test
     fun eventsAndStateSurviveTheJournalFormat() {
         slots(2)
