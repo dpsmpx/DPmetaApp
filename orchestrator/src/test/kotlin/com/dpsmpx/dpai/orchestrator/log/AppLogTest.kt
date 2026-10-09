@@ -150,6 +150,17 @@ class AppLogTest {
     private fun env(type: EventType, payload: JsonObject) =
         EventEnvelope(ids.next(IdKinds.EVENT), type, StreamRef.SYSTEM, 1, Timestamp(0), Timestamp(0), payload = payload)
 
+    /** Длинный путь в строке события — без обрезка id, который защита журнала спрятала бы (Redmi Note 13, 9 октября 2026). */
+    @Test
+    fun longPathKeepsWholeTailSegmentsAndSurvivesRedaction() {
+        val path = "/data/data/com.termux/files/home/dpai-sandbox/trees/tsk_01M4FP745VR6TQ0JJ9VQJ0H9TP"
+        val line = EventLog.line(env(EventType.WORKTREE_CREATED, JsonObject.of("path" to JsonString(path))))!!
+        assertTrue(line.text.endsWith("path=…/data/com.termux/files/home/dpai-sandbox/trees/tsk_01M4FP745VR6TQ0JJ9VQJ0H9TP"), line.text)
+        assertEquals(line.text, com.dpsmpx.dpai.core.diagnostics.Redactor.STANDARD.redact(line.text), "нечего прятать")
+        // Текст — по границе слова: 13 целых «слово» (78 знаков) и «…», без обрывка «сл».
+        assertEquals(List(13) { "слово" }.joinToString(" ") + "…", EventLog.shorten("слово ".repeat(20)))
+    }
+
     @Test
     fun eventsBecomeFactLinesWithoutTextsOfModelOrUser() {
         assertNull(EventLog.line(env(EventType.SESSION_OUTPUT, JsonObject.of("text" to JsonString("ответ модели")))))

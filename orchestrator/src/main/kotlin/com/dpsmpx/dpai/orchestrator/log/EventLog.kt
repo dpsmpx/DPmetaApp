@@ -33,6 +33,27 @@ object EventLog {
 
     private const val MAX_VALUE = 80
 
+    /**
+     * Длинное значение — короче [MAX_VALUE], но не посреди слова: обрезок
+     * id (`tsk_01M4FP745VR6TQ0JJ9V…`) защита журнала принимала за токен, и
+     * путь рабочего дерева становился `<redacted>` (Redmi Note 13, 9 октября
+     * 2026). У пути важен конец — остаются последние целые сегменты.
+     */
+    internal fun shorten(s: String): String {
+        if (s.length <= MAX_VALUE) return s
+        if ('/' in s) {
+            var tail = ""
+            for (seg in s.split('/').asReversed()) {
+                val next = if (tail.isEmpty()) seg else "$seg/$tail"
+                if (next.length + 2 > MAX_VALUE) break
+                tail = next
+            }
+            if (tail.isNotEmpty()) return "…/$tail"
+        }
+        val cut = s.take(MAX_VALUE).let { head -> head.substring(0, head.indexOfLast { !it.isLetterOrDigit() && it != '_' }.takeIf { it > 0 } ?: head.length) }
+        return "$cut…"
+    }
+
     fun line(e: EventEnvelope): EventLine? {
         if (e.type in SKIP) return null
         val p = e.payload
@@ -82,7 +103,7 @@ object EventLog {
         o.fields.entries.filter { it.key !in EXCLUDED && it.key !in skip }.mapNotNull { (k, v) -> value(v)?.let { k to it } }
 
     private fun value(v: JsonValue): String? = when (v) {
-        is JsonString -> v.value.let { if (it.length > MAX_VALUE) it.take(MAX_VALUE) + "…" else it }.let { if (' ' in it) "«$it»" else it }
+        is JsonString -> shorten(v.value).let { if (' ' in it) "«$it»" else it }
         is JsonNumber -> v.toBigDecimal().toPlainString()
         is JsonBool -> v.value.toString()
         is JsonArray -> v.items.mapNotNull { (it as? JsonString)?.value ?: (it as? JsonNumber)?.toBigDecimal()?.toPlainString() }
