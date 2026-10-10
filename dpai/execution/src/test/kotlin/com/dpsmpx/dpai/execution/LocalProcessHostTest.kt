@@ -5,6 +5,7 @@ import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.execution.process.ArgumentEncoding
 import com.dpsmpx.dpai.execution.process.LocalProcessHost
 import com.dpsmpx.dpai.execution.process.OutputLine
+import com.dpsmpx.dpai.execution.process.OutputStream
 import com.dpsmpx.dpai.execution.process.ProcessSpec
 import com.dpsmpx.dpai.execution.process.run
 import com.dpsmpx.dpai.testkit.RealTime
@@ -78,6 +79,8 @@ class LocalProcessHostTest {
     /**
      * Ревью A-8: медленный обработчик вывода (правка и запись журнала на
      * телефоне) — хвост вывода всё равно дочитан до возврата `awaitExit`.
+     * Сверяется стандартный вывод: в stderr JVM-потомка окружение может
+     * дописать своё («Picked up JAVA_TOOL_OPTIONS» облачной сессии).
      */
     @Test
     fun slowOutputHandlerStillGetsTheTail() {
@@ -86,7 +89,7 @@ class LocalProcessHostTest {
         val p = (
             host.start(ProcessSpec(TestChild.command("lines", "3"))) { l ->
                 if (l.text == "line 2") slow.await(1500, java.util.concurrent.TimeUnit.MILLISECONDS)
-                lines += l.text
+                if (l.stream == OutputStream.STDOUT) lines += l.text
             } as Outcome.Success
             ).value
         assertEquals(0, p.awaitExit(60.seconds))

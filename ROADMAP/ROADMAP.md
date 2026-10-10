@@ -59,15 +59,16 @@ Ecosystem Baseline, когда проекты экосистемы доведе�
       проверками (`dpai/tools/verify/run.sh`).
 - [+] Проверки: `core.single` (ядро одно) и шаг `subsystem.dpai` в
       `tools/check/run.sh full`.
-- [ ] Сборка Gradle из корня: wrapper (тот же, что в `dpai/`),
-      `settings.gradle.kts` с `includeBuild("dpai")`, общие задачи
-      `build` и `check` (ТЗ, §6.1, N-14).
+- [+] Сборка Gradle из корня: wrapper (тот же, что в `dpai/`, проверка
+      `build.wrapper`), `settings.gradle.kts` с `includeBuild("dpai")`,
+      задачи `build`, `check`, `clean` поверх общих задач подсистемы
+      (ТЗ, §6.1; `docs/ARCHITECTURE.md`, §4).
 - [ ] Модули ТЗ §6.2 на ядре `dpai/` (пустые, с границами); проверка
       модулей; строки зависимостей в `docs/PROVENANCE.md`.
 - [ ] `:core:model` — типы предметной области на ID и `Measure` ядра.
 - [ ] `:cli` — `dpmeta-cli` с дымом; `:tests:corpus`.
 - [ ] Уровни проверок с Gradle: `full`, `full --strict` (ТЗ, §14).
-- [ ] `docs/ARCHITECTURE.md` — как устроено.
+- [+] `docs/ARCHITECTURE.md` — как устроено.
 
 ### <a id="task-2"></a>[ ] Этап 2. Данные экосистемы — `Т`
 

@@ -62,6 +62,12 @@ CLEAN = {
         "enum class DiagCode { A }\nclass Secret(private val v: String)\ninterface Clock\n"),
     "dpai/core/src/main/kotlin/Use.kt": "package core\n\nclass ManualClock : Clock\nval x: Outcome<Int>? = null\n",
 }
+# Wrapper Gradle: копия в корне — та же, что в dpai/ (D-28); пакетный файл — с CRLF, как его пишет Gradle.
+for _rel, _text in {"gradlew": "#!/bin/sh\nexec java\n", "gradlew.bat": "@echo off\r\nexit /b 0\r\n",
+                    "gradle/wrapper/gradle-wrapper.jar": b"PK\x03\x04\x00jar",
+                    "gradle/wrapper/gradle-wrapper.properties": "distributionUrl=x\n"}.items():
+    CLEAN[_rel] = _text
+    CLEAN["dpai/" + _rel] = _text
 
 
 def readme_for(roadmap):
@@ -175,6 +181,24 @@ class CoreSingleTest(CheckCase):
     def test_similar_names_pass(self):
         s = self.sample({"core/model/src/main/kotlin/M.kt": "class OutcomeView\nclass TestClock\nfun Secret() = 1\n"})
         self.assertClean(s.run("core.single"))
+
+
+class WrapperTest(CheckCase):
+    def test_root_copy_differs(self):
+        s = self.sample({"gradle/wrapper/gradle-wrapper.properties": "distributionUrl=y\n"})
+        self.assertCatches(s.run("build.wrapper"), "отличается от dpai/gradle/wrapper/gradle-wrapper.properties")
+
+    def test_root_copy_missing(self):
+        self.assertCatches(self.sample(remove=["gradlew"]).run("build.wrapper"), "нет копии dpai/gradlew")
+
+    def test_source_missing(self):
+        self.assertCatches(self.sample(remove=["dpai/gradlew.bat"]).run("build.wrapper"), "нет wrapper подсистемы")
+
+    def test_batch_file_keeps_crlf_but_other_files_do_not(self):
+        s = self.sample({"docs/PROCESS.md": "# П\r\n"})
+        found = s.run("format.text").findings
+        self.assertFalse(any("gradlew.bat" in f for f in found))
+        self.assertTrue(any("docs/PROCESS.md" in f for f in found))
 
 
 class SubsystemChecksTest(CheckCase):

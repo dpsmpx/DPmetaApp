@@ -6,7 +6,7 @@
 Пустая проверка — провал (`DP-Verify:V-07`): проверка, которой нечего проверять, только
 выглядит защитой.
 
-Уровни: static — структура, текст, секреты, ссылки, номера, процесс, единое ядро (секунды);
+Уровни: static — структура, текст, секреты, ссылки, номера, процесс, единое ядро, wrapper (секунды);
         full   — static, самотесты проверок (tests/) и проверки подсистем (D-28).
 
 Подсистема со своими проверками (SUBSYSTEMS) — каталог со своим процессом: её текст, ссылки
@@ -36,13 +36,19 @@ TODO = "TODO.md"
 # В корне — только точки входа (`DPmeta:E-06`) и мастер-ТЗ автора (D-25: на этот путь
 # ссылаются другие репозитории); файлы Gradle и модули — с этапа 1 (ТЗ, §6.2); подсистемы (D-28).
 ROOT_ALLOW = {
-    "README.md", "CLAUDE.md", "TODO.md", "LICENSE", ".gitignore",
+    "README.md", "CLAUDE.md", "TODO.md", "LICENSE", ".gitignore", ".gitattributes",
     "MESTER_TECHNICAL_TASK_ROADMAP.md",
     ".claude", ".github", "docs", "ROADMAP", "tools", "tests",
     "settings.gradle.kts", "build.gradle.kts", "gradle.properties", "gradlew", "gradlew.bat",
     "gradle", "build-logic", "app", "core", "cli", "config",
     "dpai",
 }
+# Пакетный файл Windows создан Gradle с CRLF — так и хранится (`.gitattributes`).
+CRLF_ALLOWED = {"gradlew.bat"}
+# Wrapper корня — копия wrapper подсистемы dpai/ (D-28): одна версия Gradle и одна сверка
+# его суммы (`dpai/docs/PROVENANCE.md`).
+WRAPPER = ("gradlew", "gradlew.bat", "gradle/wrapper/gradle-wrapper.jar", "gradle/wrapper/gradle-wrapper.properties")
+WRAPPER_SOURCE = "dpai/"
 # Подсистемы со своим процессом и командой проверок (D-28): каталог → команда уровня static.
 SUBSYSTEMS = {"dpai": "dpai/tools/verify/run.sh"}
 # Единое ядро (D-28): эти типы объявлены один раз — в ядре подсистемы dpai.
@@ -61,7 +67,7 @@ REQUIRED = [
 # Пути, которые документы называют заранее: появятся на своих этапах. Путь появился —
 # убрать отсюда (иначе находка): список не должен прятать опечатки.
 PLANNED = {
-    "docs/ARCHITECTURE.md": "как устроено — этап 1",
+    "gradle/verification-metadata.xml": "контрольные суммы зависимостей (ТЗ, N-14) — с первой зависимостью модулей DPmetaApp, этап 1",
     "docs/SECURITY_MODEL.md": "модель угроз — этап 3",
     "docs/CHANGELOG.md": "версии правил и выпуски — с первой RULES_VERSION",
     "docs/RELEASE.md": "отпечаток ключа и порядок выпуска — этап 8",
@@ -221,7 +227,7 @@ def check_format(repo, r):
         except UnicodeDecodeError:
             r.add(rel, "не UTF-8")
             continue
-        if "\r" in text:
+        if "\r" in text and rel not in CRLF_ALLOWED:
             r.add(rel, "переводы строк CRLF или CR — нужен LF")
         if text and not text.endswith("\n"):
             r.add(rel, "нет перевода строки в конце файла")
@@ -490,6 +496,20 @@ def check_core_single(repo, r):
             r.add(CORE_HOME, f"нет объявления {name} в ядре — проверка устарела или ядро сломано (D-28)")
 
 
+def check_wrapper(repo, r):
+    """build.wrapper — wrapper Gradle корня совпадает с wrapper подсистемы dpai/ байт в байт (D-28)."""
+    for rel in WRAPPER:
+        src = WRAPPER_SOURCE + rel
+        if not repo.exists(src):
+            r.add(src, "нет wrapper подсистемы — источника копии")
+            continue
+        r.scanned += 1
+        if not repo.exists(rel):
+            r.add(rel, f"нет копии {src} в корне — сборка из корня не запустится")
+        elif repo.raw(rel) != repo.raw(src):
+            r.add(rel, f"отличается от {src}: wrapper один — скопировать заново (cp {src} {rel})")
+
+
 def check_subsystems(root, subsystems=None):
     """subsystem.* — команда проверок каждой подсистемы на уровне static проходит (D-28)."""
     results = []
@@ -533,6 +553,7 @@ CHECKS = [
     ("process.files", check_files),
     ("readme.status", check_status),
     ("core.single", check_core_single),
+    ("build.wrapper", check_wrapper),
 ]
 
 
