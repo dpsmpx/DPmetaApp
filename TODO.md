@@ -96,7 +96,11 @@
      `Galdhold:docs/audits/WINDOWS_PRODUCT_AUDIT.md`). DPlearn — ложное совпадение
      (глагол). DPmeta, DPmetaApp, DPprofile, DPlang, DP-Verify,
      DP_game_market_analytic_system, DPmonetization, DPvisualisation —
-     чисто. Публичный `dpsmpx/dpsmpx` не сверялся.
+     чисто. Публичный `dpsmpx/dpsmpx` сверен 10.10.2026 (`1e0b8ba`, автор
+     переписал README 8 октября): в заголовке — личное имя автора, а Д40
+     требует «только `dpsmpx`». Профиль правит только автор (`DPmeta:C-07`);
+     оставить или убрать — решает автор (`DPmeta:SQ-17`). Имя здесь не
+     повторяется.
   5. **История Git — переписать (решено, Д40).** Команда готова (06.10.2026):
      `python3 -m tools.cs history rewrite` (`docs/SECURITY.md`, §4,
      «История с личными словами»). Запуск — после влития PR #24: в нём вся
