@@ -1069,7 +1069,7 @@
   }
  },
  "state": {
-  "as_of": "2026-10-10T03:16:00Z",
+  "as_of": "2026-10-10T08:36:49Z",
   "generated_by": {
    "rules_version": 1,
    "tool": "DPvisualisation",
@@ -1101,7 +1101,7 @@
    "galdhold": {
     "activity": {
      "state": "working",
-     "last": "2026-10-09"
+     "last": "2026-10-10"
     },
     "git": {
      "days": {
@@ -1181,7 +1181,7 @@
    "dplang": {
     "activity": {
      "state": "working",
-     "last": "2026-10-09"
+     "last": "2026-10-10"
     },
     "git": {
      "days": {
@@ -1341,7 +1341,7 @@
    "orchestrator": {
     "activity": {
      "state": "working",
-     "last": "2026-10-09"
+     "last": "2026-10-10"
     },
     "git": {
      "days": {
@@ -1501,7 +1501,7 @@
    "smi": {
     "activity": {
      "state": "working",
-     "last": "2026-10-09"
+     "last": "2026-10-10"
     },
     "git": {
      "days": {
@@ -1821,7 +1821,7 @@
    "dpmeta": {
     "activity": {
      "state": "working",
-     "last": "2026-10-09"
+     "last": "2026-10-10"
     },
     "git": {
      "days": {
@@ -1981,7 +1981,7 @@
    "dpvisualisation": {
     "activity": {
      "state": "working",
-     "last": "2026-10-09"
+     "last": "2026-10-10"
     },
     "git": {
      "days": {
@@ -2146,11 +2146,11 @@
      27,
      25,
      5,
-     0
+     16
     ],
-    "week": 226,
-    "total": 692,
-    "last": "2026-10-09"
+    "week": 208,
+    "total": 708,
+    "last": "2026-10-10"
    },
    "work.dplang": {
     "state": "flowing",
@@ -2184,11 +2184,11 @@
      7,
      0,
      15,
-     0
+     14
     ],
-    "week": 102,
-    "total": 102,
-    "last": "2026-10-09"
+    "week": 116,
+    "total": 116,
+    "last": "2026-10-10"
    },
    "work.dpverify": {
     "state": "quiet",
@@ -2298,11 +2298,11 @@
      2,
      0,
      1,
-     0
+     2
     ],
-    "week": 79,
-    "total": 79,
-    "last": "2026-10-09"
+    "week": 81,
+    "total": 81,
+    "last": "2026-10-10"
    },
    "work.dplearn": {
     "state": "quiet",
@@ -2450,11 +2450,11 @@
      0,
      0,
      2,
-     0
+     1
     ],
-    "week": 10,
-    "total": 10,
-    "last": "2026-10-09"
+    "week": 11,
+    "total": 11,
+    "last": "2026-10-10"
    },
    "work.dpmetaapp": {
     "state": "flowing",
@@ -2526,11 +2526,11 @@
      0,
      0,
      4,
-     0
+     2
     ],
-    "week": 11,
-    "total": 11,
-    "last": "2026-10-09"
+    "week": 13,
+    "total": 13,
+    "last": "2026-10-10"
    },
    "work.orchestrator": {
     "state": "flowing",
@@ -2564,11 +2564,11 @@
      46,
      42,
      50,
-     1
+     11
     ],
-    "week": 161,
-    "total": 161,
-    "last": "2026-10-09"
+    "week": 171,
+    "total": 171,
+    "last": "2026-10-10"
    },
    "decide.galdhold": {
     "state": "flowing",
@@ -2604,12 +2604,12 @@
      0,
      0
     ],
-    "week": 25,
+    "week": 23,
     "total": 178,
     "last": "2026-10-08"
    },
    "decide.dplang": {
-    "state": "flowing",
+    "state": "quiet",
     "days": [
      0,
      0,
@@ -2723,7 +2723,7 @@
     "last": "2026-10-04"
    },
    "decide.smi": {
-    "state": "flowing",
+    "state": "quiet",
     "days": [
      0,
      0,
