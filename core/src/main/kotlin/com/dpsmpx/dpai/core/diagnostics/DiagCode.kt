@@ -199,6 +199,8 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     ORPHAN_FOUND(Category.STATE, Severity.WARNING, Retryability.NON_RETRYABLE),
     WORKTREE_MISSING(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
     MERGE_CONFLICT(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
+    /** Рабочая копия не готова к слиянию (A-68, A-54): выгружена не ветка-цель или есть изменения. */
+    MERGE_TARGET_NOT_READY(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
 
     // --- экосистема и внешние сервисы (этапы 15, 16) ---
     ECOSYSTEM_DISABLED(Category.STATE, Severity.INFO, Retryability.NON_RETRYABLE),

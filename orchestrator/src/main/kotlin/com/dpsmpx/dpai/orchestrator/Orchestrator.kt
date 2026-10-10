@@ -1021,14 +1021,47 @@ class Orchestrator(
             MERGE -> {
                 val repo = config.repository ?: return Outcome.failure(DiagCode.UNSUPPORTED, "у проекта нет репозитория")
                 val g = git ?: return Outcome.failure(DiagCode.UNSUPPORTED, "нет Git")
+                val target = pending.proposal.subject.substringAfterLast('#')
+                mergeBlocker(g, repo.root, target)?.let { return it }
                 when (val m = g.run(GitOp.MERGE, repo.root, pending.proposal.arguments)) {
-                    is Outcome.Failure -> m
-                    is Outcome.Success -> Outcome.success("слито в ${pending.proposal.subject.substringAfterLast('#')}").also {
+                    is Outcome.Failure -> m.also {
+                        // A-54: конфликт оставил бы рабочую копию автора посреди слияния, и повтор упал бы
+                        // на нём же. До слияния копия была чистой (mergeBlocker), так что отмена ничего не теряет.
+                        g.run(GitOp.MERGE_ABORT, repo.root)
+                    }
+                    is Outcome.Success -> Outcome.success("слито в $target").also {
                         commitMerges(listOf(MergeEvent.Merged(task, pending.approval, clock.now())))
                     }
                 }
             }
             else -> Outcome.failure(DiagCode.REQUEST_ANSWER_INVALID, "вариант «$option» не к этому запросу")
+        }
+    }
+
+    /**
+     * Почему слить в [target] сейчас нельзя, или `null`. `git merge` сливает в
+     * выгруженную ветку, а одобрено слияние в [target] (ревью A-68, A-53):
+     * переключать ветку в рабочей копии автора молча нельзя — отказ с
+     * причиной, и запрос «Повторить слияние» (A-30). Изменения и конфликты
+     * в копии — тоже отказ: слияние поверх них нельзя чисто отменить (A-54).
+     */
+    private fun mergeBlocker(g: GitService, root: String, target: String): Outcome.Failure? {
+        val s = when (val st = g.status(root)) {
+            is Outcome.Failure -> return st
+            is Outcome.Success -> st.value
+        }
+        return when {
+            s.branch != target -> Outcome.failure(
+                DiagCode.MERGE_TARGET_NOT_READY,
+                "в рабочей копии выгружена ${s.branch?.let { "ветка $it" } ?: "не ветка (detached HEAD)"}, а слияние — в $target: выгрузите $target",
+                root,
+            )
+            s.changed.isNotEmpty() || s.conflicted.isNotEmpty() -> Outcome.failure(
+                DiagCode.MERGE_TARGET_NOT_READY,
+                "в рабочей копии ${if (s.conflicted.isNotEmpty()) "незавершённое слияние" else "незакоммиченные изменения"}: закоммитьте или уберите их",
+                root,
+            )
+            else -> null
         }
     }
 

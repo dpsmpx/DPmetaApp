@@ -2,8 +2,10 @@ package com.dpsmpx.dpai.ui
 
 import com.dpsmpx.dpai.core.clock.ManualClock
 import com.dpsmpx.dpai.core.clock.RandomSource
+import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.ids.IdGenerator
 import com.dpsmpx.dpai.core.ids.IdKinds
+import com.dpsmpx.dpai.core.operation.OperationStatus
 import com.dpsmpx.dpai.core.state.TaskState
 import com.dpsmpx.dpai.execution.agent.ExitReason
 import com.dpsmpx.dpai.execution.agent.MockAgentHost
@@ -154,5 +156,103 @@ class LiveProjectTest {
         assertTrue(s.orchestrator.pendingRequests().any { it.purpose == "task.blocked" })
         val tree = s.orchestrator.worktrees.worktrees.values.single()
         assertTrue(File(tree.path, "feature.txt").exists(), "работа — в дереве задачи")
+    }
+
+    /**
+     * Ревью A-68, A-53: `git merge` сливает в выгруженную ветку, а одобрено
+     * слияние в main. У автора выгружена своя ветка — отказ с причиной и
+     * «Повторить слияние», ветка автора не переключается; выгрузил main —
+     * слито.
+     */
+    @Test
+    fun mergeGoesOnlyIntoTheApprovedBranch() {
+        val (s, root) = doneAwaitingMerge(96)
+        git("-C", root, "checkout", "-q", "-b", "author-work")
+        val refused = answerMerge(s)
+        assertEquals(OperationStatus.FAILED, refused.status)
+        assertEquals(DiagCode.MERGE_TARGET_NOT_READY, refused.diagnostics.first().code, refused.diagnostics.toString())
+        assertTrue(!File(root, "feature.txt").exists(), "в ветку автора не слито")
+        assertEquals("author-work", gitOut("-C", root, "rev-parse", "--abbrev-ref", "HEAD"))
+        assertEquals(emptyList(), s.orchestrator.merged)
+        git("-C", root, "checkout", "-q", "main")
+        assertEquals(OperationStatus.SUCCEEDED, answerMerge(s).status)
+        assertTrue(File(root, "feature.txt").exists(), "после «Повторить слияние» — слито в main")
+    }
+
+    /**
+     * Ревью A-54: конфликт не оставляет рабочую копию автора посреди
+     * слияния — оно отменено, копия чистая, запрос «Повторить слияние» ждёт.
+     */
+    @Test
+    fun conflictingMergeIsAbortedAndAskedAgain() {
+        val (s, root) = doneAwaitingMerge(97)
+        File(root, "feature.txt").writeText("своё\n")
+        git("-C", root, "add", "feature.txt")
+        git("-C", root, "commit", "-q", "-m", "своё")
+        assertEquals(OperationStatus.FAILED, answerMerge(s).status)
+        assertTrue(!File(root, ".git/MERGE_HEAD").exists(), "слияние отменено")
+        assertEquals("", gitOut("-C", root, "status", "--porcelain"))
+        assertEquals("своё\n", File(root, "feature.txt").readText())
+        assertTrue(s.orchestrator.pendingRequests().any { it.purpose == "task.merge" }, "«Повторить слияние» ждёт")
+        assertEquals(emptyList(), s.orchestrator.merged)
+    }
+
+    /** Ревью A-54: в копии незакоммиченная правка автора — не сливать поверх неё; правка цела. */
+    @Test
+    fun mergeRefusesDirtyWorkingCopy() {
+        val (s, root) = doneAwaitingMerge(98)
+        File(root, "README.md").appendText("правка автора\n")
+        val refused = answerMerge(s)
+        assertEquals(DiagCode.MERGE_TARGET_NOT_READY, refused.diagnostics.first().code, refused.diagnostics.toString())
+        assertEquals("проект\nправка автора\n", File(root, "README.md").readText())
+        assertTrue(!File(root, "feature.txt").exists())
+    }
+
+    private fun gitOut(vararg argv: String): String {
+        val r = local.run(ProcessSpec(listOf("git", *argv)), 1.minutes).valueOrNull()!!
+        assertEquals(0, r.exitCode, (r.stderr + r.stdout).joinToString("\n"))
+        return r.stdout.joinToString("\n").trim()
+    }
+
+    private fun answerMerge(s: LiveSystem) =
+        s.orchestrator.pendingRequests().single { it.purpose == "task.merge" }.let { s.orchestrator.answer(it.id, "merge", null, it.hash, "автор") }
+
+    /** Репозиторий с main, задача прошла проверку и ждёт ответа на запрос слияния. */
+    private fun doneAwaitingMerge(seed: Long): Pair<LiveSystem, String> {
+        val root = dir.resolve("repo").toFile().apply { mkdirs() }.path.replace('\\', '/')
+        git("init", "-q", "-b", "main", root)
+        git("-C", root, "config", "user.email", "dpai-test@example.org")
+        git("-C", root, "config", "user.name", "dpai test")
+        File(root, "README.md").writeText("проект\n")
+        git("-C", root, "add", "README.md")
+        git("-C", root, "commit", "-q", "-m", "начало")
+        agent.onStart = { run, spec, _ ->
+            when {
+                spec.command.take(3) == listOf("claude", "auth", "status") -> {
+                    agent.output(run, """{"loggedIn":true,"authMethod":"claude.ai","apiProvider":"firstParty"}""")
+                    agent.exit(run, 0)
+                }
+                spec.command.first() == "claude" -> {
+                    File(spec.workDir!!, "feature.txt").writeText("новая возможность\n")
+                    val c = spec.command
+                    MockRunner.script(MockScenario.SUCCESS, c[c.indexOfFirst { it == "--session-id" || it == "--resume" } + 1]).forEach { agent.output(run, it) }
+                    agent.exit(run, 0, ExitReason.EXITED)
+                }
+                else -> {
+                    agent.output(run, "ok")
+                    agent.exit(run, 0)
+                }
+            }
+        }
+        val target = TargetForm.validate(ids.next(IdKinds.TARGET), "сервер", "build.lan", "22", "dev", false, "/opt/dpai/bin/dpai", "/home/dev/.claude-dpai").valueOrNull()!!
+        val project = ProjectEntry(ids.next(IdKinds.PROJECT), ids.next(IdKinds.REPOSITORY), target.id, root, dir.resolve("trees").toString().replace('\\', '/'), "main", listOf(com.dpsmpx.dpai.verification.VerifyStep("тесты", listOf("make", "test"))))
+        val s = LiveSystem(clock, NioVfs(dir.resolve("ctl").also { it.toFile().mkdirs() }), listOf(target), { _, _ -> targetHost }, "/known_hosts", RandomSource.seeded(seed), project = project)
+        val task = s.addTask("фича", "добавить возможность").valueOrNull()!!
+        repeat(6) {
+            s.step()
+            clock.advance(10.seconds)
+        }
+        assertEquals(TaskState.DONE, s.orchestrator.tasks.tasks.getValue(task).state, s.problems.toString() + s.orchestrator.problems)
+        return s to root
     }
 }

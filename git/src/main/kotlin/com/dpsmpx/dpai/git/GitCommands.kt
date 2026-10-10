@@ -24,6 +24,7 @@ enum class GitOp(val destructive: Boolean, val writes: Boolean) {
     WORKTREE_ADD(false, true),
     WORKTREE_REMOVE(false, true),
     MERGE(false, true),
+    MERGE_ABORT(false, true),
     PUSH(false, true),
     RESET_HARD(true, true),
     CLEAN_FORCE(true, true),
@@ -69,6 +70,7 @@ class GitCommands(private val approvals: ApprovalLedger, private val git: String
             GitOp.WORKTREE_ADD -> listOf("worktree", "add", "-b", args[1], "--", args[0]) + args.drop(2)
             GitOp.WORKTREE_REMOVE -> listOf("worktree", "remove", "--", args.single())
             GitOp.MERGE -> listOf("merge", "--no-ff", "--no-edit", "--") + args
+            GitOp.MERGE_ABORT -> listOf("merge", "--abort")
             GitOp.PUSH -> listOf("push", "--") + args
             GitOp.RESET_HARD -> listOf("reset", "--hard", "--") + args
             GitOp.CLEAN_FORCE -> listOf("clean", "-fd", "--") + args
@@ -97,7 +99,7 @@ class GitCommands(private val approvals: ApprovalLedger, private val git: String
         private val ARITY: Map<GitOp, IntRange> = mapOf(
             GitOp.STATUS to 0..0, GitOp.DIFF to 0..50, GitOp.LOG to 0..0, GitOp.WORKTREE_LIST to 0..0, GitOp.FETCH to 0..2,
             GitOp.ADD to 1..1000, GitOp.COMMIT to 1..1, GitOp.BRANCH_CREATE to 1..2, GitOp.WORKTREE_ADD to 2..3,
-            GitOp.WORKTREE_REMOVE to 1..1, GitOp.MERGE to 1..1, GitOp.PUSH to 1..2, GitOp.RESET_HARD to 0..1,
+            GitOp.WORKTREE_REMOVE to 1..1, GitOp.MERGE to 1..1, GitOp.MERGE_ABORT to 0..0, GitOp.PUSH to 1..2, GitOp.RESET_HARD to 0..1,
             GitOp.CLEAN_FORCE to 0..50, GitOp.PUSH_FORCE to 1..2, GitOp.BRANCH_DELETE_FORCE to 1..1, GitOp.WORKTREE_REMOVE_FORCE to 1..1,
         )
     }
