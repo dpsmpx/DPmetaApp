@@ -2,7 +2,7 @@
  "schema": "dpvis-public/1",
  "model": {
   "title": "Экосистема dpsmpx",
-  "as_of": "2026-10-09",
+  "as_of": "2026-10-10",
   "timezone": "+03:00",
   "layers": [
    {
@@ -308,7 +308,7 @@
     "status": "active",
     "visibility": "private",
     "role": "карта экосистемы, контракты между репозиториями и риски",
-    "stage": "два прохода по экосистеме — 5 октября 2026"
+    "stage": "три прохода по экосистеме — 5 октября 2026"
    },
    {
     "id": "dpmetaapp",
@@ -1069,7 +1069,7 @@
   }
  },
  "state": {
-  "as_of": "2026-10-10T08:36:49Z",
+  "as_of": "2026-10-10T09:02:34Z",
   "generated_by": {
    "rules_version": 1,
    "tool": "DPvisualisation",
@@ -1901,7 +1901,7 @@
    "dpmetaapp": {
     "activity": {
      "state": "working",
-     "last": "2026-10-09"
+     "last": "2026-10-10"
     },
     "git": {
      "days": {
@@ -2148,7 +2148,7 @@
      5,
      16
     ],
-    "week": 208,
+    "week": 207,
     "total": 708,
     "last": "2026-10-10"
    },
@@ -2298,10 +2298,10 @@
      2,
      0,
      1,
-     2
+     4
     ],
-    "week": 81,
-    "total": 81,
+    "week": 83,
+    "total": 83,
     "last": "2026-10-10"
    },
    "work.dplearn": {
@@ -2450,10 +2450,10 @@
      0,
      0,
      2,
-     1
+     4
     ],
-    "week": 11,
-    "total": 11,
+    "week": 14,
+    "total": 14,
     "last": "2026-10-10"
    },
    "work.dpmetaapp": {
@@ -2488,11 +2488,11 @@
      0,
      0,
      1,
-     0
+     1
     ],
-    "week": 4,
-    "total": 4,
-    "last": "2026-10-09"
+    "week": 5,
+    "total": 5,
+    "last": "2026-10-10"
    },
    "work.dpvisualisation": {
     "state": "flowing",
@@ -2526,10 +2526,10 @@
      0,
      0,
      4,
-     2
+     3
     ],
-    "week": 13,
-    "total": 13,
+    "week": 14,
+    "total": 14,
     "last": "2026-10-10"
    },
    "work.orchestrator": {
@@ -2564,10 +2564,10 @@
      46,
      42,
      50,
-     11
+     14
     ],
-    "week": 171,
-    "total": 171,
+    "week": 174,
+    "total": 174,
     "last": "2026-10-10"
    },
    "decide.galdhold": {

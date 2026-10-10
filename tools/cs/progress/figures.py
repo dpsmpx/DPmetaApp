@@ -84,7 +84,7 @@ L = {
                    "время суток коммитов (личный распорядок)", "код и выдержки из закрытых репозиториев (Д17)",
                    "оценки готовности в процентах — у проектов нет их определения"],
         "markers": "ромб под осью — веха дня",
-        "partial": "5 октября учтено до {t}",
+        "partial": "учтено до {t}",  # день уже назван в начале подписи
     },
     "en": {
         "kind": {"measured": "measured", "reported": "reported by the project", "derived": "derived", "milestone": "milestones",
@@ -143,7 +143,7 @@ L = {
                    "time of day of commits (a personal routine)", "code or excerpts from private repositories",
                    "readiness percentages — the projects do not define them"],
         "markers": "a diamond under the axis marks a milestone",
-        "partial": "5 October counted until {t}",
+        "partial": "counted until {t}",
     },
 }
 

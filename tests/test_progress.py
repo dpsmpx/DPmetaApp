@@ -104,6 +104,10 @@ class Figures(unittest.TestCase):
         for fid in ("snapshot", "ecosystem"):
             for lang, word in (("ru", "эта схема"), ("en", "this diagram")):
                 self.assertNotIn(word, render(self.p, fid, lang)[0], f"{fid} [{lang}]")
+        # подпись неполного последнего дня — без чужой даты (раньше было зашито «5 октября»)
+        act, _ = render(self.p, "activity", "ru")
+        self.assertNotIn("5 октября учтено", act)
+        self.assertIn("9 октября, пт — учтено до 19:00", act)
         archived = {x["slug"].split("/")[-1] for x in self.p.scope["excluded"] if x["kind"] == "archive"}
         for fid in ("repos", "ecosystem", "snapshot"):
             html_, _ = render(self.p, fid, "ru")

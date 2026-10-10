@@ -203,4 +203,4 @@ milestones:
     ru: Автор делит экосистему на ядро, управление и поддерживающий слой; ранние проекты до репозитория игры и убранные автором — архив, вне счёта.
     en: The author divides the ecosystem into the core, control and a support layer; early projects that predate the game repository and ones the author removed become an archive outside the count.
     evidence:
-      - {kind: decision, source: "dpsmpx/DPmeta docs/DECISIONS.md M-10 (ветка claude/dreamy-bardeen-xe4k6r)", ref: 041fa53, date: 2026-10-09, verification: decision}
+      - {kind: decision, source: "dpsmpx/DPmeta docs/DECISIONS.md M-10 (ветка claude/dreamy-bardeen-xe4k6r; граница архива уточнена 10.10.2026)", ref: 93a3939, date: 2026-10-10, verification: decision}
