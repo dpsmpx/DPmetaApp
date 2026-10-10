@@ -321,7 +321,7 @@ class AgentRuntime(
         if (supervisor != null) return stopWithSupervisor(id, doc, last, supervisor, grace, store)
         // Супервизор потерян: процесс останавливается по идентификатору и времени старта.
         val child = doc.pid?.let { ProcessTree.find(it, doc.pidStartedAt, doc.bootAt) }
-        val r = child?.let { ProcessTree.stop(it, grace, clock) } ?: ProcessTree.Result(false, emptyList())
+        val r = child?.let { ProcessTree.stop(it, grace, clock, doc.supervisorPid?.takeIf { sid -> ProcessTree.sessionOf(it.pid()) == sid }) } ?: ProcessTree.Result(false, emptyList())
         return stopLost(id, doc, last, r, store)
     }
 
@@ -339,7 +339,7 @@ class AgentRuntime(
             }
         }
         // Супервизор не уложился — останавливается он сам вместе со своим деревом.
-        return stopLost(id, doc, last, ProcessTree.stop(supervisor, grace, clock), store)
+        return stopLost(id, doc, last, ProcessTree.stop(supervisor, grace, clock, supervisor.pid().takeIf { ProcessTree.sessionOf(it) == it }), store)
     }
 
     /**

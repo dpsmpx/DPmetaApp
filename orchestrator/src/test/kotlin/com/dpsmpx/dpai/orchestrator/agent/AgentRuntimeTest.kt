@@ -428,4 +428,20 @@ class AgentRuntimeTest {
         assertEquals(doc.copy(bootAt = null), RunDoc.read(v2))
         assertTrue(rt.stop(run, 2.seconds).ok)
     }
+
+    /** Ревью A-9: потомок хода, ушедший в фон (родитель — init), останавливается вместе с ходом. */
+    @Test
+    fun stopKillsBackgroundedDescendant() {
+        org.junit.jupiter.api.Assumptions.assumeTrue(com.dpsmpx.dpai.execution.process.ProcessTree.sessionOf(ProcessHandle.current().pid()) != null, "сеансы — Linux и Android")
+        val rt = runtime()
+        val run = ids.next(IdKinds.SESSION)
+        assertTrue(rt.start(run, RunSpec(TestChild.command("child", "spawn-daemon"))).ok)
+        val daemon = RealTime.await(60.seconds, "фоновый потомок запущен") {
+            outputs(rt.events(run, 0, 1000).events).firstOrNull { it.startsWith("daemon ") }?.removePrefix("daemon ")?.toLong()
+        }
+        started += daemon
+        assertTrue(alive(daemon))
+        assertTrue(rt.stop(run, 2.seconds).ok)
+        RealTime.await(15.seconds, "фоновый потомок остановлен") { if (alive(daemon)) null else Unit }
+    }
 }

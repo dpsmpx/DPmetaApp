@@ -41,6 +41,15 @@ object TestChild {
                 println("ready")
                 CountDownLatch(1).await()
             }
+            "spawn-daemon" -> {
+                // Внук уходит в фон: оболочка выходит, и его родитель — init (A-9).
+                val cmd = command("child", "hang").joinToString(" ") { "'" + it.replace("'", "'\\''") + "'" }
+                val sh = ProcessBuilder("sh", "-c", "$cmd >/dev/null 2>&1 & echo \$!").start()
+                val pid = sh.inputStream.bufferedReader().readLine()
+                sh.waitFor()
+                println("daemon $pid")
+                CountDownLatch(1).await()
+            }
             "ignore-term" -> {
                 // Мягкая остановка (SIGTERM) не завершает: хук выхода ждёт без конца — нужен SIGKILL.
                 Runtime.getRuntime().addShutdownHook(Thread { CountDownLatch(1).await() })

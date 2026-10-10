@@ -59,7 +59,8 @@ class LocalProcessHost(private val clock: Clock = Clock.SYSTEM) : ProcessHost {
         }
 
         override fun stop(grace: Duration): StopReport {
-            val r = ProcessTree.stop(process.toHandle(), grace, clock)
+            // Супервизор — лидер своего сеанса: и фоновые потомки хода (A-9). Контроллер — только дерево.
+            val r = ProcessTree.stop(process.toHandle(), grace, clock, ProcessTree.ownSession())
             drain()
             return StopReport(if (process.isAlive) null else process.exitValue(), r.forced, r.survivors)
         }

@@ -26,12 +26,20 @@ object ProcessTree {
     /** Итог: [forced] — понадобилось принудительное завершение; [survivors] — кто выжил. */
     data class Result(val forced: Boolean, val survivors: List<Long>)
 
-    fun stop(root: ProcessHandle, grace: Duration, clock: Clock): Result {
+    /**
+     * [session] — сеанс процессов хода (Linux; ревью A-9): потомки, ушедшие в
+     * фон (`&`, `nohup`, демоны инструментов), меняют родителя на init и в
+     * дерево потомков не попадают, но остаются в сеансе супервизора. Их тоже
+     * останавливаем — кроме своего процесса; сеанса нет — только дерево.
+     */
+    fun stop(root: ProcessHandle, grace: Duration, clock: Clock, session: Long? = null): Result {
         val tree = LinkedHashMap<Long, ProcessHandle>()
+        val self = ProcessHandle.current().pid()
         fun snapshot() {
             tree.putIfAbsent(root.pid(), root)
             root.descendants().forEach { tree.putIfAbsent(it.pid(), it) }
             tree.values.toList().forEach { h -> h.descendants().forEach { tree.putIfAbsent(it.pid(), it) } }
+            session?.let { sid -> sessionMembers(sid).filter { it.pid() != self }.forEach { tree.putIfAbsent(it.pid(), it) } }
         }
         snapshot()
         // Мягко: сначала потомки (глубже — позже в снимке, поэтому с конца), потом корень.
@@ -70,6 +78,24 @@ object ProcessTree {
         val shift = if (bootAtMillis != null && bootNow != null) bootNow - bootAtMillis else 0
         if (kotlin.math.abs(start - shift - startedAtMillis) > 1000) return null
         return h
+    }
+
+    /** Сеанс процесса [pid] (`/proc/<pid>/stat`, поле 6; Linux и Android); где его нет — `null`. */
+    fun sessionOf(pid: Long): Long? = try {
+        java.io.File("/proc/$pid/stat").takeIf { it.isFile }?.readText()
+            ?.substringAfterLast(')')?.trim()?.split(' ')?.getOrNull(3)?.toLongOrNull()
+    } catch (_: java.io.IOException) {
+        null
+    }
+
+    /** Свой сеанс, если этот процесс — его лидер (супервизор, запущенный через `setsid`); иначе `null`. */
+    fun ownSession(): Long? = ProcessHandle.current().pid().takeIf { sessionOf(it) == it }
+
+    private fun sessionMembers(sid: Long): List<ProcessHandle> {
+        val dirs = java.io.File("/proc").listFiles { f -> f.isDirectory && f.name.all(Char::isDigit) }.orEmpty()
+        return dirs.mapNotNull { d -> d.name.toLongOrNull()?.takeIf { sessionOf(it) == sid } }
+            .mapNotNull { ProcessHandle.of(it).orElse(null) }
+            .filter { it.isAlive }
     }
 
     /** Время загрузки (`btime` из `/proc/stat`, Linux и Android); где его нет — `null`. */
