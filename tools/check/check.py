@@ -65,7 +65,6 @@ PLANNED = {
     "docs/SECURITY_MODEL.md": "модель угроз — этап 3",
     "docs/CHANGELOG.md": "версии правил и выпуски — с первой RULES_VERSION",
     "docs/RELEASE.md": "отпечаток ключа и порядок выпуска — этап 8",
-    "docs/audits/": "срезы на дату — с первого среза",
     "tools/release/": "сборка неподписанного APK — этап 8",
     "tools/notify/": "набор хуков уведомлений Claude Code (F-56) — этап 7",
 }
