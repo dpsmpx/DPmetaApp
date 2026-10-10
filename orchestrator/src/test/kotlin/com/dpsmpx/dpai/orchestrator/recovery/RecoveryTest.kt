@@ -69,6 +69,19 @@ class RecoveryTest {
         assertEquals(SessionState.COMPLETED, h.sessions.sessions.getValue(s).state)
     }
 
+    /** Ревью A-64: итог хода — за первой страницей событий агента; сверка читает все страницы. */
+    @Test
+    fun finishedTurnBeyondFirstPageIsResolvedCompleted() {
+        val h = RecoveryHarness(Files.createTempDirectory(dir, "h"), 1, reconcilePage = 2)
+        h.slots(1)
+        val s = h.launch(MockScenario.SLOW_OUTPUT)
+        h.pollAll()
+        while (h.host.advance(s)) continue
+        h.crash()
+        assertEquals(listOf(Resolution.RESOLVED_COMPLETED), h.resolutions)
+        assertEquals(SessionState.COMPLETED, h.sessions.sessions.getValue(s).state)
+    }
+
     @Test
     fun targetGoneLeavesSessionPendingNotFailed() {
         val h = harness()

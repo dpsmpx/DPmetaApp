@@ -154,7 +154,8 @@ class MockAgentHost(private val clock: Clock, private val ids: IdGenerator) : Pr
             "events" -> runs[run]?.let { r ->
                 val after = opt("after")?.toLongOrNull() ?: 0
                 val limit = opt("limit")?.toIntOrNull() ?: 500
-                AgentReply("events", true, run = status(r), events = r.events.filter { it.sequence > after }.take(limit))
+                val rest = r.events.filter { it.sequence > after }
+                AgentReply("events", true, run = status(r), events = rest.take(limit), more = rest.size > limit)
             } ?: failure("events", DiagCode.ENTITY_NOT_FOUND, "нет такого запуска")
             "stop" -> runs[run]?.let { r ->
                 if (r.state == RunState.RUNNING || r.state == RunState.LOST) finish(r, null, ExitReason.STOPPED)

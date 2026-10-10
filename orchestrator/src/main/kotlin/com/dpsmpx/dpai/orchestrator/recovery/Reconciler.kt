@@ -47,7 +47,7 @@ enum class Resolution { RESOLVED_RUNNING, RESOLVED_FAILED, RESOLVED_COMPLETED, R
  * причиной [DiagCode.RECOVERY_START_UNCONFIRMED] — по ней сверка и после
  * следующего перезапуска знает, что хода могло не быть.
  */
-class Reconciler(private val sessions: Sessions, private val clock: Clock) {
+class Reconciler(private val sessions: Sessions, private val clock: Clock, private val pageSize: Int = 10_000) {
     data class Result(val session: SessionId, val resolution: Resolution, val events: List<SessionEvent>, val diagnostics: List<Diagnostic>)
 
     private val working = setOf(SessionState.STARTING, SessionState.RUNNING, SessionState.WAITING, SessionState.NEAR_LIMIT, SessionState.VERIFYING)
@@ -118,7 +118,20 @@ class Reconciler(private val sessions: Sessions, private val clock: Clock) {
 
     /** Итог последнего хода — из событий агента: начало хода, вывод, выход. */
     private fun lastTurn(id: SessionId, provider: com.dpsmpx.dpai.core.ids.ProviderSessionId, agent: AgentClient): TurnStatus? {
-        val events = agent.events(id, 0, 10_000).valueOrNull()?.events ?: return null
+        // Все страницы (ревью A-64): одна страница с начала — первые [pageSize] событий и не больше
+        // объёма строки ответа агента; итог последнего хода длинной сессии оставался за ней.
+        // В памяти — только хвост с последнего начала хода.
+        val events = mutableListOf<com.dpsmpx.dpai.core.events.EventEnvelope>()
+        var after = 0L
+        while (true) {
+            val page = agent.events(id, after, pageSize).valueOrNull() ?: return null
+            for (e in page.events) {
+                if (e.type == EventType.TARGET_PROCESS_STARTED) events.clear()
+                events += e
+            }
+            if (!page.more || page.events.isEmpty()) break
+            after = page.events.last().sequence
+        }
         val startIdx = events.indexOfLast { it.type == EventType.TARGET_PROCESS_STARTED }
         if (startIdx < 0) return null
         val asm = ClaudeTurnAssembler(provider)

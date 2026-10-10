@@ -42,14 +42,14 @@ import java.nio.file.Path
  * оркестратор знает, — только из журнала: [crash] выбрасывает память и
  * поднимает состояние заново ([boot]).
  */
-class RecoveryHarness(private val dir: Path, seed: Long) {
+class RecoveryHarness(private val dir: Path, seed: Long, reconcilePage: Int = 10_000) {
     val clock = ManualClock()
     val ids = IdGenerator(clock, RandomSource.seeded(seed))
     val host = MockAgentHost(clock, IdGenerator(clock, RandomSource.seeded(seed + 1)))
     val scenarios = HashMap<SessionId, MockScenario>()
     private val accountsLogic = Accounts()
     private val sessionsLogic = Sessions()
-    private val reconciler = Reconciler(sessionsLogic, clock)
+    private val reconciler = Reconciler(sessionsLogic, clock, reconcilePage)
     private val orphans = OrphanScan(accountsLogic, Tasks())
 
     lateinit var journal: EventJournal
