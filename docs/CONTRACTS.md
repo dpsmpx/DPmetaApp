@@ -365,9 +365,9 @@ DPmeta: у каждого есть владелец, и правится он т
   сверка пропускается. C-11…C-13, добавленные четвёртым проходом, модель
   DPvisualisation покроет после вливания ветки DPmeta
   (`DPvisualisation:TODO.md`). Реестр строго читает и `xref.py` DPmeta, а
-  по плану — DPmetaApp (`DPmetaApp:docs/direction/TECHNICAL_TASK.md`, F-01,
-  и `DPmetaApp:D-26` — в невлитой ветке; поле `place` там названо): новое
-  поле реестра согласуется и с ним.
+  по плану — DPmetaApp (его ТЗ, F-01, и `DPmetaApp:D-26` — только в
+  невлитой ветке `claude/dreamy-bardeen-xe4k6r`, SQ-27; поле `place` там
+  названо): новое поле реестра согласуется и с ним.
 
 ## C-12 — Комплект схемы DPvisualisation → раздел «Экосистема» сайта
 
