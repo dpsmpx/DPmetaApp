@@ -9,6 +9,9 @@ import com.dpsmpx.dpai.core.diagnostics.Diagnostic
 import com.dpsmpx.dpai.core.ids.IdGenerator
 import com.dpsmpx.dpai.core.ids.IdKinds
 import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.execution.process.Completed
+import com.dpsmpx.dpai.execution.process.ProcessSpec
+import com.dpsmpx.dpai.execution.process.run
 import com.dpsmpx.dpai.execution.target.DoctorResult
 import com.dpsmpx.dpai.execution.target.ExecutionTargetManager
 import com.dpsmpx.dpai.jsch.EcdsaSignerIdentity
@@ -27,6 +30,7 @@ import com.dpsmpx.dpai.ui.SettingsSnapshot
 import com.dpsmpx.dpai.ui.TargetBook
 import com.dpsmpx.dpai.ui.TargetEntry
 import com.dpsmpx.dpai.ui.TargetForm
+import com.dpsmpx.dpai.ui.WorkspaceLink
 import java.io.File
 import java.security.KeyPairGenerator
 import java.security.KeyStore
@@ -34,6 +38,7 @@ import java.security.PrivateKey
 import java.security.Signature
 import java.security.interfaces.ECPublicKey
 import java.security.spec.ECGenParameterSpec
+import kotlin.time.Duration.Companion.minutes
 
 /**
  * Ключ входа приложения (D-35): ECDSA P-256 в Android Keystore. Закрытая
@@ -196,6 +201,43 @@ class Controller(private val root: File, val version: String?) {
         }
         docs.write(BOOK, TargetBook.toJson(s.targets)).let { if (it is Outcome.Failure) return it }
         return setProject(s.project)
+    }
+
+    /**
+     * Связать Claude в Termux [termux] с деревом на ПК [pc] (D-53): ключ в
+     * proot, его строка на ПК, ключ хоста ПК (уже подтверждённый) в
+     * known_hosts proot, проверка входа. Каждый шаг — короткая команда по
+     * SSH с ключом приложения; [progress] — что сейчас идёт, для экрана.
+     */
+    fun linkWorkspace(termux: TargetEntry, pc: TargetEntry, progress: (String) -> Unit = {}): Outcome<Unit> {
+        fun host(e: TargetEntry) = JschProcessHost(checkNotNull(e.toTarget(knownHostsFile).ssh), e.platform, identities = listOf(KeystoreKey.identity()))
+        fun step(e: TargetEntry, what: String, command: List<String>, stdin: String? = null, timeout: kotlin.time.Duration = 1.minutes, accept: (Completed) -> Boolean = { it.ok }): Outcome<Completed> {
+            progress(what)
+            return when (val r = host(e).run(ProcessSpec(command, stdin = stdin), timeout)) {
+                is Outcome.Failure -> Outcome.Failure(listOf(Diagnostic.of(DiagCode.TARGET_CHECK_FAILED, "$what: не выполнено", causes = r.diagnostics)))
+                is Outcome.Success -> if (accept(r.value)) {
+                    r
+                } else {
+                    val tail = (r.value.stderr + r.value.stdout).lastOrNull { it.isNotBlank() }.orEmpty()
+                    Outcome.failure(DiagCode.TARGET_CHECK_FAILED, "$what: код ${r.value.exitCode} $tail".trim(), e.label)
+                }
+            }
+        }
+        val hostLines = WorkspaceLink.hostLines(vfs.read(KNOWN_HOSTS)?.toString(Charsets.UTF_8).orEmpty(), pc)
+        if (hostLines.isEmpty()) return Outcome.failure(DiagCode.VALUE_INVALID, "ключ хоста ${pc.label} не подтверждён: удалите и добавьте target заново", pc.label)
+        val made = when (val r = step(termux, "ключ в Termux", WorkspaceLink.termuxKey(), timeout = 3.minutes)) {
+            is Outcome.Failure -> return r
+            is Outcome.Success -> r.value
+        }
+        val key = WorkspaceLink.publicKey(made.stdout) ?: return Outcome.failure(DiagCode.VALUE_INVALID, "Termux не вернул открытый ключ", termux.label)
+        step(pc, "ключ на ${pc.label}", WorkspaceLink.pcAuthorize(key)).let { if (it is Outcome.Failure) return it }
+        step(termux, "ключ хоста ${pc.label} в Termux", WorkspaceLink.termuxKnownHosts(pc), stdin = hostLines.joinToString("\n", postfix = "\n"))
+            .let { if (it is Outcome.Failure) return it }
+        // Ответ агента — строка JSON и при `"ok":false` (на ПК нет Claude Code — так и задумано): важен вход ключом.
+        return when (val r = step(termux, "вход с Termux на ${pc.label}", WorkspaceLink.termuxCheck(pc), accept = { WorkspaceLink.checked(it.stdout) })) {
+            is Outcome.Failure -> r
+            is Outcome.Success -> Outcome.success(Unit)
+        }
     }
 
     /** `dpai agent doctor` на target — по SSH с ключом приложения. */

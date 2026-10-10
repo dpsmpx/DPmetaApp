@@ -296,6 +296,8 @@ private fun ProjectDialog(controller: Controller, target: TargetEntry, withClaud
     var key by remember { mutableStateOf(com.dpsmpx.dpai.ui.ProjectForm.DEFAULT_IDENTITY) }
     var known by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
+    var linking by remember { mutableStateOf<String?>(null) }
+    var linked by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = { onDone(null) },
         title = { Text("Проект на ${target.label}") },
@@ -313,8 +315,29 @@ private fun ProjectDialog(controller: Controller, target: TargetEntry, withClaud
                         Text(if (c.id == target.id) "${c.label} (здесь же)" else "${c.label} — дерево по SSH", style = MaterialTheme.typography.bodySmall)
                     }
                 }
-                if (claudeOn != null && claudeOn?.id != target.id) {
-                    OutlinedTextField(key, { key = it }, label = { Text("Ключ SSH на ${claudeOn?.label}") }, singleLine = true)
+                val on = claudeOn
+                if (on != null && on.id != target.id) {
+                    // Связка D-53: приложение само кладёт ключ Claude на ${target.label} и ключ хоста — в Termux.
+                    Text(
+                        linking ?: if (linked) "✓ Связано: Claude на ${on.label} ходит на ${target.label} ключом $key" else "Claude на ${on.label} ходит на ${target.label} по SSH своим ключом — его можно настроить автоматически.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    TextButton(enabled = linking == null, onClick = {
+                        error = null
+                        scope.launch {
+                            val r = withContext(Dispatchers.IO) { controller.linkWorkspace(on, target) { linking = "… $it" } }
+                            linking = null
+                            when (r) {
+                                is Outcome.Failure -> error = r.diagnostics.first().let { d -> listOfNotNull(d.message, d.causes.firstOrNull()?.message).joinToString(": ") }
+                                is Outcome.Success -> {
+                                    key = com.dpsmpx.dpai.ui.WorkspaceLink.KEY
+                                    known = com.dpsmpx.dpai.ui.WorkspaceLink.KNOWN_HOSTS
+                                    linked = true
+                                }
+                            }
+                        }
+                    }) { Text(if (linked) "Связать заново" else "Связать автоматически") }
+                    OutlinedTextField(key, { key = it }, label = { Text("Ключ SSH на ${on.label}") }, singleLine = true)
                     OutlinedTextField(known, { known = it }, label = { Text("known_hosts на нём (необязательно)") }, singleLine = true)
                 }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
