@@ -16,6 +16,7 @@ import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.serialization.CanonicalJson
 import com.dpsmpx.dpai.core.serialization.DiagnosticJson
 import com.dpsmpx.dpai.core.serialization.FormatHeader
+import com.dpsmpx.dpai.core.serialization.JsonArray
 import com.dpsmpx.dpai.core.serialization.JsonBool
 import com.dpsmpx.dpai.core.serialization.JsonFields
 import com.dpsmpx.dpai.core.serialization.JsonNumber
@@ -240,6 +241,7 @@ class AgentRuntime(
         var exitCode: Int?
         var reason: ExitReason
         var stopDiags = emptyList<Diagnostic>()
+        var stopped: StopResult? = null
         while (true) {
             exitCode = process.awaitExit(pollEvery)
             if (exitCode != null) {
@@ -250,6 +252,7 @@ class AgentRuntime(
             val timedOut = doc.spec.timeout?.let { clock.monotonicNanos() - begin >= it.inWholeNanoseconds } ?: false
             if (stopRequest != null || timedOut) {
                 val report = process.stop(stopRequest ?: RunningProcess.DEFAULT_GRACE)
+                stopped = StopResult(report.forced, report.survivors)
                 exitCode = report.exitCode
                 reason = if (stopRequest != null) ExitReason.STOPPED else ExitReason.TIMEOUT
                 stopDiags = buildList {
@@ -263,7 +266,7 @@ class AgentRuntime(
                 emit(EventType.TARGET_PROCESS_HEARTBEAT, JsonObject.of("turn" to JsonNumber.of(doc.turn)))
             }
         }
-        emit(EventType.TARGET_PROCESS_EXITED, exitPayload(doc.turn, exitCode, reason, stopDiags))
+        emit(EventType.TARGET_PROCESS_EXITED, exitPayload(doc.turn, exitCode, reason, stopDiags, stopped))
         current = current.copy(state = RunState.EXITED, exitCode = exitCode, reason = reason)
         store.write(RUN_KEY, current.toJson())
         return AgentReply("supervise", ok = true, diagnostics = stopDiags.filterNot { it.isError }, run = current.status(journal.position))
@@ -332,7 +335,7 @@ class AgentRuntime(
         if (waited) {
             val after = observe(id)
             if (after is Outcome.Success) {
-                return AgentReply("stop", ok = true, run = after.value.first.status(after.value.second), stop = StopResult(false, emptyList()))
+                return AgentReply("stop", ok = true, run = after.value.first.status(after.value.second), stop = stoppedBySupervisor(id, doc.turn))
             }
         }
         // Супервизор не уложился — останавливается он сам вместе со своим деревом.
@@ -455,11 +458,31 @@ class AgentRuntime(
         return Outcome.success((if (lost) doc.copy(state = RunState.LOST) else doc) to last)
     }
 
-    private fun exitPayload(turn: Int, code: Int?, reason: ExitReason, diags: List<Diagnostic>): JsonObject {
+    /** [stopped] — итог остановки дерева супервизором: по нему `stop` отвечает правду (ревью A-10). */
+    private fun exitPayload(turn: Int, code: Int?, reason: ExitReason, diags: List<Diagnostic>, stopped: StopResult? = null): JsonObject {
         val f = linkedMapOf<String, JsonValue>("reason" to JsonString(reason.name), "turn" to JsonNumber.of(turn))
         code?.let { f["exitCode"] = JsonNumber.of(it) }
         if (diags.isNotEmpty()) f["diagnostics"] = DiagnosticJson.writeAll(diags)
+        stopped?.let {
+            f["forced"] = JsonBool(it.forced)
+            f["survivors"] = JsonArray(it.survivors.map { pid -> JsonNumber.of(pid) })
+        }
         return JsonObject(f)
+    }
+
+    /**
+     * Итог остановки хода [turn], записанный супервизором в событие выхода
+     * (ревью A-10): раньше `stop`, дождавшись супервизора, отвечал «чисто»,
+     * даже если тот добивал дерево силой или оставил живых — и контроллер
+     * не узнавал о сиротах (ТЗ, §119). Нет записи — ход вышел сам.
+     */
+    private fun stoppedBySupervisor(id: SessionId, turn: Int): StopResult {
+        val exit = EventJournal.readCommitted(vfs, journalPath(id)).valueOrNull().orEmpty().map { it.event }
+            .lastOrNull { it.type == EventType.TARGET_PROCESS_EXITED && (it.payload["turn"] as? JsonNumber)?.toLongExact() == turn.toLong() }
+            ?: return StopResult(false, emptyList())
+        val forced = (exit.payload["forced"] as? JsonBool)?.value ?: false
+        val survivors = (exit.payload["survivors"] as? JsonArray)?.items.orEmpty().mapNotNull { (it as? JsonNumber)?.toLongExact() }
+        return StopResult(forced, survivors)
     }
 
     /**

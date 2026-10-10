@@ -82,7 +82,9 @@ WARN, больше 5 мин — FAIL. Неизвестное — UNKNOWN, а н�
 сессии (`StreamRef` вида `session`): `TARGET_PROCESS_STARTED`,
 `TARGET_PROCESS_OUTPUT`, `TARGET_PROCESS_HEARTBEAT`,
 `TARGET_PROCESS_EXITED` (причина: `EXITED`, `TIMEOUT`, `STOPPED`,
-`START_FAILED`).
+`START_FAILED`). Остановленный супервизором ход несёт в событии выхода
+итог остановки — `forced` и `survivors`; по нему `stop` отвечает контроллеру,
+а не «чисто» (ревью A-10).
 
 Контроллер читает события каналом `RunChannel`: с номера, следующего за
 последним принятым, поэтому обрыв связи ничего не теряет. Пропуск номера

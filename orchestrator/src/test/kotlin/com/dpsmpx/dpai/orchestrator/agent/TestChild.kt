@@ -41,6 +41,12 @@ object TestChild {
                 println("ready")
                 CountDownLatch(1).await()
             }
+            "ignore-term" -> {
+                // Мягкая остановка (SIGTERM) не завершает: хук выхода ждёт без конца — нужен SIGKILL.
+                Runtime.getRuntime().addShutdownHook(Thread { CountDownLatch(1).await() })
+                println("ready")
+                CountDownLatch(1).await()
+            }
             "secret" -> {
                 println("ключ: $FAKE_KEY")
                 exitProcess(0)

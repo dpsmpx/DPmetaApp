@@ -397,4 +397,21 @@ class AgentRuntimeTest {
         assertEquals((1L..events.size).toList(), events.map { it.sequence }, "номера подряд через ходы")
         assertEquals(2, events.count { it.type == EventType.TARGET_PROCESS_STARTED })
     }
+
+    /**
+     * Ревью A-10: супервизор добил дерево силой — `stop` говорит об этом, а
+     * не «чисто» (по итогу в событии выхода).
+     */
+    @Test
+    fun stopReportsForcedKillBySupervisor() {
+        org.junit.jupiter.api.Assumptions.assumeFalse(java.io.File.separatorChar == '\\', "на Windows остановка процесса всегда принудительная")
+        val rt = runtime()
+        val run = ids.next(IdKinds.SESSION)
+        assertTrue(rt.start(run, RunSpec(TestChild.command("child", "ignore-term"))).ok)
+        RealTime.await(60.seconds, "процесс готов") { outputs(rt.events(run, 0, 1000).events).firstOrNull { it == "ready" } }
+        val stop = rt.stop(run, 1.seconds)
+        assertTrue(stop.ok, stop.diagnostics.toString())
+        assertTrue(stop.stop!!.forced, "принуждение видно контроллеру: ${stop.stop}")
+        assertEquals(RunState.EXITED, rt.status(run).run!!.state)
+    }
 }
