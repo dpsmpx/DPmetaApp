@@ -5,9 +5,11 @@ import com.dpsmpx.dpai.core.ids.IdKinds
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.execution.process.LocalProcessHost
 import com.dpsmpx.dpai.execution.process.ProcessSpec
+import com.dpsmpx.dpai.execution.process.run
 import java.io.File
 import java.util.concurrent.CountDownLatch
 import kotlin.system.exitProcess
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * Программы тестов агента: потомок с известным поведением и супервизор,
@@ -44,10 +46,8 @@ object TestChild {
             "spawn-daemon" -> {
                 // Внук уходит в фон: оболочка выходит, и его родитель — init (A-9).
                 val cmd = command("child", "hang").joinToString(" ") { "'" + it.replace("'", "'\\''") + "'" }
-                val sh = ProcessBuilder("sh", "-c", "$cmd >/dev/null 2>&1 & echo \$!").start()
-                val pid = sh.inputStream.bufferedReader().readLine()
-                sh.waitFor()
-                println("daemon $pid")
+                val sh = LocalProcessHost().run(ProcessSpec(listOf("sh", "-c", "$cmd >/dev/null 2>&1 & echo \$!")), 30.seconds)
+                println("daemon ${(sh as Outcome.Success).value.stdout.first()}")
                 CountDownLatch(1).await()
             }
             "ignore-term" -> {
