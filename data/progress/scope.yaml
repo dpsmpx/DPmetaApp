@@ -11,8 +11,9 @@
 #                           на сайте — только числа в общих суммах: ни строки, ни узла карты,
 #                           ни отдельной даты (фильтр Д39)
 # group:      core | support | control — места по слову автора 09.10.2026 (DPmeta M-10): ядро,
-#             поддерживающий слой, управление. Архива (проекты до репозитория игры) в счёте нет —
-#             он в excluded с kind: archive (Д38)
+#             поддерживающий слой, управление. Исключение — DPmeta: по M-10 его место meta, здесь он
+#             считается вместе с ядром, как с 05.10.2026 (Д38). Архива (ранние проекты до репозитория
+#             игры и убранные автором) в счёте нет — он в excluded с kind: archive (Д38)
 # what:       id факта с публичной ролью (data/facts/facts.yaml)
 # layer:      слой на карте экосистемы
 schema: progress_scope/v1
@@ -97,7 +98,7 @@ repos:
   - key: dpmeta
     slug: dpsmpx/DPmeta
     name: DPmeta
-    group: core
+    group: core                    # по DPmeta M-10 — место meta; на странице — вместе с ядром (Д38)
     visibility: private
     layer: meta
     what: META-WHAT
@@ -121,6 +122,7 @@ repos:
     visibility: private
     layer: engineering
     what: VIS-WHAT
+    what_idx: 1                    # «…на реальных данных» — без «эта схема»: она — в разделе «Экосистема»
   - key: dpmon
     slug: dpsmpx/DPmonetization
     name: DPmonetization
@@ -154,7 +156,8 @@ excluded:                          # с работой в периоде, но �
   - {slug: dpsmpx/tanks_blitz_stat_chat, key: tanks, kind: archive, reason: ранний проект — до репозитория игры}
   - {slug: dpsmpx/DP_Ecosystem, key: ecosystem, kind: archive, reason: убран автором из текущей системы}
   - {slug: dpsmpx/DP_Repeated_Tasks, key: repeated, kind: archive, reason: убран автором из текущей системы}
-relations:                         # связи между репозиториями — из контрактов DPmeta (docs/CONTRACTS.md)
+relations:                         # связи между репозиториями — из контрактов DPmeta (docs/CONTRACTS.md, main);
+                                   # C-11…C-13 — после вливания ветки DPmeta (TODO.md)
   - from: galdhold
     to: dplang
     both: true
@@ -188,18 +191,3 @@ relations:                         # связи между репозитори�
     source: DPmeta C-03
     ru: "поставка общих проверок копией"
     en: "shared checks delivered as a copy"
-  - from: dpmeta
-    to: dpvis
-    source: DPmeta C-11
-    ru: "реестр репозиториев и контракты — для сверки модели экосистемы"
-    en: "the repository registry and contracts, to check the ecosystem model"
-  - from: dpvis
-    to: smi
-    source: DPmeta C-12
-    ru: "схема экосистемы для сайта — копия, обновляется при каждой выгрузке"
-    en: "the ecosystem diagram for the website — a copy refreshed on every upload"
-  - from: dpmeta
-    to: orchestrator
-    source: DPmeta C-13
-    ru: "манифест экосистемы: проекты и предложения задач"
-    en: "the ecosystem manifest: projects and suggested tasks"

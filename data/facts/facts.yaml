@@ -644,12 +644,13 @@ facts:
     class: FACT
     risk: low
     public: true
-    statement: Первый и повторный проходы консолидации экосистемы — 5 октября 2026.
+    statement: Три прохода консолидации экосистемы — 5 октября 2026 (первый, повторный и третий).
     allowed_wording:
-      ru: ["два прохода по экосистеме — 5 октября 2026"]
-      en: ["two passes over the ecosystem on 5 October 2026"]
+      ru: ["три прохода по экосистеме — 5 октября 2026"]
+      en: ["three passes over the ecosystem on 5 October 2026"]
     evidence:
       - {kind: doc, source: "dpsmpx/DPmeta docs/reports/2026-10-05-ECOSYSTEM_HEALTH.md, 2026-10-05-2-ECOSYSTEM_HEALTH.md", ref: "b03e9bc", date: 2026-10-05, verification: reported}
+      - {kind: doc, source: "dpsmpx/DPmeta docs/reports/2026-10-05-3-ECOSYSTEM_HEALTH.md (третий проход, main)", ref: "f166b47", date: 2026-10-05, verification: reported}
   - id: CORE-SCALE-2026-10-05
     subject: ecosystem
     class: FACT

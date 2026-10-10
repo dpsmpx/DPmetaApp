@@ -120,6 +120,10 @@
      "what": {
       "type": "string"
      },
+     "what_idx": {
+      "type": "integer",
+      "minimum": 0
+     },
      "project": {
       "type": "string"
      },

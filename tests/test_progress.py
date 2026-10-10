@@ -97,6 +97,17 @@ class Figures(unittest.TestCase):
         snap, _ = render(self.p, "snapshot", "ru")
         for k in self.p.supporting():
             self.assertIn(self.p.specs[k]["name"], snap)
+        # ядро — сверху, управление и поддерживающий слой — отдельной частью таблицы под ним
+        core_end = max(snap.index(self.p.specs[k]["name"]) for k in self.p.listed(self.p.core()))
+        self.assertLess(core_end, snap.index('colspan="3">Управление и поддерживающий слой'))
+        # на странице прогресса нет схемы DPvisualisation: формулировка без «эта схема» (what_idx)
+        for fid in ("snapshot", "ecosystem"):
+            for lang, word in (("ru", "эта схема"), ("en", "this diagram")):
+                self.assertNotIn(word, render(self.p, fid, lang)[0], f"{fid} [{lang}]")
+        archived = {x["slug"].split("/")[-1] for x in self.p.scope["excluded"] if x["kind"] == "archive"}
+        for fid in ("repos", "ecosystem", "snapshot"):
+            html_, _ = render(self.p, fid, "ru")
+            self.assertFalse([n for n in archived if n in html_], fid)
 
     def test_old_dataset_hides_archive(self):
         old = Progress(Repo(), OLD)

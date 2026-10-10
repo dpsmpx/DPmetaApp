@@ -4,15 +4,15 @@ item: CI-0002
 platform: website
 lang: en
 format: page
-source_version: 3
-version: 2
+source_version: 4
+version: 3
 status: ready
 trust: validated
 title: Ecosystem progress
 link: null
 generation:
   provider: session
-  note: 'английский вариант канона v3 (Д21, Д22): тот же смысл, формулировки фактов на en; фигуры набора
+  note: 'английский вариант канона v4 (Д21, Д22): тот же смысл, формулировки фактов на en; фигуры набора
     2026-10-09'
 summary: From 11 September to 9 October 2026 one game grew into an ecosystem of repositories — the core,
   control and a support layer. This page shows what was built — from git history measurements and the
@@ -39,21 +39,21 @@ deps:
     PRF-STAGE: 40947e9899f1a802
     LRN-STAGE: 374e468812f9a5f2
     MKT-STAGE: 85a31655a6f4615e
-    META-STAGE: 746c6b8c7089cbae
+    META-STAGE: 812717a1ab0bcfea
     ORC-STAGE: a2bf3e66a0bd346a
     META-NO-DEPS: 538aa32a19a5c5ea
   links: {}
   releases: {}
   datasets:
-    '2026-10-09': aa3b4fb071f1aeab
+    '2026-10-09': d3208297fceaac2e
   canonical:
-    version: 3
-    sha256: 7ad3428d739bc28d694f3f1204a0eddb8e6119552245d07fd381d417f335dbf6
+    version: 4
+    sha256: 917b104b4e5e63239c08c33871fe5ca9d284d4921d8cb1ba59f6ef31fa19d214
   media: {}
 ---
 The period runs from {{progress:2026-10-09.period_start}} to {{progress:2026-10-09.period_end}}, from the first commit of {{fact:GH-NAME#1}} to the snapshot at {{progress:2026-10-09.cutoff}}. That is {{progress:2026-10-09.span_days}} days; the charts show {{progress:2026-10-09.days}} calendar dates, and the last one is partial.
 
-Only the current system is counted — repositories started together with the game repository and after it. Earlier projects form an archive: they are neither shown nor counted here.
+Only the current system is counted — repositories started together with the game repository and after it, except those the author removed. Earlier projects and the removed ones form an archive: they are neither shown nor counted here.
 
 The numbers here are measurements of git history and of the projects' own documents; derived values follow the formulas in "How it was measured". A commit count is not a measure of value, so progress is shown through several measurements at once: work per day, branches, code, checks, decisions, structure.
 
@@ -66,7 +66,7 @@ Where the projects stand now. Stages come from the projects' own documents, with
 
 ## Every day
 
-Over the period — {{progress:2026-10-09.commits}} commits by the author and Claude across all branches and {{progress:2026-10-09.merges}} merged pull requests; there were commits on {{progress:2026-10-09.active_days}} of {{progress:2026-10-09.days}} days. Until 3 October all work went into Galdhold. From 3 October new core repositories appear, from 5 October control and the support layer; {{progress:2026-10-09.peak_day}} is the peak: {{progress:2026-10-09.peak_commits}} commits and {{progress:2026-10-09.peak_merges}} pull requests.
+Over the period — {{progress:2026-10-09.commits}} commits by the author and Claude across all branches and {{progress:2026-10-09.merges}} merged pull requests; there were commits on {{progress:2026-10-09.active_days}} of {{progress:2026-10-09.days}} days. Until 3 October Galdhold was the only repository in the count. From 3 October new core repositories appear, from 5 October control and the support layer; {{progress:2026-10-09.peak_day}} is the peak: {{progress:2026-10-09.peak_commits}} commits and {{progress:2026-10-09.peak_merges}} pull requests.
 
 The columns are split into three groups — Galdhold, the rest of the core, control and the support layer — so that work outside Galdhold does not disappear against it: Galdhold accounts for {{progress:2026-10-09.galdhold_share}} of all commits. A commit is a unit of history, not a measure of quality: one commit can be a line in a document, another a new system.
 
@@ -120,7 +120,7 @@ Until {{progress:2026-10-09.decisions_first}} the core had no decision logs; at 
 
 ## Ecosystem map
 
-The ecosystem has three parts: the core — the projects in the snapshot table above, control, and the support layer. Control stands apart: DPmetaApp is {{fact:APP-WHAT}}. The support layer: DPvisualisation is {{fact:VIS-WHAT#1}}; DPmonetization is {{fact:MON-WHAT}}.
+The ecosystem has three parts: the core — the upper part of the snapshot table above, control and the support layer — its lower part. Control stands apart: DPmetaApp is {{fact:APP-WHAT}}. The support layer: DPvisualisation is {{fact:VIS-WHAT#1}}; DPmonetization is {{fact:MON-WHAT}}. The map below shows layers by purpose: control has its own layer, and the support layer sits in the engineering foundation.
 
 The repositories are independent: {{fact:META-NO-DEPS}}. Each builds and is checked on its own; they are connected by decisions, contracts and facts. A diagram of the links, built from data, is in the "Ecosystem" section.
 
@@ -134,6 +134,6 @@ Milestones are events with sources: a decision, a release, a measurement, a new 
 
 ## How it was measured
 
-The dataset is collected by the system's own tool from repository clones; it is stored with the site, and the page is built from it at build time, without calls to GitHub. Only the current system is counted; the archive of earlier projects is given in the method only as a number. A private project without a public name is counted only in totals; branch names, commit messages and the time of day of commits are not published. Later snapshots are new datasets with the same formulas; past ones are not recalculated.
+The dataset is collected by the system's own tool from repository clones; it is stored with the site, and the page is built from it at build time, without calls to GitHub. Only the current system is counted; the archive — earlier projects and the removed ones — is given in the method only as a number. A private project without a public name is counted only in totals; branch names, commit messages and the time of day of commits are not published. Later snapshots are new datasets with the same formulas; past ones are not recalculated.
 
 {{figure:2026-10-09.method}}

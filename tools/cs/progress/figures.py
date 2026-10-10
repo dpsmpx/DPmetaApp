@@ -67,7 +67,7 @@ L = {
         "core_note": "из них один закрытый проект без имени",
         "only_totals": "Закрытый проект без публичного имени здесь не показан отдельно — он входит только в общие суммы.",
         "personal_n": "личные репозитории — {n}: заметки и планы; имена не публикуются",
-        "archive_n": "архив — {n}: проекты до репозитория игры и ранние; вне текущей системы, на странице не показываются",
+        "archive_n": "архив — {n}: ранние проекты до репозитория игры и убранные автором; вне текущей системы, на странице не показываются",
         "ms_kind": {"decision": "решение автора", "verification": "проверки", "device": "замер на устройстве",
                     "release": "релиз", "start": "начало", "build": "сборка", "world": "мир игры", "graphics": "графика",
                     "process": "процесс", "platform": "платформы", "repository": "новый репозиторий",
@@ -126,7 +126,7 @@ L = {
         "core_note": "including one undisclosed private project",
         "only_totals": "A private project without a public name is not shown separately — it is counted only in totals.",
         "personal_n": "personal repositories — {n}: notes and plans; names are not published",
-        "archive_n": "archive — {n}: projects that predate the game repository and earlier ones; outside the current system, not shown here",
+        "archive_n": "archive — {n}: early projects that predate the game repository and ones the author removed; outside the current system, not shown here",
         "ms_kind": {"decision": "author's decision", "verification": "checks", "device": "device measurement",
                     "release": "release", "start": "start", "build": "build", "world": "game world", "graphics": "graphics",
                     "process": "process", "platform": "platforms", "repository": "new repository",
@@ -196,6 +196,20 @@ class Fig:
             self.facts_used.append(fid)
         return words[idx] if f.get("public") and len(words) > idx else None
 
+    def what(self, spec: dict) -> str | None:
+        """Роль репозитория: формулировка факта `what` с номером `what_idx` (по умолчанию первая)."""
+        return self.fact(spec["what"], spec.get("what_idx", 0)) if spec.get("what") else None
+
+    def stage_row(self, key: str) -> str:
+        """Строка таблицы среза: имя, роль, стадия с датой факта."""
+        spec, t = self.p.specs[key], self.t
+        sf = STAGE_FACTS.get(key)
+        stage = self.fact(sf) if sf else None
+        fd = self.fact_date(sf) if sf else None
+        when = f' <span class="meta">({E(t["fact_date"])} {E(fmt_short(fd, self.lang))})</span>' if fd else ""
+        return (f'<tr><th scope="row">{E(spec["name"])}</th><td>{E(self.what(spec) or "")}</td>'
+                f'<td>{E(stage or "—")}{when}</td></tr>')
+
     def fact_date(self, fid: str) -> str | None:
         ev = (self.p.repo.facts().get(fid) or {}).get("evidence") or []
         return max((str(e["date"]) for e in ev if e.get("date")), default=None)
@@ -254,18 +268,14 @@ class Fig:
             tiles.append(f'<div class="tile"><div class="tv">{E(v)}</div><div class="tl">{E(t["tiles"][mid])}</div>{note}'
                          f'<span class="dkind dk-{kind}">{E(t["kind"][kind])}</span></div>')
         rows = []
-        for key in p.core() + p.supporting():
-            spec = p.specs[key]
-            if spec["visibility"] == "undisclosed":
-                continue
-            what = self.fact(spec["what"]) if spec.get("what") else ""
-            sf = STAGE_FACTS.get(key)
-            stage = self.fact(sf) if sf else None
-            fd = self.fact_date(sf) if sf else None
-            when = f' <span class="meta">({E(t["fact_date"])} {E(fmt_short(fd, self.lang))})</span>' if fd else ""
-            rows.append(f'<tr><th scope="row">{E(spec["name"])}</th><td>{E(what or "")}</td>'
-                        f'<td>{E(stage or "—")}{when}</td></tr>')
+        for gname, keys in (("", p.core()), (t["grp_sup"], p.supporting())):
+            keys = p.listed(keys)
+            if gname and keys:  # управление и поддерживающий слой — отдельной частью таблицы, под ядром
+                rows.append(f'<tr><th scope="colgroup" colspan="3">{E(gname)}</th></tr>')
+            for key in keys:
+                rows.append(self.stage_row(key))
         cut = fmt_value(p.data["period"]["cutoff"], "datetime", self.lang)
+
         stages = (f'<div class="tscroll"><table class="facts stages"><thead><tr><th scope="col">{E(t["project"])}</th>'
                   f'<th scope="col">{E(t["role"])}</th><th scope="col">{E(t["stage"])}</th></tr></thead>'
                   f'<tbody>{"".join(rows)}</tbody></table></div>')
@@ -522,7 +532,7 @@ class Fig:
                     continue
                 if spec["visibility"] == "undisclosed":  # только в суммах (Д38, Д39): ни узла, ни слоя
                     continue
-                what = self.fact(spec["what"]) if spec.get("what") else None
+                what = self.what(spec)
                 first = p.first_day(k)
                 since = (f'<span class="meta">{E(t["first_seen"])} {E(fmt_short(first, self.lang))}</span>'
                          if first and first > p.days[0] else "")
