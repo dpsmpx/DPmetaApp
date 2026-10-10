@@ -157,6 +157,11 @@
   CSP — `connect-src 'self'`. Решение автора: где живёт инфраструктура
   (шлюз, worker-ы — Beget только статика). Задачу в ROADMAP сайта — по
   этому решению.
+- [ ] **Черновой PR ветки `claude/dreamy-bardeen-xe4k6r`** — `CLAUDE.md`
+  требует его сразу после первого пуша, а ветки по решению автора
+  (09.10.2026) остаются невлитыми; облачная сессия PR без прямой просьбы
+  автора не открывает. Открыть черновик с пометкой «не вливать» или
+  записать «без PR до вливания» — решает автор.
 - [ ] **После вливания ветки DPmeta `claude/dreamy-bardeen-xe4k6r`** — связи
   `DPmeta:C-11`…`DPmeta:C-13` (DPmeta → DPvisualisation, DPvisualisation →
   сайт, DPmeta → DP_AI_Orcestrator) в `relations` `data/progress/scope.yaml` и
