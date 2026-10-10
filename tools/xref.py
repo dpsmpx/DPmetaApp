@@ -33,9 +33,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 MAX_BYTES = 2_000_000
-# Место проекта в экосистеме (M-10): управление, ядро, поддерживающий слой,
-# мета-уровень, архив — вне текущей системы.
-PLACES = {"control", "core", "support", "meta", "archive"}
+# Место проекта в экосистеме (M-10, M-12): управление, ядро, поддерживающий слой,
+# слой синхронизации (DPmeta), архив — вне текущей системы.
+PLACES = {"control", "core", "support", "sync", "archive"}
 SAMPLES = 5
 
 

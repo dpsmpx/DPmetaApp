@@ -21,9 +21,9 @@ DP_game_market_analytic_system, — журнал решений, `CLAUDE.md`, `T
 `CLAUDE.md`, а `TODO.md` лежит в `docs/` (RISK-05). Все закрытые
 (private); DP_AI_Orcestrator по ответу автора остаётся закрытым и
 ведётся по правилам публичного (`DP_AI_Orcestrator:D-16`,
-`DP_AI_Orcestrator:TODO.md`). На странице прогресса сайта и в схеме
-DPvisualisation с ядром считается и DPmeta (`SocialMediaImage:Д38` —
-в невлитой ветке `claude/dreamy-bardeen-xe4k6r` SocialMediaImage): там в ядре десять репозиториев.
+`DP_AI_Orcestrator:TODO.md`). DP_AI_Orcestrator будет в составе
+DPmetaApp, а не отдельным приложением (слово автора 10 октября 2026,
+SQ-29).
 
 | репозиторий | отвечает за | не делает | стадия | проверки | вход |
 |---|---|---|---|---|---|
@@ -36,9 +36,11 @@ DPvisualisation с ядром считается и DPmeta (`SocialMediaImage:Д
 | **SocialMediaImage** | производство, проверка и публикация контента автора; сайт `dpsmpx.com` и его страница «Прогресс экосистемы» (`SocialMediaImage:README.md`, `SocialMediaImage:Д38`) | решения закрытых проектов не переписывает; их код не переносит; не публикует без одобрения автора (`SocialMediaImage:CLAUDE.md`) | сайт выпущен — выгрузка разрешена 5 октября 2026, первая штатная прошла (`SocialMediaImage:Д34`, `SocialMediaImage:TODO.md`); фаза «Сайт MVP» продолжается; `CI-0001` и страница прогресса `CI-0002` ждут одобрения автора (`SocialMediaImage:ROADMAP/ROADMAP.md`) | `tools/check.sh` | `SocialMediaImage:README.md` |
 | **DP_game_market_analytic_system** | воспроизводимый анализ рынка игр с явной неопределённостью: наблюдения → факты → метрики → гипотезы → решения (`DP_game_market_analytic_system:docs/ARCHITECTURE.md`) | не скрейпер, не агрегатор новостей, не обёртка над LLM (там же) | 0.1.0; фазы 0–4 с тестами, 5–6 без тестов, CLI нет (`DP_game_market_analytic_system:docs/HANDOFF.md`) | `python3 -m pytest` | `DP_game_market_analytic_system:docs/ARCHITECTURE.md` |
 
-| **DP_AI_Orcestrator** | управляющий слой для параллельных сессий Claude Code и Agent SDK: задачи и зависимости, аккаунты, execution targets, контекст и handoff, проверка результата; управление — из Android-приложения (`DP_AI_Orcestrator:README.md`, `DP_AI_Orcestrator:D-01`) | код закрытых репозиториев не переносит — только идеи (`DP_AI_Orcestrator:D-16`); кода DPmeta не содержит — читает его манифест (C-13) | выполнено этапов 15 из 21, в работе — 5, 11, 12, 17 (`DP_AI_Orcestrator:README.md`, «Прогресс»); врезка README отстаёт (SQ-26) | `tools/verify/run.sh full` | `DP_AI_Orcestrator:CLAUDE.md` |
+| **DP_AI_Orcestrator** | управляющий слой для параллельных сессий Claude Code и Agent SDK: задачи и зависимости, аккаунты, execution targets, контекст и handoff, проверка результата; управление — из Android-приложения (`DP_AI_Orcestrator:README.md`, `DP_AI_Orcestrator:D-01`); по слову автора 10 октября 2026 — в составе DPmetaApp, отдельного приложения не будет (SQ-29) | код закрытых репозиториев не переносит — только идеи (`DP_AI_Orcestrator:D-16`); кода DPmeta не содержит — читает его манифест (C-13) | выполнено этапов 15 из 21, в работе — 5, 11, 12, 17 (`DP_AI_Orcestrator:README.md`, «Прогресс»); врезка README отстаёт (SQ-26) | `tools/verify/run.sh full` | `DP_AI_Orcestrator:CLAUDE.md` |
 
-DPmeta — мета-уровень (M-01, `place = "meta"`): `README.md`.
+DPmeta — **слой синхронизации** (M-01, M-12, `place = "sync"`): карта,
+контракты, имена, очередь согласований, манифест; не ядро и не
+зависимость. `README.md`.
 
 ## 2. Управление, поддерживающий слой, профиль и архив
 
@@ -49,9 +51,11 @@ DPmeta — мета-уровень (M-01, `place = "meta"`): `README.md`.
 странице прогресса сайта и в DPmetaApp архива нет (`DPvisualisation:D-20`,
 `SocialMediaImage:Д38`, `DPmetaApp:D-26` — все три в невлитой ветке `claude/dreamy-bardeen-xe4k6r`
 своих репозиториев; в `main` SocialMediaImage архив пока в счёте как
-«ранние и малые проекты»); станция «2023» раздела «Путь» сайта (ранние
-проекты без имён) и упоминание TrueJointTileMaker в статье CI-0003 —
-решение автора (`SocialMediaImage:TODO.md` в той же ветке). В реестре DPmeta
+«ранние и малые проекты»). Говорить о ранних проектах на сайте можно
+открыто — их репозитории открыты, а о закрытых активных — осторожнее
+(слово автора 10 октября 2026): станция «2023» раздела «Путь» и
+упоминание TrueJointTileMaker в статье CI-0003 остаются, на странице
+прогресса архив назван по именам, но не в счёте. В реестре DPmeta
 архив остаётся ради контракта C-08 и сверки ссылок, в манифест (M-11) не
 входит. Профиль `dpsmpx/dpsmpx` — не проект: места у него нет (M-10, C-07).
 
@@ -59,7 +63,7 @@ DPmeta — мета-уровень (M-01, `place = "meta"`): `README.md`.
 
 | репозиторий | что это | связи |
 |---|---|---|
-| `dpsmpx/DPmetaApp` (закрытый) | управление экосистемой — Android-приложение автора над законченными системами; по мастер-ТЗ строится в фазе B, после того как проекты доведены до законченных систем (`DPmetaApp:MESTER_TECHNICAL_TASK_ROADMAP.md`). ТЗ, решения и процесс — в невлитой ветке `claude/dreamy-bardeen-xe4k6r` (SQ-27) | по плану — читатель всего: модель и срез DPvisualisation — его слой визуализации и живой режим схемы (`DPvisualisation:D-18`); DP_AI_Orcestrator — подсистемой; данные DPmeta. Кода пока нет, контрактов нет |
+| `dpsmpx/DPmetaApp` (закрытый) | управление экосистемой — Android-приложение автора над законченными системами; по мастер-ТЗ строится в фазе B, после того как проекты доведены до законченных систем (`DPmetaApp:MESTER_TECHNICAL_TASK_ROADMAP.md`). ТЗ, решения и процесс — в невлитой ветке `claude/dreamy-bardeen-xe4k6r` (SQ-27) | по слову автора 10 октября 2026 — содержит системы активных репозиториев в себе, а не обращается каждый раз к GitHub: DP_AI_Orcestrator — его подсистема, модель и срез DPvisualisation — слой визуализации и живой режим схемы (`DPvisualisation:D-18`), данные DPmeta. Кода пока нет, контрактов нет |
 
 ### Поддерживающий слой (`support`)
 

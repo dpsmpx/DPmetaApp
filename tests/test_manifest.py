@@ -239,7 +239,7 @@ class RealRegistryTest(unittest.TestCase):
     def test_every_repo_has_a_place_and_manifest_builds(self):
         repos = xref.load_registry(ROOT / "tools" / "ecosystem.toml")
         self.assertEqual([r.name for r in repos if not r.place], [])
-        self.assertEqual({r.name for r in repos if r.place == "meta"}, {"DPmeta"})
+        self.assertEqual({r.name for r in repos if r.place == "sync"}, {"DPmeta"})
         queue = (ROOT / "docs" / "SYNC_QUEUE.md").read_text(encoding="utf-8")
         assert_reader_accepts(self, manifest.build(repos, {}, queue))
 

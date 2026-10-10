@@ -14,10 +14,10 @@
 #   decisions  — журнал решений: путь и шаблон номера (регулярное выражение);
 #   defs       — где ещё определены номера, на которые ссылаются другие
 #                репозитории (ТЗ, реестры); шаблон — тот же формат;
-#   place      — место в экосистеме по слову автора (M-10): control —
+#   place      — место в экосистеме по слову автора (M-10, M-12): control —
 #                управление, core — ядро, support — поддерживающий слой,
-#                meta — DPmeta, archive — вне текущей системы (в манифест
-#                dpai.ecosystem не входит, M-11).
+#                sync — слой синхронизации (DPmeta), archive — вне текущей
+#                системы (в манифест dpai.ecosystem не входит, M-11).
 # Порядок записей — порядок строк и столбцов в отчёте.
 
 schema = 1
@@ -137,7 +137,7 @@ place = "archive"
 name = "DPmeta"
 slug = "dpsmpx/DPmeta"
 clone = "DPmeta"
-place = "meta"
+place = "sync"
 decisions = { path = "docs/DECISIONS.md", id = "M-\\d+" }
 defs = [
   { path = "docs/CONTRACTS.md", id = "C-\\d+" },
