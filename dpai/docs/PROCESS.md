@@ -111,8 +111,9 @@ tools/verify/run.sh doctor     # окружение проверок: JDK, Pytho
 
 Сессию обрывает лимит — без предупреждения; незапушенное пропадает.
 
-- **В начале сессии** — хук `.claude/hooks/session-start.sh` показывает
-  ветки с невлитой работой; начатое продолжается с той ветки.
+- **В начале сессии** — хук DPmetaApp
+  (`DPmetaApp:.claude/hooks/session-start.sh`, D-55) показывает ветки с
+  невлитой работой; начатое продолжается с той ветки.
 - **Коммит и пуш** — после каждого законченного куска и не реже раза в
   полчаса; незаконченное — коммитом `WIP:` со словами, что осталось.
 - **Перед долгим** (сборка с загрузкой зависимостей, большой рефакторинг)
@@ -124,8 +125,8 @@ tools/verify/run.sh doctor     # окружение проверок: JDK, Pytho
 
 GitHub Actions не используется (D-15). Условие слияния в `main`:
 `tools/verify/run.sh full` выполнен на последнем коммите и прошёл; итог
-(`tools/verify/run.sh report`) — в описании PR (шаблон
-`.github/pull_request_template.md`).
+(`tools/verify/run.sh report`) — в описании PR (шаблон DPmetaApp
+`DPmetaApp:.github/pull_request_template.md`, D-55).
 
 ## 6. Выпуск
 

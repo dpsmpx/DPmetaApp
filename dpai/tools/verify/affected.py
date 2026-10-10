@@ -34,8 +34,9 @@ def changed_files():
     base = git_lines("merge-base", "HEAD", "origin/main")
     if base is None:
         return None, "нет origin/main — выбираются все модули"
-    committed = git_lines("diff", "--name-only", base[0], "HEAD") or []
-    worktree = git_lines("diff", "--name-only", "HEAD") or []
+    # --relative: dpai — каталог DPmetaApp (D-55); пути — от корня подсистемы, как в таблице модулей.
+    committed = git_lines("diff", "--name-only", "--relative", base[0], "HEAD") or []
+    worktree = git_lines("diff", "--name-only", "--relative", "HEAD") or []
     untracked = git_lines("ls-files", "--others", "--exclude-standard") or []
     return sorted(set(committed + worktree + untracked)), f"изменения от {base[0][:12]} (merge-base с origin/main)"
 

@@ -62,4 +62,4 @@ D-17). `tools/verify/check_dependencies.py` сверяет таблицу §2 с
 | Таблица модулей как источник направлений зависимостей | `DPpass:docs/ARCHITECTURE.md`, §2 | `docs/ARCHITECTURE.md`, §2 |
 | Уровни проверки static/affected/full, plan, report | `DP-Verify:README.md` | `tools/verify/`, D-16 |
 | Ссылки `Проект:номер`, общие принципы E-01…E-13 | `DPmeta:docs/NAMING.md`, `DPmeta:docs/PRINCIPLES.md` | `CLAUDE.md`, D-18 |
-| Хук начала сессии с ветками невлитой работы | `DPlang:.claude/hooks/session-start.sh` | `.claude/hooks/session-start.sh` |
+| Хук начала сессии с ветками невлитой работы | `DPlang:.claude/hooks/session-start.sh` | `DPmetaApp:.claude/hooks/session-start.sh` (D-55) |
