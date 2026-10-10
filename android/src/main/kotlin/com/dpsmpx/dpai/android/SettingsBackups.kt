@@ -85,6 +85,8 @@ object SettingsBackups {
         }
         prefs(context).edit().putString("lastDigest", SettingsBackup.digest(s)).putLong("lastAt", now).putString("lastName", name).apply()
         prune(context)
+        // И в Termux (D-54): после переустановки настройки вернутся оттуда без выбора файла.
+        runCatching { controller.mirrorSettings(bytes.toString(Charsets.UTF_8)) }
         return Outcome.success(name)
     }
 
@@ -128,6 +130,36 @@ object SettingsBackups {
         }
         ids.drop(KEEP).forEach { id -> runCatching { resolver.delete(ContentUris.withAppendedId(MediaStore.Downloads.EXTERNAL_CONTENT_URI, id), null, null) } }
     }
+
+    /**
+     * Одноразовый код восстановления (D-54): один на сутки, хранится, пока
+     * человек в Termux, — HyperOS может выгрузить приложение, и код должен
+     * дожить до возвращения.
+     */
+    fun restoreNonce(context: Context): String {
+        val p = prefs(context)
+        val now = Clock.SYSTEM.now().epochMillis
+        p.getString("restoreNonce", null)?.takeIf { now - p.getLong("restoreNonceAt", 0) < NONCE_MS }?.let { return it }
+        val bytes = com.dpsmpx.dpai.core.clock.RandomSource.secure().nextBytes(16)
+        val nonce = bytes.joinToString("") { "%02x".format(it) }
+        p.edit().putString("restoreNonce", nonce).putLong("restoreNonceAt", now).apply()
+        return nonce
+    }
+
+    /** Код использован. */
+    fun clearRestoreNonce(context: Context) {
+        prefs(context).edit().remove("restoreNonce").remove("restoreNonceAt").apply()
+    }
+
+    /** Пользователь Termux (`u0_a123`) — по uid его приложения; `null` — Termux не установлен. */
+    fun termuxUser(context: Context): String? = try {
+        val uid = context.packageManager.getApplicationInfo("com.termux", 0).uid
+        "u${uid / 100_000}_a${uid % 100_000 - 10_000}"
+    } catch (_: android.content.pm.PackageManager.NameNotFoundException) {
+        null
+    }
+
+    private const val NONCE_MS = 24L * 60 * 60 * 1000
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 }

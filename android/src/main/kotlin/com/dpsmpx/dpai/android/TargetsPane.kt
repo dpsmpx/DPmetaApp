@@ -60,6 +60,7 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
     var projectFor by remember { mutableStateOf<TargetEntry?>(null) }
     var guide by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf<TargetEntry?>(null) }
+    var restoring by remember { mutableStateOf(false) }
     if (guide) {
         SetupPane(controller, model) {
             guide = false
@@ -82,8 +83,18 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
             }
         }
         if (targets.any(TermuxLauncher::local)) item(key = "termux") { TermuxCard(targets.first(TermuxLauncher::local).port) }
+        if (restoring || targets.none(TermuxLauncher::local)) {
+            item(key = "restore") {
+                // После восстановления карточка остаётся с отчётом, пока её не скроют.
+                RestoreCard(controller, onHide = { restoring = false }) {
+                    targets = controller.targets()
+                    project = controller.project()
+                    restoring = true
+                }
+            }
+        }
         item(key = "backup") {
-            BackupCard(controller) {
+            BackupCard(controller, onRestoreAccess = { restoring = true }) {
                 targets = controller.targets()
                 project = controller.project()
             }
@@ -601,7 +612,7 @@ private fun RemoveDialog(t: TargetEntry, model: DemoModel, onCancel: () -> Unit,
  * строку надо снова добавить в authorized_keys targets.
  */
 @Composable
-private fun BackupCard(controller: Controller, onRestored: () -> Unit) {
+private fun BackupCard(controller: Controller, onRestoreAccess: () -> Unit, onRestored: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current.applicationContext
     val scope = rememberCoroutineScope()
     var last by remember { mutableStateOf(SettingsBackups.last(context)) }
@@ -643,7 +654,81 @@ private fun BackupCard(controller: Controller, onRestored: () -> Unit) {
                 }) { Text("Сохранить сейчас") }
                 TextButton(onClick = { pick.launch(arrayOf("application/json", "application/octet-stream", "text/plain", "*/*")) }) { Text("Загрузить…") }
             }
+            TextButton(onClick = onRestoreAccess) { Text("Восстановить доступ после переустановки") }
         }
     }
 }
 
+/**
+ * Восстановление после переустановки (D-54): одна команда в Termux — и
+ * приложение само возвращает доступ по SSH, настройки из копии в Termux,
+ * targets по слотам Claude и ключ приложения на ПК. После копирования
+ * команды карточка сама ждёт возвращения из Termux и пробует каждые 5 с.
+ */
+@Composable
+private fun RestoreCard(controller: Controller, onHide: () -> Unit, onRestored: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current.applicationContext
+    val scope = rememberCoroutineScope()
+    val nonce = remember { SettingsBackups.restoreNonce(context) }
+    val user = remember { SettingsBackups.termuxUser(context) }
+    var command by remember { mutableStateOf<String?>(null) }
+    var waiting by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf<String?>(null) }
+    var message by remember { mutableStateOf<String?>(null) }
+    var report by remember { mutableStateOf<List<String>>(emptyList()) }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        command = withContext(Dispatchers.IO) { com.dpsmpx.dpai.ui.TermuxRestore.command(controller.publicKeyLine(), nonce) }
+    }
+    suspend fun attempt(quiet: Boolean): Boolean {
+        val u = user ?: run { message = "Termux не установлен"; return true }
+        busy = "…"
+        val r = withContext(Dispatchers.IO) { controller.restoreAccess(nonce, u) { busy = "… $it" } }
+        busy = null
+        return when (r) {
+            is Outcome.Success -> {
+                SettingsBackups.clearRestoreNonce(context)
+                report = r.value
+                message = "Готово. Проверьте targets кнопкой «Проверить»; вход Claude — «Вход Claude»."
+                onRestored()
+                true
+            }
+            is Outcome.Failure -> {
+                val d = r.diagnostics.first()
+                if (!quiet || d.code == com.dpsmpx.dpai.core.diagnostics.DiagCode.SSH_HOST_KEY_REJECTED) message = d.message
+                d.code == com.dpsmpx.dpai.core.diagnostics.DiagCode.SSH_HOST_KEY_REJECTED
+            }
+        }
+    }
+    androidx.compose.runtime.LaunchedEffect(waiting) {
+        var left = 180
+        while (waiting && left-- > 0) {
+            kotlinx.coroutines.delay(5_000)
+            if (busy == null && withContext(Dispatchers.IO) { TermuxLauncher.listening(com.dpsmpx.dpai.ui.TermuxRestore.PORT) } && attempt(quiet = true)) waiting = false
+        }
+        waiting = false
+    }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp)) {
+            Text("Восстановление после переустановки", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Удаление приложения стёрло его настройки и ключ, но Termux цел: агент, входы Claude, копия настроек. " +
+                    "Скопируйте команду, вставьте в Termux (долгое нажатие → Paste) и вернитесь — остальное приложение сделает само.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Row {
+                TextButton(enabled = command != null, onClick = {
+                    val c = command ?: return@TextButton
+                    context.getSystemService(android.content.ClipboardManager::class.java).setPrimaryClip(android.content.ClipData.newPlainText("dpai", c))
+                    context.packageManager.getLaunchIntentForPackage("com.termux")?.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)?.let(context::startActivity)
+                    message = "Команда скопирована. Вставьте её в Termux и вернитесь сюда."
+                    waiting = true
+                }) { Text("Копировать и открыть Termux") }
+                TextButton(enabled = busy == null, onClick = { scope.launch { attempt(quiet = false) } }) { Text("Восстановить") }
+            }
+            (busy ?: if (waiting) "жду команду в Termux…" else null)?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            report.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
+            TextButton(onClick = onHide) { Text("Скрыть") }
+        }
+    }
+}

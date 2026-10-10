@@ -27,9 +27,11 @@ import com.dpsmpx.dpai.ui.ProjectBook
 import com.dpsmpx.dpai.ui.ProjectEntry
 import com.dpsmpx.dpai.ui.ProjectForm
 import com.dpsmpx.dpai.ui.SettingsSnapshot
+import com.dpsmpx.dpai.ui.SetupGuide
 import com.dpsmpx.dpai.ui.TargetBook
 import com.dpsmpx.dpai.ui.TargetEntry
 import com.dpsmpx.dpai.ui.TargetForm
+import com.dpsmpx.dpai.ui.TermuxRestore
 import com.dpsmpx.dpai.ui.WorkspaceLink
 import java.io.File
 import java.security.KeyPairGenerator
@@ -39,6 +41,7 @@ import java.security.Signature
 import java.security.interfaces.ECPublicKey
 import java.security.spec.ECGenParameterSpec
 import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * Ключ входа приложения (D-35): ECDSA P-256 в Android Keystore. Закрытая
@@ -238,6 +241,83 @@ class Controller(private val root: File, val version: String?) {
             is Outcome.Failure -> r
             is Outcome.Success -> Outcome.success(Unit)
         }
+    }
+
+    /** Копия настроек — и в Termux (D-54): переживает удаление приложения и читается без выбора файла. */
+    fun mirrorSettings(text: String): Outcome<Unit> {
+        val termux = targets().firstOrNull { it.host == TermuxRestore.HOST && it.port == TermuxRestore.PORT }
+            ?: return Outcome.failure(DiagCode.VALUE_INVALID, "нет target Termux")
+        val r = JschProcessHost(checkNotNull(termux.toTarget(knownHostsFile).ssh), termux.platform, identities = listOf(KeystoreKey.identity()))
+            .run(ProcessSpec(TermuxRestore.mirror(), stdin = text), 30.seconds)
+        return when {
+            r is Outcome.Failure -> r
+            (r as Outcome.Success).value.ok -> Outcome.success(Unit)
+            else -> Outcome.failure(DiagCode.STORAGE_IO_FAILED, "копия в Termux не записана: код ${r.value.exitCode}", termux.label)
+        }
+    }
+
+    /**
+     * Восстановление после переустановки (D-54): человек вставил в Termux
+     * команду с кодом [nonce] ([TermuxRestore.command]). Ключ хоста Termux
+     * принимается, только если сервер вернул этот код; затем — настройки из
+     * копии в Termux (если своих нет), targets по слотам со входом Claude,
+     * новый ключ приложения на ПК через ключ связки (D-53). [termuxUser] —
+     * пользователь Termux по его uid. Итог — строки отчёта.
+     */
+    fun restoreAccess(nonce: String, termuxUser: String, progress: (String) -> Unit = {}): Outcome<List<String>> = synchronized(restoring) {
+        restoreAccessLocked(nonce, termuxUser, progress)
+    }
+
+    /** Одно восстановление за раз; общий замок контроллера не держится минутами сети. */
+    private val restoring = Any()
+
+    private fun restoreAccessLocked(nonce: String, termuxUser: String, progress: (String) -> Unit): Outcome<List<String>> {
+        progress("ключ хоста Termux")
+        val probed = when (val p = HostKeyProbe.fetch(TermuxRestore.HOST, TermuxRestore.PORT)) {
+            is Outcome.Failure -> return Outcome.failure(DiagCode.TARGET_CHECK_FAILED, "sshd Termux не отвечает: вставьте команду в Termux", "127.0.0.1:${TermuxRestore.PORT}")
+            is Outcome.Success -> p.value
+        }
+        val pending = "$KNOWN_HOSTS.restore"
+        val found = try {
+            vfs.write(pending, (probed.knownHostsLine + "\n").toByteArray())
+            val probe = TargetForm.validate(ids.next(IdKinds.TARGET), "Termux", TermuxRestore.HOST, TermuxRestore.PORT.toString(), termuxUser, false, SetupGuide.AGENT).valueOrNull()
+                ?: return Outcome.failure(DiagCode.VALUE_INVALID, "пользователь Termux недопустим: $termuxUser")
+            progress("вход в Termux")
+            val host = JschProcessHost(checkNotNull(probe.toTarget(File(root, pending).path).ssh), probe.platform, identities = listOf(KeystoreKey.identity()))
+            when (val r = host.run(ProcessSpec(TermuxRestore.discover()), 2.minutes)) {
+                is Outcome.Failure -> return Outcome.Failure(listOf(Diagnostic.of(DiagCode.TARGET_CHECK_FAILED, "вход в Termux не удался: вставьте команду в Termux", causes = r.diagnostics)))
+                is Outcome.Success -> TermuxRestore.parse(r.value.stdout)
+            }
+        } finally {
+            runCatching { vfs.delete(pending) }
+        }
+        if (!TermuxRestore.codeMatches(found, nonce)) {
+            return Outcome.failure(DiagCode.SSH_HOST_KEY_REJECTED, "код не совпал — ключ хоста не принят: скопируйте команду заново и вставьте в Termux")
+        }
+        progress("настройки")
+        val (merged, report) = TermuxRestore.merge(snapshot(), found, probed.knownHostsLine, ids)
+        restore(merged).let { if (it is Outcome.Failure) return it }
+        val lines = report.toMutableList()
+        val termux = merged.targets.first { it.host == TermuxRestore.HOST && it.port == TermuxRestore.PORT }
+        val shell = JschProcessHost(checkNotNull(termux.toTarget(knownHostsFile).ssh), termux.platform, identities = listOf(KeystoreKey.identity()))
+        shell.run(ProcessSpec(TermuxRestore.cleanup()), 30.seconds)
+        val key = publicKeyLine()
+        for (pc in merged.targets.filter { it.host != TermuxRestore.HOST && it.host != "localhost" }) {
+            if (!found.workspace) {
+                lines += "${pc.label}: ключа связки в Termux нет — новый ключ приложения добавьте командой из «Инструкция → 10»"
+                continue
+            }
+            progress("ключ приложения на ${pc.label}")
+            val r = shell.run(ProcessSpec(TermuxRestore.pcReauthorize(pc, key)), 1.minutes)
+            lines += when {
+                r is Outcome.Success && TermuxRestore.reauthorized(r.value.stdout) -> "${pc.label}: новый ключ приложения добавлен"
+                r is Outcome.Success -> "${pc.label}: не вышло (${(r.value.stderr + r.value.stdout).lastOrNull { it.isNotBlank() } ?: "код ${r.value.exitCode}"}) — команда из «Инструкция → 10»"
+                else -> "${pc.label}: не вышло (${(r as Outcome.Failure).diagnostics.first().message}) — команда из «Инструкция → 10»"
+            }
+        }
+        mirrorSettings(com.dpsmpx.dpai.ui.SettingsBackup.write(merged, Clock.SYSTEM.now().epochMillis, version))
+        lines += "доступ к Termux восстановлен; targets: ${merged.targets.size}"
+        return Outcome.success(lines)
     }
 
     /** `dpai agent doctor` на target — по SSH с ключом приложения. */
