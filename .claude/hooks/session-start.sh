@@ -9,7 +9,7 @@ python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' 2>/de
   || echo "! нужен Python 3.11+ — без него не работают tools/dpvis и tools/check"
 command -v node >/dev/null 2>&1 || echo "! нет Node.js — тесты просмотрщика (full) не запустятся"
 echo "Правила — CLAUDE.md; решения — docs/direction/DECISIONS.md; незаконченное — TODO.md."
-echo "Проверки: tools/check/run.sh (после правки), tools/check/run.sh full (перед вливанием)."
+echo "Проверки: tools/check/run.sh (после правки); перед вливанием — full и независимая проверка (D-21)."
 echo
 
 timeout 20 git fetch --prune origin >/dev/null 2>&1 || echo "! git fetch не удался — список веток может быть устаревшим"

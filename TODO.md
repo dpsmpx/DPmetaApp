@@ -20,7 +20,10 @@
 - [ ] `М` **DPmeta.** В ветке `claude/dreamy-bardeen-xe4k6r` — DPmetaApp,
       DPvisualisation и DP_AI_Orcestrator в реестре, контракты C-11
       («DPmeta → DPvisualisation») и C-12 («DPvisualisation → сайт»),
-      классификация автора. Когда ветка окажется в `main` DPmeta — здесь:
+      классификация автора; решения `DPmeta:M-12` (слой синхронизации),
+      `DPmeta:M-13` (правило вливания) и `DPmeta:SQ-29` (оркестратор в
+      составе DPmetaApp) — на них ссылаются D-21 и модель. Когда ветка
+      окажется в `main` DPmeta — здесь:
       `contracts` у потоков `vis.dpmeta.dpvisualisation`,
       `vis.dpvisualisation.smi` и `orc.dpmeta.orchestrator` (C-13 —
       манифест `dpai.ecosystem`, `DPmeta:M-11`), иначе сбор покажет
@@ -36,9 +39,9 @@
       1…») расходится с разделом «Прогресс» (`DPmeta:SQ-26` в ветке
       DPmeta). Своё Android-приложение (`DP_AI_Orcestrator:D-28`,
       `DP_AI_Orcestrator:D-46`) расходится с ответом автора 10 октября
-      2026 «в составе DPmetaApp» (D-21, `DPmeta:SQ-29`); когда репозиторий
-      оркестратора это запишет — здесь убрать поток `orc.orchestrator.phone`
-      или его пометку.
+      2026 «в составе DPmetaApp» (D-21, `DPmeta:SQ-29` в ветке DPmeta);
+      когда репозиторий оркестратора это запишет — здесь убрать поток
+      `orc.orchestrator.phone` или его пометку.
 
 ## Долг
 
