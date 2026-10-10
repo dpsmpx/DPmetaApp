@@ -50,6 +50,14 @@ object TestChild {
                 println("daemon ${(sh as Outcome.Success).value.stdout.first()}")
                 CountDownLatch(1).await()
             }
+            "tick" -> {
+                // Строка каждые 200 мс, без конца (A-15: запись журнала ломается посреди хода).
+                var i = 0
+                while (true) {
+                    println("tick ${i++}")
+                    CountDownLatch(1).await(200, java.util.concurrent.TimeUnit.MILLISECONDS)
+                }
+            }
             "ignore-term" -> {
                 // Мягкая остановка (SIGTERM) не завершает: хук выхода ждёт без конца — нужен SIGKILL.
                 Runtime.getRuntime().addShutdownHook(Thread { CountDownLatch(1).await() })

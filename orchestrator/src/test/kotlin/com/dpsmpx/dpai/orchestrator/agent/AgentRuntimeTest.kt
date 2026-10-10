@@ -444,4 +444,27 @@ class AgentRuntimeTest {
         assertTrue(rt.stop(run, 2.seconds).ok)
         RealTime.await(15.seconds, "фоновый потомок остановлен") { if (alive(daemon)) null else Unit }
     }
+
+    /**
+     * Ревью A-15: запись журнала хода сломалась посреди хода — ход
+     * останавливается (а не идёт дальше вслепую), причина — в документе
+     * запуска и в ответе `status`.
+     */
+    @Test
+    fun brokenJournalStopsTheTurnAndSaysWhy() {
+        val rt = runtime()
+        val run = ids.next(IdKinds.SESSION)
+        assertTrue(rt.start(run, RunSpec(TestChild.command("child", "tick"))).ok)
+        RealTime.await(60.seconds, "ход пишет") { outputs(rt.events(run, 0, 1000).events).firstOrNull { it.startsWith("tick ") } }
+        // Журнал подменён каталогом: следующая запись откажет.
+        val journal = dir.resolve("runs/${run.value}/events.jsonl").toFile()
+        assertTrue(journal.delete() && journal.mkdir())
+        val store = DocumentStore(NioVfs(dir), "runs/${run.value}")
+        val doc = RealTime.await(30.seconds, "ход остановлен") {
+            RunDoc.read(store.read(AgentRuntime.RUN_KEY).valueOrNull()!!.content)?.takeIf { it.state == RunState.EXITED }
+        }
+        assertEquals(ExitReason.STOPPED, doc.reason)
+        assertTrue(doc.journalError != null, "причина записана")
+        assertTrue(rt.status(run).diagnostics.any { it.code == DiagCode.STORAGE_IO_FAILED }, "status говорит о потере")
+    }
 }

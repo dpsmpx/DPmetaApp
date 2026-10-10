@@ -174,8 +174,13 @@ class AgentRuntime(
             pruned(id)?.let { resumeFromLast(mapOf(stream to it.lastSequence)) }
         }
         val lock = Any()
+        // Первый отказ записи журнала (ревью A-15): после него журнал закрыт, и все события хода —
+        // вывод, выход — пропадали бы молча, а Claude работал бы дальше вслепую.
+        val journalError = java.util.concurrent.atomic.AtomicReference<String?>(null)
         fun emit(type: EventType, payload: JsonObject) = synchronized(lock) {
-            journal.append(recorder.envelope(type, stream, clock.now(), payload))
+            journal.append(recorder.envelope(type, stream, clock.now(), payload)).also { r ->
+                if (r is Outcome.Failure) journalError.compareAndSet(null, r.errors.firstOrNull()?.message ?: "запись не подтверждена")
+            }
         }
         val self = ProcessHandle.current()
         var current = doc.copy(supervisorPid = self.pid(), supervisorStartedAt = ProcessTree.startedAtMillis(self), bootAt = ProcessTree.bootMillis())
@@ -250,12 +255,14 @@ class AgentRuntime(
             }
             val stopRequest = stopRequest(store, doc.turn)
             val timedOut = doc.spec.timeout?.let { clock.monotonicNanos() - begin >= it.inWholeNanoseconds } ?: false
-            if (stopRequest != null || timedOut) {
+            val lostJournal = journalError.get()
+            if (stopRequest != null || timedOut || lostJournal != null) {
                 val report = process.stop(stopRequest ?: RunningProcess.DEFAULT_GRACE)
                 stopped = StopResult(report.forced, report.survivors)
                 exitCode = report.exitCode
-                reason = if (stopRequest != null) ExitReason.STOPPED else ExitReason.TIMEOUT
+                reason = if (timedOut && stopRequest == null && lostJournal == null) ExitReason.TIMEOUT else ExitReason.STOPPED
                 stopDiags = buildList {
+                    if (lostJournal != null) add(Diagnostic.error(DiagCode.STORAGE_IO_FAILED, "журнал хода не пишется ($lostJournal): ход остановлен", "run $id"))
                     if (reason == ExitReason.TIMEOUT) add(Diagnostic.warning(DiagCode.PROCESS_TIMEOUT, "тайм-аут ${doc.spec.timeout}: дерево процессов остановлено", "run $id"))
                     if (!report.clean) add(Diagnostic.error(DiagCode.PROCESS_ORPHANS_LEFT, "после остановки живы ${report.survivors.joinToString()}", "run $id"))
                 }
@@ -267,7 +274,7 @@ class AgentRuntime(
             }
         }
         emit(EventType.TARGET_PROCESS_EXITED, exitPayload(doc.turn, exitCode, reason, stopDiags, stopped))
-        current = current.copy(state = RunState.EXITED, exitCode = exitCode, reason = reason)
+        current = current.copy(state = RunState.EXITED, exitCode = exitCode, reason = reason, journalError = journalError.get())
         store.write(RUN_KEY, current.toJson())
         return AgentReply("supervise", ok = true, diagnostics = stopDiags.filterNot { it.isError }, run = current.status(journal.position))
     }
@@ -281,8 +288,12 @@ class AgentRuntime(
 
     fun status(id: SessionId): AgentReply = when (val s = observe(id)) {
         is Outcome.Failure -> AgentReply.failure("status", s.diagnostics)
-        is Outcome.Success -> AgentReply("status", ok = true, run = s.value.first.status(s.value.second))
+        is Outcome.Success -> AgentReply("status", ok = true, diagnostics = journalWarning(s.value.first), run = s.value.first.status(s.value.second))
     }
+
+    /** Журнал хода записан не полностью (A-15): события после отказа записи потеряны — сказать об этом. */
+    private fun journalWarning(doc: RunDoc): List<Diagnostic> =
+        listOfNotNull(doc.journalError?.let { Diagnostic.warning(DiagCode.STORAGE_IO_FAILED, "журнал хода записан не полностью: $it; ход остановлен", "run ${doc.id}") })
 
     fun events(id: SessionId, after: Long, limit: Int): AgentReply {
         if (after < 0 || limit !in 1..10_000) {
@@ -611,6 +622,8 @@ internal data class RunDoc(
     val reason: ExitReason? = null,
     /** Время загрузки на момент записи времён старта (v3, ревью A-11): опознание процесса — относительно загрузки. */
     val bootAt: Long? = null,
+    /** Почему журнал хода перестал писаться (v3, ревью A-15): ход остановлен, события после — потеряны. */
+    val journalError: String? = null,
 ) {
     fun status(lastSequence: Long): RunStatus = RunStatus(id, state, pid, exitCode, reason, lastSequence, turn)
 
@@ -628,13 +641,14 @@ internal data class RunDoc(
         exitCode?.let { f["exitCode"] = JsonNumber.of(it) }
         reason?.let { f["reason"] = JsonString(it.name) }
         bootAt?.let { f["bootAt"] = JsonNumber.of(it) }
+        journalError?.let { f["journalError"] = JsonString(it) }
         return JsonObject(f)
     }
 
     companion object {
         const val FORMAT = "dpai.agent-run"
 
-        /** v3 — `bootAt` (A-11); v2 читается: без него процесс опознаётся по стенным часам, как раньше. */
+        /** v3 — `bootAt` (A-11) и `journalError` (A-15); v2 читается: без `bootAt` процесс опознаётся по стенным часам, как раньше. */
         const val VERSION = 3
 
         fun read(value: JsonObject): RunDoc? {
@@ -653,9 +667,10 @@ internal data class RunDoc(
             val exitCode = f.optLong("exitCode")?.toInt()
             val reason = f.optString("reason")?.let { s -> ExitReason.entries.firstOrNull { it.name == s } }
             val bootAt = f.optLong("bootAt")
+            val journalError = f.optString("journalError")
             f.finish()
             if (d.hasErrors || id == null || spec == null || created == null || state == null || turn == null) return null
-            return RunDoc(id, spec, created, state, turn, supervisorPid, supervisorStartedAt, pid, pidStartedAt, exitCode, reason, bootAt)
+            return RunDoc(id, spec, created, state, turn, supervisorPid, supervisorStartedAt, pid, pidStartedAt, exitCode, reason, bootAt, journalError)
         }
     }
 }
