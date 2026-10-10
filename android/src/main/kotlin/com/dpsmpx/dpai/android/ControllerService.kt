@@ -103,6 +103,8 @@ class ControllerService : Service() {
                     // Сбой такта — в журнал приложения, а не молча (D-43): контур идёт дальше.
                     val ok = try {
                         model.step(null).notifications.forEach(notifier::show)
+                        // Копия настроек — после изменения и раз в час (D-51).
+                        SettingsBackups.tick(app, Controller.get(app.filesDir, null))
                         true
                     } catch (e: Exception) {
                         log.error("такт", AppLogs.describe(e))

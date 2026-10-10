@@ -105,7 +105,11 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
             if (background && !ControllerService.running) ControllerService.start(context)
             stopped = background && !ControllerService.running && withContext(Dispatchers.IO) { ControllerService.stoppedByUser(context) }
             val next = try {
-                withContext(Dispatchers.IO) { if (background) model.view(s) else model.step(s) }
+                withContext(Dispatchers.IO) {
+                    // Копия настроек — после изменения и раз в час (D-51); служба делает то же в своём такте.
+                    runCatching { SettingsBackups.tick(context.applicationContext, Controller.get(context.filesDir, null)) }
+                    if (background) model.view(s) else model.step(s)
+                }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {

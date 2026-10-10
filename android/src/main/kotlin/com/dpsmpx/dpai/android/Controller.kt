@@ -23,6 +23,7 @@ import com.dpsmpx.dpai.ui.LiveSystem
 import com.dpsmpx.dpai.ui.ProjectBook
 import com.dpsmpx.dpai.ui.ProjectEntry
 import com.dpsmpx.dpai.ui.ProjectForm
+import com.dpsmpx.dpai.ui.SettingsSnapshot
 import com.dpsmpx.dpai.ui.TargetBook
 import com.dpsmpx.dpai.ui.TargetEntry
 import com.dpsmpx.dpai.ui.TargetForm
@@ -79,7 +80,7 @@ object KeystoreKey {
  * `dpai.app-targets` через `DocumentStore` (атомарная замена, D-24).
  * Вызовы сети — с фонового потока.
  */
-class Controller(private val root: File, private val version: String?) {
+class Controller(private val root: File, val version: String?) {
     private val vfs = NioVfs(root.toPath())
     private val docs = DocumentStore(vfs, "docs")
     val knownHostsFile: String = File(root, KNOWN_HOSTS).path
@@ -174,6 +175,28 @@ class Controller(private val root: File, private val version: String?) {
             is Outcome.Failure -> w
             is Outcome.Success -> Outcome.success(Unit)
         }
+
+    /** Настройки для копии (D-51): targets, проект, ключи хостов. */
+    @Synchronized
+    fun snapshot(): SettingsSnapshot = SettingsSnapshot(targets(), project(), vfs.read(KNOWN_HOSTS)?.toString(Charsets.UTF_8).orEmpty())
+
+    /**
+     * Настройки — как в копии (D-51): targets, проект и ключи хостов
+     * заменяются целиком. known_hosts — атомарно (A-85).
+     */
+    @Synchronized
+    fun restore(s: SettingsSnapshot): Outcome<Unit> {
+        try {
+            val tmp = "$KNOWN_HOSTS.tmp"
+            vfs.write(tmp, s.knownHosts.toByteArray(Charsets.UTF_8))
+            vfs.fsync(tmp)
+            vfs.rename(tmp, KNOWN_HOSTS)
+        } catch (e: java.io.IOException) {
+            return Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "known_hosts не записан", e, KNOWN_HOSTS))
+        }
+        docs.write(BOOK, TargetBook.toJson(s.targets)).let { if (it is Outcome.Failure) return it }
+        return setProject(s.project)
+    }
 
     /** `dpai agent doctor` на target — по SSH с ключом приложения. */
     fun doctor(entry: TargetEntry): Outcome<DoctorResult> {

@@ -82,6 +82,12 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
             }
         }
         if (targets.any(TermuxLauncher::local)) item(key = "termux") { TermuxCard(targets.first(TermuxLauncher::local).port) }
+        item(key = "backup") {
+            BackupCard(controller) {
+                targets = controller.targets()
+                project = controller.project()
+            }
+        }
         item {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
@@ -564,3 +570,57 @@ private fun RemoveDialog(t: TargetEntry, model: DemoModel, onCancel: () -> Unit,
         dismissButton = { TextButton(onClick = onCancel) { Text("Отмена") } },
     )
 }
+
+/**
+ * Копия настроек (D-51): в «Загрузки/dpai-backup» — сама после изменения и
+ * раз в час, и по кнопке; загрузка — системным выбором файла. Ключ SSH
+ * приложения в копию не входит: после восстановления на новом ключе его
+ * строку надо снова добавить в authorized_keys targets.
+ */
+@Composable
+private fun BackupCard(controller: Controller, onRestored: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current.applicationContext
+    val scope = rememberCoroutineScope()
+    var last by remember { mutableStateOf(SettingsBackups.last(context)) }
+    var message by remember { mutableStateOf<String?>(null) }
+    val pick = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val r = withContext(Dispatchers.IO) { SettingsBackups.restore(context, uri, controller) }
+                message = when (r) {
+                    is com.dpsmpx.dpai.core.result.Outcome.Success ->
+                        "Восстановлено: targets — ${r.value.targets.size}, проект — ${if (r.value.project != null) "есть" else "нет"}. " +
+                            "Ключ приложения мог смениться: «Показать открытый ключ» и добавьте строку в authorized_keys каждого target."
+                    is com.dpsmpx.dpai.core.result.Outcome.Failure -> "Не восстановлено: ${r.errors.firstOrNull()?.message}"
+                }
+                last = SettingsBackups.last(context)
+                onRestored()
+            }
+        }
+    }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp)) {
+            Text("Копия настроек", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Загрузки/dpai-backup — сама после изменений и раз в час. " +
+                    (last?.let { "Последняя: ${it.first}" } ?: "Копий ещё нет."),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            Row {
+                TextButton(onClick = {
+                    scope.launch {
+                        val r = withContext(Dispatchers.IO) { SettingsBackups.save(context, controller.snapshot(), controller) }
+                        message = when (r) {
+                            is com.dpsmpx.dpai.core.result.Outcome.Success -> "Сохранено: Загрузки/dpai-backup/${r.value}"
+                            is com.dpsmpx.dpai.core.result.Outcome.Failure -> "Не сохранено: ${r.errors.firstOrNull()?.message}"
+                        }
+                        last = SettingsBackups.last(context)
+                    }
+                }) { Text("Сохранить сейчас") }
+                TextButton(onClick = { pick.launch(arrayOf("application/json", "application/octet-stream", "text/plain", "*/*")) }) { Text("Загрузить…") }
+            }
+        }
+    }
+}
+
