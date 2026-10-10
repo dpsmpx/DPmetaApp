@@ -153,6 +153,20 @@ object SetupGuide {
             optional = true,
         ),
         GuideSection(
+            "pc", "10. ПК с Windows",
+            "ПК — ещё один target: задачи и проверки идут на нём, доступ — через Tailscale из любого места (docs/SETUP_PC_WINDOWS.md). " +
+                "Нужны Tailscale на ПК и на телефоне одним аккаунтом. Одна команда ставит и настраивает остальное; повторять её безопасно.",
+            listOf(
+                GuideStep("Сохраните архив агента и перенесите dpai-agent.zip на ПК в папку «Загрузки»:", action = GuideAction.SAVE_AGENT),
+                PcSetup.command(s.appKey)?.let {
+                    GuideStep("На ПК: PowerShell от администратора, вставить команду (5–15 минут). В конце — поля для «Добавить» и отпечатки ключа хоста:", it)
+                } ?: GuideStep("Ключ приложения ещё не создан — откройте эту инструкцию снова через секунду."),
+                GuideStep("Targets → «Добавить» по выведенным полям; «Получить ключ хоста» — сверить с отпечатками; затем «Проверить»."),
+                GuideStep("Вход в Claude на ПК (или Claude на телефоне — docs/SETUP_PC_WINDOWS.md, §7): в PowerShell — войти, /exit; в приложении — «Вход Claude».", "\$env:CLAUDE_CONFIG_DIR = \"\$HOME\\.claude-slot-1\"; claude"),
+            ),
+            optional = true,
+        ),
+        GuideSection(
             "trouble", "Если что-то не работает",
             "Подробности ошибок — во вкладке «Журнал».",
             listOf(

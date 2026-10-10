@@ -17,6 +17,10 @@ class SetupGuideTest {
         val keyLine = all.single { it.id == "key" }.steps.single().command!!
         assertTrue("echo 'from=\"127.0.0.1,::1\" $key' >> ~/.ssh/authorized_keys" in keyLine, keyLine)
         assertTrue(all.single { it.id == "agent" }.steps.any { it.action == GuideAction.SAVE_AGENT })
+        val pc = all.single { it.id == "pc" }.steps.mapNotNull { it.command }
+        assertTrue(pc.any { "from=\"100.64.0.0/10\" $key" in it }, "команда ПК — с ключом приложения")
+        val noKey = SetupGuide.sections(SetupState()).single { it.id == "pc" }.steps
+        assertTrue(noKey.none { it.command?.contains("authorized_keys") == true }, "без ключа — без команды ПК")
     }
 
     @Test
