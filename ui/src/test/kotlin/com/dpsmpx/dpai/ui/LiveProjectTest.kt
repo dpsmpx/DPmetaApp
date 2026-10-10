@@ -272,6 +272,30 @@ class LiveProjectTest {
         assertTrue(File(project.root, "feature.txt").exists(), "работа закоммичена и слита")
     }
 
+    /** Ревью A-65: после слияния дерево задачи удаляется, ветка задачи с работой остаётся. */
+    @Test
+    fun mergedTaskTreeIsRemovedBranchKept() {
+        val (s, root) = doneAwaitingMerge(105)
+        val tree = s.orchestrator.worktrees.worktrees.values.single()
+        assertEquals(OperationStatus.SUCCEEDED, answerMerge(s).status)
+        assertTrue(!File(tree.path).exists(), "дерево удалено")
+        assertTrue(s.orchestrator.worktrees.worktrees.values.single().removed)
+        assertTrue(gitOut("-C", root, "rev-parse", "--verify", tree.branch).isNotEmpty(), "ветка задачи цела")
+    }
+
+    /** Ревью A-65: в дереве неотслеживаемое — после «Не сливать» дерево остаётся (без --force), автор видит почему. */
+    @Test
+    fun declinedTaskTreeWithUntrackedFilesIsKept() {
+        val (s, _) = doneAwaitingMerge(106)
+        val tree = s.orchestrator.worktrees.worktrees.values.single()
+        File(tree.path, "заметки.txt").writeText("не моё — не трогать\n")
+        val request = s.orchestrator.pendingRequests().single { it.purpose == "task.merge" }
+        assertEquals(OperationStatus.SUCCEEDED, s.orchestrator.answer(request.id, "decline", null, request.hash, "автор").status)
+        assertTrue(File(tree.path, "заметки.txt").exists(), "дерево с чужим файлом цело")
+        assertTrue(!s.orchestrator.worktrees.worktrees.values.single().removed)
+        assertTrue(s.orchestrator.problems.any { "дерево задачи оставлено" in it.message }, s.orchestrator.problems.toString())
+    }
+
     private fun stepsUntilKilled(s: LiveSystem, n: Int): Boolean {
         repeat(n) {
             try {

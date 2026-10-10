@@ -1037,7 +1037,10 @@ class Orchestrator(
         val pending = mergesState.pending.values.firstOrNull { it.task == task }
             ?: return Outcome.failure(DiagCode.REQUEST_NOT_PENDING, "слияние задачи уже не ждёт ответа", "task $task")
         return when (option) {
-            DECLINE -> Outcome.success("слияние отклонено").also { commitMerges(listOf(MergeEvent.Declined(task, pending.approval, clock.now()))) }
+            DECLINE -> Outcome.success("слияние отклонено").also {
+                commitMerges(listOf(MergeEvent.Declined(task, pending.approval, clock.now())))
+                retireTree(task)
+            }
             MERGE -> {
                 val repo = config.repository ?: return Outcome.failure(DiagCode.UNSUPPORTED, "у проекта нет репозитория")
                 val g = git ?: return Outcome.failure(DiagCode.UNSUPPORTED, "нет Git")
@@ -1051,10 +1054,37 @@ class Orchestrator(
                     }
                     is Outcome.Success -> Outcome.success("слито в $target").also {
                         commitMerges(listOf(MergeEvent.Merged(task, pending.approval, clock.now())))
+                        retireTree(task)
                     }
                 }
             }
             else -> Outcome.failure(DiagCode.REQUEST_ANSWER_INVALID, "вариант «$option» не к этому запросу")
+        }
+    }
+
+    /**
+     * Дерево задачи после слияния или отказа от него (ревью A-65): работа —
+     * в ветке задачи, её коммиты не трогаются, а дерево больше не нужно и
+     * иначе копилось бы на диске target. Только `git worktree remove` без
+     * `--force`: в дереве незакоммиченное или неотслеживаемое (кеши проверки
+     * и т. п.) — git откажет, дерево останется, и автор увидит, что убрать
+     * его — за ним. Разрушительного без одобрения нет (T10).
+     */
+    private fun retireTree(task: TaskId) {
+        val id = treeOf[task] ?: return
+        val w = worktrees.worktrees[id]?.takeIf { !it.removed && it.owner == null } ?: return
+        val repo = config.repository ?: return
+        val g = git ?: return
+        when (val r = g.run(GitOp.WORKTREE_REMOVE, repo.root, listOf(w.path))) {
+            is Outcome.Failure -> problems += Diagnostic.warning(
+                DiagCode.GIT_COMMAND_FAILED,
+                "дерево задачи оставлено: ${r.errors.first().message}; ветка ${w.branch} цела, удалить дерево — `git worktree remove --force ${w.path}`",
+                "task $task",
+            )
+            is Outcome.Success -> {
+                commitWorktrees(Worktrees.remove(worktrees, id, clock.now()).valueOrNull().orEmpty())
+                treeOf.remove(task)
+            }
         }
     }
 
