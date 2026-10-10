@@ -69,6 +69,25 @@ class RecoveryTest {
         assertEquals(SessionState.COMPLETED, h.sessions.sessions.getValue(s).state)
     }
 
+    /** Ревью A-14: подхваченный после сбоя ход учитывает инструменты, вызванные до сбоя (замер D-41). */
+    @Test
+    fun adoptedTurnCountsToolsFromBeforeTheCrash() {
+        val h = harness()
+        h.slots(1)
+        val s = h.launch(MockScenario.SLOW_TOOLS)
+        h.pollAll()
+        repeat(3) {
+            h.host.advance(s)
+            h.pollAll()
+        }
+        h.crash()
+        assertEquals(listOf(Resolution.RESOLVED_RUNNING), h.resolutions)
+        while (h.host.advance(s)) h.pollAll()
+        h.pollAll()
+        assertEquals(SessionState.COMPLETED, h.sessions.sessions.getValue(s).state)
+        assertEquals(1L, h.sessions.sessions.getValue(s).usage.tools.byTool["Read"]?.calls, "${h.sessions.sessions.getValue(s).usage.tools}")
+    }
+
     /** Ревью A-64: итог хода — за первой страницей событий агента; сверка читает все страницы. */
     @Test
     fun finishedTurnBeyondFirstPageIsResolvedCompleted() {

@@ -26,6 +26,9 @@ import com.dpsmpx.dpai.execution.agent.RunSpec
  */
 enum class MockScenario {
     SUCCESS, FAILURE, TIMEOUT, CRASH, SLOW_OUTPUT, DUPLICATE_EVENTS, MISSING_EVENTS, RATE_LIMIT, AUTH_ERROR, PARTIAL_COMPLETION,
+
+    /** Как [SLOW_OUTPUT], но в начале хода — вызов инструмента `Read` (замер D-41 подхваченного хода, ревью A-14). */
+    SLOW_TOOLS,
 }
 
 /**
@@ -84,7 +87,7 @@ class MockRunner private constructor(
                 val reason = if (scenario == MockScenario.TIMEOUT) ExitReason.TIMEOUT else ExitReason.EXITED
                 steps.addLast { host.exit(run, exitCode, reason) }
                 if (scenario == MockScenario.MISSING_EVENTS) dropOnce = HashSet(dropOnce + run)
-                if (scenario == MockScenario.SLOW_OUTPUT) {
+                if (scenario == MockScenario.SLOW_OUTPUT || scenario == MockScenario.SLOW_TOOLS) {
                     host.schedule(run, steps)
                 } else {
                     while (steps.isNotEmpty()) steps.removeFirst()()
@@ -133,6 +136,14 @@ class MockRunner private constructor(
             MockScenario.RATE_LIMIT -> listOf(init(sid, "u1"), rateLimit(sid, "u2", "rejected"), text(sid, "u3", "limit", "rate_limit"), result(sid, "u4", true, "success", "limit"))
             MockScenario.AUTH_ERROR -> listOf(init(sid, "u1"), text(sid, "u2", "Not logged in", "authentication_failed"), result(sid, "u3", true, "success", "Not logged in"))
             MockScenario.PARTIAL_COMPLETION -> listOf(init(sid, "u1"), text(sid, "u2", "часть сделана"), result(sid, "u3", true, "error_max_turns", ""))
+            MockScenario.SLOW_TOOLS -> listOf(
+                init(sid, "u1"),
+                line(
+                    "type" to json("assistant"), "session_id" to json(sid), "uuid" to json("u2"),
+                    "message" to JsonObject.of("content" to JsonArray(listOf(JsonObject.of("type" to json("tool_use"), "id" to json("t1"), "name" to json("Read"), "input" to JsonObject.of("file_path" to json("a.kt")))))),
+                ),
+                text(sid, "u3", "работаю"), text(sid, "u4", "готово"), result(sid, "u5", false, "success", "готово"),
+            )
         }
     }
 }

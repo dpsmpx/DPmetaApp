@@ -67,6 +67,7 @@ class MockRunnerTest {
             MockScenario.TIMEOUT to Expect(TurnStatus.INCOMPLETE, DiagCode.CLAUDE_STREAM_INCOMPLETE),
             MockScenario.CRASH to Expect(TurnStatus.FAILED, DiagCode.CLAUDE_STREAM_INCOMPLETE),
             MockScenario.SLOW_OUTPUT to Expect(TurnStatus.COMPLETED, null),
+            MockScenario.SLOW_TOOLS to Expect(TurnStatus.COMPLETED, null),
             MockScenario.DUPLICATE_EVENTS to Expect(TurnStatus.COMPLETED, DiagCode.EVENT_DUPLICATE),
             MockScenario.MISSING_EVENTS to Expect(TurnStatus.COMPLETED, null),
             MockScenario.RATE_LIMIT to Expect(TurnStatus.FAILED, DiagCode.CLAUDE_RATE_LIMITED),

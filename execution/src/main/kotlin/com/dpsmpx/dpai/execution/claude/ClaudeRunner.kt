@@ -264,9 +264,28 @@ class ClaudeCodeCliRunner(
     override fun adopt(session: SessionId, provider: ProviderSessionId, afterSequence: Long, turnRunning: Boolean): Outcome<RunnerState> {
         if (session in live) return Outcome.failure(DiagCode.VALUE_INVALID, "сессия уже ведётся раннером", "session $session")
         val l = Live(session, provider, RunChannel(eventSource, session, startAfter = afterSequence), providerStarted = true)
-        if (turnRunning) l.assembler = ClaudeTurnAssembler(provider)
+        if (turnRunning) replayTurn(l, afterSequence)
         live[session] = l
         return Outcome.success(state(l))
+    }
+
+    /**
+     * Подхват идущего хода (ревью A-14): сборка хода — с его начала, а не с
+     * записанной позиции: события до неё (инструменты D-41, расход) иначе в
+     * итог хода не попадали. Обновлений наружу нет — они уже были до сбоя.
+     * Агент не ответил — сборка с позиции, как раньше.
+     */
+    private fun replayTurn(l: Live, upTo: Long) {
+        l.assembler = ClaudeTurnAssembler(l.provider)
+        var after = 0L
+        while (after < upTo) {
+            val page = agent.events(l.session, after, REPLAY_PAGE).valueOrNull() ?: return
+            for (e in page.events.takeWhile { it.sequence <= upTo }) {
+                if (e.type == EventType.TARGET_PROCESS_STARTED || e.type == EventType.TARGET_PROCESS_OUTPUT) translate(l, e)
+            }
+            if (!page.more || page.events.isEmpty()) return
+            after = page.events.last().sequence
+        }
     }
 
     @Synchronized
@@ -282,5 +301,9 @@ class ClaudeCodeCliRunner(
     private inline fun <T> withLive(session: SessionId, f: (Live) -> Outcome<T>): Outcome<T> {
         val l = live[session] ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "сессия не ведётся раннером", "session $session")
         return f(l)
+    }
+
+    private companion object {
+        const val REPLAY_PAGE = 1000
     }
 }
