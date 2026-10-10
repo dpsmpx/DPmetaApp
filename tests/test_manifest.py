@@ -47,22 +47,52 @@ QUEUE = """\
 
 | № | репозиторий | что | риск | состояние |
 |---|---|---|---|---|
-| SQ-01 | Alpha | ссылка `x` устарела | низкий | открыт — активная разработка |
-| SQ-02 | Alpha, Beta_Tool | общий адрес | средний (публичный адрес) | открыт — RISK-01 |
+| SQ-01 | Alpha | ссылка `x` устарела | высокий | открыт — активная разработка |
+| SQ-02 | Alpha, Beta_Tool | общий адрес | средний (публичный адрес) | открыт |
 | SQ-03 | Alpha | уже сделано | низкий | сделано: `dpmeta/docs-sync` |
 | SQ-04 | Old | архивное | высокий | открыт |
+| SQ-05 | Alpha | ждёт решения по риску | высокий | открыт — RISK-01 |
+| SQ-06 | Alpha | README правит автор | низкий | открыт — за автором |
+| SQ-07 | Alpha | вопрос | высокий | открыт |
+| SQ-08 | Alpha | без предложения | низкий | открыт |
 
 ## Alpha
 
 ### SQ-01 — Ссылка `x` устарела
 
-- **Вид:** наблюдение. **Риск:** низкий.
+- **Вид:** наблюдение. **Риск:** высокий.
+- **Где:** `docs/A.md:3`.
 - **Предложение:** заменить `x` на `y`
   во всех **документах**.
 - **Повторный проход:** то же.
-- **Состояние:** открыт.
+- **Состояние:** открыт — активная разработка.
 
 ### SQ-02 — Общий адрес
+
+- **Вид:** наблюдение.
+- **Где и что** (сверено на `abc1234`): адрес в двух местах.
+- **Предложение:** сессии Alpha — сменить адрес; сессии Beta_Tool — тоже.
+- **Состояние:** открыт.
+
+### SQ-05 — Ждёт решения по риску
+
+- **Вид:** наблюдение.
+- **Предложение:** что-то сделать.
+- **Состояние:** открыт — RISK-01.
+
+### SQ-06 — README правит автор
+
+- **Вид:** наблюдение.
+- **Предложение:** убрать значок.
+- **Состояние:** открыт — за автором.
+
+### SQ-07 — Вопрос
+
+- **Вид:** открытый вопрос. **Риск:** высокий.
+- **Предложение:** решить.
+- **Состояние:** открыт.
+
+### SQ-08 — Без предложения
 
 - **Вид:** наблюдение.
 - **Состояние:** открыт.
@@ -140,16 +170,38 @@ class ManifestTest(unittest.TestCase):
         self.assertEqual(beta["state"], {"place": "support", "clone": "нет"})
         self.assertEqual(beta["documents"], [])
 
-    def test_suggestions_are_open_queue_items(self):
+    def test_suggestions_are_what_a_session_can_do(self):
+        # M-11: без RISK-NN, без «за автором», не «открытый вопрос», только с «Предложением»
         _, text = self.run_tool()
         alpha, beta = json.loads(text)["projects"]
         self.assertEqual([s["key"] for s in alpha["suggestions"]], ["sq-01", "sq-02"])
-        first, second = alpha["suggestions"]
-        self.assertEqual(first["objective"].split(" (DPmeta:")[0], "заменить x на y во всех документах.")
-        self.assertEqual((first["priority"], second["priority"]), ("LOW", "NORMAL"))
-        self.assertEqual(second["objective"].split(" (DPmeta:")[0], "общий адрес", "без «Предложения» — заголовок")
         self.assertEqual([s["key"] for s in beta["suggestions"]], ["sq-02"])
         self.assertEqual({s["operation"] for s in alpha["suggestions"]}, {"docs"})
+
+    def test_priority_is_not_risk(self):
+        _, text = self.run_tool()
+        alpha = json.loads(text)["projects"][0]
+        self.assertEqual({s["priority"] for s in alpha["suggestions"]}, {"LOW"}, "SQ-01 с высоким риском — тоже LOW")
+
+    def test_objective_has_where_and_stable_reference(self):
+        _, text = self.run_tool()
+        first, second = json.loads(text)["projects"][0]["suggestions"]
+        self.assertEqual(first["objective"],
+                         "Где: docs/A.md:3. Предложение: заменить x на y во всех документах. (DPmeta:SQ-01)")
+        self.assertNotIn("состояние", first["objective"])
+        self.assertIn("Где: (сверено на abc1234): адрес в двух местах.", second["objective"])
+        self.assertIn("Пункт касается и Beta_Tool: здесь — только часть для Alpha.", second["objective"])
+
+    def test_objective_does_not_change_with_state(self):
+        before = self.run_tool()[1]
+        self.queue.write_text(QUEUE.replace("- **Состояние:** открыт — активная разработка.",
+                                            "- **Состояние:** открыт."), encoding="utf-8")
+        self.assertEqual(before, self.run_tool()[1])
+
+    def test_unwritable_out_is_code_2(self):
+        code = manifest.main(["--registry", str(self.registry), "--queue", str(self.queue),
+                              "--root", str(self.clones), "--out", str(Path(self.tmp.name) / "no" / "m.json")])
+        self.assertEqual(code, 2)
 
     def test_repository_only_with_paths(self):
         _, text = self.run_tool()
@@ -187,6 +239,27 @@ class RealRegistryTest(unittest.TestCase):
         text = (ROOT / "docs" / "SYNC_QUEUE.md").read_text(encoding="utf-8")
         rows = [line for line in text.splitlines() if line.startswith("| SQ-")]
         self.assertEqual(len(manifest.read_queue(text)), len(rows))
+
+    def test_summary_agrees_with_item_state(self):
+        # сводка и поле «Состояние» пункта говорят одно: закрыт, открыт или ждёт автора
+        queue = manifest.read_queue((ROOT / "docs" / "SYNC_QUEUE.md").read_text(encoding="utf-8"))
+        for num, item in queue.items():
+            with self.subTest(num):
+                if "Состояние" in item["fields"]:
+                    self.assertEqual(manifest.status(item["state"]), manifest.item_status(item))
+
+    def test_real_suggestions_have_proposal_and_dpmeta_paths(self):
+        repos = xref.load_registry(ROOT / "tools" / "ecosystem.toml")
+        queue = (ROOT / "docs" / "SYNC_QUEUE.md").read_text(encoding="utf-8")
+        doc = json.loads(manifest.build(repos, {}, queue))
+        suggestions = [s for p in doc["projects"] for s in p["suggestions"]]
+        self.assertTrue(suggestions)
+        for s in suggestions:
+            with self.subTest(s["key"]):
+                self.assertIn("Предложение: ", s["objective"])
+                # свои документы DPmeta — только с префиксом проекта (их нет в репозиториях проектов)
+                for own in ("docs/NAMING.md", "docs/SYNC_QUEUE.md", "docs/CONTRACTS.md", "docs/RISKS.md"):
+                    self.assertNotRegex(s["objective"], rf"(?<!DPmeta:){own}")
 
 
 if __name__ == "__main__":

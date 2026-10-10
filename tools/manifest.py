@@ -10,18 +10,22 @@
   её последний коммит и дата;
 - документы — точки входа проекта (`CLAUDE.md`, `README.md`, `TODO.md`,
   журнал решений из реестра), которые есть в основной ветке клона; без
-  клона — только журнал решений из реестра;
-- предложения задач — открытые пункты docs/SYNC_QUEUE.md этого проекта:
-  ключ `sq-NN`, заголовок, цель — поле «Предложение», приоритет — по риску,
-  вид работы `docs`. Задачу ставит и одобряет оркестратор по своей
-  политике; DPmeta её не исполняет (M-01, M-04).
+  клона проверить нечего — список пуст;
+- предложения задач — пункты docs/SYNC_QUEUE.md этого проекта, которые
+  сессия может сделать сама: открытые по своему полю «Состояние», не
+  ждущие автора и не привязанные к RISK-NN, не «открытый вопрос» и с полем
+  «Предложение». Ключ `sq-NN`, цель — поля «Где» («Где и что») и
+  «Предложение» с ссылкой `DPmeta:SQ-NN` (без состояния: цель не меняется
+  от прохода к проходу), приоритет — один для всех (`LOW`: риск пункта не
+  срочность), вид работы `docs`. Задачу ставит и одобряет оркестратор по
+  своей политике; DPmeta её не исполняет (M-01, M-04).
 
 Чтение у оркестратора строгое: лишних полей нет, ключи проектов не
 повторяются. Без `--paths` поле `repository` не пишется: путь клона —
 свойство устройства, а не экосистемы. Без сети; читает клоны (только
 `git ls-tree` и `git log`), ничего не пишет, кроме файла из --out. Один и
 тот же вход — одинаковые байты. Коды возврата: 0 — манифест построен;
-2 — неверный вызов или реестр.
+2 — неверный вызов, реестр или запись файла.
 """
 
 from __future__ import annotations
@@ -41,13 +45,17 @@ import xref  # noqa: E402
 FORMAT = "dpai.ecosystem"
 VERSION = 1
 ENTRY_DOCS = ("CLAUDE.md", "README.md", "TODO.md")
-# Риск пункта очереди → уровень `Priority` оркестратора (CRITICAL … BACKGROUND).
-PRIORITY = {"высокий": "HIGH", "средний": "NORMAL", "низкий": "LOW"}
+# Один уровень `Priority` для всех предложений: риск пункта — не срочность, а пункты,
+# которые решает автор, в манифест не попадают вовсе (blocked).
+PRIORITY = "LOW"
 OPERATION = "docs"
 
 ROW = re.compile(r"^\| (SQ-\d+) \| ([^|]+) \| ([^|]+) \| ([^|]+) \| ([^|]+) \|$")
 HEAD = re.compile(r"^### (SQ-\d+) — (.+)$")
-FIELD = re.compile(r"^- \*\*([^*]+):\*\* ?(.*)$")
+# «- **Поле:** текст» и «- **Поле** (уточнение): текст»
+FIELD = re.compile(r"^- \*\*([^*]+?):?\*\*:? ?(.*)$")
+# Пункт ждёт автора или решения по риску — сессия его сделать не может.
+BLOCKED = re.compile(r"RISK-\d+|автор", re.I)
 
 
 def key_of(name: str) -> str:
@@ -63,20 +71,38 @@ def is_open(state: str) -> bool:
     return state.strip().startswith(("открыт", "частично"))
 
 
+def status(state: str, kind: str = "") -> str:
+    """closed | open | blocked — что значит состояние пункта для сессии проекта."""
+    if not is_open(state):
+        return "closed"
+    if BLOCKED.search(state) or kind.strip().lower().startswith("открытый вопрос"):
+        return "blocked"
+    return "open"
+
+
 def read_queue(text: str) -> dict[str, dict]:
-    """Пункты очереди: номер → репозитории, заголовок, риск, состояние, предложение."""
+    """Пункты очереди: номер → репозитории, заголовок, риск, состояние сводки, поля пункта."""
     items: dict[str, dict] = {}
     for line in text.splitlines():
         m = ROW.match(line)
         if m:
             num, repos, title, risk, state = (g.strip() for g in m.groups())
-            items[num] = {"repos": [r.strip() for r in repos.split(",")], "title": plain(title),
-                          "risk": risk, "state": state, "proposal": ""}
+            items[num] = {"repos": [r.strip().strip("`") for r in repos.split(",")], "title": plain(title),
+                          "risk": risk, "state": state, "proposal": "", "fields": {}}
     current, field_name, buf = None, None, []
 
     def flush():
-        if current in items and field_name == "Предложение" and buf:
-            items[current]["proposal"] = plain(" ".join(buf))
+        if current in items and field_name and buf:
+            # строки поля — одной строкой; пункты вложенного списка («- …») — через «;»
+            text = ""
+            for x in buf:
+                if x.startswith("- "):
+                    text += ("; " if text.strip() else "") + x[2:]
+                else:
+                    text += " " + x
+            items[current]["fields"].setdefault(field_name, plain(text))
+            if field_name == "Предложение":
+                items[current]["proposal"] = items[current]["fields"][field_name]
 
     for line in text.splitlines():
         h = HEAD.match(line)
@@ -98,20 +124,31 @@ def read_queue(text: str) -> dict[str, dict]:
     return items
 
 
-def priority(risk: str) -> str:
-    word = risk.split()[0].strip(",(") if risk.split() else ""
-    return PRIORITY.get(word, "NORMAL")
+def item_status(item: dict) -> str:
+    """Статус пункта по его собственному полю «Состояние» (сводка — запасной источник)."""
+    f = item["fields"]
+    return status(f.get("Состояние") or item["state"], f.get("Вид", ""))
+
+
+def objective(num: str, item: dict, name: str) -> str:
+    """Цель задачи: где и что предлагается; без состояния — оно меняется от прохода к проходу."""
+    f = item["fields"]
+    where = f.get("Где") or f.get("Где и что")
+    parts = [f"Где: {where}"] if where else []
+    parts.append(f"Предложение: {item['proposal']}")
+    others = [r for r in item["repos"] if r != name]
+    if others:
+        parts.append(f"Пункт касается и {', '.join(others)}: здесь — только часть для {name}.")
+    return " ".join(parts) + f" (DPmeta:{num})"
 
 
 def suggestions(queue: dict[str, dict], name: str) -> list[dict]:
     out = []
     for num, item in sorted(queue.items(), key=lambda kv: int(kv[0].split("-")[1])):
-        if name not in item["repos"] or not is_open(item["state"]):
+        if name not in item["repos"] or not item["proposal"] or item_status(item) != "open":
             continue
-        objective = item["proposal"] or item["title"]
         out.append({"key": num.lower(), "title": f"{num}: {item['title']}",
-                    "objective": f"{objective} (DPmeta:{num}, состояние: {plain(item['state'])})",
-                    "priority": priority(item["risk"]), "operation": OPERATION})
+                    "objective": objective(num, item, name), "priority": PRIORITY, "operation": OPERATION})
     return out
 
 
@@ -123,7 +160,7 @@ def project(repo: xref.Repo, root: Path | None, queue: dict[str, dict], paths: b
     state = {"place": repo.place}
     decisions = (repo.decisions or {}).get("path")
     wanted = [*ENTRY_DOCS, *([decisions] if decisions else [])]
-    documents = [decisions] if decisions else []
+    documents: list[str] = []  # только то, что есть в основной ветке клона
     if root is not None:
         base = activity.default_branch(root)
         if base:
@@ -198,7 +235,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"manifest: {e}", file=sys.stderr)
         return 2
     if a.out:
-        a.out.write_text(text, encoding="utf-8")
+        try:
+            a.out.write_text(text, encoding="utf-8")
+        except OSError as e:
+            print(f"manifest: {e}", file=sys.stderr)
+            return 2
     else:
         sys.stdout.write(text)
     return 0

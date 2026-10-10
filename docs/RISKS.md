@@ -239,10 +239,12 @@ DPmeta их не принимает (M-03): здесь — разбор и пр�
   DPpass — Apache-2.0 с отложенным решением (RISK-01). DPprofile, DPlearn,
   SocialMediaImage, DP_game_market_analytic_system — без `LICENSE`.
   Новые (9 октября 2026): DPvisualisation — «все права защищены»
-  (`DPvisualisation:D-17`, слово автора); DP_AI_Orcestrator — Apache-2.0
-  и «репозиторий публичный» в своих документах при закрытом репозитории
-  на GitHub (SQ-28); DPmetaApp — Apache-2.0 при закрытом репозитории,
-  вопрос Q-01 его ТЗ (в невлитой ветке); DPmonetization — без `LICENSE`.
+  (`DPvisualisation:D-17`, слово автора, в невлитой ветке; в `main` пока
+  Apache-2.0 начального коммита); DP_AI_Orcestrator — Apache-2.0 при
+  закрытом репозитории: по ответу автора остаётся закрытым и ведётся по
+  правилам публичного (`DP_AI_Orcestrator:TODO.md`); DPmetaApp —
+  Apache-2.0 при закрытом репозитории, вопрос Q-01 его ТЗ (в невлитой
+  ветке); DPmonetization — без `LICENSE`.
 - **Затронуты:** все закрытые репозитории.
 - **Как сейчас.** Все закрыты; посторонним код не передаётся. Без
   `LICENSE` закрытый репозиторий — «все права защищены» по умолчанию.

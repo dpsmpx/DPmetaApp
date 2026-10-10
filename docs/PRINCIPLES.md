@@ -76,8 +76,8 @@ DP_game_market_analytic_system — каталоги данных `market/`, `pro
 `Galdhold:Р12`, `DP-Verify:V-05`, `DPpass:D-23`, `DPprofile:D-08`,
 `SocialMediaImage:Д3`; DPlang и DPlearn — в `CLAUDE.md`. Итог полного
 прогона — в описании PR. В Galdhold `.github/workflows/build.yml` оставлен
-описанием без триггеров (`Galdhold:Р12`), но значок сборки в README ещё
-ведёт на Actions прежнего адреса (SQ-02).
+описанием без триггеров (`Galdhold:Р12`); значок сборки, который вёл на
+Actions прежнего адреса, автор убрал 8 октября 2026 (`517e411`, SQ-02).
 
 ## E-08 — Работа не теряется между сессиями
 
