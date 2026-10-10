@@ -63,7 +63,7 @@ def _scope(p: Progress, repo: Repo, r: Report, latest: bool = True) -> None:
             r.error(f"scope.yaml: {k} — закрытый проект без публичного имени, а name задан")
         if spec["visibility"] != "undisclosed" and not spec.get("name"):
             r.error(f"scope.yaml: {k} — нет публичного имени")
-        for fid in [spec.get("what"), STAGE_FACTS.get(k) if spec["group"] == "core" else None]:
+        for fid in [spec.get("what"), STAGE_FACTS.get(k)]:  # стадия выводится у всех в таблице среза, не только у ядра
             if not fid or spec["visibility"] == "undisclosed":
                 continue
             f = facts.get(fid)

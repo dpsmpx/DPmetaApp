@@ -718,7 +718,7 @@ facts:
       - {kind: code, source: "github.com/dpsmpx/Andors-Love, github.com/dpsmpx/TrueJointTileMaker, github.com/dpsmpx/PixRogue — README.md", date: 2026-10-04, verification: observed}
       - {kind: doc, source: "dpsmpx/DPprofile docs/facts/F-0008, F-0009 (первые коммиты Andors-Love — 2023-04-13, TrueJointTileMaker — 2024-02-21)", ref: "3e76c10", date: 2026-10-04, verification: reported}
       - {kind: code, source: "история git dpsmpx/PixRogue: первый коммит — 2026-09-02", date: 2026-10-10, verification: observed}
-    notes: Называются открыто по слову автора 10.10.2026 (Д44) — их репозитории открыты; в счёт страницы прогресса не входят (архив, Д38).
+    notes: Называются открыто по слову автора 10.10.2026 (Д44) — их репозитории открыты; в счёт страницы прогресса не входят (архив, Д38). tanks_blitz_stat_chat здесь не назван — связан с чужой игрой (PROJECT_MAP §3, RIGHTS_MATRIX).
   - id: ECO-NEW-2026-10-06
     subject: ecosystem
     class: FACT
@@ -747,7 +747,7 @@ facts:
     allowed_wording:
       ru: ["управляющий слой для параллельных сессий ИИ: задачи, контекст, проверка результата, продолжение после смены сессии"]
       en: ["a control layer for parallel AI sessions: tasks, context, result checks, continuing after a session ends"]
-    notes: Тема нескольких аккаунтов сервиса ИИ в публичные формулировки не входит (ОР-9).
+    notes: Тема нескольких аккаунтов сервиса ИИ в публичные формулировки не входит (ОР-9). «Управление — из Android-приложения» — нынешнее состояние по README оркестратора; по ответу автора 10.10.2026 он войдёт в DPmetaApp и отдельным приложением не будет (DPmeta:SQ-29) — пересмотреть утверждение, когда это запишет его репозиторий. Публичная формулировка о приложении не говорит.
     evidence:
       - {kind: doc, source: "dpsmpx/DP_AI_Orcestrator MASTER_TECHNICAL_TASK.md §0–§3, §156", ref: "2f3d55e", date: 2026-10-06, verification: self-reported}
   - id: ORC-STAGE

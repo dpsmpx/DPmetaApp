@@ -191,6 +191,18 @@ class Check(unittest.TestCase):
         for want in ("Claude + автор ≠ коммиты", "stray есть в наборе, но не в scope.yaml", "нет величины no_such_metric"):
             self.assertIn(want, msgs)
 
+    def test_stage_fact_outside_core_is_guarded(self):
+        # таблица среза выводит стадию и вне ядра (DPmeta — слой синхронизации): её факт проверяется так же
+        repo = make_repo(git=False)
+        fp = repo.path("data/facts/facts.yaml")
+        reg = yaml.safe_load(fp.read_text(encoding="utf-8"))
+        for f in reg["facts"]:
+            if f["id"] == "META-STAGE":
+                f["public"] = False
+        fp.write_text(yaml.safe_dump(reg, allow_unicode=True), encoding="utf-8")
+        repo.reset()
+        self.assertIn("META-STAGE", " | ".join(progress_check.check(repo).errors))
+
 
 class SitePage(unittest.TestCase):
     @classmethod
