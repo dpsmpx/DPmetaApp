@@ -94,7 +94,7 @@
     "refs": {"type": "array", "items": {"$ref": "#/$defs/ref"}},
     "repo": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"},
     "clone": {"type": "string"},
-    "group": {"enum": ["control", "core", "support", "new", "periphery"]},
+    "group": {"enum": ["control", "core", "sync", "support", "new", "periphery"]},
     "stage": {"type": "string"},
     "note": {"type": "string"},
     "row": {"type": "number"},

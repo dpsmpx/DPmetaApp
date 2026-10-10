@@ -6,7 +6,7 @@
 
 export const GEOM = { minNodeW: 136, maxNodeW: 190, nodeH: 44, gapX: 16, gapY: 16, headerH: 28, pad: 12, bandGap: 14, minWidth: 240 };
 
-const GROUP_ORDER = { control: 0, core: 1, support: 2, new: 3, periphery: 4 };
+const GROUP_ORDER = { control: 0, core: 1, sync: 2, support: 3, new: 4, periphery: 5 };
 
 function degree(view, id) {
   return (view.outgoing.get(id) || []).length + (view.incoming.get(id) || []).length;
@@ -21,7 +21,7 @@ function groupsByLayer(view) {
   for (const c of cols) {
     c.nodes.sort(
       (a, b) =>
-        (GROUP_ORDER[a.group] ?? 3) - (GROUP_ORDER[b.group] ?? 3) ||
+        (GROUP_ORDER[a.group] ?? 4) - (GROUP_ORDER[b.group] ?? 4) ||
         degree(view, b.id) - degree(view, a.id) ||
         a.name.localeCompare(b.name, "ru"),
     );

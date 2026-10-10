@@ -97,3 +97,4 @@
 | 6 октября 2026 | модель: `public_role`, `public_stage`, `public_what`; тексты выжимки — только из них (D-15) |
 | 9 октября 2026 | пояснения к `dpvis-model/1` и `dpvis-state/1`; полей не изменилось |
 | 9 октября 2026 | группы `control` и `support` в каталоге; `registry.exclude`, `exclude_contracts`, `exclude_reason` в модели и `excluded`, `contracts_excluded`, `exclude_reason` в срезе (D-20); пробы больше не пишутся, поля остались (D-19) |
+| 10 октября 2026 | группа `sync` «слой синхронизации» в каталоге — DPmeta (D-21); значение добавлено, прежние не менялись |
