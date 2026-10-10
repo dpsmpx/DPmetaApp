@@ -100,4 +100,14 @@ class TargetsTest {
         KnownHosts.save(vfs, "known_hosts", "[b]:22 ssh-ed25519 AAAA2")
         assertEquals(setOf("[a]:22", "[b]:22"), KnownHosts.names(vfs.read("known_hosts")!!.toString(Charsets.UTF_8)))
     }
+
+    /** Ревью A-86: команда проверки делится как в оболочке — кавычки дают одно слово; незакрытая — отказ формы. */
+    @Test
+    fun verifyCommandKeepsQuotedWords() {
+        assertEquals(listOf("python", "-c", "import sys; sys.exit(0)"), ProjectForm.words("python -c \"import sys; sys.exit(0)\""))
+        assertEquals(listOf("sh", "-c", "make test && echo ok"), ProjectForm.words("  sh  -c 'make test && echo ok' "))
+        assertEquals(listOf("C:\\tools\\check.cmd", "a b"), ProjectForm.words("C:\\tools\\check.cmd \"a b\""))
+        assertEquals(emptyList(), ProjectForm.words("   "))
+        assertEquals(null, ProjectForm.words("make 'test"))
+    }
 }

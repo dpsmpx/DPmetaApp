@@ -107,4 +107,11 @@ class RedactorTest {
         val padded = "QUJD" + "a1".repeat(14) + "=="
         assertEquals(Redactor.MARK, Redactor.STANDARD.redact(padded))
     }
+
+    /** Ревью A-70: ветка задачи в уведомлении о слиянии видна — путь из id оркестратора не токен. */
+    @Test
+    fun taskBranchIsNotAToken() {
+        val text = "Ветка задачи task/tsk_01M4EWP74S6EWVHWSM33QD5YK0 → main."
+        assertEquals(text, Redactor.STRICT.redact(text))
+    }
 }

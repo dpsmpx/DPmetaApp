@@ -153,16 +153,21 @@ object HostKeyProbe {
             override fun getHostKey(host: String?, type: String?): Array<HostKey> = emptyArray()
         }
         val jsch = JSch().apply { hostKeyRepository = capture }
-        val session = jsch.getSession("dpai-probe", host, port)
-        session.setConfig("StrictHostKeyChecking", "yes")
+        // Отказ JSch на любом шаге (ревью A-78) — Outcome, а не исключение из экрана target (D-05).
         try {
+            val session = jsch.getSession("dpai-probe", host, port)
+            session.setConfig("StrictHostKeyChecking", "yes")
             session.connect(timeout.inWholeMilliseconds.toInt())
             session.disconnect()
         } catch (e: JSchException) {
             if (seen == null) return Outcome.failure(DiagCode.SSH_CONNECTION_FAILED, e.message?.take(300) ?: "отказ SSH", "ssh $host:$port")
         }
         val (_, key) = seen ?: return Outcome.failure(DiagCode.SSH_CONNECTION_FAILED, "сервер не показал ключ хоста", "ssh $host:$port")
-        val hk = HostKey(SshKeys.knownHostsName(host, port), key)
+        val hk = try {
+            HostKey(SshKeys.knownHostsName(host, port), key)
+        } catch (e: JSchException) {
+            return Outcome.failure(DiagCode.SSH_HOST_KEY_REJECTED, "ключ хоста не разобран: ${e.message?.take(200)}", "ssh $host:$port")
+        }
         return Outcome.success(ProbedHostKey("${hk.host} ${hk.type} ${hk.key}", hk.type, SshKeys.fingerprint(key)))
     }
 }

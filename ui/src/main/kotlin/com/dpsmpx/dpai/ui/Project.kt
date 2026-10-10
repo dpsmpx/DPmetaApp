@@ -77,7 +77,7 @@ object ProjectForm {
         if (!absolute(w) || w.any { it.isISOControl() } || w == r) return Outcome.failure(DiagCode.VALUE_INVALID, "каталог рабочих деревьев — абсолютный путь на target, не сам репозиторий", "worktreeRoot")
         val b = branch.trim()
         if (!BRANCH.matches(b) || ".." in b || b.startsWith("-")) return Outcome.failure(DiagCode.VALUE_INVALID, "ветка интеграции недопустима", "branch")
-        val argv = check.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+        val argv = words(check) ?: return Outcome.failure(DiagCode.VALUE_INVALID, "в команде проверки незакрытая кавычка", "check")
         if (argv.firstOrNull()?.startsWith("-") == true) return Outcome.failure(DiagCode.VALUE_INVALID, "команда проверки не начинается с «-»", "check")
         val steps = if (argv.isEmpty()) emptyList() else listOf(VerifyStep("проверка", argv))
         val route = when {
@@ -96,6 +96,41 @@ object ProjectForm {
             }
         }
         return Outcome.success(ProjectEntry(ids.next(IdKinds.PROJECT), ids.next(IdKinds.REPOSITORY), target.id, r, w, b, steps, route))
+    }
+
+    /**
+     * Слова команды проверки из поля ввода (ревью A-86): через пробелы, а
+     * `'…'` и `"…"` — одно слово, как в оболочке. Деление по пробелам
+     * ломало кавычки (`python -c "import x"`), и проверка падала всегда.
+     * `\` — обычный знак: на target с Windows это разделитель пути.
+     * Незакрытая кавычка — `null`.
+     */
+    internal fun words(text: String): List<String>? {
+        val out = mutableListOf<String>()
+        val word = StringBuilder()
+        var inWord = false
+        var quote: Char? = null
+        for (c in text) {
+            when {
+                quote != null -> if (c == quote) quote = null else word.append(c)
+                c == '\'' || c == '"' -> {
+                    quote = c
+                    inWord = true
+                }
+                c.isWhitespace() -> if (inWord) {
+                    out += word.toString()
+                    word.clear()
+                    inWord = false
+                }
+                else -> {
+                    word.append(c)
+                    inWord = true
+                }
+            }
+        }
+        if (quote != null) return null
+        if (inWord) out += word.toString()
+        return out
     }
 }
 

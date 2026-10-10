@@ -78,6 +78,10 @@ class JschProcessHost(
         } catch (e: JSchException) {
             session.disconnect()
             Outcome.failure(classify(e), "не открылся канал: ${e.message}", subject)
+        } catch (e: java.io.IOException) {
+            // Потоки канала (ревью A-78): отказ библиотеки — Outcome, а не исключение из такта (D-05).
+            session.disconnect()
+            Outcome.failure(DiagCode.SSH_CONNECTION_FAILED, "не открылся канал: ${e.message}", subject)
         }
     }
 

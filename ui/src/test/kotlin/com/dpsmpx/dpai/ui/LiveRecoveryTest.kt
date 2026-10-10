@@ -343,4 +343,17 @@ class LiveRecoveryTest {
         assertEquals(DiagCode.RECOVERY_START_UNCONFIRMED, first.lastReason)
         assertEquals(0, s.orchestrator.tasks.tasks.getValue(task).retries, "попытка без хода не считается")
     }
+
+    /** Ревью A-62: ход упёрся в предел подписки — телефон об этом говорит (уведомления аккаунтов подключены). */
+    @Test
+    fun subscriptionLimitIsNotified() {
+        val s = system()
+        steps(s, 1)
+        scenario = MockScenario.RATE_LIMIT
+        s.addTask("задача", "цель").valueOrNull()!!
+        steps(s, 4)
+        // Показано, обновлено или придержано пределом частоты — решение движка уведомлений есть.
+        val decisions = s.orchestrator.posted.map { it.toString() }
+        assertTrue(decisions.any { "достигнут" in it }, decisions.toString())
+    }
 }

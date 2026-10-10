@@ -59,6 +59,7 @@ import com.dpsmpx.dpai.notifications.NotificationCategory
 import com.dpsmpx.dpai.notifications.NotificationDecision
 import com.dpsmpx.dpai.notifications.NotificationEngine
 import com.dpsmpx.dpai.notifications.NotificationRequest
+import com.dpsmpx.dpai.orchestrator.accounts.AccountNotifications
 import com.dpsmpx.dpai.orchestrator.accounts.accountEnvelopes
 import com.dpsmpx.dpai.orchestrator.git.GitService
 import com.dpsmpx.dpai.orchestrator.sessions.sessionEnvelopes
@@ -422,7 +423,14 @@ class Orchestrator(
 
     fun commitAccounts(es: List<AccountEvent>) {
         write(recorder.accountEnvelopes(es))
-        accounts = Accounts.applyAll(accounts, es)
+        // Уведомления аккаунтов (ревью A-62): предел подписки, вход, пересечение аккаунтов — по каждому
+        // событию, по состоянию до и после: повторное наблюдение без изменений уведомлением не становится.
+        for (e in es) {
+            val before = accounts
+            accounts = Accounts.applyAll(accounts, listOf(e))
+            AccountNotifications.requests(e, before, accounts).forEach { notify(it) }
+            AccountNotifications.resolvedKeys(e).forEach { notifications.resolve(it) }
+        }
     }
 
     private fun commitSessions(es: List<SessionEvent>) {

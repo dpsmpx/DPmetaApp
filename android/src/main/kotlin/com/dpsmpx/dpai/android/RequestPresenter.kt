@@ -136,13 +136,19 @@ object RequestPresenter {
         cards[id]?.let { show(context, it) }
     }
 
-    /** Итог ответа — заменой уведомления запроса: короткое, само исчезает. */
+    /**
+     * Итог ответа — заменой уведомления запроса: короткое, само исчезает.
+     * Текст — строгой правкой (D-14, ревью A-71): в нём может быть хвост
+     * вывода git, а уведомление видно и на экране блокировки. Предел
+     * частоты не нужен: итог — один на нажатие.
+     */
     fun result(context: Context, id: String, title: String, text: String) {
         channel(context)
+        val strict = com.dpsmpx.dpai.core.diagnostics.Redactor.STRICT
         val n = AndroidNotification.Builder(context, Notifier.channelOf(com.dpsmpx.dpai.notifications.NotificationCategory.INFO))
             .setSmallIcon(android.R.drawable.stat_notify_more)
-            .setContentTitle(title)
-            .setContentText(text)
+            .setContentTitle(strict.redact(title))
+            .setContentText(strict.redact(text))
             .setAutoCancel(true)
             .setTimeoutAfter(RESULT_MS)
             .build()
