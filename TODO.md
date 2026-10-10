@@ -24,15 +24,16 @@
       `vis.dpvisualisation.smi`, иначе сбор покажет `CONTRACT_UNCOVERED`.
 - [ ] `М` **DPmetaApp.** ТЗ, решения и TODO приложения — в его ветке
       `claude/dreamy-bardeen-xe4k6r` (взяты из `claude/vigilant-franklin-61x8kq`);
-      в `main` их нет. Ссылки модели `DPmetaApp:docs/direction/TECHNICAL_TASK.md`
-      и `DPmetaApp:D-24` ведут туда (пометки `note` у `dpmetaapp` и
-      `ntfy`). Живой режим схемы — его задача (D-18, фаза B).
+      в `main` их нет. Ссылки модели `DPmetaApp:docs/direction/TECHNICAL_TASK.md`,
+      `DPmetaApp:D-23`…`DPmetaApp:D-26` ведут туда (пометки `note` у
+      `dpmetaapp`, `ntfy` и потока `vis.dpvisualisation.dpmetaapp`). Живой
+      режим схемы — его задача (D-18, фаза B; с его стороны — `DPmetaApp:D-26`).
 - [ ] `М` **DP_AI_Orcestrator.** Строка состояния README («идут этапы 0 и
       1…») расходится с разделом «Прогресс» (`DPmeta:SQ-26` в ветке
       DPmeta).
 
 ## Долг
 
-- [ ] `М` Срез — на 09.10.2026; следующий — перед выгрузкой сайта (D-18)
+- [ ] `М` Срез — на 10.10.2026; следующий — перед выгрузкой сайта (D-18)
       или по `collect` (срез старше суток просмотрщик помечает «устарел»,
       F-31).
