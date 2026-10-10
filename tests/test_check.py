@@ -146,6 +146,13 @@ class FormatTest(CheckCase):
     def test_not_utf8(self):
         self.assertCatches(self.sample({"docs/PROCESS.md": "# П\n".encode("cp1251")}).run("format.text"), "не UTF-8")
 
+    def test_author_master_spec_is_not_reformatted(self):
+        # документ автора (D-25) без перевода строки в конце — не находка; тот же текст в другом файле — находка
+        s = self.sample({"MESTER_TECHNICAL_TASK_ROADMAP.md": "# Мастер-ТЗ", "docs/PROCESS.md": "# П"})
+        found = s.run("format.text").findings
+        self.assertFalse(any("MESTER" in f for f in found))
+        self.assertTrue(any("docs/PROCESS.md" in f for f in found))
+
 
 class ScriptsTest(CheckCase):
     def test_shell_without_shebang(self):
@@ -175,6 +182,29 @@ class SecretsTest(CheckCase):
     def test_key_file(self):
         self.assertCatches(self.sample({"config/.env": "A=1\n"}).run("security.secrets"), "файл ключа")
 
+    def test_every_key_file_kind(self):
+        for name in ("app/release.jks", "app/upload.keystore", "cert.p12", "cert.pfx", "config/server.key",
+                     ".git-credentials"):
+            with self.subTest(name):
+                self.assertCatches(self.sample({name: "x\n"}).run("security.secrets"), "файл ключа")
+
+    def test_every_secret_pattern(self):
+        # образцы собираются из частей: этот файл не должен ловиться сам (CLAUDE.md, «Секреты»)
+        samples = {
+            "github-token": ["ghp" + "_" + "Ab12" * 9, "github" + "_pat_" + "A1" * 21],
+            "anthropic-key": ["sk-" + "ant-" + "api03-" + "x" * 24],
+            "llm-api-key": ["sk-" + "Q" * 44],
+            "aws-key": ["AKIA" + "ABCDEFGHIJKLMNOP"],
+            "google-api-key": ["AIza" + "B" * 35],
+            "slack-token": ["xox" + "b-" + "1234567890ab"],
+            "telegram-bot-token": ["123456789" + ":" + "T" * 35],
+            "private-key": ["-----BEGIN " + "RSA PRIVATE " + "KEY-----"],
+        }
+        for kind, values in samples.items():
+            for value in values:
+                with self.subTest(kind=kind):
+                    self.assertCatches(self.sample({"docs/PROCESS.md": f"x {value}\n"}).run("security.secrets"), kind)
+
 
 class LinksTest(CheckCase):
     def test_missing_link_target(self):
@@ -195,6 +225,10 @@ class LinksTest(CheckCase):
         s = self.sample()
         self.assertCatches(s.run("docs.links", planned={"docs/PROCESS.md": "позже"}), "убрать из PLANNED")
 
+    def test_missing_anchor_in_backtick_path(self):
+        self.assertCatches(self.sample({"docs/PROCESS.md": "`docs/PROVENANCE.md#nope`\n"}).run("docs.links"),
+                           "нет якоря")
+
     def test_code_block_is_skipped(self):
         self.assertClean(self.sample({"docs/PROCESS.md": "```\n[x](nope.md)\n```\n[p](PROVENANCE.md)\n"})
                          .run("docs.links"))
@@ -207,6 +241,12 @@ class RefsTest(CheckCase):
     def test_bare_foreign_number(self):
         self.assertCatches(self.sample({"docs/PROCESS.md": "Контракт C-06.\n"}).run("docs.refs"),
                            "без имени проекта")
+
+    def test_bare_foreign_numbers_of_every_project(self):
+        for ref in ("Д12", "Р16", "ОР-6", "RISK-01", "SQ-12", "V-07", "ADR-01", "IC-04", "INV-01", "M-04", "E-06"):
+            with self.subTest(ref):
+                self.assertCatches(self.sample({"docs/PROCESS.md": f"См. {ref}.\n"}).run("docs.refs"),
+                                   "без имени проекта")
 
     def test_prefixed_foreign_number_passes(self):
         self.assertClean(self.sample({"docs/PROCESS.md": "`DPmeta:C-06`, `DPmeta:SQ-12`, D-01.\n"})
@@ -240,6 +280,13 @@ class RoadmapTest(CheckCase):
 
     def test_bad_heading(self):
         self.assertCatches(self.run_roadmap("### Этап 0 без образца\n\n- [ ] шаг\n"), "не по образцу")
+
+    def test_stage_without_steps(self):
+        self.assertCatches(self.run_roadmap('### <a id="task-0"></a>[ ] Этап 0. Пусто — `М`\n\nТекст.\n'),
+                           "нет шагов")
+
+    def test_anchor_differs_from_number(self):
+        self.assertCatches(self.run_roadmap(ROADMAP_TEXT.replace("task-0", "task-1")), "должны быть 0")
 
     def test_wrong_number(self):
         self.assertCatches(self.run_roadmap(ROADMAP_TEXT.replace("task-0", "task-1").replace("Этап 0", "Этап 1")),

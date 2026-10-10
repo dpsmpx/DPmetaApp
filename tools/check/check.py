@@ -38,6 +38,9 @@ ROOT_ALLOW = {
     "settings.gradle.kts", "build.gradle.kts", "gradle.properties", "gradlew", "gradlew.bat",
     "gradle", "build-logic", "app", "core", "cli", "config",
 }
+# Документы автора, которые он ведёт сам (через веб-интерфейс): форма текста не проверяется,
+# чтобы не править их ради проверки (D-25).
+AUTHOR_FILES = {"MESTER_TECHNICAL_TASK_ROADMAP.md"}
 REQUIRED = [
     README, "CLAUDE.md", TODO, "LICENSE", ".gitignore", DECISIONS, TZ, ROADMAP,
     "docs/direction/REQUEST.md", "docs/PROCESS.md", "docs/PROVENANCE.md",
@@ -52,7 +55,7 @@ PLANNED = {
     "docs/RELEASE.md": "отпечаток ключа и порядок выпуска — этап 8",
     "docs/audits/": "срезы на дату — с первого среза",
     "tools/release/": "сборка неподписанного APK — этап 8",
-    "tools/notify/": "набор хуков уведомлений Claude Code (F-56) — этап 8",
+    "tools/notify/": "набор хуков уведомлений Claude Code (F-56) — этап 7",
 }
 
 SECRETS = [
@@ -189,8 +192,13 @@ def check_layout(repo, r):
 
 
 def check_format(repo, r):
-    """format.text — UTF-8, переводы строк LF, перевод строки в конце, без пробелов в конце строк."""
+    """format.text — UTF-8, переводы строк LF, перевод строки в конце, без пробелов в конце строк.
+
+    Документы автора (AUTHOR_FILES) не проверяются: их ведёт автор, сессия их не правит.
+    """
     for rel in repo.files:
+        if rel in AUTHOR_FILES:
+            continue
         data = repo.raw(rel)
         if b"\0" in data[:8192]:
             continue
