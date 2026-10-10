@@ -140,6 +140,14 @@ class LiveSystem(
     /** Targets, где Claude ещё не вошёл: слота нет, задачи туда не идут. */
     private val waitingLogin = HashSet<ExecutionTargetId>()
     private val slotOf = HashMap<ExecutionTargetId, AccountId>()
+
+    /**
+     * Когда не удалась проба входа target (ревью A-79): нет связи, SSH до
+     * добавления ключа, сон ПК. Target без слота пробуется снова раз в
+     * [PROBE_RETRY_MS], а не ждёт «Вход Claude». Ответ «не вошли» — не
+     * отказ: такой target ждёт входа и кнопки, без проб каждую минуту.
+     */
+    private val probeFailedAt = HashMap<ExecutionTargetId, Long>()
     private val accountsLogic = Accounts()
     override val orchestrator: Orchestrator
     val notes: List<String> = entries.filter { it.configDir == null && it.id != project?.target }.map { "${it.label}: нет каталога Claude — только проверка агента" } +
@@ -229,13 +237,17 @@ class LiveSystem(
         val client = when (val c = manager.client(target)) {
             is Outcome.Failure -> {
                 problems += c.diagnostics
+                probeFailedAt[target] = clock.now().epochMillis
                 return
             }
             is Outcome.Success -> c.value
         }
         val probe = SlotAuthProbe(client)
         when (val s = probe.start(ids.next(IdKinds.SESSION), entry.configDir!!)) {
-            is Outcome.Failure -> problems += s.diagnostics
+            is Outcome.Failure -> {
+                problems += s.diagnostics
+                probeFailedAt[target] = clock.now().epochMillis
+            }
             is Outcome.Success -> probes[target] = probe to s.value
         }
     }
@@ -297,9 +309,11 @@ class LiveSystem(
                 is Outcome.Failure -> {
                     problems += r.diagnostics
                     probes.remove(target)
+                    probeFailedAt[target] = clock.now().epochMillis
                 }
                 is Outcome.Success -> r.value?.let { status ->
                     probes.remove(target)
+                    probeFailedAt.remove(target)
                     // Target ответил: прежние сетевые отказы (SSH до добавления ключа и т. п.) — уже не правда, на «Внимание» их не держать.
                     problems.removeAll { it.category == com.dpsmpx.dpai.core.diagnostics.Category.NETWORK }
                     val slot = slotOf[target]
@@ -313,6 +327,11 @@ class LiveSystem(
                     }
                 }
             }
+        }
+        // Target без слота, чья проба не удалась, — проба снова раз в минуту (A-79).
+        val now = clock.now().epochMillis
+        for ((target, at) in probeFailedAt.entries.toList()) {
+            if (target !in slotOf && target !in probes && now - at >= PROBE_RETRY_MS) probeSlot(target)
         }
         pollUsage()
         // Git проекта — проверка один раз (дальше — по итогам операций контура) и снова, пока не работает, раз в минуту.
@@ -339,7 +358,9 @@ class LiveSystem(
     override fun dashboard(): DashboardScreen {
         val base = Screens.dashboard(orchestrator.dashboard(), diagnosis(), orchestrator.usage())
         val login = usable.filter { it.id in waitingLogin }.map { "${it.label}: войдите в Claude в каталоге ${it.configDir}, затем «Вход Claude»" }
-        val extra = notes + login + (problems + orchestrator.problems).takeLast(5).map { "${it.code}: ${it.message}" }
+        val retry = usable.filter { it.id in probeFailedAt && it.id !in slotOf }
+            .map { "${it.label}: проба входа не удалась — повтор раз в минуту; «Вход Claude» — сразу" }
+        val extra = notes + login + retry + (problems + orchestrator.problems).takeLast(5).map { "${it.code}: ${it.message}" }
         return base.copy(attention = base.attention + extra, limits = Screens.limits(orchestrator.accounts, clock.now()))
     }
 
@@ -361,6 +382,9 @@ class LiveSystem(
 
         /** Как часто перепроверять Git, пока он не работает. */
         private const val GIT_RECHECK_MS = 60_000L
+
+        /** Как часто повторять неудавшуюся пробу входа target без слота (A-79). */
+        const val PROBE_RETRY_MS = 60_000L
 
         /** Предел одновременных сессий подписки контроллера; на target — по одной (`TargetSlot`). */
         private const val MAX_PARALLEL = 8

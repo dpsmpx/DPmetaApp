@@ -19,6 +19,7 @@ import com.dpsmpx.dpai.execution.target.ExecutionTarget
 import com.dpsmpx.dpai.execution.target.SshEndpoint
 import com.dpsmpx.dpai.execution.target.TargetPlatform
 import com.dpsmpx.dpai.execution.target.TargetType
+import com.dpsmpx.dpai.storage.vfs.Vfs
 
 /**
  * Target, заведённый в приложении (D-35): куда ходить по SSH и чем
@@ -161,6 +162,20 @@ object KnownHosts {
     }
 
     fun names(text: String): Set<String> = text.lines().mapNotNull { l -> l.trim().split(" ").takeIf { it.size >= 3 }?.get(0) }.toSet()
+
+    /**
+     * Добавить строку в known_hosts [path] атомарно (ревью A-85): новый текст —
+     * во временный файл, `fsync`, переименование. Обрыв посреди записи или
+     * чтение JSch в этот момент видят прежний файл целиком, а не пустой —
+     * пустой отверг бы ключ хоста (`SSH_HOST_KEY_REJECTED`) без повтора.
+     */
+    fun save(vfs: Vfs, path: String, line: String) {
+        val current = vfs.read(path)?.toString(Charsets.UTF_8).orEmpty()
+        val tmp = "$path.tmp"
+        vfs.write(tmp, add(current, line).toByteArray())
+        vfs.fsync(tmp)
+        vfs.rename(tmp, path)
+    }
 }
 
 /** Строка проверки target для экрана. */

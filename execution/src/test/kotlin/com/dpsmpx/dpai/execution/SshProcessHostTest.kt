@@ -45,6 +45,12 @@ class SshProcessHostTest {
         assertTrue("StrictHostKeyChecking=yes" in argv)
         assertTrue("BatchMode=yes" in argv)
         assertTrue("UserKnownHostsFile=/k/known_hosts" in argv)
+        // Ревью A-19: путь с пробелом — одним файлом в кавычках, `%` — буквально.
+        val spaced = SshEndpoint.of("build.example", "dev", 22, identityFile = "/k/my keys/id%1", knownHostsFile = "/k/my hosts/known_hosts").valueOrNull()!!
+        SshProcessHost(spaced, TargetPlatform.POSIX, local).start(ProcessSpec(listOf("dpai", "agent", "doctor")))
+        val spacedArgv = local.last!!.command
+        assertTrue("UserKnownHostsFile=\"/k/my hosts/known_hosts\"" in spacedArgv, spacedArgv.toString())
+        assertEquals("/k/my keys/id%%1", spacedArgv[spacedArgv.indexOf("-i") + 1])
         assertEquals(listOf("-p", "2222"), argv.subList(argv.indexOf("-p"), argv.indexOf("-p") + 2))
         assertEquals(listOf("--", "build.example", "dpai agent doctor"), argv.takeLast(3))
     }

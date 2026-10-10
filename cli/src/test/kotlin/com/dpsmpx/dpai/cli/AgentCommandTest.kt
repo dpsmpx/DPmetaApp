@@ -105,6 +105,23 @@ class AgentCommandTest {
         assertEquals(CheckStatus.OK, manager.doctor(target.id).valueOrNull()!!.checks.first { it.name == "связь" }.status)
     }
 
+    /** Ревью A-18: относительный --home — супервизор находит запуск и берёт ход, а не ищет его в home/home. */
+    @Test
+    fun relativeHomeIsResolvedForSupervisor() {
+        val rel = Path.of("").toAbsolutePath().relativize(dir).toString()
+        val manager = ExecutionTargetManager(Clock.SYSTEM)
+        val target = ExecutionTarget(
+            ids.next(IdKinds.TARGET), TargetType.LOCAL, "эта машина", platform(), null,
+            AgentCommand.selfCommand(), agentHome = rel,
+        )
+        manager.register(target)
+        val client = manager.client(target.id).valueOrNull()!!
+        val run = ids.next(IdKinds.SESSION)
+        assertTrue(client.start(run, RunSpec(hangCommand())).isSuccess)
+        RealTime.await(60.seconds, "супервизор взял ход") { client.status(run).valueOrNull()?.takeIf { it.state == RunState.RUNNING } }
+        assertEquals(RunState.EXITED, client.stop(run, 2.seconds).valueOrNull()!!.run!!.state)
+    }
+
     /**
      * Настоящий target по SSH. Задаётся системным свойством
      * `dpai.test.ssh` = `пользователь@хост:порт:posix|windows:команда агента`,

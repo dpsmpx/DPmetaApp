@@ -87,6 +87,13 @@ class SshProcessHost(
 
     companion object {
         /**
+         * Путь в значении `-o` OpenSSH (ревью A-19): значение разбирается как
+         * строка конфигурации — пробел делит его на несколько файлов, поэтому
+         * путь с пробелом — в кавычках; `%` — начало токена, сам знак — `%%`.
+         */
+        internal fun configPath(path: String): String = path.replace("%", "%%").let { if (it.any(Char::isWhitespace)) "\"$it\"" else it }
+
+        /**
          * Команда клиента OpenSSH для [remote] на [endpoint]: те же параметры,
          * что у вызовов агента, — и для MCP-сервера рабочего дерева, который
          * Claude Code запускает сам (D-50).
@@ -115,11 +122,11 @@ class SshProcessHost(
                     }
                     endpoint.knownHostsFile?.let {
                         add("-o")
-                        add("UserKnownHostsFile=$it")
+                        add("UserKnownHostsFile=${configPath(it)}")
                     }
                     endpoint.identityFile?.let {
                         add("-i")
-                        add(it)
+                        add(it.replace("%", "%%"))
                         add("-o")
                         add("IdentitiesOnly=yes")
                     }

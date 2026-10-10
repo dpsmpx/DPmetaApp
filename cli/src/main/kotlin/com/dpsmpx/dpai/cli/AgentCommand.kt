@@ -34,7 +34,9 @@ class AgentCommand(
         val command = args.firstOrNull() ?: return usage("нет команды агента")
         val opts = Options.parse(args.drop(1)) ?: return usage("неверные параметры")
         if (command == "mcp") return mcp(opts)
-        val home = opts.single("home") ?: defaultHome()
+        // Абсолютный (ревью A-18): супервизор запускается с рабочим каталогом home, и относительный
+        // путь он искал бы в home/home — каждый ход становился бы LOST.
+        val home = File(opts.single("home") ?: defaultHome()).absolutePath
         val runtime = AgentRuntime(home, clock, version, selfCommand)
         val reply = when (command) {
             "doctor" -> runtime.doctor()

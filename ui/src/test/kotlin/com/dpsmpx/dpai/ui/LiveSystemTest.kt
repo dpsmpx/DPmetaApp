@@ -19,6 +19,7 @@ import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 import org.junit.jupiter.api.io.TempDir
 
@@ -115,6 +116,28 @@ class LiveSystemTest {
         s.probeSlot(target.id)
         steps(s, 4)
         assertTrue(s.orchestrator.sessions.sessions.values.any { it.task == task })
+    }
+
+    /**
+     * Ревью A-79: первая проба входа не удалась (нет связи — SSH до
+     * добавления ключа, сон ПК). Target без слота пробуется снова раз в
+     * минуту и получает слот без «Вход Claude»; задача идёт.
+     */
+    @Test
+    fun failedSlotProbeIsRetried() {
+        host.reachable = false
+        val target = entry("сервер", "/home/dev/.claude-dpai")
+        val s = system(target)
+        steps(s, 1)
+        assertTrue(s.orchestrator.accounts.slots.isEmpty(), "без связи слота нет")
+        assertTrue(s.dashboard().attention.any { "повтор раз в минуту" in it }, s.dashboard().attention.toString())
+        host.reachable = true
+        val task = s.addTask("Ждёт", "ждать слота").valueOrNull()!!
+        clock.advance(LiveSystem.PROBE_RETRY_MS.milliseconds)
+        steps(s, 4)
+        assertEquals(1, s.orchestrator.accounts.slots.size, "слот после повтора пробы")
+        assertTrue(s.orchestrator.sessions.sessions.values.any { it.task == task })
+        assertTrue(s.dashboard().attention.none { "повтор раз в минуту" in it })
     }
 
     /**

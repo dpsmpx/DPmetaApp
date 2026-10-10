@@ -10,11 +10,19 @@ import com.dpsmpx.dpai.core.serialization.CanonicalJson
 import com.dpsmpx.dpai.core.serialization.JsonParser
 import com.dpsmpx.dpai.execution.target.TargetPlatform
 import com.dpsmpx.dpai.execution.target.TargetType
+import com.dpsmpx.dpai.storage.vfs.NioVfs
+import com.dpsmpx.dpai.storage.vfs.Vfs
+import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
+import org.junit.jupiter.api.io.TempDir
 
 class TargetsTest {
+    @TempDir
+    lateinit var dir: Path
+
     private val ids = IdGenerator(ManualClock(), RandomSource.seeded(9))
 
     private fun entry(host: String = "127.0.0.1", port: String = "8022", windows: Boolean = false) =
@@ -77,5 +85,19 @@ class TargetsTest {
         val v1 = """{"format":"dpai.app-targets","version":1,"targets":[{"id":"$id","label":"t","host":"127.0.0.1","port":8022,"user":"u","platform":"posix","agent":"/a/dpai"}]}"""
         val read = TargetBook.fromJson(JsonParser().parse(v1).valueOrNull()!!).valueOrNull()!!
         assertEquals(null, read.single().configDir)
+    }
+
+    /** Ревью A-85: known_hosts пишется атомарно — сбой посреди записи оставляет прежний файл целым. */
+    @Test
+    fun knownHostsSaveIsAtomic() {
+        val vfs = NioVfs(dir)
+        KnownHosts.save(vfs, "known_hosts", "[a]:22 ssh-ed25519 AAAA1")
+        val failing = object : Vfs by vfs {
+            override fun rename(from: String, to: String) = throw java.io.IOException("сбой при переименовании")
+        }
+        assertFailsWith<java.io.IOException> { KnownHosts.save(failing, "known_hosts", "[b]:22 ssh-ed25519 AAAA2") }
+        assertEquals("[a]:22 ssh-ed25519 AAAA1\n", vfs.read("known_hosts")!!.toString(Charsets.UTF_8))
+        KnownHosts.save(vfs, "known_hosts", "[b]:22 ssh-ed25519 AAAA2")
+        assertEquals(setOf("[a]:22", "[b]:22"), KnownHosts.names(vfs.read("known_hosts")!!.toString(Charsets.UTF_8)))
     }
 }

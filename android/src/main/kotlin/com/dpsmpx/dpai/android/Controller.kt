@@ -158,9 +158,7 @@ class Controller(private val root: File, private val version: String?) {
     @Synchronized
     fun add(entry: TargetEntry, confirmed: ProbedHostKey): Outcome<Unit> {
         try {
-            val current = vfs.read(KNOWN_HOSTS)?.toString(Charsets.UTF_8).orEmpty()
-            vfs.write(KNOWN_HOSTS, KnownHosts.add(current, confirmed.knownHostsLine).toByteArray())
-            vfs.fsync(KNOWN_HOSTS)
+            KnownHosts.save(vfs, KNOWN_HOSTS, confirmed.knownHostsLine)
         } catch (e: java.io.IOException) {
             return Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "known_hosts не записан", e, KNOWN_HOSTS))
         }
