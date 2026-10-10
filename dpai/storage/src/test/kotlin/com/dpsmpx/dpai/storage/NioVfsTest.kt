@@ -1,0 +1,55 @@
+package com.dpsmpx.dpai.storage
+
+import com.dpsmpx.dpai.core.serialization.JsonObject
+import com.dpsmpx.dpai.core.serialization.json
+import com.dpsmpx.dpai.storage.document.DocumentStore
+import com.dpsmpx.dpai.storage.vfs.NioVfs
+import com.dpsmpx.dpai.storage.vfs.Vfs
+import java.nio.file.Path
+import kotlin.test.Test
+import kotlin.test.assertContentEquals
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+import org.junit.jupiter.api.io.TempDir
+
+class NioVfsTest {
+    @TempDir
+    lateinit var dir: Path
+
+    @Test
+    fun basicOperationsOnRealFiles() {
+        val vfs = NioVfs(dir)
+        vfs.mkdirs("data")
+        assertNull(vfs.read("data/a"))
+        vfs.write("data/a", "один".toByteArray())
+        vfs.append("data/a", "+два".toByteArray())
+        vfs.fsync("data/a")
+        assertContentEquals("один+два".toByteArray(), vfs.read("data/a"))
+        vfs.rename("data/a", "data/b")
+        vfs.fsyncDir("data")
+        assertFalse(vfs.exists("data/a"))
+        assertEquals(listOf("b"), vfs.list("data"))
+        vfs.truncate("data/b", 3)
+        assertEquals(3, vfs.read("data/b")!!.size)
+        vfs.delete("data/b")
+        assertTrue(vfs.list("data").isEmpty())
+        assertFailsWith<IllegalArgumentException> { vfs.read("../outside") }
+    }
+
+    @Test
+    fun documentStoreOnRealFiles() {
+        val store = DocumentStore(NioVfs(dir), "data")
+        store.write("settings", JsonObject.of("x" to json(1)))
+        store.write("settings", JsonObject.of("x" to json(2)))
+        assertEquals(JsonObject.of("x" to json(2)), store.read("settings").valueOrNull()?.content)
+    }
+
+    @Test
+    fun safePaths() {
+        assertTrue(Vfs.isSafeRelative("data/journal.log"))
+        for (bad in listOf("", "/etc/passwd", "../x", "a/../b", "a//b", "a\\b", "C:x", "./a")) assertFalse(Vfs.isSafeRelative(bad), bad)
+    }
+}

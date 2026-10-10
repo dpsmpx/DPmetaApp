@@ -1,0 +1,13 @@
+# Окончания строк — LF во всех текстовых файлах на любой ОС
+# (tools/verify/check_format.py): без этого git на Windows с
+# core.autocrlf=true выписывает CRLF, и проверка формата падает.
+* text=auto eol=lf
+
+# Командный файл Windows хранится с CRLF (его создал Gradle) — как есть.
+*.bat -text
+*.cmd -text
+
+# Двоичное.
+*.jar binary
+*.png binary
+*.zip binary
