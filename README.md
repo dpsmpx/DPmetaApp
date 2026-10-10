@@ -55,5 +55,7 @@ DP_AI_Orcestrator и связи схемы сайта
 ([`docs/reports/2026-10-09-ECOSYSTEM_HEALTH.md`](docs/reports/2026-10-09-ECOSYSTEM_HEALTH.md));
 в тот же день — места проектов по слову автора (M-10) и манифест
 `dpai.ecosystem` (M-11)
-([`docs/reports/2026-10-09-2-ECOSYSTEM_HEALTH.md`](docs/reports/2026-10-09-2-ECOSYSTEM_HEALTH.md)).
+([`docs/reports/2026-10-09-2-ECOSYSTEM_HEALTH.md`](docs/reports/2026-10-09-2-ECOSYSTEM_HEALTH.md));
+10 октября — проверка всего прохода отдельным проходом и исправления
+([`docs/reports/2026-10-10-ECOSYSTEM_HEALTH.md`](docs/reports/2026-10-10-ECOSYSTEM_HEALTH.md)).
 Аудит согласованности документации (M-09) ещё не запускался.
