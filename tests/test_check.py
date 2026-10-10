@@ -56,6 +56,11 @@ CLEAN = {
     ".github/pull_request_template.md": "## Что\n",
     "tools/check/run.sh": "#!/bin/sh\nexit 0\n",
     "tools/check/check.py": "print('ok')\n",
+    # Ядро подсистемы dpai (D-28): каждый тип ядра объявлен один раз.
+    "dpai/core/src/main/kotlin/Core.kt": (
+        "package core\n\nsealed interface Outcome<out T>\nclass OperationResult<out T>\nclass Diagnostic\n"
+        "enum class DiagCode { A }\nclass Secret(private val v: String)\ninterface Clock\n"),
+    "dpai/core/src/main/kotlin/Use.kt": "package core\n\nclass ManualClock : Clock\nval x: Outcome<Int>? = null\n",
 }
 
 
@@ -131,6 +136,63 @@ class LayoutTest(CheckCase):
 
     def test_workflow_is_forbidden(self):
         self.assertCatches(self.sample({".github/workflows/ci.yml": "on: push\n"}).run("repo.layout"), "D-13")
+
+
+class SubsystemScopeTest(CheckCase):
+    def test_subsystem_dir_is_allowed_in_root(self):
+        self.assertClean(self.sample().run("repo.layout"))
+
+    def test_subsystem_text_is_left_to_its_own_checks(self):
+        # Текст, ссылки и номера подсистемы проверяет её команда (D-28): здесь не находка.
+        s = self.sample({"dpai/docs/X.md": "# X\r\nСм. D-55, `docs/NOPE.md`, C-06.\n"})
+        for cid in ("format.text", "docs.links", "docs.refs"):
+            with self.subTest(cid):
+                self.assertClean(s.run(cid))
+
+    def test_secrets_are_searched_in_subsystem_too(self):
+        token = "ghp" + "_" + "C3d4" * 9
+        self.assertCatches(self.sample({"dpai/docs/X.md": f"{token}\n"}).run("security.secrets"), "github-token")
+
+
+class CoreSingleTest(CheckCase):
+    def test_core_type_outside_core(self):
+        s = self.sample({"core/model/src/main/kotlin/Result.kt": "package m\n\nsealed class Outcome\n"})
+        self.assertCatches(s.run("core.single"), "Outcome объявлен вне")
+
+    def test_nested_redeclaration_outside_core(self):
+        s = self.sample({"app/src/main/kotlin/A.kt": "class A {\n    object Clock\n}\n"})
+        self.assertCatches(s.run("core.single"), "Clock объявлен вне")
+
+    def test_core_type_twice_in_core(self):
+        s = self.sample({"dpai/core/src/main/kotlin/Again.kt": "package core\n\ndata class Secret(val v: String)\n"})
+        self.assertCatches(s.run("core.single"), "объявлен в ядре 2 раз")
+
+    def test_core_type_missing_in_core(self):
+        core = CLEAN["dpai/core/src/main/kotlin/Core.kt"].replace("interface Clock\n", "")
+        self.assertCatches(self.sample({"dpai/core/src/main/kotlin/Core.kt": core}).run("core.single"),
+                           "нет объявления Clock")
+
+    def test_similar_names_pass(self):
+        s = self.sample({"core/model/src/main/kotlin/M.kt": "class OutcomeView\nclass TestClock\nfun Secret() = 1\n"})
+        self.assertClean(s.run("core.single"))
+
+
+class SubsystemChecksTest(CheckCase):
+    def run_sub(self, script):
+        s = self.sample({"sub/verify.sh": script} if script else None)
+        return check.check_subsystems(s.root, {"sub": "sub/verify.sh"})[0]
+
+    def test_passing_subsystem(self):
+        self.assertClean(self.run_sub("#!/bin/sh\necho '- ✓ формат'\necho '- ✓ ссылки'\n"))
+
+    def test_failing_step_is_reported(self):
+        self.assertCatches(self.run_sub("#!/bin/sh\necho '- ✓ формат'\necho '- ✗ ссылки'\nexit 1\n"), "ссылки")
+
+    def test_failure_without_steps_is_reported(self):
+        self.assertCatches(self.run_sub("#!/bin/sh\necho 'сломалось'\nexit 2\n"), "сломалось")
+
+    def test_missing_command(self):
+        self.assertCatches(self.run_sub(None), "нет команды проверок")
 
 
 class FormatTest(CheckCase):

@@ -17,13 +17,15 @@ PROJ="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "$0")/../.." && pwd)}"
 {
     echo "== Начало сессии: DPmetaApp =="
     echo "Правила — CLAUDE.md; этап и шаги — ROADMAP/ROADMAP.md; хвосты — TODO.md."
+    echo "Подсистема «AI» и ядро — dpai/ (D-28): правила dpai/CLAUDE.md, хвосты dpai/TODO.md,"
+    echo "  проверки — cd dpai && tools/verify/run.sh static|affected|full."
     for tool in python3 git java; do
         if command -v "$tool" >/dev/null 2>&1; then
             echo "  $tool: есть"
             continue
         fi
         case "$tool" in
-            java) why="сборка ядра (этап 1) недоступна" ;;
+            java) why="сборка ядра и подсистемы dpai/ недоступна" ;;
             *)    why="проверки tools/check недоступны" ;;
         esac
         echo "  ! $tool: нет — $why"

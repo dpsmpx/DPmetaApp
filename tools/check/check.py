@@ -6,8 +6,12 @@
 Пустая проверка — провал (`DP-Verify:V-07`): проверка, которой нечего проверять, только
 выглядит защитой.
 
-Уровни: static — структура, текст, секреты, ссылки, номера, процесс (секунды);
-        full   — static и самотесты проверок (tests/).
+Уровни: static — структура, текст, секреты, ссылки, номера, процесс, единое ядро (секунды);
+        full   — static, самотесты проверок (tests/) и проверки подсистем (D-28).
+
+Подсистема со своими проверками (SUBSYSTEMS) — каталог со своим процессом: её текст, ссылки
+и номера проверяет её команда; здесь — секреты (второй, независимый поиск), раскладка корня
+и единое ядро.
 Ключ --write-status переписывает блок состояния README.md из ROADMAP и выходит.
 
 Коды возврата: 0 — пройдено; 1 — есть находки; 2 — неверный вызов;
@@ -30,14 +34,22 @@ README = "README.md"
 TODO = "TODO.md"
 
 # В корне — только точки входа (`DPmeta:E-06`) и мастер-ТЗ автора (D-25: на этот путь
-# ссылаются другие репозитории); файлы Gradle и модули — с этапа 1 (ТЗ, §6.2).
+# ссылаются другие репозитории); файлы Gradle и модули — с этапа 1 (ТЗ, §6.2); подсистемы (D-28).
 ROOT_ALLOW = {
     "README.md", "CLAUDE.md", "TODO.md", "LICENSE", ".gitignore",
     "MESTER_TECHNICAL_TASK_ROADMAP.md",
     ".claude", ".github", "docs", "ROADMAP", "tools", "tests",
     "settings.gradle.kts", "build.gradle.kts", "gradle.properties", "gradlew", "gradlew.bat",
     "gradle", "build-logic", "app", "core", "cli", "config",
+    "dpai",
 }
+# Подсистемы со своим процессом и командой проверок (D-28): каталог → команда уровня static.
+SUBSYSTEMS = {"dpai": "dpai/tools/verify/run.sh"}
+# Единое ядро (D-28): эти типы объявлены один раз — в ядре подсистемы dpai.
+CORE_TYPES = ("Outcome", "OperationResult", "Diagnostic", "DiagCode", "Secret", "Clock")
+CORE_HOME = "dpai/core/src/main/"
+CORE_DECL = re.compile(r"^[ \t]*(?:(?:public|internal|private|sealed|data|value|enum|abstract|open|fun|inline)\s+)*"
+                       r"(?:class|interface|object|typealias)\s+(" + "|".join(CORE_TYPES) + r")\b", re.M)
 # Документы автора, которые он ведёт сам (через веб-интерфейс): форма текста не проверяется,
 # чтобы не править их ради проверки (D-25).
 AUTHOR_FILES = {"MESTER_TECHNICAL_TASK_ROADMAP.md"}
@@ -110,6 +122,8 @@ class Repo:
                              capture_output=True, check=True)
         names = {f for f in out.stdout.decode("utf-8").split("\0") if f}
         self.files = sorted(f for f in names if os.path.isfile(os.path.join(root, f)))
+        # Свои файлы — вне подсистем: текст, ссылки и номера подсистемы проверяет её команда (D-28).
+        self.own = [f for f in self.files if f.split("/", 1)[0] not in SUBSYSTEMS]
         self.top_dirs = {f.split("/", 1)[0] for f in self.files if "/" in f}
         self._text = {}
 
@@ -134,7 +148,7 @@ class Repo:
         return self._text[rel]
 
     def texts(self, suffix=None):
-        for rel in self.files:
+        for rel in self.own:
             if suffix and not rel.endswith(suffix):
                 continue
             t = self.text(rel)
@@ -196,7 +210,7 @@ def check_format(repo, r):
 
     Документы автора (AUTHOR_FILES) не проверяются: их ведёт автор, сессия их не правит.
     """
-    for rel in repo.files:
+    for rel in repo.own:
         if rel in AUTHOR_FILES:
             continue
         data = repo.raw(rel)
@@ -220,7 +234,7 @@ def check_format(repo, r):
 
 def check_scripts(repo, r):
     """format.scripts — у скриптов shell есть #! и право на исполнение; Python разбирается."""
-    for rel in repo.files:
+    for rel in repo.own:
         if rel.endswith(".sh"):
             r.scanned += 1
             if not repo.raw(rel).startswith(b"#!"):
@@ -455,6 +469,50 @@ def check_status(repo, r):
         r.add(README, "блок состояния устарел — tools/check/run.sh --write-status")
 
 
+def check_core_single(repo, r):
+    """core.single — типы ядра объявлены один раз и только в ядре dpai (D-28): второго ядра нет."""
+    seen = {}
+    for rel in repo.files:
+        if not rel.endswith(".kt"):
+            continue
+        r.scanned += 1
+        text = repo.text(rel) or ""
+        for m in CORE_DECL.finditer(text):
+            seen.setdefault(m.group(1), []).append((rel, text.count("\n", 0, m.start()) + 1))
+    for name in CORE_TYPES:
+        places = seen.get(name, [])
+        home = [p for p in places if p[0].startswith(CORE_HOME)]
+        for rel, line in places:
+            if not rel.startswith(CORE_HOME):
+                r.add(f"{rel}:{line}", f"{name} объявлен вне {CORE_HOME}: ядро одно — тип берётся оттуда (D-28)")
+        if len(home) > 1:
+            r.add(f"{home[1][0]}:{home[1][1]}", f"{name} объявлен в ядре {len(home)} раз — тип один (D-28)")
+        if r.scanned and not home:
+            r.add(CORE_HOME, f"нет объявления {name} в ядре — проверка устарела или ядро сломано (D-28)")
+
+
+def check_subsystems(root, subsystems=None):
+    """subsystem.* — команда проверок каждой подсистемы на уровне static проходит (D-28)."""
+    results = []
+    for name, cmd in sorted((SUBSYSTEMS if subsystems is None else subsystems).items()):
+        r = Result(f"subsystem.{name}")
+        t0 = time.monotonic()
+        path = os.path.join(root, cmd)
+        if not os.path.isfile(path):
+            r.add(cmd, "нет команды проверок подсистемы")
+        else:
+            p = subprocess.run(["bash", path, "static"], cwd=root, capture_output=True, text=True)
+            steps = re.findall(r"^- ([✓✗]) (.+)$", p.stdout, re.M)
+            r.scanned = len(steps)
+            r.findings.extend(f"{cmd}: {what}" for mark, what in steps if mark == "✗")
+            if p.returncode != 0 and not r.findings:
+                tail = [l for l in (p.stdout + p.stderr).strip().split("\n") if l][-SHOW:]
+                r.findings.extend(tail or [f"{cmd}: код {p.returncode}"])
+        r.seconds = time.monotonic() - t0
+        results.append(r)
+    return results
+
+
 def check_files(repo, r):
     """process.files — обязательные документы процесса на месте."""
     r.scanned = len(REQUIRED)
@@ -475,6 +533,7 @@ CHECKS = [
     ("process.roadmap", check_roadmap),
     ("process.files", check_files),
     ("readme.status", check_status),
+    ("core.single", check_core_single),
 ]
 
 
@@ -563,6 +622,7 @@ def main(argv):
     results = [run_one(cid, repo) for cid, _ in CHECKS]
     if level == "full":
         results.append(selftest(ROOT))
+        results.extend(check_subsystems(ROOT))
     return report(results, level, verbose, time.monotonic() - t0)
 
 

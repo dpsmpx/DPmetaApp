@@ -22,7 +22,10 @@
 этап начинается по поручению автора («готово — остановиться»,
 `CLAUDE.md`). Этапы 1 и дальше — фаза B мастер-ТЗ: начинаются после
 Ecosystem Baseline, когда проекты экосистемы доведены до законченных
-систем (D-25).
+систем (D-25). Исключение — подсистема «AI» (D-28, поручение автора
+10 октября 2026): DP_AI_Orcestrator уже в `dpai/`, поэтому этап 1 —
+сборка и ядро — идёт сейчас, на его ядре. Свой план подсистемы —
+`dpai/docs/direction/ROADMAP/` (этапы 19, 20 — заморозка её V1).
 
 ## Версия 1.0
 
@@ -33,29 +36,37 @@ Ecosystem Baseline, когда проекты экосистемы доведе�
 
 - [+] Постановка автора — `docs/direction/REQUEST.md`.
 - [+] ТЗ версии 1.0 — `docs/direction/TECHNICAL_TASK.md`.
-- [+] Решения D-01…D-27 — `docs/direction/DECISIONS.md`.
+- [+] Решения D-01…D-28 — `docs/direction/DECISIONS.md`.
 - [+] Место в экосистеме и очередь — D-25 (мастер-ТЗ); схема из
       DPvisualisation — D-26; одно приложение с системами активных
-      репозиториев внутри, DP_AI_Orcestrator — подсистема «AI» — D-27.
+      репозиториев внутри, DP_AI_Orcestrator — подсистема «AI» — D-27;
+      всё в одном сейчас: оркестратор — в `dpai/` — D-28.
 - [+] Процесс: `CLAUDE.md`, `docs/PROCESS.md`, `docs/PROVENANCE.md`,
       `TODO.md`, хук начала сессии, шаблон PR.
 - [+] Проверки `tools/check/` с самотестами.
 - [ ] ТЗ влито автором.
-- [ ] Ответы на Q-01…Q-16 — решениями в `DECISIONS.md` (Q-07 — D-26, Q-16 — D-27).
+- [ ] Ответы на Q-01…Q-17 — решениями в `DECISIONS.md` (Q-07 — D-26, Q-16 — D-27, D-28).
 
 ### <a id="task-1"></a>[ ] Этап 1. Каркас сборки и ядро — `Т`
 
-Выход: `tools/check/run.sh full` собирает и тестирует ядро без Android
-SDK; с SDK — пустой `:app` собирается и проходит Lint. Версия — `0.1.0`.
+Выход: `tools/check/run.sh full` собирает и тестирует из корня ядро и
+подсистему «AI» (`dpai/`) без Android SDK; с SDK — приложение собирается
+и проходит Lint. Версия — `0.1.0`.
 
-- [ ] Gradle: wrapper, `gradle/libs.versions.toml`, `build-logic/`,
-      контрольные суммы зависимостей (ТЗ, §6.1, N-14).
-- [ ] Модули ТЗ §6.2 (пустые, с границами); проверка модулей.
-- [ ] `:core:diagnostics` — `Outcome`, `Diagnostic`, реестр кодов (§6.9).
-- [ ] `:core:model`, `Clock`, `Secret` (§6.3, §6.6).
+- [+] Ядро и подсистема «AI» — код DP_AI_Orcestrator в `dpai/` с
+      историей (D-28): `Outcome`, `Diagnostic` и реестр кодов, `Clock`,
+      `Secret`, JSON, события, журнал, хранилище — с тестами и своими
+      проверками (`dpai/tools/verify/run.sh`).
+- [+] Проверки: `core.single` (ядро одно) и шаг `subsystem.dpai` в
+      `tools/check/run.sh full`.
+- [ ] Сборка Gradle из корня: wrapper (тот же, что в `dpai/`),
+      `settings.gradle.kts` с `includeBuild("dpai")`, общие задачи
+      `build` и `check` (ТЗ, §6.1, N-14).
+- [ ] Модули ТЗ §6.2 на ядре `dpai/` (пустые, с границами); проверка
+      модулей; строки зависимостей в `docs/PROVENANCE.md`.
+- [ ] `:core:model` — типы предметной области на ID и `Measure` ядра.
 - [ ] `:cli` — `dpmeta-cli` с дымом; `:tests:corpus`.
-- [ ] Уровни проверок с Gradle: `full`, `full --strict` (ТЗ, §14);
-      строки зависимостей в `docs/PROVENANCE.md`.
+- [ ] Уровни проверок с Gradle: `full`, `full --strict` (ТЗ, §14).
 - [ ] `docs/ARCHITECTURE.md` — как устроено.
 
 ### <a id="task-2"></a>[ ] Этап 2. Данные экосистемы — `Т`
