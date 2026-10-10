@@ -394,12 +394,17 @@ DPmeta: у каждого есть владелец, и правится он т
 - **Чем проверяется:** в DPvisualisation — `tests/test_public.py`, проверки
   `public.leak` и `browser.smoke`; в SocialMediaImage —
   `tests/test_site.py` (Д43), проверки `site` и `siteshots`.
-- **Состояние на 9 октября 2026:** в `main` SocialMediaImage — комплект
+- **Состояние на 10 октября 2026:** в `main` SocialMediaImage — комплект
   из невлитой ветки DPvisualisation (`48095ef`); новый комплект
-  (DPvisualisation `ce0ada3`: срез 9 октября, DP_AI_Orcestrator,
-  просмотрщик без анимаций — `DPvisualisation:D-16`) — в ветках
+  (DPvisualisation `6268cb3`: срез 10 октября по 13 репозиториям текущей
+  системы, без архива — `DPvisualisation:D-20`; управление отдельным
+  слоем; просмотрщик без анимаций — `DPvisualisation:D-16`) — в ветках
   `claude/dreamy-bardeen-xe4k6r` обоих репозиториев; на сервере
   `/ecosystem/` отвечает 404 — выгрузки ещё не было (SQ-25).
+- **Как часто:** при каждой выгрузке сайта — свежий срез и комплект
+  (слово автора 9 октября 2026; `SocialMediaImage:Д43`,
+  `DPvisualisation:D-18`); DPvisualisation к сайту не обращается
+  (`DPvisualisation:D-19`).
 
 ## C-13 — Манифест `dpai.ecosystem` DPmeta → глобальный прогон DP_AI_Orcestrator
 
