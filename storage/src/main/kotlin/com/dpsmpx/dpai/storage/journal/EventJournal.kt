@@ -8,6 +8,7 @@ import com.dpsmpx.dpai.core.hashing.ContentHash
 import com.dpsmpx.dpai.core.hashing.Hashing
 import com.dpsmpx.dpai.core.ids.EventId
 import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.core.result.map
 import com.dpsmpx.dpai.core.serialization.CanonicalJson
 import com.dpsmpx.dpai.core.serialization.FormatHeader
 import com.dpsmpx.dpai.core.serialization.JsonFields
@@ -320,6 +321,49 @@ class EventJournal private constructor(
                 return Outcome.failure(DiagCode.JOURNAL_CORRUPTED, "запись №${scan.badLine} испорчена, за ней ещё ${scan.linesAfterBad}", path)
             }
             return Outcome.success(scan.loaded)
+        }
+
+        /**
+         * Подтверждённые записи с номером события больше [afterSequence] и
+         * номер последнего события (ревью A-13). Читатель — агент: каждый его
+         * вызов — новый процесс, и полная сверка журнала длинного хода (20 МБ —
+         * ~3 с на Redmi) шла на каждом опросе. Здесь — с конца: опорная запись
+         * (номер не больше [afterSequence]) и цепочка хешей от неё до конца;
+         * начало журнала сверено, когда его отдавали раньше. Что-то не так в
+         * хвосте — полное чтение, как [readCommitted].
+         */
+        fun readCommittedAfter(vfs: Vfs, path: String, afterSequence: Long): Outcome<Pair<List<JournalRecord>, Long>> {
+            fun full(): Outcome<Pair<List<JournalRecord>, Long>> = readCommitted(vfs, path).map { all ->
+                all.filter { it.event.sequence > afterSequence } to (all.lastOrNull()?.event?.sequence ?: 0)
+            }
+            if (afterSequence <= 0) return full()
+            val bytes = try {
+                vfs.read(path)
+            } catch (e: IOException) {
+                return Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "журнал не прочитан", e, path))
+            } ?: return Outcome.success(emptyList<JournalRecord>() to 0L)
+            var lineEnd = lastIndexOf(bytes, '\n'.code.toByte(), bytes.size - 1)
+            while (lineEnd >= 0) {
+                val lineStart = lastIndexOf(bytes, '\n'.code.toByte(), lineEnd - 1) + 1
+                val seq = eventSequence(bytes.copyOfRange(lineStart, lineEnd)) ?: return full()
+                if (seq <= afterSequence) {
+                    val scan = scan(bytes.copyOfRange(lineStart, bytes.size), null)
+                    if (scan.badLine != null) return full()
+                    return Outcome.success(scan.loaded.filter { it.event.sequence > afterSequence } to (scan.loaded.lastOrNull()?.event?.sequence ?: seq))
+                }
+                lineEnd = lineStart - 1
+            }
+            return full()
+        }
+
+        private fun eventSequence(line: ByteArray): Long? {
+            val value = JsonParser().parse(line.toString(Charsets.UTF_8)).valueOrNull() as? JsonObject ?: return null
+            return ((value["event"] as? JsonObject)?.get("sequence") as? JsonNumber)?.toLongExact()
+        }
+
+        private fun lastIndexOf(bytes: ByteArray, b: Byte, from: Int): Int {
+            for (i in from downTo 0) if (bytes[i] == b) return i
+            return -1
         }
 
         private class Scan(val loaded: List<JournalRecord>, val validEnd: Int, val badLine: Int?, val linesAfterBad: Int)

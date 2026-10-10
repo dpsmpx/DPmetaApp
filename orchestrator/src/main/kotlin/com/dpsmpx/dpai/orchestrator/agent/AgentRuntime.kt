@@ -299,11 +299,12 @@ class AgentRuntime(
         if (after < 0 || limit !in 1..10_000) {
             return AgentReply.failure("events", listOf(Diagnostic.error(DiagCode.VALUE_INVALID, "after ≥ 0, limit — 1…10000")))
         }
-        val records = when (val r = EventJournal.readCommitted(vfs, journalPath(id))) {
+        // С конца журнала (ревью A-13): канал опрашивает с последнего принятого — хвост короткий.
+        val (records, lastInJournal) = when (val r = EventJournal.readCommittedAfter(vfs, journalPath(id), after)) {
             is Outcome.Failure -> return AgentReply.failure("events", r.diagnostics)
             is Outcome.Success -> r.value
         }
-        val status = when (val s = observe(id, records.lastOrNull()?.event?.sequence ?: 0)) {
+        val status = when (val s = observe(id, lastInJournal)) {
             is Outcome.Failure -> return AgentReply.failure("events", s.diagnostics)
             is Outcome.Success -> s.value
         }
@@ -438,7 +439,7 @@ class AgentRuntime(
     }
 
     private fun lastSequence(id: SessionId): Long =
-        maxOf(EventJournal.readCommitted(vfs, journalPath(id)).valueOrNull()?.lastOrNull()?.event?.sequence ?: 0, pruned(id)?.lastSequence ?: 0)
+        maxOf(EventJournal.readCommittedAfter(vfs, journalPath(id), Long.MAX_VALUE).valueOrNull()?.second ?: 0, pruned(id)?.lastSequence ?: 0)
 
     /** Надгробие удалённого по сроку запуска (A-6): с какого хода и номера продолжать. */
     private fun pruned(id: SessionId): PrunedDoc? =

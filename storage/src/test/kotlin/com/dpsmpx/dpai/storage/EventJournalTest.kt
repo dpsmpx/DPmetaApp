@@ -4,6 +4,7 @@ import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.events.EventEnvelope
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.storage.journal.EventJournal
+import com.dpsmpx.dpai.storage.journal.JournalRecord
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -142,5 +143,25 @@ class EventJournalTest {
         val j = open(SimulatedVfs())
         assertEquals(EventJournal.GENESIS, j.hashAt(0))
         assertEquals(null, j.hashAt(1))
+    }
+
+    /** Ревью A-13: хвост после номера — то же, что полное чтение с фильтром; испорченный хвост — не тихо. */
+    @Test
+    fun readCommittedAfterGivesTheTailOfFullRead() {
+        val vfs = SimulatedVfs()
+        val f = EventFactory()
+        val j = open(vfs)
+        repeat(50) { assertTrue(j.append(f.next()).isSuccess) }
+        val all = assertIs<Outcome.Success<List<JournalRecord>>>(EventJournal.readCommitted(vfs, path)).value
+        for (after in listOf(0L, 1L, 25L, 49L, 50L, 1000L)) {
+            val (tail, last) = EventJournal.readCommittedAfter(vfs, path, after).valueOrNull()!!
+            assertEquals(all.filter { it.event.sequence > after }, tail, "после $after")
+            assertEquals(50L, last)
+        }
+        // Испорченная запись в хвосте: полное чтение решает — JOURNAL_CORRUPTED, а не пропуск.
+        val text = vfs.read(path)!!.toString(Charsets.UTF_8).lines().filter { it.isNotEmpty() }.toMutableList()
+        text[45] = text[45].replace("вывод", "подмена")
+        vfs.write(path, (text.joinToString("\n") + "\n").toByteArray())
+        assertEquals(DiagCode.JOURNAL_CORRUPTED, assertIs<Outcome.Failure>(EventJournal.readCommittedAfter(vfs, path, 40)).errors.single().code)
     }
 }
