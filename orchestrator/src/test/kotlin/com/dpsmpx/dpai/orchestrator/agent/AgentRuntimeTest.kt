@@ -414,4 +414,18 @@ class AgentRuntimeTest {
         assertTrue(stop.stop!!.forced, "принуждение видно контроллеру: ${stop.stop}")
         assertEquals(RunState.EXITED, rt.status(run).run!!.state)
     }
+
+    /** Ревью A-11: запуск пишется v3 со временем загрузки; запуск v2 (без него) читается. */
+    @Test
+    fun runDocV2IsStillReadable() {
+        val rt = runtime()
+        val run = ids.next(IdKinds.SESSION)
+        val (_, _) = startTree(rt, run)
+        val json = DocumentStore(NioVfs(dir), "runs/${run.value}").read(AgentRuntime.RUN_KEY).valueOrNull()!!.content
+        val doc = RunDoc.read(json)!!
+        if (com.dpsmpx.dpai.execution.process.ProcessTree.bootMillis() != null) assertTrue(doc.bootAt != null, "время загрузки записано")
+        val v2 = com.dpsmpx.dpai.core.serialization.JsonObject(json.fields - "bootAt" + ("version" to com.dpsmpx.dpai.core.serialization.JsonNumber.of(2)))
+        assertEquals(doc.copy(bootAt = null), RunDoc.read(v2))
+        assertTrue(rt.stop(run, 2.seconds).ok)
+    }
 }

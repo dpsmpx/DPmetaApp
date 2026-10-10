@@ -52,12 +52,32 @@ object ProcessTree {
      * (±1 с): идентификатор мог достаться другому процессу, и убить чужой
      * процесс нельзя. Без известного времени старта — `null`.
      */
-    fun find(pid: Long, startedAtMillis: Long?): ProcessHandle? {
+    fun find(pid: Long, startedAtMillis: Long?, bootAtMillis: Long? = null): ProcessHandle? = find(pid, startedAtMillis, bootAtMillis, bootMillis())
+
+    /**
+     * [bootAtMillis] — время загрузки на момент записи [startedAtMillis] (ревью
+     * A-11). На Linux время старта процесса JDK считает от времени загрузки
+     * (`btime`), а оно сдвигается вместе со скачком часов (NTP, сеть на
+     * телефоне): живой процесс иначе не узнавался, и ход становился `LOST`.
+     * Сравнивается старт относительно загрузки — скачок часов на него не
+     * влияет. Без записанной загрузки — как раньше.
+     */
+    internal fun find(pid: Long, startedAtMillis: Long?, bootAtMillis: Long?, bootNow: Long?): ProcessHandle? {
         val h = ProcessHandle.of(pid).orElse(null) ?: return null
         if (!h.isAlive) return null
         val start = h.info().startInstant().orElse(null)?.toEpochMilli() ?: return null
-        if (startedAtMillis == null || kotlin.math.abs(start - startedAtMillis) > 1000) return null
+        if (startedAtMillis == null) return null
+        val shift = if (bootAtMillis != null && bootNow != null) bootNow - bootAtMillis else 0
+        if (kotlin.math.abs(start - shift - startedAtMillis) > 1000) return null
         return h
+    }
+
+    /** Время загрузки (`btime` из `/proc/stat`, Linux и Android); где его нет — `null`. */
+    fun bootMillis(): Long? = try {
+        java.io.File("/proc/stat").takeIf { it.isFile }?.readLines()
+            ?.firstOrNull { it.startsWith("btime ") }?.removePrefix("btime ")?.trim()?.toLongOrNull()?.times(1000)
+    } catch (_: java.io.IOException) {
+        null
     }
 
     /** Время старта процесса по ОС, если она его сообщает. */

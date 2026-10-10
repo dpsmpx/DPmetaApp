@@ -178,7 +178,7 @@ class AgentRuntime(
             journal.append(recorder.envelope(type, stream, clock.now(), payload))
         }
         val self = ProcessHandle.current()
-        var current = doc.copy(supervisorPid = self.pid(), supervisorStartedAt = ProcessTree.startedAtMillis(self))
+        var current = doc.copy(supervisorPid = self.pid(), supervisorStartedAt = ProcessTree.startedAtMillis(self), bootAt = ProcessTree.bootMillis())
         // Супервизор записывает себя до запуска процесса: так stop находит его и просит, а не пишет сам (A-4).
         store.write(RUN_KEY, current.toJson()).let { if (it is Outcome.Failure) return AgentReply.failure("supervise", it.diagnostics) }
         if (stopRequest(store, doc.turn) != null) {
@@ -317,10 +317,10 @@ class AgentRuntime(
         }
         if (doc.state == RunState.EXITED) return AgentReply("stop", ok = true, run = doc.status(last), stop = StopResult(false, emptyList()))
         if (doc.state == RunState.STARTING && doc.supervisorPid == null) return stopBeforeSupervisor(id, doc, last, grace, store)
-        val supervisor = doc.supervisorPid?.let { ProcessTree.find(it, doc.supervisorStartedAt) }
+        val supervisor = doc.supervisorPid?.let { ProcessTree.find(it, doc.supervisorStartedAt, doc.bootAt) }
         if (supervisor != null) return stopWithSupervisor(id, doc, last, supervisor, grace, store)
         // Супервизор потерян: процесс останавливается по идентификатору и времени старта.
-        val child = doc.pid?.let { ProcessTree.find(it, doc.pidStartedAt) }
+        val child = doc.pid?.let { ProcessTree.find(it, doc.pidStartedAt, doc.bootAt) }
         val r = child?.let { ProcessTree.stop(it, grace, clock) } ?: ProcessTree.Result(false, emptyList())
         return stopLost(id, doc, last, r, store)
     }
@@ -361,7 +361,7 @@ class AgentRuntime(
             when {
                 now.state == RunState.EXITED -> return AgentReply("stop", ok = true, run = now.status(lastNow), stop = StopResult(false, emptyList()))
                 now.supervisorPid != null -> {
-                    val supervisor = ProcessTree.find(now.supervisorPid, now.supervisorStartedAt)
+                    val supervisor = ProcessTree.find(now.supervisorPid, now.supervisorStartedAt, now.bootAt)
                     return if (supervisor != null) stopWithSupervisor(id, now, lastNow, supervisor, grace, store) else stop(id, grace)
                 }
                 now.state == RunState.LOST -> return stop(id, grace)
@@ -449,7 +449,7 @@ class AgentRuntime(
         }
         val last = knownLast ?: lastSequence(id)
         if (doc.state == RunState.EXITED) return Outcome.success(doc to last)
-        val supervisorAlive = doc.supervisorPid?.let { ProcessTree.find(it, doc.supervisorStartedAt) != null }
+        val supervisorAlive = doc.supervisorPid?.let { ProcessTree.find(it, doc.supervisorStartedAt, doc.bootAt) != null }
         val lost = when (supervisorAlive) {
             true -> false
             false -> true
@@ -609,6 +609,8 @@ internal data class RunDoc(
     val pidStartedAt: Long? = null,
     val exitCode: Int? = null,
     val reason: ExitReason? = null,
+    /** Время загрузки на момент записи времён старта (v3, ревью A-11): опознание процесса — относительно загрузки. */
+    val bootAt: Long? = null,
 ) {
     fun status(lastSequence: Long): RunStatus = RunStatus(id, state, pid, exitCode, reason, lastSequence, turn)
 
@@ -625,17 +627,20 @@ internal data class RunDoc(
         pidStartedAt?.let { f["pidStartedAt"] = JsonNumber.of(it) }
         exitCode?.let { f["exitCode"] = JsonNumber.of(it) }
         reason?.let { f["reason"] = JsonString(it.name) }
+        bootAt?.let { f["bootAt"] = JsonNumber.of(it) }
         return JsonObject(f)
     }
 
     companion object {
         const val FORMAT = "dpai.agent-run"
-        const val VERSION = 2
+
+        /** v3 — `bootAt` (A-11); v2 читается: без него процесс опознаётся по стенным часам, как раньше. */
+        const val VERSION = 3
 
         fun read(value: JsonObject): RunDoc? {
             val d = DiagnosticCollector()
             val f = JsonFields(value, "$", d)
-            FormatHeader.read(f, FORMAT, VERSION..VERSION, d) ?: return null
+            FormatHeader.read(f, FORMAT, 2..VERSION, d) ?: return null
             val id = f.string("id")?.let { IdKinds.SESSION.parse(it).valueOrNull() }
             val spec = f.raw("spec")?.let { RunSpec.fromJson(it).valueOrNull() }
             val created = f.long("createdAt")?.let(::Timestamp)
@@ -647,9 +652,10 @@ internal data class RunDoc(
             val pidStartedAt = f.optLong("pidStartedAt")
             val exitCode = f.optLong("exitCode")?.toInt()
             val reason = f.optString("reason")?.let { s -> ExitReason.entries.firstOrNull { it.name == s } }
+            val bootAt = f.optLong("bootAt")
             f.finish()
             if (d.hasErrors || id == null || spec == null || created == null || state == null || turn == null) return null
-            return RunDoc(id, spec, created, state, turn, supervisorPid, supervisorStartedAt, pid, pidStartedAt, exitCode, reason)
+            return RunDoc(id, spec, created, state, turn, supervisorPid, supervisorStartedAt, pid, pidStartedAt, exitCode, reason, bootAt)
         }
     }
 }

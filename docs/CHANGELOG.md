@@ -13,7 +13,8 @@
   дерева. Ход запускается с `--tools ""`, `--strict-mcp-config` и
   `--mcp-config` (сервер — `ssh … agent mcp`).
 - Форматы: `dpai.app-project` v2 (маршрут `claude`; v1 читается),
-  `dpai.agent-pruned` v1 (надгробие запуска, ревью A-6).
+  `dpai.agent-pruned` v1 (надгробие запуска, ревью A-6), `dpai.agent-run` v3
+  (время загрузки, ревью A-11; v2 читается).
 
 ## 9 октября 2026 — одобрение слияния — запрос (D-49)
 
