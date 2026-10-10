@@ -82,4 +82,16 @@ class ScreensTest {
         }
         assertEquals(run("x"), run("y"))
     }
+
+    /** Ревью A-87: демо ставит задачи до потолка — пока экран открыт, журнал и память не растут без предела. */
+    @Test
+    fun demoStopsAddingTasksAtTheCap() {
+        val clock = ManualClock()
+        val demo = DemoSystem(clock, NioVfs(dir), sessions = 5, maxTasks = 12)
+        repeat(400) {
+            demo.step()
+            clock.advance(1.seconds)
+        }
+        assertTrue(demo.orchestrator.tasks.tasks.size <= 12, "${demo.orchestrator.tasks.tasks.size}")
+    }
 }

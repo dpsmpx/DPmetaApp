@@ -131,6 +131,8 @@ class LiveSystemTest {
         steps(s, 1)
         assertTrue(s.orchestrator.accounts.slots.isEmpty(), "без связи слота нет")
         assertTrue(s.dashboard().attention.any { "повтор раз в минуту" in it }, s.dashboard().attention.toString())
+        // Ревью A-84: самодиагностика не выдумывает «все targets в сети».
+        assertEquals(0, s.signals().targetsOnline)
         host.reachable = true
         val task = s.addTask("Ждёт", "ждать слота").valueOrNull()!!
         clock.advance(LiveSystem.PROBE_RETRY_MS.milliseconds)
@@ -138,6 +140,7 @@ class LiveSystemTest {
         assertEquals(1, s.orchestrator.accounts.slots.size, "слот после повтора пробы")
         assertTrue(s.orchestrator.sessions.sessions.values.any { it.task == task })
         assertTrue(s.dashboard().attention.none { "повтор раз в минуту" in it })
+        assertEquals(1, s.signals().targetsOnline)
     }
 
     /**

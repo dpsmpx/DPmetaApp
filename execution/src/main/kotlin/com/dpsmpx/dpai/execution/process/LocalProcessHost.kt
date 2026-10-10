@@ -64,7 +64,12 @@ class LocalProcessHost(private val clock: Clock = Clock.SYSTEM) : ProcessHost {
             return StopReport(if (process.isAlive) null else process.exitValue(), r.forced, r.survivors)
         }
 
-        /** Вывод дочитывается до конца, но не дольше секунды: поток может держать открытым живой внук. */
+        /**
+         * Вывод дочитывается до конца, но не дольше [READER_DRAIN]: поток может
+         * держать открытым живой внук. Секунды не хватало (ревью A-8): на
+         * телефоне каждая строка проходит правку и запись в журнал, и хвост
+         * вывода — с итогом хода Claude — терялся или ложился после выхода.
+         */
         private fun drain() = readers.forEach { it.join(READER_DRAIN.inWholeMilliseconds) }
     }
 
@@ -76,7 +81,7 @@ class LocalProcessHost(private val clock: Clock = Clock.SYSTEM) : ProcessHost {
          */
         const val MAX_LINE: Int = 1024 * 1024
 
-        private val READER_DRAIN = 1.seconds
+        private val READER_DRAIN = 10.seconds
 
         private fun reader(input: InputStream, stream: OutputStream, onOutput: (OutputLine) -> Unit): Thread =
             Thread {

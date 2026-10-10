@@ -74,4 +74,22 @@ class LocalProcessHostTest {
         assertTrue(ArgumentEncoding.check(listOf("git", "status"), Charsets.US_ASCII).isSuccess)
         assertTrue(ArgumentEncoding.check(commit, null).isSuccess, "Windows: аргументы — UTF-16, проверка не нужна")
     }
+
+    /**
+     * Ревью A-8: медленный обработчик вывода (правка и запись журнала на
+     * телефоне) — хвост вывода всё равно дочитан до возврата `awaitExit`.
+     */
+    @Test
+    fun slowOutputHandlerStillGetsTheTail() {
+        val lines = Collections.synchronizedList(mutableListOf<String>())
+        val slow = java.util.concurrent.CountDownLatch(1)
+        val p = (
+            host.start(ProcessSpec(TestChild.command("lines", "3"))) { l ->
+                if (l.text == "line 2") slow.await(1500, java.util.concurrent.TimeUnit.MILLISECONDS)
+                lines += l.text
+            } as Outcome.Success
+            ).value
+        assertEquals(0, p.awaitExit(60.seconds))
+        assertEquals(listOf("line 0", "line 1", "line 2"), lines.toList())
+    }
 }

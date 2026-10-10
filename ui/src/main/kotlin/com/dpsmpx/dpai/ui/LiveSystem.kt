@@ -13,6 +13,7 @@ import com.dpsmpx.dpai.core.ids.ProviderSessionId
 import com.dpsmpx.dpai.core.ids.SessionId
 import com.dpsmpx.dpai.core.ids.TaskId
 import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.core.state.SessionState
 import com.dpsmpx.dpai.execution.claude.ClaudeCodeCliRunner
 import com.dpsmpx.dpai.execution.claude.ClaudeRunner
 import com.dpsmpx.dpai.execution.claude.RoutingRunner
@@ -346,12 +347,24 @@ class LiveSystem(
     /** События активного сегмента журнала — для временной шкалы (D-37). */
     fun events(): List<EventEnvelope> = journal.records(journal.activeFrom).map { it.event }
 
-    fun diagnosis(): SelfDiagnosis = SelfDiagnostics.evaluate(
-        SystemSignals(
-            storageOk = true, recoveryInProgress = false, gitAvailable = orchestrator.gitOk, notificationsOk = notificationsOk(),
-            targetsOnline = usable.size, targetsTotal = usable.size, securityAlert = false, gitRequired = project != null,
-        ),
-    )
+    fun diagnosis(): SelfDiagnosis = SelfDiagnostics.evaluate(signals())
+
+    /**
+     * Сигналы самодиагностики — из состояния контура, а не «всё в порядке»
+     * (ревью A-84, D-13): сверка идёт, пока есть сессии `RECOVERY_PENDING`;
+     * в сети — target без неудавшейся пробы входа (A-79) и без сессии, ждущей
+     * сверки (target не ответил). Хранилище: журнал открылся, а отказ записи
+     * — исключение контура, его видно сразу.
+     */
+    internal fun signals(): SystemSignals {
+        val waiting = orchestrator.sessions.sessions.values.filter { it.state == SessionState.RECOVERY_PENDING }
+        val silent = waiting.map { it.target }.toSet()
+        return SystemSignals(
+            storageOk = true, recoveryInProgress = waiting.isNotEmpty(), gitAvailable = orchestrator.gitOk, notificationsOk = notificationsOk(),
+            targetsOnline = usable.count { it.id !in probeFailedAt && it.id !in silent }, targetsTotal = usable.size,
+            securityAlert = false, gitRequired = project != null,
+        )
+    }
 
     private var lastGitCheck = Long.MIN_VALUE / 2
 

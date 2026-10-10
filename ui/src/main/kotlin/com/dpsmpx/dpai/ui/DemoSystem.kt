@@ -44,6 +44,8 @@ class DemoSystem(
     vfs: Vfs,
     sessions: Int = 25,
     seed: Long = 11,
+    /** Сколько задач демо ставит всего (ревью A-87): дальше — доигрывает, а журнал и память не растут без предела. */
+    private val maxTasks: Int = 200,
 ) : ControlView {
     override val mode: String = "демо"
     private val random = RandomSource.seeded(seed)
@@ -106,7 +108,7 @@ class DemoSystem(
         }
         orchestrator.tick()
         val open = orchestrator.tasks.tasks.values.count { !it.terminal }
-        if (open < targets * 4) addTasks(targets)
+        if (open < targets * 4 && orchestrator.tasks.tasks.size + targets <= maxTasks) addTasks(targets)
     }
 
     fun events(): List<EventEnvelope> = journal.records().map { it.event }

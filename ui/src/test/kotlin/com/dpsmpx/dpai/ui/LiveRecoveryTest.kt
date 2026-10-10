@@ -320,6 +320,9 @@ class LiveRecoveryTest {
         val session = s.orchestrator.sessions.sessions.values.single()
         assertEquals(SessionState.RECOVERY_PENDING, session.state)
         assertEquals(DiagCode.RECOVERY_START_UNCONFIRMED, session.lastReason)
+        // Ревью A-84: сверка идёт, target молчит — самодиагностика это показывает.
+        assertTrue(s.signals().recoveryInProgress)
+        assertEquals(0, s.signals().targetsOnline)
         host.reachable = true
         done(s, task)
         assertEquals(1, s.orchestrator.sessions.sessions.size, "ход подхвачен, а не запущен заново")
