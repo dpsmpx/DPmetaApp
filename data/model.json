@@ -2129,7 +2129,7 @@
     "DPmonetization:tools/dpmon/__init__.py"
    ],
    "repo": "dpsmpx/DPmonetization",
-   "role": "Strategic Project Intelligence — анализ портфеля проектов; место в экосистеме не определено",
+   "role": "Strategic Project Intelligence — анализ портфеля проектов; поддерживающий слой",
    "stage": "каркас ядра без тестов",
    "status": "active",
    "visibility": "private"
@@ -2379,7 +2379,7 @@
  "schema": "dpvis-model/1",
  "source": {
   "path": "model/ecosystem.toml",
-  "sha256": "a0cf0b790ecc1b167e49f2bf8eb309b82571cd5c9ee5b5d8be49c68fba1cbc11"
+  "sha256": "5bca45da2c2f177f54edbd0c853eeb8deff87a61a1e7171e78540452f17d79e6"
  },
  "sources": [
   "DPmeta:docs/ECOSYSTEM.md",
