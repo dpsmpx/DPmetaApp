@@ -10,10 +10,10 @@
 #             undisclosed — закрытый, имя не публикуется (PROJECT_MAP: «не упоминать»);
 #                           на сайте — только числа в общих суммах: ни строки, ни узла карты,
 #                           ни отдельной даты (фильтр Д39)
-# group:      core | support | control — места по слову автора 09.10.2026 (DPmeta M-10): ядро,
-#             поддерживающий слой, управление. Исключение — DPmeta: по M-10 его место meta, здесь он
-#             считается вместе с ядром, как с 05.10.2026 (Д38). Архива (ранние проекты до репозитория
-#             игры и убранные автором) в счёте нет — он в excluded с kind: archive (Д38)
+# group:      core | control | sync | support — места по слову автора (DPmeta M-10, M-12): ядро,
+#             управление (09.10.2026), слой синхронизации — DPmeta (10.10.2026), поддерживающий слой
+#             (09.10.2026). Архива (ранние проекты до репозитория игры и убранные автором) в счёте нет —
+#             он в excluded с kind: archive (Д38)
 # what:       id факта с публичной ролью (data/facts/facts.yaml)
 # layer:      слой на карте экосистемы
 schema: progress_scope/v1
@@ -26,7 +26,7 @@ layers:
   - {id: product, ru: Продукты, en: Products}
   - {id: engineering, ru: Инженерная основа, en: Engineering foundation}
   - {id: knowledge, ru: Знание и публикация, en: Knowledge and publishing}
-  - {id: meta, ru: Мета-уровень, en: Meta layer}
+  - {id: meta, ru: Синхронизация, en: Synchronisation}
 repos:
   - key: galdhold
     slug: dpsmpx/Galdhold
@@ -98,7 +98,7 @@ repos:
   - key: dpmeta
     slug: dpsmpx/DPmeta
     name: DPmeta
-    group: core                    # по DPmeta M-10 — место meta; на странице — вместе с ядром (Д38)
+    group: sync                    # «DPmeta - слой синхронизации» — слово автора 10.10.2026 (Д38)
     visibility: private
     layer: meta
     what: META-WHAT
@@ -148,14 +148,16 @@ excluded:                          # с работой в периоде, но �
   - {slug: dpsmpx/Mobile-Basic-set-line-numbers, kind: script, reason: одиночный скрипт вне карты проектов}
   - {slug: dpsmpx/DP_3D_Works, kind: script, reason: одиночный скрипт вне карты проектов}
                                    # kind: archive — вне текущей системы (слово автора 09.10.2026, Д38): проекты
-                                   # до репозитория игры и убранные автором; на странице — только число.
+                                   # до репозитория игры (why: early) и убранные автором (why: removed); их
+                                   # репозитории открыты — в методике они названы (слово автора 10.10.2026), в
+                                   # счёте, таблицах и на карте их нет.
                                    # key — ключ в прежних наборах (2026-10-05), чтобы их проверка его узнавала
-  - {slug: dpsmpx/Andors-Love, key: andors_love, kind: archive, reason: ранний проект — до репозитория игры}
-  - {slug: dpsmpx/TrueJointTileMaker, key: tjtm, kind: archive, reason: ранний проект — до репозитория игры}
-  - {slug: dpsmpx/PixRogue, key: pixrogue, kind: archive, reason: ранний проект — до репозитория игры}
-  - {slug: dpsmpx/tanks_blitz_stat_chat, key: tanks, kind: archive, reason: ранний проект — до репозитория игры}
-  - {slug: dpsmpx/DP_Ecosystem, key: ecosystem, kind: archive, reason: убран автором из текущей системы}
-  - {slug: dpsmpx/DP_Repeated_Tasks, key: repeated, kind: archive, reason: убран автором из текущей системы}
+  - {slug: dpsmpx/Andors-Love, key: andors_love, kind: archive, why: early, reason: ранний проект — до репозитория игры}
+  - {slug: dpsmpx/TrueJointTileMaker, key: tjtm, kind: archive, why: early, reason: ранний проект — до репозитория игры}
+  - {slug: dpsmpx/PixRogue, key: pixrogue, kind: archive, why: early, reason: ранний проект — до репозитория игры}
+  - {slug: dpsmpx/tanks_blitz_stat_chat, key: tanks, kind: archive, why: early, reason: ранний проект — до репозитория игры}
+  - {slug: dpsmpx/DP_Ecosystem, key: ecosystem, kind: archive, why: removed, reason: убран автором из текущей системы}
+  - {slug: dpsmpx/DP_Repeated_Tasks, key: repeated, kind: archive, why: removed, reason: убран автором из текущей системы}
 relations:                         # связи между репозиториями — из контрактов DPmeta (docs/CONTRACTS.md, main);
                                    # C-11…C-13 — после вливания ветки DPmeta (TODO.md)
   - from: galdhold

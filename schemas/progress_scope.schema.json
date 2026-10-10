@@ -103,8 +103,9 @@
      "group": {
       "enum": [
        "core",
-       "support",
-       "control"
+       "control",
+       "sync",
+       "support"
       ]
      },
      "visibility": {
@@ -211,6 +212,12 @@
      },
      "key": {
       "type": "string"
+     },
+     "why": {
+      "enum": [
+       "early",
+       "removed"
+      ]
      }
     }
    }

@@ -16,7 +16,7 @@ from tools.cs.core.inject import resolve
 from tools.cs.core.repo import Repo
 from tools.cs.progress import check as progress_check
 from tools.cs.progress.dataset import METRICS, Progress
-from tools.cs.progress.figures import FIGURES, render
+from tools.cs.progress.figures import FIGURES, facts_of, render
 from tools.cs.site.build import SiteBuild
 from tests.platform_fixture import make_repo
 
@@ -82,24 +82,37 @@ class Figures(unittest.TestCase):
         html_, _ = render(self.p, "method", "ru")
         for x in self.p.scope["excluded"]:
             name = x["slug"].split("/")[-1]
-            (self.assertNotIn if x["kind"] in ("personal", "archive") else self.assertIn)(name, html_)
+            (self.assertNotIn if x["kind"] == "personal" else self.assertIn)(name, html_)
         self.assertIn("личные репозитории — 2", html_)
-        archive = sum(1 for x in self.p.scope["excluded"] if x["kind"] == "archive")
-        self.assertIn(f"архив — {archive}", html_)
+        # архив — по именам: его репозитории открыты (слово автора 10.10.2026); у каждого — why
+        for x in self.p.scope["excluded"]:
+            if x["kind"] == "archive":
+                self.assertIn(x.get("why"), ("early", "removed"), x["slug"])
+        self.assertIn("ранние открытые проекты до репозитория игры — <code>Andors-Love</code>", html_)
+        self.assertIn("убраны автором из текущей системы — <code>DP_Ecosystem</code>", html_)
+        en, _ = render(self.p, "method", "en")
+        self.assertIn("early open projects that predate the game repository — <code>Andors-Love</code>", en)
 
     def test_three_groups_and_no_archive(self):
-        # Д38, слово автора 09.10.2026: только текущая система — ядро, управление и поддерживающий слой
-        self.assertEqual({self.p.specs[k]["group"] for k in self.p.keys}, {"core", "support", "control"})
+        # Д38, слово автора 09.10.2026: только текущая система — ядро, управление и поддерживающий слой;
+        # 10.10.2026: DPmeta — слой синхронизации
+        self.assertEqual({self.p.specs[k]["group"] for k in self.p.keys}, {"core", "control", "sync", "support"})
+        self.assertEqual(self.p.specs["dpmeta"]["group"], "sync")
+        self.assertNotIn("dpmeta", self.p.core())
         act, _ = render(self.p, "activity", "ru")
-        self.assertIn("управление и поддерживающий слой", act)
+        self.assertIn("управление, синхронизация и поддерживающий слой", act)
         heat, _ = render(self.p, "repos", "ru")
-        self.assertIn(f"Управление и поддерживающий слой · {len(self.p.listed(self.p.supporting()))}", heat)
+        self.assertIn(f"Управление, синхронизация и поддерживающий слой · {len(self.p.listed(self.p.supporting()))}", heat)
         snap, _ = render(self.p, "snapshot", "ru")
         for k in self.p.supporting():
             self.assertIn(self.p.specs[k]["name"], snap)
-        # ядро — сверху, управление и поддерживающий слой — отдельной частью таблицы под ним
+        # ядро — сверху, управление, синхронизация и поддерживающий слой — отдельной частью таблицы под ним
         core_end = max(snap.index(self.p.specs[k]["name"]) for k in self.p.listed(self.p.core()))
-        self.assertLess(core_end, snap.index('colspan="3">Управление и поддерживающий слой'))
+        self.assertLess(core_end, snap.index('colspan="3">Управление, синхронизация и поддерживающий слой'))
+        # стадия DPmeta выводится и вне ядра — и числится в фактах фигуры (зависимости варианта, Д28)
+        _, used = render(self.p, "snapshot", "ru")
+        self.assertIn("META-STAGE", used)
+        self.assertEqual(set(used), set(facts_of(self.p, "snapshot")))
         # на странице прогресса нет схемы DPvisualisation: формулировка без «эта схема» (what_idx)
         for fid in ("snapshot", "ecosystem"):
             for lang, word in (("ru", "эта схема"), ("en", "this diagram")):

@@ -701,6 +701,24 @@ facts:
     evidence:
       - {kind: doc, source: "dpsmpx/DPprofile docs/facts/F-0001.md (created_at аккаунта — 2023-03-03), F-0008, F-0009 (первые коммиты Andors-Love — 2023-04-13, TrueJointTileMaker — 2024-02-21)", ref: "3e76c10", date: 2026-10-04, verification: reported}
       - {kind: code, source: "открытые репозитории: Andors-Love (C++11), PixRogue (Python), TrueJointTileMaker (PascalABC.NET)", date: 2026-10-04, verification: observed}
+  - id: AU-EARLY
+    subject: author
+    class: FACT
+    risk: low
+    public: true
+    statement: >-
+      Ранние открытые проекты автора до репозитория игры: Andors-Love — пошаговая RPG на C++11 (первый
+      коммит — 13 апреля 2023 года); TrueJointTileMaker — редактор пиксельной графики и карт локаций для
+      Andors-Love на PascalABC.NET (первый коммит — 21 февраля 2024 года); PixRogue — классический Rogue в
+      пиксельном стиле на Python (первый коммит — 2 сентября 2026 года). Их репозитории открыты.
+    allowed_wording:
+      ru: ["ранние открытые проекты: Andors-Love — пошаговая RPG на C++ (2023), TrueJointTileMaker — редактор пиксельной графики и карт для неё (2024), PixRogue — Rogue в пиксельном стиле на Python (2026)"]
+      en: ["early open projects: Andors-Love, a turn-based RPG in C++ (2023); TrueJointTileMaker, a pixel-art and map editor for it (2024); PixRogue, a pixel-art Rogue in Python (2026)"]
+    evidence:
+      - {kind: code, source: "github.com/dpsmpx/Andors-Love, github.com/dpsmpx/TrueJointTileMaker, github.com/dpsmpx/PixRogue — README.md", date: 2026-10-04, verification: observed}
+      - {kind: doc, source: "dpsmpx/DPprofile docs/facts/F-0008, F-0009 (первые коммиты Andors-Love — 2023-04-13, TrueJointTileMaker — 2024-02-21)", ref: "3e76c10", date: 2026-10-04, verification: reported}
+      - {kind: code, source: "история git dpsmpx/PixRogue: первый коммит — 2026-09-02", date: 2026-10-10, verification: observed}
+    notes: Называются открыто по слову автора 10.10.2026 (Д44) — их репозитории открыты; в счёт страницы прогресса не входят (архив, Д38).
   - id: ECO-NEW-2026-10-06
     subject: ecosystem
     class: FACT
