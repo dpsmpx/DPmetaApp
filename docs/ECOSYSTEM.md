@@ -22,8 +22,8 @@ DP_game_market_analytic_system, — журнал решений, `CLAUDE.md`, `T
 (private); DP_AI_Orcestrator по ответу автора остаётся закрытым и
 ведётся по правилам публичного (`DP_AI_Orcestrator:D-16`,
 `DP_AI_Orcestrator:TODO.md`). На странице прогресса сайта и в схеме
-DPvisualisation с ядром считается и DPmeta (`SocialMediaImage:Д38`): там
-в ядре десять репозиториев.
+DPvisualisation с ядром считается и DPmeta (`SocialMediaImage:Д38` —
+в невлитой ветке `claude/dreamy-bardeen-xe4k6r` SocialMediaImage): там в ядре десять репозиториев.
 
 | репозиторий | отвечает за | не делает | стадия | проверки | вход |
 |---|---|---|---|---|---|
@@ -47,9 +47,11 @@ DPmeta — мета-уровень (M-01, `place = "meta"`): `README.md`.
 системы: ранние проекты до репозитория игры (первый коммит Galdhold —
 11 сентября 2026) и те, что автор убрал. В схеме DPvisualisation, на
 странице прогресса сайта и в DPmetaApp архива нет (`DPvisualisation:D-20`,
-`SocialMediaImage:Д38`, `DPmetaApp:D-26`); станция «2023» раздела «Путь»
-сайта (ранние проекты без имён) и упоминание TrueJointTileMaker в статье
-CI-0003 — решение автора (`SocialMediaImage:TODO.md`). В реестре DPmeta
+`SocialMediaImage:Д38`, `DPmetaApp:D-26` — все три в невлитой ветке `claude/dreamy-bardeen-xe4k6r`
+своих репозиториев; в `main` SocialMediaImage архив пока в счёте как
+«ранние и малые проекты»); станция «2023» раздела «Путь» сайта (ранние
+проекты без имён) и упоминание TrueJointTileMaker в статье CI-0003 —
+решение автора (`SocialMediaImage:TODO.md` в той же ветке). В реестре DPmeta
 архив остаётся ради контракта C-08 и сверки ссылок, в манифест (M-11) не
 входит. Профиль `dpsmpx/dpsmpx` — не проект: места у него нет (M-10, C-07).
 

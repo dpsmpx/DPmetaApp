@@ -55,6 +55,7 @@ QUEUE = """\
 | SQ-06 | Alpha | README правит автор | низкий | открыт — за автором |
 | SQ-07 | Alpha | вопрос | высокий | открыт |
 | SQ-08 | Alpha | без предложения | низкий | открыт |
+| SQ-09 | Alpha | сверить с правкой автора | низкий | частично: сверить с правкой автора |
 
 ## Alpha
 
@@ -96,6 +97,12 @@ QUEUE = """\
 
 - **Вид:** наблюдение.
 - **Состояние:** открыт.
+
+### SQ-09 — Сверить с правкой автора
+
+- **Вид:** наблюдение.
+- **Предложение:** сверить черновик.
+- **Состояние:** частично: сверить с правкой автора.
 """
 
 ROOT_FIELDS = {"format", "version", "projects"}
@@ -174,7 +181,8 @@ class ManifestTest(unittest.TestCase):
         # M-11: без RISK-NN, без «за автором», не «открытый вопрос», только с «Предложением»
         _, text = self.run_tool()
         alpha, beta = json.loads(text)["projects"]
-        self.assertEqual([s["key"] for s in alpha["suggestions"]], ["sq-01", "sq-02"])
+        # SQ-09: слово «автора» в состоянии — не «ждёт автора»
+        self.assertEqual([s["key"] for s in alpha["suggestions"]], ["sq-01", "sq-02", "sq-09"])
         self.assertEqual([s["key"] for s in beta["suggestions"]], ["sq-02"])
         self.assertEqual({s["operation"] for s in alpha["suggestions"]}, {"docs"})
 
@@ -185,7 +193,7 @@ class ManifestTest(unittest.TestCase):
 
     def test_objective_has_where_and_stable_reference(self):
         _, text = self.run_tool()
-        first, second = json.loads(text)["projects"][0]["suggestions"]
+        first, second = json.loads(text)["projects"][0]["suggestions"][:2]
         self.assertEqual(first["objective"],
                          "Где: docs/A.md:3. Предложение: заменить x на y во всех документах. (DPmeta:SQ-01)")
         self.assertNotIn("состояние", first["objective"])
@@ -258,8 +266,26 @@ class RealRegistryTest(unittest.TestCase):
             with self.subTest(s["key"]):
                 self.assertIn("Предложение: ", s["objective"])
                 # свои документы DPmeta — только с префиксом проекта (их нет в репозиториях проектов)
-                for own in ("docs/NAMING.md", "docs/SYNC_QUEUE.md", "docs/CONTRACTS.md", "docs/RISKS.md"):
-                    self.assertNotRegex(s["objective"], rf"(?<!DPmeta:){own}")
+                for own in ("docs/NAMING.md", "docs/SYNC_QUEUE.md", "docs/CONTRACTS.md", "docs/RISKS.md",
+                            "docs/PRINCIPLES.md"):
+                    self.assertNotRegex(s["objective"], rf"(?<![\w:/]){own}")
+
+    def test_every_open_item_has_a_proposal(self):
+        # пункт, который сессия может сделать, без «Предложения» молча выпал бы из манифеста (C-13)
+        archive = {r.name for r in xref.load_registry(ROOT / "tools" / "ecosystem.toml") if r.place == "archive"}
+        queue = manifest.read_queue((ROOT / "docs" / "SYNC_QUEUE.md").read_text(encoding="utf-8"))
+        for num, item in queue.items():
+            if manifest.item_status(item) == "open" and set(item["repos"]) - archive:
+                with self.subTest(num):
+                    self.assertTrue(item["proposal"], f"{num}: открыт, а поля «Предложение» нет")
+
+    def test_dpmeta_paths_in_open_and_blocked_items(self):
+        # и пункты, которые ждут автора, уйдут в манифест, когда он решит, — пути DPmeta в них с префиксом
+        queue = manifest.read_queue((ROOT / "docs" / "SYNC_QUEUE.md").read_text(encoding="utf-8"))
+        for num, item in queue.items():
+            if manifest.item_status(item) != "closed":
+                with self.subTest(num):
+                    self.assertNotRegex(item["proposal"], r"(?<![\w:/])docs/NAMING\.md")
 
 
 if __name__ == "__main__":
