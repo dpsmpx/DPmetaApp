@@ -53,6 +53,7 @@ sealed interface AccountFact {
  * | `COMPLETED` | `COMPLETED` — исполнитель закончил ход (D-23: не «задача выполнена») |
  * | `INCOMPLETE`, предел подписки | `PAUSED` — продолжение `resume` |
  * | ошибка входа | `BLOCKED` — нужен вход пользователя |
+ * | запуск не подтверждён: ответ потерян, target молчит (A-12, A-55) | `RECOVERY_PENDING` — решит сверка |
  * | прочие ошибки | `FAILED` |
  */
 class SessionDriver(private val sessions: Sessions, private val runner: ClaudeRunner, private val clock: Clock) {
@@ -88,7 +89,13 @@ class SessionDriver(private val sessions: Sessions, private val runner: ClaudeRu
             is Outcome.Failure -> {
                 val s1 = Sessions.applyAll(state, starting)
                 val code = started.errors.first().code
-                Outcome.success(Step(starting + sessions.transition(s1, id, SessionState.FAILED, now, code).valueOrNull().orEmpty(), listOf(AccountFact.Release(id))), started.diagnostics.map { Diagnostic.warning(it.code, it.message, it.subject) })
+                val warnings = started.diagnostics.map { Diagnostic.warning(it.code, it.message, it.subject) }
+                if (code == DiagCode.RECOVERY_START_UNCONFIRMED) {
+                    // Ход мог начаться (A-12, A-55): не FAILED и не повтор поверх него — сверка (A-42, A-44)
+                    // подхватит идущий ход или отменит сессию без попытки; слот аккаунта пока за ней.
+                    return Outcome.success(Step(starting + sessions.transition(s1, id, SessionState.RECOVERY_PENDING, now, code).valueOrNull().orEmpty()), warnings)
+                }
+                Outcome.success(Step(starting + sessions.transition(s1, id, SessionState.FAILED, now, code).valueOrNull().orEmpty(), listOf(AccountFact.Release(id))), warnings)
             }
         }
     }

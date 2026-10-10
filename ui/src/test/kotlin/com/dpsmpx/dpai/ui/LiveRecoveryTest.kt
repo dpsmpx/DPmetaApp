@@ -7,6 +7,7 @@ import com.dpsmpx.dpai.core.events.EventEnvelope
 import com.dpsmpx.dpai.core.events.EventType
 import com.dpsmpx.dpai.core.ids.IdGenerator
 import com.dpsmpx.dpai.core.ids.IdKinds
+import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.core.state.SessionState
 import com.dpsmpx.dpai.core.state.TaskState
@@ -53,6 +54,16 @@ class LiveRecoveryTest {
 
     private var crash = Crash.NONE
 
+    /**
+     * Ответ на `start` хода теряется (A-12, A-55): [Lost.REPLY] — запуск дошёл
+     * до агента, а строка ответа — нет; [Lost.REQUEST] — не дошёл, вызов
+     * отвалился по тайм-ауту. [silentAfter] — затем target замолкает.
+     */
+    private enum class Lost { NONE, REPLY, REQUEST }
+
+    private var lost = Lost.NONE
+    private var silentAfter = false
+
     private val target = TargetForm.validate(ids.next(IdKinds.TARGET), "сервер", "build.lan", "22", "dev", false, "/opt/dpai/bin/dpai", "/home/dev/.claude-dpai").valueOrNull()!!
 
     init {
@@ -77,6 +88,13 @@ class LiveRecoveryTest {
             if (turn && crash == Crash.BEFORE_TURN_START) {
                 crash = Crash.NONE
                 throw Killed()
+            }
+            if (turn && lost != Lost.NONE) {
+                val mode = lost
+                lost = Lost.NONE
+                val r = if (mode == Lost.REPLY) host.start(spec) {} else Outcome.failure(DiagCode.PROCESS_TIMEOUT, "агент не ответил за срок", "test")
+                if (silentAfter) host.reachable = false
+                return@run r
             }
             val r = host.start(spec, onOutput)
             if (turn && crash == Crash.AFTER_TURN_START) {
@@ -276,5 +294,53 @@ class LiveRecoveryTest {
         host.reachable = true
         clock.advance(Orchestrator.TARGET_RETRY)
         done(s, task)
+    }
+
+    /** A-12, A-55: ответ на запуск потерян, а ход идёт — его подхватывают; второго Claude нет, попытка не считается. */
+    @Test
+    fun lostStartReplyAdoptsTheRunningTurn() {
+        val s = system()
+        steps(s, 1)
+        val task = s.addTask("задача", "цель").valueOrNull()!!
+        lost = Lost.REPLY
+        done(s, task)
+        assertEquals(1, s.orchestrator.sessions.sessions.size, "второй сессии — второго Claude в дереве — нет")
+        assertEquals(0, s.orchestrator.tasks.tasks.getValue(task).retries)
+    }
+
+    /** A-12, A-55: ответ потерян и target замолк — сессия ждёт сверки, а не FAILED с повтором поверх идущего хода. */
+    @Test
+    fun lostStartReplyWithSilentTargetWaitsForReconciliation() {
+        val s = system()
+        steps(s, 1)
+        val task = s.addTask("задача", "цель").valueOrNull()!!
+        lost = Lost.REPLY
+        silentAfter = true
+        steps(s, 12) // две минуты молчания
+        val session = s.orchestrator.sessions.sessions.values.single()
+        assertEquals(SessionState.RECOVERY_PENDING, session.state)
+        assertEquals(DiagCode.RECOVERY_START_UNCONFIRMED, session.lastReason)
+        host.reachable = true
+        done(s, task)
+        assertEquals(1, s.orchestrator.sessions.sessions.size, "ход подхвачен, а не запущен заново")
+        assertEquals(0, s.orchestrator.tasks.tasks.getValue(task).retries)
+    }
+
+    /** A-12, A-55: запуск не дошёл, target замолк — после сверки сессия отменена, задача снова в очереди и доходит до итога. */
+    @Test
+    fun lostStartRequestWithSilentTargetIsCancelledAndTaskRuns() {
+        val s = system()
+        steps(s, 1)
+        val task = s.addTask("задача", "цель").valueOrNull()!!
+        lost = Lost.REQUEST
+        silentAfter = true
+        steps(s, 12)
+        assertEquals(SessionState.RECOVERY_PENDING, s.orchestrator.sessions.sessions.values.single().state)
+        host.reachable = true
+        done(s, task)
+        val first = s.orchestrator.sessions.sessions.values.minBy { it.id.value }
+        assertEquals(SessionState.CANCELLED, first.state)
+        assertEquals(DiagCode.RECOVERY_START_UNCONFIRMED, first.lastReason)
+        assertEquals(0, s.orchestrator.tasks.tasks.getValue(task).retries, "попытка без хода не считается")
     }
 }

@@ -194,7 +194,7 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     // --- восстановление (этап 13) ---
     STATE_CONFLICT(Category.INTEGRITY, Severity.WARNING, Retryability.RETRYABLE),
     RECOVERY_RESTARTED(Category.STATE, Severity.INFO, Retryability.NON_RETRYABLE),
-    /** Сессия была создана, но запуск хода не подтверждён до сбоя (A-42): target мог его и не получить. */
+    /** Запуск хода не подтверждён: сбой до записи о нём (A-42) или ответ агента потерян (A-12, A-55); target мог его и не получить. */
     RECOVERY_START_UNCONFIRMED(Category.STATE, Severity.INFO, Retryability.NON_RETRYABLE),
     ORPHAN_FOUND(Category.STATE, Severity.WARNING, Retryability.NON_RETRYABLE),
     WORKTREE_MISSING(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),

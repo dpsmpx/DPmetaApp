@@ -124,7 +124,12 @@ class AgentRuntime(
         })
         store.write(INPUT_KEY, input).let { if (it is Outcome.Failure) return AgentReply.failure("start", it.diagnostics) }
         val doc = RunDoc(id, spec.copy(stdin = null), clock.now(), RunState.STARTING, turn = turn)
-        store.write(RUN_KEY, doc.toJson()).let { if (it is Outcome.Failure) return AgentReply.failure("start", it.diagnostics) }
+        store.write(RUN_KEY, doc.toJson()).let {
+            if (it is Outcome.Failure) {
+                store.delete(INPUT_KEY)
+                return AgentReply.failure("start", it.diagnostics)
+            }
+        }
         val last = lastSequence(id)
         val argv = selfCommand + listOf("agent", "supervise", "--home", home, "--run", id.value)
         val log = File(home, "${runDir(id)}/supervisor.log").path
@@ -151,6 +156,8 @@ class AgentRuntime(
         // Опоздавший супервизор хода не берёт: контроллер мог уже счесть ход потерянным и записать
         // выход сам (A-4). Запас до START_GRACE — чтобы проверка и решение контроллера не совпали.
         if (clock.now() - doc.createdAt > SUPERVISOR_DEADLINE) {
+            // Ход не будет взят никем: вход хода (prompt) на target не нужен (ревью A-16).
+            store.delete(INPUT_KEY)
             return AgentReply.failure("supervise", listOf(Diagnostic.error(DiagCode.AGENT_RUN_LOST, "супервизор запущен позже ${SUPERVISOR_DEADLINE}: ход не взят", "run $id")))
         }
         val stdin = (store.read(INPUT_KEY) as? Outcome.Success)?.value?.content
@@ -203,6 +210,8 @@ class AgentRuntime(
             }
             when (started) {
                 is Outcome.Failure -> {
+                    // Процесс не запустился — вход хода (prompt) на target тоже не хранится (ревью A-73).
+                    if (stdin != null) store.delete(INPUT_KEY)
                     emit(EventType.TARGET_PROCESS_EXITED, exitPayload(doc.turn, null, ExitReason.START_FAILED, started.diagnostics))
                     current = current.copy(state = RunState.EXITED, reason = ExitReason.START_FAILED)
                     store.write(RUN_KEY, current.toJson())
@@ -361,6 +370,8 @@ class AgentRuntime(
 
     private fun stopLost(id: SessionId, doc: RunDoc, last: Long, r: ProcessTree.Result, store: DocumentStore): AgentReply {
         val exited = doc.copy(state = RunState.EXITED, reason = ExitReason.STOPPED)
+        // Ход потерян и закрыт: вход хода (prompt), если процесс так и не начался, на target не остаётся (ревью A-16).
+        store.delete(INPUT_KEY)
         // Супервизор мёртв — у журнала нет писателя; выход записывает stop.
         EventJournal.open(vfs, journalPath(id)).valueOrNull()?.let { journal ->
             val recorder = EventRecorder(ids, clock).apply { resumeFrom(journal.records()) }

@@ -1,7 +1,10 @@
 package com.dpsmpx.dpai.execution.claude
 
+import com.dpsmpx.dpai.core.diagnostics.Category
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.Diagnostic
+import com.dpsmpx.dpai.core.diagnostics.Retryability
+import com.dpsmpx.dpai.core.diagnostics.Severity
 import com.dpsmpx.dpai.core.events.EventEnvelope
 import com.dpsmpx.dpai.core.events.EventType
 import com.dpsmpx.dpai.core.ids.ProviderSessionId
@@ -142,12 +145,41 @@ class ClaudeCodeCliRunner(
             stdin = request.prompt,
         )
         return when (val r = agent.start(l.session, spec)) {
-            is Outcome.Failure -> r
-            is Outcome.Success -> {
-                l.providerStarted = true
-                l.run = r.value
-                l.lostReported = false
-                Outcome.success(state(l), r.diagnostics)
+            is Outcome.Failure -> if (l.run == null) unconfirmedStart(l, r) else r
+            is Outcome.Success -> started(l, r.value, r.diagnostics)
+        }
+    }
+
+    private fun started(l: Live, run: RunStatus, diagnostics: List<Diagnostic>): Outcome<RunnerState> {
+        l.providerStarted = true
+        l.run = run
+        l.lostReported = false
+        return Outcome.success(state(l), diagnostics)
+    }
+
+    /**
+     * Первый `start` запуска не удался (ревью A-12, A-55): запуск мог дойти до
+     * агента, а ответ — потеряться (обрыв SSH, тайм-аут, ответа нет). FAILED и
+     * повтор при идущем на target ходе — второй Claude в том же дереве. Поэтому
+     * `status`: агент знает запуск — ход идёт, дальше как после ответа; не
+     * знает — хода не было, отказ как есть. Агент не отвечает: сетевой отказ
+     * запуска — подключения не было (сон target, A-50), отказ как есть; иначе
+     * исход неизвестен — [DiagCode.RECOVERY_START_UNCONFIRMED], раннер сессию
+     * забывает, и её решит сверка ([adopt], A-42). Явный отказ агента
+     * (`NON_RETRYABLE`, кроме нечитаемого ответа) — без `status`.
+     */
+    private fun unconfirmedStart(l: Live, failed: Outcome.Failure): Outcome<RunnerState> {
+        if (failed.errors.any { it.retryability == Retryability.NON_RETRYABLE && it.code != DiagCode.AGENT_REPLY_INVALID }) return failed
+        return when (val s = agent.status(l.session)) {
+            is Outcome.Success -> started(l, s.value, failed.diagnostics.map { Diagnostic.warning(it.code, it.message, it.subject) })
+            is Outcome.Failure -> when {
+                s.errors.any { it.code == DiagCode.ENTITY_NOT_FOUND } -> failed
+                failed.errors.all { it.category == Category.NETWORK } -> failed
+                else -> {
+                    live.remove(l.session)
+                    val note = "ответ на запуск потерян, а target не отвечает: ход мог начаться"
+                    Outcome.Failure(listOf(Diagnostic.of(DiagCode.RECOVERY_START_UNCONFIRMED, note, "session ${l.session}", Severity.ERROR, failed.errors + s.errors)))
+                }
             }
         }
     }

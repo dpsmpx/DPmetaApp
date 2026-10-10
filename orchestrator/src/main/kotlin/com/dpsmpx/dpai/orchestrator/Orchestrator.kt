@@ -1191,7 +1191,14 @@ class Orchestrator(
             when {
                 after.state == SessionState.RECOVERY_PENDING -> Unit
                 // Хода не было: дерево и аренда свободны, задача ждёт запуска, попытка не считается.
-                res.resolution == Resolution.RESOLVED_NOT_STARTED -> releaseTree(after.task, r.id)
+                res.resolution == Resolution.RESOLVED_NOT_STARTED -> {
+                    releaseTree(after.task, r.id)
+                    // Запуск в такте с потерянным ответом (A-12, A-55): задача уже RUNNING — снова в очередь.
+                    // После сбоя процесса её так же чинит OrphanScan в recover().
+                    if (tasks.tasks[after.task]?.state == TaskState.RUNNING) {
+                        commitTasks(tasksLogic.move(tasks, after.task, TaskState.READY, clock.now(), DiagCode.RECOVERY_START_UNCONFIRMED).valueOrNull().orEmpty())
+                    }
+                }
                 else -> {
                     if (tasks.tasks[after.task]?.state == TaskState.READY) commitTasks(tasksLogic.start(tasks, after.task, clock.now()).valueOrNull().orEmpty())
                     react(after.task, r.id, after.state)

@@ -345,12 +345,42 @@ class AgentRuntimeTest {
     fun lateSupervisorDoesNotTakeTheTurn() {
         val rt = AgentRuntime(dir.toString(), Clock.SYSTEM, "test", TestChild.selfCommand() + "noop")
         val run = ids.next(IdKinds.SESSION)
-        assertTrue(rt.start(run, RunSpec(TestChild.command("child", "hang"))).ok)
+        assertTrue(rt.start(run, RunSpec(TestChild.command("child", "hang"), stdin = "prompt")).ok)
         val clock = com.dpsmpx.dpai.core.clock.ManualClock(com.dpsmpx.dpai.core.clock.Timestamp(Clock.SYSTEM.now().epochMillis + 31_000))
         val late = AgentRuntime(dir.toString(), clock, "test", TestChild.selfCommand()).supervise(run)
         assertFalse(late.ok)
         assertEquals(DiagCode.AGENT_RUN_LOST, late.diagnostics.single().code)
         assertEquals(emptyList(), rt.events(run, 0, 1000).events)
+        assertNull(DocumentStore(NioVfs(dir), "runs/${run.value}").read(AgentRuntime.INPUT_KEY).valueOrNull(), "ход не будет взят: вход удалён (A-16)")
+    }
+
+    /** Ревью A-73: процесс хода не запустился — вход хода (prompt) на target не остаётся. */
+    @Test
+    fun turnInputIsDeletedWhenProcessFailsToStart() {
+        val rt = runtime()
+        val run = ids.next(IdKinds.SESSION)
+        assertTrue(rt.start(run, RunSpec(listOf(dir.resolve("no-such-program").toString()), stdin = "сделай задачу: секретный план")).ok)
+        val exited = RealTime.await(60.seconds, "запуск закончился") { rt.status(run).run!!.takeIf { it.state == RunState.EXITED } }
+        assertEquals(ExitReason.START_FAILED, exited.reason)
+        assertNull(DocumentStore(NioVfs(dir), "runs/${run.value}").read(AgentRuntime.INPUT_KEY).valueOrNull())
+        val onDisk = dir.toFile().walkTopDown().filter { it.isFile }.joinToString(" ") { it.readText(Charsets.UTF_8) }
+        assertFalse("секретный план" in onDisk, "вход хода остался на диске")
+    }
+
+    /** Ревью A-16: ход без супервизора стал LOST — `stop` закрывает его и удаляет вход хода. */
+    @Test
+    fun lostRunWithoutSupervisorLosesItsInputOnStop() {
+        val rt = AgentRuntime(dir.toString(), Clock.SYSTEM, "test", TestChild.selfCommand() + "noop")
+        val run = ids.next(IdKinds.SESSION)
+        assertTrue(rt.start(run, RunSpec(TestChild.command("child", "hang"), stdin = "prompt")).ok)
+        val later = com.dpsmpx.dpai.core.clock.ManualClock(
+            com.dpsmpx.dpai.core.clock.Timestamp(Clock.SYSTEM.now().epochMillis + AgentRuntime.START_GRACE.inWholeMilliseconds + 1_000),
+        )
+        val rt2 = AgentRuntime(dir.toString(), later, "test", TestChild.selfCommand() + "noop")
+        assertEquals(RunState.LOST, rt2.status(run).run!!.state)
+        assertTrue(rt2.stop(run, 1.seconds).ok)
+        assertEquals(RunState.EXITED, rt2.status(run).run!!.state)
+        assertNull(DocumentStore(NioVfs(dir), "runs/${run.value}").read(AgentRuntime.INPUT_KEY).valueOrNull(), "вход хода удалён")
     }
 
     @Test
