@@ -2,7 +2,7 @@
  "allow": {
   "hosts": []
  },
- "as_of": "2026-10-09",
+ "as_of": "2026-10-10",
  "catalog": {
   "drivers": [
    {
@@ -2141,7 +2141,7 @@
    "layer": "meta",
    "name": "DPmeta",
    "public_role": "карта экосистемы, контракты между репозиториями и риски",
-   "public_stage": "два прохода по экосистеме — 5 октября 2026",
+   "public_stage": "три прохода по экосистеме — 5 октября 2026",
    "refs": [
     "DPmeta:README.md",
     "DPmeta:M-01"
@@ -2379,7 +2379,7 @@
  "schema": "dpvis-model/1",
  "source": {
   "path": "model/ecosystem.toml",
-  "sha256": "5bca45da2c2f177f54edbd0c853eeb8deff87a61a1e7171e78540452f17d79e6"
+  "sha256": "3850722865f83591846f64aa6da95c20ee1b624aead7f890c7a8fa502e9cfbce"
  },
  "sources": [
   "DPmeta:docs/ECOSYSTEM.md",
