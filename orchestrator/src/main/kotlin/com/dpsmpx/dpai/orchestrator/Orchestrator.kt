@@ -863,33 +863,45 @@ class Orchestrator(
     private fun afterVerification(task: TaskId, session: SessionId, report: VerificationReport, tree: com.dpsmpx.dpai.git.Worktree?, path: String) {
         if (report.verdict != com.dpsmpx.dpai.verification.Verdict.PASSED) problems += report.diagnostics.filter { it.isError || it.code == DiagCode.VERIFICATION_STEP_UNAVAILABLE }
         when (tasks.tasks.getValue(task).state) {
-            TaskState.VERIFIED -> {
-                val failed = if (tree != null && git != null) commitWork(task, session, path) else null
-                if (failed != null) {
-                    // Работа проверена, но не закоммичена (A-52): не DONE и не слияние ветки без неё — решает человек,
-                    // работа остаётся в дереве задачи.
-                    for (to in listOf(TaskState.READY, TaskState.BLOCKED)) {
-                        commitTasks(tasksLogic.move(tasks, task, to, clock.now(), DiagCode.GIT_COMMAND_FAILED).valueOrNull().orEmpty())
-                    }
-                    releaseTree(task, session)
-                    askBlocked(task, session, "$failed: работа проверена, но не закоммичена — она в дереве задачи")
-                    return
-                }
-                commitTasks(ok(tasksLogic.complete(tasks, task, clock.now()), "завершение задачи").orEmpty())
-                releaseTree(task, session)
-                progress(task, NotificationCategory.SUCCESS, "Задача выполнена", "проверка прошла")
-                if (tree != null) requestMerge(task, tree.branch)
-            }
+            TaskState.VERIFIED -> afterVerified(task, session, tree, path)
             TaskState.COMPLETION_UNVERIFIED -> {
                 releaseTree(task, session)
                 askUnverified(task, session)
             }
             else -> {
-                // READY: проверка не прошла — следующий исполнитель с тем же деревом; что упало — ему (D-40).
+                // READY: проверка не прошла — следующий исполнитель с тем же деревом; что упало — ему (D-40, п. 3).
                 if (efficiency.feedVerification) verificationFailed(task, session, report, path)
                 releaseTree(task, session)
             }
         }
+    }
+
+    /**
+     * Проверка прошла: коммит работы, `DONE`, запрос слияния. Вызывается и
+     * при восстановлении (ревью A-56): коммит идемпотентен — чистое дерево
+     * значит «уже закоммичено».
+     */
+    private fun afterVerified(task: TaskId, session: SessionId, tree: com.dpsmpx.dpai.git.Worktree?, path: String) {
+        val failed = if (tree != null && git != null) commitWork(task, session, path) else null
+        if (failed != null) {
+            // Работа проверена, но не закоммичена (A-52): не DONE и не слияние ветки без неё — решает человек,
+            // работа остаётся в дереве задачи.
+            for (to in listOf(TaskState.READY, TaskState.BLOCKED)) {
+                commitTasks(tasksLogic.move(tasks, task, to, clock.now(), DiagCode.GIT_COMMAND_FAILED).valueOrNull().orEmpty())
+            }
+            releaseTree(task, session)
+            askBlocked(task, session, "$failed: работа проверена, но не закоммичена — она в дереве задачи")
+            return
+        }
+        // DONE и запрос слияния — одной пачкой журнала (ревью A-56): сбой между ними оставлял
+        // задачу DONE без запроса, и слияния не было бы никогда.
+        batch {
+            commitTasks(ok(tasksLogic.complete(tasks, task, clock.now()), "завершение задачи").orEmpty())
+            if (tree != null) recordMergeRequest(task, tree.branch)
+        }
+        releaseTree(task, session)
+        progress(task, NotificationCategory.SUCCESS, "Задача выполнена", "проверка прошла")
+        mergesState.pending.values.firstOrNull { it.task == task }?.let { askMerge(it) }
     }
 
     /**
@@ -986,13 +998,13 @@ class Orchestrator(
         return if (gitOk == true) null else "git commit не удался"
     }
 
-    private fun requestMerge(task: TaskId, branch: String) {
+    /** Слияние ждёт ответа — в журнал; сам запрос задаёт вызывающий после пачки (askMerges в такте — после перезапуска). */
+    private fun recordMergeRequest(task: TaskId, branch: String) {
         val repo = config.repository ?: return
         val target = config.integrationBranch ?: return
+        if (mergesState.pending.values.any { it.task == task }) return
         val proposal = Proposal("git.merge", "${repo.root}#$target", listOf(branch))
-        // Сначала журнал: после перезапуска слияние снова ждёт ответа (askMerges в такте).
         commitMerges(listOf(MergeEvent.Requested(PendingMerge(task, ids.next(IdKinds.APPROVAL), proposal, clock.now() + requestTtl), clock.now())))
-        askMerge(mergesState.pending.values.first { it.task == task })
     }
 
     /**
@@ -1164,6 +1176,7 @@ class Orchestrator(
         val out = reconcilePending(agentFor)
         // PAUSED без handoff: процесс умер между итогом хода и передачей (A-42) — передать сейчас.
         for (r in sessions.sessions.values.filter { it.state == SessionState.PAUSED }.sortedBy { it.id.value }) react(r.task, r.id, SessionState.PAUSED)
+        resumeFinish()
         // Сироты (ТЗ, §119; `docs/RECOVERY.md`, §5): аренды и деревья завершённых сессий, задачи
         // RUNNING без живой сессии — безопасные починки сразу, остальное — вопросом.
         val orphans = OrphanScan(accountsLogic, tasksLogic).scan(sessions, accounts, tasks, worktrees, emptySet(), clock.now())
@@ -1176,6 +1189,28 @@ class Orchestrator(
         for (q in orphans.questions) askRecovery(q)
         maybeSnapshot()
         return out
+    }
+
+    /**
+     * Недоделанный итог хода (ревью A-56): процесс умер посреди `finish`. Ход
+     * завершён (последняя сессия COMPLETED), живой сессии нет: задача RUNNING
+     * — проверка не дошла до итога, проверить снова, а не запускать Claude
+     * заново (так сделал бы OrphanScan); VERIFIED — коммит, `DONE`, слияние.
+     */
+    private fun resumeFinish() {
+        val live = sessions.sessions.values.filter { !it.terminal }.map { it.task }.toSet()
+        val stuck = tasks.tasks.values.filter { (it.state == TaskState.RUNNING || it.state == TaskState.VERIFIED) && it.id !in live }
+        for (t in stuck.sortedBy { it.id.value }) {
+            val last = sessions.sessions.values.filter { it.task == t.id }
+                .maxWithOrNull(compareBy<com.dpsmpx.dpai.sessions.SessionRecord>({ it.createdAt.epochMillis }, { it.turn }, { it.id.value }))
+            if (last?.state != SessionState.COMPLETED) continue
+            if (t.state == TaskState.RUNNING) {
+                finish(t.id, last.id)
+            } else {
+                val tree = treeOf[t.id]?.let { worktrees.worktrees[it] }
+                afterVerified(t.id, last.id, tree, tree?.path ?: config.worktreeRoot ?: ".")
+            }
+        }
     }
 
     /**

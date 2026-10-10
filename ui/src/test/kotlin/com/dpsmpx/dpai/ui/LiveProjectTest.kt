@@ -41,10 +41,26 @@ class LiveProjectTest {
     private val agent = MockAgentHost(clock, ids)
     private val local = LocalProcessHost()
 
+    /** Смерть процесса приложения: `Error`, а не исключение, — её не ловит ни один обработчик контура. */
+    private class Killed : Error()
+
+    /** На каком вызове target «убить» приложение (один раз). */
+    private var crashOn: ((ProcessSpec) -> Boolean)? = null
+
+    /** Сколько раз запускался «Claude». */
+    private var claudeRuns = 0
+
     /** Хост target: Git — настоящий, остальное — агент. */
     private val targetHost = object : ProcessHost {
-        override fun start(spec: ProcessSpec, onOutput: (com.dpsmpx.dpai.execution.process.OutputLine) -> Unit) =
+        override fun start(spec: ProcessSpec, onOutput: (com.dpsmpx.dpai.execution.process.OutputLine) -> Unit) = run {
+            crashOn?.let {
+                if (it(spec)) {
+                    crashOn = null
+                    throw Killed()
+                }
+            }
             if (spec.command.first() == "git") local.start(spec, onOutput) else agent.start(spec, onOutput)
+        }
     }
 
     private fun git(vararg argv: String) {
@@ -216,6 +232,93 @@ class LiveProjectTest {
 
     private fun answerMerge(s: LiveSystem) =
         s.orchestrator.pendingRequests().single { it.purpose == "task.merge" }.let { s.orchestrator.answer(it.id, "merge", null, it.hash, "автор") }
+
+    /**
+     * Ревью A-56: приложение умерло посреди проверки задачи (ход Claude уже
+     * завершён). После перезапуска проверка идёт снова — Claude заново не
+     * запускается, — задача DONE, слияние спрошено.
+     */
+    @Test
+    fun crashDuringVerificationResumesVerificationNotClaude() {
+        val (project, target) = repoProject()
+        crashOn = { "start" in it.command && it.stdin?.contains("\"make\"") == true }
+        val first = live(project, target, 101)
+        val task = first.addTask("фича", "добавить возможность").valueOrNull()!!
+        assertTrue(!stepsUntilKilled(first, 6), "приложение «умерло» на проверке")
+        val second = live(project, target, 102)
+        repeat(3) {
+            second.step()
+            clock.advance(10.seconds)
+        }
+        assertEquals(TaskState.DONE, second.orchestrator.tasks.tasks.getValue(task).state, second.problems.toString() + second.orchestrator.problems)
+        assertEquals(1, claudeRuns, "Claude заново не запускался")
+        assertTrue(second.orchestrator.pendingRequests().any { it.purpose == "task.merge" })
+    }
+
+    /** Ревью A-56: приложение умерло после «проверка прошла», до коммита — после перезапуска коммит, DONE, запрос слияния. */
+    @Test
+    fun crashAfterVerifiedCommitsAndAsksMergeOnRestart() {
+        val (project, target) = repoProject()
+        crashOn = { it.command.first() == "git" && "add" in it.command && "worktree" !in it.command }
+        val first = live(project, target, 103)
+        val task = first.addTask("фича", "добавить возможность").valueOrNull()!!
+        assertTrue(!stepsUntilKilled(first, 6), "приложение «умерло» перед коммитом")
+        assertEquals(TaskState.VERIFIED, first.orchestrator.tasks.tasks.getValue(task).state)
+        val second = live(project, target, 104)
+        assertEquals(TaskState.DONE, second.orchestrator.tasks.tasks.getValue(task).state, second.problems.toString() + second.orchestrator.problems)
+        assertEquals(1, claudeRuns)
+        val request = second.orchestrator.pendingRequests().single { it.purpose == "task.merge" }
+        assertEquals(OperationStatus.SUCCEEDED, second.orchestrator.answer(request.id, "merge", null, request.hash, "автор").status)
+        assertTrue(File(project.root, "feature.txt").exists(), "работа закоммичена и слита")
+    }
+
+    private fun stepsUntilKilled(s: LiveSystem, n: Int): Boolean {
+        repeat(n) {
+            try {
+                s.step()
+            } catch (_: Killed) {
+                return false
+            }
+            clock.advance(10.seconds)
+        }
+        return true
+    }
+
+    private fun live(project: ProjectEntry, target: TargetEntry, seed: Long) =
+        LiveSystem(clock, NioVfs(dir.resolve("ctl").also { it.toFile().mkdirs() }), listOf(target), { _, _ -> targetHost }, "/known_hosts", RandomSource.seeded(seed), project = project)
+
+    /** Репозиторий с main и проект на нём; «Claude» пишет feature.txt, проверка — «ok». */
+    private fun repoProject(): Pair<ProjectEntry, TargetEntry> {
+        val root = dir.resolve("repo").toFile().apply { mkdirs() }.path.replace('\\', '/')
+        git("init", "-q", "-b", "main", root)
+        git("-C", root, "config", "user.email", "dpai-test@example.org")
+        git("-C", root, "config", "user.name", "dpai test")
+        File(root, "README.md").writeText("проект\n")
+        git("-C", root, "add", "README.md")
+        git("-C", root, "commit", "-q", "-m", "начало")
+        agent.onStart = { run, spec, _ ->
+            when {
+                spec.command.take(3) == listOf("claude", "auth", "status") -> {
+                    agent.output(run, """{"loggedIn":true,"authMethod":"claude.ai","apiProvider":"firstParty"}""")
+                    agent.exit(run, 0)
+                }
+                spec.command.first() == "claude" -> {
+                    claudeRuns++
+                    File(spec.workDir!!, "feature.txt").writeText("новая возможность\n")
+                    val c = spec.command
+                    MockRunner.script(MockScenario.SUCCESS, c[c.indexOfFirst { it == "--session-id" || it == "--resume" } + 1]).forEach { agent.output(run, it) }
+                    agent.exit(run, 0, ExitReason.EXITED)
+                }
+                else -> {
+                    agent.output(run, "ok")
+                    agent.exit(run, 0)
+                }
+            }
+        }
+        val target = TargetForm.validate(ids.next(IdKinds.TARGET), "сервер", "build.lan", "22", "dev", false, "/opt/dpai/bin/dpai", "/home/dev/.claude-dpai").valueOrNull()!!
+        val project = ProjectEntry(ids.next(IdKinds.PROJECT), ids.next(IdKinds.REPOSITORY), target.id, root, dir.resolve("trees").toString().replace('\\', '/'), "main", listOf(com.dpsmpx.dpai.verification.VerifyStep("тесты", listOf("make", "test"))))
+        return project to target
+    }
 
     /** Репозиторий с main, задача прошла проверку и ждёт ответа на запрос слияния. */
     private fun doneAwaitingMerge(seed: Long): Pair<LiveSystem, String> {
