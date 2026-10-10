@@ -20,8 +20,10 @@
       DPvisualisation и DP_AI_Orcestrator в реестре, контракты C-11
       («DPmeta → DPvisualisation») и C-12 («DPvisualisation → сайт»),
       классификация автора. Когда ветка окажется в `main` DPmeta — здесь:
-      `contracts` у потоков `vis.dpmeta.dpvisualisation` и
-      `vis.dpvisualisation.smi`, иначе сбор покажет `CONTRACT_UNCOVERED`.
+      `contracts` у потоков `vis.dpmeta.dpvisualisation`,
+      `vis.dpvisualisation.smi` и `orc.dpmeta.orchestrator` (C-13 —
+      манифест `dpai.ecosystem`, `DPmeta:M-11`), иначе сбор покажет
+      `CONTRACT_UNCOVERED`.
 - [ ] `М` **DPmetaApp.** ТЗ, решения и TODO приложения — в его ветке
       `claude/dreamy-bardeen-xe4k6r` (взяты из `claude/vigilant-franklin-61x8kq`);
       в `main` их нет. Ссылки модели `DPmetaApp:docs/direction/TECHNICAL_TASK.md`,
