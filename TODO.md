@@ -44,6 +44,10 @@
   ветке SocialMediaImage `claude/dreamy-bardeen-xe4k6r`; признак сборки в
   `/api/v1/index.json` (ТЗ, Q-12) — решает SocialMediaImage.
 
+- `М` **DPvisualisation:** Q-04 его ТЗ (нативно или WebView) — ответ
+  D-26 записан в его ветке `claude/dreamy-bardeen-xe4k6r` (10 октября
+  2026); после вливания обеих веток сверить.
+
 ## Система
 
 - `С` **Проверки модулей и запрещённых вызовов** (ТЗ, §6.2, A-06, A-07)

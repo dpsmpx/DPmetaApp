@@ -330,9 +330,9 @@ Galdhold 5 октября 2026 (`Galdhold:TODO.md`) — подтвердить (
 | YAML (`item.yaml`, `scope.yaml`) | `snakeyaml-engine` | Apache-2.0 | `:core:formats` | 6 |
 | TOML | свой разборщик подмножества TOML 1.0, нужного реестру; неподдержанное — ошибка с позицией | — | `:core:formats` | 2 |
 | интерфейс | Compose BOM, Activity, Lifecycle, Navigation | Apache-2.0 | `:app` | 3 |
-| фон, биометрия, виджет | WorkManager, Biometric, Glance | Apache-2.0 | `:app` | 3, 8 |
-| мгновенный канал | UnifiedPush connector (`org.unifiedpush.android:connector`) | Apache-2.0 | `:app` | 8 |
-| вход Google (YouTube) | AppAuth for Android или Authorization API Google Identity Services — выбор по проверке (приложение Г) | Apache-2.0 / условия Google | `:app` | 7 |
+| фон, биометрия, виджет | WorkManager, Biometric, Glance | Apache-2.0 | `:app` | 3, 7 |
+| мгновенный канал | UnifiedPush connector (`org.unifiedpush.android:connector`) | Apache-2.0 | `:app` | 7 |
+| вход Google (YouTube) | AppAuth for Android или Authorization API Google Identity Services — выбор по проверке (приложение Г) | Apache-2.0 / условия Google | `:app` | 6 |
 | тесты | JUnit, `kotlinx-coroutines-test` | EPL-2.0, Apache-2.0 | тесты | 1 |
 
 Сторонние библиотеки графиков, аналитики, отчётов о падениях и
@@ -766,12 +766,12 @@ Android-типы — только в `:app` (как `DPpass:CLAUDE.md`, «Пра
 | I-08 | Claude API | Messages (официальный SDK), Models, Usage & Cost report и лимиты (Admin, только GET) | стабильный API; Admin — бета в SDK, отчёты — только HTTP | смена моделей — список из Models API, не из кода |
 | I-09 | GitHub | REST и GraphQL: PR, ветки, сравнение, содержимое файлов, issues, слияние | стабильный API; условные запросы | лимит запросов (R-01) |
 | I-10 | Termux | интент `com.termux.RUN_COMMAND` (F-41) | документированный интерфейс Termux | версия Termux из Google Play отличается — нужна сборка F-Droid или GitHub (R-07) |
-| I-11 | YouTube | Data API v3: подписчики канала, комментарии (`commentThreads.list`), ответ (`comments.insert`); Analytics API — точный прирост подписчиков | стабильный API; квота 10 000 единиц в сутки на проект Google | квота, срок токена в режиме Testing, вход Google (приложение Г) |
-| I-12 | Telegram | Bot API отдельного бота приложения: число подписчиков канала (`getChatMemberCount`), комментарии из группы обсуждения, ответ от имени бота | стабильный API; обновления хранятся сутки | бот не админ; общий бот с SocialMediaImage — спор за `getUpdates` (поэтому — свой бот) |
-| I-13 | VK | API VK: подписчики страницы или сообщества, комментарии стены, ответ; для сообщества — ключ сообщества | зависит от решения «страница или сообщество» (`SocialMediaImage:docs/platforms/VK.md`) | права `wall` выдаются по запросу |
+| I-11 | YouTube | Data API v3: подписчики канала, комментарии (`commentThreads.list`), ответ (`comments.insert`); Analytics API — точный прирост подписчиков (методы — UNKNOWN до сверки перед этапом 6, приложение Г) | стабильный API; квота 10 000 единиц в сутки на проект Google | квота, срок токена в режиме Testing, вход Google (приложение Г) |
+| I-12 | Telegram | Bot API отдельного бота приложения: число подписчиков канала (`getChatMemberCount`), комментарии из группы обсуждения, ответ от имени бота (методы — UNKNOWN до сверки перед этапом 6, приложение Г) | стабильный API; обновления хранятся сутки | бот не админ; общий бот с SocialMediaImage — спор за `getUpdates` (поэтому — свой бот) |
+| I-13 | VK | API VK: подписчики страницы или сообщества, комментарии стены, ответ; для сообщества — ключ сообщества (методы — UNKNOWN до сверки перед этапом 6, приложение Г) | зависит от решения «страница или сообщество» (`SocialMediaImage:docs/platforms/VK.md`) | права `wall` выдаются по запросу |
 | I-14 | TikTok | API для разработчиков: `user.info.stats` (подписчики) после проверки приложения; комментарии — UNKNOWN для личного аккаунта | доступ — по проверке TikTok | аудит не пройден — только ручной ввод |
-| I-15 | GitHub (профиль) | подписчики профиля, звёзды и наблюдатели открытых репозиториев; комментарии — это PR и issues (§7.4) | стабильный API | — |
-| I-16 | Discord | бот сервера: число участников, сообщения каналов, ответ от бота — когда сервер появится (`SocialMediaImage:data/platforms/destinations.yaml`, `SocialMediaImage:ОР-6`) | стабильный API | нет сервера |
+| I-15 | GitHub (профиль) | подписчики профиля, звёзды и наблюдатели открытых репозиториев; комментарии — это PR и issues (§7.4) (методы — UNKNOWN до сверки перед этапом 6, приложение Г) | стабильный API | — |
+| I-16 | Discord | бот сервера: число участников, сообщения каналов, ответ от бота — когда сервер появится (`SocialMediaImage:data/platforms/destinations.yaml`, `SocialMediaImage:ОР-6`) (методы — UNKNOWN до сверки перед этапом 6, приложение Г) | стабильный API | нет сервера |
 | I-17 | UnifiedPush и ntfy | регистрация у дистрибьютора, приём событий (F-55); источники шлют на адрес канала | открытый протокол UnifiedPush; ntfy — сторонний сервис | недоступность ntfy — события идут опросом (R-15) |
 | I-18 | Хуки Claude Code | события `Stop`, `Notification`, `StopFailure`, `SessionEnd` с полями `session_id`, `cwd`, `stop_reason`, `notification_type` (F-56) | документированный интерфейс хуков | облачная сессия с несколькими репозиториями хуки репозиториев не читает (приложение В) |
 | I-19 | DPvisualisation | модель и срез экосистемы `dpvis-model/1`, `dpvis-state/1` — живой режим схемы (D-26) | поля в пределах `/1` только добавляются (`DPvisualisation:D-07`) | новая версия формата — корпус и разборщик заново |
@@ -945,7 +945,8 @@ API, которые требуют регистрации разработчик
 для сессий — `CLAUDE.md`. Главное:
 
 - **Источник истины** — `docs/direction/DECISIONS.md`; старшинство:
-  решения → `CLAUDE.md` → ТЗ → ROADMAP → `TODO.md` → `docs/`. `README.md`
+  решения → `CLAUDE.md` → мастер-ТЗ `MESTER_TECHNICAL_TASK_ROADMAP.md`
+  (D-25) → ТЗ → ROADMAP → `TODO.md` → `docs/`. `README.md`
   — не источник истины; его блок состояния пишет скрипт (`DPmeta:E-13`).
 - **Запрос автора сверяется с решениями** до работы; решённое не
   переспрашивается; мелочи решаются и называются в отчёте (`DPmeta:E-02`).
@@ -1111,6 +1112,7 @@ Managed Agents для еженедельной сводки; раскладка 
 | DPmeta | карта, контракты, риски, очередь, срезы, связность | `DPmeta:docs/ECOSYSTEM.md`, `CONTRACTS.md`, `RISKS.md`, `SYNC_QUEUE.md`, `DPmeta:docs/reports/` | карточка DPmeta, вопросы, метрики `eco.*` | З |
 | DPmeta | «кто работает» | правила `DPmeta:docs/PROCESS.md`, раздел 2; через Termux — `DPmeta:tools/activity.py` | разработка | П |
 | DPmonetization | стадии и шлюзы готовности | `DPmonetization:config/tracks.toml` (после влития ядра) | после 1.0 | З |
+| DP_AI_Orcestrator | подсистема «AI»: аккаунты, сессии и уведомления Claude | `DP_AI_Orcestrator:docs/INTEGRATION_CONTRACT.md`, §21 | пересекается с §7.5, §7.9; как брать — решает автор (Q-16, I-20) | — |
 
 ## Приложение Б. Черновик реестра команд Termux
 
@@ -1187,9 +1189,11 @@ level = 1
 SocialMediaImage (`SocialMediaImage:docs/research/publishing/PLATFORM_APIS.md`,
 `SocialMediaImage:data/platforms/capabilities.yaml`) сверены только
 сведения о публикации: квота YouTube, право `wall` VK, аудит TikTok.
-Методы чтения подписчиков и комментариев в этих документах не описаны —
-**UNKNOWN**: перед этапом 6 сверить по официальной документации площадок
-и записать строками в приложении В с датой проверки. Чего нет — показывается честно
+Методы чтения подписчиков и комментариев и ответа на них (столбцы
+«Подписчики», «Комментарии», «Ответ»; в §10 — I-11…I-16) в этих
+документах не описаны — **UNKNOWN**: перед этапом 6 сверить по
+официальной документации площадок и записать строками в приложении В с
+датой проверки. Чего нет — показывается честно
 (D-20).
 
 | Площадка | Подписчики | Комментарии: чтение | Ответ | Ограничения |
