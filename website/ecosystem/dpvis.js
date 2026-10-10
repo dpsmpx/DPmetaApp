@@ -448,7 +448,7 @@ function focusSet(view, sel) {
 
 const GEOM = { minNodeW: 136, maxNodeW: 190, nodeH: 44, gapX: 16, gapY: 16, headerH: 28, pad: 12, bandGap: 14, minWidth: 240 };
 
-const GROUP_ORDER = { core: 0, new: 1, periphery: 2 };
+const GROUP_ORDER = { control: 0, core: 1, support: 2, new: 3, periphery: 4 };
 
 function degree(view, id) {
   return (view.outgoing.get(id) || []).length + (view.incoming.get(id) || []).length;
@@ -471,6 +471,17 @@ function groupsByLayer(view) {
   return cols;
 }
 
+// Подпись слоя в колонку: длинная — в две строки по пробелу у середины. Ширина
+// знака — с запасом под прописные 12 px с разрядкой (style.css, .col-name).
+function splitHeader(name, width) {
+  const max = Math.max(6, Math.floor((width - 10) / 8.4));
+  if (name.length <= max || !name.includes(" ")) return [name];
+  const mid = name.length / 2;
+  let best = -1;
+  for (let i = 0; i < name.length; i++) if (name[i] === " " && (best < 0 || Math.abs(i - mid) < Math.abs(best - mid))) best = i;
+  return [name.slice(0, best), name.slice(best + 1)];
+}
+
 function neighbours(view, id) {
   return [...(view.outgoing.get(id) || []), ...(view.incoming.get(id) || [])].map((f) => (f.from === id ? f.to : f.from));
 }
@@ -484,7 +495,8 @@ function columns(view, cols, W, g) {
   cols.forEach((c, i) => c.nodes.forEach((n) => colOf.set(n.id, i)));
   const maxRows = Math.max(...cols.map((c) => c.nodes.length));
   const fullH = maxRows * (g.nodeH + g.gapY) - g.gapY;
-  const top0 = g.pad + g.headerH;
+  const lines = cols.map((c) => splitHeader(c.layer.name, colW));
+  const top0 = g.pad + g.headerH + (lines.some((l) => l.length > 1) ? 14 : 0);
   const yOf = new Map();
   const place = () => {
     for (const c of cols) {
@@ -509,7 +521,7 @@ function columns(view, cols, W, g) {
   const headers = cols.map((c, i) => {
     const cx = g.pad + i * colW + colW / 2;
     for (const n of c.nodes) nodes.set(n.id, { x: Math.round(cx - nodeW / 2), y: Math.round(yOf.get(n.id)), w: nodeW, h: g.nodeH, band: i });
-    return { id: c.layer.id, name: c.layer.name, x: Math.round(cx), y: g.pad + 12, anchor: "middle", w: colW };
+    return { id: c.layer.id, name: c.layer.name, lines: lines[i], x: Math.round(cx), y: g.pad + 12, anchor: "middle", w: colW };
   });
   return { nodes, headers, height: top0 + fullH + g.pad, nodeW };
 }
@@ -523,7 +535,7 @@ function bands(view, cols, W, g) {
   const headers = [];
   let y = g.pad;
   cols.forEach((c, i) => {
-    headers.push({ id: c.layer.id, name: c.layer.name, x: g.pad, y: y + 12, anchor: "start", w: inner });
+    headers.push({ id: c.layer.id, name: c.layer.name, lines: [c.layer.name], x: g.pad, y: y + 12, anchor: "start", w: inner });
     y += g.headerH;
     c.nodes.forEach((n, j) => {
       const row = Math.floor(j / perRow);
@@ -692,7 +704,9 @@ function createGraph(host, view, handlers) {
     const gHead = el("g", { class: "cols", "aria-hidden": "true" }, svg);
     for (const c of lay.headers) {
       const t = el("text", { x: c.x, y: c.y, class: "col-name", "text-anchor": c.anchor }, gHead);
-      t.textContent = c.name;
+      c.lines.forEach((line, i) => {
+        el("tspan", { x: c.x, dy: i ? 14 : 0 }, t).textContent = line;
+      });
     }
     const gNodes = el("g", { class: "nodes" }, svg);
 
@@ -1169,6 +1183,9 @@ function reconView(view) {
     const list = (title, items) => (items && items.length ? [h("h4", { text: `${title} · ${items.length}` }), h("ul", {}, items.map((x) => h("li", {}, h("code", { text: x }))))] : []);
     out.push(...list("В реестре есть, в модели нет", reg.missing_in_model));
     out.push(...list("В модели есть, в реестре нет", reg.not_in_registry));
+    const skipped = [...(reg.excluded || []), ...(reg.contracts_excluded || []).map((c) => `DPmeta:${c}`)];
+    out.push(...list("Вне сверки", skipped));
+    if (skipped.length && reg.exclude_reason) out.push(h("p", { class: "muted", text: `Почему: ${reg.exclude_reason}` }));
   }
   const diags = view.diagnostics || [];
   out.push(h("h3", { text: `Диагностика сборщика · ${diags.length}` }));

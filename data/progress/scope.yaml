@@ -10,7 +10,9 @@
 #             undisclosed — закрытый, имя не публикуется (PROJECT_MAP: «не упоминать»);
 #                           на сайте — только числа в общих суммах: ни строки, ни узла карты,
 #                           ни отдельной даты (фильтр Д39)
-# group:      core | background (Д5, docs/identity/PROJECT_MAP.md)
+# group:      core | support | control — места по слову автора 09.10.2026 (DPmeta M-10): ядро,
+#             поддерживающий слой, управление. Архива (проекты до репозитория игры) в счёте нет —
+#             он в excluded с kind: archive (Д38)
 # what:       id факта с публичной ролью (data/facts/facts.yaml)
 # layer:      слой на карте экосистемы
 schema: progress_scope/v1
@@ -19,11 +21,11 @@ authors:                           # чьи коммиты считаются; �
   ai: [Claude]
   human: [dpsmpx, "Ваше Имя"]      # «Ваше Имя» — заглушка git config в первом коммите Galdhold (DPprofile F-0049)
 layers:
+  - {id: control, ru: Управление, en: Control}
   - {id: product, ru: Продукты, en: Products}
   - {id: engineering, ru: Инженерная основа, en: Engineering foundation}
   - {id: knowledge, ru: Знание и публикация, en: Knowledge and publishing}
   - {id: meta, ru: Мета-уровень, en: Meta layer}
-  - {id: background, ru: Ранние и малые проекты, en: Earlier and smaller projects}
 repos:
   - key: galdhold
     slug: dpsmpx/Galdhold
@@ -105,46 +107,34 @@ repos:
       - {id: sync_queue, file: docs/SYNC_QUEUE.md, pattern: '^#{2,3} +SQ-\d+'}
       - {id: principles, file: docs/PRINCIPLES.md, pattern: '^#{2,3} +E-\d+'}
       - {id: reports, glob: "docs/reports/*.md"}
-  - key: repeated
-    slug: dpsmpx/DP_Repeated_Tasks
-    name: DP_Repeated_Tasks
-    group: background
-    visibility: public
-    layer: background
-  - key: tanks
-    slug: dpsmpx/tanks_blitz_stat_chat
-    name: tanks_blitz_stat_chat
-    group: background
-    visibility: public
-    layer: background
-  - key: ecosystem
-    slug: dpsmpx/DP_Ecosystem
-    name: DP_Ecosystem
-    group: background
-    visibility: public
-    layer: background
-    what: ECO-WHAT
-  - key: tjtm
-    slug: dpsmpx/TrueJointTileMaker
-    name: TrueJointTileMaker
-    group: background
-    visibility: public
-    layer: background
-    what: TJTM-WHAT
-  - key: pixrogue
-    slug: dpsmpx/PixRogue
-    name: PixRogue
-    group: background
-    visibility: public
-    layer: background
-    what: PIX-WHAT
-  - key: andors_love
-    slug: dpsmpx/Andors-Love
-    name: Andors-Love
-    group: background
-    visibility: public
-    layer: background
-    what: AL-WHAT
+  - key: orchestrator
+    slug: dpsmpx/DP_AI_Orcestrator
+    name: DP_AI_Orcestrator
+    group: core                    # «один из основных инструментов системы» — слово автора 09.10.2026
+    visibility: private
+    layer: engineering
+    what: ORC-WHAT
+  - key: dpvis
+    slug: dpsmpx/DPvisualisation
+    name: DPvisualisation
+    group: support                 # «обеспечение системы, поддерживающий слой»
+    visibility: private
+    layer: engineering
+    what: VIS-WHAT
+  - key: dpmon
+    slug: dpsmpx/DPmonetization
+    name: DPmonetization
+    group: support                 # «поддерживающий слой»
+    visibility: private
+    layer: engineering             # как в модели DPvisualisation
+    what: MON-WHAT
+  - key: dpmetaapp
+    slug: dpsmpx/DPmetaApp
+    name: DPmetaApp
+    group: control                 # «управление экосистемы, можно выделить немного»
+    visibility: private
+    layer: control
+    what: APP-WHAT
 excluded:                          # с работой в периоде, но вне счёта — и почему
                                    # kind: fork | profile | script — имя на странице есть;
                                    #       personal — имени нет, только число (Д2, ОР-8; фильтр Д39)
@@ -155,6 +145,15 @@ excluded:                          # с работой в периоде, но �
   - {slug: dpsmpx/dayplan_neocities, kind: personal, reason: личный планировщик и резюме (Д2)}
   - {slug: dpsmpx/Mobile-Basic-set-line-numbers, kind: script, reason: одиночный скрипт вне карты проектов}
   - {slug: dpsmpx/DP_3D_Works, kind: script, reason: одиночный скрипт вне карты проектов}
+                                   # kind: archive — вне текущей системы (слово автора 09.10.2026, Д38): проекты
+                                   # до репозитория игры и убранные автором; на странице — только число.
+                                   # key — ключ в прежних наборах (2026-10-05), чтобы их проверка его узнавала
+  - {slug: dpsmpx/Andors-Love, key: andors_love, kind: archive, reason: ранний проект — до репозитория игры}
+  - {slug: dpsmpx/TrueJointTileMaker, key: tjtm, kind: archive, reason: ранний проект — до репозитория игры}
+  - {slug: dpsmpx/PixRogue, key: pixrogue, kind: archive, reason: ранний проект — до репозитория игры}
+  - {slug: dpsmpx/tanks_blitz_stat_chat, key: tanks, kind: archive, reason: ранний проект — до репозитория игры}
+  - {slug: dpsmpx/DP_Ecosystem, key: ecosystem, kind: archive, reason: убран автором из текущей системы}
+  - {slug: dpsmpx/DP_Repeated_Tasks, key: repeated, kind: archive, reason: убран автором из текущей системы}
 relations:                         # связи между репозиториями — из контрактов DPmeta (docs/CONTRACTS.md)
   - from: galdhold
     to: dplang
@@ -189,8 +188,18 @@ relations:                         # связи между репозитори�
     source: DPmeta C-03
     ru: "поставка общих проверок копией"
     en: "shared checks delivered as a copy"
-  - from: andors_love
-    to: tjtm
-    source: DPmeta C-08
-    ru: "формат карт и имена тайлов"
-    en: "map format and tile names"
+  - from: dpmeta
+    to: dpvis
+    source: DPmeta C-11
+    ru: "реестр репозиториев и контракты — для сверки модели экосистемы"
+    en: "the repository registry and contracts, to check the ecosystem model"
+  - from: dpvis
+    to: smi
+    source: DPmeta C-12
+    ru: "схема экосистемы для сайта — копия, обновляется при каждой выгрузке"
+    en: "the ecosystem diagram for the website — a copy refreshed on every upload"
+  - from: dpmeta
+    to: orchestrator
+    source: DPmeta C-13
+    ru: "манифест экосистемы: проекты и предложения задач"
+    en: "the ecosystem manifest: projects and suggested tasks"

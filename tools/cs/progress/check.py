@@ -6,7 +6,7 @@
                 на день; коммиты = Claude + автор = основная ветка + только в ветке;
                 «только документы» не больше коммитов (ветки — только рабочие: коммит
                 прямо в основную ветку ветки не добавляет)
-    границы     репозитории набора есть в scope.yaml и наоборот; у закрытого проекта
+    границы     репозитории набора есть в scope.yaml (или в архиве `excluded`) и наоборот; у закрытого проекта
                 без имени нет name; факты ролей и стадий есть и публичны; связи —
                 между известными ключами
     вехи        в периоде набора, ключи репозиториев и факты известны, источник есть
@@ -50,14 +50,14 @@ def _series(p: Progress, r: Report) -> None:
                 r.error(f"{p.id}/{key} {days[i]}: «только документы» больше коммитов")
 
 
-def _scope(p: Progress, repo: Repo, r: Report) -> None:
+def _scope(p: Progress, repo: Repo, r: Report, latest: bool = True) -> None:
     facts = repo.facts()
     keys = set(p.specs)
     for k in p.data["repos"]:
-        if k not in keys:
+        if k not in keys and k not in p.archived():  # архив — в excluded с ключом: в прежнем наборе есть, на странице нет
             r.error(f"{p.id}: репозиторий {k} есть в наборе, но не в scope.yaml — граница публичного не задана")
     for k, spec in p.specs.items():
-        if k not in p.data["repos"]:
+        if k not in p.data["repos"] and latest:  # прежний набор собран до нового репозитория — не находка
             r.warn(f"{p.id}: {k} есть в scope.yaml, но не в наборе")
         if spec["visibility"] == "undisclosed" and spec.get("name"):
             r.error(f"scope.yaml: {k} — закрытый проект без публичного имени, а name задан")
@@ -114,7 +114,7 @@ def check(repo: Repo | None = None) -> Report:
             r.error(f"{ds}: набор не читается: {e}")
             continue
         _series(p, r)
-        _scope(p, repo, r)
+        _scope(p, repo, r, latest=ds == ids[-1])
         for mid in METRICS:
             try:
                 p.formatted(mid, "ru"), p.formatted(mid, "en")

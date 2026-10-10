@@ -4,18 +4,19 @@ item: CI-0002
 platform: website
 lang: en
 format: page
-source_version: 2
-version: 1
+source_version: 3
+version: 2
 status: ready
 trust: validated
 title: Ecosystem progress
 link: null
 generation:
   provider: session
-  note: 'английский вариант канона v1 (Д21, Д22): тот же смысл, формулировки фактов на en; фигуры набора
-    2026-10-05'
-summary: From 11 September to 5 October 2026 one game grew into an ecosystem of nine core repositories.
-  This page shows what was built — from git history measurements and the projects' own documents.
+  note: 'английский вариант канона v3 (Д21, Д22): тот же смысл, формулировки фактов на en; фигуры набора
+    2026-10-09'
+summary: From 11 September to 9 October 2026 one game grew into an ecosystem of repositories — the core,
+  control and a support layer. This page shows what was built — from git history measurements and the
+  projects' own documents.
 deps:
   facts:
     GH-NAME: 18e9e8bc34f1c9f0
@@ -27,6 +28,10 @@ deps:
     LRN-WHAT: bab936f8c2f8776c
     MKT-WHAT: d7cee6de6f534b61
     META-WHAT: d86fda377e1113a5
+    ORC-WHAT: 032d9f19e4ee9a1b
+    VIS-WHAT: be359c822796fc5c
+    MON-WHAT: 58d9b24a09124db2
+    APP-WHAT: e0a79055d2da5359
     GH-STAGES: 9967754b7d9b5500
     DP-STAGE: 0d8aced210be861e
     VRF-STAGE: 1e4e75cc2d4739a1
@@ -35,98 +40,100 @@ deps:
     LRN-STAGE: 374e468812f9a5f2
     MKT-STAGE: 85a31655a6f4615e
     META-STAGE: 746c6b8c7089cbae
+    ORC-STAGE: a2bf3e66a0bd346a
     META-NO-DEPS: 538aa32a19a5c5ea
-    ECO-WHAT: 4aec988a8a58b2db
-    TJTM-WHAT: fac135f354d06844
-    PIX-WHAT: 468af8962d77a634
-    AL-WHAT: 91f3218fc684c04b
   links: {}
   releases: {}
   datasets:
-    '2026-10-05': b4eb09f271093055
+    '2026-10-09': aa3b4fb071f1aeab
   canonical:
-    version: 2
-    sha256: 910ca5429bc43369cd015b5c53bcbbce64f4c242aeef55ceacacb2880c56cf1d
+    version: 3
+    sha256: 7ad3428d739bc28d694f3f1204a0eddb8e6119552245d07fd381d417f335dbf6
   media: {}
 ---
-The period runs from {{progress:2026-10-05.period_start}} to {{progress:2026-10-05.period_end}}, from the first commit of {{fact:GH-NAME#1}} to the snapshot at {{progress:2026-10-05.cutoff}}. That is {{progress:2026-10-05.span_days}} days; the charts show {{progress:2026-10-05.days}} calendar dates, and the last one is partial.
+The period runs from {{progress:2026-10-09.period_start}} to {{progress:2026-10-09.period_end}}, from the first commit of {{fact:GH-NAME#1}} to the snapshot at {{progress:2026-10-09.cutoff}}. That is {{progress:2026-10-09.span_days}} days; the charts show {{progress:2026-10-09.days}} calendar dates, and the last one is partial.
+
+Only the current system is counted — repositories started together with the game repository and after it. Earlier projects form an archive: they are neither shown nor counted here.
 
 The numbers here are measurements of git history and of the projects' own documents; derived values follow the formulas in "How it was measured". A commit count is not a measure of value, so progress is shown through several measurements at once: work per day, branches, code, checks, decisions, structure.
 
-## Snapshot on 5 October
+
+## Snapshot on 9 October
 
 Where the projects stand now. Stages come from the projects' own documents, with a date. There are no readiness percentages: the projects do not define them.
 
-{{figure:2026-10-05.snapshot}}
+{{figure:2026-10-09.snapshot}}
 
 ## Every day
 
-Over the period — {{progress:2026-10-05.commits}} commits by the author and Claude across all branches and {{progress:2026-10-05.merges}} merged pull requests; there were commits on {{progress:2026-10-05.active_days}} of {{progress:2026-10-05.days}} days. Until 3 October all core work went into Galdhold, with only earlier and smaller projects alongside; from 3 October new core repositories appear, and {{progress:2026-10-05.peak_day}} is the peak: {{progress:2026-10-05.peak_commits}} commits and {{progress:2026-10-05.peak_merges}} pull requests.
+Over the period — {{progress:2026-10-09.commits}} commits by the author and Claude across all branches and {{progress:2026-10-09.merges}} merged pull requests; there were commits on {{progress:2026-10-09.active_days}} of {{progress:2026-10-09.days}} days. Until 3 October all work went into Galdhold. From 3 October new core repositories appear, from 5 October control and the support layer; {{progress:2026-10-09.peak_day}} is the peak: {{progress:2026-10-09.peak_commits}} commits and {{progress:2026-10-09.peak_merges}} pull requests.
 
-The columns are split into groups so that work outside Galdhold does not disappear against it: Galdhold accounts for {{progress:2026-10-05.galdhold_share}} of all commits. A commit is a unit of history, not a measure of quality: one commit can be a line in a document, another a new system.
+The columns are split into three groups — Galdhold, the rest of the core, control and the support layer — so that work outside Galdhold does not disappear against it: Galdhold accounts for {{progress:2026-10-09.galdhold_share}} of all commits. A commit is a unit of history, not a measure of quality: one commit can be a line in a document, another a new system.
 
-{{figure:2026-10-05.activity}}
+{{figure:2026-10-09.activity}}
 
 ## Accumulation
 
-How much has been done since the start of the period. Core repositories with work reached {{progress:2026-10-05.repos_core}}; {{progress:2026-10-05.repos_core_new}} of them appeared after the first day.
+How much has been done since the start of the period. Core repositories with work reached {{progress:2026-10-09.repos_core}}; {{progress:2026-10-09.repos_core_new}} of them appeared after the first day. In total, {{progress:2026-10-09.repos_active}} repositories with work are counted.
 
-{{figure:2026-10-05.cumulative}}
+{{figure:2026-10-09.cumulative}}
 
 ## Where the work happened
 
-A row is a repository, a cell is a day; colour is the number of commits on one scale for all rows. Forks of other people's projects and personal repositories are not counted.
+A row is a repository, a cell is a day; colour is the number of commits on one scale for all rows. The core is on top, control and the support layer below. Forks of other people's projects, personal repositories and the archive are not counted.
 
-{{figure:2026-10-05.repos}}
+{{figure:2026-10-09.repos}}
 
 ## Who writes the code
 
-Most commits are made by Claude sessions: {{progress:2026-10-05.ai_share}}. Commits under the author's name include both manual work and other tools under the author's account; git cannot tell them apart. What the author does shows not in the commit count but in the decision logs below.
+Most commits are made by Claude sessions: {{progress:2026-10-09.ai_share}}. Commits under the author's name include both manual work and other tools under the author's account; git cannot tell them apart. What the author does shows not in the commit count but in the decision logs below.
 
-{{figure:2026-10-05.authorship}}
+{{figure:2026-10-09.authorship}}
 
 ## Parallel work in branches
 
-Each AI session works in its own branch and merges the result into the main branch through a pull request in small batches. In the first three weeks commits went into no more than {{progress:2026-10-05.branches_first_weeks}} working branches a day; at the peak, into {{progress:2026-10-05.peak_branches}}. A commit made directly on the main branch does not count as a working branch. The median time from a batch's first commit to the merge is {{progress:2026-10-05.pr_median_minutes}}; {{progress:2026-10-05.pr_within_hour}} of pull requests were merged within an hour.
+Each AI session works in its own branch and merges the result into the main branch through a pull request in small batches. In the first three weeks commits went into no more than {{progress:2026-10-09.branches_first_weeks}} working branches a day; at the peak, into {{progress:2026-10-09.peak_branches}}. A commit made directly on the main branch does not count as a working branch. The median time from a batch's first commit to the merge is {{progress:2026-10-09.pr_median_minutes}}; {{progress:2026-10-09.pr_within_hour}} of pull requests were merged within an hour.
 
 An unmerged branch is not a result yet, so it is shown separately, as of the snapshot. Branch history can only be reconstructed from merges and surviving branches: deleted unmerged branches are not counted.
 
-{{figure:2026-10-05.parallel}}
+{{figure:2026-10-09.parallel}}
 
 ## Code, tests and documents
 
-Lines of text files in the core's main branches at the end of each day: {{progress:2026-10-05.lines_start}} at the start, {{progress:2026-10-05.lines_end}} now. The jumps on 3–4 October are new repositories with their own code and documents. Volume shows the scale of the implementation, not its quality. Data, schemas and run logs are not included.
+Lines of text files in the core's main branches at the end of each day: {{progress:2026-10-09.lines_start}} at the start, {{progress:2026-10-09.lines_end}} now. The jumps on 3–4 and 6 October are new core repositories with their own code and documents. This is the core's volume: control and the support layer are not included. Volume shows the scale of the implementation, not its quality. Data, schemas and run logs are not included.
 
-{{figure:2026-10-05.codebase}}
+{{figure:2026-10-09.codebase}}
 
 ## Checks
 
-What checks the code grew along with it: lines in the core's test files went from {{progress:2026-10-05.tests_start}} to {{progress:2026-10-05.tests_end}}. Galdhold has its own automated check command: according to the game's README there were {{progress:2026-10-05.hostcheck_start}} checks, now {{progress:2026-10-05.hostcheck_end}}.
+What checks the code grew along with it: lines in the core's test files went from {{progress:2026-10-09.tests_start}} to {{progress:2026-10-09.tests_end}}. Galdhold has its own automated check command: according to the game's README there were {{progress:2026-10-09.hostcheck_start}} checks, now {{progress:2026-10-09.hostcheck_end}}.
 
 These are different measures, and there is no overall quality score here. Test lines do not compare projects with each other, and the Galdhold check count is the project's own record on the dates it changed; there are no values between those dates.
 
-{{figure:2026-10-05.verification}}
+{{figure:2026-10-09.verification}}
 
 ## Decisions and knowledge
 
-Until {{progress:2026-10-05.decisions_first}} the core had no decision logs; at the snapshot they hold {{progress:2026-10-05.decisions_end}} entries. DPprofile is {{fact:PRF-WHAT}}. DPmeta holds {{fact:META-WHAT}}.
+Until {{progress:2026-10-09.decisions_first}} the core had no decision logs; at the snapshot they hold {{progress:2026-10-09.decisions_end}} entries. DPprofile is {{fact:PRF-WHAT}}. DPmeta holds {{fact:META-WHAT}}.
 
-{{figure:2026-10-05.knowledge}}
+{{figure:2026-10-09.knowledge}}
 
 ## Ecosystem map
 
-The repositories are independent: {{fact:META-NO-DEPS}}. Each builds and is checked on its own; they are connected by decisions, contracts and facts.
+The ecosystem has three parts: the core — the projects in the snapshot table above, control, and the support layer. Control stands apart: DPmetaApp is {{fact:APP-WHAT}}. The support layer: DPvisualisation is {{fact:VIS-WHAT#1}}; DPmonetization is {{fact:MON-WHAT}}.
 
-{{figure:2026-10-05.ecosystem}}
+The repositories are independent: {{fact:META-NO-DEPS}}. Each builds and is checked on its own; they are connected by decisions, contracts and facts. A diagram of the links, built from data, is in the "Ecosystem" section.
+
+{{figure:2026-10-09.ecosystem}}
 
 ## Milestones
 
 Milestones are events with sources: a decision, a release, a measurement, a new repository. They are not measurements, and on the daily chart they are only marked.
 
-{{figure:2026-10-05.timeline}}
+{{figure:2026-10-09.timeline}}
 
 ## How it was measured
 
-The dataset is collected by the system's own tool from repository clones; it is stored with the site, and the page is built from it at build time, without calls to GitHub. A private project without a public name is counted only in totals; branch names, commit messages and the time of day of commits are not published. Later snapshots are new datasets with the same formulas; past ones are not recalculated.
+The dataset is collected by the system's own tool from repository clones; it is stored with the site, and the page is built from it at build time, without calls to GitHub. Only the current system is counted; the archive of earlier projects is given in the method only as a number. A private project without a public name is counted only in totals; branch names, commit messages and the time of day of commits are not published. Later snapshots are new datasets with the same formulas; past ones are not recalculated.
 
-{{figure:2026-10-05.method}}
+{{figure:2026-10-09.method}}

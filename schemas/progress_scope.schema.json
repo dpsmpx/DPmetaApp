@@ -103,7 +103,8 @@
      "group": {
       "enum": [
        "core",
-       "background"
+       "support",
+       "control"
       ]
      },
      "visibility": {
@@ -197,10 +198,14 @@
        "fork",
        "profile",
        "personal",
-       "script"
+       "script",
+       "archive"
       ]
      },
      "reason": {
+      "type": "string"
+     },
+     "key": {
       "type": "string"
      }
     }

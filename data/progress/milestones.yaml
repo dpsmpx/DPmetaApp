@@ -179,3 +179,28 @@ milestones:
     en: The dpsmpx.com domain is registered; the first regular site deployment.
     evidence:
       - {kind: code, source: "dpsmpx/SocialMediaImage — ОР-11 закрыт; первая штатная выгрузка", ref: "a9b559c, a110c88", date: 2026-10-05, verification: re-measured}
+  - id: M-20
+    date: 2026-10-05
+    kind: repository
+    repos: [dpmetaapp, dpvis, dpmon]
+    ru: Начаты управление и поддерживающий слой — DPmetaApp, DPvisualisation и DPmonetization.
+    en: Control and the support layer start — DPmetaApp, DPvisualisation and DPmonetization.
+    evidence:
+      - {kind: code, source: "первые коммиты: DPmetaApp 31ffc56, DPvisualisation 9769a94, DPmonetization e999df6", date: 2026-10-05, verification: re-measured}
+  - id: M-21
+    date: 2026-10-06
+    kind: repository
+    repos: [orchestrator]
+    ru: Начат DP_AI_Orcestrator — управляющий слой для параллельных сессий ИИ; журнал решений — с первого дня.
+    en: DP_AI_Orcestrator starts — a control layer for parallel AI sessions, with a decision log from day one.
+    evidence:
+      - {kind: code, source: "dpsmpx/DP_AI_Orcestrator — первый коммит", ref: 3ea2aea, date: 2026-10-06, verification: re-measured}
+      - {kind: code, source: "журнал решений на конец дня — набор прогресса, counters.decisions", date: 2026-10-09, verification: re-measured}
+  - id: M-22
+    date: 2026-10-09
+    kind: decision
+    repos: [dpmetaapp, dpvis, dpmon, orchestrator]
+    ru: Автор делит экосистему на ядро, управление и поддерживающий слой; ранние проекты до репозитория игры — архив, вне счёта.
+    en: The author divides the ecosystem into the core, control and a support layer; projects that predate the game repository become an archive outside the count.
+    evidence:
+      - {kind: decision, source: "dpsmpx/DPmeta docs/DECISIONS.md M-10 (ветка claude/dreamy-bardeen-xe4k6r)", ref: 041fa53, date: 2026-10-09, verification: decision}

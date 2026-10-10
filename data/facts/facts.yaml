@@ -590,13 +590,18 @@ facts:
     class: FACT
     risk: low
     public: true
-    statement: "DPmetaApp — личное приложение автора для Android — пульт над экосистемой (проекты, ход разработки, сайт); на 06.10.2026 — этап ТЗ, черновой PR."
+    statement: >-
+      DPmetaApp — управление экосистемой: личное приложение автора для Android, пульт над проектами,
+      ходом разработки и сайтом. По мастер-ТЗ автора строится после того, как проекты станут
+      законченными системами; на 09.10.2026 — этап ТЗ.
     allowed_wording:
-      ru: ["личный пульт автора над экосистемой для Android — на этапе ТЗ"]
-      en: ["the author's personal Android control app for the ecosystem — at the specification stage"]
+      ru: ["управление экосистемой: личный пульт автора для Android — на этапе ТЗ"]
+      en: ["ecosystem control: the author's personal Android app — at the specification stage"]
     evidence:
       - {kind: doc, source: "dpsmpx/DPmetaApp docs/direction/TECHNICAL_TASK.md (ветка claude/vigilant-franklin-61x8kq, черновик этапа 0)", ref: "2812482", date: 2026-10-06, verification: reported}
-    recheck_by: 2026-11-06
+      - {kind: doc, source: "dpsmpx/DPmetaApp MESTER_TECHNICAL_TASK_ROADMAP.md (main): сначала законченные системы, затем приложение", ref: "4dcc27a", date: 2026-10-06, verification: reported}
+      - {kind: decision, source: "dpsmpx/DPmetaApp docs/direction/DECISIONS.md D-25 (ветка claude/dreamy-bardeen-xe4k6r): управление экосистемой, фаза B мастер-ТЗ; слово автора 09.10.2026", ref: "ed0df9b", date: 2026-10-09, verification: decision}
+    recheck_by: 2026-11-09
   - id: MON-WHAT
     subject: dpmonetization
     class: FACT

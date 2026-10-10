@@ -20,7 +20,8 @@ from tools.cs.progress.figures import FIGURES, render
 from tools.cs.site.build import SiteBuild
 from tests.platform_fixture import make_repo
 
-DS = "2026-10-05"
+DS = "2026-10-09"  # последний набор: на него ссылается текущий канон CI-0002
+OLD = "2026-10-05"  # прежний набор: в нём есть архив, которого больше нет в счёте (Д38)
 
 
 class Metrics(unittest.TestCase):
@@ -81,8 +82,32 @@ class Figures(unittest.TestCase):
         html_, _ = render(self.p, "method", "ru")
         for x in self.p.scope["excluded"]:
             name = x["slug"].split("/")[-1]
-            (self.assertNotIn if x["kind"] == "personal" else self.assertIn)(name, html_)
+            (self.assertNotIn if x["kind"] in ("personal", "archive") else self.assertIn)(name, html_)
         self.assertIn("личные репозитории — 2", html_)
+        archive = sum(1 for x in self.p.scope["excluded"] if x["kind"] == "archive")
+        self.assertIn(f"архив — {archive}", html_)
+
+    def test_three_groups_and_no_archive(self):
+        # Д38, слово автора 09.10.2026: только текущая система — ядро, управление и поддерживающий слой
+        self.assertEqual({self.p.specs[k]["group"] for k in self.p.keys}, {"core", "support", "control"})
+        act, _ = render(self.p, "activity", "ru")
+        self.assertIn("управление и поддерживающий слой", act)
+        heat, _ = render(self.p, "repos", "ru")
+        self.assertIn(f"Управление и поддерживающий слой · {len(self.p.listed(self.p.supporting()))}", heat)
+        snap, _ = render(self.p, "snapshot", "ru")
+        for k in self.p.supporting():
+            self.assertIn(self.p.specs[k]["name"], snap)
+
+    def test_old_dataset_hides_archive(self):
+        old = Progress(Repo(), OLD)
+        archived = old.archived()
+        self.assertTrue(archived & set(old.data["repos"]), "в прежнем наборе есть архив")
+        self.assertFalse(archived & set(old.keys), "на странице его нет")
+        for fid in ("repos", "ecosystem", "snapshot"):
+            html_, _ = render(old, fid, "ru")
+            for x in old.scope["excluded"]:
+                if x["kind"] == "archive":
+                    self.assertNotIn(x["slug"].split("/")[-1], html_, fid)
 
 
 class Validator(unittest.TestCase):
@@ -127,7 +152,7 @@ class Check(unittest.TestCase):
         path = repo.path(f"data/progress/datasets/{DS}.json")
         data = json.loads(path.read_text(encoding="utf-8"))
         data["repos"]["galdhold"]["daily"]["ai"][0] += 1
-        data["repos"]["stray"] = data["repos"]["tanks"]
+        data["repos"]["stray"] = data["repos"]["dpmeta"]
         path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
         kw = repo.path("data/facts/claim_keywords.yaml")
         rules = yaml.safe_load(kw.read_text(encoding="utf-8"))

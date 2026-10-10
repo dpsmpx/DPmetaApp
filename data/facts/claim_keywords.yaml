@@ -13,7 +13,7 @@ rules:
   - {id: KW-ENGINE, pattern: '(?i)\bдвиж(ок|ка|ке|ком)\b|\bengine\b', any_of: [GH-ENGINE]}
   - {id: KW-LANGUAGE, pattern: '(?i)\bязык(а|е|ом)?\b|\blanguage\b|\bDPlang\b', any_of: [DP-WHAT]}
   - {id: KW-WINDOWS, pattern: '(?i)\bWindows\b|\bSteam\b', any_of: [GH-WINDOWS, GH-RELEASE-PLAN]}
-  - {id: KW-ANDROID, pattern: '(?i)\bAndroid\b|телефон|\bphones?\b|\bRedmi\b|\bPoco\b', any_of: [GH-ANDROID, GH-RELEASE-PLAN]}
+  - {id: KW-ANDROID, pattern: '(?i)\bAndroid\b|телефон|\bphones?\b|\bRedmi\b|\bPoco\b', any_of: [GH-ANDROID, GH-RELEASE-PLAN, APP-WHAT]}
   - {id: KW-GALDHOLD, pattern: '\bGaldhold\b', any_of: [GH-NAME]}
   - {id: KW-GENRE, pattern: '(?i)воксел|\bvoxel\b|action-RPG|процедурн|\bprocedural\b', any_of: [GH-GENRE, GH-ASSETS]}
   - {id: KW-TECH, pattern: '(?i)C\+\+|\bVulkan\b', any_of: [GH-TECH, AU-STACK]}
