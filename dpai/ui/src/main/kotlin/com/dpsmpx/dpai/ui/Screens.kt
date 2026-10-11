@@ -13,6 +13,7 @@ import com.dpsmpx.dpai.monitoring.SystemHealth
 import com.dpsmpx.dpai.monitoring.Timeline
 import com.dpsmpx.dpai.monitoring.UsageReport
 import com.dpsmpx.dpai.sessions.LiveTurn
+import com.dpsmpx.dpai.sessions.SessionRecord
 import com.dpsmpx.dpai.sessions.SessionsState
 import com.dpsmpx.dpai.tasks.TasksState
 import kotlin.time.Duration
@@ -63,6 +64,8 @@ data class SessionScreen(
     val timeline: List<TimelineLine>,
     val live: LiveLine? = null,
     val actions: List<SessionAction> = emptyList(),
+    /** Расход сессии (D-42, п. 4) — [Screens.usageLine]; ходов ещё нет — `null`. */
+    val usage: String? = null,
 )
 
 /** Действие человека с сессией (D-42, п. 3). */
@@ -128,6 +131,7 @@ object Screens {
         live: LiveTurn? = null,
         now: com.dpsmpx.dpai.core.clock.Timestamp? = null,
         actions: List<SessionAction> = emptyList(),
+        usage: UsageReport? = null,
     ): SessionScreen {
         val stream = StreamRef.of(session)
         val own = events.filter { it.stream == stream }
@@ -137,7 +141,40 @@ object Screens {
             timeline = Timeline.of(own).map { TimelineLine(it.at.toIsoString().substring(11, 19), it.text) },
             live = live?.let { l -> LiveLine(l.tool, l.target, l.text, now?.let { ago(it.epochMillis - l.at.epochMillis) } ?: "?") },
             actions = actions,
+            usage = usage?.let(::usageLine),
         )
+    }
+
+    /** Расход части сессий (D-42, п. 4): одной задачи или одной сессии — тот же отчёт D-40 по выборке. */
+    fun usage(sessions: SessionsState, pick: (SessionRecord) -> Boolean): UsageReport =
+        UsageReport.build(SessionsState(sessions.sessions.filterValues(pick)), TasksState.EMPTY)
+
+    /**
+     * Расход строкой (D-42, п. 4): ходы, вход с долей кеша, выход,
+     * стоимость. Ходы без итога — суммы лишь нижняя граница, и это
+     * написано (D-13); стоимость по прейскуранту — «оценка». Ходов нет —
+     * `null`: «0 токенов» означало бы, что их сочли.
+     */
+    fun usageLine(u: UsageReport): String? {
+        if (u.turns + u.unknownTurns == 0) return null
+        return buildString {
+            append("ходов ${u.turns}")
+            if (u.unknownTurns > 0) append(" (+${u.unknownTurns} без итога — суммы не меньше)")
+            append(" · вход ${tokens(u.totalInput)}")
+            u.cacheReadShare?.let { append(", из кеша ${(it * 100).toInt()} %") }
+            append(" · выход ${tokens(u.outputTokens)}")
+            val cents = u.costUsd.movePointRight(2)
+            append(" · ")
+            append(if (cents.signum() > 0 && cents < java.math.BigDecimal.ONE) "< 0.01 $" else "${u.costUsd.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString()} $")
+            if (u.costEstimated) append(" (оценка)")
+        }
+    }
+
+    /** Токены коротко: до 10 тыс. — как есть, дальше — тыс. и млн. */
+    fun tokens(n: Long): String = when {
+        n < 10_000 -> n.toString()
+        n < 1_000_000 -> "${n / 1000} тыс."
+        else -> "%.1f млн".format(java.util.Locale.ROOT, n / 1_000_000.0)
     }
 
     /**

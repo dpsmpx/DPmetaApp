@@ -316,6 +316,7 @@ private fun SessionPane(screen: SessionScreen?, model: DemoModel) {
     LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         item {
             screen.line?.let { SessionRow(it) } ?: Text(screen.session.value)
+            screen.usage?.let { Text("Расход: $it", style = MaterialTheme.typography.labelSmall) }
             // Живой вид хода (D-42): что модель делает сейчас.
             screen.live?.let { l ->
                 Card(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {

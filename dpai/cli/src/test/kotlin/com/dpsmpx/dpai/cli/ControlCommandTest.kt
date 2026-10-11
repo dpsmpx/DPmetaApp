@@ -15,7 +15,8 @@ class ControlCommandTest {
     @TempDir
     lateinit var dir: Path
 
-    private val state = """{"tasks":[{"id":"tsk_01M4EWP74S6EWVHWSM33QD5YK0","title":"Калькулятор","state":"READY","priority":"NORMAL","held":false,"taskClass":"NORMAL_ENGINEERING"}],
+    private val state = """{"tasks":[{"id":"tsk_01M4EWP74S6EWVHWSM33QD5YK0","title":"Калькулятор","state":"READY","priority":"NORMAL","held":false,"taskClass":"NORMAL_ENGINEERING",
+        |"usage":{"turns":2,"unknownTurns":0,"inputTokens":1200,"cacheReadTokens":600,"outputTokens":80,"costUsd":"0.0421","costEstimated":true}}],
         |"sessions":[{"id":"ses_01M4EY7BAXY3ZGE5VT0K6SF4QD","task":"tsk_01M4EWP74S6EWVHWSM33QD5YK0","state":"COMPLETED","target":"tgt_01M4EPJW9FKC2Q78Y8QHVN8P2Y","turn":1}],
         |"requests":[{"id":"req_01M4EY8H60MYC7N5W7XF7STMSB","kind":"USER_RESOLUTION","title":"Задача без проверки","body":"…","options":[
         |{"id":"verify","label":"Проверить снова","role":"ACCEPT","needsText":false,"uri":"dpai://answer/req_01M4EY8H60MYC7N5W7XF7STMSB/verify?hash=sha256:aa"},
@@ -54,6 +55,7 @@ class ControlCommandTest {
         assertEquals(0, cli(out, err).run("control", listOf("pair", "123456")))
         assertEquals(0, cli(out, err).run("status", emptyList()))
         assertTrue(out.any { "Калькулятор" in it } && out.any { "5 ч 82 %" in it }, out.toString())
+        assertTrue(out.any { "ходов 2, 0.04 \$ (оценка)" in it }, "расход задачи (D-42, п. 4): $out")
 
         assertEquals(0, cli(out, err).run("task", listOf("5YK0", "hold")))
         assertEquals("task.hold", field("command"))

@@ -17,7 +17,8 @@ import kotlin.test.assertTrue
 /** Действия задачи по состоянию (D-42): экран не предлагает того, что оркестратор отклонит. */
 class TaskScreensTest {
     private val clock = ManualClock()
-    private val id = IdGenerator(clock, RandomSource.seeded(3)).next(IdKinds.TASK)
+    private val ids = IdGenerator(clock, RandomSource.seeded(3))
+    private val id = ids.next(IdKinds.TASK)
     private fun task(state: TaskState, held: Boolean = false) =
         TaskRecord(id, "задача", "цель", Priority.NORMAL, emptySet(), emptySet(), TaskPolicy(), clock.now(), state = state, held = held)
 
@@ -62,5 +63,30 @@ class TaskScreensTest {
         val long = TaskChangesScreen.of(c, limit = 5)
         assertEquals(6, long.lines.size)
         assertTrue("dpai task <id> diff" in long.lines.last().text, "длинное — целиком в dpai")
+    }
+
+    @Test
+    fun usageOfTaskAndSessionOnScreen() {
+        fun session(u: com.dpsmpx.dpai.sessions.UsageTotals, task: com.dpsmpx.dpai.core.ids.TaskId = id) = com.dpsmpx.dpai.sessions.SessionRecord(
+            ids.next(IdKinds.SESSION), "k-" + ids.next(IdKinds.OPERATION).value, task, ids.next(IdKinds.ACCOUNT), ids.next(IdKinds.SUBSCRIPTION),
+            ids.next(IdKinds.TARGET), "/c", com.dpsmpx.dpai.core.ids.ProviderSessionId.newUuid(RandomSource.seeded(4)), null,
+            com.dpsmpx.dpai.core.state.SessionState.COMPLETED, clock.now(), clock.now(), usage = u,
+        )
+        val s1 = session(com.dpsmpx.dpai.sessions.UsageTotals(turns = 2, inputTokens = 1_000, cacheReadTokens = 39_000, outputTokens = 1_500, costUsd = java.math.BigDecimal("0.1234"), costEstimated = true))
+        val s2 = session(com.dpsmpx.dpai.sessions.UsageTotals(unknownTurns = 1))
+        val other = session(com.dpsmpx.dpai.sessions.UsageTotals(turns = 5, inputTokens = 9_000_000, costUsd = java.math.BigDecimal("3")), task = ids.next(IdKinds.TASK))
+        val sessions = SessionsState(listOf(s1, s2, other).associateBy { it.id })
+
+        assertEquals(
+            "ходов 2 (+1 без итога — суммы не меньше) · вход 40 тыс., из кеша 97 % · выход 1500 · 0.12 $ (оценка)",
+            TaskScreens.detail(task(TaskState.RUNNING), sessions).usage,
+            "сессии чужой задачи не считаются",
+        )
+        assertEquals(null, TaskScreens.detail(task(TaskState.READY), SessionsState.EMPTY).usage, "ходов нет — не «0 токенов»")
+        assertTrue(Screens.usageLine(Screens.usage(sessions) { it.id == s2.id })!!.startsWith("ходов 0 (+1 без итога"), "только ход без итога — строка есть")
+        assertEquals("ходов 5 · вход 9.0 млн, из кеша 0 % · выход 0 · 3.00 $", Screens.usageLine(Screens.usage(sessions) { it.id == other.id }))
+        val cheap = s1.copy(usage = s1.usage.copy(costUsd = java.math.BigDecimal("0.004"), costEstimated = false))
+        assertEquals("< 0.01 $", Screens.usageLine(Screens.usage(SessionsState(mapOf(cheap.id to cheap))) { true })!!.substringAfterLast(" · "))
+        assertEquals(listOf("9999", "10 тыс.", "1.5 млн"), listOf(9_999L, 10_000L, 1_500_000L).map(Screens::tokens))
     }
 }

@@ -14,11 +14,14 @@ import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonParser
 import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.core.serialization.JsonValue
+import com.dpsmpx.dpai.monitoring.UsageReport
 import com.dpsmpx.dpai.notifications.RequestAction
 import com.dpsmpx.dpai.orchestrator.Orchestrator
 import com.dpsmpx.dpai.orchestrator.commands.Command
 import com.dpsmpx.dpai.orchestrator.git.TaskChanges
+import com.dpsmpx.dpai.sessions.SessionsState
 import com.dpsmpx.dpai.storage.vfs.Vfs
+import com.dpsmpx.dpai.tasks.TasksState
 import java.security.MessageDigest
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
@@ -195,6 +198,7 @@ class ControlApi(
 object ControlSnapshot {
     fun of(o: Orchestrator): JsonObject {
         val now = o.now()
+        val byTask = o.sessions.sessions.values.groupBy { it.task }
         return JsonObject(
             linkedMapOf<String, JsonValue>(
                 "tasks" to JsonArray(
@@ -209,6 +213,7 @@ object ControlSnapshot {
                                 // Причина — пока что-то не так; у выполненной это уже история (отмена до повтора и т. п.).
                                 t.lastReason?.takeIf { t.state != com.dpsmpx.dpai.core.state.TaskState.DONE }?.let { put("reason", JsonString(it.name)) }
                                 o.waitingReason(t.id)?.let { put("waiting", JsonString(it)) }
+                                byTask[t.id]?.let { ss -> usage(UsageReport.build(SessionsState(ss.associateBy { it.id }), TasksState.EMPTY)) }?.let { put("usage", it) }
                             },
                         )
                     },
@@ -284,6 +289,20 @@ object ControlSnapshot {
             put("diagnostics", CommandCodec.diagnostics(warnings))
         },
     )
+
+    /**
+     * Расход задачи (D-42, п. 4): со слов провайдера; стоимость — строкой
+     * (точная десятичная), `costEstimated` — по прейскуранту. Ходов нет —
+     * `null`, поля нет: «ноль» означал бы, что ходы сочтены (D-13).
+     */
+    fun usage(u: UsageReport): JsonObject? {
+        if (u.turns + u.unknownTurns == 0) return null
+        return JsonObject.of(
+            "turns" to JsonNumber.of(u.turns), "unknownTurns" to JsonNumber.of(u.unknownTurns),
+            "inputTokens" to JsonNumber.of(u.totalInput), "cacheReadTokens" to JsonNumber.of(u.cacheReadTokens), "outputTokens" to JsonNumber.of(u.outputTokens),
+            "costUsd" to JsonString(u.costUsd.toPlainString()), "costEstimated" to JsonBool(u.costEstimated),
+        )
+    }
 
     fun messages(o: Orchestrator, task: com.dpsmpx.dpai.core.ids.TaskId): JsonObject = JsonObject.of(
         "messages" to JsonArray(

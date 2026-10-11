@@ -42,6 +42,7 @@ import com.dpsmpx.dpai.verification.VerifyStep
 import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.minutes
 import org.junit.jupiter.api.io.TempDir
@@ -108,6 +109,7 @@ class ControlApiTest {
         val task = IdKinds.TASK.parse(str(add.body, "value")).valueOrNull()!!
         val state = api.handle("GET", "/v1/state", token, null)
         assertTrue("из dpai" in CanonicalJson.write(state.body))
+        assertFalse(""""usage"""" in CanonicalJson.write(state.body), "ходов не было — расхода нет, а не нули")
         assertEquals(400, api.handle("POST", "/v1/commands", token, """{"command":"task.hold","task":"${task.value}","лишнее":1}""").status, "лишнее поле — отказ")
         val cancel = CanonicalJson.write(CommandCodec.encode(Command.Cancel(task)))
         assertEquals(409, api.handle("POST", "/v1/commands", token, cancel).status, "опасное без --yes")

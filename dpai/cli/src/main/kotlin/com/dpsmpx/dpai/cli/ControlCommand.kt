@@ -114,6 +114,7 @@ class ControlCommand(
         for (t in tasks) {
             val extra = listOfNotNull(
                 "архив".takeIf { bool(t, "archived") }, "пауза".takeIf { bool(t, "held") }, str(t, "model"), str(t, "reason"), str(t, "waiting")?.let { "ждёт: $it" },
+                (t["usage"] as? JsonObject)?.let(::usage),
             ).joinToString(" · ")
             out("  ${short(str(t, "id"))}  ${str(t, "state")}  ${str(t, "priority")}  ${str(t, "title")}${if (extra.isNotEmpty()) "  [$extra]" else ""}")
         }
@@ -132,6 +133,13 @@ class ControlCommand(
         val control = s["control"] as? JsonObject
         control?.let { c -> num(c, "maxSessions")?.let { out("Предел сессий контура: $it") } }
         return OK
+    }
+
+    /** Расход задачи коротко (D-42, п. 4): ходы и стоимость; суммы с ходами без итога — нижняя граница. */
+    private fun usage(u: JsonObject): String {
+        val cost = str(u, "costUsd")?.toBigDecimalOrNull()?.setScale(2, java.math.RoundingMode.HALF_UP)?.toPlainString() ?: "?"
+        val unknown = num(u, "unknownTurns")?.takeIf { it > 0 }?.let { " (+$it без итога)" }.orEmpty()
+        return "ходов ${num(u, "turns")}$unknown, $cost \$${if (bool(u, "costEstimated")) " (оценка)" else ""}"
     }
 
     private fun requests(): Int {

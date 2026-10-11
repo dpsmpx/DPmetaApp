@@ -46,6 +46,8 @@ data class TaskDetail(
     val actions: List<TaskAction>,
     /** Почему готовая задача не начинается (нет слота, подписка у предела) — если оркестратор знает. */
     val waiting: String? = null,
+    /** Расход всех сессий задачи (D-42, п. 4) — [Screens.usageLine]; ходов ещё нет — `null`. */
+    val usage: String? = null,
 )
 
 /**
@@ -79,6 +81,7 @@ object TaskScreens {
         lastSession = sessions.sessions.values.filter { it.task == t.id }.maxByOrNull { it.createdAt.epochMillis }?.id,
         actions = actions(t),
         waiting = waiting?.takeIf { t.state == TaskState.READY },
+        usage = Screens.usageLine(Screens.usage(sessions) { it.task == t.id }),
     )
 }
 

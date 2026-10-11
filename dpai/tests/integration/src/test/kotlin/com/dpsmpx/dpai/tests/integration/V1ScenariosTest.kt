@@ -318,6 +318,8 @@ class V1ScenariosTest {
 
         runUntilQuiet(3)
         assertEquals(TaskState.DONE, state(t))
+        // Расход задачи в снимке канала (D-42, п. 4): ход был — поле есть.
+        assertTrue(""""usage":{""" in CanonicalJson.write(ControlSnapshot.of(orchestrator)))
         val done = orchestrator.taskChanges(t)
         assertTrue(done.diagnostics.isEmpty(), done.diagnostics.toString())
         val committed = done.valueOrNull()!!.committed!!

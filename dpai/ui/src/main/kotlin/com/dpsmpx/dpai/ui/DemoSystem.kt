@@ -125,6 +125,7 @@ class DemoSystem(
 
     override fun session(id: SessionId): SessionScreen = Screens.session(
         orchestrator.dashboard(), id, events(), orchestrator.live(id), clock.now(), Screens.sessionActions(id, orchestrator.sessions, orchestrator.tasks),
+        Screens.usage(orchestrator.sessions) { it.id == id },
     )
 
     override fun board(): TaskBoard = Screens.board(orchestrator.tasks)
