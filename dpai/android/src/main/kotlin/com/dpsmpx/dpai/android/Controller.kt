@@ -177,6 +177,19 @@ class Controller(private val root: File, val version: String?) {
         }
     }
 
+    /** Переименовать target (слот): имя — от 1 до 60 знаков, как в форме; остальное не меняется. */
+    @Synchronized
+    fun rename(entry: TargetEntry, label: String): Outcome<Unit> {
+        val name = label.trim()
+        if (name.isEmpty() || name.length > 60 || name.any { it.isISOControl() }) {
+            return Outcome.failure(DiagCode.VALUE_INVALID, "имя — от 1 до 60 знаков", "label")
+        }
+        return when (val w = docs.write(BOOK, TargetBook.toJson(targets().map { if (it.id == entry.id) it.copy(label = name) else it }))) {
+            is Outcome.Failure -> w
+            is Outcome.Success -> Outcome.success(Unit)
+        }
+    }
+
     @Synchronized
     fun remove(entry: TargetEntry): Outcome<Unit> =
         when (val w = docs.write(BOOK, TargetBook.toJson(targets().filter { it.id != entry.id }))) {

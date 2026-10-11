@@ -206,10 +206,15 @@ object Screens {
      * Пределы подписок (D-45): загрузка окон «5 ч» и «неделя», время сброса
      * в поясе [zone], порог; тон окна — по порогу.
      */
-    fun limits(accounts: com.dpsmpx.dpai.accounts.AccountsState, now: com.dpsmpx.dpai.core.clock.Timestamp, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): List<SubscriptionLimits> =
+    fun limits(
+        accounts: com.dpsmpx.dpai.accounts.AccountsState,
+        now: com.dpsmpx.dpai.core.clock.Timestamp,
+        zone: java.time.ZoneId = java.time.ZoneId.systemDefault(),
+        labelOf: (com.dpsmpx.dpai.accounts.SubscriptionState) -> String = { it.label },
+    ): List<SubscriptionLimits> =
         accounts.subscriptions.values.sortedBy { it.id.value }.map { sub ->
             SubscriptionLimits(
-                sub.id, sub.label,
+                sub.id, labelOf(sub),
                 com.dpsmpx.dpai.accounts.LimitWindow.entries.map { w ->
                     val ws = sub.window(w)
                     val u = ws.utilization

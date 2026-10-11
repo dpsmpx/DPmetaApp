@@ -61,6 +61,22 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
     var guide by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf<TargetEntry?>(null) }
     var restoring by remember { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf<TargetEntry?>(null) }
+    renaming?.let { r ->
+        RenameDialog(r) { name ->
+            if (name == null) {
+                renaming = null
+            } else {
+                scope.launch {
+                    when (val w = withContext(Dispatchers.IO) { controller.rename(r, name) }) {
+                        is Outcome.Failure -> checks[r.id.value] = listOf(CheckLine("имя", w.diagnostics.first().message, Tone.ERROR))
+                        is Outcome.Success -> targets = controller.targets()
+                    }
+                    renaming = null
+                }
+            }
+        }
+    }
     // Кто чем занят (D-56) — раз в 5 с, пока экран открыт.
     var work by remember { mutableStateOf(emptyMap<com.dpsmpx.dpai.core.ids.ExecutionTargetId, List<String>>()) }
     androidx.compose.runtime.LaunchedEffect(Unit) {
@@ -160,6 +176,7 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
                     Text(t.configDir?.let { "каталог Claude: $it" } ?: "без каталога Claude — только проверка агента", style = MaterialTheme.typography.bodySmall)
                     // Чем занят слот (D-56): идущие задачи с проектом; нет — свободен.
                     if (t.configDir != null) {
+                        UsageAutoSwitch(model, t)
                         val busy = work[t.id].orEmpty()
                         Text(if (busy.isEmpty()) "Сейчас: свободен" else "Сейчас: " + busy.joinToString("; "), style = MaterialTheme.typography.bodySmall)
                     }
@@ -173,6 +190,7 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
                         }
                         // Проект — у любого target: ход Claude может идти на другом, со своим входом (D-50).
                         TextButton(onClick = { projectFor = t }) { Text("Проект") }
+                        TextButton(onClick = { renaming = t }) { Text("Имя") }
                         TextButton(onClick = { removing = t }) { Text("Удалить") }
                     }
                     checks[t.id.value]?.forEach { c -> CheckRow(c) }
@@ -743,5 +761,34 @@ private fun RestoreCard(controller: Controller, onHide: () -> Unit, onRestored: 
             report.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
             TextButton(onClick = onHide) { Text("Скрыть") }
         }
+    }
+}
+
+/** Новое имя слота (target): от 1 до 60 знаков; `null` — отмена. */
+@Composable
+private fun RenameDialog(t: TargetEntry, onDone: (String?) -> Unit) {
+    var name by remember { mutableStateOf(t.label) }
+    AlertDialog(
+        onDismissRequest = { onDone(null) },
+        title = { Text("Имя слота") },
+        text = { OutlinedTextField(name, { name = it.take(60) }, label = { Text("Имя") }, singleLine = true) },
+        confirmButton = { TextButton(enabled = name.isNotBlank(), onClick = { onDone(name) }) { Text("Сохранить") } },
+        dismissButton = { TextButton(onClick = { onDone(null) }) { Text("Отмена") } },
+    )
+}
+
+/** Автообновление лимитов слота: включили — `/usage` сразу, дальше раз в минуту в фоне ([UsageAuto]). */
+@Composable
+private fun UsageAutoSwitch(model: DemoModel, t: TargetEntry) {
+    val context = androidx.compose.ui.platform.LocalContext.current.applicationContext
+    val scope = rememberCoroutineScope()
+    var on by remember { mutableStateOf(t.id in UsageAuto.enabled(context)) }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("Лимиты: обновлять раз в минуту", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+        androidx.compose.material3.Switch(checked = on, onCheckedChange = { v ->
+            on = v
+            UsageAuto.set(context, t.id, v)
+            if (v) scope.launch { withContext(Dispatchers.IO) { model.refreshUsage(setOf(t.id)) } }
+        })
     }
 }

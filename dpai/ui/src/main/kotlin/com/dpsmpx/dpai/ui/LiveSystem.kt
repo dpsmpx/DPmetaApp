@@ -206,8 +206,8 @@ class LiveSystem(
      * Обновить загрузку окон подписок (D-48): `/usage` на каждом target со
      * слотом — без хода и без траты лимита. Уже идёт — ничего.
      */
-    fun refreshUsage() {
-        for (e in usable) {
+    fun refreshUsage(only: Set<ExecutionTargetId>? = null) {
+        for (e in usable.filter { only == null || it.id in only }) {
             val slot = slotOf[e.id] ?: continue
             if (synchronized(usageProbes) { e.id in usageProbes }) continue
             val dir = orchestrator.accounts.slots[slot]?.configDir ?: continue
@@ -384,7 +384,17 @@ class LiveSystem(
         val retry = usable.filter { it.id in probeFailedAt && it.id !in slotOf }
             .map { "${it.label}: проба входа не удалась — повтор раз в минуту; «Вход Claude» — сразу" }
         val extra = notes + login + retry + (problems + orchestrator.problems).takeLast(5).map { "${it.code}: ${it.message}" }
-        return base.copy(attention = base.attention + extra, limits = Screens.limits(orchestrator.accounts, clock.now()))
+        return base.copy(attention = base.attention + extra, limits = Screens.limits(orchestrator.accounts, clock.now(), labelOf = ::subscriptionName))
+    }
+
+    /**
+     * Имя подписки для человека: тариф и нынешние имена её targets — «pro —
+     * Мой слот»; имя при регистрации хранило имя target на тот момент и
+     * после переименования слота устаревало бы.
+     */
+    fun subscriptionName(sub: com.dpsmpx.dpai.accounts.SubscriptionState): String {
+        val names = orchestrator.accounts.slotsOf(sub.id).mapNotNull { s -> usable.firstOrNull { it.id == s.targetId }?.label }.distinct()
+        return if (names.isEmpty()) sub.label else (sub.plan?.let { "$it — " } ?: "") + names.joinToString(", ")
     }
 
     override fun board(): TaskBoard = Screens.board(orchestrator.tasks)

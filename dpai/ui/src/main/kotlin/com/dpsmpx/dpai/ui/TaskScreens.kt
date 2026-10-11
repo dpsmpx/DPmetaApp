@@ -94,7 +94,7 @@ object TaskScreens {
      * подписка pro»; неизвестный слот — его target.
      */
     fun slotName(accounts: com.dpsmpx.dpai.accounts.AccountsState?, s: com.dpsmpx.dpai.sessions.SessionRecord, targetLabel: (com.dpsmpx.dpai.core.ids.ExecutionTargetId) -> String): String =
-        targetLabel(s.target) + (accounts?.subscriptions?.get(s.subscription)?.let { " · ${it.label}" } ?: "")
+        targetLabel(s.target) + (accounts?.subscriptions?.get(s.subscription)?.let { " · ${it.plan ?: it.label}" } ?: "")
 
     /**
      * Почему задача ушла с прежней сессии (D-56): по её handoff — предел

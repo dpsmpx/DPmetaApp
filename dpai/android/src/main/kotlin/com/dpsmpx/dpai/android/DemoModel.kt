@@ -327,8 +327,8 @@ class DemoModel(
     }
 
     /** Обновить загрузку окон подписок через `/usage` (D-48): без хода, лимит не тратится. */
-    fun refreshUsage() = lock.withLock {
-        liveSystem().valueOrNull()?.refreshUsage()
+    fun refreshUsage(only: Set<com.dpsmpx.dpai.core.ids.ExecutionTargetId>? = null) = lock.withLock {
+        liveSystem().valueOrNull()?.refreshUsage(only)
         Unit
     }
 
