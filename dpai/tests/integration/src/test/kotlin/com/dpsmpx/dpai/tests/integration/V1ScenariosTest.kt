@@ -13,6 +13,7 @@ import com.dpsmpx.dpai.core.ids.ProviderSessionId
 import com.dpsmpx.dpai.core.ids.SessionId
 import com.dpsmpx.dpai.core.ids.TaskId
 import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.core.serialization.CanonicalJson
 import com.dpsmpx.dpai.core.state.SessionState
 import com.dpsmpx.dpai.core.state.TaskState
 import com.dpsmpx.dpai.execution.claude.ClaudeCodeCli
@@ -31,6 +32,7 @@ import com.dpsmpx.dpai.notifications.NotificationDecision
 import com.dpsmpx.dpai.orchestrator.Orchestrator
 import com.dpsmpx.dpai.orchestrator.ProjectConfig
 import com.dpsmpx.dpai.orchestrator.TargetSlot
+import com.dpsmpx.dpai.orchestrator.control.ControlSnapshot
 import com.dpsmpx.dpai.orchestrator.git.GitService
 import com.dpsmpx.dpai.orchestrator.git.WorktreesProjection
 import com.dpsmpx.dpai.orchestrator.verification.ProcessStepRunner
@@ -309,6 +311,10 @@ class V1ScenariosTest {
         assertEquals(emptyList(), working.committed, "коммитов в ветке ещё нет")
         assertTrue(working.uncommitted!!.any { it == "+правка задачи" }, working.uncommitted.toString())
         assertEquals(listOf("feature.txt"), working.untracked)
+        // Канал `dpai` (D-47): нет части — нет поля; пустая часть — пустой список.
+        val json = CanonicalJson.write(ControlSnapshot.changes(working, emptyList()))
+        assertTrue(""""committed":[]""" in json && """"untracked":["feature.txt"]""" in json && "+правка задачи" in json, json)
+        assertFalse("committed" in CanonicalJson.write(ControlSnapshot.changes(before, emptyList())))
 
         runUntilQuiet(3)
         assertEquals(TaskState.DONE, state(t))

@@ -115,6 +115,11 @@ class ControlApiTest {
         assertEquals(200, done.status, done.body.toString())
         assertEquals(TaskState.CANCELLED, o.tasks.tasks.getValue(task).state)
         assertEquals(200, api.handle("GET", "/v1/tasks/${task.value}/messages", token, null).status)
+        val changes = api.handle("GET", "/v1/tasks/${task.value}/changes", token, null)
+        assertEquals(422, changes.status, "без репозитория смотреть нечего: ${changes.body}")
+        assertTrue("UNSUPPORTED" in CanonicalJson.write(changes.body))
+        assertEquals(400, api.handle("GET", "/v1/tasks/не-id/changes", token, null).status)
+        assertEquals(404, api.handle("GET", "/v1/tasks/${task.value}/плясать", token, null).status)
 
         // Лимит попыток: шестая — отказ и для верного кода.
         val (code2, _) = pairing.newCode()

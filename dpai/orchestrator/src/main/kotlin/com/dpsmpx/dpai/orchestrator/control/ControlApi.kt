@@ -17,6 +17,7 @@ import com.dpsmpx.dpai.core.serialization.JsonValue
 import com.dpsmpx.dpai.notifications.RequestAction
 import com.dpsmpx.dpai.orchestrator.Orchestrator
 import com.dpsmpx.dpai.orchestrator.commands.Command
+import com.dpsmpx.dpai.orchestrator.git.TaskChanges
 import com.dpsmpx.dpai.storage.vfs.Vfs
 import java.security.MessageDigest
 import kotlin.time.Duration
@@ -102,6 +103,8 @@ class Pairing(private val vfs: Vfs, private val random: RandomSource, private va
  * - `POST /v1/pair` `{"code"}` — токен (без токена);
  * - `GET /v1/state` — задачи, сессии, ждущие запросы, подписки, настройки;
  * - `GET /v1/tasks/<id>/messages` — итоговые сообщения ходов задачи;
+ * - `GET /v1/tasks/<id>/changes` — изменения задачи (D-42, п. 3): что
+ *   принесёт слияние ветки задачи и что в её дереве не закоммичено;
  * - `POST /v1/commands` — команда ([CommandCodec]) через очередь контура:
  *   [submit] — та же, что у экрана (D-42, п. 1); опасное — только с
  *   `confirmed` (ТЗ, §68).
@@ -124,13 +127,21 @@ class ControlApi(
         val o = orchestrator() ?: return error(503, DiagCode.OPERATION_NOT_ALLOWED, "контроллер не запущен: в приложении нет target с каталогом Claude")
         return when {
             method == "GET" && path == "/v1/state" -> ControlResponse(200, ControlSnapshot.of(o))
-            method == "GET" && path.startsWith("/v1/tasks/") && path.endsWith("/messages") -> {
-                val id = IdKinds.TASK.parse(path.removePrefix("/v1/tasks/").removeSuffix("/messages")).valueOrNull()
-                    ?: return error(400, DiagCode.ID_INVALID, "ожидался TaskId")
-                ControlResponse(200, ControlSnapshot.messages(o, id))
-            }
+            method == "GET" && path.startsWith("/v1/tasks/") && path.count { it == '/' } == 4 -> task(o, path.substringAfterLast('/'), path.removePrefix("/v1/tasks/").substringBefore('/'))
             method == "POST" && path == "/v1/commands" -> command(o, body)
             else -> error(404, DiagCode.UNSUPPORTED, "нет такого пути: $method $path")
+        }
+    }
+
+    /** Чтение по задаче: `messages`, `changes`. */
+    private fun task(o: Orchestrator, what: String, raw: String): ControlResponse {
+        if (what != "messages" && what != "changes") return error(404, DiagCode.UNSUPPORTED, "нет такого пути: GET /v1/tasks/…/$what")
+        val id = IdKinds.TASK.parse(raw).valueOrNull() ?: return error(400, DiagCode.ID_INVALID, "ожидался TaskId")
+        if (what == "messages") return ControlResponse(200, ControlSnapshot.messages(o, id))
+        return when (val r = o.taskChanges(id)) {
+            // Нет задачи — 404; нет репозитория или Git — 422: запрос верен, смотреть нечего.
+            is Outcome.Failure -> ControlResponse(if (r.errors.first().code == DiagCode.ENTITY_NOT_FOUND) 404 else 422, failure(r.diagnostics))
+            is Outcome.Success -> ControlResponse(200, ControlSnapshot.changes(r.value, r.diagnostics))
         }
     }
 
@@ -261,6 +272,18 @@ object ControlSnapshot {
             ),
         )
     }
+
+    /** Изменения задачи: части как строки вывода Git; нет части — поля нет (ветки или дерева нет), а не пустой список. */
+    fun changes(c: TaskChanges, warnings: List<Diagnostic>): JsonObject = JsonObject(
+        linkedMapOf<String, JsonValue>("branch" to JsonString(c.branch)).apply {
+            c.base?.let { put("base", JsonString(it)) }
+            c.committed?.let { put("committed", JsonArray(it.map(::JsonString))) }
+            c.uncommitted?.let { put("uncommitted", JsonArray(it.map(::JsonString))) }
+            put("untracked", JsonArray(c.untracked.map(::JsonString)))
+            put("truncated", JsonBool(c.truncated))
+            put("diagnostics", CommandCodec.diagnostics(warnings))
+        },
+    )
 
     fun messages(o: Orchestrator, task: com.dpsmpx.dpai.core.ids.TaskId): JsonObject = JsonObject.of(
         "messages" to JsonArray(

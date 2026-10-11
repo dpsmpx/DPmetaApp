@@ -23,6 +23,9 @@ class ControlCommandTest {
         |"subscriptions":[{"id":"sub_01M4EVC6NCPMK72R25GZV67HSW","label":"подписка pro","nearPercent":80,"near":true,"windows":[{"window":"SESSION","level":"OK","percent":82}]}],
         |"slots":[],"control":{"disabledTargets":[]}}""".trimMargin()
 
+    private var changes = """{"branch":"task/tsk_01M4EWP74S6EWVHWSM33QD5YK0","base":"main","committed":[" calc.py | 2 +-","+print(2)"],
+        |"uncommitted":[],"untracked":["notes.txt"],"truncated":true,"diagnostics":[]}""".trimMargin()
+
     private val sent = mutableListOf<Pair<String, JsonObject?>>()
 
     private fun cli(out: MutableList<String>, err: MutableList<String>) = ControlCommand(out::add, err::add, NioVfs(dir)) { _ ->
@@ -32,6 +35,7 @@ class ControlCommandTest {
                 path == "/v1/pair" -> HttpReply(200, obj("""{"token":"${"a".repeat(64)}"}"""))
                 token == null -> HttpReply(401, obj("""{"status":"FAILED","diagnostics":[]}"""))
                 path == "/v1/state" -> HttpReply(200, obj(state))
+                path.endsWith("/changes") -> HttpReply(200, obj(changes))
                 else -> HttpReply(200, obj("""{"operation":"x","operationId":"op_1","status":"SUCCEEDED","diagnostics":[]}"""))
             }
         }
@@ -67,5 +71,26 @@ class ControlCommandTest {
         assertEquals(0, cli(out, err).run("sessions-limit", listOf("off")))
         assertEquals("control.session-limit", field("command"))
         assertTrue(sent.last().second!!["limit"] == null, "off — без предела")
+    }
+
+    @Test
+    fun taskDiffShowsWhatTheMergeWouldBring() {
+        val out = mutableListOf<String>()
+        val err = mutableListOf<String>()
+        assertEquals(0, cli(out, err).run("control", listOf("pair", "123456")))
+        assertEquals(0, cli(out, err).run("task", listOf("5YK0", "diff")))
+        assertEquals("GET /v1/tasks/tsk_01M4EWP74S6EWVHWSM33QD5YK0/changes", sent.last().first, "сокращённый id раскрыт")
+        assertTrue(out.any { "main...task/tsk_01M4EWP74S6EWVHWSM33QD5YK0" in it } && "+print(2)" in out, out.toString())
+        assertTrue(out.none { "не закоммичено" in it }, "пустая часть не печатается")
+        assertTrue("  notes.txt" in out && out.any { "обрезан" in it }, out.toString())
+
+        out.clear()
+        changes = """{"branch":"task/x","base":"main","untracked":[],"truncated":false,"diagnostics":[]}"""
+        assertEquals(0, cli(out, err).run("task", listOf("5YK0", "diff")))
+        assertTrue(out.single().contains("ещё нет"), "ни ветки, ни дерева — задача не начиналась: $out")
+        out.clear()
+        changes = """{"branch":"task/x","base":"main","committed":[],"uncommitted":[],"untracked":[],"truncated":false,"diagnostics":[]}"""
+        cli(out, err).run("task", listOf("5YK0", "diff"))
+        assertTrue(out.single().startsWith("изменений нет"), out.toString())
     }
 }

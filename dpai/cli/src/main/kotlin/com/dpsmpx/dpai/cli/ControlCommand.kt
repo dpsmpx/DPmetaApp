@@ -12,6 +12,7 @@ import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonParser
 import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.core.serialization.JsonValue
+import com.dpsmpx.dpai.orchestrator.git.TaskChanges
 import com.dpsmpx.dpai.storage.vfs.NioVfs
 import com.dpsmpx.dpai.storage.vfs.Vfs
 import java.net.URI
@@ -164,6 +165,7 @@ class ControlCommand(
         val id = args.getOrNull(0) ?: return usage(TASK_USAGE)
         val action = args.getOrNull(1) ?: return usage(TASK_USAGE)
         if (action == "messages") return messages(id)
+        if (action == "diff") return changes(id)
         val task = resolve(id, "tasks") ?: return FAILED
         val c = linkedMapOf<String, JsonValue>("task" to JsonString(task))
         when (action) {
@@ -206,6 +208,37 @@ class ControlCommand(
             out("── ход ${num(m, "turn")} · ${str(m, "status")}${str(m, "model")?.let { " · $it" } ?: ""}")
             out(str(m, "text").orEmpty())
         }
+        return OK
+    }
+
+    /** Изменения задачи (D-42, п. 3): что принесёт слияние, что не закоммичено, новые файлы. */
+    private fun changes(id: String): Int {
+        val task = resolve(id, "tasks") ?: return FAILED
+        val r = call("GET", "/v1/tasks/$task/changes", null) ?: return FAILED
+        if (json) return print(r)
+        val committed = strings(r, "committed")
+        val uncommitted = strings(r, "uncommitted")
+        val untracked = strings(r, "untracked").orEmpty()
+        val branch = str(r, "branch")
+        when {
+            committed == null && uncommitted == null ->
+                out(if (str(r, "base") == null) "показать нечего: у проекта нет ветки интеграции, дерева задачи нет" else "ветки $branch ещё нет: задача не начиналась")
+            committed.isNullOrEmpty() && uncommitted.isNullOrEmpty() && untracked.isEmpty() -> out("изменений нет: в $branch нет ничего, чего нет в ${str(r, "base") ?: "базе"}")
+        }
+        if (!committed.isNullOrEmpty()) {
+            out("── что принесёт слияние (${str(r, "base")}...$branch)")
+            committed.forEach(out)
+        }
+        if (!uncommitted.isNullOrEmpty()) {
+            out("── не закоммичено в дереве задачи")
+            uncommitted.forEach(out)
+        }
+        if (untracked.isNotEmpty()) {
+            out("── новые файлы, ещё не в Git (${untracked.size})")
+            untracked.forEach { out("  $it") }
+        }
+        if (bool(r, "truncated")) out("── вывод обрезан: часть длиннее ${TaskChanges.MAX_LINES} строк")
+        list(r, "diagnostics").forEach { err("${str(it, "code")}: ${str(it, "message")}") }
         return OK
     }
 
@@ -348,14 +381,14 @@ class ControlCommand(
         const val USAGE_ERROR = 2
 
         private const val TASK_USAGE = "dpai task add «название» «что сделать» [--priority HIGH] [--class trivial] [--model haiku] [--effort low] [--budget 0.25]\n" +
-            "dpai task <id> hold|resume|retry [--text «…»]|verify|messages|priority <P>|policy --class <к> …|archive|unarchive|cancel --yes|waive --reason «…» --yes\n" +
+            "dpai task <id> hold|resume|retry [--text «…»]|verify|messages|diff|priority <P>|policy --class <к> …|archive|unarchive|cancel --yes|waive --reason «…» --yes\n" +
             "dpai task archive-done   — все завершённые в архив"
         private const val SESSION_USAGE = "dpai session <id> stop | send «запрос» [--model m] [--effort e] | fresh [«запрос»]"
 
         val USAGE = """
             |  dpai control pair <код>   сопряжение с приложением (код — Targets → «Командная строка»)
             |  dpai status [--all]       задачи (без архива), сессии, запросы, загрузка подписки
-            |  dpai task …               add | archive-done | <id> hold|resume|cancel|retry|verify|waive|priority|policy|archive|unarchive|messages
+            |  dpai task …               add | archive-done | <id> hold|resume|cancel|retry|verify|waive|priority|policy|archive|unarchive|messages|diff
             |  dpai session <id> …       stop | send «запрос» | fresh
             |  dpai requests             ждущие запросы;  dpai answer <запрос> <вариант> [--text] [--yes]
             |  dpai limit <процент>      порог «у предела»;  dpai sessions-limit <n|off>
@@ -377,6 +410,8 @@ class ControlCommand(
 
         private fun list(o: JsonObject, k: String): List<JsonObject> = (o[k] as? JsonArray)?.items.orEmpty().filterIsInstance<JsonObject>()
 
+        /** Список строк; поля нет — `null` (не «пусто»: части нет вовсе). */
+        private fun strings(o: JsonObject, k: String): List<String>? = (o[k] as? JsonArray)?.items?.mapNotNull { (it as? JsonString)?.value }
         private fun short(id: String?): String = id?.let { if (it.length > 12) it.take(4) + "…" + it.takeLast(6) else it } ?: "?"
     }
 }
