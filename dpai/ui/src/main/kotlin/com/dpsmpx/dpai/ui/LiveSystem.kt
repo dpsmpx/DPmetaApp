@@ -203,6 +203,46 @@ class LiveSystem(
     }
 
     /**
+     * Слот «нужен вход» после отказа хода (D-58): без сети Claude Code не
+     * обновляет токен и отвечает `authentication_failed`, хотя вход цел —
+     * слот перепроверяется сам (`claude auth status`, локально, без хода и
+     * лимита) через 2, 4, 8 … 60 минут; вход цел — слот снова доступен, и
+     * задачи, остановленные из‑за входа, продолжаются сами. Пауза растёт,
+     * чтобы настоящий отзыв входа не гонял задачу по кругу; сбрасывается
+     * после [AUTH_STABLE_MS] доступности слота.
+     */
+    private fun recheckLogins(now: Long) {
+        for (e in usable) {
+            val slot = slotOf[e.id] ?: continue
+            val st = orchestrator.accounts.slots[slot] ?: continue
+            if (st.state != com.dpsmpx.dpai.core.state.AccountState.AUTH_REQUIRED || st.disabled) {
+                if (st.state == com.dpsmpx.dpai.core.state.AccountState.AVAILABLE) {
+                    authRecheck[e.id]?.let { (n, at) -> if (now - at >= AUTH_STABLE_MS) authRecheck.remove(e.id) else authRecheck[e.id] = n to at }
+                }
+                continue
+            }
+            if (e.id in probes) continue
+            val (n, at) = authRecheck[e.id] ?: run {
+                authRecheck[e.id] = 0 to now
+                continue
+            }
+            val wait = (AUTH_RECHECK_FIRST_MS shl n.coerceAtMost(5)).coerceAtMost(AUTH_RECHECK_MAX_MS)
+            if (now - at >= wait) {
+                authRecheck[e.id] = (n + 1) to now
+                probeSlot(e.id)
+            }
+        }
+    }
+
+    /** Перепроверки входа слота (D-58): сколько было подряд и когда последняя. */
+    private val authRecheck = HashMap<ExecutionTargetId, Pair<Int, Long>>()
+
+    /** Когда перепроверить вход слота снова (D-58) — для экрана; не ждёт — `null`. */
+    fun loginRecheckAt(target: ExecutionTargetId): Long? = authRecheck[target]?.let { (n, at) ->
+        at + (AUTH_RECHECK_FIRST_MS shl n.coerceAtMost(5)).coerceAtMost(AUTH_RECHECK_MAX_MS)
+    }?.takeIf { slotOf[target]?.let { orchestrator.accounts.slots[it]?.state } == com.dpsmpx.dpai.core.state.AccountState.AUTH_REQUIRED }
+
+    /**
      * Обновить загрузку окон подписок (D-48): `/usage` на каждом target со
      * слотом — без хода и без траты лимита. Уже идёт — ничего.
      */
@@ -344,6 +384,7 @@ class LiveSystem(
         for ((target, at) in probeFailedAt.entries.toList()) {
             if (target !in slotOf && target !in probes && now - at >= PROBE_RETRY_MS) probeSlot(target)
         }
+        recheckLogins(now)
         pollUsage()
         // Git проекта — проверка один раз (дальше — по итогам операций контура) и снова, пока не работает, раз в минуту.
         if (project != null && orchestrator.gitOk != true && clock.now().epochMillis - lastGitCheck >= GIT_RECHECK_MS) {
@@ -380,7 +421,13 @@ class LiveSystem(
 
     override fun dashboard(): DashboardScreen {
         val base = Screens.dashboard(orchestrator.dashboard(), diagnosis(), orchestrator.usage())
-        val login = usable.filter { it.id in waitingLogin }.map { "${it.label}: войдите в Claude в каталоге ${it.configDir}, затем «Вход Claude»" }
+        val login = usable.filter { it.id in waitingLogin }.map { "${it.label}: войдите в Claude в каталоге ${it.configDir}, затем «Вход Claude»" } +
+            usable.mapNotNull { e ->
+                loginRecheckAt(e.id)?.let { at ->
+                    val min = ((at - clock.now().epochMillis).coerceAtLeast(0) + 59_999) / 60_000
+                    "${e.label}: Claude ответил «нужен вход» — после сбоя сети так бывает; проверю вход сам через $min мин, «Вход Claude» — сразу"
+                }
+            }
         val retry = usable.filter { it.id in probeFailedAt && it.id !in slotOf }
             .map { "${it.label}: проба входа не удалась — повтор раз в минуту; «Вход Claude» — сразу" }
         val extra = notes + login + retry + (problems + orchestrator.problems).takeLast(5).map { "${it.code}: ${it.message}" }
@@ -419,6 +466,13 @@ class LiveSystem(
 
         /** Как часто повторять неудавшуюся пробу входа target без слота (A-79). */
         const val PROBE_RETRY_MS = 60_000L
+
+        /** Первая перепроверка входа после отказа хода (D-58); дальше — вдвое, до [AUTH_RECHECK_MAX_MS]. */
+        const val AUTH_RECHECK_FIRST_MS = 120_000L
+        const val AUTH_RECHECK_MAX_MS = 3_600_000L
+
+        /** Сколько слот должен быть доступен, чтобы пауза перепроверок сбросилась (D-58). */
+        const val AUTH_STABLE_MS = 1_800_000L
 
         /** Предел одновременных сессий подписки контроллера; на target — по одной (`TargetSlot`). */
         private const val MAX_PARALLEL = 8

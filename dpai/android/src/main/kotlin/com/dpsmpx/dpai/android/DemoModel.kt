@@ -66,6 +66,8 @@ class DemoModel(
     private val controller: Controller,
     private val onEvents: (List<EventEnvelope>) -> Unit = {},
     private val onProblem: (Diagnostic) -> Unit = {},
+    /** Контекст приложения — для намерений о настройках (D-57); в тестах без Android — `null`. */
+    private val context: android.content.Context? = null,
 ) {
     private val lock = ReentrantLock()
     private var demo: DemoSystem? = null
@@ -142,7 +144,10 @@ class DemoModel(
     /** Такт и снимок; новые уведомления — в снимке, один раз. */
     fun step(selected: String?): Snapshot = lock.withLock {
         val v = current()
+        // Намерения о настройках (D-57) — в очередь этого контура до такта: такт их и исполнит.
+        context?.let { SettingIntents.reconcile(it, v.orchestrator) }
         v.step()
+        context?.let { SettingIntents.reconcile(it, v.orchestrator) }
         snapshot(v, selected, drain(v))
     }
 
@@ -155,7 +160,9 @@ class DemoModel(
         try {
             val v = current()
             // Команды, пришедшие с экрана, пока такта нет, — сразу (поток экрана — единственный писатель в этот миг).
+            context?.let { SettingIntents.reconcile(it, v.orchestrator) }
             v.orchestrator.runCommands()
+            context?.let { SettingIntents.reconcile(it, v.orchestrator) }
             return snapshot(v, selected, emptyList())
         } finally {
             lock.unlock()
@@ -168,7 +175,7 @@ class DemoModel(
      * дольше [waitMs]: не дождались — честно «в очереди», команда не
      * теряется и применится тактом.
      */
-    fun command(c: Command, waitMs: Long = WAIT_MS): Outcome<Any?> = try {
+    fun command(c: Command, waitMs: Long = WAIT_MS): Outcome<Any?> = intent(c) ?: try {
         val v = built ?: lock.withLock { current() }
         val f = v.orchestrator.submit(c)
         if (lock.tryLock()) {
@@ -184,6 +191,35 @@ class DemoModel(
     } catch (e: Exception) {
         Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.INTERNAL_ERROR, "контроллер не принял команду", e)))
     }
+
+    /**
+     * Настройка слота или подписки (D-57): намерение записано сразу и видно
+     * на экране; контур исполнит его, когда свободен (сейчас — если замок
+     * свободен, иначе в своём такте). Не настройка — `null`: команда идёт как
+     * раньше.
+     */
+    private fun intent(c: Command): Outcome<Any?>? {
+        val ctx = context ?: return null
+        SettingIntents.key(c) ?: return null
+        SettingIntents.record(ctx, c)
+        val v = built ?: return Outcome.success(null)
+        SettingIntents.reconcile(ctx, v.orchestrator)
+        if (lock.tryLock()) {
+            try {
+                v.orchestrator.runCommands()
+                SettingIntents.reconcile(ctx, v.orchestrator)
+            } finally {
+                lock.unlock()
+            }
+        }
+        return Outcome.success(null)
+    }
+
+    /** Желаемое значение настройки, ещё не применённое (D-57): экран показывает его, а не прежнее. */
+    fun desired(c: Command): Command? = context?.let { ctx -> SettingIntents.key(c)?.let { SettingIntents.desired(ctx, it) } }
+
+    /** Почему намерение отклонено контуром (слот удалён и т. п.); нет — `null`. */
+    fun refusal(c: Command): String? = SettingIntents.key(c)?.let(SettingIntents::refusal)
 
     /**
      * Незавершённые сессии на target — перед его удалением (ревью 8 октября
@@ -359,7 +395,7 @@ class DemoModel(
                 val controller = Controller.get(app.filesDir, app.packageManager.getPackageInfo(app.packageName, 0).versionName)
                 // Уведомления — у Android: отключены человеком — «недоступны», иначе работают.
                 controller.notificationsOk = { app.getSystemService(android.app.NotificationManager::class.java).areNotificationsEnabled() }
-                DemoModel(app.cacheDir, controller, AppLogs.events(app), AppLogs.problems(app)).also { instance = it }
+                DemoModel(app.cacheDir, controller, AppLogs.events(app), AppLogs.problems(app), app).also { instance = it }
             }
         }
     }

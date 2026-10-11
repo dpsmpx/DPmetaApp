@@ -592,28 +592,34 @@ private fun LimitsCard(l: com.dpsmpx.dpai.ui.SubscriptionLimits, model: DemoMode
                 )
                 TextButton(enabled = !refreshing, onClick = { scope.launch { withContext(Dispatchers.IO) { model.refreshUsage() } } }) { Text("Обновить") }
             }
-            Text("Порог «у предела»: выше — несрочные задачи ждут сброса окна", style = MaterialTheme.typography.labelSmall)
+            // Намерения (D-57): выбор виден сразу и применится, когда контур освободится.
+            var tick by remember { mutableStateOf(0) }
+            val wantNear = remember(tick, l) { model.desired(com.dpsmpx.dpai.orchestrator.commands.Command.SetNearPercent(l.subscription, l.nearPercent)) as? com.dpsmpx.dpai.orchestrator.commands.Command.SetNearPercent }
+            val wantRotation = remember(tick, l) { model.desired(com.dpsmpx.dpai.orchestrator.commands.Command.SetRotation(l.subscription, l.rotation)) as? com.dpsmpx.dpai.orchestrator.commands.Command.SetRotation }
+            Text("Порог «у предела»: выше — несрочные задачи ждут сброса окна, чужие задачи сюда не передаются" + if (wantNear != null) " · применится" else "", style = MaterialTheme.typography.labelSmall)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                for (p in listOf(70, 80, 90, 95, 100)) {
-                    androidx.compose.material3.FilterChip(selected = l.nearPercent == p, onClick = {
+                for (p in listOf(50, 60, 70, 80, 90, 95, 100)) {
+                    androidx.compose.material3.FilterChip(selected = (wantNear?.percent ?: l.nearPercent) == p, onClick = {
                         scope.launch {
                             status = when (val r = withContext(Dispatchers.IO) { model.command(com.dpsmpx.dpai.orchestrator.commands.Command.SetNearPercent(l.subscription, p)) }) {
                                 is Outcome.Success -> null
                                 is Outcome.Failure -> "Не принято: ${r.diagnostics.first().message}"
                             }
+                            tick++
                         }
                     }, label = { Text("$p %") })
                 }
             }
             // Передача задач при пределе (D-56): подписка берёт задачи других подписок, упёршихся в 5 ч или неделю.
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Брать задачи подписок у предела (с handoff)", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall)
-                androidx.compose.material3.Switch(checked = l.rotation, onCheckedChange = { on ->
+                Text("Брать задачи подписок у предела (с handoff)" + if (wantRotation != null) " · применится" else "", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall)
+                androidx.compose.material3.Switch(checked = wantRotation?.allowed ?: l.rotation, onCheckedChange = { on ->
                     scope.launch {
                         status = when (val r = withContext(Dispatchers.IO) { model.command(com.dpsmpx.dpai.orchestrator.commands.Command.SetRotation(l.subscription, on)) }) {
                             is Outcome.Success -> null
                             is Outcome.Failure -> "Не принято: ${r.diagnostics.first().message}"
                         }
+                        tick++
                     }
                 })
             }

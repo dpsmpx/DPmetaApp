@@ -39,6 +39,9 @@ class LiveSystemTest {
     /** Ход идёт, пока тест не продвинет его шаги (`host.advance`). */
     private var slow = false
 
+    /** Ход отвечает `authentication_failed` (сбой сети: токен не обновился, D-58). */
+    private var authError = false
+
     private fun entry(label: String, configDir: String?) =
         TargetForm.validate(ids.next(IdKinds.TARGET), label, "build.lan", "22", "dev", false, "/opt/dpai/bin/dpai", configDir).valueOrNull()!!
 
@@ -51,7 +54,7 @@ class LiveSystemTest {
             } else {
                 val c = spec.command
                 val sid = c[c.indexOfFirst { it == "--session-id" || it == "--resume" } + 1]
-                val steps = MockRunner.script(MockScenario.SUCCESS, sid).map { l -> { host.output(run, l); Unit } } +
+                val steps = MockRunner.script(if (authError) MockScenario.AUTH_ERROR else MockScenario.SUCCESS, sid).map { l -> { host.output(run, l); Unit } } +
                     listOf({ host.exit(run, 0, ExitReason.EXITED) })
                 if (slow) host.schedule(run, steps) else steps.forEach { it() }
             }
@@ -141,6 +144,32 @@ class LiveSystemTest {
         assertTrue(s.orchestrator.sessions.sessions.values.any { it.task == task })
         assertTrue(s.dashboard().attention.none { "повтор раз в минуту" in it })
         assertEquals(1, s.signals().targetsOnline)
+    }
+
+    /**
+     * D-58: без сети ход ответил «нужен вход», хотя вход цел. Слот не ждёт
+     * «Вход Claude»: через 2 минуты приложение само проверяет вход, слот
+     * снова доступен, задача продолжается; на «Внимание» — когда проверка.
+     */
+    @Test
+    fun slotMarkedByFailedTurnRechecksLoginItself() {
+        val target = entry("сервер", "/home/dev/.claude-dpai")
+        val s = system(target)
+        steps(s, 1)
+        authError = true
+        val task = s.addTask("Сбой сети", "ответить").valueOrNull()!!
+        steps(s, 4)
+        val slot = s.orchestrator.accounts.slots.values.single()
+        assertEquals(AccountState.AUTH_REQUIRED, slot.state, "ход сказал «нужен вход»")
+        assertEquals(TaskState.BLOCKED, s.orchestrator.tasks.tasks.getValue(task).state)
+        steps(s, 1)
+        assertTrue(s.dashboard().attention.any { "проверю вход сам через" in it }, s.dashboard().attention.toString())
+        authError = false
+        clock.advance(LiveSystem.AUTH_RECHECK_FIRST_MS.milliseconds)
+        steps(s, 6)
+        assertEquals(AccountState.AVAILABLE, s.orchestrator.accounts.slots.values.single().state, "вход цел — слот снова доступен")
+        assertTrue(s.orchestrator.sessions.sessions.values.count { it.task == task } >= 2, "задача продолжилась сама")
+        assertTrue(s.dashboard().attention.none { "проверю вход сам" in it })
     }
 
     /**

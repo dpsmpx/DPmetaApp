@@ -249,6 +249,47 @@ class AccountsTest {
     }
 
     @Test
+    fun foreignTaskNeverGoesToSubscriptionNearLimitAndMoreHeadroomWins() {
+        // D-57: задача упёршейся подписки не уходит на подписку у предела — даже срочная;
+        // из подходящих — с большим запасом окна.
+        val f = Fixture()
+        val a = f.subscription("A", rotation = true)
+        val b = f.subscription("B", rotation = true)
+        val c = f.subscription("C", rotation = true)
+        val slotA = f.slot(a, dir = "~/.claude-a")
+        val slotB = f.slot(b, dir = "~/.claude-b")
+        val slotC = f.slot(c, dir = "~/.claude-c")
+        f.login(slotA, email = "a@example.org")
+        f.login(slotB, email = "b@example.org")
+        f.login(slotC, email = "c@example.org")
+        f.ok(f.accounts.observeUsage(f.state, slotA, LimitWindow.SESSION, 0.10, null, f.now))
+        f.ok(f.accounts.observeUsage(f.state, slotB, LimitWindow.SESSION, 0.90, null, f.now))
+        f.ok(f.accounts.observeUsage(f.state, slotC, LimitWindow.WEEKLY, 0.40, null, f.now))
+        val task = f.task()
+        val (s1, r1) = f.lease(task)
+        assertEquals(a, r1.valueOrNull()!!.subscription, "новая задача — на подписку с наибольшим запасом")
+        f.ok(f.accounts.release(f.state, s1, f.now))
+        f.ok(f.accounts.observeLimit(f.state, slotA, LimitWindow.SESSION, LimitLevel.REACHED, f.now + 3.hours, f.now))
+        val urgent = f.accounts.lease(f.state, f.ids.next(com.dpsmpx.dpai.core.ids.IdKinds.SESSION), task, f.now, urgent = true).valueOrNull()!!
+        assertEquals(c, urgent.subscription, "B у предела (90 % ≥ 80 %) — чужую задачу не берёт и срочную; C — с запасом")
+        // Только B: задача ждёт, причина названа.
+        val g = Fixture()
+        val ga = g.subscription("A", rotation = true)
+        val gb = g.subscription("B", rotation = true)
+        val ra = g.slot(ga, dir = "~/.claude-a")
+        val rb = g.slot(gb, dir = "~/.claude-b")
+        g.login(ra, email = "a@example.org")
+        g.login(rb, email = "b@example.org")
+        val t = g.task()
+        val (gs, _) = g.lease(t)
+        g.ok(g.accounts.release(g.state, gs, g.now))
+        g.ok(g.accounts.observeUsage(g.state, rb, LimitWindow.SESSION, 0.95, null, g.now))
+        g.ok(g.accounts.observeLimit(g.state, ra, LimitWindow.SESSION, LimitLevel.REACHED, g.now + 3.hours, g.now))
+        val none = g.accounts.lease(g.state, g.ids.next(com.dpsmpx.dpai.core.ids.IdKinds.SESSION), t, g.now, urgent = true)
+        assertContains(assertIs<Outcome.Failure>(none).errors.single().message, "у предела — чужие задачи не берёт")
+    }
+
+    @Test
     fun errorSeriesCoolsDownAndSuccessClears() {
         val f = Fixture()
         val slot = f.slot(f.subscription())
