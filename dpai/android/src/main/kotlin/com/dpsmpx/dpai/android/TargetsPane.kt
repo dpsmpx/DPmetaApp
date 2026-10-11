@@ -521,6 +521,8 @@ private fun TargetSwitches(model: DemoModel, t: TargetEntry) {
     val scope = rememberCoroutineScope()
     var enabled by remember { mutableStateOf(model.control()?.let { t.id !in it.disabledTargets }) }
     var slots by remember { mutableStateOf(model.slotsOf(t.id)) }
+    // Намерения (D-57): переключатель показывает желаемое, пока контур занят, и не откатывается.
+    var tick by remember { mutableStateOf(0) }
     LaunchedEffect(t.id) {
         while (true) {
             enabled = withContext(Dispatchers.IO) { model.control()?.let { t.id !in it.disabledTargets } }
@@ -529,8 +531,6 @@ private fun TargetSwitches(model: DemoModel, t: TargetEntry) {
             kotlinx.coroutines.delay(3000)
         }
     }
-    // Намерения (D-57): переключатель показывает желаемое, пока контур занят, и не откатывается.
-    var tick by remember { mutableStateOf(0) }
     val on = enabled ?: return
     val wantTarget = remember(tick, on) { model.desired(com.dpsmpx.dpai.orchestrator.commands.Command.SetTargetEnabled(t.id, on)) as? com.dpsmpx.dpai.orchestrator.commands.Command.SetTargetEnabled }
     Row(verticalAlignment = Alignment.CenterVertically) {
