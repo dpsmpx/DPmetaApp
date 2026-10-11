@@ -85,13 +85,10 @@ adb devices
 Признак: окно «Приложение остановлено» или приложение закрылось само.
 Причина падения записывается в `files/last-crash.txt` приложения при
 любой сборке, но прочитать файл можно только из debug-сборки
-(`docs/TESTING.md`, §9). Обе сборки подписаны одним ключом, поэтому
-debug ставится поверх release без потери данных:
+(`docs/TESTING.md`, §9). Сборка из §1.1 — debug, файл читается сразу:
 
 ```sh
-adb install -r dpai-0.1.0-dev.1-debug.apk
 adb shell run-as com.dpsmpx.dpai cat files/last-crash.txt > last-crash.txt
-adb install -r dpai-0.1.0-dev.1-release.apk
 ```
 
 Если на Redmi работает системный журнал, приложите и его:
@@ -101,8 +98,8 @@ adb logcat -d -b crash > logcat-crash.txt
 ```
 
 В файле — тип ошибки и стек (имена классов); перед отправкой просмотрите
-его. Замеры (§4) делаются только на release: после чтения файла верните
-release, как в третьей команде.
+его. Замеры (§4) делаются только на release: его подписывает автор своим
+ключом (`docs/PROCESS.md`, §6), облачная сессия собирает только debug.
 
 Журнал самого приложения (D-43) — без `adb`: вкладка «Журнал» → «В
 Загрузки» — файл `Загрузки/dpai-logs/dpai-log-<время>.txt` (начало и
@@ -122,13 +119,13 @@ release, как в третьей команде.
 
 ### 1.1. Файлы и проверка SHA-256
 
-Файлы лежат в ветке `apk-0.1.0-dev.1` репозитория
-`github.com/dpsmpx/DP_AI_Orcestrator`:
+Файлы лежат в ветке `apk-0.1.0-dev.1-2026-10-11` репозитория
+`github.com/dpsmpx/DPmetaApp` (до 11 октября 2026 — ветка
+`apk-0.1.0-dev.1` прежнего репозитория DP_AI_Orcestrator):
 
 | Файл | Зачем |
 |---|---|
-| `dpai-0.1.0-dev.1-release.apk` | приложение для проверки и замеров |
-| `dpai-0.1.0-dev.1-debug.apk` | только чтобы прочитать `last-crash.txt` (§0.4) |
+| `dpmetaapp-0.1.0-dev.1-debug.apk` | приложение (debug: из него читается и `last-crash.txt`, §0.4) |
 | `dpai-agent-0.1.0-dev.1.zip` | агент `dpai` для Termux и ПК: каталог `dpai/` с `bin/dpai` и `lib/` |
 | `claude-proot.sh` | обёртка Claude Code для Termux (§5.3) |
 | `SHA256SUMS` | хеши файлов |
@@ -139,7 +136,7 @@ release, как в третьей команде.
 есть):
 
 ```sh
-git clone --depth 1 --branch apk-0.1.0-dev.1 https://github.com/dpsmpx/DP_AI_Orcestrator.git ~/dpai-device-check
+git clone --depth 1 --branch apk-0.1.0-dev.1-2026-10-11 https://github.com/dpsmpx/DPmetaApp.git ~/dpai-device-check
 cd ~/dpai-device-check
 sha256sum -c SHA256SUMS
 ```
@@ -154,7 +151,7 @@ adb push dpai-agent-0.1.0-dev.1.zip claude-proot.sh SHA256SUMS /sdcard/Download/
 скачайте заново; повторилось — FAIL пункта 1.1.
 
 С телефона без ПК: в браузере откройте
-`https://github.com/dpsmpx/DP_AI_Orcestrator/tree/apk-0.1.0-dev.1`,
+`https://github.com/dpsmpx/DPmetaApp/tree/apk-0.1.0-dev.1-2026-10-11`,
 нажмите на файл и кнопку загрузки «Download raw file». Хеш на телефоне
 сверяется в Termux (§5.2) после `termux-setup-storage`:
 
@@ -186,6 +183,13 @@ Android Keystore, закреплённые ключи хостов, журнал
 установки ключ приложения будет новым — его снова нужно добавить в
 `authorized_keys` на targets (§5.6), а старую строку убрать.
 
+Если в старом приложении есть «Targets» → «Копия настроек» (D-51), до
+удаления нажмите «Сохранить сейчас»: копия уйдёт в
+«Загрузки/dpai-backup» и в Termux. После установки карточка
+«Восстановление после переустановки» (D-54) даёт одну команду для
+Termux: она заменяет ключ приложения в `authorized_keys`, и приложение
+само возвращает targets и слоты из копии.
+
 ```sh
 adb uninstall com.dpsmpx.dpai
 ```
@@ -198,7 +202,7 @@ adb uninstall com.dpsmpx.dpai
 С ПК:
 
 ```sh
-adb install dpai-0.1.0-dev.1-release.apk
+adb install dpmetaapp-0.1.0-dev.1-debug.apk
 adb shell dumpsys package com.dpsmpx.dpai | grep -E "versionName|versionCode"
 ```
 
@@ -207,7 +211,7 @@ adb shell dumpsys package com.dpsmpx.dpai | grep -E "versionName|versionCode"
 выключена «Установка через USB» в «Для разработчиков»; включить её без
 аккаунта Mi часто нельзя — тогда ставьте с телефона.
 
-С телефона: откройте скачанный `dpai-0.1.0-dev.1-release.apk` из
+С телефона: откройте скачанный `dpmetaapp-0.1.0-dev.1-debug.apk` из
 «Загрузок», разрешите установку из этого источника, если HyperOS
 спросит, и подтвердите установку. Версия — в «О приложении».
 
@@ -1329,7 +1333,7 @@ Gradle не делит), например в WSL Ubuntu 24.04 в домашне�
 
 ```sh
 sudo apt install -y openjdk-21-jdk-headless
-git clone https://github.com/dpsmpx/DP_AI_Orcestrator.git ~/dpai-endurance && cd ~/dpai-endurance
+git clone https://github.com/dpsmpx/DPmetaApp.git ~/dpai-endurance && cd ~/dpai-endurance/dpai
 ./gradlew :tests:integration:test --tests '*EnduranceTest*' -Ddpai.endurance.minutes=2880 2>&1 | tee endurance-2880.log
 ```
 
