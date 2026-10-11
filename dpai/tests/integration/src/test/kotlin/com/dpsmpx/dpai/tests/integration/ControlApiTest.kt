@@ -107,6 +107,14 @@ class ControlApiTest {
         val add = api.handle("POST", "/v1/commands", token, CanonicalJson.write(CommandCodec.encode(Command.AddTask("из dpai", "цель", key = "cli-key-00001"))))
         assertEquals(200, add.status, add.body.toString())
         val task = IdKinds.TASK.parse(str(add.body, "value")).valueOrNull()!!
+        // Зависимости и область — при создании (D-42, п. 1).
+        val after = api.handle("POST", "/v1/commands", token, CanonicalJson.write(CommandCodec.encode(Command.AddTask("после", "цель 2", dependencies = setOf(task), scope = setOf("src/main.kt"), key = "cli-key-00002"))))
+        assertEquals(200, after.status, after.body.toString())
+        val second = o.tasks.tasks.getValue(IdKinds.TASK.parse(str(after.body, "value")).valueOrNull()!!)
+        assertEquals(setOf(task), second.dependencies)
+        assertEquals(setOf("src/main.kt"), second.scope)
+        val bad = api.handle("POST", "/v1/commands", token, """{"command":"task.add","title":"x","objective":"y","dependencies":["не-id"]}""")
+        assertEquals(400, bad.status, "зависимость — только TaskId")
         val state = api.handle("GET", "/v1/state", token, null)
         assertTrue("из dpai" in CanonicalJson.write(state.body))
         assertFalse(""""usage"""" in CanonicalJson.write(state.body), "ходов не было — расхода нет, а не нули")
@@ -140,7 +148,9 @@ class ControlApiTest {
         val commands = listOf(
             Command.AnswerRequest("dpai://answer/x/y?hash=sha256:00", "текст", ControlApi.BY, "cli"),
             Command.Probe(com.dpsmpx.dpai.notifications.RequestKind.CHOICE, 5.minutes, "k-00000001"),
-            Command.AddTask("t", "o", com.dpsmpx.dpai.tasks.Priority.HIGH, com.dpsmpx.dpai.tasks.TaskPolicy(taskClass = com.dpsmpx.dpai.tasks.TaskClass.TRIVIAL, model = "haiku", effort = "low", maxBudgetUsdCents = 50), "k-00000002"),
+            Command.AddTask("t", "o", com.dpsmpx.dpai.tasks.Priority.HIGH, com.dpsmpx.dpai.tasks.TaskPolicy(taskClass = com.dpsmpx.dpai.tasks.TaskClass.TRIVIAL, model = "haiku", effort = "low", maxBudgetUsdCents = 50), key = "k-00000002"),
+            Command.AddTask("t2", "o", dependencies = setOf(t), scope = setOf("src/a.kt", "docs"), key = "k-00000004"),
+            Command.AddTask("t3", "o", scope = emptySet()),
             Command.SetPriority(t, com.dpsmpx.dpai.tasks.Priority.LOW), Command.SetPolicy(t, com.dpsmpx.dpai.tasks.TaskClass.ARCHITECTURE, "opus", null, 100),
             Command.Hold(t), Command.Resume(t), Command.Cancel(t), Command.Retry(t, "ответ"), Command.Verify(t), Command.Waive(t, "проверил", ControlApi.BY),
             Command.StopSession(s), Command.SendToSession(s, "ещё", "sonnet", "high"), Command.SendToSession(s, null, fresh = true),

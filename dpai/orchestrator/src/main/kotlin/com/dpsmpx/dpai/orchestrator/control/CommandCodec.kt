@@ -46,6 +46,8 @@ object CommandCodec {
                 str("title", c.title); str("objective", c.objective); str("priority", c.priority.name)
                 str("taskClass", c.policy.taskClass.name); str("model", c.policy.model); str("effort", c.policy.effort)
                 c.policy.maxBudgetUsdCents?.let { f["budgetCents"] = JsonNumber.of(it) }
+                if (c.dependencies.isNotEmpty()) f["dependencies"] = JsonArray(c.dependencies.map { it.value }.sorted().map(::JsonString))
+                c.scope?.let { sc -> f["scope"] = JsonArray(sc.sorted().map(::JsonString)) }
             }
             is Command.SetPriority -> { id("task", c.task); str("priority", c.priority.name) }
             is Command.SetPolicy -> {
@@ -87,6 +89,10 @@ object CommandCodec {
         val confirmed = if (f.has("confirmed")) f.boolean("confirmed") ?: false else false
         fun task() = f.string("task")?.let { IdKinds.TASK.parse(it).valueOrNull() ?: null.also { d.error(DiagCode.ID_INVALID, "ожидался TaskId", "$.task") } }
         fun session() = f.string("session")?.let { IdKinds.SESSION.parse(it).valueOrNull() ?: null.also { d.error(DiagCode.ID_INVALID, "ожидался SessionId", "$.session") } }
+        // Необязательный массив строк: нет поля — `null`, не пустой список.
+        fun strings(k: String): List<String>? = if (!f.has(k)) null else f.array(k)?.items?.mapIndexedNotNull { i, v ->
+            (v as? JsonString)?.value ?: null.also { d.error(DiagCode.VALUE_INVALID, "ожидалась строка", "$.$k[$i]") }
+        }
         fun <E : Enum<E>> enum(k: String, values: Array<E>, required: Boolean = true): E? =
             (if (required) f.string(k) else f.optString(k))?.let { v -> values.firstOrNull { it.name == v } ?: null.also { d.error(DiagCode.VALUE_INVALID, "неизвестное значение", "$.$k") } }
         val c: Command? = when (name) {
@@ -99,7 +105,11 @@ object CommandCodec {
                 val cls = enum("taskClass", TaskClass.entries.toTypedArray(), required = false) ?: TaskClass.NORMAL_ENGINEERING
                 val policy = runCatching { TaskPolicy(taskClass = cls, model = f.optString("model"), effort = f.optString("effort"), maxBudgetUsdCents = f.optLong("budgetCents")) }
                     .getOrElse { d.error(DiagCode.VALUE_INVALID, it.message ?: "политика недопустима", "$"); null }
-                if (title != null && objective != null && policy != null) Command.AddTask(title, objective, priority, policy, key) else null
+                val dependencies = strings("dependencies").orEmpty().mapIndexedNotNull { i, v ->
+                    IdKinds.TASK.parse(v).valueOrNull() ?: null.also { d.error(DiagCode.ID_INVALID, "ожидался TaskId", "$.dependencies[$i]") }
+                }.toSet()
+                val scope = strings("scope")?.toSet()
+                if (title != null && objective != null && policy != null) Command.AddTask(title, objective, priority, policy, dependencies, scope, key) else null
             }
             "task.priority" -> task()?.let { t -> enum("priority", Priority.entries.toTypedArray())?.let { Command.SetPriority(t, it, key) } }
             "task.policy" -> task()?.let { t ->

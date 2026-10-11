@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -378,12 +380,20 @@ private fun BoardPane(board: TaskBoard, live: Boolean, model: DemoModel, archive
     opened?.let { t -> TaskSheet(model, t, onSession = { s -> opened = null; onSession(s) }) { opened = null } }
 }
 
-/** Новая задача контроллеру: название и цель — что Claude должен сделать (ТЗ, §21). */
+/**
+ * Новая задача контроллеру: название и цель — что Claude должен сделать
+ * (ТЗ, §21); по желанию — после каких задач и какие пути затронет (D-42,
+ * п. 1; ТЗ, §31).
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun NewTaskDialog(model: DemoModel, onDone: () -> Unit) {
     val scope = rememberCoroutineScope()
     var title by remember { mutableStateOf("") }
     var objective by remember { mutableStateOf("") }
+    var area by remember { mutableStateOf("") }
+    var after by remember { mutableStateOf(emptySet<com.dpsmpx.dpai.core.ids.TaskId>()) }
+    val choices = remember { model.dependencyChoices() }
     // Ключ нажатия (D-42): повтор «Поставить» в этом диалоге — та же задача, а не вторая.
     val key = remember { com.dpsmpx.dpai.core.ids.IdGenerator(com.dpsmpx.dpai.core.clock.Clock.SYSTEM, com.dpsmpx.dpai.core.clock.RandomSource.secure()).next(com.dpsmpx.dpai.core.ids.IdKinds.OPERATION).value }
     var error by remember { mutableStateOf<String?>(null) }
@@ -393,9 +403,23 @@ private fun NewTaskDialog(model: DemoModel, onDone: () -> Unit) {
         onDismissRequest = onDone,
         title = { Text("Новая задача") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            // Задач для выбора бывает много: диалог прокручивается.
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 OutlinedTextField(title, { title = it }, label = { Text("Название") }, singleLine = true)
                 OutlinedTextField(objective, { objective = it }, label = { Text("Что сделать") }, minLines = 3)
+                OutlinedTextField(area, { area = it }, label = { Text("Область: пути через запятую (необязательно)") })
+                if (choices.isNotEmpty()) {
+                    Text("Начать после задач (необязательно)", style = MaterialTheme.typography.labelSmall)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        for ((id, name) in choices) {
+                            androidx.compose.material3.FilterChip(
+                                selected = id in after,
+                                onClick = { after = if (id in after) after - id else after + id },
+                                label = { Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                            )
+                        }
+                    }
+                }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
         },
@@ -403,7 +427,7 @@ private fun NewTaskDialog(model: DemoModel, onDone: () -> Unit) {
             TextButton(enabled = !busy, onClick = {
                 busy = true
                 scope.launch {
-                    when (val r = withContext(Dispatchers.IO) { model.addTask(title, objective, key) }) {
+                    when (val r = withContext(Dispatchers.IO) { model.addTask(title, objective, key, after, com.dpsmpx.dpai.ui.TaskScreens.scope(area)) }) {
                         is Outcome.Failure -> error = r.diagnostics.first().message
                         is Outcome.Success -> onDone()
                     }

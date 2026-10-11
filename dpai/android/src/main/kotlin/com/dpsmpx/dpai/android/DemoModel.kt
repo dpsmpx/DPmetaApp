@@ -258,6 +258,10 @@ class DemoModel(
         built?.orchestrator?.sessions?.sessions?.values?.filter { it.task == task }?.maxByOrNull { it.createdAt.epochMillis }?.id
     }.getOrNull()
 
+    /** Задачи, после которых можно поставить новую (D-42, п. 1) — без замка. */
+    fun dependencyChoices(): List<Pair<TaskId, String>> =
+        runCatching { (built as? LiveSystem)?.orchestrator?.tasks?.let(com.dpsmpx.dpai.ui.TaskScreens::dependencyChoices) }.getOrNull().orEmpty()
+
     /** Лист задачи (D-42): состояние и доступные действия — из неизменяемого состояния контура, без замка. */
     fun taskDetail(task: TaskId): com.dpsmpx.dpai.ui.TaskDetail? = runCatching {
         val o = built?.orchestrator ?: return null
@@ -291,9 +295,9 @@ class DemoModel(
      * Новая задача контроллеру (D-42): команда с ключом нажатия [key] —
      * повтор того же нажатия задачу не дублирует. Демо задач не берёт.
      */
-    fun addTask(title: String, objective: String, key: String): Outcome<TaskId> {
+    fun addTask(title: String, objective: String, key: String, dependencies: Set<TaskId> = emptySet(), scope: Set<String>? = null): Outcome<TaskId> {
         if (!hasLive()) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "задачи ставятся только контроллеру: заведите target с каталогом Claude")
-        return command(Command.AddTask(title.trim(), objective.trim(), key = key)).then { v ->
+        return command(Command.AddTask(title.trim(), objective.trim(), dependencies = dependencies, scope = scope, key = key)).then { v ->
             when (v) {
                 is TaskId -> Outcome.success(v)
                 is String -> IdKinds.TASK.parse(v)

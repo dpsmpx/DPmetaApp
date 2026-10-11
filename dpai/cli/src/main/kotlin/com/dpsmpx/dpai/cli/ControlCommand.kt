@@ -168,6 +168,12 @@ class ControlCommand(
             opt(args, "--model")?.let { c["model"] = JsonString(it) }
             opt(args, "--effort")?.let { c["effort"] = JsonString(it) }
             opt(args, "--budget")?.let { budget(it) ?: return usage("--budget — доллары, например 0.25") }?.let { c["budgetCents"] = JsonNumber.of(it) }
+            // Зависимости — сокращённые id раскрываются по снимку, как у остальных команд.
+            opt(args, "--after")?.let { v ->
+                val deps = commaList(v).map { resolve(it, "tasks") ?: return FAILED }
+                c["dependencies"] = JsonArray(deps.map(::JsonString))
+            }
+            opt(args, "--scope")?.let { v -> c["scope"] = JsonArray(commaList(v).map(::JsonString)) }
             return send(c)
         }
         val id = args.getOrNull(0) ?: return usage(TASK_USAGE)
@@ -388,7 +394,7 @@ class ControlCommand(
         const val FAILED = 1
         const val USAGE_ERROR = 2
 
-        private const val TASK_USAGE = "dpai task add «название» «что сделать» [--priority HIGH] [--class trivial] [--model haiku] [--effort low] [--budget 0.25]\n" +
+        private const val TASK_USAGE = "dpai task add «название» «что сделать» [--priority HIGH] [--class trivial] [--model haiku] [--effort low] [--budget 0.25] [--after <id>,<id>] [--scope путь,путь]\n" +
             "dpai task <id> hold|resume|retry [--text «…»]|verify|messages|diff|priority <P>|policy --class <к> …|archive|unarchive|cancel --yes|waive --reason «…» --yes\n" +
             "dpai task archive-done   — все завершённые в архив"
         private const val SESSION_USAGE = "dpai session <id> stop | send «запрос» [--model m] [--effort e] | fresh [«запрос»]"
@@ -417,6 +423,9 @@ class ControlCommand(
         private fun bool(o: JsonObject, k: String): Boolean = (o[k] as? JsonBool)?.value == true
 
         private fun list(o: JsonObject, k: String): List<JsonObject> = (o[k] as? JsonArray)?.items.orEmpty().filterIsInstance<JsonObject>()
+
+        /** Значение через запятую: `a,b` → `[a, b]`, пустые части отброшены. */
+        private fun commaList(v: String): List<String> = v.split(',').map { it.trim() }.filter { it.isNotEmpty() }
 
         /** Список строк; поля нет — `null` (не «пусто»: части нет вовсе). */
         private fun strings(o: JsonObject, k: String): List<String>? = (o[k] as? JsonArray)?.items?.mapNotNull { (it as? JsonString)?.value }

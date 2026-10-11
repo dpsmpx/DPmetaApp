@@ -73,6 +73,18 @@ object TaskScreens {
         if (t.terminal) add(if (t.archived) TaskAction.UNARCHIVE else TaskAction.ARCHIVE)
     }
 
+    /**
+     * Область новой задачи из поля ввода (ТЗ, §31): пути через запятую,
+     * пробел или перевод строки; пусто — `null` (область неизвестна, D-13),
+     * а не «ничего не затронет». Проверяет пути контур (`Tasks.setScope`).
+     */
+    fun scope(text: String): Set<String>? =
+        text.split(',', ' ', '\n', '\t').map { it.trim() }.filter { it.isNotEmpty() }.toSet().ifEmpty { null }
+
+    /** Задачи, после которых можно поставить новую: незавершённые и не в архиве, по порядку создания. */
+    fun dependencyChoices(tasks: com.dpsmpx.dpai.tasks.TasksState): List<Pair<TaskId, String>> =
+        tasks.tasks.values.filter { !it.terminal && !it.archived }.sortedBy { it.createdAt.epochMillis }.map { it.id to it.title }
+
     fun detail(t: TaskRecord, sessions: SessionsState, waiting: String? = null): TaskDetail = TaskDetail(
         id = t.id, title = t.title, objective = t.objective,
         state = t.state.name, tone = Screens.tone(t.state), held = t.held, priority = t.priority.name,

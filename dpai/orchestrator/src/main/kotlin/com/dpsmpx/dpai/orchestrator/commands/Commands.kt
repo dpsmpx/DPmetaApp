@@ -46,6 +46,10 @@ sealed interface Command {
         val objective: String,
         val priority: Priority = Priority.NORMAL,
         val policy: TaskPolicy = TaskPolicy(),
+        /** Задачи, после которых эта начинается (DAG, ТЗ, §21). */
+        val dependencies: Set<TaskId> = emptySet(),
+        /** Заявленная область — пути файлов (ТЗ, §31); `null` — неизвестна, пересечения не проверяются (D-13). */
+        val scope: Set<String>? = null,
         override val key: String? = null,
     ) : Command {
         override val operation: String get() = "task.add"

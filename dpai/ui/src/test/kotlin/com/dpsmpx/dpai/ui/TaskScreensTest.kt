@@ -89,4 +89,13 @@ class TaskScreensTest {
         assertEquals("< 0.01 $", Screens.usageLine(Screens.usage(SessionsState(mapOf(cheap.id to cheap))) { true })!!.substringAfterLast(" · "))
         assertEquals(listOf("9999", "10 тыс.", "1.5 млн"), listOf(9_999L, 10_000L, 1_500_000L).map(Screens::tokens))
     }
+
+    @Test
+    fun newTaskScopeAndDependencyChoices() {
+        assertEquals(setOf("src/a.kt", "docs", "README.md"), TaskScreens.scope(" src/a.kt, docs\nREADME.md "))
+        assertEquals(null, TaskScreens.scope(" , "), "пусто — область неизвестна, а не пустая")
+        val open = task(TaskState.READY)
+        val done = TaskRecord(ids.next(IdKinds.TASK), "готовая", "цель", Priority.NORMAL, emptySet(), emptySet(), TaskPolicy(), clock.now(), state = TaskState.DONE)
+        assertEquals(listOf(open.id to "задача"), TaskScreens.dependencyChoices(com.dpsmpx.dpai.tasks.TasksState(mapOf(open.id to open, done.id to done))))
+    }
 }
