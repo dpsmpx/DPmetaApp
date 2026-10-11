@@ -103,6 +103,7 @@ name = "DPmetaApp"
 slug = "dpsmpx/DPmetaApp"
 clone = "dpmetaapp"
 place = "control"
+decisions = { path = "docs/direction/DECISIONS.md", id = "D-\\d+" }
 
 [[repo]]
 name = "DPvisualisation"
