@@ -63,7 +63,6 @@ import com.dpsmpx.dpai.core.ids.SessionId
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.ui.DashboardScreen
 import com.dpsmpx.dpai.ui.RequestCard
-import com.dpsmpx.dpai.ui.SessionLine
 import com.dpsmpx.dpai.ui.SessionScreen
 import com.dpsmpx.dpai.ui.TaskBoard
 import com.dpsmpx.dpai.ui.TaskCard
@@ -260,7 +259,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                         screen == 4 -> LogPane(model)
                         s == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                         screen == SESSION_SCREEN -> SessionPane(s.session, model, sessionEvents)
-                        screen == 0 -> DashboardPane(s.dashboard, model) { selectedId = it.value }
+                        screen == 0 -> DashboardPane(s.dashboard, model)
                         else -> BoardPane(s.board, s.live, model, s.archived) { selectedId = it }
                     }
                 }
@@ -302,7 +301,7 @@ private fun rememberVisible(): Boolean {
 }
 
 @Composable
-private fun DashboardPane(screen: DashboardScreen, model: DemoModel, onSession: (SessionId) -> Unit) {
+private fun DashboardPane(screen: DashboardScreen, model: DemoModel) {
     // Загрузка окон — из `/usage` раз в минуту, пока сводка видна (D-48).
     if (screen.limits.isNotEmpty() && rememberVisible()) {
         LaunchedEffect(Unit) {
@@ -312,21 +311,19 @@ private fun DashboardPane(screen: DashboardScreen, model: DemoModel, onSession: 
             }
         }
     }
+    // Сводка — подписки (D-65): лимиты, порог и передача задач сверху, затем состояние, счётчики и «Внимание»;
+    // задачи и их сессии — во вкладке «Задачи», оттуда — сразу чат (D-62).
     LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (screen.limits.isEmpty()) item { Text("Подписок пока нет: они появятся после первой пробы входа слотов.", style = MaterialTheme.typography.bodySmall) }
+        items(screen.limits, key = { "limits:${it.subscription.value}" }) { LimitsCard(it, model) }
         item {
             Text("Состояние: ${screen.health}", color = toneColor(screen.healthTone), fontWeight = FontWeight.Bold)
             screen.reasons.forEach { Text("· $it", style = MaterialTheme.typography.bodySmall) }
         }
-        items(screen.limits, key = { "limits:${it.subscription.value}" }) { LimitsCard(it, model) }
         item { Counters(screen) }
         if (screen.attention.isNotEmpty()) {
             item { Text("Внимание", style = MaterialTheme.typography.titleMedium) }
             items(screen.attention) { Text("· $it", color = toneColor(Tone.WARNING), style = MaterialTheme.typography.bodySmall) }
-        }
-        item { Text("Сессии (${screen.sessions.size})", style = MaterialTheme.typography.titleMedium) }
-        items(screen.sessions, key = { it.session.value }) { line ->
-            SessionRow(line, Modifier.clickable { onSession(line.session) })
-            HorizontalDivider()
         }
     }
 }
@@ -342,20 +339,6 @@ private fun Counters(screen: DashboardScreen) {
                     Text(c.label, style = MaterialTheme.typography.labelSmall)
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun SessionRow(line: SessionLine, modifier: Modifier = Modifier) {
-    Row(modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text(line.task, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(line.session.value, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-        }
-        Column(Modifier.width(120.dp), horizontalAlignment = Alignment.End) {
-            Text(line.state, color = toneColor(line.tone), style = MaterialTheme.typography.labelMedium)
-            Text("тишина ${line.silent} · ${line.next}", style = MaterialTheme.typography.labelSmall, maxLines = 1)
         }
     }
 }
