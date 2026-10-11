@@ -223,6 +223,12 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     /** Задачу или сессию остановил человек (ответ на запрос, команда D-42): не сбой и не повод для повтора. */
     CANCELLED_BY_USER(Category.STATE, Severity.INFO, Retryability.NON_RETRYABLE),
 
+    // --- форматы экосистемы для DPmetaApp (DPmetaApp:docs/direction/TECHNICAL_TASK.md, §10) ---
+    /** Файл чужого формата (TOML, реестр, журнал решений) не разобран: место и причина, а не догадка. */
+    FORMAT_UNRECOGNIZED(Category.FORMAT, Severity.ERROR, Retryability.NON_RETRYABLE),
+    /** Реестр DPmeta другой схемы или с неизвестным ключом (F-01): работа — на последнем распознанном. */
+    REGISTRY_SCHEMA_UNSUPPORTED(Category.FORMAT, Severity.ERROR, Retryability.NON_RETRYABLE),
+
     // --- общее ---
     /** Строгая семантика (D-05): неподдержанное — явный отказ, а не «похожее». */
     UNSUPPORTED(Category.UNSUPPORTED, Severity.ERROR, Retryability.NON_RETRYABLE),
