@@ -3,6 +3,7 @@ package com.dpsmpx.dpai.ui
 import com.dpsmpx.dpai.core.ids.SessionId
 import com.dpsmpx.dpai.core.ids.TaskId
 import com.dpsmpx.dpai.core.state.TaskState
+import com.dpsmpx.dpai.orchestrator.git.TaskChanges
 import com.dpsmpx.dpai.sessions.SessionsState
 import com.dpsmpx.dpai.tasks.TaskClass
 import com.dpsmpx.dpai.tasks.TaskRecord
@@ -79,4 +80,80 @@ object TaskScreens {
         actions = actions(t),
         waiting = waiting?.takeIf { t.state == TaskState.READY },
     )
+}
+
+/** Вид строки изменений — для цвета на экране. */
+enum class DiffKind { SECTION, STAT, FILE, HUNK, ADDED, REMOVED, CONTEXT, NOTE }
+
+data class DiffLine(val kind: DiffKind, val text: String)
+
+/** Изменения задачи на экране (D-42, п. 3): одна строка сути и строки вывода Git по частям. */
+data class ChangesView(val summary: String, val lines: List<DiffLine>) {
+    /** Текст для буфера обмена — как в `dpai task <id> diff`. */
+    val text: String get() = lines.joinToString("\n") { it.text }
+}
+
+/**
+ * Изменения задачи для листа задачи (D-42, п. 3) — чистая функция:
+ * части [TaskChanges] по порядку («что принесёт слияние», «не
+ * закоммичено», «новые файлы»), у строки — вид. На экране — не больше
+ * [SCREEN_LINES] строк: длинное целиком — `dpai task <id> diff`.
+ */
+object TaskChangesScreen {
+    const val SCREEN_LINES = 2000
+
+    fun of(c: TaskChanges, warnings: List<String> = emptyList(), limit: Int = SCREEN_LINES): ChangesView {
+        val files = { part: List<String>? -> part.orEmpty().count { it.startsWith("diff --git ") } }
+        val summary = when {
+            c.committed == null && c.uncommitted == null ->
+                if (c.base == null) "Показать нечего: у проекта нет ветки интеграции, дерева задачи нет" else "Ветки ${c.branch} ещё нет: задача не начиналась"
+            c.empty -> "Изменений нет: в ${c.branch} нет ничего, чего нет в ${c.base ?: "базе"}"
+            else -> listOfNotNull(
+                c.committed?.let { "слияние в ${c.base}: файлов ${files(it)}" },
+                c.uncommitted?.takeIf { it.isNotEmpty() }?.let { "не закоммичено: файлов ${files(it)}" },
+                "новых файлов ${c.untracked.size}".takeIf { c.untracked.isNotEmpty() },
+            ).joinToString(" · ")
+        }
+        val all = buildList {
+            c.committed?.takeIf { it.isNotEmpty() }?.let {
+                add(DiffLine(DiffKind.SECTION, "Что принесёт слияние (${c.base}...${c.branch})"))
+                addAll(classify(it))
+            }
+            c.uncommitted?.takeIf { it.isNotEmpty() }?.let {
+                add(DiffLine(DiffKind.SECTION, "Не закоммичено в дереве задачи"))
+                addAll(classify(it))
+            }
+            if (c.untracked.isNotEmpty()) {
+                add(DiffLine(DiffKind.SECTION, "Новые файлы, ещё не в Git (${c.untracked.size})"))
+                c.untracked.forEach { add(DiffLine(DiffKind.FILE, it)) }
+            }
+            if (c.truncated) add(DiffLine(DiffKind.NOTE, "Вывод обрезан: часть длиннее ${TaskChanges.MAX_LINES} строк"))
+            warnings.forEach { add(DiffLine(DiffKind.NOTE, it)) }
+        }
+        val lines = if (all.size <= limit) all else all.take(limit) + DiffLine(DiffKind.NOTE, "На экране — первые $limit строк из ${all.size}; целиком — dpai task <id> diff")
+        return ChangesView(summary, lines)
+    }
+
+    /**
+     * Виды строк одной части: до первого `diff --git` — сводка `--stat`;
+     * от `diff --git` до первого `@@` — заголовок файла (там `---` и `+++`
+     * — имена, а не строки); дальше — по первому знаку.
+     */
+    fun classify(part: List<String>): List<DiffLine> {
+        var seenFile = false
+        var header = false
+        return part.map { s ->
+            val kind = when {
+                s.startsWith("diff --git ") -> DiffKind.FILE.also { seenFile = true; header = true }
+                !seenFile -> DiffKind.STAT
+                header && !s.startsWith("@@") -> DiffKind.FILE
+                s.startsWith("@@") -> DiffKind.HUNK.also { header = false }
+                s.startsWith("+") -> DiffKind.ADDED
+                s.startsWith("-") -> DiffKind.REMOVED
+                s.startsWith("\\") -> DiffKind.NOTE
+                else -> DiffKind.CONTEXT
+            }
+            DiffLine(kind, s)
+        }
+    }
 }

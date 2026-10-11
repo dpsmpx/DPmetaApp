@@ -1,5 +1,6 @@
 package com.dpsmpx.dpai.android
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -131,6 +132,7 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
                     else -> Unit
                 }
                 status?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
+                ChangesSection(model, task)
                 TurnMessagesSection(messages)
             }
         },
@@ -192,6 +194,83 @@ private fun ReplyEditor(busy: Boolean, onSend: (String) -> Unit) {
         TextButton(enabled = !busy && text.isNotBlank(), onClick = { onSend(text) }) { Text("Отправить и повторить") }
     }
 }
+
+/**
+ * Изменения задачи (D-42, п. 3): что принесёт слияние, что не закоммичено,
+ * новые файлы. Загружаются по кнопке — это Git на target, — и строки
+ * красятся по виду ([com.dpsmpx.dpai.ui.TaskChangesScreen]); длинные
+ * строки — прокруткой вбок, без переноса.
+ */
+@Composable
+private fun ChangesSection(model: DemoModel, task: TaskId) {
+    val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var view by remember(task) { mutableStateOf<com.dpsmpx.dpai.ui.ChangesView?>(null) }
+    var failure by remember(task) { mutableStateOf<String?>(null) }
+    var loading by remember(task) { mutableStateOf(false) }
+    fun load() {
+        loading = true
+        scope.launch {
+            when (val r = withContext(Dispatchers.IO) { model.taskChanges(task) }) {
+                is Outcome.Success -> {
+                    view = withContext(Dispatchers.Default) { com.dpsmpx.dpai.ui.TaskChangesScreen.of(r.value, r.warnings.map { it.message }) }
+                    failure = null
+                }
+                is Outcome.Failure -> failure = r.errors.first().message
+            }
+            loading = false
+        }
+    }
+    androidx.compose.material3.HorizontalDivider()
+    androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        Text("Изменения", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+        view?.let { v ->
+            TextButton(onClick = {
+                context.getSystemService(android.content.ClipboardManager::class.java)
+                    .setPrimaryClip(android.content.ClipData.newPlainText("dpai", v.text))
+            }) { Text("Копировать") }
+        }
+        TextButton(enabled = !loading, onClick = { load() }) { Text(if (loading) "Загружаю…" else if (view == null) "Показать" else "Обновить") }
+    }
+    failure?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
+    val v = view ?: return
+    Text(v.summary, style = MaterialTheme.typography.bodySmall)
+    if (v.lines.isEmpty()) return
+    val colors = MaterialTheme.colorScheme
+    val text = remember(v) {
+        val b = androidx.compose.ui.text.AnnotatedString.Builder()
+        v.lines.forEachIndexed { i, l ->
+            if (i > 0) b.append("\n")
+            val style = when (l.kind) {
+                com.dpsmpx.dpai.ui.DiffKind.SECTION -> androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold, color = colors.primary)
+                com.dpsmpx.dpai.ui.DiffKind.FILE -> androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold)
+                com.dpsmpx.dpai.ui.DiffKind.HUNK -> androidx.compose.ui.text.SpanStyle(color = colors.tertiary)
+                com.dpsmpx.dpai.ui.DiffKind.ADDED -> androidx.compose.ui.text.SpanStyle(color = ADDED, background = ADDED.copy(alpha = 0.08f))
+                com.dpsmpx.dpai.ui.DiffKind.REMOVED -> androidx.compose.ui.text.SpanStyle(color = colors.error, background = colors.error.copy(alpha = 0.08f))
+                com.dpsmpx.dpai.ui.DiffKind.NOTE -> androidx.compose.ui.text.SpanStyle(fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, color = colors.outline)
+                com.dpsmpx.dpai.ui.DiffKind.STAT, com.dpsmpx.dpai.ui.DiffKind.CONTEXT -> null
+            }
+            val start = b.length
+            b.append(l.text)
+            style?.let { b.addStyle(it, start, b.length) }
+        }
+        b.toAnnotatedString()
+    }
+    androidx.compose.material3.Card(Modifier.fillMaxWidth()) {
+        androidx.compose.foundation.text.selection.SelectionContainer {
+            Text(
+                text,
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                softWrap = false,
+                modifier = Modifier.horizontalScroll(rememberScrollState()).padding(8.dp),
+            )
+        }
+    }
+}
+
+/** Цвет добавленных строк: зелёный, различимый на светлой и тёмной теме. */
+private val ADDED = androidx.compose.ui.graphics.Color(0xFF2E7D32)
 
 /**
  * Итоговые сообщения ходов (D-42): на чём модель остановилась и ждёт

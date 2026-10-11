@@ -268,6 +268,15 @@ class DemoModel(
     fun taskMessages(task: TaskId): List<com.dpsmpx.dpai.orchestrator.TurnMessage> =
         runCatching { built?.orchestrator?.turnMessages(task) }.getOrNull().orEmpty()
 
+    /**
+     * Изменения задачи (D-42, п. 3) — по кнопке, не по таймеру: это Git на
+     * target (по SSH — секунды). Без замка: контур читает неизменяемый
+     * снимок деревьев; звать — с потока ввода-вывода.
+     */
+    fun taskChanges(task: TaskId): Outcome<com.dpsmpx.dpai.orchestrator.git.TaskChanges> =
+        runCatching { built?.orchestrator?.taskChanges(task) }.getOrElse { e -> Outcome.failure(DiagCode.GIT_COMMAND_FAILED, "изменения не прочитаны: ${e.javaClass.simpleName}") }
+            ?: Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "контроллер не запущен")
+
     /** Настройки контура (D-42, п. 5, 6) — для вкладки Targets; без замка. */
     fun control(): com.dpsmpx.dpai.orchestrator.commands.ControlState? = runCatching { (built as? LiveSystem)?.orchestrator?.control }.getOrNull()
 
