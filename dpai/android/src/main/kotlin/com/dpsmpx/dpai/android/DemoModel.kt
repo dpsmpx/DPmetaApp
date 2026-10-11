@@ -92,8 +92,10 @@ class DemoModel(
         if (targets.any { it.configDir != null }) {
             val key = targets to controller.project()
             if (live == null || liveFor != key) {
+                val started = Clock.SYSTEM.monotonicNanos()
                 live = controller.live(key.first, key.second, onEvents, onProblem)
                 liveFor = key
+                perf("контроллер построен", started)
             }
             return live!!.also { built = it }
         }
@@ -138,17 +140,38 @@ class DemoModel(
         return Snapshot(
             v.mode, v is LiveSystem, v.dashboard(), com.dpsmpx.dpai.ui.Screens.board(o.tasks, showArchived), session?.let(v::session), notifications,
             RequestScreens.cards(shown(v), o.tasks, Clock.SYSTEM.now()), o.tasks.tasks.values.count { it.archived },
-        ).also { published = it }
+        ).also {
+            published = it
+            publishedOf = v
+        }
     }
 
     /** Такт и снимок; новые уведомления — в снимке, один раз. */
     fun step(selected: String?): Snapshot = lock.withLock {
         val v = current()
+        // Снимок — до такта (D-63): такт ходит по SSH секундами, экран не должен его ждать.
+        if (published == null || publishedOf !== v) {
+            val started = Clock.SYSTEM.monotonicNanos()
+            snapshot(v, selected, emptyList())
+            perf("снимок до такта", started)
+        }
         // Намерения о настройках (D-57) — в очередь этого контура до такта: такт их и исполнит.
         context?.let { SettingIntents.reconcile(it, v.orchestrator) }
+        val started = Clock.SYSTEM.monotonicNanos()
         v.step()
+        perf("такт", started)
         context?.let { SettingIntents.reconcile(it, v.orchestrator) }
         snapshot(v, selected, drain(v))
+    }
+
+    /** Контур, по которому опубликован последний снимок: новый контур — новый снимок до такта. */
+    @Volatile
+    private var publishedOf: ControlView? = null
+
+    /** Замер для настройки скорости (D-63): в logcat с тегом `dpai-perf`, только длительность. */
+    private fun perf(what: String, startedNanos: Long) {
+        val ms = (Clock.SYSTEM.monotonicNanos() - startedNanos) / 1_000_000
+        runCatching { android.util.Log.i("dpai-perf", "$what: $ms мс") }
     }
 
     /**
@@ -156,7 +179,12 @@ class DemoModel(
      * держит замок — последний опубликованный снимок: экран не ждёт SSH.
      */
     fun view(selected: String?): Snapshot? {
-        if (!lock.tryLock()) return published
+        if (!lock.tryLock()) {
+            // Такт держит замок (SSH, проверка лимитов) — снимок из уже построенного контура без замка (D-63):
+            // состояния контура неизменяемы, а сбой чтения посреди записи такта — прежний снимок, не ошибка.
+            val v = built ?: return published
+            return runCatching { snapshot(v, selected, emptyList()) }.getOrNull() ?: published
+        }
         try {
             val v = current()
             // Команды, пришедшие с экрана, пока такта нет, — сразу (поток экрана — единственный писатель в этот миг).

@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.navigationBars
@@ -233,7 +235,8 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
         },
     ) { padding ->
         val s = snapshot
-        Column(Modifier.padding(padding).fillMaxSize()) {
+        // Клавиатура (D-64): содержимое — над ней; отступ панели вкладок уже учтён (consumeWindowInsets), не вдвое.
+        Column(Modifier.padding(padding).consumeWindowInsets(padding).imePadding().fillMaxSize()) {
             failure?.let {
                 Text(
                     "Контроллер не работает: $it. Проверьте targets на вкладке Targets.",

@@ -199,8 +199,12 @@ class LiveSystem(
         for (sub in o.accounts.subscriptions.values.filter { !it.rotationExplicit && !it.rotationAllowed }.sortedBy { it.id.value }) {
             accountsLogic.setRotation(o.accounts, sub.id, true, clock.now()).valueOrNull()?.let(o::commitAccounts)
         }
-        for (e in usable) probeSlot(e.id)
+        // Пробы входа слотов (SSH к каждому target) — в первом такте, а не здесь (D-63): контроллер
+        // строится из журнала быстро, и экран показывает состояние, не дожидаясь сети.
     }
+
+    /** Пробы входа слотов ещё не начинались — их начнёт первый такт (D-63). */
+    private var probesStarted = false
 
     /**
      * Слот «нужен вход» после отказа хода (D-58): без сети Claude Code не
@@ -355,6 +359,10 @@ class LiveSystem(
     }
 
     override fun step() {
+        if (!probesStarted) {
+            probesStarted = true
+            for (e in usable) probeSlot(e.id)
+        }
         for ((target, p) in probes.entries.toList()) {
             when (val r = p.first.poll(p.second)) {
                 is Outcome.Failure -> {
@@ -397,6 +405,21 @@ class LiveSystem(
 
     /** События активного сегмента журнала — для временной шкалы (D-37). */
     fun events(): List<EventEnvelope> = journal.records(journal.activeFrom).map { it.event }
+
+    /**
+     * События одной сессии из активного сегмента (D-63): обход журнала с
+     * фильтром по потоку — без копии всех записей сегмента ради одной
+     * сессии (экран чата берёт снимок раз в 1–2 с).
+     */
+    fun sessionEvents(id: SessionId): List<EventEnvelope> {
+        val stream = com.dpsmpx.dpai.core.events.StreamRef.of(id)
+        val out = ArrayList<EventEnvelope>()
+        journal.forEachRecord(journal.activeFrom) { r ->
+            if (r.event.stream == stream) out += r.event
+            true
+        }
+        return out
+    }
 
     fun diagnosis(): SelfDiagnosis = SelfDiagnostics.evaluate(signals())
 
@@ -448,7 +471,7 @@ class LiveSystem(
 
     override fun session(id: SessionId): SessionScreen {
         val base = Screens.session(
-            orchestrator.dashboard(), id, events(), orchestrator.live(id), clock.now(), Screens.sessionActions(id, orchestrator.sessions, orchestrator.tasks),
+            orchestrator.dashboard(), id, sessionEvents(id), orchestrator.live(id), clock.now(), Screens.sessionActions(id, orchestrator.sessions, orchestrator.tasks),
             Screens.usage(orchestrator.sessions) { it.id == id },
         )
         // Чат задачи сессии (D-59): все её сессии в одной ленте.
