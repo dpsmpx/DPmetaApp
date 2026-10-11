@@ -49,7 +49,7 @@ DP-Verify, DPmetaApp, DP_AI_Orcestrator, DP_game_market_analytic_system;
 | SQ-25 | DPvisualisation, SocialMediaImage | схема сайта — из невлитой ветки; связи не записаны в DPmeta | низкий (документы), публичный (сайт) | сделано в ветках `claude/dreamy-bardeen-xe4k6r` трёх репозиториев; вливаются, когда полностью проверены (M-13) |
 | SQ-26 | DP_AI_Orcestrator | строка состояния README расходится с «Прогрессом» | низкий | сделано в `DPmetaApp:dpai/README.md`; репозиторий заморожен (SQ-30) |
 | SQ-27 | DPmetaApp | ТЗ и журнал решений — только в невлитой ветке, а на них ссылаются | низкий | решено: влито в `main` DPmetaApp — PR #2 (`51fa0c7`, 11 октября 2026) |
-| SQ-28 | DP_AI_Orcestrator | пункты о манифесте в TODO и контракте интеграции решены (M-11); «публичный» при закрытом — ответ автора записан там | средний (лицензия, границы) | частично: пункт `TODO.md` подсистемы обновлён; контракт интеграции по-прежнему называет DPmeta получателем итогов — активная разработка DPmetaApp |
+| SQ-28 | DPmetaApp | пункты о манифесте в TODO и контракте интеграции решены (M-11); «публичный» при закрытом — ответ автора записан там | средний (лицензия, границы) | частично: пункт `TODO.md` подсистемы обновлён; контракт интеграции по-прежнему называет DPmeta получателем итогов — активная разработка DPmetaApp |
 | SQ-29 | DP_AI_Orcestrator | своё Android-приложение (`android/`, README), а по слову автора — в составе DPmetaApp | средний (архитектура) | решено автором: `DPmetaApp:D-28` — оболочка `dpai/android` и есть приложение DPmetaApp |
 | SQ-30 | DP_AI_Orcestrator | репозиторий заморожен (`DPmetaApp:D-28`), а сам об этом не говорит | низкий | открыт — архивировать репозиторий решает автор |
 | SQ-31 | DPvisualisation, SocialMediaImage | узлы и факты: DP_AI_Orcestrator ещё «войдёт» в DPmetaApp, его приложение — отдельно | низкий (документы), публичный (сайт) | открыт — место в счёте и схеме решает автор (RISK-11), текст — сессии проектов |
@@ -67,10 +67,10 @@ DP-Verify, DPmetaApp, DP_AI_Orcestrator, DP_game_market_analytic_system;
 ### SQ-01 — Адрес DPlang `dpsmpx/C-` в настоящем времени
 
 - **Вид:** наблюдение + рекомендация. **Риск:** низкий.
-- **Где:** `CLAUDE.md:44`, `docs/PROCESS.md:303`,
-  `docs/direction/DECISIONS.md:452` (`Galdhold:Р17`) и `:475`
-  (`Galdhold:Р18`), `docs/direction/WORLD_COORDINATES.md:182` («нынешний
-  `dpsmpx/C-`»), `docs/direction/DEFERRED_TASKS_BY_EARLY_EASE.md:200`,
+- **Где** (`d7a9d43`, 11 октября 2026): `CLAUDE.md:44`,
+  `docs/PROCESS.md:491`, `docs/direction/DECISIONS.md:482` (`Galdhold:Р17`)
+  и `:505` (`Galdhold:Р18`), `docs/direction/WORLD_COORDINATES.md:182`
+  («нынешний `dpsmpx/C-`»), `docs/direction/DEFERRED_TASKS_BY_EARLY_EASE.md:200`,
   `ROADMAP/Детерминированный скриптовый язык.md:172`.
 - **Что не так:** репозиторий называется `dpsmpx/DPlang`; старый адрес
   работает только перенаправлением GitHub. В Р18 дата смены имени — 4
@@ -79,11 +79,9 @@ DP-Verify, DPmetaApp, DP_AI_Orcestrator, DP_game_market_analytic_system;
   Р18 — с записью в историю журнала (правка имени, суть не меняется —
   так же, как запись «C- теперь DPlang»); история (`:731`, `:944`) — как
   есть.
-- **Проход 11 октября 2026** (`d7a9d43`): всё на месте, строки сдвинулись —
-  `CLAUDE.md:44`, `docs/PROCESS.md:491`, `docs/direction/DECISIONS.md:482`
-  (Р17) и `:505` (Р18), `docs/direction/WORLD_COORDINATES.md:182`,
-  `docs/direction/DEFERRED_TASKS_BY_EARLY_EASE.md:200`,
-  `ROADMAP/Детерминированный скриптовый язык.md:172`.
+- **Проход 11 октября 2026** (`d7a9d43`): всё на месте; строки в «Где»
+  обновлены (на `d66fb79` были `docs/PROCESS.md:303`,
+  `docs/direction/DECISIONS.md:452` и `:475`).
 - **Состояние:** открыт.
 
 ### SQ-02 — Значок сборки ведёт на Actions прежнего адреса
@@ -159,8 +157,9 @@ DP-Verify, DPmetaApp, DP_AI_Orcestrator, DP_game_market_analytic_system;
 - **Вид:** наблюдение. **Риск:** низкий.
 - **Где:** `compiler/support/codes.def:1` ссылается на
   `docs/compiler/diagnostics.md` — документа нет и в планах, диагностика
-  описана в `docs/compiler/README.md`; `bench/README.md:56` —
-  `docs/research/syntax/spec_X.md`, где `X` — заполнитель варианта.
+  описана в `docs/compiler/README.md`; `bench/README.md:62` (`59153ab`,
+  11 октября 2026; прежде — `:56`) — `docs/research/syntax/spec_X.md`, где
+  `X` — заполнитель варианта.
 - **Предложение:** ссылку — на `docs/compiler/README.md`; заполнитель —
   `spec_<вариант>.md` (так его понимает DP-Verify).
 - **Состояние:** открыт.
@@ -237,37 +236,35 @@ Galdhold); DP Verify 1.0.0-rc2 поставлен в DPpass (этап 6) и Gald
 ### SQ-07 — Неверные пути в чужих репозиториях
 
 - **Вид:** наблюдение. **Риск:** низкий.
-- **Где:** `docs/direction/TECHNICAL_TASK.md` ссылается на файлы в корне
-  чужих репозиториев, которые лежат в `docs/`: строки 1148 и 1161 —
-  `PROVENANCE.md` DPpass (есть `DPpass:docs/PROVENANCE.md`); 774 и 1228 —
-  `PROVENANCE.md` Galdhold, в ТЗ — VoxelRPG (есть
-  `Galdhold:docs/PROVENANCE.md`); 1681 — `ARCHITECTURE.md` DPpass (есть
-  `DPpass:docs/ARCHITECTURE.md`); 698 — `CHANGELOG.md` Galdhold (есть
-  `Galdhold:docs/CHANGELOG.md`).
+- **Где** (`6c57f07`, 11 октября 2026): `docs/direction/TECHNICAL_TASK.md`
+  ссылается на файлы в корне чужих репозиториев, которые лежат в `docs/`:
+  строки 1161 и 1174 — `PROVENANCE.md` DPpass (есть
+  `DPpass:docs/PROVENANCE.md`); 774 и 1241 — `PROVENANCE.md` Galdhold, в
+  ТЗ — VoxelRPG (есть `Galdhold:docs/PROVENANCE.md`); 1722 —
+  `ARCHITECTURE.md` DPpass (есть `DPpass:docs/ARCHITECTURE.md`); 698 —
+  `CHANGELOG.md` Galdhold (есть `Galdhold:docs/CHANGELOG.md`).
 - **Что не так:** DP-Verify не сверяет чужие пути (`DP-Verify:V-17`), и по
   плану в эти файлы шаги поставки должны дописывать строки (I-09).
 - **Предложение:** поправить пути при следующей правке ТЗ.
 - **Проход 11 октября 2026** (`6c57f07`): в шагах 3 §12.2 и §12.3 пути
   исправлены (`DPpass:docs/PROVENANCE.md`, `VoxelRPG:docs/PROVENANCE.md`);
-  остались строки 698 (`CHANGELOG.md` Galdhold), 774 и 1241
-  (`PROVENANCE.md` Galdhold), 1161 и 1174 (`PROVENANCE.md` DPpass), 1722
-  (`ARCHITECTURE.md` DPpass) — везде путь без `docs/`.
+  остальные места — в «Где», строки обновлены (на `8db2fc0` были 1148,
+  1161, 774, 1228, 1681, 698).
 - **Состояние:** открыт.
 
 ### SQ-08 — Устаревшие сведения о других репозиториях
 
 - **Вид:** наблюдение. **Риск:** низкий.
 - **Где и что:**
-  - `ROADMAP/ROADMAP.md:20-23` («Порядок»): DPpass «сейчас красный»,
-    «`main` DPlang красный» — оба зелёные (своя же проба:
+  - `ROADMAP/ROADMAP.md:23-24` («Порядок», `6c57f07`): DPpass «сейчас
+    красный», «`main` DPlang красный» — оба зелёные (своя же проба:
     `DP-Verify:docs/audits/STAGE2_TRIAL.md` — DPpass ✓, «DPlang … зелёный —
     8 из 8»; прогон DPmeta 5 октября 2026 — так же);
-  - `docs/direction/TECHNICAL_TASK.md`, §12.4: «зелёный `main` (сейчас 1
-    тест компилятора)» — устарело так же; §1 и §12.2 «Предусловия» — срез
-    на 4 октября, так и помечен — не ошибка;
-  - `TODO.md`, «Предусловия в других репозиториях»: «Хук начала сессии
-    DPpass ставит command-line tools Android SDK» — хука в DPpass нет; его
-    ставит сам DP-Verify шагом 8 §12.2.
+  - `docs/direction/TECHNICAL_TASK.md`, §12.4 (строка 1263): «зелёный
+    `main` (сейчас 1 тест компилятора)» — устарело так же; §1 и §12.2
+    «Предусловия» — срез на 4 октября, так и помечен — не ошибка;
+  - снято 11 октября 2026: пункт `TODO.md` «Хук начала сессии DPpass
+    ставит command-line tools Android SDK» — хук поставлен пилотом.
 - **Предложение:** прошедшее время с датой («на 4 октября был красным»)
   — обоснование порядка сохраняется; пункт TODO — как план: «хук, который
   поставит DP-Verify (§12.2, шаг 8), должен …».
@@ -583,35 +580,30 @@ Code, управление — из Android-приложения (`DP_AI_Orcestr
 
 - **Вид:** наблюдение. **Риск:** средний — лицензия и граница «что
   переносить сюда».
-- **Где и что:**
-  - `DP_AI_Orcestrator:D-16` («Репозиторий публичный (Apache-2.0, выбор
-    автора при создании)») и `DP_AI_Orcestrator:CLAUDE.md` («репозиторий
-    публичный, переносятся только идеи») — а на GitHub репозиторий
-    закрытый (private, 9 октября 2026). Ответ автора записан там же
-    (`DP_AI_Orcestrator:TODO.md`, «Открытые вопросы автору») — править по
-    нему нечего; Apache-2.0 при закрытом репозитории — RISK-06;
-  - `DP_AI_Orcestrator:TODO.md` — «Выгрузка манифеста `dpai.ecosystem` из
-    DPmeta — вопрос к DPmeta» и `DP_AI_Orcestrator:docs/INTEGRATION_CONTRACT.md`,
-    §20 — «выгрузка манифеста из DPmeta — открытый вопрос к DPmeta»:
-    решено (M-11, C-13). Там же, §20 и таблица выходов, DPmeta назван
-    получателем итогов `dpai.ecosystem-results` и событий `dpai.event` —
-    DPmeta их не читает (M-01, C-13).
+- **Где и что** (с 10 октября 2026 — в DPmetaApp, подсистема `dpai/`;
+  сверено на `4116a95`): `dpai/docs/INTEGRATION_CONTRACT.md` — таблица
+  выходов («Итог глобального прогона … пользователь, DPmeta») и §20
+  называют DPmeta получателем итогов `dpai.ecosystem-results` и событий
+  `dpai.event` — DPmeta их не читает (M-01, C-13). Пункт о манифесте в
+  `dpai/TODO.md` уже ведёт на `DPmeta:tools/manifest.py` — сделано.
+  «Репозиторий публичный» (D-16 подсистемы,
+  `dpai/docs/direction/DECISIONS.md`) — теперь внутри закрытого DPmetaApp
+  (RISK-06).
+- **Прежде** (до `DPmetaApp:D-28`): `DP_AI_Orcestrator:D-16` («Репозиторий
+  публичный (Apache-2.0, выбор автора при создании)») и
+  `DP_AI_Orcestrator:CLAUDE.md` («репозиторий публичный, переносятся
+  только идеи») при закрытом репозитории; `DP_AI_Orcestrator:TODO.md` и
+  `DP_AI_Orcestrator:docs/INTEGRATION_CONTRACT.md`, §20 — «выгрузка
+  манифеста из DPmeta — открытый вопрос к DPmeta», решено M-11 и C-13.
 - **Ответ автора о видимости** (9 октября 2026, записан в
   `DP_AI_Orcestrator:TODO.md`, «Открытые вопросы автору» — раньше этого
   прохода): репозиторий остаётся закрытым, пока автор не решит открыть;
   правила D-16 соблюдаются как для публичного. Решать здесь нечего.
-- **Предложение:** сессии оркестратора — пункты о манифесте в `TODO.md`
-  и в `docs/INTEGRATION_CONTRACT.md`, §20, заменить ссылкой на
-  `DPmeta:C-13` (манифест строит `DPmeta:tools/manifest.py`); получателем
-  итогов прогона DPmeta не указывать. Манифест в репозиторий оркестратора
-  не копировать (`DPmeta:C-13`, «Границы»).
-- **Проход 11 октября 2026** (`DPmetaApp` `4116a95`): пункт о манифесте в
-  `DPmetaApp:dpai/TODO.md` ведёт на `DPmeta:tools/manifest.py` и ветку
-  DPmeta — сделано. Осталось: `DPmetaApp:dpai/docs/INTEGRATION_CONTRACT.md`
-  (таблица выходов и §20) называет DPmeta получателем
-  `dpai.ecosystem-results`; «публичный» D-16 подсистемы
-  (`DPmetaApp:dpai/docs/direction/DECISIONS.md`) — теперь внутри закрытого
-  DPmetaApp (RISK-06).
+- **Предложение:** сессии DPmetaApp — в `dpai/docs/INTEGRATION_CONTRACT.md`
+  (таблица выходов и §20) получателем итогов прогона DPmeta не указывать:
+  манифест строит `DPmeta:tools/manifest.py` (`DPmeta:C-13`), итоги читает
+  пользователь. Манифест в DPmetaApp не копировать (`DPmeta:C-13`,
+  «Границы»).
 - **Состояние:** частично; остальное — сессия DPmetaApp (активная
   разработка).
 

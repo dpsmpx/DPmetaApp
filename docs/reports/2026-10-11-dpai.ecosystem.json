@@ -1,0 +1,287 @@
+{
+ "format": "dpai.ecosystem",
+ "version": 1,
+ "projects": [
+  {
+   "key": "galdhold",
+   "name": "Galdhold",
+   "state": {
+    "place": "core",
+    "branch": "main",
+    "head": "d7a9d43",
+    "updated": "2026-10-11"
+   },
+   "documents": [
+    "CLAUDE.md",
+    "README.md",
+    "TODO.md",
+    "docs/direction/DECISIONS.md"
+   ],
+   "suggestions": [
+    {
+     "key": "sq-01",
+     "title": "SQ-01: адрес DPlang dpsmpx/C- в настоящем времени",
+     "objective": "Где: (d7a9d43, 11 октября 2026): CLAUDE.md:44, docs/PROCESS.md:491, docs/direction/DECISIONS.md:482 (Galdhold:Р17) и :505 (Galdhold:Р18), docs/direction/WORLD_COORDINATES.md:182 («нынешний dpsmpx/C-»), docs/direction/DEFERRED_TASKS_BY_EARLY_EASE.md:200, ROADMAP/Детерминированный скриптовый язык.md:172. Предложение: dpsmpx/C- → dpsmpx/DPlang в этих местах; в Р17 и Р18 — с записью в историю журнала (правка имени, суть не меняется — так же, как запись «C- теперь DPlang»); история (:731, :944) — как есть. (DPmeta:SQ-01)",
+     "priority": "LOW",
+     "operation": "docs"
+    }
+   ]
+  },
+  {
+   "key": "dplang",
+   "name": "DPlang",
+   "state": {
+    "place": "core",
+    "branch": "main",
+    "head": "59153ab",
+    "updated": "2026-10-11"
+   },
+   "documents": [
+    "CLAUDE.md",
+    "README.md",
+    "TODO.md",
+    "docs/direction/DECISIONS.md"
+   ],
+   "suggestions": [
+    {
+     "key": "sq-05",
+     "title": "SQ-05: находки пробы DP-Verify: ссылка и заполнитель",
+     "objective": "Где: compiler/support/codes.def:1 ссылается на docs/compiler/diagnostics.md — документа нет и в планах, диагностика описана в docs/compiler/README.md; bench/README.md:62 (59153ab, 11 октября 2026; прежде — :56) — docs/research/syntax/spec_X.md, где X — заполнитель варианта. Предложение: ссылку — на docs/compiler/README.md; заполнитель — spec_<вариант>.md (так его понимает DP-Verify). (DPmeta:SQ-05)",
+     "priority": "LOW",
+     "operation": "docs"
+    },
+    {
+     "key": "sq-32",
+     "title": "SQ-32: README: v0.2 «не начата», а по ROADMAP сделаны шаги 1–5",
+     "objective": "Где: README.md:21 (59153ab, 11 октября 2026) — «v0.2 — native-срез | следующая, не начата». Предложение: строку v0.2 — по состоянию ROADMAP («идёт: шаги 1–5 из …»), как строку v0.1; сессией DPlang по его правилам. (DPmeta:SQ-32)",
+     "priority": "LOW",
+     "operation": "docs"
+    }
+   ]
+  },
+  {
+   "key": "dp-verify",
+   "name": "DP-Verify",
+   "state": {
+    "place": "core",
+    "branch": "main",
+    "head": "6c57f07",
+    "updated": "2026-10-11"
+   },
+   "documents": [
+    "CLAUDE.md",
+    "README.md",
+    "TODO.md",
+    "docs/direction/DECISIONS.md"
+   ],
+   "suggestions": [
+    {
+     "key": "sq-07",
+     "title": "SQ-07: неверные пути в чужих репозиториях в ТЗ",
+     "objective": "Где: (6c57f07, 11 октября 2026): docs/direction/TECHNICAL_TASK.md ссылается на файлы в корне чужих репозиториев, которые лежат в docs/: строки 1161 и 1174 — PROVENANCE.md DPpass (есть DPpass:docs/PROVENANCE.md); 774 и 1241 — PROVENANCE.md Galdhold, в ТЗ — VoxelRPG (есть Galdhold:docs/PROVENANCE.md); 1722 — ARCHITECTURE.md DPpass (есть DPpass:docs/ARCHITECTURE.md); 698 — CHANGELOG.md Galdhold (есть Galdhold:docs/CHANGELOG.md). Предложение: поправить пути при следующей правке ТЗ. (DPmeta:SQ-07)",
+     "priority": "LOW",
+     "operation": "docs"
+    },
+    {
+     "key": "sq-08",
+     "title": "SQ-08: устаревшие сведения о состоянии других репозиториев",
+     "objective": "Где: ROADMAP/ROADMAP.md:23-24 («Порядок», 6c57f07): DPpass «сейчас красный», «main DPlang красный» — оба зелёные (своя же проба: DP-Verify:docs/audits/STAGE2_TRIAL.md — DPpass ✓, «DPlang … зелёный — 8 из 8»; прогон DPmeta 5 октября 2026 — так же);; docs/direction/TECHNICAL_TASK.md, §12.4 (строка 1263): «зелёный main (сейчас 1 тест компилятора)» — устарело так же; §1 и §12.2 «Предусловия» — срез на 4 октября, так и помечен — не ошибка;; снято 11 октября 2026: пункт TODO.md «Хук начала сессии DPpass ставит command-line tools Android SDK» — хук поставлен пилотом. Предложение: прошедшее время с датой («на 4 октября был красным») — обоснование порядка сохраняется; пункт TODO — как план: «хук, который поставит DP-Verify (§12.2, шаг 8), должен …». (DPmeta:SQ-08)",
+     "priority": "LOW",
+     "operation": "docs"
+    }
+   ]
+  },
+  {
+   "key": "dppass",
+   "name": "DPpass",
+   "state": {
+    "place": "core",
+    "branch": "main",
+    "head": "50f185d",
+    "updated": "2026-10-06"
+   },
+   "documents": [
+    "CLAUDE.md",
+    "README.md",
+    "TODO.md",
+    "docs/direction/DECISIONS.md"
+   ],
+   "suggestions": []
+  },
+  {
+   "key": "dpprofile",
+   "name": "DPprofile",
+   "state": {
+    "place": "core",
+    "branch": "main",
+    "head": "3e76c10",
+    "updated": "2026-10-04"
+   },
+   "documents": [
+    "CLAUDE.md",
+    "README.md",
+    "TODO.md",
+    "docs/direction/DECISIONS.md"
+   ],
+   "suggestions": []
+  },
+  {
+   "key": "dplearn",
+   "name": "DPlearn",
+   "state": {
+    "place": "core",
+    "branch": "main",
+    "head": "d2565dd",
+    "updated": "2026-10-04"
+   },
+   "documents": [
+    "CLAUDE.md",
+    "README.md",
+    "TODO.md",
+    "docs/direction/DECISIONS.md"
+   ],
+   "suggestions": []
+  },
+  {
+   "key": "socialmediaimage",
+   "name": "SocialMediaImage",
+   "state": {
+    "place": "core",
+    "branch": "main",
+    "head": "c21b2d2",
+    "updated": "2026-10-07"
+   },
+   "documents": [
+    "CLAUDE.md",
+    "README.md",
+    "TODO.md",
+    "docs/direction/DECISIONS.md"
+   ],
+   "suggestions": [
+    {
+     "key": "sq-12",
+     "title": "SQ-12: карта проектов и черновик README профиля устарели",
+     "objective": "Где: docs/identity/PROJECT_MAP.md: нет DP-Verify, DPprofile, DPlearn, DP_game_market_analytic_system, DPmeta (дополнено третьим проходом, раздел 5); DPpass — «назначение не проверено», хотя оно записано в его README (в разделах 1–2 — по-прежнему). Показывать ли эти проекты публично — решение автора; сама карта может их знать с весом «не упоминать»;; TODO.md:93-128 — правки README профиля по аудиту коммита 433f627; после него автор сам выпустил 0b7aad9: раздел и ссылка уже Galdhold, но появилась описка «Goldhold», два «VoxelRPG repository» и «VoxelRPG does not depend on it» остались (SQ-17). Предложение: сессии SocialMediaImage — черновик ОР-4 сверить с README профиля после правки автора (dpsmpx 1e0b8ba, 8 октября 2026): нужен ли он ещё; пункт TODO.md «Черновик: README профиля GitHub (ОР-4)» — закрыть или обновить. (DPmeta:SQ-12)",
+     "priority": "LOW",
+     "operation": "docs"
+    },
+    {
+     "key": "sq-24",
+     "title": "SQ-24: Д35 и ROADMAP: «UNKNOWN» и «за автором» о сделанном",
+     "objective": "Где: docs/direction/DECISIONS.md, SocialMediaImage:Д35, «Следствия»: «Разрешает ли Beget Options в .htaccess — UNKNOWN … проверить после выгрузки» и «Работают ли директивы Header … — UNKNOWN … проверить curl -I после первой выгрузки». Проверено: docs/platforms/WEBSITE.md:201-206 — Beget применяет Header к статике и принимает Options -Indexes, сайт отвечает 200 (5 октября 2026). То же в плане: ROADMAP/ROADMAP.md:20 — П2 «выгрузка разрешена (05.10.2026), первая — за автором; домен — ОР-11», а первая штатная выгрузка прошла и ОР-11 закрыт (TODO.md, «Инцидент 05.10.2026»; docs/direction/DECISIONS.md, ОР-11); :88 — П2-12 «на хостинге — проверить после первой выгрузки (П2-02)». Предложение: в Д35 — итог проверки с датой и ссылкой на WEBSITE.md, как там же сделано для домена (ОР-11); в ROADMAP — то же для П2 и П2-12. (DPmeta:SQ-24)",
+     "priority": "LOW",
+     "operation": "docs"
+    }
+   ]
+  },
+  {
+   "key": "dp_game_market_analytic_system",
+   "name": "DP_game_market_analytic_system",
+   "state": {
+    "place": "core",
+    "branch": "main",
+    "head": "9edf18c",
+    "updated": "2026-10-11"
+   },
+   "documents": [
+    "README.md",
+    "docs/DECISIONS.md"
+   ],
+   "suggestions": []
+  },
+  {
+   "key": "dpmonetization",
+   "name": "DPmonetization",
+   "state": {
+    "place": "support",
+    "branch": "main",
+    "head": "f6d30fe",
+    "updated": "2026-10-05"
+   },
+   "documents": [
+    "README.md"
+   ],
+   "suggestions": [
+    {
+     "key": "sq-22",
+     "title": "SQ-22: код ссылается на решения и документы, которых нет; WIP в main",
+     "objective": "Где: (f6d30fe): tools/dpmon/*.py и config/tracks.toml ссылаются на решения D-04…D-09, на docs/MODEL.md («Readiness Gates»), docs/CHANGELOG.md и команду tools/spi — ничего из этого в репозитории нет: в корне README.md из одного заголовка, config/, tools/. Нет CLAUDE.md, TODO.md, журнала решений, проверок и тестов; по описанию PR #1 readiness.py ни разу не запускался. Предложение: сессии DPmonetization — журнал решений с уже принятыми решениями, на которые ссылается код (в описании PR #1 они перечислены как «принятые, но не записанные»), TODO.md из раздела «Не сделано» того же PR, README по существу. Входит ли репозиторий в общий процесс (CLAUDE.md, проверки) — решение автора, как RISK-05. По плану PR #1 DPmonetization будет читать DPmeta (реестр и контракты C-01, C-03, C-08, C-09), DP-Verify (report.json) и DP_game_market_analytic_system (DecisionReport) — это ещё план, а не контракт (DPmeta:docs/ECOSYSTEM.md, §2). (DPmeta:SQ-22)",
+     "priority": "LOW",
+     "operation": "docs"
+    }
+   ]
+  },
+  {
+   "key": "dpmetaapp",
+   "name": "DPmetaApp",
+   "state": {
+    "place": "control",
+    "branch": "main",
+    "head": "4116a95",
+    "updated": "2026-10-11"
+   },
+   "documents": [
+    "CLAUDE.md",
+    "README.md",
+    "TODO.md",
+    "docs/direction/DECISIONS.md"
+   ],
+   "suggestions": [
+    {
+     "key": "sq-28",
+     "title": "SQ-28: пункты о манифесте в TODO и контракте интеграции решены (M-11); «публичный» при закрытом — ответ автора записан там",
+     "objective": "Где: (с 10 октября 2026 — в DPmetaApp, подсистема dpai/; сверено на 4116a95): dpai/docs/INTEGRATION_CONTRACT.md — таблица выходов («Итог глобального прогона … пользователь, DPmeta») и §20 называют DPmeta получателем итогов dpai.ecosystem-results и событий dpai.event — DPmeta их не читает (M-01, C-13). Пункт о манифесте в dpai/TODO.md уже ведёт на DPmeta:tools/manifest.py — сделано. «Репозиторий публичный» (D-16 подсистемы, dpai/docs/direction/DECISIONS.md) — теперь внутри закрытого DPmetaApp (RISK-06). Предложение: сессии DPmetaApp — в dpai/docs/INTEGRATION_CONTRACT.md (таблица выходов и §20) получателем итогов прогона DPmeta не указывать: манифест строит DPmeta:tools/manifest.py (DPmeta:C-13), итоги читает пользователь. Манифест в DPmetaApp не копировать (DPmeta:C-13, «Границы»). (DPmeta:SQ-28)",
+     "priority": "LOW",
+     "operation": "docs"
+    }
+   ]
+  },
+  {
+   "key": "dpvisualisation",
+   "name": "DPvisualisation",
+   "state": {
+    "place": "support",
+    "branch": "main",
+    "head": "9769a94",
+    "updated": "2026-10-05"
+   },
+   "documents": [
+    "README.md"
+   ],
+   "suggestions": []
+  },
+  {
+   "key": "dp_ai_orcestrator",
+   "name": "DP_AI_Orcestrator",
+   "state": {
+    "place": "core",
+    "branch": "main",
+    "head": "463415c",
+    "updated": "2026-10-10"
+   },
+   "documents": [
+    "CLAUDE.md",
+    "README.md",
+    "TODO.md",
+    "docs/direction/DECISIONS.md"
+   ],
+   "suggestions": []
+  },
+  {
+   "key": "dpmeta",
+   "name": "DPmeta",
+   "state": {
+    "place": "sync",
+    "branch": "main",
+    "head": "fec807c",
+    "updated": "2026-10-05"
+   },
+   "documents": [
+    "CLAUDE.md",
+    "README.md",
+    "docs/DECISIONS.md"
+   ],
+   "suggestions": []
+  }
+ ]
+}
