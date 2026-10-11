@@ -317,6 +317,10 @@ class Orchestrator(
 
     /** Контексты и handoff незавершённых задач — из документов (после перезапуска). */
     private fun loadTaskDocuments(store: DocumentStore) {
+        // Очереди сообщений (D-60) — и у завершённых задач: сообщение их продолжит.
+        for (t in tasks.tasks.values.filter { !it.archived }) {
+            store.read(docKey("queued", t.id)).valueOrNull()?.let { d -> QueuedMessages.fromJson(d.content).valueOrNull()?.takeIf { it.isNotEmpty() }?.let { queuedOf[t.id] = it } }
+        }
         for (t in tasks.tasks.values.filter { !it.terminal }) {
             store.read(docKey("context", t.id)).valueOrNull()?.let { d ->
                 when (val c = ContextCodec.readContext(d.content)) {
@@ -523,6 +527,7 @@ class Orchestrator(
     /** Такт контура: команды — в начале и между вызовами target (D-42, п. 1). */
     fun tick() {
         runCommands()
+        deliverIdleQueues()
         commitTasks(tasksLogic.promote(tasks, clock.now()))
         resumeAfterLogin()
         // Ждущие сверки сессии держат аренду и место target: сверить снова, когда target ответит (A-44, A-76).
@@ -869,6 +874,11 @@ class Orchestrator(
     }
 
     private fun react(task: TaskId, session: SessionId, state: SessionState) {
+        // Сообщения, ждавшие конца хода (D-60): ход кончился или прерван — они уходят в ту же сессию раньше проверки.
+        if ((state == SessionState.COMPLETED || state == SessionState.PAUSED) && queued(task).isNotEmpty()) {
+            deliverQueued(task, session, state)
+            return
+        }
         when (state) {
             SessionState.COMPLETED -> finish(task, session)
             SessionState.PAUSED -> handOff(task, session)
@@ -1577,19 +1587,27 @@ class Orchestrator(
      * `--resume`. Модель и усилие запроса — в политику задачи (видно на
      * листе задачи). Пока ход идёт — отказ: в идущий процесс не пишут.
      */
-    fun sendToSession(session: SessionId, text: String?, model: String?, effort: String?, fresh: Boolean): Outcome<TaskState> {
+    fun sendToSession(session: SessionId, text: String?, model: String?, effort: String?, fresh: Boolean, echo: Boolean = true): Outcome<TaskState> {
         val s = sessions.sessions[session] ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой сессии", "session $session")
         val task = s.task
         val clean = text?.trim()?.takeIf { it.isNotEmpty() }?.take(UserRequest.MAX_TEXT)
         if (clean == null && !fresh) return Outcome.failure(DiagCode.VALUE_INVALID, "запрос без текста")
-        if (turnRunning(task)) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "ход идёт: остановите его или дождитесь конца", "session $session")
         val last = sessions.sessions.values.filter { it.task == task }.maxWithOrNull(compareBy({ it.createdAt.epochMillis }, { it.id.value }))!!
         if (last.id != session) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "запрос — в последнюю сессию задачи ${last.id}", "session $session")
+        if (turnRunning(task)) {
+            // Ход не прерывается (D-60): сообщение — в очередь задачи, уйдёт в ту же сессию сразу после хода.
+            if (fresh || clean == null) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "ход идёт: свежая сессия — после него", "session $session")
+            enqueue(task, QueuedMessage(clean, clock.now(), model?.trim()?.ifEmpty { null }, effort?.trim()?.ifEmpty { null }))
+            say(task, ChatRole.USER, clean, session)
+            say(task, ChatRole.EVENT, "в очереди: уйдёт в сессию после текущего хода, ход не прерывается", session)
+            return Outcome.success(tasks.tasks.getValue(task).state)
+        }
         reopenForTurn(task)?.let { return it }
         val reason = if (fresh) HandoffReason.TURN_FINISHED else HandoffReason.MANUAL
         val next = clean?.let { "запрос пользователя: $it" } ?: "продолжить работу в свежей сессии с этого места"
-        clean?.let { say(task, ChatRole.USER, it, session) }
+        if (echo) clean?.let { say(task, ChatRole.USER, it, session) }
         if (fresh) say(task, ChatRole.EVENT, "свежая сессия по запросу человека", session)
+        if (!echo) say(task, ChatRole.EVENT, "сообщение из очереди отправлено в сессию", session)
         if (!last.terminal) handOff(task, last.id, reason, next) else writeHandoff(task, last.id, reason, next)
         if (model != null || effort != null) {
             val t = tasks.tasks.getValue(task)
@@ -1892,6 +1910,71 @@ class Orchestrator(
     /** Лента чата задачи по порядку (D-59): запросы человека, рассуждения и тексты модели, события. */
     fun chat(task: TaskId): List<ChatEntry> = chatOf[task]
         ?: documents?.read(docKey("chat", task))?.valueOrNull()?.let { TaskChat.fromJson(it.content).valueOrNull() }.orEmpty()
+
+    /** Сообщения в сессию, ждущие конца хода (D-60); дальше — из документа `queued`. */
+    private val queuedOf = java.util.concurrent.ConcurrentHashMap<TaskId, List<QueuedMessage>>()
+
+    /** Очередь сообщений задачи (D-60) — для экрана и доставки. */
+    fun queued(task: TaskId): List<QueuedMessage> = queuedOf[task]
+        ?: documents?.read(docKey("queued", task))?.valueOrNull()?.let { QueuedMessages.fromJson(it.content).valueOrNull() }.orEmpty()
+
+    private fun enqueue(task: TaskId, m: QueuedMessage) = setQueued(task, (queued(task) + m).takeLast(QueuedMessages.MAX))
+
+    private fun setQueued(task: TaskId, list: List<QueuedMessage>) {
+        queuedOf[task] = list
+        saveTaskDocument("queued", task, QueuedMessages.toJson(list))
+    }
+
+    /**
+     * Доставить очередь (D-60): одно сообщение из всех ждавших — новый ход
+     * той же сессии провайдера (handoff `MANUAL`, `--resume`), задача снова в
+     * плане; модель и усилие — последние заданные. Сессия прервана
+     * (`PAUSED`) — handoff как при прерывании; завершена — handoff к ней, без
+     * проверки этого хода: работа продолжается.
+     */
+    private fun deliverQueued(task: TaskId, session: SessionId, state: SessionState) {
+        val list = queued(task)
+        val text = list.joinToString("\n\n") { it.text }
+        val next = "запрос пользователя: $text"
+        if (state == SessionState.PAUSED) {
+            handOff(task, session, HandoffReason.MANUAL, next)
+        } else {
+            writeHandoff(task, session, HandoffReason.MANUAL, next)
+            releaseTree(task, session)
+            commitTasks(ok(tasksLogic.continueLater(tasks, task, clock.now()), "сообщение после хода").orEmpty())
+        }
+        applyQueuedPolicy(task, list)
+        setQueued(task, emptyList())
+        say(task, ChatRole.EVENT, "сообщение из очереди отправлено в сессию", session)
+    }
+
+    private fun applyQueuedPolicy(task: TaskId, list: List<QueuedMessage>) {
+        val model = list.lastOrNull { it.model != null }?.model
+        val effort = list.lastOrNull { it.effort != null }?.effort
+        if (model == null && effort == null) return
+        val t = tasks.tasks.getValue(task)
+        val policy = runCatching { t.policy.copy(model = model ?: t.policy.model, effort = effort ?: t.policy.effort) }.getOrNull() ?: return
+        commitTasks(ok(tasksLogic.setPolicy(tasks, task, policy, clock.now()), "модель запроса из очереди").orEmpty())
+    }
+
+    /**
+     * Очередь задачи, чей ход кончился не итогом и не прерыванием (сбой,
+     * блок, задача завершена или ждёт проверки): уходит, как только ход
+     * снова можно начать — тем же запросом в последнюю сессию (D-60).
+     */
+    private fun deliverIdleQueues() {
+        for (task in queuedOf.keys.toList().sortedBy { it.value }) {
+            val list = queued(task).takeIf { it.isNotEmpty() } ?: continue
+            if (turnRunning(task)) continue
+            val state = tasks.tasks[task]?.state ?: continue
+            if (state in setOf(TaskState.RUNNING, TaskState.IMPLEMENTED, TaskState.VERIFYING, TaskState.VERIFIED)) continue
+            val last = sessions.sessions.values.filter { it.task == task }.maxWithOrNull(compareBy({ it.createdAt.epochMillis }, { it.id.value })) ?: continue
+            if (last.state !in WAIT_STATES && !last.terminal) continue
+            setQueued(task, emptyList())
+            val r = sendToSession(last.id, list.joinToString("\n\n") { it.text }, list.lastOrNull { it.model != null }?.model, list.lastOrNull { it.effort != null }?.effort, false, echo = false)
+            if (r is Outcome.Failure) setQueued(task, list)
+        }
+    }
 
     /** Дописать в ленту чата задачи (D-59) и сохранить документ. */
     private fun say(task: TaskId, entries: List<ChatEntry>) {

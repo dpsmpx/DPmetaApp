@@ -401,10 +401,10 @@ private fun ChatBubble(line: com.dpsmpx.dpai.ui.ChatLine) {
 }
 
 /**
- * Ввод внизу чата (D-59): сообщение в сессию — сразу, если ход не идёт; во
- * время хода — «Прервать и отправить»: ход останавливается, сообщение
- * уходит, как только сессия примет запрос. Остановка, свежая сессия,
- * модель и усилие — здесь же.
+ * Ввод внизу чата (D-59, D-60): сообщение в сессию — сразу, если ход не
+ * идёт; во время хода — в очередь задачи: ход, рассуждения и фоновые
+ * процессы сессии не прерываются, сообщение уходит в ту же сессию после
+ * хода. Остановка, свежая сессия, модель и усилие — здесь же.
  */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
@@ -419,7 +419,6 @@ private fun ChatInput(screen: SessionScreen, model: DemoModel) {
     var busy by remember { mutableStateOf(false) }
     val canSend = com.dpsmpx.dpai.ui.SessionAction.SEND in screen.actions
     val running = com.dpsmpx.dpai.ui.SessionAction.STOP in screen.actions
-    val queued = model.queuedMessage(screen.session)
     fun send(c: (String) -> com.dpsmpx.dpai.orchestrator.commands.Command, after: () -> Unit = {}) {
         busy = true
         val key = keys.next(com.dpsmpx.dpai.core.ids.IdKinds.OPERATION).value
@@ -431,16 +430,9 @@ private fun ChatInput(screen: SessionScreen, model: DemoModel) {
             busy = false
         }
     }
-    // Сообщение, ждавшее остановки хода, — как только сессия принимает запрос.
-    LaunchedEffect(screen.session, canSend, queued) {
-        if (canSend && queued != null) {
-            model.dequeueMessage(screen.session)
-            send({ k -> com.dpsmpx.dpai.orchestrator.commands.Command.SendToSession(screen.session, queued, modelName.ifEmpty { null }, effort.ifEmpty { null }, key = k) })
-        }
-    }
     Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         status?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
-        queued?.let { Text("Отправится после остановки хода: «${it.take(80)}»", style = MaterialTheme.typography.labelSmall) }
+        if (running && canSend) Text("Ход идёт: сообщение уйдёт после него, ход не прерывается", style = MaterialTheme.typography.labelSmall)
         if (params) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 for (m in listOf("", "haiku", "sonnet", "opus")) {
@@ -456,20 +448,13 @@ private fun ChatInput(screen: SessionScreen, model: DemoModel) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             OutlinedTextField(
                 text, { text = it }, Modifier.weight(1f),
-                placeholder = { Text(if (canSend || running) "Сообщение Claude" else "Ход недоступен: задача проверяется или завершена") },
-                enabled = canSend || running, maxLines = 6,
+                placeholder = { Text(if (canSend) "Сообщение Claude" else "Ход недоступен: задача проверяется или завершена") },
+                enabled = canSend, maxLines = 6,
             )
-            when {
-                canSend -> Button(enabled = !busy && text.isNotBlank(), onClick = {
-                    val t = text
-                    send({ k -> com.dpsmpx.dpai.orchestrator.commands.Command.SendToSession(screen.session, t, modelName.ifEmpty { null }, effort.ifEmpty { null }, key = k) }) { text = "" }
-                }) { Text("Отправить") }
-                running -> Button(enabled = !busy && text.isNotBlank(), onClick = {
-                    model.queueMessage(screen.session, text)
-                    text = ""
-                    send({ k -> com.dpsmpx.dpai.orchestrator.commands.Command.StopSession(screen.session, k) })
-                }) { Text("Прервать\nи отправить") }
-            }
+            Button(enabled = canSend && !busy && text.isNotBlank(), onClick = {
+                val t = text
+                send({ k -> com.dpsmpx.dpai.orchestrator.commands.Command.SendToSession(screen.session, t, modelName.ifEmpty { null }, effort.ifEmpty { null }, key = k) }) { text = "" }
+            }) { Text("Отправить") }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             if (running) TextButton(enabled = !busy, onClick = { send({ k -> com.dpsmpx.dpai.orchestrator.commands.Command.StopSession(screen.session, k) }) }) { Text("Остановить ход") }

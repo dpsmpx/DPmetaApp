@@ -232,6 +232,34 @@ class V1ScenariosTest {
     }
 
     @Test
+    fun messageDuringTurnWaitsForItsEndAndGoesToTheSameSession() {
+        // D-60: сообщение во время хода не прерывает его — ход доигрывает, сообщение уходит в ту же
+        // сессию Claude (--resume) сразу после хода, раньше проверки; в чате — запрос и «в очереди».
+        setUp(slots = 1)
+        val t = task("очередь", MockScenario.SLOW_OUTPUT, MockScenario.SUCCESS)
+        orchestrator.tick()
+        orchestrator.tick()
+        val first = orchestrator.sessions.sessions.values.single { it.task == t }
+        assertEquals(SessionState.RUNNING, first.state)
+        val r = orchestrator.sendToSession(first.id, "добавь ещё тест", null, null, false)
+        assertTrue(r is Outcome.Success, r.toString())
+        assertEquals(1, orchestrator.queued(t).size, "сообщение в очереди")
+        assertEquals(SessionState.RUNNING, orchestrator.sessions.sessions.getValue(first.id).state, "ход не прерван")
+        runUntilQuiet()
+        assertEquals(TaskState.DONE, state(t))
+        val all = orchestrator.sessions.sessions.values.filter { it.task == t }.sortedBy { it.id.value }
+        assertEquals(2, all.size, all.toString())
+        assertEquals(first.id, all[1].continues, "вторая сессия продолжает первую")
+        assertEquals(first.provider, all[1].provider, "та же сессия Claude (--resume)")
+        assertTrue(orchestrator.handoffs.all().any { it.session == first.id && "добавь ещё тест" in it.nextAction }, "текст человека — в handoff")
+        assertTrue(orchestrator.queued(t).isEmpty(), "очередь доставлена")
+        val chat = orchestrator.chat(t)
+        assertTrue(chat.any { it.role == com.dpsmpx.dpai.orchestrator.ChatRole.USER && it.text == "добавь ещё тест" }, chat.toString())
+        assertEquals(1, chat.count { it.role == com.dpsmpx.dpai.orchestrator.ChatRole.USER && it.text == "добавь ещё тест" }, "запрос в чате — один раз")
+        assertTrue(chat.any { it.text.startsWith("в очереди") } && chat.any { it.text.startsWith("сообщение из очереди отправлено") })
+    }
+
+    @Test
     fun scenario3RecoveryAfterFailure() {
         setUp(slots = 1)
         val t = task("падение", MockScenario.CRASH, MockScenario.SUCCESS)

@@ -215,20 +215,6 @@ class DemoModel(
         return Outcome.success(null)
     }
 
-    /**
-     * Сообщение в сессию, ждущее остановки хода (D-59, «Прервать и
-     * отправить»): уходит, как только сессия принимает запрос.
-     */
-    private val queued = java.util.concurrent.ConcurrentHashMap<SessionId, String>()
-
-    fun queueMessage(session: SessionId, text: String) {
-        text.trim().takeIf { it.isNotEmpty() }?.let { queued[session] = it }
-    }
-
-    fun queuedMessage(session: SessionId): String? = queued[session]
-
-    fun dequeueMessage(session: SessionId): String? = queued.remove(session)
-
     /** Желаемое значение настройки, ещё не применённое (D-57): экран показывает его, а не прежнее. */
     fun desired(c: Command): Command? = context?.let { ctx -> SettingIntents.key(c)?.let { SettingIntents.desired(ctx, it) } }
 

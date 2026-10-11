@@ -227,10 +227,9 @@ object Screens {
         val taskState = tasks.tasks[s.task]?.state
         return buildList {
             if (!s.terminal && s.state !in WAIT) add(SessionAction.STOP)
-            if (last && !running && taskState !in BUSY) {
-                add(SessionAction.SEND)
-                add(SessionAction.FRESH)
-            }
+            // Во время хода сообщение — в очередь, ход не прерывается (D-60); свежая сессия — после хода.
+            if (last && (running || taskState !in BUSY)) add(SessionAction.SEND)
+            if (last && !running && taskState !in BUSY) add(SessionAction.FRESH)
         }
     }
 

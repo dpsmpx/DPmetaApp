@@ -46,4 +46,12 @@ class TaskChatTest {
         assertEquals(TaskChat.MAX, kept.size)
         assertEquals("событие 11", kept.first().text)
     }
+
+    @Test
+    fun queuedMessagesRoundTrip() {
+        // D-60: очередь сообщений задачи переживает перезапуск.
+        val list = listOf(QueuedMessage("первое", Timestamp(1)), QueuedMessage("второе", Timestamp(2), model = "sonnet", effort = "high"))
+        val back = QueuedMessages.fromJson(JsonParser().parse(CanonicalJson.write(QueuedMessages.toJson(list))).valueOrNull() as JsonObject)
+        assertEquals(list, back.valueOrNull())
+    }
 }
