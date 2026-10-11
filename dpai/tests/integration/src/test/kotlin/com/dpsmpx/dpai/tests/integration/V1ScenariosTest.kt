@@ -212,7 +212,7 @@ class V1ScenariosTest {
         assertTrue(sessions[0].provider != sessions[1].provider, "другой аккаунт — свежая сессия, не --resume")
         assertTrue(orchestrator.handoffs.latest(t) != null, "контекст передан handoff")
         assertEquals(1, orchestrator.accounts.switches[t].orEmpty().size, "переход между подписками записан")
-        assertEquals(com.dpsmpx.dpai.core.diagnostics.DiagCode.CLAUDE_RATE_LIMITED, sessions[0].lastReason)
+        assertEquals(com.dpsmpx.dpai.contexts.HandoffReason.ACCOUNT_EXHAUSTED, orchestrator.handoffs.all().single { it.session == sessions[0].id }.reason, "предел — причина handoff")
     }
 
     @Test

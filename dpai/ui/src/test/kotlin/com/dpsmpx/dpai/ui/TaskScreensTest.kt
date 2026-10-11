@@ -123,7 +123,7 @@ class TaskScreensTest {
         val second = session(slotB, subB, tB, com.dpsmpx.dpai.core.state.SessionState.RUNNING, null)
         val sessions = SessionsState(listOf(first, second).associateBy { it.id })
         val labels = mapOf(tA to "Termux (claude-slot-1)", tB to "Termux (claude-slot-2)")
-        val d = TaskScreens.detail(task(TaskState.RUNNING), sessions, null, acc) { labels.getValue(it) }
+        val d = TaskScreens.detail(task(TaskState.RUNNING), sessions, null, acc, targetLabel = { labels.getValue(it) })
         assertEquals("Termux (claude-slot-2) · подписка B", d.executor)
         assertEquals(2, d.assignments.size)
         assertTrue(d.assignments[0].contains("Termux (claude-slot-1) · подписка A — начата"), d.assignments.toString())

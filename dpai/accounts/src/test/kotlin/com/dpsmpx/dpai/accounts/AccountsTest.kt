@@ -237,7 +237,7 @@ class AccountsTest {
         val (s1, r1) = f.lease(task)
         assertEquals(a, r1.valueOrNull()!!.subscription)
         f.ok(f.accounts.release(f.state, s1, f.now))
-        f.ok(f.accounts.observeLimit(f.state, slotA, LimitWindow.WEEK, LimitLevel.REACHED, f.now + 3.hours, f.now))
+        f.ok(f.accounts.observeLimit(f.state, slotA, LimitWindow.WEEKLY, LimitLevel.REACHED, f.now + 3.hours, f.now))
         assertContains(f.lease(task).second.errors.single().message, "продолжение чужих задач не разрешено")
         f.ok(f.accounts.setRotation(f.state, b, true, f.now))
         assertTrue(f.state.subscriptions.getValue(b).rotationExplicit)
