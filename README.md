@@ -7,8 +7,10 @@
 
 | Файл | Что это |
 |---|---|
-| `dpmetaapp-0.1.0-dev.1-debug.apk` | приложение (debug); агент `dpai` для Termux и ПК — внутри, его сохраняет «Инструкция» в «Загрузки» |
-| `SHA256SUMS` | сумма SHA-256 файла |
+| `dpmetaapp-0.1.0-dev.1-debug.apk` | приложение (debug); агент `dpai` вложен в него — «Инструкция» сохраняет его в «Загрузки» |
+| `dpai-agent-0.1.0-dev.1.zip` | тот же агент отдельно (байт в байт как вложение APK): каталог `dpai/` с `bin/dpai`, `lib/` и `claude-proot.sh`, нужна Java 17+ |
+| `claude-proot.sh` | обёртка Claude Code для Termux (`dpai/tools/termux/claude-proot.sh` того же коммита) |
+| `SHA256SUMS` | суммы SHA-256 файлов |
 
 Приложение: `com.dpsmpx.dpai`, versionName `0.1.0-dev.1`, versionCode 1,
 minSdk 30, targetSdk 36, название на экране — «DP AI Orcestrator» (имя и
@@ -61,8 +63,8 @@ Release подписывает только автор своим ключом (
   `dpai task add … --after <id> --scope путь`;
 - «Журнал» → «В Загрузки»: файл `Загрузки/dpai-logs/…`.
 
-Что проверить на телефоне — `dpai/docs/DEVICE_CHECK.md` рабочей ветки:
-§0.4, §8.4 (п. 5), §8.9, §8.10.
+Инструкция — `dpai/docs/DEVICE_CHECK.md` рабочей ветки (§1 — эта
+ветка); новое проверить: §0.4, §8.4 (п. 5), §8.9, §8.10.
 
 ## Проверки кода сборки
 
