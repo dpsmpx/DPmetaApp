@@ -63,6 +63,7 @@ object CommandCodec {
             is Command.StopSession -> id("session", c.session)
             is Command.SendToSession -> { id("session", c.session); str("text", c.text); str("model", c.model); str("effort", c.effort) }
             is Command.SetNearPercent -> { id("subscription", c.subscription); f["percent"] = JsonNumber.of(c.percent) }
+            is Command.SetRotation -> { id("subscription", c.subscription); f["allowed"] = JsonBool(c.allowed) }
             is Command.SetTargetEnabled -> { id("target", c.target); f["enabled"] = JsonBool(c.enabled) }
             is Command.SetSlotEnabled -> { id("slot", c.slot); f["enabled"] = JsonBool(c.enabled) }
             is Command.SetSessionLimit -> c.limit?.let { f["limit"] = JsonNumber.of(it) }
@@ -125,6 +126,8 @@ object CommandCodec {
             "session.send", "session.fresh" -> session()?.let { Command.SendToSession(it, f.optString("text"), f.optString("model"), f.optString("effort"), name == "session.fresh", key) }
             "subscription.near-percent" -> f.string("subscription")?.let { IdKinds.SUBSCRIPTION.parse(it).valueOrNull() }
                 ?.let { s -> f.int("percent")?.let { Command.SetNearPercent(s, it, key) } }
+            "subscription.rotation" -> f.string("subscription")?.let { IdKinds.SUBSCRIPTION.parse(it).valueOrNull() }
+                ?.let { s -> f.boolean("allowed")?.let { Command.SetRotation(s, it, key) } }
             "target.enabled" -> f.string("target")?.let { IdKinds.TARGET.parse(it).valueOrNull() }?.let { t -> f.boolean("enabled")?.let { Command.SetTargetEnabled(t, it, key) } }
             "slot.enabled" -> f.string("slot")?.let { IdKinds.ACCOUNT.parse(it).valueOrNull() }?.let { s -> f.boolean("enabled")?.let { Command.SetSlotEnabled(s, it, key) } }
             "control.session-limit" -> Command.SetSessionLimit(f.optLong("limit")?.toInt(), key)

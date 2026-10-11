@@ -80,8 +80,12 @@ class V1ScenariosTest {
         assertEquals(0, r.exitCode, (r.stderr + r.stdout).joinToString("\n"))
     }
 
-    /** Проект с репозиторием, [slots] слотов одной подписки на своих targets. */
-    private fun setUp(slots: Int, perTarget: Int = 1) {
+    /**
+     * Проект с репозиторием, [slots] слотов на своих targets: одной подписки
+     * или, при [ownSubscriptions], у каждого слота — своя подписка, которая
+     * берёт задачи упёршихся в предел (D-56).
+     */
+    private fun setUp(slots: Int, perTarget: Int = 1, ownSubscriptions: Boolean = false) {
         val root = dir.resolve("repo").toFile().apply { mkdirs() }.path
         sh("init", "-q", "-b", "main", root)
         sh("-C", root, "config", "user.email", "dpai-test@example.org")
@@ -93,15 +97,23 @@ class V1ScenariosTest {
 
         val accountsLogic = Accounts()
         var accounts = AccountsState.EMPTY
-        val sub = ids.next(IdKinds.SUBSCRIPTION)
-        accounts = Accounts.applyAll(accounts, accountsLogic.registerSubscription(accounts, sub, "основная", clock.now(), maxParallelSessions = 64).valueOrNull()!!)
+        val shared = ids.next(IdKinds.SUBSCRIPTION)
+        accounts = Accounts.applyAll(accounts, accountsLogic.registerSubscription(accounts, shared, "основная", clock.now(), maxParallelSessions = 64).valueOrNull()!!)
         val targets = mutableListOf<TargetSlot>()
         repeat(slots) { i ->
+            val sub = if (!ownSubscriptions) {
+                shared
+            } else {
+                ids.next(IdKinds.SUBSCRIPTION).also { s ->
+                    accounts = Accounts.applyAll(accounts, accountsLogic.registerSubscription(accounts, s, "подписка $i", clock.now(), maxParallelSessions = 64, rotationAllowed = true).valueOrNull()!!)
+                }
+            }
             val target = ids.next(IdKinds.TARGET)
             targets += TargetSlot(target, emptySet(), perTarget)
             val slot = ids.next(IdKinds.ACCOUNT)
             accounts = Accounts.applyAll(accounts, accountsLogic.registerSlot(accounts, slot, sub, target, "/home/dev/.claude-$i", clock.now()).valueOrNull()!!)
-            val status = AuthStatus(true, AuthStatus.CLAUDE_AI, AuthStatus.FIRST_PARTY, AuthStatus.fingerprint("org", "a@example.org"), "max")
+            val email = if (ownSubscriptions) "a$i@example.org" else "a@example.org"
+            val status = AuthStatus(true, AuthStatus.CLAUDE_AI, AuthStatus.FIRST_PARTY, AuthStatus.fingerprint("org", email), "max")
             accounts = Accounts.applyAll(accounts, accountsLogic.observeAuthStatus(accounts, slot, status, clock.now()).valueOrNull()!!)
         }
         val java = File(File(System.getProperty("java.home"), "bin"), if (File.separatorChar == '\\') "java.exe" else "java").path
@@ -183,6 +195,24 @@ class V1ScenariosTest {
         assertEquals(sessions[0].id, sessions[1].continues, "вторая сессия продолжает первую")
         assertEquals(sessions[0].provider, sessions[1].provider, "та же сессия Claude (--resume)")
         assertTrue(orchestrator.handoffs.latest(t) != null, "handoff создан")
+    }
+
+    @Test
+    fun taskAtSubscriptionLimitMovesToAnotherSubscriptionWithHandoff() {
+        // D-56: подписка первого слота упёрлась в предел — задача не ждёт сброса, а продолжает на слоте
+        // другой подписки свежей сессией с handoff; переход записан в журнале аккаунтов.
+        setUp(slots = 2, ownSubscriptions = true)
+        val t = task("передача", MockScenario.RATE_LIMIT, MockScenario.SUCCESS)
+        runUntilQuiet()
+        assertEquals(TaskState.DONE, state(t))
+        val sessions = orchestrator.sessions.sessions.values.filter { it.task == t }.sortedBy { it.id.value }
+        assertEquals(2, sessions.size, sessions.toString())
+        val subOf = { s: com.dpsmpx.dpai.sessions.SessionRecord -> orchestrator.accounts.slots.getValue(s.slot).subscriptionId }
+        assertTrue(subOf(sessions[0]) != subOf(sessions[1]), "вторая сессия — на другой подписке")
+        assertTrue(sessions[0].provider != sessions[1].provider, "другой аккаунт — свежая сессия, не --resume")
+        assertTrue(orchestrator.handoffs.latest(t) != null, "контекст передан handoff")
+        assertEquals(1, orchestrator.accounts.switches[t].orEmpty().size, "переход между подписками записан")
+        assertEquals(com.dpsmpx.dpai.core.diagnostics.DiagCode.CLAUDE_RATE_LIMITED, sessions[0].lastReason)
     }
 
     @Test

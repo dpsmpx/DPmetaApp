@@ -129,6 +129,11 @@ sealed interface Command {
         override val operation: String get() = if (fresh) "session.fresh" else "session.send"
     }
 
+    /** Принимает ли подписка задачи подписок, упёршихся в предел пяти часов или недели (D-56): продолжение с handoff. */
+    data class SetRotation(val subscription: com.dpsmpx.dpai.core.ids.SubscriptionId, val allowed: Boolean, override val key: String? = null) : Command {
+        override val operation: String get() = "subscription.rotation"
+    }
+
     /** Порог «у предела» подписки в процентах загрузки окна (D-45): на нём — откладывание несрочного и экономия D-40. */
     data class SetNearPercent(val subscription: com.dpsmpx.dpai.core.ids.SubscriptionId, val percent: Int, override val key: String? = null) : Command {
         override val operation: String get() = "subscription.near-percent"

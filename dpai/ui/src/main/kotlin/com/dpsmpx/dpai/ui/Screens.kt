@@ -50,6 +50,8 @@ data class SubscriptionLimits(
     val windows: List<WindowLine>,
     val nearPercent: Int,
     val near: Boolean,
+    /** Принимает задачи подписок, упёршихся в предел (D-56). */
+    val rotation: Boolean = false,
 )
 
 data class TimelineLine(val time: String, val text: String)
@@ -226,7 +228,7 @@ object Screens {
                         },
                     )
                 },
-                sub.nearPercent, sub.nearAt(now),
+                sub.nearPercent, sub.nearAt(now), sub.rotationAllowed,
             )
         }
 

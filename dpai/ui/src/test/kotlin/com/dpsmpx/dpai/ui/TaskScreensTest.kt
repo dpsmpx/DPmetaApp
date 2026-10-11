@@ -98,4 +98,36 @@ class TaskScreensTest {
         val done = TaskRecord(ids.next(IdKinds.TASK), "готовая", "цель", Priority.NORMAL, emptySet(), emptySet(), TaskPolicy(), clock.now(), state = TaskState.DONE)
         assertEquals(listOf(open.id to "задача"), TaskScreens.dependencyChoices(com.dpsmpx.dpai.tasks.TasksState(mapOf(open.id to open, done.id to done))))
     }
+
+    @Test
+    fun executorAndHandoffsAreNamedBySlot() {
+        // D-56: лист задачи говорит, кто её выполняет и кому и почему она передавалась.
+        val logic = com.dpsmpx.dpai.accounts.Accounts()
+        var acc = com.dpsmpx.dpai.accounts.AccountsState.EMPTY
+        val subA = ids.next(IdKinds.SUBSCRIPTION)
+        val subB = ids.next(IdKinds.SUBSCRIPTION)
+        acc = com.dpsmpx.dpai.accounts.Accounts.applyAll(acc, logic.registerSubscription(acc, subA, "подписка A", clock.now()).valueOrNull()!!)
+        acc = com.dpsmpx.dpai.accounts.Accounts.applyAll(acc, logic.registerSubscription(acc, subB, "подписка B", clock.now()).valueOrNull()!!)
+        val tA = ids.next(IdKinds.TARGET)
+        val tB = ids.next(IdKinds.TARGET)
+        val slotA = ids.next(IdKinds.ACCOUNT)
+        val slotB = ids.next(IdKinds.ACCOUNT)
+        acc = com.dpsmpx.dpai.accounts.Accounts.applyAll(acc, logic.registerSlot(acc, slotA, subA, tA, "/h/.claude-slot-1", clock.now()).valueOrNull()!!)
+        acc = com.dpsmpx.dpai.accounts.Accounts.applyAll(acc, logic.registerSlot(acc, slotB, subB, tB, "/h/.claude-slot-2", clock.now()).valueOrNull()!!)
+        fun session(slot: com.dpsmpx.dpai.core.ids.AccountId, sub: com.dpsmpx.dpai.core.ids.SubscriptionId, target: com.dpsmpx.dpai.core.ids.ExecutionTargetId, state: com.dpsmpx.dpai.core.state.SessionState, reason: com.dpsmpx.dpai.core.diagnostics.DiagCode?) =
+            com.dpsmpx.dpai.sessions.SessionRecord(
+                ids.next(IdKinds.SESSION), "k-" + ids.next(IdKinds.OPERATION).value, id, slot, sub, target, "/c",
+                com.dpsmpx.dpai.core.ids.ProviderSessionId.newUuid(RandomSource.seeded(5)), null, state, clock.now(), clock.now(), lastReason = reason,
+            ).also { clock.advance(kotlin.time.Duration.parse("10m")) }
+        val first = session(slotA, subA, tA, com.dpsmpx.dpai.core.state.SessionState.CANCELLED, com.dpsmpx.dpai.core.diagnostics.DiagCode.CLAUDE_RATE_LIMITED)
+        val second = session(slotB, subB, tB, com.dpsmpx.dpai.core.state.SessionState.RUNNING, null)
+        val sessions = SessionsState(listOf(first, second).associateBy { it.id })
+        val labels = mapOf(tA to "Termux (claude-slot-1)", tB to "Termux (claude-slot-2)")
+        val d = TaskScreens.detail(task(TaskState.RUNNING), sessions, null, acc) { labels.getValue(it) }
+        assertEquals("Termux (claude-slot-2) · подписка B", d.executor)
+        assertEquals(2, d.assignments.size)
+        assertTrue(d.assignments[0].contains("Termux (claude-slot-1) · подписка A — начата"), d.assignments.toString())
+        assertTrue(d.assignments[1].contains("Termux (claude-slot-2) · подписка B — передана другой подписке: предел подписки · RUNNING"), d.assignments.toString())
+        assertEquals(null, TaskScreens.detail(task(TaskState.READY), SessionsState.EMPTY).executor, "сессий нет — исполнителя нет")
+    }
 }

@@ -48,6 +48,10 @@ data class TaskDetail(
     val waiting: String? = null,
     /** Расход всех сессий задачи (D-42, п. 4) — [Screens.usageLine]; ходов ещё нет — `null`. */
     val usage: String? = null,
+    /** Кто выполняет задачу сейчас (D-56): слот — target и подписка; идущей сессии нет — `null`. */
+    val executor: String? = null,
+    /** Кому и когда задача передавалась (D-56): по сессии на строку, с причиной перехода между подписками. */
+    val assignments: List<String> = emptyList(),
 )
 
 /**
@@ -85,7 +89,51 @@ object TaskScreens {
     fun dependencyChoices(tasks: com.dpsmpx.dpai.tasks.TasksState): List<Pair<TaskId, String>> =
         tasks.tasks.values.filter { !it.terminal && !it.archived }.sortedBy { it.createdAt.epochMillis }.map { it.id to it.title }
 
-    fun detail(t: TaskRecord, sessions: SessionsState, waiting: String? = null): TaskDetail = TaskDetail(
+    /**
+     * Имя слота для человека (D-56): target и подписка — «Termux (claude-slot-1) ·
+     * подписка pro»; неизвестный слот — его target.
+     */
+    fun slotName(accounts: com.dpsmpx.dpai.accounts.AccountsState?, s: com.dpsmpx.dpai.sessions.SessionRecord, targetLabel: (com.dpsmpx.dpai.core.ids.ExecutionTargetId) -> String): String =
+        targetLabel(s.target) + (accounts?.subscriptions?.get(s.subscription)?.let { " · ${it.label}" } ?: "")
+
+    /** Почему задача ушла с прежней сессии: предел подписки — так и сказано (D-56). */
+    private fun why(prev: com.dpsmpx.dpai.sessions.SessionRecord): String? = when (prev.lastReason) {
+        com.dpsmpx.dpai.core.diagnostics.DiagCode.CLAUDE_RATE_LIMITED -> "предел подписки"
+        com.dpsmpx.dpai.core.diagnostics.DiagCode.CLAUDE_CONTEXT_OVERFLOW -> "переполнение контекста"
+        null -> null
+        else -> prev.lastReason.name
+    }
+
+    /** Строки «кому и когда» (D-56): время начала сессии, слот, её состояние; смена подписки — «передана: причина». */
+    fun assignments(
+        task: TaskId,
+        sessions: SessionsState,
+        accounts: com.dpsmpx.dpai.accounts.AccountsState?,
+        targetLabel: (com.dpsmpx.dpai.core.ids.ExecutionTargetId) -> String,
+        zone: java.time.ZoneId = java.time.ZoneId.systemDefault(),
+    ): List<String> {
+        val own = sessions.sessions.values.filter { it.task == task }.sortedWith(compareBy({ it.createdAt.epochMillis }, { it.id.value }))
+        return own.mapIndexed { i, s ->
+            val at = java.time.Instant.ofEpochMilli(s.createdAt.epochMillis).atZone(zone)
+            val time = "%02d.%02d %02d:%02d".format(at.dayOfMonth, at.monthValue, at.hour, at.minute)
+            val prev = own.getOrNull(i - 1)
+            val handed = when {
+                prev == null -> "начата"
+                prev.subscription != s.subscription -> "передана другой подписке" + (why(prev)?.let { ": $it" } ?: "")
+                prev.slot != s.slot -> "передана другому слоту" + (why(prev)?.let { ": $it" } ?: "")
+                else -> "продолжена"
+            }
+            "$time — ${slotName(accounts, s, targetLabel)} — $handed · ${s.state.name}"
+        }
+    }
+
+    fun detail(
+        t: TaskRecord,
+        sessions: SessionsState,
+        waiting: String? = null,
+        accounts: com.dpsmpx.dpai.accounts.AccountsState? = null,
+        targetLabel: (com.dpsmpx.dpai.core.ids.ExecutionTargetId) -> String = { it.value },
+    ): TaskDetail = TaskDetail(
         id = t.id, title = t.title, objective = t.objective,
         state = t.state.name, tone = Screens.tone(t.state), held = t.held, priority = t.priority.name,
         taskClass = t.policy.taskClass, model = t.policy.model, effort = t.policy.effort, budgetCents = t.policy.maxBudgetUsdCents,
@@ -94,6 +142,9 @@ object TaskScreens {
         actions = actions(t),
         waiting = waiting?.takeIf { t.state == TaskState.READY },
         usage = Screens.usageLine(Screens.usage(sessions) { it.task == t.id }),
+        executor = sessions.sessions.values.filter { it.task == t.id && !it.terminal }.maxByOrNull { it.createdAt.epochMillis }
+            ?.let { slotName(accounts, it, targetLabel) },
+        assignments = assignments(t.id, sessions, accounts, targetLabel),
     )
 }
 

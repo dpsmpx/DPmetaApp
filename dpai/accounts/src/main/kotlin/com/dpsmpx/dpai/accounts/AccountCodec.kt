@@ -57,6 +57,7 @@ object AccountCodec {
         is LimitReset -> EventType.ACCOUNT_LIMIT_RESET
         is AccountEvent.UsageObserved -> EventType.ACCOUNT_USAGE_OBSERVED
         is AccountEvent.NearThresholdSet -> EventType.ACCOUNT_NEAR_THRESHOLD_SET
+        is AccountEvent.RotationSet -> EventType.ACCOUNT_ROTATION_SET
         is LoginExpiring -> EventType.ACCOUNT_LOGIN_EXPIRING
         is ErrorRecorded -> EventType.ACCOUNT_ERROR_RECORDED
         is ErrorsCleared -> EventType.ACCOUNT_ERRORS_CLEARED
@@ -77,6 +78,7 @@ object AccountCodec {
             is LimitReset -> e.subscription
             is AccountEvent.UsageObserved -> e.subscription
             is AccountEvent.NearThresholdSet -> e.subscription
+            is AccountEvent.RotationSet -> e.subscription
             is SubscriptionSwitched -> e.task
             is SlotRegistered -> e.slot
             is LoginObserved -> e.slot
@@ -112,6 +114,7 @@ object AccountCodec {
             "subscription" to id(e.subscription), "window" to name(e.window), "utilizationBp" to JsonNumber.of(bp(e.utilization)), "resetAt" to time(e.resetAt),
         )
         is AccountEvent.NearThresholdSet -> obj("subscription" to id(e.subscription), "percent" to JsonNumber.of(e.percent))
+        is AccountEvent.RotationSet -> obj("subscription" to id(e.subscription), "allowed" to JsonBool(e.allowed))
         is LoginExpiring -> obj("slot" to id(e.slot), "expiresAt" to time(e.expiresAt))
         is ErrorRecorded -> obj("slot" to id(e.slot), "code" to JsonString(e.code.name), "cooldownUntil" to time(e.cooldownUntil))
         is ErrorsCleared -> obj("slot" to id(e.slot))
@@ -153,6 +156,7 @@ object AccountCodec {
                 AccountEvent.UsageObserved(a, b, c / 10_000.0, f.optTime("resetAt"), at)
             }
             EventType.ACCOUNT_NEAR_THRESHOLD_SET -> build(f.id("subscription", IdKinds.SUBSCRIPTION), f.int("percent")) { a, b -> AccountEvent.NearThresholdSet(a, b, at) }
+            EventType.ACCOUNT_ROTATION_SET -> build(f.id("subscription", IdKinds.SUBSCRIPTION), f.boolean("allowed")) { a, b -> AccountEvent.RotationSet(a, b, at) }
             EventType.ACCOUNT_LOGIN_EXPIRING -> build(f.id("slot", IdKinds.ACCOUNT)) { a -> LoginExpiring(a, f.optTime("expiresAt"), at) }
             EventType.ACCOUNT_ERROR_RECORDED -> build(f.id("slot", IdKinds.ACCOUNT), f.enum<DiagCode>("code")) { a, b ->
                 ErrorRecorded(a, b, f.optTime("cooldownUntil"), at)
@@ -189,6 +193,7 @@ object AccountCodec {
                         "id" to id(sub.id), "label" to JsonString(sub.label), "maxParallelSessions" to JsonNumber.of(sub.maxParallelSessions),
                         "rotationAllowed" to JsonBool(sub.rotationAllowed), "identity" to opt(sub.identity?.toString()), "plan" to opt(sub.plan),
                         "nearPercent" to sub.nearPercent.takeIf { it != DEFAULT_NEAR_PERCENT }?.let { JsonNumber.of(it) },
+                        "rotationExplicit" to JsonBool(true).takeIf { sub.rotationExplicit },
                         "windows" to JsonArray(
                             LimitWindow.entries.map { w ->
                                 val ws = sub.window(w)
@@ -241,6 +246,7 @@ object AccountCodec {
                 SubscriptionState(
                     a, b, c, e, s.optHash("identity"), s.optString("plan"), LimitWindow.entries.associateWith { windows[it] ?: WindowState() },
                     s.optLong("nearPercent")?.toInt() ?: DEFAULT_NEAR_PERCENT,
+                    (s.raw("rotationExplicit", required = false) as? JsonBool)?.value ?: false,
                 )
             }.also { s.finish() }
         }

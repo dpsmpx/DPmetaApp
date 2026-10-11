@@ -605,6 +605,18 @@ private fun LimitsCard(l: com.dpsmpx.dpai.ui.SubscriptionLimits, model: DemoMode
                     }, label = { Text("$p %") })
                 }
             }
+            // Передача задач при пределе (D-56): подписка берёт задачи других подписок, упёршихся в 5 ч или неделю.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Брать задачи подписок у предела (с handoff)", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall)
+                androidx.compose.material3.Switch(checked = l.rotation, onCheckedChange = { on ->
+                    scope.launch {
+                        status = when (val r = withContext(Dispatchers.IO) { model.command(com.dpsmpx.dpai.orchestrator.commands.Command.SetRotation(l.subscription, on)) }) {
+                            is Outcome.Success -> null
+                            is Outcome.Failure -> "Не принято: ${r.diagnostics.first().message}"
+                        }
+                    }
+                })
+            }
             status?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall) }
         }
     }

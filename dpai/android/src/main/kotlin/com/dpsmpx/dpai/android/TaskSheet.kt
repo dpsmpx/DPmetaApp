@@ -102,6 +102,12 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
                 )
                 d.reason?.let { Text("причина: $it · повторов: ${d.retries}", style = MaterialTheme.typography.labelSmall) }
                 d.usage?.let { Text("Расход: $it", style = MaterialTheme.typography.labelSmall) }
+                // Кто выполняет и кому передавалась (D-56): слот — target и подписка.
+                d.executor?.let { Text("Выполняет: $it", style = MaterialTheme.typography.bodySmall) }
+                if (d.assignments.size > 1 || (d.assignments.isNotEmpty() && d.executor == null)) {
+                    Text("Кому передавалась:", style = MaterialTheme.typography.labelSmall)
+                    d.assignments.forEach { Text("• $it", style = MaterialTheme.typography.labelSmall) }
+                }
                 d.waiting?.let { Text("Ждёт: $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
                 d.lastSession?.let { s -> TextButton(onClick = { onSession(s.value) }) { Text("Открыть последнюю сессию") } }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {

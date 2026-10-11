@@ -41,4 +41,17 @@ class AccountCodecTest {
         assertNull(AccountCodec.decode(EventType.TASK_CREATED, e.at, good), "чужой тип — не событие аккаунтов")
         assertEquals(sub, (AccountCodec.decode(AccountCodec.type(e), e.at, good)!!.valueOrNull() as AccountEvent.SubscriptionRegistered).subscription)
     }
+
+    @Test
+    fun rotationEventAndSnapshotRoundTrip() {
+        val f = Fixture()
+        val sub = f.subscription()
+        f.ok(f.accounts.setRotation(f.state, sub, true, f.now))
+        val e = f.events.last()
+        assertEquals(EventType.ACCOUNT_ROTATION_SET, AccountCodec.type(e))
+        assertEquals(e, AccountCodec.decode(AccountCodec.type(e), e.at, AccountCodec.payload(e))!!.valueOrNull())
+        assertEquals(f.state, AccountCodec.decodeState(AccountCodec.encodeState(f.state)).valueOrNull(), "rotationExplicit в снимке")
+        val old = AccountCodec.encodeState(Fixture().also { it.subscription() }.state)
+        assertEquals(false, AccountCodec.decodeState(old).valueOrNull()!!.subscriptions.values.single().rotationExplicit, "снимок до D-56 читается")
+    }
 }

@@ -116,14 +116,19 @@ class LiveSystem(
     }
 
     /**
-     * Targets, на которых идут сессии: при проекте — только target хода
-     * (его же target или выбранный в маршруте D-50); маршрут без target
-     * проекта — ни одного.
+     * Targets, на которых идут сессии: при проекте — target хода (его же
+     * target или выбранный в маршруте D-50) и все слоты той же машины —
+     * тот же хост и порт, то есть те же файлы, деревья и ключ связки (D-56):
+     * задача, чья подписка упёрлась в предел, продолжает на другой;
+     * маршрут без target проекта — ни одного.
      */
     private val working = when {
         project == null -> usable
         project.claude != null && remote == null -> emptyList()
-        else -> (project.claude?.target ?: project.target).let { id -> usable.filter { it.id == id } }
+        else -> (project.claude?.target ?: project.target).let { id ->
+            val run = entries.firstOrNull { it.id == id }
+            usable.filter { it.id == id || (run != null && it.host == run.host && it.port == run.port && it.platform == run.platform) }
+        }
     }
     private val manager = ExecutionTargetManager(clock, sshHost = sshHost, controllerVersion = controllerVersion)
     private val runners = HashMap<ExecutionTargetId, ClaudeRunner>()
@@ -189,6 +194,11 @@ class LiveSystem(
             o.accounts.slots.values.firstOrNull { it.targetId == e.id && it.configDir == dir }?.let { slotOf[e.id] = it.id }
         }
         for (r in o.recover { t -> manager.client(t).valueOrNull() }) problems += r.diagnostics.filter { it.isError }
+        // Подписки, заведённые до D-56, ротацию не принимали (так регистрировались) — теперь принимают,
+        // пока человек не выключит: задача у предела продолжает на другой подписке.
+        for (sub in o.accounts.subscriptions.values.filter { !it.rotationExplicit && !it.rotationAllowed }.sortedBy { it.id.value }) {
+            accountsLogic.setRotation(o.accounts, sub.id, true, clock.now()).valueOrNull()?.let(o::commitAccounts)
+        }
         for (e in usable) probeSlot(e.id)
     }
 
@@ -270,7 +280,7 @@ class LiveSystem(
         val sub = status.identity?.let { id -> o.accounts.subscriptions.values.firstOrNull { it.identity == id }?.id }
             ?: ids.next(IdKinds.SUBSCRIPTION).also { s ->
                 val label = status.plan?.let { "подписка $it (${e.label})" } ?: "подписка ${e.label}"
-                o.commitAccounts(accountsLogic.registerSubscription(o.accounts, s, label, clock.now(), maxParallelSessions = MAX_PARALLEL).valueOrNull()!!)
+                o.commitAccounts(accountsLogic.registerSubscription(o.accounts, s, label, clock.now(), maxParallelSessions = MAX_PARALLEL, rotationAllowed = true).valueOrNull()!!)
             }
         val slot = ids.next(IdKinds.ACCOUNT)
         when (val r = accountsLogic.registerSlot(o.accounts, slot, sub, e.id, e.configDir!!, clock.now())) {

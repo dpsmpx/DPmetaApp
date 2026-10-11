@@ -247,7 +247,7 @@ object ControlSnapshot {
                     o.accounts.subscriptions.values.sortedBy { it.id.value }.map { sub ->
                         JsonObject.of(
                             "id" to JsonString(sub.id.value), "label" to JsonString(sub.label), "nearPercent" to JsonNumber.of(sub.nearPercent),
-                            "near" to JsonBool(sub.nearAt(now)),
+                            "near" to JsonBool(sub.nearAt(now)), "rotation" to JsonBool(sub.rotationAllowed),
                             "windows" to JsonArray(
                                 sub.windows.entries.sortedBy { it.key.name }.map { (w, ws) ->
                                     JsonObject(

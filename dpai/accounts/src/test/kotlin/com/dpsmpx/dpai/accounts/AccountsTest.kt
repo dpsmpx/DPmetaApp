@@ -224,6 +224,31 @@ class AccountsTest {
     }
 
     @Test
+    fun rotationSwitchedOnLaterLetsTheTaskMoveToAnotherSubscription() {
+        // D-56: подписки заведены без ротации (как до решения), затем ротация включена событием.
+        val f = Fixture()
+        val a = f.subscription("A")
+        val b = f.subscription("B")
+        val slotA = f.slot(a, dir = "~/.claude-a")
+        val slotB = f.slot(b, dir = "~/.claude-b")
+        f.login(slotA, email = "a@example.org")
+        f.login(slotB, email = "b@example.org")
+        val task = f.task()
+        val (s1, r1) = f.lease(task)
+        assertEquals(a, r1.valueOrNull()!!.subscription)
+        f.ok(f.accounts.release(f.state, s1, f.now))
+        f.ok(f.accounts.observeLimit(f.state, slotA, LimitWindow.WEEK, LimitLevel.REACHED, f.now + 3.hours, f.now))
+        assertContains(f.lease(task).second.errors.single().message, "продолжение чужих задач не разрешено")
+        f.ok(f.accounts.setRotation(f.state, b, true, f.now))
+        assertTrue(f.state.subscriptions.getValue(b).rotationExplicit)
+        assertEquals(emptyList(), f.accounts.setRotation(f.state, b, true, f.now).valueOrNull(), "то же значение — без события")
+        val lease = f.lease(task).second.valueOrNull()!!
+        assertEquals(b, lease.subscription, "недельный предел A — задача продолжает на B")
+        assertTrue(lease.events.any { it is AccountEvent.SubscriptionSwitched })
+        assertEquals(DiagCode.ENTITY_NOT_FOUND, failure(f.accounts.setRotation(f.state, f.ids.next(com.dpsmpx.dpai.core.ids.IdKinds.SUBSCRIPTION), true, f.now)))
+    }
+
+    @Test
     fun errorSeriesCoolsDownAndSuccessClears() {
         val f = Fixture()
         val slot = f.slot(f.subscription())
