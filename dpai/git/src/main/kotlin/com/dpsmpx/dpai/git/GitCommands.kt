@@ -15,6 +15,12 @@ import com.dpsmpx.dpai.security.Proposal
 enum class GitOp(val destructive: Boolean, val writes: Boolean) {
     STATUS(false, false),
     DIFF(false, false),
+    /**
+     * Изменения ветки относительно базы (`<база>...<ветка>`: с точки
+     * расхождения — то, что принесёт слияние; D-42, п. 3). Аргументы —
+     * имена веток, не пути: проверяются по [GitCommands.REF].
+     */
+    DIFF_RANGE(false, false),
     LOG(false, false),
     WORKTREE_LIST(false, false),
     FETCH(false, false),
@@ -58,9 +64,16 @@ class GitCommands(private val approvals: ApprovalLedger, private val git: String
         }
         val need = ARITY.getValue(op)
         if (args.size !in need) return Outcome.failure(DiagCode.VALUE_INVALID, "у ${op.name} аргументов ${need.first}…${need.last}, дано ${args.size}", worktree)
+        if (op == GitOp.DIFF_RANGE) {
+            // Ветки встают в диапазон `a...b` до `--`: только имя ветки, без `..`, `@{`, `:` и прочего синтаксиса ревизий.
+            args.firstOrNull { !REF.matches(it) || ".." in it || it.endsWith(".lock") || it.endsWith("/") }?.let {
+                return Outcome.failure(DiagCode.VALUE_INVALID, "«$it» — не имя ветки", worktree)
+            }
+        }
         val tail: List<String> = when (op) {
             GitOp.STATUS -> listOf("status", "--porcelain=v2", "--branch")
             GitOp.DIFF -> listOf("diff", "--no-color", "--no-ext-diff") + (if (args.isEmpty()) emptyList() else listOf("--") + args)
+            GitOp.DIFF_RANGE -> listOf("diff", "--no-color", "--no-ext-diff", "--stat", "--patch", "${args[0]}...${args[1]}", "--")
             GitOp.LOG -> listOf("log", "--no-color", "--format=%H %s", "-n", "50")
             GitOp.WORKTREE_LIST -> listOf("worktree", "list", "--porcelain")
             GitOp.FETCH -> listOf("fetch", "--no-recurse-submodules", "--") + args
@@ -92,12 +105,15 @@ class GitCommands(private val approvals: ApprovalLedger, private val git: String
          */
         val HARDENING: List<String> = listOf("-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null")
 
+        /** Имя ветки для [GitOp.DIFF_RANGE]: латиница, цифры, `.`, `_`, `/`, `-`; первый знак — не точка и не дефис. */
+        val REF = Regex("[A-Za-z0-9_][A-Za-z0-9._/-]*")
+
         /**
          * Хуки проекта при коммите оркестратора не исполняются (`--no-verify`, T4):
          * проверка проекта — отдельный шаг профиля (этап 10), а не побочный эффект коммита.
          */
         private val ARITY: Map<GitOp, IntRange> = mapOf(
-            GitOp.STATUS to 0..0, GitOp.DIFF to 0..50, GitOp.LOG to 0..0, GitOp.WORKTREE_LIST to 0..0, GitOp.FETCH to 0..2,
+            GitOp.STATUS to 0..0, GitOp.DIFF to 0..50, GitOp.DIFF_RANGE to 2..2, GitOp.LOG to 0..0, GitOp.WORKTREE_LIST to 0..0, GitOp.FETCH to 0..2,
             GitOp.ADD to 1..1000, GitOp.COMMIT to 1..1, GitOp.BRANCH_CREATE to 1..2, GitOp.WORKTREE_ADD to 2..3,
             GitOp.WORKTREE_REMOVE to 1..1, GitOp.MERGE to 1..1, GitOp.MERGE_ABORT to 0..0, GitOp.PUSH to 1..2, GitOp.RESET_HARD to 0..1,
             GitOp.CLEAN_FORCE to 0..50, GitOp.PUSH_FORCE to 1..2, GitOp.BRANCH_DELETE_FORCE to 1..1, GitOp.WORKTREE_REMOVE_FORCE to 1..1,

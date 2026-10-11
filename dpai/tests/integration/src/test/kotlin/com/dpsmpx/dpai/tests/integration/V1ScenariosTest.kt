@@ -1,5 +1,6 @@
 package com.dpsmpx.dpai.tests.integration
 
+import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.operation.OperationStatus
 import com.dpsmpx.dpai.accounts.Accounts
 import com.dpsmpx.dpai.accounts.AccountsState
@@ -285,6 +286,49 @@ class V1ScenariosTest {
         assertTrue(again.id != first.id, "истёкший — заменён новым")
         assertEquals(OperationStatus.SUCCEEDED, orchestrator.answer(again.id, "merge", null, again.hash, "автор").status)
         assertEquals(listOf(t), orchestrator.merged)
+    }
+
+    /**
+     * Изменения задачи (D-42, п. 3): до слияния видно, что задача поменяла, —
+     * незакоммиченное и новые файлы, пока идёт ход; что принесёт слияние —
+     * после коммита; после слияния дерево убрано, ветке нечего принести.
+     */
+    @Test
+    fun taskChangesShowWhatTheMergeWouldBring() {
+        setUp(slots = 1)
+        val t = task("фича", MockScenario.SLOW_OUTPUT)
+        val before = orchestrator.taskChanges(t).valueOrNull()!!
+        assertEquals("task/${t.value}", before.branch)
+        assertTrue(before.empty && before.committed == null && before.uncommitted == null, "до запуска ветки и дерева нет: $before")
+
+        orchestrator.tick()
+        val tree = orchestrator.worktrees.worktrees.values.single { it.owner != null }
+        File(tree.path, "feature.txt").writeText("новая возможность\n")
+        File(tree.path, "README.md").appendText("правка задачи\n")
+        val working = orchestrator.taskChanges(t).valueOrNull()!!
+        assertEquals(emptyList(), working.committed, "коммитов в ветке ещё нет")
+        assertTrue(working.uncommitted!!.any { it == "+правка задачи" }, working.uncommitted.toString())
+        assertEquals(listOf("feature.txt"), working.untracked)
+
+        runUntilQuiet(3)
+        assertEquals(TaskState.DONE, state(t))
+        val done = orchestrator.taskChanges(t)
+        assertTrue(done.diagnostics.isEmpty(), done.diagnostics.toString())
+        val committed = done.valueOrNull()!!.committed!!
+        assertTrue(committed.any { it.contains("feature.txt") && it.contains("|") }, "сводка --stat: $committed")
+        assertTrue("+новая возможность" in committed && "+правка задачи" in committed, committed.toString())
+        assertEquals(emptyList(), done.valueOrNull()!!.uncommitted, "всё закоммичено")
+        assertEquals("main", done.valueOrNull()!!.base)
+        assertFalse(done.valueOrNull()!!.truncated)
+
+        val request = mergeRequest()
+        assertEquals(OperationStatus.SUCCEEDED, orchestrator.answer(request.id, "merge", null, request.hash, "автор").status)
+        val merged = orchestrator.taskChanges(t).valueOrNull()!!
+        assertEquals(null, merged.uncommitted, "дерево убрано после слияния (A-65)")
+        assertEquals(emptyList(), merged.committed, "слитой ветке нечего принести")
+
+        val unknown = orchestrator.taskChanges(com.dpsmpx.dpai.core.ids.IdKinds.TASK.let { ids.next(it) })
+        assertEquals(DiagCode.ENTITY_NOT_FOUND, (unknown as Outcome.Failure).errors.single().code)
     }
 
     private fun mergeRequest() = orchestrator.pendingRequests().single { it.purpose == "task.merge" }

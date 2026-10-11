@@ -62,6 +62,7 @@ import com.dpsmpx.dpai.notifications.NotificationRequest
 import com.dpsmpx.dpai.orchestrator.accounts.AccountNotifications
 import com.dpsmpx.dpai.orchestrator.accounts.accountEnvelopes
 import com.dpsmpx.dpai.orchestrator.git.GitService
+import com.dpsmpx.dpai.orchestrator.git.TaskChanges
 import com.dpsmpx.dpai.orchestrator.sessions.sessionEnvelopes
 import com.dpsmpx.dpai.orchestrator.tasks.taskEnvelopes
 import com.dpsmpx.dpai.orchestrator.verification.CompletionFlow
@@ -1840,6 +1841,41 @@ class Orchestrator(
     /** Итоговые сообщения ходов задачи по порядку — для окна задачи (D-42). */
     fun turnMessages(task: TaskId): List<TurnMessage> = messagesOf[task]
         ?: documents?.read(docKey("messages", task))?.valueOrNull()?.let { TurnMessages.fromJson(it.content).valueOrNull() }.orEmpty()
+
+    /**
+     * Изменения задачи (D-42, п. 3) — для листа задачи и `dpai task <id>
+     * diff`: что принесёт слияние ветки задачи в ветку интеграции и что в её
+     * дереве ещё не закоммичено. Чтение: Git на target проекта по
+     * неизменяемому снимку деревьев, без замка и без событий — зовут поток
+     * экрана и канал `dpai`, а не такт. Ветки ещё нет (задача не
+     * начиналась) — пустые изменения, а не отказ; сбой одной части —
+     * предупреждение, остальные части показываются.
+     */
+    fun taskChanges(task: TaskId): Outcome<TaskChanges> {
+        if (task !in tasks.tasks) return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой задачи", "task $task")
+        val repo = config.repository ?: return Outcome.failure(DiagCode.UNSUPPORTED, "у проекта нет репозитория: изменений задачи нет", "task $task")
+        val g = git ?: return Outcome.failure(DiagCode.UNSUPPORTED, "Git проекта не подключён", "task $task")
+        val branch = "$TASK_BRANCH${task.value}"
+        val trees = worktrees.worktrees.values.filter { it.branch == branch }
+        val tree = trees.firstOrNull { !it.removed }
+        val warnings = mutableListOf<Diagnostic>()
+        var truncated = false
+        fun part(what: String, r: Outcome<com.dpsmpx.dpai.execution.process.Completed>): List<String>? = when (r) {
+            is Outcome.Failure -> null.also { warnings += Diagnostic.warning(DiagCode.GIT_COMMAND_FAILED, "$what: ${r.errors.first().message}", "task $task") }
+            is Outcome.Success -> TaskChanges.cap(r.value.stdout).let { (lines, cut) -> truncated = truncated || cut; lines }
+        }
+        val base = config.integrationBranch
+        // Ветка появляется с деревом задачи: нет записи о дереве — нет и ветки, Git не нужен.
+        val committed = if (base == null || trees.isEmpty()) null else part("изменения ветки", g.run(GitOp.DIFF_RANGE, repo.root, listOf(base, branch)))
+        val uncommitted = tree?.let { part("незакоммиченное", g.run(GitOp.DIFF, it.path)) }
+        val untracked = tree?.let { w ->
+            when (val st = g.status(w.path)) {
+                is Outcome.Failure -> emptyList<String>().also { warnings += Diagnostic.warning(DiagCode.GIT_COMMAND_FAILED, "новые файлы: ${st.errors.first().message}", "task $task") }
+                is Outcome.Success -> st.value.untracked
+            }
+        }.orEmpty()
+        return Outcome.success(TaskChanges(branch, base, committed, uncommitted, untracked, truncated), warnings)
+    }
 
     /**
      * Работает ли Git проекта (самодиагностика, ТЗ, §79): итог последней

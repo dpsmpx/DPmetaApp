@@ -86,10 +86,26 @@ class GitLogicTest {
             val args = when (op) {
                 GitOp.COMMIT, GitOp.WORKTREE_REMOVE, GitOp.MERGE, GitOp.BRANCH_CREATE, GitOp.ADD, GitOp.PUSH -> listOf("x")
                 GitOp.WORKTREE_ADD -> listOf("/p", "b")
+                GitOp.DIFF_RANGE -> listOf("main", "task/x")
                 else -> emptyList()
             }
             val argv = c.argv(op, "/w", args, clock.now()).valueOrNull() ?: error("$op")
             assertTrue(argv.none { it in setOf("--hard", "--force", "-f", "-D", "-fd", "--force-with-lease") }, "$op: $argv")
         }
+    }
+
+    /** Изменения задачи (D-42, п. 3): диапазон из двух имён веток; синтаксис ревизий и параметры не проходят. */
+    @Test
+    fun branchDiffTakesOnlyBranchNames() {
+        val c = GitCommands(ApprovalLedger())
+        assertEquals(
+            listOf("git") + GitCommands.HARDENING + listOf("-C", "/repo", "diff", "--no-color", "--no-ext-diff", "--stat", "--patch", "main...task/tsk_01", "--"),
+            c.argv(GitOp.DIFF_RANGE, "/repo", listOf("main", "task/tsk_01"), clock.now()).valueOrNull(),
+        )
+        for (bad in listOf("main..HEAD", "HEAD@{1}", "a:b", ".hidden", "-p", "x.lock", "dir/", "a b", "")) {
+            val r = c.argv(GitOp.DIFF_RANGE, "/repo", listOf("main", bad), clock.now())
+            assertEquals(DiagCode.VALUE_INVALID, (r as Outcome.Failure).errors.single().code, bad)
+        }
+        assertEquals(DiagCode.VALUE_INVALID, (c.argv(GitOp.DIFF_RANGE, "/repo", listOf("main"), clock.now()) as Outcome.Failure).errors.single().code)
     }
 }
