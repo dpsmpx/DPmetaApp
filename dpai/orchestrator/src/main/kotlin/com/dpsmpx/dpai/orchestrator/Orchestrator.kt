@@ -288,6 +288,18 @@ class Orchestrator(
     /** Очередь команд (D-42, п. 1): кладёт любой поток, исполняет поток такта ([runCommands]). */
     val inbox = CommandInbox()
 
+    // Хранилища документов задач — выше `init`: его `loadTaskDocuments` пишет в них при перезапуске, а свойство,
+    // объявленное ниже `init`, в этот миг ещё null (NullPointerException на устройстве, 11 октября 2026).
+
+    /** Итоги ходов задач в памяти — до завершения задачи; дальше — из документа. Читает и поток экрана. */
+    private val messagesOf = java.util.concurrent.ConcurrentHashMap<TaskId, List<TurnMessage>>()
+
+    /** Ленты чата задач в памяти (D-59); дальше — из документа `chat`. Читает и поток экрана. */
+    private val chatOf = java.util.concurrent.ConcurrentHashMap<TaskId, List<ChatEntry>>()
+
+    /** Сообщения в сессию, ждущие конца хода (D-60); дальше — из документа `queued`. */
+    private val queuedOf = java.util.concurrent.ConcurrentHashMap<TaskId, List<QueuedMessage>>()
+
     init {
         // Перезапуск (ТЗ, §54; D-24): состояние — из журнала. [initialAccounts] —
         // исходное состояние до журнала (его регистрация в журнал не пишется),
@@ -1901,18 +1913,11 @@ class Orchestrator(
     /** Последняя версия контекста задачи — что видел Claude в последнем ходе. */
     fun lastContext(task: TaskId): ContextBundle? = contextOf[task] ?: storedContext(task, report = false)
 
-    /** Итоги ходов задач в памяти — до завершения задачи; дальше — из документа. Читает и поток экрана. */
-    private val messagesOf = java.util.concurrent.ConcurrentHashMap<TaskId, List<TurnMessage>>()
-
-    /** Ленты чата задач в памяти (D-59); дальше — из документа `chat`. Читает и поток экрана. */
-    private val chatOf = java.util.concurrent.ConcurrentHashMap<TaskId, List<ChatEntry>>()
 
     /** Лента чата задачи по порядку (D-59): запросы человека, рассуждения и тексты модели, события. */
     fun chat(task: TaskId): List<ChatEntry> = chatOf[task]
         ?: documents?.read(docKey("chat", task))?.valueOrNull()?.let { TaskChat.fromJson(it.content).valueOrNull() }.orEmpty()
 
-    /** Сообщения в сессию, ждущие конца хода (D-60); дальше — из документа `queued`. */
-    private val queuedOf = java.util.concurrent.ConcurrentHashMap<TaskId, List<QueuedMessage>>()
 
     /** Очередь сообщений задачи (D-60) — для экрана и доставки. */
     fun queued(task: TaskId): List<QueuedMessage> = queuedOf[task]

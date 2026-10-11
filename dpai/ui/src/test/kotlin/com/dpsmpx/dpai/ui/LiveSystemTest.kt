@@ -173,6 +173,32 @@ class LiveSystemTest {
     }
 
     /**
+     * Перезапуск с сообщением в очереди (D-60): контроллер строится и
+     * доставляет его после хода. На устройстве 11 октября 2026 очередь,
+     * прочитанная при построении, роняла контроллер NullPointerException:
+     * её хранилище было объявлено ниже `init` оркестратора.
+     */
+    @Test
+    fun restartWithQueuedMessageBuildsAndDeliversIt() {
+        slow = true
+        val t = entry("сервер", "/home/dev/.claude-dpai")
+        val first = system(t)
+        steps(first, 1)
+        val task = first.addTask("Долгая", "ход идёт через перезапуск").valueOrNull()!!
+        steps(first, 2)
+        val session = first.orchestrator.sessions.sessions.values.single { it.task == task }.id
+        assertTrue(first.orchestrator.sendToSession(session, "ещё вопрос", null, null, false) is com.dpsmpx.dpai.core.result.Outcome.Success)
+        assertEquals(1, first.orchestrator.queued(task).size)
+
+        val second = system(t)
+        assertEquals(1, second.orchestrator.queued(task).size, "очередь прочитана при построении")
+        do { val more = host.advance(session) } while (more)
+        steps(second, 6)
+        assertTrue(second.orchestrator.queued(task).isEmpty(), "очередь доставлена после хода")
+        assertTrue(second.orchestrator.chat(task).any { it.text == "ещё вопрос" })
+    }
+
+    /**
      * Перезапуск приложения посреди хода (ТЗ, §54): новый контроллер над тем
      * же журналом знает задачу, сессию и слот, сверяет сессию с агентом и
      * подхватывает идущий ход; второго слота не появляется.
