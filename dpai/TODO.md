@@ -194,10 +194,14 @@
 
 ## Окружение
 
-- [ ] `М` Android SDK и Google Maven недоступны в облачной сессии
-      (6 октября 2026: `dl.google.com` — 403 по политике прокси). Там
-      модуль `android` не подключается (D-34); он собирается на машине
-      автора (Android SDK поставлен 7 октября 2026).
+- [ ] `М` Android SDK в облачной сессии не стоит, но ставится (11 октября
+      2026, `dl.google.com` отвечает): `commandlinetools-linux-*_latest.zip`
+      → `sdkmanager --licenses`, `platform-tools`, `build-tools;37.0.0`,
+      `platforms;android-37.0` (сборка) и `platforms;android-30` (сверка
+      `check_android_api.py`, D-28); `ANDROID_HOME` — до первого запуска
+      демона Gradle. Так `tools/verify/run.sh full` прошёл с модулем
+      `android` (сборка, lint, API Android 30). Поставить это хуком начала
+      сессии DPmetaApp — по решению автора (загрузка ~0,5 ГБ на сессию).
 - [ ] `М` Maven Central через прокси отвечает `429 Too Many Requests`
       (6 октября 2026); шаг сборки повторяется (`docs/PROCESS.md`,
       «Правила»). Если повторов не хватит — прогрев кеша Gradle в хуке

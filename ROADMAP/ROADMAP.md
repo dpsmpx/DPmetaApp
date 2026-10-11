@@ -63,6 +63,9 @@ Ecosystem Baseline, когда проекты экосистемы доведе�
       `build.wrapper`), `settings.gradle.kts` с `includeBuild("dpai")`,
       задачи `build`, `check`, `clean` поверх общих задач подсистемы
       (ТЗ, §6.1; `docs/ARCHITECTURE.md`, §4).
+- [+] Приложение (оболочка `dpai/android`) собирается из корня с Android
+      SDK и проходит lint и сверку API Android 30 (11 октября 2026,
+      `dpai/tools/verify/run.sh full` — PASS).
 - [ ] Модули ТЗ §6.2 на ядре `dpai/` (пустые, с границами); проверка
       модулей; строки зависимостей в `docs/PROVENANCE.md`.
 - [ ] `:core:model` — типы предметной области на ID и `Measure` ядра.
