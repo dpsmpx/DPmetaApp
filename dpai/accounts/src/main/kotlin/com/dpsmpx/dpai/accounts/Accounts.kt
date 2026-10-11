@@ -256,7 +256,10 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
             .filter { it.state == AccountState.AVAILABLE && (target == null || it.targetId == target) }
             .filter { slot ->
                 val sub = s1.subscriptions.getValue(slot.subscriptionId)
-                policy.startNewTasksWhenNear || urgent || !sub.nearAt(now) || previous == sub.id
+                // Чужую задачу подписка у предела не берёт и срочную (D-57): переход ради того, чтобы сразу
+                // упереться снова, не нужен; своя срочная задача у предела начинается (D-45).
+                val foreign = previous != null && previous != sub.id
+                policy.startNewTasksWhenNear || !sub.nearAt(now) || previous == sub.id || (urgent && !foreign)
             }
         val own = if (previous == null) emptyList() else candidates.filter { it.subscriptionId == previous }
         val switching = previous != null && own.isEmpty()
@@ -277,7 +280,12 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
             }
         }
         val active = activeBySubscription(s1)
-        val chosen = pool.minWith(compareBy<SlotState>({ active[it.subscriptionId] ?: 0 }, { it.sessions.size }, { it.id.value }))
+        // Больше запаса — раньше (D-57): известная загрузка окон десятками процентов, неизвестная — после
+        // известной (D-13: не ноль); внутри одного десятка — меньше сессий, как раньше.
+        val load = { slot: SlotState -> s1.subscriptions.getValue(slot.subscriptionId).let { sub -> LimitWindow.entries.mapNotNull { sub.window(it).utilization }.maxOrNull() } }
+        val chosen = pool.minWith(
+            compareBy<SlotState>({ load(it) == null }, { load(it)?.let { u -> (u * 10).toInt() } ?: 0 }, { active[it.subscriptionId] ?: 0 }, { it.sessions.size }, { it.id.value }),
+        )
         val facts = buildList {
             add(SessionLeased(chosen.id, session, task, now))
             if (switching) add(SubscriptionSwitched(task, previous, chosen.subscriptionId, now))
@@ -380,6 +388,8 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
                 slots.all { it.state == AccountState.AUTH_REQUIRED } -> "нужен вход формой Claude"
                 slots.all { it.state == AccountState.ERROR || it.state == AccountState.DISABLED } -> "слоты остановлены"
                 state.activeSessions(sub.id) >= sub.maxParallelSessions -> "заняты все ${sub.maxParallelSessions} сессии"
+                sub.nearAt(now) && !policy.startNewTasksWhenNear && previous != null && previous != sub.id ->
+                    "у предела — чужие задачи не берёт (${resetPhrase(sub, now)})"
                 sub.nearAt(now) && !policy.startNewTasksWhenNear && !urgent && previous != sub.id ->
                     "близко к пределу — новые задачи отложены до сброса окна (${resetPhrase(sub, now)}); срочная — приоритет HIGH"
                 slots.any { it.state == AccountState.COOLDOWN } -> "пауза после серии ошибок"
