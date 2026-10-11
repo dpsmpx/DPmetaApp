@@ -329,6 +329,13 @@ class DemoModel(
         com.dpsmpx.dpai.ui.TaskScreens.work(o.sessions, o.tasks, project)
     }.getOrNull().orEmpty()
 
+    /** Слоты для ручного переноса задачи (D-66): targets с каталогом Claude — id и имя. */
+    fun slotTargets(): List<Pair<com.dpsmpx.dpai.core.ids.ExecutionTargetId, String>> =
+        controller.targets().filter { it.configDir != null }.map { it.id to it.label }
+
+    /** Слот, выбранный человеком для следующего хода задачи (D-66) — без замка. */
+    fun pinned(task: TaskId): com.dpsmpx.dpai.core.ids.ExecutionTargetId? = runCatching { built?.orchestrator?.pinned(task) }.getOrNull()
+
     /** Задачи, после которых можно поставить новую (D-42, п. 1) — без замка. */
     fun dependencyChoices(): List<Pair<TaskId, String>> =
         runCatching { (built as? LiveSystem)?.orchestrator?.tasks?.let(com.dpsmpx.dpai.ui.TaskScreens::dependencyChoices) }.getOrNull().orEmpty()

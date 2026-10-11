@@ -260,6 +260,32 @@ class V1ScenariosTest {
     }
 
     @Test
+    fun manualMoveContinuesOnChosenSlotWithTheTaskContext() {
+        // D-66: перенос во время хода его не прерывает; следующий ход — на выбранном слоте свежей сессией,
+        // в её контексте — переписка задачи с исходным запросом человека; в чате — событие переноса.
+        setUp(slots = 2)
+        val t = task("перенос", MockScenario.PARTIAL_COMPLETION, MockScenario.SUCCESS)
+        orchestrator.tick()
+        val first = orchestrator.sessions.sessions.values.single { it.task == t }
+        val other = orchestrator.accounts.slots.values.map { it.targetId }.first { it != first.target }
+        val r = orchestrator.submit(com.dpsmpx.dpai.orchestrator.commands.Command.MoveTask(t, other))
+        orchestrator.runCommands()
+        assertTrue(r.get().outcome is Outcome.Success, r.get().outcome.toString())
+        assertEquals(other, orchestrator.pinned(t))
+        runUntilQuiet()
+        assertEquals(TaskState.DONE, state(t))
+        val all = orchestrator.sessions.sessions.values.filter { it.task == t }.sortedBy { it.id.value }
+        assertEquals(2, all.size, all.toString())
+        assertEquals(other, all[1].target, "второй ход — на выбранном слоте")
+        assertTrue(all[1].provider != first.provider, "другой слот — свежая сессия")
+        val ctx = orchestrator.lastContext(t)!!
+        val transcript = ctx.sources.firstOrNull { it.key == com.dpsmpx.dpai.orchestrator.Orchestrator.TRANSCRIPT_SOURCE }
+        assertTrue(transcript != null && "цель: перенос" in transcript.content, ctx.sources.map { it.key }.toString())
+        assertEquals(null, orchestrator.pinned(t), "выбор — на один ход")
+        assertTrue(orchestrator.chat(t).any { it.text.startsWith("перенос на ") })
+    }
+
+    @Test
     fun scenario3RecoveryAfterFailure() {
         setUp(slots = 1)
         val t = task("падение", MockScenario.CRASH, MockScenario.SUCCESS)

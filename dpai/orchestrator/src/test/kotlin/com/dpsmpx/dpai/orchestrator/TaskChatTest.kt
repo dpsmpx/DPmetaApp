@@ -54,4 +54,14 @@ class TaskChatTest {
         val back = QueuedMessages.fromJson(JsonParser().parse(CanonicalJson.write(QueuedMessages.toJson(list))).valueOrNull() as JsonObject)
         assertEquals(list, back.valueOrNull())
     }
+
+    @Test
+    fun backgroundJobsAndPinRoundTrip() {
+        // D-66: фоновые команды и слот следующего хода переживают перезапуск.
+        val s = ids.next(IdKinds.SESSION)
+        val jobs = listOf(BackgroundJob(Timestamp(5), s, "npm run dev"))
+        assertEquals(jobs, BackgroundJobs.fromJson(JsonParser().parse(CanonicalJson.write(BackgroundJobs.toJson(jobs))).valueOrNull() as JsonObject).valueOrNull())
+        val target = ids.next(IdKinds.TARGET)
+        assertEquals(target, TaskPin.fromJson(JsonParser().parse(CanonicalJson.write(TaskPin.toJson(target))).valueOrNull() as JsonObject).valueOrNull())
+    }
 }

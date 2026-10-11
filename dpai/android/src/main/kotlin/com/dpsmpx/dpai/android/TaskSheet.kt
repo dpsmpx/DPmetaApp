@@ -138,6 +138,7 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
                     else -> Unit
                 }
                 status?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
+                MoveSection(model, task, d.executor) { c -> send(c) }
                 ChangesSection(model, task)
             }
         },
@@ -276,3 +277,34 @@ private fun ChangesSection(model: DemoModel, task: TaskId) {
 
 /** Цвет добавленных строк: зелёный, различимый на светлой и тёмной теме. */
 private val ADDED = androidx.compose.ui.graphics.Color(0xFF2E7D32)
+
+/**
+ * Ручной перенос задачи на слот (D-66): следующий ход — на выбранном слоте
+ * свежей сессией с контекстом задачи (цель, переписка, фоновые процессы);
+ * идущий ход не прерывается. Это опция: без неё задача сама переходит на
+ * слот с запасом, когда подписка упирается в предел (D-56, D-57).
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun MoveSection(model: DemoModel, task: TaskId, executor: String?, send: ((String) -> Command) -> Unit) {
+    val slots = remember { model.slotTargets() }
+    if (slots.size < 2) return
+    var pinned by remember { mutableStateOf(model.pinned(task)) }
+    LaunchedEffect(task) {
+        while (true) {
+            pinned = withContext(Dispatchers.IO) { model.pinned(task) }
+            delay(1500)
+        }
+    }
+    androidx.compose.material3.HorizontalDivider()
+    Text("Перенести на слот", style = MaterialTheme.typography.titleSmall)
+    Text(
+        (executor?.let { "Сейчас: $it. " } ?: "") + "Следующий ход пойдёт на выбранном слоте с контекстом задачи; идущий ход не прерывается.",
+        style = MaterialTheme.typography.labelSmall,
+    )
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        for ((id, label) in slots) {
+            FilterChip(selected = pinned == id, onClick = { send { k -> Command.MoveTask(task, id, k) }; pinned = id }, label = { Text(label) })
+        }
+    }
+}

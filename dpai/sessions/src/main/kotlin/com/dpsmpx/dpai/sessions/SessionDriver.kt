@@ -68,6 +68,8 @@ class SessionDriver(private val sessions: Sessions, private val runner: ClaudeRu
         val turns: List<ClaudeTurn> = emptyList(),
         /** Что модель написала и о чём рассуждала — по порядку, без инструментов (лента чата D-59). */
         val chat: List<ChatPiece> = emptyList(),
+        /** Фоновые команды хода (D-66): что запущено и может пережить ход. */
+        val background: List<String> = emptyList(),
     )
 
     /** Первый ход: сверка слота, `QUEUED → STARTING`, запуск. Продолжение прежней — `--resume` её сессии провайдера. */
@@ -137,6 +139,7 @@ class SessionDriver(private val sessions: Sessions, private val runner: ClaudeRu
         val unsupported = linkedSetOf<String>()
         val turns = mutableListOf<ClaudeTurn>()
         val chat = mutableListOf<ChatPiece>()
+        val background = mutableListOf<String>()
         for (u in updates.value) {
             val now = clock.now()
             when (u) {
@@ -154,6 +157,7 @@ class SessionDriver(private val sessions: Sessions, private val runner: ClaudeRu
                             e.thinking.forEach { chat += ChatPiece(ChatPiece.Kind.THINKING, it, now) }
                             e.texts.filter { it.isNotBlank() }.forEach { chat += ChatPiece(ChatPiece.Kind.TEXT, it, now) }
                         }
+                        e.toolUses.mapNotNullTo(background) { com.dpsmpx.dpai.execution.claude.BackgroundCommand.of(it) }
                         val text = e.texts.joinToString("\n").take(sessions.policy.maxOutputChars)
                         if (text.isNotBlank()) emit(listOf(SessionEvent.Output(id, text, now)))
                         e.toolUses.forEach { emit(listOf(SessionEvent.ToolStarted(id, it.name, now))) }
@@ -207,7 +211,7 @@ class SessionDriver(private val sessions: Sessions, private val runner: ClaudeRu
         // Позиция в потоке агента — в журнал: после перезапуска сессия продолжается с неё.
         runner.position(id)?.let { pos -> emit(sessions.heartbeat(current, id, clock.now(), pos)) }
         if (current.sessions.getValue(id).terminal && state.sessions[id]?.terminal == false) facts += AccountFact.Release(id)
-        return Outcome.success(Step(events, facts, unsupported, turns, chat), updates.diagnostics)
+        return Outcome.success(Step(events, facts, unsupported, turns, chat, background), updates.diagnostics)
     }
 
     /** Что ход делает сейчас (D-42): только в памяти процесса — после перезапуска пусто, пока не придёт новое. */
