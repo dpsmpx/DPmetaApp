@@ -2,6 +2,8 @@ package com.dpsmpx.dpai.android
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -14,6 +16,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -28,12 +37,9 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -154,33 +160,71 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
     }
     confirmUri?.let { uri -> ConfirmDialog(model, snapshot?.requests.orEmpty(), uri) { confirmUri = null } }
 
+    // Окно сессии: чат или временная шкала (D-59) — переключатель в заголовке, а не в окне (D-61).
+    var sessionEvents by remember { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf(false) }
+    val sessionScreen = if (selectedId != null) snapshot?.session else null
+    val renameTask = sessionScreen?.task
+    if (renaming && renameTask != null) {
+        RenameSessionDialog(SessionNames.name(context, renameTask) ?: sessionScreen.title.orEmpty()) { name ->
+            name?.let { SessionNames.set(context, renameTask, it) }
+            renaming = false
+        }
+    }
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(if (selectedId != null) "Сессия" else if (tab == 2) "DP AI · targets" else if (tab == 3) "DP AI · запросы" else if (tab == 4) "DP AI · журнал" else "DP AI · ${snapshot?.mode ?: "…"}") },
-                navigationIcon = {
-                    if (selectedId != null) TextButton(onClick = { selectedId = null }) { Text("←") }
-                },
-            )
+            // Узкая строка (D-61): больше места чату; в окне сессии — кружок состояния и имя (нажатие — переименовать).
+            androidx.compose.material3.Surface(tonalElevation = 3.dp) {
+                Row(
+                    Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).height(48.dp).padding(horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (selectedId != null) {
+                        TextButton(onClick = { selectedId = null }) { Text("←") }
+                        sessionScreen?.let { sc -> StatusDot(sc.status) }
+                        Text(
+                            sessionScreen?.let { sc -> SessionNames.name(context, sc.task) ?: sc.title } ?: "Сессия",
+                            Modifier.weight(1f).padding(start = 8.dp).clickable(enabled = sessionScreen?.task != null) { renaming = true },
+                            style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
+                        TextButton(onClick = { sessionEvents = !sessionEvents }) { Text(if (sessionEvents) "Чат" else "События") }
+                    } else {
+                        Text(
+                            if (tab == 2) "DP AI · targets" else if (tab == 3) "DP AI · запросы" else if (tab == 4) "DP AI · журнал" else "DP AI · ${snapshot?.mode ?: "…"}",
+                            Modifier.padding(start = 12.dp), style = MaterialTheme.typography.titleMedium,
+                        )
+                    }
+                }
+            }
         },
         bottomBar = {
-            // Панель — всегда: её исчезновение на экране сессии сдвигало всё содержимое.
-            NavigationBar {
-                fun go(t: Int) {
-                    tab = t
-                    selectedId = null
+            // Панель — всегда: её исчезновение на экране сессии сдвигало всё содержимое. Без подписей, узкая (D-61).
+            androidx.compose.material3.Surface(tonalElevation = 3.dp) {
+                Row(
+                    Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.navigationBars).height(44.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    fun go(t: Int) {
+                        tab = t
+                        selectedId = null
+                    }
+                    val waiting = snapshot?.requests?.size ?: 0
+                    for ((i, icon) in listOf("◉", "▦", "⇄", "?", "≡").withIndex()) {
+                        val selected = tab == i && selectedId == null
+                        Box(
+                            Modifier.weight(1f).fillMaxSize().clickable { go(i) },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            val color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            // Число — значком поверх: ширина пункта не меняется с числом запросов.
+                            if (i == 3) {
+                                BadgedBox(badge = { if (waiting > 0) Badge { Text("$waiting") } }) { Text(icon, color = color, style = MaterialTheme.typography.titleMedium) }
+                            } else {
+                                Text(icon, color = color, style = MaterialTheme.typography.titleMedium)
+                            }
+                        }
+                    }
                 }
-                NavigationBarItem(selected = tab == 0 && selectedId == null, onClick = { go(0) }, icon = { Text("◉") }, label = { Text("Сводка") })
-                NavigationBarItem(selected = tab == 1 && selectedId == null, onClick = { go(1) }, icon = { Text("▦") }, label = { Text("Задачи") })
-                NavigationBarItem(selected = tab == 2 && selectedId == null, onClick = { go(2) }, icon = { Text("⇄") }, label = { Text("Targets") })
-                val waiting = snapshot?.requests?.size ?: 0
-                // Число — значком поверх: ширина пункта не меняется с числом запросов.
-                NavigationBarItem(
-                    selected = tab == 3 && selectedId == null, onClick = { go(3) },
-                    icon = { BadgedBox(badge = { if (waiting > 0) Badge { Text("$waiting") } }) { Text("?") } },
-                    label = { Text("Запросы") },
-                )
-                NavigationBarItem(selected = tab == 4 && selectedId == null, onClick = { go(4) }, icon = { Text("≡") }, label = { Text("Журнал") })
             }
         },
     ) { padding ->
@@ -208,7 +252,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                         screen == 3 -> RequestsPane(model, s)
                         screen == 4 -> LogPane(model)
                         s == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-                        screen == SESSION_SCREEN -> SessionPane(s.session, model)
+                        screen == SESSION_SCREEN -> SessionPane(s.session, model, sessionEvents)
                         screen == 0 -> DashboardPane(s.dashboard, model) { selectedId = it.value }
                         else -> BoardPane(s.board, s.live, model, s.archived) { selectedId = it }
                     }
@@ -310,29 +354,26 @@ private fun SessionRow(line: SessionLine, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun SessionPane(screen: SessionScreen?, model: DemoModel) {
+private fun SessionPane(screen: SessionScreen?, model: DemoModel, events: Boolean) {
     if (screen == null) {
         Box(Modifier.fillMaxSize()) { CircularProgressIndicator(Modifier.align(Alignment.Center)) }
         return
     }
-    // Чат сессии (D-59): все сообщения задачи в одной ленте, ввод внизу, управление ходом.
-    var events by remember(screen.session) { mutableStateOf(false) }
+    // Чат сессии (D-59): все сообщения задачи в одной ленте, ввод внизу, управление ходом; имя и состояние — в заголовке (D-61).
     val list = androidx.compose.foundation.lazy.rememberLazyListState()
     val shown = if (events) screen.timeline.size else screen.chat.size
     LaunchedEffect(screen.session, shown, events) {
         if (shown > 0) list.animateScrollToItem(shown)
     }
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
+    val inputMax = maxHeight - 56.dp
     Column(Modifier.fillMaxSize()) {
-        Column(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
-            screen.title?.let { Text(it, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis) }
-            screen.line?.let { SessionRow(it) } ?: Text(screen.session.value, style = MaterialTheme.typography.labelSmall)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(screen.usage?.let { "Расход: $it" } ?: "", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall)
-                TextButton(onClick = { events = !events }) { Text(if (events) "Чат" else "События") }
+        LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = list, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            // Расход и строка состояния — мелко в начале ленты, а не над ней (D-61).
+            item {
+                screen.line?.let { l -> Text("${l.state} · ${l.next}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                screen.usage?.let { Text("Расход: $it", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
-        }
-        HorizontalDivider()
-        LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = list, contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             if (events) {
                 items(screen.timeline) { e ->
                     Row {
@@ -355,8 +396,46 @@ private fun SessionPane(screen: SessionScreen?, model: DemoModel) {
             }
         }
         HorizontalDivider()
-        ChatInput(screen, model)
+        ChatInput(screen, model, inputMax)
     }
+    }
+}
+
+/**
+ * Состояние сессии кружком (D-61): идёт — пульсирует цветом акцента,
+ * готово — зелёный, ошибка — красный, ждёт — серый.
+ */
+@Composable
+private fun StatusDot(status: com.dpsmpx.dpai.ui.SessionStatus) {
+    val base = when (status) {
+        com.dpsmpx.dpai.ui.SessionStatus.RUNNING -> MaterialTheme.colorScheme.primary
+        com.dpsmpx.dpai.ui.SessionStatus.DONE -> toneColor(Tone.DONE)
+        com.dpsmpx.dpai.ui.SessionStatus.ERROR -> MaterialTheme.colorScheme.error
+        com.dpsmpx.dpai.ui.SessionStatus.IDLE -> MaterialTheme.colorScheme.outline
+    }
+    val pulse = androidx.compose.animation.core.rememberInfiniteTransition(label = "dot")
+    val scale by pulse.animateFloat(
+        initialValue = 0.7f, targetValue = 1f,
+        animationSpec = androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(700), androidx.compose.animation.core.RepeatMode.Reverse),
+        label = "scale",
+    )
+    val k = if (status == com.dpsmpx.dpai.ui.SessionStatus.RUNNING) scale else 1f
+    Box(Modifier.size(14.dp), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(12.dp * k).background(base.copy(alpha = if (status == com.dpsmpx.dpai.ui.SessionStatus.RUNNING) 0.5f + 0.5f * k else 1f), androidx.compose.foundation.shape.CircleShape))
+    }
+}
+
+/** Имя сессии (D-61): пусто — снова название задачи. */
+@Composable
+private fun RenameSessionDialog(current: String, onDone: (String?) -> Unit) {
+    var name by remember { mutableStateOf(current) }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = { onDone(null) },
+        title = { Text("Имя сессии") },
+        text = { OutlinedTextField(name, { name = it.take(80) }, singleLine = true, label = { Text("Имя (пусто — название задачи)") }) },
+        confirmButton = { TextButton(onClick = { onDone(name) }) { Text("Сохранить") } },
+        dismissButton = { TextButton(onClick = { onDone(null) }) { Text("Отмена") } },
+    )
 }
 
 /** Пузырь ленты (D-59): запрос человека — справа, текст модели — слева, рассуждение — свёрнуто, событие — по центру. */
@@ -408,7 +487,7 @@ private fun ChatBubble(line: com.dpsmpx.dpai.ui.ChatLine) {
  */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun ChatInput(screen: SessionScreen, model: DemoModel) {
+private fun ChatInput(screen: SessionScreen, model: DemoModel, maxHeight: androidx.compose.ui.unit.Dp) {
     val scope = rememberCoroutineScope()
     val keys = remember { com.dpsmpx.dpai.core.ids.IdGenerator(com.dpsmpx.dpai.core.clock.Clock.SYSTEM, com.dpsmpx.dpai.core.clock.RandomSource.secure()) }
     var text by remember(screen.session) { mutableStateOf("") }
@@ -419,6 +498,7 @@ private fun ChatInput(screen: SessionScreen, model: DemoModel) {
     var busy by remember { mutableStateOf(false) }
     val canSend = com.dpsmpx.dpai.ui.SessionAction.SEND in screen.actions
     val running = com.dpsmpx.dpai.ui.SessionAction.STOP in screen.actions
+    val fresh = com.dpsmpx.dpai.ui.SessionAction.FRESH in screen.actions
     fun send(c: (String) -> com.dpsmpx.dpai.orchestrator.commands.Command, after: () -> Unit = {}) {
         busy = true
         val key = keys.next(com.dpsmpx.dpai.core.ids.IdKinds.OPERATION).value
@@ -430,41 +510,51 @@ private fun ChatInput(screen: SessionScreen, model: DemoModel) {
             busy = false
         }
     }
-    Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    val typing = text.isNotEmpty()
+    Column(Modifier.padding(horizontal = 6.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         status?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
-        if (running && canSend) Text("Ход идёт: сообщение уйдёт после него, ход не прерывается", style = MaterialTheme.typography.labelSmall)
-        if (params) {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                for (m in listOf("", "haiku", "sonnet", "opus")) {
-                    androidx.compose.material3.FilterChip(selected = modelName == m, onClick = { modelName = m }, label = { Text(m.ifEmpty { "модель задачи" }) })
-                }
-            }
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                for (e in listOf("", "low", "medium", "high")) {
-                    androidx.compose.material3.FilterChip(selected = effort == e, onClick = { effort = e }, label = { Text(e.ifEmpty { "усилие задачи" }) })
-                }
-            }
-        }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        // Пусто — одна строка на всю ширину и рядом «стоп» (или «свежая сессия»); начали писать — поле растёт
+        // до высоты окна, под ним «Отправить» и «Модель и усилие» (D-61). Ход сообщением не прерывается (D-60).
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             OutlinedTextField(
-                text, { text = it }, Modifier.weight(1f),
-                placeholder = { Text(if (canSend) "Сообщение Claude" else "Ход недоступен: задача проверяется или завершена") },
-                enabled = canSend, maxLines = 6,
+                text, { text = it }, Modifier.weight(1f).heightIn(max = maxHeight),
+                placeholder = { Text(if (canSend) "Сообщение Claude" else "Задача проверяется или завершена") },
+                enabled = canSend, singleLine = !typing, maxLines = if (typing) Int.MAX_VALUE else 1,
+                textStyle = MaterialTheme.typography.bodyMedium,
             )
-            Button(enabled = canSend && !busy && text.isNotBlank(), onClick = {
-                val t = text
-                send({ k -> com.dpsmpx.dpai.orchestrator.commands.Command.SendToSession(screen.session, t, modelName.ifEmpty { null }, effort.ifEmpty { null }, key = k) }) { text = "" }
-            }) { Text("Отправить") }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            if (running) TextButton(enabled = !busy, onClick = { send({ k -> com.dpsmpx.dpai.orchestrator.commands.Command.StopSession(screen.session, k) }) }) { Text("Остановить ход") }
-            if (com.dpsmpx.dpai.ui.SessionAction.FRESH in screen.actions) {
-                TextButton(enabled = !busy, onClick = {
-                    val t = text
-                    send({ k -> com.dpsmpx.dpai.orchestrator.commands.Command.SendToSession(screen.session, t.ifBlank { null }, modelName.ifEmpty { null }, effort.ifEmpty { null }, fresh = true, key = k) }) { text = "" }
-                }) { Text("Свежая сессия") }
+            if (!typing) {
+                when {
+                    running -> androidx.compose.material3.FilledTonalIconButton(enabled = !busy, onClick = {
+                        send({ k -> com.dpsmpx.dpai.orchestrator.commands.Command.StopSession(screen.session, k) })
+                    }) { Text("■") }
+                    fresh -> androidx.compose.material3.FilledTonalIconButton(enabled = !busy, onClick = {
+                        send({ k -> com.dpsmpx.dpai.orchestrator.commands.Command.SendToSession(screen.session, null, modelName.ifEmpty { null }, effort.ifEmpty { null }, fresh = true, key = k) })
+                    }) { Text("↻") }
+                }
             }
-            TextButton(onClick = { params = !params }) { Text(if (params) "Скрыть параметры" else "Модель и усилие") }
+        }
+        if (typing) {
+            if (params) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    for (m in listOf("", "haiku", "sonnet", "opus")) {
+                        androidx.compose.material3.FilterChip(selected = modelName == m, onClick = { modelName = m }, label = { Text(m.ifEmpty { "модель задачи" }) })
+                    }
+                    for (e in listOf("", "low", "medium", "high")) {
+                        androidx.compose.material3.FilterChip(selected = effort == e, onClick = { effort = e }, label = { Text(e.ifEmpty { "усилие задачи" }) })
+                    }
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Button(enabled = canSend && !busy && text.isNotBlank(), onClick = {
+                    val t = text
+                    send({ k -> com.dpsmpx.dpai.orchestrator.commands.Command.SendToSession(screen.session, t, modelName.ifEmpty { null }, effort.ifEmpty { null }, key = k) }) { text = "" }
+                }) { Text("Отправить") }
+                TextButton(onClick = { params = !params }) { Text(if (params) "Скрыть параметры" else "Модель и усилие") }
+                if (fresh) TextButton(enabled = !busy, onClick = {
+                    val t = text
+                    send({ k -> com.dpsmpx.dpai.orchestrator.commands.Command.SendToSession(screen.session, t, modelName.ifEmpty { null }, effort.ifEmpty { null }, fresh = true, key = k) }) { text = "" }
+                }) { Text("Свежая") }
+            }
         }
     }
 }
@@ -617,7 +707,8 @@ private fun TaskRow(card: TaskCard, modifier: Modifier = Modifier) {
     Card(modifier.fillMaxWidth().padding(start = (card.level * 16).dp)) {
         Column(Modifier.padding(10.dp)) {
             Row {
-                Text(card.title, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                // Имя, заданное человеком в окне сессии (D-61), — и на карточке.
+                Text(SessionNames.name(androidx.compose.ui.platform.LocalContext.current, card.id) ?: card.title, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(card.state + if (card.held) " · пауза" else "", color = toneColor(card.tone), style = MaterialTheme.typography.labelMedium)
             }
             Text(

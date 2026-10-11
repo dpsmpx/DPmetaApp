@@ -453,7 +453,14 @@ class LiveSystem(
         )
         // Чат задачи сессии (D-59): все её сессии в одной ленте.
         val task = orchestrator.sessions.sessions[id]?.task ?: return base
-        return base.copy(title = orchestrator.tasks.tasks[task]?.title, chat = Screens.chat(orchestrator.chat(task), id, clock.now()))
+        val record = orchestrator.sessions.sessions[id]
+        val running = orchestrator.sessions.sessions.values.any {
+            it.task == task && !it.terminal && it.state in setOf(com.dpsmpx.dpai.core.state.SessionState.STARTING, com.dpsmpx.dpai.core.state.SessionState.RUNNING, com.dpsmpx.dpai.core.state.SessionState.NEAR_LIMIT)
+        }
+        return base.copy(
+            title = orchestrator.tasks.tasks[task]?.title, chat = Screens.chat(orchestrator.chat(task), id, clock.now()),
+            task = task, status = Screens.sessionStatus(record, orchestrator.tasks.tasks[task]?.state, running),
+        )
     }
 
     companion object {

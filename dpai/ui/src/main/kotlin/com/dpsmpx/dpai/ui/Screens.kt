@@ -71,7 +71,13 @@ data class SessionScreen(
     /** Задача сессии и лента её чата (D-59): все сессии задачи в одном пространстве. */
     val title: String? = null,
     val chat: List<ChatLine> = emptyList(),
+    /** Задача сессии — к ней привязано имя, которое задаёт человек; и состояние для кружка в заголовке. */
+    val task: TaskId? = null,
+    val status: SessionStatus = SessionStatus.IDLE,
 )
+
+/** Состояние сессии одним знаком в заголовке окна (D-61): идёт, готово, ошибка или ждёт. */
+enum class SessionStatus { RUNNING, DONE, ERROR, IDLE }
 
 /**
  * Строка ленты чата (D-59): [mine] — запрос человека (справа); [thinking]
@@ -156,6 +162,19 @@ object Screens {
             actions = actions,
             usage = usage?.let(::usageLine),
         )
+    }
+
+    /**
+     * Состояние для кружка в заголовке (D-61): ход идёт — «идёт»; задача
+     * готова или ход завершён — «готово»; сбой или блок — «ошибка»; иначе —
+     * «ждёт» (очередь, пауза, проверка).
+     */
+    fun sessionStatus(record: SessionRecord?, taskState: TaskState?, running: Boolean): SessionStatus = when {
+        running -> SessionStatus.RUNNING
+        taskState == TaskState.FAILED || taskState == TaskState.BLOCKED ||
+            record?.state == com.dpsmpx.dpai.core.state.SessionState.FAILED || record?.state == com.dpsmpx.dpai.core.state.SessionState.BLOCKED -> SessionStatus.ERROR
+        taskState == TaskState.DONE || taskState == TaskState.VERIFIED || taskState == TaskState.COMPLETION_UNVERIFIED -> SessionStatus.DONE
+        else -> SessionStatus.IDLE
     }
 
     /**
