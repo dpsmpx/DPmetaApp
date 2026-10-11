@@ -171,6 +171,17 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
         return Outcome.success(finish(state, listOf(AccountEvent.NearThresholdSet(subscription, percent, now)), now))
     }
 
+    /**
+     * Принимает ли подписка задачи других подписок, упёршихся в предел
+     * (D-30, D-56): продолжение — свежей сессией с handoff, не чаще
+     * [AccountPolicy.maxSwitchesPerTask] раз за [AccountPolicy.switchWindow].
+     */
+    fun setRotation(state: AccountsState, subscription: SubscriptionId, allowed: Boolean, now: Timestamp): Outcome<List<AccountEvent>> {
+        val sub = state.subscriptions[subscription] ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой подписки", "subscription $subscription")
+        if (sub.rotationExplicit && sub.rotationAllowed == allowed) return Outcome.success(emptyList())
+        return Outcome.success(finish(state, listOf(AccountEvent.RotationSet(subscription, allowed, now)), now))
+    }
+
     /** Успешный запрос слота: предел подписки снят (доказано), серия ошибок слота сброшена. */
     fun observeSuccess(state: AccountsState, slotId: AccountId, now: Timestamp): Outcome<List<AccountEvent>> {
         val slot = state.slots[slotId] ?: return notFound(slotId)
@@ -422,6 +433,7 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
                 val w = it.window(event.window)
                 it.copy(windows = it.windows + (event.window to w.copy(utilization = event.utilization, resetAt = event.resetAt ?: w.resetAt, observedAt = event.at)))
             }
+            is AccountEvent.RotationSet -> state.sub(event.subscription) { it.copy(rotationAllowed = event.allowed, rotationExplicit = true) }
             is AccountEvent.NearThresholdSet -> state.sub(event.subscription) { it.copy(nearPercent = event.percent) }
             is LimitReset -> state.sub(event.subscription) { it.copy(windows = it.windows + (event.window to WindowState())) }
             is LoginExpiring -> state.slot(event.slot) { it.copy(loginExpiring = true, loginExpiresAt = event.expiresAt) }

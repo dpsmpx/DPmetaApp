@@ -75,6 +75,8 @@ data class SubscriptionState(
     val windows: Map<LimitWindow, WindowState> = LimitWindow.entries.associateWith { WindowState() },
     /** Порог «у предела» в процентах загрузки окна (D-45): его задаёт человек, на нём — откладывание и экономия. */
     val nearPercent: Int = DEFAULT_NEAR_PERCENT,
+    /** [rotationAllowed] задано событием `RotationSet` (D-56), а не значением при регистрации до D-56. */
+    val rotationExplicit: Boolean = false,
 ) {
     fun window(w: LimitWindow): WindowState = windows[w] ?: WindowState()
 

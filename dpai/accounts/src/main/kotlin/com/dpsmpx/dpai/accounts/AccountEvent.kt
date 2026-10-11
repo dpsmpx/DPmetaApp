@@ -60,6 +60,13 @@ sealed interface AccountEvent {
     ) : AccountEvent
 
     /** Порог «у предела» подписки задан человеком (D-45), процентов. */
+    /**
+     * Принимает ли подписка задачи, начатые на других подписках, когда те
+     * упёрлись в предел (D-30, D-56): задаёт человек или перенос значения по
+     * умолчанию для подписок, заведённых до D-56.
+     */
+    data class RotationSet(val subscription: SubscriptionId, val allowed: Boolean, override val at: Timestamp) : AccountEvent
+
     data class NearThresholdSet(val subscription: SubscriptionId, val percent: Int, override val at: Timestamp) : AccountEvent
 
     data class LoginExpiring(val slot: AccountId, val expiresAt: Timestamp?, override val at: Timestamp) : AccountEvent

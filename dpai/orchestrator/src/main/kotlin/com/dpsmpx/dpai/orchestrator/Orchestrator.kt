@@ -598,17 +598,53 @@ class Orchestrator(
     /** Почему задача ждёт, если известно (лист задачи). */
     fun waitingReason(task: TaskId): String? = lastWaiting[task]
 
-    private fun launch(task: TaskId, target: ExecutionTargetId) {
+    /**
+     * Targets, куда ещё можно начать сессию [task] сейчас: не выключен,
+     * есть место, есть нужные возможности. Первыми — с слотом подписки, на
+     * которой задача шла (продолжение без перехода), затем [planned] —
+     * выбор плана, затем остальные (D-56).
+     */
+    private fun launchOrder(task: TaskId, planned: ExecutionTargetId): List<ExecutionTargetId> {
+        val need = tasks.tasks[task]?.capabilities.orEmpty()
+        val open = targets.filter { t ->
+            t.id == planned || (
+                t.id !in control.disabledTargets && t.capabilities.containsAll(need) &&
+                    sessions.sessions.values.count { !it.terminal && it.target == t.id } < t.maxSessions
+                )
+        }.map { it.id }
+        val own = accounts.taskSubscription[task]
+        fun ownSlot(id: ExecutionTargetId) = own != null && accounts.slots.values.any { it.targetId == id && it.subscriptionId == own }
+        return open.sortedWith(compareBy<ExecutionTargetId>({ !ownSlot(it) }, { it != planned }, { it.value }))
+    }
+
+    private fun launch(task: TaskId, planned: ExecutionTargetId) {
         val t = tasks.tasks.getValue(task)
         val session = ids.next(IdKinds.SESSION)
-        val lease = accountsLogic.lease(accounts, session, task, clock.now(), target, urgent = t.priority.ordinal <= Priority.HIGH.ordinal)
+        // План выбирает target по месту, не по пределам: его подписка могла упереться в предел пяти часов
+        // или недели — тогда задача уходит на свободный слот другой подписки, если та принимает (D-56).
+        var target = planned
+        var lease: Outcome<Accounts.Lease> = Outcome.failure(DiagCode.ACCOUNT_NONE_AVAILABLE, "нет target", "task $task")
+        var first: Outcome.Failure? = null
+        for (candidate in launchOrder(task, planned)) {
+            lease = accountsLogic.lease(accounts, session, task, clock.now(), candidate, urgent = t.priority.ordinal <= Priority.HIGH.ordinal)
+            if (lease is Outcome.Success) {
+                target = candidate
+                break
+            }
+            if (first == null || candidate == planned) first = lease as Outcome.Failure
+        }
         if (lease is Outcome.Failure) {
             // Свободного слота нет: задача ждёт следующего такта — и человек видит почему (раньше — молча).
-            waiting(task, lease.errors.first().message)
+            waiting(task, (first ?: lease).errors.first().message)
             return
         }
         lastWaiting.remove(task)
         val slot = lease.valueOrNull()!!.slot
+        // Кому передана задача (D-56): подписка и каталог слота — в уведомлении и журнале приложения.
+        val leased = lease.valueOrNull()!!
+        val slotName = accounts.subscriptions[leased.subscription]?.label.orEmpty() +
+            (accounts.slots[slot]?.configDir?.substringAfterLast('/')?.let { " · $it" } ?: "")
+        val switched = leased.events.filterIsInstance<AccountEvent.SubscriptionSwitched>().firstOrNull()
         val budgetMode = budgetMode(slot)
         if (budgetMode == BudgetMode.FRUGAL && efficiency.budget.deferBelow?.let { t.priority.ordinal > it.ordinal } == true) {
             // Подписка у предела (D-30): несрочное ждёт сброса окна (D-40, п. 5). Аренда не записана — снимать нечего.
@@ -684,7 +720,11 @@ class Orchestrator(
         // RUNNING без живой сессии — реакция как при опросе (прогон выносливости 7 октября 2026).
         val after = sessions.sessions.getValue(session)
         if (after.state != SessionState.RUNNING && after.state != SessionState.STARTING) react(task, session, after.state)
-        else progress(task, NotificationCategory.PROGRESS, "Задача начата", "попытка $attempt")
+        else progress(task, NotificationCategory.PROGRESS, "Задача начата", "попытка $attempt · $slotName")
+        switched?.let { sw ->
+            val from = accounts.subscriptions[sw.from]?.label ?: "прежняя подписка"
+            notify("task:${task.value}:switch", NotificationCategory.WARNING, "Задача передана другой подписке: ${taskTitle(task)}", "«$from» у предела — продолжает «$slotName» с handoff")
+        }
     }
 
     /** Метка версии контекста в `SESSION_PROMPT_PREPARED`: по ней узнаётся, что видела сессия. */
@@ -1333,6 +1373,12 @@ class Orchestrator(
                 when (val r = accountsLogic.setNearPercent(accounts, command.subscription, command.percent, clock.now())) {
                     is Outcome.Failure -> r
                     is Outcome.Success -> Outcome.success(command.percent).also { commitAccounts(r.value) }
+                }
+            }
+            is Command.SetRotation -> record(command, provenance) {
+                when (val r = accountsLogic.setRotation(accounts, command.subscription, command.allowed, clock.now())) {
+                    is Outcome.Failure -> r
+                    is Outcome.Success -> Outcome.success(command.allowed).also { commitAccounts(r.value) }
                 }
             }
             is Command.Verify -> record(command, provenance) { verifyTask(command.task) }

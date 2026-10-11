@@ -128,7 +128,7 @@ class ControlCommand(
                 val name = if (str(w, "window") == "SESSION") "5 ч" else "неделя"
                 "$name ${num(w, "percent")?.let { "$it %" } ?: "?"}"
             }
-            out("Подписка «${str(sub, "label")}»: $windows; порог ${num(sub, "nearPercent")} %${if (bool(sub, "near")) " — у предела" else ""}")
+            out("Подписка «${str(sub, "label")}»: $windows; порог ${num(sub, "nearPercent")} %${if (bool(sub, "near")) " — у предела" else ""}${if (bool(sub, "rotation")) "; берёт задачи подписок у предела" else ""}")
         }
         val control = s["control"] as? JsonObject
         control?.let { c -> num(c, "maxSessions")?.let { out("Предел сессий контура: $it") } }

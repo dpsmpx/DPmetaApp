@@ -258,6 +258,13 @@ class DemoModel(
         built?.orchestrator?.sessions?.sessions?.values?.filter { it.task == task }?.maxByOrNull { it.createdAt.epochMillis }?.id
     }.getOrNull()
 
+    /** Кто чем занят (D-56): target → его идущие задачи с проектом — без замка. */
+    fun work(): Map<com.dpsmpx.dpai.core.ids.ExecutionTargetId, List<String>> = runCatching {
+        val o = (built as? LiveSystem)?.orchestrator ?: return emptyMap()
+        val project = controller.project()?.root?.trimEnd('/', '\\')?.substringAfterLast('/')?.substringAfterLast('\\')
+        com.dpsmpx.dpai.ui.TaskScreens.work(o.sessions, o.tasks, project)
+    }.getOrNull().orEmpty()
+
     /** Задачи, после которых можно поставить новую (D-42, п. 1) — без замка. */
     fun dependencyChoices(): List<Pair<TaskId, String>> =
         runCatching { (built as? LiveSystem)?.orchestrator?.tasks?.let(com.dpsmpx.dpai.ui.TaskScreens::dependencyChoices) }.getOrNull().orEmpty()
@@ -265,7 +272,9 @@ class DemoModel(
     /** Лист задачи (D-42): состояние и доступные действия — из неизменяемого состояния контура, без замка. */
     fun taskDetail(task: TaskId): com.dpsmpx.dpai.ui.TaskDetail? = runCatching {
         val o = built?.orchestrator ?: return null
-        o.tasks.tasks[task]?.let { com.dpsmpx.dpai.ui.TaskScreens.detail(it, o.sessions, o.waitingReason(task)) }
+        val labels = controller.targets().associate { it.id to it.label }
+        val handoffs = o.handoffs.all().filter { it.task == task }
+        o.tasks.tasks[task]?.let { com.dpsmpx.dpai.ui.TaskScreens.detail(it, o.sessions, o.waitingReason(task), o.accounts, { id -> labels[id] ?: id.value }, handoffs) }
     }.getOrNull()
 
     /** Итоговые сообщения ходов задачи (D-42) — целиком; из памяти контура или документа задачи, без замка. */
@@ -318,8 +327,8 @@ class DemoModel(
     }
 
     /** Обновить загрузку окон подписок через `/usage` (D-48): без хода, лимит не тратится. */
-    fun refreshUsage() = lock.withLock {
-        liveSystem().valueOrNull()?.refreshUsage()
+    fun refreshUsage(only: Set<com.dpsmpx.dpai.core.ids.ExecutionTargetId>? = null) = lock.withLock {
+        liveSystem().valueOrNull()?.refreshUsage(only)
         Unit
     }
 
