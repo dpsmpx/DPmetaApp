@@ -53,7 +53,6 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
     val scope = rememberCoroutineScope()
     // Сразу с данными (чтение неизменяемого состояния, без замка): лист не меняет размер после «Загружаю…».
     var detail by remember { mutableStateOf(model.taskDetail(task)) }
-    var messages by remember { mutableStateOf(model.taskMessages(task)) }
     var status by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var confirm by remember { mutableStateOf<TaskAction?>(null) }
@@ -62,7 +61,6 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
     LaunchedEffect(task) {
         while (true) {
             detail = withContext(Dispatchers.IO) { model.taskDetail(task) }
-            messages = withContext(Dispatchers.IO) { model.taskMessages(task) }
             delay(1500)
         }
     }
@@ -94,6 +92,8 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
                     Text("Загружаю…")
                     return@Column
                 }
+                // Вывод модели — только в чате сессии (D-62): переход туда — первым.
+                d.lastSession?.let { s -> androidx.compose.material3.Button(onClick = { onSession(s.value) }, Modifier.fillMaxWidth()) { Text("Открыть чат") } }
                 Text("${d.state}${if (d.held) " · приостановлена" else ""} · приоритет ${d.priority}", fontWeight = FontWeight.Bold)
                 Text(d.objective, style = MaterialTheme.typography.bodySmall, maxLines = 4)
                 Text(
@@ -109,7 +109,6 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
                     d.assignments.forEach { Text("• $it", style = MaterialTheme.typography.labelSmall) }
                 }
                 d.waiting?.let { Text("Ждёт: $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
-                d.lastSession?.let { s -> TextButton(onClick = { onSession(s.value) }) { Text("Открыть последнюю сессию") } }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     for (a in d.actions) {
                         OutlinedButton(
@@ -140,7 +139,6 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
                 }
                 status?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
                 ChangesSection(model, task)
-                TurnMessagesSection(messages)
             }
         },
         confirmButton = { TextButton(onClick = onDone) { Text("Закрыть") } },
@@ -278,75 +276,3 @@ private fun ChangesSection(model: DemoModel, task: TaskId) {
 
 /** Цвет добавленных строк: зелёный, различимый на светлой и тёмной теме. */
 private val ADDED = androidx.compose.ui.graphics.Color(0xFF2E7D32)
-
-/**
- * Итоговые сообщения ходов (D-42): на чём модель остановилась и ждёт
- * ввода — целиком, по порядку. Переключатель: оформление (Markdown без
- * символов разметки) или исходный текст; «Копировать» берёт то, что
- * видно, — оформленное копируется чисто, без `#`, `**` и `` ` ``.
- */
-@Composable
-private fun TurnMessagesSection(messages: List<com.dpsmpx.dpai.orchestrator.TurnMessage>) {
-    if (messages.isEmpty()) return
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val zone = remember { java.time.ZoneId.systemDefault() }
-    var formatted by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(true) }
-    androidx.compose.material3.HorizontalDivider()
-    androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-        Text("Сообщения модели (${messages.size})", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-        FilterChip(selected = formatted, onClick = { formatted = true }, label = { Text("md") })
-        androidx.compose.foundation.layout.Spacer(Modifier.padding(2.dp))
-        FilterChip(selected = !formatted, onClick = { formatted = false }, label = { Text("txt") })
-    }
-    val codeBackground = MaterialTheme.colorScheme.surfaceVariant
-    val linkColor = MaterialTheme.colorScheme.primary
-    for (m in messages) {
-        val t = java.time.Instant.ofEpochMilli(m.at.epochMillis).atZone(zone)
-        val rendered = remember(m.text) { com.dpsmpx.dpai.ui.Markdown.render(m.text) }
-        androidx.compose.material3.Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    Text(
-                        "ход ${m.turn} · %02d.%02d %02d:%02d · ${m.status}${m.model?.let { " · $it" } ?: ""}".format(t.dayOfMonth, t.monthValue, t.hour, t.minute),
-                        style = MaterialTheme.typography.labelSmall,
-                        modifier = Modifier.weight(1f),
-                    )
-                    TextButton(onClick = {
-                        val text = if (formatted) rendered.text else m.text
-                        context.getSystemService(android.content.ClipboardManager::class.java)
-                            .setPrimaryClip(android.content.ClipData.newPlainText("dpai", text))
-                    }) { Text("Копировать") }
-                }
-                androidx.compose.foundation.text.selection.SelectionContainer {
-                    if (formatted) {
-                        Text(annotated(rendered, codeBackground, linkColor), style = MaterialTheme.typography.bodySmall)
-                    } else {
-                        Text(m.text, style = MaterialTheme.typography.bodySmall, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
-                    }
-                }
-            }
-        }
-    }
-}
-
-/** Оформленный текст ([com.dpsmpx.dpai.ui.Markdown]) → стили Compose; символов разметки в нём уже нет. */
-private fun annotated(r: com.dpsmpx.dpai.ui.Rendered, code: androidx.compose.ui.graphics.Color, link: androidx.compose.ui.graphics.Color): androidx.compose.ui.text.AnnotatedString {
-    val b = androidx.compose.ui.text.AnnotatedString.Builder(r.text)
-    for (m in r.marks) {
-        val style = when (m.style) {
-            com.dpsmpx.dpai.ui.MarkStyle.BOLD -> androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold)
-            com.dpsmpx.dpai.ui.MarkStyle.ITALIC -> androidx.compose.ui.text.SpanStyle(fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
-            com.dpsmpx.dpai.ui.MarkStyle.STRIKE -> androidx.compose.ui.text.SpanStyle(textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough)
-            com.dpsmpx.dpai.ui.MarkStyle.CODE, com.dpsmpx.dpai.ui.MarkStyle.CODE_BLOCK ->
-                androidx.compose.ui.text.SpanStyle(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, background = code)
-            com.dpsmpx.dpai.ui.MarkStyle.HEADING_1 -> androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold, fontSize = androidx.compose.ui.unit.TextUnit(1.35f, androidx.compose.ui.unit.TextUnitType.Em))
-            com.dpsmpx.dpai.ui.MarkStyle.HEADING_2 -> androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold, fontSize = androidx.compose.ui.unit.TextUnit(1.2f, androidx.compose.ui.unit.TextUnitType.Em))
-            com.dpsmpx.dpai.ui.MarkStyle.HEADING_3 -> androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold, fontSize = androidx.compose.ui.unit.TextUnit(1.08f, androidx.compose.ui.unit.TextUnitType.Em))
-            com.dpsmpx.dpai.ui.MarkStyle.QUOTE -> androidx.compose.ui.text.SpanStyle(fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, color = link.copy(alpha = 0.8f))
-            com.dpsmpx.dpai.ui.MarkStyle.LINK -> androidx.compose.ui.text.SpanStyle(color = link, textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline)
-            com.dpsmpx.dpai.ui.MarkStyle.TABLE -> androidx.compose.ui.text.SpanStyle(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
-        }
-        b.addStyle(style, m.start, m.end)
-    }
-    return b.toAnnotatedString()
-}

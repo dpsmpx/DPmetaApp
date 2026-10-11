@@ -178,6 +178,26 @@ object Screens {
     }
 
     /**
+     * Лента задачи целиком (D-62): записи чата и то, что было до него —
+     * итоги ходов из `dpai.task-messages` раньше первой записи чата и цель
+     * задачи, если чат начался не с неё (задачи, начатые до D-59). Вывод
+     * модели — только в чате, лист задачи его больше не показывает.
+     */
+    fun chatEntries(
+        chat: List<com.dpsmpx.dpai.orchestrator.ChatEntry>,
+        turns: List<com.dpsmpx.dpai.orchestrator.TurnMessage>,
+        task: com.dpsmpx.dpai.tasks.TaskRecord?,
+    ): List<com.dpsmpx.dpai.orchestrator.ChatEntry> {
+        val first = chat.firstOrNull()?.at?.epochMillis ?: Long.MAX_VALUE
+        val older = turns.filter { it.at.epochMillis < first }
+            .map { com.dpsmpx.dpai.orchestrator.TaskChat.entry(it.at, com.dpsmpx.dpai.orchestrator.ChatRole.ASSISTANT, it.text, it.session) }
+        val goal = task?.takeIf { chat.firstOrNull()?.role != com.dpsmpx.dpai.orchestrator.ChatRole.USER }?.let { t ->
+            com.dpsmpx.dpai.orchestrator.TaskChat.entry(t.createdAt, com.dpsmpx.dpai.orchestrator.ChatRole.USER, if (t.objective.trim() == t.title.trim()) t.title else "${t.title}\n\n${t.objective}")
+        }
+        return (listOfNotNull(goal) + older + chat).sortedBy { it.at.epochMillis }
+    }
+
+    /**
      * Лента чата задачи для экрана (D-59): время — «ЧЧ:ММ» в поясе [zone],
      * у записей другого дня — «ДД.ММ ЧЧ:ММ»; записи по порядку.
      */

@@ -163,6 +163,9 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
     // Окно сессии: чат или временная шкала (D-59) — переключатель в заголовке, а не в окне (D-61).
     var sessionEvents by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf(false) }
+    // Лист задачи — кнопкой из чата (D-62): вывод модели — в чате, настройки и действия задачи — в листе.
+    var taskSheet by remember { mutableStateOf<com.dpsmpx.dpai.core.ids.TaskId?>(null) }
+    taskSheet?.let { t -> TaskSheet(model, t, onSession = { s -> taskSheet = null; selectedId = s }) { taskSheet = null } }
     val sessionScreen = if (selectedId != null) snapshot?.session else null
     val renameTask = sessionScreen?.task
     if (renaming && renameTask != null) {
@@ -187,6 +190,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                             Modifier.weight(1f).padding(start = 8.dp).clickable(enabled = sessionScreen?.task != null) { renaming = true },
                             style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
+                        sessionScreen?.task?.let { t -> TextButton(onClick = { taskSheet = t }) { Text("⚙", style = MaterialTheme.typography.titleMedium) } }
                         TextButton(onClick = { sessionEvents = !sessionEvents }) { Text(if (sessionEvents) "Чат" else "События") }
                     } else {
                         Text(
@@ -471,7 +475,13 @@ private fun ChatBubble(line: com.dpsmpx.dpai.ui.ChatLine) {
                 ),
             ) {
                 Column(Modifier.padding(10.dp)) {
-                    androidx.compose.foundation.text.selection.SelectionContainer { Text(line.text, style = MaterialTheme.typography.bodyMedium) }
+                    // Ответ модели — с оформлением Markdown (заголовки, код, списки), как было в листе задачи (D-62).
+                    val code = MaterialTheme.colorScheme.surface
+                    val link = MaterialTheme.colorScheme.primary
+                    val rendered = remember(line.text) { if (line.mine) null else com.dpsmpx.dpai.ui.Markdown.render(line.text) }
+                    androidx.compose.foundation.text.selection.SelectionContainer {
+                        if (rendered != null) Text(annotated(rendered, code, link), style = MaterialTheme.typography.bodyMedium) else Text(line.text, style = MaterialTheme.typography.bodyMedium)
+                    }
                     Text(line.time, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
@@ -590,7 +600,10 @@ private fun BoardPane(board: TaskBoard, live: Boolean, model: DemoModel, archive
         }
         board.columns.forEach { col ->
             item(key = "h:${col.title}") { Text("${col.title} (${col.cards.size})", style = MaterialTheme.typography.titleMedium) }
-            items(col.cards, key = { it.id.value }) { c -> TaskRow(c, Modifier.clickable { opened = c.id }) }
+            // Нажатие — сразу чат задачи (D-62); сессий ещё не было — лист задачи.
+            items(col.cards, key = { it.id.value }) { c ->
+                TaskRow(c, Modifier.clickable { model.sessionOf(c.id)?.let { s -> onSession(s.value) } ?: run { opened = c.id } })
+            }
         }
     }
     if (creating) NewTaskDialog(model) { creating = false }

@@ -134,7 +134,8 @@ class DemoSystem(
             it.task == task && !it.terminal && it.state in setOf(com.dpsmpx.dpai.core.state.SessionState.STARTING, com.dpsmpx.dpai.core.state.SessionState.RUNNING, com.dpsmpx.dpai.core.state.SessionState.NEAR_LIMIT)
         }
         return base.copy(
-            title = orchestrator.tasks.tasks[task]?.title, chat = Screens.chat(orchestrator.chat(task), id, clock.now()),
+            title = orchestrator.tasks.tasks[task]?.title,
+            chat = Screens.chat(Screens.chatEntries(orchestrator.chat(task), orchestrator.turnMessages(task), orchestrator.tasks.tasks[task]), id, clock.now()),
             task = task, status = Screens.sessionStatus(record, orchestrator.tasks.tasks[task]?.state, running),
         )
     }
