@@ -138,6 +138,27 @@ object TaskScreens {
         }
     }
 
+    /**
+     * Кто чем занят (D-56): по target — его идущие сессии: задача, проект
+     * (каталог репозитория) и с какого времени; target без сессий — нет в
+     * ответе (свободен).
+     */
+    fun work(
+        sessions: SessionsState,
+        tasks: com.dpsmpx.dpai.tasks.TasksState,
+        project: String?,
+        zone: java.time.ZoneId = java.time.ZoneId.systemDefault(),
+    ): Map<com.dpsmpx.dpai.core.ids.ExecutionTargetId, List<String>> =
+        sessions.sessions.values.filter { !it.terminal }.sortedWith(compareBy({ it.createdAt.epochMillis }, { it.id.value }))
+            .groupBy { it.target }
+            .mapValues { (_, list) ->
+                list.map { s ->
+                    val at = java.time.Instant.ofEpochMilli(s.createdAt.epochMillis).atZone(zone)
+                    val title = tasks.tasks[s.task]?.title ?: s.task.value
+                    "«$title»" + (project?.let { " · проект $it" } ?: "") + " · с %02d:%02d".format(at.hour, at.minute)
+                }
+            }
+
     fun detail(
         t: TaskRecord,
         sessions: SessionsState,

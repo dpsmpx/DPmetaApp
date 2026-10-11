@@ -61,6 +61,14 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
     var guide by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf<TargetEntry?>(null) }
     var restoring by remember { mutableStateOf(false) }
+    // Кто чем занят (D-56) — раз в 5 с, пока экран открыт.
+    var work by remember { mutableStateOf(emptyMap<com.dpsmpx.dpai.core.ids.ExecutionTargetId, List<String>>()) }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        while (true) {
+            work = withContext(Dispatchers.IO) { model.work() }
+            kotlinx.coroutines.delay(5_000)
+        }
+    }
     if (guide) {
         SetupPane(controller, model) {
             guide = false
@@ -150,6 +158,11 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
                     if (t.configDir != null) TargetSwitches(model, t)
                     Text("${t.user}@${t.host}:${t.port} · ${t.type.name}", style = MaterialTheme.typography.bodySmall)
                     Text(t.configDir?.let { "каталог Claude: $it" } ?: "без каталога Claude — только проверка агента", style = MaterialTheme.typography.bodySmall)
+                    // Чем занят слот (D-56): идущие задачи с проектом; нет — свободен.
+                    if (t.configDir != null) {
+                        val busy = work[t.id].orEmpty()
+                        Text(if (busy.isEmpty()) "Сейчас: свободен" else "Сейчас: " + busy.joinToString("; "), style = MaterialTheme.typography.bodySmall)
+                    }
                     Row {
                         TextButton(onClick = {
                             checks[t.id.value] = listOf(CheckLine("проверка", "идёт…", Tone.NEUTRAL))

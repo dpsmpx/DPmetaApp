@@ -258,6 +258,13 @@ class DemoModel(
         built?.orchestrator?.sessions?.sessions?.values?.filter { it.task == task }?.maxByOrNull { it.createdAt.epochMillis }?.id
     }.getOrNull()
 
+    /** Кто чем занят (D-56): target → его идущие задачи с проектом — без замка. */
+    fun work(): Map<com.dpsmpx.dpai.core.ids.ExecutionTargetId, List<String>> = runCatching {
+        val o = (built as? LiveSystem)?.orchestrator ?: return emptyMap()
+        val project = controller.project()?.root?.trimEnd('/', '\\')?.substringAfterLast('/')?.substringAfterLast('\\')
+        com.dpsmpx.dpai.ui.TaskScreens.work(o.sessions, o.tasks, project)
+    }.getOrNull().orEmpty()
+
     /** Задачи, после которых можно поставить новую (D-42, п. 1) — без замка. */
     fun dependencyChoices(): List<Pair<TaskId, String>> =
         runCatching { (built as? LiveSystem)?.orchestrator?.tasks?.let(com.dpsmpx.dpai.ui.TaskScreens::dependencyChoices) }.getOrNull().orEmpty()
