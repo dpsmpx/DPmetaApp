@@ -216,6 +216,22 @@ class V1ScenariosTest {
     }
 
     @Test
+    fun taskChatHoldsRequestsModelTextsAndEventsInOrder() {
+        // D-59: лента чата задачи — цель задачи, событие начала на слоте, тексты модели, запрос человека;
+        // без вызовов инструментов.
+        setUp(slots = 1)
+        val t = task("чат", MockScenario.SUCCESS)
+        runUntilQuiet()
+        val chat = orchestrator.chat(t)
+        assertEquals(com.dpsmpx.dpai.orchestrator.ChatRole.USER, chat.first().role)
+        assertTrue(chat.first().text.startsWith("чат"), chat.first().text)
+        assertTrue(chat.any { it.role == com.dpsmpx.dpai.orchestrator.ChatRole.EVENT && it.text.startsWith("попытка 1") }, chat.toString())
+        assertTrue(chat.any { it.role == com.dpsmpx.dpai.orchestrator.ChatRole.ASSISTANT }, chat.toString())
+        assertTrue(chat.none { "tool_use" in it.text || "\"name\"" in it.text }, "инструменты в ленту не попадают")
+        assertEquals(chat.sortedBy { it.at.epochMillis }, chat, "по порядку")
+    }
+
+    @Test
     fun scenario3RecoveryAfterFailure() {
         setUp(slots = 1)
         val t = task("падение", MockScenario.CRASH, MockScenario.SUCCESS)

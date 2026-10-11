@@ -300,4 +300,18 @@ class ClaudeStreamTest {
         assertEquals(1, t.tools.unmatchedResults)
         assertEquals(0, t.tools.filesRead)
     }
+
+    @Test
+    fun thinkingBlocksAreKeptForTheChatButRedactedOnesAreNot() {
+        // D-59: рассуждение модели — в ленту чата; скрытое (`redacted_thinking`) — не текст.
+        val a = ClaudeTurnAssembler(recorded)
+        val e = assertIs<ClaudeEvent.Assistant>(
+            a.feed(
+                """{"type":"assistant","message":{"content":[{"type":"thinking","thinking":"сначала прочту файл","signature":"s"},{"type":"redacted_thinking","data":"xx"},{"type":"text","text":"Читаю."},{"type":"tool_use","id":"t1","name":"Read","input":{"file_path":"/a"}}]},"session_id":"${recorded.value}"}""",
+            ),
+        )
+        assertEquals(listOf("сначала прочту файл"), e.thinking)
+        assertEquals(listOf("Читаю."), e.texts)
+        assertEquals(listOf("Read"), e.toolUses.map { it.name })
+    }
 }

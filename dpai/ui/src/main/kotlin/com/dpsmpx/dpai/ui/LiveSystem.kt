@@ -446,10 +446,15 @@ class LiveSystem(
 
     override fun board(): TaskBoard = Screens.board(orchestrator.tasks)
 
-    override fun session(id: SessionId): SessionScreen = Screens.session(
-        orchestrator.dashboard(), id, events(), orchestrator.live(id), clock.now(), Screens.sessionActions(id, orchestrator.sessions, orchestrator.tasks),
-        Screens.usage(orchestrator.sessions) { it.id == id },
-    )
+    override fun session(id: SessionId): SessionScreen {
+        val base = Screens.session(
+            orchestrator.dashboard(), id, events(), orchestrator.live(id), clock.now(), Screens.sessionActions(id, orchestrator.sessions, orchestrator.tasks),
+            Screens.usage(orchestrator.sessions) { it.id == id },
+        )
+        // Чат задачи сессии (D-59): все её сессии в одной ленте.
+        val task = orchestrator.sessions.sessions[id]?.task ?: return base
+        return base.copy(title = orchestrator.tasks.tasks[task]?.title, chat = Screens.chat(orchestrator.chat(task), id, clock.now()))
+    }
 
     companion object {
         /**

@@ -315,29 +315,171 @@ private fun SessionPane(screen: SessionScreen?, model: DemoModel) {
         Box(Modifier.fillMaxSize()) { CircularProgressIndicator(Modifier.align(Alignment.Center)) }
         return
     }
-    LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        item {
-            screen.line?.let { SessionRow(it) } ?: Text(screen.session.value)
-            screen.usage?.let { Text("Расход: $it", style = MaterialTheme.typography.labelSmall) }
-            // Живой вид хода (D-42): что модель делает сейчас.
+    // Чат сессии (D-59): все сообщения задачи в одной ленте, ввод внизу, управление ходом.
+    var events by remember(screen.session) { mutableStateOf(false) }
+    val list = androidx.compose.foundation.lazy.rememberLazyListState()
+    val shown = if (events) screen.timeline.size else screen.chat.size
+    LaunchedEffect(screen.session, shown, events) {
+        if (shown > 0) list.animateScrollToItem(shown)
+    }
+    Column(Modifier.fillMaxSize()) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+            screen.title?.let { Text(it, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+            screen.line?.let { SessionRow(it) } ?: Text(screen.session.value, style = MaterialTheme.typography.labelSmall)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(screen.usage?.let { "Расход: $it" } ?: "", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall)
+                TextButton(onClick = { events = !events }) { Text(if (events) "Чат" else "События") }
+            }
+        }
+        HorizontalDivider()
+        LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = list, contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (events) {
+                items(screen.timeline) { e ->
+                    Row {
+                        Text(e.time, style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(64.dp))
+                        Text(e.text, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            } else {
+                if (screen.chat.isEmpty()) item { Text("Сообщений пока нет: лента пишется с этой версии приложения.", style = MaterialTheme.typography.bodySmall) }
+                items(screen.chat) { line -> ChatBubble(line) }
+            }
+            // Модель работает (D-59): без инструментов и команд — только то, что ход идёт.
             screen.live?.let { l ->
-                Card(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                    Column(Modifier.padding(10.dp)) {
-                        Text("Сейчас · ${l.ago}", style = MaterialTheme.typography.labelSmall)
-                        l.tool?.let { t -> Text("$t${l.target?.let { " · $it" } ?: ""}", fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis) }
-                        l.text?.let { Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 6, overflow = TextOverflow.Ellipsis) }
+                item {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        CircularProgressIndicator(Modifier.width(16.dp), strokeWidth = 2.dp)
+                        Text("Claude работает · ${l.ago}", style = MaterialTheme.typography.labelSmall)
                     }
                 }
             }
-            if (screen.actions.isNotEmpty()) SessionActions(screen, model)
-            HorizontalDivider()
-            Text("Временная шкала", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
         }
-        items(screen.timeline) { e ->
-            Row {
-                Text(e.time, style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(64.dp))
-                Text(e.text, style = MaterialTheme.typography.bodySmall)
+        HorizontalDivider()
+        ChatInput(screen, model)
+    }
+}
+
+/** Пузырь ленты (D-59): запрос человека — справа, текст модели — слева, рассуждение — свёрнуто, событие — по центру. */
+@Composable
+private fun ChatBubble(line: com.dpsmpx.dpai.ui.ChatLine) {
+    val faded = if (line.here) 1f else 0.6f
+    when {
+        line.event -> Text(
+            "${line.time} · ${line.text}",
+            Modifier.fillMaxWidth().padding(vertical = 2.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = faded),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        )
+        line.thinking -> {
+            var open by remember(line) { mutableStateOf(false) }
+            Column(Modifier.fillMaxWidth().clickable { open = !open }.padding(start = 4.dp, end = 48.dp)) {
+                Text("Рассуждение · ${line.time}" + if (open) "" else " ▸", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = faded))
+                Text(
+                    line.text,
+                    style = MaterialTheme.typography.bodySmall.copy(fontStyle = androidx.compose.ui.text.font.FontStyle.Italic),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = faded),
+                    maxLines = if (open) Int.MAX_VALUE else 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
+        }
+        else -> Row(Modifier.fillMaxWidth(), horizontalArrangement = if (line.mine) Arrangement.End else Arrangement.Start) {
+            Card(
+                Modifier.padding(start = if (line.mine) 48.dp else 0.dp, end = if (line.mine) 0.dp else 24.dp),
+                colors = androidx.compose.material3.CardDefaults.cardColors(
+                    containerColor = (if (line.mine) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant).copy(alpha = faded),
+                ),
+            ) {
+                Column(Modifier.padding(10.dp)) {
+                    androidx.compose.foundation.text.selection.SelectionContainer { Text(line.text, style = MaterialTheme.typography.bodyMedium) }
+                    Text(line.time, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Ввод внизу чата (D-59): сообщение в сессию — сразу, если ход не идёт; во
+ * время хода — «Прервать и отправить»: ход останавливается, сообщение
+ * уходит, как только сессия примет запрос. Остановка, свежая сессия,
+ * модель и усилие — здесь же.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun ChatInput(screen: SessionScreen, model: DemoModel) {
+    val scope = rememberCoroutineScope()
+    val keys = remember { com.dpsmpx.dpai.core.ids.IdGenerator(com.dpsmpx.dpai.core.clock.Clock.SYSTEM, com.dpsmpx.dpai.core.clock.RandomSource.secure()) }
+    var text by remember(screen.session) { mutableStateOf("") }
+    var modelName by remember(screen.session) { mutableStateOf("") }
+    var effort by remember(screen.session) { mutableStateOf("") }
+    var params by remember(screen.session) { mutableStateOf(false) }
+    var status by remember(screen.session) { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    val canSend = com.dpsmpx.dpai.ui.SessionAction.SEND in screen.actions
+    val running = com.dpsmpx.dpai.ui.SessionAction.STOP in screen.actions
+    val queued = model.queuedMessage(screen.session)
+    fun send(c: (String) -> com.dpsmpx.dpai.orchestrator.commands.Command, after: () -> Unit = {}) {
+        busy = true
+        val key = keys.next(com.dpsmpx.dpai.core.ids.IdKinds.OPERATION).value
+        scope.launch {
+            status = when (val r = withContext(Dispatchers.IO) { model.command(c(key)) }) {
+                is Outcome.Success -> null.also { after() }
+                is Outcome.Failure -> "Не принято: ${r.diagnostics.first().message}"
+            }
+            busy = false
+        }
+    }
+    // Сообщение, ждавшее остановки хода, — как только сессия принимает запрос.
+    LaunchedEffect(screen.session, canSend, queued) {
+        if (canSend && queued != null) {
+            model.dequeueMessage(screen.session)
+            send({ k -> com.dpsmpx.dpai.orchestrator.commands.Command.SendToSession(screen.session, queued, modelName.ifEmpty { null }, effort.ifEmpty { null }, key = k) })
+        }
+    }
+    Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        status?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
+        queued?.let { Text("Отправится после остановки хода: «${it.take(80)}»", style = MaterialTheme.typography.labelSmall) }
+        if (params) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                for (m in listOf("", "haiku", "sonnet", "opus")) {
+                    androidx.compose.material3.FilterChip(selected = modelName == m, onClick = { modelName = m }, label = { Text(m.ifEmpty { "модель задачи" }) })
+                }
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                for (e in listOf("", "low", "medium", "high")) {
+                    androidx.compose.material3.FilterChip(selected = effort == e, onClick = { effort = e }, label = { Text(e.ifEmpty { "усилие задачи" }) })
+                }
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            OutlinedTextField(
+                text, { text = it }, Modifier.weight(1f),
+                placeholder = { Text(if (canSend || running) "Сообщение Claude" else "Ход недоступен: задача проверяется или завершена") },
+                enabled = canSend || running, maxLines = 6,
+            )
+            when {
+                canSend -> Button(enabled = !busy && text.isNotBlank(), onClick = {
+                    val t = text
+                    send({ k -> com.dpsmpx.dpai.orchestrator.commands.Command.SendToSession(screen.session, t, modelName.ifEmpty { null }, effort.ifEmpty { null }, key = k) }) { text = "" }
+                }) { Text("Отправить") }
+                running -> Button(enabled = !busy && text.isNotBlank(), onClick = {
+                    model.queueMessage(screen.session, text)
+                    text = ""
+                    send({ k -> com.dpsmpx.dpai.orchestrator.commands.Command.StopSession(screen.session, k) })
+                }) { Text("Прервать\nи отправить") }
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (running) TextButton(enabled = !busy, onClick = { send({ k -> com.dpsmpx.dpai.orchestrator.commands.Command.StopSession(screen.session, k) }) }) { Text("Остановить ход") }
+            if (com.dpsmpx.dpai.ui.SessionAction.FRESH in screen.actions) {
+                TextButton(enabled = !busy, onClick = {
+                    val t = text
+                    send({ k -> com.dpsmpx.dpai.orchestrator.commands.Command.SendToSession(screen.session, t.ifBlank { null }, modelName.ifEmpty { null }, effort.ifEmpty { null }, fresh = true, key = k) }) { text = "" }
+                }) { Text("Свежая сессия") }
+            }
+            TextButton(onClick = { params = !params }) { Text(if (params) "Скрыть параметры" else "Модель и усилие") }
         }
     }
 }
@@ -498,62 +640,6 @@ private fun TaskRow(card: TaskCard, modifier: Modifier = Modifier) {
                 style = MaterialTheme.typography.labelSmall,
             )
         }
-    }
-}
-
-/**
- * Действия с сессией (D-42, п. 3): остановить ход; запрос — новый ход той
- * же сессии Claude с моделью и усилием; свежая сессия с handoff.
- */
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
-@Composable
-private fun SessionActions(screen: SessionScreen, model: DemoModel) {
-    val scope = rememberCoroutineScope()
-    val keys = remember { com.dpsmpx.dpai.core.ids.IdGenerator(com.dpsmpx.dpai.core.clock.Clock.SYSTEM, com.dpsmpx.dpai.core.clock.RandomSource.secure()) }
-    var text by remember(screen.session) { mutableStateOf("") }
-    var modelName by remember(screen.session) { mutableStateOf("") }
-    var effort by remember(screen.session) { mutableStateOf("") }
-    var status by remember(screen.session) { mutableStateOf<String?>(null) }
-    var busy by remember { mutableStateOf(false) }
-    fun send(c: (String) -> com.dpsmpx.dpai.orchestrator.commands.Command) {
-        busy = true
-        val key = keys.next(com.dpsmpx.dpai.core.ids.IdKinds.OPERATION).value
-        scope.launch {
-            status = when (val r = withContext(Dispatchers.IO) { model.command(c(key)) }) {
-                is Outcome.Success -> "Принято".also { text = "" }
-                is Outcome.Failure -> "Не принято: ${r.diagnostics.first().message}"
-            }
-            busy = false
-        }
-    }
-    Column(Modifier.padding(vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        if (com.dpsmpx.dpai.ui.SessionAction.STOP in screen.actions) {
-            Button(enabled = !busy, onClick = { send { com.dpsmpx.dpai.orchestrator.commands.Command.StopSession(screen.session, it) } }) { Text("Остановить ход") }
-        }
-        if (com.dpsmpx.dpai.ui.SessionAction.SEND in screen.actions) {
-            OutlinedTextField(text, { text = it }, label = { Text("Запрос в сессию") }, minLines = 2, modifier = Modifier.fillMaxWidth())
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                for (m in listOf("", "haiku", "sonnet", "opus")) {
-                    androidx.compose.material3.FilterChip(selected = modelName == m, onClick = { modelName = m }, label = { Text(m.ifEmpty { "модель задачи" }) })
-                }
-            }
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                for (e in listOf("", "low", "medium", "high")) {
-                    androidx.compose.material3.FilterChip(selected = effort == e, onClick = { effort = e }, label = { Text(e.ifEmpty { "усилие задачи" }) })
-                }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(enabled = !busy && text.isNotBlank(), onClick = {
-                    send { com.dpsmpx.dpai.orchestrator.commands.Command.SendToSession(screen.session, text, modelName.ifEmpty { null }, effort.ifEmpty { null }, key = it) }
-                }) { Text("Отправить") }
-                if (com.dpsmpx.dpai.ui.SessionAction.FRESH in screen.actions) {
-                    TextButton(enabled = !busy, onClick = {
-                        send { com.dpsmpx.dpai.orchestrator.commands.Command.SendToSession(screen.session, text.ifBlank { null }, modelName.ifEmpty { null }, effort.ifEmpty { null }, fresh = true, key = it) }
-                    }) { Text("Свежая сессия") }
-                }
-            }
-        }
-        status?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
     }
 }
 

@@ -470,6 +470,7 @@ class Orchestrator(
                 lastOverlap.remove(id)
                 lastWaiting.remove(id)
                 if (documents != null) messagesOf.remove(id)
+                if (documents != null) chatOf.remove(id)
                 toolOf.remove(id)
                 sentOf.remove(id)
                 workingOf.remove(id)
@@ -514,6 +515,8 @@ class Orchestrator(
         }.orEmpty()
         commitTasks(created.valueOrNull()!! + withScope)
         commitTasks(tasksLogic.enqueue(tasks, id, clock.now()).valueOrNull()!!)
+        // Начало ленты чата (D-59): задача — первый запрос человека.
+        say(id, ChatRole.USER, if (objective.trim() == title.trim()) title else "$title\n\n$objective")
         return Outcome.success(id)
     }
 
@@ -721,6 +724,7 @@ class Orchestrator(
         val after = sessions.sessions.getValue(session)
         if (after.state != SessionState.RUNNING && after.state != SessionState.STARTING) react(task, session, after.state)
         else progress(task, NotificationCategory.PROGRESS, "Задача начата", "попытка $attempt · $slotName")
+        say(task, ChatRole.EVENT, "попытка $attempt · $slotName" + (switched?.let { " · передана с подписки у предела" } ?: ""), session)
         switched?.let { sw ->
             val from = accounts.subscriptions[sw.from]?.label ?: "прежняя подписка"
             notify("task:${task.value}:switch", NotificationCategory.WARNING, "Задача передана другой подписке: ${taskTitle(task)}", "«$from» у предела — продолжает «$slotName» с handoff")
@@ -851,6 +855,15 @@ class Orchestrator(
             applyFacts(step.facts)
         }
         recordTurnMessages(session, step.turns)
+        if (step.chat.isNotEmpty()) {
+            val task = sessions.sessions.getValue(session).task
+            say(task, step.chat.map { c -> TaskChat.entry(c.at, if (c.kind == com.dpsmpx.dpai.sessions.ChatPiece.Kind.THINKING) ChatRole.THINKING else ChatRole.ASSISTANT, c.text, session) })
+        }
+        // Ход кончился не итогом — одной строкой в ленте (D-59): почему модель остановилась.
+        step.turns.filter { it.status != com.dpsmpx.dpai.execution.claude.TurnStatus.COMPLETED }.forEach { t ->
+            val why = t.diagnostics.firstOrNull { it.isError }?.code?.name
+            say(sessions.sessions.getValue(session).task, ChatRole.EVENT, "ход прерван: ${t.status.name.lowercase()}" + (why?.let { " · $it" } ?: ""), session)
+        }
         val after = sessions.sessions.getValue(session)
         if (after.state != before) react(after.task, session, after.state)
     }
@@ -1366,7 +1379,9 @@ class Orchestrator(
             is Command.Cancel -> record(command, provenance) { cancelTask(command.task) }
             is Command.Retry -> record(command, provenance) { retryTask(command.task, command.text) }
             is Command.StopSession -> record(command, provenance) {
-                sessions.sessions[command.session]?.let { holdTask(it.task) } ?: Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой сессии", "session ${command.session}")
+                sessions.sessions[command.session]?.let { s ->
+                    holdTask(s.task).also { r -> if (r is Outcome.Success) say(s.task, ChatRole.EVENT, "ход остановлен человеком", s.id) }
+                } ?: Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой сессии", "session ${command.session}")
             }
             is Command.SendToSession -> record(command, provenance) { sendToSession(command.session, command.text, command.model, command.effort, command.fresh) }
             is Command.SetNearPercent -> record(command, provenance) {
@@ -1573,6 +1588,8 @@ class Orchestrator(
         reopenForTurn(task)?.let { return it }
         val reason = if (fresh) HandoffReason.TURN_FINISHED else HandoffReason.MANUAL
         val next = clean?.let { "запрос пользователя: $it" } ?: "продолжить работу в свежей сессии с этого места"
+        clean?.let { say(task, ChatRole.USER, it, session) }
+        if (fresh) say(task, ChatRole.EVENT, "свежая сессия по запросу человека", session)
         if (!last.terminal) handOff(task, last.id, reason, next) else writeHandoff(task, last.id, reason, next)
         if (model != null || effort != null) {
             val t = tasks.tasks.getValue(task)
@@ -1786,6 +1803,7 @@ class Orchestrator(
         val open = openSessions(task)
         return when (option) {
             RETRY, REPLY -> {
+                text?.let { say(task, ChatRole.USER, it, open.lastOrNull()?.id) } ?: say(task, ChatRole.EVENT, "блок снят человеком: продолжить")
                 // Сессия остановлена — продолжение той же сессии провайдера с ответом человека (handoff MANUAL).
                 val next = text?.let { "ответ пользователя: $it" } ?: "пользователь снял блок: продолжить с места остановки"
                 for (s in open) if (s.state in WAIT_STATES) handOff(task, s.id, HandoffReason.MANUAL, next) else closeSession(task, s.id)
@@ -1867,6 +1885,23 @@ class Orchestrator(
 
     /** Итоги ходов задач в памяти — до завершения задачи; дальше — из документа. Читает и поток экрана. */
     private val messagesOf = java.util.concurrent.ConcurrentHashMap<TaskId, List<TurnMessage>>()
+
+    /** Ленты чата задач в памяти (D-59); дальше — из документа `chat`. Читает и поток экрана. */
+    private val chatOf = java.util.concurrent.ConcurrentHashMap<TaskId, List<ChatEntry>>()
+
+    /** Лента чата задачи по порядку (D-59): запросы человека, рассуждения и тексты модели, события. */
+    fun chat(task: TaskId): List<ChatEntry> = chatOf[task]
+        ?: documents?.read(docKey("chat", task))?.valueOrNull()?.let { TaskChat.fromJson(it.content).valueOrNull() }.orEmpty()
+
+    /** Дописать в ленту чата задачи (D-59) и сохранить документ. */
+    private fun say(task: TaskId, entries: List<ChatEntry>) {
+        if (entries.isEmpty()) return
+        val list = TaskChat.append(chat(task), entries)
+        chatOf[task] = list
+        saveTaskDocument("chat", task, TaskChat.toJson(list))
+    }
+
+    private fun say(task: TaskId, role: ChatRole, text: String, session: SessionId? = null) = say(task, listOf(TaskChat.entry(clock.now(), role, text, session)))
 
     /**
      * Итоговые сообщения ходов (D-42): что модель сказала, остановившись, —

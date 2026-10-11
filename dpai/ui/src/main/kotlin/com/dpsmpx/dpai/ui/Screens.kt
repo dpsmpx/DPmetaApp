@@ -68,7 +68,18 @@ data class SessionScreen(
     val actions: List<SessionAction> = emptyList(),
     /** Расход сессии (D-42, п. 4) — [Screens.usageLine]; ходов ещё нет — `null`. */
     val usage: String? = null,
+    /** Задача сессии и лента её чата (D-59): все сессии задачи в одном пространстве. */
+    val title: String? = null,
+    val chat: List<ChatLine> = emptyList(),
 )
+
+/**
+ * Строка ленты чата (D-59): [mine] — запрос человека (справа); [thinking]
+ * — рассуждение модели (свёрнуто); [event] — событие контура одной строкой
+ * по центру; иначе — текст модели. [here] — запись этой сессии, а не
+ * соседней сессии той же задачи.
+ */
+data class ChatLine(val text: String, val time: String, val mine: Boolean = false, val thinking: Boolean = false, val event: Boolean = false, val here: Boolean = true)
 
 /** Действие человека с сессией (D-42, п. 3). */
 enum class SessionAction(val label: String) {
@@ -145,6 +156,30 @@ object Screens {
             actions = actions,
             usage = usage?.let(::usageLine),
         )
+    }
+
+    /**
+     * Лента чата задачи для экрана (D-59): время — «ЧЧ:ММ» в поясе [zone],
+     * у записей другого дня — «ДД.ММ ЧЧ:ММ»; записи по порядку.
+     */
+    fun chat(
+        entries: List<com.dpsmpx.dpai.orchestrator.ChatEntry>,
+        session: SessionId?,
+        now: com.dpsmpx.dpai.core.clock.Timestamp,
+        zone: java.time.ZoneId = java.time.ZoneId.systemDefault(),
+    ): List<ChatLine> {
+        val today = java.time.Instant.ofEpochMilli(now.epochMillis).atZone(zone).toLocalDate()
+        return entries.map { e ->
+            val t = java.time.Instant.ofEpochMilli(e.at.epochMillis).atZone(zone)
+            val time = if (t.toLocalDate() == today) "%02d:%02d".format(t.hour, t.minute) else "%02d.%02d %02d:%02d".format(t.dayOfMonth, t.monthValue, t.hour, t.minute)
+            ChatLine(
+                e.text, time,
+                mine = e.role == com.dpsmpx.dpai.orchestrator.ChatRole.USER,
+                thinking = e.role == com.dpsmpx.dpai.orchestrator.ChatRole.THINKING,
+                event = e.role == com.dpsmpx.dpai.orchestrator.ChatRole.EVENT,
+                here = e.session == null || session == null || e.session == session,
+            )
+        }
     }
 
     /** Расход части сессий (D-42, п. 4): одной задачи или одной сессии — тот же отчёт D-40 по выборке. */
