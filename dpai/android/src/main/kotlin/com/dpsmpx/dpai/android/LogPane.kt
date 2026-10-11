@@ -18,21 +18,31 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import com.dpsmpx.dpai.core.clock.Clock
+import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.core.result.map
 import com.dpsmpx.dpai.orchestrator.log.LogFilter
 import com.dpsmpx.dpai.orchestrator.log.LogLine
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
  * Вкладка «Журнал» (D-43): последние строки журнала приложения с
- * фильтром по уровню и выгрузка в буфер обмена — начало и хвост файла.
- * Выгрузка — только кнопкой человека: наружу журнал сам не уходит.
+ * фильтром по уровню и выгрузка — начало и хвост файла — в буфер обмена
+ * или файлом в «Загрузки/dpai-logs» (длинный журнал в буфер не влезает,
+ * файл передаётся целиком). Выгрузка — только кнопкой человека: наружу
+ * журнал сам не уходит.
  */
 @Composable
 fun LogPane(model: DemoModel) {
@@ -41,6 +51,7 @@ fun LogPane(model: DemoModel) {
     var filter by remember { mutableStateOf(LogFilter.ALL) }
     var lines by remember { mutableStateOf<List<LogLine>>(emptyList()) }
     var note by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
     LaunchedEffect(filter) {
         while (true) {
             lines = log.lines(filter = filter, max = MAX_LINES).reversed()
@@ -60,6 +71,14 @@ fun LogPane(model: DemoModel) {
                 context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("dpai.log", text))
                 note = "скопировано знаков: ${text.length}"
             }) { Text("Копировать журнал") }
+            OutlinedButton(onClick = {
+                scope.launch {
+                    note = when (val r = withContext(Dispatchers.IO) { saveLog(context, log.export()) }) {
+                        is Outcome.Success -> "Сохранено: Загрузки/$LOG_DIR/${r.value}"
+                        is Outcome.Failure -> "Не сохранено: ${r.errors.first().message}"
+                    }
+                }
+            }) { Text("В Загрузки") }
         }
         note?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
         // Отладка: проверочные запросы (D-44) — с экрана «Запросы» убраны, здесь — по требованию.
@@ -74,5 +93,15 @@ fun LogPane(model: DemoModel) {
     }
 }
 
+/** Журнал файлом в «Загрузки/[LOG_DIR]»; хранятся последние [LOG_KEEP] выгрузок. Имя файла. */
+private fun saveLog(context: android.content.Context, text: String): Outcome<String> {
+    val name = LOG_PREFIX + SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date(Clock.SYSTEM.now().epochMillis)) + ".txt"
+    return Downloads.write(context, LOG_DIR, name, "text/plain", text.toByteArray(Charsets.UTF_8), "журнал").map { name }
+        .also { if (it is Outcome.Success) Downloads.prune(context, LOG_DIR, LOG_PREFIX, LOG_KEEP) }
+}
+
+private const val LOG_DIR = "dpai-logs"
+private const val LOG_PREFIX = "dpai-log-"
+private const val LOG_KEEP = 10
 private const val MAX_LINES = 300
 private const val REFRESH_MS = 2000L

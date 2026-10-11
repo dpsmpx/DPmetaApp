@@ -1,11 +1,7 @@
 package com.dpsmpx.dpai.android
 
-import android.content.ContentUris
-import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
-import android.os.Environment
-import android.provider.MediaStore
 import com.dpsmpx.dpai.core.clock.Clock
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.Diagnostic
@@ -63,28 +59,9 @@ object SettingsBackups {
         val now = Clock.SYSTEM.now().epochMillis
         val name = PREFIX + SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date(now)) + ".json"
         val bytes = SettingsBackup.write(s, now, controller.version).toByteArray(Charsets.UTF_8)
-        val resolver = context.contentResolver
-        val values = ContentValues().apply {
-            put(MediaStore.Downloads.DISPLAY_NAME, name)
-            put(MediaStore.Downloads.MIME_TYPE, "application/json")
-            put(MediaStore.Downloads.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/$DIR")
-            put(MediaStore.Downloads.IS_PENDING, 1)
-        }
-        val uri = try {
-            resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-                ?: return Outcome.failure(DiagCode.STORAGE_IO_FAILED, "копия настроек не создана", name)
-        } catch (e: Exception) {
-            return Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "копия настроек не создана", e, name))
-        }
-        try {
-            resolver.openOutputStream(uri)?.use { it.write(bytes) } ?: error("нет потока записи")
-            resolver.update(uri, ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }, null, null)
-        } catch (e: Exception) {
-            runCatching { resolver.delete(uri, null, null) }
-            return Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "копия настроек не записана", e, name))
-        }
+        Downloads.write(context, DIR, name, "application/json", bytes, "копия настроек").let { if (it is Outcome.Failure) return it }
         prefs(context).edit().putString("lastDigest", SettingsBackup.digest(s)).putLong("lastAt", now).putString("lastName", name).apply()
-        prune(context)
+        Downloads.prune(context, DIR, PREFIX, KEEP)
         // И в Termux (D-54): после переустановки настройки вернутся оттуда без выбора файла.
         runCatching { controller.mirrorSettings(bytes.toString(Charsets.UTF_8)) }
         return Outcome.success(name)
@@ -113,22 +90,6 @@ object SettingsBackups {
                 prefs(context).edit().putString("lastDigest", SettingsBackup.digest(s)).apply()
             }
         }
-    }
-
-    /** Старше [KEEP] своих копий — удалить (чужие, прежней установки, MediaStore не отдаёт и не трогаем). */
-    private fun prune(context: Context) {
-        val resolver = context.contentResolver
-        val ids = mutableListOf<Long>()
-        runCatching {
-            resolver.query(
-                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
-                arrayOf(MediaStore.Downloads._ID),
-                "${MediaStore.Downloads.RELATIVE_PATH} = ? AND ${MediaStore.Downloads.DISPLAY_NAME} LIKE ?",
-                arrayOf("${Environment.DIRECTORY_DOWNLOADS}/$DIR/", "$PREFIX%"),
-                "${MediaStore.Downloads.DATE_ADDED} DESC",
-            )?.use { c -> while (c.moveToNext()) ids += c.getLong(0) }
-        }
-        ids.drop(KEEP).forEach { id -> runCatching { resolver.delete(ContentUris.withAppendedId(MediaStore.Downloads.EXTERNAL_CONTENT_URI, id), null, null) } }
     }
 
     /**
