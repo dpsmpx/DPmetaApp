@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- SSH к targets из контроллера приложения (D-35). -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Такт контроллера при выключенном экране — частичный wakelock службы (D-39). -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Уведомления контроллера (D-36); на Android 13+ разрешение спрашивается при запуске. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Контроллер в фоне — служба переднего плана (D-36). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- Окно запроса поверх приложений (D-44): только если человек включил его и дал разрешение в настройках. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- Запуск sshd Termux-target на этом телефоне (D-46): только эта команда; разрешение даёт человек. -->
+    <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
+
+    <!-- Android 11+: видеть Termux, чтобы послать ему RUN_COMMAND (D-46). -->
+    <queries>
+        <package android:name="com.termux" />
+    </queries>
+
+    <application
+        android:name=".DpaiApplication"
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@android:style/Theme.Material.NoActionBar">
+        <!-- Поворот, тема, размер окна — без пересоздания: экраны на Compose перерисовываются сами, а диалоги
+             и введённое (в том числе полученный ключ хоста) не теряются (ревью 8 октября 2026, A-39). -->
+        <activity
+            android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density|fontScale|locale|layoutDirection"
+            android:exported="true"
+            android:launchMode="singleTop">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <!-- Вход из своих уведомлений (ссылка на задачу, подтверждение опасного ответа, D-44):
+             не экспортируется — чужое приложение этим путём экран не откроет. -->
+        <activity-alias
+            android:name=".InternalEntry"
+            android:exported="false"
+            android:targetActivity=".MainActivity" />
+        <!-- Ответы на запросы — только через PendingIntent своего уведомления (D-44). -->
+        <receiver
+            android:name=".RequestReceiver"
+            android:exported="false" />
+        <service
+            android:name=".ControllerService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Опрос агентов на своих execution targets по SSH и уведомления о задачах" />
+        </service>
+    </application>
+</manifest>
