@@ -56,6 +56,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.dpsmpx.dpai.core.diagnostics.Redactor
@@ -375,19 +376,31 @@ private fun SessionPane(screen: SessionScreen?, model: DemoModel, events: Boolea
                 if (screen.chat.isEmpty()) item { Text("Сообщений пока нет: лента пишется с этой версии приложения.", style = MaterialTheme.typography.bodySmall) }
                 items(screen.chat) { line -> ChatBubble(line) }
             }
-            // Модель работает (D-59): без инструментов и команд — только то, что ход идёт.
-            screen.live?.let { l ->
-                item {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        CircularProgressIndicator(Modifier.width(16.dp), strokeWidth = 2.dp)
-                        Text("Claude работает · ${l.ago}", style = MaterialTheme.typography.labelSmall)
-                    }
-                }
+            // Ход идёт (D-59): одной строкой — медленно крутящийся кружок и «работает N мин»; без инструментов и команд.
+            if (screen.live != null || screen.workingFor != null) {
+                item { WorkingLine(screen.workingFor) }
             }
         }
         HorizontalDivider()
         ChatInput(screen, model, inputMax)
     }
+    }
+}
+
+/** «работает N мин» с медленно крутящимся кружком — ровно одна строка. */
+@Composable
+private fun WorkingLine(duration: String?) {
+    val spin = androidx.compose.animation.core.rememberInfiniteTransition(label = "spin")
+    val angle by spin.animateFloat(
+        initialValue = 0f, targetValue = 360f,
+        animationSpec = androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(2400, easing = androidx.compose.animation.core.LinearEasing)),
+        label = "angle",
+    )
+    Row(Modifier.fillMaxWidth().height(20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        CircularProgressIndicator(
+            progress = { 0.3f }, modifier = Modifier.size(12.dp).graphicsLayer { rotationZ = angle }, strokeWidth = 2.dp,
+        )
+        Text("работает" + (duration?.let { " $it" } ?: ""), style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 

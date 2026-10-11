@@ -470,8 +470,9 @@ class LiveSystem(
     override fun board(): TaskBoard = Screens.board(orchestrator.tasks)
 
     override fun session(id: SessionId): SessionScreen {
+        val own = sessionEvents(id)
         val base = Screens.session(
-            orchestrator.dashboard(), id, sessionEvents(id), orchestrator.live(id), clock.now(), Screens.sessionActions(id, orchestrator.sessions, orchestrator.tasks),
+            orchestrator.dashboard(), id, own, orchestrator.live(id), clock.now(), Screens.sessionActions(id, orchestrator.sessions, orchestrator.tasks),
             Screens.usage(orchestrator.sessions) { it.id == id },
         )
         // Чат задачи сессии (D-59): все её сессии в одной ленте.
@@ -480,10 +481,14 @@ class LiveSystem(
         val running = orchestrator.sessions.sessions.values.any {
             it.task == task && !it.terminal && it.state in setOf(com.dpsmpx.dpai.core.state.SessionState.STARTING, com.dpsmpx.dpai.core.state.SessionState.RUNNING, com.dpsmpx.dpai.core.state.SessionState.NEAR_LIMIT)
         }
+        // Сколько идёт ход: от последнего начала хода этой сессии в журнале.
+        val turnStart = own.lastOrNull { it.type == com.dpsmpx.dpai.core.events.EventType.SESSION_TURN_STARTED }?.occurredAt
+        val working = turnStart?.takeIf { record?.state == com.dpsmpx.dpai.core.state.SessionState.RUNNING || record?.state == com.dpsmpx.dpai.core.state.SessionState.NEAR_LIMIT }
+            ?.let { Screens.duration(clock.now().epochMillis - it.epochMillis) }
         return base.copy(
             title = orchestrator.tasks.tasks[task]?.title,
             chat = Screens.chat(Screens.chatEntries(orchestrator.chat(task), orchestrator.turnMessages(task), orchestrator.tasks.tasks[task]), id, clock.now()),
-            task = task, status = Screens.sessionStatus(record, orchestrator.tasks.tasks[task]?.state, running),
+            task = task, status = Screens.sessionStatus(record, orchestrator.tasks.tasks[task]?.state, running), workingFor = working,
         )
     }
 
