@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Проверки репозитория DPmetaApp — tools/check/run.sh [static|full] [--verbose] [--write-status].
+"""Проверки репозитория DPmetaApp — tools/check/run.sh [static|full [--strict]] [--verbose] [--write-status].
 
 По идеям DP-Verify (`DP-Verify:docs/direction/TECHNICAL_TASK.md`), без его кода (D-16):
 у каждой проверки — id, число просмотренных объектов и находки «путь:строка: что не так».
@@ -7,7 +7,9 @@
 выглядит защитой.
 
 Уровни: static — структура, текст, секреты, ссылки, номера, процесс, единое ядро, wrapper (секунды);
-        full   — static, самотесты проверок (tests/) и проверки подсистем (D-28).
+        full   — static, самотесты проверок (tests/), проверки подсистем (D-28) и сборка
+                 Gradle из корня (`build.gradle`, ТЗ, §14); пропуск (нет JDK, нет
+                 Android SDK) назван, а с --strict — ошибка.
 
 Подсистема со своими проверками (SUBSYSTEMS) — каталог со своим процессом: её текст, ссылки
 и номера проверяет её команда; здесь — секреты (второй, независимый поиск), раскладка корня
@@ -19,6 +21,7 @@
 """
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -112,6 +115,8 @@ class Result:
         self.findings = []
         self.error = None
         self.seconds = 0.0
+        # Чего проверка не сделала и почему (нет JDK, нет SDK): в --strict — находка (ТЗ, §14).
+        self.skipped = []
 
     def add(self, where, msg):
         self.findings.append(f"{where}: {msg}")
@@ -532,6 +537,55 @@ def check_subsystems(root, subsystems=None):
     return results
 
 
+# Отказ загрузки зависимостей — окружение (прокси, сеть), а не код: сбой проверки, код 3.
+TRANSIENT = re.compile(r"status code (?:429|5\d\d)|Could not GET|Connection reset|Read timed out|connect timed out")
+TASKS_DONE = re.compile(r"^(\d+) actionable tasks?", re.M)
+
+
+def android_sdk(root):
+    """Android SDK, как его ищет dpai/settings.gradle.kts: dpai/local.properties или переменные окружения."""
+    local = os.path.join(root, "dpai", "local.properties")
+    candidates = []
+    if os.path.isfile(local):
+        for line in open(local, encoding="utf-8"):
+            if line.startswith("sdk.dir="):
+                candidates.append(line.split("=", 1)[1].strip().replace("\\:", ":").replace("\\\\", "/"))
+    candidates += [os.environ.get("ANDROID_HOME"), os.environ.get("ANDROID_SDK_ROOT")]
+    return next((c for c in candidates if c and os.path.isdir(c)), None)
+
+
+def gradle_run(cmd, cwd):
+    p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=3600)
+    return p.returncode, p.stdout + p.stderr
+
+
+def check_gradle(root, java=None, sdk=None, run=gradle_run):
+    """build.gradle — `./gradlew build` из корня: ядро, подсистема dpai/ и, при Android SDK, приложение (ТЗ, §14).
+
+    Нет JDK — сборка пропущена; нет Android SDK — собрано всё, кроме оболочки. Пропуск назван,
+    в `full --strict` он — находка. Отказ загрузки зависимостей — сбой проверки (код 3), а не код.
+    """
+    r = Result("build.gradle")
+    t0 = time.monotonic()
+    java = shutil.which("java") if java is None else java
+    if not java:
+        r.skipped.append("нет JDK — сборка Gradle не проверена")
+        return r
+    if not (android_sdk(root) if sdk is None else sdk):
+        r.skipped.append("нет Android SDK — приложение (dpai/android) не собрано")
+    rc, out = run([os.path.join(root, "gradlew"), "build", "--console=plain"], root)
+    m = TASKS_DONE.search(out)
+    r.scanned = int(m.group(1)) if m else 0
+    if rc != 0:
+        tail = [l for l in out.strip().split("\n") if l.strip()][-SHOW * 2:]
+        if TRANSIENT.search(out):
+            r.error = "загрузка зависимостей не удалась (сеть, прокси) — сбой окружения, не кода; повторить\n" + tail[-1]
+        else:
+            r.findings.extend(tail or [f"gradlew: код {rc}"])
+    r.seconds = time.monotonic() - t0
+    return r
+
+
 def check_files(repo, r):
     """process.files — обязательные документы процесса на месте."""
     r.scanned = len(REQUIRED)
@@ -583,7 +637,7 @@ def selftest(root):
     return r
 
 
-def report(results, level, verbose, seconds):
+def report(results, level, verbose, seconds, strict=False):
     failed = 0
     errors = 0
     for r in results:
@@ -591,6 +645,11 @@ def report(results, level, verbose, seconds):
             errors += 1
             print(f"! {r.id} — сбой проверки")
             print("    " + r.error.strip().split("\n")[-1])
+            continue
+        if strict:
+            r.findings.extend(f"пропуск в --strict — ошибка: {why}" for why in r.skipped)
+        elif r.skipped and not r.findings:
+            print(f"○ {r.id} — просмотрено: {r.scanned}; пропуск: {'; '.join(r.skipped)}")
             continue
         if r.scanned == 0 and not r.findings:
             r.findings.append("пустая проверка: нечего проверять — это провал, а не зелёный (`DP-Verify:V-07`)")
@@ -610,10 +669,12 @@ def report(results, level, verbose, seconds):
 
 
 def main(argv):
-    level, verbose, write = "static", False, False
+    level, verbose, write, strict = "static", False, False, False
     for a in argv:
         if a in ("static", "full"):
             level = a
+        elif a == "--strict":
+            strict = True
         elif a == "--verbose":
             verbose = True
         elif a == "--write-status":
@@ -622,8 +683,11 @@ def main(argv):
             print(__doc__)
             return 0
         else:
-            print(f"неизвестный параметр: {a} (есть static, full, --verbose, --write-status)")
+            print(f"неизвестный параметр: {a} (есть static, full, --strict, --verbose, --write-status)")
             return 2
+    if strict and level != "full":
+        print("--strict — только с full: пропуски бывают у сборки (ТЗ, §14)")
+        return 2
     try:
         repo = Repo(ROOT)
     except (OSError, subprocess.CalledProcessError) as e:
@@ -643,7 +707,8 @@ def main(argv):
     if level == "full":
         results.append(selftest(ROOT))
         results.extend(check_subsystems(ROOT))
-    return report(results, level, verbose, time.monotonic() - t0)
+        results.append(check_gradle(ROOT))
+    return report(results, level, verbose, time.monotonic() - t0, strict)
 
 
 if __name__ == "__main__":

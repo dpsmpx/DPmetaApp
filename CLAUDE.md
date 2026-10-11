@@ -139,7 +139,10 @@ Android-оболочка `dpai/android` — первая форма прилож
 - `tools/check/run.sh` (уровень `static`) — после любой правки, секунды.
 - `tools/check/run.sh full` — перед переводом PR из черновика и перед
   вливанием; итог — в разделе «Проверки» описания PR. Он запускает и
-  проверки подсистемы (`subsystem.dpai`).
+  проверки подсистемы (`subsystem.dpai`), и `./gradlew build` из корня.
+- `tools/check/run.sh full --strict` — перед вливанием правок
+  приложения и перед выпуском: пропуск сборки (нет JDK, нет Android
+  SDK) — ошибка.
 - Правка в `dpai/` — ещё `dpai/tools/verify/run.sh affected` (после
   задачи) и `full` (перед вливанием), по `dpai/CLAUDE.md`.
 - `main` всегда зелёный: не вливать без зелёного `full`.

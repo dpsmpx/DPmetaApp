@@ -201,6 +201,64 @@ class WrapperTest(CheckCase):
         self.assertTrue(any("docs/PROCESS.md" in f for f in found))
 
 
+def quiet_report(results, strict=False):
+    import contextlib
+    with open(os.devnull, "w") as null, contextlib.redirect_stdout(null):
+        return check.report(results, "full", False, 0.0, strict)
+
+
+class GradleTest(unittest.TestCase):
+    """build.gradle (ТЗ, §14): сборка Gradle из корня; пропуск назван, в --strict — ошибка."""
+
+    @staticmethod
+    def never(cmd, cwd):
+        raise AssertionError("Gradle не должен запускаться без JDK")
+
+    @staticmethod
+    def answers(rc, out):
+        return lambda cmd, cwd: (rc, out)
+
+    def test_no_jdk_is_named_skip_not_failure(self):
+        r = check.check_gradle(ROOT, java="", sdk="/sdk", run=self.never)
+        self.assertEqual([], r.findings)
+        self.assertTrue(any("нет JDK" in w for w in r.skipped))
+        self.assertEqual(0, quiet_report([r]))
+
+    def test_skip_is_error_in_strict(self):
+        r = check.check_gradle(ROOT, java="", sdk="/sdk", run=self.never)
+        self.assertEqual(1, quiet_report([r], strict=True))
+        self.assertTrue(any("--strict" in f for f in r.findings))
+
+    def test_without_sdk_builds_the_rest_and_names_it(self):
+        r = check.check_gradle(ROOT, java="/jdk/bin/java", sdk="", run=self.answers(0, "BUILD SUCCESSFUL\n12 actionable tasks: 12 executed\n"))
+        self.assertEqual(12, r.scanned)
+        self.assertTrue(any("Android SDK" in w for w in r.skipped))
+        self.assertEqual(0, quiet_report([r]))
+
+    def test_full_build_passes_clean(self):
+        r = check.check_gradle(ROOT, java="/jdk/bin/java", sdk="/sdk", run=self.answers(0, "301 actionable tasks: 9 executed, 292 up-to-date\n"))
+        self.assertEqual(([], [], 301), (r.findings, r.skipped, r.scanned))
+        self.assertEqual(0, quiet_report([r], strict=True))
+
+    def test_build_failure_is_finding(self):
+        out = "> Task :dpai:core:test FAILED\n\nBUILD FAILED in 9s\n59 actionable tasks: 50 executed, 9 up-to-date\n"
+        r = check.check_gradle(ROOT, java="/jdk/bin/java", sdk="/sdk", run=self.answers(1, out))
+        self.assertTrue(any("FAILED" in f for f in r.findings))
+        self.assertEqual(1, quiet_report([r]))
+
+    def test_download_failure_is_tool_error_not_code(self):
+        out = "> Could not GET 'https://repo.maven.apache.org/x.pom'.\n> Received status code 429 from server: Too Many Requests\nBUILD FAILED\n"
+        r = check.check_gradle(ROOT, java="/jdk/bin/java", sdk="/sdk", run=self.answers(1, out))
+        self.assertIsNotNone(r.error)
+        self.assertEqual([], r.findings)
+        self.assertEqual(3, quiet_report([r]))
+
+    def test_strict_only_with_full(self):
+        import contextlib
+        with open(os.devnull, "w") as null, contextlib.redirect_stdout(null):
+            self.assertEqual(2, check.main(["static", "--strict"]))
+
+
 class SubsystemChecksTest(CheckCase):
     def run_sub(self, script):
         s = self.sample({"sub/verify.sh": script} if script else None)

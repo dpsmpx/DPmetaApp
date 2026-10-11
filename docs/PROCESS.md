@@ -70,11 +70,19 @@
 - **`static`** — после любой правки. Проверки: `repo.layout`,
   `format.text`, `format.scripts`, `security.secrets`, `docs.links`,
   `docs.refs`, `process.decisions`, `process.todo`, `process.roadmap`,
-  `process.files`, `readme.status`. Что ловит каждая — строка
-  документации в `tools/check/check.py`.
-- **`full`** — `static` и самотесты проверок
-  (`python3 -B -X utf8 -m unittest discover -s tests`); с этапа 1 —
-  сборка и тесты ядра, дым `dpmeta-cli`, с Android SDK — `:app`.
+  `process.files`, `readme.status`, `core.single`, `build.wrapper`. Что
+  ловит каждая — строка документации в `tools/check/check.py`. Каталог
+  `dpai/` — подсистема со своими проверками: её текст, ссылки и номера
+  здесь не сверяются, секреты — сверяются (D-28).
+- **`full`** — `static`, самотесты проверок
+  (`python3 -B -X utf8 -m unittest discover -s tests`), проверки
+  подсистемы (`subsystem.dpai` — `dpai/tools/verify/run.sh static`) и
+  `build.gradle` — `./gradlew build` из корня: ядро, подсистема и, при
+  Android SDK, приложение. Нет JDK или SDK — пропуск называется знаком
+  `○`, но не валит прогон. Отказ загрузки зависимостей (`429`, сеть) —
+  сбой проверки, код 3: окружение, а не код.
+- **`full --strict`** — то же, но пропуск — ошибка: перед вливанием
+  правок приложения и перед выпуском (ТЗ, §14).
 - **`--write-status`** — переписать блок состояния `README.md` из
   ROADMAP; руками блок не правится.
 
