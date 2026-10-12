@@ -52,9 +52,14 @@ claims:
 - fact: SMI-WHAT
 - fact: MKT-WHAT
 - fact: TJTM-WHAT
+- fact: GH-COMBAT
+- fact: DP-COMPILER
+- fact: DP-DOCS
+- fact: META-SYNC
+- fact: TJTM-PORT
 canonical:
   lang: ru
-  current: 1
+  current: 2
   versions:
   - version: 1
     file: canonical/v1.md
@@ -67,6 +72,19 @@ canonical:
       releases: {}
       datasets:
         '2026-10-05': b4eb09f271093055
+  - version: 2
+    file: canonical/v2.md
+    date: '2026-10-12'
+    note: 'ответы автора 12.10.2026 (В7): «и компилятор (в разработке)», «мета-уровень (синхронизация)»;
+      больше ничего не менялось; утверждения статьи — фактами GH-COMBAT, DP-COMPILER, DP-DOCS, META-SYNC,
+      TJTM-PORT'
+    sha256: 2b7397a7f91987909df97ff11b82a726e524d8a87e5e4b7a5e5a89b3782d8df7
+    deps:
+      facts: {}
+      links: {}
+      releases: {}
+      datasets:
+        '2026-10-05': eb5bdad921bccc6e
 source_projects:
 - galdhold
 - dplang
@@ -83,12 +101,14 @@ history:
     и нейропластичность»'
 - date: '2026-10-05'
   state: RESEARCHED
-  note: 'утверждения статьи сверены с реестром фактов: 11 подтверждены, 5 без факта или расходятся (бриф, §2);
-    решения автора: закрытый прикладной проект — без имени и подробностей, репозитории называть можно (Д42)'
+  note: 'утверждения статьи сверены с реестром фактов: 11 подтверждены, 5 без факта или расходятся (бриф,
+    §2); решения автора: закрытый прикладной проект — без имени и подробностей, репозитории называть можно
+    (Д42)'
 - date: '2026-10-05'
   state: BRIEFED
   note: бриф — docs/content/products/articles/neyroseti-i-neyroplastichnost/BRIEF.md
 - date: '2026-10-05'
   state: GENERATED
-  note: 'генерации нет — текст автора: канон v1 с разметкой (заголовки, списки, схемы — блоки кода), период — подстановкой;
-    вариант website.ru — тот же текст. Дальше — критика отдельным проходом, ревизия по решениям автора (бриф, §2)'
+  note: 'генерации нет — текст автора: канон v1 с разметкой (заголовки, списки, схемы — блоки кода), период
+    — подстановкой; вариант website.ru — тот же текст. Дальше — критика отдельным проходом, ревизия по
+    решениям автора (бриф, §2)'
