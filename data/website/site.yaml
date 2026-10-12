@@ -39,6 +39,7 @@ ecosystem:                               # Д43: интерактивная мо
   kit: website/ecosystem                 # dpvis.js, dpvis.css, dpvis-data.json, MANIFEST.json — сверка по sha256
   # роли и стадии репозиториев на странице — только из реестра фактов (Д6, Д43); без факта — не выводятся
   roles: {galdhold: GH-GENRE, dplang: DP-WHAT, dpverify: VRF-WHAT, smi: SMI-WHAT, dpprofile: PRF-WHAT, dplearn: LRN-WHAT,
-          market: MKT-WHAT, dpmeta: META-WHAT, dpmetaapp: APP-WHAT, dpmonetization: MON-WHAT, dpvisualisation: VIS-WHAT}
+          market: MKT-WHAT, dpmeta: META-WHAT, dpmetaapp: APP-WHAT, dpmonetization: MON-WHAT, dpvisualisation: VIS-WHAT,
+          orchestrator: ORC-WHAT}
   stages: {galdhold: GH-STAGES, dplang: DP-STAGE, smi: SMI-SITE, dpverify: VRF-STAGE, dpprofile: PRF-STAGE, dplearn: LRN-STAGE,
-           market: MKT-STAGE, dpmeta: META-STAGE}
+           market: MKT-STAGE, dpmeta: META-STAGE, orchestrator: ORC-STAGE}

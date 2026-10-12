@@ -16,11 +16,12 @@ from tools.cs.core.inject import resolve
 from tools.cs.core.repo import Repo
 from tools.cs.progress import check as progress_check
 from tools.cs.progress.dataset import METRICS, Progress
-from tools.cs.progress.figures import FIGURES, render
+from tools.cs.progress.figures import FIGURES, facts_of, render
 from tools.cs.site.build import SiteBuild
 from tests.platform_fixture import make_repo
 
-DS = "2026-10-05"
+DS = "2026-10-09"  # последний набор: на него ссылается текущий канон CI-0002
+OLD = "2026-10-05"  # прежний набор: в нём есть архив, которого больше нет в счёте (Д38)
 
 
 class Metrics(unittest.TestCase):
@@ -83,6 +84,58 @@ class Figures(unittest.TestCase):
             name = x["slug"].split("/")[-1]
             (self.assertNotIn if x["kind"] == "personal" else self.assertIn)(name, html_)
         self.assertIn("личные репозитории — 2", html_)
+        # архив — по именам: его репозитории открыты (слово автора 10.10.2026); у каждого — why
+        for x in self.p.scope["excluded"]:
+            if x["kind"] == "archive":
+                self.assertIn(x.get("why"), ("early", "removed"), x["slug"])
+        self.assertIn("ранние открытые проекты до репозитория игры — <code>Andors-Love</code>", html_)
+        self.assertIn("убраны автором из текущей системы — <code>DP_Ecosystem</code>", html_)
+        en, _ = render(self.p, "method", "en")
+        self.assertIn("early open projects that predate the game repository — <code>Andors-Love</code>", en)
+
+    def test_three_groups_and_no_archive(self):
+        # Д38, слово автора 09.10.2026: только текущая система — ядро, управление и поддерживающий слой;
+        # 10.10.2026: DPmeta — слой синхронизации
+        self.assertEqual({self.p.specs[k]["group"] for k in self.p.keys}, {"core", "control", "sync", "support"})
+        self.assertEqual(self.p.specs["dpmeta"]["group"], "sync")
+        self.assertNotIn("dpmeta", self.p.core())
+        act, _ = render(self.p, "activity", "ru")
+        self.assertIn("управление, синхронизация и поддерживающий слой", act)
+        heat, _ = render(self.p, "repos", "ru")
+        self.assertIn(f"Управление, синхронизация и поддерживающий слой · {len(self.p.listed(self.p.supporting()))}", heat)
+        snap, _ = render(self.p, "snapshot", "ru")
+        for k in self.p.supporting():
+            self.assertIn(self.p.specs[k]["name"], snap)
+        # ядро — сверху, управление, синхронизация и поддерживающий слой — отдельной частью таблицы под ним
+        core_end = max(snap.index(self.p.specs[k]["name"]) for k in self.p.listed(self.p.core()))
+        self.assertLess(core_end, snap.index('colspan="3">Управление, синхронизация и поддерживающий слой'))
+        # стадия DPmeta выводится и вне ядра — и числится в фактах фигуры (зависимости варианта, Д28)
+        _, used = render(self.p, "snapshot", "ru")
+        self.assertIn("META-STAGE", used)
+        self.assertEqual(set(used), set(facts_of(self.p, "snapshot")))
+        # на странице прогресса нет схемы DPvisualisation: формулировка без «эта схема» (what_idx)
+        for fid in ("snapshot", "ecosystem"):
+            for lang, word in (("ru", "эта схема"), ("en", "this diagram")):
+                self.assertNotIn(word, render(self.p, fid, lang)[0], f"{fid} [{lang}]")
+        # подпись неполного последнего дня — без чужой даты (раньше было зашито «5 октября»)
+        act, _ = render(self.p, "activity", "ru")
+        self.assertNotIn("5 октября учтено", act)
+        self.assertIn("9 октября, пт — учтено до 19:00", act)
+        archived = {x["slug"].split("/")[-1] for x in self.p.scope["excluded"] if x["kind"] == "archive"}
+        for fid in ("repos", "ecosystem", "snapshot"):
+            html_, _ = render(self.p, fid, "ru")
+            self.assertFalse([n for n in archived if n in html_], fid)
+
+    def test_old_dataset_hides_archive(self):
+        old = Progress(Repo(), OLD)
+        archived = old.archived()
+        self.assertTrue(archived & set(old.data["repos"]), "в прежнем наборе есть архив")
+        self.assertFalse(archived & set(old.keys), "на странице его нет")
+        for fid in ("repos", "ecosystem", "snapshot"):
+            html_, _ = render(old, fid, "ru")
+            for x in old.scope["excluded"]:
+                if x["kind"] == "archive":
+                    self.assertNotIn(x["slug"].split("/")[-1], html_, fid)
 
 
 class Validator(unittest.TestCase):
@@ -127,7 +180,7 @@ class Check(unittest.TestCase):
         path = repo.path(f"data/progress/datasets/{DS}.json")
         data = json.loads(path.read_text(encoding="utf-8"))
         data["repos"]["galdhold"]["daily"]["ai"][0] += 1
-        data["repos"]["stray"] = data["repos"]["tanks"]
+        data["repos"]["stray"] = data["repos"]["dpmeta"]
         path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
         kw = repo.path("data/facts/claim_keywords.yaml")
         rules = yaml.safe_load(kw.read_text(encoding="utf-8"))
@@ -137,6 +190,18 @@ class Check(unittest.TestCase):
         msgs = " | ".join(progress_check.check(repo).errors)
         for want in ("Claude + автор ≠ коммиты", "stray есть в наборе, но не в scope.yaml", "нет величины no_such_metric"):
             self.assertIn(want, msgs)
+
+    def test_stage_fact_outside_core_is_guarded(self):
+        # таблица среза выводит стадию и вне ядра (DPmeta — слой синхронизации): её факт проверяется так же
+        repo = make_repo(git=False)
+        fp = repo.path("data/facts/facts.yaml")
+        reg = yaml.safe_load(fp.read_text(encoding="utf-8"))
+        for f in reg["facts"]:
+            if f["id"] == "META-STAGE":
+                f["public"] = False
+        fp.write_text(yaml.safe_dump(reg, allow_unicode=True), encoding="utf-8")
+        repo.reset()
+        self.assertIn("META-STAGE", " | ".join(progress_check.check(repo).errors))
 
 
 class SitePage(unittest.TestCase):

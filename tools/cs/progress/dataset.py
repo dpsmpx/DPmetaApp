@@ -23,7 +23,9 @@ from typing import Callable
 from ..core.repo import Repo
 from .collect import BRANCH_STATES
 
-GROUPS = ("galdhold", "core_other", "background")
+# Группы рядов: Galdhold, остальное ядро; управление, синхронизация и поддерживающий слой (DPmeta M-10, M-12).
+# Архива (ранние проекты до репозитория игры и убранные автором) в счёте нет — слово автора 09.10.2026 (Д38).
+GROUPS = ("galdhold", "core_other", "support")
 LINE_KINDS = ("tests", "code", "docs")  # «прочее» (данные, схемы, журналы прогонов) в объём не входит
 
 MONTHS = {
@@ -116,10 +118,18 @@ class Progress:
     def group(self, key: str) -> str:
         if key == "galdhold":
             return "galdhold"
-        return "core_other" if self.specs[key]["group"] == "core" else "background"
+        return "core_other" if self.specs[key]["group"] == "core" else "support"
 
     def core(self) -> list[str]:
         return [k for k in self.keys if self.specs[k]["group"] == "core"]
+
+    def supporting(self) -> list[str]:
+        """Управление, синхронизация и поддерживающий слой (DPmeta M-10, M-12): в счёте, но не в ядре."""
+        return [k for k in self.keys if self.specs[k]["group"] != "core"]
+
+    def archived(self) -> set[str]:
+        """Ключи архива из `excluded`: прежние наборы их содержат, страница их не показывает."""
+        return {x["key"] for x in self.scope.get("excluded", []) if x.get("kind") == "archive" and x.get("key")}
 
     def listed(self, keys: list[str] | None = None) -> list[str]:
         """Кого можно показывать по отдельности (строка, узел карты, дата): все, кроме закрытых

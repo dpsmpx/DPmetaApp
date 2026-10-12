@@ -37,11 +37,11 @@ L = {
         "src_ms": "коммиты, PR, журналы решений и релизы; у каждой вехи — свой источник",
         "src_scope": "границы счёта и контракты DPmeta",
         "source": "Источник", "table": "Таблица значений", "date": "День", "total": "Всего",
-        "groups": {"galdhold": "Galdhold", "core_other": "другие репозитории ядра", "background": "ранние и малые проекты"},
+        "groups": {"galdhold": "Galdhold", "core_other": "другие репозитории ядра", "support": "управление, синхронизация и поддерживающий слой"},
         "commits_n": "коммитов", "merges_n": "PR влито", "ai": "Claude", "human": "автор",
         "cum_commits": "Коммитов с начала периода", "cum_merges": "PR влито с начала периода",
         "core_est": "Репозиториев ядра с работой",
-        "grp_core": "Ядро", "grp_bg": "Ранние и малые проекты", "commits_prs": "коммиты · PR", "sum": "Σ",
+        "grp_core": "Ядро", "grp_sup": "Управление, синхронизация и поддерживающий слой", "commits_prs": "коммиты · PR", "sum": "Σ",
         "branches_day": "Рабочих веток с коммитами (без основных)", "cycle": "От первого коммита порции до слияния PR",
         "cycle_buckets": ["до 15 мин", "15–30 мин", "30–60 мин", "1–3 ч", "3–12 ч", "дольше 12 ч"],
         "now": "Невлитая работа на момент среза",
@@ -62,11 +62,13 @@ L = {
         "project": "Репозиторий", "fact_date": "на",
         "tiles": {"repos_core": "репозиториев ядра", "repos_active": "репозиториев с работой в периоде",
                   "lines_end": "строк кода, тестов и документов в ядре", "tests_end": "из них — в файлах тестов",
-                  "decisions_end": "записей в журналах решений", "hostcheck_end": "автопроверок Galdhold (README)",
+                  "decisions_end": "записей в журналах решений ядра", "hostcheck_end": "автопроверок Galdhold (README)",
                   "unmerged_branches": "веток с невлитой работой"},
         "core_note": "из них один закрытый проект без имени",
         "only_totals": "Закрытый проект без публичного имени здесь не показан отдельно — он входит только в общие суммы.",
         "personal_n": "личные репозитории — {n}: заметки и планы; имена не публикуются",
+        "archive": {"early": "ранние открытые проекты до репозитория игры — {names}: вне текущей системы, в счёт не входят",
+                    "removed": "убраны автором из текущей системы — {names}: в счёт не входят"},
         "ms_kind": {"decision": "решение автора", "verification": "проверки", "device": "замер на устройстве",
                     "release": "релиз", "start": "начало", "build": "сборка", "world": "мир игры", "graphics": "графика",
                     "process": "процесс", "platform": "платформы", "repository": "новый репозиторий",
@@ -83,7 +85,7 @@ L = {
                    "время суток коммитов (личный распорядок)", "код и выдержки из закрытых репозиториев (Д17)",
                    "оценки готовности в процентах — у проектов нет их определения"],
         "markers": "ромб под осью — веха дня",
-        "partial": "5 октября учтено до {t}",
+        "partial": "учтено до {t}",  # день уже назван в начале подписи
     },
     "en": {
         "kind": {"measured": "measured", "reported": "reported by the project", "derived": "derived", "milestone": "milestones",
@@ -95,11 +97,11 @@ L = {
         "src_ms": "commits, pull requests, decision logs and releases; each milestone cites its own source",
         "src_scope": "scope boundaries and DPmeta contracts",
         "source": "Source", "table": "Values table", "date": "Day", "total": "Total",
-        "groups": {"galdhold": "Galdhold", "core_other": "other core repositories", "background": "earlier and smaller projects"},
+        "groups": {"galdhold": "Galdhold", "core_other": "other core repositories", "support": "control, sync and support layers"},
         "commits_n": "commits", "merges_n": "PRs merged", "ai": "Claude", "human": "author",
         "cum_commits": "Commits since the start", "cum_merges": "PRs merged since the start",
         "core_est": "Core repositories with work",
-        "grp_core": "Core", "grp_bg": "Earlier and smaller projects", "commits_prs": "commits · PRs", "sum": "Σ",
+        "grp_core": "Core", "grp_sup": "Control, sync and support layers", "commits_prs": "commits · PRs", "sum": "Σ",
         "branches_day": "Working branches with commits (main not counted)", "cycle": "From a batch's first commit to the PR merge",
         "cycle_buckets": ["under 15 min", "15–30 min", "30–60 min", "1–3 h", "3–12 h", "over 12 h"],
         "now": "Unmerged work at snapshot time",
@@ -120,11 +122,13 @@ L = {
         "project": "Repository", "fact_date": "as of",
         "tiles": {"repos_core": "core repositories", "repos_active": "repositories with work in the period",
                   "lines_end": "lines of code, tests and documents in the core", "tests_end": "of them in test files",
-                  "decisions_end": "decision log entries", "hostcheck_end": "Galdhold automated checks (README)",
+                  "decisions_end": "core decision log entries", "hostcheck_end": "Galdhold automated checks (README)",
                   "unmerged_branches": "branches with unmerged work"},
         "core_note": "including one undisclosed private project",
         "only_totals": "A private project without a public name is not shown separately — it is counted only in totals.",
         "personal_n": "personal repositories — {n}: notes and plans; names are not published",
+        "archive": {"early": "early open projects that predate the game repository — {names}: outside the current system, not counted",
+                    "removed": "removed by the author from the current system — {names}: not counted"},
         "ms_kind": {"decision": "author's decision", "verification": "checks", "device": "device measurement",
                     "release": "release", "start": "start", "build": "build", "world": "game world", "graphics": "graphics",
                     "process": "process", "platform": "platforms", "repository": "new repository",
@@ -141,13 +145,14 @@ L = {
                    "time of day of commits (a personal routine)", "code or excerpts from private repositories",
                    "readiness percentages — the projects do not define them"],
         "markers": "a diamond under the axis marks a milestone",
-        "partial": "5 October counted until {t}",
+        "partial": "counted until {t}",
     },
 }
 
 MS_CLASS = {"decision": "c-human", "process": "c-human", "verification": "c-ver", "device": "c-ver", "release": "c-ver"}
 STAGE_FACTS = {"galdhold": "GH-STAGES", "dplang": "DP-STAGE", "dpverify": "VRF-STAGE", "smi": "SMI-SITE",
-               "dpprofile": "PRF-STAGE", "dplearn": "LRN-STAGE", "market": "MKT-STAGE", "dpmeta": "META-STAGE"}
+               "dpprofile": "PRF-STAGE", "dplearn": "LRN-STAGE", "market": "MKT-STAGE", "dpmeta": "META-STAGE",
+               "orchestrator": "ORC-STAGE"}
 BINS = [2, 5, 10, 20, 40]
 CYCLE_EDGES = [15, 30, 60, 180, 720]
 
@@ -192,6 +197,20 @@ class Fig:
         if fid not in self.facts_used:
             self.facts_used.append(fid)
         return words[idx] if f.get("public") and len(words) > idx else None
+
+    def what(self, spec: dict) -> str | None:
+        """Роль репозитория: формулировка факта `what` с номером `what_idx` (по умолчанию первая)."""
+        return self.fact(spec["what"], spec.get("what_idx", 0)) if spec.get("what") else None
+
+    def stage_row(self, key: str) -> str:
+        """Строка таблицы среза: имя, роль, стадия с датой факта."""
+        spec, t = self.p.specs[key], self.t
+        sf = STAGE_FACTS.get(key)
+        stage = self.fact(sf) if sf else None
+        fd = self.fact_date(sf) if sf else None
+        when = f' <span class="meta">({E(t["fact_date"])} {E(fmt_short(fd, self.lang))})</span>' if fd else ""
+        return (f'<tr><th scope="row">{E(spec["name"])}</th><td>{E(self.what(spec) or "")}</td>'
+                f'<td>{E(stage or "—")}{when}</td></tr>')
 
     def fact_date(self, fid: str) -> str | None:
         ev = (self.p.repo.facts().get(fid) or {}).get("evidence") or []
@@ -251,18 +270,14 @@ class Fig:
             tiles.append(f'<div class="tile"><div class="tv">{E(v)}</div><div class="tl">{E(t["tiles"][mid])}</div>{note}'
                          f'<span class="dkind dk-{kind}">{E(t["kind"][kind])}</span></div>')
         rows = []
-        for key in p.core():
-            spec = p.specs[key]
-            if spec["visibility"] == "undisclosed":
-                continue
-            what = self.fact(spec["what"]) if spec.get("what") else ""
-            sf = STAGE_FACTS.get(key)
-            stage = self.fact(sf) if sf else None
-            fd = self.fact_date(sf) if sf else None
-            when = f' <span class="meta">({E(t["fact_date"])} {E(fmt_short(fd, self.lang))})</span>' if fd else ""
-            rows.append(f'<tr><th scope="row">{E(spec["name"])}</th><td>{E(what or "")}</td>'
-                        f'<td>{E(stage or "—")}{when}</td></tr>')
+        for gname, keys in (("", p.core()), (t["grp_sup"], p.supporting())):
+            keys = p.listed(keys)
+            if gname and keys:  # управление, синхронизация и поддерживающий слой — отдельной частью таблицы, под ядром
+                rows.append(f'<tr><th scope="colgroup" colspan="3">{E(gname)}</th></tr>')
+            for key in keys:
+                rows.append(self.stage_row(key))
         cut = fmt_value(p.data["period"]["cutoff"], "datetime", self.lang)
+
         stages = (f'<div class="tscroll"><table class="facts stages"><thead><tr><th scope="col">{E(t["project"])}</th>'
                   f'<th scope="col">{E(t["role"])}</th><th scope="col">{E(t["stage"])}</th></tr></thead>'
                   f'<tbody>{"".join(rows)}</tbody></table></div>')
@@ -276,7 +291,7 @@ class Fig:
         g = p.by_group("commits")
         merges = p.total("merges")
         series = [("c-gald", g["galdhold"], t["groups"]["galdhold"]), ("c-core", g["core_other"], t["groups"]["core_other"]),
-                  ("c-bg", g["background"], t["groups"]["background"])]
+                  ("c-bg", g["support"], t["groups"]["support"])]
         tips = []
         for i in range(p.n):
             parts = ", ".join(f"{name} {vals[i]}" for _, vals, name in series if vals[i])
@@ -299,10 +314,10 @@ class Fig:
                            (peak, peak_early), markers, self.weekend()),
             charts.columns("pf-act-n", charts.NARROW, title, desc, self.labels(), self.months(), series, self.lang, 250, tips,
                            (peak,), markers, self.weekend()))
-        rows = [[fmt_short(d, self.lang), tot[i], g["galdhold"][i], g["core_other"][i], g["background"][i], merges[i]]
+        rows = [[fmt_short(d, self.lang), tot[i], g["galdhold"][i], g["core_other"][i], g["support"][i], merges[i]]
                 for i, d in enumerate(p.days)]
         rows = [[r[0]] + [self.n(x) for x in r[1:]] for r in rows]
-        table = self.table([t["date"], t["total"], t["groups"]["galdhold"], t["groups"]["core_other"], t["groups"]["background"],
+        table = self.table([t["date"], t["total"], t["groups"]["galdhold"], t["groups"]["core_other"], t["groups"]["support"],
                             t["merges_n"]], rows)
         cap = self.caption(["measured"], t["src_git"], [(cls, name) for cls, _, name in series], t["markers"] + ".")
         return self.figure("activity", svg + cap + table)
@@ -330,7 +345,7 @@ class Fig:
         p, t = self.p, self.t
         groups = []
         for gname, keys in ((t["grp_core"], p.listed([k for k in p.keys if p.specs[k]["group"] == "core"])),
-                            (t["grp_bg"], p.listed([k for k in p.keys if p.specs[k]["group"] == "background"]))):
+                            (t["grp_sup"], p.listed([k for k in p.keys if p.specs[k]["group"] != "core"]))):
             rows = []
             for k in keys:
                 vals = p.daily(k, "commits")
@@ -342,7 +357,7 @@ class Fig:
                              "extra": self.n(sum(p.daily(k, "merges"))), "first": p.first_day(k)})
             groups.append((f"{gname} · {len(rows)}", rows))
         desc = "; ".join(f"{r['label']} — {r['total']}" for _, rows in groups for r in rows)
-        title = t["grp_core"] + " / " + t["grp_bg"]
+        title = t["grp_core"] + " / " + t["grp_sup"]
         svg = self.both(
             charts.heatmap("pf-heat-w", charts.WIDE, title, desc, self.labels(), self.months(), groups, BINS, self.lang,
                            t["commits_prs"]),
@@ -495,7 +510,7 @@ class Fig:
         bars = self.both(charts.hbars("pf-decp-w", {"w": 380}, t["decisions_per"], bdesc, rows, self.lang, label_w=120, row_h=26),
                          charts.hbars("pf-decp-n", charts.NARROW, t["decisions_per"], bdesc, rows, self.lang, row_h=26))
         items = []
-        for key in p.listed(p.core()):
+        for key in p.listed(p.keys):  # счётчики документов — у всех в счёте, в том числе у DPmeta (слой синхронизации)
             for cid in t["counters"]:
                 vals = p.counter(key, cid)
                 if cid in p.data["repos"][key]["counters"] and vals[-1] is not None:
@@ -519,7 +534,7 @@ class Fig:
                     continue
                 if spec["visibility"] == "undisclosed":  # только в суммах (Д38, Д39): ни узла, ни слоя
                     continue
-                what = self.fact(spec["what"]) if spec.get("what") else None
+                what = self.what(spec)
                 first = p.first_day(k)
                 since = (f'<span class="meta">{E(t["first_seen"])} {E(fmt_short(first, self.lang))}</span>'
                          if first and first > p.days[0] else "")
@@ -565,10 +580,15 @@ class Fig:
                         f'<td class="num">{E(p.formatted(mid, self.lang))}</td></tr>')
         excluded = p.scope.get("excluded", [])
         excl = "".join(f'<li><code>{E(x["slug"].split("/")[-1])}</code> — {E(x["reason"])}</li>'
-                       for x in excluded if x.get("kind") != "personal")
+                       for x in excluded if x.get("kind") not in ("personal", "archive"))
         personal = sum(1 for x in excluded if x.get("kind") == "personal")
         if personal:  # личные репозитории — без имён (Д2, ОР-8; фильтр Д39)
             excl += f'<li>{E(t["personal_n"].format(n=personal))}</li>'
+        for why in ("early", "removed"):  # архив — по именам: его репозитории открыты (Д38, слово автора 10.10.2026)
+            names = [x["slug"].split("/")[-1] for x in excluded if x.get("kind") == "archive" and x.get("why") == why]
+            if names:
+                excl += "<li>" + E(t["archive"][why]).replace(
+                    "{names}", ", ".join(f"<code>{E(n)}</code>" for n in names)) + "</li>"
         hidden = "".join(f"<li>{E(h)}</li>" for h in t["hidden"])
         head = (f'<dl class="facts-dl"><dt>{E(t["m_period"])}</dt><dd>{E(fmt_date(per["start"], self.lang))} — '
                 f'{E(fmt_date(per["end"], self.lang))} (UTC{E(per["timezone"])})</dd>'
@@ -595,8 +615,10 @@ def render(p: Progress, fid: str, lang: str) -> tuple[str, list[str]]:
 def facts_of(p: Progress, fid: str) -> list[str]:
     """Какие факты реестра выводит фигура — без сборки HTML (для зависимостей при фиксации варианта)."""
     if fid == "snapshot":
-        return [p.specs[k]["what"] for k in p.core() if p.specs[k].get("what") and p.specs[k]["visibility"] != "undisclosed"] + \
-               [STAGE_FACTS[k] for k in p.core() if k in STAGE_FACTS]
+        shown = p.core() + p.supporting()
+        return [p.specs[k]["what"] for k in shown
+                if p.specs[k].get("what") and p.specs[k]["visibility"] != "undisclosed"] + \
+               [STAGE_FACTS[k] for k in shown if k in STAGE_FACTS]
     if fid == "ecosystem":
         return [p.specs[k]["what"] for k in p.keys if p.specs[k].get("what") and p.specs[k]["visibility"] != "undisclosed"]
     return []

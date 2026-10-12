@@ -590,13 +590,18 @@ facts:
     class: FACT
     risk: low
     public: true
-    statement: "DPmetaApp — личное приложение автора для Android — пульт над экосистемой (проекты, ход разработки, сайт); на 06.10.2026 — этап ТЗ, черновой PR."
+    statement: >-
+      DPmetaApp — управление экосистемой: личное приложение автора для Android, пульт над проектами,
+      ходом разработки и сайтом. По мастер-ТЗ автора строится после того, как проекты станут
+      законченными системами; на 09.10.2026 — этап ТЗ.
     allowed_wording:
-      ru: ["личный пульт автора над экосистемой для Android — на этапе ТЗ"]
-      en: ["the author's personal Android control app for the ecosystem — at the specification stage"]
+      ru: ["управление экосистемой: личный пульт автора для Android — на этапе ТЗ"]
+      en: ["ecosystem control: the author's personal Android app — at the specification stage"]
     evidence:
       - {kind: doc, source: "dpsmpx/DPmetaApp docs/direction/TECHNICAL_TASK.md (ветка claude/vigilant-franklin-61x8kq, черновик этапа 0)", ref: "2812482", date: 2026-10-06, verification: reported}
-    recheck_by: 2026-11-06
+      - {kind: doc, source: "dpsmpx/DPmetaApp MESTER_TECHNICAL_TASK_ROADMAP.md (main): сначала законченные системы, затем приложение", ref: "4dcc27a", date: 2026-10-06, verification: reported}
+      - {kind: decision, source: "dpsmpx/DPmetaApp docs/direction/DECISIONS.md D-25 (ветка claude/dreamy-bardeen-xe4k6r): управление экосистемой, фаза B мастер-ТЗ; слово автора 09.10.2026", ref: "ed0df9b", date: 2026-10-09, verification: decision}
+    recheck_by: 2026-11-09
   - id: MON-WHAT
     subject: dpmonetization
     class: FACT
@@ -639,12 +644,13 @@ facts:
     class: FACT
     risk: low
     public: true
-    statement: Первый и повторный проходы консолидации экосистемы — 5 октября 2026.
+    statement: Три прохода консолидации экосистемы — 5 октября 2026 (первый, повторный и третий).
     allowed_wording:
-      ru: ["два прохода по экосистеме — 5 октября 2026"]
-      en: ["two passes over the ecosystem on 5 October 2026"]
+      ru: ["три прохода по экосистеме — 5 октября 2026"]
+      en: ["three passes over the ecosystem on 5 October 2026"]
     evidence:
       - {kind: doc, source: "dpsmpx/DPmeta docs/reports/2026-10-05-ECOSYSTEM_HEALTH.md, 2026-10-05-2-ECOSYSTEM_HEALTH.md", ref: "b03e9bc", date: 2026-10-05, verification: reported}
+      - {kind: doc, source: "dpsmpx/DPmeta docs/reports/2026-10-05-3-ECOSYSTEM_HEALTH.md (третий проход, main)", ref: "f166b47", date: 2026-10-05, verification: reported}
   - id: CORE-SCALE-2026-10-05
     subject: ecosystem
     class: FACT
@@ -695,6 +701,24 @@ facts:
     evidence:
       - {kind: doc, source: "dpsmpx/DPprofile docs/facts/F-0001.md (created_at аккаунта — 2023-03-03), F-0008, F-0009 (первые коммиты Andors-Love — 2023-04-13, TrueJointTileMaker — 2024-02-21)", ref: "3e76c10", date: 2026-10-04, verification: reported}
       - {kind: code, source: "открытые репозитории: Andors-Love (C++11), PixRogue (Python), TrueJointTileMaker (PascalABC.NET)", date: 2026-10-04, verification: observed}
+  - id: AU-EARLY
+    subject: author
+    class: FACT
+    risk: low
+    public: true
+    statement: >-
+      Ранние открытые проекты автора до репозитория игры: Andors-Love — пошаговая RPG на C++11 (первый
+      коммит — 13 апреля 2023 года); TrueJointTileMaker — редактор пиксельной графики и карт локаций для
+      Andors-Love на PascalABC.NET (первый коммит — 21 февраля 2024 года); PixRogue — классический Rogue в
+      пиксельном стиле на Python (первый коммит — 2 сентября 2026 года). Их репозитории открыты.
+    allowed_wording:
+      ru: ["ранние открытые проекты: Andors-Love — пошаговая RPG на C++ (2023), TrueJointTileMaker — редактор пиксельной графики и карт для неё (2024), PixRogue — Rogue в пиксельном стиле на Python (2026)"]
+      en: ["early open projects: Andors-Love, a turn-based RPG in C++ (2023); TrueJointTileMaker, a pixel-art and map editor for it (2024); PixRogue, a pixel-art Rogue in Python (2026)"]
+    evidence:
+      - {kind: code, source: "github.com/dpsmpx/Andors-Love, github.com/dpsmpx/TrueJointTileMaker, github.com/dpsmpx/PixRogue — README.md", date: 2026-10-04, verification: observed}
+      - {kind: doc, source: "dpsmpx/DPprofile docs/facts/F-0008, F-0009 (первые коммиты Andors-Love — 2023-04-13, TrueJointTileMaker — 2024-02-21)", ref: "3e76c10", date: 2026-10-04, verification: reported}
+      - {kind: code, source: "история git dpsmpx/PixRogue: первый коммит — 2026-09-02", date: 2026-10-10, verification: observed}
+    notes: Называются открыто по слову автора 10.10.2026 (Д44) — их репозитории открыты; в счёт страницы прогресса не входят (архив, Д38). tanks_blitz_stat_chat здесь не назван — связан с чужой игрой (PROJECT_MAP §3, RIGHTS_MATRIX).
   - id: ECO-NEW-2026-10-06
     subject: ecosystem
     class: FACT
@@ -723,7 +747,7 @@ facts:
     allowed_wording:
       ru: ["управляющий слой для параллельных сессий ИИ: задачи, контекст, проверка результата, продолжение после смены сессии"]
       en: ["a control layer for parallel AI sessions: tasks, context, result checks, continuing after a session ends"]
-    notes: Тема нескольких аккаунтов сервиса ИИ в публичные формулировки не входит (ОР-9).
+    notes: Тема нескольких аккаунтов сервиса ИИ в публичные формулировки не входит (ОР-9). «Управление — из Android-приложения» — нынешнее состояние по README оркестратора; по ответу автора 10.10.2026 он войдёт в DPmetaApp и отдельным приложением не будет (DPmeta:SQ-29) — пересмотреть утверждение, когда это запишет его репозиторий. Публичная формулировка о приложении не говорит.
     evidence:
       - {kind: doc, source: "dpsmpx/DP_AI_Orcestrator MASTER_TECHNICAL_TASK.md §0–§3, §156", ref: "2f3d55e", date: 2026-10-06, verification: self-reported}
   - id: ORC-STAGE

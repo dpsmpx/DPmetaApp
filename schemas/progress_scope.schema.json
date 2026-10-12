@@ -103,7 +103,9 @@
      "group": {
       "enum": [
        "core",
-       "background"
+       "control",
+       "sync",
+       "support"
       ]
      },
      "visibility": {
@@ -118,6 +120,10 @@
      },
      "what": {
       "type": "string"
+     },
+     "what_idx": {
+      "type": "integer",
+      "minimum": 0
      },
      "project": {
       "type": "string"
@@ -197,11 +203,21 @@
        "fork",
        "profile",
        "personal",
-       "script"
+       "script",
+       "archive"
       ]
      },
      "reason": {
       "type": "string"
+     },
+     "key": {
+      "type": "string"
+     },
+     "why": {
+      "enum": [
+       "early",
+       "removed"
+      ]
      }
     }
    }
