@@ -602,6 +602,24 @@ facts:
       - {kind: doc, source: "dpsmpx/DPmetaApp MESTER_TECHNICAL_TASK_ROADMAP.md (main): сначала законченные системы, затем приложение", ref: "4dcc27a", date: 2026-10-06, verification: reported}
       - {kind: decision, source: "dpsmpx/DPmetaApp docs/direction/DECISIONS.md D-25 (ветка claude/dreamy-bardeen-xe4k6r): управление экосистемой, фаза B мастер-ТЗ; слово автора 09.10.2026", ref: "ed0df9b", date: 2026-10-09, verification: decision}
     recheck_by: 2026-11-09
+  - id: APP-NOW
+    subject: dpmetaapp
+    class: FACT
+    risk: low
+    public: true
+    statement: >-
+      С 10 октября 2026 года DPmetaApp — одно приложение автора: первая подсистема «AI» (бывший
+      DP_AI_Orcestrator, каталог dpai/ с его историей) уже внутри, её ядро — ядро приложения, её
+      Android-оболочка — первая форма приложения на телефоне автора; прежний репозиторий оркестратора
+      заморожен. Этап 1 (сборка и ядро) сделан, идёт этап 2 — данные экосистемы.
+    allowed_wording:
+      ru: ["управление экосистемой: одно приложение автора для Android; внутри уже подсистема ИИ для параллельных сессий"]
+      en: ["ecosystem control: the author's single Android app, already with an AI subsystem for parallel sessions inside"]
+    notes: Решение «всё в одном» — слово автора 10.10.2026 в сессии DPmetaApp. APP-WHAT — о DPmetaApp на 9 октября (страница прогресса).
+    evidence:
+      - {kind: decision, source: "dpsmpx/DPmetaApp docs/direction/DECISIONS.md D-28 (всё в одном: dpai/, репозиторий оркестратора заморожен) и D-29 (фаза B — сейчас)", ref: "4116a95", date: 2026-10-12, verification: decision}
+      - {kind: doc, source: "dpsmpx/DPmetaApp README.md, ROADMAP/ROADMAP.md (этап 1 — [+]), TODO.md (на телефоне — com.dpsmpx.dpai)", ref: "4116a95", date: 2026-10-12, verification: reported}
+    recheck_by: 2026-10-26
   - id: MON-WHAT
     subject: dpmonetization
     class: FACT
@@ -718,7 +736,7 @@ facts:
       - {kind: code, source: "github.com/dpsmpx/Andors-Love, github.com/dpsmpx/TrueJointTileMaker, github.com/dpsmpx/PixRogue — README.md", date: 2026-10-04, verification: observed}
       - {kind: doc, source: "dpsmpx/DPprofile docs/facts/F-0008, F-0009 (первые коммиты Andors-Love — 2023-04-13, TrueJointTileMaker — 2024-02-21)", ref: "3e76c10", date: 2026-10-04, verification: reported}
       - {kind: code, source: "история git dpsmpx/PixRogue: первый коммит — 2026-09-02", date: 2026-10-10, verification: observed}
-    notes: Называются открыто по слову автора 10.10.2026 (Д44) — их репозитории открыты; в счёт страницы прогресса не входят (архив, Д38). tanks_blitz_stat_chat здесь не назван — связан с чужой игрой (PROJECT_MAP §3, RIGHTS_MATRIX).
+    notes: Называются открыто по слову автора 10.10.2026 (Д44) — их репозитории открыты; в счёт страницы прогресса не входят (архив, Д38). tanks_blitz_stat_chat здесь не назван — публичного факта о нём нет, а связь с чужой игрой допускает только упоминание как опыта (Д44; PROJECT_MAP §3, RIGHTS_MATRIX).
   - id: ECO-NEW-2026-10-06
     subject: ecosystem
     class: FACT
@@ -747,7 +765,7 @@ facts:
     allowed_wording:
       ru: ["управляющий слой для параллельных сессий ИИ: задачи, контекст, проверка результата, продолжение после смены сессии"]
       en: ["a control layer for parallel AI sessions: tasks, context, result checks, continuing after a session ends"]
-    notes: Тема нескольких аккаунтов сервиса ИИ в публичные формулировки не входит (ОР-9). «Управление — из Android-приложения» — нынешнее состояние по README оркестратора; по ответу автора 10.10.2026 он войдёт в DPmetaApp и отдельным приложением не будет (DPmeta:SQ-29) — пересмотреть утверждение, когда это запишет его репозиторий. Публичная формулировка о приложении не говорит.
+    notes: Тема нескольких аккаунтов сервиса ИИ в публичные формулировки не входит (ОР-9). С 10.10.2026 оркестратор — подсистема «AI» DPmetaApp (каталог dpai/, его Android-оболочка — первая форма приложения DPmetaApp), прежний репозиторий заморожен (DPmetaApp D-28); утверждение — о нём на 7 октября. Публичная формулировка о приложении не говорит. О DPmetaApp сейчас — APP-NOW.
     evidence:
       - {kind: doc, source: "dpsmpx/DP_AI_Orcestrator MASTER_TECHNICAL_TASK.md §0–§3, §156", ref: "2f3d55e", date: 2026-10-06, verification: self-reported}
   - id: ORC-STAGE

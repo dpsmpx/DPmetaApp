@@ -1,10 +1,10 @@
 {
  "schema": "dpvis-site-kit/1",
- "data_as_of": "2026-10-10T14:12:34Z",
- "model_as_of": "2026-10-10",
+ "data_as_of": "2026-10-12T13:46:15Z",
+ "model_as_of": "2026-10-12",
  "files": {
   "dpvis.js": "a8f2784b3479284d4b36cd69be25bbeb7696bd767c1c6efc594184474d5284fd",
   "dpvis.css": "e4aa47a3682f83650c0118c83d41bd273c6d2d166a2137f267823cd3fa54d40f",
-  "dpvis-data.json": "e750a7a96d4e379c7e08e7036af4d20bae654e74fdccb5437a8ca28370548dcc"
+  "dpvis-data.json": "570c1939c3f6df2a07d3c6fd2c1a54f61efed64402e508abb9dd699d61fc17cf"
  }
 }
