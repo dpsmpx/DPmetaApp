@@ -57,6 +57,12 @@ claims:
 - fact: DP-DOCS
 - fact: META-SYNC
 - fact: TJTM-PORT
+- fact: LRN-STAGE
+- fact: VRF-STAGE
+- fact: CORE-SCALE-2026-10-05
+- fact: META-SOT
+- fact: META-PROCESS
+- fact: GH-STAGES
 canonical:
   lang: ru
   current: 3
@@ -139,6 +145,10 @@ review:
       text: CORE-SCALE-2026-10-05 нет в claims; строки 182, 382–384 без факта
       status: fixed
       resolution: CORE-SCALE-2026-10-05 в claims; факты META-SOT (M-02) и META-PROCESS (M-04, E-01) по DPmeta fec807c
+    - id: N1
+      text: 'повторный проход: новые факты были только в каноне v3, не в claims объекта (гейт Factual читает item.yaml)'
+      status: fixed
+      resolution: LRN-STAGE, VRF-STAGE, CORE-SCALE-2026-10-05, META-SOT, META-PROCESS, GH-STAGES — в claims
     - id: C3-5
       text: бриф §2 и история объекта отстают от 12.10
       status: fixed
