@@ -5,12 +5,14 @@
 `DECISIONS.md`, «12 октября 2026», «Позже в тот же день»). Автор пересмотрел
 порядок: «Статья сейчас, П2-20 потом», «„Путь“ на 07.10, П2-28 позже»,
 страница прогресса — следующей выгрузкой.
-- **CI-0003:** пять фактов по перечитанным источникам (GH-COMBAT,
-  DP-COMPILER, DP-DOCS, META-SYNC, TJTM-PORT); канон v2 и `website.ru` v2
-  — только две правки автора (В7); критика отдельным проходом —
-  `docs/content/products/articles/neyroseti-i-neyroplastichnost/CRITIQUE.md`.
-  Одобряет и публикует автор — порядок в `TODO.md`, первый пункт; после
-  `publish --production` **закоммитить журнал** `data/publications/production.jsonl`.
+- **CI-0003:** факты по перечитанным источникам (GH-COMBAT, DP-COMPILER,
+  DP-DOCS, META-SYNC, TJTM-PORT, META-SOT, META-PROCESS); канон v2 — две
+  правки автора (В7); критика отдельным проходом и повторный проход —
+  `docs/content/products/articles/neyroseti-i-neyroplastichnost/CRITIQUE.md`;
+  канон v3 и `website.ru` v3 — правки по критике, принятые автором, и
+  разметка для телефона; `UNDER_REVIEW`, готово к одобрению. Одобряет и
+  публикует автор — порядок в `TODO.md`, первый пункт; после `publish
+  --production` **закоммитить журнал** `data/publications/production.jsonl`.
 - **П2-20:** метка изображений сделана и замерена (`tools/cs/mark/`;
   цифры — `TODO.md`, П2-20), в выгрузку не встроена. Остальное П2-20 —
   после выгрузки статьи (поиск в снимке экрана, SVG, реестр выпусков,
