@@ -1,5 +1,5 @@
 {
- "as_of": "2026-10-12T13:46:15Z",
+ "as_of": "2026-10-12T14:12:27Z",
  "diagnostics": [],
  "flows": {
   "app.dpmeta.dpmetaapp": {
@@ -1603,7 +1603,7 @@
  },
  "model": {
   "as_of": "2026-10-12",
-  "sha256": "b15738973dfab95247d6cb08b845966d18bdd2b6e090f715d4636b550a480cc5"
+  "sha256": "1c7ec1346cd32193e507d8a5e156a12ce32a6c93b1fbc7355318aaff0dbc7c9c"
  },
  "nodes": {
   "author": {
@@ -1611,7 +1611,7 @@
     "last": "2026-10-12T13:38:34Z",
     "reasons": [
      {
-      "hours": 0.13,
+      "hours": 0.56,
       "rule": "author"
      }
     ],
@@ -1655,7 +1655,7 @@
     "last": "2026-10-12T13:08:42Z",
     "reasons": [
      {
-      "hours": 0.63,
+      "hours": 1.06,
       "rule": "claude"
      }
     ],
@@ -1713,7 +1713,7 @@
     "last": "2026-10-12T12:20:53Z",
     "reasons": [
      {
-      "hours": 1.42,
+      "hours": 1.86,
       "rule": "main"
      }
     ],
@@ -2087,7 +2087,7 @@
     "reasons": [
      {
       "branch": "ccr-ddc9eb14-p13f4u",
-      "hours": 9.44,
+      "hours": 9.87,
       "rule": "branch"
      }
     ],
@@ -2290,7 +2290,7 @@
     "reasons": [
      {
       "branch": "claude/stage2-formats",
-      "hours": 20.99,
+      "hours": 21.43,
       "rule": "branch"
      }
     ],
@@ -2499,7 +2499,7 @@
     "reasons": [
      {
       "branch": "ccr-0895c63e-uprau7",
-      "hours": 9.26,
+      "hours": 9.69,
       "rule": "branch"
      }
     ],
@@ -3296,7 +3296,7 @@
     "last": "2026-10-12T13:38:34Z",
     "reasons": [
      {
-      "hours": 0.13,
+      "hours": 0.56,
       "rule": "main"
      }
     ],
@@ -3486,7 +3486,7 @@
     "reasons": [
      {
       "branch": "ccr-abb64cd1-cs6at9",
-      "hours": 0.63,
+      "hours": 1.06,
       "rule": "branch"
      }
     ],

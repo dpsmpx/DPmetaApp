@@ -749,7 +749,8 @@
    "kind": "decision",
    "public_what": "решения автора и вливание PR",
    "refs": [
-    "DPmetaApp:TODO.md"
+    "DPmetaApp:TODO.md",
+    "DPmetaApp:D-28"
    ],
    "signal": {
     "repo": "dpmetaapp",
@@ -760,8 +761,8 @@
    "status": "active",
    "to": "dpmetaapp",
    "transport": "git",
-   "trigger": "ТЗ готово к вливанию",
-   "what": "постановка, ответы на Q-NN ТЗ, вливание ТЗ"
+   "trigger": "PR готов к вливанию",
+   "what": "постановка, ответы на Q-NN ТЗ, решения (и по подсистеме «AI»), вливание PR"
   },
   {
    "bidirectional": false,
@@ -1607,7 +1608,8 @@
    "refs": [
     "DPmetaApp:D-24",
     "DPmetaApp:D-28",
-    "DPmetaApp:TODO.md"
+    "DPmetaApp:TODO.md",
+    "DPmetaApp:dpai/docs/direction/DECISIONS.md"
    ],
    "status": "active",
    "to": "phone",
@@ -2143,9 +2145,10 @@
    "refs": [
     "SocialMediaImage:tools/termux/dpsmpx-site-deploy.sh",
     "Galdhold:README.md",
-    "DPmetaApp:docs/direction/TECHNICAL_TASK.md"
+    "DPmetaApp:docs/direction/TECHNICAL_TASK.md",
+    "DPmetaApp:D-28"
    ],
-   "role": "Android с Termux: ярлык выгрузки сайта, проверка сборок Galdhold; здесь будет DPmetaApp",
+   "role": "Android с Termux: ярлык выгрузки сайта, проверка сборок Galdhold; здесь — DPmetaApp (первая форма — оболочка подсистемы «AI»)",
    "status": "active",
    "visibility": "private"
   },
@@ -2291,7 +2294,7 @@
  "schema": "dpvis-model/1",
  "source": {
   "path": "model/ecosystem.toml",
-  "sha256": "b15738973dfab95247d6cb08b845966d18bdd2b6e090f715d4636b550a480cc5"
+  "sha256": "1c7ec1346cd32193e507d8a5e156a12ce32a6c93b1fbc7355318aaff0dbc7c9c"
  },
  "sources": [
   "DPmeta:docs/ECOSYSTEM.md",

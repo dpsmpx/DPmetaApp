@@ -314,8 +314,8 @@ id = "phone"
 name = "Телефон автора (Termux)"
 kind = "device"
 layer = "infra"
-role = "Android с Termux: ярлык выгрузки сайта, проверка сборок Galdhold; здесь будет DPmetaApp"
-refs = ["SocialMediaImage:tools/termux/dpsmpx-site-deploy.sh", "Galdhold:README.md", "DPmetaApp:docs/direction/TECHNICAL_TASK.md"]
+role = "Android с Termux: ярлык выгрузки сайта, проверка сборок Galdhold; здесь — DPmetaApp (первая форма — оболочка подсистемы «AI»)"
+refs = ["SocialMediaImage:tools/termux/dpsmpx-site-deploy.sh", "Galdhold:README.md", "DPmetaApp:docs/direction/TECHNICAL_TASK.md", "DPmetaApp:D-28"]
 
 [[node]]
 id = "compiler"
@@ -685,11 +685,11 @@ id = "decide.dpmetaapp"
 from = "author"
 to = "dpmetaapp"
 kind = "decision"
-what = "постановка, ответы на Q-NN ТЗ, вливание ТЗ"
+what = "постановка, ответы на Q-NN ТЗ, решения (и по подсистеме «AI»), вливание PR"
 public_what = "решения автора и вливание PR"
 transport = "git"
-trigger = "ТЗ готово к вливанию"
-refs = ["DPmetaApp:TODO.md"]
+trigger = "PR готов к вливанию"
+refs = ["DPmetaApp:TODO.md", "DPmetaApp:D-28"]
 signal = { type = "git-commits", repo = "dpmetaapp", who = "merge" }
 
 [[flow]]
@@ -1202,7 +1202,7 @@ kind = "host"
 what = "личное приложение — только на устройствах автора, нигде не публикуется; первая форма — оболочка подсистемы «AI» (com.dpsmpx.dpai): управление исполнителями, Termux-target на том же телефоне"
 transport = "manual"
 trigger = "сборка APK и установка автором"
-refs = ["DPmetaApp:D-24", "DPmetaApp:D-28", "DPmetaApp:TODO.md"]
+refs = ["DPmetaApp:D-24", "DPmetaApp:D-28", "DPmetaApp:TODO.md", "DPmetaApp:dpai/docs/direction/DECISIONS.md"]
 
 # ------------------------------------- DPmetaApp: подсистема «AI» (dpai/)
 
