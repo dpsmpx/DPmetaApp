@@ -12,7 +12,7 @@
 #               decision (записанное решение) | self-reported (сказано автором)
 # recheck_by:   дата, после которой число/состояние перепроверяется перед использованием
 schema: facts/v1
-as_of: 2026-10-07
+as_of: 2026-10-12
 # Выведенные из реестра id: ссылки на них в документах — история; в контент
 # они не подставляются (подстановка их не знает).
 retired:
@@ -122,6 +122,17 @@ facts:
       en: ["a voxel action-RPG with an open procedural world"]
     evidence:
       - {kind: doc, source: "dpsmpx/Galdhold docs/direction/DECISIONS.md §1, ROADMAP этапы 3–4", ref: "f2ba263", date: 2026-10-04, verification: reported}
+  - id: GH-COMBAT
+    subject: galdhold
+    class: FACT
+    risk: low
+    public: true
+    statement: В описании Galdhold (README игры) — боевая система и прокачка.
+    allowed_wording:
+      ru: ["боевая система"]
+      en: ["a combat system"]
+    evidence:
+      - {kind: doc, source: "dpsmpx/Galdhold README.md, строка 3", ref: "517e411", date: 2026-10-12, verification: reported}
   - id: GH-TECH
     subject: galdhold
     class: FACT
@@ -376,6 +387,35 @@ facts:
     recheck_by: 2026-10-18
     evidence:
       - {kind: doc, source: "dpsmpx/DPlang ROADMAP/ROADMAP.md, docs/CHANGELOG.md", ref: "66e461c", date: 2026-10-04, verification: reported}
+  - id: DP-COMPILER
+    subject: dplang
+    class: FACT
+    risk: high
+    public: true
+    statement: >-
+      Компилятор DPlang — в разработке: каталог compiler/ в main с 5 октября 2026; v0.1 «ядро-срез» закрыта
+      с оговоркой 10 октября 2026; C-бэкенд переводит программу в C11. Выпущенного компилятора нет,
+      публичный запуск онлайн-компилятора выключен.
+    allowed_wording:
+      ru: ["язык программирования и компилятор (в разработке)"]
+      en: ["a programming language and compiler (in development)"]
+    recheck_by: 2026-11-12
+    evidence:
+      - {kind: doc, source: "dpsmpx/DPlang README.md, «Готовность»: v0.1, компилятор, онлайн-компилятор", ref: "b525c5f", date: 2026-10-12, verification: reported}
+      - {kind: code, source: "dpsmpx/DPlang compiler/ в main (слияние #11)", ref: "715ab0c", date: 2026-10-05, verification: observed}
+  - id: DP-DOCS
+    subject: dplang
+    class: FACT
+    risk: medium
+    public: true
+    statement: >-
+      У DPlang формализованы постановка, требования и решения (Р0–Р60), видение, архитектура, политики,
+      критерии готовности (DoD v1.0), риски, аудит и спецификация ядра v0.1.
+    allowed_wording:
+      ru: ["формализованы требования, решения, спецификация, архитектура, политики и критерии готовности"]
+      en: ["requirements, decisions, specification, architecture, policies and definition of done are written down"]
+    evidence:
+      - {kind: doc, source: "dpsmpx/DPlang README.md, «Готовность»", ref: "b525c5f", date: 2026-10-12, verification: reported}
   - id: DP-EXPERIMENT
     subject: dplang
     class: FACT
@@ -433,6 +473,19 @@ facts:
       en: ["pixel-art and map editor for Andors-Love"]
     evidence:
       - {kind: code, source: "github.com/dpsmpx/TrueJointTileMaker README.md", date: 2026-10-04, verification: observed}
+  - id: TJTM-PORT
+    subject: truejointtilemaker
+    class: FACT
+    risk: low
+    public: true
+    statement: >-
+      С 5 октября 2026 TrueJointTileMaker переносится с PascalABC.NET на C++: версия 0.6.0 лежит в pascal/
+      как эталон, перенос сверяется с ней по снимкам окна.
+    allowed_wording:
+      ru: ["переводится на новую архитектурную основу"]
+      en: ["is being moved to a new architectural base"]
+    evidence:
+      - {kind: code, source: "github.com/dpsmpx/TrueJointTileMaker README.md, docs/porting.md", ref: "46beb45", date: 2026-10-05, verification: observed}
   - id: PIX-WHAT
     subject: pixrogue
     class: FACT
@@ -657,6 +710,47 @@ facts:
     recheck_by: 2026-11-05
     evidence:
       - {kind: doc, source: "dpsmpx/DPmeta docs/ECOSYSTEM.md, §3 «Связи», наблюдения", ref: "b03e9bc", date: 2026-10-05, verification: reported}
+  - id: META-SYNC
+    subject: dpmeta
+    class: FACT
+    risk: low
+    public: true
+    statement: >-
+      DPmeta ведёт очередь согласований (расхождения между репозиториями — с местом и предлагаемой правкой),
+      делает межрепозиторные проходы со срезами (05.10.2026) и помечает каждую запись видом: наблюдение,
+      рекомендация, решение или открытый вопрос (M-03).
+    allowed_wording:
+      ru: ["очередь согласований и межрепозиторные аудиты", "различать наблюдение, рекомендацию, решение и открытый вопрос"]
+      en: ["a reconciliation queue and cross-repository audits"]
+    evidence:
+      - {kind: doc, source: "dpsmpx/DPmeta docs/DECISIONS.md M-03, docs/SYNC_QUEUE.md, docs/reports/2026-10-05-*-xref.md", ref: "fec807c", date: 2026-10-12, verification: reported}
+  - id: META-SOT
+    subject: dpmeta
+    class: FACT
+    risk: low
+    public: true
+    statement: >-
+      Принцип DPmeta (M-02): о себе каждый репозиторий — сам себе источник истины; DPmeta описывает только
+      то, что между ними, и при расхождении с репозиторием исправляется сам.
+    allowed_wording:
+      ru: ["каждый репозиторий сам является источником истины о себе, а мета-уровень хранит только знание о связях между репозиториями"]
+      en: ["each repository is the source of truth about itself; the meta level only knows the links between them"]
+    evidence:
+      - {kind: decision, source: "dpsmpx/DPmeta README.md; docs/DECISIONS.md M-02", ref: "fec807c", date: 2026-10-12, verification: decision}
+  - id: META-PROCESS
+    subject: dpmeta
+    class: FACT
+    risk: low
+    public: true
+    statement: >-
+      В DPmeta записаны правила для активных веток (M-04: перед правкой — ветки, открытые PR и активные
+      сессии; активный репозиторий — только чтение) и общие принципы репозиториев, среди них журнал решений
+      как источник истины (E-01, docs/PRINCIPLES.md).
+    allowed_wording:
+      ru: ["правила активных веток", "единая модель решений"]
+      en: ["rules for active branches", "a shared decision model"]
+    evidence:
+      - {kind: decision, source: "dpsmpx/DPmeta docs/DECISIONS.md M-04; docs/PRINCIPLES.md E-01", ref: "fec807c", date: 2026-10-12, verification: decision}
   - id: META-STAGE
     subject: dpmeta
     class: FACT
