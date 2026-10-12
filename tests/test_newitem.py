@@ -52,6 +52,21 @@ class ItemRulesTest(unittest.TestCase):
             errs = self.errors(self.item(d, gates={"brand": {"status": "pass", "by": "session"}}))
             self.assertTrue(any("brand" in e for e in errs))
 
+    def test_text_item_v2_approved_without_selected_variant(self):
+        with tempfile.TemporaryDirectory() as d:
+            hist = [{"date": "2026-10-04", "state": s, "note": "шаг"} for s in
+                    ("IDEA", "RESEARCHED", "BRIEFED", "GENERATED", "UNDER_REVIEW", "APPROVED")]
+            gates = {g: {"status": "pass", "by": "author" if g == "brand" else "tool"} for g in
+                     ("factual", "brand", "visual", "platform", "safety", "legal", "provenance")}
+            kw = dict(state="APPROVED", history=hist, gates=gates, approval={"by": "author", "date": "2026-10-04"})
+            v1 = self.errors(self.item(d, **kw))
+            self.assertTrue(any("APPROVED без выбранного варианта" in e for e in v1))
+            (Path(d) / "CI-0009-t").rmdir()
+            issues = {"major": [{"id": "X-1", "variant": "website.ru", "text": "проблема", "status": "open"}]}
+            v2 = self.errors(self.item(d, schema="content_item/v2", review={"issues": issues}, **kw))
+            self.assertFalse(any("выбранного варианта" in e for e in v2))
+            self.assertTrue(any("открытая проблема major X-1" in e for e in v2))
+
     def test_publication_requires_published_state(self):
         with tempfile.TemporaryDirectory() as d:
             pub = [{"platform": "telegram", "state": "published", "url": "https://t.me/x/1", "published_at": "2026-10-04"}]
