@@ -19,7 +19,7 @@
 
 schema = 1
 title = "Экосистема dpsmpx"
-as_of = "2026-10-10"
+as_of = "2026-10-12"
 timezone = "+03:00"
 sources = [
   "DPmeta:docs/ECOSYSTEM.md",
@@ -27,7 +27,8 @@ sources = [
   "DPmeta:tools/ecosystem.toml",
   "DPmetaApp:docs/direction/TECHNICAL_TASK.md",
   "DPmetaApp:MESTER_TECHNICAL_TASK_ROADMAP.md",
-  "DP_AI_Orcestrator:README.md",
+  "DPmetaApp:README.md",
+  "DPmetaApp:D-28",
   "SocialMediaImage:Д43",
   "SocialMediaImage:docs/platforms/WEBSITE.md",
   "SocialMediaImage:data/platforms/destinations.yaml",
@@ -44,9 +45,9 @@ node = "dpmeta"
 path = "tools/ecosystem.toml"
 contracts = "docs/CONTRACTS.md"
 # Архив вне текущей системы (D-20): в реестре DPmeta есть, в модели — нет.
-exclude = ["dpsmpx/Andors-Love", "dpsmpx/TrueJointTileMaker"]
+exclude = ["dpsmpx/Andors-Love", "dpsmpx/TrueJointTileMaker", "dpsmpx/DP_AI_Orcestrator"]
 exclude_contracts = ["C-08"]
-exclude_reason = "архив: проекты до репозитория игры (11.09.2026) — в схеме только текущая система (решение автора 9 октября 2026)"
+exclude_reason = "архив: проекты до репозитория игры (11.09.2026) — в схеме только текущая система (решение автора 9 октября 2026); DP_AI_Orcestrator заморожен — его код и работа в DPmetaApp, dpai/ (DPmetaApp:D-28, D-22)"
 
 # ------------------------------------------------------------------ слои
 # Порядок — порядок колонок схемы слева направо (ТЗ, §8.2).
@@ -162,21 +163,6 @@ public_role = "общий каркас проверок для репозито�
 public_stage = "версия 0.3.0: этапы 0–3 из 0–8"
 refs = ["DPmeta:docs/ECOSYSTEM.md", "DP-Verify:README.md"]
 
-[[node]]
-id = "orchestrator"
-name = "DP_AI_Orcestrator"
-kind = "repo"
-layer = "engineering"
-repo = "dpsmpx/DP_AI_Orcestrator"
-group = "core"
-visibility = "private"
-role = "control plane для параллельных сессий Claude Code: задачи и их зависимости, аккаунты, исполнители (Termux, Linux, Windows), контекст и handoff, проверка результата; управление — из Android-приложения"
-stage = "V1: выполнено этапов 15 из 21 (README, «Прогресс»); приложение проверяется на телефоне автора"
-public_role = "управляющий слой для параллельных сессий ИИ: задачи, контекст, проверка результата"
-public_stage = "первая версия в разработке"
-note = "один из основных инструментов системы (решение автора 9 октября 2026); войдёт в DPmetaApp, отдельным приложением не будет (ответ автора 10 октября 2026, D-21; DPmeta:SQ-29 в ветке DPmeta); в реестре DPmeta — в его ветке (Q-03)"
-refs = ["DP_AI_Orcestrator:README.md", "DP_AI_Orcestrator:D-01", "DP_AI_Orcestrator:docs/ECOSYSTEM.md", "SocialMediaImage:data/facts/facts.yaml"]
-
 # -------------------------------------------------- знание и публикация
 
 [[node]]
@@ -277,12 +263,12 @@ layer = "control"
 repo = "dpsmpx/DPmetaApp"
 group = "control"
 visibility = "private"
-role = "управление экосистемой: мета-приложение автора для Android над законченными системами — содержит системы активных репозиториев в себе (с DP_AI_Orcestrator), общее состояние, события, знания, проверки; живой режим схемы DPvisualisation — здесь"
-stage = "в main — мастер-ТЗ экосистемы: сначала довести каждый проект до законченной системы, затем строить приложение; ТЗ самого приложения — черновик в невлитой ветке"
-public_role = "управление экосистемой: пульт автора для Android"
-public_stage = "этап ТЗ"
-note = "управление экосистемой — выделено своим слоем (решение автора 9 октября 2026); системы активных репозиториев — внутри (ответ автора 10 октября 2026, D-21; DPmetaApp:D-27); ТЗ, решения и TODO приложения — в ветке claude/dreamy-bardeen-xe4k6r DPmetaApp, в main их нет"
-refs = ["DPmetaApp:README.md", "DPmetaApp:MESTER_TECHNICAL_TASK_ROADMAP.md", "DPmetaApp:docs/direction/TECHNICAL_TASK.md", "DPmetaApp:D-25", "DPvisualisation:D-21"]
+role = "управление экосистемой: одно Android-приложение автора — системы активных репозиториев становятся его подсистемами; первая уже внутри — подсистема «AI» (бывший DP_AI_Orcestrator, dpai/): параллельные сессии Claude Code, задачи, контекст и handoff, исполнители, проверка результата; живой режим схемы DPvisualisation — здесь"
+stage = "этап 1 сделан (сборка и ядро — ядро подсистемы «AI»), идёт этап 2 — данные экосистемы; оболочка приложения на телефоне автора (ROADMAP, README)"
+public_role = "управление экосистемой: одно приложение автора для Android; внутри — управляющий слой для параллельных сессий ИИ"
+public_stage = "первая форма приложения — подсистема ИИ; идёт этап данных экосистемы"
+note = "управление экосистемой — выделено своим слоем (решение автора 9 октября 2026); всё в одном: DP_AI_Orcestrator — подсистема «AI» в dpai/, его репозиторий заморожен (DPmetaApp:D-27, DPmetaApp:D-28; здесь — D-22)"
+refs = ["DPmetaApp:README.md", "DPmetaApp:MESTER_TECHNICAL_TASK_ROADMAP.md", "DPmetaApp:docs/direction/TECHNICAL_TASK.md", "DPmetaApp:D-25", "DPmetaApp:D-28", "DPmetaApp:ROADMAP/ROADMAP.md", "DPvisualisation:D-22"]
 
 # ---------------------------------------------------- поддерживающий слой
 
@@ -349,7 +335,7 @@ kind = "service"
 layer = "infra"
 status = "planned"
 role = "UnifiedPush через ntfy: события «Claude закончил ответ» и другие — на телефон"
-note = "источник — ТЗ и решение DPmetaApp:D-23 в ветке claude/dreamy-bardeen-xe4k6r DPmetaApp (наработки claude/vigilant-franklin-61x8kq), в main их нет"
+note = "источник — ТЗ и решение DPmetaApp:D-23"
 refs = ["DPmetaApp:docs/direction/TECHNICAL_TASK.md", "DPmetaApp:D-23"]
 
 # ------------------------------------------------- площадки и внешнее
@@ -572,18 +558,6 @@ trigger = "поручение автора сессии"
 refs = ["DPvisualisation:docs/direction/REQUEST.md"]
 signal = { type = "git-commits", repo = "dpvisualisation", who = "ai", scope = "all" }
 
-[[flow]]
-id = "work.orchestrator"
-from = "claude"
-to = "orchestrator"
-kind = "work"
-what = "ветки, коммиты и PR сессий"
-public_what = "коммиты и PR сессий ИИ"
-transport = "git"
-trigger = "поручение автора сессии"
-refs = ["DP_AI_Orcestrator:README.md"]
-signal = { type = "git-commits", repo = "orchestrator", who = "ai", scope = "all" }
-
 # --------------------------------------- решения автора и вливание PR
 # Сигнал — коммиты вливания в основной ветке (F-12).
 
@@ -729,18 +703,6 @@ transport = "git"
 trigger = "PR готов к вливанию"
 refs = ["DPvisualisation:docs/direction/REQUEST.md"]
 signal = { type = "git-commits", repo = "dpvisualisation", who = "merge" }
-
-[[flow]]
-id = "decide.orchestrator"
-from = "author"
-to = "orchestrator"
-kind = "decision"
-what = "ТЗ автора, решения, вливание PR"
-public_what = "решения автора и вливание PR"
-transport = "git"
-trigger = "PR готов к вливанию"
-refs = ["DP_AI_Orcestrator:README.md"]
-signal = { type = "git-commits", repo = "orchestrator", who = "merge" }
 
 # ----------------------------------------- C-01, C-02: Galdhold и DPlang
 
@@ -1179,7 +1141,7 @@ public_what = "схема для управления экосистемой"
 transport = "http"
 format = "dpvis-model/1, dpvis-state/1"
 refs = ["DPvisualisation:D-18", "DPvisualisation:D-07", "DPvisualisation:D-21", "DPmetaApp:MESTER_TECHNICAL_TASK_ROADMAP.md", "DPmetaApp:D-26"]
-note = "решение автора 9 октября 2026 (Q-01, Q-05); строится вместе с DPmetaApp — в фазе B мастер-ТЗ; система DPvisualisation — будущая подсистема DPmetaApp (D-21), до переноса — эти форматы; с его стороны — DPmetaApp:D-26 и DPmetaApp:D-27 в ветке claude/dreamy-bardeen-xe4k6r DPmetaApp"
+note = "решение автора 9 октября 2026 (Q-01, Q-05); строится вместе с DPmetaApp — в фазе B мастер-ТЗ; система DPvisualisation — будущая подсистема DPmetaApp (D-21), до переноса — эти форматы; с его стороны — DPmetaApp:D-26 и DPmetaApp:D-27"
 
 [[flow]]
 id = "vis.dpvisualisation.smi"
@@ -1219,7 +1181,7 @@ what = "PR, ветки, проверки, файлы процесса всех �
 public_what = "данные для пульта"
 transport = "api"
 refs = ["DPmetaApp:docs/direction/TECHNICAL_TASK.md", "DPvisualisation:D-21"]
-note = "системы активных репозиториев — внутри DPmetaApp; GitHub — источник синхронизации, а не запрос на каждое действие (ответ автора 10 октября 2026; DPmetaApp:D-27 в его ветке)"
+note = "системы активных репозиториев — внутри DPmetaApp; GitHub — источник синхронизации, а не запрос на каждое действие (ответ автора 10 октября 2026; DPmetaApp:D-27)"
 
 [[flow]]
 id = "app.site.dpmetaapp"
@@ -1237,61 +1199,38 @@ id = "app.dpmetaapp.phone"
 from = "dpmetaapp"
 to = "phone"
 kind = "host"
-status = "planned"
-what = "личное приложение — только на устройствах автора, нигде не публикуется"
+what = "личное приложение — только на устройствах автора, нигде не публикуется; первая форма — оболочка подсистемы «AI» (com.dpsmpx.dpai): управление исполнителями, Termux-target на том же телефоне"
 transport = "manual"
-refs = ["DPmetaApp:D-24"]
+trigger = "сборка APK и установка автором"
+refs = ["DPmetaApp:D-24", "DPmetaApp:D-28", "DPmetaApp:TODO.md"]
 
-# ---------------------------------------------------- DP_AI_Orcestrator
+# ------------------------------------- DPmetaApp: подсистема «AI» (dpai/)
 
 [[flow]]
-id = "orc.orchestrator.claude"
-from = "orchestrator"
+id = "orc.dpmetaapp.claude"
+from = "dpmetaapp"
 to = "claude"
 kind = "work"
 status = "planned"
-what = "запуск и продолжение сессий Claude Code через CLI: задача, контекст и handoff, проверка результата"
+what = "подсистема «AI» (бывший DP_AI_Orcestrator): запуск и продолжение сессий Claude Code через CLI — задача, контекст и handoff, проверка результата"
 public_what = "управление сессиями ИИ"
 transport = "intent"
-trigger = "задача в очереди оркестратора"
-refs = ["DP_AI_Orcestrator:D-01", "DP_AI_Orcestrator:D-32", "DP_AI_Orcestrator:D-23"]
-note = "V1 в разработке; работают ли сессии под оркестратором постоянно — неизвестно (по git не видно)"
+trigger = "задача в очереди подсистемы"
+refs = ["DPmetaApp:D-28", "DPmetaApp:dpai/README.md", "DPmetaApp:dpai/docs/direction/DECISIONS.md"]
+note = "V1 подсистемы в разработке (этапы 19 и 20 — в DPmetaApp); работают ли сессии под ней постоянно — неизвестно (по git не видно)"
 
 [[flow]]
-id = "orc.dpmeta.orchestrator"
+id = "orc.dpmeta.dpmetaapp"
 from = "dpmeta"
-to = "orchestrator"
+to = "dpmetaapp"
 kind = "format"
 status = "planned"
 what = "манифест экосистемы dpai.ecosystem v1: проекты, состояние, документы, предложения задач"
 public_what = "карта экосистемы для управления сессиями"
 transport = "copy"
 format = "dpai.ecosystem v1"
-refs = ["DP_AI_Orcestrator:docs/ECOSYSTEM.md", "DP_AI_Orcestrator:docs/INTEGRATION_CONTRACT.md"]
-note = "манифест ведёт DPmeta — решение автора 9 октября 2026 (DPmeta:M-11, контракт DPmeta:C-13, инструмент DPmeta:tools/manifest.py — в ветке claude/dreamy-bardeen-xe4k6r DPmeta); глобальный прогон по реальной экосистеме ещё не запускался"
-
-[[flow]]
-id = "orc.orchestrator.dpmetaapp"
-from = "orchestrator"
-to = "dpmetaapp"
-kind = "delivery"
-status = "planned"
-what = "оркестратор — в составе DPmetaApp, а не отдельным приложением: его ядро — подсистема «AI» (модули Kotlin, события, протокол управления)"
-public_what = "управляющий слой войдёт в пульт"
-transport = "copy"
-refs = ["DP_AI_Orcestrator:docs/INTEGRATION_CONTRACT.md", "DPmetaApp:MESTER_TECHNICAL_TASK_ROADMAP.md", "DPvisualisation:D-21"]
-note = "ответ автора 10 октября 2026; после заморозки V1 и завершения остальных систем (мастер-ТЗ DPmetaApp); с его стороны — DPmetaApp:D-27 в ветке claude/dreamy-bardeen-xe4k6r DPmetaApp"
-
-[[flow]]
-id = "orc.orchestrator.phone"
-from = "orchestrator"
-to = "phone"
-kind = "host"
-what = "Android-приложение оркестратора: управление исполнителями, Termux-target на том же телефоне"
-transport = "manual"
-trigger = "сборка APK и установка автором"
-refs = ["DP_AI_Orcestrator:D-28", "DP_AI_Orcestrator:D-46", "DP_AI_Orcestrator:TODO.md"]
-note = "так сейчас по репозиторию оркестратора; по ответу автора 10 октября 2026 отдельным приложением он не останется — войдёт в DPmetaApp (D-21; расхождение — DPmeta:SQ-29 в ветке DPmeta)"
+refs = ["DPmetaApp:dpai/docs/ECOSYSTEM.md", "DPmetaApp:dpai/docs/INTEGRATION_CONTRACT.md"]
+note = "манифест ведёт DPmeta — решение автора 9 октября 2026 (DPmeta:M-11, контракт DPmeta:C-13, инструмент DPmeta:tools/manifest.py — в ветке claude/dreamy-bardeen-xe4k6r DPmeta); читатель — подсистема «AI» DPmetaApp (DPmetaApp:D-28); глобальный прогон по реальной экосистеме ещё не запускался"
 
 [[flow]]
 id = "notify.claude.ntfy"

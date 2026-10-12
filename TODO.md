@@ -5,11 +5,6 @@
 
 ## За автором
 
-- [ ] `М` Ветка `claude/dreamy-bardeen-xe4k6r` — невлитая; в ней вся
-      работа PR #1 (`claude/eager-wozniak-krzsx4`) и сверх неё. Вливается
-      только полностью проверенной (D-21, ответ автора 10 октября 2026) и
-      с его согласия. Пока она не влита, исходник схемы на сайте есть
-      только в невлитых ветках.
 - [ ] `М` Выгрузка сайта с разделом «Экосистема» — в SocialMediaImage, по его
       правилам и после «да» автора; перед выгрузкой — свежий срез и
       комплект (D-18, `docs/OPERATIONS.md`, раздел 4). После выгрузки —
@@ -17,34 +12,23 @@
 
 ## Вне репозитория — правят сессии тех репозиториев
 
-- [ ] `М` **DPmeta.** В ветке `claude/dreamy-bardeen-xe4k6r` — DPmetaApp,
-      DPvisualisation и DP_AI_Orcestrator в реестре, контракты C-11
-      («DPmeta → DPvisualisation») и C-12 («DPvisualisation → сайт»),
-      классификация автора; решения `DPmeta:M-12` (слой синхронизации),
-      `DPmeta:M-13` (правило вливания) и `DPmeta:SQ-29` (оркестратор в
-      составе DPmetaApp) — на них ссылаются D-21 и модель. Когда ветка
-      окажется в `main` DPmeta — здесь:
+- [ ] `М` **DPmeta.** В ветке `claude/dreamy-bardeen-xe4k6r` — DPmetaApp и
+      DPvisualisation в реестре, контракты C-11 («DPmeta → DPvisualisation»)
+      и C-12 («DPvisualisation → сайт»), классификация автора; решения
+      `DPmeta:M-12` (слой синхронизации) и `DPmeta:M-13` (правило
+      вливания) — на них ссылаются D-21 и модель. В реестре той ветки
+      DP_AI_Orcestrator ещё с `place = "core"`, а он заморожен
+      (`DPmetaApp:D-28`; здесь — в `[registry] exclude`, D-22): правка —
+      сессией DPmeta. Когда ветка окажется в `main` DPmeta — здесь:
       `contracts` у потоков `vis.dpmeta.dpvisualisation`,
-      `vis.dpvisualisation.smi` и `orc.dpmeta.orchestrator` (C-13 —
-      манифест `dpai.ecosystem`, `DPmeta:M-11`), иначе сбор покажет
+      `vis.dpvisualisation.smi` и `orc.dpmeta.dpmetaapp` (C-13 — манифест
+      `dpai.ecosystem`, `DPmeta:M-11`), иначе сбор покажет
       `CONTRACT_UNCOVERED`.
-- [ ] `М` **DPmetaApp.** ТЗ, решения и TODO приложения — в его ветке
-      `claude/dreamy-bardeen-xe4k6r` (взяты из `claude/vigilant-franklin-61x8kq`);
-      в `main` их нет. Ссылки модели `DPmetaApp:docs/direction/TECHNICAL_TASK.md`,
-      `DPmetaApp:D-23`…`DPmetaApp:D-27` ведут туда (пометки `note` у
-      `dpmetaapp`, `ntfy` и потоков `vis.dpvisualisation.dpmetaapp`,
-      `orc.orchestrator.dpmetaapp`, `app.github.dpmetaapp`). Живой
-      режим схемы — его задача (D-18, фаза B; с его стороны — `DPmetaApp:D-26`).
-- [ ] `М` **DP_AI_Orcestrator.** Строка состояния README («идут этапы 0 и
-      1…») расходится с разделом «Прогресс» (`DPmeta:SQ-26` в ветке
-      DPmeta). Своё Android-приложение (`DP_AI_Orcestrator:D-28`,
-      `DP_AI_Orcestrator:D-46`) расходится с ответом автора 10 октября
-      2026 «в составе DPmetaApp» (D-21, `DPmeta:SQ-29` в ветке DPmeta);
-      когда репозиторий оркестратора это запишет — здесь убрать поток
-      `orc.orchestrator.phone` или его пометку.
+- [ ] `М` **DPmetaApp.** Живой режим схемы — его задача (D-18, фаза B; с
+      его стороны — `DPmetaApp:D-26`).
 
 ## Долг
 
-- [ ] `М` Срез — на 10.10.2026, 13:35 UTC; следующий — перед выгрузкой сайта (D-18)
+- [ ] `М` Срез — на 12.10.2026, 13:45 UTC; следующий — перед выгрузкой сайта (D-18)
       или по `collect` (срез старше суток просмотрщик помечает «устарел»,
       F-31).

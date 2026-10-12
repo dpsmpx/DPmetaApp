@@ -1,12 +1,12 @@
 {
- "as_of": "2026-10-10T14:12:34Z",
+ "as_of": "2026-10-12T13:46:15Z",
  "diagnostics": [],
  "flows": {
   "app.dpmeta.dpmetaapp": {
    "state": "planned"
   },
   "app.dpmetaapp.phone": {
-   "state": "planned"
+   "state": "unobserved"
   },
   "app.github.dpmetaapp": {
    "state": "planned"
@@ -45,8 +45,6 @@
     0,
     0,
     0,
-    0,
-    0,
     7,
     5,
     2,
@@ -54,13 +52,15 @@
     0,
     0,
     2,
-    7
+    9,
+    2,
+    3
    ],
-   "last": "2026-10-10T13:33:23Z",
+   "last": "2026-10-12T12:16:38Z",
    "signal": "git-path",
    "state": "flowing",
-   "total": 23,
-   "week": 23
+   "total": 30,
+   "week": 16
   },
   "c02.galdhold.dplang": {
    "state": "blocked"
@@ -100,9 +100,9 @@
     0,
     0,
     0,
-    0,
-    0,
     7,
+    0,
+    0,
     0,
     0,
     0,
@@ -114,7 +114,7 @@
    "signal": "git-path",
    "state": "quiet",
    "total": 7,
-   "week": 7
+   "week": 0
   },
   "c04.dplang.smi": {
    "days": [
@@ -139,12 +139,12 @@
     0,
     0,
     0,
-    0,
-    0,
     7,
     7,
     1,
     1,
+    0,
+    0,
     0,
     0,
     0
@@ -153,7 +153,7 @@
    "signal": "git-path",
    "state": "quiet",
    "total": 16,
-   "week": 16
+   "week": 4
   },
   "c04.dppass.dpprofile": {
    "days": [
@@ -178,9 +178,9 @@
     0,
     0,
     0,
-    0,
-    0,
     7,
+    0,
+    0,
     0,
     0,
     0,
@@ -192,7 +192,7 @@
    "signal": "git-path",
    "state": "quiet",
    "total": 7,
-   "week": 7
+   "week": 0
   },
   "c04.galdhold.dpprofile": {
    "days": [
@@ -217,9 +217,9 @@
     0,
     0,
     0,
-    0,
-    0,
     7,
+    0,
+    0,
     0,
     0,
     0,
@@ -231,7 +231,7 @@
    "signal": "git-path",
    "state": "quiet",
    "total": 7,
-   "week": 7
+   "week": 0
   },
   "c04.galdhold.smi": {
    "days": [
@@ -256,12 +256,12 @@
     0,
     0,
     0,
-    0,
-    0,
     7,
     7,
     1,
     1,
+    0,
+    0,
     0,
     0,
     0
@@ -270,7 +270,7 @@
    "signal": "git-path",
    "state": "quiet",
    "total": 16,
-   "week": 16
+   "week": 4
   },
   "c09.compiler.site": {
    "state": "planned"
@@ -302,9 +302,9 @@
     0,
     0,
     0,
-    0,
-    0,
     1,
+    0,
+    0,
     0,
     0,
     0,
@@ -315,7 +315,7 @@
    "signal": "git-path",
    "state": "quiet",
    "total": 1,
-   "week": 1
+   "week": 0
   },
   "c10.dpprofile.smi": {
    "days": [
@@ -341,9 +341,9 @@
     0,
     0,
     0,
-    0,
-    0,
     1,
+    0,
+    0,
     0,
     0,
     0,
@@ -354,7 +354,7 @@
    "signal": "git-path",
    "state": "quiet",
    "total": 1,
-   "week": 1
+   "week": 0
   },
   "c10.github.smi": {
    "days": [
@@ -380,9 +380,9 @@
     0,
     0,
     0,
-    0,
-    0,
     1,
+    0,
+    0,
     0,
     0,
     0,
@@ -393,7 +393,7 @@
    "signal": "git-path",
    "state": "quiet",
    "total": 1,
-   "week": 1
+   "week": 0
   },
   "c10.smi.site": {
    "state": "planned"
@@ -423,8 +423,6 @@
     0,
     0,
     0,
-    0,
-    0,
     3,
     5,
     3,
@@ -432,13 +430,15 @@
     1,
     0,
     0,
-    7
+    8,
+    2,
+    2
    ],
-   "last": "2026-10-10T13:46:20Z",
+   "last": "2026-10-12T12:20:53Z",
    "signal": "git-commits",
    "state": "flowing",
-   "total": 19,
-   "week": 19
+   "total": 24,
+   "week": 13
   },
   "decide.dplearn": {
    "days": [
@@ -463,9 +463,9 @@
     0,
     0,
     0,
-    0,
-    0,
     1,
+    0,
+    0,
     0,
     0,
     0,
@@ -477,12 +477,10 @@
    "signal": "git-commits",
    "state": "quiet",
    "total": 1,
-   "week": 1
+   "week": 0
   },
   "decide.dpmeta": {
    "days": [
-    0,
-    0,
     0,
     0,
     0,
@@ -510,13 +508,15 @@
     0,
     0,
     0,
+    0,
+    0,
     0
    ],
    "last": "2026-10-05T15:43:45Z",
    "signal": "git-commits",
    "state": "quiet",
    "total": 4,
-   "week": 4
+   "week": 1
   },
   "decide.dpmetaapp": {
    "days": [
@@ -545,22 +545,20 @@
     0,
     0,
     0,
-    0,
-    0,
-    0,
-    0,
+    1,
+    3,
+    2,
+    3,
     0
    ],
-   "last": null,
+   "last": "2026-10-11T09:29:36Z",
    "signal": "git-commits",
-   "state": "quiet",
-   "total": 0,
-   "week": 0
+   "state": "flowing",
+   "total": 9,
+   "week": 9
   },
   "decide.dpmonetization": {
    "days": [
-    0,
-    0,
     0,
     0,
     0,
@@ -588,18 +586,18 @@
     0,
     0,
     0,
+    0,
+    0,
     0
    ],
    "last": "2026-10-05T10:50:07Z",
    "signal": "git-commits",
    "state": "quiet",
    "total": 1,
-   "week": 1
+   "week": 0
   },
   "decide.dppass": {
    "days": [
-    0,
-    0,
     0,
     0,
     0,
@@ -627,18 +625,18 @@
     0,
     0,
     0,
+    0,
+    0,
     0
    ],
    "last": "2026-10-06T12:36:55Z",
    "signal": "git-commits",
    "state": "quiet",
    "total": 34,
-   "week": 34
+   "week": 15
   },
   "decide.dpprofile": {
    "days": [
-    0,
-    0,
     0,
     0,
     0,
@@ -666,18 +664,18 @@
     0,
     0,
     0,
+    0,
+    0,
     0
    ],
    "last": "2026-10-04T19:34:51Z",
    "signal": "git-commits",
    "state": "quiet",
    "total": 3,
-   "week": 3
+   "week": 0
   },
   "decide.dpverify": {
    "days": [
-    0,
-    0,
     0,
     0,
     0,
@@ -705,13 +703,15 @@
     0,
     0,
     0,
+    0,
+    1,
     0
    ],
-   "last": "2026-10-06T12:28:06Z",
+   "last": "2026-10-11T16:08:19Z",
    "signal": "git-commits",
-   "state": "quiet",
-   "total": 11,
-   "week": 11
+   "state": "flowing",
+   "total": 12,
+   "week": 5
   },
   "decide.dpvisualisation": {
    "days": [
@@ -744,18 +744,16 @@
     0,
     0,
     0,
-    0
+    1
    ],
-   "last": null,
+   "last": "2026-10-12T13:38:34Z",
    "signal": "git-commits",
-   "state": "quiet",
-   "total": 0,
-   "week": 0
+   "state": "flowing",
+   "total": 1,
+   "week": 1
   },
   "decide.galdhold": {
    "days": [
-    4,
-    18,
     10,
     17,
     11,
@@ -783,13 +781,15 @@
     2,
     1,
     0,
+    8,
+    3,
     0
    ],
-   "last": "2026-10-08T11:12:37Z",
+   "last": "2026-10-11T16:55:30Z",
    "signal": "git-commits",
    "state": "flowing",
-   "total": 178,
-   "week": 17
+   "total": 167,
+   "week": 16
   },
   "decide.market": {
    "days": [
@@ -814,45 +814,7 @@
     0,
     0,
     0,
-    0,
-    0,
     1,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0
-   ],
-   "last": "2026-10-04T16:48:02Z",
-   "signal": "git-commits",
-   "state": "quiet",
-   "total": 1,
-   "week": 1
-  },
-  "decide.orchestrator": {
-   "days": [
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
     0,
     0,
     0,
@@ -860,19 +822,16 @@
     0,
     0,
     1,
-    2,
     0
    ],
-   "last": "2026-10-09T12:42:08Z",
+   "last": "2026-10-11T08:58:17Z",
    "signal": "git-commits",
    "state": "flowing",
-   "total": 3,
-   "week": 3
+   "total": 2,
+   "week": 1
   },
   "decide.smi": {
    "days": [
-    0,
-    0,
     0,
     0,
     0,
@@ -900,13 +859,15 @@
     1,
     0,
     0,
+    0,
+    0,
     0
    ],
    "last": "2026-10-07T04:58:52Z",
    "signal": "git-commits",
    "state": "quiet",
    "total": 23,
-   "week": 23
+   "week": 5
   },
   "deploy.phone.site": {
    "state": "unobserved"
@@ -934,12 +895,12 @@
     0,
     0,
     0,
-    0,
-    0,
     8,
     15,
     1,
     2,
+    0,
+    0,
     0,
     0,
     0
@@ -948,7 +909,7 @@
    "signal": "git-path",
    "state": "quiet",
    "total": 26,
-   "week": 26
+   "week": 7
   },
   "host.github.repos": {
    "state": "unobserved"
@@ -977,9 +938,9 @@
     0,
     0,
     0,
-    0,
-    0,
     3,
+    0,
+    0,
     0,
     0,
     0,
@@ -990,7 +951,7 @@
    "signal": "git-path",
    "state": "quiet",
    "total": 3,
-   "week": 3
+   "week": 0
   },
   "mon.dpmeta.dpmonetization": {
    "state": "planned"
@@ -1007,17 +968,11 @@
   "notify.ntfy.phone": {
    "state": "planned"
   },
-  "orc.dpmeta.orchestrator": {
+  "orc.dpmeta.dpmetaapp": {
    "state": "planned"
   },
-  "orc.orchestrator.claude": {
+  "orc.dpmetaapp.claude": {
    "state": "planned"
-  },
-  "orc.orchestrator.dpmetaapp": {
-   "state": "planned"
-  },
-  "orc.orchestrator.phone": {
-   "state": "unobserved"
   },
   "proc.dplang.dpverify": {
    "state": "unobserved"
@@ -1076,9 +1031,9 @@
     0,
     0,
     0,
-    0,
-    0,
     6,
+    0,
+    0,
     0,
     0,
     0,
@@ -1089,7 +1044,7 @@
    "signal": "git-path",
    "state": "quiet",
    "total": 6,
-   "week": 6
+   "week": 0
   },
   "vis.dpvisualisation.dpmetaapp": {
    "state": "planned"
@@ -1119,9 +1074,9 @@
     0,
     0,
     0,
-    0,
-    0,
     1,
+    0,
+    0,
     0,
     0,
     0,
@@ -1158,24 +1113,22 @@
     0,
     0,
     0,
+    2,
     0,
     0,
-    0,
-    0,
-    0,
+    2,
+    6,
     0,
     0
    ],
-   "last": null,
+   "last": "2026-10-10T14:12:51Z",
    "signal": "git-path",
-   "state": "quiet",
-   "total": 0,
-   "week": 0
+   "state": "flowing",
+   "total": 10,
+   "week": 10
   },
   "work.dplang": {
    "days": [
-    0,
-    0,
     0,
     0,
     0,
@@ -1203,18 +1156,18 @@
     7,
     0,
     15,
-    34
+    39,
+    10,
+    18
    ],
-   "last": "2026-10-10T13:51:10Z",
+   "last": "2026-10-12T12:16:38Z",
    "signal": "git-commits",
    "state": "flowing",
-   "total": 136,
-   "week": 136
+   "total": 169,
+   "week": 89
   },
   "work.dplearn": {
    "days": [
-    0,
-    0,
     0,
     0,
     0,
@@ -1242,18 +1195,18 @@
     0,
     0,
     0,
+    0,
+    0,
     0
    ],
    "last": "2026-10-04T15:24:09Z",
    "signal": "git-commits",
    "state": "quiet",
    "total": 3,
-   "week": 3
+   "week": 0
   },
   "work.dpmeta": {
    "days": [
-    0,
-    0,
     0,
     0,
     0,
@@ -1281,13 +1234,15 @@
     0,
     0,
     2,
-    7
+    7,
+    3,
+    3
    ],
-   "last": "2026-10-10T13:53:08Z",
+   "last": "2026-10-12T04:19:58Z",
    "signal": "git-commits",
    "state": "flowing",
-   "total": 17,
-   "week": 17
+   "total": 23,
+   "week": 15
   },
   "work.dpmetaapp": {
    "days": [
@@ -1313,20 +1268,20 @@
     0,
     0,
     0,
-    0,
-    0,
     3,
-    0,
-    0,
-    0,
-    1,
-    3
+    22,
+    46,
+    40,
+    51,
+    31,
+    34,
+    0
    ],
-   "last": "2026-10-10T13:51:17Z",
+   "last": "2026-10-11T16:46:50Z",
    "signal": "git-commits",
    "state": "flowing",
-   "total": 7,
-   "week": 7
+   "total": 227,
+   "week": 227
   },
   "work.dpmonetization": {
    "days": [
@@ -1352,25 +1307,23 @@
     0,
     0,
     0,
-    0,
-    0,
     1,
     0,
     0,
     0,
     0,
-    0
+    0,
+    0,
+    1
    ],
-   "last": "2026-10-05T10:41:46Z",
+   "last": "2026-10-12T04:30:49Z",
    "signal": "git-commits",
-   "state": "quiet",
-   "total": 1,
+   "state": "flowing",
+   "total": 2,
    "week": 1
   },
   "work.dppass": {
    "days": [
-    0,
-    0,
     0,
     0,
     0,
@@ -1398,18 +1351,18 @@
     2,
     0,
     0,
+    0,
+    0,
     0
    ],
    "last": "2026-10-07T00:17:33Z",
    "signal": "git-commits",
    "state": "quiet",
    "total": 85,
-   "week": 85
+   "week": 45
   },
   "work.dpprofile": {
    "days": [
-    0,
-    0,
     0,
     0,
     0,
@@ -1437,18 +1390,18 @@
     0,
     0,
     0,
+    0,
+    0,
     0
    ],
    "last": "2026-10-04T19:28:06Z",
    "signal": "git-commits",
    "state": "quiet",
    "total": 16,
-   "week": 16
+   "week": 0
   },
   "work.dpverify": {
    "days": [
-    0,
-    0,
     0,
     0,
     0,
@@ -1476,18 +1429,18 @@
     0,
     0,
     0,
+    0,
+    7,
     0
    ],
-   "last": "2026-10-06T16:20:25Z",
+   "last": "2026-10-11T16:03:47Z",
    "signal": "git-commits",
-   "state": "quiet",
-   "total": 40,
-   "week": 40
+   "state": "flowing",
+   "total": 47,
+   "week": 27
   },
   "work.dpvisualisation": {
    "days": [
-    0,
-    0,
     0,
     0,
     0,
@@ -1515,18 +1468,18 @@
     0,
     0,
     4,
-    5
+    6,
+    0,
+    0
    ],
-   "last": "2026-10-10T13:35:44Z",
+   "last": "2026-10-10T14:12:51Z",
    "signal": "git-commits",
    "state": "flowing",
-   "total": 16,
-   "week": 16
+   "total": 17,
+   "week": 17
   },
   "work.galdhold": {
    "days": [
-    13,
-    45,
     35,
     21,
     40,
@@ -1554,18 +1507,18 @@
     27,
     25,
     5,
-    30
+    46,
+    57,
+    10
    ],
-   "last": "2026-10-10T11:14:32Z",
+   "last": "2026-10-12T13:08:42Z",
    "signal": "git-commits",
    "state": "flowing",
-   "total": 722,
-   "week": 195
+   "total": 747,
+   "week": 188
   },
   "work.market": {
    "days": [
-    0,
-    0,
     0,
     0,
     0,
@@ -1593,57 +1546,18 @@
     0,
     0,
     0,
+    0,
+    11,
     0
    ],
-   "last": "2026-10-05T02:30:28Z",
-   "signal": "git-commits",
-   "state": "quiet",
-   "total": 8,
-   "week": 8
-  },
-  "work.orchestrator": {
-   "days": [
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    22,
-    46,
-    42,
-    50,
-    22
-   ],
-   "last": "2026-10-10T13:17:00Z",
+   "last": "2026-10-11T09:24:50Z",
    "signal": "git-commits",
    "state": "flowing",
-   "total": 182,
-   "week": 182
+   "total": 19,
+   "week": 11
   },
   "work.smi": {
    "days": [
-    0,
-    0,
     0,
     0,
     0,
@@ -1671,13 +1585,15 @@
     2,
     0,
     1,
-    7
+    8,
+    0,
+    0
    ],
-   "last": "2026-10-10T13:49:06Z",
+   "last": "2026-10-10T14:18:41Z",
    "signal": "git-commits",
    "state": "flowing",
-   "total": 86,
-   "week": 86
+   "total": 87,
+   "week": 23
   }
  },
  "generated_by": {
@@ -1686,24 +1602,22 @@
   "version": "1.0.0"
  },
  "model": {
-  "as_of": "2026-10-10",
-  "sha256": "29092c83b3946308d186aab6d08c71488bb7016ff8075dd60655ff4c0477bd82"
+  "as_of": "2026-10-12",
+  "sha256": "b15738973dfab95247d6cb08b845966d18bdd2b6e090f715d4636b550a480cc5"
  },
  "nodes": {
   "author": {
    "activity": {
-    "last": "2026-10-10T13:46:20Z",
+    "last": "2026-10-12T13:38:34Z",
     "reasons": [
      {
-      "hours": 0.44,
+      "hours": 0.13,
       "rule": "author"
      }
     ],
     "state": "working"
    },
    "days": [
-    6,
-    18,
     10,
     17,
     11,
@@ -1730,24 +1644,24 @@
     44,
     4,
     4,
-    2,
-    7
+    3,
+    18,
+    10,
+    3
    ]
   },
   "claude": {
    "activity": {
-    "last": "2026-10-10T13:53:08Z",
+    "last": "2026-10-12T13:08:42Z",
     "reasons": [
      {
-      "hours": 0.32,
+      "hours": 0.63,
       "rule": "claude"
      }
     ],
     "state": "working"
    },
    "days": [
-    13,
-    45,
     35,
     21,
     40,
@@ -1773,9 +1687,11 @@
     140,
     105,
     84,
-    67,
+    65,
     78,
-    108
+    137,
+    122,
+    32
    ]
   },
   "compiler": {
@@ -1794,33 +1710,19 @@
   },
   "dplang": {
    "activity": {
-    "last": "2026-10-10T13:51:10Z",
+    "last": "2026-10-12T12:20:53Z",
     "reasons": [
      {
-      "hours": 0.44,
+      "hours": 1.42,
       "rule": "main"
-     },
-     {
-      "branch": "ccr-e8cdc9d7-loyx3g",
-      "hours": 0.36,
-      "rule": "branch"
      }
     ],
     "state": "working"
    },
    "git": {
-    "branches": [
-     {
-      "ahead": 1,
-      "method": "cherry",
-      "name": "ccr-e8cdc9d7-loyx3g",
-      "time": "2026-10-10T13:51:10Z"
-     }
-    ],
+    "branches": [],
     "days": {
      "ai": [
-      0,
-      0,
       0,
       0,
       0,
@@ -1848,7 +1750,9 @@
       7,
       0,
       15,
-      33
+      39,
+      10,
+      18
      ],
      "human": [
       0,
@@ -1871,9 +1775,9 @@
       0,
       0,
       0,
-      0,
-      0,
       1,
+      0,
+      0,
       0,
       0,
       0,
@@ -1903,8 +1807,6 @@
       0,
       0,
       0,
-      0,
-      0,
       3,
       5,
       3,
@@ -1912,13 +1814,13 @@
       1,
       0,
       0,
-      7
+      8,
+      2,
+      2
      ]
     },
     "days_all": {
      "ai": [
-      0,
-      0,
       0,
       0,
       0,
@@ -1946,11 +1848,11 @@
       7,
       0,
       15,
-      34
+      39,
+      10,
+      18
      ],
      "human": [
-      0,
-      0,
       0,
       0,
       0,
@@ -1978,18 +1880,20 @@
       0,
       0,
       0,
+      0,
+      0,
       0
      ]
     },
     "first_time": "2026-10-03T16:12:20Z",
-    "head": "5323f2f9ec82dd19a4fe022dc1b6c046b4486057",
-    "head_time": "2026-10-10T13:46:20Z",
+    "head": "b525c5f333c7de7fe1219d9605c5325975dbd0a3",
+    "head_time": "2026-10-12T12:20:53Z",
     "history": "complete",
     "ref": "origin/main",
     "window": {
-     "ai": 135,
+     "ai": 169,
      "human": 1,
-     "merges": 19
+     "merges": 24
     }
    }
   },
@@ -2024,9 +1928,9 @@
       0,
       0,
       0,
-      0,
-      0,
       3,
+      0,
+      0,
       0,
       0,
       0,
@@ -2056,9 +1960,9 @@
       0,
       0,
       0,
-      0,
-      0,
       1,
+      0,
+      0,
       0,
       0,
       0,
@@ -2088,9 +1992,9 @@
       0,
       0,
       0,
-      0,
-      0,
       1,
+      0,
+      0,
       0,
       0,
       0,
@@ -2122,9 +2026,9 @@
       0,
       0,
       0,
-      0,
-      0,
       3,
+      0,
+      0,
       0,
       0,
       0,
@@ -2154,9 +2058,9 @@
       0,
       0,
       0,
-      0,
-      0,
       1,
+      0,
+      0,
       0,
       0,
       0,
@@ -2179,11 +2083,11 @@
   },
   "dpmeta": {
    "activity": {
-    "last": "2026-10-10T13:53:08Z",
+    "last": "2026-10-12T04:19:58Z",
     "reasons": [
      {
-      "branch": "claude/dreamy-bardeen-xe4k6r",
-      "hours": 0.32,
+      "branch": "ccr-ddc9eb14-p13f4u",
+      "hours": 9.44,
       "rule": "branch"
      }
     ],
@@ -2191,6 +2095,12 @@
    },
    "git": {
     "branches": [
+     {
+      "ahead": 15,
+      "method": "cherry",
+      "name": "ccr-ddc9eb14-p13f4u",
+      "time": "2026-10-12T04:19:58Z"
+     },
      {
       "ahead": 9,
       "method": "cherry",
@@ -2222,9 +2132,9 @@
       0,
       0,
       0,
-      0,
-      0,
       8,
+      0,
+      0,
       0,
       0,
       0,
@@ -2254,9 +2164,9 @@
       0,
       0,
       0,
-      0,
-      0,
       1,
+      0,
+      0,
       0,
       0,
       0,
@@ -2264,8 +2174,6 @@
       0
      ],
      "merges": [
-      0,
-      0,
       0,
       0,
       0,
@@ -2293,13 +2201,13 @@
       0,
       0,
       0,
+      0,
+      0,
       0
      ]
     },
     "days_all": {
      "ai": [
-      0,
-      0,
       0,
       0,
       0,
@@ -2327,215 +2235,8 @@
       0,
       0,
       2,
-      7
-     ],
-     "human": [
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      1,
-      0,
-      0,
-      0,
-      0,
-      0
-     ]
-    },
-    "first_time": "2026-10-05T02:02:55Z",
-    "head": "fec807c51db9ad7eda6dbc1a8751518c3b394403",
-    "head_time": "2026-10-05T15:43:45Z",
-    "history": "complete",
-    "ref": "origin/main",
-    "window": {
-     "ai": 8,
-     "human": 1,
-     "merges": 4
-    }
-   }
-  },
-  "dpmetaapp": {
-   "activity": {
-    "last": "2026-10-10T13:51:17Z",
-    "reasons": [
-     {
-      "branch": "claude/dreamy-bardeen-xe4k6r",
-      "hours": 0.35,
-      "rule": "branch"
-     }
-    ],
-    "state": "working"
-   },
-   "git": {
-    "branches": [
-     {
-      "ahead": 7,
-      "method": "cherry",
-      "name": "claude/dreamy-bardeen-xe4k6r",
-      "time": "2026-10-10T13:51:17Z"
-     },
-     {
-      "ahead": 3,
-      "method": "cherry",
-      "name": "claude/vigilant-franklin-61x8kq",
-      "time": "2026-10-05T18:45:59Z"
-     },
-     {
-      "ahead": 1,
-      "method": "cherry",
-      "name": "ccr-273c59ab-oj8683",
-      "time": "2026-10-05T17:23:21Z"
-     }
-    ],
-    "days": {
-     "ai": [
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0
-     ],
-     "human": [
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      1,
+      7,
       3,
-      0,
-      0,
-      0,
-      0
-     ],
-     "merges": [
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0
-     ]
-    },
-    "days_all": {
-     "ai": [
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      3,
-      0,
-      0,
-      0,
-      1,
       3
      ],
      "human": [
@@ -2561,36 +2262,61 @@
       0,
       0,
       0,
-      0,
-      0,
       1,
-      3,
+      0,
+      0,
+      0,
       0,
       0,
       0,
       0
      ]
     },
-    "first_time": "2026-10-05T12:27:23Z",
-    "head": "4dcc27a9608bca89b254a3458dd3108317ab95c7",
-    "head_time": "2026-10-06T09:04:26Z",
+    "first_time": "2026-10-05T02:02:55Z",
+    "head": "fec807c51db9ad7eda6dbc1a8751518c3b394403",
+    "head_time": "2026-10-05T15:43:45Z",
     "history": "complete",
     "ref": "origin/main",
     "window": {
-     "ai": 0,
-     "human": 4,
-     "merges": 0
+     "ai": 8,
+     "human": 1,
+     "merges": 4
     }
    }
   },
-  "dpmonetization": {
+  "dpmetaapp": {
    "activity": {
-    "last": "2026-10-05T10:50:07Z",
-    "reasons": [],
-    "state": "idle"
+    "last": "2026-10-11T16:46:50Z",
+    "reasons": [
+     {
+      "branch": "claude/stage2-formats",
+      "hours": 20.99,
+      "rule": "branch"
+     }
+    ],
+    "state": "working"
    },
    "git": {
-    "branches": [],
+    "branches": [
+     {
+      "ahead": 10,
+      "method": "cherry",
+      "name": "claude/stage2-formats",
+      "time": "2026-10-11T16:46:50Z"
+     },
+     {
+      "ahead": 2,
+      "method": "cherry",
+      "name": "ccr-ac186f97-v71g2m",
+      "time": "2026-10-11T04:48:53Z"
+     },
+     {
+      "ahead": 2,
+      "method": "cherry",
+      "name": "apk-0.1.0-dev.1-2026-10-11",
+      "time": "2026-10-11T04:47:59Z"
+     }
+    ],
     "days": {
      "ai": [
       0,
@@ -2615,13 +2341,13 @@
       0,
       0,
       0,
-      0,
-      0,
-      1,
-      0,
-      0,
-      0,
-      0,
+      3,
+      22,
+      46,
+      40,
+      51,
+      31,
+      20,
       0
      ],
      "human": [
@@ -2647,9 +2373,9 @@
       0,
       0,
       0,
-      0,
-      0,
       1,
+      5,
+      0,
       0,
       0,
       0,
@@ -2681,7 +2407,204 @@
       0,
       0,
       0,
+      0,
       1,
+      3,
+      2,
+      3,
+      0
+     ]
+    },
+    "days_all": {
+     "ai": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      3,
+      22,
+      46,
+      40,
+      51,
+      31,
+      34,
+      0
+     ],
+     "human": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      5,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+     ]
+    },
+    "first_time": "2026-10-05T12:27:23Z",
+    "head": "4116a95e8ae905d5f6924a0beeb38a6abda6b091",
+    "head_time": "2026-10-11T09:29:36Z",
+    "history": "complete",
+    "ref": "origin/main",
+    "window": {
+     "ai": 213,
+     "human": 6,
+     "merges": 9
+    }
+   }
+  },
+  "dpmonetization": {
+   "activity": {
+    "last": "2026-10-12T04:30:49Z",
+    "reasons": [
+     {
+      "branch": "ccr-0895c63e-uprau7",
+      "hours": 9.26,
+      "rule": "branch"
+     }
+    ],
+    "state": "working"
+   },
+   "git": {
+    "branches": [
+     {
+      "ahead": 1,
+      "method": "cherry",
+      "name": "ccr-0895c63e-uprau7",
+      "time": "2026-10-12T04:30:49Z"
+     }
+    ],
+    "days": {
+     "ai": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+     ],
+     "human": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+     ],
+     "merges": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      0,
       0,
       0,
       0,
@@ -2713,14 +2636,14 @@
       0,
       0,
       0,
-      0,
-      0,
       1,
       0,
       0,
       0,
       0,
-      0
+      0,
+      0,
+      1
      ],
      "human": [
       0,
@@ -2745,9 +2668,9 @@
       0,
       0,
       0,
-      0,
-      0,
       1,
+      0,
+      0,
       0,
       0,
       0,
@@ -2847,11 +2770,11 @@
       0,
       0,
       0,
-      0,
-      0,
       28,
       15,
       23,
+      0,
+      0,
       0,
       0,
       0,
@@ -2879,11 +2802,11 @@
       0,
       0,
       0,
-      0,
-      0,
       1,
       24,
       17,
+      0,
+      0,
       0,
       0,
       0,
@@ -2911,11 +2834,11 @@
       0,
       0,
       0,
-      0,
-      0,
       13,
       8,
       13,
+      0,
+      0,
       0,
       0,
       0,
@@ -2945,12 +2868,12 @@
       0,
       0,
       0,
-      0,
-      0,
       29,
       18,
       36,
       2,
+      0,
+      0,
       0,
       0,
       0
@@ -2977,11 +2900,11 @@
       0,
       0,
       0,
-      0,
-      0,
       1,
       24,
       17,
+      0,
+      0,
       0,
       0,
       0,
@@ -3031,9 +2954,9 @@
       0,
       0,
       0,
-      0,
-      0,
       16,
+      0,
+      0,
       0,
       0,
       0,
@@ -3063,9 +2986,9 @@
       0,
       0,
       0,
-      0,
-      0,
       1,
+      0,
+      0,
       0,
       0,
       0,
@@ -3095,9 +3018,9 @@
       0,
       0,
       0,
-      0,
-      0,
       3,
+      0,
+      0,
       0,
       0,
       0,
@@ -3129,9 +3052,9 @@
       0,
       0,
       0,
-      0,
-      0,
       16,
+      0,
+      0,
       0,
       0,
       0,
@@ -3161,9 +3084,9 @@
       0,
       0,
       0,
-      0,
-      0,
       1,
+      0,
+      0,
       0,
       0,
       0,
@@ -3186,19 +3109,12 @@
   },
   "dpverify": {
    "activity": {
-    "last": "2026-10-06T16:20:25Z",
+    "last": "2026-10-11T16:08:19Z",
     "reasons": [],
     "state": "idle"
    },
    "git": {
-    "branches": [
-     {
-      "ahead": 3,
-      "method": "cherry",
-      "name": "ccr-7383aef4-f5kzg5",
-      "time": "2026-10-06T16:20:25Z"
-     }
-    ],
+    "branches": [],
     "days": {
      "ai": [
       0,
@@ -3222,14 +3138,14 @@
       0,
       0,
       0,
-      0,
-      0,
       1,
       18,
-      17,
+      20,
       0,
       0,
       0,
+      0,
+      7,
       0
      ],
      "human": [
@@ -3254,9 +3170,9 @@
       0,
       0,
       0,
-      0,
-      0,
       1,
+      0,
+      0,
       0,
       0,
       0,
@@ -3265,8 +3181,6 @@
       0
      ],
      "merges": [
-      0,
-      0,
       0,
       0,
       0,
@@ -3294,13 +3208,13 @@
       0,
       0,
       0,
+      0,
+      1,
       0
      ]
     },
     "days_all": {
      "ai": [
-      0,
-      0,
       0,
       0,
       0,
@@ -3328,11 +3242,11 @@
       0,
       0,
       0,
+      0,
+      7,
       0
      ],
      "human": [
-      0,
-      0,
       0,
       0,
       0,
@@ -3360,48 +3274,36 @@
       0,
       0,
       0,
+      0,
+      0,
       0
      ]
     },
     "first_time": "2026-10-04T12:56:31Z",
-    "head": "5ad8f2bf42fec6b7592854a4a2313f1f939165e4",
-    "head_time": "2026-10-06T12:28:06Z",
+    "head": "6c57f07c76415531a459e069815691a410173dc1",
+    "head_time": "2026-10-11T16:08:19Z",
     "history": "complete",
     "ref": "origin/main",
     "window": {
-     "ai": 36,
+     "ai": 46,
      "human": 1,
-     "merges": 11
+     "merges": 12
     }
    }
   },
   "dpvisualisation": {
    "activity": {
-    "last": "2026-10-10T13:35:44Z",
+    "last": "2026-10-12T13:38:34Z",
     "reasons": [
      {
-      "branch": "claude/dreamy-bardeen-xe4k6r",
-      "hours": 0.61,
-      "rule": "branch"
+      "hours": 0.13,
+      "rule": "main"
      }
     ],
     "state": "working"
    },
    "git": {
-    "branches": [
-     {
-      "ahead": 16,
-      "method": "cherry",
-      "name": "claude/dreamy-bardeen-xe4k6r",
-      "time": "2026-10-10T13:35:44Z"
-     },
-     {
-      "ahead": 7,
-      "method": "cherry",
-      "name": "claude/eager-wozniak-krzsx4",
-      "time": "2026-10-06T18:02:10Z"
-     }
-    ],
+    "branches": [],
     "days": {
      "ai": [
       0,
@@ -3427,11 +3329,11 @@
       0,
       0,
       0,
+      7,
       0,
       0,
-      0,
-      0,
-      0,
+      4,
+      6,
       0,
       0
      ],
@@ -3458,9 +3360,9 @@
       0,
       0,
       0,
-      0,
-      0,
       1,
+      0,
+      0,
       0,
       0,
       0,
@@ -3497,7 +3399,7 @@
       0,
       0,
       0,
-      0
+      1
      ]
     },
     "days_all": {
@@ -3525,17 +3427,15 @@
       0,
       0,
       0,
-      0,
-      0,
       7,
       0,
       0,
       4,
-      5
+      6,
+      0,
+      0
      ],
      "human": [
-      0,
-      0,
       0,
       0,
       0,
@@ -3563,28 +3463,30 @@
       0,
       0,
       0,
+      0,
+      0,
       0
      ]
     },
     "first_time": "2026-10-05T18:00:26Z",
-    "head": "9769a94de29f9c586ac60e3730d82accfb92cc99",
-    "head_time": "2026-10-05T18:00:26Z",
+    "head": "763467582269002e8932312f1991361116ff40fd",
+    "head_time": "2026-10-12T13:38:34Z",
     "history": "complete",
     "ref": "origin/main",
     "window": {
-     "ai": 0,
+     "ai": 17,
      "human": 1,
-     "merges": 0
+     "merges": 1
     }
    }
   },
   "galdhold": {
    "activity": {
-    "last": "2026-10-10T11:14:32Z",
+    "last": "2026-10-12T13:08:42Z",
     "reasons": [
      {
       "branch": "ccr-abb64cd1-cs6at9",
-      "hours": 2.97,
+      "hours": 0.63,
       "rule": "branch"
      }
     ],
@@ -3593,22 +3495,16 @@
    "git": {
     "branches": [
      {
-      "ahead": 45,
+      "ahead": 33,
       "method": "cherry",
       "name": "ccr-abb64cd1-cs6at9",
-      "time": "2026-10-10T11:14:32Z"
+      "time": "2026-10-12T13:08:42Z"
      },
      {
-      "ahead": 34,
+      "ahead": 1,
       "method": "cherry",
-      "name": "ccr-57d4e84e-nic7vb",
-      "time": "2026-10-10T09:42:31Z"
-     },
-     {
-      "ahead": 31,
-      "method": "cherry",
-      "name": "claude/sleepy-gauss-ooaa8u",
-      "time": "2026-10-10T05:52:39Z"
+      "name": "apk-build-967d8ed",
+      "time": "2026-10-10T19:05:30Z"
      },
      {
       "ahead": 1,
@@ -3617,22 +3513,10 @@
       "time": "2026-10-09T17:04:10Z"
      },
      {
-      "ahead": 5,
-      "method": "cherry",
-      "name": "ccr-c1dd1da2-l1hs1t",
-      "time": "2026-10-08T12:01:09Z"
-     },
-     {
       "ahead": 1,
       "method": "cherry",
       "name": "apk-build-c0d23c3",
       "time": "2026-10-08T01:10:16Z"
-     },
-     {
-      "ahead": 6,
-      "method": "cherry",
-      "name": "ccr-7383aef4-dpverify-pilot",
-      "time": "2026-10-06T16:18:31Z"
      },
      {
       "ahead": 1,
@@ -3649,8 +3533,6 @@
     ],
     "days": {
      "ai": [
-      13,
-      45,
       35,
       21,
       40,
@@ -3674,15 +3556,15 @@
       108,
       32,
       32,
-      9,
+      15,
       27,
-      19,
-      0,
+      24,
+      4,
+      45,
+      34,
       0
      ],
      "human": [
-      2,
-      0,
       0,
       0,
       0,
@@ -3710,11 +3592,11 @@
       0,
       2,
       0,
+      0,
+      0,
       0
      ],
      "merges": [
-      4,
-      18,
       10,
       17,
       11,
@@ -3742,13 +3624,13 @@
       2,
       1,
       0,
+      8,
+      3,
       0
      ]
     },
     "days_all": {
      "ai": [
-      13,
-      45,
       35,
       21,
       40,
@@ -3776,11 +3658,11 @@
       27,
       25,
       5,
-      30
+      46,
+      57,
+      10
      ],
      "human": [
-      2,
-      0,
       0,
       0,
       0,
@@ -3808,18 +3690,20 @@
       0,
       2,
       0,
+      0,
+      0,
       0
      ]
     },
     "first_time": "2026-09-11T12:59:45Z",
-    "head": "517e41118f3894b4e5f985e4843e2a263d73de58",
-    "head_time": "2026-10-08T16:14:35Z",
+    "head": "579ee018497beab0be26427c1eaad2670af17f4e",
+    "head_time": "2026-10-11T16:55:30Z",
     "history": "complete",
     "ref": "origin/main",
     "window": {
-     "ai": 673,
-     "human": 69,
-     "merges": 178
+     "ai": 709,
+     "human": 67,
+     "merges": 167
     }
    }
   },
@@ -3832,12 +3716,18 @@
   },
   "market": {
    "activity": {
-    "last": "2026-10-05T02:30:28Z",
+    "last": "2026-10-11T09:24:50Z",
     "reasons": [],
     "state": "idle"
    },
    "git": {
     "branches": [
+     {
+      "ahead": 6,
+      "method": "cherry",
+      "name": "ccr-f363af81-brt8py",
+      "time": "2026-10-11T09:24:50Z"
+     },
      {
       "ahead": 1,
       "method": "cherry",
@@ -3868,14 +3758,14 @@
       0,
       0,
       0,
-      0,
-      0,
       7,
       0,
       0,
       0,
       0,
       0,
+      0,
+      5,
       0
      ],
      "human": [
@@ -3900,9 +3790,9 @@
       0,
       0,
       0,
-      0,
-      0,
       1,
+      0,
+      0,
       0,
       0,
       0,
@@ -3932,21 +3822,19 @@
       0,
       0,
       0,
-      0,
-      0,
       1,
       0,
       0,
       0,
       0,
       0,
+      0,
+      1,
       0
      ]
     },
     "days_all": {
      "ai": [
-      0,
-      0,
       0,
       0,
       0,
@@ -3974,6 +3862,8 @@
       0,
       0,
       0,
+      0,
+      11,
       0
      ],
      "human": [
@@ -3998,9 +3888,9 @@
       0,
       0,
       0,
-      0,
-      0,
       1,
+      0,
+      0,
       0,
       0,
       0,
@@ -4010,14 +3900,14 @@
      ]
     },
     "first_time": "2026-10-04T15:43:21Z",
-    "head": "2fd2abef3c9686594af598fc6fc1d53d9269ba19",
-    "head_time": "2026-10-04T16:48:02Z",
+    "head": "9edf18c1a85f825fdb75572e9319606ba21cec75",
+    "head_time": "2026-10-11T08:58:17Z",
     "history": "complete",
     "ref": "origin/main",
     "window": {
-     "ai": 7,
+     "ai": 12,
      "human": 1,
-     "merges": 1
+     "merges": 2
     }
    }
   },
@@ -4026,209 +3916,6 @@
     "last": null,
     "reasons": [],
     "state": "planned"
-   }
-  },
-  "orchestrator": {
-   "activity": {
-    "last": "2026-10-10T13:17:00Z",
-    "reasons": [
-     {
-      "branch": "claude/nice-gates-flj2u8",
-      "hours": 0.93,
-      "rule": "branch"
-     }
-    ],
-    "state": "working"
-   },
-   "git": {
-    "branches": [
-     {
-      "ahead": 28,
-      "method": "cherry",
-      "name": "claude/nice-gates-flj2u8",
-      "time": "2026-10-10T13:17:00Z"
-     },
-     {
-      "ahead": 2,
-      "method": "cherry",
-      "name": "apk-0.1.0-dev.1",
-      "time": "2026-10-08T14:55:44Z"
-     }
-    ],
-    "days": {
-     "ai": [
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      22,
-      46,
-      40,
-      44,
-      0
-     ],
-     "human": [
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      2,
-      0,
-      0,
-      0,
-      0
-     ],
-     "merges": [
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      1,
-      2,
-      0
-     ]
-    },
-    "days_all": {
-     "ai": [
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      22,
-      46,
-      42,
-      50,
-      22
-     ],
-     "human": [
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      0,
-      2,
-      0,
-      0,
-      0,
-      0
-     ]
-    },
-    "first_time": "2026-10-06T09:16:22Z",
-    "head": "5108df481aba6aafbfd5cb3745ed8bd7d3034e0a",
-    "head_time": "2026-10-09T12:42:08Z",
-    "history": "complete",
-    "ref": "origin/main",
-    "window": {
-     "ai": 152,
-     "human": 2,
-     "merges": 3
-    }
    }
   },
   "phone": {
@@ -4247,29 +3934,21 @@
   },
   "smi": {
    "activity": {
-    "last": "2026-10-10T13:49:06Z",
-    "reasons": [
-     {
-      "branch": "claude/dreamy-bardeen-xe4k6r",
-      "hours": 0.39,
-      "rule": "branch"
-     }
-    ],
-    "state": "working"
+    "last": "2026-10-10T14:18:41Z",
+    "reasons": [],
+    "state": "idle"
    },
    "git": {
     "branches": [
      {
-      "ahead": 8,
+      "ahead": 9,
       "method": "cherry",
       "name": "claude/dreamy-bardeen-xe4k6r",
-      "time": "2026-10-10T13:49:06Z"
+      "time": "2026-10-10T14:18:41Z"
      }
     ],
     "days": {
      "ai": [
-      0,
-      0,
       0,
       0,
       0,
@@ -4297,11 +3976,11 @@
       2,
       0,
       0,
+      0,
+      0,
       0
      ],
      "human": [
-      0,
-      0,
       0,
       0,
       0,
@@ -4329,11 +4008,11 @@
       0,
       0,
       0,
+      0,
+      0,
       0
      ],
      "merges": [
-      0,
-      0,
       0,
       0,
       0,
@@ -4359,6 +4038,8 @@
       14,
       3,
       1,
+      0,
+      0,
       0,
       0,
       0
@@ -4387,15 +4068,15 @@
       0,
       0,
       0,
-      0,
-      0,
       27,
       44,
       5,
       2,
       0,
       1,
-      7
+      8,
+      0,
+      0
      ],
      "human": [
       0,
@@ -4419,11 +4100,11 @@
       0,
       0,
       0,
-      0,
-      0,
       1,
       2,
       1,
+      0,
+      0,
       0,
       0,
       0,
@@ -4518,7 +4199,7 @@
   "contracts_excluded": [
    "C-08"
   ],
-  "exclude_reason": "архив: проекты до репозитория игры (11.09.2026) — в схеме только текущая система (решение автора 9 октября 2026)",
+  "exclude_reason": "архив: проекты до репозитория игры (11.09.2026) — в схеме только текущая система (решение автора 9 октября 2026); DP_AI_Orcestrator заморожен — его код и работа в DPmetaApp, dpai/ (DPmetaApp:D-28, D-22)",
   "excluded": [
    "dpsmpx/Andors-Love",
    "dpsmpx/TrueJointTileMaker"
@@ -4526,7 +4207,6 @@
   "missing_in_model": [],
   "node": "dpmeta",
   "not_in_registry": [
-   "dpsmpx/DP_AI_Orcestrator",
    "dpsmpx/DPmetaApp",
    "dpsmpx/DPvisualisation"
   ],
@@ -4543,8 +4223,8 @@
  "schema": "dpvis-state/1",
  "window": {
   "days": 30,
-  "end": "2026-10-10",
-  "start": "2026-09-11",
+  "end": "2026-10-12",
+  "start": "2026-09-13",
   "timezone": "+03:00"
  }
 }
