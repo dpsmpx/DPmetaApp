@@ -65,11 +65,12 @@
 | DP_game_market_analytic_system | `ADR-001`…`ADR-010` (`docs/DECISIONS.md`) | инварианты `INV-NN` | латиница |
 | DPmonetization | журнала нет; код ссылается на `D-04`…`D-09` (SQ-22) | критерии готовности `tech.core_loop`… (`config/tracks.toml`) | латиница |
 | DPmetaApp | `D-01`…`D-29` — `docs/direction/DECISIONS.md` (в `main` с 11 октября 2026, SQ-27); у подсистемы `dpai/` — свой журнал, извне — `DP_AI_Orcestrator:D-NN` | — | латиница |
-| DPvisualisation | `D-01`…`D-20` — `docs/direction/DECISIONS.md` (в невлитой ветке, SQ-25) | ТЗ: `G-`, `S-`, `F-`, `N-`, `I-`, `T-`, `A-`, `L-`, `R-`, `Q-` | латиница |
-| DP_AI_Orcestrator | `D-01`…`D-49` — `docs/direction/DECISIONS.md` | — | латиница |
+| DPvisualisation | `D-01`…`D-21` — `docs/direction/DECISIONS.md` (в невлитой ветке, SQ-25) | ТЗ: `G-`, `S-`, `F-`, `N-`, `I-`, `T-`, `A-`, `L-`, `R-`, `Q-` | латиница |
+| DP_AI_Orcestrator | `D-01`…`D-54` — `docs/direction/DECISIONS.md` (репозиторий заморожен; журнал продолжает подсистема `dpai/` DPmetaApp) | — | латиница |
 | DPmeta | `M-NN` | `C-NN`, `RISK-NN`, `SQ-NN`, `E-NN`; находки аудита документации `DOC-AUDIT-NNN` (у каждого проекта свой счёт) и `CROSS-DOC-NNN` (M-09) | латиница |
 
 Диапазоны — на 5 октября 2026, у новых репозиториев — на 9 октября 2026;
+у DPmetaApp, DPvisualisation и DP_AI_Orcestrator — на 11 октября 2026;
 растут, и это нормально.
 
 **Наблюдения:**
