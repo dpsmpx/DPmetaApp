@@ -17,7 +17,7 @@
   Порядок на своей машине:
   1. `git pull`.
   2. Прочитать статью — `content/items/CI-0003-neyroseti-i-neyroplastichnost/variants/website.ru.md`
-     (v2: только две правки по В7) или на staging (`python3 -m tools.cs
+     (v3: правки по В7 и по критике — приняты автором 12.10.2026) или на staging (`python3 -m tools.cs
      site serve` → `/articles/neyroseti-i-neyroplastichnost/`) — и критику
      (`docs/content/products/articles/neyroseti-i-neyroplastichnost/CRITIQUE.md`).
   3. Одобрить: `python3 -m tools.cs approve CI-0003 website.ru` (Д12;

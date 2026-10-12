@@ -59,7 +59,7 @@ claims:
 - fact: TJTM-PORT
 canonical:
   lang: ru
-  current: 2
+  current: 3
   versions:
   - version: 1
     file: canonical/v1.md
@@ -85,6 +85,18 @@ canonical:
       releases: {}
       datasets:
         '2026-10-05': eb5bdad921bccc6e
+  - version: 3
+    file: canonical/v3.md
+    date: 2026-10-12
+    note: 'ревизия по критике отдельным проходом (CRITIQUE.md): правки текста приняты автором 12.10.2026 (C3-1, C3-2,
+      C3-7, C3-8, C3-9); разметка для телефона (C3-3); claims — по C3-2 и C3-4'
+    sha256: 0d907bdff8044ec77236d76880db6234d4dfa5c1a7305bb36501fe59134c5596
+    deps:
+      facts: {}
+      links: {}
+      releases: {}
+      datasets:
+        '2026-10-05': eb5bdad921bccc6e
 source_projects:
 - galdhold
 - dplang
@@ -93,7 +105,64 @@ provenance: provenance.yaml
 targets:
 - variant: website.ru
   destination: site-production
-state: GENERATED
+state: UNDER_REVIEW
+review:
+  file: docs/content/products/articles/neyroseti-i-neyroplastichnost/CRITIQUE.md
+  scores:
+    website.ru:
+      factuality: 3
+      identity_fit: 4
+      visual_quality: 4
+      communication: 4
+      platform_fit: 4
+      strategic_value: 5
+  issues:
+    major:
+    - id: C3-1
+      variant: website.ru
+      text: дата среза (5 октября) видна только в конце; «за последние 24 дня» читается от даты публикации
+      status: fixed
+      resolution: 'решение автора 12.10.2026: «— по 5 октября 2026 года —» в начале (подстановка period_end), канон v3'
+    - id: C3-2
+      variant: website.ru
+      text: замысел DPlearn и DP-Verify подан как работающий механизм (LRN-STAGE, VRF-STAGE)
+      status: fixed
+      resolution: 'решение автора 12.10.2026: «должна помогать», «задуман проверять», фраза «своих целей в DPlearn
+        пока нет»; LRN-STAGE и VRF-STAGE — в claims; канон v3'
+    minor:
+    - id: C3-3
+      variant: website.ru
+      text: однострочные блоки кода, фраза в блоке кода, длинные строки схемы на 390 px
+      status: fixed
+      resolution: курсив вместо однострочных блоков, переносы в схеме, `DPlearn` в заголовке — канон v3
+    - id: C3-4
+      text: CORE-SCALE-2026-10-05 нет в claims; строки 182, 382–384 без факта
+      status: fixed
+      resolution: CORE-SCALE-2026-10-05 в claims; факты META-SOT (M-02) и META-PROCESS (M-04, E-01) по DPmeta fec807c
+    - id: C3-5
+      text: бриф §2 и история объекта отстают от 12.10
+      status: fixed
+      resolution: бриф §2 — по фактам 12.10.2026; история — канон v2, критика, ревизия
+    - id: C3-6
+      variant: website.ru
+      text: «коммерческий и профильный контуры» — какой проект коммерческий
+      status: accepted
+      resolution: 'ответ автора 12.10.2026: это Galdhold (коммерческая версия, GH-STAGES) — оставить'
+    - id: C3-7
+      variant: website.ru
+      text: «Основание кейса» — источники закрыты, сверка 12.10 не видна
+      status: fixed
+      resolution: строка «Репозитории закрыты; утверждения о проектах сверены с первоисточниками 12 октября 2026 года»
+    - id: C3-8
+      variant: website.ru
+      text: формулировки сильнее наблюдения («эксперимент», «уже тренирует», «саморазвивающуюся», «очень сильная идея»)
+      status: fixed
+      resolution: правки приняты автором 12.10.2026 — канон v3
+    - id: C3-9
+      variant: website.ru
+      text: «AI-assisted cognitive engineering» — у термина другой устоявшийся смысл
+      status: fixed
+      resolution: оговорка «в другом смысле, чем классическая cognitive engineering» — канон v3
 history:
 - date: '2026-10-05'
   state: IDEA
@@ -112,3 +181,14 @@ history:
   note: 'генерации нет — текст автора: канон v1 с разметкой (заголовки, списки, схемы — блоки кода), период
     — подстановкой; вариант website.ru — тот же текст. Дальше — критика отдельным проходом, ревизия по
     решениям автора (бриф, §2)'
+- date: '2026-10-12'
+  state: UNDER_REVIEW
+  note: 'канон v2 и website.ru v2 — правки автора по В7; факты GH-COMBAT, DP-COMPILER, DP-DOCS, META-SYNC, TJTM-PORT;
+    критика отдельным проходом (CRITIQUE.md): fatal нет, major C3-1, C3-2'
+- date: '2026-10-12'
+  state: REVISED
+  note: 'канон v3 и website.ru v3: правки текста приняты автором (C3-1, C3-2, C3-7, C3-8, C3-9), C3-6 — оставить
+    (Galdhold); разметка C3-3; claims и факты META-SOT, META-PROCESS (C3-4)'
+- date: '2026-10-12'
+  state: UNDER_REVIEW
+  note: повторный проход по ревизии — CRITIQUE.md, «Ревизия»; дальше — одобрение автора (Д12)

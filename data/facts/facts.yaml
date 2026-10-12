@@ -724,6 +724,33 @@ facts:
       en: ["a reconciliation queue and cross-repository audits"]
     evidence:
       - {kind: doc, source: "dpsmpx/DPmeta docs/DECISIONS.md M-03, docs/SYNC_QUEUE.md, docs/reports/2026-10-05-*-xref.md", ref: "fec807c", date: 2026-10-12, verification: reported}
+  - id: META-SOT
+    subject: dpmeta
+    class: FACT
+    risk: low
+    public: true
+    statement: >-
+      Принцип DPmeta (M-02): о себе каждый репозиторий — сам себе источник истины; DPmeta описывает только
+      то, что между ними, и при расхождении с репозиторием исправляется сам.
+    allowed_wording:
+      ru: ["каждый репозиторий сам является источником истины о себе, а мета-уровень хранит только знание о связях между репозиториями"]
+      en: ["each repository is the source of truth about itself; the meta level only knows the links between them"]
+    evidence:
+      - {kind: decision, source: "dpsmpx/DPmeta README.md; docs/DECISIONS.md M-02", ref: "fec807c", date: 2026-10-12, verification: decision}
+  - id: META-PROCESS
+    subject: dpmeta
+    class: FACT
+    risk: low
+    public: true
+    statement: >-
+      В DPmeta записаны правила для активных веток (M-04: перед правкой — ветки, открытые PR и активные
+      сессии; активный репозиторий — только чтение) и общие принципы репозиториев, среди них журнал решений
+      как источник истины (E-01, docs/PRINCIPLES.md).
+    allowed_wording:
+      ru: ["правила активных веток", "единая модель решений"]
+      en: ["rules for active branches", "a shared decision model"]
+    evidence:
+      - {kind: decision, source: "dpsmpx/DPmeta docs/DECISIONS.md M-04; docs/PRINCIPLES.md E-01", ref: "fec807c", date: 2026-10-12, verification: decision}
   - id: META-STAGE
     subject: dpmeta
     class: FACT
