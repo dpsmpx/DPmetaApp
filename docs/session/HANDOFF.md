@@ -1,5 +1,9 @@
 # Передача между сессиями
 
+**Перед выгрузкой сайта (12.10.2026) — вопросы автору:**
+`docs/session/2026-10-12-DEPLOY_QUESTIONS.md`. Задать по порядку, ответы
+записать в `DECISIONS.md` и `TODO.md`.
+
 Дополнение 12.10.2026, та же сессия, ветка `claude/dreamy-bardeen-xe4k6r`
 (без выгрузки). DPvisualisation и DPmetaApp автор и другая сессия влили;
 в DPmetaApp — «всё в одном» (его D-28): DP_AI_Orcestrator — подсистема в
