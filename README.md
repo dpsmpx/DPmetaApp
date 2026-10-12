@@ -64,7 +64,9 @@ DP_AI_Orcestrator и связи схемы сайта
 DP_AI_Orcestrator вошёл в DPmetaApp, и после пилотов DP-Verify
 ([`docs/reports/2026-10-11-ECOSYSTEM_HEALTH.md`](docs/reports/2026-10-11-ECOSYSTEM_HEALTH.md));
 12 октября — проверка отдельным проходом всех веток прохода и исправления
-([`docs/reports/2026-10-12-ECOSYSTEM_HEALTH.md`](docs/reports/2026-10-12-ECOSYSTEM_HEALTH.md))
-и второй круг проверки
-([`docs/reports/2026-10-12-2-ECOSYSTEM_HEALTH.md`](docs/reports/2026-10-12-2-ECOSYSTEM_HEALTH.md)).
+([`docs/reports/2026-10-12-ECOSYSTEM_HEALTH.md`](docs/reports/2026-10-12-ECOSYSTEM_HEALTH.md)),
+второй круг проверки
+([`docs/reports/2026-10-12-2-ECOSYSTEM_HEALTH.md`](docs/reports/2026-10-12-2-ECOSYSTEM_HEALTH.md))
+и третий
+([`docs/reports/2026-10-12-3-ECOSYSTEM_HEALTH.md`](docs/reports/2026-10-12-3-ECOSYSTEM_HEALTH.md)).
 Аудит согласованности документации (M-09) ещё не запускался.
