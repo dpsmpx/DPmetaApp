@@ -1,0 +1,1406 @@
+# Модель экосистемы dpsmpx — источник (D-02).
+#
+# Узлы — то, между чем течёт информация; потоки — направленные связи
+# «от → к». У каждого узла и потока — ссылки на источники в форме
+# `Проект:путь` или `Проект:номер` (DPmeta:C-06): о проекте прав его
+# репозиторий, о связях — DPmeta (D-01). Каталоги видов, состояний,
+# транспорта и сигналов — ТЗ, §8, и tools/dpvis/model.py.
+#
+# После правки: python3 -m tools.dpvis model build — собирает
+# data/model.json; tools/check/run.sh сверяет, что сборка не отстала.
+#
+# Поля узла: id, name, kind, layer, role, refs; у репозитория — repo
+# (slug GitHub), group, visibility, stage; status (active | planned |
+# blocked | off, по умолчанию active), note, row. Источник данных — только
+# история git клонов: сайт и сервисы не опрашиваются (D-19).
+#
+# Поля потока: id, from, to, kind, what, transport, refs и/или contracts;
+# status, driver, trigger, format, note, bidirectional, via, signal.
+
+schema = 1
+title = "Экосистема dpsmpx"
+as_of = "2026-10-10"
+timezone = "+03:00"
+sources = [
+  "DPmeta:docs/ECOSYSTEM.md",
+  "DPmeta:docs/CONTRACTS.md",
+  "DPmeta:tools/ecosystem.toml",
+  "DPmetaApp:docs/direction/TECHNICAL_TASK.md",
+  "DPmetaApp:MESTER_TECHNICAL_TASK_ROADMAP.md",
+  "DP_AI_Orcestrator:README.md",
+  "SocialMediaImage:Д43",
+  "SocialMediaImage:docs/platforms/WEBSITE.md",
+  "SocialMediaImage:data/platforms/destinations.yaml",
+  "SocialMediaImage:data/progress/scope.yaml",
+]
+
+[allow]
+# К сайту и сервисам DPvisualisation не обращается (D-19): адресов нет.
+hosts = []
+
+[registry]
+# Откуда сборщик берёт реестр и контракты DPmeta для сверки (D-11, F-18).
+node = "dpmeta"
+path = "tools/ecosystem.toml"
+contracts = "docs/CONTRACTS.md"
+# Архив вне текущей системы (D-20): в реестре DPmeta есть, в модели — нет.
+exclude = ["dpsmpx/Andors-Love", "dpsmpx/TrueJointTileMaker"]
+exclude_contracts = ["C-08"]
+exclude_reason = "архив: проекты до репозитория игры (11.09.2026) — в схеме только текущая система (решение автора 9 октября 2026)"
+
+# ------------------------------------------------------------------ слои
+# Порядок — порядок колонок схемы слева направо (ТЗ, §8.2).
+
+[[layer]]
+id = "control"
+name = "Управление"
+
+[[layer]]
+id = "actors"
+name = "Участники"
+
+[[layer]]
+id = "product"
+name = "Продукты"
+
+[[layer]]
+id = "engineering"
+name = "Инструменты и обеспечение"
+
+[[layer]]
+id = "knowledge"
+name = "Знание и публикация"
+
+[[layer]]
+id = "meta"
+name = "Синхронизация"
+
+[[layer]]
+id = "infra"
+name = "Инфраструктура"
+
+[[layer]]
+id = "outside"
+name = "Площадки и внешнее"
+
+# ================================================================== узлы
+# ------------------------------------------------------------ участники
+
+[[node]]
+id = "author"
+name = "Автор"
+kind = "actor"
+layer = "actors"
+role = "замысел, решения, ответы на вопросы, вливание PR, одобрение публикаций и «да» на выгрузку сайта"
+public_role = "замысел и решения: задачи, ответы на вопросы, вливание PR, одобрение публикаций"
+refs = ["DPmeta:E-02", "DPmeta:C-07", "SocialMediaImage:Д36"]
+
+[[node]]
+id = "claude"
+name = "Сессии Claude Code"
+kind = "actor"
+layer = "actors"
+role = "облачные сессии ИИ: ветки, коммиты и PR во всех репозиториях; проверки — командой в сессии, без GitHub Actions"
+public_role = "облачные сессии ИИ: ветки, коммиты и PR во всех репозиториях"
+refs = ["DPmeta:E-07", "DPmeta:E-08", "DPmetaApp:docs/direction/TECHNICAL_TASK.md"]
+
+# ------------------------------------------------------------- продукты
+
+[[node]]
+id = "galdhold"
+name = "Galdhold"
+kind = "repo"
+layer = "product"
+repo = "dpsmpx/Galdhold"
+group = "core"
+visibility = "private"
+role = "воксельная action-RPG и её движок; Android и Windows"
+stage = "этапы 1–4 закрыты, идёт этап 5 — версия 1 и выпуск"
+public_role = "воксельная action-RPG с открытым процедурным миром"
+public_stage = "закрыты этапы: движок, живое поселение, регионы; идёт подготовка версии 1"
+refs = ["DPmeta:docs/ECOSYSTEM.md", "Galdhold:README.md"]
+
+[[node]]
+id = "dplang"
+name = "DPlang"
+kind = "repo"
+layer = "product"
+repo = "dpsmpx/DPlang"
+group = "core"
+visibility = "private"
+role = "системный язык общего назначения, компилятор в C11 и toolchain"
+stage = "v0.1 — шаги 1–8 из 13, C-бэкенд готов"
+public_role = "собственный язык программирования"
+public_stage = "ранняя стадия: выбран синтаксис, начат компилятор"
+refs = ["DPmeta:docs/ECOSYSTEM.md", "DPlang:README.md"]
+
+[[node]]
+id = "dppass"
+name = "DPpass"
+kind = "repo"
+layer = "product"
+repo = "dpsmpx/DPpass"
+group = "core"
+visibility = "undisclosed"
+role = "клиент прокси/VPN для Android: своя модель конфигурации, маршрутизации и подписок"
+stage = "этап 1 из 5 выполнен, идёт этап 2"
+refs = ["DPmeta:docs/ECOSYSTEM.md", "DPpass:README.md", "SocialMediaImage:data/progress/scope.yaml"]
+
+# ---------------------------------------------------- инженерная основа
+
+[[node]]
+id = "dpverify"
+name = "DP-Verify"
+kind = "repo"
+layer = "engineering"
+repo = "dpsmpx/DP-Verify"
+group = "core"
+visibility = "private"
+role = "общий каркас инженерных проверок и process-kit для репозиториев автора"
+stage = "0.3.0: этапы 0–3; потребителей ещё нет"
+public_role = "общий каркас проверок для репозиториев автора"
+public_stage = "версия 0.3.0: этапы 0–3 из 0–8"
+refs = ["DPmeta:docs/ECOSYSTEM.md", "DP-Verify:README.md"]
+
+[[node]]
+id = "orchestrator"
+name = "DP_AI_Orcestrator"
+kind = "repo"
+layer = "engineering"
+repo = "dpsmpx/DP_AI_Orcestrator"
+group = "core"
+visibility = "private"
+role = "control plane для параллельных сессий Claude Code: задачи и их зависимости, аккаунты, исполнители (Termux, Linux, Windows), контекст и handoff, проверка результата; управление — из Android-приложения"
+stage = "V1: выполнено этапов 15 из 21 (README, «Прогресс»); приложение проверяется на телефоне автора"
+public_role = "управляющий слой для параллельных сессий ИИ: задачи, контекст, проверка результата"
+public_stage = "первая версия в разработке"
+note = "один из основных инструментов системы (решение автора 9 октября 2026); войдёт в DPmetaApp, отдельным приложением не будет (ответ автора 10 октября 2026, D-21; DPmeta:SQ-29 в ветке DPmeta); в реестре DPmeta — в его ветке (Q-03)"
+refs = ["DP_AI_Orcestrator:README.md", "DP_AI_Orcestrator:D-01", "DP_AI_Orcestrator:docs/ECOSYSTEM.md", "SocialMediaImage:data/facts/facts.yaml"]
+
+# -------------------------------------------------- знание и публикация
+
+[[node]]
+id = "dpprofile"
+name = "DPprofile"
+kind = "repo"
+layer = "knowledge"
+repo = "dpsmpx/DPprofile"
+group = "core"
+visibility = "private"
+role = "проверяемая история пути автора: источники, факты, хронология, выводы"
+stage = "этап 4 из 6"
+public_role = "проверяемая история пути разработки — источники, факты, хронология"
+public_stage = "выполнено 4 этапа из 6"
+refs = ["DPmeta:docs/ECOSYSTEM.md", "DPprofile:README.md"]
+
+[[node]]
+id = "smi"
+name = "SocialMediaImage"
+kind = "repo"
+layer = "knowledge"
+repo = "dpsmpx/SocialMediaImage"
+group = "core"
+visibility = "private"
+role = "производство, проверка и публикация контента автора; сайт dpsmpx.com и страница прогресса"
+stage = "сайт выпущен 05.10.2026; фаза «Сайт MVP»"
+public_role = "система контента и сайт dpsmpx.com"
+public_stage = "сайт выгружен на хостинг 5 октября 2026"
+refs = ["DPmeta:docs/ECOSYSTEM.md", "SocialMediaImage:README.md"]
+
+[[node]]
+id = "dplearn"
+name = "DPlearn"
+kind = "repo"
+layer = "knowledge"
+repo = "dpsmpx/DPlearn"
+group = "core"
+visibility = "private"
+role = "персональная система обучения: «освоено» вычисляется из доказательств"
+stage = "0.1.0"
+public_role = "система обучения, где «освоено» вычисляется из доказательств"
+public_stage = "версия 0.1.0: ядро и пилотный домен"
+refs = ["DPmeta:docs/ECOSYSTEM.md", "DPlearn:README.md"]
+
+[[node]]
+id = "market"
+name = "DP_game_market_analytic_system"
+kind = "repo"
+layer = "knowledge"
+repo = "dpsmpx/DP_game_market_analytic_system"
+group = "core"
+visibility = "private"
+role = "воспроизводимый анализ рынка игр: наблюдения → факты → метрики → гипотезы → решения"
+stage = "0.1.0; CLI нет"
+public_role = "воспроизводимый анализ рынка игр"
+public_stage = "написаны фазы 0–6 из 0–10"
+refs = ["DPmeta:docs/ECOSYSTEM.md", "DP_game_market_analytic_system:docs/ARCHITECTURE.md"]
+
+[[node]]
+id = "dpmonetization"
+name = "DPmonetization"
+kind = "repo"
+layer = "engineering"
+repo = "dpsmpx/DPmonetization"
+group = "support"
+visibility = "private"
+role = "Strategic Project Intelligence — анализ портфеля проектов; поддерживающий слой"
+stage = "каркас ядра без тестов"
+public_role = "анализ портфеля проектов: от доказательств к решению"
+public_stage = "каркас ядра"
+note = "поддерживающий слой (решение автора 9 октября 2026)"
+refs = ["DPmeta:docs/ECOSYSTEM.md", "DPmonetization:tools/dpmon/__init__.py"]
+
+# ---------------------------------------------------- слой синхронизации
+
+[[node]]
+id = "dpmeta"
+name = "DPmeta"
+kind = "repo"
+layer = "meta"
+repo = "dpsmpx/DPmeta"
+group = "sync"
+visibility = "private"
+role = "слой синхронизации: карта репозиториев, контракты, имена, принципы, риски, очередь согласований"
+stage = "три прохода 5.10.2026"
+public_role = "карта экосистемы, контракты между репозиториями и риски"
+public_stage = "три прохода по экосистеме — 5 октября 2026"
+note = "слой синхронизации (ответ автора 10 октября 2026, DPvisualisation:D-21); в DPmeta — M-12 в ветке claude/dreamy-bardeen-xe4k6r DPmeta"
+refs = ["DPmeta:README.md", "DPmeta:M-01"]
+
+# ------------------------------------------------------------ управление
+
+[[node]]
+id = "dpmetaapp"
+name = "DPmetaApp"
+kind = "repo"
+layer = "control"
+repo = "dpsmpx/DPmetaApp"
+group = "control"
+visibility = "private"
+role = "управление экосистемой: мета-приложение автора для Android над законченными системами — содержит системы активных репозиториев в себе (с DP_AI_Orcestrator), общее состояние, события, знания, проверки; живой режим схемы DPvisualisation — здесь"
+stage = "в main — мастер-ТЗ экосистемы: сначала довести каждый проект до законченной системы, затем строить приложение; ТЗ самого приложения — черновик в невлитой ветке"
+public_role = "управление экосистемой: пульт автора для Android"
+public_stage = "этап ТЗ"
+note = "управление экосистемой — выделено своим слоем (решение автора 9 октября 2026); системы активных репозиториев — внутри (ответ автора 10 октября 2026, D-21; DPmetaApp:D-27); ТЗ, решения и TODO приложения — в ветке claude/dreamy-bardeen-xe4k6r DPmetaApp, в main их нет"
+refs = ["DPmetaApp:README.md", "DPmetaApp:MESTER_TECHNICAL_TASK_ROADMAP.md", "DPmetaApp:docs/direction/TECHNICAL_TASK.md", "DPmetaApp:D-25", "DPvisualisation:D-21"]
+
+# ---------------------------------------------------- поддерживающий слой
+
+[[node]]
+id = "dpvisualisation"
+name = "DPvisualisation"
+kind = "repo"
+layer = "engineering"
+repo = "dpsmpx/DPvisualisation"
+group = "support"
+visibility = "private"
+role = "поддерживающий слой: модель экосистемы — проекты, участники и потоки работы по истории git; публичная выжимка — схема сайта; живой режим — в DPmetaApp (D-18)"
+stage = "версия 1.0: модель, сборщик, просмотрщик без анимаций, живой режим, комплект для сайта"
+public_role = "интерактивная модель экосистемы на реальных данных — эта схема"
+public_stage = "версия 1.0"
+note = "поддерживающий слой (решение автора 9 октября 2026); данные только собирает, ничем не управляет"
+refs = ["DPvisualisation:docs/direction/REQUEST.md", "DPvisualisation:D-01", "DPvisualisation:ROADMAP/ROADMAP.md"]
+
+# ------------------------------------------------------ инфраструктура
+
+[[node]]
+id = "github"
+name = "GitHub"
+kind = "service"
+layer = "infra"
+role = "хранилище репозиториев, ветки и PR; GitHub Actions не используются"
+public_role = "хранилище репозиториев, ветки и PR"
+refs = ["DPmeta:E-07", "DPmeta:E-08"]
+
+[[node]]
+id = "site"
+name = "Сайт dpsmpx.com"
+kind = "service"
+layer = "infra"
+visibility = "public"
+role = "статический сайт на хостинге Beget: главная, проекты, лента, /api/v1/; HTTPS, с HTTP — перенаправление"
+public_role = "статический сайт: главная, проекты, лента, экосистема, открытый API"
+refs = ["SocialMediaImage:docs/platforms/WEBSITE.md", "SocialMediaImage:Д32", "SocialMediaImage:Д35", "SocialMediaImage:TODO.md"]
+note = "DPvisualisation сайт не опрашивает (D-19): схему сайт забирает перед выгрузкой"
+
+[[node]]
+id = "phone"
+name = "Телефон автора (Termux)"
+kind = "device"
+layer = "infra"
+role = "Android с Termux: ярлык выгрузки сайта, проверка сборок Galdhold; здесь будет DPmetaApp"
+refs = ["SocialMediaImage:tools/termux/dpsmpx-site-deploy.sh", "Galdhold:README.md", "DPmetaApp:docs/direction/TECHNICAL_TASK.md"]
+
+[[node]]
+id = "compiler"
+name = "Онлайн-компилятор DPlang"
+kind = "service"
+layer = "infra"
+status = "planned"
+role = "компиляция программ на сервере по HTTP, только диагностика, без исполнения; запуск выключен"
+public_role = "компиляция программ на сервере — в плане"
+note = "вторая сторона и инфраструктура не определены (DPmeta:RISK-09)"
+refs = ["DPmeta:C-09", "DPmeta:RISK-09"]
+
+[[node]]
+id = "ntfy"
+name = "Мгновенный канал (ntfy)"
+kind = "service"
+layer = "infra"
+status = "planned"
+role = "UnifiedPush через ntfy: события «Claude закончил ответ» и другие — на телефон"
+note = "источник — ТЗ и решение DPmetaApp:D-23 в ветке claude/dreamy-bardeen-xe4k6r DPmetaApp (наработки claude/vigilant-franklin-61x8kq), в main их нет"
+refs = ["DPmetaApp:docs/direction/TECHNICAL_TASK.md", "DPmetaApp:D-23"]
+
+# ------------------------------------------------- площадки и внешнее
+
+[[node]]
+id = "telegram"
+name = "Telegram"
+kind = "platform"
+layer = "outside"
+visibility = "public"
+role = "личный канал и канал-дневник Galdhold"
+public_role = "канал автора и канал-дневник Galdhold"
+refs = ["SocialMediaImage:data/platforms/destinations.yaml", "SocialMediaImage:data/identity/links.yaml"]
+
+[[node]]
+id = "youtube"
+name = "YouTube"
+kind = "platform"
+layer = "outside"
+visibility = "public"
+role = "канал @dpsmpx"
+public_role = "канал @dpsmpx"
+refs = ["SocialMediaImage:data/platforms/destinations.yaml", "SocialMediaImage:data/identity/links.yaml"]
+
+[[node]]
+id = "vk"
+name = "VK"
+kind = "platform"
+layer = "outside"
+visibility = "public"
+role = "сообщество dpsmpx — публикации только там; личная страница — не канал"
+public_role = "сообщество dpsmpx"
+refs = ["SocialMediaImage:data/platforms/destinations.yaml", "SocialMediaImage:data/identity/links.yaml", "SocialMediaImage:Д40"]
+
+[[node]]
+id = "tiktok"
+name = "TikTok"
+kind = "platform"
+layer = "outside"
+visibility = "public"
+role = "короткие вертикальные видео"
+public_role = "короткие вертикальные видео"
+refs = ["SocialMediaImage:data/platforms/destinations.yaml", "SocialMediaImage:data/identity/links.yaml"]
+
+[[node]]
+id = "discord"
+name = "Discord"
+kind = "platform"
+layer = "outside"
+status = "planned"
+visibility = "public"
+role = "сервер сообщества — ещё не создан"
+public_role = "сервер сообщества — ещё не создан"
+refs = ["SocialMediaImage:data/platforms/destinations.yaml"]
+
+[[node]]
+id = "steam"
+name = "Steam"
+kind = "platform"
+layer = "outside"
+status = "planned"
+visibility = "public"
+role = "магазин первого выпуска Galdhold на Windows"
+public_role = "магазин первого выпуска Galdhold"
+refs = ["Galdhold:README.md"]
+
+[[node]]
+id = "xray"
+name = "Xray-core"
+kind = "upstream"
+layer = "outside"
+visibility = "public"
+role = "внешнее ядро прокси (XTLS), собирается в процесс приложения с набором геоданных"
+refs = ["DPpass:README.md"]
+
+# ================================================================ потоки
+# ------------------------------------------- работа сессий Claude Code
+# Сигнал — коммиты ИИ во всех ветках репозитория (F-12, F-15).
+
+[[flow]]
+id = "work.galdhold"
+from = "claude"
+to = "galdhold"
+kind = "work"
+what = "ветки, коммиты и PR сессий"
+public_what = "коммиты и PR сессий ИИ"
+transport = "git"
+trigger = "поручение автора сессии"
+refs = ["DPmeta:E-08"]
+signal = { type = "git-commits", repo = "galdhold", who = "ai", scope = "all" }
+
+[[flow]]
+id = "work.dplang"
+from = "claude"
+to = "dplang"
+kind = "work"
+what = "ветки, коммиты и PR сессий"
+public_what = "коммиты и PR сессий ИИ"
+transport = "git"
+trigger = "поручение автора сессии"
+refs = ["DPmeta:E-08"]
+signal = { type = "git-commits", repo = "dplang", who = "ai", scope = "all" }
+
+[[flow]]
+id = "work.dppass"
+from = "claude"
+to = "dppass"
+kind = "work"
+what = "ветки, коммиты и PR сессий"
+transport = "git"
+trigger = "поручение автора сессии"
+refs = ["DPmeta:E-08"]
+signal = { type = "git-commits", repo = "dppass", who = "ai", scope = "all" }
+
+[[flow]]
+id = "work.dpverify"
+from = "claude"
+to = "dpverify"
+kind = "work"
+what = "ветки, коммиты и PR сессий"
+public_what = "коммиты и PR сессий ИИ"
+transport = "git"
+trigger = "поручение автора сессии"
+refs = ["DPmeta:E-08"]
+signal = { type = "git-commits", repo = "dpverify", who = "ai", scope = "all" }
+
+[[flow]]
+id = "work.dpprofile"
+from = "claude"
+to = "dpprofile"
+kind = "work"
+what = "ветки, коммиты и PR сессий"
+public_what = "коммиты и PR сессий ИИ"
+transport = "git"
+trigger = "поручение автора сессии"
+refs = ["DPmeta:E-08"]
+signal = { type = "git-commits", repo = "dpprofile", who = "ai", scope = "all" }
+
+[[flow]]
+id = "work.smi"
+from = "claude"
+to = "smi"
+kind = "work"
+what = "ветки, коммиты и PR сессий"
+public_what = "коммиты и PR сессий ИИ"
+transport = "git"
+trigger = "поручение автора сессии"
+refs = ["DPmeta:E-08"]
+signal = { type = "git-commits", repo = "smi", who = "ai", scope = "all" }
+
+[[flow]]
+id = "work.dplearn"
+from = "claude"
+to = "dplearn"
+kind = "work"
+what = "ветки, коммиты и PR сессий"
+public_what = "коммиты и PR сессий ИИ"
+transport = "git"
+trigger = "поручение автора сессии"
+refs = ["DPmeta:E-08"]
+signal = { type = "git-commits", repo = "dplearn", who = "ai", scope = "all" }
+
+[[flow]]
+id = "work.market"
+from = "claude"
+to = "market"
+kind = "work"
+what = "ветки, коммиты и PR сессий"
+public_what = "коммиты и PR сессий ИИ"
+transport = "git"
+trigger = "поручение автора сессии"
+refs = ["DP_game_market_analytic_system:docs/HANDOFF.md"]
+signal = { type = "git-commits", repo = "market", who = "ai", scope = "all" }
+
+[[flow]]
+id = "work.dpmonetization"
+from = "claude"
+to = "dpmonetization"
+kind = "work"
+what = "ветки, коммиты и PR сессий"
+public_what = "коммиты и PR сессий ИИ"
+transport = "git"
+trigger = "поручение автора сессии"
+refs = ["DPmeta:docs/ECOSYSTEM.md"]
+signal = { type = "git-commits", repo = "dpmonetization", who = "ai", scope = "all" }
+
+[[flow]]
+id = "work.dpmeta"
+from = "claude"
+to = "dpmeta"
+kind = "work"
+what = "мета-проходы и аудит документации"
+public_what = "проходы по экосистеме и аудит документации"
+transport = "git"
+trigger = "поручение автора: проход DPmeta"
+refs = ["DPmeta:docs/PROCESS.md", "DPmeta:M-04"]
+signal = { type = "git-commits", repo = "dpmeta", who = "ai", scope = "all" }
+
+[[flow]]
+id = "work.dpmetaapp"
+from = "claude"
+to = "dpmetaapp"
+kind = "work"
+what = "ветки, коммиты и PR сессий"
+public_what = "коммиты и PR сессий ИИ"
+transport = "git"
+trigger = "поручение автора сессии"
+refs = ["DPmetaApp:README.md"]
+signal = { type = "git-commits", repo = "dpmetaapp", who = "ai", scope = "all" }
+
+[[flow]]
+id = "work.dpvisualisation"
+from = "claude"
+to = "dpvisualisation"
+kind = "work"
+what = "ветки, коммиты и PR сессий"
+public_what = "коммиты и PR сессий ИИ"
+transport = "git"
+trigger = "поручение автора сессии"
+refs = ["DPvisualisation:docs/direction/REQUEST.md"]
+signal = { type = "git-commits", repo = "dpvisualisation", who = "ai", scope = "all" }
+
+[[flow]]
+id = "work.orchestrator"
+from = "claude"
+to = "orchestrator"
+kind = "work"
+what = "ветки, коммиты и PR сессий"
+public_what = "коммиты и PR сессий ИИ"
+transport = "git"
+trigger = "поручение автора сессии"
+refs = ["DP_AI_Orcestrator:README.md"]
+signal = { type = "git-commits", repo = "orchestrator", who = "ai", scope = "all" }
+
+# --------------------------------------- решения автора и вливание PR
+# Сигнал — коммиты вливания в основной ветке (F-12).
+
+[[flow]]
+id = "decide.galdhold"
+from = "author"
+to = "galdhold"
+kind = "decision"
+what = "решения, ответы на вопросы, вливание PR"
+public_what = "решения автора и вливание PR"
+transport = "git"
+trigger = "PR сессии готов к вливанию"
+refs = ["DPmeta:E-01", "DPmeta:E-02"]
+signal = { type = "git-commits", repo = "galdhold", who = "merge" }
+
+[[flow]]
+id = "decide.dplang"
+from = "author"
+to = "dplang"
+kind = "decision"
+what = "решения, ответы на вопросы, вливание PR"
+public_what = "решения автора и вливание PR"
+transport = "git"
+trigger = "PR сессии готов к вливанию"
+refs = ["DPmeta:E-01", "DPmeta:E-02"]
+signal = { type = "git-commits", repo = "dplang", who = "merge" }
+
+[[flow]]
+id = "decide.dppass"
+from = "author"
+to = "dppass"
+kind = "decision"
+what = "решения, ответы на вопросы, вливание PR"
+transport = "git"
+trigger = "PR сессии готов к вливанию"
+refs = ["DPmeta:E-01", "DPmeta:E-02"]
+signal = { type = "git-commits", repo = "dppass", who = "merge" }
+
+[[flow]]
+id = "decide.dpverify"
+from = "author"
+to = "dpverify"
+kind = "decision"
+what = "решения, ответы на вопросы, вливание PR"
+public_what = "решения автора и вливание PR"
+transport = "git"
+trigger = "PR сессии готов к вливанию"
+refs = ["DPmeta:E-01", "DPmeta:E-02"]
+signal = { type = "git-commits", repo = "dpverify", who = "merge" }
+
+[[flow]]
+id = "decide.dpprofile"
+from = "author"
+to = "dpprofile"
+kind = "decision"
+what = "решения, ответы на вопросы, вливание PR"
+public_what = "решения автора и вливание PR"
+transport = "git"
+trigger = "PR сессии готов к вливанию"
+refs = ["DPmeta:E-01", "DPmeta:E-02"]
+signal = { type = "git-commits", repo = "dpprofile", who = "merge" }
+
+[[flow]]
+id = "decide.smi"
+from = "author"
+to = "smi"
+kind = "decision"
+what = "решения, одобрение версий контента, вливание PR"
+public_what = "решения, одобрение публикаций, вливание PR"
+transport = "git"
+trigger = "PR сессии готов; одобрение — в терминале автора"
+refs = ["DPmeta:E-01", "SocialMediaImage:Д12"]
+signal = { type = "git-commits", repo = "smi", who = "merge" }
+
+[[flow]]
+id = "decide.dplearn"
+from = "author"
+to = "dplearn"
+kind = "decision"
+what = "решения, вливание PR; данные учащегося — только автора"
+public_what = "решения автора и вливание PR"
+transport = "git"
+trigger = "PR сессии готов к вливанию"
+refs = ["DPmeta:E-01", "DPlearn:README.md"]
+signal = { type = "git-commits", repo = "dplearn", who = "merge" }
+
+[[flow]]
+id = "decide.market"
+from = "author"
+to = "market"
+kind = "decision"
+what = "решения, вливание PR"
+public_what = "решения автора и вливание PR"
+transport = "git"
+trigger = "PR сессии готов к вливанию"
+refs = ["DP_game_market_analytic_system:docs/HANDOFF.md"]
+signal = { type = "git-commits", repo = "market", who = "merge" }
+
+[[flow]]
+id = "decide.dpmonetization"
+from = "author"
+to = "dpmonetization"
+kind = "decision"
+what = "решения, вливание PR; место проекта в экосистеме — вопрос автору"
+public_what = "решения автора и вливание PR"
+transport = "git"
+trigger = "PR сессии готов к вливанию"
+refs = ["DPmeta:docs/ECOSYSTEM.md"]
+signal = { type = "git-commits", repo = "dpmonetization", who = "merge" }
+
+[[flow]]
+id = "decide.dpmeta"
+from = "author"
+to = "dpmeta"
+kind = "decision"
+what = "постановка, выбор вариантов, ответы на RISK-NN, вливание PR"
+public_what = "решения автора и вливание PR"
+transport = "git"
+trigger = "срез прохода готов"
+refs = ["DPmeta:M-03", "DPmeta:docs/RISKS.md"]
+signal = { type = "git-commits", repo = "dpmeta", who = "merge" }
+
+[[flow]]
+id = "decide.dpmetaapp"
+from = "author"
+to = "dpmetaapp"
+kind = "decision"
+what = "постановка, ответы на Q-NN ТЗ, вливание ТЗ"
+public_what = "решения автора и вливание PR"
+transport = "git"
+trigger = "ТЗ готово к вливанию"
+refs = ["DPmetaApp:TODO.md"]
+signal = { type = "git-commits", repo = "dpmetaapp", who = "merge" }
+
+[[flow]]
+id = "decide.dpvisualisation"
+from = "author"
+to = "dpvisualisation"
+kind = "decision"
+what = "постановка, ответы на Q-NN ТЗ, вливание PR"
+public_what = "решения автора и вливание PR"
+transport = "git"
+trigger = "PR готов к вливанию"
+refs = ["DPvisualisation:docs/direction/REQUEST.md"]
+signal = { type = "git-commits", repo = "dpvisualisation", who = "merge" }
+
+[[flow]]
+id = "decide.orchestrator"
+from = "author"
+to = "orchestrator"
+kind = "decision"
+what = "ТЗ автора, решения, вливание PR"
+public_what = "решения автора и вливание PR"
+transport = "git"
+trigger = "PR готов к вливанию"
+refs = ["DP_AI_Orcestrator:README.md"]
+signal = { type = "git-commits", repo = "orchestrator", who = "merge" }
+
+# ----------------------------------------- C-01, C-02: Galdhold и DPlang
+
+[[flow]]
+id = "c01.galdhold.dplang"
+from = "galdhold"
+to = "dplang"
+kind = "knowledge"
+bidirectional = true
+what = "решения, повторённые с обеих сторон: Galdhold не зависит от DPlang ни при сборке, ни при исполнении"
+transport = "knowledge"
+contracts = ["DPmeta:C-01"]
+refs = ["Galdhold:Р18", "DPlang:Р22"]
+signal = { type = "git-path", repo = "dplang", paths = ["docs/direction/DECISIONS.md"] }
+
+[[flow]]
+id = "c02.galdhold.dplang"
+from = "galdhold"
+to = "dplang"
+kind = "knowledge"
+status = "blocked"
+what = "ожидание встраиваемого детерминированного исполнителя DPlang для скриптов Galdhold — DPlang такой режим исключает"
+transport = "knowledge"
+contracts = ["DPmeta:C-02"]
+refs = ["DPmeta:RISK-02", "Galdhold:Р17", "DPlang:Р27"]
+note = "открытый вопрос автору (DPmeta:RISK-02)"
+
+[[flow]]
+id = "proc.galdhold.dplang"
+from = "galdhold"
+to = "dplang"
+kind = "knowledge"
+what = "инженерная культура и правила процесса — перенесены копированием с указанием источника"
+public_what = "правила процесса и проверок"
+transport = "copy"
+refs = ["DPmeta:docs/ECOSYSTEM.md", "DPlang:Р3"]
+
+# ------------------------------------------------ C-03: поставка DP-Verify
+
+[[flow]]
+id = "c03.dpverify.dppass"
+from = "dpverify"
+to = "dppass"
+kind = "delivery"
+status = "planned"
+what = "копия проверок в tools/dpv/, профиль tools/dpverify.toml, report.json — пилот"
+transport = "copy"
+trigger = "этап 6 DP-Verify и решение принимающего репозитория"
+format = "report.json, схема 1"
+contracts = ["DPmeta:C-03"]
+refs = ["DPmeta:RISK-01", "DPmeta:RISK-03"]
+
+[[flow]]
+id = "c03.dpverify.galdhold"
+from = "dpverify"
+to = "galdhold"
+kind = "delivery"
+status = "planned"
+what = "копия проверок в tools/dpv/"
+public_what = "проверки — копией в репозиторий"
+transport = "copy"
+trigger = "этап 7 DP-Verify"
+format = "report.json, схема 1"
+contracts = ["DPmeta:C-03"]
+
+[[flow]]
+id = "c03.dpverify.dplang"
+from = "dpverify"
+to = "dplang"
+kind = "delivery"
+status = "planned"
+what = "копия проверок в tools/dpv/"
+public_what = "проверки — копией в репозиторий"
+transport = "copy"
+trigger = "DPlang 1.1"
+format = "report.json, схема 1"
+contracts = ["DPmeta:C-03"]
+
+[[flow]]
+id = "c03.dpverify.dplearn"
+from = "dpverify"
+to = "dplearn"
+kind = "delivery"
+status = "planned"
+what = "образец процесса сейчас; поставка — после DP-Verify 1.0"
+public_what = "проверки — копией в репозиторий"
+transport = "copy"
+trigger = "выпуск DP-Verify 1.0"
+contracts = ["DPmeta:C-03"]
+refs = ["DPlearn:README.md"]
+
+[[flow]]
+id = "proc.galdhold.dpverify"
+from = "galdhold"
+to = "dpverify"
+kind = "knowledge"
+what = "правила процесса и проверок, обобщённые в process-kit"
+public_what = "правила процесса и проверок"
+transport = "copy"
+refs = ["DPmeta:docs/ECOSYSTEM.md", "DP-Verify:README.md"]
+
+[[flow]]
+id = "proc.dppass.dpverify"
+from = "dppass"
+to = "dpverify"
+kind = "knowledge"
+what = "правила процесса и проверок, обобщённые в process-kit"
+transport = "copy"
+refs = ["DPmeta:docs/ECOSYSTEM.md"]
+
+[[flow]]
+id = "proc.dplang.dpverify"
+from = "dplang"
+to = "dpverify"
+kind = "knowledge"
+what = "правила процесса и проверок, обобщённые в process-kit"
+public_what = "правила процесса и проверок"
+transport = "copy"
+refs = ["DPmeta:docs/ECOSYSTEM.md"]
+
+# ----------------------------------------- C-04: факты о проектах
+# Сигнал — изменения реестров фактов у приёмника.
+
+[[flow]]
+id = "c04.galdhold.dpprofile"
+from = "galdhold"
+to = "dpprofile"
+kind = "facts"
+what = "факты о проекте со ссылкой на путь@sha; без кода, выжимки до 300 знаков"
+public_what = "факты о проекте со ссылкой на источник"
+transport = "clone"
+trigger = "сессия DPprofile"
+format = "путь@sha"
+contracts = ["DPmeta:C-04", "DPmeta:C-05"]
+refs = ["DPprofile:README.md"]
+signal = { type = "git-path", repo = "dpprofile", paths = ["docs/facts/", "docs/sources/", "docs/timeline/"] }
+
+[[flow]]
+id = "c04.dplang.dpprofile"
+from = "dplang"
+to = "dpprofile"
+kind = "facts"
+what = "факты о проекте со ссылкой на путь@sha; без кода"
+public_what = "факты о проекте со ссылкой на источник"
+transport = "clone"
+trigger = "сессия DPprofile"
+format = "путь@sha"
+contracts = ["DPmeta:C-04", "DPmeta:C-05"]
+signal = { type = "git-path", repo = "dpprofile", paths = ["docs/facts/", "docs/sources/", "docs/timeline/"] }
+
+[[flow]]
+id = "c04.dppass.dpprofile"
+from = "dppass"
+to = "dpprofile"
+kind = "facts"
+what = "факты о проекте со ссылкой на путь@sha; без кода"
+transport = "clone"
+trigger = "сессия DPprofile"
+format = "путь@sha"
+contracts = ["DPmeta:C-04", "DPmeta:C-05"]
+signal = { type = "git-path", repo = "dpprofile", paths = ["docs/facts/", "docs/sources/", "docs/timeline/"] }
+
+[[flow]]
+id = "c04.galdhold.smi"
+from = "galdhold"
+to = "smi"
+kind = "facts"
+what = "факты и вехи для публикаций: класс, источник, коммит, срок перепроверки"
+public_what = "факты и вехи для публикаций"
+transport = "clone"
+trigger = "сессия SocialMediaImage"
+contracts = ["DPmeta:C-04", "DPmeta:C-05"]
+refs = ["SocialMediaImage:data/facts/facts.yaml"]
+signal = { type = "git-path", repo = "smi", paths = ["data/facts/"] }
+
+[[flow]]
+id = "c04.dplang.smi"
+from = "dplang"
+to = "smi"
+kind = "facts"
+what = "факты и вехи для публикаций"
+public_what = "факты и вехи для публикаций"
+transport = "clone"
+trigger = "сессия SocialMediaImage"
+contracts = ["DPmeta:C-04", "DPmeta:C-05"]
+refs = ["SocialMediaImage:data/facts/facts.yaml"]
+signal = { type = "git-path", repo = "smi", paths = ["data/facts/"] }
+
+# --------------------------- C-05, C-07: сайт и публичный образ, выгрузка
+
+[[flow]]
+id = "deploy.smi.phone"
+from = "smi"
+to = "phone"
+kind = "deploy"
+what = "клон SocialMediaImage на телефоне: тема, код и записи сайта"
+transport = "git"
+trigger = "git pull в Termux перед выгрузкой"
+refs = ["SocialMediaImage:tools/termux/dpsmpx-site-deploy.sh"]
+signal = { type = "git-path", repo = "smi", paths = ["website/", "tools/cs/site/", "data/website/"] }
+
+[[flow]]
+id = "deploy.phone.site"
+from = "phone"
+to = "site"
+kind = "deploy"
+what = "production-сборка сайта — только командами site deploy и publish, после «да» автора"
+public_what = "выгрузка сайта — только после «да» автора"
+transport = "rsync"
+trigger = "ярлык Termux:Widget на телефоне автора"
+contracts = ["DPmeta:C-07", "DPmeta:C-05"]
+refs = ["SocialMediaImage:Д35", "SocialMediaImage:Д36", "DPmeta:RISK-08"]
+note = "журнал выгрузок не в git, сайт не опрашивается (D-19) — поток не наблюдается"
+
+[[flow]]
+id = "decide.deploy"
+from = "author"
+to = "phone"
+kind = "decision"
+what = "«да» в терминале на выгрузку сайта и одобрение публикаций"
+transport = "manual"
+contracts = ["DPmeta:C-07"]
+refs = ["SocialMediaImage:Д36", "SocialMediaImage:Д12"]
+
+# ----------------------------------------------- публикации на площадки
+
+[[flow]]
+id = "publish.smi.telegram"
+from = "smi"
+to = "telegram"
+kind = "publish"
+status = "planned"
+what = "записи канала-дневника Galdhold через бота-публикатора"
+public_what = "публикации — только одобренные автором"
+transport = "api"
+trigger = "publish после одобрения автора"
+refs = ["SocialMediaImage:data/platforms/destinations.yaml", "SocialMediaImage:Д25"]
+note = "адресат tg-devlog: not_connected — id канала и бота записывает автор"
+
+[[flow]]
+id = "publish.smi.youtube"
+from = "smi"
+to = "youtube"
+kind = "publish"
+status = "planned"
+what = "описания и обложки видео"
+public_what = "публикации — только одобренные автором"
+transport = "api"
+trigger = "publish после одобрения автора"
+refs = ["SocialMediaImage:data/platforms/destinations.yaml"]
+note = "адресат yt-channel: not_connected"
+
+[[flow]]
+id = "publish.smi.vk"
+from = "smi"
+to = "vk"
+kind = "publish"
+status = "blocked"
+what = "записи на странице или в сообществе VK"
+public_what = "публикации — только одобренные автором"
+transport = "api"
+refs = ["SocialMediaImage:data/platforms/destinations.yaml"]
+note = "ждёт автора: страница или сообщество; VK: право wall"
+
+[[flow]]
+id = "publish.smi.tiktok"
+from = "smi"
+to = "tiktok"
+kind = "publish"
+status = "blocked"
+what = "вертикальные клипы"
+public_what = "публикации — только одобренные автором"
+transport = "api"
+refs = ["SocialMediaImage:data/platforms/destinations.yaml", "SocialMediaImage:Д19"]
+note = "ждёт аудита клиента API TikTok"
+
+[[flow]]
+id = "publish.smi.discord"
+from = "smi"
+to = "discord"
+kind = "publish"
+status = "blocked"
+what = "объявления сервера сообщества"
+public_what = "публикации — только одобренные автором"
+transport = "api"
+refs = ["SocialMediaImage:data/platforms/destinations.yaml"]
+note = "сервера нет (ОР-6 SocialMediaImage)"
+
+[[flow]]
+id = "publish.site.platforms"
+from = "site"
+to = "telegram"
+kind = "publish"
+what = "площадки ссылаются на канонический адрес записи на сайте (POSSE)"
+public_what = "площадки ссылаются на запись на сайте"
+transport = "http"
+status = "planned"
+refs = ["SocialMediaImage:docs/platforms/WEBSITE.md"]
+
+# ----------------------------------------- C-08: формат карт Andors-Love
+
+# --------------------------------------- C-09: онлайн-компилятор DPlang
+
+[[flow]]
+id = "c09.dplang.compiler"
+from = "dplang"
+to = "compiler"
+kind = "host"
+status = "planned"
+what = "компилятор работает на сервере; код и сборка наружу не уходят"
+public_what = "компилятор на сервере — в плане"
+transport = "copy"
+trigger = "решение автора по DPlang:Р5 и DoD сервиса"
+contracts = ["DPmeta:C-09", "DPmeta:C-05"]
+refs = ["DPlang:Р49"]
+
+[[flow]]
+id = "c09.compiler.site"
+from = "compiler"
+to = "site"
+kind = "service"
+status = "planned"
+what = "программа → диагностика (JSON, /api/v1/…); только компиляция, без исполнения"
+public_what = "диагностика программ на сайте — в плане"
+transport = "http"
+contracts = ["DPmeta:C-09"]
+refs = ["DPmeta:RISK-09"]
+note = "адрес /api/v1/ сайта занят статическим API; CSP connect-src 'self' — не сойдётся без решения"
+
+# -------------------------------------- C-10: страница «Прогресс экосистемы»
+
+[[flow]]
+id = "c10.github.smi"
+from = "github"
+to = "smi"
+kind = "metrics"
+what = "история git всех репозиториев из scope.yaml: коммиты по дням, ИИ и человек, строки, решения"
+public_what = "история git: коммиты по дням, ИИ и человек"
+transport = "clone"
+trigger = "progress collect при сборе нового набора"
+format = "progress/v1"
+contracts = ["DPmeta:C-10"]
+refs = ["SocialMediaImage:data/progress/scope.yaml"]
+signal = { type = "git-path", repo = "smi", paths = ["data/progress/datasets/"] }
+
+[[flow]]
+id = "c10.dpmeta.smi"
+from = "dpmeta"
+to = "smi"
+kind = "metrics"
+what = "счётчики заголовков C-, RISK-, SQ-, E- и срезов docs/reports/"
+public_what = "счётчики для страницы прогресса"
+transport = "clone"
+trigger = "progress collect"
+format = "progress/v1"
+contracts = ["DPmeta:C-10"]
+signal = { type = "git-path", repo = "smi", paths = ["data/progress/datasets/"] }
+
+[[flow]]
+id = "c10.dpprofile.smi"
+from = "dpprofile"
+to = "smi"
+kind = "metrics"
+what = "счётчики фактов, выводов, источников и хронологии"
+public_what = "счётчики для страницы прогресса"
+transport = "clone"
+trigger = "progress collect"
+format = "progress/v1"
+contracts = ["DPmeta:C-10"]
+signal = { type = "git-path", repo = "smi", paths = ["data/progress/datasets/"] }
+
+[[flow]]
+id = "c10.smi.site"
+from = "smi"
+to = "site"
+kind = "metrics"
+status = "planned"
+what = "страница /progress/ — числа из сохранённого набора, без имени DPpass"
+public_what = "страница прогресса на сайте"
+transport = "rsync"
+trigger = "одобрение автором вариантов website.ru и website.en"
+contracts = ["DPmeta:C-10", "DPmeta:C-05"]
+refs = ["SocialMediaImage:Д38", "SocialMediaImage:Д39"]
+note = "страница ждёт одобрения автора (DPmeta:SQ-23 — DPmonetization не учтён)"
+
+# --------------------------------------------- DPmeta: чтение клонов
+
+[[flow]]
+id = "meta.github.dpmeta"
+from = "github"
+to = "dpmeta"
+kind = "check"
+what = "клоны всех репозиториев: сверка ссылок Проект:номер и Проект:путь, признаки работы"
+public_what = "сверка ссылок между репозиториями"
+transport = "clone"
+trigger = "мета-проход по поручению автора"
+contracts = ["DPmeta:C-06"]
+refs = ["DPmeta:M-07", "DPmeta:M-08"]
+signal = { type = "git-path", repo = "dpmeta", paths = ["docs/reports/"] }
+
+# ------------------------------------------------------- DPvisualisation
+
+[[flow]]
+id = "vis.github.dpvisualisation"
+from = "github"
+to = "dpvisualisation"
+kind = "read"
+what = "клоны всех репозиториев модели: история основной ветки, ветки, вливания"
+public_what = "история основных веток всех репозиториев"
+transport = "clone"
+trigger = "collect; в живом режиме — по расписанию"
+refs = ["DPvisualisation:D-03"]
+signal = { type = "git-path", repo = "dpvisualisation", paths = ["data/state/"] }
+
+[[flow]]
+id = "vis.dpmeta.dpvisualisation"
+from = "dpmeta"
+to = "dpvisualisation"
+kind = "read"
+what = "реестр tools/ecosystem.toml и заголовки контрактов — сверка модели"
+public_what = "сверка модели с картой экосистемы"
+transport = "clone"
+trigger = "collect"
+format = "ecosystem.toml schema 1; ## C-NN"
+refs = ["DPvisualisation:D-11"]
+signal = { type = "git-path", repo = "dpmeta", paths = ["tools/ecosystem.toml", "docs/CONTRACTS.md"] }
+
+[[flow]]
+id = "vis.dpvisualisation.dpmetaapp"
+from = "dpvisualisation"
+to = "dpmetaapp"
+kind = "read"
+status = "planned"
+what = "модель и срезы (dpvis-model/1, dpvis-state/1) — живой режим схемы в DPmetaApp: актуальная схема текущих процессов для управления и отслеживания, без архива"
+public_what = "схема для управления экосистемой"
+transport = "http"
+format = "dpvis-model/1, dpvis-state/1"
+refs = ["DPvisualisation:D-18", "DPvisualisation:D-07", "DPvisualisation:D-21", "DPmetaApp:MESTER_TECHNICAL_TASK_ROADMAP.md", "DPmetaApp:D-26"]
+note = "решение автора 9 октября 2026 (Q-01, Q-05); строится вместе с DPmetaApp — в фазе B мастер-ТЗ; система DPvisualisation — будущая подсистема DPmetaApp (D-21), до переноса — эти форматы; с его стороны — DPmetaApp:D-26 и DPmetaApp:D-27 в ветке claude/dreamy-bardeen-xe4k6r DPmetaApp"
+
+[[flow]]
+id = "vis.dpvisualisation.smi"
+from = "dpvisualisation"
+to = "smi"
+kind = "format"
+what = "комплект схемы для раздела /ecosystem/ сайта: dpvis.js, dpvis.css, публичная выжимка dpvis-data.json и MANIFEST.json с sha256"
+public_what = "эта схема для сайта"
+transport = "copy"
+trigger = "build --site здесь, затем site ecosystem-import в SocialMediaImage"
+format = "dpvis-public/1, dpvis-site-kit/1"
+refs = ["DPvisualisation:D-15", "SocialMediaImage:Д43"]
+note = "SocialMediaImage сверяет sha256 по MANIFEST.json и принимает только dpvis-public/1; в DPmeta связь ещё не записана (Q-03)"
+signal = { type = "git-path", repo = "smi", paths = ["website/ecosystem/"] }
+
+# ----------------------------------------------------------- DPmetaApp
+
+[[flow]]
+id = "app.dpmeta.dpmetaapp"
+from = "dpmeta"
+to = "dpmetaapp"
+kind = "read"
+status = "planned"
+what = "реестр проектов, заголовки C-, RISK-, SQ-, срезы"
+public_what = "данные для пульта"
+transport = "http"
+format = "ecosystem.toml schema 1"
+refs = ["DPmetaApp:docs/direction/TECHNICAL_TASK.md"]
+
+[[flow]]
+id = "app.github.dpmetaapp"
+from = "github"
+to = "dpmetaapp"
+kind = "read"
+status = "planned"
+what = "PR, ветки, проверки, файлы процесса всех проектов; действия — по уровням"
+public_what = "данные для пульта"
+transport = "api"
+refs = ["DPmetaApp:docs/direction/TECHNICAL_TASK.md", "DPvisualisation:D-21"]
+note = "системы активных репозиториев — внутри DPmetaApp; GitHub — источник синхронизации, а не запрос на каждое действие (ответ автора 10 октября 2026; DPmetaApp:D-27 в его ветке)"
+
+[[flow]]
+id = "app.site.dpmetaapp"
+from = "site"
+to = "dpmetaapp"
+kind = "read"
+status = "planned"
+what = "/api/v1/*.json, пробы и заголовки сайта"
+public_what = "данные для пульта"
+transport = "http"
+refs = ["DPmetaApp:docs/direction/TECHNICAL_TASK.md", "SocialMediaImage:docs/platforms/WEBSITE.md"]
+
+[[flow]]
+id = "app.dpmetaapp.phone"
+from = "dpmetaapp"
+to = "phone"
+kind = "host"
+status = "planned"
+what = "личное приложение — только на устройствах автора, нигде не публикуется"
+transport = "manual"
+refs = ["DPmetaApp:D-24"]
+
+# ---------------------------------------------------- DP_AI_Orcestrator
+
+[[flow]]
+id = "orc.orchestrator.claude"
+from = "orchestrator"
+to = "claude"
+kind = "work"
+status = "planned"
+what = "запуск и продолжение сессий Claude Code через CLI: задача, контекст и handoff, проверка результата"
+public_what = "управление сессиями ИИ"
+transport = "intent"
+trigger = "задача в очереди оркестратора"
+refs = ["DP_AI_Orcestrator:D-01", "DP_AI_Orcestrator:D-32", "DP_AI_Orcestrator:D-23"]
+note = "V1 в разработке; работают ли сессии под оркестратором постоянно — неизвестно (по git не видно)"
+
+[[flow]]
+id = "orc.dpmeta.orchestrator"
+from = "dpmeta"
+to = "orchestrator"
+kind = "format"
+status = "planned"
+what = "манифест экосистемы dpai.ecosystem v1: проекты, состояние, документы, предложения задач"
+public_what = "карта экосистемы для управления сессиями"
+transport = "copy"
+format = "dpai.ecosystem v1"
+refs = ["DP_AI_Orcestrator:docs/ECOSYSTEM.md", "DP_AI_Orcestrator:docs/INTEGRATION_CONTRACT.md"]
+note = "манифест ведёт DPmeta — решение автора 9 октября 2026 (DPmeta:M-11, контракт DPmeta:C-13, инструмент DPmeta:tools/manifest.py — в ветке claude/dreamy-bardeen-xe4k6r DPmeta); глобальный прогон по реальной экосистеме ещё не запускался"
+
+[[flow]]
+id = "orc.orchestrator.dpmetaapp"
+from = "orchestrator"
+to = "dpmetaapp"
+kind = "delivery"
+status = "planned"
+what = "оркестратор — в составе DPmetaApp, а не отдельным приложением: его ядро — подсистема «AI» (модули Kotlin, события, протокол управления)"
+public_what = "управляющий слой войдёт в пульт"
+transport = "copy"
+refs = ["DP_AI_Orcestrator:docs/INTEGRATION_CONTRACT.md", "DPmetaApp:MESTER_TECHNICAL_TASK_ROADMAP.md", "DPvisualisation:D-21"]
+note = "ответ автора 10 октября 2026; после заморозки V1 и завершения остальных систем (мастер-ТЗ DPmetaApp); с его стороны — DPmetaApp:D-27 в ветке claude/dreamy-bardeen-xe4k6r DPmetaApp"
+
+[[flow]]
+id = "orc.orchestrator.phone"
+from = "orchestrator"
+to = "phone"
+kind = "host"
+what = "Android-приложение оркестратора: управление исполнителями, Termux-target на том же телефоне"
+transport = "manual"
+trigger = "сборка APK и установка автором"
+refs = ["DP_AI_Orcestrator:D-28", "DP_AI_Orcestrator:D-46", "DP_AI_Orcestrator:TODO.md"]
+note = "так сейчас по репозиторию оркестратора; по ответу автора 10 октября 2026 отдельным приложением он не останется — войдёт в DPmetaApp (D-21; расхождение — DPmeta:SQ-29 в ветке DPmeta)"
+
+[[flow]]
+id = "notify.claude.ntfy"
+from = "claude"
+to = "ntfy"
+kind = "notify"
+status = "planned"
+what = "хуки Stop и Notification: «Claude закончил ответ», «ждёт ввода» — подписанный минимум без текста"
+transport = "push"
+trigger = "конец хода сессии"
+refs = ["DPmetaApp:docs/direction/TECHNICAL_TASK.md"]
+
+[[flow]]
+id = "notify.ntfy.phone"
+from = "ntfy"
+to = "phone"
+kind = "notify"
+status = "planned"
+what = "события — на телефон автора через дистрибьютор UnifiedPush"
+transport = "push"
+refs = ["DPmetaApp:docs/direction/TECHNICAL_TASK.md"]
+
+# ------------------------------------------------- DPmonetization: план
+
+[[flow]]
+id = "mon.dpmeta.dpmonetization"
+from = "dpmeta"
+to = "dpmonetization"
+kind = "read"
+status = "planned"
+what = "реестр проектов по фактам DPmeta; зависимости по контрактам C-01, C-03, C-08, C-09"
+public_what = "данные для анализа портфеля"
+transport = "clone"
+refs = ["DPmeta:docs/ECOSYSTEM.md"]
+
+[[flow]]
+id = "mon.dpverify.dpmonetization"
+from = "dpverify"
+to = "dpmonetization"
+kind = "read"
+status = "planned"
+what = "адаптер к report.json DP-Verify"
+public_what = "данные для анализа портфеля"
+transport = "clone"
+format = "report.json, схема 1"
+refs = ["DPmeta:docs/ECOSYSTEM.md"]
+
+[[flow]]
+id = "mon.market.dpmonetization"
+from = "market"
+to = "dpmonetization"
+kind = "read"
+status = "planned"
+what = "адаптер к DecisionReport анализа рынка"
+public_what = "данные для анализа портфеля"
+transport = "clone"
+refs = ["DPmeta:docs/ECOSYSTEM.md"]
+
+# ------------------------------------------ сборки, устройства, выпуск
+
+[[flow]]
+id = "build.xray.dppass"
+from = "xray"
+to = "dppass"
+kind = "build"
+what = "Xray-core 26.9.30 как модуль Go и наборы геоданных — собираются своим кодом в APK"
+transport = "http"
+trigger = "сборка APK (задачи xrayNative, xrayGeodata)"
+refs = ["DPpass:README.md"]
+
+[[flow]]
+id = "build.galdhold.phone"
+from = "galdhold"
+to = "phone"
+kind = "deploy"
+what = "APK для проверки на устройстве и замеры"
+transport = "manual"
+refs = ["Galdhold:README.md"]
+
+[[flow]]
+id = "build.dppass.phone"
+from = "dppass"
+to = "phone"
+kind = "deploy"
+status = "planned"
+what = "отладочный APK; подключение через туннель на устройстве ещё не проверено"
+transport = "manual"
+refs = ["DPpass:README.md"]
+
+[[flow]]
+id = "release.galdhold.steam"
+from = "galdhold"
+to = "steam"
+kind = "deploy"
+status = "planned"
+what = "первый выпуск на Windows"
+public_what = "первый выпуск на Windows"
+transport = "manual"
+trigger = "этап 5 — версия 1"
+refs = ["Galdhold:README.md"]
+
+# ------------------------------------------------------- хостинг кода
+
+[[flow]]
+id = "host.github.repos"
+from = "github"
+to = "claude"
+kind = "host"
+what = "сессии получают репозиторий клоном и пушат ветки; PR открываются на GitHub"
+public_what = "сессии работают с клоном репозитория"
+transport = "git"
+refs = ["DPmeta:E-08"]
