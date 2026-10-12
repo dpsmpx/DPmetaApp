@@ -6,42 +6,13 @@
 
 ## За автором
 
-- [ ] **Выгрузить сайт со статьёй CI-0003 — сегодня, 12.10.2026** (ответы
-  автора 12.10.2026, позже: «Статья сейчас, П2-20 потом», «„Путь“ на 07.10,
-  П2-28 позже» — история `DECISIONS.md`, Д41, Д44). Одна выгрузка: статья
-  «Нейросети и нейропластичность» (`/articles/neyroseti-i-neyroplastichnost/`),
-  раздел «Статьи», «Путь» (срез на 07.10.2026, Д44, П2-27), «Экосистема»
-  (Д43, П2-26; комплект `99d05f6`, срез 12.10.2026 — годится, В3) и меню.
-  Страница прогресса CI-0002, изображения контента и `og_default` — следующей
-  выгрузкой, после П2-20 (Д41). Сборка — в `main` (PR #27 влит сессией).
-  Порядок на своей машине:
-  1. `git pull`.
-  2. Прочитать статью — `content/items/CI-0003-neyroseti-i-neyroplastichnost/variants/website.ru.md`
-     (v3: правки по В7 и по критике — приняты автором 12.10.2026) или на staging (`python3 -m tools.cs
-     site serve` → `/articles/neyroseti-i-neyroplastichnost/`) — и критику
-     (`docs/content/products/articles/neyroseti-i-neyroplastichnost/CRITIQUE.md`).
-  3. Одобрить: `python3 -m tools.cs approve CI-0003 website.ru` (Д12;
-     одобрение с хэшем текста — в файле варианта), затем `git commit` и
-     `git push`.
-  4. `tools/check.sh --fast --release` (на телефоне без Playwright — В2, Д36).
-  5. Пробный прогон: `python3 -m tools.cs publish CI-0003 website.ru --to
-     site-production` и `python3 -m tools.cs site deploy --dry-run` (новые:
-     `articles/`, `path/`, `en/path/`, `ecosystem/` и `ecosystem/.htaccess`;
-     изменятся все страницы — меню, маршрут на главной, `style.css`).
-  6. «Да» → `python3 -m tools.cs publish CI-0003 website.ru --to
-     site-production --production` — сборка всего сайта со статьёй → rsync
-     на Beget → проверка по HTTP (Д35, Д36).
-  7. **Сразу `git commit` и `git push` журнала** `data/publications/production.jsonl`:
-     рабочая сборка выводит статью только по записи журнала — без неё
-     следующая выгрузка статью снимет.
-  8. Проверить: `curl -sI https://dpsmpx.com/ecosystem/ | grep -i
-     content-security` — `script-src 'self'`; то же для `/` — `script-src
-     'none'`. Если на `/ecosystem/` пришло `'none'` — Beget не применил
-     `.htaccess` каталога: схема не запустится, но список по слоям виден;
-     прислать вывод сессии.
-  **Наблюдение 09.10.2026 (сессия DPvisualisation, внешняя проба):** на
-  сервере — сборка от 05.10.2026; `/ecosystem/`, `/path/`, `/progress/`
-  отвечают 404; `/` — 200 по HTTPS, CSP `script-src 'none'`.
+- [x] **Выгрузка 12.10.2026 со статьёй CI-0003 — сделана автором.**
+  `publish CI-0003 website.ru --to site-production --production`, 17:24 UTC;
+  одобрение и журнал — коммит `5b0fb9f`. Проверено снаружи (сессия,
+  12.10.2026): статья, главная, «Статьи», «Путь», «Экосистема» — 200; CSP
+  `/ecosystem/` — `script-src 'self'`, остальные — `script-src 'none'`.
+  Дальше на сайт — следующей выгрузкой: прогресс CI-0002, «Путь» после
+  П2-28, изображения контента и `og_default` — после П2-20 (Д41).
 - [ ] **Инцидент 05.10.2026 — закрыть** (разбор и команды —
   `docs/audits/2026-10-05-SITE_LEAK_INCIDENT.md`, §6, §8–§10). Сделано: улики
   сохранены, второй ярлык убран. Сервер проверен снаружи (§9) и с

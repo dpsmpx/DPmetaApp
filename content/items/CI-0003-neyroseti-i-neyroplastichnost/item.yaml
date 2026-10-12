@@ -111,7 +111,49 @@ provenance: provenance.yaml
 targets:
 - variant: website.ru
   destination: site-production
-state: UNDER_REVIEW
+gates:
+  factual:
+    status: pass
+    by: tool
+    date: 2026-10-12
+    note: 'claims: 27 фактов — FACT, public, сроки перепроверки не истекли; anti-hype — 0 совпадений; major C3-1, C3-2
+      закрыты ревизией (повторный проход)'
+  brand:
+    status: pass
+    by: author
+    date: 2026-10-12
+    note: автор одобрил website.ru v3 для публикации («одобряю», approve; sha256 49c0f422…; коммит 5b0fb9f)
+  visual:
+    status: pass
+    by: tool
+    date: 2026-10-12
+    note: 'siteshots: страница статьи в Chromium, 390 и 1280 px (tools/check.sh, 12.10.2026); изображений в статье нет'
+  platform:
+    status: pass
+    by: tool
+    date: 2026-10-12
+    note: 'site: сборка staging и production со статьёй без ошибок — раздел «Статьи», оглавление, время чтения'
+  safety:
+    status: pass
+    by: session
+    date: 2026-10-12
+    note: 'критика отдельным проходом: имени автора, личных данных, имени и подробностей закрытого прикладного проекта
+      нет (Д40, Д42); фильтр чувствительных данных сборки (Д39) — без находок'
+  legal:
+    status: pass
+    by: session
+    date: 2026-10-12
+    note: текст автора; сторонних изображений, шрифтов и цитат нет
+  provenance:
+    status: pass
+    by: tool
+    date: 2026-10-12
+    note: provenance.yaml объекта; каноны v1–v3 и вариант зафиксированы с sha256 (canonical seal, variant seal)
+approval:
+  by: author
+  date: 2026-10-12
+  note: 'одобрение варианта website.ru v3 командой approve (sha256 49c0f422c795…; коммит 5b0fb9f)'
+state: PUBLISHED
 review:
   file: docs/content/products/articles/neyroseti-i-neyroplastichnost/CRITIQUE.md
   scores:
@@ -202,3 +244,13 @@ history:
 - date: '2026-10-12'
   state: UNDER_REVIEW
   note: повторный проход по ревизии — CRITIQUE.md, «Ревизия»; дальше — одобрение автора (Д12)
+- date: '2026-10-12'
+  state: APPROVED
+  note: 'автор одобрил website.ru v3 (approve, sha256 49c0f422c795…; коммит 5b0fb9f); гейты — gates'
+- date: '2026-10-12'
+  state: EXPORTED
+  note: текст площадки — одобренный вариант (Д12); экспорта изображений нет — в статье их нет
+- date: '2026-10-12'
+  state: PUBLISHED
+  note: 'https://dpsmpx.com/articles/neyroseti-i-neyroplastichnost/ — publish --production автором, 17:24 UTC
+    (data/publications/production.jsonl, PUB-7dc7c90da278); проверено снаружи: 200, CSP script-src ''none'''

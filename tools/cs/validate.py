@@ -180,8 +180,11 @@ def item_findings(item: Item) -> list[Finding]:
         E(f"статус selected у {selected}, но selected_variant не задан")
 
     gates = d.get("gates") or {}
+    # Текстовый объект v2 (канон без вариантов-изображений): выбор — одобренный автором вариант
+    # каждой площадки (Д12, Д22), selected_variant не нужен; блокирует открытая проблема любого варианта.
+    text_only = v2 and not variants
     if reached(eff, "APPROVED"):
-        if not sel:
+        if not sel and not text_only:
             E("APPROVED без выбранного варианта")
         for g in GATES:
             st = (gates.get(g) or {}).get("status")
@@ -191,7 +194,7 @@ def item_findings(item: Item) -> list[Finding]:
         for sev in ("fatal", "major"):
             for i in issues.get(sev, []):
                 # Блокируют проблемы утверждаемого варианта и общие; у отклонённых — история выбора.
-                if i["status"] == "open" and i.get("variant") in (None, sel):
+                if i["status"] == "open" and (text_only or i.get("variant") in (None, sel)):
                     E(f"APPROVED: открытая проблема {sev} {i['id']}")
         if (d.get("approval") or {}).get("by") != "author":
             E("APPROVED без approval автора (Д12)")
