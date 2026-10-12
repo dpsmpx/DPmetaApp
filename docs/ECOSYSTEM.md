@@ -39,9 +39,9 @@ DP_game_market_analytic_system, — журнал решений, `CLAUDE.md`, `T
 | **DPprofile** | проверяемая история пути автора и его проектов: источники, факты, хронология, выводы, структура будущей книги (`DPprofile:D-01`) | книгу не пишет до шлюза `DPprofile:D-02`; решений о проектах не принимает; код и большие фрагменты не копирует (`DPprofile:D-05`) | этап 4 из 6 (`DPprofile:README.md`) | `tools/verify/run.sh --quick`; полный — с клонами источников | `DPprofile:CLAUDE.md` |
 | **DPlearn** | персональная система обучения: статус «освоено» вычисляется из доказательств (`DPlearn:D-01`) | сессия разработки не трогает данные учащегося `learner/` (`DPlearn:CLAUDE.md`) | 0.1.0 (`DPlearn:README.md`) | `tools/check/run.sh full` | `DPlearn:README.md` |
 | **SocialMediaImage** | производство, проверка и публикация контента автора; сайт `dpsmpx.com` и его страница «Прогресс экосистемы» (`SocialMediaImage:README.md`, `SocialMediaImage:Д38`) | решения закрытых проектов не переписывает; их код не переносит; не публикует без одобрения автора (`SocialMediaImage:CLAUDE.md`) | сайт выпущен — выгрузка разрешена 5 октября 2026, первая штатная прошла (`SocialMediaImage:Д34`, `SocialMediaImage:TODO.md`); фаза «Сайт MVP» продолжается; `CI-0001` и страница прогресса `CI-0002` ждут одобрения автора (`SocialMediaImage:ROADMAP/ROADMAP.md`) | `tools/check.sh` | `SocialMediaImage:README.md` |
-| **DP_game_market_analytic_system** | воспроизводимый анализ рынка игр с явной неопределённостью: наблюдения → факты → метрики → гипотезы → решения (`DP_game_market_analytic_system:docs/ARCHITECTURE.md`) | не скрейпер, не агрегатор новостей, не обёртка над LLM (там же) | 0.1.0 (pre-release): фазы 0–8, CLI `dpm`, 294 теста (`DP_game_market_analytic_system:docs/HANDOFF.md`, PR #2 — 10 октября 2026) | `python3 -m pytest` | `DP_game_market_analytic_system:docs/ARCHITECTURE.md` |
+| **DP_game_market_analytic_system** | воспроизводимый анализ рынка игр с явной неопределённостью: наблюдения → факты → метрики → гипотезы → решения (`DP_game_market_analytic_system:docs/ARCHITECTURE.md`) | не скрейпер, не агрегатор новостей, не обёртка над LLM (там же) | 0.1.0 (pre-release): фазы 0–8, CLI `dpm`, 294 теста (`DP_game_market_analytic_system:docs/HANDOFF.md`, PR #2 — 11 октября 2026) | `python3 -m pytest` | `DP_game_market_analytic_system:docs/ARCHITECTURE.md` |
 
-| **DP_AI_Orcestrator** | управляющий слой для параллельных сессий Claude Code и Agent SDK: задачи и зависимости, аккаунты, execution targets, контекст и handoff, проверка результата (`DP_AI_Orcestrator:D-01`). **С 10 октября 2026 заморожен:** код, документы и история — подсистема «AI» DPmetaApp в `DPmetaApp:dpai/`, её Android-оболочка — первая форма приложения DPmetaApp (`DPmetaApp:D-28`); архивировать репозиторий — автор (SQ-30) | код закрытых репозиториев не переносит — только идеи (`DP_AI_Orcestrator:D-16`); кода DPmeta не содержит — читает его манифест (C-13); в самом репозитории работа не начинается (`DPmetaApp:D-28`) | в `DPmetaApp:dpai/README.md`: выполнено этапов 15 из 21, V1 не заморожена — открыты этапы 19 и 20 | `DPmetaApp:dpai/tools/verify/run.sh` (`full`) | `DPmetaApp:dpai/CLAUDE.md` |
+| **DP_AI_Orcestrator** | управляющий слой для параллельных сессий Claude Code и Agent SDK: задачи и зависимости, аккаунты, execution targets, контекст и handoff, проверка результата (`DP_AI_Orcestrator:D-01`). **С 10 октября 2026 заморожен:** код, документы и история — подсистема «AI» DPmetaApp в `DPmetaApp:dpai/`, её Android-оболочка — первая форма приложения DPmetaApp (`DPmetaApp:D-28`); архивировать репозиторий — автор (SQ-30) | код закрытых репозиториев не переносит — только идеи (`DP_AI_Orcestrator:D-16`); кода DPmeta не содержит — читает его манифест (C-13); в самом репозитории работа не начинается (`DPmetaApp:D-28`) | в `DPmetaApp:dpai/README.md`: выполнено этапов 15 из 21, в работе — 5, 11, 12, 17, впереди — 19 и 20 (V1 не заморожена) | `DPmetaApp:dpai/tools/verify/run.sh` (`full`) | `DPmetaApp:dpai/CLAUDE.md` |
 
 DPmeta — **слой синхронизации** (M-01, M-12, `place = "sync"`): карта,
 контракты, имена, очередь согласований, манифест; не ядро и не
@@ -97,7 +97,7 @@ DPmeta — **слой синхронизации** (M-01, M-12, `place = "sync"`
 
 Поставка проверок копией в tools/dpv/ (C-03; 1.0.0-rc2)
   DP-Verify ──► DPpass          этап 6, пилот — поставлено 6 октября 2026 (DPpass:D-50)
-            ──► Galdhold        этап 7 — поставлено 6 октября, влито 10 октября 2026 (Galdhold:Р21)
+            ──► Galdhold        этап 7 — влито 10 октября 2026 (Galdhold:Р21)
             ┄┄► DPlang          версия 1.1
             ┄┄► DPlearn         пока — образец процесса; поставка — после DP-Verify 1.0
 
@@ -130,9 +130,10 @@ DPmeta — **слой синхронизации** (M-01, M-12, `place = "sync"`
 Наблюдения:
 
 - **Зависимостей сборки и исполнения между репозиториями нет.**
-  Поставка DP-Verify копией в `tools/dpv/` (C-03) — с 6 октября 2026 в
-  DPpass и Galdhold: копия, а не ссылка на другой репозиторий, и только по
-  решению принимающего репозитория (`DPpass:D-50`, `Galdhold:Р21`).
+  Поставка DP-Verify копией в `tools/dpv/` (C-03) — в DPpass с 6 октября
+  2026, в Galdhold с 10 октября: копия, а не ссылка на другой репозиторий,
+  и только по решению принимающего репозитория (`DPpass:D-50`,
+  `Galdhold:Р21`).
   Запланирована одна. Онлайн-компилятор DPlang для страницы
   сайта (C-09): страница SocialMediaImage будет обращаться к сервису
   DPlang по сети; запуск выключен, а записана связь только в DPlang

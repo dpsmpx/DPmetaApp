@@ -16,7 +16,7 @@
 | **DPprofile** — проверяемая история пути | `dpsmpx/DPprofile` | — | тег проекта `voxelrpg` — устойчивый идентификатор игры под любым именем | `DPprofile:D-03` |
 | **DPlearn** — система обучения | `dpsmpx/DPlearn` | — | — | — |
 | **SocialMediaImage** — контент и сайт `dpsmpx.com` | `dpsmpx/SocialMediaImage` | — | — | — |
-| **DP_game_market_analytic_system** — анализ рынка игр | `dpsmpx/DP_game_market_analytic_system` | — (пакет `dpmarket`, команда `dpm` — ещё не написана; на странице прогресса сайта — «DP_game_market», `SocialMediaImage:data/progress/scope.yaml`) | — | — |
+| **DP_game_market_analytic_system** — анализ рынка игр | `dpsmpx/DP_game_market_analytic_system` | — (пакет `dpmarket`, команда `dpm` — `tools/dpm/` и `bin/dpm`, с 11 октября 2026; на странице прогресса сайта — «DP_game_market», `SocialMediaImage:data/progress/scope.yaml`) | — | — |
 | **DPmonetization** — Strategic Project Intelligence | `dpsmpx/DPmonetization` | — (пакет `dpmon`, команда `tools/spi` — ещё не написана) | — | — |
 | **DPmetaApp** — мета-приложение для Android | `dpsmpx/DPmetaApp` | — | — | — |
 | **DPvisualisation** — интерактивная модель экосистемы | `dpsmpx/DPvisualisation` | — (пакет `tools.dpvis`; на сайте автор называл его «DPvisualise», `DPvisualisation:D-15`) | — | — |
@@ -64,7 +64,7 @@
 | SocialMediaImage | `Д0`…`Д39` | открытые решения `ОР-N`, конфликты идентичности `IC-NN`, фазы `П0`…`П11`, `К1`…`К7`, объекты контента `CI-NNNN` | смешанный |
 | DP_game_market_analytic_system | `ADR-001`…`ADR-010` (`docs/DECISIONS.md`) | инварианты `INV-NN` | латиница |
 | DPmonetization | журнала нет; код ссылается на `D-04`…`D-09` (SQ-22) | критерии готовности `tech.core_loop`… (`config/tracks.toml`) | латиница |
-| DPmetaApp | в `main` журнала нет; `D-NN` — в невлитой ветке (SQ-27) | — | латиница |
+| DPmetaApp | `D-01`…`D-29` — `docs/direction/DECISIONS.md` (в `main` с 11 октября 2026, SQ-27); у подсистемы `dpai/` — свой журнал, извне — `DP_AI_Orcestrator:D-NN` | — | латиница |
 | DPvisualisation | `D-01`…`D-20` — `docs/direction/DECISIONS.md` (в невлитой ветке, SQ-25) | ТЗ: `G-`, `S-`, `F-`, `N-`, `I-`, `T-`, `A-`, `L-`, `R-`, `Q-` | латиница |
 | DP_AI_Orcestrator | `D-01`…`D-49` — `docs/direction/DECISIONS.md` | — | латиница |
 | DPmeta | `M-NN` | `C-NN`, `RISK-NN`, `SQ-NN`, `E-NN`; находки аудита документации `DOC-AUDIT-NNN` (у каждого проекта свой счёт) и `CROSS-DOC-NNN` (M-09) | латиница |
@@ -74,9 +74,10 @@
 
 **Наблюдения:**
 
-- `D-NN` — у пяти репозиториев (DPpass, DPprofile, DPlearn,
-  DPvisualisation, DP_AI_Orcestrator; ещё в коде DPmonetization и в ветке
-  DPmetaApp, где журнала в `main` нет), `Р18` — у двух с разным смыслом
+- `D-NN` — у шести репозиториев (DPpass, DPprofile, DPlearn,
+  DPvisualisation, DP_AI_Orcestrator — его журнал продолжает подсистема
+  `dpai/` DPmetaApp, — и DPmetaApp; ещё в коде DPmonetization), `Р18` — у
+  двух с разным смыслом
   (`Galdhold:Р18` — независимость от DPlang, `DPlang:Р18` — эволюция
   языка), `F-` — и факты DPprofile, и требования ТЗ DP-Verify. Номер без
   имени проекта однозначен только внутри своего репозитория.
