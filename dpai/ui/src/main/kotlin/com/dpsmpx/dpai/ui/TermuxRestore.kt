@@ -141,7 +141,7 @@ object TermuxRestore {
             TargetPlatform.WINDOWS -> {
                 val script = "\$ak = \"\$env:ProgramData\\ssh\\administrators_authorized_keys\"; " +
                     "\$keep = @(if (Test-Path \$ak) { Get-Content \$ak | Where-Object { \$_ -notmatch ' dpai-android\$' } }); " +
-                    "Set-Content \$ak (\$keep + 'from=\"100.64.0.0/10\" $key') -Encoding ascii; " +
+                    "Set-Content \$ak (\$keep + 'from=\"${PcSetup.PRIVATE_NETS}\" $key') -Encoding ascii; " +
                     "icacls \$ak /inheritance:r /grant Administrators:F /grant SYSTEM:F | Out-Null; 'dpai-reauthorized'"
                 "powershell -NoProfile -NonInteractive -EncodedCommand " + Base64.getEncoder().encodeToString(script.toByteArray(Charsets.UTF_16LE))
             }

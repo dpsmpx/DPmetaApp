@@ -6,7 +6,7 @@ import java.util.Base64
  * Связка «Claude на телефоне — дерево на ПК» (D-53, к D-50) без ручного
  * переноса ключей: приложение уже ходит по SSH и в Termux, и на ПК, поэтому
  * само (1) создаёт в proot Termux ключ, которым Claude Code ходит на ПК,
- * (2) добавляет его открытую строку на ПК — только из сети Tailscale,
+ * (2) добавляет его открытую строку на ПК — только из частных сетей (дом, VPN; D-68),
  * прежняя строка связки заменяется, (3) кладёт в known_hosts proot ключ
  * хоста ПК, который человек уже подтвердил в приложении (D-31), и
  * (4) проверяет вход этим ключом. Здесь — команды и разбор их вывода;
@@ -38,7 +38,7 @@ object WorkspaceLink {
         require(PUBLIC.matches(publicKey) && publicKey.endsWith(" $COMMENT")) { "не ключ связки" }
         val script = "\$ak = \"\$env:ProgramData\\ssh\\administrators_authorized_keys\"; " +
             "\$keep = @(if (Test-Path \$ak) { Get-Content \$ak | Where-Object { \$_ -notmatch ' $COMMENT\$' } }); " +
-            "Set-Content \$ak (\$keep + 'from=\"100.64.0.0/10\" $publicKey') -Encoding ascii; " +
+            "Set-Content \$ak (\$keep + 'from=\"${PcSetup.PRIVATE_NETS}\" $publicKey') -Encoding ascii; " +
             "icacls \$ak /inheritance:r /grant Administrators:F /grant SYSTEM:F | Out-Null; 'dpai-linked'"
         val encoded = Base64.getEncoder().encodeToString(script.toByteArray(Charsets.UTF_16LE))
         return listOf("powershell", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded)
