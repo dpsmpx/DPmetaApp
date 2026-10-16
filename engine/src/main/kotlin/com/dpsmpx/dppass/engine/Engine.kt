@@ -5,8 +5,15 @@ import com.dpsmpx.dppass.config.ProtocolKind
 import com.dpsmpx.dppass.config.SecurityKind
 import com.dpsmpx.dppass.config.TransportKind
 import com.dpsmpx.dppass.config.VlessFlow
+import com.dpsmpx.dppass.core.Cidr
+import com.dpsmpx.dppass.core.IpAddress
 import com.dpsmpx.dppass.core.ProfileId
 import com.dpsmpx.dppass.diagnostics.Outcome
+import com.dpsmpx.dppass.diagnostics.Secret
+import com.dpsmpx.dppass.routing.RouteDecision
+import com.dpsmpx.dppass.routing.RouteEvaluator
+import com.dpsmpx.dppass.routing.RouteQuery
+import com.dpsmpx.dppass.routing.RoutingPolicy
 
 /** Возможности, которые бывают не у каждого ядра. */
 enum class EngineFeature {
@@ -72,8 +79,64 @@ class CompiledConfig(
     override fun toString(): String = "CompiledConfig($backendId $backendVersion, profile=$profileId, sha256=${checksum.take(12)})"
 }
 
-/** Что именно компилировать: какой профиль активен и есть ли TUN. */
-data class CompilePlan(val profileId: ProfileId, val withTun: Boolean)
+/**
+ * Что именно компилировать: какой профиль активен, есть ли TUN и
+ * раздаётся ли туннель другим устройствам ([share], D-51).
+ */
+data class CompilePlan(val profileId: ProfileId, val withTun: Boolean, val share: ShareSpec? = null)
+
+/**
+ * Раздача туннеля другим устройствам (D-51): вход прокси с логином и
+ * паролем — только на адресах [endpoints] (частные IPv4 интерфейсов
+ * раздачи: точка доступа, USB- и Bluetooth-модем), на порту [port].
+ * Пускать — только клиентов из подсетей раздачи и не с адресов самого
+ * телефона: так прокси не достаётся приложениям телефона.
+ */
+data class ShareSpec(val endpoints: List<Endpoint>, val port: Int, val user: Secret, val password: Secret) {
+    init {
+        require(endpoints.isNotEmpty()) { "раздача без адресов" }
+        require(endpoints.map { it.address }.distinct().size == endpoints.size) { "адрес раздачи повторяется" }
+        require(port in MIN_PORT..MAX_PORT) { "порт раздачи вне $MIN_PORT..$MAX_PORT" }
+    }
+
+    /**
+     * Адрес телефона на интерфейсе раздачи и длина префикса его подсети:
+     * клиенты раздачи приходят из этой подсети. Подсеть — целиком внутри
+     * частных адресов (RFC 1918), иначе «клиентом раздачи» оказался бы
+     * кто угодно из интернета.
+     */
+    data class Endpoint(val address: IpAddress, val prefix: Int) {
+        init {
+            require(isPrivateV4(address)) { "раздача только на частных IPv4-адресах" }
+            require(prefix <= MAX_PREFIX && PRIVATE_V4.any { subnet.isWithin(it) }) { "подсеть раздачи не внутри частных адресов" }
+        }
+
+        val subnet: Cidr get() = Cidr.of(address, prefix)
+
+        override fun toString(): String = "$address/$prefix"
+
+        companion object {
+            /** Адрес интерфейса, годный для раздачи (те же условия, что у конструктора), — или null. */
+            fun ofOrNull(address: IpAddress, prefix: Int): Endpoint? {
+                if (!isPrivateV4(address) || prefix !in 0..MAX_PREFIX) return null
+                return if (PRIVATE_V4.any { Cidr.of(address, prefix).isWithin(it) }) Endpoint(address, prefix) else null
+            }
+        }
+    }
+
+    companion object {
+        const val MIN_PORT: Int = 1024
+        const val MAX_PORT: Int = 65535
+
+        /** Длиннее /30 — в подсети нет места для клиентов. */
+        const val MAX_PREFIX: Int = 30
+
+        /** RFC 1918: 10/8, 172.16/12, 192.168/16 — адреса, которые не видны из интернета. */
+        val PRIVATE_V4: List<Cidr> = listOf("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16").map { Cidr.parse(it)!!.cidr }
+
+        fun isPrivateV4(ip: IpAddress): Boolean = PRIVATE_V4.any { ip in it }
+    }
+}
 
 /**
  * IR → конфигурация ядра. Обязан сохранить смысл IR или отказать с
@@ -129,4 +192,17 @@ interface ProxyEngine {
     suspend fun validate(config: CompiledConfig): Outcome<Unit>
 
     suspend fun start(config: CompiledConfig, tun: TunInput?): Outcome<EngineSession>
+
+    /**
+     * Объяснение решения маршрутизации (D-09): [RouteEvaluator] на
+     * геоданных этого ядра (D-27), чтобы объяснение не расходилось с тем,
+     * что ядро делает с трафиком. Отказ — геоданные не ответили: решение с
+     * geosite или geoip тогда не объясняется, а не подменяется ответом «не
+     * сработало» (D-05). Блокирует поток: ядро может читать файлы набора.
+     *
+     * По умолчанию геоданных у ядра нет ([com.dpsmpx.dppass.routing.GeoResolver.None]) —
+     * так у фиктивного ядра.
+     */
+    fun explain(policy: RoutingPolicy, query: RouteQuery): Outcome<RouteDecision> =
+        Outcome.Success(RouteEvaluator(policy).decide(query))
 }

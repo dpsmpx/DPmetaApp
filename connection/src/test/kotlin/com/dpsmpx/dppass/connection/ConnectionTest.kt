@@ -7,14 +7,27 @@ import com.dpsmpx.dppass.core.Json
 import com.dpsmpx.dppass.core.JsonArray
 import com.dpsmpx.dppass.core.JsonObject
 import com.dpsmpx.dppass.core.ManualClock
+import com.dpsmpx.dppass.core.IpAddress
 import com.dpsmpx.dppass.core.ProfileId
 import com.dpsmpx.dppass.diagnostics.DiagCode
 import com.dpsmpx.dppass.diagnostics.Diagnostic
+import com.dpsmpx.dppass.diagnostics.Logger
+import com.dpsmpx.dppass.diagnostics.MemoryLogSink
 import com.dpsmpx.dppass.diagnostics.Outcome
+import com.dpsmpx.dppass.diagnostics.Secret
+import com.dpsmpx.dppass.engine.CompiledConfig
+import com.dpsmpx.dppass.engine.EngineSession
+import com.dpsmpx.dppass.engine.EngineState
+import com.dpsmpx.dppass.engine.ProxyEngine
+import com.dpsmpx.dppass.engine.ShareSpec
+import com.dpsmpx.dppass.engine.TrafficStats
+import com.dpsmpx.dppass.engine.TunInput
 import com.dpsmpx.dppass.engine.mock.MockBackend
 import com.dpsmpx.dppass.engine.mock.MockBackendCompiler
 import com.dpsmpx.dppass.engine.mock.MockBehavior
 import com.dpsmpx.dppass.engine.mock.MockProxyEngine
+import com.dpsmpx.dppass.engine.xray.XrayBackend
+import com.dpsmpx.dppass.engine.xray.XrayCompiler
 import com.dpsmpx.dppass.network.LatencyFailure
 import com.dpsmpx.dppass.network.LatencyProbe
 import com.dpsmpx.dppass.network.LatencyResult
@@ -26,6 +39,10 @@ import com.dpsmpx.dppass.network.simulation.SimulatedNetwork
 import com.dpsmpx.dppass.storage.BlobStore
 import com.dpsmpx.dppass.storage.InMemoryBlobStore
 import com.dpsmpx.dppass.storage.Quarantine
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.io.File
 import kotlin.test.Test
@@ -376,6 +393,90 @@ class OrchestratorTest {
         assertEquals(DiagCode.ATTEMPTS_EXHAUSTED, failed.reason.code)
         assertEquals(ConnectionPolicy().maxAttempts, r.attempts.size)
         assertNull(engine.runningSession(), "неудачные сессии остановлены")
+    }
+
+    /**
+     * Отмена посреди проверки здоровья («Отключить», onRevoke, переподключение)
+     * останавливает уже запущенное ядро: иначе оно работало бы без TUN, а с
+     * раздачей (D-51) — с открытым прокси, и следующий запуск упирался бы в
+     * BACKEND_ALREADY_RUNNING, наказывая серверы.
+     */
+    @Test
+    fun cancelDuringHealthCheckStopsTheStartedCore() = runBlocking {
+        val clock = ManualClock(0)
+        val multi = ir("valid-multi.json")
+        val book = HealthBook()
+        val plan = CandidatePlanner.plan(multi, MockBackend.FULL, null, book, null, 0)
+        val engine = MockProxyEngine()
+        val log = Logger("t", MemoryLogSink(), clock::nowMillis)
+        val inCheck = CompletableDeferred<Unit>()
+        val hanging = HealthChecker { _, _ ->
+            inCheck.complete(Unit)
+            awaitCancellation()
+        }
+        val job = launch { ConnectionOrchestrator(MockBackendCompiler(), engine, hanging, book, clock, log) { clock.advance(it) }.connect(multi, plan, null) }
+        inCheck.await()
+        assertNotNull(engine.runningSession(), "ядро запущено, идёт проверка здоровья")
+        job.cancelAndJoin()
+        assertNull(engine.runningSession(), "отмена остановила запущенное ядро")
+        val again = ConnectionOrchestrator(MockBackendCompiler(), engine, { _, _ -> Outcome.Success(Unit) }, book, clock, log) { clock.advance(it) }
+            .connect(multi, plan, null)
+        assertIs<ConnectionReport.Connected>(again)
+        assertTrue(again.attempts.none { it.failure?.code == DiagCode.BACKEND_ALREADY_RUNNING }, again.attempts.toString())
+    }
+
+    /** Ядро, у которого вход раздачи не встаёт (адрес пропал, порт занят): запуск с входами раздачи — отказ. */
+    private class ShareCannotBind : ProxyEngine {
+        override val capabilities = XrayBackend.CAPABILITIES
+        val starts = mutableListOf<Boolean>()
+        private var running: EngineSession? = null
+
+        override suspend fun validate(config: CompiledConfig): Outcome<Unit> = Outcome.Success(Unit)
+
+        override suspend fun start(config: CompiledConfig, tun: TunInput?): Outcome<EngineSession> {
+            val withShare = "\"${XrayBackend.SHARE_TAG_PREFIX}0\"" in config.payloadForEngine()
+            starts += withShare
+            if (running != null) return Outcome.failure(DiagCode.BACKEND_ALREADY_RUNNING, "ядро уже запущено")
+            if (withShare) return Outcome.failure(DiagCode.BACKEND_START_FAILED, "listen tcp 192.168.43.1:41234: bind: cannot assign requested address")
+            val s = object : EngineSession {
+                private var state = EngineState.RUNNING
+                override val compiled = config
+
+                override fun state() = state
+
+                override fun stats() = TrafficStats(0, 0)
+
+                override suspend fun stop() {
+                    state = EngineState.STOPPED
+                    running = null
+                }
+            }
+            running = s
+            return Outcome.Success(s)
+        }
+    }
+
+    /** D-51: вход раздачи не встал — туннель без раздачи, а сервер не наказан за чужой отказ. */
+    @Test
+    fun shareThatCannotBindIsDroppedWithoutBlamingServers() = runBlocking {
+        val clock = ManualClock(0)
+        val multi = ir("valid-multi.json")
+        val book = HealthBook()
+        val plan = CandidatePlanner.plan(multi, XrayBackend.CAPABILITIES, null, book, null, 0)
+        val engine = ShareCannotBind()
+        val share = ShareSpec(listOf(ShareSpec.Endpoint(IpAddress.parse("192.168.43.1")!!, 24)), 41234, Secret("u-test"), Secret("p-test-0123456789"))
+        var checks = 0
+        // Первый кандидат не проходит проверку здоровья — второй пробуется уже без раздачи.
+        val health = HealthChecker { _, _ ->
+            if (checks++ == 0) Outcome.failure(DiagCode.ENDPOINT_UNREACHABLE, "сервер недоступен") else Outcome.Success(Unit)
+        }
+        val log = Logger("t", MemoryLogSink(), clock::nowMillis)
+        val report = ConnectionOrchestrator(XrayCompiler(), engine, health, book, clock, log) { clock.advance(it) }.connect(multi, plan, null, share)
+        val connected = assertIs<ConnectionReport.Connected>(report)
+        assertEquals(DiagCode.BACKEND_START_FAILED, connected.shareRefused?.code)
+        assertEquals(listOf(true, false, false), engine.starts, "с раздачей — один запуск; повтор той же попытки и следующая — без неё")
+        assertEquals(DiagCode.ENDPOINT_UNREACHABLE, report.attempts.first().failure?.code, "первый отказ — от проверки здоровья")
+        assertTrue(report.attempts.none { it.failure?.code == DiagCode.BACKEND_START_FAILED }, "отказ входа раздачи не записан серверу")
     }
 
     @Test

@@ -9,6 +9,7 @@ import kotlinx.coroutines.runBlocking
 import java.io.ByteArrayInputStream
 import java.io.InputStream
 import java.net.HttpURLConnection
+import java.net.SocketTimeoutException
 import java.net.URL
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -73,6 +74,25 @@ class HttpsSubscriptionFetcherTest {
         fetch(request(url.toString(), id), withId)
         assertEquals(setOf("User-Agent", "Accept", "x-hwid"), withId.sent.keys)
         assertEquals(id.reveal(), withId.sent["x-hwid"])
+    }
+
+    @Test
+    fun timeoutIsSetForConnectAndReadWithinBounds() {
+        assertEquals(20_000L, FetchPolicy().timeoutMillis, "как в PERFORMANCE_BUDGET §2")
+        val url = URL("https://sub.example.com/token-1")
+        for ((asked, applied) in listOf(20_000L to 20_000, 10L to 1_000, 600_000L to 120_000)) {
+            val c = FakeConnection(url, 200)
+            fetch(request(url.toString()), c, p = FetchPolicy(timeoutMillis = asked))
+            assertEquals(applied to applied, c.connectTimeout to c.readTimeout, "срок $asked мс")
+        }
+        // Срок вышел посреди тела: отказ «сервер недоступен», а не обрезанная подписка.
+        val stalled = FakeConnection(url, 200, body = {
+            object : InputStream() {
+                override fun read(): Int = throw SocketTimeoutException("Read timed out")
+            }
+        })
+        val (r, _) = fetch(request(url.toString()), stalled)
+        assertEquals(DiagCode.ENDPOINT_UNREACHABLE, assertIs<Outcome.Failure>(r).errors.single().code)
     }
 
     @Test

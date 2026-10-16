@@ -7,7 +7,8 @@ CorpusTest читает корпус по соглашениям об имена
 
   * пары файлов: у каждого входа есть ожидание и наоборот
     (`X.json` ↔ `X.expect.json`, `X.txt` ↔ `X.expect.json`,
-    `X.headers.json` → `X.txt`), ссылки на конфигурации существуют;
+    `X.headers.json` → `X.txt`), ссылки на конфигурации и на оглавление
+    геоданных (`xray.geodata`) существуют;
   * ожидания строгие: только известные ключи и значения исходов, коды —
     из `DiagCode`, условия сети — из `NetworkCondition` (и каждое условие
     модели есть в таблице), классы — из `RestrictionClass`,
@@ -148,13 +149,26 @@ def check_config_dirs():
             xr = e.get("xray")
             if xr is None and ld.get("outcome") == "ok":
                 bad(path, "нет ожидания xray: разбираемая конфигурация корпуса компилируется и для Xray (этап 2)")
-            if xr is not None and keys(path, xr, {"outcome", "codes"}, ("outcome",)):
+            if xr is not None and keys(path, xr, {"outcome", "codes", "geodata"}, ("outcome",)):
                 one_of(path, "xray.outcome", xr.get("outcome"), {"compiled", "rejected"})
                 codes(path, xr)
+                if "geodata" in xr:
+                    check_geodata_ref(path, xr["geodata"])
                 if ld.get("outcome") != "ok":
                     bad(path, "xray есть, а load.outcome не ok — компиляция не дойдёт до проверки")
                 check_xray_golden(d, n, os.path.join(root, n + ".json"), xr.get("outcome") == "compiled")
         check_xray_orphans(d, expects & inputs)
+
+
+def check_geodata_ref(path, ref):
+    """xray.geodata — оглавление набора геоданных в корпусе (`geodata/…`): по нему сверяются коды."""
+    target = os.path.normpath(os.path.join(DATA, ref)) if isinstance(ref, str) else None
+    if target is None or not ref.startswith("geodata/") or not target.startswith(os.path.join(DATA, "geodata") + os.sep):
+        bad(path, f"xray.geodata = {ref!r}: ожидался путь к оглавлению в tests/data/geodata/")
+        return
+    doc = load(target) if os.path.isfile(target) else None
+    if not isinstance(doc, dict) or doc.get("format") != "dppass.geodata":
+        bad(path, f"xray.geodata = {ref!r}: нет оглавления набора геоданных (формат dppass.geodata)")
 
 
 def profile_ids(config_path):

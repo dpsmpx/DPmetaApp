@@ -8,6 +8,9 @@
         APK в DIR (по умолчанию build/release-apk) с SHA256SUMS и CERTIFICATE.txt
     python3 tools/release/sign_apks.py --fingerprint
         отпечаток сертификата ключа из окружения — для docs/PROVENANCE.md, §7
+    python3 tools/release/sign_apks.py --unsigned [--out DIR]
+        те же APK без подписи — подписывает автор на своём устройстве
+        (tools/release/dppass-sign-termux.sh): файла ключа в сессии нет
 
 Ключ — только из окружения (D-35), в командную строку пароли не попадают
 (`apksigner … --ks-pass env:…`):
@@ -31,6 +34,14 @@
 выравнивание zip (4 байта, библиотеки — 16 КБ) → `apksigner sign` →
 `apksigner verify`: подпись v2/v3 и сертификат = отпечаток из
 docs/PROVENANCE.md, §7 → `check_apk.py --abi` → SHA256SUMS.
+
+Без подписи (`--unsigned`): файл ключа не нужен, нужен только пароль
+хранилища (`DPPASS_SIGNING_STORE_PASSWORD`; алиас — `DPPASS_SIGNING_KEY_ALIAS`,
+по умолчанию `dppass-dev`). Зерно личности — из отпечатка, записанного в
+docs/PROVENANCE.md, §7, и этого пароля; шаги те же, кроме подписи. Рядом
+с APK — `dppass-sign-termux.sh`: на устройстве он сверяет пароль с
+зерном сборки (`seed-sha256` в CERTIFICATE.txt — иначе пакет не тот),
+подписывает APK ключом автора и сверяет сертификат с отпечатком.
 
 Код возврата: 0 — APK готовы; 1 — проверка не прошла; 2 — нет ключа,
 Android SDK или записанного отпечатка.
@@ -61,6 +72,8 @@ ENV_ALIAS = "DPPASS_SIGNING_KEY_ALIAS"
 ENV_KEY_PASS = "DPPASS_SIGNING_KEY_PASSWORD"
 # Строка таблицы §7: | `dppass-dev` | <64 hex> |
 RECORDED = re.compile(r"^\|\s*`([^`]+)`\s*\|\s*([0-9a-f]{64})\s*\|\s*$", re.M)
+DEFAULT_ALIAS = "dppass-dev"
+TERMUX_SIGNER = os.path.join(PROJ, "tools", "release", "dppass-sign-termux.sh")
 
 
 class Refusal(Exception):
@@ -214,6 +227,13 @@ def sha256(path):
     return h.hexdigest()
 
 
+def align_only(tools, unsigned, out):
+    """Без подписи: выровнять (библиотеки — 16 КБ, D-25) и проверить выравнивание; подпишет автор."""
+    run([os.path.join(tools, "zipalign"), "-f", "-P", "16", "4", unsigned, out], "zipalign")
+    run([os.path.join(tools, "zipalign"), "-c", "-P", "16", "4", out], "zipalign -c")
+    return []
+
+
 def sign_one(tools, ks, unsigned, out, expected):
     """Выровнять, подписать, проверить подпись и сертификат; problems — список нарушений."""
     problems = []
@@ -242,19 +262,29 @@ def main():
     a.add_argument("--out", default=os.path.join(PROJ, "build", "release-apk"))
     a.add_argument("--skip-build", action="store_true", help="не собирать: взять готовые APK из app/build/outputs")
     a.add_argument("--fingerprint", action="store_true", help="напечатать отпечаток ключа из окружения и выйти")
+    a.add_argument("--unsigned", action="store_true",
+                   help="без подписи: личность — из записанного отпечатка и пароля, подпись — на устройстве автора")
     args = a.parse_args()
     tmp = tempfile.mkdtemp(prefix="dppass-sign-")
     try:
-        ks = keystore(tmp)
-        actual = fingerprint(ks)
-        if args.fingerprint:
-            print(f"| `{os.environ[ENV_ALIAS]}` | {actual} |")
-            return 0
-        expected = recorded(os.environ[ENV_ALIAS])
-        if actual != expected:
-            fail(f"ключ из окружения ({actual}) — не тот, что записан в docs/PROVENANCE.md, §7 ({expected})")
+        if args.unsigned:
+            if not os.environ.get(ENV_STORE_PASS):
+                fail(f"нет {ENV_STORE_PASS}: без пароля хранилища не вычислить личность пакета (D-49)")
+            alias = os.environ.get(ENV_ALIAS) or DEFAULT_ALIAS
+            ks = None
+            expected = recorded(alias)
+        else:
+            ks = keystore(tmp)
+            alias = os.environ[ENV_ALIAS]
+            actual = fingerprint(ks)
+            if args.fingerprint:
+                print(f"| `{alias}` | {actual} |")
+                return 0
+            expected = recorded(alias)
+            if actual != expected:
+                fail(f"ключ из окружения ({actual}) — не тот, что записан в docs/PROVENANCE.md, §7 ({expected})")
         version = version_name()
-        seed = identity_seed(actual)
+        seed = identity_seed(expected)
         want = expected_identity(seed)
         sdk = sdk_dir()
         tools = build_tools(sdk) if sdk else None
@@ -277,10 +307,10 @@ def main():
             if not os.path.isfile(unsigned):
                 problems.append(f"{abi}: нет {os.path.relpath(unsigned, PROJ)}")
                 continue
-            name = f"dppass-{version}-{rev}-{abi}.apk"
+            name = f"dppass-{version}-{rev}-{abi}" + ("-unsigned.apk" if args.unsigned else ".apk")
             out = os.path.join(args.out, name)
             try:
-                bad = sign_one(tools, ks, unsigned, out, expected)
+                bad = align_only(tools, unsigned, out) if args.unsigned else sign_one(tools, ks, unsigned, out, expected)
             except RuntimeError as e:
                 problems.append(f"{abi}: {e}")
                 continue
@@ -306,9 +336,20 @@ def main():
                 f.write(f"{sha256(os.path.join(args.out, name))}  {name}\n")
         package, label = next(iter(packages))
         with open(os.path.join(args.out, "CERTIFICATE.txt"), "w", encoding="utf-8") as f:
-            f.write(f"SHA-256 сертификата ключа {os.environ[ENV_ALIAS]} (docs/PROVENANCE.md, §7):\n{expected}\n")
-            f.write(f"Пакет и ярлык (D-49, постоянные для ключа): {package} «{label}»\n")
-        print(f"✓ {len(made)} APK ({version}, {rev}) подписаны ключом {os.environ[ENV_ALIAS]} ({expected[:16]}…), "
+            f.write(f"# Ключ {alias}: SHA-256 сертификата — docs/PROVENANCE.md, §7; пакет и ярлык постоянны для ключа (D-49).\n")
+            if args.unsigned:
+                f.write("# APK не подписаны: подписывает автор (dppass-sign-termux.sh). seed-sha256 — SHA-256 зерна\n"
+                        "# личности: по нему скрипт проверяет, что пароль тот же, что при сборке.\n")
+            f.write(f"alias: {alias}\ncertificate-sha256: {expected}\npackage: {package}\nlabel: {label}\n")
+            if args.unsigned:
+                f.write(f"seed-sha256: {hashlib.sha256(seed.encode('ascii')).hexdigest()}\n")
+        if args.unsigned:
+            shutil.copy(TERMUX_SIGNER, os.path.join(args.out, os.path.basename(TERMUX_SIGNER)))
+            print(f"✓ {len(made)} APK ({version}, {rev}) без подписи, личность ключа {alias} ({expected[:16]}…), "
+                  f"check_apk.py --abi пройден; пакет {package} «{label}»; подписать на устройстве — "
+                  f"{os.path.basename(TERMUX_SIGNER)}: {os.path.relpath(args.out, PROJ)}")
+            return 0
+        print(f"✓ {len(made)} APK ({version}, {rev}) подписаны ключом {alias} ({expected[:16]}…), "
               f"сертификат сверен с docs/PROVENANCE.md, §7, check_apk.py --abi пройден; пакет {package} «{label}»: "
               f"{os.path.relpath(args.out, PROJ)}")
         return 0

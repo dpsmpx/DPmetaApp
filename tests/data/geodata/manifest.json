@@ -1,6 +1,6 @@
 {
   "format": "dppass.geodata",
-  "format_version": 1,
+  "format_version": 2,
   "sources": {
     "dlc": {
       "module": "github.com/v2fly/domain-list-community",
@@ -20,8 +20,8 @@
     },
     {
       "name": "geosite.dat",
-      "sha256": "159efede339f2fb32cbdea52b62c129e2893844a145c67a8eae610ce7c259ad3",
-      "size": 489
+      "sha256": "5ffe00184440810558fd6d0694ef55543f7fae1f95f90122f7bac15a8673b661",
+      "size": 557
     },
     {
       "name": "NOTICE.txt",
@@ -36,18 +36,34 @@
   ],
   "geosite": {
     "example-a": [
-      "ads"
+      [
+        "ads"
+      ]
     ],
     "example-all": [
-      "ads",
-      "cn"
+      [
+        "ads",
+        "cn"
+      ]
     ],
     "example-b": [
-      "ads",
-      "cn"
+      [
+        "ads",
+        "cn"
+      ]
     ],
     "example-c": [
-      "ads"
+      [
+        "ads"
+      ]
+    ],
+    "example-split": [
+      [
+        "ads"
+      ],
+      [
+        "cn"
+      ]
     ]
   }
 }

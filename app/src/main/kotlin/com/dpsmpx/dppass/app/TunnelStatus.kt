@@ -2,6 +2,7 @@ package com.dpsmpx.dppass.app
 
 import com.dpsmpx.dppass.core.ProfileId
 import com.dpsmpx.dppass.diagnostics.Diagnostic
+import com.dpsmpx.dppass.engine.ShareSpec
 import com.dpsmpx.dppass.engine.TrafficStats
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -74,18 +75,35 @@ class TrafficMeter {
 object TunnelState {
     private val flow = MutableStateFlow<TunnelStatus>(TunnelStatus.Idle)
     private val trafficFlow = MutableStateFlow(Traffic.ZERO)
+    private val shareFlow = MutableStateFlow<List<ShareSpec.Endpoint>>(emptyList())
+    private val shareRefusedFlow = MutableStateFlow(false)
 
     val status: StateFlow<TunnelStatus> = flow.asStateFlow()
 
     /** Трафик текущей сессии; без туннеля — нули. */
     val traffic: StateFlow<Traffic> = trafficFlow.asStateFlow()
 
+    /** На каких адресах сейчас раздаётся туннель (D-51); без туннеля или раздачи — пусто. */
+    val share: StateFlow<List<ShareSpec.Endpoint>> = shareFlow.asStateFlow()
+
+    /** Раздача просилась, но ядро с её входами не запустилось (адрес пропал, порт занят): туннель — без неё. */
+    val shareRefused: StateFlow<Boolean> = shareRefusedFlow.asStateFlow()
+
     fun set(next: TunnelStatus) {
         flow.value = next
-        if (!next.busy) trafficFlow.value = Traffic.ZERO
+        if (!next.busy) {
+            trafficFlow.value = Traffic.ZERO
+            shareFlow.value = emptyList()
+            shareRefusedFlow.value = false
+        }
     }
 
     fun traffic(next: Traffic) {
         trafficFlow.value = next
+    }
+
+    fun share(next: List<ShareSpec.Endpoint>, refused: Boolean = false) {
+        shareFlow.value = next
+        shareRefusedFlow.value = refused
     }
 }

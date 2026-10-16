@@ -4,7 +4,9 @@ import com.dpsmpx.dppass.config.ConfigIr
 import com.dpsmpx.dppass.config.ConfigLoader
 import com.dpsmpx.dppass.config.SecuritySpec
 import com.dpsmpx.dppass.config.TransportSpec
+import com.dpsmpx.dppass.core.Cidr
 import com.dpsmpx.dppass.core.Host
+import com.dpsmpx.dppass.core.IpAddress
 import com.dpsmpx.dppass.core.Json
 import com.dpsmpx.dppass.core.JsonArray
 import com.dpsmpx.dppass.core.JsonNumber
@@ -13,14 +15,17 @@ import com.dpsmpx.dppass.core.JsonString
 import com.dpsmpx.dppass.core.JsonValue
 import com.dpsmpx.dppass.diagnostics.DiagCode
 import com.dpsmpx.dppass.diagnostics.Outcome
+import com.dpsmpx.dppass.diagnostics.Secret
 import com.dpsmpx.dppass.engine.CompilePlan
 import com.dpsmpx.dppass.engine.CompiledConfig
+import com.dpsmpx.dppass.engine.ShareSpec
 import com.dpsmpx.dppass.engine.capabilityDiff
 import com.dpsmpx.dppass.engine.mock.MockBackend
 import com.dpsmpx.dppass.routing.RouteAction
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -413,14 +418,25 @@ class XrayCompilerTest {
 
     @Test
     fun geoCodesAreCheckedAgainstTheInstalledSet() {
-        // D-27: кода или атрибута нет в наборе геоданных ядра — отказ с путём правила,
-        // а не условие, которое молча никогда не сработает (D-05).
-        val set = GeodataManifest("v0.0.0-20260101000000-0123456789ab", "0123456789ab", "2026-01", emptyList(), setOf("aa", "private"), mapOf("example-a" to setOf("ads")))
+        // D-27: кода, атрибута или сочетания атрибутов нет в наборе геоданных ядра —
+        // отказ с путём правила, а не условие, которое молча никогда не сработает (D-05).
+        val set = GeodataManifest(
+            "v0.0.0-20260101000000-0123456789ab", "0123456789ab", "2026-01", emptyList(), setOf("aa", "private"),
+            mapOf(
+                "example-a" to listOf(setOf("ads")),
+                "example-plain" to emptyList(),
+                "example-both" to listOf(setOf("ads", "cn")),
+                // @ads и @cn есть, но у разных правил: @ads@cn ядро не выберет ни одного.
+                "example-split" to listOf(setOf("ads"), setOf("cn")),
+            ),
+        )
         val routing = """{"rules": [
-            {"id": "known", "action": "direct", "geoip": ["aa", "private"], "geosite": ["example-a", "example-a@ads"]},
+            {"id": "known", "action": "direct", "geoip": ["aa", "private"],
+             "geosite": ["example-a", "example-a@ads", "example-plain", "example-both@cn@ads", "example-both@cn", "example-split@ads", "example-split@cn"]},
             {"id": "unknown-ip", "action": "direct", "geoip": ["zz"]},
             {"id": "unknown-site", "action": "block", "geosite": ["example-b"]},
-            {"id": "unknown-attr", "action": "block", "geosite": ["example-a@cn"]}]}"""
+            {"id": "unknown-attr", "action": "block", "geosite": ["example-a@cn"]},
+            {"id": "split-attrs", "action": "block", "geosite": ["example-split@ads@cn"]}]}"""
         val dns = """{"servers": [{"id": "remote", "type": "https", "url": "https://dns.example.net/dns-query", "route": "tunnel"}],
             "default": "remote", "rules": [{"geosite": ["example-z"], "server": "remote"}]}"""
         val geo = ir(routing = routing, dns = dns)
@@ -431,16 +447,119 @@ class XrayCompilerTest {
                 DiagCode.GEO_CODE_UNKNOWN to "$.routing.rules[1].geoip",
                 DiagCode.GEO_CODE_UNKNOWN to "$.routing.rules[2].geosite",
                 DiagCode.GEO_CODE_UNKNOWN to "$.routing.rules[3].geosite",
+                DiagCode.GEO_CODE_UNKNOWN to "$.routing.rules[4].geosite",
                 DiagCode.GEO_CODE_UNKNOWN to "$.dns.rules[0].geosite",
             ),
             errors(compileWith(GeodataCodes.Installed(set))).toSet(),
         )
+        val split = compileWith(GeodataCodes.Installed(set)).diagnostics.single { it.path == "$.routing.rules[4].geosite" }
+        assertTrue("нет правила со всеми атрибутами @ads@cn сразу" in split.message, split.message)
         val missing = errors(compileWith(GeodataCodes.Missing("в приложении нет набора")))
         assertTrue(missing.all { it.first == DiagCode.GEODATA_UNAVAILABLE }, "$missing")
-        assertEquals(6, missing.size, "каждое условие geoip/geosite — с путём: $missing")
+        assertEquals(7, missing.size, "каждое условие geoip/geosite — с путём: $missing")
         assertTrue(compileWith(GeodataCodes.Unchecked).isSuccess, "без набора коды проверяет само ядро")
         val known = ir(routing = """{"rules": [{"id": "known", "action": "direct", "geoip": ["aa"], "geosite": ["example-a@ads"]}]}""")
         assertTrue(XrayCompiler(geodata = GeodataCodes.Installed(set)).compile(known, CompilePlan(known.profiles[0].id, true)).isSuccess)
+    }
+
+    /** D-51: раздача — вход SOCKS/HTTP с паролем только на адресах раздачи и только для клиентов раздачи. */
+    @Test
+    fun shareInboundsListenOnlyOnTetherAddressesWithAuth() {
+        val gi = ir(routing = """{"rules": [{"id": "net", "action": "direct", "domain": ["net.example.com"]}]}""")
+        val hotspot = ShareSpec.Endpoint(IpAddress.parse("192.168.43.1")!!, 24)
+        val usb = ShareSpec.Endpoint(IpAddress.parse("192.168.42.129")!!, 24)
+        val share = ShareSpec(listOf(hotspot, usb), 41234, Secret("u-test"), Secret("p-test-0123456789"))
+        val p = Json.parse(XrayCompiler().compile(gi, CompilePlan(gi.profiles[0].id, true, share)).valueOrNull()!!.payloadForEngine()) as JsonObject
+        val inbounds = p["inbounds"].items
+        assertEquals(listOf("tun-in", "dppass:share-0", "dppass:share-1"), inbounds.map { it["tag"].text })
+        for ((i, e) in share.endpoints.withIndex()) {
+            val inb = inbounds[i + 1]
+            assertEquals("socks", inb["protocol"].text)
+            assertEquals(e.address.toString(), inb["listen"].text, "только адрес раздачи — не 0.0.0.0")
+            assertEquals(41234, inb["port"].int)
+            assertEquals("password", inb["settings"]["auth"].text)
+            assertEquals("u-test", inb["settings"]["accounts"].items.single()["user"].text)
+            assertEquals("p-test-0123456789", inb["settings"]["accounts"].items.single()["pass"].text)
+        }
+        // Первое правило: на вход раздачи — только клиенты из подсетей раздачи, не сам телефон.
+        val first = rules(p).first()
+        assertEquals("dppass:share-guard", first["ruleTag"].text)
+        assertEquals(listOf("dppass:share-0", "dppass:share-1"), first["inboundTag"].items.map { it.text })
+        assertEquals("block", first["outboundTag"].text)
+        val refused = first["source"].items.map { Cidr.parse(it.text)!!.cidr }
+        fun refused(ip: String) = refused.any { IpAddress.parse(ip)!! in it }
+        assertFalse(refused("192.168.43.17"), "клиент точки доступа")
+        assertFalse(refused("192.168.42.200"), "клиент USB-модема")
+        assertTrue(refused("192.168.43.1"), "адрес самого телефона")
+        assertTrue(refused("192.168.42.129"), "адрес самого телефона")
+        assertTrue(refused("192.168.1.5"), "адрес телефона в домашнем Wi-Fi")
+        assertTrue(refused("127.0.0.1"))
+        assertTrue(refused("10.0.0.2"))
+        assertTrue(refused("203.0.113.5"))
+        assertTrue(refused("fd00::1"))
+        // Правила пользователя действуют и для раздачи (правило без inboundTag).
+        assertNull(rules(p).single { it["ruleTag"].text == "net" }["inboundTag"])
+        // Без раздачи — ни входа, ни правила.
+        val plain = payload(gi)
+        assertEquals(listOf("tun-in"), plain["inbounds"].items.map { it["tag"].text })
+        assertTrue(ruleTags(plain).none { it.startsWith("dppass:share") })
+        // Адрес или подсеть не частные, подсеть без места для клиентов, порт ниже 1024 — раздачу не построить.
+        assertFailsWith<IllegalArgumentException> { ShareSpec.Endpoint(IpAddress.parse("203.0.113.5")!!, 24) }
+        assertFailsWith<IllegalArgumentException> { ShareSpec.Endpoint(IpAddress.parse("127.0.0.1")!!, 8) }
+        assertFailsWith<IllegalArgumentException> { ShareSpec.Endpoint(IpAddress.parse("192.168.43.1")!!, 8) }
+        assertFailsWith<IllegalArgumentException> { ShareSpec.Endpoint(IpAddress.parse("192.168.43.1")!!, 32) }
+        assertFailsWith<IllegalArgumentException> { ShareSpec(listOf(hotspot), 80, Secret("u"), Secret("p")) }
+        assertFailsWith<IllegalArgumentException> { ShareSpec(listOf(hotspot, hotspot), 41234, Secret("u"), Secret("p")) }
+    }
+
+    /**
+     * D-51, T11: «напрямую» для клиентов раздачи — свой исходящий, закрытый для
+     * loopback телефона; правила те же, что у телефона. Без раздачи
+     * конфигурация не меняется.
+     */
+    @Test
+    fun shareDirectIsClosedToPhoneLoopback() {
+        val routing = """{"default": "direct", "rules": [{"id": "net", "action": "direct", "domain": ["net.example.com"]}, """ +
+            """{"id": "ads", "action": "block", "domain": ["ads.example.com"]}, {"id": "far", "action": "proxy", "domain": ["far.example.com"]}]}"""
+        val gi = ir(routing = routing)
+        val share = ShareSpec(listOf(ShareSpec.Endpoint(IpAddress.parse("192.168.43.1")!!, 24)), 41234, Secret("u-test"), Secret("p-test-0123456789"))
+        val p = Json.parse(XrayCompiler().compile(gi, CompilePlan(gi.profiles[0].id, true, share)).valueOrNull()!!.payloadForEngine()) as JsonObject
+        val outbounds = p["outbounds"].items
+        val direct = outbounds.single { it["tag"].text == "direct" }
+        val forShare = outbounds.single { it["tag"].text == XrayBackend.TAG_DIRECT_SHARE }
+        assertEquals("freedom", forShare["protocol"].text)
+        assertEquals(direct["streamSettings"], forShare["streamSettings"], "имя резолвится так же, как у direct (T4)")
+        val closed = forShare["settings"]["finalRules"].items.single()
+        assertEquals("block", closed["action"].text)
+        assertEquals(listOf("127.0.0.0/8", "0.0.0.0/8", "::1/128", "::/128"), closed["ip"].items.map { it.text })
+        assertNull(direct["settings"], "у direct телефона ограничений нет: DNS-сервер на 127.0.0.1 остаётся рабочим")
+        // Перед правилом direct — его копия только для раздачи (свой ruleTag: Xray не
+        // принимает повторов); block и proxy — общие.
+        val r = rules(p)
+        val net = r.indexOfFirst { it["ruleTag"].text == "dppass:share:net" }
+        assertEquals(listOf("dppass:share-0"), r[net]["inboundTag"].items.map { it.text })
+        assertEquals(XrayBackend.TAG_DIRECT_SHARE, r[net]["outboundTag"].text)
+        assertEquals("net", r[net + 1]["ruleTag"].text)
+        assertEquals(r[net]["domain"], r[net + 1]["domain"])
+        assertNull(r[net + 1]["inboundTag"])
+        assertEquals("direct", r[net + 1]["outboundTag"].text)
+        assertEquals(ruleTags(p).size, ruleTags(p).toSet().size, "ruleTag не повторяются")
+        assertEquals(1, r.count { it["ruleTag"].text == "ads" })
+        assertEquals(1, r.count { it["ruleTag"].text == "far" })
+        // Действие по умолчанию direct: раздаче — последним правилом свой исходящий.
+        val last = r.last()
+        assertEquals("dppass:share-default", last["ruleTag"].text)
+        assertEquals(XrayBackend.TAG_DIRECT_SHARE, last["outboundTag"].text)
+        // Без раздачи — ни исходящего, ни копий правил.
+        val plain = payload(gi)
+        assertTrue(plain["outbounds"].items.none { it["tag"].text == XrayBackend.TAG_DIRECT_SHARE })
+        assertEquals(1, rules(plain).count { it["ruleTag"].text == "net" })
+        assertTrue(ruleTags(plain).none { it == "dppass:share-default" })
+        // По умолчанию proxy: правила для раздачи в конце нет — её клиентов ведёт первый исходящий.
+        val viaProxy = ir(routing = """{"rules": [{"id": "net", "action": "direct", "domain": ["net.example.com"]}]}""")
+        val pp = Json.parse(XrayCompiler().compile(viaProxy, CompilePlan(viaProxy.profiles[0].id, true, share)).valueOrNull()!!.payloadForEngine()) as JsonObject
+        assertTrue(ruleTags(pp).none { it == "dppass:share-default" })
+        assertEquals("proxy", pp["outbounds"].items.first()["tag"].text)
     }
 
     @Test
@@ -456,7 +575,7 @@ class XrayCompilerTest {
                 .all { it.first == DiagCode.GEO_CODE_UNKNOWN },
             "кодов ru нет в наборе — GEO_CODE_UNKNOWN",
         )
-        val withRu = GeodataManifest("v0.0.0-20260101000000-0123456789ab", "0123456789ab", "2026-01", emptyList(), setOf("ru"), mapOf("category-ru" to emptySet()))
+        val withRu = GeodataManifest("v0.0.0-20260101000000-0123456789ab", "0123456789ab", "2026-01", emptyList(), setOf("ru"), mapOf("category-ru" to emptyList()))
         val p = Json.parse(
             XrayCompiler(geodata = GeodataCodes.Installed(withRu)).compile(gi, CompilePlan(gi.profiles[0].id, true)).valueOrNull()!!.payloadForEngine(),
         ) as JsonObject

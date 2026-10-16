@@ -9,6 +9,7 @@ import com.dpsmpx.dppass.config.TransportSpec
 import com.dpsmpx.dppass.config.VlessFlow
 import com.dpsmpx.dppass.config.XHttpExtra
 import com.dpsmpx.dppass.core.Checksums
+import com.dpsmpx.dppass.core.Cidr
 import com.dpsmpx.dppass.core.Host
 import com.dpsmpx.dppass.core.Json
 import com.dpsmpx.dppass.core.JsonObject
@@ -22,6 +23,7 @@ import com.dpsmpx.dppass.engine.CapabilityChecker
 import com.dpsmpx.dppass.engine.CompilePlan
 import com.dpsmpx.dppass.engine.CompiledConfig
 import com.dpsmpx.dppass.engine.EngineCapabilities
+import com.dpsmpx.dppass.engine.ShareSpec
 import com.dpsmpx.dppass.routing.AppLowering
 import com.dpsmpx.dppass.routing.Conditions
 import com.dpsmpx.dppass.routing.DnsPolicy
@@ -64,8 +66,8 @@ import java.util.Base64
  * (`GEO_CODE_UNKNOWN`), набора нет — отказ `GEODATA_UNAVAILABLE`. Без
  * набора ([GeodataCodes.Unchecked]: хост) коды не сверяются: в `cli` ядра
  * нет, эталоны ядро проверяет на синтетическом наборе со всеми их кодами.
- * Несколько атрибутов сверяются по одному: сочетание, которого нет ни у
- * одной записи списка, не ловится (`docs/CONFIG_FORMAT.md`, §4).
+ * Несколько атрибутов сверяются сочетанием: ни у одного правила списка
+ * нет их всех сразу — тоже отказ (`docs/CONFIG_FORMAT.md`, §4).
  *
  * Конфигурация содержит секреты: наружу — только через
  * [CompiledConfig.payloadForEngine].
@@ -83,7 +85,7 @@ class XrayCompiler(
 
         val proxy = build.proxyOutbound(profile, "$.profiles[$index]")
         val dns = build.dns(ir.dns)
-        val routing = build.routing(ir, plan.withTun)
+        val routing = build.routing(ir, plan.withTun, plan.share)
         if (problems.any { it.isError }) return Outcome.Failure(problems)
 
         val terminal = mapOf(
@@ -93,13 +95,16 @@ class XrayCompiler(
         )
         // Первый исходящий — действие по умолчанию (см. KDoc класса).
         val order = listOf(ir.routing.defaultAction) + RouteAction.entries.filter { it != ir.routing.defaultAction }
-        val outbounds = order.map { terminal.getValue(it) } + listOfNotNull(dnsOutbound().takeIf { plan.withTun })
+        val outbounds = order.map { terminal.getValue(it) } + listOfNotNull(
+            dnsOutbound().takeIf { plan.withTun },
+            build.directShareOutbound(ir.dns.strategy).takeIf { plan.share != null },
+        )
 
         val doc = Json.obj(
             "log" to Json.obj("loglevel" to Json.str("none"), "dnsLog" to Json.bool(false)),
             "dns" to dns,
             "routing" to routing,
-            "inbounds" to Json.arr(listOfNotNull(tunInbound().takeIf { plan.withTun })),
+            "inbounds" to Json.arr(listOfNotNull(tunInbound().takeIf { plan.withTun }) + plan.share?.let(::shareInbounds).orEmpty()),
             "outbounds" to Json.arr(outbounds),
             // Счётчики исходящих (`outbound>>>proxy>>>traffic>>>…`): по ним мост отдаёт
             // TrafficStats сессии (D-25); без них запуск отвергается, а не врёт нулями.
@@ -137,16 +142,25 @@ class XrayCompiler(
                     for (entry in geoSites) {
                         val code = entry.substringBefore('@')
                         val attrs = entry.split('@').drop(1)
-                        val known = m.geoSite[code]
+                        val known = m.siteAttributes(code)
                         if (known == null) {
                             reject(DiagCode.GEO_CODE_UNKNOWN, "geosite:$code — такого списка нет в наборе геоданных (${m.summary})", "$path.geosite")
                             continue
                         }
-                        // Xray выбирает правила списка по атрибутам; атрибута, которого в списке
-                        // нет, не найдёт ни одно правило — условие молча пустое. Сочетание
-                        // атрибутов не сверяется: в оглавлении — только атрибуты списка (TODO.md).
-                        for (a in attrs.filter { it !in known }) {
+                        // Xray берёт правила списка, у которых есть каждый из атрибутов сразу
+                        // (common/geodata, siteDecoder): атрибута нет в списке или нет правила
+                        // со всеми ними — условие молча пустое (D-05).
+                        val absent = attrs.filter { it !in known }
+                        for (a in absent) {
                             reject(DiagCode.GEO_CODE_UNKNOWN, "geosite:$entry — у списка $code нет атрибута @$a (${m.summary})", "$path.geosite")
+                        }
+                        if (absent.isEmpty() && !m.siteHasRuleWithAll(code, attrs)) {
+                            reject(
+                                DiagCode.GEO_CODE_UNKNOWN,
+                                "geosite:$entry — в списке $code нет правила со всеми атрибутами ${attrs.distinct().joinToString("") { "@$it" }} " +
+                                    "сразу: ядро берёт только такие, и условие не сработало бы ни разу (${m.summary})",
+                                "$path.geosite",
+                            )
                         }
                     }
                 }
@@ -340,9 +354,22 @@ class XrayCompiler(
 
         // ---- маршрутизация ----
 
-        fun routing(ir: ConfigIr, withTun: Boolean): JsonObject {
+        fun routing(ir: ConfigIr, withTun: Boolean, share: ShareSpec? = null): JsonObject {
             val lowered = AppLowering.lower(ir.routing)
             val rules = mutableListOf<JsonValue>()
+            if (share != null) {
+                // Раздача (D-51) — только другим устройствам: на входы раздачи пускаются
+                // лишь клиенты из подсетей раздачи. Адрес самого телефона и всё вне
+                // этих подсетей — приложение телефона (оно может привязать сокет к
+                // любому своему адресу); ему отказ, иначе оно обошло бы через прокси
+                // политику приложений (D-38).
+                rules += Json.obj(
+                    "ruleTag" to Json.str("${XrayBackend.SYSTEM_PREFIX}share-guard"),
+                    "inboundTag" to Json.strings(shareTags(share)),
+                    "source" to Json.strings(shareRefused(share).map { it.toString() }),
+                    "outboundTag" to Json.str(XrayBackend.TAG_BLOCK),
+                )
+            }
             if (withTun) {
                 // Приложения в туннеле спрашивают DNS у адреса TUN; ответ — по DnsPolicy.
                 rules += Json.obj(
@@ -363,9 +390,10 @@ class XrayCompiler(
                     "outboundTag" to Json.str(if (s.route == DnsRoute.TUNNEL) XrayBackend.TAG_PROXY else XrayBackend.TAG_DIRECT),
                 )
             }
+            val user = mutableListOf<JsonObject>()
             for ((i, rule) in lowered.engineRules.withIndex()) {
                 val at = "$.routing.rules[${ir.routing.rules.indexOf(rule).takeIf { it >= 0 } ?: i}]"
-                rules += userRule(rule.id.value, rule.conditions, XrayBackend.outboundTag(rule.action), at)
+                user += userRule(rule.id.value, rule.conditions, XrayBackend.outboundTag(rule.action), at)
             }
             // Автоматический раздельный маршрут (D-45): отечественное — напрямую,
             // ПОСЛЕ явных правил пользователя. geosite и geoip — отдельными
@@ -377,8 +405,33 @@ class XrayCompiler(
                 val ip = RouteEvaluator.IP_RU
                 checkGeo(listOf(site), emptyList(), "$.routing.automatic_domestic")
                 checkGeo(emptyList(), listOf(ip), "$.routing.automatic_domestic")
-                rules += userRule("${XrayBackend.SYSTEM_PREFIX}auto-domestic-site", Conditions(geoSites = listOf(site)), XrayBackend.TAG_DIRECT, "$.routing.automatic_domestic")
-                rules += userRule("${XrayBackend.SYSTEM_PREFIX}auto-domestic-ip", Conditions(geoIps = listOf(ip)), XrayBackend.TAG_DIRECT, "$.routing.automatic_domestic")
+                user += userRule("${XrayBackend.SYSTEM_PREFIX}auto-domestic-site", Conditions(geoSites = listOf(site)), XrayBackend.TAG_DIRECT, "$.routing.automatic_domestic")
+                user += userRule("${XrayBackend.SYSTEM_PREFIX}auto-domestic-ip", Conditions(geoIps = listOf(ip)), XrayBackend.TAG_DIRECT, "$.routing.automatic_domestic")
+            }
+            // Раздача (D-51, T11): «напрямую» для её клиентов — через свой исходящий,
+            // закрытый для loopback телефона. Правила те же, что у телефона: перед
+            // каждым правилом direct — его копия только для входов раздачи (ruleTag у
+            // Xray не повторяется: `dppass:share:<id>`, в id пользователя двоеточий нет);
+            // действие по умолчанию direct — последним правилом для них же. Без
+            // раздачи конфигурация не меняется.
+            for (r in user) {
+                if (share != null && (r["outboundTag"] as? JsonString)?.value == XrayBackend.TAG_DIRECT) {
+                    rules += JsonObject(
+                        r.fields + mapOf(
+                            "ruleTag" to JsonString("${XrayBackend.SYSTEM_PREFIX}share:${(r["ruleTag"] as JsonString).value}"),
+                            "inboundTag" to Json.strings(shareTags(share)),
+                            "outboundTag" to JsonString(XrayBackend.TAG_DIRECT_SHARE),
+                        ),
+                    )
+                }
+                rules += r
+            }
+            if (share != null && ir.routing.defaultAction == RouteAction.DIRECT) {
+                rules += Json.obj(
+                    "ruleTag" to Json.str("${XrayBackend.SYSTEM_PREFIX}share-default"),
+                    "inboundTag" to Json.strings(shareTags(share)),
+                    "outboundTag" to Json.str(XrayBackend.TAG_DIRECT_SHARE),
+                )
             }
             return Json.obj(
                 "domainStrategy" to Json.str(domainStrategy(ir.routing.domainResolution, withTun)),
@@ -509,6 +562,22 @@ class XrayCompiler(
          * отказе не уходит к системному резолверу (`ForceIP*`; `AsIs` и
          * `UseIP*` молча спросили бы систему — T4).
          */
+        /**
+         * `direct` для клиентов раздачи (D-51, T11): адрес назначения — не loopback
+         * и не «ноль» телефона. Устройству в раздаче службы, которые слушают
+         * только 127.0.0.1, недоступны, как и без прокси; из TUN такие адреса не
+         * приходят. `finalRules` Xray проверяет и адрес, полученный из имени, — до
+         * соединения и после (`proxy/freedom`).
+         */
+        fun directShareOutbound(s: DnsStrategy): JsonObject = JsonObject(
+            directOutbound(s).fields + mapOf(
+                "tag" to JsonString(XrayBackend.TAG_DIRECT_SHARE),
+                "settings" to Json.obj(
+                    "finalRules" to Json.arr(listOf(Json.obj("action" to Json.str("block"), "ip" to Json.strings(SHARE_CLOSED)))),
+                ),
+            ),
+        )
+
         fun directOutbound(s: DnsStrategy): JsonObject = Json.obj(
             "tag" to Json.str(XrayBackend.TAG_DIRECT),
             "protocol" to Json.str("freedom"),
@@ -529,6 +598,13 @@ class XrayCompiler(
     }
 
     private companion object {
+        /**
+         * Куда «напрямую» клиентам раздачи нельзя (T11): loopback и «ноль» (на
+         * Linux соединение с 0.0.0.0 приходит на loopback). Адреса IPv4 в виде
+         * IPv6 (`::ffff:127.0.0.1`) Xray приводит к IPv4 (`common/net`, `IPAddress`).
+         */
+        val SHARE_CLOSED: List<String> = listOf("127.0.0.0/8", "0.0.0.0/8", "::1/128", "::/128")
+
         fun domainRule(m: DomainMatcher): String = when (m) {
             is DomainMatcher.Full -> "full:${m.name}"
             is DomainMatcher.Suffix -> "domain:${m.suffix}"
@@ -561,6 +637,44 @@ class XrayCompiler(
                 ),
             ),
         )
+
+        /**
+         * Входы раздачи (D-51): SOCKS5 с паролем (и HTTP-прокси на том же порту —
+         * так устроен вход socks Xray), по одному на адрес интерфейса раздачи;
+         * никогда не `0.0.0.0` и не loopback. UDP — для SOCKS5 UDP ASSOCIATE.
+         */
+        fun shareInbounds(share: ShareSpec): List<JsonObject> = share.endpoints.map { it.address }.mapIndexed { i, addr ->
+            Json.obj(
+                "tag" to Json.str(XrayBackend.SHARE_TAG_PREFIX + i),
+                "protocol" to Json.str("socks"),
+                "listen" to Json.str(addr.toString()),
+                "port" to Json.num(share.port),
+                "settings" to Json.obj(
+                    "auth" to Json.str("password"),
+                    "accounts" to Json.arr(listOf(Json.obj("user" to Json.str(share.user.reveal()), "pass" to Json.str(share.password.reveal())))),
+                    "udp" to Json.bool(true),
+                    "ip" to Json.str(addr.toString()),
+                ),
+                "sniffing" to Json.obj(
+                    "enabled" to Json.bool(true),
+                    "destOverride" to Json.strings(listOf("http", "tls", "quic")),
+                    "routeOnly" to Json.bool(true),
+                ),
+            )
+        }
+
+        private fun shareTags(share: ShareSpec): List<String> = share.endpoints.indices.map { XrayBackend.SHARE_TAG_PREFIX + it }
+
+        /**
+         * Источники, которым вход раздачи закрыт (D-51): адреса самого телефона
+         * на интерфейсах раздачи, весь IPv4 вне подсетей раздачи и весь IPv6
+         * (входы слушают только IPv4). Правила Xray не умеют «кроме», поэтому
+         * «всё, кроме подсетей» — дополнение набором подсетей.
+         */
+        fun shareRefused(share: ShareSpec): List<Cidr> =
+            share.endpoints.map { Cidr.of(it.address, it.address.bitLength) } +
+                Cidr.complement(Cidr.ALL_V4, share.endpoints.map { it.subnet }) +
+                Cidr.ALL_V6
 
         fun tunInbound(): JsonObject = Json.obj(
             "tag" to Json.str(XrayBackend.TAG_TUN_IN),

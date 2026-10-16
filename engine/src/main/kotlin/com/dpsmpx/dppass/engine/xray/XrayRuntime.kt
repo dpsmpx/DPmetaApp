@@ -41,6 +41,26 @@ interface XrayRuntime {
      * [timeoutMillis].
      */
     fun probeDns(target: String, timeoutMillis: Int): DnsProbeResult
+
+    /**
+     * Попадает ли [value] в `geosite:`[code] (имя байтами UTF-8) или в
+     * `geoip:`[code] (адрес, 4 или 16 байт) набора геоданных (D-27) —
+     * сопоставителем маршрутизатора ядра, по файлам каталога геоданных.
+     * Ядро для этого не запускается. Первое обращение к коду читает файл
+     * набора; потом сопоставитель берётся из памяти моста.
+     */
+    fun geoMatch(kind: GeoKind, code: String, value: ByteArray): GeoMatchResult
+}
+
+/** Вид кода геоданных; [code] — договор с `bridge.GeoKind` (Go). */
+enum class GeoKind(val code: Int) {
+    SITE(1),
+    IP(2),
+}
+
+/** Ответ сопоставления с геоданными: [Answer] или отказ моста [XrayResult.Failed]. */
+sealed interface GeoMatchResult {
+    data class Answer(val matches: Boolean) : GeoMatchResult
 }
 
 /** Исход пробы DNS; [code] — договор с `bridge.ProbeOutcome` (Go). */
@@ -85,7 +105,7 @@ sealed interface XrayResult {
     data object Partial : XrayResult
 
     /** [text] — сырой текст ядра: показывать только через [Redactor]. */
-    class Failed(val kind: XrayFailureKind, val text: String) : XrayResult {
+    class Failed(val kind: XrayFailureKind, val text: String) : XrayResult, GeoMatchResult {
         override fun toString(): String = "Failed($kind)"
     }
 }
@@ -101,7 +121,7 @@ enum class XrayFailureKind(val code: Int) {
     /** Ядро уже запущено. */
     RUNNING(3),
 
-    /** Нарушен договор вызова: fd, MTU, защитник, каталог геоданных. */
+    /** Нарушен договор вызова: fd, MTU, защитник, каталог геоданных, код или адрес сопоставления. */
     CONTRACT(4),
     ;
 
@@ -113,8 +133,9 @@ enum class XrayFailureKind(val code: Int) {
 /**
  * Объявления JNI моста (`tools/xray/jni`). Договор: строки — байтами
  * UTF-8; ответ — байты, первый — статус (0 успех, 5 неполная проверка,
- * иначе [XrayFailureKind.code]), остальное — текст ядра. Вызывается
- * только из [JniXrayRuntime].
+ * иначе [XrayFailureKind.code]), остальное — текст ядра; у пробы DNS и
+ * сопоставления с геоданными — свои ответы ([decodeProbe], [decodeGeo]).
+ * Вызывается только из [JniXrayRuntime].
  */
 internal object XrayJni {
     @JvmStatic external fun nativeVersion(): ByteArray
@@ -130,6 +151,19 @@ internal object XrayJni {
     @JvmStatic external fun nativeTraffic(): LongArray?
 
     @JvmStatic external fun nativeProbeDns(target: ByteArray, timeoutMillis: Int): ByteArray
+
+    @JvmStatic external fun nativeGeoMatch(kind: Int, code: ByteArray, value: ByteArray): ByteArray
+
+    /** Ответ сопоставления: статус 0 и байт 1 (попадает) или 0 (нет); отказ — как у [decode]. */
+    fun decodeGeo(answer: ByteArray): GeoMatchResult = when (val r = decode(answer)) {
+        is XrayResult.Failed -> r
+        XrayResult.Ok -> when {
+            answer.size == GEO_ANSWER && answer[1].toInt() == 1 -> GeoMatchResult.Answer(true)
+            answer.size == GEO_ANSWER && answer[1].toInt() == 0 -> GeoMatchResult.Answer(false)
+            else -> XrayResult.Failed(XrayFailureKind.CONTRACT, "ответ сопоставления не по договору: ${answer.size} байт")
+        }
+        XrayResult.Partial -> XrayResult.Failed(XrayFailureKind.CONTRACT, "ответ сопоставления со статусом неполной проверки")
+    }
 
     /** Ответ пробы: исход, по 4 байта (старшим вперёд) время в мс и пришедшие байты, текст. */
     fun decodeProbe(answer: ByteArray): DnsProbeResult {
@@ -153,6 +187,7 @@ internal object XrayJni {
     private const val STATUS_OK = 0
     private const val STATUS_PARTIAL = 5
     private const val PROBE_HEADER = 9
+    private const val GEO_ANSWER = 2
 }
 
 /** Мост через JNI: библиотека `libdppassxray.so` в этом процессе. */
@@ -170,6 +205,9 @@ class JniXrayRuntime private constructor() : XrayRuntime {
 
     override fun probeDns(target: String, timeoutMillis: Int): DnsProbeResult =
         XrayJni.decodeProbe(XrayJni.nativeProbeDns(target.encodeToByteArray(), timeoutMillis))
+
+    override fun geoMatch(kind: GeoKind, code: String, value: ByteArray): GeoMatchResult =
+        XrayJni.decodeGeo(XrayJni.nativeGeoMatch(kind.code, code.encodeToByteArray(), value))
 
     companion object {
         const val LIBRARY: String = "dppassxray"

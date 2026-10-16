@@ -288,6 +288,16 @@ class MetadataParserTest {
         assertFalse("x.example.com" in ignored.message, "значения директив не попадают в сообщение")
     }
 
+    /** Название поставщика — по тому же правилу, что имя подписки: без управляющих символов, и DEL, и C1. */
+    @Test
+    fun providerTitleWithControlCharactersIsDropped() {
+        for (title in listOf("base64:VlBOwoV4", "base64:VlBOfw==")) {
+            val r = MetadataParser.parse(mapOf("profile-title" to title), emptyMap())
+            assertNull(r.metadata.title, title)
+            assertEquals(1, r.notes.count { it.code == DiagCode.SUBSCRIPTION_METADATA_INVALID }, title)
+        }
+    }
+
     @Test
     fun nonHttpsLinksAreNotAccepted() {
         val r = MetadataParser.parse(mapOf("support-url" to "http://support.example.com", "profile-web-page-url" to "javascript:alert(1)"), emptyMap())

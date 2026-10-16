@@ -39,6 +39,11 @@ class ImportClassifierTest {
     fun plainHttpAndOversizedTextAreRefusedWithReason() {
         val http = assertIs<ImportKind.Unrecognized>(ImportClassifier.classify("http://sub.example.com/x"))
         assertEquals(DiagCode.SUBSCRIPTION_FETCH_FAILED, http.reason?.code)
+        // Строка https:// с управляющим символом — не адрес подписки, и причина — правило адреса,
+        // а не «схема https:// неизвестна» из разбора ссылок.
+        val control = assertIs<ImportKind.Unrecognized>(ImportClassifier.classify("https://sub.example.com/s\u0001"))
+        assertEquals(DiagCode.SUBSCRIPTION_FETCH_FAILED, control.reason?.code)
+        assertTrue("управляющих" in control.reason!!.message, control.reason.message)
 
         // Предел — до разбора: огромный текст не декодируется (T6).
         val huge = "vless://" + "a".repeat(ImportClassifier.MAX_BYTES)

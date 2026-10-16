@@ -24,9 +24,12 @@ data class GeodataFile(val name: String, val sha256: String, val size: Long)
 
 /**
  * Оглавление набора геоданных ядра (D-27): `manifest.json`, который
- * пишет сборщик `tools/xray/geodata` (формат `dppass.geodata`, версия 1).
- * Источники — для отчёта; файлы — для сверки при переносе; коды — для
- * сверки конфигурации с набором.
+ * пишет сборщик `tools/xray/geodata` (формат `dppass.geodata`, версия 2).
+ * Источники — для отчёта; файлы — для сверки при переносе; коды и
+ * сочетания атрибутов — для сверки конфигурации с набором.
+ *
+ * Оглавление приходит в том же APK, что и приложение, поэтому прежние
+ * версии формата не читаются: набора другой версии у приложения не бывает.
  */
 data class GeodataManifest(
     val dlcVersion: String,
@@ -35,15 +38,33 @@ data class GeodataManifest(
     val files: List<GeodataFile>,
     /** Коды geoip в нижнем регистре, как в конфигурации. */
     val geoIp: Set<String>,
-    /** Коды geosite → атрибуты, которые встречаются в списке. */
-    val geoSite: Map<String, Set<String>>,
+    /**
+     * Коды geosite → наибольшие сочетания атрибутов правил списка (с
+     * версии 2). По `geosite:код@a@b` Xray берёт правила, у которых есть все
+     * атрибуты сразу, поэтому условие не пусто, только если сочетание
+     * входит в одно из этих. У списка без атрибутов — пустой список.
+     */
+    val geoSite: Map<String, List<Set<String>>>,
 ) {
     /** Из чего собран набор — строка отчёта (D-27). */
     val summary: String get() = "dlc $dlcCommit, DB-IP $dbipRelease"
 
+    /** Атрибуты, которые есть хоть у одного правила списка [code]; null — списка нет. */
+    fun siteAttributes(code: String): Set<String>? = geoSite[code]?.flatten()?.toSet()
+
+    /**
+     * Есть ли в списке [code] правило со всеми [attrs] сразу — найдёт ли ядро
+     * хоть что-то. Без атрибутов — есть ли список: у списка без атрибутов
+     * сочетаний нет, а правила есть.
+     */
+    fun siteHasRuleWithAll(code: String, attrs: Collection<String>): Boolean {
+        val sets = geoSite[code] ?: return false
+        return attrs.isEmpty() || sets.any { it.containsAll(attrs) }
+    }
+
     companion object {
         const val FORMAT: String = "dppass.geodata"
-        const val FORMAT_VERSION: Int = 1
+        const val FORMAT_VERSION: Int = 2
         const val FILE: String = "manifest.json"
 
         /** Файлы, без которых набор — не набор: их ищет Xray (common/geodata). */
@@ -91,8 +112,13 @@ data class GeodataManifest(
             require(files.map { it.name }.containsAll(REQUIRED + "NOTICE.txt")) { "нет ${REQUIRED + "NOTICE.txt"}" }
             require(files.none { it.name == FILE }) { "оглавление не описывает само себя" }
             val geoIp = o["geoip"].arr("geoip").map { it.string("geoip[]") }.toSet()
-            val geoSite = o["geosite"].obj("geosite").fields.mapValues { (code, attrs) ->
-                attrs.arr("geosite.$code").map { it.string("geosite.$code[]") }.toSet()
+            val geoSite = o["geosite"].obj("geosite").fields.mapValues { (code, sets) ->
+                sets.arr("geosite.$code").mapIndexed { i, set ->
+                    val attrs = set.arr("geosite.$code[$i]").map { it.string("geosite.$code[$i][]") }
+                    require(attrs.isNotEmpty()) { "geosite.$code[$i]: пустое сочетание атрибутов" }
+                    require(attrs.toSet().size == attrs.size) { "geosite.$code[$i]: атрибуты повторяются" }
+                    attrs.toSet()
+                }
             }
             return GeodataManifest(dlc.str("version"), dlc.str("commit"), dbip.str("release"), files, geoIp, geoSite)
         }

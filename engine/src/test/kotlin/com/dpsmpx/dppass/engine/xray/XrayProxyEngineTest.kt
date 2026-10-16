@@ -1,6 +1,8 @@
 package com.dpsmpx.dppass.engine.xray
 
 import com.dpsmpx.dppass.config.ConfigLoader
+import com.dpsmpx.dppass.core.IpAddress
+import com.dpsmpx.dppass.core.RuleId
 import com.dpsmpx.dppass.diagnostics.DiagCode
 import com.dpsmpx.dppass.diagnostics.Diagnostic
 import com.dpsmpx.dppass.diagnostics.Outcome
@@ -13,6 +15,13 @@ import com.dpsmpx.dppass.engine.SocketProtector
 import com.dpsmpx.dppass.engine.TrafficStats
 import com.dpsmpx.dppass.engine.TunInput
 import com.dpsmpx.dppass.engine.mock.MockBackendCompiler
+import com.dpsmpx.dppass.routing.Conditions
+import com.dpsmpx.dppass.routing.DomainMatcher
+import com.dpsmpx.dppass.routing.RouteAction
+import com.dpsmpx.dppass.routing.RouteDecision
+import com.dpsmpx.dppass.routing.RouteQuery
+import com.dpsmpx.dppass.routing.RoutingPolicy
+import com.dpsmpx.dppass.routing.Rule
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -58,6 +67,19 @@ private class FakeRuntime : XrayRuntime {
     override fun probeDns(target: String, timeoutMillis: Int): DnsProbeResult {
         probes += target
         return if (running) probeAnswer else DnsProbeResult(DnsProbeOutcome.NOT_RUNNING, 0, 0, "ядро не запущено")
+    }
+
+    /** Набор геоданных моста: вид и код → значения, которые в него попадают. */
+    var geodata: Map<Pair<GeoKind, String>, Set<String>> = emptyMap()
+    var geoFailure: XrayResult.Failed? = null
+    val geoAsked = mutableListOf<String>()
+
+    override fun geoMatch(kind: GeoKind, code: String, value: ByteArray): GeoMatchResult {
+        val text = if (kind == GeoKind.IP) IpAddress.of(value).toString() else value.decodeToString()
+        geoAsked += "${kind.name.lowercase()}:$code $text"
+        geoFailure?.let { return it }
+        val set = geodata[kind to code] ?: return XrayResult.Failed(XrayFailureKind.CONFIG, "failed to load code ${code.uppercase()} from geo.dat")
+        return GeoMatchResult.Answer(text in set)
     }
 }
 
@@ -182,7 +204,8 @@ class XrayProxyEngineTest {
     fun unavailableRuntimeAnswersEveryCall() = runBlocking {
         val reason = Diagnostic.error(DiagCode.BACKEND_NOT_AVAILABLE, "библиотека ядра не загружена")
         val engine = XrayProxyEngine(Outcome.failure(reason))
-        for (r in listOf(engine.validate(compiled), engine.start(compiled, null))) {
+        val explained = engine.explain(RoutingPolicy(), RouteQuery(domain = "example.org"))
+        for (r in listOf(engine.validate(compiled), engine.start(compiled, null), explained)) {
             val d = r.errors.single()
             assertEquals(DiagCode.BACKEND_NOT_AVAILABLE, d.code)
             assertEquals(listOf(reason), d.causes)
@@ -211,6 +234,66 @@ class XrayProxyEngineTest {
         assertEquals(listOf(1, 2, 3, 4), XrayFailureKind.entries.map { it.code }, "коды — договор с bridge.Kind")
         assertNull(XrayFailureKind.of(0))
         assertFalse("сбой" in failed.toString(), "toString не печатает текст ядра")
+
+        // Сопоставление с геоданными: статус 0 и байт попадания; отказ — как у остальных.
+        assertEquals(GeoMatchResult.Answer(true), XrayJni.decodeGeo(byteArrayOf(0, 1)))
+        assertEquals(GeoMatchResult.Answer(false), XrayJni.decodeGeo(byteArrayOf(0, 0)))
+        for (broken in listOf(byteArrayOf(0), byteArrayOf(0, 2), byteArrayOf(0, 1, 1), byteArrayOf(5, 1), byteArrayOf())) {
+            assertEquals(XrayFailureKind.CONTRACT, assertIs<XrayResult.Failed>(XrayJni.decodeGeo(broken), broken.contentToString()).kind)
+        }
+        assertEquals(XrayFailureKind.CONFIG, assertIs<XrayResult.Failed>(XrayJni.decodeGeo(byteArrayOf(1) + "нет кода".encodeToByteArray())).kind)
+        assertEquals(listOf(1, 2), GeoKind.entries.map { it.code }, "коды — договор с bridge.GeoKind")
+    }
+
+    // ---- объяснение решений на геоданных ядра (D-09, D-27) ----
+
+    private val geoPolicy = RoutingPolicy(
+        rules = listOf(
+            Rule(RuleId("lan"), Conditions(domains = listOf(DomainMatcher.Suffix("home.arpa"))), RouteAction.DIRECT),
+            Rule(RuleId("ru-sites"), Conditions(geoSites = listOf("category-ru")), RouteAction.DIRECT),
+            Rule(RuleId("ads"), Conditions(geoSites = listOf("split@ads@cn")), RouteAction.BLOCK),
+            Rule(RuleId("ru-ips"), Conditions(geoIps = listOf("ru")), RouteAction.DIRECT),
+        ),
+        defaultAction = RouteAction.PROXY,
+    )
+
+    @Test
+    fun explanationAsksTheCoreGeodata() {
+        val rt = FakeRuntime()
+        rt.geodata = mapOf(
+            (GeoKind.SITE to "category-ru") to setOf("shop.example.ru"),
+            (GeoKind.SITE to "split@ads@cn") to emptySet(),
+            (GeoKind.IP to "ru") to setOf("203.0.113.9"),
+        )
+        val engine = XrayProxyEngine(Outcome.Success(rt))
+        fun decide(q: RouteQuery): RouteDecision = assertIs<Outcome.Success<RouteDecision>>(engine.explain(geoPolicy, q)).value
+
+        assertEquals(RuleId("ru-sites"), decide(RouteQuery(domain = "shop.example.ru")).ruleId)
+        assertEquals(RuleId("ru-ips"), decide(RouteQuery(ip = IpAddress.parse("203.0.113.9"))).ruleId)
+        // Сочетание атрибутов, которого нет ни у одной записи: ядро не применяет его — и объяснение тоже.
+        assertEquals(RouteAction.PROXY, decide(RouteQuery(domain = "ads.example")).action)
+        assertEquals(listOf("site:category-ru shop.example.ru", "ip:ru 203.0.113.9", "site:category-ru ads.example", "site:split@ads@cn ads.example"), rt.geoAsked)
+
+        // Правило без геоданных сработало раньше — мост не спрашивается.
+        rt.geoAsked.clear()
+        assertEquals(RuleId("lan"), decide(RouteQuery(domain = "nas.home.arpa")).ruleId)
+        assertTrue(rt.geoAsked.isEmpty(), "спрошены геоданные: ${rt.geoAsked}")
+    }
+
+    @Test
+    fun explanationIsRefusedWhenGeodataDoesNotAnswer() {
+        val rt = FakeRuntime()
+        val engine = XrayProxyEngine(Outcome.Success(rt))
+        // Кода нет в наборе: условие не превращается в «не сработало» (D-05).
+        val unknown = engine.explain(geoPolicy, RouteQuery(domain = "shop.example.ru")).errors.single()
+        assertEquals(DiagCode.GEO_CODE_UNKNOWN, unknown.code)
+        assertTrue("geosite:category-ru" in unknown.message, unknown.message)
+        assertEquals(DiagCode.GEO_CODE_UNKNOWN, unknown.causes.single().code)
+
+        rt.geoFailure = XrayResult.Failed(XrayFailureKind.CONTRACT, "каталог геоданных не задан (SetAssetDir)")
+        val noSet = engine.explain(geoPolicy, RouteQuery(ip = IpAddress.parse("198.51.100.1"))).errors.single()
+        assertEquals(DiagCode.GEODATA_UNAVAILABLE, noSet.code)
+        assertTrue("geoip:ru" in noSet.message, noSet.message)
     }
 
     @Test

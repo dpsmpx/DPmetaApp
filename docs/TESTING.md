@@ -8,7 +8,7 @@
 
 | Слой | Где | Что проверяет |
 |---|---|---|
-| Модульные тесты | `<модуль>/src/test` | каждый модуль отдельно: разбор, проверка, нормализация, маршрутизация, DNS, классификация сети, бюджет проб, хранилище, подписки, активация, план, оркестратор, спецификация TUN; журнал устройства (D-26): запись в фоне, части, прошлый сеанс, текст для буфера обмена, запись о падении (`FileLogSinkTest`, `LogExportTest`, `CrashRecordTest`); политика пользователя (D-38: `PolicyBuilderTest` — решения `RouteEvaluator` по набору геоданных, `PolicyStoreTest`, `PolicyServiceTest`), расписание и хранение подписок (D-39: `UpdateScheduleTest`, `SubscriptionCodecTest`), задержка (D-41: `LatencyBookTest`), импорт (D-42: `ImportClassifierTest`), подписки в хранилище (`SubscriptionBookTest`, `SubscriptionFlowTest`); адаптивная устойчивость (D-44: `StabilityModelTest` — пессимизм, джиттер, смена режима, гистерезис, устойчивость к одиночному сбою; `TransportAdvisorTest` — перенос опыта; `SessionSupervisorTest`; `StabilityBookTest` — хранение без секретов; `CandidatePlannerTest.learnedStabilityOrdersViableCandidates`); автосплит (D-45: `AutomaticDomesticRoutingTest`, `PolicyBuilderTest.autoModeEnablesDomesticSplit`, `XrayCompilerTest.automaticDomesticAddsCheckedRuRulesAfterUserRules`); личность сборки (D-47: `IdentityTest`) |
+| Модульные тесты | `<модуль>/src/test` | каждый модуль отдельно: разбор, проверка, нормализация, маршрутизация, DNS, классификация сети, бюджет проб, хранилище, подписки, активация, план, оркестратор, спецификация TUN; журнал устройства (D-26): запись в фоне, части, прошлый сеанс, текст для буфера обмена, запись о падении (`FileLogSinkTest`, `LogExportTest`, `CrashRecordTest`); политика пользователя (D-38: `PolicyBuilderTest` — решения `RouteEvaluator` по набору геоданных, `PolicyStoreTest`, `PolicyServiceTest`), расписание и хранение подписок (D-39: `UpdateScheduleTest`, `SubscriptionCodecTest`), задержка (D-41: `LatencyBookTest`), импорт (D-42: `ImportClassifierTest`), подписки в хранилище (`SubscriptionBookTest`, `SubscriptionFlowTest`); адаптивная устойчивость (D-44: `StabilityModelTest` — пессимизм, джиттер, смена режима, гистерезис, устойчивость к одиночному сбою; `TransportAdvisorTest` — перенос опыта; `SessionSupervisorTest`; `StabilityBookTest` — хранение без секретов; `CandidatePlannerTest.learnedStabilityOrdersViableCandidates`); автосплит (D-45: `AutomaticDomesticRoutingTest`, `PolicyBuilderTest.autoModeEnablesDomesticSplit`, `XrayCompilerTest.automaticDomesticAddsCheckedRuRulesAfterUserRules`); личность сборки (D-47: `IdentityTest`); раздача туннеля (D-51: `ShareSettingsTest` — выключена по умолчанию, случайные порт и пароль, карантин; `TetherInterfacesTest` — что считается интерфейсом раздачи и когда переподключаться; `XrayCompilerTest.shareInboundsListenOnlyOnTetherAddressesWithAuth` — входы только на адресах раздачи, с паролем, и только для клиентов раздачи) |
 | Интерфейс без Android | `app/src/test` | логика экранов (D-34): строки серверов и подписок, поиск и порядок по задержке, уровни задержки, значок сервера, трафик и срок подписки, длительность и скорость, источник конфигурации, состояние туннеля и счётчик скорости (`PresentationTest`, `TunnelStatusTest`, `TrafficMeterTest`) — тестами JVM, без устройства |
 | Межмодульные | `tests/integration` | сквозные сценарии через `DPpassCore`: документ → активная конфигурация → подключение; подписка → атомарная активация; откат к last-known-good; отказ запуска кандидата; секреты нигде не всплывают |
 | Корпус регрессий | `tests/regression` + `tests/data/` | файлы-примеры с ожиданиями (§2); эталоны компилятора Xray (§2, «Эталоны Xray») |
@@ -66,7 +66,10 @@
 - `xray` — компиляция для Xray (обязательно, если `load.outcome` — `ok`):
   `outcome` — `compiled` (каждый профиль скомпилирован без находок
   сверх `codes`, результат совпал с эталоном) или `rejected` (хотя бы
-  один профиль отвергнут), `codes` — в находках компиляции.
+  один профиль отвергнут), `codes` — в находках компиляции. `geodata`
+  (необязательно) — оглавление набора геоданных в корпусе
+  (`geodata/manifest.json`): коды и атрибуты сверяются с ним, как на
+  устройстве (D-27); без него не сверяются, как на хосте.
 
 Имя файла начинается с ожидаемого исхода: `valid-…`, `invalid-…`,
 `warning-…`, `info-…`, `limited-backend-…` (ядро не умеет: фиктивное
@@ -141,19 +144,31 @@
    ядра, его отказ закрывает путь, счётчики считают трафик, после
    остановки вход освобождается. Код `geoip`/`geosite`, которого нет в
    наборе геоданных, — отказ проверки, а не условие, которое молча не
-   выполняется (D-27).
+   выполняется (D-27). Вход раздачи (D-51) проходит, только если это
+   SOCKS с тегом раздачи, паролем, частным IPv4 и портом от 1024
+   (`TestPolicyAllowsOnlyAuthenticatedShareInbound`). Сопоставление с
+   геоданными для объяснения решений (`GeoMatch`, D-27) отвечает так же,
+   как маршрутизатор Xray с правилом на тот же код: домен, полное имя,
+   подстрока, regexp, регистр имени, сочетание атрибутов, которого нет ни
+   у одной записи, IPv4 и IPv6 (`TestGeoMatchAgreesWithRouter`); кода нет
+   в наборе — отказ, как у проверки конфигурации, и после смены каталога
+   тоже (`TestGeoMatchFollowsAssetDir`); набора нет — отказ договора, а
+   не «такого кода нет» (`TestGeoMatchWithoutSetIsContractNotUnknownCode`).
 2. **`XrayJniTest`** (`tests/integration/src/xrayJni`, задача
    `xrayJniTest`): тот же мост, собранный `tools/xray/native.py host`
    как `libdppassxray.so` для JVM хоста, загружается в JVM теста через
    `JniXrayRuntime`. Проверяется договор JNI: версия ядра равна
    `XrayBackend.VERSION`; эталон компилятора проходит полную проверку,
-   битый JSON и чужой вход (SOCKS) — отказ `CONFIG`; конфигурация с
+   битый JSON и чужой вход (SOCKS) — отказ `CONFIG`, а входы раздачи
+   компилятора (D-51) с правилом-ограничителем — проходят; конфигурация с
    `geoip` без каталога геоданных — отказ (так ядро ведёт себя, если
    набор на устройстве не перенёсся, D-27); второй запуск — `RUNNING`, проверка при
    работающем ядре — неполная; TUN без защитника или без fd — `CONTRACT`;
    защитник вызывается из потоков Go, его отказ и исключение в нём
    закрывают путь, а не роняют JVM; счётчики и `XrayProxyEngine` поверх
-   JNI.
+   JNI; сопоставление с геоданными — по синтетическому набору
+   (`XrayJniTest.geoMatchAnswersFromTheSet`) и отказ без набора, с
+   отказом объяснения решения (`XrayJniTest.geoMatchWithoutSetIsRefused`).
 
 Без библиотеки задача `xrayJniTest` падает с подсказкой, а не
 пропускается; в `check` входит только компиляция этого набора. Запуск
@@ -192,7 +207,9 @@ python3 tools/xray/native.py host
    `include` с фильтрами и аффилиации
    (`TestDlcResolvesIncludesFiltersAndAffiliations`), детерминизм
    (`TestBuildIsDeterministicAndManifestDescribesFiles`), приём набора
-   ядром (`TestXrayAcceptsTheSet`).
+   ядром (`TestXrayAcceptsTheSet`), сочетания атрибутов в оглавлении —
+   ровно те, по которым ядро находит имена
+   (`TestManifestAttrSetsAreWhatXrayMatches`).
 2. **Эталон оглавления** `geodata/manifest.json` в корпусе. Go-тест
    `TestManifestMatchesGolden` сверяет с ним оглавление синтетического
    набора, а Kotlin-тест `GeodataTest.builderManifestParses` его
@@ -208,7 +225,14 @@ python3 tools/xray/native.py host
 каталога, атрибуция DB-IP на месте, оглавление побайтно совпадает с
 набором шага «Xray: геоданные». Коды конфигурации компилятор сверяет с
 оглавлением установленного набора
-(`XrayCompilerTest.geoCodesAreCheckedAgainstTheInstalledSet`).
+(`XrayCompilerTest.geoCodesAreCheckedAgainstTheInstalledSet`; в корпусе —
+`configs/limited-backend-xray-geosite-attrs` с `xray.geodata`).
+
+Объяснение решений (`ProxyEngine.explain`, D-09) у Xray идёт на наборе
+ядра: geosite и geoip спрашиваются у моста, правило без геоданных мост не
+трогает, а отказ моста — отказ объяснения, а не «условие не сработало»
+(`XrayProxyEngineTest.explanationAsksTheCoreGeodata`,
+`XrayProxyEngineTest.explanationIsRefusedWhenGeodataDoesNotAnswer`).
 
 Перенос набора на устройстве (`GeodataInstaller`) проверяет `GeodataTest`:
 файл, не совпавший с оглавлением, не ставится; прерванный перенос не

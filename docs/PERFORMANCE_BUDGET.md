@@ -28,13 +28,14 @@
 | Значения во всех правилах | 100 000 | `ConfigLimits.maxRuleValues` | `ConfigLimitsTest.ruleValuesUpToLimitPassOneMoreIsRejected` |
 | Тело подписки | 2 МиБ | `FetchPolicy.maxBytes` | `SubscriptionUpdaterTest` (`SUBSCRIPTION_TOO_LARGE`) |
 | Записи подписки | 1000; остальные не читаются (`SUBSCRIPTION_ENTRY_SKIPPED`) | `FetchPolicy.maxEntries` | `PayloadLimitsTest.entriesUpToLimitAreReadTheRestAreSkippedLoudly` |
-| Загрузка подписки | 20 с | `FetchPolicy.timeoutMillis` (соединение и чтение; в `HttpsSubscriptionFetcher` — от 1 до 120 с) | нет (тайм-аут не моделируется) |
-| Подписок в приложении | 64; адрес — 2048 символов, имя — 64 | `SubscriptionService.MAX_SUBSCRIPTIONS`, `MAX_URL`, `MAX_NAME` | `LimitsTest.subscriptionsUpTo64` (число подписок; длины — нет) |
+| Загрузка подписки | 20 с | `FetchPolicy.timeoutMillis` (соединение и чтение; в `HttpsSubscriptionFetcher` — от 1 до 120 с) | `HttpsSubscriptionFetcherTest.timeoutIsSetForConnectAndReadWithinBounds` (значение, границы и отказ по сроку; сам срок отсчитывает JDK) |
+| Подписок в приложении | 64; адрес — 2048 символов, имя — 64 | `SubscriptionService.MAX_SUBSCRIPTIONS`, `MAX_URL`, `MAX_NAME` | `LimitsTest.subscriptionsUpTo64`, `LimitsTest.subscriptionUrlUpTo2048NameUpTo64` |
 | Обновление по расписанию | задание раз в час; подписка — по своему интервалу (по умолчанию 12 ч); после отказа — не раньше чем через 30 мин; только активная | `SubscriptionJobService`, `UpdateSchedule` (D-39) | `UpdateScheduleTest.intervalsFailuresAndOff` |
 | Импорт (буфер, файл, «Поделиться») | 1 МиБ | `ImportClassifier.MAX_BYTES` | `ImportClassifierTest.plainHttpAndOversizedTextAreRefusedWithReason` |
 | Приложения в политике | 1000 | `UserPolicy.MAX_APPS` | `LimitsTest.policyAppsUpTo1000` |
 | Проверка задержки | по одному серверу, пауза 150 мс, тайм-аут 3 с, не больше 128 за прогон | `LatencyBook` (D-41) | `LatencyBookTest.measuresTcpOneByOneAndSkipsUdp` |
 | Обновление уведомления туннеля | раз в 2 с и только при включённом экране | `DPpassVpnService` (D-40) | нет (на устройстве) |
+| Опрос интерфейсов раздачи | раз в 5 с, только пока раздача включена и туннель поднят; новый интерфейс — после двух опросов подряд | `DPpassVpnService.SHARE_POLL_MILLIS`, `TetherInterfaces.shouldReconnect` (D-51) | `TetherInterfacesTest.goneInterfaceReconnectsAtOnceNewOneAfterTwoPolls` (решение; период — на устройстве) |
 | История активаций | 32 записи | `ActivationStore` | `LimitsTest.activationHistoryKeepsLast32` |
 | Пробы сети | 1 на ориентир за 1,5 с; не больше 12 за 60 с | `ProbeBudget` | `ProbeBudgetTest` (механизм — на своих параметрах) |
 | Кандидаты за подключение | 4, пауза 2 с между попытками | `ConnectionPolicy` | `CandidatePlannerTest`, `OrchestratorTest` |

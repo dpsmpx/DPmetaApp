@@ -48,6 +48,11 @@ object ImportClassifier {
         if (t.startsWith("http://", ignoreCase = true) && '\n' !in t) {
             return ImportKind.Unrecognized(Diagnostic.error(DiagCode.SUBSCRIPTION_FETCH_FAILED, "подписка загружается только по https://"))
         }
+        // Одна строка https://, но не адрес подписки (пробел, управляющий символ, длина):
+        // причина — правило адреса, а не «схема https:// неизвестна» из разбора ссылок.
+        if (t.startsWith("https://", ignoreCase = true) && '\n' !in t) {
+            return ImportKind.Unrecognized(Diagnostic.error(DiagCode.SUBSCRIPTION_FETCH_FAILED, SubscriptionService.URL_RULE))
+        }
         if (t.startsWith("{")) return ImportKind.Unrecognized(null)
         return when (val d = PayloadDecoder.decode(t.toByteArray(Charsets.UTF_8), "import", MAX_ENTRIES)) {
             is Outcome.Failure -> ImportKind.Unrecognized(d.errors.firstOrNull())

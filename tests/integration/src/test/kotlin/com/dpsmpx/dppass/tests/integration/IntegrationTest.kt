@@ -71,7 +71,7 @@ class ConfigToActiveProfileTest {
         val env = Env()
         val r = env.core.importAndActivate(data("configs/valid-multi.json")).valueOrNull()
         assertIs<ActivationResult.Activated>(r)
-        assertEquals(RouteAction.BLOCK, env.core.explain(RouteQuery(domain = "ads.example.com"))!!.action)
+        assertEquals(RouteAction.BLOCK, env.core.explain(RouteQuery(domain = "ads.example.com"))!!.valueOrNull()!!.action)
 
         val tun = FakeTunnelProvider()
         val handle = tun.establish(env.core.tunnelSpec()!!.valueOrNull()!!).valueOrNull()!!

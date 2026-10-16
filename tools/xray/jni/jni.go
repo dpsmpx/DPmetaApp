@@ -16,7 +16,10 @@
 //     protect(int) зовётся из потоков Go, исключение в нём — отказ;
 //   - проба DNS (D-32) отвечает своим форматом: исход (bridge.ProbeOutcome),
 //     время до ответа в мс и число пришедших байт — по 4 байта, старшим
-//     вперёд, — затем текст ошибки.
+//     вперёд, — затем текст ошибки;
+//   - сопоставление с геоданными (D-27): вид (bridge.GeoKind), код и
+//     значение — имя байтами UTF-8 или адрес 4 или 16 байт; ответ успеха —
+//     статус 0 и байт 1 (попадает) или 0 (нет), отказа — как у остальных.
 package main
 
 /*
@@ -251,4 +254,17 @@ func Java_com_dpsmpx_dppass_engine_xray_XrayJni_nativeProbeDns(env *C.JNIEnv, _ 
 		out = append(out, r.Err.Error()...)
 	}
 	return newBytes(env, out)
+}
+
+//export Java_com_dpsmpx_dppass_engine_xray_XrayJni_nativeGeoMatch
+func Java_com_dpsmpx_dppass_engine_xray_XrayJni_nativeGeoMatch(env *C.JNIEnv, _ C.jclass, kind C.jint, code C.jbyteArray, value C.jbyteArray) C.jbyteArray {
+	ok, err := bridge.GeoMatch(bridge.GeoKind(kind), string(bytesOf(env, code)), bytesOf(env, value))
+	if err != nil {
+		return statusOf(env, err)
+	}
+	match := byte(0)
+	if ok {
+		match = 1
+	}
+	return newBytes(env, []byte{statusOK, match})
 }

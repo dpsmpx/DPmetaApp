@@ -19,11 +19,11 @@ import com.dpsmpx.dppass.engine.BackendCompiler
 import com.dpsmpx.dppass.engine.CapabilityChecker
 import com.dpsmpx.dppass.engine.EngineCapabilities
 import com.dpsmpx.dppass.engine.ProxyEngine
+import com.dpsmpx.dppass.engine.ShareSpec
 import com.dpsmpx.dppass.engine.SocketProtector
 import com.dpsmpx.dppass.engine.TunInput
 import com.dpsmpx.dppass.network.NetworkAssessment
 import com.dpsmpx.dppass.routing.RouteDecision
-import com.dpsmpx.dppass.routing.RouteEvaluator
 import com.dpsmpx.dppass.routing.RouteQuery
 import com.dpsmpx.dppass.storage.BlobStore
 import com.dpsmpx.dppass.storage.Quarantine
@@ -108,6 +108,9 @@ class DPpassCore(
     /** Политика пользователя: маршрутизация, DNS, приложения (D-38). */
     val userPolicy: PolicyService = PolicyService(PolicyStore(store, quarantine), this)
 
+    /** Раздача туннеля другим устройствам (D-51): включена ли, порт, логин и пароль. */
+    val share: ShareService = ShareService(ShareStore(store, quarantine))
+
     fun restore(): List<Diagnostic> = activation.restore().also { it.forEach(log::diagnostic) }
 
     /**
@@ -186,12 +189,14 @@ class DPpassCore(
         checker: HealthChecker,
         tun: TunInput?,
         preferred: ProfileId? = null,
+        /** Раздача туннеля другим устройствам (D-51); null — без раздачи. */
+        share: ShareSpec? = null,
         pause: suspend (Long) -> Unit,
     ): ConnectionReport? {
         val ir = activation.state.activeConfig ?: return null
         val plan = plan(assessment, preferred) ?: return null
         val orchestrator = ConnectionOrchestrator(compiler, engine, checker, health, clock, log, policy, stability, assessment, pause)
-        return orchestrator.connect(ir, plan, tun)
+        return orchestrator.connect(ir, plan, tun, share)
     }
 
     /** Наблюдатель сессии (D-44): Android-слой кормит его пробами (D-32). */
@@ -203,7 +208,13 @@ class DPpassCore(
 
     fun tunnelSpec(): Outcome<TunnelSpec>? = activation.state.activeConfig?.let { TunnelSpecBuilder.build(it, selfPackage, platform) }
 
-    fun explain(query: RouteQuery): RouteDecision? = activation.state.activeConfig?.let { RouteEvaluator(it.routing).decide(query) }
+    /**
+     * Почему соединение пошло бы так (D-09): решение по активной
+     * конфигурации на геоданных ядра (D-27). null — активной конфигурации
+     * нет; отказ — геоданные ядра не ответили. Блокирует поток: первое
+     * обращение к коду geosite или geoip читает файл набора.
+     */
+    fun explain(query: RouteQuery): Outcome<RouteDecision>? = activation.state.activeConfig?.let { engine.explain(it.routing, query) }
 
     fun subscriptionNotes(result: UpdateResult): List<Diagnostic> = result.diagnostics.also { it.forEach(log::diagnostic) }
 
