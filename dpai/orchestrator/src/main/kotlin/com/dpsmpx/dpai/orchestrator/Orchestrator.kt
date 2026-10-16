@@ -1626,7 +1626,8 @@ class Orchestrator(
      * задачи, задача снова в плане, счётчики сброшены, удержание снято.
      * [fresh] — свежая сессия с handoff (контрольная точка, D-40), а не
      * `--resume`. Модель и усилие запроса — в политику задачи (видно на
-     * листе задачи). Пока ход идёт — отказ: в идущий процесс не пишут.
+     * листе задачи). Пока ход идёт, в идущий процесс не пишут: сообщение —
+     * в очередь задачи до конца хода, свежая сессия — отказ (D-60).
      */
     fun sendToSession(session: SessionId, text: String?, model: String?, effort: String?, fresh: Boolean, echo: Boolean = true): Outcome<TaskState> {
         val s = sessions.sessions[session] ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой сессии", "session $session")
