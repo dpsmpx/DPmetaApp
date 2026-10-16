@@ -1,7 +1,7 @@
 # Настройка: ПК с Windows как target (доступ с телефона из любого места)
 
 Claude Code работает на ПК, телефон управляет им по SSH (D-26, D-31)
-через частную сеть Tailscale: ПК не открывается в интернет. Начатый ход
+через общую частную сеть телефона и ПК (D-68): ПК не открывается в интернет. Начатый ход
 продолжается на ПК и без связи; проверку, коммит и следующий ход делает
 телефон, когда связь есть. **Подключение по сети ещё не проверено на
 устройстве** (9 октября 2026); проверено — Windows-target по кабелю
@@ -13,7 +13,7 @@ Claude Code работает на ПК, телефон управляет им �
 Code — в Termux на телефоне («Инструкция», разделы 1–7), файлы, проверки
 и Git — на ПК; входить в Claude на ПК не нужно.
 
-**Быстрее — кнопками (D-52, D-53).** После Tailscale (§1) и переноса
+**Быстрее — кнопками (D-52, D-53).** После общей сети (§1) и переноса
 `dpai-agent.zip` в «Загрузки» ПК: Targets → «Инструкция» → «10. ПК с
 Windows» → «Копировать», вставить в PowerShell от администратора — это
 §2 (без Node.js и Claude Code), §3, §4 и поля для §5 с отпечатками ключа
@@ -22,18 +22,29 @@ Windows» → «Копировать», вставить в PowerShell от ад
 шаги 1–4 §7. Ниже — то же вручную. §6 (вход на ПК) — только если Claude
 работает на самом ПК.
 
-## 1. Tailscale
+## 1. Общая сеть телефона и ПК
 
-1. На ПК: `winget install --id Tailscale.Tailscale -e`, затем войти в
-   Tailscale. На телефоне — Tailscale из Google Play, тот же аккаунт.
-   Android держит одну VPN за раз — другую VPN выключите.
-2. Адрес ПК (вида `100.x.y.z`): `tailscale ip -4`.
+Ключи телефона входят на ПК только из частных сетей (D-68): дом
+(`192.168.0.0/16`, `10.0.0.0/8`, `172.16.0.0/12`) и VPN-сети с адресами
+`100.64.0.0/10`. Android держит одну VPN за раз, поэтому второй VPN ради
+ПК не ставится — свой VPN телефона остаётся.
+
+1. Дома — один Wi-Fi. В VPN на телефоне включить «доступ к локальной
+   сети» или исключить из VPN приложения DP AI и Termux (раздельное
+   туннелирование); в VPN на ПК — «разрешить локальную сеть». Вне дома —
+   только свой VPN, где телефон и ПК видят друг друга (свой WireGuard,
+   ZeroTier, Tailscale без другого VPN на телефоне): «Хост» — адрес ПК в
+   нём.
+2. Адрес ПК: `Get-NetIPAddress -AddressFamily IPv4 | Select-Object IPAddress, InterfaceAlias`.
+   Сеть Windows — «Частная»: в «Общедоступной» брандмауэр не пускает
+   вход.
 3. Питание: сон при питании от сети — «Никогда».
 
 ## 2. SSH, Java, Git, Claude Code
 
 ```powershell
 Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0; Set-Service sshd -StartupType Automatic; Start-Service sshd
+if (-not (Get-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -ErrorAction SilentlyContinue)) { New-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -DisplayName 'OpenSSH Server (sshd)' -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22 }
 notepad C:\ProgramData\ssh\sshd_config
 ```
 
@@ -61,15 +72,15 @@ Expand-Archive "$HOME\Downloads\dpai-agent.zip" -DestinationPath $HOME -Force; S
 ## 4. Ключ приложения
 
 Строка ключа — Targets → «Ключ приложения» → «Показать открытый ключ».
-Только из сети Tailscale; для администратора Windows — общий файл:
+Только из частных сетей (D-68); для администратора Windows — общий файл:
 
 ```powershell
-Add-Content C:\ProgramData\ssh\administrators_authorized_keys 'from="100.64.0.0/10" ВСТАВЛЕННАЯ_СТРОКА'; icacls C:\ProgramData\ssh\administrators_authorized_keys /inheritance:r /grant Administrators:F /grant SYSTEM:F
+Add-Content C:\ProgramData\ssh\administrators_authorized_keys 'from="192.168.0.0/16,10.0.0.0/8,172.16.0.0/12,100.64.0.0/10" ВСТАВЛЕННАЯ_СТРОКА'; icacls C:\ProgramData\ssh\administrators_authorized_keys /inheritance:r /grant Administrators:F /grant SYSTEM:F
 ```
 
 ## 5. Target в приложении
 
-Targets → «Добавить»: «Хост» — адрес Tailscale, «Порт» — `22`,
+Targets → «Добавить»: «Хост» — адрес ПК в общей сети (§1), «Порт» — `22`,
 «Пользователь» — `$env:USERNAME`, «Команда агента dpai» —
 `C:/Users/<пользователь>/dpai-agent.cmd`, «Каталог Claude слота» —
 `C:/Users/<пользователь>/.claude-slot-1`, «Windows» — отметить.
@@ -109,10 +120,10 @@ proot-distro login alpine -- sh -c 'apk add -q openssh-client && mkdir -p /root/
 ```
 
 2. Напечатанную строку — на ПК (PowerShell от администратора), только из
-   сети Tailscale:
+   частных сетей (D-68):
 
 ```powershell
-Add-Content C:\ProgramData\ssh\administrators_authorized_keys 'from="100.64.0.0/10" СТРОКА_КЛЮЧА_ТЕЛЕФОНА'
+Add-Content C:\ProgramData\ssh\administrators_authorized_keys 'from="192.168.0.0/16,10.0.0.0/8,172.16.0.0/12,100.64.0.0/10" СТРОКА_КЛЮЧА_ТЕЛЕФОНА'
 ```
 
 3. Ключ хоста ПК — в known_hosts proot: на вопрос `ssh` сверить отпечаток

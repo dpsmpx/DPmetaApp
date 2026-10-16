@@ -11,7 +11,7 @@ class PcSetupTest {
     private val key = "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTY= dpai-android"
 
     @Test
-    fun oneLineWithTheKeyFromTailscaleOnly() {
+    fun oneLineWithTheKeyFromPrivateNetsOnly() {
         val cmd = assertNotNull(PcSetup.command(key))
         assertTrue('\n' !in cmd && '\r' !in cmd, "одна строка")
         assertEquals(1, Regex.escape("from=\"${PcSetup.PRIVATE_NETS}\" $key").toRegex().findAll(cmd).count())
