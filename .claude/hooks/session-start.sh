@@ -19,6 +19,8 @@ PROJ="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "$0")/../.." && pwd)}"
     echo "Правила — CLAUDE.md; этап и шаги — ROADMAP/ROADMAP.md; хвосты — TODO.md."
     echo "Подсистема «AI» и ядро — dpai/ (D-28): правила dpai/CLAUDE.md, хвосты dpai/TODO.md,"
     echo "  проверки — cd dpai && tools/verify/run.sh static|affected|full."
+    echo "Подсистема DPpass — dppass/ (D-30): правила dppass/CLAUDE.md, хвосты dppass/TODO.md,"
+    echo "  проверки — cd dppass && tools/hostcheck/run.sh --quick|--full, итог для PR — run.sh report."
     for tool in python3 git java; do
         if command -v "$tool" >/dev/null 2>&1; then
             echo "  $tool: есть"

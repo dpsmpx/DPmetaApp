@@ -13,7 +13,7 @@
 
 Подсистема со своими проверками (SUBSYSTEMS) — каталог со своим процессом: её текст, ссылки
 и номера проверяет её команда; здесь — секреты (второй, независимый поиск), раскладка корня
-и единое ядро.
+и единое ядро (кроме подсистемы со своим ядром по решению — CORE_OWN, D-30).
 Ключ --write-status переписывает блок состояния README.md из ROADMAP и выходит.
 
 Коды возврата: 0 — пройдено; 1 — есть находки; 2 — неверный вызов;
@@ -44,7 +44,7 @@ ROOT_ALLOW = {
     ".claude", ".github", "docs", "ROADMAP", "tools", "tests",
     "settings.gradle.kts", "build.gradle.kts", "gradle.properties", "gradlew", "gradlew.bat",
     "gradle", "build-logic", "app", "core", "cli", "config",
-    "dpai",
+    "dpai", "dppass",
 }
 # Пакетный файл Windows создан Gradle с CRLF — так и хранится (`.gitattributes`).
 CRLF_ALLOWED = {"gradlew.bat"}
@@ -53,10 +53,14 @@ CRLF_ALLOWED = {"gradlew.bat"}
 WRAPPER = ("gradlew", "gradlew.bat", "gradle/wrapper/gradle-wrapper.jar", "gradle/wrapper/gradle-wrapper.properties")
 WRAPPER_SOURCE = "dpai/"
 # Подсистемы со своим процессом и командой проверок (D-28): каталог → команда уровня static.
-SUBSYSTEMS = {"dpai": "dpai/tools/verify/run.sh"}
+SUBSYSTEMS = {"dpai": "dpai/tools/verify/run.sh", "dppass": "dppass/tools/hostcheck/run.sh"}
+# Строка шага в выводе команды подсистемы: «- ✓ шаг» (dpai) или «  ✓ id  итог» (DP Verify у dppass, D-30).
+SUBSYSTEM_STEP = re.compile(r"^(?:- |  )([✓✗]) (.+)$", re.M)
 # Единое ядро (D-28): эти типы объявлены один раз — в ядре подсистемы dpai.
 CORE_TYPES = ("Outcome", "OperationResult", "Diagnostic", "DiagCode", "Secret", "Clock")
 CORE_HOME = "dpai/core/src/main/"
+# Своё ядро подсистемы — по решению, с причиной: каталог → решение.
+CORE_OWN = {"dppass/": "D-30: ядро DPpass пока своё, сведение с ядром dpai — отдельной задачей с паритетом"}
 CORE_DECL = re.compile(r"^[ \t]*(?:(?:public|internal|private|sealed|data|value|enum|abstract|open|fun|inline)\s+)*"
                        r"(?:class|interface|object|typealias)\s+(" + "|".join(CORE_TYPES) + r")\b", re.M)
 # Документы автора, которые он ведёт сам (через веб-интерфейс): форма текста не проверяется,
@@ -480,10 +484,12 @@ def check_status(repo, r):
 
 
 def check_core_single(repo, r):
-    """core.single — типы ядра объявлены один раз и только в ядре dpai (D-28): второго ядра нет."""
+    """core.single — типы ядра объявлены один раз и только в ядре dpai (D-28): второго ядра нет.
+
+    Исключение — подсистема со своим ядром по решению (CORE_OWN, D-30)."""
     seen = {}
     for rel in repo.files:
-        if not rel.endswith(".kt"):
+        if not rel.endswith(".kt") or rel.startswith(tuple(CORE_OWN)):
             continue
         r.scanned += 1
         text = repo.text(rel) or ""
@@ -526,7 +532,7 @@ def check_subsystems(root, subsystems=None):
             r.add(cmd, "нет команды проверок подсистемы")
         else:
             p = subprocess.run(["bash", path, "static"], cwd=root, capture_output=True, text=True)
-            steps = re.findall(r"^- ([✓✗]) (.+)$", p.stdout, re.M)
+            steps = SUBSYSTEM_STEP.findall(p.stdout)
             r.scanned = len(steps)
             r.findings.extend(f"{cmd}: {what}" for mark, what in steps if mark == "✗")
             if p.returncode != 0 and not r.findings:
