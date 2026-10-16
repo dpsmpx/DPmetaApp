@@ -12,7 +12,7 @@ set -eu
 PY="${DPSMPX_PY:-/data/data/com.termux/files/usr/bin/python3}"   # Python из pkg, с jsonschema
 REPO="${DPSMPX_REPO:-$HOME/SocialMediaImage}"
 ENVF="$HOME/.config/dpsmpx/deploy.env"
-SITE="http://dpsmpx.com/"   # http, пока у домена нет сертификата (TODO.md)
+SITE="https://dpsmpx.com/"   # HTTPS работает с 05.10.2026 (выгрузка ярлыком, 06.10.2026)
 
 [ -t 0 ] && trap 'printf "\nEnter — закрыть "; read -r _' EXIT
 fail() { echo "✗ $*"; exit 1; }
