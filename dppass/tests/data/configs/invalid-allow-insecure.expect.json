@@ -1,0 +1,8 @@
+{
+  "load": {
+    "outcome": "rejected",
+    "codes": [
+      "INSECURE_TLS_REJECTED"
+    ]
+  }
+}

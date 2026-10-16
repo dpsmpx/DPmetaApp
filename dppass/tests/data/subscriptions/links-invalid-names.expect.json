@@ -1,0 +1,9 @@
+{
+  "outcome": "ready",
+  "profiles": 1,
+  "codes": [
+    "SUBSCRIPTION_ENTRY_SKIPPED",
+    "SERVER_NAME_INVALID",
+    "DOMAIN_INVALID"
+  ]
+}

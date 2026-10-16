@@ -1,0 +1,21 @@
+{
+  "content-type": "text/plain; charset=utf-8",
+  "profile-title": "base64:0KHQuNC90YLQtdGC0LjRh9C10YHQutC40Lkg0L/QvtGB0YLQsNCy0YnQuNC6",
+  "profile-update-interval": "1",
+  "profile-web-page-url": "https://sub.example.com/page",
+  "support-url": "",
+  "hide-settings": "1",
+  "new-domain": "sub2.example.com",
+  "notification-subs-expire": "1",
+  "ping-type": "proxy",
+  "ping-result": "time",
+  "providerid": "test0001",
+  "routing": "",
+  "subscription-always-hwid-enable": "1",
+  "subscription-auto-update-enable": "1",
+  "subscription-ping-onopen-enabled": "1",
+  "subscription-request-timeout": "9",
+  "subscriptions-collapse": "0",
+  "x-hwid-active": "true",
+  "x-hwid-max-devices-reached": "true"
+}

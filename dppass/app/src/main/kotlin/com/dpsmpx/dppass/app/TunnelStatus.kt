@@ -1,0 +1,109 @@
+package com.dpsmpx.dppass.app
+
+import com.dpsmpx.dppass.core.ProfileId
+import com.dpsmpx.dppass.diagnostics.Diagnostic
+import com.dpsmpx.dppass.engine.ShareSpec
+import com.dpsmpx.dppass.engine.TrafficStats
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
+/**
+ * Состояние туннеля для интерфейса (D-34). Меняет его только сервис
+ * туннеля; экраны, плитка и уведомление его показывают. Без Android:
+ * переходы проверяются на хосте.
+ */
+sealed interface TunnelStatus {
+    /** Туннеля нет и не было отказа с прошлого запуска. */
+    data object Idle : TunnelStatus
+
+    /** Идёт подключение; [profileName] — кого проверяет сейчас (null — план ещё составляется). */
+    data class Connecting(val profileName: String?) : TunnelStatus
+
+    /** [sinceMillis] — время суток подключения (для уведомления); [sinceMonotonic] — для длительности. */
+    data class Connected(val profileId: ProfileId, val profileName: String, val sinceMillis: Long, val sinceMonotonic: Long = 0) : TunnelStatus
+
+    data object Stopping : TunnelStatus
+
+    /** Последняя попытка не удалась; причина — с кодом (D-22), туннеля нет. */
+    data class Failed(val reason: Diagnostic) : TunnelStatus
+
+    /** Туннель есть или поднимается: кнопка экрана — «Отключить», выбор сервера — переподключение. */
+    val busy: Boolean get() = this is Connecting || this is Connected
+}
+
+/** Трафик сессии (D-40): итоги с подключения и скорость по счётчикам ядра. */
+data class Traffic(val upBytes: Long, val downBytes: Long, val upPerSec: Long, val downPerSec: Long) {
+    companion object {
+        val ZERO: Traffic = Traffic(0, 0, 0, 0)
+    }
+}
+
+/**
+ * Скорость по накопленным счётчикам ядра (`EngineSession.stats`, D-25):
+ * разница за прошедшее время. Счётчики уменьшились — это новая сессия,
+ * отсчёт заново, а не «отрицательная скорость». Время — монотонное.
+ */
+class TrafficMeter {
+    private var lastAt: Long? = null
+    private var last: TrafficStats? = null
+
+    fun sample(stats: TrafficStats, nowMillis: Long): Traffic {
+        val prev = last
+        val prevAt = lastAt
+        last = stats
+        lastAt = nowMillis
+        if (prev == null || prevAt == null || nowMillis <= prevAt || stats.uplinkBytes < prev.uplinkBytes || stats.downlinkBytes < prev.downlinkBytes) {
+            return Traffic(stats.uplinkBytes, stats.downlinkBytes, 0, 0)
+        }
+        val dt = nowMillis - prevAt
+        return Traffic(
+            stats.uplinkBytes,
+            stats.downlinkBytes,
+            (stats.uplinkBytes - prev.uplinkBytes) * 1000 / dt,
+            (stats.downlinkBytes - prev.downlinkBytes) * 1000 / dt,
+        )
+    }
+
+    fun reset() {
+        last = null
+        lastAt = null
+    }
+}
+
+/** Одно состояние на процесс: сервис и экраны живут в одном процессе (D-30). */
+object TunnelState {
+    private val flow = MutableStateFlow<TunnelStatus>(TunnelStatus.Idle)
+    private val trafficFlow = MutableStateFlow(Traffic.ZERO)
+    private val shareFlow = MutableStateFlow<List<ShareSpec.Endpoint>>(emptyList())
+    private val shareRefusedFlow = MutableStateFlow(false)
+
+    val status: StateFlow<TunnelStatus> = flow.asStateFlow()
+
+    /** Трафик текущей сессии; без туннеля — нули. */
+    val traffic: StateFlow<Traffic> = trafficFlow.asStateFlow()
+
+    /** На каких адресах сейчас раздаётся туннель (D-51); без туннеля или раздачи — пусто. */
+    val share: StateFlow<List<ShareSpec.Endpoint>> = shareFlow.asStateFlow()
+
+    /** Раздача просилась, но ядро с её входами не запустилось (адрес пропал, порт занят): туннель — без неё. */
+    val shareRefused: StateFlow<Boolean> = shareRefusedFlow.asStateFlow()
+
+    fun set(next: TunnelStatus) {
+        flow.value = next
+        if (!next.busy) {
+            trafficFlow.value = Traffic.ZERO
+            shareFlow.value = emptyList()
+            shareRefusedFlow.value = false
+        }
+    }
+
+    fun traffic(next: Traffic) {
+        trafficFlow.value = next
+    }
+
+    fun share(next: List<ShareSpec.Endpoint>, refused: Boolean = false) {
+        shareFlow.value = next
+        shareRefusedFlow.value = refused
+    }
+}

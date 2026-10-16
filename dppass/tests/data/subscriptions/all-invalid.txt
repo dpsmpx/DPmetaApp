@@ -1,0 +1,5 @@
+vless://00000000-0000-4000-8000-000000000014@203.0.113.14:443?type=tcp&security=tls&sni=a.example.com&allowInsecure=1#Insecure
+vless://00000000-0000-4000-8000-000000000015@203.0.113.15:443?type=kcp&security=none#KCP
+vmess://eyJ2IjoiMiJ9
+vless://00000000-0000-4000-8000-000000000016@203.0.113.16:443?type=tcp&security=tls&sni=b.example.com&encryption=mlkem768x25519plus.native.0rtt.AAAA#PQ
+vless://not-a-uuid@203.0.113.17:443?type=tcp&security=tls&sni=c.example.com#BadUUID
