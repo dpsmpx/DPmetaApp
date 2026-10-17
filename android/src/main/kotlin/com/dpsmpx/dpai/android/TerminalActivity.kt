@@ -97,7 +97,19 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
                     if (TerminalHub.tabs.isEmpty()) finish()
                     return@runOnUiThread
                 }
-                val command = if (claude) (TerminalLaunch.claude(target) as? Outcome.Success)?.value.orEmpty() else emptyList()
+                // Claude не запустить (Windows, нет каталога слота) — сказать, а не открыть вместо него оболочку (D-05).
+                val command = if (!claude) {
+                    emptyList()
+                } else {
+                    when (val c = TerminalLaunch.claude(target)) {
+                        is Outcome.Success -> c.value
+                        is Outcome.Failure -> {
+                            Toast.makeText(this, c.diagnostics.first().message, Toast.LENGTH_LONG).show()
+                            if (TerminalHub.tabs.isEmpty()) finish()
+                            return@runOnUiThread
+                        }
+                    }
+                }
                 val tab = TerminalHub.open(this, target, command, if (claude) "${target.label} · claude" else target.label)
                 show(tab)
             }

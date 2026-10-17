@@ -233,7 +233,7 @@ class Controller(private val root: File, val version: String?) {
             is Outcome.Success -> r.value
         }
         val key = WorkspaceLink.publicKey(made.stdout) ?: return Outcome.failure(DiagCode.VALUE_INVALID, "Termux не вернул открытый ключ", termux.label)
-        step(pc, "ключ на ${pc.label}", WorkspaceLink.pcAuthorize(key)).let { if (it is Outcome.Failure) return it }
+        step(pc, "ключ на ${pc.label}", WorkspaceLink.pcAuthorize(key, pc.platform)).let { if (it is Outcome.Failure) return it }
         step(termux, "ключ хоста ${pc.label} в Termux", WorkspaceLink.termuxKnownHosts(pc), stdin = hostLines.joinToString("\n", postfix = "\n"))
             .let { if (it is Outcome.Failure) return it }
         // Ответ агента — строка JSON и при `"ok":false` (на ПК нет Claude Code — так и задумано): важен вход ключом.
@@ -242,6 +242,9 @@ class Controller(private val root: File, val version: String?) {
             is Outcome.Success -> Outcome.success(Unit)
         }
     }
+
+    /** Раздел «Инструкции» с командой настройки ПК: 10 — Windows, 11 — Linux (D-56). */
+    private fun guideSection(pc: TargetEntry): Int = if (pc.platform == com.dpsmpx.dpai.execution.target.TargetPlatform.WINDOWS) 10 else 11
 
     /** Копия настроек — и в Termux (D-54): переживает удаление приложения и читается без выбора файла. */
     fun mirrorSettings(text: String): Outcome<Unit> {
@@ -304,15 +307,15 @@ class Controller(private val root: File, val version: String?) {
         val key = publicKeyLine()
         for (pc in merged.targets.filter { it.host != TermuxRestore.HOST && it.host != "localhost" }) {
             if (!found.workspace) {
-                lines += "${pc.label}: ключа связки в Termux нет — новый ключ приложения добавьте командой из «Инструкция → 10»"
+                lines += "${pc.label}: ключа связки в Termux нет — новый ключ приложения добавьте командой из «Инструкция → ${guideSection(pc)}»"
                 continue
             }
             progress("ключ приложения на ${pc.label}")
             val r = shell.run(ProcessSpec(TermuxRestore.pcReauthorize(pc, key)), 1.minutes)
             lines += when {
                 r is Outcome.Success && TermuxRestore.reauthorized(r.value.stdout) -> "${pc.label}: новый ключ приложения добавлен"
-                r is Outcome.Success -> "${pc.label}: не вышло (${(r.value.stderr + r.value.stdout).lastOrNull { it.isNotBlank() } ?: "код ${r.value.exitCode}"}) — команда из «Инструкция → 10»"
-                else -> "${pc.label}: не вышло (${(r as Outcome.Failure).diagnostics.first().message}) — команда из «Инструкция → 10»"
+                r is Outcome.Success -> "${pc.label}: не вышло (${(r.value.stderr + r.value.stdout).lastOrNull { it.isNotBlank() } ?: "код ${r.value.exitCode}"}) — команда из «Инструкция → ${guideSection(pc)}»"
+                else -> "${pc.label}: не вышло (${(r as Outcome.Failure).diagnostics.first().message}) — команда из «Инструкция → ${guideSection(pc)}»"
             }
         }
         mirrorSettings(com.dpsmpx.dpai.ui.SettingsBackup.write(merged, Clock.SYSTEM.now().epochMillis, version))

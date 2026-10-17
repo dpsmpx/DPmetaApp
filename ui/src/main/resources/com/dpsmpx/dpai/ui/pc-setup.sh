@@ -4,6 +4,9 @@
 set -u
 KEY='DPAI_KEY_LINE'
 if [ "$(id -u)" = 0 ]; then echo 'Запустите от своего пользователя, не от root: sudo спросит пароль, где нужно'; exit 1; fi
+# Без sudo каждый шаг падал бы со своей непонятной ошибкой (Debian с паролем root ставит систему без sudo).
+if ! command -v sudo >/dev/null 2>&1; then echo 'Нет sudo: под root поставьте его (apt install sudo, dnf install sudo или pacman -S sudo), добавьте себя в группу sudo или wheel (usermod -aG sudo ИМЯ), войдите заново и запустите команду снова'; exit 1; fi
+sudo -v || { echo 'sudo не дал прав: ваш пользователь должен быть в группе sudo или wheel'; exit 1; }
 
 echo '[1/5] Пакеты: OpenSSH Server, Java 17+, Git, unzip'
 jv=$(java -XshowSettings:properties -version 2>&1 | sed -n 's/.*java.specification.version = //p'); jv=${jv%%.*}
@@ -15,18 +18,27 @@ elif command -v dnf >/dev/null 2>&1; then
   sudo dnf install -y -q openssh-server git unzip </dev/null
   [ "${jv:-0}" -ge 17 ] 2>/dev/null || sudo dnf install -y -q java-21-openjdk-headless </dev/null || sudo dnf install -y -q java-17-openjdk-headless </dev/null
 elif command -v pacman >/dev/null 2>&1; then
-  sudo pacman -S --needed --noconfirm openssh git unzip </dev/null
-  [ "${jv:-0}" -ge 17 ] 2>/dev/null || sudo pacman -S --needed --noconfirm jre21-openjdk-headless </dev/null
+  # Arch — только полным обновлением (-Syu): со старыми списками пакетов зеркала отвечают 404.
+  sudo pacman -Syu --needed --noconfirm openssh git unzip </dev/null
+  # Java по умолчанию выбирает archlinux-java: новая JRE сама её не меняет.
+  [ "${jv:-0}" -ge 17 ] 2>/dev/null || { sudo pacman -S --needed --noconfirm jre21-openjdk-headless </dev/null && sudo archlinux-java set java-21-openjdk; }
 else
   echo '  Менеджер пакетов не узнан: поставьте openssh-server, Java 17 или новее, git и unzip вручную и запустите команду снова'
 fi
 
-echo '[2/5] SSH-сервер: только по ключу (вернуть пароли: sudo rm /etc/ssh/sshd_config.d/10-dpai.conf)'
+echo '[2/5] SSH-сервер: только по ключу'
 if grep -qs '^Include /etc/ssh/sshd_config.d/\*\.conf' /etc/ssh/sshd_config; then
   printf 'PasswordAuthentication no\nKbdInteractiveAuthentication no\n' | sudo tee /etc/ssh/sshd_config.d/10-dpai.conf >/dev/null
-elif ! grep -qs '^PasswordAuthentication no' /etc/ssh/sshd_config; then
-  sudo cp /etc/ssh/sshd_config /etc/ssh/sshd_config.bak-dpai && { echo 'PasswordAuthentication no'; sudo cat /etc/ssh/sshd_config.bak-dpai; } | sudo tee /etc/ssh/sshd_config >/dev/null
+  echo '  Вернуть вход по паролю: sudo rm /etc/ssh/sshd_config.d/10-dpai.conf, затем перезапустить ssh'
+else
+  # Основной sshd_config скрипт не меняет (D-56): без Include — шаг вручную.
+  echo '  В /etc/ssh/sshd_config нет строки Include /etc/ssh/sshd_config.d/*.conf — основной файл не меняется.'
+  echo '  Чтобы вход был только по ключу, впишите в его начало PasswordAuthentication no и KbdInteractiveAuthentication no и перезапустите ssh'
 fi
+# Ключи хоста и каталог разделения прав: на свежей системе (Arch, Fedora без запуска sshd, Ubuntu 24.04 с ssh.socket)
+# их ещё нет, и проверка sshd -t падала бы, а сервер так и не запускался.
+sudo ssh-keygen -A >/dev/null
+[ -d /run/sshd ] || sudo install -d -m 755 /run/sshd
 if sudo sshd -t; then
   sudo systemctl enable --now ssh 2>/dev/null || sudo systemctl enable --now sshd 2>/dev/null || echo '  systemd нет: запустите sshd вручную'
   sudo systemctl reload ssh 2>/dev/null || sudo systemctl reload sshd 2>/dev/null || true

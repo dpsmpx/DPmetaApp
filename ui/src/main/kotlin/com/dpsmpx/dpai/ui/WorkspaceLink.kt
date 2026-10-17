@@ -1,5 +1,6 @@
 package com.dpsmpx.dpai.ui
 
+import com.dpsmpx.dpai.execution.target.TargetPlatform
 import java.util.Base64
 
 /**
@@ -33,9 +34,23 @@ object WorkspaceLink {
     fun publicKey(stdout: List<String>): String? =
         stdout.asReversed().firstNotNullOfOrNull { PUBLIC.matchEntire(it.trim())?.groupValues?.get(1) }?.let { "$it $COMMENT" }
 
-    /** На ПК (OpenSSH Windows, пользователь — администратор): строка [publicKey] в `administrators_authorized_keys`. */
-    fun pcAuthorize(publicKey: String): List<String> {
+    /**
+     * На ПК: строка [publicKey] — только из сети Tailscale, прежняя строка
+     * связки заменяется. Windows (пользователь — администратор) —
+     * `administrators_authorized_keys`; Linux (D-56) — `~/.ssh/authorized_keys`
+     * пользователя (ревью 17 октября 2026: раньше была только ветка Windows).
+     */
+    fun pcAuthorize(publicKey: String, platform: TargetPlatform = TargetPlatform.WINDOWS): List<String> {
         require(PUBLIC.matches(publicKey) && publicKey.endsWith(" $COMMENT")) { "не ключ связки" }
+        if (platform == TargetPlatform.POSIX) {
+            val ak = "\$HOME/.ssh/authorized_keys"
+            return listOf(
+                "sh", "-c",
+                "mkdir -p \"\$HOME/.ssh\" && chmod 700 \"\$HOME/.ssh\" && touch \"$ak\" && " +
+                    "{ grep -v ' $COMMENT\$' \"$ak\"; printf '%s\\n' 'from=\"100.64.0.0/10\" $publicKey'; } > \"$ak.dpai-new\" && " +
+                    "mv \"$ak.dpai-new\" \"$ak\" && chmod 600 \"$ak\" && echo dpai-linked",
+            )
+        }
         val script = "\$ak = \"\$env:ProgramData\\ssh\\administrators_authorized_keys\"; " +
             "\$keep = @(if (Test-Path \$ak) { Get-Content \$ak | Where-Object { \$_ -notmatch ' $COMMENT\$' } }); " +
             "Set-Content \$ak (\$keep + 'from=\"100.64.0.0/10\" $publicKey') -Encoding ascii; " +

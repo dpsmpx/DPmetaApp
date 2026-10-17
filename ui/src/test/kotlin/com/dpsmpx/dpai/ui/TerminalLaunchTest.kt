@@ -9,6 +9,7 @@ import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.execution.target.TargetPlatform
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /** Что запускает свой терминал (D-57): `claude` слота — через оболочку входа. */
 class TerminalLaunchTest {
@@ -20,7 +21,10 @@ class TerminalLaunchTest {
     @Test
     fun claudeRunsInTheSlotDirectoryThroughALoginShell() {
         val cmd = TerminalLaunch.claude(entry()).valueOrNull()!!
-        assertEquals(listOf("sh", "-lc", "exec env 'CLAUDE_CONFIG_DIR=/home/u/.dpai/slot a' claude"), cmd)
+        assertEquals(listOf("sh", "-lc"), cmd.take(2))
+        assertTrue(cmd[2].startsWith("exec env -u ") && cmd[2].endsWith(" 'CLAUDE_CONFIG_DIR=/home/u/.dpai/slot a' claude"), cmd[2])
+        // Переменные, перекрывающие вход слота (D-29), сняты после профиля оболочки входа.
+        for (v in com.dpsmpx.dpai.accounts.SlotEnvironment.OVERRIDING) assertTrue("-u $v " in cmd[2], v)
     }
 
     @Test

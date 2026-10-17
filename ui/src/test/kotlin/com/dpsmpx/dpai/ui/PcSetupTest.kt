@@ -93,7 +93,9 @@ class PcSetupTest {
         assertTrue("agent ok: agent doctor LANG=C.UTF-8" in out, out)
         assertTrue("Хост: 100.101.102.103" in out && "Команда агента dpai: ${home.path}/dpai-agent" in out && "SHA256:stub" in out, out)
         val sudo = log.readText()
-        assertTrue("apt-get install" in sudo && "sshd -t" in sudo, sudo)
-        assertTrue(!File(dir.toFile(), "dpai-pc-setup.sh").exists(), "временный скрипт удалён")
+        assertTrue("apt-get install" in sudo && "sshd -t" in sudo && "sudo -v" in sudo, sudo)
+        // Ключи хоста — до проверки sshd -t: на свежей системе без них проверка падает.
+        assertTrue(sudo.indexOf("ssh-keygen -A") in 0 until sudo.indexOf("sshd -t"), sudo)
+        assertTrue(dir.toFile().listFiles()!!.none { it.name.startsWith("tmp.") }, "временный скрипт удалён")
     }
 }
