@@ -159,6 +159,9 @@ class ControlCommand(
             opt(args, "--model")?.let { c["model"] = JsonString(it) }
             opt(args, "--effort")?.let { c["effort"] = JsonString(it) }
             opt(args, "--budget")?.let { budget(it) ?: return usage("--budget — доллары, например 0.25") }?.let { c["budgetCents"] = JsonNumber.of(it) }
+            // Область и зависимости — списком через запятую (D-42, п. 1); короткие id задач — как у других команд.
+            opt(args, "--scope")?.let { c["scope"] = JsonArray(csv(it).map(::JsonString)) }
+            opt(args, "--depends-on")?.let { v -> c["dependsOn"] = JsonArray(csv(v).map { JsonString(resolve(it, "tasks") ?: return FAILED) }) }
             return send(c)
         }
         val id = args.getOrNull(0) ?: return usage(TASK_USAGE)
@@ -184,6 +187,15 @@ class ControlCommand(
             "priority" -> {
                 c["command"] = JsonString("task.priority")
                 c["priority"] = JsonString(args.getOrNull(2)?.uppercase() ?: return usage("dpai task <id> priority CRITICAL|HIGH|NORMAL|LOW|BACKGROUND"))
+            }
+            // Без путей или без задач — очистить: `dpai task <id> scope`, `dpai task <id> depends`.
+            "scope" -> {
+                c["command"] = JsonString("task.scope")
+                c["scope"] = JsonArray(args.drop(2).filter { !it.startsWith("--") }.map(::JsonString))
+            }
+            "depends" -> {
+                c["command"] = JsonString("task.dependencies")
+                c["dependsOn"] = JsonArray(args.drop(2).filter { !it.startsWith("--") }.map { JsonString(resolve(it, "tasks") ?: return FAILED) })
             }
             "policy" -> {
                 c["command"] = JsonString("task.policy")
@@ -362,8 +374,8 @@ class ControlCommand(
         const val FAILED = 1
         const val USAGE_ERROR = 2
 
-        private const val TASK_USAGE = "dpai task add «название» «что сделать» [--priority HIGH] [--class trivial] [--model haiku] [--effort low] [--budget 0.25]\n" +
-            "dpai task <id> hold|resume|retry [--text «…»]|verify|messages|diff [--stat]|priority <P>|policy --class <к> …|archive|unarchive|cancel --yes|waive --reason «…» --yes\n" +
+        private const val TASK_USAGE = "dpai task add «название» «что сделать» [--priority HIGH] [--class trivial] [--model haiku] [--effort low] [--budget 0.25] [--scope путь,путь] [--depends-on id,id]\n" +
+            "dpai task <id> hold|resume|retry [--text «…»]|verify|messages|diff [--stat]|priority <P>|policy --class <к> …|scope [путь…]|depends [id…]|archive|unarchive|cancel --yes|waive --reason «…» --yes\n" +
             "dpai task archive-done   — все завершённые в архив"
         private const val SESSION_USAGE = "dpai session <id> stop | send «запрос» [--model m] [--effort e] | fresh [«запрос»]"
 
@@ -381,6 +393,8 @@ class ControlCommand(
         private fun defaultConfig(): Vfs = NioVfs(Paths.get(System.getProperty("user.home") ?: ".", ".config", "dpai").also { it.toFile().mkdirs() })
 
         private fun opt(args: List<String>, name: String): String? = args.indexOf(name).takeIf { it >= 0 }?.let { args.getOrNull(it + 1) }
+
+        private fun csv(v: String): List<String> = v.split(',').map(String::trim).filter(String::isNotEmpty)
 
         private fun budget(v: String): Long? = v.replace(',', '.').toBigDecimalOrNull()?.movePointRight(2)?.toLong()?.takeIf { it > 0 }
 

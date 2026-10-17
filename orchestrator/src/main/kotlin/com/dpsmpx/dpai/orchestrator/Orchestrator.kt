@@ -1315,8 +1315,11 @@ class Orchestrator(
             is Command.Delivered -> OperationResult.record(command.operation, provenance, ids, clock, delivered(command.request, command.channel))
             is Command.Probe -> OperationResult.record(command.operation, provenance, ids, clock, probe(command.kind, command.ttl ?: requestTtl))
             is Command.AddTask -> OperationResult.record(
-                command.operation, provenance, ids, clock, addTask(command.title, command.objective, command.priority, policy = command.policy),
+                command.operation, provenance, ids, clock,
+                addTask(command.title, command.objective, command.priority, command.dependencies, scope = command.scope.ifEmpty { null }, policy = command.policy),
             )
+            is Command.SetScope -> record(command, provenance) { taskEdit(command.task) { Tasks.setScope(tasks, command.task, command.scope, clock.now()) } }
+            is Command.SetDependencies -> record(command, provenance) { taskEdit(command.task) { tasksLogic.setDependencies(tasks, command.task, command.dependencies, clock.now()) } }
             is Command.SetPriority -> record(command, provenance) { taskEdit(command.task) { tasksLogic.setPriority(tasks, command.task, command.priority, null, clock.now()) } }
             is Command.SetPolicy -> record(command, provenance) { setPolicy(command) }
             is Command.Hold -> record(command, provenance) { holdTask(command.task) }

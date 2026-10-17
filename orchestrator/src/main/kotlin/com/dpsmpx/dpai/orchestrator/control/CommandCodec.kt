@@ -46,7 +46,11 @@ object CommandCodec {
                 str("title", c.title); str("objective", c.objective); str("priority", c.priority.name)
                 str("taskClass", c.policy.taskClass.name); str("model", c.policy.model); str("effort", c.policy.effort)
                 c.policy.maxBudgetUsdCents?.let { f["budgetCents"] = JsonNumber.of(it) }
+                if (c.scope.isNotEmpty()) f["scope"] = JsonArray(c.scope.sorted().map(::JsonString))
+                if (c.dependencies.isNotEmpty()) f["dependsOn"] = JsonArray(c.dependencies.map { JsonString(it.value) }.sortedBy { it.value })
             }
+            is Command.SetScope -> { id("task", c.task); f["scope"] = JsonArray(c.scope.sorted().map(::JsonString)) }
+            is Command.SetDependencies -> { id("task", c.task); f["dependsOn"] = JsonArray(c.dependencies.map { JsonString(it.value) }.sortedBy { it.value }) }
             is Command.SetPriority -> { id("task", c.task); str("priority", c.priority.name) }
             is Command.SetPolicy -> {
                 id("task", c.task); str("taskClass", c.taskClass.name); str("model", c.model); str("effort", c.effort)
@@ -87,6 +91,15 @@ object CommandCodec {
         val confirmed = if (f.has("confirmed")) f.boolean("confirmed") ?: false else false
         fun task() = f.string("task")?.let { IdKinds.TASK.parse(it).valueOrNull() ?: null.also { d.error(DiagCode.ID_INVALID, "ожидался TaskId", "$.task") } }
         fun session() = f.string("session")?.let { IdKinds.SESSION.parse(it).valueOrNull() ?: null.also { d.error(DiagCode.ID_INVALID, "ожидался SessionId", "$.session") } }
+        // Массив строк: нет поля и не обязателен — пусто; не строки — ошибка с местом.
+        fun strings(k: String, required: Boolean): List<String>? {
+            if (!required && !f.has(k)) return emptyList()
+            val a = f.array(k) ?: return null
+            return a.items.mapIndexedNotNull { i, v -> (v as? JsonString)?.value ?: null.also { d.error(DiagCode.VALUE_INVALID, "ожидалась строка", "$.$k[$i]") } }
+        }
+        fun taskIds(k: String, required: Boolean): Set<com.dpsmpx.dpai.core.ids.TaskId>? = strings(k, required)?.mapNotNull { s ->
+            IdKinds.TASK.parse(s).valueOrNull() ?: null.also { d.error(DiagCode.ID_INVALID, "ожидался TaskId", "$.$k") }
+        }?.toSet()
         fun <E : Enum<E>> enum(k: String, values: Array<E>, required: Boolean = true): E? =
             (if (required) f.string(k) else f.optString(k))?.let { v -> values.firstOrNull { it.name == v } ?: null.also { d.error(DiagCode.VALUE_INVALID, "неизвестное значение", "$.$k") } }
         val c: Command? = when (name) {
@@ -99,8 +112,12 @@ object CommandCodec {
                 val cls = enum("taskClass", TaskClass.entries.toTypedArray(), required = false) ?: TaskClass.NORMAL_ENGINEERING
                 val policy = runCatching { TaskPolicy(taskClass = cls, model = f.optString("model"), effort = f.optString("effort"), maxBudgetUsdCents = f.optLong("budgetCents")) }
                     .getOrElse { d.error(DiagCode.VALUE_INVALID, it.message ?: "политика недопустима", "$"); null }
-                if (title != null && objective != null && policy != null) Command.AddTask(title, objective, priority, policy, key) else null
+                val scope = strings("scope", required = false)?.toSet()
+                val deps = taskIds("dependsOn", required = false)
+                if (title != null && objective != null && policy != null && scope != null && deps != null) Command.AddTask(title, objective, priority, policy, scope, deps, key) else null
             }
+            "task.scope" -> task()?.let { t -> strings("scope", required = true)?.let { Command.SetScope(t, it.toSet(), key) } }
+            "task.dependencies" -> task()?.let { t -> taskIds("dependsOn", required = true)?.let { Command.SetDependencies(t, it, key) } }
             "task.priority" -> task()?.let { t -> enum("priority", Priority.entries.toTypedArray())?.let { Command.SetPriority(t, it, key) } }
             "task.policy" -> task()?.let { t ->
                 enum("taskClass", TaskClass.entries.toTypedArray())?.let { Command.SetPolicy(t, it, f.optString("model"), f.optString("effort"), f.optLong("budgetCents"), key) }

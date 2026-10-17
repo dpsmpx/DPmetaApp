@@ -232,6 +232,26 @@ class TasksTest {
         assertEquals(DiagCode.DEPENDENCY_CYCLE, (tasks.create(state, self, "x", "y", Priority.LOW, clock.now(), setOf(self)) as Outcome.Failure).errors.single().code)
     }
 
+    /** D-42, п. 1: зависимости и область меняют целиком, но только у задачи, которая ещё не идёт. */
+    @Test
+    fun dependenciesAndScopeChangeOnlyBeforeStart() {
+        val a = task()
+        val b = task()
+        val c = task()
+        ok(tasks.setDependencies(state, c, setOf(a, b), clock.now()))
+        assertEquals(setOf(a, b), state.tasks.getValue(c).dependencies)
+        ok(tasks.setDependencies(state, c, setOf(b), clock.now()))
+        assertEquals(setOf(b), state.tasks.getValue(c).dependencies, "лишняя зависимость снята")
+        assertEquals(emptyList(), ok(tasks.setDependencies(state, c, setOf(b), clock.now())), "повтор — без события")
+        assertEquals(DiagCode.DEPENDENCY_CYCLE, (tasks.setDependencies(state, b, setOf(c), clock.now()) as Outcome.Failure).errors.single().code)
+        assertEquals(DiagCode.DEPENDENCY_CYCLE, (tasks.setDependencies(state, c, setOf(c), clock.now()) as Outcome.Failure).errors.single().code)
+        assertEquals(DiagCode.ENTITY_NOT_FOUND, (tasks.setDependencies(state, c, setOf(ids.next(IdKinds.TASK)), clock.now()) as Outcome.Failure).errors.single().code)
+        runTickUntilReady(a)
+        ok(tasks.start(state, a, clock.now()))
+        assertEquals(DiagCode.OPERATION_NOT_ALLOWED, (tasks.setDependencies(state, a, setOf(b), clock.now()) as Outcome.Failure).errors.single().code)
+        assertEquals(DiagCode.OPERATION_NOT_ALLOWED, (Tasks.setScope(state, a, setOf("src"), clock.now()) as Outcome.Failure).errors.single().code)
+    }
+
     @Test
     fun failedDependencyBlocksDependents() {
         val a = task(policy = TaskPolicy(maxRetries = 0))

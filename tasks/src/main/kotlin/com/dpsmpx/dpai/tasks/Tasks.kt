@@ -63,6 +63,23 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
         return Outcome.success(listOf(TaskEvent.DependenciesChanged(task, t.dependencies + dependsOn, now)))
     }
 
+    /**
+     * Зависимости целиком (D-42, п. 1: изменить у задачи, которая ещё не
+     * идёт): несуществующая задача, сама задача и цикл — отказ.
+     */
+    fun setDependencies(state: TasksState, task: TaskId, dependencies: Set<TaskId>, now: Timestamp): Outcome<List<TaskEvent>> {
+        val t = state.tasks[task] ?: return notFound(task)
+        if (t.state !in EDITABLE) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "зависимости меняют до запуска: задача ${t.state}", "task $task")
+        if (task in dependencies) return Outcome.failure(DiagCode.DEPENDENCY_CYCLE, "задача зависит от самой себя", "task $task")
+        dependencies.firstOrNull { it !in state.tasks }?.let { return notFound(it) }
+        if (dependencies == t.dependencies) return Outcome.success(emptyList())
+        val graph = state.tasks.mapValues { it.value.dependencies } + (task to dependencies)
+        findCycle(graph)?.let { cycle ->
+            return Outcome.failure(DiagCode.DEPENDENCY_CYCLE, "цикл зависимостей: ${cycle.joinToString(" → ")}", "task $task")
+        }
+        return Outcome.success(listOf(TaskEvent.DependenciesChanged(task, dependencies, now)))
+    }
+
     fun enqueue(state: TasksState, id: TaskId, now: Timestamp): Outcome<List<TaskEvent>> = move(state, id, TaskState.QUEUED, now)
 
     /**
@@ -404,6 +421,8 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
         fun setScope(state: TasksState, task: TaskId, scope: Set<String>, now: Timestamp): Outcome<List<TaskEvent>> {
             val t = state.tasks[task] ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой задачи", "task $task")
             if (t.terminal) return Outcome.failure(DiagCode.INVALID_TRANSITION, "задача завершена", "task $task")
+            // Область меняют до запуска (D-42, п. 1): у идущего хода она уже в его контексте.
+            if (t.state !in EDITABLE) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "область меняют до запуска: задача ${t.state}", "task $task")
             val bad = scope.firstOrNull { p -> !SCOPE_PATH.matches(p) || p.split('/').any { it == ".." || it == "." } }
             if (bad != null || scope.size > 500) return Outcome.failure(DiagCode.VALUE_INVALID, "область — относительные пути внутри репозитория, не больше 500", "task $task")
             if (t.scope == scope) return Outcome.success(emptyList())

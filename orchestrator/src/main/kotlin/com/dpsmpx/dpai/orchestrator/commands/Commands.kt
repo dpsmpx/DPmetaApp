@@ -40,15 +40,30 @@ sealed interface Command {
         override val operation: String get() = "request.probe"
     }
 
-    /** Новая задача (ТЗ, §21; D-42, п. 1). */
+    /**
+     * Новая задача (ТЗ, §21; D-42, п. 1): сразу с областью — путями в
+     * репозитории (ТЗ, §31) — и зависимостями (ТЗ, §21).
+     */
     data class AddTask(
         val title: String,
         val objective: String,
         val priority: Priority = Priority.NORMAL,
         val policy: TaskPolicy = TaskPolicy(),
+        val scope: Set<String> = emptySet(),
+        val dependencies: Set<TaskId> = emptySet(),
         override val key: String? = null,
     ) : Command {
         override val operation: String get() = "task.add"
+    }
+
+    /** Область задачи (ТЗ, §31; D-42, п. 1) — до запуска; пустая — без области. */
+    data class SetScope(override val task: TaskId, val scope: Set<String>, override val key: String? = null) : Command, TaskCommand {
+        override val operation: String get() = "task.scope"
+    }
+
+    /** Зависимости задачи целиком (ТЗ, §21; D-42, п. 1) — до запуска; цикл — отказ `DEPENDENCY_CYCLE`. */
+    data class SetDependencies(override val task: TaskId, val dependencies: Set<TaskId>, override val key: String? = null) : Command, TaskCommand {
+        override val operation: String get() = "task.dependencies"
     }
 
     /** Приоритет задачи (ТЗ, §21; D-42). */

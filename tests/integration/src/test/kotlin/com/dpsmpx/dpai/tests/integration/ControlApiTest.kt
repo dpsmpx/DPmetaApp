@@ -138,17 +138,25 @@ class ControlApiTest {
         val commands = listOf(
             Command.AnswerRequest("dpai://answer/x/y?hash=sha256:00", "текст", ControlApi.BY, "cli"),
             Command.Probe(com.dpsmpx.dpai.notifications.RequestKind.CHOICE, 5.minutes, "k-00000001"),
-            Command.AddTask("t", "o", com.dpsmpx.dpai.tasks.Priority.HIGH, com.dpsmpx.dpai.tasks.TaskPolicy(taskClass = com.dpsmpx.dpai.tasks.TaskClass.TRIVIAL, model = "haiku", effort = "low", maxBudgetUsdCents = 50), "k-00000002"),
+            Command.AddTask("t", "o", com.dpsmpx.dpai.tasks.Priority.HIGH, com.dpsmpx.dpai.tasks.TaskPolicy(taskClass = com.dpsmpx.dpai.tasks.TaskClass.TRIVIAL, model = "haiku", effort = "low", maxBudgetUsdCents = 50), key = "k-00000002"),
             Command.SetPriority(t, com.dpsmpx.dpai.tasks.Priority.LOW), Command.SetPolicy(t, com.dpsmpx.dpai.tasks.TaskClass.ARCHITECTURE, "opus", null, 100),
             Command.Hold(t), Command.Resume(t), Command.Cancel(t), Command.Retry(t, "ответ"), Command.Verify(t), Command.Waive(t, "проверил", ControlApi.BY),
             Command.StopSession(s), Command.SendToSession(s, "ещё", "sonnet", "high"), Command.SendToSession(s, null, fresh = true),
             Command.SetNearPercent(ids.next(IdKinds.SUBSCRIPTION), 90), Command.SetTargetEnabled(ids.next(IdKinds.TARGET), false),
             Command.SetSlotEnabled(ids.next(IdKinds.ACCOUNT), true), Command.SetSessionLimit(4), Command.SetSessionLimit(null),
             Command.Archive(t, true), Command.ArchiveFinished("k-00000003"),
+            Command.AddTask("с областью", "o", scope = setOf("src/a", "docs"), dependencies = setOf(t, ids.next(IdKinds.TASK)), key = "k-00000004"),
+            Command.SetScope(t, setOf("src/main")), Command.SetScope(t, emptySet()),
+            Command.SetDependencies(t, setOf(ids.next(IdKinds.TASK))), Command.SetDependencies(t, emptySet()),
         )
         for (c in commands) {
             val back = CommandCodec.decode(CommandCodec.encode(c), ControlApi.BY)
             assertEquals(c, back.valueOrNull()?.command, "$c: ${back.diagnostics}")
         }
+        // Не строка в области и не TaskId в зависимостях — отказ с местом, а не пропуск.
+        val badScope = com.dpsmpx.dpai.core.serialization.JsonParser().parse("""{"command":"task.scope","task":"${t.value}","scope":[1]}""").valueOrNull() as com.dpsmpx.dpai.core.serialization.JsonObject
+        assertTrue(CommandCodec.decode(badScope, ControlApi.BY).diagnostics.any { it.subject == "$.scope[0]" })
+        val badDep = com.dpsmpx.dpai.core.serialization.JsonParser().parse("""{"command":"task.dependencies","task":"${t.value}","dependsOn":["x"]}""").valueOrNull() as com.dpsmpx.dpai.core.serialization.JsonObject
+        assertTrue(CommandCodec.decode(badDep, ControlApi.BY) is com.dpsmpx.dpai.core.result.Outcome.Failure)
     }
 }
