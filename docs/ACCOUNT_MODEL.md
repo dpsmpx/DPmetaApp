@@ -58,6 +58,8 @@
 Вход проверяет `SlotAuthProbe` (модуль `orchestrator`): `claude auth
 status --json` под агентом target с окружением слота (`CLAUDE_CONFIG_DIR`
 слота, без перекрывающих вход переменных); итог — `observeAuthStatus`.
+Вывод пробы агент сводит на target в `dpai.auth-status` — отпечаток
+вместо email и организации; на диск target они не попадают (D-55).
 Вход делается сразу в каталог слота: при входе без него у Claude Code
 нет файла настроек в каталоге слота, и отпечаток аккаунта неизвестен
 (`docs/research/CLAUDE_CODE_CLI.md`, §10).

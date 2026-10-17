@@ -26,6 +26,7 @@ import com.dpsmpx.dpai.core.serialization.JsonValue
 import com.dpsmpx.dpai.execution.agent.AgentReply
 import com.dpsmpx.dpai.execution.agent.DoctorReport
 import com.dpsmpx.dpai.execution.agent.ExitReason
+import com.dpsmpx.dpai.execution.agent.OutputCapture
 import com.dpsmpx.dpai.execution.agent.RunSpec
 import com.dpsmpx.dpai.execution.agent.RunState
 import com.dpsmpx.dpai.execution.agent.RunStatus
@@ -33,12 +34,14 @@ import com.dpsmpx.dpai.execution.agent.StopResult
 import com.dpsmpx.dpai.execution.agent.ToolProbe
 import com.dpsmpx.dpai.execution.process.Detacher
 import com.dpsmpx.dpai.execution.process.LocalProcessHost
+import com.dpsmpx.dpai.execution.process.OutputStream
 import com.dpsmpx.dpai.execution.process.ProcessHost
 import com.dpsmpx.dpai.execution.process.ProcessSpec
 import com.dpsmpx.dpai.execution.process.ProcessTree
 import com.dpsmpx.dpai.execution.process.RunningProcess
 import com.dpsmpx.dpai.execution.process.run
 import com.dpsmpx.dpai.orchestrator.EventRecorder
+import com.dpsmpx.dpai.security.AccountIdentity
 import com.dpsmpx.dpai.storage.document.DocumentStore
 import com.dpsmpx.dpai.storage.journal.EventJournal
 import com.dpsmpx.dpai.storage.vfs.NioVfs
@@ -47,8 +50,8 @@ import java.lang.management.ManagementFactory
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 import kotlin.time.Duration
-import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.days
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -198,9 +201,16 @@ class AgentRuntime(
             doc.spec.unsetEnv.forEach { remove(it) }
             putAll(doc.spec.setEnv)
         }
+        val capture = doc.spec.capture == OutputCapture.AUTH_STATUS
+        val captured = StringBuilder()
         // Вывод ждёт блокировки, пока не записано TARGET_PROCESS_STARTED: в журнале ход начинается с него.
         val process: RunningProcess = synchronized(lock) {
             val started = host.start(ProcessSpec(doc.spec.command, doc.spec.workDir, env, stdin)) { line ->
+                // Вывод пробы входа — только в памяти (D-55): в журнал идёт сведённый итог при выходе.
+                if (capture && line.stream == OutputStream.STDOUT) {
+                    synchronized(captured) { if (captured.length < CAPTURE_LIMIT) captured.append(line.text).append('\n') }
+                    return@start
+                }
                 // Текст события — не длиннее MAX_EVENT_TEXT: с экранированием JSON одно событие
                 // помещается в строку ответа агента (см. events).
                 val text = Redactor.STANDARD.redactLine(line.text)
@@ -272,6 +282,10 @@ class AgentRuntime(
                 lastBeat = clock.monotonicNanos()
                 emit(EventType.TARGET_PROCESS_HEARTBEAT, JsonObject.of("turn" to JsonNumber.of(doc.turn)))
             }
+        }
+        if (capture) {
+            val summary = AccountIdentity.summarize(synchronized(captured) { captured.toString() })
+            emit(EventType.TARGET_PROCESS_OUTPUT, JsonObject.of("stream" to JsonString("stdout"), "text" to JsonString(CanonicalJson.write(summary)), "truncated" to JsonBool(false)))
         }
         emit(EventType.TARGET_PROCESS_EXITED, exitPayload(doc.turn, exitCode, reason, stopDiags, stopped))
         current = current.copy(state = RunState.EXITED, exitCode = exitCode, reason = reason, journalError = journalError.get())
@@ -562,6 +576,9 @@ class AgentRuntime(
         const val STOP_KEY = "stop-request"
         const val PRUNED_KEY = "pruned"
         private val TOOL_TIMEOUT = 20.seconds
+
+        /** Вывод пробы входа в памяти — не больше: JSON статуса — сотни байт. */
+        private const val CAPTURE_LIMIT = 64 * 1024
         private val SUPERVISOR_EXTRA = 10.seconds
 
         /** Сколько ждать, пока супервизор запишет себя, прежде чем считать ход потерянным. */

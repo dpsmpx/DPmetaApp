@@ -13,6 +13,7 @@ import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.serialization.CanonicalJson
 import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonString
+import com.dpsmpx.dpai.security.AccountIdentity
 import com.dpsmpx.dpai.core.serialization.json
 import com.dpsmpx.dpai.execution.process.OutputLine
 import com.dpsmpx.dpai.execution.process.OutputStream
@@ -40,6 +41,7 @@ class MockAgentHost(private val clock: Clock, private val ids: IdGenerator) : Pr
         var state = RunState.RUNNING
         var exitCode: Int? = null
         var reason: ExitReason? = null
+        val captured = StringBuilder()
     }
 
     /** Ход начат: запуск, его спецификация и номер хода. */
@@ -92,8 +94,22 @@ class MockAgentHost(private val clock: Clock, private val ids: IdGenerator) : Pr
         pending.remove(run)
     }
 
-    /** Строка вывода процесса хода. */
-    fun output(run: SessionId, text: String, stream: OutputStream = OutputStream.STDOUT): EventEnvelope =
+    /**
+     * Строка вывода процесса хода. Запуск с `OutputCapture.AUTH_STATUS` —
+     * как у настоящего агента (D-55): stdout копится и в журнал идёт сводом
+     * при выходе; возвращается `null`.
+     */
+    @Synchronized
+    fun output(run: SessionId, text: String, stream: OutputStream = OutputStream.STDOUT): EventEnvelope? {
+        val r = runs.getValue(run)
+        if (r.spec?.capture == OutputCapture.AUTH_STATUS && stream == OutputStream.STDOUT) {
+            r.captured.append(text).append('\n')
+            return null
+        }
+        return line(run, stream, text)
+    }
+
+    private fun line(run: SessionId, stream: OutputStream, text: String): EventEnvelope =
         emit(run, EventType.TARGET_PROCESS_OUTPUT, JsonObject.of("stream" to JsonString(stream.name.lowercase()), "text" to JsonString(text), "truncated" to com.dpsmpx.dpai.core.serialization.JsonBool(false)))
 
     @Synchronized
@@ -168,6 +184,7 @@ class MockAgentHost(private val clock: Clock, private val ids: IdGenerator) : Pr
 
     private fun finish(r: Run, code: Int?, reason: ExitReason) {
         if (reason != ExitReason.EXITED) pending.remove(r.id)
+        if (r.spec?.capture == OutputCapture.AUTH_STATUS) line(r.id, OutputStream.STDOUT, CanonicalJson.write(AccountIdentity.summarize(r.captured.toString())))
         val payload = JsonObject(buildMap {
             put("reason", JsonString(reason.name))
             put("turn", json(r.turn))

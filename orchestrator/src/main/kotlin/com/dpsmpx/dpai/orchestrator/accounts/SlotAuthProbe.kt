@@ -10,6 +10,7 @@ import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.serialization.JsonParser
 import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.execution.agent.AgentClient
+import com.dpsmpx.dpai.execution.agent.OutputCapture
 import com.dpsmpx.dpai.execution.agent.RunSpec
 import com.dpsmpx.dpai.execution.agent.RunState
 import kotlin.time.Duration.Companion.seconds
@@ -19,7 +20,10 @@ import kotlin.time.Duration.Companion.seconds
  * `claude auth status --json` под агентом с окружением слота — каталог
  * конфигурации слота, без переменных, перекрывающих вход. Итог —
  * [AuthStatus], который оркестратор применяет к слоту
- * (`Accounts.observeAuthStatus`). Токенов вывод не содержит.
+ * (`Accounts.observeAuthStatus`). Токенов вывод не содержит; email и
+ * организацию агент сводит в отпечаток на target и на диск их не пишет
+ * (`OutputCapture.AUTH_STATUS`, D-55): в журнале запуска — только
+ * `dpai.auth-status`.
  *
  * Без ожидания: [start] запускает пробу, [poll] возвращает итог, когда
  * процесс вышел, и `null`, пока идёт (D-07: время — у вызывающего).
@@ -34,6 +38,7 @@ class SlotAuthProbe(private val agent: AgentClient) {
             setEnv = mapOf(SlotEnvironment.CONFIG_DIR to configDir),
             unsetEnv = SlotEnvironment.OVERRIDING,
             timeout = 60.seconds,
+            capture = OutputCapture.AUTH_STATUS,
         )
         return when (val s = agent.start(run, spec)) {
             is Outcome.Failure -> s
@@ -54,15 +59,10 @@ class SlotAuthProbe(private val agent: AgentClient) {
         }
         val stdout = events.filter { it.type == EventType.TARGET_PROCESS_OUTPUT && (it.payload["stream"] as? JsonString)?.value == "stdout" }
             .joinToString("\n") { (it.payload["text"] as? JsonString)?.value.orEmpty() }
-        // Код 1 — «не вошёл», но JSON тот же (`docs/research/CLAUDE_CODE_CLI.md`, §4).
+        // Код 1 — «не вошёл», но JSON тот же (`docs/research/CLAUDE_CODE_CLI.md`, §4); агент свёл его в `dpai.auth-status`.
         return when (val json = JsonParser().parse(stdout)) {
-            is Outcome.Failure -> Outcome.failure(DiagCode.CLAUDE_AUTH_STATUS_INVALID, "claude auth status: не JSON (код ${status.exitCode})", "run $run")
-            is Outcome.Success -> AuthStatus.fromClaudeJson(json.value).let { r ->
-                when (r) {
-                    is Outcome.Failure -> r
-                    is Outcome.Success -> Outcome.success(r.value)
-                }
-            }
+            is Outcome.Failure -> Outcome.failure(DiagCode.CLAUDE_AUTH_STATUS_INVALID, "проба входа: агент не вернул dpai.auth-status (код ${status.exitCode}; агент на target устарел?)", "run $run")
+            is Outcome.Success -> AuthStatus.fromAgentJson(json.value)
         }
     }
 }

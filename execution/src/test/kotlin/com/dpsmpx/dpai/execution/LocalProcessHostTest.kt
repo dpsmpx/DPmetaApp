@@ -86,7 +86,9 @@ class LocalProcessHostTest {
         val p = (
             host.start(ProcessSpec(TestChild.command("lines", "3"))) { l ->
                 if (l.text == "line 2") slow.await(1500, java.util.concurrent.TimeUnit.MILLISECONDS)
-                lines += l.text
+                // Только stdout: JVM-потомок пишет в stderr «Picked up JAVA_TOOL_OPTIONS», когда
+                // переменная задана окружением (облачная среда), — это не вывод программы.
+                if (l.stream == com.dpsmpx.dpai.execution.process.OutputStream.STDOUT) lines += l.text
             } as Outcome.Success
             ).value
         assertEquals(0, p.awaitExit(60.seconds))

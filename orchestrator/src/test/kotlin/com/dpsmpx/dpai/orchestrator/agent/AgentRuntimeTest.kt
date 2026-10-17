@@ -242,6 +242,25 @@ class AgentRuntimeTest {
         assertFalse(TestChild.FAKE_KEY in onDisk, "ключ попал на диск")
     }
 
+    /** Проба входа (D-55, ревью A-72): на диск target — только отпечаток, без email и организации. */
+    @Test
+    fun authProbeOutputIsSummarizedNotStored() {
+        val rt = runtime()
+        val run = ids.next(IdKinds.SESSION)
+        assertTrue(rt.start(run, RunSpec(TestChild.command("child", "auth-status"), capture = com.dpsmpx.dpai.execution.agent.OutputCapture.AUTH_STATUS)).ok)
+        RealTime.await(60.seconds, "процесс вышел") { rt.status(run).run!!.takeIf { it.state == RunState.EXITED } }
+        // stdout — одна строка свода; stderr (например, «Picked up JAVA_TOOL_OPTIONS» JVM-потомка) — как обычно.
+        val out = rt.events(run, 0, 1000).events.filter { it.type == EventType.TARGET_PROCESS_OUTPUT && (it.payload["stream"] as JsonString).value == "stdout" }
+            .map { (it.payload["text"] as JsonString).value }
+        val summary = com.dpsmpx.dpai.core.serialization.JsonParser().parse(out.single()).valueOrNull()!!
+        val status = com.dpsmpx.dpai.accounts.AuthStatus.fromAgentJson(summary).valueOrNull()!!
+        assertTrue(status.isClaudeLogin)
+        assertEquals("max", status.plan)
+        assertEquals(com.dpsmpx.dpai.accounts.AuthStatus.fingerprint("org-777", "slot.owner@example.org"), status.identity)
+        val onDisk = dir.toFile().walkTopDown().filter { it.isFile }.joinToString(" ") { it.readText(Charsets.UTF_8) }
+        assertFalse("slot.owner@example.org" in onDisk || "org-777" in onDisk, "email или организация попали на диск target")
+    }
+
     /** Вход хода (prompt) доходит до процесса и после запуска на target не хранится (аудит 2026-10-07, A-5). */
     @Test
     fun turnInputIsDeliveredThenDeleted() {
