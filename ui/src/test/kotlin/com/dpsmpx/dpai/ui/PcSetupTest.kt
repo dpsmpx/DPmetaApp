@@ -73,10 +73,11 @@ class PcSetupTest {
         File(home, ".ssh").mkdirs()
         File(home, ".ssh/authorized_keys").writeText("ssh-ed25519 AAAAother me@pc\nssh-ed25519 AAAAold dpai-android\n")
         File(home, "Downloads").mkdirs()
-        // Архив — как у сборки (`distZip`): скрипт `dpai/bin/dpai` с правом исполнения.
+        // Архив — без права исполнения у `dpai/bin/dpai`: так его могла выдать сборка 0.1.0-dev.2 до правки
+        // (Gradle Zip без прав) — скрипт сам делает его исполняемым.
         val pack = Files.createDirectories(dir.resolve("pack/dpai/bin")).resolve("dpai").toFile()
         pack.writeText("#!/bin/sh\necho \"agent ok: $* LANG=${'$'}LANG\"\n")
-        pack.setExecutable(true)
+        pack.setExecutable(false)
         val zipped = LocalProcessHost().run(ProcessSpec(listOf("zip", "-qr", File(home, "Downloads/dpai-agent.zip").path, "dpai"), dir.resolve("pack").toString()), 1.minutes)
         assertEquals(0, zipped.valueOrNull()?.exitCode, zipped.toString())
         val env = HashMap(System.getenv()).apply {

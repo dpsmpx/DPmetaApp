@@ -58,6 +58,8 @@ zip="$dl/dpai-agent.zip"
 [ -f "$zip" ] || zip="$HOME/Downloads/dpai-agent.zip"
 if [ -f "$zip" ]; then
   unzip -oq "$zip" -d "$HOME"
+  # Архив не обязан нести право на исполнение (zip из Windows, старая сборка): без него обёртка — «Permission denied».
+  chmod +x "$HOME/dpai/bin/dpai"
   # Локаль UTF-8 для агента: по SSH без неё кириллица в аргументах не передаётся (docs/EXECUTION_MODEL.md, §5).
   printf '#!/bin/sh\nexport LANG=C.UTF-8 LC_ALL=C.UTF-8\nexec "$HOME/dpai/bin/dpai" "$@"\n' > "$HOME/dpai-agent" && chmod 755 "$HOME/dpai-agent"
   "$HOME/dpai-agent" agent doctor
