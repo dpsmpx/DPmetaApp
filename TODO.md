@@ -85,14 +85,6 @@
   `DiagCode`, `Secret`, `Clock` DPpass — пока свои (`core.single`,
   `CORE_OWN`). Свести — отдельной задачей с тестами паритета; коды
   диагностики DPpass — публичный контракт (`DPpass:D-22`).
-- `М` **Отчёт `--full` DPpass перезаписывается** (17 октября 2026, PR #9):
-  `tools/check/run.sh full` запускает `dppass/tools/hostcheck/run.sh static`
-  (`subsystem.dppass`), и DP Verify кладёт его итог в тот же каталог
-  последнего прогона (`build/dpv/last` подсистемы). После корневого прогона `run.sh report` даёт
-  итог `static`, а не `--full`. Пока — `run.sh report` сразу после
-  `--full`, до корневого прогона; чинить — отдельным каталогом прогона для
-  `subsystem.dppass` (если DP Verify это позволяет) или копией отчёта
-  `--full` в обёртке `run.sh`.
 - `С` **На устройстве (DPpass, D-30):** APK, собранный из `dppass/`,
   ставится поверх нынешнего DPpass 0.6.x — та же личность пакета,
   подписка и согласие на VPN на месте.
