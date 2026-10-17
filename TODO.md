@@ -90,10 +90,21 @@
   подписка и согласие на VPN на месте.
 
 - `М` **Gradle: «The Kotlin Gradle plugin was loaded multiple times»** —
-  предупреждение при сборке из корня с модулями `core/` (11 октября 2026,
-  этап 2): convention-плагины `dpai/build-logic/` подключены и корнем, и
-  `dpai/`. Сборка и тесты проходят; убрать — общим classpath плагина
-  Kotlin в корне без версий в подпроектах.
+  предупреждение при сборке из корня (11 октября 2026, этап 2). Разбор
+  17 октября 2026 (`--info`): плагин загружен дважды в **подсистеме
+  `dpai/`** — в `:accounts` (convention-плагин `dpai/build-logic`) и в
+  `:android` (свои `alias(libs.plugins.android.application)` и
+  `alias(libs.plugins.kotlin.compose)` с версиями). Корень DPmetaApp ни при
+  чём: `apply false` в корне не помогло. Средства есть, но каждое меняет
+  решение `dpai/` «без Google Maven ядро собирается» (`dpai/build-logic`
+  без AGP, `dpai/docs/ARCHITECTURE.md`, §2):
+  1. объявить плагины Android и Compose в `dpai/build.gradle.kts` с
+     `apply false` — тогда AGP разрешается из Google Maven при каждой
+     настройке, даже без SDK;
+  2. перенести AGP и плагин Compose на classpath `dpai/build-logic` —
+     то же следствие.
+  Сборка и тесты проходят; выбор — решением подсистемы `dpai/`, не
+  попутной правкой.
 - `С` **На устройстве (`DP_AI_Orcestrator:D-56`, подсистема «AI»):** задача у предела одной
   подписки продолжает на слоте другой с handoff; «Выполняет» и «Кому
   передавалась» в листе задачи; «Сейчас: …» на карточке слота;

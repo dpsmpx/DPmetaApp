@@ -43,7 +43,7 @@
 | `Outcome` и `Diagnostic` вместо исключений; коды только добавляются | `DPpass:D-22` | ТЗ §6.9 |
 | `Secret`, журнал с редактированием, `Clock` | `DPpass:D-11`, `DPpass:D-21` | ТЗ §6.3, §6.6 |
 | Хранение: AES-256-GCM, ключ Keystore, без резервных копий | `DPpass:D-19` | D-09 |
-| Без телеметрии | `DPpass:D-12` | D-10 |
+| Без телеметрии (и статистики сборки плагина Kotlin: `kotlin.internal.collectFUSMetrics=false` в корне, `dpai/`, `dpai/build-logic`) | `DPpass:D-12` | D-10 |
 | Проверка манифеста и APK | `DPpass:tools/hostcheck/check_manifest.py`, `DPpass:tools/hostcheck/check_apk.py` | этапы 3 и 8 |
 | Релиз — только своим ключом; без ключа сборка останавливается | `Galdhold:app/build.gradle` | D-12, ТЗ §12.4 |
 | Источник выпуска — только артефакт сборки | `DPmeta:RISK-08` | ТЗ §12.4 |
