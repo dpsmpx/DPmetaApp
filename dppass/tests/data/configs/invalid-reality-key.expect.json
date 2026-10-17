@@ -1,0 +1,8 @@
+{
+  "load": {
+    "outcome": "rejected",
+    "codes": [
+      "REALITY_PUBLIC_KEY_INVALID"
+    ]
+  }
+}

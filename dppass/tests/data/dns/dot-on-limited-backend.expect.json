@@ -1,0 +1,20 @@
+{
+  "load": {
+    "outcome": "ok",
+    "codes": []
+  },
+  "activate": {
+    "backend": "mock-limited",
+    "outcome": "rejected",
+    "codes": [
+      "ACTIVATION_REJECTED",
+      "CAPABILITY_FEATURE_UNSUPPORTED"
+    ]
+  },
+  "xray": {
+    "outcome": "rejected",
+    "codes": [
+      "CAPABILITY_FEATURE_UNSUPPORTED"
+    ]
+  }
+}

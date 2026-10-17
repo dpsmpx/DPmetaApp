@@ -1,0 +1,131 @@
+{
+  "format": "dppass.config",
+  "format_version": 2,
+  "name": "Format 2",
+  "profiles": [
+    {
+      "id": "reality-qq",
+      "name": "Reality qq",
+      "server": "203.0.113.23",
+      "port": 443,
+      "protocol": {
+        "type": "vless",
+        "id": "00000000-0000-4000-8000-000000000023",
+        "flow": "vision"
+      },
+      "transport": {
+        "type": "tcp"
+      },
+      "security": {
+        "type": "reality",
+        "server_name": "www.example.com",
+        "public_key": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "short_id": "",
+        "fingerprint": "qq"
+      }
+    },
+    {
+      "id": "ws-edge",
+      "name": "WS edge",
+      "server": "cdn.example.net",
+      "port": 443,
+      "protocol": {
+        "type": "vless",
+        "id": "00000000-0000-4000-8000-000000000025"
+      },
+      "transport": {
+        "type": "websocket",
+        "path": "/ws",
+        "host": "cdn.example.net"
+      },
+      "security": {
+        "type": "tls",
+        "server_name": "cdn.example.net",
+        "alpn": [
+          "http/1.1"
+        ],
+        "fingerprint": "edge"
+      }
+    },
+    {
+      "id": "xhttp-extra",
+      "name": "XHTTP extra",
+      "server": "203.0.113.26",
+      "port": 443,
+      "protocol": {
+        "type": "vless",
+        "id": "00000000-0000-4000-8000-000000000026"
+      },
+      "transport": {
+        "type": "xhttp",
+        "path": "/x",
+        "mode": "auto",
+        "x_padding_bytes": "100-1000",
+        "sc_max_each_post_bytes": 1000000,
+        "sc_min_posts_interval_ms": "10-50",
+        "no_grpc_header": true,
+        "xmux": {
+          "max_concurrency": "16-32",
+          "c_max_reuse_times": "64-128",
+          "h_max_request_times": "600-900",
+          "h_max_reusable_secs": "1800-3000",
+          "h_keep_alive_period": 30
+        }
+      },
+      "security": {
+        "type": "reality",
+        "server_name": "www.example.com",
+        "public_key": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        "short_id": "01234567",
+        "fingerprint": "random"
+      }
+    },
+    {
+      "id": "hy2-bbr",
+      "name": "Hysteria2 BBR",
+      "server": "192.0.2.30",
+      "port": 8443,
+      "protocol": {
+        "type": "hysteria2",
+        "password": "test-password-2",
+        "congestion": "bbr"
+      },
+      "transport": {
+        "type": "native"
+      },
+      "security": {
+        "type": "tls",
+        "server_name": "hy2.example.com"
+      }
+    },
+    {
+      "id": "trojan-ios",
+      "name": "Trojan ios",
+      "server": "198.51.100.20",
+      "port": 443,
+      "protocol": {
+        "type": "trojan",
+        "password": "test-password-1"
+      },
+      "transport": {
+        "type": "tcp"
+      },
+      "security": {
+        "type": "tls",
+        "server_name": "trojan.example.org",
+        "fingerprint": "ios"
+      }
+    }
+  ],
+  "dns": {
+    "servers": [
+      {
+        "id": "remote",
+        "type": "https",
+        "url": "https://dns.example.net/dns-query",
+        "route": "tunnel"
+      }
+    ],
+    "default": "remote"
+  }
+}

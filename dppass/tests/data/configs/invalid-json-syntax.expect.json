@@ -1,0 +1,8 @@
+{
+  "load": {
+    "outcome": "rejected",
+    "codes": [
+      "JSON_SYNTAX"
+    ]
+  }
+}

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Задержка: стрелка прибора (свой рисунок, D-34). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M4.5,16A8,8 0,1 1,19.5 16"
+        android:strokeColor="@color/text"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M12,13.5L16,9.5"
+        android:strokeColor="@color/text"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M11,13.5a1,1 0,1 0,2 0a1,1 0,1 0,-2 0Z"
+        android:fillColor="@color/text" />
+</vector>

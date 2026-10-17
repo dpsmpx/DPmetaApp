@@ -1,0 +1,5 @@
+{
+  "profile-title": "Example provider",
+  "subscription-userinfo": "upload=0; download=1024; total=10737418240; expire=1893456000",
+  "profile-update-interval": "12"
+}

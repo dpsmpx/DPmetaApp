@@ -1,0 +1,96 @@
+package com.dpsmpx.dppass.network
+
+/**
+ * Модель наблюдений о сети (D-14). Модуль не знает ни про ядро, ни про
+ * конфигурацию: он отвечает на вопрос «что сейчас пропускает эта сеть»,
+ * а не «какой сервер выбрать».
+ */
+enum class NetworkType { WIFI, MOBILE, ETHERNET, OTHER, NONE }
+
+enum class ProbeKind {
+    /** DNS-запрос к резолверу сети. */
+    DNS,
+    /** Установка TCP-соединения. */
+    TCP,
+    /** TLS-рукопожатие с безобидным SNI. */
+    TLS,
+    /** UDP-обмен (QUIC-подобный). */
+    UDP,
+    /** HTTP-проверка на перехват (captive portal). */
+    CAPTIVE,
+    /** Передача больше 32 КБ в одном соединении (порог «16–20 КБ», L4/L7). */
+    BULK,
+}
+
+/**
+ * Куда проба. Отечественный и зарубежный ориентиры нужны, чтобы
+ * отличить «нет связи вообще» (L10) от «пускают только внутрь» (L9).
+ */
+enum class ProbeTarget { DOMESTIC, FOREIGN }
+
+enum class ProbeOutcome {
+    SUCCESS,
+    TIMEOUT,
+    RESET,
+    REFUSED,
+    /** Ответ DNS подменён или NXDOMAIN для существующего имени. */
+    DNS_TAMPERED,
+    /** Передача остановилась на характерном объёме. */
+    STALLED,
+    /** HTTP перенаправлен на страницу входа. */
+    REDIRECTED,
+    UNREACHABLE,
+    /** Пробу не дал провести бюджет — это не наблюдение о сети. */
+    SKIPPED,
+}
+
+data class ProbeRequest(val kind: ProbeKind, val target: ProbeTarget)
+
+data class ProbeResult(
+    val request: ProbeRequest,
+    val outcome: ProbeOutcome,
+    val latencyMillis: Long? = null,
+) {
+    val ok: Boolean get() = outcome == ProbeOutcome.SUCCESS
+}
+
+/** Исполнитель проб. Настоящий (Android) — позже; в тестах — [com.dpsmpx.dppass.network.simulation.SimulatedNetwork]. */
+fun interface Prober {
+    suspend fun probe(request: ProbeRequest): ProbeResult
+}
+
+enum class Reachability { OK, DEGRADED, BLOCKED, UNKNOWN }
+
+/**
+ * Класс ограничений сети на данный момент — эвристика по наблюдениям,
+ * **не знание о политике оператора** (D-14).
+ */
+enum class RestrictionClass {
+    /** Данных мало для вывода. */
+    UNKNOWN,
+    NORMAL,
+    /** Что-то режется (DNS, TLS, крупные передачи), но путь наружу есть. */
+    DEGRADED,
+    /** Внутрь страны можно, наружу — нет: похоже на белый список (L9). */
+    ALLOWLIST_LIKE,
+    /** Перехват страницей входа. */
+    CAPTIVE,
+    /** Связи нет ни с чем (L10 или нет сети). */
+    OFFLINE,
+}
+
+enum class Confidence { LOW, MEDIUM, HIGH }
+
+data class NetworkAssessment(
+    val type: NetworkType,
+    val dns: Reachability,
+    val tcp: Reachability,
+    val tls: Reachability,
+    val udp: Reachability,
+    val bulk: Reachability,
+    val captivePortal: Boolean,
+    val restriction: RestrictionClass,
+    val confidence: Confidence,
+    /** Почему сделан вывод — по одной строке на наблюдение. */
+    val evidence: List<String>,
+)

@@ -155,6 +155,13 @@ class SubsystemScopeTest(CheckCase):
             with self.subTest(cid):
                 self.assertClean(s.run(cid))
 
+    def test_dppass_is_a_subsystem_too(self):
+        # DPpass — подсистема со своим процессом (D-30): каталог разрешён в корне, текст — её проверкам.
+        s = self.sample({"dppass/docs/X.md": "# X\r\nСм. D-52, `docs/NOPE.md`.\n"})
+        for cid in ("repo.layout", "format.text", "docs.links", "docs.refs"):
+            with self.subTest(cid):
+                self.assertClean(s.run(cid))
+
     def test_secrets_are_searched_in_subsystem_too(self):
         token = "ghp" + "_" + "C3d4" * 9
         self.assertCatches(self.sample({"dpai/docs/X.md": f"{token}\n"}).run("security.secrets"), "github-token")
@@ -177,6 +184,13 @@ class CoreSingleTest(CheckCase):
         core = CLEAN["dpai/core/src/main/kotlin/Core.kt"].replace("interface Clock\n", "")
         self.assertCatches(self.sample({"dpai/core/src/main/kotlin/Core.kt": core}).run("core.single"),
                            "нет объявления Clock")
+
+    def test_own_core_of_dppass_is_allowed(self):
+        # Ядро DPpass пока своё (D-30): его типы — не находка, а в остальном коде — по-прежнему.
+        s = self.sample({"dppass/diagnostics/src/main/kotlin/Outcome.kt": "package d\n\nsealed interface Outcome\nclass Secret\n"})
+        self.assertClean(s.run("core.single"))
+        s = self.sample({"dppass/x/Outcome.kt": "sealed interface Outcome\n", "core/m/A.kt": "class Secret\n"})
+        self.assertCatches(s.run("core.single"), "Secret объявлен вне")
 
     def test_similar_names_pass(self):
         s = self.sample({"core/model/src/main/kotlin/M.kt": "class OutcomeView\nclass TestClock\nfun Secret() = 1\n"})
@@ -275,6 +289,17 @@ class SubsystemChecksTest(CheckCase):
 
     def test_missing_command(self):
         self.assertCatches(self.run_sub(None), "нет команды проверок")
+
+    def test_dp_verify_lines_are_steps(self):
+        # Вывод DP Verify (dppass, D-30): «  ✓ id  итог»; строки подробностей и итог прогона — не шаги.
+        out = "printf 'dpv · static\\n  ✓ docs.links    ссылок 10\\n  ✓ docs.refs     ссылок 3\\n✓ static пройден\\n'"
+        r = self.run_sub(f"#!/bin/sh\n{out}\n")
+        self.assertClean(r)
+        self.assertEqual(2, r.scanned)
+
+    def test_dp_verify_failing_check_is_reported(self):
+        out = "printf '  ✓ docs.links    ссылок 10\\n  ✗ docs.refs     находок: 1\\n      a.md:1  D-9 не определено\\n'"
+        self.assertCatches(self.run_sub(f"#!/bin/sh\n{out}\nexit 1\n"), "docs.refs")
 
 
 class FormatTest(CheckCase):

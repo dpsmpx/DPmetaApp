@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Радиусы форм DPpass (D-34). Отступы — шаг 4 dp, задаются в коде (ui/Ui.kt). -->
+<resources>
+    <dimen name="radius_card">20dp</dimen>
+    <dimen name="radius_row">14dp</dimen>
+    <dimen name="radius_pill">100dp</dimen>
+</resources>

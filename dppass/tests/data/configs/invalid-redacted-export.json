@@ -1,0 +1,102 @@
+{
+  "format": "dppass.config",
+  "format_version": 1,
+  "name": "Redacted export",
+  "profiles": [
+    {
+      "id": "trojan-ws",
+      "name": "Trojan WS",
+      "server": "198.51.100.20",
+      "port": 443,
+      "protocol": {
+        "type": "trojan",
+        "password": "<redacted>"
+      },
+      "transport": {
+        "type": "websocket",
+        "path": "/ws",
+        "host": "ws.example.org"
+      },
+      "security": {
+        "type": "tls",
+        "server_name": "ws.example.org"
+      }
+    }
+  ],
+  "routing": {
+    "default": "proxy",
+    "domain_resolution": "never",
+    "bypass_lan": true,
+    "apps": {
+      "mode": "except",
+      "packages": [
+        "com.example.bank"
+      ]
+    },
+    "rules": [
+      {
+        "id": "bank-app-direct",
+        "action": "direct",
+        "apps": [
+          "com.example.gosapp"
+        ]
+      },
+      {
+        "id": "ads-block",
+        "action": "block",
+        "domain_suffix": [
+          "ads.example.com"
+        ],
+        "domain_keyword": [
+          "tracker"
+        ]
+      },
+      {
+        "id": "ru-direct",
+        "action": "direct",
+        "domain_suffix": [
+          "example.ru"
+        ],
+        "geoip": [
+          "ru"
+        ]
+      },
+      {
+        "id": "quic-block",
+        "action": "block",
+        "protocol": [
+          "udp"
+        ],
+        "port": [
+          "443"
+        ]
+      }
+    ]
+  },
+  "dns": {
+    "servers": [
+      {
+        "id": "remote",
+        "type": "https",
+        "url": "https://dns.example.net/dns-query",
+        "route": "tunnel"
+      },
+      {
+        "id": "local",
+        "type": "system",
+        "route": "direct"
+      }
+    ],
+    "default": "remote",
+    "rules": [
+      {
+        "domain_suffix": [
+          "example.ru"
+        ],
+        "server": "local"
+      }
+    ],
+    "strategy": "prefer_ipv4",
+    "leak_protection": true
+  }
+}

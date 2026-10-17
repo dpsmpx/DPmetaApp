@@ -1,0 +1,8 @@
+{
+  "load": {
+    "outcome": "rejected",
+    "codes": [
+      "PATH_INVALID"
+    ]
+  }
+}

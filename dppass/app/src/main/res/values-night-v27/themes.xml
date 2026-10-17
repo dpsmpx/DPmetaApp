@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Тёмная тема: светлые значки панели навигации не нужны. -->
+<resources>
+    <style name="Theme.DPpass" parent="Base.DPpass">
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+</resources>
