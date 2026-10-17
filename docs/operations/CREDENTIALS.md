@@ -188,7 +188,14 @@ CS_PROD_YOUTUBE_OAUTH: {rotated: 2026-10-05, expires: 2026-10-12}
    ```
    Последняя строка — только имена файлов, где ещё записан адрес; в
    профиле строку `export` заменить на `. ~/.config/dpsmpx/deploy.env`.
-7. Проверки: `tools/check.sh --quick`, `python3 -m tools.cs health`,
+7. Ключ водяного знака (Д41) — один раз: `python3 -m tools.cs mark init`
+   создаёт `~/.config/dpsmpx/mark.key` (права 600) и печатает его отпечаток.
+   Ключ — в свою резервную копию вне Git и вне сессий ИИ: без него
+   выпущенные метки не прочитать, а без файла выгрузка отказывает. Для
+   изображений на сайте — `pkg install python-numpy python-pillow`; для
+   меток OpenTimestamps — по желанию `"$PREFIX/bin/python3" -m pip install
+   opentimestamps-client` (без него — только RFC 3161, `.ots` позже).
+   Затем проверки: `tools/check.sh --quick`, `python3 -m tools.cs health`,
    `python3 -m tools.cs site deploy --dry-run` — ничего не выкладывает,
    последняя строка «изменений: N».
 8. Выгрузка (разрешена, Д34): `git pull` в `~/SocialMediaImage`, снова
@@ -197,7 +204,10 @@ CS_PROD_YOUTUBE_OAUTH: {rotated: 2026-10-05, expires: 2026-10-12}
    проверка `/`, `/en/`, `/projects/` по `https://dpsmpx.com`: `✓` —
    страница на месте, `?` — адрес не открывается (сеть или
    сертификат), `✗` — 404 или чужая
-   страница. Изменений 0 — выгружать нечего: сервер уже совпадает со
+   страница. После выгрузки — манифест выпуска и метки времени
+   (`data/provenance/site-releases/`): `git add data/provenance/site-releases
+   && git commit && git push`; метки, не поставленные без сети, —
+   `python3 -m tools.cs mark stamp`. Изменений 0 — выгружать нечего: сервер уже совпадает со
    сборкой.
 
 #### Ярлык Termux:Widget

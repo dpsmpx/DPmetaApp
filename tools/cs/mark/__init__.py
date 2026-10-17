@@ -8,6 +8,8 @@ OpenTimestamps) и метка в самих файлах — ключевая ч
 держит. Метка повторяема: тот же вход и ключ дают те же байты.
 
 Модули: `key` — ключ; `image` — метка изображений; `svg` — метка SVG;
-`release` — метка сборки и манифест выпуска; `stamp` — метки времени;
-`verify` — проверка файла или адреса (`python3 -m tools.cs mark verify`).
+`release` — метка сборки, манифест выпуска и проверка `releases`; `stamp` —
+метки времени; `verify` — проверка файла или адреса; `stats` — порог и
+вероятность ложной находки; `cli` — `python3 -m tools.cs mark init|verify|stamp`.
+Встраивание в выгрузку — `tools/cs/site/deploy.py` (`deploy.mark` в `site.yaml`).
 """

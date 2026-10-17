@@ -373,14 +373,22 @@ def _site_deploy(repo: Repo, dry_run: bool) -> int:
     print(f"  изменений: {len(res.changes)}" + (" (показаны первые 200)" if len(res.changes) > 200 else ""))
     for p in res.problems:
         print(f"  ✗ {p}")
+    if res.marked:
+        print(f"  метка (Д41): файлов {res.marked}")
     if res.output and not res.ok:
         print(res.output)
     if dry_run or not res.ok:
         return 0 if res.ok else 1
+    if res.release:
+        print(f"  манифест выпуска: {res.release.relative_to(repo.root)}")
+        for st in res.stamps:
+            print(f"    {'✓' if st.state == 'done' else '·'} {st.kind}: {st.state}{(' — ' + st.note) if st.note else ''}")
+        print("    закоммитить манифест и метки времени: git add data/provenance/site-releases && git commit")
     seen = deploy.verify(repo.site_base("production"), ["/", "/en/", "/projects/"])
     for path, ok in seen.items():
         print(f"  {'✓' if ok else '✗' if ok is False else '?'} {repo.site_base('production')}{path}")
     log(repo, "deploy", {"env": "production", "actor": actor(), "changes": len(res.changes),
+                         "release": res.release.parent.name if res.release else None,
                          "verified": {k: v for k, v in seen.items()}})
     return 0 if all(v is not False for v in seen.values()) else 1
 

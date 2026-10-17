@@ -20,6 +20,9 @@ environments:
       target_ref: CS_PROD_SITE_DEPLOY_TARGET   # логин@сервер:dpsmpx.com/public_html/ — у автора, не в Git
       guard_suffix: public_html/         # иной путь — отказ: --delete не тронет чужой каталог
       protect: [/.well-known/]           # не удалять (выпуск сертификата)
+      mark:                              # Д41: метка ключом автора перед rsync; нет ключа — отказ (mark init)
+        required: true
+        tsa: https://freetsa.org/tsr     # RFC 3161 на манифест выпуска; плюс OpenTimestamps (клиент ots)
 home:
   projects: [galdhold, dplang]
   social_links:                          # публичные подписи (role в links.yaml — служебная)

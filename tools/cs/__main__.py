@@ -6,6 +6,7 @@
   export ITEM --variant  экспорт варианта по форматам площадок (exports/)
   new                    новый объект в состоянии IDEA
   metrics import         импорт выгрузки CSV площадки (Д15)
+  mark init|verify|stamp водяной знак сайта, реестр выпусков, метки времени (Д41)
   …и команды платформы публикации — tools/cs/platform_cli.py (publish, approve, preview, site…)
 """
 from __future__ import annotations
@@ -16,6 +17,8 @@ from pathlib import Path
 
 from . import capabilities, claims, exports, facts, links, metrics, newitem, platform_checks, platform_cli, provenance, secrets, validate, visual
 from .common import Item, dump_yaml, find_item, load_yaml, rel, sha256_file
+from .mark import cli as mark_cli
+from .mark import release as mark_release
 from .model import effective_state, reached
 from .progress import check as progress_check
 from .site import shots as site_shots
@@ -40,6 +43,7 @@ CHECKS = {
     "progress": progress_check.check,
     "site": platform_checks.site_check,
     "siteshots": site_shots.check,
+    "releases": mark_release.check,
 }
 REVIEW_FORMAT = "telegram_post"  # формат рендеров для критики: самый частый 16:9
 
@@ -182,6 +186,7 @@ def main(argv=None) -> int:
     m.add_argument("--url")
     m.set_defaults(fn=cmd_metrics)
     platform_cli.register(sub)
+    mark_cli.register(sub)
     args = ap.parse_args(argv)
     return args.fn(args)
 

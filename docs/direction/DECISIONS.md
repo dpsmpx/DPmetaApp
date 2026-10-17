@@ -845,6 +845,12 @@ ContentItem: цель · аудитория · площадка · утверж�
     замерена (`tools/cs/mark/`), в выгрузку ещё не встроена; встраивание,
     SVG, реестр выпусков, метки времени и `mark verify` — следующая работа
     по П2-20.
+  - **Сделано 17.10.2026** (П2-20, без нового решения): метка SVG — сдвиг
+    координат на ±3 единицы нового последнего знака, читается без
+    исходника; реестр выпусков — `data/provenance/site-releases/`; метки
+    времени RFC 3161 и OpenTimestamps; метку ставит выгрузка
+    (`deploy.mark.required`), без ключа — отказ; `mark init|verify|stamp`;
+    проверка `releases`. Осталось — поиск в снимке экрана и `og_default`.
 
 ---
 
@@ -1377,3 +1383,9 @@ ORC-WHAT о приложении не говорит (заметка у факт
 `data/website/path.yaml`, `schemas/path.schema.json` (поле `merged`),
 `tools/cs/site/path.py`, тесты `JourneyPath`, `WEBSITE.md`, `ROADMAP`
 (П2-28), `TODO.md`.
+
+**17 октября 2026, ещё позже.** П2-20 — метка SVG, реестр выпусков, метки
+времени, встраивание в выгрузку и `mark verify` (Д41, «Следствия»).
+Решения не менялись. Затронуто: `tools/cs/mark/`, `tools/cs/site/deploy.py`,
+`data/website/site.yaml` и схема (`deploy.mark`), `tools/requirements.txt`,
+тесты, `WEBSITE.md`, `CREDENTIALS.md`, `ARCHITECTURE.md`, `ROADMAP`, `TODO.md`.
