@@ -45,6 +45,7 @@ class TerminalView(context: Context) : View(context) {
             field = value
             scrollBack = 0
             selection = null
+            anchored = false
             regrid()
             invalidate()
         }
@@ -60,6 +61,15 @@ class TerminalView(context: Context) : View(context) {
 
     /** На сколько строк экран отведён назад в историю (0 — низ). */
     private var scrollBack = 0
+
+    /**
+     * Счётчики истории эмулятора на последней отрисовке: пока человек читает
+     * историю, новые строки сдвигают [scrollBack], а не текст под глазами.
+     * `false` — сверить заново (смена вкладки или размера).
+     */
+    private var anchored = false
+    private var seenAdded = 0L
+    private var seenDropped = 0L
     private var scrollAccum = 0f
 
     /** Выделение: сквозные строки и столбцы эмулятора (начало, конец). */
@@ -140,7 +150,13 @@ class TerminalView(context: Context) : View(context) {
         if (width <= 0 || height <= 0) return
         val cols = (width / cellW).toInt().coerceIn(1, TerminalEmulator.MAX_COLS)
         val rows = (height / cellH).toInt().coerceIn(1, TerminalEmulator.MAX_ROWS)
-        if (t.session.read { it.cols != cols || it.rows != rows }) t.session.resize(cols, rows)
+        if (t.session.read { it.cols != cols || it.rows != rows }) {
+            // Строки перестроены: прежние номера строк истории и выделения ничего не значат.
+            t.session.resize(cols, rows)
+            scrollBack = 0
+            selection = null
+            anchored = false
+        }
         invalidate()
     }
 
@@ -223,11 +239,24 @@ class TerminalView(context: Context) : View(context) {
 
     // ---- ввод ----
 
+    private fun toBottom() {
+        if (scrollBack != 0) {
+            scrollBack = 0
+            invalidate()
+        }
+    }
+
     /** Текст с экранной клавиатуры или ряда клавиш. */
     fun input(text: String) {
         val t = tab ?: return
         val mods = stickyMods()
-        scrollBack = 0
+        toBottom()
+        // Несколько строк или управляющие знаки разом — вставка из буфера клавиатуры, а не набор:
+        // через фильтр и скобки 2004, как «Вставить» (ревью 17 октября 2026).
+        if (text.length > 1 && text.any { it == '\n' || it == '\r' || it.isISOControl() }) {
+            t.session.paste(text)
+            return
+        }
         text.codePoints().forEach { cp ->
             when {
                 cp == '\n'.code -> t.session.key(Key.ENTER, mods)
@@ -239,7 +268,7 @@ class TerminalView(context: Context) : View(context) {
 
     fun key(key: Key, extraMods: Int = 0) {
         val t = tab ?: return
-        scrollBack = 0
+        toBottom()
         t.session.key(key, extraMods or stickyMods())
     }
 
@@ -308,9 +337,19 @@ class TerminalView(context: Context) : View(context) {
             return true
         }
         // Символ без Ctrl и Alt — их смысл добавляет KeyEncoder; Shift уже в символе.
-        val cp = event.getUnicodeChar(event.metaState and (KeyEvent.META_CTRL_MASK or KeyEvent.META_ALT_MASK).inv())
+        val plain = event.getUnicodeChar(event.metaState and (KeyEvent.META_CTRL_MASK or KeyEvent.META_ALT_MASK).inv())
+        // AltGr (правый Alt) раскладки даёт свой знак (@, [, ~ в немецкой) — это символ, а не Alt+клавиша.
+        if (event.metaState and KeyEvent.META_ALT_RIGHT_ON != 0 && !event.isCtrlPressed) {
+            val third = event.getUnicodeChar(event.metaState and KeyEvent.META_CTRL_MASK.inv())
+            if (third > 0 && third != plain) {
+                toBottom()
+                t.session.type(String(Character.toChars(third)), stickyMods())
+                return true
+            }
+        }
+        val cp = plain
         if (cp > 0) {
-            scrollBack = 0
+            toBottom()
             val all = (mods and Mod.SHIFT.inv()) or stickyMods()
             t.session.type(String(Character.toChars(cp)), all)
             return true
@@ -339,6 +378,18 @@ class TerminalView(context: Context) : View(context) {
         val defFg = 0xff000000.toInt() or (if (emu.reverseVideo) emu.backgroundRgb else emu.foregroundRgb)
         val defBg = 0xff000000.toInt() or (if (emu.reverseVideo) emu.foregroundRgb else emu.backgroundRgb)
         canvas.drawColor(defBg)
+        if (anchored) {
+            val dropped = (emu.historyDropped - seenDropped).toInt()
+            if (scrollBack > 0) scrollBack += (emu.historyAdded - seenAdded).toInt()
+            selection?.let { s ->
+                s[0] -= dropped
+                s[2] -= dropped
+                if (s[0] < 0 || s[2] < 0) selection = null
+            }
+        }
+        anchored = true
+        seenAdded = emu.historyAdded
+        seenDropped = emu.historyDropped
         scrollBack = scrollBack.coerceIn(0, emu.scrollbackSize)
         val first = emu.scrollbackSize - scrollBack
         val sel = selection?.let(::ordered)

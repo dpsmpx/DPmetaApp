@@ -21,6 +21,7 @@ import android.view.WindowManager
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.terminal.Key
 import com.dpsmpx.dpai.terminal.Mod
@@ -49,8 +50,22 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         // Отступы системных панелей и клавиатуры — свои: экран терминала сжимается над клавиатурой.
         enableEdgeToEdge()
         setContentView(layout())
-        if (savedInstanceState == null) handle(intent)
+        // После смерти процесса Android восстанавливает экран, а вкладок (только в памяти, D-27) уже нет:
+        // открыть заново ту, с которой экран начинался, а не показывать мёртвый чёрный экран.
+        if (savedInstanceState == null || TerminalHub.tabs.isEmpty()) handle(intent)
         if (TerminalHub.tabs.isEmpty() && intent?.getStringExtra(EXTRA_TARGET) == null) finish()
+    }
+
+    // Приложение на экране — окно запроса поверх него не нужно (D-44), как у MainActivity: иначе
+    // оно всплывало бы над терминалом и забирало клавиатуру.
+    override fun onResume() {
+        super.onResume()
+        RequestOverlay.appVisible = true
+    }
+
+    override fun onPause() {
+        RequestOverlay.appVisible = false
+        super.onPause()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -112,11 +127,21 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
     /** OSC 52: программа просит записать в буфер обмена — решает человек. */
     override fun clipboard(tab: TerminalHub.Tab, text: String) {
         runOnUiThread {
+            if (isFinishing || isDestroyed) return@runOnUiThread
+            // Буфер обмена идёт через binder: сотни КиБ не пройдут и уронили бы приложение.
+            if (text.length > MAX_CLIP) {
+                Toast.makeText(this, "Программа на «${tab.label}» прислала для буфера обмена ${text.length} знаков — слишком много, не записано", Toast.LENGTH_LONG).show()
+                return@runOnUiThread
+            }
             AlertDialog.Builder(this)
                 .setTitle("Запись в буфер обмена")
                 .setMessage("Программа на «${tab.label}» просит записать в буфер обмена:\n\n${text.take(PREVIEW)}")
                 .setPositiveButton("Записать") { _, _ ->
-                    getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("терминал", text))
+                    try {
+                        getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("терминал", text))
+                    } catch (e: RuntimeException) {
+                        Toast.makeText(this, "Не записано в буфер обмена: ${e.javaClass.simpleName}", Toast.LENGTH_LONG).show()
+                    }
                 }
                 .setNegativeButton("Нет", null)
                 .show()
@@ -244,6 +269,7 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         const val EXTRA_TARGET = "com.dpsmpx.dpai.terminal.TARGET"
         const val EXTRA_CLAUDE = "com.dpsmpx.dpai.terminal.CLAUDE"
         private const val PREVIEW = 500
+        private const val MAX_CLIP = 100_000
         private val ACTIVE = 0xff66ccff.toInt()
 
         /** Открыть терминал target: оболочку или `claude` слота; без target — открытые вкладки. */

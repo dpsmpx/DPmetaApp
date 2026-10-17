@@ -425,6 +425,16 @@ class TerminalEmulatorTest {
     }
 
     @Test
+    fun historyCountersFollowScrolling() {
+        val t = TerminalEmulator(10, 2, scrollbackMax = 3)
+        repeat(6) { t.feed("$it\r\n") }
+        assertEquals(5, t.historyAdded)
+        assertEquals(2, t.historyDropped)
+        t.feed("\u001b[3J")
+        assertEquals(5, t.historyDropped)
+    }
+
+    @Test
     fun supplementaryCharactersAreNotTruncatedToAscii() {
         val t = term()
         t.feed("hello\u001b" + String(Character.toChars(0x10063)))

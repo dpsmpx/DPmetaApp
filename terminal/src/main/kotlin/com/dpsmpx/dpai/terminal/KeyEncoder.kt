@@ -25,6 +25,8 @@ enum class MouseButton(val code: Int) { LEFT(0), MIDDLE(1), RIGHT(2), NONE(3), W
  */
 object KeyEncoder {
     private const val ESC = "\u001b"
+    private const val JCUKEN = "йцукенгшщзхъфывапролджэячсмитьбюё"
+    private const val QWERTY = "qwertyuiop[]asdfghjkl;'zxcvbnm,.`"
 
     fun key(key: Key, mods: Int, term: TerminalEmulator): ByteArray {
         val m = if (mods == 0) "" else "1;${1 + mods}"
@@ -83,9 +85,20 @@ object KeyEncoder {
         return alt(mods, s).toByteArray(Charsets.UTF_8)
     }
 
-    private fun control(cp: Int): Int = when (cp) {
-        in 'a'.code..'z'.code -> cp - 'a'.code + 1
-        in 'A'.code..'Z'.code -> cp - 'A'.code + 1
+    /**
+     * Ctrl с русской раскладкой — по месту клавиши (ЙЦУКЕН → QWERTY): Ctrl+С
+     * прерывает, как Ctrl+C (ревью 17 октября 2026). Без этого шла бы сама
+     * буква, и Ctrl+C, Ctrl+D, Ctrl+R не работали бы без смены раскладки.
+     */
+    private fun latinKey(cp: Int): Int {
+        if (cp !in 0x400..0x4ff) return cp
+        val i = JCUKEN.indexOf(Character.toLowerCase(cp).toChar())
+        return if (i >= 0) QWERTY[i].code else cp
+    }
+
+    private fun control(cp: Int): Int = when (val c = latinKey(cp)) {
+        in 'a'.code..'z'.code -> c - 'a'.code + 1
+        in 'A'.code..'Z'.code -> c - 'A'.code + 1
         ' '.code, '@'.code, '2'.code -> 0
         '['.code, '3'.code -> 0x1b
         '\\'.code, '4'.code -> 0x1c

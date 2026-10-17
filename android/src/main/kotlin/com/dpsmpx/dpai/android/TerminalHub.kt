@@ -32,6 +32,9 @@ object TerminalHub {
 
     val tabs = CopyOnWriteArrayList<Tab>()
 
+    /** Число вкладок для экранов Compose («Терминалы (N)»): обычный список они не наблюдают. */
+    val count = androidx.compose.runtime.mutableIntStateOf(0)
+
     @Volatile
     var current: Tab? = null
 
@@ -81,6 +84,7 @@ object TerminalHub {
     fun open(context: Context, target: TargetEntry, command: List<String>, label: String): Tab {
         val tab = Tab(nextId++, target, command, label)
         tabs += tab
+        count.intValue = tabs.size
         current = tab
         connect(context, tab)
         return tab
@@ -112,8 +116,8 @@ object TerminalHub {
                 )
             }
             when (o) {
-                is Outcome.Success -> {
-                    t.bind(o.value)
+                // Вкладку закрыли, пока шло подключение: канал закрывается сразу, а не живёт без вкладки.
+                is Outcome.Success -> if (t.bind(o.value)) {
                     // Размер мог смениться, пока шло подключение.
                     tab.session.read { it.cols to it.rows }.let { (c, r) -> o.value.resize(c, r) }
                     tab.status = ""
@@ -140,9 +144,12 @@ object TerminalHub {
     }
 
     fun close(tab: Tab) {
+        // Канал закрывается и тогда, когда подключение ещё идёт (ChannelTransport помнит закрытие).
+        tab.transport?.close()
         tab.transport = null
         tab.session.close()
         tabs -= tab
+        count.intValue = tabs.size
         if (current === tab) current = tabs.lastOrNull()
         observer?.tabs()
     }
@@ -155,14 +162,21 @@ object TerminalHub {
 internal class ChannelTransport : TerminalTransport {
     private val pending = ArrayList<ByteArray>()
     private var channel: ShellChannel? = null
+    private var closed = false
 
     val isOpen: Boolean @Synchronized get() = channel?.isOpen == true
 
+    /** Канал открылся. `false` — транспорт уже закрыт: канал закрывается здесь же. */
     @Synchronized
-    fun bind(c: ShellChannel) {
+    fun bind(c: ShellChannel): Boolean {
+        if (closed) {
+            c.close()
+            return false
+        }
         channel = c
         pending.forEach(c::write)
         pending.clear()
+        return true
     }
 
     @Synchronized
@@ -178,6 +192,8 @@ internal class ChannelTransport : TerminalTransport {
 
     @Synchronized
     override fun close() {
+        closed = true
+        pending.clear()
         channel?.close()
         channel = null
     }

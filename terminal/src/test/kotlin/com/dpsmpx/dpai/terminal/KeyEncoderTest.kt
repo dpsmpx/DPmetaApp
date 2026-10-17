@@ -50,6 +50,12 @@ class KeyEncoderTest {
         assertEquals("\u001bx", s(KeyEncoder.char('x'.code, Mod.ALT)))
         assertEquals("\u001b\u0018", s(KeyEncoder.char('x'.code, Mod.ALT or Mod.CTRL)))
         assertEquals("ж", s(KeyEncoder.char('ж'.code, 0)))
+        // Русская раскладка: Ctrl — по месту клавиши.
+        assertContentEquals(byteArrayOf(3), KeyEncoder.char('с'.code, Mod.CTRL))
+        assertContentEquals(byteArrayOf(3), KeyEncoder.char('С'.code, Mod.CTRL))
+        assertContentEquals(byteArrayOf(4), KeyEncoder.char('в'.code, Mod.CTRL))
+        assertContentEquals(byteArrayOf(0x1b), KeyEncoder.char('х'.code, Mod.CTRL))
+        assertEquals("\u001bж", s(KeyEncoder.char('ж'.code, Mod.ALT)))
     }
 
     @Test

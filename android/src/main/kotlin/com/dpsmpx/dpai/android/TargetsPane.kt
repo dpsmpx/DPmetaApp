@@ -140,7 +140,8 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Targets (${targets.size})", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                 // Открытые вкладки терминала живут, пока жив процесс (D-57): вернуться к ним.
-                if (TerminalHub.tabs.isNotEmpty()) TextButton(onClick = { TerminalActivity.start(context, null) }) { Text("Терминалы (${TerminalHub.tabs.size})") }
+                val terminals = TerminalHub.count.intValue
+                if (terminals > 0) TextButton(onClick = { TerminalActivity.start(context, null) }) { Text("Терминалы ($terminals)") }
                 Button(onClick = { form = true }) { Text("Добавить") }
             }
         }

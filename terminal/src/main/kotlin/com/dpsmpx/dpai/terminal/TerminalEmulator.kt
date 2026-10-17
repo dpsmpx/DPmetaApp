@@ -98,6 +98,16 @@ class TerminalEmulator(
     var title: String = ""
         private set
 
+    /**
+     * Сколько строк всего ушло в прокрутку назад и сколько выпало из её
+     * начала: по ним экран держит место чтения, пока идёт вывод (ревью
+     * 17 октября 2026). Перестройка при смене размера их не меняет.
+     */
+    var historyAdded: Long = 0
+        private set
+    var historyDropped: Long = 0
+        private set
+
     /** Растёт при каждом изменении экрана: экран перерисовывается по нему. */
     var version: Long = 0
         private set
@@ -711,7 +721,11 @@ class TerminalEmulator(
             val gone = screen[from]
             if (keep && !altScreen && from == 0 && scrollbackMax > 0) {
                 history.addLast(gone)
-                if (history.size > scrollbackMax) history.removeFirst()
+                historyAdded++
+                if (history.size > scrollbackMax) {
+                    history.removeFirst()
+                    historyDropped++
+                }
             }
             for (y in from until bottom) screen[y] = screen[y + 1]
             screen[bottom] = TerminalRow(cols).also { it.clear(0, cols, erase) }
@@ -761,7 +775,10 @@ class TerminalEmulator(
                 screen[cursorY].clear(0, cursorX + 1, erase)
             }
             2 -> for (y in 0 until rows) screen[y].also { it.clear(0, cols, erase); it.wrapped = false }
-            3 -> history.clear()
+            3 -> {
+                historyDropped += history.size
+                history.clear()
+            }
         }
         pendingWrap = false
     }

@@ -120,8 +120,12 @@ class ShellChannel internal constructor(
                 val code = channel.exitStatus.takeIf { channel.isClosed && it >= 0 }
                 queue.put(STOP)
                 session.disconnect()
-                done.countDown()
-                onClosed(code)
+                // Сначала итог вызывающему, потом «закрыт»: awaitClosed возвращается уже с кодом выхода.
+                try {
+                    onClosed(code)
+                } finally {
+                    done.countDown()
+                }
             }
         }, "dpai-term-read").apply { isDaemon = true }.start()
         Thread({
