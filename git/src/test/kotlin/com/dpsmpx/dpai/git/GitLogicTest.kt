@@ -86,6 +86,8 @@ class GitLogicTest {
             val args = when (op) {
                 GitOp.COMMIT, GitOp.WORKTREE_REMOVE, GitOp.MERGE, GitOp.BRANCH_CREATE, GitOp.ADD, GitOp.PUSH -> listOf("x")
                 GitOp.WORKTREE_ADD -> listOf("/p", "b")
+                GitOp.MERGE_BASE -> listOf("main", "HEAD")
+                GitOp.DIFF_FROM, GitOp.DIFF_STAT_FROM -> listOf("main")
                 else -> emptyList()
             }
             val argv = c.argv(op, "/w", args, clock.now()).valueOrNull() ?: error("$op")

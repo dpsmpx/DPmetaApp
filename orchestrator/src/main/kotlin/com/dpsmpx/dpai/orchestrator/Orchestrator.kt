@@ -1837,6 +1837,22 @@ class Orchestrator(
         saveTaskDocument("messages", rec.task, TurnMessages.toJson(list))
     }
 
+    /**
+     * Изменения задачи (D-42): от базы ветки интеграции до рабочего дерева
+     * задачи, а после его уборки — до ветки задачи. Только чтение; дерево
+     * ищется в неизменяемом снимке [worktrees], поэтому вызов безопасен вне
+     * потока такта (экран, канал управления).
+     */
+    fun taskDiff(task: TaskId, maxChars: Int = com.dpsmpx.dpai.orchestrator.git.TaskDiff.MAX_CHARS): Outcome<com.dpsmpx.dpai.orchestrator.git.TaskDiff> {
+        val g = git ?: return Outcome.failure(DiagCode.UNSUPPORTED, "у проекта нет репозитория: изменений задачи нет", "task $task")
+        val repo = config.repository ?: return Outcome.failure(DiagCode.UNSUPPORTED, "у проекта нет репозитория: изменений задачи нет", "task $task")
+        val base = config.integrationBranch ?: return Outcome.failure(DiagCode.UNSUPPORTED, "у проекта нет ветки интеграции", "task $task")
+        if (task !in tasks.tasks) return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой задачи", "task $task")
+        val branch = TASK_BRANCH + task.value
+        val tree = worktrees.worktrees.values.firstOrNull { it.branch == branch && !it.removed }
+        return com.dpsmpx.dpai.orchestrator.git.TaskDiff.load(g, tree?.path ?: repo.root, base, if (tree != null) null else branch, maxChars)
+    }
+
     /** Итоговые сообщения ходов задачи по порядку — для окна задачи (D-42). */
     fun turnMessages(task: TaskId): List<TurnMessage> = messagesOf[task]
         ?: documents?.read(docKey("messages", task))?.valueOrNull()?.let { TurnMessages.fromJson(it.content).valueOrNull() }.orEmpty()

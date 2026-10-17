@@ -102,6 +102,7 @@ class Pairing(private val vfs: Vfs, private val random: RandomSource, private va
  * - `POST /v1/pair` `{"code"}` — токен (без токена);
  * - `GET /v1/state` — задачи, сессии, ждущие запросы, подписки, настройки;
  * - `GET /v1/tasks/<id>/messages` — итоговые сообщения ходов задачи;
+ * - `GET /v1/tasks/<id>/diff` — изменения задачи (`TaskDiff`);
  * - `POST /v1/commands` — команда ([CommandCodec]) через очередь контура:
  *   [submit] — та же, что у экрана (D-42, п. 1); опасное — только с
  *   `confirmed` (ТЗ, §68).
@@ -128,6 +129,14 @@ class ControlApi(
                 val id = IdKinds.TASK.parse(path.removePrefix("/v1/tasks/").removeSuffix("/messages")).valueOrNull()
                     ?: return error(400, DiagCode.ID_INVALID, "ожидался TaskId")
                 ControlResponse(200, ControlSnapshot.messages(o, id))
+            }
+            method == "GET" && path.startsWith("/v1/tasks/") && path.endsWith("/diff") -> {
+                val id = IdKinds.TASK.parse(path.removePrefix("/v1/tasks/").removeSuffix("/diff")).valueOrNull()
+                    ?: return error(400, DiagCode.ID_INVALID, "ожидался TaskId")
+                when (val d = o.taskDiff(id)) {
+                    is Outcome.Success -> ControlResponse(200, d.value.toJson())
+                    is Outcome.Failure -> ControlResponse(if (d.errors.any { it.code == DiagCode.ENTITY_NOT_FOUND }) 404 else 409, failure(d.diagnostics))
+                }
             }
             method == "POST" && path == "/v1/commands" -> command(o, body)
             else -> error(404, DiagCode.UNSUPPORTED, "нет такого пути: $method $path")

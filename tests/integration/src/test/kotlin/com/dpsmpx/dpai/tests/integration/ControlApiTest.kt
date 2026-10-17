@@ -115,6 +115,11 @@ class ControlApiTest {
         assertEquals(200, done.status, done.body.toString())
         assertEquals(TaskState.CANCELLED, o.tasks.tasks.getValue(task).state)
         assertEquals(200, api.handle("GET", "/v1/tasks/${task.value}/messages", token, null).status)
+        // Изменения задачи (D-42): у проекта без репозитория — отказ с причиной, неверный id — 400.
+        val diff = api.handle("GET", "/v1/tasks/${task.value}/diff", token, null)
+        assertEquals(409, diff.status, diff.body.toString())
+        assertTrue("репозитория" in CanonicalJson.write(diff.body))
+        assertEquals(400, api.handle("GET", "/v1/tasks/не-id/diff", token, null).status)
 
         // Лимит попыток: шестая — отказ и для верного кода.
         val (code2, _) = pairing.newCode()

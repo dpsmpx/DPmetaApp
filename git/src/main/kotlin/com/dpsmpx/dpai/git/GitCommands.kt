@@ -16,6 +16,11 @@ enum class GitOp(val destructive: Boolean, val writes: Boolean) {
     STATUS(false, false),
     DIFF(false, false),
     LOG(false, false),
+    /** База ветки задачи и ветки интеграции (D-42: изменения задачи). */
+    MERGE_BASE(false, false),
+    /** Изменения от ревизии до рабочего дерева или до второй ревизии — текст и счёт строк по файлам. */
+    DIFF_FROM(false, false),
+    DIFF_STAT_FROM(false, false),
     WORKTREE_LIST(false, false),
     FETCH(false, false),
     ADD(false, true),
@@ -62,6 +67,10 @@ class GitCommands(private val approvals: ApprovalLedger, private val git: String
             GitOp.STATUS -> listOf("status", "--porcelain=v2", "--branch")
             GitOp.DIFF -> listOf("diff", "--no-color", "--no-ext-diff") + (if (args.isEmpty()) emptyList() else listOf("--") + args)
             GitOp.LOG -> listOf("log", "--no-color", "--format=%H %s", "-n", "50")
+            GitOp.MERGE_BASE -> listOf("merge-base") + args
+            // Ревизии — до `--`: имя ветки, совпавшее с файлом, не станет путём.
+            GitOp.DIFF_FROM -> listOf("diff", "--no-color", "--no-ext-diff", "--find-renames") + args + "--"
+            GitOp.DIFF_STAT_FROM -> listOf("diff", "--no-color", "--no-ext-diff", "--find-renames", "--numstat") + args + "--"
             GitOp.WORKTREE_LIST -> listOf("worktree", "list", "--porcelain")
             GitOp.FETCH -> listOf("fetch", "--no-recurse-submodules", "--") + args
             GitOp.ADD -> listOf("add", "--") + args
@@ -97,7 +106,7 @@ class GitCommands(private val approvals: ApprovalLedger, private val git: String
          * проверка проекта — отдельный шаг профиля (этап 10), а не побочный эффект коммита.
          */
         private val ARITY: Map<GitOp, IntRange> = mapOf(
-            GitOp.STATUS to 0..0, GitOp.DIFF to 0..50, GitOp.LOG to 0..0, GitOp.WORKTREE_LIST to 0..0, GitOp.FETCH to 0..2,
+            GitOp.STATUS to 0..0, GitOp.DIFF to 0..50, GitOp.LOG to 0..0, GitOp.MERGE_BASE to 2..2, GitOp.DIFF_FROM to 1..2, GitOp.DIFF_STAT_FROM to 1..2, GitOp.WORKTREE_LIST to 0..0, GitOp.FETCH to 0..2,
             GitOp.ADD to 1..1000, GitOp.COMMIT to 1..1, GitOp.BRANCH_CREATE to 1..2, GitOp.WORKTREE_ADD to 2..3,
             GitOp.WORKTREE_REMOVE to 1..1, GitOp.MERGE to 1..1, GitOp.MERGE_ABORT to 0..0, GitOp.PUSH to 1..2, GitOp.RESET_HARD to 0..1,
             GitOp.CLEAN_FORCE to 0..50, GitOp.PUSH_FORCE to 1..2, GitOp.BRANCH_DELETE_FORCE to 1..1, GitOp.WORKTREE_REMOVE_FORCE to 1..1,

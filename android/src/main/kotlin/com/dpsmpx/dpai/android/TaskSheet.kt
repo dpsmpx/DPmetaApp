@@ -131,6 +131,7 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
                     else -> Unit
                 }
                 status?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
+                DiffSection(model, task)
                 TurnMessagesSection(messages)
             }
         },
@@ -190,6 +191,47 @@ private fun ReplyEditor(busy: Boolean, onSend: (String) -> Unit) {
     Column {
         OutlinedTextField(text, { text = it }, label = { Text("Ответ к следующему ходу") }, minLines = 2)
         TextButton(enabled = !busy && text.isNotBlank(), onClick = { onSend(text) }) { Text("Отправить и повторить") }
+    }
+}
+
+/** Изменения задачи (D-42): по кнопке — Git по SSH в фоне; по файлам и текст diff моноширинным. */
+@Composable
+private fun DiffSection(model: DemoModel, task: TaskId) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var loading by remember(task) { mutableStateOf(false) }
+    var diff by remember(task) { mutableStateOf<com.dpsmpx.dpai.core.result.Outcome<com.dpsmpx.dpai.orchestrator.git.TaskDiff>?>(null) }
+    androidx.compose.material3.HorizontalDivider()
+    androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        Text("Изменения", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+        TextButton(enabled = !loading, onClick = {
+            loading = true
+            scope.launch {
+                diff = withContext(Dispatchers.IO) { model.taskDiff(task) }
+                loading = false
+            }
+        }) { Text(if (loading) "Загружаю…" else if (diff == null) "Показать" else "Обновить") }
+    }
+    when (val d = diff) {
+        null -> Unit
+        is com.dpsmpx.dpai.core.result.Outcome.Failure ->
+            Text(d.diagnostics.firstOrNull()?.message ?: "не загрузилось", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+        is com.dpsmpx.dpai.core.result.Outcome.Success -> {
+            val v = d.value
+            Text("от ${v.base} (${v.mergeBase.take(10)}) до: ${v.head}", style = MaterialTheme.typography.labelSmall)
+            if (v.files.isEmpty() && v.untracked.isEmpty()) Text("изменений нет", style = MaterialTheme.typography.bodySmall)
+            for (f in v.files) Text("+${f.added ?: "?"} −${f.removed ?: "?"}  ${f.path}", style = MaterialTheme.typography.bodySmall, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+            for (u in v.untracked) Text("новый, вне индекса: $u", style = MaterialTheme.typography.bodySmall)
+            if (v.patch.isNotEmpty()) {
+                TextButton(onClick = {
+                    context.getSystemService(android.content.ClipboardManager::class.java)
+                        .setPrimaryClip(android.content.ClipData.newPlainText("dpai.diff", v.patch))
+                }) { Text("Копировать diff") }
+                androidx.compose.foundation.text.selection.SelectionContainer {
+                    Text(v.patch, style = MaterialTheme.typography.bodySmall, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                }
+            }
+        }
     }
 }
 

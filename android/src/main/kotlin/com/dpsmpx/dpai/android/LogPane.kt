@@ -27,6 +27,7 @@ import com.dpsmpx.dpai.orchestrator.log.LogFilter
 import com.dpsmpx.dpai.orchestrator.log.LogLine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
@@ -41,6 +42,7 @@ fun LogPane(model: DemoModel) {
     var filter by remember { mutableStateOf(LogFilter.ALL) }
     var lines by remember { mutableStateOf<List<LogLine>>(emptyList()) }
     var note by remember { mutableStateOf<String?>(null) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     LaunchedEffect(filter) {
         while (true) {
             lines = log.lines(filter = filter, max = MAX_LINES).reversed()
@@ -60,6 +62,17 @@ fun LogPane(model: DemoModel) {
                 context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("dpai.log", text))
                 note = "скопировано знаков: ${text.length}"
             }) { Text("Копировать журнал") }
+            OutlinedButton(onClick = {
+                scope.launch {
+                    val name = "dpai-log-" + java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(java.util.Date()) + ".txt"
+                    // Журнал целиком (без обрезки буфера обмена) — в «Загрузки/dpai-logs» (D-43).
+                    val r = withContext(Dispatchers.IO) { Downloads.write(context, "dpai-logs", name, "text/plain", log.export(maxChars = Int.MAX_VALUE).toByteArray(Charsets.UTF_8)) }
+                    note = when (r) {
+                        is com.dpsmpx.dpai.core.result.Outcome.Success -> "сохранено: Загрузки/dpai-logs/${r.value}"
+                        is com.dpsmpx.dpai.core.result.Outcome.Failure -> "не сохранено: ${r.diagnostics.firstOrNull()?.message}"
+                    }
+                }
+            }) { Text("В «Загрузки»") }
         }
         note?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
         // Отладка: проверочные запросы (D-44) — с экрана «Запросы» убраны, здесь — по требованию.

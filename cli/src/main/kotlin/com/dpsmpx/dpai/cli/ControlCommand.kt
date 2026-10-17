@@ -164,6 +164,7 @@ class ControlCommand(
         val id = args.getOrNull(0) ?: return usage(TASK_USAGE)
         val action = args.getOrNull(1) ?: return usage(TASK_USAGE)
         if (action == "messages") return messages(id)
+        if (action == "diff") return diff(id, "--stat" in args)
         val task = resolve(id, "tasks") ?: return FAILED
         val c = linkedMapOf<String, JsonValue>("task" to JsonString(task))
         when (action) {
@@ -206,6 +207,20 @@ class ControlCommand(
             out("── ход ${num(m, "turn")} · ${str(m, "status")}${str(m, "model")?.let { " · $it" } ?: ""}")
             out(str(m, "text").orEmpty())
         }
+        return OK
+    }
+
+    /** Изменения задачи (D-42): по файлам и, без `--stat`, текст diff. */
+    private fun diff(id: String, statOnly: Boolean): Int {
+        val task = resolve(id, "tasks") ?: return FAILED
+        val r = call("GET", "/v1/tasks/$task/diff", null) ?: return FAILED
+        if (json) return print(r)
+        out("от ${str(r, "base")} (${str(r, "mergeBase")?.take(12)}) до: ${str(r, "head")}")
+        val files = list(r, "files")
+        if (files.isEmpty() && list(r, "untracked").isEmpty()) out("изменений нет")
+        for (f in files) out("  +${num(f, "added") ?: "?"} −${num(f, "removed") ?: "?"}  ${str(f, "path")}")
+        for (u in (r["untracked"] as? JsonArray)?.items.orEmpty()) out("  новый, вне индекса: ${(u as? JsonString)?.value}")
+        if (!statOnly) str(r, "patch")?.takeIf { it.isNotEmpty() }?.let { out(""); out(it) }
         return OK
     }
 
@@ -348,7 +363,7 @@ class ControlCommand(
         const val USAGE_ERROR = 2
 
         private const val TASK_USAGE = "dpai task add «название» «что сделать» [--priority HIGH] [--class trivial] [--model haiku] [--effort low] [--budget 0.25]\n" +
-            "dpai task <id> hold|resume|retry [--text «…»]|verify|messages|priority <P>|policy --class <к> …|archive|unarchive|cancel --yes|waive --reason «…» --yes\n" +
+            "dpai task <id> hold|resume|retry [--text «…»]|verify|messages|diff [--stat]|priority <P>|policy --class <к> …|archive|unarchive|cancel --yes|waive --reason «…» --yes\n" +
             "dpai task archive-done   — все завершённые в архив"
         private const val SESSION_USAGE = "dpai session <id> stop | send «запрос» [--model m] [--effort e] | fresh [«запрос»]"
 

@@ -1,7 +1,6 @@
 package com.dpsmpx.dpai.android
 
 import android.content.ContentUris
-import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
 import android.os.Environment
@@ -63,25 +62,9 @@ object SettingsBackups {
         val now = Clock.SYSTEM.now().epochMillis
         val name = PREFIX + SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date(now)) + ".json"
         val bytes = SettingsBackup.write(s, now, controller.version).toByteArray(Charsets.UTF_8)
-        val resolver = context.contentResolver
-        val values = ContentValues().apply {
-            put(MediaStore.Downloads.DISPLAY_NAME, name)
-            put(MediaStore.Downloads.MIME_TYPE, "application/json")
-            put(MediaStore.Downloads.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/$DIR")
-            put(MediaStore.Downloads.IS_PENDING, 1)
-        }
-        val uri = try {
-            resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
-                ?: return Outcome.failure(DiagCode.STORAGE_IO_FAILED, "копия настроек не создана", name)
-        } catch (e: Exception) {
-            return Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "копия настроек не создана", e, name))
-        }
-        try {
-            resolver.openOutputStream(uri)?.use { it.write(bytes) } ?: error("нет потока записи")
-            resolver.update(uri, ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }, null, null)
-        } catch (e: Exception) {
-            runCatching { resolver.delete(uri, null, null) }
-            return Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "копия настроек не записана", e, name))
+        when (val w = Downloads.write(context, DIR, name, "application/json", bytes)) {
+            is Outcome.Failure -> return w
+            is Outcome.Success -> Unit
         }
         prefs(context).edit().putString("lastDigest", SettingsBackup.digest(s)).putLong("lastAt", now).putString("lastName", name).apply()
         prune(context)
