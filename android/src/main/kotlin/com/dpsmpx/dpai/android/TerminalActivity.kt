@@ -62,7 +62,8 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         super.onStart()
         TerminalHub.observer = this
         show(TerminalHub.current)
-        view.showKeyboard()
+        // Клавиатура — когда окно уже прикреплено: до этого контроллера вставок нет.
+        view.post { view.showKeyboard() }
     }
 
     override fun onStop() {
