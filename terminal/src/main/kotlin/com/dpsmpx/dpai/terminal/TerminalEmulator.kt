@@ -222,6 +222,11 @@ class TerminalEmulator(
             return
         }
         state = State.GROUND
+        // Не ASCII после ESC — не команда: toChar() обрезал бы U+10063 до 'c' (RIS).
+        if (cp > 0x7e) {
+            if (cp >= 0xa0) putChar(cp)
+            return
+        }
         when (cp.toChar()) {
             '[' -> {
                 state = State.CSI
@@ -336,7 +341,10 @@ class TerminalEmulator(
     private fun csiPlain(final: Char) {
         val erase = Style.DEFAULT.withBg(style.bg)
         when (final) {
-            '@' -> row().insert(cursorX, p(0), erase)
+            '@' -> {
+                row().insert(cursorX, p(0), erase)
+                pendingWrap = false
+            }
             'A' -> moveTo(cursorX, (cursorY - p(0)).coerceAtLeast(if (cursorY >= top) top else 0))
             'B', 'e' -> moveTo(cursorX, (cursorY + p(0)).coerceAtMost(if (cursorY <= bottom) bottom else rows - 1))
             'C', 'a' -> moveTo(cursorX + p(0), cursorY)
@@ -352,10 +360,12 @@ class TerminalEmulator(
             'L' -> if (cursorY in top..bottom) {
                 scrollDown(p(0), cursorY)
                 cursorX = 0
+                pendingWrap = false
             }
             'M' -> if (cursorY in top..bottom) {
                 scrollUp(p(0), cursorY, keep = false)
                 cursorX = 0
+                pendingWrap = false
             }
             'P' -> {
                 row().delete(cursorX, p(0), erase)
@@ -382,8 +392,9 @@ class TerminalEmulator(
             }
             'r' -> {
                 val t = p(0) - 1
-                val b = p(1, rows) - 1
-                if (t < b && b < rows) {
+                // Низ за краем экрана — до края, как в xterm и VTE (размер у программы мог устареть).
+                val b = (p(1, rows) - 1).coerceAtMost(rows - 1)
+                if (t < b) {
                     top = t
                     bottom = b
                     setCursor(0, 0)
@@ -642,7 +653,7 @@ class TerminalEmulator(
         if (r.codePoint(x) != TerminalRow.EMPTY) r.combine(x, cp)
     }
 
-    private fun decGraphics(cp: Int): Int = when (cp.toChar()) {
+    private fun decGraphics(cp: Int): Int = if (cp >= 0x80) cp else when (cp.toChar()) {
         'j' -> 0x2518
         'k' -> 0x2510
         'l' -> 0x250C
@@ -738,12 +749,15 @@ class TerminalEmulator(
     private fun eraseDisplay(mode: Int) {
         val erase = Style.DEFAULT.withBg(style.bg)
         when (mode) {
+            // Стёртый конец строки — конец мягкого переноса (как ClearRight в xterm): иначе смена
+            // размера склеит строку со следующей, а копирование потеряет перевод строки.
             0 -> {
                 screen[cursorY].clear(cursorX, cols, erase)
-                for (y in cursorY + 1 until rows) screen[y].clear(0, cols, erase)
+                screen[cursorY].wrapped = false
+                for (y in cursorY + 1 until rows) screen[y].also { it.clear(0, cols, erase); it.wrapped = false }
             }
             1 -> {
-                for (y in 0 until cursorY) screen[y].clear(0, cols, erase)
+                for (y in 0 until cursorY) screen[y].also { it.clear(0, cols, erase); it.wrapped = false }
                 screen[cursorY].clear(0, cursorX + 1, erase)
             }
             2 -> for (y in 0 until rows) screen[y].also { it.clear(0, cols, erase); it.wrapped = false }
@@ -755,9 +769,9 @@ class TerminalEmulator(
     private fun eraseLine(mode: Int) {
         val erase = Style.DEFAULT.withBg(style.bg)
         when (mode) {
-            0 -> row().clear(cursorX, cols, erase)
+            0 -> row().also { it.clear(cursorX, cols, erase); it.wrapped = false }
             1 -> row().clear(0, cursorX + 1, erase)
-            2 -> row().clear(0, cols, erase)
+            2 -> row().also { it.clear(0, cols, erase); it.wrapped = false }
         }
         pendingWrap = false
     }
@@ -852,8 +866,14 @@ class TerminalEmulator(
     fun resize(newCols: Int, newRows: Int) {
         require(newCols in 1..MAX_COLS && newRows in 1..MAX_ROWS) { "размер терминала — 1…$MAX_COLS × 1…$MAX_ROWS" }
         if (newCols == cols && newRows == rows) return
-        val curAbs = history.size + cursorY
-        val (newMain, cursor) = reflow(main, newCols, newRows, if (altScreen) null else curAbs to cursorX)
+        // Курсор основного экрана, который надо провести через перестройку: текущий, а во втором
+        // экране — сохранённый 1049, на него вернётся оболочка. Отложенный перенос — столбец за краем.
+        val mainCursor: Pair<Int, Int>? = if (!altScreen) {
+            history.size + cursorY to cursorX + (if (pendingWrap) 1 else 0)
+        } else {
+            savedMain?.let { history.size + it.y to it.x + (if (it.wrap) 1 else 0) }
+        }
+        val (newMain, cursor) = reflow(main, newCols, newRows, mainCursor)
         main = newMain
         alt = Array(newRows) { y -> (alt.getOrNull(y) ?: TerminalRow(newCols)).also { it.resize(newCols) } }
         cols = newCols
@@ -862,15 +882,21 @@ class TerminalEmulator(
         top = 0
         bottom = rows - 1
         tabs = BooleanArray(cols) { it > 0 && it % 8 == 0 }
+        fun clamp(it: Saved) = Saved(it.x.coerceIn(0, cols - 1), it.y.coerceIn(0, rows - 1), it.style, it.origin, false, it.g0, it.g1, it.useG1)
         if (altScreen) {
             moveTo(cursorX, cursorY)
-        } else if (cursor != null) {
-            cursorX = cursor.second.coerceIn(0, cols - 1)
-            cursorY = cursor.first.coerceIn(0, rows - 1)
+            savedMain = savedMain?.let {
+                if (cursor == null) clamp(it) else Saved(cursor.second.coerceIn(0, cols - 1), cursor.first.coerceIn(0, rows - 1), it.style, it.origin, cursor.second >= cols, it.g0, it.g1, it.useG1)
+            }
+        } else {
+            if (cursor != null) {
+                cursorX = cursor.second.coerceIn(0, cols - 1)
+                cursorY = cursor.first.coerceIn(0, rows - 1)
+            }
+            pendingWrap = cursor != null && cursor.second >= cols && autoWrap
+            savedMain = savedMain?.let(::clamp)
         }
-        pendingWrap = false
-        savedMain = savedMain?.let { Saved(it.x.coerceIn(0, cols - 1), it.y.coerceIn(0, rows - 1), it.style, it.origin, false, it.g0, it.g1, it.useG1) }
-        savedAlt = savedAlt?.let { Saved(it.x.coerceIn(0, cols - 1), it.y.coerceIn(0, rows - 1), it.style, it.origin, false, it.g0, it.g1, it.useG1) }
+        savedAlt = savedAlt?.let(::clamp)
         version++
     }
 
@@ -921,7 +947,9 @@ class TerminalEmulator(
                 }
             }
             for ((k, cell) in cells.withIndex()) {
-                val w = if (cell.cp == TerminalRow.EMPTY) 1 else CharWidth.of(cell.cp).coerceAtLeast(1)
+                // Широкий знак в один столбец не входит: занимает одну ячейку, без правой половины.
+                val wide = cell.cp != TerminalRow.EMPTY && CharWidth.of(cell.cp) == 2 && newCols >= 2
+                val w = if (wide) 2 else 1
                 if (x + w > newCols) {
                     row.wrapped = true
                     out += row
@@ -931,14 +959,15 @@ class TerminalEmulator(
                 placeCursorIfHere(k)
                 row.set(x, cell.cp, Style(cell.style))
                 cell.combining?.codePoints()?.forEach { row.combine(x, it) }
-                if (w == 2) row.set(x + 1, TerminalRow.WIDE_TAIL, Style(cell.style))
+                if (wide) row.set(x + 1, TerminalRow.WIDE_TAIL, Style(cell.style))
                 x += w
             }
             if (!cursorPlaced && cursorOffset >= 0) {
                 // Курсор за последним символом: столбец — отступ от начала логической строки.
                 val extra = cursorOffset - cells.size
                 var cx = x + extra
-                while (cx >= newCols) {
+                // Ровно за последним символом во всю ширину — отложенный перенос: тот же ряд, столбец newCols.
+                while (cx > newCols || (cx == newCols && extra > 0)) {
                     row.wrapped = true
                     out += row
                     row = TerminalRow(newCols)
@@ -955,7 +984,8 @@ class TerminalEmulator(
         while (out.size <= cursorLine) out += TerminalRow(newCols)
         // Окно экрана: последние строки, но курсор — на экране.
         val end = maxOf(out.size, cursorLine + 1)
-        val start = (end - newRows).coerceAtLeast(0)
+        // Строк под курсором больше, чем рядов, — лишние нижние уходят, а не строка курсора в историю.
+        val start = (end - newRows).coerceAtLeast(0).let { if (cursor != null) minOf(it, cursorLine) else it }
         history.clear()
         for (k in 0 until start) history.addLast(out[k])
         while (history.size > scrollbackMax) history.removeFirst()

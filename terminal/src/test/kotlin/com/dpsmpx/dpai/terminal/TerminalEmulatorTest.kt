@@ -325,6 +325,115 @@ class TerminalEmulatorTest {
         assertEquals("cdefg\nx", t.text(0, 2, 2, 0))
     }
 
+    // ---- находки ревью перед вливанием (17 октября 2026) ----
+
+    @Test
+    fun combiningMarksPerCellAreCapped() {
+        val t = term()
+        t.feed("a" + "\u0301".repeat(100_000) + "b")
+        assertTrue(t.screenRow(0).text(0).length <= 1 + TerminalRow.MAX_COMBINING)
+        assertEquals("b", t.screenRow(0).text(1))
+    }
+
+    @Test
+    fun resizeInSecondScreenKeepsTheSavedCursorOnItsLine() {
+        val t = TerminalEmulator(20, 6)
+        for (i in 1..10) t.feed("line$i\r\n")
+        t.feed("\u001b[H\u001b[2J$ vim\r\n")
+        t.feed("\u001b[?1049h")
+        t.resize(20, 3)
+        t.resize(20, 6)
+        t.feed("\u001b[?1049l$ ")
+        // Строки истории вернулись на экран при росте; приглашение — сразу под «$ vim», ничего не затёрто.
+        assertTrue(t.screenText().endsWith("line5\n$ vim\n$ "), t.screenText())
+        assertEquals("$ vim", t.screenRow(t.cursorY - 1).text())
+        assertEquals(2, t.cursorX)
+    }
+
+    @Test
+    fun erasingTheLineEndsItsSoftWrap() {
+        val t = TerminalEmulator(10, 5)
+        t.feed("0123456789AB\u001b[1;1H\u001b[2Kshort\r\n\u001b[2Knext\r\n")
+        assertFalse(t.screenRow(0).wrapped)
+        t.resize(10, 4)
+        assertEquals("short", t.screenRow(0).text())
+        assertEquals("next", t.screenRow(1).text())
+        val j = TerminalEmulator(10, 5)
+        j.feed("0123456789AB\u001b[1;1H\u001b[Jone\r\ntwo")
+        j.resize(10, 4)
+        assertEquals("one\ntwo", j.screenText())
+    }
+
+    @Test
+    fun oneColumnResizeWithWideCharactersDoesNotThrow() {
+        val t = TerminalEmulator(10, 3)
+        t.feed("ab中")
+        t.resize(1, 3)
+        t.resize(10, 3)
+        assertTrue("中" in t.screenText())
+    }
+
+    @Test
+    fun deletingCharactersDropsTheirCombiningMarks() {
+        val t = term()
+        t.feed("ae\u0301x\u001b[1;2H\u001b[P")
+        assertEquals("ax", t.screenRow(0).text())
+    }
+
+    @Test
+    fun pendingWrapSurvivesResize() {
+        val t = TerminalEmulator(10, 3)
+        t.feed("0123456789")
+        t.resize(10, 4)
+        t.feed("X")
+        assertEquals("0123456789\nX", t.screenText())
+        val w = TerminalEmulator(10, 3)
+        w.feed("0123456789")
+        w.resize(20, 3)
+        w.feed("X")
+        assertEquals("0123456789X", w.screenText())
+    }
+
+    @Test
+    fun shrinkingKeepsTheCursorLineOnScreen() {
+        val t = TerminalEmulator(10, 4)
+        t.feed("$ " + "x".repeat(35) + "\u001b[4A\r")
+        t.resize(10, 2)
+        assertEquals("$ xxxxxxxx", t.screenRow(t.cursorY).text())
+        assertEquals(0, t.cursorX)
+    }
+
+    @Test
+    fun insertAndDeleteLinesCancelPendingWrap() {
+        val t = TerminalEmulator(5, 4)
+        t.feed("\u001b[2;1Habcde\u001b[LX")
+        assertEquals("X", t.screenRow(1).text())
+        assertFalse(t.screenRow(1).wrapped)
+        assertEquals("abcde", t.screenRow(2).text())
+        val c = TerminalEmulator(5, 2)
+        c.feed("abcde\u001b[@Y")
+        assertEquals("abcdY", c.screenRow(0).text().replace(" ", "").let { it })
+        assertEquals(0, c.cursorY)
+    }
+
+    @Test
+    fun scrollRegionBottomBeyondTheScreenIsClamped() {
+        val t = TerminalEmulator(10, 5)
+        t.feed("top\u001b[2;9r\u001b[5;1HA\nB\nC\nD\nE")
+        assertEquals("top", t.screenRow(0).text())
+        assertEquals(0, t.scrollbackSize)
+    }
+
+    @Test
+    fun supplementaryCharactersAreNotTruncatedToAscii() {
+        val t = term()
+        t.feed("hello\u001b" + String(Character.toChars(0x10063)))
+        assertTrue(t.screenText().startsWith("hello"))
+        val g = term()
+        g.feed("\u001b(0" + String(Character.toChars(0x2006A)))
+        assertEquals(0x2006A, g.screenRow(0).codePoint(0))
+    }
+
     @Test
     fun garbageNeverBreaksTheEmulator() {
         val t = TerminalEmulator(30, 10, scrollbackMax = 50, host = Recorder())

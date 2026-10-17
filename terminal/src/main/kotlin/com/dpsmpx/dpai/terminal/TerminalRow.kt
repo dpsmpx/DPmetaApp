@@ -34,9 +34,16 @@ class TerminalRow(cols: Int) {
         combining?.remove(col)
     }
 
+    /**
+     * Составной знак к ячейке. Сверх [MAX_COMBINING] знаков (в char) —
+     * отбрасываются: поток из одних составных знаков иначе растил бы строку
+     * ячейки без предела и копировал её на каждом знаке (ревью 17 октября 2026).
+     */
     fun combine(col: Int, cp: Int) {
         val map = combining ?: HashMap<Int, String>().also { combining = it }
-        map[col] = (map[col] ?: "") + String(Character.toChars(cp))
+        val old = map[col] ?: ""
+        if (old.length + Character.charCount(cp) > MAX_COMBINING) return
+        map[col] = old + String(Character.toChars(cp))
     }
 
     fun combiningAt(col: Int): String? = combining?.get(col)
@@ -66,6 +73,8 @@ class TerminalRow(cols: Int) {
         val k = n.coerceAtMost(cols - col)
         System.arraycopy(chars, col + k, chars, col, cols - col - k)
         System.arraycopy(styles, col + k, styles, col, cols - col - k)
+        // Знаки удалённых ячеек уходят вместе с ними, а не к соседу слева.
+        combining?.keys?.removeIf { it in col until col + k }
         shiftCombining(col, -k)
         clear(cols - k, cols, style)
     }
@@ -113,5 +122,8 @@ class TerminalRow(cols: Int) {
     companion object {
         const val EMPTY = 0
         const val WIDE_TAIL = -1
+
+        /** Предел составных знаков ячейки, в char (VTE и xterm тоже держат немного). */
+        const val MAX_COMBINING = 16
     }
 }
