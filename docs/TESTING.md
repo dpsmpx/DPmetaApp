@@ -162,7 +162,10 @@ musl-сборка `@anthropic-ai/claude-code-linux-arm64-musl` распаков�
 
 Тот же путь через SSH-клиент на JVM (D-35) — `JschProcessHostTest` в
 модуле `jsch` с теми же свойствами `dpai.test.ssh*`; без них идут только
-проверки отказов.
+проверки отказов. Канал своего терминала (D-57) — `JschShellTest`: PTY
+`xterm-256color`, размер окна и его смена (`stty size`), код выхода,
+команда в PTY; 17 октября 2026 прошёл на `sshd` в облачной сессии
+(`127.0.0.1:2222`, вход ключом).
 
 Финальный аудит (ТЗ, §99–§125): после `tools/verify/run.sh full` —
 `python3 tools/audit/final_stability.py --endurance <отчёт EnduranceTest>`.

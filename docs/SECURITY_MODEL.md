@@ -72,7 +72,8 @@
 устройство. Ключ хоста нового target попадает в known_hosts приложения
 только после того, как человек сверил отпечаток с тем, что показывает
 сам target (`HostKeyProbe`); «доверять при первом подключении» нет.
-Проверка: `JschProcessHostTest`, `SshKeysTest`.
+Свой терминал (D-57) входит тем же путём (`JschConnect`). Проверка:
+`JschProcessHostTest`, `JschShellTest`, `SshKeysTest`.
 
 ### T3 — Prompt injection
 
