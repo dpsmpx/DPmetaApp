@@ -1,11 +1,7 @@
-import os
-import tempfile
 import unittest
-from pathlib import Path
-from unittest import mock
 
 from tools.cs import secrets
-from tools.cs.secrets import private_lines, private_words, scan_text
+from tools.cs.secrets import scan_text
 
 # Образцы собираются из частей, чтобы проверка secrets не находила их в этом файле.
 GH = "gh" + "p_" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"
@@ -33,32 +29,13 @@ class SecretsTest(unittest.TestCase):
         self.assertEqual(hits[0][2], 3)
 
 
-class PrivateWordsTest(unittest.TestCase):
-    """Д40: список личных слов — вне Git; слова — заглушки, не имена."""
+class CheckTest(unittest.TestCase):
+    """Д40, 12.10.2026: списка личных слов нет — проверка не ищет его и не пишет LIMITED."""
 
-    def write(self, text: str) -> Path:
-        p = Path(tempfile.mkdtemp(prefix="cs-words-")) / "private-words.txt"
-        p.write_text(text, encoding="utf-8")
-        return p
-
-    def test_parse(self):
-        p = self.write("# комментарий\nQwzk  # хвост\nab\n\nЁжзк\n")
-        self.assertEqual(private_words(p), ["qwzk", "ежзк"])
-        self.assertIsNone(private_words(p.with_name("нет.txt")))
-
-    def test_lines_without_words(self):
-        self.assertEqual(private_lines("a\nQWZKов b\nc\nежзк", ["qwzk", "ежзк"]), [2, 4])
-
-    def test_check_limited_without_list_and_clean_with_list(self):
-        missing = Path(tempfile.mkdtemp(prefix="cs-words-")) / "нет.txt"
-        with mock.patch.dict(os.environ, {"DPSMPX_PRIVATE_WORDS": str(missing)}):
-            r = secrets.check()
-        self.assertTrue(any("LIMITED" in n for n in r.notes), r.notes)
-        word = "qq" + "wv" + "zk"  # из частей — чтобы этого слова не было в самом файле
-        with mock.patch.dict(os.environ, {"DPSMPX_PRIVATE_WORDS": str(self.write(word + "\n"))}):
-            r = secrets.check()
-        self.assertFalse([e for e in r.errors if "личных слов" in e], r.errors)
-        self.assertTrue(any("слов 1" in n for n in r.notes), r.notes)
+    def test_no_private_words_list(self):
+        r = secrets.check()
+        self.assertFalse([n for n in r.notes if "LIMITED" in n or "личные слова" in n], r.notes)
+        self.assertFalse(hasattr(secrets, "private_words"))
 
 
 if __name__ == "__main__":

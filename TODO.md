@@ -132,14 +132,6 @@
   `data/website/path.yaml` (`as_of`), тесты `JourneyPath`; проверки,
   независимая проверка, вливание (`DPmeta:M-13`); на сайт — следующей
   выгрузкой.
-- [ ] **Снять список личных слов (Д40, ответ автора 12.10.2026, В1).**
-  Код: `tools/cs/secrets.py` (список, ошибка и отметка `LIMITED`),
-  `tools/cs/core/sensitive.py` и `data/policy/sensitive.yaml`
-  (`SD-PRIVATE`), предупреждение «списка личных слов нет» в
-  `tools/cs/site/build.py`; тесты `test_secrets.py`, `test_sensitive.py`,
-  `test_site.py`. Текст: `CLAUDE.md` («Идентичность»), `docs/SECURITY.md`
-  (§3), `docs/platforms/WEBSITE.md`, `docs/ARCHITECTURE.md`. Правило
-  «имени нет нигде» остаётся — в критике (К1).
 - [ ] **Путь (Д44) после выгрузки:** снимки `/path/` и `/en/path/` с рабочего
   сайта (390 и 1280 px; сессией с доступом к сайту). Перепроверить ORC-STAGE до 21.10.2026 и при каждом
   новом шаге плана — `as_of` и станции в `data/website/path.yaml`.
