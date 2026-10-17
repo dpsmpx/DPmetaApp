@@ -225,7 +225,9 @@ JSON-LD (`Person`, `CreativeWork`, `BlogPosting`), фиды и API. Имени
 3. `tools/check.sh`, `git diff`, коммит; выгрузка — по Д35, Д36.
 
 После выгрузки — проверить по HTTPS: `/ecosystem/` отдаёт
-`script-src 'self'`, а `/` — `script-src 'none'`.
+`script-src 'self'`, а `/` — `script-src 'none'`. Выгрузка 12.10.2026
+проверена снаружи: так и есть, страницы раздела, главная, «Статьи» и
+«Путь» — 200.
 
 ## Фильтр чувствительных данных (Д39)
 
