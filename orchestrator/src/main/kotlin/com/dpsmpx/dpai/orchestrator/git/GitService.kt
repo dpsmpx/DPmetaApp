@@ -28,9 +28,9 @@ import kotlin.time.Duration.Companion.minutes
  */
 class GitService(private val host: ProcessHost, private val commands: GitCommands, private val clock: Clock, private val timeout: Duration = 5.minutes) {
     /** Операция над деревом по пути; ненулевой код Git — `GIT_COMMAND_FAILED` с хвостом stderr. */
-    fun run(op: GitOp, path: String, args: List<String> = emptyList(), approval: Approval? = null): Outcome<Completed> =
+    fun run(op: GitOp, path: String, args: List<String> = emptyList(), approval: Approval? = null, maxStdoutChars: Int = Int.MAX_VALUE): Outcome<Completed> =
         commands.argv(op, path, args, clock.now(), approval).then { argv ->
-            host.run(ProcessSpec(argv), timeout).then { done ->
+            host.run(ProcessSpec(argv), timeout, maxStdoutChars = maxStdoutChars).then { done ->
                 if (done.ok) {
                     Outcome.success(done)
                 } else {

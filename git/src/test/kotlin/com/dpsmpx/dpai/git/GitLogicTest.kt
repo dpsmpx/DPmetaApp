@@ -77,6 +77,10 @@ class GitLogicTest {
         val add = c.argv(GitOp.ADD, "/w", listOf("a.txt"), clock.now()).valueOrNull()!!
         assertEquals(listOf("git") + GitCommands.HARDENING + listOf("-C", "/w", "add", "--", "a.txt"), add)
         assertEquals(DiagCode.VALUE_INVALID, (c.argv(GitOp.STATUS, "-oops", emptyList(), clock.now()) as Outcome.Failure).errors.single().code)
+        // Чтение — без необязательного index.lock и с путями в UTF-8; запись — без этого (ревью 17 октября 2026).
+        val status = c.argv(GitOp.STATUS, "/w", emptyList(), clock.now()).valueOrNull()!!
+        assertEquals(listOf("git", "--no-optional-locks") + GitCommands.HARDENING + listOf("-c", "core.quotePath=false", "-C", "/w", "status", "--porcelain=v2", "--branch"), status)
+        assertTrue("--no-optional-locks" !in add)
         for (op in GitOp.entries.filter { it.destructive }) {
             val r = c.argv(op, "/w", if (op == GitOp.BRANCH_DELETE_FORCE || op == GitOp.WORKTREE_REMOVE_FORCE || op == GitOp.PUSH_FORCE) listOf("x") else emptyList(), clock.now())
             assertEquals(DiagCode.APPROVAL_REQUIRED, (r as Outcome.Failure).errors.single().code, op.name)
@@ -86,7 +90,7 @@ class GitLogicTest {
             val args = when (op) {
                 GitOp.COMMIT, GitOp.WORKTREE_REMOVE, GitOp.MERGE, GitOp.BRANCH_CREATE, GitOp.ADD, GitOp.PUSH -> listOf("x")
                 GitOp.WORKTREE_ADD -> listOf("/p", "b")
-                GitOp.MERGE_BASE -> listOf("main", "HEAD")
+                GitOp.MERGE_BASE, GitOp.MERGES_BETWEEN -> listOf("main", "HEAD")
                 GitOp.DIFF_FROM, GitOp.DIFF_STAT_FROM -> listOf("main")
                 else -> emptyList()
             }

@@ -4,12 +4,14 @@ import com.dpsmpx.dpai.accounts.AuthStatus
 import com.dpsmpx.dpai.accounts.SlotEnvironment
 import com.dpsmpx.dpai.accounts.SlotState
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
+import com.dpsmpx.dpai.core.diagnostics.Diagnostic
 import com.dpsmpx.dpai.core.events.EventType
 import com.dpsmpx.dpai.core.ids.SessionId
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.serialization.JsonParser
 import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.execution.agent.AgentClient
+import com.dpsmpx.dpai.execution.agent.ExitReason
 import com.dpsmpx.dpai.execution.agent.OutputCapture
 import com.dpsmpx.dpai.execution.agent.RunSpec
 import com.dpsmpx.dpai.execution.agent.RunState
@@ -61,7 +63,15 @@ class SlotAuthProbe(private val agent: AgentClient) {
             .joinToString("\n") { (it.payload["text"] as? JsonString)?.value.orEmpty() }
         // Код 1 — «не вошёл», но JSON тот же (`docs/research/CLAUDE_CODE_CLI.md`, §4); агент свёл его в `dpai.auth-status`.
         return when (val json = JsonParser().parse(stdout)) {
-            is Outcome.Failure -> Outcome.failure(DiagCode.CLAUDE_AUTH_STATUS_INVALID, "проба входа: агент не вернул dpai.auth-status (код ${status.exitCode}; агент на target устарел?)", "run $run")
+            // Без сводки — сказать почему, а не гадать (D-05): старый агент спецификацию v2 отверг бы ещё
+            // при запуске, а сюда доходят «claude не запустился» и тайм-аут (ревью 17 октября 2026).
+            is Outcome.Failure -> Outcome.failure(
+                when (status.reason) {
+                    ExitReason.START_FAILED -> Diagnostic.error(DiagCode.PROCESS_START_FAILED, "проба входа: claude на target не запустился — установлен ли он и есть ли в PATH", "run $run")
+                    ExitReason.TIMEOUT -> Diagnostic.error(DiagCode.PROCESS_TIMEOUT, "проба входа: claude auth status не ответил вовремя", "run $run")
+                    else -> Diagnostic.error(DiagCode.CLAUDE_AUTH_STATUS_INVALID, "проба входа: агент не вернул dpai.auth-status (${status.reason?.name ?: "без причины"}, код ${status.exitCode})", "run $run")
+                },
+            )
             is Outcome.Success -> AuthStatus.fromAgentJson(json.value)
         }
     }

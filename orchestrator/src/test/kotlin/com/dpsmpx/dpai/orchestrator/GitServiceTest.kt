@@ -276,5 +276,32 @@ class GitServiceTest {
         assertTrue(cut.truncated && "… обрезано:" in cut.patch, cut.patch)
         // Ревизия, похожая на параметр, — отказ команды, а не флаг Git (T4).
         assertTrue(com.dpsmpx.dpai.orchestrator.git.TaskDiff.load(git, r.root, "--output=/tmp/x", "task/diff") is Outcome.Failure)
+        // Кириллица в пути — как есть, а не «\320…» в кавычках (ревью 17 октября 2026).
+        val ru = worktree(r, "ru", ids.next(IdKinds.SESSION))
+        val ruPath = state.worktrees.getValue(ru).path
+        File(ruPath, "Заметки.md").writeText("текст\n")
+        sh("-C", ruPath, "add", "Заметки.md")
+        val ruDiff = assertIs<Outcome.Success<com.dpsmpx.dpai.orchestrator.git.TaskDiff>>(com.dpsmpx.dpai.orchestrator.git.TaskDiff.load(git, ruPath, "main", null)).value
+        assertEquals(listOf("Заметки.md"), ruDiff.files.map { it.path })
+        assertTrue("Заметки.md" in ruDiff.patch, ruDiff.patch)
+    }
+
+    /** Слитая задача (ревью 17 октября 2026): изменения — до слияния, а не пусто. */
+    @Test
+    fun mergedTaskStillShowsItsChanges() {
+        val r = repo()
+        val wt = worktree(r, "merged", ids.next(IdKinds.SESSION))
+        val path = state.worktrees.getValue(wt).path
+        File(path, "feature.txt").writeText("сделано\n")
+        sh("-C", path, "add", "feature.txt")
+        sh("-C", path, "commit", "-q", "-m", "задача")
+        File(r.root, "MAIN.md").writeText("только в main\n")
+        sh("-C", r.root, "add", "MAIN.md")
+        sh("-C", r.root, "commit", "-q", "-m", "main впереди")
+        sh("-C", r.root, "worktree", "remove", path)
+        sh("-C", r.root, "merge", "-q", "--no-ff", "--no-edit", "task/merged")
+        val d = assertIs<Outcome.Success<com.dpsmpx.dpai.orchestrator.git.TaskDiff>>(com.dpsmpx.dpai.orchestrator.git.TaskDiff.load(git, r.root, "main", "task/merged")).value
+        assertEquals(listOf("feature.txt"), d.files.map { it.path })
+        assertTrue("+сделано" in d.patch && "MAIN.md" !in d.patch, d.patch)
     }
 }
