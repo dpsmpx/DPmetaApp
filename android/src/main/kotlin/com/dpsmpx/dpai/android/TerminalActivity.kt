@@ -1,6 +1,8 @@
 package com.dpsmpx.dpai.android
 
 import android.app.Activity
+import androidx.activity.ComponentActivity
+import androidx.activity.enableEdgeToEdge
 import android.app.AlertDialog
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -30,7 +32,7 @@ import kotlin.concurrent.thread
  * клавиш, которых нет на экранной клавиатуре (Esc, Ctrl, Alt, Tab,
  * стрелки). Открывается с карточки target: оболочка или `claude` слота.
  */
-class TerminalActivity : Activity(), TerminalHub.Observer {
+class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
     private lateinit var view: TerminalView
     private lateinit var tabsRow: LinearLayout
     private lateinit var statusRow: LinearLayout
@@ -45,9 +47,7 @@ class TerminalActivity : Activity(), TerminalHub.Observer {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         // Отступы системных панелей и клавиатуры — свои: экран терминала сжимается над клавиатурой.
-        window.setDecorFitsSystemWindows(false)
-        window.statusBarColor = Color.BLACK
-        window.navigationBarColor = Color.BLACK
+        enableEdgeToEdge()
         setContentView(layout())
         if (savedInstanceState == null) handle(intent)
         if (TerminalHub.tabs.isEmpty() && intent?.getStringExtra(EXTRA_TARGET) == null) finish()

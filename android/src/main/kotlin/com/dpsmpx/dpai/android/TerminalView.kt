@@ -15,10 +15,10 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
+import android.view.WindowInsets
 import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
-import android.view.inputmethod.InputMethodManager
 import android.widget.Toast
 import com.dpsmpx.dpai.terminal.Attr
 import com.dpsmpx.dpai.terminal.Key
@@ -214,12 +214,11 @@ class TerminalView(context: Context) : View(context) {
 
     fun showKeyboard() {
         requestFocus()
-        context.getSystemService(InputMethodManager::class.java).showSoftInput(this, InputMethodManager.SHOW_IMPLICIT)
+        windowInsetsController?.show(WindowInsets.Type.ime())
     }
 
     fun toggleKeyboard() {
-        val imm = context.getSystemService(InputMethodManager::class.java)
-        if (rootWindowInsets?.isVisible(android.view.WindowInsets.Type.ime()) == true) imm.hideSoftInputFromWindow(windowToken, 0) else showKeyboard()
+        if (rootWindowInsets?.isVisible(WindowInsets.Type.ime()) == true) windowInsetsController?.hide(WindowInsets.Type.ime()) else showKeyboard()
     }
 
     // ---- ввод ----
