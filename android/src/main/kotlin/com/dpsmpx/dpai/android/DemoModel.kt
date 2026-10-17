@@ -261,8 +261,12 @@ class DemoModel(
     /** Лист задачи (D-42): состояние и доступные действия — из неизменяемого состояния контура, без замка. */
     fun taskDetail(task: TaskId): com.dpsmpx.dpai.ui.TaskDetail? = runCatching {
         val o = built?.orchestrator ?: return null
-        o.tasks.tasks[task]?.let { com.dpsmpx.dpai.ui.TaskScreens.detail(it, o.sessions, o.waitingReason(task)) }
+        o.tasks.tasks[task]?.let { com.dpsmpx.dpai.ui.TaskScreens.detail(it, o.sessions, o.waitingReason(task), o.tasks.tasks) }
     }.getOrNull()
+
+    /** Задачи, от которых можно зависеть (D-42, п. 1): не завершённые, кроме [except]; без замка. */
+    fun dependencyChoices(except: TaskId? = null): List<com.dpsmpx.dpai.ui.DependencyLine> =
+        runCatching { built?.orchestrator?.tasks?.tasks?.let { com.dpsmpx.dpai.ui.TaskScreens.dependencyChoices(it, except) } }.getOrNull().orEmpty()
 
     /** Изменения задачи (D-42): Git по SSH — вызывать не из главного потока; без замка такта. */
     fun taskDiff(task: TaskId): Outcome<com.dpsmpx.dpai.orchestrator.git.TaskDiff> =
@@ -284,12 +288,12 @@ class DemoModel(
     fun hasLive(): Boolean = controller.targets().any { it.configDir != null }
 
     /**
-     * Новая задача контроллеру (D-42): команда с ключом нажатия [key] —
-     * повтор того же нажатия задачу не дублирует. Демо задач не берёт.
+     * Новая задача контроллеру (D-42): команда с ключом нажатия — повтор
+     * того же нажатия задачу не дублирует. Демо задач не берёт.
      */
-    fun addTask(title: String, objective: String, key: String): Outcome<TaskId> {
+    fun addTask(c: Command.AddTask): Outcome<TaskId> {
         if (!hasLive()) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "задачи ставятся только контроллеру: заведите target с каталогом Claude")
-        return command(Command.AddTask(title.trim(), objective.trim(), key = key)).then { v ->
+        return command(c).then { v ->
             when (v) {
                 is TaskId -> Outcome.success(v)
                 is String -> IdKinds.TASK.parse(v)

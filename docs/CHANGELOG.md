@@ -4,6 +4,15 @@
 и PR; что решено — `docs/direction/DECISIONS.md`.
 
 
+## 18 октября 2026 — задача с областью и зависимостями (D-42, п. 1)
+
+- «Новая задача» → «Дополнительно»: приоритет, класс, модель, усилие,
+  предел хода, область и зависимости; в листе задачи до запуска —
+  «Область и зависимости».
+- Команды `task.scope`, `task.dependencies`; `task.add` с `scope` и
+  `dependsOn`; `dpai task add --scope … --depends-on …`,
+  `dpai task <id> scope|depends`.
+
 ## 17 октября 2026 — сборка 0.1.0-dev.2 для проверки на телефоне
 
 - Ветка `apk-0.1.0-dev.2`: APK release и debug (versionCode 2, тот же

@@ -43,6 +43,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -378,11 +379,22 @@ private fun BoardPane(board: TaskBoard, live: Boolean, model: DemoModel, archive
 }
 
 /** Новая задача контроллеру: название и цель — что Claude должен сделать (ТЗ, §21). */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun NewTaskDialog(model: DemoModel, onDone: () -> Unit) {
     val scope = rememberCoroutineScope()
     var title by remember { mutableStateOf("") }
     var objective by remember { mutableStateOf("") }
+    // Всё, что задаётся при создании (D-42, п. 1), — под «Дополнительно»: обычно хватает названия и цели.
+    var more by remember { mutableStateOf(false) }
+    var priority by remember { mutableStateOf(com.dpsmpx.dpai.tasks.Priority.NORMAL) }
+    var taskClass by remember { mutableStateOf(com.dpsmpx.dpai.tasks.TaskClass.NORMAL_ENGINEERING) }
+    var modelName by remember { mutableStateOf("") }
+    var effort by remember { mutableStateOf("") }
+    var budget by remember { mutableStateOf("") }
+    var paths by remember { mutableStateOf("") }
+    var deps by remember { mutableStateOf(setOf<com.dpsmpx.dpai.core.ids.TaskId>()) }
+    val choices = remember { model.dependencyChoices() }
     // Ключ нажатия (D-42): повтор «Поставить» в этом диалоге — та же задача, а не вторая.
     val key = remember { com.dpsmpx.dpai.core.ids.IdGenerator(com.dpsmpx.dpai.core.clock.Clock.SYSTEM, com.dpsmpx.dpai.core.clock.RandomSource.secure()).next(com.dpsmpx.dpai.core.ids.IdKinds.OPERATION).value }
     var error by remember { mutableStateOf<String?>(null) }
@@ -392,9 +404,40 @@ private fun NewTaskDialog(model: DemoModel, onDone: () -> Unit) {
         onDismissRequest = onDone,
         title = { Text("Новая задача") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 OutlinedTextField(title, { title = it }, label = { Text("Название") }, singleLine = true)
                 OutlinedTextField(objective, { objective = it }, label = { Text("Что сделать") }, minLines = 3)
+                TextButton(onClick = { more = !more }) { Text(if (more) "Дополнительно ▾" else "Дополнительно ▸") }
+                if (more) {
+                    Text("Приоритет", style = MaterialTheme.typography.labelSmall)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        for (p in com.dpsmpx.dpai.tasks.Priority.entries) {
+                            androidx.compose.material3.FilterChip(selected = priority == p, onClick = { priority = p }, label = { Text(p.name.lowercase()) })
+                        }
+                    }
+                    Text("Класс — маршрут модели (D-40)", style = MaterialTheme.typography.labelSmall)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        for (c in com.dpsmpx.dpai.tasks.TaskClass.entries) {
+                            androidx.compose.material3.FilterChip(selected = taskClass == c, onClick = { taskClass = c }, label = { Text(c.name.lowercase()) })
+                        }
+                    }
+                    OutlinedTextField(modelName, { modelName = it }, label = { Text("Модель (пусто — по классу)") }, singleLine = true)
+                    OutlinedTextField(effort, { effort = it }, label = { Text("Усилие: low, medium, high (пусто — по классу)") }, singleLine = true)
+                    OutlinedTextField(budget, { budget = it }, label = { Text("Предел стоимости хода, $ (пусто — без предела)") }, singleLine = true)
+                    OutlinedTextField(paths, { paths = it }, label = { Text("Область: пути в репозитории, через запятую или с новой строки") }, minLines = 2)
+                    if (choices.isNotEmpty()) {
+                        Text("Зависит от (начнётся после них)", style = MaterialTheme.typography.labelSmall)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            for (c in choices) {
+                                androidx.compose.material3.FilterChip(
+                                    selected = c.id in deps,
+                                    onClick = { deps = if (c.id in deps) deps - c.id else deps + c.id },
+                                    label = { Text(c.title.take(32)) },
+                                )
+                            }
+                        }
+                    }
+                }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
         },
@@ -402,7 +445,12 @@ private fun NewTaskDialog(model: DemoModel, onDone: () -> Unit) {
             TextButton(enabled = !busy, onClick = {
                 busy = true
                 scope.launch {
-                    when (val r = withContext(Dispatchers.IO) { model.addTask(title, objective, key) }) {
+                    val form = com.dpsmpx.dpai.ui.NewTaskForm.command(title, objective, key, priority, taskClass, modelName, effort, budget, paths, deps)
+                    val r = when (form) {
+                        is Outcome.Failure -> form
+                        is Outcome.Success -> withContext(Dispatchers.IO) { model.addTask(form.value) }
+                    }
+                    when (r) {
                         is Outcome.Failure -> error = r.diagnostics.first().message
                         is Outcome.Success -> onDone()
                     }

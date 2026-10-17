@@ -65,11 +65,16 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
             delay(1500)
         }
     }
-    fun send(c: (String) -> Command) {
+    // Несколько команд — по очереди, до первого отказа (область, затем зависимости).
+    fun sendAll(vararg cs: (String) -> Command) {
         busy = true
-        val key = keys.next(IdKinds.OPERATION).value
+        val built = cs.map { c -> c(keys.next(IdKinds.OPERATION).value) }
         scope.launch {
-            val r = withContext(Dispatchers.IO) { model.command(c(key)) }
+            var r: Outcome<Any?> = Outcome.success(null)
+            for (c in built) {
+                r = withContext(Dispatchers.IO) { model.command(c) }
+                if (r is Outcome.Failure) break
+            }
             status = when (r) {
                 is Outcome.Success -> "Принято"
                 is Outcome.Failure -> "Не принято: ${r.diagnostics.first().message}"
@@ -80,6 +85,7 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
             confirm = null
         }
     }
+    fun send(c: (String) -> Command) = sendAll(c)
     val d = detail
     AlertDialog(
         onDismissRequest = onDone,
@@ -99,6 +105,10 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
                     "класс ${d.taskClass} · модель ${d.model ?: "по классу"} · усилие ${d.effort ?: "по классу"} · бюджет хода ${d.budgetCents?.let { "%.2f $".format(it / 100.0) } ?: "без предела"}",
                     style = MaterialTheme.typography.labelSmall,
                 )
+                d.scope?.let { Text("область: ${it.sorted().joinToString(", ")}", style = MaterialTheme.typography.labelSmall) }
+                if (d.dependencies.isNotEmpty()) {
+                    Text("зависит от: ${d.dependencies.joinToString(" · ") { "${it.title} (${it.state})" }}", style = MaterialTheme.typography.labelSmall)
+                }
                 d.reason?.let { Text("причина: $it · повторов: ${d.retries}", style = MaterialTheme.typography.labelSmall) }
                 d.waiting?.let { Text("Ждёт: $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
                 d.lastSession?.let { s -> TextButton(onClick = { onSession(s.value) }) { Text("Открыть последнюю сессию") } }
@@ -116,7 +126,7 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
                                     TaskAction.ARCHIVE -> send { Command.Archive(task, true, it) }
                                     TaskAction.UNARCHIVE -> send { Command.Archive(task, false, it) }
                                     TaskAction.CANCEL, TaskAction.WAIVE -> confirm = a
-                                    TaskAction.PRIORITY, TaskAction.POLICY, TaskAction.REPLY -> editor = a
+                                    TaskAction.PRIORITY, TaskAction.POLICY, TaskAction.SCOPE, TaskAction.REPLY -> editor = a
                                 }
                             },
                         ) { Text(a.label) }
@@ -128,6 +138,9 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
                     }
                     TaskAction.POLICY -> PolicyEditor(d, busy) { cls, m, e, b -> send { k -> Command.SetPolicy(task, cls, m, e, b, k) } }
                     TaskAction.REPLY -> ReplyEditor(busy) { text -> send { k -> Command.Retry(task, text, k) } }
+                    TaskAction.SCOPE -> ScopeEditor(d, remember(task) { model.dependencyChoices(except = task) }, busy) { paths, deps ->
+                        sendAll({ k -> Command.SetScope(task, paths, k) }, { k -> Command.SetDependencies(task, deps, k) })
+                    }
                     else -> Unit
                 }
                 status?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
@@ -182,6 +195,26 @@ private fun PolicyEditor(d: TaskDetail, busy: Boolean, onSave: (TaskClass, Strin
             val cents = budget.trim().replace(',', '.').takeIf { it.isNotEmpty() }?.let { v -> v.toBigDecimalOrNull()?.movePointRight(2)?.toLong() ?: -1L }
             if (cents != null && cents <= 0) error = "бюджет — положительное число долларов" else onSave(cls, modelName, effort, cents)
         }) { Text("Сохранить") }
+    }
+}
+
+/** Область и зависимости задачи до запуска (D-42, п. 1): пути — текстом, зависимости — выбором из незавершённых задач. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun ScopeEditor(d: TaskDetail, choices: List<com.dpsmpx.dpai.ui.DependencyLine>, busy: Boolean, onSave: (Set<String>, Set<TaskId>) -> Unit) {
+    var paths by remember { mutableStateOf(d.scope?.sorted()?.joinToString("\n").orEmpty()) }
+    var deps by remember { mutableStateOf(d.dependencies.map { it.id }.toSet()) }
+    // Уже выбранная зависимость могла завершиться — её тоже видно, чтобы её можно было снять.
+    val all = (choices + d.dependencies).distinctBy { it.id }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        OutlinedTextField(paths, { paths = it }, label = { Text("Область: пути в репозитории (пусто — без области)") }, minLines = 2)
+        if (all.isNotEmpty()) {
+            Text("Зависит от", style = MaterialTheme.typography.labelSmall)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                for (c in all) FilterChip(selected = c.id in deps, onClick = { deps = if (c.id in deps) deps - c.id else deps + c.id }, label = { Text(c.title.take(32)) })
+            }
+        }
+        TextButton(enabled = !busy, onClick = { onSave(com.dpsmpx.dpai.ui.NewTaskForm.scopePaths(paths), deps) }) { Text("Сохранить") }
     }
 }
 

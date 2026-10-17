@@ -15,6 +15,8 @@ import com.dpsmpx.dpai.tasks.TaskRecord
 enum class TaskAction(val label: String, val dangerous: Boolean = false) {
     PRIORITY("Приоритет"),
     POLICY("Модель и бюджет"),
+    /** Область и зависимости (D-42, п. 1) — до запуска. */
+    SCOPE("Область и зависимости"),
     HOLD("Приостановить"),
     RESUME("Продолжить"),
     RETRY("Повторить"),
@@ -45,7 +47,14 @@ data class TaskDetail(
     val actions: List<TaskAction>,
     /** Почему готовая задача не начинается (нет слота, подписка у предела) — если оркестратор знает. */
     val waiting: String? = null,
+    /** Область — пути в репозитории (ТЗ, §31); `null` — не заявлена. */
+    val scope: Set<String>? = null,
+    /** Зависимости: задача, её название и состояние (ТЗ, §21). */
+    val dependencies: List<DependencyLine> = emptyList(),
 )
+
+/** Строка зависимости в листе задачи. */
+data class DependencyLine(val id: TaskId, val title: String, val state: String)
 
 /**
  * Какие действия доступны задаче (D-42) — по её состоянию; оркестратор
@@ -59,6 +68,7 @@ object TaskScreens {
     fun actions(t: TaskRecord): List<TaskAction> = buildList {
         if (!t.terminal) add(TaskAction.PRIORITY)
         if (t.state in EDITABLE) add(TaskAction.POLICY)
+        if (t.state in EDITABLE && !t.terminal) add(TaskAction.SCOPE)
         if (t.held) add(TaskAction.RESUME) else if (t.state in HOLDABLE) add(TaskAction.HOLD)
         if (t.state == TaskState.FAILED || t.state == TaskState.CANCELLED || t.state == TaskState.BLOCKED) add(TaskAction.RETRY)
         if (t.state == TaskState.BLOCKED) add(TaskAction.REPLY)
@@ -70,7 +80,7 @@ object TaskScreens {
         if (t.terminal) add(if (t.archived) TaskAction.UNARCHIVE else TaskAction.ARCHIVE)
     }
 
-    fun detail(t: TaskRecord, sessions: SessionsState, waiting: String? = null): TaskDetail = TaskDetail(
+    fun detail(t: TaskRecord, sessions: SessionsState, waiting: String? = null, tasks: Map<TaskId, TaskRecord> = emptyMap()): TaskDetail = TaskDetail(
         id = t.id, title = t.title, objective = t.objective,
         state = t.state.name, tone = Screens.tone(t.state), held = t.held, priority = t.priority.name,
         taskClass = t.policy.taskClass, model = t.policy.model, effort = t.policy.effort, budgetCents = t.policy.maxBudgetUsdCents,
@@ -78,5 +88,16 @@ object TaskScreens {
         lastSession = sessions.sessions.values.filter { it.task == t.id }.maxByOrNull { it.createdAt.epochMillis }?.id,
         actions = actions(t),
         waiting = waiting?.takeIf { t.state == TaskState.READY },
+        scope = t.scope,
+        dependencies = t.dependencies.map { d -> DependencyLine(d, tasks[d]?.title ?: d.value, tasks[d]?.state?.name ?: "?") }.sortedBy { it.title },
     )
+
+    /**
+     * Задачи, от которых можно зависеть (D-42, п. 1): не завершённые, кроме
+     * самой [except]; по названию. Оркестратор цикл всё равно отвергнет.
+     */
+    fun dependencyChoices(tasks: Map<TaskId, TaskRecord>, except: TaskId? = null): List<DependencyLine> =
+        tasks.values.filter { !it.terminal && !it.archived && it.id != except }
+            .map { DependencyLine(it.id, it.title, it.state.name) }
+            .sortedBy { it.title }
 }
