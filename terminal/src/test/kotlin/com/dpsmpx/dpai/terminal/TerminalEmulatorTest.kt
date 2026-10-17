@@ -425,6 +425,20 @@ class TerminalEmulatorTest {
     }
 
     @Test
+    fun linksAreFoundAcrossSoftWraps() {
+        val t = TerminalEmulator(20, 4)
+        t.feed("Open https://example.org/sign/in?code=abc123xyz (in browser).")
+        // Адрес перенесён по ширине: касание на любой его части даёт его целиком.
+        assertEquals("https://example.org/sign/in?code=abc123xyz", t.linkAt(0, 7))
+        assertEquals("https://example.org/sign/in?code=abc123xyz", t.linkAt(2, 3))
+        assertEquals(null, t.linkAt(0, 1))
+        val x = TerminalEmulator(40, 2)
+        x.feed("intent://evil#Intent;end file:///etc/passwd")
+        assertEquals(null, x.linkAt(0, 3))
+        assertEquals(null, x.linkAt(0, 30))
+    }
+
+    @Test
     fun historyCountersFollowScrolling() {
         val t = TerminalEmulator(10, 2, scrollbackMax = 3)
         repeat(6) { t.feed("$it\r\n") }

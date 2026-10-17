@@ -1029,6 +1029,36 @@ class TerminalEmulator(
     fun screenText(): String = (0 until rows).joinToString("\n") { screen[it].text() }.trimEnd('\n')
 
     /**
+     * Ссылка `http(s)://` под ячейкой ([line] — сквозной номер, [col] —
+     * столбец) или `null`. Логическая строка собирается из мягких
+     * переносов: длинный адрес входа Claude (`/login`) переносится по
+     * ширине экрана. Другие схемы (`intent:`, `file:`) не ссылки — их
+     * программа на target могла бы подсунуть.
+     */
+    fun linkAt(line: Int, col: Int): String? {
+        if (line !in 0 until lineCount) return null
+        var first = line
+        while (first > 0 && line(first - 1).wrapped) first--
+        var last = line
+        while (last < lineCount - 1 && line(last).wrapped) last++
+        val text = StringBuilder()
+        var at = -1
+        for (l in first..last) {
+            val r = line(l)
+            for (c in 0 until r.cols) {
+                if (l == line && c == col) at = text.length
+                text.append(r.text(c))
+            }
+        }
+        if (at < 0) return null
+        for (m in LINK.findAll(text)) {
+            val url = m.value.trimEnd('.', ',', ';', ':', '!', '?', ')', ']', '»', '"', '\'')
+            if (at >= m.range.first && at < m.range.first + url.length) return url
+        }
+        return null
+    }
+
+    /**
      * Текст выделения по сквозным номерам строк: от ([fromLine], [fromCol])
      * до ([toLine], [toCol]) включительно; мягкий перенос — без `\n`.
      */
@@ -1045,6 +1075,7 @@ class TerminalEmulator(
     }
 
     companion object {
+        private val LINK = Regex("https?://[^\\s<>\"'`]+")
         const val MAX_COLS = 1_000
         const val MAX_ROWS = 500
         private const val ESC = 0x1b

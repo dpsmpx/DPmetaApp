@@ -176,6 +176,36 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         setOnClickListener { onClick() }
     }
 
+    /**
+     * Клавиша с повтором при удержании (стрелки, листание): первое нажатие
+     * сразу, через [REPEAT_DELAY_MS] — повтор каждые [REPEAT_EVERY_MS], как
+     * у клавиатуры. Отпустили или палец ушёл (прокрутка ряда) — повтор
+     * кончается.
+     */
+    @android.annotation.SuppressLint("ClickableViewAccessibility") // нажатие для TalkBack — тот же onClick
+    private fun repeatChip(text: String, action: () -> Unit): TextView = chip(text, action).apply {
+        val repeat = object : Runnable {
+            override fun run() {
+                action()
+                postDelayed(this, REPEAT_EVERY_MS)
+            }
+        }
+        setOnTouchListener { v, e ->
+            when (e.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    v.isPressed = true
+                    action()
+                    v.postDelayed(repeat, REPEAT_DELAY_MS)
+                }
+                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                    v.isPressed = false
+                    v.removeCallbacks(repeat)
+                }
+            }
+            true
+        }
+    }
+
     private fun scrollRow(row: LinearLayout) = HorizontalScrollView(this).apply {
         isHorizontalScrollBarEnabled = false
         setBackgroundColor(0xff1a1a1a.toInt())
@@ -206,14 +236,14 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         keys.addView(ctrlKey)
         keys.addView(altKey)
         keys.addView(chip("TAB") { view.key(Key.TAB) })
-        keys.addView(chip("←") { view.key(Key.LEFT) })
-        keys.addView(chip("↓") { view.key(Key.DOWN) })
-        keys.addView(chip("↑") { view.key(Key.UP) })
-        keys.addView(chip("→") { view.key(Key.RIGHT) })
+        keys.addView(repeatChip("←") { view.key(Key.LEFT) })
+        keys.addView(repeatChip("↓") { view.key(Key.DOWN) })
+        keys.addView(repeatChip("↑") { view.key(Key.UP) })
+        keys.addView(repeatChip("→") { view.key(Key.RIGHT) })
         keys.addView(chip("HOME") { view.key(Key.HOME) })
         keys.addView(chip("END") { view.key(Key.END) })
-        keys.addView(chip("PGUP") { view.key(Key.PAGE_UP) })
-        keys.addView(chip("PGDN") { view.key(Key.PAGE_DOWN) })
+        keys.addView(repeatChip("PGUP") { view.key(Key.PAGE_UP) })
+        keys.addView(repeatChip("PGDN") { view.key(Key.PAGE_DOWN) })
         for (s in listOf("-", "/", "|", "~", "\\")) keys.addView(chip(s) { view.input(s) })
         keys.addView(chip("Вставить") { paste() })
         keys.addView(chip("⌨") { view.toggleKeyboard() })
@@ -282,6 +312,8 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         const val EXTRA_CLAUDE = "com.dpsmpx.dpai.terminal.CLAUDE"
         private const val PREVIEW = 500
         private const val MAX_CLIP = 100_000
+        private const val REPEAT_DELAY_MS = 400L
+        private const val REPEAT_EVERY_MS = 60L
         private val ACTIVE = 0xff66ccff.toInt()
 
         /** Открыть терминал target: оболочку или `claude` слота; без target — открытые вкладки. */

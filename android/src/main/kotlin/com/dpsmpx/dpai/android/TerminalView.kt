@@ -76,8 +76,25 @@ class TerminalView(context: Context) : View(context) {
     private var selection: IntArray? = null
     private var selecting = false
 
+    /** Инерция прокрутки истории после смахивания. */
+    private val flinger = android.widget.OverScroller(context)
+    private var flingLastY = 0
+
     private val gestures = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
-        override fun onDown(e: MotionEvent): Boolean = true
+        override fun onDown(e: MotionEvent): Boolean {
+            flinger.forceFinished(true)
+            return true
+        }
+
+        override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
+            if (selecting) return true
+            flingLastY = 0
+            flinger.fling(0, 0, 0, -velocityY.toInt(), 0, 0, Int.MIN_VALUE / 2, Int.MAX_VALUE / 2)
+            lastFling?.recycle()
+            lastFling = MotionEvent.obtain(e2)
+            postInvalidateOnAnimation()
+            return true
+        }
 
         override fun onSingleTapUp(e: MotionEvent): Boolean {
             if (selection != null) {
@@ -87,13 +104,15 @@ class TerminalView(context: Context) : View(context) {
             }
             val t = tab ?: return true
             val mouse = t.session.read { it.mouseMode } != MouseMode.NONE
+            val (c, r) = cell(e)
             if (mouse) {
-                val (c, r) = cell(e)
                 t.session.mouse(MouseButton.LEFT, c, r, pressed = true, motion = false)
                 t.session.mouse(MouseButton.LEFT, c, r, pressed = false, motion = false)
-            } else {
-                showKeyboard()
+                return true
             }
+            // Ссылка под пальцем (адрес входа Claude из `/login`) — в браузер; иначе — клавиатура.
+            val link = t.session.read { it.linkAt(it.scrollbackSize - scrollBack + r, c) }
+            if (link != null) openLink(link) else showKeyboard()
             return true
         }
 
@@ -168,6 +187,33 @@ class TerminalView(context: Context) : View(context) {
     fun screenChanged() {
         val sync = tab?.session?.read { it.syncOutput } == true
         if (sync) postInvalidateDelayed(SYNC_REDRAW_MS) else postInvalidateOnAnimation()
+    }
+
+    /** Последнее смахивание: место пальца для колеса мыши и стрелок во время инерции. */
+    private var lastFling: MotionEvent? = null
+
+    override fun computeScroll() {
+        if (!flinger.computeScrollOffset()) return
+        val y = flinger.currY
+        scrollAccum += (y - flingLastY).toFloat()
+        flingLastY = y
+        val lines = (scrollAccum / cellH).toInt()
+        if (lines != 0) {
+            scrollAccum -= lines * cellH
+            lastFling?.let { scrollLines(lines, it) }
+            // Упёрлись в край истории в сторону движения — инерция кончается, а не крутит впустую.
+            val (history, app) = tab?.session?.read { it.scrollbackSize to (it.altScreen || it.mouseMode != MouseMode.NONE) } ?: (0 to false)
+            if (!app && ((lines > 0 && scrollBack == 0) || (lines < 0 && scrollBack >= history))) flinger.forceFinished(true)
+        }
+        postInvalidateOnAnimation()
+    }
+
+    private fun openLink(url: String) {
+        try {
+            context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (_: android.content.ActivityNotFoundException) {
+            Toast.makeText(context, "Нет приложения для ссылки — скопируйте её долгим нажатием", Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun cell(e: MotionEvent): Pair<Int, Int> {
