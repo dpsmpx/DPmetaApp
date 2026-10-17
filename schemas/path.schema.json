@@ -60,6 +60,12 @@
           "when": {"$ref": "#/$defs/label"},
           "title": {"$ref": "#/$defs/label"},
           "repos": {"type": "array", "items": {"$ref": "#/$defs/nodeRef"}},
+          "merged": {
+            "description": "Репозитории, которые на этой станции вошли в другой: {вошедший: куда}; дальше по маршруту — без отдельного квадрата",
+            "type": "object",
+            "propertyNames": {"$ref": "#/$defs/nodeRef"},
+            "additionalProperties": {"$ref": "#/$defs/nodeRef"}
+          },
           "texts": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/text"}},
           "plan": {"type": "boolean"}
         }

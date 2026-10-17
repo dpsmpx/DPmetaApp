@@ -10,8 +10,10 @@
 # Проект без публичного имени — только «ещё 1 проект без публичного имени» (Д42, Д43); личные
 # заметки — без имени репозитория (Д2, ОР-8); ранние открытые проекты — одной станцией «2023», по именам
 # (слово автора 10.10.2026, Д44): текстом, без квадратов — в текущую систему они не входят.
+# «Всё в одном» (DPmetaApp D-28, 10.10.2026; П2-28): DP_AI_Orcestrator — подсистема DPmetaApp, а не
+# отдельный проект: на маршруте с этой станции без своего квадрата (merged), в цели — подсистема ИИ.
 schema: path/v1
-as_of: 2026-10-07                       # «сейчас» на маршруте
+as_of: 2026-10-17                       # «сейчас» на маршруте
 
 # Кто есть на пути и в цели. group — цвет квадрата на маршруте: game — игра, core — ядро на срезе
 # 5 октября, new — репозитории после среза, hidden — без публичного имени. kind: repo | service | other.
@@ -26,10 +28,11 @@ nodes:
   market:          {name: {ru: анализ рынка игр, en: game market analysis}, kind: repo, group: core, role: {fact: MKT-WHAT}, stage: {fact: MKT-STAGE}}
   undisclosed:     {name: {ru: ещё 1 проект без публичного имени, en: 1 more project without a public name}, kind: repo, group: hidden}
   dpmeta:          {name: DPmeta, kind: repo, group: core, role: {fact: META-WHAT}, stage: {fact: META-STAGE}}
-  dpmetaapp:       {name: DPmetaApp, kind: repo, group: new, role: {fact: APP-WHAT}}
+  dpmetaapp:       {name: DPmetaApp, kind: repo, group: new, role: {fact: APP-NOW}}
   dpmonetization:  {name: DPmonetization, kind: repo, group: new, role: {fact: MON-WHAT}}
   dpvisualisation: {name: DPvisualisation, kind: repo, group: new, role: {fact: VIS-WHAT, idx: 1}}
-  orchestrator:    {name: DP_AI_Orcestrator, kind: repo, group: new, role: {fact: ORC-WHAT}, stage: {fact: ORC-STAGE}}
+  orchestrator:    {name: DP_AI_Orcestrator, kind: repo, group: new, role: {fact: ORC-WHAT}}
+  dpai:            {name: {ru: подсистема ИИ в DPmetaApp, en: the AI subsystem in DPmetaApp}, kind: other, role: {fact: ORC-WHAT}}
   github:          {name: GitHub, kind: service}
   site:            {name: {ru: сайт dpsmpx.com, en: the dpsmpx.com site}, kind: service}
   sessions:        {name: {ru: сессии Claude, en: Claude sessions}, kind: other}
@@ -70,6 +73,11 @@ stations:
     title: {ru: Цель записана, en: Goal written down}
     repos: [orchestrator]
     texts: [{fact: GOAL-PLAN, idx: 3}, {fact: ECO-NEW-2026-10-06, idx: 1}]
+  - id: all-in-one
+    date: 2026-10-10
+    title: {ru: Всё в одном, en: All in one}
+    merged: {orchestrator: dpmetaapp}
+    texts: [{fact: APP-NOW}]
   - id: phase-a
     plan: true
     when: {ru: "фаза A", en: "phase A"}
@@ -91,7 +99,7 @@ goal:
   domains:
     - {id: dev, title: {ru: Разработка, en: Development}, nodes: [galdhold, dplang, dplang_ide, dpverify, dpmeta, github, undisclosed]}
     - {id: knowledge, title: {ru: Знание, en: Knowledge}, nodes: [notes, dpprofile, dplearn]}
-    - {id: ai, title: {ru: ИИ, en: AI}, nodes: [orchestrator, sessions]}
+    - {id: ai, title: {ru: ИИ, en: AI}, nodes: [dpai, sessions]}
     - {id: analytics, title: {ru: Аналитика, en: Analytics}, nodes: [market, dpmonetization]}
     - {id: content, title: {ru: Контент, en: Content}, nodes: [smi, site]}
   base: {node: dpvisualisation, text: {fact: GOAL-ARCH, idx: 2}}

@@ -168,6 +168,7 @@ def problems(data: dict, fact_ok, milestones: dict) -> list[str]:
             if n.get(key):
                 text_ok(n[key], f"узел {nid}, {key}")
     seen_plan = False
+    seen_repos: set[str] = set()
     for st in data.get("stations") or []:
         sid = st["id"]
         if st.get("plan"):
@@ -179,6 +180,12 @@ def problems(data: dict, fact_ok, milestones: dict) -> list[str]:
         for r in st.get("repos") or []:
             if r not in nodes:
                 out.append(f"путь: станция {sid}: узла {r} нет в nodes")
+        for r, into in (st.get("merged") or {}).items():
+            if r not in seen_repos:
+                out.append(f"путь: станция {sid}: вошедший {r} не появлялся на маршруте раньше")
+            if into not in seen_repos | set(st.get("repos") or []):
+                out.append(f"путь: станция {sid}: {r} входит в {into}, а {into} на маршруте ещё нет")
+        seen_repos |= set(st.get("repos") or [])
         lo, hi = _date(st.get("date")), _date(st.get("date_to") or st.get("date"))
         for src in st.get("texts") or []:
             text_ok(src, f"станция {sid}")
@@ -306,6 +313,7 @@ def route_svg(data: dict, lang: str, goal_name: str) -> str:
             continue
         new = [r for r in st.get("repos") or [] if r not in cum]
         cum += new
+        cum = [r for r in cum if r not in (st.get("merged") or {})]  # вошедший в другой — без своего квадрата
         plan = bool(st.get("plan"))
         last = i == len(slots) - 1
         # квадраты: два столбца снизу вверх, в порядке появления
@@ -414,7 +422,9 @@ class _Goal:
         app_text = strip_name(self.say(app["text"]) or "", app_name)
         aw = W - 16 if narrow else 440
         ax = (W - aw) / 2
-        p, ah = self.box(ax, 4, aw, app_name, wrap(app_text, aw - 24, 12), True, "g-appt", lab["plan"])
+        app_plan = bool(self.nodes[app["node"]].get("plan"))  # приложение уже есть — сплошная рамка (APP-NOW)
+        p, ah = self.box(ax, 4, aw, app_name, wrap(app_text, aw - 24, 12), app_plan, "g-appt",
+                         lab["plan"] if app_plan else lab["exists"])
         parts.append(p)
         cores = self.goal["cores"]
         gap = 12 if narrow else 36

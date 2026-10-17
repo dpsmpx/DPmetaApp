@@ -473,6 +473,39 @@ class JourneyPath(unittest.TestCase):
         rep, _ = self.build(self.repo(boast))
         self.assertTrue(any("AH-SUPERLATIVE" in e for e in rep.errors), rep.errors)
 
+    def test_all_in_one(self):
+        """П2-28: «всё в одном» (DPmetaApp D-28) — оркестратор входит в DPmetaApp: дальше без своего квадрата,
+        в цели — подсистема ИИ, а не отдельный проект; рамка DPmetaApp сплошная (приложение есть, APP-NOW)."""
+        import re as _re
+        from tools.cs.site.path import route_svg
+        data = yaml.safe_load((ROOT / "data/website/path.yaml").read_text(encoding="utf-8"))
+        st = next(s for s in data["stations"] if s["id"] == "all-in-one")
+        self.assertEqual(st["merged"], {"orchestrator": "dpmetaapp"})
+        svg = route_svg(data, "ru", "DPmetaApp")
+        titles = _re.findall(r"<title>([^<]+)</title></rect>", svg)
+        self.assertEqual(titles.count("DP_AI_Orcestrator"), 1, "квадрат оркестратора — только на станции «Цель записана»")
+        ai = next(d for d in data["goal"]["domains"] if d["id"] == "ai")
+        self.assertNotIn("orchestrator", ai["nodes"])
+        page = self.page()
+        self.assertIn("<h3>Всё в одном</h3>", page)
+        self.assertIn("<strong>подсистема ИИ в DPmetaApp</strong>", page)
+        app_box = _re.search(r'<rect[^>]*class="(g-box[^"]*)"/><text[^>]*class="t-lab g-appt"', page)
+        self.assertEqual(app_box.group(1), "g-box", "приложение уже есть — сплошная рамка")
+
+    def test_bad_merge_is_a_build_error(self):
+        def merge_unknown(d):
+            next(s for s in d["stations"] if s["id"] == "all-in-one")["merged"] = {"nobody": "dpmetaapp"}
+
+        def merge_into_future(d):
+            st = next(s for s in d["stations"] if s["id"] == "goal")
+            st["merged"] = {"dpvisualisation": "orchestrator"}
+            d["stations"][0]["merged"] = {"galdhold": "dpmeta"}
+
+        for mutate, word in ((merge_unknown, "вошедший nobody"), (merge_into_future, "а dpmeta на маршруте ещё нет")):
+            rep, out = self.build(self.repo(mutate))
+            self.assertTrue(any(word in e for e in rep.errors), (word, rep.errors))
+            self.assertFalse((out / "path/index.html").exists())
+
     def test_dates_and_wrap(self):
         from tools.cs.site.path import sentence, when, when_short, wrap
         st = {"date": "2026-09-25", "date_to": "2026-09-29"}
