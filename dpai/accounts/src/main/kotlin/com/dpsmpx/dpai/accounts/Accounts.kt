@@ -269,9 +269,10 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
             else -> candidates.filter { s1.subscriptions.getValue(it.subscriptionId).rotationAllowed }
         }
         if (pool.isEmpty()) return Outcome.failure(DiagCode.ACCOUNT_NONE_AVAILABLE, explainNone(s1, now, previous, target, urgent), "task $task")
-        if (switching) {
+        val limit = policy.maxSwitchesPerTask
+        if (switching && limit != null) {
             val recent = s1.switches[task].orEmpty().count { it > now - policy.switchWindow }
-            if (recent >= policy.maxSwitchesPerTask) {
+            if (recent >= limit) {
                 return Outcome.failure(
                     DiagCode.ACCOUNT_SWITCH_LOOP,
                     "задача уже переходила между подписками $recent раз за ${formatDuration(policy.switchWindow)}: переход остановлен",

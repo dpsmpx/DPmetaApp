@@ -216,6 +216,76 @@ class V1ScenariosTest {
     }
 
     @Test
+    fun taskChatHoldsRequestsModelTextsAndEventsInOrder() {
+        // D-59: лента чата задачи — цель задачи, событие начала на слоте, тексты модели, запрос человека;
+        // без вызовов инструментов.
+        setUp(slots = 1)
+        val t = task("чат", MockScenario.SUCCESS)
+        runUntilQuiet()
+        val chat = orchestrator.chat(t)
+        assertEquals(com.dpsmpx.dpai.orchestrator.ChatRole.USER, chat.first().role)
+        assertTrue(chat.first().text.startsWith("чат"), chat.first().text)
+        assertTrue(chat.any { it.role == com.dpsmpx.dpai.orchestrator.ChatRole.EVENT && it.text.startsWith("попытка 1") }, chat.toString())
+        assertTrue(chat.any { it.role == com.dpsmpx.dpai.orchestrator.ChatRole.ASSISTANT }, chat.toString())
+        assertTrue(chat.none { "tool_use" in it.text || "\"name\"" in it.text }, "инструменты в ленту не попадают")
+        assertEquals(chat.sortedBy { it.at.epochMillis }, chat, "по порядку")
+    }
+
+    @Test
+    fun messageDuringTurnWaitsForItsEndAndGoesToTheSameSession() {
+        // D-60: сообщение во время хода не прерывает его — ход доигрывает, сообщение уходит в ту же
+        // сессию Claude (--resume) сразу после хода, раньше проверки; в чате — запрос и «в очереди».
+        setUp(slots = 1)
+        val t = task("очередь", MockScenario.SLOW_OUTPUT, MockScenario.SUCCESS)
+        orchestrator.tick()
+        orchestrator.tick()
+        val first = orchestrator.sessions.sessions.values.single { it.task == t }
+        assertEquals(SessionState.RUNNING, first.state)
+        val r = orchestrator.sendToSession(first.id, "добавь ещё тест", null, null, false)
+        assertTrue(r is Outcome.Success, r.toString())
+        assertEquals(1, orchestrator.queued(t).size, "сообщение в очереди")
+        assertEquals(SessionState.RUNNING, orchestrator.sessions.sessions.getValue(first.id).state, "ход не прерван")
+        runUntilQuiet()
+        assertEquals(TaskState.DONE, state(t))
+        val all = orchestrator.sessions.sessions.values.filter { it.task == t }.sortedBy { it.id.value }
+        assertEquals(2, all.size, all.toString())
+        assertEquals(first.id, all[1].continues, "вторая сессия продолжает первую")
+        assertEquals(first.provider, all[1].provider, "та же сессия Claude (--resume)")
+        assertTrue(orchestrator.handoffs.all().any { it.session == first.id && "добавь ещё тест" in it.nextAction }, "текст человека — в handoff")
+        assertTrue(orchestrator.queued(t).isEmpty(), "очередь доставлена")
+        val chat = orchestrator.chat(t)
+        assertTrue(chat.any { it.role == com.dpsmpx.dpai.orchestrator.ChatRole.USER && it.text == "добавь ещё тест" }, chat.toString())
+        assertEquals(1, chat.count { it.role == com.dpsmpx.dpai.orchestrator.ChatRole.USER && it.text == "добавь ещё тест" }, "запрос в чате — один раз")
+        assertTrue(chat.any { it.text.startsWith("в очереди") } && chat.any { it.text.startsWith("сообщение из очереди отправлено") })
+    }
+
+    @Test
+    fun manualMoveContinuesOnChosenSlotWithTheTaskContext() {
+        // D-66: перенос во время хода его не прерывает; следующий ход — на выбранном слоте свежей сессией,
+        // в её контексте — переписка задачи с исходным запросом человека; в чате — событие переноса.
+        setUp(slots = 2)
+        val t = task("перенос", MockScenario.PARTIAL_COMPLETION, MockScenario.SUCCESS)
+        orchestrator.tick()
+        val first = orchestrator.sessions.sessions.values.single { it.task == t }
+        val other = orchestrator.accounts.slots.values.map { it.targetId }.first { it != first.target }
+        val r = orchestrator.submit(com.dpsmpx.dpai.orchestrator.commands.Command.MoveTask(t, other))
+        orchestrator.runCommands()
+        assertTrue(r.get().outcome is Outcome.Success, r.get().outcome.toString())
+        assertEquals(other, orchestrator.pinned(t))
+        runUntilQuiet()
+        assertEquals(TaskState.DONE, state(t))
+        val all = orchestrator.sessions.sessions.values.filter { it.task == t }.sortedBy { it.id.value }
+        assertEquals(2, all.size, all.toString())
+        assertEquals(other, all[1].target, "второй ход — на выбранном слоте")
+        assertTrue(all[1].provider != first.provider, "другой слот — свежая сессия")
+        val ctx = orchestrator.lastContext(t)!!
+        val transcript = ctx.sources.firstOrNull { it.key == com.dpsmpx.dpai.orchestrator.Orchestrator.TRANSCRIPT_SOURCE }
+        assertTrue(transcript != null && "цель: перенос" in transcript.content, ctx.sources.map { it.key }.toString())
+        assertEquals(null, orchestrator.pinned(t), "выбор — на один ход")
+        assertTrue(orchestrator.chat(t).any { it.text.startsWith("перенос на ") })
+    }
+
+    @Test
     fun scenario3RecoveryAfterFailure() {
         setUp(slots = 1)
         val t = task("падение", MockScenario.CRASH, MockScenario.SUCCESS)

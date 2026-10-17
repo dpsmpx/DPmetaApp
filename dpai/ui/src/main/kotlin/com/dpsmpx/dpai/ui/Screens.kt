@@ -68,7 +68,26 @@ data class SessionScreen(
     val actions: List<SessionAction> = emptyList(),
     /** Расход сессии (D-42, п. 4) — [Screens.usageLine]; ходов ещё нет — `null`. */
     val usage: String? = null,
+    /** Задача сессии и лента её чата (D-59): все сессии задачи в одном пространстве. */
+    val title: String? = null,
+    val chat: List<ChatLine> = emptyList(),
+    /** Задача сессии — к ней привязано имя, которое задаёт человек; и состояние для кружка в заголовке. */
+    val task: TaskId? = null,
+    val status: SessionStatus = SessionStatus.IDLE,
+    /** Сколько идёт текущий ход — «5 мин» (от начала хода в журнале сессии); ход не идёт — `null`. */
+    val workingFor: String? = null,
 )
+
+/** Состояние сессии одним знаком в заголовке окна (D-61): идёт, готово, ошибка или ждёт. */
+enum class SessionStatus { RUNNING, DONE, ERROR, IDLE }
+
+/**
+ * Строка ленты чата (D-59): [mine] — запрос человека (справа); [thinking]
+ * — рассуждение модели (свёрнуто); [event] — событие контура одной строкой
+ * по центру; иначе — текст модели. [here] — запись этой сессии, а не
+ * соседней сессии той же задачи.
+ */
+data class ChatLine(val text: String, val time: String, val mine: Boolean = false, val thinking: Boolean = false, val event: Boolean = false, val here: Boolean = true)
 
 /** Действие человека с сессией (D-42, п. 3). */
 enum class SessionAction(val label: String) {
@@ -147,6 +166,63 @@ object Screens {
         )
     }
 
+    /**
+     * Состояние для кружка в заголовке (D-61): ход идёт — «идёт»; задача
+     * готова или ход завершён — «готово»; сбой или блок — «ошибка»; иначе —
+     * «ждёт» (очередь, пауза, проверка).
+     */
+    fun sessionStatus(record: SessionRecord?, taskState: TaskState?, running: Boolean): SessionStatus = when {
+        running -> SessionStatus.RUNNING
+        taskState == TaskState.FAILED || taskState == TaskState.BLOCKED ||
+            record?.state == com.dpsmpx.dpai.core.state.SessionState.FAILED || record?.state == com.dpsmpx.dpai.core.state.SessionState.BLOCKED -> SessionStatus.ERROR
+        taskState == TaskState.DONE || taskState == TaskState.VERIFIED || taskState == TaskState.COMPLETION_UNVERIFIED -> SessionStatus.DONE
+        else -> SessionStatus.IDLE
+    }
+
+    /**
+     * Лента задачи целиком (D-62): записи чата и то, что было до него —
+     * итоги ходов из `dpai.task-messages` раньше первой записи чата и цель
+     * задачи, если чат начался не с неё (задачи, начатые до D-59). Вывод
+     * модели — только в чате, лист задачи его больше не показывает.
+     */
+    fun chatEntries(
+        chat: List<com.dpsmpx.dpai.orchestrator.ChatEntry>,
+        turns: List<com.dpsmpx.dpai.orchestrator.TurnMessage>,
+        task: com.dpsmpx.dpai.tasks.TaskRecord?,
+    ): List<com.dpsmpx.dpai.orchestrator.ChatEntry> {
+        val first = chat.firstOrNull()?.at?.epochMillis ?: Long.MAX_VALUE
+        val older = turns.filter { it.at.epochMillis < first }
+            .map { com.dpsmpx.dpai.orchestrator.TaskChat.entry(it.at, com.dpsmpx.dpai.orchestrator.ChatRole.ASSISTANT, it.text, it.session) }
+        val goal = task?.takeIf { chat.firstOrNull()?.role != com.dpsmpx.dpai.orchestrator.ChatRole.USER }?.let { t ->
+            com.dpsmpx.dpai.orchestrator.TaskChat.entry(t.createdAt, com.dpsmpx.dpai.orchestrator.ChatRole.USER, if (t.objective.trim() == t.title.trim()) t.title else "${t.title}\n\n${t.objective}")
+        }
+        return (listOfNotNull(goal) + older + chat).sortedBy { it.at.epochMillis }
+    }
+
+    /**
+     * Лента чата задачи для экрана (D-59): время — «ЧЧ:ММ» в поясе [zone],
+     * у записей другого дня — «ДД.ММ ЧЧ:ММ»; записи по порядку.
+     */
+    fun chat(
+        entries: List<com.dpsmpx.dpai.orchestrator.ChatEntry>,
+        session: SessionId?,
+        now: com.dpsmpx.dpai.core.clock.Timestamp,
+        zone: java.time.ZoneId = java.time.ZoneId.systemDefault(),
+    ): List<ChatLine> {
+        val today = java.time.Instant.ofEpochMilli(now.epochMillis).atZone(zone).toLocalDate()
+        return entries.map { e ->
+            val t = java.time.Instant.ofEpochMilli(e.at.epochMillis).atZone(zone)
+            val time = if (t.toLocalDate() == today) "%02d:%02d".format(t.hour, t.minute) else "%02d.%02d %02d:%02d".format(t.dayOfMonth, t.monthValue, t.hour, t.minute)
+            ChatLine(
+                e.text, time,
+                mine = e.role == com.dpsmpx.dpai.orchestrator.ChatRole.USER,
+                thinking = e.role == com.dpsmpx.dpai.orchestrator.ChatRole.THINKING,
+                event = e.role == com.dpsmpx.dpai.orchestrator.ChatRole.EVENT,
+                here = e.session == null || session == null || e.session == session,
+            )
+        }
+    }
+
     /** Расход части сессий (D-42, п. 4): одной задачи или одной сессии — тот же отчёт D-40 по выборке. */
     fun usage(sessions: SessionsState, pick: (SessionRecord) -> Boolean): UsageReport =
         UsageReport.build(SessionsState(sessions.sessions.filterValues(pick)), TasksState.EMPTY)
@@ -192,10 +268,9 @@ object Screens {
         val taskState = tasks.tasks[s.task]?.state
         return buildList {
             if (!s.terminal && s.state !in WAIT) add(SessionAction.STOP)
-            if (last && !running && taskState !in BUSY) {
-                add(SessionAction.SEND)
-                add(SessionAction.FRESH)
-            }
+            // Во время хода сообщение — в очередь, ход не прерывается (D-60); свежая сессия — после хода.
+            if (last && (running || taskState !in BUSY)) add(SessionAction.SEND)
+            if (last && !running && taskState !in BUSY) add(SessionAction.FRESH)
         }
     }
 
@@ -238,6 +313,13 @@ object Screens {
         }
 
     /** «3 с назад», «2 мин назад»; будущее (часы разошлись) — «только что». */
+    /** Длительность для «работает …»: «40 с», «5 мин», «1 ч 5 мин». */
+    fun duration(ms: Long): String = when {
+        ms < 60_000 -> "${(ms / 1_000).coerceAtLeast(0)} с"
+        ms < 3_600_000 -> "${ms / 60_000} мин"
+        else -> "${ms / 3_600_000} ч ${ms % 3_600_000 / 60_000} мин"
+    }
+
     fun ago(ms: Long): String = when {
         ms < 1_000 -> "только что"
         ms < 60_000 -> "${ms / 1_000} с назад"

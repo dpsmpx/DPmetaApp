@@ -123,10 +123,22 @@ class DemoSystem(
     override fun dashboard(): DashboardScreen =
         Screens.dashboard(orchestrator.dashboard(), diagnosis(), orchestrator.usage()).copy(limits = Screens.limits(orchestrator.accounts, clock.now()))
 
-    override fun session(id: SessionId): SessionScreen = Screens.session(
-        orchestrator.dashboard(), id, events(), orchestrator.live(id), clock.now(), Screens.sessionActions(id, orchestrator.sessions, orchestrator.tasks),
-        Screens.usage(orchestrator.sessions) { it.id == id },
-    )
+    override fun session(id: SessionId): SessionScreen {
+        val base = Screens.session(
+            orchestrator.dashboard(), id, events(), orchestrator.live(id), clock.now(), Screens.sessionActions(id, orchestrator.sessions, orchestrator.tasks),
+            Screens.usage(orchestrator.sessions) { it.id == id },
+        )
+        val task = orchestrator.sessions.sessions[id]?.task ?: return base
+        val record = orchestrator.sessions.sessions[id]
+        val running = orchestrator.sessions.sessions.values.any {
+            it.task == task && !it.terminal && it.state in setOf(com.dpsmpx.dpai.core.state.SessionState.STARTING, com.dpsmpx.dpai.core.state.SessionState.RUNNING, com.dpsmpx.dpai.core.state.SessionState.NEAR_LIMIT)
+        }
+        return base.copy(
+            title = orchestrator.tasks.tasks[task]?.title,
+            chat = Screens.chat(Screens.chatEntries(orchestrator.chat(task), orchestrator.turnMessages(task), orchestrator.tasks.tasks[task]), id, clock.now()),
+            task = task, status = Screens.sessionStatus(record, orchestrator.tasks.tasks[task]?.state, running),
+        )
+    }
 
     override fun board(): TaskBoard = Screens.board(orchestrator.tasks)
 }

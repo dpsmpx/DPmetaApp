@@ -288,6 +288,24 @@ class Orchestrator(
     /** Очередь команд (D-42, п. 1): кладёт любой поток, исполняет поток такта ([runCommands]). */
     val inbox = CommandInbox()
 
+    // Хранилища документов задач — выше `init`: его `loadTaskDocuments` пишет в них при перезапуске, а свойство,
+    // объявленное ниже `init`, в этот миг ещё null (NullPointerException на устройстве, 11 октября 2026).
+
+    /** Итоги ходов задач в памяти — до завершения задачи; дальше — из документа. Читает и поток экрана. */
+    private val messagesOf = java.util.concurrent.ConcurrentHashMap<TaskId, List<TurnMessage>>()
+
+    /** Ленты чата задач в памяти (D-59); дальше — из документа `chat`. Читает и поток экрана. */
+    private val chatOf = java.util.concurrent.ConcurrentHashMap<TaskId, List<ChatEntry>>()
+
+    /** Сообщения в сессию, ждущие конца хода (D-60); дальше — из документа `queued`. */
+    private val queuedOf = java.util.concurrent.ConcurrentHashMap<TaskId, List<QueuedMessage>>()
+
+    /** Фоновые команды прошлых сессий задач (D-66); дальше — из документа `background`. */
+    private val backgroundOf = java.util.concurrent.ConcurrentHashMap<TaskId, List<BackgroundJob>>()
+
+    /** Слот следующего хода по выбору человека (D-66); дальше — из документа `pin`. */
+    private val pinOf = java.util.concurrent.ConcurrentHashMap<TaskId, ExecutionTargetId>()
+
     init {
         // Перезапуск (ТЗ, §54; D-24): состояние — из журнала. [initialAccounts] —
         // исходное состояние до журнала (его регистрация в журнал не пишется),
@@ -317,6 +335,10 @@ class Orchestrator(
 
     /** Контексты и handoff незавершённых задач — из документов (после перезапуска). */
     private fun loadTaskDocuments(store: DocumentStore) {
+        // Очереди сообщений (D-60) — и у завершённых задач: сообщение их продолжит.
+        for (t in tasks.tasks.values.filter { !it.archived }) {
+            store.read(docKey("queued", t.id)).valueOrNull()?.let { d -> QueuedMessages.fromJson(d.content).valueOrNull()?.takeIf { it.isNotEmpty() }?.let { queuedOf[t.id] = it } }
+        }
         for (t in tasks.tasks.values.filter { !it.terminal }) {
             store.read(docKey("context", t.id)).valueOrNull()?.let { d ->
                 when (val c = ContextCodec.readContext(d.content)) {
@@ -470,6 +492,7 @@ class Orchestrator(
                 lastOverlap.remove(id)
                 lastWaiting.remove(id)
                 if (documents != null) messagesOf.remove(id)
+                if (documents != null) chatOf.remove(id)
                 toolOf.remove(id)
                 sentOf.remove(id)
                 workingOf.remove(id)
@@ -514,12 +537,15 @@ class Orchestrator(
         }.orEmpty()
         commitTasks(created.valueOrNull()!! + withScope)
         commitTasks(tasksLogic.enqueue(tasks, id, clock.now()).valueOrNull()!!)
+        // Начало ленты чата (D-59): задача — первый запрос человека.
+        say(id, ChatRole.USER, if (objective.trim() == title.trim()) title else "$title\n\n$objective")
         return Outcome.success(id)
     }
 
     /** Такт контура: команды — в начале и между вызовами target (D-42, п. 1). */
     fun tick() {
         runCommands()
+        deliverIdleQueues()
         commitTasks(tasksLogic.promote(tasks, clock.now()))
         resumeAfterLogin()
         // Ждущие сверки сессии держат аренду и место target: сверить снова, когда target ответит (A-44, A-76).
@@ -625,7 +651,18 @@ class Orchestrator(
         var target = planned
         var lease: Outcome<Accounts.Lease> = Outcome.failure(DiagCode.ACCOUNT_NONE_AVAILABLE, "нет target", "task $task")
         var first: Outcome.Failure? = null
-        for (candidate in launchOrder(task, planned)) {
+        // Перенос человеком (D-66): только выбранный слот; занят или недоступен — задача ждёт его.
+        val pin = pinned(task)
+        val order = if (pin != null) {
+            listOf(pin).filter { p -> p !in control.disabledTargets && targets.any { it.id == p } && sessions.sessions.values.count { !it.terminal && it.target == p } < (targets.first { it.id == p }.maxSessions) }
+        } else {
+            launchOrder(task, planned)
+        }
+        if (pin != null && order.isEmpty()) {
+            waiting(task, "ждёт слот ${slotLabel(pin)}, выбранный человеком")
+            return
+        }
+        for (candidate in order) {
             lease = accountsLogic.lease(accounts, session, task, clock.now(), candidate, urgent = t.priority.ordinal <= Priority.HIGH.ordinal)
             if (lease is Outcome.Success) {
                 target = candidate
@@ -638,6 +675,7 @@ class Orchestrator(
             waiting(task, (first ?: lease).errors.first().message)
             return
         }
+        if (pin != null) setPin(task, null)
         lastWaiting.remove(task)
         val slot = lease.valueOrNull()!!.slot
         // Кому передана задача (D-56): подписка и каталог слота — в уведомлении и журнале приложения.
@@ -721,6 +759,7 @@ class Orchestrator(
         val after = sessions.sessions.getValue(session)
         if (after.state != SessionState.RUNNING && after.state != SessionState.STARTING) react(task, session, after.state)
         else progress(task, NotificationCategory.PROGRESS, "Задача начата", "попытка $attempt · $slotName")
+        say(task, ChatRole.EVENT, "попытка $attempt · $slotName" + (switched?.let { " · передана с подписки у предела" } ?: ""), session)
         switched?.let { sw ->
             val from = accounts.subscriptions[sw.from]?.label ?: "прежняя подписка"
             notify("task:${task.value}:switch", NotificationCategory.WARNING, "Задача передана другой подписке: ${taskTitle(task)}", "«$from» у предела — продолжает «$slotName» с handoff")
@@ -820,7 +859,10 @@ class Orchestrator(
     private fun context(task: TaskId, objective: String, policy: ContextPolicy, workingSet: Boolean = true): Outcome<ContextBundle> {
         val previous = contextOf[task] ?: storedContext(task)
         val handoff = handoffs.latest(task)
-        val sources = config.sources(task) + listOfNotNull(environment(), handoff?.asSource(workingSet), toolOf[task])
+        // Свежая сессия после прошлых (другой слот, перенос, контрольная точка — D-66): переписка и фоновые процессы.
+        val fresh = workingSet && sessions.sessions.values.count { it.task == task } > 1
+        val carried = if (fresh) listOfNotNull(transcriptSource(task), backgroundSource(task)) else emptyList()
+        val sources = config.sources(task) + listOfNotNull(environment(), handoff?.asSource(workingSet), toolOf[task]) + carried
         val out = ContextAssembler.assemble(
             previous?.id ?: ids.next(IdKinds.CONTEXT), task, config.project, objective, handoff?.nextAction, sources, clock.now(), previous, policy,
         )
@@ -851,11 +893,31 @@ class Orchestrator(
             applyFacts(step.facts)
         }
         recordTurnMessages(session, step.turns)
+        if (step.background.isNotEmpty()) {
+            val task = sessions.sessions.getValue(session).task
+            val list = (background(task) + step.background.map { BackgroundJob(clock.now(), session, it) }).takeLast(BackgroundJobs.MAX)
+            backgroundOf[task] = list
+            saveTaskDocument("background", task, BackgroundJobs.toJson(list))
+        }
+        if (step.chat.isNotEmpty()) {
+            val task = sessions.sessions.getValue(session).task
+            say(task, step.chat.map { c -> TaskChat.entry(c.at, if (c.kind == com.dpsmpx.dpai.sessions.ChatPiece.Kind.THINKING) ChatRole.THINKING else ChatRole.ASSISTANT, c.text, session) })
+        }
+        // Ход кончился не итогом — одной строкой в ленте (D-59): почему модель остановилась.
+        step.turns.filter { it.status != com.dpsmpx.dpai.execution.claude.TurnStatus.COMPLETED }.forEach { t ->
+            val why = t.diagnostics.firstOrNull { it.isError }?.code?.name
+            say(sessions.sessions.getValue(session).task, ChatRole.EVENT, "ход прерван: ${t.status.name.lowercase()}" + (why?.let { " · $it" } ?: ""), session)
+        }
         val after = sessions.sessions.getValue(session)
         if (after.state != before) react(after.task, session, after.state)
     }
 
     private fun react(task: TaskId, session: SessionId, state: SessionState) {
+        // Сообщения, ждавшие конца хода (D-60): ход кончился или прерван — они уходят в ту же сессию раньше проверки.
+        if ((state == SessionState.COMPLETED || state == SessionState.PAUSED) && queued(task).isNotEmpty()) {
+            deliverQueued(task, session, state)
+            return
+        }
         when (state) {
             SessionState.COMPLETED -> finish(task, session)
             SessionState.PAUSED -> handOff(task, session)
@@ -999,6 +1061,7 @@ class Orchestrator(
             }
             if (config.repository != null) appendLine("- узнает изменённые файлы из `git status` и закоммитит их после проверки;")
             appendLine("- сохранит handoff, если ход прервётся.")
+            appendLine("Долгий фоновый процесс (сервер, сборка, наблюдение) запускай отвязанным — `nohup setsid <команда> > <лог в дереве> 2>&1 &` — и назови в итоге хода его PID и лог: он переживёт конец хода и смену аккаунта.")
             appendLine("Поэтому полный прогон проверки ради подтверждения и коммит не нужны: запускай то, что нужно для решения.")
             append("Итог хода — коротко: что сделано, что нет и почему.")
         }
@@ -1366,7 +1429,9 @@ class Orchestrator(
             is Command.Cancel -> record(command, provenance) { cancelTask(command.task) }
             is Command.Retry -> record(command, provenance) { retryTask(command.task, command.text) }
             is Command.StopSession -> record(command, provenance) {
-                sessions.sessions[command.session]?.let { holdTask(it.task) } ?: Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой сессии", "session ${command.session}")
+                sessions.sessions[command.session]?.let { s ->
+                    holdTask(s.task).also { r -> if (r is Outcome.Success) say(s.task, ChatRole.EVENT, "ход остановлен человеком", s.id) }
+                } ?: Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой сессии", "session ${command.session}")
             }
             is Command.SendToSession -> record(command, provenance) { sendToSession(command.session, command.text, command.model, command.effort, command.fresh) }
             is Command.SetNearPercent -> record(command, provenance) {
@@ -1375,6 +1440,7 @@ class Orchestrator(
                     is Outcome.Success -> Outcome.success(command.percent).also { commitAccounts(r.value) }
                 }
             }
+            is Command.MoveTask -> record(command, provenance) { moveTask(command.task, command.target) }
             is Command.SetRotation -> record(command, provenance) {
                 when (val r = accountsLogic.setRotation(accounts, command.subscription, command.allowed, clock.now())) {
                     is Outcome.Failure -> r
@@ -1560,19 +1626,30 @@ class Orchestrator(
      * задачи, задача снова в плане, счётчики сброшены, удержание снято.
      * [fresh] — свежая сессия с handoff (контрольная точка, D-40), а не
      * `--resume`. Модель и усилие запроса — в политику задачи (видно на
-     * листе задачи). Пока ход идёт — отказ: в идущий процесс не пишут.
+     * листе задачи). Пока ход идёт, в идущий процесс не пишут: сообщение —
+     * в очередь задачи до конца хода, свежая сессия — отказ (D-60).
      */
-    fun sendToSession(session: SessionId, text: String?, model: String?, effort: String?, fresh: Boolean): Outcome<TaskState> {
+    fun sendToSession(session: SessionId, text: String?, model: String?, effort: String?, fresh: Boolean, echo: Boolean = true): Outcome<TaskState> {
         val s = sessions.sessions[session] ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой сессии", "session $session")
         val task = s.task
         val clean = text?.trim()?.takeIf { it.isNotEmpty() }?.take(UserRequest.MAX_TEXT)
         if (clean == null && !fresh) return Outcome.failure(DiagCode.VALUE_INVALID, "запрос без текста")
-        if (turnRunning(task)) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "ход идёт: остановите его или дождитесь конца", "session $session")
         val last = sessions.sessions.values.filter { it.task == task }.maxWithOrNull(compareBy({ it.createdAt.epochMillis }, { it.id.value }))!!
         if (last.id != session) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "запрос — в последнюю сессию задачи ${last.id}", "session $session")
+        if (turnRunning(task)) {
+            // Ход не прерывается (D-60): сообщение — в очередь задачи, уйдёт в ту же сессию сразу после хода.
+            if (fresh || clean == null) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "ход идёт: свежая сессия — после него", "session $session")
+            enqueue(task, QueuedMessage(clean, clock.now(), model?.trim()?.ifEmpty { null }, effort?.trim()?.ifEmpty { null }))
+            say(task, ChatRole.USER, clean, session)
+            say(task, ChatRole.EVENT, "в очереди: уйдёт в сессию после текущего хода, ход не прерывается", session)
+            return Outcome.success(tasks.tasks.getValue(task).state)
+        }
         reopenForTurn(task)?.let { return it }
         val reason = if (fresh) HandoffReason.TURN_FINISHED else HandoffReason.MANUAL
         val next = clean?.let { "запрос пользователя: $it" } ?: "продолжить работу в свежей сессии с этого места"
+        if (echo) clean?.let { say(task, ChatRole.USER, it, session) }
+        if (fresh) say(task, ChatRole.EVENT, "свежая сессия по запросу человека", session)
+        if (!echo) say(task, ChatRole.EVENT, "сообщение из очереди отправлено в сессию", session)
         if (!last.terminal) handOff(task, last.id, reason, next) else writeHandoff(task, last.id, reason, next)
         if (model != null || effort != null) {
             val t = tasks.tasks.getValue(task)
@@ -1786,6 +1863,7 @@ class Orchestrator(
         val open = openSessions(task)
         return when (option) {
             RETRY, REPLY -> {
+                text?.let { say(task, ChatRole.USER, it, open.lastOrNull()?.id) } ?: say(task, ChatRole.EVENT, "блок снят человеком: продолжить")
                 // Сессия остановлена — продолжение той же сессии провайдера с ответом человека (handoff MANUAL).
                 val next = text?.let { "ответ пользователя: $it" } ?: "пользователь снял блок: продолжить с места остановки"
                 for (s in open) if (s.state in WAIT_STATES) handOff(task, s.id, HandoffReason.MANUAL, next) else closeSession(task, s.id)
@@ -1865,8 +1943,151 @@ class Orchestrator(
     /** Последняя версия контекста задачи — что видел Claude в последнем ходе. */
     fun lastContext(task: TaskId): ContextBundle? = contextOf[task] ?: storedContext(task, report = false)
 
-    /** Итоги ходов задач в памяти — до завершения задачи; дальше — из документа. Читает и поток экрана. */
-    private val messagesOf = java.util.concurrent.ConcurrentHashMap<TaskId, List<TurnMessage>>()
+
+    /** Лента чата задачи по порядку (D-59): запросы человека, рассуждения и тексты модели, события. */
+    fun chat(task: TaskId): List<ChatEntry> = chatOf[task]
+        ?: documents?.read(docKey("chat", task))?.valueOrNull()?.let { TaskChat.fromJson(it.content).valueOrNull() }.orEmpty()
+
+
+    /** Очередь сообщений задачи (D-60) — для экрана и доставки. */
+    fun queued(task: TaskId): List<QueuedMessage> = queuedOf[task]
+        ?: documents?.read(docKey("queued", task))?.valueOrNull()?.let { QueuedMessages.fromJson(it.content).valueOrNull() }.orEmpty()
+
+    private fun enqueue(task: TaskId, m: QueuedMessage) = setQueued(task, (queued(task) + m).takeLast(QueuedMessages.MAX))
+
+    private fun setQueued(task: TaskId, list: List<QueuedMessage>) {
+        queuedOf[task] = list
+        saveTaskDocument("queued", task, QueuedMessages.toJson(list))
+    }
+
+    /**
+     * Доставить очередь (D-60): одно сообщение из всех ждавших — новый ход
+     * той же сессии провайдера (handoff `MANUAL`, `--resume`), задача снова в
+     * плане; модель и усилие — последние заданные. Сессия прервана
+     * (`PAUSED`) — handoff как при прерывании; завершена — handoff к ней, без
+     * проверки этого хода: работа продолжается.
+     */
+    private fun deliverQueued(task: TaskId, session: SessionId, state: SessionState) {
+        val list = queued(task)
+        val text = list.joinToString("\n\n") { it.text }
+        val next = "запрос пользователя: $text"
+        if (state == SessionState.PAUSED) {
+            handOff(task, session, HandoffReason.MANUAL, next)
+        } else {
+            writeHandoff(task, session, HandoffReason.MANUAL, next)
+            releaseTree(task, session)
+            commitTasks(ok(tasksLogic.continueLater(tasks, task, clock.now()), "сообщение после хода").orEmpty())
+        }
+        applyQueuedPolicy(task, list)
+        setQueued(task, emptyList())
+        say(task, ChatRole.EVENT, "сообщение из очереди отправлено в сессию", session)
+    }
+
+    private fun applyQueuedPolicy(task: TaskId, list: List<QueuedMessage>) {
+        val model = list.lastOrNull { it.model != null }?.model
+        val effort = list.lastOrNull { it.effort != null }?.effort
+        if (model == null && effort == null) return
+        val t = tasks.tasks.getValue(task)
+        val policy = runCatching { t.policy.copy(model = model ?: t.policy.model, effort = effort ?: t.policy.effort) }.getOrNull() ?: return
+        commitTasks(ok(tasksLogic.setPolicy(tasks, task, policy, clock.now()), "модель запроса из очереди").orEmpty())
+    }
+
+    /**
+     * Очередь задачи, чей ход кончился не итогом и не прерыванием (сбой,
+     * блок, задача завершена или ждёт проверки): уходит, как только ход
+     * снова можно начать — тем же запросом в последнюю сессию (D-60).
+     */
+    private fun deliverIdleQueues() {
+        for (task in queuedOf.keys.toList().sortedBy { it.value }) {
+            val list = queued(task).takeIf { it.isNotEmpty() } ?: continue
+            if (turnRunning(task)) continue
+            val state = tasks.tasks[task]?.state ?: continue
+            if (state in setOf(TaskState.RUNNING, TaskState.IMPLEMENTED, TaskState.VERIFYING, TaskState.VERIFIED)) continue
+            val last = sessions.sessions.values.filter { it.task == task }.maxWithOrNull(compareBy({ it.createdAt.epochMillis }, { it.id.value })) ?: continue
+            if (last.state !in WAIT_STATES && !last.terminal) continue
+            setQueued(task, emptyList())
+            val r = sendToSession(last.id, list.joinToString("\n\n") { it.text }, list.lastOrNull { it.model != null }?.model, list.lastOrNull { it.effort != null }?.effort, false, echo = false)
+            if (r is Outcome.Failure) setQueued(task, list)
+        }
+    }
+
+    /** Фоновые команды прошлых сессий задачи (D-66). */
+    fun background(task: TaskId): List<BackgroundJob> = backgroundOf[task]
+        ?: documents?.read(docKey("background", task))?.valueOrNull()?.let { BackgroundJobs.fromJson(it.content).valueOrNull() }.orEmpty()
+
+    /** Слот, выбранный человеком для следующего хода задачи (D-66); не выбран — `null`. */
+    fun pinned(task: TaskId): ExecutionTargetId? = pinOf[task]
+        ?: documents?.read(docKey("pin", task))?.valueOrNull()?.let { TaskPin.fromJson(it.content).valueOrNull() }?.also { pinOf[task] = it }
+
+    private fun setPin(task: TaskId, target: ExecutionTargetId?) {
+        if (target == null) {
+            pinOf.remove(task)
+            documents?.delete(docKey("pin", task))
+        } else {
+            pinOf[task] = target
+            saveTaskDocument("pin", task, TaskPin.toJson(target))
+        }
+    }
+
+    /** Имя слота target для ленты: подписка и каталог слота; слота нет — id target. */
+    private fun slotLabel(target: ExecutionTargetId): String =
+        accounts.slots.values.firstOrNull { it.targetId == target }?.let { slot ->
+            (accounts.subscriptions[slot.subscriptionId]?.label ?: "") + " · " + slot.configDir.substringAfterLast('/')
+        } ?: target.value
+
+    /**
+     * Ручной перенос задачи на слот [target] (D-66): следующий ход — там,
+     * свежей сессией с handoff, перепиской и фоновыми процессами; идущий
+     * ход и фоновые процессы не прерываются. Выбор — на один ход: дальше
+     * задача снова идёт по общим правилам (запас окна, передача у предела).
+     */
+    private fun moveTask(task: TaskId, target: ExecutionTargetId): Outcome<TaskState> {
+        val t = tasks.tasks[task] ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой задачи", "task $task")
+        if (targets.none { it.id == target }) return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "этот слот не берёт задачи проекта", "target $target")
+        if (target in control.disabledTargets) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "слот не принимает новые задачи", "target $target")
+        setPin(task, target)
+        val when_ = if (turnRunning(task)) "после текущего хода" else "со следующего хода"
+        say(task, ChatRole.EVENT, "перенос на ${slotLabel(target)} по выбору человека — $when_, с контекстом задачи")
+        return Outcome.success(t.state)
+    }
+
+    /**
+     * Переписка задачи для свежей сессии (D-66): запросы человека и ответы
+     * прошлых сессий — последние, кратко; рассуждений и событий нет.
+     */
+    private fun transcriptSource(task: TaskId): ContextSource? {
+        val lines = chat(task).filter { it.role == ChatRole.USER || it.role == ChatRole.ASSISTANT }.takeLast(TRANSCRIPT_ENTRIES)
+        if (lines.isEmpty()) return null
+        val body = StringBuilder("Переписка задачи до этой сессии (человек и прошлые сессии модели, по порядку):\n")
+        for (e in lines) {
+            val who = if (e.role == ChatRole.USER) "Человек" else "Модель"
+            val text = e.text.let { if (it.length > TRANSCRIPT_ENTRY_CHARS) it.take(TRANSCRIPT_ENTRY_CHARS) + " …" else it }
+            body.append("\n").append(who).append(": ").append(text).append("\n")
+        }
+        val content = body.toString().let { if (it.length > TRANSCRIPT_CHARS) "…" + it.takeLast(TRANSCRIPT_CHARS) else it }
+        return ContextSource(TRANSCRIPT_SOURCE, SourceLevel.PROJECT, config.project, Sensitivity.INTERNAL, Origin.ORCHESTRATOR, content)
+    }
+
+    /** Фоновые процессы прошлых сессий (D-66): что могло пережить ход и смену слота. */
+    private fun backgroundSource(task: TaskId): ContextSource? {
+        val jobs = background(task).takeIf { it.isNotEmpty() } ?: return null
+        val text = buildString {
+            appendLine("Прошлые сессии этой задачи запускали фоновые процессы — они могут ещё работать (сессия сменилась, процессы не останавливались):")
+            for (j in jobs) appendLine("- ${j.at.toIsoString().substring(0, 16).replace('T', ' ')} UTC: `${j.command}`")
+            append("Проверь, живы ли они и что в их выводе (ps, логи), прежде чем запускать то же снова.")
+        }
+        return ContextSource(BACKGROUND_SOURCE, SourceLevel.PROJECT, config.project, Sensitivity.INTERNAL, Origin.ORCHESTRATOR, text)
+    }
+
+    /** Дописать в ленту чата задачи (D-59) и сохранить документ. */
+    private fun say(task: TaskId, entries: List<ChatEntry>) {
+        if (entries.isEmpty()) return
+        val list = TaskChat.append(chat(task), entries)
+        chatOf[task] = list
+        saveTaskDocument("chat", task, TaskChat.toJson(list))
+    }
+
+    private fun say(task: TaskId, role: ChatRole, text: String, session: SessionId? = null) = say(task, listOf(TaskChat.entry(clock.now(), role, text, session)))
 
     /**
      * Итоговые сообщения ходов (D-42): что модель сказала, остановившись, —
@@ -1967,6 +2188,13 @@ class Orchestrator(
 
         /** Ключ источника «что среда делает сама» (D-40). */
         const val ENVIRONMENT_SOURCE = "orchestrator:environment"
+
+        /** Переписка задачи и фоновые процессы — в свежей сессии после прошлых (D-66). */
+        const val TRANSCRIPT_SOURCE = "orchestrator:transcript"
+        const val BACKGROUND_SOURCE = "orchestrator:background"
+        private const val TRANSCRIPT_ENTRIES = 12
+        private const val TRANSCRIPT_ENTRY_CHARS = 1500
+        private const val TRANSCRIPT_CHARS = 8000
 
         /** Ключ источника с выжимкой проваленной проверки (D-40). */
         const val VERIFICATION_SOURCE = "tool:verification"

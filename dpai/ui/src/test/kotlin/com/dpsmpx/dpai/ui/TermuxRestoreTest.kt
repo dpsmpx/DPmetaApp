@@ -90,7 +90,7 @@ class TermuxRestoreTest {
         assertEquals(listOf("22", "dev@100.1.2.3"), cmd.subList(cmd.size - 3, cmd.size - 1))
         val encoded = cmd.last().substringAfterLast(' ')
         val script = Base64.getDecoder().decode(encoded).toString(Charsets.UTF_16LE)
-        assertTrue("'from=\"100.64.0.0/10\" $key'" in script && "-notmatch ' dpai-android$'" in script, script)
+        assertTrue("'from=\"${PcSetup.PRIVATE_NETS}\" $key'" in script && "-notmatch ' dpai-android$'" in script, script)
         val linux = win.copy(platform = TargetPlatform.POSIX)
         val sh = Base64.getDecoder().decode(TermuxRestore.pcReauthorize(linux, key).last().split(' ')[1]).toString(Charsets.UTF_8)
         assertTrue("echo '$key' >> ~/.ssh/authorized_keys" in sh, sh)

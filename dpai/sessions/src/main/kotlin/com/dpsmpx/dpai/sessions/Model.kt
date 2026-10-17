@@ -146,3 +146,11 @@ data class LiveTurn(val text: String?, val tool: String?, val target: String?, v
         const val MAX_TEXT = 600
     }
 }
+
+/**
+ * Кусок ленты чата из потока хода (D-59): рассуждение или текст модели,
+ * как пришёл; редактирование секретов и обрезка — при записи в ленту.
+ */
+data class ChatPiece(val kind: Kind, val text: String, val at: com.dpsmpx.dpai.core.clock.Timestamp) {
+    enum class Kind { THINKING, TEXT }
+}

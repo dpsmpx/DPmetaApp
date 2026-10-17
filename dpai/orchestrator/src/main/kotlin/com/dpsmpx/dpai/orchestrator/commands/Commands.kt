@@ -129,6 +129,15 @@ sealed interface Command {
         override val operation: String get() = if (fresh) "session.fresh" else "session.send"
     }
 
+    /**
+     * Перенести задачу на слот [target] (D-66): следующий ход — там, свежей
+     * сессией с handoff, перепиской и фоновыми процессами; идущий ход не
+     * прерывается.
+     */
+    data class MoveTask(val task: com.dpsmpx.dpai.core.ids.TaskId, val target: com.dpsmpx.dpai.core.ids.ExecutionTargetId, override val key: String? = null) : Command {
+        override val operation: String get() = "task.move"
+    }
+
     /** Принимает ли подписка задачи подписок, упёршихся в предел пяти часов или недели (D-56): продолжение с handoff. */
     data class SetRotation(val subscription: com.dpsmpx.dpai.core.ids.SubscriptionId, val allowed: Boolean, override val key: String? = null) : Command {
         override val operation: String get() = "subscription.rotation"

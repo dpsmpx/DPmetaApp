@@ -33,7 +33,7 @@ class WorkspaceLinkTest {
         val cmd = WorkspaceLink.pcAuthorize("ssh-ed25519 $b64 dpai-workspace")
         assertIs<Outcome.Success<String>>(RemoteShell.join(TargetPlatform.WINDOWS, cmd), "без \", %, ^, ! — проходит в cmd.exe")
         val script = Base64.getDecoder().decode(cmd.last()).toString(Charsets.UTF_16LE)
-        assertTrue("'from=\"100.64.0.0/10\" ssh-ed25519 $b64 dpai-workspace'" in script, script)
+        assertTrue("'from=\"${PcSetup.PRIVATE_NETS}\" ssh-ed25519 $b64 dpai-workspace'" in script, script)
         assertTrue("-notmatch ' dpai-workspace$'" in script, script)
         assertFailsWith<IllegalArgumentException> { WorkspaceLink.pcAuthorize("ssh-ed25519 $b64' ; Remove-Item C:\\ ; ' dpai-workspace") }
     }

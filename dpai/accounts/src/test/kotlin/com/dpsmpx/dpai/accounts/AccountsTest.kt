@@ -290,6 +290,29 @@ class AccountsTest {
     }
 
     @Test
+    fun byDefaultTaskSwitchesSubscriptionsWithoutLimit() {
+        // D-67: предела числа переходов нет — задача переходит к подписке с запасом столько раз, сколько нужно.
+        val f = Fixture()
+        val a = f.subscription("A", rotation = true)
+        val b = f.subscription("B", rotation = true)
+        val sa = f.slot(a, dir = "~/.claude-a")
+        val sb = f.slot(b, dir = "~/.claude-b")
+        f.login(sa, email = "a@example.org")
+        f.login(sb, email = "b@example.org")
+        val t = f.task()
+        var current = f.lease(t).let { (s, r) -> f.ok(f.accounts.release(f.state, s, f.now)); r.valueOrNull()!!.subscription }
+        repeat(6) {
+            f.ok(f.accounts.observeLimit(f.state, if (current == a) sa else sb, LimitWindow.SESSION, LimitLevel.REACHED, f.now + 3.hours, f.now))
+            val (s, r) = f.lease(t)
+            val lease = r.valueOrNull() ?: error("переход ${it + 1} отклонён: ${(r as Outcome.Failure).errors}")
+            assertTrue(lease.subscription != current)
+            current = lease.subscription
+            f.ok(f.accounts.release(f.state, s, f.now))
+            f.ok(f.accounts.observeSuccess(f.state, if (current == a) sb else sa, f.now))
+        }
+    }
+
+    @Test
     fun errorSeriesCoolsDownAndSuccessClears() {
         val f = Fixture()
         val slot = f.slot(f.subscription())

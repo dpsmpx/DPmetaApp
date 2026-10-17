@@ -127,8 +127,27 @@ class SessionCommandsTest {
         assertEquals(PromptMode.CHECKPOINT, second.usage.lastPrompt?.mode)
     }
 
+    /** В идущий ход не пишут (D-04): сообщение ждёт в очереди его конца, ход не прерывается (D-60). */
     @Test
-    fun runningTurnIsNotWrittenToButCanBeStopped() {
+    fun messageDuringRunningTurnIsQueuedNotWritten() {
+        scenario = MockScenario.SLOW_OUTPUT
+        val (o, runner) = boot()
+        val t = o.addTask("долгая", "цель").valueOrNull()!!
+        o.tick()
+        val s = sessionsOf(o, t).last()
+        val run = host.runIds().single()
+        repeat(2) { runner.advance(run) }
+        o.tick()
+        val queued = o.run(Command.SendToSession(s.id, "ещё"))
+        assertEquals(OperationStatus.SUCCEEDED, queued.status, queued.diagnostics.toString())
+        assertEquals(listOf("ещё"), o.queued(t).map { it.text }, "сообщение — в очереди задачи")
+        assertEquals(setOf(run), host.runIds(), "процесс хода тот же: ход не прерван, нового запуска нет")
+        assertTrue(o.live(s.id) != null, "ход идёт")
+        assertEquals(DiagCode.OPERATION_NOT_ALLOWED, o.run(Command.SendToSession(s.id, null, fresh = true)).diagnostics.single().code, "свежая сессия — после хода")
+    }
+
+    @Test
+    fun runningTurnCanBeStoppedAndContinued() {
         scenario = MockScenario.SLOW_OUTPUT
         val (o, runner) = boot()
         val t = o.addTask("долгая", "цель").valueOrNull()!!
@@ -138,7 +157,6 @@ class SessionCommandsTest {
         repeat(2) { runner.advance(run) }
         o.tick()
         assertTrue(o.live(s.id) != null, "живой вид хода")
-        assertEquals(DiagCode.OPERATION_NOT_ALLOWED, o.run(Command.SendToSession(s.id, "ещё")).diagnostics.single().code, "в идущий ход не пишут (D-04)")
         val stop = o.run(Command.StopSession(s.id))
         assertEquals(OperationStatus.SUCCEEDED, stop.status, stop.diagnostics.toString())
         assertTrue(o.tasks.tasks.getValue(t).held)

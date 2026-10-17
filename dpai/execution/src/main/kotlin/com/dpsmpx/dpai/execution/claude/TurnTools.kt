@@ -232,3 +232,22 @@ object ToolTarget {
         return com.dpsmpx.dpai.core.diagnostics.Redactor.STANDARD.redact(short)
     }
 }
+
+/**
+ * Фоновая команда хода (D-66): `Bash` с `run_in_background: true` —
+ * текст команды (редактор секретов, до 300 знаков); иначе `null`. Её
+ * запоминает контур: свежая сессия на другом слоте узнаёт, что запущено
+ * раньше и может ещё работать.
+ */
+object BackgroundCommand {
+    private const val MAX = 300
+
+    fun of(use: ClaudeEvent.ToolUse): String? {
+        if (use.name != "Bash") return null
+        val input = use.input ?: return null
+        if ((input["run_in_background"] as? com.dpsmpx.dpai.core.serialization.JsonBool)?.value != true) return null
+        val command = (input["command"] as? com.dpsmpx.dpai.core.serialization.JsonString)?.value?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        val one = command.replace(Regex("\\s+"), " ")
+        return com.dpsmpx.dpai.core.diagnostics.Redactor.STANDARD.redact(if (one.length <= MAX) one else one.take(MAX - 1) + "…")
+    }
+}
