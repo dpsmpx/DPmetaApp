@@ -52,6 +52,7 @@ import kotlinx.coroutines.withContext
 @Composable
 fun TargetsPane(controller: Controller, model: DemoModel) {
     val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
     var targets by remember { mutableStateOf(controller.targets()) }
     var publicKey by remember { mutableStateOf<String?>(null) }
     val checks = remember { mutableStateMapOf<String, List<CheckLine>>() }
@@ -138,6 +139,8 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Targets (${targets.size})", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                // Открытые вкладки терминала живут, пока жив процесс (D-57): вернуться к ним.
+                if (TerminalHub.tabs.isNotEmpty()) TextButton(onClick = { TerminalActivity.start(context, null) }) { Text("Терминалы (${TerminalHub.tabs.size})") }
                 Button(onClick = { form = true }) { Text("Добавить") }
             }
         }
@@ -161,6 +164,13 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
                         // Проект — у любого target: ход Claude может идти на другом, со своим входом (D-50).
                         TextButton(onClick = { projectFor = t }) { Text("Проект") }
                         TextButton(onClick = { removing = t }) { Text("Удалить") }
+                    }
+                    // Свой терминал (D-57): оболочка target или интерактивный claude слота (вход, /usage).
+                    Row {
+                        TextButton(onClick = { TerminalActivity.start(context, t.id.value) }) { Text("Терминал") }
+                        if (t.configDir != null && t.platform == com.dpsmpx.dpai.execution.target.TargetPlatform.POSIX) {
+                            TextButton(onClick = { TerminalActivity.start(context, t.id.value, claude = true) }) { Text("Claude в терминале") }
+                        }
                     }
                     checks[t.id.value]?.forEach { c -> CheckRow(c) }
                 }
