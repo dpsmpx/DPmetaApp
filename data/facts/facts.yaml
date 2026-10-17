@@ -268,10 +268,11 @@ facts:
     class: FACT
     risk: high
     public: false
-    statement: "Оценка готовности к первому релизу в Steam — 43 %, по всем задачам — 31 % (3 октября 2026, check_progress.py)."
-    recheck_by: 2026-10-18
+    statement: "Оценка готовности к первому релизу в Steam — 43 %, по всем задачам — 31 % (3 октября 2026, check_progress.py); на 17 октября 2026 оценка не пересчитывалась, счёт закрытых пунктов ROADMAP — 250 из 465 к релизу, 250 из 537 по всем задачам."
+    recheck_by: 2026-11-04
     evidence:
       - {kind: doc, source: "dpsmpx/Galdhold README.md, блок готовности", ref: "f2ba263", date: 2026-10-04, verification: reported}
+      - {kind: doc, source: "dpsmpx/Galdhold README.md, блок готовности (пишет tools/hostcheck/check_progress.py --write): оценка на 3 октября 2026, счёт пунктов ROADMAP", ref: "11bf957", date: 2026-10-17, verification: reported}
     notes: Внутренняя оценка; публично проценты без определения не используются (аудит, § 4).
   - id: GH-REPO-START
     subject: galdhold
