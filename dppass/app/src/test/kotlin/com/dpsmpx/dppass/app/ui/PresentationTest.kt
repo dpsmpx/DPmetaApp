@@ -231,4 +231,20 @@ class PresentationTest {
         assertNull(rows[1].autoUpdateMinutes)
         assertNull(rows[1].usedPercent)
     }
+
+    @Test
+    fun skippedEntriesAreCountedAndPlaced() {
+        val s = Subscription(SubscriptionId("s1"), "S", SubscriptionSource.Url(Secret("https://a.example.net/s")))
+        val state = SubscriptionsState(listOf(s), null)
+        assertNull(SubscriptionList.rows(state, ConfigSource.None, 0).single().skipped, "не разбиралась — ничего не известно")
+        assertEquals(3, SubscriptionList.rows(state, ConfigSource.None, 0) { 3 }.single().skipped)
+        fun skipped(path: String?) = Diagnostic.warning(DiagCode.SUBSCRIPTION_ENTRY_SKIPPED, "запись пропущена", path)
+        assertEquals(1, SubscriptionList.entryNumber(skipped("entry[0]")))
+        assertEquals(12, SubscriptionList.entryNumber(skipped("entry[11]")))
+        assertNull(SubscriptionList.entryNumber(skipped("profiles[0]")))
+        assertNull(SubscriptionList.entryNumber(skipped(null)))
+        // Фильтр ядра считает среди разобранных серверов: номер указал бы не на ту запись.
+        val excluded = Diagnostic.warning(DiagCode.PROFILE_EXCLUDED_UNSUPPORTED, "сервер «A» исключён: ядро его не поддерживает", "entry[1]")
+        assertNull(SubscriptionList.entryNumber(excluded))
+    }
 }
