@@ -107,20 +107,19 @@ class DemoModel(
     }
 
     private var drainedOf: ControlView? = null
-    private var drained = 0
+    private var drained = 0L
 
     /**
      * Уведомления, которые оболочка ещё не показала: у контроллера — все
      * новые и обновлённые (ТЗ, §36), у демо — только проверочные запросы.
      */
     private fun drain(v: ControlView): List<Notification> {
-        val posted = v.orchestrator.posted
         if (drainedOf !== v) {
             drainedOf = v
             drained = 0
         }
-        val fresh = posted.drop(drained)
-        drained = posted.size
+        val (fresh, next) = v.orchestrator.postedSince(drained)
+        drained = next
         return fresh.mapNotNull {
             when (it) {
                 is NotificationDecision.Post -> it.notification

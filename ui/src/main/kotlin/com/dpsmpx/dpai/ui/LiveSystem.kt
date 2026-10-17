@@ -289,12 +289,12 @@ class LiveSystem(
 
     fun addTask(title: String, objective: String): Outcome<TaskId> = orchestrator.addTask(title, objective, Priority.NORMAL)
 
-    private var delivered = 0
+    private var delivered = 0L
 
     /** Уведомления, которые оболочка ещё не показала: новые и обновлённые (ТЗ, §36). */
     fun drainNotifications(): List<Notification> {
-        val fresh = orchestrator.posted.drop(delivered)
-        delivered = orchestrator.posted.size
+        val (fresh, next) = orchestrator.postedSince(delivered)
+        delivered = next
         return fresh.mapNotNull {
             when (it) {
                 is NotificationDecision.Post -> it.notification

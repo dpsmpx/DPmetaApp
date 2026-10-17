@@ -41,6 +41,23 @@ class ExecutionTargetManagerTest {
         manager.register(target)
     }
 
+    /** Заглушка держит не больше KEEP_FINISHED завершённых запусков (этап 19): идущие и недавние — на месте. */
+    @Test
+    fun mockKeepsOnlyRecentFinishedRuns() {
+        val client = manager.client(target.id).valueOrNull()!!
+        val live = ids.next(IdKinds.SESSION)
+        client.start(live, RunSpec(listOf("claude", "-p", "живой")))
+        val runs = List(MockAgentHost.KEEP_FINISHED + 10) { ids.next(IdKinds.SESSION) }
+        for (r in runs) {
+            client.start(r, RunSpec(listOf("claude", "-p", "x")))
+            mock.exit(r, 0)
+        }
+        assertEquals(null, mock.state(runs.first()), "давний завершённый — ушёл")
+        assertEquals(RunState.EXITED, mock.state(runs.last()))
+        assertEquals(RunState.RUNNING, mock.state(live), "идущий не трогается")
+        assertEquals(MockAgentHost.KEEP_FINISHED + 1, mock.runIds().size)
+    }
+
     @Test
     fun processStartsStreamsAndStopsThroughUnifiedInterface() {
         val client = manager.client(target.id).valueOrNull()!!

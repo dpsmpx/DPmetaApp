@@ -58,7 +58,9 @@ class MockAgentHost(private val clock: Clock, private val ids: IdGenerator) : Pr
     /** Следующий шаг процесса хода; шагов нет — `false`. */
     @Synchronized
     fun advance(run: SessionId): Boolean {
-        val step = pending[run]?.removeFirstOrNull() ?: return false
+        val queue = pending[run] ?: return false
+        val step = queue.removeFirstOrNull() ?: return false
+        if (queue.isEmpty()) pending.remove(run)
         step()
         return true
     }
@@ -66,7 +68,13 @@ class MockAgentHost(private val clock: Clock, private val ids: IdGenerator) : Pr
     @Synchronized
     fun hasPending(run: SessionId): Boolean = pending[run]?.isNotEmpty() == true
 
-    private val runs = LinkedHashMap<SessionId, Run>()
+    /**
+     * Запуски по давности обращения: завершённых держится не больше
+     * [KEEP_FINISHED] — давно забытые уходят, как журнал запуска на target,
+     * который никто не читает. Без предела демо и прогоны выносливости
+     * копили все события всех запусков (гистограммы кучи, 18 октября 2026).
+     */
+    private val runs = LinkedHashMap<SessionId, Run>(16, 0.75f, true)
 
     @Volatile
     var reachable: Boolean = true
@@ -194,6 +202,20 @@ class MockAgentHost(private val clock: Clock, private val ids: IdGenerator) : Pr
         r.state = RunState.EXITED
         r.exitCode = code
         r.reason = reason
+        trimFinished()
+    }
+
+    private fun trimFinished() {
+        var finished = runs.values.count { it.state == RunState.EXITED }
+        val it = runs.entries.iterator()
+        while (finished > KEEP_FINISHED && it.hasNext()) {
+            val e = it.next()
+            if (e.value.state == RunState.EXITED && pending[e.key].isNullOrEmpty()) {
+                it.remove()
+                pending.remove(e.key)
+                finished--
+            }
+        }
     }
 
     private fun status(r: Run) = RunStatus(r.id, r.state, null, r.exitCode, r.reason, r.events.size.toLong(), r.turn)
@@ -201,6 +223,11 @@ class MockAgentHost(private val clock: Clock, private val ids: IdGenerator) : Pr
     private fun failure(command: String, code: DiagCode, message: String) = AgentReply.failure(command, listOf(Diagnostic.error(code, message)))
 
     /** Вызов, который уже завершился: вывод отдан сразу. */
+    companion object {
+        /** Сколько завершённых запусков держит заглушка. */
+        const val KEEP_FINISHED = 500
+    }
+
     private class Done(private val code: Int, stdout: String, stderr: String, onOutput: (OutputLine) -> Unit) : RunningProcess {
         init {
             if (stdout.isNotEmpty()) onOutput(OutputLine(OutputStream.STDOUT, stdout))

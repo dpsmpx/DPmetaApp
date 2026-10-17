@@ -210,7 +210,28 @@ class Orchestrator(
     val handoffs = Handoffs()
     private val overlap = OverlapPolicy()
     val notifications = NotificationEngine()
-    val posted = mutableListOf<NotificationDecision>()
+    /**
+     * Решения об уведомлениях — последние [POSTED_KEEP]: раньше список рос
+     * с каждым уведомлением без предела (гистограммы кучи `EnduranceTest`,
+     * 18 октября 2026), а оболочка читала его из своего потока без замка.
+     * Новое оболочка берёт по сквозному номеру ([postedSince]).
+     */
+    private val postedLog = RecentLog<NotificationDecision>(POSTED_KEEP)
+
+    /** Сколько решений было всего — сквозной номер следующего. */
+    val postedTotal: Long get() = postedLog.total
+
+    /** Последние решения (копия): для проверок и экрана. */
+    val posted: List<NotificationDecision> get() = postedLog.toList()
+
+    /**
+     * Решения после сквозного номера [seen] и новый номер. Отставшая
+     * оболочка (больше [POSTED_KEEP] за раз) получает последние — старые
+     * уведомления к тому времени уже неактуальны.
+     */
+    fun postedSince(seen: Long): Pair<List<NotificationDecision>, Long> = postedLog.since(seen)
+
+    private fun post(d: NotificationDecision) = postedLog.add(d)
 
     var accounts: AccountsState = initialAccounts
         private set
@@ -551,7 +572,7 @@ class Orchestrator(
         runCommands()
         settleRequests()
         // Придержанное пределом частоты — сводкой, когда предел позволяет (ТЗ, §36).
-        notifications.flush(clock.now())?.let { posted += it }
+        notifications.flush(clock.now())?.let(::post)
         maybeSnapshot()
     }
 
@@ -1185,7 +1206,7 @@ class Orchestrator(
         notify(NotificationRequest(key, category, title, body, null, clock.now()))
 
     private fun notify(r: NotificationRequest) {
-        posted += notifications.submit(r)
+        post(notifications.submit(r))
     }
 
     /**
@@ -1889,6 +1910,9 @@ class Orchestrator(
         Dashboard.build(sessions, tasks, accounts, emptyMap(), Measure.observed(mergesState.pending.size), sessionsLogic, clock.now())
 
     companion object {
+        /** Сколько последних решений об уведомлениях держать в памяти. */
+        const val POSTED_KEEP = 500
+
         /** Сессии, которые не опрашиваются: ждут человека или сверки. */
         /** Ветка дерева задачи: по ней дерево узнаётся после перезапуска. */
         private const val TASK_BRANCH = "task/"
