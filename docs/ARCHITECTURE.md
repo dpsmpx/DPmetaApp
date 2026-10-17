@@ -52,7 +52,6 @@ tools/cs/
 │                    (dataset.py), графики SVG (charts.py), фигуры (figures.py), проверка (check.py)
 ├── site/            САЙТ — генератор (build.py), фиды и API (feeds.py), подписи (i18n.py), предпросмотр (preview.py), локальный сервер (serve.py), снимки страниц (shots.py), выгрузка на Beget (deploy.py)
 ├── platform_cli.py  команды платформы;  platform_checks.py  проверки платформы;  capabilities.py  матрица
-├── history.py       переписывание истории Git по списку личных слов автора (Д40) — запускает только автор
 └── claims.py facts.py validate.py visual.py exports.py provenance.py render.py …   конвейер изображений и гейты (v1)
 website/             тема сайта: templates/base.html, static/style.css (цвета — из токенов бренда)
 ```
@@ -159,7 +158,7 @@ renders/ и exports/: PNG/JPEG + *.layout.json → provenance.yaml (хэши, в
 | сквозной | `tests/test_platform_e2e.py`: новость → сайт → Telegram → проверка → аналитика → production-сборка |
 | регрессия | рендер (хэши), миграция, неизменность канона, граница модулей; снимки сайта — `tests/test_site_shots.py` (правила ловят поломки, staging фикстуры чистый) |
 | прогресс и фильтр | `tests/test_progress.py` (величины, фигуры, границы, валидатор, страница на staging и её отсутствие на production без одобрения), `tests/test_sensitive.py` (каждый вид утечки ловится, чистое и публичное проходит, метаданные изображений) |
-| личные слова | `tests/test_secrets.py` (список вне Git, строки без слов), `tests/test_history.py` (переписывание истории на временном «origin»: файлы, двоичные, сообщения, теги; отказ без «переписать»; сессия ИИ — отказ) |
+| личные слова | `tests/test_secrets.py` (список вне Git, строки без слов) |
 
 Реальные площадки в тестах не используются; рабочая проверка —
 безопасный режим на тестовом канале автора (§104).
@@ -176,7 +175,6 @@ python3 -m tools.cs publish --due | --record-manual | --reconcile | --cancel | -
 python3 -m tools.cs campaign status|list | calendar | search | stale
 python3 -m tools.cs site build|serve|shots|scan [каталог]|deploy | health | bundle | capabilities [--write] | events
 python3 -m tools.cs progress collect --start … --end … [--cutoff …] | progress show --id <набор>
-python3 -m tools.cs history rewrite [--workdir DIR] [--no-push]                # только автор (Д40)
 ```
 
 ## 9. Окружение

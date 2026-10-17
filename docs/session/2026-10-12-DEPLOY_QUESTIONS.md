@@ -32,7 +32,7 @@
   `a5e0d35`; `tools/check.sh` — красный только из-за тестов рендера и
   снимков сайта (`FAILED (failures=1, errors=2, skipped=3)`; вывод
   обрезан до 25 строк — видны два из трёх; на телефоне нет Playwright;
-  `skipped=3` — `tests/test_history.py`, нет git filter-repo); `secrets` —
+  `skipped=3` — tests/test_history.py, нет git filter-repo); `secrets` —
   «личные слова: LIMITED — списка нет»; `site deploy --dry-run` — 25
   изменений: новые `ecosystem/` с `.htaccess`, `path/`, `en/path/`;
   обновлены страницы (меню), `style.css`, `rss.xml`, `sitemap.xml`,

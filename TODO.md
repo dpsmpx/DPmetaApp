@@ -140,10 +140,6 @@
   `test_site.py`. Текст: `CLAUDE.md` («Идентичность»), `docs/SECURITY.md`
   (§3), `docs/platforms/WEBSITE.md`, `docs/ARCHITECTURE.md`. Правило
   «имени нет нигде» остаётся — в критике (К1).
-- [ ] **Убрать переписывание истории (Д40, ответ автора 12.10.2026).**
-  `tools/cs/history.py` и команда `history rewrite`, `tests/test_history.py`,
-  `docs/SECURITY.md` §4
-  («История с личными словами»), `docs/ARCHITECTURE.md`.
 - [ ] **Путь (Д44) после выгрузки:** снимки `/path/` и `/en/path/` с рабочего
   сайта (390 и 1280 px; сессией с доступом к сайту). Перепроверить ORC-STAGE до 21.10.2026 и при каждом
   новом шаге плана — `as_of` и станции в `data/website/path.yaml`.

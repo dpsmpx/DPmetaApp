@@ -6,7 +6,6 @@
   export ITEM --variant  экспорт варианта по форматам площадок (exports/)
   new                    новый объект в состоянии IDEA
   metrics import         импорт выгрузки CSV площадки (Д15)
-  history rewrite        личные слова — из всей истории Git (Д40), только автор
   …и команды платформы публикации — tools/cs/platform_cli.py (publish, approve, preview, site…)
 """
 from __future__ import annotations
@@ -15,7 +14,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import capabilities, claims, exports, facts, history, links, metrics, newitem, platform_checks, platform_cli, provenance, secrets, validate, visual
+from . import capabilities, claims, exports, facts, links, metrics, newitem, platform_checks, platform_cli, provenance, secrets, validate, visual
 from .common import Item, dump_yaml, find_item, load_yaml, rel, sha256_file
 from .model import effective_state, reached
 from .progress import check as progress_check
@@ -183,7 +182,6 @@ def main(argv=None) -> int:
     m.add_argument("--url")
     m.set_defaults(fn=cmd_metrics)
     platform_cli.register(sub)
-    history.register(sub)
     args = ap.parse_args(argv)
     return args.fn(args)
 

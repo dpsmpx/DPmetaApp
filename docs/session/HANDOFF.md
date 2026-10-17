@@ -196,7 +196,7 @@ PR #24). Поручение автора: «Загрузи все обновле
   невлитое из веток теперь в PR #24; PR #23 (та же стопка) закроется сам
   при влитии. `ccr-dffbd62b-iprg27` — уже в `main`.
 - **Переписывание истории (Д40):** команда `python3 -m tools.cs history
-  rewrite` (`tools/cs/history.py`, `tests/test_history.py`,
+  rewrite` (tools/cs/history.py, tests/test_history.py — удалены 17.10.2026,
   `docs/SECURITY.md` §4). Запускает автор у себя; в сессии ИИ — отказ.
   filter-repo `--replace-text` пропускает двоичные файлы, поэтому замена
   идёт своим обработчиком по всем файлам: в двоичных — звёздочки той же
