@@ -3,7 +3,7 @@
 Пошаговая инструкция автору: что сделать на Redmi Note 13 (основное
 устройство приёмки, D-28) и на ПК, чтобы закрыть открытые критерии,
 которым нужно устройство или долгий прогон. Версия приложения и агента —
-**0.1.0-dev.2**; срез на 17 октября 2026.
+**0.1.0-dev.3**; срез на 18 октября 2026.
 
 Порядок разделов важен: §3 и §4 идут в демо-режиме, а он кончается, как
 только в приложении появляется target с каталогом Claude (§5). Каждый
@@ -90,9 +90,9 @@ adb devices
 debug ставится поверх release без потери данных:
 
 ```sh
-adb install -r dpai-0.1.0-dev.2-debug.apk
+adb install -r dpai-0.1.0-dev.3-debug.apk
 adb shell run-as com.dpsmpx.dpai cat files/last-crash.txt > last-crash.txt
-adb install -r dpai-0.1.0-dev.2-release.apk
+adb install -r dpai-0.1.0-dev.3-release.apk
 ```
 
 Если на Redmi работает системный журнал, приложите и его:
@@ -118,14 +118,14 @@ release, как в третьей команде.
 
 ### 1.1. Файлы и проверка SHA-256
 
-Файлы лежат в ветке `apk-0.1.0-dev.2` репозитория
+Файлы лежат в ветке `apk-0.1.0-dev.3` репозитория
 `github.com/dpsmpx/DP_AI_Orcestrator`:
 
 | Файл | Зачем |
 |---|---|
-| `dpai-0.1.0-dev.2-release.apk` | приложение для проверки и замеров |
-| `dpai-0.1.0-dev.2-debug.apk` | только чтобы прочитать `last-crash.txt` (§0.4) |
-| `dpai-agent-0.1.0-dev.2.zip` | агент `dpai` для Termux и ПК: каталог `dpai/` с `bin/dpai` и `lib/` |
+| `dpai-0.1.0-dev.3-release.apk` | приложение для проверки и замеров |
+| `dpai-0.1.0-dev.3-debug.apk` | только чтобы прочитать `last-crash.txt` (§0.4) |
+| `dpai-agent-0.1.0-dev.3.zip` | агент `dpai` для Termux и ПК: каталог `dpai/` с `bin/dpai` и `lib/` |
 | `claude-proot.sh` | обёртка Claude Code для Termux (§5.3) |
 | `SHA256SUMS` | хеши файлов |
 | `README.md` | описание ветки |
@@ -135,7 +135,7 @@ release, как в третьей команде.
 есть):
 
 ```sh
-git clone --depth 1 --branch apk-0.1.0-dev.2 https://github.com/dpsmpx/DP_AI_Orcestrator.git ~/dpai-device-check
+git clone --depth 1 --branch apk-0.1.0-dev.3 https://github.com/dpsmpx/DP_AI_Orcestrator.git ~/dpai-device-check
 cd ~/dpai-device-check
 sha256sum -c SHA256SUMS
 ```
@@ -143,14 +143,14 @@ sha256sum -c SHA256SUMS
 Файлы для Termux — на телефон в «Загрузки»:
 
 ```sh
-adb push dpai-agent-0.1.0-dev.2.zip claude-proot.sh SHA256SUMS /sdcard/Download/
+adb push dpai-agent-0.1.0-dev.3.zip claude-proot.sh SHA256SUMS /sdcard/Download/
 ```
 
 Ожидается `…: OK` для каждого файла. Любое `FAILED` — стоп: файл не тот,
 скачайте заново; повторилось — FAIL пункта 1.1.
 
 С телефона без ПК: в браузере откройте
-`https://github.com/dpsmpx/DP_AI_Orcestrator/tree/apk-0.1.0-dev.2`,
+`https://github.com/dpsmpx/DP_AI_Orcestrator/tree/apk-0.1.0-dev.3`,
 нажмите на файл и кнопку загрузки «Download raw file». Хеш на телефоне
 сверяется в Termux (§5.2) после `termux-setup-storage`:
 
@@ -163,9 +163,10 @@ cd ~/storage/downloads && sha256sum -c SHA256SUMS --ignore-missing
 
 ### 1.2. Уже установленная версия
 
-**Стоит 0.1.0-dev.1 из ветки `apk-0.1.0-dev.1`.** Она подписана тем же
-ключом: dev.2 ставится поверх (§1.3; с ПК — `adb install -r
-dpai-0.1.0-dev.2-release.apk`), targets, ключ приложения и
+**Стоит 0.1.0-dev.1 или 0.1.0-dev.2** (ветки `apk-0.1.0-dev.1`,
+`apk-0.1.0-dev.2`). Они подписаны тем же ключом: dev.3 ставится поверх
+(§1.3; с ПК — `adb install -r
+dpai-0.1.0-dev.3-release.apk`), targets, ключ приложения и
 закреплённые ключи хостов остаются. После установки обновите агента на
 каждом target тем же архивом, как в §5.4 (Termux) или §10 (ПК): версии
 приложения и агента должны совпадать, иначе «Проверить» покажет
@@ -206,16 +207,16 @@ adb uninstall com.dpsmpx.dpai
 С ПК:
 
 ```sh
-adb install dpai-0.1.0-dev.2-release.apk
+adb install dpai-0.1.0-dev.3-release.apk
 adb shell dumpsys package com.dpsmpx.dpai | grep -E "versionName|versionCode"
 ```
 
-Ожидается `Success`, затем `versionCode=2` и `versionName=0.1.0-dev.2`.
+Ожидается `Success`, затем `versionCode=3` и `versionName=0.1.0-dev.3`.
 Если `adb install` отвечает `INSTALL_FAILED_USER_RESTRICTED`, у Xiaomi
 выключена «Установка через USB» в «Для разработчиков»; включить её без
 аккаунта Mi часто нельзя — тогда ставьте с телефона.
 
-С телефона: откройте скачанный `dpai-0.1.0-dev.2-release.apk` из
+С телефона: откройте скачанный `dpai-0.1.0-dev.3-release.apk` из
 «Загрузок», разрешите установку из этого источника, если HyperOS
 спросит, и подтвердите установку. Версия — в «О приложении».
 
@@ -343,9 +344,6 @@ adb shell pidof com.dpsmpx.dpai || echo "процесса нет"
 рывков дольше доли секунды, нет падения.
 
 ### 3.9. Поиск (ТЗ, §75)
-
-Только с версии **0.1.0-dev.3**: в 0.1.0-dev.2 кнопки «Найти» нет —
-пропустите пункт.
 
 1. Сверху справа «Найти» → наберите две-три буквы из названия любой
    задачи на доске. Ожидается: через долю секунды после того, как вы
@@ -540,14 +538,14 @@ claude --version
 
 ```sh
 cd ~/storage/downloads && sha256sum -c SHA256SUMS --ignore-missing && cd ~
-rm -rf ~/dpai && unzip -q ~/storage/downloads/dpai-agent-0.1.0-dev.2.zip -d ~
+rm -rf ~/dpai && unzip -q ~/storage/downloads/dpai-agent-0.1.0-dev.3.zip -d ~
 chmod +x ~/dpai/bin/dpai
 ~/dpai/bin/dpai version
 ~/dpai/bin/dpai agent doctor
 ```
 
-Ожидается: `dpai-agent-0.1.0-dev.2.zip: OK`; `dpai 0.1.0-dev.2`; одна
-строка JSON, в которой `"ok":true`, `"agentVersion":"0.1.0-dev.2"`,
+Ожидается: `dpai-agent-0.1.0-dev.3.zip: OK`; `dpai 0.1.0-dev.3`; одна
+строка JSON, в которой `"ok":true`, `"agentVersion":"0.1.0-dev.3"`,
 `"termux":true`, у `claude` — `"found":true` и версия, у `git` —
 `"found":true`. Сохраните эту строку для отчёта (в ней нет секретов):
 
@@ -668,7 +666,7 @@ ssh -i ~/.ssh/dpai_redmi -p 8022 u0_a123@127.0.0.1
 | Строка | Ожидание |
 |---|---|
 | связь | ответ за … мс |
-| агент | `dpai 0.1.0-dev.2; Linux aarch64; Java 21…; Termux`, без «обновить агента» — версии приложения и агента совпадают |
+| агент | `dpai 0.1.0-dev.3; Linux aarch64; Java 21…; Termux`, без «обновить агента» — версии приложения и агента совпадают |
 | Claude Code | версия, как в §5.3 |
 | Git | версия |
 | диск, память | свободно … МиБ |
@@ -1100,7 +1098,7 @@ Redmi Note 13, HyperOS 2.0 (8 октября 2026): уведомления DP AI
     зависимости»: снять зависимость, «Сохранить» → «Принято», задача
     начинается. То же — `dpai task add «…» «…» --scope README.md
     --depends-on <id>` и `dpai task <id> depends` (без id — снять).
-12. С версии **0.1.0-dev.3** — быстрые действия на «Сводке» (ТЗ, §73):
+12. Быстрые действия на «Сводке» (ТЗ, §73):
     поставьте две задачи; «Пауза всем (2)» → подтверждение → «Пауза:
     принято 2 из 2», на карточках «пауза»; «Продолжить все (2)» — задачи
     идут дальше. «Ждут человека» — список задач `BLOCKED`, `FAILED`,
@@ -1118,7 +1116,7 @@ Redmi Note 13, HyperOS 2.0 (8 октября 2026): уведомления DP AI
 5. После хода: на экране сессии — «Расход: ходов 1 · вход … · выход …»,
    в окне задачи — «расход:» по всем её сессиям; `dpai status` — то же у
    задачи в квадратных скобках (D-42, п. 4).
-6. С версии **0.1.0-dev.3** (ТЗ, §74): на экране сессии «Задача» —
+6. Быстрые действия сессии (ТЗ, §74): «Задача» —
    открывается лист задачи; «Контекст» — цель, следующее действие и
    источники последнего хода, касание источника показывает его текст;
    у задачи без хода — «контекст не собирался».
@@ -1198,8 +1196,8 @@ Windows-target на ПК описан в `docs/TESTING.md`, §8: OpenSSH Server
 Телефон дойдёт до него по кабелю через `adb reverse`, без открытия порта в
 сеть.
 
-1. Агент на ПК — той же версии 0.1.0-dev.2 (распакуйте
-   `dpai-agent-0.1.0-dev.2.zip` и направьте на него обёртку
+1. Агент на ПК — той же версии 0.1.0-dev.3 (распакуйте
+   `dpai-agent-0.1.0-dev.3.zip` и направьте на него обёртку
    `dpai-agent.cmd`), иначе «Проверить» покажет «обновить агента».
 2. Проброс порта (порт телефона 2222 → порт ПК 22):
 
@@ -1437,7 +1435,7 @@ python3 tools/audit/final_stability.py --endurance build/audits/final-stability/
 отличалось от ожидаемого.
 
 ```text
-# Проверка на устройстве — 0.1.0-dev.2
+# Проверка на устройстве — 0.1.0-dev.3
 
 Дата:
 Телефон: модель (getprop ro.product.model) / Android / HyperOS / RAM / частота экрана
@@ -1450,7 +1448,7 @@ Claude Code: версия (claude --version)
 | Пункт | Статус | Заметки |
 |---|---|---|
 | 1.1 SHA-256 файлов | | |
-| 1.3 установка, versionName 0.1.0-dev.2 | | удаляли ли старую версию |
+| 1.3 установка, versionName 0.1.0-dev.3 | | удаляли ли старую версию |
 | 2.1 первый запуск, разрешение уведомлений | | |
 | 2.2 настройки HyperOS | | какие пункты нашлись и как называются |
 | 3.1 сводка демо, N сессий | | N = |
@@ -1461,7 +1459,7 @@ Claude Code: версия (claude --version)
 | 3.6 пересоздание процесса | | способ: am kill / лимит процессов |
 | 3.7 force-stop и новый запуск | | |
 | 3.8 длинная временная шкала | | |
-| 3.9 поиск (с dev.3) | | |
+| 3.9 поиск | | |
 | 4.1 холодный старт, медиана TotalTime | | мс; индикатор загрузки после окна: нет / < 0,5 с / больше |
 | 4.2 кадры, первый прогон | | кадров / janky % / p50 / p90 / p95 / p99; частота экрана |
 | 4.2 кадры, после прогрева | | то же |
