@@ -276,6 +276,25 @@ class DemoModel(
     fun taskMessages(task: TaskId): List<com.dpsmpx.dpai.orchestrator.TurnMessage> =
         runCatching { built?.orchestrator?.turnMessages(task) }.getOrNull().orEmpty()
 
+    /**
+     * Глобальный поиск (ТЗ, §75). Проекции неизменяемы и читаются без замка;
+     * события, контексты и отказы дописывает такт — их копия берётся под
+     * замком, если он освободится за [SEARCH_WAIT_MS], иначе поиск идёт без
+     * них, и итог это говорит (D-05). Не из главного потока; контура нет — `null`.
+     */
+    fun search(query: String): com.dpsmpx.dpai.ui.GlobalSearch.Result? {
+        val o = built?.orchestrator ?: return null
+        var source = com.dpsmpx.dpai.ui.GlobalSearch.Source(o.tasks, o.sessions, o.accounts, o.worktrees, o.handoffs.all(), o.projectConfig)
+        if (lock.tryLock(SEARCH_WAIT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+            try {
+                source = source.copy(events = o.recentEvents(), eventsFrom = o.eventsFrom, contexts = o.contexts(), problems = o.problems.toList())
+            } finally {
+                lock.unlock()
+            }
+        }
+        return com.dpsmpx.dpai.ui.GlobalSearch.search(source, query)
+    }
+
     /** Настройки контура (D-42, п. 5, 6) — для вкладки Targets; без замка. */
     fun control(): com.dpsmpx.dpai.orchestrator.commands.ControlState? = runCatching { (built as? LiveSystem)?.orchestrator?.control }.getOrNull()
 
@@ -334,6 +353,9 @@ class DemoModel(
 
         /** Сколько ждать итога команды: такт с вызовом target идёт секунды, не минуты. */
         private const val WAIT_MS = 30_000L
+
+        /** Сколько поиск ждёт конца такта ради событий: дольше — поиск без них, человек не ждёт. */
+        private const val SEARCH_WAIT_MS = 1_500L
 
         @Volatile
         private var instance: DemoModel? = null

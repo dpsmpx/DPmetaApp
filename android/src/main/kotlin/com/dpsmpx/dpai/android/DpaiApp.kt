@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -73,6 +74,9 @@ private const val SESSION_SCREEN = -1
 /** Период шага контроллера: каждый шаг — вызовы агентов по SSH. */
 private const val LIVE_STEP_MS = 3000L
 
+/** Пауза ввода перед поиском (ТЗ, §75): поиск — когда человек перестал печатать. */
+private const val SEARCH_PAUSE_MS = 350L
+
 /**
  * Приложение: сводка и доска задач, экран сессии по нажатию (ТЗ, §38–§41).
  * Шаг системы идёт вне главного потока; главный поток только рисует
@@ -89,6 +93,9 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
     // Сбой контроллера (журнал не открылся, target недоступен при запуске): показать, а не упасть —
     // иначе приложение падало бы при каждом запуске и target нельзя было бы исправить.
     var failure by remember { mutableStateOf<String?>(null) }
+    // Глобальный поиск (ТЗ, §75) и задача, открытая из него, — лист задачи поверх любой вкладки.
+    var searching by rememberSaveable { mutableStateOf(false) }
+    var foundTask by remember { mutableStateOf<com.dpsmpx.dpai.core.ids.TaskId?>(null) }
     val selected by rememberUpdatedState(selectedId)
     val scope = rememberCoroutineScope()
 
@@ -152,6 +159,20 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
         if (incoming != Incoming()) onIncoming()
     }
     confirmUri?.let { uri -> ConfirmDialog(model, snapshot?.requests.orEmpty(), uri) { confirmUri = null } }
+    // Найденное ведёт к сущности: сессия — её экран, задача — её лист, слоты и проекты — вкладка Targets.
+    if (searching) {
+        SearchDialog(model, onDone = { searching = false }) { link ->
+            searching = false
+            when (link.kind) {
+                com.dpsmpx.dpai.notifications.DeepLink.Kind.SESSION -> selectedId = link.id
+                com.dpsmpx.dpai.notifications.DeepLink.Kind.TASK -> foundTask = com.dpsmpx.dpai.core.ids.IdKinds.TASK.parse(link.id).valueOrNull()
+                com.dpsmpx.dpai.notifications.DeepLink.Kind.REQUEST -> { selectedId = null; tab = 3 }
+                com.dpsmpx.dpai.notifications.DeepLink.Kind.EVENT -> Unit
+                else -> { selectedId = null; tab = 2 }
+            }
+        }
+    }
+    foundTask?.let { t -> TaskSheet(model, t, onSession = { s -> foundTask = null; selectedId = s }) { foundTask = null } }
 
     Scaffold(
         topBar = {
@@ -160,6 +181,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                 navigationIcon = {
                     if (selectedId != null) TextButton(onClick = { selectedId = null }) { Text("←") }
                 },
+                actions = { TextButton(onClick = { searching = true }) { Text("Найти") } },
             )
         },
         bottomBar = {
@@ -378,6 +400,70 @@ private fun BoardPane(board: TaskBoard, live: Boolean, model: DemoModel, archive
     }
     if (creating) NewTaskDialog(model) { creating = false }
     opened?.let { t -> TaskSheet(model, t, onSession = { s -> opened = null; onSession(s) }) { opened = null } }
+}
+
+/**
+ * Глобальный поиск (ТЗ, §75): ищет после паузы ввода, а не на каждую букву;
+ * найденное — по видам, касание ведёт к сущности ([onOpen]). Чего поиск не
+ * видел (события во время такта, старые сегменты журнала), сказано над
+ * списком (D-05).
+ */
+@Composable
+private fun SearchDialog(model: DemoModel, onDone: () -> Unit, onOpen: (com.dpsmpx.dpai.notifications.DeepLink) -> Unit) {
+    var query by rememberSaveable { mutableStateOf("") }
+    var result by remember { mutableStateOf<com.dpsmpx.dpai.ui.GlobalSearch.Result?>(null) }
+    var unavailable by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+    LaunchedEffect(query) {
+        if (query.trim().length < com.dpsmpx.dpai.ui.GlobalSearch.MIN_QUERY) {
+            result = null
+            return@LaunchedEffect
+        }
+        delay(SEARCH_PAUSE_MS)
+        busy = true
+        try {
+            val r = withContext(Dispatchers.IO) { model.search(query) }
+            unavailable = r == null
+            result = r
+        } finally {
+            busy = false
+        }
+    }
+    AlertDialog(
+        onDismissRequest = onDone,
+        title = { Text("Поиск") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedTextField(query, { query = it }, label = { Text("Задача, сессия, ветка, коммит, код…") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                when {
+                    busy -> Text("Ищу…", style = MaterialTheme.typography.bodySmall)
+                    unavailable -> Text("Контур ещё не запущен — искать негде.", style = MaterialTheme.typography.bodySmall)
+                    result?.hits?.isEmpty() == true -> Text("Ничего не найдено.", style = MaterialTheme.typography.bodySmall)
+                }
+                val r = result
+                if (r != null) {
+                    LazyColumn(Modifier.heightIn(max = 420.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        items(r.notes) { n -> Text(n, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        r.hits.groupBy { it.kind }.forEach { (kind, hits) ->
+                            item(key = "h:${kind.name}") {
+                                val more = r.more[kind]?.let { " и ещё $it" } ?: ""
+                                Text("${kind.label} (${hits.size}$more)", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 6.dp))
+                            }
+                            items(hits) { h ->
+                                // Системное событие ведёт к самому событию — экрана события нет, касание ничего не делает.
+                                val link = h.link?.takeIf { it.kind != com.dpsmpx.dpai.notifications.DeepLink.Kind.EVENT }
+                                Column(Modifier.fillMaxWidth().then(if (link != null) Modifier.clickable { onOpen(link) } else Modifier).padding(vertical = 2.dp)) {
+                                    Text(h.title, style = MaterialTheme.typography.bodyMedium, maxLines = 2)
+                                    Text(h.detail, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 3)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDone) { Text("Закрыть") } },
+    )
 }
 
 /** Новая задача контроллеру: название и цель — что Claude должен сделать (ТЗ, §21). */

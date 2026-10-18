@@ -1838,6 +1838,22 @@ class Orchestrator(
         ),
     )
 
+    /**
+     * События в памяти — активный сегмент журнала (D-37), по порядку записи;
+     * старшие — в сегментах на диске. Для поиска (ТЗ, §75): журнал дописывает
+     * такт, поэтому вызывать под замком такта, как [tick].
+     */
+    fun recentEvents(): List<EventEnvelope> = journal.records(journal.activeFrom).map { it.event }
+
+    /** Номер первой записи в памяти: записи до него — в сегментах на диске (D-37). */
+    val eventsFrom: Long get() = journal.activeFrom
+
+    /** Последние версии контекстов задач в памяти (ТЗ, §75); под замком такта, как [recentEvents]. */
+    fun contexts(): List<ContextBundle> = contextOf.values.toList()
+
+    /** Проект контура: репозиторий, ветка интеграции (ТЗ, §75 — поиск по проектам). */
+    val projectConfig: ProjectConfig get() = config
+
     /** Последняя версия контекста задачи — что видел Claude в последнем ходе. */
     fun lastContext(task: TaskId): ContextBundle? = contextOf[task] ?: storedContext(task, report = false)
 
