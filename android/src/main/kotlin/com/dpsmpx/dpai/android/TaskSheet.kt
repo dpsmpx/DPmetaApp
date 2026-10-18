@@ -105,6 +105,7 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
                     "класс ${d.taskClass} · модель ${d.model ?: "по классу"} · усилие ${d.effort ?: "по классу"} · бюджет хода ${d.budgetCents?.let { "%.2f $".format(it / 100.0) } ?: "без предела"}",
                     style = MaterialTheme.typography.labelSmall,
                 )
+                d.usage?.let { Text("расход: $it", style = MaterialTheme.typography.labelSmall) }
                 d.scope?.let { Text("область: ${it.sorted().joinToString(", ")}", style = MaterialTheme.typography.labelSmall) }
                 if (d.dependencies.isNotEmpty()) {
                     Text("зависит от: ${d.dependencies.joinToString(" · ") { "${it.title} (${it.state})" }}", style = MaterialTheme.typography.labelSmall)

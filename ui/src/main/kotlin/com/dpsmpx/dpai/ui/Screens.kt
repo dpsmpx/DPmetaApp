@@ -63,6 +63,8 @@ data class SessionScreen(
     val timeline: List<TimelineLine>,
     val live: LiveLine? = null,
     val actions: List<SessionAction> = emptyList(),
+    /** Расход сессии (D-42, п. 4); ходов не было — `null`. */
+    val usage: String? = null,
 )
 
 /** Действие человека с сессией (D-42, п. 3). */
@@ -128,6 +130,7 @@ object Screens {
         live: LiveTurn? = null,
         now: com.dpsmpx.dpai.core.clock.Timestamp? = null,
         actions: List<SessionAction> = emptyList(),
+        usage: com.dpsmpx.dpai.sessions.UsageTotals? = null,
     ): SessionScreen {
         val stream = StreamRef.of(session)
         val own = events.filter { it.stream == stream }
@@ -137,6 +140,7 @@ object Screens {
             timeline = Timeline.of(own).map { TimelineLine(it.at.toIsoString().substring(11, 19), it.text) },
             live = live?.let { l -> LiveLine(l.tool, l.target, l.text, now?.let { ago(it.epochMillis - l.at.epochMillis) } ?: "?") },
             actions = actions,
+            usage = usage?.let { UsageText.of(com.dpsmpx.dpai.sessions.UsageSummary.of(listOf(it))) },
         )
     }
 

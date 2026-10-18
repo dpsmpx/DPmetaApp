@@ -191,6 +191,18 @@ class ControlApi(
 
 /** Снимок для `dpai` (D-47): то же, что видит экран, — данными. */
 object ControlSnapshot {
+    /** Расход (D-42, п. 4): ходов не было — поля нет; стоимость — строкой, без потери точности. */
+    private fun usage(u: com.dpsmpx.dpai.sessions.UsageSummary): JsonObject? = if (u.empty) {
+        null
+    } else {
+        JsonObject.of(
+            "turns" to JsonNumber.of(u.turns), "unknownTurns" to JsonNumber.of(u.unknownTurns),
+            "inputTokens" to JsonNumber.of(u.inputTokens), "outputTokens" to JsonNumber.of(u.outputTokens),
+            "cacheReadTokens" to JsonNumber.of(u.cacheReadTokens), "costUsd" to JsonString(u.costUsd.toPlainString()),
+            "costEstimated" to JsonBool(u.costEstimated),
+        )
+    }
+
     fun of(o: Orchestrator): JsonObject {
         val now = o.now()
         return JsonObject(
@@ -207,15 +219,18 @@ object ControlSnapshot {
                                 // Причина — пока что-то не так; у выполненной это уже история (отмена до повтора и т. п.).
                                 t.lastReason?.takeIf { t.state != com.dpsmpx.dpai.core.state.TaskState.DONE }?.let { put("reason", JsonString(it.name)) }
                                 o.waitingReason(t.id)?.let { put("waiting", JsonString(it)) }
+                                usage(com.dpsmpx.dpai.sessions.UsageSummary.of(o.sessions.sessions.values.filter { it.task == t.id }.map { it.usage }))?.let { put("usage", it) }
                             },
                         )
                     },
                 ),
                 "sessions" to JsonArray(
                     o.sessions.sessions.values.sortedBy { it.createdAt.epochMillis }.map { s ->
-                        JsonObject.of(
-                            "id" to JsonString(s.id.value), "task" to JsonString(s.task.value), "state" to JsonString(s.state.name),
-                            "target" to JsonString(s.target.value), "turn" to JsonNumber.of(s.turn),
+                        JsonObject(
+                            linkedMapOf<String, JsonValue>(
+                                "id" to JsonString(s.id.value), "task" to JsonString(s.task.value), "state" to JsonString(s.state.name),
+                                "target" to JsonString(s.target.value), "turn" to JsonNumber.of(s.turn),
+                            ).apply { usage(com.dpsmpx.dpai.sessions.UsageSummary.of(listOf(s.usage)))?.let { put("usage", it) } },
                         )
                     },
                 ),

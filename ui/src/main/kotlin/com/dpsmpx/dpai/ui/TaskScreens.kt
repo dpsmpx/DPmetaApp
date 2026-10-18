@@ -51,6 +51,8 @@ data class TaskDetail(
     val scope: Set<String>? = null,
     /** Зависимости: задача, её название и состояние (ТЗ, §21). */
     val dependencies: List<DependencyLine> = emptyList(),
+    /** Расход всех сессий задачи (D-42, п. 4); ходов не было — `null`. */
+    val usage: String? = null,
 )
 
 /** Строка зависимости в листе задачи. */
@@ -90,6 +92,7 @@ object TaskScreens {
         waiting = waiting?.takeIf { t.state == TaskState.READY },
         scope = t.scope,
         dependencies = t.dependencies.map { d -> DependencyLine(d, tasks[d]?.title ?: d.value, tasks[d]?.state?.name ?: "?") }.sortedBy { it.title },
+        usage = UsageText.of(com.dpsmpx.dpai.sessions.UsageSummary.of(sessions.sessions.values.filter { it.task == t.id }.map { it.usage })),
     )
 
     /**

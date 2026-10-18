@@ -113,12 +113,13 @@ class ControlCommand(
         for (t in tasks) {
             val extra = listOfNotNull(
                 "архив".takeIf { bool(t, "archived") }, "пауза".takeIf { bool(t, "held") }, str(t, "model"), str(t, "reason"), str(t, "waiting")?.let { "ждёт: $it" },
+                spend(t),
             ).joinToString(" · ")
             out("  ${short(str(t, "id"))}  ${str(t, "state")}  ${str(t, "priority")}  ${str(t, "title")}${if (extra.isNotEmpty()) "  [$extra]" else ""}")
         }
         val live = list(s, "sessions").filter { str(it, "state") !in setOf("COMPLETED", "FAILED", "CANCELLED") }
         out("Сессии идут (${live.size}):")
-        for (x in live) out("  ${short(str(x, "id"))}  ${str(x, "state")}  ход ${num(x, "turn")}  задача ${short(str(x, "task"))}")
+        for (x in live) out("  ${short(str(x, "id"))}  ${str(x, "state")}  ход ${num(x, "turn")}  задача ${short(str(x, "task"))}${spend(x)?.let { "  [$it]" } ?: ""}")
         val reqs = list(s, "requests")
         if (reqs.isNotEmpty()) out("Запросы ждут ответа: ${reqs.size} (dpai requests)")
         for (sub in list(s, "subscriptions")) {
@@ -131,6 +132,14 @@ class ControlCommand(
         val control = s["control"] as? JsonObject
         control?.let { c -> num(c, "maxSessions")?.let { out("Предел сессий контура: $it") } }
         return OK
+    }
+
+    /** Расход задачи или сессии (D-42, п. 4): ходы и стоимость; ходов не было — `null`. */
+    private fun spend(o: JsonObject): String? {
+        val u = o["usage"] as? JsonObject ?: return null
+        val cost = str(u, "costUsd")?.toBigDecimalOrNull()?.takeIf { it.signum() > 0 }
+            ?.let { "$" + it.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString() + if (bool(u, "costEstimated")) " (оценка)" else "" }
+        return listOfNotNull("ходов ${num(u, "turns")}", "вход ${num(u, "inputTokens")} · выход ${num(u, "outputTokens")}", cost).joinToString(" · ")
     }
 
     private fun requests(): Int {
