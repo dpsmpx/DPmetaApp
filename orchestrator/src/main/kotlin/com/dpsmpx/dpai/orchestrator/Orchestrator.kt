@@ -559,8 +559,10 @@ class Orchestrator(
         val room = control.maxSessions?.let { (it - sessions.sessions.values.count { s -> !s.terminal }).coerceAtLeast(0) } ?: Int.MAX_VALUE
         for (a in tasksLogic.plan(tasks, clock.now(), offers).take(room)) {
             runCommands()
-            // Команда могла снять задачу с очереди (отмена, ответ человека) — план уже не про неё.
-            if (tasks.tasks[a.task]?.state != TaskState.READY) continue
+            // Команда могла снять задачу с очереди (отмена, ответ человека) или придержать её («Пауза всем»,
+            // ТЗ, §73) — план уже не про неё: удержанная остаётся READY, и без проверки held она бы запустилась.
+            val now = tasks.tasks[a.task]
+            if (now == null || now.state != TaskState.READY || now.held) continue
             if (overlapAllows(a.task)) launch(a.task, a.target)
         }
         for (s in sessions.sessions.values.filter { it.state !in WAIT_STATES && !it.terminal }.map { it.id }.sorted()) {

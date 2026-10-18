@@ -228,13 +228,18 @@ class DemoModel(
      */
     fun context(task: TaskId): Pair<com.dpsmpx.dpai.ui.ContextView?, String?> {
         val o = built?.orchestrator ?: return null to "контур ещё не запущен"
-        if (!lock.tryLock(SEARCH_WAIT_MS, TimeUnit.MILLISECONDS)) return null to "идёт такт контура — повторите через несколько секунд"
-        return try {
-            o.lastContext(task)?.let { com.dpsmpx.dpai.ui.ContextScreens.view(it) to null } ?: (null to "у задачи ещё не было хода — контекст не собирался")
+        if (!lock.tryLock(SEARCH_WAIT_MS, TimeUnit.MILLISECONDS)) return null to CONTEXT_BUSY
+        // Под замком — только чтение версии (она неизменна); показ с Redactor по всему тексту — уже без замка такта.
+        val bundle = try {
+            o.lastContext(task)
         } finally {
             lock.unlock()
         }
+        return bundle?.let { com.dpsmpx.dpai.ui.ContextScreens.view(it) to null } ?: (null to "у задачи ещё не было хода — контекст не собирался")
     }
+
+    /** Быстрые действия по текущему состоянию контура (ТЗ, §73) — в миг нажатия, а не по снимку, который такт мог задержать. */
+    fun quickNow(): com.dpsmpx.dpai.ui.QuickActions? = runCatching { built?.orchestrator?.tasks?.let(com.dpsmpx.dpai.ui.QuickActions::of) }.getOrNull()
 
     /**
      * Незавершённые сессии на target — перед его удалением (ревью 8 октября
@@ -411,6 +416,9 @@ class DemoModel(
 
         /** Сколько поиск ждёт конца такта ради событий: дольше — поиск без них, человек не ждёт. */
         private const val SEARCH_WAIT_MS = 1_500L
+
+        /** Причина «контекст не прочитан: идёт такт» — окно повторяет попытку само. */
+        const val CONTEXT_BUSY = "идёт такт контура — пробую ещё раз"
 
         @Volatile
         private var instance: DemoModel? = null

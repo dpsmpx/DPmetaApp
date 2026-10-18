@@ -147,6 +147,28 @@ class TaskCommandsTest {
         assertEquals(TaskState.DONE, state(second, t))
     }
 
+    /**
+     * Пауза, пришедшая посреди такта (ТЗ, §73, «Пауза всем»), не даёт
+     * запустить задачу, уже попавшую в план этого такта: удержанная
+     * остаётся READY, решает признак held.
+     */
+    @Test
+    fun holdArrivingMidTickStopsAlreadyPlannedLaunch() {
+        val (o, _) = boot()
+        val a = o.addTask("первая", "цель").valueOrNull()!!
+        val b = o.addTask("вторая", "цель").valueOrNull()!!
+        // Команды приходят, пока такт запускает первую из запланированных: их исполнит такт перед следующим запуском.
+        scenario = { n ->
+            if (n == 1) listOf(a, b).forEach { o.submit(Command.Hold(it)) }
+            MockScenario.SLOW_OUTPUT
+        }
+        o.tick()
+        val started = listOf(a, b).filter { t -> o.sessions.sessions.values.any { it.task == t } }
+        assertEquals(1, started.size, "вторая из плана такта не запускается: $started")
+        assertTrue(listOf(a, b).all { o.tasks.tasks.getValue(it).held })
+        assertEquals(emptyList(), o.invariants())
+    }
+
     @Test
     fun cancelStopsRunningTurnAndFreesResources() {
         val (o, _) = boot()

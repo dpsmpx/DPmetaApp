@@ -70,7 +70,7 @@ fun QuickRow(quick: QuickActions, live: Boolean, requests: Int, model: DemoModel
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             if (live) OutlinedButton(onClick = { creating = true }) { Text("Новая задача") }
             OutlinedButton(enabled = !busy && quick.holdable.isNotEmpty(), onClick = { confirmHold = true }) { Text("Пауза всем (${quick.holdable.size})") }
-            OutlinedButton(enabled = !busy && quick.resumable.isNotEmpty(), onClick = { run("Продолжить", quick.resumeAll(keys.next(IdKinds.OPERATION).value)) }) {
+            OutlinedButton(enabled = !busy && quick.resumable.isNotEmpty(), onClick = { run("Продолжить", (model.quickNow() ?: quick).resumeAll(keys.next(IdKinds.OPERATION).value)) }) {
                 Text("Продолжить все (${quick.resumable.size})")
             }
             OutlinedButton(enabled = quick.waiting.isNotEmpty(), onClick = { waiting = true }) { Text("Ждут человека (${quick.waiting.size})") }
@@ -88,7 +88,8 @@ fun QuickRow(quick: QuickActions, live: Boolean, requests: Int, model: DemoModel
             confirmButton = {
                 TextButton(onClick = {
                     confirmHold = false
-                    run("Пауза", quick.holdAll(keys.next(IdKinds.OPERATION).value))
+                    // Набор задач — в миг нажатия: снимок мог отстать на такт, и новая задача осталась бы без паузы.
+                    run("Пауза", (model.quickNow() ?: quick).holdAll(keys.next(IdKinds.OPERATION).value))
                 }) { Text("Приостановить") }
             },
             dismissButton = { TextButton(onClick = { confirmHold = false }) { Text("Отмена") } },
@@ -118,6 +119,10 @@ fun QuickRow(quick: QuickActions, live: Boolean, requests: Int, model: DemoModel
     }
 }
 
+/** Сколько раз окно «Контекст» пробует прочитать версию, пока идёт такт, и пауза между попытками. */
+private const val CONTEXT_TRIES = 10
+private const val CONTEXT_RETRY_MS = 1_500L
+
 /**
  * Окно «Контекст» сессии (ТЗ, §74, View context): что видел Claude в
  * последнем ходе задачи — цель, следующее действие, источники и что не
@@ -130,10 +135,17 @@ fun ContextDialog(model: DemoModel, task: TaskId, onDone: () -> Unit) {
     var loading by remember { mutableStateOf(true) }
     var opened by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(task) {
-        val (v, reason) = withContext(Dispatchers.IO) { model.context(task) }
-        view = v
-        why = reason
-        loading = false
+        // Такт держит замок, пока ходит к target: окно повторяет попытку само, а не просит закрыть и открыть.
+        repeat(CONTEXT_TRIES) { attempt ->
+            val (v, reason) = withContext(Dispatchers.IO) { model.context(task) }
+            view = v
+            why = reason
+            if (reason != DemoModel.CONTEXT_BUSY || attempt == CONTEXT_TRIES - 1) {
+                loading = false
+                return@LaunchedEffect
+            }
+            kotlinx.coroutines.delay(CONTEXT_RETRY_MS)
+        }
     }
     AlertDialog(
         onDismissRequest = onDone,

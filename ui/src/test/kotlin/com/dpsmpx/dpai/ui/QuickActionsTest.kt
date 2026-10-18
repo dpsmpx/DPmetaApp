@@ -43,7 +43,9 @@ class QuickActionsTest {
         val unverified = task("без проверки", TaskState.COMPLETION_UNVERIFIED)
         val done = task("готово", TaskState.DONE)
         val archived = task("в архиве", TaskState.FAILED, archived = true)
-        val q = QuickActions.of(TasksState(listOf(ready, running, paused, failed, blocked, unverified, done, archived).associateBy { it.id }))
+        // Отменённая на паузе: контур её не отпустит (`Tasks.hold`), «Продолжить» ей не предлагается.
+        val cancelledHeld = task("отменена на паузе", TaskState.CANCELLED, held = true)
+        val q = QuickActions.of(TasksState(listOf(ready, running, paused, failed, blocked, unverified, done, archived, cancelledHeld).associateBy { it.id }))
         assertEquals(setOf(ready.id, running.id, blocked.id), q.holdable.toSet(), "пауза — тем, кого можно приостановить")
         assertEquals(listOf(paused.id), q.resumable)
         // Ждут человека — новые первыми; задача в архиве не показывается.
@@ -78,7 +80,7 @@ class QuickActionsTest {
             omitted = listOf(OmittedSource("doc:big.md", SourceLevel.DOCUMENT, 9000), OmittedSource("doc:copy.md", SourceLevel.DOCUMENT, 10, sameAs = "doc:README.md")),
         )
         val v = ContextScreens.view(c)
-        assertEquals("Контекст v3", v.title)
+        assertEquals("Контекст задачи v3", v.title)
         assertTrue(token !in v.sources[0].text!!, "секрет в тексте источника скрыт (D-14)")
         assertNull(v.sources[1].text, "секретный источник — без текста (ТЗ, §65)")
         assertEquals("текст скрыт: SECRET", v.sources[1].hidden)

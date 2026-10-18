@@ -66,7 +66,8 @@ object ContextScreens {
      * через [Redactor] (D-14), длинное — обрезано с пометкой.
      */
     fun view(c: ContextBundle): ContextView = ContextView(
-        title = "Контекст v${c.version}",
+        // Последняя собранная версия задачи: её видел последний ход или увидит следующий (после отказа проверки — новая).
+        title = "Контекст задачи v${c.version}",
         objective = Redactor.STANDARD.redact(c.objective),
         nextAction = c.nextAction?.let(Redactor.STANDARD::redact),
         hash = c.hash.toString(),

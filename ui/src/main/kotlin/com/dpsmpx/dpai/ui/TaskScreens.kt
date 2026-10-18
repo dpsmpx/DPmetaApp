@@ -71,7 +71,12 @@ object TaskScreens {
         if (!t.terminal) add(TaskAction.PRIORITY)
         if (t.state in EDITABLE) add(TaskAction.POLICY)
         if (t.state in EDITABLE && !t.terminal) add(TaskAction.SCOPE)
-        if (t.held) add(TaskAction.RESUME) else if (t.state in HOLDABLE) add(TaskAction.HOLD)
+        // Завершённую не отпускают и не удерживают (`Tasks.hold`): у отменённой на паузе «Продолжить» был бы отказом.
+        if (t.held) {
+            if (!t.terminal) add(TaskAction.RESUME)
+        } else if (t.state in HOLDABLE) {
+            add(TaskAction.HOLD)
+        }
         if (t.state == TaskState.FAILED || t.state == TaskState.CANCELLED || t.state == TaskState.BLOCKED) add(TaskAction.RETRY)
         if (t.state == TaskState.BLOCKED) add(TaskAction.REPLY)
         if (t.state == TaskState.COMPLETION_UNVERIFIED) {
