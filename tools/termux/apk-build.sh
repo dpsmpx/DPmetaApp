@@ -21,7 +21,7 @@
 # умолчанию ~/dppass-build/termux-env.sh, на котором уже собирается DPpass:
 # ANDROID_HOME, JAVA_HOME, обходы aapt2 и NDK под proot. DPpass собирается, как
 # прежде, ~/dppass-build/build.sh с ключом dppass-dev (DPpass:D-35, DPpass:D-49).
-# Лог — ~/apk-build/<проект>.log; итог — APK, которые появились в клоне за сборку.
+# Лог — ~/apk-build/<проект>.log; итог — APK в каталоге выхода пункта, новые и прежние.
 #
 # Файл — на POSIX sh: та же функция inner работает в busybox sh внутри Alpine.
 # pipefail есть и в bash, и в busybox sh.
@@ -36,28 +36,34 @@ DISTRO="${APK_BUILD_DISTRO:-alpine}"
 DPPASS_B="$HOME/dppass-build"
 PROJECTS="dpmetaapp dppass galdhold galdhold-polygon gravitydefied andors-trail"
 
-# Проект: репозиторий, строка меню, скрипт сборки в клоне и команда его запуска
-# из корня клона (D-31). У DPpass своя сборка — ниже, отдельно.
+# Проект: репозиторий, строка меню, скрипт сборки в клоне, команда его запуска из
+# корня клона (D-31) и каталог, где он оставляет APK. У DPpass своя сборка — ниже.
 project() {
   case "$1" in
     dpmetaapp)
       REPO=DPmetaApp; TITLE="DPmetaApp — пульт (dpai/android, release)"
-      SCRIPT=tools/build-apk.sh; CMD="sh tools/build-apk.sh release" ;;
+      SCRIPT=tools/build-apk.sh; CMD="sh tools/build-apk.sh release"
+      OUT=dpai/android/build/outputs/apk ;;
     dppass)
       REPO=DPmetaApp; TITLE="DPpass — подпись ключом dppass-dev"
-      SCRIPT=; CMD= ;;
+      SCRIPT=; CMD=
+      OUT=dppass/build/release-apk ;;
     galdhold)
       REPO=Galdhold; TITLE="Galdhold — игра (debug, код с -O2)"
-      SCRIPT=build_gradle.sh; CMD="bash tools/deps.sh glm entt tomlplusplus && bash build_gradle.sh debug" ;;
+      SCRIPT=build_gradle.sh; CMD="bash tools/deps.sh glm entt tomlplusplus && bash build_gradle.sh debug"
+      OUT=app/build/outputs/apk ;;
     galdhold-polygon)
       REPO=Galdhold; TITLE="Galdhold — полигон движка"
-      SCRIPT=build_gradle.sh; CMD="bash tools/deps.sh glm entt tomlplusplus && bash build_gradle.sh polygon" ;;
+      SCRIPT=build_gradle.sh; CMD="bash tools/deps.sh glm entt tomlplusplus && bash build_gradle.sh polygon"
+      OUT=polygon/android/build/outputs/apk ;;
     gravitydefied)
       REPO=gravitydefied; TITLE="Gravity Defied — форк (debug)"
-      SCRIPT=build-apk.sh; CMD="sh build-apk.sh" ;;
+      SCRIPT=build-apk.sh; CMD="sh build-apk.sh"
+      OUT=app/build/outputs/apk ;;
     andors-trail)
       REPO=andors-trail-load; TITLE="Andor's Trail — форк andors-trail-load (debug)"
-      SCRIPT=build-apk.sh; CMD="sh build-apk.sh" ;;
+      SCRIPT=build-apk.sh; CMD="sh build-apk.sh"
+      OUT=AndorsTrail/app/build/outputs/apk ;;
     *) return 1 ;;
   esac
 }
@@ -209,13 +215,13 @@ min=$(( ($(date +%s) - start) / 60 ))
 [ -f "$HOME/bin/beep-attention.sh" ] && { sh "$HOME/bin/beep-attention.sh" >/dev/null 2>&1 || true; }
 
 [ "$status" = 0 ] || fail "сборка не прошла (код $status, $min мин); лог — $LOG"
-# Итог — APK в каталогах build/ клона; промежуточные AGP не в счёт. Gradle не
-# пересобирает то, что не менялось (UP-TO-DATE), — такие APK помечены «прежний».
-apks=$(find "$DIR" -path "$DIR/.git" -prune -o -name '*.apk' -path '*/build/*' ! -path '*/intermediates/*' -print 2>/dev/null | sort) || apks=
-[ -n "$apks" ] || fail "сборка прошла, но APK в $DIR нет; лог — $LOG"
+# Итог — APK в каталоге выхода пункта. Gradle не пересобирает то, что не менялось
+# (UP-TO-DATE), — такие APK помечены «прежний».
+apks=$(find "$DIR/$OUT" -name '*.apk' 2>/dev/null | sort) || apks=
+[ -n "$apks" ] || fail "сборка прошла, но APK в $DIR/$OUT нет; лог — $LOG"
 echo
 echo "✓ Готово за $min мин"
-c="$DIR/dppass/build/release-apk/CERTIFICATE.txt"
+c="$DIR/$OUT/CERTIFICATE.txt"
 if [ "$ID" = dppass ] && [ -f "$c" ]; then
   sed -n 's/^\(package\|label\): /  \1: /p' "$c"
 fi
