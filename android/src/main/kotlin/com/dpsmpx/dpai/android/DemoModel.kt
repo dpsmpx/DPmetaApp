@@ -336,13 +336,16 @@ class DemoModel(
      */
     fun search(query: String): com.dpsmpx.dpai.ui.GlobalSearch.Result? {
         val o = built?.orchestrator ?: return null
-        var source = com.dpsmpx.dpai.ui.GlobalSearch.Source(o.tasks, o.sessions, o.accounts, o.worktrees, o.handoffs.all(), o.projectConfig)
-        if (lock.tryLock(SEARCH_WAIT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+        fun projections() = com.dpsmpx.dpai.ui.GlobalSearch.Source(o.tasks, o.sessions, o.accounts, o.worktrees, o.handoffs.all(), o.projectConfig)
+        // Под замком — всё из одного промежутка между тактами: иначе задача и её события были бы из разных тактов.
+        val source = if (lock.tryLock(SEARCH_WAIT_MS, TimeUnit.MILLISECONDS)) {
             try {
-                source = source.copy(events = o.recentEvents(), eventsFrom = o.eventsFrom, contexts = o.contexts(), problems = o.problems.toList())
+                projections().copy(events = o.recentEvents(), eventsFrom = o.eventsFrom, contexts = o.contexts(), problems = o.problems.toList())
             } finally {
                 lock.unlock()
             }
+        } else {
+            projections()
         }
         return com.dpsmpx.dpai.ui.GlobalSearch.search(source, query)
     }

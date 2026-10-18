@@ -32,8 +32,11 @@ import com.dpsmpx.dpai.tasks.TasksState
  * `GlobalSearchTest`).
  *
  * Чего поиск не видит, сказано в [Result.notes], а не скрыто (D-05):
- * события — только активный сегмент журнала (D-37), контексты — последние
- * версии в памяти, отказы — последние [com.dpsmpx.dpai.orchestrator.Orchestrator.KEPT_PROBLEMS].
+ * события — только активный сегмент журнала (D-37), контексты и handoff —
+ * задач в памяти контура, отказы — последние
+ * [com.dpsmpx.dpai.orchestrator.Orchestrator.KEPT_PROBLEMS]; хеш коммита
+ * контур пока не записывает (`TODO.md`), поэтому коммиты находятся, только
+ * если он есть в handoff или в событии.
  * Содержимое источников контекста не ищется: в нём может быть то, что
  * показывать не следует (ТЗ, §65); найденный текст событий — через
  * [Redactor] (D-14).
@@ -83,6 +86,12 @@ object GlobalSearch {
     /** Вокруг найденного в тексте события — столько символов с каждой стороны. */
     private const val AROUND = 40
 
+    /** Больше этого событий не считается: `EventQuery.limit` не больше 10 000. */
+    private const val EVENT_CAP = 10_000
+
+    /** Запрос похож на хеш коммита. */
+    private val HEX = Regex("[0-9a-fA-F]{4,40}")
+
     private val TYPED_ID = Regex("""\b(?:tsk|ses|acc|sub|req)_[0-9A-Za-z]+\b""")
 
     fun search(source: Source, query: String): Result {
@@ -90,6 +99,7 @@ object GlobalSearch {
         if (q.length < MIN_QUERY) return Result(emptyList(), emptyMap(), listOf("запрос — от $MIN_QUERY символов"))
         val hits = ArrayList<Hit>()
         val more = LinkedHashMap<Kind, Int>()
+        var capped = false
         // Строчные и `contains`, как у `EventSearch`: `contains(ignoreCase = true)` сравнивает посимвольно с переводом
         // регистра каждого знака: на 30 тыс. задач и сессий — 85 мс против 15 (замер `GlobalSearchTest`, 18 октября 2026).
         val needle = q.lowercase()
@@ -123,8 +133,10 @@ object GlobalSearch {
 
         source.events?.let { events ->
             // Номер события ищется точно, текст — в строках полезной нагрузки, как у истории (ТЗ, §42).
-            val found = (events.filter { it.id.value.equals(q, ignoreCase = true) } + EventSearch.search(events, EventQuery(text = q, limit = 10_000))).distinctBy { it.id }
+            val matched = EventSearch.search(events, EventQuery(text = q, limit = EVENT_CAP))
+            val found = (events.filter { it.id.value.equals(q, ignoreCase = true) } + matched).distinctBy { it.id }
             add(Kind.EVENT, found.map { e -> Hit(Kind.EVENT, Timeline.describe(e) ?: e.type.name.lowercase(), eventDetail(e, q), link(e), e.occurredAt) })
+            if (matched.size >= EVENT_CAP) capped = true
         }
 
         source.contexts?.let { contexts ->
@@ -142,9 +154,12 @@ object GlobalSearch {
         val notes = ArrayList<String>()
         if (source.events == null) {
             notes += "события, контексты и последние отказы не просмотрены: шёл такт контура — повторите поиск"
-        } else if (source.eventsFrom > 1) {
-            notes += "события — с №${source.eventsFrom}: старшие лежат в сегментах журнала на диске и в поиск не входят (D-37)"
+        } else {
+            if (source.eventsFrom > 1) notes += "события — с записи журнала №${source.eventsFrom}: старшие лежат в сегментах на диске и в поиск не входят (D-37)"
+            if (capped) notes += "событий нашлось больше $EVENT_CAP — посчитаны новые $EVENT_CAP"
+            notes += "контексты и handoff — только задач в памяти контура, отказы — последние ${com.dpsmpx.dpai.orchestrator.Orchestrator.KEPT_PROBLEMS}"
         }
+        if (HEX.matches(q) && hits.none { it.kind == Kind.COMMIT }) notes += "хеши коммитов контур пока не записывает: коммит находится, только если он есть в handoff или событии"
         return Result(hits, more, notes)
     }
 
@@ -225,13 +240,14 @@ object GlobalSearch {
 
     /** Номер, поток и кусок текста вокруг найденного — через [Redactor] (D-14). */
     private fun eventDetail(e: EventEnvelope, q: String): String {
-        val text = firstMatch(e.payload, q)?.let { s ->
-            val i = s.indexOf(q, ignoreCase = true)
+        // Сначала скрыть секреты во всей строке, потом вырезать кусок: обрезанный посередине секрет Redactor уже не узнал бы.
+        val text = firstMatch(e.payload, q)?.let(Redactor.STANDARD::redact)?.let { s ->
+            val i = s.indexOf(q, ignoreCase = true).coerceAtLeast(0)
             val from = (i - AROUND).coerceAtLeast(0)
             val to = (i + q.length + AROUND).coerceAtMost(s.length)
             (if (from > 0) "…" else "") + s.substring(from, to).replace('\n', ' ') + (if (to < s.length) "…" else "")
         }
-        return listOfNotNull("№${e.sequence}", e.stream.toString(), text?.let(Redactor.STANDARD::redact)).joinToString(" · ")
+        return listOfNotNull("№${e.sequence} в потоке", e.stream.toString(), text).joinToString(" · ")
     }
 
     private fun firstMatch(v: JsonValue, q: String): String? = when (v) {

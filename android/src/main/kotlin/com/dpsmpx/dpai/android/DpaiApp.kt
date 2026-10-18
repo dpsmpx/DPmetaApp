@@ -62,6 +62,7 @@ import com.dpsmpx.dpai.ui.TaskCard
 import com.dpsmpx.dpai.ui.Tone
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -168,6 +169,8 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                 com.dpsmpx.dpai.notifications.DeepLink.Kind.TASK -> foundTask = com.dpsmpx.dpai.core.ids.IdKinds.TASK.parse(link.id).valueOrNull()
                 com.dpsmpx.dpai.notifications.DeepLink.Kind.REQUEST -> { selectedId = null; tab = 3 }
                 com.dpsmpx.dpai.notifications.DeepLink.Kind.EVENT -> Unit
+                // Подписки и их окна — на сводке (LimitsCard); слоты и проект — на вкладке Targets.
+                com.dpsmpx.dpai.notifications.DeepLink.Kind.SUBSCRIPTION -> { selectedId = null; tab = 0 }
                 else -> { selectedId = null; tab = 2 }
             }
         }
@@ -430,6 +433,7 @@ private fun SearchDialog(model: DemoModel, onDone: () -> Unit, onOpen: (com.dpsm
         if (query.trim().length < com.dpsmpx.dpai.ui.GlobalSearch.MIN_QUERY) {
             result = null
             unavailable = false
+            busy = false
             return@LaunchedEffect
         }
         delay(SEARCH_PAUSE_MS)
@@ -439,7 +443,8 @@ private fun SearchDialog(model: DemoModel, onDone: () -> Unit, onOpen: (com.dpsm
             unavailable = r == null
             result = r
         } finally {
-            busy = false
+            // Отменённый поиск (запрос изменился) не снимает «Ищу…» у следующего — его снимет тот сам.
+            if (coroutineContext.isActive) busy = false
         }
     }
     AlertDialog(
