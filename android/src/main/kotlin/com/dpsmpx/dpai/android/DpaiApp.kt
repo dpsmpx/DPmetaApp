@@ -417,6 +417,7 @@ private fun SearchDialog(model: DemoModel, onDone: () -> Unit, onOpen: (com.dpsm
     LaunchedEffect(query) {
         if (query.trim().length < com.dpsmpx.dpai.ui.GlobalSearch.MIN_QUERY) {
             result = null
+            unavailable = false
             return@LaunchedEffect
         }
         delay(SEARCH_PAUSE_MS)
