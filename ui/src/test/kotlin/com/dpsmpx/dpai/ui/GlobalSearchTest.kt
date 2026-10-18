@@ -3,8 +3,11 @@ package com.dpsmpx.dpai.ui
 import com.dpsmpx.dpai.accounts.AccountsState
 import com.dpsmpx.dpai.accounts.SlotState
 import com.dpsmpx.dpai.accounts.SubscriptionState
+import com.dpsmpx.dpai.contexts.ContextBundle
 import com.dpsmpx.dpai.contexts.Handoff
 import com.dpsmpx.dpai.contexts.HandoffReason
+import com.dpsmpx.dpai.contexts.IncludedSource
+import com.dpsmpx.dpai.contexts.SourceLevel
 import com.dpsmpx.dpai.core.clock.ManualClock
 import com.dpsmpx.dpai.core.clock.RandomSource
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
@@ -19,9 +22,13 @@ import com.dpsmpx.dpai.core.ids.ProviderSessionId
 import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.core.state.TaskState
+import com.dpsmpx.dpai.git.Repository
 import com.dpsmpx.dpai.git.Worktree
 import com.dpsmpx.dpai.git.WorktreesState
 import com.dpsmpx.dpai.notifications.DeepLink
+import com.dpsmpx.dpai.orchestrator.ProjectConfig
+import com.dpsmpx.dpai.security.Origin
+import com.dpsmpx.dpai.security.Sensitivity
 import com.dpsmpx.dpai.sessions.SessionRecord
 import com.dpsmpx.dpai.sessions.SessionsState
 import com.dpsmpx.dpai.tasks.Priority
@@ -112,6 +119,10 @@ class GlobalSearchTest {
         assertEquals(DeepLink.of(DeepLink.Kind.SESSION, session.id), hit.link, "событие ведёт к своей сессии")
         assertTrue("unresolved reference" in hit.detail, hit.detail)
         assertTrue("sk-ant-oat01" !in hit.detail, "секрет в найденном тексте скрыт (D-14): ${hit.detail}")
+        // Секрет на краю вырезанного куска: скрывается до обрезки, иначе Redactor его бы не узнал.
+        val edge = event(EventType.SESSION_OUTPUT, StreamRef.of(session.id), 2, "text" to "export password=Hunter2Secret!! and more filler xx unresolved reference here")
+        val cut = GlobalSearch.search(source(events = listOf(edge)), "unresolved").hits.single { it.kind == GlobalSearch.Kind.EVENT }
+        assertTrue("Hunter2Secret" !in cut.detail, cut.detail)
         // Событие системного потока — ссылкой на само событие.
         val system = find("системная").hits.single()
         assertEquals(DeepLink.Kind.EVENT, system.link?.kind)
@@ -124,10 +135,25 @@ class GlobalSearchTest {
         assertEquals(emptyList(), find("x").hits)
         assertTrue(find("x").notes.single().contains("от 2"))
         assertTrue(find("unresolved", source(events = null)).let { r -> r.hits.none { it.kind == GlobalSearch.Kind.EVENT } && r.notes.single().contains("шёл такт") })
-        assertTrue(find("unresolved", source(from = 20_001)).notes.single().contains("№20001"))
-        assertEquals(emptyList(), find("unresolved").notes)
-        // Секреты в содержимом источников контекста не ищутся: только ключи источников и цель.
-        assertEquals(emptySet(), kinds("нет такого"))
+        assertTrue(find("unresolved", source(from = 20_001)).notes.any { it.contains("записи журнала №20001") })
+        assertEquals(listOf("контексты и handoff — только задач в памяти контура, отказы — последние 200"), find("unresolved").notes)
+        // Похожее на хеш без найденного коммита — сказано, что хеши коммитов контур пока не записывает.
+        assertTrue(find("deadbeef").notes.any { it.contains("хеши коммитов") })
+        assertTrue(find("a1b2c3").notes.none { it.contains("хеши коммитов") }, "коммит из handoff найден — пометки нет")
+    }
+
+    @Test
+    fun projectAndContextAreFoundButSourceContentIsNot() {
+        val project = ProjectConfig(ids.next(IdKinds.PROJECT), Repository(ids.next(IdKinds.REPOSITORY), slot.targetId, "/srv/repo-parser"), "/w", null, integrationBranch = "main")
+        val content = "уникальная-строка-содержимого"
+        val context = ContextBundle(
+            ids.next(IdKinds.CONTEXT), 1, task.id, project.project, "цель", "дальше",
+            listOf(IncludedSource("doc:ARCH.md", SourceLevel.DOCUMENT, Sensitivity.INTERNAL, Origin.REPOSITORY, Hashing.sha256(content.toByteArray()), content)), null, clock.now(),
+        )
+        val s = source().copy(project = project, contexts = listOf(context))
+        assertEquals(DeepLink.of(DeepLink.Kind.PROJECT, project.project), GlobalSearch.search(s, "repo-parser").hits.single().link)
+        assertEquals(DeepLink.of(DeepLink.Kind.TASK, task.id), GlobalSearch.search(s, "ARCH.md").hits.single { it.kind == GlobalSearch.Kind.CONTEXT }.link)
+        assertEquals(emptyList(), GlobalSearch.search(s, "уникальная-строка").hits, "содержимое источников не ищется (ТЗ, §65)")
     }
 
     @Test
