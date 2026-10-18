@@ -107,6 +107,9 @@ class NotificationEngine(private val policy: NotificationPolicy = NotificationPo
     fun submit(raw: NotificationRequest): NotificationDecision {
         // Уведомление видно на экране блокировки: текст — через строгий редактор (A-6).
         val r = raw.copy(title = Redactor.STRICT.redact(raw.title), body = Redactor.STRICT.redact(raw.body))
+        // Показанное старше окна агрегации ничего не решает (следующий показ по ключу — новый): без
+        // этого ключи всех задач («задача X: ход») копились навсегда (дамп кучи, 18 октября 2026).
+        shown.values.removeIf { r.at - it.second >= policy.aggregationWindow }
         val prev = shown[r.key]
         if (prev != null && r.at - prev.second < policy.aggregationWindow && r.category.rank <= prev.first.category.rank) {
             val updated = prev.first.copy(count = prev.first.count + 1, lastAt = r.at, title = r.title, body = r.body, actions = r.actions, request = r.request)
@@ -122,6 +125,10 @@ class NotificationEngine(private val policy: NotificationPolicy = NotificationPo
         recentPosts += r.at
         return NotificationDecision.Post(n)
     }
+
+    /** Сколько ключей помнится для агрегации — для проверок предела памяти. */
+    @Synchronized
+    fun tracked(): Int = shown.size
 
     /** Предмет решён (например, предел снят): следующий раз по ключу — новый показ. */
     @Synchronized
