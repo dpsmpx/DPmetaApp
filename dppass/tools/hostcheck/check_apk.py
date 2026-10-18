@@ -87,6 +87,7 @@ CODE_ROOTS = {
     "_COROUTINE/": "kotlinx-coroutines: метки кадров стека (матрица, §1.1)",
     "org/jetbrains/annotations/": "org.jetbrains:annotations (матрица, §1.1)",
     "org/intellij/lang/annotations/": "org.jetbrains:annotations (матрица, §1.1)",
+    "com/google/zxing/": "ZXing core: QR с картинки (матрица, §1.1, D-65)",
     "com/android/tools/r8/": "поддержка desugaring, которую D8 (AGP) добавляет в APK (матрица, §1.3)",
 }
 # Свой код, которому в APK не место: тестовые фикстуры (модель сети, здоровье по
@@ -169,7 +170,11 @@ def dex_classes(dexdump, apk):
     with tempfile.TemporaryDirectory() as tmp, zipfile.ZipFile(apk) as z:
         for name in sorted(n for n in z.namelist() if re.fullmatch(r"classes\d*\.dex", n)):
             path = z.extract(name, tmp)
-            out = subprocess.run([dexdump, "-l", "plain", path], capture_output=True, text=True, check=True).stdout
+            # Строки dex dexdump печатает как есть, в MUTF-8: NUL там — байты C0 80, не UTF-8
+            # (такие строки есть в ZXing, D-65). Недекодируемое — символом замены: дескриптор
+            # с ним не совпадёт ни с одним утверждённым корнем и останется находкой.
+            raw = subprocess.run([dexdump, "-l", "plain", path], capture_output=True, check=True).stdout
+            out = raw.decode("utf-8", errors="replace")
             current = None
             for line in out.splitlines():
                 m = re.match(r"^\s*Class descriptor\s*:\s*'L([^;]+);'", line)
