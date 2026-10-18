@@ -41,6 +41,11 @@
 - `М` **Черновой PR ветки** — `CLAUDE.md` требует его сразу после первого
   пуша; облачная сессия PR без прямой просьбы автора не открывает.
   Открыть черновик или вливать без PR — решает автор.
+- `М` **Скрипты сборки APK в форках (D-31)** — `build-apk.sh` в
+  `dpsmpx/gravitydefied` (PR #7, ещё и Gradle Wrapper 9.6.0) и
+  `dpsmpx/andors-trail-load` (PR #2). Пока PR не влиты, эти пункты ярлыка
+  `tools/termux/apk-build.sh` отвечают «в клоне нет `build-apk.sh`».
+  Вливание — автор.
 
 ## Вне репозитория
 
@@ -88,18 +93,19 @@
 - `С` **На устройстве (DPpass, D-30):** APK, собранный из `dppass/`,
   ставится поверх нынешнего DPpass 0.6.x — та же личность пакета,
   подписка и согласие на VPN на месте.
-- `С` **На устройстве (ярлык сборки `tools/termux/apk-build.sh`):** в
-  облачной сессии он проверен в имитации Termux (заглушка `proot-distro`,
-  внутренняя часть — busybox `sh`), до APK на x86_64 доведены Gravity
-  Defied и Andor's Trail; на телефоне — ещё нет. Сверить там:
+- `С` **На устройстве (ярлык сборки `tools/termux/apk-build.sh`, D-31):**
+  в облачной сессии он проверен в имитации Termux (заглушка
+  `proot-distro`, внутренняя часть — busybox `sh`). На x86_64 до APK
+  доведены все Gradle-сборки его пунктов: DPmetaApp, Galdhold, Gravity
+  Defied, Andor's Trail. На телефоне ярлык ещё не запускался. Сверить там:
   - `~/dppass-build/termux-env.sh` годится и не для DPpass (задаёт
     `ANDROID_HOME` и обход aapt2 для любой сборки Gradle) — иначе свой
     файл в `APK_BUILD_ENV`;
   - DPmetaApp: платформа 37 в SDK (`compileSdk` 37, у DPpass — 36);
   - Galdhold: `glslc` в proot (`apk add shaderc`), CMake 3.22.1, который
     запускается на aarch64;
-  - Andor's Trail: демон Gradle на JetBrains JDK 21 под musl, который
-    скачивает ярлык (этого JDK требует для демона сам форк);
+  - Andor's Trail: демон Gradle на JetBrains JDK 21 под musl, которую
+    скачивает его `build-apk.sh` (этого JDK требует для демона сам форк);
   - DPpass из меню — как прежний ярлык: тот же `~/dppass-build/build.sh`.
 
 - `М` **Gradle: «The Kotlin Gradle plugin was loaded multiple times»** —
