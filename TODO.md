@@ -88,6 +88,19 @@
 - `С` **На устройстве (DPpass, D-30):** APK, собранный из `dppass/`,
   ставится поверх нынешнего DPpass 0.6.x — та же личность пакета,
   подписка и согласие на VPN на месте.
+- `С` **На устройстве (ярлык сборки `tools/termux/apk-build.sh`):** в
+  облачной сессии он проверен в имитации Termux (заглушка `proot-distro`,
+  внутренняя часть — busybox `sh`), до APK на x86_64 доведены Gravity
+  Defied и Andor's Trail; на телефоне — ещё нет. Сверить там:
+  - `~/dppass-build/termux-env.sh` годится и не для DPpass (задаёт
+    `ANDROID_HOME` и обход aapt2 для любой сборки Gradle) — иначе свой
+    файл в `APK_BUILD_ENV`;
+  - DPmetaApp: платформа 37 в SDK (`compileSdk` 37, у DPpass — 36);
+  - Galdhold: `glslc` в proot (`apk add shaderc`), CMake 3.22.1, который
+    запускается на aarch64;
+  - Andor's Trail: демон Gradle на JetBrains JDK 21 под musl, который
+    скачивает ярлык (этого JDK требует для демона сам форк);
+  - DPpass из меню — как прежний ярлык: тот же `~/dppass-build/build.sh`.
 
 - `М` **Gradle: «The Kotlin Gradle plugin was loaded multiple times»** —
   предупреждение при сборке из корня (11 октября 2026, этап 2). Разбор
