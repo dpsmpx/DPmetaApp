@@ -65,6 +65,8 @@ data class SessionScreen(
     val actions: List<SessionAction> = emptyList(),
     /** Расход сессии (D-42, п. 4); ходов не было — `null`. */
     val usage: String? = null,
+    /** Задача сессии — её лист и контекст с экрана сессии (ТЗ, §74); неизвестна — `null`. */
+    val task: TaskId? = null,
 )
 
 /** Действие человека с сессией (D-42, п. 3). */
@@ -131,6 +133,7 @@ object Screens {
         now: com.dpsmpx.dpai.core.clock.Timestamp? = null,
         actions: List<SessionAction> = emptyList(),
         usage: com.dpsmpx.dpai.sessions.UsageTotals? = null,
+        task: TaskId? = null,
     ): SessionScreen {
         val stream = StreamRef.of(session)
         val own = events.filter { it.stream == stream }
@@ -141,6 +144,7 @@ object Screens {
             live = live?.let { l -> LiveLine(l.tool, l.target, l.text, now?.let { ago(it.epochMillis - l.at.epochMillis) } ?: "?") },
             actions = actions,
             usage = usage?.let { UsageText.of(com.dpsmpx.dpai.sessions.UsageSummary.of(listOf(it))) },
+            task = task,
         )
     }
 
