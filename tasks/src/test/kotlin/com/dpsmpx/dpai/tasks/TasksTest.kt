@@ -252,6 +252,30 @@ class TasksTest {
         assertEquals(DiagCode.OPERATION_NOT_ALLOWED, (Tasks.setScope(state, a, setOf("src"), clock.now()) as Outcome.Failure).errors.single().code)
     }
 
+    /** Ревью 18 октября 2026: новая зависимость у готовой задачи возвращает её в очередь — она не начнётся раньше. */
+    @Test
+    fun newDependencyRequeuesReadyAndUnblocksDependencyBlocked() {
+        val dep = task()
+        val t = task()
+        runTickUntilReady(t)
+        assertEquals(TaskState.READY, state.tasks.getValue(t).state)
+        ok(tasks.setDependencies(state, t, setOf(dep), clock.now()))
+        assertEquals(TaskState.QUEUED, state.tasks.getValue(t).state, "готовая с незавершённой зависимостью — снова в очереди")
+        assertTrue(tasks.ready(state, clock.now()).none { it.id == t })
+        // Заблокирована упавшей зависимостью: зависимость сняли — снова в очереди и затем готова.
+        val bad = task(policy = TaskPolicy(maxRetries = 0))
+        val blocked = task(deps = setOf(bad))
+        runTickUntilReady(bad)
+        ok(tasks.start(state, bad, clock.now()))
+        ok(tasks.attemptFailed(state, bad, DiagCode.NETWORK_UNREACHABLE, Retryability.RETRYABLE, "k", clock.now()))
+        ok(Outcome.success(tasks.promote(state, clock.now())))
+        assertEquals(TaskState.BLOCKED, state.tasks.getValue(blocked).state)
+        ok(tasks.setDependencies(state, blocked, emptySet(), clock.now()))
+        assertEquals(TaskState.QUEUED, state.tasks.getValue(blocked).state)
+        ok(Outcome.success(tasks.promote(state, clock.now())))
+        assertEquals(TaskState.READY, state.tasks.getValue(blocked).state)
+    }
+
     @Test
     fun failedDependencyBlocksDependents() {
         val a = task(policy = TaskPolicy(maxRetries = 0))

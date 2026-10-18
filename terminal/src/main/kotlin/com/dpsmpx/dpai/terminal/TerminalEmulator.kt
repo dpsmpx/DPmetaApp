@@ -1037,6 +1037,8 @@ class TerminalEmulator(
      */
     fun linkAt(line: Int, col: Int): String? {
         if (line !in 0 until lineCount) return null
+        // Правая половина широкого знака — тот же знак: иначе касание попадало бы в следующую ячейку.
+        val cell = if (col > 0 && col < line(line).cols && line(line).codePoint(col) == TerminalRow.WIDE_TAIL) col - 1 else col
         var first = line
         while (first > 0 && line(first - 1).wrapped) first--
         var last = line
@@ -1046,7 +1048,7 @@ class TerminalEmulator(
         for (l in first..last) {
             val r = line(l)
             for (c in 0 until r.cols) {
-                if (l == line && c == col) at = text.length
+                if (l == line && c == cell) at = text.length
                 text.append(r.text(c))
             }
         }

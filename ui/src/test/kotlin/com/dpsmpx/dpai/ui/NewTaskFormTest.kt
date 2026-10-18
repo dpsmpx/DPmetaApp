@@ -44,5 +44,10 @@ class NewTaskFormTest {
         assertEquals(DiagCode.VALUE_INVALID, code(NewTaskForm.command("t", "o", "k", budget = "-1")))
         assertEquals(DiagCode.VALUE_INVALID, code(NewTaskForm.command("t", "o", "k", budget = "много")))
         assertEquals(DiagCode.VALUE_INVALID, code(NewTaskForm.command("t", "o", "k", model = "opus; rm -rf")))
+        // Дробь цента и переполнение — отказ, а не округление; путь области — правилом оркестратора.
+        assertEquals(DiagCode.VALUE_INVALID, code(NewTaskForm.command("t", "o", "k", budget = "0.129")))
+        assertEquals(DiagCode.VALUE_INVALID, code(NewTaskForm.command("t", "o", "k", budget = "184467440737095516.17")))
+        assertEquals(DiagCode.VALUE_INVALID, code(NewTaskForm.command("t", "o", "k", scope = "src, ../etc")))
+        assertEquals(DiagCode.VALUE_INVALID, code(NewTaskForm.command("t", "o", "k", scope = "/abs")))
     }
 }

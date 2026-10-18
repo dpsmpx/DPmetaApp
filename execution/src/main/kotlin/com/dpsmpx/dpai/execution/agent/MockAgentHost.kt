@@ -36,6 +36,9 @@ import kotlin.time.Duration
 class MockAgentHost(private val clock: Clock, private val ids: IdGenerator) : ProcessHost {
     private class Run(val id: SessionId) {
         val events = mutableListOf<EventEnvelope>()
+
+        /** Сколько событий сжато ([trimFinished]): номера событий и ходов продолжаются после них. */
+        var dropped = 0L
         var spec: RunSpec? = null
         var turn = 0
         var state = RunState.RUNNING
@@ -69,10 +72,12 @@ class MockAgentHost(private val clock: Clock, private val ids: IdGenerator) : Pr
     fun hasPending(run: SessionId): Boolean = pending[run]?.isNotEmpty() == true
 
     /**
-     * Запуски по давности обращения: завершённых держится не больше
-     * [KEEP_FINISHED] — давно забытые уходят, как журнал запуска на target,
-     * который никто не читает. Без предела демо и прогоны выносливости
-     * копили все события всех запусков (гистограммы кучи, 18 октября 2026).
+     * Запуски по давности обращения: событий завершённых держится не
+     * больше чем у [KEEP_FINISHED] — у давних остаются только номера хода
+     * и последнего события, как у настоящего агента после уборки
+     * (`AgentRuntime.prune`): ход, ждавший долго, продолжает нумерацию.
+     * Без предела демо и прогоны выносливости копили все события всех
+     * запусков (гистограммы кучи, 18 октября 2026).
      */
     private val runs = LinkedHashMap<SessionId, Run>(16, 0.75f, true)
 
@@ -86,7 +91,7 @@ class MockAgentHost(private val clock: Clock, private val ids: IdGenerator) : Pr
     @Synchronized
     fun emit(run: SessionId, type: EventType, payload: JsonObject = JsonObject(emptyMap())): EventEnvelope {
         val r = runs.getValue(run)
-        val e = EventEnvelope(ids.next(IdKinds.EVENT), type, StreamRef.of(run), r.events.size + 1L, clock.now(), clock.now(), payload = payload)
+        val e = EventEnvelope(ids.next(IdKinds.EVENT), type, StreamRef.of(run), r.dropped + r.events.size + 1L, clock.now(), clock.now(), payload = payload)
         r.events += e
         return e
     }
@@ -206,28 +211,29 @@ class MockAgentHost(private val clock: Clock, private val ids: IdGenerator) : Pr
     }
 
     private fun trimFinished() {
-        var finished = runs.values.count { it.state == RunState.EXITED }
-        val it = runs.entries.iterator()
-        while (finished > KEEP_FINISHED && it.hasNext()) {
-            val e = it.next()
-            if (e.value.state == RunState.EXITED && pending[e.key].isNullOrEmpty()) {
-                it.remove()
-                pending.remove(e.key)
-                finished--
+        var full = runs.values.count { it.state == RunState.EXITED && it.events.isNotEmpty() }
+        for (r in runs.values) {
+            if (full <= KEEP_FINISHED) break
+            if (r.state == RunState.EXITED && r.events.isNotEmpty() && pending[r.id].isNullOrEmpty()) {
+                r.dropped += r.events.size
+                r.events.clear()
+                r.captured.setLength(0)
+                r.spec = null
+                full--
             }
         }
     }
 
-    private fun status(r: Run) = RunStatus(r.id, r.state, null, r.exitCode, r.reason, r.events.size.toLong(), r.turn)
+    private fun status(r: Run) = RunStatus(r.id, r.state, null, r.exitCode, r.reason, r.dropped + r.events.size, r.turn)
 
     private fun failure(command: String, code: DiagCode, message: String) = AgentReply.failure(command, listOf(Diagnostic.error(code, message)))
 
-    /** Вызов, который уже завершился: вывод отдан сразу. */
     companion object {
         /** Сколько завершённых запусков держит заглушка. */
         const val KEEP_FINISHED = 500
     }
 
+    /** Вызов, который уже завершился: вывод отдан сразу. */
     private class Done(private val code: Int, stdout: String, stderr: String, onOutput: (OutputLine) -> Unit) : RunningProcess {
         init {
             if (stdout.isNotEmpty()) onOutput(OutputLine(OutputStream.STDOUT, stdout))

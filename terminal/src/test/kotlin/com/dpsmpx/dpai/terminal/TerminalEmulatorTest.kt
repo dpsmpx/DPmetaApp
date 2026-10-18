@@ -432,6 +432,11 @@ class TerminalEmulatorTest {
         assertEquals("https://example.org/sign/in?code=abc123xyz", t.linkAt(0, 7))
         assertEquals("https://example.org/sign/in?code=abc123xyz", t.linkAt(2, 3))
         assertEquals(null, t.linkAt(0, 1))
+        // Правая половина широкого знака прямо перед адресом — не ссылка.
+        val w = TerminalEmulator(40, 2)
+        w.feed("中https://example.org/x")
+        assertEquals(null, w.linkAt(0, 1))
+        assertEquals("https://example.org/x", w.linkAt(0, 2))
         val x = TerminalEmulator(40, 2)
         x.feed("intent://evil#Intent;end file:///etc/passwd")
         assertEquals(null, x.linkAt(0, 3))

@@ -46,6 +46,9 @@ class TerminalView(context: Context) : View(context) {
             scrollBack = 0
             selection = null
             anchored = false
+            // Инерция прежней вкладки не листает новую (стрелки в vim, колесо в TUI).
+            flinger.forceFinished(true)
+            scrollAccum = 0f
             regrid()
             invalidate()
         }
@@ -175,6 +178,8 @@ class TerminalView(context: Context) : View(context) {
             scrollBack = 0
             selection = null
             anchored = false
+            flinger.forceFinished(true)
+            scrollAccum = 0f
         }
         invalidate()
     }

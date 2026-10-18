@@ -177,15 +177,18 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
     }
 
     /**
-     * Клавиша с повтором при удержании (стрелки, листание): первое нажатие
-     * сразу, через [REPEAT_DELAY_MS] — повтор каждые [REPEAT_EVERY_MS], как
-     * у клавиатуры. Отпустили или палец ушёл (прокрутка ряда) — повтор
-     * кончается.
+     * Клавиша с повтором при удержании (стрелки, листание): удержание
+     * дольше [REPEAT_DELAY_MS] — повтор каждые [REPEAT_EVERY_MS], как у
+     * клавиатуры; короткое нажатие — одна клавиша при отпускании. Палец
+     * ушёл в прокрутку ряда (CANCEL) — ничего не отправлено: смахивание
+     * ряда не должно двигать выбор в меню Claude (ревью 18 октября 2026).
      */
     @android.annotation.SuppressLint("ClickableViewAccessibility") // нажатие для TalkBack — тот же onClick
     private fun repeatChip(text: String, action: () -> Unit): TextView = chip(text, action).apply {
+        var repeated = false
         val repeat = object : Runnable {
             override fun run() {
+                repeated = true
                 action()
                 postDelayed(this, REPEAT_EVERY_MS)
             }
@@ -194,10 +197,15 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
             when (e.actionMasked) {
                 android.view.MotionEvent.ACTION_DOWN -> {
                     v.isPressed = true
-                    action()
+                    repeated = false
                     v.postDelayed(repeat, REPEAT_DELAY_MS)
                 }
-                android.view.MotionEvent.ACTION_UP, android.view.MotionEvent.ACTION_CANCEL -> {
+                android.view.MotionEvent.ACTION_UP -> {
+                    v.isPressed = false
+                    v.removeCallbacks(repeat)
+                    if (!repeated) action()
+                }
+                android.view.MotionEvent.ACTION_CANCEL -> {
                     v.isPressed = false
                     v.removeCallbacks(repeat)
                 }

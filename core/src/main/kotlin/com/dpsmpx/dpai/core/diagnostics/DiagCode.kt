@@ -222,6 +222,12 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     REQUEST_ANSWER_INVALID(Category.INPUT, Severity.ERROR, Retryability.NON_RETRYABLE),
     /** Задачу или сессию остановил человек (ответ на запрос, команда D-42): не сбой и не повод для повтора. */
     CANCELLED_BY_USER(Category.STATE, Severity.INFO, Retryability.NON_RETRYABLE),
+    /**
+     * Команда (D-42) принята в очередь такта, но итога ещё нет — контур
+     * занят вызовом target. Не отказ: экран не меняет ключ нажатия и не
+     * бросает следующие команды (ревью 18 октября 2026).
+     */
+    COMMAND_QUEUED(Category.STATE, Severity.WARNING, Retryability.RETRYABLE),
 
     // --- общее ---
     /** Строгая семантика (D-05): неподдержанное — явный отказ, а не «похожее». */

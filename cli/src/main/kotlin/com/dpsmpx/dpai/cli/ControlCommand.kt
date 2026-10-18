@@ -405,7 +405,12 @@ class ControlCommand(
 
         private fun csv(v: String): List<String> = v.split(',').map(String::trim).filter(String::isNotEmpty)
 
-        private fun budget(v: String): Long? = v.replace(',', '.').toBigDecimalOrNull()?.movePointRight(2)?.toLong()?.takeIf { it > 0 }
+        /** Доллары → центы; дробь цента и переполнение — отказ, а не округление (D-05). */
+        private fun budget(v: String): Long? = try {
+            v.replace(',', '.').toBigDecimalOrNull()?.movePointRight(2)?.setScale(0, java.math.RoundingMode.UNNECESSARY)?.longValueExact()?.takeIf { it > 0 }
+        } catch (_: ArithmeticException) {
+            null
+        }
 
         private fun str(o: JsonObject, k: String): String? = (o[k] as? JsonString)?.value
 

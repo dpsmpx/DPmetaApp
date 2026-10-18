@@ -179,7 +179,7 @@ class DemoModel(
         }
         f.get(waitMs, TimeUnit.MILLISECONDS).outcome
     } catch (_: TimeoutException) {
-        Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "контур занят вызовом target: команда в очереди и применится в ближайшем такте")
+        Outcome.failure(DiagCode.COMMAND_QUEUED, "контур занят вызовом target: команда в очереди и применится в ближайшем такте")
     } catch (e: Exception) {
         Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.INTERNAL_ERROR, "контроллер не принял команду", e)))
     }
@@ -210,7 +210,7 @@ class DemoModel(
         }
         Outcome.success(f.get(waitMs, TimeUnit.MILLISECONDS))
     } catch (_: TimeoutException) {
-        Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "контур занят вызовом target: команда в очереди и применится в ближайшем такте")
+        Outcome.failure(DiagCode.COMMAND_QUEUED, "контур занят вызовом target: команда в очереди и применится в ближайшем такте")
     } catch (e: Exception) {
         Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.INTERNAL_ERROR, "контроллер не принял команду", e)))
     }

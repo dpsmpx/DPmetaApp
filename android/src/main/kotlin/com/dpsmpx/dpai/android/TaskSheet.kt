@@ -70,15 +70,19 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
         busy = true
         val built = cs.map { c -> c(keys.next(IdKinds.OPERATION).value) }
         scope.launch {
-            var r: Outcome<Any?> = Outcome.success(null)
+            // «В очереди» — не отказ: следующая команда тоже идёт в очередь; настоящий отказ — стоп.
+            val lines = mutableListOf<String>()
             for (c in built) {
-                r = withContext(Dispatchers.IO) { model.command(c) }
-                if (r is Outcome.Failure) break
+                val r = withContext(Dispatchers.IO) { model.command(c) }
+                val d = (r as? Outcome.Failure)?.diagnostics?.first()
+                lines += when {
+                    d == null -> "Принято"
+                    d.code == com.dpsmpx.dpai.core.diagnostics.DiagCode.COMMAND_QUEUED -> "В очереди: ${d.message}"
+                    else -> "Не принято: ${d.message}"
+                }
+                if (d != null && d.code != com.dpsmpx.dpai.core.diagnostics.DiagCode.COMMAND_QUEUED) break
             }
-            status = when (r) {
-                is Outcome.Success -> "Принято"
-                is Outcome.Failure -> "Не принято: ${r.diagnostics.first().message}"
-            }
+            status = lines.distinct().joinToString("\n")
             detail = withContext(Dispatchers.IO) { model.taskDetail(task) }
             busy = false
             editor = null
@@ -140,7 +144,12 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
                     TaskAction.POLICY -> PolicyEditor(d, busy) { cls, m, e, b -> send { k -> Command.SetPolicy(task, cls, m, e, b, k) } }
                     TaskAction.REPLY -> ReplyEditor(busy) { text -> send { k -> Command.Retry(task, text, k) } }
                     TaskAction.SCOPE -> ScopeEditor(d, remember(task) { model.dependencyChoices(except = task) }, busy) { paths, deps ->
-                        sendAll({ k -> Command.SetScope(task, paths, k) }, { k -> Command.SetDependencies(task, deps, k) })
+                        // Неизменённое не шлётся: лишняя команда записала бы пустое изменение в журнал.
+                        val cs = buildList<(String) -> Command> {
+                            if (paths != d.scope.orEmpty()) add { k -> Command.SetScope(task, paths, k) }
+                            if (deps != d.dependencies.map { it.id }.toSet()) add { k -> Command.SetDependencies(task, deps, k) }
+                        }
+                        if (cs.isEmpty()) editor = null else sendAll(*cs.toTypedArray())
                     }
                     else -> Unit
                 }
@@ -193,8 +202,10 @@ private fun PolicyEditor(d: TaskDetail, busy: Boolean, onSave: (TaskClass, Strin
         OutlinedTextField(budget, { budget = it }, label = { Text("Предел стоимости хода, $ (пусто — без предела)") }, singleLine = true)
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall) }
         TextButton(enabled = !busy, onClick = {
-            val cents = budget.trim().replace(',', '.').takeIf { it.isNotEmpty() }?.let { v -> v.toBigDecimalOrNull()?.movePointRight(2)?.toLong() ?: -1L }
-            if (cents != null && cents <= 0) error = "бюджет — положительное число долларов" else onSave(cls, modelName, effort, cents)
+            when (val c = com.dpsmpx.dpai.ui.NewTaskForm.budgetCents(budget)) {
+                is Outcome.Failure -> error = c.diagnostics.first().message
+                is Outcome.Success -> onSave(cls, modelName, effort, c.value)
+            }
         }) { Text("Сохранить") }
     }
 }

@@ -398,7 +398,9 @@ private fun NewTaskDialog(model: DemoModel, onDone: () -> Unit) {
     var deps by remember { mutableStateOf(setOf<com.dpsmpx.dpai.core.ids.TaskId>()) }
     val choices = remember { model.dependencyChoices() }
     // Ключ нажатия (D-42): повтор «Поставить» в этом диалоге — та же задача, а не вторая.
-    val key = remember { com.dpsmpx.dpai.core.ids.IdGenerator(com.dpsmpx.dpai.core.clock.Clock.SYSTEM, com.dpsmpx.dpai.core.clock.RandomSource.secure()).next(com.dpsmpx.dpai.core.ids.IdKinds.OPERATION).value }
+    val keys = remember { com.dpsmpx.dpai.core.ids.IdGenerator(com.dpsmpx.dpai.core.clock.Clock.SYSTEM, com.dpsmpx.dpai.core.clock.RandomSource.secure()) }
+    // После настоящего отказа ключ новый: исправленная задача — новая команда, а не «уже исполнена: отказ».
+    var key by remember { mutableStateOf(keys.next(com.dpsmpx.dpai.core.ids.IdKinds.OPERATION).value) }
     var error by remember { mutableStateOf<String?>(null) }
     // Второе нажатие, пока первое ставит задачу, не создаёт дубль (два хода Claude с одной целью).
     var busy by remember { mutableStateOf(false) }
@@ -453,7 +455,16 @@ private fun NewTaskDialog(model: DemoModel, onDone: () -> Unit) {
                         is Outcome.Success -> withContext(Dispatchers.IO) { model.addTask(form.value) }
                     }
                     when (r) {
-                        is Outcome.Failure -> error = r.diagnostics.first().message
+                        is Outcome.Failure -> {
+                            val d = r.diagnostics.first()
+                            // «В очереди» — команда применится в такте: окно закрывается, задача появится на доске.
+                            if (d.code == com.dpsmpx.dpai.core.diagnostics.DiagCode.COMMAND_QUEUED) {
+                                onDone()
+                            } else {
+                                error = d.message
+                                key = keys.next(com.dpsmpx.dpai.core.ids.IdKinds.OPERATION).value
+                            }
+                        }
                         is Outcome.Success -> onDone()
                     }
                     busy = false

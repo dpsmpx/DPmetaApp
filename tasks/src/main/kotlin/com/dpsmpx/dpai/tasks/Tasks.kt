@@ -77,7 +77,20 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
         findCycle(graph)?.let { cycle ->
             return Outcome.failure(DiagCode.DEPENDENCY_CYCLE, "цикл зависимостей: ${cycle.joinToString(" → ")}", "task $task")
         }
-        return Outcome.success(listOf(TaskEvent.DependenciesChanged(task, dependencies, now)))
+        val changed = TaskEvent.DependenciesChanged(task, dependencies, now)
+        // Готовность решает promote по зависимостям (`docs/SCHEDULER.md`, §2): готовая задача с новой
+        // незавершённой зависимостью и заблокированная упавшей зависимостью — снова в очередь, иначе
+        // готовая начала бы раньше зависимости (ревью 18 октября 2026).
+        val requeue = when (t.state) {
+            TaskState.READY -> dependencies.any { state.tasks.getValue(it).state != TaskState.DONE }
+            TaskState.BLOCKED -> t.lastReason == DiagCode.DEPENDENCY_FAILED
+            else -> false
+        }
+        if (!requeue) return Outcome.success(listOf(changed))
+        return when (val m = move(apply(state, changed), task, TaskState.QUEUED, now)) {
+            is Outcome.Failure -> m
+            is Outcome.Success -> Outcome.success(listOf(changed) + m.value)
+        }
     }
 
     fun enqueue(state: TasksState, id: TaskId, now: Timestamp): Outcome<List<TaskEvent>> = move(state, id, TaskState.QUEUED, now)
@@ -125,7 +138,8 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
             TaskState.CANCELLED -> move(s1, id, TaskState.BACKLOG, now, mode = TransitionMode.EXPLICIT).let { r ->
                 if (r is Outcome.Failure) r else move(applyAll(s1, r.valueOrNull()!!), id, TaskState.QUEUED, now).let { q -> if (q is Outcome.Failure) q else Outcome.success(r.valueOrNull()!! + q.valueOrNull()!!) }
             }
-            TaskState.BLOCKED -> move(s1, id, TaskState.READY, now)
+            // Готова, только если все зависимости выполнены; иначе — в очередь, их ждёт promote.
+            TaskState.BLOCKED -> move(s1, id, if (t.dependencies.all { state.tasks[it]?.state == TaskState.DONE }) TaskState.READY else TaskState.QUEUED, now)
             else -> return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "повторяют упавшую, отменённую или заблокированную: задача ${t.state}", "task $id")
         }
         return moves.let { r -> if (r is Outcome.Failure) r else Outcome.success(listOf(reset) + r.valueOrNull()!!) }
@@ -401,7 +415,8 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
                 }
                 is TaskEvent.Continued -> tasks.computeIfPresent(e.task) { _, t -> t.copy(continuations = t.continuations + 1, updatedAt = e.at) }
                 is TaskEvent.VerificationRecorded -> tasks.computeIfPresent(e.task) { _, t -> t.copy(verification = e.record, updatedAt = e.at) }
-                is TaskEvent.ScopeChanged -> tasks.computeIfPresent(e.task) { _, t -> t.copy(scope = e.scope, updatedAt = e.at) }
+                // Пустая область — «без области» (как при создании), а не пустой список (ревью 18 октября 2026).
+                is TaskEvent.ScopeChanged -> tasks.computeIfPresent(e.task) { _, t -> t.copy(scope = e.scope.ifEmpty { null }, updatedAt = e.at) }
                 is TaskEvent.PolicyChanged -> tasks.computeIfPresent(e.task) { _, t -> t.copy(policy = e.policy, updatedAt = e.at) }
                 is TaskEvent.HoldChanged -> tasks.computeIfPresent(e.task) { _, t -> t.copy(held = e.held, updatedAt = e.at) }
                 is TaskEvent.CountersReset -> tasks.computeIfPresent(e.task) { _, t -> t.copy(retries = 0, continuations = 0, failures = emptyMap(), updatedAt = e.at) }
@@ -414,6 +429,9 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
 
         private val SCOPE_PATH = Regex("[A-Za-z0-9._@+-]+(/[A-Za-z0-9._@+-]+)*")
 
+        /** Путь области (ТЗ, §31): относительный внутри репозитория, без `..`, `.` и абсолютного начала. */
+        fun validScopePath(p: String): Boolean = SCOPE_PATH.matches(p) && p.split('/').none { it == ".." || it == "." }
+
         /**
          * Заявить область задачи (ТЗ, §31): относительные пути внутри
          * репозитория, без `..` и абсолютных путей, не больше 500.
@@ -423,9 +441,9 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
             if (t.terminal) return Outcome.failure(DiagCode.INVALID_TRANSITION, "задача завершена", "task $task")
             // Область меняют до запуска (D-42, п. 1): у идущего хода она уже в его контексте.
             if (t.state !in EDITABLE) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "область меняют до запуска: задача ${t.state}", "task $task")
-            val bad = scope.firstOrNull { p -> !SCOPE_PATH.matches(p) || p.split('/').any { it == ".." || it == "." } }
+            val bad = scope.firstOrNull { !validScopePath(it) }
             if (bad != null || scope.size > 500) return Outcome.failure(DiagCode.VALUE_INVALID, "область — относительные пути внутри репозитория, не больше 500", "task $task")
-            if (t.scope == scope) return Outcome.success(emptyList())
+            if (t.scope.orEmpty() == scope) return Outcome.success(emptyList())
             return Outcome.success(listOf(TaskEvent.ScopeChanged(task, scope, now)))
         }
 
