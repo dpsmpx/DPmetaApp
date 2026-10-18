@@ -209,9 +209,10 @@ min=$(( ($(date +%s) - start) / 60 ))
 [ -f "$HOME/bin/beep-attention.sh" ] && { sh "$HOME/bin/beep-attention.sh" >/dev/null 2>&1 || true; }
 
 [ "$status" = 0 ] || fail "сборка не прошла (код $status, $min мин); лог — $LOG"
-# Итог — APK, появившиеся в клоне за эту сборку; промежуточные AGP не в счёт.
-apks=$(find "$DIR" -path "$DIR/.git" -prune -o -name '*.apk' -newer "$MARK" ! -path '*/intermediates/*' -print 2>/dev/null | sort) || apks=
-[ -n "$apks" ] || fail "сборка прошла, но нового APK в $DIR нет; лог — $LOG"
+# Итог — APK в каталогах build/ клона; промежуточные AGP не в счёт. Gradle не
+# пересобирает то, что не менялось (UP-TO-DATE), — такие APK помечены «прежний».
+apks=$(find "$DIR" -path "$DIR/.git" -prune -o -name '*.apk' -path '*/build/*' ! -path '*/intermediates/*' -print 2>/dev/null | sort) || apks=
+[ -n "$apks" ] || fail "сборка прошла, но APK в $DIR нет; лог — $LOG"
 echo
 echo "✓ Готово за $min мин"
 c="$DIR/dppass/build/release-apk/CERTIFICATE.txt"
@@ -219,7 +220,8 @@ if [ "$ID" = dppass ] && [ -f "$c" ]; then
   sed -n 's/^\(package\|label\): /  \1: /p' "$c"
 fi
 echo "$apks" | while read -r a; do
+  if [ "$a" -nt "$MARK" ]; then w="новый"; else w="прежний — не менялся с прошлой сборки"; fi
   echo "  $a"
-  echo "    $(du -h "$a" | cut -f1), sha256 $(sha256sum "$a" | cut -c1-16)…"
+  echo "    $w, $(du -h "$a" | cut -f1), sha256 $(sha256sum "$a" | cut -c1-16)…"
 done
 echo "Установить: termux-open <файл>.apk (этому телефону — arm64-v8a)"
