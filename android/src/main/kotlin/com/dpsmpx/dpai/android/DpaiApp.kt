@@ -229,8 +229,11 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                         screen == 3 -> RequestsPane(model, s)
                         screen == 4 -> LogPane(model)
                         s == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-                        screen == SESSION_SCREEN -> SessionPane(s.session, model)
-                        screen == 0 -> DashboardPane(s.dashboard, model) { selectedId = it.value }
+                        screen == SESSION_SCREEN -> SessionPane(s.session, model) { foundTask = it }
+                        screen == 0 -> Column(Modifier.fillMaxSize()) {
+                            QuickRow(s.quick, s.live, s.requests.size, model, onTask = { foundTask = it }) { selectedId = null; tab = 3 }
+                            Box(Modifier.weight(1f)) { DashboardPane(s.dashboard, model) { selectedId = it.value } }
+                        }
                         else -> BoardPane(s.board, s.live, model, s.archived) { selectedId = it }
                     }
                 }
@@ -331,16 +334,25 @@ private fun SessionRow(line: SessionLine, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun SessionPane(screen: SessionScreen?, model: DemoModel) {
+private fun SessionPane(screen: SessionScreen?, model: DemoModel, onTask: (com.dpsmpx.dpai.core.ids.TaskId) -> Unit) {
     if (screen == null) {
         Box(Modifier.fillMaxSize()) { CircularProgressIndicator(Modifier.align(Alignment.Center)) }
         return
     }
+    var context by remember(screen.session) { mutableStateOf(false) }
+    screen.task?.let { t -> if (context) ContextDialog(model, t) { context = false } }
     LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         item {
             screen.line?.let { SessionRow(it) } ?: Text(screen.session.value)
             // Расход сессии (D-42, п. 4): ходы, токены, стоимость.
             screen.usage?.let { Text("Расход: $it", style = MaterialTheme.typography.labelSmall) }
+            // Быстрые действия сессии (ТЗ, §74): пауза, продолжение, повтор, проверка, изменения — в листе задачи; контекст хода.
+            screen.task?.let { t ->
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    androidx.compose.material3.OutlinedButton(onClick = { onTask(t) }) { Text("Задача") }
+                    androidx.compose.material3.OutlinedButton(onClick = { context = true }) { Text("Контекст") }
+                }
+            }
             // Живой вид хода (D-42): что модель делает сейчас.
             screen.live?.let { l ->
                 Card(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
@@ -470,7 +482,7 @@ private fun SearchDialog(model: DemoModel, onDone: () -> Unit, onOpen: (com.dpsm
 /** Новая задача контроллеру: название и цель — что Claude должен сделать (ТЗ, §21). */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun NewTaskDialog(model: DemoModel, onDone: () -> Unit) {
+internal fun NewTaskDialog(model: DemoModel, onDone: () -> Unit) {
     val scope = rememberCoroutineScope()
     var title by remember { mutableStateOf("") }
     var objective by remember { mutableStateOf("") }

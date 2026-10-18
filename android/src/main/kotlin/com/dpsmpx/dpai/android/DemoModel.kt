@@ -48,6 +48,8 @@ data class Snapshot(
     val requests: List<RequestCard> = emptyList(),
     /** Сколько задач в архиве (D-42) — для переключателя на доске. */
     val archived: Int = 0,
+    /** Быстрые действия сводки (ТЗ, §73). */
+    val quick: com.dpsmpx.dpai.ui.QuickActions = com.dpsmpx.dpai.ui.QuickActions.NONE,
 )
 
 /**
@@ -135,6 +137,7 @@ class DemoModel(
         return Snapshot(
             v.mode, v is LiveSystem, v.dashboard(), com.dpsmpx.dpai.ui.Screens.board(o.tasks, showArchived), session?.let(v::session), notifications,
             RequestScreens.cards(shown(v), o.tasks, Clock.SYSTEM.now()), o.tasks.tasks.values.count { it.archived },
+            com.dpsmpx.dpai.ui.QuickActions.of(o.tasks),
         ).also { published = it }
     }
 
@@ -182,6 +185,55 @@ class DemoModel(
         Outcome.failure(DiagCode.COMMAND_QUEUED, "контур занят вызовом target: команда в очереди и применится в ближайшем такте")
     } catch (e: Exception) {
         Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.INTERNAL_ERROR, "контроллер не принял команду", e)))
+    }
+
+    /**
+     * Несколько команд разом (ТЗ, §73: «Пауза всем», «Продолжить все»): все —
+     * в очередь контура, итог — каждой, общий срок [waitMs]. По одной с
+     * ожиданием каждой серия шла бы такт за тактом — секунды на задачу.
+     */
+    fun commandAll(cs: List<Command>, waitMs: Long = WAIT_MS): List<Outcome<Any?>> {
+        if (cs.isEmpty()) return emptyList()
+        val v = try {
+            built ?: lock.withLock { current() }
+        } catch (e: Exception) {
+            val f = Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.INTERNAL_ERROR, "контроллер не принял команды", e)))
+            return cs.map { f }
+        }
+        val fs = cs.map { v.orchestrator.submit(it) }
+        if (lock.tryLock()) {
+            try {
+                v.orchestrator.runCommands()
+            } finally {
+                lock.unlock()
+            }
+        }
+        val deadline = Clock.SYSTEM.monotonicNanos() + waitMs * 1_000_000
+        return fs.map { f ->
+            try {
+                f.get(((deadline - Clock.SYSTEM.monotonicNanos()) / 1_000_000).coerceAtLeast(0), TimeUnit.MILLISECONDS).outcome
+            } catch (_: TimeoutException) {
+                Outcome.failure(DiagCode.COMMAND_QUEUED, "контур занят вызовом target: команда в очереди и применится в ближайшем такте")
+            } catch (e: Exception) {
+                Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.INTERNAL_ERROR, "контроллер не принял команду", e)))
+            }
+        }
+    }
+
+    /**
+     * Что видел Claude в последнем ходе задачи (ТЗ, §74): версия контекста
+     * для окна «Контекст» — или почему её нет. Контексты в памяти дописывает
+     * такт, поэтому чтение — под замком, если он освободится за
+     * [SEARCH_WAIT_MS]. Не из главного потока.
+     */
+    fun context(task: TaskId): Pair<com.dpsmpx.dpai.ui.ContextView?, String?> {
+        val o = built?.orchestrator ?: return null to "контур ещё не запущен"
+        if (!lock.tryLock(SEARCH_WAIT_MS, TimeUnit.MILLISECONDS)) return null to "идёт такт контура — повторите через несколько секунд"
+        return try {
+            o.lastContext(task)?.let { com.dpsmpx.dpai.ui.ContextScreens.view(it) to null } ?: (null to "у задачи ещё не было хода — контекст не собирался")
+        } finally {
+            lock.unlock()
+        }
     }
 
     /**
