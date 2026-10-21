@@ -2,15 +2,15 @@
 # Собран из desktop/package/PKGBUILD.in (tools/desktop/package.py): версия и сумма — по архиву.
 # Личная сборка: не публикуется (DPmetaApp:D-24).
 pkgname=dppass-desktop
-_ver=0.1.1-dev
-pkgver=0.1.1dev
+_ver=0.1.2-dev
+pkgver=0.1.2dev
 pkgrel=1
 pkgdesc='DPpass для Linux: окно и туннель TUN через свои серверы (личная сборка)'
 arch=('x86_64')
 license=('LicenseRef-DPpass')
 depends=('java-runtime>=17' 'iproute2' 'polkit' 'util-linux' 'glibc')
 source=("dppass-desktop-${_ver}.tar.gz")
-sha256sums=('2d4f66e5dbf03bf883eecdc1bf3f824d7ad217ccf4b4b07c3ed4e1058c1c5267')
+sha256sums=('a9a5c5786ad9c7d8bd1f630b0cc37d8ca0f18a41ba9b5d6a576e9d86bdef0d2b')
 # Библиотека ядра — как собрана и сверена (native.py desktop): без strip и отладочного пакета.
 options=('!strip' '!debug')
 

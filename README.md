@@ -5,7 +5,7 @@
 
 | Файл | Что это |
 |---|---|
-| `dppass-desktop-0.1.1-dev.tar.gz` + `PKGBUILD` | **DPpass с окном и настоящим туннелем** (`DPpass:D-74`): пакет для `makepkg -si`. 0.1.1 — окно рисуется под Hyprland и sway |
+| `dppass-desktop-0.1.2-dev.tar.gz` + `PKGBUILD` | **DPpass с окном и настоящим туннелем** (`DPpass:D-74`): пакет для `makepkg -si`. 0.1.1 — окно рисуется под Hyprland и sway; 0.1.2 — без предупреждения JDK 24+ о `System.load` |
 | `VIA_PHONE.md`, `dppass-via-phone` | **ПК через раздачу туннеля DPpass на Android** (`DPpass:D-51`): инструкция и скрипт — весь ПК через телефон с sing-box |
 | `checks/via_phone_stand.py` | стенд, на котором проверен скрипт (сетевые пространства имён, от root) |
 | `screenshot.png` | как выглядит окно (тёмная тема) |
@@ -84,8 +84,8 @@ DPpass для Linux через телефон пока не подключает
 
 ## Как собрано
 
-Код — коммит `a61ac77` рабочей ветки `ccr-c0380b37-vo299h` (PR #68,
-черновик; до него — PR #67, влит в `main`). Облачная сессия 21 октября 2026:
+Код — `main` после PR #69 (`c8b18d4`): PR #67 — первая версия, #68 —
+серое окно, #69 — флаг JDK. Облачная сессия 21 октября 2026:
 OpenJDK 21, Gradle 9.8.0, Go из `tools/xray/go.mod`, ядро Xray 26.9.30.
 Google Maven (`dl.google.com`) закрыт сетевой политикой окружения, поэтому
 сборка шла во временной копии `dppass/` без плагина Android (Android Lint не
@@ -94,6 +94,8 @@ Google Maven (`dl.google.com`) закрыт сетевой политикой о
 
 ## Проверки
 
+- 0.1.2: в скрипте запуска — `--enable-native-access=ALL-UNNAMED`;
+  `netns_check.py` прошёл на JDK 21 и 17; окно в Xvfb рисуется.
 - 0.1.1:
   - ktlint без замечаний;
   - тесты оболочки Linux — 20, отказов 0;
