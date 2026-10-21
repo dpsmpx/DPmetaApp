@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+# dppass-via-phone — весь трафик ПК с Linux через раздачу туннеля DPpass на
+# Android (DPpass:D-51): sing-box поднимает TUN и ведёт всё, DNS тоже, в прокси
+# SOCKS5 телефона.
+#
+#   dppass-via-phone 'socks5://логин:пароль@адрес:порт#DPpass'  — запомнить вход и подключиться
+#   dppass-via-phone                                            — подключиться с запомненным входом
+#
+# Ссылка — «Поделиться входом» на экране «Раздача туннеля» телефона. Адрес из
+# неё не запоминается: Android меняет подсеть раздачи при каждом включении,
+# поэтому телефон ищется среди шлюзов сетей ПК по порту раздачи. Другой адрес —
+# DPPASS_PHONE=10.1.2.3 dppass-via-phone. DNS-сервер, который спрашивается
+# через телефон, — DPPASS_DNS (по умолчанию 1.1.1.1).
+#
+# Остановить — Ctrl+C: sing-box уберёт свои маршруты и правила.
+set -euo pipefail
+
+TUN=dppass-phone
+conf_dir=${XDG_CONFIG_HOME:-$HOME/.config}/dppass-via-phone
+login_file=$conf_dir/login
+dns=${DPPASS_DNS:-1.1.1.1}
+
+die() {
+    printf 'dppass-via-phone: %s\n' "$*" >&2
+    exit 1
+}
+
+# Логин и пароль DPpass — буквы и цифры; символы, которые надо экранировать в
+# JSON или URL, не принимаются.
+word='[A-Za-z0-9._~-]+'
+ipv4='[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}'
+
+private_ipv4() {
+    [[ $1 =~ ^$ipv4$ ]] || return 1
+    case $1 in
+    10.* | 192.168.* | 172.1[6-9].* | 172.2[0-9].* | 172.3[01].*) return 0 ;;
+    *) return 1 ;;
+    esac
+}
+
+# Открыт ли TCP-порт: телефон с раздачей слушает порт раздачи на своём адресе.
+answers() {
+    # shellcheck disable=SC2016 # $1 и $2 раскрывает внутренний bash, не этот
+    timeout 3 bash -c 'exec 3<>"/dev/tcp/$1/$2"' _ "$1" "$2" 2>/dev/null
+}
+
+[ $# -le 1 ] || die "лишние аргументы; как вызывать — в начале $0"
+
+if [ $# -eq 1 ]; then
+    [[ $1 =~ ^socks5://($word):($word)@($ipv4):([0-9]{1,5})(#.*)?$ ]] ||
+        die "это не ссылка входа раздачи DPpass: нужна socks5://логин:пароль@адрес:порт"
+    (
+        umask 077
+        mkdir -p "$conf_dir"
+        printf 'PORT=%s\nLOGIN=%s\nPASSWORD=%s\n' "${BASH_REMATCH[4]}" "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" >"$login_file"
+    )
+    echo "Вход запомнен: $login_file"
+fi
+
+[ -r "$login_file" ] || die "нет входа: запустите со ссылкой «Поделиться входом» с телефона"
+port='' login='' password=''
+while IFS='=' read -r key value; do
+    case $key in
+    PORT) port=$value ;;
+    LOGIN) login=$value ;;
+    PASSWORD) password=$value ;;
+    esac
+done <"$login_file"
+[[ $port =~ ^[0-9]{1,5}$ && $login =~ ^$word$ && $password =~ ^$word$ ]] ||
+    die "$login_file испорчен: запустите со ссылкой «Поделиться входом» ещё раз"
+
+sing_box=$(command -v sing-box) || die "нет sing-box: sudo pacman -S sing-box"
+! ip link show "$TUN" >/dev/null 2>&1 || die "уже запущен: туннель $TUN есть"
+
+if [ -n "${DPPASS_PHONE:-}" ]; then
+    candidates=$DPPASS_PHONE
+else
+    candidates=$(ip -4 route show default | awk '{ for (i = 1; i < NF; i++) if ($i == "via") print $(i + 1) }')
+fi
+phone=
+for a in $candidates; do
+    # SOCKS передаёт логин и пароль открыто: только адрес своей сети (DPpass:D-55).
+    private_ipv4 "$a" || continue
+    if answers "$a" "$port"; then
+        phone=$a
+        break
+    fi
+done
+[ -n "$phone" ] || die "телефон не найден (проверены: ${candidates:-нет шлюзов}; порт $port).
+  ПК подключён к точке доступа или USB-модему телефона? На телефоне DPpass подключён
+  и включено «Раздавать туннель»? Другой адрес — DPPASS_PHONE=адрес $0"
+dev=$(ip -4 route get "$phone" | awk '{ for (i = 1; i < NF; i++) if ($i == "dev") { print $(i + 1); exit } }')
+[ -n "$dev" ] || die "нет маршрута к $phone"
+
+run_dir=${XDG_RUNTIME_DIR:-}
+[ -n "$run_dir" ] && [ -d "$run_dir" ] || run_dir=${TMPDIR:-/tmp}
+config=$(umask 077 && mktemp "$run_dir/dppass-via-phone.XXXXXX.json")
+trap 'rm -f "$config"' EXIT
+# Всё — в TUN, оттуда — в прокси телефона; запросы DNS на любой адрес
+# перехватываются и уходят через телефон по TCP. IPv6 у TUN нет, strict_route
+# закрывает его, а не пускает мимо; DNS отдаёт только IPv4.
+cat >"$config" <<EOF
+{
+  "log": { "level": "warn" },
+  "dns": {
+    "servers": [ { "type": "tcp", "tag": "phone-dns", "server": "$dns", "detour": "phone" } ],
+    "strategy": "ipv4_only"
+  },
+  "inbounds": [
+    {
+      "type": "tun",
+      "tag": "tun",
+      "interface_name": "$TUN",
+      "address": [ "198.18.0.1/30" ],
+      "auto_route": true,
+      "strict_route": true,
+      "stack": "system"
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "socks",
+      "tag": "phone",
+      "server": "$phone",
+      "server_port": $port,
+      "version": "5",
+      "username": "$login",
+      "password": "$password",
+      "bind_interface": "$dev"
+    }
+  ],
+  "route": {
+    "rules": [
+      { "action": "sniff" },
+      { "protocol": "dns", "action": "hijack-dns" }
+    ],
+    "final": "phone",
+    "auto_detect_interface": true
+  }
+}
+EOF
+
+echo "Телефон: $phone:$port через $dev; DNS — $dns через телефон. Остановить — Ctrl+C."
+sudo "$sing_box" check -c "$config"
+sudo "$sing_box" run -c "$config"
