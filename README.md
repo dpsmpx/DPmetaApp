@@ -5,7 +5,7 @@
 
 | Файл | Что это |
 |---|---|
-| `dppass-desktop-0.1.0-dev.tar.gz` + `PKGBUILD` | **DPpass с окном и настоящим туннелем** (`DPpass:D-74`): пакет для `makepkg -si` |
+| `dppass-desktop-0.1.1-dev.tar.gz` + `PKGBUILD` | **DPpass с окном и настоящим туннелем** (`DPpass:D-74`): пакет для `makepkg -si`. 0.1.1 — окно рисуется под Hyprland и sway |
 | `VIA_PHONE.md`, `dppass-via-phone` | **ПК через раздачу туннеля DPpass на Android** (`DPpass:D-51`): инструкция и скрипт — весь ПК через телефон с sing-box |
 | `checks/via_phone_stand.py` | стенд, на котором проверен скрипт (сетевые пространства имён, от root) |
 | `screenshot.png` | как выглядит окно (тёмная тема) |
@@ -21,6 +21,10 @@ sha256sum -c SHA256SUMS
 makepkg -si
 ```
 
+Обновить уже поставленный пакет — в том же каталоге `git pull`, затем
+`sha256sum -c SHA256SUMS` и `makepkg -si`. Данные в `~/.local/share/dppass`
+остаются.
+
 `makepkg -si` поставит и зависимости: Java 17+ (`java-runtime`, например
 `jre-openjdk`), `iproute2`, `polkit`, `util-linux` (последние три на Garuda
 уже есть). Репозиторий приватный: `git clone` спросит вход в GitHub.
@@ -30,6 +34,15 @@ makepkg -si
 (`CAP_NET_ADMIN`). Root у окна не остаётся: `dppass-launch` запускает его от
 вашего пользователя только с этой возможностью (`setpriv`). Пароль
 кешируется polkit на несколько минут.
+
+**Окно серое, хотя курсор над кнопкой меняется.** Так было в 0.1.0 под
+Hyprland и sway. Java на X11 ждёт оконный менеджер, который перерамливает
+окно, а XWayland этих композиторов так не делает. Нужна переменная
+`_JAVA_AWT_WM_NONREPARENTING`, а `pkexec` её стирал.
+- 0.1.1 ставит её сам под Wayland, кроме KDE, GNOME и Cinnamon.
+- На другом оконном менеджере, например X11 без перерамливания (bspwm,
+  dwm, qtile), её можно задать самому: `_JAVA_AWT_WM_NONREPARENTING=1 dppass`
+  или в окружении сеанса.
 
 ## Как пользоваться
 
@@ -71,8 +84,8 @@ DPpass для Linux через телефон пока не подключает
 
 ## Как собрано
 
-Код — коммит `1e6434f` рабочей ветки `ccr-c0380b37-vo299h` (PR #67, влит в `main` 21 октября 2026),
-PKGBUILD — по шаблону коммита `041f0d6`. Облачная сессия 21 октября 2026:
+Код — коммит `a61ac77` рабочей ветки `ccr-c0380b37-vo299h` (PR #68,
+черновик; до него — PR #67, влит в `main`). Облачная сессия 21 октября 2026:
 OpenJDK 21, Gradle 9.8.0, Go из `tools/xray/go.mod`, ядро Xray 26.9.30.
 Google Maven (`dl.google.com`) закрыт сетевой политикой окружения, поэтому
 сборка шла во временной копии `dppass/` без плагина Android (Android Lint не
@@ -81,8 +94,19 @@ Google Maven (`dl.google.com`) закрыт сетевой политикой о
 
 ## Проверки
 
-- JVM: 484 теста в 14 модулях (19 — оболочки Linux), отказов и пропусков 0;
-  ktlint — без замечаний; `tools/hostcheck/run.sh --quick` — 22 из 22.
+- 0.1.1:
+  - ktlint без замечаний;
+  - тесты оболочки Linux — 20, отказов 0;
+  - `tools/hostcheck/run.sh --quick` — 22 из 22;
+  - `netns_check.py` — в том числе 11 сочетаний рабочего стола для
+    `_JAVA_AWT_WM_NONREPARENTING`.
+- Окно 0.1.1 запускалось через `dppass-launch` от обычного пользователя,
+  из раскладки этого PKGBUILD:
+  - sway 1.9 headless с `XDG_CURRENT_DESKTOP=Hyprland` — рисуется
+    (скрипты 0.1.0 там же дают серое окно);
+  - KWin 5.27 — рисуется.
+- 0.1.0 (ядро и мост с тех пор не менялись): JVM — 484 теста в 14
+  модулях, отказов и пропусков 0.
 - Мост: `native.py host` — `go vet` и `go test` в обеих сборках;
   `native.py desktop` — библиотека без тестового входа, экспорт JNI — 13
   функций `XrayJni` и `LinuxNative`.
@@ -93,6 +117,6 @@ Google Maven (`dl.google.com`) закрыт сетевой политикой о
   через защитника, уборка; `dppass-launch` — процесс от `nobody` с одной
   `CAP_NET_ADMIN` и `NoNewPrivs`, чужое окружение не проходит.
 - Окно — в Xvfb: все четыре вкладки.
-- Не проверено здесь: IPv6 (в ядре облачной машины его нет), Wayland/KDE,
+- Не проверено здесь: IPv6 (в ядре облачной машины его нет), сам Hyprland,
   polkit и `makepkg` на самой Garuda, подключение через настоящий сервер —
   это список на ПК в `dppass/TODO.md`, «Linux — этап 6».
