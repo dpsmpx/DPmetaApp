@@ -94,7 +94,14 @@ Release DPpass подписывает только автор, и до этап�
 ## Проверки
 
 - `:cli:build` — компиляция с предупреждениями как ошибками — PASS.
+- `./gradlew build ktlintCheck` в той же копии — PASS: 464 теста в 13
+  модулях ядра и наборах `tests/integration`, `tests/regression`,
+  `tests/fuzz`, отказов и пропусков 0; стиль ktlint — без нарушений.
 - Все 15 случаев `smoke.cli` из `dppass/tools/dpverify.toml` на
   **распакованном архиве**, а не на `installDist` — 15/15 PASS.
 - Повторная распаковка `.tar.gz` и `check`, `route`, `connect` на
   `examples/` — ожидаемый вывод.
+
+Не запускались: Android Lint и `:app` (нет Google Maven и Android SDK),
+тест JNI моста Xray (набор `xrayJni`, нужна библиотека Go; `dppass-cli`
+Xray не использует) и, значит, `tools/hostcheck/run.sh --full`.
