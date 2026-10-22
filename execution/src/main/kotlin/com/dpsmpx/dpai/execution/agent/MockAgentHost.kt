@@ -31,7 +31,9 @@ import kotlin.time.Duration
  *
  * [reachable] = false — target недоступен: вызовы падают, как упавший SSH.
  * [onStart] вызывается после каждого хода `start` — так сценарий
- * `MockRunner` пишет вывод «процесса».
+ * `MockRunner` пишет вывод «процесса». Поток `follow` (D-62) — строка на
+ * каждое новое событие и смену состояния, конец — с концом хода;
+ * [follows] = false — агент прежней версии: `follow` ему неизвестна.
  */
 class MockAgentHost(private val clock: Clock, private val ids: IdGenerator) : ProcessHost {
     private class Run(val id: SessionId) {
@@ -88,12 +90,39 @@ class MockAgentHost(private val clock: Clock, private val ids: IdGenerator) : Pr
     var calls: Int = 0
         private set
 
+    /** Сколько опросов `events` пришло — для проверок «поток заменил опрос» (D-62). */
+    var eventCalls: Int = 0
+        private set
+
+    /** Знает ли агент поток `follow` (D-62); нет — отказ `UNSUPPORTED`, как у агента прежней версии. */
+    @Volatile
+    var follows: Boolean = true
+
+    /** Идущие потоки `follow`. */
+    private val followers = mutableListOf<Follower>()
+
+    /** Сколько потоков `follow` идёт. */
+    @Synchronized
+    fun followerCount(): Int = followers.size
+
+    /** Обрыв связи: все потоки `follow` кончаются, как оборванный канал SSH (код 255). */
+    @Synchronized
+    fun dropFollowers() {
+        followers.toList().forEach { it.end(255) }
+    }
+
     @Synchronized
     fun emit(run: SessionId, type: EventType, payload: JsonObject = JsonObject(emptyMap())): EventEnvelope {
         val r = runs.getValue(run)
         val e = EventEnvelope(ids.next(IdKinds.EVENT), type, StreamRef.of(run), r.dropped + r.events.size + 1L, clock.now(), clock.now(), payload = payload)
         r.events += e
+        push(run)
         return e
+    }
+
+    /** Новость запуска [run] — потокам `follow`; под замком заглушки. */
+    private fun push(run: SessionId) {
+        followers.filter { it.run == run }.forEach { it.push() }
     }
 
     /** Процесс хода вышел сам с кодом [code] или по [reason] (тайм-аут агента). */
@@ -105,6 +134,7 @@ class MockAgentHost(private val clock: Clock, private val ids: IdGenerator) : Pr
     fun lose(run: SessionId) {
         runs.getValue(run).state = RunState.LOST
         pending.remove(run)
+        push(run)
     }
 
     /**
@@ -181,6 +211,7 @@ class MockAgentHost(private val clock: Clock, private val ids: IdGenerator) : Pr
             }
             "status" -> runs[run]?.let { AgentReply("status", true, run = status(it)) } ?: failure("status", DiagCode.ENTITY_NOT_FOUND, "нет такого запуска")
             "events" -> runs[run]?.let { r ->
+                eventCalls++
                 val after = opt("after")?.toLongOrNull() ?: 0
                 val limit = opt("limit")?.toIntOrNull() ?: 500
                 val rest = r.events.filter { it.sequence > after }
@@ -190,6 +221,15 @@ class MockAgentHost(private val clock: Clock, private val ids: IdGenerator) : Pr
                 if (r.state == RunState.RUNNING || r.state == RunState.LOST) finish(r, null, ExitReason.STOPPED)
                 AgentReply("stop", true, run = status(r), stop = StopResult(false, emptyList()))
             } ?: failure("stop", DiagCode.ENTITY_NOT_FOUND, "нет такого запуска")
+            "follow" -> {
+                if (follows && run != null && run in runs) {
+                    val f = Follower(run, opt("after")?.toLongOrNull() ?: 0, onOutput)
+                    followers += f
+                    f.push()
+                    return Outcome.success(f)
+                }
+                if (follows) failure("follow", DiagCode.ENTITY_NOT_FOUND, "нет такого запуска") else failure("follow", DiagCode.UNSUPPORTED, "неизвестная команда агента")
+            }
             else -> failure(command ?: "", DiagCode.UNSUPPORTED, "неизвестная команда агента")
         }
         return Outcome.success(Done(if (reply.ok) 0 else 1, CanonicalJson.write(reply.toJson()), "", onOutput))
@@ -207,6 +247,7 @@ class MockAgentHost(private val clock: Clock, private val ids: IdGenerator) : Pr
         r.state = RunState.EXITED
         r.exitCode = code
         r.reason = reason
+        push(r.id)
         trimFinished()
     }
 
@@ -231,6 +272,45 @@ class MockAgentHost(private val clock: Clock, private val ids: IdGenerator) : Pr
     companion object {
         /** Сколько завершённых запусков держит заглушка. */
         const val KEEP_FINISHED = 500
+    }
+
+    /**
+     * Поток `follow` заглушки: строка — при новых событиях и смене
+     * состояния, как у `AgentRuntime.follow`; ход не идёт — конец с кодом 0.
+     */
+    private inner class Follower(val run: SessionId, private var cursor: Long, private val onOutput: (OutputLine) -> Unit) : RunningProcess {
+        @Volatile
+        private var code: Int? = null
+        private var sent: RunState? = null
+
+        override val pid: Long? = null
+        override val isAlive: Boolean get() = code == null
+
+        override fun awaitExit(timeout: Duration): Int? = code
+
+        override fun stop(grace: Duration): StopReport {
+            synchronized(this@MockAgentHost) { if (code == null) end(143) }
+            return StopReport(code, false, emptyList())
+        }
+
+        /** Под замком заглушки. */
+        fun push() {
+            if (code != null) return
+            val r = runs[run] ?: return end(1)
+            val rest = r.events.filter { it.sequence > cursor }
+            if (rest.isNotEmpty() || r.state != sent) {
+                onOutput(OutputLine(OutputStream.STDOUT, CanonicalJson.write(AgentReply("follow", true, run = status(r), events = rest).toJson())))
+                sent = r.state
+                rest.lastOrNull()?.let { cursor = it.sequence }
+            }
+            if (r.state != RunState.RUNNING) end(0)
+        }
+
+        /** Под замком заглушки. */
+        fun end(exit: Int) {
+            code = exit
+            followers.remove(this)
+        }
     }
 
     /** Вызов, который уже завершился: вывод отдан сразу. */

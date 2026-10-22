@@ -52,6 +52,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -72,6 +73,8 @@ import kotlin.time.Duration.Companion.seconds
  *   следит за тайм-аутом и просьбой остановиться.
  * - `events` отдаёт подтверждённые события с номера — после обрыва
  *   контроллер забирает пропущенное.
+ * - `follow` — то же потоком (D-62, D-65): строки по мере записи журнала,
+ *   пока ход идёт и читатель не ушёл.
  * - `stop` просит супервизор остановить дерево процессов; если супервизор
  *   потерян — останавливает процесс сам по идентификатору и времени
  *   старта (чужой процесс с тем же идентификатором не трогается).
@@ -92,6 +95,8 @@ class AgentRuntime(
     private val heartbeatEvery: Duration = 30.seconds,
     private val pollEvery: Duration = 250.milliseconds,
     private val supervisorWait: Duration = 10.seconds,
+    private val followHeartbeat: Duration = FOLLOW_HEARTBEAT,
+    private val followFor: Duration = FOLLOW_FOR,
 ) {
     private val vfs = NioVfs(Path.of(home))
     private val ids = IdGenerator(clock, RandomSource.secure())
@@ -335,6 +340,50 @@ class AgentRuntime(
         return AgentReply("events", ok = true, run = status.first.status(status.second), events = page, more = page.size < candidates.size)
     }
 
+    /**
+     * Поток событий хода (D-62, D-65): строки `dpai.agent-reply` команды
+     * `follow` — события журнала запуска после [after] по мере записи и
+     * состояние запуска; страница — по объёму, как у [events]. Строка
+     * уходит, когда есть новые события, сменилось состояние или пора подать
+     * признак жизни ([followHeartbeat]): на нём агент узнаёт, что читатель
+     * ушёл ([emit] вернул `false` — канал закрыт), и кончает, а не держит
+     * JVM до конца хода. Поток кончается и когда ход не идёт (`EXITED`,
+     * `LOST`) и всё записанное отдано, и по сроку [followFor] — контроллер
+     * переподключится с номера. Отказ — строка с `ok = false` и конец.
+     * Итог — не было ли отказа.
+     */
+    fun follow(id: SessionId, after: Long, emit: (AgentReply) -> Boolean): Boolean {
+        val until = clock.now() + followFor
+        var cursor = after
+        var sentAt: Timestamp? = null
+        var sentState: RunState? = null
+        var endedBefore = false
+        while (true) {
+            val page = events(id, cursor, FOLLOW_LIMIT).copy(command = "follow")
+            val run = page.run
+            if (!page.ok || run == null) {
+                emit(page)
+                return false
+            }
+            val now = clock.now()
+            if (sentAt == null || page.events.isNotEmpty() || run.state != sentState || now - sentAt >= followHeartbeat) {
+                if (!emit(page)) return true
+                sentAt = now
+                sentState = run.state
+            }
+            page.events.lastOrNull()?.let { cursor = it.sequence }
+            if (page.more) continue
+            val ended = run.finished
+            // Конец — только по чтению, начатому при уже законченном ходе: выход пишется в журнал
+            // раньше документа запуска, и журнал, прочитанный до документа, мог не застать событие выхода.
+            if (ended && endedBefore && page.events.isEmpty()) return true
+            endedBefore = ended
+            if (ended) continue
+            if (now >= until) return true
+            pace.await(pollEvery.inWholeMilliseconds, TimeUnit.MILLISECONDS)
+        }
+    }
+
     fun stop(id: SessionId, grace: Duration): AgentReply {
         val store = docs(id)
         val (doc, last) = when (val s = observe(id)) {
@@ -555,6 +604,19 @@ class AgentRuntime(
 
         /** Предел знаков страницы событий: ответ агента — одна строка не длиннее `LocalProcessHost.MAX_LINE`. */
         const val PAGE_CHARS: Int = 256 * 1024
+
+        /** Событий в строке потока `follow` — не больше; объём строки ограничен ещё и [PAGE_CHARS]. */
+        const val FOLLOW_LIMIT: Int = 500
+
+        /**
+         * Признак жизни потока `follow` без событий: по записи в закрытый канал
+         * агент узнаёт, что читатель ушёл. Меньше `ServerAliveInterval` × `CountMax`
+         * клиента SSH (45 с) — оборванный поток кончается раньше, чем его заметит связь.
+         */
+        val FOLLOW_HEARTBEAT: Duration = 15.seconds
+
+        /** Срок одного потока `follow`: дольше — контроллер переподключается с номера, JVM на target не живёт сутками. */
+        val FOLLOW_FOR: Duration = 30.minutes
 
         /** Предел текста одного события вывода: даже с экранированием JSON оно меньше `LocalProcessHost.MAX_LINE`. */
         const val MAX_EVENT_TEXT: Int = 256 * 1024

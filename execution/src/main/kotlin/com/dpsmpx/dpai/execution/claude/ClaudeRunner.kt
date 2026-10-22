@@ -154,6 +154,8 @@ class ClaudeCodeCliRunner(
         l.providerStarted = true
         l.run = run
         l.lostReported = false
+        // Поток прежнего хода (D-62) мог не застать новый: его состояние устарело.
+        eventSource.reset(l.session)
         return Outcome.success(state(l), diagnostics)
     }
 
