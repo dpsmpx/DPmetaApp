@@ -5,8 +5,10 @@ import com.dpsmpx.dpai.core.state.TaskState
 import com.dpsmpx.dpai.execution.claude.ToolCount
 import com.dpsmpx.dpai.execution.claude.TurnTools
 import com.dpsmpx.dpai.sessions.PromptMode
+import com.dpsmpx.dpai.sessions.SessionRecord
 import com.dpsmpx.dpai.sessions.ToolTotals
 import com.dpsmpx.dpai.sessions.SessionsState
+import com.dpsmpx.dpai.tasks.ReviewVerdict
 import com.dpsmpx.dpai.tasks.TasksState
 import java.math.BigDecimal
 import java.math.RoundingMode
@@ -54,6 +56,8 @@ data class UsageReport(
     val toolCallsByMode: Map<PromptMode, Double> = emptyMap(),
     val contextTokensAtEnd: List<Long> = emptyList(),
     val durationMs: Long = 0,
+    /** С какой попытки задачи проходят проверку и ревью — по классу и модели (D-59, п. 4); ключ — «КЛАСС · модель». */
+    val passAtK: Map<String, PassAtK> = emptyMap(),
 ) {
     /** Вход модели целиком: без кеша, чтение и запись кеша. */
     val totalInput: Long get() = inputTokens + cacheReadTokens + cacheCreationTokens
@@ -155,6 +159,17 @@ data class UsageReport(
             append("| вызовов на сессию по режиму prompt | ${toolCallsByMode.entries.sortedBy { it.key }.joinToString { "${it.key} %.1f".format(it.value) }.ifEmpty { "—" }} |")
             if (tools.unmatchedResults > 0) append("\n\nРезультатов без известного вызова: ${tools.unmatchedResults} — суммы инструментов — нижняя граница.")
         }
+        if (passAtK.isNotEmpty()) {
+            appendLine()
+            appendLine()
+            appendLine("## С какой попытки (pass@k, D-59)")
+            appendLine()
+            appendLine("Задачи с итогом: выполненные по проверке и ревью и проваленные; принятые без проверки или без ревью не считаются.")
+            appendLine()
+            appendLine("| класс · модель | задач | pass@1 | pass@3 |")
+            append("|---|---|---|---|")
+            for ((k, v) in passAtK.entries.sortedBy { it.key }) append("\n| $k | ${v.tasks} | ${pct(v.share1)} | ${pct(v.share3)} |")
+        }
     }
 
     /** Инструменты с наибольшим выводом в контекст. */
@@ -202,9 +217,45 @@ data class UsageReport(
                     .mapValues { (_, ss) -> ss.sumOf { it.usage.tools.total.calls }.toDouble() / ss.size },
                 contextTokensAtEnd = u.mapNotNull { it.lastContextTokens },
                 durationMs = u.sumOf { it.durationMs },
+                passAtK = passAtK(all, tasks),
             )
         }
+
+        /**
+         * pass@k (D-59, п. 4): задача с итогом — `DONE` по проверке (не
+         * исключение) без ревью, принятого без итога, — прошла с попытки
+         * `retries + 1`; `FAILED` — не прошла. Остальные итога не имеют и не
+         * считаются, а не идут нулём (D-13). Попытка — повтор после отказа
+         * любого рода (проверка, ревью, сбой хода); повтор человеком счёт
+         * сбрасывает. Модель — последней рабочей сессии задачи (`по
+         * умолчанию` — модель аккаунта).
+         */
+        fun passAtK(sessions: Collection<SessionRecord>, tasks: TasksState): Map<String, PassAtK> {
+            val lastWork = sessions.filter { it.review == null }.groupBy { it.task }
+                .mapValues { (_, ss) -> ss.maxWith(compareBy({ it.createdAt.epochMillis }, { it.id.value })) }
+            return tasks.tasks.values.mapNotNull { t ->
+                val passed = when {
+                    t.state == TaskState.FAILED -> false
+                    t.state == TaskState.DONE && t.verification?.verdict == "PASSED" && t.reviews.values.none { it.verdict == ReviewVerdict.WAIVED } -> true
+                    else -> return@mapNotNull null
+                }
+                val model = lastWork[t.id]?.usage?.lastPrompt?.model ?: "по умолчанию"
+                "${t.policy.taskClass} · $model" to (if (passed) t.retries + 1 else null)
+            }.groupBy({ it.first }, { it.second }).mapValues { (_, attempts) ->
+                PassAtK(attempts.size, attempts.count { it != null && it <= 1 }, attempts.count { it != null && it <= 3 })
+            }
+        }
     }
+}
+
+/** pass@k группы задач (D-59, п. 4): [tasks] — с итогом; [pass1], [pass3] — прошли с первой и не позже третьей попытки. */
+data class PassAtK(val tasks: Int, val pass1: Int, val pass3: Int) {
+    init {
+        require(tasks >= 0 && pass1 in 0..pass3 && pass3 <= tasks) { "pass@1 ≤ pass@3 ≤ задач" }
+    }
+
+    val share1: Double? get() = if (tasks == 0) null else pass1.toDouble() / tasks
+    val share3: Double? get() = if (tasks == 0) null else pass3.toDouble() / tasks
 }
 
 /** Сумма замеров двух наборов сессий (`turns` складываются). */
