@@ -31,6 +31,7 @@ import com.dpsmpx.dpai.git.Repository
 import com.dpsmpx.dpai.orchestrator.Orchestrator
 import com.dpsmpx.dpai.orchestrator.ProjectConfig
 import com.dpsmpx.dpai.orchestrator.TargetSlot
+import com.dpsmpx.dpai.orchestrator.commands.Command
 import com.dpsmpx.dpai.orchestrator.control.ControlSnapshot
 import com.dpsmpx.dpai.orchestrator.git.GitService
 import com.dpsmpx.dpai.orchestrator.review.Review
@@ -140,6 +141,9 @@ class ReviewFlowTest {
 
     private fun task(t: TaskId) = orchestrator.tasks.tasks.getValue(t)
 
+    /** Команда, как с экрана (D-42): через очередь контура. */
+    private fun Orchestrator.run(c: Command) = submit(c).also { runCommands() }.get()
+
     private fun reviewRequests() = started.filter { (s, _) -> orchestrator.sessions.sessions[s]?.review != null }
 
     @Test
@@ -236,6 +240,44 @@ class ReviewFlowTest {
         orchestrator.recover { AgentClient(runner.host, listOf("dpai"), null, "target mock") }
         runUntilQuiet()
         // Ответ того хода — без схемы (SLOW_OUTPUT): ревью без итога, повтор — и ответ по схеме.
+        assertEquals(TaskState.DONE, task(t).state)
+        assertEquals(2, orchestrator.sessions.sessions.values.count { it.task == t && it.review != null })
+    }
+
+    /**
+     * «Остановить ход» у сессии ревью ставит задачу на паузу (D-42): сессия
+     * снята без handoff — задача остаётся проверенной, а не идёт на новую
+     * попытку работы; ревью не перезапускается, пока не «Продолжить».
+     */
+    @Test
+    fun stoppedReviewWaitsForResume() {
+        setUp()
+        work += MockScenario.SLOW_OUTPUT
+        reviews["CODE"] = ArrayDeque(listOf(MockScenario.SLOW_OUTPUT, MockScenario.REVIEW_PASS))
+        val t = reviewedTask(ReviewRole.CODE)
+        repeat(6) {
+            if (orchestrator.sessions.sessions.values.any { it.task == t && it.review != null }) return@repeat
+            orchestrator.tick()
+            orchestrator.sessions.sessions.values.filter { it.review == null }.forEach { s -> while (runner.advance(s.id)) continue }
+            orchestrator.tick()
+            clock.advance(2.minutes)
+        }
+        val review = orchestrator.sessions.sessions.values.single { it.task == t && it.review == "CODE" }
+        // Ход ревью пошёл (первая строка вывода) — его и останавливаем.
+        runner.advance(review.id)
+        orchestrator.tick()
+        assertEquals(com.dpsmpx.dpai.core.state.SessionState.RUNNING, orchestrator.sessions.sessions.getValue(review.id).state)
+        // Проверенную задачу не отменяют — и отказ не снимает идущее ревью.
+        assertEquals(OperationStatus.FAILED, orchestrator.run(Command.Cancel(t)).status)
+        assertEquals(com.dpsmpx.dpai.core.state.SessionState.RUNNING, orchestrator.sessions.sessions.getValue(review.id).state)
+        val stop = orchestrator.run(Command.StopSession(review.id))
+        assertEquals(OperationStatus.SUCCEEDED, stop.status, stop.diagnostics.toString())
+        runUntilQuiet(4)
+        assertEquals(TaskState.VERIFIED, task(t).state)
+        assertTrue(task(t).held)
+        assertEquals(1, orchestrator.sessions.sessions.values.count { it.task == t && it.review != null }, "на паузе ревью не перезапускается")
+        assertEquals(OperationStatus.SUCCEEDED, orchestrator.run(Command.Resume(t)).status)
+        runUntilQuiet()
         assertEquals(TaskState.DONE, task(t).state)
         assertEquals(2, orchestrator.sessions.sessions.values.count { it.task == t && it.review != null })
     }

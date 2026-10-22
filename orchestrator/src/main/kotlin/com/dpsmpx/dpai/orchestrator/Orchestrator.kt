@@ -961,13 +961,14 @@ class Orchestrator(
      * Ревью проверенных задач (D-59): у задачи одна активная сессия
      * (инвариант `task-single-session`), поэтому роли — по одной за раз,
      * по порядку. Запускать нечего — решить итог: перезапуск между записью
-     * итога и решением не оставляет задачу ждать вечно.
+     * итога и решением не оставляет задачу ждать вечно. Задача на паузе
+     * (D-42: «Остановить ход» у сессии ревью) ждёт «Продолжить».
      */
     private fun reviews() {
         for (id in tasks.tasks.values.filter { it.state == TaskState.VERIFIED && it.policy.reviews.isNotEmpty() }.map { it.id }.sortedBy { it.value }) {
             runCommands()
             val t = tasks.tasks[id] ?: continue
-            if (t.state != TaskState.VERIFIED || openSessions(id).isNotEmpty()) continue
+            if (t.state != TaskState.VERIFIED || t.held || openSessions(id).isNotEmpty()) continue
             if (t.reviews.values.any { it.verdict == ReviewVerdict.BLOCKED }) {
                 settleReviews(id)
                 continue
@@ -1724,7 +1725,10 @@ class Orchestrator(
                 is Outcome.Failure -> failures += step.errors
                 is Outcome.Success -> {
                     commitSessions(step.value.events)
-                    handOff(task, s.id, HandoffReason.PAUSED, "продолжить с места остановки: ход приостановлен человеком")
+                    // Сессию ревью (D-59) не продолжают: она снимается, ревью — без итога и запустится после «Продолжить».
+                    val role = s.review
+                    if (role != null) reactReview(task, s.id, role, SessionState.PAUSED)
+                    else handOff(task, s.id, HandoffReason.PAUSED, "продолжить с места остановки: ход приостановлен человеком")
                 }
             }
         }
@@ -1738,6 +1742,10 @@ class Orchestrator(
     private fun cancelTask(task: TaskId): Outcome<TaskState> {
         val t = tasks.tasks[task] ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой задачи", "task $task")
         if (t.terminal) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "задача уже завершена: ${t.state}", "task $task")
+        // До остановки ходов: отказ автомата (`VERIFIED` — проверенная, на ревью, D-59) не должен снимать идущее ревью.
+        if (!com.dpsmpx.dpai.core.state.TaskLifecycle.table.isAllowed(t.state, TaskState.CANCELLED)) {
+            return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "задачу ${t.state} не отменяют", "task $task")
+        }
         for (s in openSessions(task)) {
             if (s.state in WAIT_STATES) {
                 closeSession(task, s.id)
