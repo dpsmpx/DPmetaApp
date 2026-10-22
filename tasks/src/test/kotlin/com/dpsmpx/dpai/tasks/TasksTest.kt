@@ -341,6 +341,94 @@ class TasksTest {
         assertEquals(null, TaskCodec.decodeState(v1).valueOrNull()!!.tasks.getValue(t).scope)
     }
 
+    /** D-59: задача доводится до VERIFIED; с ревью — до ревью. */
+    private fun verified(policy: TaskPolicy): TaskId {
+        val t = task(policy = policy)
+        runTickUntilReady(t)
+        ok(tasks.start(state, t, clock.now()))
+        ok(tasks.implemented(state, t, clock.now()))
+        ok(tasks.recordVerification(state, t, "PASSED", "sha256:ok", clock.now()))
+        assertEquals(TaskState.VERIFIED, state.tasks.getValue(t).state)
+        return t
+    }
+
+    private val session = ids.next(IdKinds.SESSION)
+
+    /** D-59: у TRIVIAL ревью нет; DONE ждёт ревью всех ролей; блокирующее — повтор, новая попытка — ревью заново. */
+    @Test
+    fun reviewsGateDoneAndBlockingReviewIsAnAttempt() {
+        val refused = runCatching { TaskPolicy(taskClass = TaskClass.TRIVIAL, reviews = setOf(ReviewRole.CODE)) }
+        assertTrue(refused.isFailure && "TRIVIAL" in refused.exceptionOrNull()!!.message!!)
+        val t = verified(TaskPolicy(retryBackoff = 0.minutes, reviews = setOf(ReviewRole.SECURITY, ReviewRole.CODE)))
+        assertEquals(listOf(ReviewRole.CODE, ReviewRole.SECURITY), state.tasks.getValue(t).reviewsLeft())
+        assertEquals(DiagCode.REVIEW_REQUIRED, (tasks.complete(state, t, clock.now()) as Outcome.Failure).errors.single().code)
+        val major = ReviewFinding(FindingSeverity.MAJOR, "нет проверки длины", "src/a.kt", 12, "строка без предела")
+        ok(tasks.recordReview(state, t, ReviewRecord(ReviewRole.CODE, ReviewVerdict.PASSED, 1, session, listOf(major)), clock.now()))
+        val blocking = ReviewFinding(FindingSeverity.BLOCKING, "секрет в журнале")
+        ok(tasks.recordReview(state, t, ReviewRecord(ReviewRole.SECURITY, ReviewVerdict.BLOCKED, 1, session, listOf(blocking)), clock.now()))
+        ok(tasks.reviewBlocked(state, t, clock.now()))
+        val back = state.tasks.getValue(t)
+        assertEquals(TaskState.READY, back.state)
+        assertEquals(DiagCode.REVIEW_BLOCKING, back.lastReason)
+        assertEquals(1, back.retries, "блокирующее ревью — попытка")
+        assertEquals(2, back.reviews.size, "итоги видны до новой попытки")
+        ok(tasks.start(state, t, clock.now()))
+        assertEquals(emptyMap(), state.tasks.getValue(t).reviews, "новая попытка — ревью заново")
+        ok(tasks.implemented(state, t, clock.now()))
+        ok(tasks.recordVerification(state, t, "PASSED", "sha256:ok2", clock.now()))
+        ok(tasks.recordReview(state, t, ReviewRecord(ReviewRole.CODE, ReviewVerdict.PASSED, 1, session), clock.now()))
+        ok(tasks.recordReview(state, t, ReviewRecord(ReviewRole.SECURITY, ReviewVerdict.FAILED, 2, session, reason = "ответ не по схеме"), clock.now()))
+        assertEquals(listOf(ReviewRole.SECURITY), state.tasks.getValue(t).reviewsLeft(), "без итога — не пройдено")
+        assertEquals(DiagCode.VALUE_INVALID, (tasks.waiveReview(state, t, ReviewRole.SECURITY, "автор", " ", clock.now()) as Outcome.Failure).errors.single().code)
+        ok(tasks.waiveReview(state, t, ReviewRole.SECURITY, "автор", "ревью недоступно, проверил сам", clock.now()))
+        assertEquals(DiagCode.OPERATION_NOT_ALLOWED, (tasks.waiveReview(state, t, ReviewRole.CODE, "автор", "x", clock.now()) as Outcome.Failure).errors.single().code, "у прошедшего — не исключение")
+        ok(tasks.complete(state, t, clock.now()))
+        assertEquals(TaskState.DONE, state.tasks.getValue(t).state)
+        // Чужая роль и задача не в VERIFIED — отказ.
+        val other = verified(TaskPolicy())
+        assertEquals(DiagCode.OPERATION_NOT_ALLOWED, (tasks.recordReview(state, other, ReviewRecord(ReviewRole.CODE, ReviewVerdict.PASSED, 1, session), clock.now()) as Outcome.Failure).errors.single().code)
+        ok(tasks.complete(state, other, clock.now()))
+        assertEquals(DiagCode.INVALID_TRANSITION, (tasks.recordReview(state, t, ReviewRecord(ReviewRole.CODE, ReviewVerdict.PASSED, 1, session), clock.now()) as Outcome.Failure).errors.single().code)
+    }
+
+    /** D-59: то же блокирующее ревью раз за разом — BLOCKED (из VERIFIED в FAILED пути нет), решает человек. */
+    @Test
+    fun repeatedBlockingReviewStopsAsLoop() {
+        val t = verified(TaskPolicy(maxRetries = 10, retryBackoff = 0.minutes, reviews = setOf(ReviewRole.CODE)))
+        val blocking = ReviewRecord(ReviewRole.CODE, ReviewVerdict.BLOCKED, 1, session, listOf(ReviewFinding(FindingSeverity.BLOCKING, "гонка")))
+        repeat(3) { i ->
+            if (i > 0) {
+                ok(tasks.start(state, t, clock.now()))
+                ok(tasks.implemented(state, t, clock.now()))
+                ok(tasks.recordVerification(state, t, "PASSED", "sha256:$i", clock.now()))
+            }
+            ok(tasks.recordReview(state, t, blocking, clock.now()))
+            ok(tasks.reviewBlocked(state, t, clock.now()))
+        }
+        assertEquals(TaskState.BLOCKED, state.tasks.getValue(t).state)
+        assertEquals(DiagCode.LOOP_DETECTED, state.tasks.getValue(t).lastReason)
+        // Запись ревью строгая: BLOCKED — только с блокирующей находкой, длины ограничены.
+        assertTrue(runCatching { ReviewRecord(ReviewRole.CODE, ReviewVerdict.BLOCKED, 1, session) }.isFailure)
+        assertTrue(runCatching { ReviewFinding(FindingSeverity.NOTE, "x".repeat(ReviewRecord.MAX_TITLE + 1)) }.isFailure)
+    }
+
+    /** D-59: роли в политике и итоги ревью — в событиях и снимке v6; снимок v5 читается без них. */
+    @Test
+    fun reviewsSurviveTheJournalFormat() {
+        val t = verified(TaskPolicy(reviews = setOf(ReviewRole.CODE)))
+        val f = ReviewFinding(FindingSeverity.BLOCKING, "SQL без параметров", "db/q.kt", 7, "конкатенация строки запроса")
+        ok(tasks.recordReview(state, t, ReviewRecord(ReviewRole.CODE, ReviewVerdict.BLOCKED, 2, session, listOf(f), omitted = 3), clock.now()))
+        val decoded = log.map { TaskCodec.decode(TaskCodec.type(it), it.at, TaskCodec.payload(it))!!.valueOrNull()!! }
+        assertEquals(log, decoded)
+        val json = com.dpsmpx.dpai.core.serialization.CanonicalJson.write(TaskCodec.encodeState(state))
+        val parsed = com.dpsmpx.dpai.core.serialization.JsonParser().parse(json).valueOrNull() as com.dpsmpx.dpai.core.serialization.JsonObject
+        assertEquals(state, TaskCodec.decodeState(parsed).valueOrNull())
+        val plain = task()
+        val v6 = TaskCodec.encodeState(TasksState(mapOf(plain to state.tasks.getValue(plain))))
+        val v5 = com.dpsmpx.dpai.core.serialization.JsonObject(v6.fields + ("version" to com.dpsmpx.dpai.core.serialization.JsonNumber.of(5)))
+        assertEquals(state.tasks.getValue(plain), TaskCodec.decodeState(v5).valueOrNull()!!.tasks.getValue(plain))
+    }
+
     @Test
     fun continuationsAreLimited() {
         val t = task(policy = TaskPolicy(maxContinuations = 2))

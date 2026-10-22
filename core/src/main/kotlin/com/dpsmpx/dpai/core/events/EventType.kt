@@ -117,4 +117,7 @@ enum class EventType {
 
     // --- архив задач (D-42) ---
     TASK_ARCHIVE_CHANGED,
+
+    // --- ревью задачи (D-59) ---
+    TASK_REVIEW_RECORDED,
 }

@@ -42,8 +42,11 @@ class Sessions(val policy: SessionPolicy = SessionPolicy()) {
         provider: ProviderSessionId,
         now: Timestamp,
         continues: SessionId? = null,
+        /** Роль ревью (D-59); `null` — рабочая сессия. */
+        review: String? = null,
     ): Outcome<Created> {
         if (key.isBlank() || key.length > 200) return Outcome.failure(DiagCode.VALUE_INVALID, "ключ идемпотентности — 1…200 знаков")
+        if (review != null && !REVIEW_ROLE.matches(review)) return Outcome.failure(DiagCode.VALUE_INVALID, "роль ревью — латиница в верхнем регистре", "session $id")
         state.byKey(key)?.let { return Outcome.success(Created(it.id, emptyList()), listOf(repeated(it.id))) }
         if (id in state.sessions) return Outcome.failure(DiagCode.VALUE_INVALID, "сессия с этим id уже есть под другим ключом", "session $id")
         if (continues != null) {
@@ -58,7 +61,7 @@ class Sessions(val policy: SessionPolicy = SessionPolicy()) {
             return Outcome.failure(DiagCode.SESSION_BINDING_MISMATCH, "слот не арендован этой сессией", "session $id")
         }
         if (s.targetId != target) return Outcome.failure(DiagCode.SESSION_BINDING_MISMATCH, "слот на другом target", "session $id")
-        val created = SessionEvent.Created(id, key, task, slot, s.subscriptionId, target, s.configDir, provider, continues, now)
+        val created = SessionEvent.Created(id, key, task, slot, s.subscriptionId, target, s.configDir, provider, continues, now, review)
         return Outcome.success(Created(id, listOf(created, changed(id, SessionState.CREATED, SessionState.QUEUED, null, now))))
     }
 
@@ -140,13 +143,16 @@ class Sessions(val policy: SessionPolicy = SessionPolicy()) {
     private fun repeated(id: SessionId) = Diagnostic.info(DiagCode.SESSION_ALREADY_EXISTS, "повтор запроса: сессия уже создана", "session $id")
 
     companion object {
+        /** Роль ревью сессии (D-59) — имя перечисления: латиница в верхнем регистре. */
+        private val REVIEW_ROLE = Regex("[A-Z][A-Z_]{0,31}")
+
         /** Свёртка события в состояние; недопустимый переход в журнале — несовместимость, а не тихая правка. */
         fun apply(state: SessionsState, e: SessionEvent): SessionsState {
             val sessions = state.sessions.toMutableMap()
             when (e) {
                 is SessionEvent.Created -> sessions[e.session] = SessionRecord(
                     e.session, e.key, e.task, e.slot, e.subscription, e.target, e.configDir, e.provider, e.continues,
-                    createdAt = e.at, updatedAt = e.at,
+                    createdAt = e.at, updatedAt = e.at, review = e.review,
                 )
                 is SessionEvent.StateChanged -> sessions.computeIfPresent(e.session) { _, r ->
                     check(SessionLifecycle.table.isAllowed(r.state, e.to, TransitionMode.EXPLICIT)) { "сессия ${e.session}: ${r.state} → ${e.to}" }

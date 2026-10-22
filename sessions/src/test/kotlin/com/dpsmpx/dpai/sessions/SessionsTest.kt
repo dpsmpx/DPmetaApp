@@ -263,6 +263,28 @@ class SessionsTest {
         assertEquals(state, SessionCodec.decodeState(JsonParser().parse(json).valueOrNull() as JsonObject).valueOrNull())
     }
 
+    /** D-59: сессия ревью несёт роль в событии и снимке v4; роль — только имя латиницей; снимок v3 читается без неё. */
+    @Test
+    fun reviewSessionCarriesItsRole() {
+        slots(1)
+        val task = ids.next(IdKinds.TASK)
+        val id = ids.next(IdKinds.SESSION)
+        val lease = assertIs<Outcome.Success<Accounts.Lease>>(accountsLogic.lease(accounts, id, task, clock.now())).value
+        accounts = Accounts.applyAll(accounts, lease.events)
+        val target = accounts.slots.getValue(lease.slot).targetId
+        val provider = ProviderSessionId.newUuid(RandomSource.seeded(7))
+        assertEquals(DiagCode.VALUE_INVALID, (sessionsLogic.create(state, accounts, id, "review:1", task, lease.slot, target, provider, clock.now(), review = "code; rm") as Outcome.Failure).errors.single().code)
+        apply(assertIs<Outcome.Success<Sessions.Created>>(sessionsLogic.create(state, accounts, id, "review:1", task, lease.slot, target, provider, clock.now(), review = "SECURITY")).value.events)
+        assertEquals("SECURITY", state.sessions.getValue(id).review)
+        val decoded = log.map { e -> SessionCodec.decode(SessionCodec.type(e), e.at, SessionCodec.payload(e))!!.valueOrNull()!! }
+        assertEquals(log, decoded)
+        val json = CanonicalJson.write(SessionCodec.encodeState(state))
+        assertEquals(state, SessionCodec.decodeState(JsonParser().parse(json).valueOrNull() as JsonObject).valueOrNull())
+        val work = state.sessions.getValue(id).copy(review = null)
+        val v3 = CanonicalJson.write(SessionCodec.encodeState(SessionsState(mapOf(id to work)))).replace("\"version\":4", "\"version\":3")
+        assertEquals(work, SessionCodec.decodeState(JsonParser().parse(v3).valueOrNull() as JsonObject).valueOrNull()!!.sessions.getValue(id))
+    }
+
     @Test
     fun usageOfPromptAndTurnIsRecordedAndSurvivesSnapshot() {
         // D-40, п. 1: prompt — оценка оркестратора, ход — со слов провайдера; оба в журнале и снимке.
@@ -292,7 +314,7 @@ class SessionsTest {
         assertEquals(state, SessionCodec.decodeState(JsonParser().parse(json).valueOrNull() as JsonObject).valueOrNull())
         // Снимок v1 (до D-40) читается: расхода в нём нет.
         val bare = SessionsState(state.sessions.mapValues { it.value.copy(usage = UsageTotals.EMPTY) })
-        val v1 = CanonicalJson.write(SessionCodec.encodeState(bare)).replace("\"version\":3", "\"version\":1")
+        val v1 = CanonicalJson.write(SessionCodec.encodeState(bare)).replace("\"version\":4", "\"version\":1")
         assertEquals(bare, SessionCodec.decodeState(JsonParser().parse(v1).valueOrNull() as JsonObject).valueOrNull())
     }
 
@@ -320,7 +342,7 @@ class SessionsTest {
         assertEquals(state, SessionCodec.decodeState(JsonParser().parse(json).valueOrNull() as JsonObject).valueOrNull())
         // Снимок v2 (D-40, до D-41) читается: инструментов в нём нет.
         val noTools = SessionsState(state.sessions.mapValues { it.value.copy(usage = it.value.usage.copy(tools = ToolTotals.EMPTY)) })
-        val v2 = CanonicalJson.write(SessionCodec.encodeState(noTools)).replace("\"version\":3", "\"version\":2")
+        val v2 = CanonicalJson.write(SessionCodec.encodeState(noTools)).replace("\"version\":4", "\"version\":2")
         assertEquals(noTools, SessionCodec.decodeState(JsonParser().parse(v2).valueOrNull() as JsonObject).valueOrNull())
         // Испорченный замер — ошибка чтения, а не нули.
         val bad = SessionCodec.payload(SessionEvent.TurnTools(s, 3, t2, clock.now())).let { p ->

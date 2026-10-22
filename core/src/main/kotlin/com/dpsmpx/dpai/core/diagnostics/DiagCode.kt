@@ -191,6 +191,16 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     VERIFICATION_REQUIRED(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
     VERIFICATION_WAIVED(Category.STATE, Severity.WARNING, Retryability.NON_RETRYABLE),
 
+    // --- ревью задачи (D-59) ---
+    /** Ревью нашло блокирующее: задача — на повтор с выжимкой находок. */
+    REVIEW_BLOCKING(Category.EXECUTION, Severity.WARNING, Retryability.RETRYABLE),
+    /** Ревью не дало итога: сбой сессии, ответ не по схеме, нет слота. */
+    REVIEW_FAILED(Category.EXECUTION, Severity.ERROR, Retryability.RETRYABLE),
+    /** `DONE` ждёт ревью, назначенных политикой задачи. */
+    REVIEW_REQUIRED(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
+    /** Ревью роли принято без итога — решением человека. */
+    REVIEW_WAIVED(Category.STATE, Severity.WARNING, Retryability.NON_RETRYABLE),
+
     // --- восстановление (этап 13) ---
     STATE_CONFLICT(Category.INTEGRITY, Severity.WARNING, Retryability.RETRYABLE),
     RECOVERY_RESTARTED(Category.STATE, Severity.INFO, Retryability.NON_RETRYABLE),

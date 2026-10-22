@@ -345,12 +345,12 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
     fun complete(state: TasksState, id: TaskId, now: Timestamp, waiver: Pair<String, String>? = null): Outcome<List<TaskEvent>> {
         val t = state.tasks[id] ?: return notFound(id)
         return when (t.state) {
-            TaskState.VERIFIED ->
-                if (t.verification?.verdict == "PASSED") {
-                    move(state, id, TaskState.DONE, now)
-                } else {
-                    Outcome.failure(DiagCode.VERIFICATION_REQUIRED, "нет записанной успешной проверки", "task $id")
-                }
+            TaskState.VERIFIED -> when {
+                t.verification?.verdict != "PASSED" -> Outcome.failure(DiagCode.VERIFICATION_REQUIRED, "нет записанной успешной проверки", "task $id")
+                // Ревью политики (D-59) — шаг проверки: без его итога DONE нет.
+                t.reviewsLeft().isNotEmpty() -> Outcome.failure(DiagCode.REVIEW_REQUIRED, "ждёт ревью: ${t.reviewsLeft().joinToString { it.name }}", "task $id")
+                else -> move(state, id, TaskState.DONE, now)
+            }
             TaskState.COMPLETION_UNVERIFIED -> {
                 val (who, why) = waiver ?: return Outcome.failure(DiagCode.VERIFICATION_REQUIRED, "без проверки DONE — только с исключением политики", "task $id")
                 if (who.isBlank() || why.isBlank()) return Outcome.failure(DiagCode.VALUE_INVALID, "у исключения — кто и почему", "task $id")
@@ -360,6 +360,61 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
                 }
             }
             else -> Outcome.failure(DiagCode.INVALID_TRANSITION, "в DONE — из VERIFIED или COMPLETION_UNVERIFIED, а задача ${t.state}", "task $id")
+        }
+    }
+
+    /**
+     * Итог ревью роли (D-59): только у `VERIFIED` и только роли из
+     * политики задачи. Блокирующий итог сам задачу не двигает — это
+     * [reviewBlocked], когда ревью всех ролей кончились.
+     */
+    fun recordReview(state: TasksState, id: TaskId, record: ReviewRecord, now: Timestamp): Outcome<List<TaskEvent>> {
+        val t = state.tasks[id] ?: return notFound(id)
+        if (t.state != TaskState.VERIFIED) return Outcome.failure(DiagCode.INVALID_TRANSITION, "ревью — у проверенной задачи, а эта ${t.state}", "task $id")
+        if (record.role !in t.policy.reviews) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "ревью ${record.role} нет в политике задачи", "task $id")
+        return Outcome.success(listOf(TaskEvent.ReviewRecorded(id, record, now)))
+    }
+
+    /**
+     * Принять ревью роли без итога (D-59, п. 3): решение человека — кто и
+     * почему; только роли, у которых итога нет или он `FAILED`.
+     */
+    fun waiveReview(state: TasksState, id: TaskId, role: ReviewRole, by: String, why: String, now: Timestamp): Outcome<List<TaskEvent>> {
+        val t = state.tasks[id] ?: return notFound(id)
+        if (by.isBlank() || why.isBlank()) return Outcome.failure(DiagCode.VALUE_INVALID, "у исключения — кто и почему", "task $id")
+        val last = t.reviews[role]
+        if (last != null && last.verdict != ReviewVerdict.FAILED) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "у ревью $role уже есть итог ${last.verdict}", "task $id")
+        val record = ReviewRecord(role, ReviewVerdict.WAIVED, last?.attempt ?: 1, last?.session, by = by.take(ReviewRecord.MAX_TITLE), reason = why.take(ReviewRecord.MAX_DETAIL))
+        return recordReview(state, id, record, now)
+    }
+
+    /**
+     * Ревью нашло блокирующее (D-59, п. 3): попытка засчитывается, как у
+     * проваленной проверки, задача — снова `READY` после паузы. Попытки
+     * кончились или тот же итог повторяется — `BLOCKED`: решает человек
+     * (из `VERIFIED` в `FAILED` пути нет, а молча бросать работу нельзя).
+     */
+    fun reviewBlocked(state: TasksState, id: TaskId, now: Timestamp): Outcome<List<TaskEvent>> {
+        val t = state.tasks[id] ?: return notFound(id)
+        val roles = t.reviews.values.filter { it.verdict == ReviewVerdict.BLOCKED }.map { it.role }.sorted()
+        if (t.state != TaskState.VERIFIED || roles.isEmpty()) return Outcome.failure(DiagCode.INVALID_TRANSITION, "нет блокирующего ревью у проверенной задачи", "task $id")
+        val loopKey = "review:${roles.joinToString(",")}"
+        val failed = TaskEvent.AttemptFailed(id, loopKey, DiagCode.REVIEW_BLOCKING, now)
+        val s1 = apply(state, failed)
+        val attempt = t.retries + 1
+        val backoff = t.policy.retryBackoff * (1 shl (attempt - 1).coerceAtMost(10))
+        val ready = when (val r = move(s1, id, TaskState.READY, now, DiagCode.REVIEW_BLOCKING, notBefore = now + backoff)) {
+            is Outcome.Failure -> return r
+            is Outcome.Success -> r.value
+        }
+        val stop = when {
+            attempt > t.policy.maxRetries -> DiagCode.RETRY_LIMIT_REACHED
+            (t.failures[loopKey] ?: 0) + 1 >= policy.loopThreshold -> DiagCode.LOOP_DETECTED
+            else -> return Outcome.success(listOf(failed) + ready)
+        }
+        return when (val b = move(applyAll(s1, ready), id, TaskState.BLOCKED, now, stop)) {
+            is Outcome.Failure -> b
+            is Outcome.Success -> Outcome.success(listOf(failed) + ready + b.value)
         }
     }
 
@@ -407,6 +462,8 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
                         lastReason = e.reason ?: t.lastReason,
                         notBefore = e.notBefore,
                         queuedAt = if (e.to == TaskState.QUEUED && e.from == TaskState.BACKLOG) e.at else t.queuedAt,
+                        // Новая попытка — ревью заново (D-59): итог прошлой попытки к новой работе не относится.
+                        reviews = if (e.to == TaskState.RUNNING) emptyMap() else t.reviews,
                     )
                 }
                 is TaskEvent.PriorityChanged -> tasks.computeIfPresent(e.task) { _, t -> t.copy(priority = e.priority, manualPriority = e.manual, updatedAt = e.at) }
@@ -421,6 +478,7 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
                 is TaskEvent.HoldChanged -> tasks.computeIfPresent(e.task) { _, t -> t.copy(held = e.held, updatedAt = e.at) }
                 is TaskEvent.CountersReset -> tasks.computeIfPresent(e.task) { _, t -> t.copy(retries = 0, continuations = 0, failures = emptyMap(), updatedAt = e.at) }
                 is TaskEvent.ArchiveChanged -> tasks.computeIfPresent(e.task) { _, t -> t.copy(archived = e.archived, updatedAt = e.at) }
+                is TaskEvent.ReviewRecorded -> tasks.computeIfPresent(e.task) { _, t -> t.copy(reviews = t.reviews + (e.record.role to e.record), updatedAt = e.at) }
             }
             return TasksState(tasks)
         }
