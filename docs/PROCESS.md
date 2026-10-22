@@ -125,7 +125,9 @@ tools/verify/run.sh doctor     # окружение проверок: JDK, Pytho
 GitHub Actions не используется (D-15). Условие слияния в `main`:
 `tools/verify/run.sh full` выполнен на последнем коммите и прошёл; итог
 (`tools/verify/run.sh report`) — в описании PR (шаблон
-`.github/pull_request_template.md`).
+`.github/pull_request_template.md`). Засчитывается прогон на ПК или в
+облаке; на телефоне (сборка в Termux) полный прогон не обязателен и не
+засчитывается — там бюджеты устройства и `docs/DEVICE_CHECK.md` (D-64).
 
 ## 6. Выпуск
 
