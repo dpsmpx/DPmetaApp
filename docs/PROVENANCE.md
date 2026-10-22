@@ -63,3 +63,12 @@ D-17). `tools/verify/check_dependencies.py` сверяет таблицу §2 с
 | Уровни проверки static/affected/full, plan, report | `DP-Verify:README.md` | `tools/verify/`, D-16 |
 | Ссылки `Проект:номер`, общие принципы E-01…E-13 | `DPmeta:docs/NAMING.md`, `DPmeta:docs/PRINCIPLES.md` | `CLAUDE.md`, D-18 |
 | Хук начала сессии с ветками невлитой работы | `DPlang:.claude/hooks/session-start.sh` | `.claude/hooks/session-start.sh` |
+
+## 6. Идеи из внешних проектов
+
+Открытые проекты вне экосистемы автора. Берётся идея, код и тексты
+пишутся здесь заново; дата — когда проект прочитан.
+
+| Идея | Откуда | Лицензия, дата | Где здесь |
+|---|---|---|---|
+| Роли ревью (код, безопасность) отдельно от исполнителя; оценка попыток pass@k | `https://github.com/affaan-m/everything-claude-code` (`agents/code-reviewer.md`, `agents/security-reviewer.md`, `skills/eval-harness/SKILL.md`); прочитан форк `WorldFlowAI/everything-claude-code`, коммит `432485b` | MIT (файл `LICENSE` — в исходном проекте, у форка его нет), 22 октября 2026 | D-59 |
