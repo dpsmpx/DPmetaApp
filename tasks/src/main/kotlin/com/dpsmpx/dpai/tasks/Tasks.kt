@@ -3,6 +3,7 @@ package com.dpsmpx.dpai.tasks
 import com.dpsmpx.dpai.core.clock.Timestamp
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.Retryability
+import com.dpsmpx.dpai.core.ids.AccountId
 import com.dpsmpx.dpai.core.ids.ExecutionTargetId
 import com.dpsmpx.dpai.core.ids.TaskId
 import com.dpsmpx.dpai.core.result.Outcome
@@ -145,6 +146,30 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
         return moves.let { r -> if (r is Outcome.Failure) r else Outcome.success(listOf(reset) + r.valueOrNull()!!) }
     }
 
+    /**
+     * «Запустить первой» (D-63; ТЗ, §73): ручной приоритет выше всех открытых
+     * задач и снятие паузы. Только у задачи, которая ещё не идёт; пределы
+     * подписки и аренда — как у всех: задача идёт следующей, когда есть слот.
+     */
+    fun runFirst(state: TasksState, id: TaskId, now: Timestamp): Outcome<List<TaskEvent>> {
+        val t = state.tasks[id] ?: return notFound(id)
+        if (t.state !in WAITS_TO_RUN) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "«Запустить первой» — у задачи в очереди: задача ${t.state}", "task $id")
+        if (!policy.manualPriorityAllowed) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "политика планировщика не разрешает ручной приоритет", "task $id")
+        val top = state.tasks.values.filter { !it.terminal && it.id != id }.maxOfOrNull { it.manualPriority ?: 0 } ?: 0
+        val events = mutableListOf<TaskEvent>()
+        if (t.manualPriority == null || t.manualPriority <= top) events += TaskEvent.PriorityChanged(id, t.priority, top + 1, now)
+        if (t.held) events += TaskEvent.HoldChanged(id, false, now)
+        return Outcome.success(events)
+    }
+
+    /** Перенести задачу со слота (D-63): следующая сессия на него не идёт; повтор — без второго события. */
+    fun excludeSlot(state: TasksState, id: TaskId, slot: AccountId, now: Timestamp): Outcome<List<TaskEvent>> {
+        val t = state.tasks[id] ?: return notFound(id)
+        if (t.terminal) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "задача завершена: ${t.state}", "task $id")
+        if (t.excludedSlot == slot) return Outcome.success(emptyList())
+        return Outcome.success(listOf(TaskEvent.SlotExcluded(id, slot, now)))
+    }
+
     fun setPriority(state: TasksState, id: TaskId, priority: Priority, manual: Int?, now: Timestamp): Outcome<List<TaskEvent>> {
         val t = state.tasks[id] ?: return notFound(id)
         if (t.priority == priority && t.manualPriority == manual) return Outcome.success(emptyList())
@@ -203,11 +228,21 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
      * нужными возможностями и свободным местом. Задача без подходящего
      * target ждёт, не занимая места других (ТЗ, §50, §51, §85).
      */
-    fun plan(state: TasksState, now: Timestamp, offers: List<TargetOffer>): List<Assignment> {
+    /**
+     * [accepts] — может ли задача пойти на target сверх возможностей:
+     * например, у перенесённой задачи (D-63) там есть слот, кроме
+     * исключённого.
+     */
+    fun plan(
+        state: TasksState,
+        now: Timestamp,
+        offers: List<TargetOffer>,
+        accepts: (TaskRecord, ExecutionTargetId) -> Boolean = { _, _ -> true },
+    ): List<Assignment> {
         val free = offers.associate { it.target to it.free }.toMutableMap()
         val out = mutableListOf<Assignment>()
         for (t in ready(state, now)) {
-            val o = offers.firstOrNull { (free[it.target] ?: 0) > 0 && it.capabilities.containsAll(t.capabilities) } ?: continue
+            val o = offers.firstOrNull { (free[it.target] ?: 0) > 0 && it.capabilities.containsAll(t.capabilities) && accepts(t, it.target) } ?: continue
             free[o.target] = free.getValue(o.target) - 1
             out += Assignment(t.id, o.target)
         }
@@ -445,6 +480,8 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
 
     companion object {
         /** Где политику задачи ещё можно менять: ход не идёт и не начат. */
+        /** Ещё не идёт и ждёт запуска — у неё есть смысл «Запустить первой» (D-63). */
+        private val WAITS_TO_RUN = setOf(TaskState.QUEUED, TaskState.READY, TaskState.WAITING)
         private val EDITABLE = setOf(TaskState.BACKLOG, TaskState.QUEUED, TaskState.READY, TaskState.WAITING, TaskState.BLOCKED, TaskState.FAILED, TaskState.CANCELLED)
 
         fun apply(state: TasksState, e: TaskEvent): TasksState {
@@ -464,6 +501,8 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
                         queuedAt = if (e.to == TaskState.QUEUED && e.from == TaskState.BACKLOG) e.at else t.queuedAt,
                         // Новая попытка — ревью заново (D-59): итог прошлой попытки к новой работе не относится.
                         reviews = if (e.to == TaskState.RUNNING) emptyMap() else t.reviews,
+                        // Запуск — уже на другом слоте (D-63): исключение своё отработало.
+                        excludedSlot = if (e.to == TaskState.RUNNING) null else t.excludedSlot,
                     )
                 }
                 is TaskEvent.PriorityChanged -> tasks.computeIfPresent(e.task) { _, t -> t.copy(priority = e.priority, manualPriority = e.manual, updatedAt = e.at) }
@@ -479,6 +518,7 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
                 is TaskEvent.CountersReset -> tasks.computeIfPresent(e.task) { _, t -> t.copy(retries = 0, continuations = 0, failures = emptyMap(), updatedAt = e.at) }
                 is TaskEvent.ArchiveChanged -> tasks.computeIfPresent(e.task) { _, t -> t.copy(archived = e.archived, updatedAt = e.at) }
                 is TaskEvent.ReviewRecorded -> tasks.computeIfPresent(e.task) { _, t -> t.copy(reviews = t.reviews + (e.record.role to e.record), updatedAt = e.at) }
+                is TaskEvent.SlotExcluded -> tasks.computeIfPresent(e.task) { _, t -> t.copy(excludedSlot = e.slot, updatedAt = e.at) }
             }
             return TasksState(tasks)
         }

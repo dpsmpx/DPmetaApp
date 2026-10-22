@@ -77,6 +77,8 @@ enum class SessionAction(val label: String) {
     STOP("Остановить ход"),
     SEND("Запрос"),
     FRESH("Свежая сессия"),
+    /** Ход остановлен с handoff, следующая сессия задачи — на другом слоте (D-63; ТЗ, §74, Reassign). */
+    REASSIGN("Перенести на другой слот"),
 }
 
 /** Карточка задачи; [level] — глубина в DAG: 0 — без зависимостей, иначе 1 + наибольшая у зависимостей. */
@@ -173,10 +175,13 @@ object Screens {
                 add(SessionAction.SEND)
                 add(SessionAction.FRESH)
             }
+            // Перенос — у последней рабочей сессии незавершённой задачи, пока она не на проверке (D-63).
+            if (last && tasks.tasks[s.task]?.terminal == false && taskState !in CHECKING) add(SessionAction.REASSIGN)
         }
     }
 
     private val WAIT = setOf(com.dpsmpx.dpai.core.state.SessionState.PAUSED, com.dpsmpx.dpai.core.state.SessionState.BLOCKED, com.dpsmpx.dpai.core.state.SessionState.RECOVERY_PENDING)
+    private val CHECKING = setOf(TaskState.IMPLEMENTED, TaskState.VERIFYING, TaskState.VERIFIED)
     private val BUSY = setOf(TaskState.RUNNING, TaskState.IMPLEMENTED, TaskState.VERIFYING, TaskState.VERIFIED)
 
     /**

@@ -375,4 +375,51 @@ class TaskCommandsTest {
         advance(second, runner2, 4)
         assertTrue(tasks.all { state(second, it) == TaskState.DONE }, tasks.map { state(second, it) }.toString())
     }
+
+    /** D-63: «Запустить первой» — следующей, выше всех и без паузы; места не отнимает у идущих. */
+    @Test
+    fun runFirstGoesNext() {
+        val (o, runner) = boot()
+        val queued = (1..5).map { o.addTask("задача $it", "цель $it").valueOrNull()!! }
+        val last = o.addTask("срочная", "цель срочной").valueOrNull()!!
+        assertEquals(OperationStatus.SUCCEEDED, o.run(Command.Hold(last)).status)
+        val r = o.run(Command.RunFirst(last))
+        assertEquals(OperationStatus.SUCCEEDED, r.status, r.diagnostics.toString())
+        o.tick()
+        assertEquals(TaskState.RUNNING, state(o, last), "первой — она, пауза снята")
+        assertEquals(listOf(TaskState.RUNNING, TaskState.RUNNING, TaskState.RUNNING, TaskState.READY, TaskState.READY), queued.map { state(o, it) }, "мест четыре: одно ей, остальные — по очереди")
+        assertEquals(DiagCode.OPERATION_NOT_ALLOWED, o.run(Command.RunFirst(last)).diagnostics.single().code, "идущую — нет")
+        advance(o, runner, 1)
+    }
+
+    /**
+     * D-63: «Перенести» — ход остановлен с handoff, следующая сессия на другом
+     * слоте без `--resume`; другого слота нет — задача ждёт с причиной.
+     */
+    @Test
+    fun reassignMovesToAnotherSlotOrWaitsWithReason() {
+        val (o, runner) = boot()
+        val t = o.addTask("задача", "цель").valueOrNull()!!
+        o.tick()
+        val first = o.sessions.sessions.values.single { it.task == t }
+        val r = o.run(Command.Reassign(first.id))
+        assertEquals(OperationStatus.SUCCEEDED, r.status, r.diagnostics.toString())
+        assertEquals(com.dpsmpx.dpai.core.state.SessionState.CANCELLED, o.sessions.sessions.getValue(first.id).state, "ход остановлен с handoff")
+        assertEquals(first.slot, o.tasks.tasks.getValue(t).excludedSlot)
+        o.tick()
+        val second = o.sessions.sessions.values.single { it.task == t && !it.terminal }
+        assertTrue(second.slot != first.slot && second.target != first.target, "другой слот — на другом target")
+        assertEquals(first.id, second.continues, "продолжение — с handoff прежней сессии")
+        assertTrue(second.provider != first.provider, "другой слот — новая сессия провайдера, без --resume")
+        assertEquals(null, o.tasks.tasks.getValue(t).excludedSlot, "запуск снимает исключение")
+        // Другого слота нет (прежний выключен): задача ждёт с причиной и не идёт на исключённый, хотя он свободен.
+        assertEquals(OperationStatus.SUCCEEDED, o.run(Command.SetSlotEnabled(first.slot, false)).status)
+        assertEquals(OperationStatus.SUCCEEDED, o.run(Command.Reassign(second.id)).status)
+        advance(o, runner, 2)
+        assertTrue(o.sessions.sessions.values.none { it.task == t && !it.terminal }, "на исключённый и выключенный не идёт")
+        assertEquals(TaskState.READY, state(o, t))
+        assertTrue("перенесена" in o.waitingReason(t).orEmpty(), o.waitingReason(t).toString())
+        // Нет такой сессии — отказ, а не тишина.
+        assertEquals(DiagCode.ENTITY_NOT_FOUND, o.run(Command.Reassign(com.dpsmpx.dpai.core.ids.IdKinds.SESSION.let { ids.next(it) })).diagnostics.single().code)
+    }
 }

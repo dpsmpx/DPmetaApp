@@ -69,6 +69,12 @@ class ControlCommandTest {
         assertTrue(CanonicalJson.write(sent.last().second!!).contains("verify?hash"))
         assertEquals(1, cli(out, err).run("answer", listOf("STMSB", "нет-такого")))
         assertEquals(2, cli(out, err).run("task", listOf("5YK0", "плясать")))
+        // «Запустить первой» и «Перенести» (D-63).
+        assertEquals(0, cli(out, err).run("task", listOf("5YK0", "first")))
+        assertEquals("task.run-first", field("command"))
+        assertEquals(0, cli(out, err).run("session", listOf("SF4QD", "reassign")))
+        assertEquals("session.reassign", field("command"))
+        assertEquals("ses_01M4EY7BAXY3ZGE5VT0K6SF4QD", field("session"))
         assertEquals(0, cli(out, err).run("sessions-limit", listOf("off")))
         assertEquals("control.session-limit", field("command"))
         assertTrue(sent.last().second!!["limit"] == null, "off — без предела")

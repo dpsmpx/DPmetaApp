@@ -58,6 +58,8 @@
       и контекст хода (`QuickActionsTest`, 18 октября 2026). «Retry» и
       «Continue» сводки — у каждой задачи через «Ждут человека» (повтор
       тратит пределы, D-27), «Stop» — «Пауза всем»: она останавливает идущие
-      ходы с handoff. Открыто — «Run Task» и «Reassign»: решение D-63
-      («Запустить первой», «Перенести»), реализация — `TODO.md`; и проверка
-      на устройстве (`docs/DEVICE_CHECK.md`, §8.9, §8.10).
+      ходы с handoff. «Run Task» — «Запустить первой», «Reassign» —
+      «Перенести на другой слот» (D-63; `TaskCommandsTest`,
+      `runFirstGoesNext`, `reassignMovesToAnotherSlotOrWaitsWithReason`,
+      22 октября 2026). Открыта проверка на устройстве
+      (`docs/DEVICE_CHECK.md`, §8.9, §8.10).

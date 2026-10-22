@@ -673,6 +673,12 @@ private fun SessionActions(screen: SessionScreen, model: DemoModel) {
         if (com.dpsmpx.dpai.ui.SessionAction.STOP in screen.actions) {
             Button(enabled = !busy, onClick = { send { com.dpsmpx.dpai.orchestrator.commands.Command.StopSession(screen.session, it) } }) { Text("Остановить ход") }
         }
+        if (com.dpsmpx.dpai.ui.SessionAction.REASSIGN in screen.actions) {
+            // Перенос (D-63): ход остановлен с handoff, задача сразу в плане — на другом слоте.
+            androidx.compose.material3.OutlinedButton(enabled = !busy, onClick = { send { com.dpsmpx.dpai.orchestrator.commands.Command.Reassign(screen.session, it) } }) {
+                Text(com.dpsmpx.dpai.ui.SessionAction.REASSIGN.label)
+            }
+        }
         if (com.dpsmpx.dpai.ui.SessionAction.SEND in screen.actions) {
             OutlinedTextField(text, { text = it }, label = { Text("Запрос в сессию") }, minLines = 2, modifier = Modifier.fillMaxWidth())
             FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {

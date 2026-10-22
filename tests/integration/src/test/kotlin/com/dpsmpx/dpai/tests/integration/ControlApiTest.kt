@@ -177,6 +177,8 @@ class ControlApiTest {
             Command.AddTask("с ревью", "o", policy = com.dpsmpx.dpai.tasks.TaskPolicy(reviews = setOf(ReviewRole.SECURITY, ReviewRole.CODE)), key = "k-00000005"),
             Command.SetPolicy(t, com.dpsmpx.dpai.tasks.TaskClass.ARCHITECTURE, null, null, null, setOf(ReviewRole.CODE)),
             Command.SetPolicy(t, com.dpsmpx.dpai.tasks.TaskClass.ARCHITECTURE, null, null, null, emptySet()),
+            // «Запустить первой» и «Перенести» (D-63).
+            Command.RunFirst(t, "k-00000006"), Command.Reassign(s, "k-00000007"),
         )
         for (c in commands) {
             val back = CommandCodec.decode(CommandCodec.encode(c), ControlApi.BY)

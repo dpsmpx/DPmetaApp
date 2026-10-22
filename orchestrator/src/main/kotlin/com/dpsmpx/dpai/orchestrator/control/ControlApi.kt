@@ -257,7 +257,7 @@ object ControlSnapshot {
                         JsonObject(
                             linkedMapOf<String, JsonValue>(
                                 "id" to JsonString(s.id.value), "task" to JsonString(s.task.value), "state" to JsonString(s.state.name),
-                                "target" to JsonString(s.target.value), "turn" to JsonNumber.of(s.turn),
+                                "target" to JsonString(s.target.value), "slot" to JsonString(s.slot.value), "turn" to JsonNumber.of(s.turn),
                             ).apply {
                                 usage(com.dpsmpx.dpai.sessions.UsageSummary.of(listOf(s.usage)))?.let { put("usage", it) }
                                 s.review?.let { put("review", JsonString(it)) }

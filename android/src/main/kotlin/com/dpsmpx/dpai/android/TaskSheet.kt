@@ -131,6 +131,7 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
                                 when (a) {
                                     TaskAction.HOLD -> send { Command.Hold(task, it) }
                                     TaskAction.RESUME -> send { Command.Resume(task, it) }
+                                    TaskAction.RUN_FIRST -> send { Command.RunFirst(task, it) }
                                     TaskAction.RETRY -> send { Command.Retry(task, null, it) }
                                     TaskAction.VERIFY -> send { Command.Verify(task, it) }
                                     TaskAction.ARCHIVE -> send { Command.Archive(task, true, it) }

@@ -2,6 +2,7 @@ package com.dpsmpx.dpai.tasks
 
 import com.dpsmpx.dpai.core.clock.Timestamp
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
+import com.dpsmpx.dpai.core.ids.AccountId
 import com.dpsmpx.dpai.core.ids.TaskId
 import com.dpsmpx.dpai.core.state.TaskLifecycle
 import com.dpsmpx.dpai.core.state.TaskState
@@ -102,6 +103,11 @@ data class TaskRecord(
     val archived: Boolean = false,
     /** Итоги ревью текущей попытки по ролям (D-59); новая попытка (`RUNNING`) их сбрасывает. */
     val reviews: Map<ReviewRole, ReviewRecord> = emptyMap(),
+    /**
+     * Слот, с которого человек задачу перенёс («Перенести», D-63): следующая
+     * сессия задачи на него не идёт; запуск (`RUNNING`) исключение снимает.
+     */
+    val excludedSlot: AccountId? = null,
 ) {
     /** Роли политики, у которых ещё нет итога, позволяющего `DONE` (прошло или принято без ревью); по порядку ролей. */
     fun reviewsLeft(): List<ReviewRole> =
@@ -233,6 +239,9 @@ sealed interface TaskEvent {
 
     /** Итог ревью роли (D-59): прошло, блокирует, не дало итога или принято без ревью. */
     data class ReviewRecorded(override val task: TaskId, val record: ReviewRecord, override val at: Timestamp) : TaskEvent
+
+    /** Человек перенёс задачу со слота (D-63): следующая сессия — на другом. */
+    data class SlotExcluded(override val task: TaskId, val slot: AccountId, override val at: Timestamp) : TaskEvent
 }
 
 /**

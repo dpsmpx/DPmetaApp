@@ -123,6 +123,22 @@ sealed interface Command {
         override val operation: String get() = "task.waive"
     }
 
+    /**
+     * «Запустить первой» (D-63; ТЗ, §73): ручной приоритет выше всех
+     * открытых задач и снятие паузы; пределы подписки не обходятся.
+     */
+    data class RunFirst(override val task: TaskId, override val key: String? = null) : Command, TaskCommand {
+        override val operation: String get() = "task.run-first"
+    }
+
+    /**
+     * «Перенести» (D-63; ТЗ, §74): ход сессии остановлен с handoff, следующая
+     * сессия задачи — на другом слоте; другого нет — задача ждёт с причиной.
+     */
+    data class Reassign(val session: com.dpsmpx.dpai.core.ids.SessionId, override val key: String? = null) : Command {
+        override val operation: String get() = "session.reassign"
+    }
+
     /** Остановить ход сессии (D-42): ход остановлен, handoff записан, задача приостановлена. */
     data class StopSession(val session: com.dpsmpx.dpai.core.ids.SessionId, override val key: String? = null) : Command {
         override val operation: String get() = "session.stop"

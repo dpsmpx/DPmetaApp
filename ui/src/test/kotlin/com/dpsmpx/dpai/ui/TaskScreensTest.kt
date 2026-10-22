@@ -31,9 +31,9 @@ class TaskScreensTest {
 
     @Test
     fun actionsFollowState() {
-        assertEquals(listOf(TaskAction.PRIORITY, TaskAction.POLICY, TaskAction.SCOPE, TaskAction.HOLD, TaskAction.CANCEL), TaskScreens.actions(task(TaskState.READY)))
+        assertEquals(listOf(TaskAction.PRIORITY, TaskAction.RUN_FIRST, TaskAction.POLICY, TaskAction.SCOPE, TaskAction.HOLD, TaskAction.CANCEL), TaskScreens.actions(task(TaskState.READY)))
         assertEquals(listOf(TaskAction.PRIORITY, TaskAction.HOLD, TaskAction.CANCEL), TaskScreens.actions(task(TaskState.RUNNING)), "идущей — без правки политики")
-        assertEquals(listOf(TaskAction.PRIORITY, TaskAction.POLICY, TaskAction.SCOPE, TaskAction.RESUME, TaskAction.CANCEL), TaskScreens.actions(task(TaskState.READY, held = true)))
+        assertEquals(listOf(TaskAction.PRIORITY, TaskAction.RUN_FIRST, TaskAction.POLICY, TaskAction.SCOPE, TaskAction.RESUME, TaskAction.CANCEL), TaskScreens.actions(task(TaskState.READY, held = true)))
         assertTrue(TaskAction.REPLY in TaskScreens.actions(task(TaskState.BLOCKED)) && TaskAction.RETRY in TaskScreens.actions(task(TaskState.BLOCKED)))
         assertEquals(listOf(TaskAction.PRIORITY, TaskAction.VERIFY, TaskAction.WAIVE, TaskAction.CANCEL), TaskScreens.actions(task(TaskState.COMPLETION_UNVERIFIED)))
         assertEquals(listOf(TaskAction.POLICY, TaskAction.RETRY, TaskAction.ARCHIVE), TaskScreens.actions(task(TaskState.FAILED)), "завершённой — без области")
@@ -94,7 +94,10 @@ class TaskScreensTest {
         val sessions = SessionsState(listOf(work, review).associateBy { it.id })
         val tasks = TasksState(mapOf(id to task(TaskState.BLOCKED)))
         assertEquals(emptyList(), Screens.sessionActions(review.id, sessions, tasks), "ревью только читает")
-        assertEquals(listOf(SessionAction.SEND, SessionAction.FRESH), Screens.sessionActions(work.id, sessions, tasks), "продолжают работу, хотя ревью было позже")
+        assertEquals(listOf(SessionAction.SEND, SessionAction.FRESH, SessionAction.REASSIGN), Screens.sessionActions(work.id, sessions, tasks), "продолжают работу, хотя ревью было позже")
+        // «Перенести» (D-63) — у рабочей сессии незавершённой задачи, не на проверке.
+        assertTrue(SessionAction.REASSIGN !in Screens.sessionActions(work.id, sessions, TasksState(mapOf(id to task(TaskState.VERIFIED)))))
+        assertTrue(SessionAction.REASSIGN !in Screens.sessionActions(work.id, sessions, TasksState(mapOf(id to task(TaskState.DONE)))))
         assertEquals("ревью кода", Screens.reviewLabel("CODE"))
         assertEquals("ревью STYLE", Screens.reviewLabel("STYLE"))
     }

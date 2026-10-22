@@ -120,4 +120,7 @@ enum class EventType {
 
     // --- ревью задачи (D-59) ---
     TASK_REVIEW_RECORDED,
+
+    // --- перенос задачи на другой слот (D-63) ---
+    TASK_SLOT_EXCLUDED,
 }

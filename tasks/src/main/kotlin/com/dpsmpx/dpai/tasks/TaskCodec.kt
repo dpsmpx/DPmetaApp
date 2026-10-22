@@ -28,7 +28,8 @@ import kotlin.time.Duration.Companion.milliseconds
 object TaskCodec {
     const val STATE_FORMAT = "dpai.tasks-state"
     /**
-     * v6 — ревью (D-59): роли в политике (`reviews`) и итоги ревью у
+     * v7 — слот, с которого задачу перенесли (`excludedSlot`, D-63; пишется,
+     * только если есть); v6 — ревью (D-59): роли в политике (`reviews`) и итоги ревью у
      * задачи (`reviews`), пишутся, только если есть; v5 — архив
      * (`archived`, пишется, только если в архиве; D-42); v4 —
      * удержание задачи человеком (`held`, пишется, только если
@@ -36,7 +37,7 @@ object TaskCodec {
      * если заданы); v2 — заявленная область задачи (`scope`); v1 читается,
      * область неизвестна.
      */
-    const val STATE_VERSION = 6
+    const val STATE_VERSION = 7
 
     fun type(e: TaskEvent): EventType = when (e) {
         is TaskEvent.Created -> EventType.TASK_CREATED
@@ -52,6 +53,7 @@ object TaskCodec {
         is TaskEvent.CountersReset -> EventType.TASK_COUNTERS_RESET
         is TaskEvent.ArchiveChanged -> EventType.TASK_ARCHIVE_CHANGED
         is TaskEvent.ReviewRecorded -> EventType.TASK_REVIEW_RECORDED
+        is TaskEvent.SlotExcluded -> EventType.TASK_SLOT_EXCLUDED
     }
 
     fun stream(e: TaskEvent): StreamRef = StreamRef.of(e.task)
@@ -79,6 +81,7 @@ object TaskCodec {
         is TaskEvent.CountersReset -> obj("task" to id(e.task))
         is TaskEvent.ArchiveChanged -> obj("task" to id(e.task), "archived" to com.dpsmpx.dpai.core.serialization.JsonBool(e.archived))
         is TaskEvent.ReviewRecorded -> JsonObject(obj("task" to id(e.task)).fields + review(e.record).fields)
+        is TaskEvent.SlotExcluded -> obj("task" to id(e.task), "slot" to JsonString(e.slot.value))
     }
 
     fun decode(type: EventType, at: Timestamp, payload: JsonObject): Outcome<TaskEvent>? {
@@ -157,6 +160,11 @@ object TaskCodec {
                 val record = readReview(f)
                 if (task != null && record != null) TaskEvent.ReviewRecorded(task, record, at) else null
             }
+            EventType.TASK_SLOT_EXCLUDED -> {
+                val task = f.taskId("task")
+                val slot = f.string("slot")?.let { v -> IdKinds.ACCOUNT.parse(v).valueOrNull() ?: null.also { d.error(DiagCode.ID_INVALID, "ожидался AccountId", "$.payload.slot") } }
+                if (task != null && slot != null) TaskEvent.SlotExcluded(task, slot, at) else null
+            }
             else -> return null
         }
         f.finish()
@@ -186,6 +194,7 @@ object TaskCodec {
         "held" to (if (t.held) com.dpsmpx.dpai.core.serialization.JsonBool(true) else JsonNull),
         "archived" to (if (t.archived) com.dpsmpx.dpai.core.serialization.JsonBool(true) else JsonNull),
         "reviews" to (t.reviews.takeIf { it.isNotEmpty() }?.let { m -> JsonArray(m.values.sortedBy { it.role }.map(::review)) } ?: JsonNull),
+        "excludedSlot" to (t.excludedSlot?.let { JsonString(it.value) } ?: JsonNull),
     )
 
     fun decodeState(json: JsonObject): Outcome<TasksState> {
@@ -219,6 +228,7 @@ object TaskCodec {
                     held = if (version >= 4 && r.has("held")) r.boolean("held")!! else false,
                     archived = if (version >= 5 && r.has("archived")) r.boolean("archived")!! else false,
                     reviews = if (version >= 6 && r.has("reviews")) readReviews(r)!! else emptyMap(),
+                    excludedSlot = if (version >= 7) r.optString("excludedSlot")?.let { IdKinds.ACCOUNT.parse(it).valueOrNull()!! } else null,
                 )
             }.getOrNull()
             r.finish()

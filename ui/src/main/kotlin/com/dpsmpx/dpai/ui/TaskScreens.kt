@@ -19,6 +19,8 @@ import com.dpsmpx.dpai.tasks.TaskRecord
  */
 enum class TaskAction(val label: String, val dangerous: Boolean = false) {
     PRIORITY("Приоритет"),
+    /** Выше всех в очереди и без паузы (D-63; ТЗ, §73, Run Task); пределы подписки — как у всех. */
+    RUN_FIRST("Запустить первой"),
     POLICY("Модель, бюджет, ревью"),
     /** Область и зависимости (D-42, п. 1) — до запуска. */
     SCOPE("Область и зависимости"),
@@ -78,10 +80,12 @@ data class DependencyLine(val id: TaskId, val title: String, val state: String)
  */
 object TaskScreens {
     private val EDITABLE = setOf(TaskState.BACKLOG, TaskState.QUEUED, TaskState.READY, TaskState.WAITING, TaskState.BLOCKED, TaskState.FAILED, TaskState.CANCELLED)
+    private val WAITS_TO_RUN = setOf(TaskState.QUEUED, TaskState.READY, TaskState.WAITING)
     private val HOLDABLE = setOf(TaskState.BACKLOG, TaskState.QUEUED, TaskState.READY, TaskState.RUNNING, TaskState.WAITING, TaskState.BLOCKED)
 
     fun actions(t: TaskRecord): List<TaskAction> = buildList {
         if (!t.terminal) add(TaskAction.PRIORITY)
+        if (t.state in WAITS_TO_RUN) add(TaskAction.RUN_FIRST)
         if (t.state in EDITABLE) add(TaskAction.POLICY)
         if (t.state in EDITABLE && !t.terminal) add(TaskAction.SCOPE)
         // Завершённую не отпускают и не удерживают (`Tasks.hold`): у отменённой на паузе «Продолжить» был бы отказом.

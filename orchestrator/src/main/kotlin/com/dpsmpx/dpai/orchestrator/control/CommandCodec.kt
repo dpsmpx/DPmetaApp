@@ -66,6 +66,8 @@ object CommandCodec {
             is Command.Verify -> id("task", c.task)
             is Command.Waive -> { id("task", c.task); str("reason", c.reason) }
             is Command.StopSession -> id("session", c.session)
+            is Command.RunFirst -> id("task", c.task)
+            is Command.Reassign -> id("session", c.session)
             is Command.SendToSession -> { id("session", c.session); str("text", c.text); str("model", c.model); str("effort", c.effort) }
             is Command.SetNearPercent -> { id("subscription", c.subscription); f["percent"] = JsonNumber.of(c.percent) }
             is Command.SetTargetEnabled -> { id("target", c.target); f["enabled"] = JsonBool(c.enabled) }
@@ -145,6 +147,8 @@ object CommandCodec {
             "task.verify" -> task()?.let { Command.Verify(it, key) }
             "task.waive" -> task()?.let { t -> f.string("reason")?.let { Command.Waive(t, it, by, key) } }
             "session.stop" -> session()?.let { Command.StopSession(it, key) }
+            "task.run-first" -> task()?.let { Command.RunFirst(it, key) }
+            "session.reassign" -> session()?.let { Command.Reassign(it, key) }
             "session.send", "session.fresh" -> session()?.let { Command.SendToSession(it, f.optString("text"), f.optString("model"), f.optString("effort"), name == "session.fresh", key) }
             "subscription.near-percent" -> f.string("subscription")?.let { IdKinds.SUBSCRIPTION.parse(it).valueOrNull() }
                 ?.let { s -> f.int("percent")?.let { Command.SetNearPercent(s, it, key) } }

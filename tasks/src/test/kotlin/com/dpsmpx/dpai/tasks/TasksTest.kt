@@ -442,4 +442,52 @@ class TasksTest {
         assertEquals(TaskState.BLOCKED, state.tasks.getValue(t).state)
         assertEquals(DiagCode.CONTINUATION_LIMIT_REACHED, state.tasks.getValue(t).lastReason)
     }
+
+    /** D-63: «Запустить первой» — выше всех открытых и без паузы; только у ждущей запуска; повтор — без событий. */
+    @Test
+    fun runFirstLiftsAboveAllAndUnholds() {
+        val a = task()
+        val b = task(priority = Priority.CRITICAL)
+        val c = task(priority = Priority.LOW)
+        ok(tasks.setPriority(state, b, Priority.CRITICAL, 5, clock.now()))
+        ok(tasks.hold(state, c, true, clock.now()))
+        ok(Outcome.success(tasks.promote(state, clock.now())))
+        ok(tasks.runFirst(state, c, clock.now()))
+        assertEquals(6, state.tasks.getValue(c).manualPriority)
+        assertEquals(false, state.tasks.getValue(c).held)
+        assertEquals(listOf(c, b, a), tasks.ready(state, clock.now()).map { it.id }, "первой — она, дальше — как было")
+        assertEquals(emptyList(), ok(tasks.runFirst(state, c, clock.now())), "уже первая — повтор без событий")
+        ok(tasks.start(state, a, clock.now()))
+        assertEquals(DiagCode.OPERATION_NOT_ALLOWED, (tasks.runFirst(state, a, clock.now()) as Outcome.Failure).errors.single().code, "идущую — нет")
+        val strict = Tasks(SchedulerPolicy(manualPriorityAllowed = false))
+        assertEquals(DiagCode.OPERATION_NOT_ALLOWED, (strict.runFirst(state, b, clock.now()) as Outcome.Failure).errors.single().code, "политика без ручного приоритета — отказ, а не тишина")
+    }
+
+    /** D-63: исключённый слот — до запуска; план ставит задачу только туда, где она может пойти; формат v7, v6 читается. */
+    @Test
+    fun excludedSlotLastsUntilStartAndSurvivesTheJournal() {
+        val t = task()
+        ok(Outcome.success(tasks.promote(state, clock.now())))
+        val slot = ids.next(IdKinds.ACCOUNT)
+        ok(tasks.excludeSlot(state, t, slot, clock.now()))
+        assertEquals(slot, state.tasks.getValue(t).excludedSlot)
+        assertEquals(emptyList(), ok(tasks.excludeSlot(state, t, slot, clock.now())), "повтор — без второго события")
+        val other = ids.next(IdKinds.TARGET)
+        val offers = listOf(Tasks.TargetOffer(target, emptySet(), 1), Tasks.TargetOffer(other, emptySet(), 1))
+        assertEquals(listOf(other), tasks.plan(state, clock.now(), offers) { r, tg -> r.excludedSlot == null || tg != target }.map { it.target })
+        val decoded = log.map { TaskCodec.decode(TaskCodec.type(it), it.at, TaskCodec.payload(it))!!.valueOrNull()!! }
+        assertEquals(log, decoded)
+        val json = TaskCodec.encodeState(state)
+        assertEquals(state, TaskCodec.decodeState(json).valueOrNull())
+        // Снимок v6 — без поля исключения: читается, исключения нет.
+        val records = (json["tasks"] as com.dpsmpx.dpai.core.serialization.JsonArray).items.map { r ->
+            com.dpsmpx.dpai.core.serialization.JsonObject((r as com.dpsmpx.dpai.core.serialization.JsonObject).fields - "excludedSlot")
+        }
+        val v6 = com.dpsmpx.dpai.core.serialization.JsonObject(
+            json.fields + ("version" to com.dpsmpx.dpai.core.serialization.JsonNumber.of(6)) + ("tasks" to com.dpsmpx.dpai.core.serialization.JsonArray(records)),
+        )
+        assertEquals(null, TaskCodec.decodeState(v6).valueOrNull()!!.tasks.getValue(t).excludedSlot, "в v6 исключения нет")
+        ok(tasks.start(state, t, clock.now()))
+        assertEquals(null, state.tasks.getValue(t).excludedSlot, "запуск снимает исключение")
+    }
 }

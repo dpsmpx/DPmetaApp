@@ -567,13 +567,22 @@ class Orchestrator(
         }
         // Общий предел сессий контура (D-42, п. 6) — поверх предела каждого target.
         val room = control.maxSessions?.let { (it - sessions.sessions.values.count { s -> !s.terminal }).coerceAtLeast(0) } ?: Int.MAX_VALUE
-        for (a in tasksLogic.plan(tasks, clock.now(), offers).take(room)) {
+        // Перенесённая задача (D-63) — только на target, где есть слот, кроме исключённого: иначе план ставил бы
+        // её на тот же target, и она ждала бы там, хотя на другом место есть.
+        val elsewhere = { t: com.dpsmpx.dpai.tasks.TaskRecord, target: ExecutionTargetId ->
+            t.excludedSlot == null || accounts.slots.values.any { it.targetId == target && it.id != t.excludedSlot && !it.disabled }
+        }
+        for (a in tasksLogic.plan(tasks, clock.now(), offers, elsewhere).take(room)) {
             runCommands()
             // Команда могла снять задачу с очереди (отмена, ответ человека) или придержать её («Пауза всем»,
             // ТЗ, §73) — план уже не про неё: удержанная остаётся READY, и без проверки held она бы запустилась.
             val now = tasks.tasks[a.task]
             if (now == null || now.state != TaskState.READY || now.held) continue
             if (overlapAllows(a.task)) launch(a.task, a.target)
+        }
+        // Перенесённой задаче идти некуда — план её пропускает; молча ждать нельзя (D-05, D-63).
+        for (t in tasks.tasks.values.filter { it.state == TaskState.READY && !it.held && it.excludedSlot != null }.sortedBy { it.id.value }) {
+            if (targets.none { elsewhere(t, it.id) }) waiting(t.id, "задача перенесена со слота ${t.excludedSlot}, а другого слота для неё нет — включите или добавьте слот")
         }
         for (s in sessions.sessions.values.filter { it.state !in WAIT_STATES && !it.terminal }.map { it.id }.sorted()) {
             runCommands()
@@ -634,10 +643,11 @@ class Orchestrator(
     private fun launch(task: TaskId, target: ExecutionTargetId) {
         val t = tasks.tasks.getValue(task)
         val session = ids.next(IdKinds.SESSION)
-        val lease = accountsLogic.lease(accounts, session, task, clock.now(), target, urgent = t.priority.ordinal <= Priority.HIGH.ordinal)
+        val lease = accountsLogic.lease(accounts, session, task, clock.now(), target, urgent = t.priority.ordinal <= Priority.HIGH.ordinal, exclude = t.excludedSlot)
         if (lease is Outcome.Failure) {
             // Свободного слота нет: задача ждёт следующего такта — и человек видит почему (раньше — молча).
-            waiting(task, lease.errors.first().message)
+            val moved = t.excludedSlot?.let { "задача перенесена со слота $it — другого слота нет: " }.orEmpty()
+            waiting(task, moved + lease.errors.first().message)
             return
         }
         lastWaiting.remove(task)
@@ -1639,6 +1649,8 @@ class Orchestrator(
             is Command.Resume -> record(command, provenance) { taskEdit(command.task) { tasksLogic.hold(tasks, command.task, false, clock.now()) } }
             is Command.Cancel -> record(command, provenance) { cancelTask(command.task) }
             is Command.Retry -> record(command, provenance) { retryTask(command.task, command.text) }
+            is Command.RunFirst -> record(command, provenance) { taskEdit(command.task) { tasksLogic.runFirst(tasks, command.task, clock.now()) } }
+            is Command.Reassign -> record(command, provenance) { reassign(command.session) }
             is Command.StopSession -> record(command, provenance) {
                 sessions.sessions[command.session]?.let { holdTask(it.task) } ?: Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой сессии", "session ${command.session}")
             }
@@ -1765,6 +1777,40 @@ class Orchestrator(
             }
         }
         return if (failures.isEmpty()) Outcome.success(tasks.tasks.getValue(task).state) else Outcome.Failure(failures)
+    }
+
+    /**
+     * «Перенести» (D-63): слот сессии исключён для задачи — первым, чтобы и
+     * сбой остановки не вернул её на тот же слот; открытые сессии задачи —
+     * остановка хода и handoff (не пауза: задача сразу снова в плане);
+     * следующая сессия — на другом слоте, `Continuation` начинает её с
+     * handoff, без `--resume` (другой слот — другая сессия провайдера).
+     * Сессию ревью (D-59) не переносят: она только читает.
+     */
+    private fun reassign(session: SessionId): Outcome<TaskState> {
+        val s = sessions.sessions[session] ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой сессии", "session $session")
+        if (s.review != null) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "сессию ревью не переносят: ревью повторится само", "session $session")
+        val t = tasks.tasks[s.task] ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет задачи сессии", "session $session")
+        if (t.state in setOf(TaskState.IMPLEMENTED, TaskState.VERIFYING, TaskState.VERIFIED)) {
+            return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "задача на проверке: ${t.state} — переносить нечего", "task ${t.id}")
+        }
+        val excluded = taskEdit(t.id) { tasksLogic.excludeSlot(tasks, t.id, s.slot, clock.now()) }
+        if (excluded is Outcome.Failure) return excluded
+        lastWaiting.remove(t.id)
+        val failures = mutableListOf<Diagnostic>()
+        for (open in openSessions(t.id)) {
+            if (open.state !in WAIT_STATES) {
+                when (val step = driver.pause(sessions, open.id)) {
+                    is Outcome.Failure -> {
+                        failures += step.errors
+                        continue
+                    }
+                    is Outcome.Success -> commitSessions(step.value.events)
+                }
+            }
+            handOff(t.id, open.id, HandoffReason.MANUAL, "продолжить на другом слоте: человек перенёс задачу со слота ${s.slot}")
+        }
+        return if (failures.isEmpty()) Outcome.success(tasks.tasks.getValue(t.id).state) else Outcome.Failure(failures)
     }
 
     /**

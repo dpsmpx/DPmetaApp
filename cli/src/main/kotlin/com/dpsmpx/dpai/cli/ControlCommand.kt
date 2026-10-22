@@ -184,6 +184,8 @@ class ControlCommand(
         val c = linkedMapOf<String, JsonValue>("task" to JsonString(task))
         when (action) {
             "hold", "resume", "cancel", "verify" -> c["command"] = JsonString("task.$action")
+            // «Запустить первой» (D-63): выше всех в очереди и без паузы; пределы подписки — как у всех.
+            "first" -> c["command"] = JsonString("task.run-first")
             "archive", "unarchive" -> {
                 c["command"] = JsonString("task.archive")
                 c["archived"] = JsonBool(action == "archive")
@@ -309,6 +311,8 @@ class ControlCommand(
         val c = linkedMapOf<String, JsonValue>("session" to JsonString(session))
         when (args.getOrNull(1)) {
             "stop" -> c["command"] = JsonString("session.stop")
+            // «Перенести» (D-63): ход остановлен с handoff, следующая сессия — на другом слоте.
+            "reassign" -> c["command"] = JsonString("session.reassign")
             "send" -> {
                 c["command"] = JsonString("session.send")
                 c["text"] = JsonString(args.getOrNull(2)?.takeIf { !it.startsWith("--") } ?: return usage(SESSION_USAGE))
@@ -442,15 +446,15 @@ class ControlCommand(
         const val USAGE_ERROR = 2
 
         private const val TASK_USAGE = "dpai task add «название» «что сделать» [--priority HIGH] [--class trivial] [--model haiku] [--effort low] [--budget 0.25] [--review code,security] [--scope путь,путь] [--depends-on id,id]\n" +
-            "dpai task <id> hold|resume|retry [--text «…»]|verify|messages|diff [--stat]|reviews|priority <P>|policy --class <к> …|scope [путь…]|depends [id…]|archive|unarchive|cancel --yes|waive --reason «…» --yes\n" +
+            "dpai task <id> hold|resume|first|retry [--text «…»]|verify|messages|diff [--stat]|reviews|priority <P>|policy --class <к> …|scope [путь…]|depends [id…]|archive|unarchive|cancel --yes|waive --reason «…» --yes\n" +
             "dpai task archive-done   — все завершённые в архив"
-        private const val SESSION_USAGE = "dpai session <id> stop | send «запрос» [--model m] [--effort e] | fresh [«запрос»]"
+        private const val SESSION_USAGE = "dpai session <id> stop | reassign | send «запрос» [--model m] [--effort e] | fresh [«запрос»]"
 
         val USAGE = """
             |  dpai control pair <код>   сопряжение с приложением (код — Targets → «Командная строка»)
             |  dpai status [--all]       задачи (без архива), сессии, запросы, загрузка подписки
-            |  dpai task …               add | archive-done | <id> hold|resume|cancel|retry|verify|waive|priority|policy|archive|unarchive|messages
-            |  dpai session <id> …       stop | send «запрос» | fresh
+            |  dpai task …               add | archive-done | <id> hold|resume|first|cancel|retry|verify|waive|priority|policy|archive|unarchive|messages
+            |  dpai session <id> …       stop | reassign | send «запрос» | fresh
             |  dpai requests             ждущие запросы;  dpai answer <запрос> <вариант> [--text] [--yes]
             |  dpai search «запрос»      поиск по задачам, сессиям, веткам, коммитам, событиям (ТЗ, §75)
             |  dpai limit <процент>      порог «у предела»;  dpai sessions-limit <n|off>
