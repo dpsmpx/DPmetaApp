@@ -72,6 +72,7 @@ class ControlCommand(
             "limit" -> limit(args)
             "target", "slot" -> toggle(cmd, args)
             "sessions-limit" -> sessionsLimit(args)
+            "search" -> search(args)
             else -> usage("неизвестная команда: $cmd")
         }
     }
@@ -224,6 +225,22 @@ class ControlCommand(
 
     /** Роли ревью (D-59) через запятую: `code,security`; `none` — без ревью. Неизвестную роль отвергает приложение. */
     private fun roles(v: String): JsonArray = JsonArray(if (v.trim().lowercase() == "none") emptyList() else csv(v).map { JsonString(it.uppercase()) })
+
+    /** Глобальный поиск (ТЗ, §75): найденное по видам, ссылки `dpai://…` и чего поиск не видел. */
+    private fun search(args: List<String>): Int {
+        val q = args.joinToString(" ").trim().ifEmpty { return usage("dpai search «запрос»") }
+        val r = call("POST", "/v1/search", JsonObject.of("query" to JsonString(q))) ?: return FAILED
+        if (json) return print(r)
+        val hits = list(r, "hits")
+        if (hits.isEmpty()) out("ничего не найдено")
+        for ((kind, group) in hits.groupBy { str(it, "kind") }) {
+            out("$kind:")
+            for (h in group) out("  ${str(h, "title")}  ${str(h, "detail").orEmpty()}${str(h, "link")?.let { "  $it" } ?: ""}")
+        }
+        (r["more"] as? JsonObject)?.fields?.forEach { (k, v) -> out("ещё $k: ${(v as? JsonNumber)?.toLongExact()}") }
+        for (n in (r["notes"] as? JsonArray)?.items.orEmpty()) (n as? JsonString)?.let { out("· ${it.value}") }
+        return OK
+    }
 
     private fun messages(id: String): Int {
         val task = resolve(id, "tasks") ?: return FAILED
@@ -435,6 +452,7 @@ class ControlCommand(
             |  dpai task …               add | archive-done | <id> hold|resume|cancel|retry|verify|waive|priority|policy|archive|unarchive|messages
             |  dpai session <id> …       stop | send «запрос» | fresh
             |  dpai requests             ждущие запросы;  dpai answer <запрос> <вариант> [--text] [--yes]
+            |  dpai search «запрос»      поиск по задачам, сессиям, веткам, коммитам, событиям (ТЗ, §75)
             |  dpai limit <процент>      порог «у предела»;  dpai sessions-limit <n|off>
             |  dpai target|slot <id> on|off
             |  --json — ответ как есть; опасное — с --yes

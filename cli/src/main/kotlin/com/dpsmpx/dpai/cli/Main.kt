@@ -43,7 +43,7 @@ class Cli(
         }
         "agent" -> AgentCommand(out, err, version).run(args.drop(1))
         // Пульт приложения (D-47): те же команды, что на экране, через канал на loopback.
-        "control", "status", "task", "session", "requests", "answer", "limit", "target", "slot", "sessions-limit" ->
+        "control", "status", "task", "session", "requests", "answer", "limit", "target", "slot", "sessions-limit", "search" ->
             ControlCommand(out, err).run(args.first(), args.drop(1))
         "help", "--help", "-h" -> {
             out(USAGE)

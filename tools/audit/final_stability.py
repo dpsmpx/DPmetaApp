@@ -46,7 +46,7 @@ MAP = {
         ("A §100", "stop", ["AgentRuntimeTest.startStreamAndStopWholeTree", "AgentCommandTest.localTargetStartsAndStopsThroughUnifiedInterface"], None),
         ("A §100", "retry", ["TasksTest.retryWaitsForBackoff", "TasksTest.retryLimitIsRespected", "V1ScenariosTest.scenario3RecoveryAfterFailure"], None),
         ("A §100", "continue", ["V1ScenariosTest.scenario2AutomaticContinuationAfterLimit", "RestartTest.continuationAfterRestartKeepsContextAndHandoff"], None),
-        ("A §100", "verify", ["CompletionFlowTest", "LiveProjectTest"], None),
+        ("A §100", "verify", ["CompletionFlowTest", "LiveProjectTest", "ReviewFlowTest"], None),
         ("A §100", "complete", ["V1ScenariosTest.scenario4CompletionVerifiedCommittedAndMergedOnlyAfterApproval", "LifecycleTablesTest.doneOnlyAfterVerificationOrPolicyException"], None),
         ("A §100", "fail", ["TasksTest.failedDependencyBlocksDependents", "TasksTest.nonRetryableBlocksImmediately", "ChaosLoopTest.startFailureDoesNotLeaveTaskRunning"], None),
         ("A §100", "reassign", ["AccountsTest.continuationOnAnotherSubscriptionOnlyWhenAllowedAndWithoutLoops"], None),
@@ -82,7 +82,7 @@ MAP = {
         ("R §117", "смена аккаунта", ["AccountsTest.continuationOnAnotherSubscriptionOnlyWhenAllowedAndWithoutLoops", "AccountNotificationsTest"], None),
     ],
     "CHAOS.md": [
-        ("F §105", "offline, отключение, переподключение", ["TargetHealthTest", "ExecutionTargetManagerTest.unreachableTargetGoesOfflineOnlyAfterThresholds", "ChaosLoopTest"], None),
+        ("F §105", "offline, отключение, переподключение", ["TargetHealthTest", "ExecutionTargetManagerTest.unreachableTargetGoesOfflineOnlyAfterThresholds", "ChaosLoopTest", "ReviewChaosTest"], None),
         ("F §105", "медленная связь, задержка", ["TargetHealthTest.slowProbeDegrades"], None),
         ("F §105", "SSH: тайм-аут, отказ, ключ хоста", ["SshProcessHostTest.sshFailuresAreClassified", "JschProcessHostTest.refusedPortIsConnectionFailure", "JschProcessHostTest.unknownHostKeyIsRejectedOnRealTarget"], None),
         ("F §105", "сбой DNS", ["JschProcessHostTest.unresolvableHostIsConnectionFailure"], None),
@@ -134,7 +134,7 @@ MAP = {
     "MOBILE.md": [
         ("P §115", "большой список сессий (20+) без потери кадров", ["MonitoringTest.twentyFiveSessionsBuildWithinFrameBudget", "ScreensTest.demoSystemShowsTwentyPlusSessions"], None),
         ("P §115", "быстрая навигация, поворот, пересоздание процесса, фон", "DEVICE", "MEDIUM"),
-        ("P §115", "множество уведомлений, кнопки одобрения", ["NotificationEngineTest", "ApprovalDeskTest"], None),
+        ("P §115", "множество уведомлений, кнопки одобрения", ["NotificationEngineTest", "UserRequestsFlowTest"], None),
         ("P §115", "интерфейс не блокируется тактом планировщика", "DEVICE", "MEDIUM"),
     ],
 }

@@ -104,6 +104,8 @@ class Pairing(private val vfs: Vfs, private val random: RandomSource, private va
  * - `GET /v1/tasks/<id>/messages` — итоговые сообщения ходов задачи;
  * - `GET /v1/tasks/<id>/diff` — изменения задачи (`TaskDiff`);
  * - `GET /v1/tasks/<id>/reviews` — роли ревью задачи и итоги с находками (D-59);
+ * - `POST /v1/search` `{"query"}` — глобальный поиск (ТЗ, §75): его даёт
+ *   оболочка ([search]) — поиск живёт в модуле `ui`, а не здесь;
  * - `POST /v1/commands` — команда ([CommandCodec]) через очередь контура:
  *   [submit] — та же, что у экрана (D-42, п. 1); опасное — только с
  *   `confirmed` (ТЗ, §68).
@@ -111,6 +113,8 @@ class Pairing(private val vfs: Vfs, private val random: RandomSource, private va
 class ControlApi(
     private val pairing: Pairing,
     private val orchestrator: () -> Orchestrator?,
+    /** Поиск по запросу — итог в JSON; `null` у функции или у итога — поиска нет (контура нет). */
+    private val search: ((String) -> JsonObject?)? = null,
     private val submit: (Command) -> OperationOutcome,
 ) {
     /** Итог команды для канала: `OperationResult` в JSON или отказ до исполнения. */
@@ -144,6 +148,7 @@ class ControlApi(
                     ?: return error(400, DiagCode.ID_INVALID, "ожидался TaskId")
                 ControlSnapshot.reviews(o, id)?.let { ControlResponse(200, it) } ?: error(404, DiagCode.ENTITY_NOT_FOUND, "нет такой задачи")
             }
+            method == "POST" && path == "/v1/search" -> searchResponse(body)
             method == "POST" && path == "/v1/commands" -> command(o, body)
             else -> error(404, DiagCode.UNSUPPORTED, "нет такого пути: $method $path")
         }
@@ -173,6 +178,15 @@ class ControlApi(
         }
     }
 
+    /** Поиск (ТЗ, §75): запрос — строка от 2 до [MAX_QUERY] знаков; поиска нет — 503 с причиной. */
+    private fun searchResponse(body: String?): ControlResponse {
+        val q = ((parse(body) as? JsonObject)?.get("query") as? JsonString)?.value?.trim()
+            ?: return error(400, DiagCode.VALUE_INVALID, "тело — {\"query\": \"…\"}")
+        if (q.length !in 2..MAX_QUERY) return error(400, DiagCode.VALUE_INVALID, "запрос — от 2 до $MAX_QUERY знаков")
+        val f = search ?: return error(503, DiagCode.UNSUPPORTED, "поиск не подключён в этой оболочке")
+        return f(q)?.let { ControlResponse(200, it) } ?: error(503, DiagCode.OPERATION_NOT_ALLOWED, "контроллер не запущен: искать негде")
+    }
+
     /** Ответ опасным вариантом запроса (D-44) — тоже только с подтверждением. */
     private fun destructiveAnswer(o: Orchestrator, c: Command): Boolean {
         if (c !is Command.AnswerRequest) return false
@@ -192,6 +206,9 @@ class ControlApi(
 
         /** Предел тела запроса: команда — строки, не файлы. */
         const val MAX_BODY = 64 * 1024
+
+        /** Длиннее запрос поиска не бывает: это строка из поля ввода, а не текст. */
+        const val MAX_QUERY = 200
     }
 }
 

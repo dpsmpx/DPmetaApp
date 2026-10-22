@@ -132,6 +132,30 @@ class ControlApiTest {
         assertEquals(403, api.handle("POST", "/v1/pair", null, """{"code":"$code3"}""").status)
     }
 
+    /** Поиск (ТЗ, §75) для `dpai`: его даёт оболочка; запрос проверяется здесь, нет поиска или контура — 503 с причиной. */
+    @Test
+    fun searchIsTheShellsAndQueryIsChecked() {
+        val o = boot()
+        val pairing = Pairing(NioVfs(dir.resolve("app").also { it.toFile().mkdirs() }), RandomSource.seeded(10), clock)
+        val (code, _) = pairing.newCode()
+        val bare = api(o, pairing)
+        val token = "Bearer " + str(bare.handle("POST", "/v1/pair", null, """{"code":"$code"}""").body, "token")
+        assertEquals(503, bare.handle("POST", "/v1/search", token, """{"query":"задача"}""").status, "поиск не подключён")
+        val asked = mutableListOf<String>()
+        val api = ControlApi(pairing, { o }, { q -> asked += q; if (q == "нет контура") null else JsonObject.of("hits" to JsonString(q)) }) { c ->
+            ControlApi.OperationOutcome.Done(o.submit(c).also { o.runCommands() }.get())
+        }
+        assertEquals(401, api.handle("POST", "/v1/search", null, """{"query":"задача"}""").status, "без токена — отказ")
+        val ok = api.handle("POST", "/v1/search", token, """{"query":"  задача  "}""")
+        assertEquals(200, ok.status)
+        assertEquals("задача", str(ok.body, "hits"))
+        assertEquals(400, api.handle("POST", "/v1/search", token, """{"query":"я"}""").status, "короче двух знаков")
+        assertEquals(400, api.handle("POST", "/v1/search", token, """{"query":"${"x".repeat(ControlApi.MAX_QUERY + 1)}"}""").status)
+        assertEquals(400, api.handle("POST", "/v1/search", token, """{"q":"задача"}""").status, "нет поля query")
+        assertEquals(503, api.handle("POST", "/v1/search", token, """{"query":"нет контура"}""").status)
+        assertEquals(listOf("задача", "нет контура"), asked, "до поиска доходит только проверенный запрос")
+    }
+
     @Test
     fun codecRoundTripForEveryExternalCommand() {
         val t = ids.next(IdKinds.TASK)

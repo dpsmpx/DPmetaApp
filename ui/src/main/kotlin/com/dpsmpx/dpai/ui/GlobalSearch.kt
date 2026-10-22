@@ -11,6 +11,7 @@ import com.dpsmpx.dpai.core.events.StreamKind
 import com.dpsmpx.dpai.core.ids.IdKinds
 import com.dpsmpx.dpai.core.ids.TaskId
 import com.dpsmpx.dpai.core.serialization.JsonArray
+import com.dpsmpx.dpai.core.serialization.JsonNumber
 import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.core.serialization.JsonValue
@@ -165,6 +166,30 @@ object GlobalSearch {
         if (HEX.matches(q) && hits.none { it.kind == Kind.COMMIT }) notes += "коммит не найден: ищутся коммиты контура (последний у каждой задачи) и из handoff и событий; коммиты Claude в дереве — нет"
         return Result(hits, more, notes)
     }
+
+    /**
+     * Итог для канала `dpai` (D-47; `POST /v1/search`): найденное по видам,
+     * сколько не показано и чего поиск не видел. Текст — тот же, что на
+     * экране: события уже прошли [Redactor].
+     */
+    fun toJson(r: Result): JsonObject = JsonObject.of(
+        "hits" to JsonArray(
+            r.hits.map { h ->
+                JsonObject(
+                    linkedMapOf<String, JsonValue>(
+                        "kind" to JsonString(h.kind.name), "title" to JsonString(h.title), "detail" to JsonString(h.detail),
+                    ).apply {
+                        h.link?.let { put("link", JsonString(it.toUri())) }
+                        h.at?.let { put("at", JsonNumber.of(it.epochMillis)) }
+                    },
+                )
+            },
+        ),
+        "more" to JsonObject(
+            r.more.entries.sortedBy { it.key }.associateTo(linkedMapOf<String, JsonValue>()) { (k, v) -> k.name to JsonNumber.of(v) },
+        ),
+        "notes" to JsonArray(r.notes.map(::JsonString)),
+    )
 
     /** Ветки рабочих деревьев и из handoff — каждая один раз; ведут к задаче (ветка `task/<id>`) или к сессии-владельцу. */
     private fun branches(source: Source, m: (String?) -> Boolean, title: (TaskId?) -> String): List<Hit> {

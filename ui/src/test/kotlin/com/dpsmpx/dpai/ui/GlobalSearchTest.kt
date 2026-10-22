@@ -86,6 +86,19 @@ class GlobalSearchTest {
 
     private fun kinds(q: String) = find(q).hits.map { it.kind }.toSet()
 
+    /** Итог для `dpai` (`POST /v1/search`): вид, заголовок, ссылка `dpai://…`, сколько ещё и пометки. */
+    @Test
+    fun resultAsJsonForDpai() {
+        val r = find("экспонент")
+        assertTrue(r.hits.isNotEmpty())
+        val j = GlobalSearch.toJson(r)
+        val hits = (j["hits"] as com.dpsmpx.dpai.core.serialization.JsonArray).items.map { it as JsonObject }
+        assertEquals(r.hits.size, hits.size)
+        assertEquals(r.hits.map { it.kind.name }, hits.map { (it["kind"] as JsonString).value })
+        assertEquals(r.hits.mapNotNull { it.link?.toUri() }, hits.mapNotNull { (it["link"] as? JsonString)?.value })
+        assertEquals(r.notes, (j["notes"] as com.dpsmpx.dpai.core.serialization.JsonArray).items.map { (it as JsonString).value })
+    }
+
     @Test
     fun everyKindIsFoundAndLeadsToItsEntity() {
         val byTitle = find("экспонент").hits

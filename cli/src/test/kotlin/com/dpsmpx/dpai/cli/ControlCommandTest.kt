@@ -32,6 +32,11 @@ class ControlCommandTest {
                 path == "/v1/pair" -> HttpReply(200, obj("""{"token":"${"a".repeat(64)}"}"""))
                 token == null -> HttpReply(401, obj("""{"status":"FAILED","diagnostics":[]}"""))
                 path == "/v1/state" -> HttpReply(200, obj(state))
+                path == "/v1/search" -> HttpReply(200, obj("""{"hits":[{"kind":"TASK","title":"Калькулятор","detail":"READY","link":"dpai://task/tsk_01M4EWP74S6EWVHWSM33QD5YK0"}],"more":{"TASK":3},"notes":["пометка поиска"]}"""))
+                path.endsWith("/reviews") -> HttpReply(
+                    200,
+                    obj("""{"roles":["CODE","SECURITY"],"reviews":[{"role":"CODE","verdict":"BLOCKED","attempt":1,"findings":[{"severity":"BLOCKING","title":"деление на ноль","file":"a.kt","line":3,"detail":"пустой список"}],"omitted":2}]}"""),
+                )
                 else -> HttpReply(200, obj("""{"operation":"x","operationId":"op_1","status":"SUCCEEDED","diagnostics":[]}"""))
             }
         }
@@ -67,5 +72,31 @@ class ControlCommandTest {
         assertEquals(0, cli(out, err).run("sessions-limit", listOf("off")))
         assertEquals("control.session-limit", field("command"))
         assertTrue(sent.last().second!!["limit"] == null, "off — без предела")
+    }
+
+    /** Поиск (ТЗ, §75) и ревью задачи (D-59) из `dpai`. */
+    @Test
+    fun searchAndReviews() {
+        val out = mutableListOf<String>()
+        val err = mutableListOf<String>()
+        assertEquals(0, cli(out, err).run("control", listOf("pair", "123456")))
+        assertEquals(0, cli(out, err).run("search", listOf("кальк", "ул")))
+        assertEquals("POST /v1/search", sent.last().first)
+        assertEquals("кальк ул", field("query"))
+        assertTrue(out.containsAll(listOf("TASK:", "ещё TASK: 3", "· пометка поиска")) && out.any { "Калькулятор" in it && "dpai://task/" in it }, out.toString())
+        assertEquals(2, cli(out, err).run("search", emptyList()), "без запроса — подсказка")
+
+        cli(out, err).run("task", listOf("add", "С ревью", "Сделай", "--review", "code,security"))
+        assertTrue(""""reviews":["CODE","SECURITY"]""" in CanonicalJson.write(sent.last().second!!), CanonicalJson.write(sent.last().second!!))
+        cli(out, err).run("task", listOf("5YK0", "policy", "--class", "architecture", "--review", "none"))
+        assertTrue(""""reviews":[]""" in CanonicalJson.write(sent.last().second!!), "none — снять роли")
+        cli(out, err).run("task", listOf("5YK0", "policy", "--class", "architecture"))
+        assertTrue("reviews" !in CanonicalJson.write(sent.last().second!!), "без --review роли не трогаются")
+
+        out.clear()
+        assertEquals(0, cli(out, err).run("task", listOf("5YK0", "reviews")))
+        assertEquals("GET /v1/tasks/tsk_01M4EWP74S6EWVHWSM33QD5YK0/reviews", sent.last().first)
+        assertTrue(out.any { it.startsWith("── CODE: BLOCKED") } && out.any { "BLOCKING  деление на ноль  (a.kt:3)" in it }, out.toString())
+        assertTrue("── SECURITY: ещё нет итога" in out && out.any { "не показано находок: 2" in it }, out.toString())
     }
 }
