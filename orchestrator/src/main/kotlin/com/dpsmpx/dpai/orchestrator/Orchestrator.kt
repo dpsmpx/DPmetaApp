@@ -526,6 +526,7 @@ class Orchestrator(
         scope: Set<String>? = null,
         policy: TaskPolicy = TaskPolicy(),
     ): Outcome<TaskId> {
+        reviewsUnsupported(policy)?.let { return it }
         // Та же задача уже в очереди — второй ход с той же работой (D-40; аудит, W10).
         if (efficiency.rejectDuplicateTasks) {
             tasksLogic.duplicateOf(tasks, title, objective)?.let { other ->
@@ -1035,7 +1036,7 @@ class Orchestrator(
                 failed = t.reviews.values.flatMap { r -> r.findings.filter { it.severity == FindingSeverity.BLOCKING }.map { "${Review.label(r.role)}: ${it.title}" } },
                 warnings = emptyList(), openProblems = emptyList(), currentAction = null,
                 nextAction = "исправить то, что нашло ревью (выжимка — источник $REVIEW_SOURCE), и снова проверить",
-                modifiedFiles = emptyList(), commit = null, branch = treeOf[task]?.let { worktrees.worktrees[it]?.branch },
+                modifiedFiles = emptyList(), commit = mergesState.commits[task]?.commit, branch = treeOf[task]?.let { worktrees.worktrees[it]?.branch },
                 workspace = treeOf[task]?.let { worktrees.worktrees[it]?.path }, createdAt = clock.now(),
                 relevantFiles = t.reviews.values.flatMap { r -> r.findings.mapNotNull { it.file } }.distinct().take(50), summary = workingOf[task]?.summary,
             )
@@ -1226,7 +1227,7 @@ class Orchestrator(
             failed = failed.map { "шаг ${it.name}: код ${it.exitCode ?: "?"}" },
             warnings = emptyList(), openProblems = emptyList(), currentAction = null,
             nextAction = "исправить то, что не прошло в проверке (выжимка — источник $VERIFICATION_SOURCE), и снова проверить",
-            modifiedFiles = modified, commit = null, branch = treeOf[task]?.let { worktrees.worktrees[it]?.branch },
+            modifiedFiles = modified, commit = mergesState.commits[task]?.commit, branch = treeOf[task]?.let { worktrees.worktrees[it]?.branch },
             workspace = treeOf[task]?.let { worktrees.worktrees[it]?.path }, createdAt = clock.now(),
             relevantFiles = relevantFiles(task, modified), summary = workingOf[task]?.summary,
         )
@@ -1289,7 +1290,25 @@ class Orchestrator(
         val tree = treeOf.getValue(task)
         ok(g.write(worktrees, tree, session, GitOp.ADD, files), "git add") ?: return "git add не удался"
         gitOk = ok(g.write(worktrees, tree, session, GitOp.COMMIT, listOf("dpai: ${tasks.tasks.getValue(task).title}")), "git commit") != null
-        return if (gitOk == true) null else "git commit не удался"
+        if (gitOk != true) return "git commit не удался"
+        recordCommit(task, path)
+        return null
+    }
+
+    /**
+     * Хеш коммита задачи — событие `GIT_COMMIT_CREATED` в её потоке (поиск,
+     * ТЗ, §75) и поле `commit` следующих handoff. Хеш не прочитан — коммит
+     * есть, но хеш неизвестен: это видно в журнале приложения, а не
+     * записано выдуманным (D-13).
+     */
+    private fun recordCommit(task: TaskId, path: String) {
+        val branch = treeOf[task]?.let { worktrees.worktrees[it]?.branch } ?: return
+        val head = git?.run(GitOp.HEAD, path)?.valueOrNull()?.stdout?.firstOrNull()?.trim()?.lowercase()
+        if (head == null || !TaskCommit.HASH.matches(head)) {
+            problems += Diagnostic.warning(DiagCode.GIT_COMMAND_FAILED, "коммит задачи сделан, хеш не прочитан: ${head ?: "git rev-parse не удался"}", "task $task")
+            return
+        }
+        commitMerges(listOf(MergeEvent.Committed(task, TaskCommit(head, branch, clock.now()))))
     }
 
     /** Слияние ждёт ответа — в журнал; сам запрос задаёт вызывающий после пачки (askMerges в такте — после перезапуска). */
@@ -1446,7 +1465,7 @@ class Orchestrator(
             warnings = listOfNotNull(s.lastReason?.name), openProblems = emptyList(), currentAction = null,
             nextAction = next ?: "продолжить с места остановки в той же сессии",
             modifiedFiles = modified,
-            commit = null, branch = treeOf[task]?.let { worktrees.worktrees[it]?.branch },
+            commit = mergesState.commits[task]?.commit, branch = treeOf[task]?.let { worktrees.worktrees[it]?.branch },
             workspace = treePath(task), createdAt = clock.now(),
             relevantFiles = relevantFiles(task, modified), summary = workingOf[task]?.summary,
         )
@@ -1707,8 +1726,21 @@ class Orchestrator(
         } catch (e: IllegalArgumentException) {
             return Outcome.failure(DiagCode.VALUE_INVALID, e.message ?: "политика недопустима", "task ${c.task}")
         }
+        reviewsUnsupported(policy)?.takeIf { policy.reviews != t.policy.reviews }?.let { return it }
         return taskEdit(c.task) { tasksLogic.setPolicy(tasks, c.task, policy, clock.now()) }
     }
+
+    /**
+     * Ревью (D-59) читает изменения ветки задачи против ветки интеграции: у
+     * проекта без Git их нет, и каждое ревью кончилось бы запросом человеку.
+     * Отказ — при постановке, а не после работы.
+     */
+    private fun reviewsUnsupported(policy: TaskPolicy): Outcome.Failure? =
+        if (policy.reviews.isNotEmpty() && (git == null || config.repository == null || config.integrationBranch == null)) {
+            Outcome.Failure(listOf(Diagnostic.error(DiagCode.UNSUPPORTED, "ревью — у проекта с Git: ревьюер читает изменения ветки задачи (D-59)", "policy")))
+        } else {
+            null
+        }
 
     /**
      * Приостановить (D-42): задача удержана — планировщик её не берёт;

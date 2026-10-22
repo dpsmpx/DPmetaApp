@@ -341,7 +341,7 @@ class DemoModel(
      */
     fun search(query: String): com.dpsmpx.dpai.ui.GlobalSearch.Result? {
         val o = built?.orchestrator ?: return null
-        fun projections() = com.dpsmpx.dpai.ui.GlobalSearch.Source(o.tasks, o.sessions, o.accounts, o.worktrees, o.handoffs.all(), o.projectConfig)
+        fun projections() = com.dpsmpx.dpai.ui.GlobalSearch.Source(o.tasks, o.sessions, o.accounts, o.worktrees, o.handoffs.all(), o.projectConfig, o.mergesState.commits)
         // Под замком — всё из одного промежутка между тактами: иначе задача и её события были бы из разных тактов.
         val source = if (lock.tryLock(SEARCH_WAIT_MS, TimeUnit.MILLISECONDS)) {
             try {

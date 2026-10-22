@@ -79,6 +79,7 @@ class GlobalSearchTest {
         eventsFrom = from,
         contexts = emptyList(),
         problems = listOf(Diagnostic.error(DiagCode.SSH_AUTH_FAILED, "вход по ключу отклонён", "session ${session.id.value}")),
+        commits = mapOf(task.id to com.dpsmpx.dpai.orchestrator.TaskCommit("9a8b7c6d5e4f30211203f4e5d6c7b8a990817263", "task/${task.id.value}", clock.now())),
     )
 
     private fun find(q: String, s: GlobalSearch.Source = source()) = GlobalSearch.search(s, q)
@@ -103,7 +104,10 @@ class GlobalSearchTest {
         assertEquals(DeepLink.of(DeepLink.Kind.TASK, task.id), find("task/").hits.single { it.kind == GlobalSearch.Kind.BRANCH }.link)
         assertEquals(listOf("feature/lexer"), find("feature/").hits.filter { it.kind == GlobalSearch.Kind.BRANCH }.map { it.title })
 
-        // Коммиты — из handoff и из событий с полем commit.
+        // Коммиты — контура по задачам (`GIT_COMMIT_CREATED`), из handoff и из событий с полем commit.
+        val own = find("9a8b7c").hits.single { it.kind == GlobalSearch.Kind.COMMIT }
+        assertEquals("9a8b7c6d5e4f", own.title)
+        assertEquals(DeepLink.of(DeepLink.Kind.TASK, task.id), own.link)
         assertEquals("a1b2c3d4e5f6", find("a1b2c3").hits.single { it.kind == GlobalSearch.Kind.COMMIT }.title)
         assertEquals(DeepLink.of(DeepLink.Kind.TASK, task.id), find("ffeedd").hits.single { it.kind == GlobalSearch.Kind.COMMIT }.link)
 
@@ -137,9 +141,9 @@ class GlobalSearchTest {
         assertTrue(find("unresolved", source(events = null)).let { r -> r.hits.none { it.kind == GlobalSearch.Kind.EVENT } && r.notes.single().contains("шёл такт") })
         assertTrue(find("unresolved", source(from = 20_001)).notes.any { it.contains("записи журнала №20001") })
         assertEquals(listOf("контексты и handoff — только задач в памяти контура, отказы — последние 200"), find("unresolved").notes)
-        // Похожее на хеш без найденного коммита — сказано, что хеши коммитов контур пока не записывает.
-        assertTrue(find("deadbeef").notes.any { it.contains("хеши коммитов") })
-        assertTrue(find("a1b2c3").notes.none { it.contains("хеши коммитов") }, "коммит из handoff найден — пометки нет")
+        // Похожее на хеш без найденного коммита — сказано, какие коммиты ищутся (коммиты Claude в дереве — нет).
+        assertTrue(find("deadbeef").notes.any { it.contains("коммит не найден") })
+        assertTrue(find("a1b2c3").notes.none { it.contains("коммит не найден") }, "коммит из handoff найден — пометки нет")
     }
 
     @Test

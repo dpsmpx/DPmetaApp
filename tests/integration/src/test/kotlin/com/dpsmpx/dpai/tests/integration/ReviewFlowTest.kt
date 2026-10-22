@@ -5,6 +5,7 @@ import com.dpsmpx.dpai.accounts.AccountsState
 import com.dpsmpx.dpai.accounts.AuthStatus
 import com.dpsmpx.dpai.core.clock.ManualClock
 import com.dpsmpx.dpai.core.clock.RandomSource
+import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.ids.IdGenerator
 import com.dpsmpx.dpai.core.ids.IdKinds
 import com.dpsmpx.dpai.core.ids.ProviderSessionId
@@ -42,6 +43,7 @@ import com.dpsmpx.dpai.storage.vfs.NioVfs
 import com.dpsmpx.dpai.tasks.FindingSeverity
 import com.dpsmpx.dpai.tasks.ReviewRole
 import com.dpsmpx.dpai.tasks.ReviewVerdict
+import com.dpsmpx.dpai.tasks.TaskClass
 import com.dpsmpx.dpai.tasks.TaskPolicy
 import com.dpsmpx.dpai.verification.VerificationProfile
 import com.dpsmpx.dpai.verification.Verifier
@@ -186,6 +188,13 @@ class ReviewFlowTest {
         val retry = started.single { it.first == workSessions[1].id }.second
         assertTrue("деление на ноль" in retry.prompt, "выжимка ревью — в prompt повтора: ${retry.prompt.take(400)}")
         assertEquals(2, orchestrator.sessions.sessions.values.count { it.task == t && it.review == "CODE" })
+        // Коммит задачи (ТЗ, §75): хеш — тот, что в ветке задачи, в handoff повтора и после перезапуска.
+        val tree = orchestrator.worktrees.worktrees.values.single { it.branch.endsWith(t.value) }
+        val head = host.run(ProcessSpec(listOf("git", "-C", tree.path, "rev-parse", "HEAD")), 1.minutes).valueOrNull()!!.stdout.single().trim()
+        assertEquals(head, orchestrator.mergesState.commits[t]?.commit)
+        assertEquals(head, orchestrator.handoffs.all().single { it.task == t && it.key.contains(":review:") }.commit, "handoff повтора знает коммит, который ревьюили")
+        boot()
+        assertEquals(head, orchestrator.mergesState.commits[t]?.commit, "коммит — из журнала")
     }
 
     @Test
@@ -242,6 +251,18 @@ class ReviewFlowTest {
         // Ответ того хода — без схемы (SLOW_OUTPUT): ревью без итога, повтор — и ответ по схеме.
         assertEquals(TaskState.DONE, task(t).state)
         assertEquals(2, orchestrator.sessions.sessions.values.count { it.task == t && it.review != null })
+    }
+
+    /** Роли в `task.policy` (D-59): без поля — как были, пустой набор снимает, у `TRIVIAL` — отказ, а не тихое снятие. */
+    @Test
+    fun policyKeepsRolesUnlessGiven() {
+        setUp()
+        val t = orchestrator.addTask("правка", "цель", policy = TaskPolicy(reviews = setOf(ReviewRole.CODE))).valueOrNull()!!
+        assertEquals(OperationStatus.SUCCEEDED, orchestrator.run(Command.SetPolicy(t, TaskClass.ARCHITECTURE, null, null, null)).status)
+        assertEquals(setOf(ReviewRole.CODE), task(t).policy.reviews, "клиент без ролей их не снимает")
+        assertEquals(DiagCode.VALUE_INVALID, orchestrator.run(Command.SetPolicy(t, TaskClass.TRIVIAL, null, null, null)).diagnostics.single().code)
+        assertEquals(OperationStatus.SUCCEEDED, orchestrator.run(Command.SetPolicy(t, TaskClass.TRIVIAL, null, null, null, emptySet())).status)
+        assertEquals(emptySet(), task(t).policy.reviews)
     }
 
     /**

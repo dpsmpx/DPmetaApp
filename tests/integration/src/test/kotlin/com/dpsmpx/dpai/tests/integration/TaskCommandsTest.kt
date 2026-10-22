@@ -117,14 +117,11 @@ class TaskCommandsTest {
         val refused = o.run(Command.SetPolicy(t, TaskClass.ARCHITECTURE, null, null, null))
         assertEquals(DiagCode.OPERATION_NOT_ALLOWED, refused.diagnostics.single().code, "идущей задаче политику не меняют")
         assertEquals(DiagCode.VALUE_INVALID, o.run(Command.SetPolicy(busy[3], TaskClass.TRIVIAL, "плохая модель", null, null)).diagnostics.single().code)
-        // Роли ревью (D-59): без поля — как были; пустой набор снимает; у TRIVIAL — отказ, а не тихое снятие.
+        // Роли ревью (D-59): у проекта без Git — отказ при постановке, а не запрос человеку после работы.
         val q = busy[3]
-        assertEquals(OperationStatus.SUCCEEDED, o.run(Command.SetPolicy(q, TaskClass.NORMAL_ENGINEERING, null, null, null, setOf(ReviewRole.CODE))).status)
-        assertEquals(OperationStatus.SUCCEEDED, o.run(Command.SetPolicy(q, TaskClass.ARCHITECTURE, null, null, null)).status)
-        assertEquals(setOf(ReviewRole.CODE), o.tasks.tasks.getValue(q).policy.reviews, "клиент без ролей их не снимает")
-        assertEquals(DiagCode.VALUE_INVALID, o.run(Command.SetPolicy(q, TaskClass.TRIVIAL, null, null, null)).diagnostics.single().code)
-        assertEquals(OperationStatus.SUCCEEDED, o.run(Command.SetPolicy(q, TaskClass.TRIVIAL, null, null, null, emptySet())).status)
-        assertEquals(emptySet(), o.tasks.tasks.getValue(q).policy.reviews)
+        assertEquals(DiagCode.UNSUPPORTED, o.run(Command.SetPolicy(q, TaskClass.NORMAL_ENGINEERING, null, null, null, setOf(ReviewRole.CODE))).diagnostics.single().code)
+        assertEquals(DiagCode.UNSUPPORTED, o.addTask("с ревью", "цель", policy = TaskPolicy(reviews = setOf(ReviewRole.CODE))).diagnostics.single().code)
+        assertEquals(OperationStatus.SUCCEEDED, o.run(Command.SetPolicy(q, TaskClass.TRIVIAL, null, null, null, emptySet())).status, "снять роли можно и без Git")
         advance(o, runner, 1)
     }
 

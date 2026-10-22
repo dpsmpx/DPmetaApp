@@ -34,9 +34,10 @@ import com.dpsmpx.dpai.tasks.TasksState
  * Чего поиск не видит, сказано в [Result.notes], а не скрыто (D-05):
  * события — только активный сегмент журнала (D-37), контексты и handoff —
  * задач в памяти контура, отказы — последние
- * [com.dpsmpx.dpai.orchestrator.Orchestrator.KEPT_PROBLEMS]; хеш коммита
- * контур пока не записывает (`TODO.md`), поэтому коммиты находятся, только
- * если он есть в handoff или в событии.
+ * [com.dpsmpx.dpai.orchestrator.Orchestrator.KEPT_PROBLEMS]; коммиты — те,
+ * что сделал контур (последний коммит каждой задачи, `GIT_COMMIT_CREATED`),
+ * и из handoff и событий: коммиты, которые Claude сделал в дереве сам, не
+ * записываются.
  * Содержимое источников контекста не ищется: в нём может быть то, что
  * показывать не следует (ТЗ, §65); найденный текст событий — через
  * [Redactor] (D-14).
@@ -74,6 +75,8 @@ object GlobalSearch {
         val worktrees: WorktreesState,
         val handoffs: List<Handoff>,
         val project: ProjectConfig? = null,
+        /** Последний коммит контура в ветке каждой задачи — проекция, читается без замка. */
+        val commits: Map<TaskId, com.dpsmpx.dpai.orchestrator.TaskCommit> = emptyMap(),
         val events: List<EventEnvelope>? = null,
         val eventsFrom: Long = 1,
         val contexts: List<ContextBundle>? = null,
@@ -159,7 +162,7 @@ object GlobalSearch {
             if (capped) notes += "событий нашлось больше $EVENT_CAP — посчитаны новые $EVENT_CAP"
             notes += "контексты и handoff — только задач в памяти контура, отказы — последние ${com.dpsmpx.dpai.orchestrator.Orchestrator.KEPT_PROBLEMS}"
         }
-        if (HEX.matches(q) && hits.none { it.kind == Kind.COMMIT }) notes += "хеши коммитов контур пока не записывает: коммит находится, только если он есть в handoff или событии"
+        if (HEX.matches(q) && hits.none { it.kind == Kind.COMMIT }) notes += "коммит не найден: ищутся коммиты контура (последний у каждой задачи) и из handoff и событий; коммиты Claude в дереве — нет"
         return Result(hits, more, notes)
     }
 
@@ -180,10 +183,13 @@ object GlobalSearch {
         return out
     }
 
-    /** Коммиты — из handoff и из событий с полем `commit` (проверка, слияние); каждый один раз. */
+    /** Коммиты — контура по задачам, из handoff и из событий с полем `commit` (коммит, проверка, слияние); каждый один раз. */
     private fun commits(source: Source, m: (String?) -> Boolean, title: (TaskId?) -> String): List<Hit> {
         val seen = HashSet<String>()
         val out = ArrayList<Hit>()
+        for ((task, c) in source.commits) {
+            if (m(c.commit) && seen.add(c.commit)) out += Hit(Kind.COMMIT, c.commit.take(12), "${title(task)} · ${c.branch}", DeepLink.of(DeepLink.Kind.TASK, task), c.at)
+        }
         for (h in source.handoffs) {
             val c = h.commit ?: continue
             if (m(c) && seen.add(c)) out += Hit(Kind.COMMIT, c.take(12), title(h.task) + (h.branch?.let { " · $it" } ?: ""), DeepLink.of(DeepLink.Kind.TASK, h.task), h.createdAt)

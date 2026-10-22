@@ -215,7 +215,7 @@ API не включён. Граница — этот раздел и реест�
 | `dpai.tasks-state` | 2 (1–2) | `TaskCodec` | снимок проекции задач; v1 — без `scope` |
 | `dpai.worktrees-state` | 1 | `WorktreeCodec` | снимок репозиториев и деревьев |
 | `dpai.streams-state` | 1 | `StreamsProjection` | снимок последних номеров потоков |
-| `dpai.merges-state` | 1 | `MergesProjection` | снимок ожидающих и выполненных слияний |
+| `dpai.merges-state` | 2 | `MergesProjection` | снимок ожидающих и выполненных слияний и коммитов задач |
 | `dpai.context` | 2 (только 2) | `ContextBundle`, `ContextCodec` | документ `context-<задача>` контура |
 | `dpai.handoff` | 1 | `Handoff`, `ContextCodec` | документ `handoff-<задача>` контура |
 | `dpai.verification-report` | 1 | `VerificationReport` | только пишется; контур хранит вердикт и хеш |
