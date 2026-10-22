@@ -16,6 +16,12 @@ import com.dpsmpx.dpai.security.Sensitivity
 import com.dpsmpx.dpai.sessions.PromptFacts
 import com.dpsmpx.dpai.sessions.PromptMode
 import com.dpsmpx.dpai.tasks.TaskPolicy
+import com.dpsmpx.dpai.tasks.FindingSeverity
+import com.dpsmpx.dpai.tasks.ReviewRecord
+import com.dpsmpx.dpai.tasks.ReviewRole
+import com.dpsmpx.dpai.tasks.ReviewVerdict
+import com.dpsmpx.dpai.tasks.TaskRecord
+import com.dpsmpx.dpai.orchestrator.review.Review
 import com.dpsmpx.dpai.verification.VerificationReport
 import com.dpsmpx.dpai.contexts.ContextBundle
 import com.dpsmpx.dpai.contexts.ContextSource
@@ -245,6 +251,9 @@ class Orchestrator(
     private val contextOf = HashMap<TaskId, ContextBundle>()
     /** Выжимка проваленной проверки задачи — источник `TOOL` следующей попытки (D-40); восстанавливается из версии контекста. */
     private val toolOf = HashMap<TaskId, ContextSource>()
+
+    /** Ответ по схеме последнего хода сессии ревью (D-59) — до её реакции на конец хода. */
+    private val reviewOutput = HashMap<SessionId, com.dpsmpx.dpai.core.serialization.JsonValue?>()
     /** Флаги, которых не знает Claude Code target (D-40): следующие ходы идут без них. */
     private val unsupportedFlags = HashMap<ExecutionTargetId, MutableSet<String>>()
 
@@ -342,7 +351,7 @@ class Orchestrator(
                 when (val c = ContextCodec.readContext(d.content)) {
                     is Outcome.Success -> {
                         contextOf[t.id] = c.value
-                        c.value.sources.firstOrNull { it.key == VERIFICATION_SOURCE }?.let { s ->
+                        c.value.sources.firstOrNull { it.key == VERIFICATION_SOURCE || it.key == REVIEW_SOURCE }?.let { s ->
                             toolOf[t.id] = ContextSource(s.key, s.level, config.project, s.sensitivity, s.origin, s.content)
                         }
                     }
@@ -571,6 +580,7 @@ class Orchestrator(
             if (r.terminal || r.state in WAIT_STATES) continue
             poll(s)
         }
+        reviews()
         runCommands()
         settleRequests()
         // Придержанное пределом частоты — сводкой, когда предел позволяет (ТЗ, §36).
@@ -640,8 +650,8 @@ class Orchestrator(
         // Продолжение — прерванная сессия той же задачи или сессия, чья работа не прошла проверку (D-40).
         // Последняя сессия задачи: продолжение создаётся в ту же миллисекунду, что и handoff, — при равном
         // времени решает id (монотонен), а не порядок обхода (разница при `--resume` теряла бы версию).
-        val previous = sessions.sessions.values.filter { it.task == task }
-            .maxWithOrNull(compareBy<com.dpsmpx.dpai.sessions.SessionRecord>({ it.createdAt.epochMillis }, { it.turn }, { it.id.value }))
+        // Сессии ревью (D-59) не продолжаются работой: у них свой prompt и только чтение.
+        val previous = lastWork(task)
         val handoff = handoffs.latest(task)
         val continues = previous?.takeIf {
             (it.state == SessionState.CANCELLED && it.lastReason == DiagCode.SESSION_HANDED_OFF) ||
@@ -661,7 +671,7 @@ class Orchestrator(
                 ?.also { commitSessions(it.events) }
         } ?: return releaseLease(session)
         val workDir = prepareWorktree(task, session) ?: return failLaunch(task, session, DiagCode.WORKTREE_MISSING)
-        val window = sessions.sessions.values.filter { it.task == task }.mapNotNull { it.usage.contextWindow }.maxOrNull()
+        val window = sessions.sessions.values.filter { it.task == task && it.review == null }.mapNotNull { it.usage.contextWindow }.maxOrNull()
         // Версия, которую видела продолжаемая сессия (а не последняя собранная); неизвестна — полный prompt.
         val seen = if (plan.mode == PromptMode.DELTA) continues?.let { sentContext(task, it) } else null
         val promptMode = if (plan.mode == PromptMode.DELTA && seen == null) PromptMode.FULL else plan.mode
@@ -834,10 +844,13 @@ class Orchestrator(
         }
         recordTurnMessages(session, step.turns)
         val after = sessions.sessions.getValue(session)
+        if (after.review != null) step.turns.lastOrNull()?.let { reviewOutput[session] = it.structured }
         if (after.state != before) react(after.task, session, after.state)
     }
 
     private fun react(task: TaskId, session: SessionId, state: SessionState) {
+        // Сессия ревью (D-59) — свой итог: находки, а не работа задачи.
+        sessions.sessions[session]?.review?.let { return reactReview(task, session, it, state) }
         when (state) {
             SessionState.COMPLETED -> finish(task, session)
             SessionState.PAUSED -> handOff(task, session)
@@ -916,15 +929,272 @@ class Orchestrator(
             askBlocked(task, session, "$failed: работа проверена, но не закоммичена — она в дереве задачи")
             return
         }
+        releaseTree(task, session)
+        // Ревью (D-59) — после коммита: ревьюер читает закоммиченную ветку; DONE — когда ревью кончились.
+        val reviews = tasks.tasks.getValue(task).policy.reviews
+        if (reviews.isNotEmpty()) {
+            progress(task, NotificationCategory.PROGRESS, "Задача на ревью", "проверка прошла; ${reviews.sorted().joinToString { Review.label(it) }}")
+            settleReviews(task)
+            return
+        }
+        completeVerified(task, tree, "проверка прошла")
+    }
+
+    /** `DONE` и запрос слияния проверенной (и, если назначено, прошедшей ревью) задачи. */
+    private fun completeVerified(task: TaskId, tree: com.dpsmpx.dpai.git.Worktree?, why: String) {
         // DONE и запрос слияния — одной пачкой журнала (ревью A-56): сбой между ними оставлял
         // задачу DONE без запроса, и слияния не было бы никогда.
         batch {
             commitTasks(ok(tasksLogic.complete(tasks, task, clock.now()), "завершение задачи").orEmpty())
-            if (tree != null) recordMergeRequest(task, tree.branch)
+            if (tree != null && tasks.tasks[task]?.state == TaskState.DONE) recordMergeRequest(task, tree.branch)
         }
-        releaseTree(task, session)
-        progress(task, NotificationCategory.SUCCESS, "Задача выполнена", "проверка прошла")
+        if (tasks.tasks[task]?.state != TaskState.DONE) return
+        progress(task, NotificationCategory.SUCCESS, "Задача выполнена", why)
         mergesState.pending.values.firstOrNull { it.task == task }?.let { askMerge(it) }
+    }
+
+    /** Последняя рабочая сессия задачи — не ревью (D-59): её продолжают, ей пишут запросы. */
+    private fun lastWork(task: TaskId): com.dpsmpx.dpai.sessions.SessionRecord? = sessions.sessions.values.filter { it.task == task && it.review == null }
+        .maxWithOrNull(compareBy<com.dpsmpx.dpai.sessions.SessionRecord>({ it.createdAt.epochMillis }, { it.turn }, { it.id.value }))
+
+    /**
+     * Ревью проверенных задач (D-59): у задачи одна активная сессия
+     * (инвариант `task-single-session`), поэтому роли — по одной за раз,
+     * по порядку. Запускать нечего — решить итог: перезапуск между записью
+     * итога и решением не оставляет задачу ждать вечно.
+     */
+    private fun reviews() {
+        for (id in tasks.tasks.values.filter { it.state == TaskState.VERIFIED && it.policy.reviews.isNotEmpty() }.map { it.id }.sortedBy { it.value }) {
+            runCommands()
+            val t = tasks.tasks[id] ?: continue
+            if (t.state != TaskState.VERIFIED || openSessions(id).isNotEmpty()) continue
+            if (t.reviews.values.any { it.verdict == ReviewVerdict.BLOCKED }) {
+                settleReviews(id)
+                continue
+            }
+            val next = nextReview(t)
+            if (next == null) settleReviews(id) else launchReview(id, next.first, next.second)
+        }
+    }
+
+    /**
+     * Роль, которую пора ревьюить, и номер попытки ревью; `null` — запускать
+     * нечего. Сбой — повтор, пока попыток меньше [Review.MAX_ATTEMPTS];
+     * повтор сверх них — только по решению человека (запись с `by`).
+     */
+    private fun nextReview(t: TaskRecord): Pair<ReviewRole, Int>? = t.policy.reviews.sorted().firstNotNullOfOrNull { role ->
+        val r = t.reviews[role]
+        when {
+            r == null -> role to 1
+            r.verdict == ReviewVerdict.FAILED && (r.attempt < Review.MAX_ATTEMPTS || r.by != null) -> role to r.attempt + 1
+            else -> null
+        }
+    }
+
+    /**
+     * Итог ревью (D-59, п. 3): блокирующее — повтор с выжимкой; без итога и
+     * без повторов — запрос человеку; все прошли или приняты — `DONE`.
+     */
+    private fun settleReviews(task: TaskId) {
+        val t = tasks.tasks[task] ?: return
+        if (t.state != TaskState.VERIFIED) return
+        when {
+            t.reviews.values.any { it.verdict == ReviewVerdict.BLOCKED } -> blockedByReview(task)
+            nextReview(t) != null -> Unit
+            t.reviewsLeft().isNotEmpty() -> askReview(task, t.reviewsLeft())
+            else -> completeVerified(task, treeOf[task]?.let { worktrees.worktrees[it] }, "проверка и ревью прошли")
+        }
+    }
+
+    /**
+     * Ревью нашло блокирующее (D-59, п. 3): выжимка находок — источник
+     * следующей попытки и handoff последней рабочей сессии, как у
+     * проваленной проверки (D-40, п. 3): следующая попытка продолжает её.
+     */
+    private fun blockedByReview(task: TaskId) {
+        val t = tasks.tasks.getValue(task)
+        val digest = Review.digest(t.reviews.values)
+        val work = lastWork(task)
+        if (digest != null && work != null && efficiency.feedVerification) {
+            // Находки написала модель — данные с происхождением MODEL, а не указания (T3).
+            toolOf[task] = ContextSource(REVIEW_SOURCE, SourceLevel.TOOL, config.project, Sensitivity.INTERNAL, Origin.MODEL, digest)
+            val bundle = contextOf[task]
+            val roles = t.reviews.values.filter { it.verdict == ReviewVerdict.BLOCKED }.map { it.role }.sorted()
+            val handoff = Handoff(
+                id = ids.next(IdKinds.HANDOFF),
+                key = "${work.id.value}:review:${t.retries}",
+                reason = HandoffReason.VERIFICATION_FAILED,
+                session = work.id,
+                task = task,
+                project = config.project,
+                context = bundle?.id ?: ids.next(IdKinds.CONTEXT),
+                contextHash = bundle?.hash ?: com.dpsmpx.dpai.core.hashing.Hashing.sha256(""),
+                state = "проверка прошла, ${roles.joinToString { Review.label(it) }} нашло блокирующее",
+                completed = emptyList(), verified = listOf("проверка профиля"),
+                failed = t.reviews.values.flatMap { r -> r.findings.filter { it.severity == FindingSeverity.BLOCKING }.map { "${Review.label(r.role)}: ${it.title}" } },
+                warnings = emptyList(), openProblems = emptyList(), currentAction = null,
+                nextAction = "исправить то, что нашло ревью (выжимка — источник $REVIEW_SOURCE), и снова проверить",
+                modifiedFiles = emptyList(), commit = null, branch = treeOf[task]?.let { worktrees.worktrees[it]?.branch },
+                workspace = treeOf[task]?.let { worktrees.worktrees[it]?.path }, createdAt = clock.now(),
+                relevantFiles = t.reviews.values.flatMap { r -> r.findings.mapNotNull { it.file } }.distinct().take(50), summary = workingOf[task]?.summary,
+            )
+            handoffs.create(handoff)
+            saveTaskDocument("handoff", task, handoff.toJson())
+            context(task, t.objective, efficiency.context.policy(null))
+        }
+        commitTasks(ok(tasksLogic.reviewBlocked(tasks, task, clock.now()), "ревью задачи").orEmpty())
+        val found = t.reviews.values.flatMap { r -> r.findings.filter { it.severity == FindingSeverity.BLOCKING } }.joinToString("; ") { it.title }
+        when (tasks.tasks[task]?.state) {
+            TaskState.BLOCKED -> askBlocked(task, work?.id, "ревью снова нашло блокирующее: $found")
+            else -> progress(task, NotificationCategory.WARNING, "Ревью нашло ошибки", "задача снова в работе: $found")
+        }
+    }
+
+    /**
+     * Сессия ревью роли (D-59, п. 2): на target последней рабочей сессии
+     * (там дерево или маршрут к нему, D-50), слот — по правилам аренды
+     * (D-30), только чтение, ответ по схеме. Нет target, слота или места —
+     * задача ждёт с причиной; изменения не получены — ревью без итога.
+     */
+    private fun launchReview(task: TaskId, role: ReviewRole, attempt: Int) {
+        val t = tasks.tasks.getValue(task)
+        val work = lastWork(task) ?: return recordReviewFailure(task, role, attempt, null, "у задачи нет рабочей сессии — неизвестно, где её дерево")
+        val target = work.target
+        if (target in control.disabledTargets) return waiting(task, "${Review.label(role)} ждёт: target $target не принимает новые задачи")
+        val active = sessions.sessions.values.count { !it.terminal && it.target == target }
+        if (active >= (targets.firstOrNull { it.id == target }?.maxSessions ?: 0)) return waiting(task, "${Review.label(role)} ждёт места на target $target")
+        control.maxSessions?.let { max -> if (sessions.sessions.values.count { !it.terminal } >= max) return waiting(task, "${Review.label(role)} ждёт: предел сессий контура $max") }
+        if ("--json-schema" in unsupportedFlags[target].orEmpty()) return recordReviewFailure(task, role, attempt, null, "Claude Code на target $target не знает --json-schema: ответ ревью по схеме невозможен")
+        val diff = when (val d = taskDiff(task, Review.MAX_PATCH_CHARS)) {
+            is Outcome.Failure -> return recordReviewFailure(task, role, attempt, null, "изменения задачи не получены: ${d.errors.first().message}")
+            is Outcome.Success -> d.value
+        }
+        val session = ids.next(IdKinds.SESSION)
+        val lease = accountsLogic.lease(accounts, session, task, clock.now(), target, urgent = t.priority.ordinal <= Priority.HIGH.ordinal)
+        if (lease is Outcome.Failure) return waiting(task, "${Review.label(role)} ждёт слот: ${lease.errors.first().message}")
+        val slot = lease.valueOrNull()!!.slot
+        val route = router.route(t, budgetMode(slot))
+        batch {
+            commitAccounts(lease.valueOrNull()!!.events)
+            ok(sessionsLogic.create(sessions, accounts, session, "task:${task.value}:review:${role.name}:${t.retries}:$attempt", task, slot, target, ProviderSessionId.newUuid(random), clock.now(), review = role.name), "сессия ревью $task не создана")
+                ?.also { commitSessions(it.events) }
+        } ?: return releaseLease(session)
+        val workDir = treePath(task) ?: config.worktreeRoot
+        val prompt = Review.prompt(role, t.title, t.objective, diff)
+        val unknown = unsupportedFlags[target].orEmpty()
+        val local = ClaudeRequest(
+            prompt, model = route.model,
+            effort = route.effort.takeIf { "--effort" !in unknown },
+            fallbackModel = route.fallbackModel.takeIf { "--fallback-model" !in unknown },
+            permissionMode = ClaudeCodeCli.TURN_PERMISSION_MODE,
+            tools = Review.TOOLS, disallowedTools = listOf(ClaudeCodeCli.SUBAGENT_TOOL), jsonSchema = Review.SCHEMA,
+            workDir = workDir, timeout = t.policy.turnTimeout, maxBudgetUsd = t.policy.maxBudgetUsdCents?.let { BigDecimal(it).movePointLeft(2) },
+        )
+        // Дерево на другом target (D-50): его MCP-сервер умеет и писать — у ревью эти инструменты запрещены.
+        val request = config.remote?.let { r ->
+            ok(r.apply(local, workDir ?: "."), "ревью с деревом на другом target")?.let { it.copy(disallowedTools = it.disallowedTools + Review.remoteWriteTools()) }
+                ?: return failReviewLaunch(task, role, attempt, session, "маршрут к дереву на другом target не собран")
+        } ?: local
+        val facts = PromptFacts(
+            PromptMode.FULL, prompt.length.toLong(), com.dpsmpx.dpai.contexts.TokenEstimate.of(prompt), 1,
+            context = "review:${role.name}", taskClass = t.policy.taskClass.name, model = route.model, effort = route.effort, route = route.route,
+            why = "${Review.label(role)}, попытка $attempt",
+        )
+        commitSessions(listOf(SessionEvent.PromptPrepared(session, facts, clock.now())))
+        val step = ok(driver.launch(sessions, accounts, session, request), "ревью $session не запущено") ?: return failReviewLaunch(task, role, attempt, session, "сессия ревью не запущена")
+        batch {
+            commitSessions(step.events)
+            applyFacts(step.facts)
+        }
+        lastWaiting.remove(task)
+        val after = sessions.sessions.getValue(session)
+        if (after.state != SessionState.RUNNING && after.state != SessionState.STARTING) react(task, session, after.state)
+        else progress(task, NotificationCategory.PROGRESS, "Ревью начато", "${Review.label(role)}, попытка $attempt")
+    }
+
+    /** Ревью не запустилось после создания сессии: сессия снята, итог — без ревью с причиной. */
+    private fun failReviewLaunch(task: TaskId, role: ReviewRole, attempt: Int, session: SessionId, why: String) {
+        if (sessions.sessions[session]?.terminal == false) {
+            commitSessions(sessionsLogic.transition(sessions, session, SessionState.FAILED, clock.now(), DiagCode.REVIEW_FAILED).valueOrNull().orEmpty())
+        }
+        releaseLease(session)
+        recordReviewFailure(task, role, attempt, session, why)
+    }
+
+    /** Ревью роли без итога (D-59, п. 3): записать с причиной — повтор или запрос решит [settleReviews]. */
+    private fun recordReviewFailure(task: TaskId, role: ReviewRole, attempt: Int, session: SessionId?, why: String) {
+        problems += Diagnostic.warning(DiagCode.REVIEW_FAILED, "${Review.label(role)}: $why", "task $task")
+        val record = ReviewRecord(role, ReviewVerdict.FAILED, attempt, session, reason = why.take(ReviewRecord.MAX_DETAIL))
+        commitTasks(ok(tasksLogic.recordReview(tasks, task, record, clock.now()), "итог ревью").orEmpty())
+        settleReviews(task)
+    }
+
+    /**
+     * Сессия ревью дошла до конечного или ждущего состояния: итог по схеме
+     * из ответа хода — или ревью без итога с причиной. Ждущая (предел,
+     * вход) снимается: ревью не продолжается, а запускается заново.
+     */
+    private fun reactReview(task: TaskId, session: SessionId, roleName: String, state: SessionState) {
+        val role = ReviewRole.entries.firstOrNull { it.name == roleName } ?: return
+        val attempt = sessions.sessions[session]?.key?.substringAfterLast(':')?.toIntOrNull() ?: 1
+        when (state) {
+            SessionState.COMPLETED -> {
+                val record = Review.parse(role, attempt, session, reviewOutput.remove(session))
+                if (record.verdict == ReviewVerdict.FAILED) problems += Diagnostic.warning(DiagCode.REVIEW_FAILED, "${Review.label(role)}: ${record.reason}", "task $task")
+                commitTasks(ok(tasksLogic.recordReview(tasks, task, record, clock.now()), "итог ревью").orEmpty())
+                settleReviews(task)
+            }
+            SessionState.FAILED, SessionState.BLOCKED, SessionState.PAUSED -> {
+                val reason = sessions.sessions[session]?.lastReason
+                if (sessions.sessions[session]?.terminal == false) closeSession(task, session)
+                reviewOutput.remove(session)
+                recordReviewFailure(task, role, attempt, session, "сессия ревью ${state.name}" + (reason?.let { " ($it)" } ?: ""))
+            }
+            else -> Unit
+        }
+    }
+
+    private fun askReview(task: TaskId, roles: List<ReviewRole>) {
+        val why = roles.joinToString("; ") { r -> "${Review.label(r)}: ${tasks.tasks[task]?.reviews?.get(r)?.reason ?: "без итога"}" }
+        ask(
+            RequestPurpose.TASK_REVIEW, RequestKind.USER_RESOLUTION, "task:${task.value}:review",
+            "Ревью без итога: ${taskTitle(task)}", "Проверка прошла, а ревью не дало итога и после повтора ($why). Повторить или принять без ревью?",
+            listOf(
+                RequestOption(RETRY, "Повторить ревью", OptionRole.ACCEPT),
+                RequestOption(WAIVE, "Принять без ревью", OptionRole.DESTRUCTIVE),
+                RequestOption(LATER, "Решу позже", OptionRole.NEUTRAL),
+            ),
+            task, null,
+        )
+    }
+
+    /** Ответ на запрос ревью (D-59, п. 3): повтор — запись с решением человека; принять — исключение по ролям без итога. */
+    private fun resolveReview(task: TaskId, option: String, by: String): Outcome<String> {
+        val t = tasks.tasks[task] ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой задачи", "task $task")
+        if (t.state != TaskState.VERIFIED) return Outcome.failure(DiagCode.REQUEST_NOT_PENDING, "задача уже не VERIFIED: ${t.state}", "task $task")
+        val failed = t.reviewsLeft().filter { t.reviews[it]?.verdict == ReviewVerdict.FAILED }
+        return when (option) {
+            RETRY -> {
+                val es = failed.flatMap { r ->
+                    val last = t.reviews.getValue(r)
+                    ok(tasksLogic.recordReview(tasks, task, last.copy(by = by.take(ReviewRecord.MAX_TITLE), reason = "повтор по решению человека"), clock.now()), "повтор ревью").orEmpty()
+                }
+                commitTasks(es)
+                Outcome.success("ревью будет повторено")
+            }
+            WAIVE -> {
+                for (r in failed) {
+                    when (val w = tasksLogic.waiveReview(tasks, task, r, by, "принято без ревью ответом на запрос", clock.now())) {
+                        is Outcome.Failure -> return w
+                        is Outcome.Success -> commitTasks(w.value)
+                    }
+                }
+                settleReviews(task)
+                Outcome.success("принято без ревью")
+            }
+            LATER -> Outcome.success("решение отложено")
+            else -> Outcome.failure(DiagCode.REQUEST_ANSWER_INVALID, "вариант «$option» не к этому запросу")
+        }
     }
 
     /**
@@ -1511,7 +1781,7 @@ class Orchestrator(
     private fun verifyTask(task: TaskId): Outcome<TaskState> {
         val t = tasks.tasks[task] ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой задачи", "task $task")
         if (t.state != TaskState.COMPLETION_UNVERIFIED) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "проверяют задачу без проверки: задача ${t.state}", "task $task")
-        val session = sessions.sessions.values.filter { it.task == task }.maxWithOrNull(compareBy({ it.createdAt.epochMillis }, { it.id.value }))?.id
+        val session = lastWork(task)?.id
             ?: return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "у задачи не было сессии", "task $task")
         commitTasks(ok(tasksLogic.move(tasks, task, TaskState.VERIFYING, clock.now()), "проверка вручную") ?: return Outcome.failure(DiagCode.INVALID_TRANSITION, "не перейти в VERIFYING", "task $task"))
         val tree = treeOf[task]?.let { worktrees.worktrees[it] }
@@ -1545,8 +1815,9 @@ class Orchestrator(
         val task = s.task
         val clean = text?.trim()?.takeIf { it.isNotEmpty() }?.take(UserRequest.MAX_TEXT)
         if (clean == null && !fresh) return Outcome.failure(DiagCode.VALUE_INVALID, "запрос без текста")
+        if (s.review != null) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "сессия ревью только читает (D-59): запрос — в рабочую сессию задачи", "session $session")
         if (turnRunning(task)) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "ход идёт: остановите его или дождитесь конца", "session $session")
-        val last = sessions.sessions.values.filter { it.task == task }.maxWithOrNull(compareBy({ it.createdAt.epochMillis }, { it.id.value }))!!
+        val last = lastWork(task)!!
         if (last.id != session) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "запрос — в последнюю сессию задачи ${last.id}", "session $session")
         reopenForTurn(task)?.let { return it }
         val reason = if (fresh) HandoffReason.TURN_FINISHED else HandoffReason.MANUAL
@@ -1737,6 +2008,7 @@ class Orchestrator(
             RequestPurpose.TASK_BLOCKED -> resolveBlocked(r.task!!, a.option.id, a.text)
             RequestPurpose.TASK_UNVERIFIED -> resolveUnverified(r.task!!, a.option.id, by)
             RequestPurpose.TASK_MERGE -> resolveMerge(r.task!!, a.option.id)
+            RequestPurpose.TASK_REVIEW -> resolveReview(r.task!!, a.option.id, by)
             null -> Outcome.failure(DiagCode.UNSUPPORTED, "назначение запроса неизвестно: ${r.purpose}")
         }
         return when (effect) {
@@ -1821,6 +2093,8 @@ class Orchestrator(
             when (RequestPurpose.of(r.purpose)) {
                 RequestPurpose.TASK_BLOCKED -> state != TaskState.BLOCKED
                 RequestPurpose.TASK_UNVERIFIED -> state != TaskState.COMPLETION_UNVERIFIED
+                // Ревью без итога (D-59): задача ушла из VERIFIED или ревью роли снова идёт — вопрос снят.
+                RequestPurpose.TASK_REVIEW -> state != TaskState.VERIFIED || r.task?.let { t -> tasks.tasks[t]?.let { nextReview(it) != null } } == true
                 else -> false
             }
         }
@@ -1948,6 +2222,9 @@ class Orchestrator(
 
         /** Ключ источника с выжимкой проваленной проверки (D-40). */
         const val VERIFICATION_SOURCE = "tool:verification"
+
+        /** Ключ источника с выжимкой блокирующего ревью (D-59, п. 3). */
+        const val REVIEW_SOURCE = "tool:review"
 
         /** Изменённых файлов в handoff — не больше: список, а не дамп рабочего дерева. */
         private const val MAX_HANDOFF_FILES = 200
