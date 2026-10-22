@@ -284,6 +284,10 @@ target:     start ─► Detacher ─► supervise ─► процесс; выв
 ждущий запрос с тем же хешем; ссылки `dpai://approve|deny`
 (`notifications.ApprovalAction`) больше не создаются.
 
+Ревью задачи (D-59) — `orchestrator.review.Review`: prompt роли, схема
+ответа, разбор находок и выжимка для повтора; запуск, итог и запрос
+человеку `task.review` — в `Orchestrator` после проверки и коммита.
+
 Запросы человеку (D-44): модель и автомат — `notifications.UserRequest`,
 `UserRequests`; журнал и снимок — `orchestrator.requests.UserRequestsProjection`;
 назначения и их действия — `orchestrator.requests.RequestPurpose` и

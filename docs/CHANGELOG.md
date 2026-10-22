@@ -4,6 +4,23 @@
 и PR; что решено — `docs/direction/DECISIONS.md`.
 
 
+## 22 октября 2026 — ревью задачи (D-59), этап 10 выполнен
+
+- Роли ревью в политике задачи (`TaskPolicy.reviews`: `CODE`,
+  `SECURITY`): после проверки и коммита — отдельные сессии только для
+  чтения с ответом по `--json-schema`; блокирующая находка — повтор с
+  выжимкой той же рабочей сессией, без итога — повтор и запрос
+  `task.review`.
+- Форматы: `dpai.tasks-state` v6, `dpai.sessions-state` v4; событие
+  `TASK_REVIEW_RECORDED`; коды `REVIEW_BLOCKING`, `REVIEW_FAILED`,
+  `REVIEW_REQUIRED`, `REVIEW_WAIVED`.
+- Команды: `reviews` в `task.add` и `task.policy`; `dpai task add|policy
+  --review code,security`, `dpai task <id> reviews`; Control API —
+  `GET /v1/tasks/<id>/reviews`.
+- Экраны: роли в «Новой задаче» и «Модель, бюджет, ревью», итоги и
+  находки в листе задачи, роль у сессии на сводке.
+- Отчёт расхода: pass@1 и pass@3 по классу и модели.
+
 ## 18 октября 2026 — сборка 0.1.0-dev.3 для проверки на телефоне
 
 - Ветка `apk-0.1.0-dev.3`: APK release и debug (versionCode 3, тот же

@@ -263,7 +263,7 @@ API не включён. Граница — этот раздел и реест�
 | Команда | Где | Итог |
 |---|---|---|
 | создать задачу | `Orchestrator.addTask`, в приложении — `LiveSystem.addTask` | `Outcome<TaskId>`; `TASK_CREATED`, `TASK_SCOPE_CHANGED` (если область задана), `TASK_STATE_CHANGED` (в очередь) |
-| такт контура | `Orchestrator.tick`, в оболочке — `ControlView.step` | очередь → план → аренда слота → сессия → дерево → контекст → ход; опрос; проверка → коммит → `DONE` → запрос слияния |
+| такт контура | `Orchestrator.tick`, в оболочке — `ControlView.step` | очередь → план → аренда слота → сессия → дерево → контекст → ход; опрос; проверка → коммит → ревью по политике (D-59) → `DONE` → запрос слияния |
 | ответ на запрос (в том числе слияние, D-49) | `Orchestrator.answer(uri, text, by)` | `OperationResult<RequestAnswer>`; действует только ответ на ждущий запрос с тем же хешем |
 | сверка после перезапуска | `Orchestrator.recover(agentFor)` | `Reconciler.Result` по сессиям, затем `OrphanScan` |
 | факты аккаунтов | `Orchestrator.commitAccounts`; проба входа — `LiveSystem.probeSlot` (`SlotAuthProbe`) | события аккаунтов |
