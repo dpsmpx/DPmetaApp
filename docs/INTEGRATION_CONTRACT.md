@@ -288,12 +288,13 @@ API не включён. Граница — этот раздел и реест�
 | `dpai agent supervise --run ID` | супервизор — единственный писатель `events.jsonl` |
 | `dpai agent status --run ID` | состояние запуска; супервизор умер без записи выхода — `LOST` |
 | `dpai agent events --run ID [--after N] [--limit N]` | подтверждённые события с номером больше N |
+| `dpai agent follow --run ID [--after N]` | то же потоком, пока идёт ход: строка `dpai.agent-reply` команды `follow` на каждую новость журнала, смену состояния и раз в 15 с без новостей (D-62, D-65) |
 | `dpai agent stop --run ID [--grace-seconds N]` | просьба супервизору; потерянный — остановка по pid и времени старта; ход ещё без супервизора — только просьба (`AGENT_STOP_PENDING`) |
 | `dpai agent mcp --root DIR [--shell bash\|sh\|powershell\|cmd]` | MCP-сервер рабочего дерева по stdio (JSON-RPC 2.0 строками; `initialize`, `ping`, `tools/list`, `tools/call`; инструменты `run`, `read`, `write`, `edit`, `glob`, `grep`) — для хода Claude на другом target (D-50; `docs/EXECUTION_MODEL.md`, §7) |
 
 `ID` — `SessionId`. Каждая команда агента отвечает одной строкой
-`dpai.agent-reply`, кроме `mcp` — она отвечает строками JSON-RPC, пока
-открыт вход; коды выхода: 0 — успех, 1 — отказ (подробности в ответе), 2 —
+`dpai.agent-reply`, кроме `follow` — строка на каждую новость, пока идёт
+ход, — и `mcp` — она отвечает строками JSON-RPC, пока открыт вход; коды выхода: 0 — успех, 1 — отказ (подробности в ответе), 2 —
 неверный вызов. Режима контроллера без интерфейса в `cli` нет
 (раздел 19).
 

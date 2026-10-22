@@ -42,3 +42,11 @@ Linux и на телефоне (Termux + proot, D-33).
 - [x] Claude Code в Termux: нативно — нет, в окружении Linux поверх
       Termux (proot-distro, Alpine) — да; проверено на Realme C21Y
       (D-33; `docs/research/CLAUDE_CODE_CLI.md`, §9).
+- [x] Поток событий хода вместо опроса (D-62, D-65, 22 октября 2026):
+      `dpai agent follow` — строки по мере записи журнала до конца хода,
+      признак жизни, конец при ушедшем читателе; контроллер ведёт идущие
+      ходы потоком, без него — опросом (`AgentRuntimeTest`,
+      `FollowingEventSourceTest`, `LiveSystemTest`); по SSH — долгий
+      канал `exec` OpenSSH и JSch (`AgentCommandTest`,
+      `JschProcessHostTest` с `dpai.test.ssh`, облако). Задержка на
+      устройстве — `docs/DEVICE_CHECK.md`, §7.7.

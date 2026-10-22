@@ -372,7 +372,8 @@ class AgentRuntime(
                 sentState = run.state
             }
             page.events.lastOrNull()?.let { cursor = it.sequence }
-            if (page.more) continue
+            // Полная по числу страница — за ней могут быть ещё: дочитать сразу, как канал (`RunChannel`).
+            if (page.more || page.events.size >= FOLLOW_LIMIT) continue
             val ended = run.finished
             // Конец — только по чтению, начатому при уже законченном ходе: выход пишется в журнал
             // раньше документа запуска, и журнал, прочитанный до документа, мог не застать событие выхода.
