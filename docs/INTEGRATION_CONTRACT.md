@@ -53,8 +53,8 @@ claude.ai (D-27), не принимает решений планировщик�
 
 | Что | Версия | Где |
 |---|---|---|
-| Модули, jar, дистрибутив `dpai` | `0.1.0-dev.3` (сборка для проверки на устройстве — ветка `apk-0.1.0-dev.3`) | `gradle.properties`, `version`; в jar `cli` — `Implementation-Version`, его печатает `dpai version` |
-| Приложение Android | `versionName` — версия проекта, `versionCode` — 1 | `android/build.gradle.kts` |
+| Модули, jar, дистрибутив `dpai` | `0.1.0-dev.4` (сборка для проверки на устройстве — ветка `apk-0.1.0-dev.4`) | `gradle.properties`, `version`; в jar `cli` — `Implementation-Version`, его печатает `dpai version` |
+| Приложение Android | `versionName` — версия проекта, `versionCode` — 4 | `android/build.gradle.kts` |
 | Форматы хранения | свой номер у каждого (раздел 10) | `docs/DATA_MODEL.md`, §4 |
 | Реестры | 116 кодов диагностики, 67 типов событий (8 октября 2026) | `tools/verify/registry/` |
 | Решения | D-01…D-39, заменённых нет | `docs/direction/DECISIONS.md` |
