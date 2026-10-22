@@ -87,12 +87,13 @@ adb devices
 Причина падения записывается в `files/last-crash.txt` приложения при
 любой сборке, но прочитать файл можно только из debug-сборки
 (`docs/TESTING.md`, §9). Обе сборки подписаны одним ключом, поэтому
-debug ставится поверх release без потери данных:
+debug ставится поверх release без потери данных — переподписанная вашим
+ключом (`…-author.apk`, §1.2) поверх переподписанной:
 
 ```sh
-adb install -r dpai-0.1.0-dev.4-debug.apk
+adb install -r dpai-0.1.0-dev.4-debug-author.apk
 adb shell run-as com.dpsmpx.dpai cat files/last-crash.txt > last-crash.txt
-adb install -r dpai-0.1.0-dev.4-release.apk
+adb install -r dpai-0.1.0-dev.4-release-author.apk
 ```
 
 Если на Redmi работает системный журнал, приложите и его:
@@ -127,6 +128,7 @@ release, как в третьей команде.
 | `dpai-0.1.0-dev.4-debug.apk` | только чтобы прочитать `last-crash.txt` (§0.4) |
 | `dpai-agent-0.1.0-dev.4.zip` | агент `dpai` для Termux и ПК: каталог `dpai/` с `bin/dpai` и `lib/` |
 | `claude-proot.sh` | обёртка Claude Code для Termux (§5.3) |
+| `resign-apk.sh` | переподпись APK вашим ключом выпуска на телефоне (§1.2) |
 | `SHA256SUMS` | хеши файлов |
 | `README.md` | описание ветки |
 
@@ -140,10 +142,11 @@ cd ~/dpai-device-check
 sha256sum -c SHA256SUMS
 ```
 
-Файлы для Termux — на телефон в «Загрузки»:
+Файлы для Termux — на телефон в «Загрузки» (APK — тоже: переподписываются
+на телефоне, где ваш ключ, §1.2):
 
 ```sh
-adb push dpai-agent-0.1.0-dev.4.zip claude-proot.sh SHA256SUMS /sdcard/Download/
+adb push dpai-0.1.0-dev.4-release.apk dpai-0.1.0-dev.4-debug.apk dpai-agent-0.1.0-dev.4.zip claude-proot.sh resign-apk.sh SHA256SUMS /sdcard/Download/
 ```
 
 Ожидается `…: OK` для каждого файла. Любое `FAILED` — стоп: файл не тот,
@@ -163,21 +166,52 @@ cd ~/storage/downloads && sha256sum -c SHA256SUMS --ignore-missing
 
 ### 1.2. Уже установленная версия
 
-**Стоит 0.1.0-dev.1, dev.2 или dev.3** (ветки `apk-0.1.0-dev.1` …
-`apk-0.1.0-dev.3`). Они подписаны тем же ключом: dev.4 ставится поверх
-(§1.3; с ПК — `adb install -r
+**Стоит версия, подписанная вашим ключом выпуска** (сертификат «DPpass
+Dev»; просмотрщик подписи показывает его как `807c…`). APK ветки подписаны отладочным ключом
+облака (`docs/PROCESS.md`, §6) и поверх неё не встанут: Android ответит
+«конфликт пакетов» (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`). Приложение не
+удаляйте — пропадут targets и ключи; переподпишите APK вашим ключом на
+телефоне. Ключ и пароли с телефона не уходят: `resign-apk.sh` (он же
+`tools/termux/resign-apk.sh`) берёт путь, псевдоним и пароли из тех же
+свойств `dpai.release.*` в `~/.gradle/gradle.properties`, что и Gradle, а
+пароли передаёт `apksigner` через окружение, не командной строкой.
+
+Нужен `apksigner`: в Termux — `pkg install apksigner`; или запускайте
+скрипт там, где вы подписываете DPpass (proot Alpine с Android SDK:
+скрипт найдёт `build-tools/*/apksigner` в `$ANDROID_HOME`). Файлы — в
+«Загрузках» (§1.1):
+
+```sh
+cd ~/storage/downloads
+sha256sum -c SHA256SUMS --ignore-missing
+sh resign-apk.sh dpai-0.1.0-dev.4-release.apk dpai-0.1.0-dev.4-debug.apk
+```
+
+Ожидается для каждого файла `✓ …-author.apk` и строки «сертификат
+SHA-256» и «SHA-1»: одна из них начинается с тех же знаков, что показывает
+просмотрщик у установленной версии (`807c…`). Чтобы скрипт сверял сам,
+добавьте в `~/.gradle/gradle.properties` строку `dpai.release.certSha256=`
+с SHA-256 сертификата или его началом: с ней чужой ключ — отказ, и файл
+удаляется. Содержимое APK переподпись не
+меняет — только подпись. Дальше ставьте `…-release-author.apk` (§1.3), а
+для `last-crash.txt` — `…-debug-author.apk` (§0.4). В отчёт — начало хеша
+сертификата; ключ, пароли и `gradle.properties` — никогда (§0.5).
+
+**Стоит 0.1.0-dev.1, dev.2 или dev.3 с отладочным ключом облака** (ветки
+`apk-0.1.0-dev.1` … `apk-0.1.0-dev.3`): APK ветки ставится поверх как
+есть, без переподписи (§1.3; с ПК — `adb install -r
 dpai-0.1.0-dev.4-release.apk`), targets, ключ приложения и
-закреплённые ключи хостов остаются. После установки обновите агента на
+закреплённые ключи хостов остаются.
+
+**В обоих случаях** после установки обновите агента на
 каждом target тем же архивом, как в §5.4 (Termux) или §10 (ПК): версии
 приложения и агента должны совпадать, иначе «Проверить» покажет
 «обновить агента», а проба входа (D-55) ждёт сводку `dpai.auth-status`
 от нового агента. Вход Claude в каталогах слотов сохраняется — заново
 входить не нужно.
 
-**Стоит сборка с другой подписью.**
-
-APK подписан отладочным ключом облачной сессии, а не вашим ключом
-выпуска (`docs/PROCESS.md`, §6). Проверьте, стоит ли приложение:
+**Стоит сборка с другой подписью** — ни вашим ключом, ни отладочным
+ключом облака. Проверьте, стоит ли приложение:
 
 ```sh
 adb shell pm list packages com.dpsmpx.dpai
@@ -204,10 +238,13 @@ adb uninstall com.dpsmpx.dpai
 
 ### 1.3. Установка
 
-С ПК:
+Ставится `dpai-0.1.0-dev.4-release-author.apk` — переподписанный вашим
+ключом (§1.2); без переподписи (стоит сборка облака или ничего) —
+`dpai-0.1.0-dev.4-release.apk`. С ПК (переподписанный — сначала
+`adb pull /sdcard/Download/dpai-0.1.0-dev.4-release-author.apk`):
 
 ```sh
-adb install dpai-0.1.0-dev.4-release.apk
+adb install -r dpai-0.1.0-dev.4-release-author.apk
 adb shell dumpsys package com.dpsmpx.dpai | grep -E "versionName|versionCode"
 ```
 
@@ -216,8 +253,8 @@ adb shell dumpsys package com.dpsmpx.dpai | grep -E "versionName|versionCode"
 выключена «Установка через USB» в «Для разработчиков»; включить её без
 аккаунта Mi часто нельзя — тогда ставьте с телефона.
 
-С телефона: откройте скачанный `dpai-0.1.0-dev.4-release.apk` из
-«Загрузок», разрешите установку из этого источника, если HyperOS
+С телефона: откройте `dpai-0.1.0-dev.4-release-author.apk` (или без
+`-author`) из «Загрузок», разрешите установку из этого источника, если HyperOS
 спросит, и подтвердите установку. Версия — в «О приложении».
 
 ## 2. Первый запуск и настройки HyperOS
@@ -1476,6 +1513,7 @@ Claude Code: версия (claude --version)
 | Пункт | Статус | Заметки |
 |---|---|---|
 | 1.1 SHA-256 файлов | | |
+| 1.2 переподпись вашим ключом | | начало SHA-256 сертификата; `apksigner` — Termux или Alpine |
 | 1.3 установка, versionName 0.1.0-dev.4 | | удаляли ли старую версию |
 | 2.1 первый запуск, разрешение уведомлений | | |
 | 2.2 настройки HyperOS | | какие пункты нашлись и как называются |
