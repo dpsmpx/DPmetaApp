@@ -12,6 +12,7 @@ import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.serialization.CanonicalJson
 import com.dpsmpx.dpai.core.serialization.JsonBool
 import com.dpsmpx.dpai.core.serialization.JsonString
+import com.dpsmpx.dpai.execution.agent.AgentReply
 import com.dpsmpx.dpai.execution.agent.ExitReason
 import com.dpsmpx.dpai.execution.agent.RunChannel
 import com.dpsmpx.dpai.execution.agent.RunEventSource
@@ -152,6 +153,58 @@ class AgentRuntimeTest {
         assertFalse(alive(pid))
         assertFalse(alive(grandchild))
         assertEquals(RunState.EXITED, rt.status(run).run!!.state)
+    }
+
+    /**
+     * Поток хода (D-62, «Проверка»): события приходят строками по мере
+     * записи, пока ход идёт, — номера подряд, — и поток кончается вместе с
+     * ходом, последней строкой с его концом.
+     */
+    @Test
+    fun followStreamsTheTurnAsWrittenAndEndsWithIt() {
+        val rt = AgentRuntime(dir.toString(), Clock.SYSTEM, "test", TestChild.selfCommand(), followHeartbeat = 300.milliseconds)
+        val run = ids.next(IdKinds.SESSION)
+        assertTrue(rt.start(run, RunSpec(TestChild.command("child", "tick"), timeout = 3.seconds)).ok)
+        val lines = mutableListOf<AgentReply>()
+        assertTrue(rt.follow(run, 0) { lines += it; true })
+        assertTrue(lines.all { it.command == "follow" && it.ok })
+        val events = lines.flatMap { it.events }
+        assertEquals((1L..events.size).toList(), events.map { it.sequence }, "номера подряд, без пропусков и повторов")
+        assertEquals(EventType.TARGET_PROCESS_EXITED, events.last().type)
+        assertEquals(RunState.EXITED, lines.last().run!!.state)
+        val whileRunning = lines.filter { it.run!!.state == RunState.RUNNING && outputs(it.events).isNotEmpty() }
+        assertTrue(whileRunning.size >= 3, "вывод хода пришёл несколькими строками, пока ход шёл: ${whileRunning.size}")
+    }
+
+    /**
+     * Продолжение с номера — без повторов; пока ход молчит — строки без
+     * событий (признак жизни); читатель ушёл — поток кончается, а ход идёт.
+     * Поток законченного хода отдаёт его конец и кончается; чужой запуск —
+     * отказ строкой.
+     */
+    @Test
+    fun followResumesFromNumberBeatsWhileQuietAndLeavesTheTurnRunning() {
+        val rt = AgentRuntime(dir.toString(), Clock.SYSTEM, "test", TestChild.selfCommand(), followHeartbeat = 300.milliseconds)
+        val run = ids.next(IdKinds.SESSION)
+        assertTrue(rt.start(run, RunSpec(TestChild.command("child", "hang"))).ok)
+        val first = mutableListOf<AgentReply>()
+        assertTrue(rt.follow(run, 0) { first += it; outputs(first.flatMap { r -> r.events }).isEmpty() })
+        val status = rt.status(run).run!!
+        status.pid?.let { started += it }
+        assertEquals(RunState.RUNNING, status.state, "читатель ушёл — ход идёт")
+        val last = first.flatMap { it.events }.last().sequence
+        val second = mutableListOf<AgentReply>()
+        assertTrue(rt.follow(run, last) { second += it; second.count { r -> r.events.isEmpty() } < 3 })
+        assertTrue(second.flatMap { it.events }.none { it.sequence <= last }, "с номера — без повторов")
+        assertTrue(second.all { it.run!!.state == RunState.RUNNING })
+        assertTrue(rt.stop(run, 2.seconds).ok)
+        val third = mutableListOf<AgentReply>()
+        assertTrue(rt.follow(run, last) { third += it; true })
+        assertEquals(EventType.TARGET_PROCESS_EXITED, third.flatMap { it.events }.last().type)
+        assertEquals(RunState.EXITED, third.last().run!!.state)
+        val unknown = mutableListOf<AgentReply>()
+        assertFalse(rt.follow(ids.next(IdKinds.SESSION), 0) { unknown += it; true })
+        assertEquals(DiagCode.ENTITY_NOT_FOUND, unknown.single().diagnostics.single().code)
     }
 
     /** Аудит 2026-10-07, A-4: каталог агента закрыт для других пользователей (на POSIX). */

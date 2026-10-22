@@ -228,12 +228,12 @@ class FollowingEventSource(
                 // Пропуск в потоке: канал сверится с агентом опросом.
                 else -> s.broken = true
             }
-            if (s.broken) return@synchronized
+            if (s.broken) return@synchronized failed(now)
         }
         // Такты встали, а ход пишет: буфер не растёт без предела — поток прочь, потом опрос.
         if (s.events.size > MAX_BUFFERED) {
             s.broken = true
-            return@synchronized
+            return@synchronized failed(now)
         }
         if (!reply.more) reply.run?.let { s.status = it }
     }

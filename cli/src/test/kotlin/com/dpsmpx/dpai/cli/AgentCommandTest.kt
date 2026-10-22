@@ -7,6 +7,7 @@ import com.dpsmpx.dpai.core.ids.IdGenerator
 import com.dpsmpx.dpai.core.ids.IdKinds
 import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.execution.agent.AgentReply
+import com.dpsmpx.dpai.execution.agent.FollowingEventSource
 import com.dpsmpx.dpai.execution.agent.RunChannel
 import com.dpsmpx.dpai.execution.agent.RunSpec
 import com.dpsmpx.dpai.execution.agent.RunState
@@ -48,6 +49,8 @@ class AgentCommandTest {
         assertEquals(Cli.USAGE_ERROR, cli.run(listOf("agent", "status")))
         assertEquals(Cli.USAGE_ERROR, cli.run(listOf("agent", "start", "--run", "ses_bad")))
         assertEquals(Cli.USAGE_ERROR, cli.run(listOf("agent", "nope")))
+        assertEquals(Cli.USAGE_ERROR, cli.run(listOf("agent", "follow")))
+        assertEquals(Cli.USAGE_ERROR, cli.run(listOf("agent", "follow", "--run", ids.next(IdKinds.SESSION).value, "--after", "x")))
     }
 
     /** D-50: `dpai agent mcp` — сервер дерева строками JSON-RPC, пока открыт вход; без --root или с чужой оболочкой — неверный вызов. */
@@ -105,6 +108,39 @@ class AgentCommandTest {
         assertEquals(CheckStatus.OK, manager.doctor(target.id).valueOrNull()!!.checks.first { it.name == "связь" }.status)
     }
 
+    /**
+     * Поток хода через настоящий `dpai agent follow` (D-62): события идущего
+     * хода канал получает из потока, а не опросом; поток кончается с ходом.
+     */
+    @Test
+    fun localTargetStreamsTheTurnThroughFollow() {
+        val manager = ExecutionTargetManager(Clock.SYSTEM)
+        val target = ExecutionTarget(
+            ids.next(IdKinds.TARGET), TargetType.LOCAL, "эта машина", platform(), null,
+            AgentCommand.selfCommand(), agentHome = dir.toString(),
+        )
+        manager.register(target)
+        val client = manager.client(target.id).valueOrNull()!!
+        val run = ids.next(IdKinds.SESSION)
+        assertTrue(client.start(run, RunSpec(hangCommand())).isSuccess)
+        val source = FollowingEventSource(client, Clock.SYSTEM)
+        val channel = RunChannel(source, run)
+        val seen = mutableListOf<com.dpsmpx.dpai.core.events.EventEnvelope>()
+        RealTime.await(60.seconds, "вывод хода пришёл потоком") {
+            seen += channel.poll().valueOrNull()!!.events
+            seen.firstOrNull { it.type == EventType.TARGET_PROCESS_OUTPUT && it.payload["text"] == JsonString("ready") }?.takeIf { source.served > 0 }
+        }
+        assertEquals(1, source.started)
+        assertEquals(RunState.EXITED, client.stop(run, 2.seconds).valueOrNull()!!.run!!.state)
+        RealTime.await(60.seconds, "конец хода получен") {
+            seen += channel.poll().valueOrNull()!!.events
+            seen.lastOrNull()?.takeIf { it.type == EventType.TARGET_PROCESS_EXITED }
+        }
+        assertEquals((1L..seen.size).toList(), seen.map { it.sequence }, "номера подряд, без пропусков и повторов")
+        RealTime.await(30.seconds, "поток кончился вместе с ходом") { channel.poll(); if (source.streaming == 0) Unit else null }
+        source.close()
+    }
+
     /** Ревью A-18: относительный --home — супервизор находит запуск и берёт ход, а не ищет его в home/home. */
     @Test
     fun relativeHomeIsResolvedForSupervisor() {
@@ -151,9 +187,15 @@ class AgentCommandTest {
         val cmd = if (p == TargetPlatform.WINDOWS) listOf("ping", "-n", "600", "127.0.0.1") else listOf("sleep", "600")
         assertTrue(client.start(run, RunSpec(cmd)).isSuccess)
         RealTime.await(60.seconds, "запуск на target") { client.status(run).valueOrNull()?.takeIf { it.state == RunState.RUNNING } }
+        // Поток хода по долгому каналу exec клиента OpenSSH (D-62).
+        val source = FollowingEventSource(client, Clock.SYSTEM)
+        val channel = RunChannel(source, run)
+        RealTime.await(60.seconds, "строка потока по SSH") { channel.poll().valueOrNull(); if (source.served > 0) Unit else null }
         val stopped = client.stop(run, 2.seconds).valueOrNull()!!
         assertEquals(RunState.EXITED, stopped.run!!.state)
         assertEquals(emptyList(), stopped.stop!!.survivors)
+        RealTime.await(60.seconds, "поток кончился с ходом") { channel.poll(); if (source.streaming == 0) Unit else null }
+        source.close()
     }
 
     private fun platform() = if (File.separatorChar == '\\') TargetPlatform.WINDOWS else TargetPlatform.POSIX
