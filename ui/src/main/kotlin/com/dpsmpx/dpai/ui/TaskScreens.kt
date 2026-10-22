@@ -3,7 +3,12 @@ package com.dpsmpx.dpai.ui
 import com.dpsmpx.dpai.core.ids.SessionId
 import com.dpsmpx.dpai.core.ids.TaskId
 import com.dpsmpx.dpai.core.state.TaskState
+import com.dpsmpx.dpai.orchestrator.review.Review
 import com.dpsmpx.dpai.sessions.SessionsState
+import com.dpsmpx.dpai.tasks.FindingSeverity
+import com.dpsmpx.dpai.tasks.ReviewRecord
+import com.dpsmpx.dpai.tasks.ReviewRole
+import com.dpsmpx.dpai.tasks.ReviewVerdict
 import com.dpsmpx.dpai.tasks.TaskClass
 import com.dpsmpx.dpai.tasks.TaskRecord
 
@@ -14,7 +19,7 @@ import com.dpsmpx.dpai.tasks.TaskRecord
  */
 enum class TaskAction(val label: String, val dangerous: Boolean = false) {
     PRIORITY("Приоритет"),
-    POLICY("Модель и бюджет"),
+    POLICY("Модель, бюджет, ревью"),
     /** Область и зависимости (D-42, п. 1) — до запуска. */
     SCOPE("Область и зависимости"),
     HOLD("Приостановить"),
@@ -53,7 +58,15 @@ data class TaskDetail(
     val dependencies: List<DependencyLine> = emptyList(),
     /** Расход всех сессий задачи (D-42, п. 4); ходов не было — `null`. */
     val usage: String? = null,
+    /** Роли ревью задачи (D-59) — из политики — и итог каждой; без ревью — пусто. */
+    val reviews: List<ReviewLine> = emptyList(),
 )
+
+/** Роль ревью в листе задачи (D-59): итог словами, находки — блокирующие первыми, пометка (кто решил, почему без итога). */
+data class ReviewLine(val role: ReviewRole, val label: String, val verdict: String, val tone: Tone, val findings: List<FindingLine>, val note: String?)
+
+/** Находка ревью; [where] — «файл:строка», если ревьюер их назвал. */
+data class FindingLine(val severity: FindingSeverity, val title: String, val where: String?, val detail: String?)
 
 /** Строка зависимости в листе задачи. */
 data class DependencyLine(val id: TaskId, val title: String, val state: String)
@@ -98,7 +111,28 @@ object TaskScreens {
         scope = t.scope,
         dependencies = t.dependencies.map { d -> DependencyLine(d, tasks[d]?.title ?: d.value, tasks[d]?.state?.name ?: "?") }.sortedBy { it.title },
         usage = UsageText.of(com.dpsmpx.dpai.sessions.UsageSummary.of(sessions.sessions.values.filter { it.task == t.id }.map { it.usage })),
+        reviews = t.policy.reviews.sorted().map { review(it, t.reviews[it]) },
     )
+
+    /** Строка роли ревью: итога ещё нет — «ещё нет»; итог прошлой попытки работы сбрасывается её запуском. */
+    fun review(role: ReviewRole, r: ReviewRecord?): ReviewLine {
+        val (verdict, tone) = when (r?.verdict) {
+            null -> "ещё нет" to Tone.NEUTRAL
+            ReviewVerdict.PASSED -> "пройдено" to Tone.DONE
+            ReviewVerdict.BLOCKED -> "нужно исправить" to Tone.WARNING
+            ReviewVerdict.FAILED -> "без итога" to Tone.ERROR
+            ReviewVerdict.WAIVED -> "принято без ревью" to Tone.WARNING
+        }
+        val note = listOfNotNull(
+            r?.by?.let { "решил: $it" },
+            r?.reason,
+            r?.omitted?.takeIf { it > 0 }?.let { "не показано находок: $it" },
+        ).joinToString(" · ").ifEmpty { null }
+        val findings = r?.findings.orEmpty().map { f ->
+            FindingLine(f.severity, f.title, listOfNotNull(f.file, f.line?.toString()).joinToString(":").ifEmpty { null }, f.detail)
+        }
+        return ReviewLine(role, Review.label(role), verdict, tone, findings, note)
+    }
 
     /**
      * Задачи, от которых можно зависеть (D-42, п. 1): не завершённые, кроме

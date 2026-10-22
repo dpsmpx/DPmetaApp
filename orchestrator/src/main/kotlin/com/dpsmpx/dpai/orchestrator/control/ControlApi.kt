@@ -103,6 +103,7 @@ class Pairing(private val vfs: Vfs, private val random: RandomSource, private va
  * - `GET /v1/state` — задачи, сессии, ждущие запросы, подписки, настройки;
  * - `GET /v1/tasks/<id>/messages` — итоговые сообщения ходов задачи;
  * - `GET /v1/tasks/<id>/diff` — изменения задачи (`TaskDiff`);
+ * - `GET /v1/tasks/<id>/reviews` — роли ревью задачи и итоги с находками (D-59);
  * - `POST /v1/commands` — команда ([CommandCodec]) через очередь контура:
  *   [submit] — та же, что у экрана (D-42, п. 1); опасное — только с
  *   `confirmed` (ТЗ, §68).
@@ -137,6 +138,11 @@ class ControlApi(
                     is Outcome.Success -> ControlResponse(200, d.value.toJson())
                     is Outcome.Failure -> ControlResponse(if (d.errors.any { it.code == DiagCode.ENTITY_NOT_FOUND }) 404 else 409, failure(d.diagnostics))
                 }
+            }
+            method == "GET" && path.startsWith("/v1/tasks/") && path.endsWith("/reviews") -> {
+                val id = IdKinds.TASK.parse(path.removePrefix("/v1/tasks/").removeSuffix("/reviews")).valueOrNull()
+                    ?: return error(400, DiagCode.ID_INVALID, "ожидался TaskId")
+                ControlSnapshot.reviews(o, id)?.let { ControlResponse(200, it) } ?: error(404, DiagCode.ENTITY_NOT_FOUND, "нет такой задачи")
             }
             method == "POST" && path == "/v1/commands" -> command(o, body)
             else -> error(404, DiagCode.UNSUPPORTED, "нет такого пути: $method $path")
@@ -216,6 +222,11 @@ object ControlSnapshot {
                                 "archived" to JsonBool(t.archived),
                             ).apply {
                                 t.policy.model?.let { put("model", JsonString(it)) }
+                                // Роли ревью (D-59) и итог каждой: нет итога — роли нет в `verdicts`.
+                                if (t.policy.reviews.isNotEmpty()) {
+                                    put("reviews", JsonArray(t.policy.reviews.sorted().map { JsonString(it.name) }))
+                                    put("verdicts", JsonObject(t.reviews.entries.sortedBy { it.key }.associateTo(linkedMapOf<String, JsonValue>()) { (r, v) -> r.name to JsonString(v.verdict.name) }))
+                                }
                                 // Причина — пока что-то не так; у выполненной это уже история (отмена до повтора и т. п.).
                                 t.lastReason?.takeIf { t.state != com.dpsmpx.dpai.core.state.TaskState.DONE }?.let { put("reason", JsonString(it.name)) }
                                 o.waitingReason(t.id)?.let { put("waiting", JsonString(it)) }
@@ -230,7 +241,10 @@ object ControlSnapshot {
                             linkedMapOf<String, JsonValue>(
                                 "id" to JsonString(s.id.value), "task" to JsonString(s.task.value), "state" to JsonString(s.state.name),
                                 "target" to JsonString(s.target.value), "turn" to JsonNumber.of(s.turn),
-                            ).apply { usage(com.dpsmpx.dpai.sessions.UsageSummary.of(listOf(s.usage)))?.let { put("usage", it) } },
+                            ).apply {
+                                usage(com.dpsmpx.dpai.sessions.UsageSummary.of(listOf(s.usage)))?.let { put("usage", it) }
+                                s.review?.let { put("review", JsonString(it)) }
+                            },
                         )
                     },
                 ),
@@ -298,4 +312,37 @@ object ControlSnapshot {
             },
         ),
     )
+
+    /** Роли ревью задачи и итоги с находками (D-59); `null` — нет такой задачи. */
+    fun reviews(o: Orchestrator, task: com.dpsmpx.dpai.core.ids.TaskId): JsonObject? {
+        val t = o.tasks.tasks[task] ?: return null
+        return JsonObject.of(
+            "roles" to JsonArray(t.policy.reviews.sorted().map { JsonString(it.name) }),
+            "reviews" to JsonArray(
+                t.reviews.values.sortedBy { it.role }.map { r ->
+                    JsonObject(
+                        linkedMapOf<String, JsonValue>(
+                            "role" to JsonString(r.role.name), "verdict" to JsonString(r.verdict.name), "attempt" to JsonNumber.of(r.attempt),
+                            "findings" to JsonArray(
+                                r.findings.map { f ->
+                                    JsonObject(
+                                        linkedMapOf<String, JsonValue>("severity" to JsonString(f.severity.name), "title" to JsonString(f.title)).apply {
+                                            f.file?.let { put("file", JsonString(it)) }
+                                            f.line?.let { put("line", JsonNumber.of(it)) }
+                                            f.detail?.let { put("detail", JsonString(it)) }
+                                        },
+                                    )
+                                },
+                            ),
+                            "omitted" to JsonNumber.of(r.omitted),
+                        ).apply {
+                            r.session?.let { put("session", JsonString(it.value)) }
+                            r.by?.let { put("by", JsonString(it)) }
+                            r.reason?.let { put("reason", JsonString(it)) }
+                        },
+                    )
+                },
+            ),
+        )
+    }
 }

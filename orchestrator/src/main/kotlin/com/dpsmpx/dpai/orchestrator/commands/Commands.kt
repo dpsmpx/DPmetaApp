@@ -6,6 +6,7 @@ import com.dpsmpx.dpai.notifications.RequestKind
 import com.dpsmpx.dpai.core.ids.TaskId
 import com.dpsmpx.dpai.tasks.Priority
 import com.dpsmpx.dpai.tasks.TaskClass
+import com.dpsmpx.dpai.tasks.ReviewRole
 import com.dpsmpx.dpai.tasks.TaskPolicy
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.LinkedBlockingDeque
@@ -72,9 +73,10 @@ sealed interface Command {
     }
 
     /**
-     * Класс, модель, усилие и предел стоимости хода (D-40, D-42) — до
-     * запуска; `null` у модели и усилия — по маршруту класса, у бюджета —
-     * без предела.
+     * Класс, модель, усилие и предел стоимости хода (D-40, D-42), роли ревью
+     * (D-59) — до запуска; `null` у модели и усилия — по маршруту класса, у
+     * бюджета — без предела, у ролей — как были: клиент, не знающий ролей,
+     * их не снимает молча (D-05).
      */
     data class SetPolicy(
         override val task: TaskId,
@@ -82,6 +84,7 @@ sealed interface Command {
         val model: String?,
         val effort: String?,
         val maxBudgetUsdCents: Long?,
+        val reviews: Set<ReviewRole>? = null,
         override val key: String? = null,
     ) : Command, TaskCommand {
         override val operation: String get() = "task.policy"

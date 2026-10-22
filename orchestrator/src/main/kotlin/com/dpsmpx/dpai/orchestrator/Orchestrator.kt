@@ -1699,7 +1699,10 @@ class Orchestrator(
     private fun setPolicy(c: Command.SetPolicy): Outcome<TaskState> {
         val t = tasks.tasks[c.task] ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой задачи", "task ${c.task}")
         val policy = try {
-            t.policy.copy(taskClass = c.taskClass, model = c.model?.trim()?.ifEmpty { null }, effort = c.effort?.trim()?.ifEmpty { null }, maxBudgetUsdCents = c.maxBudgetUsdCents)
+            t.policy.copy(
+                taskClass = c.taskClass, model = c.model?.trim()?.ifEmpty { null }, effort = c.effort?.trim()?.ifEmpty { null },
+                maxBudgetUsdCents = c.maxBudgetUsdCents, reviews = c.reviews ?: t.policy.reviews,
+            )
         } catch (e: IllegalArgumentException) {
             return Outcome.failure(DiagCode.VALUE_INVALID, e.message ?: "политика недопустима", "task ${c.task}")
         }

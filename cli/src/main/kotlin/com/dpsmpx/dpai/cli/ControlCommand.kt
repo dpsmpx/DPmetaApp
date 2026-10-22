@@ -113,13 +113,13 @@ class ControlCommand(
         for (t in tasks) {
             val extra = listOfNotNull(
                 "архив".takeIf { bool(t, "archived") }, "пауза".takeIf { bool(t, "held") }, str(t, "model"), str(t, "reason"), str(t, "waiting")?.let { "ждёт: $it" },
-                spend(t),
+                reviewsLine(t), spend(t),
             ).joinToString(" · ")
             out("  ${short(str(t, "id"))}  ${str(t, "state")}  ${str(t, "priority")}  ${str(t, "title")}${if (extra.isNotEmpty()) "  [$extra]" else ""}")
         }
         val live = list(s, "sessions").filter { str(it, "state") !in setOf("COMPLETED", "FAILED", "CANCELLED") }
         out("Сессии идут (${live.size}):")
-        for (x in live) out("  ${short(str(x, "id"))}  ${str(x, "state")}  ход ${num(x, "turn")}  задача ${short(str(x, "task"))}${spend(x)?.let { "  [$it]" } ?: ""}")
+        for (x in live) out("  ${short(str(x, "id"))}  ${str(x, "state")}  ход ${num(x, "turn")}  задача ${short(str(x, "task"))}${str(x, "review")?.let { "  ревью $it" } ?: ""}${spend(x)?.let { "  [$it]" } ?: ""}")
         val reqs = list(s, "requests")
         if (reqs.isNotEmpty()) out("Запросы ждут ответа: ${reqs.size} (dpai requests)")
         for (sub in list(s, "subscriptions")) {
@@ -168,6 +168,7 @@ class ControlCommand(
             opt(args, "--model")?.let { c["model"] = JsonString(it) }
             opt(args, "--effort")?.let { c["effort"] = JsonString(it) }
             opt(args, "--budget")?.let { budget(it) ?: return usage("--budget — доллары, например 0.25") }?.let { c["budgetCents"] = JsonNumber.of(it) }
+            opt(args, "--review")?.let { c["reviews"] = roles(it) }
             // Область и зависимости — списком через запятую (D-42, п. 1); короткие id задач — как у других команд.
             opt(args, "--scope")?.let { c["scope"] = JsonArray(csv(it).map(::JsonString)) }
             opt(args, "--depends-on")?.let { v -> c["dependsOn"] = JsonArray(csv(v).map { JsonString(resolve(it, "tasks") ?: return FAILED) }) }
@@ -177,6 +178,7 @@ class ControlCommand(
         val action = args.getOrNull(1) ?: return usage(TASK_USAGE)
         if (action == "messages") return messages(id)
         if (action == "diff") return diff(id, "--stat" in args)
+        if (action == "reviews") return showReviews(id)
         val task = resolve(id, "tasks") ?: return FAILED
         val c = linkedMapOf<String, JsonValue>("task" to JsonString(task))
         when (action) {
@@ -208,15 +210,20 @@ class ControlCommand(
             }
             "policy" -> {
                 c["command"] = JsonString("task.policy")
-                c["taskClass"] = JsonString(opt(args, "--class")?.uppercase() ?: return usage("dpai task <id> policy --class <класс> [--model m] [--effort e] [--budget $]"))
+                c["taskClass"] = JsonString(opt(args, "--class")?.uppercase() ?: return usage("dpai task <id> policy --class <класс> [--model m] [--effort e] [--budget $] [--review code,security|none]"))
                 opt(args, "--model")?.let { c["model"] = JsonString(it) }
                 opt(args, "--effort")?.let { c["effort"] = JsonString(it) }
                 opt(args, "--budget")?.let { budget(it) ?: return usage("--budget — доллары") }?.let { c["budgetCents"] = JsonNumber.of(it) }
+                // Без --review роли не меняются; `none` снимает все (D-59).
+                opt(args, "--review")?.let { c["reviews"] = roles(it) }
             }
             else -> return usage(TASK_USAGE)
         }
         return send(c, confirmed = "--yes" in args)
     }
+
+    /** Роли ревью (D-59) через запятую: `code,security`; `none` — без ревью. Неизвестную роль отвергает приложение. */
+    private fun roles(v: String): JsonArray = JsonArray(if (v.trim().lowercase() == "none") emptyList() else csv(v).map { JsonString(it.uppercase()) })
 
     private fun messages(id: String): Int {
         val task = resolve(id, "tasks") ?: return FAILED
@@ -227,6 +234,40 @@ class ControlCommand(
         for (m in ms) {
             out("── ход ${num(m, "turn")} · ${str(m, "status")}${str(m, "model")?.let { " · $it" } ?: ""}")
             out(str(m, "text").orEmpty())
+        }
+        return OK
+    }
+
+    /** Роли ревью и итог каждой одной строкой (D-59): `ревью CODE PASSED, SECURITY —`. */
+    private fun reviewsLine(t: JsonObject): String? {
+        val roles = names(t, "reviews").ifEmpty { return null }
+        val verdicts = t["verdicts"] as? JsonObject
+        return "ревью " + roles.joinToString(", ") { r -> "$r ${(verdicts?.get(r) as? JsonString)?.value ?: "—"}" }
+    }
+
+    private fun names(o: JsonObject, k: String): List<String> = (o[k] as? JsonArray)?.items.orEmpty().mapNotNull { (it as? JsonString)?.value }
+
+    /** Итоги ревью задачи с находками (D-59): сначала блокирующие. */
+    private fun showReviews(id: String): Int {
+        val task = resolve(id, "tasks") ?: return FAILED
+        val r = call("GET", "/v1/tasks/$task/reviews", null) ?: return FAILED
+        if (json) return print(r)
+        val roles = names(r, "roles")
+        if (roles.isEmpty()) out("у задачи нет ревью: dpai task <id> policy … --review code,security")
+        val done = list(r, "reviews").associateBy { str(it, "role") }
+        for (role in roles) {
+            val v = done[role]
+            if (v == null) {
+                out("── $role: ещё нет итога")
+                continue
+            }
+            out("── $role: ${str(v, "verdict")} (запуск ${num(v, "attempt")})${str(v, "by")?.let { " · $it" } ?: ""}${str(v, "reason")?.let { " · $it" } ?: ""}")
+            for (f in list(v, "findings")) {
+                val where = listOfNotNull(str(f, "file"), num(f, "line")?.toString()).joinToString(":")
+                out("  ${str(f, "severity")}  ${str(f, "title")}${if (where.isNotEmpty()) "  ($where)" else ""}")
+                str(f, "detail")?.let { out("    $it") }
+            }
+            num(v, "omitted")?.takeIf { it > 0 }?.let { out("  не показано находок: $it") }
         }
         return OK
     }
@@ -383,8 +424,8 @@ class ControlCommand(
         const val FAILED = 1
         const val USAGE_ERROR = 2
 
-        private const val TASK_USAGE = "dpai task add «название» «что сделать» [--priority HIGH] [--class trivial] [--model haiku] [--effort low] [--budget 0.25] [--scope путь,путь] [--depends-on id,id]\n" +
-            "dpai task <id> hold|resume|retry [--text «…»]|verify|messages|diff [--stat]|priority <P>|policy --class <к> …|scope [путь…]|depends [id…]|archive|unarchive|cancel --yes|waive --reason «…» --yes\n" +
+        private const val TASK_USAGE = "dpai task add «название» «что сделать» [--priority HIGH] [--class trivial] [--model haiku] [--effort low] [--budget 0.25] [--review code,security] [--scope путь,путь] [--depends-on id,id]\n" +
+            "dpai task <id> hold|resume|retry [--text «…»]|verify|messages|diff [--stat]|reviews|priority <P>|policy --class <к> …|scope [путь…]|depends [id…]|archive|unarchive|cancel --yes|waive --reason «…» --yes\n" +
             "dpai task archive-done   — все завершённые в архив"
         private const val SESSION_USAGE = "dpai session <id> stop | send «запрос» [--model m] [--effort e] | fresh [«запрос»]"
 

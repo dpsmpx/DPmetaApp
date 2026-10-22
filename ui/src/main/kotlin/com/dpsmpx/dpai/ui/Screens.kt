@@ -12,8 +12,10 @@ import com.dpsmpx.dpai.monitoring.SelfDiagnosis
 import com.dpsmpx.dpai.monitoring.SystemHealth
 import com.dpsmpx.dpai.monitoring.Timeline
 import com.dpsmpx.dpai.monitoring.UsageReport
+import com.dpsmpx.dpai.orchestrator.review.Review
 import com.dpsmpx.dpai.sessions.LiveTurn
 import com.dpsmpx.dpai.sessions.SessionsState
+import com.dpsmpx.dpai.tasks.ReviewRole
 import com.dpsmpx.dpai.tasks.TasksState
 import kotlin.time.Duration
 
@@ -25,7 +27,8 @@ enum class Tone { NEUTRAL, ACTIVE, WARNING, ERROR, DONE }
 
 data class Counter(val label: String, val value: String, val tone: Tone)
 
-data class SessionLine(val session: SessionId, val task: String, val state: String, val tone: Tone, val silent: String, val next: String)
+/** Строка сессии; [review] — название роли, если сессия — ревью задачи (D-59), а не её работа. */
+data class SessionLine(val session: SessionId, val task: String, val state: String, val tone: Tone, val silent: String, val next: String, val review: String? = null)
 
 /** Сводка (ТЗ, §38): состояние приложения, счётчики, сессии, что требует внимания. */
 data class DashboardScreen(
@@ -109,7 +112,7 @@ object Screens {
             Counter("Аккаунтов доступно", view.availableAccounts.toString(), Tone.NEUTRAL),
         ) + usageCounters(usage),
         sessions = view.rows.map { r ->
-            SessionLine(r.session, r.task, r.state.name, tone(r.state), silent(r.silentFor), r.next ?: "—")
+            SessionLine(r.session, r.task, r.state.name, tone(r.state), silent(r.silentFor), r.next ?: "—", r.review?.let(::reviewLabel))
         },
         attention = view.attention.map { "${it.subject}: ${it.detail}" },
     )
@@ -148,16 +151,21 @@ object Screens {
         )
     }
 
+    /** Название роли ревью по имени из записи сессии (D-59); незнакомое — как есть. */
+    fun reviewLabel(role: String): String = ReviewRole.entries.firstOrNull { it.name == role }?.let(Review::label) ?: "ревью $role"
+
     /**
      * Действия с сессией (D-42): остановить — идущий ход; запрос и свежая
-     * сессия — последней сессии задачи, когда ход не идёт и задача не на
-     * проверке. Оркестратор проверяет каждую команду сам.
+     * сессия — последней рабочей сессии задачи, когда ход не идёт и задача
+     * не на проверке. Сессии ревью продолжать нельзя (D-59): она только
+     * читает — запрос ей оркестратор отвергнет. Оркестратор проверяет
+     * каждую команду сам.
      */
     fun sessionActions(session: SessionId, sessions: SessionsState, tasks: TasksState): List<SessionAction> {
         val s = sessions.sessions[session] ?: return emptyList()
         val own = sessions.sessions.values.filter { it.task == s.task }
         val running = own.any { !it.terminal && it.state !in WAIT }
-        val last = own.maxWithOrNull(compareBy({ it.createdAt.epochMillis }, { it.id.value }))?.id == session
+        val last = s.review == null && own.filter { it.review == null }.maxWithOrNull(compareBy({ it.createdAt.epochMillis }, { it.id.value }))?.id == session
         val taskState = tasks.tasks[s.task]?.state
         return buildList {
             if (!s.terminal && s.state !in WAIT) add(SessionAction.STOP)

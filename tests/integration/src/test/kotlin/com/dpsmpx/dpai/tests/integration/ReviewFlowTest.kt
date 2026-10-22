@@ -12,6 +12,9 @@ import com.dpsmpx.dpai.core.ids.SessionId
 import com.dpsmpx.dpai.core.ids.TaskId
 import com.dpsmpx.dpai.core.operation.OperationStatus
 import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.core.serialization.JsonArray
+import com.dpsmpx.dpai.core.serialization.JsonObject
+import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.core.state.TaskState
 import com.dpsmpx.dpai.execution.agent.AgentClient
 import com.dpsmpx.dpai.execution.claude.ClaudeCodeCli
@@ -28,6 +31,7 @@ import com.dpsmpx.dpai.git.Repository
 import com.dpsmpx.dpai.orchestrator.Orchestrator
 import com.dpsmpx.dpai.orchestrator.ProjectConfig
 import com.dpsmpx.dpai.orchestrator.TargetSlot
+import com.dpsmpx.dpai.orchestrator.control.ControlSnapshot
 import com.dpsmpx.dpai.orchestrator.git.GitService
 import com.dpsmpx.dpai.orchestrator.review.Review
 import com.dpsmpx.dpai.orchestrator.verification.ProcessStepRunner
@@ -154,6 +158,11 @@ class ReviewFlowTest {
         assertEquals(ReviewVerdict.PASSED, code.verdict)
         assertEquals(FindingSeverity.MAJOR, code.findings.single().severity, "серьёзное замечание видно, но DONE не держит")
         assertEquals(1, orchestrator.pendingRequests().count { it.purpose == "task.merge" }, "после ревью — запрос слияния")
+        // Канал `dpai` (D-47): роли и итоги — в состоянии, находки — по задаче.
+        val row = (ControlSnapshot.of(orchestrator)["tasks"] as JsonArray).items.map { it as JsonObject }.single { (it["id"] as JsonString).value == t.value }
+        assertEquals(JsonObject.of("CODE" to JsonString("PASSED"), "SECURITY" to JsonString("PASSED")), row["verdicts"])
+        val reviews = assertNotNull(ControlSnapshot.reviews(orchestrator, t))["reviews"] as JsonArray
+        assertEquals(JsonString("MAJOR"), (((reviews.items[0] as JsonObject)["findings"] as JsonArray).items.single() as JsonObject)["severity"])
         val log = host.run(ProcessSpec(listOf("git", "-C", orchestrator.worktrees.worktrees.values.single { !it.removed }.path, "log", "--format=%s", "-n", "1")), 1.minutes).valueOrNull()!!.stdout
         assertEquals(listOf("dpai: фича"), log, "ревью — после коммита")
     }

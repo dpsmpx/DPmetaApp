@@ -5,13 +5,14 @@ import com.dpsmpx.dpai.core.ids.TaskId
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.orchestrator.commands.Command
 import com.dpsmpx.dpai.tasks.Priority
+import com.dpsmpx.dpai.tasks.ReviewRole
 import com.dpsmpx.dpai.tasks.TaskClass
 import com.dpsmpx.dpai.tasks.TaskPolicy
 
 /**
  * Окно «Новая задача» (D-42, п. 1): всё, что задаётся при создании, —
- * приоритет, класс, модель и усилие, предел стоимости хода, область и
- * зависимости. Поля — текст как ввёл человек; разбор здесь, а не в
+ * приоритет, класс, модель и усилие, предел стоимости хода, роли ревью
+ * (D-59), область и зависимости. Поля — текст как ввёл человек; разбор здесь, а не в
  * оболочке Android (D-22): пустое — «по умолчанию», неверное — отказ с
  * объяснением, а не тихая замена.
  */
@@ -27,6 +28,7 @@ object NewTaskForm {
         budget: String = "",
         scope: String = "",
         dependencies: Set<TaskId> = emptySet(),
+        reviews: Set<ReviewRole> = emptySet(),
     ): Outcome<Command.AddTask> {
         if (title.isBlank()) return Outcome.failure(DiagCode.VALUE_INVALID, "нужно название", "title")
         if (objective.isBlank()) return Outcome.failure(DiagCode.VALUE_INVALID, "нужно «Что сделать»", "objective")
@@ -40,7 +42,7 @@ object NewTaskForm {
             return Outcome.failure(DiagCode.VALUE_INVALID, "путь области «$it»: относительный внутри репозитория, латиница, цифры и . _ @ + -", "scope")
         }
         val policy = try {
-            TaskPolicy(taskClass = taskClass, model = model.trim().ifEmpty { null }, effort = effort.trim().ifEmpty { null }, maxBudgetUsdCents = cents)
+            TaskPolicy(taskClass = taskClass, model = model.trim().ifEmpty { null }, effort = effort.trim().ifEmpty { null }, maxBudgetUsdCents = cents, reviews = reviews)
         } catch (e: IllegalArgumentException) {
             return Outcome.failure(DiagCode.VALUE_INVALID, e.message ?: "политика недопустима", "policy")
         }

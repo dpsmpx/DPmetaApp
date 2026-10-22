@@ -28,6 +28,7 @@ import com.dpsmpx.dpai.storage.journal.EventJournal
 import com.dpsmpx.dpai.storage.snapshot.SnapshotStore
 import com.dpsmpx.dpai.storage.vfs.NioVfs
 import com.dpsmpx.dpai.tasks.Priority
+import com.dpsmpx.dpai.tasks.ReviewRole
 import com.dpsmpx.dpai.tasks.TaskClass
 import com.dpsmpx.dpai.tasks.TaskPolicy
 import com.dpsmpx.dpai.verification.VerificationProfile
@@ -116,6 +117,14 @@ class TaskCommandsTest {
         val refused = o.run(Command.SetPolicy(t, TaskClass.ARCHITECTURE, null, null, null))
         assertEquals(DiagCode.OPERATION_NOT_ALLOWED, refused.diagnostics.single().code, "идущей задаче политику не меняют")
         assertEquals(DiagCode.VALUE_INVALID, o.run(Command.SetPolicy(busy[3], TaskClass.TRIVIAL, "плохая модель", null, null)).diagnostics.single().code)
+        // Роли ревью (D-59): без поля — как были; пустой набор снимает; у TRIVIAL — отказ, а не тихое снятие.
+        val q = busy[3]
+        assertEquals(OperationStatus.SUCCEEDED, o.run(Command.SetPolicy(q, TaskClass.NORMAL_ENGINEERING, null, null, null, setOf(ReviewRole.CODE))).status)
+        assertEquals(OperationStatus.SUCCEEDED, o.run(Command.SetPolicy(q, TaskClass.ARCHITECTURE, null, null, null)).status)
+        assertEquals(setOf(ReviewRole.CODE), o.tasks.tasks.getValue(q).policy.reviews, "клиент без ролей их не снимает")
+        assertEquals(DiagCode.VALUE_INVALID, o.run(Command.SetPolicy(q, TaskClass.TRIVIAL, null, null, null)).diagnostics.single().code)
+        assertEquals(OperationStatus.SUCCEEDED, o.run(Command.SetPolicy(q, TaskClass.TRIVIAL, null, null, null, emptySet())).status)
+        assertEquals(emptySet(), o.tasks.tasks.getValue(q).policy.reviews)
         advance(o, runner, 1)
     }
 

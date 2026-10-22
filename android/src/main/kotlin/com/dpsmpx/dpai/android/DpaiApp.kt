@@ -246,7 +246,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
 }
 
 @Composable
-private fun toneColor(t: Tone): Color {
+internal fun toneColor(t: Tone): Color {
     val dark = androidx.compose.foundation.isSystemInDarkTheme()
     return when (t) {
         Tone.NEUTRAL -> MaterialTheme.colorScheme.onSurfaceVariant
@@ -327,7 +327,8 @@ private fun SessionRow(line: SessionLine, modifier: Modifier = Modifier) {
     Row(modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(line.task, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(line.session.value, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+            // Сессия ревью (D-59) — с ролью: она только читает, её не продолжают запросом.
+            Text(line.review?.let { "$it · ${line.session.value}" } ?: line.session.value, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
         }
         Column(Modifier.width(120.dp), horizontalAlignment = Alignment.End) {
             Text(line.state, color = toneColor(line.tone), style = MaterialTheme.typography.labelMedium)
@@ -500,6 +501,7 @@ internal fun NewTaskDialog(model: DemoModel, onDone: () -> Unit) {
     var budget by remember { mutableStateOf("") }
     var paths by remember { mutableStateOf("") }
     var deps by remember { mutableStateOf(setOf<com.dpsmpx.dpai.core.ids.TaskId>()) }
+    var reviews by remember { mutableStateOf(setOf<com.dpsmpx.dpai.tasks.ReviewRole>()) }
     val choices = remember { model.dependencyChoices() }
     // Ключ нажатия (D-42): повтор «Поставить» в этом диалоге — та же задача, а не вторая.
     val keys = remember { com.dpsmpx.dpai.core.ids.IdGenerator(com.dpsmpx.dpai.core.clock.Clock.SYSTEM, com.dpsmpx.dpai.core.clock.RandomSource.secure()) }
@@ -532,6 +534,7 @@ internal fun NewTaskDialog(model: DemoModel, onDone: () -> Unit) {
                     OutlinedTextField(modelName, { modelName = it }, label = { Text("Модель (пусто — по классу)") }, singleLine = true)
                     OutlinedTextField(effort, { effort = it }, label = { Text("Усилие: low, medium, high (пусто — по классу)") }, singleLine = true)
                     OutlinedTextField(budget, { budget = it }, label = { Text("Предел стоимости хода, $ (пусто — без предела)") }, singleLine = true)
+                    ReviewChips(reviews) { reviews = it }
                     OutlinedTextField(paths, { paths = it }, label = { Text("Область: пути в репозитории, через запятую или с новой строки") }, minLines = 2)
                     if (choices.isNotEmpty()) {
                         Text("Зависит от (начнётся после них)", style = MaterialTheme.typography.labelSmall)
@@ -553,7 +556,7 @@ internal fun NewTaskDialog(model: DemoModel, onDone: () -> Unit) {
             TextButton(enabled = !busy, onClick = {
                 busy = true
                 scope.launch {
-                    val form = com.dpsmpx.dpai.ui.NewTaskForm.command(title, objective, key, priority, taskClass, modelName, effort, budget, paths, deps)
+                    val form = com.dpsmpx.dpai.ui.NewTaskForm.command(title, objective, key, priority, taskClass, modelName, effort, budget, paths, deps, reviews)
                     val r = when (form) {
                         is Outcome.Failure -> form
                         is Outcome.Success -> withContext(Dispatchers.IO) { model.addTask(form.value) }

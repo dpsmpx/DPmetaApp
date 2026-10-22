@@ -32,8 +32,12 @@ import com.dpsmpx.dpai.core.ids.IdKinds
 import com.dpsmpx.dpai.core.ids.TaskId
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.orchestrator.commands.Command
+import com.dpsmpx.dpai.orchestrator.review.Review
+import com.dpsmpx.dpai.tasks.FindingSeverity
 import com.dpsmpx.dpai.tasks.Priority
+import com.dpsmpx.dpai.tasks.ReviewRole
 import com.dpsmpx.dpai.tasks.TaskClass
+import com.dpsmpx.dpai.ui.ReviewLine
 import com.dpsmpx.dpai.ui.TaskAction
 import com.dpsmpx.dpai.ui.TaskDetail
 import kotlinx.coroutines.Dispatchers
@@ -115,6 +119,7 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
                     Text("зависит от: ${d.dependencies.joinToString(" · ") { "${it.title} (${it.state})" }}", style = MaterialTheme.typography.labelSmall)
                 }
                 d.reason?.let { Text("причина: $it · повторов: ${d.retries}", style = MaterialTheme.typography.labelSmall) }
+                if (d.reviews.isNotEmpty()) ReviewsSection(d.reviews)
                 d.waiting?.let { Text("Ждёт: $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
                 d.lastSession?.let { s -> TextButton(onClick = { onSession(s.value) }) { Text("Открыть последнюю сессию") } }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -141,7 +146,7 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
                     TaskAction.PRIORITY -> FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         for (p in Priority.entries) FilterChip(selected = d.priority == p.name, onClick = { send { k -> Command.SetPriority(task, p, k) } }, label = { Text(p.name) })
                     }
-                    TaskAction.POLICY -> PolicyEditor(d, busy) { cls, m, e, b -> send { k -> Command.SetPolicy(task, cls, m, e, b, k) } }
+                    TaskAction.POLICY -> PolicyEditor(d, busy) { cls, m, e, b, r -> send { k -> Command.SetPolicy(task, cls, m, e, b, r, k) } }
                     TaskAction.REPLY -> ReplyEditor(busy) { text -> send { k -> Command.Retry(task, text, k) } }
                     TaskAction.SCOPE -> ScopeEditor(d, remember(task) { model.dependencyChoices(except = task) }, busy) { paths, deps ->
                         // Неизменённое не шлётся: лишняя команда записала бы пустое изменение в журнал.
@@ -186,8 +191,9 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
 
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun PolicyEditor(d: TaskDetail, busy: Boolean, onSave: (TaskClass, String?, String?, Long?) -> Unit) {
+private fun PolicyEditor(d: TaskDetail, busy: Boolean, onSave: (TaskClass, String?, String?, Long?, Set<ReviewRole>) -> Unit) {
     var cls by remember { mutableStateOf(d.taskClass) }
+    var reviews by remember { mutableStateOf(d.reviews.map { it.role }.toSet()) }
     var modelName by remember { mutableStateOf(d.model.orEmpty()) }
     var effort by remember { mutableStateOf(d.effort.orEmpty()) }
     var budget by remember { mutableStateOf(d.budgetCents?.let { "%.2f".format(it / 100.0) }.orEmpty()) }
@@ -200,11 +206,12 @@ private fun PolicyEditor(d: TaskDetail, busy: Boolean, onSave: (TaskClass, Strin
         OutlinedTextField(modelName, { modelName = it }, label = { Text("Модель (пусто — по классу)") }, singleLine = true)
         OutlinedTextField(effort, { effort = it }, label = { Text("Усилие: low, medium, high (пусто — по классу)") }, singleLine = true)
         OutlinedTextField(budget, { budget = it }, label = { Text("Предел стоимости хода, $ (пусто — без предела)") }, singleLine = true)
+        ReviewChips(reviews) { reviews = it }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall) }
         TextButton(enabled = !busy, onClick = {
             when (val c = com.dpsmpx.dpai.ui.NewTaskForm.budgetCents(budget)) {
                 is Outcome.Failure -> error = c.diagnostics.first().message
-                is Outcome.Success -> onSave(cls, modelName, effort, c.value)
+                is Outcome.Success -> onSave(cls, modelName, effort, c.value, reviews)
             }
         }) { Text("Сохранить") }
     }
@@ -350,4 +357,35 @@ private fun annotated(r: com.dpsmpx.dpai.ui.Rendered, code: androidx.compose.ui.
         b.addStyle(style, m.start, m.end)
     }
     return b.toAnnotatedString()
+}
+
+/** Роли ревью после проверки (D-59): каждая — отдельная сессия только для чтения. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+fun ReviewChips(selected: Set<ReviewRole>, onChange: (Set<ReviewRole>) -> Unit) {
+    Text("Ревью после проверки — отдельной сессией (D-59)", style = MaterialTheme.typography.labelSmall)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        for (r in ReviewRole.entries) {
+            FilterChip(selected = r in selected, onClick = { onChange(if (r in selected) selected - r else selected + r) }, label = { Text(Review.label(r)) })
+        }
+    }
+}
+
+/** Итоги ревью в листе задачи (D-59): роль, итог, находки — блокирующие первыми, с пояснением. */
+@Composable
+private fun ReviewsSection(reviews: List<ReviewLine>) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        for (r in reviews) {
+            Text("${r.label}: ${r.verdict}", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = toneColor(r.tone))
+            r.note?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
+            for (f in r.findings) {
+                Text(
+                    "${f.severity} · ${f.title}${f.where?.let { " ($it)" } ?: ""}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (f.severity == FindingSeverity.BLOCKING) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                )
+                f.detail?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 8.dp)) }
+            }
+        }
+    }
 }
