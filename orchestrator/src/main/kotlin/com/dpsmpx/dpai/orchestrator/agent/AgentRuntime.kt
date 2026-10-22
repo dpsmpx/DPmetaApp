@@ -7,6 +7,7 @@ import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.Diagnostic
 import com.dpsmpx.dpai.core.diagnostics.DiagnosticCollector
 import com.dpsmpx.dpai.core.diagnostics.Redactor
+import com.dpsmpx.dpai.core.diagnostics.Severity
 import com.dpsmpx.dpai.core.events.EventType
 import com.dpsmpx.dpai.core.events.StreamRef
 import com.dpsmpx.dpai.core.ids.IdGenerator
@@ -39,6 +40,7 @@ import com.dpsmpx.dpai.execution.process.ProcessHost
 import com.dpsmpx.dpai.execution.process.ProcessSpec
 import com.dpsmpx.dpai.execution.process.ProcessTree
 import com.dpsmpx.dpai.execution.process.RunningProcess
+import com.dpsmpx.dpai.execution.process.TurnJob
 import com.dpsmpx.dpai.execution.process.run
 import com.dpsmpx.dpai.orchestrator.EventRecorder
 import com.dpsmpx.dpai.security.AccountIdentity
@@ -97,6 +99,13 @@ class AgentRuntime(
     private val supervisorWait: Duration = 10.seconds,
     private val followHeartbeat: Duration = FOLLOW_HEARTBEAT,
     private val followFor: Duration = FOLLOW_FOR,
+    /**
+     * Помощник объекта задания для процессов хода (A-9, `TurnJob`): команда
+     * по процессу хода, супервизору и отметке «ход кончился сам». Windows —
+     * PowerShell; Linux и Android — `null`: там процессы хода держит сеанс
+     * супервизора.
+     */
+    private val jobHelper: JobHelper? = if (Detacher.isWindows()) WINDOWS_JOB else null,
 ) {
     private val vfs = NioVfs(Path.of(home))
     private val ids = IdGenerator(clock, RandomSource.secure())
@@ -255,6 +264,21 @@ class AgentRuntime(
         val handle = process.pid?.let { ProcessHandle.of(it).orElse(null) }
         current = current.copy(state = RunState.RUNNING, pid = process.pid, pidStartedAt = handle?.let(ProcessTree::startedAtMillis))
         store.write(RUN_KEY, current.toJson())
+        // Объект задания Windows (A-9) готовится, пока ход идёт; проба входа — короткая, без него.
+        var jobProblem: Diagnostic? = null
+        val releaseMark = "${runDir(id)}/job-release-${doc.turn}"
+        val job = jobHelper?.takeIf { !capture }?.let { helper ->
+            process.pid?.let { pid ->
+                runCatching { vfs.delete(releaseMark) }
+                when (val j = TurnJob.start(host, helper(pid, self.pid(), File(home, releaseMark)))) {
+                    is Outcome.Success -> j.value
+                    is Outcome.Failure -> null.also {
+                        val why = "помощник объекта задания не запустился: фоновые потомки хода могут остаться (A-9)"
+                        jobProblem = Diagnostic.of(DiagCode.PROCESS_JOB_UNAVAILABLE, why, "run $id", Severity.WARNING, j.errors)
+                    }
+                }
+            }
+        }
 
         val begin = clock.monotonicNanos()
         var lastBeat = begin
@@ -272,7 +296,10 @@ class AgentRuntime(
             val timedOut = doc.spec.timeout?.let { clock.monotonicNanos() - begin >= it.inWholeNanoseconds } ?: false
             val lostJournal = journalError.get()
             if (stopRequest != null || timedOut || lostJournal != null) {
-                val report = process.stop(stopRequest ?: RunningProcess.DEFAULT_GRACE)
+                val grace = stopRequest ?: RunningProcess.DEFAULT_GRACE
+                // Объект задания — первым: с ним уходят и потомки, потерявшие родителя (A-9).
+                val jobNote = job?.kill(grace, "run $id") ?: jobProblem
+                val report = process.stop(grace)
                 stopped = StopResult(report.forced, report.survivors)
                 exitCode = report.exitCode
                 reason = if (timedOut && stopRequest == null && lostJournal == null) ExitReason.TIMEOUT else ExitReason.STOPPED
@@ -280,6 +307,7 @@ class AgentRuntime(
                     if (lostJournal != null) add(Diagnostic.error(DiagCode.STORAGE_IO_FAILED, "журнал хода не пишется ($lostJournal): ход остановлен", "run $id"))
                     if (reason == ExitReason.TIMEOUT) add(Diagnostic.warning(DiagCode.PROCESS_TIMEOUT, "тайм-аут ${doc.spec.timeout}: дерево процессов остановлено", "run $id"))
                     if (!report.clean) add(Diagnostic.error(DiagCode.PROCESS_ORPHANS_LEFT, "после остановки живы ${report.survivors.joinToString()}", "run $id"))
+                    jobNote?.let { add(it) }
                 }
                 break
             }
@@ -288,6 +316,8 @@ class AgentRuntime(
                 emit(EventType.TARGET_PROCESS_HEARTBEAT, JsonObject.of("turn" to JsonNumber.of(doc.turn)))
             }
         }
+        // Ход кончился сам: фоновые потомки живут дальше, как на Linux, — помощник снимет охрану после выхода супервизора.
+        if (reason == ExitReason.EXITED && job != null) runCatching { vfs.write(releaseMark, "release".toByteArray()) }
         if (capture) {
             val summary = AccountIdentity.summarize(synchronized(captured) { captured.toString() })
             emit(EventType.TARGET_PROCESS_OUTPUT, JsonObject.of("stream" to JsonString("stdout"), "text" to JsonString(CanonicalJson.write(summary)), "truncated" to JsonBool(false)))
@@ -606,6 +636,9 @@ class AgentRuntime(
         /** Предел знаков страницы событий: ответ агента — одна строка не длиннее `LocalProcessHost.MAX_LINE`. */
         const val PAGE_CHARS: Int = 256 * 1024
 
+        /** Помощник PowerShell объекта задания Windows (A-9). */
+        val WINDOWS_JOB: JobHelper = JobHelper { child, supervisor, release -> TurnJob.powershell(child, supervisor, release) }
+
         /** Событий в строке потока `follow` — не больше; объём строки ограничен ещё и [PAGE_CHARS]. */
         const val FOLLOW_LIMIT: Int = 500
 
@@ -787,4 +820,9 @@ internal data class PrunedDoc(val turn: Int, val lastSequence: Long, val prunedA
             return PrunedDoc(turn, last, at)
         }
     }
+}
+
+/** Команда помощника объекта задания (A-9): процесс хода, супервизор, отметка «ход кончился сам». */
+fun interface JobHelper {
+    operator fun invoke(child: Long, supervisor: Long, release: File): List<String>
 }

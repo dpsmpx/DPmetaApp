@@ -111,6 +111,8 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     PROCESS_ORPHANS_LEFT(Category.EXECUTION, Severity.ERROR, Retryability.NON_RETRYABLE),
     /** Аргумент процесса не выражается в кодировке локали: запуск исказил бы его (D-05). */
     PROCESS_ARGUMENT_UNENCODABLE(Category.EXECUTION, Severity.ERROR, Retryability.NON_RETRYABLE),
+    /** Объект задания Windows для процессов хода не создан (A-9): фоновые потомки хода могли остаться. */
+    PROCESS_JOB_UNAVAILABLE(Category.EXECUTION, Severity.WARNING, Retryability.NON_RETRYABLE),
     SSH_HOST_KEY_REJECTED(Category.NETWORK, Severity.ERROR, Retryability.NON_RETRYABLE),
     SSH_AUTH_FAILED(Category.NETWORK, Severity.ERROR, Retryability.NON_RETRYABLE),
     AGENT_REPLY_INVALID(Category.FORMAT, Severity.ERROR, Retryability.NON_RETRYABLE),

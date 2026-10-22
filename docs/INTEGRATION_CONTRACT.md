@@ -340,11 +340,11 @@ API не включён. Граница — этот раздел и реест�
   `subject` (путь или сущность), `severity` (`INFO`, `WARNING`, `ERROR`),
   `causes` (цепочка, ТЗ, §5.1), `error` (сводка исключения без стека).
   Между процессами — `DiagnosticJson`.
-- `DiagCode` несёт категорию и класс повтора. 115 кодов
-  (`tools/verify/registry/diag_codes.txt`); по категориям: `STATE` 43,
-  `EXECUTION` 21, `INPUT` 15, `INTEGRITY` 15, `FORMAT` 13, `NETWORK` 4,
-  `STORAGE` 2, `UNSUPPORTED` 1, `INTERNAL` 1; по классу повтора:
-  `NON_RETRYABLE` 91, `RETRYABLE` 14, `UNKNOWN` 10. Группы в коде: JSON,
+- `DiagCode` несёт категорию и класс повтора. 135 кодов
+  (`tools/verify/registry/diag_codes.txt`; 22 октября 2026); по
+  категориям: `STATE` 53, `EXECUTION` 28, `INPUT` 17, `INTEGRITY` 15,
+  `FORMAT` 14, `NETWORK` 4, `STORAGE` 2, `UNSUPPORTED` 1, `INTERNAL` 1; по
+  классу повтора: `NON_RETRYABLE` 105, `RETRYABLE` 20, `UNKNOWN` 10. Группы в коде: JSON,
   поля, форматы, ID, хеши, автоматы, события, исполнение, хранилище,
   аккаунты, targets и процессы, Claude Code CLI, сессии, задачи, контекст,
   одобрения и Git, проверка, восстановление, экосистема, общее.

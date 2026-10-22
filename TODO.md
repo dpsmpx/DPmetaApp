@@ -126,11 +126,15 @@
       6. Документы: `docs/ARCHITECTURE.md`, `docs/EXECUTION_MODEL.md`,
          `docs/SECURITY_MODEL.md`, `docs/DEVICE_CHECK.md`.
 - [ ] `С` A-9 на Windows-target — помощник PowerShell (слово автора,
-      22 октября 2026): Job Object через `Add-Type` (P/Invoke, без новых
-      зависимостей) держит процессы хода, пока он идёт; остановка хода —
-      закрытие объекта, и с ним уходят и фоновые потомки. Проверка — на
-      ПК автора с Windows (`docs/TESTING.md`, §8); после — убрать
-      ограничение из `docs/SETUP_PC_WINDOWS.md`, §6 и закрыть A-9 в
+      22 октября 2026). Сделано кодом 22 октября 2026: `TurnJob` — объект
+      задания через `Add-Type` держит процессы хода; остановка закрывает
+      его, ход, кончившийся сам, — снимает охрану (`docs/EXECUTION_MODEL.md`,
+      §1.3); протокол супервизора проверен с подделкой помощника
+      (`jobHelperFollowsTheTurn`). Осталось — на ПК автора с Windows:
+      `./gradlew :orchestrator:test --tests '*AgentRuntimeTest*'`
+      (`stopKillsBackgroundedDescendant` — фоновый потомок остановлен;
+      `docs/TESTING.md`, §7) и ход с фоновым сервером; после — ограничение
+      из `docs/SETUP_PC_WINDOWS.md`, §6 убрать и A-9 закрыть в
       `docs/audits/2026-10-08-pre-device-review.md`.
 - [ ] `Т` Этап 19: финальный аудит стабильности — выносливость,
       инварианты, на устройстве (D-28). На хосте всё, что можно без

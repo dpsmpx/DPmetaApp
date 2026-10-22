@@ -5,6 +5,7 @@ import com.dpsmpx.dpai.core.ids.IdKinds
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.execution.process.LocalProcessHost
 import com.dpsmpx.dpai.execution.process.ProcessSpec
+import com.dpsmpx.dpai.execution.process.TurnJob
 import com.dpsmpx.dpai.execution.process.run
 import java.io.File
 import java.util.concurrent.CountDownLatch
@@ -20,7 +21,15 @@ import kotlin.time.Duration.Companion.seconds
  * - `child wide N W` — напечатать N строк по W знаков и выйти;
  * - `child spawn-hang` — запустить внука `child hang`, напечатать
  *   `grandchild <pid>`, ждать без конца;
- * - `agent supervise --home H --run R` — супервизор запуска, как у `dpai`.
+ * - `child spawn-daemon` — потомок, потерявший родителя (A-9): на POSIX —
+ *   фоном оболочки, на Windows — через промежуточный процесс, который сразу
+ *   выходит; напечатать `daemon <pid>`, ждать без конца;
+ * - `child job-helper S R M` — подделка помощника объекта задания
+ *   (`TurnJob`): `R.pid`, строка готовности, ожидание выхода супервизора S;
+ *   затем `R.marker` — `released`, если есть отметка R, иначе `closed`;
+ *   режим M = `fail` — отказ, как без `Add-Type`;
+ * - `agent supervise --home H --run R` — супервизор запуска, как у `dpai`;
+ *   с файлом [FAKE_JOB] в H — с подделкой помощника.
  */
 object TestChild {
     @JvmStatic
@@ -30,7 +39,14 @@ object TestChild {
             "agent" -> {
                 val home = args[args.indexOf("--home") + 1]
                 val run = IdKinds.SESSION.trusted(args[args.indexOf("--run") + 1])
-                AgentRuntime(home, Clock.SYSTEM, "test", selfCommand()).supervise(run)
+                val fake = File(home, FAKE_JOB).takeIf { it.exists() }?.readText()?.trim()
+                val helper = fake?.let { mode -> JobHelper { _, supervisor, release -> command("child", "job-helper", supervisor.toString(), release.path, mode.ifEmpty { "ok" }) } }
+                val runtime = if (helper != null) {
+                    AgentRuntime(home, Clock.SYSTEM, "test", selfCommand(), jobHelper = helper)
+                } else {
+                    AgentRuntime(home, Clock.SYSTEM, "test", selfCommand())
+                }
+                runtime.supervise(run)
                 exitProcess(0)
             }
             else -> exitProcess(64)
@@ -44,6 +60,20 @@ object TestChild {
                 CountDownLatch(1).await()
             }
             "spawn-daemon" -> {
+                if (File.separatorChar == '\\') {
+                    // Помощник объекта задания готовится секунды (A-9, окно в `TurnJob`): потомок — после.
+                    CountDownLatch(1).await(15, java.util.concurrent.TimeUnit.SECONDS)
+                    val pidFile = File.createTempFile("dpai-daemon", ".pid").apply { deleteOnExit() }
+                    // Промежуточный процесс запускает внука и выходит: у внука нет живого родителя.
+                    LocalProcessHost().run(ProcessSpec(command("child", "spawn-orphan", pidFile.path)), 60.seconds)
+                    var pid: String? = null
+                    while (pid.isNullOrBlank()) {
+                        CountDownLatch(1).await(100, java.util.concurrent.TimeUnit.MILLISECONDS)
+                        pid = pidFile.readText().trim()
+                    }
+                    println("daemon $pid")
+                    CountDownLatch(1).await()
+                }
                 // Внук уходит в фон: оболочка выходит, и его родитель — init (A-9).
                 val cmd = command("child", "hang").joinToString(" ") { "'" + it.replace("'", "'\\''") + "'" }
                 val sh = LocalProcessHost().run(ProcessSpec(listOf("sh", "-c", "$cmd >/dev/null 2>&1 & echo \$!")), 30.seconds)
@@ -85,6 +115,26 @@ object TestChild {
                 println("stdin chars: ${System.`in`.readBytes().toString(Charsets.UTF_8).length}")
                 exitProcess(0)
             }
+            "spawn-orphan" -> {
+                LocalProcessHost().start(ProcessSpec(command("child", "hang-pid", args[1])))
+                exitProcess(0)
+            }
+            "hang-pid" -> {
+                File(args[1]).writeText(ProcessHandle.current().pid().toString())
+                CountDownLatch(1).await()
+            }
+            "job-helper" -> {
+                val (supervisor, release, mode) = args.drop(1)
+                File("$release.pid").writeText(ProcessHandle.current().pid().toString())
+                if (mode == "fail") {
+                    println(TurnJob.PREFIX + "Add-Type запрещён политикой")
+                    exitProcess(3)
+                }
+                println(TurnJob.READY)
+                ProcessHandle.of(supervisor.toLong()).ifPresent { it.onExit().get() }
+                File("$release.marker").writeText(if (File(release).exists()) "released" else "closed")
+                exitProcess(0)
+            }
             "spawn-hang" -> {
                 val started = LocalProcessHost().start(ProcessSpec(command("child", "hang")))
                 println("grandchild ${(started as Outcome.Success).value.pid}")
@@ -93,6 +143,9 @@ object TestChild {
             else -> exitProcess(64)
         }
     }
+
+    /** Файл в каталоге агента: супервизор теста — с подделкой помощника объекта задания; содержимое — режим. */
+    const val FAKE_JOB = "test-job-helper"
 
     /** Похож на ключ API Anthropic; собран из частей, чтобы исходник не выглядел секретом. */
     val FAKE_KEY: String = "sk-" + "ant-" + "api03-" + "Zx9".repeat(12)

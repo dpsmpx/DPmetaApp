@@ -504,7 +504,12 @@ class AgentRuntimeTest {
     /** Ревью A-9: потомок хода, ушедший в фон (родитель — init), останавливается вместе с ходом. */
     @Test
     fun stopKillsBackgroundedDescendant() {
-        org.junit.jupiter.api.Assumptions.assumeTrue(com.dpsmpx.dpai.execution.process.ProcessTree.sessionOf(ProcessHandle.current().pid()) != null, "сеансы — Linux и Android")
+        // Linux и Android — сеанс супервизора; Windows — объект задания помощника PowerShell (A-9).
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+            com.dpsmpx.dpai.execution.process.ProcessTree.sessionOf(ProcessHandle.current().pid()) != null ||
+                com.dpsmpx.dpai.execution.process.Detacher.isWindows(),
+            "сеансы — Linux и Android, объект задания — Windows",
+        )
         val rt = runtime()
         val run = ids.next(IdKinds.SESSION)
         assertTrue(rt.start(run, RunSpec(TestChild.command("child", "spawn-daemon"))).ok)
@@ -515,6 +520,53 @@ class AgentRuntimeTest {
         assertTrue(alive(daemon))
         assertTrue(rt.stop(run, 2.seconds).ok)
         RealTime.await(15.seconds, "фоновый потомок остановлен") { if (alive(daemon)) null else Unit }
+    }
+
+    /**
+     * Помощник объекта задания (A-9) — по протоколу супервизора, с
+     * подделкой помощника (настоящий — PowerShell, только Windows):
+     * остановка хода завершает помощника, и объект закрывается; ход
+     * кончился сам — отметка, и помощник снимает охрану после выхода
+     * супервизора; супервизор умер — объект закрывается; помощник не смог
+     * — ход идёт, а при остановке предупреждение `PROCESS_JOB_UNAVAILABLE`.
+     */
+    @Test
+    fun jobHelperFollowsTheTurn() {
+        val rt = runtime()
+        dir.resolve(TestChild.FAKE_JOB).toFile().writeText("ok")
+        fun mark(run: SessionId, turn: Int, ext: String) = dir.resolve("runs/${run.value}/job-release-$turn.$ext").toFile()
+        fun helperOf(run: SessionId) = RealTime.await(60.seconds, "помощник запущен") { mark(run, 1, "pid").takeIf { it.exists() }?.readText()?.toLongOrNull() }
+        fun awaitRunning(run: SessionId) = RealTime.await(60.seconds, "ход идёт") { rt.status(run).run!!.takeIf { it.state == RunState.RUNNING } }
+
+        val stopped = ids.next(IdKinds.SESSION)
+        assertTrue(rt.start(stopped, RunSpec(TestChild.command("child", "hang"))).ok)
+        awaitRunning(stopped).pid?.let { started += it }
+        val helper = helperOf(stopped)
+        assertTrue(rt.stop(stopped, 2.seconds).ok)
+        RealTime.await(15.seconds, "помощник завершён остановкой") { if (alive(helper)) null else Unit }
+        assertFalse(mark(stopped, 1, "marker").exists(), "объект закрыт остановкой, а не решением помощника")
+
+        val ended = ids.next(IdKinds.SESSION)
+        assertTrue(rt.start(ended, RunSpec(TestChild.command("child", "wide", "1", "1"))).ok)
+        assertEquals("released", RealTime.await(60.seconds, "помощник снял охрану") { mark(ended, 1, "marker").takeIf { it.exists() }?.readText() })
+
+        val lost = ids.next(IdKinds.SESSION)
+        assertTrue(rt.start(lost, RunSpec(TestChild.command("child", "hang"))).ok)
+        awaitRunning(lost).pid?.let { started += it }
+        helperOf(lost)
+        val doc = RunDoc.read(DocumentStore(NioVfs(dir), "runs/${lost.value}").read(AgentRuntime.RUN_KEY).valueOrNull()!!.content)!!
+        ProcessHandle.of(doc.supervisorPid!!).ifPresent { it.destroyForcibly().let { _ -> it.onExit().get() } }
+        assertEquals("closed", RealTime.await(60.seconds, "супервизор умер — объект закрыт") { mark(lost, 1, "marker").takeIf { it.exists() }?.readText() })
+        assertTrue(rt.stop(lost, 2.seconds).ok)
+
+        dir.resolve(TestChild.FAKE_JOB).toFile().writeText("fail")
+        val failed = ids.next(IdKinds.SESSION)
+        assertTrue(rt.start(failed, RunSpec(TestChild.command("child", "hang"))).ok)
+        awaitRunning(failed).pid?.let { started += it }
+        helperOf(failed)
+        assertTrue(rt.stop(failed, 2.seconds).ok)
+        val exit = rt.events(failed, 0, 1000).events.last { it.type == EventType.TARGET_PROCESS_EXITED }
+        assertTrue("PROCESS_JOB_UNAVAILABLE" in CanonicalJson.write(exit.payload), CanonicalJson.write(exit.payload))
     }
 
     /**
