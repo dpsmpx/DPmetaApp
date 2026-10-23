@@ -43,8 +43,9 @@ class NativeProcessHostTest {
     private val proc: File get() = dir.toFile()
 
     /** Процесс подделки `/proc`: состояние меняют сигналы. */
-    private fun stat(pid: Int, session: Int, state: Char = 'S', comm: String = "sh") =
-        File(proc, "$pid").apply { mkdirs() }.resolve("stat").writeText("$pid ($comm) $state 1 $session $session 0 -1 4194560 0\n")
+    private fun stat(pid: Int, session: Int, state: Char = 'S', comm: String = "sh", start: Long = 5000) =
+        File(proc, "$pid").apply { mkdirs() }.resolve("stat")
+            .writeText("$pid ($comm) $state 1 $session $session 0 -1 4194560 120 0 0 0 3 1 0 0 20 0 1 0 $start 1000 50\n")
 
     /**
      * Подделка: процесс [ROOT] — лидер сеанса, [members] — его фоновые
@@ -109,11 +110,12 @@ class NativeProcessHostTest {
     }
 
     private fun start(fake: Fake, spec: ProcessSpec = ProcessSpec(listOf("/bin/sh", "-c", "x")), lines: MutableList<OutputLine> = CopyOnWriteArrayList()): RunningProcess =
-        assertIs<Outcome.Success<RunningProcess>>(NativeProcessHost(fake, Clock.SYSTEM, proc).start(spec) { lines += it }).value
+        assertIs<Outcome.Success<RunningProcess>>(NativeProcessHost(fake, Clock.SYSTEM, proc, forceWait = 300.milliseconds).start(spec) { lines += it }).value
 
     @Test
     fun procStatReadsSessionAndStateEvenWithParensInTheName() {
-        assertEquals(ProcStat.Entry(42, 'S', 40), ProcStat.of(42, proc.also { stat(42, 40, comm = "a) b") }))
+        assertEquals(ProcStat.Entry(42, 'S', 40, 5000), ProcStat.of(42, proc.also { stat(42, 40, comm = "a) b") }))
+        assertEquals(50_000L, ProcStat.startedSinceBootMillis(42, proc))
         stat(43, 40, 'Z')
         stat(44, 41)
         stat(45, 40, 'R')

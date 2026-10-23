@@ -63,7 +63,14 @@ object Signals {
  * нужно (потомки, запущенные им самим).
  */
 object ProcStat {
-    data class Entry(val pid: Long, val state: Char, val session: Long)
+    /** [startTicks] — время старта в тиках от загрузки (поле 22); тик — [TICK_MILLIS]. */
+    data class Entry(val pid: Long, val state: Char, val session: Long, val startTicks: Long? = null)
+
+    /**
+     * Длительность тика `/proc/<pid>/stat` (`USER_HZ` = 100 у ядра Linux на
+     * всех архитектурах, Android — тоже): время старта процесса в мс от загрузки.
+     */
+    const val TICK_MILLIS: Long = 10
 
     fun of(pid: Long, proc: File = File("/proc")): Entry? = try {
         File(proc, "$pid/stat").takeIf { it.isFile }?.readText()?.let { parse(pid, it) }
@@ -71,12 +78,22 @@ object ProcStat {
         null
     }
 
-    /** Поля после имени программы: состояние, родитель, группа, сеанс (`man 5 proc`); имя может содержать `)`. */
+    /** Номер своего процесса (`/proc/self`); `ProcessHandle` в ART нет. */
+    fun self(proc: File = File("/proc")): Long? = try {
+        File(proc, "self").canonicalFile.name.toLongOrNull()
+    } catch (_: IOException) {
+        null
+    }
+
+    /** Время старта процесса в мс от загрузки — не зависит от скачков часов (A-11); нет процесса — `null`. */
+    fun startedSinceBootMillis(pid: Long, proc: File = File("/proc")): Long? = of(pid, proc)?.startTicks?.times(TICK_MILLIS)
+
+    /** Поля после имени программы: состояние, родитель, группа, сеанс, …, старт (`man 5 proc`); имя может содержать `)`. */
     internal fun parse(pid: Long, stat: String): Entry? {
         val fields = stat.substringAfterLast(')').trim().split(' ')
         val state = fields.getOrNull(0)?.firstOrNull() ?: return null
         val session = fields.getOrNull(3)?.toLongOrNull() ?: return null
-        return Entry(pid, state, session)
+        return Entry(pid, state, session, fields.getOrNull(19)?.toLongOrNull())
     }
 
     /** Живые процессы сеанса [session]; зомби (`Z`) и умирающие (`X`) — уже не живые. */
