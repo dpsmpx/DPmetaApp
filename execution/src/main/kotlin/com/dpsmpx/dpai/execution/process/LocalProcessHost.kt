@@ -82,9 +82,10 @@ class LocalProcessHost(private val clock: Clock = Clock.SYSTEM) : ProcessHost {
          */
         const val MAX_LINE: Int = 1024 * 1024
 
-        private val READER_DRAIN = 10.seconds
+        internal val READER_DRAIN = 10.seconds
 
-        private fun reader(input: InputStream, stream: OutputStream, onOutput: (OutputLine) -> Unit): Thread =
+        /** Поток чтения строк вывода; его же берёт `NativeProcessHost` (Linux-среда в приложении). */
+        internal fun reader(input: InputStream, stream: OutputStream, onOutput: (OutputLine) -> Unit): Thread =
             Thread {
                 input.bufferedReader(Charsets.UTF_8).use { r ->
                     val buf = StringBuilder()

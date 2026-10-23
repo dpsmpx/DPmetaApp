@@ -51,6 +51,18 @@ android {
         compose = true
     }
 
+    // Процессы и псевдотерминал Linux-среды — свой код на C через JNI (D-61, шаг 3; D-17: NDK — только здесь).
+    // Версия NDK — та, что AGP берёт по умолчанию: NDK r28 выравнивает библиотеки под страницы 16 КБ.
+    ndkVersion = "28.2.13676358"
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
+
+    testOptions.unitTests.all { it.useJUnitPlatform() }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -178,6 +190,35 @@ tasks.matching {
         )
 }.configureEach { dependsOn(packAgent, linuxFiles) }
 
+// Тот же код C — для машины сборки: JniProcessesTest гоняет его на JVM. Нет Linux или компилятора C —
+// задача пропускается, а тест — с пометкой «пропущен» (на телефоне — docs/DEVICE_CHECK.md).
+val hostNative = tasks.register<Exec>("hostNative") {
+    val jdk = javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(21)) }
+        .map { it.metadata.installationPath.asFile.path }
+    val source = file("src/main/cpp/dpai_native.c")
+    val library = layout.buildDirectory.file("host-native/libdpai-native.so")
+    val compiler = System.getenv("PATH").orEmpty().split(File.pathSeparator).map { File(it, "cc") }.firstOrNull { it.canExecute() }
+    val linux = System.getProperty("os.name") == "Linux"
+    inputs.file(source)
+    outputs.file(library)
+    onlyIf { linux && compiler != null }
+    executable = compiler?.path ?: "cc"
+    argumentProviders.add(
+        CommandLineArgumentProvider {
+            listOf(
+                "-std=c11", "-Wall", "-Wextra", "-Werror", "-shared", "-fPIC",
+                "-I${jdk.get()}/include", "-I${jdk.get()}/include/linux",
+                source.path, "-o", library.get().asFile.path,
+            )
+        },
+    )
+    doFirst { library.get().asFile.parentFile.mkdirs() }
+}
+tasks.withType<Test>().configureEach {
+    dependsOn(hostNative)
+    systemProperty("dpai.native.library", layout.buildDirectory.file("host-native/libdpai-native.so").get().asFile.path)
+}
+
 kotlin {
     jvmToolchain(21)
     compilerOptions {
@@ -193,4 +234,8 @@ dependencies {
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.material3)
     implementation(libs.activity.compose)
+    testImplementation(kotlin("test-junit5"))
+    testImplementation(platform(libs.junit.bom))
+    testImplementation(libs.junit.jupiter)
+    testRuntimeOnly(libs.junit.platform.launcher)
 }

@@ -86,7 +86,7 @@
 | `cli` | оболочка JVM: команда `dpai` | `orchestrator` | 0 |
 | `jsch` | SSH-хост на JVM (JSch) для targets там, где нет системного OpenSSH — приложение Android (D-35); интерактивная оболочка с PTY для терминала (D-57) | `execution` | 11 |
 | `terminal` | эмулятор xterm: экран, разбор последовательностей, ввод — свой терминал (D-57); без Android | `core` | — |
-| `android` | оболочка Android: интерфейс, Keystore, WorkManager, уведомления, экран терминала (D-57); подключается при Android SDK | `ui`, `jsch`, `terminal` | 11 |
+| `android` | оболочка Android: интерфейс, Keystore, WorkManager, уведомления, экран терминала (D-57); нативный код процессов и псевдотерминала (`JniProcesses`, C через NDK; D-61); подключается при Android SDK | `ui`, `jsch`, `terminal` | 11 |
 | `tests/integration` | межмодульные сценарии | `orchestrator` | 1 |
 <!-- check_modules: end -->
 
@@ -223,7 +223,7 @@ RECOVERY_PENDING ─► проба target и процесса ─► сверк�
 | `target` | `ExecutionTarget`, `SshEndpoint`, `TargetHealthTracker` (пороги и предохранитель), `TargetDoctor`, `ExecutionTargetManager` |
 | `process` | `ProcessHost`, `LocalProcessHost`, `ProcessTree` (остановка дерева), `Detacher` (процесс, переживающий сессию SSH), `run` с тайм-аутом |
 | `ssh` | `SshProcessHost` (системный OpenSSH), `RemoteShell` (кавычки POSIX и Windows) |
-| `linux` | `ProotHost` — процессы в Alpine под proot Linux-среды в приложении (D-61, D-68): команда proot, окружение гостя, `apk` — без `/proc` |
+| `linux` | Linux-среда в приложении (D-61, D-68): `ProotHost` — процессы в Alpine под proot (команда proot, окружение гостя, `apk` — без `/proc`); `NativeProcesses` и `NativeProcessHost` — процессы без `ProcessHandle` (остановка сеанса по `/proc`, `ProcStat`); реализация — JNI модуля `android` |
 | `agent` | протокол `dpai.agent-reply`, `RunSpec`, `AgentClient`, `RunChannel` (номера и сверка), `MockAgentHost` |
 | `claude` | `ClaudeRunner`, `ClaudeCodeCliRunner`, `MockRunner`, `ClaudeCodeCli` (команда), `ClaudeStreamParser` и `ClaudeTurnAssembler` (поток → итог хода) |
 
