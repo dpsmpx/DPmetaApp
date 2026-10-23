@@ -246,7 +246,10 @@
       `apk-0.1.0-dev.2`, `apk-0.1.0-dev.3`, `apk-0.1.0-dev.4`,
       `apk-0.1.0-dev.5`, `apk-probe-b2` — «Branches» → корзина у ветки.
       Их сборки — в `apk_debug`; облачной сессии удаление веток запрещено
-      (HTTP 403, 23 октября 2026).
+      (HTTP 403, 23 октября 2026). Там же — старые рабочие ветки, вся
+      работа которых уже в `main` (23 октября 2026): `claude/nice-gates-flj2u8`,
+      `claude/stages-3plus`, `claude/trusting-bohr-rxi7tx`,
+      `claude/trusting-gates-bbkmwh`.
 
 ## На устройстве (Redmi Note 13)
 
