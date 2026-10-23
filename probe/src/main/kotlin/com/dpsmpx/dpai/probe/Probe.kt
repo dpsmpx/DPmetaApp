@@ -80,12 +80,34 @@ class Probe(private val context: Context, private val report: (String) -> Unit) 
     }
 
     /** Команда оболочки Alpine под proot: root-подделка (`-0`), `/dev`, `/proc`, `/sys` хоста. */
-    fun inProot(script: String, extra: List<String> = emptyList(), env: Map<String, String> = emptyMap(), timeoutSeconds: Long = 120): Run =
-        exec(prootArgv(script, extra), prootEnvironment() + env, timeoutSeconds)
+    fun inProot(
+        script: String,
+        extra: List<String> = emptyList(),
+        env: Map<String, String> = emptyMap(),
+        timeoutSeconds: Long = 120,
+        proc: Boolean = true,
+    ): Run = exec(prootArgv(script, extra, proc), prootEnvironment() + env, timeoutSeconds)
 
-    fun prootArgv(script: String, extra: List<String> = emptyList()): List<String> =
-        listOf(proot.path, "--kill-on-exit") + extra +
-            listOf("-0", "-r", rootfs.path, "-b", "/dev", "-b", "/proc", "-b", "/sys", "-w", "/root", "/bin/sh", "-c", script)
+    /** [proc] = false — без `/proc` у гостя (для `apk`, см. [apk]). */
+    fun prootArgv(script: String, extra: List<String> = emptyList(), proc: Boolean = true): List<String> =
+        listOf(proot.path, "--kill-on-exit") + extra + listOf("-0", "-r", rootfs.path, "-b", "/dev") +
+            (if (proc) listOf("-b", "/proc") else emptyList()) + listOf("-b", "/sys", "-w", "/root", "/bin/sh", "-c", script)
+
+    /**
+     * `apk` под proot. apk-tools 3 создаёт файлы через `O_TMPFILE` и `linkat`
+     * из `/proc/self/fd` — это жёсткая ссылка, а её Android запрещает
+     * (`docs/research/LINUX_IN_APP.md`, §9: «Permission denied» при сети в
+     * порядке). Без `/proc` у гостя apk пишет временный файл и
+     * переименовывает его — так и пробуем, если с `/proc` отказ.
+     */
+    private fun apk(args: String, timeoutSeconds: Long): Pair<Run, Boolean> {
+        val withProc = inProot("apk $args", timeoutSeconds = timeoutSeconds)
+        show("apk $args", withProc)
+        if (withProc.ok) return withProc to true
+        val noProc = inProot("apk $args", timeoutSeconds = timeoutSeconds, proc = false)
+        show("apk $args — без /proc у гостя", noProc)
+        return noProc to false
+    }
 
     private fun show(title: String, r: Run) {
         report("\$ $title")
@@ -182,17 +204,12 @@ class Probe(private val context: Context, private val report: (String) -> Unit) 
             report("сеть из Alpine не работает — apk и git не проверить; причина — в строках выше")
             return
         }
-        show("apk update", inProot("apk update", timeoutSeconds = 300))
-        var add = inProot("apk add --no-progress git", timeoutSeconds = 600)
-        show("apk add git", add)
-        var mode = emptyList<String>()
-        if (!add.ok) {
-            mode = listOf("--link2symlink")
-            add = inProot("apk add --no-progress git", mode, timeoutSeconds = 600)
-            show("apk add git с --link2symlink", add)
-        }
-        verdict("п. 2 apk add", add.ok, if (mode.isEmpty()) "без --link2symlink" else "с --link2symlink: ${if (add.ok) "работает" else "не работает"}")
+        apk("update", 300)
+        val (add, withProc) = apk("add --no-progress git", 600)
+        verdict("п. 2 apk add", add.ok, if (withProc) "с /proc у гостя" else "только без /proc у гостя: ${if (add.ok) "работает" else "не работает"}")
         if (!add.ok) return
+        // Git дальше — с /proc: при отказе link() он переименовывает файл сам (§9 исследования).
+        val mode = emptyList<String>()
         val repo = "cd /tmp && rm -rf r && git init -q r && cd r && git config user.email probe@example.org && git config user.name probe && " +
             "echo a > f && git add f && git commit -qm t && git gc -q && git log --oneline && echo GIT_OK"
         val git = inProot(repo, mode, timeoutSeconds = 300)
@@ -273,8 +290,7 @@ class Probe(private val context: Context, private val report: (String) -> Unit) 
         report("== JVM под proot ==")
         if (!unpack()) return
         resolvConf()
-        val add = inProot("apk add --no-progress openjdk17-jre-headless", timeoutSeconds = 1200)
-        show("apk add openjdk17-jre-headless", add)
+        val (add, _) = apk("add --no-progress openjdk17-jre-headless", 1200)
         if (!add.ok) {
             verdict("п. 3 JVM", false, "Java не установилась")
             return

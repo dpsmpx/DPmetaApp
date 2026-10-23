@@ -29,8 +29,8 @@ android {
         applicationId = "com.dpsmpx.dpai.probe"
         minSdk = 30
         targetSdk = 36
-        // 2 — разбор сети под proot по отчёту с Redmi Note 13 (23 октября 2026).
-        versionCode = 2
+        // 2 — разбор сети под proot; 3 — apk без /proc у гостя (отчёты с Redmi Note 13, 23 октября 2026).
+        versionCode = 3
         versionName = project.version.toString()
         // proot-static Alpine — только aarch64; Redmi Note 13 — arm64-v8a.
         ndk { abiFilters += "arm64-v8a" }
