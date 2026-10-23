@@ -109,23 +109,13 @@
       **Вариант B — своя Linux-среда в приложении: B2** (D-61; D-60 —
       без Google Play) — отдельный пункт «Терминал B2» ниже.
 - [ ] `К` Терминал B2 — Linux-среда в приложении (D-61, D-60):
-      1. Проба на Redmi Note 13 до кода продукта — исследование
-         `docs/research/LINUX_IN_APP.md`, §8, п. 1–5: `proot.static` и
-         загрузчик как `lib…so` из `nativeLibraryDir` при targetSdk 36
-         (`ptrace`, `mmap(PROT_EXEC)`, `PROOT_NO_SECCOMP`), жёсткие
-         ссылки, скорость под proot, фантомные процессы HyperOS, страницы
-         16 КБ. Итог — новая дата в исследовании; не прошла — D-61
-         пересматривается. Пробник готов 23 октября 2026 (модуль `probe`,
-         D-66; ветка `apk_debug`, каталог `probe/`). Первый прогон автора,
-         23 октября 2026 (`docs/research/LINUX_IN_APP.md`, §9): п. 1 — ДА
-         (proot из `nativeLibraryDir`, Alpine под ним, seccomp нужен);
-         жёсткие ссылки — нет (proot Alpine 5.4.0 на arm64). Второй прогон:
-         сеть из Alpine работает, фон — 32 мин с выключенным экраном (п. 4 —
-         ДА); `apk` отказывает из-за `linkat` из `/proc/self/fd`
-         (apk-tools 3). Осталось: пробник 3 — `apk` без `/proc` у гостя,
-         затем Git и JVM (§14). Для продукта — proot из форка Termux
-         (обработка `linkat` из `/proc/self/fd`), собранный NDK (шаг 2),
-         или `apk` без `/proc` — по итогам пробника 3.
+      1. ~~Проба на Redmi Note 13~~ — пройдена 23 октября 2026, три
+         прогона пробника (D-66; `docs/research/LINUX_IN_APP.md`, §9):
+         proot Alpine из `nativeLibraryDir` при targetSdk 36 с seccomp,
+         сеть, `apk` (без `/proc` у гостя — apk-tools 3 иначе делает
+         жёсткую ссылку), Git, OpenJDK 17, фон 32 мин — да; жёсткие ссылки
+         — нет (proot 5.4.0 на arm64). Не проверены: ход Claude Code под
+         proot приложения (шаг 5, со входом) и ядро 16 КБ.
       2. Сборка: NDK в модуле `android`; `proot.static` и загрузчик —
          двоичные файлы с суммами (`docs/PROVENANCE.md`, §4), текст GPL и
          ссылка на исходники proot в сборке, строка в PROVENANCE.
