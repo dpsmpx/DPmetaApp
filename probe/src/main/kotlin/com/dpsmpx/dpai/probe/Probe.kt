@@ -1,11 +1,15 @@
 package com.dpsmpx.dpai.probe
 
 import android.content.Context
+import android.net.ConnectivityManager
 import android.os.Build
 import android.system.Os
 import android.system.OsConstants
 import java.io.File
 import java.io.IOException
+import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.Socket
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
@@ -139,6 +143,8 @@ class Probe(private val context: Context, private val report: (String) -> Unit) 
         show("proot с PROOT_NO_SECCOMP=1: оболочка Alpine", noSec)
         val plainOk = "PROBE_OK" in plain.output
         val noSecOk = "PROBE_OK" in noSec.output
+        // Без seccomp на Redmi Note 13 — код 255 без вывода (23 октября 2026): причина — в подробном выводе proot.
+        if (!noSecOk) show("proot -v 1 с PROOT_NO_SECCOMP=1: почему отказ", inProot("true", listOf("-v", "1")))
         noSeccomp = !plainOk && noSecOk
         verdict("п. 1б оболочка Alpine под proot", plainOk || noSecOk, if (plainOk) "без PROOT_NO_SECCOMP" else if (noSecOk) "только с PROOT_NO_SECCOMP=1" else "не запускается ни так, ни так")
         if (!plainOk && !noSecOk) return
@@ -171,8 +177,11 @@ class Probe(private val context: Context, private val report: (String) -> Unit) 
     fun network() {
         report("== Сеть: apk и git ==")
         if (!unpack()) return
-        // У Android нет /etc/resolv.conf: адреса DNS для гостя — явно.
-        File(rootfs, "etc/resolv.conf").writeText("nameserver 1.1.1.1\nnameserver 8.8.8.8\n")
+        resolvConf()
+        if (!networkDiagnosis()) {
+            report("сеть из Alpine не работает — apk и git не проверить; причина — в строках выше")
+            return
+        }
         show("apk update", inProot("apk update", timeoutSeconds = 300))
         var add = inProot("apk add --no-progress git", timeoutSeconds = 600)
         show("apk add git", add)
@@ -197,11 +206,73 @@ class Probe(private val context: Context, private val report: (String) -> Unit) 
         verdict("п. 3 git status (записать)", status.all { it.ok }, "${status.joinToString { "${it.millis}" }} мс, с запуском proot")
     }
 
+    /** Серверы DNS текущей сети Android; нет их — общедоступные. */
+    private fun dnsServers(): List<String> = try {
+        val cm = context.getSystemService(ConnectivityManager::class.java)
+        cm.getLinkProperties(cm.activeNetwork)?.dnsServers.orEmpty().mapNotNull { it.hostAddress?.substringBefore('%') }
+    } catch (_: Exception) {
+        emptyList()
+    }
+
+    /** У Android нет /etc/resolv.conf: серверы DNS для гостя — явно, сначала серверы сети телефона. */
+    private fun resolvConf() {
+        val servers = (dnsServers() + listOf("1.1.1.1", "8.8.8.8")).distinct()
+        File(rootfs, "etc/resolv.conf").writeText(servers.joinToString("") { "nameserver $it\n" })
+        report("DNS для Alpine: ${servers.joinToString()}")
+    }
+
+    /**
+     * Где отказ сети: у самого приложения (группы процесса, DNS, TCP) или
+     * только под proot (те же группы у гостя, nslookup, HTTP, HTTPS).
+     * Итог — работает ли сеть из Alpine.
+     */
+    fun networkDiagnosis(): Boolean {
+        report("== Сеть: где отказ ==")
+        val status = File("/proc/self/status").readLines().filter { it.startsWith("Uid:") || it.startsWith("Groups:") }
+        report("процесс приложения: ${status.joinToString("; ")}")
+        val inet = status.firstOrNull { it.startsWith("Groups:") }?.split(Regex("\\s+"))?.contains("3003") == true
+        report("группа inet (3003, право на сеть): ${if (inet) "есть" else "НЕТ"}")
+        val start = System.nanoTime()
+        val addresses = try {
+            InetAddress.getAllByName(HOST).map { it.hostAddress }.also { report("DNS приложения: $HOST → ${it.joinToString()} (${ms(start)} мс)") }
+        } catch (e: Exception) {
+            report("DNS приложения: отказ — ${e.javaClass.simpleName}: ${e.message}")
+            emptyList()
+        }
+        val tcp = addresses.isNotEmpty() && try {
+            val t = System.nanoTime()
+            Socket().use { it.connect(InetSocketAddress(HOST, 443), 10_000) }
+            report("TCP приложения: $HOST:443 — соединение есть (${ms(t)} мс)")
+            true
+        } catch (e: Exception) {
+            report("TCP приложения: отказ — ${e.javaClass.simpleName}: ${e.message}")
+            false
+        }
+        val url = "dl-cdn.alpinelinux.org/alpine/v3.24/main/aarch64/APKINDEX.tar.gz"
+        val guest = inProot(
+            "grep -E '^(Uid|Groups):' /proc/self/status; nslookup $HOST; " +
+                "wget -T 15 -q -O /dev/null http://$url && echo HTTP_OK; wget -T 15 -q -O /dev/null https://$url && echo HTTPS_OK",
+            timeoutSeconds = 90,
+        )
+        show("сеть из Alpine: группы, nslookup, HTTP, HTTPS", guest)
+        val ok = "HTTPS_OK" in guest.output
+        val why = when {
+            ok -> "HTTPS из Alpine работает"
+            !tcp -> "у самого приложения нет сети: «Настройки» → «Приложения» → «Пробник B2» — разрешить Wi‑Fi и мобильный интернет (HyperOS), потом снова «Сеть»"
+            "HTTP_OK" in guest.output -> "HTTP есть, HTTPS нет — сертификаты или TLS в Alpine"
+            else -> "приложение в сети, а из-под proot — нет: см. группы и nslookup выше"
+        }
+        verdict("сеть из Alpine", ok, why)
+        return ok
+    }
+
+    private fun ms(start: Long) = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start)
+
     /** П. 3: JVM агента под proot — `java -version`, холодный и тёплый запуск. Около 180 МБ. */
     fun java() {
         report("== JVM под proot ==")
         if (!unpack()) return
-        File(rootfs, "etc/resolv.conf").writeText("nameserver 1.1.1.1\nnameserver 8.8.8.8\n")
+        resolvConf()
         val add = inProot("apk add --no-progress openjdk17-jre-headless", timeoutSeconds = 1200)
         show("apk add openjdk17-jre-headless", add)
         if (!add.ok) {
@@ -214,6 +285,7 @@ class Probe(private val context: Context, private val report: (String) -> Unit) 
     }
 
     companion object {
+        private const val HOST = "dl-cdn.alpinelinux.org"
         private const val OUTPUT_LIMIT = 64 * 1024
         private const val OUTPUT_LINES = 40
     }
