@@ -86,9 +86,14 @@ class ProbeActivity : ComponentActivity() {
                 Button(onClick = { run("JVM под proot") { it.java() } }, enabled = !busy.value) { Text("JVM (≈180 МБ)") }
                 OutlinedButton(onClick = {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
-                    BeatService.start(this@ProbeActivity)
-                    append("фон: запущен — заблокируйте экран на 30 мин, потом «Фон: проверить»")
-                }) { Text("Фон: запустить") }
+                    // Цикл идёт под proot — корневая система нужна до запуска службы.
+                    run("Фон: запуск") { p ->
+                        if (p.unpack()) {
+                            BeatService.start(this@ProbeActivity)
+                            append("фон: запущен — заблокируйте экран на 30 мин, потом «Фон: проверить»")
+                        }
+                    }
+                }, enabled = !busy.value) { Text("Фон: запустить") }
                 OutlinedButton(onClick = { append(BeatService.check(this@ProbeActivity)) }) { Text("Фон: проверить") }
                 OutlinedButton(onClick = {
                     BeatService.stop(this@ProbeActivity)
