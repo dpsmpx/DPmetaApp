@@ -48,6 +48,19 @@ D-17). `tools/verify/check_dependencies.py` сверяет таблицу §2 с
 |---|---|---|
 | `gradle/wrapper/gradle-wrapper.jar` | `238e777fcddd7e34f9708186085def2abd6e08e658505b38718d79d74c21abd5` | Gradle 9.8.0, §3 |
 
+Загружаемые сборкой пробника B2 (`probe`, D-66) — в репозитории их нет:
+`probe/build.gradle.kts` загружает файлы в `~/.gradle/caches/dpai-probe`
+и сверяет по суммам ниже, иначе сборка падает. В APK пробника — без
+изменений; текст GPL-2.0 — `probe/GPL-2.0.txt`, ссылки на исходники —
+`probe/NOTICE.txt`.
+
+| Файл | SHA-256 | Лицензия | Откуда и как проверено |
+|---|---|---|---|
+| `alpine-minirootfs-3.24.3-aarch64.tar.gz` | `4d3f80afaebd447c5591a63a73bde380a149fe8b2d85488cafabb2ff97551f50` | пакеты Alpine (busybox GPL-2.0-only, musl MIT, apk-tools GPL-2.0-only и др.) | `dl-cdn.alpinelinux.org/alpine/v3.24/releases/aarch64`; сумма совпала с `latest-releases.yaml` и `.sha256` выпуска (подписи GPG у minirootfs нет), 23 октября 2026 |
+| `proot-static-5.4.0-r2.apk` | `31d0e21ee87435ed819112cef84b8ce7d004c2835d8f61eeabe422e122b4b6cf` | GPL-2.0-or-later | `…/v3.24/community/aarch64`; подпись `APKINDEX` и пакета — ключом Alpine `616ae350` из `/etc/apk/keys` minirootfs, контрольная сумма пакета (`C:`) — как в индексе, `datahash` — как у данных, 23 октября 2026 |
+| `proot.static` из пакета → `libproot.so` | `05e07c2dca260a720b3c191bb1c85c80126bb28991ba9060115bf19c8ba0a9a0` | GPL-2.0-or-later | `usr/bin/proot.static` пакета выше |
+| загрузчик proot → `libproot-loader.so` | `2ce2923d28939c1166e6e7b0676a4fcc3eb741d6fe1feb3e3dcd15819d58eef8` | GPL-2.0-or-later | второй ELF в `proot.static` (смещение 268 640, 131 896 байт), без изменений |
+
 ## 5. Идеи из экосистемы
 
 ТЗ, §5 велит взять проверенные идеи других репозиториев автора. Здесь —

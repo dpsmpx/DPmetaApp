@@ -74,3 +74,5 @@ val androidSdk = run {
     listOf(local, System.getenv("ANDROID_HOME"), System.getenv("ANDROID_SDK_ROOT")).firstOrNull { !it.isNullOrBlank() }?.takeIf { file(it).isDirectory }
 }
 if (androidSdk != null) include(":android")
+// Пробник B2 (D-61, шаг 1; D-66): отдельное приложение для пробы Linux-среды на телефоне, не продукт.
+if (androidSdk != null) include(":probe")
