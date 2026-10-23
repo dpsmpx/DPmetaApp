@@ -48,11 +48,12 @@ D-17). `tools/verify/check_dependencies.py` сверяет таблицу §2 с
 |---|---|---|
 | `gradle/wrapper/gradle-wrapper.jar` | `238e777fcddd7e34f9708186085def2abd6e08e658505b38718d79d74c21abd5` | Gradle 9.8.0, §3 |
 
-Загружаемые сборкой пробника B2 (`probe`, D-66) — в репозитории их нет:
-`probe/build.gradle.kts` загружает файлы в `~/.gradle/caches/dpai-probe`
-и сверяет по суммам ниже, иначе сборка падает. В APK пробника — без
-изменений; текст GPL-2.0 — `probe/GPL-2.0.txt`, ссылки на исходники —
-`probe/NOTICE.txt`.
+Загружаемые сборкой приложения для Linux-среды (D-61, D-68; прежде —
+пробника B2, D-66) — в репозитории их нет: задача `linuxFiles` в
+`android/build.gradle.kts` загружает файлы в `~/.gradle/caches/dpai-linux`
+и сверяет по суммам ниже, иначе сборка падает. В APK — без изменений
+(`docs/EXECUTION_MODEL.md`, §8); текст GPL-2.0 — `android/linux/GPL-2.0.txt`,
+ссылки на исходники — `android/linux/NOTICE.txt`.
 
 | Файл | SHA-256 | Лицензия | Откуда и как проверено |
 |---|---|---|---|

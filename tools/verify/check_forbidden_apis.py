@@ -21,11 +21,8 @@ RULES = [
     ("system-time",
      r"\bSystem\.(?:currentTimeMillis|nanoTime)\s*\(|\b(?:Instant|LocalDateTime|LocalDate|LocalTime|"
      r"ZonedDateTime|OffsetDateTime)\.now\s*\(|\bClock\.system(?:UTC|DefaultZone)\s*\(",
-     [
-         CLOCK_PKG,  # единственная граница с системными часами продукта (D-07)
-         # Пробник B2 (D-66): средство пробы на устройстве, не продукт — меряет время проверок.
-         "probe/src/main/",
-     ],
+     # Единственная граница с системными часами (D-07).
+     [CLOCK_PKG],
      "системное время — только через Clock (D-07)", False),
     ("randomness",
      r"\bRandom\(\s*\)|\bSecureRandom\s*\(|\bMath\.random\s*\(|\bRandom\.(?:Default|next\w*)\b|"
@@ -50,11 +47,7 @@ RULES = [
     ("stack-trace", r"\.printStackTrace\s*\(", [],
      "стек не печатается: исключение — сводка в Diagnostic (D-05)", False),
     ("process-spawn", r"\bProcessBuilder\b|\bRuntime\.getRuntime\s*\(\s*\)\s*\.exec",
-     [
-         "execution/src/main/",  # запуск процессов — только execution (D-03)
-         # Пробник B2 (D-66): запускает proot — в этом и проба.
-         "probe/src/main/",
-     ],
+     ["execution/src/main/"],  # запуск процессов — только execution (D-03)
      "процессы — только в модуле execution (D-03)", False),
     ("secret-reveal", r"\.reveal\s*\(\s*\)",
      [
@@ -67,9 +60,8 @@ RULES = [
      r"\bFileOutputStream\b|\bRandomAccessFile\b|\bFileChannel\b|\bFileWriter\b|"
      r"\bFiles\.(?:write\w*|newOutputStream|newByteChannel|newBufferedWriter|move|copy|delete\w*|createFile|"
      r"createTemp\w*)\s*\(|\.(?:writeText|writeBytes|appendText|appendBytes)\s*\(",
-     # Запись в файлы — через Vfs хранилища (D-24); тесты пишут во временные каталоги;
-     # пробник B2 (D-66) распаковывает корневую систему Alpine в свой каталог данных.
-     ["storage/src/main/", "*/src/test/", "probe/src/main/"],
+     # Запись в файлы — через Vfs хранилища (D-24); тесты пишут во временные каталоги.
+     ["storage/src/main/", "*/src/test/"],
      "запись в файлы — только через Vfs модуля storage (D-24)", False),
     ("storage-secret", r"\bSecret\b",
      [],  # правило действует только в storage (см. ONLY_IN)

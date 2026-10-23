@@ -87,18 +87,12 @@
 | `jsch` | SSH-хост на JVM (JSch) для targets там, где нет системного OpenSSH — приложение Android (D-35); интерактивная оболочка с PTY для терминала (D-57) | `execution` | 11 |
 | `terminal` | эмулятор xterm: экран, разбор последовательностей, ввод — свой терминал (D-57); без Android | `core` | — |
 | `android` | оболочка Android: интерфейс, Keystore, WorkManager, уведомления, экран терминала (D-57); подключается при Android SDK | `ui`, `jsch`, `terminal` | 11 |
-| `probe` | пробник B2: отдельное приложение для пробы Linux-среды в приложении на телефоне (D-61, шаг 1); не продукт, ни от чего не зависит (D-66); подключается при Android SDK | — | — |
 | `tests/integration` | межмодульные сценарии | `orchestrator` | 1 |
 <!-- check_modules: end -->
 
 Правила, которые Gradle не выражает (тоже `check_modules.py`):
 
-- `android.*` и `androidx.*` — только в модуле `android` (D-02) и в
-  пробнике `probe` (D-66).
-- `probe` — средство пробы, а не продукт (D-66): он запускает процессы,
-  меряет время системными часами и пишет файлы сам — правила D-03, D-07 и
-  D-24 к нему не применяются (`check_forbidden_apis.py`, с причиной); от
-  модулей продукта он не зависит, и они — от него.
+- `android.*` и `androidx.*` — только в модуле `android` (D-02).
 - `testkit` — только в тестовых конфигурациях (`testImplementation`); в
   основном коде любого модуля — нельзя.
 - Модуль `android` может отсутствовать в `settings.gradle.kts`: он
@@ -184,7 +178,7 @@ RECOVERY_PENDING ─► проба target и процесса ─► сверк�
 
 | Пакет | Содержимое |
 |---|---|
-| `vfs` | `Vfs` — единственный путь к файлам: запись, дописывание, fsync, атомарное переименование, fsync каталога; `NioVfs` на `java.nio` |
+| `vfs` | `Vfs` — единственный путь к файлам: запись, дописывание, fsync, атомарное переименование, fsync каталога, символьные ссылки и права (корневая система Linux-среды); `NioVfs` на `java.nio` |
 | `document` | `DocumentStore`: документы «ключ → JSON» в конверте `dpai.stored` с хешем; атомарная замена; last known good; миграция при чтении |
 | `journal` | `EventJournal`: `dpai.journal-record` с цепочкой хешей; подтверждение после fsync; восстановление хвоста; карантин |
 | `snapshot` | `Projection`, `SnapshotStore` (`dpai.snapshot`), `StateRecovery`: снимок + хвост журнала |
@@ -229,6 +223,7 @@ RECOVERY_PENDING ─► проба target и процесса ─► сверк�
 | `target` | `ExecutionTarget`, `SshEndpoint`, `TargetHealthTracker` (пороги и предохранитель), `TargetDoctor`, `ExecutionTargetManager` |
 | `process` | `ProcessHost`, `LocalProcessHost`, `ProcessTree` (остановка дерева), `Detacher` (процесс, переживающий сессию SSH), `run` с тайм-аутом |
 | `ssh` | `SshProcessHost` (системный OpenSSH), `RemoteShell` (кавычки POSIX и Windows) |
+| `linux` | `ProotHost` — процессы в Alpine под proot Linux-среды в приложении (D-61, D-68): команда proot, окружение гостя, `apk` — без `/proc` |
 | `agent` | протокол `dpai.agent-reply`, `RunSpec`, `AgentClient`, `RunChannel` (номера и сверка), `MockAgentHost` |
 | `claude` | `ClaudeRunner`, `ClaudeCodeCliRunner`, `MockRunner`, `ClaudeCodeCli` (команда), `ClaudeStreamParser` и `ClaudeTurnAssembler` (поток → итог хода) |
 
@@ -237,6 +232,10 @@ RECOVERY_PENDING ─► проба target и процесса ─► сверк�
 другом target — `orchestrator.agent.WorkspaceMcp` (`dpai agent mcp`), а
 запрос такого хода — `orchestrator.RemoteWorkspace` (D-50;
 `docs/EXECUTION_MODEL.md`, §7).
+Корневую систему Linux-среды в приложении распаковывает
+`orchestrator.linux.RootfsInstaller` через `Vfs` (D-24; символьные ссылки
+и права — `Vfs.symlink`, `Vfs.setMode`); proot, его загрузчик и minirootfs
+Alpine кладёт в APK сборка модуля `android` (`docs/EXECUTION_MODEL.md`, §8).
 
 ```
 контроллер: AgentClient ─► ProcessHost (local | ssh | mock) ─► dpai agent <команда>

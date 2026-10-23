@@ -8,8 +8,7 @@
     `android`: он подключается на этапе 11 и только при Android SDK);
   * каждая зависимость `project(":…")` в build.gradle.kts модуля — из столбца
     «Может зависеть от»; `testkit` — только в тестовых конфигурациях;
-  * `android.*` и `androidx.*` — только в модуле `android` и в пробнике
-    `probe` (D-02, D-66);
+  * `android.*` и `androidx.*` — только в модуле `android` (D-02);
   * пакет исходника — `com.dpsmpx.dpai.<модуль>` (`tests/integration` —
     `com.dpsmpx.dpai.tests.integration`);
   * у модулей нет сторонних зависимостей времени выполнения (`libs.…` не в
@@ -25,9 +24,7 @@ import re
 
 from common import ARCHITECTURE, Findings, files, main, module_of, read, root
 
-ALLOWED_ABSENT = {"android", "probe"}  # docs/ARCHITECTURE.md, §2: подключаются при Android SDK
-# Модули с Android API (D-02): оболочка и пробник B2 (D-66).
-ANDROID_MODULES = {"android", "probe"}
+ALLOWED_ABSENT = {"android"}  # docs/ARCHITECTURE.md, §2: подключается при Android SDK
 TEST_ONLY = {"testkit"}
 TABLE = re.compile(r"<!-- check_modules: begin -->(.*?)<!-- check_modules: end -->", re.S)
 INCLUDE_ARG = re.compile(r'"(:[\w:-]+)"')
@@ -37,7 +34,6 @@ LIB_DEP = re.compile(r'^\s*(\w+)\(\s*(?:platform\()?\s*libs\.([\w.]+)', re.M)
 RUNTIME_DEPS_ALLOWED = {
     "android": "оболочка Android: Compose и AndroidX (D-34)",
     "jsch": "SSH-клиент на JVM для Android (D-35)",
-    "probe": "пробник B2: Compose и AndroidX, как оболочка (D-66)",
 }
 PACKAGE = re.compile(r"^\s*package\s+([\w.]+)", re.M)
 ANDROID_IMPORT = re.compile(r"^\s*import\s+(androidx?\.[\w.]+)", re.M)
@@ -113,7 +109,7 @@ def check():
             continue
         mod = module_of(rel)
         text = read(rel)
-        if mod not in ANDROID_MODULES:
+        if mod != "android":
             for imp in ANDROID_IMPORT.findall(text):
                 f.add(rel, f"{imp} — Android только в модуле android (D-02)")
         if "/src/" in rel and mod in table:

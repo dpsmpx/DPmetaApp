@@ -1,10 +1,10 @@
-Пробник B2 DP AI Orcestrator — сторонние программы в этом APK
+DP AI Orcestrator — сторонние программы Linux-среды в этом APK
 
-Пробник — средство проверки на устройстве (D-61, D-66), не распространяется
-(D-60). В APK — неизменённые файлы Alpine Linux 3.24 (aarch64):
+Linux-среда в приложении (D-61, D-68). В APK — неизменённые файлы
+Alpine Linux 3.24 (aarch64):
 
 proot 5.4.0 (пакет proot-static 5.4.0-r2, community/aarch64)
-  Лицензия: GPL-2.0-or-later — текст: GPL-2.0.txt рядом.
+  Лицензия: GPL-2.0-or-later — текст: linux/GPL-2.0.txt рядом.
   Исходники: https://github.com/proot-me/proot (тег v5.4.0);
   сборка Alpine: https://gitlab.alpinelinux.org/alpine/aports/-/tree/3.24-stable/community/proot
   В APK: lib/arm64-v8a/libproot.so — usr/bin/proot.static пакета;
@@ -16,7 +16,8 @@ Alpine minirootfs 3.24.3 (alpine-minirootfs-3.24.3-aarch64.tar.gz)
   (GPL-2.0-only), alpine-baselayout (GPL-2.0-only) и другие пакеты Alpine;
   лицензии — в данных пакетов (/lib/apk/db/installed, поле L:).
   Исходники: https://gitlab.alpinelinux.org/alpine/aports (ветка 3.24-stable).
-  В APK: assets/rootfs.tgz — архив без изменений.
+  В APK: assets/linux/rootfs.tgz — архив без изменений.
 
 Суммы SHA-256 и проверка подписей Alpine — docs/PROVENANCE.md, §4 и
-probe/build.gradle.kts репозитория DP_AI_Orcestrator.
+android/build.gradle.kts репозитория DP_AI_Orcestrator
+(https://github.com/dpsmpx/DP_AI_Orcestrator).
