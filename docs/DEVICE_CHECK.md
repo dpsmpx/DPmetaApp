@@ -122,8 +122,9 @@ release, как в третьей команде.
 
 ### 1.1. Файлы и проверка SHA-256
 
-Файлы лежат в ветке `apk-0.1.0-dev.5` репозитория
-`github.com/dpsmpx/DP_AI_Orcestrator`:
+Файлы лежат в ветке сборок `apk_debug` репозитория
+`github.com/dpsmpx/DP_AI_Orcestrator`, каталог `dpai/` (D-67: в ветке —
+только последние сборки; пробник B2 — каталог `probe/`, §14):
 
 | Файл | Зачем |
 |---|---|
@@ -133,15 +134,15 @@ release, как в третьей команде.
 | `claude-proot.sh` | обёртка Claude Code для Termux (§5.3) |
 | `resign-apk.sh` | переподпись APK вашим ключом выпуска на телефоне (§1.2) |
 | `SHA256SUMS` | хеши файлов |
-| `README.md` | описание ветки |
+| `README.md` | описание сборки: коммит `main`, версия, подпись |
 
 Репозиторий приватный: ссылки `raw` без входа в GitHub отвечают 404,
 поэтому `curl` из Termux не подходит. На ПК (вход в GitHub у `git` уже
 есть):
 
 ```sh
-git clone --depth 1 --branch apk-0.1.0-dev.5 https://github.com/dpsmpx/DP_AI_Orcestrator.git ~/dpai-device-check
-cd ~/dpai-device-check
+git clone --depth 1 --branch apk_debug https://github.com/dpsmpx/DP_AI_Orcestrator.git ~/dpai-device-check
+cd ~/dpai-device-check/dpai
 sha256sum -c SHA256SUMS
 ```
 
@@ -156,7 +157,7 @@ adb push dpai-0.1.0-dev.5-release.apk dpai-0.1.0-dev.5-debug.apk dpai-agent-0.1.
 скачайте заново; повторилось — FAIL пункта 1.1.
 
 С телефона без ПК: в браузере откройте
-`https://github.com/dpsmpx/DP_AI_Orcestrator/tree/apk-0.1.0-dev.5`,
+`https://github.com/dpsmpx/DP_AI_Orcestrator/tree/apk_debug/dpai`,
 нажмите на файл и кнопку загрузки «Download raw file». Хеш на телефоне
 сверяется в Termux (§5.2) после `termux-setup-storage`:
 
@@ -200,8 +201,8 @@ SHA-256» и «SHA-1»: одна из них начинается с тех же
 для `last-crash.txt` — `…-debug-author.apk` (§0.4). В отчёт — начало хеша
 сертификата; ключ, пароли и `gradle.properties` — никогда (§0.5).
 
-**Стоит 0.1.0-dev.1 … dev.4 с отладочным ключом облака** (ветки
-`apk-0.1.0-dev.1` … `apk-0.1.0-dev.5`): APK ветки ставится поверх как
+**Стоит 0.1.0-dev.1 … dev.4 со сборок облака** (отладочный ключ
+облака): APK из `apk_debug` ставится поверх как
 есть, без переподписи (§1.3; с ПК — `adb install -r
 dpai-0.1.0-dev.5-release.apk`), targets, ключ приложения и
 закреплённые ключи хостов остаются.
@@ -1646,8 +1647,9 @@ Termux):
 
 ### 14.1. Установка
 
-Файл — ветка `apk-probe-b2` (`dpai-probe-b2.apk`, суммы — `SHA256SUMS`;
-скачать — как в §1.1). Подпись — отладочный ключ облака; переподписывать
+Файл — ветка сборок `apk_debug`, каталог `probe/` (`dpai-probe-b2.apk`,
+суммы — `SHA256SUMS`; скачать — как в §1.1, на ПК —
+`cd ~/dpai-device-check/probe`). Подпись — отладочный ключ облака; переподписывать
 не нужно: это другое приложение, ваша версия DP AI не мешает.
 
 ```sh
