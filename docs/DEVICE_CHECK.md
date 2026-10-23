@@ -3,7 +3,7 @@
 Пошаговая инструкция автору: что сделать на Redmi Note 13 (основное
 устройство приёмки, D-28) и на ПК, чтобы закрыть открытые критерии,
 которым нужно устройство или долгий прогон. Версия приложения и агента —
-**0.1.0-dev.4**; срез на 22 октября 2026.
+**0.1.0-dev.5**; срез на 23 октября 2026.
 
 Порядок разделов важен: §3 и §4 идут в демо-режиме, а он кончается, как
 только в приложении появляется target с каталогом Claude (§5). Каждый
@@ -29,6 +29,8 @@
 | Фоновая работа на HyperOS (D-28) | `TODO.md`, «На устройстве (Redmi Note 13)» | §2, §9 |
 | Два `CLAUDE_CONFIG_DIR` с разными подписками параллельно | `docs/direction/ROADMAP/05-accounts.md` | §11 |
 | Свой терминал к target (D-57) | `TODO.md`, «Следующее» | §6.4 |
+| Поток событий хода вместо опроса (D-62): задержка на устройстве | `TODO.md`, «На устройстве (Redmi Note 13)» | §7.7 |
+| Профиль базовой линии: первый прогон после установки | `TODO.md`, «Следующее» | §4.2 |
 | Прогоны 24 ч и 48 ч без утечек (ТЗ, §116), рост кучи | `docs/direction/ROADMAP/19-stability-audit.md`; `TODO.md`, «Известные долги» | §12 |
 
 ### 0.2. Что понадобится и сколько времени
@@ -91,9 +93,9 @@ debug ставится поверх release без потери данных —
 ключом (`…-author.apk`, §1.2) поверх переподписанной:
 
 ```sh
-adb install -r dpai-0.1.0-dev.4-debug-author.apk
+adb install -r dpai-0.1.0-dev.5-debug-author.apk
 adb shell run-as com.dpsmpx.dpai cat files/last-crash.txt > last-crash.txt
-adb install -r dpai-0.1.0-dev.4-release-author.apk
+adb install -r dpai-0.1.0-dev.5-release-author.apk
 ```
 
 Если на Redmi работает системный журнал, приложите и его:
@@ -119,14 +121,14 @@ release, как в третьей команде.
 
 ### 1.1. Файлы и проверка SHA-256
 
-Файлы лежат в ветке `apk-0.1.0-dev.4` репозитория
+Файлы лежат в ветке `apk-0.1.0-dev.5` репозитория
 `github.com/dpsmpx/DP_AI_Orcestrator`:
 
 | Файл | Зачем |
 |---|---|
-| `dpai-0.1.0-dev.4-release.apk` | приложение для проверки и замеров |
-| `dpai-0.1.0-dev.4-debug.apk` | только чтобы прочитать `last-crash.txt` (§0.4) |
-| `dpai-agent-0.1.0-dev.4.zip` | агент `dpai` для Termux и ПК: каталог `dpai/` с `bin/dpai` и `lib/` |
+| `dpai-0.1.0-dev.5-release.apk` | приложение для проверки и замеров |
+| `dpai-0.1.0-dev.5-debug.apk` | только чтобы прочитать `last-crash.txt` (§0.4) |
+| `dpai-agent-0.1.0-dev.5.zip` | агент `dpai` для Termux и ПК: каталог `dpai/` с `bin/dpai` и `lib/` |
 | `claude-proot.sh` | обёртка Claude Code для Termux (§5.3) |
 | `resign-apk.sh` | переподпись APK вашим ключом выпуска на телефоне (§1.2) |
 | `SHA256SUMS` | хеши файлов |
@@ -137,7 +139,7 @@ release, как в третьей команде.
 есть):
 
 ```sh
-git clone --depth 1 --branch apk-0.1.0-dev.4 https://github.com/dpsmpx/DP_AI_Orcestrator.git ~/dpai-device-check
+git clone --depth 1 --branch apk-0.1.0-dev.5 https://github.com/dpsmpx/DP_AI_Orcestrator.git ~/dpai-device-check
 cd ~/dpai-device-check
 sha256sum -c SHA256SUMS
 ```
@@ -146,14 +148,14 @@ sha256sum -c SHA256SUMS
 на телефоне, где ваш ключ, §1.2):
 
 ```sh
-adb push dpai-0.1.0-dev.4-release.apk dpai-0.1.0-dev.4-debug.apk dpai-agent-0.1.0-dev.4.zip claude-proot.sh resign-apk.sh SHA256SUMS /sdcard/Download/
+adb push dpai-0.1.0-dev.5-release.apk dpai-0.1.0-dev.5-debug.apk dpai-agent-0.1.0-dev.5.zip claude-proot.sh resign-apk.sh SHA256SUMS /sdcard/Download/
 ```
 
 Ожидается `…: OK` для каждого файла. Любое `FAILED` — стоп: файл не тот,
 скачайте заново; повторилось — FAIL пункта 1.1.
 
 С телефона без ПК: в браузере откройте
-`https://github.com/dpsmpx/DP_AI_Orcestrator/tree/apk-0.1.0-dev.4`,
+`https://github.com/dpsmpx/DP_AI_Orcestrator/tree/apk-0.1.0-dev.5`,
 нажмите на файл и кнопку загрузки «Download raw file». Хеш на телефоне
 сверяется в Termux (§5.2) после `termux-setup-storage`:
 
@@ -184,7 +186,7 @@ Dev»; просмотрщик подписи показывает его как 
 ```sh
 cd ~/storage/downloads
 sha256sum -c SHA256SUMS --ignore-missing
-sh resign-apk.sh dpai-0.1.0-dev.4-release.apk dpai-0.1.0-dev.4-debug.apk
+sh resign-apk.sh dpai-0.1.0-dev.5-release.apk dpai-0.1.0-dev.5-debug.apk
 ```
 
 Ожидается для каждого файла `✓ …-author.apk` и строки «сертификат
@@ -197,10 +199,10 @@ SHA-256» и «SHA-1»: одна из них начинается с тех же
 для `last-crash.txt` — `…-debug-author.apk` (§0.4). В отчёт — начало хеша
 сертификата; ключ, пароли и `gradle.properties` — никогда (§0.5).
 
-**Стоит 0.1.0-dev.1, dev.2 или dev.3 с отладочным ключом облака** (ветки
-`apk-0.1.0-dev.1` … `apk-0.1.0-dev.3`): APK ветки ставится поверх как
+**Стоит 0.1.0-dev.1 … dev.4 с отладочным ключом облака** (ветки
+`apk-0.1.0-dev.1` … `apk-0.1.0-dev.5`): APK ветки ставится поверх как
 есть, без переподписи (§1.3; с ПК — `adb install -r
-dpai-0.1.0-dev.4-release.apk`), targets, ключ приложения и
+dpai-0.1.0-dev.5-release.apk`), targets, ключ приложения и
 закреплённые ключи хостов остаются.
 
 **В обоих случаях** после установки обновите агента на
@@ -238,22 +240,22 @@ adb uninstall com.dpsmpx.dpai
 
 ### 1.3. Установка
 
-Ставится `dpai-0.1.0-dev.4-release-author.apk` — переподписанный вашим
+Ставится `dpai-0.1.0-dev.5-release-author.apk` — переподписанный вашим
 ключом (§1.2); без переподписи (стоит сборка облака или ничего) —
-`dpai-0.1.0-dev.4-release.apk`. С ПК (переподписанный — сначала
-`adb pull /sdcard/Download/dpai-0.1.0-dev.4-release-author.apk`):
+`dpai-0.1.0-dev.5-release.apk`. С ПК (переподписанный — сначала
+`adb pull /sdcard/Download/dpai-0.1.0-dev.5-release-author.apk`):
 
 ```sh
-adb install -r dpai-0.1.0-dev.4-release-author.apk
+adb install -r dpai-0.1.0-dev.5-release-author.apk
 adb shell dumpsys package com.dpsmpx.dpai | grep -E "versionName|versionCode"
 ```
 
-Ожидается `Success`, затем `versionCode=4` и `versionName=0.1.0-dev.4`.
+Ожидается `Success`, затем `versionCode=5` и `versionName=0.1.0-dev.5`.
 Если `adb install` отвечает `INSTALL_FAILED_USER_RESTRICTED`, у Xiaomi
 выключена «Установка через USB» в «Для разработчиков»; включить её без
 аккаунта Mi часто нельзя — тогда ставьте с телефона.
 
-С телефона: откройте `dpai-0.1.0-dev.4-release-author.apk` (или без
+С телефона: откройте `dpai-0.1.0-dev.5-release-author.apk` (или без
 `-author`) из «Загрузок», разрешите установку из этого источника, если HyperOS
 спросит, и подтвердите установку. Версия — в «О приложении».
 
@@ -479,7 +481,7 @@ done
 
 PASS — p95 после прогрева ≤ 16 мс (на Realme: 11 мс). Первый прогон
 записывается для профиля базовой линии (`TODO.md`, «Следующее»): на
-Realme он был хуже из-за JIT; в сборке после 0.1.0-dev.4 профиль уже в
+Realme он был хуже из-за JIT; с 0.1.0-dev.5 профиль уже в
 APK — первый прогон должен быть близок к прогону после прогрева. Если между установкой и замером телефон
 ночь стоял на зарядке, система могла заранее скомпилировать приложение —
 отметьте это.
@@ -576,14 +578,14 @@ claude --version
 
 ```sh
 cd ~/storage/downloads && sha256sum -c SHA256SUMS --ignore-missing && cd ~
-rm -rf ~/dpai && unzip -q ~/storage/downloads/dpai-agent-0.1.0-dev.4.zip -d ~
+rm -rf ~/dpai && unzip -q ~/storage/downloads/dpai-agent-0.1.0-dev.5.zip -d ~
 chmod +x ~/dpai/bin/dpai
 ~/dpai/bin/dpai version
 ~/dpai/bin/dpai agent doctor
 ```
 
-Ожидается: `dpai-agent-0.1.0-dev.4.zip: OK`; `dpai 0.1.0-dev.4`; одна
-строка JSON, в которой `"ok":true`, `"agentVersion":"0.1.0-dev.4"`,
+Ожидается: `dpai-agent-0.1.0-dev.5.zip: OK`; `dpai 0.1.0-dev.5`; одна
+строка JSON, в которой `"ok":true`, `"agentVersion":"0.1.0-dev.5"`,
 `"termux":true`, у `claude` — `"found":true` и версия, у `git` —
 `"found":true`. Сохраните эту строку для отчёта (в ней нет секретов):
 
@@ -704,7 +706,7 @@ ssh -i ~/.ssh/dpai_redmi -p 8022 u0_a123@127.0.0.1
 | Строка | Ожидание |
 |---|---|
 | связь | ответ за … мс |
-| агент | `dpai 0.1.0-dev.4; Linux aarch64; Java 21…; Termux`, без «обновить агента» — версии приложения и агента совпадают |
+| агент | `dpai 0.1.0-dev.5; Linux aarch64; Java 21…; Termux`, без «обновить агента» — версии приложения и агента совпадают |
 | Claude Code | версия, как в §5.3 |
 | Git | версия |
 | диск, память | свободно … МиБ |
@@ -906,7 +908,7 @@ sshd
 
 ### 7.7. Поток событий хода (D-62)
 
-Только для сборки с потоком — после 0.1.0-dev.4; агент в Termux — из
+Сборка с потоком — 0.1.0-dev.5 и новее; агент в Termux — из
 архива той же сборки (§1.2, §5.4). Во время «Долгого хода» (§7.3) в
 Termux:
 
@@ -1297,8 +1299,8 @@ Windows-target на ПК описан в `docs/TESTING.md`, §8: OpenSSH Server
 Телефон дойдёт до него по кабелю через `adb reverse`, без открытия порта в
 сеть.
 
-1. Агент на ПК — той же версии 0.1.0-dev.4 (распакуйте
-   `dpai-agent-0.1.0-dev.4.zip` и направьте на него обёртку
+1. Агент на ПК — той же версии 0.1.0-dev.5 (распакуйте
+   `dpai-agent-0.1.0-dev.5.zip` и направьте на него обёртку
    `dpai-agent.cmd`), иначе «Проверить» покажет «обновить агента».
 2. Проброс порта (порт телефона 2222 → порт ПК 22):
 
@@ -1536,7 +1538,7 @@ python3 tools/audit/final_stability.py --endurance build/audits/final-stability/
 отличалось от ожидаемого.
 
 ```text
-# Проверка на устройстве — 0.1.0-dev.4
+# Проверка на устройстве — 0.1.0-dev.5
 
 Дата:
 Телефон: модель (getprop ro.product.model) / Android / HyperOS / RAM / частота экрана
@@ -1550,7 +1552,7 @@ Claude Code: версия (claude --version)
 |---|---|---|
 | 1.1 SHA-256 файлов | | |
 | 1.2 переподпись вашим ключом | | начало SHA-256 сертификата; `apksigner` — Termux или Alpine |
-| 1.3 установка, versionName 0.1.0-dev.4 | | удаляли ли старую версию |
+| 1.3 установка, versionName 0.1.0-dev.5 | | удаляли ли старую версию |
 | 2.1 первый запуск, разрешение уведомлений | | |
 | 2.2 настройки HyperOS | | какие пункты нашлись и как называются |
 | 3.1 сводка демо, N сессий | | N = |

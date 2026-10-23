@@ -17,7 +17,7 @@ android {
         applicationId = "com.dpsmpx.dpai"
         minSdk = 30
         targetSdk = 36
-        versionCode = 4
+        versionCode = 5
         versionName = project.version.toString()
     }
 
