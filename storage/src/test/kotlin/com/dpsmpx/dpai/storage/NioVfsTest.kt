@@ -47,6 +47,26 @@ class NioVfsTest {
         assertEquals(JsonObject.of("x" to json(2)), store.read("settings").valueOrNull()?.content)
     }
 
+    /** Ссылки и права — для корневой системы Linux-среды в приложении (D-61): цель — как есть, права — младшие 9 бит. */
+    @Test
+    fun symlinksAndModes() {
+        // Ссылки на Windows требуют особых прав, а среда в приложении — только Android: проверка — на POSIX.
+        val posix = java.nio.file.Files.getFileAttributeView(dir, java.nio.file.attribute.PosixFileAttributeView::class.java)
+        org.junit.jupiter.api.Assumptions.assumeTrue(posix != null, "прав POSIX нет (Windows)")
+        val vfs = NioVfs(dir)
+        vfs.mkdirs("bin")
+        vfs.write("bin/busybox", byteArrayOf(1))
+        vfs.setMode("bin/busybox", "755".toInt(8))
+        vfs.symlink("bin/sh", "/bin/busybox")
+        assertEquals("/bin/busybox", java.nio.file.Files.readSymbolicLink(dir.resolve("bin/sh")).toString())
+        // Повтор заменяет ссылку, а не падает.
+        vfs.symlink("bin/sh", "busybox")
+        assertEquals("busybox", java.nio.file.Files.readSymbolicLink(dir.resolve("bin/sh")).toString())
+        assertEquals("rwxr-xr-x", java.nio.file.attribute.PosixFilePermissions.toString(java.nio.file.Files.getPosixFilePermissions(dir.resolve("bin/busybox"))))
+        vfs.setMode("bin/busybox", "600".toInt(8))
+        assertEquals("rw-------", java.nio.file.attribute.PosixFilePermissions.toString(java.nio.file.Files.getPosixFilePermissions(dir.resolve("bin/busybox"))))
+    }
+
     @Test
     fun safePaths() {
         assertTrue(Vfs.isSafeRelative("data/journal.log"))

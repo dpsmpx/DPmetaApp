@@ -61,6 +61,19 @@ interface Vfs {
     @Throws(IOException::class)
     fun mkdirs(dir: String)
 
+    /**
+     * Символьная ссылка [path] → [target]; цель записывается как есть и не
+     * проверяется: корневая система Linux-среды в приложении (D-61) ссылается
+     * на свои абсолютные пути. Пишущий через ссылку сам следит, чтобы запись
+     * не ушла за корень, — хранилище ссылок не создаёт.
+     */
+    @Throws(IOException::class)
+    fun symlink(path: String, target: String): Unit = throw IOException("символьные ссылки не поддерживаются")
+
+    /** Права POSIX — младшие 9 бит [mode] (`rwxrwxrwx`); где прав POSIX нет (Windows), ничего не делает. */
+    @Throws(IOException::class)
+    fun setMode(path: String, mode: Int) {}
+
     companion object {
         /** Каталог пути: `a/b/c` → `a/b`, `c` → `` (корень). */
         fun parentOf(path: String): String = path.substringBeforeLast('/', "")
