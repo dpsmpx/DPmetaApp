@@ -2,7 +2,7 @@
  "schema": "dpvis-public/1",
  "model": {
   "title": "Экосистема dpsmpx",
-  "as_of": "2026-10-12",
+  "as_of": "2026-10-25",
   "timezone": "+03:00",
   "layers": [
    {
@@ -332,7 +332,7 @@
     "id": "tjtm",
     "kind": "repo",
     "layer": "engineering",
-    "name": "TrueJointTileMaker",
+    "name": "True Joint Tile Maker",
     "group": "periphery",
     "status": "active",
     "visibility": "public",
@@ -1129,7 +1129,7 @@
   }
  },
  "state": {
-  "as_of": "2026-10-25T09:35:39Z",
+  "as_of": "2026-10-25T10:18:07Z",
   "generated_by": {
    "rules_version": 1,
    "tool": "DPvisualisation",
@@ -1574,7 +1574,7 @@
        0,
        0,
        0,
-       0,
+       3,
        0,
        0,
        0,
@@ -1630,10 +1630,10 @@
        0
       ]
      },
-     "first_date": null,
+     "first_date": "2026-10-04",
      "head_date": "2026-10-04",
      "window": {
-      "ai": 0,
+      "ai": 3,
       "human": 1
      }
     }
@@ -1826,9 +1826,9 @@
        2,
        1,
        10,
-       15,
-       0,
-       9,
+       27,
+       12,
+       52,
        39,
        37,
        0,
@@ -1870,10 +1870,10 @@
        0
       ]
      },
-     "first_date": null,
+     "first_date": "2026-07-05",
      "head_date": "2026-10-25",
      "window": {
-      "ai": 158,
+      "ai": 225,
       "human": 0
      }
     }
@@ -1960,7 +1960,7 @@
    },
    "andorslove": {
     "activity": {
-     "state": "working",
+     "state": "idle",
      "last": "2026-10-25"
     },
     "git": {
@@ -2235,7 +2235,7 @@
        22,
        16,
        17,
-       20
+       21
       ],
       "human": [
        0,
@@ -2273,7 +2273,7 @@
      "first_date": "2026-10-05",
      "head_date": "2026-10-25",
      "window": {
-      "ai": 426,
+      "ai": 427,
       "human": 6
      }
     }
@@ -2448,7 +2448,7 @@
      59,
      29
     ],
-    "week": 222,
+    "week": 221,
     "total": 1098,
     "last": "2026-10-25"
    },
@@ -2598,10 +2598,10 @@
      0,
      0,
      0,
-     5
+     6
     ],
-    "week": 5,
-    "total": 116,
+    "week": 6,
+    "total": 117,
     "last": "2026-10-25"
    },
    "work.dplearn": {
@@ -2788,10 +2788,10 @@
      22,
      16,
      17,
-     23
+     24
     ],
-    "week": 120,
-    "total": 441,
+    "week": 121,
+    "total": 442,
     "last": "2026-10-25"
    },
    "work.dpvisualisation": {
@@ -2826,10 +2826,10 @@
      0,
      0,
      0,
-     2
+     3
     ],
-    "week": 2,
-    "total": 22,
+    "week": 3,
+    "total": 23,
     "last": "2026-10-25"
    },
    "decide.galdhold": {
@@ -3033,7 +3033,7 @@
      0,
      0,
      0,
-     0,
+     1,
      0,
      0,
      0,
@@ -3057,7 +3057,8 @@
      0
     ],
     "week": 0,
-    "total": 0
+    "total": 1,
+    "last": "2026-10-04"
    },
    "decide.market": {
     "state": "quiet",
@@ -3205,10 +3206,10 @@
      0,
      0,
      17,
-     11
+     12
     ],
-    "week": 53,
-    "total": 100,
+    "week": 54,
+    "total": 101,
     "last": "2026-10-25"
    },
    "decide.dpvisualisation": {
@@ -3809,9 +3810,9 @@
      2,
      1,
      10,
-     15,
-     0,
-     9,
+     27,
+     12,
+     52,
      39,
      37,
      0,
@@ -3820,8 +3821,8 @@
      22,
      2
     ],
-    "week": 130,
-    "total": 158,
+    "week": 151,
+    "total": 225,
     "last": "2026-10-25"
    },
    "work.dpclock": {

@@ -36,7 +36,7 @@ L = {
         "goal_aria": "Схема конечной цели: одно приложение, два ядра, пять направлений и визуализация под ними",
         "route_note": "Квадрат — репозиторий с работой к этой станции; станции — не в масштабе времени: "
                       "между первыми проектами и игрой — годы, дальше — дни.",
-        "groups": {"game": "игра", "core": "ядро на срезе 5 октября", "new": "новые после среза",
+        "groups": {"game": "игра", "core": "ядро на срезе 5 октября", "new": "новые после среза", "periphery": "периферия",
                    "hidden": "без публичного имени"},
         "finished": "впереди — те же системы, доведённые до законченных",
         "exists": "есть сейчас", "planned": "план",
@@ -62,7 +62,7 @@ L = {
         "goal_aria": "The end goal: one app, two cores, five directions and a visualisation under them",
         "route_note": "A square is a repository with work by that station; stations are not to scale: "
                       "years pass between the first projects and the game, days after that.",
-        "groups": {"game": "the game", "core": "core as of the 5 October snapshot", "new": "new after the snapshot",
+        "groups": {"game": "the game", "core": "core as of the 5 October snapshot", "new": "new after the snapshot", "periphery": "periphery",
                    "hidden": "no public name"},
         "finished": "ahead — the same systems, brought to finished",
         "exists": "exists now", "planned": "planned",
@@ -572,7 +572,7 @@ def page_main(data: dict, lang: str, say, role_of, rule_date: str | None, links:
             g = nodes[r].get("group", "core")
             if g not in groups:
                 groups.append(g)
-    order = [g for g in ("game", "core", "new", "hidden") if g in groups]
+    order = [g for g in ("game", "core", "new", "periphery", "hidden") if g in groups]
     app_name = name_of(nodes[data["goal"]["app"]["node"]], lang)
     rule = say(data["goal"]["rule"])
     quote = ""

@@ -474,6 +474,9 @@ facts:
     allowed_wording:
       ru: ["редактор пиксельной графики и карт для Andors-Love"]
       en: ["pixel-art and map editor for Andors-Love"]
+    notes: >-
+      Срез на 04.10.2026: «на PascalABC.NET» — до переноса; с версии 1.6 — C++ и SDL3 (TJTM-NOW).
+      Формулировка для сайта верна и сейчас; утверждение не меняется — на него ссылается CI-0003.
     evidence:
       - {kind: code, source: "github.com/dpsmpx/TrueJointTileMaker README.md", date: 2026-10-04, verification: observed}
   - id: TJTM-PORT
@@ -1125,8 +1128,8 @@ facts:
     public: true
     statement: Код открыт — репозиторий публичный, лицензия GPL-3.0.
     allowed_wording:
-      ru: ["открытый код под GPL-3.0"]
-      en: ["open source under GPL-3.0"]
+      ru: ["код в открытом доступе, лицензия GPL-3.0"]
+      en: ["public repository, GPL-3.0 license"]
     evidence:
       - {kind: code, source: "github.com/dpsmpx/TrueJointTileMaker LICENSE (GNU GPL v3)", ref: "abe887a", date: 2026-10-25, verification: observed}
   - id: AL-OPEN

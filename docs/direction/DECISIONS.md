@@ -114,13 +114,21 @@ ContentItem: цель · аудитория · площадка · утверж�
 - **Решение.** Primary — Galdhold (игра и движок внутри него).
   Secondary — DPlang; метод ИИ-разработки (как опора контента, не
   проект). Background — TrueJointTileMaker, Andors-Love, PixRogue,
-  DP_Ecosystem, инструменты. Archive — ранние закрытые репозитории
-  2023–2024. Подробно — `docs/identity/PROJECT_MAP.md`.
+  DP_Ecosystem, инструменты; с 25.10.2026 — и DP AIM Trainer, DP_Clock.
+  Archive — ранние закрытые репозитории 2023–2024. Подробно —
+  `docs/identity/PROJECT_MAP.md`.
+- **Уточнено 25.10.2026 (слово автора, опрос).** Background-проекты с
+  работой в октябре 2026 — DP AIM Trainer, DP_Clock, True Joint Tile
+  Maker, Andors-Love — «периферия»: у каждого страница в разделе
+  «Проекты» (факты с источниками), они в «Экосистеме» и на «Пути» (Д43,
+  Д44). Своей рубрики и места на главной у них нет; закрытые (AIM Trainer,
+  DP_Clock) — без ссылок на код и подробностей сверх фактов.
 - **Почему.** Вес — по доказуемости и зрелости: Galdhold прошёл этапы
   1–4 и проверялся на телефонах; DPlang — на v0.0, компилятора-выпуска
   нет.
 - **Следствия.** DPlang в контенте — «в разработке», без обещаний
-  возможностей; Background — только как история пути.
+  возможностей; Background — как история пути и широта, периферия — ещё
+  страницей проекта (уточнение 25.10.2026).
 
 ### Д6. Политика утверждений
 - **Решение.** Три класса: `FACT` (подтверждено источником и датой),
@@ -1446,4 +1454,19 @@ Maker и Andors-Love — со ссылкой на открытый репози�
 `data/facts/facts.yaml`, `data/identity/links.yaml`, `data/website/site.yaml`
 (`ecosystem.roles`, `ecosystem.stages`), `data/website/path.yaml`,
 `website/ecosystem/`, `WEBSITE.md`, `TODO.md`.
+
+**25 октября 2026, по независимой проверке PR #30.** Д5 уточнён словом
+автора того же дня: периферия — background-проекты с работой в октябре —
+со страницами проектов, в «Экосистеме» и «Пути», без своей рубрики и места
+на главной; DP AIM Trainer и DP_Clock — в Background. На «Пути» — группа
+квадратов `periphery` «периферия» вместо «новые после среза». TJTM-OPEN —
+формулировка без «открытого кода» (правило CL-OPEN-SOURCE — о Galdhold и
+DPlang); TJTM-WHAT — пометка о срезе 04.10 (утверждение не меняется: на
+него ссылается CI-0003). Комплект «Экосистемы» — DPvisualisation `3d17055`,
+срез 25.10.2026, 10:18 UTC, с полных клонов. Затронуто: Д5,
+`docs/identity/PROJECT_MAP.md`, `docs/context/PROJECT_FACTS.md`,
+`AUTHOR_MASTER_CONTEXT.md`, `data/website/path.yaml`,
+`schemas/path.schema.json`, `tools/cs/site/path.py`,
+`website/static/style.css`, `data/facts/facts.yaml`, `website/ecosystem/`,
+`TODO.md`.
 

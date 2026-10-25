@@ -56,12 +56,28 @@
 | Allowed claims | «пошаговая RPG на C++ с двумя интерфейсами над одной логикой» |
 | Forbidden claims | материалы и логотип Andor's Trail; «клон» |
 
-## TrueJointTileMaker
+## True Joint Tile Maker
 
 | Поле | Значение |
 |---|---|
-| Status | открытый, последний пуш 06.09.2026 |
-| Purpose | редактор пиксель-графики и карт для Andors-Love на PascalABC.NET — TJTM-WHAT |
+| Status | открытый, GPL-3.0 (TJTM-OPEN); версия 1.6 на 25.10.2026 — перенос на C++ и SDL3 (TJTM-NOW) |
+| Purpose | редактор пиксель-графики и карт для Andors-Love — TJTM-WHAT (на 04.10 — PascalABC.NET) |
+
+## DP AIM Trainer
+
+| Поле | Значение |
+|---|---|
+| Status | закрытый (AIM-PRIVATE); стадия — AIM-STAGE |
+| Purpose | замер реакции и разминка перед шутерами — AIM-WHAT |
+| Allowed claims | только формулировки фактов; без ссылок на код |
+
+## DP_Clock
+
+| Поле | Значение |
+|---|---|
+| Status | закрытый (CLK-PRIVATE); стадия — CLK-STAGE |
+| Purpose | своё приложение часов для Android — CLK-WHAT |
+| Allowed claims | только формулировки фактов; без ссылок на код; «код чужих приложений не копируется» — не как сравнение с ними |
 
 ## PixRogue · DP_Ecosystem · утилиты
 
