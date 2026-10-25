@@ -381,13 +381,15 @@ facts:
     class: FACT
     risk: high
     public: true
-    statement: v0.0 «замер до компилятора» пройдена 4 октября 2026; следующая — v0.1, компилятор ядра. Выпущенного компилятора нет.
+    statement: "v0.0 «замер до компилятора» пройдена 4 октября 2026; v0.1 «ядро-срез» закрыта с оговоркой 10 октября; ворота v0.2 «native-срез» пройдены 19 октября: программы собираются для Linux, Windows (проверка под Wine) и Android, кадр графической программы совпадает с эталоном; идёт v0.3 «память и параллелизм». Выпущенного компилятора нет."
     allowed_wording:
-      ru: ["язык на ранней стадии: выбран синтаксис, начат компилятор"]
-      en: ["early stage: syntax chosen, compiler work started"]
-    recheck_by: 2026-10-18
+      ru: ["язык на ранней стадии: компилятор в разработке, собирает программы для Linux, Windows и Android"]
+      en: ["early stage: the compiler is in development and builds programs for Linux, Windows and Android"]
+    recheck_by: 2026-11-08
     evidence:
       - {kind: doc, source: "dpsmpx/DPlang ROADMAP/ROADMAP.md, docs/CHANGELOG.md", ref: "66e461c", date: 2026-10-04, verification: reported}
+      - {kind: doc, source: "dpsmpx/DPlang ROADMAP/ROADMAP.md: v0.1 [x], v0.2 [+] (ворота пройдены 19.10.2026, аудит docs/audits/2026-10-17-v0.2-audit.md), v0.3 — в работе", ref: "eac5a87", date: 2026-10-25, verification: reported}
+    notes: Смена текста 25.10.2026 — ответ автора «сменить и переодобрить»; варианты CI-0001 и CI-0002 — новыми версиями, одобряет автор. README DPlang («v0.2 — следующая, не начата») отстал от ROADMAP.
   - id: DP-COMPILER
     subject: dplang
     class: FACT

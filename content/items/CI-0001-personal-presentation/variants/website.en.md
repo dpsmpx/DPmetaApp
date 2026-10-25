@@ -5,7 +5,7 @@ platform: website
 lang: en
 format: page
 source_version: 2
-version: 2
+version: 3
 status: ready
 trust: validated
 title: About
@@ -24,10 +24,7 @@ generation:
   provider: session
   note: английский вариант канона v2 (Д21, Д22); без имени автора — только dpsmpx (Д37); роли репозиториев
     — условие ОР-12
-approval:
-  by: author
-  date: 2026-10-05
-  sha256: a78294d9820c588cd9c802c9fb82f0cfec830ed9c7539c51188eb76408f898f0
+approval: null
 claims:
 - AU-HANDLE
 - AU-ROLE
@@ -57,7 +54,7 @@ deps:
     META-NO-DEPS: 538aa32a19a5c5ea
     GH-NAME: 18e9e8bc34f1c9f0
     GH-GENRE: 87840cd38160c9f1
-    DP-STAGE: 0d8aced210be861e
+    DP-STAGE: 9037b8c5d00cdf08
     VRF-WHAT: 917a8dae29da7eb5
     SMI-WHAT: cbf16ce5b6f07403
     PRF-WHAT: 774e3cfe896d3a27

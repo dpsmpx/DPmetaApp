@@ -5,7 +5,7 @@ platform: website
 lang: ru
 format: page
 source_version: 2
-version: 2
+version: 3
 status: ready
 trust: validated
 title: Обо мне
@@ -24,10 +24,7 @@ generation:
   provider: session
   note: из канона v2 для страницы «Обо мне» и главной (summary — первая строка главной); без имени автора
     — только dpsmpx (Д37); роли репозиториев — условие ОР-12
-approval:
-  by: author
-  date: 2026-10-05
-  sha256: d980aba30479b723e84a41ddd73065b5b20bdee4152bfe62059ee30456efbeb0
+approval: null
 claims:
 - AU-HANDLE
 - AU-ROLE
@@ -57,7 +54,7 @@ deps:
     META-NO-DEPS: 538aa32a19a5c5ea
     GH-NAME: 18e9e8bc34f1c9f0
     GH-GENRE: 87840cd38160c9f1
-    DP-STAGE: 0d8aced210be861e
+    DP-STAGE: 9037b8c5d00cdf08
     VRF-WHAT: 917a8dae29da7eb5
     SMI-WHAT: cbf16ce5b6f07403
     PRF-WHAT: 774e3cfe896d3a27
