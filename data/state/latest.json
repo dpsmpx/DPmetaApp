@@ -1,5 +1,5 @@
 {
- "as_of": "2026-10-25T08:20:45Z",
+ "as_of": "2026-10-25T09:35:39Z",
  "diagnostics": [
   {
    "code": "CLONE_SHALLOW",
@@ -145,6 +145,7 @@
     0,
     0,
     0,
+    1,
     0,
     0,
     0,
@@ -152,14 +153,13 @@
     0,
     0,
     0,
-    0,
-    0
+    2
    ],
-   "last": "2026-10-12T17:07:11Z",
+   "last": "2026-10-25T08:11:48Z",
    "signal": "git-path",
-   "state": "quiet",
-   "total": 23,
-   "week": 0
+   "state": "flowing",
+   "total": 26,
+   "week": 2
   },
   "c04.dppass.dpprofile": {
    "days": [
@@ -262,6 +262,7 @@
     0,
     0,
     0,
+    1,
     0,
     0,
     0,
@@ -269,14 +270,13 @@
     0,
     0,
     0,
-    0,
-    0
+    2
    ],
-   "last": "2026-10-12T17:07:11Z",
+   "last": "2026-10-25T08:11:48Z",
    "signal": "git-path",
-   "state": "quiet",
-   "total": 23,
-   "week": 0
+   "state": "flowing",
+   "total": 26,
+   "week": 2
   },
   "c08.andorslove.tjtm": {
    "state": "unobserved"
@@ -537,9 +537,9 @@
     0,
     0,
     0,
-    13,
-    8,
-    15,
+    0,
+    0,
+    0,
     0,
     1,
     3,
@@ -549,7 +549,7 @@
     0,
     0,
     0,
-    2,
+    1,
     27,
     16,
     14,
@@ -558,13 +558,13 @@
     0,
     0,
     17,
-    6
+    11
    ],
-   "last": "2026-10-25T04:53:59Z",
+   "last": "2026-10-25T09:02:12Z",
    "signal": "git-commits",
    "state": "flowing",
-   "total": 132,
-   "week": 50
+   "total": 100,
+   "week": 53
   },
   "decide.dpmonetization": {
    "days": [
@@ -870,13 +870,13 @@
     0,
     0,
     0,
-    0
+    1
    ],
-   "last": "2026-10-12T17:31:39Z",
+   "last": "2026-10-25T09:30:49Z",
    "signal": "git-commits",
-   "state": "quiet",
-   "total": 27,
-   "week": 0
+   "state": "flowing",
+   "total": 28,
+   "week": 1
   },
   "deploy.phone.site": {
    "state": "unobserved"
@@ -904,6 +904,7 @@
     0,
     0,
     0,
+    3,
     0,
     0,
     0,
@@ -911,14 +912,13 @@
     0,
     0,
     0,
-    0,
-    0
+    3
    ],
-   "last": "2026-10-12T14:16:49Z",
+   "last": "2026-10-25T09:10:26Z",
    "signal": "git-path",
-   "state": "quiet",
-   "total": 34,
-   "week": 0
+   "state": "flowing",
+   "total": 40,
+   "week": 3
   },
   "host.github.repos": {
    "state": "unobserved"
@@ -1380,10 +1380,10 @@
     0,
     0,
     0,
-    28,
-    18,
-    55,
-    48,
+    0,
+    3,
+    22,
+    46,
     40,
     51,
     31,
@@ -1401,13 +1401,13 @@
     22,
     16,
     17,
-    15
+    23
    ],
-   "last": "2026-10-25T07:12:08Z",
+   "last": "2026-10-25T08:51:47Z",
    "signal": "git-commits",
    "state": "flowing",
-   "total": 511,
-   "week": 115
+   "total": 441,
+   "week": 120
   },
   "work.dpmonetization": {
    "days": [
@@ -1596,13 +1596,13 @@
     0,
     0,
     0,
-    0
+    2
    ],
-   "last": "2026-10-17T16:48:21Z",
+   "last": "2026-10-25T08:22:51Z",
    "signal": "git-commits",
-   "state": "quiet",
-   "total": 20,
-   "week": 0
+   "state": "flowing",
+   "total": 22,
+   "week": 2
   },
   "work.galdhold": {
    "days": [
@@ -1635,13 +1635,13 @@
     42,
     16,
     59,
-    22
+    29
    ],
-   "last": "2026-10-25T07:43:26Z",
+   "last": "2026-10-25T08:51:47Z",
    "signal": "git-commits",
    "state": "flowing",
-   "total": 1091,
-   "week": 216
+   "total": 1098,
+   "week": 222
   },
   "work.market": {
    "days": [
@@ -1713,13 +1713,13 @@
     0,
     0,
     0,
-    2
+    5
    ],
-   "last": "2026-10-25T08:11:48Z",
+   "last": "2026-10-25T09:10:26Z",
    "signal": "git-commits",
    "state": "flowing",
-   "total": 113,
-   "week": 2
+   "total": 116,
+   "week": 5
   },
   "work.tjtm": {
    "days": [
@@ -1768,7 +1768,7 @@
  },
  "model": {
   "as_of": "2026-10-12",
-  "sha256": "f146e4c80037bd613b579937fcbd490e1729893fa5631ee79ce82eeb3c5b0c4f"
+  "sha256": "df9625011404d686e397a0d5a6c50f358b444ddb417565b40c565df237529b83"
  },
  "nodes": {
   "aimtrainer": {
@@ -1776,7 +1776,7 @@
     "last": "2026-10-25T06:53:48Z",
     "reasons": [
      {
-      "hours": 1.45,
+      "hours": 2.7,
       "rule": "main"
      }
     ],
@@ -1965,7 +1965,7 @@
     "last": "2026-10-25T03:47:33Z",
     "reasons": [
      {
-      "hours": 4.55,
+      "hours": 5.8,
       "rule": "main"
      }
     ],
@@ -2151,10 +2151,10 @@
   },
   "author": {
    "activity": {
-    "last": "2026-10-25T06:59:21Z",
+    "last": "2026-10-25T09:30:49Z",
     "reasons": [
      {
-      "hours": 1.36,
+      "hours": 0.08,
       "rule": "author"
      }
     ],
@@ -2169,9 +2169,9 @@
     5,
     18,
     15,
-    58,
-    102,
-    78,
+    44,
+    70,
+    46,
     4,
     4,
     3,
@@ -2181,7 +2181,7 @@
     1,
     1,
     4,
-    6,
+    5,
     34,
     18,
     25,
@@ -2190,15 +2190,15 @@
     4,
     2,
     25,
-    16
+    22
    ]
   },
   "claude": {
    "activity": {
-    "last": "2026-10-25T08:11:48Z",
+    "last": "2026-10-25T09:10:26Z",
     "reasons": [
      {
-      "hours": 0.15,
+      "hours": 0.42,
       "rule": "claude"
      }
     ],
@@ -2213,10 +2213,10 @@
     22,
     95,
     142,
-    176,
-    156,
-    138,
-    86,
+    148,
+    141,
+    105,
+    84,
     65,
     78,
     137,
@@ -2234,7 +2234,7 @@
     84,
     52,
     148,
-    49
+    69
    ]
   },
   "compiler": {
@@ -2256,7 +2256,7 @@
     "last": "2026-10-25T05:07:00Z",
     "reasons": [
      {
-      "hours": 3.23,
+      "hours": 4.48,
       "rule": "main"
      }
     ],
@@ -3027,15 +3027,15 @@
   },
   "dpmetaapp": {
    "activity": {
-    "last": "2026-10-25T07:12:39Z",
+    "last": "2026-10-25T09:02:12Z",
     "reasons": [
      {
-      "hours": 3.45,
+      "hours": 0.56,
       "rule": "main"
      },
      {
       "branch": "ccr-9d427584-116aer",
-      "hours": 1.14,
+      "hours": 0.73,
       "rule": "branch"
      }
     ],
@@ -3044,10 +3044,10 @@
    "git": {
     "branches": [
      {
-      "ahead": 81,
+      "ahead": 3,
       "method": "cherry",
       "name": "ccr-9d427584-116aer",
-      "time": "2026-10-25T07:12:39Z"
+      "time": "2026-10-25T08:51:47Z"
      },
      {
       "ahead": 6,
@@ -3060,12 +3060,6 @@
       "method": "cherry",
       "name": "ccr-2310d434-reminder-answers",
       "time": "2026-10-19T11:37:20Z"
-     },
-     {
-      "ahead": 1,
-      "method": "cherry",
-      "name": "ccr-dc77131a-share",
-      "time": "2026-10-17T09:37:36Z"
      },
      {
       "ahead": 2,
@@ -3090,10 +3084,10 @@
       0,
       0,
       0,
-      28,
-      18,
-      55,
-      48,
+      0,
+      3,
+      22,
+      46,
       40,
       51,
       31,
@@ -3103,15 +3097,15 @@
       0,
       0,
       4,
-      34,
-      26,
+      44,
+      53,
       15,
       3,
       9,
-      0,
-      0,
+      22,
+      16,
       17,
-      9
+      20
      ],
      "human": [
       0,
@@ -3122,9 +3116,9 @@
       0,
       0,
       0,
+      0,
       1,
-      25,
-      22,
+      5,
       0,
       0,
       0,
@@ -3154,9 +3148,9 @@
       0,
       0,
       0,
-      13,
-      8,
-      15,
+      0,
+      0,
+      0,
       0,
       1,
       3,
@@ -3166,7 +3160,7 @@
       0,
       0,
       0,
-      2,
+      1,
       27,
       16,
       14,
@@ -3175,7 +3169,7 @@
       0,
       0,
       17,
-      6
+      11
      ]
     },
     "days_all": {
@@ -3188,10 +3182,10 @@
       0,
       0,
       0,
-      28,
-      18,
-      55,
-      48,
+      0,
+      3,
+      22,
+      46,
       40,
       51,
       31,
@@ -3209,7 +3203,7 @@
       22,
       16,
       17,
-      15
+      23
      ],
      "human": [
       0,
@@ -3220,9 +3214,9 @@
       0,
       0,
       0,
+      0,
       1,
-      25,
-      22,
+      5,
       0,
       0,
       0,
@@ -3244,15 +3238,16 @@
       0
      ]
     },
-    "first_time": "2026-10-04T09:19:52Z",
-    "head": "9c6f08904b8526abe0684318a3c3149fdc676219",
-    "head_time": "2026-10-25T04:53:59Z",
+    "excluded": 157,
+    "first_time": "2026-10-05T12:27:23Z",
+    "head": "1898f8e4e91dd7f62ba19465f09aff643694a3b9",
+    "head_time": "2026-10-25T09:02:12Z",
     "history": "complete",
     "ref": "origin/main",
     "window": {
-     "ai": 418,
-     "human": 48,
-     "merges": 132
+     "ai": 426,
+     "human": 6,
+     "merges": 100
     }
    }
   },
@@ -4039,17 +4034,23 @@
   },
   "dpvisualisation": {
    "activity": {
-    "last": "2026-10-17T16:48:21Z",
-    "reasons": [],
-    "state": "idle"
+    "last": "2026-10-25T08:22:51Z",
+    "reasons": [
+     {
+      "branch": "claude/tender-hypatia-mbrwf9",
+      "hours": 1.21,
+      "rule": "branch"
+     }
+    ],
+    "state": "working"
    },
    "git": {
     "branches": [
      {
-      "ahead": 1,
+      "ahead": 3,
       "method": "cherry",
       "name": "claude/tender-hypatia-mbrwf9",
-      "time": "2026-10-17T16:48:21Z"
+      "time": "2026-10-25T08:22:51Z"
      }
     ],
     "days": {
@@ -4181,7 +4182,7 @@
       0,
       0,
       0,
-      0
+      2
      ],
      "human": [
       0,
@@ -4230,15 +4231,15 @@
   },
   "galdhold": {
    "activity": {
-    "last": "2026-10-25T07:43:26Z",
+    "last": "2026-10-25T08:51:47Z",
     "reasons": [
      {
-      "hours": 1.36,
+      "hours": 2.6,
       "rule": "main"
      },
      {
       "branch": "ccr-abb64cd1-cs6at9",
-      "hours": 0.62,
+      "hours": 0.73,
       "rule": "branch"
      }
     ],
@@ -4247,10 +4248,10 @@
    "git": {
     "branches": [
      {
-      "ahead": 9,
+      "ahead": 16,
       "method": "cherry",
       "name": "ccr-abb64cd1-cs6at9",
-      "time": "2026-10-25T07:43:26Z"
+      "time": "2026-10-25T08:51:47Z"
      },
      {
       "ahead": 8,
@@ -4436,7 +4437,7 @@
       42,
       16,
       59,
-      22
+      29
      ],
      "human": [
       13,
@@ -4704,11 +4705,15 @@
   },
   "smi": {
    "activity": {
-    "last": "2026-10-25T08:11:48Z",
+    "last": "2026-10-25T09:31:07Z",
     "reasons": [
      {
-      "branch": "claude/quirky-curie-wvnj3m",
-      "hours": 0.15,
+      "hours": 0.08,
+      "rule": "main"
+     },
+     {
+      "branch": "claude/peripheral-projects",
+      "hours": 0.08,
       "rule": "branch"
      }
     ],
@@ -4717,10 +4722,10 @@
    "git": {
     "branches": [
      {
-      "ahead": 10,
+      "ahead": 1,
       "method": "cherry",
-      "name": "claude/quirky-curie-wvnj3m",
-      "time": "2026-10-25T08:11:48Z"
+      "name": "claude/peripheral-projects",
+      "time": "2026-10-25T09:31:07Z"
      }
     ],
     "days": {
@@ -4745,6 +4750,8 @@
       0,
       0,
       0,
+      1,
+      7,
       0,
       0,
       0,
@@ -4752,9 +4759,7 @@
       0,
       0,
       0,
-      0,
-      0,
-      0
+      4
      ],
      "human": [
       0,
@@ -4818,7 +4823,7 @@
       0,
       0,
       0,
-      0
+      1
      ]
     },
     "days_all": {
@@ -4852,7 +4857,7 @@
       0,
       0,
       0,
-      2
+      5
      ],
      "human": [
       0,
@@ -4888,14 +4893,14 @@
      ]
     },
     "first_time": "2026-10-04T10:01:18Z",
-    "head": "4f0516d2af4cdf72d30370e87b1c642445bd8f3d",
-    "head_time": "2026-10-12T17:31:39Z",
+    "head": "0b9a57f002bbf0942b2acf209f9dccf220d8dad3",
+    "head_time": "2026-10-25T09:30:49Z",
     "history": "complete",
     "ref": "origin/main",
     "window": {
-     "ai": 102,
+     "ai": 114,
      "human": 5,
-     "merges": 27
+     "merges": 28
     }
    }
   },
@@ -4925,7 +4930,7 @@
     "last": "2026-10-25T04:38:38Z",
     "reasons": [
      {
-      "hours": 3.7,
+      "hours": 4.95,
       "rule": "main"
      }
     ],
@@ -5133,7 +5138,7 @@
  },
  "options": {
   "days": 30,
-  "fetch": false,
+  "fetch": true,
   "online": false
  },
  "registry": {

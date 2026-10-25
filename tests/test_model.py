@@ -140,6 +140,27 @@ class ValidationCatchesTest(unittest.TestCase):
     def test_registry_on_non_repo(self):
         self.assertCatches(lambda s: s["registry"].update(node="site"), "registry: node")
 
+    def test_history_exclude_needs_root_reason_refs(self):
+        good = {"root": "a" * 40, "reason": "влитая история", "refs": ["Alpha:README.md"]}
+        self.assertEqual(problems(lambda s: node(s, "alpha").update(history_exclude=[good])), [])
+        self.assertCatches(lambda s: node(s, "alpha").update(history_exclude=[dict(good, root="abc")]),
+                           "root — полный хеш")
+        self.assertCatches(lambda s: node(s, "alpha").update(history_exclude=[dict(good, reason=" ")]),
+                           "нет reason")
+        self.assertCatches(lambda s: node(s, "alpha").update(history_exclude=[dict(good, refs=[])]),
+                           "нет ссылок")
+        self.assertCatches(lambda s: node(s, "alpha").update(history_exclude=[dict(good, since="x")]),
+                           "неизвестный ключ 'since'")
+        self.assertCatches(lambda s: node(s, "site").update(history_exclude=[good]),
+                           "history_exclude — только у вида repo")
+
+    def test_history_exclude_is_exported(self):
+        src = base_source()
+        ex = {"root": "b" * 40, "reason": "влитая история", "refs": ["Alpha:README.md"]}
+        node(src, "alpha")["history_exclude"] = [ex]
+        built = next(n for n in model_from(src)["nodes"] if n["id"] == "alpha")
+        self.assertEqual(built["history_exclude"], [ex])
+
     def test_compile_raises_with_all_problems(self):
         src = base_source()
         node(src, "alpha")["kind"] = "robot"

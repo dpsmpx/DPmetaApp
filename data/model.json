@@ -2036,14 +2036,17 @@
    "kind": "repo",
    "layer": "product",
    "name": "DPpass",
+   "note": "узел показывает историю своего репозитория до слияния; работа после — в счёте DPmetaApp (D-24)",
    "refs": [
     "DPmeta:docs/ECOSYSTEM.md",
     "DPpass:README.md",
-    "SocialMediaImage:data/progress/scope.yaml"
+    "SocialMediaImage:data/progress/scope.yaml",
+    "DPmetaApp:D-30",
+    "DPvisualisation:D-24"
    ],
    "repo": "dpsmpx/DPpass",
    "role": "клиент прокси/VPN для Android: своя модель конфигурации, маршрутизации и подписок",
-   "stage": "этап 1 из 5 выполнен, идёт этап 2",
+   "stage": "этап 1 из 5 выполнен, идёт этап 2; с 16 октября 2026 — подсистема DPmetaApp (dppass/), репозиторий заморожен",
    "status": "active",
    "visibility": "undisclosed"
   },
@@ -2245,6 +2248,16 @@
   },
   {
    "group": "control",
+   "history_exclude": [
+    {
+     "reason": "история DPpass до 16 октября 2026 — у узла dppass; работа в dppass/ после слияния — DPmetaApp (D-24)",
+     "refs": [
+      "DPmetaApp:D-30",
+      "DPvisualisation:D-24"
+     ],
+     "root": "2f8443628125eff09e2a462a12a646bd583b813a"
+    }
+   ],
    "id": "dpmetaapp",
    "kind": "repo",
    "layer": "control",
@@ -2470,7 +2483,7 @@
  "schema": "dpvis-model/1",
  "source": {
   "path": "model/ecosystem.toml",
-  "sha256": "f146e4c80037bd613b579937fcbd490e1729893fa5631ee79ce82eeb3c5b0c4f"
+  "sha256": "df9625011404d686e397a0d5a6c50f358b444ddb417565b40c565df237529b83"
  },
  "sources": [
   "DPmeta:docs/ECOSYSTEM.md",

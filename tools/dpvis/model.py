@@ -102,8 +102,10 @@ SLUG_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 NODE_KEYS = {
     "id", "name", "kind", "layer", "role", "refs", "repo", "clone", "group",
     "visibility", "stage", "status", "note", "row",
-    "public_role", "public_stage",
+    "public_role", "public_stage", "history_exclude",
 }
+HISTORY_EXCLUDE_KEYS = {"root", "reason", "refs"}
+SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 REGISTRY_KEYS = {"node", "path", "contracts", "exclude", "exclude_contracts", "exclude_reason"}
 FLOW_KEYS = {
     "id", "from", "to", "kind", "what", "transport", "refs", "contracts",
@@ -235,8 +237,22 @@ def validate(src: dict) -> list[str]:
                 bad(place, f"неизвестная группа {node.get('group')!r}")
             if "visibility" not in node:
                 bad(place, "у репозитория должна быть visibility")
-        elif "repo" in node or "group" in node:
-            bad(place, "repo и group — только у вида repo")
+        elif "repo" in node or "group" in node or "history_exclude" in node:
+            bad(place, "repo, group и history_exclude — только у вида repo")
+        for j, ex in enumerate(node.get("history_exclude", [])):
+            where = f"{place} history_exclude[{j}]"
+            if not isinstance(ex, dict):
+                bad(where, "ожидается таблица {root, reason, refs}")
+                continue
+            for key in sorted(set(ex) - HISTORY_EXCLUDE_KEYS):
+                bad(where, f"неизвестный ключ {key!r}")
+            if not isinstance(ex.get("root"), str) or not SHA_RE.match(ex["root"]):
+                bad(where, "root — полный хеш корневого коммита (40 знаков)")
+            if not (isinstance(ex.get("reason"), str) and ex["reason"].strip()):
+                bad(where, "нет reason — почему эта история не в счёте (D-24)")
+            check_refs(where, ex.get("refs", []))
+            if not ex.get("refs"):
+                bad(where, "нет ссылок на источники (refs)")
         if "row" in node and not isinstance(node["row"], (int, float)):
             bad(place, "row — число")
 
@@ -368,6 +384,9 @@ def compile_model(src: dict, raw: bytes, source_path: str = "model/ecosystem.tom
         for key in ("repo", "clone", "group", "stage", "note", "row", "public_role", "public_stage"):
             if key in node:
                 out[key] = node[key]
+        if "history_exclude" in node:
+            out["history_exclude"] = [{"root": ex["root"], "reason": ex["reason"], "refs": list(ex["refs"])}
+                                      for ex in node["history_exclude"]]
         nodes.append(out)
     flows = []
     for flow in src["flow"]:

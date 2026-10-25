@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tests.fixture import base_source, build_ecosystem, model_from, utc
+from tests.fixture import Repo, base_source, build_ecosystem, model_from, utc
 from tools.dpvis import collect, formats, model as modelmod
 
 NOW = utc("2026-10-05T12:00:00")
@@ -182,3 +182,90 @@ def _toml(src: dict) -> str:
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HistoryExcludeTest(unittest.TestCase):
+    """Влитая история — у своего узла до слияния (D-24)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        tmp = Path(cls.tmp.name)
+        guest = Repo(tmp / "src" / "guest")
+        guest.commit("2026-09-20T10:00:00", author="Claude", message="гость: ИИ", files={"guest/g1.txt": "1"})
+        guest.commit("2026-09-21T10:00:00", message="гость: человек", files={"guest/g2.txt": "2"})
+        cls.guest_root = guest.git("rev-list", "--max-parents=0", "HEAD").strip()
+        guest.branch("extra")
+        guest.commit("2026-10-03T10:00:00", author="Claude", message="гость: невлитое", files={"guest/g3.txt": "3"})
+        guest.checkout("main")
+        host = Repo(tmp / "src" / "host")
+        host.commit("2026-09-25T10:00:00", message="свой корень")
+        host.commit("2026-09-26T10:00:00", author="Claude", message="своё: ИИ")
+        host.git("fetch", "-q", str(guest.path), "main:guest-main", "extra:guest-extra")
+        host.git("merge", "-q", "--no-ff", "--allow-unrelated-histories", "-m", "гость — в host",
+                 "guest-main", when=utc("2026-10-01T10:00:00"))
+        host.commit("2026-10-02T10:00:00", author="Claude", message="после слияния: ИИ",
+                    files={"guest/after.txt": "работа в каталоге гостя"})
+        host.git("branch", "-D", "guest-main")
+        root = tmp / "clones"
+        root.mkdir()
+        host.clone_to(root / "Host")
+        cls.root = root
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def source(self, exclude: bool) -> dict:
+        host = {"id": "host", "name": "Host", "kind": "repo", "layer": "product", "repo": "owner/Host",
+                "group": "control", "visibility": "private", "role": "хозяин", "refs": ["Host:README.md"]}
+        if exclude:
+            host["history_exclude"] = [{"root": self.guest_root, "reason": "история гостя до слияния",
+                                        "refs": ["Host:README.md"]}]
+        return {
+            "schema": 1, "title": "Влитая история", "as_of": "2026-10-05", "timezone": "+03:00",
+            "allow": {"hosts": []},
+            "layer": [{"id": "actors", "name": "Участники"}, {"id": "product", "name": "Продукты"}],
+            "node": [
+                {"id": "author", "name": "Автор", "kind": "actor", "layer": "actors", "role": "решения",
+                 "refs": ["Host:README.md"]},
+                {"id": "claude", "name": "Сессии", "kind": "actor", "layer": "actors", "role": "работа",
+                 "refs": ["Host:README.md"]},
+                host,
+            ],
+            "flow": [
+                {"id": "work.host", "from": "claude", "to": "host", "kind": "work", "what": "работа",
+                 "transport": "git", "refs": ["Host:README.md"],
+                 "signal": {"type": "git-commits", "repo": "host", "who": "ai", "scope": "all"}},
+                {"id": "path.host", "from": "claude", "to": "host", "kind": "work", "what": "каталог гостя",
+                 "transport": "git", "refs": ["Host:README.md"],
+                 "signal": {"type": "git-path", "repo": "host", "paths": ["guest/"]}},
+            ],
+        }
+
+    def collect(self, exclude: bool) -> dict:
+        model = model_from(self.source(exclude))
+        state = collect.collect(model, self.root, NOW)
+        self.assertEqual(formats.validate_document(state), [])
+        self.assertEqual(formats.validate_pair(model, state), [])
+        return state
+
+    def test_without_rule_guest_history_counts(self):
+        s = self.collect(False)
+        g = s["nodes"]["host"]["git"]
+        self.assertEqual(g["first_time"], "2026-09-20T10:00:00Z")
+        self.assertEqual(g["window"], {"ai": 3, "human": 2, "merges": 1})
+        self.assertEqual([b["name"] for b in g["branches"]], ["guest-extra"])
+        self.assertNotIn("excluded", g)
+        self.assertEqual(s["flows"]["path.host"]["total"], 3)
+
+    def test_guest_history_before_merge_is_not_counted(self):
+        s = self.collect(True)
+        g = s["nodes"]["host"]["git"]
+        self.assertEqual(g["first_time"], "2026-09-25T10:00:00Z")      # свой корень, а не гостя
+        self.assertEqual(g["window"], {"ai": 2, "human": 1, "merges": 1})  # слияние и работа после — свои
+        self.assertEqual(g["excluded"], 3)                              # два влитых и невлитое гостя
+        self.assertEqual(g["branches"], [])                             # вершина ветки — во влитой истории
+        self.assertEqual(s["flows"]["work.host"]["total"], 2)
+        self.assertEqual(s["flows"]["path.host"]["total"], 1)           # только работа в guest/ после слияния
+        self.assertEqual(sum(s["nodes"]["claude"]["days"]), 2)

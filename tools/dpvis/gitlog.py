@@ -122,10 +122,43 @@ def commits(repo: Path, refs: list[str], since: datetime | None = None,
     return result
 
 
-def first_commit_time(repo: Path, ref: str) -> datetime | None:
-    out = git(repo, "log", "--reverse", "--format=%ct", ref)
-    first = out.split("\n", 1)[0].strip()
-    return datetime.fromtimestamp(int(first), tz=timezone.utc) if first else None
+def first_commit_time(repo: Path, ref: str, skip: frozenset[str] = frozenset()) -> datetime | None:
+    """Время первого коммита основной ветки; коммиты skip (влитая история, D-24) — не в счёт."""
+    out = git(repo, "log", "--reverse", "--format=%H %ct", ref)
+    for line in out.splitlines():
+        sha, _, ct = line.partition(" ")
+        if sha and sha not in skip:
+            return datetime.fromtimestamp(int(ct), tz=timezone.utc)
+    return None
+
+
+_OWN, _FOREIGN = 1, 2
+
+
+def foreign(repo: Path, refs: list[str], roots: set[str]) -> frozenset[str]:
+    """Коммиты влитой истории (D-24): их история сходится только к корням roots.
+
+    Корень (коммит без родителей) из roots — чужой, любой другой — свой;
+    коммит наследует пометки родителей. Чужой — тот, у кого только чужая
+    пометка: коммиты влитого репозитория до слияния. Слияние и всё после
+    него видит оба корня — это работа самого репозитория. Родитель за
+    границей неполного клона — свой: такой коммит считается (занизить
+    чужое безопаснее, чем потерять своё).
+    """
+    if not roots or not refs:
+        return frozenset()
+    out = git(repo, "rev-list", "--parents", "--topo-order", "--reverse", *refs)
+    marks: dict[str, int] = {}
+    for line in out.splitlines():
+        sha, *parents = line.split()
+        if not parents:
+            marks[sha] = _FOREIGN if sha in roots else _OWN
+            continue
+        mark = 0
+        for p in parents:
+            mark |= marks.get(p, _OWN)
+        marks[sha] = mark
+    return frozenset(sha for sha, mark in marks.items() if mark == _FOREIGN)
 
 
 def is_shallow(repo: Path) -> bool:
@@ -143,13 +176,14 @@ class Branch:
     method: str             # cherry — по изменениям; rev-list — по коммитам
 
 
-def unmerged_branches(repo: Path, main: str) -> list[Branch]:
+def unmerged_branches(repo: Path, main: str, skip: frozenset[str] = frozenset()) -> list[Branch]:
     """Ветки с работой, которой нет в основной (`DPmeta:M-08`).
 
     Сначала `rev-list --count main..ветка`; если там что-то есть —
     `git cherry`: коммит, чьё изменение уже есть в основной под другим
     хешем, не считается невлитым. `git cherry` в неполном клоне может
-    потребовать догрузки — тогда остаётся счёт по коммитам.
+    потребовать догрузки — тогда остаётся счёт по коммитам. Ветка, чья
+    вершина — во влитой истории (skip, D-24), не считается.
     """
     result = []
     for ref in branch_refs(repo):
@@ -170,7 +204,10 @@ def unmerged_branches(repo: Path, main: str) -> list[Branch]:
             pass
         if ahead == 0:
             continue
-        tip = int(git(repo, "log", "-1", "--format=%ct", ref).strip())
+        tip_sha, _, tip_ct = git(repo, "log", "-1", "--format=%H %ct", ref).strip().partition(" ")
+        if tip_sha in skip:
+            continue
+        tip = int(tip_ct)
         name = ref.removeprefix("origin/")
         result.append(Branch(name=name, ahead=ahead,
                              time=datetime.fromtimestamp(tip, tz=timezone.utc), method=method))

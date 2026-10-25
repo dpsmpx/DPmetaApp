@@ -127,6 +127,7 @@ class RepoData:
     ref: str
     main: list[gitlog.Commit]               # основная ветка, в окне, не позже среза
     all: list[gitlog.Commit]                # все ветки, в окне, не позже среза
+    skip: frozenset[str] = frozenset()      # влитая история — не в счёт узла (D-24)
 
 
 def observe_repo(node: dict, path: Path, win: Window, diags: Diagnostics) -> tuple[dict, RepoData | None]:
@@ -135,16 +136,19 @@ def observe_repo(node: dict, path: Path, win: Window, diags: Diagnostics) -> tup
     if ref is None:
         diags.add("REF_NOT_FOUND", nid, f"в клоне {path.name} нет основной ветки (origin/HEAD, main, master)")
         return {"state": "unknown", "reasons": [{"rule": "no_ref"}]}, None
+    roots = {h["root"] for h in node.get("history_exclude", [])}
     try:
-        main = [c for c in gitlog.commits(path, [ref], win.since) if c.time <= win.now]
         branches_all = gitlog.branch_refs(path)
-        every = [c for c in gitlog.commits(path, sorted(set(branches_all) | {ref}), win.since)
-                 if c.time <= win.now]
+        refs_all = sorted(set(branches_all) | {ref})
+        skip = gitlog.foreign(path, refs_all, roots)
+        main = [c for c in gitlog.commits(path, [ref], win.since) if c.time <= win.now and c.sha not in skip]
+        every = [c for c in gitlog.commits(path, refs_all, win.since)
+                 if c.time <= win.now and c.sha not in skip]
         head_out = gitlog.git(path, "log", "-1", "--format=%H%x1f%ct",
                               f"--before={int(win.now.timestamp())}", ref).strip()
-        first = gitlog.first_commit_time(path, ref)
+        first = gitlog.first_commit_time(path, ref, skip)
         shallow = gitlog.is_shallow(path)
-        branches = gitlog.unmerged_branches(path, ref)
+        branches = gitlog.unmerged_branches(path, ref, skip)
     except gitlog.GitError as exc:
         diags.add("GIT_FAILED", nid, str(exc))
         return {"state": "unknown", "reasons": [{"rule": "git_failed"}]}, None
@@ -183,6 +187,8 @@ def observe_repo(node: dict, path: Path, win: Window, diags: Diagnostics) -> tup
             for b in branches
         ],
     }
+    if roots:
+        git_data["excluded"] = len(skip)    # коммитов влитой истории не в счёте (D-24)
     reasons = []
     if head_time is not None and win.hours_since(head_time) <= rules.MAIN_ACTIVE_HOURS:
         reasons.append({"rule": "main", "hours": win.hours_since(head_time)})
@@ -196,7 +202,7 @@ def observe_repo(node: dict, path: Path, win: Window, diags: Diagnostics) -> tup
                         default=None)),
         "reasons": reasons,
     }
-    return {"git": git_data, "activity": activity}, RepoData(path, ref, main, every)
+    return {"git": git_data, "activity": activity}, RepoData(path, ref, main, every, skip)
 
 
 # --------------------------------------------------------------- потоки
@@ -230,7 +236,7 @@ def flow_state(flow: dict, nodes_state: dict, repos: dict[str, RepoData],
         except gitlog.GitError as exc:
             diags.add("GIT_FAILED", flow["id"], str(exc))
             return {"state": "unknown", "signal": stype, "reason": "git не прочитал пути"}
-        times = [c.time for c in found if c.time <= win.now]
+        times = [c.time for c in found if c.time <= win.now and c.sha not in data.skip]
     else:
         diags.add("SIGNAL_UNSUPPORTED", flow["id"], f"сигнал {stype!r} не поддержан")
         return {"state": "unknown", "signal": stype}
