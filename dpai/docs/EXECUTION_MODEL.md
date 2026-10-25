@@ -10,7 +10,7 @@
 Mobile Controller (android/ или cli/)
         │  протокол событий с номерами (транспорт — этап 3)
         ▼
-Execution Target  ── TERMUX_LOCAL · LINUX_SSH · WINDOWS_REMOTE · MOCK  (V1, D-26)
+Execution Target  ── TERMUX_LOCAL · LINUX_SSH · WINDOWS_REMOTE · MOCK  (V1, D-26) · IN_APP (D-75)
         │  агент оркестратора на target (оболочка cli)
         ▼
 Claude runtime    ── Claude Code CLI (print, stream-json), Claude Agent SDK
@@ -19,7 +19,9 @@ Claude runtime    ── Claude Code CLI (print, stream-json), Claude Agent SDK
 Транспорт к любому target — SSH (D-26): к Termux — на `127.0.0.1` того
 же телефона, к Linux и Windows — с проверкой ключа хоста. На JVM — системный
 клиент OpenSSH (D-31); вид `LOCAL` — машина самого контроллера, тот же
-агент без SSH; `MOCK` — `MockAgentHost` без процессов (ТЗ, §89). Работает
+агент без SSH; `MOCK` — `MockAgentHost` без процессов (ТЗ, §89);
+`IN_APP` — Linux-среда в самом приложении, агент — в его процессе, без
+SSH (D-75, §8). Работает
 ли Claude Code в Termux на Redmi Note 13 — проверка на устройстве
 (`docs/research/CLAUDE_CODE_CLI.md`, §5; `TODO.md`).
 
@@ -298,6 +300,23 @@ Termux. Готово (шаги 2 и 3 D-75):
   паузу — `KILL`, пережившие — в отчёте. Так останавливаются и ушедшие в
   фон потомки, как у супервизора на Linux (§1.3).
 
-Дальше (пункт «Терминал B2» в `TODO.md`): агент в процессе приложения
-(шаг 4), первый запуск Alpine и вход в Claude Code в каталоге слота
-(шаг 5).
+- **Агент в процессе приложения** (шаг 4). Target вида `IN_APP` — без
+  SSH: `AgentClient` шлёт те же вызовы `dpai agent …`, а
+  `InAppAgentHost` исполняет их агентом (`AgentRuntime`) этого же
+  процесса, каждый в своём потоке: ответ — строками, код выхода — как у
+  `dpai agent`, остановка `follow` — закрытием вывода. Разбор параметров
+  и ответы — общие с `cli` (`AgentCommands`). Супервизор хода — поток
+  (`ThreadSupervision`): отдельный процесс приложению недоступен (в ART
+  нет `ProcessHandle`). Его опознание — номер процесса приложения и
+  время его старта по `/proc` (`ProcStat`); после перезапуска приложения
+  поток не вернётся, и ход — `LOST`, как у умершего супервизора на
+  target. Процессы хода — лидеры своих сеансов (`NativeProcessHost`),
+  остановка без супервизора — остановка сеанса (`NativeSessions`).
+  Команд `supervise` и `mcp` снаружи нет; `doctor` берёт память из
+  `/proc/meminfo`. На target под JVM всё по-прежнему: супервизор —
+  отдельный процесс (`ProcessSupervision`). Проверка на JVM —
+  `InAppAgentHostTest`.
+
+Дальше (пункт «Терминал B2» в `TODO.md`): первый запуск Alpine и вход в
+Claude Code в каталоге слота (шаг 5); target «в приложении» в оболочке
+Android и проверка агента на телефоне — с ним.

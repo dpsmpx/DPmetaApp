@@ -231,7 +231,13 @@ RECOVERY_PENDING ─► проба target и процесса ─► сверк�
 `storage`), команда — `dpai agent` модуля `cli`. Дерево задачи для хода на
 другом target — `orchestrator.agent.WorkspaceMcp` (`dpai agent mcp`), а
 запрос такого хода — `orchestrator.RemoteWorkspace` (D-50;
-`docs/EXECUTION_MODEL.md`, §7).
+`docs/EXECUTION_MODEL.md`, §7). Где живёт супервизор хода —
+`orchestrator.agent.Supervision`: на target — отдельный процесс ОС
+(`ProcessSupervision`), в приложении — поток (`ThreadSupervision`).
+Target «в приложении» (`IN_APP`, D-75) — тот же агент в процессе
+приложения: `orchestrator.agent.InAppAgentHost` — `ProcessHost`, который
+исполняет вызовы `dpai agent …` без SSH; разбор параметров и ответы —
+`AgentCommands`, общие с `dpai agent` (`docs/EXECUTION_MODEL.md`, §8).
 Корневую систему Linux-среды в приложении распаковывает
 `orchestrator.linux.RootfsInstaller` через `Vfs` (D-24; символьные ссылки
 и права — `Vfs.symlink`, `Vfs.setMode`); proot, его загрузчик и minirootfs

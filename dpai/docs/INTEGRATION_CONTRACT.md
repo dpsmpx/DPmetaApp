@@ -143,7 +143,7 @@ API не включён. Граница — этот раздел и реест�
 |---|---|---|
 | Задача (`TaskId`, `tsk`) | цель, приоритет, зависимости (DAG), политики; автомат `TaskLifecycle`; в `DONE` — только после `VERIFIED` или записанного исключения (D-23) | `docs/SCHEDULER.md` |
 | Подписка (`SubscriptionId`, `sub`) и слот (`AccountId`, `acc`; `AIAccount` ТЗ, §7) | подписка — аккаунт Claude с общими пределами (`SubscriptionState`); слот — подписка, вошедшая в Claude Code на target в своём `CLAUDE_CONFIG_DIR` (`SlotState`; D-27, D-30) | `docs/ACCOUNT_MODEL.md` |
-| Execution target (`tgt`) | где работает Claude: `LOCAL`, `TERMUX_LOCAL`, `LINUX_SSH`, `WINDOWS_REMOTE`, `MOCK`; транспорт — SSH (D-26) | `docs/EXECUTION_MODEL.md` |
+| Execution target (`tgt`) | где работает Claude: `LOCAL`, `TERMUX_LOCAL`, `LINUX_SSH`, `WINDOWS_REMOTE`, `MOCK`, `IN_APP`; транспорт — SSH (D-26), к `IN_APP` — вызов в процессе приложения (D-75) | `docs/EXECUTION_MODEL.md` |
 | Агент target | `dpai agent`: запускает ход отделённым супервизором, пишет журнал запуска с номерами, переживает обрыв SSH (D-31) | `docs/EXECUTION_MODEL.md`, §1.3 |
 | Сессия (`SessionId`, `ses`) | временный исполнитель: задача + слот + target + рабочее дерево + процесс Claude; автомат `SessionLifecycle`; `ProviderSessionId` — отдельный тип | `docs/SESSION_MODEL.md` |
 | Ход | один процесс `claude -p --verbose --output-format stream-json`; продолжение — `--resume` (D-32) | `docs/EXECUTION_MODEL.md`, §3 |
