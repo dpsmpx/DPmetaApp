@@ -676,8 +676,8 @@ DPmetaApp — 4 октября вместо 5-го, работа закрыто�
 ### D-25 — DPvisualisation — подсистема DPmetaApp, каталог `dpvisualisation/`
 
 **Статус.** Принято — ответы автора 25 октября 2026 в опросе сессии
-DPmetaApp (`DPmetaApp:D-43`): DPvisualisation переезжает в DPmetaApp
-«только как подкаталог со своими сборщиками, README и прочим», по одной
+DPmetaApp (`DPmetaApp:D-43`): DPvisualisation переезжает в DPmetaApp —
+«только как подкаталоги со своими сборщиками, README и прочим», по одной
 системе за раз с проверками; в старом репозитории — надпись, что его
 нужно архивировать.
 
@@ -694,7 +694,8 @@ DPmetaApp (`DPmetaApp:D-43`): DPvisualisation переезжает в DPmetaApp
 - Формат `dpvis-model/1` и `dpvis-state/1` для DPmetaApp не меняется
   (D-07): приложение читает их теперь из соседнего каталога.
 - Хук начала сессии и правила `ask` — в корне DPmetaApp
-  (`DPmetaApp:.claude/`): Claude Code читает настройки только корня.
+  (`DPmetaApp:.claude/`): Claude Code читает настройки только корня, а
+  `.claude/` и `.github/` подсистемы ни на что не влияют.
 
 **Почему.** Слово автора; так уже живут `dpai/`, `dppass/` и
 `socialmediaimage/` (`DPmetaApp:D-28`, `DPmetaApp:D-30`, `DPmetaApp:D-43`).

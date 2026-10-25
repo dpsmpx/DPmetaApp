@@ -320,8 +320,9 @@ class SubsystemChecksTest(CheckCase):
         self.assertEqual(2, r.scanned)
 
     def test_smi_failing_check_is_reported(self):
+        # Код 0 нарочно: находку должен дать разбор строки «✗ id — …», а не запасной хвост вывода.
         out = "printf '✓ schemas — данные\\n✗ links — ссылки в документах\\n    ✗ a.md:1: нет файла\\n'"
-        s = self.sample({"sub/check.sh": f"#!/bin/sh\n{out}\nexit 1\n"})
+        s = self.sample({"sub/check.sh": f"#!/bin/sh\n{out}\n"})
         self.assertCatches(check.check_subsystems(s.root, {"sub": ("sub/check.sh", "--quick")})[0], "links")
 
     def test_dpvisualisation_lines_are_steps(self):
@@ -332,8 +333,9 @@ class SubsystemChecksTest(CheckCase):
         self.assertEqual(2, r.scanned)
 
     def test_dpvisualisation_failing_check_is_reported(self):
+        # Код 0 нарочно: находку должен дать разбор строки «✗ id (…)», а не запасной хвост вывода.
         out = "printf '✓ process.decisions (0.0 с)\\n✗ docs.refs (0.0 с)\\n    a.md:1: D-9 нигде не определён\\n'"
-        self.assertCatches(self.run_sub(f"#!/bin/sh\n{out}\nexit 1\n"), "docs.refs")
+        self.assertCatches(self.run_sub(f"#!/bin/sh\n{out}\n"), "docs.refs")
 
     def test_dp_verify_failing_check_is_reported(self):
         out = "printf '  ✓ docs.links    ссылок 10\\n  ✗ docs.refs     находок: 1\\n      a.md:1  D-9 не определено\\n'"
