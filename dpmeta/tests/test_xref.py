@@ -3,12 +3,14 @@
 Запуск: python3 -B -m unittest discover -s tests
 """
 
+import os
 import subprocess
 import sys
 import tempfile
 import textwrap
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
@@ -155,10 +157,12 @@ class XrefTest(unittest.TestCase):
         _, report = self.run_xref("--clone", f"Alpha={host / 'alpha'}", "--clone", f"Beta={host}")
         self.assertIn("Ссылок распознано: 5; нет такого номера: 1.", report)
         self.assertNotIn("`alpha/ref.md", report)
-        # Простой каталог вне рабочего дерева — не клон.
+        # Простой каталог вне рабочего дерева — не клон. Git не ищет выше
+        # каталога теста: временный каталог может лежать в чужом рабочем дереве.
         plain = self.root / "plain"
         plain.mkdir()
-        _, report = self.run_xref("--clone", f"Alpha={plain}")
+        with mock.patch.dict(os.environ, {"GIT_CEILING_DIRECTORIES": str(self.root)}):
+            _, report = self.run_xref("--clone", f"Alpha={plain}")
         self.assertIn("| Alpha | нет клона | — |", report)
 
     def test_bad_registry_and_unknown_name_give_code_2(self):

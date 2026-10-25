@@ -28,18 +28,13 @@
 
 ## Вне репозитория — правят сессии тех репозиториев
 
-- [ ] `М` **DPmeta.** В ветке `claude/dreamy-bardeen-xe4k6r` — DPmetaApp и
-      DPvisualisation в реестре, контракты C-11 («DPmeta → DPvisualisation»)
-      и C-12 («DPvisualisation → сайт»), классификация автора; решения
-      `DPmeta:M-12` (слой синхронизации) и `DPmeta:M-13` (правило
-      вливания) — на них ссылаются D-21 и модель. В реестре той ветки
-      DP_AI_Orcestrator ещё с `place = "core"`, а он заморожен
-      (`DPmetaApp:D-28`; здесь — в `[registry] exclude`, D-22): правка —
-      сессией DPmeta. Когда ветка окажется в `main` DPmeta — здесь:
-      `contracts` у потоков `vis.dpmeta.dpvisualisation`,
-      `vis.dpvisualisation.smi` и `orc.dpmeta.dpmetaapp` (C-13 — манифест
-      `dpai.ecosystem`, `DPmeta:M-11`), иначе сбор покажет
-      `CONTRACT_UNCOVERED`.
+- [ ] `М` **Контракты DPmeta у потоков.** Ветка DPmeta с C-11…C-13 влита
+      вместе с переездом (`DPmeta:M-14`): `contracts` у потоков
+      `vis.dpmeta.dpvisualisation`, `vis.dpvisualisation.smi` и
+      `orc.dpmeta.dpmetaapp` (C-13 — манифест `dpai.ecosystem`,
+      `DPmeta:M-11`) — вместе с моделью под переезды, иначе сбор покажет
+      `CONTRACT_UNCOVERED`. Место оркестратора в реестре — по
+      `DPmeta:M-16` (строка с каталогом `dpai/`), в модели — D-27.
 - [ ] `М` **DPmeta.** AIM_Trainer_pas и DP_Clock — в реестр `DPmeta:tools/ecosystem.toml`
       (D-23: узлы `aimtrainer`, `dpclock` в модели есть, сбор пишет их в
       `not_in_registry`); Andors-Love и TrueJointTileMaker — из периферии в

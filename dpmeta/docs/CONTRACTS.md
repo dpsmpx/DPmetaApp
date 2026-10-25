@@ -392,9 +392,11 @@ DPmeta: у каждого есть владелец, и правится он т
   согласуется и с ним.
 - **25 октября 2026:** обе стороны — подсистемы DPmetaApp
   (`DPvisualisation:D-25`, M-14): реестр — `DPmetaApp:dpmeta/tools/ecosystem.toml`.
-  Сбор ищет клон DPmeta по `slug` `dpsmpx/DPmeta`
-  (`DPmetaApp:dpvisualisation/tools/dpvis/registry.py`, `find_clone`) — без
-  явного `--clone` это замороженный репозиторий с реестром до переезда.
+  Сбор берёт реестр из клона узла `dpmeta` модели
+  (`DPmetaApp:dpvisualisation/tools/dpvis/registry.py`), а клон ищет по его
+  репозиторию `dpsmpx/DPmeta` (`DPmetaApp:dpvisualisation/tools/dpvis/collect.py`,
+  `find_clone`) — без явного `--clone` это замороженный репозиторий с
+  реестром до переезда.
   Как реестр называет подсистемы и откуда их читать — SQ-36; модель под
   переезды — `DPvisualisation:D-26`.
 
@@ -483,10 +485,10 @@ DPmeta: у каждого есть владелец, и правится он т
   `DPmetaApp:dpai/`) он не копируется: она по ответу автора ведётся по
   правилам публичного (`DP_AI_Orcestrator:D-16`,
   `DP_AI_Orcestrator:TODO.md`); читается из клона DPmeta или файла на
-  устройстве автора. Обратного потока нет: подсистема называет DPmeta
-  получателем итогов `dpai.ecosystem-results` и событий `dpai.event`
-  (`DPmetaApp:dpai/docs/INTEGRATION_CONTRACT.md`, §20), но DPmeta их не
-  читает и читателя не заводит (M-01) — SQ-28.
+  устройстве автора. Обратного потока нет: итоги `dpai.ecosystem-results`
+  и события `dpai.event` DPmeta не читает и читателя не заводит (M-01);
+  с 25 октября 2026 так пишет и подсистема
+  (`DPmetaApp:dpai/docs/INTEGRATION_CONTRACT.md`, §20; SQ-28 — сделано).
 - **Устойчивость:** чтение строгое (`DP_AI_Orcestrator:D-09`): неизвестное
   поле, версия новее, повтор ключа — отказ всего манифеста; поэтому
   DPmeta не добавляет полей сверх §2 и не меняет версию сам.

@@ -51,14 +51,14 @@ DPvisualisation, DPmeta и DPprofile, как прежде DP_AI_Orcestrator, —
 | SQ-21 | DPlang, SocialMediaImage | онлайн-компилятор: адрес `/api/v1/` занят, страница не в планах сайта | средний (публичный адрес) | открыт — RISK-09; часть DPlang сделана (`78defb1`) |
 | SQ-22 | DPmonetization | код ссылается на решения и документы, которых нет; WIP в `main` | низкий (документы) | открыт — активная разработка |
 | SQ-23 | SocialMediaImage | DPmonetization нет ни в счёте прогресса, ни в списке «вне счёта» | низкий | сделано: решение автора 9.10 влито в `main` SocialMediaImage до переезда |
-| SQ-24 | SocialMediaImage | Д35 и ROADMAP: «UNKNOWN» и «за автором» о сделанном | низкий | открыт — активная разработка |
+| SQ-24 | SocialMediaImage | Д35 и ROADMAP: «UNKNOWN» и «за автором» о сделанном | низкий | сделано сессией SocialMediaImage 16–17.10.2026, до переезда |
 | SQ-25 | DPvisualisation, SocialMediaImage | схема сайта — из невлитой ветки; связи не записаны в DPmeta | низкий (документы), публичный (сайт) | сделано: ветки влиты — DPvisualisation и SocialMediaImage до переезда, DPmeta — с переездом (PR #5, M-14) |
 | SQ-26 | DP_AI_Orcestrator | строка состояния README расходится с «Прогрессом» | низкий | сделано в `DPmetaApp:dpai/README.md`; репозиторий заморожен (SQ-30) |
 | SQ-27 | DPmetaApp | ТЗ и журнал решений — только в невлитой ветке, а на них ссылаются | низкий | решено: влито в `main` DPmetaApp — PR #2 (`51fa0c7`, 11 октября 2026) |
 | SQ-28 | DPmetaApp | пункты о манифесте в TODO и контракте интеграции решены (M-11); «публичный» при закрытом — ответ автора записан там | средний (лицензия, границы) | сделано проходом 25.10: контракт интеграции и `TODO.md` подсистемы «AI» сведены с C-13 |
 | SQ-29 | DP_AI_Orcestrator | своё Android-приложение (`android/`, README), а по слову автора — в составе DPmetaApp | средний (архитектура) | решено автором: `DPmetaApp:D-28` — оболочка `dpai/android` и есть приложение DPmetaApp |
-| SQ-30 | DP_AI_Orcestrator, DPpass | репозиторий заморожен (`DPmetaApp:D-28`, `DPmetaApp:D-30`), а сам об этом не говорит | низкий | открыт — архивировать шесть замороженных репозиториев решает автор; у четырёх переехавших 25.10 надпись есть (`DPmetaApp:D-43`) |
-| SQ-31 | DPvisualisation, SocialMediaImage | узлы и факты: DP_AI_Orcestrator ещё «войдёт» в DPmetaApp, его приложение — отдельно | низкий (документы), публичный (сайт) | частично: схема — сделано (`DPvisualisation:D-22`); счёт и факты сайта — ведёт SocialMediaImage (SQ-37) |
+| SQ-30 | DP_AI_Orcestrator, DPpass | репозиторий заморожен (`DPmetaApp:D-28`, `DPmetaApp:D-30`), а сам об этом не говорит | низкий | частично: DP_AI_Orcestrator и DPpass архивированы; четыре переехавших 25.10 (с надписью, `DPmetaApp:D-43`) — архивировать решает автор |
+| SQ-31 | DPvisualisation, SocialMediaImage | узлы и факты: DP_AI_Orcestrator ещё «войдёт» в DPmetaApp, его приложение — отдельно | низкий (документы), публичный (сайт) | решено автором (M-16, `DPvisualisation:D-27`, `SocialMediaImage:Д46`): узел — модель DPvisualisation; счёт и факты сайта — сессия SocialMediaImage |
 | SQ-32 | DPlang | README: v0.2 «не начата», а по ROADMAP сделаны шаги 1–5; «Р0–Р60» при Р61 | низкий | открыт — активная разработка |
 | SQ-33 | DPvisualisation | модель отстала: стадии DP-Verify, DPlang, анализа рынка; мелочи ТЗ и форматов | низкий; публичный — комплект сайта | открыт — сессия DPvisualisation, вместе с моделью под переезды (`DPvisualisation:D-26`) |
 | SQ-34 | SocialMediaImage | факты отстали: DPmetaApp после D-27…D-29, стадия DP-Verify; повторы в реестре фактов | низкий; публичный — сайт | частично: стадия DP-Verify — VRF-NOW; APP-WHAT, ECO-NEW и повтор AU-EARLY — открыт |
@@ -79,10 +79,10 @@ DPvisualisation, DPmeta и DPprofile, как прежде DP_AI_Orcestrator, —
 ### SQ-01 — Адрес DPlang `dpsmpx/C-` в настоящем времени
 
 - **Вид:** наблюдение + рекомендация. **Риск:** низкий.
-- **Где** (`579ee01`, 12 октября 2026; строки те же, что на `d7a9d43`):
-  `CLAUDE.md:44`,
-  `docs/PROCESS.md:491`, `docs/direction/DECISIONS.md:482` (`Galdhold:Р17`)
-  и `:505` (`Galdhold:Р18`), `docs/direction/WORLD_COORDINATES.md:182`
+- **Где** (`83790f1`, 25 октября 2026; на `579ee01` было `CLAUDE.md:44`,
+  `docs/PROCESS.md:491`, `DECISIONS.md:482` и `:505`): `CLAUDE.md:48`,
+  `docs/PROCESS.md:567`, `docs/direction/DECISIONS.md:500` (`Galdhold:Р17`)
+  и `:523` (`Galdhold:Р18`), `docs/direction/WORLD_COORDINATES.md:182`
   («нынешний `dpsmpx/C-`»), `docs/direction/DEFERRED_TASKS_BY_EARLY_EASE.md:200`,
   `ROADMAP/Детерминированный скриптовый язык.md:172`.
 - **Что не так:** репозиторий называется `dpsmpx/DPlang`; старый адрес
@@ -134,11 +134,14 @@ DPvisualisation, DPmeta и DPprofile, как прежде DP_AI_Orcestrator, —
   (`Galdhold:Р21`, `DP-Verify:docs/audits/STAGE7_PILOT_VOXELRPG.md`, PR #170
   влит с #177 10 октября 2026). SHA-256 трёх меток —
   `Galdhold:docs/PROVENANCE.md`, §2; остальное — базовая линия DP Verify
-  (`tools/dpverify.baseline.json` Galdhold, 51 запись; сокращена до
-  одной в `0b237cf`, удалена 20 октября 2026 в `cc93728`) с пунктами
+  (`tools/dpverify.baseline.json` Galdhold, 51 запись) с пунктами
   `Galdhold:TODO.md`: перевод строки в конце, комментарии о
   `tools/preview` (теперь `features.h:66`), ссылка на раздел. Issue не
   нужен — пункты ведёт сам Galdhold.
+- **Проход 25 октября 2026:** базовой линии больше нет — сокращена до
+  одной записи (`0b237cf`), удалена 20 октября 2026 (`cc93728`); ссылка
+  выше — уже не путь `Galdhold:…`, чтобы сверка ссылок не считала её
+  пропажей.
 - **Состояние:** закрыт для DPmeta — ведёт Galdhold (`TODO.md`).
 
 ## DPlang
@@ -152,8 +155,9 @@ DPvisualisation, DPmeta и DPprofile, как прежде DP_AI_Orcestrator, —
 - **Вид:** рекомендация. **Риск:** низкий по сути; средний по процессу —
   правятся заголовки решений.
 - **Где:** 38 файлов, около 155 строк (`docs/reports/2026-10-05-xref.md`); в
-  живых документах — `CLAUDE.md:59-61, 126-129`, `README.md:23`,
-  `ROADMAP/ROADMAP.md:16-22, 155`, `ROADMAP/IMPLEMENTATION.md:20`,
+  живых документах (`eac5a87`, 25 октября 2026) — `CLAUDE.md:59-61,
+  138-141`, `README.md:25`, `ROADMAP/ROADMAP.md:16-22, 217`,
+  `ROADMAP/IMPLEMENTATION.md:20`,
   `docs/design/*`, `docs/policy/*`, `docs/direction/DECISIONS.md`
   (заголовки `DPlang:Р3`, `DPlang:Р21`, `DPlang:Р22`, `DPlang:Р31`; адрес
   `dpsmpx/3D_Voxel_OpenWorld_RPG` в строке 45).
@@ -345,9 +349,10 @@ Galdhold); DP Verify 1.0.0-rc2 поставлен в DPpass (этап 6) и Gald
 - **Проход 25 октября 2026:** с 16 октября 2026 DPpass — подсистема
   `DPmetaApp:dppass/` (`DPmetaApp:D-30`), репозиторий заморожен. Копия DP
   Verify — в `DPmetaApp:dppass/tools/dpv/`; в `DPmetaApp:dppass/LICENSE` и
-  в корне DPmetaApp — Apache-2.0, а лицензия корня — открытый вопрос
-  DPmetaApp Q-01 (`DPmetaApp:TODO.md`). Решения автора о лицензии копии
-  нет.
+  в корне DPmetaApp — Apache-2.0. Ответ автора 17 октября 2026: копию DP
+  Verify в `dppass/tools/dpv/` держать можно, Q-01 её не касается
+  (`DPmetaApp:D-30`, история решений DPmetaApp); лицензия корня —
+  тогда ещё открытый вопрос Q-01.
 - **Ответ автора 25 октября 2026:** лицензия всего DPmetaApp — «все права
   защищены», Apache-2.0 в корне, `dpai/` и `dppass/` заменяется, копия DP
   Verify — по его лицензии (`DPmetaApp:D-47`, ответ на Q-01).
@@ -515,11 +520,14 @@ Galdhold); DP Verify 1.0.0-rc2 поставлен в DPpass (этап 6) и Gald
 - **Предложение:** в Д35 — итог проверки с датой и ссылкой на
   `WEBSITE.md`, как там же сделано для домена (ОР-11); в ROADMAP — то же
   для П2 и П2-12.
-- **Проход 25 октября 2026:** SocialMediaImage — подсистема
-  `DPmetaApp:socialmediaimage/` (`DPmetaApp:D-43`); на `8e9cdd4` в Д35
-  по-прежнему «Поддержка `Options` в `.htaccess` у Beget — UNKNOWN»
-  (`DPmetaApp:socialmediaimage/docs/direction/DECISIONS.md:1181`).
-- **Состояние:** открыт — активная разработка.
+- **Проход 25 октября 2026:** сделано сессией SocialMediaImage до
+  переезда: в Д35, «Следствия», — итоги проверок вместо «UNKNOWN»
+  (история решений, запись 17 октября 2026: «Д35, «Следствия», — итоги
+  проверок вместо «UNKNOWN» (DPmeta SQ-24)»), П2 и П2-12 ROADMAP — 16
+  октября. «UNKNOWN» осталось только в записи истории за 5 октября — так и
+  должно быть. (Срез 2026-10-25 записал пункт открытым по этой записи
+  истории — поправка в срезе `2026-10-25-2`.)
+- **Состояние:** сделано сессией SocialMediaImage (17 октября 2026).
 
 ### SQ-34 — Факты в ветке отстали: DPmetaApp после D-27…D-29, стадия DP-Verify; повторы
 
@@ -740,8 +748,15 @@ DPvisualisation «исправь все несоответствия». `main` D
   прежние; двойной счёт записан в `DPmetaApp:socialmediaimage/TODO.md`
   («Следующий набор прогресса») вместе с DPpass, а после 25 октября он
   шире — SQ-37.
-- **Состояние:** частично: схема — сделано; счёт и факты сайта — ведёт
-  SocialMediaImage (SQ-37).
+- **Ответ автора 25 октября 2026:** место решено (M-16, RISK-11 закрыт):
+  оркестратор — как пять других переехавших систем. В схеме его узел
+  возвращается (`DPvisualisation:D-27` заменяет D-22 в части узла) —
+  правка модели, `DPmetaApp:dpvisualisation/TODO.md`; на странице
+  прогресса — своя строка со счётом до переезда (`SocialMediaImage:Д46`).
+  Тексты фактов ORC-WHAT и ORC-STAGE — по-прежнему за сессией
+  SocialMediaImage.
+- **Состояние:** решено автором; узел — модель DPvisualisation, счёт и
+  факты — сессия SocialMediaImage.
 
 ### SQ-33 — Модель в ветке отстала от репозиториев: стадии DP-Verify, DPmetaApp, DPlang
 
@@ -895,16 +910,17 @@ Code, управление — из Android-приложения (`DP_AI_Orcestr
   `DPmetaApp:D-28` (PR #4 уже влит, перенос — `b66079a`). До этого ветки
   DPmeta туда не пушатся (M-04), а пункты о подсистеме ведутся по
   `DPmetaApp:dpai/`.
-- **Проход 25 октября 2026:** README и CLAUDE.md замороженных
-  DP_AI_Orcestrator (`9ff8dc4`) и DPpass (`e78a846`) по-прежнему как у
-  живых репозиториев: DPpass с 16 октября 2026 — подсистема
-  `DPmetaApp:dppass/` (`DPmetaApp:D-30`). Четыре переехавших 25 октября
+- **Проход 25 октября 2026:** DPpass архивирован 17 октября 2026
+  (`DPmetaApp:D-30`, история решений), DP_AI_Orcestrator — 25 октября
+  2026 (GitHub: `archived`, 06:32 UTC); README и CLAUDE.md у них — как у
+  живых репозиториев, но архив только для чтения. Четыре переехавших 25 октября
   получили надпись «заморожен — архивировать» в `CLAUDE.md` и `README.md`
   по слову автора (`DPmetaApp:D-43`): SocialMediaImage, DPvisualisation,
   DPmeta, DPprofile. Невлитые ветки замороженного DPmeta
   (`ccr-ddc9eb14-p13f4u`, `claude/dreamy-bardeen-xe4k6r`) уже в DPmetaApp
   — с PR #5; сам PR #5 закрыть — автору (`DPmetaApp:TODO.md`).
-- **Состояние:** открыт — архивировать шесть замороженных репозиториев
+- **Состояние:** частично: DP_AI_Orcestrator и DPpass архивированы;
+  SocialMediaImage, DPvisualisation, DPmeta и DPprofile — архивировать
   решает автор (`DPmetaApp:TODO.md`).
 
 ## DPmetaApp
@@ -926,8 +942,9 @@ PR #2 (`51fa0c7`), D-29 — PR #3 (`a28ec98`); DP_AI_Orcestrator — подси�
 ### SQ-38 — Путь в чужом репозитории — скрипт автора вне репозитория
 
 - **Вид:** наблюдение. **Риск:** низкий.
-- **Где:** `DPmetaApp:dpai/docs/PROVENANCE.md:87` (и прежний
-  `DP_AI_Orcestrator:docs/PROVENANCE.md:87`) — источник подписи APK
+- **Где:** `DPmetaApp:dpai/docs/PROVENANCE.md:87` (в замороженном
+  `DP_AI_Orcestrator:docs/PROVENANCE.md` — строка `:80` на `9ff8dc4`) —
+  источник подписи APK
   указан как путь DPpass `dppass-build/build.sh`, такого файла в DPpass
   нет ни в одной ветке.
 - **Что не так:** это скрипт автора в домашнем каталоге Termux
@@ -1128,11 +1145,10 @@ PR #1 «WIP: … каркас ядра (прервано)» влит в `main` �
     а их журналы и код — в каталогах DPmetaApp (`DPmetaApp:D-28`,
     `DPmetaApp:D-30`, `DPmetaApp:D-43`). По клонам замороженных
     репозиториев `tools/xref.py` на этом срезе не находит 159 ссылок на
-    номера, принятые после переездов или в ветке, влитой с переездом
-    (`DPmeta:M-10`…`DPmeta:M-15`, `DPmeta:C-11`…`DPmeta:C-13`,
-    `DP_AI_Orcestrator:D-75`…`DP_AI_Orcestrator:D-83`,
-    `DPpass:D-52`…`DPpass:D-94`, `SocialMediaImage:Д45`,
-    `DPvisualisation:D-25`, `DPprofile:D-16`);
+    номера, принятые после переездов или в ветке, влитой с переездом:
+    DPmeta `M-10`…`M-14`, `C-11`…`C-13` и `SQ-26`…`SQ-34` (ветка PR #5),
+    подсистемы «AI» `D-70`…`D-84`, DPpass `D-52`…`D-94`,
+    `SocialMediaImage:Д45`, `DPvisualisation:D-25`, `DPprofile:D-16`;
     по каталогам подсистем (ключи `--clone`) — ни одной. Этот проход
     сверял по каталогам; пока реестр прежний, так придётся делать каждому.
   - Andors-Love и TrueJointTileMaker — `place = "archive"`, а по слову
