@@ -49,6 +49,7 @@ DP_AI_Orcestrator — control plane для множества сессий Claud
 | Модель безопасности (угрозы T1…) | `docs/SECURITY_MODEL.md` |
 | Тесты, производительность | `docs/TESTING.md`, `docs/PERFORMANCE.md` |
 | Экономия контекста и токенов | `docs/EFFICIENCY.md` |
+| ПК как target (Windows, Linux) | `docs/SETUP_PC_WINDOWS.md`, `docs/SETUP_PC_LINUX.md` |
 | Процесс, проверки, зависимости | `docs/PROCESS.md` |
 | Происхождение зависимостей и идей | `docs/PROVENANCE.md` |
 | Исследования (датированные факты) | `docs/research/` |

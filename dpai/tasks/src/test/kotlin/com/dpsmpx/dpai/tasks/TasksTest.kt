@@ -232,6 +232,50 @@ class TasksTest {
         assertEquals(DiagCode.DEPENDENCY_CYCLE, (tasks.create(state, self, "x", "y", Priority.LOW, clock.now(), setOf(self)) as Outcome.Failure).errors.single().code)
     }
 
+    /** D-42, п. 1: зависимости и область меняют целиком, но только у задачи, которая ещё не идёт. */
+    @Test
+    fun dependenciesAndScopeChangeOnlyBeforeStart() {
+        val a = task()
+        val b = task()
+        val c = task()
+        ok(tasks.setDependencies(state, c, setOf(a, b), clock.now()))
+        assertEquals(setOf(a, b), state.tasks.getValue(c).dependencies)
+        ok(tasks.setDependencies(state, c, setOf(b), clock.now()))
+        assertEquals(setOf(b), state.tasks.getValue(c).dependencies, "лишняя зависимость снята")
+        assertEquals(emptyList(), ok(tasks.setDependencies(state, c, setOf(b), clock.now())), "повтор — без события")
+        assertEquals(DiagCode.DEPENDENCY_CYCLE, (tasks.setDependencies(state, b, setOf(c), clock.now()) as Outcome.Failure).errors.single().code)
+        assertEquals(DiagCode.DEPENDENCY_CYCLE, (tasks.setDependencies(state, c, setOf(c), clock.now()) as Outcome.Failure).errors.single().code)
+        assertEquals(DiagCode.ENTITY_NOT_FOUND, (tasks.setDependencies(state, c, setOf(ids.next(IdKinds.TASK)), clock.now()) as Outcome.Failure).errors.single().code)
+        runTickUntilReady(a)
+        ok(tasks.start(state, a, clock.now()))
+        assertEquals(DiagCode.OPERATION_NOT_ALLOWED, (tasks.setDependencies(state, a, setOf(b), clock.now()) as Outcome.Failure).errors.single().code)
+        assertEquals(DiagCode.OPERATION_NOT_ALLOWED, (Tasks.setScope(state, a, setOf("src"), clock.now()) as Outcome.Failure).errors.single().code)
+    }
+
+    /** Ревью 18 октября 2026: новая зависимость у готовой задачи возвращает её в очередь — она не начнётся раньше. */
+    @Test
+    fun newDependencyRequeuesReadyAndUnblocksDependencyBlocked() {
+        val dep = task()
+        val t = task()
+        runTickUntilReady(t)
+        assertEquals(TaskState.READY, state.tasks.getValue(t).state)
+        ok(tasks.setDependencies(state, t, setOf(dep), clock.now()))
+        assertEquals(TaskState.QUEUED, state.tasks.getValue(t).state, "готовая с незавершённой зависимостью — снова в очереди")
+        assertTrue(tasks.ready(state, clock.now()).none { it.id == t })
+        // Заблокирована упавшей зависимостью: зависимость сняли — снова в очереди и затем готова.
+        val bad = task(policy = TaskPolicy(maxRetries = 0))
+        val blocked = task(deps = setOf(bad))
+        runTickUntilReady(bad)
+        ok(tasks.start(state, bad, clock.now()))
+        ok(tasks.attemptFailed(state, bad, DiagCode.NETWORK_UNREACHABLE, Retryability.RETRYABLE, "k", clock.now()))
+        ok(Outcome.success(tasks.promote(state, clock.now())))
+        assertEquals(TaskState.BLOCKED, state.tasks.getValue(blocked).state)
+        ok(tasks.setDependencies(state, blocked, emptySet(), clock.now()))
+        assertEquals(TaskState.QUEUED, state.tasks.getValue(blocked).state)
+        ok(Outcome.success(tasks.promote(state, clock.now())))
+        assertEquals(TaskState.READY, state.tasks.getValue(blocked).state)
+    }
+
     @Test
     fun failedDependencyBlocksDependents() {
         val a = task(policy = TaskPolicy(maxRetries = 0))
@@ -297,6 +341,94 @@ class TasksTest {
         assertEquals(null, TaskCodec.decodeState(v1).valueOrNull()!!.tasks.getValue(t).scope)
     }
 
+    /** D-73: задача доводится до VERIFIED; с ревью — до ревью. */
+    private fun verified(policy: TaskPolicy): TaskId {
+        val t = task(policy = policy)
+        runTickUntilReady(t)
+        ok(tasks.start(state, t, clock.now()))
+        ok(tasks.implemented(state, t, clock.now()))
+        ok(tasks.recordVerification(state, t, "PASSED", "sha256:ok", clock.now()))
+        assertEquals(TaskState.VERIFIED, state.tasks.getValue(t).state)
+        return t
+    }
+
+    private val session = ids.next(IdKinds.SESSION)
+
+    /** D-73: у TRIVIAL ревью нет; DONE ждёт ревью всех ролей; блокирующее — повтор, новая попытка — ревью заново. */
+    @Test
+    fun reviewsGateDoneAndBlockingReviewIsAnAttempt() {
+        val refused = runCatching { TaskPolicy(taskClass = TaskClass.TRIVIAL, reviews = setOf(ReviewRole.CODE)) }
+        assertTrue(refused.isFailure && "TRIVIAL" in refused.exceptionOrNull()!!.message!!)
+        val t = verified(TaskPolicy(retryBackoff = 0.minutes, reviews = setOf(ReviewRole.SECURITY, ReviewRole.CODE)))
+        assertEquals(listOf(ReviewRole.CODE, ReviewRole.SECURITY), state.tasks.getValue(t).reviewsLeft())
+        assertEquals(DiagCode.REVIEW_REQUIRED, (tasks.complete(state, t, clock.now()) as Outcome.Failure).errors.single().code)
+        val major = ReviewFinding(FindingSeverity.MAJOR, "нет проверки длины", "src/a.kt", 12, "строка без предела")
+        ok(tasks.recordReview(state, t, ReviewRecord(ReviewRole.CODE, ReviewVerdict.PASSED, 1, session, listOf(major)), clock.now()))
+        val blocking = ReviewFinding(FindingSeverity.BLOCKING, "секрет в журнале")
+        ok(tasks.recordReview(state, t, ReviewRecord(ReviewRole.SECURITY, ReviewVerdict.BLOCKED, 1, session, listOf(blocking)), clock.now()))
+        ok(tasks.reviewBlocked(state, t, clock.now()))
+        val back = state.tasks.getValue(t)
+        assertEquals(TaskState.READY, back.state)
+        assertEquals(DiagCode.REVIEW_BLOCKING, back.lastReason)
+        assertEquals(1, back.retries, "блокирующее ревью — попытка")
+        assertEquals(2, back.reviews.size, "итоги видны до новой попытки")
+        ok(tasks.start(state, t, clock.now()))
+        assertEquals(emptyMap(), state.tasks.getValue(t).reviews, "новая попытка — ревью заново")
+        ok(tasks.implemented(state, t, clock.now()))
+        ok(tasks.recordVerification(state, t, "PASSED", "sha256:ok2", clock.now()))
+        ok(tasks.recordReview(state, t, ReviewRecord(ReviewRole.CODE, ReviewVerdict.PASSED, 1, session), clock.now()))
+        ok(tasks.recordReview(state, t, ReviewRecord(ReviewRole.SECURITY, ReviewVerdict.FAILED, 2, session, reason = "ответ не по схеме"), clock.now()))
+        assertEquals(listOf(ReviewRole.SECURITY), state.tasks.getValue(t).reviewsLeft(), "без итога — не пройдено")
+        assertEquals(DiagCode.VALUE_INVALID, (tasks.waiveReview(state, t, ReviewRole.SECURITY, "автор", " ", clock.now()) as Outcome.Failure).errors.single().code)
+        ok(tasks.waiveReview(state, t, ReviewRole.SECURITY, "автор", "ревью недоступно, проверил сам", clock.now()))
+        assertEquals(DiagCode.OPERATION_NOT_ALLOWED, (tasks.waiveReview(state, t, ReviewRole.CODE, "автор", "x", clock.now()) as Outcome.Failure).errors.single().code, "у прошедшего — не исключение")
+        ok(tasks.complete(state, t, clock.now()))
+        assertEquals(TaskState.DONE, state.tasks.getValue(t).state)
+        // Чужая роль и задача не в VERIFIED — отказ.
+        val other = verified(TaskPolicy())
+        assertEquals(DiagCode.OPERATION_NOT_ALLOWED, (tasks.recordReview(state, other, ReviewRecord(ReviewRole.CODE, ReviewVerdict.PASSED, 1, session), clock.now()) as Outcome.Failure).errors.single().code)
+        ok(tasks.complete(state, other, clock.now()))
+        assertEquals(DiagCode.INVALID_TRANSITION, (tasks.recordReview(state, t, ReviewRecord(ReviewRole.CODE, ReviewVerdict.PASSED, 1, session), clock.now()) as Outcome.Failure).errors.single().code)
+    }
+
+    /** D-73: то же блокирующее ревью раз за разом — BLOCKED (из VERIFIED в FAILED пути нет), решает человек. */
+    @Test
+    fun repeatedBlockingReviewStopsAsLoop() {
+        val t = verified(TaskPolicy(maxRetries = 10, retryBackoff = 0.minutes, reviews = setOf(ReviewRole.CODE)))
+        val blocking = ReviewRecord(ReviewRole.CODE, ReviewVerdict.BLOCKED, 1, session, listOf(ReviewFinding(FindingSeverity.BLOCKING, "гонка")))
+        repeat(3) { i ->
+            if (i > 0) {
+                ok(tasks.start(state, t, clock.now()))
+                ok(tasks.implemented(state, t, clock.now()))
+                ok(tasks.recordVerification(state, t, "PASSED", "sha256:$i", clock.now()))
+            }
+            ok(tasks.recordReview(state, t, blocking, clock.now()))
+            ok(tasks.reviewBlocked(state, t, clock.now()))
+        }
+        assertEquals(TaskState.BLOCKED, state.tasks.getValue(t).state)
+        assertEquals(DiagCode.LOOP_DETECTED, state.tasks.getValue(t).lastReason)
+        // Запись ревью строгая: BLOCKED — только с блокирующей находкой, длины ограничены.
+        assertTrue(runCatching { ReviewRecord(ReviewRole.CODE, ReviewVerdict.BLOCKED, 1, session) }.isFailure)
+        assertTrue(runCatching { ReviewFinding(FindingSeverity.NOTE, "x".repeat(ReviewRecord.MAX_TITLE + 1)) }.isFailure)
+    }
+
+    /** D-73: роли в политике и итоги ревью — в событиях и снимке v6; снимок v5 читается без них. */
+    @Test
+    fun reviewsSurviveTheJournalFormat() {
+        val t = verified(TaskPolicy(reviews = setOf(ReviewRole.CODE)))
+        val f = ReviewFinding(FindingSeverity.BLOCKING, "SQL без параметров", "db/q.kt", 7, "конкатенация строки запроса")
+        ok(tasks.recordReview(state, t, ReviewRecord(ReviewRole.CODE, ReviewVerdict.BLOCKED, 2, session, listOf(f), omitted = 3), clock.now()))
+        val decoded = log.map { TaskCodec.decode(TaskCodec.type(it), it.at, TaskCodec.payload(it))!!.valueOrNull()!! }
+        assertEquals(log, decoded)
+        val json = com.dpsmpx.dpai.core.serialization.CanonicalJson.write(TaskCodec.encodeState(state))
+        val parsed = com.dpsmpx.dpai.core.serialization.JsonParser().parse(json).valueOrNull() as com.dpsmpx.dpai.core.serialization.JsonObject
+        assertEquals(state, TaskCodec.decodeState(parsed).valueOrNull())
+        val plain = task()
+        val v6 = TaskCodec.encodeState(TasksState(mapOf(plain to state.tasks.getValue(plain))))
+        val v5 = com.dpsmpx.dpai.core.serialization.JsonObject(v6.fields + ("version" to com.dpsmpx.dpai.core.serialization.JsonNumber.of(5)))
+        assertEquals(state.tasks.getValue(plain), TaskCodec.decodeState(v5).valueOrNull()!!.tasks.getValue(plain))
+    }
+
     @Test
     fun continuationsAreLimited() {
         val t = task(policy = TaskPolicy(maxContinuations = 2))
@@ -309,5 +441,53 @@ class TasksTest {
         ok(tasks.continueLater(state, t, clock.now()))
         assertEquals(TaskState.BLOCKED, state.tasks.getValue(t).state)
         assertEquals(DiagCode.CONTINUATION_LIMIT_REACHED, state.tasks.getValue(t).lastReason)
+    }
+
+    /** D-77: «Запустить первой» — выше всех открытых и без паузы; только у ждущей запуска; повтор — без событий. */
+    @Test
+    fun runFirstLiftsAboveAllAndUnholds() {
+        val a = task()
+        val b = task(priority = Priority.CRITICAL)
+        val c = task(priority = Priority.LOW)
+        ok(tasks.setPriority(state, b, Priority.CRITICAL, 5, clock.now()))
+        ok(tasks.hold(state, c, true, clock.now()))
+        ok(Outcome.success(tasks.promote(state, clock.now())))
+        ok(tasks.runFirst(state, c, clock.now()))
+        assertEquals(6, state.tasks.getValue(c).manualPriority)
+        assertEquals(false, state.tasks.getValue(c).held)
+        assertEquals(listOf(c, b, a), tasks.ready(state, clock.now()).map { it.id }, "первой — она, дальше — как было")
+        assertEquals(emptyList(), ok(tasks.runFirst(state, c, clock.now())), "уже первая — повтор без событий")
+        ok(tasks.start(state, a, clock.now()))
+        assertEquals(DiagCode.OPERATION_NOT_ALLOWED, (tasks.runFirst(state, a, clock.now()) as Outcome.Failure).errors.single().code, "идущую — нет")
+        val strict = Tasks(SchedulerPolicy(manualPriorityAllowed = false))
+        assertEquals(DiagCode.OPERATION_NOT_ALLOWED, (strict.runFirst(state, b, clock.now()) as Outcome.Failure).errors.single().code, "политика без ручного приоритета — отказ, а не тишина")
+    }
+
+    /** D-77: исключённый слот — до запуска; план ставит задачу только туда, где она может пойти; формат v7, v6 читается. */
+    @Test
+    fun excludedSlotLastsUntilStartAndSurvivesTheJournal() {
+        val t = task()
+        ok(Outcome.success(tasks.promote(state, clock.now())))
+        val slot = ids.next(IdKinds.ACCOUNT)
+        ok(tasks.excludeSlot(state, t, slot, clock.now()))
+        assertEquals(slot, state.tasks.getValue(t).excludedSlot)
+        assertEquals(emptyList(), ok(tasks.excludeSlot(state, t, slot, clock.now())), "повтор — без второго события")
+        val other = ids.next(IdKinds.TARGET)
+        val offers = listOf(Tasks.TargetOffer(target, emptySet(), 1), Tasks.TargetOffer(other, emptySet(), 1))
+        assertEquals(listOf(other), tasks.plan(state, clock.now(), offers) { r, tg -> r.excludedSlot == null || tg != target }.map { it.target })
+        val decoded = log.map { TaskCodec.decode(TaskCodec.type(it), it.at, TaskCodec.payload(it))!!.valueOrNull()!! }
+        assertEquals(log, decoded)
+        val json = TaskCodec.encodeState(state)
+        assertEquals(state, TaskCodec.decodeState(json).valueOrNull())
+        // Снимок v6 — без поля исключения: читается, исключения нет.
+        val records = (json["tasks"] as com.dpsmpx.dpai.core.serialization.JsonArray).items.map { r ->
+            com.dpsmpx.dpai.core.serialization.JsonObject((r as com.dpsmpx.dpai.core.serialization.JsonObject).fields - "excludedSlot")
+        }
+        val v6 = com.dpsmpx.dpai.core.serialization.JsonObject(
+            json.fields + ("version" to com.dpsmpx.dpai.core.serialization.JsonNumber.of(6)) + ("tasks" to com.dpsmpx.dpai.core.serialization.JsonArray(records)),
+        )
+        assertEquals(null, TaskCodec.decodeState(v6).valueOrNull()!!.tasks.getValue(t).excludedSlot, "в v6 исключения нет")
+        ok(tasks.start(state, t, clock.now()))
+        assertEquals(null, state.tasks.getValue(t).excludedSlot, "запуск снимает исключение")
     }
 }

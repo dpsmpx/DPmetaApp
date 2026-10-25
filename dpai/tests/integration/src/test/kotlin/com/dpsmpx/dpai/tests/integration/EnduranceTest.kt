@@ -174,7 +174,7 @@ class EnduranceTest {
             done = o.tasks.tasks.values.count { it.state == TaskState.DONE },
             open = o.tasks.tasks.values.count { !it.terminal },
             stale = view.rows.count { it.state == DisplayState.STALE },
-            notifications = o.posted.size,
+            notifications = o.postedTotal.toInt(),
             cpuSec = os.processCpuTime / 1_000_000_000L,
             threads = Thread.activeCount(),
             restarts = restarts,

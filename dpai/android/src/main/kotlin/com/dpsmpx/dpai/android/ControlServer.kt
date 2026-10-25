@@ -74,7 +74,7 @@ object ControlServer {
 
     private fun openNow(app: Context) {
         val log = AppLogs.get(app)
-        val api = ControlApi(pairing(app), { DemoModel.get(app).liveOrchestrator() }) { c ->
+        val api = ControlApi(pairing(app), { DemoModel.get(app).liveOrchestrator() }, { q -> DemoModel.get(app).search(q)?.let(com.dpsmpx.dpai.ui.GlobalSearch::toJson) }) { c ->
             when (val r = DemoModel.get(app).commandResult(c)) {
                 is Outcome.Success -> ControlApi.OperationOutcome.Done(r.value)
                 is Outcome.Failure -> ControlApi.OperationOutcome.Refused(r.diagnostics)

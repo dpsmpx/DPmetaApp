@@ -33,8 +33,12 @@ import com.dpsmpx.dpai.core.ids.IdKinds
 import com.dpsmpx.dpai.core.ids.TaskId
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.orchestrator.commands.Command
+import com.dpsmpx.dpai.orchestrator.review.Review
+import com.dpsmpx.dpai.tasks.FindingSeverity
 import com.dpsmpx.dpai.tasks.Priority
+import com.dpsmpx.dpai.tasks.ReviewRole
 import com.dpsmpx.dpai.tasks.TaskClass
+import com.dpsmpx.dpai.ui.ReviewLine
 import com.dpsmpx.dpai.ui.TaskAction
 import com.dpsmpx.dpai.ui.TaskDetail
 import kotlinx.coroutines.Dispatchers
@@ -64,21 +68,31 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
             delay(1500)
         }
     }
-    fun send(c: (String) -> Command) {
+    // Несколько команд — по очереди, до первого отказа (область, затем зависимости).
+    fun sendAll(vararg cs: (String) -> Command) {
         busy = true
-        val key = keys.next(IdKinds.OPERATION).value
+        val built = cs.map { c -> c(keys.next(IdKinds.OPERATION).value) }
         scope.launch {
-            val r = withContext(Dispatchers.IO) { model.command(c(key)) }
-            status = when (r) {
-                is Outcome.Success -> "Принято"
-                is Outcome.Failure -> "Не принято: ${r.diagnostics.first().message}"
+            // «В очереди» — не отказ: следующая команда тоже идёт в очередь; настоящий отказ — стоп.
+            val lines = mutableListOf<String>()
+            for (c in built) {
+                val r = withContext(Dispatchers.IO) { model.command(c) }
+                val d = (r as? Outcome.Failure)?.diagnostics?.first()
+                lines += when {
+                    d == null -> "Принято"
+                    d.code == com.dpsmpx.dpai.core.diagnostics.DiagCode.COMMAND_QUEUED -> "В очереди: ${d.message}"
+                    else -> "Не принято: ${d.message}"
+                }
+                if (d != null && d.code != com.dpsmpx.dpai.core.diagnostics.DiagCode.COMMAND_QUEUED) break
             }
+            status = lines.distinct().joinToString("\n")
             detail = withContext(Dispatchers.IO) { model.taskDetail(task) }
             busy = false
             editor = null
             confirm = null
         }
     }
+    fun send(c: (String) -> Command) = sendAll(c)
     val d = detail
     AlertDialog(
         onDismissRequest = onDone,
@@ -100,14 +114,19 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
                     "класс ${d.taskClass} · модель ${d.model ?: "по классу"} · усилие ${d.effort ?: "по классу"} · бюджет хода ${d.budgetCents?.let { "%.2f $".format(it / 100.0) } ?: "без предела"}",
                     style = MaterialTheme.typography.labelSmall,
                 )
+                d.usage?.let { Text("расход: $it", style = MaterialTheme.typography.labelSmall) }
+                d.scope?.let { Text("область: ${it.sorted().joinToString(", ")}", style = MaterialTheme.typography.labelSmall) }
+                if (d.dependencies.isNotEmpty()) {
+                    Text("зависит от: ${d.dependencies.joinToString(" · ") { "${it.title} (${it.state})" }}", style = MaterialTheme.typography.labelSmall)
+                }
                 d.reason?.let { Text("причина: $it · повторов: ${d.retries}", style = MaterialTheme.typography.labelSmall) }
-                d.usage?.let { Text("Расход: $it", style = MaterialTheme.typography.labelSmall) }
                 // Кто выполняет и кому передавалась (D-56): слот — target и подписка.
                 d.executor?.let { Text("Выполняет: $it", style = MaterialTheme.typography.bodySmall) }
                 if (d.assignments.size > 1 || (d.assignments.isNotEmpty() && d.executor == null)) {
                     Text("Кому передавалась:", style = MaterialTheme.typography.labelSmall)
                     d.assignments.forEach { Text("• $it", style = MaterialTheme.typography.labelSmall) }
                 }
+                if (d.reviews.isNotEmpty()) ReviewsSection(d.reviews)
                 d.waiting?.let { Text("Ждёт: $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     for (a in d.actions) {
@@ -118,12 +137,13 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
                                 when (a) {
                                     TaskAction.HOLD -> send { Command.Hold(task, it) }
                                     TaskAction.RESUME -> send { Command.Resume(task, it) }
+                                    TaskAction.RUN_FIRST -> send { Command.RunFirst(task, it) }
                                     TaskAction.RETRY -> send { Command.Retry(task, null, it) }
                                     TaskAction.VERIFY -> send { Command.Verify(task, it) }
                                     TaskAction.ARCHIVE -> send { Command.Archive(task, true, it) }
                                     TaskAction.UNARCHIVE -> send { Command.Archive(task, false, it) }
                                     TaskAction.CANCEL, TaskAction.WAIVE -> confirm = a
-                                    TaskAction.PRIORITY, TaskAction.POLICY, TaskAction.REPLY -> editor = a
+                                    TaskAction.PRIORITY, TaskAction.POLICY, TaskAction.SCOPE, TaskAction.REPLY -> editor = a
                                 }
                             },
                         ) { Text(a.label) }
@@ -133,8 +153,16 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
                     TaskAction.PRIORITY -> FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         for (p in Priority.entries) FilterChip(selected = d.priority == p.name, onClick = { send { k -> Command.SetPriority(task, p, k) } }, label = { Text(p.name) })
                     }
-                    TaskAction.POLICY -> PolicyEditor(d, busy) { cls, m, e, b -> send { k -> Command.SetPolicy(task, cls, m, e, b, k) } }
+                    TaskAction.POLICY -> PolicyEditor(d, busy) { cls, m, e, b, r -> send { k -> Command.SetPolicy(task, cls, m, e, b, r, k) } }
                     TaskAction.REPLY -> ReplyEditor(busy) { text -> send { k -> Command.Retry(task, text, k) } }
+                    TaskAction.SCOPE -> ScopeEditor(d, remember(task) { model.dependencyChoices(except = task) }, busy) { paths, deps ->
+                        // Неизменённое не шлётся: лишняя команда записала бы пустое изменение в журнал.
+                        val cs = buildList<(String) -> Command> {
+                            if (paths != d.scope.orEmpty()) add { k -> Command.SetScope(task, paths, k) }
+                            if (deps != d.dependencies.map { it.id }.toSet()) add { k -> Command.SetDependencies(task, deps, k) }
+                        }
+                        if (cs.isEmpty()) editor = null else sendAll(*cs.toTypedArray())
+                    }
                     else -> Unit
                 }
                 status?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
@@ -170,8 +198,9 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
 
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun PolicyEditor(d: TaskDetail, busy: Boolean, onSave: (TaskClass, String?, String?, Long?) -> Unit) {
+private fun PolicyEditor(d: TaskDetail, busy: Boolean, onSave: (TaskClass, String?, String?, Long?, Set<ReviewRole>) -> Unit) {
     var cls by remember { mutableStateOf(d.taskClass) }
+    var reviews by remember { mutableStateOf(d.reviews.map { it.role }.toSet()) }
     var modelName by remember { mutableStateOf(d.model.orEmpty()) }
     var effort by remember { mutableStateOf(d.effort.orEmpty()) }
     var budget by remember { mutableStateOf(d.budgetCents?.let { "%.2f".format(it / 100.0) }.orEmpty()) }
@@ -184,11 +213,34 @@ private fun PolicyEditor(d: TaskDetail, busy: Boolean, onSave: (TaskClass, Strin
         OutlinedTextField(modelName, { modelName = it }, label = { Text("Модель (пусто — по классу)") }, singleLine = true)
         OutlinedTextField(effort, { effort = it }, label = { Text("Усилие: low, medium, high (пусто — по классу)") }, singleLine = true)
         OutlinedTextField(budget, { budget = it }, label = { Text("Предел стоимости хода, $ (пусто — без предела)") }, singleLine = true)
+        ReviewChips(reviews) { reviews = it }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall) }
         TextButton(enabled = !busy, onClick = {
-            val cents = budget.trim().replace(',', '.').takeIf { it.isNotEmpty() }?.let { v -> v.toBigDecimalOrNull()?.movePointRight(2)?.toLong() ?: -1L }
-            if (cents != null && cents <= 0) error = "бюджет — положительное число долларов" else onSave(cls, modelName, effort, cents)
+            when (val c = com.dpsmpx.dpai.ui.NewTaskForm.budgetCents(budget)) {
+                is Outcome.Failure -> error = c.diagnostics.first().message
+                is Outcome.Success -> onSave(cls, modelName, effort, c.value, reviews)
+            }
         }) { Text("Сохранить") }
+    }
+}
+
+/** Область и зависимости задачи до запуска (D-42, п. 1): пути — текстом, зависимости — выбором из незавершённых задач. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun ScopeEditor(d: TaskDetail, choices: List<com.dpsmpx.dpai.ui.DependencyLine>, busy: Boolean, onSave: (Set<String>, Set<TaskId>) -> Unit) {
+    var paths by remember { mutableStateOf(d.scope?.sorted()?.joinToString("\n").orEmpty()) }
+    var deps by remember { mutableStateOf(d.dependencies.map { it.id }.toSet()) }
+    // Уже выбранная зависимость могла завершиться — её тоже видно, чтобы её можно было снять.
+    val all = (choices + d.dependencies).distinctBy { it.id }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        OutlinedTextField(paths, { paths = it }, label = { Text("Область: пути в репозитории (пусто — без области)") }, minLines = 2)
+        if (all.isNotEmpty()) {
+            Text("Зависит от", style = MaterialTheme.typography.labelSmall)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                for (c in all) FilterChip(selected = c.id in deps, onClick = { deps = if (c.id in deps) deps - c.id else deps + c.id }, label = { Text(c.title.take(32)) })
+            }
+        }
+        TextButton(enabled = !busy, onClick = { onSave(com.dpsmpx.dpai.ui.NewTaskForm.scopePaths(paths), deps) }) { Text("Сохранить") }
     }
 }
 
@@ -202,9 +254,9 @@ private fun ReplyEditor(busy: Boolean, onSend: (String) -> Unit) {
 }
 
 /**
- * Изменения задачи (D-42, п. 3): что принесёт слияние, что не закоммичено,
- * новые файлы. Загружаются по кнопке — это Git на target, — и строки
- * красятся по виду ([com.dpsmpx.dpai.ui.TaskChangesScreen]); длинные
+ * Изменения задачи (D-42, п. 3; D-72): от базы ветки интеграции до дерева
+ * задачи — по файлам, новые файлы и текст. Загружаются по кнопке — это Git
+ * на target, — и строки красятся по виду ([com.dpsmpx.dpai.ui.TaskChangesScreen]); длинные
  * строки — прокруткой вбок, без переноса.
  */
 @Composable
@@ -217,9 +269,9 @@ private fun ChangesSection(model: DemoModel, task: TaskId) {
     fun load() {
         loading = true
         scope.launch {
-            when (val r = withContext(Dispatchers.IO) { model.taskChanges(task) }) {
+            when (val r = withContext(Dispatchers.IO) { model.taskDiff(task) }) {
                 is Outcome.Success -> {
-                    view = withContext(Dispatchers.Default) { com.dpsmpx.dpai.ui.TaskChangesScreen.of(r.value, r.warnings.map { it.message }) }
+                    view = withContext(Dispatchers.Default) { com.dpsmpx.dpai.ui.TaskChangesScreen.of(r.value) }
                     failure = null
                 }
                 is Outcome.Failure -> failure = r.errors.first().message
@@ -305,6 +357,37 @@ private fun MoveSection(model: DemoModel, task: TaskId, executor: String?, send:
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         for ((id, label) in slots) {
             FilterChip(selected = pinned == id, onClick = { send { k -> Command.MoveTask(task, id, k) }; pinned = id }, label = { Text(label) })
+        }
+    }
+}
+
+/** Роли ревью после проверки (D-73): каждая — отдельная сессия только для чтения. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+fun ReviewChips(selected: Set<ReviewRole>, onChange: (Set<ReviewRole>) -> Unit) {
+    Text("Ревью после проверки — отдельной сессией (D-73)", style = MaterialTheme.typography.labelSmall)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        for (r in ReviewRole.entries) {
+            FilterChip(selected = r in selected, onClick = { onChange(if (r in selected) selected - r else selected + r) }, label = { Text(Review.label(r)) })
+        }
+    }
+}
+
+/** Итоги ревью в листе задачи (D-73): роль, итог, находки — блокирующие первыми, с пояснением. */
+@Composable
+private fun ReviewsSection(reviews: List<ReviewLine>) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        for (r in reviews) {
+            Text("${r.label}: ${r.verdict}", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = toneColor(r.tone))
+            r.note?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
+            for (f in r.findings) {
+                Text(
+                    "${f.severity} · ${f.title}${f.where?.let { " ($it)" } ?: ""}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (f.severity == FindingSeverity.BLOCKING) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                )
+                f.detail?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 8.dp)) }
+            }
         }
     }
 }

@@ -241,6 +241,8 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
          * человек отметил её высоким приоритетом; несрочное ждёт сброса окна.
          */
         urgent: Boolean = false,
+        /** Слот, с которого задачу перенесли (D-77): на него она не идёт. */
+        exclude: AccountId? = null,
     ): Outcome<Lease> {
         state.slotOf(session)?.let { s ->
             return if (s.sessions[session] == task) {
@@ -253,7 +255,7 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
         val s1 = ticked.fold(state, ::apply)
         val previous = s1.taskSubscription[task]
         val candidates = s1.slots.values
-            .filter { it.state == AccountState.AVAILABLE && (target == null || it.targetId == target) }
+            .filter { it.state == AccountState.AVAILABLE && (target == null || it.targetId == target) && it.id != exclude }
             .filter { slot ->
                 val sub = s1.subscriptions.getValue(slot.subscriptionId)
                 // Чужую задачу подписка у предела не берёт и срочную (D-57): переход ради того, чтобы сразу

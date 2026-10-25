@@ -7,7 +7,8 @@
 #     JDK и Android SDK — для сборки с этапа 1 (без SDK собирается
 #     только ядро, D-03);
 #   * ветки с работой, не влитой в main, — свежие первыми: с них
-#     продолжают, а не делают заново.
+#     продолжают, а не делают заново; ветки сборок (`*_debug`, прежние
+#     `apk-*` и `linux-debug`, D-33) — не работа, их нет.
 #
 # Ничего не ставит и не пишет; любая ошибка — мимо: хук не должен
 # мешать начать сессию.
@@ -50,7 +51,8 @@ PROJ="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "$0")/../.." && pwd)}"
         found=1
         echo "  ${ref#origin/}: коммитов $n, последний — $(git -C "$PROJ" log -1 --format='%cr: %s' "$ref")"
     done < <(git -C "$PROJ" for-each-ref --sort=-committerdate --format='%(refname:short)' \
-                 refs/remotes/origin 2>/dev/null | grep -v -e '^origin$' -e '^origin/HEAD$' -e '^origin/main$' | head -8)
+                 refs/remotes/origin 2>/dev/null | grep -v -e '^origin$' -e '^origin/HEAD$' -e '^origin/main$' \
+                 -e '^origin/.*_debug$' -e '^origin/apk-' -e '^origin/linux-debug$' | head -8)
     [ "$found" -eq 1 ] || echo "  нет"
     echo "  Перед работой сверить с ними задачу: git log origin/main..origin/<ветка>."
     echo "Открытые PR — через GitHub (MCP); незаконченное — в их описании и TODO.md."

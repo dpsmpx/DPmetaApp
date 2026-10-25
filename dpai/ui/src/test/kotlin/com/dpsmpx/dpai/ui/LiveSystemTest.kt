@@ -223,6 +223,33 @@ class LiveSystemTest {
     }
 
     /**
+     * Ход идёт потоком агента (D-76): события хода приходят без опроса
+     * `events` на каждый такт; поток кончается вместе с ходом.
+     */
+    @Test
+    fun runningTurnIsFollowedNotPolled() {
+        slow = true
+        val s = system(entry("сервер", "/home/dev/.claude-dpai"))
+        steps(s, 1)
+        val task = s.addTask("Поток", "ход идёт потоком").valueOrNull()!!
+        steps(s, 2)
+        val session = s.orchestrator.sessions.sessions.values.single { it.task == task }.id
+        assertEquals(1, host.followerCount(), "у идущего хода — поток")
+        val polls = host.eventCalls
+        var ticks = 0
+        while (host.advance(session)) {
+            steps(s, 1)
+            ticks++
+        }
+        assertTrue(ticks >= 3, "ход из нескольких шагов: $ticks")
+        assertEquals(polls, host.eventCalls, "за $ticks тактов хода — ни одного опроса events")
+        assertEquals(0, host.followerCount(), "поток кончился вместе с ходом")
+        steps(s, 3)
+        assertEquals(TaskState.COMPLETION_UNVERIFIED, s.orchestrator.tasks.tasks.getValue(task).state, s.problems.toString())
+        s.close()
+    }
+
+    /**
      * Подписка слота — по аккаунту (D-29, D-30): два targets, вошедшие одним
      * аккаунтом, — одна подписка; другим аккаунтом — своя.
      */

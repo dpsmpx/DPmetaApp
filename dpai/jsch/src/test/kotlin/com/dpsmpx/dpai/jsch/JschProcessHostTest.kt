@@ -6,6 +6,8 @@ import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.ids.IdGenerator
 import com.dpsmpx.dpai.core.ids.IdKinds
 import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.execution.agent.FollowingEventSource
+import com.dpsmpx.dpai.execution.agent.RunChannel
 import com.dpsmpx.dpai.execution.agent.RunSpec
 import com.dpsmpx.dpai.execution.agent.RunState
 import com.dpsmpx.dpai.execution.process.ProcessSpec
@@ -82,7 +84,7 @@ class JschProcessHostTest {
         assertEquals(DiagCode.SSH_HOST_KEY_REJECTED, code(JschProcessHost(endpoint, platform).start(ProcessSpec(listOf("true")))))
     }
 
-    /** Тот же путь, что `AgentCommandTest` через OpenSSH, — через JSch: doctor, запуск, остановка. */
+    /** Тот же путь, что `AgentCommandTest` через OpenSSH, — через JSch: doctor, запуск, поток хода, остановка. */
     @Test
     fun agentWorksThroughJschOnRealTarget() {
         val (endpoint, platform, agent) = realTarget()
@@ -99,8 +101,14 @@ class JschProcessHostTest {
         val started = client.start(run, RunSpec(cmd))
         assertTrue(started.isSuccess, started.diagnostics.toString())
         RealTime.await(60.seconds, "запуск на target") { client.status(run).valueOrNull()?.takeIf { it.state == RunState.RUNNING } }
+        // Поток хода по долгому каналу exec JSch (D-76).
+        val source = FollowingEventSource(client, Clock.SYSTEM)
+        val channel = RunChannel(source, run)
+        RealTime.await(60.seconds, "строка потока по SSH") { channel.poll().valueOrNull(); if (source.served > 0) Unit else null }
         val stopped = client.stop(run, 2.seconds).valueOrNull()!!
         assertEquals(RunState.EXITED, stopped.run!!.state)
         assertEquals(emptyList(), stopped.stop!!.survivors)
+        RealTime.await(60.seconds, "поток кончился с ходом") { channel.poll(); if (source.streaming == 0) Unit else null }
+        source.close()
     }
 }

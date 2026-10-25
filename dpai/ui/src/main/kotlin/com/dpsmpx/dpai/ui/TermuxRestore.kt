@@ -147,7 +147,8 @@ object TermuxRestore {
             }
             TargetPlatform.POSIX -> {
                 val script = "mkdir -p ~/.ssh && chmod 700 ~/.ssh && { sed -i '/ dpai-android\$/d' ~/.ssh/authorized_keys 2>/dev/null; true; } && " +
-                    "echo '$key' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && echo dpai-reauthorized"
+                    // Только из частных сетей, как при настройке (D-84): восстановление не снимает это ограничение.
+                    "echo 'from=\"${PcSetup.PRIVATE_NETS}\" $key' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && echo dpai-reauthorized"
                 "echo " + Base64.getEncoder().encodeToString(script.toByteArray()) + " | base64 -d | sh"
             }
         }

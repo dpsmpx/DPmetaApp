@@ -6,8 +6,10 @@ import com.dpsmpx.dpai.core.ids.SessionId
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.result.then
 import com.dpsmpx.dpai.core.serialization.CanonicalJson
+import com.dpsmpx.dpai.execution.process.OutputStream
 import com.dpsmpx.dpai.execution.process.ProcessHost
 import com.dpsmpx.dpai.execution.process.ProcessSpec
+import com.dpsmpx.dpai.execution.process.RunningProcess
 import com.dpsmpx.dpai.execution.process.run
 import com.dpsmpx.dpai.execution.ssh.SshProcessHost
 import kotlin.time.Duration
@@ -17,6 +19,21 @@ import kotlin.time.Duration.Companion.seconds
 fun interface RunEventSource {
     /** События запуска [run] с номерами больше [after], не больше [limit], и состояние запуска. */
     fun events(run: SessionId, after: Long, limit: Int): Outcome<AgentReply>
+
+    /**
+     * Раннер сменил ход запуска [run] (начал новый, остановил): то, что
+     * источник знает о запуске, устарело — следующий ответ берётся у агента.
+     */
+    fun reset(run: SessionId) {}
+}
+
+/** Поток событий запуска (D-76): долгий вызов `follow` агента или подделка в тестах. */
+fun interface RunFollower {
+    /**
+     * Строки потока запуска [run] после номера [after] — в [onReply] по мере
+     * прихода, из потока чтения; конец потока — выход процесса.
+     */
+    fun follow(run: SessionId, after: Long, onReply: (Outcome<AgentReply>) -> Unit): Outcome<RunningProcess>
 }
 
 /**
@@ -31,7 +48,7 @@ class AgentClient(
     private val home: String?,
     private val subject: String,
     private val callTimeout: Duration = 60.seconds,
-) : RunEventSource {
+) : RunEventSource, RunFollower {
     /**
      * Запуск или следующий ход того же запуска (у завершённого запуска —
      * новый ход в том же журнале, номера событий продолжаются).
@@ -44,6 +61,25 @@ class AgentClient(
 
     override fun events(run: SessionId, after: Long, limit: Int): Outcome<AgentReply> =
         call("events", runArgs(run) + listOf("--after", after.toString(), "--limit", limit.toString()))
+
+    /**
+     * Поток `follow` (D-76, D-79): долгий канал `exec`, строка ответа — на
+     * каждую новость журнала запуска. Строка, которая не читается как
+     * ответ, — отказом в [onReply]; вывод ошибок не читается — исход потока
+     * виден по коду выхода.
+     */
+    override fun follow(run: SessionId, after: Long, onReply: (Outcome<AgentReply>) -> Unit): Outcome<RunningProcess> =
+        host.start(ProcessSpec(agentCommand + listOf("agent", "follow") + runArgs(run) + listOf("--after", after.toString()))) { line ->
+            if (line.stream == OutputStream.STDOUT && line.text.isNotBlank()) {
+                onReply(
+                    if (line.truncated) {
+                        Outcome.failure(DiagCode.AGENT_REPLY_INVALID, "строка потока длиннее предела — обрезана", subject)
+                    } else {
+                        AgentReply.parseOutput(listOf(line.text), subject)
+                    },
+                )
+            }
+        }
 
     fun stop(run: SessionId, grace: Duration = 5.seconds): Outcome<AgentReply> =
         call("stop", runArgs(run) + listOf("--grace-seconds", grace.inWholeSeconds.coerceAtLeast(1).toString()))

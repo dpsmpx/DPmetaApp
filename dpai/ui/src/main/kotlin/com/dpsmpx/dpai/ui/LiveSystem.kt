@@ -14,6 +14,7 @@ import com.dpsmpx.dpai.core.ids.SessionId
 import com.dpsmpx.dpai.core.ids.TaskId
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.state.SessionState
+import com.dpsmpx.dpai.execution.agent.FollowingEventSource
 import com.dpsmpx.dpai.execution.claude.ClaudeCodeCliRunner
 import com.dpsmpx.dpai.execution.claude.ClaudeRunner
 import com.dpsmpx.dpai.execution.claude.RoutingRunner
@@ -73,7 +74,8 @@ interface ControlView {
  * дереве на target проекта; ход Claude — там же или на другом target, со
  * входом его слота и деревом по MCP (D-50).
  * [sshHost] — хост SSH-targets: в приложении JSch с ключом Keystore, в
- * тестах — mock.
+ * тестах — mock. События идущих ходов — потоком `follow` агента (D-76), без
+ * него — опросом; [close] закрывает потоки, когда систему сменяет новая.
  */
 class LiveSystem(
     private val clock: Clock,
@@ -95,7 +97,7 @@ class LiveSystem(
     onProblem: (Diagnostic) -> Unit = {},
     /** Разрешены ли уведомления (у оболочки — Android); неизвестно — `null`. */
     private val notificationsOk: () -> Boolean? = { null },
-) : ControlView {
+) : ControlView, AutoCloseable {
     override val mode: String = "контроллер"
     private val ids = IdGenerator(clock, random)
     // Сегменты и снимки (D-37): контроллер живёт неделями, память журнала не растёт с историей.
@@ -132,6 +134,7 @@ class LiveSystem(
     }
     private val manager = ExecutionTargetManager(clock, sshHost = sshHost, controllerVersion = controllerVersion)
     private val runners = HashMap<ExecutionTargetId, ClaudeRunner>()
+    private val streams = mutableListOf<FollowingEventSource>()
     private val probes = HashMap<ExecutionTargetId, Pair<SlotAuthProbe, SessionId>>()
     private val usageProbes = HashMap<ExecutionTargetId, Pair<com.dpsmpx.dpai.orchestrator.accounts.UsageProbe, SessionId>>()
 
@@ -165,7 +168,11 @@ class LiveSystem(
 
     init {
         for (e in (usable + listOfNotNull(projectEntry)).distinctBy { it.id }) manager.register(e.toTarget(knownHostsFile))
-        for (e in usable) runners[e.id] = ClaudeCodeCliRunner(manager.client(e.id).valueOrNull()!!, { ProviderSessionId.newUuid(random) })
+        for (e in usable) {
+            val agent = manager.client(e.id).valueOrNull()!!
+            val events = FollowingEventSource(agent, clock).also { streams += it }
+            runners[e.id] = ClaudeCodeCliRunner(agent, { ProviderSessionId.newUuid(random) }, eventSource = events)
+        }
         lateinit var o: Orchestrator
         val router = RoutingRunner({ o.sessions.sessions[it]?.target }, { runners[it] })
         // Состояние — из журнала (перезапуск приложения); подписка и слоты
@@ -343,12 +350,12 @@ class LiveSystem(
 
     fun addTask(title: String, objective: String): Outcome<TaskId> = orchestrator.addTask(title, objective, Priority.NORMAL)
 
-    private var delivered = 0
+    private var delivered = 0L
 
     /** Уведомления, которые оболочка ещё не показала: новые и обновлённые (ТЗ, §36). */
     fun drainNotifications(): List<Notification> {
-        val fresh = orchestrator.posted.drop(delivered)
-        delivered = orchestrator.posted.size
+        val (fresh, next) = orchestrator.postedSince(delivered)
+        delivered = next
         return fresh.mapNotNull {
             when (it) {
                 is NotificationDecision.Post -> it.notification
@@ -401,6 +408,14 @@ class LiveSystem(
         }
         orchestrator.tick()
         if (problems.size > MAX_PROBLEMS) problems.subList(0, problems.size - MAX_PROBLEMS).clear()
+    }
+
+    /**
+     * Потоки событий ходов (D-76) — прочь: систему сменила новая (другие
+     * targets или проект), а поток прежней держал бы канал SSH и JVM на target.
+     */
+    override fun close() {
+        streams.forEach { it.close() }
     }
 
     /** События активного сегмента журнала — для временной шкалы (D-37). */
@@ -473,7 +488,7 @@ class LiveSystem(
         val own = sessionEvents(id)
         val base = Screens.session(
             orchestrator.dashboard(), id, own, orchestrator.live(id), clock.now(), Screens.sessionActions(id, orchestrator.sessions, orchestrator.tasks),
-            Screens.usage(orchestrator.sessions) { it.id == id },
+            orchestrator.sessions.sessions[id]?.usage, orchestrator.sessions.sessions[id]?.task,
         )
         // Чат задачи сессии (D-59): все её сессии в одной ленте.
         val task = orchestrator.sessions.sessions[id]?.task ?: return base
@@ -488,7 +503,7 @@ class LiveSystem(
         return base.copy(
             title = orchestrator.tasks.tasks[task]?.title,
             chat = Screens.chat(Screens.chatEntries(orchestrator.chat(task), orchestrator.turnMessages(task), orchestrator.tasks.tasks[task]), id, clock.now()),
-            task = task, status = Screens.sessionStatus(record, orchestrator.tasks.tasks[task]?.state, running), workingFor = working,
+            status = Screens.sessionStatus(record, orchestrator.tasks.tasks[task]?.state, running), workingFor = working,
         )
     }
 

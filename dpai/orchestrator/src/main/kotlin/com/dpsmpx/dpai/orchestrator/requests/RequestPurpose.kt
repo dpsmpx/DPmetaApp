@@ -26,6 +26,12 @@ enum class RequestPurpose(val code: String) {
      * слияния — новый запрос с причиной (ревью A-30).
      */
     TASK_MERGE("task.merge"),
+
+    /**
+     * Ревью роли не дало итога и после повтора (D-73, п. 3): повторить
+     * ревью или принять без него (исключение — кто и почему).
+     */
+    TASK_REVIEW("task.review"),
     ;
 
     companion object {

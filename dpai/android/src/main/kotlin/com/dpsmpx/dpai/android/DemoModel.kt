@@ -48,6 +48,8 @@ data class Snapshot(
     val requests: List<RequestCard> = emptyList(),
     /** Сколько задач в архиве (D-42) — для переключателя на доске. */
     val archived: Int = 0,
+    /** Быстрые действия сводки (ТЗ, §73). */
+    val quick: com.dpsmpx.dpai.ui.QuickActions = com.dpsmpx.dpai.ui.QuickActions.NONE,
 )
 
 /**
@@ -92,6 +94,8 @@ class DemoModel(
         if (targets.any { it.configDir != null }) {
             val key = targets to controller.project()
             if (live == null || liveFor != key) {
+                // Потоки событий прежней системы (D-76) не переживают её: каналы SSH закрываются.
+                live?.close()
                 val started = Clock.SYSTEM.monotonicNanos()
                 live = controller.live(key.first, key.second, onEvents, onProblem)
                 liveFor = key
@@ -111,20 +115,19 @@ class DemoModel(
     }
 
     private var drainedOf: ControlView? = null
-    private var drained = 0
+    private var drained = 0L
 
     /**
      * Уведомления, которые оболочка ещё не показала: у контроллера — все
      * новые и обновлённые (ТЗ, §36), у демо — только проверочные запросы.
      */
     private fun drain(v: ControlView): List<Notification> {
-        val posted = v.orchestrator.posted
         if (drainedOf !== v) {
             drainedOf = v
             drained = 0
         }
-        val fresh = posted.drop(drained)
-        drained = posted.size
+        val (fresh, next) = v.orchestrator.postedSince(drained)
+        drained = next
         return fresh.mapNotNull {
             when (it) {
                 is NotificationDecision.Post -> it.notification
@@ -140,6 +143,7 @@ class DemoModel(
         return Snapshot(
             v.mode, v is LiveSystem, v.dashboard(), com.dpsmpx.dpai.ui.Screens.board(o.tasks, showArchived), session?.let(v::session), notifications,
             RequestScreens.cards(shown(v), o.tasks, Clock.SYSTEM.now()), o.tasks.tasks.values.count { it.archived },
+            com.dpsmpx.dpai.ui.QuickActions.of(o.tasks),
         ).also {
             published = it
             publishedOf = v
@@ -215,7 +219,7 @@ class DemoModel(
         }
         f.get(waitMs, TimeUnit.MILLISECONDS).outcome
     } catch (_: TimeoutException) {
-        Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "контур занят вызовом target: команда в очереди и применится в ближайшем такте")
+        Outcome.failure(DiagCode.COMMAND_QUEUED, "контур занят вызовом target: команда в очереди и применится в ближайшем такте")
     } catch (e: Exception) {
         Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.INTERNAL_ERROR, "контроллер не принял команду", e)))
     }
@@ -250,6 +254,60 @@ class DemoModel(
     fun refusal(c: Command): String? = SettingIntents.key(c)?.let(SettingIntents::refusal)
 
     /**
+     * Несколько команд разом (ТЗ, §73: «Пауза всем», «Продолжить все»): все —
+     * в очередь контура, итог — каждой, общий срок [waitMs]. По одной с
+     * ожиданием каждой серия шла бы такт за тактом — секунды на задачу.
+     */
+    fun commandAll(cs: List<Command>, waitMs: Long = WAIT_MS): List<Outcome<Any?>> {
+        if (cs.isEmpty()) return emptyList()
+        val v = try {
+            built ?: lock.withLock { current() }
+        } catch (e: Exception) {
+            val f = Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.INTERNAL_ERROR, "контроллер не принял команды", e)))
+            return cs.map { f }
+        }
+        val fs = cs.map { v.orchestrator.submit(it) }
+        if (lock.tryLock()) {
+            try {
+                v.orchestrator.runCommands()
+            } finally {
+                lock.unlock()
+            }
+        }
+        val deadline = Clock.SYSTEM.monotonicNanos() + waitMs * 1_000_000
+        return fs.map { f ->
+            try {
+                f.get(((deadline - Clock.SYSTEM.monotonicNanos()) / 1_000_000).coerceAtLeast(0), TimeUnit.MILLISECONDS).outcome
+            } catch (_: TimeoutException) {
+                Outcome.failure(DiagCode.COMMAND_QUEUED, "контур занят вызовом target: команда в очереди и применится в ближайшем такте")
+            } catch (e: Exception) {
+                Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.INTERNAL_ERROR, "контроллер не принял команду", e)))
+            }
+        }
+    }
+
+    /**
+     * Что видел Claude в последнем ходе задачи (ТЗ, §74): версия контекста
+     * для окна «Контекст» — или почему её нет. Контексты в памяти дописывает
+     * такт, поэтому чтение — под замком, если он освободится за
+     * [SEARCH_WAIT_MS]. Не из главного потока.
+     */
+    fun context(task: TaskId): Pair<com.dpsmpx.dpai.ui.ContextView?, String?> {
+        val o = built?.orchestrator ?: return null to "контур ещё не запущен"
+        if (!lock.tryLock(SEARCH_WAIT_MS, TimeUnit.MILLISECONDS)) return null to CONTEXT_BUSY
+        // Под замком — только чтение версии (она неизменна); показ с Redactor по всему тексту — уже без замка такта.
+        val bundle = try {
+            o.lastContext(task)
+        } finally {
+            lock.unlock()
+        }
+        return bundle?.let { com.dpsmpx.dpai.ui.ContextScreens.view(it) to null } ?: (null to "у задачи ещё не было хода — контекст не собирался")
+    }
+
+    /** Быстрые действия по текущему состоянию контура (ТЗ, §73) — в миг нажатия, а не по снимку, который такт мог задержать. */
+    fun quickNow(): com.dpsmpx.dpai.ui.QuickActions? = runCatching { built?.orchestrator?.tasks?.let(com.dpsmpx.dpai.ui.QuickActions::of) }.getOrNull()
+
+    /**
      * Незавершённые сессии на target — перед его удалением (ревью 8 октября
      * 2026, A-32). Без замка модели: такт держит его минутами, а экран
      * читает уже построенный контроллер; `null` — контроллер ещё не построен.
@@ -275,7 +333,7 @@ class DemoModel(
         }
         Outcome.success(f.get(waitMs, TimeUnit.MILLISECONDS))
     } catch (_: TimeoutException) {
-        Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "контур занят вызовом target: команда в очереди и применится в ближайшем такте")
+        Outcome.failure(DiagCode.COMMAND_QUEUED, "контур занят вызовом target: команда в очереди и применится в ближайшем такте")
     } catch (e: Exception) {
         Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.INTERNAL_ERROR, "контроллер не принял команду", e)))
     }
@@ -336,30 +394,48 @@ class DemoModel(
     /** Слот, выбранный человеком для следующего хода задачи (D-66) — без замка. */
     fun pinned(task: TaskId): com.dpsmpx.dpai.core.ids.ExecutionTargetId? = runCatching { built?.orchestrator?.pinned(task) }.getOrNull()
 
-    /** Задачи, после которых можно поставить новую (D-42, п. 1) — без замка. */
-    fun dependencyChoices(): List<Pair<TaskId, String>> =
-        runCatching { (built as? LiveSystem)?.orchestrator?.tasks?.let(com.dpsmpx.dpai.ui.TaskScreens::dependencyChoices) }.getOrNull().orEmpty()
-
     /** Лист задачи (D-42): состояние и доступные действия — из неизменяемого состояния контура, без замка. */
     fun taskDetail(task: TaskId): com.dpsmpx.dpai.ui.TaskDetail? = runCatching {
         val o = built?.orchestrator ?: return null
         val labels = controller.targets().associate { it.id to it.label }
         val handoffs = o.handoffs.all().filter { it.task == task }
-        o.tasks.tasks[task]?.let { com.dpsmpx.dpai.ui.TaskScreens.detail(it, o.sessions, o.waitingReason(task), o.accounts, { id -> labels[id] ?: id.value }, handoffs) }
+        o.tasks.tasks[task]?.let { com.dpsmpx.dpai.ui.TaskScreens.detail(it, o.sessions, o.waitingReason(task), o.accounts, { id -> labels[id] ?: id.value }, handoffs, o.tasks.tasks) }
     }.getOrNull()
+
+    /** Задачи, от которых можно зависеть (D-42, п. 1): не завершённые, кроме [except]; без замка. */
+    fun dependencyChoices(except: TaskId? = null): List<com.dpsmpx.dpai.ui.DependencyLine> =
+        runCatching { built?.orchestrator?.tasks?.tasks?.let { com.dpsmpx.dpai.ui.TaskScreens.dependencyChoices(it, except) } }.getOrNull().orEmpty()
+
+    /** Изменения задачи (D-42): Git по SSH — вызывать не из главного потока; без замка такта. */
+    fun taskDiff(task: TaskId): Outcome<com.dpsmpx.dpai.orchestrator.git.TaskDiff> =
+        runCatching { built?.orchestrator?.taskDiff(task) }.getOrNull()
+            ?: Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "контроллер не запущен", "task $task")
 
     /** Итоговые сообщения ходов задачи (D-42) — целиком; из памяти контура или документа задачи, без замка. */
     fun taskMessages(task: TaskId): List<com.dpsmpx.dpai.orchestrator.TurnMessage> =
         runCatching { built?.orchestrator?.turnMessages(task) }.getOrNull().orEmpty()
 
     /**
-     * Изменения задачи (D-42, п. 3) — по кнопке, не по таймеру: это Git на
-     * target (по SSH — секунды). Без замка: контур читает неизменяемый
-     * снимок деревьев; звать — с потока ввода-вывода.
+     * Глобальный поиск (ТЗ, §75). Проекции неизменяемы и читаются без замка;
+     * события, контексты и отказы дописывает такт — их копия берётся под
+     * замком, если он освободится за [SEARCH_WAIT_MS], иначе поиск идёт без
+     * них, и итог это говорит (D-05). Не из главного потока; контура нет — `null`.
      */
-    fun taskChanges(task: TaskId): Outcome<com.dpsmpx.dpai.orchestrator.git.TaskChanges> =
-        runCatching { built?.orchestrator?.taskChanges(task) }.getOrElse { e -> Outcome.failure(DiagCode.GIT_COMMAND_FAILED, "изменения не прочитаны: ${e.javaClass.simpleName}") }
-            ?: Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "контроллер не запущен")
+    fun search(query: String): com.dpsmpx.dpai.ui.GlobalSearch.Result? {
+        val o = built?.orchestrator ?: return null
+        fun projections() = com.dpsmpx.dpai.ui.GlobalSearch.Source(o.tasks, o.sessions, o.accounts, o.worktrees, o.handoffs.all(), o.projectConfig, o.mergesState.commits)
+        // Под замком — всё из одного промежутка между тактами: иначе задача и её события были бы из разных тактов.
+        val source = if (lock.tryLock(SEARCH_WAIT_MS, TimeUnit.MILLISECONDS)) {
+            try {
+                projections().copy(events = o.recentEvents(), eventsFrom = o.eventsFrom, contexts = o.contexts(), problems = o.problems.toList())
+            } finally {
+                lock.unlock()
+            }
+        } else {
+            projections()
+        }
+        return com.dpsmpx.dpai.ui.GlobalSearch.search(source, query)
+    }
 
     /** Настройки контура (D-42, п. 5, 6) — для вкладки Targets; без замка. */
     fun control(): com.dpsmpx.dpai.orchestrator.commands.ControlState? = runCatching { (built as? LiveSystem)?.orchestrator?.control }.getOrNull()
@@ -372,12 +448,12 @@ class DemoModel(
     fun hasLive(): Boolean = controller.targets().any { it.configDir != null }
 
     /**
-     * Новая задача контроллеру (D-42): команда с ключом нажатия [key] —
-     * повтор того же нажатия задачу не дублирует. Демо задач не берёт.
+     * Новая задача контроллеру (D-42): команда с ключом нажатия — повтор
+     * того же нажатия задачу не дублирует. Демо задач не берёт.
      */
-    fun addTask(title: String, objective: String, key: String, dependencies: Set<TaskId> = emptySet(), scope: Set<String>? = null): Outcome<TaskId> {
+    fun addTask(c: Command.AddTask): Outcome<TaskId> {
         if (!hasLive()) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "задачи ставятся только контроллеру: заведите target с каталогом Claude")
-        return command(Command.AddTask(title.trim(), objective.trim(), dependencies = dependencies, scope = scope, key = key)).then { v ->
+        return command(c).then { v ->
             when (v) {
                 is TaskId -> Outcome.success(v)
                 is String -> IdKinds.TASK.parse(v)
@@ -419,6 +495,12 @@ class DemoModel(
 
         /** Сколько ждать итога команды: такт с вызовом target идёт секунды, не минуты. */
         private const val WAIT_MS = 30_000L
+
+        /** Сколько поиск ждёт конца такта ради событий: дольше — поиск без них, человек не ждёт. */
+        private const val SEARCH_WAIT_MS = 1_500L
+
+        /** Причина «контекст не прочитан: идёт такт» — окно повторяет попытку само. */
+        const val CONTEXT_BUSY = "идёт такт контура — пробую ещё раз"
 
         @Volatile
         private var instance: DemoModel? = null

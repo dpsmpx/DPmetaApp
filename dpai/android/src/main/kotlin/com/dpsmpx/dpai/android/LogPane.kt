@@ -73,7 +73,7 @@ fun LogPane(model: DemoModel) {
             }) { Text("Копировать журнал") }
             OutlinedButton(onClick = {
                 scope.launch {
-                    note = when (val r = withContext(Dispatchers.IO) { saveLog(context, log.export()) }) {
+                    note = when (val r = withContext(Dispatchers.IO) { saveLog(context, log.export(maxChars = Int.MAX_VALUE)) }) {
                         is Outcome.Success -> "Сохранено: Загрузки/$LOG_DIR/${r.value}"
                         is Outcome.Failure -> "Не сохранено: ${r.errors.first().message}"
                     }
@@ -93,7 +93,11 @@ fun LogPane(model: DemoModel) {
     }
 }
 
-/** Журнал файлом в «Загрузки/[LOG_DIR]»; хранятся последние [LOG_KEEP] выгрузок. Имя файла. */
+/**
+ * Журнал целиком файлом в «Загрузки/[LOG_DIR]» (D-43, уточнено D-72): буфер
+ * обмена берёт начало и хвост, файл — всё. Хранятся последние [LOG_KEEP]
+ * выгрузок. Итог — имя файла.
+ */
 private fun saveLog(context: android.content.Context, text: String): Outcome<String> {
     val name = LOG_PREFIX + SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date(Clock.SYSTEM.now().epochMillis)) + ".txt"
     return Downloads.write(context, LOG_DIR, name, "text/plain", text.toByteArray(Charsets.UTF_8), "журнал").map { name }

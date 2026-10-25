@@ -21,7 +21,7 @@ fun main(args: Array<String>) {
     } else {
         System.out to System.err
     }
-    val code = Cli(out = { out.println(it) }, err = { err.println(it) }).run(args.toList())
+    val code = Cli(out = { out.println(it) }, err = { err.println(it) }, outClosed = out::checkError).run(args.toList())
     out.flush()
     err.flush()
     exitProcess(code)
@@ -35,15 +35,17 @@ class Cli(
     private val out: (String) -> Unit,
     private val err: (String) -> Unit,
     private val version: String = Cli::class.java.`package`?.implementationVersion ?: "dev",
+    /** Стандартный вывод закрыт: поток `dpai agent follow` кончается (D-76). */
+    private val outClosed: () -> Boolean = { false },
 ) {
     fun run(args: List<String>): Int = when (args.firstOrNull()) {
         "version", "--version" -> {
             out("dpai $version")
             OK
         }
-        "agent" -> AgentCommand(out, err, version).run(args.drop(1))
+        "agent" -> AgentCommand(out, err, version, outClosed = outClosed).run(args.drop(1))
         // Пульт приложения (D-47): те же команды, что на экране, через канал на loopback.
-        "control", "status", "task", "session", "requests", "answer", "limit", "target", "slot", "sessions-limit" ->
+        "control", "status", "task", "session", "requests", "answer", "limit", "target", "slot", "sessions-limit", "search" ->
             ControlCommand(out, err).run(args.first(), args.drop(1))
         "help", "--help", "-h" -> {
             out(USAGE)

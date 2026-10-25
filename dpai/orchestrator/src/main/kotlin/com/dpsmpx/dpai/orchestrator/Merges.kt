@@ -23,10 +23,26 @@ import com.dpsmpx.dpai.storage.snapshot.Projection
 /** Слияние задачи, ждущее одобрения (ТЗ, §68): запрос, предложение, срок. */
 data class PendingMerge(val task: TaskId, val approval: ApprovalId, val proposal: Proposal, val expiresAt: Timestamp)
 
-/** Ожидающие слияния и слитые задачи с одобрением каждой — из журнала (D-24). */
+/** Коммит работы задачи, сделанный контуром после проверки: хеш, ветка задачи, когда. */
+data class TaskCommit(val commit: String, val branch: String, val at: Timestamp) {
+    init {
+        require(HASH.matches(commit)) { "хеш коммита — 40 или 64 шестнадцатеричных знака" }
+    }
+
+    companion object {
+        /** SHA-1 или SHA-256 Git, строчными. */
+        val HASH = Regex("[0-9a-f]{40}|[0-9a-f]{64}")
+    }
+}
+
+/**
+ * Ожидающие слияния, слитые задачи с одобрением каждой и последний коммит
+ * контура в ветке каждой задачи ([commits]) — из журнала (D-24).
+ */
 data class MergesState(
     val pending: Map<ApprovalId, PendingMerge> = emptyMap(),
     val merged: Map<TaskId, ApprovalId> = emptyMap(),
+    val commits: Map<TaskId, TaskCommit> = emptyMap(),
 ) {
     companion object {
         val EMPTY = MergesState()
@@ -45,18 +61,25 @@ sealed interface MergeEvent {
     data class Declined(override val task: TaskId, val approval: ApprovalId, override val at: Timestamp) : MergeEvent
 
     data class Merged(override val task: TaskId, val approval: ApprovalId, override val at: Timestamp) : MergeEvent
+
+    /** Контур закоммитил проверенную работу задачи (`GIT_COMMIT_CREATED`). */
+    data class Committed(override val task: TaskId, val commit: TaskCommit) : MergeEvent {
+        override val at: Timestamp get() = commit.at
+    }
 }
 
 /**
  * События слияний в потоке задачи (`TASK_MERGE_REQUESTED`,
- * `TASK_MERGE_DECLINED`, `TASK_MERGED`) и снимок `dpai.merges-state` v1:
- * после перезапуска ожидающий запрос снова ждёт ответа с прежним сроком, а
- * слитое не предлагается к слиянию повторно; запись одобрения слияния —
- * для инварианта «разрушительное — с одобрением» (ТЗ, §118).
+ * `TASK_MERGE_DECLINED`, `TASK_MERGED`, `GIT_COMMIT_CREATED`) и снимок
+ * `dpai.merges-state` v2: после перезапуска ожидающий запрос снова ждёт
+ * ответа с прежним сроком, а слитое не предлагается к слиянию повторно;
+ * запись одобрения слияния — для инварианта «разрушительное — с
+ * одобрением» (ТЗ, §118); коммит задачи — для поиска и handoff. Снимок v1
+ * читается: коммитов в нём нет.
  */
 object MergesProjection : Projection<MergesState> {
     const val FORMAT = "dpai.merges-state"
-    const val VERSION = 1
+    const val VERSION = 2
 
     override val name: String = "merges"
 
@@ -72,12 +95,14 @@ object MergesProjection : Projection<MergesState> {
         is MergeEvent.Requested -> state.copy(pending = state.pending + (e.merge.approval to e.merge))
         is MergeEvent.Declined -> state.copy(pending = state.pending - e.approval)
         is MergeEvent.Merged -> state.copy(pending = state.pending - e.approval, merged = state.merged + (e.task to e.approval))
+        is MergeEvent.Committed -> state.copy(commits = state.commits + (e.task to e.commit))
     }
 
     fun type(e: MergeEvent): EventType = when (e) {
         is MergeEvent.Requested -> EventType.TASK_MERGE_REQUESTED
         is MergeEvent.Declined -> EventType.TASK_MERGE_DECLINED
         is MergeEvent.Merged -> EventType.TASK_MERGED
+        is MergeEvent.Committed -> EventType.GIT_COMMIT_CREATED
     }
 
     fun stream(e: MergeEvent): StreamRef = StreamRef.of(e.task)
@@ -86,6 +111,7 @@ object MergesProjection : Projection<MergesState> {
         is MergeEvent.Requested -> pendingJson(e.merge)
         is MergeEvent.Declined -> JsonObject.of("task" to JsonString(e.task.value), "approval" to JsonString(e.approval.value))
         is MergeEvent.Merged -> JsonObject.of("task" to JsonString(e.task.value), "approval" to JsonString(e.approval.value))
+        is MergeEvent.Committed -> commitJson(e.task, e.commit)
     }
 
     fun decode(type: EventType, at: Timestamp, payload: JsonObject): Outcome<MergeEvent>? {
@@ -93,6 +119,7 @@ object MergesProjection : Projection<MergesState> {
         val f = JsonFields(payload, "$.payload", d)
         val e: MergeEvent? = when (type) {
             EventType.TASK_MERGE_REQUESTED -> readPending(f)?.let { MergeEvent.Requested(it, at) }
+            EventType.GIT_COMMIT_CREATED -> readCommit(f, at)?.let { (t, c) -> MergeEvent.Committed(t, c) }
             EventType.TASK_MERGE_DECLINED, EventType.TASK_MERGED -> {
                 val task = f.string("task")?.let { IdKinds.TASK.parse(it).valueOrNull() }
                 val approval = f.string("approval")?.let { IdKinds.APPROVAL.parse(it).valueOrNull() }
@@ -119,13 +146,14 @@ object MergesProjection : Projection<MergesState> {
             "merged" to JsonArray(
                 state.merged.entries.sortedBy { it.key.value }.map { (t, a) -> JsonObject.of("task" to JsonString(t.value), "approval" to JsonString(a.value)) },
             ),
+            "commits" to JsonArray(state.commits.entries.sortedBy { it.key.value }.map { (t, c) -> commitJson(t, c) }),
         ),
     )
 
     override fun decode(json: JsonObject): Outcome<MergesState> {
         val d = DiagnosticCollector()
         val f = JsonFields(json, "$", d)
-        FormatHeader.read(f, FORMAT, VERSION..VERSION, d) ?: return Outcome.Failure(d.all)
+        val version = FormatHeader.read(f, FORMAT, 1..VERSION, d) ?: return Outcome.Failure(d.all)
         val pending = f.array("pending")?.items.orEmpty().mapIndexedNotNull { i, v ->
             (v as? JsonObject)?.let { o -> JsonFields(o, "$.pending[$i]", d).let { r -> readPending(r).also { r.finish() } } }
         }
@@ -138,8 +166,30 @@ object MergesProjection : Projection<MergesState> {
                 if (t != null && a != null) t to a else null
             }
         }
+        val commits = if (version < 2) {
+            emptyList()
+        } else {
+            f.array("commits")?.items.orEmpty().mapIndexedNotNull { i, v ->
+                (v as? JsonObject)?.let { o -> JsonFields(o, "$.commits[$i]", d).let { r -> readCommit(r, null).also { r.finish() } } }
+                    ?: null.also { d.error(DiagCode.VALUE_INVALID, "запись коммита неполна или хеш неверен", "$.commits[$i]") }
+            }
+        }
         f.finish()
-        return if (d.hasErrors) Outcome.Failure(d.all) else Outcome.success(MergesState(pending.associateBy { it.approval }, merged.toMap()))
+        return if (d.hasErrors) Outcome.Failure(d.all) else Outcome.success(MergesState(pending.associateBy { it.approval }, merged.toMap(), commits.toMap()))
+    }
+
+    private fun commitJson(task: TaskId, c: TaskCommit): JsonObject = JsonObject(
+        linkedMapOf("task" to JsonString(task.value), "commit" to JsonString(c.commit), "branch" to JsonString(c.branch), "at" to JsonNumber.of(c.at.epochMillis)),
+    )
+
+    /** [eventAt] — время события, если запись — событие: поле `at` в нём то же. */
+    private fun readCommit(f: JsonFields, eventAt: Timestamp?): Pair<TaskId, TaskCommit>? {
+        val task = f.string("task")?.let { IdKinds.TASK.parse(it).valueOrNull() }
+        val commit = f.string("commit")?.takeIf { TaskCommit.HASH.matches(it) }
+        val branch = f.string("branch")
+        val at = f.long("at")?.let(::Timestamp) ?: eventAt
+        if (task == null || commit == null || branch == null || at == null) return null
+        return task to TaskCommit(commit, branch, at)
     }
 
     private fun pendingJson(m: PendingMerge): JsonObject = JsonObject(

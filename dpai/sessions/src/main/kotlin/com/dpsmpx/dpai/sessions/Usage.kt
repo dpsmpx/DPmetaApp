@@ -148,3 +148,34 @@ data class UsageTotals(
         val EMPTY = UsageTotals()
     }
 }
+
+/**
+ * Свод расхода нескольких сессий — задачи или одной сессии (D-42, п. 4:
+ * расход на экране и в `dpai`, а не только в журнале). Стоимость —
+ * оценка, если оценена хоть одна сессия; ходы без данных провайдера —
+ * отдельным счётом, не нулём (D-13).
+ */
+data class UsageSummary(
+    val turns: Int,
+    val unknownTurns: Int,
+    val inputTokens: Long,
+    val outputTokens: Long,
+    val cacheReadTokens: Long,
+    val costUsd: BigDecimal,
+    val costEstimated: Boolean,
+) {
+    /** Ходов ещё не было — показывать нечего. */
+    val empty: Boolean get() = turns == 0 && unknownTurns == 0
+
+    companion object {
+        fun of(totals: Collection<UsageTotals>): UsageSummary = UsageSummary(
+            turns = totals.sumOf { it.turns },
+            unknownTurns = totals.sumOf { it.unknownTurns },
+            inputTokens = totals.sumOf { it.inputTokens },
+            outputTokens = totals.sumOf { it.outputTokens },
+            cacheReadTokens = totals.sumOf { it.cacheReadTokens },
+            costUsd = totals.fold(BigDecimal.ZERO) { a, u -> a + u.costUsd },
+            costEstimated = totals.any { it.costEstimated },
+        )
+    }
+}

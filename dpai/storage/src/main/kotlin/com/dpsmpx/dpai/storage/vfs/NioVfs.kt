@@ -5,10 +5,13 @@ import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
+import java.nio.file.attribute.PosixFileAttributeView
+import java.nio.file.attribute.PosixFilePermission
 
 /**
  * [Vfs] на `java.nio` внутри каталога [root]. fsync — `FileChannel.force`;
@@ -86,6 +89,19 @@ class NioVfs(private val root: Path) : Vfs {
 
     override fun mkdirs(dir: String) {
         Files.createDirectories(p(dir))
+    }
+
+    override fun symlink(path: String, target: String) {
+        val link = p(path)
+        Files.deleteIfExists(link)
+        // Не Path.of: его (Java 11) нет в Android 11 (`check_android_api.py`).
+        Files.createSymbolicLink(link, link.fileSystem.getPath(target))
+    }
+
+    override fun setMode(path: String, mode: Int) {
+        val view = Files.getFileAttributeView(p(path), PosixFileAttributeView::class.java, LinkOption.NOFOLLOW_LINKS) ?: return
+        // OWNER_READ … OTHERS_EXECUTE — от бита 0400 к биту 0001.
+        view.setPermissions(PosixFilePermission.values().filterIndexed { i, _ -> mode and (0x100 shr i) != 0 }.toSet())
     }
 
     private fun writeFully(ch: FileChannel, bytes: ByteArray) {

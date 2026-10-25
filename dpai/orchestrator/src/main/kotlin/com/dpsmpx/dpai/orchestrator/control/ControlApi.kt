@@ -14,14 +14,10 @@ import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonParser
 import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.core.serialization.JsonValue
-import com.dpsmpx.dpai.monitoring.UsageReport
 import com.dpsmpx.dpai.notifications.RequestAction
 import com.dpsmpx.dpai.orchestrator.Orchestrator
 import com.dpsmpx.dpai.orchestrator.commands.Command
-import com.dpsmpx.dpai.orchestrator.git.TaskChanges
-import com.dpsmpx.dpai.sessions.SessionsState
 import com.dpsmpx.dpai.storage.vfs.Vfs
-import com.dpsmpx.dpai.tasks.TasksState
 import java.security.MessageDigest
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
@@ -106,8 +102,10 @@ class Pairing(private val vfs: Vfs, private val random: RandomSource, private va
  * - `POST /v1/pair` `{"code"}` — токен (без токена);
  * - `GET /v1/state` — задачи, сессии, ждущие запросы, подписки, настройки;
  * - `GET /v1/tasks/<id>/messages` — итоговые сообщения ходов задачи;
- * - `GET /v1/tasks/<id>/changes` — изменения задачи (D-42, п. 3): что
- *   принесёт слияние ветки задачи и что в её дереве не закоммичено;
+ * - `GET /v1/tasks/<id>/diff` — изменения задачи (`TaskDiff`);
+ * - `GET /v1/tasks/<id>/reviews` — роли ревью задачи и итоги с находками (D-73);
+ * - `POST /v1/search` `{"query"}` — глобальный поиск (ТЗ, §75): его даёт
+ *   оболочка ([search]) — поиск живёт в модуле `ui`, а не здесь;
  * - `POST /v1/commands` — команда ([CommandCodec]) через очередь контура:
  *   [submit] — та же, что у экрана (D-42, п. 1); опасное — только с
  *   `confirmed` (ТЗ, §68).
@@ -115,6 +113,8 @@ class Pairing(private val vfs: Vfs, private val random: RandomSource, private va
 class ControlApi(
     private val pairing: Pairing,
     private val orchestrator: () -> Orchestrator?,
+    /** Поиск по запросу — итог в JSON; `null` у функции или у итога — поиска нет (контура нет). */
+    private val search: ((String) -> JsonObject?)? = null,
     private val submit: (Command) -> OperationOutcome,
 ) {
     /** Итог команды для канала: `OperationResult` в JSON или отказ до исполнения. */
@@ -130,21 +130,27 @@ class ControlApi(
         val o = orchestrator() ?: return error(503, DiagCode.OPERATION_NOT_ALLOWED, "контроллер не запущен: в приложении нет target с каталогом Claude")
         return when {
             method == "GET" && path == "/v1/state" -> ControlResponse(200, ControlSnapshot.of(o))
-            method == "GET" && path.startsWith("/v1/tasks/") && path.count { it == '/' } == 4 -> task(o, path.substringAfterLast('/'), path.removePrefix("/v1/tasks/").substringBefore('/'))
+            method == "GET" && path.startsWith("/v1/tasks/") && path.endsWith("/messages") -> {
+                val id = IdKinds.TASK.parse(path.removePrefix("/v1/tasks/").removeSuffix("/messages")).valueOrNull()
+                    ?: return error(400, DiagCode.ID_INVALID, "ожидался TaskId")
+                ControlResponse(200, ControlSnapshot.messages(o, id))
+            }
+            method == "GET" && path.startsWith("/v1/tasks/") && path.endsWith("/diff") -> {
+                val id = IdKinds.TASK.parse(path.removePrefix("/v1/tasks/").removeSuffix("/diff")).valueOrNull()
+                    ?: return error(400, DiagCode.ID_INVALID, "ожидался TaskId")
+                when (val d = o.taskDiff(id)) {
+                    is Outcome.Success -> ControlResponse(200, d.value.toJson())
+                    is Outcome.Failure -> ControlResponse(if (d.errors.any { it.code == DiagCode.ENTITY_NOT_FOUND }) 404 else 409, failure(d.diagnostics))
+                }
+            }
+            method == "GET" && path.startsWith("/v1/tasks/") && path.endsWith("/reviews") -> {
+                val id = IdKinds.TASK.parse(path.removePrefix("/v1/tasks/").removeSuffix("/reviews")).valueOrNull()
+                    ?: return error(400, DiagCode.ID_INVALID, "ожидался TaskId")
+                ControlSnapshot.reviews(o, id)?.let { ControlResponse(200, it) } ?: error(404, DiagCode.ENTITY_NOT_FOUND, "нет такой задачи")
+            }
+            method == "POST" && path == "/v1/search" -> searchResponse(body)
             method == "POST" && path == "/v1/commands" -> command(o, body)
             else -> error(404, DiagCode.UNSUPPORTED, "нет такого пути: $method $path")
-        }
-    }
-
-    /** Чтение по задаче: `messages`, `changes`. */
-    private fun task(o: Orchestrator, what: String, raw: String): ControlResponse {
-        if (what != "messages" && what != "changes") return error(404, DiagCode.UNSUPPORTED, "нет такого пути: GET /v1/tasks/…/$what")
-        val id = IdKinds.TASK.parse(raw).valueOrNull() ?: return error(400, DiagCode.ID_INVALID, "ожидался TaskId")
-        if (what == "messages") return ControlResponse(200, ControlSnapshot.messages(o, id))
-        return when (val r = o.taskChanges(id)) {
-            // Нет задачи — 404; нет репозитория или Git — 422: запрос верен, смотреть нечего.
-            is Outcome.Failure -> ControlResponse(if (r.errors.first().code == DiagCode.ENTITY_NOT_FOUND) 404 else 422, failure(r.diagnostics))
-            is Outcome.Success -> ControlResponse(200, ControlSnapshot.changes(r.value, r.diagnostics))
         }
     }
 
@@ -172,6 +178,15 @@ class ControlApi(
         }
     }
 
+    /** Поиск (ТЗ, §75): запрос — строка от 2 до [MAX_QUERY] знаков; поиска нет — 503 с причиной. */
+    private fun searchResponse(body: String?): ControlResponse {
+        val q = ((parse(body) as? JsonObject)?.get("query") as? JsonString)?.value?.trim()
+            ?: return error(400, DiagCode.VALUE_INVALID, "тело — {\"query\": \"…\"}")
+        if (q.length !in 2..MAX_QUERY) return error(400, DiagCode.VALUE_INVALID, "запрос — от 2 до $MAX_QUERY знаков")
+        val f = search ?: return error(503, DiagCode.UNSUPPORTED, "поиск не подключён в этой оболочке")
+        return f(q)?.let { ControlResponse(200, it) } ?: error(503, DiagCode.OPERATION_NOT_ALLOWED, "контроллер не запущен: искать негде")
+    }
+
     /** Ответ опасным вариантом запроса (D-44) — тоже только с подтверждением. */
     private fun destructiveAnswer(o: Orchestrator, c: Command): Boolean {
         if (c !is Command.AnswerRequest) return false
@@ -191,14 +206,28 @@ class ControlApi(
 
         /** Предел тела запроса: команда — строки, не файлы. */
         const val MAX_BODY = 64 * 1024
+
+        /** Длиннее запрос поиска не бывает: это строка из поля ввода, а не текст. */
+        const val MAX_QUERY = 200
     }
 }
 
 /** Снимок для `dpai` (D-47): то же, что видит экран, — данными. */
 object ControlSnapshot {
+    /** Расход (D-42, п. 4): ходов не было — поля нет; стоимость — строкой, без потери точности. */
+    private fun usage(u: com.dpsmpx.dpai.sessions.UsageSummary): JsonObject? = if (u.empty) {
+        null
+    } else {
+        JsonObject.of(
+            "turns" to JsonNumber.of(u.turns), "unknownTurns" to JsonNumber.of(u.unknownTurns),
+            "inputTokens" to JsonNumber.of(u.inputTokens), "outputTokens" to JsonNumber.of(u.outputTokens),
+            "cacheReadTokens" to JsonNumber.of(u.cacheReadTokens), "costUsd" to JsonString(u.costUsd.toPlainString()),
+            "costEstimated" to JsonBool(u.costEstimated),
+        )
+    }
+
     fun of(o: Orchestrator): JsonObject {
         val now = o.now()
-        val byTask = o.sessions.sessions.values.groupBy { it.task }
         return JsonObject(
             linkedMapOf<String, JsonValue>(
                 "tasks" to JsonArray(
@@ -210,19 +239,29 @@ object ControlSnapshot {
                                 "archived" to JsonBool(t.archived),
                             ).apply {
                                 t.policy.model?.let { put("model", JsonString(it)) }
+                                // Роли ревью (D-73) и итог каждой: нет итога — роли нет в `verdicts`.
+                                if (t.policy.reviews.isNotEmpty()) {
+                                    put("reviews", JsonArray(t.policy.reviews.sorted().map { JsonString(it.name) }))
+                                    put("verdicts", JsonObject(t.reviews.entries.sortedBy { it.key }.associateTo(linkedMapOf<String, JsonValue>()) { (r, v) -> r.name to JsonString(v.verdict.name) }))
+                                }
                                 // Причина — пока что-то не так; у выполненной это уже история (отмена до повтора и т. п.).
                                 t.lastReason?.takeIf { t.state != com.dpsmpx.dpai.core.state.TaskState.DONE }?.let { put("reason", JsonString(it.name)) }
                                 o.waitingReason(t.id)?.let { put("waiting", JsonString(it)) }
-                                byTask[t.id]?.let { ss -> usage(UsageReport.build(SessionsState(ss.associateBy { it.id }), TasksState.EMPTY)) }?.let { put("usage", it) }
+                                usage(com.dpsmpx.dpai.sessions.UsageSummary.of(o.sessions.sessions.values.filter { it.task == t.id }.map { it.usage }))?.let { put("usage", it) }
                             },
                         )
                     },
                 ),
                 "sessions" to JsonArray(
                     o.sessions.sessions.values.sortedBy { it.createdAt.epochMillis }.map { s ->
-                        JsonObject.of(
-                            "id" to JsonString(s.id.value), "task" to JsonString(s.task.value), "state" to JsonString(s.state.name),
-                            "target" to JsonString(s.target.value), "turn" to JsonNumber.of(s.turn),
+                        JsonObject(
+                            linkedMapOf<String, JsonValue>(
+                                "id" to JsonString(s.id.value), "task" to JsonString(s.task.value), "state" to JsonString(s.state.name),
+                                "target" to JsonString(s.target.value), "slot" to JsonString(s.slot.value), "turn" to JsonNumber.of(s.turn),
+                            ).apply {
+                                usage(com.dpsmpx.dpai.sessions.UsageSummary.of(listOf(s.usage)))?.let { put("usage", it) }
+                                s.review?.let { put("review", JsonString(it)) }
+                            },
                         )
                     },
                 ),
@@ -278,32 +317,6 @@ object ControlSnapshot {
         )
     }
 
-    /** Изменения задачи: части как строки вывода Git; нет части — поля нет (ветки или дерева нет), а не пустой список. */
-    fun changes(c: TaskChanges, warnings: List<Diagnostic>): JsonObject = JsonObject(
-        linkedMapOf<String, JsonValue>("branch" to JsonString(c.branch)).apply {
-            c.base?.let { put("base", JsonString(it)) }
-            c.committed?.let { put("committed", JsonArray(it.map(::JsonString))) }
-            c.uncommitted?.let { put("uncommitted", JsonArray(it.map(::JsonString))) }
-            put("untracked", JsonArray(c.untracked.map(::JsonString)))
-            put("truncated", JsonBool(c.truncated))
-            put("diagnostics", CommandCodec.diagnostics(warnings))
-        },
-    )
-
-    /**
-     * Расход задачи (D-42, п. 4): со слов провайдера; стоимость — строкой
-     * (точная десятичная), `costEstimated` — по прейскуранту. Ходов нет —
-     * `null`, поля нет: «ноль» означал бы, что ходы сочтены (D-13).
-     */
-    fun usage(u: UsageReport): JsonObject? {
-        if (u.turns + u.unknownTurns == 0) return null
-        return JsonObject.of(
-            "turns" to JsonNumber.of(u.turns), "unknownTurns" to JsonNumber.of(u.unknownTurns),
-            "inputTokens" to JsonNumber.of(u.totalInput), "cacheReadTokens" to JsonNumber.of(u.cacheReadTokens), "outputTokens" to JsonNumber.of(u.outputTokens),
-            "costUsd" to JsonString(u.costUsd.toPlainString()), "costEstimated" to JsonBool(u.costEstimated),
-        )
-    }
-
     fun messages(o: Orchestrator, task: com.dpsmpx.dpai.core.ids.TaskId): JsonObject = JsonObject.of(
         "messages" to JsonArray(
             o.turnMessages(task).map { m ->
@@ -316,4 +329,37 @@ object ControlSnapshot {
             },
         ),
     )
+
+    /** Роли ревью задачи и итоги с находками (D-73); `null` — нет такой задачи. */
+    fun reviews(o: Orchestrator, task: com.dpsmpx.dpai.core.ids.TaskId): JsonObject? {
+        val t = o.tasks.tasks[task] ?: return null
+        return JsonObject.of(
+            "roles" to JsonArray(t.policy.reviews.sorted().map { JsonString(it.name) }),
+            "reviews" to JsonArray(
+                t.reviews.values.sortedBy { it.role }.map { r ->
+                    JsonObject(
+                        linkedMapOf<String, JsonValue>(
+                            "role" to JsonString(r.role.name), "verdict" to JsonString(r.verdict.name), "attempt" to JsonNumber.of(r.attempt),
+                            "findings" to JsonArray(
+                                r.findings.map { f ->
+                                    JsonObject(
+                                        linkedMapOf<String, JsonValue>("severity" to JsonString(f.severity.name), "title" to JsonString(f.title)).apply {
+                                            f.file?.let { put("file", JsonString(it)) }
+                                            f.line?.let { put("line", JsonNumber.of(it)) }
+                                            f.detail?.let { put("detail", JsonString(it)) }
+                                        },
+                                    )
+                                },
+                            ),
+                            "omitted" to JsonNumber.of(r.omitted),
+                        ).apply {
+                            r.session?.let { put("session", JsonString(it.value)) }
+                            r.by?.let { put("by", JsonString(it)) }
+                            r.reason?.let { put("reason", JsonString(it)) }
+                        },
+                    )
+                },
+            ),
+        )
+    }
 }
