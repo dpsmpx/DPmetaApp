@@ -164,7 +164,9 @@ def project(repo: xref.Repo, root: Path | None, queue: dict[str, dict], paths: b
     if root is not None:
         base = activity.default_branch(root)
         if base:
-            line = xref.git(root, "log", "-1", "--format=%h %cs", base).strip()
+            # Подсистема в чужом репозитории (M-14) — последний коммит, менявший её каталог.
+            within = ["--", "."] if xref.git(root, "rev-parse", "--show-prefix").strip() else []
+            line = xref.git(root, "log", "-1", "--format=%h %cs", base, *within).strip()
             state["branch"] = base.removeprefix("origin/")
             if line:
                 state["head"], state["updated"] = line.split(" ", 1)
@@ -228,7 +230,7 @@ def main(argv: list[str] | None = None) -> int:
     roots = {}
     for r in repos:
         root = overrides.get(r.name) or xref.find_clone(a.root, r)
-        roots[r.name] = root.resolve() if (root / ".git").exists() else None
+        roots[r.name] = root.resolve() if xref.is_clone(root) else None
     try:
         text = build(repos, roots, queue_text, a.paths)
     except ValueError as e:
