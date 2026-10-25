@@ -261,9 +261,16 @@ class RealConfig(unittest.TestCase):
         self.assertEqual(dest["status"], "active", "live и адресат согласованы — иначе site deploy и publish откажут")
         self.assertEqual(dest["target"]["base_url"], self.repo.site_base("production"))
         self.assertEqual(self.repo.site_base("production"), self.repo.site()["canonical_base"])
+        import tempfile
+        from pathlib import Path
+        key = Path(tempfile.mkdtemp(prefix="cs-key-")) / "mark.key"
+        key.write_text("00" * 32 + "\n", encoding="ascii")
+        self.assertIs((self.cfg.get("mark") or {}).get("required"), True, "Д41: метку ставит выгрузка")
         for env in (AUTHOR, LOCAL):
-            with mock.patch.dict(os.environ, env):
+            with mock.patch.dict(os.environ, {**env, "DPSMPX_MARK_KEY": str(key)}):
                 self.assertEqual(deploy.guard(self.repo, store=self.store), [])
+            with mock.patch.dict(os.environ, {**env, "DPSMPX_MARK_KEY": str(key.with_name("нет.key"))}):
+                self.assertTrue(any("mark init" in p for p in deploy.guard(self.repo, store=self.store)))
 
     def test_guards_stay(self):
         self.assertEqual(self.cfg["kind"], "rsync")

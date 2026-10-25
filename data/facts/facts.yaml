@@ -268,10 +268,11 @@ facts:
     class: FACT
     risk: high
     public: false
-    statement: "Оценка готовности к первому релизу в Steam — 43 %, по всем задачам — 31 % (3 октября 2026, check_progress.py)."
-    recheck_by: 2026-10-18
+    statement: "Оценка готовности к первому релизу в Steam — 43 %, по всем задачам — 31 % (3 октября 2026, check_progress.py); на 17 октября 2026 оценка не пересчитывалась, счёт закрытых пунктов ROADMAP — 250 из 465 к релизу, 250 из 537 по всем задачам."
+    recheck_by: 2026-11-04
     evidence:
       - {kind: doc, source: "dpsmpx/Galdhold README.md, блок готовности", ref: "f2ba263", date: 2026-10-04, verification: reported}
+      - {kind: doc, source: "dpsmpx/Galdhold README.md, блок готовности (пишет tools/hostcheck/check_progress.py --write): оценка на 3 октября 2026, счёт пунктов ROADMAP", ref: "11bf957", date: 2026-10-17, verification: reported}
     notes: Внутренняя оценка; публично проценты без определения не используются (аудит, § 4).
   - id: GH-REPO-START
     subject: galdhold
@@ -380,13 +381,15 @@ facts:
     class: FACT
     risk: high
     public: true
-    statement: v0.0 «замер до компилятора» пройдена 4 октября 2026; следующая — v0.1, компилятор ядра. Выпущенного компилятора нет.
+    statement: "v0.0 «замер до компилятора» пройдена 4 октября 2026; v0.1 «ядро-срез» закрыта с оговоркой 10 октября; ворота v0.2 «native-срез» пройдены 19 октября: программы собираются для Linux, Windows (проверка под Wine) и Android, кадр графической программы совпадает с эталоном; идёт v0.3 «память и параллелизм». Выпущенного компилятора нет."
     allowed_wording:
-      ru: ["язык на ранней стадии: выбран синтаксис, начат компилятор"]
-      en: ["early stage: syntax chosen, compiler work started"]
-    recheck_by: 2026-10-18
+      ru: ["язык на ранней стадии: компилятор в разработке, собирает программы для Linux, Windows и Android"]
+      en: ["early stage: the compiler is in development and builds programs for Linux, Windows and Android"]
+    recheck_by: 2026-11-08
     evidence:
       - {kind: doc, source: "dpsmpx/DPlang ROADMAP/ROADMAP.md, docs/CHANGELOG.md", ref: "66e461c", date: 2026-10-04, verification: reported}
+      - {kind: doc, source: "dpsmpx/DPlang ROADMAP/ROADMAP.md: v0.1 [x], v0.2 [+] (ворота пройдены 19.10.2026, аудит docs/audits/2026-10-17-v0.2-audit.md), v0.3 — в работе", ref: "eac5a87", date: 2026-10-25, verification: reported}
+    notes: Смена текста 25.10.2026 — ответ автора «сменить и переодобрить»; варианты CI-0001 и CI-0002 — новыми версиями, одобряет автор. README DPlang («v0.2 — следующая, не начата») отстал от ROADMAP.
   - id: DP-COMPILER
     subject: dplang
     class: FACT
@@ -555,9 +558,25 @@ facts:
     allowed_wording:
       ru: ["версия 0.3.0: этапы 0–3 из 0–8; другие репозитории его пока не подключили"]
       en: ["version 0.3.0: stages 0–3 of 0–8; not yet adopted by other repositories"]
-    recheck_by: 2026-10-19
+    notes: Срез на 5 октября 2026 (страница прогресса CI-0002, статья CI-0003 — «по 5 октября»); нынешняя стадия — VRF-NOW.
     evidence:
       - {kind: doc, source: "dpsmpx/DP-Verify ROADMAP/ROADMAP.md, README.md", ref: "c3d3d3e", date: 2026-10-05, verification: reported}
+  - id: VRF-NOW
+    subject: dp_verify
+    class: FACT
+    risk: medium
+    public: true
+    statement: >-
+      На 11 октября 2026 года DP-Verify — версия 1.0.0-rc2, кандидат 1.0: этапы 0–7 из 0–8 сделаны
+      (каркас, обязательный набор, выбор по изменениям, необязательные проверки, process-kit, два
+      пилотных подключения); его проверки подключены в Galdhold. Выпуск 1.0.0 — этап 8.
+    allowed_wording:
+      ru: ["кандидат версии 1.0; его проверки подключены в Galdhold"]
+      en: ["a 1.0 release candidate; its checks run in Galdhold"]
+    recheck_by: 2026-11-08
+    evidence:
+      - {kind: doc, source: "dpsmpx/DP-Verify README.md («Состояние»), ROADMAP/ROADMAP.md (этапы 0–7 — [+], этап 8 — [ ])", ref: "6c57f07", date: 2026-10-25, verification: reported}
+      - {kind: doc, source: "dpsmpx/Galdhold CLAUDE.md: проверки через DP Verify (Р21)", ref: "5aebe330", date: 2026-10-25, verification: reported}
   - id: PRF-WHAT
     subject: dpprofile
     class: FACT
@@ -578,9 +597,10 @@ facts:
     allowed_wording:
       ru: ["выполнено 4 этапа из 6; текст книги не пишется"]
       en: ["4 of 6 stages complete; the book itself is not being written"]
-    recheck_by: 2026-10-19
+    recheck_by: 2026-11-08
     evidence:
       - {kind: doc, source: "dpsmpx/DPprofile README.md, блок состояния (строит tools/verify/readme_status.py)", ref: "3e76c10", date: 2026-10-04, verification: reported}
+      - {kind: doc, source: "dpsmpx/DPprofile main — без новых коммитов с 4 октября (сверено)", ref: "3e76c10", date: 2026-10-25, verification: reported}
   - id: LRN-WHAT
     subject: dplearn
     class: FACT
@@ -601,9 +621,10 @@ facts:
     allowed_wording:
       ru: ["версия 0.1.0: ядро и пилотный домен готовы"]
       en: ["version 0.1.0: the core and a pilot domain are ready"]
-    recheck_by: 2026-10-19
+    recheck_by: 2026-11-08
     evidence:
       - {kind: doc, source: "dpsmpx/DPlearn README.md, «Состояние»", ref: "d2565dd", date: 2026-10-04, verification: reported}
+      - {kind: doc, source: "dpsmpx/DPlearn main — без новых коммитов с 4 октября (сверено)", ref: "d2565dd", date: 2026-10-25, verification: reported}
   - id: MKT-WHAT
     subject: dp_game_market
     class: FACT
@@ -624,9 +645,24 @@ facts:
     allowed_wording:
       ru: ["написаны фазы 0–6 из 0–10, тесты — у 0–4"]
       en: ["phases 0–6 of 0–10 written, 0–4 with tests"]
-    recheck_by: 2026-10-19
+    notes: Срез на 4 октября 2026 (страница прогресса CI-0002, статья CI-0003); нынешняя стадия — MKT-NOW.
     evidence:
       - {kind: doc, source: "dpsmpx/DP_game_market_analytic_system docs/HANDOFF.md", ref: "2fd2abe", date: 2026-10-04, verification: reported}
+  - id: MKT-NOW
+    subject: dp_game_market
+    class: FACT
+    risk: medium
+    public: true
+    statement: >-
+      На 16 октября 2026 года — версия 0.3.0 до выпуска: командная строка dpm (рынок сегмента,
+      конкуренты, тренды, возможности, прогноз сценариями, бэктест); 358 тестов; все данные в
+      репозитории синтетические — реальные подключаются отдельно.
+    allowed_wording:
+      ru: ["версия 0.3.0 до выпуска: командная строка, 358 тестов, данные пока синтетические"]
+      en: ["version 0.3.0, pre-release: a command-line tool, 358 tests, synthetic data so far"]
+    recheck_by: 2026-11-08
+    evidence:
+      - {kind: doc, source: "dpsmpx/DP_game_market_analytic_system docs/HANDOFF.md (версии, тесты), README.md (команды dpm, синтетические данные)", ref: "a04506a", date: 2026-10-25, verification: reported}
   - id: META-WHAT
     subject: dpmeta
     class: FACT
@@ -672,7 +708,22 @@ facts:
     evidence:
       - {kind: decision, source: "dpsmpx/DPmetaApp docs/direction/DECISIONS.md D-28 (всё в одном: dpai/, репозиторий оркестратора заморожен) и D-29 (фаза B — сейчас)", ref: "4116a95", date: 2026-10-12, verification: decision}
       - {kind: doc, source: "dpsmpx/DPmetaApp README.md, ROADMAP/ROADMAP.md (этап 1 — [+]), TODO.md (на телефоне — com.dpsmpx.dpai)", ref: "4116a95", date: 2026-10-12, verification: reported}
-    recheck_by: 2026-10-26
+      - {kind: doc, source: "dpsmpx/DPmetaApp ROADMAP/ROADMAP.md: этап 1 — [+], этап 2 — [ ] (сверено)", ref: "9c6f0890", date: 2026-10-25, verification: reported}
+    recheck_by: 2026-11-08
+  - id: APP-PHASE-B
+    subject: dpmetaapp
+    class: FACT
+    risk: low
+    public: true
+    statement: >-
+      С 11 октября 2026 года фаза B плана начата для самого приложения: DPmetaApp строит свои функции
+      по одной, не дожидаясь, пока все системы станут законченными (решение D-29, слово автора).
+    allowed_wording:
+      ru: ["фаза B начата: приложение строит свои функции по одной, не дожидаясь законченных систем"]
+      en: ["phase B has started: the app is built one function at a time, without waiting for every system to be finished"]
+    recheck_by: 2026-11-08
+    evidence:
+      - {kind: decision, source: "dpsmpx/DPmetaApp docs/direction/DECISIONS.md D-29 (фаза B для DPmetaApp — сейчас, по одной функции)", ref: "9c6f0890", date: 2026-10-11, verification: decision}
   - id: MON-WHAT
     subject: dpmonetization
     class: FACT
@@ -873,7 +924,7 @@ facts:
     allowed_wording:
       ru: ["первая версия в разработке"]
       en: ["the first version is in development"]
-    recheck_by: 2026-10-21
+    notes: Срез на 7 октября 2026; с 10 октября репозиторий заморожен, подсистема — в DPmetaApp (APP-NOW, DPmetaApp D-28). Держит его только страница прогресса CI-0002 (набор на 9 октября).
     evidence:
       - {kind: doc, source: "dpsmpx/DP_AI_Orcestrator README.md, раздел «Прогресс» (рабочая ветка)", ref: "a2434cd", date: 2026-10-07, verification: reported}
   - id: GOAL-PLAN

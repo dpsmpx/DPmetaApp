@@ -2,24 +2,16 @@
 
 Замена поиску секретов GitHub, которого нет в закрытом репозитории личного
 аккаунта. Проверяются отслеживаемые и новые файлы (кроме .gitignore).
-Ошибка — ключи, токены, приватные ключи, cookies, подписанные адреса,
-файлы секретов и слова из списка личных слов автора (Д40); предупреждение —
-адреса почты и приглашения Discord.
-
-Список личных слов лежит у автора вне Git (`private_words_path()`): в
-репозитории его быть не может — в нём то, что он защищает. Найденное слово
-не печатается, только файл и строка. Без списка проверка помечена LIMITED.
+Ошибка — ключи, токены, приватные ключи, cookies, подписанные адреса и
+файлы секретов; предупреждение — адреса почты и приглашения Discord.
+Списка личных слов автора нет (Д40, ответ автора 12.10.2026): правило
+«имени нет нигде» держат критика и просмотр автора.
 """
 from __future__ import annotations
 
-import os
 import re
-from pathlib import Path
 
-from .common import ROOT, Report, is_text, rel, repo_files
-
-PRIVATE_WORDS_ENV = "DPSMPX_PRIVATE_WORDS"
-PRIVATE_WORDS_DEFAULT = "~/.config/dpsmpx/private-words.txt"
+from .common import Report, is_text, rel, repo_files
 
 PATTERNS = [
     ("приватный ключ", re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY")),
@@ -46,35 +38,9 @@ WARN_PATTERNS = [
 SECRET_FILES = re.compile(r"(^|/)(\.env(\..*)?|.*\.(pem|key|p12|pfx)|id_(rsa|ed25519|ecdsa)|cookies?.*\.txt|.*\.cookies)$")
 
 
-def private_words_path() -> Path:
-    return Path(os.environ.get(PRIVATE_WORDS_ENV) or PRIVATE_WORDS_DEFAULT).expanduser()
-
-
 def norm(text: str) -> str:
-    """Для сравнения со списком личных слов: без регистра, ё = е."""
+    """Для сравнения со списками слов фильтра сайта: без регистра, ё = е."""
     return text.lower().replace("ё", "е")
-
-
-def private_words(path: Path | None = None) -> list[str] | None:
-    """Список личных слов автора (Д40): слово или основа на строку, # — комментарий.
-
-    None — списка нет (облачная сессия): проверка ограничена. Слова короче
-    трёх знаков не берутся — они совпадали бы с чем угодно.
-    """
-    p = path or private_words_path()
-    if not p.is_file():
-        return None
-    words = set()
-    for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
-        w = norm(line.split("#", 1)[0].strip())
-        if len(w) >= 3:
-            words.add(w)
-    return sorted(words)
-
-
-def private_lines(text: str, words: list[str]) -> list[int]:
-    """Номера строк, где есть слово из списка (сами слова не возвращаются)."""
-    return [i for i, line in enumerate(norm(text).splitlines(), 1) if any(w in line for w in words)]
 
 
 def scan_text(text: str) -> list[tuple[str, str, int]]:
@@ -89,28 +55,15 @@ def scan_text(text: str) -> list[tuple[str, str, int]]:
 
 def check() -> Report:
     r = Report("secrets — секреты и личные данные")
-    words = private_words()
-    wp = private_words_path().resolve()
-    if wp.is_file() and ROOT in wp.parents:
-        r.error(f"{rel(wp)}: список личных слов внутри репозитория — его место вне Git (docs/SECURITY.md)")
     n = 0
     for f in repo_files():
         rp = rel(f)
         if SECRET_FILES.search(rp):
             r.error(f"{rp}: файл секретов в репозитории")
-        text = is_text(f)
-        if words and f.resolve() != wp:
-            data = f.read_bytes().decode("utf-8", "ignore")
-            for line in private_lines(data, words) if text else ([0] if private_lines(data, words) else []):
-                r.error(f"{rp}{f':{line}' if line else ''}: слово из списка личных слов (Д40) — само слово не печатается")
-        if not text:
+        if not is_text(f):
             continue
         n += 1
         for level, name, line in scan_text(f.read_text(encoding="utf-8", errors="replace")):
             (r.error if level == "error" else r.warn)(f"{rp}:{line}: {name}")
     r.note(f"текстовых файлов {n}")
-    if words is None:
-        r.note(f"личные слова: LIMITED — списка нет ({PRIVATE_WORDS_DEFAULT} или ${PRIVATE_WORDS_ENV}; docs/SECURITY.md)")
-    else:
-        r.note(f"личные слова: список автора, слов {len(words)}")
     return r

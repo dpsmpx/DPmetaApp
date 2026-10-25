@@ -64,7 +64,7 @@ L = {
                   "lines_end": "строк кода, тестов и документов в ядре", "tests_end": "из них — в файлах тестов",
                   "decisions_end": "записей в журналах решений ядра", "hostcheck_end": "автопроверок Galdhold (README)",
                   "unmerged_branches": "веток с невлитой работой"},
-        "core_note": "из них один закрытый проект без имени",
+        "core_note": "в том числе 1 проект без публичного имени",  # В8.2, ответ автора 25.10.2026
         "only_totals": "Закрытый проект без публичного имени здесь не показан отдельно — он входит только в общие суммы.",
         "personal_n": "личные репозитории — {n}: заметки и планы; имена не публикуются",
         "archive": {"early": "ранние открытые проекты до репозитория игры — {names}: вне текущей системы, в счёт не входят",
@@ -124,7 +124,7 @@ L = {
                   "lines_end": "lines of code, tests and documents in the core", "tests_end": "of them in test files",
                   "decisions_end": "core decision log entries", "hostcheck_end": "Galdhold automated checks (README)",
                   "unmerged_branches": "branches with unmerged work"},
-        "core_note": "including one undisclosed private project",
+        "core_note": "including 1 project without a public name",
         "only_totals": "A private project without a public name is not shown separately — it is counted only in totals.",
         "personal_n": "personal repositories — {n}: notes and plans; names are not published",
         "archive": {"early": "early open projects that predate the game repository — {names}: outside the current system, not counted",

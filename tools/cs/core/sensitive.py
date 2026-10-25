@@ -8,8 +8,7 @@
     правила политики   почта, телефон, IP, локальные пути, технический адрес
                        хостинга, сессии ИИ, имена веток (data/policy/sensitive.yaml)
     секреты            те же шаблоны, что проверка `secrets` (tools/cs/secrets.py)
-    слова из данных    список личных слов автора вне Git (Д37, Д40; не печатаются);
-                       имена закрытых проектов без публичного имени и личных
+    слова из данных    имена закрытых проектов без публичного имени и личных
                        репозиториев (data/progress/scope.yaml); коммиты закрытых
                        репозиториев (наборы прогресса и вехи, Д17); ручной список terms
     метаданные         EXIF, XMP, IPTC и текстовые блоки PNG в изображениях
@@ -99,14 +98,10 @@ def image_metadata(data: bytes, suffix: str) -> list[str]:
 
 
 class Filter:
-    def __init__(self, repo: Repo, private_words: list[str] | None = None):
-        """private_words — список личных слов; None — взять у автора (secrets.private_words)."""
+    def __init__(self, repo: Repo):
         self.repo = repo
         policy = repo.yaml("data/policy/sensitive.yaml") or {}
         from .. import secrets
-        if private_words is None:
-            private_words = secrets.private_words()
-        self.private_limited = private_words is None  # списка нет — имя автора не проверяется
         self.rules = [Rule(r["id"], r["label"], r["basis"], r["where"], r["show"], re.compile(r["pattern"], re.I))
                       for r in policy.get("rules", [])]
         self.rules += [Rule("SD-SECRET", f"секрет: {name}", "секретов на сайте нет (docs/SECURITY.md)", "raw", False, pat)
@@ -114,9 +109,6 @@ class Filter:
         self.allow = {(a["rule"], a["value"]) for a in policy.get("allow", [])}
         # (правило, слово, подпись, основание, печатать найденное)
         self.terms: list[tuple[str, str, str, str, bool]] = []
-        for w in private_words or []:
-            self.terms.append(("SD-PRIVATE", w, "слово из списка личных слов автора",
-                               "Д37, Д40: автор — только dpsmpx", False))
         scope = repo.yaml("data/progress/scope.yaml") or {}
         for r in scope.get("repos", []):
             if r.get("visibility") == "undisclosed":
@@ -193,5 +185,5 @@ class Filter:
         return hits
 
 
-def scan(repo: Repo, root: Path, private_words: list[str] | None = None) -> list[Hit]:
-    return Filter(repo, private_words).scan_tree(root)
+def scan(repo: Repo, root: Path) -> list[Hit]:
+    return Filter(repo).scan_tree(root)

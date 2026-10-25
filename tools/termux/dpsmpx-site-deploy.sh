@@ -12,7 +12,7 @@ set -eu
 PY="${DPSMPX_PY:-/data/data/com.termux/files/usr/bin/python3}"   # Python из pkg, с jsonschema
 REPO="${DPSMPX_REPO:-$HOME/SocialMediaImage}"
 ENVF="$HOME/.config/dpsmpx/deploy.env"
-SITE="http://dpsmpx.com/"   # http, пока у домена нет сертификата (TODO.md)
+SITE="https://dpsmpx.com/"   # HTTPS подтвердил автор 12.10.2026 (В5)
 
 [ -t 0 ] && trap 'printf "\nEnter — закрыть "; read -r _' EXIT
 fail() { echo "✗ $*"; exit 1; }
@@ -22,7 +22,12 @@ fail() { echo "✗ $*"; exit 1; }
 . "$ENVF"
 cd "$REPO" || fail "нет каталога $REPO"
 [ "$(git branch --show-current)" = main ] || fail "ветка не main — отказ"
-[ -z "$(git status --porcelain)" ] || fail "есть незакоммиченное — отказ"
+if [ -n "$(git status --porcelain -- . ':!data/provenance/site-releases')" ]; then
+  fail "есть незакоммиченное — отказ"
+fi
+if [ -n "$(git status --porcelain -- data/provenance/site-releases)" ]; then
+  fail "манифест прошлой выгрузки не закоммичен (Д41): git add data/provenance/site-releases && git commit && git push — затем снова"
+fi
 git pull --ff-only || fail "git pull не прошёл — сеть или расхождение с GitHub"
 
 echo "== пробный прогон"

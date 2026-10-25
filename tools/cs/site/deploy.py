@@ -12,9 +12,15 @@
 локальной и только для сайта (`local_session_production` политики);
 облачная — никогда. Выпуск открывает автор (Д34, с 05.10.2026 —
 `environments.production.live: true`); при `false` рабочая выгрузка отказывает.
+
+Водяной знак (Д41, `deploy.mark.required`): перед rsync сборка получает
+метку ключом автора (`tools/cs/mark/`); нет ключа — отказ. После выгрузки —
+манифест выпуска в `data/provenance/site-releases/` и метки времени на него;
+нет сети — выгрузка не падает, метки ставит `mark stamp`.
 """
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import urllib.error
@@ -36,6 +42,9 @@ class DeployResult:
     changes: list = field(default_factory=list)
     problems: list = field(default_factory=list)
     output: str = ""
+    release: Path | None = None  # манифест выпуска (Д41)
+    stamps: list = field(default_factory=list)  # метки времени на манифест
+    marked: int = 0  # файлов с меткой
 
 
 def env_config(repo: Repo, env: str = "production") -> dict:
@@ -71,6 +80,14 @@ def guard(repo: Repo, env: str = "production", store: EnvCredentialStore | None 
         why = session_may_deploy(repo)
         if why:
             out.append(why)
+    if (cfg.get("mark") or {}).get("required"):
+        from ..mark import key as mkey
+        try:
+            if mkey.load() is None:
+                out.append(f"нет ключа метки (Д41): {mkey.key_path()} — один раз на машине автора: "
+                           "python3 -m tools.cs mark init")
+        except ValueError as e:
+            out.append(f"ключ метки не читается: {e}")
     if cfg.get("kind") == "rsync":
         target = (store or EnvCredentialStore()).get(cfg.get("target_ref"))
         if not target:
@@ -104,13 +121,43 @@ def rsync_argv(src: Path, target: str, cfg: dict, dry_run: bool = False) -> list
     return argv + [f"{src}/", dest]
 
 
+def mark_sidecar(src: Path) -> Path:
+    """Записи метки сборки — рядом с каталогом сборки, не в нём (на хостинг не уходят)."""
+    return src.with_name(src.name + ".mark.json")
+
+
+def mark_build(src: Path, key: bytes, objs: dict | None = None) -> list[dict]:
+    """Метка сборки ровно один раз: сборка уже с меткой (те же sha256, что записаны рядом) — не трогать."""
+    from ..mark import release
+    side = mark_sidecar(src)
+    if side.is_file():
+        files = json.loads(side.read_text(encoding="utf-8"))
+        have = {p.relative_to(src).as_posix() for p in src.rglob("*") if p.is_file()}
+        if have == {f["path"] for f in files} and all(
+                release.sha256((src / f["path"]).read_bytes()) == f["sha256"] for f in files):
+            return files
+    files = release.mark_build(src, key, objs)
+    side.write_text(json.dumps(files, ensure_ascii=False), encoding="utf-8")
+    return files
+
+
 def run(repo: Repo, src: Path, env: str = "production", dry_run: bool = False,
-        store: EnvCredentialStore | None = None, runner=subprocess.run) -> DeployResult:
+        store: EnvCredentialStore | None = None, runner=subprocess.run, now=None,
+        post=None, stamp_runner=subprocess.run, objects: dict | None = None) -> DeployResult:
     """Выгрузить готовую сборку src. dry_run — только показать изменения (rsync --dry-run)."""
     problems = guard(repo, env, store, dry_run)
     if problems:
         return DeployResult(False, problems=problems)
     cfg = config(repo, env)
+    mcfg = cfg.get("mark") or {}
+    files, key = None, None
+    if mcfg.get("required"):
+        from ..mark import key as mkey
+        key = mkey.load()
+        if key is None:
+            return DeployResult(False, problems=[f"нет ключа метки (Д41): {mkey.key_path()} — один раз на машине автора: "
+                                                 "python3 -m tools.cs mark init"])
+        files = mark_build(src, key, objects)  # повторяемо: пробный прогон видит те же байты, что и выгрузка
     if cfg.get("kind") == "command":
         if dry_run:
             return DeployResult(True, list(cfg.get("command") or []), problems=["kind: command — показа изменений нет"])
@@ -122,7 +169,26 @@ def run(repo: Repo, src: Path, env: str = "production", dry_run: bool = False,
     changes = [ln for ln in (r.stdout or "").splitlines() if ln[:1] in "<>ch*." and ln.strip()]
     if r.returncode != 0:
         return DeployResult(False, shown, changes, [f"выгрузка: код {r.returncode}"], (r.stderr or "")[-2000:])
-    return DeployResult(True, shown, changes, output=(r.stdout or "")[-4000:])
+    res = DeployResult(True, shown, changes, output=(r.stdout or "")[-4000:],
+                       marked=sum(1 for f in files or [] if f.get("method")))
+    if files is not None and not dry_run:
+        try:  # rsync уже прошёл: сбой записи манифеста или меток времени выгрузку не роняет (Д41)
+            res.release, res.stamps = record_release(repo, env, files, key, mcfg, now, post, stamp_runner)
+        except Exception as e:
+            res.problems.append(f"манифест выпуска не записан ({type(e).__name__}: {e}) — сайт выгружен; "
+                                "повторить выгрузку: rsync и метка повторяемы, манифест запишется")
+    return res
+
+
+def record_release(repo: Repo, env: str, files: list[dict], key: bytes, mcfg: dict, now=None, post=None,
+                   stamp_runner=subprocess.run) -> tuple[Path, list]:
+    """Манифест выпуска и метки времени на него (Д41): ни сеть, ни служба выгрузку не роняют."""
+    import urllib.request
+    from ..mark import release, stamp
+    m = release.manifest(files, key, repo.site_base(env), release.git_head(repo.root), release.release_id(now))
+    mp = release.write_manifest(repo.root, m)
+    stamps = stamp.stamp_all(mp, mcfg.get("tsa") or stamp.TSA_DEFAULT, post or urllib.request.urlopen, stamp_runner)
+    return mp, stamps
 
 
 def verify(base: str, paths: list[str], fetch=urllib.request.urlopen, timeout: float = 15) -> dict[str, bool | None]:

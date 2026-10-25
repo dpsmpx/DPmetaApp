@@ -50,9 +50,9 @@ tools/cs/
 │   └── mock.py          имитации всех площадок с внедрением отказов (§102)
 ├── progress/        ПРОГРЕСС ЭКОСИСТЕМЫ (Д38) — сбор набора из клонов (collect.py), величины и публичная выжимка
 │                    (dataset.py), графики SVG (charts.py), фигуры (figures.py), проверка (check.py)
+├── mark/            ВОДЯНОЙ ЗНАК (Д41) — ключ (key.py), метка изображений (image.py) и SVG (svg.py), манифест выпуска (release.py), метки времени RFC 3161 и OpenTimestamps (stamp.py), mark verify (verify.py), команды (cli.py)
 ├── site/            САЙТ — генератор (build.py), фиды и API (feeds.py), подписи (i18n.py), предпросмотр (preview.py), локальный сервер (serve.py), снимки страниц (shots.py), выгрузка на Beget (deploy.py)
 ├── platform_cli.py  команды платформы;  platform_checks.py  проверки платформы;  capabilities.py  матрица
-├── history.py       переписывание истории Git по списку личных слов автора (Д40) — запускает только автор
 └── claims.py facts.py validate.py visual.py exports.py provenance.py render.py …   конвейер изображений и гейты (v1)
 website/             тема сайта: templates/base.html, static/style.css (цвета — из токенов бренда)
 ```
@@ -146,6 +146,7 @@ renders/ и exports/: PNG/JPEG + *.layout.json → provenance.yaml (хэши, в
 | `progress` | набор прогресса: ряды и суммы, границы `scope.yaml`, вехи, величины, фигуры на ru и en, публичная выжимка через фильтр Д39 | data, website |
 | `site` | сборка staging и production, фиды, JSON, внутренние ссылки; фильтр чувствительных данных по каждому файлу (Д39) | build, website, secrets |
 | `siteshots` | страницы staging в Chromium на 390 и 1280 px: прокрутка вбок, край экрана, изображения, CSP, консоль, запросы, шрифт, `h1`, цели касания (`--fast` — пропуск) | website (визуальная регрессия, П2-17) |
+| `releases` | манифесты выпусков сайта не изменены после записи; метки времени RFC 3161 и OpenTimestamps на месте (нет — предупреждение и команда `mark stamp`) | website (Д41) |
 | тесты | `tests/` — модульные, контрактные, интеграционные, сквозной, свойства, регрессия | tests |
 
 ## 7. Тесты (§100–104)
@@ -159,7 +160,8 @@ renders/ и exports/: PNG/JPEG + *.layout.json → provenance.yaml (хэши, в
 | сквозной | `tests/test_platform_e2e.py`: новость → сайт → Telegram → проверка → аналитика → production-сборка |
 | регрессия | рендер (хэши), миграция, неизменность канона, граница модулей; снимки сайта — `tests/test_site_shots.py` (правила ловят поломки, staging фикстуры чистый) |
 | прогресс и фильтр | `tests/test_progress.py` (величины, фигуры, границы, валидатор, страница на staging и её отсутствие на production без одобрения), `tests/test_sensitive.py` (каждый вид утечки ловится, чистое и публичное проходит, метаданные изображений) |
-| личные слова | `tests/test_secrets.py` (список вне Git, строки без слов), `tests/test_history.py` (переписывание истории на временном «origin»: файлы, двоичные, сообщения, теги; отказ без «переписать»; сессия ИИ — отказ) |
+| водяной знак | `tests/test_mark.py` (ключ; метка SVG и изображений — повторяемость, заметность, находка после JPEG и уменьшения, чужой ключ; запрос RFC 3161 и своя служба на openssl; выгрузка без ключа — отказ, с ключом — метка один раз, манифест, без сети — метки «позже»; `mark verify`) |
+| секреты | `tests/test_secrets.py` (шаблоны ключей и токенов, номер строки; списка личных слов нет — Д40) |
 
 Реальные площадки в тестах не используются; рабочая проверка —
 безопасный режим на тестовом канале автора (§104).
@@ -176,13 +178,14 @@ python3 -m tools.cs publish --due | --record-manual | --reconcile | --cancel | -
 python3 -m tools.cs campaign status|list | calendar | search | stale
 python3 -m tools.cs site build|serve|shots|scan [каталог]|deploy | health | bundle | capabilities [--write] | events
 python3 -m tools.cs progress collect --start … --end … [--cutoff …] | progress show --id <набор>
-python3 -m tools.cs history rewrite [--workdir DIR] [--no-push]                # только автор (Д40)
+python3 -m tools.cs mark init | mark verify <файл|адрес> [--no-key] | mark stamp [выпуск …] [--tsa URL]   # Д41
 ```
 
 ## 9. Окружение
 
-- Python 3.10+ с PyYAML и jsonschema (`tools/requirements.txt`); сайт и
-  платформа — без других зависимостей.
+- Python 3.10+ с PyYAML и jsonschema (`tools/requirements.txt`); метка
+  изображений и перцептивный хэш (Д41) — ещё numpy и Pillow (там же); метки
+  OpenTimestamps — клиент `ots`; проверка `.tsr` — openssl.
 - Рендер изображений: Node.js и Playwright с Chromium (как раньше;
   `CS_CHROMIUM=<путь>`).
 - `CS_TODAY` — дата для тестов сроков; `CS_SKIP_RENDER=1` — без тестов

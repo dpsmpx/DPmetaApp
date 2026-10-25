@@ -24,13 +24,13 @@ from __future__ import annotations
 
 import hashlib
 import io
-import math
 from dataclasses import dataclass
 
 import numpy as np
 from PIL import Image, JpegImagePlugin
 
 from .key import stream
+from .stats import P_FOUND, binom_tail  # noqa: F401 — P_FOUND и binom_tail читают и отсюда
 
 METHOD = "dct8-edge-v1"
 TILE = (16, 16)  # плитка шаблона, в блоках 8×8
@@ -39,7 +39,6 @@ ALPHA = 80.0  # шаг шаблона в единицах ортонормиро
 EDGE_FULL = 24.0  # градиент яркости (уровней на пиксель), у которого метка — полной силы
 CAP = 4.0  # предел поправки пикселя, уровней из 255
 CONTRAST = 0.10  # предел поправки — доля местного контраста 3×3
-P_FOUND = 1e-9  # «метка есть»: вероятность такого совпадения у копии без метки не выше этой
 MIN_SIDE = 32  # копия меньше — не сверяется (мест плитки слишком мало)
 MODES = ("RGB", "RGBA", "L", "LA", "P")
 
@@ -147,13 +146,6 @@ def expected(original: bytes, key: bytes) -> tuple[np.ndarray, np.ndarray]:
     пересжатий шум квантования не должен сойти за метку."""
     y0 = _luma(_rgb(_open(original))[0])
     return y0, mark_delta(y0, signs(key, original))
-
-
-def binom_tail(n: int, k: int) -> float:
-    """P(Bin(n, ½) ≥ k) — точно."""
-    if k <= 0:
-        return 1.0
-    return sum(math.comb(n, i) for i in range(k, n + 1)) / 2 ** n
 
 
 @dataclass

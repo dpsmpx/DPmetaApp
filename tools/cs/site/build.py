@@ -225,9 +225,6 @@ class SiteBuild:
         f = sensitive.Filter(self.repo)
         for h in f.scan_tree(out):
             self.report.errors.append(h.msg)
-        if f.private_limited and self.env == "production":
-            self.report.warnings.append("списка личных слов нет — имя автора на сайте не проверено "
-                                        "(Д40, docs/SECURITY.md)")
 
     # ------------------------------------------------------- страницы
     def nav(self, lang: str, current: str, alt: dict) -> str:

@@ -109,6 +109,20 @@
                 "items": {
                   "type": "string"
                 }
+              },
+              "mark": {
+                "description": "Д41: водяной знак при выгрузке; required — без ключа метки выгрузка отказывает; tsa — служба RFC 3161",
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "required": {
+                    "type": "boolean"
+                  },
+                  "tsa": {
+                    "type": "string",
+                    "pattern": "^https://"
+                  }
+                }
               }
             }
           },

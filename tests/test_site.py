@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import shutil
 import tempfile
@@ -187,25 +186,20 @@ class HostFiles(unittest.TestCase):
 
 
 class AuthorName(unittest.TestCase):
-    """Д37, Д40: на сайте только dpsmpx; имени нет в данных, а слово из списка личных слов — ошибка сборки."""
+    """Д37, Д40: на сайте только dpsmpx; имени нет в данных и в настройках сайта."""
 
-    WORD = "zqxprivat"  # заглушка, не имя (Д40: в тестах нет ни настоящих, ни выдуманных имён)
-
-    def built(self, repo, env="staging", words: str | None = None):
+    def built(self, repo, env="staging"):
         out = Path(tempfile.mkdtemp(prefix="cs-name-")) / env
-        lst = Path(tempfile.mkdtemp(prefix="cs-words-")) / "private-words.txt"
-        if words is not None:
-            lst.write_text(words, encoding="utf-8")
-        with mock.patch.dict(os.environ, {"DPSMPX_PRIVATE_WORDS": str(lst)}):
-            sb = SiteBuild(repo, env)
-            return sb, sb.build(out), out
+        sb = SiteBuild(repo, env)
+        return sb, sb.build(out), out
 
     def test_only_dpsmpx(self):
         repo = make_repo(git=False)
         self.assertNotIn("AU-NAME", repo.facts())
         for env in ("staging", "production"):
-            sb, rep, out = self.built(repo, env, words=f"# список\n{self.WORD}\n")
+            sb, rep, out = self.built(repo, env)
             self.assertEqual(rep.errors, [], env)
+            self.assertFalse([w for w in rep.warnings if "личных слов" in w], env)
         home = (out / "index.html").read_text(encoding="utf-8")
         self.assertIn("<h1>dpsmpx</h1>", home)
         person = next(json.loads(m) for m in re.findall(r'<script type="application/ld\+json">(.*?)</script>', home)
@@ -213,25 +207,6 @@ class AuthorName(unittest.TestCase):
         self.assertEqual(person["name"], "dpsmpx")
         self.assertNotIn("alternateName", person)
         self.assertEqual(json.loads((out / "feed.json").read_text(encoding="utf-8"))["authors"][0]["name"], "dpsmpx")
-
-    def test_private_word_is_a_build_error_and_not_printed(self):
-        repo = make_repo(git=False)
-        v = find(repo, "CI-0101").variants()["website.ru"]
-        v.doc.body = f"Автор — {self.WORD.upper()}.\n\n" + v.doc.body
-        textdoc.save(v.doc, v.path)
-        repo.reset()
-        _, rep, _ = self.built(repo, words=self.WORD + "\n")
-        self.assertTrue(any("news/test-news/index.html: слово из списка личных слов" in e for e in rep.errors),
-                        rep.errors)
-        self.assertFalse([e for e in rep.errors if self.WORD in e.lower()], "слово из списка не печатается")
-
-    def test_production_warns_without_list(self):
-        repo = make_repo(git=False)
-        _, rep, _ = self.built(repo, "production")
-        self.assertEqual(rep.errors, [])
-        self.assertTrue(any("списка личных слов нет" in w for w in rep.warnings), rep.warnings)
-        _, rep, _ = self.built(repo, "staging")
-        self.assertFalse(any("списка личных слов нет" in w for w in rep.warnings))
 
     def test_real_name_switch_is_gone(self):
         import jsonschema
@@ -497,6 +472,60 @@ class JourneyPath(unittest.TestCase):
             d["stations"][1]["title"]["ru"] = "Лучший разработчик в мире"
         rep, _ = self.build(self.repo(boast))
         self.assertTrue(any("AH-SUPERLATIVE" in e for e in rep.errors), rep.errors)
+
+    def test_all_in_one(self):
+        """П2-28: «всё в одном» (DPmetaApp D-28) — оркестратор входит в DPmetaApp: дальше без своего квадрата,
+        в цели — подсистема ИИ, а не отдельный проект; рамка DPmetaApp сплошная (приложение есть, APP-NOW)."""
+        import re as _re
+        from tools.cs.site.path import route_svg
+        data = yaml.safe_load((ROOT / "data/website/path.yaml").read_text(encoding="utf-8"))
+        st = next(s for s in data["stations"] if s["id"] == "all-in-one")
+        self.assertEqual(st["merged"], {"orchestrator": "dpmetaapp"})
+        svg = route_svg(data, "ru", "DPmetaApp")
+        titles = _re.findall(r"<title>([^<]+)</title></rect>", svg)
+        self.assertEqual(titles.count("DP_AI_Orcestrator"), 1, "квадрат оркестратора — только на станции «Цель записана»")
+        ai = next(d for d in data["goal"]["domains"] if d["id"] == "ai")
+        self.assertNotIn("orchestrator", ai["nodes"])
+        page = self.page()
+        self.assertIn("<h3>Всё в одном</h3>", page)
+        self.assertIn("<strong>подсистема ИИ в DPmetaApp</strong>", page)
+        app_box = _re.search(r'<rect[^>]*class="(g-box[^"]*)"/><text[^>]*class="t-lab g-appt"', page)
+        self.assertEqual(app_box.group(1), "g-box", "приложение уже есть — сплошная рамка")
+
+    def test_phase_b_started(self):
+        """Ответ автора 25.10.2026: фаза B — «идёт» с 11.10 (DPmetaApp D-29), а не «план»."""
+        page = self.page()
+        self.assertIn('<li class="st st-plan st-active" id="st-phase-b">', page)
+        self.assertIn('идёт с <time datetime="2026-10-11">11.10.2026</time>', page)
+        self.assertIn("Фаза B начата", page)
+        self.assertIn('class="r-dot r-dot-active"', page)
+        self.assertIn('<li class="st st-plan" id="st-phase-a">', page, "фаза A — по-прежнему план")
+        self.assertIn('<span class="rs-when">фаза B · идёт</span>', self.page("index.html"))
+        self.assertIn("in progress since", self.page("en/path/index.html"))
+
+    def test_bad_started_is_a_build_error(self):
+        def on_past(d):
+            next(s for s in d["stations"] if s["id"] == "game")["started"] = {"date": "2026-09-11", "text": {"fact": "APP-PHASE-B"}}
+
+        def after_now(d):
+            next(s for s in d["stations"] if s["id"] == "phase-b")["started"]["date"] = "2099-01-01"
+
+        for mutate, word in ((on_past, "только у станции плана"), (after_now, "позже «сейчас»")):
+            rep, out = self.build(self.repo(mutate))
+            self.assertTrue(any(word in e for e in rep.errors), (word, rep.errors))
+            self.assertFalse((out / "path/index.html").exists())
+
+    def test_bad_merge_is_a_build_error(self):
+        def merge_unknown(d):
+            next(s for s in d["stations"] if s["id"] == "all-in-one")["merged"] = {"nobody": "dpmetaapp"}
+
+        def merge_into_future(d):
+            d["stations"][0]["merged"] = {"galdhold": "dpmeta"}  # на станции «2023» ни того, ни другого ещё нет
+
+        for mutate, word in ((merge_unknown, "вошедший nobody"), (merge_into_future, "а dpmeta на маршруте ещё нет")):
+            rep, out = self.build(self.repo(mutate))
+            self.assertTrue(any(word in e for e in rep.errors), (word, rep.errors))
+            self.assertFalse((out / "path/index.html").exists())
 
     def test_dates_and_wrap(self):
         from tools.cs.site.path import sentence, when, when_short, wrap

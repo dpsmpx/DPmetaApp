@@ -271,6 +271,8 @@ nav.crumbs a { padding: 4px 0; }
 .r-plan { stroke: var(--mist); stroke-dasharray: 6 5; }
 .r-dot { fill: var(--human); stroke: var(--graphite); stroke-width: 3; }
 .r-dot-plan { fill: var(--graphite); stroke: var(--mist); stroke-width: 2; stroke-dasharray: 3 2; }
+.r-dot-active { fill: var(--graphite); stroke: var(--human); stroke-width: 2; stroke-dasharray: 3 2; }
+.r-activet { fill: var(--human); font-weight: 600; }
 .r-now { fill: var(--graphite); stroke: var(--human); stroke-width: 2; }
 .r-nowdot { fill: var(--human); }
 .r-nowline { stroke: var(--human); stroke-width: 1; stroke-dasharray: 3 4; }
@@ -290,11 +292,14 @@ nav.crumbs a { padding: 4px 0; }
 .route > li.st-now::before { background: var(--ink); border: 3px solid var(--human); }
 .route > li.st-now::after, .route > li.st-plan::after { border-left: 2px dashed var(--mist); }
 .route > li.st-plan::before { background: var(--ink); border: 2px dashed var(--mist); }
+.route > li.st-active::before { border-color: var(--human); }
 .st-when { margin: 0; color: var(--mist); font: 13px/1.6 "IBM Plex Mono", monospace; }
 .route h3 { margin: 0 0 4px; font-size: 18px; }
 .route p { margin: 0 0 6px; }
 .route .st-nowt { color: var(--human); font-weight: 600; }
 .st-plan h3 { color: var(--mist); }
+.st-active h3 { color: inherit; }
+.route .st-active-t { color: var(--human); font-weight: 600; }
 .chips { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border: 1px solid var(--line);
   border-radius: 4px; font-size: 14px; background: var(--graphite); }
@@ -327,6 +332,7 @@ nav.crumbs a { padding: 4px 0; }
 .rs-when { font: 12px/1.6 "IBM Plex Mono", monospace; color: var(--mist); }
 .route-strip .rs-now { color: var(--human); }
 .route-strip .rs-plan { color: var(--mist); }
+.route-strip .rs-active .rs-when { color: var(--human); }
 
 @media (max-width: 760px) {
   .page-path .fig-wide { display: none; }
