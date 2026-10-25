@@ -394,10 +394,6 @@ class DemoModel(
     /** Слот, выбранный человеком для следующего хода задачи (D-66) — без замка. */
     fun pinned(task: TaskId): com.dpsmpx.dpai.core.ids.ExecutionTargetId? = runCatching { built?.orchestrator?.pinned(task) }.getOrNull()
 
-    /** Задачи, после которых можно поставить новую (D-42, п. 1) — без замка. */
-    fun dependencyChoices(): List<Pair<TaskId, String>> =
-        runCatching { (built as? LiveSystem)?.orchestrator?.tasks?.let(com.dpsmpx.dpai.ui.TaskScreens::dependencyChoices) }.getOrNull().orEmpty()
-
     /** Лист задачи (D-42): состояние и доступные действия — из неизменяемого состояния контура, без замка. */
     fun taskDetail(task: TaskId): com.dpsmpx.dpai.ui.TaskDetail? = runCatching {
         val o = built?.orchestrator ?: return null

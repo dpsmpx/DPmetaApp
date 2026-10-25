@@ -148,8 +148,13 @@ class ThreadSupervision(
 
     override fun startedAt(pid: Long): Long? = ProcStat.startedSinceBootMillis(pid, proc)
 
-    private fun isMe(mark: ProcessMark): Boolean =
-        mark.pid == me.pid && mark.startedAt != null && me.startedAt != null && kotlin.math.abs(mark.startedAt - me.startedAt) <= TOLERANCE_MILLIS
+    private fun isMe(mark: ProcessMark): Boolean {
+        // `me` — ленивое свойство: значения — в локальные, сравнение — по ним.
+        val own = me
+        val theirs = mark.startedAt ?: return false
+        val mine = own.startedAt ?: return false
+        return mark.pid == own.pid && kotlin.math.abs(theirs - mine) <= TOLERANCE_MILLIS
+    }
 
     override fun alive(id: SessionId, supervisor: ProcessMark): Boolean = isMe(supervisor) && threads[id]?.isAlive == true
 
