@@ -21,10 +21,10 @@
   (её PR #64 закрыт: ответы заменены `DPpass:D-76`), `ccr-dc77131a-share`
   (влита), `ccr-dc77131a-dppass` и `ccr-dc77131a-dppass-subname` (их
   изменения уже в `main`). Облачной сессии удаление веток запрещено.
-- `М` **Архивировать репозитории, переехавшие сюда** (D-43): SocialMediaImage
-  — в его `CLAUDE.md` и `README.md` уже написано, что работа идёт в
-  DPmetaApp (`socialmediaimage/`); Settings → Archive. Его ветки остаются
-  как есть.
+- `М` **Архивировать репозитории, переехавшие сюда** (D-43):
+  SocialMediaImage и DPvisualisation — в их `CLAUDE.md` и `README.md`
+  написано, что работа идёт в DPmetaApp (`socialmediaimage/`,
+  `dpvisualisation/`); Settings → Archive. Их ветки остаются как есть.
 - `М` **DP_AI_Orcestrator заморозить** (D-28): работа, сделанная там
   после переноса, — здесь (`DP_AI_Orcestrator:D-83`: `main` до `9ff8dc4`
   и ветка `claude/nice-hopper-5fg5vk` до `d8b8860`). Архивировать
@@ -66,9 +66,6 @@
   процессов» (ТЗ, §10, Q-11) — когда появится код, который их читает
   (фаза B).
 
-- `М` **DPvisualisation:** Q-04 его ТЗ (нативно или WebView) — ответ
-  D-26 записан в его ветке `claude/dreamy-bardeen-xe4k6r` (10 октября
-  2026); после вливания обеих веток сверить.
 - `М` **DPmeta:** после D-28 — строка DP_AI_Orcestrator в реестре
   (`DPmeta:tools/ecosystem.toml`) ведёт в замороженный репозиторий:
   журнал решений подсистемы теперь `DPmetaApp:dpai/docs/direction/DECISIONS.md`;
@@ -76,9 +73,6 @@
   `dpai/android` и есть приложение DPmetaApp; `DPmeta:SQ-26` (строка
   состояния README) исправлен в `dpai/README.md`; `DPmeta:SQ-28` — пункт о
   манифесте в `dpai/TODO.md` обновлён. Записывает сессия DPmeta.
-- `М` **DPvisualisation:** узлы и факты, где DP_AI_Orcestrator —
-  отдельный репозиторий или приложение, — сверить с D-28 (подсистема
-  `dpai/` DPmetaApp); правит его сессия.
 - `С` **DP-Verify: корень подпроекта.** DP Verify считает корнем проекта
   вершину git (`find_root` — `git rev-parse --show-toplevel`), поэтому в
   `dppass/` он увидел бы весь DPmetaApp; сейчас обёртка DPpass запускает

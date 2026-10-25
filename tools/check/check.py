@@ -44,7 +44,7 @@ ROOT_ALLOW = {
     ".claude", ".github", "docs", "ROADMAP", "tools", "tests",
     "settings.gradle.kts", "build.gradle.kts", "gradle.properties", "gradlew", "gradlew.bat",
     "gradle", "build-logic", "app", "core", "cli", "config",
-    "dpai", "dppass", "socialmediaimage",
+    "dpai", "dppass", "socialmediaimage", "dpvisualisation",
 }
 # Пакетный файл Windows создан Gradle с CRLF — так и хранится (`.gitattributes`).
 CRLF_ALLOWED = {"gradlew.bat"}
@@ -58,10 +58,12 @@ SUBSYSTEMS = {
     "dpai": "dpai/tools/verify/run.sh",
     "dppass": "dppass/tools/hostcheck/run.sh",
     "socialmediaimage": ("socialmediaimage/tools/check.sh", "--quick"),
+    "dpvisualisation": "dpvisualisation/tools/check/run.sh",
 }
-# Строка шага в выводе команды подсистемы: «- ✓ шаг» (dpai), «  ✓ id  итог» (DP Verify у dppass, D-30)
-# или «✓ id — что проверено» (SocialMediaImage, D-43); итог прогона без « — » — не шаг.
-SUBSYSTEM_STEP = re.compile(r"^(?:(?:- |  )([✓✗]) (.+)|([✓✗]) (\S+ — .+))$", re.M)
+# Строка шага в выводе команды подсистемы: «- ✓ шаг» (dpai), «  ✓ id  итог» (DP Verify у dppass, D-30),
+# «✓ id — что проверено» (SocialMediaImage) или «✓ id (0.0 с)» (DPvisualisation, D-43);
+# итог прогона («✓ static пройден», «✓ tools/check.sh: всё зелёное») — не шаг.
+SUBSYSTEM_STEP = re.compile(r"^(?:(?:- |  )([✓✗]) (.+)|([✓✗]) (\S+ (?:— |\().+))$", re.M)
 # Единое ядро (D-28): эти типы объявлены один раз — в ядре подсистемы dpai.
 CORE_TYPES = ("Outcome", "OperationResult", "Diagnostic", "DiagCode", "Secret", "Clock")
 CORE_HOME = "dpai/core/src/main/"
