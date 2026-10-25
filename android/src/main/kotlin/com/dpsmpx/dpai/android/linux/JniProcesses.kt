@@ -41,7 +41,7 @@ internal object NativeCalls {
 }
 
 /**
- * [NativeProcesses] через JNI (D-61): `fork`, `setsid`, `execve`, каналы
+ * [NativeProcesses] через JNI (D-75): `fork`, `setsid`, `execve`, каналы
  * или псевдотерминал. Программа без пути ищется по `PATH` из окружения
  * процесса — как у `ProcessBuilder`.
  */

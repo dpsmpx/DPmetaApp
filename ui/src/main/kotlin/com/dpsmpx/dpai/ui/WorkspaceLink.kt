@@ -37,7 +37,7 @@ object WorkspaceLink {
     /**
      * На ПК: строка [publicKey] — только из сети Tailscale, прежняя строка
      * связки заменяется. Windows (пользователь — администратор) —
-     * `administrators_authorized_keys`; Linux (D-56) — `~/.ssh/authorized_keys`
+     * `administrators_authorized_keys`; Linux (D-70) — `~/.ssh/authorized_keys`
      * пользователя (ревью 17 октября 2026: раньше была только ветка Windows).
      */
     fun pcAuthorize(publicKey: String, platform: TargetPlatform = TargetPlatform.WINDOWS): List<String> {

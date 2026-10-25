@@ -14,7 +14,7 @@ data class WindowSize(val cols: Int, val rows: Int) {
 }
 
 /**
- * Запуск процессов там, где нет `java.lang.ProcessHandle` (ART, D-61;
+ * Запуск процессов там, где нет `java.lang.ProcessHandle` (ART, D-75;
  * `docs/research/LINUX_IN_APP.md`, §7): реализация — JNI модуля `android`
  * (`JniProcesses`, свой код на C). Процесс запускается лидером своего
  * сеанса (`setsid`), поэтому все его потомки, в том числе ушедшие в фон,

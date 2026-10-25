@@ -69,7 +69,7 @@ class ControlCommandTest {
         assertTrue(CanonicalJson.write(sent.last().second!!).contains("verify?hash"))
         assertEquals(1, cli(out, err).run("answer", listOf("STMSB", "нет-такого")))
         assertEquals(2, cli(out, err).run("task", listOf("5YK0", "плясать")))
-        // «Запустить первой» и «Перенести» (D-63).
+        // «Запустить первой» и «Перенести» (D-77).
         assertEquals(0, cli(out, err).run("task", listOf("5YK0", "first")))
         assertEquals("task.run-first", field("command"))
         assertEquals(0, cli(out, err).run("session", listOf("SF4QD", "reassign")))
@@ -80,7 +80,7 @@ class ControlCommandTest {
         assertTrue(sent.last().second!!["limit"] == null, "off — без предела")
     }
 
-    /** Поиск (ТЗ, §75) и ревью задачи (D-59) из `dpai`. */
+    /** Поиск (ТЗ, §75) и ревью задачи (D-73) из `dpai`. */
     @Test
     fun searchAndReviews() {
         val out = mutableListOf<String>()

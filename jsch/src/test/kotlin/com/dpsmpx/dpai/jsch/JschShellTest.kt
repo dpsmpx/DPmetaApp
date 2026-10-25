@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.io.TempDir
 
 /**
- * Канал своего терминала (D-57): отказы — кодами без сервера; оболочка
+ * Канал своего терминала (D-71): отказы — кодами без сервера; оболочка
  * с PTY — на настоящем target (`docs/TESTING.md`, §8).
  */
 class JschShellTest {

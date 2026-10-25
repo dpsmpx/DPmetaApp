@@ -35,7 +35,7 @@ class Cli(
     private val out: (String) -> Unit,
     private val err: (String) -> Unit,
     private val version: String = Cli::class.java.`package`?.implementationVersion ?: "dev",
-    /** Стандартный вывод закрыт: поток `dpai agent follow` кончается (D-62). */
+    /** Стандартный вывод закрыт: поток `dpai agent follow` кончается (D-76). */
     private val outClosed: () -> Boolean = { false },
 ) {
     fun run(args: List<String>): Int = when (args.firstOrNull()) {

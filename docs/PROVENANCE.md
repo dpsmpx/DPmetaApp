@@ -34,7 +34,7 @@ D-17). `tools/verify/check_dependencies.py` сверяет таблицу §2 с
 2026; ядро от них не зависит. Compose BOM 2026.09.00 требует compileSdk 37
 (платформа `android-37.0`); targetSdk остаётся 36.
 
-Инструменты Android SDK для нативного кода модуля `android` (D-61, шаг 3;
+Инструменты Android SDK для нативного кода модуля `android` (D-75, шаг 3;
 D-17 — только в нём): NDK 28.2.13676358 и CMake 3.22.1 — версии, которые
 AGP 9.4.1 берёт по умолчанию; Apache-2.0 и другие свободные лицензии
 инструментов, в APK попадает только собранный `libdpai-native.so` из
@@ -55,8 +55,8 @@ AGP 9.4.1 берёт по умолчанию; Apache-2.0 и другие сво�
 |---|---|---|
 | `gradle/wrapper/gradle-wrapper.jar` | `238e777fcddd7e34f9708186085def2abd6e08e658505b38718d79d74c21abd5` | Gradle 9.8.0, §3 |
 
-Загружаемые сборкой приложения для Linux-среды (D-61, D-68; прежде —
-пробника B2, D-66) — в репозитории их нет: задача `linuxFiles` в
+Загружаемые сборкой приложения для Linux-среды (D-75, D-82; прежде —
+пробника B2, D-80) — в репозитории их нет: задача `linuxFiles` в
 `android/build.gradle.kts` загружает файлы в `~/.gradle/caches/dpai-linux`
 и сверяет по суммам ниже, иначе сборка падает. В APK — без изменений
 (`docs/EXECUTION_MODEL.md`, §8); текст GPL-2.0 — `android/linux/GPL-2.0.txt`,
@@ -93,4 +93,4 @@ AGP 9.4.1 берёт по умолчанию; Apache-2.0 и другие сво�
 
 | Идея | Откуда | Лицензия, дата | Где здесь |
 |---|---|---|---|
-| Роли ревью (код, безопасность) отдельно от исполнителя; оценка попыток pass@k | `https://github.com/affaan-m/everything-claude-code` (`agents/code-reviewer.md`, `agents/security-reviewer.md`, `skills/eval-harness/SKILL.md`); прочитан форк `WorldFlowAI/everything-claude-code`, коммит `432485b` | MIT (файл `LICENSE` — в исходном проекте, у форка его нет), 22 октября 2026 | D-59 |
+| Роли ревью (код, безопасность) отдельно от исполнителя; оценка попыток pass@k | `https://github.com/affaan-m/everything-claude-code` (`agents/code-reviewer.md`, `agents/security-reviewer.md`, `skills/eval-harness/SKILL.md`); прочитан форк `WorldFlowAI/everything-claude-code`, коммит `432485b` | MIT (файл `LICENSE` — в исходном проекте, у форка его нет), 22 октября 2026 | D-73 |

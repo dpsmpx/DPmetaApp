@@ -42,7 +42,7 @@ class Sessions(val policy: SessionPolicy = SessionPolicy()) {
         provider: ProviderSessionId,
         now: Timestamp,
         continues: SessionId? = null,
-        /** Роль ревью (D-59); `null` — рабочая сессия. */
+        /** Роль ревью (D-73); `null` — рабочая сессия. */
         review: String? = null,
     ): Outcome<Created> {
         if (key.isBlank() || key.length > 200) return Outcome.failure(DiagCode.VALUE_INVALID, "ключ идемпотентности — 1…200 знаков")
@@ -143,7 +143,7 @@ class Sessions(val policy: SessionPolicy = SessionPolicy()) {
     private fun repeated(id: SessionId) = Diagnostic.info(DiagCode.SESSION_ALREADY_EXISTS, "повтор запроса: сессия уже создана", "session $id")
 
     companion object {
-        /** Роль ревью сессии (D-59) — имя перечисления: латиница в верхнем регистре. */
+        /** Роль ревью сессии (D-73) — имя перечисления: латиница в верхнем регистре. */
         private val REVIEW_ROLE = Regex("[A-Z][A-Z_]{0,31}")
 
         /** Свёртка события в состояние; недопустимый переход в журнале — несовместимость, а не тихая правка. */

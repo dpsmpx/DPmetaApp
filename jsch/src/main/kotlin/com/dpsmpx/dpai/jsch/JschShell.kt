@@ -19,7 +19,7 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * Интерактивная оболочка на target с PTY для своего терминала (D-57):
+ * Интерактивная оболочка на target с PTY для своего терминала (D-71):
  * связь — по тем же правилам, что команды агента (ключ приложения,
  * строгий ключ хоста, D-31, D-35). Терминал `xterm-256color`. Пустая
  * команда — оболочка входа; иначе — команда в PTY (например, `claude`
@@ -89,7 +89,7 @@ class JschShell(
     }
 }
 
-/** Открытый канал терминала: ввод, размер окна, закрытие (D-57). */
+/** Открытый канал терминала: ввод, размер окна, закрытие (D-71). */
 class ShellChannel internal constructor(
     private val session: Session,
     private val channel: Channel,

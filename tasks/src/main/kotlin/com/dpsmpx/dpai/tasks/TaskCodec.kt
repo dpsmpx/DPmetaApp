@@ -28,8 +28,8 @@ import kotlin.time.Duration.Companion.milliseconds
 object TaskCodec {
     const val STATE_FORMAT = "dpai.tasks-state"
     /**
-     * v7 — слот, с которого задачу перенесли (`excludedSlot`, D-63; пишется,
-     * только если есть); v6 — ревью (D-59): роли в политике (`reviews`) и итоги ревью у
+     * v7 — слот, с которого задачу перенесли (`excludedSlot`, D-77; пишется,
+     * только если есть); v6 — ревью (D-73): роли в политике (`reviews`) и итоги ревью у
      * задачи (`reviews`), пишутся, только если есть; v5 — архив
      * (`archived`, пишется, только если в архиве; D-42); v4 —
      * удержание задачи человеком (`held`, пишется, только если
@@ -247,7 +247,7 @@ object TaskCodec {
         "taskClass" to (p.taskClass.takeIf { it != TaskClass.NORMAL_ENGINEERING }?.let { JsonString(it.name) } ?: JsonNull),
         "model" to (p.model?.let(::JsonString) ?: JsonNull),
         "effort" to (p.effort?.let(::JsonString) ?: JsonNull),
-        // D-59: пишется, только если роли есть, — записи до D-59 читаются как прежде.
+        // D-73: пишется, только если роли есть, — записи до D-73 читаются как прежде.
         "reviews" to (p.reviews.takeIf { it.isNotEmpty() }?.let { r -> JsonArray(r.sorted().map { JsonString(it.name) }) } ?: JsonNull),
     )
 
@@ -293,7 +293,7 @@ object TaskCodec {
         "by" to (r.by?.let(::JsonString) ?: JsonNull), "reason" to (r.reason?.let(::JsonString) ?: JsonNull),
     )
 
-    /** Поля записи ревью в [f] (D-59); закрывает чтение полей вызывающий. */
+    /** Поля записи ревью в [f] (D-73); закрывает чтение полей вызывающий. */
     private fun readReview(f: JsonFields): ReviewRecord? {
         val role = f.enumOf<ReviewRole>("role")
         val verdict = f.enumOf<ReviewVerdict>("verdict")

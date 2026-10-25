@@ -1,6 +1,6 @@
 DP AI Orcestrator — сторонние программы Linux-среды в этом APK
 
-Linux-среда в приложении (D-61, D-68). В APK — неизменённые файлы
+Linux-среда в приложении (D-75, D-82). В APK — неизменённые файлы
 Alpine Linux 3.24 (aarch64):
 
 proot 5.4.0 (пакет proot-static 5.4.0-r2, community/aarch64)

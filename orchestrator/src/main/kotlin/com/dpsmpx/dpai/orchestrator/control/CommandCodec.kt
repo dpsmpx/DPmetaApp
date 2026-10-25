@@ -107,7 +107,7 @@ object CommandCodec {
         fun taskIds(k: String, required: Boolean): Set<com.dpsmpx.dpai.core.ids.TaskId>? = strings(k, required)?.mapNotNull { s ->
             IdKinds.TASK.parse(s).valueOrNull() ?: null.also { d.error(DiagCode.ID_INVALID, "ожидался TaskId", "$.$k") }
         }?.toSet()
-        // Роли ревью (D-59): имена ролей; неизвестная — ошибка с местом, а не пропуск.
+        // Роли ревью (D-73): имена ролей; неизвестная — ошибка с местом, а не пропуск.
         fun reviews(required: Boolean): Set<ReviewRole>? = strings("reviews", required)?.let { names ->
             val roles = names.mapIndexedNotNull { i, n -> ReviewRole.entries.firstOrNull { it.name == n } ?: null.also { d.error(DiagCode.VALUE_INVALID, "неизвестная роль ревью: $n", "$.reviews[$i]") } }
             if (roles.size == names.size) roles.toSet() else null

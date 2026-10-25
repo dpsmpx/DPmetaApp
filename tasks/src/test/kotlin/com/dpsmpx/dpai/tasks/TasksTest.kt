@@ -341,7 +341,7 @@ class TasksTest {
         assertEquals(null, TaskCodec.decodeState(v1).valueOrNull()!!.tasks.getValue(t).scope)
     }
 
-    /** D-59: задача доводится до VERIFIED; с ревью — до ревью. */
+    /** D-73: задача доводится до VERIFIED; с ревью — до ревью. */
     private fun verified(policy: TaskPolicy): TaskId {
         val t = task(policy = policy)
         runTickUntilReady(t)
@@ -354,7 +354,7 @@ class TasksTest {
 
     private val session = ids.next(IdKinds.SESSION)
 
-    /** D-59: у TRIVIAL ревью нет; DONE ждёт ревью всех ролей; блокирующее — повтор, новая попытка — ревью заново. */
+    /** D-73: у TRIVIAL ревью нет; DONE ждёт ревью всех ролей; блокирующее — повтор, новая попытка — ревью заново. */
     @Test
     fun reviewsGateDoneAndBlockingReviewIsAnAttempt() {
         val refused = runCatching { TaskPolicy(taskClass = TaskClass.TRIVIAL, reviews = setOf(ReviewRole.CODE)) }
@@ -391,7 +391,7 @@ class TasksTest {
         assertEquals(DiagCode.INVALID_TRANSITION, (tasks.recordReview(state, t, ReviewRecord(ReviewRole.CODE, ReviewVerdict.PASSED, 1, session), clock.now()) as Outcome.Failure).errors.single().code)
     }
 
-    /** D-59: то же блокирующее ревью раз за разом — BLOCKED (из VERIFIED в FAILED пути нет), решает человек. */
+    /** D-73: то же блокирующее ревью раз за разом — BLOCKED (из VERIFIED в FAILED пути нет), решает человек. */
     @Test
     fun repeatedBlockingReviewStopsAsLoop() {
         val t = verified(TaskPolicy(maxRetries = 10, retryBackoff = 0.minutes, reviews = setOf(ReviewRole.CODE)))
@@ -412,7 +412,7 @@ class TasksTest {
         assertTrue(runCatching { ReviewFinding(FindingSeverity.NOTE, "x".repeat(ReviewRecord.MAX_TITLE + 1)) }.isFailure)
     }
 
-    /** D-59: роли в политике и итоги ревью — в событиях и снимке v6; снимок v5 читается без них. */
+    /** D-73: роли в политике и итоги ревью — в событиях и снимке v6; снимок v5 читается без них. */
     @Test
     fun reviewsSurviveTheJournalFormat() {
         val t = verified(TaskPolicy(reviews = setOf(ReviewRole.CODE)))
@@ -443,7 +443,7 @@ class TasksTest {
         assertEquals(DiagCode.CONTINUATION_LIMIT_REACHED, state.tasks.getValue(t).lastReason)
     }
 
-    /** D-63: «Запустить первой» — выше всех открытых и без паузы; только у ждущей запуска; повтор — без событий. */
+    /** D-77: «Запустить первой» — выше всех открытых и без паузы; только у ждущей запуска; повтор — без событий. */
     @Test
     fun runFirstLiftsAboveAllAndUnholds() {
         val a = task()
@@ -463,7 +463,7 @@ class TasksTest {
         assertEquals(DiagCode.OPERATION_NOT_ALLOWED, (strict.runFirst(state, b, clock.now()) as Outcome.Failure).errors.single().code, "политика без ручного приоритета — отказ, а не тишина")
     }
 
-    /** D-63: исключённый слот — до запуска; план ставит задачу только туда, где она может пойти; формат v7, v6 читается. */
+    /** D-77: исключённый слот — до запуска; план ставит задачу только туда, где она может пойти; формат v7, v6 читается. */
     @Test
     fun excludedSlotLastsUntilStartAndSurvivesTheJournal() {
         val t = task()

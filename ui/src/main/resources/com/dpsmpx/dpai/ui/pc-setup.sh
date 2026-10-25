@@ -1,4 +1,4 @@
-# Настройка ПК с Linux как target одной командой (D-56; docs/SETUP_PC_LINUX.md).
+# Настройка ПК с Linux как target одной командой (D-70; docs/SETUP_PC_LINUX.md).
 # DPAI_KEY_LINE — строка ключа приложения (PcSetup подставляет только ключ вида «тип base64 dpai-android»).
 # Запуск — от своего пользователя: sudo спросит пароль там, где нужен root.
 set -u
@@ -31,7 +31,7 @@ if grep -qs '^Include /etc/ssh/sshd_config.d/\*\.conf' /etc/ssh/sshd_config; the
   printf 'PasswordAuthentication no\nKbdInteractiveAuthentication no\n' | sudo tee /etc/ssh/sshd_config.d/10-dpai.conf >/dev/null
   echo '  Вернуть вход по паролю: sudo rm /etc/ssh/sshd_config.d/10-dpai.conf, затем перезапустить ssh'
 else
-  # Основной sshd_config скрипт не меняет (D-56): без Include — шаг вручную.
+  # Основной sshd_config скрипт не меняет (D-70): без Include — шаг вручную.
   echo '  В /etc/ssh/sshd_config нет строки Include /etc/ssh/sshd_config.d/*.conf — основной файл не меняется.'
   echo '  Чтобы вход был только по ключу, впишите в его начало PasswordAuthentication no и KbdInteractiveAuthentication no и перезапустите ssh'
 fi

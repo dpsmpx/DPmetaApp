@@ -27,7 +27,7 @@ fun interface RunEventSource {
     fun reset(run: SessionId) {}
 }
 
-/** Поток событий запуска (D-62): долгий вызов `follow` агента или подделка в тестах. */
+/** Поток событий запуска (D-76): долгий вызов `follow` агента или подделка в тестах. */
 fun interface RunFollower {
     /**
      * Строки потока запуска [run] после номера [after] — в [onReply] по мере
@@ -63,7 +63,7 @@ class AgentClient(
         call("events", runArgs(run) + listOf("--after", after.toString(), "--limit", limit.toString()))
 
     /**
-     * Поток `follow` (D-62, D-65): долгий канал `exec`, строка ответа — на
+     * Поток `follow` (D-76, D-79): долгий канал `exec`, строка ответа — на
      * каждую новость журнала запуска. Строка, которая не читается как
      * ответ, — отказом в [onReply]; вывод ошибок не читается — исход потока
      * виден по коду выхода.

@@ -24,7 +24,7 @@ import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.BeforeEach
 
 /**
- * Нативный код процессов (D-61, шаг 3) — на JVM: `dpai_native.c`, собранный
+ * Нативный код процессов (D-75, шаг 3) — на JVM: `dpai_native.c`, собранный
  * для машины сборки (задача `hostNative`), с теми же вызовами, что на
  * телефоне. Нет компилятора C — проверка пропущена; на телефоне —
  * `docs/DEVICE_CHECK.md`.

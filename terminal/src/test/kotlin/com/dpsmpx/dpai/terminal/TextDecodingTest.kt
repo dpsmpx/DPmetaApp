@@ -3,7 +3,7 @@ package com.dpsmpx.dpai.terminal
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
-/** Декодер UTF-8 и ширина символов эмулятора (D-57). */
+/** Декодер UTF-8 и ширина символов эмулятора (D-71). */
 class TextDecodingTest {
     private fun decode(vararg chunks: ByteArray): List<Int> {
         val d = Utf8Decoder()

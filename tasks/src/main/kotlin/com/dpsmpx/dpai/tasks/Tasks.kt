@@ -147,7 +147,7 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
     }
 
     /**
-     * «Запустить первой» (D-63; ТЗ, §73): ручной приоритет выше всех открытых
+     * «Запустить первой» (D-77; ТЗ, §73): ручной приоритет выше всех открытых
      * задач и снятие паузы. Только у задачи, которая ещё не идёт; пределы
      * подписки и аренда — как у всех: задача идёт следующей, когда есть слот.
      */
@@ -162,7 +162,7 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
         return Outcome.success(events)
     }
 
-    /** Перенести задачу со слота (D-63): следующая сессия на него не идёт; повтор — без второго события. */
+    /** Перенести задачу со слота (D-77): следующая сессия на него не идёт; повтор — без второго события. */
     fun excludeSlot(state: TasksState, id: TaskId, slot: AccountId, now: Timestamp): Outcome<List<TaskEvent>> {
         val t = state.tasks[id] ?: return notFound(id)
         if (t.terminal) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "задача завершена: ${t.state}", "task $id")
@@ -230,7 +230,7 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
      */
     /**
      * [accepts] — может ли задача пойти на target сверх возможностей:
-     * например, у перенесённой задачи (D-63) там есть слот, кроме
+     * например, у перенесённой задачи (D-77) там есть слот, кроме
      * исключённого.
      */
     fun plan(
@@ -382,7 +382,7 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
         return when (t.state) {
             TaskState.VERIFIED -> when {
                 t.verification?.verdict != "PASSED" -> Outcome.failure(DiagCode.VERIFICATION_REQUIRED, "нет записанной успешной проверки", "task $id")
-                // Ревью политики (D-59) — шаг проверки: без его итога DONE нет.
+                // Ревью политики (D-73) — шаг проверки: без его итога DONE нет.
                 t.reviewsLeft().isNotEmpty() -> Outcome.failure(DiagCode.REVIEW_REQUIRED, "ждёт ревью: ${t.reviewsLeft().joinToString { it.name }}", "task $id")
                 else -> move(state, id, TaskState.DONE, now)
             }
@@ -399,7 +399,7 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
     }
 
     /**
-     * Итог ревью роли (D-59): только у `VERIFIED` и только роли из
+     * Итог ревью роли (D-73): только у `VERIFIED` и только роли из
      * политики задачи. Блокирующий итог сам задачу не двигает — это
      * [reviewBlocked], когда ревью всех ролей кончились.
      */
@@ -411,7 +411,7 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
     }
 
     /**
-     * Принять ревью роли без итога (D-59, п. 3): решение человека — кто и
+     * Принять ревью роли без итога (D-73, п. 3): решение человека — кто и
      * почему; только роли, у которых итога нет или он `FAILED`.
      */
     fun waiveReview(state: TasksState, id: TaskId, role: ReviewRole, by: String, why: String, now: Timestamp): Outcome<List<TaskEvent>> {
@@ -424,7 +424,7 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
     }
 
     /**
-     * Ревью нашло блокирующее (D-59, п. 3): попытка засчитывается, как у
+     * Ревью нашло блокирующее (D-73, п. 3): попытка засчитывается, как у
      * проваленной проверки, задача — снова `READY` после паузы. Попытки
      * кончились или тот же итог повторяется — `BLOCKED`: решает человек
      * (из `VERIFIED` в `FAILED` пути нет, а молча бросать работу нельзя).
@@ -480,7 +480,7 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
 
     companion object {
         /** Где политику задачи ещё можно менять: ход не идёт и не начат. */
-        /** Ещё не идёт и ждёт запуска — у неё есть смысл «Запустить первой» (D-63). */
+        /** Ещё не идёт и ждёт запуска — у неё есть смысл «Запустить первой» (D-77). */
         private val WAITS_TO_RUN = setOf(TaskState.QUEUED, TaskState.READY, TaskState.WAITING)
         private val EDITABLE = setOf(TaskState.BACKLOG, TaskState.QUEUED, TaskState.READY, TaskState.WAITING, TaskState.BLOCKED, TaskState.FAILED, TaskState.CANCELLED)
 
@@ -499,9 +499,9 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
                         lastReason = e.reason ?: t.lastReason,
                         notBefore = e.notBefore,
                         queuedAt = if (e.to == TaskState.QUEUED && e.from == TaskState.BACKLOG) e.at else t.queuedAt,
-                        // Новая попытка — ревью заново (D-59): итог прошлой попытки к новой работе не относится.
+                        // Новая попытка — ревью заново (D-73): итог прошлой попытки к новой работе не относится.
                         reviews = if (e.to == TaskState.RUNNING) emptyMap() else t.reviews,
-                        // Запуск — уже на другом слоте (D-63): исключение своё отработало.
+                        // Запуск — уже на другом слоте (D-77): исключение своё отработало.
                         excludedSlot = if (e.to == TaskState.RUNNING) null else t.excludedSlot,
                     )
                 }

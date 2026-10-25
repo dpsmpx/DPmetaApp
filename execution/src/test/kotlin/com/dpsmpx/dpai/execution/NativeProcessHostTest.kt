@@ -31,7 +31,7 @@ import kotlin.time.Duration.Companion.seconds
 import org.junit.jupiter.api.io.TempDir
 
 /**
- * Остановка процессов без `ProcessHandle` (D-61): сеанс по `/proc`,
+ * Остановка процессов без `ProcessHandle` (D-75): сеанс по `/proc`,
  * `TERM`, через паузу — `KILL`, пережившие — в отчёте. `/proc` и процессы
  * — подделки: настоящие процессы через JNI проверяет `JniProcessesTest`
  * модуля `android`.

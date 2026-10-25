@@ -29,7 +29,7 @@ import com.dpsmpx.dpai.core.state.SessionState
 object SessionCodec {
     const val STATE_FORMAT = "dpai.sessions-state"
     /**
-     * v4: назначение сессии — роль ревью `review` (D-59), пишется, только
+     * v4: назначение сессии — роль ревью `review` (D-73), пишется, только
      * если есть; v3: инструменты ходов `usage.tools` (D-41); v2 — расход
      * сессии `usage` (D-40); прежние читаются — чего в них нет, того нет и
      * в состоянии.

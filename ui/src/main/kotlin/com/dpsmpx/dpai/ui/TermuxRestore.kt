@@ -147,7 +147,7 @@ object TermuxRestore {
             }
             TargetPlatform.POSIX -> {
                 val script = "mkdir -p ~/.ssh && chmod 700 ~/.ssh && { sed -i '/ dpai-android\$/d' ~/.ssh/authorized_keys 2>/dev/null; true; } && " +
-                    // Только из сети Tailscale, как при настройке (D-56): восстановление не снимает это ограничение.
+                    // Только из сети Tailscale, как при настройке (D-70): восстановление не снимает это ограничение.
                     "echo 'from=\"100.64.0.0/10\" $key' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && echo dpai-reauthorized"
                 "echo " + Base64.getEncoder().encodeToString(script.toByteArray()) + " | base64 -d | sh"
             }

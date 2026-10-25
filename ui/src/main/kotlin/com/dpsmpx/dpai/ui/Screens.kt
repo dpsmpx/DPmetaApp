@@ -27,7 +27,7 @@ enum class Tone { NEUTRAL, ACTIVE, WARNING, ERROR, DONE }
 
 data class Counter(val label: String, val value: String, val tone: Tone)
 
-/** Строка сессии; [review] — название роли, если сессия — ревью задачи (D-59), а не её работа. */
+/** Строка сессии; [review] — название роли, если сессия — ревью задачи (D-73), а не её работа. */
 data class SessionLine(val session: SessionId, val task: String, val state: String, val tone: Tone, val silent: String, val next: String, val review: String? = null)
 
 /** Сводка (ТЗ, §38): состояние приложения, счётчики, сессии, что требует внимания. */
@@ -77,7 +77,7 @@ enum class SessionAction(val label: String) {
     STOP("Остановить ход"),
     SEND("Запрос"),
     FRESH("Свежая сессия"),
-    /** Ход остановлен с handoff, следующая сессия задачи — на другом слоте (D-63; ТЗ, §74, Reassign). */
+    /** Ход остановлен с handoff, следующая сессия задачи — на другом слоте (D-77; ТЗ, §74, Reassign). */
     REASSIGN("Перенести на другой слот"),
 }
 
@@ -153,13 +153,13 @@ object Screens {
         )
     }
 
-    /** Название роли ревью по имени из записи сессии (D-59); незнакомое — как есть. */
+    /** Название роли ревью по имени из записи сессии (D-73); незнакомое — как есть. */
     fun reviewLabel(role: String): String = ReviewRole.entries.firstOrNull { it.name == role }?.let(Review::label) ?: "ревью $role"
 
     /**
      * Действия с сессией (D-42): остановить — идущий ход; запрос и свежая
      * сессия — последней рабочей сессии задачи, когда ход не идёт и задача
-     * не на проверке. Сессии ревью продолжать нельзя (D-59): она только
+     * не на проверке. Сессии ревью продолжать нельзя (D-73): она только
      * читает — запрос ей оркестратор отвергнет. Оркестратор проверяет
      * каждую команду сам.
      */
@@ -175,7 +175,7 @@ object Screens {
                 add(SessionAction.SEND)
                 add(SessionAction.FRESH)
             }
-            // Перенос — у последней рабочей сессии незавершённой задачи, пока она не на проверке (D-63).
+            // Перенос — у последней рабочей сессии незавершённой задачи, пока она не на проверке (D-77).
             if (last && tasks.tasks[s.task]?.terminal == false && taskState !in CHECKING) add(SessionAction.REASSIGN)
         }
     }

@@ -19,7 +19,7 @@ import kotlin.time.Duration.Companion.seconds
  * `docs/EXECUTION_MODEL.md`, §1). Каждая команда отвечает одной строкой
  * `dpai.agent-reply` на стандартном выводе; код выхода: 0 — успех, 1 —
  * отказ (подробности в ответе), 2 — неверный вызов. Исключения — `follow`:
- * строки ответа потоком, пока идёт ход (D-62, D-65), и `mcp`: сервер MCP,
+ * строки ответа потоком, пока идёт ход (D-76, D-79), и `mcp`: сервер MCP,
  * отвечающий строками JSON-RPC, пока открыт вход (D-50).
  */
 class AgentCommand(
@@ -167,7 +167,7 @@ class AgentCommand(
             |  dpai agent status   --run ID [--home DIR]
             |  dpai agent events   --run ID [--home DIR] [--after N] [--limit N]
             |  dpai agent follow   --run ID [--home DIR] [--after N]
-            |                      (строки ответа потоком, пока идёт ход, D-62)
+            |                      (строки ответа потоком, пока идёт ход, D-76)
             |  dpai agent stop     --run ID [--home DIR] [--grace-seconds N]
             |  dpai agent mcp      --root DIR [--shell bash|sh|powershell|cmd]
             |                      (MCP-сервер рабочего дерева по stdio, D-50)

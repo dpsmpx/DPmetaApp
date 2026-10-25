@@ -30,7 +30,7 @@ enum class MockScenario {
     /** Как [SLOW_OUTPUT], но в начале хода — вызов инструмента `Read` (замер D-41 подхваченного хода, ревью A-14). */
     SLOW_TOOLS,
 
-    /** Ход ревью (D-59) с ответом по `--json-schema`: одно серьёзное замечание, блокирующих нет. */
+    /** Ход ревью (D-73) с ответом по `--json-schema`: одно серьёзное замечание, блокирующих нет. */
     REVIEW_PASS,
 
     /** Ход ревью с блокирующей находкой. */
@@ -132,7 +132,7 @@ class MockRunner private constructor(
             ).toTypedArray(),
         )
 
-        /** Ответ ревью по схеме D-59: одна находка уровня [severity]. */
+        /** Ответ ревью по схеме D-73: одна находка уровня [severity]. */
         private fun findings(severity: String, title: String) = JsonObject.of(
             "findings" to JsonArray(listOf(JsonObject.of("severity" to json(severity), "title" to json(title), "file" to json("src/a.kt"), "line" to json(3)))),
         )

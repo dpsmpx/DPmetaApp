@@ -173,11 +173,11 @@ class ControlApiTest {
             Command.AddTask("с областью", "o", scope = setOf("src/a", "docs"), dependencies = setOf(t, ids.next(IdKinds.TASK)), key = "k-00000004"),
             Command.SetScope(t, setOf("src/main")), Command.SetScope(t, emptySet()),
             Command.SetDependencies(t, setOf(ids.next(IdKinds.TASK))), Command.SetDependencies(t, emptySet()),
-            // Роли ревью (D-59): в новой задаче; в политике — заданы, сняты или «как были» (`null`).
+            // Роли ревью (D-73): в новой задаче; в политике — заданы, сняты или «как были» (`null`).
             Command.AddTask("с ревью", "o", policy = com.dpsmpx.dpai.tasks.TaskPolicy(reviews = setOf(ReviewRole.SECURITY, ReviewRole.CODE)), key = "k-00000005"),
             Command.SetPolicy(t, com.dpsmpx.dpai.tasks.TaskClass.ARCHITECTURE, null, null, null, setOf(ReviewRole.CODE)),
             Command.SetPolicy(t, com.dpsmpx.dpai.tasks.TaskClass.ARCHITECTURE, null, null, null, emptySet()),
-            // «Запустить первой» и «Перенести» (D-63).
+            // «Запустить первой» и «Перенести» (D-77).
             Command.RunFirst(t, "k-00000006"), Command.Reassign(s, "k-00000007"),
         )
         for (c in commands) {
@@ -192,6 +192,6 @@ class ControlApiTest {
         val badRole = com.dpsmpx.dpai.core.serialization.JsonParser().parse("""{"command":"task.policy","task":"${t.value}","taskClass":"ARCHITECTURE","reviews":["CODE","STYLE"]}""").valueOrNull() as com.dpsmpx.dpai.core.serialization.JsonObject
         assertTrue(CommandCodec.decode(badRole, ControlApi.BY).diagnostics.any { it.subject == "$.reviews[1]" }, "неизвестная роль — отказ с местом")
         val trivial = com.dpsmpx.dpai.core.serialization.JsonParser().parse("""{"command":"task.add","title":"t","objective":"o","taskClass":"TRIVIAL","reviews":["CODE"]}""").valueOrNull() as com.dpsmpx.dpai.core.serialization.JsonObject
-        assertTrue(CommandCodec.decode(trivial, ControlApi.BY) is com.dpsmpx.dpai.core.result.Outcome.Failure, "у TRIVIAL ревью нет (D-59)")
+        assertTrue(CommandCodec.decode(trivial, ControlApi.BY) is com.dpsmpx.dpai.core.result.Outcome.Failure, "у TRIVIAL ревью нет (D-73)")
     }
 }

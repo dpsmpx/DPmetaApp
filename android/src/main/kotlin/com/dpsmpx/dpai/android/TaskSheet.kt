@@ -360,11 +360,11 @@ private fun annotated(r: com.dpsmpx.dpai.ui.Rendered, code: androidx.compose.ui.
     return b.toAnnotatedString()
 }
 
-/** Роли ревью после проверки (D-59): каждая — отдельная сессия только для чтения. */
+/** Роли ревью после проверки (D-73): каждая — отдельная сессия только для чтения. */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun ReviewChips(selected: Set<ReviewRole>, onChange: (Set<ReviewRole>) -> Unit) {
-    Text("Ревью после проверки — отдельной сессией (D-59)", style = MaterialTheme.typography.labelSmall)
+    Text("Ревью после проверки — отдельной сессией (D-73)", style = MaterialTheme.typography.labelSmall)
     FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         for (r in ReviewRole.entries) {
             FilterChip(selected = r in selected, onClick = { onChange(if (r in selected) selected - r else selected + r) }, label = { Text(Review.label(r)) })
@@ -372,7 +372,7 @@ fun ReviewChips(selected: Set<ReviewRole>, onChange: (Set<ReviewRole>) -> Unit) 
     }
 }
 
-/** Итоги ревью в листе задачи (D-59): роль, итог, находки — блокирующие первыми, с пояснением. */
+/** Итоги ревью в листе задачи (D-73): роль, итог, находки — блокирующие первыми, с пояснением. */
 @Composable
 private fun ReviewsSection(reviews: List<ReviewLine>) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {

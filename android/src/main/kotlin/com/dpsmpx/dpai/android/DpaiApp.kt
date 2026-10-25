@@ -327,7 +327,7 @@ private fun SessionRow(line: SessionLine, modifier: Modifier = Modifier) {
     Row(modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(line.task, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            // Сессия ревью (D-59) — с ролью: она только читает, её не продолжают запросом.
+            // Сессия ревью (D-73) — с ролью: она только читает, её не продолжают запросом.
             Text(line.review?.let { "$it · ${line.session.value}" } ?: line.session.value, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
         }
         Column(Modifier.width(120.dp), horizontalAlignment = Alignment.End) {
@@ -674,7 +674,7 @@ private fun SessionActions(screen: SessionScreen, model: DemoModel) {
             Button(enabled = !busy, onClick = { send { com.dpsmpx.dpai.orchestrator.commands.Command.StopSession(screen.session, it) } }) { Text("Остановить ход") }
         }
         if (com.dpsmpx.dpai.ui.SessionAction.REASSIGN in screen.actions) {
-            // Перенос (D-63): ход остановлен с handoff, задача сразу в плане — на другом слоте.
+            // Перенос (D-77): ход остановлен с handoff, задача сразу в плане — на другом слоте.
             androidx.compose.material3.OutlinedButton(enabled = !busy, onClick = { send { com.dpsmpx.dpai.orchestrator.commands.Command.Reassign(screen.session, it) } }) {
                 Text(com.dpsmpx.dpai.ui.SessionAction.REASSIGN.label)
             }

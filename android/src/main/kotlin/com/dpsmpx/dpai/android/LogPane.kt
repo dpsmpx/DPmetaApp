@@ -66,7 +66,7 @@ fun LogPane(model: DemoModel) {
                 scope.launch {
                     // Время — через Clock (D-07), как у копий настроек.
                     val name = "dpai-log-" + java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(java.util.Date(com.dpsmpx.dpai.core.clock.Clock.SYSTEM.now().epochMillis)) + ".txt"
-                    // Журнал целиком (без обрезки буфера обмена) — в «Загрузки/dpai-logs» (D-43, уточнено D-58).
+                    // Журнал целиком (без обрезки буфера обмена) — в «Загрузки/dpai-logs» (D-43, уточнено D-72).
                     val r = withContext(Dispatchers.IO) { Downloads.write(context, "dpai-logs", name, "text/plain", log.export(maxChars = Int.MAX_VALUE).toByteArray(Charsets.UTF_8)) }
                     note = when (r) {
                         is com.dpsmpx.dpai.core.result.Outcome.Success -> "сохранено: Загрузки/dpai-logs/${r.value}"

@@ -42,7 +42,7 @@ data class SessionRecord(
     /** Расход сессии: prompt (оценка) и ходы (со слов провайдера), D-40. */
     val usage: UsageTotals = UsageTotals.EMPTY,
     /**
-     * Назначение (D-59): `null` — работа над задачей, иначе роль ревью
+     * Назначение (D-73): `null` — работа над задачей, иначе роль ревью
      * (имя `ReviewRole` модуля `tasks`): сессия только читает дерево и
      * отвечает находками.
      */
@@ -95,7 +95,7 @@ sealed interface SessionEvent {
         val provider: ProviderSessionId,
         val continues: SessionId?,
         override val at: Timestamp,
-        /** Роль ревью (D-59); `null` — рабочая сессия. */
+        /** Роль ревью (D-73); `null` — рабочая сессия. */
         val review: String? = null,
     ) : SessionEvent
 

@@ -51,7 +51,7 @@ android {
         compose = true
     }
 
-    // Процессы и псевдотерминал Linux-среды — свой код на C через JNI (D-61, шаг 3; D-17: NDK — только здесь).
+    // Процессы и псевдотерминал Linux-среды — свой код на C через JNI (D-75, шаг 3; D-17: NDK — только здесь).
     // Версия NDK — та, что AGP берёт по умолчанию: NDK r28 выравнивает библиотеки под страницы 16 КБ.
     ndkVersion = "28.2.13676358"
     externalNativeBuild {
@@ -90,7 +90,7 @@ val packAgent by tasks.registering(Zip::class) {
     isReproducibleFileOrder = true
 }
 
-// Linux-среда в приложении (D-61, D-68): proot-static Alpine, его вшитый загрузчик и minirootfs — без
+// Linux-среда в приложении (D-75, D-82): proot-static Alpine, его вшитый загрузчик и minirootfs — без
 // изменений; proot-static Alpine — только aarch64: на устройстве другой архитектуры приложение ставится, но
 // без Linux-среды (каталог библиотек ABI устройства proot не содержит). В репозиторий двоичные файлы не кладутся: сборка загружает их и сверяет по SHA-256 (docs/PROVENANCE.md,
 // §4; суммы закреплены 23 октября 2026 после проверки цепочки Alpine: ключи из minirootfs → подпись APKINDEX →

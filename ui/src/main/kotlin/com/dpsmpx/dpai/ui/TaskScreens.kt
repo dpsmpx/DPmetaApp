@@ -19,7 +19,7 @@ import com.dpsmpx.dpai.tasks.TaskRecord
  */
 enum class TaskAction(val label: String, val dangerous: Boolean = false) {
     PRIORITY("Приоритет"),
-    /** Выше всех в очереди и без паузы (D-63; ТЗ, §73, Run Task); пределы подписки — как у всех. */
+    /** Выше всех в очереди и без паузы (D-77; ТЗ, §73, Run Task); пределы подписки — как у всех. */
     RUN_FIRST("Запустить первой"),
     POLICY("Модель, бюджет, ревью"),
     /** Область и зависимости (D-42, п. 1) — до запуска. */
@@ -60,11 +60,11 @@ data class TaskDetail(
     val dependencies: List<DependencyLine> = emptyList(),
     /** Расход всех сессий задачи (D-42, п. 4); ходов не было — `null`. */
     val usage: String? = null,
-    /** Роли ревью задачи (D-59) — из политики — и итог каждой; без ревью — пусто. */
+    /** Роли ревью задачи (D-73) — из политики — и итог каждой; без ревью — пусто. */
     val reviews: List<ReviewLine> = emptyList(),
 )
 
-/** Роль ревью в листе задачи (D-59): итог словами, находки — блокирующие первыми, пометка (кто решил, почему без итога). */
+/** Роль ревью в листе задачи (D-73): итог словами, находки — блокирующие первыми, пометка (кто решил, почему без итога). */
 data class ReviewLine(val role: ReviewRole, val label: String, val verdict: String, val tone: Tone, val findings: List<FindingLine>, val note: String?)
 
 /** Находка ревью; [where] — «файл:строка», если ревьюер их назвал. */

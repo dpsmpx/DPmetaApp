@@ -57,7 +57,7 @@ include(
     ":cli",
     // SSH на JVM для приложения Android (D-35); ядро от него не зависит.
     ":jsch",
-    // Эмулятор xterm своего терминала (D-57): чистый Kotlin, без Android.
+    // Эмулятор xterm своего терминала (D-71): чистый Kotlin, без Android.
     ":terminal",
 )
 

@@ -46,7 +46,7 @@
             android:name=".InternalEntry"
             android:exported="false"
             android:targetActivity=".MainActivity" />
-        <!-- Свой терминал к target по SSH (D-57): только из своего экрана; поворот и клавиатура — без пересоздания. -->
+        <!-- Свой терминал к target по SSH (D-71): только из своего экрана; поворот и клавиатура — без пересоздания. -->
         <activity
             android:name=".TerminalActivity"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density|fontScale|locale|layoutDirection"

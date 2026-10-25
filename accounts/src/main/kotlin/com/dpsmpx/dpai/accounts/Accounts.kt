@@ -230,7 +230,7 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
          * человек отметил её высоким приоритетом; несрочное ждёт сброса окна.
          */
         urgent: Boolean = false,
-        /** Слот, с которого задачу перенесли (D-63): на него она не идёт. */
+        /** Слот, с которого задачу перенесли (D-77): на него она не идёт. */
         exclude: AccountId? = null,
     ): Outcome<Lease> {
         state.slotOf(session)?.let { s ->

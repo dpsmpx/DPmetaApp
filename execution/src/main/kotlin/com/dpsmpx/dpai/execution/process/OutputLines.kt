@@ -7,7 +7,7 @@ import kotlin.time.Duration.Companion.seconds
 
 /**
  * Вывод процесса строками — общий для [LocalProcessHost] и
- * `NativeProcessHost` (Linux-среда в приложении, D-61): строка длиннее
+ * `NativeProcessHost` (Linux-среда в приложении, D-75): строка длиннее
  * [LocalProcessHost.MAX_LINE] обрезается с отметкой, `\r` в конце снимается.
  * Без `ProcessHandle` — исполняется и на телефоне.
  */

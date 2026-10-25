@@ -243,7 +243,7 @@ class Controller(private val root: File, val version: String?) {
         }
     }
 
-    /** Раздел «Инструкции» с командой настройки ПК: 10 — Windows, 11 — Linux (D-56). */
+    /** Раздел «Инструкции» с командой настройки ПК: 10 — Windows, 11 — Linux (D-70). */
     private fun guideSection(pc: TargetEntry): Int = if (pc.platform == com.dpsmpx.dpai.execution.target.TargetPlatform.WINDOWS) 10 else 11
 
     /** Копия настроек — и в Termux (D-54): переживает удаление приложения и читается без выбора файла. */

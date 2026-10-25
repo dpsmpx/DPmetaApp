@@ -11,7 +11,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-/** Что запускает свой терминал (D-57): `claude` слота — через оболочку входа. */
+/** Что запускает свой терминал (D-71): `claude` слота — через оболочку входа. */
 class TerminalLaunchTest {
     private val ids = IdGenerator(ManualClock(), RandomSource.seeded(57))
 

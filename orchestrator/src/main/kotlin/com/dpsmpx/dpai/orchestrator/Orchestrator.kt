@@ -252,7 +252,7 @@ class Orchestrator(
     /** Выжимка проваленной проверки задачи — источник `TOOL` следующей попытки (D-40); восстанавливается из версии контекста. */
     private val toolOf = HashMap<TaskId, ContextSource>()
 
-    /** Ответ по схеме последнего хода сессии ревью (D-59) — до её реакции на конец хода. */
+    /** Ответ по схеме последнего хода сессии ревью (D-73) — до её реакции на конец хода. */
     private val reviewOutput = HashMap<SessionId, com.dpsmpx.dpai.core.serialization.JsonValue?>()
     /** Флаги, которых не знает Claude Code target (D-40): следующие ходы идут без них. */
     private val unsupportedFlags = HashMap<ExecutionTargetId, MutableSet<String>>()
@@ -567,7 +567,7 @@ class Orchestrator(
         }
         // Общий предел сессий контура (D-42, п. 6) — поверх предела каждого target.
         val room = control.maxSessions?.let { (it - sessions.sessions.values.count { s -> !s.terminal }).coerceAtLeast(0) } ?: Int.MAX_VALUE
-        // Перенесённая задача (D-63) — только на target, где есть слот, кроме исключённого: иначе план ставил бы
+        // Перенесённая задача (D-77) — только на target, где есть слот, кроме исключённого: иначе план ставил бы
         // её на тот же target, и она ждала бы там, хотя на другом место есть.
         val elsewhere = { t: com.dpsmpx.dpai.tasks.TaskRecord, target: ExecutionTargetId ->
             t.excludedSlot == null || accounts.slots.values.any { it.targetId == target && it.id != t.excludedSlot && !it.disabled }
@@ -580,7 +580,7 @@ class Orchestrator(
             if (now == null || now.state != TaskState.READY || now.held) continue
             if (overlapAllows(a.task)) launch(a.task, a.target)
         }
-        // Перенесённой задаче идти некуда — план её пропускает; молча ждать нельзя (D-05, D-63).
+        // Перенесённой задаче идти некуда — план её пропускает; молча ждать нельзя (D-05, D-77).
         for (t in tasks.tasks.values.filter { it.state == TaskState.READY && !it.held && it.excludedSlot != null }.sortedBy { it.id.value }) {
             if (targets.none { elsewhere(t, it.id) }) waiting(t.id, "задача перенесена со слота ${t.excludedSlot}, а другого слота для неё нет — включите или добавьте слот")
         }
@@ -661,7 +661,7 @@ class Orchestrator(
         // Продолжение — прерванная сессия той же задачи или сессия, чья работа не прошла проверку (D-40).
         // Последняя сессия задачи: продолжение создаётся в ту же миллисекунду, что и handoff, — при равном
         // времени решает id (монотонен), а не порядок обхода (разница при `--resume` теряла бы версию).
-        // Сессии ревью (D-59) не продолжаются работой: у них свой prompt и только чтение.
+        // Сессии ревью (D-73) не продолжаются работой: у них свой prompt и только чтение.
         val previous = lastWork(task)
         val handoff = handoffs.latest(task)
         val continues = previous?.takeIf {
@@ -860,7 +860,7 @@ class Orchestrator(
     }
 
     private fun react(task: TaskId, session: SessionId, state: SessionState) {
-        // Сессия ревью (D-59) — свой итог: находки, а не работа задачи.
+        // Сессия ревью (D-73) — свой итог: находки, а не работа задачи.
         sessions.sessions[session]?.review?.let { return reactReview(task, session, it, state) }
         when (state) {
             SessionState.COMPLETED -> finish(task, session)
@@ -941,7 +941,7 @@ class Orchestrator(
             return
         }
         releaseTree(task, session)
-        // Ревью (D-59) — после коммита: ревьюер читает закоммиченную ветку; DONE — когда ревью кончились.
+        // Ревью (D-73) — после коммита: ревьюер читает закоммиченную ветку; DONE — когда ревью кончились.
         val reviews = tasks.tasks.getValue(task).policy.reviews
         if (reviews.isNotEmpty()) {
             progress(task, NotificationCategory.PROGRESS, "Задача на ревью", "проверка прошла; ${reviews.sorted().joinToString { Review.label(it) }}")
@@ -964,12 +964,12 @@ class Orchestrator(
         mergesState.pending.values.firstOrNull { it.task == task }?.let { askMerge(it) }
     }
 
-    /** Последняя рабочая сессия задачи — не ревью (D-59): её продолжают, ей пишут запросы. */
+    /** Последняя рабочая сессия задачи — не ревью (D-73): её продолжают, ей пишут запросы. */
     private fun lastWork(task: TaskId): com.dpsmpx.dpai.sessions.SessionRecord? = sessions.sessions.values.filter { it.task == task && it.review == null }
         .maxWithOrNull(compareBy<com.dpsmpx.dpai.sessions.SessionRecord>({ it.createdAt.epochMillis }, { it.turn }, { it.id.value }))
 
     /**
-     * Ревью проверенных задач (D-59): у задачи одна активная сессия
+     * Ревью проверенных задач (D-73): у задачи одна активная сессия
      * (инвариант `task-single-session`), поэтому роли — по одной за раз,
      * по порядку. Запускать нечего — решить итог: перезапуск между записью
      * итога и решением не оставляет задачу ждать вечно. Задача на паузе
@@ -1004,7 +1004,7 @@ class Orchestrator(
     }
 
     /**
-     * Итог ревью (D-59, п. 3): блокирующее — повтор с выжимкой; без итога и
+     * Итог ревью (D-73, п. 3): блокирующее — повтор с выжимкой; без итога и
      * без повторов — запрос человеку; все прошли или приняты — `DONE`.
      */
     private fun settleReviews(task: TaskId) {
@@ -1019,7 +1019,7 @@ class Orchestrator(
     }
 
     /**
-     * Ревью нашло блокирующее (D-59, п. 3): выжимка находок — источник
+     * Ревью нашло блокирующее (D-73, п. 3): выжимка находок — источник
      * следующей попытки и handoff последней рабочей сессии, как у
      * проваленной проверки (D-40, п. 3): следующая попытка продолжает её.
      */
@@ -1063,7 +1063,7 @@ class Orchestrator(
     }
 
     /**
-     * Сессия ревью роли (D-59, п. 2): на target последней рабочей сессии
+     * Сессия ревью роли (D-73, п. 2): на target последней рабочей сессии
      * (там дерево или маршрут к нему, D-50), слот — по правилам аренды
      * (D-30), только чтение, ответ по схеме. Нет target, слота или места —
      * задача ждёт с причиной; изменения не получены — ревью без итога.
@@ -1133,7 +1133,7 @@ class Orchestrator(
         recordReviewFailure(task, role, attempt, session, why)
     }
 
-    /** Ревью роли без итога (D-59, п. 3): записать с причиной — повтор или запрос решит [settleReviews]. */
+    /** Ревью роли без итога (D-73, п. 3): записать с причиной — повтор или запрос решит [settleReviews]. */
     private fun recordReviewFailure(task: TaskId, role: ReviewRole, attempt: Int, session: SessionId?, why: String) {
         problems += Diagnostic.warning(DiagCode.REVIEW_FAILED, "${Review.label(role)}: $why", "task $task")
         val record = ReviewRecord(role, ReviewVerdict.FAILED, attempt, session, reason = why.take(ReviewRecord.MAX_DETAIL))
@@ -1180,7 +1180,7 @@ class Orchestrator(
         )
     }
 
-    /** Ответ на запрос ревью (D-59, п. 3): повтор — запись с решением человека; принять — исключение по ролям без итога. */
+    /** Ответ на запрос ревью (D-73, п. 3): повтор — запись с решением человека; принять — исключение по ролям без итога. */
     private fun resolveReview(task: TaskId, option: String, by: String): Outcome<String> {
         val t = tasks.tasks[task] ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой задачи", "task $task")
         if (t.state != TaskState.VERIFIED) return Outcome.failure(DiagCode.REQUEST_NOT_PENDING, "задача уже не VERIFIED: ${t.state}", "task $task")
@@ -1743,13 +1743,13 @@ class Orchestrator(
     }
 
     /**
-     * Ревью (D-59) читает изменения ветки задачи против ветки интеграции: у
+     * Ревью (D-73) читает изменения ветки задачи против ветки интеграции: у
      * проекта без Git их нет, и каждое ревью кончилось бы запросом человеку.
      * Отказ — при постановке, а не после работы.
      */
     private fun reviewsUnsupported(policy: TaskPolicy): Outcome.Failure? =
         if (policy.reviews.isNotEmpty() && (git == null || config.repository == null || config.integrationBranch == null)) {
-            Outcome.Failure(listOf(Diagnostic.error(DiagCode.UNSUPPORTED, "ревью — у проекта с Git: ревьюер читает изменения ветки задачи (D-59)", "policy")))
+            Outcome.Failure(listOf(Diagnostic.error(DiagCode.UNSUPPORTED, "ревью — у проекта с Git: ревьюер читает изменения ветки задачи (D-73)", "policy")))
         } else {
             null
         }
@@ -1769,7 +1769,7 @@ class Orchestrator(
                 is Outcome.Failure -> failures += step.errors
                 is Outcome.Success -> {
                     commitSessions(step.value.events)
-                    // Сессию ревью (D-59) не продолжают: она снимается, ревью — без итога и запустится после «Продолжить».
+                    // Сессию ревью (D-73) не продолжают: она снимается, ревью — без итога и запустится после «Продолжить».
                     val role = s.review
                     if (role != null) reactReview(task, s.id, role, SessionState.PAUSED)
                     else handOff(task, s.id, HandoffReason.PAUSED, "продолжить с места остановки: ход приостановлен человеком")
@@ -1780,12 +1780,12 @@ class Orchestrator(
     }
 
     /**
-     * «Перенести» (D-63): слот сессии исключён для задачи — первым, чтобы и
+     * «Перенести» (D-77): слот сессии исключён для задачи — первым, чтобы и
      * сбой остановки не вернул её на тот же слот; открытые сессии задачи —
      * остановка хода и handoff (не пауза: задача сразу снова в плане);
      * следующая сессия — на другом слоте, `Continuation` начинает её с
      * handoff, без `--resume` (другой слот — другая сессия провайдера).
-     * Сессию ревью (D-59) не переносят: она только читает.
+     * Сессию ревью (D-73) не переносят: она только читает.
      */
     private fun reassign(session: SessionId): Outcome<TaskState> {
         val s = sessions.sessions[session] ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой сессии", "session $session")
@@ -1820,7 +1820,7 @@ class Orchestrator(
     private fun cancelTask(task: TaskId): Outcome<TaskState> {
         val t = tasks.tasks[task] ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой задачи", "task $task")
         if (t.terminal) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "задача уже завершена: ${t.state}", "task $task")
-        // До остановки ходов: отказ автомата (`VERIFIED` — проверенная, на ревью, D-59) не должен снимать идущее ревью.
+        // До остановки ходов: отказ автомата (`VERIFIED` — проверенная, на ревью, D-73) не должен снимать идущее ревью.
         if (!com.dpsmpx.dpai.core.state.TaskLifecycle.table.isAllowed(t.state, TaskState.CANCELLED)) {
             return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "задачу ${t.state} не отменяют", "task $task")
         }
@@ -1904,7 +1904,7 @@ class Orchestrator(
         val task = s.task
         val clean = text?.trim()?.takeIf { it.isNotEmpty() }?.take(UserRequest.MAX_TEXT)
         if (clean == null && !fresh) return Outcome.failure(DiagCode.VALUE_INVALID, "запрос без текста")
-        if (s.review != null) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "сессия ревью только читает (D-59): запрос — в рабочую сессию задачи", "session $session")
+        if (s.review != null) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "сессия ревью только читает (D-73): запрос — в рабочую сессию задачи", "session $session")
         if (turnRunning(task)) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "ход идёт: остановите его или дождитесь конца", "session $session")
         val last = lastWork(task)!!
         if (last.id != session) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "запрос — в последнюю сессию задачи ${last.id}", "session $session")
@@ -2182,7 +2182,7 @@ class Orchestrator(
             when (RequestPurpose.of(r.purpose)) {
                 RequestPurpose.TASK_BLOCKED -> state != TaskState.BLOCKED
                 RequestPurpose.TASK_UNVERIFIED -> state != TaskState.COMPLETION_UNVERIFIED
-                // Ревью без итога (D-59): задача ушла из VERIFIED или ревью роли снова идёт — вопрос снят.
+                // Ревью без итога (D-73): задача ушла из VERIFIED или ревью роли снова идёт — вопрос снят.
                 RequestPurpose.TASK_REVIEW -> state != TaskState.VERIFIED || r.task?.let { t -> tasks.tasks[t]?.let { nextReview(it) != null } } == true
                 else -> false
             }
@@ -2312,7 +2312,7 @@ class Orchestrator(
         /** Ключ источника с выжимкой проваленной проверки (D-40). */
         const val VERIFICATION_SOURCE = "tool:verification"
 
-        /** Ключ источника с выжимкой блокирующего ревью (D-59, п. 3). */
+        /** Ключ источника с выжимкой блокирующего ревью (D-73, п. 3). */
         const val REVIEW_SOURCE = "tool:review"
 
         /** Изменённых файлов в handoff — не больше: список, а не дамп рабочего дерева. */

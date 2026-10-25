@@ -2,7 +2,7 @@ package com.dpsmpx.dpai.ui
 
 /**
  * Одна команда, которая готовит ПК как target: Linux — [linuxCommand]
- * (D-56); Windows — [command], PowerShell от администратора (D-52): OpenSSH Server только по ключу, Java, Git,
+ * (D-70); Windows — [command], PowerShell от администратора (D-52): OpenSSH Server только по ключу, Java, Git,
  * Node.js и Claude Code, ключ приложения в `administrators_authorized_keys`
  * (только из сети Tailscale, прежний ключ DP AI заменяется), агент из
  * `Загрузки\dpai-agent.zip` и `agent doctor`, затем — значения полей
@@ -30,7 +30,7 @@ object PcSetup {
     }
 
     /**
-     * Команда для ПК с Linux (D-56) — одной строкой, как у Windows: строки
+     * Команда для ПК с Linux (D-70) — одной строкой, как у Windows: строки
      * скрипта `pc-setup.sh` (без комментариев) — в одинарных кавычках для
      * `printf` во временный файл (`mktemp`), затем `bash` его и удаление. Так `sudo`
      * спрашивает пароль в терминале, команды скрипта не читают его остаток

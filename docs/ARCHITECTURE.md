@@ -84,9 +84,9 @@
 | `orchestrator` | сборка системы: команды, сверка, восстановление, продолжение, полуавтономный режим | `storage`, `security`, `execution`, `accounts`, `git`, `contexts`, `tasks`, `sessions`, `verification`, `monitoring`, `notifications`, `ecosystem`, `connectors`, `analytics` | 13, 14, 16 |
 | `ui` | представление без платформы: состояния экранов, форматирование, разбор `dpai://` | `orchestrator` | 11 |
 | `cli` | оболочка JVM: команда `dpai` | `orchestrator` | 0 |
-| `jsch` | SSH-хост на JVM (JSch) для targets там, где нет системного OpenSSH — приложение Android (D-35); интерактивная оболочка с PTY для терминала (D-57) | `execution` | 11 |
-| `terminal` | эмулятор xterm: экран, разбор последовательностей, ввод — свой терминал (D-57); без Android | `core` | — |
-| `android` | оболочка Android: интерфейс, Keystore, WorkManager, уведомления, экран терминала (D-57); нативный код процессов и псевдотерминала (`JniProcesses`, C через NDK; D-61); подключается при Android SDK | `ui`, `jsch`, `terminal` | 11 |
+| `jsch` | SSH-хост на JVM (JSch) для targets там, где нет системного OpenSSH — приложение Android (D-35); интерактивная оболочка с PTY для терминала (D-71) | `execution` | 11 |
+| `terminal` | эмулятор xterm: экран, разбор последовательностей, ввод — свой терминал (D-71); без Android | `core` | — |
+| `android` | оболочка Android: интерфейс, Keystore, WorkManager, уведомления, экран терминала (D-71); нативный код процессов и псевдотерминала (`JniProcesses`, C через NDK; D-75); подключается при Android SDK | `ui`, `jsch`, `terminal` | 11 |
 | `tests/integration` | межмодульные сценарии | `orchestrator` | 1 |
 <!-- check_modules: end -->
 
@@ -223,7 +223,7 @@ RECOVERY_PENDING ─► проба target и процесса ─► сверк�
 | `target` | `ExecutionTarget`, `SshEndpoint`, `TargetHealthTracker` (пороги и предохранитель), `TargetDoctor`, `ExecutionTargetManager` |
 | `process` | `ProcessHost`, `LocalProcessHost`, `ProcessTree` (остановка дерева), `Detacher` (процесс, переживающий сессию SSH), `run` с тайм-аутом |
 | `ssh` | `SshProcessHost` (системный OpenSSH), `RemoteShell` (кавычки POSIX и Windows) |
-| `linux` | Linux-среда в приложении (D-61, D-68): `ProotHost` — процессы в Alpine под proot (команда proot, окружение гостя, `apk` — без `/proc`); `NativeProcesses` и `NativeProcessHost` — процессы без `ProcessHandle` (остановка сеанса по `/proc`, `ProcStat`); реализация — JNI модуля `android` |
+| `linux` | Linux-среда в приложении (D-75, D-82): `ProotHost` — процессы в Alpine под proot (команда proot, окружение гостя, `apk` — без `/proc`); `NativeProcesses` и `NativeProcessHost` — процессы без `ProcessHandle` (остановка сеанса по `/proc`, `ProcStat`); реализация — JNI модуля `android` |
 | `agent` | протокол `dpai.agent-reply`, `RunSpec`, `AgentClient`, `RunChannel` (номера и сверка), `MockAgentHost` |
 | `claude` | `ClaudeRunner`, `ClaudeCodeCliRunner`, `MockRunner`, `ClaudeCodeCli` (команда), `ClaudeStreamParser` и `ClaudeTurnAssembler` (поток → итог хода) |
 
@@ -289,7 +289,7 @@ target:     start ─► Detacher ─► supervise ─► процесс; выв
 ждущий запрос с тем же хешем; ссылки `dpai://approve|deny`
 (`notifications.ApprovalAction`) больше не создаются.
 
-Ревью задачи (D-59) — `orchestrator.review.Review`: prompt роли, схема
+Ревью задачи (D-73) — `orchestrator.review.Review`: prompt роли, схема
 ответа, разбор находок и выжимка для повтора; запуск, итог и запрос
 человеку `task.review` — в `Orchestrator` после проверки и коммита.
 

@@ -168,7 +168,7 @@ object SetupGuide {
         ),
         GuideSection(
             "pc-linux", "11. ПК с Linux",
-            "Как раздел 10, но ПК с Linux (D-56): Claude Code и вход — в Termux на этом телефоне, файлы, проверки и Git задачи — на ПК по SSH. " +
+            "Как раздел 10, но ПК с Linux (D-70): Claude Code и вход — в Termux на этом телефоне, файлы, проверки и Git задачи — на ПК по SSH. " +
                 "Связь — через Tailscale на ПК и на телефоне одним аккаунтом.",
             listOf(
                 GuideStep("Сохраните архив агента и перенесите dpai-agent.zip на ПК в папку «Загрузки»:", action = GuideAction.SAVE_AGENT),

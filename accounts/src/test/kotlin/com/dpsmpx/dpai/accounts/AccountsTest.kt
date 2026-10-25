@@ -262,7 +262,7 @@ class AccountsTest {
         assertEquals(DiagCode.ACCOUNT_LEASE_CONFLICT, failure(f.accounts.lease(f.state, s, f.task(), f.now)))
     }
 
-    /** D-63: перенесённая задача не идёт на исключённый слот; другого нет — отказ с причиной, а не тот же слот. */
+    /** D-77: перенесённая задача не идёт на исключённый слот; другого нет — отказ с причиной, а не тот же слот. */
     @Test
     fun excludedSlotIsNotLeased() {
         val f = Fixture()

@@ -15,7 +15,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * Команда proot Linux-среды в приложении (D-68): корень, каталоги ядра,
+ * Команда proot Linux-среды в приложении (D-82): корень, каталоги ядра,
  * каталоги хоста, каталог и окружение гостя, правило «`apk` — без `/proc`».
  * Сам proot — aarch64 и запускается только на телефоне (`docs/DEVICE_CHECK.md`, §14).
  */

@@ -184,7 +184,7 @@ class ControlCommand(
         val c = linkedMapOf<String, JsonValue>("task" to JsonString(task))
         when (action) {
             "hold", "resume", "cancel", "verify" -> c["command"] = JsonString("task.$action")
-            // «Запустить первой» (D-63): выше всех в очереди и без паузы; пределы подписки — как у всех.
+            // «Запустить первой» (D-77): выше всех в очереди и без паузы; пределы подписки — как у всех.
             "first" -> c["command"] = JsonString("task.run-first")
             "archive", "unarchive" -> {
                 c["command"] = JsonString("task.archive")
@@ -217,7 +217,7 @@ class ControlCommand(
                 opt(args, "--model")?.let { c["model"] = JsonString(it) }
                 opt(args, "--effort")?.let { c["effort"] = JsonString(it) }
                 opt(args, "--budget")?.let { budget(it) ?: return usage("--budget — доллары") }?.let { c["budgetCents"] = JsonNumber.of(it) }
-                // Без --review роли не меняются; `none` снимает все (D-59).
+                // Без --review роли не меняются; `none` снимает все (D-73).
                 opt(args, "--review")?.let { c["reviews"] = roles(it) }
             }
             else -> return usage(TASK_USAGE)
@@ -225,7 +225,7 @@ class ControlCommand(
         return send(c, confirmed = "--yes" in args)
     }
 
-    /** Роли ревью (D-59) через запятую: `code,security`; `none` — без ревью. Неизвестную роль отвергает приложение. */
+    /** Роли ревью (D-73) через запятую: `code,security`; `none` — без ревью. Неизвестную роль отвергает приложение. */
     private fun roles(v: String): JsonArray = JsonArray(if (v.trim().lowercase() == "none") emptyList() else csv(v).map { JsonString(it.uppercase()) })
 
     /** Глобальный поиск (ТЗ, §75): найденное по видам, ссылки `dpai://…` и чего поиск не видел. */
@@ -257,7 +257,7 @@ class ControlCommand(
         return OK
     }
 
-    /** Роли ревью и итог каждой одной строкой (D-59): `ревью CODE PASSED, SECURITY —`. */
+    /** Роли ревью и итог каждой одной строкой (D-73): `ревью CODE PASSED, SECURITY —`. */
     private fun reviewsLine(t: JsonObject): String? {
         val roles = names(t, "reviews").ifEmpty { return null }
         val verdicts = t["verdicts"] as? JsonObject
@@ -266,7 +266,7 @@ class ControlCommand(
 
     private fun names(o: JsonObject, k: String): List<String> = (o[k] as? JsonArray)?.items.orEmpty().mapNotNull { (it as? JsonString)?.value }
 
-    /** Итоги ревью задачи с находками (D-59): сначала блокирующие. */
+    /** Итоги ревью задачи с находками (D-73): сначала блокирующие. */
     private fun showReviews(id: String): Int {
         val task = resolve(id, "tasks") ?: return FAILED
         val r = call("GET", "/v1/tasks/$task/reviews", null) ?: return FAILED
@@ -311,7 +311,7 @@ class ControlCommand(
         val c = linkedMapOf<String, JsonValue>("session" to JsonString(session))
         when (args.getOrNull(1)) {
             "stop" -> c["command"] = JsonString("session.stop")
-            // «Перенести» (D-63): ход остановлен с handoff, следующая сессия — на другом слоте.
+            // «Перенести» (D-77): ход остановлен с handoff, следующая сессия — на другом слоте.
             "reassign" -> c["command"] = JsonString("session.reassign")
             "send" -> {
                 c["command"] = JsonString("session.send")

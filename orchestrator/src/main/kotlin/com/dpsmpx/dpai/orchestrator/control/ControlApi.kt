@@ -103,7 +103,7 @@ class Pairing(private val vfs: Vfs, private val random: RandomSource, private va
  * - `GET /v1/state` — задачи, сессии, ждущие запросы, подписки, настройки;
  * - `GET /v1/tasks/<id>/messages` — итоговые сообщения ходов задачи;
  * - `GET /v1/tasks/<id>/diff` — изменения задачи (`TaskDiff`);
- * - `GET /v1/tasks/<id>/reviews` — роли ревью задачи и итоги с находками (D-59);
+ * - `GET /v1/tasks/<id>/reviews` — роли ревью задачи и итоги с находками (D-73);
  * - `POST /v1/search` `{"query"}` — глобальный поиск (ТЗ, §75): его даёт
  *   оболочка ([search]) — поиск живёт в модуле `ui`, а не здесь;
  * - `POST /v1/commands` — команда ([CommandCodec]) через очередь контура:
@@ -239,7 +239,7 @@ object ControlSnapshot {
                                 "archived" to JsonBool(t.archived),
                             ).apply {
                                 t.policy.model?.let { put("model", JsonString(it)) }
-                                // Роли ревью (D-59) и итог каждой: нет итога — роли нет в `verdicts`.
+                                // Роли ревью (D-73) и итог каждой: нет итога — роли нет в `verdicts`.
                                 if (t.policy.reviews.isNotEmpty()) {
                                     put("reviews", JsonArray(t.policy.reviews.sorted().map { JsonString(it.name) }))
                                     put("verdicts", JsonObject(t.reviews.entries.sortedBy { it.key }.associateTo(linkedMapOf<String, JsonValue>()) { (r, v) -> r.name to JsonString(v.verdict.name) }))
@@ -330,7 +330,7 @@ object ControlSnapshot {
         ),
     )
 
-    /** Роли ревью задачи и итоги с находками (D-59); `null` — нет такой задачи. */
+    /** Роли ревью задачи и итоги с находками (D-73); `null` — нет такой задачи. */
     fun reviews(o: Orchestrator, task: com.dpsmpx.dpai.core.ids.TaskId): JsonObject? {
         val t = o.tasks.tasks[task] ?: return null
         return JsonObject.of(

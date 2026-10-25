@@ -5,7 +5,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-/** Эмулятор xterm своего терминала (D-57): экран, режимы, ответы программе, смена размера. */
+/** Эмулятор xterm своего терминала (D-71): экран, режимы, ответы программе, смена размера. */
 class TerminalEmulatorTest {
     private class Recorder : TerminalHost {
         val out = StringBuilder()

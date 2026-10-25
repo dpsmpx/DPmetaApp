@@ -8,7 +8,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 
-/** Свод `claude auth status` на target (D-55, ревью A-72): отпечаток вместо email и организации. */
+/** Свод `claude auth status` на target (D-69, ревью A-72): отпечаток вместо email и организации. */
 class AccountIdentityTest {
     @Test
     fun summaryKeepsLoginAndFingerprintButNoPersonalData() {

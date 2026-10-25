@@ -92,7 +92,7 @@ class DemoModel(
         if (targets.any { it.configDir != null }) {
             val key = targets to controller.project()
             if (live == null || liveFor != key) {
-                // Потоки событий прежней системы (D-62) не переживают её: каналы SSH закрываются.
+                // Потоки событий прежней системы (D-76) не переживают её: каналы SSH закрываются.
                 live?.close()
                 live = controller.live(key.first, key.second, onEvents, onProblem)
                 liveFor = key

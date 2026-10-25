@@ -1,6 +1,6 @@
 package com.dpsmpx.dpai.terminal
 
-/** Клавиши без текста: стрелки, правка, функциональные (D-57). */
+/** Клавиши без текста: стрелки, правка, функциональные (D-71). */
 enum class Key {
     UP, DOWN, LEFT, RIGHT, HOME, END, PAGE_UP, PAGE_DOWN, INSERT, DELETE,
     ENTER, BACKSPACE, TAB, ESCAPE,
@@ -18,7 +18,7 @@ object Mod {
 enum class MouseButton(val code: Int) { LEFT(0), MIDDLE(1), RIGHT(2), NONE(3), WHEEL_UP(64), WHEEL_DOWN(65) }
 
 /**
- * Ввод человека → байты для программы (D-57): последовательности xterm с
+ * Ввод человека → байты для программы (D-71): последовательности xterm с
  * учётом режимов эмулятора (курсор приложения, перевод строки, вставка в
  * скобках, мышь, фокус). Чистые функции от состояния [TerminalEmulator] —
  * вызывающий держит тот же замок, что и при выводе.

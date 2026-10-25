@@ -193,7 +193,7 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     VERIFICATION_REQUIRED(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
     VERIFICATION_WAIVED(Category.STATE, Severity.WARNING, Retryability.NON_RETRYABLE),
 
-    // --- ревью задачи (D-59) ---
+    // --- ревью задачи (D-73) ---
     /** Ревью нашло блокирующее: задача — на повтор с выжимкой находок. */
     REVIEW_BLOCKING(Category.EXECUTION, Severity.WARNING, Retryability.RETRYABLE),
     /** Ревью не дало итога: сбой сессии, ответ не по схеме, нет слота. */

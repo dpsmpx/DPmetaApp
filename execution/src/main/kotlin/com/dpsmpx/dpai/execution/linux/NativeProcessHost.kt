@@ -19,7 +19,7 @@ import kotlin.time.Duration.Companion.seconds
 
 /**
  * Процессы через [NativeProcesses] — для ART, где нет `ProcessHandle`
- * (D-61): процесс — лидер своего сеанса, остановка — [NativeSessions.stop].
+ * (D-75): процесс — лидер своего сеанса, остановка — [NativeSessions.stop].
  * Вывод — строками, как у `LocalProcessHost`.
  */
 class NativeProcessHost(
@@ -87,7 +87,7 @@ class NativeProcessHost(
 }
 
 /**
- * Остановка сеанса процессов без `ProcessHandle` (D-61): `TERM` группе
+ * Остановка сеанса процессов без `ProcessHandle` (D-75): `TERM` группе
  * лидера и каждому живому процессу сеанса по `/proc`, через паузу —
  * `KILL`; пережившие — в итоге (ТЗ, §119). Так останавливаются и ушедшие
  * в фон потомки, сменившие родителя (A-9). Сеанс — номер его лидера.

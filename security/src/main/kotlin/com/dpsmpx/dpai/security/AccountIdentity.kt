@@ -10,7 +10,7 @@ import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.core.serialization.JsonValue
 
 /**
- * Аккаунт Claude без личных данных (D-30, D-55): отпечаток вместо email и
+ * Аккаунт Claude без личных данных (D-30, D-69): отпечаток вместо email и
  * организации. Здесь — потому что свод нужен и агенту на target (он не
  * пишет вывод `claude auth status` на диск), и модулю аккаунтов, и mock
  * агента: у всех — одна каноническая форма.

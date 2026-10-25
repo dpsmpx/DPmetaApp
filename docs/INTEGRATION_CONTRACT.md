@@ -53,7 +53,7 @@ claude.ai (D-27), не принимает решений планировщик�
 
 | Что | Версия | Где |
 |---|---|---|
-| Модули, jar, дистрибутив `dpai` | `0.1.0-dev.5` (сборка для проверки на устройстве — ветка `apk_debug`, каталог `dpai/`, D-67) | `gradle.properties`, `version`; в jar `cli` — `Implementation-Version`, его печатает `dpai version` |
+| Модули, jar, дистрибутив `dpai` | `0.1.0-dev.5` (сборка для проверки на устройстве — ветка `apk_debug`, каталог `dpai/`, D-81) | `gradle.properties`, `version`; в jar `cli` — `Implementation-Version`, его печатает `dpai version` |
 | Приложение Android | `versionName` — версия проекта, `versionCode` — 4 | `android/build.gradle.kts` |
 | Форматы хранения | свой номер у каждого (раздел 10) | `docs/DATA_MODEL.md`, §4 |
 | Реестры | 116 кодов диагностики, 67 типов событий (8 октября 2026) | `tools/verify/registry/` |
@@ -263,7 +263,7 @@ API не включён. Граница — этот раздел и реест�
 | Команда | Где | Итог |
 |---|---|---|
 | создать задачу | `Orchestrator.addTask`, в приложении — `LiveSystem.addTask` | `Outcome<TaskId>`; `TASK_CREATED`, `TASK_SCOPE_CHANGED` (если область задана), `TASK_STATE_CHANGED` (в очередь) |
-| такт контура | `Orchestrator.tick`, в оболочке — `ControlView.step` | очередь → план → аренда слота → сессия → дерево → контекст → ход; опрос; проверка → коммит → ревью по политике (D-59) → `DONE` → запрос слияния |
+| такт контура | `Orchestrator.tick`, в оболочке — `ControlView.step` | очередь → план → аренда слота → сессия → дерево → контекст → ход; опрос; проверка → коммит → ревью по политике (D-73) → `DONE` → запрос слияния |
 | ответ на запрос (в том числе слияние, D-49) | `Orchestrator.answer(uri, text, by)` | `OperationResult<RequestAnswer>`; действует только ответ на ждущий запрос с тем же хешем |
 | сверка после перезапуска | `Orchestrator.recover(agentFor)` | `Reconciler.Result` по сессиям, затем `OrphanScan` |
 | факты аккаунтов | `Orchestrator.commitAccounts`; проба входа — `LiveSystem.probeSlot` (`SlotAuthProbe`) | события аккаунтов |
@@ -288,7 +288,7 @@ API не включён. Граница — этот раздел и реест�
 | `dpai agent supervise --run ID` | супервизор — единственный писатель `events.jsonl` |
 | `dpai agent status --run ID` | состояние запуска; супервизор умер без записи выхода — `LOST` |
 | `dpai agent events --run ID [--after N] [--limit N]` | подтверждённые события с номером больше N |
-| `dpai agent follow --run ID [--after N]` | то же потоком, пока идёт ход: строка `dpai.agent-reply` команды `follow` на каждую новость журнала, смену состояния и раз в 15 с без новостей (D-62, D-65) |
+| `dpai agent follow --run ID [--after N]` | то же потоком, пока идёт ход: строка `dpai.agent-reply` команды `follow` на каждую новость журнала, смену состояния и раз в 15 с без новостей (D-76, D-79) |
 | `dpai agent stop --run ID [--grace-seconds N]` | просьба супервизору; потерянный — остановка по pid и времени старта; ход ещё без супервизора — только просьба (`AGENT_STOP_PENDING`) |
 | `dpai agent mcp --root DIR [--shell bash\|sh\|powershell\|cmd]` | MCP-сервер рабочего дерева по stdio (JSON-RPC 2.0 строками; `initialize`, `ping`, `tools/list`, `tools/call`; инструменты `run`, `read`, `write`, `edit`, `glob`, `grep`) — для хода Claude на другом target (D-50; `docs/EXECUTION_MODEL.md`, §7) |
 

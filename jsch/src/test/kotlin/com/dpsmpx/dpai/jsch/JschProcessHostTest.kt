@@ -101,7 +101,7 @@ class JschProcessHostTest {
         val started = client.start(run, RunSpec(cmd))
         assertTrue(started.isSuccess, started.diagnostics.toString())
         RealTime.await(60.seconds, "запуск на target") { client.status(run).valueOrNull()?.takeIf { it.state == RunState.RUNNING } }
-        // Поток хода по долгому каналу exec JSch (D-62).
+        // Поток хода по долгому каналу exec JSch (D-76).
         val source = FollowingEventSource(client, Clock.SYSTEM)
         val channel = RunChannel(source, run)
         RealTime.await(60.seconds, "строка потока по SSH") { channel.poll().valueOrNull(); if (source.served > 0) Unit else null }

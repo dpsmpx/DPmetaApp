@@ -34,7 +34,7 @@ data class SessionRow(
     val freshness: HeartbeatFreshness,
     val silentFor: Measure<Duration>,
     val next: String?,
-    /** Роль ревью (D-59), если сессия — ревью задачи, а не её работа. */
+    /** Роль ревью (D-73), если сессия — ревью задачи, а не её работа. */
     val review: String? = null,
 )
 

@@ -263,7 +263,7 @@ class SessionsTest {
         assertEquals(state, SessionCodec.decodeState(JsonParser().parse(json).valueOrNull() as JsonObject).valueOrNull())
     }
 
-    /** D-59: сессия ревью несёт роль в событии и снимке v4; роль — только имя латиницей; снимок v3 читается без неё. */
+    /** D-73: сессия ревью несёт роль в событии и снимке v4; роль — только имя латиницей; снимок v3 читается без неё. */
     @Test
     fun reviewSessionCarriesItsRole() {
         slots(1)

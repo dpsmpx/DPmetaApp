@@ -75,7 +75,7 @@ import kotlin.time.Duration.Companion.seconds
  *   следит за тайм-аутом и просьбой остановиться.
  * - `events` отдаёт подтверждённые события с номера — после обрыва
  *   контроллер забирает пропущенное.
- * - `follow` — то же потоком (D-62, D-65): строки по мере записи журнала,
+ * - `follow` — то же потоком (D-76, D-79): строки по мере записи журнала,
  *   пока ход идёт и читатель не ушёл.
  * - `stop` просит супервизор остановить дерево процессов; если супервизор
  *   потерян — останавливает процесс сам по идентификатору и времени
@@ -220,7 +220,7 @@ class AgentRuntime(
         // Вывод ждёт блокировки, пока не записано TARGET_PROCESS_STARTED: в журнале ход начинается с него.
         val process: RunningProcess = synchronized(lock) {
             val started = host.start(ProcessSpec(doc.spec.command, doc.spec.workDir, env, stdin)) { line ->
-                // Вывод пробы входа — только в памяти (D-55): в журнал идёт сведённый итог при выходе.
+                // Вывод пробы входа — только в памяти (D-69): в журнал идёт сведённый итог при выходе.
                 if (capture && line.stream == OutputStream.STDOUT) {
                     synchronized(captured) { if (captured.length < CAPTURE_LIMIT) captured.append(line.text).append('\n') }
                     return@start
@@ -371,7 +371,7 @@ class AgentRuntime(
     }
 
     /**
-     * Поток событий хода (D-62, D-65): строки `dpai.agent-reply` команды
+     * Поток событий хода (D-76, D-79): строки `dpai.agent-reply` команды
      * `follow` — события журнала запуска после [after] по мере записи и
      * состояние запуска; страница — по объёму, как у [events]. Строка
      * уходит, когда есть новые события, сменилось состояние или пора подать

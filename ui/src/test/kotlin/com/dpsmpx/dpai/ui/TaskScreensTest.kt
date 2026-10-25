@@ -56,7 +56,7 @@ class TaskScreensTest {
         assertEquals(listOf(dep.id), TaskScreens.dependencyChoices(all, except = t.id).map { it.id })
     }
 
-    /** D-59: лист задачи — роли из политики и итог каждой; нет итога — «ещё нет». */
+    /** D-73: лист задачи — роли из политики и итог каждой; нет итога — «ещё нет». */
     @Test
     fun reviewsInDetail() {
         val blocked = ReviewRecord(
@@ -78,7 +78,7 @@ class TaskScreensTest {
         assertEquals(emptyList(), TaskScreens.detail(task(TaskState.READY), SessionsState.EMPTY).reviews, "без ролей — без строк")
     }
 
-    /** D-59: сессию ревью не продолжают — запрос и свежая сессия у последней рабочей; в строке сводки — роль. */
+    /** D-73: сессию ревью не продолжают — запрос и свежая сессия у последней рабочей; в строке сводки — роль. */
     @Test
     fun reviewSessionIsNotContinued() {
         val gen = IdGenerator(clock, RandomSource.seeded(5))
@@ -95,7 +95,7 @@ class TaskScreensTest {
         val tasks = TasksState(mapOf(id to task(TaskState.BLOCKED)))
         assertEquals(emptyList(), Screens.sessionActions(review.id, sessions, tasks), "ревью только читает")
         assertEquals(listOf(SessionAction.SEND, SessionAction.FRESH, SessionAction.REASSIGN), Screens.sessionActions(work.id, sessions, tasks), "продолжают работу, хотя ревью было позже")
-        // «Перенести» (D-63) — у рабочей сессии незавершённой задачи, не на проверке.
+        // «Перенести» (D-77) — у рабочей сессии незавершённой задачи, не на проверке.
         assertTrue(SessionAction.REASSIGN !in Screens.sessionActions(work.id, sessions, TasksState(mapOf(id to task(TaskState.VERIFIED)))))
         assertTrue(SessionAction.REASSIGN !in Screens.sessionActions(work.id, sessions, TasksState(mapOf(id to task(TaskState.DONE)))))
         assertEquals("ревью кода", Screens.reviewLabel("CODE"))

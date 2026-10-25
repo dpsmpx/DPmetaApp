@@ -47,7 +47,7 @@ class NioVfsTest {
         assertEquals(JsonObject.of("x" to json(2)), store.read("settings").valueOrNull()?.content)
     }
 
-    /** Ссылки и права — для корневой системы Linux-среды в приложении (D-61): цель — как есть, права — младшие 9 бит. */
+    /** Ссылки и права — для корневой системы Linux-среды в приложении (D-75): цель — как есть, права — младшие 9 бит. */
     @Test
     fun symlinksAndModes() {
         // Ссылки на Windows требуют особых прав, а среда в приложении — только Android: проверка — на POSIX.

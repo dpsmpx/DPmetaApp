@@ -109,7 +109,7 @@ class AgentCommandTest {
     }
 
     /**
-     * Поток хода через настоящий `dpai agent follow` (D-62): события идущего
+     * Поток хода через настоящий `dpai agent follow` (D-76): события идущего
      * хода канал получает из потока, а не опросом; поток кончается с ходом.
      */
     @Test
@@ -187,7 +187,7 @@ class AgentCommandTest {
         val cmd = if (p == TargetPlatform.WINDOWS) listOf("ping", "-n", "600", "127.0.0.1") else listOf("sleep", "600")
         assertTrue(client.start(run, RunSpec(cmd)).isSuccess)
         RealTime.await(60.seconds, "запуск на target") { client.status(run).valueOrNull()?.takeIf { it.state == RunState.RUNNING } }
-        // Поток хода по долгому каналу exec клиента OpenSSH (D-62).
+        // Поток хода по долгому каналу exec клиента OpenSSH (D-76).
         val source = FollowingEventSource(client, Clock.SYSTEM)
         val channel = RunChannel(source, run)
         RealTime.await(60.seconds, "строка потока по SSH") { channel.poll().valueOrNull(); if (source.served > 0) Unit else null }

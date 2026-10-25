@@ -29,7 +29,7 @@ import com.dpsmpx.dpai.ui.TerminalLaunch
 import kotlin.concurrent.thread
 
 /**
- * Свой терминал (D-57): вкладки [TerminalHub], экран [TerminalView], ряд
+ * Свой терминал (D-71): вкладки [TerminalHub], экран [TerminalView], ряд
  * клавиш, которых нет на экранной клавиатуре (Esc, Ctrl, Alt, Tab,
  * стрелки). Открывается с карточки target: оболочка или `claude` слота.
  */

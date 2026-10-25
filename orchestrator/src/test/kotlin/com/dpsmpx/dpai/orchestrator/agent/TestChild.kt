@@ -94,7 +94,7 @@ object TestChild {
                 println("ready")
                 CountDownLatch(1).await()
             }
-            // Вывод `claude auth status --json` с личными данными (D-55, ревью A-72).
+            // Вывод `claude auth status --json` с личными данными (D-69, ревью A-72).
             "auth-status" -> {
                 println("""{"loggedIn":true,"authMethod":"claude.ai","apiProvider":"firstParty","email":"slot.owner@example.org","orgId":"org-777","subscriptionType":"max"}""")
                 exitProcess(0)

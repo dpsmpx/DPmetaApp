@@ -5,7 +5,7 @@ import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
-/** Ввод человека → байты программе (D-57). */
+/** Ввод человека → байты программе (D-71). */
 class KeyEncoderTest {
     private fun s(b: ByteArray?) = b?.let { String(it, Charsets.UTF_8) }
 

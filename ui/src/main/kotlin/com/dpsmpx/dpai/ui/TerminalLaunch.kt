@@ -7,7 +7,7 @@ import com.dpsmpx.dpai.execution.ssh.RemoteShell
 import com.dpsmpx.dpai.execution.target.TargetPlatform
 
 /**
- * Что запускает свой терминал на target (D-57): пустая команда —
+ * Что запускает свой терминал на target (D-71): пустая команда —
  * оболочка входа; «Claude» — интерактивный `claude` в каталоге слота
  * (`CLAUDE_CONFIG_DIR`, D-29): вход, `/usage`, ручная работа.
  */

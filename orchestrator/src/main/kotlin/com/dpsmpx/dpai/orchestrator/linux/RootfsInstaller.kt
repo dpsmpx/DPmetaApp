@@ -9,7 +9,7 @@ import java.io.InputStream
 import java.util.zip.GZIPInputStream
 
 /**
- * Корневая система Alpine Linux-среды в приложении (D-61, D-68): распаковка
+ * Корневая система Alpine Linux-среды в приложении (D-75, D-82): распаковка
  * minirootfs (`tar.gz`) в каталог [Vfs] — каталоги, файлы с правами,
  * символьные ссылки; жёсткая ссылка — копией (Android жёстких ссылок не
  * даёт, `docs/research/LINUX_IN_APP.md`, §9); длинные имена GNU и PAX.

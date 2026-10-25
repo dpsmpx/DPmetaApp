@@ -1,6 +1,6 @@
 # Настройка: ПК с Linux как target (доступ с телефона из любого места)
 
-Как для Windows (`docs/SETUP_PC_WINDOWS.md`), но ПК с Linux (D-56).
+Как для Windows (`docs/SETUP_PC_WINDOWS.md`), но ПК с Linux (D-70).
 Основной сценарий — Claude на телефоне (D-50, D-53): вход и Claude Code —
 в Termux на телефоне («Инструкция», разделы 1–7), файлы, проверки и Git
 задачи — на ПК по SSH через частную сеть Tailscale; ПК в интернет не

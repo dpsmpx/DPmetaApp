@@ -5,7 +5,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-/** Сессия терминала (D-57): ответы программе, события экрана, размер окна, ввод. */
+/** Сессия терминала (D-71): ответы программе, события экрана, размер окна, ввод. */
 class TerminalSessionTest {
     private class FakeTransport : TerminalTransport {
         val sent = StringBuilder()

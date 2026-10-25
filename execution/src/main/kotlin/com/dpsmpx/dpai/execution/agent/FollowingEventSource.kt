@@ -13,7 +13,7 @@ import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * Поток событий идущих ходов вместо опроса (D-62, D-65; ТЗ, §56).
+ * Поток событий идущих ходов вместо опроса (D-76, D-79; ТЗ, §56).
  *
  * Опрос `events` — вызов агента на каждый такт, а по SSH это запуск JVM на
  * target: ~1 с на телефоне (`docs/research/SSH_ON_ANDROID.md`). У идущего

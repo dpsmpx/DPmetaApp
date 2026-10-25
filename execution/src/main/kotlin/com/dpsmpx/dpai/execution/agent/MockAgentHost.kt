@@ -31,7 +31,7 @@ import kotlin.time.Duration
  *
  * [reachable] = false — target недоступен: вызовы падают, как упавший SSH.
  * [onStart] вызывается после каждого хода `start` — так сценарий
- * `MockRunner` пишет вывод «процесса». Поток `follow` (D-62) — строка на
+ * `MockRunner` пишет вывод «процесса». Поток `follow` (D-76) — строка на
  * каждое новое событие и смену состояния, конец — с концом хода;
  * [follows] = false — агент прежней версии: `follow` ему неизвестна.
  */
@@ -90,11 +90,11 @@ class MockAgentHost(private val clock: Clock, private val ids: IdGenerator) : Pr
     var calls: Int = 0
         private set
 
-    /** Сколько опросов `events` пришло — для проверок «поток заменил опрос» (D-62). */
+    /** Сколько опросов `events` пришло — для проверок «поток заменил опрос» (D-76). */
     var eventCalls: Int = 0
         private set
 
-    /** Знает ли агент поток `follow` (D-62); нет — отказ `UNSUPPORTED`, как у агента прежней версии. */
+    /** Знает ли агент поток `follow` (D-76); нет — отказ `UNSUPPORTED`, как у агента прежней версии. */
     @Volatile
     var follows: Boolean = true
 
@@ -139,7 +139,7 @@ class MockAgentHost(private val clock: Clock, private val ids: IdGenerator) : Pr
 
     /**
      * Строка вывода процесса хода. Запуск с `OutputCapture.AUTH_STATUS` —
-     * как у настоящего агента (D-55): stdout копится и в журнал идёт сводом
+     * как у настоящего агента (D-69): stdout копится и в журнал идёт сводом
      * при выходе; возвращается `null`.
      */
     @Synchronized

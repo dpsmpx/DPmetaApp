@@ -56,7 +56,7 @@ data class UsageReport(
     val toolCallsByMode: Map<PromptMode, Double> = emptyMap(),
     val contextTokensAtEnd: List<Long> = emptyList(),
     val durationMs: Long = 0,
-    /** С какой попытки задачи проходят проверку и ревью — по классу и модели (D-59, п. 4); ключ — «КЛАСС · модель». */
+    /** С какой попытки задачи проходят проверку и ревью — по классу и модели (D-73, п. 4); ключ — «КЛАСС · модель». */
     val passAtK: Map<String, PassAtK> = emptyMap(),
 ) {
     /** Вход модели целиком: без кеша, чтение и запись кеша. */
@@ -162,7 +162,7 @@ data class UsageReport(
         if (passAtK.isNotEmpty()) {
             appendLine()
             appendLine()
-            appendLine("## С какой попытки (pass@k, D-59)")
+            appendLine("## С какой попытки (pass@k, D-73)")
             appendLine()
             appendLine("Задачи с итогом: выполненные по проверке и ревью и проваленные; принятые без проверки или без ревью не считаются.")
             appendLine()
@@ -222,7 +222,7 @@ data class UsageReport(
         }
 
         /**
-         * pass@k (D-59, п. 4): задача с итогом — `DONE` по проверке (не
+         * pass@k (D-73, п. 4): задача с итогом — `DONE` по проверке (не
          * исключение) без ревью, принятого без итога, — прошла с попытки
          * `retries + 1`; `FAILED` — не прошла. Остальные итога не имеют и не
          * считаются, а не идут нулём (D-13). Попытка — повтор после отказа
@@ -248,7 +248,7 @@ data class UsageReport(
     }
 }
 
-/** pass@k группы задач (D-59, п. 4): [tasks] — с итогом; [pass1], [pass3] — прошли с первой и не позже третьей попытки. */
+/** pass@k группы задач (D-73, п. 4): [tasks] — с итогом; [pass1], [pass3] — прошли с первой и не позже третьей попытки. */
 data class PassAtK(val tasks: Int, val pass1: Int, val pass3: Int) {
     init {
         require(tasks >= 0 && pass1 in 0..pass3 && pass3 <= tasks) { "pass@1 ≤ pass@3 ≤ задач" }

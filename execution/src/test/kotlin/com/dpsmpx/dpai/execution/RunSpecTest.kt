@@ -8,7 +8,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.time.Duration.Companion.seconds
 
-/** `dpai.run-spec`: без захвата — v1 (его читает агент прежней версии), с захватом — v2 (D-55). */
+/** `dpai.run-spec`: без захвата — v1 (его читает агент прежней версии), с захватом — v2 (D-69). */
 class RunSpecTest {
     @Test
     fun streamSpecStaysV1AndCaptureIsV2() {

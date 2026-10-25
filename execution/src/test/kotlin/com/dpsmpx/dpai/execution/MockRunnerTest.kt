@@ -93,7 +93,7 @@ class MockRunnerTest {
             assertEquals(want.status, t.status, "$scenario: ${t.diagnostics}")
             want.code?.let { assertTrue(t.diagnostics.any { d -> d.code == it }, "$scenario: нет $it в ${t.diagnostics}") }
             if (scenario == MockScenario.SLOW_OUTPUT) assertTrue(polls > 3, "медленный вывод приходит частями")
-            // Ответ ревью по схеме (D-59) — в `structured_output`; без схемы — только текст.
+            // Ответ ревью по схеме (D-73) — в `structured_output`; без схемы — только текст.
             assertEquals(scenario in setOf(MockScenario.REVIEW_PASS, MockScenario.REVIEW_BLOCK), t.structured != null, "$scenario: ${t.structured}")
         }
     }

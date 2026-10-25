@@ -24,7 +24,7 @@ import kotlin.time.Duration.Companion.seconds
  * [AuthStatus], который оркестратор применяет к слоту
  * (`Accounts.observeAuthStatus`). Токенов вывод не содержит; email и
  * организацию агент сводит в отпечаток на target и на диск их не пишет
- * (`OutputCapture.AUTH_STATUS`, D-55): в журнале запуска — только
+ * (`OutputCapture.AUTH_STATUS`, D-69): в журнале запуска — только
  * `dpai.auth-status`.
  *
  * Без ожидания: [start] запускает пробу, [poll] возвращает итог, когда

@@ -7,7 +7,7 @@ import com.dpsmpx.dpai.execution.process.ProcessSpec
 import com.dpsmpx.dpai.execution.process.RunningProcess
 
 /**
- * Файлы Linux-среды в приложении на стороне хоста (D-61, D-68): [proot] и
+ * Файлы Linux-среды в приложении на стороне хоста (D-75, D-82): [proot] и
  * [loader] — из каталога библиотек приложения (запуск из каталога данных
  * при targetSdk 29+ запрещён, `docs/research/LINUX_IN_APP.md`, §1),
  * [rootfs] — распакованный Alpine, [tmp] — служебный каталог proot.
@@ -24,7 +24,7 @@ data class ProotLayout(
 }
 
 /**
- * Процессы внутри Alpine под proot (D-68): команда [ProcessSpec] — команда
+ * Процессы внутри Alpine под proot (D-82): команда [ProcessSpec] — команда
  * гостя, [ProcessSpec.workDir] — каталог гостя, [ProcessSpec.environment] —
  * окружение гостя целиком (`null` — [GUEST_ENVIRONMENT]); окружение
  * приложения Android гостю не передаётся.

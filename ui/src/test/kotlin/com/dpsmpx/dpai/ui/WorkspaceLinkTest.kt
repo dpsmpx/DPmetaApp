@@ -39,7 +39,7 @@ class WorkspaceLinkTest {
         assertFailsWith<IllegalArgumentException> { WorkspaceLink.pcAuthorize("ssh-ed25519 $b64' ; Remove-Item C:\\ ; ' dpai-workspace") }
     }
 
-    /** ПК с Linux (D-56): ключ связки — в authorized_keys пользователя, из Tailscale, прежняя строка заменяется. */
+    /** ПК с Linux (D-70): ключ связки — в authorized_keys пользователя, из Tailscale, прежняя строка заменяется. */
     @Test
     fun linuxPcGetsTheLinkKeyInItsOwnAuthorizedKeys() {
         val home = java.nio.file.Files.createTempDirectory("dpai-link").toFile()

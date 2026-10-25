@@ -139,7 +139,7 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Targets (${targets.size})", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                // Открытые вкладки терминала живут, пока жив процесс (D-57): вернуться к ним.
+                // Открытые вкладки терминала живут, пока жив процесс (D-71): вернуться к ним.
                 val terminals = TerminalHub.count.intValue
                 if (terminals > 0) TextButton(onClick = { TerminalActivity.start(context, null) }) { Text("Терминалы ($terminals)") }
                 Button(onClick = { form = true }) { Text("Добавить") }
@@ -166,7 +166,7 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
                         TextButton(onClick = { projectFor = t }) { Text("Проект") }
                         TextButton(onClick = { removing = t }) { Text("Удалить") }
                     }
-                    // Свой терминал (D-57): оболочка target или интерактивный claude слота (вход, /usage).
+                    // Свой терминал (D-71): оболочка target или интерактивный claude слота (вход, /usage).
                     Row {
                         TextButton(onClick = { TerminalActivity.start(context, t.id.value) }) { Text("Терминал") }
                         if (t.configDir != null && t.platform == com.dpsmpx.dpai.execution.target.TargetPlatform.POSIX) {

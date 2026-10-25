@@ -51,7 +51,7 @@ class SlotAuthProbeTest {
         assertEquals(listOf("claude", "auth", "status", "--json"), spec.command)
         assertEquals("/home/u/.claude-slot1", spec.setEnv[SlotEnvironment.CONFIG_DIR])
         assertTrue("ANTHROPIC_API_KEY" in spec.unsetEnv)
-        // Агент сводит вывод в отпечаток на target (D-55, A-72).
+        // Агент сводит вывод в отпечаток на target (D-69, A-72).
         assertEquals(com.dpsmpx.dpai.execution.agent.OutputCapture.AUTH_STATUS, spec.capture)
         val status = probe.poll(run).valueOrNull()!!
         assertTrue(status.isClaudeLogin)

@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.io.TempDir
 
 /**
- * Корневая система Linux-среды в приложении (D-61, D-68): распаковка
+ * Корневая система Linux-среды в приложении (D-75, D-82): распаковка
  * minirootfs через Vfs. Ссылки и права записываются в память теста —
  * поведение одно на Linux и Windows; настоящий minirootfs Alpine — если
  * сборка приложения уже загрузила его в кеш Gradle.
@@ -112,7 +112,7 @@ class RootfsInstallerTest {
         assertEquals(DiagCode.STORAGE_IO_FAILED, assertIs<Outcome.Failure>(r).errors.first().code)
     }
 
-    /** Настоящий minirootfs Alpine 3.24.3 из кеша сборки приложения (D-68); его нет — проверка пропущена. */
+    /** Настоящий minirootfs Alpine 3.24.3 из кеша сборки приложения (D-82); его нет — проверка пропущена. */
     @Test
     fun unpacksRealAlpineMinirootfs() {
         val gradleHome = System.getenv("GRADLE_USER_HOME") ?: File(System.getProperty("user.home"), ".gradle").path

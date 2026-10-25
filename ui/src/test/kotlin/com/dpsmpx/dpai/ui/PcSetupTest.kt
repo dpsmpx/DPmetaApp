@@ -17,7 +17,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** Команда настройки ПК (D-52, D-56): ключ подставлен, чужое не подставляется; Linux — прогон в песочнице. */
+/** Команда настройки ПК (D-52, D-70): ключ подставлен, чужое не подставляется; Linux — прогон в песочнице. */
 class PcSetupTest {
     @TempDir
     lateinit var dir: Path

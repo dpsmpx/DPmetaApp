@@ -59,7 +59,7 @@ import kotlin.time.Duration.Companion.minutes
 import org.junit.jupiter.api.io.TempDir
 
 /**
- * Ревью задачи (D-59) сквозь контур: настоящий `git` и шаги проверки,
+ * Ревью задачи (D-73) сквозь контур: настоящий `git` и шаги проверки,
  * `MockRunner` вместо Claude. Роли — отдельными сессиями после проверки и
  * коммита, по одной за раз; блокирующее — повтор с выжимкой; без итога —
  * повтор, затем запрос человеку; перезапуск во время ревью ревью не теряет.
@@ -253,7 +253,7 @@ class ReviewFlowTest {
         assertEquals(2, orchestrator.sessions.sessions.values.count { it.task == t && it.review != null })
     }
 
-    /** Роли в `task.policy` (D-59): без поля — как были, пустой набор снимает, у `TRIVIAL` — отказ, а не тихое снятие. */
+    /** Роли в `task.policy` (D-73): без поля — как были, пустой набор снимает, у `TRIVIAL` — отказ, а не тихое снятие. */
     @Test
     fun policyKeepsRolesUnlessGiven() {
         setUp()

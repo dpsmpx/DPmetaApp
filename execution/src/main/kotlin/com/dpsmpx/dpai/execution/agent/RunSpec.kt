@@ -19,7 +19,7 @@ import kotlin.time.Duration.Companion.seconds
  * Как агент обращается с выводом процесса: `STREAM` — в журнал запуска
  * построчно; `AUTH_STATUS` — stdout `claude auth status --json` держится в
  * памяти, а в журнал идёт только `dpai.auth-status` с отпечатком аккаунта:
- * email и организация не попадают на диск target (D-55; ревью A-72).
+ * email и организация не попадают на диск target (D-69; ревью A-72).
  */
 enum class OutputCapture { STREAM, AUTH_STATUS }
 
@@ -63,7 +63,7 @@ data class RunSpec(
 
     companion object {
         const val FORMAT = "dpai.run-spec"
-        /** v2: способ вывода [capture] (D-55). */
+        /** v2: способ вывода [capture] (D-69). */
         const val VERSION = 2
         val ENV_NAME = Regex("[A-Za-z_][A-Za-z0-9_]{0,127}")
 
