@@ -115,6 +115,11 @@ Windows. Внешний мир ждут `RealTime.await` из `testkit` — ог
 помощник уже готов, поэтому тест идёт дольше. Протокол супервизора с
 помощником — с подделкой помощника на любой ОС (`jobHelperFollowsTheTurn`).
 
+Агент в процессе приложения (D-75) — `InAppAgentHostTest`: те же вызовы
+`AgentClient`, супервизор — поток, опознание — по `/proc`, поэтому тест
+идёт только на Linux; процессы хода — `LocalProcessHost` (proot и JNI —
+`JniProcessesTest` и проверка на телефоне).
+
 ## 8. Проверка по SSH
 
 На машине автора (7 октября 2026) — Windows-target на ней же: OpenSSH

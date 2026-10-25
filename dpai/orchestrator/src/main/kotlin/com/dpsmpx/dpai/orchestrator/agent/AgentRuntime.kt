@@ -38,7 +38,6 @@ import com.dpsmpx.dpai.execution.process.LocalProcessHost
 import com.dpsmpx.dpai.execution.process.OutputStream
 import com.dpsmpx.dpai.execution.process.ProcessHost
 import com.dpsmpx.dpai.execution.process.ProcessSpec
-import com.dpsmpx.dpai.execution.process.ProcessTree
 import com.dpsmpx.dpai.execution.process.RunningProcess
 import com.dpsmpx.dpai.execution.process.TurnJob
 import com.dpsmpx.dpai.execution.process.run
@@ -48,7 +47,6 @@ import com.dpsmpx.dpai.storage.document.DocumentStore
 import com.dpsmpx.dpai.storage.journal.EventJournal
 import com.dpsmpx.dpai.storage.vfs.NioVfs
 import java.io.File
-import java.lang.management.ManagementFactory
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 import kotlin.time.Duration
@@ -93,7 +91,8 @@ class AgentRuntime(
     private val version: String,
     private val selfCommand: List<String>,
     private val host: ProcessHost = LocalProcessHost(clock),
-    private val detacher: Detacher = Detacher(),
+    /** Запуск супервизора отдельным процессом на target; `null` — по умолчанию (в приложении не нужен: там [supervision] — поток). */
+    detacher: Detacher? = null,
     private val heartbeatEvery: Duration = 30.seconds,
     private val pollEvery: Duration = 250.milliseconds,
     private val supervisorWait: Duration = 10.seconds,
@@ -106,13 +105,21 @@ class AgentRuntime(
      * супервизора.
      */
     private val jobHelper: JobHelper? = if (Detacher.isWindows()) WINDOWS_JOB else null,
+    /**
+     * Где живёт супервизор хода и как опознать процессы после его потери
+     * (D-75): на target — отдельный процесс ОС ([ProcessSupervision]), в
+     * приложении — поток ([ThreadSupervision]).
+     */
+    private val supervision: Supervision = ProcessSupervision(home, selfCommand, detacher ?: Detacher(), clock),
+    /** Память машины для `doctor`: на JVM — сведения JDK ([JvmOsFacts]), в приложении — `/proc/meminfo`. */
+    private val osFacts: () -> OsFacts = JvmOsFacts::read,
 ) {
-    private val vfs = NioVfs(Path.of(home))
+    private val vfs = NioVfs(File(home).toPath())
     private val ids = IdGenerator(clock, RandomSource.secure())
     private val pace = java.util.concurrent.CountDownLatch(1)
 
     init {
-        restrictHome(Path.of(home))
+        restrictHome(File(home).toPath())
     }
 
     private fun runDir(id: SessionId) = "runs/${id.value}"
@@ -149,9 +156,7 @@ class AgentRuntime(
             }
         }
         val last = lastSequence(id)
-        val argv = selfCommand + listOf("agent", "supervise", "--home", home, "--run", id.value)
-        val log = File(home, "${runDir(id)}/supervisor.log").path
-        return when (val spawned = detacher.spawn(argv, home, log)) {
+        return when (val spawned = supervision.launch(id) { supervise(id) }) {
             is Outcome.Failure -> {
                 val failed = doc.copy(state = RunState.EXITED, reason = ExitReason.START_FAILED)
                 store.write(RUN_KEY, failed.toJson())
@@ -199,8 +204,8 @@ class AgentRuntime(
                 if (r is Outcome.Failure) journalError.compareAndSet(null, r.errors.firstOrNull()?.message ?: "запись не подтверждена")
             }
         }
-        val self = ProcessHandle.current()
-        var current = doc.copy(supervisorPid = self.pid(), supervisorStartedAt = ProcessTree.startedAtMillis(self), bootAt = ProcessTree.bootMillis())
+        val self = supervision.self()
+        var current = doc.copy(supervisorPid = self.pid, supervisorStartedAt = self.startedAt, bootAt = self.bootAt)
         // Супервизор записывает себя до запуска процесса: так stop находит его и просит, а не пишет сам (A-4).
         store.write(RUN_KEY, current.toJson()).let { if (it is Outcome.Failure) return AgentReply.failure("supervise", it.diagnostics) }
         if (stopRequest(store, doc.turn) != null) {
@@ -261,8 +266,7 @@ class AgentRuntime(
         }
         // Вход хода (prompt) отдан процессу — на target он больше не хранится (аудит 2026-10-07, A-5).
         if (stdin != null) store.delete(INPUT_KEY)
-        val handle = process.pid?.let { ProcessHandle.of(it).orElse(null) }
-        current = current.copy(state = RunState.RUNNING, pid = process.pid, pidStartedAt = handle?.let(ProcessTree::startedAtMillis))
+        current = current.copy(state = RunState.RUNNING, pid = process.pid, pidStartedAt = process.pid?.let(supervision::startedAt))
         store.write(RUN_KEY, current.toJson())
         // Объект задания Windows (A-9) готовится, пока ход идёт; проба входа — короткая, без него.
         var jobProblem: Diagnostic? = null
@@ -270,7 +274,7 @@ class AgentRuntime(
         val job = jobHelper?.takeIf { !capture }?.let { helper ->
             process.pid?.let { pid ->
                 runCatching { vfs.delete(releaseMark) }
-                when (val j = TurnJob.start(host, helper(pid, self.pid(), File(home, releaseMark)))) {
+                when (val j = TurnJob.start(host, helper(pid, self.pid, File(home, releaseMark)))) {
                     is Outcome.Success -> j.value
                     is Outcome.Failure -> null.also {
                         val why = "помощник объекта задания не запустился: фоновые потомки хода могут остаться (A-9)"
@@ -423,11 +427,10 @@ class AgentRuntime(
         }
         if (doc.state == RunState.EXITED) return AgentReply("stop", ok = true, run = doc.status(last), stop = StopResult(false, emptyList()))
         if (doc.state == RunState.STARTING && doc.supervisorPid == null) return stopBeforeSupervisor(id, doc, last, grace, store)
-        val supervisor = doc.supervisorPid?.let { ProcessTree.find(it, doc.supervisorStartedAt, doc.bootAt) }
-        if (supervisor != null) return stopWithSupervisor(id, doc, last, supervisor, grace, store)
+        val supervisor = doc.supervisorMark()
+        if (supervisor != null && supervision.alive(id, supervisor)) return stopWithSupervisor(id, doc, last, supervisor, grace, store)
         // Супервизор потерян: процесс останавливается по идентификатору и времени старта.
-        val child = doc.pid?.let { ProcessTree.find(it, doc.pidStartedAt, doc.bootAt) }
-        val r = child?.let { ProcessTree.stop(it, grace, clock, doc.supervisorPid?.takeIf { sid -> ProcessTree.sessionOf(it.pid()) == sid }) } ?: ProcessTree.Result(false, emptyList())
+        val r = doc.childMark()?.let { supervision.stopOrphan(it, supervisor, grace) } ?: StopResult(false, emptyList())
         return stopLost(id, doc, last, r, store)
     }
 
@@ -435,9 +438,9 @@ class AgentRuntime(
         store.write(STOP_KEY, JsonObject.of("turn" to JsonNumber.of(turn), "graceSeconds" to JsonNumber.of(grace.inWholeSeconds.coerceAtLeast(1))))
     }
 
-    private fun stopWithSupervisor(id: SessionId, doc: RunDoc, last: Long, supervisor: ProcessHandle, grace: Duration, store: DocumentStore): AgentReply {
+    private fun stopWithSupervisor(id: SessionId, doc: RunDoc, last: Long, supervisor: ProcessMark, grace: Duration, store: DocumentStore): AgentReply {
         requestStop(store, doc.turn, grace)
-        val waited = runCatching { supervisor.onExit().get((grace + SUPERVISOR_EXTRA).inWholeMilliseconds, TimeUnit.MILLISECONDS) }.isSuccess
+        val waited = supervision.awaitEnd(id, supervisor, grace + SUPERVISOR_EXTRA)
         if (waited) {
             val after = observe(id)
             if (after is Outcome.Success) {
@@ -445,7 +448,7 @@ class AgentRuntime(
             }
         }
         // Супервизор не уложился — останавливается он сам вместе со своим деревом.
-        return stopLost(id, doc, last, ProcessTree.stop(supervisor, grace, clock, supervisor.pid().takeIf { ProcessTree.sessionOf(it) == it }), store)
+        return stopLost(id, doc, last, supervision.stopSupervisor(id, supervisor, doc.childMark(), grace), store)
     }
 
     /**
@@ -467,8 +470,8 @@ class AgentRuntime(
             when {
                 now.state == RunState.EXITED -> return AgentReply("stop", ok = true, run = now.status(lastNow), stop = StopResult(false, emptyList()))
                 now.supervisorPid != null -> {
-                    val supervisor = ProcessTree.find(now.supervisorPid, now.supervisorStartedAt, now.bootAt)
-                    return if (supervisor != null) stopWithSupervisor(id, now, lastNow, supervisor, grace, store) else stop(id, grace)
+                    val supervisor = now.supervisorMark()!!
+                    return if (supervision.alive(id, supervisor)) stopWithSupervisor(id, now, lastNow, supervisor, grace, store) else stop(id, grace)
                 }
                 now.state == RunState.LOST -> return stop(id, grace)
             }
@@ -477,7 +480,7 @@ class AgentRuntime(
         return AgentReply("stop", ok = true, diagnostics = listOf(pending), run = doc.status(last), stop = StopResult(false, emptyList()))
     }
 
-    private fun stopLost(id: SessionId, doc: RunDoc, last: Long, r: ProcessTree.Result, store: DocumentStore): AgentReply {
+    private fun stopLost(id: SessionId, doc: RunDoc, last: Long, r: StopResult, store: DocumentStore): AgentReply {
         val exited = doc.copy(state = RunState.EXITED, reason = ExitReason.STOPPED)
         // Ход потерян и закрыт: вход хода (prompt), если процесс так и не начался, на target не остаётся (ревью A-16).
         store.delete(INPUT_KEY)
@@ -498,7 +501,7 @@ class AgentRuntime(
 
     fun doctor(): AgentReply {
         File(home).mkdirs()
-        val os = ManagementFactory.getOperatingSystemMXBean() as? com.sun.management.OperatingSystemMXBean
+        val os = osFacts()
         val report = DoctorReport(
             agentVersion = version,
             os = System.getProperty("os.name").orEmpty(),
@@ -507,8 +510,8 @@ class AgentRuntime(
             timeMillis = clock.now().epochMillis,
             termux = System.getenv("PREFIX")?.contains("com.termux") == true,
             diskFreeBytes = File(home).usableSpace.takeIf { it > 0 },
-            memoryTotalBytes = os?.totalMemorySize,
-            memoryFreeBytes = availableMemory(meminfo(), os?.freeMemorySize, os?.totalMemorySize),
+            memoryTotalBytes = os.totalBytes ?: meminfoTotal(meminfo()),
+            memoryFreeBytes = availableMemory(meminfo(), os.freeBytes, os.totalBytes),
             claude = probeTool(listOf("claude", "--version")),
             git = probeTool(listOf("git", "--version")),
         )
@@ -555,7 +558,7 @@ class AgentRuntime(
         }
         val last = knownLast ?: lastSequence(id)
         if (doc.state == RunState.EXITED) return Outcome.success(doc to last)
-        val supervisorAlive = doc.supervisorPid?.let { ProcessTree.find(it, doc.supervisorStartedAt, doc.bootAt) != null }
+        val supervisorAlive = doc.supervisorMark()?.let { supervision.alive(id, it) }
         val lost = when (supervisorAlive) {
             true -> false
             false -> true
@@ -705,6 +708,11 @@ class AgentRuntime(
             return if (limited && jvmFree != null) minOf(available, jvmFree) else available
         }
 
+        /** `MemTotal` из `/proc/meminfo` — где JDK о памяти не говорит (в приложении); нет — `null`. */
+        internal fun meminfoTotal(meminfo: String?): Long? =
+            meminfo?.lineSequence()?.mapNotNull { MEMINFO_LINE.matchEntire(it.trim()) }?.firstOrNull { it.groupValues[1] == "MemTotal" }
+                ?.groupValues?.get(2)?.toLongOrNull()?.times(1024)
+
         /** Текст `/proc/meminfo`; нет файла (Windows, macOS) или он не читается — `null`. */
         private fun meminfo(): String? = try {
             File("/proc/meminfo").takeIf { it.isFile }?.readText()
@@ -740,6 +748,12 @@ internal data class RunDoc(
     val journalError: String? = null,
 ) {
     fun status(lastSequence: Long): RunStatus = RunStatus(id, state, pid, exitCode, reason, lastSequence, turn)
+
+    /** Супервизор хода для опознания ([Supervision]); ещё не записал себя — `null`. */
+    fun supervisorMark(): ProcessMark? = supervisorPid?.let { ProcessMark(it, supervisorStartedAt, bootAt) }
+
+    /** Процесс хода для опознания; ещё не запущен — `null`. */
+    fun childMark(): ProcessMark? = pid?.let { ProcessMark(it, pidStartedAt, bootAt) }
 
     fun toJson(): JsonObject {
         val f = linkedMapOf<String, JsonValue>(*FormatHeader.write(FORMAT, VERSION))

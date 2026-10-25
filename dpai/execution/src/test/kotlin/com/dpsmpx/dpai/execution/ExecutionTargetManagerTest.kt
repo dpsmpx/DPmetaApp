@@ -128,4 +128,19 @@ class ExecutionTargetManagerTest {
         assertEquals(DiagCode.TARGET_DISABLED, r.errors.single().code)
         assertEquals(TargetState.UNKNOWN, manager.setEnabled(target.id, true).valueOrNull()!!.health.state)
     }
+
+    /** Target «в приложении» (D-75): без SSH, через канал к агенту в процессе приложения; без канала — не регистрируется. */
+    @Test
+    fun inAppTargetNeedsTheAppAgentChannel() {
+        val inApp = ExecutionTarget(ids.next(IdKinds.TARGET), TargetType.IN_APP, "в приложении", TargetPlatform.POSIX, null, listOf("dpai"))
+        val refused = manager.register(inApp)
+        assertIs<Outcome.Failure>(refused)
+        assertEquals(DiagCode.UNSUPPORTED, refused.errors.single().code)
+
+        val app = ExecutionTargetManager(clock, policy, inAppHost = mock)
+        assertTrue(app.register(inApp) is Outcome.Success)
+        val run = ids.next(IdKinds.SESSION)
+        assertEquals(RunState.RUNNING, app.client(inApp.id).valueOrNull()!!.start(run, RunSpec(listOf("claude", "-p", "x"))).valueOrNull()!!.state)
+        assertEquals(RunState.RUNNING, mock.state(run), "вызов дошёл до канала в приложении")
+    }
 }
