@@ -31,15 +31,17 @@ DPmeta — **не зависимость**: ни один репозиторий
 ## Проверки
 
 ```sh
-tools/check.sh                       # самопроверка DPmeta: ссылки, реестр, тесты
-python3 tools/activity.py --root ..  # кто работает: свежие коммиты, невлитые ветки
-python3 tools/xref.py --root ..      # сверка ссылок между клонами экосистемы
-python3 tools/manifest.py --root ..  # манифест dpai.ecosystem для DP_AI_Orcestrator (M-11, C-13)
+CLONES=<клоны> tools/check.sh                                # самопроверка DPmeta: ссылки, реестр, тесты
+python3 tools/activity.py --root <клоны> --clone DPmeta=.    # кто работает: свежие коммиты, невлитые ветки
+python3 tools/xref.py --root <клоны> --clone DPmeta=.        # сверка ссылок между клонами экосистемы
+python3 tools/manifest.py --root <клоны> --clone DPmeta=.    # манифест dpai.ecosystem (M-11, C-13)
 ```
 
-Инструменты читают клоны репозиториев, лежащие рядом с DPmeta
-(каталоги — `tools/ecosystem.toml`, или по имени репозитория), и ничего в
-них не пишут. Нужен только Python ≥ 3.11.
+DPmeta — подсистема DPmetaApp, каталог `dpmeta/` (M-14); команды — из
+него. Инструменты читают клоны репозиториев из каталога `<клоны>`
+(каталоги — `tools/ecosystem.toml`, или по имени репозитория), DPmeta —
+этот каталог (`--clone DPmeta=.`), и ничего в них не пишут. Нужен только
+Python ≥ 3.11.
 
 ## Состояние
 

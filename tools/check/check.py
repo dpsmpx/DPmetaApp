@@ -74,8 +74,11 @@ CORE_HOME = "dpai/core/src/main/"
 CORE_OWN = {"dppass/": "D-30: ядро DPpass пока своё, сведение с ядром dpai — отдельной задачей с паритетом"}
 CORE_DECL = re.compile(r"^[ \t]*(?:(?:public|internal|private|sealed|data|value|enum|abstract|open|fun|inline)\s+)*"
                        r"(?:class|interface|object|typealias)\s+(" + "|".join(CORE_TYPES) + r")\b", re.M)
-# Срезы на дату — задним числом не правятся (CLAUDE.md, «Где что лежит»).
-AUDITS = "docs/audits/"
+# Имена в обратных кавычках, похожие на путь, но не пути: с переездом подсистемы её каталог
+# стал первым сегментом таких имён (D-43); срезы docs/audits/ задним числом не правятся.
+NOT_PATHS = {
+    "dpmeta/docs-sync": "имя ветки DPmeta в срезе docs/audits/2026-10-10-ecosystem.md, не путь",
+}
 # Документы автора, которые он ведёт сам (через веб-интерфейс): форма текста не проверяется,
 # чтобы не править их ради проверки (D-25).
 AUTHOR_FILES = {"MESTER_TECHNICAL_TASK_ROADMAP.md"}
@@ -309,9 +312,8 @@ def check_links(repo, r):
 
     Путь сверяется, если его первый каталог есть в репозитории; путь другого проекта
     пишется `Проект:путь` (`DPmeta:C-06`) и не сверяется. Заранее названные пути —
-    PLANNED, с причиной. Срез на дату (AUDITS) задним числом не правится: пути в его
-    обратных кавычках — как было на дату (например, имя ветки `dpmeta/…` до переезда
-    DPmeta сюда, D-43), их не сверяет; ссылки Markdown — сверяет.
+    PLANNED, с причиной. Имя в обратных кавычках, похожее на путь, но не путь, —
+    NOT_PATHS, с причиной; такой путь появился — находка (иначе список прятал бы его).
     """
     anchor_cache = {}
 
@@ -333,7 +335,7 @@ def check_links(repo, r):
                     r.add(f"{rel}:{n}", f"ссылка ведёт на несуществующий `{path}`")
                 elif frag and dest.endswith(".md") and frag not in anchors_of(dest):
                     r.add(f"{rel}:{n}", f"нет якоря `#{frag}` в `{dest}`")
-            for code in ([] if rel.startswith(AUDITS) else re.findall(r"`([^`\n]+)`", line)):
+            for code in re.findall(r"`([^`\n]+)`", line):
                 cand = path_candidate(code)
                 if not cand:
                     continue
@@ -342,6 +344,10 @@ def check_links(repo, r):
                     continue
                 r.scanned += 1
                 if path in repo.planned:
+                    continue
+                if path in NOT_PATHS:
+                    if repo.exists(path) or repo.is_dir(path):
+                        r.add(f"{rel}:{n}", f"`{path}` в NOT_PATHS, а такой путь есть — убрать из NOT_PATHS")
                     continue
                 if path.endswith("/"):
                     ok = repo.is_dir(path)

@@ -460,12 +460,16 @@ class LinksTest(CheckCase):
         self.assertCatches(self.sample({"docs/PROCESS.md": "`docs/PROVENANCE.md#nope`\n"}).run("docs.links"),
                            "нет якоря")
 
-    def test_audit_backtick_paths_are_as_of_their_date(self):
-        # Срез на дату не правится задним числом: его пути в обратных кавычках не сверяются, ссылки — сверяются.
-        s = self.sample({"docs/audits/2026-10-10-x.md": "`docs/NOPE.md`\n"})
+    def test_not_path_name_is_skipped(self):
+        # Имя ветки `dpmeta/docs-sync` в срезе — не путь (NOT_PATHS); соседний неверный путь — находка.
+        s = self.sample({"dpmeta/README.md": "# DPmeta\n", "docs/audits/2026-10-10-x.md": "`dpmeta/docs-sync`\n"})
         self.assertClean(s.run("docs.links"))
-        s = self.sample({"docs/audits/2026-10-10-x.md": "[x](nope.md)\n"})
-        self.assertCatches(s.run("docs.links"), "несуществующий")
+        s = self.sample({"dpmeta/README.md": "# DPmeta\n", "docs/audits/2026-10-10-x.md": "`dpmeta/NOPE.md`\n"})
+        self.assertCatches(s.run("docs.links"), "нет пути")
+
+    def test_not_path_that_exists(self):
+        s = self.sample({"dpmeta/docs-sync/x.md": "# x\n", "docs/PROCESS.md": "`dpmeta/docs-sync`\n"})
+        self.assertCatches(s.run("docs.links"), "убрать из NOT_PATHS")
 
     def test_code_block_is_skipped(self):
         self.assertClean(self.sample({"docs/PROCESS.md": "```\n[x](nope.md)\n```\n[p](PROVENANCE.md)\n"})
