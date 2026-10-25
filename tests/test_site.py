@@ -520,9 +520,7 @@ class JourneyPath(unittest.TestCase):
             next(s for s in d["stations"] if s["id"] == "all-in-one")["merged"] = {"nobody": "dpmetaapp"}
 
         def merge_into_future(d):
-            st = next(s for s in d["stations"] if s["id"] == "goal")
-            st["merged"] = {"dpvisualisation": "orchestrator"}
-            d["stations"][0]["merged"] = {"galdhold": "dpmeta"}
+            d["stations"][0]["merged"] = {"galdhold": "dpmeta"}  # на станции «2023» ни того, ни другого ещё нет
 
         for mutate, word in ((merge_unknown, "вошедший nobody"), (merge_into_future, "а dpmeta на маршруте ещё нет")):
             rep, out = self.build(self.repo(mutate))

@@ -51,9 +51,12 @@ def cmd_mark(a) -> int:
     if not mans:
         print("выпусков в реестре нет (data/provenance/site-releases)")
         return 0
+    from ..core.repo import Repo
+    tsa = a.tsa or (((((Repo().site().get("environments") or {}).get("production") or {}).get("deploy") or {})
+                     .get("mark") or {}).get("tsa")) or stamp.TSA_DEFAULT
     bad = 0
     for p, m in mans:
-        for s in stamp.stamp_all(p, a.tsa or stamp.TSA_DEFAULT):
+        for s in stamp.stamp_all(p, tsa):
             bad += s.state == "failed"
             print(f"{m['id']}: {s.kind} — {s.state}{(': ' + s.note) if s.note else ''}")
     print("  · новые .tsr и .ots — закоммитить рядом с манифестом")

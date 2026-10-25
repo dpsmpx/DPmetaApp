@@ -183,8 +183,9 @@ python3 -m tools.cs mark init | mark verify <файл|адрес> [--no-key] | m
 
 ## 9. Окружение
 
-- Python 3.10+ с PyYAML и jsonschema (`tools/requirements.txt`); сайт и
-  платформа — без других зависимостей.
+- Python 3.10+ с PyYAML и jsonschema (`tools/requirements.txt`); метка
+  изображений и перцептивный хэш (Д41) — ещё numpy и Pillow (там же); метки
+  OpenTimestamps — клиент `ots`; проверка `.tsr` — openssl.
 - Рендер изображений: Node.js и Playwright с Chromium (как раньше;
   `CS_CHROMIUM=<путь>`).
 - `CS_TODAY` — дата для тестов сроков; `CS_SKIP_RENDER=1` — без тестов

@@ -20,7 +20,6 @@ import hashlib
 import secrets
 import shutil
 import subprocess
-import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -57,13 +56,15 @@ def tsq(digest: bytes, nonce: int | None = None) -> bytes:
 
 
 def _read(buf: bytes, i: int) -> tuple[int, int, int]:
-    """(тег, начало тела, конец тела) элемента DER с позиции i."""
+    """(тег, начало тела, конец тела) элемента DER с позиции i; тело за концом буфера — IndexError."""
     tag, n = buf[i], buf[i + 1]
     i += 2
     if n & 0x80:
         k = n & 0x7F
         n = int.from_bytes(buf[i:i + k], "big")
         i += k
+    if i + n > len(buf):
+        raise IndexError("DER: длина за концом ответа")
     return tag, i, i + n
 
 
@@ -103,7 +104,7 @@ def rfc3161(manifest: Path, url: str = TSA_DEFAULT, post=urllib.request.urlopen,
     try:
         with post(req, timeout=timeout) as r:
             body = r.read(1_000_000)
-    except (urllib.error.URLError, OSError) as e:
+    except Exception as e:  # сеть, обрыв ответа (IncompleteRead), странный ответ — выгрузку не роняет (Д41)
         return Stamp("rfc3161", "pending", f"служба {url} недоступна ({type(e).__name__}) — позже: mark stamp")
     st = tsr_status(body)
     if st not in (0, 1):

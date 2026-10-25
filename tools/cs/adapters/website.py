@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 import urllib.request
 
 from ..common import Finding
@@ -66,6 +67,7 @@ class WebsiteAdapter(PlatformAdapter):
         rep = build(self.repo, self.site_env(), self.out_dir(), include=include)
         if rep.errors:
             raise PublishError("INVALID_CONTENT", rep.errors[0])
+        self._report = rep
         return rep
 
     def _deploy(self) -> None:
@@ -73,8 +75,14 @@ class WebsiteAdapter(PlatformAdapter):
             if self.env() == "production":
                 raise PublishError("MANUAL_REQUIRED", f"сборка готова в {self.out_dir()}; выгрузка на хостинг не настроена (Д35)")
             return  # staging — локальная сборка и есть сервер
-        res = deploy.run(self.repo, self.out_dir(), self.site_env(), store=self.credentials, runner=self.runner)
-        if not res.ok:
+        from ..mark.release import objects
+        rep = getattr(self, "_report", None)
+        res = deploy.run(self.repo, self.out_dir(), self.site_env(), store=self.credentials, runner=self.runner,
+                         objects=objects(rep.entries) if rep else None)
+        if res.ok:
+            for msg in res.problems:  # сайт выгружен, но манифест выпуска не записан (Д41) — не молча
+                print(f"  ✗ {msg}", file=sys.stderr)
+        else:
             # rsync запускался и упал — сеть или сервер; rsync идемпотентен, повтор безопасен.
             # Не запускался — запрет выгрузки (обычно его ловит check_identity раньше).
             raise PublishError("PLATFORM_UNAVAILABLE" if res.command else "PERMISSION_DENIED", "; ".join(res.problems))

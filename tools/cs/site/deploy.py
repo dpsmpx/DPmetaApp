@@ -80,6 +80,14 @@ def guard(repo: Repo, env: str = "production", store: EnvCredentialStore | None 
         why = session_may_deploy(repo)
         if why:
             out.append(why)
+    if (cfg.get("mark") or {}).get("required"):
+        from ..mark import key as mkey
+        try:
+            if mkey.load() is None:
+                out.append(f"нет ключа метки (Д41): {mkey.key_path()} — один раз на машине автора: "
+                           "python3 -m tools.cs mark init")
+        except ValueError as e:
+            out.append(f"ключ метки не читается: {e}")
     if cfg.get("kind") == "rsync":
         target = (store or EnvCredentialStore()).get(cfg.get("target_ref"))
         if not target:
@@ -118,7 +126,7 @@ def mark_sidecar(src: Path) -> Path:
     return src.with_name(src.name + ".mark.json")
 
 
-def mark_build(src: Path, key: bytes) -> list[dict]:
+def mark_build(src: Path, key: bytes, objs: dict | None = None) -> list[dict]:
     """Метка сборки ровно один раз: сборка уже с меткой (те же sha256, что записаны рядом) — не трогать."""
     from ..mark import release
     side = mark_sidecar(src)
@@ -128,14 +136,14 @@ def mark_build(src: Path, key: bytes) -> list[dict]:
         if have == {f["path"] for f in files} and all(
                 release.sha256((src / f["path"]).read_bytes()) == f["sha256"] for f in files):
             return files
-    files = release.mark_build(src, key)
+    files = release.mark_build(src, key, objs)
     side.write_text(json.dumps(files, ensure_ascii=False), encoding="utf-8")
     return files
 
 
 def run(repo: Repo, src: Path, env: str = "production", dry_run: bool = False,
         store: EnvCredentialStore | None = None, runner=subprocess.run, now=None,
-        post=None, stamp_runner=subprocess.run) -> DeployResult:
+        post=None, stamp_runner=subprocess.run, objects: dict | None = None) -> DeployResult:
     """Выгрузить готовую сборку src. dry_run — только показать изменения (rsync --dry-run)."""
     problems = guard(repo, env, store, dry_run)
     if problems:
@@ -149,7 +157,7 @@ def run(repo: Repo, src: Path, env: str = "production", dry_run: bool = False,
         if key is None:
             return DeployResult(False, problems=[f"нет ключа метки (Д41): {mkey.key_path()} — один раз на машине автора: "
                                                  "python3 -m tools.cs mark init"])
-        files = mark_build(src, key)  # повторяемо: пробный прогон видит те же байты, что и выгрузка
+        files = mark_build(src, key, objects)  # повторяемо: пробный прогон видит те же байты, что и выгрузка
     if cfg.get("kind") == "command":
         if dry_run:
             return DeployResult(True, list(cfg.get("command") or []), problems=["kind: command — показа изменений нет"])
@@ -164,7 +172,11 @@ def run(repo: Repo, src: Path, env: str = "production", dry_run: bool = False,
     res = DeployResult(True, shown, changes, output=(r.stdout or "")[-4000:],
                        marked=sum(1 for f in files or [] if f.get("method")))
     if files is not None and not dry_run:
-        res.release, res.stamps = record_release(repo, env, files, key, mcfg, now, post, stamp_runner)
+        try:  # rsync уже прошёл: сбой записи манифеста или меток времени выгрузку не роняет (Д41)
+            res.release, res.stamps = record_release(repo, env, files, key, mcfg, now, post, stamp_runner)
+        except Exception as e:
+            res.problems.append(f"манифест выпуска не записан ({type(e).__name__}: {e}) — сайт выгружен; "
+                                "повторить выгрузку: rsync и метка повторяемы, манифест запишется")
     return res
 
 
