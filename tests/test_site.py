@@ -492,6 +492,29 @@ class JourneyPath(unittest.TestCase):
         app_box = _re.search(r'<rect[^>]*class="(g-box[^"]*)"/><text[^>]*class="t-lab g-appt"', page)
         self.assertEqual(app_box.group(1), "g-box", "приложение уже есть — сплошная рамка")
 
+    def test_phase_b_started(self):
+        """Ответ автора 25.10.2026: фаза B — «идёт» с 11.10 (DPmetaApp D-29), а не «план»."""
+        page = self.page()
+        self.assertIn('<li class="st st-plan st-active" id="st-phase-b">', page)
+        self.assertIn('идёт с <time datetime="2026-10-11">11.10.2026</time>', page)
+        self.assertIn("Фаза B начата", page)
+        self.assertIn('class="r-dot r-dot-active"', page)
+        self.assertIn('<li class="st st-plan" id="st-phase-a">', page, "фаза A — по-прежнему план")
+        self.assertIn('<span class="rs-when">фаза B · идёт</span>', self.page("index.html"))
+        self.assertIn("in progress since", self.page("en/path/index.html"))
+
+    def test_bad_started_is_a_build_error(self):
+        def on_past(d):
+            next(s for s in d["stations"] if s["id"] == "game")["started"] = {"date": "2026-09-11", "text": {"fact": "APP-PHASE-B"}}
+
+        def after_now(d):
+            next(s for s in d["stations"] if s["id"] == "phase-b")["started"]["date"] = "2099-01-01"
+
+        for mutate, word in ((on_past, "только у станции плана"), (after_now, "позже «сейчас»")):
+            rep, out = self.build(self.repo(mutate))
+            self.assertTrue(any(word in e for e in rep.errors), (word, rep.errors))
+            self.assertFalse((out / "path/index.html").exists())
+
     def test_bad_merge_is_a_build_error(self):
         def merge_unknown(d):
             next(s for s in d["stations"] if s["id"] == "all-in-one")["merged"] = {"nobody": "dpmetaapp"}

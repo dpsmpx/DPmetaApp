@@ -67,7 +67,14 @@
             "additionalProperties": {"$ref": "#/$defs/nodeRef"}
           },
           "texts": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/text"}},
-          "plan": {"type": "boolean"}
+          "plan": {"type": "boolean"},
+          "started": {
+            "description": "Станция плана, которая уже идёт: с какого дня и факт об этом (фаза B, DPmetaApp D-29)",
+            "type": "object",
+            "required": ["date", "text"],
+            "additionalProperties": false,
+            "properties": {"date": {"type": "string", "format": "date"}, "text": {"$ref": "#/$defs/text"}}
+          }
         }
       }
     },

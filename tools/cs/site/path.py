@@ -31,6 +31,7 @@ L = {
                        "законченные системы и одно приложение над ними.",
         "lead": "Откуда я иду и к какой системе: маршрут по датам и цель, как я её записал.",
         "route": "Маршрут", "goal": "Конечная цель", "now": "сейчас", "plan": "план",
+        "active": "идёт", "since": "идёт с",
         "route_aria": "Маршрут: станции пути от первых проектов до записанной цели и две фазы впереди",
         "goal_aria": "Схема конечной цели: одно приложение, два ядра, пять направлений и визуализация под ними",
         "route_note": "Квадрат — репозиторий с работой к этой станции; станции — не в масштабе времени: "
@@ -56,6 +57,7 @@ L = {
                        "finished systems and one app over them.",
         "lead": "Where I come from and what system I'm heading for: the route by date and the goal as I wrote it down.",
         "route": "Route", "goal": "The end goal", "now": "now", "plan": "planned",
+        "active": "in progress", "since": "in progress since",
         "route_aria": "Route: stations of the path from the first projects to the written goal, and two phases ahead",
         "goal_aria": "The end goal: one app, two cores, five directions and a visualisation under them",
         "route_note": "A square is a repository with work by that station; stations are not to scale: "
@@ -177,6 +179,13 @@ def problems(data: dict, fact_ok, milestones: dict) -> list[str]:
             out.append(f"путь: станция {sid} пройдена, а стоит после станций плана")
         if not st.get("plan") and not st.get("date"):
             out.append(f"путь: станция {sid} без даты")
+        if st.get("started"):
+            if not st.get("plan"):
+                out.append(f"путь: станция {sid}: «идёт» — только у станции плана")
+            if _date(st["started"]["date"]) and _date(data.get("as_of")) and \
+                    _date(st["started"]["date"]) > _date(data.get("as_of")):
+                out.append(f"путь: станция {sid}: начата {st['started']['date']} — позже «сейчас» ({data.get('as_of')})")
+            text_ok(st["started"]["text"], f"станция {sid}, «идёт»")
         for r in st.get("repos") or []:
             if r not in nodes:
                 out.append(f"путь: станция {sid}: узла {r} нет в nodes")
@@ -332,12 +341,15 @@ def route_svg(data: dict, lang: str, goal_name: str) -> str:
             parts.append(f'<rect x="{x - fw / 2:.1f}" y="{top:.1f}" width="{fw:.1f}" height="{BASE - top + 6:.1f}" '
                          f'rx="6" class="r-frame"/>')
             parts.append(_text(x, top - 7, goal_name, "t-lab r-framet", "middle"))
-        dot = "r-dot r-dot-plan" if plan else "r-dot"
+        dot = ("r-dot r-dot-active" if st.get("started") else "r-dot r-dot-plan") if plan else "r-dot"
         parts.append(f'<circle cx="{x:.1f}" cy="{LINE}" r="7" class="{dot}"/>')
         parts.append(_text(x, LINE + 24, when_short(st, lang), "t-axis t-num", "middle"))
         if st.get("date"):
             years.append((x, _date(st["date"]).year))
-        parts.append(_lines(x, LINE + 44, wrap(label(st["title"], lang), step - 8, 13), "t-lab r-title", 16, "middle"))
+        title = wrap(label(st["title"], lang), step - 8, 13)
+        parts.append(_lines(x, LINE + 44, title, "t-lab r-title", 16, "middle"))
+        if st.get("started"):  # фаза плана, которая уже идёт
+            parts.append(_text(x, LINE + 44 + 16 * len(title), lab["active"], "t-lab r-activet", "middle"))
     # год скобкой под станциями, у которых подпись дня без года
     yb = LINE + 44 + 2 * 16 + 6
     for year in sorted({yr for _, yr in years}):
@@ -377,9 +389,14 @@ def route_list(data: dict, lang: str, say) -> str:
             chips = '<ul class="chips">' + "".join(
                 f'<li class="chip"><span class="sw pv-{nodes[r].get("group", "core")}" aria-hidden="true"></span>'
                 f'{E(name_of(nodes[r], lang))}</li>' for r in st["repos"]) + "</ul>"
-        cls = "st st-plan" if st.get("plan") else "st"
+        cls = ("st st-plan st-active" if st.get("started") else "st st-plan") if st.get("plan") else "st"
+        active = ""
+        if st.get("started"):
+            sd = st["started"]["date"]
+            active = (f'<p class="st-active-t">{E(lab["since"])} <time datetime="{sd}">{E(day_text(sd, lang))}</time></p>'
+                      + "".join(f"<p>{E(sentence(t))}</p>" for t in [say(st["started"]["text"])] if t))
         items.append(f'<li class="{cls}" id="st-{E(st["id"])}"><p class="st-when"><time{dt_attr}>{E(when(st, lang))}</time></p>'
-                     f'<h3>{E(label(st["title"], lang))}</h3>'
+                     f'<h3>{E(label(st["title"], lang))}</h3>{active}'
                      + "".join(f"<p>{E(sentence(t))}</p>" for t in texts) + chips + "</li>")
     return f'<ol class="route">{"".join(items)}</ol>'
 
@@ -593,8 +610,9 @@ def home_block(data: dict, lang: str, href: str) -> str:
             items.append(f'<li class="rs-now"><span class="rs-when">{E(day_text(data["as_of"], lang))}</span>'
                          f'<span class="rs-t">{E(lab["now"])}</span></li>')
             continue
-        cls = ' class="rs-plan"' if st.get("plan") else ""
-        items.append(f'<li{cls}><span class="rs-when">{E(when(st, lang))}</span>'
+        cls = (' class="rs-active"' if st.get("started") else ' class="rs-plan"') if st.get("plan") else ""
+        tail = f' · {lab["active"]}' if st.get("started") else ""
+        items.append(f'<li{cls}><span class="rs-when">{E(when(st, lang) + tail)}</span>'
                      f'<span class="rs-t">{E(label(st["title"], lang))}</span></li>')
     return (f'<h2>{E(lab["home_h2"])}</h2><ol class="route-strip">{"".join(items)}</ol>'
             f'<p><a href="{E(href)}">{E(lab["home_link"])} →</a></p>')

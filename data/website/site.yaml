@@ -43,5 +43,5 @@ ecosystem:                               # Д43: интерактивная мо
   # роли и стадии репозиториев на странице — только из реестра фактов (Д6, Д43); без факта — не выводятся
   roles: {galdhold: GH-GENRE, dplang: DP-WHAT, dpverify: VRF-WHAT, smi: SMI-WHAT, dpprofile: PRF-WHAT, dplearn: LRN-WHAT,
           market: MKT-WHAT, dpmeta: META-WHAT, dpmetaapp: APP-NOW, dpmonetization: MON-WHAT, dpvisualisation: VIS-WHAT}
-  stages: {galdhold: GH-STAGES, dplang: DP-STAGE, smi: SMI-SITE, dpverify: VRF-STAGE, dpprofile: PRF-STAGE, dplearn: LRN-STAGE,
-           market: MKT-STAGE, dpmeta: META-STAGE}
+  stages: {galdhold: GH-STAGES, dplang: DP-STAGE, smi: SMI-SITE, dpverify: VRF-NOW, dpprofile: PRF-STAGE, dplearn: LRN-STAGE,
+           market: MKT-NOW, dpmeta: META-STAGE}
