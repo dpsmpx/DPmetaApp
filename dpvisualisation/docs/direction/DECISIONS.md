@@ -707,6 +707,34 @@ DPmetaApp (`DPmetaApp:D-43`): DPvisualisation переезжает в DPmetaApp 
 SocialMediaImage, DPvisualisation, DPmeta, DPprofile у DPmetaApp, D-24):
 `TODO.md`.
 
+### D-26 — Переехавшие в DPmetaApp системы — узлы с историей до переезда, как DPpass
+
+**Статус.** Принято — ответ автора 25 октября 2026 в опросе сессии
+DPmetaApp на вопрос, как модель показывает SocialMediaImage,
+DPvisualisation, DPmeta и DPprofile после переезда (`DPmetaApp:D-43`):
+«Узлы остаются». Расширяет исключение D-24 из D-22 и ТЗ F-01 на эти
+системы.
+
+**Решение.**
+- Узлы `smi`, `dpvisualisation`, `dpmeta`, `dpprofile` остаются в
+  модели. Их счёт — история своего замороженного репозитория: работа до
+  слияния поддерева 25 октября 2026 и коммиты надписи об архиве после
+  него (в отличие от DPpass, D-24, они есть); работа после слияния — в
+  счёте DPmetaApp.
+- У узла DPmetaApp — `history_exclude` корней их историй (D-24); рабочие
+  `role` и `stage` и ссылки узлов — как подсистем DPmetaApp, ссылки на
+  файлы — по новым путям. Публичные тексты (`public_role`,
+  `public_stage`) — как раньше: новые подробности о закрытых проектах —
+  только по слову автора (D-21).
+- DP_AI_Orcestrator по-прежнему без узла (D-22): иначе — только новым
+  решением.
+
+**Почему.** Слово автора: проекты остаются видны на схеме и на сайте, а
+их работа до переезда не попадает в счёт DPmetaApp (D-24).
+
+**Проверка.** `python3 -m tools.dpvis model check`; `tests/test_collect.py`
+(влитая история не в счёте); срез — без `HISTORY_ROOT_NOT_FOUND`.
+
 ## История
 
 | Дата | Что |
@@ -722,3 +750,4 @@ SocialMediaImage, DPvisualisation, DPmeta, DPprofile у DPmetaApp, D-24):
 | 25 октября 2026 | D-23 — периферийные проекты с работой (AIM Trainer, DP_Clock, TrueJointTileMaker, Andors-Love) — в текущей системе по слову автора; уточняет D-20 |
 | 25 октября 2026 | D-24 — влитая история — у своего узла до слияния: DPpass до 16 октября — у узла `dppass`, после — DPmetaApp (слово автора); поле `history_exclude` |
 | 25 октября 2026 | D-25 — подсистема DPmetaApp, каталог `dpvisualisation/` (`DPmetaApp:D-43`, слово автора); репозиторий заморожен, архивирует автор |
+| 25 октября 2026 | D-26 — переехавшие в DPmetaApp SocialMediaImage, DPvisualisation, DPmeta, DPprofile — узлы с историей до переезда (слово автора); исключение D-24 расширено |
