@@ -3,6 +3,7 @@
 import contextlib
 import io
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -267,6 +268,15 @@ class HistoryExcludeTest(unittest.TestCase):
         self.assertEqual(s["flows"]["path.host"]["total"], 1)           # только работа в guest/ после слияния
         self.assertEqual(sum(s["nodes"]["claude"]["days"]), 2)
         self.assertNotIn("HISTORY_ROOT_NOT_FOUND", [d["code"] for d in s["diagnostics"]])
+
+    def test_shallow_clone_with_history_exclude_is_a_diagnostic(self):
+        shallow = self.root.parent / "shallow"
+        shallow.mkdir(exist_ok=True)
+        subprocess.run(["git", "clone", "-q", "--depth", "2", (self.root / "Host").as_uri(),
+                        str(shallow / "Host")], check=True, capture_output=True)
+        s = collect.collect(model_from(self.source(True)), shallow, NOW)
+        self.assertIn(("HISTORY_ROOT_NOT_FOUND", "host"),
+                      [(d["code"], d["subject"]) for d in s["diagnostics"]])
 
     def test_unknown_root_is_a_diagnostic_not_silent_zero(self):
         src = self.source(True)

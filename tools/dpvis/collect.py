@@ -153,6 +153,11 @@ def observe_repo(node: dict, path: Path, win: Window, diags: Diagnostics) -> tup
                               f"--before={int(win.now.timestamp())}", ref).strip()
         first = gitlog.first_commit_time(path, ref, skip)
         shallow = gitlog.is_shallow(path)
+        if roots and shallow and not missing:
+            # граница неполного клона отрезает часть влитой истории от корня: её коммиты — «свои» (D-24)
+            diags.add("HISTORY_ROOT_NOT_FOUND", nid,
+                      f"клон {path.name} неполный — влитая история из history_exclude может быть "
+                      "в счёте узла; нужен полный клон (D-24)")
         branches = gitlog.unmerged_branches(path, ref, skip)
     except gitlog.GitError as exc:
         diags.add("GIT_FAILED", nid, str(exc))
