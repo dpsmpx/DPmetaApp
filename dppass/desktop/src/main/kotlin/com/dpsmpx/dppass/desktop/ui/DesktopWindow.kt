@@ -42,6 +42,9 @@ class DesktopWindow(
 ) {
     private val frame = JFrame("DPpass")
 
+    /** Перерисовать «Подключение» после смены настроек из меню (без VPN, D-95). */
+    private var redrawConnect: () -> Unit = {}
+
     fun show() {
         Theme.apply(prefs.theme, System.getenv(), System.getProperty("user.home"))
         lateinit var servers: ServersPanel
@@ -53,14 +56,15 @@ class DesktopWindow(
             servers.refresh()
             connect.render(session.status.value)
         }
-        subscriptions = SubscriptionsPanel(graph, scope, changed) { run ->
+        subscriptions = SubscriptionsPanel(graph, scope, changed, { run ->
             if (run.needsReconnect(session.connectedProfile())) session.reconnectIfConnected()
-        }
-        val import = ImportFlow(graph, scope, { frame }, subscriptions, changed) {
+        }) { session.reconnectIfConnected() }
+        val import = ImportFlow(graph, scope, { frame }, subscriptions, changed, {
             relays.reload()
             tabs.selectedComponent = relays
-        }
+        }) { session.reconnectIfConnected() }
         connect = ConnectPanel(graph, session, prefs, import::fromClipboard)
+        redrawConnect = { connect.render(session.status.value) }
         servers = ServersPanel(graph, prefs, scope, { session.status.value }) {
             session.reconnectIfConnected()
             relays.render()
@@ -160,6 +164,18 @@ class DesktopWindow(
                 )
                 // Сайты напрямую с разбиением (D-72, D-82): список ПК; действует сразу.
                 add(JMenuItem("Сайты напрямую с разбиением…").apply { addActionListener { SplitSitesDialog.show(frame, graph, prefs, session) } })
+                // Свои списки сайтов (D-93): напрямую, через туннель, блокировать; действует сразу.
+                add(
+                    JMenuItem("Свои списки сайтов…").apply {
+                        addActionListener { SiteListsDialog.show(frame, graph.core, scope, { session.reconnectIfConnected() }) }
+                    },
+                )
+                // Подключение без VPN (D-95): локальный прокси с паролем вместо TUN.
+                add(
+                    JMenuItem("Подключение без VPN…").apply {
+                        addActionListener { LocalProxyDialog.show(frame, graph.core, { session.reconnectIfConnected() }) { redrawConnect() } }
+                    },
+                )
                 // Без сервера (D-73, D-83): остальные сайты и DNS; приложения — все (Linux их не различает).
                 add(serverlessMenu())
                 // Проверка новой сети при поднятом туннеле (D-80): выключено — только по кнопке на «Сети».

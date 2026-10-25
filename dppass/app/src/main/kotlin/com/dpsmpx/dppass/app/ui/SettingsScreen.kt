@@ -108,6 +108,15 @@ class SettingsScreen(host: Host) : Screen(host) {
                     Ui.matchWidth(),
                 )
                 addView(Ui.divider(context))
+                // Свои списки сайтов (D-93): раньше правил режима.
+                addView(
+                    Ui.ListRow(context, R.drawable.ic_route, context.getString(R.string.site_lists_title))
+                        .subtitle(SiteListsScreen.summary(host, policy))
+                        .trailing(Ui.icon(context, R.drawable.ic_chevron, R.color.text_secondary))
+                        .onClick { host.push(SiteListsScreen(host)) },
+                    Ui.matchWidth(),
+                )
+                addView(Ui.divider(context))
                 addView(
                     Ui.ListRow(context, R.drawable.ic_apps, context.getString(R.string.settings_apps))
                         .subtitle(appsSummary(policy))
@@ -155,6 +164,22 @@ class SettingsScreen(host: Host) : Screen(host) {
         body.addView(Ui.section(context, context.getString(R.string.settings_connection)))
         body.addView(
             Ui.listCard(context).apply {
+                // Подключение без VPN (D-95): локальный прокси с паролем вместо VPN.
+                val local = host.graph?.core?.localProxy?.current()?.valueOrNull()
+                addView(
+                    Ui.ListRow(context, R.drawable.ic_route, context.getString(R.string.local_proxy_title))
+                        .subtitle(
+                            if (local?.enabled == true) {
+                                context.getString(R.string.local_proxy_row_on, local.port)
+                            } else {
+                                context.getString(R.string.local_proxy_off)
+                            },
+                        )
+                        .trailing(Ui.icon(context, R.drawable.ic_chevron, R.color.text_secondary))
+                        .onClick { host.push(LocalProxyScreen(host)) },
+                    Ui.matchWidth(),
+                )
+                addView(Ui.divider(context))
                 addView(
                     Ui.ListRow(context, R.drawable.ic_shield, context.getString(R.string.settings_always_on))
                         // В списке VPN Android приложение — под ярлыком установки: у личной сборки он случаен (D-47, D-49).

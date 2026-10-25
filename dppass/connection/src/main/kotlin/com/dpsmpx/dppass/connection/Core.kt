@@ -23,6 +23,7 @@ import com.dpsmpx.dppass.engine.BackendCompiler
 import com.dpsmpx.dppass.engine.CapabilityChecker
 import com.dpsmpx.dppass.engine.EngineCapabilities
 import com.dpsmpx.dppass.engine.EngineSession
+import com.dpsmpx.dppass.engine.LocalProxySpec
 import com.dpsmpx.dppass.engine.ProxyEngine
 import com.dpsmpx.dppass.engine.ShareSpec
 import com.dpsmpx.dppass.engine.SocketProtector
@@ -35,6 +36,10 @@ import com.dpsmpx.dppass.routing.RouteDecision
 import com.dpsmpx.dppass.routing.RouteQuery
 import com.dpsmpx.dppass.routing.RoutingPolicy
 import com.dpsmpx.dppass.routing.Rule
+import com.dpsmpx.dppass.routing.SiteEntry
+import com.dpsmpx.dppass.routing.SiteListKind
+import com.dpsmpx.dppass.routing.SiteLists
+import com.dpsmpx.dppass.routing.SiteListsChange
 import com.dpsmpx.dppass.routing.SplitSites
 import com.dpsmpx.dppass.storage.BlobStore
 import com.dpsmpx.dppass.storage.Quarantine
@@ -141,6 +146,9 @@ class DPpassCore(
     /** Учёт трафика через сервер (D-92): сутки и расчётный период по сетям, порог мобильной сети. */
     val usage: UsageService = UsageService(UsageStore(store, quarantine), clock, zone)
 
+    /** Подключение без VPN (D-95): локальный прокси с паролем на 127.0.0.1. */
+    val localProxy: LocalProxyService = LocalProxyService(LocalProxyStore(store, quarantine))
+
     fun restore(): List<Diagnostic> = activation.restore().also { it.forEach(log::diagnostic) }
 
     /**
@@ -246,12 +254,14 @@ class DPpassCore(
         splitClientHello: Boolean = false,
         /** Сайты напрямую с разбиением (D-72): список пользователя, по умолчанию пуст. */
         splitSites: SplitSites = SplitSites.NONE,
+        /** Подключение без VPN (D-95): локальный прокси вместо [tun]; null — через VPN. */
+        local: LocalProxySpec? = null,
         pause: suspend (Long) -> Unit,
     ): ConnectionReport? {
         val ir = activation.state.activeConfig ?: return null
         val plan = plan(assessment, preferred, regime) ?: return null
         val orchestrator = ConnectionOrchestrator(compiler, engine, checker, health, clock, log, policy, stability, assessment ?: regime, splitMemory, pause)
-        return orchestrator.connect(ir, plan, tun, share, splitClientHello, splitSites)
+        return orchestrator.connect(ir, plan, tun, share, splitClientHello, splitSites, local)
     }
 
     /** Наблюдатель сессии (D-44): Android-слой кормит его пробами (D-32). */
@@ -314,6 +324,8 @@ class DPpassCore(
         checker: HealthChecker,
         tun: TunInput?,
         share: ShareSpec? = null,
+        /** Без VPN (D-95): локальный прокси вместо [tun]. */
+        local: LocalProxySpec? = null,
         pause: suspend (Long) -> Unit,
     ): ConnectionReport {
         val ir = relayConfig(device, at)
@@ -322,7 +334,7 @@ class DPpassCore(
         )
         log.info("relay_connect", "device" to Safe(device.id), "port" to device.port)
         val orchestrator = ConnectionOrchestrator(compiler, engine, checker, health, clock, log, policy, stability, null, pause = pause)
-        val report = orchestrator.connect(ir, plan, tun, share)
+        val report = orchestrator.connect(ir, plan, tun, share, local = local)
         // Вход раздачи ответил, а данные не пошли (D-59): сбоит туннель того телефона, а не сервер.
         val failure = (report as? ConnectionReport.Failed)?.attempts?.singleOrNull()?.failure
         if (report !is ConnectionReport.Failed || failure == null || failure.code !in RELAY_HEALTH_CODES) return report
@@ -344,6 +356,58 @@ class DPpassCore(
 
     /** Список «Напрямую с разбиением» (D-72) против ядра: коды geosite — по набору геоданных (D-27). */
     fun checkSplitSites(sites: SplitSites): List<Diagnostic> = compiler.checkSplitSites(sites)
+
+    /** Запись своего списка с geosite или geoip (D-93) — против набора ядра; null — код есть (или проверять нечем). */
+    fun checkGeoEntry(entry: SiteEntry, path: String): Diagnostic? = when (entry) {
+        is SiteEntry.GeoSite -> compiler.checkGeoCodes(listOf(entry.code), emptyList(), path).firstOrNull()
+        is SiteEntry.GeoIp -> compiler.checkGeoCodes(emptyList(), listOf(entry.code), path).firstOrNull()
+        else -> null
+    }
+
+    /** Профиль маршрутизации Happ (D-93) → что добавится в свои списки и что нет; коды geosite/geoip — против набора ядра. */
+    fun parseHappRouting(text: String): Outcome<HappRoutingImport> = HappRouting.parse(text) { e -> checkGeoEntry(e, "happ")?.message }
+
+    /** Профиль маршрутизации поставщика (D-94) → списки; коды geosite/geoip — против набора ядра, как у своих. */
+    fun parseProviderProfile(text: String): Outcome<HappRoutingImport> = HappRouting.provider(text) { e -> checkGeoEntry(e, "provider")?.message }
+
+    /** Списки поставщика, которые действуют у [sub], когда она применена (D-94): только с согласия и только разобранные. */
+    fun providerListsOf(sub: Subscription): SiteLists {
+        if (!sub.useProviderLists) return SiteLists.NONE
+        return sub.providerProfile?.let { parseProviderProfile(it.text).valueOrNull()?.lists } ?: SiteLists.NONE
+    }
+
+    /** Подписка, чья ревизия применена сейчас; null — действует свой документ или ничего (D-94). */
+    fun appliedSubscription(): Subscription? {
+        val source = activation.state.active?.source ?: return null
+        val st = subscriptions.state().valueOrNull() ?: return null
+        return st.activeId?.let(st::find)?.takeIf { source.substringBefore('#') == "subscription:${it.id}" }
+    }
+
+    /** Действующие списки поставщика (D-94): у применённой подписки, если пользователь их включил. */
+    fun activeProviderLists(): SiteLists = appliedSubscription()?.let(::providerListsOf) ?: SiteLists.NONE
+
+    /** Списки поставщика подписки [sub] для экрана (D-94); null — поставщик профиля не присылал. */
+    fun providerLists(sub: Subscription): ProviderListsView? {
+        val current = sub.providerProfile ?: return null
+        val parsed = parseProviderProfile(current.text)
+        val previous = sub.previousProviderProfile?.let { parseProviderProfile(it.text).valueOrNull() }
+        val now = parsed.valueOrNull()
+        return ProviderListsView(
+            subscription = sub.id,
+            profile = now,
+            problem = (parsed as? Outcome.Failure)?.errors?.first(),
+            receivedAtMillis = current.receivedAtMillis,
+            change = if (now != null && previous != null) SiteListsChange.between(previous.lists, now.lists) else null,
+            previousAtMillis = sub.previousProviderProfile?.receivedAtMillis,
+            inUse = sub.useProviderLists,
+            applied = appliedSubscription()?.id == sub.id,
+        )
+    }
+
+    /** Свои списки (D-93) — против набора ядра: все записи с кодом, которого нет. */
+    fun checkSiteLists(lists: SiteLists): List<Diagnostic> = SiteListKind.entries.flatMap { kind ->
+        lists[kind].entries.mapNotNull { checkGeoEntry(it, "${PolicyBuilder.LISTS_PATH}.${kind.wire}") }
+    }
 
     /**
      * Попадает ли соединение в список «Напрямую с разбиением» (D-72): тот же
