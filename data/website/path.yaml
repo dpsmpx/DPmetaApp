@@ -33,6 +33,10 @@ nodes:
   dpvisualisation: {name: DPvisualisation, kind: repo, group: new, role: {fact: VIS-WHAT, idx: 1}}
   orchestrator:    {name: DP_AI_Orcestrator, kind: repo, group: new, role: {fact: ORC-WHAT}}
   dpai:            {name: {ru: подсистема ИИ в DPmetaApp, en: the AI subsystem in DPmetaApp}, kind: other, role: {fact: ORC-WHAT}}
+  aimtrainer:      {name: DP AIM Trainer, kind: repo, group: new, role: {fact: AIM-WHAT}, stage: {fact: AIM-STAGE}}
+  dpclock:         {name: DP_Clock, kind: repo, group: new, role: {fact: CLK-WHAT}, stage: {fact: CLK-STAGE}}
+  tjtm:            {name: True Joint Tile Maker, kind: repo, group: new, role: {fact: TJTM-WHAT}, stage: {fact: TJTM-NOW}}
+  andorslove:      {name: Andors-Love, kind: repo, group: new, role: {fact: AL-WHAT}}
   github:          {name: GitHub, kind: service}
   site:            {name: {ru: сайт dpsmpx.com, en: the dpsmpx.com site}, kind: service}
   sessions:        {name: {ru: сессии Claude, en: Claude sessions}, kind: other}
@@ -78,6 +82,11 @@ stations:
     title: {ru: Всё в одном, en: All in one}
     merged: {orchestrator: dpmetaapp}
     texts: [{fact: APP-NOW}]
+  - id: periphery
+    date: 2026-10-25
+    title: {ru: Ещё четыре проекта, en: Four more projects}
+    repos: [aimtrainer, dpclock, tjtm, andorslove]     # слово автора 25.10.2026: и в «Пути» (DPvisualisation D-23)
+    texts: [{fact: ECO-PERIPHERY-2026-10-25}]
   - id: phase-a
     plan: true
     when: {ru: "фаза A", en: "phase A"}

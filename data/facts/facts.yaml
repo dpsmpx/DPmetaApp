@@ -1021,3 +1021,135 @@ facts:
     evidence:
       - {kind: decision, source: "dpsmpx/Galdhold DECISIONS.md Р12", ref: "f2ba263", date: 2026-10-04, verification: decision}
     notes: «CI» о нынешнем состоянии не писать.
+  # --- Периферийные проекты на сайте (поручение автора 25.10.2026: страницы проектов) ---
+  - id: AIM-WHAT
+    subject: aim_trainer
+    class: FACT
+    risk: low
+    public: true
+    statement: >-
+      DP AIM Trainer — программа для замера реакции и разминки перед шутерами: замер собирается
+      из опций конструктора, рекорды и среднее — по набору параметров, лучшие замеры сохраняются
+      реплеями (D-37…D-39). Первая версия на PascalABC.NET — в архиве репозитория.
+    allowed_wording:
+      ru: ["замер реакции и разминка перед шутерами: конструктор замеров, рекорды по параметрам, реплеи лучших попыток"]
+      en: ["reaction testing and warm-up before shooters: a test builder, records per settings, replays of the best attempts"]
+    recheck_by: 2026-11-25
+    evidence:
+      - {kind: decision, source: "dpsmpx/AIM_Trainer_pas docs/direction/DECISIONS.md D-37, D-38, D-39, D-09; CLAUDE.md", ref: "443a3ea", date: 2026-10-25, verification: decision}
+  - id: AIM-STAGE
+    subject: aim_trainer
+    class: FACT
+    risk: medium
+    public: true
+    statement: >-
+      На 25 октября 2026 года — версия на C++ и SDL3 для Windows и Linux (D-08, D-10); в ROADMAP
+      выполнено 22 задачи из 30; прогон на Windows делает автор.
+    allowed_wording:
+      ru: ["C++ и SDL3 для Windows и Linux; выполнено 22 задачи плана из 30"]
+      en: ["C++ and SDL3 for Windows and Linux; 22 of 30 planned tasks done"]
+    recheck_by: 2026-11-08
+    evidence:
+      - {kind: doc, source: "dpsmpx/AIM_Trainer_pas ROADMAP/ROADMAP.md (задачи [+] и [ ]), DECISIONS.md D-08, D-10", ref: "443a3ea", date: 2026-10-25, verification: reported}
+  - id: AIM-PRIVATE
+    subject: aim_trainer
+    class: FACT
+    risk: low
+    public: true
+    statement: Код закрыт — «© 2026 dpsmpx. Все права защищены» (D-91); репозиторий закрыт.
+    allowed_wording:
+      ru: ["код закрыт"]
+      en: ["closed source"]
+    evidence:
+      - {kind: decision, source: "dpsmpx/AIM_Trainer_pas DECISIONS.md D-91, LICENSE; репозиторий private (список репозиториев GitHub)", ref: "443a3ea", date: 2026-10-25, verification: decision}
+  - id: CLK-WHAT
+    subject: dp_clock
+    class: FACT
+    risk: low
+    public: true
+    statement: >-
+      DP_Clock — своё Android-приложение часов, разрабатываемое с нуля: будильники со сменными
+      графиками и подтверждением пробуждения, таймеры, секундомер, мировые часы с погодой, виджеты;
+      код чужих приложений часов не копируется.
+    allowed_wording:
+      ru: ["своё приложение часов для Android: будильники, таймеры, мировые часы, виджеты"]
+      en: ["my own Android clock app: alarms, timers, world clock, widgets"]
+    recheck_by: 2026-11-25
+    evidence:
+      - {kind: doc, source: "dpsmpx/DP_Clock README.md («Статус»), DECISIONS/D-003-ORIGINAL-IMPLEMENTATION.md", ref: "a1bbb85", date: 2026-10-25, verification: reported}
+  - id: CLK-STAGE
+    subject: dp_clock
+    class: FACT
+    risk: medium
+    public: true
+    statement: >-
+      Версия 0.11.0 на 25 октября 2026 года: MVP, будильник целиком, графики и исключения, мировые
+      часы и погода, виджеты, оформление, большие экраны и доступность (D-006…D-022); выпуска нет —
+      только отладочные сборки.
+    allowed_wording:
+      ru: ["версия 0.11.0: MVP и будильник целиком; выпуска пока нет"]
+      en: ["version 0.11.0: the MVP and the full alarm; not released yet"]
+    recheck_by: 2026-11-08
+    evidence:
+      - {kind: doc, source: "dpsmpx/DP_Clock README.md («Статус»), DECISIONS/D-005-DEBUG-BUILDS.md", ref: "a1bbb85", date: 2026-10-25, verification: reported}
+  - id: CLK-PRIVATE
+    subject: dp_clock
+    class: FACT
+    risk: low
+    public: true
+    statement: Код закрыт — репозиторий закрыт.
+    allowed_wording:
+      ru: ["код закрыт"]
+      en: ["closed source"]
+    evidence:
+      - {kind: doc, source: "dpsmpx/DP_Clock — репозиторий private (список репозиториев GitHub)", ref: "a1bbb85", date: 2026-10-25, verification: observed}
+  - id: TJTM-NOW
+    subject: truejointtilemaker
+    class: FACT
+    risk: low
+    public: true
+    statement: >-
+      Версия 1.6 на 25 октября 2026 года: перенос с PascalABC.NET на C++ и SDL3 для Windows и Linux;
+      слои, кадры и анимация, палитра до 256 цветов, свой формат проекта .tjt (PNG с проектом внутри),
+      редактор карт Andors-Love.
+    allowed_wording:
+      ru: ["версия 1.6: перенесён на C++ и SDL3, для Windows и Linux"]
+      en: ["version 1.6: ported to C++ and SDL3, for Windows and Linux"]
+    recheck_by: 2026-11-25
+    evidence:
+      - {kind: doc, source: "github.com/dpsmpx/TrueJointTileMaker README.md («Версия 1.6»)", ref: "abe887a", date: 2026-10-25, verification: observed}
+  - id: TJTM-OPEN
+    subject: truejointtilemaker
+    class: FACT
+    risk: low
+    public: true
+    statement: Код открыт — репозиторий публичный, лицензия GPL-3.0.
+    allowed_wording:
+      ru: ["открытый код под GPL-3.0"]
+      en: ["open source under GPL-3.0"]
+    evidence:
+      - {kind: code, source: "github.com/dpsmpx/TrueJointTileMaker LICENSE (GNU GPL v3)", ref: "abe887a", date: 2026-10-25, verification: observed}
+  - id: AL-OPEN
+    subject: andors_love
+    class: FACT
+    risk: low
+    public: true
+    statement: Код виден на GitHub — репозиторий публичный; файла лицензии нет.
+    allowed_wording:
+      ru: ["код виден на GitHub"]
+      en: ["source visible on GitHub"]
+    evidence:
+      - {kind: code, source: "github.com/dpsmpx/Andors-Love — публичный, без LICENSE", ref: "0e231a3", date: 2026-10-25, verification: observed}
+  - id: ECO-PERIPHERY-2026-10-25
+    subject: ecosystem
+    class: FACT
+    risk: low
+    public: true
+    statement: >-
+      25 октября 2026 года в текущую систему вошли ещё четыре проекта с работой в октябре:
+      DP AIM Trainer, DP_Clock, True Joint Tile Maker и Andors-Love (слово автора; DPvisualisation D-23).
+    allowed_wording:
+      ru: ["в систему вошли ещё четыре проекта с работой в октябре: AIM Trainer, DP_Clock, True Joint Tile Maker и Andors-Love"]
+      en: ["four more projects with work in October joined the system: AIM Trainer, DP_Clock, True Joint Tile Maker and Andors-Love"]
+    evidence:
+      - {kind: decision, source: "dpsmpx/SocialMediaImage docs/direction/DECISIONS.md, история 25.10.2026 (опрос автора); dpsmpx/DPvisualisation D-23", ref: "66a2537", date: 2026-10-25, verification: decision}
