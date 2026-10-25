@@ -169,6 +169,13 @@ class SubsystemScopeTest(CheckCase):
             with self.subTest(cid):
                 self.assertClean(s.run(cid))
 
+    def test_dpvisualisation_is_a_subsystem_too(self):
+        # DPvisualisation — подсистема со своим процессом (D-43): её номера без имени проекта — её проверкам.
+        s = self.sample({"dpvisualisation/docs/X.md": "# X\r\nСм. D-24, `docs/NOPE.md`.\n"})
+        for cid in ("repo.layout", "format.text", "docs.links", "docs.refs"):
+            with self.subTest(cid):
+                self.assertClean(s.run(cid))
+
     def test_secrets_are_searched_in_subsystem_too(self):
         token = "ghp" + "_" + "C3d4" * 9
         self.assertCatches(self.sample({"dpai/docs/X.md": f"{token}\n"}).run("security.secrets"), "github-token")
@@ -316,6 +323,17 @@ class SubsystemChecksTest(CheckCase):
         out = "printf '✓ schemas — данные\\n✗ links — ссылки в документах\\n    ✗ a.md:1: нет файла\\n'"
         s = self.sample({"sub/check.sh": f"#!/bin/sh\n{out}\nexit 1\n"})
         self.assertCatches(check.check_subsystems(s.root, {"sub": ("sub/check.sh", "--quick")})[0], "links")
+
+    def test_dpvisualisation_lines_are_steps(self):
+        # Вывод tools/check/run.sh DPvisualisation (D-43): «✓ id (0.0 с)»; итог «Итог static: …» — не шаг.
+        out = "printf '✓ process.decisions (0.0 с)\\n✓ docs.refs (0.0 с)\\nИтог static: всё прошло (2) — 0.2 с\\n'"
+        r = self.run_sub(f"#!/bin/sh\n{out}\n")
+        self.assertClean(r)
+        self.assertEqual(2, r.scanned)
+
+    def test_dpvisualisation_failing_check_is_reported(self):
+        out = "printf '✓ process.decisions (0.0 с)\\n✗ docs.refs (0.0 с)\\n    a.md:1: D-9 нигде не определён\\n'"
+        self.assertCatches(self.run_sub(f"#!/bin/sh\n{out}\nexit 1\n"), "docs.refs")
 
     def test_dp_verify_failing_check_is_reported(self):
         out = "printf '  ✓ docs.links    ссылок 10\\n  ✗ docs.refs     находок: 1\\n      a.md:1  D-9 не определено\\n'"

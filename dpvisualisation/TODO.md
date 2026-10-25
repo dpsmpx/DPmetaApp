@@ -12,6 +12,17 @@
       `script-src 'self'`, проверен снаружи в тот же день (SocialMediaImage,
       `TODO.md`).
 
+## Подсистема DPmetaApp (D-25)
+
+- [ ] `С` **Модель — под переезды `DPmetaApp:D-43`.** SocialMediaImage и
+      DPvisualisation с 25 октября 2026 — каталоги DPmetaApp, следом DPmeta
+      и DPprofile (их репозитории заморожены). По D-24: у узла DPmetaApp —
+      `history_exclude` их корней (SocialMediaImage `46b3afe…`,
+      DPvisualisation `9769a94…`), узлы проектов — история до слияния;
+      роли и стадии узлов, ссылки `Проект:путь` на перенесённые файлы,
+      реестр — из `dpmeta/` после переезда DPmeta. Затем — свежий срез с
+      полных клонов и комплект сайта.
+
 ## Вне репозитория — правят сессии тех репозиториев
 
 - [ ] `М` **DPmeta.** В ветке `claude/dreamy-bardeen-xe4k6r` — DPmetaApp и

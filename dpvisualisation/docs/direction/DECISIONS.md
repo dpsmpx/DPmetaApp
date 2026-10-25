@@ -673,6 +673,39 @@ DPmetaApp — 4 октября вместо 5-го, работа закрыто�
 `python3 -m tools.dpvis model check`; срез — первый коммит DPmetaApp
 5 октября 2026, без `HISTORY_ROOT_NOT_FOUND`.
 
+### D-25 — DPvisualisation — подсистема DPmetaApp, каталог `dpvisualisation/`
+
+**Статус.** Принято — ответы автора 25 октября 2026 в опросе сессии
+DPmetaApp (`DPmetaApp:D-43`): DPvisualisation переезжает в DPmetaApp
+«только как подкаталог со своими сборщиками, README и прочим», по одной
+системе за раз с проверками; в старом репозитории — надпись, что его
+нужно архивировать.
+
+**Решение.**
+- С 25 октября 2026 DPvisualisation живёт в репозитории DPmetaApp, в
+  каталоге `dpvisualisation/`: код, документы и история перенесены
+  слиянием поддерева (`main` `a1c1e93`). Репозиторий DPvisualisation
+  заморожен: работа там не начинается, архивирует его автор.
+- Свой процесс сохраняется: решения — этот журнал (извне —
+  `DPvisualisation:D-NN`), правила — `CLAUDE.md`, проверки —
+  `tools/check/run.sh` из каталога подсистемы; пути в документах — от
+  `dpvisualisation/`. Правила DPmetaApp (`DPmetaApp:CLAUDE.md`) — для
+  всего репозитория, `CLAUDE.md` подсистемы — для работы в её каталоге.
+- Формат `dpvis-model/1` и `dpvis-state/1` для DPmetaApp не меняется
+  (D-07): приложение читает их теперь из соседнего каталога.
+- Хук начала сессии и правила `ask` — в корне DPmetaApp
+  (`DPmetaApp:.claude/`): Claude Code читает настройки только корня.
+
+**Почему.** Слово автора; так уже живут `dpai/`, `dppass/` и
+`socialmediaimage/` (`DPmetaApp:D-28`, `DPmetaApp:D-30`, `DPmetaApp:D-43`).
+
+**Проверка.** `tools/check/run.sh full` из `dpvisualisation/` — зелёный;
+в корне DPmetaApp — шаг `subsystem.dpvisualisation`.
+
+**Следствия.** Модель — под переезды `DPmetaApp:D-43` (влитая история
+SocialMediaImage, DPvisualisation, DPmeta, DPprofile у DPmetaApp, D-24):
+`TODO.md`.
+
 ## История
 
 | Дата | Что |
@@ -687,3 +720,4 @@ DPmetaApp — 4 октября вместо 5-го, работа закрыто�
 | 12 октября 2026 | D-22 — DP_AI_Orcestrator — подсистема DPmetaApp сейчас (`DPmetaApp:D-28`): узел снят, потоки — у DPmetaApp; пункт D-21 об оркестраторе заменён |
 | 25 октября 2026 | D-23 — периферийные проекты с работой (AIM Trainer, DP_Clock, TrueJointTileMaker, Andors-Love) — в текущей системе по слову автора; уточняет D-20 |
 | 25 октября 2026 | D-24 — влитая история — у своего узла до слияния: DPpass до 16 октября — у узла `dppass`, после — DPmetaApp (слово автора); поле `history_exclude` |
+| 25 октября 2026 | D-25 — подсистема DPmetaApp, каталог `dpvisualisation/` (`DPmetaApp:D-43`, слово автора); репозиторий заморожен, архивирует автор |

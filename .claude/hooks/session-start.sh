@@ -99,6 +99,8 @@ fi
     echo "  проверки — cd dppass && tools/hostcheck/run.sh --quick|--full, итог для PR — run.sh report."
     echo "Подсистема SocialMediaImage — socialmediaimage/ (D-43): правила socialmediaimage/CLAUDE.md, начало —"
     echo "  его docs/session/HANDOFF.md; проверки — cd socialmediaimage && tools/check.sh --quick|--affected|(полный)."
+    echo "Подсистема DPvisualisation — dpvisualisation/ (D-43): правила dpvisualisation/CLAUDE.md;"
+    echo "  проверки — cd dpvisualisation && tools/check/run.sh [full] (Python 3.11+; full — Node.js и Chromium)."
     # Зависимости проверок SocialMediaImage (PyYAML, jsonschema и др.) — в веб-сессии, если их нет.
     if ! python3 -c "import yaml, jsonschema" 2>/dev/null; then
         if [ "${CLAUDE_CODE_REMOTE:-}" = "true" ]; then

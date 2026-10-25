@@ -14,6 +14,12 @@ D-20). Поддерживающий слой системы: данные тол
 (полустатичная выжимка, D-15). Что строится — ТЗ `docs/direction/TECHNICAL_TASK.md`;
 этапы — `ROADMAP/ROADMAP.md`; устройство — `docs/ARCHITECTURE.md`.
 
+С 25 октября 2026 — подсистема DPmetaApp, каталог `dpvisualisation/`
+(D-25, `DPmetaApp:D-43`): репозиторий DPvisualisation заморожен, работа
+идёт только здесь. Пути ниже — от `dpvisualisation/`, команды — из этого
+каталога; правила DPmetaApp (`DPmetaApp:CLAUDE.md`) — для всего
+репозитория, этот файл — для работы в каталоге подсистемы.
+
 ## Источник истины
 
 - Старшинство: `docs/direction/DECISIONS.md` → этот файл → ТЗ →
