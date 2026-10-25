@@ -595,7 +595,8 @@ Galdhold); DP Verify 1.0.0-rc2 поставлен в DPpass (этап 6) и Gald
 - **Где:** `DPmetaApp:socialmediaimage/data/progress/scope.yaml` — в
   `repos` отдельными строками `dpsmpx/DP_AI_Orcestrator` (`:111-117`),
   `dpsmpx/DPmeta` (`:98`), `dpsmpx/DPvisualisation` (`:118`), а также
-  DPpass, DPprofile и сама SocialMediaImage; рядом — `dpsmpx/DPmetaApp`.
+  DPpass (`:59`), SocialMediaImage (`:65`) и DPprofile (`:72`); рядом —
+  `dpsmpx/DPmetaApp` (`:133`).
 - **Что не так:** слияния поддеревьев принесли в историю `main` DPmetaApp
   историю шести систем с теми же хэшами: DP_AI_Orcestrator — 10 октября
   (`DPmetaApp:D-28`), DPpass — 16 октября (`DPmetaApp:D-30`),

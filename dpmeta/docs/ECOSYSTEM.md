@@ -10,6 +10,10 @@ DP_AI_Orcestrator и их связи — четвёртый, частичный 
 строки репозиториев, изменившихся после 10 октября, — Galdhold, DPlang,
 DP-Verify, DP_game_market_analytic_system, DP_AI_Orcestrator, DPmetaApp —
 и связи C-03, C-13 (`docs/reports/2026-10-11-ECOSYSTEM_HEALTH.md`).
+25 октября 2026 — проход после переездов в DPmetaApp
+(`docs/reports/2026-10-25-ECOSYSTEM_HEALTH.md`): строки систем, ставших его
+подсистемами, и репозиториев, изменившихся после 12 октября, — Galdhold,
+DPlang, DP_game_market_analytic_system, Andors-Love, TrueJointTileMaker.
 Деление на ядро, управление, поддерживающий слой и архив — слово автора
 9 октября 2026 (M-10); место каждого проекта — поле `place` реестра
 `tools/ecosystem.toml`.
@@ -24,24 +28,34 @@ DP_game_market_analytic_system, — журнал решений, `CLAUDE.md`, `T
 `CLAUDE.md`, а `TODO.md` лежит в `docs/` (RISK-05). Все закрытые
 (private); DP_AI_Orcestrator по ответу автора остаётся закрытым и
 ведётся по правилам публичного (`DP_AI_Orcestrator:D-16`,
-`DP_AI_Orcestrator:TODO.md`). С 10 октября 2026 DP_AI_Orcestrator — в
-составе DPmetaApp: код, документы и история — подсистема «AI» в
-`DPmetaApp:dpai/`, сам репозиторий заморожен (`DPmetaApp:D-28`, слово
-автора «всё в одном»). Место в реестре пока прежнее — `core`; каким оно
-станет, решает автор (RISK-11).
+`DP_AI_Orcestrator:TODO.md`).
+
+**Всё в одном** (слово автора, `DPmetaApp:D-27`, `DPmetaApp:D-28`): системы
+активных репозиториев переезжают в DPmetaApp подсистемами — код,
+документы и история слиянием поддерева, свой процесс, журнал решений и
+проверки, своя сборка и установка (`DPmetaApp:D-35`). С 10 октября 2026 —
+DP_AI_Orcestrator (`DPmetaApp:dpai/`), с 16 октября — DPpass
+(`DPmetaApp:dppass/`, `DPmetaApp:D-30`), с 25 октября — SocialMediaImage,
+DPvisualisation, DPmeta и DPprofile (`DPmetaApp:socialmediaimage/`,
+`DPmetaApp:dpvisualisation/`, `DPmetaApp:dpmeta/`, `DPmetaApp:dpprofile/`,
+`DPmetaApp:D-43`). Их репозитории заморожены — работа только в DPmetaApp,
+архивирует автор (SQ-30). DPlearn остаётся отдельным проектом со своими
+сборками (слово автора 25 октября 2026, `DPmetaApp:D-43`). Места в реестре
+пока прежние: как реестр называет подсистему — решение DPmeta (SQ-36),
+место оркестратора — RISK-11.
 
 | репозиторий | отвечает за | не делает | стадия | проверки | вход |
 |---|---|---|---|---|---|
 | **Galdhold** | воксельная action-RPG и её движок (`voxel_engine`) с полигоном в одном репозитории (`Galdhold:Р1`); Android и Windows (`Galdhold:Р2`) | не зависит от DPlang (`Galdhold:Р18`); движок не зависит от игры и полигона (`Galdhold:Р1`); GitHub Actions не использует (`Galdhold:Р12`) | этапы 1–4 закрыты, идёт этап 5 — версия 1 и выпуск (`Galdhold:README.md`) | `tools/hostcheck/run.sh` — вход через DP Verify (`Galdhold:Р21`); полный — 23–50 минут в контейнере сессии (`DP-Verify:docs/audits/STAGE7_PILOT_VOXELRPG.md`) | `Galdhold:CLAUDE.md`, `Galdhold:docs/direction/DECISIONS.md` |
-| **DPlang** | системный язык общего назначения, компилятор в C11 и toolchain (`DPlang:Р27`, `DPlang:Р16`) | не DSL и не скриптовый слой (`DPlang:Р27`); решений за Galdhold не принимает (`DPlang:Р22`); онлайн программы пользователя не исполняет (`DPlang:Р49`) | v0.0 сделана; v0.1 закрыта с оговоркой 10 октября 2026 (`DPlang:docs/audits/2026-10-10-v0.1-audit.md`); идёт v0.2 — native-срез (`DPlang:ROADMAP/ROADMAP.md`; в `DPlang:README.md` — «не начата»); онлайн-компилятор для страницы на dpsmpx.com — запуск выключен (`DPlang:Р49`, C-09) | `tools/check/run.sh` | `DPlang:docs/README.md` |
+| **DPlang** | системный язык общего назначения, компилятор в C11 и toolchain (`DPlang:Р27`, `DPlang:Р16`) | не DSL и не скриптовый слой (`DPlang:Р27`); решений за Galdhold не принимает (`DPlang:Р22`); онлайн программы пользователя не исполняет (`DPlang:Р49`) | v0.0 сделана; v0.1 закрыта с оговоркой 10 октября 2026 (`DPlang:docs/audits/2026-10-10-v0.1-audit.md`); ворота v0.2 — native-срез — пройдены 19 октября 2026 (`DPlang:ROADMAP/ROADMAP.md`, `DPlang:docs/audits/2026-10-17-v0.2-audit.md`; в `DPlang:README.md` — «не начата», SQ-32), впереди v0.3; онлайн-компилятор для страницы на dpsmpx.com — запуск выключен (`DPlang:Р49`, C-09) | `tools/check/run.sh` | `DPlang:docs/README.md` |
 | **DP-Verify** | общий каркас инженерных проверок и process-kit для репозиториев автора (`DP-Verify:README.md`) | предметное — командами проекта, в ядро — только нужное двум репозиториям (`DP-Verify:V-04`); код проверяемых репозиториев не правит (`DP-Verify:docs/audits/STAGE2_TRIAL.md`) | 1.0.0-rc2: этапы 0–7 сделаны — пилоты в DPpass (`DPpass:D-50`) и Galdhold (`Galdhold:Р21`); выпуск 1.0.0 — этап 8 (`DP-Verify:ROADMAP/ROADMAP.md`) | `./dpv run full --ci` | `DP-Verify:README.md`, `DP-Verify:docs/direction/TECHNICAL_TASK.md` |
-| **DPpass** | клиент прокси/VPN для Android: своя модель конфигурации, маршрутизации и подписок; ядро Xray в процессе (`DPpass:D-02`, `DPpass:D-24`, `DPpass:D-25`) | без телеметрии (`DPpass:D-12`); не обещает «обход» (`DPpass:D-13`); код других клиентов не берёт (`DPpass:D-20`) | этап 1 из 5 выполнен, идёт этап 2 (`DPpass:README.md`, «Прогресс») | `tools/hostcheck/run.sh` (`--quick`, `--full`) | `DPpass:CLAUDE.md` |
-| **DPprofile** | проверяемая история пути автора и его проектов: источники, факты, хронология, выводы, структура будущей книги (`DPprofile:D-01`) | книгу не пишет до шлюза `DPprofile:D-02`; решений о проектах не принимает; код и большие фрагменты не копирует (`DPprofile:D-05`) | этап 4 из 6 (`DPprofile:README.md`) | `tools/verify/run.sh --quick`; полный — с клонами источников | `DPprofile:CLAUDE.md` |
+| **DPpass** | клиент прокси/VPN для Android: своя модель конфигурации, маршрутизации и подписок; ядро Xray в процессе (`DPpass:D-02`, `DPpass:D-24`, `DPpass:D-25`) | без телеметрии (`DPpass:D-12`); не обещает «обход» (`DPpass:D-13`); код других клиентов не берёт (`DPpass:D-20`) | с 16 октября 2026 — подсистема `DPmetaApp:dppass/` (`DPmetaApp:D-30`): выполнено этапов 2 из 6, следующий — этап 3 (`DPmetaApp:dppass/README.md`, «Прогресс») | `DPmetaApp:dppass/tools/hostcheck/run.sh` (`--quick`, `--full`) | `DPmetaApp:dppass/CLAUDE.md` |
+| **DPprofile** | проверяемая история пути автора и его проектов: источники, факты, хронология, выводы, структура будущей книги (`DPprofile:D-01`) | книгу не пишет до шлюза `DPprofile:D-02`; решений о проектах не принимает; код и большие фрагменты не копирует (`DPprofile:D-05`) | с 25 октября 2026 — подсистема `DPmetaApp:dpprofile/` (`DPprofile:D-16`): этап 4 из 6 (`DPmetaApp:dpprofile/README.md`) | `DPmetaApp:dpprofile/tools/verify/run.sh --quick`; полный — с клонами источников | `DPmetaApp:dpprofile/CLAUDE.md` |
 | **DPlearn** | персональная система обучения: статус «освоено» вычисляется из доказательств (`DPlearn:D-01`) | сессия разработки не трогает данные учащегося `learner/` (`DPlearn:CLAUDE.md`) | 0.1.0 (`DPlearn:README.md`) | `tools/check/run.sh full` | `DPlearn:README.md` |
-| **SocialMediaImage** | производство, проверка и публикация контента автора; сайт `dpsmpx.com` и его страница «Прогресс экосистемы» (`SocialMediaImage:README.md`, `SocialMediaImage:Д38`) | решения закрытых проектов не переписывает; их код не переносит; не публикует без одобрения автора (`SocialMediaImage:CLAUDE.md`) | сайт выпущен — выгрузка разрешена 5 октября 2026, первая штатная прошла (`SocialMediaImage:Д34`, `SocialMediaImage:TODO.md`); фаза «Сайт MVP» продолжается; `CI-0001` и страница прогресса `CI-0002` ждут одобрения автора (`SocialMediaImage:ROADMAP/ROADMAP.md`) | `tools/check.sh` | `SocialMediaImage:README.md` |
-| **DP_game_market_analytic_system** | воспроизводимый анализ рынка игр с явной неопределённостью: наблюдения → факты → метрики → гипотезы → решения (`DP_game_market_analytic_system:docs/ARCHITECTURE.md`) | не скрейпер, не агрегатор новостей, не обёртка над LLM (там же) | 0.1.0 (pre-release): фазы 0–8, CLI `dpm`, 294 теста (`DP_game_market_analytic_system:docs/HANDOFF.md`, PR #2 — 11 октября 2026) | `python3 -m pytest` | `DP_game_market_analytic_system:docs/ARCHITECTURE.md` |
+| **SocialMediaImage** | производство, проверка и публикация контента автора; сайт `dpsmpx.com` и его страница «Прогресс экосистемы» (`SocialMediaImage:README.md`, `SocialMediaImage:Д38`) | решения закрытых проектов не переписывает; их код не переносит; не публикует без одобрения автора (`SocialMediaImage:CLAUDE.md`) | с 25 октября 2026 — подсистема `DPmetaApp:socialmediaimage/` (`SocialMediaImage:Д45`); сайт выпущен 5 октября 2026 (`SocialMediaImage:Д34`), фаза П2 «Сайт MVP» продолжается каждой сессией (`DPmetaApp:socialmediaimage/ROADMAP/ROADMAP.md`); облачная сессия не выгружает, из приложения выгрузки нет до полной готовности (`DPmetaApp:D-40`) | `DPmetaApp:socialmediaimage/tools/check.sh` | `DPmetaApp:socialmediaimage/README.md` |
+| **DP_game_market_analytic_system** | воспроизводимый анализ рынка игр с явной неопределённостью: наблюдения → факты → метрики → гипотезы → решения (`DP_game_market_analytic_system:docs/ARCHITECTURE.md`) | не скрейпер, не агрегатор новостей, не обёртка над LLM (там же) | SYSTEM 0.3.0 (pre-release), 358 тестов; CLI `dpm` (`DP_game_market_analytic_system:docs/HANDOFF.md`; последний коммит — 16 октября 2026) | `python3 -m pytest` | `DP_game_market_analytic_system:docs/ARCHITECTURE.md` |
 
-| **DP_AI_Orcestrator** | управляющий слой для параллельных сессий Claude Code и Agent SDK: задачи и зависимости, аккаунты, execution targets, контекст и handoff, проверка результата (`DP_AI_Orcestrator:D-01`). **С 10 октября 2026 заморожен:** код, документы и история — подсистема «AI» DPmetaApp в `DPmetaApp:dpai/`, её Android-оболочка — первая форма приложения DPmetaApp (`DPmetaApp:D-28`); архивировать репозиторий — автор (SQ-30) | код закрытых репозиториев не переносит — только идеи (`DP_AI_Orcestrator:D-16`); кода DPmeta не содержит — читает его манифест (C-13); в самом репозитории работа не начинается (`DPmetaApp:D-28`) | в `DPmetaApp:dpai/README.md`: выполнено этапов 15 из 21, в работе — 5, 11, 12, 17, впереди — 19 и 20 (V1 не заморожена) | `DPmetaApp:dpai/tools/verify/run.sh` (`full`) | `DPmetaApp:dpai/CLAUDE.md` |
+| **DP_AI_Orcestrator** | управляющий слой для параллельных сессий Claude Code и Agent SDK: задачи и зависимости, аккаунты, execution targets, контекст и handoff, проверка результата (`DP_AI_Orcestrator:D-01`). **С 10 октября 2026 заморожен:** код, документы и история — подсистема «AI» DPmetaApp в `DPmetaApp:dpai/`, её Android-оболочка — первая форма приложения DPmetaApp (`DPmetaApp:D-28`); в ней же — агент в процессе приложения (`DP_AI_Orcestrator:D-75`); архивировать репозиторий — автор (SQ-30) | код закрытых репозиториев не переносит — только идеи (`DP_AI_Orcestrator:D-16`); кода DPmeta не содержит — читает его манифест (C-13); в самом репозитории работа не начинается (`DPmetaApp:D-28`) | в `DPmetaApp:dpai/README.md`: выполнено этапов 15 из 21, в работе — 5, 11, 12, 17, впереди — 19 и 20 (V1 не заморожена) | `DPmetaApp:dpai/tools/verify/run.sh` (`full`) | `DPmetaApp:dpai/CLAUDE.md` |
 
 DPmeta — **слой синхронизации** (M-01, M-12, `place = "sync"`): карта,
 контракты, имена, очередь согласований, манифест; не ядро и не
@@ -53,11 +67,13 @@ DPmeta — **слой синхронизации** (M-01, M-12, `place = "sync"`
 слой — часть текущей системы наравне с ядром; архив — вне текущей
 системы: ранние проекты до репозитория игры (первый коммит Galdhold —
 11 сентября 2026) и те, что автор убрал. В схеме DPvisualisation, на
-странице прогресса сайта и в DPmetaApp архива нет (`DPvisualisation:D-20`
-и `SocialMediaImage:Д38` — в невлитой ветке `claude/dreamy-bardeen-xe4k6r`
-своих репозиториев, `DPmetaApp:D-26` — в `main` с 11 октября 2026; в
-`main` SocialMediaImage архив пока в счёте как «ранние и малые
-проекты»). Говорить о ранних проектах на сайте можно
+странице прогресса сайта и в DPmetaApp архива нет (`DPvisualisation:D-20`,
+`SocialMediaImage:Д38`, `DPmetaApp:D-26`; ветки влиты до переезда —
+SQ-25). Слово автора 25 октября 2026 уточнило границу: периферийные
+проекты с работой в октябре — AIM Trainer, DP_Clock, TrueJointTileMaker,
+Andors-Love — в текущей системе (`DPvisualisation:D-23`,
+`SocialMediaImage:Д44`); реестр DPmeta этого ещё не знает — два последних
+в нём `archive`, двух первых нет (SQ-36). Говорить о ранних проектах на сайте можно
 открыто — их репозитории открыты, а о закрытых активных — осторожнее
 (слово автора 10 октября 2026): станция «2023» раздела «Путь» и
 упоминание TrueJointTileMaker в статье CI-0003 остаются, на странице
@@ -69,13 +85,13 @@ DPmeta — **слой синхронизации** (M-01, M-12, `place = "sync"`
 
 | репозиторий | что это | связи |
 |---|---|---|
-| `dpsmpx/DPmetaApp` (закрытый) | управление экосистемой — одно Android-приложение автора, единая среда систем активных репозиториев (`DPmetaApp:D-27`); мастер-ТЗ — `DPmetaApp:MESTER_TECHNICAL_TASK_ROADMAP.md`. ТЗ, решения и процесс — в `main` с 11 октября 2026 (PR #2, SQ-27). С 10 октября в нём — подсистема «AI» `dpai/` (прежде DP_AI_Orcestrator) с историей: её ядро — ядро приложения, её Android-оболочка — первая форма DPmetaApp (`DPmetaApp:D-28`). Фаза B — сейчас, по одной функции: идёт этап 2, команда `dpmeta-cli` (`DPmetaApp:D-29`) | данные — локально, GitHub — синхронизация, а не запрос на каждое действие (`DPmetaApp:D-27`); схема — из DPvisualisation (`DPmetaApp:D-26`, `DPvisualisation:D-18`); манифест DPmeta читает подсистема «AI» (C-13); реестр DPmeta — по плану, корпус с `place` (`DPmetaApp:D-05`) |
+| `dpsmpx/DPmetaApp` (закрытый) | управление экосистемой — одно Android-приложение автора, единая среда систем активных репозиториев (`DPmetaApp:D-27`); мастер-ТЗ — `DPmetaApp:MESTER_TECHNICAL_TASK_ROADMAP.md`. Шесть подсистем с историей (§1): «AI» `dpai/` — её ядро и Android-оболочка — ядро и первая форма приложения (`DPmetaApp:D-28`); `dppass/` (`DPmetaApp:D-30`); `socialmediaimage/`, `dpvisualisation/`, `dpmeta/`, `dpprofile/` (`DPmetaApp:D-43`). Фаза B — сейчас, по одной функции (`DPmetaApp:D-29`): по `DPmetaApp:README.md` сделан этап 1 из 9 — каркас сборки и ядро | данные — локально, GitHub — синхронизация, а не запрос на каждое действие (`DPmetaApp:D-27`); состояние и метрики — при синхронизации, с историей чисел (`DPmetaApp:D-34`); схема — из подсистемы DPvisualisation (`DPmetaApp:D-26`, `DPvisualisation:D-18`); манифест DPmeta читает подсистема «AI» (C-13); реестр — `DPmetaApp:dpmeta/tools/ecosystem.toml` (`DPmetaApp:D-05`) |
 
 ### Поддерживающий слой (`support`)
 
 | репозиторий | что это | связи |
 |---|---|---|
-| `dpsmpx/DPvisualisation` (закрытый) | обеспечение системы: модель экосистемы — узлы, потоки и активность по истории git клонов (`DPvisualisation:D-01`); собирает данные в схему и ничем не управляет, к сайту не обращается (`DPvisualisation:D-19`); лицензия — «все права защищены» (`DPvisualisation:D-17`, в невлитой ветке; в `main` пока Apache-2.0 начального коммита); 1.0.0 — в невлитой ветке (SQ-25) | читает реестр и контракты DPmeta (C-11) и клоны; отдаёт комплект схемы SocialMediaImage — на сайте полустатичная схема, обновляется при каждой выгрузке (C-12, `DPvisualisation:D-18`); по плану — слой визуализации DPmetaApp |
+| `dpsmpx/DPvisualisation` (закрытый, заморожен) | обеспечение системы: модель экосистемы — узлы, потоки и активность по истории git клонов (`DPvisualisation:D-01`); собирает данные в схему и ничем не управляет, к сайту не обращается (`DPvisualisation:D-19`); лицензия — «все права защищены» (`DPvisualisation:D-17`). С 25 октября 2026 — подсистема `DPmetaApp:dpvisualisation/` (`DPvisualisation:D-25`): версия 1.0.0, этапы 5 из 5 (`DPmetaApp:dpvisualisation/README.md`); модель под переезды — `DPvisualisation:D-26` | читает реестр и контракты DPmeta (C-11) и клоны; отдаёт комплект схемы SocialMediaImage — на сайте полустатичная схема, обновляется при каждой выгрузке (C-12, `DPvisualisation:D-18`); по плану — слой визуализации DPmetaApp |
 | `dpsmpx/DPmonetization` (закрытый) | с 5 октября 2026: «Strategic Project Intelligence» — анализ портфеля проектов: доказательства, стадии и шлюзы готовности, ценность, монетизация, решения (`DPmonetization:tools/dpmon/__init__.py`). В `main` — прерванный каркас ядра без тестов; README из одного заголовка, нет `CLAUDE.md` и журнала решений (SQ-22) | связей пока нет. **План** (описание PR #1 DPmonetization): реестр проектов по фактам DPmeta, зависимости по C-01, C-03, C-08, C-09, адаптеры к `report.json` DP-Verify и к `DecisionReport` DP_game_market_analytic_system, экспорт для сайта только одобренного автором |
 
 ### Профиль и архив
@@ -83,8 +99,8 @@ DPmeta — **слой синхронизации** (M-01, M-12, `place = "sync"`
 | репозиторий | место | что это | связи |
 |---|---|---|---|
 | `dpsmpx/dpsmpx` (публичный) | — (не проект, C-07) | README страницы профиля GitHub | читают DPprofile (`DPprofile:docs/sources/REGISTRY.md`, S-04) и SocialMediaImage (`SocialMediaImage:IC-04`…`SocialMediaImage:IC-06`); правит только автор (C-07) |
-| `dpsmpx/Andors-Love` (публичный) | архив | пошаговая RPG на C++ (терминал и SDL), с 2023 года | владелец формата карт `data/maps/*.map` (C-08) |
-| `dpsmpx/TrueJointTileMaker` (публичный) | архив | редактор пиксельной графики и карт на PascalABC.NET; с 5 октября 2026 переносится на C++ и SDL2 (`TrueJointTileMaker:docs/porting.md`) — по слову автора всё же вне текущей системы | читает и пишет карты Andors-Love, берёт имена его тайлов; тесты переноса — на клоне игры (C-08) |
+| `dpsmpx/Andors-Love` (публичный) | архив в реестре; по слову автора 25 октября 2026 — периферия текущей системы (SQ-36) | пошаговая RPG на C++ (терминал и SDL), с 2023 года; работа снова идёт с 25 октября 2026 (PR #16) | владелец формата карт `data/maps/*.map` (C-08) |
+| `dpsmpx/TrueJointTileMaker` (публичный) | архив в реестре; по слову автора 25 октября 2026 — периферия текущей системы (SQ-36) | редактор пиксельной графики и карт на PascalABC.NET; с 5 октября 2026 переносится на C++ (`TrueJointTileMaker:docs/porting.md`), 25 октября — этап 10, версия 1.6 (PR #12) | читает и пишет карты Andors-Love, берёт имена его тайлов; тесты переноса — на клоне игры (C-08) |
 | DP_Ecosystem, DP_Repeated_Tasks, PixRogue, tanks_blitz_stat_chat и другие публичные | архив | ранние и малые проекты; DP_Ecosystem и DP_Repeated_Tasks начаты после Galdhold, но автор их убрал | источники DPprofile (`DPprofile:D-13`) |
 | форки (`andors-trail-load`, `gravitydefied`, `CreepyCodeCollection`, `pascalabcnet`) | — | чужие проекты | вне предмета, кроме коммитов автора (`DPprofile:D-13`) |
 | репозитории 2023–2024 (`day_plan`, `rnd_day` и другие) | архив | старые проекты | не упоминаются (`SocialMediaImage:docs/identity/PROJECT_MAP.md`) |
@@ -96,7 +112,7 @@ DPmeta — **слой синхронизации** (M-01, M-12, `place = "sync"`
   Galdhold ◄────────────────► DPlang
 
 Поставка проверок копией в tools/dpv/ (C-03; 1.0.0-rc2)
-  DP-Verify ──► DPpass          этап 6, пилот — поставлено 6 октября 2026 (DPpass:D-50)
+  DP-Verify ──► DPpass          этап 6, пилот — поставлено 6 октября 2026 (DPpass:D-50); с 16 октября — DPmetaApp:dppass/
             ──► Galdhold        этап 7 — влито 10 октября 2026 (Galdhold:Р21)
             ┄┄► DPlang          версия 1.1
             ┄┄► DPlearn         пока — образец процесса; поставка — после DP-Verify 1.0
@@ -125,6 +141,10 @@ DPmeta — **слой синхронизации** (M-01, M-12, `place = "sync"`
 
 Без связей, кроме счёта прогресса (C-10): DP_game_market_analytic_system
 Пока без связей (план — §2): DPmonetization
+
+С 25 октября 2026 обе стороны C-10…C-13 — подсистемы DPmetaApp
+(socialmediaimage/, dpvisualisation/, dpmeta/, dpai/): связи остаются
+контрактами между ними, у каждой стороны — свой процесс (§1).
 ```
 
 Наблюдения:
