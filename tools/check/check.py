@@ -44,7 +44,7 @@ ROOT_ALLOW = {
     ".claude", ".github", "docs", "ROADMAP", "tools", "tests",
     "settings.gradle.kts", "build.gradle.kts", "gradle.properties", "gradlew", "gradlew.bat",
     "gradle", "build-logic", "app", "core", "cli", "config",
-    "dpai", "dppass", "socialmediaimage", "dpvisualisation",
+    "dpai", "dppass", "socialmediaimage", "dpvisualisation", "dpmeta",
 }
 # Пакетный файл Windows создан Gradle с CRLF — так и хранится (`.gitattributes`).
 CRLF_ALLOWED = {"gradlew.bat"}
@@ -59,11 +59,14 @@ SUBSYSTEMS = {
     "dppass": "dppass/tools/hostcheck/run.sh",
     "socialmediaimage": ("socialmediaimage/tools/check.sh", "--quick"),
     "dpvisualisation": "dpvisualisation/tools/check/run.sh",
+    "dpmeta": ("dpmeta/tools/check.sh",),
 }
 # Строка шага в выводе команды подсистемы: «- ✓ шаг» (dpai), «  ✓ id  итог» (DP Verify у dppass, D-30),
 # «✓ id — что проверено» (SocialMediaImage) или «✓ id (0.0 с)» (DPvisualisation, D-43);
 # итог прогона («✓ static пройден», «✓ tools/check.sh: всё зелёное») — не шаг.
 SUBSYSTEM_STEP = re.compile(r"^(?:(?:- |  )([✓✗]) (.+)|([✓✗]) (\S+ (?:— |\().+))$", re.M)
+# Свой вид строки шага: у DPmeta шаг — «✓ документы: ссылки, …», итог — «✓ DPmeta: всё зелёное» (D-43).
+SUBSYSTEM_STEP_OWN = {"dpmeta": re.compile(r"^([✓✗]) (?!DPmeta: )(.+)$", re.M)}
 # Единое ядро (D-28): эти типы объявлены один раз — в ядре подсистемы dpai.
 CORE_TYPES = ("Outcome", "OperationResult", "Diagnostic", "DiagCode", "Secret", "Clock")
 CORE_HOME = "dpai/core/src/main/"
@@ -71,6 +74,8 @@ CORE_HOME = "dpai/core/src/main/"
 CORE_OWN = {"dppass/": "D-30: ядро DPpass пока своё, сведение с ядром dpai — отдельной задачей с паритетом"}
 CORE_DECL = re.compile(r"^[ \t]*(?:(?:public|internal|private|sealed|data|value|enum|abstract|open|fun|inline)\s+)*"
                        r"(?:class|interface|object|typealias)\s+(" + "|".join(CORE_TYPES) + r")\b", re.M)
+# Срезы на дату — задним числом не правятся (CLAUDE.md, «Где что лежит»).
+AUDITS = "docs/audits/"
 # Документы автора, которые он ведёт сам (через веб-интерфейс): форма текста не проверяется,
 # чтобы не править их ради проверки (D-25).
 AUTHOR_FILES = {"MESTER_TECHNICAL_TASK_ROADMAP.md"}
@@ -304,7 +309,9 @@ def check_links(repo, r):
 
     Путь сверяется, если его первый каталог есть в репозитории; путь другого проекта
     пишется `Проект:путь` (`DPmeta:C-06`) и не сверяется. Заранее названные пути —
-    PLANNED, с причиной.
+    PLANNED, с причиной. Срез на дату (AUDITS) задним числом не правится: пути в его
+    обратных кавычках — как было на дату (например, имя ветки `dpmeta/…` до переезда
+    DPmeta сюда, D-43), их не сверяет; ссылки Markdown — сверяет.
     """
     anchor_cache = {}
 
@@ -326,7 +333,7 @@ def check_links(repo, r):
                     r.add(f"{rel}:{n}", f"ссылка ведёт на несуществующий `{path}`")
                 elif frag and dest.endswith(".md") and frag not in anchors_of(dest):
                     r.add(f"{rel}:{n}", f"нет якоря `#{frag}` в `{dest}`")
-            for code in re.findall(r"`([^`\n]+)`", line):
+            for code in ([] if rel.startswith(AUDITS) else re.findall(r"`([^`\n]+)`", line)):
                 cand = path_candidate(code)
                 if not cand:
                     continue
@@ -541,7 +548,8 @@ def check_subsystems(root, subsystems=None):
             r.add(cmd, "нет команды проверок подсистемы")
         else:
             p = subprocess.run(["bash", path, *args], cwd=root, capture_output=True, text=True)
-            steps = [(m[0] or m[2], m[1] or m[3]) for m in SUBSYSTEM_STEP.findall(p.stdout)]
+            found = SUBSYSTEM_STEP_OWN.get(name, SUBSYSTEM_STEP).findall(p.stdout)
+            steps = [(m[0] or m[2], m[1] or m[3]) if len(m) == 4 else m for m in found]
             r.scanned = len(steps)
             r.findings.extend(f"{cmd}: {what}" for mark, what in steps if mark == "✗")
             if p.returncode != 0 and not r.findings:

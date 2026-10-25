@@ -176,6 +176,13 @@ class SubsystemScopeTest(CheckCase):
             with self.subTest(cid):
                 self.assertClean(s.run(cid))
 
+    def test_dpmeta_is_a_subsystem_too(self):
+        # DPmeta — подсистема со своим процессом (D-43): её номера M-NN без имени проекта — её проверкам.
+        s = self.sample({"dpmeta/docs/X.md": "# X\r\nСм. M-14, `docs/NOPE.md`.\n"})
+        for cid in ("repo.layout", "format.text", "docs.links", "docs.refs"):
+            with self.subTest(cid):
+                self.assertClean(s.run(cid))
+
     def test_secrets_are_searched_in_subsystem_too(self):
         token = "ghp" + "_" + "C3d4" * 9
         self.assertCatches(self.sample({"dpai/docs/X.md": f"{token}\n"}).run("security.secrets"), "github-token")
@@ -337,6 +344,21 @@ class SubsystemChecksTest(CheckCase):
         out = "printf '✓ process.decisions (0.0 с)\\n✗ docs.refs (0.0 с)\\n    a.md:1: D-9 нигде не определён\\n'"
         self.assertCatches(self.run_sub(f"#!/bin/sh\n{out}\n"), "docs.refs")
 
+    def test_dpmeta_lines_are_steps(self):
+        # Вывод tools/check.sh DPmeta (D-43): «✓ шаг: …»; «○ … пропущено» и итог «✓ DPmeta: …» — не шаги.
+        out = ("printf '✓ документы: ссылки, свои номера, корень\\n✓ самотесты инструментов\\n"
+               "○ ссылки — пропущено: рядом нет клонов\\n✓ DPmeta: всё зелёное\\n'")
+        s = self.sample({"dpmeta/tools/check.sh": f"#!/bin/sh\n{out}\n"})
+        r = check.check_subsystems(s.root, {"dpmeta": ("dpmeta/tools/check.sh",)})[0]
+        self.assertClean(r)
+        self.assertEqual(2, r.scanned)
+
+    def test_dpmeta_failing_step_is_reported(self):
+        # Код 0 нарочно: находку должен дать разбор строки «✗ шаг», а не запасной хвост вывода.
+        out = "printf '✓ самотесты инструментов\\n✗ документы: ссылки, свои номера, корень\\n    a.md:1: нет файла\\n'"
+        s = self.sample({"dpmeta/tools/check.sh": f"#!/bin/sh\n{out}\n"})
+        self.assertCatches(check.check_subsystems(s.root, {"dpmeta": ("dpmeta/tools/check.sh",)})[0], "документы")
+
     def test_dp_verify_failing_check_is_reported(self):
         out = "printf '  ✓ docs.links    ссылок 10\\n  ✗ docs.refs     находок: 1\\n      a.md:1  D-9 не определено\\n'"
         self.assertCatches(self.run_sub(f"#!/bin/sh\n{out}\nexit 1\n"), "docs.refs")
@@ -437,6 +459,13 @@ class LinksTest(CheckCase):
     def test_missing_anchor_in_backtick_path(self):
         self.assertCatches(self.sample({"docs/PROCESS.md": "`docs/PROVENANCE.md#nope`\n"}).run("docs.links"),
                            "нет якоря")
+
+    def test_audit_backtick_paths_are_as_of_their_date(self):
+        # Срез на дату не правится задним числом: его пути в обратных кавычках не сверяются, ссылки — сверяются.
+        s = self.sample({"docs/audits/2026-10-10-x.md": "`docs/NOPE.md`\n"})
+        self.assertClean(s.run("docs.links"))
+        s = self.sample({"docs/audits/2026-10-10-x.md": "[x](nope.md)\n"})
+        self.assertCatches(s.run("docs.links"), "несуществующий")
 
     def test_code_block_is_skipped(self):
         self.assertClean(self.sample({"docs/PROCESS.md": "```\n[x](nope.md)\n```\n[p](PROVENANCE.md)\n"})

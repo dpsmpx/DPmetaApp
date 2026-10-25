@@ -35,6 +35,10 @@ DPvisualisation — подсистема в `dpvisualisation/` с историе
 репозиторий заморожен, работа идёт только здесь; модель и срезы
 экосистемы для живого режима приложения (D-26) — оттуда.
 
+DPmeta — подсистема в `dpmeta/` с историей (D-43): репозиторий заморожен,
+работа идёт только здесь; реестр экосистемы для приложения (D-05) —
+`dpmeta/tools/ecosystem.toml`.
+
 ## Источник истины
 
 - Старшинство: `docs/direction/DECISIONS.md` → этот файл → мастер-ТЗ
@@ -65,6 +69,11 @@ DPvisualisation — подсистема в `dpvisualisation/` с историе
   `DPvisualisation:D-NN`), правила — `dpvisualisation/CLAUDE.md`, проверки
   — `dpvisualisation/tools/check/run.sh`. Решения этого журнала старше
   там, где речь о приложении целиком.
+- Подсистема `dpmeta/` — свой процесс (`DPmeta:M-14`): решения —
+  `dpmeta/docs/DECISIONS.md` (извне — `DPmeta:M-NN`), правила —
+  `dpmeta/CLAUDE.md`, проверки — `dpmeta/tools/check.sh` (клоны экосистемы
+  — `CLONES=<каталог клонов>`). Решения этого журнала старше там, где
+  речь о приложении целиком.
 - `README.md` — не источник истины и меняется только по запросу автора;
   его блок состояния пишет `tools/check/run.sh --write-status`.
 
@@ -104,10 +113,10 @@ DPvisualisation — подсистема в `dpvisualisation/` с историе
   `dpai/`, а сам он заморожен (D-28); в нём не работать, туда не пушить.
 - DPpass — тоже: его код в `dppass/`, репозиторий архивирован (D-30); в
   нём не работать, туда не пушить.
-- SocialMediaImage и DPvisualisation — тоже: их код в
-  `socialmediaimage/` и `dpvisualisation/`, репозитории заморожены (D-43);
-  в них не работать. Исключение — надпись об архиве в их `CLAUDE.md` и
-  `README.md` после переезда (слово автора, D-43).
+- SocialMediaImage, DPvisualisation и DPmeta — тоже: их код в
+  `socialmediaimage/`, `dpvisualisation/` и `dpmeta/`, репозитории
+  заморожены (D-43); в них не работать. Исключение — надпись об архиве в
+  их `CLAUDE.md` и `README.md` после переезда (слово автора, D-43).
 - Только чтение: клоны — чтобы сверить форматы, которые читает
   приложение (ТЗ, §10). Их не править, в их ветки не пушить; находка —
   в PR и `TODO.md` здесь, правка там — сессией того репозитория по его
@@ -196,6 +205,9 @@ DPvisualisation — подсистема в `dpvisualisation/` с историе
 - Правка в `dpvisualisation/` — ещё `dpvisualisation/tools/check/run.sh`
   (после правки) и `full` с независимой проверкой (перед вливанием), по
   `dpvisualisation/CLAUDE.md`.
+- Правка в `dpmeta/` — ещё `dpmeta/tools/check.sh` (перед каждым
+  коммитом), по `dpmeta/CLAUDE.md`; ветка прохода — с проверкой отдельным
+  проходом (`DPmeta:M-13`).
 - `main` всегда зелёный: не вливать без зелёного `full`. Исключение —
   правка только Linux-оболочки DPpass: перед вливанием — проверки её
   Linux-части (D-32).
@@ -217,6 +229,8 @@ DPvisualisation — подсистема в `dpvisualisation/` с историе
   `tools/`, `TODO.md` и сайтом (D-43).
 - `dpvisualisation/` — подсистема DPvisualisation со своими `docs/`,
   `tools/`, моделью и просмотрщиком (D-43).
+- `dpmeta/` — подсистема DPmeta со своими `docs/`, `tools/` и реестром
+  экосистемы (D-43).
 - `docs/direction/` — постановка, ТЗ, решения; `docs/` — как устроено;
   `docs/audits/` — срезы на дату, задним числом не правятся;
   `ROADMAP/` — этапы; `tools/` — проверки и инструменты; `tests/` —
