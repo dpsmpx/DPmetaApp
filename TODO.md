@@ -21,6 +21,10 @@
   (её PR #64 закрыт: ответы заменены `DPpass:D-76`), `ccr-dc77131a-share`
   (влита), `ccr-dc77131a-dppass` и `ccr-dc77131a-dppass-subname` (их
   изменения уже в `main`). Облачной сессии удаление веток запрещено.
+- `М` **Архивировать репозитории, переехавшие сюда** (D-43): SocialMediaImage
+  — в его `CLAUDE.md` и `README.md` уже написано, что работа идёт в
+  DPmetaApp (`socialmediaimage/`); Settings → Archive. Его ветки остаются
+  как есть.
 - `М` **DP_AI_Orcestrator заморозить** (D-28): работа, сделанная там
   после переноса, — здесь (`DP_AI_Orcestrator:D-83`: `main` до `9ff8dc4`
   и ветка `claude/nice-hopper-5fg5vk` до `d8b8860`). Архивировать
@@ -61,9 +65,6 @@
   `claude/dreamy-bardeen-xe4k6r`; контракт «DPmetaApp читает форматы
   процессов» (ТЗ, §10, Q-11) — когда появится код, который их читает
   (фаза B).
-- `М` **SocialMediaImage:** DPmetaApp в счёте страницы прогресса — в
-  ветке SocialMediaImage `claude/dreamy-bardeen-xe4k6r`; признак сборки в
-  `/api/v1/index.json` (ТЗ, Q-12) — решает SocialMediaImage.
 
 - `М` **DPvisualisation:** Q-04 его ТЗ (нативно или WebView) — ответ
   D-26 записан в его ветке `claude/dreamy-bardeen-xe4k6r` (10 октября
@@ -75,9 +76,9 @@
   `dpai/android` и есть приложение DPmetaApp; `DPmeta:SQ-26` (строка
   состояния README) исправлен в `dpai/README.md`; `DPmeta:SQ-28` — пункт о
   манифесте в `dpai/TODO.md` обновлён. Записывает сессия DPmeta.
-- `М` **DPvisualisation, SocialMediaImage:** узлы и факты, где
-  DP_AI_Orcestrator — отдельный репозиторий или приложение, — сверить с
-  D-28 (подсистема `dpai/` DPmetaApp); правят их сессии.
+- `М` **DPvisualisation:** узлы и факты, где DP_AI_Orcestrator —
+  отдельный репозиторий или приложение, — сверить с D-28 (подсистема
+  `dpai/` DPmetaApp); правит его сессия.
 - `С` **DP-Verify: корень подпроекта.** DP Verify считает корнем проекта
   вершину git (`find_root` — `git rev-parse --show-toplevel`), поэтому в
   `dppass/` он увидел бы весь DPmetaApp; сейчас обёртка DPpass запускает

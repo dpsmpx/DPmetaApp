@@ -4,13 +4,13 @@
 # берёт `site deploy` из CS_PROD_SITE_DEPLOY_TARGET (~/.config/dpsmpx/deploy.env).
 # Установка (docs/operations/CREDENTIALS.md, «Ярлык Termux:Widget»):
 #   mkdir -p ~/.shortcuts && chmod 700 ~/.shortcuts
-#   install -m 700 ~/SocialMediaImage/tools/termux/dpsmpx-site-deploy.sh ~/.shortcuts/
+#   install -m 700 ~/DPmetaApp/socialmediaimage/tools/termux/dpsmpx-site-deploy.sh ~/.shortcuts/
 # Каталог — ~/.shortcuts/, не ~/.shortcuts/tasks/: оттуда ярлык идёт без
 # терминала и не может спросить «да».
 set -eu
 
 PY="${DPSMPX_PY:-/data/data/com.termux/files/usr/bin/python3}"   # Python из pkg, с jsonschema
-REPO="${DPSMPX_REPO:-$HOME/SocialMediaImage}"
+REPO="${DPSMPX_REPO:-$HOME/DPmetaApp/socialmediaimage}"   # система — подсистема DPmetaApp (Д45)
 ENVF="$HOME/.config/dpsmpx/deploy.env"
 SITE="https://dpsmpx.com/"   # HTTPS подтвердил автор 12.10.2026 (В5)
 

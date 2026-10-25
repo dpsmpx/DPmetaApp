@@ -1045,6 +1045,34 @@ ContentItem: цель · аудитория · площадка · утверж�
     True Joint Tile Maker и Andors-Love. Станция «2023» (AU-EARLY) — как была.
     В цели — без изменений: план автора от 6 октября их не называет.
 
+### Д45. Система — подсистема DPmetaApp, каталог `socialmediaimage/`; репозиторий SocialMediaImage — в архив
+- **Решение.**
+  - С 25 октября 2026 система живёт в репозитории DPmetaApp, в каталоге
+    `socialmediaimage/` (`DPmetaApp:D-43`): код, документы и история
+    перенесены слиянием поддерева (`main` `71a5f86`). Репозиторий
+    SocialMediaImage заморожен: работа там не начинается, архивирует его
+    автор.
+  - Свой процесс сохраняется: решения — этот журнал (извне —
+    `SocialMediaImage:ДNN`), правила — `CLAUDE.md`, проверки —
+    `tools/check.sh` из каталога системы; пути в документах — от
+    `socialmediaimage/`. Правила DPmetaApp (`DPmetaApp:CLAUDE.md`) — для
+    всего репозитория, `CLAUDE.md` системы — для работы в её каталоге;
+    «каждая сессия» Д34 — сессия, которая работает в `socialmediaimage/`.
+  - Выгрузка сайта — по-прежнему Д35 и Д36: с машины автора, из его клона
+    DPmetaApp (`~/DPmetaApp/socialmediaimage`, ярлык тот же). Из
+    приложения DPmetaApp выгрузки нет до полной готовности системы
+    (`DPmetaApp:D-40`).
+  - Хук начала сессии и правила `ask` для выгрузки и публикации — в
+    корне DPmetaApp (`DPmetaApp:.claude/settings.json`): Claude Code
+    читает настройки только корня репозитория.
+- **Почему.** Слово автора 25.10.2026 (опрос): «SocilaMediaImage будет
+  внедрено в DPmetaApp и будет работать полностью внутри приложения»;
+  переезд — «Сейчас», по одному, с проверками.
+- **Следствия.** `docs/operations/CREDENTIALS.md` (клон и ярлык — из
+  `~/DPmetaApp`), `tools/termux/dpsmpx-site-deploy.sh` (каталог по
+  умолчанию), `tools/cs/platform_cli.py` (`affected` — пути от каталога
+  системы), `CLAUDE.md`, `docs/session/HANDOFF.md`.
+
 ---
 
 ## 3. Открытые решения (решает автор)
@@ -1470,3 +1498,8 @@ DPlang); TJTM-WHAT — пометка о срезе 04.10 (утверждени�
 `website/static/style.css`, `data/facts/facts.yaml`, `website/ecosystem/`,
 `TODO.md`.
 
+**25 октября 2026, вечер.** Система — подсистема DPmetaApp (Д45; ответы
+автора в опросе DPmetaApp, `DPmetaApp:D-43`): каталог `socialmediaimage/`
+с историей, репозиторий SocialMediaImage — в архив. Затронуто:
+`CREDENTIALS.md`, ярлык Termux, `tools/cs/platform_cli.py`, `CLAUDE.md`,
+`HANDOFF.md`.

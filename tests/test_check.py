@@ -162,6 +162,13 @@ class SubsystemScopeTest(CheckCase):
             with self.subTest(cid):
                 self.assertClean(s.run(cid))
 
+    def test_socialmediaimage_is_a_subsystem_too(self):
+        # SocialMediaImage — подсистема со своим процессом (D-43): номера Д без имени проекта — её проверкам.
+        s = self.sample({"socialmediaimage/docs/X.md": "# X\r\nСм. Д35, `docs/NOPE.md`.\n"})
+        for cid in ("repo.layout", "format.text", "docs.links", "docs.refs"):
+            with self.subTest(cid):
+                self.assertClean(s.run(cid))
+
     def test_secrets_are_searched_in_subsystem_too(self):
         token = "ghp" + "_" + "C3d4" * 9
         self.assertCatches(self.sample({"dpai/docs/X.md": f"{token}\n"}).run("security.secrets"), "github-token")
@@ -296,6 +303,19 @@ class SubsystemChecksTest(CheckCase):
         r = self.run_sub(f"#!/bin/sh\n{out}\n")
         self.assertClean(r)
         self.assertEqual(2, r.scanned)
+
+    def test_smi_lines_are_steps(self):
+        # Вывод tools/check.sh SocialMediaImage (D-43): «✓ id — что проверено»; подробности и итог — не шаги.
+        out = "printf '✓ schemas — данные по JSON Schema\\n    · файлов 36\\n✓ links — ссылки\\n\\n✓ tools/check.sh: всё зелёное\\n'"
+        s = self.sample({"sub/check.sh": f"#!/bin/sh\n{out}\n"})
+        r = check.check_subsystems(s.root, {"sub": ("sub/check.sh", "--quick")})[0]
+        self.assertClean(r)
+        self.assertEqual(2, r.scanned)
+
+    def test_smi_failing_check_is_reported(self):
+        out = "printf '✓ schemas — данные\\n✗ links — ссылки в документах\\n    ✗ a.md:1: нет файла\\n'"
+        s = self.sample({"sub/check.sh": f"#!/bin/sh\n{out}\nexit 1\n"})
+        self.assertCatches(check.check_subsystems(s.root, {"sub": ("sub/check.sh", "--quick")})[0], "links")
 
     def test_dp_verify_failing_check_is_reported(self):
         out = "printf '  ✓ docs.links    ссылок 10\\n  ✗ docs.refs     находок: 1\\n      a.md:1  D-9 не определено\\n'"

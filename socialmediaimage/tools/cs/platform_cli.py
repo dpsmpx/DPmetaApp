@@ -593,7 +593,11 @@ def cmd_affected(a) -> int:
                                             capture_output=True).returncode == 0 else "main"
     out = subprocess.run(["git", "diff", "--name-only", f"{base}...HEAD"], cwd=repo.root, capture_output=True, text=True).stdout
     out += subprocess.run(["git", "status", "--porcelain"], cwd=repo.root, capture_output=True, text=True).stdout
-    files = sorted({l[3:] if l[:2].strip() and len(l) > 3 and l[2] == " " else l.strip() for l in out.splitlines() if l.strip()})
+    files = {l[3:] if l[:2].strip() and len(l) > 3 and l[2] == " " else l.strip() for l in out.splitlines() if l.strip()}
+    # Система — каталог внутри DPmetaApp (Д45): git отдаёт пути от вершины репозитория;
+    # затронутое — только своё, путь — от каталога системы.
+    prefix = subprocess.run(["git", "rev-parse", "--show-prefix"], cwd=repo.root, capture_output=True, text=True).stdout.strip()
+    files = sorted(f[len(prefix):] for f in files if f.startswith(prefix))
     checks, tests = affected_checks(files)
     print(" ".join(checks) + (" +tests" if tests else ""))
     return 0

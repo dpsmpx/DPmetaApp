@@ -125,7 +125,8 @@ CS_PROD_YOUTUBE_OAUTH: {rotated: 2026-10-05, expires: 2026-10-12}
 2. Репозиторий — в домашний каталог Termux, не в `/sdcard` (там нет
    прав на исполнение): `gh auth login` (GitHub.com, HTTPS, вход через
    браузер; код вида `XXXX-XXXX` печатает Termux), `gh repo clone
-   dpsmpx/SocialMediaImage ~/SocialMediaImage`. В Termux нет хранилища
+   dpsmpx/DPmetaApp ~/DPmetaApp` — система лежит в
+   `~/DPmetaApp/socialmediaimage` (Д45), команды ниже — из этого каталога. В Termux нет хранилища
    ключей: токен `gh` лежит открытым текстом в `~/.config/gh/hosts.yml`
    (`gh` так и предупреждает); потерян телефон — отозвать на GitHub,
    Settings → Applications.
@@ -199,7 +200,7 @@ CS_PROD_YOUTUBE_OAUTH: {rotated: 2026-10-05, expires: 2026-10-12}
    Затем проверки: `tools/check.sh --quick`, `python3 -m tools.cs health`,
    `python3 -m tools.cs site deploy --dry-run` — ничего не выкладывает,
    последняя строка «изменений: N».
-8. Выгрузка (разрешена, Д34): `git pull` в `~/SocialMediaImage`, снова
+8. Выгрузка (разрешена, Д34): `git pull` в `~/DPmetaApp/socialmediaimage`, снова
    `python3 -m tools.cs site deploy --dry-run` — сверить, что удаляется,
    затем `python3 -m tools.cs site deploy` — или ярлыком ниже. В конце —
    проверка `/`, `/en/`, `/projects/` по `https://dpsmpx.com`: `✓` —
@@ -219,7 +220,7 @@ CS_PROD_YOUTUBE_OAUTH: {rotated: 2026-10-05, expires: 2026-10-12}
 главном экране. Установка — из каталога репозитория:
 ```bash
 mkdir -p ~/.shortcuts && chmod 700 ~/.shortcuts
-install -m 700 ~/SocialMediaImage/tools/termux/dpsmpx-site-deploy.sh ~/.shortcuts/
+install -m 700 ~/DPmetaApp/socialmediaimage/tools/termux/dpsmpx-site-deploy.sh ~/.shortcuts/
 ```
 Каталог — `~/.shortcuts/`, а не `~/.shortcuts/tasks/`: оттуда ярлык идёт
 без терминала, и подтверждение не спросить. Ярлык — копия: после
@@ -247,7 +248,7 @@ install -m 700 ~/SocialMediaImage/tools/termux/dpsmpx-site-deploy.sh ~/.shortcut
 с которой сравнивается сервер. Ошибку `ssh` с именем сервера в чат —
 только заменив имя на `СЕРВЕР`.
 ```bash
-cd ~/SocialMediaImage
+cd ~/DPmetaApp/socialmediaimage
 [ -f ~/.config/dpsmpx/deploy.env ] && . ~/.config/dpsmpx/deploy.env
 T="${CS_PROD_SITE_DEPLOY_TARGET:-}"; H="${T%%:*}"; P="${T#*:}"
 [ -n "$T" ] && echo "адрес задан" || echo "адрес не задан — шаг 6"
