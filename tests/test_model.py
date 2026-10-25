@@ -40,11 +40,12 @@ class RealModelTest(unittest.TestCase):
         self.assertEqual(committed, first, "data/model.json отстал: python3 -m tools.dpvis model build")
 
     def test_every_dpmeta_contract_is_cited_or_excluded(self):
-        # C-01…C-10 на 5 октября 2026; контракт архива исключён с причиной (D-20)
+        # C-01…C-10 на 5 октября 2026; C-08 (формат карт Andors-Love) с 25 октября покрыт потоком (D-23)
         model = json.loads(modelmod.expected_text(SOURCE))
         cited = {c for f in model["flows"] for c in f["contracts"]}
         excluded = {f"DPmeta:{c}" for c in model["registry"].get("exclude_contracts", [])}
-        self.assertEqual(excluded, {"DPmeta:C-08"})
+        self.assertEqual(excluded, set())
+        self.assertIn("DPmeta:C-08", cited)
         self.assertTrue(model["registry"].get("exclude_reason"))
         self.assertEqual(cited | excluded, {f"DPmeta:C-{i:02d}" for i in range(1, 11)})
         self.assertFalse(cited & excluded)

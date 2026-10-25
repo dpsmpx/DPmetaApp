@@ -596,6 +596,31 @@ Github»; «Пускай на сайте будет информация о ра
 `dpsmpx/DP_AI_Orcestrator` нет, он в `[registry] exclude`; сбор без
 `REGISTRY_DRIFT` по нему (обзор).
 
+### D-23 — Периферийные проекты с работой — в текущей системе
+
+**Статус.** Принято — слово автора 25 октября 2026 (сессия SocialMediaImage,
+опрос): AIM Trainer, DP_Clock, TrueJointTileMaker и Andors-Love — «ещё в
+«Экосистеме» и «Пути»». Уточняет D-20 («только текущая система»): архив
+по-прежнему вне схемы, а эти четыре проекта с работой в октябре 2026 —
+в ней.
+
+**Решение.**
+- Узлы `aimtrainer`, `dpclock`, `andorslove`, `tjtm` — группа
+  `periphery`; продукты — в слое «Продукты», редактор TrueJointTileMaker —
+  в «Инструментах». Закрытые (AIM Trainer, DP_Clock) — `private`, открытые —
+  `public`; тексты выжимки — `public_role`, `public_stage` (D-15).
+- Потоки `work.<узел>` — работа сессий (`DPmeta:E-08`); формат карт
+  Andors-Love → TrueJointTileMaker — `c08.andorslove.tjtm` по
+  `DPmeta:C-08` (контракт снят из `exclude_contracts`).
+- Andors-Love и TrueJointTileMaker сняты из `[registry] exclude`.
+  AIM_Trainer_pas и DP_Clock в реестре DPmeta пока нет — сборщик пишет их
+  в `not_in_registry`; добавить в реестр — сессией DPmeta (`TODO.md`).
+
+**Почему.** Слово автора: посетитель сайта видит всё, над чем идёт работа.
+
+**Проверка.** `python3 -m tools.dpvis model check`; сбор без
+`REGISTRY_DRIFT` и `CONTRACT_UNCOVERED` по этим проектам.
+
 ## История
 
 | Дата | Что |
@@ -608,3 +633,4 @@ Github»; «Пускай на сайте будет информация о ра
 | 9 октября 2026 | D-16 — просмотрщик без анимаций, связи — прямые, схема по ширине экрана (поручение автора); ТЗ F-21…F-23, F-33, N-04, N-05, A-07 — под него |
 | 10 октября 2026 | D-21 — ответы автора: DPmeta — слой синхронизации (группа `sync`), DP_AI_Orcestrator — в составе DPmetaApp, правило вливания |
 | 12 октября 2026 | D-22 — DP_AI_Orcestrator — подсистема DPmetaApp сейчас (`DPmetaApp:D-28`): узел снят, потоки — у DPmetaApp; пункт D-21 об оркестраторе заменён |
+| 25 октября 2026 | D-23 — периферийные проекты с работой (AIM Trainer, DP_Clock, TrueJointTileMaker, Andors-Love) — в текущей системе по слову автора; уточняет D-20 |

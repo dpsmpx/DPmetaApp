@@ -26,11 +26,15 @@
       `vis.dpvisualisation.smi` и `orc.dpmeta.dpmetaapp` (C-13 — манифест
       `dpai.ecosystem`, `DPmeta:M-11`), иначе сбор покажет
       `CONTRACT_UNCOVERED`.
+- [ ] `М` **DPmeta.** AIM_Trainer_pas и DP_Clock — в реестр `tools/ecosystem.toml`
+      (D-23: узлы `aimtrainer`, `dpclock` в модели есть, сбор пишет их в
+      `not_in_registry`); Andors-Love и TrueJointTileMaker — из периферии в
+      текущую систему (`DPmeta:docs/ECOSYSTEM.md`). Правка — сессией DPmeta.
 - [ ] `М` **DPmetaApp.** Живой режим схемы — его задача (D-18, фаза B; с
       его стороны — `DPmetaApp:D-26`).
 
 ## Долг
 
-- [ ] `М` Срез — на 12.10.2026, 14:12 UTC; следующий — перед выгрузкой сайта (D-18)
+- [ ] `М` Срез — на 25.10.2026, 08:20 UTC; следующий — перед выгрузкой сайта (D-18)
       или по `collect` (срез старше суток просмотрщик помечает «устарел»,
       F-31).
