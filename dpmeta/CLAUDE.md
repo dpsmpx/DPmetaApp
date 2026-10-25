@@ -65,7 +65,8 @@
 - После прохода по клонам — `python3 tools/xref.py`,
   `python3 tools/activity.py` и `python3 tools/manifest.py` (M-11) с
   ключами `--root <каталог клонов> --clone DPmeta=.` (M-14: DPmeta — этот
-  каталог, а не клон замороженного репозитория); срез — в
+  каталог, а не клон замороженного репозитория) и ключами других
+  подсистем DPmetaApp (`docs/PROCESS.md`, раздел 1); срез — в
   `docs/reports/` с датой.
 - GitHub Actions не используются — как во всей экосистеме
   (`docs/PRINCIPLES.md`, E-07).

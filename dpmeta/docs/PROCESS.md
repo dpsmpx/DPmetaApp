@@ -14,6 +14,19 @@
    `tools/activity.py` не увидит невлитой работы — он это пометит.
    Репозиторий аккаунта, которого нет в реестре, — находка: запись в
    реестре. Клоны только читаются.
+   **Подсистемы DPmetaApp.** DP_AI_Orcestrator, DPpass, SocialMediaImage,
+   DPvisualisation, DPmeta и DPprofile живут каталогами DPmetaApp
+   (`DPmetaApp:D-28`, `DPmetaApp:D-30`, `DPmetaApp:D-43`), а их строки
+   реестра пока ведут в замороженные репозитории (SQ-36). До правки
+   реестра `xref.py` и `manifest.py` получают их каталоги ключами
+   `--clone`: `DPmetaApp=<DPmetaApp>`, `DP_AI_Orcestrator=<DPmetaApp>/dpai`,
+   `DPpass=<DPmetaApp>/dppass` и так же `socialmediaimage`,
+   `dpvisualisation`, `dpprofile`, а `DPmeta=.`. Клон — и каталог внутри
+   рабочего дерева; файл принадлежит самому глубокому клону, поэтому
+   подсистема не считается второй раз за DPmetaApp. `activity.py`
+   читает замороженные репозитории без ключей — так видно, не работает
+   ли кто-то в них; подкаталог он отметил бы «признаки в строке его
+   репозитория».
 2. **Кто работает** (раздел 2) — до чтения документов: от этого зависит,
    можно ли что-то править. `python3 tools/activity.py --root <клоны>`
    плюс открытые PR и список сессий.
