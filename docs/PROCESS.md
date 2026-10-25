@@ -33,7 +33,7 @@
 | Секретов нет — и это проверяется; файлы ключей запрещены | `DPmeta:E-09`; `DPpass:CLAUDE.md`, `DPlearn:tools/check/check.py` | проверка `security.secrets` |
 | Тексты по-русски, идентификаторы латиницей; `P` и `Р` | `DPmeta:E-10`, `DPmeta:M-06` | D-14 |
 | Чужое — только с записью происхождения | `DPmeta:E-11`; `DPpass:D-20` | `docs/PROVENANCE.md` |
-| Детерминизм прежде скорости | `DPmeta:E-12`; `DP-Verify:V-14` | D-04, ТЗ N-01 |
+| Детерминизм прежде скорости | `DPmeta:E-12`; `DP-Verify:V-14` | D-34, ТЗ N-01 |
 | Блок состояния README пишет скрипт | `DPmeta:E-13`; `DPprofile:tools/verify/readme_status.py`, `DPpass:tools/hostcheck/readme_progress.py` | `tools/check/run.sh --write-status`, проверка `readme.status` |
 | Одна команда проверок, уровни, коды 0/1/2/3, пустая проверка — провал | `DP-Verify:V-07`, `DP-Verify:V-10`; ТЗ DP-Verify §9 | `tools/check/run.sh` |
 | У правила — образец, который оно ловит, и чистый образец | ТЗ DP-Verify, N-08 там | `tests/test_check.py` |
@@ -44,13 +44,13 @@
 | `Outcome` и `Diagnostic` вместо исключений; коды только добавляются | `DPpass:D-22` | ТЗ §6.9 |
 | `Secret`, журнал с редактированием, `Clock` | `DPpass:D-11`, `DPpass:D-21` | ТЗ §6.3, §6.6 |
 | Хранение: AES-256-GCM, ключ Keystore, без резервных копий | `DPpass:D-19` | D-09 |
-| Без телеметрии (и статистики сборки плагина Kotlin: `kotlin.internal.collectFUSMetrics=false` в корне, `dpai/`, `dpai/build-logic`) | `DPpass:D-12` | D-10 |
+| Без телеметрии (и статистики сборки плагина Kotlin: `kotlin.internal.collectFUSMetrics=false` в корне, `dpai/`, `dpai/build-logic`); журнал отладки — только файлом в приложении | `DPpass:D-12` | D-10, D-39 |
 | Проверка манифеста и APK | `DPpass:tools/hostcheck/check_manifest.py`, `DPpass:tools/hostcheck/check_apk.py` | этапы 3 и 8 |
 | Релиз — только своим ключом; без ключа сборка останавливается | `Galdhold:app/build.gradle` | D-12, ТЗ §12.4 |
 | Источник выпуска — только артефакт сборки | `DPmeta:RISK-08` | ТЗ §12.4 |
-| Состояние — следствие событий; числа правил в одном месте | `DPlearn:D-01`; `DP_game_market_analytic_system:docs/ARCHITECTURE.md`; `DPmonetization:tools/dpmon/__init__.py` | D-04 |
+| Числа правил в одном месте (хранение наблюдений с пересчётом — D-04 — заменено готовым состоянием с историей чисел) | `DPlearn:D-01`; `DP_game_market_analytic_system:docs/ARCHITECTURE.md`; `DPmonetization:tools/dpmon/__init__.py` | D-34 |
 | Факты — с датой и источником; неизвестное — UNKNOWN | `SocialMediaImage:CLAUDE.md`, «Факты и утверждения» | ТЗ §0, приложение В |
-| Выгрузка — только командой системы, «да» — у автора; правила `ask` | `SocialMediaImage:Д35`, `SocialMediaImage:Д36` | D-11; `.claude/settings.json` |
+| Выгрузка — только командой системы, «да» — у автора; правила `ask` | `SocialMediaImage:Д35`, `SocialMediaImage:Д36` | D-40 (в приложении — подсистемой SocialMediaImage); `.claude/settings.json` |
 | Ссылки между репозиториями `Проект:номер`, `Проект:путь` | `DPmeta:C-06` | проверка `docs.refs` |
 
 **Что не взято сейчас и почему:**
@@ -96,8 +96,8 @@
 | Класс | Что | Проверки | Проверяющий |
 |---|---|---|---|
 | обычная | экран, разборщик формата, метрика, документ | `static` после правки; `full` перед вливанием | — |
-| системная | сборка, общие модули (`:core:diagnostics`, `:core:model`, `:core:net`), формат данных и наблюдений, `Rules.kt` | `full` после задачи | на контрольной точке |
-| рискованная | секреты и хранилище, действия уровня 2, сеть, подпись и выпуск, мост Termux | `full --strict` после задачи | обязательно, до вливания |
+| системная | сборка, общие модули (`:core:diagnostics`, `:core:model`, `:core:net`), формат данных, состояния и истории чисел, `Rules.kt` | `full` после задачи | на контрольной точке |
+| рискованная | секреты и хранилище, действия уровней 2 и 3, запись в репозитории, журнал отладки, сеть, подпись и выпуск, мост Termux | `full --strict` после задачи | обязательно, до вливания |
 
 Проверяющий — отдельный агент только для чтения (`Galdhold:CLAUDE.md`):
 раз в пять законченных задач, после рискованной задачи и перед вливанием
