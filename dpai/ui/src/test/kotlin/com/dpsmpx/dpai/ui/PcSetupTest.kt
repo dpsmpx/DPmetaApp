@@ -48,16 +48,18 @@ class PcSetupTest {
         val cmd = assertNotNull(PcSetup.linuxCommand(key))
         assertTrue('\n' !in cmd && '\r' !in cmd, "одна строка")
         assertEquals(1, Regex.escape(key).toRegex().findAll(cmd).count())
-        assertTrue("DPAI_KEY_LINE" !in cmd && "Локаль UTF-8" !in cmd, "ключ подставлен, комментарии не попали")
+        assertTrue("DPAI_KEY_LINE" !in cmd && "DPAI_NETS" !in cmd && "Локаль UTF-8" !in cmd, "ключ и сети подставлены, комментарии не попали")
+        assertTrue("from=\"${PcSetup.PRIVATE_NETS}\"" in cmd && "tailscale" !in cmd.lowercase(), "ключ — из частных сетей, без Tailscale (D-84)")
         assertNull(PcSetup.linuxCommand(null))
         assertNull(PcSetup.linuxCommand("ssh-ed25519 AAAA' ; rm -rf ~ ; ' dpai-android"))
     }
 
     /**
      * Команда целиком — в песочнице: свой HOME, заглушки `sudo`, `apt-get`,
-     * `id`, `tailscale`, `ssh-keygen`, настоящий архив агента. Проверяется
-     * то, что на ПК не проверить из облака: ключ — только из Tailscale и
-     * один, чужие ключи целы, агент — с локалью UTF-8, поля для «Добавить».
+     * `id`, `ip`, `ssh-keygen`, настоящий архив агента. Проверяется то,
+     * что на ПК не проверить из облака: ключ — только из частных сетей
+     * (D-84) и один, чужие ключи целы, агент — с локалью UTF-8, поля для
+     * «Добавить» — адреса ПК только из частных сетей.
      */
     @Test
     fun linuxCommandRunsEndToEndInASandbox() {
@@ -69,7 +71,11 @@ class PcSetupTest {
         stub("sudo", "echo \"sudo $*\" >> '${log.path}'; exit 0")
         stub("apt-get", "exit 0")
         stub("id", "case \"$1\" in -u) echo 1000;; -un) echo tester;; *) echo tester;; esac")
-        stub("tailscale", "echo 100.101.102.103")
+        stub(
+            "ip",
+            "printf '%s\\n' '2: eth0    inet 192.168.1.20/24 brd 192.168.1.255 scope global eth0' " +
+                "'3: tailscale0    inet 100.101.102.103/32 scope global tailscale0' '4: wan0    inet 203.0.113.5/24 scope global wan0'",
+        )
         stub("ssh-keygen", "echo \"256 SHA256:stub host (ED25519)\"")
         stub("xdg-user-dir", "echo '${home.path}/Downloads'")
         File(home, ".ssh").mkdirs()
@@ -92,9 +98,10 @@ class PcSetupTest {
         val out = (done.stdout + done.stderr).joinToString("\n")
         assertEquals(0, done.exitCode, out)
         val keys = File(home, ".ssh/authorized_keys").readLines()
-        assertEquals(listOf("ssh-ed25519 AAAAother me@pc", "from=\"100.64.0.0/10\" $key"), keys, "чужой ключ цел, прежний ключ DP AI заменён")
+        assertEquals(listOf("ssh-ed25519 AAAAother me@pc", "from=\"${PcSetup.PRIVATE_NETS}\" $key"), keys, "чужой ключ цел, прежний ключ DP AI заменён")
         assertTrue("agent ok: agent doctor LANG=C.UTF-8" in out, out)
-        assertTrue("Хост: 100.101.102.103" in out && "Команда агента dpai: ${home.path}/dpai-agent" in out && "SHA256:stub" in out, out)
+        assertTrue("Хост: 192.168.1.20 100.101.102.103 " in out && "203.0.113.5" !in out, "адреса ПК — только частные: $out")
+        assertTrue("Команда агента dpai: ${home.path}/dpai-agent" in out && "SHA256:stub" in out && "раздачу DPpass" in out, out)
         val sudo = log.readText()
         assertTrue("apt-get install" in sudo && "sshd -t" in sudo && "sudo -v" in sudo, sudo)
         // Ключи хоста — до проверки sshd -t: на свежей системе без них проверка падает.

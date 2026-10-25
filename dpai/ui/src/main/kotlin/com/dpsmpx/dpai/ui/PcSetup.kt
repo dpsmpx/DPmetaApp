@@ -40,7 +40,7 @@ object PcSetup {
     }
 
     /**
-     * Команда для ПК с Linux (D-70) — одной строкой, как у Windows: строки
+     * Команда для ПК с Linux (D-70; ключ из частных сетей — D-84) — одной строкой, как у Windows: строки
      * скрипта `pc-setup.sh` (без комментариев) — в одинарных кавычках для
      * `printf` во временный файл (`mktemp`), затем `bash` его и удаление. Так `sudo`
      * спрашивает пароль в терминале, команды скрипта не читают его остаток
@@ -54,6 +54,7 @@ object PcSetup {
         val lines = checkNotNull(PcSetup::class.java.getResourceAsStream("pc-setup.sh")) { "нет pc-setup.sh" }
             .use { it.readBytes().toString(Charsets.UTF_8) }
             .replace(PLACEHOLDER, key)
+            .replace(NETS_PLACEHOLDER, PRIVATE_NETS)
             .lines()
             .filter { it.isNotBlank() && !it.trimStart().startsWith("#") }
         // Своё имя файла (mktemp), а не общее: заранее созданный чужой файл с тем же именем подменил бы

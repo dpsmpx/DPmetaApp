@@ -35,10 +35,10 @@ object WorkspaceLink {
         stdout.asReversed().firstNotNullOfOrNull { PUBLIC.matchEntire(it.trim())?.groupValues?.get(1) }?.let { "$it $COMMENT" }
 
     /**
-     * На ПК: строка [publicKey], прежняя строка связки заменяется. Windows
-     * (пользователь — администратор) — `administrators_authorized_keys`, из
-     * частных сетей (D-68); Linux (D-70) — `~/.ssh/authorized_keys`
-     * пользователя, только из сети Tailscale (ревью 17 октября 2026: раньше
+     * На ПК: строка [publicKey] — только из частных сетей (D-68, D-84),
+     * прежняя строка связки заменяется. Windows (пользователь —
+     * администратор) — `administrators_authorized_keys`; Linux (D-70) —
+     * `~/.ssh/authorized_keys` пользователя (ревью 17 октября 2026: раньше
      * была только ветка Windows).
      */
     fun pcAuthorize(publicKey: String, platform: TargetPlatform = TargetPlatform.WINDOWS): List<String> {
@@ -48,7 +48,7 @@ object WorkspaceLink {
             return listOf(
                 "sh", "-c",
                 "mkdir -p \"\$HOME/.ssh\" && chmod 700 \"\$HOME/.ssh\" && touch \"$ak\" && " +
-                    "{ grep -v ' $COMMENT\$' \"$ak\"; printf '%s\\n' 'from=\"100.64.0.0/10\" $publicKey'; } > \"$ak.dpai-new\" && " +
+                    "{ grep -v ' $COMMENT\$' \"$ak\"; printf '%s\\n' 'from=\"${PcSetup.PRIVATE_NETS}\" $publicKey'; } > \"$ak.dpai-new\" && " +
                     "mv \"$ak.dpai-new\" \"$ak\" && chmod 600 \"$ak\" && echo dpai-linked",
             )
         }

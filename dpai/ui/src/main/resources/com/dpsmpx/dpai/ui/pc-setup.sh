@@ -46,11 +46,16 @@ else
   echo '  sshd_config с ошибкой: сервер не перезапускался — смотрите вывод выше'
 fi
 
-echo '[3/5] Ключ приложения (только из сети Tailscale; прежний ключ DP AI заменяется)'
+echo '[3/5] Ключ приложения (только из частных сетей — дом, точка доступа телефона, свой VPN; прежний ключ DP AI заменяется)'
 mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
 touch "$HOME/.ssh/authorized_keys"
-{ grep -v ' dpai-android$' "$HOME/.ssh/authorized_keys"; printf 'from="100.64.0.0/10" %s\n' "$KEY"; } > "$HOME/.ssh/authorized_keys.dpai-new"
+{ grep -v ' dpai-android$' "$HOME/.ssh/authorized_keys"; printf 'from="DPAI_NETS" %s\n' "$KEY"; } > "$HOME/.ssh/authorized_keys.dpai-new"
 mv "$HOME/.ssh/authorized_keys.dpai-new" "$HOME/.ssh/authorized_keys" && chmod 600 "$HOME/.ssh/authorized_keys"
+# Брандмауэр (D-84): включённый ufw пускает к порту 22 только частные сети; firewalld пускает ssh в зоне по умолчанию.
+if command -v ufw >/dev/null 2>&1 && sudo ufw status 2>/dev/null | grep -q '^Status: active'; then
+  for n in $(echo 'DPAI_NETS' | tr ',' ' '); do sudo ufw allow from "$n" to any port 22 proto tcp >/dev/null; done
+  echo '  ufw: порт 22 открыт только для частных сетей'
+fi
 
 echo '[4/5] Агент dpai'
 dl=$(xdg-user-dir DOWNLOAD 2>/dev/null || echo "$HOME/Downloads")
@@ -69,9 +74,12 @@ else
 fi
 
 echo '[5/5] Поля для «Добавить» в приложении'
-ip=$(tailscale ip -4 2>/dev/null | head -n 1)
-[ -n "$ip" ] || ip='нет Tailscale — поставьте: https://tailscale.com/download/linux'
-echo "  Хост: $ip   Порт: 22   Пользователь: $(id -un)   Windows: не отмечать"
+# Адреса ПК в частных сетях (D-84): «Хост» — адрес в сети, общей с телефоном.
+if command -v ip >/dev/null 2>&1; then all=$(ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1); else all=$(hostname -I 2>/dev/null | tr ' ' '\n'); fi
+ips=$(printf '%s\n' $all | grep -E '^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.|100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.)' | tr '\n' ' ')
+[ -n "$ips" ] || ips='не найден — подключите ПК к сети, общей с телефоном'
+echo "  Хост: $ips  Порт: 22   Пользователь: $(id -un)   Windows: не отмечать"
+echo '  Дома — адрес ПК в домашней сети; вне дома — ПК на точке доступа телефона, интернет ПК — через раздачу DPpass (docs/SETUP_PC_LINUX.md)'
 echo "  Команда агента dpai: $HOME/dpai-agent"
 echo '  Каталог Claude слота: оставить пустым (Claude — на телефоне)'
 echo '  Отпечатки ключа хоста — сверить с «Получить ключ хоста»:'
