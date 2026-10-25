@@ -182,7 +182,7 @@ API не включён. Граница — этот раздел и реест�
 | Действия на target | ход Claude (`dpai.run-spec` агенту), команды `git -C`, шаги проверки; команды `gh` (`gh pr create`, `gh pr view`) строит `GitHubCommands` — контур их пока не вызывает | target, репозиторий, GitHub |
 | Результат задачи | коммит в ветке задачи, `DONE`; слияние в ветку интеграции — после одобрения | репозиторий пользователя |
 | Отчёт проверки | `VerificationReport` (`dpai.verification-report` v1, текст — `render`); в журнале — вердикт и хеш отчёта | задача, аудит |
-| Итог глобального прогона | документ `dpai.ecosystem-results` v1 | пользователь, DPmeta |
+| Итог глобального прогона | документ `dpai.ecosystem-results` v1 | пользователь (DPmeta его не читает — раздел 20) |
 | Уведомления | `NotificationDecision` (`Post`, `Update`, `Held`), сводка — `flush`; категория и ссылка `dpai://` | оболочка (`Notifier`) |
 | Экраны | `DashboardScreen`, `TaskBoard`, `SessionScreen` через `ControlView`; текстом — `DashboardText` | оболочка |
 | Диагностика | `Diagnostic` с кодом и причинами; `SelfDiagnosis` | пользователь, журнал |
@@ -530,10 +530,14 @@ DP-Verify как шаг профиля проверки (D-16).
   строк, поля решает источник), `documents`, `suggestions` (`key`, `title`,
   `objective`, `priority` — уровень `Priority`, `operation`). Читает
   `ManifestEcosystem`, строго (D-09); код DPmeta не переносится (D-16).
-  Выгрузка манифеста из DPmeta — открытый вопрос к DPmeta (`TODO.md`).
-- Оркестратор → DPmeta: итоги прогона `dpai.ecosystem-results` v1 (проект,
-  предложение, задача, состояние, вердикт, хеш отчёта); события
-  `dpai.event` — для состояния активности.
+  Манифест строит DPmeta (`DPmeta:tools/manifest.py`, `DPmeta:M-11`,
+  `DPmeta:C-13`) — с 25 октября 2026 подсистема `dpmeta/` того же
+  репозитория (`DPmetaApp:D-43`); сюда он не копируется, а читается из
+  клона или файла на устройстве автора (`DPmeta:C-13`, «Границы»).
+- Обратного потока нет: итоги прогона `dpai.ecosystem-results` v1 (проект,
+  предложение, задача, состояние, вердикт, хеш отчёта) и события
+  `dpai.event` — пользователю и экранам; DPmeta их не читает
+  (`DPmeta:C-13`, `DPmeta:M-01`).
 - Необязательность (ТЗ, §5.3, §148): манифеста нет — `EcosystemProvider.None`
   (`ECOSYSTEM_DISABLED`, не ошибка); недоступен или испорчен —
   `ECOSYSTEM_UNAVAILABLE`, ручные задачи идут
