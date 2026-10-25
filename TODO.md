@@ -26,7 +26,7 @@
       `vis.dpvisualisation.smi` и `orc.dpmeta.dpmetaapp` (C-13 — манифест
       `dpai.ecosystem`, `DPmeta:M-11`), иначе сбор покажет
       `CONTRACT_UNCOVERED`.
-- [ ] `М` **DPmeta.** AIM_Trainer_pas и DP_Clock — в реестр `tools/ecosystem.toml`
+- [ ] `М` **DPmeta.** AIM_Trainer_pas и DP_Clock — в реестр `DPmeta:tools/ecosystem.toml`
       (D-23: узлы `aimtrainer`, `dpclock` в модели есть, сбор пишет их в
       `not_in_registry`); Andors-Love и TrueJointTileMaker — из периферии в
       текущую систему (`DPmeta:docs/ECOSYSTEM.md`). Правка — сессией DPmeta.
