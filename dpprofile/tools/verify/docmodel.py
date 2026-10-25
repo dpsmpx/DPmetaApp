@@ -519,6 +519,44 @@ def is_git_repo(root=None):
     return top_code == 0 and os.path.realpath(top.strip()) == os.path.realpath(root or ROOT)
 
 
+# DPprofile — подсистема DPmetaApp, каталог dpprofile/ (D-16): своей вершины git у него
+# нет. Его история как отдельного репозитория — `git subtree split` с опорой на прежний
+# main DPprofile: у коммитов до переезда — те же SHA и даты, после — переписанные, с
+# теми же датами. DPPROFILE_PRE_MOVE_HEAD — та же опора для самопроверки.
+PRE_MOVE_HEAD = "3e76c10730d3cf1f98ce8f11063b02a7fb1670ed"
+_history_cache = {}
+
+
+def history(root=None):
+    """(каталог для git, ревизия) истории DPprofile; (None, причина), если её не прочитать.
+
+    Своя вершина git — (root, "HEAD"). Каталог в чужом репозитории — вершина того
+    репозитория и коммит `git subtree split` (только закоммиченное).
+    """
+    root = os.path.realpath(root or ROOT)
+    onto = os.environ.get("DPPROFILE_PRE_MOVE_HEAD", PRE_MOVE_HEAD)
+    key = (root, onto)
+    if key not in _history_cache:
+        _history_cache[key] = _history(root, onto)
+    return _history_cache[key]
+
+
+def _history(root, onto):
+    if is_git_repo(root):
+        return root, "HEAD"
+    code, inside = git(["rev-parse", "--is-inside-work-tree"], cwd=root)
+    if code != 0 or inside.strip() != "true":
+        return None, "не репозиторий git — историю не проверить"
+    _, top = git(["rev-parse", "--show-toplevel"], cwd=root)
+    _, prefix = git(["rev-parse", "--show-prefix"], cwd=root)
+    top, prefix = top.strip(), prefix.strip().rstrip("/")
+    code, out = git(["subtree", "split", f"--prefix={prefix}", f"--onto={onto}", "HEAD"], cwd=top)
+    sha = out.strip().split("\n")[-1] if code == 0 and out.strip() else ""
+    if not re.fullmatch(r"[0-9a-f]{40}", sha):
+        return None, f"история каталога {prefix}/ не собрана (git subtree split, опора {onto[:7]})"
+    return top, sha
+
+
 # ---------------------------------------------------------------- условия этапов
 
 class Context:
@@ -626,12 +664,13 @@ def coverage(what, ctx):
 
 
 def stable(rel, days, root):
-    if not is_git_repo(root) or not exists(rel, root):
+    where, rev = history(root)
+    if where is None or not exists(rel, root):
         return False
     code, dirty = git(["status", "--porcelain", "--", rel], cwd=root)
     if code != 0 or dirty.strip():
         return False
-    code, out = git(["log", "-1", "--format=%cs", "--", rel], cwd=root)
+    code, out = git(["log", "-1", "--format=%cs", rev, "--", rel], cwd=where)
     last = iso(out.strip())
     return last is not None and (today() - last).days >= days
 

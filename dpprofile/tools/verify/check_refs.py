@@ -32,7 +32,7 @@ def sources_dir(root):
 def repo_dir(sid, registry, root):
     s = registry[sid]
     if s["kind"] == "self":
-        return root if dm.is_git_repo(root) else None
+        return dm.history(root)[0]  # в DPmetaApp — его вершина: коммиты DPprofile в его истории
     d = os.path.join(sources_dir(root), s["clone"] + ".git")
     return d if os.path.isdir(d) else None
 

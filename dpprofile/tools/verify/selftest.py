@@ -102,6 +102,36 @@ def git_commit(root, message="правка"):
     git(root, "commit", "-q", "-m", message)
 
 
+def subtree_repo(tmp, name, mutate=None):
+    """DPprofile каталогом sub/ в чужом репозитории, как в DPmetaApp (D-16): (каталог, опора).
+
+    Опора — main «прежнего репозитория» до слияния поддерева; mutate — правка уже
+    внутри внешнего репозитория, с коммитом там.
+    """
+    base = os.path.join(tmp, name + "-base")
+    copy_repo(base)
+    git_repo(base)
+    onto = subprocess.run(["git", "rev-parse", "HEAD"], cwd=base, capture_output=True, text=True).stdout.strip()
+    outer = os.path.join(tmp, name + "-outer")
+    os.makedirs(outer)
+    write(outer, "README.md", "# внешний репозиторий\n")
+    git_repo(outer)
+    git(outer, "fetch", "-q", base, "HEAD")
+    git(outer, "merge", "-q", "-s", "ours", "--no-commit", "--allow-unrelated-histories", "FETCH_HEAD")
+    git(outer, "read-tree", "--prefix=sub/", "-u", "FETCH_HEAD")
+    git(outer, "commit", "-q", "-m", "слияние поддерева")
+    root = os.path.join(outer, "sub")
+    if mutate:
+        mutate(root)
+        git_commit(outer)
+    return root, onto
+
+
+def rewrite_fact(r):
+    rel, _ = fact(r)
+    sub(r, rel, r"^statement: .*$", "statement: Другая формулировка того же факта.")
+
+
 def insight(root, name, lines, body=""):
     write(root, f"docs/insights/{name}.md", "---\n" + "\n".join(lines) + "\n---\n" + body)
 
@@ -314,8 +344,7 @@ def t_readme_stale(r):
 
 def t_history_rewrite(r):
     git_repo(r)
-    rel, _ = fact(r)
-    sub(r, rel, r"^statement: .*$", "statement: Другая формулировка того же факта.")
+    rewrite_fact(r)
     git_commit(r)
 
 
@@ -446,6 +475,17 @@ def main(argv):
             elif verbose:
                 print(f"  ✓ {name} → {script}")
             shutil.rmtree(root, ignore_errors=True)
+        # Каталог в чужом репозитории (D-16): история — представление git subtree split.
+        root, onto = subtree_repo(tmp, "subtree")
+        code, out = run(root, "check_history", "--strict", env={"DPPROFILE_PRE_MOVE_HEAD": onto})
+        if code != 0 or not re.search(r"фактов в истории [1-9]", out):
+            failures.append(f"подкаталог: чистая история не прошла\n{out.strip()[:600]}")
+        root, onto = subtree_repo(tmp, "subtree-rewrite", rewrite_fact)
+        code, out = run(root, "check_history", "--strict", env={"DPPROFILE_PRE_MOVE_HEAD": onto})
+        if code == 0 or "изменено ядро" not in out:
+            failures.append(f"подкаталог: факт переписан — check_history не поймал\n{out.strip()[:600]}")
+        elif verbose:
+            print("  ✓ подкаталог: факт переписан → check_history")
     if failures:
         for f in failures:
             print(f"✗ {f}")

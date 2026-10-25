@@ -103,6 +103,8 @@ fi
     echo "  проверки — cd dpvisualisation && tools/check/run.sh [full] (Python 3.11+; full — Node.js и Chromium)."
     echo "Подсистема DPmeta — dpmeta/ (D-43): правила dpmeta/CLAUDE.md; проверки — cd dpmeta && tools/check.sh"
     echo "  (клоны экосистемы — CLONES=<каталог клонов>); аудит документации — /doc-consistency-audit."
+    echo "Подсистема DPprofile — dpprofile/ (D-43): правила dpprofile/CLAUDE.md; проверки — cd dpprofile &&"
+    echo "  tools/verify/run.sh --quick|--full (--full — после tools/verify/fetch_sources.sh)."
     # Зависимости проверок SocialMediaImage (PyYAML, jsonschema и др.) — в веб-сессии, если их нет.
     if ! python3 -c "import yaml, jsonschema" 2>/dev/null; then
         if [ "${CLAUDE_CODE_REMOTE:-}" = "true" ]; then
