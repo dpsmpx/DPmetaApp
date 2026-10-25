@@ -35,10 +35,11 @@ object WorkspaceLink {
         stdout.asReversed().firstNotNullOfOrNull { PUBLIC.matchEntire(it.trim())?.groupValues?.get(1) }?.let { "$it $COMMENT" }
 
     /**
-     * На ПК: строка [publicKey] — только из сети Tailscale, прежняя строка
-     * связки заменяется. Windows (пользователь — администратор) —
-     * `administrators_authorized_keys`; Linux (D-70) — `~/.ssh/authorized_keys`
-     * пользователя (ревью 17 октября 2026: раньше была только ветка Windows).
+     * На ПК: строка [publicKey], прежняя строка связки заменяется. Windows
+     * (пользователь — администратор) — `administrators_authorized_keys`, из
+     * частных сетей (D-68); Linux (D-70) — `~/.ssh/authorized_keys`
+     * пользователя, только из сети Tailscale (ревью 17 октября 2026: раньше
+     * была только ветка Windows).
      */
     fun pcAuthorize(publicKey: String, platform: TargetPlatform = TargetPlatform.WINDOWS): List<String> {
         require(PUBLIC.matches(publicKey) && publicKey.endsWith(" $COMMENT")) { "не ключ связки" }
