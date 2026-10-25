@@ -30,4 +30,5 @@ cd /tmp/restore && git init -q && git add -A && python3 -m tools.cs check schema
 ```
 
 Архив самодостаточен: в нём данные, документы и код инструментов
-(`tools/`, `tests/`, `website/`); нужны только Python и PyYAML/jsonschema.
+(`tools/`, `tests/`, `website/`); нужны Python и PyYAML/jsonschema, для метки
+изображений (Д41) — ещё numpy и Pillow (`tools/requirements.txt`).

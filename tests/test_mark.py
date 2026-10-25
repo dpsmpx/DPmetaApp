@@ -171,6 +171,18 @@ class Stamps(unittest.TestCase):
         self.assertEqual(stamp.tsr_status(der_resp(0)), 0)
         self.assertEqual(stamp.tsr_status(der_resp(2)), 2)
         self.assertIsNone(stamp.tsr_status(b"<html>"))
+        self.assertIsNone(stamp.tsr_status(b"\x30\x05\x30\x03\x02\x01"), "обрезанный ответ — не метка")
+
+    def test_broken_response_is_pending(self):
+        import http.client
+
+        class Broken(_Resp):
+            def read(self, *a):
+                raise http.client.IncompleteRead(b"")
+
+        mp = self.manifest()
+        self.assertEqual(stamp.rfc3161(mp, post=lambda r, timeout=None: Broken()).state, "pending")
+        self.assertFalse(mp.with_name("manifest.json.tsr").exists())
 
     def test_network_down_is_pending_not_failure(self):
         mp = self.manifest()
@@ -298,10 +310,45 @@ class DeployWithMark(unittest.TestCase):
             return deploy.run(repo, out, dry_run=dry_run, runner=FakeRsync(), post=down)
 
     def test_without_key_refuses(self):
+        from tools.cs.site import deploy
         repo = marked_repo()
         res = self.deploy(repo, tree(), self.keyfile.with_name("нет.key"))
         self.assertFalse(res.ok)
         self.assertIn("mark init", res.problems[0])
+        with mock.patch.dict(os.environ, {**AUTHOR, mkey.KEY_ENV: str(self.keyfile.with_name("нет.key"))}):
+            self.assertTrue(any("mark init" in p for p in deploy.guard(repo)), "ключ проверяет и preflight публикации")
+            self.assertFalse([p for p in deploy.guard(site_repo()) if "ключ" in p], "без deploy.mark ключ не нужен")
+
+    def test_release_record_failure_does_not_fail_deploy(self):
+        from tools.cs.site import deploy
+        repo, out = marked_repo(), tree()
+        with mock.patch.object(deploy, "record_release", side_effect=OSError("диск")):
+            res = self.deploy(repo, out, self.keyfile)
+        self.assertTrue(res.ok, "rsync уже прошёл — выгрузка не падает")
+        self.assertIsNone(res.release)
+        self.assertTrue(any("манифест выпуска не записан" in p for p in res.problems))
+
+    def test_manifest_names_object_and_version(self):
+        from types import SimpleNamespace as NS
+        from tools.cs.site import deploy
+        repo, out = marked_repo(), tree()
+        entry = NS(item=NS(id="CI-0101"), variant=NS(id="website.ru", m=lambda k: 3 if k == "version" else None),
+                   path="/path/", image=None)
+        objs = release.objects([entry])
+        self.assertEqual(objs, {"path/index.html": {"object": "CI-0101", "variant": "website.ru", "version": 3}})
+        from tools.cs.site import deploy as d
+
+        def down(req, timeout=None):
+            raise urllib.error.URLError("нет сети")
+
+        with mock.patch.dict(os.environ, {**AUTHOR, mkey.KEY_ENV: str(self.keyfile)}), \
+                mock.patch("tools.cs.mark.stamp.shutil.which", return_value=None):
+            res = d.run(repo, out, runner=FakeRsync(), post=down, objects=objs)
+        man = json.loads(res.release.read_text(encoding="utf-8"))
+        rec = next(f for f in man["files"] if f["path"] == "path/index.html")
+        self.assertEqual((rec["object"], rec["variant"], rec["version"]), ("CI-0101", "website.ru", 3))
+        self.assertNotIn("object", next(f for f in man["files"] if f["path"] == "style.css"))
+        self.assertTrue(deploy)
 
     def test_marks_once_writes_manifest_and_survives_no_network(self):
         repo, out = marked_repo(), tree()

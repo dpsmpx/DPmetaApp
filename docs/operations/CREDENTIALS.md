@@ -193,8 +193,9 @@ CS_PROD_YOUTUBE_OAUTH: {rotated: 2026-10-05, expires: 2026-10-12}
    Ключ — в свою резервную копию вне Git и вне сессий ИИ: без него
    выпущенные метки не прочитать, а без файла выгрузка отказывает. Для
    изображений на сайте — `pkg install python-numpy python-pillow`; для
-   меток OpenTimestamps — по желанию `"$PREFIX/bin/python3" -m pip install
-   opentimestamps-client` (без него — только RFC 3161, `.ots` позже).
+   меток OpenTimestamps — тоже: `"$PREFIX/bin/python3" -m pip install
+   opentimestamps-client` (Д41 — метки обеих служб; без клиента выгрузка
+   ставит только RFC 3161, `.ots` — позже командой `mark stamp`).
    Затем проверки: `tools/check.sh --quick`, `python3 -m tools.cs health`,
    `python3 -m tools.cs site deploy --dry-run` — ничего не выкладывает,
    последняя строка «изменений: N».

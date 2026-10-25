@@ -284,7 +284,18 @@ def cmd_publish(a) -> int:
     for n in o.notes:
         print(f"  · {n}")
     print(f"итог: {o.status}{' ' + o.remote_url if o.remote_url else ''}{' ' + str(o.error) if o.error else ''}")
+    _remind_releases(repo)
     return 0 if o.status in ("dry_run", "published", "already_published", "scheduled", "manual_required") else 1
+
+
+def _remind_releases(repo: Repo) -> None:
+    """После рабочей выгрузки сайта — манифест выпуска и метки времени в Git (Д41)."""
+    import subprocess
+    r = subprocess.run(["git", "status", "--porcelain", "--", "data/provenance/site-releases"],
+                       cwd=repo.root, capture_output=True, text=True)
+    if r.returncode == 0 and r.stdout.strip():
+        print("  · манифест выпуска и метки времени (Д41) — закоммитить: "
+              "git add data/provenance/site-releases && git commit && git push")
 
 
 # ----------------------------------------------------------------- виды
@@ -366,7 +377,8 @@ def _site_deploy(repo: Repo, dry_run: bool) -> int:
     if r.errors:
         print("сборка не прошла проверку — не выгружаю:" + "".join(f"\n  ✗ {e}" for e in r.errors))
         return 1
-    res = deploy.run(repo, out, "production", dry_run=dry_run)
+    from .mark.release import objects
+    res = deploy.run(repo, out, "production", dry_run=dry_run, objects=objects(rep.entries))
     print(("пробный прогон" if dry_run else "выгрузка") + f": {' '.join(res.command)}")
     for line in res.changes[:200]:
         print(f"  {line}")
@@ -547,7 +559,7 @@ AFFECTED = [  # префикс пути → проверки (tools/check.sh --a
     ("data/projects/", ["projects", "site", "siteshots"]),
     ("data/identity/", ["destinations", "projects", "canonical", "site", "siteshots"]),
     ("data/website/", ["site", "siteshots"]),
-    ("data/provenance/", ["provenance"]),
+    ("data/provenance/", ["provenance", "releases"]),
     ("data/metrics/", ["metrics"]),
     ("data/experiments/", ["metrics"]),
     ("website/", ["site", "siteshots"]),

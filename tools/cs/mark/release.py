@@ -53,8 +53,21 @@ def mark_file(rel: str, data: bytes, key: bytes) -> tuple[bytes, dict]:
     return data, {}
 
 
-def mark_build(root: Path, key: bytes) -> list[dict]:
-    """Поставить метку в сборке root на месте; записи всех файлов по порядку путей."""
+def objects(entries) -> dict[str, dict]:
+    """Какой объект контента стоит за файлом сборки (Д41: «объект и версия каждого файла»):
+    страница записи и её изображение → {object, variant, version}; entries — BuildReport.entries."""
+    out = {}
+    for e in entries or []:
+        rec = {"object": e.item.id, "variant": e.variant.id, "version": int(e.variant.m("version") or 1)}
+        out[e.path.strip("/") + "/index.html" if e.path.strip("/") else "index.html"] = rec
+        if e.image:
+            out[e.image.lstrip("/")] = rec
+    return out
+
+
+def mark_build(root: Path, key: bytes, objs: dict | None = None) -> list[dict]:
+    """Поставить метку в сборке root на месте; записи всех файлов по порядку путей.
+    objs — объект, вариант и версия файлов из записей сборки (`objects`)."""
     files = []
     for p in sorted(x for x in root.rglob("*") if x.is_file()):
         rel = p.relative_to(root).as_posix()
@@ -66,6 +79,7 @@ def mark_build(root: Path, key: bytes) -> list[dict]:
         if out != data:
             entry["source_sha256"] = sha256(data)
         entry.update(extra)
+        entry.update((objs or {}).get(rel, {}))
         files.append(entry)
     return files
 

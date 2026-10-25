@@ -21,9 +21,11 @@
   `site deploy` и `publish --production` без ключа отказывают. Один раз на
   телефоне: `python3 -m tools.cs mark init` и копия ключа
   `~/.config/dpsmpx/mark.key` в свою резервную копию вне Git
-  (`CREDENTIALS.md`, Termux, шаг 7). По желанию — `pip install
-  opentimestamps-client` для меток `.ots`. После выгрузки — закоммитить
-  `data/provenance/site-releases/`.
+  (`CREDENTIALS.md`, Termux, шаг 7). Нужен и клиент OpenTimestamps
+  (`pip install opentimestamps-client`): Д41 требует метки обеих служб; без
+  него `.ots` ставит позже `mark stamp`. После выгрузки — закоммитить
+  `data/provenance/site-releases/` (ярлык без этого следующую выгрузку не
+  начинает).
 - [ ] **Инцидент 05.10.2026 — закрыть** (разбор и команды —
   `docs/audits/2026-10-05-SITE_LEAK_INCIDENT.md`, §6, §8–§10). Сделано: улики
   сохранены, второй ярлык убран. Сервер проверен снаружи (§9) и с
@@ -111,7 +113,12 @@
 - [ ] **Следующий набор прогресса:** история DP_AI_Orcestrator влита в
   DPmetaApp (`dpai/`, DPmetaApp D-28, 10.10.2026), его репозиторий
   заморожен — в `scope.yaml` не считать его коммиты дважды (DPmetaApp и
-  прежний репозиторий).
+  прежний репозиторий). То же с DPpass: с 16.10.2026 он поддеревом в
+  DPmetaApp (`dppass/`, DPmetaApp D-30), его корень `2f844362` — в истории
+  `main` DPmetaApp; его коммиты не должны попасть в счёт DPmetaApp ни датой
+  первого коммита, ни числами (Д38: проект без публичного имени — только в
+  общих суммах). Та же находка — в комплекте «Экосистемы» (ветка
+  `claude/peripheral-projects`, независимая проверка 25.10.2026).
 - [ ] **После вливания ветки DPmeta `claude/dreamy-bardeen-xe4k6r`** — связи
   `DPmeta:C-11`…`DPmeta:C-13` (DPmeta → DPvisualisation, DPvisualisation →
   сайт, DPmeta → DPmetaApp — манифест для его подсистемы «AI») в `relations` `data/progress/scope.yaml` и
