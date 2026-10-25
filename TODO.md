@@ -117,8 +117,8 @@
   DPmetaApp (`dppass/`, DPmetaApp D-30), его корень `2f844362` — в истории
   `main` DPmetaApp; его коммиты не должны попасть в счёт DPmetaApp ни датой
   первого коммита, ни числами (Д38: проект без публичного имени — только в
-  общих суммах). Та же находка — в комплекте «Экосистемы» (ветка
-  `claude/peripheral-projects`, независимая проверка 25.10.2026).
+  общих суммах). В «Экосистеме» так уже считается: DPvisualisation D-24
+  (слово автора 25.10.2026 — «до 16.10 — DPpass, после — DPmetaApp»).
 - [ ] **После вливания ветки DPmeta `claude/dreamy-bardeen-xe4k6r`** — связи
   `DPmeta:C-11`…`DPmeta:C-13` (DPmeta → DPvisualisation, DPvisualisation →
   сайт, DPmeta → DPmetaApp — манифест для его подсистемы «AI») в `relations` `data/progress/scope.yaml` и
