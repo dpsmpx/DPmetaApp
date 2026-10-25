@@ -15,7 +15,8 @@
       pass@k (D-73, п. 4) после первых задач с ревью.
 
 - [ ] `С` Проверка на телефоне по `docs/DEVICE_CHECK.md`, сборка
-      `apk_debug`, каталог `dpai/` — 0.1.0-dev.5 (автор); итоги — в критерии этапов 5, 11, 12, 17,
+      `apk_debug` DP_AI_Orcestrator, каталог `dpai/` — 0.1.0-dev.5 (автор;
+      следующая — из DPmetaApp, `DPmetaApp:D-33`); итоги — в критерии этапов 5, 11, 12, 17,
       19 и `docs/PERFORMANCE.md`.
 - [ ] `М` Этап 11: приёмка на Redmi Note 13 вручную (замер на Realme —
       `docs/PERFORMANCE.md`, §5).
@@ -277,12 +278,6 @@
       `claude/trusting-bohr-rxi7tx`, `claude/trusting-gates-bbkmwh` — или
       оставить их архиву вместе с репозиторием. Облачной сессии удаление
       веток запрещено (HTTP 403).
-- [ ] `М` Ветки сборок в DPmetaApp: D-81 (одна ветка сборок на платформу —
-      `apk_debug`, `windows_debug`, `linux_debug`) принят для прежнего
-      репозитория, а здесь — `apk-0.1.0-dev.1-2026-10-11` и `linux-debug`.
-      Правило веток сборок DPmetaApp — решение автора в
-      `DPmetaApp:docs/direction/DECISIONS.md`; до него ветку следующей
-      сборки подсистемы называет её PR.
 
 ## На устройстве (Redmi Note 13)
 
