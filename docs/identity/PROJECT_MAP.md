@@ -13,14 +13,16 @@ dpsmpx
 │   ├── Andors-Love (C++11, терминал + SDL2) . BACKGROUND (периферия)
 │   └── PixRogue (Python, Rogue) ............. BACKGROUND
 │
+├── Apps
+│   ├── DP AIM Trainer (закрытый) ........... BACKGROUND (периферия)
+│   └── DP_Clock (Android, закрытый) ........ BACKGROUND (периферия)
+│
 ├── Engine / Systems
 │   └── движок Galdhold + полигон ........... PRIMARY (как часть Galdhold)
 │
 ├── Languages / Tools
 │   ├── DPlang .............................. SECONDARY
 │   ├── True Joint Tile Maker (C++/SDL3 с 1.6) BACKGROUND (периферия)
-│   ├── DP AIM Trainer (закрытый) ........... BACKGROUND (периферия)
-│   ├── DP_Clock (Android, закрытый) ........ BACKGROUND (периферия)
 │   └── малые утилиты (dpcalls, DP_Backup_Tool, DP_Repeated_Tasks…) BACKGROUND
 │
 ├── AI-assisted engineering
@@ -100,8 +102,8 @@ dpsmpx
 ранние проекты до репозитория игры (Andors-Love, TrueJointTileMaker,
 PixRogue, tanks_blitz_stat_chat) и убранные автором (DP_Ecosystem,
 DP_Repeated_Tasks): в счёт не входят (Andors-Love и True Joint Tile Maker с
-25.10.2026 — в «Экосистеме» и на «Пути», в счёт страницы прогресса — только
-со следующим набором, `TODO.md`). Уточнение 10.10.2026: DPmeta —
+25.10.2026 — в «Экосистеме» и на «Пути»; в счёте страницы прогресса их нет —
+решения о нём нет). Уточнение 10.10.2026: DPmeta —
 **слой синхронизации**, четвёртая часть; архив в методике страницы
 прогресса назван по именам, а на станции «2023» раздела «Путь» ранние
 открытые проекты названы фактом AU-EARLY — их репозитории открыты, о них
