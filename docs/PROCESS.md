@@ -28,6 +28,7 @@
 | Без GitHub Actions; проверка — командой в сессии; итог — в PR | `DPmeta:E-07` | D-13, раздел 2 |
 | Работа не теряется: пуш каждые полчаса, `WIP:`, черновой PR сразу | `DPmeta:E-08`; `Galdhold:CLAUDE.md` | `CLAUDE.md`, «Не терять работу» |
 | Хук начала сессии: ветки с невлитой работой | Galdhold, DPlang, DPlearn, SocialMediaImage | `.claude/hooks/session-start.sh` |
+| Хук начала сессии ставит Android SDK и зеркало Maven Central (ответ автора 25 октября 2026) | `DPpass:.claude/hooks/session-start.sh` (`DPpass:D-50`) | `.claude/hooks/session-start.sh` |
 | Шаблон PR «Сделано / Осталось / Проверки» | `DPlang:.github/pull_request_template.md` | `.github/pull_request_template.md` |
 | Секретов нет — и это проверяется; файлы ключей запрещены | `DPmeta:E-09`; `DPpass:CLAUDE.md`, `DPlearn:tools/check/check.py` | проверка `security.secrets` |
 | Тексты по-русски, идентификаторы латиницей; `P` и `Р` | `DPmeta:E-10`, `DPmeta:M-06` | D-14 |
