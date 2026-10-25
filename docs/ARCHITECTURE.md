@@ -21,10 +21,12 @@ DPmetaApp/                        сборка Gradle из корня: ./gradlew
 ├── dppass/                       подсистема DPpass (D-30): свой процесс, сборка и APK, ядро — пока своё
 ├── socialmediaimage/             подсистема SocialMediaImage (D-43): контент и сайт, Python, свой процесс
 ├── dpvisualisation/              подсистема DPvisualisation (D-43): модель экосистемы и просмотрщик, свой процесс
+├── dpmeta/                       подсистема DPmeta (D-43): реестр экосистемы, контракты, очередь, свой процесс
 ├── (этап 1+) core/ cli/ app/     модули DPmetaApp на ядре dpai/ (ТЗ, §6.2)
 ├── docs/ ROADMAP/ TODO.md        процесс приложения целиком
 └── tools/check/                  проверки корня; подсистемы — dpai/tools/verify/, dppass/tools/hostcheck/,
-                                  socialmediaimage/tools/check.sh, dpvisualisation/tools/check/
+                                  socialmediaimage/tools/check.sh, dpvisualisation/tools/check/,
+                                  dpmeta/tools/check.sh
 ```
 
 Сейчас в сборке корня только `dpai/`: модули DPmetaApp из ТЗ, §6.2
@@ -32,9 +34,10 @@ DPmetaApp/                        сборка Gradle из корня: ./gradlew
 DPpass в сборку корня не входит: он собирается из `dppass/` (Go и NDK,
 `DPpass:D-25`) отдельным APK с прежней личностью пакета (D-30).
 SocialMediaImage — инструменты на Python и сайт, DPvisualisation — модель
-на Python и просмотрщик на JavaScript; в сборку корня и APK они не входят,
-их проверки — шаги `subsystem.socialmediaimage` и
-`subsystem.dpvisualisation` (D-43).
+на Python и просмотрщик на JavaScript, DPmeta — документы и инструменты на
+Python; в сборку корня и APK они не входят, их проверки — шаги
+`subsystem.socialmediaimage`, `subsystem.dpvisualisation` и
+`subsystem.dpmeta` (D-43).
 
 ## 2. Ядро одно
 

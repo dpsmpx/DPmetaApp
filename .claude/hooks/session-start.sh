@@ -101,6 +101,8 @@ fi
     echo "  его docs/session/HANDOFF.md; проверки — cd socialmediaimage && tools/check.sh --quick|--affected|(полный)."
     echo "Подсистема DPvisualisation — dpvisualisation/ (D-43): правила dpvisualisation/CLAUDE.md;"
     echo "  проверки — cd dpvisualisation && tools/check/run.sh [full] (Python 3.11+; full — Node.js и Chromium)."
+    echo "Подсистема DPmeta — dpmeta/ (D-43): правила dpmeta/CLAUDE.md; проверки — cd dpmeta && tools/check.sh"
+    echo "  (клоны экосистемы — CLONES=<каталог клонов>); аудит документации — /doc-consistency-audit."
     # Зависимости проверок SocialMediaImage (PyYAML, jsonschema и др.) — в веб-сессии, если их нет.
     if ! python3 -c "import yaml, jsonschema" 2>/dev/null; then
         if [ "${CLAUDE_CODE_REMOTE:-}" = "true" ]; then

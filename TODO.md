@@ -15,6 +15,11 @@
   `dppass/CLAUDE.md` нужно исключение со ссылкой на `DPmetaApp:D-32`
   (корневой `CLAUDE.md` сведён). Сессии не разрешено править файлы своих
   правил без слова автора; в `dppass/` сейчас работает другая сессия.
+- `М` **Правки DPmeta в других репозиториях** (`DPmeta:M-04`): своя ветка
+  `dpmeta/<цель>` в неактивном репозитории, а правило DPmetaApp —
+  «другие репозитории — только чтение». После переезда DPmeta (D-43) до
+  слова автора действует более строгое — только чтение (`DPmeta:M-14`).
+  Разрешить ли проходу DPmeta такие ветки — решает автор.
 - `М` **Рабочие ветки без своей работы** (25 октября 2026) — удалить на
   GitHub: `ccr-ac186f97-v71g2m` (её наработки в `main` другими ветками,
   остались устаревшие README и инструкция сборки 0.1.0-dev.1), `ccr-2310d434-reminder-answers`
@@ -22,9 +27,10 @@
   (влита), `ccr-dc77131a-dppass` и `ccr-dc77131a-dppass-subname` (их
   изменения уже в `main`). Облачной сессии удаление веток запрещено.
 - `М` **Архивировать репозитории, переехавшие сюда** (D-43):
-  SocialMediaImage и DPvisualisation — в их `CLAUDE.md` и `README.md`
-  написано, что работа идёт в DPmetaApp (`socialmediaimage/`,
-  `dpvisualisation/`); Settings → Archive. Их ветки остаются как есть.
+  SocialMediaImage, DPvisualisation и DPmeta — в их `CLAUDE.md` и
+  `README.md` написано, что работа идёт в DPmetaApp (`socialmediaimage/`,
+  `dpvisualisation/`, `dpmeta/`); Settings → Archive. Их ветки остаются как
+  есть; PR #5 DPmeta — закрыть (он влит сюда).
 - `М` **DP_AI_Orcestrator заморозить** (D-28): работа, сделанная там
   после переноса, — здесь (`DP_AI_Orcestrator:D-83`: `main` до `9ff8dc4`
   и ветка `claude/nice-hopper-5fg5vk` до `d8b8860`). Архивировать
@@ -61,30 +67,27 @@
 Правки в других репозиториях — их сессиями по их правилам (`CLAUDE.md`,
 «Другие репозитории экосистемы»).
 
-- `М` **DPmeta:** строка DPmetaApp в реестре — в ветке DPmeta
-  `claude/dreamy-bardeen-xe4k6r`; контракт «DPmetaApp читает форматы
-  процессов» (ТЗ, §10, Q-11) — когда появится код, который их читает
-  (фаза B).
-
-- `М` **DPmeta:** после D-28 — строка DP_AI_Orcestrator в реестре
-  (`DPmeta:tools/ecosystem.toml`) ведёт в замороженный репозиторий:
-  журнал решений подсистемы теперь `DPmetaApp:dpai/docs/direction/DECISIONS.md`;
-  `DPmeta:SQ-29` (своё Android-приложение) решён D-28 — оболочка
-  `dpai/android` и есть приложение DPmetaApp; `DPmeta:SQ-26` (строка
-  состояния README) исправлен в `dpai/README.md`; `DPmeta:SQ-28` — пункт о
-  манифесте в `dpai/TODO.md` обновлён. Записывает сессия DPmeta.
 - `С` **DP-Verify: корень подпроекта.** DP Verify считает корнем проекта
   вершину git (`find_root` — `git rev-parse --show-toplevel`), поэтому в
   `dppass/` он увидел бы весь DPmetaApp; сейчас обёртка DPpass запускает
   его в представлении поддерева (`DPpass:D-52`). Нужен корень по
   каталогу профиля (`dppass/tools/dpverify.toml`) — правит сессия DP-Verify; после
   обновления копии в `dppass/tools/dpv/` представление убрать.
-- `М` **DPmeta:** после D-30 — строка DPpass в реестре
-  (`DPmeta:tools/ecosystem.toml`) ведёт в замороженный репозиторий:
-  журнал решений DPpass теперь `DPmetaApp:dppass/docs/direction/DECISIONS.md`.
-  Записывает сессия DPmeta.
 
 ## Система
+
+- `С` **Реестр `dpmeta/tools/ecosystem.toml` — под D-28, D-30, D-43**
+  (DPmeta — подсистема `dpmeta/`, `DPmeta:M-14`): строки
+  DP_AI_Orcestrator, DPpass, SocialMediaImage, DPvisualisation и DPmeta
+  ведут в замороженные репозитории, а их журналы решений — здесь
+  (`dpai/`, `dppass/`, …); DPprofile — следом (D-43). Как реестр называет
+  подсистему (поле, место) — формат, который читает приложение (D-05):
+  новое поле — решением DPmeta и образцом в корпусе здесь. Остаток
+  `DPmeta:SQ-28`: `dpai/docs/INTEGRATION_CONTRACT.md` (итоги прогона —
+  «пользователь, DPmeta»; выгрузка манифеста — «открытый вопрос к DPmeta»)
+  и пункт о манифесте в `dpai/TODO.md` — свести теперь, когда DPmeta здесь.
+  Контракт «DPmetaApp читает форматы процессов» (ТЗ, §10, Q-11) — когда
+  появится код, который их читает (фаза B).
 
 - `М` **API-профиль — в журнал подсистемы «AI»** (D-44): решение о виде
   аккаунта «API-профиль» в `dpai/docs/direction/DECISIONS.md` —
