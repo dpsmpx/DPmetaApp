@@ -26,7 +26,7 @@
 |---|---|
 | `catalog` | подписи каталогов (виды узлов и потоков, кто движет, состояния, транспорт, видимость, группы) — читатель не держит их у себя; у вида потока — `driver` по умолчанию |
 | `layers` | слои по порядку: колонки схемы слева направо (на узком экране — полосы сверху вниз) |
-| узел | `id`, `name`, `kind`, `layer`, `role`, `status` (`active`, `planned`, `blocked`, `off`), `visibility` (`public`, `private`, `undisclosed`), `refs` — источники `Проект:путь` или `Проект:номер`; у репозитория — `repo` (slug GitHub), `group`, необязательно `clone`; у сервиса — `probes`; ещё `stage`, `note`, `row`, `public_role`, `public_stage` |
+| узел | `id`, `name`, `kind`, `layer`, `role`, `status` (`active`, `planned`, `blocked`, `off`), `visibility` (`public`, `private`, `undisclosed`), `refs` — источники `Проект:путь` или `Проект:номер`; у репозитория — `repo` (slug GitHub), `group`, необязательно `clone` и `history_exclude` (корни влитой истории: `root`, `reason`, `refs` — эти коммиты не в счёте узла, D-24); у сервиса — `probes`; ещё `stage`, `note`, `row`, `public_role`, `public_stage` |
 | поток | `id`, `from`, `to`, `kind`, `driver` (`human`, `ai`, `check`, `data` — цвет), `status`, `what`, `transport`, `bidirectional`, `contracts` (`DPmeta:C-NN`), `refs`; ещё `trigger`, `format`, `note`, `via`, `public_what`, `signal` |
 | `signal` | как поток наблюдается в данных: `git-commits` (`repo`, `who`, `scope`), `git-path` (`repo`, `paths`), `probe` (`node`); нет сигнала — поток «не наблюдается» |
 
@@ -41,7 +41,7 @@
 | Часть | Смысл |
 |---|---|
 | `nodes.<id>.activity` | `state` — `working`, `idle`, `up`, `down`, `planned`, `blocked`, `off`, `unknown`, `unobserved`; `last` — время последнего события; `reasons` — какое правило сработало (`main`, `branch`, `probe`…) |
-| `nodes.<id>.git` | у репозитория с клоном: `ref`, `head`, `head_time`, `first_time`, `history` (`complete`, `shallow`, `partial`), `days` (`ai`, `human`, `merges` по дням окна основной ветки), `days_all` (`ai`, `human` по всем веткам), `window` (суммы), `branches` (`name`, `ahead`, `time`, `method`) |
+| `nodes.<id>.git` | у репозитория с клоном: `ref`, `head`, `head_time`, `first_time`, `history` (`complete`, `shallow`, `partial`), `days` (`ai`, `human`, `merges` по дням окна основной ветки), `days_all` (`ai`, `human` по всем веткам), `window` (суммы), `branches` (`name`, `ahead`, `time`, `method`); при `history_exclude` — `excluded` (коммитов влитой истории не в счёте, D-24) |
 | `nodes.<id>.days` | у участника: события по дням окна |
 | `nodes.<id>.probe` | только в срезах до 9 октября 2026: пробы сняты (D-19), новые срезы этого поля не пишут |
 | `flows.<id>` | `state` — `flowing`, `quiet`, `planned`, `blocked`, `off`, `down`, `unknown`, `unobserved`; при сигнале — `signal`, `days`, `total`, `week`, `last`; при `unknown` — `reason` |
@@ -98,3 +98,4 @@
 | 9 октября 2026 | пояснения к `dpvis-model/1` и `dpvis-state/1`; полей не изменилось |
 | 9 октября 2026 | группы `control` и `support` в каталоге; `registry.exclude`, `exclude_contracts`, `exclude_reason` в модели и `excluded`, `contracts_excluded`, `exclude_reason` в срезе (D-20); пробы больше не пишутся, поля остались (D-19) |
 | 10 октября 2026 | группа `sync` «слой синхронизации» в каталоге — DPmeta (D-21); значение добавлено, прежние не менялись |
+| 25 октября 2026 | модель: `history_exclude` у репозитория; срез: `git.excluded`, код диагностики `HISTORY_ROOT_NOT_FOUND` (D-24); поля и код добавлены, прежние не менялись |

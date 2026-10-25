@@ -40,11 +40,12 @@ class RealModelTest(unittest.TestCase):
         self.assertEqual(committed, first, "data/model.json отстал: python3 -m tools.dpvis model build")
 
     def test_every_dpmeta_contract_is_cited_or_excluded(self):
-        # C-01…C-10 на 5 октября 2026; контракт архива исключён с причиной (D-20)
+        # C-01…C-10 на 5 октября 2026; C-08 (формат карт Andors-Love) с 25 октября покрыт потоком (D-23)
         model = json.loads(modelmod.expected_text(SOURCE))
         cited = {c for f in model["flows"] for c in f["contracts"]}
         excluded = {f"DPmeta:{c}" for c in model["registry"].get("exclude_contracts", [])}
-        self.assertEqual(excluded, {"DPmeta:C-08"})
+        self.assertEqual(excluded, set())
+        self.assertIn("DPmeta:C-08", cited)
         self.assertTrue(model["registry"].get("exclude_reason"))
         self.assertEqual(cited | excluded, {f"DPmeta:C-{i:02d}" for i in range(1, 11)})
         self.assertFalse(cited & excluded)
@@ -138,6 +139,27 @@ class ValidationCatchesTest(unittest.TestCase):
 
     def test_registry_on_non_repo(self):
         self.assertCatches(lambda s: s["registry"].update(node="site"), "registry: node")
+
+    def test_history_exclude_needs_root_reason_refs(self):
+        good = {"root": "a" * 40, "reason": "влитая история", "refs": ["Alpha:README.md"]}
+        self.assertEqual(problems(lambda s: node(s, "alpha").update(history_exclude=[good])), [])
+        self.assertCatches(lambda s: node(s, "alpha").update(history_exclude=[dict(good, root="abc")]),
+                           "root — полный хеш")
+        self.assertCatches(lambda s: node(s, "alpha").update(history_exclude=[dict(good, reason=" ")]),
+                           "нет reason")
+        self.assertCatches(lambda s: node(s, "alpha").update(history_exclude=[dict(good, refs=[])]),
+                           "нет ссылок")
+        self.assertCatches(lambda s: node(s, "alpha").update(history_exclude=[dict(good, since="x")]),
+                           "неизвестный ключ 'since'")
+        self.assertCatches(lambda s: node(s, "site").update(history_exclude=[good]),
+                           "history_exclude — только у вида repo")
+
+    def test_history_exclude_is_exported(self):
+        src = base_source()
+        ex = {"root": "b" * 40, "reason": "влитая история", "refs": ["Alpha:README.md"]}
+        node(src, "alpha")["history_exclude"] = [ex]
+        built = next(n for n in model_from(src)["nodes"] if n["id"] == "alpha")
+        self.assertEqual(built["history_exclude"], [ex])
 
     def test_compile_raises_with_all_problems(self):
         src = base_source()

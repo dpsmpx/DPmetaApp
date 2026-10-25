@@ -135,7 +135,8 @@
      "required": ["ai", "human", "merges"],
      "properties": {"ai": {"type": "integer"}, "human": {"type": "integer"}, "merges": {"type": "integer"}}
     },
-    "branches": {"type": "array", "items": {"$ref": "#/$defs/branch"}}
+    "branches": {"type": "array", "items": {"$ref": "#/$defs/branch"}},
+    "excluded": {"type": "integer", "minimum": 0}
    }
   },
   "probe_result": {
