@@ -261,6 +261,7 @@ nav.crumbs a { padding: 4px 0; }
 .pv-game { fill: #c98500; background: #c98500; }
 .pv-core { fill: #3987e5; background: #3987e5; }
 .pv-new { fill: #9085e9; background: #9085e9; }
+.pv-periphery { fill: #2a9d8f; background: #2a9d8f; }
 .pv-hidden { fill: #6b6e75; background: #6b6e75; }
 .sq-new { stroke: var(--paper); stroke-width: 1.5; }
 .sq-fin { fill-opacity: .45; stroke: var(--verified); stroke-width: 1.2; stroke-dasharray: 2 2; }

@@ -106,3 +106,17 @@ links:
     role: эссе о методе (подписано настоящим именем, IC-03)
     status: ok
     checked: 2026-10-04
+  - id: L-GH-TJTM
+    platform: github
+    url: https://github.com/dpsmpx/TrueJointTileMaker
+    role: открытый репозиторий редактора (страница проекта)
+    status: ok
+    checked: 2026-10-25
+    notes: публичный по списку репозиториев GitHub, клон без входа — есть; HTML-страница из сессии не проверялась.
+  - id: L-GH-ANDORS-LOVE
+    platform: github
+    url: https://github.com/dpsmpx/Andors-Love
+    role: открытый репозиторий игры (страница проекта)
+    status: ok
+    checked: 2026-10-25
+    notes: публичный по списку репозиториев GitHub, клон без входа — есть; HTML-страница из сессии не проверялась.

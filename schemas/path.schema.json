@@ -39,7 +39,7 @@
         "properties": {
           "name": {"oneOf": [{"type": "string", "minLength": 1}, {"$ref": "#/$defs/label"}]},
           "kind": {"enum": ["repo", "service", "other"]},
-          "group": {"enum": ["game", "core", "new", "hidden"]},
+          "group": {"enum": ["game", "core", "new", "periphery", "hidden"]},
           "role": {"$ref": "#/$defs/text"},
           "stage": {"$ref": "#/$defs/text"},
           "plan": {"type": "boolean"}

@@ -9,14 +9,16 @@
 #
 # Проект без публичного имени — только «ещё 1 проект без публичного имени» (Д42, Д43); личные
 # заметки — без имени репозитория (Д2, ОР-8); ранние открытые проекты — одной станцией «2023», по именам
-# (слово автора 10.10.2026, Д44): текстом, без квадратов — в текущую систему они не входят.
+# (слово автора 10.10.2026, Д44): текстом, без квадратов. Andors-Love и True Joint Tile Maker с работой
+# в октябре — с 25.10.2026 снова в текущей системе: квадратами с станции «Ещё четыре проекта» (Д44).
 # «Всё в одном» (DPmetaApp D-28, 10.10.2026; П2-28): DP_AI_Orcestrator — подсистема DPmetaApp, а не
 # отдельный проект: на маршруте с этой станции без своего квадрата (merged), в цели — подсистема ИИ.
 schema: path/v1
 as_of: 2026-10-25                       # «сейчас» на маршруте
 
 # Кто есть на пути и в цели. group — цвет квадрата на маршруте: game — игра, core — ядро на срезе
-# 5 октября, new — репозитории после среза, hidden — без публичного имени. kind: repo | service | other.
+# 5 октября, new — репозитории после среза, periphery — свои проекты вне ядра с работой в октябре (Д43,
+# DPvisualisation D-23), hidden — без публичного имени. kind: repo | service | other.
 # role, stage — факты (как роли раздела «Экосистема», site.yaml ecosystem.roles); plan: true — ещё не начато.
 nodes:
   galdhold:        {name: Galdhold, kind: repo, group: game, role: {fact: GH-GENRE}, stage: {fact: GH-STAGES}}
@@ -33,6 +35,10 @@ nodes:
   dpvisualisation: {name: DPvisualisation, kind: repo, group: new, role: {fact: VIS-WHAT, idx: 1}}
   orchestrator:    {name: DP_AI_Orcestrator, kind: repo, group: new, role: {fact: ORC-WHAT}}
   dpai:            {name: {ru: подсистема ИИ в DPmetaApp, en: the AI subsystem in DPmetaApp}, kind: other, role: {fact: ORC-WHAT}}
+  aimtrainer:      {name: DP AIM Trainer, kind: repo, group: periphery, role: {fact: AIM-WHAT}, stage: {fact: AIM-STAGE}}
+  dpclock:         {name: DP_Clock, kind: repo, group: periphery, role: {fact: CLK-WHAT}, stage: {fact: CLK-STAGE}}
+  tjtm:            {name: True Joint Tile Maker, kind: repo, group: periphery, role: {fact: TJTM-WHAT}, stage: {fact: TJTM-NOW}}
+  andorslove:      {name: Andors-Love, kind: repo, group: periphery, role: {fact: AL-WHAT}}
   github:          {name: GitHub, kind: service}
   site:            {name: {ru: сайт dpsmpx.com, en: the dpsmpx.com site}, kind: service}
   sessions:        {name: {ru: сессии Claude, en: Claude sessions}, kind: other}
@@ -78,6 +84,11 @@ stations:
     title: {ru: Всё в одном, en: All in one}
     merged: {orchestrator: dpmetaapp}
     texts: [{fact: APP-NOW}]
+  - id: periphery
+    date: 2026-10-25
+    title: {ru: Ещё четыре проекта, en: Four more projects}
+    repos: [aimtrainer, dpclock, tjtm, andorslove]     # слово автора 25.10.2026: и в «Пути» (DPvisualisation D-23)
+    texts: [{fact: ECO-PERIPHERY-2026-10-25}]
   - id: phase-a
     plan: true
     when: {ru: "фаза A", en: "phase A"}

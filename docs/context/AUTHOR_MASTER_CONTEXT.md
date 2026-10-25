@@ -33,9 +33,13 @@
    детерминизм, контролируемость, работа с ИИ (DP-WHAT). Ранняя стадия:
    синтаксис выбран замером, начат компилятор (DP-STAGE,
    DP-EXPERIMENT). Galdhold от него не зависит (DP-INDEPENDENT).
-3. **Раньше и рядом** — Andors-Love (C++11 RPG), TrueJointTileMaker
-   (редактор на PascalABC.NET), PixRogue, DP_Ecosystem и утилиты — как
-   история пути (`PROJECT_MAP.md`).
+3. **Раньше и рядом** — Andors-Love (C++11 RPG), True Joint Tile Maker
+   (редактор карт к ней; с версии 1.6 — C++ и SDL3), PixRogue, DP_Ecosystem
+   и утилиты — как история пути (`PROJECT_MAP.md`). С работой в октябре
+   2026 — «периферия» со своими страницами на сайте: Andors-Love, True
+   Joint Tile Maker и закрытые DP AIM Trainer (замер реакции, AIM-WHAT) и
+   DP_Clock (приложение часов для Android, CLK-WHAT) — Д5, уточнение
+   25.10.2026.
 
 ## Как работает
 
