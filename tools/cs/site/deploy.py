@@ -176,7 +176,7 @@ def run(repo: Repo, src: Path, env: str = "production", dry_run: bool = False,
             res.release, res.stamps = record_release(repo, env, files, key, mcfg, now, post, stamp_runner)
         except Exception as e:
             res.problems.append(f"манифест выпуска не записан ({type(e).__name__}: {e}) — сайт выгружен; "
-                                "записи метки — build/site/production.mark.json")
+                                "повторить выгрузку: rsync и метка повторяемы, манифест запишется")
     return res
 
 

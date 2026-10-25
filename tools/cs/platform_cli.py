@@ -402,7 +402,8 @@ def _site_deploy(repo: Repo, dry_run: bool) -> int:
     log(repo, "deploy", {"env": "production", "actor": actor(), "changes": len(res.changes),
                          "release": res.release.parent.name if res.release else None,
                          "verified": {k: v for k, v in seen.items()}})
-    return 0 if all(v is not False for v in seen.values()) else 1
+    # манифест не записан (res.problems) — не «готово»: ярлык Termux не скажет «✓», выгрузку повторить (Д41)
+    return 0 if all(v is not False for v in seen.values()) and not res.problems else 1
 
 
 def cmd_site(a) -> int:

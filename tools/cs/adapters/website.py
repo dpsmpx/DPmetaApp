@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 import urllib.request
 
 from ..common import Finding
@@ -78,8 +79,10 @@ class WebsiteAdapter(PlatformAdapter):
         rep = getattr(self, "_report", None)
         res = deploy.run(self.repo, self.out_dir(), self.site_env(), store=self.credentials, runner=self.runner,
                          objects=objects(rep.entries) if rep else None)
-        self.last_release = res.release  # манифест выпуска (Д41): publish напоминает его закоммитить
-        if not res.ok:
+        if res.ok:
+            for msg in res.problems:  # сайт выгружен, но манифест выпуска не записан (Д41) — не молча
+                print(f"  ✗ {msg}", file=sys.stderr)
+        else:
             # rsync запускался и упал — сеть или сервер; rsync идемпотентен, повтор безопасен.
             # Не запускался — запрет выгрузки (обычно его ловит check_identity раньше).
             raise PublishError("PLATFORM_UNAVAILABLE" if res.command else "PERMISSION_DENIED", "; ".join(res.problems))
