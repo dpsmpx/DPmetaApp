@@ -132,6 +132,27 @@ def rewrite_fact(r):
     sub(r, rel, r"^statement: .*$", "statement: Другая формулировка того же факта.")
 
 
+def remove_and_restore_rewritten(r):
+    """Каталог удалён одним коммитом внешнего репозитория и возвращён с переписанным фактом."""
+    outer, aside = os.path.dirname(r), r + "-aside"
+    shutil.move(r, aside)
+    git_commit(outer, "каталог удалён")
+    shutil.move(aside, r)
+    rewrite_fact(r)
+
+
+def self_commit_facts(r):
+    """Пути двух фактов источника S-00 типа commit."""
+    out = []
+    for path in sorted(glob.glob(p(r, "docs/facts/F-*.md"))):
+        f, _ = dm.parse_front_matter(open(path, encoding="utf-8").read())
+        if f.get("source") == "S-00" and f.get("source_type") == "commit":
+            out.append(os.path.relpath(path, r))
+    if len(out) < 2:
+        raise AssertionError("нет двух фактов S-00 типа commit — самопроверка устарела")
+    return out[:2]
+
+
 def insight(root, name, lines, body=""):
     write(root, f"docs/insights/{name}.md", "---\n" + "\n".join(lines) + "\n---\n" + body)
 
@@ -450,6 +471,7 @@ def main(argv):
         tests += CLONE_TESTS
     else:
         print(f"  · клонов источников нет ({CLONES}) — проверки check_refs по клонам пропущены")
+    total = len(tests)
     with tempfile.TemporaryDirectory(prefix="dpprofile-selftest-") as tmp:
         clean = os.path.join(tmp, "clean")
         copy_repo(clean)
@@ -475,23 +497,42 @@ def main(argv):
             elif verbose:
                 print(f"  ✓ {name} → {script}")
             shutil.rmtree(root, ignore_errors=True)
-        # Каталог в чужом репозитории (D-16): история — представление git subtree split.
+        # Каталог в чужом репозитории (D-16): история — прежний main и коммиты после слияния.
         root, onto = subtree_repo(tmp, "subtree")
         code, out = run(root, "check_history", "--strict", env={"DPPROFILE_PRE_MOVE_HEAD": onto})
         if code != 0 or not re.search(r"фактов в истории [1-9]", out):
             failures.append(f"подкаталог: чистая история не прошла\n{out.strip()[:600]}")
-        root, onto = subtree_repo(tmp, "subtree-rewrite", rewrite_fact)
-        code, out = run(root, "check_history", "--strict", env={"DPPROFILE_PRE_MOVE_HEAD": onto})
-        if code == 0 or "изменено ядро" not in out:
-            failures.append(f"подкаталог: факт переписан — check_history не поймал\n{out.strip()[:600]}")
+        for name, mutate in (("подкаталог: факт переписан", rewrite_fact),
+                             ("подкаталог: каталог удалён и возвращён с переписанным фактом",
+                              remove_and_restore_rewritten)):
+            total += 1
+            root, onto = subtree_repo(tmp, f"subtree-{total}", mutate)
+            code, out = run(root, "check_history", "--strict", env={"DPPROFILE_PRE_MOVE_HEAD": onto})
+            if code == 0 or "изменено ядро" not in out or "исчезло" in out:
+                failures.append(f"{name}: check_history не поймал как надо\n{out.strip()[:600]}")
+            elif verbose:
+                print(f"  ✓ {name} → check_history")
+        # S-00 — только коммиты истории DPprofile: опора есть, коммит внешнего репозитория — нет.
+        total += 1
+        root, onto = subtree_repo(tmp, "subtree-self")
+        foreign = subprocess.run(["git", "rev-parse", "HEAD^1"], cwd=os.path.dirname(root),
+                                 capture_output=True, text=True).stdout.strip()
+        mine, other = self_commit_facts(root)
+        sub(root, mine, r"^ref: .*$", f"ref: {onto}")
+        sub(root, other, r"^ref: .*$", f"ref: {foreign}")
+        os.makedirs(p(root, "build/empty-sources"), exist_ok=True)
+        code, out = run(root, "check_refs", env={"DPPROFILE_PRE_MOVE_HEAD": onto,
+                                                 "DPPROFILE_SOURCES": p(root, "build/empty-sources")})
+        if f"нет коммита {foreign[:12]} в S-00" not in out or f"нет коммита {onto[:12]}" in out:
+            failures.append(f"подкаталог: S-00 — чужой коммит принят или свой отвергнут\n{out.strip()[:600]}")
         elif verbose:
-            print("  ✓ подкаталог: факт переписан → check_history")
+            print("  ✓ подкаталог: S-00 — коммит внешнего репозитория → check_refs")
     if failures:
         for f in failures:
             print(f"✗ {f}")
-        print(f"✗ самопроверка: не поймано {len(failures)} из {len(tests)}")
+        print(f"✗ самопроверка: не поймано {len(failures)} из {total}")
         return 1
-    print(f"✓ самопроверка: чистая копия проходит, нарушений поймано {len(tests)} из {len(tests)}")
+    print(f"✓ самопроверка: чистая копия проходит, нарушений поймано {total} из {total}")
     return 0
 
 

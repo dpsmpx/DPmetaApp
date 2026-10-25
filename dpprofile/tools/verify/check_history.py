@@ -13,8 +13,9 @@
 
 Нужна полная история. Без git или в неполном (shallow) клоне обычный
 режим пропускает проверку с пометкой, режим --strict (полный прогон) —
-падает. Внутри DPmetaApp (каталог dpprofile/, D-16) история — представление
-`git subtree split` (docmodel.history): коммиты до переезда — исходные.
+падает. Внутри DPmetaApp (каталог dpprofile/, D-16) история — два отрезка
+(docmodel.history): прежний main DPprofile и коммиты DPmetaApp после
+слияния поддерева; основная история DPmetaApp в неё не попадает.
 
     python3 tools/verify/check_history.py [--strict]
 
@@ -41,23 +42,20 @@ def check(root=None, strict=False):
         code, head = dm.git(["rev-parse", "--verify", "-q", "HEAD"], cwd=root)
         if code != 0:
             return r.finish("пропущено: коммитов ещё нет")
-    where, rev = dm.history(root)
-    if where is None:
+    h = dm.history(root)
+    if not h.ok:
         if strict:
-            r.err(root, rev)
+            r.err(root, h.problem)
             return r.finish("")
-        return r.finish(f"пропущено: {rev}")
+        return r.finish(f"пропущено: {h.problem}")
 
-    code, out = dm.git(["log", "--format=", "--name-only", "--diff-filter=A", rev,
-                        "--", dm.FACTS_DIR], cwd=where)
-    paths = sorted({p for p in out.split("\n") if re.fullmatch(r"docs/facts/F-\d+\.md", p)})
+    paths = sorted(p for p in h.added(dm.FACTS_DIR) if re.fullmatch(r"docs/facts/F-\d+\.md", p))
     for rel in paths:
         if not dm.exists(rel, root):
             r.err(rel, "факт удалён или переименован — факты не удаляются (D-06)")
             continue
-        code, adds = dm.git(["log", "--format=%H", "--diff-filter=A", rev, "--", rel], cwd=where)
-        first = adds.split()[-1]
-        code, original = dm.git(["show", f"{first}:{rel}"], cwd=where)
+        first, prefix = h.first_add(rel)
+        code, original = h.show(first, prefix, rel)
         try:
             old, _ = dm.parse_front_matter(original)
             new, _ = dm.parse_front_matter(dm.read(rel, root))
@@ -72,11 +70,10 @@ def check(root=None, strict=False):
         if any(k in old for k in MUTABLE) and old.get("status", "active") != new.get("status", "active"):
             r.err(rel, "статус замены отменён — замена необратима")
 
-    code, out = dm.git(["log", "--format=%H", rev, "--", dm.DECISIONS], cwd=where)
     current, _, _ = dm.load_decisions(root)
     ever = set()
-    for sha in out.split():
-        code, text = dm.git(["show", f"{sha}:{dm.DECISIONS}"], cwd=where)
+    for sha, prefix in h.versions(dm.DECISIONS):
+        code, text = h.show(sha, prefix, dm.DECISIONS)
         if code == 0:
             ever |= set(re.findall(r"^### (D-\d+) —", text, re.M))
     for did in sorted(ever - set(current)):

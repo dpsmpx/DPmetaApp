@@ -28,9 +28,9 @@
   изменения уже в `main`). Облачной сессии удаление веток запрещено.
 - `М` **Архивировать репозитории, переехавшие сюда** (D-43):
   SocialMediaImage, DPvisualisation, DPmeta и DPprofile — в их `CLAUDE.md`
-  и `README.md` написано, что работа идёт в DPmetaApp
-  (`socialmediaimage/`, `dpvisualisation/`, `dpmeta/`, `dpprofile/`);
-  Settings → Archive. Их ветки остаются как есть; PR #5 DPmeta — закрыть
+  и `README.md` написано (у DPprofile — сразу после вливания его
+  переезда), что работа идёт в DPmetaApp (`socialmediaimage/`,
+  `dpvisualisation/`, `dpmeta/`, `dpprofile/`); Settings → Archive. Их ветки остаются как есть; PR #5 DPmeta — закрыть
   (он влит сюда).
 - `М` **DP_AI_Orcestrator заморозить** (D-28): работа, сделанная там
   после переноса, — здесь (`DP_AI_Orcestrator:D-83`: `main` до `9ff8dc4`

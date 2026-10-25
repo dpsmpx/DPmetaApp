@@ -32,12 +32,17 @@ def sources_dir(root):
 def repo_dir(sid, registry, root):
     s = registry[sid]
     if s["kind"] == "self":
-        return dm.history(root)[0]  # в DPmetaApp — его вершина: коммиты DPprofile в его истории
+        h = dm.history(root)  # в DPmetaApp — только история DPprofile (D-16), не весь репозиторий
+        return h if h.ok else None
     d = os.path.join(sources_dir(root), s["clone"] + ".git")
     return d if os.path.isdir(d) else None
 
 
 def commit_date(repo, sha):
+    if isinstance(repo, dm.History):
+        if repo.locate(sha) is None:
+            return None
+        repo = repo.where
     code, kind = dm.git(["cat-file", "-t", sha], cwd=repo)
     if code != 0 or kind.strip() != "commit":
         return None
@@ -46,11 +51,18 @@ def commit_date(repo, sha):
 
 
 def path_at(repo, sha, place):
+    if isinstance(repo, dm.History):
+        prefix = repo.locate(sha)
+        if prefix is None:
+            return False
+        repo, place = repo.where, prefix + place
     code, out = dm.git(["ls-tree", sha, "--", place], cwd=repo)
     return code == 0 and bool(out.strip())
 
 
 def tag_commit(repo, tag):
+    if isinstance(repo, dm.History):
+        repo = repo.where
     code, out = dm.git(["rev-parse", "-q", "--verify", f"refs/tags/{tag}^{{commit}}"], cwd=repo)
     return out.strip() if code == 0 else None
 
@@ -72,8 +84,11 @@ def check(root=None):
         repo = repo_dir(sid, registry, root)
         if repo is None and sid not in missing:
             missing.add(sid)
-            r.err(where, f"нет клона источника {sid} ({registry[sid]['address']}) — "
-                         "запустить tools/verify/fetch_sources.sh")
+            if registry[sid]["kind"] == "self":
+                r.err(where, f"нет истории источника {sid} (этот репозиторий): {dm.history(root).problem}")
+            else:
+                r.err(where, f"нет клона источника {sid} ({registry[sid]['address']}) — "
+                             "запустить tools/verify/fetch_sources.sh")
         return repo
 
     checked = 0

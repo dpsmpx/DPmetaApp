@@ -520,22 +520,88 @@ def is_git_repo(root=None):
 
 
 # DPprofile — подсистема DPmetaApp, каталог dpprofile/ (D-16): своей вершины git у него
-# нет. Его история как отдельного репозитория — `git subtree split` с опорой на прежний
-# main DPprofile: у коммитов до переезда — те же SHA и даты, после — переписанные, с
-# теми же датами. DPPROFILE_PRE_MOVE_HEAD — та же опора для самопроверки.
+# нет. Его история — два отрезка: до переезда — прежний main DPprofile (пути от корня),
+# после — коммиты DPmetaApp после слияния поддерева (пути с префиксом каталога). Основная
+# история DPmetaApp в неё не попадает. DPPROFILE_PRE_MOVE_HEAD — та же опора для самопроверки.
 PRE_MOVE_HEAD = "3e76c10730d3cf1f98ce8f11063b02a7fb1670ed"
 _history_cache = {}
 
 
-def history(root=None):
-    """(каталог для git, ревизия) истории DPprofile; (None, причина), если её не прочитать.
+class History:
+    """История DPprofile: каталог для git и отрезки (ревизии для git log, префикс путей).
 
-    Своя вершина git — (root, "HEAD"). Каталог в чужом репозитории — вершина того
-    репозитория и коммит `git subtree split` (только закоммиченное).
+    Свой репозиторий — один отрезок (HEAD, ""). problem — почему истории нет.
     """
+
+    def __init__(self, where=None, segments=(), problem=None):
+        self.where, self.segments, self.problem = where, list(segments), problem
+
+    @property
+    def ok(self):
+        return self.problem is None
+
+    def _git(self, args):
+        return git(args, cwd=self.where)
+
+    def added(self, directory):
+        """Пути (от корня DPprofile), когда-либо добавленные в каталог."""
+        out = set()
+        for revs, prefix in self.segments:
+            _, text = self._git(["log", "--format=", "--name-only", "--diff-filter=A", *revs,
+                                 "--", prefix + directory])
+            out |= {p[len(prefix):] for p in text.split("\n") if p.startswith(prefix + directory + "/")}
+        return out
+
+    def first_add(self, rel):
+        """(sha, префикс) первого добавления файла — в самом раннем отрезке, где оно есть."""
+        for revs, prefix in self.segments:
+            _, text = self._git(["log", "--format=%H", "--diff-filter=A", *revs, "--", prefix + rel])
+            if text.split():
+                return text.split()[-1], prefix
+        return None
+
+    def versions(self, rel):
+        """[(sha, префикс)] всех коммитов, менявших файл, во всех отрезках."""
+        out = []
+        for revs, prefix in self.segments:
+            _, text = self._git(["log", "--format=%H", *revs, "--", prefix + rel])
+            out += [(sha, prefix) for sha in text.split()]
+        return out
+
+    def show(self, sha, prefix, rel):
+        return self._git(["show", f"{sha}:{prefix}{rel}"])
+
+    def last_change(self, rel):
+        """Дата (ГГГГ-ММ-ДД) последнего коммита, менявшего файл, или ""."""
+        for revs, prefix in reversed(self.segments):
+            _, text = self._git(["log", "-1", "--format=%cs", *revs, "--", prefix + rel])
+            if text.strip():
+                return text.strip()
+        return ""
+
+    def locate(self, sha):
+        """Префикс путей коммита из истории DPprofile или None — коммит не его."""
+        code, kind = self._git(["cat-file", "-t", sha])
+        if code != 0 or kind.strip() != "commit":
+            return None
+        if len(self.segments) == 1:
+            return self.segments[0][1]
+        (pre, pre_prefix), (post, post_prefix) = self.segments
+        if self._git(["merge-base", "--is-ancestor", sha, pre[0]])[0] == 0:
+            return pre_prefix
+        merge = post[1].lstrip("^")
+        if (self._git(["merge-base", "--is-ancestor", merge, sha])[0] == 0
+                and self._git(["merge-base", "--is-ancestor", sha, "HEAD"])[0] == 0):
+            return post_prefix
+        return None
+
+
+def history(root=None):
+    """History DPprofile для каталога root (свой репозиторий или каталог в DPmetaApp)."""
     root = os.path.realpath(root or ROOT)
     onto = os.environ.get("DPPROFILE_PRE_MOVE_HEAD", PRE_MOVE_HEAD)
-    key = (root, onto)
+    _, head = git(["rev-parse", "-q", "--verify", "HEAD"], cwd=root)
+    key = (root, onto, head.strip())
     if key not in _history_cache:
         _history_cache[key] = _history(root, onto)
     return _history_cache[key]
@@ -543,19 +609,20 @@ def history(root=None):
 
 def _history(root, onto):
     if is_git_repo(root):
-        return root, "HEAD"
+        return History(root, [(["HEAD"], "")])
     code, inside = git(["rev-parse", "--is-inside-work-tree"], cwd=root)
     if code != 0 or inside.strip() != "true":
-        return None, "не репозиторий git — историю не проверить"
+        return History(problem="не репозиторий git — историю не проверить")
     _, top = git(["rev-parse", "--show-toplevel"], cwd=root)
     _, prefix = git(["rev-parse", "--show-prefix"], cwd=root)
-    top, prefix = top.strip(), prefix.strip().rstrip("/")
-    code, out = git(["subtree", "split", f"--prefix={prefix}", f"--onto={onto}", "HEAD"], cwd=top)
-    sha = out.strip().split("\n")[-1] if code == 0 and out.strip() else ""
-    if not re.fullmatch(r"[0-9a-f]{40}", sha):
-        return None, f"история каталога {prefix}/ не собрана (git subtree split, опора {onto[:7]})"
-    return top, sha
-
+    top = top.strip()
+    # Слияние поддерева: коммит, у которого опора — не первый родитель.
+    _, merges = git(["rev-list", "--merges", "--parents", "HEAD"], cwd=top)
+    merge = next((line.split()[0] for line in merges.split("\n") if onto in line.split()[2:]), None)
+    if merge is None:
+        return History(problem=f"нет слияния поддерева {prefix.strip()} с опорой {onto[:7]} "
+                               "(DPPROFILE_PRE_MOVE_HEAD) — историю не проверить")
+    return History(top, [([onto], ""), (["HEAD", "^" + merge], prefix.strip())])
 
 # ---------------------------------------------------------------- условия этапов
 
@@ -664,13 +731,13 @@ def coverage(what, ctx):
 
 
 def stable(rel, days, root):
-    where, rev = history(root)
-    if where is None or not exists(rel, root):
+    h = history(root)
+    if not h.ok or not exists(rel, root):
         return False
     code, dirty = git(["status", "--porcelain", "--", rel], cwd=root)
     if code != 0 or dirty.strip():
         return False
-    code, out = git(["log", "-1", "--format=%cs", rev, "--", rel], cwd=where)
+    out = h.last_change(rel)
     last = iso(out.strip())
     return last is not None and (today() - last).days >= days
 
