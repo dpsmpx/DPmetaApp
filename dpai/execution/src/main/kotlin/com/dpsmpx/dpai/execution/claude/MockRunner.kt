@@ -29,6 +29,15 @@ enum class MockScenario {
 
     /** Как [SLOW_OUTPUT], но в начале хода — вызов инструмента `Read` (замер D-41 подхваченного хода, ревью A-14). */
     SLOW_TOOLS,
+
+    /** Ход ревью (D-73) с ответом по `--json-schema`: одно серьёзное замечание, блокирующих нет. */
+    REVIEW_PASS,
+
+    /** Ход ревью с блокирующей находкой. */
+    REVIEW_BLOCK,
+
+    /** Ход ревью без ответа по схеме — только текст. */
+    REVIEW_NO_SCHEMA,
 }
 
 /**
@@ -114,10 +123,18 @@ class MockRunner private constructor(
             return line(*pairs.toTypedArray())
         }
 
-        private fun result(sid: String, uuid: String, isError: Boolean, subtype: String, text: String) = line(
-            "type" to json("result"), "subtype" to json(subtype), "is_error" to JsonBool(isError), "result" to json(text),
-            "session_id" to json(sid), "uuid" to json(uuid), "num_turns" to json(1),
-            "usage" to JsonObject.of("input_tokens" to json(10), "output_tokens" to json(5)),
+        private fun result(sid: String, uuid: String, isError: Boolean, subtype: String, text: String, structured: JsonObject? = null) = line(
+            *listOfNotNull(
+                "type" to json("result"), "subtype" to json(subtype), "is_error" to JsonBool(isError), "result" to json(text),
+                "session_id" to json(sid), "uuid" to json(uuid), "num_turns" to json(1),
+                "usage" to JsonObject.of("input_tokens" to json(10), "output_tokens" to json(5)),
+                structured?.let { "structured_output" to it },
+            ).toTypedArray(),
+        )
+
+        /** Ответ ревью по схеме D-73: одна находка уровня [severity]. */
+        private fun findings(severity: String, title: String) = JsonObject.of(
+            "findings" to JsonArray(listOf(JsonObject.of("severity" to json(severity), "title" to json(title), "file" to json("src/a.kt"), "line" to json(3)))),
         )
 
         private fun rateLimit(sid: String, uuid: String, status: String) = line(
@@ -144,6 +161,11 @@ class MockRunner private constructor(
                 ),
                 text(sid, "u3", "работаю"), text(sid, "u4", "готово"), result(sid, "u5", false, "success", "готово"),
             )
+            MockScenario.REVIEW_PASS ->
+                listOf(init(sid, "u1"), result(sid, "u2", false, "success", "ревью готово", findings("MAJOR", "нет теста на пустой ввод")))
+            MockScenario.REVIEW_BLOCK ->
+                listOf(init(sid, "u1"), result(sid, "u2", false, "success", "ревью готово", findings("BLOCKING", "деление на ноль при пустом списке")))
+            MockScenario.REVIEW_NO_SCHEMA -> listOf(init(sid, "u1"), text(sid, "u2", "замечаний нет"), result(sid, "u3", false, "success", "замечаний нет"))
         }
     }
 }

@@ -15,7 +15,8 @@
   * угрозы T-N (рядом со словом «угроз», SECURITY_MODEL или в скобках) —
     определены в docs/SECURITY_MODEL.md;
   * «этап N» — этап есть в плане;
-  * тест по имени (`ИмяTest` или `ИмяTest.метод`) — такой класс и метод есть.
+  * тест по имени (`ИмяTest` или `ИмяTest.метод`) — такой класс и метод есть;
+    в карте финального аудита (`tools/audit/final_stability.py`) — и в кавычках.
 
 Ссылка на другой репозиторий экосистемы (`DPpass:docs/…`, `DPpass:D-22`)
 не сверяется: её проверяют средства DPmeta.
@@ -44,6 +45,9 @@ THREAT = re.compile(r"(?<![\w:])T(\d{1,2})\b")
 THREAT_CONTEXT = re.compile(r"SECURITY_MODEL|[Уу]гроз|\((?:[^()]*,\s*)?T\d{1,2}\)")
 STAGE = re.compile(r"[Ээ]тап\w*\s+(\d+)")
 TEST_REF = re.compile(r"`([A-Z]\w*Test)(?:\.(\w+))?`")
+# Карта доказательств финального аудита (этап 19): тесты там — строками в кавычках, а не в `…`.
+AUDIT_MAP = "tools/audit/final_stability.py"
+AUDIT_REF = re.compile(r'"([A-Z]\w*Test)(?:\.(\w+))?"')
 # Не сверяются: текст автора (D-19) и образцы самотестов — в них ссылки
 # сломаны намеренно, чтобы проверки доказали, что ловят их.
 SKIP = {TZ, "tools/verify/selftest.py"}
@@ -172,7 +176,8 @@ def check():
             for m in STAGE.finditer(line):
                 if m.group(1) not in known_stages:
                     f.add(where, f"этапа {m.group(1)} нет в плане {ROADMAP}")
-            for m in TEST_REF.finditer(line):
+            refs = list(TEST_REF.finditer(line)) + (list(AUDIT_REF.finditer(line)) if rel == AUDIT_MAP else [])
+            for m in refs:
                 cls, method = m.group(1), m.group(2)
                 if cls not in tests:
                     f.add(where, f"нет теста {cls}")

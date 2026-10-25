@@ -63,8 +63,8 @@ claude.ai (D-27), не принимает решений планировщик�
 
 | Что | Версия | Где |
 |---|---|---|
-| Модули, jar, дистрибутив `dpai` | `0.1.0-dev.1` (сборка для проверки на устройстве — ветка `apk-0.1.0-dev.1`) | `gradle.properties`, `version`; в jar `cli` — `Implementation-Version`, его печатает `dpai version` |
-| Приложение Android | `versionName` — версия проекта, `versionCode` — 1 | `android/build.gradle.kts` |
+| Модули, jar, дистрибутив `dpai` | `0.1.0-dev.5` (сборка для проверки на устройстве — ветка `apk_debug`, каталог `dpai/`, D-81) | `gradle.properties`, `version`; в jar `cli` — `Implementation-Version`, его печатает `dpai version` |
+| Приложение Android | `versionName` — версия проекта, `versionCode` — 4 | `android/build.gradle.kts` |
 | Форматы хранения | свой номер у каждого (раздел 10) | `docs/DATA_MODEL.md`, §4 |
 | Реестры | 116 кодов диагностики, 67 типов событий (8 октября 2026) | `tools/verify/registry/` |
 | Решения | D-01…D-39, заменённых нет | `docs/direction/DECISIONS.md` |
@@ -225,7 +225,7 @@ API не включён. Граница — этот раздел и реест�
 | `dpai.tasks-state` | 2 (1–2) | `TaskCodec` | снимок проекции задач; v1 — без `scope` |
 | `dpai.worktrees-state` | 1 | `WorktreeCodec` | снимок репозиториев и деревьев |
 | `dpai.streams-state` | 1 | `StreamsProjection` | снимок последних номеров потоков |
-| `dpai.merges-state` | 1 | `MergesProjection` | снимок ожидающих и выполненных слияний |
+| `dpai.merges-state` | 2 | `MergesProjection` | снимок ожидающих и выполненных слияний и коммитов задач |
 | `dpai.context` | 2 (только 2) | `ContextBundle`, `ContextCodec` | документ `context-<задача>` контура |
 | `dpai.handoff` | 1 | `Handoff`, `ContextCodec` | документ `handoff-<задача>` контура |
 | `dpai.verification-report` | 1 | `VerificationReport` | только пишется; контур хранит вердикт и хеш |
@@ -273,7 +273,7 @@ API не включён. Граница — этот раздел и реест�
 | Команда | Где | Итог |
 |---|---|---|
 | создать задачу | `Orchestrator.addTask`, в приложении — `LiveSystem.addTask` | `Outcome<TaskId>`; `TASK_CREATED`, `TASK_SCOPE_CHANGED` (если область задана), `TASK_STATE_CHANGED` (в очередь) |
-| такт контура | `Orchestrator.tick`, в оболочке — `ControlView.step` | очередь → план → аренда слота → сессия → дерево → контекст → ход; опрос; проверка → коммит → `DONE` → запрос слияния |
+| такт контура | `Orchestrator.tick`, в оболочке — `ControlView.step` | очередь → план → аренда слота → сессия → дерево → контекст → ход; опрос; проверка → коммит → ревью по политике (D-73) → `DONE` → запрос слияния |
 | ответ на запрос (в том числе слияние, D-49) | `Orchestrator.answer(uri, text, by)` | `OperationResult<RequestAnswer>`; действует только ответ на ждущий запрос с тем же хешем |
 | сверка после перезапуска | `Orchestrator.recover(agentFor)` | `Reconciler.Result` по сессиям, затем `OrphanScan` |
 | факты аккаунтов | `Orchestrator.commitAccounts`; проба входа — `LiveSystem.probeSlot` (`SlotAuthProbe`) | события аккаунтов |
@@ -298,12 +298,13 @@ API не включён. Граница — этот раздел и реест�
 | `dpai agent supervise --run ID` | супервизор — единственный писатель `events.jsonl` |
 | `dpai agent status --run ID` | состояние запуска; супервизор умер без записи выхода — `LOST` |
 | `dpai agent events --run ID [--after N] [--limit N]` | подтверждённые события с номером больше N |
+| `dpai agent follow --run ID [--after N]` | то же потоком, пока идёт ход: строка `dpai.agent-reply` команды `follow` на каждую новость журнала, смену состояния и раз в 15 с без новостей (D-76, D-79) |
 | `dpai agent stop --run ID [--grace-seconds N]` | просьба супервизору; потерянный — остановка по pid и времени старта; ход ещё без супервизора — только просьба (`AGENT_STOP_PENDING`) |
 | `dpai agent mcp --root DIR [--shell bash\|sh\|powershell\|cmd]` | MCP-сервер рабочего дерева по stdio (JSON-RPC 2.0 строками; `initialize`, `ping`, `tools/list`, `tools/call`; инструменты `run`, `read`, `write`, `edit`, `glob`, `grep`) — для хода Claude на другом target (D-50; `docs/EXECUTION_MODEL.md`, §7) |
 
 `ID` — `SessionId`. Каждая команда агента отвечает одной строкой
-`dpai.agent-reply`, кроме `mcp` — она отвечает строками JSON-RPC, пока
-открыт вход; коды выхода: 0 — успех, 1 — отказ (подробности в ответе), 2 —
+`dpai.agent-reply`, кроме `follow` — строка на каждую новость, пока идёт
+ход, — и `mcp` — она отвечает строками JSON-RPC, пока открыт вход; коды выхода: 0 — успех, 1 — отказ (подробности в ответе), 2 —
 неверный вызов. Режима контроллера без интерфейса в `cli` нет
 (раздел 19).
 
@@ -349,11 +350,11 @@ API не включён. Граница — этот раздел и реест�
   `subject` (путь или сущность), `severity` (`INFO`, `WARNING`, `ERROR`),
   `causes` (цепочка, ТЗ, §5.1), `error` (сводка исключения без стека).
   Между процессами — `DiagnosticJson`.
-- `DiagCode` несёт категорию и класс повтора. 115 кодов
-  (`tools/verify/registry/diag_codes.txt`); по категориям: `STATE` 43,
-  `EXECUTION` 21, `INPUT` 15, `INTEGRITY` 15, `FORMAT` 13, `NETWORK` 4,
-  `STORAGE` 2, `UNSUPPORTED` 1, `INTERNAL` 1; по классу повтора:
-  `NON_RETRYABLE` 91, `RETRYABLE` 14, `UNKNOWN` 10. Группы в коде: JSON,
+- `DiagCode` несёт категорию и класс повтора. 135 кодов
+  (`tools/verify/registry/diag_codes.txt`; 22 октября 2026); по
+  категориям: `STATE` 53, `EXECUTION` 28, `INPUT` 17, `INTEGRITY` 15,
+  `FORMAT` 14, `NETWORK` 4, `STORAGE` 2, `UNSUPPORTED` 1, `INTERNAL` 1; по
+  классу повтора: `NON_RETRYABLE` 105, `RETRYABLE` 20, `UNKNOWN` 10. Группы в коде: JSON,
   поля, форматы, ID, хеши, автоматы, события, исполнение, хранилище,
   аккаунты, targets и процессы, Claude Code CLI, сессии, задачи, контекст,
   одобрения и Git, проверка, восстановление, экосистема, общее.

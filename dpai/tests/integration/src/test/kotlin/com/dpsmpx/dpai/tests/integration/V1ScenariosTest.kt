@@ -391,51 +391,47 @@ class V1ScenariosTest {
     }
 
     /**
-     * Изменения задачи (D-42, п. 3): до слияния видно, что задача поменяла, —
-     * незакоммиченное и новые файлы, пока идёт ход; что принесёт слияние —
-     * после коммита; после слияния дерево убрано, ветке нечего принести.
+     * Изменения задачи (D-42, п. 3; D-72) на настоящем Git: пока идёт ход —
+     * от базы до рабочего дерева, с незакоммиченным и новыми файлами; после
+     * коммита — то же из ветки; после слияния дерево убрано, а изменения
+     * задачи видны по-прежнему — от базы до её слияния.
      */
     @Test
-    fun taskChangesShowWhatTheMergeWouldBring() {
+    fun taskDiffShowsWhatTheTaskChanged() {
         setUp(slots = 1)
         val t = task("фича", MockScenario.SLOW_OUTPUT)
-        val before = orchestrator.taskChanges(t).valueOrNull()!!
-        assertEquals("task/${t.value}", before.branch)
-        assertTrue(before.empty && before.committed == null && before.uncommitted == null, "до запуска ветки и дерева нет: $before")
+        assertTrue(orchestrator.taskDiff(t) is Outcome.Failure, "до запуска ветки задачи нет")
 
         orchestrator.tick()
         val tree = orchestrator.worktrees.worktrees.values.single { it.owner != null }
         File(tree.path, "feature.txt").writeText("новая возможность\n")
         File(tree.path, "README.md").appendText("правка задачи\n")
-        val working = orchestrator.taskChanges(t).valueOrNull()!!
-        assertEquals(emptyList(), working.committed, "коммитов в ветке ещё нет")
-        assertTrue(working.uncommitted!!.any { it == "+правка задачи" }, working.uncommitted.toString())
+        val working = orchestrator.taskDiff(t).valueOrNull()!!
+        assertEquals("рабочее дерево", working.head)
+        assertEquals(listOf("README.md"), working.files.map { it.path }, "незакоммиченное — по файлам")
         assertEquals(listOf("feature.txt"), working.untracked)
-        // Канал `dpai` (D-47): нет части — нет поля; пустая часть — пустой список.
-        val json = CanonicalJson.write(ControlSnapshot.changes(working, emptyList()))
-        assertTrue(""""committed":[]""" in json && """"untracked":["feature.txt"]""" in json && "+правка задачи" in json, json)
-        assertFalse("committed" in CanonicalJson.write(ControlSnapshot.changes(before, emptyList())))
+        assertTrue("+правка задачи" in working.patch, working.patch)
+        // Канал `dpai` (D-47, D-72): то же данными.
+        val json = CanonicalJson.write(working.toJson())
+        assertTrue(""""untracked":["feature.txt"]""" in json && "+правка задачи" in json, json)
 
         runUntilQuiet(3)
         assertEquals(TaskState.DONE, state(t))
         // Расход задачи в снимке канала (D-42, п. 4): ход был — поле есть.
         assertTrue(""""usage":{""" in CanonicalJson.write(ControlSnapshot.of(orchestrator)))
-        val done = orchestrator.taskChanges(t)
-        assertTrue(done.diagnostics.isEmpty(), done.diagnostics.toString())
-        val committed = done.valueOrNull()!!.committed!!
-        assertTrue(committed.any { it.contains("feature.txt") && it.contains("|") }, "сводка --stat: $committed")
-        assertTrue("+новая возможность" in committed && "+правка задачи" in committed, committed.toString())
-        assertEquals(emptyList(), done.valueOrNull()!!.uncommitted, "всё закоммичено")
-        assertEquals("main", done.valueOrNull()!!.base)
-        assertFalse(done.valueOrNull()!!.truncated)
+        val done = orchestrator.taskDiff(t).valueOrNull()!!
+        assertEquals(setOf("README.md", "feature.txt"), done.files.map { it.path }.toSet(), "всё закоммичено: ${done.files}")
+        assertTrue("+новая возможность" in done.patch && "+правка задачи" in done.patch, done.patch)
+        assertEquals("main", done.base)
+        assertFalse(done.truncated)
 
         val request = mergeRequest()
         assertEquals(OperationStatus.SUCCEEDED, orchestrator.answer(request.id, "merge", null, request.hash, "автор").status)
-        val merged = orchestrator.taskChanges(t).valueOrNull()!!
-        assertEquals(null, merged.uncommitted, "дерево убрано после слияния (A-65)")
-        assertEquals(emptyList(), merged.committed, "слитой ветке нечего принести")
+        val merged = orchestrator.taskDiff(t).valueOrNull()!!
+        assertEquals("task/${t.value}", merged.head, "дерево убрано после слияния (A-65) — до ветки")
+        assertEquals(setOf("README.md", "feature.txt"), merged.files.map { it.path }.toSet(), "слитая задача — её изменения, а не пусто")
 
-        val unknown = orchestrator.taskChanges(com.dpsmpx.dpai.core.ids.IdKinds.TASK.let { ids.next(it) })
+        val unknown = orchestrator.taskDiff(com.dpsmpx.dpai.core.ids.IdKinds.TASK.let { ids.next(it) })
         assertEquals(DiagCode.ENTITY_NOT_FOUND, (unknown as Outcome.Failure).errors.single().code)
     }
 

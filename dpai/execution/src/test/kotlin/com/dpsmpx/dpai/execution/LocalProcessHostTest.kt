@@ -31,6 +31,11 @@ class LocalProcessHostTest {
         assertEquals(listOf("line 0", "line 1", "line 2"), r.valueOrNull()!!.stdout)
         assertEquals(0, r.valueOrNull()!!.exitCode)
         assertEquals(7, host.run(ProcessSpec(TestChild.command("exit", "7")), 30.seconds).valueOrNull()!!.exitCode)
+        // Предел вывода: строки сверх него отброшены, итог помечен (ревью 17 октября 2026).
+        val cut = host.run(ProcessSpec(TestChild.command("lines", "100")), 30.seconds, maxStdoutChars = 20).valueOrNull()!!
+        assertEquals(listOf("line 0", "line 1", "line 2"), cut.stdout)
+        assertTrue(cut.truncated)
+        assertTrue(!r.valueOrNull()!!.truncated)
     }
 
     @Test
@@ -89,6 +94,8 @@ class LocalProcessHostTest {
         val p = (
             host.start(ProcessSpec(TestChild.command("lines", "3"))) { l ->
                 if (l.text == "line 2") slow.await(1500, java.util.concurrent.TimeUnit.MILLISECONDS)
+                // Только stdout: JVM-потомок пишет в stderr «Picked up JAVA_TOOL_OPTIONS», когда
+                // переменная задана окружением (облачная среда), — это не вывод программы.
                 if (l.stream == OutputStream.STDOUT) lines += l.text
             } as Outcome.Success
             ).value

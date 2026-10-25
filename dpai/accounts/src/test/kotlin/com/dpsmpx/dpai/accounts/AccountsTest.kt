@@ -351,6 +351,26 @@ class AccountsTest {
         assertEquals(DiagCode.ACCOUNT_LEASE_CONFLICT, failure(f.accounts.lease(f.state, s, f.task(), f.now)))
     }
 
+    /** D-77: перенесённая задача не идёт на исключённый слот; другого нет — отказ с причиной, а не тот же слот. */
+    @Test
+    fun excludedSlotIsNotLeased() {
+        val f = Fixture()
+        val sub = f.subscription(max = 4)
+        val target = f.target()
+        val a = f.slot(sub, target, "~/.claude-a")
+        val b = f.slot(sub, target, "~/.claude-b")
+        f.login(a)
+        f.login(b)
+        val task = f.task()
+        val chosen = f.accounts.lease(f.state, f.ids.next(IdKinds.SESSION), task, f.now, target, exclude = a)
+        assertEquals(b, chosen.valueOrNull()!!.slot)
+        f.state = Accounts.applyAll(f.state, chosen.valueOrNull()!!.events)
+        val alone = Fixture()
+        val only = alone.slot(alone.subscription(), alone.target())
+        alone.login(only)
+        assertEquals(DiagCode.ACCOUNT_NONE_AVAILABLE, failure(alone.accounts.lease(alone.state, alone.ids.next(IdKinds.SESSION), alone.task(), alone.now, exclude = only)))
+    }
+
     @Test
     fun loadIsSpreadAcrossSlotsAndDeterministic() {
         fun run(): List<AccountEvent> {

@@ -33,3 +33,5 @@ Thumbs.db
 # Python
 __pycache__/
 *.pyc
+# Промежуточные файлы CMake сборки NDK (модуль android).
+.cxx/

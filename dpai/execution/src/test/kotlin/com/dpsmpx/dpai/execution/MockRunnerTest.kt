@@ -73,6 +73,9 @@ class MockRunnerTest {
             MockScenario.RATE_LIMIT to Expect(TurnStatus.FAILED, DiagCode.CLAUDE_RATE_LIMITED),
             MockScenario.AUTH_ERROR to Expect(TurnStatus.FAILED, DiagCode.CLAUDE_AUTH_REQUIRED),
             MockScenario.PARTIAL_COMPLETION to Expect(TurnStatus.INCOMPLETE, DiagCode.CLAUDE_MAX_TURNS),
+            MockScenario.REVIEW_PASS to Expect(TurnStatus.COMPLETED, null),
+            MockScenario.REVIEW_BLOCK to Expect(TurnStatus.COMPLETED, null),
+            MockScenario.REVIEW_NO_SCHEMA to Expect(TurnStatus.COMPLETED, null),
         )
         assertEquals(MockScenario.entries.toSet(), expected.keys, "у каждого сценария ТЗ, §89 — ожидание")
         for ((scenario, want) in expected) {
@@ -90,6 +93,8 @@ class MockRunnerTest {
             assertEquals(want.status, t.status, "$scenario: ${t.diagnostics}")
             want.code?.let { assertTrue(t.diagnostics.any { d -> d.code == it }, "$scenario: нет $it в ${t.diagnostics}") }
             if (scenario == MockScenario.SLOW_OUTPUT) assertTrue(polls > 3, "медленный вывод приходит частями")
+            // Ответ ревью по схеме (D-73) — в `structured_output`; без схемы — только текст.
+            assertEquals(scenario in setOf(MockScenario.REVIEW_PASS, MockScenario.REVIEW_BLOCK), t.structured != null, "$scenario: ${t.structured}")
         }
     }
 

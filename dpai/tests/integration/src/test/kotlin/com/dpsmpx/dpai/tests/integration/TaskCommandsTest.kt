@@ -28,6 +28,7 @@ import com.dpsmpx.dpai.storage.journal.EventJournal
 import com.dpsmpx.dpai.storage.snapshot.SnapshotStore
 import com.dpsmpx.dpai.storage.vfs.NioVfs
 import com.dpsmpx.dpai.tasks.Priority
+import com.dpsmpx.dpai.tasks.ReviewRole
 import com.dpsmpx.dpai.tasks.TaskClass
 import com.dpsmpx.dpai.tasks.TaskPolicy
 import com.dpsmpx.dpai.verification.VerificationProfile
@@ -116,6 +117,11 @@ class TaskCommandsTest {
         val refused = o.run(Command.SetPolicy(t, TaskClass.ARCHITECTURE, null, null, null))
         assertEquals(DiagCode.OPERATION_NOT_ALLOWED, refused.diagnostics.single().code, "идущей задаче политику не меняют")
         assertEquals(DiagCode.VALUE_INVALID, o.run(Command.SetPolicy(busy[3], TaskClass.TRIVIAL, "плохая модель", null, null)).diagnostics.single().code)
+        // Роли ревью (D-73): у проекта без Git — отказ при постановке, а не запрос человеку после работы.
+        val q = busy[3]
+        assertEquals(DiagCode.UNSUPPORTED, o.run(Command.SetPolicy(q, TaskClass.NORMAL_ENGINEERING, null, null, null, setOf(ReviewRole.CODE))).diagnostics.single().code)
+        assertEquals(DiagCode.UNSUPPORTED, o.addTask("с ревью", "цель", policy = TaskPolicy(reviews = setOf(ReviewRole.CODE))).diagnostics.single().code)
+        assertEquals(OperationStatus.SUCCEEDED, o.run(Command.SetPolicy(q, TaskClass.TRIVIAL, null, null, null, emptySet())).status, "снять роли можно и без Git")
         advance(o, runner, 1)
     }
 
@@ -145,6 +151,28 @@ class TaskCommandsTest {
         assertEquals(first.provider, next.provider, "продолжение — та же сессия провайдера")
         advance(second, runner2, 3)
         assertEquals(TaskState.DONE, state(second, t))
+    }
+
+    /**
+     * Пауза, пришедшая посреди такта (ТЗ, §73, «Пауза всем»), не даёт
+     * запустить задачу, уже попавшую в план этого такта: удержанная
+     * остаётся READY, решает признак held.
+     */
+    @Test
+    fun holdArrivingMidTickStopsAlreadyPlannedLaunch() {
+        val (o, _) = boot()
+        val a = o.addTask("первая", "цель").valueOrNull()!!
+        val b = o.addTask("вторая", "цель").valueOrNull()!!
+        // Команды приходят, пока такт запускает первую из запланированных: их исполнит такт перед следующим запуском.
+        scenario = { n ->
+            if (n == 1) listOf(a, b).forEach { o.submit(Command.Hold(it)) }
+            MockScenario.SLOW_OUTPUT
+        }
+        o.tick()
+        val started = listOf(a, b).filter { t -> o.sessions.sessions.values.any { it.task == t } }
+        assertEquals(1, started.size, "вторая из плана такта не запускается: $started")
+        assertTrue(listOf(a, b).all { o.tasks.tasks.getValue(it).held })
+        assertEquals(emptyList(), o.invariants())
     }
 
     @Test
@@ -346,5 +374,52 @@ class TaskCommandsTest {
         assertEquals(OperationStatus.SUCCEEDED, second.run(Command.SetTargetEnabled(a, true)).status)
         advance(second, runner2, 4)
         assertTrue(tasks.all { state(second, it) == TaskState.DONE }, tasks.map { state(second, it) }.toString())
+    }
+
+    /** D-77: «Запустить первой» — следующей, выше всех и без паузы; места не отнимает у идущих. */
+    @Test
+    fun runFirstGoesNext() {
+        val (o, runner) = boot()
+        val queued = (1..5).map { o.addTask("задача $it", "цель $it").valueOrNull()!! }
+        val last = o.addTask("срочная", "цель срочной").valueOrNull()!!
+        assertEquals(OperationStatus.SUCCEEDED, o.run(Command.Hold(last)).status)
+        val r = o.run(Command.RunFirst(last))
+        assertEquals(OperationStatus.SUCCEEDED, r.status, r.diagnostics.toString())
+        o.tick()
+        assertEquals(TaskState.RUNNING, state(o, last), "первой — она, пауза снята")
+        assertEquals(listOf(TaskState.RUNNING, TaskState.RUNNING, TaskState.RUNNING, TaskState.READY, TaskState.READY), queued.map { state(o, it) }, "мест четыре: одно ей, остальные — по очереди")
+        assertEquals(DiagCode.OPERATION_NOT_ALLOWED, o.run(Command.RunFirst(last)).diagnostics.single().code, "идущую — нет")
+        advance(o, runner, 1)
+    }
+
+    /**
+     * D-77: «Перенести» — ход остановлен с handoff, следующая сессия на другом
+     * слоте без `--resume`; другого слота нет — задача ждёт с причиной.
+     */
+    @Test
+    fun reassignMovesToAnotherSlotOrWaitsWithReason() {
+        val (o, runner) = boot()
+        val t = o.addTask("задача", "цель").valueOrNull()!!
+        o.tick()
+        val first = o.sessions.sessions.values.single { it.task == t }
+        val r = o.run(Command.Reassign(first.id))
+        assertEquals(OperationStatus.SUCCEEDED, r.status, r.diagnostics.toString())
+        assertEquals(com.dpsmpx.dpai.core.state.SessionState.CANCELLED, o.sessions.sessions.getValue(first.id).state, "ход остановлен с handoff")
+        assertEquals(first.slot, o.tasks.tasks.getValue(t).excludedSlot)
+        o.tick()
+        val second = o.sessions.sessions.values.single { it.task == t && !it.terminal }
+        assertTrue(second.slot != first.slot && second.target != first.target, "другой слот — на другом target")
+        assertEquals(first.id, second.continues, "продолжение — с handoff прежней сессии")
+        assertTrue(second.provider != first.provider, "другой слот — новая сессия провайдера, без --resume")
+        assertEquals(null, o.tasks.tasks.getValue(t).excludedSlot, "запуск снимает исключение")
+        // Другого слота нет (прежний выключен): задача ждёт с причиной и не идёт на исключённый, хотя он свободен.
+        assertEquals(OperationStatus.SUCCEEDED, o.run(Command.SetSlotEnabled(first.slot, false)).status)
+        assertEquals(OperationStatus.SUCCEEDED, o.run(Command.Reassign(second.id)).status)
+        advance(o, runner, 2)
+        assertTrue(o.sessions.sessions.values.none { it.task == t && !it.terminal }, "на исключённый и выключенный не идёт")
+        assertEquals(TaskState.READY, state(o, t))
+        assertTrue("перенесена" in o.waitingReason(t).orEmpty(), o.waitingReason(t).toString())
+        // Нет такой сессии — отказ, а не тишина.
+        assertEquals(DiagCode.ENTITY_NOT_FOUND, o.run(Command.Reassign(com.dpsmpx.dpai.core.ids.IdKinds.SESSION.let { ids.next(it) })).diagnostics.single().code)
     }
 }

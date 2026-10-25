@@ -41,6 +41,32 @@ class ExecutionTargetManagerTest {
         manager.register(target)
     }
 
+    /**
+     * Заглушка держит события не больше чем у KEEP_FINISHED завершённых
+     * запусков (этап 19): у давнего остаются номера — новый ход продолжает
+     * нумерацию, как у настоящего агента после уборки.
+     */
+    @Test
+    fun mockCompactsOldFinishedRunsButKeepsNumbering() {
+        val client = manager.client(target.id).valueOrNull()!!
+        val live = ids.next(IdKinds.SESSION)
+        client.start(live, RunSpec(listOf("claude", "-p", "живой")))
+        val runs = List(MockAgentHost.KEEP_FINISHED + 10) { ids.next(IdKinds.SESSION) }
+        for (r in runs) {
+            client.start(r, RunSpec(listOf("claude", "-p", "x")))
+            mock.exit(r, 0)
+        }
+        val old = runs.first()
+        val before = client.status(old).valueOrNull()!!
+        assertEquals(RunState.EXITED, before.state)
+        assertEquals(emptyList(), client.events(old, 0, 100).valueOrNull()!!.events, "события давнего сжаты")
+        assertEquals(RunState.RUNNING, mock.state(live), "идущий не трогается")
+        // Новый ход давнего запуска: номер хода и событий продолжаются.
+        val again = client.start(old, RunSpec(listOf("claude", "-p", "ещё"))).valueOrNull()!!
+        assertEquals(before.turn + 1, again.turn)
+        assertEquals(before.lastSequence + 1, again.lastSequence)
+    }
+
     @Test
     fun processStartsStreamsAndStopsThroughUnifiedInterface() {
         val client = manager.client(target.id).valueOrNull()!!

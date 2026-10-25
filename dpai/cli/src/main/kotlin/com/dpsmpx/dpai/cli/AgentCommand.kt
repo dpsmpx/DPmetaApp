@@ -18,8 +18,9 @@ import kotlin.time.Duration.Companion.seconds
  * `dpai agent …` — агент оркестратора на target (D-26;
  * `docs/EXECUTION_MODEL.md`, §1). Каждая команда отвечает одной строкой
  * `dpai.agent-reply` на стандартном выводе; код выхода: 0 — успех, 1 —
- * отказ (подробности в ответе), 2 — неверный вызов. Исключение — `mcp`:
- * сервер MCP, отвечающий строками JSON-RPC, пока открыт вход (D-50).
+ * отказ (подробности в ответе), 2 — неверный вызов. Исключения — `follow`:
+ * строки ответа потоком, пока идёт ход (D-76, D-79), и `mcp`: сервер MCP,
+ * отвечающий строками JSON-RPC, пока открыт вход (D-50).
  */
 class AgentCommand(
     private val out: (String) -> Unit,
@@ -29,6 +30,8 @@ class AgentCommand(
     private val selfCommand: List<String> = selfCommand(),
     private val stdin: () -> String = { System.`in`.readBytes().toString(Charsets.UTF_8) },
     private val input: () -> java.io.BufferedReader = { System.`in`.bufferedReader(Charsets.UTF_8) },
+    /** Вывод закрыт — читатель потока `follow` ушёл (обрыв канала SSH). */
+    private val outClosed: () -> Boolean = { false },
 ) {
     fun run(args: List<String>): Int {
         val command = args.firstOrNull() ?: return usage("нет команды агента")
@@ -38,6 +41,15 @@ class AgentCommand(
         // путь он искал бы в home/home — каждый ход становился бы LOST.
         val home = File(opts.single("home") ?: defaultHome()).absolutePath
         val runtime = AgentRuntime(home, clock, version, selfCommand)
+        if (command == "follow") {
+            val run = opts.single("run")?.let { IdKinds.SESSION.parse(it).valueOrNull() } ?: return usage("--run <SessionId> обязателен")
+            val after = opts.single("after")?.let { it.toLongOrNull() ?: return usage("--after — номер события") } ?: 0
+            val ok = runtime.follow(run, after) { reply ->
+                out(CanonicalJson.write(reply.toJson()))
+                !outClosed()
+            }
+            return if (ok) Cli.OK else FAILED
+        }
         val reply = when (command) {
             "doctor" -> runtime.doctor()
             "start", "supervise", "status", "events", "stop" -> {
@@ -154,11 +166,14 @@ class AgentCommand(
             |  dpai agent start    --run ID [--home DIR] --spec-stdin   (dpai.run-spec на входе)
             |  dpai agent status   --run ID [--home DIR]
             |  dpai agent events   --run ID [--home DIR] [--after N] [--limit N]
+            |  dpai agent follow   --run ID [--home DIR] [--after N]
+            |                      (строки ответа потоком, пока идёт ход, D-76)
             |  dpai agent stop     --run ID [--home DIR] [--grace-seconds N]
             |  dpai agent mcp      --root DIR [--shell bash|sh|powershell|cmd]
             |                      (MCP-сервер рабочего дерева по stdio, D-50)
             |
-            |Ответ — одна строка JSON dpai.agent-reply. Коды выхода: 0 — успех, 1 — отказ, 2 — неверный вызов.
+            |Ответ — одна строка JSON dpai.agent-reply (follow — строка на каждую новость).
+            |Коды выхода: 0 — успех, 1 — отказ, 2 — неверный вызов.
         """.trimMargin()
 
         fun defaultHome(): String = File(System.getProperty("user.home"), ".dpai-agent").path

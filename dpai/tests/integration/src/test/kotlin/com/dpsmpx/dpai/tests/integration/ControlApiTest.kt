@@ -34,6 +34,7 @@ import com.dpsmpx.dpai.storage.journal.EventJournal
 import com.dpsmpx.dpai.storage.snapshot.SnapshotStore
 import com.dpsmpx.dpai.storage.vfs.NioVfs
 import com.dpsmpx.dpai.tasks.Priority
+import com.dpsmpx.dpai.tasks.ReviewRole
 import com.dpsmpx.dpai.tasks.TaskPolicy
 import com.dpsmpx.dpai.verification.VerificationProfile
 import com.dpsmpx.dpai.verification.Verifier
@@ -125,11 +126,11 @@ class ControlApiTest {
         assertEquals(200, done.status, done.body.toString())
         assertEquals(TaskState.CANCELLED, o.tasks.tasks.getValue(task).state)
         assertEquals(200, api.handle("GET", "/v1/tasks/${task.value}/messages", token, null).status)
-        val changes = api.handle("GET", "/v1/tasks/${task.value}/changes", token, null)
-        assertEquals(422, changes.status, "без репозитория смотреть нечего: ${changes.body}")
-        assertTrue("UNSUPPORTED" in CanonicalJson.write(changes.body))
-        assertEquals(400, api.handle("GET", "/v1/tasks/не-id/changes", token, null).status)
-        assertEquals(404, api.handle("GET", "/v1/tasks/${task.value}/плясать", token, null).status)
+        // Изменения задачи (D-42): у проекта без репозитория — отказ с причиной, неверный id — 400.
+        val diff = api.handle("GET", "/v1/tasks/${task.value}/diff", token, null)
+        assertEquals(409, diff.status, diff.body.toString())
+        assertTrue("репозитория" in CanonicalJson.write(diff.body))
+        assertEquals(400, api.handle("GET", "/v1/tasks/не-id/diff", token, null).status)
 
         // Лимит попыток: шестая — отказ и для верного кода.
         val (code2, _) = pairing.newCode()
@@ -141,6 +142,30 @@ class ControlApiTest {
         assertEquals(403, api.handle("POST", "/v1/pair", null, """{"code":"$code3"}""").status)
     }
 
+    /** Поиск (ТЗ, §75) для `dpai`: его даёт оболочка; запрос проверяется здесь, нет поиска или контура — 503 с причиной. */
+    @Test
+    fun searchIsTheShellsAndQueryIsChecked() {
+        val o = boot()
+        val pairing = Pairing(NioVfs(dir.resolve("app").also { it.toFile().mkdirs() }), RandomSource.seeded(10), clock)
+        val (code, _) = pairing.newCode()
+        val bare = api(o, pairing)
+        val token = "Bearer " + str(bare.handle("POST", "/v1/pair", null, """{"code":"$code"}""").body, "token")
+        assertEquals(503, bare.handle("POST", "/v1/search", token, """{"query":"задача"}""").status, "поиск не подключён")
+        val asked = mutableListOf<String>()
+        val api = ControlApi(pairing, { o }, { q -> asked += q; if (q == "нет контура") null else JsonObject.of("hits" to JsonString(q)) }) { c ->
+            ControlApi.OperationOutcome.Done(o.submit(c).also { o.runCommands() }.get())
+        }
+        assertEquals(401, api.handle("POST", "/v1/search", null, """{"query":"задача"}""").status, "без токена — отказ")
+        val ok = api.handle("POST", "/v1/search", token, """{"query":"  задача  "}""")
+        assertEquals(200, ok.status)
+        assertEquals("задача", str(ok.body, "hits"))
+        assertEquals(400, api.handle("POST", "/v1/search", token, """{"query":"я"}""").status, "короче двух знаков")
+        assertEquals(400, api.handle("POST", "/v1/search", token, """{"query":"${"x".repeat(ControlApi.MAX_QUERY + 1)}"}""").status)
+        assertEquals(400, api.handle("POST", "/v1/search", token, """{"q":"задача"}""").status, "нет поля query")
+        assertEquals(503, api.handle("POST", "/v1/search", token, """{"query":"нет контура"}""").status)
+        assertEquals(listOf("задача", "нет контура"), asked, "до поиска доходит только проверенный запрос")
+    }
+
     @Test
     fun codecRoundTripForEveryExternalCommand() {
         val t = ids.next(IdKinds.TASK)
@@ -149,18 +174,34 @@ class ControlApiTest {
             Command.AnswerRequest("dpai://answer/x/y?hash=sha256:00", "текст", ControlApi.BY, "cli"),
             Command.Probe(com.dpsmpx.dpai.notifications.RequestKind.CHOICE, 5.minutes, "k-00000001"),
             Command.AddTask("t", "o", com.dpsmpx.dpai.tasks.Priority.HIGH, com.dpsmpx.dpai.tasks.TaskPolicy(taskClass = com.dpsmpx.dpai.tasks.TaskClass.TRIVIAL, model = "haiku", effort = "low", maxBudgetUsdCents = 50), key = "k-00000002"),
-            Command.AddTask("t2", "o", dependencies = setOf(t), scope = setOf("src/a.kt", "docs"), key = "k-00000004"),
-            Command.AddTask("t3", "o", scope = emptySet()),
             Command.SetPriority(t, com.dpsmpx.dpai.tasks.Priority.LOW), Command.SetPolicy(t, com.dpsmpx.dpai.tasks.TaskClass.ARCHITECTURE, "opus", null, 100),
             Command.Hold(t), Command.Resume(t), Command.Cancel(t), Command.Retry(t, "ответ"), Command.Verify(t), Command.Waive(t, "проверил", ControlApi.BY),
             Command.StopSession(s), Command.SendToSession(s, "ещё", "sonnet", "high"), Command.SendToSession(s, null, fresh = true),
             Command.SetNearPercent(ids.next(IdKinds.SUBSCRIPTION), 90), Command.SetTargetEnabled(ids.next(IdKinds.TARGET), false),
             Command.SetSlotEnabled(ids.next(IdKinds.ACCOUNT), true), Command.SetSessionLimit(4), Command.SetSessionLimit(null),
             Command.Archive(t, true), Command.ArchiveFinished("k-00000003"),
+            Command.AddTask("с областью", "o", scope = setOf("src/a", "docs"), dependencies = setOf(t, ids.next(IdKinds.TASK)), key = "k-00000004"),
+            Command.SetScope(t, setOf("src/main")), Command.SetScope(t, emptySet()),
+            Command.SetDependencies(t, setOf(ids.next(IdKinds.TASK))), Command.SetDependencies(t, emptySet()),
+            // Роли ревью (D-73): в новой задаче; в политике — заданы, сняты или «как были» (`null`).
+            Command.AddTask("с ревью", "o", policy = com.dpsmpx.dpai.tasks.TaskPolicy(reviews = setOf(ReviewRole.SECURITY, ReviewRole.CODE)), key = "k-00000005"),
+            Command.SetPolicy(t, com.dpsmpx.dpai.tasks.TaskClass.ARCHITECTURE, null, null, null, setOf(ReviewRole.CODE)),
+            Command.SetPolicy(t, com.dpsmpx.dpai.tasks.TaskClass.ARCHITECTURE, null, null, null, emptySet()),
+            // «Запустить первой» и «Перенести» (D-77).
+            Command.RunFirst(t, "k-00000006"), Command.Reassign(s, "k-00000007"),
         )
         for (c in commands) {
             val back = CommandCodec.decode(CommandCodec.encode(c), ControlApi.BY)
             assertEquals(c, back.valueOrNull()?.command, "$c: ${back.diagnostics}")
         }
+        // Не строка в области и не TaskId в зависимостях — отказ с местом, а не пропуск.
+        val badScope = com.dpsmpx.dpai.core.serialization.JsonParser().parse("""{"command":"task.scope","task":"${t.value}","scope":[1]}""").valueOrNull() as com.dpsmpx.dpai.core.serialization.JsonObject
+        assertTrue(CommandCodec.decode(badScope, ControlApi.BY).diagnostics.any { it.subject == "$.scope[0]" })
+        val badDep = com.dpsmpx.dpai.core.serialization.JsonParser().parse("""{"command":"task.dependencies","task":"${t.value}","dependsOn":["x"]}""").valueOrNull() as com.dpsmpx.dpai.core.serialization.JsonObject
+        assertTrue(CommandCodec.decode(badDep, ControlApi.BY) is com.dpsmpx.dpai.core.result.Outcome.Failure)
+        val badRole = com.dpsmpx.dpai.core.serialization.JsonParser().parse("""{"command":"task.policy","task":"${t.value}","taskClass":"ARCHITECTURE","reviews":["CODE","STYLE"]}""").valueOrNull() as com.dpsmpx.dpai.core.serialization.JsonObject
+        assertTrue(CommandCodec.decode(badRole, ControlApi.BY).diagnostics.any { it.subject == "$.reviews[1]" }, "неизвестная роль — отказ с местом")
+        val trivial = com.dpsmpx.dpai.core.serialization.JsonParser().parse("""{"command":"task.add","title":"t","objective":"o","taskClass":"TRIVIAL","reviews":["CODE"]}""").valueOrNull() as com.dpsmpx.dpai.core.serialization.JsonObject
+        assertTrue(CommandCodec.decode(trivial, ControlApi.BY) is com.dpsmpx.dpai.core.result.Outcome.Failure, "у TRIVIAL ревью нет (D-73)")
     }
 }

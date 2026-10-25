@@ -16,6 +16,12 @@ import com.dpsmpx.dpai.security.Sensitivity
 import com.dpsmpx.dpai.sessions.PromptFacts
 import com.dpsmpx.dpai.sessions.PromptMode
 import com.dpsmpx.dpai.tasks.TaskPolicy
+import com.dpsmpx.dpai.tasks.FindingSeverity
+import com.dpsmpx.dpai.tasks.ReviewRecord
+import com.dpsmpx.dpai.tasks.ReviewRole
+import com.dpsmpx.dpai.tasks.ReviewVerdict
+import com.dpsmpx.dpai.tasks.TaskRecord
+import com.dpsmpx.dpai.orchestrator.review.Review
 import com.dpsmpx.dpai.verification.VerificationReport
 import com.dpsmpx.dpai.contexts.ContextBundle
 import com.dpsmpx.dpai.contexts.ContextSource
@@ -62,7 +68,6 @@ import com.dpsmpx.dpai.notifications.NotificationRequest
 import com.dpsmpx.dpai.orchestrator.accounts.AccountNotifications
 import com.dpsmpx.dpai.orchestrator.accounts.accountEnvelopes
 import com.dpsmpx.dpai.orchestrator.git.GitService
-import com.dpsmpx.dpai.orchestrator.git.TaskChanges
 import com.dpsmpx.dpai.orchestrator.sessions.sessionEnvelopes
 import com.dpsmpx.dpai.orchestrator.tasks.taskEnvelopes
 import com.dpsmpx.dpai.orchestrator.verification.CompletionFlow
@@ -211,7 +216,28 @@ class Orchestrator(
     val handoffs = Handoffs()
     private val overlap = OverlapPolicy()
     val notifications = NotificationEngine()
-    val posted = mutableListOf<NotificationDecision>()
+    /**
+     * Решения об уведомлениях — последние [POSTED_KEEP]: раньше список рос
+     * с каждым уведомлением без предела (гистограммы кучи `EnduranceTest`,
+     * 18 октября 2026), а оболочка читала его из своего потока без замка.
+     * Новое оболочка берёт по сквозному номеру ([postedSince]).
+     */
+    private val postedLog = RecentLog<NotificationDecision>(POSTED_KEEP)
+
+    /** Сколько решений было всего — сквозной номер следующего. */
+    val postedTotal: Long get() = postedLog.total
+
+    /** Последние решения (копия): для проверок и экрана. */
+    val posted: List<NotificationDecision> get() = postedLog.toList()
+
+    /**
+     * Решения после сквозного номера [seen] и новый номер. Отставшая
+     * оболочка (больше [POSTED_KEEP] за раз) получает последние — старые
+     * уведомления к тому времени уже неактуальны.
+     */
+    fun postedSince(seen: Long): Pair<List<NotificationDecision>, Long> = postedLog.since(seen)
+
+    private fun post(d: NotificationDecision) = postedLog.add(d)
 
     var accounts: AccountsState = initialAccounts
         private set
@@ -225,6 +251,9 @@ class Orchestrator(
     private val contextOf = HashMap<TaskId, ContextBundle>()
     /** Выжимка проваленной проверки задачи — источник `TOOL` следующей попытки (D-40); восстанавливается из версии контекста. */
     private val toolOf = HashMap<TaskId, ContextSource>()
+
+    /** Ответ по схеме последнего хода сессии ревью (D-73) — до её реакции на конец хода. */
+    private val reviewOutput = HashMap<SessionId, com.dpsmpx.dpai.core.serialization.JsonValue?>()
     /** Флаги, которых не знает Claude Code target (D-40): следующие ходы идут без них. */
     private val unsupportedFlags = HashMap<ExecutionTargetId, MutableSet<String>>()
 
@@ -344,7 +373,7 @@ class Orchestrator(
                 when (val c = ContextCodec.readContext(d.content)) {
                     is Outcome.Success -> {
                         contextOf[t.id] = c.value
-                        c.value.sources.firstOrNull { it.key == VERIFICATION_SOURCE }?.let { s ->
+                        c.value.sources.firstOrNull { it.key == VERIFICATION_SOURCE || it.key == REVIEW_SOURCE }?.let { s ->
                             toolOf[t.id] = ContextSource(s.key, s.level, config.project, s.sensitivity, s.origin, s.content)
                         }
                     }
@@ -520,6 +549,7 @@ class Orchestrator(
         scope: Set<String>? = null,
         policy: TaskPolicy = TaskPolicy(),
     ): Outcome<TaskId> {
+        reviewsUnsupported(policy)?.let { return it }
         // Та же задача уже в очереди — второй ход с той же работой (D-40; аудит, W10).
         if (efficiency.rejectDuplicateTasks) {
             tasksLogic.duplicateOf(tasks, title, objective)?.let { other ->
@@ -563,11 +593,22 @@ class Orchestrator(
         }
         // Общий предел сессий контура (D-42, п. 6) — поверх предела каждого target.
         val room = control.maxSessions?.let { (it - sessions.sessions.values.count { s -> !s.terminal }).coerceAtLeast(0) } ?: Int.MAX_VALUE
-        for (a in tasksLogic.plan(tasks, clock.now(), offers).take(room)) {
+        // Перенесённая задача (D-77) — только на target, где есть слот, кроме исключённого: иначе план ставил бы
+        // её на тот же target, и она ждала бы там, хотя на другом место есть.
+        val elsewhere = { t: com.dpsmpx.dpai.tasks.TaskRecord, target: ExecutionTargetId ->
+            t.excludedSlot == null || accounts.slots.values.any { it.targetId == target && it.id != t.excludedSlot && !it.disabled }
+        }
+        for (a in tasksLogic.plan(tasks, clock.now(), offers, elsewhere).take(room)) {
             runCommands()
-            // Команда могла снять задачу с очереди (отмена, ответ человека) — план уже не про неё.
-            if (tasks.tasks[a.task]?.state != TaskState.READY) continue
+            // Команда могла снять задачу с очереди (отмена, ответ человека) или придержать её («Пауза всем»,
+            // ТЗ, §73) — план уже не про неё: удержанная остаётся READY, и без проверки held она бы запустилась.
+            val now = tasks.tasks[a.task]
+            if (now == null || now.state != TaskState.READY || now.held) continue
             if (overlapAllows(a.task)) launch(a.task, a.target)
+        }
+        // Перенесённой задаче идти некуда — план её пропускает; молча ждать нельзя (D-05, D-77).
+        for (t in tasks.tasks.values.filter { it.state == TaskState.READY && !it.held && it.excludedSlot != null }.sortedBy { it.id.value }) {
+            if (targets.none { elsewhere(t, it.id) }) waiting(t.id, "задача перенесена со слота ${t.excludedSlot}, а другого слота для неё нет — включите или добавьте слот")
         }
         for (s in sessions.sessions.values.filter { it.state !in WAIT_STATES && !it.terminal }.map { it.id }.sorted()) {
             runCommands()
@@ -575,10 +616,11 @@ class Orchestrator(
             if (r.terminal || r.state in WAIT_STATES) continue
             poll(s)
         }
+        reviews()
         runCommands()
         settleRequests()
         // Придержанное пределом частоты — сводкой, когда предел позволяет (ТЗ, §36).
-        notifications.flush(clock.now())?.let { posted += it }
+        notifications.flush(clock.now())?.let(::post)
         maybeSnapshot()
     }
 
@@ -663,7 +705,7 @@ class Orchestrator(
             return
         }
         for (candidate in order) {
-            lease = accountsLogic.lease(accounts, session, task, clock.now(), candidate, urgent = t.priority.ordinal <= Priority.HIGH.ordinal)
+            lease = accountsLogic.lease(accounts, session, task, clock.now(), candidate, urgent = t.priority.ordinal <= Priority.HIGH.ordinal, exclude = t.excludedSlot)
             if (lease is Outcome.Success) {
                 target = candidate
                 break
@@ -672,7 +714,8 @@ class Orchestrator(
         }
         if (lease is Outcome.Failure) {
             // Свободного слота нет: задача ждёт следующего такта — и человек видит почему (раньше — молча).
-            waiting(task, (first ?: lease).errors.first().message)
+            val moved = t.excludedSlot?.let { "задача перенесена со слота $it — другого слота нет: " }.orEmpty()
+            waiting(task, moved + (first ?: lease).errors.first().message)
             return
         }
         if (pin != null) setPin(task, null)
@@ -692,8 +735,8 @@ class Orchestrator(
         // Продолжение — прерванная сессия той же задачи или сессия, чья работа не прошла проверку (D-40).
         // Последняя сессия задачи: продолжение создаётся в ту же миллисекунду, что и handoff, — при равном
         // времени решает id (монотонен), а не порядок обхода (разница при `--resume` теряла бы версию).
-        val previous = sessions.sessions.values.filter { it.task == task }
-            .maxWithOrNull(compareBy<com.dpsmpx.dpai.sessions.SessionRecord>({ it.createdAt.epochMillis }, { it.turn }, { it.id.value }))
+        // Сессии ревью (D-73) не продолжаются работой: у них свой prompt и только чтение.
+        val previous = lastWork(task)
         val handoff = handoffs.latest(task)
         val continues = previous?.takeIf {
             (it.state == SessionState.CANCELLED && it.lastReason == DiagCode.SESSION_HANDED_OFF) ||
@@ -713,7 +756,7 @@ class Orchestrator(
                 ?.also { commitSessions(it.events) }
         } ?: return releaseLease(session)
         val workDir = prepareWorktree(task, session) ?: return failLaunch(task, session, DiagCode.WORKTREE_MISSING)
-        val window = sessions.sessions.values.filter { it.task == task }.mapNotNull { it.usage.contextWindow }.maxOrNull()
+        val window = sessions.sessions.values.filter { it.task == task && it.review == null }.mapNotNull { it.usage.contextWindow }.maxOrNull()
         // Версия, которую видела продолжаемая сессия (а не последняя собранная); неизвестна — полный prompt.
         val seen = if (plan.mode == PromptMode.DELTA) continues?.let { sentContext(task, it) } else null
         val promptMode = if (plan.mode == PromptMode.DELTA && seen == null) PromptMode.FULL else plan.mode
@@ -909,10 +952,13 @@ class Orchestrator(
             say(sessions.sessions.getValue(session).task, ChatRole.EVENT, "ход прерван: ${t.status.name.lowercase()}" + (why?.let { " · $it" } ?: ""), session)
         }
         val after = sessions.sessions.getValue(session)
+        if (after.review != null) step.turns.lastOrNull()?.let { reviewOutput[session] = it.structured }
         if (after.state != before) react(after.task, session, after.state)
     }
 
     private fun react(task: TaskId, session: SessionId, state: SessionState) {
+        // Сессия ревью (D-73) — свой итог: находки, а не работа задачи.
+        sessions.sessions[session]?.review?.let { return reactReview(task, session, it, state) }
         // Сообщения, ждавшие конца хода (D-60): ход кончился или прерван — они уходят в ту же сессию раньше проверки.
         if ((state == SessionState.COMPLETED || state == SessionState.PAUSED) && queued(task).isNotEmpty()) {
             deliverQueued(task, session, state)
@@ -996,15 +1042,273 @@ class Orchestrator(
             askBlocked(task, session, "$failed: работа проверена, но не закоммичена — она в дереве задачи")
             return
         }
+        releaseTree(task, session)
+        // Ревью (D-73) — после коммита: ревьюер читает закоммиченную ветку; DONE — когда ревью кончились.
+        val reviews = tasks.tasks.getValue(task).policy.reviews
+        if (reviews.isNotEmpty()) {
+            progress(task, NotificationCategory.PROGRESS, "Задача на ревью", "проверка прошла; ${reviews.sorted().joinToString { Review.label(it) }}")
+            settleReviews(task)
+            return
+        }
+        completeVerified(task, tree, "проверка прошла")
+    }
+
+    /** `DONE` и запрос слияния проверенной (и, если назначено, прошедшей ревью) задачи. */
+    private fun completeVerified(task: TaskId, tree: com.dpsmpx.dpai.git.Worktree?, why: String) {
         // DONE и запрос слияния — одной пачкой журнала (ревью A-56): сбой между ними оставлял
         // задачу DONE без запроса, и слияния не было бы никогда.
         batch {
             commitTasks(ok(tasksLogic.complete(tasks, task, clock.now()), "завершение задачи").orEmpty())
-            if (tree != null) recordMergeRequest(task, tree.branch)
+            if (tree != null && tasks.tasks[task]?.state == TaskState.DONE) recordMergeRequest(task, tree.branch)
         }
-        releaseTree(task, session)
-        progress(task, NotificationCategory.SUCCESS, "Задача выполнена", "проверка прошла")
+        if (tasks.tasks[task]?.state != TaskState.DONE) return
+        progress(task, NotificationCategory.SUCCESS, "Задача выполнена", why)
         mergesState.pending.values.firstOrNull { it.task == task }?.let { askMerge(it) }
+    }
+
+    /** Последняя рабочая сессия задачи — не ревью (D-73): её продолжают, ей пишут запросы. */
+    private fun lastWork(task: TaskId): com.dpsmpx.dpai.sessions.SessionRecord? = sessions.sessions.values.filter { it.task == task && it.review == null }
+        .maxWithOrNull(compareBy<com.dpsmpx.dpai.sessions.SessionRecord>({ it.createdAt.epochMillis }, { it.turn }, { it.id.value }))
+
+    /**
+     * Ревью проверенных задач (D-73): у задачи одна активная сессия
+     * (инвариант `task-single-session`), поэтому роли — по одной за раз,
+     * по порядку. Запускать нечего — решить итог: перезапуск между записью
+     * итога и решением не оставляет задачу ждать вечно. Задача на паузе
+     * (D-42: «Остановить ход» у сессии ревью) ждёт «Продолжить».
+     */
+    private fun reviews() {
+        for (id in tasks.tasks.values.filter { it.state == TaskState.VERIFIED && it.policy.reviews.isNotEmpty() }.map { it.id }.sortedBy { it.value }) {
+            runCommands()
+            val t = tasks.tasks[id] ?: continue
+            if (t.state != TaskState.VERIFIED || t.held || openSessions(id).isNotEmpty()) continue
+            if (t.reviews.values.any { it.verdict == ReviewVerdict.BLOCKED }) {
+                settleReviews(id)
+                continue
+            }
+            val next = nextReview(t)
+            if (next == null) settleReviews(id) else launchReview(id, next.first, next.second)
+        }
+    }
+
+    /**
+     * Роль, которую пора ревьюить, и номер попытки ревью; `null` — запускать
+     * нечего. Сбой — повтор, пока попыток меньше [Review.MAX_ATTEMPTS];
+     * повтор сверх них — только по решению человека (запись с `by`).
+     */
+    private fun nextReview(t: TaskRecord): Pair<ReviewRole, Int>? = t.policy.reviews.sorted().firstNotNullOfOrNull { role ->
+        val r = t.reviews[role]
+        when {
+            r == null -> role to 1
+            r.verdict == ReviewVerdict.FAILED && (r.attempt < Review.MAX_ATTEMPTS || r.by != null) -> role to r.attempt + 1
+            else -> null
+        }
+    }
+
+    /**
+     * Итог ревью (D-73, п. 3): блокирующее — повтор с выжимкой; без итога и
+     * без повторов — запрос человеку; все прошли или приняты — `DONE`.
+     */
+    private fun settleReviews(task: TaskId) {
+        val t = tasks.tasks[task] ?: return
+        if (t.state != TaskState.VERIFIED) return
+        when {
+            t.reviews.values.any { it.verdict == ReviewVerdict.BLOCKED } -> blockedByReview(task)
+            nextReview(t) != null -> Unit
+            t.reviewsLeft().isNotEmpty() -> askReview(task, t.reviewsLeft())
+            else -> completeVerified(task, treeOf[task]?.let { worktrees.worktrees[it] }, "проверка и ревью прошли")
+        }
+    }
+
+    /**
+     * Ревью нашло блокирующее (D-73, п. 3): выжимка находок — источник
+     * следующей попытки и handoff последней рабочей сессии, как у
+     * проваленной проверки (D-40, п. 3): следующая попытка продолжает её.
+     */
+    private fun blockedByReview(task: TaskId) {
+        val t = tasks.tasks.getValue(task)
+        val digest = Review.digest(t.reviews.values)
+        val work = lastWork(task)
+        if (digest != null && work != null && efficiency.feedVerification) {
+            // Находки написала модель — данные с происхождением MODEL, а не указания (T3).
+            toolOf[task] = ContextSource(REVIEW_SOURCE, SourceLevel.TOOL, config.project, Sensitivity.INTERNAL, Origin.MODEL, digest)
+            val bundle = contextOf[task]
+            val roles = t.reviews.values.filter { it.verdict == ReviewVerdict.BLOCKED }.map { it.role }.sorted()
+            val handoff = Handoff(
+                id = ids.next(IdKinds.HANDOFF),
+                key = "${work.id.value}:review:${t.retries}",
+                reason = HandoffReason.VERIFICATION_FAILED,
+                session = work.id,
+                task = task,
+                project = config.project,
+                context = bundle?.id ?: ids.next(IdKinds.CONTEXT),
+                contextHash = bundle?.hash ?: com.dpsmpx.dpai.core.hashing.Hashing.sha256(""),
+                state = "проверка прошла, ${roles.joinToString { Review.label(it) }} нашло блокирующее",
+                completed = emptyList(), verified = listOf("проверка профиля"),
+                failed = t.reviews.values.flatMap { r -> r.findings.filter { it.severity == FindingSeverity.BLOCKING }.map { "${Review.label(r.role)}: ${it.title}" } },
+                warnings = emptyList(), openProblems = emptyList(), currentAction = null,
+                nextAction = "исправить то, что нашло ревью (выжимка — источник $REVIEW_SOURCE), и снова проверить",
+                modifiedFiles = emptyList(), commit = mergesState.commits[task]?.commit, branch = treeOf[task]?.let { worktrees.worktrees[it]?.branch },
+                workspace = treeOf[task]?.let { worktrees.worktrees[it]?.path }, createdAt = clock.now(),
+                relevantFiles = t.reviews.values.flatMap { r -> r.findings.mapNotNull { it.file } }.distinct().take(50), summary = workingOf[task]?.summary,
+            )
+            handoffs.create(handoff)
+            saveTaskDocument("handoff", task, handoff.toJson())
+            context(task, t.objective, efficiency.context.policy(null))
+        }
+        commitTasks(ok(tasksLogic.reviewBlocked(tasks, task, clock.now()), "ревью задачи").orEmpty())
+        val found = t.reviews.values.flatMap { r -> r.findings.filter { it.severity == FindingSeverity.BLOCKING } }.joinToString("; ") { it.title }
+        when (tasks.tasks[task]?.state) {
+            TaskState.BLOCKED -> askBlocked(task, work?.id, "ревью снова нашло блокирующее: $found")
+            else -> progress(task, NotificationCategory.WARNING, "Ревью нашло ошибки", "задача снова в работе: $found")
+        }
+    }
+
+    /**
+     * Сессия ревью роли (D-73, п. 2): на target последней рабочей сессии
+     * (там дерево или маршрут к нему, D-50), слот — по правилам аренды
+     * (D-30), только чтение, ответ по схеме. Нет target, слота или места —
+     * задача ждёт с причиной; изменения не получены — ревью без итога.
+     */
+    private fun launchReview(task: TaskId, role: ReviewRole, attempt: Int) {
+        val t = tasks.tasks.getValue(task)
+        val work = lastWork(task) ?: return recordReviewFailure(task, role, attempt, null, "у задачи нет рабочей сессии — неизвестно, где её дерево")
+        val target = work.target
+        if (target in control.disabledTargets) return waiting(task, "${Review.label(role)} ждёт: target $target не принимает новые задачи")
+        val active = sessions.sessions.values.count { !it.terminal && it.target == target }
+        if (active >= (targets.firstOrNull { it.id == target }?.maxSessions ?: 0)) return waiting(task, "${Review.label(role)} ждёт места на target $target")
+        control.maxSessions?.let { max -> if (sessions.sessions.values.count { !it.terminal } >= max) return waiting(task, "${Review.label(role)} ждёт: предел сессий контура $max") }
+        if ("--json-schema" in unsupportedFlags[target].orEmpty()) return recordReviewFailure(task, role, attempt, null, "Claude Code на target $target не знает --json-schema: ответ ревью по схеме невозможен")
+        val diff = when (val d = taskDiff(task, Review.MAX_PATCH_CHARS)) {
+            is Outcome.Failure -> return recordReviewFailure(task, role, attempt, null, "изменения задачи не получены: ${d.errors.first().message}")
+            is Outcome.Success -> d.value
+        }
+        val session = ids.next(IdKinds.SESSION)
+        val lease = accountsLogic.lease(accounts, session, task, clock.now(), target, urgent = t.priority.ordinal <= Priority.HIGH.ordinal)
+        if (lease is Outcome.Failure) return waiting(task, "${Review.label(role)} ждёт слот: ${lease.errors.first().message}")
+        val slot = lease.valueOrNull()!!.slot
+        val route = router.route(t, budgetMode(slot))
+        batch {
+            commitAccounts(lease.valueOrNull()!!.events)
+            ok(sessionsLogic.create(sessions, accounts, session, "task:${task.value}:review:${role.name}:${t.retries}:$attempt", task, slot, target, ProviderSessionId.newUuid(random), clock.now(), review = role.name), "сессия ревью $task не создана")
+                ?.also { commitSessions(it.events) }
+        } ?: return releaseLease(session)
+        val workDir = treePath(task) ?: config.worktreeRoot
+        val prompt = Review.prompt(role, t.title, t.objective, diff)
+        val unknown = unsupportedFlags[target].orEmpty()
+        val local = ClaudeRequest(
+            prompt, model = route.model,
+            effort = route.effort.takeIf { "--effort" !in unknown },
+            fallbackModel = route.fallbackModel.takeIf { "--fallback-model" !in unknown },
+            permissionMode = ClaudeCodeCli.TURN_PERMISSION_MODE,
+            tools = Review.TOOLS, disallowedTools = listOf(ClaudeCodeCli.SUBAGENT_TOOL), jsonSchema = Review.SCHEMA,
+            workDir = workDir, timeout = t.policy.turnTimeout, maxBudgetUsd = t.policy.maxBudgetUsdCents?.let { BigDecimal(it).movePointLeft(2) },
+        )
+        // Дерево на другом target (D-50): его MCP-сервер умеет и писать — у ревью эти инструменты запрещены.
+        val request = config.remote?.let { r ->
+            ok(r.apply(local, workDir ?: "."), "ревью с деревом на другом target")?.let { it.copy(disallowedTools = it.disallowedTools + Review.remoteWriteTools()) }
+                ?: return failReviewLaunch(task, role, attempt, session, "маршрут к дереву на другом target не собран")
+        } ?: local
+        val facts = PromptFacts(
+            PromptMode.FULL, prompt.length.toLong(), com.dpsmpx.dpai.contexts.TokenEstimate.of(prompt), 1,
+            context = "review:${role.name}", taskClass = t.policy.taskClass.name, model = route.model, effort = route.effort, route = route.route,
+            why = "${Review.label(role)}, попытка $attempt",
+        )
+        commitSessions(listOf(SessionEvent.PromptPrepared(session, facts, clock.now())))
+        val step = ok(driver.launch(sessions, accounts, session, request), "ревью $session не запущено") ?: return failReviewLaunch(task, role, attempt, session, "сессия ревью не запущена")
+        batch {
+            commitSessions(step.events)
+            applyFacts(step.facts)
+        }
+        lastWaiting.remove(task)
+        val after = sessions.sessions.getValue(session)
+        if (after.state != SessionState.RUNNING && after.state != SessionState.STARTING) react(task, session, after.state)
+        else progress(task, NotificationCategory.PROGRESS, "Ревью начато", "${Review.label(role)}, попытка $attempt")
+    }
+
+    /** Ревью не запустилось после создания сессии: сессия снята, итог — без ревью с причиной. */
+    private fun failReviewLaunch(task: TaskId, role: ReviewRole, attempt: Int, session: SessionId, why: String) {
+        if (sessions.sessions[session]?.terminal == false) {
+            commitSessions(sessionsLogic.transition(sessions, session, SessionState.FAILED, clock.now(), DiagCode.REVIEW_FAILED).valueOrNull().orEmpty())
+        }
+        releaseLease(session)
+        recordReviewFailure(task, role, attempt, session, why)
+    }
+
+    /** Ревью роли без итога (D-73, п. 3): записать с причиной — повтор или запрос решит [settleReviews]. */
+    private fun recordReviewFailure(task: TaskId, role: ReviewRole, attempt: Int, session: SessionId?, why: String) {
+        problems += Diagnostic.warning(DiagCode.REVIEW_FAILED, "${Review.label(role)}: $why", "task $task")
+        val record = ReviewRecord(role, ReviewVerdict.FAILED, attempt, session, reason = why.take(ReviewRecord.MAX_DETAIL))
+        commitTasks(ok(tasksLogic.recordReview(tasks, task, record, clock.now()), "итог ревью").orEmpty())
+        settleReviews(task)
+    }
+
+    /**
+     * Сессия ревью дошла до конечного или ждущего состояния: итог по схеме
+     * из ответа хода — или ревью без итога с причиной. Ждущая (предел,
+     * вход) снимается: ревью не продолжается, а запускается заново.
+     */
+    private fun reactReview(task: TaskId, session: SessionId, roleName: String, state: SessionState) {
+        val role = ReviewRole.entries.firstOrNull { it.name == roleName } ?: return
+        val attempt = sessions.sessions[session]?.key?.substringAfterLast(':')?.toIntOrNull() ?: 1
+        when (state) {
+            SessionState.COMPLETED -> {
+                val record = Review.parse(role, attempt, session, reviewOutput.remove(session))
+                if (record.verdict == ReviewVerdict.FAILED) problems += Diagnostic.warning(DiagCode.REVIEW_FAILED, "${Review.label(role)}: ${record.reason}", "task $task")
+                commitTasks(ok(tasksLogic.recordReview(tasks, task, record, clock.now()), "итог ревью").orEmpty())
+                settleReviews(task)
+            }
+            SessionState.FAILED, SessionState.BLOCKED, SessionState.PAUSED -> {
+                val reason = sessions.sessions[session]?.lastReason
+                if (sessions.sessions[session]?.terminal == false) closeSession(task, session)
+                reviewOutput.remove(session)
+                recordReviewFailure(task, role, attempt, session, "сессия ревью ${state.name}" + (reason?.let { " ($it)" } ?: ""))
+            }
+            else -> Unit
+        }
+    }
+
+    private fun askReview(task: TaskId, roles: List<ReviewRole>) {
+        val why = roles.joinToString("; ") { r -> "${Review.label(r)}: ${tasks.tasks[task]?.reviews?.get(r)?.reason ?: "без итога"}" }
+        ask(
+            RequestPurpose.TASK_REVIEW, RequestKind.USER_RESOLUTION, "task:${task.value}:review",
+            "Ревью без итога: ${taskTitle(task)}", "Проверка прошла, а ревью не дало итога и после повтора ($why). Повторить или принять без ревью?",
+            listOf(
+                RequestOption(RETRY, "Повторить ревью", OptionRole.ACCEPT),
+                RequestOption(WAIVE, "Принять без ревью", OptionRole.DESTRUCTIVE),
+                RequestOption(LATER, "Решу позже", OptionRole.NEUTRAL),
+            ),
+            task, null,
+        )
+    }
+
+    /** Ответ на запрос ревью (D-73, п. 3): повтор — запись с решением человека; принять — исключение по ролям без итога. */
+    private fun resolveReview(task: TaskId, option: String, by: String): Outcome<String> {
+        val t = tasks.tasks[task] ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой задачи", "task $task")
+        if (t.state != TaskState.VERIFIED) return Outcome.failure(DiagCode.REQUEST_NOT_PENDING, "задача уже не VERIFIED: ${t.state}", "task $task")
+        val failed = t.reviewsLeft().filter { t.reviews[it]?.verdict == ReviewVerdict.FAILED }
+        return when (option) {
+            RETRY -> {
+                val es = failed.flatMap { r ->
+                    val last = t.reviews.getValue(r)
+                    ok(tasksLogic.recordReview(tasks, task, last.copy(by = by.take(ReviewRecord.MAX_TITLE), reason = "повтор по решению человека"), clock.now()), "повтор ревью").orEmpty()
+                }
+                commitTasks(es)
+                Outcome.success("ревью будет повторено")
+            }
+            WAIVE -> {
+                for (r in failed) {
+                    when (val w = tasksLogic.waiveReview(tasks, task, r, by, "принято без ревью ответом на запрос", clock.now())) {
+                        is Outcome.Failure -> return w
+                        is Outcome.Success -> commitTasks(w.value)
+                    }
+                }
+                settleReviews(task)
+                Outcome.success("принято без ревью")
+            }
+            LATER -> Outcome.success("решение отложено")
+            else -> Outcome.failure(DiagCode.REQUEST_ANSWER_INVALID, "вариант «$option» не к этому запросу")
+        }
     }
 
     /**
@@ -1035,7 +1339,7 @@ class Orchestrator(
             failed = failed.map { "шаг ${it.name}: код ${it.exitCode ?: "?"}" },
             warnings = emptyList(), openProblems = emptyList(), currentAction = null,
             nextAction = "исправить то, что не прошло в проверке (выжимка — источник $VERIFICATION_SOURCE), и снова проверить",
-            modifiedFiles = modified, commit = null, branch = treeOf[task]?.let { worktrees.worktrees[it]?.branch },
+            modifiedFiles = modified, commit = mergesState.commits[task]?.commit, branch = treeOf[task]?.let { worktrees.worktrees[it]?.branch },
             workspace = treeOf[task]?.let { worktrees.worktrees[it]?.path }, createdAt = clock.now(),
             relevantFiles = relevantFiles(task, modified), summary = workingOf[task]?.summary,
         )
@@ -1099,7 +1403,25 @@ class Orchestrator(
         val tree = treeOf.getValue(task)
         ok(g.write(worktrees, tree, session, GitOp.ADD, files), "git add") ?: return "git add не удался"
         gitOk = ok(g.write(worktrees, tree, session, GitOp.COMMIT, listOf("dpai: ${tasks.tasks.getValue(task).title}")), "git commit") != null
-        return if (gitOk == true) null else "git commit не удался"
+        if (gitOk != true) return "git commit не удался"
+        recordCommit(task, path)
+        return null
+    }
+
+    /**
+     * Хеш коммита задачи — событие `GIT_COMMIT_CREATED` в её потоке (поиск,
+     * ТЗ, §75) и поле `commit` следующих handoff. Хеш не прочитан — коммит
+     * есть, но хеш неизвестен: это видно в журнале приложения, а не
+     * записано выдуманным (D-13).
+     */
+    private fun recordCommit(task: TaskId, path: String) {
+        val branch = treeOf[task]?.let { worktrees.worktrees[it]?.branch } ?: return
+        val head = git?.run(GitOp.HEAD, path)?.valueOrNull()?.stdout?.firstOrNull()?.trim()?.lowercase()
+        if (head == null || !TaskCommit.HASH.matches(head)) {
+            problems += Diagnostic.warning(DiagCode.GIT_COMMAND_FAILED, "коммит задачи сделан, хеш не прочитан: ${head ?: "git rev-parse не удался"}", "task $task")
+            return
+        }
+        commitMerges(listOf(MergeEvent.Committed(task, TaskCommit(head, branch, clock.now()))))
     }
 
     /** Слияние ждёт ответа — в журнал; сам запрос задаёт вызывающий после пачки (askMerges в такте — после перезапуска). */
@@ -1256,7 +1578,7 @@ class Orchestrator(
             warnings = listOfNotNull(s.lastReason?.name), openProblems = emptyList(), currentAction = null,
             nextAction = next ?: "продолжить с места остановки в той же сессии",
             modifiedFiles = modified,
-            commit = null, branch = treeOf[task]?.let { worktrees.worktrees[it]?.branch },
+            commit = mergesState.commits[task]?.commit, branch = treeOf[task]?.let { worktrees.worktrees[it]?.branch },
             workspace = treePath(task), createdAt = clock.now(),
             relevantFiles = relevantFiles(task, modified), summary = workingOf[task]?.summary,
         )
@@ -1289,7 +1611,7 @@ class Orchestrator(
         notify(NotificationRequest(key, category, title, body, null, clock.now()))
 
     private fun notify(r: NotificationRequest) {
-        posted += notifications.submit(r)
+        post(notifications.submit(r))
     }
 
     /**
@@ -1420,14 +1742,18 @@ class Orchestrator(
             is Command.Probe -> OperationResult.record(command.operation, provenance, ids, clock, probe(command.kind, command.ttl ?: requestTtl))
             is Command.AddTask -> OperationResult.record(
                 command.operation, provenance, ids, clock,
-                addTask(command.title, command.objective, command.priority, command.dependencies, scope = command.scope, policy = command.policy),
+                addTask(command.title, command.objective, command.priority, command.dependencies, scope = command.scope.ifEmpty { null }, policy = command.policy),
             )
+            is Command.SetScope -> record(command, provenance) { taskEdit(command.task) { Tasks.setScope(tasks, command.task, command.scope, clock.now()) } }
+            is Command.SetDependencies -> record(command, provenance) { taskEdit(command.task) { tasksLogic.setDependencies(tasks, command.task, command.dependencies, clock.now()) } }
             is Command.SetPriority -> record(command, provenance) { taskEdit(command.task) { tasksLogic.setPriority(tasks, command.task, command.priority, null, clock.now()) } }
             is Command.SetPolicy -> record(command, provenance) { setPolicy(command) }
             is Command.Hold -> record(command, provenance) { holdTask(command.task) }
             is Command.Resume -> record(command, provenance) { taskEdit(command.task) { tasksLogic.hold(tasks, command.task, false, clock.now()) } }
             is Command.Cancel -> record(command, provenance) { cancelTask(command.task) }
             is Command.Retry -> record(command, provenance) { retryTask(command.task, command.text) }
+            is Command.RunFirst -> record(command, provenance) { taskEdit(command.task) { tasksLogic.runFirst(tasks, command.task, clock.now()) } }
+            is Command.Reassign -> record(command, provenance) { reassign(command.session) }
             is Command.StopSession -> record(command, provenance) {
                 sessions.sessions[command.session]?.let { s ->
                     holdTask(s.task).also { r -> if (r is Outcome.Success) say(s.task, ChatRole.EVENT, "ход остановлен человеком", s.id) }
@@ -1517,12 +1843,28 @@ class Orchestrator(
     private fun setPolicy(c: Command.SetPolicy): Outcome<TaskState> {
         val t = tasks.tasks[c.task] ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой задачи", "task ${c.task}")
         val policy = try {
-            t.policy.copy(taskClass = c.taskClass, model = c.model?.trim()?.ifEmpty { null }, effort = c.effort?.trim()?.ifEmpty { null }, maxBudgetUsdCents = c.maxBudgetUsdCents)
+            t.policy.copy(
+                taskClass = c.taskClass, model = c.model?.trim()?.ifEmpty { null }, effort = c.effort?.trim()?.ifEmpty { null },
+                maxBudgetUsdCents = c.maxBudgetUsdCents, reviews = c.reviews ?: t.policy.reviews,
+            )
         } catch (e: IllegalArgumentException) {
             return Outcome.failure(DiagCode.VALUE_INVALID, e.message ?: "политика недопустима", "task ${c.task}")
         }
+        reviewsUnsupported(policy)?.takeIf { policy.reviews != t.policy.reviews }?.let { return it }
         return taskEdit(c.task) { tasksLogic.setPolicy(tasks, c.task, policy, clock.now()) }
     }
+
+    /**
+     * Ревью (D-73) читает изменения ветки задачи против ветки интеграции: у
+     * проекта без Git их нет, и каждое ревью кончилось бы запросом человеку.
+     * Отказ — при постановке, а не после работы.
+     */
+    private fun reviewsUnsupported(policy: TaskPolicy): Outcome.Failure? =
+        if (policy.reviews.isNotEmpty() && (git == null || config.repository == null || config.integrationBranch == null)) {
+            Outcome.Failure(listOf(Diagnostic.error(DiagCode.UNSUPPORTED, "ревью — у проекта с Git: ревьюер читает изменения ветки задачи (D-73)", "policy")))
+        } else {
+            null
+        }
 
     /**
      * Приостановить (D-42): задача удержана — планировщик её не берёт;
@@ -1539,11 +1881,48 @@ class Orchestrator(
                 is Outcome.Failure -> failures += step.errors
                 is Outcome.Success -> {
                     commitSessions(step.value.events)
-                    handOff(task, s.id, HandoffReason.PAUSED, "продолжить с места остановки: ход приостановлен человеком")
+                    // Сессию ревью (D-73) не продолжают: она снимается, ревью — без итога и запустится после «Продолжить».
+                    val role = s.review
+                    if (role != null) reactReview(task, s.id, role, SessionState.PAUSED)
+                    else handOff(task, s.id, HandoffReason.PAUSED, "продолжить с места остановки: ход приостановлен человеком")
                 }
             }
         }
         return if (failures.isEmpty()) Outcome.success(tasks.tasks.getValue(task).state) else Outcome.Failure(failures)
+    }
+
+    /**
+     * «Перенести» (D-77): слот сессии исключён для задачи — первым, чтобы и
+     * сбой остановки не вернул её на тот же слот; открытые сессии задачи —
+     * остановка хода и handoff (не пауза: задача сразу снова в плане);
+     * следующая сессия — на другом слоте, `Continuation` начинает её с
+     * handoff, без `--resume` (другой слот — другая сессия провайдера).
+     * Сессию ревью (D-73) не переносят: она только читает.
+     */
+    private fun reassign(session: SessionId): Outcome<TaskState> {
+        val s = sessions.sessions[session] ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой сессии", "session $session")
+        if (s.review != null) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "сессию ревью не переносят: ревью повторится само", "session $session")
+        val t = tasks.tasks[s.task] ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет задачи сессии", "session $session")
+        if (t.state in setOf(TaskState.IMPLEMENTED, TaskState.VERIFYING, TaskState.VERIFIED)) {
+            return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "задача на проверке: ${t.state} — переносить нечего", "task ${t.id}")
+        }
+        val excluded = taskEdit(t.id) { tasksLogic.excludeSlot(tasks, t.id, s.slot, clock.now()) }
+        if (excluded is Outcome.Failure) return excluded
+        lastWaiting.remove(t.id)
+        val failures = mutableListOf<Diagnostic>()
+        for (open in openSessions(t.id)) {
+            if (open.state !in WAIT_STATES) {
+                when (val step = driver.pause(sessions, open.id)) {
+                    is Outcome.Failure -> {
+                        failures += step.errors
+                        continue
+                    }
+                    is Outcome.Success -> commitSessions(step.value.events)
+                }
+            }
+            handOff(t.id, open.id, HandoffReason.MANUAL, "продолжить на другом слоте: человек перенёс задачу со слота ${s.slot}")
+        }
+        return if (failures.isEmpty()) Outcome.success(tasks.tasks.getValue(t.id).state) else Outcome.Failure(failures)
     }
 
     /**
@@ -1553,6 +1932,10 @@ class Orchestrator(
     private fun cancelTask(task: TaskId): Outcome<TaskState> {
         val t = tasks.tasks[task] ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой задачи", "task $task")
         if (t.terminal) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "задача уже завершена: ${t.state}", "task $task")
+        // До остановки ходов: отказ автомата (`VERIFIED` — проверенная, на ревью, D-73) не должен снимать идущее ревью.
+        if (!com.dpsmpx.dpai.core.state.TaskLifecycle.table.isAllowed(t.state, TaskState.CANCELLED)) {
+            return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "задачу ${t.state} не отменяют", "task $task")
+        }
         for (s in openSessions(task)) {
             if (s.state in WAIT_STATES) {
                 closeSession(task, s.id)
@@ -1599,7 +1982,7 @@ class Orchestrator(
     private fun verifyTask(task: TaskId): Outcome<TaskState> {
         val t = tasks.tasks[task] ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой задачи", "task $task")
         if (t.state != TaskState.COMPLETION_UNVERIFIED) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "проверяют задачу без проверки: задача ${t.state}", "task $task")
-        val session = sessions.sessions.values.filter { it.task == task }.maxWithOrNull(compareBy({ it.createdAt.epochMillis }, { it.id.value }))?.id
+        val session = lastWork(task)?.id
             ?: return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "у задачи не было сессии", "task $task")
         commitTasks(ok(tasksLogic.move(tasks, task, TaskState.VERIFYING, clock.now()), "проверка вручную") ?: return Outcome.failure(DiagCode.INVALID_TRANSITION, "не перейти в VERIFYING", "task $task"))
         val tree = treeOf[task]?.let { worktrees.worktrees[it] }
@@ -1634,7 +2017,8 @@ class Orchestrator(
         val task = s.task
         val clean = text?.trim()?.takeIf { it.isNotEmpty() }?.take(UserRequest.MAX_TEXT)
         if (clean == null && !fresh) return Outcome.failure(DiagCode.VALUE_INVALID, "запрос без текста")
-        val last = sessions.sessions.values.filter { it.task == task }.maxWithOrNull(compareBy({ it.createdAt.epochMillis }, { it.id.value }))!!
+        if (s.review != null) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "сессия ревью только читает (D-73): запрос — в рабочую сессию задачи", "session $session")
+        val last = lastWork(task)!!
         if (last.id != session) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "запрос — в последнюю сессию задачи ${last.id}", "session $session")
         if (turnRunning(task)) {
             // Ход не прерывается (D-60): сообщение — в очередь задачи, уйдёт в ту же сессию сразу после хода.
@@ -1836,6 +2220,7 @@ class Orchestrator(
             RequestPurpose.TASK_BLOCKED -> resolveBlocked(r.task!!, a.option.id, a.text)
             RequestPurpose.TASK_UNVERIFIED -> resolveUnverified(r.task!!, a.option.id, by)
             RequestPurpose.TASK_MERGE -> resolveMerge(r.task!!, a.option.id)
+            RequestPurpose.TASK_REVIEW -> resolveReview(r.task!!, a.option.id, by)
             null -> Outcome.failure(DiagCode.UNSUPPORTED, "назначение запроса неизвестно: ${r.purpose}")
         }
         return when (effect) {
@@ -1921,6 +2306,8 @@ class Orchestrator(
             when (RequestPurpose.of(r.purpose)) {
                 RequestPurpose.TASK_BLOCKED -> state != TaskState.BLOCKED
                 RequestPurpose.TASK_UNVERIFIED -> state != TaskState.COMPLETION_UNVERIFIED
+                // Ревью без итога (D-73): задача ушла из VERIFIED или ревью роли снова идёт — вопрос снят.
+                RequestPurpose.TASK_REVIEW -> state != TaskState.VERIFIED || r.task?.let { t -> tasks.tasks[t]?.let { nextReview(it) != null } } == true
                 else -> false
             }
         }
@@ -1939,6 +2326,22 @@ class Orchestrator(
             merged, mergeApprovals.toMap(), problems.toList(),
         ),
     )
+
+    /**
+     * События в памяти — активный сегмент журнала (D-37), по порядку записи;
+     * старшие — в сегментах на диске. Для поиска (ТЗ, §75): журнал дописывает
+     * такт, поэтому вызывать под замком такта, как [tick].
+     */
+    fun recentEvents(): List<EventEnvelope> = journal.records(journal.activeFrom).map { it.event }
+
+    /** Номер первой записи в памяти: записи до него — в сегментах на диске (D-37). */
+    val eventsFrom: Long get() = journal.activeFrom
+
+    /** Последние версии контекстов задач в памяти (ТЗ, §75); под замком такта, как [recentEvents]. */
+    fun contexts(): List<ContextBundle> = contextOf.values.toList()
+
+    /** Проект контура: репозиторий, ветка интеграции (ТЗ, §75 — поиск по проектам). */
+    val projectConfig: ProjectConfig get() = config
 
     /** Последняя версия контекста задачи — что видел Claude в последнем ходе. */
     fun lastContext(task: TaskId): ContextBundle? = contextOf[task] ?: storedContext(task, report = false)
@@ -2003,7 +2406,8 @@ class Orchestrator(
             if (turnRunning(task)) continue
             val state = tasks.tasks[task]?.state ?: continue
             if (state in setOf(TaskState.RUNNING, TaskState.IMPLEMENTED, TaskState.VERIFYING, TaskState.VERIFIED)) continue
-            val last = sessions.sessions.values.filter { it.task == task }.maxWithOrNull(compareBy({ it.createdAt.epochMillis }, { it.id.value })) ?: continue
+            // Последняя рабочая сессия: сессия ревью (D-73) запросов не принимает.
+            val last = lastWork(task) ?: continue
             if (last.state !in WAIT_STATES && !last.terminal) continue
             setQueued(task, emptyList())
             val r = sendToSession(last.id, list.joinToString("\n\n") { it.text }, list.lastOrNull { it.model != null }?.model, list.lastOrNull { it.effort != null }?.effort, false, echo = false)
@@ -2106,44 +2510,25 @@ class Orchestrator(
         saveTaskDocument("messages", rec.task, TurnMessages.toJson(list))
     }
 
+    /**
+     * Изменения задачи (D-42): от базы ветки интеграции до рабочего дерева
+     * задачи, а после его уборки — до ветки задачи. Только чтение; дерево
+     * ищется в неизменяемом снимке [worktrees], поэтому вызов безопасен вне
+     * потока такта (экран, канал управления).
+     */
+    fun taskDiff(task: TaskId, maxChars: Int = com.dpsmpx.dpai.orchestrator.git.TaskDiff.MAX_CHARS): Outcome<com.dpsmpx.dpai.orchestrator.git.TaskDiff> {
+        val g = git ?: return Outcome.failure(DiagCode.UNSUPPORTED, "у проекта нет репозитория: изменений задачи нет", "task $task")
+        val repo = config.repository ?: return Outcome.failure(DiagCode.UNSUPPORTED, "у проекта нет репозитория: изменений задачи нет", "task $task")
+        val base = config.integrationBranch ?: return Outcome.failure(DiagCode.UNSUPPORTED, "у проекта нет ветки интеграции", "task $task")
+        if (task !in tasks.tasks) return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой задачи", "task $task")
+        val branch = TASK_BRANCH + task.value
+        val tree = worktrees.worktrees.values.firstOrNull { it.branch == branch && !it.removed }
+        return com.dpsmpx.dpai.orchestrator.git.TaskDiff.load(g, tree?.path ?: repo.root, base, if (tree != null) null else branch, maxChars)
+    }
+
     /** Итоговые сообщения ходов задачи по порядку — для окна задачи (D-42). */
     fun turnMessages(task: TaskId): List<TurnMessage> = messagesOf[task]
         ?: documents?.read(docKey("messages", task))?.valueOrNull()?.let { TurnMessages.fromJson(it.content).valueOrNull() }.orEmpty()
-
-    /**
-     * Изменения задачи (D-42, п. 3) — для листа задачи и `dpai task <id>
-     * diff`: что принесёт слияние ветки задачи в ветку интеграции и что в её
-     * дереве ещё не закоммичено. Чтение: Git на target проекта по
-     * неизменяемому снимку деревьев, без замка и без событий — зовут поток
-     * экрана и канал `dpai`, а не такт. Ветки ещё нет (задача не
-     * начиналась) — пустые изменения, а не отказ; сбой одной части —
-     * предупреждение, остальные части показываются.
-     */
-    fun taskChanges(task: TaskId): Outcome<TaskChanges> {
-        if (task !in tasks.tasks) return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой задачи", "task $task")
-        val repo = config.repository ?: return Outcome.failure(DiagCode.UNSUPPORTED, "у проекта нет репозитория: изменений задачи нет", "task $task")
-        val g = git ?: return Outcome.failure(DiagCode.UNSUPPORTED, "Git проекта не подключён", "task $task")
-        val branch = "$TASK_BRANCH${task.value}"
-        val trees = worktrees.worktrees.values.filter { it.branch == branch }
-        val tree = trees.firstOrNull { !it.removed }
-        val warnings = mutableListOf<Diagnostic>()
-        var truncated = false
-        fun part(what: String, r: Outcome<com.dpsmpx.dpai.execution.process.Completed>): List<String>? = when (r) {
-            is Outcome.Failure -> null.also { warnings += Diagnostic.warning(DiagCode.GIT_COMMAND_FAILED, "$what: ${r.errors.first().message}", "task $task") }
-            is Outcome.Success -> TaskChanges.cap(r.value.stdout).let { (lines, cut) -> truncated = truncated || cut; lines }
-        }
-        val base = config.integrationBranch
-        // Ветка появляется с деревом задачи: нет записи о дереве — нет и ветки, Git не нужен.
-        val committed = if (base == null || trees.isEmpty()) null else part("изменения ветки", g.run(GitOp.DIFF_RANGE, repo.root, listOf(base, branch)))
-        val uncommitted = tree?.let { part("незакоммиченное", g.run(GitOp.DIFF, it.path)) }
-        val untracked = tree?.let { w ->
-            when (val st = g.status(w.path)) {
-                is Outcome.Failure -> emptyList<String>().also { warnings += Diagnostic.warning(DiagCode.GIT_COMMAND_FAILED, "новые файлы: ${st.errors.first().message}", "task $task") }
-                is Outcome.Success -> st.value.untracked
-            }
-        }.orEmpty()
-        return Outcome.success(TaskChanges(branch, base, committed, uncommitted, untracked, truncated), warnings)
-    }
 
     /**
      * Работает ли Git проекта (самодиагностика, ТЗ, §79): итог последней
@@ -2174,6 +2559,9 @@ class Orchestrator(
         Dashboard.build(sessions, tasks, accounts, emptyMap(), Measure.observed(mergesState.pending.size), sessionsLogic, clock.now())
 
     companion object {
+        /** Сколько последних решений об уведомлениях держать в памяти. */
+        const val POSTED_KEEP = 500
+
         /** Сессии, которые не опрашиваются: ждут человека или сверки. */
         /** Ветка дерева задачи: по ней дерево узнаётся после перезапуска. */
         private const val TASK_BRANCH = "task/"
@@ -2198,6 +2586,9 @@ class Orchestrator(
 
         /** Ключ источника с выжимкой проваленной проверки (D-40). */
         const val VERIFICATION_SOURCE = "tool:verification"
+
+        /** Ключ источника с выжимкой блокирующего ревью (D-73, п. 3). */
+        const val REVIEW_SOURCE = "tool:review"
 
         /** Изменённых файлов в handoff — не больше: список, а не дамп рабочего дерева. */
         private const val MAX_HANDOFF_FILES = 200

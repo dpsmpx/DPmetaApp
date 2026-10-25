@@ -6,10 +6,8 @@ import com.dpsmpx.dpai.core.diagnostics.Diagnostic
 import com.dpsmpx.dpai.core.result.Outcome
 import java.io.File
 import java.io.IOException
-import java.io.InputStream
 import java.util.concurrent.TimeUnit
 import kotlin.time.Duration
-import kotlin.time.Duration.Companion.seconds
 
 /**
  * Процессы на машине, где работает этот код: на контроллере (`cli`) или на
@@ -41,8 +39,8 @@ class LocalProcessHost(private val clock: Clock = Clock.SYSTEM) : ProcessHost {
             // Процесс закрыл вход сам: это не отказ запуска, а его поведение — оно видно по выводу и коду.
         }
         val readers = listOf(
-            reader(process.inputStream, OutputStream.STDOUT, onOutput),
-            reader(process.errorStream, OutputStream.STDERR, onOutput),
+            OutputLines.reader(process.inputStream, OutputStream.STDOUT, onOutput),
+            OutputLines.reader(process.errorStream, OutputStream.STDERR, onOutput),
         )
         return Outcome.success(Local(process, readers, clock))
     }
@@ -66,12 +64,12 @@ class LocalProcessHost(private val clock: Clock = Clock.SYSTEM) : ProcessHost {
         }
 
         /**
-         * Вывод дочитывается до конца, но не дольше [READER_DRAIN]: поток может
+         * Вывод дочитывается до конца, но не дольше [OutputLines.READER_DRAIN]: поток может
          * держать открытым живой внук. Секунды не хватало (ревью A-8): на
          * телефоне каждая строка проходит правку и запись в журнал, и хвост
          * вывода — с итогом хода Claude — терялся или ложился после выхода.
          */
-        private fun drain() = readers.forEach { it.join(READER_DRAIN.inWholeMilliseconds) }
+        private fun drain() = readers.forEach { it.join(OutputLines.READER_DRAIN.inWholeMilliseconds) }
     }
 
     companion object {
@@ -81,37 +79,5 @@ class LocalProcessHost(private val clock: Clock = Clock.SYSTEM) : ProcessHost {
          * целиком — поэтому мегабайт, а не килобайты.
          */
         const val MAX_LINE: Int = 1024 * 1024
-
-        private val READER_DRAIN = 10.seconds
-
-        private fun reader(input: InputStream, stream: OutputStream, onOutput: (OutputLine) -> Unit): Thread =
-            Thread {
-                input.bufferedReader(Charsets.UTF_8).use { r ->
-                    val buf = StringBuilder()
-                    var truncated = false
-                    while (true) {
-                        val c = try {
-                            r.read()
-                        } catch (_: IOException) {
-                            -1
-                        }
-                        if (c == -1 || c == '\n'.code) {
-                            if (c == -1 && buf.isEmpty() && !truncated) break
-                            onOutput(OutputLine(stream, buf.toString().removeSuffix("\r"), truncated))
-                            buf.setLength(0)
-                            truncated = false
-                            if (c == -1) break
-                        } else if (buf.length < MAX_LINE) {
-                            buf.append(c.toChar())
-                        } else {
-                            truncated = true
-                        }
-                    }
-                }
-            }.apply {
-                name = "dpai-process-${stream.name.lowercase()}"
-                isDaemon = true
-                start()
-            }
     }
 }

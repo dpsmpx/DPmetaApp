@@ -34,6 +34,8 @@ data class SessionRow(
     val freshness: HeartbeatFreshness,
     val silentFor: Measure<Duration>,
     val next: String?,
+    /** Роль ревью (D-73), если сессия — ревью задачи, а не её работа. */
+    val review: String? = null,
 )
 
 /** Что требует внимания пользователя (ТЗ, §38): блокировки, вход, недоступные targets, упавшие задачи. */
@@ -105,7 +107,8 @@ object Dashboard {
         }
         val last = r.lastHeartbeat ?: r.updatedAt
         val task = tasks.tasks[r.task]
-        return SessionRow(r.id, task?.title ?: r.task.value, display, freshness, Measure.observed(now - last), task?.let { nextOf(it.state) })
+        val next = task?.let { if (it.state == TaskState.VERIFIED && it.policy.reviews.isNotEmpty()) "ревью" else nextOf(it.state) }
+        return SessionRow(r.id, task?.title ?: r.task.value, display, freshness, Measure.observed(now - last), next, r.review)
     }
 
     private fun nextOf(s: TaskState): String? = when (s) {

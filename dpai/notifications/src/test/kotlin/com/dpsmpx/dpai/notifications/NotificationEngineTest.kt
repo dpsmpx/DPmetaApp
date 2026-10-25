@@ -55,6 +55,20 @@ class NotificationEngineTest {
         assertIs<NotificationDecision.Post>(e.submit(req("sub:limit", NotificationCategory.BLOCKED)), "окно истекло — снова показ")
     }
 
+    /** Этап 19: ключи старше окна агрегации забываются — память не растёт с числом задач. */
+    @Test
+    fun keysOlderThanTheWindowAreForgotten() {
+        val e = NotificationEngine(NotificationPolicy(maxPostsPerMinute = 1000))
+        for (i in 1..100) {
+            e.submit(req("task:$i:progress"))
+            clock.advance(1.minutes)
+        }
+        assertTrue(e.tracked() <= 11, "помнятся только ключи последних 10 минут: ${e.tracked()}")
+        // Повтор в окне — по-прежнему обновление со счётчиком.
+        val again = e.submit(req("task:100:progress"))
+        assertTrue(again is NotificationDecision.Update, again.toString())
+    }
+
     /** Шторм (ТЗ, §36, §93): много разных ключей разом — предел в минуту, затем одна сводка; безопасность не теряется. */
     @Test
     fun stormIsHeldAndDigested() {

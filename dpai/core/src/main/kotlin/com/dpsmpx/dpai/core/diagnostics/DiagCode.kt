@@ -111,6 +111,8 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     PROCESS_ORPHANS_LEFT(Category.EXECUTION, Severity.ERROR, Retryability.NON_RETRYABLE),
     /** Аргумент процесса не выражается в кодировке локали: запуск исказил бы его (D-05). */
     PROCESS_ARGUMENT_UNENCODABLE(Category.EXECUTION, Severity.ERROR, Retryability.NON_RETRYABLE),
+    /** Объект задания Windows для процессов хода не создан (A-9): фоновые потомки хода могли остаться. */
+    PROCESS_JOB_UNAVAILABLE(Category.EXECUTION, Severity.WARNING, Retryability.NON_RETRYABLE),
     SSH_HOST_KEY_REJECTED(Category.NETWORK, Severity.ERROR, Retryability.NON_RETRYABLE),
     SSH_AUTH_FAILED(Category.NETWORK, Severity.ERROR, Retryability.NON_RETRYABLE),
     AGENT_REPLY_INVALID(Category.FORMAT, Severity.ERROR, Retryability.NON_RETRYABLE),
@@ -191,6 +193,16 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     VERIFICATION_REQUIRED(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
     VERIFICATION_WAIVED(Category.STATE, Severity.WARNING, Retryability.NON_RETRYABLE),
 
+    // --- ревью задачи (D-73) ---
+    /** Ревью нашло блокирующее: задача — на повтор с выжимкой находок. */
+    REVIEW_BLOCKING(Category.EXECUTION, Severity.WARNING, Retryability.RETRYABLE),
+    /** Ревью не дало итога: сбой сессии, ответ не по схеме, нет слота. */
+    REVIEW_FAILED(Category.EXECUTION, Severity.ERROR, Retryability.RETRYABLE),
+    /** `DONE` ждёт ревью, назначенных политикой задачи. */
+    REVIEW_REQUIRED(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
+    /** Ревью роли принято без итога — решением человека. */
+    REVIEW_WAIVED(Category.STATE, Severity.WARNING, Retryability.NON_RETRYABLE),
+
     // --- восстановление (этап 13) ---
     STATE_CONFLICT(Category.INTEGRITY, Severity.WARNING, Retryability.RETRYABLE),
     RECOVERY_RESTARTED(Category.STATE, Severity.INFO, Retryability.NON_RETRYABLE),
@@ -222,6 +234,12 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     REQUEST_ANSWER_INVALID(Category.INPUT, Severity.ERROR, Retryability.NON_RETRYABLE),
     /** Задачу или сессию остановил человек (ответ на запрос, команда D-42): не сбой и не повод для повтора. */
     CANCELLED_BY_USER(Category.STATE, Severity.INFO, Retryability.NON_RETRYABLE),
+    /**
+     * Команда (D-42) принята в очередь такта, но итога ещё нет — контур
+     * занят вызовом target. Не отказ: экран не меняет ключ нажатия и не
+     * бросает следующие команды (ревью 18 октября 2026).
+     */
+    COMMAND_QUEUED(Category.STATE, Severity.WARNING, Retryability.RETRYABLE),
 
     // --- форматы экосистемы для DPmetaApp (DPmetaApp:docs/direction/TECHNICAL_TASK.md, §10) ---
     /** Файл чужого формата (TOML, реестр, журнал решений) не разобран: место и причина, а не догадка. */

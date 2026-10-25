@@ -29,10 +29,12 @@ import com.dpsmpx.dpai.core.state.SessionState
 object SessionCodec {
     const val STATE_FORMAT = "dpai.sessions-state"
     /**
-     * v3: инструменты ходов `usage.tools` (D-41); v2 — расход сессии `usage`
-     * (D-40); v1 и v2 читаются — чего в них нет, того нет и в состоянии.
+     * v4: назначение сессии — роль ревью `review` (D-73), пишется, только
+     * если есть; v3: инструменты ходов `usage.tools` (D-41); v2 — расход
+     * сессии `usage` (D-40); прежние читаются — чего в них нет, того нет и
+     * в состоянии.
      */
-    const val STATE_VERSION = 3
+    const val STATE_VERSION = 4
 
     fun type(e: SessionEvent): EventType = when (e) {
         is SessionEvent.Created -> EventType.SESSION_CREATED
@@ -54,6 +56,7 @@ object SessionCodec {
             "session" to id(e.session), "key" to JsonString(e.key), "task" to id(e.task), "slot" to id(e.slot),
             "subscription" to id(e.subscription), "target" to id(e.target), "configDir" to JsonString(e.configDir),
             "provider" to JsonString(e.provider.value), "continues" to (e.continues?.let(::id) ?: JsonNull),
+            "review" to (e.review?.let(::JsonString) ?: JsonNull),
         )
         is SessionEvent.StateChanged -> obj(
             "session" to id(e.session), "from" to JsonString(e.from.name), "to" to JsonString(e.to.name),
@@ -90,8 +93,9 @@ object SessionCodec {
                     ProviderSessionId.parse(p).valueOrNull() ?: null.also { d.error(DiagCode.ID_INVALID, "не id сессии провайдера", "$.payload.provider") }
                 }
                 val continues = f.optString("continues")?.let { c -> IdKinds.SESSION.parse(c).valueOrNull() ?: null.also { d.error(DiagCode.ID_INVALID, "не SessionId", "$.payload.continues") } }
+                val review = f.optString("review")
                 if (s != null && key != null && task != null && slot != null && sub != null && target != null && dir != null && provider != null) {
-                    SessionEvent.Created(s, key, task, slot, sub, target, dir, provider, continues, at)
+                    SessionEvent.Created(s, key, task, slot, sub, target, dir, provider, continues, at, review)
                 } else {
                     null
                 }
@@ -176,6 +180,7 @@ object SessionCodec {
         "lastReason" to (r.lastReason?.let { JsonString(it.name) } ?: JsonNull),
         "agentSequence" to JsonNumber.of(r.agentSequence),
         "usage" to (r.usage.takeIf { it != UsageTotals.EMPTY }?.let(UsageJson::totals) ?: JsonNull),
+        "review" to (r.review?.let(::JsonString) ?: JsonNull),
     )
 
     fun decodeState(json: JsonObject): Outcome<SessionsState> {
@@ -204,6 +209,7 @@ object SessionCodec {
                     lastReason = r.optString("lastReason")?.let { n -> DiagCode.entries.first { it.name == n } },
                     agentSequence = r.long("agentSequence")!!,
                     usage = r.optObj("usage")?.let { u -> UsageJson.readTotals(u) ?: error("расход не читается") } ?: UsageTotals.EMPTY,
+                    review = r.optString("review"),
                 )
             }.getOrNull()
             r.finish()

@@ -16,7 +16,15 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * Что запустить под агентом (`dpai.run-spec` v1). Окружение — правка
+ * Как агент обращается с выводом процесса: `STREAM` — в журнал запуска
+ * построчно; `AUTH_STATUS` — stdout `claude auth status --json` держится в
+ * памяти, а в журнал идёт только `dpai.auth-status` с отпечатком аккаунта:
+ * email и организация не попадают на диск target (D-69; ревью A-72).
+ */
+enum class OutputCapture { STREAM, AUTH_STATUS }
+
+/**
+ * Что запустить под агентом (`dpai.run-spec` v2; v1 — без [capture]). Окружение — правка
  * окружения агента: [unsetEnv] удаляются, [setEnv] задаются (D-29:
  * окружение слота). [stdin] — вход процесса: так Claude получает prompt, а
  * не аргументом командной строки (D-14; длина строки команды ограничена).
@@ -32,6 +40,7 @@ data class RunSpec(
     val unsetEnv: List<String> = emptyList(),
     val timeout: Duration? = null,
     val stdin: String? = null,
+    val capture: OutputCapture = OutputCapture.STREAM,
 ) {
     init {
         require(command.isNotEmpty()) { "пустая команда" }
@@ -40,19 +49,22 @@ data class RunSpec(
     }
 
     fun toJson(): JsonObject {
-        val f = linkedMapOf<String, JsonValue>(*FormatHeader.write(FORMAT, VERSION))
+        // Без захвата — v1: агент прежней версии такую спецификацию читает.
+        val f = linkedMapOf<String, JsonValue>(*FormatHeader.write(FORMAT, if (capture == OutputCapture.STREAM) 1 else VERSION))
         f["command"] = JsonArray(command.map(::JsonString))
         workDir?.let { f["workDir"] = JsonString(it) }
         f["setEnv"] = JsonObject(setEnv.toSortedMap().mapValues { JsonString(it.value) })
         f["unsetEnv"] = JsonArray(unsetEnv.map(::JsonString))
         timeout?.let { f["timeoutSeconds"] = JsonNumber.of(it.inWholeSeconds.coerceAtLeast(1)) }
         stdin?.let { f["stdin"] = JsonString(it) }
+        if (capture != OutputCapture.STREAM) f["capture"] = JsonString(capture.name)
         return JsonObject(f)
     }
 
     companion object {
         const val FORMAT = "dpai.run-spec"
-        const val VERSION = 1
+        /** v2: способ вывода [capture] (D-69). */
+        const val VERSION = 2
         val ENV_NAME = Regex("[A-Za-z_][A-Za-z0-9_]{0,127}")
 
         fun parse(text: String): Outcome<RunSpec> = when (val v = JsonParser().parse(text)) {
@@ -63,13 +75,16 @@ data class RunSpec(
         fun fromJson(value: JsonValue): Outcome<RunSpec> {
             val d = DiagnosticCollector()
             val f = JsonFields.root(value, d) ?: return Outcome.Failure(d.all)
-            FormatHeader.read(f, FORMAT, VERSION..VERSION, d) ?: return Outcome.Failure(d.all)
+            FormatHeader.read(f, FORMAT, 1..VERSION, d) ?: return Outcome.Failure(d.all)
             val command = f.array("command")?.items?.map { (it as? JsonString)?.value }
             val workDir = f.optString("workDir")
             val setEnv = (f.raw("setEnv") as? JsonObject)?.fields?.mapValues { (it.value as? JsonString)?.value }
             val unset = f.array("unsetEnv")?.items?.map { (it as? JsonString)?.value }
             val timeout = f.optLong("timeoutSeconds")?.seconds
             val stdin = f.optString("stdin")
+            val capture = f.optString("capture")?.let { c ->
+                OutputCapture.entries.firstOrNull { it.name == c } ?: null.also { d.error(DiagCode.VALUE_INVALID, "неизвестный способ вывода", "$.capture") }
+            } ?: OutputCapture.STREAM
             f.finish()
             if (d.hasErrors) return Outcome.Failure(d.all)
             if (command == null || command.isEmpty() || command.any { it == null } || setEnv == null || setEnv.values.any { it == null } ||
@@ -78,7 +93,7 @@ data class RunSpec(
                 return Outcome.failure(DiagCode.FIELD_TYPE, "command, setEnv, unsetEnv — непустой список и строки", "$")
             }
             return runCatching {
-                RunSpec(command.filterNotNull(), workDir, setEnv.mapValues { it.value!! }, unset.filterNotNull(), timeout, stdin)
+                RunSpec(command.filterNotNull(), workDir, setEnv.mapValues { it.value!! }, unset.filterNotNull(), timeout, stdin, capture)
             }.fold(
                 { Outcome.success(it) },
                 { Outcome.failure(Diagnostic.error(DiagCode.VALUE_INVALID, it.message ?: "спецификация недопустима", "$")) },
