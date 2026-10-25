@@ -44,7 +44,7 @@ ROOT_ALLOW = {
     ".claude", ".github", "docs", "ROADMAP", "tools", "tests",
     "settings.gradle.kts", "build.gradle.kts", "gradle.properties", "gradlew", "gradlew.bat",
     "gradle", "build-logic", "app", "core", "cli", "config",
-    "dpai", "dppass", "socialmediaimage", "dpvisualisation", "dpmeta",
+    "dpai", "dppass", "socialmediaimage", "dpvisualisation", "dpmeta", "dpprofile",
 }
 # Пакетный файл Windows создан Gradle с CRLF — так и хранится (`.gitattributes`).
 CRLF_ALLOWED = {"gradlew.bat"}
@@ -60,6 +60,7 @@ SUBSYSTEMS = {
     "socialmediaimage": ("socialmediaimage/tools/check.sh", "--quick"),
     "dpvisualisation": "dpvisualisation/tools/check/run.sh",
     "dpmeta": ("dpmeta/tools/check.sh",),
+    "dpprofile": ("dpprofile/tools/verify/run.sh", "--quick"),
 }
 # Строка шага в выводе команды подсистемы: «- ✓ шаг» (dpai), «  ✓ id  итог» (DP Verify у dppass, D-30),
 # «✓ id — что проверено» (SocialMediaImage) или «✓ id (0.0 с)» (DPvisualisation, D-43);

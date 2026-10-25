@@ -183,6 +183,13 @@ class SubsystemScopeTest(CheckCase):
             with self.subTest(cid):
                 self.assertClean(s.run(cid))
 
+    def test_dpprofile_is_a_subsystem_too(self):
+        # DPprofile — подсистема со своим процессом (D-43): её номера без имени проекта — её проверкам.
+        s = self.sample({"dpprofile/docs/X.md": "# X\r\nСм. D-16, `docs/NOPE.md`.\n"})
+        for cid in ("repo.layout", "format.text", "docs.links", "docs.refs"):
+            with self.subTest(cid):
+                self.assertClean(s.run(cid))
+
     def test_secrets_are_searched_in_subsystem_too(self):
         token = "ghp" + "_" + "C3d4" * 9
         self.assertCatches(self.sample({"dpai/docs/X.md": f"{token}\n"}).run("security.secrets"), "github-token")

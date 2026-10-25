@@ -27,10 +27,11 @@
   (влита), `ccr-dc77131a-dppass` и `ccr-dc77131a-dppass-subname` (их
   изменения уже в `main`). Облачной сессии удаление веток запрещено.
 - `М` **Архивировать репозитории, переехавшие сюда** (D-43):
-  SocialMediaImage, DPvisualisation и DPmeta — в их `CLAUDE.md` и
-  `README.md` написано, что работа идёт в DPmetaApp (`socialmediaimage/`,
-  `dpvisualisation/`, `dpmeta/`); Settings → Archive. Их ветки остаются как
-  есть; PR #5 DPmeta — закрыть (он влит сюда).
+  SocialMediaImage, DPvisualisation, DPmeta и DPprofile — в их `CLAUDE.md`
+  и `README.md` написано (у DPprofile — сразу после вливания его
+  переезда), что работа идёт в DPmetaApp (`socialmediaimage/`,
+  `dpvisualisation/`, `dpmeta/`, `dpprofile/`); Settings → Archive. Их ветки остаются как есть; PR #5 DPmeta — закрыть
+  (он влит сюда).
 - `М` **DP_AI_Orcestrator заморозить** (D-28): работа, сделанная там
   после переноса, — здесь (`DP_AI_Orcestrator:D-83`: `main` до `9ff8dc4`
   и ветка `claude/nice-hopper-5fg5vk` до `d8b8860`). Архивировать
@@ -78,9 +79,9 @@
 
 - `С` **Реестр `dpmeta/tools/ecosystem.toml` — под D-28, D-30, D-43**
   (DPmeta — подсистема `dpmeta/`, `DPmeta:M-14`): строки
-  DP_AI_Orcestrator, DPpass, SocialMediaImage, DPvisualisation и DPmeta
-  ведут в замороженные репозитории, а их журналы решений — здесь
-  (`dpai/`, `dppass/`, …); DPprofile — следом (D-43). Как реестр называет
+  DP_AI_Orcestrator, DPpass, SocialMediaImage, DPvisualisation, DPmeta и
+  DPprofile ведут в замороженные репозитории, а их журналы решений —
+  здесь (`dpai/`, `dppass/`, …). Как реестр называет
   подсистему (поле, место) — формат, который читает приложение (D-05):
   новое поле — решением DPmeta и образцом в корпусе здесь. Остаток
   `DPmeta:SQ-28`: `dpai/docs/INTEGRATION_CONTRACT.md` (итоги прогона —
