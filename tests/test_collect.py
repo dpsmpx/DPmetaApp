@@ -180,9 +180,6 @@ def _toml(src: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class HistoryExcludeTest(unittest.TestCase):
     """Влитая история — у своего узла до слияния (D-24)."""
@@ -269,3 +266,16 @@ class HistoryExcludeTest(unittest.TestCase):
         self.assertEqual(s["flows"]["work.host"]["total"], 2)
         self.assertEqual(s["flows"]["path.host"]["total"], 1)           # только работа в guest/ после слияния
         self.assertEqual(sum(s["nodes"]["claude"]["days"]), 2)
+        self.assertNotIn("HISTORY_ROOT_NOT_FOUND", [d["code"] for d in s["diagnostics"]])
+
+    def test_unknown_root_is_a_diagnostic_not_silent_zero(self):
+        src = self.source(True)
+        src["node"][2]["history_exclude"][0]["root"] = "0" * 40
+        s = collect.collect(model_from(src), self.root, NOW)
+        self.assertIn(("HISTORY_ROOT_NOT_FOUND", "host"),
+                      [(d["code"], d["subject"]) for d in s["diagnostics"]])
+        self.assertEqual(s["nodes"]["host"]["git"]["excluded"], 0)
+
+
+if __name__ == "__main__":
+    unittest.main()

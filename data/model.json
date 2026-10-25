@@ -2,7 +2,7 @@
  "allow": {
   "hosts": []
  },
- "as_of": "2026-10-12",
+ "as_of": "2026-10-25",
  "catalog": {
   "drivers": [
    {
@@ -2169,7 +2169,8 @@
    "public_stage": "C++ и SDL3 для Windows и Linux",
    "refs": [
     "AIM_Trainer_pas:CLAUDE.md",
-    "AIM_Trainer_pas:docs/direction/DECISIONS.md"
+    "AIM_Trainer_pas:docs/direction/DECISIONS.md",
+    "AIM_Trainer_pas:ROADMAP/ROADMAP.md"
    ],
    "repo": "dpsmpx/AIM_Trainer_pas",
    "role": "замер реакции и разминка перед шутерами: конструктор замеров, рекорды по параметрам, реплеи; C++ и SDL3",
@@ -2215,7 +2216,7 @@
    "id": "tjtm",
    "kind": "repo",
    "layer": "engineering",
-   "name": "TrueJointTileMaker",
+   "name": "True Joint Tile Maker",
    "public_role": "редактор пиксельной графики и карт для Andors-Love",
    "public_stage": "версия 1.6 на C++ и SDL3",
    "refs": [
@@ -2483,7 +2484,7 @@
  "schema": "dpvis-model/1",
  "source": {
   "path": "model/ecosystem.toml",
-  "sha256": "df9625011404d686e397a0d5a6c50f358b444ddb417565b40c565df237529b83"
+  "sha256": "30997f2f82650a26aabe97fae0479d4a8bd76e8c31d8879f35e0c1247678aa06"
  },
  "sources": [
   "DPmeta:docs/ECOSYSTEM.md",

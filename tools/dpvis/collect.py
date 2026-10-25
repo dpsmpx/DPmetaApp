@@ -24,6 +24,7 @@ DIAG_CODES = (
     "REGISTRY_SCHEMA_UNSUPPORTED", "REGISTRY_DRIFT", "CONTRACT_UNCOVERED",
     "CONTRACT_NOT_FOUND", "HOST_NOT_ALLOWED", "PROBE_FAILED",
     "PROBE_STATUS_UNEXPECTED", "PROBE_HEADER_MISSING", "SIGNAL_UNSUPPORTED",
+    "HISTORY_ROOT_NOT_FOUND",
 )
 
 def iso(moment: datetime | None) -> str | None:
@@ -140,7 +141,11 @@ def observe_repo(node: dict, path: Path, win: Window, diags: Diagnostics) -> tup
     try:
         branches_all = gitlog.branch_refs(path)
         refs_all = sorted(set(branches_all) | {ref})
-        skip = gitlog.foreign(path, refs_all, roots)
+        skip, missing = gitlog.foreign(path, refs_all, roots)
+        for root_sha in sorted(missing):
+            diags.add("HISTORY_ROOT_NOT_FOUND", nid,
+                      f"корня {root_sha[:12]} из history_exclude нет в истории клона {path.name} "
+                      "(опечатка или неполный клон) — влитая история в счёте узла (D-24)")
         main = [c for c in gitlog.commits(path, [ref], win.since) if c.time <= win.now and c.sha not in skip]
         every = [c for c in gitlog.commits(path, refs_all, win.since)
                  if c.time <= win.now and c.sha not in skip]

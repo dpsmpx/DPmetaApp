@@ -135,7 +135,7 @@ def first_commit_time(repo: Path, ref: str, skip: frozenset[str] = frozenset()) 
 _OWN, _FOREIGN = 1, 2
 
 
-def foreign(repo: Path, refs: list[str], roots: set[str]) -> frozenset[str]:
+def foreign(repo: Path, refs: list[str], roots: set[str]) -> tuple[frozenset[str], set[str]]:
     """Коммиты влитой истории (D-24): их история сходится только к корням roots.
 
     Корень (коммит без родителей) из roots — чужой, любой другой — свой;
@@ -143,22 +143,25 @@ def foreign(repo: Path, refs: list[str], roots: set[str]) -> frozenset[str]:
     пометка: коммиты влитого репозитория до слияния. Слияние и всё после
     него видит оба корня — это работа самого репозитория. Родитель за
     границей неполного клона — свой: такой коммит считается (занизить
-    чужое безопаснее, чем потерять своё).
+    чужое безопаснее, чем потерять своё). Второе значение — корни roots,
+    которых нет среди корней доступной истории (опечатка, неполный клон).
     """
     if not roots or not refs:
-        return frozenset()
+        return frozenset(), set()
     out = git(repo, "rev-list", "--parents", "--topo-order", "--reverse", *refs)
     marks: dict[str, int] = {}
+    seen_roots: set[str] = set()
     for line in out.splitlines():
         sha, *parents = line.split()
         if not parents:
             marks[sha] = _FOREIGN if sha in roots else _OWN
+            seen_roots.add(sha)
             continue
         mark = 0
         for p in parents:
             mark |= marks.get(p, _OWN)
         marks[sha] = mark
-    return frozenset(sha for sha, mark in marks.items() if mark == _FOREIGN)
+    return frozenset(sha for sha, mark in marks.items() if mark == _FOREIGN), set(roots) - seen_roots
 
 
 def is_shallow(repo: Path) -> bool:

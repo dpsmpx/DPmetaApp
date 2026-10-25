@@ -1,12 +1,6 @@
 {
- "as_of": "2026-10-25T09:35:39Z",
- "diagnostics": [
-  {
-   "code": "CLONE_SHALLOW",
-   "message": "неполный клон: граница истории внутри окна — числа за ранние дни занижены",
-   "subject": "dplearn"
-  }
- ],
+ "as_of": "2026-10-25T10:18:07Z",
+ "diagnostics": [],
  "flows": {
   "app.dpmeta.dpmetaapp": {
    "state": "planned"
@@ -459,7 +453,7 @@
     0,
     0,
     0,
-    0,
+    1,
     0,
     0,
     0,
@@ -482,10 +476,10 @@
     0,
     0
    ],
-   "last": null,
+   "last": "2026-10-04T15:26:52Z",
    "signal": "git-commits",
    "state": "quiet",
-   "total": 0,
+   "total": 1,
    "week": 0
   },
   "decide.dpmeta": {
@@ -558,13 +552,13 @@
     0,
     0,
     17,
-    11
+    12
    ],
-   "last": "2026-10-25T09:02:12Z",
+   "last": "2026-10-25T09:38:15Z",
    "signal": "git-commits",
    "state": "flowing",
-   "total": 100,
-   "week": 53
+   "total": 101,
+   "week": 54
   },
   "decide.dpmonetization": {
    "days": [
@@ -1158,9 +1152,9 @@
     2,
     1,
     10,
-    15,
-    0,
-    9,
+    27,
+    12,
+    52,
     39,
     37,
     0,
@@ -1172,8 +1166,8 @@
    "last": "2026-10-25T03:49:16Z",
    "signal": "git-commits",
    "state": "flowing",
-   "total": 158,
-   "week": 130
+   "total": 225,
+   "week": 151
   },
   "work.andorslove": {
    "days": [
@@ -1401,13 +1395,13 @@
     22,
     16,
     17,
-    23
+    24
    ],
-   "last": "2026-10-25T08:51:47Z",
+   "last": "2026-10-25T09:30:10Z",
    "signal": "git-commits",
    "state": "flowing",
-   "total": 441,
-   "week": 120
+   "total": 442,
+   "week": 121
   },
   "work.dpmonetization": {
    "days": [
@@ -1596,13 +1590,13 @@
     0,
     0,
     0,
-    2
+    3
    ],
-   "last": "2026-10-25T08:22:51Z",
+   "last": "2026-10-25T09:36:27Z",
    "signal": "git-commits",
    "state": "flowing",
-   "total": 22,
-   "week": 2
+   "total": 23,
+   "week": 3
   },
   "work.galdhold": {
    "days": [
@@ -1641,7 +1635,7 @@
    "signal": "git-commits",
    "state": "flowing",
    "total": 1098,
-   "week": 222
+   "week": 221
   },
   "work.market": {
    "days": [
@@ -1713,13 +1707,13 @@
     0,
     0,
     0,
-    5
+    6
    ],
-   "last": "2026-10-25T09:10:26Z",
+   "last": "2026-10-25T09:38:47Z",
    "signal": "git-commits",
    "state": "flowing",
-   "total": 116,
-   "week": 5
+   "total": 117,
+   "week": 6
   },
   "work.tjtm": {
    "days": [
@@ -1767,8 +1761,8 @@
   "version": "1.0.0"
  },
  "model": {
-  "as_of": "2026-10-12",
-  "sha256": "df9625011404d686e397a0d5a6c50f358b444ddb417565b40c565df237529b83"
+  "as_of": "2026-10-25",
+  "sha256": "30997f2f82650a26aabe97fae0479d4a8bd76e8c31d8879f35e0c1247678aa06"
  },
  "nodes": {
   "aimtrainer": {
@@ -1776,7 +1770,7 @@
     "last": "2026-10-25T06:53:48Z",
     "reasons": [
      {
-      "hours": 2.7,
+      "hours": 3.41,
       "rule": "main"
      }
     ],
@@ -1806,9 +1800,9 @@
       2,
       1,
       10,
-      15,
-      0,
-      9,
+      27,
+      12,
+      52,
       39,
       37,
       0,
@@ -1904,9 +1898,9 @@
       2,
       1,
       10,
-      15,
-      0,
-      9,
+      27,
+      12,
+      52,
       39,
       37,
       0,
@@ -1948,13 +1942,13 @@
       0
      ]
     },
-    "first_time": null,
+    "first_time": "2026-07-05T18:34:06Z",
     "head": "443a3eae8694515afcb36fd5d702445b3c4c70e2",
     "head_time": "2026-10-25T06:53:48Z",
-    "history": "shallow",
+    "history": "complete",
     "ref": "origin/main",
     "window": {
-     "ai": 158,
+     "ai": 225,
      "human": 0,
      "merges": 15
     }
@@ -1963,13 +1957,8 @@
   "andorslove": {
    "activity": {
     "last": "2026-10-25T03:47:33Z",
-    "reasons": [
-     {
-      "hours": 5.8,
-      "rule": "main"
-     }
-    ],
-    "state": "working"
+    "reasons": [],
+    "state": "idle"
    },
    "git": {
     "branches": [],
@@ -2151,10 +2140,10 @@
   },
   "author": {
    "activity": {
-    "last": "2026-10-25T09:30:49Z",
+    "last": "2026-10-25T09:38:15Z",
     "reasons": [
      {
-      "hours": 0.08,
+      "hours": 0.66,
       "rule": "author"
      }
     ],
@@ -2169,7 +2158,7 @@
     5,
     18,
     15,
-    44,
+    45,
     70,
     46,
     4,
@@ -2190,15 +2179,15 @@
     4,
     2,
     25,
-    22
+    23
    ]
   },
   "claude": {
    "activity": {
-    "last": "2026-10-25T09:10:26Z",
+    "last": "2026-10-25T09:38:47Z",
     "reasons": [
      {
-      "hours": 0.42,
+      "hours": 0.66,
       "rule": "claude"
      }
     ],
@@ -2225,16 +2214,16 @@
     55,
     67,
     59,
-    71,
-    109,
-    125,
+    83,
+    121,
+    168,
     92,
     51,
     29,
     84,
     52,
     148,
-    69
+    72
    ]
   },
   "compiler": {
@@ -2256,7 +2245,7 @@
     "last": "2026-10-25T05:07:00Z",
     "reasons": [
      {
-      "hours": 4.48,
+      "hours": 5.19,
       "rule": "main"
      }
     ],
@@ -2644,14 +2633,7 @@
     "state": "idle"
    },
    "git": {
-    "branches": [
-     {
-      "ahead": 4,
-      "method": "cherry",
-      "name": "claude/personal-learning-system-1ranvn",
-      "time": "2026-10-04T15:24:09Z"
-     }
-    ],
+    "branches": [],
     "days": {
      "ai": [
       0,
@@ -2662,7 +2644,7 @@
       0,
       0,
       0,
-      0,
+      3,
       0,
       0,
       0,
@@ -2726,7 +2708,7 @@
       0,
       0,
       0,
-      0,
+      1,
       0,
       0,
       0,
@@ -2792,7 +2774,7 @@
       0,
       0,
       0,
-      2,
+      1,
       0,
       0,
       0,
@@ -2816,15 +2798,15 @@
       0
      ]
     },
-    "first_time": null,
+    "first_time": "2026-10-04T14:00:25Z",
     "head": "d2565dda256a38f117adb3578fb4493274f454b2",
     "head_time": "2026-10-04T15:26:52Z",
-    "history": "partial",
+    "history": "complete",
     "ref": "origin/main",
     "window": {
-     "ai": 0,
+     "ai": 3,
      "human": 1,
-     "merges": 0
+     "merges": 1
     }
    }
   },
@@ -3027,15 +3009,15 @@
   },
   "dpmetaapp": {
    "activity": {
-    "last": "2026-10-25T09:02:12Z",
+    "last": "2026-10-25T09:38:15Z",
     "reasons": [
      {
-      "hours": 0.56,
+      "hours": 0.66,
       "rule": "main"
      },
      {
       "branch": "ccr-9d427584-116aer",
-      "hours": 0.73,
+      "hours": 1.44,
       "rule": "branch"
      }
     ],
@@ -3105,7 +3087,7 @@
       22,
       16,
       17,
-      20
+      21
      ],
      "human": [
       0,
@@ -3169,7 +3151,7 @@
       0,
       0,
       17,
-      11
+      12
      ]
     },
     "days_all": {
@@ -3203,7 +3185,7 @@
       22,
       16,
       17,
-      23
+      24
      ],
      "human": [
       0,
@@ -3240,14 +3222,14 @@
     },
     "excluded": 157,
     "first_time": "2026-10-05T12:27:23Z",
-    "head": "1898f8e4e91dd7f62ba19465f09aff643694a3b9",
-    "head_time": "2026-10-25T09:02:12Z",
+    "head": "73f34726978cd574545f515de3208444bab6dacb",
+    "head_time": "2026-10-25T09:38:15Z",
     "history": "complete",
     "ref": "origin/main",
     "window": {
-     "ai": 426,
+     "ai": 427,
      "human": 6,
-     "merges": 100
+     "merges": 101
     }
    }
   },
@@ -4034,11 +4016,11 @@
   },
   "dpvisualisation": {
    "activity": {
-    "last": "2026-10-25T08:22:51Z",
+    "last": "2026-10-25T09:36:27Z",
     "reasons": [
      {
       "branch": "claude/tender-hypatia-mbrwf9",
-      "hours": 1.21,
+      "hours": 0.69,
       "rule": "branch"
      }
     ],
@@ -4047,10 +4029,10 @@
    "git": {
     "branches": [
      {
-      "ahead": 3,
+      "ahead": 4,
       "method": "cherry",
       "name": "claude/tender-hypatia-mbrwf9",
-      "time": "2026-10-25T08:22:51Z"
+      "time": "2026-10-25T09:36:27Z"
      }
     ],
     "days": {
@@ -4182,7 +4164,7 @@
       0,
       0,
       0,
-      2
+      3
      ],
      "human": [
       0,
@@ -4234,12 +4216,12 @@
     "last": "2026-10-25T08:51:47Z",
     "reasons": [
      {
-      "hours": 2.6,
+      "hours": 3.31,
       "rule": "main"
      },
      {
       "branch": "ccr-abb64cd1-cs6at9",
-      "hours": 0.73,
+      "hours": 1.44,
       "rule": "branch"
      }
     ],
@@ -4705,15 +4687,15 @@
   },
   "smi": {
    "activity": {
-    "last": "2026-10-25T09:31:07Z",
+    "last": "2026-10-25T09:38:47Z",
     "reasons": [
      {
-      "hours": 0.08,
+      "hours": 0.79,
       "rule": "main"
      },
      {
       "branch": "claude/peripheral-projects",
-      "hours": 0.08,
+      "hours": 0.66,
       "rule": "branch"
      }
     ],
@@ -4722,10 +4704,10 @@
    "git": {
     "branches": [
      {
-      "ahead": 1,
+      "ahead": 2,
       "method": "cherry",
       "name": "claude/peripheral-projects",
-      "time": "2026-10-25T09:31:07Z"
+      "time": "2026-10-25T09:38:47Z"
      }
     ],
     "days": {
@@ -4857,7 +4839,7 @@
       0,
       0,
       0,
-      5
+      6
      ],
      "human": [
       0,
@@ -4930,7 +4912,7 @@
     "last": "2026-10-25T04:38:38Z",
     "reasons": [
      {
-      "hours": 4.95,
+      "hours": 5.66,
       "rule": "main"
      }
     ],

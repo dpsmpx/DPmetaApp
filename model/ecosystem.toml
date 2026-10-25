@@ -19,7 +19,7 @@
 
 schema = 1
 title = "Экосистема dpsmpx"
-as_of = "2026-10-12"
+as_of = "2026-10-25"
 timezone = "+03:00"
 sources = [
   "DPmeta:docs/ECOSYSTEM.md",
@@ -250,7 +250,7 @@ role = "замер реакции и разминка перед шутерам�
 stage = "22 из 30 задач ROADMAP; прогон на Windows — у автора"
 public_role = "замер реакции и разминка перед шутерами"
 public_stage = "C++ и SDL3 для Windows и Linux"
-refs = ["AIM_Trainer_pas:CLAUDE.md", "AIM_Trainer_pas:docs/direction/DECISIONS.md"]
+refs = ["AIM_Trainer_pas:CLAUDE.md", "AIM_Trainer_pas:docs/direction/DECISIONS.md", "AIM_Trainer_pas:ROADMAP/ROADMAP.md"]
 
 [[node]]
 id = "dpclock"
@@ -281,7 +281,7 @@ refs = ["Andors-Love:README.md"]
 
 [[node]]
 id = "tjtm"
-name = "TrueJointTileMaker"
+name = "True Joint Tile Maker"
 kind = "repo"
 layer = "engineering"
 repo = "dpsmpx/TrueJointTileMaker"
