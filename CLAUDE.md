@@ -26,6 +26,11 @@ DPpass — подсистема в `dppass/` с историей (D-30): реп�
 заморожен, работа идёт только здесь. Пока у него свои APK (прежняя
 личность пакета), сборка и ядро.
 
+SocialMediaImage — подсистема в `socialmediaimage/` с историей (D-43):
+репозиторий SocialMediaImage заморожен, работа идёт только здесь; свой
+процесс, проверки и выгрузка сайта по его решениям; из приложения
+выгрузки нет до его полной готовности (D-40).
+
 ## Источник истины
 
 - Старшинство: `docs/direction/DECISIONS.md` → этот файл → мастер-ТЗ
@@ -45,6 +50,12 @@ DPpass — подсистема в `dppass/` с историей (D-30): реп�
   `dppass/docs/direction/DECISIONS.md` (извне — `DPpass:D-NN`), правила —
   `dppass/CLAUDE.md`, проверки — `dppass/tools/hostcheck/run.sh`.
   Решения этого журнала старше там, где речь о приложении целиком.
+- Подсистема `socialmediaimage/` — свой процесс (`SocialMediaImage:Д45`):
+  решения — `socialmediaimage/docs/direction/DECISIONS.md` (извне —
+  `SocialMediaImage:ДNN`), правила — `socialmediaimage/CLAUDE.md`, начало
+  работы — `socialmediaimage/docs/session/HANDOFF.md`, проверки —
+  `socialmediaimage/tools/check.sh`. Решения этого журнала старше там, где
+  речь о приложении целиком.
 - `README.md` — не источник истины и меняется только по запросу автора;
   его блок состояния пишет `tools/check/run.sh --write-status`.
 
@@ -84,6 +95,9 @@ DPpass — подсистема в `dppass/` с историей (D-30): реп�
   `dpai/`, а сам он заморожен (D-28); в нём не работать, туда не пушить.
 - DPpass — тоже: его код в `dppass/`, репозиторий архивирован (D-30); в
   нём не работать, туда не пушить.
+- SocialMediaImage — тоже: его код в `socialmediaimage/`, репозиторий
+  заморожен (D-43); в нём не работать. Исключение — надпись об архиве в
+  его `CLAUDE.md` и `README.md` после переезда (слово автора, D-43).
 - Только чтение: клоны — чтобы сверить форматы, которые читает
   приложение (ТЗ, §10). Их не править, в их ветки не пушить; находка —
   в PR и `TODO.md` здесь, правка там — сессией того репозитория по его
@@ -166,6 +180,9 @@ DPpass — подсистема в `dppass/` с историей (D-30): реп�
 - Правка в `dppass/` — ещё `dppass/tools/hostcheck/run.sh --quick` (после
   правки) и `--full` (перед вливанием, только на закоммиченном
   `dppass/`), итог для PR — `run.sh report` (`dppass/CLAUDE.md`).
+- Правка в `socialmediaimage/` — ещё `socialmediaimage/tools/check.sh
+  --affected` (после куска) и он же без ключа — полный (перед
+  вливанием), по `socialmediaimage/CLAUDE.md`.
 - `main` всегда зелёный: не вливать без зелёного `full`. Исключение —
   правка только Linux-оболочки DPpass: перед вливанием — проверки её
   Linux-части (D-32).
@@ -183,6 +200,8 @@ DPpass — подсистема в `dppass/` с историей (D-30): реп�
   `tools/` и `TODO.md` (D-28).
 - `dppass/` — подсистема DPpass со своими `docs/`, `tools/`, `TODO.md` и
   сборкой (D-30).
+- `socialmediaimage/` — подсистема SocialMediaImage со своими `docs/`,
+  `tools/`, `TODO.md` и сайтом (D-43).
 - `docs/direction/` — постановка, ТЗ, решения; `docs/` — как устроено;
   `docs/audits/` — срезы на дату, задним числом не правятся;
   `ROADMAP/` — этапы; `tools/` — проверки и инструменты; `tests/` —

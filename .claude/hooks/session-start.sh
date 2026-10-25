@@ -12,11 +12,13 @@
 #     Google для Gradle (прокси веб-сессии отвечает 404 и 429);
 #   * ветки с работой, не влитой в main, — свежие первыми: с них
 #     продолжают, а не делают заново; ветки сборок (`*_debug`, прежние
-#     `apk-*` и `linux-debug`, D-33) — не работа, их нет.
+#     `apk-*` и `linux-debug`, D-33) — не работа, их нет;
+#   * зависимости проверок SocialMediaImage (D-43) — в веб-сессии, если
+#     их нет.
 #
-# Кроме SDK и зеркала ничего не ставит и в репозитории не пишет (кроме
-# local.properties, он в .gitignore); любая ошибка — мимо: хук не должен
-# мешать начать сессию.
+# Кроме SDK, зеркала и этих зависимостей ничего не ставит и в репозитории
+# не пишет (кроме local.properties, он в .gitignore); любая ошибка — мимо:
+# хук не должен мешать начать сессию.
 # ============================================================
 PROJ="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "$0")/../.." && pwd)}"
 
@@ -95,6 +97,17 @@ fi
     echo "  проверки — cd dpai && tools/verify/run.sh static|affected|full."
     echo "Подсистема DPpass — dppass/ (D-30): правила dppass/CLAUDE.md, хвосты dppass/TODO.md,"
     echo "  проверки — cd dppass && tools/hostcheck/run.sh --quick|--full, итог для PR — run.sh report."
+    echo "Подсистема SocialMediaImage — socialmediaimage/ (D-43): правила socialmediaimage/CLAUDE.md, начало —"
+    echo "  его docs/session/HANDOFF.md; проверки — cd socialmediaimage && tools/check.sh --quick|--affected|(полный)."
+    # Зависимости проверок SocialMediaImage (PyYAML, jsonschema и др.) — в веб-сессии, если их нет.
+    if ! python3 -c "import yaml, jsonschema" 2>/dev/null; then
+        if [ "${CLAUDE_CODE_REMOTE:-}" = "true" ]; then
+            pip install -q -r "$PROJ/socialmediaimage/tools/requirements.txt" >/dev/null 2>&1 \
+                || echo "  ! зависимости SocialMediaImage не поставились: pip install -r socialmediaimage/tools/requirements.txt"
+        else
+            echo "  ! нужны PyYAML и jsonschema: pip install -r socialmediaimage/tools/requirements.txt"
+        fi
+    fi
     for tool in python3 git java; do
         if command -v "$tool" >/dev/null 2>&1; then
             echo "  $tool: есть"

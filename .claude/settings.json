@@ -10,7 +10,14 @@
       "Bash(rsync *)",
       "Bash(ssh *)",
       "Bash(scp *)",
-      "Bash(sftp *)"
+      "Bash(sftp *)",
+      "Bash(python3 -m tools.cs publish *)",
+      "Bash(python3 -m tools.cs site deploy *)",
+      "Bash(python -m tools.cs publish *)",
+      "Bash(python -m tools.cs site deploy *)",
+      "Bash(*tools.cs site*deploy*)",
+      "Bash(*tools.cs publish*)",
+      "Bash(*dpsmpx-site-deploy*)"
     ],
     "deny": [
       "Read(~/.ssh/**)",

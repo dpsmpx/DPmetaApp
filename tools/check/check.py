@@ -44,7 +44,7 @@ ROOT_ALLOW = {
     ".claude", ".github", "docs", "ROADMAP", "tools", "tests",
     "settings.gradle.kts", "build.gradle.kts", "gradle.properties", "gradlew", "gradlew.bat",
     "gradle", "build-logic", "app", "core", "cli", "config",
-    "dpai", "dppass",
+    "dpai", "dppass", "socialmediaimage",
 }
 # Пакетный файл Windows создан Gradle с CRLF — так и хранится (`.gitattributes`).
 CRLF_ALLOWED = {"gradlew.bat"}
@@ -52,10 +52,16 @@ CRLF_ALLOWED = {"gradlew.bat"}
 # его суммы (`dpai/docs/PROVENANCE.md`).
 WRAPPER = ("gradlew", "gradlew.bat", "gradle/wrapper/gradle-wrapper.jar", "gradle/wrapper/gradle-wrapper.properties")
 WRAPPER_SOURCE = "dpai/"
-# Подсистемы со своим процессом и командой проверок (D-28): каталог → команда уровня static.
-SUBSYSTEMS = {"dpai": "dpai/tools/verify/run.sh", "dppass": "dppass/tools/hostcheck/run.sh"}
-# Строка шага в выводе команды подсистемы: «- ✓ шаг» (dpai) или «  ✓ id  итог» (DP Verify у dppass, D-30).
-SUBSYSTEM_STEP = re.compile(r"^(?:- |  )([✓✗]) (.+)$", re.M)
+# Подсистемы со своим процессом и командой проверок (D-28, D-43): каталог → команда быстрого уровня;
+# строка — команда с аргументом `static`, кортеж — команда со своими аргументами.
+SUBSYSTEMS = {
+    "dpai": "dpai/tools/verify/run.sh",
+    "dppass": "dppass/tools/hostcheck/run.sh",
+    "socialmediaimage": ("socialmediaimage/tools/check.sh", "--quick"),
+}
+# Строка шага в выводе команды подсистемы: «- ✓ шаг» (dpai), «  ✓ id  итог» (DP Verify у dppass, D-30)
+# или «✓ id — что проверено» (SocialMediaImage, D-43); итог прогона без « — » — не шаг.
+SUBSYSTEM_STEP = re.compile(r"^(?:(?:- |  )([✓✗]) (.+)|([✓✗]) (\S+ — .+))$", re.M)
 # Единое ядро (D-28): эти типы объявлены один раз — в ядре подсистемы dpai.
 CORE_TYPES = ("Outcome", "OperationResult", "Diagnostic", "DiagCode", "Secret", "Clock")
 CORE_HOME = "dpai/core/src/main/"
@@ -524,15 +530,16 @@ def check_wrapper(repo, r):
 def check_subsystems(root, subsystems=None):
     """subsystem.* — команда проверок каждой подсистемы на уровне static проходит (D-28)."""
     results = []
-    for name, cmd in sorted((SUBSYSTEMS if subsystems is None else subsystems).items()):
+    for name, spec in sorted((SUBSYSTEMS if subsystems is None else subsystems).items()):
+        cmd, *args = (spec, "static") if isinstance(spec, str) else spec
         r = Result(f"subsystem.{name}")
         t0 = time.monotonic()
         path = os.path.join(root, cmd)
         if not os.path.isfile(path):
             r.add(cmd, "нет команды проверок подсистемы")
         else:
-            p = subprocess.run(["bash", path, "static"], cwd=root, capture_output=True, text=True)
-            steps = SUBSYSTEM_STEP.findall(p.stdout)
+            p = subprocess.run(["bash", path, *args], cwd=root, capture_output=True, text=True)
+            steps = [(m[0] or m[2], m[1] or m[3]) for m in SUBSYSTEM_STEP.findall(p.stdout)]
             r.scanned = len(steps)
             r.findings.extend(f"{cmd}: {what}" for mark, what in steps if mark == "✗")
             if p.returncode != 0 and not r.findings:
