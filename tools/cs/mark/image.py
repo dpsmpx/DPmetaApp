@@ -51,6 +51,7 @@ SCREEN_MIN = 96  # картинка в снимке экрана меньше (�
 SCREEN_NCC = 0.6  # сходство по содержимому ниже — картинки в снимке нет
 COARSE_SIDE = 480  # длинная сторона снимка на грубом шаге поиска, px
 COARSE_STEP = 1.03  # шаг масштаба на грубом шаге поиска
+COARSE_MIN = 16  # самая мелкая картинка (SCREEN_MIN) на грубом шаге — не меньше, px
 FLAT = 1.0  # окно с σ яркости ниже (уровней) — ровное: сходство не считается
 MODES = ("RGB", "RGBA", "L", "LA", "P")
 
@@ -191,10 +192,8 @@ def _place(sy: np.ndarray, y0: np.ndarray) -> tuple[int, int]:
     return int(dy), int(dx)
 
 
-def _cells(r: np.ndarray, m: np.ndarray, dy: int, dx: int) -> tuple[int, int]:
-    """Знаковый тест по местам плитки: (мест с положительной корреляцией, мест с меткой).
-    Вклады блоков одного места связаны (знаки шаблона повторяются), поэтому сначала —
-    сумма по месту; без метки знак суммы — монетка: знаки от ключа не связаны с остатком."""
+def _sums(r: np.ndarray, m: np.ndarray, dy: int, dx: int) -> tuple[np.ndarray, np.ndarray]:
+    """Сумма остатка × метки по каждому месту плитки и где метка есть."""
     ty, tx = TILE
     h, w = m.shape
     cy = ((np.arange(h) + dy) // 8) % ty
@@ -202,6 +201,14 @@ def _cells(r: np.ndarray, m: np.ndarray, dy: int, dx: int) -> tuple[int, int]:
     cell = (cy[:, None] * tx + cx[None, :]).ravel()
     c = np.bincount(cell, weights=(r * m).ravel(), minlength=ty * tx)
     has = np.bincount(cell, weights=np.abs(m).ravel(), minlength=ty * tx) > 0
+    return c, has
+
+
+def _cells(r: np.ndarray, m: np.ndarray, dy: int, dx: int) -> tuple[int, int]:
+    """Знаковый тест по местам плитки: (мест с положительной корреляцией, мест с меткой).
+    Вклады блоков одного места связаны (знаки шаблона повторяются), поэтому сначала —
+    сумма по месту; без метки знак суммы — монетка: знаки от ключа не связаны с остатком."""
+    c, has = _sums(r, m, dy, dx)
     return int((c[has] > 0).sum()), int(has.sum())
 
 
@@ -301,7 +308,8 @@ def locate(ys: np.ndarray, y0: np.ndarray) -> Place | None:
     s_min = SCREEN_MIN / min(W, H)
     if s_max < s_min:
         return None
-    f = min(1.0, COARSE_SIDE / max(hs, ws))
+    # длинная сторона — до COARSE_SIDE, но самая мелкая картинка не меньше COARSE_MIN px (длинный снимок страницы)
+    f = min(1.0, max(COARSE_SIDE / max(hs, ws), COARSE_MIN / SCREEN_MIN))
     yc = ys if f == 1.0 else _resample(ys, (max(1, round(ws * f)), max(1, round(hs * f))))
     best = None  # (ncc, s, x, y) — x, y в пикселях полного снимка
     corr = _Corr(yc)
@@ -354,33 +362,57 @@ def _crop(a: np.ndarray, box: tuple, size: tuple) -> np.ndarray:
                       dtype=np.float64)
 
 
-def match_screen(img: Image.Image, original: bytes, key: bytes) -> Match:
-    """Сверить снимок экрана, где картинка — часть кадра: место и масштаб — `locate` (по
-    содержимому, без ключа, поэтому без поправки на перебор); область приводится к размеру
-    исходника, яркость — линейно к исходнику (экран и сжатие снимка её сдвигают); исходник и
-    метка проходят то же уменьшение до размера в снимке и обратно (согласованный фильтр)."""
-    y0, m = expected(original, key)
+def residual(ys: np.ndarray, y0: np.ndarray, pl: Place) -> np.ndarray:
+    """Остаток области снимка против исходника — в размере исходника, после того же уменьшения
+    до размера в снимке и обратно; от ключа не зависит (см. `match_screen`)."""
     H, W = y0.shape
-    ys = _luma(_rgb(img if img.mode in MODES else img.convert("RGB"))[0])
-    pl = locate(ys, y0)
-    if pl is None:
-        return Match(0, 0, 1.0, 0.0, (0, 0), 0.0, screen=True)
     x0, top, x1, bottom = pl.box
     tw, th = round(x1 - x0), round(bottom - top)
     reg = _crop(ys, pl.box, (W, H))
     yb = _resample(_resample(y0, (tw, th)), (W, H))
-    mm = _resample(_resample(m, (tw, th)), (W, H))
     a, b = np.polyfit(yb.ravel(), reg.ravel(), 1)
-    k, n = _cells(reg - (a * yb + b), mm, 0, 0)
+    return _resample(_resample(reg - (a * yb + b), (tw, th)), (W, H))
+
+
+def screen_sums(ys: np.ndarray, y0: np.ndarray, m: np.ndarray, pl: Place) -> tuple[np.ndarray, np.ndarray]:
+    """Суммы мест плитки для снимка: остаток против неразмытой метки — сумма места зависит только
+    от его знаков (см. `match_screen`)."""
+    return _sums(residual(ys, y0, pl), m, 0, 0)
+
+
+def _screen(ys: np.ndarray, y0: np.ndarray, m: np.ndarray) -> Match:
+    """Сверка снимка (яркость ys) с исходником y0 и его меткой m — см. `match_screen`."""
+    pl = locate(ys, y0)
+    if pl is None:
+        return Match(0, 0, 1.0, 0.0, (0, 0), 0.0, screen=True)
+    x0, top = pl.box[:2]
+    c, has = screen_sums(ys, y0, m, pl)
+    k, n = int((c[has] > 0).sum()), int(has.sum())
     p = binom_tail(n, k) if n else 1.0
     return Match(k, n, p, 1 / pl.scale, (round(top), round(x0)), 1.0, screen=True)
+
+
+def match_screen(img: Image.Image, original: bytes, key: bytes) -> Match:
+    """Сверить снимок экрана, где картинка — часть кадра: место и масштаб — `locate` (по
+    содержимому, без ключа, поэтому без поправки на перебор); область приводится к размеру
+    исходника, яркость — линейно к исходнику (экран и сжатие снимка её сдвигают).
+
+    Остаток проходит то же уменьшение до размера в снимке и обратно, а метка — нет: размытая
+    метка одного места плитки заходит на соседние, и суммы соседних мест зависели бы от чужих
+    знаков — разброс числа совпадений шире биномиального, вероятность ложной находки занижена
+    (независимая проверка 26.10.2026: при уменьшении до 0,2 — в сотни раз). Сумма места против
+    неразмытой метки зависит только от его знаков, поэтому без метки знаки мест — независимые
+    монетки и вероятность считается точно при любом уменьшении."""
+    y0, m = expected(original, key)
+    return _screen(_luma(_rgb(img if img.mode in MODES else img.convert("RGB"))[0]), y0, m)
 
 
 def match(img: Image.Image, original: bytes, key: bytes) -> Match:
     """Сверить копию с исходником: масштаб — 1:1 или по ширине/высоте исходника; место —
     взаимной корреляцией; метка проходит то же уменьшение, что и копия (согласованный фильтр).
-    Не нашлось — копия, может быть, снимок экрана с картинкой внутри: `match_screen`; поправка
-    на перебор — на все попытки вместе (Бонферрони)."""
+    Не нашлось — копия, может быть, снимок экрана с картинкой внутри: `match_screen`. Поправка
+    на перебор (Бонферрони) считает и снимок, даже когда до него не дошло: иначе «сначала
+    копия, потом снимок» давало бы ложную находку чаще порога."""
     y0, m = expected(original, key)
     H, W = y0.shape
     w, h = img.size
@@ -401,12 +433,14 @@ def match(img: Image.Image, original: bytes, key: bytes) -> Match:
         p = binom_tail(n, k) if n else 1.0
         if p < best_p:
             best, best_p = Match(k, n, p, sc, (dy, dx), nw * nh / (W * H)), p
+    tried += 1  # снимок экрана — всегда одна из попыток
     if tried * best.p > P_FOUND:
-        scr = match_screen(img, original, key)
-        tried += 1
+        luma = _luma(rgb)
+        del rgb
+        scr = _screen(luma, y0, m)
         if scr.cells and scr.p < best.p:
             best = scr
-    best.p = min(1.0, max(tried, 1) * best.p)
+    best.p = min(1.0, tried * best.p)
     return best
 
 

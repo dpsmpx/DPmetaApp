@@ -138,7 +138,8 @@ def _image_mark(repo_root: Path, res: Result, img, key: bytes, cands: list) -> N
         if mt.found:
             res.found = True
             res.releases.add(m["id"])
-        where = (f"снимок экрана, картинка с ({mt.shift[1]}, {mt.shift[0]}) px, уменьшена в {mt.scale:.3g} раза"
+        size = (f"уменьшена в {mt.scale:.3g} раза" if mt.scale >= 1 else f"увеличена в {1 / mt.scale:.3g} раза")
+        where = (f"снимок экрана, картинка с ({mt.shift[1]}, {mt.shift[0]}) px, {size}"
                  if mt.screen and mt.cells else f"масштаб {mt.scale:.3g}")
         res.add(f"  {'✓' if mt.found else '·'} метка изображения против {f['path']} (выпуск {m['id']}): "
                 f"мест {mt.agree} из {mt.cells}, {where}, вероятность случайно — {mt.p:.1e}")

@@ -162,6 +162,33 @@ class ImageMark(unittest.TestCase):
         self.assertFalse(mt.found)
         self.assertEqual(mt.cells, 0)
 
+    def test_screenshot_place_sum_depends_only_on_its_own_signs(self):
+        """Без метки знаки мест плитки — независимые монетки, только если сумма места зависит лишь от
+        его знаков. Размытая метка (как было до проверки 26.10.2026) заходила на соседние места: при
+        уменьшении до 0,2 разброс числа совпадений — в 1,5 раза шире биномиального, вероятность
+        ложной находки — занижена. Перевернуть знаки одного места — меняется сумма только его."""
+        import numpy as np
+        im = self.image
+        shot = self.screen(self.src, 160, (301, 77))  # уменьшение до 0,42, без метки
+        y0 = im._luma(im._rgb(self.open(self.src))[0])
+        ys = im._luma(im._rgb(shot.convert("RGB"))[0])
+        pl = im.locate(ys, y0)
+        self.assertIsNotNone(pl)
+        sg = im.signs(KEY, self.src)
+        c1, has = im.screen_sums(ys, y0, im.mark_delta(y0, sg), pl)
+        flip = sg.copy()
+        flip[5, 7] *= -1
+        c2, _ = im.screen_sums(ys, y0, im.mark_delta(y0, flip), pl)
+        changed = np.flatnonzero(~np.isclose(c1, c2, rtol=0, atol=1e-9))
+        self.assertEqual(changed.tolist(), [5 * im.TILE[1] + 7])
+        self.assertTrue(has.all())
+
+    def test_long_page_screenshot_is_searched(self):
+        """Снимок длинной страницы: ни один масштаб копии целиком не подходит — снимок всё равно ищется."""
+        shot = self.screen(self.marked, 288, (6, 2400), size=(300, 4000))
+        mt = self.image.match(shot, self.src, KEY)
+        self.assertTrue(mt.found and mt.screen, f"p={mt.p:.1e}")
+
     def test_verify_finds_release_by_screenshot(self):
         root = Path(tempfile.mkdtemp(prefix="cs-verify-"))
         (root / "content").mkdir()
