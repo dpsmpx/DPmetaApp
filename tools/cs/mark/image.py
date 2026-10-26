@@ -17,6 +17,13 @@
 совпадения на каждом месте — монетка, поэтому вероятность ложной находки
 считается точно (биномиально). Без ключа метку не поставить и не проверить.
 
+Снимок экрана (`match_screen`): картинка — часть кадра, масштаб и место
+неизвестны. Их находит `locate` по содержимому, без ключа — нормированной
+взаимной корреляцией с исходником, грубо по масштабам и точно рядом с
+находкой; дальше область приводится к размеру исходника и сверяется тем же
+знаковым тестом. Картинка должна быть в кадре целиком; пересъёмку экрана
+камерой, поворот и перспективу поиск не берёт.
+
 Повторяемо: тот же вход и ключ дают те же байты (Pillow, без метаданных;
 JPEG — с таблицами квантования и прореживанием цвета исходника).
 """
@@ -162,6 +169,7 @@ class Match:
     scale: float  # во сколько раз копию увеличили до исходника
     shift: tuple  # где копия лежит в исходнике (y, x), px
     overlap: float  # доля исходника, которую покрывает копия
+    screen: bool = False  # копия — снимок экрана, картинка в нём найдена по содержимому (`locate`)
 
     @property
     def found(self) -> bool:
@@ -209,30 +217,50 @@ class Place:
     ncc: float  # сходство по содержимому (нормированная взаимная корреляция), 1 — то же
 
 
-def _ncc(s: np.ndarray, t: np.ndarray) -> np.ndarray | None:
-    """Нормированная взаимная корреляция t по всем местам целиком внутри s (БПФ и суммы окон).
-    Ровные окна (σ < FLAT уровней) — ноль: там сходство не определено."""
-    H, W = s.shape
-    h, w = t.shape
-    if h > H or w > W:
-        return None
-    t0 = t - t.mean()
-    tn = float(np.sqrt((t0 * t0).sum()))
-    if tn < 1e-6:
-        return None
-    num = np.fft.irfft2(np.fft.rfft2(s) * np.conj(np.fft.rfft2(t0, s.shape)), s.shape)[:H - h + 1, :W - w + 1]
-    i1 = np.pad(s.cumsum(0).cumsum(1), ((1, 0), (1, 0)))
-    i2 = np.pad((s * s).cumsum(0).cumsum(1), ((1, 0), (1, 0)))
+def _fast(n: int) -> int:
+    """Ближайшая не меньшая длина вида 2^a·3^b·5^c — на ней БПФ быстрое."""
+    while True:
+        m = n
+        for q in (2, 3, 5):
+            while m % q == 0:
+                m //= q
+        if m == 1:
+            return n
+        n += 1
 
-    def win(i):
-        return i[h:, w:] - i[:-h, w:] - i[h:, :-w] + i[:-h, :-w]
 
-    n = h * w
-    var = win(i2) - win(i1) ** 2 / n
-    out = np.zeros_like(num)
-    ok = var > n * FLAT ** 2
-    out[ok] = num[ok] / (np.sqrt(var[ok]) * tn)
-    return out
+class _Corr:
+    """Нормированная взаимная корреляция шаблонов по всем местам целиком внутри s: БПФ снимка
+    и суммы окон считаются один раз на снимок. Ровные окна (σ < FLAT уровней) — ноль: там
+    сходство не определено."""
+
+    def __init__(self, s: np.ndarray):
+        self.H, self.W = s.shape
+        self.shape = (_fast(self.H), _fast(self.W))
+        self.F = np.fft.rfft2(s, self.shape)
+        self.i1 = np.pad(s.cumsum(0).cumsum(1), ((1, 0), (1, 0)))
+        self.i2 = np.pad((s * s).cumsum(0).cumsum(1), ((1, 0), (1, 0)))
+
+    def __call__(self, t: np.ndarray) -> np.ndarray | None:
+        H, W = self.H, self.W
+        h, w = t.shape
+        if h > H or w > W:
+            return None
+        t0 = t - t.mean()
+        tn = float(np.sqrt((t0 * t0).sum()))
+        if tn < 1e-6:
+            return None
+        num = np.fft.irfft2(self.F * np.conj(np.fft.rfft2(t0, self.shape)), self.shape)[:H - h + 1, :W - w + 1]
+
+        def win(i):
+            return i[h:, w:] - i[:-h, w:] - i[h:, :-w] + i[:-h, :-w]
+
+        n = h * w
+        var = win(self.i2) - win(self.i1) ** 2 / n
+        out = np.zeros_like(num)
+        ok = var > n * FLAT ** 2
+        out[ok] = num[ok] / (np.sqrt(var[ok]) * tn)
+        return out
 
 
 def _peak(c: np.ndarray) -> tuple[float, float, float]:
@@ -247,6 +275,16 @@ def _peak(c: np.ndarray) -> tuple[float, float, float]:
     fy = frac(c[iy - 1, ix], c[iy + 1, ix], v) if 0 < iy < c.shape[0] - 1 else 0.0
     fx = frac(c[iy, ix - 1], c[iy, ix + 1], v) if 0 < ix < c.shape[1] - 1 else 0.0
     return iy + fy, ix + fx, v
+
+
+def _shrink(a: np.ndarray, width: float) -> np.ndarray:
+    """Промежуточное уменьшение до 1,5× нужной ширины: шаблоны всех масштабов — из него, а не
+    из полного исходника (иначе уменьшение большого исходника — дольше самого поиска)."""
+    h, w = a.shape
+    if width * 1.5 >= w:
+        return a
+    nw = max(1, round(width * 1.5))
+    return _resample(a, (nw, max(1, round(nw * h / w))))
 
 
 def locate(ys: np.ndarray, y0: np.ndarray) -> Place | None:
@@ -265,34 +303,42 @@ def locate(ys: np.ndarray, y0: np.ndarray) -> Place | None:
         return None
     f = min(1.0, COARSE_SIDE / max(hs, ws))
     yc = ys if f == 1.0 else _resample(ys, (max(1, round(ws * f)), max(1, round(hs * f))))
-    best = None  # (ncc, s)
+    best = None  # (ncc, s, x, y) — x, y в пикселях полного снимка
+    corr = _Corr(yc)
+    base = _shrink(y0, W * s_max * f)
     s = s_max
     while s >= s_min:
         tw, th = round(W * s * f), round(H * s * f)
         if min(tw, th) >= 8:
-            c = _ncc(yc, _resample(y0, (tw, th)))
+            c = corr(_resample(base, (tw, th)))
             if c is not None and c.size:
-                v = float(c.max())
+                iy, ix = np.unravel_index(int(np.argmax(c)), c.shape)
+                v = float(c[iy, ix])
                 if best is None or v > best[0]:
-                    best = (v, s)
+                    best = (v, s, ix / f, iy / f)
         s /= COARSE_STEP
     if best is None or best[0] < SCREEN_NCC * 0.8:
         return None
-    s0 = best[1]
-    found = None  # (ncc, tw, th, x, y)
+    _, s0, cx, cy = best
+    # точно — в окне вокруг грубой находки: её место известно с точностью до шага уменьшения
     lo, hi = max(SCREEN_MIN, round(W * s0 / COARSE_STEP ** 2)), min(ws, round(W * s0 * COARSE_STEP ** 2))
-    for step in (max(1, (hi - lo) // 24), 1):
-        widths = range(lo, hi + 1, step)
-        for tw in widths:
+    pad = round(hi * 0.04 + 2 / f + 8)
+    wx0, wy0 = max(0, round(cx) - pad), max(0, round(cy) - pad)
+    wx1, wy1 = min(ws, round(cx) + hi + pad), min(hs, round(cy) + round(hi * H / W) + pad)
+    corr = _Corr(ys[wy0:wy1, wx0:wx1])
+    base = _shrink(y0, hi)
+    found = None  # (ncc, tw, th, x, y)
+    for step in (max(1, (hi - lo) // 16), 1):
+        for tw in range(lo, hi + 1, step):
             th = round(tw * H / W)
-            if th > hs or th < SCREEN_MIN * min(1.0, H / W):
+            if th < SCREEN_MIN * min(1.0, H / W):
                 continue
-            c = _ncc(ys, _resample(y0, (tw, th)))
+            c = corr(_resample(base, (tw, th)))
             if c is None or not c.size:
                 continue
             y, x, v = _peak(c)
             if found is None or v > found[0]:
-                found = (v, tw, th, x, y)
+                found = (v, tw, th, x + wx0, y + wy0)
         if found is None:
             return None
         lo, hi = max(SCREEN_MIN, found[1] - step), min(ws, found[1] + step)
@@ -318,7 +364,7 @@ def match_screen(img: Image.Image, original: bytes, key: bytes) -> Match:
     ys = _luma(_rgb(img if img.mode in MODES else img.convert("RGB"))[0])
     pl = locate(ys, y0)
     if pl is None:
-        return Match(0, 0, 1.0, 0.0, (0, 0), 0.0)
+        return Match(0, 0, 1.0, 0.0, (0, 0), 0.0, screen=True)
     x0, top, x1, bottom = pl.box
     tw, th = round(x1 - x0), round(bottom - top)
     reg = _crop(ys, pl.box, (W, H))
@@ -327,12 +373,14 @@ def match_screen(img: Image.Image, original: bytes, key: bytes) -> Match:
     a, b = np.polyfit(yb.ravel(), reg.ravel(), 1)
     k, n = _cells(reg - (a * yb + b), mm, 0, 0)
     p = binom_tail(n, k) if n else 1.0
-    return Match(k, n, p, 1 / pl.scale, (round(top), round(x0)), 1.0)
+    return Match(k, n, p, 1 / pl.scale, (round(top), round(x0)), 1.0, screen=True)
 
 
 def match(img: Image.Image, original: bytes, key: bytes) -> Match:
     """Сверить копию с исходником: масштаб — 1:1 или по ширине/высоте исходника; место —
-    взаимной корреляцией; метка проходит то же уменьшение, что и копия (согласованный фильтр)."""
+    взаимной корреляцией; метка проходит то же уменьшение, что и копия (согласованный фильтр).
+    Не нашлось — копия, может быть, снимок экрана с картинкой внутри: `match_screen`; поправка
+    на перебор — на все попытки вместе (Бонферрони)."""
     y0, m = expected(original, key)
     H, W = y0.shape
     w, h = img.size
@@ -353,7 +401,12 @@ def match(img: Image.Image, original: bytes, key: bytes) -> Match:
         p = binom_tail(n, k) if n else 1.0
         if p < best_p:
             best, best_p = Match(k, n, p, sc, (dy, dx), nw * nh / (W * H)), p
-    best.p = min(1.0, tried * best.p)
+    if tried * best.p > P_FOUND:
+        scr = match_screen(img, original, key)
+        tried += 1
+        if scr.cells and scr.p < best.p:
+            best = scr
+    best.p = min(1.0, max(tried, 1) * best.p)
     return best
 
 

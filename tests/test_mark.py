@@ -132,6 +132,54 @@ class ImageMark(unittest.TestCase):
         self.assertFalse(self.image.match(self.open(self.src), self.src, KEY).found)
         self.assertFalse(self.image.match(self.open(self.image.embed(self.src, OTHER)), self.src, KEY).found)
 
+    def screen(self, data, width, at, size=(900, 700), quality=85):
+        """Снимок экрана: светлая страница со строками текста, картинка шириной width в точке at, JPEG."""
+        page = Image.new("RGB", size, (248, 248, 246))
+        d = ImageDraw.Draw(page)
+        for y in range(12, size[1], 22):
+            for x in range(12, size[0] - 40, 64):
+                d.text((x, y), "текст", fill=(40, 40, 40))
+        pic = self.open(data).convert("RGB")
+        page.paste(pic.resize((width, round(width * pic.height / pic.width)), Image.BILINEAR), at)
+        buf = io.BytesIO()
+        page.save(buf, "JPEG", quality=quality)
+        return self.open(buf.getvalue())
+
+    def test_found_in_screenshot_at_unknown_scale_and_place(self):
+        for width, at in ((288, (301, 77)), (576, (150, 260))):  # уменьшена до 0,75 и увеличена в 1,5 раза
+            shot = self.screen(self.marked, width, at, size=(900, 700) if width < 400 else (1000, 800))
+            mt = self.image.match(shot, self.src, KEY)
+            self.assertTrue(mt.found and mt.screen, f"ширина {width}: p={mt.p:.1e}")
+            self.assertEqual(mt.shift, (at[1], at[0]))
+            self.assertAlmostEqual(1 / mt.scale, width / 384, places=2)
+
+    def test_screenshot_without_mark_other_key_or_picture_is_not_found(self):
+        for data in (self.src, self.image.embed(self.src, OTHER)):
+            self.assertFalse(self.image.match(self.screen(data, 288, (301, 77)), self.src, KEY).found)
+        page = self.screen(self.marked, 288, (301, 77))
+        page.paste((248, 248, 246), (290, 70, 600, 280))  # картинки в кадре нет
+        mt = self.image.match_screen(page, self.src, KEY)
+        self.assertFalse(mt.found)
+        self.assertEqual(mt.cells, 0)
+
+    def test_verify_finds_release_by_screenshot(self):
+        root = Path(tempfile.mkdtemp(prefix="cs-verify-"))
+        (root / "content").mkdir()
+        (root / "content" / "pic.png").write_bytes(self.src)
+        rel = root / release.RELEASES / "2026-10-26T000000Z"
+        rel.mkdir(parents=True)
+        entry = {"path": "media/pic.png", "sha256": hashlib.sha256(self.marked).hexdigest(),
+                 "source_sha256": hashlib.sha256(self.src).hexdigest(), "kind": "image",
+                 "method": self.image.METHOD, "dhash": self.image.dhash(self.open(self.src))}
+        m = release.manifest([entry], KEY, "https://dpsmpx.com", None, rel.name)
+        (rel / "manifest.json").write_bytes(release.manifest_bytes(m))
+        buf = io.BytesIO()
+        self.screen(self.marked, 288, (301, 77)).save(buf, "PNG")
+        res = verify.check(root, buf.getvalue(), "shot.png", KEY)
+        self.assertTrue(res.found, "\n".join(res.lines))
+        self.assertIn(rel.name, res.releases)
+        self.assertTrue(any("снимок экрана" in line for line in res.lines), "\n".join(res.lines))
+
 
 def der_resp(status: int) -> bytes:
     """Ответ службы RFC 3161 без токена: SEQUENCE { SEQUENCE { INTEGER status } }."""
