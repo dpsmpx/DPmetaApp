@@ -41,6 +41,13 @@ class GitServiceTest {
     @TempDir
     lateinit var dir: Path
 
+    /** Класс — про настоящий `git`: нет его в `PATH` — пропуск с причиной, а не NPE (аудит, стабильность H-1). */
+    @org.junit.jupiter.api.BeforeEach
+    fun needsGit() = org.junit.jupiter.api.Assumptions.assumeTrue(
+        com.dpsmpx.dpai.testkit.Tools.gitAvailable(),
+        "нет git в PATH: проверка на настоящем git — на машине с git",
+    )
+
     private val clock = ManualClock()
     private val ids = IdGenerator(clock, RandomSource.seeded(51))
     private val host = LocalProcessHost()

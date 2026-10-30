@@ -100,9 +100,27 @@ class LiveSystem(
 ) : ControlView, AutoCloseable {
     override val mode: String = "контроллер"
     private val ids = IdGenerator(clock, random)
+
+    /**
+     * Диагностика открытия журнала (D-87): отрезанный хвост и карантин —
+     * это потеря подтверждённых записей, о которой человек обязан узнать.
+     * Собирается до [problems], потому что журнал нужен оркестратору;
+     * переносится туда в `init`.
+     */
+    private val journalDiagnostics = mutableListOf<com.dpsmpx.dpai.core.diagnostics.Diagnostic>()
+
     // Сегменты и снимки (D-37): контроллер живёт неделями, память журнала не растёт с историей.
-    private val journal: EventJournal = EventJournal.open(vfs, "live.journal", quarantineCorruption = true, segmentSize = SEGMENT).valueOrNull()
-        ?: error("журнал контроллера не открылся")
+    private val journal: EventJournal = when (
+        val opened = EventJournal.open(vfs, "live.journal", quarantineCorruption = true, segmentSize = SEGMENT)
+    ) {
+        is Outcome.Success -> {
+            // Предупреждения открытия (`JOURNAL_TAIL_TRUNCATED`: что именно потеряно и где карантин)
+            // не выбрасываются: без этого состояние молча откатывается на границу целой записи (D-87).
+            journalDiagnostics += opened.diagnostics
+            opened.value
+        }
+        is Outcome.Failure -> error("журнал контроллера не открылся: ${opened.diagnostics.joinToString { "${it.code}: ${it.message}" }}")
+    }
     private val snapshots = SnapshotStore(DocumentStore(vfs, "snapshots"))
     private val usable = entries.filter { it.configDir != null }
 
@@ -167,6 +185,8 @@ class LiveSystem(
     val problems = mutableListOf<Diagnostic>()
 
     init {
+        // Потеря хвоста журнала и карантин — в те же «проблемы», что и остальные отказы (D-87).
+        problems += journalDiagnostics
         for (e in (usable + listOfNotNull(projectEntry)).distinctBy { it.id }) manager.register(e.toTarget(knownHostsFile))
         for (e in usable) {
             val agent = manager.client(e.id).valueOrNull()!!
@@ -442,17 +462,29 @@ class LiveSystem(
      * Сигналы самодиагностики — из состояния контура, а не «всё в порядке»
      * (ревью A-84, D-13): сверка идёт, пока есть сессии `RECOVERY_PENDING`;
      * в сети — target без неудавшейся пробы входа (A-79) и без сессии, ждущей
-     * сверки (target не ответил). Хранилище: журнал открылся, а отказ записи
-     * — исключение контура, его видно сразу.
+     * сверки (target не ответил). Хранилище — по факту (D-87): журнал закрыт
+     * после отказа записи или в проблемах есть отказ хранилища, значит
+     * разрушительные записи остановлены, а не «всё хорошо».
      */
     internal fun signals(): SystemSignals {
         val waiting = orchestrator.sessions.sessions.values.filter { it.state == SessionState.RECOVERY_PENDING }
         val silent = waiting.map { it.target }.toSet()
         return SystemSignals(
-            storageOk = true, recoveryInProgress = waiting.isNotEmpty(), gitAvailable = orchestrator.gitOk, notificationsOk = notificationsOk(),
+            storageOk = storageOk(), recoveryInProgress = waiting.isNotEmpty(), gitAvailable = orchestrator.gitOk, notificationsOk = notificationsOk(),
             targetsOnline = usable.count { it.id !in probeFailedAt && it.id !in silent }, targetsTotal = usable.size,
             securityAlert = false, gitRequired = project != null,
         )
+    }
+
+    /**
+     * Хранилище в порядке? `false` — журнал закрыт после отказа записи или
+     * последний отказ — отказ хранилища (D-87, ТЗ §80): тогда разрушительные
+     * записи останавливаются. `null` — неизвестно (D-13), а не «да».
+     */
+    internal fun storageOk(): Boolean? = when {
+        journal.isBroken -> false
+        (problems + orchestrator.problems).any { it.isError && it.code.name.startsWith("STORAGE_") } -> false
+        else -> true
     }
 
     private var lastGitCheck = Long.MIN_VALUE / 2

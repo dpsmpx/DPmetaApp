@@ -260,6 +260,11 @@ class LiveRecoveryTest {
     /** A-47: запуск не удаётся до хода (Git не создаёт дерево) — не каждый такт без конца: попытка, затем запрос человеку. */
     @Test
     fun launchFailureIsAnAttemptNotASpin() {
+        // Отказ `git worktree add` воспроизводится настоящим git: нет его в PATH — пропуск, а не NPE (аудит, H-1).
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+            com.dpsmpx.dpai.testkit.Tools.gitAvailable(),
+            "нет git в PATH: проверка на настоящем git — на машине с git",
+        )
         val local = com.dpsmpx.dpai.execution.process.LocalProcessHost()
         val gitAndAgent = object : ProcessHost {
             override fun start(spec: ProcessSpec, onOutput: (OutputLine) -> Unit) =

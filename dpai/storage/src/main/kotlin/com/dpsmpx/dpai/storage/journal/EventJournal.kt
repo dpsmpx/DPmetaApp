@@ -67,6 +67,14 @@ class EventJournal private constructor(
     /** Номер последней записи (0 — журнал пуст). */
     val position: Long get() = offset + records.size
 
+    /**
+     * Журнал закрыт после отказа записи: что легло на диск, неизвестно, и до
+     * повторного [open] записи не принимаются (ТЗ, §80). Состояние наружу —
+     * чтобы контур показал «хранилище не в порядке», а не «всё хорошо»
+     * (D-87, D-13: неизвестное — не ноль).
+     */
+    val isBroken: Boolean get() = broken
+
     val lastHash: ContentHash get() = records.lastOrNull()?.hash ?: baseHash
 
     /** Номер первой записи активного сегмента: всё раньше — в запечатанных сегментах. */

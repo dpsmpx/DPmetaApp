@@ -104,6 +104,47 @@ class LiveSystemTest {
         assertEquals("отказ 51", s.orchestrator.problems.first().message)
     }
 
+    /**
+     * D-87: хранилище «в порядке» — по факту, а не константой. Отказ хранилища в
+     * проблемах (диск полон, `STORAGE_*`) — сигнал `storageOk = false`: разрушительные
+     * записи останавливаются, как обещает `docs/RECOVERY.md`, §6.
+     */
+    @Test
+    fun storageTroubleIsVisibleInSelfDiagnostics() {
+        val s = system(entry("сервер", "/home/dev/.claude-dpai"))
+        assertEquals(true, s.storageOk(), "чистый контур — хранилище в порядке")
+        s.orchestrator.problems += Diagnostic.error(DiagCode.STORAGE_UNAVAILABLE, "журнал закрыт после отказа записи")
+        assertEquals(false, s.storageOk(), "отказ хранилища виден сигналом")
+        assertEquals(false, s.signals().storageOk, "и в самодиагностике экрана")
+    }
+
+    /**
+     * D-87: отрезанный хвост журнала не теряется молча. Испорченная запись после
+     * целых — `JOURNAL_TAIL_TRUNCATED` с числом байт и именем карантина; система
+     * открывается, а предупреждение стоит в её проблемах (раньше уходило в `.valueOrNull()`).
+     */
+    @Test
+    fun truncatedJournalTailIsReportedNotSwallowed() {
+        val target = entry("сервер", "/home/dev/.claude-dpai")
+        // Первый запуск пишет журнал, затем портим его хвост: обрываем последнюю строку.
+        system(target).also { s -> steps(s, 2) }.close()
+        val journal = dir.resolve("live.journal")
+        if (java.nio.file.Files.exists(journal)) {
+            val bytes = java.nio.file.Files.readAllBytes(journal)
+            // Обрезаем последние 10 байт: последняя запись не подтверждена — её отрежет open().
+            java.nio.file.Files.write(journal, bytes.copyOf((bytes.size - 10).coerceAtLeast(0)))
+        }
+        val s = system(target)
+        try {
+            assertTrue(
+                s.problems.any { it.code == DiagCode.JOURNAL_TAIL_TRUNCATED },
+                "потеря хвоста журнала — в проблемах контура: ${s.problems.map { it.code }}",
+            )
+        } finally {
+            s.close()
+        }
+    }
+
     @Test
     fun slotWithoutLoginKeepsTasksWaiting() {
         loggedIn = false

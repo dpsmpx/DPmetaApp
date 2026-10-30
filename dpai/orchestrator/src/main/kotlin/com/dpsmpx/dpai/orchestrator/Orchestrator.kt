@@ -84,6 +84,7 @@ import com.dpsmpx.dpai.orchestrator.git.worktreeEnvelopes
 import com.dpsmpx.dpai.execution.agent.AgentClient
 import com.dpsmpx.dpai.contexts.ContextCodec
 import com.dpsmpx.dpai.storage.document.DocumentStore
+import com.dpsmpx.dpai.storage.document.StoredDocument
 import com.dpsmpx.dpai.storage.snapshot.Projection
 import com.dpsmpx.dpai.storage.snapshot.SnapshotStore
 import com.dpsmpx.dpai.storage.snapshot.StateRecovery
@@ -362,14 +363,32 @@ class Orchestrator(
     /** Ключ документа задачи: id в нижнем регистре — ключи документов строчные. */
     private fun docKey(kind: String, task: TaskId) = "$kind-${task.value.lowercase()}"
 
+    /**
+     * Документ задачи с находками чтения (D-87). «Основная версия испорчена или
+     * недописана — прочитана прежняя» (`STORAGE_RECOVERED_LKG`) — это откат
+     * последней правки слота, проекта, контекста или handoff; раньше такое
+     * предупреждение терялось в `.valueOrNull()`, и человек не узнавал о потере.
+     */
+    private fun storedDocument(store: DocumentStore, key: String): StoredDocument? =
+        when (val read = store.read(key)) {
+            is Outcome.Success -> {
+                problems += read.warnings
+                read.value
+            }
+            is Outcome.Failure -> {
+                problems += read.errors
+                null
+            }
+        }
+
     /** Контексты и handoff незавершённых задач — из документов (после перезапуска). */
     private fun loadTaskDocuments(store: DocumentStore) {
         // Очереди сообщений (D-60) — и у завершённых задач: сообщение их продолжит.
         for (t in tasks.tasks.values.filter { !it.archived }) {
-            store.read(docKey("queued", t.id)).valueOrNull()?.let { d -> QueuedMessages.fromJson(d.content).valueOrNull()?.takeIf { it.isNotEmpty() }?.let { queuedOf[t.id] = it } }
+            storedDocument(store, docKey("queued", t.id))?.let { d -> QueuedMessages.fromJson(d.content).valueOrNull()?.takeIf { it.isNotEmpty() }?.let { queuedOf[t.id] = it } }
         }
         for (t in tasks.tasks.values.filter { !it.terminal }) {
-            store.read(docKey("context", t.id)).valueOrNull()?.let { d ->
+            storedDocument(store, docKey("context", t.id))?.let { d ->
                 when (val c = ContextCodec.readContext(d.content)) {
                     is Outcome.Success -> {
                         contextOf[t.id] = c.value
@@ -380,7 +399,7 @@ class Orchestrator(
                     is Outcome.Failure -> problems += Diagnostic.of(DiagCode.STORAGE_CORRUPTED, "контекст задачи ${t.id} не читается", causes = c.errors)
                 }
             }
-            store.read(docKey("handoff", t.id)).valueOrNull()?.let { d ->
+            storedDocument(store, docKey("handoff", t.id))?.let { d ->
                 when (val h = ContextCodec.readHandoff(d.content)) {
                     is Outcome.Success -> handoffs.create(h.value)
                     is Outcome.Failure -> problems += Diagnostic.of(DiagCode.STORAGE_CORRUPTED, "handoff задачи ${t.id} не читается", causes = h.errors)
@@ -396,7 +415,15 @@ class Orchestrator(
      * контекста, а не новый контекст (`docs/CONTEXT_MODEL.md`).
      */
     private fun storedContext(task: TaskId, report: Boolean = true): ContextBundle? {
-        val d = documents?.read(docKey("context", task))?.valueOrNull() ?: return null
+        val d = documents?.let { store ->
+            when (val read = store.read(docKey("context", task))) {
+                is Outcome.Success -> {
+                    if (report) problems += read.warnings
+                    read.value
+                }
+                is Outcome.Failure -> null.also { if (report) problems += read.errors }
+            }
+        } ?: return null
         return when (val c = ContextCodec.readContext(d.content)) {
             is Outcome.Success -> c.value
             is Outcome.Failure -> null.also {
@@ -411,9 +438,24 @@ class Orchestrator(
         if (r is Outcome.Failure) problems += Diagnostic.of(DiagCode.STORAGE_IO_FAILED, "документ $kind задачи $task не записан", causes = r.errors)
     }
 
-    /** Проекция из снимка и хвоста журнала, а без снимка — из всей истории потоком (D-37). */
-    private fun <S> restore(p: Projection<S>, initial: S): S =
-        snapshots?.let { StateRecovery(p).recover(journal, it, initial).valueOrNull()?.state } ?: StateRecovery(p).replayAll(journal, initial)
+    /**
+     * Проекция из снимка и хвоста журнала, а без снимка — из всей истории потоком (D-37).
+     * Снимок, который не сошёлся с журналом (`SNAPSHOT_INVALID`), — не тишина (D-87):
+     * состояние пересчитано заново, и об этом стоит знать, если пересчёт окажется дорогим.
+     */
+    private fun <S> restore(p: Projection<S>, initial: S): S {
+        val snapshots = this.snapshots ?: return StateRecovery(p).replayAll(journal, initial)
+        return when (val recovered = StateRecovery(p).recover(journal, snapshots, initial)) {
+            is Outcome.Success -> {
+                problems += recovered.warnings
+                recovered.value.state
+            }
+            is Outcome.Failure -> {
+                problems += recovered.errors
+                StateRecovery(p).replayAll(journal, initial)
+            }
+        }
+    }
 
     /**
      * Снимки всех проекций, если с прошлого прошло [snapshotEvery] записей.
@@ -917,7 +959,18 @@ class Orchestrator(
 
     private fun poll(session: SessionId) {
         val before = sessions.sessions.getValue(session).state
-        val step = driver.poll(sessions, session).valueOrNull() ?: return
+        // Отказ опроса — не «ничего не произошло» (D-87): в нём приходят `RUN_RECONCILIATION_REQUIRED`
+        // (пропуск событий не закрыт сверкой), `EVENT_SEQUENCE_CONFLICT` (тот же номер с другим
+        // событием) и отказы связи. Молча выйти здесь — значит оставить сессию «устаревшей» без
+        // причины и собрать итог хода из дырявого потока.
+        val step = when (val polled = driver.poll(sessions, session)) {
+            is Outcome.Success -> polled.value
+            is Outcome.Failure -> {
+                // `problems` сам отправляет каждый отказ в `onProblem` (журнал приложения, D-43).
+                problems += polled.errors
+                return
+            }
+        }
         if (efficiency.workingSet.enabled && step.turns.isNotEmpty()) {
             val task = sessions.sessions.getValue(session).task
             val ws = workingOf.getOrPut(task) {

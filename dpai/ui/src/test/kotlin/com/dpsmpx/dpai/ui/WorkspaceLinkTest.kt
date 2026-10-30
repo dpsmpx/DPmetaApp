@@ -42,6 +42,11 @@ class WorkspaceLinkTest {
     /** ПК с Linux (D-70): ключ связки — в authorized_keys пользователя, из частных сетей (D-84), прежняя строка заменяется. */
     @Test
     fun linuxPcGetsTheLinkKeyInItsOwnAuthorizedKeys() {
+        // Команда — POSIX (`sh`, `sed`): на Windows её не выполнить, там — пропуск (аудит, стабильность H-2).
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+            com.dpsmpx.dpai.testkit.Tools.posixAvailable(),
+            "нет POSIX-оболочки: команда для ПК с Linux проверяется на POSIX",
+        )
         val home = java.nio.file.Files.createTempDirectory("dpai-link").toFile()
         try {
             java.io.File(home, ".ssh").mkdirs()
