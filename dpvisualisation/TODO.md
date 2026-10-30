@@ -22,12 +22,6 @@
       `[registry] exclude` — снять; стадии — и по `DPmeta:SQ-33`; роли и
       стадии узлов — подсистемы DPmetaApp; ссылки `Проект:путь` на
       перенесённые файлы; реестр — из `dpmeta/` (`DPmeta:M-16`). Затем — свежий срез с полных клонов и комплект сайта.
-- [ ] `М` **Живой режим схемы в приложении** — задача DPmetaApp (D-18,
-      фаза B; с его стороны — `DPmetaApp:D-26`), теперь в том же
-      репозитории.
-
-## Вне репозитория — правят сессии тех репозиториев
-
 - [ ] `М` **Контракты DPmeta у потоков.** Ветка DPmeta с C-11…C-13 влита
       вместе с переездом (`DPmeta:M-14`): `contracts` у потоков
       `vis.dpmeta.dpvisualisation`, `vis.dpvisualisation.smi` и
@@ -35,10 +29,16 @@
       `DPmeta:M-11`) — вместе с моделью под переезды, иначе сбор покажет
       `CONTRACT_UNCOVERED`. Место оркестратора в реестре — по
       `DPmeta:M-16` (строка с каталогом `dpai/`), в модели — D-27.
+- [ ] `М` **Живой режим схемы в приложении** — задача DPmetaApp (D-18,
+      фаза B; с его стороны — `DPmetaApp:D-26`), теперь в том же
+      репозитории.
+
+## Вне репозитория — правят сессии тех репозиториев
+
 - [ ] `М` **DPmeta.** AIM_Trainer_pas и DP_Clock — в реестр `DPmeta:tools/ecosystem.toml`
       (D-23: узлы `aimtrainer`, `dpclock` в модели есть, сбор пишет их в
-      `not_in_registry`); Andors-Love и TrueJointTileMaker — из периферии в
-      текущую систему (`DPmeta:docs/ECOSYSTEM.md`). Правка — сессией DPmeta.
+      `not_in_registry`); Andors-Love и TrueJointTileMaker — из `archive` в
+      новое место `periphery` (`DPmeta:M-16`). Правка — сессией DPmeta.
 
 ## Долг
 
