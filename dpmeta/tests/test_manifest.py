@@ -177,6 +177,21 @@ class ManifestTest(unittest.TestCase):
         self.assertEqual(beta["state"], {"place": "support", "clone": "нет"})
         self.assertEqual(beta["documents"], [])
 
+    def test_subsystem_directory_is_read_from_its_repository(self):
+        # Подсистема в чужом репозитории (M-14): документы — от её каталога,
+        # дата — последнего коммита, менявшего её каталог.
+        origin = Path(self.tmp.name) / "origin-host"
+        origin.mkdir()
+        git(origin, "init", "-q", "-b", "main")
+        (origin / "sub").mkdir()
+        commit(origin, "sub/CLAUDE.md", "# S\n", "2026-10-08T10:00:00+00:00")
+        commit(origin, "other.txt", "o\n", "2026-10-09T10:00:00+00:00")
+        git(self.clones, "clone", "-q", str(origin), "host")
+        _, text = self.run_tool("--clone", f"Alpha={self.clones / 'host' / 'sub'}")
+        alpha = assert_reader_accepts(self, text)["projects"][0]
+        self.assertEqual((alpha["state"]["branch"], alpha["state"]["updated"]), ("main", "2026-10-08"))
+        self.assertEqual(alpha["documents"], ["CLAUDE.md"])
+
     def test_suggestions_are_what_a_session_can_do(self):
         # M-11: без RISK-NN, без «за автором», не «открытый вопрос», только с «Предложением»
         _, text = self.run_tool()

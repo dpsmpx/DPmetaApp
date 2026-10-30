@@ -3,12 +3,14 @@
 Запуск: python3 -B -m unittest discover -s tests
 """
 
+import os
 import subprocess
 import sys
 import tempfile
 import textwrap
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
@@ -103,6 +105,14 @@ class XrefTest(unittest.TestCase):
         code, _ = self.run_xref("--strict", "Alpha")
         self.assertEqual(code, 0)
 
+    def test_abbreviated_path_is_not_missing(self):
+        # `Alpha:docs/…` и `Alpha:…/guide.md` — сокращения, как маска `**`.
+        (self.root / "beta" / "short.md").write_text(
+            "Сокращения: `Alpha:docs/…`, `Alpha:…/guide.md`.\n", encoding="utf-8")
+        _, report = self.run_xref("--only", "Beta")
+        self.assertIn("пути нет в клоне: 1.", report)
+        self.assertNotIn("…", report.split("## Пути")[1].split("## Прежние")[0])
+
     def test_untracked_files_are_scanned(self):
         (self.root / "beta" / "new.md").write_text("Ссылка `Alpha:D-02`.\n", encoding="utf-8")
         _, report = self.run_xref("--only", "Beta")
@@ -122,6 +132,38 @@ class XrefTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertNotIn("нет клона", report)
         self.assertIn("Ссылок распознано: 4; нет такого номера: 1.", report)
+
+    def test_subsystem_directory_is_a_clone(self):
+        # Подсистема в чужом репозитории (DPmeta в `DPmetaApp:dpmeta/`, M-14):
+        # своего `.git` нет, но каталог — внутри рабочего дерева.
+        host = self.root / "host"
+        host.mkdir()
+        subprocess.run(["git", "init", "-q", str(host)], check=True)
+        (self.root / "alpha" / ".git").rename(self.root / "alpha-git")
+        (self.root / "alpha").rename(host / "alpha")
+        subprocess.run(["git", "-C", str(host), "add", "-A"], check=True)
+        code, report = self.run_xref("--clone", f"Alpha={host / 'alpha'}")
+        self.assertEqual(code, 0)
+        self.assertNotIn("нет клона", report)
+        self.assertIn("Ссылок распознано: 4; нет такого номера: 1.", report)
+        self.assertIn("пути нет в клоне: 1.", report)
+        # Ссылка из подсистемы считается только за неё, а не ещё раз за
+        # репозиторий, в каталоге которого она лежит.
+        (host / "alpha" / "ref.md").write_text("`Alpha:D-01`, `Beta:Р7`.\n", encoding="utf-8")
+        (self.root / "beta" / ".git").rename(self.root / "beta-git")
+        for item in (self.root / "beta").iterdir():
+            item.rename(host / item.name)
+        subprocess.run(["git", "-C", str(host), "add", "-A"], check=True)
+        _, report = self.run_xref("--clone", f"Alpha={host / 'alpha'}", "--clone", f"Beta={host}")
+        self.assertIn("Ссылок распознано: 5; нет такого номера: 1.", report)
+        self.assertNotIn("`alpha/ref.md", report)
+        # Простой каталог вне рабочего дерева — не клон. Git не ищет выше
+        # каталога теста: временный каталог может лежать в чужом рабочем дереве.
+        plain = self.root / "plain"
+        plain.mkdir()
+        with mock.patch.dict(os.environ, {"GIT_CEILING_DIRECTORIES": str(self.root)}):
+            _, report = self.run_xref("--clone", f"Alpha={plain}")
+        self.assertIn("| Alpha | нет клона | — |", report)
 
     def test_bad_registry_and_unknown_name_give_code_2(self):
         self.registry.write_text("schema = 2\n", encoding="utf-8")

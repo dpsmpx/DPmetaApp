@@ -110,7 +110,11 @@
   CSP — `connect-src 'self'`. Решение автора: где живёт инфраструктура
   (шлюз, worker-ы — Beget только статика). Задачу в ROADMAP сайта — по
   этому решению.
-- [ ] **Следующий набор прогресса:** история DP_AI_Orcestrator влита в
+- [ ] **Следующий набор прогресса — по Д46:** история шести систем,
+  переехавших в DPmetaApp (оркестратор, DPpass, SocialMediaImage,
+  DPvisualisation, DPmeta, DPprofile; корни `3ea2aea`, `2f844362`,
+  `46b3afe`, `9769a94`, `686a27a`, `c86ba57`), — один раз: до переезда —
+  в их строках, после — у DPmetaApp. История DP_AI_Orcestrator влита в
   DPmetaApp (`dpai/`, DPmetaApp D-28, 10.10.2026), его репозиторий
   заморожен — в `scope.yaml` не считать его коммиты дважды (DPmetaApp и
   прежний репозиторий). То же с DPpass: с 16.10.2026 он поддеревом в
@@ -119,11 +123,14 @@
   первого коммита, ни числами (Д38: проект без публичного имени — только в
   общих суммах). В «Экосистеме» так уже считается: DPvisualisation D-24
   (слово автора 25.10.2026 — «до 16.10 — DPpass, после — DPmetaApp»).
-- [ ] **После вливания ветки DPmeta `claude/dreamy-bardeen-xe4k6r`** — связи
-  `DPmeta:C-11`…`DPmeta:C-13` (DPmeta → DPvisualisation, DPvisualisation →
-  сайт, DPmeta → DPmetaApp — манифест для его подсистемы «AI») в `relations` `data/progress/scope.yaml` и
-  новый набор прогресса: до вливания в `main` DPmeta их нет, а счётчик
-  контрактов на странице берётся из `main` (уточнение Д38).
+- [ ] **Связи C-11…C-13 в счёте прогресса.** Ветка DPmeta
+  `claude/dreamy-bardeen-xe4k6r` влита вместе с переездом DPmeta в
+  DPmetaApp (`DPmeta:M-14`): связи `DPmeta:C-11`…`DPmeta:C-13` (DPmeta →
+  DPvisualisation, DPvisualisation → сайт, DPmeta → DPmetaApp — манифест
+  для его подсистемы «AI») — в `relations` `data/progress/scope.yaml` и в
+  новый набор прогресса; счётчики DPmeta теперь — в `DPmetaApp:dpmeta/`, а
+  не в `main` замороженного репозитория (`DPmetaApp:D-43`, `DPmeta:M-14`;
+  уточнение Д38).
 - [x] **DPmeta — «мета-уровень» в CI-0001 и CI-0003 — решено автором
   12.10.2026:** CI-0001 — оставить как срез на 5 октября (В9); CI-0003 —
   «мета-уровень (синхронизация)» в каноне v2 (В7.2).

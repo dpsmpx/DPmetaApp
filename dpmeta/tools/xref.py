@@ -117,6 +117,15 @@ def find_clone(root: Path, repo: Repo) -> Path:
     return root / repo.clone
 
 
+def is_clone(root: Path) -> bool:
+    """Клон — рабочее дерево git: каталог со своим `.git` или каталог внутри
+    чужого рабочего дерева — подсистема, переехавшая в другой репозиторий
+    (DPmeta в `DPmetaApp:dpmeta/`, M-14). Пути и номера читаются от него."""
+    if (root / ".git").exists():
+        return True
+    return root.is_dir() and git(root, "rev-parse", "--is-inside-work-tree").strip() == "true"
+
+
 def git(root: Path, *args: str) -> str:
     out = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True)
     return out.stdout if out.returncode == 0 else ""
@@ -178,7 +187,13 @@ def scan(repos: list[Repo], sources: list[Repo]):
         ))
 
     for s in [r for r in sources if r.root is not None]:
+        # Файл принадлежит самому глубокому клону: подсистема в каталоге другого
+        # репозитория (DPmeta в `DPmetaApp:dpmeta/`, M-14) считается только за себя.
+        inner = [r.root.relative_to(s.root).as_posix() + "/" for r in present
+                 if r.root != s.root and r.root.is_relative_to(s.root)]
         for rel, text in text_files(s.root):
+            if any(rel.startswith(d) for d in inner):
+                continue
             for no, line in enumerate(text.splitlines(), 1):
                 loc = f"{rel}:{no}"
                 for t, any_name, fwd, back, path_re, alias_res in targets:
@@ -200,9 +215,10 @@ def scan(repos: list[Repo], sources: list[Repo]):
                         if not re.search(r"[/.]", target) or (t.id_re and re.fullmatch(t.id_re, target)):
                             continue  # `Galdhold:Р12` — номер, а не путь
                         target = re.sub(r":\d+(?:-\d+)?$", "", target)
-                        # `run.sh --quick` — команда с ключами; `docs/audits/**` — маска.
+                        # `run.sh --quick` — команда с ключами; `docs/audits/**` — маска;
+                        # `dpai/…`, `…/core/file_io.h` — сокращение пути, как маска.
                         cands = {target, target.split(" ")[0]}
-                        cands = {re.sub(r"/?\*.*$", "", c) or "." for c in cands}
+                        cands = {re.sub(r"/?[*…].*$", "", c) or "." for c in cands}
                         ok = any((t.root / c).exists() for c in cands)
                         paths.append((Finding(s.name, loc, t.name, target), ok))
     return mention, refs, paths, stale
@@ -307,7 +323,7 @@ def main(argv: list[str] | None = None) -> int:
 
     for r in repos:
         root = overrides.get(r.name) or find_clone(a.root, r)
-        if (root / ".git").exists():
+        if is_clone(root):
             r.root = root.resolve()
             r.head = git(r.root, "rev-parse", "--short", "HEAD").strip()
             specs = ([r.decisions] if r.decisions else []) + r.defs

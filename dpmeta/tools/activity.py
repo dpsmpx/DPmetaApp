@@ -12,6 +12,11 @@
 3. ветки `dpmeta/*` — влиты или нет: так следующий проход видит, взял ли
    репозиторий правку DPmeta (docs/PROCESS.md, раздел 4).
 
+Клон может быть и подкаталогом чужого рабочего дерева — подсистемой,
+переехавшей в другой репозиторий (DPmeta в `DPmetaApp:dpmeta/`, M-14): его
+ветки и коммиты — того репозитория, и отчёт пишет «признаки в строке его
+репозитория», не повторяя их.
+
 Итог по репозиторию — «активен», если основная ветка обновлялась за
 последние --main-hours часов (по умолчанию 6 — «последние часы») или ветка
 с невлитой работой — за --hours (по умолчанию 24 — «меньше суток»).
@@ -60,6 +65,7 @@ class State:
     head_when: datetime | None = None
     shallow: bool = False
     single: bool = False  # скачана только основная ветка: других не видно
+    within: str = ""  # подкаталог чужого клона (M-14): ветки — того репозитория
     branches: list[Branch] = field(default_factory=list)
 
 
@@ -91,6 +97,11 @@ def unmerged(root: Path, base: str, ref: str) -> int:
 
 def read_state(name: str, root: Path) -> State:
     st = State(name, root)
+    # Подсистема в другом репозитории: его ветки и коммиты — не её признаки,
+    # они видны в строке того репозитория.
+    st.within = xref.git(root, "rev-parse", "--show-prefix").strip().rstrip("/")
+    if st.within:
+        return st
     st.base = default_branch(root)
     st.shallow = xref.git(root, "rev-parse", "--is-shallow-repository").strip() == "true"
     # `+refs/heads/*:refs/remotes/origin/*` — все ветки; refspec без маски
@@ -133,6 +144,8 @@ def fresh(now: datetime, when: datetime | None, hours: float) -> bool:
 def verdict(st: State, now: datetime, hours: float, main_hours: float) -> str:
     if st.root is None:
         return "нет клона"
+    if st.within:
+        return f"подкаталог `{st.within}/` другого клона — признаки в строке его репозитория"
     signs = []
     if fresh(now, st.head_when, main_hours):
         signs.append(f"коммит в `{st.base.removeprefix('origin/')}`")
@@ -154,8 +167,8 @@ def render(states: list[State], now: datetime, hours: float, main_hours: float) 
     out += ["## Итог", "", "| репозиторий | основная ветка | коммит | возраст | итог |",
             "|---|---|---|---|---|"]
     for st in states:
-        if st.root is None:
-            out.append(f"| {st.name} | — | — | — | нет клона |")
+        if st.root is None or st.within:
+            out.append(f"| {st.name} | — | — | — | {verdict(st, now, hours, main_hours)} |")
             continue
         base = st.base.removeprefix("origin/") or "?"
         out.append(f"| {st.name} | `{base}` | `{st.head or '?'}` | "
@@ -236,7 +249,7 @@ def main(argv: list[str] | None = None) -> int:
     states = []
     for r in repos:
         root = overrides.get(r.name) or xref.find_clone(a.root, r)
-        states.append(read_state(r.name, root.resolve()) if (root / ".git").exists()
+        states.append(read_state(r.name, root.resolve()) if xref.is_clone(root)
                       else State(r.name, None))
     report = render(states, now, a.hours, a.main_hours)
     if a.out:

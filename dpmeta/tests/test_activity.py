@@ -136,6 +136,19 @@ class ActivityTest(unittest.TestCase):
         # Полный клон Beta — как раньше.
         self.assertIn("7 дн | признаков нет |", report)
 
+    def test_subsystem_directory_points_to_its_repository(self):
+        # Подсистема в чужом клоне (M-14): ветки и коммиты — того репозитория,
+        # своими признаками они не считаются и не повторяются.
+        sub = self.root / "alpha" / "sub"
+        sub.mkdir()
+        (sub / "x.txt").write_text("x\n", encoding="utf-8")
+        code, report = self.run_activity("--clone", f"Beta={sub}")
+        self.assertEqual(code, 0)
+        self.assertIn("| Beta | — | — | — | подкаталог `sub/` другого клона — признаки в строке "
+                      "его репозитория |", report)
+        self.assertEqual(report.count("`work`"), 1)
+        self.assertIn("| Alpha | `work` |", report)
+
     def test_missing_clone_and_bad_call(self):
         code, report = self.run_activity("--clone", f"Beta={self.root / 'nowhere'}")
         self.assertEqual(code, 0)

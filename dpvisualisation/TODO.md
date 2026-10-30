@@ -14,34 +14,30 @@
 
 ## Подсистема DPmetaApp (D-25)
 
-- [ ] `С` **Модель — под переезды `DPmetaApp:D-43`** (D-26, ответ автора
-      25 октября 2026: узлы остаются). У узла DPmetaApp — `history_exclude`
-      корней SocialMediaImage `46b3afe…`, DPvisualisation `9769a94…`, DPmeta
-      `686a27a…`, DPprofile `c86ba57…`; роли и стадии узлов — подсистемы
-      DPmetaApp; ссылки `Проект:путь` на перенесённые файлы; реестр — из
-      `dpmeta/`. Затем — свежий срез с полных клонов и комплект сайта.
+- [ ] `С` **Модель — под переезды `DPmetaApp:D-43`** (D-26, D-27, ответы
+      автора 25 октября 2026: узлы остаются, оркестратор — тоже узел). У узла
+      DPmetaApp — `history_exclude` корней SocialMediaImage `46b3afe…`,
+      DPvisualisation `9769a94…`, DPmeta `686a27a…`, DPprofile `c86ba57…` и
+      оркестратора `3ea2aea…`; узел `orchestrator` — вернуть, из
+      `[registry] exclude` — снять; стадии — и по `DPmeta:SQ-33`; роли и
+      стадии узлов — подсистемы DPmetaApp; ссылки `Проект:путь` на
+      перенесённые файлы; реестр — из `dpmeta/` (`DPmeta:M-16`). Затем —
+      свежий срез с полных клонов и комплект сайта.
+- [ ] `М` **Контракты DPmeta у потоков.** Ветка DPmeta с C-11…C-13 влита
+      вместе с переездом (`DPmeta:M-14`): `contracts` у потоков
+      `vis.dpmeta.dpvisualisation`, `vis.dpvisualisation.smi` и
+      `orc.dpmeta.dpmetaapp` (C-13 — манифест `dpai.ecosystem`,
+      `DPmeta:M-11`) — вместе с моделью под переезды, иначе сбор покажет
+      `CONTRACT_UNCOVERED`. Место оркестратора в реестре — по
+      `DPmeta:M-16` (строка с каталогом `dpai/`), в модели — D-27.
 - [ ] `М` **Живой режим схемы в приложении** — задача DPmetaApp (D-18,
       фаза B; с его стороны — `DPmetaApp:D-26`), теперь в том же
       репозитории.
-
-## Вне репозитория — правят сессии тех репозиториев
-
-- [ ] `М` **DPmeta.** В ветке `claude/dreamy-bardeen-xe4k6r` — DPmetaApp и
-      DPvisualisation в реестре, контракты C-11 («DPmeta → DPvisualisation»)
-      и C-12 («DPvisualisation → сайт»), классификация автора; решения
-      `DPmeta:M-12` (слой синхронизации) и `DPmeta:M-13` (правило
-      вливания) — на них ссылаются D-21 и модель. В реестре той ветки
-      DP_AI_Orcestrator ещё с `place = "core"`, а он заморожен
-      (`DPmetaApp:D-28`; здесь — в `[registry] exclude`, D-22): правка —
-      сессией DPmeta. Когда ветка окажется в `main` DPmeta — здесь:
-      `contracts` у потоков `vis.dpmeta.dpvisualisation`,
-      `vis.dpvisualisation.smi` и `orc.dpmeta.dpmetaapp` (C-13 — манифест
-      `dpai.ecosystem`, `DPmeta:M-11`), иначе сбор покажет
-      `CONTRACT_UNCOVERED`.
 - [ ] `М` **DPmeta.** AIM_Trainer_pas и DP_Clock — в реестр `DPmeta:tools/ecosystem.toml`
       (D-23: узлы `aimtrainer`, `dpclock` в модели есть, сбор пишет их в
-      `not_in_registry`); Andors-Love и TrueJointTileMaker — из периферии в
-      текущую систему (`DPmeta:docs/ECOSYSTEM.md`). Правка — сессией DPmeta.
+      `not_in_registry`); Andors-Love и TrueJointTileMaker — из `archive` в
+      новое место `periphery` (`DPmeta:M-16`). Правка — в `dpmeta/` по его
+      правилам (`DPmeta:M-14`).
 
 ## Долг
 
