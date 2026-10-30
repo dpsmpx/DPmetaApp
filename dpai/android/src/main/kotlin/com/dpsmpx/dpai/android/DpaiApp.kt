@@ -69,6 +69,7 @@ import com.dpsmpx.dpai.ui.SessionScreen
 import com.dpsmpx.dpai.ui.TaskBoard
 import com.dpsmpx.dpai.ui.TaskCard
 import com.dpsmpx.dpai.ui.Tone
+import com.dpsmpx.dpai.ui.Words
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -895,10 +896,11 @@ private fun TaskRow(card: TaskCard, modifier: Modifier = Modifier) {
             Row {
                 // Имя, заданное человеком в окне сессии (D-61), — и на карточке.
                 Text(SessionNames.name(androidx.compose.ui.platform.LocalContext.current, card.id) ?: card.title, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(card.state + if (card.held) " · пауза" else "", color = toneColor(card.tone), style = MaterialTheme.typography.labelMedium)
+                // Слово, а не идентификатор: `COMPLETION_UNVERIFIED` человеку ничего не говорит (D-88, U-3).
+                Text(Words.task(card.state) + if (card.held) " · пауза" else "", color = toneColor(card.tone), style = MaterialTheme.typography.labelMedium)
             }
             Text(
-                "приоритет ${card.priority}" + if (card.dependsOn.isEmpty()) "" else " · ждёт: ${card.dependsOn.joinToString()}",
+                "приоритет ${Words.priority(card.priority)}" + if (card.dependsOn.isEmpty()) "" else " · ждёт: ${card.dependsOn.joinToString()}",
                 style = MaterialTheme.typography.labelSmall,
             )
         }
