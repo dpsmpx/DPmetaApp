@@ -750,7 +750,8 @@ DPvisualisation «исправь все несоответствия». `main` D
   шире — SQ-37.
 - **Ответ автора 25 октября 2026:** место решено (M-16, RISK-11 закрыт):
   оркестратор — как пять других переехавших систем. В схеме его узел
-  возвращается (`DPvisualisation:D-27` заменяет D-22 в части узла) —
+  возвращается (`DPvisualisation:D-27` заменяет `DPvisualisation:D-22`
+  в части узла) —
   правка модели, `DPmetaApp:dpvisualisation/TODO.md`; на странице
   прогресса — своя строка со счётом до переезда (`SocialMediaImage:Д46`).
   Тексты фактов ORC-WHAT и ORC-STAGE — по-прежнему за сессией
@@ -911,9 +912,9 @@ Code, управление — из Android-приложения (`DP_AI_Orcestr
   DPmeta туда не пушатся (M-04), а пункты о подсистеме ведутся по
   `DPmetaApp:dpai/`.
 - **Проход 25 октября 2026:** DPpass архивирован 17 октября 2026
-  (`DPmetaApp:D-30`, история решений), DP_AI_Orcestrator — 25 октября
-  2026 (GitHub: `archived`; время архивации GitHub не отдаёт,
-  `updated_at` — 06:32 UTC); README и CLAUDE.md у них — как у живых
+  (`DPmetaApp:D-30`, история решений), DP_AI_Orcestrator — не позже
+  25 октября 2026, 06:32 UTC (GitHub: `archived`; 06:32 — `updated_at`,
+  времени архивации в ответе REST нет); README и CLAUDE.md у них — как у живых
   репозиториев, но архив только для чтения. Четыре переехавших 25 октября
   получили надпись «заморожен — архивировать» в `CLAUDE.md` и `README.md`
   по слову автора (`DPmetaApp:D-43`): SocialMediaImage, DPvisualisation,
