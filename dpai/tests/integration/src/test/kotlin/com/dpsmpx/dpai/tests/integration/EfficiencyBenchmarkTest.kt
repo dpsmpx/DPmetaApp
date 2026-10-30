@@ -29,6 +29,7 @@ import com.dpsmpx.dpai.tasks.TaskPolicy
 import java.io.File
 import java.math.BigDecimal
 import java.nio.file.Path
+import java.util.Locale
 import kotlin.test.Test
 import kotlin.test.assertTrue
 import org.junit.jupiter.api.io.TempDir
@@ -227,7 +228,7 @@ class EfficiencyBenchmarkTest {
                 for ((name, r) in listOf("до" to before, "после" to after)) {
                     appendLine(
                         "| ${s.name} | $name | ${r.done}/${r.tasks} | ${r.turns} | ${r.overflows} | ${r.promptTokens} | ${r.read} | ${r.write} | ${r.output} | " +
-                            "%.4f | %.1f | ${r.ticks} |".format(r.cost, r.workPerCost),
+                            String.format(Locale.ROOT, "%.4f | %.1f | ${r.ticks} |", r.cost, r.workPerCost),
                     )
                 }
             }
@@ -235,9 +236,15 @@ class EfficiencyBenchmarkTest {
             val a = rows.map { it.third }
             appendLine()
             appendLine(
-                "Всего: до — ${b.sumOf { it.done }}/${b.sumOf { it.tasks }} задач за %.4f $; после — ${a.sumOf { it.done }}/${a.sumOf { it.tasks }} за %.4f $; "
-                    .format(b.sumOf { it.cost }, a.sumOf { it.cost }) +
-                    "работа/$: %.1f → %.1f.".format(b.sumOf { it.done } / b.sumOf { it.cost }, a.sumOf { it.done } / a.sumOf { it.cost }),
+                String.format(
+                    Locale.ROOT,
+                    "Всего: до — ${b.sumOf { it.done }}/${b.sumOf { it.tasks }} задач за %.4f $; после — ${a.sumOf { it.done }}/${a.sumOf { it.tasks }} за %.4f $; ",
+                    b.sumOf { it.cost }, a.sumOf { it.cost },
+                ) +
+                    String.format(
+                        Locale.ROOT, "работа/$: %.1f → %.1f.",
+                        b.sumOf { it.done } / b.sumOf { it.cost }, a.sumOf { it.done } / a.sumOf { it.cost },
+                    ),
             )
         }
         val out = File(System.getProperty("dpai.repoRoot") ?: ".", "build/audits/efficiency").apply { mkdirs() }

@@ -144,6 +144,10 @@ CASES = [
     ("check_forbidden_apis.py",
      {"execution/src/main/kotlin/A.kt": "val p = \"~/.claude/\" + \".credentials.json\".substring(0) + \"/.credentials.json\"\n"},
      {"execution/src/main/kotlin/A.kt": "val env = mapOf(\"CLAUDE_CONFIG_DIR\" to dir)\n"}, []),
+    ("check_forbidden_apis.py",
+     {"monitoring/src/main/kotlin/A.kt": "fun f(v: Double) = \"%.1f %%\".format(v)\n"},
+     {"monitoring/src/main/kotlin/A.kt": "fun f(v: Double) = String.format(java.util.Locale.ROOT, \"%.1f %%\", v)\n"
+      "fun h(v: Double) = String.format(java.util.Locale.ROOT, \"%.2f\", v)\n"}, []),
     ("check_secrets.py",
      {"a.txt": "key = " + secret_sample() + "\n"},
      {"a.txt": "key = <из окружения>\n"}, []),

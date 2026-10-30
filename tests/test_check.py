@@ -250,7 +250,7 @@ def quiet_report(results, strict=False):
 
 
 class GradleTest(unittest.TestCase):
-    """build.gradle (ТЗ, §14): сборка Gradle из корня; пропуск назван, в --strict — ошибка."""
+    """build.gradle (ТЗ, §14): нет JDK — находка, а не зелёный (D-46); нет SDK — названный пропуск."""
 
     @staticmethod
     def never(cmd, cwd):
@@ -260,22 +260,23 @@ class GradleTest(unittest.TestCase):
     def answers(rc, out):
         return lambda cmd, cwd: (rc, out)
 
-    def test_no_jdk_is_named_skip_not_failure(self):
+    def test_no_jdk_is_finding_not_green(self):
+        """Без JDK сборки не было: `full` не значит ничего (D-46, блокер аудита 30 октября 2026)."""
         r = check.check_gradle(ROOT, java="", sdk="/sdk", run=self.never)
-        self.assertEqual([], r.findings)
-        self.assertTrue(any("нет JDK" in w for w in r.skipped))
-        self.assertEqual(0, quiet_report([r]))
+        self.assertTrue(any("нет JDK" in f for f in r.findings))
+        self.assertEqual([], r.skipped)
+        self.assertEqual(1, quiet_report([r]))
 
-    def test_skip_is_error_in_strict(self):
+    def test_no_jdk_is_finding_in_strict_too(self):
         r = check.check_gradle(ROOT, java="", sdk="/sdk", run=self.never)
         self.assertEqual(1, quiet_report([r], strict=True))
-        self.assertTrue(any("--strict" in f for f in r.findings))
 
-    def test_without_sdk_builds_the_rest_and_names_it(self):
+    def test_no_sdk_is_named_skip_and_not_a_finding(self):
+        """SDK — не про ядро: собрано всё, кроме оболочки; это законный пропуск, в --strict — находка."""
         r = check.check_gradle(ROOT, java="/jdk/bin/java", sdk="", run=self.answers(0, "BUILD SUCCESSFUL\n12 actionable tasks: 12 executed\n"))
-        self.assertEqual(12, r.scanned)
         self.assertTrue(any("Android SDK" in w for w in r.skipped))
         self.assertEqual(0, quiet_report([r]))
+        self.assertEqual(1, quiet_report([r], strict=True))
 
     def test_full_build_passes_clean(self):
         r = check.check_gradle(ROOT, java="/jdk/bin/java", sdk="/sdk", run=self.answers(0, "301 actionable tasks: 9 executed, 292 up-to-date\n"))
