@@ -24,6 +24,7 @@ STATIC_STEPS=(
   "запрещённые API:check_forbidden_apis.py"
   "секреты:check_secrets.py"
   "контракты:check_contracts.py"
+  "экраны с секретами:check_secure_screens.py"
   "зависимости:check_dependencies.py"
   "README:readme_progress.py --check"
 )

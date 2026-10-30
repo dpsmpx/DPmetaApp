@@ -172,6 +172,34 @@ CASES = [
       ".github/workflows/ci.yml": "on: push\n"},
      {"gradle/libs.versions.toml": "[versions]\n", "docs/PROVENANCE.md": "<!-- provenance: begin -->\n<!-- provenance: end -->\n",
       "a/build.gradle.kts": "dependencies { implementation(libs.x) }\n"}, []),
+    ("check_secure_screens.py",
+     # Экран из реестра без флага — дыра: содержимое попадает в превью и снимки (D-86).
+     {"android/src/main/kotlin/com/dpsmpx/dpai/android/TerminalActivity.kt":
+      "class TerminalActivity : ComponentActivity() {\n    override fun onCreate(b: Bundle?) {\n        super.onCreate(b)\n    }\n}\n",
+      "tools/verify/registry/secure_screens.txt":
+      "# реестр\nandroid/src/main/kotlin/com/dpsmpx/dpai/android/TerminalActivity.kt:TerminalActivity\n"},
+     {"android/src/main/kotlin/com/dpsmpx/dpai/android/TerminalActivity.kt":
+      "class TerminalActivity : ComponentActivity() {\n    override fun onCreate(b: Bundle?) {\n"
+      "        window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)\n    }\n}\n",
+      "tools/verify/registry/secure_screens.txt":
+      "# реестр\nandroid/src/main/kotlin/com/dpsmpx/dpai/android/TerminalActivity.kt:TerminalActivity\n"}, []),
+    ("check_secure_screens.py",
+     # У диалога своё окно: флаг активности его не закрывает (D-86).
+     {"android/src/main/kotlin/com/dpsmpx/dpai/android/TerminalActivity.kt":
+      "class TerminalActivity : ComponentActivity() {\n    override fun onCreate(b: Bundle?) {\n"
+      "        window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)\n    }\n"
+      "    fun ask() {\n        AlertDialog.Builder(this).setTitle(\"x\").show()\n    }\n}\n",
+      "tools/verify/registry/secure_screens.txt":
+      "android/src/main/kotlin/com/dpsmpx/dpai/android/TerminalActivity.kt:TerminalActivity\n"},
+     {"android/src/main/kotlin/com/dpsmpx/dpai/android/TerminalActivity.kt":
+      "class TerminalActivity : ComponentActivity() {\n    override fun onCreate(b: Bundle?) {\n"
+      "        window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)\n    }\n"
+      "    fun ask() {\n"
+      "        val d = AlertDialog.Builder(this).setTitle(\"x\").create()\n"
+      "        d.window?.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)\n"
+      "        d.show()\n    }\n}\n",
+      "tools/verify/registry/secure_screens.txt":
+      "android/src/main/kotlin/com/dpsmpx/dpai/android/TerminalActivity.kt:TerminalActivity\n"}, []),
     ("readme_progress.py",
      {**BASE, "TODO.md": "## Раздел\n\n- [ ] пункт\n",
       "README.md": "<!-- progress:begin -->\nстарое\n<!-- progress:end -->\n"},

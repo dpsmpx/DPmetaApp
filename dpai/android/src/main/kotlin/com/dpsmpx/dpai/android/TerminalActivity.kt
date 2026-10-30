@@ -46,6 +46,9 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Экран терминала — единственное место, где видны код входа Claude (`/login`) и содержимое
+        // сессии: в превью «недавних» и в снимках экрана его быть не должно (D-86, T8).
+        window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         // Отступы системных панелей и клавиатуры — свои: экран терминала сжимается над клавиатурой.
         enableEdgeToEdge()
@@ -145,7 +148,7 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
                 Toast.makeText(this, "Программа на «${tab.label}» прислала для буфера обмена ${text.length} знаков — слишком много, не записано", Toast.LENGTH_LONG).show()
                 return@runOnUiThread
             }
-            AlertDialog.Builder(this)
+            val dialog = AlertDialog.Builder(this)
                 .setTitle("Запись в буфер обмена")
                 .setMessage("Программа на «${tab.label}» просит записать в буфер обмена:\n\n${text.take(PREVIEW)}")
                 .setPositiveButton("Записать") { _, _ ->
@@ -156,7 +159,10 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
                     }
                 }
                 .setNegativeButton("Нет", null)
-                .show()
+                .create()
+            // У диалога своё окно, и FLAG_SECURE активности его не закрывает (D-86, как `Ui.secure` DPpass).
+            dialog.window?.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+            dialog.show()
         }
     }
 
