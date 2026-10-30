@@ -69,7 +69,7 @@ R-06 там). Чужой номер пишется с именем проект�
 
 | Термин | Значение |
 |---|---|
-| экосистема | текущая система автора `dpsmpx` по `DPmeta:docs/ECOSYSTEM.md` (`DPmeta:M-10`): управление (DPmetaApp), ядро (девять репозиториев с DP_AI_Orcestrator), поддерживающий слой (DPvisualisation, DPmonetization) и слой синхронизации (DPmeta, `DPmeta:M-12`, D-27); архив — вне её (D-26) |
+| экосистема | текущая система автора `dpsmpx` по `DPmeta:docs/ECOSYSTEM.md` (`DPmeta:M-10`): управление (DPmetaApp), ядро (девять репозиториев с DP_AI_Orcestrator), поддерживающий слой (DPvisualisation, DPmonetization), слой синхронизации (DPmeta, `DPmeta:M-12`, D-27) и периферия — проекты с работой в октябре 2026 (место `periphery`, D-46, `DPmeta:M-16`); архив — вне её (D-26) |
 | проект | репозиторий экосистемы с записью в реестре (§7.1) |
 | подсистема «AI» | DP_AI_Orcestrator внутри DPmetaApp, каталог `dpai/` (D-27, D-28): задачи, аккаунты, execution targets, сессии Claude Code, контекст, проверка; свои решения `DP_AI_Orcestrator:D-NN` и проверки |
 | ядро | модули `dpai/` ниже `orchestrator` — `core`, `storage`, `security`, `notifications`: результат и диагностика, ID, время, JSON, хеши, события, журнал, одобрения (D-28); общее для всех подсистем |
