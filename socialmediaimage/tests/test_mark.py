@@ -170,6 +170,22 @@ class ImageMark(unittest.TestCase):
         self.assertEqual(changed.tolist(), [5 * im.TILE[1] + 7])
         self.assertTrue(has.all())
 
+    def test_match_passes_unblurred_mark_to_copy_sums(self):
+        """И сам `match` отдаёт в `copy_sums` неразмытую часть метки — на каждой попытке масштаба
+        (прежняя статистика размывала её до вызова: независимая проверка 31.10.2026)."""
+        import numpy as np
+        im = self.image
+        _, m = im.expected(self.src, KEY)
+        buf = io.BytesIO()
+        self.open(self.src).convert("RGB").resize((128, 85), Image.LANCZOS).save(buf, "JPEG", quality=85)
+        with mock.patch.object(im, "copy_sums", wraps=im.copy_sums) as spy:
+            im.match(self.open(buf.getvalue()), self.src, KEY)
+        self.assertGreaterEqual(spy.call_count, 2)
+        for call in spy.call_args_list:
+            mc, dy, dx = call.args[2:5]
+            h, w = mc.shape
+            self.assertTrue(np.array_equal(mc, m[dy:dy + h, dx:dx + w]), f"попытка {mc.shape}, ({dy}, {dx})")
+
     def test_not_found_without_mark_or_with_other_key(self):
         self.assertFalse(self.image.match(self.open(self.src), self.src, KEY).found)
         self.assertFalse(self.image.match(self.open(self.image.embed(self.src, OTHER)), self.src, KEY).found)
