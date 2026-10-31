@@ -12,8 +12,8 @@
   не меняются.
 
 Читает (`match`) сверкой с исходником из реестра: копию приводят к размеру
-исходника, находят её место в нём, остаток (копия − исходник) сравнивают с
-ожидаемой меткой — по местам плитки, знаковым тестом. Без метки знак
+исходника, находят её место в нём, остаток (копия − исходник, прошедший то же
+уменьшение) сравнивают с ожидаемой меткой — по местам плитки, знаковым тестом. Без метки знак
 совпадения на каждом месте — монетка, поэтому вероятность ложной находки
 считается точно (биномиально). Без ключа метку не поставить и не проверить.
 
@@ -49,6 +49,7 @@ EDGE_FULL = 24.0  # градиент яркости (уровней на пик�
 CAP = 4.0  # предел поправки пикселя, уровней из 255
 CONTRAST = 0.10  # предел поправки — доля местного контраста 3×3
 MIN_SIDE = 32  # копия меньше — не сверяется (мест плитки слишком мало)
+ASPECT_TOL = 0.02  # пропорция копии в этих пределах от исходника — пробуется и вся картинка, без обрезки
 SCREEN_MIN = 96  # картинка в снимке экрана меньше (по короткой стороне, px) — не ищется
 SCREEN_NCC = 0.6  # сходство по содержимому ниже — картинки в снимке нет
 COARSE_SIDE = 480  # длинная сторона снимка на грубом шаге поиска, px
@@ -409,9 +410,33 @@ def match_screen(img: Image.Image, original: bytes, key: bytes) -> Match:
     return _screen(_luma(_rgb(img if img.mode in MODES else img.convert("RGB"))[0]), y0, m)
 
 
+def _copy_residual(sy: np.ndarray, y0c: np.ndarray, size: tuple) -> np.ndarray:
+    """Остаток копии, приведённой к размеру исходника (sy), против его части y0c. Копия была
+    размера size — исходник проходит то же уменьшение и обратно, остаток — тоже, а метка — нет
+    (как у снимка экрана, `match_screen`): сумма места плитки зависит только от его знаков, и
+    вероятность точная; вычитать так же размытый исходник — убрать из остатка его детали,
+    которых в уменьшенной копии нет (иначе они глушат метку)."""
+    h, w = sy.shape
+    if size == (w, h):
+        return sy - y0c
+    yb = _resample(_resample(y0c, size), (w, h))
+    return _resample(_resample(sy - yb, size), (w, h))
+
+
+def copy_sums(sy: np.ndarray, y0c: np.ndarray, mc: np.ndarray, dy: int, dx: int,
+              size: tuple) -> tuple[np.ndarray, np.ndarray]:
+    """Суммы мест плитки для копии: `_copy_residual` против неразмытой части метки mc — сумма
+    места зависит только от его знаков (как `screen_sums` у снимка)."""
+    return _sums(_copy_residual(sy, y0c, size), mc, dy, dx)
+
+
 def match(img: Image.Image, original: bytes, key: bytes) -> Match:
     """Сверить копию с исходником: масштаб — 1:1 или по ширине/высоте исходника; место —
-    взаимной корреляцией; метка проходит то же уменьшение, что и копия (согласованный фильтр).
+    взаимной корреляцией; остаток — `_copy_residual` (метка не размывается: вероятность точная).
+    Копия всей картинки, у которой пропорция чуть другая (стороны округлены или уменьшены
+    порознь, расхождение не больше ASPECT_TOL), — ещё и прямо к размеру исходника: общий
+    масштаб по одной стороне сдвигал бы её к другому краю или выводил за исходник, и метка
+    терялась. Обрезанной копии эта попытка просто не даёт находки.
     Не нашлось — копия, может быть, снимок экрана с картинкой внутри: `match_screen`. Поправка
     на перебор (Бонферрони) считает и снимок, даже когда до него не дошло: иначе «сначала
     копия, потом снимок» давало бы ложную находку чаще порога."""
@@ -420,17 +445,19 @@ def match(img: Image.Image, original: bytes, key: bytes) -> Match:
     w, h = img.size
     rgb = _rgb(img if img.mode in MODES else img.convert("RGB"))[0]
     best, best_p, tried = Match(0, 0, 1.0, 1.0, (0, 0), 0.0), 2.0, 0
+    tries = []  # (масштаб, размер копии у исходника)
     for sc in sorted({1.0, round(W / w, 4), round(H / h, 4)}):
         nw, nh = round(w * sc), round(h * sc)
         if nw > W + 1 or nh > H + 1 or min(nw, nh) < MIN_SIDE:
             continue
-        nw, nh = min(nw, W), min(nh, H)
+        tries.append((sc, (min(nw, W), min(nh, H))))
+    if (W, H) not in [t[1] for t in tries] and min(w, h) >= MIN_SIDE and abs(w * H / (h * W) - 1) <= ASPECT_TOL:
+        tries.append((round(W / w, 4), (W, H)))  # вся картинка, стороны уменьшены порознь
+    for sc, (nw, nh) in tries:
         sy = _luma(rgb) if (nw, nh) == (w, h) else _resample(_luma(rgb), (nw, nh))
-        dy, dx = _place(sy, y0)
-        mm = m[dy:dy + nh, dx:dx + nw]
-        if (nw, nh) != (w, h):
-            mm = _resample(_resample(mm, (w, h)), (nw, nh))
-        k, n = _cells(sy - y0[dy:dy + nh, dx:dx + nw], mm, dy, dx)
+        dy, dx = (0, 0) if (nw, nh) == (W, H) else _place(sy, y0)
+        c, has = copy_sums(sy, y0[dy:dy + nh, dx:dx + nw], m[dy:dy + nh, dx:dx + nw], dy, dx, (w, h))
+        k, n = int((c[has] > 0).sum()), int(has.sum())
         tried += 1
         p = binom_tail(n, k) if n else 1.0
         if p < best_p:
