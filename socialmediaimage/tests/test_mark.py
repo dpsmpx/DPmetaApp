@@ -130,7 +130,7 @@ class ImageMark(unittest.TestCase):
 
     def test_found_after_downscale_to_third(self):
         """Уменьшение до трети + JPEG 85: исходник проходит то же уменьшение, что и копия, — его
-        детали не глушат метку (до 31.10.2026 — p ≈ 3e-3, не находка); без метки — не находка."""
+        детали не глушат метку (до 31.10.2026 — p ≈ 1e-4, не находка); без метки — не находка."""
         third = (128, 85)
         for data, found in ((self.marked, True), (self.src, False)):
             buf = io.BytesIO()
@@ -138,6 +138,37 @@ class ImageMark(unittest.TestCase):
             mt = self.image.match(self.open(buf.getvalue()), self.src, KEY)
             self.assertEqual(mt.found, found, f"p={mt.p:.1e}")
             self.assertFalse(mt.screen)
+
+    def test_found_when_sides_were_resized_apart(self):
+        """Стороны уменьшены порознь (129×87 из 384×256, пропорция — на 1 % другая): общий масштаб
+        по ширине выводит высоту за исходник, по высоте — сдвигает край; прямо к размеру исходника —
+        находка (до 31.10.2026 — p ≈ 0,08). Без метки — не находка."""
+        for data, found in ((self.marked, True), (self.src, False)):
+            buf = io.BytesIO()
+            self.open(data).convert("RGB").resize((129, 87), Image.LANCZOS).save(buf, "JPEG", quality=85)
+            mt = self.image.match(self.open(buf.getvalue()), self.src, KEY)
+            self.assertEqual(mt.found, found, f"p={mt.p:.1e}")
+
+    def test_copy_place_sum_depends_only_on_its_own_signs(self):
+        """Копия, как и снимок: сумма места зависит только от его знаков — без метки знаки мест —
+        независимые монетки, вероятность точная. Размытая метка (прежняя статистика копии) меняла
+        суммы соседних мест. Перевернуть знаки одного места — меняется сумма только его."""
+        import numpy as np
+        im = self.image
+        buf = io.BytesIO()
+        self.open(self.src).convert("RGB").resize((128, 85), Image.LANCZOS).save(buf, "JPEG", quality=85)
+        copy = self.open(buf.getvalue()).convert("RGB")
+        y0 = im._luma(im._rgb(self.open(self.src))[0])
+        H, W = y0.shape
+        sy = im._resample(im._luma(im._rgb(copy)[0]), (W, H))
+        sg = im.signs(KEY, self.src)
+        c1, has = im.copy_sums(sy, y0, im.mark_delta(y0, sg), 0, 0, copy.size)
+        flip = sg.copy()
+        flip[5, 7] *= -1
+        c2, _ = im.copy_sums(sy, y0, im.mark_delta(y0, flip), 0, 0, copy.size)
+        changed = np.flatnonzero(~np.isclose(c1, c2, rtol=0, atol=1e-9))
+        self.assertEqual(changed.tolist(), [5 * im.TILE[1] + 7])
+        self.assertTrue(has.all())
 
     def test_not_found_without_mark_or_with_other_key(self):
         self.assertFalse(self.image.match(self.open(self.src), self.src, KEY).found)
