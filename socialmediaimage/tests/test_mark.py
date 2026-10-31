@@ -128,6 +128,17 @@ class ImageMark(unittest.TestCase):
         half = self.open(self.marked).resize((192, 128), Image.LANCZOS)
         self.assertTrue(self.image.match(half, self.src, KEY).found, "уменьшение вдвое")
 
+    def test_found_after_downscale_to_third(self):
+        """Уменьшение до трети + JPEG 85: исходник проходит то же уменьшение, что и копия, — его
+        детали не глушат метку (до 31.10.2026 — p ≈ 3e-3, не находка); без метки — не находка."""
+        third = (128, 85)
+        for data, found in ((self.marked, True), (self.src, False)):
+            buf = io.BytesIO()
+            self.open(data).convert("RGB").resize(third, Image.LANCZOS).save(buf, "JPEG", quality=85)
+            mt = self.image.match(self.open(buf.getvalue()), self.src, KEY)
+            self.assertEqual(mt.found, found, f"p={mt.p:.1e}")
+            self.assertFalse(mt.screen)
+
     def test_not_found_without_mark_or_with_other_key(self):
         self.assertFalse(self.image.match(self.open(self.src), self.src, KEY).found)
         self.assertFalse(self.image.match(self.open(self.image.embed(self.src, OTHER)), self.src, KEY).found)
