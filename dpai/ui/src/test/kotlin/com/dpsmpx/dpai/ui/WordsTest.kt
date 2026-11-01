@@ -4,6 +4,7 @@ import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.state.AccountState
 import com.dpsmpx.dpai.core.state.SessionState
 import com.dpsmpx.dpai.core.state.TaskState
+import com.dpsmpx.dpai.core.text.Words
 import com.dpsmpx.dpai.tasks.Priority
 import com.dpsmpx.dpai.tasks.TaskClass
 import kotlin.test.Test
@@ -50,6 +51,33 @@ class WordsTest {
         assertTrue(missingPriorities.isEmpty(), "у приоритета нет слова: ${missingPriorities.map { it.name }}")
         val missingClasses = TaskClass.entries.filter { Words.taskClass(it.name) == it.name }
         assertTrue(missingClasses.isEmpty(), "у класса задачи нет слова: ${missingClasses.map { it.name }}")
+    }
+
+    /**
+     * D-89: всё, что раньше было сырым на сводке, в чате, листе задачи,
+     * «Проверить» и выводе `dpai`, — со словом. Тест — здесь, в `ui`: он
+     * видит перечисления всех модулей, а словарь — в ядре.
+     */
+    @Test
+    fun everyScreenEnumHasAWord() {
+        fun <E : Enum<E>> missing(values: Array<E>, word: (String) -> String) = values.filter { word(it.name) == it.name }.map { it.name }
+        assertEquals(emptyList(), missing(com.dpsmpx.dpai.monitoring.SystemHealth.entries.toTypedArray(), Words::health), "здоровье системы")
+        assertEquals(emptyList(), missing(com.dpsmpx.dpai.monitoring.DisplayState.entries.toTypedArray(), Words::display), "вид строки сессии")
+        assertEquals(emptyList(), missing(com.dpsmpx.dpai.execution.claude.TurnStatus.entries.toTypedArray(), Words::turn), "итог хода")
+        assertEquals(emptyList(), missing(com.dpsmpx.dpai.tasks.FindingSeverity.entries.toTypedArray(), Words::severity), "строгость находки ревью")
+        assertEquals(emptyList(), missing(com.dpsmpx.dpai.execution.target.TargetType.entries.toTypedArray(), Words::targetType), "вид target")
+        assertEquals(emptyList(), missing(com.dpsmpx.dpai.notifications.RequestKind.entries.toTypedArray(), Words::requestKind), "вид запроса")
+        assertEquals(emptyList(), missing(com.dpsmpx.dpai.core.operation.OperationStatus.entries.toTypedArray(), Words::operation), "итог команды")
+    }
+
+    /** Длительность — по-русски, а не `Duration.toString()` («1m»). */
+    @Test
+    fun durationIsRussian() {
+        assertEquals("45 с", Words.duration(kotlin.time.Duration.parse("45s")))
+        assertEquals("1 мин", Words.duration(kotlin.time.Duration.parse("1m")))
+        assertEquals("2 ч 5 мин", Words.duration(kotlin.time.Duration.parse("2h 5m")))
+        assertEquals("3 ч", Words.duration(kotlin.time.Duration.parse("3h")))
+        assertEquals("1 дн 2 ч", Words.duration(kotlin.time.Duration.parse("26h")))
     }
 
     /** Сами слова — по-русски и не идентификаторами (D-14). */

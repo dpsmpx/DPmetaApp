@@ -63,13 +63,13 @@ import androidx.compose.ui.unit.dp
 import com.dpsmpx.dpai.core.diagnostics.Redactor
 import com.dpsmpx.dpai.core.ids.SessionId
 import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.core.text.Words
 import com.dpsmpx.dpai.ui.DashboardScreen
 import com.dpsmpx.dpai.ui.RequestCard
 import com.dpsmpx.dpai.ui.SessionScreen
 import com.dpsmpx.dpai.ui.TaskBoard
 import com.dpsmpx.dpai.ui.TaskCard
 import com.dpsmpx.dpai.ui.Tone
-import com.dpsmpx.dpai.ui.Words
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive

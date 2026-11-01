@@ -32,6 +32,7 @@ import com.dpsmpx.dpai.core.ids.IdGenerator
 import com.dpsmpx.dpai.core.ids.IdKinds
 import com.dpsmpx.dpai.core.ids.TaskId
 import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.core.text.Words
 import com.dpsmpx.dpai.orchestrator.commands.Command
 import com.dpsmpx.dpai.orchestrator.review.Review
 import com.dpsmpx.dpai.tasks.FindingSeverity
@@ -41,7 +42,6 @@ import com.dpsmpx.dpai.tasks.TaskClass
 import com.dpsmpx.dpai.ui.ReviewLine
 import com.dpsmpx.dpai.ui.TaskAction
 import com.dpsmpx.dpai.ui.TaskDetail
-import com.dpsmpx.dpai.ui.Words
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch

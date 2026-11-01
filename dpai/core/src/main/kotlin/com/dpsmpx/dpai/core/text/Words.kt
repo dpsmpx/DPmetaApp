@@ -1,4 +1,6 @@
-package com.dpsmpx.dpai.ui
+package com.dpsmpx.dpai.core.text
+
+import kotlin.time.Duration
 
 /**
  * Словарь «идентификатор → слово для человека» (D-88; D-14: интерфейс
@@ -14,6 +16,10 @@ package com.dpsmpx.dpai.ui
  * Неизвестный идентификатор показывается как есть, а не теряется: новый
  * код без слова в словаре виден в интерфейсе, и это повод его добавить
  * (D-13: неизвестное — не ноль).
+ *
+ * Живёт в ядре (D-89): тексты для человека собирают и экраны (`ui`), и
+ * оркестратор (запросы, уведомления, чат), и команда `dpai` (`cli`).
+ * Словарь — на строках идентификаторов, поэтому ни от чего не зависит.
  */
 object Words {
     /** Состояние задачи — короткой строкой в карточке и листе. */
@@ -62,6 +68,86 @@ object Words {
         "ERROR" -> "ошибка"
         "DISABLED" -> "выключен"
         else -> state
+    }
+
+    /** Вид строки сессии на экране: состояние сессии и «молчит» (`STALE`, D-13). */
+    fun display(state: String): String = when (state) {
+        "STALE" -> "молчит — давно нет событий"
+        else -> session(state)
+    }
+
+    /** Здоровье системы на сводке (ТЗ, §79). */
+    fun health(h: String): String = when (h) {
+        "HEALTHY" -> "всё в порядке"
+        "DEGRADED" -> "работает с ограничениями"
+        "RECOVERY" -> "восстанавливается после перезапуска"
+        "BLOCKED" -> "остановлено — нужен человек"
+        "STORAGE_ERROR" -> "сбой хранилища"
+        "EXECUTION_UNAVAILABLE" -> "исполнители недоступны"
+        "SECURITY_LOCKDOWN" -> "заблокировано по безопасности"
+        else -> h
+    }
+
+    /** Итог хода Claude. */
+    fun turn(status: String): String = when (status) {
+        "COMPLETED" -> "завершён"
+        "FAILED" -> "сорвался"
+        "INCOMPLETE" -> "не завершён"
+        else -> status
+    }
+
+    /** Строгость находки ревью (D-73). */
+    fun severity(s: String): String = when (s) {
+        "BLOCKING" -> "блокирует"
+        "MAJOR" -> "серьёзное"
+        "MINOR" -> "мелкое"
+        "NOTE" -> "заметка"
+        else -> s
+    }
+
+    /** Вид target: где идёт работа. */
+    fun targetType(t: String): String = when (t) {
+        "LOCAL" -> "этот компьютер"
+        "TERMUX_LOCAL" -> "Termux на телефоне"
+        "LINUX_SSH" -> "Linux по SSH"
+        "WINDOWS_REMOTE" -> "Windows по SSH"
+        "MOCK" -> "проверочный"
+        "IN_APP" -> "Linux в приложении"
+        else -> t
+    }
+
+    /** Вид запроса человеку (D-44). */
+    fun requestKind(k: String): String = when (k) {
+        "QUESTION" -> "вопрос"
+        "CONFIRMATION" -> "подтверждение"
+        "DESTRUCTIVE_CONFIRMATION" -> "опасное действие"
+        "TEXT_INPUT" -> "нужен текст"
+        "CHOICE" -> "выбор"
+        "ACKNOWLEDGEMENT" -> "к сведению"
+        "USER_RESOLUTION" -> "решение"
+        else -> k
+    }
+
+    /** Итог команды (D-06) — для вывода `dpai`. */
+    fun operation(status: String): String = when (status) {
+        "SUCCEEDED" -> "принято"
+        "SUCCEEDED_WITH_WARNINGS" -> "принято с замечаниями"
+        "FAILED" -> "не принято"
+        else -> status
+    }
+
+    /**
+     * Длительность по-русски: «45 с», «3 мин», «2 ч 5 мин», «3 дн 4 ч» —
+     * вместо `Duration.toString()` («1m», «2h 5m»).
+     */
+    fun duration(d: Duration): String {
+        val s = d.inWholeSeconds.coerceAtLeast(0)
+        return when {
+            s < 60 -> "$s с"
+            s < 3600 -> "${s / 60} мин"
+            s < 86_400 -> "${s / 3600} ч" + (s % 3600 / 60).let { if (it > 0) " $it мин" else "" }
+            else -> "${s / 86_400} дн" + (s % 86_400 / 3600).let { if (it > 0) " $it ч" else "" }
+        }
     }
 
     fun priority(p: String): String = when (p) {
