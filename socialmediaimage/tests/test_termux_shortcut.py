@@ -101,6 +101,14 @@ class TermuxShortcut(unittest.TestCase):
         self.assertIn("сайт не проверен", out)
         self.assertEqual(calls, [])
 
+    def test_refuses_never_checked_site(self):
+        """Запись в репозитории с самого начала: commit null — проверки ещё не было."""
+        self.commit("data/website/site-check.json", '{"commit": null, "level": null, "checked": null}\n', "не проверялся")
+        rc, out, calls = self.shortcut("да")
+        self.assertEqual(rc, 1)
+        self.assertIn("нет проверенного коммита", out)
+        self.assertEqual(calls, [])
+
     def test_refuses_changes_after_check(self):
         self.commit("README.md", "изменено после проверки\n", "правка")
         rc, out, calls = self.shortcut("да")
