@@ -89,6 +89,7 @@ class ControllerService : Service() {
             val device = AppLogs.device(app) { wake?.isHeld }
             // Первая сводка и проверка sshd — в первом такте (поток службы: сеть в главном потоке запрещена).
             var lastSummary = Clock.SYSTEM.monotonicNanos() - TimeUnit.MINUTES.toNanos(1)
+            var lastUsage = Clock.SYSTEM.monotonicNanos() - TimeUnit.MINUTES.toNanos(1)
             timer = Executors.newSingleThreadScheduledExecutor().also { t ->
                 t.scheduleWithFixedDelay({
                     // Targets с каталогом Claude не осталось — контроллеру нечего опрашивать: служба уходит,
@@ -103,6 +104,13 @@ class ControllerService : Service() {
                     // Сбой такта — в журнал приложения, а не молча (D-43): контур идёт дальше.
                     val ok = try {
                         model.step(null).notifications.forEach(notifier::show)
+                        // Лимиты слотов с автообновлением — раз в минуту, и без открытой сводки.
+                        val auto = UsageAuto.enabled(app)
+                        val tick = Clock.SYSTEM.monotonicNanos()
+                        if (auto.isNotEmpty() && tick - lastUsage >= TimeUnit.MILLISECONDS.toNanos(UsageAuto.EVERY_MS)) {
+                            lastUsage = tick
+                            model.refreshUsage(auto)
+                        }
                         // Копия настроек — после изменения и раз в час (D-51).
                         SettingsBackups.tick(app, Controller.get(app.filesDir, null))
                         true

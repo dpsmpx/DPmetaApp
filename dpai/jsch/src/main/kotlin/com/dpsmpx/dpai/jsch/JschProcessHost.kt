@@ -15,13 +15,11 @@ import com.dpsmpx.dpai.execution.target.SshEndpoint
 import com.dpsmpx.dpai.execution.target.TargetPlatform
 import com.jcraft.jsch.ChannelExec
 import com.jcraft.jsch.Identity
-import com.jcraft.jsch.JSch
 import com.jcraft.jsch.JSchChangedHostKeyException
 import com.jcraft.jsch.JSchException
 import com.jcraft.jsch.JSchUnknownHostKeyException
 import com.jcraft.jsch.Session
 import java.io.ByteArrayInputStream
-import java.io.File
 import java.io.InputStream
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -41,9 +39,11 @@ import kotlin.time.Duration.Companion.seconds
  * - `ServerAlive` — обрыв обнаруживается.
  *
  * Окружение и рабочий каталог задаёт агент на target — здесь такой запрос
- * `UNSUPPORTED`. Сюда — только короткие вызовы агента: остановка канала
- * не обязана остановить удалённую команду. Отказ SSH приходит из
- * [start], а не кодом 255, как у клиента OpenSSH.
+ * `UNSUPPORTED`. Сюда — только вызовы агента: остановка канала не обязана
+ * остановить удалённую команду. Короткие вызовы кончаются сами, поток
+ * `follow` (D-76) — тоже: агент замечает закрытый канал на следующей
+ * строке. Отказ SSH приходит из [start], а не кодом 255, как у клиента
+ * OpenSSH.
  */
 class JschProcessHost(
     private val endpoint: SshEndpoint,
@@ -85,37 +85,9 @@ class JschProcessHost(
         }
     }
 
-    private fun connect(): Outcome<Session> {
-        val jsch = JSch()
-        val home = System.getProperty("user.home")
-        val knownHosts = endpoint.knownHostsFile ?: home?.let { File(it, ".ssh/known_hosts").path }
-        if (knownHosts == null || !File(knownHosts).isFile) {
-            return Outcome.failure(DiagCode.SSH_HOST_KEY_REJECTED, "нет файла известных хостов: ключ хоста не проверить (T2)", subject)
-        }
-        return try {
-            jsch.setKnownHosts(knownHosts)
-            if (identities.isNotEmpty()) {
-                identities.forEach { jsch.addIdentity(it, null) }
-            } else {
-                val files = endpoint.identityFile?.let(::listOf)
-                    ?: DEFAULT_IDENTITIES.mapNotNull { n -> home?.let { File(it, ".ssh/$n").takeIf(File::isFile)?.path } }
-                files.forEach(jsch::addIdentity)
-            }
-            val session = jsch.getSession(endpoint.user, endpoint.host, endpoint.port)
-            session.setConfig("StrictHostKeyChecking", "yes")
-            session.setConfig("PreferredAuthentications", "publickey")
-            session.setServerAliveInterval(15_000)
-            session.setServerAliveCountMax(3)
-            session.connect(connectTimeout.inWholeMilliseconds.toInt())
-            Outcome.success(session)
-        } catch (e: JSchException) {
-            Outcome.failure(classify(e), e.message?.take(300) ?: "отказ SSH", subject)
-        }
-    }
+    private fun connect(): Outcome<Session> = JschConnect.open(endpoint, identities, connectTimeout, subject)
 
     companion object {
-        private val DEFAULT_IDENTITIES = listOf("id_ed25519", "id_ecdsa", "id_rsa")
-
         /** Отказ JSch → код: ключ хоста, вход, связь; неопознанное — отказ связи (D-05). */
         fun classify(e: JSchException): DiagCode {
             val text = e.message.orEmpty()

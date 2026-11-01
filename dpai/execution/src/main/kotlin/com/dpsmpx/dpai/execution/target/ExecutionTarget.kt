@@ -7,9 +7,10 @@ import com.dpsmpx.dpai.core.result.Outcome
 /**
  * Вид execution target (D-26; `docs/EXECUTION_MODEL.md`, §1). `LOCAL` —
  * машина самого контроллера (`cli` на Linux или Windows), без SSH; `MOCK` —
- * для тестов ядра без процессов.
+ * для тестов ядра без процессов; `IN_APP` — Linux-среда в самом
+ * приложении, агент — в его процессе, без SSH (D-75; `docs/EXECUTION_MODEL.md`, §8).
  */
-enum class TargetType { LOCAL, TERMUX_LOCAL, LINUX_SSH, WINDOWS_REMOTE, MOCK }
+enum class TargetType { LOCAL, TERMUX_LOCAL, LINUX_SSH, WINDOWS_REMOTE, MOCK, IN_APP }
 
 /** Оболочка, которой SSH-сервер target исполняет команду (`RemoteShell`). */
 enum class TargetPlatform { POSIX, WINDOWS }

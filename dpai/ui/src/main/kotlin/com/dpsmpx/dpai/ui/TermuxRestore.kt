@@ -141,13 +141,14 @@ object TermuxRestore {
             TargetPlatform.WINDOWS -> {
                 val script = "\$ak = \"\$env:ProgramData\\ssh\\administrators_authorized_keys\"; " +
                     "\$keep = @(if (Test-Path \$ak) { Get-Content \$ak | Where-Object { \$_ -notmatch ' dpai-android\$' } }); " +
-                    "Set-Content \$ak (\$keep + 'from=\"100.64.0.0/10\" $key') -Encoding ascii; " +
+                    "Set-Content \$ak (\$keep + 'from=\"${PcSetup.PRIVATE_NETS}\" $key') -Encoding ascii; " +
                     "icacls \$ak /inheritance:r /grant Administrators:F /grant SYSTEM:F | Out-Null; 'dpai-reauthorized'"
                 "powershell -NoProfile -NonInteractive -EncodedCommand " + Base64.getEncoder().encodeToString(script.toByteArray(Charsets.UTF_16LE))
             }
             TargetPlatform.POSIX -> {
                 val script = "mkdir -p ~/.ssh && chmod 700 ~/.ssh && { sed -i '/ dpai-android\$/d' ~/.ssh/authorized_keys 2>/dev/null; true; } && " +
-                    "echo '$key' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && echo dpai-reauthorized"
+                    // Только из частных сетей, как при настройке (D-84): восстановление не снимает это ограничение.
+                    "echo 'from=\"${PcSetup.PRIVATE_NETS}\" $key' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && echo dpai-reauthorized"
                 "echo " + Base64.getEncoder().encodeToString(script.toByteArray()) + " | base64 -d | sh"
             }
         }

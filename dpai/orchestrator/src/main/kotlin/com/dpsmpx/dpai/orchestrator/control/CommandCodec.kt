@@ -17,6 +17,7 @@ import com.dpsmpx.dpai.core.serialization.JsonValue
 import com.dpsmpx.dpai.notifications.RequestKind
 import com.dpsmpx.dpai.orchestrator.commands.Command
 import com.dpsmpx.dpai.tasks.Priority
+import com.dpsmpx.dpai.tasks.ReviewRole
 import com.dpsmpx.dpai.tasks.TaskClass
 import com.dpsmpx.dpai.tasks.TaskPolicy
 import kotlin.time.Duration.Companion.minutes
@@ -46,13 +47,17 @@ object CommandCodec {
                 str("title", c.title); str("objective", c.objective); str("priority", c.priority.name)
                 str("taskClass", c.policy.taskClass.name); str("model", c.policy.model); str("effort", c.policy.effort)
                 c.policy.maxBudgetUsdCents?.let { f["budgetCents"] = JsonNumber.of(it) }
-                if (c.dependencies.isNotEmpty()) f["dependencies"] = JsonArray(c.dependencies.map { it.value }.sorted().map(::JsonString))
-                c.scope?.let { sc -> f["scope"] = JsonArray(sc.sorted().map(::JsonString)) }
+                if (c.policy.reviews.isNotEmpty()) f["reviews"] = roles(c.policy.reviews)
+                if (c.scope.isNotEmpty()) f["scope"] = JsonArray(c.scope.sorted().map(::JsonString))
+                if (c.dependencies.isNotEmpty()) f["dependsOn"] = JsonArray(c.dependencies.map { JsonString(it.value) }.sortedBy { it.value })
             }
+            is Command.SetScope -> { id("task", c.task); f["scope"] = JsonArray(c.scope.sorted().map(::JsonString)) }
+            is Command.SetDependencies -> { id("task", c.task); f["dependsOn"] = JsonArray(c.dependencies.map { JsonString(it.value) }.sortedBy { it.value }) }
             is Command.SetPriority -> { id("task", c.task); str("priority", c.priority.name) }
             is Command.SetPolicy -> {
                 id("task", c.task); str("taskClass", c.taskClass.name); str("model", c.model); str("effort", c.effort)
                 c.maxBudgetUsdCents?.let { f["budgetCents"] = JsonNumber.of(it) }
+                c.reviews?.let { f["reviews"] = roles(it) }
             }
             is Command.Hold -> id("task", c.task)
             is Command.Resume -> id("task", c.task)
@@ -61,8 +66,12 @@ object CommandCodec {
             is Command.Verify -> id("task", c.task)
             is Command.Waive -> { id("task", c.task); str("reason", c.reason) }
             is Command.StopSession -> id("session", c.session)
+            is Command.RunFirst -> id("task", c.task)
+            is Command.Reassign -> id("session", c.session)
             is Command.SendToSession -> { id("session", c.session); str("text", c.text); str("model", c.model); str("effort", c.effort) }
             is Command.SetNearPercent -> { id("subscription", c.subscription); f["percent"] = JsonNumber.of(c.percent) }
+            is Command.SetRotation -> { id("subscription", c.subscription); f["allowed"] = JsonBool(c.allowed) }
+            is Command.MoveTask -> { id("task", c.task); id("target", c.target) }
             is Command.SetTargetEnabled -> { id("target", c.target); f["enabled"] = JsonBool(c.enabled) }
             is Command.SetSlotEnabled -> { id("slot", c.slot); f["enabled"] = JsonBool(c.enabled) }
             is Command.SetSessionLimit -> c.limit?.let { f["limit"] = JsonNumber.of(it) }
@@ -73,6 +82,8 @@ object CommandCodec {
         if (confirmed) f["confirmed"] = JsonBool(true)
         return JsonObject(f)
     }
+
+    private fun roles(rs: Set<ReviewRole>) = JsonArray(rs.sorted().map { JsonString(it.name) })
 
     /** Имя в JSON: операция, у «свежей сессии» — своё. */
     fun name(c: Command): String = c.operation
@@ -89,9 +100,19 @@ object CommandCodec {
         val confirmed = if (f.has("confirmed")) f.boolean("confirmed") ?: false else false
         fun task() = f.string("task")?.let { IdKinds.TASK.parse(it).valueOrNull() ?: null.also { d.error(DiagCode.ID_INVALID, "ожидался TaskId", "$.task") } }
         fun session() = f.string("session")?.let { IdKinds.SESSION.parse(it).valueOrNull() ?: null.also { d.error(DiagCode.ID_INVALID, "ожидался SessionId", "$.session") } }
-        // Необязательный массив строк: нет поля — `null`, не пустой список.
-        fun strings(k: String): List<String>? = if (!f.has(k)) null else f.array(k)?.items?.mapIndexedNotNull { i, v ->
-            (v as? JsonString)?.value ?: null.also { d.error(DiagCode.VALUE_INVALID, "ожидалась строка", "$.$k[$i]") }
+        // Массив строк: нет поля и не обязателен — пусто; не строки — ошибка с местом.
+        fun strings(k: String, required: Boolean): List<String>? {
+            if (!required && !f.has(k)) return emptyList()
+            val a = f.array(k) ?: return null
+            return a.items.mapIndexedNotNull { i, v -> (v as? JsonString)?.value ?: null.also { d.error(DiagCode.VALUE_INVALID, "ожидалась строка", "$.$k[$i]") } }
+        }
+        fun taskIds(k: String, required: Boolean): Set<com.dpsmpx.dpai.core.ids.TaskId>? = strings(k, required)?.mapNotNull { s ->
+            IdKinds.TASK.parse(s).valueOrNull() ?: null.also { d.error(DiagCode.ID_INVALID, "ожидался TaskId", "$.$k") }
+        }?.toSet()
+        // Роли ревью (D-73): имена ролей; неизвестная — ошибка с местом, а не пропуск.
+        fun reviews(required: Boolean): Set<ReviewRole>? = strings("reviews", required)?.let { names ->
+            val roles = names.mapIndexedNotNull { i, n -> ReviewRole.entries.firstOrNull { it.name == n } ?: null.also { d.error(DiagCode.VALUE_INVALID, "неизвестная роль ревью: $n", "$.reviews[$i]") } }
+            if (roles.size == names.size) roles.toSet() else null
         }
         fun <E : Enum<E>> enum(k: String, values: Array<E>, required: Boolean = true): E? =
             (if (required) f.string(k) else f.optString(k))?.let { v -> values.firstOrNull { it.name == v } ?: null.also { d.error(DiagCode.VALUE_INVALID, "неизвестное значение", "$.$k") } }
@@ -103,17 +124,23 @@ object CommandCodec {
                 val objective = f.string("objective")
                 val priority = enum("priority", Priority.entries.toTypedArray(), required = false) ?: Priority.NORMAL
                 val cls = enum("taskClass", TaskClass.entries.toTypedArray(), required = false) ?: TaskClass.NORMAL_ENGINEERING
-                val policy = runCatching { TaskPolicy(taskClass = cls, model = f.optString("model"), effort = f.optString("effort"), maxBudgetUsdCents = f.optLong("budgetCents")) }
-                    .getOrElse { d.error(DiagCode.VALUE_INVALID, it.message ?: "политика недопустима", "$"); null }
-                val dependencies = strings("dependencies").orEmpty().mapIndexedNotNull { i, v ->
-                    IdKinds.TASK.parse(v).valueOrNull() ?: null.also { d.error(DiagCode.ID_INVALID, "ожидался TaskId", "$.dependencies[$i]") }
-                }.toSet()
-                val scope = strings("scope")?.toSet()
-                if (title != null && objective != null && policy != null) Command.AddTask(title, objective, priority, policy, dependencies, scope, key) else null
+                val reviews = reviews(required = false)
+                val policy = reviews?.let { r ->
+                    runCatching { TaskPolicy(taskClass = cls, model = f.optString("model"), effort = f.optString("effort"), maxBudgetUsdCents = f.optLong("budgetCents"), reviews = r) }
+                        .getOrElse { d.error(DiagCode.VALUE_INVALID, it.message ?: "политика недопустима", "$"); null }
+                }
+                val scope = strings("scope", required = false)?.toSet()
+                val deps = taskIds("dependsOn", required = false)
+                if (title != null && objective != null && policy != null && scope != null && deps != null) Command.AddTask(title, objective, priority, policy, scope, deps, key) else null
             }
+            "task.scope" -> task()?.let { t -> strings("scope", required = true)?.let { Command.SetScope(t, it.toSet(), key) } }
+            "task.dependencies" -> task()?.let { t -> taskIds("dependsOn", required = true)?.let { Command.SetDependencies(t, it, key) } }
             "task.priority" -> task()?.let { t -> enum("priority", Priority.entries.toTypedArray())?.let { Command.SetPriority(t, it, key) } }
             "task.policy" -> task()?.let { t ->
-                enum("taskClass", TaskClass.entries.toTypedArray())?.let { Command.SetPolicy(t, it, f.optString("model"), f.optString("effort"), f.optLong("budgetCents"), key) }
+                val cls = enum("taskClass", TaskClass.entries.toTypedArray())
+                // Нет поля — роли как были; есть — ровно эти, пустой список снимает все. Неверная роль — ошибка в `d`.
+                val reviews = if (f.has("reviews")) reviews(required = true) else null
+                cls?.let { Command.SetPolicy(t, it, f.optString("model"), f.optString("effort"), f.optLong("budgetCents"), reviews, key) }
             }
             "task.hold" -> task()?.let { Command.Hold(it, key) }
             "task.resume" -> task()?.let { Command.Resume(it, key) }
@@ -122,9 +149,14 @@ object CommandCodec {
             "task.verify" -> task()?.let { Command.Verify(it, key) }
             "task.waive" -> task()?.let { t -> f.string("reason")?.let { Command.Waive(t, it, by, key) } }
             "session.stop" -> session()?.let { Command.StopSession(it, key) }
+            "task.run-first" -> task()?.let { Command.RunFirst(it, key) }
+            "session.reassign" -> session()?.let { Command.Reassign(it, key) }
             "session.send", "session.fresh" -> session()?.let { Command.SendToSession(it, f.optString("text"), f.optString("model"), f.optString("effort"), name == "session.fresh", key) }
             "subscription.near-percent" -> f.string("subscription")?.let { IdKinds.SUBSCRIPTION.parse(it).valueOrNull() }
                 ?.let { s -> f.int("percent")?.let { Command.SetNearPercent(s, it, key) } }
+            "task.move" -> task()?.let { t -> f.string("target")?.let { IdKinds.TARGET.parse(it).valueOrNull() }?.let { Command.MoveTask(t, it, key) } }
+            "subscription.rotation" -> f.string("subscription")?.let { IdKinds.SUBSCRIPTION.parse(it).valueOrNull() }
+                ?.let { s -> f.boolean("allowed")?.let { Command.SetRotation(s, it, key) } }
             "target.enabled" -> f.string("target")?.let { IdKinds.TARGET.parse(it).valueOrNull() }?.let { t -> f.boolean("enabled")?.let { Command.SetTargetEnabled(t, it, key) } }
             "slot.enabled" -> f.string("slot")?.let { IdKinds.ACCOUNT.parse(it).valueOrNull() }?.let { s -> f.boolean("enabled")?.let { Command.SetSlotEnabled(s, it, key) } }
             "control.session-limit" -> Command.SetSessionLimit(f.optLong("limit")?.toInt(), key)

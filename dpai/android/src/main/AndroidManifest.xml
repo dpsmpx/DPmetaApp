@@ -34,7 +34,8 @@
             android:name=".MainActivity"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density|fontScale|locale|layoutDirection"
             android:exported="true"
-            android:launchMode="singleTop">
+            android:launchMode="singleTop"
+            android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -46,6 +47,13 @@
             android:name=".InternalEntry"
             android:exported="false"
             android:targetActivity=".MainActivity" />
+        <!-- Свой терминал к target по SSH (D-71): только из своего экрана; поворот и клавиатура — без пересоздания. -->
+        <activity
+            android:name=".TerminalActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density|fontScale|locale|layoutDirection"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:windowSoftInputMode="adjustResize" />
         <!-- Ответы на запросы — только через PendingIntent своего уведомления (D-44). -->
         <receiver
             android:name=".RequestReceiver"

@@ -1,0 +1,72 @@
+{
+  "config": "multi.config.json",
+  "geo": {
+    "geoip": {
+      "ru": [
+        "198.51.100.0/24"
+      ]
+    }
+  },
+  "cases": [
+    {
+      "query": {
+        "domain": "ads.example.com"
+      },
+      "action": "block",
+      "rule": "ads-block"
+    },
+    {
+      "query": {
+        "domain": "cdn.tracker.example.net"
+      },
+      "action": "block",
+      "rule": "ads-block"
+    },
+    {
+      "query": {
+        "domain": "mail.example.ru"
+      },
+      "action": "direct",
+      "rule": "ru-direct"
+    },
+    {
+      "query": {
+        "ip": "198.51.100.7"
+      },
+      "action": "direct",
+      "rule": "ru-ip-direct"
+    },
+    {
+      "query": {
+        "domain": "www.example.org"
+      },
+      "action": "proxy",
+      "rule": null
+    },
+    {
+      "query": {
+        "domain": "video.example.org",
+        "protocol": "udp",
+        "port": 443
+      },
+      "action": "block",
+      "rule": "quic-block"
+    },
+    {
+      "query": {
+        "domain": "www.example.org",
+        "package": "com.example.bank"
+      },
+      "action": "direct",
+      "rule": null
+    },
+    {
+      "query": {
+        "domain": "www.example.org",
+        "package": "com.example.gosapp"
+      },
+      "action": "direct",
+      "rule": "bank-app-direct"
+    }
+  ]
+}

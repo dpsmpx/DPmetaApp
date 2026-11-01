@@ -1,12 +1,13 @@
 package com.dpsmpx.dpai.ui
 
+import com.dpsmpx.dpai.execution.target.TargetPlatform
 import java.util.Base64
 
 /**
  * Связка «Claude на телефоне — дерево на ПК» (D-53, к D-50) без ручного
  * переноса ключей: приложение уже ходит по SSH и в Termux, и на ПК, поэтому
  * само (1) создаёт в proot Termux ключ, которым Claude Code ходит на ПК,
- * (2) добавляет его открытую строку на ПК — только из сети Tailscale,
+ * (2) добавляет его открытую строку на ПК — только из частных сетей (дом, VPN; D-68),
  * прежняя строка связки заменяется, (3) кладёт в known_hosts proot ключ
  * хоста ПК, который человек уже подтвердил в приложении (D-31), и
  * (4) проверяет вход этим ключом. Здесь — команды и разбор их вывода;
@@ -33,12 +34,27 @@ object WorkspaceLink {
     fun publicKey(stdout: List<String>): String? =
         stdout.asReversed().firstNotNullOfOrNull { PUBLIC.matchEntire(it.trim())?.groupValues?.get(1) }?.let { "$it $COMMENT" }
 
-    /** На ПК (OpenSSH Windows, пользователь — администратор): строка [publicKey] в `administrators_authorized_keys`. */
-    fun pcAuthorize(publicKey: String): List<String> {
+    /**
+     * На ПК: строка [publicKey] — только из частных сетей (D-68, D-84),
+     * прежняя строка связки заменяется. Windows (пользователь —
+     * администратор) — `administrators_authorized_keys`; Linux (D-70) —
+     * `~/.ssh/authorized_keys` пользователя (ревью 17 октября 2026: раньше
+     * была только ветка Windows).
+     */
+    fun pcAuthorize(publicKey: String, platform: TargetPlatform = TargetPlatform.WINDOWS): List<String> {
         require(PUBLIC.matches(publicKey) && publicKey.endsWith(" $COMMENT")) { "не ключ связки" }
+        if (platform == TargetPlatform.POSIX) {
+            val ak = "\$HOME/.ssh/authorized_keys"
+            return listOf(
+                "sh", "-c",
+                "mkdir -p \"\$HOME/.ssh\" && chmod 700 \"\$HOME/.ssh\" && touch \"$ak\" && " +
+                    "{ grep -v ' $COMMENT\$' \"$ak\"; printf '%s\\n' 'from=\"${PcSetup.PRIVATE_NETS}\" $publicKey'; } > \"$ak.dpai-new\" && " +
+                    "mv \"$ak.dpai-new\" \"$ak\" && chmod 600 \"$ak\" && echo dpai-linked",
+            )
+        }
         val script = "\$ak = \"\$env:ProgramData\\ssh\\administrators_authorized_keys\"; " +
             "\$keep = @(if (Test-Path \$ak) { Get-Content \$ak | Where-Object { \$_ -notmatch ' $COMMENT\$' } }); " +
-            "Set-Content \$ak (\$keep + 'from=\"100.64.0.0/10\" $publicKey') -Encoding ascii; " +
+            "Set-Content \$ak (\$keep + 'from=\"${PcSetup.PRIVATE_NETS}\" $publicKey') -Encoding ascii; " +
             "icacls \$ak /inheritance:r /grant Administrators:F /grant SYSTEM:F | Out-Null; 'dpai-linked'"
         val encoded = Base64.getEncoder().encodeToString(script.toByteArray(Charsets.UTF_16LE))
         return listOf("powershell", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded)

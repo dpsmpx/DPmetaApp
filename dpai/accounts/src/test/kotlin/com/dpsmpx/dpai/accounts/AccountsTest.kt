@@ -224,6 +224,95 @@ class AccountsTest {
     }
 
     @Test
+    fun rotationSwitchedOnLaterLetsTheTaskMoveToAnotherSubscription() {
+        // D-56: подписки заведены без ротации (как до решения), затем ротация включена событием.
+        val f = Fixture()
+        val a = f.subscription("A")
+        val b = f.subscription("B")
+        val slotA = f.slot(a, dir = "~/.claude-a")
+        val slotB = f.slot(b, dir = "~/.claude-b")
+        f.login(slotA, email = "a@example.org")
+        f.login(slotB, email = "b@example.org")
+        val task = f.task()
+        val (s1, r1) = f.lease(task)
+        assertEquals(a, r1.valueOrNull()!!.subscription)
+        f.ok(f.accounts.release(f.state, s1, f.now))
+        f.ok(f.accounts.observeLimit(f.state, slotA, LimitWindow.WEEKLY, LimitLevel.REACHED, f.now + 3.hours, f.now))
+        assertContains(f.lease(task).second.errors.single().message, "продолжение чужих задач не разрешено")
+        f.ok(f.accounts.setRotation(f.state, b, true, f.now))
+        assertTrue(f.state.subscriptions.getValue(b).rotationExplicit)
+        assertEquals(emptyList(), f.accounts.setRotation(f.state, b, true, f.now).valueOrNull(), "то же значение — без события")
+        val lease = f.lease(task).second.valueOrNull()!!
+        assertEquals(b, lease.subscription, "недельный предел A — задача продолжает на B")
+        assertTrue(lease.events.any { it is AccountEvent.SubscriptionSwitched })
+        assertEquals(DiagCode.ENTITY_NOT_FOUND, failure(f.accounts.setRotation(f.state, f.ids.next(com.dpsmpx.dpai.core.ids.IdKinds.SUBSCRIPTION), true, f.now)))
+    }
+
+    @Test
+    fun foreignTaskNeverGoesToSubscriptionNearLimitAndMoreHeadroomWins() {
+        // D-57: задача упёршейся подписки не уходит на подписку у предела — даже срочная;
+        // из подходящих — с большим запасом окна.
+        val f = Fixture()
+        val a = f.subscription("A", rotation = true)
+        val b = f.subscription("B", rotation = true)
+        val c = f.subscription("C", rotation = true)
+        val slotA = f.slot(a, dir = "~/.claude-a")
+        val slotB = f.slot(b, dir = "~/.claude-b")
+        val slotC = f.slot(c, dir = "~/.claude-c")
+        f.login(slotA, email = "a@example.org")
+        f.login(slotB, email = "b@example.org")
+        f.login(slotC, email = "c@example.org")
+        f.ok(f.accounts.observeUsage(f.state, slotA, LimitWindow.SESSION, 0.10, null, f.now))
+        f.ok(f.accounts.observeUsage(f.state, slotB, LimitWindow.SESSION, 0.90, null, f.now))
+        f.ok(f.accounts.observeUsage(f.state, slotC, LimitWindow.WEEKLY, 0.40, null, f.now))
+        val task = f.task()
+        val (s1, r1) = f.lease(task)
+        assertEquals(a, r1.valueOrNull()!!.subscription, "новая задача — на подписку с наибольшим запасом")
+        f.ok(f.accounts.release(f.state, s1, f.now))
+        f.ok(f.accounts.observeLimit(f.state, slotA, LimitWindow.SESSION, LimitLevel.REACHED, f.now + 3.hours, f.now))
+        val urgent = f.accounts.lease(f.state, f.ids.next(com.dpsmpx.dpai.core.ids.IdKinds.SESSION), task, f.now, urgent = true).valueOrNull()!!
+        assertEquals(c, urgent.subscription, "B у предела (90 % ≥ 80 %) — чужую задачу не берёт и срочную; C — с запасом")
+        // Только B: задача ждёт, причина названа.
+        val g = Fixture()
+        val ga = g.subscription("A", rotation = true)
+        val gb = g.subscription("B", rotation = true)
+        val ra = g.slot(ga, dir = "~/.claude-a")
+        val rb = g.slot(gb, dir = "~/.claude-b")
+        g.login(ra, email = "a@example.org")
+        g.login(rb, email = "b@example.org")
+        val t = g.task()
+        val (gs, _) = g.lease(t)
+        g.ok(g.accounts.release(g.state, gs, g.now))
+        g.ok(g.accounts.observeUsage(g.state, rb, LimitWindow.SESSION, 0.95, null, g.now))
+        g.ok(g.accounts.observeLimit(g.state, ra, LimitWindow.SESSION, LimitLevel.REACHED, g.now + 3.hours, g.now))
+        val none = g.accounts.lease(g.state, g.ids.next(com.dpsmpx.dpai.core.ids.IdKinds.SESSION), t, g.now, urgent = true)
+        assertContains(assertIs<Outcome.Failure>(none).errors.single().message, "у предела — чужие задачи не берёт")
+    }
+
+    @Test
+    fun byDefaultTaskSwitchesSubscriptionsWithoutLimit() {
+        // D-67: предела числа переходов нет — задача переходит к подписке с запасом столько раз, сколько нужно.
+        val f = Fixture()
+        val a = f.subscription("A", rotation = true)
+        val b = f.subscription("B", rotation = true)
+        val sa = f.slot(a, dir = "~/.claude-a")
+        val sb = f.slot(b, dir = "~/.claude-b")
+        f.login(sa, email = "a@example.org")
+        f.login(sb, email = "b@example.org")
+        val t = f.task()
+        var current = f.lease(t).let { (s, r) -> f.ok(f.accounts.release(f.state, s, f.now)); r.valueOrNull()!!.subscription }
+        repeat(6) {
+            f.ok(f.accounts.observeLimit(f.state, if (current == a) sa else sb, LimitWindow.SESSION, LimitLevel.REACHED, f.now + 3.hours, f.now))
+            val (s, r) = f.lease(t)
+            val lease = r.valueOrNull() ?: error("переход ${it + 1} отклонён: ${(r as Outcome.Failure).errors}")
+            assertTrue(lease.subscription != current)
+            current = lease.subscription
+            f.ok(f.accounts.release(f.state, s, f.now))
+            f.ok(f.accounts.observeSuccess(f.state, if (current == a) sb else sa, f.now))
+        }
+    }
+
+    @Test
     fun errorSeriesCoolsDownAndSuccessClears() {
         val f = Fixture()
         val slot = f.slot(f.subscription())
@@ -260,6 +349,26 @@ class AccountsTest {
         assertEquals(r.valueOrNull()!!.slot, again.valueOrNull()!!.slot)
         assertTrue(again.valueOrNull()!!.events.isEmpty())
         assertEquals(DiagCode.ACCOUNT_LEASE_CONFLICT, failure(f.accounts.lease(f.state, s, f.task(), f.now)))
+    }
+
+    /** D-77: перенесённая задача не идёт на исключённый слот; другого нет — отказ с причиной, а не тот же слот. */
+    @Test
+    fun excludedSlotIsNotLeased() {
+        val f = Fixture()
+        val sub = f.subscription(max = 4)
+        val target = f.target()
+        val a = f.slot(sub, target, "~/.claude-a")
+        val b = f.slot(sub, target, "~/.claude-b")
+        f.login(a)
+        f.login(b)
+        val task = f.task()
+        val chosen = f.accounts.lease(f.state, f.ids.next(IdKinds.SESSION), task, f.now, target, exclude = a)
+        assertEquals(b, chosen.valueOrNull()!!.slot)
+        f.state = Accounts.applyAll(f.state, chosen.valueOrNull()!!.events)
+        val alone = Fixture()
+        val only = alone.slot(alone.subscription(), alone.target())
+        alone.login(only)
+        assertEquals(DiagCode.ACCOUNT_NONE_AVAILABLE, failure(alone.accounts.lease(alone.state, alone.ids.next(IdKinds.SESSION), alone.task(), alone.now, exclude = only)))
     }
 
     @Test

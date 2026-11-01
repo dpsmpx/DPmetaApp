@@ -117,4 +117,13 @@ enum class EventType {
 
     // --- архив задач (D-42) ---
     TASK_ARCHIVE_CHANGED,
+
+    // --- передача задач между подписками при пределе (D-56) ---
+    ACCOUNT_ROTATION_SET,
+
+    // --- ревью задачи (D-73) ---
+    TASK_REVIEW_RECORDED,
+
+    // --- перенос задачи на другой слот (D-77) ---
+    TASK_SLOT_EXCLUDED,
 }

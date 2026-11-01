@@ -7,6 +7,7 @@ import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.Diagnostic
 import com.dpsmpx.dpai.core.diagnostics.DiagnosticCollector
 import com.dpsmpx.dpai.core.diagnostics.Redactor
+import com.dpsmpx.dpai.core.diagnostics.Severity
 import com.dpsmpx.dpai.core.events.EventType
 import com.dpsmpx.dpai.core.events.StreamRef
 import com.dpsmpx.dpai.core.ids.IdGenerator
@@ -26,6 +27,7 @@ import com.dpsmpx.dpai.core.serialization.JsonValue
 import com.dpsmpx.dpai.execution.agent.AgentReply
 import com.dpsmpx.dpai.execution.agent.DoctorReport
 import com.dpsmpx.dpai.execution.agent.ExitReason
+import com.dpsmpx.dpai.execution.agent.OutputCapture
 import com.dpsmpx.dpai.execution.agent.RunSpec
 import com.dpsmpx.dpai.execution.agent.RunState
 import com.dpsmpx.dpai.execution.agent.RunStatus
@@ -33,22 +35,24 @@ import com.dpsmpx.dpai.execution.agent.StopResult
 import com.dpsmpx.dpai.execution.agent.ToolProbe
 import com.dpsmpx.dpai.execution.process.Detacher
 import com.dpsmpx.dpai.execution.process.LocalProcessHost
+import com.dpsmpx.dpai.execution.process.OutputStream
 import com.dpsmpx.dpai.execution.process.ProcessHost
 import com.dpsmpx.dpai.execution.process.ProcessSpec
-import com.dpsmpx.dpai.execution.process.ProcessTree
 import com.dpsmpx.dpai.execution.process.RunningProcess
+import com.dpsmpx.dpai.execution.process.TurnJob
 import com.dpsmpx.dpai.execution.process.run
 import com.dpsmpx.dpai.orchestrator.EventRecorder
+import com.dpsmpx.dpai.security.AccountIdentity
 import com.dpsmpx.dpai.storage.document.DocumentStore
 import com.dpsmpx.dpai.storage.journal.EventJournal
 import com.dpsmpx.dpai.storage.vfs.NioVfs
 import java.io.File
-import java.lang.management.ManagementFactory
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 import kotlin.time.Duration
-import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.days
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -69,6 +73,8 @@ import kotlin.time.Duration.Companion.seconds
  *   следит за тайм-аутом и просьбой остановиться.
  * - `events` отдаёт подтверждённые события с номера — после обрыва
  *   контроллер забирает пропущенное.
+ * - `follow` — то же потоком (D-76, D-79): строки по мере записи журнала,
+ *   пока ход идёт и читатель не ушёл.
  * - `stop` просит супервизор остановить дерево процессов; если супервизор
  *   потерян — останавливает процесс сам по идентификатору и времени
  *   старта (чужой процесс с тем же идентификатором не трогается).
@@ -85,17 +91,35 @@ class AgentRuntime(
     private val version: String,
     private val selfCommand: List<String>,
     private val host: ProcessHost = LocalProcessHost(clock),
-    private val detacher: Detacher = Detacher(),
+    /** Запуск супервизора отдельным процессом на target; `null` — по умолчанию (в приложении не нужен: там [supervision] — поток). */
+    detacher: Detacher? = null,
     private val heartbeatEvery: Duration = 30.seconds,
     private val pollEvery: Duration = 250.milliseconds,
     private val supervisorWait: Duration = 10.seconds,
+    private val followHeartbeat: Duration = FOLLOW_HEARTBEAT,
+    private val followFor: Duration = FOLLOW_FOR,
+    /**
+     * Помощник объекта задания для процессов хода (A-9, `TurnJob`): команда
+     * по процессу хода, супервизору и отметке «ход кончился сам». Windows —
+     * PowerShell; Linux и Android — `null`: там процессы хода держит сеанс
+     * супервизора.
+     */
+    private val jobHelper: JobHelper? = if (Detacher.isWindows()) WINDOWS_JOB else null,
+    /**
+     * Где живёт супервизор хода и как опознать процессы после его потери
+     * (D-75): на target — отдельный процесс ОС ([ProcessSupervision]), в
+     * приложении — поток ([ThreadSupervision]).
+     */
+    private val supervision: Supervision = ProcessSupervision(home, selfCommand, detacher ?: Detacher(), clock),
+    /** Память машины для `doctor`: на JVM — сведения JDK ([JvmOsFacts]), в приложении — `/proc/meminfo`. */
+    private val osFacts: () -> OsFacts = JvmOsFacts::read,
 ) {
-    private val vfs = NioVfs(Path.of(home))
+    private val vfs = NioVfs(File(home).toPath())
     private val ids = IdGenerator(clock, RandomSource.secure())
     private val pace = java.util.concurrent.CountDownLatch(1)
 
     init {
-        restrictHome(Path.of(home))
+        restrictHome(File(home).toPath())
     }
 
     private fun runDir(id: SessionId) = "runs/${id.value}"
@@ -132,9 +156,7 @@ class AgentRuntime(
             }
         }
         val last = lastSequence(id)
-        val argv = selfCommand + listOf("agent", "supervise", "--home", home, "--run", id.value)
-        val log = File(home, "${runDir(id)}/supervisor.log").path
-        return when (val spawned = detacher.spawn(argv, home, log)) {
+        return when (val spawned = supervision.launch(id) { supervise(id) }) {
             is Outcome.Failure -> {
                 val failed = doc.copy(state = RunState.EXITED, reason = ExitReason.START_FAILED)
                 store.write(RUN_KEY, failed.toJson())
@@ -182,8 +204,8 @@ class AgentRuntime(
                 if (r is Outcome.Failure) journalError.compareAndSet(null, r.errors.firstOrNull()?.message ?: "запись не подтверждена")
             }
         }
-        val self = ProcessHandle.current()
-        var current = doc.copy(supervisorPid = self.pid(), supervisorStartedAt = ProcessTree.startedAtMillis(self), bootAt = ProcessTree.bootMillis())
+        val self = supervision.self()
+        var current = doc.copy(supervisorPid = self.pid, supervisorStartedAt = self.startedAt, bootAt = self.bootAt)
         // Супервизор записывает себя до запуска процесса: так stop находит его и просит, а не пишет сам (A-4).
         store.write(RUN_KEY, current.toJson()).let { if (it is Outcome.Failure) return AgentReply.failure("supervise", it.diagnostics) }
         if (stopRequest(store, doc.turn) != null) {
@@ -198,9 +220,16 @@ class AgentRuntime(
             doc.spec.unsetEnv.forEach { remove(it) }
             putAll(doc.spec.setEnv)
         }
+        val capture = doc.spec.capture == OutputCapture.AUTH_STATUS
+        val captured = StringBuilder()
         // Вывод ждёт блокировки, пока не записано TARGET_PROCESS_STARTED: в журнале ход начинается с него.
         val process: RunningProcess = synchronized(lock) {
             val started = host.start(ProcessSpec(doc.spec.command, doc.spec.workDir, env, stdin)) { line ->
+                // Вывод пробы входа — только в памяти (D-69): в журнал идёт сведённый итог при выходе.
+                if (capture && line.stream == OutputStream.STDOUT) {
+                    synchronized(captured) { if (captured.length < CAPTURE_LIMIT) captured.append(line.text).append('\n') }
+                    return@start
+                }
                 // Текст события — не длиннее MAX_EVENT_TEXT: с экранированием JSON одно событие
                 // помещается в строку ответа агента (см. events).
                 val text = Redactor.STANDARD.redactLine(line.text)
@@ -237,9 +266,23 @@ class AgentRuntime(
         }
         // Вход хода (prompt) отдан процессу — на target он больше не хранится (аудит 2026-10-07, A-5).
         if (stdin != null) store.delete(INPUT_KEY)
-        val handle = process.pid?.let { ProcessHandle.of(it).orElse(null) }
-        current = current.copy(state = RunState.RUNNING, pid = process.pid, pidStartedAt = handle?.let(ProcessTree::startedAtMillis))
+        current = current.copy(state = RunState.RUNNING, pid = process.pid, pidStartedAt = process.pid?.let(supervision::startedAt))
         store.write(RUN_KEY, current.toJson())
+        // Объект задания Windows (A-9) готовится, пока ход идёт; проба входа — короткая, без него.
+        var jobProblem: Diagnostic? = null
+        val releaseMark = "${runDir(id)}/job-release-${doc.turn}"
+        val job = jobHelper?.takeIf { !capture }?.let { helper ->
+            process.pid?.let { pid ->
+                runCatching { vfs.delete(releaseMark) }
+                when (val j = TurnJob.start(host, helper(pid, self.pid, File(home, releaseMark)))) {
+                    is Outcome.Success -> j.value
+                    is Outcome.Failure -> null.also {
+                        val why = "помощник объекта задания не запустился: фоновые потомки хода могут остаться (A-9)"
+                        jobProblem = Diagnostic.of(DiagCode.PROCESS_JOB_UNAVAILABLE, why, "run $id", Severity.WARNING, j.errors)
+                    }
+                }
+            }
+        }
 
         val begin = clock.monotonicNanos()
         var lastBeat = begin
@@ -257,7 +300,10 @@ class AgentRuntime(
             val timedOut = doc.spec.timeout?.let { clock.monotonicNanos() - begin >= it.inWholeNanoseconds } ?: false
             val lostJournal = journalError.get()
             if (stopRequest != null || timedOut || lostJournal != null) {
-                val report = process.stop(stopRequest ?: RunningProcess.DEFAULT_GRACE)
+                val grace = stopRequest ?: RunningProcess.DEFAULT_GRACE
+                // Объект задания — первым: с ним уходят и потомки, потерявшие родителя (A-9).
+                val jobNote = job?.kill(grace, "run $id") ?: jobProblem
+                val report = process.stop(grace)
                 stopped = StopResult(report.forced, report.survivors)
                 exitCode = report.exitCode
                 reason = if (timedOut && stopRequest == null && lostJournal == null) ExitReason.TIMEOUT else ExitReason.STOPPED
@@ -265,6 +311,7 @@ class AgentRuntime(
                     if (lostJournal != null) add(Diagnostic.error(DiagCode.STORAGE_IO_FAILED, "журнал хода не пишется ($lostJournal): ход остановлен", "run $id"))
                     if (reason == ExitReason.TIMEOUT) add(Diagnostic.warning(DiagCode.PROCESS_TIMEOUT, "тайм-аут ${doc.spec.timeout}: дерево процессов остановлено", "run $id"))
                     if (!report.clean) add(Diagnostic.error(DiagCode.PROCESS_ORPHANS_LEFT, "после остановки живы ${report.survivors.joinToString()}", "run $id"))
+                    jobNote?.let { add(it) }
                 }
                 break
             }
@@ -272,6 +319,12 @@ class AgentRuntime(
                 lastBeat = clock.monotonicNanos()
                 emit(EventType.TARGET_PROCESS_HEARTBEAT, JsonObject.of("turn" to JsonNumber.of(doc.turn)))
             }
+        }
+        // Ход кончился сам: фоновые потомки живут дальше, как на Linux, — помощник снимет охрану после выхода супервизора.
+        if (reason == ExitReason.EXITED && job != null) runCatching { vfs.write(releaseMark, "release".toByteArray()) }
+        if (capture) {
+            val summary = AccountIdentity.summarize(synchronized(captured) { captured.toString() })
+            emit(EventType.TARGET_PROCESS_OUTPUT, JsonObject.of("stream" to JsonString("stdout"), "text" to JsonString(CanonicalJson.write(summary)), "truncated" to JsonBool(false)))
         }
         emit(EventType.TARGET_PROCESS_EXITED, exitPayload(doc.turn, exitCode, reason, stopDiags, stopped))
         current = current.copy(state = RunState.EXITED, exitCode = exitCode, reason = reason, journalError = journalError.get())
@@ -321,6 +374,51 @@ class AgentRuntime(
         return AgentReply("events", ok = true, run = status.first.status(status.second), events = page, more = page.size < candidates.size)
     }
 
+    /**
+     * Поток событий хода (D-76, D-79): строки `dpai.agent-reply` команды
+     * `follow` — события журнала запуска после [after] по мере записи и
+     * состояние запуска; страница — по объёму, как у [events]. Строка
+     * уходит, когда есть новые события, сменилось состояние или пора подать
+     * признак жизни ([followHeartbeat]): на нём агент узнаёт, что читатель
+     * ушёл ([emit] вернул `false` — канал закрыт), и кончает, а не держит
+     * JVM до конца хода. Поток кончается и когда ход не идёт (`EXITED`,
+     * `LOST`) и всё записанное отдано, и по сроку [followFor] — контроллер
+     * переподключится с номера. Отказ — строка с `ok = false` и конец.
+     * Итог — не было ли отказа.
+     */
+    fun follow(id: SessionId, after: Long, emit: (AgentReply) -> Boolean): Boolean {
+        val until = clock.now() + followFor
+        var cursor = after
+        var sentAt: Timestamp? = null
+        var sentState: RunState? = null
+        var endedBefore = false
+        while (true) {
+            val page = events(id, cursor, FOLLOW_LIMIT).copy(command = "follow")
+            val run = page.run
+            if (!page.ok || run == null) {
+                emit(page)
+                return false
+            }
+            val now = clock.now()
+            if (sentAt == null || page.events.isNotEmpty() || run.state != sentState || now - sentAt >= followHeartbeat) {
+                if (!emit(page)) return true
+                sentAt = now
+                sentState = run.state
+            }
+            page.events.lastOrNull()?.let { cursor = it.sequence }
+            // Полная по числу страница — за ней могут быть ещё: дочитать сразу, как канал (`RunChannel`).
+            if (page.more || page.events.size >= FOLLOW_LIMIT) continue
+            val ended = run.finished
+            // Конец — только по чтению, начатому при уже законченном ходе: выход пишется в журнал
+            // раньше документа запуска, и журнал, прочитанный до документа, мог не застать событие выхода.
+            if (ended && endedBefore && page.events.isEmpty()) return true
+            endedBefore = ended
+            if (ended) continue
+            if (now >= until) return true
+            pace.await(pollEvery.inWholeMilliseconds, TimeUnit.MILLISECONDS)
+        }
+    }
+
     fun stop(id: SessionId, grace: Duration): AgentReply {
         val store = docs(id)
         val (doc, last) = when (val s = observe(id)) {
@@ -329,11 +427,10 @@ class AgentRuntime(
         }
         if (doc.state == RunState.EXITED) return AgentReply("stop", ok = true, run = doc.status(last), stop = StopResult(false, emptyList()))
         if (doc.state == RunState.STARTING && doc.supervisorPid == null) return stopBeforeSupervisor(id, doc, last, grace, store)
-        val supervisor = doc.supervisorPid?.let { ProcessTree.find(it, doc.supervisorStartedAt, doc.bootAt) }
-        if (supervisor != null) return stopWithSupervisor(id, doc, last, supervisor, grace, store)
+        val supervisor = doc.supervisorMark()
+        if (supervisor != null && supervision.alive(id, supervisor)) return stopWithSupervisor(id, doc, last, supervisor, grace, store)
         // Супервизор потерян: процесс останавливается по идентификатору и времени старта.
-        val child = doc.pid?.let { ProcessTree.find(it, doc.pidStartedAt, doc.bootAt) }
-        val r = child?.let { ProcessTree.stop(it, grace, clock, doc.supervisorPid?.takeIf { sid -> ProcessTree.sessionOf(it.pid()) == sid }) } ?: ProcessTree.Result(false, emptyList())
+        val r = doc.childMark()?.let { supervision.stopOrphan(it, supervisor, grace) } ?: StopResult(false, emptyList())
         return stopLost(id, doc, last, r, store)
     }
 
@@ -341,9 +438,9 @@ class AgentRuntime(
         store.write(STOP_KEY, JsonObject.of("turn" to JsonNumber.of(turn), "graceSeconds" to JsonNumber.of(grace.inWholeSeconds.coerceAtLeast(1))))
     }
 
-    private fun stopWithSupervisor(id: SessionId, doc: RunDoc, last: Long, supervisor: ProcessHandle, grace: Duration, store: DocumentStore): AgentReply {
+    private fun stopWithSupervisor(id: SessionId, doc: RunDoc, last: Long, supervisor: ProcessMark, grace: Duration, store: DocumentStore): AgentReply {
         requestStop(store, doc.turn, grace)
-        val waited = runCatching { supervisor.onExit().get((grace + SUPERVISOR_EXTRA).inWholeMilliseconds, TimeUnit.MILLISECONDS) }.isSuccess
+        val waited = supervision.awaitEnd(id, supervisor, grace + SUPERVISOR_EXTRA)
         if (waited) {
             val after = observe(id)
             if (after is Outcome.Success) {
@@ -351,7 +448,7 @@ class AgentRuntime(
             }
         }
         // Супервизор не уложился — останавливается он сам вместе со своим деревом.
-        return stopLost(id, doc, last, ProcessTree.stop(supervisor, grace, clock, supervisor.pid().takeIf { ProcessTree.sessionOf(it) == it }), store)
+        return stopLost(id, doc, last, supervision.stopSupervisor(id, supervisor, doc.childMark(), grace), store)
     }
 
     /**
@@ -373,8 +470,8 @@ class AgentRuntime(
             when {
                 now.state == RunState.EXITED -> return AgentReply("stop", ok = true, run = now.status(lastNow), stop = StopResult(false, emptyList()))
                 now.supervisorPid != null -> {
-                    val supervisor = ProcessTree.find(now.supervisorPid, now.supervisorStartedAt, now.bootAt)
-                    return if (supervisor != null) stopWithSupervisor(id, now, lastNow, supervisor, grace, store) else stop(id, grace)
+                    val supervisor = now.supervisorMark()!!
+                    return if (supervision.alive(id, supervisor)) stopWithSupervisor(id, now, lastNow, supervisor, grace, store) else stop(id, grace)
                 }
                 now.state == RunState.LOST -> return stop(id, grace)
             }
@@ -383,7 +480,7 @@ class AgentRuntime(
         return AgentReply("stop", ok = true, diagnostics = listOf(pending), run = doc.status(last), stop = StopResult(false, emptyList()))
     }
 
-    private fun stopLost(id: SessionId, doc: RunDoc, last: Long, r: ProcessTree.Result, store: DocumentStore): AgentReply {
+    private fun stopLost(id: SessionId, doc: RunDoc, last: Long, r: StopResult, store: DocumentStore): AgentReply {
         val exited = doc.copy(state = RunState.EXITED, reason = ExitReason.STOPPED)
         // Ход потерян и закрыт: вход хода (prompt), если процесс так и не начался, на target не остаётся (ревью A-16).
         store.delete(INPUT_KEY)
@@ -404,7 +501,7 @@ class AgentRuntime(
 
     fun doctor(): AgentReply {
         File(home).mkdirs()
-        val os = ManagementFactory.getOperatingSystemMXBean() as? com.sun.management.OperatingSystemMXBean
+        val os = osFacts()
         val report = DoctorReport(
             agentVersion = version,
             os = System.getProperty("os.name").orEmpty(),
@@ -413,8 +510,8 @@ class AgentRuntime(
             timeMillis = clock.now().epochMillis,
             termux = System.getenv("PREFIX")?.contains("com.termux") == true,
             diskFreeBytes = File(home).usableSpace.takeIf { it > 0 },
-            memoryTotalBytes = os?.totalMemorySize,
-            memoryFreeBytes = availableMemory(meminfo(), os?.freeMemorySize, os?.totalMemorySize),
+            memoryTotalBytes = os.totalBytes ?: meminfoTotal(meminfo()),
+            memoryFreeBytes = availableMemory(meminfo(), os.freeBytes, os.totalBytes),
             claude = probeTool(listOf("claude", "--version")),
             git = probeTool(listOf("git", "--version")),
         )
@@ -461,7 +558,7 @@ class AgentRuntime(
         }
         val last = knownLast ?: lastSequence(id)
         if (doc.state == RunState.EXITED) return Outcome.success(doc to last)
-        val supervisorAlive = doc.supervisorPid?.let { ProcessTree.find(it, doc.supervisorStartedAt, doc.bootAt) != null }
+        val supervisorAlive = doc.supervisorMark()?.let { supervision.alive(id, it) }
         val lost = when (supervisorAlive) {
             true -> false
             false -> true
@@ -542,6 +639,22 @@ class AgentRuntime(
         /** Предел знаков страницы событий: ответ агента — одна строка не длиннее `LocalProcessHost.MAX_LINE`. */
         const val PAGE_CHARS: Int = 256 * 1024
 
+        /** Помощник PowerShell объекта задания Windows (A-9). */
+        val WINDOWS_JOB: JobHelper = JobHelper { child, supervisor, release -> TurnJob.powershell(child, supervisor, release) }
+
+        /** Событий в строке потока `follow` — не больше; объём строки ограничен ещё и [PAGE_CHARS]. */
+        const val FOLLOW_LIMIT: Int = 500
+
+        /**
+         * Признак жизни потока `follow` без событий: по записи в закрытый канал
+         * агент узнаёт, что читатель ушёл. Меньше `ServerAliveInterval` × `CountMax`
+         * клиента SSH (45 с) — оборванный поток кончается раньше, чем его заметит связь.
+         */
+        val FOLLOW_HEARTBEAT: Duration = 15.seconds
+
+        /** Срок одного потока `follow`: дольше — контроллер переподключается с номера, JVM на target не живёт сутками. */
+        val FOLLOW_FOR: Duration = 30.minutes
+
         /** Предел текста одного события вывода: даже с экранированием JSON оно меньше `LocalProcessHost.MAX_LINE`. */
         const val MAX_EVENT_TEXT: Int = 256 * 1024
 
@@ -562,6 +675,9 @@ class AgentRuntime(
         const val STOP_KEY = "stop-request"
         const val PRUNED_KEY = "pruned"
         private val TOOL_TIMEOUT = 20.seconds
+
+        /** Вывод пробы входа в памяти — не больше: JSON статуса — сотни байт. */
+        private const val CAPTURE_LIMIT = 64 * 1024
         private val SUPERVISOR_EXTRA = 10.seconds
 
         /** Сколько ждать, пока супервизор запишет себя, прежде чем считать ход потерянным. */
@@ -591,6 +707,11 @@ class AgentRuntime(
             val limited = jvmTotal != null && machine != null && jvmTotal < machine
             return if (limited && jvmFree != null) minOf(available, jvmFree) else available
         }
+
+        /** `MemTotal` из `/proc/meminfo` — где JDK о памяти не говорит (в приложении); нет — `null`. */
+        internal fun meminfoTotal(meminfo: String?): Long? =
+            meminfo?.lineSequence()?.mapNotNull { MEMINFO_LINE.matchEntire(it.trim()) }?.firstOrNull { it.groupValues[1] == "MemTotal" }
+                ?.groupValues?.get(2)?.toLongOrNull()?.times(1024)
 
         /** Текст `/proc/meminfo`; нет файла (Windows, macOS) или он не читается — `null`. */
         private fun meminfo(): String? = try {
@@ -627,6 +748,12 @@ internal data class RunDoc(
     val journalError: String? = null,
 ) {
     fun status(lastSequence: Long): RunStatus = RunStatus(id, state, pid, exitCode, reason, lastSequence, turn)
+
+    /** Супервизор хода для опознания ([Supervision]); ещё не записал себя — `null`. */
+    fun supervisorMark(): ProcessMark? = supervisorPid?.let { ProcessMark(it, supervisorStartedAt, bootAt) }
+
+    /** Процесс хода для опознания; ещё не запущен — `null`. */
+    fun childMark(): ProcessMark? = pid?.let { ProcessMark(it, pidStartedAt, bootAt) }
 
     fun toJson(): JsonObject {
         val f = linkedMapOf<String, JsonValue>(*FormatHeader.write(FORMAT, VERSION))
@@ -707,4 +834,9 @@ internal data class PrunedDoc(val turn: Int, val lastSequence: Long, val prunedA
             return PrunedDoc(turn, last, at)
         }
     }
+}
+
+/** Команда помощника объекта задания (A-9): процесс хода, супервизор, отметка «ход кончился сам». */
+fun interface JobHelper {
+    operator fun invoke(child: Long, supervisor: Long, release: File): List<String>
 }

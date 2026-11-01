@@ -39,6 +39,9 @@ class LiveSystemTest {
     /** Ход идёт, пока тест не продвинет его шаги (`host.advance`). */
     private var slow = false
 
+    /** Ход отвечает `authentication_failed` (сбой сети: токен не обновился, D-58). */
+    private var authError = false
+
     private fun entry(label: String, configDir: String?) =
         TargetForm.validate(ids.next(IdKinds.TARGET), label, "build.lan", "22", "dev", false, "/opt/dpai/bin/dpai", configDir).valueOrNull()!!
 
@@ -51,7 +54,7 @@ class LiveSystemTest {
             } else {
                 val c = spec.command
                 val sid = c[c.indexOfFirst { it == "--session-id" || it == "--resume" } + 1]
-                val steps = MockRunner.script(MockScenario.SUCCESS, sid).map { l -> { host.output(run, l); Unit } } +
+                val steps = MockRunner.script(if (authError) MockScenario.AUTH_ERROR else MockScenario.SUCCESS, sid).map { l -> { host.output(run, l); Unit } } +
                     listOf({ host.exit(run, 0, ExitReason.EXITED) })
                 if (slow) host.schedule(run, steps) else steps.forEach { it() }
             }
@@ -144,6 +147,58 @@ class LiveSystemTest {
     }
 
     /**
+     * D-58: без сети ход ответил «нужен вход», хотя вход цел. Слот не ждёт
+     * «Вход Claude»: через 2 минуты приложение само проверяет вход, слот
+     * снова доступен, задача продолжается; на «Внимание» — когда проверка.
+     */
+    @Test
+    fun slotMarkedByFailedTurnRechecksLoginItself() {
+        val target = entry("сервер", "/home/dev/.claude-dpai")
+        val s = system(target)
+        steps(s, 1)
+        authError = true
+        val task = s.addTask("Сбой сети", "ответить").valueOrNull()!!
+        steps(s, 4)
+        val slot = s.orchestrator.accounts.slots.values.single()
+        assertEquals(AccountState.AUTH_REQUIRED, slot.state, "ход сказал «нужен вход»")
+        assertEquals(TaskState.BLOCKED, s.orchestrator.tasks.tasks.getValue(task).state)
+        steps(s, 1)
+        assertTrue(s.dashboard().attention.any { "проверю вход сам через" in it }, s.dashboard().attention.toString())
+        authError = false
+        clock.advance(LiveSystem.AUTH_RECHECK_FIRST_MS.milliseconds)
+        steps(s, 6)
+        assertEquals(AccountState.AVAILABLE, s.orchestrator.accounts.slots.values.single().state, "вход цел — слот снова доступен")
+        assertTrue(s.orchestrator.sessions.sessions.values.count { it.task == task } >= 2, "задача продолжилась сама")
+        assertTrue(s.dashboard().attention.none { "проверю вход сам" in it })
+    }
+
+    /**
+     * Перезапуск с сообщением в очереди (D-60): контроллер строится и
+     * доставляет его после хода. На устройстве 11 октября 2026 очередь,
+     * прочитанная при построении, роняла контроллер NullPointerException:
+     * её хранилище было объявлено ниже `init` оркестратора.
+     */
+    @Test
+    fun restartWithQueuedMessageBuildsAndDeliversIt() {
+        slow = true
+        val t = entry("сервер", "/home/dev/.claude-dpai")
+        val first = system(t)
+        steps(first, 1)
+        val task = first.addTask("Долгая", "ход идёт через перезапуск").valueOrNull()!!
+        steps(first, 2)
+        val session = first.orchestrator.sessions.sessions.values.single { it.task == task }.id
+        assertTrue(first.orchestrator.sendToSession(session, "ещё вопрос", null, null, false) is com.dpsmpx.dpai.core.result.Outcome.Success)
+        assertEquals(1, first.orchestrator.queued(task).size)
+
+        val second = system(t)
+        assertEquals(1, second.orchestrator.queued(task).size, "очередь прочитана при построении")
+        do { val more = host.advance(session) } while (more)
+        steps(second, 6)
+        assertTrue(second.orchestrator.queued(task).isEmpty(), "очередь доставлена после хода")
+        assertTrue(second.orchestrator.chat(task).any { it.text == "ещё вопрос" })
+    }
+
+    /**
      * Перезапуск приложения посреди хода (ТЗ, §54): новый контроллер над тем
      * же журналом знает задачу, сессию и слот, сверяет сессию с агентом и
      * подхватывает идущий ход; второго слота не появляется.
@@ -165,6 +220,33 @@ class LiveSystemTest {
         do { val more = host.advance(session) } while (more)
         steps(second, 4)
         assertEquals(TaskState.COMPLETION_UNVERIFIED, second.orchestrator.tasks.tasks.getValue(task).state, second.problems.toString())
+    }
+
+    /**
+     * Ход идёт потоком агента (D-76): события хода приходят без опроса
+     * `events` на каждый такт; поток кончается вместе с ходом.
+     */
+    @Test
+    fun runningTurnIsFollowedNotPolled() {
+        slow = true
+        val s = system(entry("сервер", "/home/dev/.claude-dpai"))
+        steps(s, 1)
+        val task = s.addTask("Поток", "ход идёт потоком").valueOrNull()!!
+        steps(s, 2)
+        val session = s.orchestrator.sessions.sessions.values.single { it.task == task }.id
+        assertEquals(1, host.followerCount(), "у идущего хода — поток")
+        val polls = host.eventCalls
+        var ticks = 0
+        while (host.advance(session)) {
+            steps(s, 1)
+            ticks++
+        }
+        assertTrue(ticks >= 3, "ход из нескольких шагов: $ticks")
+        assertEquals(polls, host.eventCalls, "за $ticks тактов хода — ни одного опроса events")
+        assertEquals(0, host.followerCount(), "поток кончился вместе с ходом")
+        steps(s, 3)
+        assertEquals(TaskState.COMPLETION_UNVERIFIED, s.orchestrator.tasks.tasks.getValue(task).state, s.problems.toString())
+        s.close()
     }
 
     /**

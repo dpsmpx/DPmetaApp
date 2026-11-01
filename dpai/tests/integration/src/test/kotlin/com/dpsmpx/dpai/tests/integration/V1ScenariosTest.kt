@@ -80,8 +80,12 @@ class V1ScenariosTest {
         assertEquals(0, r.exitCode, (r.stderr + r.stdout).joinToString("\n"))
     }
 
-    /** Проект с репозиторием, [slots] слотов одной подписки на своих targets. */
-    private fun setUp(slots: Int, perTarget: Int = 1) {
+    /**
+     * Проект с репозиторием, [slots] слотов на своих targets: одной подписки
+     * или, при [ownSubscriptions], у каждого слота — своя подписка, которая
+     * берёт задачи упёршихся в предел (D-56).
+     */
+    private fun setUp(slots: Int, perTarget: Int = 1, ownSubscriptions: Boolean = false) {
         val root = dir.resolve("repo").toFile().apply { mkdirs() }.path
         sh("init", "-q", "-b", "main", root)
         sh("-C", root, "config", "user.email", "dpai-test@example.org")
@@ -93,15 +97,23 @@ class V1ScenariosTest {
 
         val accountsLogic = Accounts()
         var accounts = AccountsState.EMPTY
-        val sub = ids.next(IdKinds.SUBSCRIPTION)
-        accounts = Accounts.applyAll(accounts, accountsLogic.registerSubscription(accounts, sub, "основная", clock.now(), maxParallelSessions = 64).valueOrNull()!!)
+        val shared = ids.next(IdKinds.SUBSCRIPTION)
+        accounts = Accounts.applyAll(accounts, accountsLogic.registerSubscription(accounts, shared, "основная", clock.now(), maxParallelSessions = 64).valueOrNull()!!)
         val targets = mutableListOf<TargetSlot>()
         repeat(slots) { i ->
+            val sub = if (!ownSubscriptions) {
+                shared
+            } else {
+                ids.next(IdKinds.SUBSCRIPTION).also { s ->
+                    accounts = Accounts.applyAll(accounts, accountsLogic.registerSubscription(accounts, s, "подписка $i", clock.now(), maxParallelSessions = 64, rotationAllowed = true).valueOrNull()!!)
+                }
+            }
             val target = ids.next(IdKinds.TARGET)
             targets += TargetSlot(target, emptySet(), perTarget)
             val slot = ids.next(IdKinds.ACCOUNT)
             accounts = Accounts.applyAll(accounts, accountsLogic.registerSlot(accounts, slot, sub, target, "/home/dev/.claude-$i", clock.now()).valueOrNull()!!)
-            val status = AuthStatus(true, AuthStatus.CLAUDE_AI, AuthStatus.FIRST_PARTY, AuthStatus.fingerprint("org", "a@example.org"), "max")
+            val email = if (ownSubscriptions) "a$i@example.org" else "a@example.org"
+            val status = AuthStatus(true, AuthStatus.CLAUDE_AI, AuthStatus.FIRST_PARTY, AuthStatus.fingerprint("org", email), "max")
             accounts = Accounts.applyAll(accounts, accountsLogic.observeAuthStatus(accounts, slot, status, clock.now()).valueOrNull()!!)
         }
         val java = File(File(System.getProperty("java.home"), "bin"), if (File.separatorChar == '\\') "java.exe" else "java").path
@@ -183,6 +195,94 @@ class V1ScenariosTest {
         assertEquals(sessions[0].id, sessions[1].continues, "вторая сессия продолжает первую")
         assertEquals(sessions[0].provider, sessions[1].provider, "та же сессия Claude (--resume)")
         assertTrue(orchestrator.handoffs.latest(t) != null, "handoff создан")
+    }
+
+    @Test
+    fun taskAtSubscriptionLimitMovesToAnotherSubscriptionWithHandoff() {
+        // D-56: подписка первого слота упёрлась в предел — задача не ждёт сброса, а продолжает на слоте
+        // другой подписки свежей сессией с handoff; переход записан в журнале аккаунтов.
+        setUp(slots = 2, ownSubscriptions = true)
+        val t = task("передача", MockScenario.RATE_LIMIT, MockScenario.SUCCESS)
+        runUntilQuiet()
+        assertEquals(TaskState.DONE, state(t))
+        val sessions = orchestrator.sessions.sessions.values.filter { it.task == t }.sortedBy { it.id.value }
+        assertEquals(2, sessions.size, sessions.toString())
+        val subOf = { s: com.dpsmpx.dpai.sessions.SessionRecord -> orchestrator.accounts.slots.getValue(s.slot).subscriptionId }
+        assertTrue(subOf(sessions[0]) != subOf(sessions[1]), "вторая сессия — на другой подписке")
+        assertTrue(sessions[0].provider != sessions[1].provider, "другой аккаунт — свежая сессия, не --resume")
+        assertTrue(orchestrator.handoffs.latest(t) != null, "контекст передан handoff")
+        assertEquals(1, orchestrator.accounts.switches[t].orEmpty().size, "переход между подписками записан")
+        assertEquals(com.dpsmpx.dpai.contexts.HandoffReason.ACCOUNT_EXHAUSTED, orchestrator.handoffs.all().single { it.session == sessions[0].id }.reason, "предел — причина handoff")
+    }
+
+    @Test
+    fun taskChatHoldsRequestsModelTextsAndEventsInOrder() {
+        // D-59: лента чата задачи — цель задачи, событие начала на слоте, тексты модели, запрос человека;
+        // без вызовов инструментов.
+        setUp(slots = 1)
+        val t = task("чат", MockScenario.SUCCESS)
+        runUntilQuiet()
+        val chat = orchestrator.chat(t)
+        assertEquals(com.dpsmpx.dpai.orchestrator.ChatRole.USER, chat.first().role)
+        assertTrue(chat.first().text.startsWith("чат"), chat.first().text)
+        assertTrue(chat.any { it.role == com.dpsmpx.dpai.orchestrator.ChatRole.EVENT && it.text.startsWith("попытка 1") }, chat.toString())
+        assertTrue(chat.any { it.role == com.dpsmpx.dpai.orchestrator.ChatRole.ASSISTANT }, chat.toString())
+        assertTrue(chat.none { "tool_use" in it.text || "\"name\"" in it.text }, "инструменты в ленту не попадают")
+        assertEquals(chat.sortedBy { it.at.epochMillis }, chat, "по порядку")
+    }
+
+    @Test
+    fun messageDuringTurnWaitsForItsEndAndGoesToTheSameSession() {
+        // D-60: сообщение во время хода не прерывает его — ход доигрывает, сообщение уходит в ту же
+        // сессию Claude (--resume) сразу после хода, раньше проверки; в чате — запрос и «в очереди».
+        setUp(slots = 1)
+        val t = task("очередь", MockScenario.SLOW_OUTPUT, MockScenario.SUCCESS)
+        orchestrator.tick()
+        orchestrator.tick()
+        val first = orchestrator.sessions.sessions.values.single { it.task == t }
+        assertEquals(SessionState.RUNNING, first.state)
+        val r = orchestrator.sendToSession(first.id, "добавь ещё тест", null, null, false)
+        assertTrue(r is Outcome.Success, r.toString())
+        assertEquals(1, orchestrator.queued(t).size, "сообщение в очереди")
+        assertEquals(SessionState.RUNNING, orchestrator.sessions.sessions.getValue(first.id).state, "ход не прерван")
+        runUntilQuiet()
+        assertEquals(TaskState.DONE, state(t))
+        val all = orchestrator.sessions.sessions.values.filter { it.task == t }.sortedBy { it.id.value }
+        assertEquals(2, all.size, all.toString())
+        assertEquals(first.id, all[1].continues, "вторая сессия продолжает первую")
+        assertEquals(first.provider, all[1].provider, "та же сессия Claude (--resume)")
+        assertTrue(orchestrator.handoffs.all().any { it.session == first.id && "добавь ещё тест" in it.nextAction }, "текст человека — в handoff")
+        assertTrue(orchestrator.queued(t).isEmpty(), "очередь доставлена")
+        val chat = orchestrator.chat(t)
+        assertTrue(chat.any { it.role == com.dpsmpx.dpai.orchestrator.ChatRole.USER && it.text == "добавь ещё тест" }, chat.toString())
+        assertEquals(1, chat.count { it.role == com.dpsmpx.dpai.orchestrator.ChatRole.USER && it.text == "добавь ещё тест" }, "запрос в чате — один раз")
+        assertTrue(chat.any { it.text.startsWith("в очереди") } && chat.any { it.text.startsWith("сообщение из очереди отправлено") })
+    }
+
+    @Test
+    fun manualMoveContinuesOnChosenSlotWithTheTaskContext() {
+        // D-66: перенос во время хода его не прерывает; следующий ход — на выбранном слоте свежей сессией,
+        // в её контексте — переписка задачи с исходным запросом человека; в чате — событие переноса.
+        setUp(slots = 2)
+        val t = task("перенос", MockScenario.PARTIAL_COMPLETION, MockScenario.SUCCESS)
+        orchestrator.tick()
+        val first = orchestrator.sessions.sessions.values.single { it.task == t }
+        val other = orchestrator.accounts.slots.values.map { it.targetId }.first { it != first.target }
+        val r = orchestrator.submit(com.dpsmpx.dpai.orchestrator.commands.Command.MoveTask(t, other))
+        orchestrator.runCommands()
+        assertTrue(r.get().outcome is Outcome.Success, r.get().outcome.toString())
+        assertEquals(other, orchestrator.pinned(t))
+        runUntilQuiet()
+        assertEquals(TaskState.DONE, state(t))
+        val all = orchestrator.sessions.sessions.values.filter { it.task == t }.sortedBy { it.id.value }
+        assertEquals(2, all.size, all.toString())
+        assertEquals(other, all[1].target, "второй ход — на выбранном слоте")
+        assertTrue(all[1].provider != first.provider, "другой слот — свежая сессия")
+        val ctx = orchestrator.lastContext(t)!!
+        val transcript = ctx.sources.firstOrNull { it.key == com.dpsmpx.dpai.orchestrator.Orchestrator.TRANSCRIPT_SOURCE }
+        assertTrue(transcript != null && "цель: перенос" in transcript.content, ctx.sources.map { it.key }.toString())
+        assertEquals(null, orchestrator.pinned(t), "выбор — на один ход")
+        assertTrue(orchestrator.chat(t).any { it.text.startsWith("перенос на ") })
     }
 
     @Test
@@ -291,51 +391,47 @@ class V1ScenariosTest {
     }
 
     /**
-     * Изменения задачи (D-42, п. 3): до слияния видно, что задача поменяла, —
-     * незакоммиченное и новые файлы, пока идёт ход; что принесёт слияние —
-     * после коммита; после слияния дерево убрано, ветке нечего принести.
+     * Изменения задачи (D-42, п. 3; D-72) на настоящем Git: пока идёт ход —
+     * от базы до рабочего дерева, с незакоммиченным и новыми файлами; после
+     * коммита — то же из ветки; после слияния дерево убрано, а изменения
+     * задачи видны по-прежнему — от базы до её слияния.
      */
     @Test
-    fun taskChangesShowWhatTheMergeWouldBring() {
+    fun taskDiffShowsWhatTheTaskChanged() {
         setUp(slots = 1)
         val t = task("фича", MockScenario.SLOW_OUTPUT)
-        val before = orchestrator.taskChanges(t).valueOrNull()!!
-        assertEquals("task/${t.value}", before.branch)
-        assertTrue(before.empty && before.committed == null && before.uncommitted == null, "до запуска ветки и дерева нет: $before")
+        assertTrue(orchestrator.taskDiff(t) is Outcome.Failure, "до запуска ветки задачи нет")
 
         orchestrator.tick()
         val tree = orchestrator.worktrees.worktrees.values.single { it.owner != null }
         File(tree.path, "feature.txt").writeText("новая возможность\n")
         File(tree.path, "README.md").appendText("правка задачи\n")
-        val working = orchestrator.taskChanges(t).valueOrNull()!!
-        assertEquals(emptyList(), working.committed, "коммитов в ветке ещё нет")
-        assertTrue(working.uncommitted!!.any { it == "+правка задачи" }, working.uncommitted.toString())
+        val working = orchestrator.taskDiff(t).valueOrNull()!!
+        assertEquals("рабочее дерево", working.head)
+        assertEquals(listOf("README.md"), working.files.map { it.path }, "незакоммиченное — по файлам")
         assertEquals(listOf("feature.txt"), working.untracked)
-        // Канал `dpai` (D-47): нет части — нет поля; пустая часть — пустой список.
-        val json = CanonicalJson.write(ControlSnapshot.changes(working, emptyList()))
-        assertTrue(""""committed":[]""" in json && """"untracked":["feature.txt"]""" in json && "+правка задачи" in json, json)
-        assertFalse("committed" in CanonicalJson.write(ControlSnapshot.changes(before, emptyList())))
+        assertTrue("+правка задачи" in working.patch, working.patch)
+        // Канал `dpai` (D-47, D-72): то же данными.
+        val json = CanonicalJson.write(working.toJson())
+        assertTrue(""""untracked":["feature.txt"]""" in json && "+правка задачи" in json, json)
 
         runUntilQuiet(3)
         assertEquals(TaskState.DONE, state(t))
         // Расход задачи в снимке канала (D-42, п. 4): ход был — поле есть.
         assertTrue(""""usage":{""" in CanonicalJson.write(ControlSnapshot.of(orchestrator)))
-        val done = orchestrator.taskChanges(t)
-        assertTrue(done.diagnostics.isEmpty(), done.diagnostics.toString())
-        val committed = done.valueOrNull()!!.committed!!
-        assertTrue(committed.any { it.contains("feature.txt") && it.contains("|") }, "сводка --stat: $committed")
-        assertTrue("+новая возможность" in committed && "+правка задачи" in committed, committed.toString())
-        assertEquals(emptyList(), done.valueOrNull()!!.uncommitted, "всё закоммичено")
-        assertEquals("main", done.valueOrNull()!!.base)
-        assertFalse(done.valueOrNull()!!.truncated)
+        val done = orchestrator.taskDiff(t).valueOrNull()!!
+        assertEquals(setOf("README.md", "feature.txt"), done.files.map { it.path }.toSet(), "всё закоммичено: ${done.files}")
+        assertTrue("+новая возможность" in done.patch && "+правка задачи" in done.patch, done.patch)
+        assertEquals("main", done.base)
+        assertFalse(done.truncated)
 
         val request = mergeRequest()
         assertEquals(OperationStatus.SUCCEEDED, orchestrator.answer(request.id, "merge", null, request.hash, "автор").status)
-        val merged = orchestrator.taskChanges(t).valueOrNull()!!
-        assertEquals(null, merged.uncommitted, "дерево убрано после слияния (A-65)")
-        assertEquals(emptyList(), merged.committed, "слитой ветке нечего принести")
+        val merged = orchestrator.taskDiff(t).valueOrNull()!!
+        assertEquals("task/${t.value}", merged.head, "дерево убрано после слияния (A-65) — до ветки")
+        assertEquals(setOf("README.md", "feature.txt"), merged.files.map { it.path }.toSet(), "слитая задача — её изменения, а не пусто")
 
-        val unknown = orchestrator.taskChanges(com.dpsmpx.dpai.core.ids.IdKinds.TASK.let { ids.next(it) })
+        val unknown = orchestrator.taskDiff(com.dpsmpx.dpai.core.ids.IdKinds.TASK.let { ids.next(it) })
         assertEquals(DiagCode.ENTITY_NOT_FOUND, (unknown as Outcome.Failure).errors.single().code)
     }
 

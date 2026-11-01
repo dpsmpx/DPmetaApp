@@ -2,6 +2,7 @@ package com.dpsmpx.dpai.tasks
 
 import com.dpsmpx.dpai.core.clock.Timestamp
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
+import com.dpsmpx.dpai.core.ids.AccountId
 import com.dpsmpx.dpai.core.ids.TaskId
 import com.dpsmpx.dpai.core.state.TaskLifecycle
 import com.dpsmpx.dpai.core.state.TaskState
@@ -22,12 +23,16 @@ enum class TaskClass {
     NORMAL_ENGINEERING, COMPLEX_DEBUGGING, ARCHITECTURE, CRITICAL_REVIEW,
 }
 
+/** Роль ревью задачи (D-73): отдельная сессия после проверки и коммита. */
+enum class ReviewRole { CODE, SECURITY }
+
 /**
  * Политика задачи (ТЗ, §20, §86): повторы, пауза перед повтором,
  * продолжения, длительность хода, бюджет. Только целые и явные пороги
  * (`docs/SCHEDULER.md`, §3). [taskClass] — маршрут модели (D-40); [model]
  * и [effort] — явный выбор автора: сильнее маршрута, без эскалации и
- * удешевления.
+ * удешевления. [reviews] — роли ревью (D-73); по умолчанию ревью нет, у
+ * класса `TRIVIAL` его не бывает.
  */
 data class TaskPolicy(
     val maxRetries: Int = 3,
@@ -38,8 +43,10 @@ data class TaskPolicy(
     val taskClass: TaskClass = TaskClass.NORMAL_ENGINEERING,
     val model: String? = null,
     val effort: String? = null,
+    val reviews: Set<ReviewRole> = emptySet(),
 ) {
     init {
+        require(reviews.isEmpty() || taskClass != TaskClass.TRIVIAL) { "у класса TRIVIAL ревью нет (D-73): смените класс или снимите роли" }
         require(model == null || NAME.matches(model)) { "модель — 1…100 знаков: буквы, цифры, «.», «-», «_», «[», «]»" }
         require(effort == null || NAME.matches(effort)) { "усилие — 1…100 знаков: буквы, цифры, «.», «-», «_»" }
         require(maxRetries in 0..100) { "maxRetries — 0…100" }
@@ -94,7 +101,18 @@ data class TaskRecord(
     val held: Boolean = false,
     /** В архиве (D-42): завершённая задача спрятана с доски; история в журнале — как была (D-12). */
     val archived: Boolean = false,
+    /** Итоги ревью текущей попытки по ролям (D-73); новая попытка (`RUNNING`) их сбрасывает. */
+    val reviews: Map<ReviewRole, ReviewRecord> = emptyMap(),
+    /**
+     * Слот, с которого человек задачу перенёс («Перенести», D-77): следующая
+     * сессия задачи на него не идёт; запуск (`RUNNING`) исключение снимает.
+     */
+    val excludedSlot: AccountId? = null,
 ) {
+    /** Роли политики, у которых ещё нет итога, позволяющего `DONE` (прошло или принято без ревью); по порядку ролей. */
+    fun reviewsLeft(): List<ReviewRole> =
+        policy.reviews.sorted().filter { reviews[it]?.verdict.let { v -> v != ReviewVerdict.PASSED && v != ReviewVerdict.WAIVED } }
+
     val terminal: Boolean get() = state in TaskLifecycle.table.terminal
 }
 
@@ -113,6 +131,59 @@ data class TasksState(val tasks: Map<TaskId, TaskRecord> = emptyMap()) {
  * без проверки, и [reason] — почему.
  */
 data class VerificationRecord(val verdict: String, val reportHash: String?, val waivedBy: String? = null, val reason: String? = null)
+
+/** Уровень находки ревью (D-73): `BLOCKING` возвращает задачу на повтор; остальные видны, но не держат `DONE`. */
+enum class FindingSeverity { BLOCKING, MAJOR, MINOR, NOTE }
+
+/** Находка ревью: что, где ([file], [line] — если ревьюер назвал) и подробности. Длины ограничены — см. [ReviewRecord]. */
+data class ReviewFinding(val severity: FindingSeverity, val title: String, val file: String? = null, val line: Int? = null, val detail: String? = null) {
+    init {
+        require(title.isNotBlank() && title.length <= ReviewRecord.MAX_TITLE) { "заголовок находки — 1…${ReviewRecord.MAX_TITLE} знаков" }
+        require(file == null || file.length <= ReviewRecord.MAX_FILE) { "путь — до ${ReviewRecord.MAX_FILE} знаков" }
+        require(line == null || line > 0) { "строка — положительная" }
+        require(detail == null || detail.length <= ReviewRecord.MAX_DETAIL) { "подробности — до ${ReviewRecord.MAX_DETAIL} знаков" }
+    }
+}
+
+/**
+ * Итог ревью роли (D-73): `PASSED` — блокирующих нет, `BLOCKED` — есть,
+ * `FAILED` — итога нет (сбой сессии, ответ не по схеме), `WAIVED` —
+ * человек принял без ревью.
+ */
+enum class ReviewVerdict { PASSED, BLOCKED, FAILED, WAIVED }
+
+/**
+ * Запись ревью роли: [attempt] — которая попытка ревью этой роли в
+ * текущей попытке задачи (сбой — повтор один раз, D-73, п. 3);
+ * [omitted] — сколько находок не вошло сверх [MAX_FINDINGS] (D-05: не
+ * молча); [by] и [reason] — у `WAIVED` и `FAILED`.
+ */
+data class ReviewRecord(
+    val role: ReviewRole,
+    val verdict: ReviewVerdict,
+    val attempt: Int,
+    val session: com.dpsmpx.dpai.core.ids.SessionId?,
+    val findings: List<ReviewFinding> = emptyList(),
+    val omitted: Int = 0,
+    val by: String? = null,
+    val reason: String? = null,
+) {
+    init {
+        require(attempt >= 1) { "попытка ревью — с 1" }
+        require(findings.size <= MAX_FINDINGS && omitted >= 0) { "находок — до $MAX_FINDINGS, остальные — числом" }
+        require(verdict != ReviewVerdict.BLOCKED || findings.any { it.severity == FindingSeverity.BLOCKING }) { "BLOCKED — только с блокирующей находкой" }
+        require(verdict == ReviewVerdict.BLOCKED || findings.none { it.severity == FindingSeverity.BLOCKING }) { "блокирующая находка — только у BLOCKED" }
+        require(verdict != ReviewVerdict.WAIVED || (!by.isNullOrBlank() && !reason.isNullOrBlank())) { "у принятого без ревью — кто и почему" }
+        require(reason == null || reason.length <= MAX_DETAIL) { "причина — до $MAX_DETAIL знаков" }
+    }
+
+    companion object {
+        const val MAX_FINDINGS = 20
+        const val MAX_TITLE = 200
+        const val MAX_FILE = 300
+        const val MAX_DETAIL = 1_000
+    }
+}
 
 /** Факт о задаче (D-12). */
 sealed interface TaskEvent {
@@ -165,6 +236,12 @@ sealed interface TaskEvent {
 
     /** Завершённая задача спрятана в архив или возвращена (D-42). */
     data class ArchiveChanged(override val task: TaskId, val archived: Boolean, override val at: Timestamp) : TaskEvent
+
+    /** Итог ревью роли (D-73): прошло, блокирует, не дало итога или принято без ревью. */
+    data class ReviewRecorded(override val task: TaskId, val record: ReviewRecord, override val at: Timestamp) : TaskEvent
+
+    /** Человек перенёс задачу со слота (D-77): следующая сессия — на другом. */
+    data class SlotExcluded(override val task: TaskId, val slot: AccountId, override val at: Timestamp) : TaskEvent
 }
 
 /**

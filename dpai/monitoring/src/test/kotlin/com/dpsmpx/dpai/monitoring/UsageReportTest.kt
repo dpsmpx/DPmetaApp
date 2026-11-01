@@ -15,23 +15,30 @@ import com.dpsmpx.dpai.sessions.SessionRecord
 import com.dpsmpx.dpai.sessions.SessionsState
 import com.dpsmpx.dpai.sessions.UsageTotals
 import com.dpsmpx.dpai.tasks.Priority
+import com.dpsmpx.dpai.tasks.ReviewRecord
+import com.dpsmpx.dpai.tasks.ReviewRole
+import com.dpsmpx.dpai.tasks.ReviewVerdict
+import com.dpsmpx.dpai.tasks.TaskClass
 import com.dpsmpx.dpai.tasks.TaskPolicy
 import com.dpsmpx.dpai.tasks.TaskRecord
 import com.dpsmpx.dpai.tasks.TasksState
+import com.dpsmpx.dpai.tasks.VerificationRecord
 import java.math.BigDecimal
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.minutes
 
 /** Отчёт расхода (D-40; `docs/EFFICIENCY.md`, §9): суммы, доли, подписи наблюдаемого и оценки. */
 class UsageReportTest {
     private val clock = ManualClock()
     private val ids = IdGenerator(clock, RandomSource.seeded(91))
 
-    private fun session(task: com.dpsmpx.dpai.core.ids.TaskId, u: UsageTotals) = SessionRecord(
+    private fun session(task: com.dpsmpx.dpai.core.ids.TaskId, u: UsageTotals, review: String? = null) = SessionRecord(
         ids.next(IdKinds.SESSION), "k-" + ids.next(IdKinds.OPERATION).value, task, ids.next(IdKinds.ACCOUNT), ids.next(IdKinds.SUBSCRIPTION),
         ids.next(IdKinds.TARGET), "/c", ProviderSessionId.newUuid(RandomSource.seeded(92)), null, SessionState.COMPLETED, clock.now(), clock.now(), usage = u,
+        review = review,
     )
 
     @Test
@@ -60,6 +67,42 @@ class UsageReportTest {
         val text = r.render()
         assertTrue("+1 без итога: суммы — нижняя граница" in text, text)
         assertTrue("(оценка по прейскуранту)" in text && "## Контекст (оценка оркестратора)" in text)
+    }
+
+    /**
+     * pass@k (D-73, п. 4): с какой попытки задача прошла проверку и ревью — по
+     * классу и модели последней рабочей сессии; принятые без проверки или без
+     * ревью и незавершённые итога не имеют.
+     */
+    @Test
+    fun passAtKByClassAndModel() {
+        fun task(state: TaskState, retries: Int, cls: TaskClass = TaskClass.NORMAL_ENGINEERING, verdict: String? = "PASSED", reviews: Map<ReviewRole, ReviewRecord> = emptyMap()): TaskRecord {
+            clock.advance(1.minutes)
+            return TaskRecord(
+                ids.next(IdKinds.TASK), "t", "o", Priority.NORMAL, emptySet(), emptySet(), TaskPolicy(taskClass = cls), clock.now(),
+                state = state, retries = retries, verification = verdict?.let { VerificationRecord(it, null) }, reviews = reviews,
+            )
+        }
+        fun model(m: String?) = UsageTotals(prompts = 1, lastPrompt = PromptFacts(PromptMode.FULL, 1, 1, 0, model = m))
+        val first = task(TaskState.DONE, 0)
+        val third = task(TaskState.DONE, 2)
+        val fourth = task(TaskState.DONE, 3)
+        val failed = task(TaskState.FAILED, 3, verdict = "FAILED")
+        val waived = task(TaskState.DONE, 0, verdict = "WAIVED")
+        val reviewWaived = task(TaskState.DONE, 0, reviews = mapOf(ReviewRole.CODE to ReviewRecord(ReviewRole.CODE, ReviewVerdict.WAIVED, 2, null, by = "автор", reason = "нет ответа")))
+        val running = task(TaskState.RUNNING, 1)
+        val trivial = task(TaskState.DONE, 1, cls = TaskClass.TRIVIAL)
+        val all = listOf(first, third, fourth, failed, waived, reviewWaived, running, trivial)
+        val sessions = all.filter { it != trivial }.map { session(it.id, model("sonnet")) } +
+            // Модель — последней рабочей сессии: ревью позже работы на другой модели в счёт не идёт.
+            session(trivial.id, model("haiku")) + session(trivial.id, model("opus"), review = "CODE")
+        val r = UsageReport.build(SessionsState(sessions.associateBy { it.id }), TasksState(all.associateBy { it.id }))
+        assertEquals(mapOf("NORMAL_ENGINEERING · sonnet" to PassAtK(4, 1, 2), "TRIVIAL · haiku" to PassAtK(1, 0, 1)), r.passAtK)
+        assertEquals(0.25, r.passAtK.getValue("NORMAL_ENGINEERING · sonnet").share1)
+        val text = r.render()
+        assertTrue("| NORMAL_ENGINEERING · sonnet | 4 | 25.0 % | 50.0 % |" in text, text)
+        assertTrue("## С какой попытки" !in UsageReport.build(SessionsState.EMPTY, TasksState.EMPTY).render(), "без задач с итогом — без раздела, а не нули")
+        assertNull(PassAtK(0, 0, 0).share1)
     }
 
     @Test

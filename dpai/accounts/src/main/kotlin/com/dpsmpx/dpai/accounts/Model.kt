@@ -75,6 +75,8 @@ data class SubscriptionState(
     val windows: Map<LimitWindow, WindowState> = LimitWindow.entries.associateWith { WindowState() },
     /** Порог «у предела» в процентах загрузки окна (D-45): его задаёт человек, на нём — откладывание и экономия. */
     val nearPercent: Int = DEFAULT_NEAR_PERCENT,
+    /** [rotationAllowed] задано событием `RotationSet` (D-56), а не значением при регистрации до D-56. */
+    val rotationExplicit: Boolean = false,
 ) {
     fun window(w: LimitWindow): WindowState = windows[w] ?: WindowState()
 
@@ -140,10 +142,15 @@ data class AccountPolicy(
     val unknownResetProbeInterval: Duration = 30.minutes,
     val errorsBeforeCooldown: Int = 3,
     val errorCooldown: Duration = 10.minutes,
-    val maxSwitchesPerTask: Int = 3,
+    /**
+     * Сколько раз задача может сменить подписку за [switchWindow]; `null` —
+     * без предела (D-67, слово автора: переход между слотами не
+     * ограничивается — он и так только к подписке с запасом, D-57).
+     */
+    val maxSwitchesPerTask: Int? = null,
     val switchWindow: Duration = 1.days,
 ) {
     init {
-        require(defaultMaxParallelSessions >= 1 && errorsBeforeCooldown >= 1 && maxSwitchesPerTask >= 0) { "политика аккаунтов неверна" }
+        require(defaultMaxParallelSessions >= 1 && errorsBeforeCooldown >= 1 && (maxSwitchesPerTask ?: 0) >= 0) { "политика аккаунтов неверна" }
     }
 }

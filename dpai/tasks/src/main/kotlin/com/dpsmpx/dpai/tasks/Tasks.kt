@@ -3,6 +3,7 @@ package com.dpsmpx.dpai.tasks
 import com.dpsmpx.dpai.core.clock.Timestamp
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.Retryability
+import com.dpsmpx.dpai.core.ids.AccountId
 import com.dpsmpx.dpai.core.ids.ExecutionTargetId
 import com.dpsmpx.dpai.core.ids.TaskId
 import com.dpsmpx.dpai.core.result.Outcome
@@ -63,6 +64,36 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
         return Outcome.success(listOf(TaskEvent.DependenciesChanged(task, t.dependencies + dependsOn, now)))
     }
 
+    /**
+     * Зависимости целиком (D-42, п. 1: изменить у задачи, которая ещё не
+     * идёт): несуществующая задача, сама задача и цикл — отказ.
+     */
+    fun setDependencies(state: TasksState, task: TaskId, dependencies: Set<TaskId>, now: Timestamp): Outcome<List<TaskEvent>> {
+        val t = state.tasks[task] ?: return notFound(task)
+        if (t.state !in EDITABLE) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "зависимости меняют до запуска: задача ${t.state}", "task $task")
+        if (task in dependencies) return Outcome.failure(DiagCode.DEPENDENCY_CYCLE, "задача зависит от самой себя", "task $task")
+        dependencies.firstOrNull { it !in state.tasks }?.let { return notFound(it) }
+        if (dependencies == t.dependencies) return Outcome.success(emptyList())
+        val graph = state.tasks.mapValues { it.value.dependencies } + (task to dependencies)
+        findCycle(graph)?.let { cycle ->
+            return Outcome.failure(DiagCode.DEPENDENCY_CYCLE, "цикл зависимостей: ${cycle.joinToString(" → ")}", "task $task")
+        }
+        val changed = TaskEvent.DependenciesChanged(task, dependencies, now)
+        // Готовность решает promote по зависимостям (`docs/SCHEDULER.md`, §2): готовая задача с новой
+        // незавершённой зависимостью и заблокированная упавшей зависимостью — снова в очередь, иначе
+        // готовая начала бы раньше зависимости (ревью 18 октября 2026).
+        val requeue = when (t.state) {
+            TaskState.READY -> dependencies.any { state.tasks.getValue(it).state != TaskState.DONE }
+            TaskState.BLOCKED -> t.lastReason == DiagCode.DEPENDENCY_FAILED
+            else -> false
+        }
+        if (!requeue) return Outcome.success(listOf(changed))
+        return when (val m = move(apply(state, changed), task, TaskState.QUEUED, now)) {
+            is Outcome.Failure -> m
+            is Outcome.Success -> Outcome.success(listOf(changed) + m.value)
+        }
+    }
+
     fun enqueue(state: TasksState, id: TaskId, now: Timestamp): Outcome<List<TaskEvent>> = move(state, id, TaskState.QUEUED, now)
 
     /**
@@ -108,10 +139,35 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
             TaskState.CANCELLED -> move(s1, id, TaskState.BACKLOG, now, mode = TransitionMode.EXPLICIT).let { r ->
                 if (r is Outcome.Failure) r else move(applyAll(s1, r.valueOrNull()!!), id, TaskState.QUEUED, now).let { q -> if (q is Outcome.Failure) q else Outcome.success(r.valueOrNull()!! + q.valueOrNull()!!) }
             }
-            TaskState.BLOCKED -> move(s1, id, TaskState.READY, now)
+            // Готова, только если все зависимости выполнены; иначе — в очередь, их ждёт promote.
+            TaskState.BLOCKED -> move(s1, id, if (t.dependencies.all { state.tasks[it]?.state == TaskState.DONE }) TaskState.READY else TaskState.QUEUED, now)
             else -> return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "повторяют упавшую, отменённую или заблокированную: задача ${t.state}", "task $id")
         }
         return moves.let { r -> if (r is Outcome.Failure) r else Outcome.success(listOf(reset) + r.valueOrNull()!!) }
+    }
+
+    /**
+     * «Запустить первой» (D-77; ТЗ, §73): ручной приоритет выше всех открытых
+     * задач и снятие паузы. Только у задачи, которая ещё не идёт; пределы
+     * подписки и аренда — как у всех: задача идёт следующей, когда есть слот.
+     */
+    fun runFirst(state: TasksState, id: TaskId, now: Timestamp): Outcome<List<TaskEvent>> {
+        val t = state.tasks[id] ?: return notFound(id)
+        if (t.state !in WAITS_TO_RUN) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "«Запустить первой» — у задачи в очереди: задача ${t.state}", "task $id")
+        if (!policy.manualPriorityAllowed) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "политика планировщика не разрешает ручной приоритет", "task $id")
+        val top = state.tasks.values.filter { !it.terminal && it.id != id }.maxOfOrNull { it.manualPriority ?: 0 } ?: 0
+        val events = mutableListOf<TaskEvent>()
+        if (t.manualPriority == null || t.manualPriority <= top) events += TaskEvent.PriorityChanged(id, t.priority, top + 1, now)
+        if (t.held) events += TaskEvent.HoldChanged(id, false, now)
+        return Outcome.success(events)
+    }
+
+    /** Перенести задачу со слота (D-77): следующая сессия на него не идёт; повтор — без второго события. */
+    fun excludeSlot(state: TasksState, id: TaskId, slot: AccountId, now: Timestamp): Outcome<List<TaskEvent>> {
+        val t = state.tasks[id] ?: return notFound(id)
+        if (t.terminal) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "задача завершена: ${t.state}", "task $id")
+        if (t.excludedSlot == slot) return Outcome.success(emptyList())
+        return Outcome.success(listOf(TaskEvent.SlotExcluded(id, slot, now)))
     }
 
     fun setPriority(state: TasksState, id: TaskId, priority: Priority, manual: Int?, now: Timestamp): Outcome<List<TaskEvent>> {
@@ -172,11 +228,21 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
      * нужными возможностями и свободным местом. Задача без подходящего
      * target ждёт, не занимая места других (ТЗ, §50, §51, §85).
      */
-    fun plan(state: TasksState, now: Timestamp, offers: List<TargetOffer>): List<Assignment> {
+    /**
+     * [accepts] — может ли задача пойти на target сверх возможностей:
+     * например, у перенесённой задачи (D-77) там есть слот, кроме
+     * исключённого.
+     */
+    fun plan(
+        state: TasksState,
+        now: Timestamp,
+        offers: List<TargetOffer>,
+        accepts: (TaskRecord, ExecutionTargetId) -> Boolean = { _, _ -> true },
+    ): List<Assignment> {
         val free = offers.associate { it.target to it.free }.toMutableMap()
         val out = mutableListOf<Assignment>()
         for (t in ready(state, now)) {
-            val o = offers.firstOrNull { (free[it.target] ?: 0) > 0 && it.capabilities.containsAll(t.capabilities) } ?: continue
+            val o = offers.firstOrNull { (free[it.target] ?: 0) > 0 && it.capabilities.containsAll(t.capabilities) && accepts(t, it.target) } ?: continue
             free[o.target] = free.getValue(o.target) - 1
             out += Assignment(t.id, o.target)
         }
@@ -314,12 +380,12 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
     fun complete(state: TasksState, id: TaskId, now: Timestamp, waiver: Pair<String, String>? = null): Outcome<List<TaskEvent>> {
         val t = state.tasks[id] ?: return notFound(id)
         return when (t.state) {
-            TaskState.VERIFIED ->
-                if (t.verification?.verdict == "PASSED") {
-                    move(state, id, TaskState.DONE, now)
-                } else {
-                    Outcome.failure(DiagCode.VERIFICATION_REQUIRED, "нет записанной успешной проверки", "task $id")
-                }
+            TaskState.VERIFIED -> when {
+                t.verification?.verdict != "PASSED" -> Outcome.failure(DiagCode.VERIFICATION_REQUIRED, "нет записанной успешной проверки", "task $id")
+                // Ревью политики (D-73) — шаг проверки: без его итога DONE нет.
+                t.reviewsLeft().isNotEmpty() -> Outcome.failure(DiagCode.REVIEW_REQUIRED, "ждёт ревью: ${t.reviewsLeft().joinToString { it.name }}", "task $id")
+                else -> move(state, id, TaskState.DONE, now)
+            }
             TaskState.COMPLETION_UNVERIFIED -> {
                 val (who, why) = waiver ?: return Outcome.failure(DiagCode.VERIFICATION_REQUIRED, "без проверки DONE — только с исключением политики", "task $id")
                 if (who.isBlank() || why.isBlank()) return Outcome.failure(DiagCode.VALUE_INVALID, "у исключения — кто и почему", "task $id")
@@ -329,6 +395,61 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
                 }
             }
             else -> Outcome.failure(DiagCode.INVALID_TRANSITION, "в DONE — из VERIFIED или COMPLETION_UNVERIFIED, а задача ${t.state}", "task $id")
+        }
+    }
+
+    /**
+     * Итог ревью роли (D-73): только у `VERIFIED` и только роли из
+     * политики задачи. Блокирующий итог сам задачу не двигает — это
+     * [reviewBlocked], когда ревью всех ролей кончились.
+     */
+    fun recordReview(state: TasksState, id: TaskId, record: ReviewRecord, now: Timestamp): Outcome<List<TaskEvent>> {
+        val t = state.tasks[id] ?: return notFound(id)
+        if (t.state != TaskState.VERIFIED) return Outcome.failure(DiagCode.INVALID_TRANSITION, "ревью — у проверенной задачи, а эта ${t.state}", "task $id")
+        if (record.role !in t.policy.reviews) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "ревью ${record.role} нет в политике задачи", "task $id")
+        return Outcome.success(listOf(TaskEvent.ReviewRecorded(id, record, now)))
+    }
+
+    /**
+     * Принять ревью роли без итога (D-73, п. 3): решение человека — кто и
+     * почему; только роли, у которых итога нет или он `FAILED`.
+     */
+    fun waiveReview(state: TasksState, id: TaskId, role: ReviewRole, by: String, why: String, now: Timestamp): Outcome<List<TaskEvent>> {
+        val t = state.tasks[id] ?: return notFound(id)
+        if (by.isBlank() || why.isBlank()) return Outcome.failure(DiagCode.VALUE_INVALID, "у исключения — кто и почему", "task $id")
+        val last = t.reviews[role]
+        if (last != null && last.verdict != ReviewVerdict.FAILED) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "у ревью $role уже есть итог ${last.verdict}", "task $id")
+        val record = ReviewRecord(role, ReviewVerdict.WAIVED, last?.attempt ?: 1, last?.session, by = by.take(ReviewRecord.MAX_TITLE), reason = why.take(ReviewRecord.MAX_DETAIL))
+        return recordReview(state, id, record, now)
+    }
+
+    /**
+     * Ревью нашло блокирующее (D-73, п. 3): попытка засчитывается, как у
+     * проваленной проверки, задача — снова `READY` после паузы. Попытки
+     * кончились или тот же итог повторяется — `BLOCKED`: решает человек
+     * (из `VERIFIED` в `FAILED` пути нет, а молча бросать работу нельзя).
+     */
+    fun reviewBlocked(state: TasksState, id: TaskId, now: Timestamp): Outcome<List<TaskEvent>> {
+        val t = state.tasks[id] ?: return notFound(id)
+        val roles = t.reviews.values.filter { it.verdict == ReviewVerdict.BLOCKED }.map { it.role }.sorted()
+        if (t.state != TaskState.VERIFIED || roles.isEmpty()) return Outcome.failure(DiagCode.INVALID_TRANSITION, "нет блокирующего ревью у проверенной задачи", "task $id")
+        val loopKey = "review:${roles.joinToString(",")}"
+        val failed = TaskEvent.AttemptFailed(id, loopKey, DiagCode.REVIEW_BLOCKING, now)
+        val s1 = apply(state, failed)
+        val attempt = t.retries + 1
+        val backoff = t.policy.retryBackoff * (1 shl (attempt - 1).coerceAtMost(10))
+        val ready = when (val r = move(s1, id, TaskState.READY, now, DiagCode.REVIEW_BLOCKING, notBefore = now + backoff)) {
+            is Outcome.Failure -> return r
+            is Outcome.Success -> r.value
+        }
+        val stop = when {
+            attempt > t.policy.maxRetries -> DiagCode.RETRY_LIMIT_REACHED
+            (t.failures[loopKey] ?: 0) + 1 >= policy.loopThreshold -> DiagCode.LOOP_DETECTED
+            else -> return Outcome.success(listOf(failed) + ready)
+        }
+        return when (val b = move(applyAll(s1, ready), id, TaskState.BLOCKED, now, stop)) {
+            is Outcome.Failure -> b
+            is Outcome.Success -> Outcome.success(listOf(failed) + ready + b.value)
         }
     }
 
@@ -359,6 +480,8 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
 
     companion object {
         /** Где политику задачи ещё можно менять: ход не идёт и не начат. */
+        /** Ещё не идёт и ждёт запуска — у неё есть смысл «Запустить первой» (D-77). */
+        private val WAITS_TO_RUN = setOf(TaskState.QUEUED, TaskState.READY, TaskState.WAITING)
         private val EDITABLE = setOf(TaskState.BACKLOG, TaskState.QUEUED, TaskState.READY, TaskState.WAITING, TaskState.BLOCKED, TaskState.FAILED, TaskState.CANCELLED)
 
         fun apply(state: TasksState, e: TaskEvent): TasksState {
@@ -376,6 +499,10 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
                         lastReason = e.reason ?: t.lastReason,
                         notBefore = e.notBefore,
                         queuedAt = if (e.to == TaskState.QUEUED && e.from == TaskState.BACKLOG) e.at else t.queuedAt,
+                        // Новая попытка — ревью заново (D-73): итог прошлой попытки к новой работе не относится.
+                        reviews = if (e.to == TaskState.RUNNING) emptyMap() else t.reviews,
+                        // Запуск — уже на другом слоте (D-77): исключение своё отработало.
+                        excludedSlot = if (e.to == TaskState.RUNNING) null else t.excludedSlot,
                     )
                 }
                 is TaskEvent.PriorityChanged -> tasks.computeIfPresent(e.task) { _, t -> t.copy(priority = e.priority, manualPriority = e.manual, updatedAt = e.at) }
@@ -384,11 +511,14 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
                 }
                 is TaskEvent.Continued -> tasks.computeIfPresent(e.task) { _, t -> t.copy(continuations = t.continuations + 1, updatedAt = e.at) }
                 is TaskEvent.VerificationRecorded -> tasks.computeIfPresent(e.task) { _, t -> t.copy(verification = e.record, updatedAt = e.at) }
-                is TaskEvent.ScopeChanged -> tasks.computeIfPresent(e.task) { _, t -> t.copy(scope = e.scope, updatedAt = e.at) }
+                // Пустая область — «без области» (как при создании), а не пустой список (ревью 18 октября 2026).
+                is TaskEvent.ScopeChanged -> tasks.computeIfPresent(e.task) { _, t -> t.copy(scope = e.scope.ifEmpty { null }, updatedAt = e.at) }
                 is TaskEvent.PolicyChanged -> tasks.computeIfPresent(e.task) { _, t -> t.copy(policy = e.policy, updatedAt = e.at) }
                 is TaskEvent.HoldChanged -> tasks.computeIfPresent(e.task) { _, t -> t.copy(held = e.held, updatedAt = e.at) }
                 is TaskEvent.CountersReset -> tasks.computeIfPresent(e.task) { _, t -> t.copy(retries = 0, continuations = 0, failures = emptyMap(), updatedAt = e.at) }
                 is TaskEvent.ArchiveChanged -> tasks.computeIfPresent(e.task) { _, t -> t.copy(archived = e.archived, updatedAt = e.at) }
+                is TaskEvent.ReviewRecorded -> tasks.computeIfPresent(e.task) { _, t -> t.copy(reviews = t.reviews + (e.record.role to e.record), updatedAt = e.at) }
+                is TaskEvent.SlotExcluded -> tasks.computeIfPresent(e.task) { _, t -> t.copy(excludedSlot = e.slot, updatedAt = e.at) }
             }
             return TasksState(tasks)
         }
@@ -397,6 +527,9 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
 
         private val SCOPE_PATH = Regex("[A-Za-z0-9._@+-]+(/[A-Za-z0-9._@+-]+)*")
 
+        /** Путь области (ТЗ, §31): относительный внутри репозитория, без `..`, `.` и абсолютного начала. */
+        fun validScopePath(p: String): Boolean = SCOPE_PATH.matches(p) && p.split('/').none { it == ".." || it == "." }
+
         /**
          * Заявить область задачи (ТЗ, §31): относительные пути внутри
          * репозитория, без `..` и абсолютных путей, не больше 500.
@@ -404,9 +537,11 @@ class Tasks(val policy: SchedulerPolicy = SchedulerPolicy()) {
         fun setScope(state: TasksState, task: TaskId, scope: Set<String>, now: Timestamp): Outcome<List<TaskEvent>> {
             val t = state.tasks[task] ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "нет такой задачи", "task $task")
             if (t.terminal) return Outcome.failure(DiagCode.INVALID_TRANSITION, "задача завершена", "task $task")
-            val bad = scope.firstOrNull { p -> !SCOPE_PATH.matches(p) || p.split('/').any { it == ".." || it == "." } }
+            // Область меняют до запуска (D-42, п. 1): у идущего хода она уже в его контексте.
+            if (t.state !in EDITABLE) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "область меняют до запуска: задача ${t.state}", "task $task")
+            val bad = scope.firstOrNull { !validScopePath(it) }
             if (bad != null || scope.size > 500) return Outcome.failure(DiagCode.VALUE_INVALID, "область — относительные пути внутри репозитория, не больше 500", "task $task")
-            if (t.scope == scope) return Outcome.success(emptyList())
+            if (t.scope.orEmpty() == scope) return Outcome.success(emptyList())
             return Outcome.success(listOf(TaskEvent.ScopeChanged(task, scope, now)))
         }
 

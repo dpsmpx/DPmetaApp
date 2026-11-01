@@ -13,7 +13,7 @@
 
 Подсистема со своими проверками (SUBSYSTEMS) — каталог со своим процессом: её текст, ссылки
 и номера проверяет её команда; здесь — секреты (второй, независимый поиск), раскладка корня
-и единое ядро.
+и единое ядро (кроме подсистемы со своим ядром по решению — CORE_OWN, D-30).
 Ключ --write-status переписывает блок состояния README.md из ROADMAP и выходит.
 
 Коды возврата: 0 — пройдено; 1 — есть находки; 2 — неверный вызов;
@@ -44,7 +44,7 @@ ROOT_ALLOW = {
     ".claude", ".github", "docs", "ROADMAP", "tools", "tests",
     "settings.gradle.kts", "build.gradle.kts", "gradle.properties", "gradlew", "gradlew.bat",
     "gradle", "build-logic", "app", "core", "cli", "config",
-    "dpai",
+    "dpai", "dppass", "socialmediaimage", "dpvisualisation", "dpmeta", "dpprofile",
 }
 # Пакетный файл Windows создан Gradle с CRLF — так и хранится (`.gitattributes`).
 CRLF_ALLOWED = {"gradlew.bat"}
@@ -52,13 +52,34 @@ CRLF_ALLOWED = {"gradlew.bat"}
 # его суммы (`dpai/docs/PROVENANCE.md`).
 WRAPPER = ("gradlew", "gradlew.bat", "gradle/wrapper/gradle-wrapper.jar", "gradle/wrapper/gradle-wrapper.properties")
 WRAPPER_SOURCE = "dpai/"
-# Подсистемы со своим процессом и командой проверок (D-28): каталог → команда уровня static.
-SUBSYSTEMS = {"dpai": "dpai/tools/verify/run.sh"}
+# Подсистемы со своим процессом и командой проверок (D-28, D-43): каталог → команда быстрого уровня;
+# строка — команда с аргументом `static`, кортеж — команда со своими аргументами.
+SUBSYSTEMS = {
+    "dpai": "dpai/tools/verify/run.sh",
+    "dppass": "dppass/tools/hostcheck/run.sh",
+    "socialmediaimage": ("socialmediaimage/tools/check.sh", "--quick"),
+    "dpvisualisation": "dpvisualisation/tools/check/run.sh",
+    "dpmeta": ("dpmeta/tools/check.sh",),
+    "dpprofile": ("dpprofile/tools/verify/run.sh", "--quick"),
+}
+# Строка шага в выводе команды подсистемы: «- ✓ шаг» (dpai), «  ✓ id  итог» (DP Verify у dppass, D-30),
+# «✓ id — что проверено» (SocialMediaImage) или «✓ id (0.0 с)» (DPvisualisation, D-43);
+# итог прогона («✓ static пройден», «✓ tools/check.sh: всё зелёное») — не шаг.
+SUBSYSTEM_STEP = re.compile(r"^(?:(?:- |  )([✓✗]) (.+)|([✓✗]) (\S+ (?:— |\().+))$", re.M)
+# Свой вид строки шага: у DPmeta шаг — «✓ документы: ссылки, …», итог — «✓ DPmeta: всё зелёное» (D-43).
+SUBSYSTEM_STEP_OWN = {"dpmeta": re.compile(r"^([✓✗]) (?!DPmeta: )(.+)$", re.M)}
 # Единое ядро (D-28): эти типы объявлены один раз — в ядре подсистемы dpai.
 CORE_TYPES = ("Outcome", "OperationResult", "Diagnostic", "DiagCode", "Secret", "Clock")
 CORE_HOME = "dpai/core/src/main/"
+# Своё ядро подсистемы — по решению, с причиной: каталог → решение.
+CORE_OWN = {"dppass/": "D-30: ядро DPpass пока своё, сведение с ядром dpai — отдельной задачей с паритетом"}
 CORE_DECL = re.compile(r"^[ \t]*(?:(?:public|internal|private|sealed|data|value|enum|abstract|open|fun|inline)\s+)*"
                        r"(?:class|interface|object|typealias)\s+(" + "|".join(CORE_TYPES) + r")\b", re.M)
+# Имена в обратных кавычках, похожие на путь, но не пути: с переездом подсистемы её каталог
+# стал первым сегментом таких имён (D-43); срезы docs/audits/ задним числом не правятся.
+NOT_PATHS = {
+    "dpmeta/docs-sync": "имя ветки DPmeta в срезе docs/audits/2026-10-10-ecosystem.md, не путь",
+}
 # Документы автора, которые он ведёт сам (через веб-интерфейс): форма текста не проверяется,
 # чтобы не править их ради проверки (D-25).
 AUTHOR_FILES = {"MESTER_TECHNICAL_TASK_ROADMAP.md"}
@@ -292,7 +313,8 @@ def check_links(repo, r):
 
     Путь сверяется, если его первый каталог есть в репозитории; путь другого проекта
     пишется `Проект:путь` (`DPmeta:C-06`) и не сверяется. Заранее названные пути —
-    PLANNED, с причиной.
+    PLANNED, с причиной. Имя в обратных кавычках, похожее на путь, но не путь, —
+    NOT_PATHS, с причиной; такой путь появился — находка (иначе список прятал бы его).
     """
     anchor_cache = {}
 
@@ -323,6 +345,10 @@ def check_links(repo, r):
                     continue
                 r.scanned += 1
                 if path in repo.planned:
+                    continue
+                if path in NOT_PATHS:
+                    if repo.exists(path) or repo.is_dir(path):
+                        r.add(f"{rel}:{n}", f"`{path}` в NOT_PATHS, а такой путь есть — убрать из NOT_PATHS")
                     continue
                 if path.endswith("/"):
                     ok = repo.is_dir(path)
@@ -480,10 +506,12 @@ def check_status(repo, r):
 
 
 def check_core_single(repo, r):
-    """core.single — типы ядра объявлены один раз и только в ядре dpai (D-28): второго ядра нет."""
+    """core.single — типы ядра объявлены один раз и только в ядре dpai (D-28): второго ядра нет.
+
+    Исключение — подсистема со своим ядром по решению (CORE_OWN, D-30)."""
     seen = {}
     for rel in repo.files:
-        if not rel.endswith(".kt"):
+        if not rel.endswith(".kt") or rel.startswith(tuple(CORE_OWN)):
             continue
         r.scanned += 1
         text = repo.text(rel) or ""
@@ -518,15 +546,17 @@ def check_wrapper(repo, r):
 def check_subsystems(root, subsystems=None):
     """subsystem.* — команда проверок каждой подсистемы на уровне static проходит (D-28)."""
     results = []
-    for name, cmd in sorted((SUBSYSTEMS if subsystems is None else subsystems).items()):
+    for name, spec in sorted((SUBSYSTEMS if subsystems is None else subsystems).items()):
+        cmd, *args = (spec, "static") if isinstance(spec, str) else spec
         r = Result(f"subsystem.{name}")
         t0 = time.monotonic()
         path = os.path.join(root, cmd)
         if not os.path.isfile(path):
             r.add(cmd, "нет команды проверок подсистемы")
         else:
-            p = subprocess.run(["bash", path, "static"], cwd=root, capture_output=True, text=True)
-            steps = re.findall(r"^- ([✓✗]) (.+)$", p.stdout, re.M)
+            p = subprocess.run(["bash", path, *args], cwd=root, capture_output=True, text=True)
+            found = SUBSYSTEM_STEP_OWN.get(name, SUBSYSTEM_STEP).findall(p.stdout)
+            steps = [(m[0] or m[2], m[1] or m[3]) if len(m) == 4 else m for m in found]
             r.scanned = len(steps)
             r.findings.extend(f"{cmd}: {what}" for mark, what in steps if mark == "✗")
             if p.returncode != 0 and not r.findings:

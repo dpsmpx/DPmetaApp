@@ -32,9 +32,17 @@ sealed interface ClaudeEvent {
     /**
      * Сообщение модели: текст, вызовы инструментов; [error] — ошибка API,
      * оформленная сообщением. [subagent] — сообщение субагента
-     * (`parent_tool_use_id`), а не самого хода.
+     * (`parent_tool_use_id`), а не самого хода. [thinking] — блоки
+     * рассуждения (`thinking`), как их отдал Claude Code; скрытые
+     * (`redacted_thinking`) — не текст и сюда не попадают (D-59).
      */
-    data class Assistant(val texts: List<String>, val toolUses: List<ToolUse>, val error: String?, val subagent: Boolean = false) : ClaudeEvent
+    data class Assistant(
+        val texts: List<String>,
+        val toolUses: List<ToolUse>,
+        val error: String?,
+        val subagent: Boolean = false,
+        val thinking: List<String> = emptyList(),
+    ) : ClaudeEvent
 
     /** Результат инструмента: [bytes] — UTF-8 текста, который получила модель; изображения не считаются. */
     data class ToolResult(val id: String?, val bytes: Long, val isError: Boolean)
@@ -140,7 +148,8 @@ class ClaudeStreamParser(private val expectedSession: ProviderSessionId?) {
         val content = ((obj["message"] as? JsonObject)?.get("content") as? JsonArray)?.items.orEmpty().filterIsInstance<JsonObject>()
         val texts = content.filter { it.str("type") == "text" }.mapNotNull { it.str("text") }
         val tools = content.filter { it.str("type") == "tool_use" }.map { ClaudeEvent.ToolUse(it.str("id"), it.str("name") ?: "?", it["input"] as? JsonObject) }
-        return ClaudeEvent.Assistant(texts, tools, obj.str("error"), subagent = obj.str("parent_tool_use_id") != null)
+        val thinking = content.filter { it.str("type") == "thinking" }.mapNotNull { it.str("thinking") }.filter { it.isNotBlank() }
+        return ClaudeEvent.Assistant(texts, tools, obj.str("error"), subagent = obj.str("parent_tool_use_id") != null, thinking = thinking)
     }
 
     /**

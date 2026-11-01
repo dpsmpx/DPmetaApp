@@ -72,8 +72,11 @@ interface ProcessHost {
     fun start(spec: ProcessSpec, onOutput: (OutputLine) -> Unit = {}): Outcome<RunningProcess>
 }
 
-/** Итог процесса, дождавшегося выхода. */
-data class Completed(val exitCode: Int, val stdout: List<String>, val stderr: List<String>) {
+/**
+ * Итог процесса, дождавшегося выхода. [truncated] — вывод длиннее предела
+ * [run] (`maxStdoutChars`): лишние строки stdout отброшены.
+ */
+data class Completed(val exitCode: Int, val stdout: List<String>, val stderr: List<String>, val truncated: Boolean = false) {
     val ok: Boolean get() = exitCode == 0
 }
 
@@ -82,12 +85,32 @@ data class Completed(val exitCode: Int, val stdout: List<String>, val stderr: Li
  * всего дерева и `PROCESS_TIMEOUT`; пережившие остановку процессы —
  * `PROCESS_ORPHANS_LEFT` причиной (ТЗ, §119).
  */
-fun ProcessHost.run(spec: ProcessSpec, timeout: Duration, grace: Duration = RunningProcess.DEFAULT_GRACE): Outcome<Completed> {
+fun ProcessHost.run(
+    spec: ProcessSpec,
+    timeout: Duration,
+    grace: Duration = RunningProcess.DEFAULT_GRACE,
+    /** Предел stdout в знаках: память на телефоне не зависит от размера вывода (ревью 17 октября 2026). */
+    maxStdoutChars: Int = Int.MAX_VALUE,
+): Outcome<Completed> {
     val out = mutableListOf<String>()
     val err = mutableListOf<String>()
     val lock = Any()
+    var chars = 0L
+    var cut = false
     val started = start(spec) { line ->
-        synchronized(lock) { (if (line.stream == OutputStream.STDOUT) out else err) += line.text }
+        synchronized(lock) {
+            if (line.stream == OutputStream.STDOUT) {
+                // После первой отброшенной строки — только отбрасывать: вывод не рвётся посередине.
+                if (cut || chars + line.text.length > maxStdoutChars) {
+                    cut = true
+                } else {
+                    chars += line.text.length + 1
+                    out += line.text
+                }
+            } else {
+                err += line.text
+            }
+        }
     }
     val process = when (started) {
         is Outcome.Failure -> return started
@@ -102,7 +125,7 @@ fun ProcessHost.run(spec: ProcessSpec, timeout: Duration, grace: Duration = Runn
         )
     }
     // Выход корня ещё не значит, что потоки чтения дочитали вывод: их дожидается awaitExit.
-    return synchronized(lock) { Outcome.success(Completed(code, out.toList(), err.toList())) }
+    return synchronized(lock) { Outcome.success(Completed(code, out.toList(), err.toList(), cut)) }
 }
 
 internal fun orphans(report: StopReport, spec: ProcessSpec): Diagnostic =

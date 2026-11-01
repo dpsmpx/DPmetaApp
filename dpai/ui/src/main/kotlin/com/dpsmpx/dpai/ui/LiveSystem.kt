@@ -14,6 +14,7 @@ import com.dpsmpx.dpai.core.ids.SessionId
 import com.dpsmpx.dpai.core.ids.TaskId
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.state.SessionState
+import com.dpsmpx.dpai.execution.agent.FollowingEventSource
 import com.dpsmpx.dpai.execution.claude.ClaudeCodeCliRunner
 import com.dpsmpx.dpai.execution.claude.ClaudeRunner
 import com.dpsmpx.dpai.execution.claude.RoutingRunner
@@ -73,7 +74,8 @@ interface ControlView {
  * дереве на target проекта; ход Claude — там же или на другом target, со
  * входом его слота и деревом по MCP (D-50).
  * [sshHost] — хост SSH-targets: в приложении JSch с ключом Keystore, в
- * тестах — mock.
+ * тестах — mock. События идущих ходов — потоком `follow` агента (D-76), без
+ * него — опросом; [close] закрывает потоки, когда систему сменяет новая.
  */
 class LiveSystem(
     private val clock: Clock,
@@ -95,7 +97,7 @@ class LiveSystem(
     onProblem: (Diagnostic) -> Unit = {},
     /** Разрешены ли уведомления (у оболочки — Android); неизвестно — `null`. */
     private val notificationsOk: () -> Boolean? = { null },
-) : ControlView {
+) : ControlView, AutoCloseable {
     override val mode: String = "контроллер"
     private val ids = IdGenerator(clock, random)
     // Сегменты и снимки (D-37): контроллер живёт неделями, память журнала не растёт с историей.
@@ -116,17 +118,23 @@ class LiveSystem(
     }
 
     /**
-     * Targets, на которых идут сессии: при проекте — только target хода
-     * (его же target или выбранный в маршруте D-50); маршрут без target
-     * проекта — ни одного.
+     * Targets, на которых идут сессии: при проекте — target хода (его же
+     * target или выбранный в маршруте D-50) и все слоты той же машины —
+     * тот же хост и порт, то есть те же файлы, деревья и ключ связки (D-56):
+     * задача, чья подписка упёрлась в предел, продолжает на другой;
+     * маршрут без target проекта — ни одного.
      */
     private val working = when {
         project == null -> usable
         project.claude != null && remote == null -> emptyList()
-        else -> (project.claude?.target ?: project.target).let { id -> usable.filter { it.id == id } }
+        else -> (project.claude?.target ?: project.target).let { id ->
+            val run = entries.firstOrNull { it.id == id }
+            usable.filter { it.id == id || (run != null && it.host == run.host && it.port == run.port && it.platform == run.platform) }
+        }
     }
     private val manager = ExecutionTargetManager(clock, sshHost = sshHost, controllerVersion = controllerVersion)
     private val runners = HashMap<ExecutionTargetId, ClaudeRunner>()
+    private val streams = mutableListOf<FollowingEventSource>()
     private val probes = HashMap<ExecutionTargetId, Pair<SlotAuthProbe, SessionId>>()
     private val usageProbes = HashMap<ExecutionTargetId, Pair<com.dpsmpx.dpai.orchestrator.accounts.UsageProbe, SessionId>>()
 
@@ -160,7 +168,11 @@ class LiveSystem(
 
     init {
         for (e in (usable + listOfNotNull(projectEntry)).distinctBy { it.id }) manager.register(e.toTarget(knownHostsFile))
-        for (e in usable) runners[e.id] = ClaudeCodeCliRunner(manager.client(e.id).valueOrNull()!!, { ProviderSessionId.newUuid(random) })
+        for (e in usable) {
+            val agent = manager.client(e.id).valueOrNull()!!
+            val events = FollowingEventSource(agent, clock).also { streams += it }
+            runners[e.id] = ClaudeCodeCliRunner(agent, { ProviderSessionId.newUuid(random) }, eventSource = events)
+        }
         lateinit var o: Orchestrator
         val router = RoutingRunner({ o.sessions.sessions[it]?.target }, { runners[it] })
         // Состояние — из журнала (перезапуск приложения); подписка и слоты
@@ -189,15 +201,64 @@ class LiveSystem(
             o.accounts.slots.values.firstOrNull { it.targetId == e.id && it.configDir == dir }?.let { slotOf[e.id] = it.id }
         }
         for (r in o.recover { t -> manager.client(t).valueOrNull() }) problems += r.diagnostics.filter { it.isError }
-        for (e in usable) probeSlot(e.id)
+        // Подписки, заведённые до D-56, ротацию не принимали (так регистрировались) — теперь принимают,
+        // пока человек не выключит: задача у предела продолжает на другой подписке.
+        for (sub in o.accounts.subscriptions.values.filter { !it.rotationExplicit && !it.rotationAllowed }.sortedBy { it.id.value }) {
+            accountsLogic.setRotation(o.accounts, sub.id, true, clock.now()).valueOrNull()?.let(o::commitAccounts)
+        }
+        // Пробы входа слотов (SSH к каждому target) — в первом такте, а не здесь (D-63): контроллер
+        // строится из журнала быстро, и экран показывает состояние, не дожидаясь сети.
     }
+
+    /** Пробы входа слотов ещё не начинались — их начнёт первый такт (D-63). */
+    private var probesStarted = false
+
+    /**
+     * Слот «нужен вход» после отказа хода (D-58): без сети Claude Code не
+     * обновляет токен и отвечает `authentication_failed`, хотя вход цел —
+     * слот перепроверяется сам (`claude auth status`, локально, без хода и
+     * лимита) через 2, 4, 8 … 60 минут; вход цел — слот снова доступен, и
+     * задачи, остановленные из‑за входа, продолжаются сами. Пауза растёт,
+     * чтобы настоящий отзыв входа не гонял задачу по кругу; сбрасывается
+     * после [AUTH_STABLE_MS] доступности слота.
+     */
+    private fun recheckLogins(now: Long) {
+        for (e in usable) {
+            val slot = slotOf[e.id] ?: continue
+            val st = orchestrator.accounts.slots[slot] ?: continue
+            if (st.state != com.dpsmpx.dpai.core.state.AccountState.AUTH_REQUIRED || st.disabled) {
+                if (st.state == com.dpsmpx.dpai.core.state.AccountState.AVAILABLE) {
+                    authRecheck[e.id]?.let { (n, at) -> if (now - at >= AUTH_STABLE_MS) authRecheck.remove(e.id) else authRecheck[e.id] = n to at }
+                }
+                continue
+            }
+            if (e.id in probes) continue
+            val (n, at) = authRecheck[e.id] ?: run {
+                authRecheck[e.id] = 0 to now
+                continue
+            }
+            val wait = (AUTH_RECHECK_FIRST_MS shl n.coerceAtMost(5)).coerceAtMost(AUTH_RECHECK_MAX_MS)
+            if (now - at >= wait) {
+                authRecheck[e.id] = (n + 1) to now
+                probeSlot(e.id)
+            }
+        }
+    }
+
+    /** Перепроверки входа слота (D-58): сколько было подряд и когда последняя. */
+    private val authRecheck = HashMap<ExecutionTargetId, Pair<Int, Long>>()
+
+    /** Когда перепроверить вход слота снова (D-58) — для экрана; не ждёт — `null`. */
+    fun loginRecheckAt(target: ExecutionTargetId): Long? = authRecheck[target]?.let { (n, at) ->
+        at + (AUTH_RECHECK_FIRST_MS shl n.coerceAtMost(5)).coerceAtMost(AUTH_RECHECK_MAX_MS)
+    }?.takeIf { slotOf[target]?.let { orchestrator.accounts.slots[it]?.state } == com.dpsmpx.dpai.core.state.AccountState.AUTH_REQUIRED }
 
     /**
      * Обновить загрузку окон подписок (D-48): `/usage` на каждом target со
      * слотом — без хода и без траты лимита. Уже идёт — ничего.
      */
-    fun refreshUsage() {
-        for (e in usable) {
+    fun refreshUsage(only: Set<ExecutionTargetId>? = null) {
+        for (e in usable.filter { only == null || it.id in only }) {
             val slot = slotOf[e.id] ?: continue
             if (synchronized(usageProbes) { e.id in usageProbes }) continue
             val dir = orchestrator.accounts.slots[slot]?.configDir ?: continue
@@ -270,7 +331,7 @@ class LiveSystem(
         val sub = status.identity?.let { id -> o.accounts.subscriptions.values.firstOrNull { it.identity == id }?.id }
             ?: ids.next(IdKinds.SUBSCRIPTION).also { s ->
                 val label = status.plan?.let { "подписка $it (${e.label})" } ?: "подписка ${e.label}"
-                o.commitAccounts(accountsLogic.registerSubscription(o.accounts, s, label, clock.now(), maxParallelSessions = MAX_PARALLEL).valueOrNull()!!)
+                o.commitAccounts(accountsLogic.registerSubscription(o.accounts, s, label, clock.now(), maxParallelSessions = MAX_PARALLEL, rotationAllowed = true).valueOrNull()!!)
             }
         val slot = ids.next(IdKinds.ACCOUNT)
         when (val r = accountsLogic.registerSlot(o.accounts, slot, sub, e.id, e.configDir!!, clock.now())) {
@@ -289,12 +350,12 @@ class LiveSystem(
 
     fun addTask(title: String, objective: String): Outcome<TaskId> = orchestrator.addTask(title, objective, Priority.NORMAL)
 
-    private var delivered = 0
+    private var delivered = 0L
 
     /** Уведомления, которые оболочка ещё не показала: новые и обновлённые (ТЗ, §36). */
     fun drainNotifications(): List<Notification> {
-        val fresh = orchestrator.posted.drop(delivered)
-        delivered = orchestrator.posted.size
+        val (fresh, next) = orchestrator.postedSince(delivered)
+        delivered = next
         return fresh.mapNotNull {
             when (it) {
                 is NotificationDecision.Post -> it.notification
@@ -305,6 +366,10 @@ class LiveSystem(
     }
 
     override fun step() {
+        if (!probesStarted) {
+            probesStarted = true
+            for (e in usable) probeSlot(e.id)
+        }
         for ((target, p) in probes.entries.toList()) {
             when (val r = p.first.poll(p.second)) {
                 is Outcome.Failure -> {
@@ -334,6 +399,7 @@ class LiveSystem(
         for ((target, at) in probeFailedAt.entries.toList()) {
             if (target !in slotOf && target !in probes && now - at >= PROBE_RETRY_MS) probeSlot(target)
         }
+        recheckLogins(now)
         pollUsage()
         // Git проекта — проверка один раз (дальше — по итогам операций контура) и снова, пока не работает, раз в минуту.
         if (project != null && orchestrator.gitOk != true && clock.now().epochMillis - lastGitCheck >= GIT_RECHECK_MS) {
@@ -344,8 +410,31 @@ class LiveSystem(
         if (problems.size > MAX_PROBLEMS) problems.subList(0, problems.size - MAX_PROBLEMS).clear()
     }
 
+    /**
+     * Потоки событий ходов (D-76) — прочь: систему сменила новая (другие
+     * targets или проект), а поток прежней держал бы канал SSH и JVM на target.
+     */
+    override fun close() {
+        streams.forEach { it.close() }
+    }
+
     /** События активного сегмента журнала — для временной шкалы (D-37). */
     fun events(): List<EventEnvelope> = journal.records(journal.activeFrom).map { it.event }
+
+    /**
+     * События одной сессии из активного сегмента (D-63): обход журнала с
+     * фильтром по потоку — без копии всех записей сегмента ради одной
+     * сессии (экран чата берёт снимок раз в 1–2 с).
+     */
+    fun sessionEvents(id: SessionId): List<EventEnvelope> {
+        val stream = com.dpsmpx.dpai.core.events.StreamRef.of(id)
+        val out = ArrayList<EventEnvelope>()
+        journal.forEachRecord(journal.activeFrom) { r ->
+            if (r.event.stream == stream) out += r.event
+            true
+        }
+        return out
+    }
 
     fun diagnosis(): SelfDiagnosis = SelfDiagnostics.evaluate(signals())
 
@@ -370,19 +459,53 @@ class LiveSystem(
 
     override fun dashboard(): DashboardScreen {
         val base = Screens.dashboard(orchestrator.dashboard(), diagnosis(), orchestrator.usage())
-        val login = usable.filter { it.id in waitingLogin }.map { "${it.label}: войдите в Claude в каталоге ${it.configDir}, затем «Вход Claude»" }
+        val login = usable.filter { it.id in waitingLogin }.map { "${it.label}: войдите в Claude в каталоге ${it.configDir}, затем «Вход Claude»" } +
+            usable.mapNotNull { e ->
+                loginRecheckAt(e.id)?.let { at ->
+                    val min = ((at - clock.now().epochMillis).coerceAtLeast(0) + 59_999) / 60_000
+                    "${e.label}: Claude ответил «нужен вход» — после сбоя сети так бывает; проверю вход сам через $min мин, «Вход Claude» — сразу"
+                }
+            }
         val retry = usable.filter { it.id in probeFailedAt && it.id !in slotOf }
             .map { "${it.label}: проба входа не удалась — повтор раз в минуту; «Вход Claude» — сразу" }
         val extra = notes + login + retry + (problems + orchestrator.problems).takeLast(5).map { "${it.code}: ${it.message}" }
-        return base.copy(attention = base.attention + extra, limits = Screens.limits(orchestrator.accounts, clock.now()))
+        return base.copy(attention = base.attention + extra, limits = Screens.limits(orchestrator.accounts, clock.now(), labelOf = ::subscriptionName))
+    }
+
+    /**
+     * Имя подписки для человека: тариф и нынешние имена её targets — «pro —
+     * Мой слот»; имя при регистрации хранило имя target на тот момент и
+     * после переименования слота устаревало бы.
+     */
+    fun subscriptionName(sub: com.dpsmpx.dpai.accounts.SubscriptionState): String {
+        val names = orchestrator.accounts.slotsOf(sub.id).mapNotNull { s -> usable.firstOrNull { it.id == s.targetId }?.label }.distinct()
+        return if (names.isEmpty()) sub.label else (sub.plan?.let { "$it — " } ?: "") + names.joinToString(", ")
     }
 
     override fun board(): TaskBoard = Screens.board(orchestrator.tasks)
 
-    override fun session(id: SessionId): SessionScreen = Screens.session(
-        orchestrator.dashboard(), id, events(), orchestrator.live(id), clock.now(), Screens.sessionActions(id, orchestrator.sessions, orchestrator.tasks),
-        Screens.usage(orchestrator.sessions) { it.id == id },
-    )
+    override fun session(id: SessionId): SessionScreen {
+        val own = sessionEvents(id)
+        val base = Screens.session(
+            orchestrator.dashboard(), id, own, orchestrator.live(id), clock.now(), Screens.sessionActions(id, orchestrator.sessions, orchestrator.tasks),
+            orchestrator.sessions.sessions[id]?.usage, orchestrator.sessions.sessions[id]?.task,
+        )
+        // Чат задачи сессии (D-59): все её сессии в одной ленте.
+        val task = orchestrator.sessions.sessions[id]?.task ?: return base
+        val record = orchestrator.sessions.sessions[id]
+        val running = orchestrator.sessions.sessions.values.any {
+            it.task == task && !it.terminal && it.state in setOf(com.dpsmpx.dpai.core.state.SessionState.STARTING, com.dpsmpx.dpai.core.state.SessionState.RUNNING, com.dpsmpx.dpai.core.state.SessionState.NEAR_LIMIT)
+        }
+        // Сколько идёт ход: от последнего начала хода этой сессии в журнале.
+        val turnStart = own.lastOrNull { it.type == com.dpsmpx.dpai.core.events.EventType.SESSION_TURN_STARTED }?.occurredAt
+        val working = turnStart?.takeIf { record?.state == com.dpsmpx.dpai.core.state.SessionState.RUNNING || record?.state == com.dpsmpx.dpai.core.state.SessionState.NEAR_LIMIT }
+            ?.let { Screens.duration(clock.now().epochMillis - it.epochMillis) }
+        return base.copy(
+            title = orchestrator.tasks.tasks[task]?.title,
+            chat = Screens.chat(Screens.chatEntries(orchestrator.chat(task), orchestrator.turnMessages(task), orchestrator.tasks.tasks[task]), id, clock.now()),
+            status = Screens.sessionStatus(record, orchestrator.tasks.tasks[task]?.state, running), workingFor = working,
+        )
+    }
 
     companion object {
         /**
@@ -399,6 +522,13 @@ class LiveSystem(
 
         /** Как часто повторять неудавшуюся пробу входа target без слота (A-79). */
         const val PROBE_RETRY_MS = 60_000L
+
+        /** Первая перепроверка входа после отказа хода (D-58); дальше — вдвое, до [AUTH_RECHECK_MAX_MS]. */
+        const val AUTH_RECHECK_FIRST_MS = 120_000L
+        const val AUTH_RECHECK_MAX_MS = 3_600_000L
+
+        /** Сколько слот должен быть доступен, чтобы пауза перепроверок сбросилась (D-58). */
+        const val AUTH_STABLE_MS = 1_800_000L
 
         /** Предел одновременных сессий подписки контроллера; на target — по одной (`TargetSlot`). */
         private const val MAX_PARALLEL = 8

@@ -28,13 +28,16 @@ import kotlin.time.Duration.Companion.milliseconds
 object TaskCodec {
     const val STATE_FORMAT = "dpai.tasks-state"
     /**
-     * v5 — архив (`archived`, пишется, только если в архиве; D-42); v4 —
+     * v7 — слот, с которого задачу перенесли (`excludedSlot`, D-77; пишется,
+     * только если есть); v6 — ревью (D-73): роли в политике (`reviews`) и итоги ревью у
+     * задачи (`reviews`), пишутся, только если есть; v5 — архив
+     * (`archived`, пишется, только если в архиве; D-42); v4 —
      * удержание задачи человеком (`held`, пишется, только если
      * удержана; D-42); v3 — класс задачи, модель и усилие в политике (D-40; пишутся, только
      * если заданы); v2 — заявленная область задачи (`scope`); v1 читается,
      * область неизвестна.
      */
-    const val STATE_VERSION = 5
+    const val STATE_VERSION = 7
 
     fun type(e: TaskEvent): EventType = when (e) {
         is TaskEvent.Created -> EventType.TASK_CREATED
@@ -49,6 +52,8 @@ object TaskCodec {
         is TaskEvent.HoldChanged -> EventType.TASK_HOLD_CHANGED
         is TaskEvent.CountersReset -> EventType.TASK_COUNTERS_RESET
         is TaskEvent.ArchiveChanged -> EventType.TASK_ARCHIVE_CHANGED
+        is TaskEvent.ReviewRecorded -> EventType.TASK_REVIEW_RECORDED
+        is TaskEvent.SlotExcluded -> EventType.TASK_SLOT_EXCLUDED
     }
 
     fun stream(e: TaskEvent): StreamRef = StreamRef.of(e.task)
@@ -75,6 +80,8 @@ object TaskCodec {
         is TaskEvent.HoldChanged -> obj("task" to id(e.task), "held" to com.dpsmpx.dpai.core.serialization.JsonBool(e.held))
         is TaskEvent.CountersReset -> obj("task" to id(e.task))
         is TaskEvent.ArchiveChanged -> obj("task" to id(e.task), "archived" to com.dpsmpx.dpai.core.serialization.JsonBool(e.archived))
+        is TaskEvent.ReviewRecorded -> JsonObject(obj("task" to id(e.task)).fields + review(e.record).fields)
+        is TaskEvent.SlotExcluded -> obj("task" to id(e.task), "slot" to JsonString(e.slot.value))
     }
 
     fun decode(type: EventType, at: Timestamp, payload: JsonObject): Outcome<TaskEvent>? {
@@ -148,6 +155,16 @@ object TaskCodec {
                 val archived = f.boolean("archived")
                 if (task != null && archived != null) TaskEvent.ArchiveChanged(task, archived, at) else null
             }
+            EventType.TASK_REVIEW_RECORDED -> {
+                val task = f.taskId("task")
+                val record = readReview(f)
+                if (task != null && record != null) TaskEvent.ReviewRecorded(task, record, at) else null
+            }
+            EventType.TASK_SLOT_EXCLUDED -> {
+                val task = f.taskId("task")
+                val slot = f.string("slot")?.let { v -> IdKinds.ACCOUNT.parse(v).valueOrNull() ?: null.also { d.error(DiagCode.ID_INVALID, "ожидался AccountId", "$.payload.slot") } }
+                if (task != null && slot != null) TaskEvent.SlotExcluded(task, slot, at) else null
+            }
             else -> return null
         }
         f.finish()
@@ -176,6 +193,8 @@ object TaskCodec {
         "scope" to (t.scope?.let(::paths) ?: JsonNull),
         "held" to (if (t.held) com.dpsmpx.dpai.core.serialization.JsonBool(true) else JsonNull),
         "archived" to (if (t.archived) com.dpsmpx.dpai.core.serialization.JsonBool(true) else JsonNull),
+        "reviews" to (t.reviews.takeIf { it.isNotEmpty() }?.let { m -> JsonArray(m.values.sortedBy { it.role }.map(::review)) } ?: JsonNull),
+        "excludedSlot" to (t.excludedSlot?.let { JsonString(it.value) } ?: JsonNull),
     )
 
     fun decodeState(json: JsonObject): Outcome<TasksState> {
@@ -208,6 +227,8 @@ object TaskCodec {
                     scope = if (version >= 2 && r.has("scope")) r.paths("scope") else null,
                     held = if (version >= 4 && r.has("held")) r.boolean("held")!! else false,
                     archived = if (version >= 5 && r.has("archived")) r.boolean("archived")!! else false,
+                    reviews = if (version >= 6 && r.has("reviews")) readReviews(r)!! else emptyMap(),
+                    excludedSlot = if (version >= 7) r.optString("excludedSlot")?.let { IdKinds.ACCOUNT.parse(it).valueOrNull()!! } else null,
                 )
             }.getOrNull()
             r.finish()
@@ -226,6 +247,8 @@ object TaskCodec {
         "taskClass" to (p.taskClass.takeIf { it != TaskClass.NORMAL_ENGINEERING }?.let { JsonString(it.name) } ?: JsonNull),
         "model" to (p.model?.let(::JsonString) ?: JsonNull),
         "effort" to (p.effort?.let(::JsonString) ?: JsonNull),
+        // D-73: пишется, только если роли есть, — записи до D-73 читаются как прежде.
+        "reviews" to (p.reviews.takeIf { it.isNotEmpty() }?.let { r -> JsonArray(r.sorted().map { JsonString(it.name) }) } ?: JsonNull),
     )
 
     private fun readPolicy(f: JsonFields): TaskPolicy? {
@@ -239,9 +262,12 @@ object TaskCodec {
         } ?: TaskClass.NORMAL_ENGINEERING
         val model = f.optString("model")
         val effort = f.optString("effort")
+        val reviews = if (f.has("reviews")) f.array("reviews")?.items.orEmpty().mapNotNull { v ->
+            ReviewRole.entries.firstOrNull { it.name == (v as? JsonString)?.value } ?: null.also { f.diagnostics.error(DiagCode.VALUE_INVALID, "неизвестная роль ревью", "${f.path}.reviews") }
+        }.toSet() else emptySet()
         f.finish()
         if (maxRetries == null || backoff == null || maxCont == null || timeout == null) return null
-        return runCatching { TaskPolicy(maxRetries, backoff.milliseconds, maxCont, timeout.milliseconds, budget, taskClass, model, effort) }.getOrNull()
+        return runCatching { TaskPolicy(maxRetries, backoff.milliseconds, maxCont, timeout.milliseconds, budget, taskClass, model, effort, reviews) }.getOrNull()
             ?: null.also { f.diagnostics.error(DiagCode.VALUE_INVALID, "политика задачи недопустима", f.path) }
     }
 
@@ -251,6 +277,53 @@ object TaskCodec {
         "waivedBy" to (v.waivedBy?.let(::JsonString) ?: JsonNull),
         "reason" to (v.reason?.let(::JsonString) ?: JsonNull),
     )
+
+    private fun review(r: ReviewRecord): JsonObject = obj(
+        "role" to JsonString(r.role.name), "verdict" to JsonString(r.verdict.name), "attempt" to JsonNumber.of(r.attempt),
+        "session" to (r.session?.let { JsonString(it.value) } ?: JsonNull),
+        "findings" to JsonArray(
+            r.findings.map { x ->
+                obj(
+                    "severity" to JsonString(x.severity.name), "title" to JsonString(x.title), "file" to (x.file?.let(::JsonString) ?: JsonNull),
+                    "line" to (x.line?.let { JsonNumber.of(it) } ?: JsonNull), "detail" to (x.detail?.let(::JsonString) ?: JsonNull),
+                )
+            },
+        ),
+        "omitted" to (r.omitted.takeIf { it > 0 }?.let { JsonNumber.of(it) } ?: JsonNull),
+        "by" to (r.by?.let(::JsonString) ?: JsonNull), "reason" to (r.reason?.let(::JsonString) ?: JsonNull),
+    )
+
+    /** Поля записи ревью в [f] (D-73); закрывает чтение полей вызывающий. */
+    private fun readReview(f: JsonFields): ReviewRecord? {
+        val role = f.enumOf<ReviewRole>("role")
+        val verdict = f.enumOf<ReviewVerdict>("verdict")
+        val attempt = f.int("attempt")
+        val session = f.optString("session")?.let { s -> IdKinds.SESSION.parse(s).valueOrNull() ?: null.also { f.diagnostics.error(DiagCode.ID_INVALID, "ожидался SessionId", "${f.path}.session") } }
+        val findings = f.array("findings")?.items.orEmpty().mapIndexedNotNull { i, item ->
+            val o = item as? JsonObject ?: return@mapIndexedNotNull null.also { f.diagnostics.error(DiagCode.FIELD_TYPE, "ожидался объект", "${f.path}.findings[$i]") }
+            val x = JsonFields(o, "${f.path}.findings[$i]", f.diagnostics)
+            val severity = x.enumOf<FindingSeverity>("severity")
+            val title = x.string("title")
+            val file = x.optString("file")
+            val line = x.optLong("line")?.toInt()
+            val detail = x.optString("detail")
+            x.finish()
+            if (severity == null || title == null) null
+            else runCatching { ReviewFinding(severity, title, file, line, detail) }.getOrNull() ?: null.also { f.diagnostics.error(DiagCode.VALUE_INVALID, "находка ревью недопустима", "${f.path}.findings[$i]") }
+        }
+        val omitted = f.optLong("omitted")?.toInt() ?: 0
+        val by = f.optString("by")
+        val reason = f.optString("reason")
+        if (role == null || verdict == null || attempt == null) return null
+        return runCatching { ReviewRecord(role, verdict, attempt, session, findings, omitted, by, reason) }.getOrNull()
+            ?: null.also { f.diagnostics.error(DiagCode.VALUE_INVALID, "запись ревью недопустима", f.path) }
+    }
+
+    private fun readReviews(r: JsonFields): Map<ReviewRole, ReviewRecord>? = r.array("reviews")?.items?.mapIndexedNotNull { i, item ->
+        val o = item as? JsonObject ?: return@mapIndexedNotNull null.also { r.diagnostics.error(DiagCode.FIELD_TYPE, "ожидался объект", "${r.path}.reviews[$i]") }
+        val x = JsonFields(o, "${r.path}.reviews[$i]", r.diagnostics)
+        readReview(x).also { x.finish() }
+    }?.associateBy { it.role }
 
     /** Поля записи проверки в [f]; закрывает чтение полей вызывающий. */
     private fun readVerification(f: JsonFields): VerificationRecord? {

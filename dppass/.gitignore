@@ -1,0 +1,40 @@
+# Сборка
+build/
+# …но не пакеты исходников с именем build (build-logic: com.dpsmpx.dppass.build).
+!**/src/**/build/
+.gradle/
+.kotlin/
+local.properties
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+*.so
+
+# Ключи и секреты — никогда в репозитории (security.secrets DP Verify, tools/dpverify.toml)
+*.keystore
+*.jks
+*.p12
+*.pfx
+.env
+*.env
+
+# Внешние исходники для исследований (tools/research/*.sh)
+third_party/
+
+# Редакторы и ОС
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# Python
+__pycache__/
+*.pyc

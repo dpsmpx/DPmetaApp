@@ -41,6 +41,12 @@ data class SessionRecord(
     val agentSequence: Long = 0,
     /** Расход сессии: prompt (оценка) и ходы (со слов провайдера), D-40. */
     val usage: UsageTotals = UsageTotals.EMPTY,
+    /**
+     * Назначение (D-73): `null` — работа над задачей, иначе роль ревью
+     * (имя `ReviewRole` модуля `tasks`): сессия только читает дерево и
+     * отвечает находками.
+     */
+    val review: String? = null,
 ) {
     val terminal: Boolean get() = state in SessionLifecycle.table.terminal
 }
@@ -89,6 +95,8 @@ sealed interface SessionEvent {
         val provider: ProviderSessionId,
         val continues: SessionId?,
         override val at: Timestamp,
+        /** Роль ревью (D-73); `null` — рабочая сессия. */
+        val review: String? = null,
     ) : SessionEvent
 
     data class StateChanged(
@@ -145,4 +153,12 @@ data class LiveTurn(val text: String?, val tool: String?, val target: String?, v
     companion object {
         const val MAX_TEXT = 600
     }
+}
+
+/**
+ * Кусок ленты чата из потока хода (D-59): рассуждение или текст модели,
+ * как пришёл; редактирование секретов и обрезка — при записи в ленту.
+ */
+data class ChatPiece(val kind: Kind, val text: String, val at: com.dpsmpx.dpai.core.clock.Timestamp) {
+    enum class Kind { THINKING, TEXT }
 }

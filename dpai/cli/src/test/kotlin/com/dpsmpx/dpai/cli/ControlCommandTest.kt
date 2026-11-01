@@ -24,9 +24,6 @@ class ControlCommandTest {
         |"subscriptions":[{"id":"sub_01M4EVC6NCPMK72R25GZV67HSW","label":"подписка pro","nearPercent":80,"near":true,"windows":[{"window":"SESSION","level":"OK","percent":82}]}],
         |"slots":[],"control":{"disabledTargets":[]}}""".trimMargin()
 
-    private var changes = """{"branch":"task/tsk_01M4EWP74S6EWVHWSM33QD5YK0","base":"main","committed":[" calc.py | 2 +-","+print(2)"],
-        |"uncommitted":[],"untracked":["notes.txt"],"truncated":true,"diagnostics":[]}""".trimMargin()
-
     private val sent = mutableListOf<Pair<String, JsonObject?>>()
 
     private fun cli(out: MutableList<String>, err: MutableList<String>) = ControlCommand(out::add, err::add, NioVfs(dir)) { _ ->
@@ -36,7 +33,15 @@ class ControlCommandTest {
                 path == "/v1/pair" -> HttpReply(200, obj("""{"token":"${"a".repeat(64)}"}"""))
                 token == null -> HttpReply(401, obj("""{"status":"FAILED","diagnostics":[]}"""))
                 path == "/v1/state" -> HttpReply(200, obj(state))
-                path.endsWith("/changes") -> HttpReply(200, obj(changes))
+                path.endsWith("/diff") -> HttpReply(
+                    200,
+                    obj("""{"base":"main","mergeBase":"0123456789abcdef","head":"рабочее дерево","files":[{"path":"calc.py","added":2,"removed":1},{"path":"logo.png","added":null,"removed":null}],"untracked":["notes.txt"],"patch":"+print(2)","truncated":false}"""),
+                )
+                path == "/v1/search" -> HttpReply(200, obj("""{"hits":[{"kind":"TASK","title":"Калькулятор","detail":"READY","link":"dpai://task/tsk_01M4EWP74S6EWVHWSM33QD5YK0"}],"more":{"TASK":3},"notes":["пометка поиска"]}"""))
+                path.endsWith("/reviews") -> HttpReply(
+                    200,
+                    obj("""{"roles":["CODE","SECURITY"],"reviews":[{"role":"CODE","verdict":"BLOCKED","attempt":1,"findings":[{"severity":"BLOCKING","title":"деление на ноль","file":"a.kt","line":3,"detail":"пустой список"}],"omitted":2}]}"""),
+                )
                 else -> HttpReply(200, obj("""{"operation":"x","operationId":"op_1","status":"SUCCEEDED","diagnostics":[]}"""))
             }
         }
@@ -55,7 +60,7 @@ class ControlCommandTest {
         assertEquals(0, cli(out, err).run("control", listOf("pair", "123456")))
         assertEquals(0, cli(out, err).run("status", emptyList()))
         assertTrue(out.any { "Калькулятор" in it } && out.any { "5 ч 82 %" in it }, out.toString())
-        assertTrue(out.any { "ходов 2, 0.04 \$ (оценка)" in it }, "расход задачи (D-42, п. 4): $out")
+        assertTrue(out.any { "ходов 2 · вход 1200 · выход 80 · \$0.04 (оценка)" in it }, "расход задачи (D-42, п. 4): $out")
 
         assertEquals(0, cli(out, err).run("task", listOf("5YK0", "hold")))
         assertEquals("task.hold", field("command"))
@@ -66,37 +71,63 @@ class ControlCommandTest {
         cli(out, err).run("task", listOf("add", "Новая", "Сделай", "--priority", "high", "--class", "trivial", "--budget", "0.25"))
         val add = CanonicalJson.write(sent.last().second!!)
         assertTrue(""""budgetCents":25""" in add && """"priority":"HIGH"""" in add && """"taskClass":"TRIVIAL"""" in add, add)
-        assertEquals(0, cli(out, err).run("task", listOf("add", "После", "Сделай", "--after", "5YK0", "--scope", "src/a.kt, docs")))
+        assertEquals(0, cli(out, err).run("task", listOf("add", "После", "Сделай", "--depends-on", "5YK0", "--scope", "src/a.kt, docs")))
         val after = CanonicalJson.write(sent.last().second!!)
-        assertTrue(""""dependencies":["tsk_01M4EWP74S6EWVHWSM33QD5YK0"]""" in after && """"scope":["src/a.kt","docs"]""" in after, after)
-        assertEquals(1, cli(out, err).run("task", listOf("add", "Ещё", "Сделай", "--after", "нет-такой")), "неизвестная зависимость — отказ до отправки")
+        assertTrue(""""dependsOn":["tsk_01M4EWP74S6EWVHWSM33QD5YK0"]""" in after && """"scope":["src/a.kt","docs"]""" in after, after)
+        assertEquals(1, cli(out, err).run("task", listOf("add", "Ещё", "Сделай", "--depends-on", "нет-такой")), "неизвестная зависимость — отказ до отправки")
         assertEquals(0, cli(out, err).run("answer", listOf("STMSB", "verify")))
         assertTrue(CanonicalJson.write(sent.last().second!!).contains("verify?hash"))
         assertEquals(1, cli(out, err).run("answer", listOf("STMSB", "нет-такого")))
         assertEquals(2, cli(out, err).run("task", listOf("5YK0", "плясать")))
+        // «Запустить первой» и «Перенести» (D-77).
+        assertEquals(0, cli(out, err).run("task", listOf("5YK0", "first")))
+        assertEquals("task.run-first", field("command"))
+        assertEquals(0, cli(out, err).run("session", listOf("SF4QD", "reassign")))
+        assertEquals("session.reassign", field("command"))
+        assertEquals("ses_01M4EY7BAXY3ZGE5VT0K6SF4QD", field("session"))
         assertEquals(0, cli(out, err).run("sessions-limit", listOf("off")))
         assertEquals("control.session-limit", field("command"))
         assertTrue(sent.last().second!!["limit"] == null, "off — без предела")
     }
 
+    /** Изменения задачи (D-42, п. 3): по файлам, новые файлы и текст; `--stat` — без текста. */
     @Test
-    fun taskDiffShowsWhatTheMergeWouldBring() {
+    fun taskDiffByFilesAndText() {
         val out = mutableListOf<String>()
         val err = mutableListOf<String>()
         assertEquals(0, cli(out, err).run("control", listOf("pair", "123456")))
         assertEquals(0, cli(out, err).run("task", listOf("5YK0", "diff")))
-        assertEquals("GET /v1/tasks/tsk_01M4EWP74S6EWVHWSM33QD5YK0/changes", sent.last().first, "сокращённый id раскрыт")
-        assertTrue(out.any { "main...task/tsk_01M4EWP74S6EWVHWSM33QD5YK0" in it } && "+print(2)" in out, out.toString())
-        assertTrue(out.none { "не закоммичено" in it }, "пустая часть не печатается")
-        assertTrue("  notes.txt" in out && out.any { "обрезан" in it }, out.toString())
+        assertEquals("GET /v1/tasks/tsk_01M4EWP74S6EWVHWSM33QD5YK0/diff", sent.last().first, "сокращённый id раскрыт")
+        assertTrue("  +2 −1  calc.py" in out && "  +? −?  logo.png" in out && "  новый, вне индекса: notes.txt" in out, out.toString())
+        assertTrue("+print(2)" in out, "текст изменений: $out")
+        out.clear()
+        assertEquals(0, cli(out, err).run("task", listOf("5YK0", "diff", "--stat")))
+        assertTrue("+print(2)" !in out && "  +2 −1  calc.py" in out, out.toString())
+    }
+
+    /** Поиск (ТЗ, §75) и ревью задачи (D-73) из `dpai`. */
+    @Test
+    fun searchAndReviews() {
+        val out = mutableListOf<String>()
+        val err = mutableListOf<String>()
+        assertEquals(0, cli(out, err).run("control", listOf("pair", "123456")))
+        assertEquals(0, cli(out, err).run("search", listOf("кальк", "ул")))
+        assertEquals("POST /v1/search", sent.last().first)
+        assertEquals("кальк ул", field("query"))
+        assertTrue(out.containsAll(listOf("TASK:", "ещё TASK: 3", "· пометка поиска")) && out.any { "Калькулятор" in it && "dpai://task/" in it }, out.toString())
+        assertEquals(2, cli(out, err).run("search", emptyList()), "без запроса — подсказка")
+
+        cli(out, err).run("task", listOf("add", "С ревью", "Сделай", "--review", "code,security"))
+        assertTrue(""""reviews":["CODE","SECURITY"]""" in CanonicalJson.write(sent.last().second!!), CanonicalJson.write(sent.last().second!!))
+        cli(out, err).run("task", listOf("5YK0", "policy", "--class", "architecture", "--review", "none"))
+        assertTrue(""""reviews":[]""" in CanonicalJson.write(sent.last().second!!), "none — снять роли")
+        cli(out, err).run("task", listOf("5YK0", "policy", "--class", "architecture"))
+        assertTrue("reviews" !in CanonicalJson.write(sent.last().second!!), "без --review роли не трогаются")
 
         out.clear()
-        changes = """{"branch":"task/x","base":"main","untracked":[],"truncated":false,"diagnostics":[]}"""
-        assertEquals(0, cli(out, err).run("task", listOf("5YK0", "diff")))
-        assertTrue(out.single().contains("ещё нет"), "ни ветки, ни дерева — задача не начиналась: $out")
-        out.clear()
-        changes = """{"branch":"task/x","base":"main","committed":[],"uncommitted":[],"untracked":[],"truncated":false,"diagnostics":[]}"""
-        cli(out, err).run("task", listOf("5YK0", "diff"))
-        assertTrue(out.single().startsWith("изменений нет"), out.toString())
+        assertEquals(0, cli(out, err).run("task", listOf("5YK0", "reviews")))
+        assertEquals("GET /v1/tasks/tsk_01M4EWP74S6EWVHWSM33QD5YK0/reviews", sent.last().first)
+        assertTrue(out.any { it.startsWith("── CODE: BLOCKED") } && out.any { "BLOCKING  деление на ноль  (a.kt:3)" in it }, out.toString())
+        assertTrue("── SECURITY: ещё нет итога" in out && out.any { "не показано находок: 2" in it }, out.toString())
     }
 }

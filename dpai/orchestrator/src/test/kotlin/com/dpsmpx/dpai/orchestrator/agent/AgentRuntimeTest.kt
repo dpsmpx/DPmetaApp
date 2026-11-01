@@ -12,6 +12,7 @@ import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.serialization.CanonicalJson
 import com.dpsmpx.dpai.core.serialization.JsonBool
 import com.dpsmpx.dpai.core.serialization.JsonString
+import com.dpsmpx.dpai.execution.agent.AgentReply
 import com.dpsmpx.dpai.execution.agent.ExitReason
 import com.dpsmpx.dpai.execution.agent.RunChannel
 import com.dpsmpx.dpai.execution.agent.RunEventSource
@@ -154,6 +155,58 @@ class AgentRuntimeTest {
         assertEquals(RunState.EXITED, rt.status(run).run!!.state)
     }
 
+    /**
+     * Поток хода (D-76, «Проверка»): события приходят строками по мере
+     * записи, пока ход идёт, — номера подряд, — и поток кончается вместе с
+     * ходом, последней строкой с его концом.
+     */
+    @Test
+    fun followStreamsTheTurnAsWrittenAndEndsWithIt() {
+        val rt = AgentRuntime(dir.toString(), Clock.SYSTEM, "test", TestChild.selfCommand(), followHeartbeat = 300.milliseconds)
+        val run = ids.next(IdKinds.SESSION)
+        assertTrue(rt.start(run, RunSpec(TestChild.command("child", "tick"), timeout = 3.seconds)).ok)
+        val lines = mutableListOf<AgentReply>()
+        assertTrue(rt.follow(run, 0) { lines += it; true })
+        assertTrue(lines.all { it.command == "follow" && it.ok })
+        val events = lines.flatMap { it.events }
+        assertEquals((1L..events.size).toList(), events.map { it.sequence }, "номера подряд, без пропусков и повторов")
+        assertEquals(EventType.TARGET_PROCESS_EXITED, events.last().type)
+        assertEquals(RunState.EXITED, lines.last().run!!.state)
+        val whileRunning = lines.filter { it.run!!.state == RunState.RUNNING && outputs(it.events).isNotEmpty() }
+        assertTrue(whileRunning.size >= 3, "вывод хода пришёл несколькими строками, пока ход шёл: ${whileRunning.size}")
+    }
+
+    /**
+     * Продолжение с номера — без повторов; пока ход молчит — строки без
+     * событий (признак жизни); читатель ушёл — поток кончается, а ход идёт.
+     * Поток законченного хода отдаёт его конец и кончается; чужой запуск —
+     * отказ строкой.
+     */
+    @Test
+    fun followResumesFromNumberBeatsWhileQuietAndLeavesTheTurnRunning() {
+        val rt = AgentRuntime(dir.toString(), Clock.SYSTEM, "test", TestChild.selfCommand(), followHeartbeat = 300.milliseconds)
+        val run = ids.next(IdKinds.SESSION)
+        assertTrue(rt.start(run, RunSpec(TestChild.command("child", "hang"))).ok)
+        val first = mutableListOf<AgentReply>()
+        assertTrue(rt.follow(run, 0) { first += it; outputs(first.flatMap { r -> r.events }).isEmpty() })
+        val status = rt.status(run).run!!
+        status.pid?.let { started += it }
+        assertEquals(RunState.RUNNING, status.state, "читатель ушёл — ход идёт")
+        val last = first.flatMap { it.events }.last().sequence
+        val second = mutableListOf<AgentReply>()
+        assertTrue(rt.follow(run, last) { second += it; second.count { r -> r.events.isEmpty() } < 3 })
+        assertTrue(second.flatMap { it.events }.none { it.sequence <= last }, "с номера — без повторов")
+        assertTrue(second.all { it.run!!.state == RunState.RUNNING })
+        assertTrue(rt.stop(run, 2.seconds).ok)
+        val third = mutableListOf<AgentReply>()
+        assertTrue(rt.follow(run, last) { third += it; true })
+        assertEquals(EventType.TARGET_PROCESS_EXITED, third.flatMap { it.events }.last().type)
+        assertEquals(RunState.EXITED, third.last().run!!.state)
+        val unknown = mutableListOf<AgentReply>()
+        assertFalse(rt.follow(ids.next(IdKinds.SESSION), 0) { unknown += it; true })
+        assertEquals(DiagCode.ENTITY_NOT_FOUND, unknown.single().diagnostics.single().code)
+    }
+
     /** Аудит 2026-10-07, A-4: каталог агента закрыт для других пользователей (на POSIX). */
     @Test
     fun agentHomeIsOwnerOnly() {
@@ -240,6 +293,25 @@ class AgentRuntimeTest {
         assertTrue(texts.any { "<redacted>" in it }, "строка с ключом есть, но ключ скрыт: $texts")
         val onDisk = dir.toFile().walkTopDown().filter { it.isFile }.joinToString(" ") { it.readText(Charsets.UTF_8) }
         assertFalse(TestChild.FAKE_KEY in onDisk, "ключ попал на диск")
+    }
+
+    /** Проба входа (D-69, ревью A-72): на диск target — только отпечаток, без email и организации. */
+    @Test
+    fun authProbeOutputIsSummarizedNotStored() {
+        val rt = runtime()
+        val run = ids.next(IdKinds.SESSION)
+        assertTrue(rt.start(run, RunSpec(TestChild.command("child", "auth-status"), capture = com.dpsmpx.dpai.execution.agent.OutputCapture.AUTH_STATUS)).ok)
+        RealTime.await(60.seconds, "процесс вышел") { rt.status(run).run!!.takeIf { it.state == RunState.EXITED } }
+        // stdout — одна строка свода; stderr (например, «Picked up JAVA_TOOL_OPTIONS» JVM-потомка) — как обычно.
+        val out = rt.events(run, 0, 1000).events.filter { it.type == EventType.TARGET_PROCESS_OUTPUT && (it.payload["stream"] as JsonString).value == "stdout" }
+            .map { (it.payload["text"] as JsonString).value }
+        val summary = com.dpsmpx.dpai.core.serialization.JsonParser().parse(out.single()).valueOrNull()!!
+        val status = com.dpsmpx.dpai.accounts.AuthStatus.fromAgentJson(summary).valueOrNull()!!
+        assertTrue(status.isClaudeLogin)
+        assertEquals("max", status.plan)
+        assertEquals(com.dpsmpx.dpai.accounts.AuthStatus.fingerprint("org-777", "slot.owner@example.org"), status.identity)
+        val onDisk = dir.toFile().walkTopDown().filter { it.isFile }.joinToString(" ") { it.readText(Charsets.UTF_8) }
+        assertFalse("slot.owner@example.org" in onDisk || "org-777" in onDisk, "email или организация попали на диск target")
     }
 
     /** Вход хода (prompt) доходит до процесса и после запуска на target не хранится (аудит 2026-10-07, A-5). */
@@ -432,7 +504,12 @@ class AgentRuntimeTest {
     /** Ревью A-9: потомок хода, ушедший в фон (родитель — init), останавливается вместе с ходом. */
     @Test
     fun stopKillsBackgroundedDescendant() {
-        org.junit.jupiter.api.Assumptions.assumeTrue(com.dpsmpx.dpai.execution.process.ProcessTree.sessionOf(ProcessHandle.current().pid()) != null, "сеансы — Linux и Android")
+        // Linux и Android — сеанс супервизора; Windows — объект задания помощника PowerShell (A-9).
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+            com.dpsmpx.dpai.execution.process.ProcessTree.sessionOf(ProcessHandle.current().pid()) != null ||
+                com.dpsmpx.dpai.execution.process.Detacher.isWindows(),
+            "сеансы — Linux и Android, объект задания — Windows",
+        )
         val rt = runtime()
         val run = ids.next(IdKinds.SESSION)
         assertTrue(rt.start(run, RunSpec(TestChild.command("child", "spawn-daemon"))).ok)
@@ -443,6 +520,53 @@ class AgentRuntimeTest {
         assertTrue(alive(daemon))
         assertTrue(rt.stop(run, 2.seconds).ok)
         RealTime.await(15.seconds, "фоновый потомок остановлен") { if (alive(daemon)) null else Unit }
+    }
+
+    /**
+     * Помощник объекта задания (A-9) — по протоколу супервизора, с
+     * подделкой помощника (настоящий — PowerShell, только Windows):
+     * остановка хода завершает помощника, и объект закрывается; ход
+     * кончился сам — отметка, и помощник снимает охрану после выхода
+     * супервизора; супервизор умер — объект закрывается; помощник не смог
+     * — ход идёт, а при остановке предупреждение `PROCESS_JOB_UNAVAILABLE`.
+     */
+    @Test
+    fun jobHelperFollowsTheTurn() {
+        val rt = runtime()
+        dir.resolve(TestChild.FAKE_JOB).toFile().writeText("ok")
+        fun mark(run: SessionId, turn: Int, ext: String) = dir.resolve("runs/${run.value}/job-release-$turn.$ext").toFile()
+        fun helperOf(run: SessionId) = RealTime.await(60.seconds, "помощник запущен") { mark(run, 1, "pid").takeIf { it.exists() }?.readText()?.toLongOrNull() }
+        fun awaitRunning(run: SessionId) = RealTime.await(60.seconds, "ход идёт") { rt.status(run).run!!.takeIf { it.state == RunState.RUNNING } }
+
+        val stopped = ids.next(IdKinds.SESSION)
+        assertTrue(rt.start(stopped, RunSpec(TestChild.command("child", "hang"))).ok)
+        awaitRunning(stopped).pid?.let { started += it }
+        val helper = helperOf(stopped)
+        assertTrue(rt.stop(stopped, 2.seconds).ok)
+        RealTime.await(15.seconds, "помощник завершён остановкой") { if (alive(helper)) null else Unit }
+        assertFalse(mark(stopped, 1, "marker").exists(), "объект закрыт остановкой, а не решением помощника")
+
+        val ended = ids.next(IdKinds.SESSION)
+        assertTrue(rt.start(ended, RunSpec(TestChild.command("child", "wide", "1", "1"))).ok)
+        assertEquals("released", RealTime.await(60.seconds, "помощник снял охрану") { mark(ended, 1, "marker").takeIf { it.exists() }?.readText() })
+
+        val lost = ids.next(IdKinds.SESSION)
+        assertTrue(rt.start(lost, RunSpec(TestChild.command("child", "hang"))).ok)
+        awaitRunning(lost).pid?.let { started += it }
+        helperOf(lost)
+        val doc = RunDoc.read(DocumentStore(NioVfs(dir), "runs/${lost.value}").read(AgentRuntime.RUN_KEY).valueOrNull()!!.content)!!
+        ProcessHandle.of(doc.supervisorPid!!).ifPresent { it.destroyForcibly().let { _ -> it.onExit().get() } }
+        assertEquals("closed", RealTime.await(60.seconds, "супервизор умер — объект закрыт") { mark(lost, 1, "marker").takeIf { it.exists() }?.readText() })
+        assertTrue(rt.stop(lost, 2.seconds).ok)
+
+        dir.resolve(TestChild.FAKE_JOB).toFile().writeText("fail")
+        val failed = ids.next(IdKinds.SESSION)
+        assertTrue(rt.start(failed, RunSpec(TestChild.command("child", "hang"))).ok)
+        awaitRunning(failed).pid?.let { started += it }
+        helperOf(failed)
+        assertTrue(rt.stop(failed, 2.seconds).ok)
+        val exit = rt.events(failed, 0, 1000).events.last { it.type == EventType.TARGET_PROCESS_EXITED }
+        assertTrue("PROCESS_JOB_UNAVAILABLE" in CanonicalJson.write(exit.payload), CanonicalJson.write(exit.payload))
     }
 
     /**

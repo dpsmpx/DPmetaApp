@@ -12,9 +12,11 @@ import com.dpsmpx.dpai.monitoring.SelfDiagnosis
 import com.dpsmpx.dpai.monitoring.SystemHealth
 import com.dpsmpx.dpai.monitoring.Timeline
 import com.dpsmpx.dpai.monitoring.UsageReport
+import com.dpsmpx.dpai.orchestrator.review.Review
 import com.dpsmpx.dpai.sessions.LiveTurn
 import com.dpsmpx.dpai.sessions.SessionRecord
 import com.dpsmpx.dpai.sessions.SessionsState
+import com.dpsmpx.dpai.tasks.ReviewRole
 import com.dpsmpx.dpai.tasks.TasksState
 import kotlin.time.Duration
 
@@ -26,7 +28,8 @@ enum class Tone { NEUTRAL, ACTIVE, WARNING, ERROR, DONE }
 
 data class Counter(val label: String, val value: String, val tone: Tone)
 
-data class SessionLine(val session: SessionId, val task: String, val state: String, val tone: Tone, val silent: String, val next: String)
+/** Строка сессии; [review] — название роли, если сессия — ревью задачи (D-73), а не её работа. */
+data class SessionLine(val session: SessionId, val task: String, val state: String, val tone: Tone, val silent: String, val next: String, val review: String? = null)
 
 /** Сводка (ТЗ, §38): состояние приложения, счётчики, сессии, что требует внимания. */
 data class DashboardScreen(
@@ -50,6 +53,8 @@ data class SubscriptionLimits(
     val windows: List<WindowLine>,
     val nearPercent: Int,
     val near: Boolean,
+    /** Принимает задачи подписок, упёршихся в предел (D-56). */
+    val rotation: Boolean = false,
 )
 
 data class TimelineLine(val time: String, val text: String)
@@ -64,15 +69,40 @@ data class SessionScreen(
     val timeline: List<TimelineLine>,
     val live: LiveLine? = null,
     val actions: List<SessionAction> = emptyList(),
-    /** Расход сессии (D-42, п. 4) — [Screens.usageLine]; ходов ещё нет — `null`. */
+    /** Расход сессии (D-42, п. 4); ходов не было — `null`. */
     val usage: String? = null,
+    /** Задача сессии и лента её чата (D-59): все сессии задачи в одном пространстве. */
+    val title: String? = null,
+    val chat: List<ChatLine> = emptyList(),
+    /**
+     * Задача сессии — к ней привязано имя, которое задаёт человек, её лист
+     * и контекст с экрана сессии (ТЗ, §74); неизвестна — `null`.
+     */
+    val task: TaskId? = null,
+    /** Состояние для кружка в заголовке (D-61). */
+    val status: SessionStatus = SessionStatus.IDLE,
+    /** Сколько идёт текущий ход — «5 мин» (от начала хода в журнале сессии); ход не идёт — `null`. */
+    val workingFor: String? = null,
 )
+
+/** Состояние сессии одним знаком в заголовке окна (D-61): идёт, готово, ошибка или ждёт. */
+enum class SessionStatus { RUNNING, DONE, ERROR, IDLE }
+
+/**
+ * Строка ленты чата (D-59): [mine] — запрос человека (справа); [thinking]
+ * — рассуждение модели (свёрнуто); [event] — событие контура одной строкой
+ * по центру; иначе — текст модели. [here] — запись этой сессии, а не
+ * соседней сессии той же задачи.
+ */
+data class ChatLine(val text: String, val time: String, val mine: Boolean = false, val thinking: Boolean = false, val event: Boolean = false, val here: Boolean = true)
 
 /** Действие человека с сессией (D-42, п. 3). */
 enum class SessionAction(val label: String) {
     STOP("Остановить ход"),
     SEND("Запрос"),
     FRESH("Свежая сессия"),
+    /** Ход остановлен с handoff, следующая сессия задачи — на другом слоте (D-77; ТЗ, §74, Reassign). */
+    REASSIGN("Перенести на другой слот"),
 }
 
 /** Карточка задачи; [level] — глубина в DAG: 0 — без зависимостей, иначе 1 + наибольшая у зависимостей. */
@@ -108,7 +138,7 @@ object Screens {
             Counter("Аккаунтов доступно", view.availableAccounts.toString(), Tone.NEUTRAL),
         ) + usageCounters(usage),
         sessions = view.rows.map { r ->
-            SessionLine(r.session, r.task, r.state.name, tone(r.state), silent(r.silentFor), r.next ?: "—")
+            SessionLine(r.session, r.task, r.state.name, tone(r.state), silent(r.silentFor), r.next ?: "—", r.review?.let(::reviewLabel))
         },
         attention = view.attention.map { "${it.subject}: ${it.detail}" },
     )
@@ -131,7 +161,8 @@ object Screens {
         live: LiveTurn? = null,
         now: com.dpsmpx.dpai.core.clock.Timestamp? = null,
         actions: List<SessionAction> = emptyList(),
-        usage: UsageReport? = null,
+        usage: com.dpsmpx.dpai.sessions.UsageTotals? = null,
+        task: TaskId? = null,
     ): SessionScreen {
         val stream = StreamRef.of(session)
         val own = events.filter { it.stream == stream }
@@ -141,73 +172,111 @@ object Screens {
             timeline = Timeline.of(own).map { TimelineLine(it.at.toIsoString().substring(11, 19), it.text) },
             live = live?.let { l -> LiveLine(l.tool, l.target, l.text, now?.let { ago(it.epochMillis - l.at.epochMillis) } ?: "?") },
             actions = actions,
-            usage = usage?.let(::usageLine),
+            usage = usage?.let { UsageText.of(com.dpsmpx.dpai.sessions.UsageSummary.of(listOf(it))) },
+            task = task,
         )
     }
 
-    /** Расход части сессий (D-42, п. 4): одной задачи или одной сессии — тот же отчёт D-40 по выборке. */
-    fun usage(sessions: SessionsState, pick: (SessionRecord) -> Boolean): UsageReport =
-        UsageReport.build(SessionsState(sessions.sessions.filterValues(pick)), TasksState.EMPTY)
+    /** Название роли ревью по имени из записи сессии (D-73); незнакомое — как есть. */
+    fun reviewLabel(role: String): String = ReviewRole.entries.firstOrNull { it.name == role }?.let(Review::label) ?: "ревью $role"
 
     /**
-     * Расход строкой (D-42, п. 4): ходы, вход с долей кеша, выход,
-     * стоимость. Ходы без итога — суммы лишь нижняя граница, и это
-     * написано (D-13); стоимость по прейскуранту — «оценка». Ходов нет —
-     * `null`: «0 токенов» означало бы, что их сочли.
+     * Состояние для кружка в заголовке (D-61): ход идёт — «идёт»; задача
+     * готова или ход завершён — «готово»; сбой или блок — «ошибка»; иначе —
+     * «ждёт» (очередь, пауза, проверка).
      */
-    fun usageLine(u: UsageReport): String? {
-        if (u.turns + u.unknownTurns == 0) return null
-        return buildString {
-            append("ходов ${u.turns}")
-            if (u.unknownTurns > 0) append(" (+${u.unknownTurns} без итога — суммы не меньше)")
-            append(" · вход ${tokens(u.totalInput)}")
-            u.cacheReadShare?.let { append(", из кеша ${(it * 100).toInt()} %") }
-            append(" · выход ${tokens(u.outputTokens)}")
-            val cents = u.costUsd.movePointRight(2)
-            append(" · ")
-            append(if (cents.signum() > 0 && cents < java.math.BigDecimal.ONE) "< 0.01 $" else "${u.costUsd.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString()} $")
-            if (u.costEstimated) append(" (оценка)")
-        }
+    fun sessionStatus(record: SessionRecord?, taskState: TaskState?, running: Boolean): SessionStatus = when {
+        running -> SessionStatus.RUNNING
+        taskState == TaskState.FAILED || taskState == TaskState.BLOCKED ||
+            record?.state == com.dpsmpx.dpai.core.state.SessionState.FAILED || record?.state == com.dpsmpx.dpai.core.state.SessionState.BLOCKED -> SessionStatus.ERROR
+        taskState == TaskState.DONE || taskState == TaskState.VERIFIED || taskState == TaskState.COMPLETION_UNVERIFIED -> SessionStatus.DONE
+        else -> SessionStatus.IDLE
     }
 
-    /** Токены коротко: до 10 тыс. — как есть, дальше — тыс. и млн. */
-    fun tokens(n: Long): String = when {
-        n < 10_000 -> n.toString()
-        n < 1_000_000 -> "${n / 1000} тыс."
-        else -> "%.1f млн".format(java.util.Locale.ROOT, n / 1_000_000.0)
+    /**
+     * Лента задачи целиком (D-62): записи чата и то, что было до него —
+     * итоги ходов из `dpai.task-messages` раньше первой записи чата и цель
+     * задачи, если чат начался не с неё (задачи, начатые до D-59). Вывод
+     * модели — только в чате, лист задачи его больше не показывает.
+     */
+    fun chatEntries(
+        chat: List<com.dpsmpx.dpai.orchestrator.ChatEntry>,
+        turns: List<com.dpsmpx.dpai.orchestrator.TurnMessage>,
+        task: com.dpsmpx.dpai.tasks.TaskRecord?,
+    ): List<com.dpsmpx.dpai.orchestrator.ChatEntry> {
+        val first = chat.firstOrNull()?.at?.epochMillis ?: Long.MAX_VALUE
+        val older = turns.filter { it.at.epochMillis < first }
+            .map { com.dpsmpx.dpai.orchestrator.TaskChat.entry(it.at, com.dpsmpx.dpai.orchestrator.ChatRole.ASSISTANT, it.text, it.session) }
+        val goal = task?.takeIf { chat.firstOrNull()?.role != com.dpsmpx.dpai.orchestrator.ChatRole.USER }?.let { t ->
+            com.dpsmpx.dpai.orchestrator.TaskChat.entry(t.createdAt, com.dpsmpx.dpai.orchestrator.ChatRole.USER, if (t.objective.trim() == t.title.trim()) t.title else "${t.title}\n\n${t.objective}")
+        }
+        return (listOfNotNull(goal) + older + chat).sortedBy { it.at.epochMillis }
+    }
+
+    /**
+     * Лента чата задачи для экрана (D-59): время — «ЧЧ:ММ» в поясе [zone],
+     * у записей другого дня — «ДД.ММ ЧЧ:ММ»; записи по порядку.
+     */
+    fun chat(
+        entries: List<com.dpsmpx.dpai.orchestrator.ChatEntry>,
+        session: SessionId?,
+        now: com.dpsmpx.dpai.core.clock.Timestamp,
+        zone: java.time.ZoneId = java.time.ZoneId.systemDefault(),
+    ): List<ChatLine> {
+        val today = java.time.Instant.ofEpochMilli(now.epochMillis).atZone(zone).toLocalDate()
+        return entries.map { e ->
+            val t = java.time.Instant.ofEpochMilli(e.at.epochMillis).atZone(zone)
+            val time = if (t.toLocalDate() == today) "%02d:%02d".format(t.hour, t.minute) else "%02d.%02d %02d:%02d".format(t.dayOfMonth, t.monthValue, t.hour, t.minute)
+            ChatLine(
+                e.text, time,
+                mine = e.role == com.dpsmpx.dpai.orchestrator.ChatRole.USER,
+                thinking = e.role == com.dpsmpx.dpai.orchestrator.ChatRole.THINKING,
+                event = e.role == com.dpsmpx.dpai.orchestrator.ChatRole.EVENT,
+                here = e.session == null || session == null || e.session == session,
+            )
+        }
     }
 
     /**
      * Действия с сессией (D-42): остановить — идущий ход; запрос и свежая
-     * сессия — последней сессии задачи, когда ход не идёт и задача не на
-     * проверке. Оркестратор проверяет каждую команду сам.
+     * сессия — последней рабочей сессии задачи, когда ход не идёт и задача
+     * не на проверке. Сессии ревью продолжать нельзя (D-73): она только
+     * читает — запрос ей оркестратор отвергнет. Оркестратор проверяет
+     * каждую команду сам.
      */
     fun sessionActions(session: SessionId, sessions: SessionsState, tasks: TasksState): List<SessionAction> {
         val s = sessions.sessions[session] ?: return emptyList()
         val own = sessions.sessions.values.filter { it.task == s.task }
         val running = own.any { !it.terminal && it.state !in WAIT }
-        val last = own.maxWithOrNull(compareBy({ it.createdAt.epochMillis }, { it.id.value }))?.id == session
+        val last = s.review == null && own.filter { it.review == null }.maxWithOrNull(compareBy({ it.createdAt.epochMillis }, { it.id.value }))?.id == session
         val taskState = tasks.tasks[s.task]?.state
         return buildList {
             if (!s.terminal && s.state !in WAIT) add(SessionAction.STOP)
-            if (last && !running && taskState !in BUSY) {
-                add(SessionAction.SEND)
-                add(SessionAction.FRESH)
-            }
+            // Во время хода сообщение — в очередь, ход не прерывается (D-60); свежая сессия — после хода.
+            if (last && (running || taskState !in BUSY)) add(SessionAction.SEND)
+            if (last && !running && taskState !in BUSY) add(SessionAction.FRESH)
+            // Перенос — у последней рабочей сессии незавершённой задачи, пока она не на проверке (D-77).
+            if (last && tasks.tasks[s.task]?.terminal == false && taskState !in CHECKING) add(SessionAction.REASSIGN)
         }
     }
 
     private val WAIT = setOf(com.dpsmpx.dpai.core.state.SessionState.PAUSED, com.dpsmpx.dpai.core.state.SessionState.BLOCKED, com.dpsmpx.dpai.core.state.SessionState.RECOVERY_PENDING)
+    private val CHECKING = setOf(TaskState.IMPLEMENTED, TaskState.VERIFYING, TaskState.VERIFIED)
     private val BUSY = setOf(TaskState.RUNNING, TaskState.IMPLEMENTED, TaskState.VERIFYING, TaskState.VERIFIED)
 
     /**
      * Пределы подписок (D-45): загрузка окон «5 ч» и «неделя», время сброса
      * в поясе [zone], порог; тон окна — по порогу.
      */
-    fun limits(accounts: com.dpsmpx.dpai.accounts.AccountsState, now: com.dpsmpx.dpai.core.clock.Timestamp, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): List<SubscriptionLimits> =
+    fun limits(
+        accounts: com.dpsmpx.dpai.accounts.AccountsState,
+        now: com.dpsmpx.dpai.core.clock.Timestamp,
+        zone: java.time.ZoneId = java.time.ZoneId.systemDefault(),
+        labelOf: (com.dpsmpx.dpai.accounts.SubscriptionState) -> String = { it.label },
+    ): List<SubscriptionLimits> =
         accounts.subscriptions.values.sortedBy { it.id.value }.map { sub ->
             SubscriptionLimits(
-                sub.id, sub.label,
+                sub.id, labelOf(sub),
                 com.dpsmpx.dpai.accounts.LimitWindow.entries.map { w ->
                     val ws = sub.window(w)
                     val u = ws.utilization
@@ -226,11 +295,18 @@ object Screens {
                         },
                     )
                 },
-                sub.nearPercent, sub.nearAt(now),
+                sub.nearPercent, sub.nearAt(now), sub.rotationAllowed,
             )
         }
 
     /** «3 с назад», «2 мин назад»; будущее (часы разошлись) — «только что». */
+    /** Длительность для «работает …»: «40 с», «5 мин», «1 ч 5 мин». */
+    fun duration(ms: Long): String = when {
+        ms < 60_000 -> "${(ms / 1_000).coerceAtLeast(0)} с"
+        ms < 3_600_000 -> "${ms / 60_000} мин"
+        else -> "${ms / 3_600_000} ч ${ms % 3_600_000 / 60_000} мин"
+    }
+
     fun ago(ms: Long): String = when {
         ms < 1_000 -> "только что"
         ms < 60_000 -> "${ms / 1_000} с назад"

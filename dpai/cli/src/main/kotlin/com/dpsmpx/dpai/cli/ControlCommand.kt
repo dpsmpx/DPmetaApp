@@ -12,7 +12,6 @@ import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonParser
 import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.core.serialization.JsonValue
-import com.dpsmpx.dpai.orchestrator.git.TaskChanges
 import com.dpsmpx.dpai.storage.vfs.NioVfs
 import com.dpsmpx.dpai.storage.vfs.Vfs
 import java.net.URI
@@ -73,6 +72,7 @@ class ControlCommand(
             "limit" -> limit(args)
             "target", "slot" -> toggle(cmd, args)
             "sessions-limit" -> sessionsLimit(args)
+            "search" -> search(args)
             else -> usage("неизвестная команда: $cmd")
         }
     }
@@ -114,13 +114,13 @@ class ControlCommand(
         for (t in tasks) {
             val extra = listOfNotNull(
                 "архив".takeIf { bool(t, "archived") }, "пауза".takeIf { bool(t, "held") }, str(t, "model"), str(t, "reason"), str(t, "waiting")?.let { "ждёт: $it" },
-                (t["usage"] as? JsonObject)?.let(::usage),
+                reviewsLine(t), spend(t),
             ).joinToString(" · ")
             out("  ${short(str(t, "id"))}  ${str(t, "state")}  ${str(t, "priority")}  ${str(t, "title")}${if (extra.isNotEmpty()) "  [$extra]" else ""}")
         }
         val live = list(s, "sessions").filter { str(it, "state") !in setOf("COMPLETED", "FAILED", "CANCELLED") }
         out("Сессии идут (${live.size}):")
-        for (x in live) out("  ${short(str(x, "id"))}  ${str(x, "state")}  ход ${num(x, "turn")}  задача ${short(str(x, "task"))}")
+        for (x in live) out("  ${short(str(x, "id"))}  ${str(x, "state")}  ход ${num(x, "turn")}  задача ${short(str(x, "task"))}${str(x, "review")?.let { "  ревью $it" } ?: ""}${spend(x)?.let { "  [$it]" } ?: ""}")
         val reqs = list(s, "requests")
         if (reqs.isNotEmpty()) out("Запросы ждут ответа: ${reqs.size} (dpai requests)")
         for (sub in list(s, "subscriptions")) {
@@ -128,18 +128,19 @@ class ControlCommand(
                 val name = if (str(w, "window") == "SESSION") "5 ч" else "неделя"
                 "$name ${num(w, "percent")?.let { "$it %" } ?: "?"}"
             }
-            out("Подписка «${str(sub, "label")}»: $windows; порог ${num(sub, "nearPercent")} %${if (bool(sub, "near")) " — у предела" else ""}")
+            out("Подписка «${str(sub, "label")}»: $windows; порог ${num(sub, "nearPercent")} %${if (bool(sub, "near")) " — у предела" else ""}${if (bool(sub, "rotation")) "; берёт задачи подписок у предела" else ""}")
         }
         val control = s["control"] as? JsonObject
         control?.let { c -> num(c, "maxSessions")?.let { out("Предел сессий контура: $it") } }
         return OK
     }
 
-    /** Расход задачи коротко (D-42, п. 4): ходы и стоимость; суммы с ходами без итога — нижняя граница. */
-    private fun usage(u: JsonObject): String {
-        val cost = str(u, "costUsd")?.toBigDecimalOrNull()?.setScale(2, java.math.RoundingMode.HALF_UP)?.toPlainString() ?: "?"
-        val unknown = num(u, "unknownTurns")?.takeIf { it > 0 }?.let { " (+$it без итога)" }.orEmpty()
-        return "ходов ${num(u, "turns")}$unknown, $cost \$${if (bool(u, "costEstimated")) " (оценка)" else ""}"
+    /** Расход задачи или сессии (D-42, п. 4): ходы и стоимость; ходов не было — `null`. */
+    private fun spend(o: JsonObject): String? {
+        val u = o["usage"] as? JsonObject ?: return null
+        val cost = str(u, "costUsd")?.toBigDecimalOrNull()?.takeIf { it.signum() > 0 }
+            ?.let { "$" + it.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString() + if (bool(u, "costEstimated")) " (оценка)" else "" }
+        return listOfNotNull("ходов ${num(u, "turns")}", "вход ${num(u, "inputTokens")} · выход ${num(u, "outputTokens")}", cost).joinToString(" · ")
     }
 
     private fun requests(): Int {
@@ -168,22 +169,23 @@ class ControlCommand(
             opt(args, "--model")?.let { c["model"] = JsonString(it) }
             opt(args, "--effort")?.let { c["effort"] = JsonString(it) }
             opt(args, "--budget")?.let { budget(it) ?: return usage("--budget — доллары, например 0.25") }?.let { c["budgetCents"] = JsonNumber.of(it) }
-            // Зависимости — сокращённые id раскрываются по снимку, как у остальных команд.
-            opt(args, "--after")?.let { v ->
-                val deps = commaList(v).map { resolve(it, "tasks") ?: return FAILED }
-                c["dependencies"] = JsonArray(deps.map(::JsonString))
-            }
-            opt(args, "--scope")?.let { v -> c["scope"] = JsonArray(commaList(v).map(::JsonString)) }
+            opt(args, "--review")?.let { c["reviews"] = roles(it) }
+            // Область и зависимости — списком через запятую (D-42, п. 1); короткие id задач — как у других команд.
+            opt(args, "--scope")?.let { c["scope"] = JsonArray(csv(it).map(::JsonString)) }
+            opt(args, "--depends-on")?.let { v -> c["dependsOn"] = JsonArray(csv(v).map { JsonString(resolve(it, "tasks") ?: return FAILED) }) }
             return send(c)
         }
         val id = args.getOrNull(0) ?: return usage(TASK_USAGE)
         val action = args.getOrNull(1) ?: return usage(TASK_USAGE)
         if (action == "messages") return messages(id)
-        if (action == "diff") return changes(id)
+        if (action == "diff") return diff(id, "--stat" in args)
+        if (action == "reviews") return showReviews(id)
         val task = resolve(id, "tasks") ?: return FAILED
         val c = linkedMapOf<String, JsonValue>("task" to JsonString(task))
         when (action) {
             "hold", "resume", "cancel", "verify" -> c["command"] = JsonString("task.$action")
+            // «Запустить первой» (D-77): выше всех в очереди и без паузы; пределы подписки — как у всех.
+            "first" -> c["command"] = JsonString("task.run-first")
             "archive", "unarchive" -> {
                 c["command"] = JsonString("task.archive")
                 c["archived"] = JsonBool(action == "archive")
@@ -200,16 +202,46 @@ class ControlCommand(
                 c["command"] = JsonString("task.priority")
                 c["priority"] = JsonString(args.getOrNull(2)?.uppercase() ?: return usage("dpai task <id> priority CRITICAL|HIGH|NORMAL|LOW|BACKGROUND"))
             }
+            // Без путей или без задач — очистить: `dpai task <id> scope`, `dpai task <id> depends`.
+            "scope" -> {
+                c["command"] = JsonString("task.scope")
+                c["scope"] = JsonArray(args.drop(2).filter { !it.startsWith("--") }.map(::JsonString))
+            }
+            "depends" -> {
+                c["command"] = JsonString("task.dependencies")
+                c["dependsOn"] = JsonArray(args.drop(2).filter { !it.startsWith("--") }.map { JsonString(resolve(it, "tasks") ?: return FAILED) })
+            }
             "policy" -> {
                 c["command"] = JsonString("task.policy")
-                c["taskClass"] = JsonString(opt(args, "--class")?.uppercase() ?: return usage("dpai task <id> policy --class <класс> [--model m] [--effort e] [--budget $]"))
+                c["taskClass"] = JsonString(opt(args, "--class")?.uppercase() ?: return usage("dpai task <id> policy --class <класс> [--model m] [--effort e] [--budget $] [--review code,security|none]"))
                 opt(args, "--model")?.let { c["model"] = JsonString(it) }
                 opt(args, "--effort")?.let { c["effort"] = JsonString(it) }
                 opt(args, "--budget")?.let { budget(it) ?: return usage("--budget — доллары") }?.let { c["budgetCents"] = JsonNumber.of(it) }
+                // Без --review роли не меняются; `none` снимает все (D-73).
+                opt(args, "--review")?.let { c["reviews"] = roles(it) }
             }
             else -> return usage(TASK_USAGE)
         }
         return send(c, confirmed = "--yes" in args)
+    }
+
+    /** Роли ревью (D-73) через запятую: `code,security`; `none` — без ревью. Неизвестную роль отвергает приложение. */
+    private fun roles(v: String): JsonArray = JsonArray(if (v.trim().lowercase() == "none") emptyList() else csv(v).map { JsonString(it.uppercase()) })
+
+    /** Глобальный поиск (ТЗ, §75): найденное по видам, ссылки `dpai://…` и чего поиск не видел. */
+    private fun search(args: List<String>): Int {
+        val q = args.joinToString(" ").trim().ifEmpty { return usage("dpai search «запрос»") }
+        val r = call("POST", "/v1/search", JsonObject.of("query" to JsonString(q))) ?: return FAILED
+        if (json) return print(r)
+        val hits = list(r, "hits")
+        if (hits.isEmpty()) out("ничего не найдено")
+        for ((kind, group) in hits.groupBy { str(it, "kind") }) {
+            out("$kind:")
+            for (h in group) out("  ${str(h, "title")}  ${str(h, "detail").orEmpty()}${str(h, "link")?.let { "  $it" } ?: ""}")
+        }
+        (r["more"] as? JsonObject)?.fields?.forEach { (k, v) -> out("ещё $k: ${(v as? JsonNumber)?.toLongExact()}") }
+        for (n in (r["notes"] as? JsonArray)?.items.orEmpty()) (n as? JsonString)?.let { out("· ${it.value}") }
+        return OK
     }
 
     private fun messages(id: String): Int {
@@ -225,34 +257,51 @@ class ControlCommand(
         return OK
     }
 
-    /** Изменения задачи (D-42, п. 3): что принесёт слияние, что не закоммичено, новые файлы. */
-    private fun changes(id: String): Int {
+    /** Роли ревью и итог каждой одной строкой (D-73): `ревью CODE PASSED, SECURITY —`. */
+    private fun reviewsLine(t: JsonObject): String? {
+        val roles = names(t, "reviews").ifEmpty { return null }
+        val verdicts = t["verdicts"] as? JsonObject
+        return "ревью " + roles.joinToString(", ") { r -> "$r ${(verdicts?.get(r) as? JsonString)?.value ?: "—"}" }
+    }
+
+    private fun names(o: JsonObject, k: String): List<String> = (o[k] as? JsonArray)?.items.orEmpty().mapNotNull { (it as? JsonString)?.value }
+
+    /** Итоги ревью задачи с находками (D-73): сначала блокирующие. */
+    private fun showReviews(id: String): Int {
         val task = resolve(id, "tasks") ?: return FAILED
-        val r = call("GET", "/v1/tasks/$task/changes", null) ?: return FAILED
+        val r = call("GET", "/v1/tasks/$task/reviews", null) ?: return FAILED
         if (json) return print(r)
-        val committed = strings(r, "committed")
-        val uncommitted = strings(r, "uncommitted")
-        val untracked = strings(r, "untracked").orEmpty()
-        val branch = str(r, "branch")
-        when {
-            committed == null && uncommitted == null ->
-                out(if (str(r, "base") == null) "показать нечего: у проекта нет ветки интеграции, дерева задачи нет" else "ветки $branch ещё нет: задача не начиналась")
-            committed.isNullOrEmpty() && uncommitted.isNullOrEmpty() && untracked.isEmpty() -> out("изменений нет: в $branch нет ничего, чего нет в ${str(r, "base") ?: "базе"}")
+        val roles = names(r, "roles")
+        if (roles.isEmpty()) out("у задачи нет ревью: dpai task <id> policy … --review code,security")
+        val done = list(r, "reviews").associateBy { str(it, "role") }
+        for (role in roles) {
+            val v = done[role]
+            if (v == null) {
+                out("── $role: ещё нет итога")
+                continue
+            }
+            out("── $role: ${str(v, "verdict")} (запуск ${num(v, "attempt")})${str(v, "by")?.let { " · $it" } ?: ""}${str(v, "reason")?.let { " · $it" } ?: ""}")
+            for (f in list(v, "findings")) {
+                val where = listOfNotNull(str(f, "file"), num(f, "line")?.toString()).joinToString(":")
+                out("  ${str(f, "severity")}  ${str(f, "title")}${if (where.isNotEmpty()) "  ($where)" else ""}")
+                str(f, "detail")?.let { out("    $it") }
+            }
+            num(v, "omitted")?.takeIf { it > 0 }?.let { out("  не показано находок: $it") }
         }
-        if (!committed.isNullOrEmpty()) {
-            out("── что принесёт слияние (${str(r, "base")}...$branch)")
-            committed.forEach(out)
-        }
-        if (!uncommitted.isNullOrEmpty()) {
-            out("── не закоммичено в дереве задачи")
-            uncommitted.forEach(out)
-        }
-        if (untracked.isNotEmpty()) {
-            out("── новые файлы, ещё не в Git (${untracked.size})")
-            untracked.forEach { out("  $it") }
-        }
-        if (bool(r, "truncated")) out("── вывод обрезан: часть длиннее ${TaskChanges.MAX_LINES} строк")
-        list(r, "diagnostics").forEach { err("${str(it, "code")}: ${str(it, "message")}") }
+        return OK
+    }
+
+    /** Изменения задачи (D-42): по файлам и, без `--stat`, текст diff. */
+    private fun diff(id: String, statOnly: Boolean): Int {
+        val task = resolve(id, "tasks") ?: return FAILED
+        val r = call("GET", "/v1/tasks/$task/diff", null) ?: return FAILED
+        if (json) return print(r)
+        out("от ${str(r, "base")} (${str(r, "mergeBase")?.take(12)}) до: ${str(r, "head")}")
+        val files = list(r, "files")
+        if (files.isEmpty() && list(r, "untracked").isEmpty()) out("изменений нет")
+        for (f in files) out("  +${num(f, "added") ?: "?"} −${num(f, "removed") ?: "?"}  ${str(f, "path")}")
+        for (u in (r["untracked"] as? JsonArray)?.items.orEmpty()) out("  новый, вне индекса: ${(u as? JsonString)?.value}")
+        if (!statOnly) str(r, "patch")?.takeIf { it.isNotEmpty() }?.let { out(""); out(it) }
         return OK
     }
 
@@ -262,6 +311,8 @@ class ControlCommand(
         val c = linkedMapOf<String, JsonValue>("session" to JsonString(session))
         when (args.getOrNull(1)) {
             "stop" -> c["command"] = JsonString("session.stop")
+            // «Перенести» (D-77): ход остановлен с handoff, следующая сессия — на другом слоте.
+            "reassign" -> c["command"] = JsonString("session.reassign")
             "send" -> {
                 c["command"] = JsonString("session.send")
                 c["text"] = JsonString(args.getOrNull(2)?.takeIf { !it.startsWith("--") } ?: return usage(SESSION_USAGE))
@@ -394,17 +445,18 @@ class ControlCommand(
         const val FAILED = 1
         const val USAGE_ERROR = 2
 
-        private const val TASK_USAGE = "dpai task add «название» «что сделать» [--priority HIGH] [--class trivial] [--model haiku] [--effort low] [--budget 0.25] [--after <id>,<id>] [--scope путь,путь]\n" +
-            "dpai task <id> hold|resume|retry [--text «…»]|verify|messages|diff|priority <P>|policy --class <к> …|archive|unarchive|cancel --yes|waive --reason «…» --yes\n" +
+        private const val TASK_USAGE = "dpai task add «название» «что сделать» [--priority HIGH] [--class trivial] [--model haiku] [--effort low] [--budget 0.25] [--review code,security] [--scope путь,путь] [--depends-on id,id]\n" +
+            "dpai task <id> hold|resume|first|retry [--text «…»]|verify|messages|diff [--stat]|reviews|priority <P>|policy --class <к> …|scope [путь…]|depends [id…]|archive|unarchive|cancel --yes|waive --reason «…» --yes\n" +
             "dpai task archive-done   — все завершённые в архив"
-        private const val SESSION_USAGE = "dpai session <id> stop | send «запрос» [--model m] [--effort e] | fresh [«запрос»]"
+        private const val SESSION_USAGE = "dpai session <id> stop | reassign | send «запрос» [--model m] [--effort e] | fresh [«запрос»]"
 
         val USAGE = """
             |  dpai control pair <код>   сопряжение с приложением (код — Targets → «Командная строка»)
             |  dpai status [--all]       задачи (без архива), сессии, запросы, загрузка подписки
-            |  dpai task …               add | archive-done | <id> hold|resume|cancel|retry|verify|waive|priority|policy|archive|unarchive|messages|diff
-            |  dpai session <id> …       stop | send «запрос» | fresh
+            |  dpai task …               add | archive-done | <id> hold|resume|first|cancel|retry|verify|waive|priority|policy|archive|unarchive|messages|diff|reviews
+            |  dpai session <id> …       stop | reassign | send «запрос» | fresh
             |  dpai requests             ждущие запросы;  dpai answer <запрос> <вариант> [--text] [--yes]
+            |  dpai search «запрос»      поиск по задачам, сессиям, веткам, коммитам, событиям (ТЗ, §75)
             |  dpai limit <процент>      порог «у предела»;  dpai sessions-limit <n|off>
             |  dpai target|slot <id> on|off
             |  --json — ответ как есть; опасное — с --yes
@@ -414,7 +466,14 @@ class ControlCommand(
 
         private fun opt(args: List<String>, name: String): String? = args.indexOf(name).takeIf { it >= 0 }?.let { args.getOrNull(it + 1) }
 
-        private fun budget(v: String): Long? = v.replace(',', '.').toBigDecimalOrNull()?.movePointRight(2)?.toLong()?.takeIf { it > 0 }
+        private fun csv(v: String): List<String> = v.split(',').map(String::trim).filter(String::isNotEmpty)
+
+        /** Доллары → центы; дробь цента и переполнение — отказ, а не округление (D-05). */
+        private fun budget(v: String): Long? = try {
+            v.replace(',', '.').toBigDecimalOrNull()?.movePointRight(2)?.setScale(0, java.math.RoundingMode.UNNECESSARY)?.longValueExact()?.takeIf { it > 0 }
+        } catch (_: ArithmeticException) {
+            null
+        }
 
         private fun str(o: JsonObject, k: String): String? = (o[k] as? JsonString)?.value
 
@@ -423,12 +482,6 @@ class ControlCommand(
         private fun bool(o: JsonObject, k: String): Boolean = (o[k] as? JsonBool)?.value == true
 
         private fun list(o: JsonObject, k: String): List<JsonObject> = (o[k] as? JsonArray)?.items.orEmpty().filterIsInstance<JsonObject>()
-
-        /** Значение через запятую: `a,b` → `[a, b]`, пустые части отброшены. */
-        private fun commaList(v: String): List<String> = v.split(',').map { it.trim() }.filter { it.isNotEmpty() }
-
-        /** Список строк; поля нет — `null` (не «пусто»: части нет вовсе). */
-        private fun strings(o: JsonObject, k: String): List<String>? = (o[k] as? JsonArray)?.items?.mapNotNull { (it as? JsonString)?.value }
         private fun short(id: String?): String = id?.let { if (it.length > 12) it.take(4) + "…" + it.takeLast(6) else it } ?: "?"
     }
 }

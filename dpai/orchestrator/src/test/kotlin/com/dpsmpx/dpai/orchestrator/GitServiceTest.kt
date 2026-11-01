@@ -246,4 +246,62 @@ class GitServiceTest {
         assertEquals(head, host.run(ProcessSpec(listOf("git", "-C", r.root, "rev-parse", "HEAD")), 1.minutes).valueOrNull()!!.stdout)
         assertEquals(emptyList(), host.run(ProcessSpec(listOf("git", "-C", r.root, "status", "--porcelain")), 1.minutes).valueOrNull()!!.stdout)
     }
+
+    /** Изменения задачи (D-42): от базы ветки интеграции — до дерева с незакоммиченным и до ветки после уборки дерева. */
+    @Test
+    fun taskDiffFromBaseToTreeAndToBranch() {
+        val r = repo()
+        val session = ids.next(IdKinds.SESSION)
+        val wt = worktree(r, "diff", session)
+        val path = state.worktrees.getValue(wt).path
+        // На main после ответвления — свой коммит: в изменениях задачи его быть не должно.
+        File(r.root, "MAIN.md").writeText("только в main\n")
+        sh("-C", r.root, "add", "MAIN.md")
+        sh("-C", r.root, "commit", "-q", "-m", "main впереди")
+        File(path, "README.md").writeText("начало\nстрока задачи\n")
+        File(path, "new.txt").writeText("новый\n")
+        val tree = assertIs<Outcome.Success<com.dpsmpx.dpai.orchestrator.git.TaskDiff>>(com.dpsmpx.dpai.orchestrator.git.TaskDiff.load(git, path, "main", null)).value
+        assertEquals(listOf(com.dpsmpx.dpai.orchestrator.git.FileChange("README.md", 1, 0)), tree.files)
+        assertEquals(listOf("new.txt"), tree.untracked)
+        assertTrue("+строка задачи" in tree.patch && "MAIN.md" !in tree.patch, tree.patch)
+        // Коммит в ветке задачи, дерево убрано: изменения — до ветки.
+        sh("-C", path, "add", "README.md", "new.txt")
+        sh("-C", path, "commit", "-q", "-m", "задача")
+        sh("-C", r.root, "worktree", "remove", path)
+        val branch = assertIs<Outcome.Success<com.dpsmpx.dpai.orchestrator.git.TaskDiff>>(com.dpsmpx.dpai.orchestrator.git.TaskDiff.load(git, r.root, "main", "task/diff")).value
+        assertEquals(setOf("README.md", "new.txt"), branch.files.map { it.path }.toSet())
+        assertTrue(branch.untracked.isEmpty())
+        // Предел текста — с пометкой, по строке.
+        val cut = assertIs<Outcome.Success<com.dpsmpx.dpai.orchestrator.git.TaskDiff>>(com.dpsmpx.dpai.orchestrator.git.TaskDiff.load(git, r.root, "main", "task/diff", maxChars = 40)).value
+        assertTrue(cut.truncated && "… обрезано:" in cut.patch, cut.patch)
+        // Ревизия, похожая на параметр, — отказ команды, а не флаг Git (T4).
+        assertTrue(com.dpsmpx.dpai.orchestrator.git.TaskDiff.load(git, r.root, "--output=/tmp/x", "task/diff") is Outcome.Failure)
+        // Кириллица в пути — как есть, а не «\320…» в кавычках (ревью 17 октября 2026).
+        val ru = worktree(r, "ru", ids.next(IdKinds.SESSION))
+        val ruPath = state.worktrees.getValue(ru).path
+        File(ruPath, "Заметки.md").writeText("текст\n")
+        sh("-C", ruPath, "add", "Заметки.md")
+        val ruDiff = assertIs<Outcome.Success<com.dpsmpx.dpai.orchestrator.git.TaskDiff>>(com.dpsmpx.dpai.orchestrator.git.TaskDiff.load(git, ruPath, "main", null)).value
+        assertEquals(listOf("Заметки.md"), ruDiff.files.map { it.path })
+        assertTrue("Заметки.md" in ruDiff.patch, ruDiff.patch)
+    }
+
+    /** Слитая задача (ревью 17 октября 2026): изменения — до слияния, а не пусто. */
+    @Test
+    fun mergedTaskStillShowsItsChanges() {
+        val r = repo()
+        val wt = worktree(r, "merged", ids.next(IdKinds.SESSION))
+        val path = state.worktrees.getValue(wt).path
+        File(path, "feature.txt").writeText("сделано\n")
+        sh("-C", path, "add", "feature.txt")
+        sh("-C", path, "commit", "-q", "-m", "задача")
+        File(r.root, "MAIN.md").writeText("только в main\n")
+        sh("-C", r.root, "add", "MAIN.md")
+        sh("-C", r.root, "commit", "-q", "-m", "main впереди")
+        sh("-C", r.root, "worktree", "remove", path)
+        sh("-C", r.root, "merge", "-q", "--no-ff", "--no-edit", "task/merged")
+        val d = assertIs<Outcome.Success<com.dpsmpx.dpai.orchestrator.git.TaskDiff>>(com.dpsmpx.dpai.orchestrator.git.TaskDiff.load(git, r.root, "main", "task/merged")).value
+        assertEquals(listOf("feature.txt"), d.files.map { it.path })
+        assertTrue("+сделано" in d.patch && "MAIN.md" !in d.patch, d.patch)
+    }
 }

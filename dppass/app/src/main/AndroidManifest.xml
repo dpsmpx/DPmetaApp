@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Манифест DPpass (docs/research/ANDROID_NETWORK_MODEL.md, D-17, D-19).
+  Проверяет tools/hostcheck/check_manifest.py: набор разрешений,
+  отсутствие резервных копий и cleartext, экспорт только того, что нужно.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- QR камерой (D-71): разрешение — при первом нажатии, камера для DPpass необязательна. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <!--
+      Напоминание о конце подписки (D-76): будильник в точное время — с
+      согласия пользователя («Будильники и напоминания», Android 12+); после
+      загрузки телефона — будильник заново, только пока напоминание включено.
+    -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
+    <!--
+      Раздельное туннелирование (D-38): видны только приложения с ярлыком
+      запуска, без QUERY_ALL_PACKAGES.
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
+    <application
+        android:name=".app.DPpassApplication"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:enableOnBackInvokedCallback="true"
+        android:fullBackupContent="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="${appLabel}"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.DPpass"
+        android:usesCleartextTraffic="false"
+        tools:targetApi="36">
+
+        <activity
+            android:name=".app.MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!--
+              «Поделиться» текстом (D-42): ссылки, адрес подписки, документ.
+              Ничего не применяется без подтверждения пользователя (T13).
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <!--
+              «Поделиться» картинкой (D-65): QR на ней распознаётся и идёт тем же
+              путём, что текст, — сводка и подтверждение (T13).
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+        </activity>
+
+        <!-- Сервис туннеля. Связывается только системой (BIND_VPN_SERVICE). -->
+        <service
+            android:name=".app.DPpassVpnService"
+            android:exported="true"
+            android:foregroundServiceType="specialUse"
+            android:permission="android.permission.BIND_VPN_SERVICE">
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="vpn" />
+        </service>
+
+        <!-- Плитка быстрых настроек (D-40). Связывает только система (BIND_QUICK_SETTINGS_TILE). -->
+        <service
+            android:name=".app.DPpassTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_stat_tunnel"
+            android:label="${appLabel}"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.ACTIVE_TILE"
+                android:value="true" />
+        </service>
+
+        <!-- Напоминание о конце подписки (D-76): будильник Android и кнопки уведомления — только свои PendingIntent. -->
+        <receiver
+            android:name=".app.ExpiryReceiver"
+            android:exported="false" />
+
+        <!--
+          Будильник заново после загрузки, обновления DPpass и выданного
+          разрешения на точный будильник (D-76). Выключен, пока выключено
+          напоминание: иначе DPpass при загрузке не запускается (D-40).
+        -->
+        <receiver
+            android:name=".app.ExpiryBootReceiver"
+            android:enabled="false"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Автообновление подписок (D-39). Запускает только JobScheduler (BIND_JOB_SERVICE). -->
+        <service
+            android:name=".app.SubscriptionJobService"
+            android:exported="true"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+    </application>
+</manifest>

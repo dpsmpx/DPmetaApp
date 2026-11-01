@@ -1,0 +1,148 @@
+# Реестр репозиториев экосистемы dpsmpx — машинная часть docs/ECOSYSTEM.md.
+#
+# Читают tools/xref.py, tools/activity.py и tools/manifest.py; как данные из
+# клона — DPvisualisation (C-11); строго, с перечнем ключей, — по плану DPmetaApp
+# (его ТЗ, F-01): новое поле согласовывать и с ним. Поля:
+#   name       — каноническое имя проекта (docs/NAMING.md);
+#   slug       — репозиторий GitHub сейчас;
+#   clone      — каталог клона относительно --root (переопределяется --clone);
+#                нет такого — ищется по имени из slug: `Andors-Love`,
+#                `andors-love`, `dpsmpx/andors-love`;
+#   aliases    — прежние и рабочие имена: ссылка через них сверяется так же,
+#                но считается устаревшим именем (docs/NAMING.md);
+#   names      — другие написания того же имени (не устаревшие);
+#   decisions  — журнал решений: путь и шаблон номера (регулярное выражение);
+#   defs       — где ещё определены номера, на которые ссылаются другие
+#                репозитории (ТЗ, реестры); шаблон — тот же формат;
+#   place      — место в экосистеме по слову автора (M-10, M-12): control —
+#                управление, core — ядро, support — поддерживающий слой,
+#                sync — слой синхронизации (DPmeta), archive — вне текущей
+#                системы (в манифест dpai.ecosystem не входит, M-11).
+# Порядок записей — порядок строк и столбцов в отчёте.
+
+schema = 1
+
+[[repo]]
+name = "Galdhold"
+slug = "dpsmpx/Galdhold"
+clone = "galdhold"
+place = "core"
+aliases = ["VoxelRPG", "3D_Voxel_OpenWorld_RPG", "3DOWVRPG"]
+decisions = { path = "docs/direction/DECISIONS.md", id = "Р\\d+" }
+
+[[repo]]
+name = "DPlang"
+slug = "dpsmpx/DPlang"
+clone = "dplang"
+place = "core"
+aliases = ["dpsmpx/C-"]
+decisions = { path = "docs/direction/DECISIONS.md", id = "Р\\d+" }
+defs = [{ path = "docs/direction/OPEN_DECISIONS.md", id = "О\\d+" }]
+
+[[repo]]
+name = "DP-Verify"
+slug = "dpsmpx/DP-Verify"
+clone = "dp-verify"
+place = "core"
+names = ["DP Verify"]
+decisions = { path = "docs/direction/DECISIONS.md", id = "V-\\d+" }
+defs = [{ path = "docs/direction/TECHNICAL_TASK.md", id = "(?:TR|[FNIALRQ])-\\d+" }]
+
+[[repo]]
+name = "DPpass"
+slug = "dpsmpx/DPpass"
+clone = "dppass"
+place = "core"
+decisions = { path = "docs/direction/DECISIONS.md", id = "D-\\d+" }
+
+[[repo]]
+name = "DPprofile"
+slug = "dpsmpx/DPprofile"
+clone = "dpprofile"
+place = "core"
+decisions = { path = "docs/direction/DECISIONS.md", id = "D-\\d+" }
+
+[[repo]]
+name = "DPlearn"
+slug = "dpsmpx/DPlearn"
+clone = "dplearn"
+place = "core"
+decisions = { path = "docs/direction/DECISIONS.md", id = "D-\\d+" }
+
+[[repo]]
+name = "SocialMediaImage"
+slug = "dpsmpx/SocialMediaImage"
+clone = "socialmediaimage"
+place = "core"
+decisions = { path = "docs/direction/DECISIONS.md", id = "Д\\d+" }
+defs = [{ path = "docs/identity/IDENTITY_CONFLICTS.md", id = "IC-\\d+" }]
+
+[[repo]]
+name = "DP_game_market_analytic_system"
+slug = "dpsmpx/DP_game_market_analytic_system"
+clone = "dp_game_market_analytic_system"
+place = "core"
+names = ["dpmarket"]
+decisions = { path = "docs/DECISIONS.md", id = "ADR-\\d+" }
+
+# Новый (5 октября 2026); поддерживающий слой — слово автора 9 октября 2026 (M-10).
+# Журнала решений ещё нет: код ссылается на D-NN, которых негде сверить.
+
+[[repo]]
+name = "DPmonetization"
+slug = "dpsmpx/DPmonetization"
+clone = "dpmonetization"
+place = "support"
+
+# Новые (5–6 октября 2026), записаны четвёртым проходом 9 октября 2026; места —
+# слово автора (M-10). У DPmetaApp журнал решений — в `main` с 11 октября 2026
+# (SQ-27).
+
+[[repo]]
+name = "DPmetaApp"
+slug = "dpsmpx/DPmetaApp"
+clone = "dpmetaapp"
+place = "control"
+decisions = { path = "docs/direction/DECISIONS.md", id = "D-\\d+" }
+
+[[repo]]
+name = "DPvisualisation"
+slug = "dpsmpx/DPvisualisation"
+clone = "dpvisualisation"
+place = "support"
+decisions = { path = "docs/direction/DECISIONS.md", id = "D-\\d+" }
+
+[[repo]]
+name = "DP_AI_Orcestrator"
+slug = "dpsmpx/DP_AI_Orcestrator"
+clone = "dp_ai_orcestrator"
+place = "core"
+decisions = { path = "docs/direction/DECISIONS.md", id = "D-\\d+" }
+
+# Архив: вне текущей системы (M-10) — ранние проекты до репозитория игры и убранные
+# автором; в реестре остаются ради контракта C-08 (формат карт) и сверки ссылок.
+
+[[repo]]
+name = "Andors-Love"
+slug = "dpsmpx/Andors-Love"
+clone = "andors-love"
+place = "archive"
+
+[[repo]]
+name = "TrueJointTileMaker"
+slug = "dpsmpx/TrueJointTileMaker"
+clone = "truejointtilemaker"
+place = "archive"
+
+[[repo]]
+name = "DPmeta"
+slug = "dpsmpx/DPmeta"
+clone = "DPmeta"
+place = "sync"
+decisions = { path = "docs/DECISIONS.md", id = "M-\\d+" }
+defs = [
+  { path = "docs/CONTRACTS.md", id = "C-\\d+" },
+  { path = "docs/RISKS.md", id = "RISK-\\d+" },
+  { path = "docs/SYNC_QUEUE.md", id = "SQ-\\d+" },
+  { path = "docs/PRINCIPLES.md", id = "E-\\d+" },
+]

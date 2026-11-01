@@ -1,0 +1,3 @@
+vless://00000000-0000-4000-8000-000000000064@203.0.113.64:443?encryption=none&flow=xtls-rprx-vision&fp=randomizednoalpn&pbk=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8&security=reality&sni=www.example.com&type=tcp#NL%20Amsterdam
+vless://00000000-0000-4000-8000-000000000064@203.0.113.64:443?encryption=none&flow=xtls-rprx-vision&fp=randomizednoalpn&pbk=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8&security=reality&sni=www.example.com&type=tcp#NL%20Amsterdam%20%F0%9F%87%B3%F0%9F%87%B1
+trojan://test-password-9@192.0.2.70:443?security=tls&sni=t.example.com#Trojan

@@ -300,4 +300,27 @@ class ClaudeStreamTest {
         assertEquals(1, t.tools.unmatchedResults)
         assertEquals(0, t.tools.filesRead)
     }
+
+    @Test
+    fun thinkingBlocksAreKeptForTheChatButRedactedOnesAreNot() {
+        // D-59: рассуждение модели — в ленту чата; скрытое (`redacted_thinking`) — не текст.
+        val a = ClaudeTurnAssembler(recorded)
+        val e = assertIs<ClaudeEvent.Assistant>(
+            a.feed(
+                """{"type":"assistant","message":{"content":[{"type":"thinking","thinking":"сначала прочту файл","signature":"s"},{"type":"redacted_thinking","data":"xx"},{"type":"text","text":"Читаю."},{"type":"tool_use","id":"t1","name":"Read","input":{"file_path":"/a"}}]},"session_id":"${recorded.value}"}""",
+            ),
+        )
+        assertEquals(listOf("сначала прочту файл"), e.thinking)
+        assertEquals(listOf("Читаю."), e.texts)
+        assertEquals(listOf("Read"), e.toolUses.map { it.name })
+    }
+
+    @Test
+    fun backgroundBashIsRecognized() {
+        // D-66: фоновая команда хода — её запомнит контур для следующей сессии.
+        fun use(name: String, input: String) = ClaudeEvent.ToolUse("t", name, com.dpsmpx.dpai.core.serialization.JsonParser().parse(input).valueOrNull() as com.dpsmpx.dpai.core.serialization.JsonObject)
+        assertEquals("npm run dev", com.dpsmpx.dpai.execution.claude.BackgroundCommand.of(use("Bash", """{"command":"npm  run dev","run_in_background":true}""")))
+        assertEquals(null, com.dpsmpx.dpai.execution.claude.BackgroundCommand.of(use("Bash", """{"command":"ls"}""")))
+        assertEquals(null, com.dpsmpx.dpai.execution.claude.BackgroundCommand.of(use("Read", """{"file_path":"/a","run_in_background":true}""")))
+    }
 }

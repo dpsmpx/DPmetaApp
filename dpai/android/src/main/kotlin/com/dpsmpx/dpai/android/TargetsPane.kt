@@ -52,6 +52,7 @@ import kotlinx.coroutines.withContext
 @Composable
 fun TargetsPane(controller: Controller, model: DemoModel) {
     val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
     var targets by remember { mutableStateOf(controller.targets()) }
     var publicKey by remember { mutableStateOf<String?>(null) }
     val checks = remember { mutableStateMapOf<String, List<CheckLine>>() }
@@ -61,6 +62,30 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
     var guide by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf<TargetEntry?>(null) }
     var restoring by remember { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf<TargetEntry?>(null) }
+    renaming?.let { r ->
+        RenameDialog(r) { name ->
+            if (name == null) {
+                renaming = null
+            } else {
+                scope.launch {
+                    when (val w = withContext(Dispatchers.IO) { controller.rename(r, name) }) {
+                        is Outcome.Failure -> checks[r.id.value] = listOf(CheckLine("имя", w.diagnostics.first().message, Tone.ERROR))
+                        is Outcome.Success -> targets = controller.targets()
+                    }
+                    renaming = null
+                }
+            }
+        }
+    }
+    // Кто чем занят (D-56) — раз в 5 с, пока экран открыт.
+    var work by remember { mutableStateOf(emptyMap<com.dpsmpx.dpai.core.ids.ExecutionTargetId, List<String>>()) }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        while (true) {
+            work = withContext(Dispatchers.IO) { model.work() }
+            kotlinx.coroutines.delay(5_000)
+        }
+    }
     if (guide) {
         SetupPane(controller, model) {
             guide = false
@@ -138,6 +163,9 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Targets (${targets.size})", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                // Открытые вкладки терминала живут, пока жив процесс (D-71): вернуться к ним.
+                val terminals = TerminalHub.count.intValue
+                if (terminals > 0) TextButton(onClick = { TerminalActivity.start(context, null) }) { Text("Терминалы ($terminals)") }
                 Button(onClick = { form = true }) { Text("Добавить") }
             }
         }
@@ -150,6 +178,12 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
                     if (t.configDir != null) TargetSwitches(model, t)
                     Text("${t.user}@${t.host}:${t.port} · ${t.type.name}", style = MaterialTheme.typography.bodySmall)
                     Text(t.configDir?.let { "каталог Claude: $it" } ?: "без каталога Claude — только проверка агента", style = MaterialTheme.typography.bodySmall)
+                    // Чем занят слот (D-56): идущие задачи с проектом; нет — свободен.
+                    if (t.configDir != null) {
+                        UsageAutoSwitch(model, t)
+                        val busy = work[t.id].orEmpty()
+                        Text(if (busy.isEmpty()) "Сейчас: свободен" else "Сейчас: " + busy.joinToString("; "), style = MaterialTheme.typography.bodySmall)
+                    }
                     Row {
                         TextButton(onClick = {
                             checks[t.id.value] = listOf(CheckLine("проверка", "идёт…", Tone.NEUTRAL))
@@ -160,7 +194,15 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
                         }
                         // Проект — у любого target: ход Claude может идти на другом, со своим входом (D-50).
                         TextButton(onClick = { projectFor = t }) { Text("Проект") }
+                        TextButton(onClick = { renaming = t }) { Text("Имя") }
                         TextButton(onClick = { removing = t }) { Text("Удалить") }
+                    }
+                    // Свой терминал (D-71): оболочка target или интерактивный claude слота (вход, /usage).
+                    Row {
+                        TextButton(onClick = { TerminalActivity.start(context, t.id.value) }) { Text("Терминал") }
+                        if (t.configDir != null && t.platform == com.dpsmpx.dpai.execution.target.TargetPlatform.POSIX) {
+                            TextButton(onClick = { TerminalActivity.start(context, t.id.value, claude = true) }) { Text("Claude в терминале") }
+                        }
                     }
                     checks[t.id.value]?.forEach { c -> CheckRow(c) }
                 }
@@ -490,35 +532,44 @@ private fun TargetSwitches(model: DemoModel, t: TargetEntry) {
     val scope = rememberCoroutineScope()
     var enabled by remember { mutableStateOf(model.control()?.let { t.id !in it.disabledTargets }) }
     var slots by remember { mutableStateOf(model.slotsOf(t.id)) }
+    // Намерения (D-57): переключатель показывает желаемое, пока контур занят, и не откатывается.
+    var tick by remember { mutableStateOf(0) }
     LaunchedEffect(t.id) {
         while (true) {
             enabled = withContext(Dispatchers.IO) { model.control()?.let { t.id !in it.disabledTargets } }
             slots = withContext(Dispatchers.IO) { model.slotsOf(t.id) }
+            tick++
             kotlinx.coroutines.delay(3000)
         }
     }
     val on = enabled ?: return
+    val wantTarget = remember(tick, on) { model.desired(com.dpsmpx.dpai.orchestrator.commands.Command.SetTargetEnabled(t.id, on)) as? com.dpsmpx.dpai.orchestrator.commands.Command.SetTargetEnabled }
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("Принимает новые задачи", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-        androidx.compose.material3.Switch(checked = on, onCheckedChange = { v ->
-            enabled = v
-            scope.launch { withContext(Dispatchers.IO) { model.command(com.dpsmpx.dpai.orchestrator.commands.Command.SetTargetEnabled(t.id, v)) } }
+        Text("Принимает новые задачи" + if (wantTarget != null) " · применится" else "", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+        androidx.compose.material3.Switch(checked = wantTarget?.enabled ?: on, onCheckedChange = { v ->
+            scope.launch {
+                withContext(Dispatchers.IO) { model.command(com.dpsmpx.dpai.orchestrator.commands.Command.SetTargetEnabled(t.id, v)) }
+                tick++
+            }
         })
     }
     for (slot in slots) {
+        val want = remember(tick, slot) { model.desired(com.dpsmpx.dpai.orchestrator.commands.Command.SetSlotEnabled(slot.id, !slot.disabled)) as? com.dpsmpx.dpai.orchestrator.commands.Command.SetSlotEnabled }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("слот ${slot.configDir.substringAfterLast('/')} · ${slot.state}", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-            androidx.compose.material3.Switch(checked = !slot.disabled, onCheckedChange = { v ->
+            Text("слот ${slot.configDir.substringAfterLast('/')} · ${slot.state}" + if (want != null) " · применится" else "", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+            androidx.compose.material3.Switch(checked = want?.enabled ?: !slot.disabled, onCheckedChange = { v ->
                 scope.launch {
                     withContext(Dispatchers.IO) {
                         model.command(com.dpsmpx.dpai.orchestrator.commands.Command.SetSlotEnabled(slot.id, v))
                         // Включённый слот — вход неизвестен: проба, а не «как было» (D-13).
                         if (v) model.probe(t.id)
                     }
+                    tick++
                     slots = withContext(Dispatchers.IO) { model.slotsOf(t.id) }
                 }
             })
         }
+        model.refusal(com.dpsmpx.dpai.orchestrator.commands.Command.SetSlotEnabled(slot.id, true))?.let { Text("Не применено: $it", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall) }
     }
 }
 
@@ -730,5 +781,34 @@ private fun RestoreCard(controller: Controller, onHide: () -> Unit, onRestored: 
             report.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
             TextButton(onClick = onHide) { Text("Скрыть") }
         }
+    }
+}
+
+/** Новое имя слота (target): от 1 до 60 знаков; `null` — отмена. */
+@Composable
+private fun RenameDialog(t: TargetEntry, onDone: (String?) -> Unit) {
+    var name by remember { mutableStateOf(t.label) }
+    AlertDialog(
+        onDismissRequest = { onDone(null) },
+        title = { Text("Имя слота") },
+        text = { OutlinedTextField(name, { name = it.take(60) }, label = { Text("Имя") }, singleLine = true) },
+        confirmButton = { TextButton(enabled = name.isNotBlank(), onClick = { onDone(name) }) { Text("Сохранить") } },
+        dismissButton = { TextButton(onClick = { onDone(null) }) { Text("Отмена") } },
+    )
+}
+
+/** Автообновление лимитов слота: включили — `/usage` сразу, дальше раз в минуту в фоне ([UsageAuto]). */
+@Composable
+private fun UsageAutoSwitch(model: DemoModel, t: TargetEntry) {
+    val context = androidx.compose.ui.platform.LocalContext.current.applicationContext
+    val scope = rememberCoroutineScope()
+    var on by remember { mutableStateOf(t.id in UsageAuto.enabled(context)) }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("Лимиты: обновлять раз в минуту", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+        androidx.compose.material3.Switch(checked = on, onCheckedChange = { v ->
+            on = v
+            UsageAuto.set(context, t.id, v)
+            if (v) scope.launch { withContext(Dispatchers.IO) { model.refreshUsage(setOf(t.id)) } }
+        })
     }
 }

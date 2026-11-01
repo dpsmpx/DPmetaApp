@@ -1,0 +1,9 @@
+{
+  "load": {
+    "outcome": "rejected",
+    "codes": [
+      "SERVER_NAME_INVALID",
+      "DOMAIN_INVALID"
+    ]
+  }
+}

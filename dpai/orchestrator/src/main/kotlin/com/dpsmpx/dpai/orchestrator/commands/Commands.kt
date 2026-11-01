@@ -6,6 +6,7 @@ import com.dpsmpx.dpai.notifications.RequestKind
 import com.dpsmpx.dpai.core.ids.TaskId
 import com.dpsmpx.dpai.tasks.Priority
 import com.dpsmpx.dpai.tasks.TaskClass
+import com.dpsmpx.dpai.tasks.ReviewRole
 import com.dpsmpx.dpai.tasks.TaskPolicy
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.LinkedBlockingDeque
@@ -40,19 +41,30 @@ sealed interface Command {
         override val operation: String get() = "request.probe"
     }
 
-    /** Новая задача (ТЗ, §21; D-42, п. 1). */
+    /**
+     * Новая задача (ТЗ, §21; D-42, п. 1): сразу с областью — путями в
+     * репозитории (ТЗ, §31) — и зависимостями (ТЗ, §21).
+     */
     data class AddTask(
         val title: String,
         val objective: String,
         val priority: Priority = Priority.NORMAL,
         val policy: TaskPolicy = TaskPolicy(),
-        /** Задачи, после которых эта начинается (DAG, ТЗ, §21). */
+        val scope: Set<String> = emptySet(),
         val dependencies: Set<TaskId> = emptySet(),
-        /** Заявленная область — пути файлов (ТЗ, §31); `null` — неизвестна, пересечения не проверяются (D-13). */
-        val scope: Set<String>? = null,
         override val key: String? = null,
     ) : Command {
         override val operation: String get() = "task.add"
+    }
+
+    /** Область задачи (ТЗ, §31; D-42, п. 1) — до запуска; пустая — без области. */
+    data class SetScope(override val task: TaskId, val scope: Set<String>, override val key: String? = null) : Command, TaskCommand {
+        override val operation: String get() = "task.scope"
+    }
+
+    /** Зависимости задачи целиком (ТЗ, §21; D-42, п. 1) — до запуска; цикл — отказ `DEPENDENCY_CYCLE`. */
+    data class SetDependencies(override val task: TaskId, val dependencies: Set<TaskId>, override val key: String? = null) : Command, TaskCommand {
+        override val operation: String get() = "task.dependencies"
     }
 
     /** Приоритет задачи (ТЗ, §21; D-42). */
@@ -61,9 +73,10 @@ sealed interface Command {
     }
 
     /**
-     * Класс, модель, усилие и предел стоимости хода (D-40, D-42) — до
-     * запуска; `null` у модели и усилия — по маршруту класса, у бюджета —
-     * без предела.
+     * Класс, модель, усилие и предел стоимости хода (D-40, D-42), роли ревью
+     * (D-73) — до запуска; `null` у модели и усилия — по маршруту класса, у
+     * бюджета — без предела, у ролей — как были: клиент, не знающий ролей,
+     * их не снимает молча (D-05).
      */
     data class SetPolicy(
         override val task: TaskId,
@@ -71,6 +84,7 @@ sealed interface Command {
         val model: String?,
         val effort: String?,
         val maxBudgetUsdCents: Long?,
+        val reviews: Set<ReviewRole>? = null,
         override val key: String? = null,
     ) : Command, TaskCommand {
         override val operation: String get() = "task.policy"
@@ -109,6 +123,22 @@ sealed interface Command {
         override val operation: String get() = "task.waive"
     }
 
+    /**
+     * «Запустить первой» (D-77; ТЗ, §73): ручной приоритет выше всех
+     * открытых задач и снятие паузы; пределы подписки не обходятся.
+     */
+    data class RunFirst(override val task: TaskId, override val key: String? = null) : Command, TaskCommand {
+        override val operation: String get() = "task.run-first"
+    }
+
+    /**
+     * «Перенести» (D-77; ТЗ, §74): ход сессии остановлен с handoff, следующая
+     * сессия задачи — на другом слоте; другого нет — задача ждёт с причиной.
+     */
+    data class Reassign(val session: com.dpsmpx.dpai.core.ids.SessionId, override val key: String? = null) : Command {
+        override val operation: String get() = "session.reassign"
+    }
+
     /** Остановить ход сессии (D-42): ход остановлен, handoff записан, задача приостановлена. */
     data class StopSession(val session: com.dpsmpx.dpai.core.ids.SessionId, override val key: String? = null) : Command {
         override val operation: String get() = "session.stop"
@@ -127,6 +157,20 @@ sealed interface Command {
         override val key: String? = null,
     ) : Command {
         override val operation: String get() = if (fresh) "session.fresh" else "session.send"
+    }
+
+    /**
+     * Перенести задачу на слот [target] (D-66): следующий ход — там, свежей
+     * сессией с handoff, перепиской и фоновыми процессами; идущий ход не
+     * прерывается.
+     */
+    data class MoveTask(val task: com.dpsmpx.dpai.core.ids.TaskId, val target: com.dpsmpx.dpai.core.ids.ExecutionTargetId, override val key: String? = null) : Command {
+        override val operation: String get() = "task.move"
+    }
+
+    /** Принимает ли подписка задачи подписок, упёршихся в предел пяти часов или недели (D-56): продолжение с handoff. */
+    data class SetRotation(val subscription: com.dpsmpx.dpai.core.ids.SubscriptionId, val allowed: Boolean, override val key: String? = null) : Command {
+        override val operation: String get() = "subscription.rotation"
     }
 
     /** Порог «у предела» подписки в процентах загрузки окна (D-45): на нём — откладывание несрочного и экономия D-40. */
