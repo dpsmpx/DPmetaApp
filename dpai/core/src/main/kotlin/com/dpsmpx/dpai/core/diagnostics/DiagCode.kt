@@ -247,6 +247,16 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     /** Реестр DPmeta другой схемы или с неизвестным ключом (F-01): работа — на последнем распознанном. */
     REGISTRY_SCHEMA_UNSUPPORTED(Category.FORMAT, Severity.ERROR, Retryability.NON_RETRYABLE),
 
+    // --- сеть и GitHub для DPmetaApp (DPmetaApp:docs/direction/TECHNICAL_TASK.md, §6.8, §6.9) ---
+    /** Адрес не из списка разрешённых `:core:net` (DPmetaApp:D-10): запрос не уходит. */
+    HOST_NOT_ALLOWED(Category.NETWORK, Severity.ERROR, Retryability.NON_RETRYABLE),
+    /** GitHub не принял токен или у токена нет прав (401, 403): нужен новый вход (DPmetaApp:D-17). */
+    GITHUB_AUTH_EXPIRED(Category.NETWORK, Severity.ERROR, Retryability.NON_RETRYABLE),
+    /** Лимит запросов GitHub исчерпан (403 с нулевым остатком, 429): остальное — после сброса лимита. */
+    GITHUB_RATE_LIMITED(Category.NETWORK, Severity.ERROR, Retryability.RETRYABLE),
+    /** Репозиторий или файл не найден — или скрыт от токена (404 GitHub). */
+    GITHUB_NOT_FOUND(Category.NETWORK, Severity.ERROR, Retryability.NON_RETRYABLE),
+
     // --- общее ---
     /** Строгая семантика (D-05): неподдержанное — явный отказ, а не «похожее». */
     UNSUPPORTED(Category.UNSUPPORTED, Severity.ERROR, Retryability.NON_RETRYABLE),
