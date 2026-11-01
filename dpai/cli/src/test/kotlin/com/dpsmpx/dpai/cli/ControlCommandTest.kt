@@ -60,6 +60,12 @@ class ControlCommandTest {
         assertEquals(0, cli(out, err).run("control", listOf("pair", "123456")))
         assertEquals(0, cli(out, err).run("status", emptyList()))
         assertTrue(out.any { "Калькулятор" in it } && out.any { "5 ч 82 %" in it }, out.toString())
+        // Слова, а не идентификаторы (D-89): «готова к запуску · обычный», а не «READY  NORMAL».
+        val line = out.first { "Калькулятор" in it }
+        assertTrue("готова к запуску" in line && "обычный" in line && "READY" !in line && "NORMAL" !in line, line)
+        val reqs = mutableListOf<String>()
+        assertEquals(0, cli(reqs, err).run("requests", emptyList()))
+        assertTrue(reqs.any { "решение" in it } && reqs.none { "USER_RESOLUTION" in it }, reqs.toString())
         assertTrue(out.any { "ходов 2 · вход 1200 · выход 80 · \$0.04 (оценка)" in it }, "расход задачи (D-42, п. 4): $out")
 
         assertEquals(0, cli(out, err).run("task", listOf("5YK0", "hold")))

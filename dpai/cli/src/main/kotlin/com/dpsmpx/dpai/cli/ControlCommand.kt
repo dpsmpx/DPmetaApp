@@ -12,6 +12,8 @@ import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonParser
 import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.core.serialization.JsonValue
+import com.dpsmpx.dpai.core.text.Words
+import com.dpsmpx.dpai.notifications.RequestKind
 import com.dpsmpx.dpai.storage.vfs.NioVfs
 import com.dpsmpx.dpai.storage.vfs.Vfs
 import java.net.URI
@@ -113,14 +115,14 @@ class ControlCommand(
         out("Задачи (${tasks.size}${if (tasks.size < all.size) ", в архиве ещё ${all.size - tasks.size}: dpai status --all" else ""}):")
         for (t in tasks) {
             val extra = listOfNotNull(
-                "архив".takeIf { bool(t, "archived") }, "пауза".takeIf { bool(t, "held") }, str(t, "model"), str(t, "reason"), str(t, "waiting")?.let { "ждёт: $it" },
+                "архив".takeIf { bool(t, "archived") }, "пауза".takeIf { bool(t, "held") }, str(t, "model"), str(t, "reason")?.let(Words::reason), str(t, "waiting")?.let { "ждёт: $it" },
                 reviewsLine(t), spend(t),
             ).joinToString(" · ")
-            out("  ${short(str(t, "id"))}  ${str(t, "state")}  ${str(t, "priority")}  ${str(t, "title")}${if (extra.isNotEmpty()) "  [$extra]" else ""}")
+            out("  ${short(str(t, "id"))}  ${str(t, "state")?.let(Words::task)}  ${str(t, "priority")?.let(Words::priority)}  ${str(t, "title")}${if (extra.isNotEmpty()) "  [$extra]" else ""}")
         }
         val live = list(s, "sessions").filter { str(it, "state") !in setOf("COMPLETED", "FAILED", "CANCELLED") }
         out("Сессии идут (${live.size}):")
-        for (x in live) out("  ${short(str(x, "id"))}  ${str(x, "state")}  ход ${num(x, "turn")}  задача ${short(str(x, "task"))}${str(x, "review")?.let { "  ревью $it" } ?: ""}${spend(x)?.let { "  [$it]" } ?: ""}")
+        for (x in live) out("  ${short(str(x, "id"))}  ${str(x, "state")?.let(Words::session)}  ход ${num(x, "turn")}  задача ${short(str(x, "task"))}${str(x, "review")?.let { "  ревью $it" } ?: ""}${spend(x)?.let { "  [$it]" } ?: ""}")
         val reqs = list(s, "requests")
         if (reqs.isNotEmpty()) out("Запросы ждут ответа: ${reqs.size} (dpai requests)")
         for (sub in list(s, "subscriptions")) {
@@ -149,7 +151,7 @@ class ControlCommand(
         if (json) return print(JsonObject.of("requests" to JsonArray(reqs)))
         if (reqs.isEmpty()) out("ждущих запросов нет")
         for (r in reqs) {
-            out("${short(str(r, "id"))}  ${str(r, "kind")}  ${str(r, "title")}")
+            out("${short(str(r, "id"))}  ${str(r, "kind")?.let { k -> RequestKind.entries.firstOrNull { it.name == k }?.label ?: k }}  ${str(r, "title")}")
             str(r, "body")?.let { out("    $it") }
             for (o in list(r, "options")) out("    ${str(o, "id")}: ${str(o, "label")}${if (bool(o, "needsText")) " (нужен --text)" else ""}${if (str(o, "role") == "DESTRUCTIVE") " (опасно: --yes)" else ""}")
         }
@@ -251,7 +253,7 @@ class ControlCommand(
         val ms = list(r, "messages")
         if (ms.isEmpty()) out("итоговых сообщений ходов пока нет")
         for (m in ms) {
-            out("── ход ${num(m, "turn")} · ${str(m, "status")}${str(m, "model")?.let { " · $it" } ?: ""}")
+            out("── ход ${num(m, "turn")} · ${str(m, "status")?.let(Words::turn)}${str(m, "model")?.let { " · $it" } ?: ""}")
             out(str(m, "text").orEmpty())
         }
         return OK
@@ -381,8 +383,9 @@ class ControlCommand(
         if (confirmed) c["confirmed"] = JsonBool(true)
         val r = call("POST", "/v1/commands", JsonObject(c)) ?: return FAILED
         if (json) return print(r)
-        out("${str(r, "status")}: ${str(r, "operation")}${str(r, "value")?.let { " → $it" } ?: ""}")
-        list(r, "diagnostics").forEach { out("  ${str(it, "code")}: ${str(it, "message")}") }
+        // Словами (D-89): «принято: task.hold», причина — фразой; коды — в --json.
+        out("${str(r, "status")?.let(Words::operation)}: ${str(r, "operation")}${str(r, "value")?.let { " → $it" } ?: ""}")
+        list(r, "diagnostics").forEach { out("  ${diagnostic(it)}") }
         return if (str(r, "status") == "FAILED") FAILED else OK
     }
 
@@ -404,13 +407,16 @@ class ControlCommand(
             r.body == null -> err("канал недоступен (${r.error ?: "код ${r.status}"}): приложение открыто и служба контроллера работает?")
             r.status == 401 -> err("токен не подходит: dpai control pair <новый код>")
             r.status == 409 -> err("опасное действие: повторите с --yes")
-            else -> list(r.body, "diagnostics").forEach { err("${str(it, "code")}: ${str(it, "message")}") }
+            else -> list(r.body, "diagnostics").forEach { err(diagnostic(it)) }
         }
         if (r.body != null && r.status == 200) return OK
         return FAILED
     }
 
     private fun fail(message: String): Int = FAILED.also { err(message) }
+
+    /** Диагностика для человека: причина словами и подробность (D-89); код — только в `--json`. */
+    private fun diagnostic(d: JsonObject): String = "${str(d, "code")?.let(Words::reason) ?: "?"}: ${str(d, "message").orEmpty()}"
 
     /** Полный id по однозначному началу или концу; иначе — сообщение. */
     private fun resolve(id: String, listName: String): String? = pickId(list(state() ?: return null, listName).mapNotNull { str(it, "id") }, id, listName)
