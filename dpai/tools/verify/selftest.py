@@ -206,6 +206,17 @@ CASES = [
      None, ["--check"]),
 ]
 
+# check_android_api.py --jars: сверяется jar текущей версии; прежний jar в
+# build/libs (осталась сборка до смены версии) — не замена текущему.
+ANDROID_ARCH = ("<!-- check_modules: begin -->\n| Модуль | Отвечает за | Может зависеть от | Этап |\n|---|---|---|---|\n"
+                "| `core` | ядро | — | 1 |\n| `android` | оболочка | `core` | 11 |\n<!-- check_modules: end -->\n")
+CASES += [("check_android_api.py",
+           {"docs/ARCHITECTURE.md": ANDROID_ARCH, "gradle.properties": "version=0.2.0\n",
+            "core/build/libs/core-0.1.0.jar": "старый\n"},
+           {"docs/ARCHITECTURE.md": ANDROID_ARCH, "gradle.properties": "version=0.2.0\n",
+            "core/build/libs/core-0.1.0.jar": "старый\n", "core/build/libs/core-0.2.0.jar": "текущий\n"},
+           ["--jars"])]
+
 # Плохих образцов больше, чем чистых: чистые идут по кругу, каждый встречается.
 CASES += [("gradle_log.py", {"build.log": bad}, {"build.log": GRADLE_RETRY[i % len(GRADLE_RETRY)]}, ["build.log"])
           for i, bad in enumerate(GRADLE_NO_RETRY)]

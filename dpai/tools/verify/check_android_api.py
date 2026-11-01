@@ -16,6 +16,12 @@
 перечислен в tools/verify/registry/android_api_allow.txt с причиной.
 
     python3 tools/verify/check_android_api.py   # после ./gradlew build
+    python3 tools/verify/check_android_api.py --jars   # только выбор jar, без SDK
+
+Jar модуля — только текущей версии (`gradle.properties`): после смены
+версии прежние jar остаются в build/libs, и сверка по ним находила
+обращения уже удалённого кода (1 ноября 2026: `AgentRuntime` из
+0.1.0-dev.1 с `ProcessHandle` при чистом 0.1.0-dev.5).
 
 Код возврата: 0 — чисто; 1 — нарушения или нет сборки/SDK.
 """
@@ -65,6 +71,33 @@ def closure():
             seen.add(x)
             todo.extend(table.get(x, ()))
     return sorted(seen)
+
+
+def project_version():
+    m = re.search(r"^version\s*=\s*(\S+)\s*$", read("gradle.properties"), re.M)
+    return m.group(1) if m else None
+
+
+def module_jars(m, version):
+    """Собранные jar модуля [m] версии [version]; прежние версии в build/libs не берутся."""
+    found = glob.glob(os.path.join(root(), m, "build", "libs", "*.jar"))
+    return sorted(p for p in found if os.path.basename(p).endswith(f"-{version}.jar"))
+
+
+def select_jars(f):
+    """Jar всех модулей замыкания `android`; нет jar текущей версии — находка."""
+    version = project_version()
+    if not version:
+        f.add("gradle.properties", "нет строки version=: какой jar сверять, неизвестно")
+        return [], []
+    mods = closure()
+    jars = []
+    for m in mods:
+        found = module_jars(m, version)
+        if not found:
+            f.add(f"{m}/build/libs", f"нет собранного jar версии {version}: сначала ./gradlew build")
+        jars += found
+    return mods, jars
 
 
 def run_javap(args):
@@ -167,19 +200,20 @@ def allowlist():
     return rules
 
 
+def check_jars():
+    """Только выбор jar (`--jars`): самотест правила версии без Android SDK."""
+    f = Findings("API Android: jar")
+    mods, jars = select_jars(f)
+    return f.finish(f"модулей — {len(mods)}, jar — {len(jars)}")
+
+
 def check():
     f = Findings("API Android")
     jar = android_jar()
     if not jar:
         f.add("android.jar", f"нет платформы android-{MIN_SDK} в Android SDK: сверка API невозможна")
         return f.finish("")
-    mods = closure()
-    jars = []
-    for m in mods:
-        found = [p for p in glob.glob(os.path.join(root(), m, "build", "libs", "*.jar")) if not p.endswith(("-sources.jar", "-javadoc.jar"))]
-        if not found:
-            f.add(f"{m}/build/libs", "нет собранного jar: сначала ./gradlew build")
-        jars += found
+    mods, jars = select_jars(f)
     if f.items:
         return f.finish("")
     allow = allowlist()
@@ -201,4 +235,4 @@ def check():
 
 
 if __name__ == "__main__":
-    main(check)
+    main(check_jars if "--jars" in sys.argv[1:] else check)
