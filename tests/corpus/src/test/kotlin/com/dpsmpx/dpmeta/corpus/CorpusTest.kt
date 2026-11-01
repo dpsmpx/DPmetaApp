@@ -38,7 +38,7 @@ class CorpusTest {
             d.entries.joinToString(",") { "${it.id}=${it.status ?: "-"}" }
         }
         "todo" -> TodoList.parse(text, "").map { t ->
-            "open=${t.open} forAuthor=${t.forAuthor} " + t.sections.joinToString(",") { "${it.title}=${it.items.size}" }
+            "open=${t.open} forAuthor=${t.forAuthor}" + t.sections.joinToString(",") { "${it.title}=${it.items.size}" }.let { if (it.isEmpty()) "" else " $it" }
         }
         "roadmap" -> Roadmap.parse(text, "").map { r ->
             "stages=${r.stages.size} done=${r.stagesDone} " +

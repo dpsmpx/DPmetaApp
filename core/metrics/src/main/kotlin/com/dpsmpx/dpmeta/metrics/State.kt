@@ -52,12 +52,19 @@ data class ProjectState(val name: String, val place: String, val sections: Map<S
         get() = (payload("pulls")?.get("pulls") as? JsonArray)?.let { Measure.observed(it.items.size.toLong()) }
             ?: Measure.unknown("нет данных о PR")
 
-    /** Доля отмеченных шагов ROADMAP, в процентах (вниз до целого). */
+    /**
+     * Доля отмеченного в ROADMAP, в процентах вниз до целого (ТЗ, §8,
+     * `repo.roadmap.progress`): по шагам, а если шагов нет — по этапам.
+     */
     val roadmapPercent: Measure<Long>
         get() {
-            val done = long("roadmap", "stepsDone").orNull()
-            val total = long("roadmap", "stepsTotal").orNull()
-            return if (done == null || total == null || total == 0L) Measure.unknown("нет шагов ROADMAP") else Measure.observed(done * 100 / total)
+            val steps = long("roadmap", "stepsTotal").orNull() ?: 0L
+            val (done, total) = if (steps > 0) {
+                long("roadmap", "stepsDone").orNull() to steps
+            } else {
+                long("roadmap", "stagesDone").orNull() to long("roadmap", "stagesTotal").orNull()
+            }
+            return if (done == null || total == null || total == 0L) Measure.unknown("нет шагов и этапов ROADMAP") else Measure.observed(done * 100 / total)
         }
 
     /**

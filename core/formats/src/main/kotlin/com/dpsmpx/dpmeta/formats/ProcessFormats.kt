@@ -127,18 +127,22 @@ data class TodoList(val sections: List<Section>) : ProcessDocument {
         private val ITEM = Regex("^[-*+][ \\t]+(?:\\[([ xX+])][ \\t]+)?(?:`([МСТК])`[ \\t]+)?(.*)$")
         private val BOLD = Regex("^\\*\\*(.+?)\\*\\*")
 
-        fun parse(text: String, source: String = "TODO.md"): Outcome<TodoList> {
-            val sections = Markdown.sections(text, 2).map { (h, lines) ->
-                val items = lines.mapNotNull { l ->
-                    val m = ITEM.find(l.text) ?: return@mapNotNull null
-                    val rest = m.groupValues[3].trim()
-                    val title = BOLD.find(rest)?.groupValues?.get(1) ?: rest
-                    Item(Markdown.plain(title).trimEnd('.', ':'), m.groupValues[2].ifEmpty { null }, m.groupValues[1].isNotBlank(), l.number)
-                }
-                Section(Markdown.plain(h.text), items)
+        /**
+         * Разделы «## …»; пункты до первого раздела (или весь список, если
+         * разделов нет, как у `DPprofile:TODO.md` с метками `[этап N]`) —
+         * раздел без заголовка. Пустой `TODO.md` — законно: всё сделано.
+         */
+        fun parse(text: String, @Suppress("UNUSED_PARAMETER") source: String = "TODO.md"): Outcome<TodoList> {
+            fun items(lines: List<Markdown.Line>) = lines.mapNotNull { l ->
+                val m = ITEM.find(l.text) ?: return@mapNotNull null
+                val rest = m.groupValues[3].trim()
+                val title = BOLD.find(rest)?.groupValues?.get(1) ?: rest
+                Item(Markdown.plain(title).trimEnd('.', ':'), m.groupValues[2].ifEmpty { null }, m.groupValues[1].isNotBlank(), l.number)
             }
-            if (sections.isEmpty()) return Outcome.failure(DiagCode.FORMAT_UNRECOGNIZED, "нет разделов второго уровня («## …»)", source)
-            return Outcome.success(TodoList(sections))
+            val sections = Markdown.sections(text, 2).map { (h, lines) -> Section(Markdown.plain(h.text), items(lines)) }
+            val firstHeading = sections.firstOrNull()?.let { Markdown.sections(text, 2).first().first.line } ?: Int.MAX_VALUE
+            val loose = items(Markdown.prose(text).filter { it.number < firstHeading })
+            return Outcome.success(TodoList(if (loose.isEmpty()) sections else listOf(Section("", loose)) + sections))
         }
     }
 }
@@ -217,9 +221,56 @@ data class Roadmap(val stages: List<Stage>) : ProcessDocument {
                 if (flag(s.groupValues[1]) == Flag.DONE) done++
             }
             flush()
-            if (stages.isEmpty()) return Outcome.failure(DiagCode.FORMAT_UNRECOGNIZED, "нет этапов и шагов с флажками «[ ]», «[x]», «[+]»", source)
+            if (stages.isEmpty()) stages += table(text)
+            if (stages.isEmpty()) {
+                return Outcome.failure(DiagCode.FORMAT_UNRECOGNIZED, "нет этапов: ни флажков «[ ]», «[x]», «[+]», ни таблицы со столбцом «Состояние»", source)
+            }
             return Outcome.success(Roadmap(stages))
         }
+
+        private val CELL_SPLIT = Regex("(?<!\\\\)\\|")
+
+        private fun cells(line: String): List<String>? {
+            val t = line.trim()
+            if (!t.startsWith("|")) return null
+            return t.removePrefix("|").removeSuffix("|").split(CELL_SPLIT).map { Markdown.plain(it) }
+        }
+
+        /**
+         * Таблица этапов со столбцом «Состояние» (`DPpass:docs/direction/ROADMAP/README.md`,
+         * `SocialMediaImage:ROADMAP/ROADMAP.md`, блок README подсистемы «AI»).
+         * Состояние начинается с «выполнен», «сделано», «готово» — сделано;
+         * говорит «в работе», «идёт» или «сделано» не в начале — идёт; иначе — нет.
+         * Берётся первая такая таблица.
+         */
+        private fun table(text: String): List<Stage> {
+            val lines = Markdown.prose(text)
+            for ((i, l) in lines.withIndex()) {
+                val head = cells(l.text) ?: continue
+                val col = head.indexOfFirst { it.equals("Состояние", ignoreCase = true) }
+                if (col < 1) continue
+                val sep = lines.getOrNull(i + 1)?.let { cells(it.text) } ?: continue
+                if (!sep.all { it.trim().matches(Regex(":?-{3,}:?")) }) continue
+                val out = mutableListOf<Stage>()
+                for (row in lines.drop(i + 2)) {
+                    val c = cells(row.text) ?: break
+                    if (c.size <= col) continue
+                    val name = c[0].trim().let { if (it.all(Char::isDigit) && c.size > 1) "Этап $it. ${c[1].trim()}" else it }
+                    val state = c[col].trim().lowercase()
+                    val flag = when {
+                        DONE_WORDS.any { state.startsWith(it) } -> Flag.DONE
+                        ACTIVE_WORDS.any { it in state } -> Flag.ACTIVE
+                        else -> Flag.OPEN
+                    }
+                    out += Stage(name, flag, 0, 0, row.number)
+                }
+                if (out.isNotEmpty()) return out
+            }
+            return emptyList()
+        }
+
+        private val DONE_WORDS = listOf("выполнен", "сделано", "готово")
+        private val ACTIVE_WORDS = listOf("в работе", "идёт", "идет", "сделано")
     }
 }
 
