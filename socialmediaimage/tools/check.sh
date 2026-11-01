@@ -80,6 +80,23 @@ if [ ${#names[@]} -eq 0 ] && [ "$level" != quick ] && [ $run_tests -eq 1 ]; then
   [ $rc -eq 0 ] || status=1
 fi
 
+# Запись проверки для выгрузки (Д47, DPmetaApp:D-48): release без --fast, всё зелёное, дерево системы
+# чистое — какой коммит проверен; ярлык выгрузки отказывает без неё и если система менялась после.
+if [ "$level" = release ] && [ $status -eq 0 ] && [ $fast -eq 0 ]; then
+  echo
+  if [ -n "$(git status --porcelain -- . ':!data/website/site-check.json')" ]; then
+    echo "запись проверки не сделана: в системе есть незакоммиченное — проверяется только закоммиченное"
+  else
+    python3 - "$(git rev-parse HEAD)" <<'PY'
+import datetime, json, sys
+rec = {"commit": sys.argv[1], "level": "release",
+       "checked": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+open("data/website/site-check.json", "w", encoding="utf-8").write(json.dumps(rec, ensure_ascii=False, indent=1) + "\n")
+PY
+    echo "запись проверки: data/website/site-check.json — $(git rev-parse --short=12 HEAD); закоммитить и запушить"
+  fi
+fi
+
 echo
 if [ $status -eq 0 ]; then echo "✓ tools/check.sh: всё зелёное"; else echo "✗ tools/check.sh: есть ошибки"; fi
 exit $status

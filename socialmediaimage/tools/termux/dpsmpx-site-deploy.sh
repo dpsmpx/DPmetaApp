@@ -7,6 +7,10 @@
 #   install -m 700 ~/DPmetaApp/socialmediaimage/tools/termux/dpsmpx-site-deploy.sh ~/.shortcuts/
 # Каталог — ~/.shortcuts/, не ~/.shortcuts/tasks/: оттуда ярлык идёт без
 # терминала и не может спросить «да».
+# Выгружается только проверенный сайт (Д47, DPmetaApp:D-48): запись
+# data/website/site-check.json пишет tools/check.sh --release, когда он
+# зелёный; после проверенного коммита система не менялась (кроме реестра
+# выпусков и самой записи) — иначе отказ.
 set -eu
 
 PY="${DPSMPX_PY:-/data/data/com.termux/files/usr/bin/python3}"   # Python из pkg, с jsonschema
@@ -29,6 +33,17 @@ if [ -n "$(git status --porcelain -- data/provenance/site-releases)" ]; then
   fail "манифест прошлой выгрузки не закоммичен (Д41): git add data/provenance/site-releases && git commit && git push — затем снова"
 fi
 git pull --ff-only || fail "git pull не прошёл — сеть или расхождение с GitHub"
+
+CHK=data/website/site-check.json
+[ -f "$CHK" ] || fail "сайт не проверен: нет $CHK — сессия делает tools/check.sh --release (Д47)"
+read -r checked when < <("$PY" -c 'import json, sys
+c = json.load(open(sys.argv[1], encoding="utf-8"))
+print(c["commit"], c["checked"])' "$CHK") || fail "$CHK не читается — сайт не проверен"
+git cat-file -e "$checked^{commit}" 2>/dev/null || fail "проверенного коммита $checked нет в клоне — git fetch, затем снова"
+if ! git diff --quiet "$checked" HEAD -- . ':!data/website/site-check.json' ':!data/provenance/site-releases'; then
+  fail "после проверки (${checked:0:12}, $when) система сайта менялась — нужна новая проверка: tools/check.sh --release (Д47)"
+fi
+echo "Сайт проверен: ${checked:0:12}, $when (tools/check.sh --release)"
 
 echo "== пробный прогон"
 out=$("$PY" -m tools.cs site deploy --dry-run) || { echo "$out"; fail "пробный прогон не прошёл — выгрузки не будет"; }
