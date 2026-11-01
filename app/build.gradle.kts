@@ -29,6 +29,12 @@ android {
         it.inputs.dir(layout.projectDirectory.dir("src/test/snapshots")).withPropertyName("snapshots")
     }
 
+    // Предупреждения Lint — ошибки (CLAUDE.md, «Правила кода»).
+    lint {
+        warningsAsErrors = true
+        abortOnError = true
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
