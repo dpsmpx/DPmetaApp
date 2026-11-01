@@ -9,7 +9,10 @@
 #   * в веб-сессии — Android SDK для приложения (ответ автора 25 октября
 #     2026): платформы, build-tools, NDK и CMake из сборки dpai/android,
 #     путь — в ANDROID_HOME и local.properties; зеркало Maven Central у
-#     Google для Gradle (прокси веб-сессии отвечает 404 и 429);
+#     Google для Gradle (прокси веб-сессии отвечает 404 и 429); закрыт
+#     dl.google.com — SDK, Google Maven и закреплённые файлы сборок из
+#     приватного build_tools автора (слово автора 1 ноября 2026,
+#     tools/build_tools_install.py);
 #   * ветки с работой, не влитой в main, — свежие первыми: с них
 #     продолжают, а не делают заново; ветки сборок (`*_debug`, прежние
 #     `apk-*` и `linux-debug`, D-33) — не работа, их нет;
@@ -36,7 +39,15 @@ if [ "${CLAUDE_CODE_REMOTE:-}" = "true" ]; then
         CLT_ZIP="commandlinetools-linux-13114758_latest.zip"
         CLT_SHA256="7ec965280a073311c339e571cd5de778b9975026cfcbe79f2b1cdcb1e15317ee"
         SDKMANAGER="$SDK/cmdline-tools/latest/bin/sdkmanager"
-        if [ ! -x "$SDKMANAGER" ]; then
+        # dl.google.com закрыт политикой сети среды — всё то же из build_tools (tools/termux/build-tools.py
+        # собирает его на телефоне автора): сверка по MANIFEST.json, SDK ставит sdkmanager из локальной копии.
+        GOOGLE="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 \
+            "https://dl.google.com/android/repository/$CLT_ZIP" -r 0-0 2>/dev/null || true)"
+        if [ "$GOOGLE" != "200" ] && [ "$GOOGLE" != "206" ]; then
+            echo "dl.google.com закрыт (ответ ${GOOGLE:-нет}) — Android SDK и Google Maven из build_tools"
+            python3 "$PROJ/tools/build_tools_install.py" --sdk "$SDK" ||
+                echo "  ! build_tools не поставлен — :app не собирается (tools/build_tools_install.py)"
+        elif [ ! -x "$SDKMANAGER" ]; then
             tmp="$(mktemp -d)"
             curl -sSfL -o "$tmp/clt.zip" "https://dl.google.com/android/repository/$CLT_ZIP" &&
                 echo "$CLT_SHA256  $tmp/clt.zip" | sha256sum -c --quiet - &&
@@ -52,7 +63,7 @@ if [ "${CLAUDE_CODE_REMOTE:-}" = "true" ]; then
         [ -d "$SDK/platform-tools" ] || want+=("platform-tools")
         [ -z "$NDK" ] || [ -f "$SDK/ndk/$NDK/source.properties" ] || want+=("ndk;$NDK")
         [ -z "$CMAKE" ] || [ -d "$SDK/cmake/$CMAKE" ] || want+=("cmake;$CMAKE")
-        if [ -x "$SDKMANAGER" ] && [ "${#want[@]}" -gt 0 ]; then
+        if [ -x "$SDKMANAGER" ] && [ "${#want[@]}" -gt 0 ] && { [ "$GOOGLE" = "200" ] || [ "$GOOGLE" = "206" ]; }; then
             echo "Android SDK: ставлю ${want[*]} в $SDK (несколько минут)"
             yes | "$SDKMANAGER" --sdk_root="$SDK" --licenses >/dev/null 2>&1 || true
             "$SDKMANAGER" --sdk_root="$SDK" "${want[@]}" >/dev/null || echo "  ! sdkmanager не поставил: ${want[*]}"

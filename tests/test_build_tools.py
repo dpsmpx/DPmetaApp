@@ -16,6 +16,19 @@ ROOT = Path(__file__).resolve().parents[1]
 _spec = importlib.util.spec_from_file_location("build_tools", ROOT / "tools" / "termux" / "build-tools.py")
 bt = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(bt)
+_ispec = importlib.util.spec_from_file_location("build_tools_install", ROOT / "tools" / "build_tools_install.py")
+inst = importlib.util.module_from_spec(_ispec)
+_ispec.loader.exec_module(inst)
+
+# Поддельный sdkmanager: пишет вызовы и адрес репозитория, «ставит» пакеты и скачивает архив NDK с
+# локального сервера установщика — сумма в журнале проверяет, что архив отдан из частей целым.
+FAKE_SDKMANAGER = """#!/bin/sh
+root=""
+for a in "$@"; do case "$a" in --sdk_root=*) root="${a#--sdk_root=}";; esac; done
+echo "$SDK_TEST_BASE_URL $*" >> "$root.log"
+for a in "$@"; do case "$a" in --*) ;; *) d="$root/$(printf %s "$a" | tr ';' '/')"; mkdir -p "$d"; echo x > "$d/package.xml";; esac; done
+case "$*" in *ndk*) python3 -c "import sys, urllib.request, hashlib; print('ndk', hashlib.sha256(urllib.request.urlopen(sys.argv[1]).read()).hexdigest())" "${SDK_TEST_BASE_URL}ndk-28.2.1.zip" >> "$root.log";; esac
+"""
 
 
 def zipped(name: str, size: int) -> bytes:
@@ -61,7 +74,10 @@ class BuildTools(unittest.TestCase):
         put(self.root, "dpai/gradle/libs.versions.toml", 'agp = "9.4.1"\ncompose-bom = "2026.09.00"\nactivity-compose = "1.13.0"\n')
         put(self.root, "dppass/gradle/libs.versions.toml", 'android-compileSdk = "36"\nandroid-ndk = "30.0.1"\n')
         put(self.root, "dppass/.claude/hooks/session-start.sh", 'BUILD_TOOLS="36.0.0"\n')
-        clt = zipped("cmdline-tools/bin/sdkmanager", 300)
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as z:
+            z.writestr("cmdline-tools/bin/sdkmanager", FAKE_SDKMANAGER)
+        clt = buf.getvalue()
         put(self.sdk, "clt.zip", clt)
         put(self.root, ".claude/hooks/session-start.sh",
             f'        CLT_ZIP="clt.zip"\n        CLT_SHA256="{hashlib.sha256(clt).hexdigest()}"\n')
@@ -231,6 +247,94 @@ class BuildTools(unittest.TestCase):
             self.run_tool(str(self.out), "--only", "files")
         self.assertIn("не сошлось", str(e.exception))
         self.assertFalse((self.out / "sdk").exists(), "--only files не трогает SDK")
+
+    def built(self):
+        old = bt.PART
+        bt.PART = 2048
+        try:
+            rc, log = self.run_tool(str(self.out))
+        finally:
+            bt.PART = old
+        self.assertEqual(rc, 0, log)
+        return json.loads((self.out / "MANIFEST.json").read_text())
+
+    def install(self):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = inst.main(["--clone", str(self.out), "--sdk", str(self.tmp / "android-sdk"),
+                            "--gradle-home", str(self.tmp / "gradle")])
+        return rc, buf.getvalue()
+
+    def test_install_from_build_tools(self):
+        m = self.built()
+        rc, log = self.install()
+        self.assertEqual(rc, 0, log)
+        sdk, gradle = self.tmp / "android-sdk", self.tmp / "gradle"
+        calls = (self.tmp / "android-sdk.log").read_text()
+        self.assertIn("http://127.0.0.1:", calls)
+        self.assertIn("--no_proxy --licenses", calls)
+        self.assertIn(f"ndk {m['files']['sdk/ndk-28.2.1.zip']['sha256']}", calls)  # архив из частей — целый
+        for path in m["sdk"]:
+            if path != "cmdline-tools":
+                self.assertTrue((sdk / path.replace(";", "/") / "package.xml").is_file(), path)
+        self.assertEqual((gradle / "build-tools/maven2/androidx/core/core/1.17.0/core-1.17.0.aar").read_bytes(), b"core" * 100)
+        init = (gradle / "init.d/build-tools-google-maven.gradle").read_text()
+        self.assertIn((gradle / "build-tools/maven2").as_uri() + "/", init)
+        self.assertIn('includeGroupByRegex("com\\\\.android(\\\\..*)?")', init)
+        self.assertIn("gradleMetadata()", init)
+        self.assertEqual((gradle / "caches/dpai-linux/alpine-minirootfs.tar.gz").read_bytes(), self.rootfs)
+        # второй запуск: SDK не ставится заново
+        rc, log = self.install()
+        self.assertEqual(rc, 0, log)
+        self.assertIn("всё уже стоит", log)
+
+    def test_install_from_clone_without_checkout(self):
+        """Клон --no-checkout (так клонирует сам установщик): файлы — из объектов git, вдвое меньше места."""
+        import subprocess
+        m = self.built()
+        for args in (["init", "-q"], ["config", "user.name", "t"], ["config", "user.email", "t@example.invalid"],
+                     ["config", "commit.gpgsign", "false"], ["add", "-A"], ["commit", "-q", "-m", "x"]):
+            subprocess.run(["git", "-C", str(self.out), *args], check=True, capture_output=True)
+        bare = self.tmp / "nocheckout"
+        subprocess.run(["git", "clone", "-q", "--no-checkout", str(self.out), str(bare)], check=True, capture_output=True)
+        self.assertFalse((bare / "MANIFEST.json").exists())
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = inst.main(["--clone", str(bare), "--sdk", str(self.tmp / "android-sdk"), "--gradle-home", str(self.tmp / "gradle")])
+        self.assertEqual(rc, 0, buf.getvalue())
+        calls = (self.tmp / "android-sdk.log").read_text()
+        self.assertIn(f"ndk {m['files']['sdk/ndk-28.2.1.zip']['sha256']}", calls)
+        self.assertEqual((self.tmp / "gradle/caches/dpai-linux/alpine-minirootfs.tar.gz").read_bytes(), self.rootfs)
+
+    def test_installer_clones_itself_then_skips_without_clone(self):
+        """Клона нет — установщик клонирует сам (--no-checkout), ставит и удаляет клон; второй запуск
+        с той же меткой и тем же коммитом на «GitHub» (здесь — локальный репозиторий) не клонирует."""
+        import subprocess
+        self.built()
+        for args in (["init", "-q"], ["config", "user.name", "t"], ["config", "user.email", "t@example.invalid"],
+                     ["config", "commit.gpgsign", "false"], ["add", "-A"], ["commit", "-q", "-m", "x"]):
+            subprocess.run(["git", "-C", str(self.out), *args], check=True, capture_output=True)
+        clone = self.tmp / "bt-clone"
+        argv = ["--clone", str(clone), "--repo", str(self.out), "--sdk", str(self.tmp / "android-sdk"),
+                "--gradle-home", str(self.tmp / "gradle")]
+        for expect in ("клонирую", "уже стоит"):
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = inst.main(argv)
+            self.assertEqual(rc, 0, buf.getvalue())
+            self.assertIn(expect, buf.getvalue())
+            self.assertFalse(clone.exists(), "клон установщика удалён")
+        self.assertNotIn("клонирую", buf.getvalue())
+
+    def test_install_stops_on_tampered_part(self):
+        m = self.built()
+        part = self.out / m["files"]["sdk/ndk-28.2.1.zip"]["parts"][0]["path"]
+        part.write_bytes(b"x" + part.read_bytes()[1:])
+        rc, log = self.install()
+        self.assertEqual(rc, 1, log)
+        self.assertIn("не сошлась", log)
+        self.assertFalse((self.tmp / "android-sdk.log").exists(), "sdkmanager не запускался")
+        self.assertFalse((self.tmp / "gradle/build-tools").exists())
 
     def test_list_names_packages_without_download(self):
         rc, log = self.run_tool("--list")
