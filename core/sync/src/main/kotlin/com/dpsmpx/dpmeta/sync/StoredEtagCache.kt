@@ -1,4 +1,4 @@
-package com.dpsmpx.dpmeta.cli
+package com.dpsmpx.dpmeta.sync
 
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.serialization.JsonObject
@@ -10,11 +10,12 @@ import com.dpsmpx.dpmeta.net.EtagCache
 import java.util.Base64
 
 /**
- * Кэш условных запросов между запусками `dpmeta-cli sync --live` (ТЗ, §6.4,
+ * Кэш условных запросов между синхронизациями — `dpmeta-cli sync --live` и
+ * пульта на телефоне (ТЗ, §6.4,
  * A-02): документ `etags` хранилища — адрес → ETag и тело. Ключ уже не
  * содержит токена (только отпечаток, `:core:net`).
  */
-class EtagFile(private val documents: DocumentStore) : EtagCache {
+class StoredEtagCache(private val documents: DocumentStore) : EtagCache {
     private val map = LinkedHashMap<String, CachedResponse>()
     private var dirty = false
 

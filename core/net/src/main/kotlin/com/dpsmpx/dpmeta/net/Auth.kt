@@ -34,3 +34,8 @@ object FormBody {
 
     const val CONTENT_TYPE = "application/x-www-form-urlencoded"
 }
+
+/** Байты секрета для шифрования на устройстве (`:app`, Keystore): раскрытие — здесь, в `:core:net`. */
+object Secrets {
+    fun bytes(secret: Secret): ByteArray = secret.reveal().toByteArray(Charsets.UTF_8)
+}

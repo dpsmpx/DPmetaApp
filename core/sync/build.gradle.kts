@@ -7,4 +7,5 @@ plugins {
 dependencies {
     api(project(":core:formats"))
     api(project(":core:github"))
+    api("com.dpsmpx.dpai:storage")
 }
