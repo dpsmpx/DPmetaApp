@@ -130,7 +130,8 @@ object TaskScreens {
             by == com.dpsmpx.dpai.contexts.HandoffReason.TARGET_FAILED -> "target недоступен"
             reason == com.dpsmpx.dpai.core.diagnostics.DiagCode.CLAUDE_RATE_LIMITED -> "предел подписки"
             reason == null || reason == com.dpsmpx.dpai.core.diagnostics.DiagCode.SESSION_HANDED_OFF -> null
-            else -> reason.name
+            // Словами, а не кодом (D-88, U-2): «предел подписки», а не `CLAUDE_RATE_LIMITED`.
+            else -> Words.reason(reason.name)
         }
     }
 
@@ -191,7 +192,7 @@ object TaskScreens {
         id = t.id, title = t.title, objective = t.objective,
         state = t.state.name, tone = Screens.tone(t.state), held = t.held, priority = t.priority.name,
         taskClass = t.policy.taskClass, model = t.policy.model, effort = t.policy.effort, budgetCents = t.policy.maxBudgetUsdCents,
-        retries = t.retries, reason = t.lastReason?.takeIf { t.state != TaskState.DONE }?.name,
+        retries = t.retries, reason = t.lastReason?.takeIf { t.state != TaskState.DONE }?.let { Words.reason(it.name) },
         lastSession = sessions.sessions.values.filter { it.task == t.id }.maxByOrNull { it.createdAt.epochMillis }?.id,
         actions = actions(t),
         waiting = waiting?.takeIf { t.state == TaskState.READY },

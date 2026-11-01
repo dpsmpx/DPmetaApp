@@ -12,6 +12,7 @@ import com.dpsmpx.dpai.tasks.ReviewVerdict
 import com.dpsmpx.dpai.tasks.TasksState
 import java.math.BigDecimal
 import java.math.RoundingMode
+import java.util.Locale
 
 /**
  * Отчёт расхода (D-40; `docs/EFFICIENCY.md`, §9): из состояния сессий и
@@ -103,7 +104,7 @@ data class UsageReport(
     val avgPromptTokens: Long? get() = if (prompts == 0) null else promptTokens / prompts
 
     fun render(): String = buildString {
-        fun pct(v: Double?) = v?.let { "%.1f %%".format(it * 100) } ?: "—"
+        fun pct(v: Double?) = v?.let { String.format(Locale.ROOT, "%.1f %%", it * 100) } ?: "—"
         appendLine("## Расход модели (наблюдаемое, со слов провайдера)")
         appendLine()
         appendLine("| Мера | Значение |")
@@ -136,7 +137,7 @@ data class UsageReport(
         appendLine("| выполнено / провалено | $tasksDone / $tasksFailed |")
         appendLine("| повторов / продолжений | $retries / $continuations |")
         appendLine("| выполненных среди завершённых | ${pct(successShare)} |")
-        appendLine("| средний ход, с | ${avgTurnMs?.let { "%.1f".format(it / 1000.0) } ?: "—"} |")
+        appendLine("| средний ход, с | ${avgTurnMs?.let { String.format(Locale.ROOT, "%.1f", it / 1000.0) } ?: "—"} |")
         appendLine("| средний контекст в конце хода | ${avgContextTokens ?: "—"} |")
         appendLine("| модели, токенов | ${models.entries.sortedByDescending { it.value }.joinToString { "${it.key} ${it.value}" }.ifEmpty { "—" }} |")
         append("| больше всех расходуют | ${topTasks.joinToString { "${it.first.value} ${it.second}" }.ifEmpty { "—" }} |")
@@ -156,7 +157,7 @@ data class UsageReport(
             appendLine("| наибольший результат, байт | ${tools.largestResultBytes} |")
             appendLine("| субагенты: вызовов / вывод, байт | ${tools.subagentCalls} / ${tools.subagentResultBytes} |")
             appendLine("| больше всего вывода | ${topTools().joinToString { "${it.key} ${it.value.calls}× ${it.value.resultBytes} Б" }} |")
-            append("| вызовов на сессию по режиму prompt | ${toolCallsByMode.entries.sortedBy { it.key }.joinToString { "${it.key} %.1f".format(it.value) }.ifEmpty { "—" }} |")
+            append("| вызовов на сессию по режиму prompt | ${toolCallsByMode.entries.sortedBy { it.key }.joinToString { "${it.key} ${String.format(Locale.ROOT, "%.1f", it.value)}" }.ifEmpty { "—" }} |")
             if (tools.unmatchedResults > 0) append("\n\nРезультатов без известного вызова: ${tools.unmatchedResults} — суммы инструментов — нижняя граница.")
         }
         if (passAtK.isNotEmpty()) {

@@ -41,9 +41,11 @@ import com.dpsmpx.dpai.tasks.TaskClass
 import com.dpsmpx.dpai.ui.ReviewLine
 import com.dpsmpx.dpai.ui.TaskAction
 import com.dpsmpx.dpai.ui.TaskDetail
+import com.dpsmpx.dpai.ui.Words
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.util.Locale
 import kotlinx.coroutines.withContext
 
 /**
@@ -108,10 +110,11 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
                 }
                 // Вывод модели — только в чате сессии (D-62): переход туда — первым.
                 d.lastSession?.let { s -> androidx.compose.material3.Button(onClick = { onSession(s.value) }, Modifier.fillMaxWidth()) { Text("Открыть чат") } }
-                Text("${d.state}${if (d.held) " · приостановлена" else ""} · приоритет ${d.priority}", fontWeight = FontWeight.Bold)
+                // Слово, а не идентификатор (D-88, U-3): человек читает экран, а не журнал событий.
+                Text("${Words.task(d.state)}${if (d.held) " · приостановлена" else ""} · приоритет ${Words.priority(d.priority)}", fontWeight = FontWeight.Bold)
                 Text(d.objective, style = MaterialTheme.typography.bodySmall, maxLines = 4)
                 Text(
-                    "класс ${d.taskClass} · модель ${d.model ?: "по классу"} · усилие ${d.effort ?: "по классу"} · бюджет хода ${d.budgetCents?.let { "%.2f $".format(it / 100.0) } ?: "без предела"}",
+                    "класс ${d.taskClass} · модель ${d.model ?: "по классу"} · усилие ${d.effort ?: "по классу"} · бюджет хода ${d.budgetCents?.let { String.format(Locale.ROOT, "%.2f $", it / 100.0) } ?: "без предела"}",
                     style = MaterialTheme.typography.labelSmall,
                 )
                 d.usage?.let { Text("расход: $it", style = MaterialTheme.typography.labelSmall) }
@@ -203,7 +206,7 @@ private fun PolicyEditor(d: TaskDetail, busy: Boolean, onSave: (TaskClass, Strin
     var reviews by remember { mutableStateOf(d.reviews.map { it.role }.toSet()) }
     var modelName by remember { mutableStateOf(d.model.orEmpty()) }
     var effort by remember { mutableStateOf(d.effort.orEmpty()) }
-    var budget by remember { mutableStateOf(d.budgetCents?.let { "%.2f".format(it / 100.0) }.orEmpty()) }
+    var budget by remember { mutableStateOf(d.budgetCents?.let { String.format(Locale.ROOT, "%.2f", it / 100.0) }.orEmpty()) }
     var error by remember { mutableStateOf<String?>(null) }
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text("Класс задачи — маршрут модели (D-40)", style = MaterialTheme.typography.labelSmall)

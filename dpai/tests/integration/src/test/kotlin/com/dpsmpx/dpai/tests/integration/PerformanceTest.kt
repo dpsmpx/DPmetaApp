@@ -52,6 +52,7 @@ import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.Locale
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -86,7 +87,7 @@ class PerformanceTest {
         }
         xs.sort()
         val s = Stat(name, xs.average(), xs[((n - 1) * 0.99).toInt()], xs.last(), n)
-        stats += "%-28s n=%-6d avg=%8.3f мс  p99=%8.3f мс  max=%8.3f мс".format(s.name, s.n, s.avgMs, s.p99Ms, s.maxMs)
+        stats += String.format(Locale.ROOT, "%-28s n=%-6d avg=%8.3f мс  p99=%8.3f мс  max=%8.3f мс", s.name, s.n, s.avgMs, s.p99Ms, s.maxMs)
         return s
     }
 
@@ -114,7 +115,7 @@ class PerformanceTest {
         fun stat(name: String, xs: DoubleArray): Stat {
             xs.sort()
             val s = Stat(name, xs.average(), xs[((n - 1) * 0.99).toInt()], xs.last(), n)
-            stats += "%-28s n=%-6d avg=%8.3f мс  p99=%8.3f мс  max=%8.3f мс".format(s.name, s.n, s.avgMs, s.p99Ms, s.maxMs)
+            stats += String.format(Locale.ROOT, "%-28s n=%-6d avg=%8.3f мс  p99=%8.3f мс  max=%8.3f мс", s.name, s.n, s.avgMs, s.p99Ms, s.maxMs)
             return s
         }
         return stat(a, xa) to stat(b, xb)
@@ -323,7 +324,7 @@ class PerformanceTest {
         val journalBytes = Files.walk(dir).filter { it.fileName.toString() == "journal.log" }.mapToLong { Files.size(it) }.sum()
         val launched = o.sessions.sessions.size
         val perLaunch = totalMs / launched
-        note("$name: задач $tasks, слотов $slots, targets $targets; тактов $ticks, худший такт %.1f мс, на запуск сессии %.2f мс, параллельно до $maxParallel сессий, событий ${j.records().size}, журнал ${journalBytes / 1024} КиБ, прирост кучи ${(heap1 - heap0) / (1 shl 20)} МиБ".format(worstTick, perLaunch))
+        note(String.format(Locale.ROOT, "$name: задач $tasks, слотов $slots, targets $targets; тактов $ticks, худший такт %.1f мс, на запуск сессии %.2f мс, параллельно до $maxParallel сессий, событий ${j.records().size}, журнал ${journalBytes / 1024} КиБ, прирост кучи ${(heap1 - heap0) / (1 shl 20)} МиБ", worstTick, perLaunch))
         assertTrue(all.all { o.tasks.tasks.getValue(it).state == TaskState.DONE }, "$name: не все задачи DONE")
         assertTrue(maxParallel >= minOf(slots, targets * perTarget, 20), "$name: параллельно только $maxParallel")
         assertTrue(o.problems.isEmpty(), o.problems.toString())

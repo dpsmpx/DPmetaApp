@@ -92,48 +92,66 @@ class ControllerService : Service() {
             var lastUsage = Clock.SYSTEM.monotonicNanos() - TimeUnit.MINUTES.toNanos(1)
             timer = Executors.newSingleThreadScheduledExecutor().also { t ->
                 t.scheduleWithFixedDelay({
-                    // Targets с каталогом Claude не осталось — контроллеру нечего опрашивать: служба уходит,
-                    // а не шагает демо в фоне (ревью 8 октября 2026, A-28). Экран поднимет её, когда target появится.
-                    if (!model.hasLive()) {
-                        log.step("служба контроллера: нет targets с каталогом Claude")
-                        stopSelf()
-                        return@scheduleWithFixedDelay
-                    }
-                    lock.acquire(TimeUnit.MINUTES.toMillis(WAKE_MINUTES))
-                    meter.begin()
-                    // Сбой такта — в журнал приложения, а не молча (D-43): контур идёт дальше.
-                    val ok = try {
-                        model.step(null).notifications.forEach(notifier::show)
-                        // Лимиты слотов с автообновлением — раз в минуту, и без открытой сводки.
-                        val auto = UsageAuto.enabled(app)
-                        val tick = Clock.SYSTEM.monotonicNanos()
-                        if (auto.isNotEmpty() && tick - lastUsage >= TimeUnit.MILLISECONDS.toNanos(UsageAuto.EVERY_MS)) {
-                            lastUsage = tick
-                            model.refreshUsage(auto)
-                        }
-                        // Копия настроек — после изменения и раз в час (D-51).
-                        SettingsBackups.tick(app, Controller.get(app.filesDir, null))
-                        true
-                    } catch (e: Exception) {
-                        log.error("такт", AppLogs.describe(e))
-                        false
-                    }
-                    meter.end(ok)
-                    // Запросы человеку — по ждущим в журнале: показать новые, убрать закрытые (D-44).
+                    // Всё тело такта — под защитой (D-87): у `ScheduledThreadPoolExecutor` исключение в
+                    // периодической задаче отменяет все её следующие запуски, а `Future` никто не хранит.
+                    // Такт, умерший молча, оставлял уведомление «контроллер работает», `running = true`
+                    // и застывший экран — приложение говорило «работаю», когда работа встала.
+                    var failures = 0
                     try {
-                        RequestPresenter.sync(app, model, model.pending())
-                    } catch (e: Exception) {
-                        log.error("запросы", AppLogs.describe(e))
-                    }
-                    val now = Clock.SYSTEM.monotonicNanos()
-                    if (now - lastSummary >= TimeUnit.MINUTES.toNanos(1)) {
-                        lastSummary = now
-                        summary(log, meter, model, device)
-                        // Termux-target на этом телефоне: sshd не слушает — запустить его в Termux (D-46).
-                        try {
-                            TermuxLauncher.ensureSshd(app, Controller.get(app.filesDir, null).targets())?.let { log.info("termux", it) }
+                        // Targets с каталогом Claude не осталось — контроллеру нечего опрашивать: служба уходит,
+                        // а не шагает демо в фоне (ревью 8 октября 2026, A-28). Экран поднимет её, когда target появится.
+                        if (!model.hasLive()) {
+                            log.step("служба контроллера: нет targets с каталогом Claude")
+                            stopSelf()
+                            return@scheduleWithFixedDelay
+                        }
+                        lock.acquire(TimeUnit.MINUTES.toMillis(WAKE_MINUTES))
+                        meter.begin()
+                        // Сбой такта — в журнал приложения, а не молча (D-43): контур идёт дальше.
+                        val ok = try {
+                            model.step(null).notifications.forEach(notifier::show)
+                            // Лимиты слотов с автообновлением — раз в минуту, и без открытой сводки.
+                            val auto = UsageAuto.enabled(app)
+                            val tick = Clock.SYSTEM.monotonicNanos()
+                            if (auto.isNotEmpty() && tick - lastUsage >= TimeUnit.MILLISECONDS.toNanos(UsageAuto.EVERY_MS)) {
+                                lastUsage = tick
+                                model.refreshUsage(auto)
+                            }
+                            // Копия настроек — после изменения и раз в час (D-51).
+                            SettingsBackups.tick(app, Controller.get(app.filesDir, null))
+                            true
                         } catch (e: Exception) {
-                            log.warn("termux", AppLogs.describe(e))
+                            log.error("такт", AppLogs.describe(e))
+                            false
+                        }
+                        meter.end(ok)
+                        // Запросы человеку — по ждущим в журнале: показать новые, убрать закрытые (D-44).
+                        try {
+                            RequestPresenter.sync(app, model, model.pending())
+                        } catch (e: Exception) {
+                            log.error("запросы", AppLogs.describe(e))
+                        }
+                        val now = Clock.SYSTEM.monotonicNanos()
+                        if (now - lastSummary >= TimeUnit.MINUTES.toNanos(1)) {
+                            lastSummary = now
+                            summary(log, meter, model, device)
+                            // Termux-target на этом телефоне: sshd не слушает — запустить его в Termux (D-46).
+                            try {
+                                TermuxLauncher.ensureSshd(app, Controller.get(app.filesDir, null).targets())?.let { log.info("termux", it) }
+                            } catch (e: Exception) {
+                                log.warn("termux", AppLogs.describe(e))
+                            }
+                        }
+                    } catch (e: Throwable) {
+                        // Сюда попадает то, что вне внутренних `try`: настройки с диска, wakelock (на части
+                        // прошивок `acquire` бросает), конец замера, сводка. Считаем сбои подряд и после
+                        // [MAX_TICK_FAILURES] уходим, а не делаем вид, что работаем: экран поднимет службу.
+                        failures++
+                        log.error("такт: сбой вне шага", AppLogs.describe(e))
+                        if (failures >= MAX_TICK_FAILURES) {
+                            log.error("служба контроллера", "такт падает $failures раз подряд — служба уходит, экран поднимет её снова")
+                            running = false
+                            stopSelf()
                         }
                     }
                 }, 0, STEP_SECONDS, TimeUnit.SECONDS)
@@ -176,6 +194,12 @@ class ControllerService : Service() {
         private const val ID = 1001
         private const val STOP = "com.dpsmpx.dpai.STOP_CONTROLLER"
         private const val STEP_SECONDS = 3L
+
+        /**
+         * Сколько сбоев такта подряд терпим, прежде чем уйти (D-87): такт, который падает
+         * раз за разом, — не «работает»; экран поднимет службу заново, а в журнале останется причина.
+         */
+        private const val MAX_TICK_FAILURES = 3
 
         /** Срок wakelock от последнего такта: такты встали — wakelock истёк (D-39). */
         private const val WAKE_MINUTES = 10L

@@ -54,6 +54,10 @@ class LiveRemoteWorkspaceTest {
     }
 
     private fun git(vararg argv: String) {
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+            com.dpsmpx.dpai.testkit.Tools.gitAvailable(),
+            "нет git в PATH: проверка на настоящем git — на машине с git",
+        )
         val r = local.run(ProcessSpec(listOf("git", *argv)), 1.minutes).valueOrNull()!!
         assertEquals(0, r.exitCode, (r.stderr + r.stdout).joinToString("\n"))
     }

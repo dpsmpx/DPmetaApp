@@ -66,6 +66,11 @@ RULES = [
     ("storage-secret", r"\bSecret\b",
      [],  # правило действует только в storage (см. ONLY_IN)
      "в хранилище секретов нет: только ссылки (D-25)", False),
+    ("locale-format",
+     r"\"[^\"\n]*%[-+ 0,(#]*\d*(?:\.\d+)?[fFeEgG][^\"\n]*\"\s*\.format\s*\(|"
+     r"\bString\.format\s*\(\s*\"[^\"\n]*%[-+ 0,(#]*\d*(?:\.\d+)?[fFeEgG]",
+     [],
+     "дробное число — только с явной локалью: String.format(Locale.ROOT, …) (D-85)", True),
     ("provider-private",
      r"claude\.ai/(?:api|chat|login|oauth)|\bsessionKey\b|\bCookieManager\b|\bCookieHandler\b|"
      r"\bHttpCookie\b|\.credentials\.json|CLAUDE_CODE_OAUTH_TOKEN|setup-token",

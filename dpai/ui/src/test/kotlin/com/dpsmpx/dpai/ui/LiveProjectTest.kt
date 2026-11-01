@@ -17,6 +17,7 @@ import com.dpsmpx.dpai.execution.process.ProcessSpec
 import com.dpsmpx.dpai.execution.process.run
 import com.dpsmpx.dpai.notifications.NotificationDecision
 import com.dpsmpx.dpai.storage.vfs.NioVfs
+import com.dpsmpx.dpai.testkit.Tools
 import java.io.File
 import java.nio.file.Path
 import kotlin.test.Test
@@ -40,6 +41,10 @@ class LiveProjectTest {
     private val ids = IdGenerator(clock, RandomSource.seeded(91))
     private val agent = MockAgentHost(clock, ids)
     private val local = LocalProcessHost()
+
+    /** Проверки идут на настоящем `git`: нет его в `PATH` — пропуск с причиной, а не NPE (аудит, H-1). */
+    @org.junit.jupiter.api.BeforeEach
+    fun needsGit() = org.junit.jupiter.api.Assumptions.assumeTrue(Tools.gitAvailable(), "нет git в PATH: проверка на настоящем git — на машине с git")
 
     /** Смерть процесса приложения: `Error`, а не исключение, — её не ловит ни один обработчик контура. */
     private class Killed : Error()

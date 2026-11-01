@@ -98,18 +98,35 @@ class Controller(private val root: File, val version: String?) {
         root.mkdirs()
     }
 
+    /**
+     * Настройки восстановлены из прежней целой версии (`STORAGE_RECOVERED_LKG`) —
+     * об этом стоит сказать человеку: последняя правка targets не сохранилась
+     * (D-87). Список заполняется чтением [targets] и [project].
+     */
+    val recoveredNotices = mutableListOf<com.dpsmpx.dpai.core.diagnostics.Diagnostic>()
+
+    /** Документ настроек целиком: предупреждения чтения — в [recoveredNotices], а не в мусор. */
+    private fun <T> bookDocument(key: String, parse: (com.dpsmpx.dpai.core.serialization.JsonObject) -> Outcome<T>): T? =
+        when (val read = docs.read(key)) {
+            is Outcome.Success -> {
+                recoveredNotices += read.warnings
+                read.value?.let { parse(it.content).valueOrNull() }
+            }
+            is Outcome.Failure -> {
+                recoveredNotices += read.errors
+                null
+            }
+        }
+
     @Synchronized
-    fun targets(): List<TargetEntry> {
-        val doc = docs.read(BOOK).valueOrNull() ?: return emptyList()
-        return TargetBook.fromJson(doc.content).valueOrNull().orEmpty()
-    }
+    fun targets(): List<TargetEntry> = bookDocument(BOOK) { TargetBook.fromJson(it) }.orEmpty()
 
     fun form(label: String, host: String, port: String, user: String, windows: Boolean, agent: String, configDir: String): Outcome<TargetEntry> =
         TargetForm.validate(ids.next(IdKinds.TARGET), label, host, port, user, windows, agent, configDir)
 
     /** Проект контроллера (один): репозиторий на target, деревья задач, проверка. */
     @Synchronized
-    fun project(): ProjectEntry? = docs.read(PROJECT).valueOrNull()?.let { ProjectBook.fromJson(it.content).valueOrNull() }
+    fun project(): ProjectEntry? = bookDocument(PROJECT) { ProjectBook.fromJson(it) }
 
     /** [claudeOn] — где идёт ход Claude, если не на [target] (D-50); ключ и known_hosts — пути на нём. */
     fun projectForm(

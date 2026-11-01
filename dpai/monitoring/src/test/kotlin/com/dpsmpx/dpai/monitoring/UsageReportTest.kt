@@ -24,6 +24,7 @@ import com.dpsmpx.dpai.tasks.TaskRecord
 import com.dpsmpx.dpai.tasks.TasksState
 import com.dpsmpx.dpai.tasks.VerificationRecord
 import java.math.BigDecimal
+import java.util.Locale
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -117,6 +118,35 @@ class UsageReportTest {
         assertTrue("—" in r.render())
         // Без замера инструментов — нет и раздела о них, а не нули.
         assertTrue("## Инструменты в ходе" !in r.render())
+    }
+
+    /**
+     * D-85: отчёт — текст для человека и для файла, а не для локали машины.
+     * Доля печатается одинаково при запятой в разделителе дробей: иначе отчёт
+     * (`docs/EFFICIENCY.md`, §9) и тесты зависят от настроек ОС, а сборка
+     * падает на любой локали, где `%.1f` даёт «25,0» вместо «25.0».
+     */
+    @Test
+    fun numbersDoNotDependOnTheMachineLocale() {
+        val saved = Locale.getDefault()
+        val a = ids.next(IdKinds.TASK)
+        // Средний ход — 4,0 с: доля в отчёте печатается дробью.
+        val r = UsageReport.build(
+            SessionsState(listOf(session(a, UsageTotals(turns = 1, prompts = 1, durationMs = 4_000))).associateBy { it.id }),
+            TasksState(mapOf(a to TaskRecord(a, "a", "a", Priority.NORMAL, emptySet(), emptySet(), TaskPolicy(), clock.now(), state = TaskState.DONE))),
+        )
+        try {
+            // Локаль с запятой — как в русской и большинстве европейских систем.
+            Locale.setDefault(Locale.forLanguageTag("ru-RU"))
+            val ru = r.render()
+            Locale.setDefault(Locale.forLanguageTag("en-US"))
+            val en = r.render()
+            assertEquals(en, ru, "отчёт не зависит от локали машины (D-85)")
+            assertTrue("| средний ход, с | 4.0 |" in ru, "дробь — точкой: $ru")
+            assertTrue("4,0" !in ru, "запятой в числах нет: $ru")
+        } finally {
+            Locale.setDefault(saved)
+        }
     }
 
     @Test
