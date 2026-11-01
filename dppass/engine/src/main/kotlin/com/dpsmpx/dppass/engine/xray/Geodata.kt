@@ -173,12 +173,23 @@ data class InstalledGeodata(val dir: File, val manifest: GeodataManifest, val in
  * появляется только после сверки, а данные приложения (`noBackupFilesDir`)
  * другим приложениям недоступны.
  */
-class GeodataInstaller(private val source: GeodataSource, private val root: File) {
+class GeodataInstaller(
+    private val source: GeodataSource,
+    private val root: File,
+    /**
+     * Приставка к имени файла в источнике: `geodata` у набора из APK
+     * (assets `geodata/…`), пусто — у набора пользователя (D-109), где
+     * файлы лежат без приставки (zip с `manifest.json` в корне).
+     */
+    private val assetPrefix: String = ASSETS,
+) {
+    private fun name(file: String) = if (assetPrefix.isEmpty()) file else "$assetPrefix/$file"
+
     fun install(): Outcome<InstalledGeodata> {
         val manifestBytes = try {
-            source.open("$ASSETS/${GeodataManifest.FILE}").use { it.readBytes() }
+            source.open(name(GeodataManifest.FILE)).use { it.readBytes() }
         } catch (e: IOException) {
-            return unavailable("в приложении нет набора геоданных ($ASSETS/${GeodataManifest.FILE})", e)
+            return unavailable("в наборе нет оглавления (${name(GeodataManifest.FILE)})", e)
         }
         val manifest = when (val m = GeodataManifest.parse(manifestBytes.toString(Charsets.UTF_8))) {
             is Outcome.Failure -> return m
@@ -210,7 +221,7 @@ class GeodataInstaller(private val source: GeodataSource, private val root: File
             val digest = MessageDigest.getInstance("SHA-256")
             var size = 0L
             File(tmp, f.name).outputStream().use { out ->
-                source.open("$ASSETS/${f.name}").use { input ->
+                source.open(name(f.name)).use { input ->
                     val buf = ByteArray(BUFFER)
                     while (true) {
                         val n = input.read(buf)
