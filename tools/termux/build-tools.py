@@ -23,6 +23,9 @@ build_tools; с --push коммитит и пушит по частям. Сес�
             dpai/settings.gradle.kts): весь список dppass/gradle/verification-metadata.xml — по
             SHA-256 оттуда; для dpai/android — обход графа плагина Android, Compose BOM, material3 и
             activity-compose по POM и Gradle module metadata (суммы из .module, где они есть);
+  files/    закреплённые загрузки самих сборок — пары «адрес to SHA-256» в *.gradle.kts dpai/ (как
+            linuxFiles dpai/android: Alpine minirootfs и proot-static с dl-cdn.alpinelinux.org) — по
+            закреплённой сумме;
   MANIFEST.json  размер и SHA-256 каждого файла и чем он сверен; файл больше 45 МБ лежит частями
             name.000, name.001… (GitHub не берёт файлы больше 100 МБ) — MANIFEST знает части.
 Повторный запуск докачивает недостающее (большие файлы — с места обрыва), сверенное не трогает.
@@ -133,6 +136,19 @@ def remote_packages(xml: bytes) -> dict[str, tuple[str, int, str]]:
                 continue
             out[pkg.get("path")] = (text(comp, "url"), int(text(comp, "size")), text(comp, "checksum"))
             break
+    return out
+
+
+PIN = re.compile(r'"([a-z]+://[^"\s]+)"\s+to\s+"([0-9a-f]{64})"')
+
+
+def pinned(root: Path) -> list[tuple[str, str]]:
+    """Закреплённые загрузки сборок: (адрес, SHA-256) из *.gradle.kts dpai/ — сборка качает их сама."""
+    out = []
+    for f in sorted((root / "dpai").rglob("*.gradle.kts")):
+        if "/build/" in f.as_posix():
+            continue
+        out += [(u, h) for u, h in PIN.findall(f.read_text(encoding="utf-8")) if (u, h) not in out]
     return out
 
 
@@ -524,7 +540,7 @@ def main(argv=None) -> int:
     ap.add_argument("out", nargs="?", help="клон build_tools")
     ap.add_argument("--push", action="store_true", help="коммитить и пушить после каждого пакета")
     ap.add_argument("--list", action="store_true", help="только показать пакеты SDK и размеры")
-    ap.add_argument("--only", choices=["sdk", "maven"], help="только эту часть")
+    ap.add_argument("--only", choices=["sdk", "maven", "files"], help="только эту часть")
     ap.add_argument("--extra", action="append", default=[], metavar="ГРУППА:ИМЯ:ВЕРСИЯ[:КЛАССИФИКАТОР]",
                     help="ещё артефакт Google Maven с его графом (если сборке чего-то не хватило)")
     ap.add_argument("--root", default=str(ROOT), help=argparse.SUPPRESS)
@@ -534,10 +550,11 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     root = Path(a.root)
 
-    manifest_xml = get(a.sdk_repo + "repository2-3.xml") if a.only != "maven" else None
+    sdk = a.only in (None, "sdk")
+    manifest_xml = get(a.sdk_repo + "repository2-3.xml") if sdk else None
     pkgs = remote_packages(manifest_xml) if manifest_xml else {}
     chosen, missing = [], []
-    for alts in sdk_wanted(root) if a.only != "maven" else []:
+    for alts in sdk_wanted(root) if sdk else []:
         path = next((p for p in alts if p in pkgs), None)
         (chosen.append(path) if path else missing.append(" или ".join(alts)))
     if a.list:
@@ -565,7 +582,7 @@ def main(argv=None) -> int:
     store = Store(out, root)
 
     try:
-        if a.only != "maven":
+        if sdk:
             (out / "sdk").mkdir(exist_ok=True)
             (out / "sdk/repository2-3.xml").write_bytes(manifest_xml)
             clt, clt_sha = command_line_tools(root)
@@ -581,7 +598,20 @@ def main(argv=None) -> int:
                 store.m["sdk"][path] = rel
                 publish(out, store, f"SDK: {path}", a.push)
 
-        if a.only != "sdk":
+        if a.only in (None, "files"):
+            store.m.setdefault("pins", {})
+            for url, sha in pinned(root):
+                rel = "files/" + url.rsplit("/", 1)[-1]
+                if not store.have(rel):
+                    print(f"Файл сборки: {url}", flush=True)
+                    got = fetch(url, out / rel, sha256=sha)
+                    if got is None:
+                        raise SystemExit(f"✗ нет {url}")
+                    store.add(rel, got, (out / rel).stat().st_size, "SHA-256, закреплённый в сборке")
+                store.m["pins"][url] = rel
+            publish(out, store, "Файлы сборки: закреплённые загрузки dpai/", a.push)
+
+        if a.only in (None, "maven"):
             crawler = Crawler(store, a.google_maven, a.central)
             n = 0
             for g, art, v, name, sha256 in dppass_artifacts(root):

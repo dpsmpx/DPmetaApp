@@ -54,6 +54,10 @@ class BuildTools(unittest.TestCase):
         # клон DPmetaApp: версии — из файлов сборки
         put(self.root, "dpai/android/build.gradle.kts",
             'android {\n    compileSdk = 37\n    ndkVersion = "28.2.1"\n    externalNativeBuild {\n        cmake {\n            version = "3.22.1"\n        }\n    }\n}\n')
+        self.rootfs = put(self.tmp / "cdn", "alpine-minirootfs.tar.gz", b"rootfs" * 50)
+        put(self.root, "dpai/android/linux.gradle.kts",
+            f'val minirootfs = "{(self.tmp / "cdn" / "alpine-minirootfs.tar.gz").as_uri()}" to\n'
+            f'    "{hashlib.sha256(self.rootfs).hexdigest()}"\n')
         put(self.root, "dpai/gradle/libs.versions.toml", 'agp = "9.4.1"\ncompose-bom = "2026.09.00"\nactivity-compose = "1.13.0"\n')
         put(self.root, "dppass/gradle/libs.versions.toml", 'android-compileSdk = "36"\nandroid-ndk = "30.0.1"\n')
         put(self.root, "dppass/.claude/hooks/session-start.sh", 'BUILD_TOOLS="36.0.0"\n')
@@ -182,6 +186,10 @@ class BuildTools(unittest.TestCase):
         self.assertFalse(any("kotlin-stdlib" in f or "material3-metadata" in f or "sources.jar" in f
                              or "ui-test" in f or "runner" in f or "material3-window" in f for f in files), files)
         self.assertIn("dppass", m["files"]["maven2/com/android/tools/build/gradle/9.4.1/gradle-9.4.1.jar"]["verified"])
+        # закреплённая загрузка сборки — по закреплённой сумме
+        self.assertEqual(list(m["pins"].values()), ["files/alpine-minirootfs.tar.gz"])
+        self.assertEqual((self.out / "files/alpine-minirootfs.tar.gz").read_bytes(), self.rootfs)
+        self.assertIn("закреплённый", m["files"]["files/alpine-minirootfs.tar.gz"]["verified"])
         self.assertIn(".module", m["files"]["maven2/androidx/compose/material3/material3-android/1.5.0/material3-android-1.5.0.aar"]["verified"])
         self.assertTrue(any("androidx.annotation:annotation:[1.0,2.0)" in s for s in m["maven_skipped"]))
         self.assertFalse(any("core-common" in s for s in m["maven_skipped"]), m["maven_skipped"])  # [2.1.0] — точная
@@ -213,9 +221,16 @@ class BuildTools(unittest.TestCase):
                               capture_output=True, text=True, check=True).stdout.splitlines()
         self.assertIn("SDK: ndk;30.0.1", msgs)
         self.assertIn("Maven: граф dpai/android (Compose, плагин Android)", msgs)
-        self.assertEqual(len(msgs), 12)  # 10 пакетов SDK, сверка DPpass, граф dpai/android
+        self.assertEqual(len(msgs), 13)  # 10 пакетов SDK, файлы сборки, сверка DPpass, граф dpai/android
         tracked = subprocess.run(["git", "-C", str(self.out), "ls-files"], capture_output=True, text=True).stdout
         self.assertNotIn(".download", tracked)
+
+    def test_wrong_pinned_file_stops(self):
+        put(self.tmp / "cdn", "alpine-minirootfs.tar.gz", b"other")
+        with self.assertRaises(SystemExit) as e:
+            self.run_tool(str(self.out), "--only", "files")
+        self.assertIn("не сошлось", str(e.exception))
+        self.assertFalse((self.out / "sdk").exists(), "--only files не трогает SDK")
 
     def test_list_names_packages_without_download(self):
         rc, log = self.run_tool("--list")
