@@ -18,8 +18,10 @@ import javax.crypto.spec.GCMParameterSpec
 /**
  * Секреты пульта — только на устройстве, под ключом Android Keystore (D-09;
  * ТЗ, §6.6): AES-256-GCM, ключ не покидает Keystore, на диске — шифротекст
- * в `noBackupFilesDir` (в резервную копию не попадает, T-02). Сейчас один
- * секрет — токен GitHub (PAT, запасной путь D-17).
+ * в `noBackupFilesDir` (в резервную копию не попадает, T-02). Ключ требует
+ * входа пользователя (T-01): после биометрии или PIN — [AUTH_SECONDS] секунд,
+ * дальше расшифровка отказывает до нового входа. Сейчас один секрет — токен
+ * GitHub (PAT, запасной путь D-17).
  */
 class SecretStore(private val vfs: Vfs, private val path: String = "github.token") {
     private fun key(): SecretKey {
@@ -31,6 +33,9 @@ class SecretStore(private val vfs: Vfs, private val path: String = "github.token
                 .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
                 .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
                 .setKeySize(256)
+                // T-01: ключ работает только после входа — биометрией или PIN (Lock, F-45).
+                .setUserAuthenticationRequired(true)
+                .setUserAuthenticationParameters(AUTH_SECONDS, KeyProperties.AUTH_BIOMETRIC_STRONG or KeyProperties.AUTH_DEVICE_CREDENTIAL)
                 .build(),
         )
         return gen.generateKey()
@@ -68,5 +73,8 @@ class SecretStore(private val vfs: Vfs, private val path: String = "github.token
         private const val ALIAS = "dpmeta.secrets"
         private const val TRANSFORMATION = "AES/GCM/NoPadding"
         private const val IV = 12
+
+        /** Сколько ключ работает после входа: хватает на синхронизацию по кнопке. */
+        const val AUTH_SECONDS = 300
     }
 }
