@@ -10,12 +10,12 @@
 Сделать может только автор: нужны его решения или доступы. Когда пункт
 сделан — сказать в сессии, пункт будет удалён.
 
-- `С` **`build_tools` — докачать lint и aapt2 плагина `dpai/android`** (1 ноября
-  2026): репозиторий загружен 31.10, SDK из него ставится, но `dpai/android` на
-  плагине Android 9.4.1, а сверка DPpass — уже 9.5.0: lint 32.4.1 и aapt2 9.4.1
-  плагин берёт во время сборки, и их не было. Скрипт исправлен — в Termux:
+- `С` **`build_tools` — файлы Alpine для `linuxFiles` `dpai/android`** (1 ноября
+  2026): SDK и Google Maven из `build_tools` стоят, сборка без `linuxFiles`
+  проходит целиком; `linuxFiles` качает с dl-cdn.alpinelinux.org (облаку
+  закрыт) minirootfs и proot-static по закреплённым суммам. В Termux:
   `cd ~/DPmetaApp && git pull && python3 tools/termux/build-tools.py ~/build_tools
-  --push` (докачает только недостающее). Сказать в сессии.
+  --push --only files` (≈ 4 МБ). Сказать в сессии.
 - `М` **Свести `dppass/CLAUDE.md` с D-32.** Правки только Linux-оболочки
   DPpass вливаются без `full` и проверки APK; в «Проверке»
   `dppass/CLAUDE.md` нужно исключение со ссылкой на `DPmetaApp:D-32`
