@@ -56,7 +56,7 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         // После смерти процесса Android восстанавливает экран, а вкладок (только в памяти, D-27) уже нет:
         // открыть заново ту, с которой экран начинался, а не показывать мёртвый чёрный экран.
         if (savedInstanceState == null || TerminalHub.tabs.isEmpty()) handle(intent)
-        if (TerminalHub.tabs.isEmpty() && intent?.getStringExtra(EXTRA_TARGET) == null) finish()
+        if (TerminalHub.tabs.isEmpty() && intent?.getStringExtra(EXTRA_TARGET) == null && intent?.getBooleanExtra(EXTRA_LINUX, false) != true) finish()
     }
 
     // Приложение на экране — окно запроса поверх него не нужно (D-44), как у MainActivity: иначе
@@ -91,6 +91,11 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
 
     /** Новая вкладка по просьбе карточки target: target читается с диска — не в потоке интерфейса. */
     private fun handle(intent: Intent?) {
+        // Linux-среда в приложении (D-75, шаг 5): вкладка без target, подключение — в потоке вкладки.
+        if (intent?.getBooleanExtra(EXTRA_LINUX, false) == true) {
+            show(TerminalHub.openLinux(this))
+            return
+        }
         val id = intent?.getStringExtra(EXTRA_TARGET) ?: return
         val claude = intent.getBooleanExtra(EXTRA_CLAUDE, false)
         thread(name = "dpai-term-open", isDaemon = true) {
@@ -308,7 +313,7 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         }
         current?.let { c ->
             tabsRow.addView(chip("+") {
-                show(TerminalHub.open(this, c.target, emptyList(), c.target.label))
+                show(TerminalHub.openLike(this, c))
             })
             tabsRow.addView(chip("×") {
                 TerminalHub.close(c)
@@ -324,6 +329,7 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
     companion object {
         const val EXTRA_TARGET = "com.dpsmpx.dpai.terminal.TARGET"
         const val EXTRA_CLAUDE = "com.dpsmpx.dpai.terminal.CLAUDE"
+        const val EXTRA_LINUX = "com.dpsmpx.dpai.terminal.LINUX"
         private const val PREVIEW = 500
         private const val MAX_CLIP = 100_000
         private const val REPEAT_DELAY_MS = 400L
@@ -334,6 +340,13 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         fun start(context: Context, targetId: String?, claude: Boolean = false) {
             val i = Intent(context, TerminalActivity::class.java)
             if (targetId != null) i.putExtra(EXTRA_TARGET, targetId).putExtra(EXTRA_CLAUDE, claude)
+            if (context !is Activity) i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(i)
+        }
+
+        /** Открыть терминал Linux-среды в приложении (D-75, шаг 5). */
+        fun startLinux(context: Context) {
+            val i = Intent(context, TerminalActivity::class.java).putExtra(EXTRA_LINUX, true)
             if (context !is Activity) i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(i)
         }
