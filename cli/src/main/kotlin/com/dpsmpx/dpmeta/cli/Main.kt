@@ -27,6 +27,7 @@ import com.dpsmpx.dpmeta.net.Net
 import com.dpsmpx.dpmeta.sync.DirectoryReader
 import com.dpsmpx.dpmeta.sync.GitHubReader
 import com.dpsmpx.dpmeta.sync.SourceReader
+import com.dpsmpx.dpmeta.sync.StoredEtagCache
 import com.dpsmpx.dpmeta.sync.Sync
 import java.nio.file.Files
 import java.nio.file.Path
@@ -120,7 +121,7 @@ class Cli(private val clock: Clock, private val env: (String) -> String? = Syste
         val budget = a.flags["budget"]?.toIntOrNull() ?: Net.DEFAULT_BUDGET
         val started = clock.monotonicNanos()
         var net: Net? = null
-        var etags: EtagFile? = null
+        var etags: StoredEtagCache? = null
         val (reg, reader) = when (modes.single()) {
             "corpus", "clones" -> {
                 val root = a.path(modes.single()) ?: throw Usage("--${modes.single()} без каталога")
@@ -131,7 +132,7 @@ class Cli(private val clock: Clock, private val env: (String) -> String? = Syste
             else -> {
                 val token = env(TOKEN_ENV)?.takeIf { it.isNotBlank() }?.let(::Secret)
                     ?: throw Usage("для --live нужен токен в переменной $TOKEN_ENV")
-                etags = EtagFile(DocumentStore(NioVfs(dir), "dpmeta/cache"))
+                etags = StoredEtagCache(DocumentStore(NioVfs(dir), "dpmeta/cache"))
                 val n = Net(JdkTransport(), cache = etags, budget = budget).also { net = it }
                 val gh = GitHub(n, token)
                 val host = RepoRef.parse(HOST).orExit("репозиторий DPmetaApp", 2)
