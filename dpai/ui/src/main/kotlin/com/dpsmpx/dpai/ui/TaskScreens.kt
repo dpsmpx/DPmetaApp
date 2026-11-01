@@ -156,7 +156,7 @@ object TaskScreens {
                 prev.slot != s.slot -> "передана другому слоту" + (why(prev, handoffs)?.let { ": $it" } ?: "")
                 else -> "продолжена"
             }
-            "$time — ${slotName(accounts, s, targetLabel)} — $handed · ${s.state.name}"
+            "$time — ${slotName(accounts, s, targetLabel)} — $handed · ${Words.session(s.state.name)}"
         }
     }
 

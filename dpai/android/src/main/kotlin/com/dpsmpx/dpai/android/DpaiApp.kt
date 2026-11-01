@@ -783,13 +783,13 @@ internal fun NewTaskDialog(model: DemoModel, onDone: () -> Unit) {
                     Text("Приоритет", style = MaterialTheme.typography.labelSmall)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         for (p in com.dpsmpx.dpai.tasks.Priority.entries) {
-                            androidx.compose.material3.FilterChip(selected = priority == p, onClick = { priority = p }, label = { Text(p.name.lowercase()) })
+                            androidx.compose.material3.FilterChip(selected = priority == p, onClick = { priority = p }, label = { Text(Words.priority(p.name)) })
                         }
                     }
                     Text("Класс — маршрут модели (D-40)", style = MaterialTheme.typography.labelSmall)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         for (c in com.dpsmpx.dpai.tasks.TaskClass.entries) {
-                            androidx.compose.material3.FilterChip(selected = taskClass == c, onClick = { taskClass = c }, label = { Text(c.name.lowercase()) })
+                            androidx.compose.material3.FilterChip(selected = taskClass == c, onClick = { taskClass = c }, label = { Text(Words.taskClass(c.name)) })
                         }
                     }
                     OutlinedTextField(modelName, { modelName = it }, label = { Text("Модель (пусто — по классу)") }, singleLine = true)

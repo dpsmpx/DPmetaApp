@@ -40,8 +40,8 @@ object RequestScreens {
         kind = kindLabel(r.kind),
         title = r.title,
         body = r.body,
-        origin = r.task?.let { t -> "задача «${tasks.tasks[t]?.title ?: t.value}»" + (r.session?.let { " · сессия ${it.value}" } ?: "") }
-            ?: r.session?.let { "сессия ${it.value}" } ?: "контур",
+        // Без id сессии: `ses_01JD…` человеку ничего не говорит, ссылка ведёт по полю session (аудит 1 ноября 2026, A-12).
+        origin = r.task?.let { t -> "задача «${tasks.tasks[t]?.title ?: t.value}»" } ?: r.session?.let { "сессия контура" } ?: "контур",
         task = r.task,
         session = r.session,
         left = r.expiresAt?.let { left(it.epochMillis - now.epochMillis) } ?: "без срока",

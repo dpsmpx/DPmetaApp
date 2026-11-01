@@ -3,6 +3,7 @@ package com.dpsmpx.dpai.execution.target
 import com.dpsmpx.dpai.core.clock.Timestamp
 import com.dpsmpx.dpai.core.diagnostics.Diagnostic
 import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.core.text.Words
 import com.dpsmpx.dpai.execution.agent.DoctorReport
 import kotlin.math.abs
 import kotlin.time.Duration
@@ -53,7 +54,8 @@ object TargetDoctor {
     ): DoctorResult {
         val r = when (report) {
             is Outcome.Failure -> return DoctorResult(
-                listOf(DoctorCheck("связь", CheckStatus.FAIL, report.errors.joinToString("; ") { it.render() })),
+                // Словами и одним разом: не `render()` с «ERROR … at …» и классом исключения (D-89; аудит 1 ноября 2026, A-5).
+                listOf(DoctorCheck("связь", CheckStatus.FAIL, report.errors.joinToString("; ") { "${Words.reason(it.code.name)}: ${it.message}" })),
                 report.diagnostics,
             )
             is Outcome.Success -> report.value

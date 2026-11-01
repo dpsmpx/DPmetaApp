@@ -124,7 +124,7 @@ object TerminalHub {
                 }
                 is Outcome.Failure -> {
                     tab.session.closed(null)
-                    tab.status = Redactor.STANDARD.redact("не подключился: ${o.diagnostics.first().code.name} — ${o.diagnostics.first().message}")
+                    tab.status = Redactor.STANDARD.redact("не подключился: ${com.dpsmpx.dpai.core.text.Words.reason(o.diagnostics.first().code.name)} — ${o.diagnostics.first().message}")
                 }
                 null -> {
                     tab.session.closed(null)

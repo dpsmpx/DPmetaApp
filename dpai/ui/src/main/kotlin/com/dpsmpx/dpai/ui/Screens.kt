@@ -6,6 +6,7 @@ import com.dpsmpx.dpai.core.ids.SessionId
 import com.dpsmpx.dpai.core.ids.TaskId
 import com.dpsmpx.dpai.core.measure.Measure
 import com.dpsmpx.dpai.core.state.TaskState
+import com.dpsmpx.dpai.core.text.Words
 import com.dpsmpx.dpai.monitoring.DashboardView
 import com.dpsmpx.dpai.monitoring.DisplayState
 import com.dpsmpx.dpai.monitoring.SelfDiagnosis
@@ -122,7 +123,7 @@ data class TaskBoard(val columns: List<BoardColumn>)
 object Screens {
     /** [usage] — отчёт расхода (D-40): три меры на сводке, когда ходы уже были. */
     fun dashboard(view: DashboardView, health: SelfDiagnosis, usage: UsageReport? = null): DashboardScreen = DashboardScreen(
-        health = health.health.name,
+        health = Words.health(health.health.name),
         healthTone = when (health.health) {
             SystemHealth.HEALTHY -> Tone.DONE
             SystemHealth.DEGRADED, SystemHealth.RECOVERY -> Tone.WARNING
@@ -138,9 +139,9 @@ object Screens {
             Counter("Аккаунтов доступно", view.availableAccounts.toString(), Tone.NEUTRAL),
         ) + usageCounters(usage),
         sessions = view.rows.map { r ->
-            SessionLine(r.session, r.task, r.state.name, tone(r.state), silent(r.silentFor), r.next ?: "—", r.review?.let(::reviewLabel))
+            SessionLine(r.session, r.task, Words.display(r.state.name), tone(r.state), silent(r.silentFor), r.next ?: "—", r.review?.let(::reviewLabel))
         },
-        attention = view.attention.map { "${it.subject}: ${it.detail}" },
+        attention = view.attention.map { "${it.title}: ${it.detail}" },
     )
 
     /** Расход на сводке (`docs/EFFICIENCY.md`, §9): работа на расход, кеш prompt, сэкономленный контекст (оценка). */

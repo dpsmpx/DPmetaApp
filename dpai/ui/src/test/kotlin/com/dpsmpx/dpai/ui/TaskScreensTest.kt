@@ -121,7 +121,7 @@ class TaskScreensTest {
         assertEquals("Termux (claude-slot-2) · подписка B", d.executor)
         assertEquals(2, d.assignments.size)
         assertTrue(d.assignments[0].contains("Termux (claude-slot-1) · подписка A — начата"), d.assignments.toString())
-        assertTrue(d.assignments[1].contains("Termux (claude-slot-2) · подписка B — передана другой подписке: предел подписки · RUNNING"), d.assignments.toString())
+        assertTrue(d.assignments[1].contains("Termux (claude-slot-2) · подписка B — передана другой подписке: предел подписки · идёт"), d.assignments.toString())
         assertEquals(null, TaskScreens.detail(task(TaskState.READY), SessionsState.EMPTY).executor, "сессий нет — исполнителя нет")
         val tasks = com.dpsmpx.dpai.tasks.TasksState(mapOf(id to task(TaskState.RUNNING)))
         val work = TaskScreens.work(sessions, tasks, "dpai-proj", java.time.ZoneOffset.UTC)

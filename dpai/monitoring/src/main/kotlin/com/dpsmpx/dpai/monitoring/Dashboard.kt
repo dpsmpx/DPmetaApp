@@ -16,6 +16,7 @@ import com.dpsmpx.dpai.core.state.HeartbeatFreshness
 import com.dpsmpx.dpai.core.state.SessionState
 import com.dpsmpx.dpai.core.state.TargetState
 import com.dpsmpx.dpai.core.state.TaskState
+import com.dpsmpx.dpai.core.text.Words
 import com.dpsmpx.dpai.execution.claude.TurnTools
 import com.dpsmpx.dpai.execution.target.TargetHealth
 import com.dpsmpx.dpai.sessions.SessionRecord
@@ -39,7 +40,12 @@ data class SessionRow(
 )
 
 /** Что требует внимания пользователя (ТЗ, §38): блокировки, вход, недоступные targets, упавшие задачи. */
-data class Attention(val kind: String, val subject: String, val detail: String)
+/**
+ * Что требует внимания: [subject] — id (по нему ведёт ссылка), [title] —
+ * имя для человека (название задачи, каталог слота), [detail] — словами
+ * (D-89; аудит 1 ноября 2026, A-3).
+ */
+data class Attention(val kind: String, val subject: String, val detail: String, val title: String = subject)
 
 /** Сводка (ТЗ, §38). Неизвестное — `Measure.Unknown`, а не ноль (D-13). */
 data class DashboardView(
@@ -76,15 +82,19 @@ object Dashboard {
             .sortedWith(compareBy({ it.terminal }, { it.state.ordinal }, { it.id.value }))
             .map { row(it, tasks, sessionsLogic, now) }
         val attention = buildList {
+            fun taskOf(s: SessionRecord) = "сессия задачи «${tasks.tasks[s.task]?.title ?: s.task.value}»"
             sessions.sessions.values.filter { it.state == SessionState.BLOCKED }.sortedBy { it.id.value }
-                .forEach { add(Attention("session-blocked", it.id.value, it.lastReason?.name ?: "заблокирована")) }
-            rows.filter { it.state == DisplayState.STALE }.forEach { add(Attention("session-stale", it.session.value, "нет вестей ${it.silentFor.orNull()?.inWholeMinutes ?: "?"} мин")) }
+                .forEach { add(Attention("session-blocked", it.id.value, it.lastReason?.let { r -> Words.reason(r.name) } ?: "заблокирована", taskOf(it))) }
+            rows.filter { it.state == DisplayState.STALE }.forEach { r ->
+                val title = sessions.sessions[r.session]?.let(::taskOf) ?: r.session.value
+                add(Attention("session-stale", r.session.value, "нет вестей ${r.silentFor.orNull()?.let(Words::duration) ?: "давно"}", title))
+            }
             accounts.slots.values.filter { it.state == AccountState.AUTH_REQUIRED && !it.disabled }.sortedBy { it.id.value }
-                .forEach { add(Attention("account-login", it.id.value, "нужен вход в Claude Code")) }
+                .forEach { add(Attention("account-login", it.id.value, "нужен вход в Claude Code", "слот ${it.configDir.substringAfterLast('/')}")) }
             targets.toSortedMap(compareBy { it.value }).filterValues { it.state == TargetState.OFFLINE }
                 .forEach { (id, _) -> add(Attention("target-offline", id.value, "target недоступен")) }
             tasks.tasks.values.filter { it.state == TaskState.FAILED }.sortedBy { it.id.value }
-                .forEach { add(Attention("task-failed", it.id.value, it.lastReason?.name ?: "упала")) }
+                .forEach { add(Attention("task-failed", it.id.value, it.lastReason?.let { r -> Words.reason(r.name) } ?: "упала", "задача «${it.title}»")) }
         }
         return DashboardView(
             activeSessions = sessions.sessions.values.count { it.state in ACTIVE },

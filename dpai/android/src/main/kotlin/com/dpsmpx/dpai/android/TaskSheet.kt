@@ -114,13 +114,13 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
                 Text("${Words.task(d.state)}${if (d.held) " · приостановлена" else ""} · приоритет ${Words.priority(d.priority)}", fontWeight = FontWeight.Bold)
                 Text(d.objective, style = MaterialTheme.typography.bodySmall, maxLines = 4)
                 Text(
-                    "класс ${d.taskClass} · модель ${d.model ?: "по классу"} · усилие ${d.effort ?: "по классу"} · бюджет хода ${d.budgetCents?.let { String.format(Locale.ROOT, "%.2f $", it / 100.0) } ?: "без предела"}",
+                    "класс «${Words.taskClass(d.taskClass.name)}» · модель ${d.model ?: "по классу"} · усилие ${d.effort ?: "по классу"} · бюджет хода ${d.budgetCents?.let { String.format(Locale.ROOT, "%.2f $", it / 100.0) } ?: "без предела"}",
                     style = MaterialTheme.typography.labelSmall,
                 )
                 d.usage?.let { Text("расход: $it", style = MaterialTheme.typography.labelSmall) }
                 d.scope?.let { Text("область: ${it.sorted().joinToString(", ")}", style = MaterialTheme.typography.labelSmall) }
                 if (d.dependencies.isNotEmpty()) {
-                    Text("зависит от: ${d.dependencies.joinToString(" · ") { "${it.title} (${it.state})" }}", style = MaterialTheme.typography.labelSmall)
+                    Text("зависит от: ${d.dependencies.joinToString(" · ") { "${it.title} (${Words.task(it.state)})" }}", style = MaterialTheme.typography.labelSmall)
                 }
                 d.reason?.let { Text("причина: $it · повторов: ${d.retries}", style = MaterialTheme.typography.labelSmall) }
                 // Кто выполняет и кому передавалась (D-56): слот — target и подписка.
@@ -154,7 +154,7 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
                 }
                 when (editor) {
                     TaskAction.PRIORITY -> FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        for (p in Priority.entries) FilterChip(selected = d.priority == p.name, onClick = { send { k -> Command.SetPriority(task, p, k) } }, label = { Text(p.name) })
+                        for (p in Priority.entries) FilterChip(selected = d.priority == p.name, onClick = { send { k -> Command.SetPriority(task, p, k) } }, label = { Text(Words.priority(p.name)) })
                     }
                     TaskAction.POLICY -> PolicyEditor(d, busy) { cls, m, e, b, r -> send { k -> Command.SetPolicy(task, cls, m, e, b, r, k) } }
                     TaskAction.REPLY -> ReplyEditor(busy) { text -> send { k -> Command.Retry(task, text, k) } }
@@ -183,7 +183,7 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
-                        if (a == TaskAction.CANCEL) "Идущий ход будет остановлен, несохранённая работа хода пропадёт." else "Задача станет DONE без проверки — запишется исключение с причиной.",
+                        if (a == TaskAction.CANCEL) "Идущий ход будет остановлен, несохранённая работа хода пропадёт." else "Задача станет выполненной без проверки — запишется исключение с причиной.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                     if (a == TaskAction.WAIVE) OutlinedTextField(reason, { reason = it }, label = { Text("Почему") }, singleLine = true)
@@ -211,7 +211,7 @@ private fun PolicyEditor(d: TaskDetail, busy: Boolean, onSave: (TaskClass, Strin
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text("Класс задачи — маршрут модели (D-40)", style = MaterialTheme.typography.labelSmall)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            for (c in TaskClass.entries) FilterChip(selected = cls == c, onClick = { cls = c }, label = { Text(c.name.lowercase()) })
+            for (c in TaskClass.entries) FilterChip(selected = cls == c, onClick = { cls = c }, label = { Text(Words.taskClass(c.name)) })
         }
         OutlinedTextField(modelName, { modelName = it }, label = { Text("Модель (пусто — по классу)") }, singleLine = true)
         OutlinedTextField(effort, { effort = it }, label = { Text("Усилие: low, medium, high (пусто — по классу)") }, singleLine = true)
@@ -385,7 +385,7 @@ private fun ReviewsSection(reviews: List<ReviewLine>) {
             r.note?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
             for (f in r.findings) {
                 Text(
-                    "${f.severity} · ${f.title}${f.where?.let { " ($it)" } ?: ""}",
+                    "${Words.severity(f.severity.name)} · ${f.title}${f.where?.let { " ($it)" } ?: ""}",
                     style = MaterialTheme.typography.bodySmall,
                     color = if (f.severity == FindingSeverity.BLOCKING) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
                 )

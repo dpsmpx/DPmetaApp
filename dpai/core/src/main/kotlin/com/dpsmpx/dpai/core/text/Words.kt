@@ -171,7 +171,7 @@ object Words {
         "CLAUDE_AUTH_REQUIRED" -> "Claude просит войти заново в каталоге слота"
         "CLAUDE_FLAG_UNSUPPORTED" -> "Claude Code на target не знает части ключей — ход идёт без них"
         "SSH_CONNECTION_FAILED" -> "нет связи с target по SSH"
-        "SSH_AUTH_FAILED" -> "target не принял ключ приложения"
+        "SSH_AUTH_FAILED" -> "target не принял ключ приложения — добавьте его в authorized_keys («Инструкция»)"
         "SSH_HOST_KEY_UNKNOWN" -> "ключ хоста не подтверждён"
         "SSH_HOST_KEY_CHANGED" -> "ключ хоста изменился — вход остановлен"
         "TARGET_OFFLINE" -> "target недоступен"

@@ -13,6 +13,7 @@ import com.dpsmpx.dpai.core.serialization.JsonNumber
 import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.core.serialization.JsonValue
+import com.dpsmpx.dpai.core.text.Words
 import com.dpsmpx.dpai.execution.target.CheckStatus
 import com.dpsmpx.dpai.execution.target.DoctorResult
 import com.dpsmpx.dpai.execution.target.ExecutionTarget
@@ -183,7 +184,7 @@ data class CheckLine(val name: String, val detail: String, val tone: Tone)
 
 object TargetScreens {
     fun doctor(result: Outcome<DoctorResult>): List<CheckLine> = when (result) {
-        is Outcome.Failure -> result.diagnostics.map { CheckLine(it.code.name, it.message, Tone.ERROR) }
+        is Outcome.Failure -> result.diagnostics.map { CheckLine(Words.reason(it.code.name), it.message, Tone.ERROR) }
         is Outcome.Success -> result.value.checks.map {
             CheckLine(
                 it.name, it.detail,
@@ -194,6 +195,9 @@ object TargetScreens {
                     CheckStatus.UNKNOWN -> Tone.NEUTRAL
                 },
             )
-        } + result.value.diagnostics.map { CheckLine(it.code.name, it.message, Tone.WARNING) }
+        } + result.value.diagnostics
+            // Причина, уже сказанная строкой проверки («связь»), второй раз не выводится (A-5).
+            .filter { d -> result.value.checks.none { d.message in it.detail } }
+            .map { CheckLine(Words.reason(it.code.name), it.message, Tone.WARNING) }
     }
 }

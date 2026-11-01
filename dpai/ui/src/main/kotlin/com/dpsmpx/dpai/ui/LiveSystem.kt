@@ -14,6 +14,7 @@ import com.dpsmpx.dpai.core.ids.SessionId
 import com.dpsmpx.dpai.core.ids.TaskId
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.state.SessionState
+import com.dpsmpx.dpai.core.text.Words
 import com.dpsmpx.dpai.execution.agent.FollowingEventSource
 import com.dpsmpx.dpai.execution.claude.ClaudeCodeCliRunner
 import com.dpsmpx.dpai.execution.claude.ClaudeRunner
@@ -500,7 +501,7 @@ class LiveSystem(
             }
         val retry = usable.filter { it.id in probeFailedAt && it.id !in slotOf }
             .map { "${it.label}: проба входа не удалась — повтор раз в минуту; «Вход Claude» — сразу" }
-        val extra = notes + login + retry + (problems + orchestrator.problems).takeLast(5).map { "${it.code}: ${it.message}" }
+        val extra = notes + login + retry + (problems + orchestrator.problems).takeLast(5).map { "${Words.reason(it.code.name)}: ${it.message}" }
         return base.copy(attention = base.attention + extra, limits = Screens.limits(orchestrator.accounts, clock.now(), labelOf = ::subscriptionName))
     }
 
