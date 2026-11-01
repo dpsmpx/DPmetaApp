@@ -10,12 +10,6 @@
 Сделать может только автор: нужны его решения или доступы. Когда пункт
 сделан — сказать в сессии, пункт будет удалён.
 
-- `С` **`build_tools` — файлы Alpine для `linuxFiles` `dpai/android`** (1 ноября
-  2026): SDK и Google Maven из `build_tools` стоят, сборка без `linuxFiles`
-  проходит целиком; `linuxFiles` качает с dl-cdn.alpinelinux.org (облаку
-  закрыт) minirootfs и proot-static по закреплённым суммам. В Termux:
-  `cd ~/DPmetaApp && git pull && python3 tools/termux/build-tools.py ~/build_tools
-  --push --only files` (≈ 4 МБ). Сказать в сессии.
 - `М` **Свести `dppass/CLAUDE.md` с D-32.** Правки только Linux-оболочки
   DPpass вливаются без `full` и проверки APK; в «Проверке»
   `dppass/CLAUDE.md` нужно исключение со ссылкой на `DPmetaApp:D-32`
