@@ -86,7 +86,7 @@ class EcosystemSyncTest {
         val reg = registry()
         val (first, _) = sync()
         val later = Timestamp(now.epochMillis + 3_600_000)
-        val failure = Triple("Alpha", "todo", com.dpsmpx.dpai.core.diagnostics.Diagnostic.error(DiagCode.NETWORK_UNREACHABLE, "нет сети", "Alpha"))
+        val failure = com.dpsmpx.dpmeta.model.SourceFailure("Alpha", "todo", com.dpsmpx.dpai.core.diagnostics.Diagnostic.error(DiagCode.NETWORK_UNREACHABLE, "нет сети", "Alpha"), later)
         val second = EcosystemState.derive(reg, emptyList(), listOf(failure), first, later)
         val alpha = second.project("Alpha")!!
         assertEquals(Measure.observed(3L), alpha.todoOpen, "прежнее не перекрыто пустым")
@@ -106,7 +106,7 @@ class EcosystemSyncTest {
         assertEquals(SourceKind.PULLS, tasks.first().kind, "сначала PR и ветки (ТЗ, §6.4)")
         val r = Sync.run(tasks, reader, ManualClock(now))
         assertTrue(r.deferred > 0)
-        assertTrue(r.failures.count { it.third.code == DiagCode.RUN_BUDGET_EXHAUSTED } == r.deferred + 1)
+        assertTrue(r.failures.count { it.diagnostic.code == DiagCode.RUN_BUDGET_EXHAUSTED } == r.deferred + 1)
     }
 
     @Test

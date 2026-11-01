@@ -15,6 +15,7 @@ import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.core.serialization.JsonValue
 import com.dpsmpx.dpmeta.model.Observation
 import com.dpsmpx.dpmeta.model.Registry
+import com.dpsmpx.dpmeta.model.SourceFailure
 
 /**
  * Последнее удачное наблюдение источника проекта (ТЗ, §6.4): [kind] —
@@ -31,9 +32,14 @@ data class SourceSection(val kind: String, val schema: String, val asOf: Timesta
     )
 }
 
-/** Отказ источника в последнем прогоне: код и сообщение (`Diagnostic`, без стека). */
-data class SourceError(val kind: String, val code: String, val message: String) {
-    fun toJson(): JsonObject = JsonObject.of("kind" to JsonString(kind), "code" to JsonString(code), "message" to JsonString(message))
+/** Отказ источника: код, сообщение (`Diagnostic`, без стека) и когда случился. */
+data class SourceError(val kind: String, val code: String, val message: String, val at: Timestamp) {
+    fun toJson(): JsonObject = JsonObject.of(
+        "kind" to JsonString(kind),
+        "code" to JsonString(code),
+        "message" to JsonString(message),
+        "at" to JsonNumber.of(at.epochMillis),
+    )
 }
 
 /** Состояние проекта: секции источников и отказы последнего прогона. */
@@ -175,7 +181,7 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
         fun derive(
             registry: Registry,
             observations: List<Observation>,
-            failures: List<Triple<String, String, com.dpsmpx.dpai.core.diagnostics.Diagnostic>>,
+            failures: List<SourceFailure>,
             previous: EcosystemState?,
             now: Timestamp,
         ): EcosystemState {
@@ -187,9 +193,9 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
                 val fresh = latest.filterKeys { it.first == entry.name }.values.associate { o ->
                     o.kind to SourceSection(o.kind, o.schema, o.asOf, o.payload)
                 }
-                val errors = failures.filter { it.first == entry.name }
-                    .sortedWith(compareBy({ it.second }, { it.third.code.name }))
-                    .map { (_, kind, d) -> SourceError(kind, d.code.name, d.message) }
+                val errors = failures.filter { it.project == entry.name }
+                    .sortedWith(compareBy({ it.kind }, { it.diagnostic.code.name }, { it.at }))
+                    .map { f -> SourceError(f.kind, f.diagnostic.code.name, f.diagnostic.message, f.at) }
                 ProjectState(entry.name, entry.place.code, (before + fresh).toSortedMap(), errors)
             }
             return EcosystemState(now, Rules.RULES_VERSION, projects)
@@ -220,7 +226,16 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
                         so["payload"] ?: return Outcome.failure(DiagCode.FIELD_MISSING, "нет содержимого секции", name),
                     )
                 }
-                ProjectState(name, place, sections.associateBy { it.kind }.toSortedMap(), emptyList())
+                val errors = (o["errors"] as? JsonArray)?.items.orEmpty().map { e ->
+                    val eo = e as? JsonObject ?: return Outcome.failure(DiagCode.FIELD_TYPE, "отказ — не объект", name)
+                    SourceError(
+                        (eo["kind"] as? JsonString)?.value ?: return Outcome.failure(DiagCode.FIELD_MISSING, "нет вида отказа", name),
+                        (eo["code"] as? JsonString)?.value ?: return Outcome.failure(DiagCode.FIELD_MISSING, "нет кода отказа", name),
+                        (eo["message"] as? JsonString)?.value.orEmpty(),
+                        Timestamp((eo["at"] as? JsonNumber)?.toLongExact() ?: return Outcome.failure(DiagCode.FIELD_MISSING, "нет времени отказа", name)),
+                    )
+                }
+                ProjectState(name, place, sections.associateBy { it.kind }.toSortedMap(), errors)
             }
             return Outcome.success(EcosystemState(Timestamp(asOf), rules.toInt(), out))
         }

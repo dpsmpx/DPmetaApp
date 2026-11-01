@@ -28,13 +28,16 @@ class EtagFile(private val documents: DocumentStore) : EtagCache {
         }
     }
 
+    @Synchronized
     override fun get(key: String): CachedResponse? = map[key]
 
+    @Synchronized
     override fun put(key: String, value: CachedResponse) {
         map[key] = value
         dirty = true
     }
 
+    @Synchronized
     fun save(): Outcome<Unit> {
         if (!dirty) return Outcome.success(Unit)
         val json = JsonObject(

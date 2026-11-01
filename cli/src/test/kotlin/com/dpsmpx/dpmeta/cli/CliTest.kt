@@ -54,4 +54,23 @@ class CliTest {
         assertEquals(2, c.run(listOf("sync", "--live", "--state", Files.createTempDirectory("x").toString())))
         assertTrue(out.first().contains(Cli.TOKEN_ENV))
     }
+
+    @Test
+    fun missingFilesAreNotAskedAgainBeforeRecheck() {
+        val dir = Files.createTempDirectory("dpmeta-cli")
+        try {
+            val (c, out) = cli()
+            c.run(listOf("sync", "--corpus", corpus.toString(), "--state", dir.toString()))
+            assertTrue(out.any { "DPmeta/roadmap: ENTITY_NOT_FOUND" in it })
+            out.clear()
+            assertEquals(0, c.run(listOf("sync", "--corpus", corpus.toString(), "--state", dir.toString())))
+            assertTrue(out.none { "✗ DPmeta/roadmap" in it }, out.joinToString("\n"))
+            assertTrue(out.any { it.contains("не спрашивалось") && it.contains("DPmeta/roadmap") }, out.joinToString("\n"))
+            out.clear()
+            c.run(listOf("state", "--state", dir.toString()))
+            assertTrue(out.single().contains("\"kind\":\"roadmap\""), "отказ перенесён в состояние")
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
 }

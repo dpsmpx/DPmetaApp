@@ -12,6 +12,13 @@ import com.dpsmpx.dpai.storage.vfs.NioVfs
 import com.dpsmpx.dpmeta.formats.RegistryFormat
 import com.dpsmpx.dpmeta.github.GitHub
 import com.dpsmpx.dpmeta.metrics.EcosystemState
+import com.dpsmpx.dpmeta.metrics.Rules
+import com.dpsmpx.dpmeta.model.SourceFailure
+import com.dpsmpx.dpai.core.diagnostics.DiagCode
+import com.dpsmpx.dpai.core.diagnostics.Diagnostic
+import com.dpsmpx.dpmeta.sync.Parallel
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import com.dpsmpx.dpmeta.metrics.Store
 import com.dpsmpx.dpmeta.model.RepoRef
 import com.dpsmpx.dpmeta.model.Registry
@@ -137,14 +144,28 @@ class Cli(private val clock: Clock, private val env: (String) -> String? = Syste
             ((p.sections["roadmap"]?.payload as? JsonObject)?.get("path") as? JsonString)?.value?.let { (p.name to "roadmap") to it }
         }.toMap()
         val commits = Sync.knownCommits(previous?.projects.orEmpty().mapNotNull { it.sections["branches"]?.payload })
-        val result = Sync.run(Sync.plan(reg, known), reader, clock, commits)
-        val state = EcosystemState.derive(reg, result.observations, result.failures, previous, clock.now())
+        // Файла не было недавно — не спрашивать до срока правил; отказ переносится со своим временем.
+        val recheckAfter = clock.now() - Rules.MISSING_RECHECK
+        val carried = previous?.projects.orEmpty().flatMap { p ->
+            p.errors.filter { it.code in MISSING && it.at >= recheckAfter }.map { e ->
+                SourceFailure(p.name, e.kind, Diagnostic.error(DiagCode.valueOf(e.code), e.message, p.name), e.at)
+            }
+        }
+        val pool = Executors.newFixedThreadPool(THREADS)
+        val result = try {
+            Sync.run(Sync.plan(reg, known, carried.map { it.project to it.kind }.toSet()), reader, clock, commits, poolOf(pool))
+        } finally {
+            pool.shutdown()
+            pool.awaitTermination(1, TimeUnit.MINUTES)
+        }
+        val state = EcosystemState.derive(reg, result.observations, result.failures + carried, previous, clock.now())
         store.writeState(state).orExit("запись состояния")
         val points = store.appendHistory(state.points()).orExit("история чисел")
         etags?.save()?.orExit("кэш условных запросов")
         val seconds = (clock.monotonicNanos() - started) / 1_000_000_000.0
         out("синхронизация: проектов ${state.projects.size}, наблюдений ${result.observations.size}, отказов ${result.failures.size}, отложено ${result.deferred}")
-        for ((project, kind, d) in result.failures) out("  ✗ $project/$kind: ${d.code.name} — ${d.message}")
+        for (f in result.failures) out("  ✗ ${f.project}/${f.kind}: ${f.diagnostic.code.name} — ${f.diagnostic.message}")
+        if (carried.isNotEmpty()) out("  не спрашивалось (файла не было за ${Rules.MISSING_RECHECK}): ${carried.joinToString(", ") { "${it.project}/${it.kind}" }}")
         for (p in state.projects) {
             val w = p.working(state.asOf).orNull()?.let { if (it) "работает" else "свободен" } ?: "неизвестно"
             out("  ${p.name} [${p.place}]: $w; решений ${p.decisions.orNull() ?: "?"}, TODO ${p.todoOpen.orNull() ?: "?"} (за автором ${p.forAuthor.orNull() ?: "?"}), ROADMAP ${p.roadmapPercent.orNull()?.let { "$it %" } ?: "?"}, PR ${p.openPulls.orNull() ?: "?"}")
@@ -203,8 +224,16 @@ class Cli(private val clock: Clock, private val env: (String) -> String? = Syste
         }
     }
 
+    private fun poolOf(pool: java.util.concurrent.ExecutorService): Parallel = object : Parallel {
+        override fun <T> all(jobs: List<() -> T>): List<T> = jobs.map { job -> pool.submit<T> { job() } }.map { it.get() }
+    }
+
     companion object {
         const val TOKEN_ENV = "DPMETA_GITHUB_TOKEN"
+
+        /** Запросы дат коммитов веток — пулом: первая синхронизация в пределах A-02 (60 с). */
+        const val THREADS = 8
+        private val MISSING = setOf(DiagCode.GITHUB_NOT_FOUND.name, DiagCode.ENTITY_NOT_FOUND.name)
         const val HOST = "dpsmpx/DPmetaApp"
     }
 }

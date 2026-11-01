@@ -24,6 +24,7 @@ import com.dpsmpx.dpmeta.model.Observation
 import com.dpsmpx.dpmeta.model.ObservationSource
 import com.dpsmpx.dpmeta.model.ProjectEntry
 import com.dpsmpx.dpmeta.model.Registry
+import com.dpsmpx.dpmeta.model.SourceFailure
 
 /**
  * Вид источника и его приоритет при нехватке бюджета (ТЗ, §6.4): сводка и
@@ -65,7 +66,21 @@ interface SourceReader {
 data class SourceTask(val project: ProjectEntry, val kind: SourceKind, val paths: List<String>)
 
 /** Итог прогона: наблюдения, отказы по паре «проект → вид», отложенное из-за бюджета. */
-class SyncResult(val observations: List<Observation>, val failures: List<Triple<String, String, Diagnostic>>, val deferred: Int)
+class SyncResult(val observations: List<Observation>, val failures: List<SourceFailure>, val deferred: Int)
+
+/**
+ * Как выполнить независимые запросы (даты коммитов веток): по очереди или
+ * пулом потоков оболочки (`dpmeta-cli`). Порядок итогов — порядок задач.
+ */
+interface Parallel {
+    fun <T> all(jobs: List<() -> T>): List<T>
+
+    companion object {
+        val SEQUENTIAL: Parallel = object : Parallel {
+            override fun <T> all(jobs: List<() -> T>): List<T> = jobs.map { it() }
+        }
+    }
+}
 
 /**
  * План и прогон синхронизации (ТЗ, §6.4). План детерминирован: по виду
@@ -80,7 +95,11 @@ object Sync {
     /** «Файла нет» у GitHub и у каталога: следующий путь-кандидат. */
     private val NOT_FOUND = setOf(DiagCode.GITHUB_NOT_FOUND, DiagCode.ENTITY_NOT_FOUND)
 
-    fun plan(registry: Registry, known: Map<Pair<String, String>, String> = emptyMap()): List<SourceTask> {
+    /**
+     * [known] — найденные прежде пути ROADMAP; [skip] — пары «проект → вид»,
+     * которые не спрашиваются в этот раз (файла не было недавно).
+     */
+    fun plan(registry: Registry, known: Map<Pair<String, String>, String> = emptyMap(), skip: Set<Pair<String, String>> = emptySet()): List<SourceTask> {
         val tasks = mutableListOf<SourceTask>()
         for (kind in SourceKind.entries) {
             for (p in registry.shown) {
@@ -91,7 +110,7 @@ object Sync {
                     SourceKind.ROADMAP -> known[p.name to kind.code]?.let { k -> listOf(k) + (ROADMAP_PATHS - k) } ?: ROADMAP_PATHS
                     SourceKind.README -> listOf("README.md")
                 }
-                tasks += SourceTask(p, kind, paths)
+                if ((p.name to kind.code) !in skip) tasks += SourceTask(p, kind, paths)
             }
         }
         return tasks
@@ -102,33 +121,34 @@ object Sync {
         reader: SourceReader,
         clock: Clock,
         knownCommits: Map<String, CommitInfo> = emptyMap(),
+        parallel: Parallel = Parallel.SEQUENTIAL,
     ): SyncResult {
         val observations = mutableListOf<Observation>()
-        val failures = mutableListOf<Triple<String, String, Diagnostic>>()
+        val failures = mutableListOf<SourceFailure>()
         var stop: Diagnostic? = null
         var deferred = 0
         val commits = HashMap(knownCommits)
         for (t in tasks) {
             val name = t.project.name
             stop?.let {
-                failures += Triple(name, t.kind.code, it)
+                failures += SourceFailure(name, t.kind.code, it, clock.now())
                 deferred++
                 continue
             }
             if ((t.kind == SourceKind.PULLS || t.kind == SourceKind.BRANCHES) && !reader.hasActivity(t.project)) continue
-            val r = fetch(t, reader, commits)
+            val r = fetch(t, reader, commits, parallel)
             when (r) {
                 is Outcome.Success -> {
                     val (payload, raw) = r.value
                     val o = Observation.of(reader.source, name, t.kind.code, clock.now(), schemaOf(t.kind, payload), payload, raw)
                     when (o) {
                         is Outcome.Success -> observations += o.value
-                        is Outcome.Failure -> failures += Triple(name, t.kind.code, o.diagnostics.first())
+                        is Outcome.Failure -> failures += SourceFailure(name, t.kind.code, o.diagnostics.first(), clock.now())
                     }
                 }
                 is Outcome.Failure -> {
                     val d = r.diagnostics.first()
-                    failures += Triple(name, t.kind.code, d)
+                    failures += SourceFailure(name, t.kind.code, d, clock.now())
                     if (d.code == DiagCode.RUN_BUDGET_EXHAUSTED || d.code == DiagCode.GITHUB_RATE_LIMITED) stop = d
                 }
             }
@@ -142,18 +162,21 @@ object Sync {
         else -> "unknown"
     }
 
-    private fun fetch(t: SourceTask, reader: SourceReader, commits: MutableMap<String, CommitInfo>): Outcome<Pair<JsonObject, ContentHash>> = when (t.kind) {
+    private fun fetch(t: SourceTask, reader: SourceReader, commits: MutableMap<String, CommitInfo>, parallel: Parallel): Outcome<Pair<JsonObject, ContentHash>> = when (t.kind) {
         SourceKind.PULLS -> reader.pulls(t.project).map { g -> pullsJson(g.value) to g.rawSha256 }
         SourceKind.BRANCHES -> when (val b = reader.branches(t.project)) {
             is Outcome.Failure -> b
             is Outcome.Success -> {
-                val items = b.value.value.sortedBy { it.name }.map { br ->
-                    val info = commits[br.sha] ?: when (val c = reader.commit(t.project, br.sha)) {
+                val branches = b.value.value.sortedBy { it.name }
+                val unknown = branches.map { it.sha }.distinct().filter { it !in commits }
+                val got = parallel.all(unknown.map { sha -> { sha to reader.commit(t.project, sha) } })
+                for ((sha, c) in got) {
+                    when (c) {
                         is Outcome.Failure -> return c
-                        is Outcome.Success -> c.value.also { commits[br.sha] = it }
+                        is Outcome.Success -> commits[sha] = c.value
                     }
-                    br to info
                 }
+                val items = branches.map { br -> br to commits.getValue(br.sha) }
                 Outcome.success(branchesJson(items) to b.value.rawSha256)
             }
         }

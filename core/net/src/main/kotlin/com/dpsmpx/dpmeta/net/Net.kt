@@ -78,13 +78,15 @@ interface EtagCache {
 class MemoryEtagCache : EtagCache {
     private val map = LinkedHashMap<String, CachedResponse>()
 
+    @Synchronized
     override fun get(key: String): CachedResponse? = map[key]
 
+    @Synchronized
     override fun put(key: String, value: CachedResponse) {
         map[key] = value
     }
 
-    val keys: Set<String> get() = map.keys
+    val keys: Set<String> @Synchronized get() = map.keys.toSet()
 }
 
 /**
@@ -108,6 +110,9 @@ data class NetStats(val requests: Int, val notModified: Int, val refused: Int)
  * Бюджет — число запросов на один прогон синхронизации: исчерпан —
  * `RUN_BUDGET_EXHAUSTED`, запрос не уходит (остальное — в следующий раз,
  * ТЗ, §6.4).
+ *
+ * Можно звать из нескольких потоков (даты коммитов — пулом): бюджет и
+ * счётчики — под замком, сам запрос — вне его.
  */
 class Net(
     private val transport: Transport,
@@ -115,13 +120,14 @@ class Net(
     private val cache: EtagCache = MemoryEtagCache(),
     private val budget: Int = DEFAULT_BUDGET,
 ) {
+    private val lock = Any()
     private var requests = 0
     private var notModified = 0
     private var refused = 0
 
-    val stats: NetStats get() = NetStats(requests, notModified, refused)
+    val stats: NetStats get() = synchronized(lock) { NetStats(requests, notModified, refused) }
 
-    val remaining: Int get() = budget - requests
+    val remaining: Int get() = synchronized(lock) { budget - requests }
 
     fun get(url: URI, headers: Map<String, String> = emptyMap(), auth: Secret? = null): Outcome<Fetched> {
         val key = cacheKey(url, auth)
@@ -132,7 +138,7 @@ class Net(
             is Outcome.Success -> s.value
         }
         if (r.status == 304 && cached != null) {
-            notModified++
+            synchronized(lock) { notModified++ }
             return Outcome.success(Fetched(200, cached.body, true, r.headers))
         }
         val etag = r.header("etag")
@@ -142,12 +148,14 @@ class Net(
 
     /** Запрос без кэша (POST и прочее): тот же список адресов и бюджет. */
     fun send(request: HttpRequest): Outcome<HttpResponse> {
-        allow.check(request).let { if (it is Outcome.Failure) return it.also { refused++ } }
-        if (requests >= budget) {
-            refused++
-            return Outcome.failure(DiagCode.RUN_BUDGET_EXHAUSTED, "бюджет запросов прогона исчерпан ($budget)", request.url.host)
+        allow.check(request).let { if (it is Outcome.Failure) return it.also { synchronized(lock) { refused++ } } }
+        synchronized(lock) {
+            if (requests >= budget) {
+                refused++
+                return Outcome.failure(DiagCode.RUN_BUDGET_EXHAUSTED, "бюджет запросов прогона исчерпан ($budget)", request.url.host)
+            }
+            requests++
         }
-        requests++
         return transport.send(request)
     }
 
