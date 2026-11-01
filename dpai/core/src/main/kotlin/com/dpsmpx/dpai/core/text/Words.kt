@@ -116,18 +116,6 @@ object Words {
         else -> t
     }
 
-    /** Вид запроса человеку (D-44). */
-    fun requestKind(k: String): String = when (k) {
-        "QUESTION" -> "вопрос"
-        "CONFIRMATION" -> "подтверждение"
-        "DESTRUCTIVE_CONFIRMATION" -> "опасное действие"
-        "TEXT_INPUT" -> "нужен текст"
-        "CHOICE" -> "выбор"
-        "ACKNOWLEDGEMENT" -> "к сведению"
-        "USER_RESOLUTION" -> "решение"
-        else -> k
-    }
-
     /** Итог команды (D-06) — для вывода `dpai`. */
     fun operation(status: String): String = when (status) {
         "SUCCEEDED" -> "принято"
@@ -137,16 +125,17 @@ object Words {
     }
 
     /**
-     * Длительность по-русски: «45 с», «3 мин», «2 ч 5 мин», «3 дн 4 ч» —
-     * вместо `Duration.toString()` («1m», «2h 5m»).
+     * Длительность по-русски: «меньше минуты», «3 мин», «2 ч 5 мин»,
+     * «3 дн 4 ч» — вместо `Duration.toString()` («1m», «2h 5m»). Одна на
+     * всё приложение: сброс окна подписки, пауза слота, повтор, срок запроса.
      */
     fun duration(d: Duration): String {
-        val s = d.inWholeSeconds.coerceAtLeast(0)
+        val m = d.inWholeMinutes.coerceAtLeast(0)
         return when {
-            s < 60 -> "$s с"
-            s < 3600 -> "${s / 60} мин"
-            s < 86_400 -> "${s / 3600} ч" + (s % 3600 / 60).let { if (it > 0) " $it мин" else "" }
-            else -> "${s / 86_400} дн" + (s % 86_400 / 3600).let { if (it > 0) " $it ч" else "" }
+            m < 1 -> "меньше минуты"
+            m < 60 -> "$m мин"
+            m < 24 * 60 -> "${m / 60} ч" + (m % 60).let { if (it > 0) " $it мин" else "" }
+            else -> "${m / (24 * 60)} дн" + (m % (24 * 60) / 60).let { if (it > 0) " $it ч" else "" }
         }
     }
 

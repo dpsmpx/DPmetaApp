@@ -506,16 +506,8 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
             return trimmed.ifEmpty { d.take(1) }
         }
 
-        /** Длительность по-русски для уведомлений и причин: «2 ч 10 мин», «5 мин», «меньше минуты». */
-        fun formatDuration(d: Duration): String {
-            val minutes = d.inWholeMinutes
-            return when {
-                minutes < 1 -> "меньше минуты"
-                minutes < 60 -> "$minutes мин"
-                minutes % 60 == 0L -> "${minutes / 60} ч"
-                else -> "${minutes / 60} ч ${minutes % 60} мин"
-            }
-        }
+        /** Длительность по-русски для уведомлений и причин — общий словарь (D-89), второй раз не пишется. */
+        fun formatDuration(d: Duration): String = com.dpsmpx.dpai.core.text.Words.duration(d)
 
         private inline fun AccountsState.slot(id: AccountId, f: (SlotState) -> SlotState): AccountsState =
             copy(slots = slots + (id to f(slots.getValue(id))))

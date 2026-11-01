@@ -8,8 +8,10 @@ import com.dpsmpx.dpai.accounts.LimitWindow
 import com.dpsmpx.dpai.accounts.LoginStatus
 import com.dpsmpx.dpai.accounts.OverlapKind
 import com.dpsmpx.dpai.accounts.SlotEnvironment
+import com.dpsmpx.dpai.core.ids.ExecutionTargetId
 import com.dpsmpx.dpai.core.ids.SubscriptionId
 import com.dpsmpx.dpai.core.state.AccountState
+import com.dpsmpx.dpai.core.text.Words
 import com.dpsmpx.dpai.notifications.DeepLink
 import com.dpsmpx.dpai.notifications.NotificationCategory
 import com.dpsmpx.dpai.notifications.NotificationRequest
@@ -27,7 +29,13 @@ import com.dpsmpx.dpai.notifications.NotificationRequest
  * [resolvedKeys].
  */
 object AccountNotifications {
-    fun requests(event: AccountEvent, before: AccountsState, after: AccountsState): List<NotificationRequest> {
+    /** [targetName] — подпись target для человека вместо его id (аудит 1 ноября 2026, A-10). */
+    fun requests(
+        event: AccountEvent,
+        before: AccountsState,
+        after: AccountsState,
+        targetName: (ExecutionTargetId) -> String = { it.value },
+    ): List<NotificationRequest> {
         val at = event.at
         return when (event) {
             is AccountEvent.LimitObserved -> {
@@ -75,7 +83,7 @@ object AccountNotifications {
                         NotificationRequest(
                             "slot:${event.slot}:auth", NotificationCategory.BLOCKED,
                             "Нужен вход формой Claude",
-                            "На ${slot.targetId} выполните «${SlotEnvironment.CONFIG_DIR}=${slot.configDir} claude» и войдите " +
+                            "На «${targetName(slot.targetId)}» выполните «${SlotEnvironment.CONFIG_DIR}=${slot.configDir} claude» и войдите " +
                                 "через форму Claude (/login). Ключи API не используются (D-29).",
                             DeepLink.of(DeepLink.Kind.ACCOUNT, event.slot), at,
                         ),
@@ -92,7 +100,7 @@ object AccountNotifications {
                             "slot:${event.slot}:method", NotificationCategory.SECURITY,
                             "Слот остановлен: вход не формой Claude",
                             "Claude Code сообщает вход «${event.authMethod}». Разрешён только вход формой Claude: уберите ключ " +
-                                "или помощник ключа из настроек каталога ${slot.configDir} на ${slot.targetId} и войдите заново.",
+                                "или помощник ключа из настроек каталога ${slot.configDir} на «${targetName(slot.targetId)}» и войдите заново.",
                             DeepLink.of(DeepLink.Kind.ACCOUNT, event.slot), at,
                         ),
                     )
@@ -105,7 +113,7 @@ object AccountNotifications {
                 val sub = after.subscriptions.getValue(slot.subscriptionId)
                 val body = when (event.kind) {
                     OverlapKind.IDENTITY_MISMATCH ->
-                        "В каталоге ${slot.configDir} на ${slot.targetId} вход другим аккаунтом, чем у подписки «${sub.label}». " +
+                        "В каталоге ${slot.configDir} на «${targetName(slot.targetId)}» вход другим аккаунтом, чем у подписки «${sub.label}». " +
                             "Слот остановлен, чтобы пределы и работа подписок не смешались."
                     OverlapKind.DUPLICATE_SUBSCRIPTION ->
                         "Этот аккаунт Claude уже зарегистрирован как подписка «${label(after, event.other)}». " +
@@ -125,7 +133,7 @@ object AccountNotifications {
                         "slot:${event.slot}:expiring", NotificationCategory.WARNING,
                         "Вход скоро истечёт",
                         (event.expiresAt?.let { "Вход истекает через ${Accounts.formatDuration(it - at)}. " } ?: "Вход скоро истекает. ") +
-                            "Обновите: «${SlotEnvironment.CONFIG_DIR}=${slot.configDir} claude», затем /login на ${slot.targetId}.",
+                            "Обновите: «${SlotEnvironment.CONFIG_DIR}=${slot.configDir} claude», затем /login на «${targetName(slot.targetId)}».",
                         DeepLink.of(DeepLink.Kind.ACCOUNT, event.slot), at,
                     ),
                 )
@@ -136,7 +144,7 @@ object AccountNotifications {
                     NotificationRequest(
                         "slot:${event.slot}:cooldown", NotificationCategory.WARNING,
                         "Слот на паузе после серии ошибок",
-                        "Последняя ошибка: ${event.code}. Пауза ${Accounts.formatDuration(until - at)}; задачи пойдут на другие слоты или подождут.",
+                        "Последняя ошибка: ${Words.reason(event.code.name)}. Пауза ${Accounts.formatDuration(until - at)}; задачи пойдут на другие слоты или подождут.",
                         DeepLink.of(DeepLink.Kind.ACCOUNT, event.slot), at,
                     ),
                 )

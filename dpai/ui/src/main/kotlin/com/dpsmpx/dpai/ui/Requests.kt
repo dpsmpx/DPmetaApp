@@ -9,6 +9,7 @@ import com.dpsmpx.dpai.notifications.RequestAction
 import com.dpsmpx.dpai.notifications.RequestKind
 import com.dpsmpx.dpai.notifications.UserRequest
 import com.dpsmpx.dpai.tasks.TasksState
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Кнопка ответа: подпись, ссылка ответа, нужен ли текст и явное
@@ -61,11 +62,6 @@ object RequestScreens {
 
     fun kindLabel(k: RequestKind): String = k.label
 
-    /** Остаток срока: «истёк», минуты, часы. */
-    fun left(ms: Long): String = when {
-        ms <= 0 -> "истёк"
-        ms < 60_000 -> "меньше минуты"
-        ms < 3_600_000 -> "${ms / 60_000} мин"
-        else -> "${ms / 3_600_000} ч ${(ms % 3_600_000) / 60_000} мин"
-    }
+    /** Остаток срока: «истёк» или длительность словами (D-89). */
+    fun left(ms: Long): String = if (ms <= 0) "истёк" else com.dpsmpx.dpai.core.text.Words.duration(ms.milliseconds)
 }

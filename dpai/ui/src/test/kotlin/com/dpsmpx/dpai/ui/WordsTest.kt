@@ -66,14 +66,13 @@ class WordsTest {
         assertEquals(emptyList(), missing(com.dpsmpx.dpai.execution.claude.TurnStatus.entries.toTypedArray(), Words::turn), "итог хода")
         assertEquals(emptyList(), missing(com.dpsmpx.dpai.tasks.FindingSeverity.entries.toTypedArray(), Words::severity), "строгость находки ревью")
         assertEquals(emptyList(), missing(com.dpsmpx.dpai.execution.target.TargetType.entries.toTypedArray(), Words::targetType), "вид target")
-        assertEquals(emptyList(), missing(com.dpsmpx.dpai.notifications.RequestKind.entries.toTypedArray(), Words::requestKind), "вид запроса")
         assertEquals(emptyList(), missing(com.dpsmpx.dpai.core.operation.OperationStatus.entries.toTypedArray(), Words::operation), "итог команды")
     }
 
     /** Длительность — по-русски, а не `Duration.toString()` («1m»). */
     @Test
     fun durationIsRussian() {
-        assertEquals("45 с", Words.duration(kotlin.time.Duration.parse("45s")))
+        assertEquals("меньше минуты", Words.duration(kotlin.time.Duration.parse("45s")))
         assertEquals("1 мин", Words.duration(kotlin.time.Duration.parse("1m")))
         assertEquals("2 ч 5 мин", Words.duration(kotlin.time.Duration.parse("2h 5m")))
         assertEquals("3 ч", Words.duration(kotlin.time.Duration.parse("3h")))

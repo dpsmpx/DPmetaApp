@@ -48,6 +48,7 @@ import com.dpsmpx.dpai.core.measure.Measure
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.state.SessionState
 import com.dpsmpx.dpai.core.state.TaskState
+import com.dpsmpx.dpai.core.text.Words
 import com.dpsmpx.dpai.execution.claude.ClaudeCodeCli
 import com.dpsmpx.dpai.execution.claude.ClaudeRequest
 import com.dpsmpx.dpai.execution.claude.ClaudeRunner
@@ -522,7 +523,7 @@ class Orchestrator(
         for (e in es) {
             val before = accounts
             accounts = Accounts.applyAll(accounts, listOf(e))
-            AccountNotifications.requests(e, before, accounts).forEach { notify(it) }
+            AccountNotifications.requests(e, before, accounts, ::targetName).forEach { notify(it) }
             AccountNotifications.resolvedKeys(e).forEach { notifications.resolve(it) }
         }
     }
@@ -685,9 +686,9 @@ class Orchestrator(
             val key = "task:${task.value}:overlap"
             when (r.verdict) {
                 OverlapVerdict.ALLOW -> Unit
-                OverlapVerdict.WARN -> notify(key, NotificationCategory.WARNING, "Возможный конфликт", "общий каталог с идущей задачей: $files")
-                OverlapVerdict.SERIALIZE -> notify(key, NotificationCategory.INFO, "Задача ждёт", "те же файлы правит идущая задача: $files")
-                OverlapVerdict.REJECT -> notify(key, NotificationCategory.WARNING, "Задача ждёт: критичный файл", "критичный файл правит идущая задача: $files")
+                OverlapVerdict.WARN -> taskNotify(task, "overlap", NotificationCategory.WARNING, "Возможный конфликт", "общий каталог с идущей задачей: $files")
+                OverlapVerdict.SERIALIZE -> taskNotify(task, "overlap", NotificationCategory.INFO, "Задача ждёт", "те же файлы правит идущая задача: $files")
+                OverlapVerdict.REJECT -> taskNotify(task, "overlap", NotificationCategory.WARNING, "Задача ждёт — критичный файл", "критичный файл правит идущая задача: $files")
             }
         }
         return r.verdict == OverlapVerdict.ALLOW || r.verdict == OverlapVerdict.WARN
@@ -698,11 +699,15 @@ class Orchestrator(
     /** Почему готовая задача не начинается — последняя сказанная причина; уведомление — при её смене. */
     private val lastWaiting = HashMap<TaskId, String>()
 
-    /** Задача ждёт: причина — уведомлением и на сводке, один раз на смену причины (ТЗ, §36). */
-    private fun waiting(task: TaskId, why: String) {
+    /**
+     * Задача ждёт: причина — уведомлением и на сводке, один раз на смену
+     * причины (ТЗ, §36). [code] — настоящая причина: недоступный target —
+     * не «нет слота» (аудит 1 ноября 2026, A-3).
+     */
+    private fun waiting(task: TaskId, why: String, code: DiagCode = DiagCode.ACCOUNT_NONE_AVAILABLE) {
         if (lastWaiting.put(task, why) == why) return
-        notify("task:${task.value}:waiting", NotificationCategory.INFO, "Задача ждёт: ${taskTitle(task)}", why)
-        problems += Diagnostic.warning(DiagCode.ACCOUNT_NONE_AVAILABLE, "${taskTitle(task)}: $why", "task $task")
+        taskNotify(task, "waiting", NotificationCategory.INFO, "Задача ждёт", why)
+        problems += Diagnostic.warning(code, "${taskTitle(task)}: $why", "task $task")
     }
 
     /** Почему задача ждёт, если известно (лист задачи). */
@@ -771,7 +776,7 @@ class Orchestrator(
         val budgetMode = budgetMode(slot)
         if (budgetMode == BudgetMode.FRUGAL && efficiency.budget.deferBelow?.let { t.priority.ordinal > it.ordinal } == true) {
             // Подписка у предела (D-30): несрочное ждёт сброса окна (D-40, п. 5). Аренда не записана — снимать нечего.
-            notify("task:${task.value}:deferred", NotificationCategory.INFO, "Задача ждёт", "подписка у предела: приоритет ${t.priority} ждёт сброса окна")
+            taskNotify(task, "deferred", NotificationCategory.INFO, "Задача ждёт", "подписка у предела: приоритет «${Words.priority(t.priority.name)}» ждёт сброса окна")
             return
         }
         // Продолжение — прерванная сессия той же задачи или сессия, чья работа не прошла проверку (D-40).
@@ -830,7 +835,7 @@ class Orchestrator(
         )
         commitSessions(listOf(SessionEvent.PromptPrepared(session, facts, clock.now())))
         if (route.downgraded) {
-            notify("task:${task.value}:budget", NotificationCategory.WARNING, "Задача удешевлена", "подписка у предела: ${t.policy.taskClass} — ${route.model ?: "модель аккаунта"}, усилие ${route.effort ?: "по умолчанию"}")
+            taskNotify(task, "budget", NotificationCategory.WARNING, "Задача удешевлена", "подписка у предела: ${Words.taskClass(t.policy.taskClass.name)} — ${route.model ?: "модель аккаунта"}, усилие ${route.effort ?: "по умолчанию"}")
         }
         val step = ok(driver.launch(sessions, accounts, session, request), "сессия $session не запущена") ?: return failLaunch(task, session, DiagCode.SESSION_FAILED)
         // Пачка 2 — после вызова: состояние сессии, факты аккаунтов, задача в работе.
@@ -900,8 +905,8 @@ class Orchestrator(
         commitTasks(tasksLogic.start(tasks, task, clock.now()).valueOrNull().orEmpty())
         commitTasks(ok(tasksLogic.attemptFailed(tasks, task, code, code.retry, "${task.value}:launch:${code.name}", clock.now()), "повтор задачи").orEmpty())
         when (tasks.tasks[task]?.state) {
-            TaskState.BLOCKED -> askBlocked(task, null, "запуск не удался: ${tasks.tasks[task]?.lastReason ?: code}")
-            TaskState.FAILED -> progress(task, NotificationCategory.FAILURE, "Задача не выполнена", "попытки кончились: $code")
+            TaskState.BLOCKED -> askBlocked(task, null, "запуск не удался: ${Words.reason((tasks.tasks[task]?.lastReason ?: code).name)}")
+            TaskState.FAILED -> progress(task, NotificationCategory.FAILURE, "Задача не выполнена", "попытки кончились: ${Words.reason(code.name)}")
             else -> Unit
         }
     }
@@ -1002,7 +1007,8 @@ class Orchestrator(
         // Ход кончился не итогом — одной строкой в ленте (D-59): почему модель остановилась.
         step.turns.filter { it.status != com.dpsmpx.dpai.execution.claude.TurnStatus.COMPLETED }.forEach { t ->
             val why = t.diagnostics.firstOrNull { it.isError }?.code?.name
-            say(sessions.sessions.getValue(session).task, ChatRole.EVENT, "ход прерван: ${t.status.name.lowercase()}" + (why?.let { " · $it" } ?: ""), session)
+            // Словами, а не `failed · КОД` (D-89): код — в журнале.
+            say(sessions.sessions.getValue(session).task, ChatRole.EVENT, "ход ${Words.turn(t.status.name)}" + (why?.let { " — ${Words.reason(it)}" } ?: ""), session)
         }
         val after = sessions.sessions.getValue(session)
         if (after.review != null) step.turns.lastOrNull()?.let { reviewOutput[session] = it.structured }
@@ -1028,13 +1034,13 @@ class Orchestrator(
                     // Target недоступен до начала хода (сон ПК, нет сети) — не неудачная попытка задачи, а
                     // ожидание target (A-50): иначе за три отказа задача — BLOCKED «петлёй».
                     commitTasks(tasksLogic.move(tasks, task, TaskState.READY, clock.now(), code, notBefore = clock.now() + TARGET_RETRY).valueOrNull().orEmpty())
-                    waiting(task, "target недоступен (${code.name}): повтор через $TARGET_RETRY")
+                    waiting(task, "${targetName(record.target)}: ${Words.reason(code.name)}; повтор через ${Words.duration(TARGET_RETRY)}", code)
                     return
                 }
                 commitTasks(ok(tasksLogic.attemptFailed(tasks, task, code, code.retry, "${task.value}:${code.name}", clock.now()), "повтор задачи").orEmpty())
                 when (tasks.tasks[task]?.state) {
-                    TaskState.BLOCKED -> askBlocked(task, session, "попытка не удалась: ${tasks.tasks[task]?.lastReason ?: code}")
-                    TaskState.FAILED -> progress(task, NotificationCategory.FAILURE, "Задача не выполнена", "попытки кончились: $code")
+                    TaskState.BLOCKED -> askBlocked(task, session, "попытка не удалась: ${Words.reason((tasks.tasks[task]?.lastReason ?: code).name)}")
+                    TaskState.FAILED -> progress(task, NotificationCategory.FAILURE, "Задача не выполнена", "попытки кончились: ${Words.reason(code.name)}")
                     else -> Unit
                 }
             }
@@ -1227,9 +1233,9 @@ class Orchestrator(
         val t = tasks.tasks.getValue(task)
         val work = lastWork(task) ?: return recordReviewFailure(task, role, attempt, null, "у задачи нет рабочей сессии — неизвестно, где её дерево")
         val target = work.target
-        if (target in control.disabledTargets) return waiting(task, "${Review.label(role)} ждёт: target $target не принимает новые задачи")
+        if (target in control.disabledTargets) return waiting(task, "${Review.label(role)} ждёт: ${targetName(target)} не принимает новые задачи")
         val active = sessions.sessions.values.count { !it.terminal && it.target == target }
-        if (active >= (targets.firstOrNull { it.id == target }?.maxSessions ?: 0)) return waiting(task, "${Review.label(role)} ждёт места на target $target")
+        if (active >= (targets.firstOrNull { it.id == target }?.maxSessions ?: 0)) return waiting(task, "${Review.label(role)} ждёт места на ${targetName(target)}")
         control.maxSessions?.let { max -> if (sessions.sessions.values.count { !it.terminal } >= max) return waiting(task, "${Review.label(role)} ждёт: предел сессий контура $max") }
         if ("--json-schema" in unsupportedFlags[target].orEmpty()) return recordReviewFailure(task, role, attempt, null, "Claude Code на target $target не знает --json-schema: ответ ревью по схеме невозможен")
         val diff = when (val d = taskDiff(task, Review.MAX_PATCH_CHARS)) {
@@ -1315,7 +1321,7 @@ class Orchestrator(
                 val reason = sessions.sessions[session]?.lastReason
                 if (sessions.sessions[session]?.terminal == false) closeSession(task, session)
                 reviewOutput.remove(session)
-                recordReviewFailure(task, role, attempt, session, "сессия ревью ${state.name}" + (reason?.let { " ($it)" } ?: ""))
+                recordReviewFailure(task, role, attempt, session, "сессия ревью ${Words.session(state.name)}" + (reason?.let { " ($it)" } ?: ""))
             }
             else -> Unit
         }
@@ -1662,6 +1668,14 @@ class Orchestrator(
 
     private fun notify(key: String, category: NotificationCategory, title: String, body: String) =
         notify(NotificationRequest(key, category, title, body, null, clock.now()))
+
+    /**
+     * Уведомление о задаче: её название в заголовке и ссылка на неё — по
+     * нажатию открывается задача, а не просто приложение (аудит 1 ноября
+     * 2026, A-11).
+     */
+    private fun taskNotify(task: TaskId, what: String, category: NotificationCategory, title: String, body: String) =
+        notify(NotificationRequest("task:${task.value}:$what", category, "$title: ${taskTitle(task)}", body, DeepLink.of(DeepLink.Kind.TASK, task), clock.now()))
 
     private fun notify(r: NotificationRequest) {
         post(notifications.submit(r))
@@ -2209,7 +2223,7 @@ class Orchestrator(
     private fun askRecovery(q: Diagnostic) {
         ask(
             RequestPurpose.RECOVERY, RequestKind.ACKNOWLEDGEMENT, "recovery:${q.code.name}:${q.subject ?: "-"}",
-            "Сверка после перезапуска: нужен человек", "${q.code}: ${q.message}",
+            "Сверка после перезапуска: нужен человек", "${Words.reason(q.code.name)}: ${q.message}",
             listOf(RequestOption(ACK, "Понятно", OptionRole.ACCEPT)), null, null,
         )
     }
@@ -2485,6 +2499,9 @@ class Orchestrator(
             saveTaskDocument("pin", task, TaskPin.toJson(target))
         }
     }
+
+    /** Имя target для человека — его подпись; неизвестен — id (D-13). */
+    private fun targetName(target: ExecutionTargetId): String = targets.firstOrNull { it.id == target }?.label ?: target.value
 
     /** Имя слота target для ленты: подписка и каталог слота; слота нет — id target. */
     private fun slotLabel(target: ExecutionTargetId): String =
