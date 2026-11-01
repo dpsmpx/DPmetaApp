@@ -161,6 +161,8 @@ data class Roadmap(val stages: List<Stage>) : ProcessDocument {
     override fun toJson(): JsonObject = JsonObject.of(
         "stagesDone" to JsonNumber.of(stagesDone),
         "stagesTotal" to JsonNumber.of(stages.size),
+        "stepsDone" to JsonNumber.of(stages.sumOf { it.stepsDone }),
+        "stepsTotal" to JsonNumber.of(stages.sumOf { it.stepsTotal }),
         "stages" to JsonArray(
             stages.map { s ->
                 JsonObject.of(
