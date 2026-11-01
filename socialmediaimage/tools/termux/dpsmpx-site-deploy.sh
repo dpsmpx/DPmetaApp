@@ -7,7 +7,7 @@
 #   install -m 700 ~/DPmetaApp/socialmediaimage/tools/termux/dpsmpx-site-deploy.sh ~/.shortcuts/
 # Каталог — ~/.shortcuts/, не ~/.shortcuts/tasks/: оттуда ярлык идёт без
 # терминала и не может спросить «да».
-# Выгружается только проверенный сайт (Д47, DPmetaApp:D-48): запись
+# Выгружается только проверенный сайт (Д47, DPmetaApp:D-49): запись
 # data/website/site-check.json пишет tools/check.sh --release, когда он
 # зелёный; после проверенного коммита система не менялась (кроме реестра
 # выпусков и самой записи) — иначе отказ.

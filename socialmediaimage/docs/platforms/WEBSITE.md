@@ -388,6 +388,13 @@ commit → python3 -m tools.cs check → site build --env staging → предп
 - **Запись** (новая или изменённая): `publish … --to site-production
   --production` — одобрение, сборка с записью, rsync, проверка страницы
   по HTTP (canonical на месте), запись в журнал.
+- **Только проверенный сайт (Д47, `DPmetaApp:D-49`).** Полный
+  `tools/check.sh --release` (снимки страниц и сборка production; не
+  `--fast`) на чистом дереве системы при зелёном итоге пишет
+  `data/website/site-check.json` — `commit`, `checked`, `level`; сессия
+  коммитит запись и пушит. Ярлык Termux без записи или при правках
+  системы после проверенного коммита (кроме `data/provenance/site-releases/`
+  и самой записи) отказывает.
 - **Тема и код сайта** без новой записи: `site deploy --dry-run` (что
   изменится: rsync `--dry-run --itemize-changes`), затем `site deploy` —
   та же production-сборка из журнала; проверка `site` до выгрузки,
