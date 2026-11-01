@@ -210,7 +210,7 @@ class LiveSystem(
             ?: Verifier({ _, _, _ -> Outcome.success(Completed(0, emptyList(), emptyList())) }, clock)
         o = Orchestrator(
             clock, ids, random, journal, router, config,
-            working.map { TargetSlot(it.id, emptySet(), maxSessions = 1) }, git, verifier,
+            working.map { TargetSlot(it.id, emptySet(), maxSessions = 1, label = it.label) }, git, verifier,
             snapshots = snapshots, snapshotEvery = SEGMENT.toLong(), documents = DocumentStore(vfs, "docs"),
             onEvents = onEvents, onProblem = onProblem,
         )

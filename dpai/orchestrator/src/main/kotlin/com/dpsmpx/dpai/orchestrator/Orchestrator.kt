@@ -136,7 +136,8 @@ import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
 
 /** Target для планировщика: его возможности (ТЗ, §51) и предел одновременных сессий. */
-data class TargetSlot(val id: ExecutionTargetId, val capabilities: Set<String>, val maxSessions: Int = 4)
+/** Target контура; [label] — его подпись для человека (в уведомлениях и причинах вместо id). */
+data class TargetSlot(val id: ExecutionTargetId, val capabilities: Set<String>, val maxSessions: Int = 4, val label: String? = null)
 
 /**
  * Проект под оркестратором: репозиторий (необязателен), каталог рабочих

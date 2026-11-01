@@ -131,6 +131,11 @@ class UserRequestsFlowTest {
         assertEquals("task.blocked", r.purpose)
         assertTrue(o.posted.any { it is NotificationDecision.Post && it.notification.request == r.id }, "запрос показан уведомлением")
         assertEquals(listOf("retry", "reply", "cancel"), r.options.map { it.id })
+        // Причина — словами, без кода (D-89; аудит 1 ноября 2026, A-1): по запросу человек решает.
+        assertTrue(DiagCode.entries.none { it.name in r.body }, "в запросе нет кода причины: ${r.body}")
+        // И в чате сессии — «ход сорвался — <причина словами>», а не «ход прерван: failed · КОД».
+        val turnEvents = o.chat(task).filter { it.role == com.dpsmpx.dpai.orchestrator.ChatRole.EVENT && it.text.startsWith("ход ") }
+        assertTrue(turnEvents.isNotEmpty() && turnEvents.none { e -> DiagCode.entries.any { it.name in e.text } || "failed" in e.text }, turnEvents.toString())
 
         assertTrue(o.delivered(r.id, "notification").isSuccess)
         relogin(o)
