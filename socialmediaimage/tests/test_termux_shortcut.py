@@ -13,6 +13,7 @@ from pathlib import Path
 SCRIPT = Path(__file__).resolve().parent.parent / "tools" / "termux" / "dpsmpx-site-deploy.sh"
 
 STUB = """#!/bin/bash
+case "$*" in *site-check.json*) exec python3 "$@" ;; esac  # запись проверки читает настоящий Python
 echo "$*" >> "$STUB_LOG"
 case "$*" in
   "-m tools.cs site deploy --dry-run")
@@ -50,10 +51,25 @@ class TermuxShortcut(unittest.TestCase):
         run("git", "commit", "-q", "-m", "init", cwd=self.repo)
         run("git", "push", "-q", "-u", "origin", "main", cwd=self.repo)
         self.git = run
+        self.check()
         self.stub = self.tmp / "py"
         self.stub.write_text(STUB)
         self.stub.chmod(0o755)
         self.log = self.tmp / "calls.log"
+
+    def commit(self, rel, text, msg):
+        p = self.repo / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text)
+        self.git("git", "add", ".", cwd=self.repo)
+        self.git("git", "commit", "-q", "-m", msg, cwd=self.repo)
+        self.git("git", "push", "-q", cwd=self.repo)
+
+    def check(self):
+        """Запись проверки — как её пишет tools/check.sh --release: текущий коммит."""
+        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=self.repo, capture_output=True, text=True).stdout.strip()
+        self.commit("data/website/site-check.json",
+                    f'{{"commit": "{head}", "level": "release", "checked": "2026-11-01T06:00:00Z"}}\n', "проверка")
 
     def shortcut(self, answer="", stdin=None, session="", **stub):
         """answer — ответ с переводом строки; stdin — сырой ввод (subprocess.DEVNULL — без ввода);
@@ -75,6 +91,40 @@ class TermuxShortcut(unittest.TestCase):
         self.assertEqual(calls[:2], ["-m tools.cs site deploy --dry-run", "-m tools.cs site deploy"])
         self.assertTrue(calls[2].startswith("-c"))
         self.assertIn("✓ готово", out)
+
+    def test_refuses_unchecked_site(self):
+        self.git("git", "rm", "-q", "data/website/site-check.json", cwd=self.repo)
+        self.git("git", "commit", "-q", "-m", "без записи", cwd=self.repo)
+        self.git("git", "push", "-q", cwd=self.repo)
+        rc, out, calls = self.shortcut("да")
+        self.assertEqual(rc, 1)
+        self.assertIn("сайт не проверен", out)
+        self.assertEqual(calls, [])
+
+    def test_refuses_never_checked_site(self):
+        """Запись в репозитории с самого начала: commit null — проверки ещё не было."""
+        self.commit("data/website/site-check.json", '{"commit": null, "level": null, "checked": null}\n', "не проверялся")
+        rc, out, calls = self.shortcut("да")
+        self.assertEqual(rc, 1)
+        self.assertIn("нет проверенного коммита", out)
+        self.assertEqual(calls, [])
+
+    def test_refuses_changes_after_check(self):
+        self.commit("README.md", "изменено после проверки\n", "правка")
+        rc, out, calls = self.shortcut("да")
+        self.assertEqual(rc, 1)
+        self.assertIn("нужна новая проверка", out)
+        self.assertEqual(calls, [])
+        self.check()  # проверили заново — можно
+        rc, out, calls = self.shortcut("да")
+        self.assertEqual(rc, 0, out)
+        self.assertIn("Сайт проверен", out)
+
+    def test_release_manifest_after_check_is_not_a_change(self):
+        self.commit("data/provenance/site-releases/2026-11-01T060000Z/manifest.json", "{}\n", "манифест выпуска")
+        rc, out, calls = self.shortcut("да")
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(calls[:2], ["-m tools.cs site deploy --dry-run", "-m tools.cs site deploy"])
 
     def test_no_changes_no_question(self):
         rc, out, calls = self.shortcut("да", changes=0)
