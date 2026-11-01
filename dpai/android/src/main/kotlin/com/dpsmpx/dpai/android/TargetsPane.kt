@@ -34,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.core.text.Words
 import com.dpsmpx.dpai.jsch.ProbedHostKey
 import com.dpsmpx.dpai.ui.CheckLine
 import com.dpsmpx.dpai.ui.ProjectEntry
@@ -176,7 +177,7 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
                 Column(Modifier.padding(12.dp)) {
                     Text(t.label, style = MaterialTheme.typography.titleSmall)
                     if (t.configDir != null) TargetSwitches(model, t)
-                    Text("${t.user}@${t.host}:${t.port} · ${t.type.name}", style = MaterialTheme.typography.bodySmall)
+                    Text("${t.user}@${t.host}:${t.port} · ${Words.targetType(t.type.name)}", style = MaterialTheme.typography.bodySmall)
                     Text(t.configDir?.let { "каталог Claude: $it" } ?: "без каталога Claude — только проверка агента", style = MaterialTheme.typography.bodySmall)
                     // Чем занят слот (D-56): идущие задачи с проектом; нет — свободен.
                     if (t.configDir != null) {
@@ -190,7 +191,21 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
                             scope.launch { checks[t.id.value] = withContext(Dispatchers.IO) { TargetScreens.doctor(controller.doctor(t)) } }
                         }) { Text("Проверить") }
                         if (t.configDir != null) {
-                            TextButton(onClick = { scope.launch { withContext(Dispatchers.IO) { model.probe(t.id) } } }) { Text("Вход Claude") }
+                            // Проба ждёт такта с SSH — секунды: отклик сразу, повтор не встаёт в очередь, итог — словами (A-6).
+                            val probing = checks[t.id.value]?.firstOrNull()?.name == LOGIN && checks[t.id.value]?.firstOrNull()?.detail == PROBING
+                            TextButton(enabled = !probing, onClick = {
+                                checks[t.id.value] = listOf(CheckLine(LOGIN, PROBING, Tone.NEUTRAL))
+                                scope.launch {
+                                    val slots = withContext(Dispatchers.IO) {
+                                        model.probe(t.id)
+                                        model.slotsOf(t.id)
+                                    }
+                                    checks[t.id.value] = slots.map { sl ->
+                                        val ok = sl.state == com.dpsmpx.dpai.core.state.AccountState.AVAILABLE || sl.state == com.dpsmpx.dpai.core.state.AccountState.BUSY
+                                        CheckLine(LOGIN, "слот ${sl.configDir.substringAfterLast('/')}: ${Words.account(sl.state.name)}", if (ok) Tone.DONE else Tone.WARNING)
+                                    }.ifEmpty { listOf(CheckLine(LOGIN, "слота нет: войдите в Claude в каталоге слота («Claude в терминале») и проверьте снова", Tone.WARNING)) }
+                                }
+                            }) { Text(if (probing) "Проверяю…" else "Вход Claude") }
                         }
                         // Проект — у любого target: ход Claude может идти на другом, со своим входом (D-50).
                         TextButton(onClick = { projectFor = t }) { Text("Проект") }
@@ -556,7 +571,7 @@ private fun TargetSwitches(model: DemoModel, t: TargetEntry) {
     for (slot in slots) {
         val want = remember(tick, slot) { model.desired(com.dpsmpx.dpai.orchestrator.commands.Command.SetSlotEnabled(slot.id, !slot.disabled)) as? com.dpsmpx.dpai.orchestrator.commands.Command.SetSlotEnabled }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("слот ${slot.configDir.substringAfterLast('/')} · ${slot.state}" + if (want != null) " · применится" else "", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+            Text("слот ${slot.configDir.substringAfterLast('/')} · ${Words.account(slot.state.name)}" + if (want != null) " · применится" else "", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
             androidx.compose.material3.Switch(checked = want?.enabled ?: !slot.disabled, onCheckedChange = { v ->
                 scope.launch {
                     withContext(Dispatchers.IO) {
@@ -812,3 +827,7 @@ private fun UsageAutoSwitch(model: DemoModel, t: TargetEntry) {
         })
     }
 }
+
+/** Строка проверки входа Claude у target (аудит 1 ноября 2026, A-6). */
+private const val LOGIN = "вход Claude"
+private const val PROBING = "проверяю вход…"

@@ -35,7 +35,7 @@ import java.util.concurrent.Executors
  * перетаскивается за верхнюю строку и запоминает место: в любом
  * постоянном месте оно что-то закрывает — шапку, клавиатуру (проверка на
  * Redmi Note 13, 8 октября 2026). Касания вне окна идут приложению под ним. Опасный вариант — вторым
- * нажатием; вариант с текстом — с полем ввода. «Позже» убирает окно, а
+ * нажатием; вариант с текстом — с полем ввода. «Скрыть окно» убирает окно, а
  * запрос остаётся в уведомлении и на экране «Запросы».
  */
 object RequestOverlay {
@@ -48,7 +48,7 @@ object RequestOverlay {
     private val main = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor()
 
-    /** Убранные «Позже» в этом процессе — окно им не возвращается. */
+    /** Убранные «Скрыть окно» в этом процессе — окно им не возвращается. */
     private val later = ConcurrentHashMap.newKeySet<String>()
 
     @Volatile
@@ -173,7 +173,9 @@ object RequestOverlay {
             null
         }
         root.addView(status)
-        val row = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.END }
+        // Кнопки — столбцом во всю ширину: у запроса бывает пять вариантов, в строку на ~393 dp они не влезают (аудит 1 ноября 2026, A-7).
+        val row = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        val wide = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         for (b in card.buttons) {
             var armed = false
             row.addView(Button(context).apply {
@@ -207,16 +209,17 @@ object RequestOverlay {
                         }
                     }
                 }
-            })
+            }, wide)
         }
+        // Только прячет окно — на запрос не отвечает (в отличие от варианта «Решу позже»).
         row.addView(Button(context).apply {
-            text = "Позже"
+            text = "Скрыть окно"
             isAllCaps = false
             setOnClickListener {
                 later += card.id.value
                 hide()
             }
-        })
+        }, wide)
         root.addView(row)
         wm.addView(root, params)
         shown = card.id.value to root

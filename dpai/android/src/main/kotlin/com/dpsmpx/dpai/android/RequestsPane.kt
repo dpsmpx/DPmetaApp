@@ -86,6 +86,7 @@ fun RequestsPane(model: DemoModel, snapshot: Snapshot?) {
     }
 }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun RequestItem(model: DemoModel, card: RequestCard) {
     val context = LocalContext.current.applicationContext
@@ -101,7 +102,8 @@ private fun RequestItem(model: DemoModel, card: RequestCard) {
             Text(card.title, fontWeight = FontWeight.Bold)
             Text(card.body, style = MaterialTheme.typography.bodySmall)
             if (card.buttons.any { it.needsText }) OutlinedTextField(text, { text = it }, label = { Text("Ответ") }, minLines = 2, modifier = Modifier.fillMaxWidth())
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            // С переносом: у запроса бывает четыре-пять вариантов, в одну строку они не влезают (A-7).
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 for (b in card.buttons) {
                     AnswerChip(b, armed == b.uri, enabled = !busy) {
                         // Опасное — вторым нажатием (D-44).
