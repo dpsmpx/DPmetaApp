@@ -120,7 +120,21 @@ class BuildTools(unittest.TestCase):
                       ("org.jetbrains.kotlin", "kotlin-stdlib", "2.0", None)]))
         put(M, "androidx/activity/activity-compose/1.13.0/activity-compose-1.13.0.aar", b"activity")
         put(M, "androidx/activity/activity-parent/1/activity-parent-1.pom", pom("androidx.activity", "activity-parent", "1", packaging="pom"))
-        put(M, "androidx/core/core/1.17.0/core-1.17.0.pom", pom("androidx.core", "core", "1.17.0", packaging="aar"))
+        put(M, "androidx/core/core/1.17.0/core-1.17.0.pom", pom("androidx.core", "core", "1.17.0", packaging="aar",
+                                                             deps=[("androidx.arch.core", "core-common", "[2.1.0]", None)]))
+        put(M, "androidx/arch/core/core-common/2.1.0/core-common-2.1.0.pom", pom("androidx.arch.core", "core-common", "2.1.0"))
+        put(M, "androidx/arch/core/core-common/2.1.0/core-common-2.1.0.jar", b"cc")
+        # во время сборки плагин Android берёт lint (мажор + 23) и aapt2 под Linux — не по графу
+        put(M, "com/android/tools/build/aapt2/maven-metadata.xml",
+            "<metadata><versioning><versions><version>9.4.1-100</version><version>9.4.1-111</version>"
+            "<version>9.5.0-200</version></versions></versioning></metadata>")
+        put(M, "com/android/tools/build/aapt2/9.4.1-111/aapt2-9.4.1-111.pom", pom("com.android.tools.build", "aapt2", "9.4.1-111"))
+        put(M, "com/android/tools/build/aapt2/9.4.1-111/aapt2-9.4.1-111-linux.jar", b"aapt2-linux")
+        put(M, "com/android/tools/lint/lint-gradle/32.4.1/lint-gradle-32.4.1.pom",
+            pom("com.android.tools.lint", "lint-gradle", "32.4.1", deps=[("com.android.tools.lint", "lint-api", "32.4.1", None)]))
+        put(M, "com/android/tools/lint/lint-gradle/32.4.1/lint-gradle-32.4.1.jar", b"lg")
+        put(M, "com/android/tools/lint/lint-api/32.4.1/lint-api-32.4.1.pom", pom("com.android.tools.lint", "lint-api", "32.4.1"))
+        put(M, "com/android/tools/lint/lint-api/32.4.1/lint-api-32.4.1.jar", b"la")
         put(M, "androidx/core/core/1.17.0/core-1.17.0.aar", b"core" * 100)
 
     def run_tool(self, *extra):
@@ -160,13 +174,18 @@ class BuildTools(unittest.TestCase):
                     "androidx/compose/ui/ui/1.9.0/ui-1.9.0.aar", "androidx/compose/ui/ui/1.10.0/ui-1.10.0.aar",
                     "androidx/activity/activity-compose/1.13.0/activity-compose-1.13.0.aar",
                     "androidx/activity/activity-parent/1/activity-parent-1.pom",
-                    "androidx/core/core/1.17.0/core-1.17.0.aar"):
+                    "androidx/core/core/1.17.0/core-1.17.0.aar", "androidx/arch/core/core-common/2.1.0/core-common-2.1.0.jar",
+                    "com/android/tools/build/aapt2/9.4.1-111/aapt2-9.4.1-111-linux.jar",
+                    "com/android/tools/lint/lint-gradle/32.4.1/lint-gradle-32.4.1.jar",
+                    "com/android/tools/lint/lint-api/32.4.1/lint-api-32.4.1.jar"):
             self.assertIn("maven2/" + rel, files)
         self.assertFalse(any("kotlin-stdlib" in f or "material3-metadata" in f or "sources.jar" in f
                              or "ui-test" in f or "runner" in f or "material3-window" in f for f in files), files)
         self.assertIn("dppass", m["files"]["maven2/com/android/tools/build/gradle/9.4.1/gradle-9.4.1.jar"]["verified"])
         self.assertIn(".module", m["files"]["maven2/androidx/compose/material3/material3-android/1.5.0/material3-android-1.5.0.aar"]["verified"])
         self.assertTrue(any("androidx.annotation:annotation:[1.0,2.0)" in s for s in m["maven_skipped"]))
+        self.assertFalse(any("core-common" in s for s in m["maven_skipped"]), m["maven_skipped"])  # [2.1.0] — точная
+        self.assertFalse(any("aapt2/9.4.1-100" in f or "aapt2/9.5.0" in f for f in files))  # только последняя сборка 9.4.1
         # повторный запуск ничего не качает заново
         rc, log = self.run_tool(str(self.out))
         self.assertEqual(rc, 0)

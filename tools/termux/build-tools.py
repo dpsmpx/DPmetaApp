@@ -305,6 +305,9 @@ class Crawler:
     def want(self, g, a, v, why):
         if not g or not a or not GOOGLE_GROUP.fullmatch(g):
             return
+        m = re.fullmatch(r"\[([^\[\](),]+)\]", v or "")
+        if m:  # «[2.1.0]» в Maven — точная версия, не диапазон
+            v = m.group(1)
         if not v or any(ch in v for ch in "[]()+,$"):
             self.skipped.append(f"{g}:{a}:{v} — версия не точная ({why})")
             return
@@ -442,6 +445,27 @@ class Crawler:
         if ext and not self.file(g, a, v, f"{a}-{v}.{ext}"):
             self.skipped.append(f"{g}:{a}:{v} — нет {a}-{v}.{ext}")
 
+    def agp_runtime(self, agp: str) -> None:
+        """Что плагин Android докачивает во время сборки, а не по графу зависимостей: lint (версия —
+        мажор плагина + 23: 9.4.1 → 32.4.1) и aapt2 под Linux (сборка aapt2 — из maven-metadata.xml)."""
+        self.want("com.android.tools.lint", "lint-gradle", re.sub(r"^\d+", lambda m: str(int(m.group(0)) + 23), agp), "lint плагина")
+        meta = get(self.maven + "com/android/tools/build/aapt2/maven-metadata.xml")
+        vs = re.findall(r"<version>(" + re.escape(agp) + r"-\d+)</version>", meta.decode("utf-8")) if meta else []
+        if not vs:
+            self.skipped.append(f"com.android.tools.build:aapt2:{agp}-* — нет в maven-metadata.xml")
+            return
+        v = max(vs, key=lambda x: int(x.rsplit("-", 1)[1]))
+        self.want("com.android.tools.build", "aapt2", v, "aapt2 плагина")
+        if not self.file("com.android.tools.build", "aapt2", v, f"aapt2-{v}-linux.jar"):
+            self.skipped.append(f"com.android.tools.build:aapt2:{v}:linux — нет")
+
+    def extra(self, coord: str) -> None:
+        """Координаты из --extra: группа:имя:версия[:классификатор]."""
+        g, a, v, *cls = coord.split(":")
+        self.want(g, a, v, "--extra")
+        if cls and not self.file(g, a, v, f"{a}-{v}-{cls[0]}.jar"):
+            self.skipped.append(f"{coord} — нет")
+
     def bom(self, g, a, v):
         """BOM (platform): его версии — ограничения, а не зависимости: тянуть всё из него не нужно."""
         self.seen.add((g, a, v))
@@ -501,6 +525,8 @@ def main(argv=None) -> int:
     ap.add_argument("--push", action="store_true", help="коммитить и пушить после каждого пакета")
     ap.add_argument("--list", action="store_true", help="только показать пакеты SDK и размеры")
     ap.add_argument("--only", choices=["sdk", "maven"], help="только эту часть")
+    ap.add_argument("--extra", action="append", default=[], metavar="ГРУППА:ИМЯ:ВЕРСИЯ[:КЛАССИФИКАТОР]",
+                    help="ещё артефакт Google Maven с его графом (если сборке чего-то не хватило)")
     ap.add_argument("--root", default=str(ROOT), help=argparse.SUPPRESS)
     ap.add_argument("--sdk-repo", default=SDK_REPO, help=argparse.SUPPRESS)
     ap.add_argument("--google-maven", default=GOOGLE_MAVEN, help=argparse.SUPPRESS)
@@ -578,6 +604,9 @@ def main(argv=None) -> int:
             crawler.want("com.android.application", "com.android.application.gradle.plugin", agp, "плагин")
             crawler.want("androidx.compose.material3", "material3", m3[-1], "dpai/android")
             crawler.want("androidx.activity", "activity-compose", act, "dpai/android")
+            crawler.agp_runtime(agp)
+            for coord in a.extra:
+                crawler.extra(coord)
             crawler.run()
             store.m["maven_skipped"] = sorted(set(crawler.skipped))
             print(f"Maven: граф dpai/android — новых файлов {crawler.files}; пропущено {len(store.m['maven_skipped'])}", flush=True)
