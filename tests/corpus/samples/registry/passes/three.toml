@@ -1,0 +1,23 @@
+# Синтетический реестр по образцу DPmeta:tools/ecosystem.toml, schema = 1.
+schema = 1
+
+[[repo]]
+name = "Alpha"
+slug = "example/Alpha"
+clone = "alpha"
+place = "core"
+aliases = ["OldAlpha"]
+decisions = { path = "docs/direction/DECISIONS.md", id = "D-\\d+" }
+defs = [{ path = "docs/direction/TECHNICAL_TASK.md", id = "F-\\d+" }]
+
+[[repo]]
+name = "Beta"
+slug = "example/Beta"
+place = "periphery"
+names = ["Beta App"]
+
+[[repo]]
+name = "Gamma"
+slug = "example/gamma"
+clone = "gamma"
+place = "archive"

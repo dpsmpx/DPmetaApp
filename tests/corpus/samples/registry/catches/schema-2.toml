@@ -1,0 +1,6 @@
+schema = 2
+
+[[repo]]
+name = "A"
+slug = "x/a"
+place = "core"
