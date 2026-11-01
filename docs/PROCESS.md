@@ -29,7 +29,7 @@
 | Работа не теряется: пуш каждые полчаса, `WIP:`, черновой PR сразу | `DPmeta:E-08`; `Galdhold:CLAUDE.md` | `CLAUDE.md`, «Не терять работу» |
 | Хук начала сессии: ветки с невлитой работой | Galdhold, DPlang, DPlearn, SocialMediaImage | `.claude/hooks/session-start.sh` |
 | Хук начала сессии ставит Android SDK и зеркало Maven Central (ответ автора 25 октября 2026) | `DPpass:.claude/hooks/session-start.sh` (`DPpass:D-50`) | `.claude/hooks/session-start.sh` |
-| Закрыт dl.google.com — SDK и Google Maven из приватного `build_tools`: собирает телефон автора, сверка по суммам Google и сверки DPpass (слово автора 31 октября 2026) | — | `tools/termux/build-tools.py`, `tests/test_build_tools.py` |
+| Закрыт dl.google.com — SDK, Google Maven и закреплённые файлы сборок из приватного `build_tools`: собирает телефон автора (сверка по суммам Google, сверки DPpass и сборок), ставит хук начала сессии (сверка по `MANIFEST.json`, SDK — `sdkmanager` из локальной копии; слово автора 31 октября и 1 ноября 2026) | — | `tools/termux/build-tools.py`, `tools/build_tools_install.py`, `.claude/hooks/session-start.sh`, `tests/test_build_tools.py` |
 | Шаблон PR «Сделано / Осталось / Проверки» | `DPlang:.github/pull_request_template.md` | `.github/pull_request_template.md` |
 | Секретов нет — и это проверяется; файлы ключей запрещены | `DPmeta:E-09`; `DPpass:CLAUDE.md`, `DPlearn:tools/check/check.py` | проверка `security.secrets` |
 | Тексты по-русски, идентификаторы латиницей; `P` и `Р` | `DPmeta:E-10`, `DPmeta:M-06` | D-14 |
