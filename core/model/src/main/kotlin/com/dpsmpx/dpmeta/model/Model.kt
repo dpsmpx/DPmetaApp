@@ -64,6 +64,9 @@ enum class ObservationSource(val code: String) {
     CLAUDE("claude"),
     SOCIAL("social"),
     MANUAL("manual"),
+
+    /** Каталог на диске: синтетический корпус или клоны репозиториев (`dpmeta-cli sync --corpus`/`--clones`). */
+    DIRECTORY("directory"),
     ;
 
     companion object {
@@ -158,3 +161,10 @@ data class Observation private constructor(
         }
     }
 }
+
+/**
+ * Отказ источника при синхронизации (ТЗ, §6.4): проект, вид источника,
+ * диагностика и когда случился. По времени отказа «файла нет» не
+ * спрашивается снова раньше срока из правил.
+ */
+data class SourceFailure(val project: String, val kind: String, val diagnostic: com.dpsmpx.dpai.core.diagnostics.Diagnostic, val at: Timestamp)

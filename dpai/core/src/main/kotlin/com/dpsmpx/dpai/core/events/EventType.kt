@@ -126,4 +126,7 @@ enum class EventType {
 
     // --- перенос задачи на другой слот (D-77) ---
     TASK_SLOT_EXCLUDED,
+
+    // --- история чисел DPmetaApp (DPmetaApp:D-34): точка метрики, только добавляется ---
+    METRIC_POINT_RECORDED,
 }

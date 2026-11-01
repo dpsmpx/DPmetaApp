@@ -35,3 +35,9 @@ includeBuild("dpai") {
 // Модули DPmetaApp (ТЗ, §6.2) — появляются вместе со своим первым кодом.
 include(":core:model")
 include(":core:formats")
+include(":core:net")
+include(":core:github")
+include(":core:metrics")
+include(":core:sync")
+include(":cli")
+include(":tests:corpus")

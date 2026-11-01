@@ -1,0 +1,2 @@
+pattern: M-\d+
+error: FORMAT_UNRECOGNIZED

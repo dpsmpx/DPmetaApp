@@ -93,7 +93,6 @@ REQUIRED = [
 PLANNED = {
     "gradle/verification-metadata.xml": "контрольные суммы зависимостей (ТЗ, N-14) — с первой зависимостью модулей DPmetaApp, этап 1",
     "docs/SECURITY_MODEL.md": "модель угроз — этап 3",
-    "docs/CHANGELOG.md": "версии правил и выпуски — с первой RULES_VERSION",
     "docs/RELEASE.md": "отпечаток ключа и порядок выпуска — этап 8",
     "tools/release/": "сборка неподписанного APK — этап 8",
     "tools/notify/": "набор хуков уведомлений Claude Code (F-56) — этап 7",
@@ -529,6 +528,75 @@ def check_core_single(repo, r):
             r.add(CORE_HOME, f"нет объявления {name} в ядре — проверка устарела или ядро сломано (D-28)")
 
 
+# Модули DPmetaApp в корне (ТЗ, §6.2; D-03, D-28): кому от кого можно зависеть.
+# Ключ — модуль, значение — разрешённые зависимости: проекты корня и модули ядра dpai/.
+ROOT_MODULES = {
+    ":core:model": set(),
+    ":core:formats": {":core:model"},
+    ":core:net": set(),
+    ":core:github": {":core:net", ":core:model", ":core:formats"},
+    ":core:site": {":core:net", ":core:model", ":core:formats"},
+    ":core:social": {":core:net", ":core:model", ":core:formats"},
+    ":core:metrics": {":core:model"},
+    ":core:notify": {":core:model"},
+    ":core:actions": {":core:model"},
+    ":core:sync": {":core:model", ":core:formats", ":core:net", ":core:github", ":core:site", ":core:social"},
+}
+# Оболочки и тесты зависят от всех (ТЗ, §6.2).
+ROOT_SHELLS = (":cli", ":app", ":tests:")
+DPAI_CORE = {"core", "storage", "security", "notifications"}
+MODULE_DEP = re.compile(r'project\(\s*"(:[\w:-]+)"\s*\)|"com\.dpsmpx\.dpai:([\w-]+)"')
+# Код модулей корня (не оболочек): правила кода CLAUDE.md — Android только в оболочке,
+# время — Clock, печать — только cli, секрет раскрывается в одном месте сети.
+MODULE_CODE_RULES = (
+    (re.compile(r"^\s*import\s+(?:android|androidx)\."), "Android-типы — только в оболочке (D-03)"),
+    (re.compile(r"System\.currentTimeMillis|Instant\.now\(|LocalDateTime\.now\("), "время — через Clock ядра"),
+    (re.compile(r"Thread\.sleep|GlobalScope|runBlocking"), "без сна и глобальных корутин вне cli"),
+    (re.compile(r"(?<![\w.])println\(|System\.out|System\.err"), "печать — только в cli; остальное — Diagnostic"),
+)
+REVEAL = re.compile(r"\.reveal\s*\(\s*\)")
+REVEAL_HOME = "core/net/src/main/kotlin/com/dpsmpx/dpmeta/net/Auth.kt"
+
+
+def module_of(rel):
+    """`core/net/build.gradle.kts` → `:core:net`."""
+    return ":" + rel[: -len("/build.gradle.kts")].replace("/", ":")
+
+
+def check_modules(repo, r):
+    """modules.root — направления зависимостей модулей корня и правила их кода (ТЗ, §6.2; D-03, D-28)."""
+    builds = [rel for rel in repo.files
+              if rel.endswith("/build.gradle.kts") and rel.split("/")[0] in ("core", "cli", "app", "tests")]
+    for rel in builds:
+        r.scanned += 1
+        mod = module_of(rel)
+        if mod.startswith(ROOT_SHELLS):
+            continue
+        if mod not in ROOT_MODULES:
+            r.add(rel, f"модуль {mod} не описан в ТЗ, §6.2 — сначала решение и ROOT_MODULES")
+            continue
+        text = repo.text(rel) or ""
+        for m in MODULE_DEP.finditer(text):
+            line = text.count("\n", 0, m.start()) + 1
+            dep, dpai = m.group(1), m.group(2)
+            if dep is not None and dep not in ROOT_MODULES[mod]:
+                r.add(f"{rel}:{line}", f"{mod} не может зависеть от {dep} (ТЗ, §6.2)")
+            if dpai is not None and dpai not in DPAI_CORE:
+                r.add(f"{rel}:{line}", f"{mod} зависит от подсистемы dpai:{dpai} — только от ядра {sorted(DPAI_CORE)}")
+    for rel in repo.files:
+        if not rel.endswith(".kt") or "/src/main/" not in rel or not rel.startswith("core/"):
+            continue
+        text = repo.text(rel) or ""
+        for i, line in enumerate(text.splitlines(), 1):
+            if line.lstrip().startswith(("//", "*", "/*")):
+                continue
+            for rx, why in MODULE_CODE_RULES:
+                if rx.search(line):
+                    r.add(f"{rel}:{i}", why)
+            if REVEAL.search(line) and rel != REVEAL_HOME:
+                r.add(f"{rel}:{i}", f"reveal() — только в {REVEAL_HOME} (секрет раскрывается в одном месте)")
+
+
 def check_wrapper(repo, r):
     """build.wrapper — wrapper Gradle корня совпадает с wrapper подсистемы dpai/ байт в байт (D-28)."""
     for rel in WRAPPER:
@@ -637,6 +705,7 @@ CHECKS = [
     ("process.files", check_files),
     ("readme.status", check_status),
     ("core.single", check_core_single),
+    ("modules.root", check_modules),
     ("build.wrapper", check_wrapper),
 ]
 
