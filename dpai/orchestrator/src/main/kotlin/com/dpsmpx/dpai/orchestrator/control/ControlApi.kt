@@ -209,6 +209,23 @@ class ControlApi(
 
         /** Длиннее запрос поиска не бывает: это строка из поля ввода, а не текст. */
         const val MAX_QUERY = 200
+
+        /**
+         * Запрос пришёл от `dpai`, а не от страницы в браузере телефона
+         * (аудит 1 ноября 2026, A-21): браузер шлёт `Origin` в каждом
+         * запросе `POST` и при DNS rebinding называет в `Host` чужой домен,
+         * указывающий на 127.0.0.1. `dpai` (`HttpClient` JDK) `Origin` не
+         * шлёт, а `Host` у него — 127.0.0.1 или localhost (туннель SSH с ПК —
+         * тоже на loopback). Нет заголовка `Host` — отказ: HTTP/1.1 его требует.
+         */
+        fun fromCli(host: String?, origin: String?): Boolean {
+            if (origin != null) return false
+            val h = host?.trim()?.lowercase() ?: return false
+            val name = if (h.startsWith("[")) h.substringBefore(']') + "]" else h.substringBefore(':')
+            return name in LOOPBACK
+        }
+
+        private val LOOPBACK = setOf("127.0.0.1", "localhost", "[::1]")
     }
 }
 

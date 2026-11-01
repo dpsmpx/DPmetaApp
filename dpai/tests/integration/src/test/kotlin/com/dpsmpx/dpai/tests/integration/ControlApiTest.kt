@@ -166,6 +166,18 @@ class ControlApiTest {
         assertEquals(listOf("задача", "нет контура"), asked, "до поиска доходит только проверенный запрос")
     }
 
+    /** A-21: канал принимает `dpai`, а не страницу браузера и не DNS rebinding. */
+    @Test
+    fun onlyLoopbackWithoutOriginIsAccepted() {
+        assertTrue(ControlApi.fromCli("127.0.0.1:47777", null))
+        assertTrue(ControlApi.fromCli("localhost:9000", null), "туннель SSH с ПК — тоже loopback")
+        assertTrue(ControlApi.fromCli("[::1]:47777", null))
+        assertFalse(ControlApi.fromCli("127.0.0.1:47777", "https://evil.example"), "страница браузера шлёт Origin")
+        assertFalse(ControlApi.fromCli("evil.example:47777", null), "DNS rebinding: чужое имя в Host")
+        assertFalse(ControlApi.fromCli("127.0.0.1.evil.example", null))
+        assertFalse(ControlApi.fromCli(null, null), "без Host — отказ")
+    }
+
     @Test
     fun codecRoundTripForEveryExternalCommand() {
         val t = ids.next(IdKinds.TASK)

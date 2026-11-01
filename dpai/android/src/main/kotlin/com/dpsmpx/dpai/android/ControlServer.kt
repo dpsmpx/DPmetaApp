@@ -124,6 +124,8 @@ object ControlServer {
                 if (length > ControlApi.MAX_BODY) return respond(sock, error(413, "тело больше ${ControlApi.MAX_BODY} байт"))
                 // readNBytes — только с API 33 (lint NewApi): minSdk 30 — DataInputStream.readFully.
                 val body = if (length > 0) String(ByteArray(length).also { java.io.DataInputStream(input).readFully(it) }, Charsets.UTF_8) else null
+                // Только `dpai`: запрос страницы браузера (Origin) или через DNS rebinding (чужой Host) — отказ (A-21).
+                if (!ControlApi.fromCli(headers["host"], headers["origin"])) return respond(sock, error(403, "запрос не от dpai: канал принимает только loopback без Origin"))
                 api.handle(parts[0], parts[1].substringBefore('?'), headers["authorization"], body)
             } catch (e: Exception) {
                 error(500, AppLogs.describe(e))
