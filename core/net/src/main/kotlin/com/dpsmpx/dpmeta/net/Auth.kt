@@ -12,6 +12,9 @@ import java.net.URLEncoder
 internal object Auth {
     fun bearer(secret: Secret): String = "Bearer " + secret.reveal()
 
+    /** Секрет годится в заголовок: печатные ASCII, без пробелов и переводов строки. */
+    fun printable(secret: Secret): Boolean = secret.reveal().let { v -> v.isNotEmpty() && v.all { it in '!'..'~' } }
+
     /** Короткий отпечаток: различает токены в ключе кэша, сам токен не восстанавливается. */
     fun fingerprint(secret: Secret): String = Hashing.sha256(secret.reveal()).toString().takeLast(16)
 }

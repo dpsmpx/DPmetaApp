@@ -20,6 +20,11 @@ class JdkTransport(private val timeout: Duration = Duration.ofSeconds(20)) : Tra
         .build()
 
     override fun send(request: HttpRequest): Outcome<HttpResponse> {
+        // Значение заголовка — только печатные ASCII: иначе JDK бросает исключение со
+        // значением в тексте, а значение может быть секретом (T-02). Отказ — без значения.
+        val bad = request.headers.entries.firstOrNull { !printable(it.key) || !printable(it.value) }?.key
+            ?: request.auth?.let { if (Auth.printable(it)) null else "Authorization" }
+        if (bad != null) return Outcome.failure(DiagCode.VALUE_INVALID, "заголовок «$bad» — только печатные знаки ASCII", request.url.host)
         val b = java.net.http.HttpRequest.newBuilder(request.url).timeout(timeout)
         for ((k, v) in request.headers) b.header(k, v)
         request.auth?.let { b.header("Authorization", Auth.bearer(it)) }
@@ -29,9 +34,14 @@ class JdkTransport(private val timeout: Duration = Duration.ofSeconds(20)) : Tra
             Outcome.success(HttpResponse(r.statusCode(), r.headers().map(), r.body()))
         } catch (e: IOException) {
             Outcome.failure(DiagCode.NETWORK_UNREACHABLE, "нет ответа: ${e.javaClass.simpleName}", request.url.host)
+        } catch (e: IllegalArgumentException) {
+            // Текст исключения JDK может содержать заголовок — не переносится.
+            Outcome.failure(DiagCode.VALUE_INVALID, "запрос не собран: ${e.javaClass.simpleName}", request.url.host)
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt()
             Outcome.failure(DiagCode.NETWORK_UNREACHABLE, "запрос прерван", request.url.host)
         }
     }
 }
+
+internal fun printable(s: String): Boolean = s.all { it in ' '..'~' }

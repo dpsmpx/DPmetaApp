@@ -20,8 +20,11 @@ DP-Verify и других репозиториев автора — источн
 
 ## Зависимости
 
-У модулей DPmetaApp — нет. С этапа 1 каждая зависимость — строка ниже и
-запись в каталоге версий; кандидаты и их лицензии — ТЗ, §6.1.
+У модулей DPmetaApp сторонних зависимостей нет: на этапе 2 (`:core:*`,
+`:cli`, `:tests:corpus`) — только ядро `dpai/` (`core`, `storage`) и JDK
+(`java.net.http` — транспорт `dpmeta-cli`; TLS — системными корнями).
+Каждая новая зависимость — строка ниже и запись в каталоге версий;
+кандидаты и их лицензии — ТЗ, §6.1.
 Зависимости подсистемы «AI» и ядра (Kotlin, JUnit, Android Gradle Plugin,
 Compose, JSch; wrapper Gradle со сверкой SHA-256) — `dpai/docs/PROVENANCE.md`
 и `dpai/gradle/libs.versions.toml` (D-28).

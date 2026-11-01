@@ -86,4 +86,16 @@ class NetTest {
     fun formBodyEncodes() {
         assertEquals("a=%D1%8F+1&s=x%26y", FormBody.of("a" to "я 1", "s" to Secret("x&y")).toString(Charsets.UTF_8))
     }
+
+    @Test
+    fun badHeaderIsRefusedWithoutItsValue() {
+        val t = JdkTransport()
+        val r = t.send(HttpRequest("GET", URI("https://api.github.com/"), auth = Secret("токен-не-ascii")))
+        assertIs<Outcome.Failure>(r)
+        val d = r.diagnostics.single()
+        assertEquals(DiagCode.VALUE_INVALID, d.code)
+        assertFalse("токен" in d.render(), "значение секрета не в сообщении")
+        val h = t.send(HttpRequest("GET", URI("https://api.github.com/"), mapOf("X" to "a\nb")))
+        assertEquals(DiagCode.VALUE_INVALID, (h as Outcome.Failure).diagnostics.single().code)
+    }
 }

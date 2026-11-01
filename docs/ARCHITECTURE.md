@@ -72,7 +72,28 @@ Python, DPprofile — документы и проверки на Python; в с�
   не наоборот; Android-типы — только в оболочке.
 - Внутри `dpai/` направления держит `dpai/tools/verify/check_modules.py` по
   таблице `dpai/docs/ARCHITECTURE.md`, §2; для модулей DPmetaApp —
-  проверка модулей корня (этап 1).
+  проверка `modules.root` (`tools/check/check.py`, таблица `ROOT_MODULES`):
+  направления по ТЗ, §6.2 и правила их кода — Android только в оболочке,
+  время через `Clock`, печать только в `:cli`, секрет раскрывается в одном
+  месте (`core/net/…/Auth.kt`).
+
+### Модули DPmetaApp (этап 2)
+
+| Модуль | Что делает | Зависит от |
+|---|---|---|
+| `:core:model` | типы предметной области: `RepoRef`, `Observation`, место `Place`, строка и реестр проектов | ядро |
+| `:core:formats` | разборщики с корпусом: подмножество TOML, реестр DPmeta `schema = 1`, журнал решений по шаблону номера, `TODO.md`, ROADMAP (флажки или таблица «Состояние»), блоки состояния README, описание PR | `model` |
+| `:core:net` | HTTP: список разрешённых адресов (D-10), условные GET с ETag, бюджет запросов прогона, счёт для A-02; транспорт `java.net.http` без переадресаций | ядро |
+| `:core:github` | GitHub REST: PR, ветки, коммит по SHA, файл; коды `GITHUB_*`; device flow GitHub App шагами (D-17) | `net`, `model` |
+| `:core:metrics` | состояние из наблюдений (D-34), «кто работает» (F-16), вопросы автору, точки истории; `Rules.kt`; хранение — документ `state` и журнал `METRIC_POINT_RECORDED` на `dpai/storage` | `model`, ядро (`storage`) |
+| `:core:sync` | план по реестру с приоритетом (PR → ветки → файлы), чтение GitHub или каталога (корпус, клоны), отказы по источникам, отложенное по бюджету | `formats`, `github` |
+| `:cli` | `dpmeta-cli`: `sync --corpus/--clones/--live`, `state`, `history`, `smoke` | все |
+| `:tests:corpus` | синтетический корпус «ловит / пропускает» (`samples/`), экосистема для синхронизации (`ecosystem/`), свои документы DPmetaApp как образцы | все |
+
+Подсистемы DPmetaApp синхронизация читает из каталога DPmetaApp
+(`Subsystems.DIRS` в `:core:sync`), пока в реестре DPmeta нет поля каталога
+подсистемы (D-46); их PR и ветки общие с DPmetaApp, поэтому «кто работает»
+у подсистемы — «неизвестно».
 
 ## 4. Сборка
 

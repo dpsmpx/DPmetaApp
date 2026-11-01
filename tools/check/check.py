@@ -93,7 +93,6 @@ REQUIRED = [
 PLANNED = {
     "gradle/verification-metadata.xml": "контрольные суммы зависимостей (ТЗ, N-14) — с первой зависимостью модулей DPmetaApp, этап 1",
     "docs/SECURITY_MODEL.md": "модель угроз — этап 3",
-    "docs/CHANGELOG.md": "версии правил и выпуски — с первой RULES_VERSION",
     "docs/RELEASE.md": "отпечаток ключа и порядок выпуска — этап 8",
     "tools/release/": "сборка неподписанного APK — этап 8",
     "tools/notify/": "набор хуков уведомлений Claude Code (F-56) — этап 7",
