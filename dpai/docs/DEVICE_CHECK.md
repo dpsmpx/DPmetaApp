@@ -3,7 +3,8 @@
 Пошаговая инструкция автору: что сделать на Redmi Note 13 (основное
 устройство приёмки, D-28) и на ПК, чтобы закрыть открытые критерии,
 которым нужно устройство или долгий прогон. Версия приложения и агента —
-**0.1.0-dev.5**; срез на 23 октября 2026.
+**0.1.0-dev.6**; срез на 23 октября 2026, файлы и установка — на
+2 ноября 2026.
 
 Порядок разделов важен: §3 и §4 идут в демо-режиме, а он кончается, как
 только в приложении появляется target с каталогом Claude (§5). Каждый
@@ -89,14 +90,15 @@ adb devices
 Признак: окно «Приложение остановлено» или приложение закрылось само.
 Причина падения записывается в `files/last-crash.txt` приложения при
 любой сборке, но прочитать файл можно только из debug-сборки
-(`docs/TESTING.md`, §9). Обе сборки подписаны одним ключом, поэтому
-debug ставится поверх release без потери данных — переподписанная вашим
-ключом (`…-author.apk`, §1.2) поверх переподписанной:
+(`docs/TESTING.md`, §9). Стоит debug (§1.3) — хватит второй команды.
+Стоит release, подписанный тем же ключом, — debug ставится поверх без
+потери данных, переподписанная вашим ключом (`…-author.apk`, §1.2)
+поверх переподписанной:
 
 ```sh
-adb install -r dpai-0.1.0-dev.5-debug-author.apk
+adb install -r dpai-0.1.0-dev.6-debug-author.apk
 adb shell run-as com.dpsmpx.dpai cat files/last-crash.txt > last-crash.txt
-adb install -r dpai-0.1.0-dev.5-release-author.apk
+adb install -r dpai-0.1.0-dev.6-release-author.apk
 ```
 
 Если на Redmi работает системный журнал, приложите и его:
@@ -128,25 +130,30 @@ release, как в третьей команде.
 ### 1.1. Файлы и проверка SHA-256
 
 Файлы лежат в ветке сборок `apk_debug` репозитория
-`github.com/dpsmpx/DP_AI_Orcestrator`, каталог `dpai/` (D-81: в ветке —
-только последние сборки; пробник B2 — каталог `probe/`, §14):
+`github.com/dpsmpx/DPmetaApp`, каталог `dpai/` (`DPmetaApp:D-33`: в
+ветке — только последние сборки, у каждой подсистемы свой каталог).
+Сборки до 0.1.0-dev.5 — в `apk_debug` замороженного DP_AI_Orcestrator.
 
 | Файл | Зачем |
 |---|---|
-| `dpai-0.1.0-dev.5-release.apk` | приложение для проверки и замеров |
-| `dpai-0.1.0-dev.5-debug.apk` | только чтобы прочитать `last-crash.txt` (§0.4) |
-| `dpai-agent-0.1.0-dev.5.zip` | агент `dpai` для Termux и ПК: каталог `dpai/` с `bin/dpai` и `lib/` |
+| `dpai-0.1.0-dev.6-debug.apk` | приложение для проверки; из него же читается `last-crash.txt` (§0.4) |
+| `dpai-agent-0.1.0-dev.6.zip` | агент `dpai` для Termux и ПК: каталог `dpai/` с `bin/dpai` и `lib/` |
 | `claude-proot.sh` | обёртка Claude Code для Termux (§5.3) |
 | `resign-apk.sh` | переподпись APK вашим ключом выпуска на телефоне (§1.2) |
 | `SHA256SUMS` | хеши файлов |
 | `README.md` | описание сборки: коммит `main`, версия, подпись |
+
+Release для замеров (§4) облако DPmetaApp не собирает: облачная сессия
+собирает только отладочный или неподписанный APK (`DPmetaApp:CLAUDE.md`,
+«Секреты и подпись»). Замеры на debug занижены — их не делать; release
+собирается вашим ключом там, где ключ (`docs/PROCESS.md`, §6).
 
 Репозиторий приватный: ссылки `raw` без входа в GitHub отвечают 404,
 поэтому `curl` из Termux не подходит. На ПК (вход в GitHub у `git` уже
 есть):
 
 ```sh
-git clone --depth 1 --branch apk_debug https://github.com/dpsmpx/DP_AI_Orcestrator.git ~/dpai-device-check
+git clone --depth 1 --branch apk_debug https://github.com/dpsmpx/DPmetaApp.git ~/dpai-device-check
 cd ~/dpai-device-check/dpai
 sha256sum -c SHA256SUMS
 ```
@@ -155,14 +162,14 @@ sha256sum -c SHA256SUMS
 на телефоне, где ваш ключ, §1.2):
 
 ```sh
-adb push dpai-0.1.0-dev.5-release.apk dpai-0.1.0-dev.5-debug.apk dpai-agent-0.1.0-dev.5.zip claude-proot.sh resign-apk.sh SHA256SUMS /sdcard/Download/
+adb push dpai-0.1.0-dev.6-debug.apk dpai-agent-0.1.0-dev.6.zip claude-proot.sh resign-apk.sh SHA256SUMS /sdcard/Download/
 ```
 
 Ожидается `…: OK` для каждого файла. Любое `FAILED` — стоп: файл не тот,
 скачайте заново; повторилось — FAIL пункта 1.1.
 
 С телефона без ПК: в браузере откройте
-`https://github.com/dpsmpx/DP_AI_Orcestrator/tree/apk_debug/dpai`,
+`https://github.com/dpsmpx/DPmetaApp/tree/apk_debug/dpai`,
 нажмите на файл и кнопку загрузки «Download raw file». Хеш на телефоне
 сверяется в Termux (§5.2) после `termux-setup-storage`:
 
@@ -193,7 +200,7 @@ Dev»; просмотрщик подписи показывает его как 
 ```sh
 cd ~/storage/downloads
 sha256sum -c SHA256SUMS --ignore-missing
-sh resign-apk.sh dpai-0.1.0-dev.5-release.apk dpai-0.1.0-dev.5-debug.apk
+sh resign-apk.sh dpai-0.1.0-dev.6-debug.apk
 ```
 
 Ожидается для каждого файла `✓ …-author.apk` и строки «сертификат
@@ -202,15 +209,17 @@ SHA-256» и «SHA-1»: одна из них начинается с тех же
 добавьте в `~/.gradle/gradle.properties` строку `dpai.release.certSha256=`
 с SHA-256 сертификата или его началом: с ней чужой ключ — отказ, и файл
 удаляется. Содержимое APK переподпись не
-меняет — только подпись. Дальше ставьте `…-release-author.apk` (§1.3), а
-для `last-crash.txt` — `…-debug-author.apk` (§0.4). В отчёт — начало хеша
+меняет — только подпись. Дальше ставьте `…-debug-author.apk` (§1.3). В отчёт — начало хеша
 сертификата; ключ, пароли и `gradle.properties` — никогда (§0.5).
 
-**Стоит 0.1.0-dev.1 … dev.4 со сборок облака** (отладочный ключ
-облака): APK из `apk_debug` ставится поверх как
-есть, без переподписи (§1.3; с ПК — `adb install -r
-dpai-0.1.0-dev.5-release.apk`), targets, ключ приложения и
-закреплённые ключи хостов остаются.
+**Стоит сборка облака** (отладочный ключ облака). Отладочный ключ у
+каждой облачной сессии свой: SHA-256 сертификата назван в `README.md`
+каталога сборки (у 0.1.0-dev.1 … dev.5 — `60551def…`, у 0.1.0-dev.6 —
+`a6f95acb…`). Совпадает с установленной — APK ставится поверх как есть,
+без переподписи (§1.3; с ПК — `adb install -r
+dpai-0.1.0-dev.6-debug.apk`), targets, ключ приложения и закреплённые
+ключи хостов остаются. Не совпадает — это «сборка с другой подписью»
+ниже.
 
 **В обоих случаях** после установки обновите агента на
 каждом target тем же архивом, как в §5.4 (Termux) или §10 (ПК): версии
@@ -254,22 +263,22 @@ adb uninstall com.dpsmpx.dpai
 
 ### 1.3. Установка
 
-Ставится `dpai-0.1.0-dev.5-release-author.apk` — переподписанный вашим
-ключом (§1.2); без переподписи (стоит сборка облака или ничего) —
-`dpai-0.1.0-dev.5-release.apk`. С ПК (переподписанный — сначала
-`adb pull /sdcard/Download/dpai-0.1.0-dev.5-release-author.apk`):
+Ставится `dpai-0.1.0-dev.6-debug-author.apk` — переподписанный вашим
+ключом (§1.2); без переподписи (стоит сборка облака с тем же ключом или
+ничего) — `dpai-0.1.0-dev.6-debug.apk`. С ПК (переподписанный — сначала
+`adb pull /sdcard/Download/dpai-0.1.0-dev.6-debug-author.apk`):
 
 ```sh
-adb install -r dpai-0.1.0-dev.5-release-author.apk
+adb install -r dpai-0.1.0-dev.6-debug-author.apk
 adb shell dumpsys package com.dpsmpx.dpai | grep -E "versionName|versionCode"
 ```
 
-Ожидается `Success`, затем `versionCode=5` и `versionName=0.1.0-dev.5`.
+Ожидается `Success`, затем `versionCode=6` и `versionName=0.1.0-dev.6`.
 Если `adb install` отвечает `INSTALL_FAILED_USER_RESTRICTED`, у Xiaomi
 выключена «Установка через USB» в «Для разработчиков»; включить её без
 аккаунта Mi часто нельзя — тогда ставьте с телефона.
 
-С телефона: откройте `dpai-0.1.0-dev.5-release-author.apk` (или без
+С телефона: откройте `dpai-0.1.0-dev.6-debug-author.apk` (или без
 `-author`) из «Загрузок», разрешите установку из этого источника, если HyperOS
 спросит, и подтвердите установку. Версия — в «О приложении».
 
@@ -592,14 +601,14 @@ claude --version
 
 ```sh
 cd ~/storage/downloads && sha256sum -c SHA256SUMS --ignore-missing && cd ~
-rm -rf ~/dpai && unzip -q ~/storage/downloads/dpai-agent-0.1.0-dev.5.zip -d ~
+rm -rf ~/dpai && unzip -q ~/storage/downloads/dpai-agent-0.1.0-dev.6.zip -d ~
 chmod +x ~/dpai/bin/dpai
 ~/dpai/bin/dpai version
 ~/dpai/bin/dpai agent doctor
 ```
 
-Ожидается: `dpai-agent-0.1.0-dev.5.zip: OK`; `dpai 0.1.0-dev.5`; одна
-строка JSON, в которой `"ok":true`, `"agentVersion":"0.1.0-dev.5"`,
+Ожидается: `dpai-agent-0.1.0-dev.6.zip: OK`; `dpai 0.1.0-dev.6`; одна
+строка JSON, в которой `"ok":true`, `"agentVersion":"0.1.0-dev.6"`,
 `"termux":true`, у `claude` — `"found":true` и версия, у `git` —
 `"found":true`. Сохраните эту строку для отчёта (в ней нет секретов):
 
@@ -720,7 +729,7 @@ ssh -i ~/.ssh/dpai_redmi -p 8022 u0_a123@127.0.0.1
 | Строка | Ожидание |
 |---|---|
 | связь | ответ за … мс |
-| агент | `dpai 0.1.0-dev.5; Linux aarch64; Java 21…; Termux`, без «обновить агента» — версии приложения и агента совпадают |
+| агент | `dpai 0.1.0-dev.6; Linux aarch64; Java 21…; Termux`, без «обновить агента» — версии приложения и агента совпадают |
 | Claude Code | версия, как в §5.3 |
 | Git | версия |
 | диск, память | свободно … МиБ |
@@ -1334,8 +1343,8 @@ Windows-target на ПК описан в `docs/TESTING.md`, §8: OpenSSH Server
 Телефон дойдёт до него по кабелю через `adb reverse`, без открытия порта в
 сеть.
 
-1. Агент на ПК — той же версии 0.1.0-dev.5 (распакуйте
-   `dpai-agent-0.1.0-dev.5.zip` и направьте на него обёртку
+1. Агент на ПК — той же версии 0.1.0-dev.6 (распакуйте
+   `dpai-agent-0.1.0-dev.6.zip` и направьте на него обёртку
    `dpai-agent.cmd`), иначе «Проверить» покажет «обновить агента».
 2. Проброс порта (порт телефона 2222 → порт ПК 22):
 
@@ -1498,7 +1507,7 @@ PASS всего раздела — 11.2 и 11.3 как описано. Если 
 - Код — `main` с той версией, из которой собран APK:
 
 ```sh
-cd /c/путь/к/DP_AI_Orcestrator
+cd /c/путь/к/DPmetaApp/dpai
 git checkout main && git pull
 git rev-parse --short HEAD
 ```
@@ -1573,11 +1582,11 @@ python3 tools/audit/final_stability.py --endurance build/audits/final-stability/
 отличалось от ожидаемого.
 
 ```text
-# Проверка на устройстве — 0.1.0-dev.5
+# Проверка на устройстве — 0.1.0-dev.6
 
 Дата:
 Телефон: модель (getprop ro.product.model) / Android / HyperOS / RAM / частота экрана
-Приложение: versionName / сборка release
+Приложение: versionName / сборка debug или release
 Termux: версия, откуда (F-Droid / GitHub)
 Claude Code: версия (claude --version)
 Агент: dpai version
@@ -1587,7 +1596,7 @@ Claude Code: версия (claude --version)
 |---|---|---|
 | 1.1 SHA-256 файлов | | |
 | 1.2 переподпись вашим ключом | | начало SHA-256 сертификата; `apksigner` — Termux или Alpine |
-| 1.3 установка, versionName 0.1.0-dev.5 | | удаляли ли старую версию |
+| 1.3 установка, versionName 0.1.0-dev.6 | | удаляли ли старую версию |
 | 2.1 первый запуск, разрешение уведомлений | | |
 | 2.2 настройки HyperOS | | какие пункты нашлись и как называются |
 | 3.1 сводка демо, N сессий | | N = |
