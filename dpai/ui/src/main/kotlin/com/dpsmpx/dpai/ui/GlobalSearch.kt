@@ -1,5 +1,6 @@
 package com.dpsmpx.dpai.ui
 
+import com.dpsmpx.dpai.core.text.Words
 import com.dpsmpx.dpai.accounts.AccountsState
 import com.dpsmpx.dpai.contexts.ContextBundle
 import com.dpsmpx.dpai.contexts.Handoff
@@ -118,16 +119,16 @@ object GlobalSearch {
         fun taskTitle(t: TaskId?) = t?.let { tasks[it]?.title ?: it.value } ?: "—"
 
         add(Kind.TASK, tasks.values.filter { t -> m(t.id.value) || m(t.title) || m(t.objective) || t.scope.orEmpty().any(::m) }
-            .map { Hit(Kind.TASK, it.title, "${it.state.name} · ${it.id.value}" + if (it.archived) " · в архиве" else "", DeepLink.of(DeepLink.Kind.TASK, it.id), it.updatedAt) })
+            .map { Hit(Kind.TASK, it.title, "${Words.task(it.state.name)} · ${it.id.value}" + if (it.archived) " · в архиве" else "", DeepLink.of(DeepLink.Kind.TASK, it.id), it.updatedAt) })
 
         add(Kind.SESSION, source.sessions.sessions.values.filter { s -> m(s.id.value) || m(s.provider.value) || m(s.configDir) || m(s.task.value) || m(s.target.value) }
-            .map { Hit(Kind.SESSION, taskTitle(it.task), "${it.state.name} · ход ${it.turn} · ${it.id.value}", DeepLink.of(DeepLink.Kind.SESSION, it.id), it.updatedAt) })
+            .map { Hit(Kind.SESSION, taskTitle(it.task), "${Words.session(it.state.name)} · ход ${it.turn} · ${it.id.value}", DeepLink.of(DeepLink.Kind.SESSION, it.id), it.updatedAt) })
 
         add(Kind.SUBSCRIPTION, source.accounts.subscriptions.values.filter { s -> m(s.id.value) || m(s.label) || m(s.plan) }
             .map { Hit(Kind.SUBSCRIPTION, it.label, listOfNotNull(it.plan, it.id.value).joinToString(" · "), DeepLink.of(DeepLink.Kind.SUBSCRIPTION, it.id)) })
 
         add(Kind.SLOT, source.accounts.slots.values.filter { s -> m(s.id.value) || m(s.configDir) || m(s.targetId.value) || m(s.subscriptionId.value) }
-            .map { Hit(Kind.SLOT, it.configDir, "${it.state.name} · ${it.targetId.value} · ${it.id.value}", DeepLink.of(DeepLink.Kind.ACCOUNT, it.id)) })
+            .map { Hit(Kind.SLOT, it.configDir, "${Words.account(it.state.name)} · ${it.targetId.value} · ${it.id.value}", DeepLink.of(DeepLink.Kind.ACCOUNT, it.id)) })
 
         add(Kind.PROJECT, listOfNotNull(source.project).filter { p -> m(p.project.value) || m(p.repository?.root) || m(p.integrationBranch) || m(p.worktreeRoot) }
             .map { Hit(Kind.PROJECT, it.repository?.root ?: it.project.value, listOfNotNull(it.integrationBranch?.let { b -> "ветка интеграции $b" }, it.project.value).joinToString(" · "), DeepLink.of(DeepLink.Kind.PROJECT, it.project)) })
@@ -151,7 +152,7 @@ object GlobalSearch {
         add(Kind.HANDOFF, source.handoffs.filter { h ->
             m(h.id.value) || m(h.nextAction) || m(h.summary) || m(h.currentAction) || m(h.commit) || m(h.branch) || m(h.reason.name) ||
                 (h.completed + h.failed + h.openProblems + h.warnings + h.modifiedFiles).any(::m)
-        }.map { Hit(Kind.HANDOFF, it.nextAction, "${taskTitle(it.task)} · ${it.reason.name} · ${it.id.value}", DeepLink.of(DeepLink.Kind.TASK, it.task), it.createdAt) })
+        }.map { Hit(Kind.HANDOFF, it.nextAction, "${taskTitle(it.task)} · ${Words.handoff(it.reason.name)} · ${it.id.value}", DeepLink.of(DeepLink.Kind.TASK, it.task), it.createdAt) })
 
         add(Kind.DIAGNOSTIC, diagnostics(source, ::m, ::taskTitle))
 
@@ -233,15 +234,15 @@ object GlobalSearch {
     private fun diagnostics(source: Source, m: (String?) -> Boolean, title: (TaskId?) -> String): List<Hit> {
         val out = ArrayList<Hit>()
         for (d in source.problems.orEmpty().asReversed()) {
-            if (m(d.code.name) || m(d.message) || m(d.subject)) out += Hit(Kind.DIAGNOSTIC, d.code.name, Redactor.STANDARD.redact(listOfNotNull(d.message, d.subject).joinToString(" · ")), subjectLink(d.subject))
+            if (m(d.code.name) || m(d.message) || m(d.subject)) out += Hit(Kind.DIAGNOSTIC, Words.reason(d.code.name), Redactor.STANDARD.redact(listOfNotNull(d.message, d.subject).joinToString(" · ")), subjectLink(d.subject))
         }
         for (t in source.tasks.tasks.values) {
             val r = t.lastReason ?: continue
-            if (m(r.name)) out += Hit(Kind.DIAGNOSTIC, r.name, "причина задачи · ${t.title}", DeepLink.of(DeepLink.Kind.TASK, t.id), t.updatedAt)
+            if (m(r.name) || m(Words.reason(r.name))) out += Hit(Kind.DIAGNOSTIC, Words.reason(r.name), "причина задачи · ${t.title}", DeepLink.of(DeepLink.Kind.TASK, t.id), t.updatedAt)
         }
         for (s in source.sessions.sessions.values) {
             val r = s.lastReason ?: continue
-            if (m(r.name)) out += Hit(Kind.DIAGNOSTIC, r.name, "причина сессии · ${title(s.task)}", DeepLink.of(DeepLink.Kind.SESSION, s.id), s.updatedAt)
+            if (m(r.name) || m(Words.reason(r.name))) out += Hit(Kind.DIAGNOSTIC, Words.reason(r.name), "причина сессии · ${title(s.task)}", DeepLink.of(DeepLink.Kind.SESSION, s.id), s.updatedAt)
         }
         return out
     }

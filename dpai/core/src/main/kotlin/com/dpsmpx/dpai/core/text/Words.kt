@@ -129,6 +129,42 @@ object Words {
      * «3 дн 4 ч» — вместо `Duration.toString()` («1m», «2h 5m»). Одна на
      * всё приложение: сброс окна подписки, пауза слота, повтор, срок запроса.
      */
+    /** Уровень источника контекста (окно «Контекст», ТЗ, §74; A-15). */
+    fun sourceLevel(level: String): String = when (level) {
+        "GLOBAL" -> "общее"
+        "PROJECT" -> "проект"
+        "REPOSITORY" -> "репозиторий"
+        "TASK" -> "задача"
+        "DOCUMENT" -> "документ"
+        "CODE" -> "код"
+        "HANDOFF" -> "передача"
+        "TOOL" -> "итог инструмента"
+        else -> level
+    }
+
+    /** Секретность источника (A-15). */
+    fun sensitivity(s: String): String = when (s) {
+        "PUBLIC" -> "открытое"
+        "INTERNAL" -> "внутреннее"
+        "SENSITIVE" -> "чувствительное"
+        "SECRET" -> "секрет"
+        else -> s
+    }
+
+    /** Почему передан контекст следующей сессии (handoff, A-15). */
+    fun handoff(reason: String): String = when (reason) {
+        "NEAR_LIMIT" -> "у предела подписки"
+        "MANUAL" -> "по запросу человека"
+        "TARGET_FAILED" -> "target недоступен"
+        "ACCOUNT_EXHAUSTED" -> "лимит слота исчерпан"
+        "APP_STOPPED" -> "приложение остановлено"
+        "PAUSED" -> "пауза"
+        "TURN_FINISHED" -> "ход закончен"
+        "VERIFICATION_FAILED" -> "проверка не прошла"
+        "CONTEXT_OVERFLOW" -> "контекст переполнен"
+        else -> reason
+    }
+
     /**
      * Сбой словами для экрана и `dpai` (аудит удобства 1 ноября 2026, A-17):
      * «нет соединения», а не «ConnectException: null». Имя класса — только в

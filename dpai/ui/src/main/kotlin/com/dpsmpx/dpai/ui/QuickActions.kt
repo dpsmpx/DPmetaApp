@@ -1,5 +1,6 @@
 package com.dpsmpx.dpai.ui
 
+import com.dpsmpx.dpai.core.text.Words
 import com.dpsmpx.dpai.contexts.ContextBundle
 import com.dpsmpx.dpai.core.diagnostics.Redactor
 import com.dpsmpx.dpai.core.ids.TaskId
@@ -75,10 +76,10 @@ object ContextScreens {
             val secret = s.sensitivity == Sensitivity.SENSITIVE || s.sensitivity == Sensitivity.SECRET
             ContextSourceLine(
                 key = s.key,
-                level = s.level.name,
+                level = Words.sourceLevel(s.level.name),
                 chars = s.content.length,
                 text = if (secret) null else clip(Redactor.STANDARD.redact(s.content)),
-                hidden = if (secret) "текст скрыт: ${s.sensitivity.name}" else null,
+                hidden = if (secret) "текст скрыт: ${Words.sensitivity(s.sensitivity.name)}" else null,
             )
         },
         omitted = c.omitted.map { o -> o.key + (o.sameAs?.let { " — повтор $it" } ?: " — не вошёл по бюджету, ≈${o.estimatedTokens} ток.") },
