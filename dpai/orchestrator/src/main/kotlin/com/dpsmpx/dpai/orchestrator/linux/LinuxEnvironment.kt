@@ -32,6 +32,9 @@ class LinuxEnvironment(private val vfs: Vfs, dir: String = DIR) {
 
     private val ready = Vfs.join(dir, READY)
 
+    /** Черновик `resolv.conf` — вне корня гостя: гость его не видит и ссылкой не подменит. */
+    private val dnsDraft = Vfs.join(dir, "resolv.conf.draft")
+
     /** Версия установленной корневой системы; `null` — не установлена или установка оборвалась. */
     fun installed(): String? = vfs.read(ready)?.toString(Charsets.UTF_8)?.trim()?.ifEmpty { null }
 
@@ -63,14 +66,23 @@ class LinuxEnvironment(private val vfs: Vfs, dir: String = DIR) {
     /**
      * DNS гостя — серверы сети телефона ([servers], адреса IPv4 и IPv6).
      * Сети нет — серверов нет, и файл не трогается: прежний лучше пустого.
+     *
+     * `/etc` гостя пишет и сам гость: ссылку на месте `resolv.conf` он может
+     * направить на файл приложения (аудит безопасности 1 ноября 2026, A-3).
+     * Поэтому файл собирается рядом с корневой системой, куда гостю не
+     * дотянуться, и встаёт на место переименованием — оно заменяет запись
+     * каталога, ссылку тоже, а не цель ссылки; `/etc`-ссылка — отказ.
      */
     fun writeDns(servers: List<String>): Outcome<Int> {
         val good = servers.map { it.trim().substringBefore('%') }.filter(::isIpLiteral).distinct().take(MAX_DNS)
         if (good.isEmpty()) return Outcome.failure(DiagCode.VALUE_INVALID, "нет адреса DNS сети телефона: /etc/resolv.conf гостя не изменён", rootfs)
-        val path = Vfs.join(rootfs, "etc/resolv.conf")
+        val etc = Vfs.join(rootfs, "etc")
+        val path = Vfs.join(etc, "resolv.conf")
+        if (vfs.isSymlink(etc)) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "/etc гостя — символьная ссылка: /etc/resolv.conf не записан", etc)
         return try {
-            vfs.mkdirs(Vfs.parentOf(path))
-            vfs.write(path, good.joinToString("") { "nameserver $it\n" }.toByteArray())
+            vfs.mkdirs(etc)
+            vfs.write(dnsDraft, good.joinToString("") { "nameserver $it\n" }.toByteArray())
+            vfs.rename(dnsDraft, path)
             Outcome.success(good.size)
         } catch (e: IOException) {
             Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "/etc/resolv.conf гостя не записан", e, path)))

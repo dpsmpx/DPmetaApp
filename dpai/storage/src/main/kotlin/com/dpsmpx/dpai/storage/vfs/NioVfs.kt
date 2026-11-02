@@ -98,6 +98,8 @@ class NioVfs(private val root: Path) : Vfs {
         Files.createSymbolicLink(link, link.fileSystem.getPath(target))
     }
 
+    override fun isSymlink(path: String): Boolean = Files.isSymbolicLink(p(path))
+
     override fun setMode(path: String, mode: Int) {
         val view = Files.getFileAttributeView(p(path), PosixFileAttributeView::class.java, LinkOption.NOFOLLOW_LINKS) ?: return
         // OWNER_READ … OTHERS_EXECUTE — от бита 0400 к биту 0001.

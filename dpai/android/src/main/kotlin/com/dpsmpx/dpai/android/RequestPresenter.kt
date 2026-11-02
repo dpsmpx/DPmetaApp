@@ -14,6 +14,7 @@ import com.dpsmpx.dpai.core.ids.IdKinds
 import com.dpsmpx.dpai.core.ids.RequestId
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.notifications.RequestAction
+import com.dpsmpx.dpai.orchestrator.commands.Command
 import com.dpsmpx.dpai.ui.AnswerButton
 import com.dpsmpx.dpai.ui.RequestCard
 import java.util.concurrent.ConcurrentHashMap
@@ -92,6 +93,9 @@ object RequestPresenter {
             .setOnlyAlertOnce(true)
             .setAutoCancel(false)
             .setExtras(Bundle().apply { putString(EXTRA_REQUEST, id) })
+            // Вопрос Claude и название задачи — не для экрана блокировки (аудит безопасности, A-12).
+            .setVisibility(AndroidNotification.VISIBILITY_PRIVATE)
+            .setPublicVersion(Notifier.lockScreen(context, CHANNEL, "Запрос контура: нужен ответ"))
             .setContentIntent(Notifier.openLink(context, card.task?.let { "dpai://task/${it.value}" } ?: card.session?.let { "dpai://session/${it.value}" } ?: "dpai://request/$id"))
             .setDeleteIntent(receiver(context, RequestReceiver.DISMISS, id, null, 0, mutable = false))
         // В уведомлении — до трёх кнопок (ограничение Android); остальные варианты — на экране «Запросы».
@@ -131,6 +135,46 @@ object RequestPresenter {
         dismissed += id
     }
 
+    /**
+     * Решающее пришло из `dpai` (D-91): запрос, который человек подтвердит
+     * здесь, — снова уведомлением и окном поверх приложений, даже смахнутый.
+     * Исключение задачи — её запрос с вариантом «принять» (без проверки, без
+     * ревью); такого нет — уведомление к листу задачи, где кнопка
+     * «Принять без проверки».
+     */
+    fun confirmFromCli(context: Context, model: DemoModel, c: Command) {
+        val pending = model.pending()
+        val id = when (c) {
+            is Command.AnswerRequest -> RequestAction.parse(c.uri).valueOrNull()?.request
+            is Command.Waive -> pending.values.firstOrNull { it.task == c.task && it.buttons.any { b -> b.confirm } }?.id
+            else -> null
+        }
+        val card = id?.let { pending[it] }
+        if (card != null) {
+            dismissed -= card.id.value
+            cards[card.id.value] = card
+            show(context, card)
+            RequestOverlay.again(card.id.value)
+            return
+        }
+        if (c !is Command.Waive) return
+        val title = model.liveOrchestrator()?.tasks?.tasks?.get(c.task)?.title ?: "задача"
+        val strict = com.dpsmpx.dpai.core.diagnostics.Redactor.STRICT
+        val channel = Notifier.channelOf(com.dpsmpx.dpai.notifications.NotificationCategory.APPROVAL)
+        Notifier(context)
+        val n = AndroidNotification.Builder(context, channel)
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setContentTitle("dpai просит исключение — подтвердите здесь")
+            .setContentText(strict.redact("«$title»: ${c.reason}"))
+            .setStyle(AndroidNotification.BigTextStyle().bigText(strict.redact("Задача «$title» станет выполненной без проверки. Причина из dpai: ${c.reason}\nПринять — на листе задачи, «Принять без проверки».")))
+            .setVisibility(AndroidNotification.VISIBILITY_PRIVATE)
+            .setPublicVersion(Notifier.lockScreen(context, channel, "Нужно подтверждение на телефоне"))
+            .setAutoCancel(true)
+            .setContentIntent(Notifier.openLink(context, "dpai://task/${c.task.value}"))
+            .build()
+        context.getSystemService(NotificationManager::class.java).notify("$TAG-waive", notificationId(c.task.value), n)
+    }
+
     /** Ответ не принят, а запрос ещё ждёт: показать его снова с кнопками. */
     fun reshow(context: Context, id: String) {
         cards[id]?.let { show(context, it) }
@@ -151,6 +195,8 @@ object RequestPresenter {
             .setContentText(strict.redact(text))
             .setAutoCancel(true)
             .setTimeoutAfter(RESULT_MS)
+            .setVisibility(AndroidNotification.VISIBILITY_PRIVATE)
+            .setPublicVersion(Notifier.lockScreen(context, Notifier.channelOf(com.dpsmpx.dpai.notifications.NotificationCategory.INFO), "Ответ на запрос"))
             .build()
         context.getSystemService(NotificationManager::class.java).notify(TAG + "-result", notificationId(id), n)
     }

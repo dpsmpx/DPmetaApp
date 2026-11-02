@@ -15,15 +15,24 @@ import java.util.zip.GZIPInputStream
  * даёт, `docs/research/LINUX_IN_APP.md`, §9); длинные имена GNU и PAX.
  *
  * Запись — только внутрь корня: путь с `..`, абсолютный или через
- * символьную ссылку, созданную этим же архивом, не распаковывается, а
- * попадает в итог пропущенным. Файл больше [MAX_FILE] — тоже: архив
- * испорчен, а память телефона не резиновая.
+ * символьную ссылку (этого архива или оставшуюся на диске) не
+ * распаковывается, а попадает в итог пропущенным; файл на месте ссылки
+ * заменяет саму ссылку, а не пишется сквозь неё. Файл больше [MAX_FILE] —
+ * тоже пропуск: архив испорчен, а память телефона не резиновая. Длинное имя
+ * больше [MAX_META] и распакованное больше [MAX_TOTAL] — отказ всей
+ * распаковки (аудит безопасности 1 ноября 2026, A-8).
  */
 object RootfsInstaller {
     data class Summary(val files: Int, val dirs: Int, val symlinks: Int, val bytes: Long, val skipped: List<String>)
 
     /** Самый большой файл, который распаковывается целиком в память (в minirootfs 3.24.3 — около 1 МиБ). */
     const val MAX_FILE: Long = 64L * 1024 * 1024
+
+    /** Тело записи имени (`L`, PAX): имя — строка, а не файл. */
+    const val MAX_META: Long = 64L * 1024
+
+    /** Распакованное целиком (minirootfs 3.24.3 — около 8 МиБ): больше — архив не тот. */
+    const val MAX_TOTAL: Long = 512L * 1024 * 1024
 
     private const val BLOCK = 512
 
@@ -47,6 +56,7 @@ object RootfsInstaller {
             if (header.all { it.toInt() == 0 }) break
             val size = octal(header, 124, 12)
             val type = header[156].toInt().toChar()
+            if (type in "Lxg" && size > MAX_META) throw IOException("запись имени в архиве больше ${MAX_META / 1024} КиБ: архив испорчен")
             val name = longName ?: (text(header, 345, 155).let { if (it.isEmpty()) "" else "$it/" } + text(header, 0, 100))
             longName = null
             when (type) {
@@ -69,13 +79,18 @@ object RootfsInstaller {
                 continue
             }
             val parents = rel.split('/').dropLast(1).runningReduce { a, b -> "$a/$b" }
-            if (!Vfs.isSafeRelative(rel) || parents.any { it in links }) {
+            if (!Vfs.isSafeRelative(rel) || throughLink(parents, links, vfs, dir)) {
                 skipped += "$rel (вне каталога)"
                 skip(tar, size + pad(size))
                 continue
             }
             val path = Vfs.join(dir, rel)
             val mode = octal(header, 100, 8).toInt() and 0x1ff
+            // Файл или каталог на месте ссылки — вместо неё, а не сквозь неё.
+            if (type != '2' && (rel in links || vfs.isSymlink(path))) {
+                vfs.delete(path)
+                links -= rel
+            }
             when (type) {
                 '5' -> {
                     vfs.mkdirs(path)
@@ -90,10 +105,14 @@ object RootfsInstaller {
                 }
                 '1' -> {
                     val from = text(header, 157, 100).removePrefix("./")
-                    val content = if (Vfs.isSafeRelative(from) && from !in links) vfs.read(Vfs.join(dir, from)) else null
+                    val fromParents = from.split('/').dropLast(1).runningReduce { a, b -> "$a/$b" }
+                    val safe = Vfs.isSafeRelative(from) && from !in links && !vfs.isSymlink(Vfs.join(dir, from)) && !throughLink(fromParents, links, vfs, dir)
+                    val content = if (safe) vfs.read(Vfs.join(dir, from)) else null
                     if (content == null) {
                         skipped += "$rel (жёсткая ссылка без файла)"
                     } else {
+                        bytes += content.size
+                        if (bytes > MAX_TOTAL) throw IOException("распаковано больше ${MAX_TOTAL / 1024 / 1024} МиБ: архив не тот")
                         vfs.mkdirs(Vfs.parentOf(path))
                         vfs.write(path, content)
                         vfs.setMode(path, mode)
@@ -106,11 +125,12 @@ object RootfsInstaller {
                         skip(tar, size + pad(size))
                         continue
                     }
+                    bytes += size
+                    if (bytes > MAX_TOTAL) throw IOException("распаковано больше ${MAX_TOTAL / 1024 / 1024} МиБ: архив не тот")
                     vfs.mkdirs(Vfs.parentOf(path))
                     vfs.write(path, body(tar, size))
                     vfs.setMode(path, mode)
                     files++
-                    bytes += size
                     continue
                 }
                 else -> skipped += "$rel (тип ${type.code})"
@@ -119,6 +139,10 @@ object RootfsInstaller {
         }
         return Summary(files, dirs, symlinks, bytes, skipped)
     }
+
+    /** Путь идёт через символьную ссылку: этого архива ([links]) или уже лежащую на диске. */
+    private fun throughLink(parents: List<String>, links: Set<String>, vfs: Vfs, dir: String): Boolean =
+        parents.any { it in links || vfs.isSymlink(Vfs.join(dir, it)) }
 
     private fun readBlock(input: InputStream, buf: ByteArray): Boolean {
         var off = 0
@@ -140,7 +164,7 @@ object RootfsInstaller {
     }
 
     private fun octal(h: ByteArray, off: Int, len: Int): Long =
-        text(h, off, len).trim().ifEmpty { "0" }.toLongOrNull(8) ?: throw IOException("испорченный заголовок архива")
+        text(h, off, len).trim().ifEmpty { "0" }.toLongOrNull(8)?.takeIf { it >= 0 } ?: throw IOException("испорченный заголовок архива")
 
     private fun pad(size: Long): Long = (BLOCK - size % BLOCK) % BLOCK
 

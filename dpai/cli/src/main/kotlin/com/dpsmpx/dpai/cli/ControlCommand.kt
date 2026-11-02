@@ -14,6 +14,7 @@ import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.core.serialization.JsonValue
 import com.dpsmpx.dpai.core.text.Words
 import com.dpsmpx.dpai.notifications.RequestKind
+import com.dpsmpx.dpai.orchestrator.control.ControlAuth
 import com.dpsmpx.dpai.storage.vfs.NioVfs
 import com.dpsmpx.dpai.storage.vfs.Vfs
 import java.net.URI
@@ -23,7 +24,7 @@ import java.net.http.HttpResponse
 import java.nio.file.Paths
 import java.time.Duration
 
-/** Ответ канала: код HTTP и тело (null — канал недоступен, [error] — почему). */
+/** Ответ канала: код HTTP и тело (null — канал недоступен или ответ не от приложения, [error] — почему). */
 data class HttpReply(val status: Int, val body: JsonObject?, val error: String? = null)
 
 /** Транспорт к приложению: метод, путь, токен, тело. Подменяется в тестах. */
@@ -31,18 +32,56 @@ fun interface ControlTransport {
     fun call(method: String, path: String, token: String?, body: JsonObject?): HttpReply
 }
 
+/** Ответ на проводе: код, заголовки (имена — в нижнем регистре), тело строкой; [error] — связи нет. */
+data class WireReply(val status: Int, val headers: Map<String, String>, val body: String?, val error: String? = null)
+
+/** HTTP как есть: заголовки и тело — уже готовые. Подменяется в тестах подписи. */
+fun interface Wire {
+    fun send(method: String, path: String, headers: Map<String, String>, body: String?): WireReply
+}
+
 /** HTTP к `127.0.0.1:<port>` (или `DPAI_CONTROL_URL`, например туннель SSH с ПК). */
-class HttpTransport(private val base: String) : ControlTransport {
+class JdkWire(private val base: String) : Wire {
     private val client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build()
 
-    override fun call(method: String, path: String, token: String?, body: JsonObject?): HttpReply = try {
+    override fun send(method: String, path: String, headers: Map<String, String>, body: String?): WireReply = try {
         val b = HttpRequest.newBuilder(URI.create(base + path)).timeout(Duration.ofSeconds(60)).header("Content-Type", "application/json")
-        token?.let { b.header("Authorization", "Bearer $it") }
-        val publisher = body?.let { HttpRequest.BodyPublishers.ofString(CanonicalJson.write(it)) } ?: HttpRequest.BodyPublishers.noBody()
+        headers.forEach { (k, v) -> b.header(k, v) }
+        val publisher = body?.let { HttpRequest.BodyPublishers.ofString(it) } ?: HttpRequest.BodyPublishers.noBody()
         val r = client.send(b.method(method, publisher).build(), HttpResponse.BodyHandlers.ofString(Charsets.UTF_8))
-        HttpReply(r.statusCode(), JsonParser().parse(r.body()).valueOrNull() as? JsonObject)
+        WireReply(r.statusCode(), r.headers().map().mapNotNull { (k, v) -> v.firstOrNull()?.let { k.lowercase() to it } }.toMap(), r.body())
     } catch (e: Exception) {
-        HttpReply(0, null, "${e.javaClass.simpleName}: ${e.message}")
+        WireReply(0, emptyMap(), null, "${e.javaClass.simpleName}: ${e.message}")
+    }
+}
+
+/**
+ * Подписанный канал (D-92): токен в сеть не уходит — запрос несёт время,
+ * одноразовое значение и подпись, а ответ без верной подписи приложения
+ * не принимается: на порту могла оказаться чужая программа. Без токена —
+ * только сопряжение: подписывать ещё нечем.
+ */
+class SignedTransport(private val wire: Wire, private val clock: Clock = Clock.SYSTEM, private val random: RandomSource = RandomSource.secure()) : ControlTransport {
+    override fun call(method: String, path: String, token: String?, body: JsonObject?): HttpReply {
+        val text = body?.let(CanonicalJson::write)
+        if (token == null) return parsed(wire.send(method, path, emptyMap(), text))
+        if (!ControlAuth.validToken(token)) return HttpReply(0, null, "токен в ~/.config/dpai/control.json повреждён: dpai control pair <код>")
+        val nonce = ControlAuth.newNonce(random)
+        val r = wire.send(method, path, ControlAuth.requestHeaders(token, method, path, text, clock.now().epochMillis, nonce), text)
+        if (r.error != null) return HttpReply(0, null, r.error)
+        if (!ControlAuth.responseValid(token, nonce, r.status, r.body.orEmpty(), r.headers[ControlAuth.SIGNATURE])) {
+            // Отказ в подписи приложение не подписывает: тело ему не верим, а код объясняем.
+            return if (r.status == 401) HttpReply(401, null, UNSIGNED_401) else HttpReply(0, null, UNSIGNED)
+        }
+        return parsed(r)
+    }
+
+    private fun parsed(r: WireReply): HttpReply =
+        if (r.error != null) HttpReply(0, null, r.error) else HttpReply(r.status, r.body?.let { JsonParser().parse(it).valueOrNull() as? JsonObject })
+
+    companion object {
+        const val UNSIGNED = "ответ без верной подписи приложения: на порту — не DPmetaApp или его старая версия (D-92)"
+        const val UNSIGNED_401 = "отказ: подпись запроса не принята — токен отозван, часы расходятся больше чем на 2 мин или на порту не DPmetaApp"
     }
 }
 
@@ -56,7 +95,7 @@ class ControlCommand(
     private val out: (String) -> Unit,
     private val err: (String) -> Unit,
     private val config: Vfs = defaultConfig(),
-    private val transport: (Int) -> ControlTransport = { port -> HttpTransport(System.getenv("DPAI_CONTROL_URL") ?: "http://127.0.0.1:$port") },
+    private val transport: (Int) -> ControlTransport = { port -> SignedTransport(JdkWire(System.getenv("DPAI_CONTROL_URL") ?: "http://127.0.0.1:$port")) },
 ) {
     private val keys = IdGenerator(Clock.SYSTEM, RandomSource.secure())
     private var json = false
@@ -381,7 +420,8 @@ class ControlCommand(
     private fun send(c: MutableMap<String, JsonValue>, confirmed: Boolean = false, key: Boolean = true): Int {
         if (key) c["key"] = JsonString(keys.next(IdKinds.OPERATION).value)
         if (confirmed) c["confirmed"] = JsonBool(true)
-        val r = call("POST", "/v1/commands", JsonObject(c)) ?: return FAILED
+        var waiting = false
+        val r = call("POST", "/v1/commands", JsonObject(c)) { waiting = true } ?: return if (waiting) WAITING else FAILED
         if (json) return print(r)
         // Словами (D-89): «принято: task.hold», причина — фразой; коды — в --json.
         out("${str(r, "status")?.let(Words::operation)}: ${str(r, "operation")}${str(r, "value")?.let { " → $it" } ?: ""}")
@@ -391,22 +431,27 @@ class ControlCommand(
 
     private fun state(): JsonObject? = call("GET", "/v1/state", null)
 
-    /** Вызов с токеном; отказ — сообщение и `null`. */
-    private fun call(method: String, path: String, body: JsonObject?): JsonObject? {
+    /** Вызов с подписью токеном (D-92); отказ — сообщение и `null`, `202` — ещё и [onWaiting]. */
+    private fun call(method: String, path: String, body: JsonObject?, onWaiting: () -> Unit = {}): JsonObject? {
         val cfg = config.read(FILE)?.let { JsonParser().parse(String(it, Charsets.UTF_8)).valueOrNull() as? JsonObject }
             ?: return null.also { err("нет сопряжения: в приложении Targets → «Командная строка» → «Показать код», затем dpai control pair <код>") }
         val port = (cfg["port"] as? JsonNumber)?.toLongExact()?.toInt() ?: DEFAULT_PORT
         val r = transport(port).call(method, path, str(cfg, "token"), body)
         if (r.status == 200 && r.body != null) return r.body
-        fail(r)
+        if (fail(r) == WAITING) onWaiting()
         return null
     }
 
     private fun fail(r: HttpReply): Int {
         when {
+            r.status == 401 -> err(r.error ?: "токен не подходит: dpai control pair <новый код>")
             r.body == null -> err("канал недоступен (${r.error ?: "код ${r.status}"}): приложение открыто и служба контроллера работает?")
-            r.status == 401 -> err("токен не подходит: dpai control pair <новый код>")
             r.status == 409 -> err("опасное действие: повторите с --yes")
+            // Решающее (D-91): не применено, ждёт человека на телефоне — не успех и не сбой.
+            r.status == 202 -> {
+                list(r.body, "diagnostics").forEach { err(diagnostic(it)) }
+                return WAITING
+            }
             else -> list(r.body, "diagnostics").forEach { err(diagnostic(it)) }
         }
         if (r.body != null && r.status == 200) return OK
@@ -451,6 +496,9 @@ class ControlCommand(
         const val FAILED = 1
         const val USAGE_ERROR = 2
 
+        /** Решающее не применено: ждёт подтверждения на телефоне (D-91). */
+        const val WAITING = 3
+
         private const val TASK_USAGE = "dpai task add «название» «что сделать» [--priority HIGH] [--class trivial] [--model haiku] [--effort low] [--budget 0.25] [--review code,security] [--scope путь,путь] [--depends-on id,id]\n" +
             "dpai task <id> hold|resume|first|retry [--text «…»]|verify|messages|diff [--stat]|reviews|priority <P>|policy --class <к> …|scope [путь…]|depends [id…]|archive|unarchive|cancel --yes|waive --reason «…» --yes\n" +
             "dpai task archive-done   — все завершённые в архив"
@@ -465,7 +513,8 @@ class ControlCommand(
             |  dpai search «запрос»      поиск по задачам, сессиям, веткам, коммитам, событиям (ТЗ, §75)
             |  dpai limit <процент>      порог «у предела»;  dpai sessions-limit <n|off>
             |  dpai target|slot <id> on|off
-            |  --json — ответ как есть; опасное — с --yes
+            |  --json — ответ как есть; опасное — с --yes; решающее (слияние, «принять», исключение) —
+            |    подтверждением на телефоне: код выхода 3 — «ждёт телефона»
         """.trimMargin()
 
         private fun defaultConfig(): Vfs = NioVfs(Paths.get(System.getProperty("user.home") ?: ".", ".config", "dpai").also { it.toFile().mkdirs() })

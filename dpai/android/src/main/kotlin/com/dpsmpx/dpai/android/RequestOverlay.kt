@@ -89,6 +89,11 @@ object RequestOverlay {
         runCatching { NioVfs(context.filesDir.toPath()).write(POSITION, "$y\n".toByteArray()) }
     }
 
+    /** Подтверждение из `dpai` (D-91): окно снова доступно запросу, даже скрытому «Скрыть окно». */
+    fun again(id: String) {
+        later -= id
+    }
+
     /** Запрос закрыт ответом: его окно убирается. */
     fun closed(id: String) {
         if (shown?.first == id) hide()

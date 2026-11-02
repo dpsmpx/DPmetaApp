@@ -38,6 +38,9 @@ class Notifier(private val context: Context) {
             .setStyle(AndroidNotification.BigTextStyle().bigText(n.body))
             .setOnlyAlertOnce(true)
             .setAutoCancel(true)
+            // Названия задач и текст — не для экрана блокировки (аудит безопасности, A-12).
+            .setVisibility(AndroidNotification.VISIBILITY_PRIVATE)
+            .setPublicVersion(lockScreen(context, channel(n.category), title(n.category)))
             // Нажатие открывает приложение — то же окно, а не второе поверх (ревью 8 октября 2026);
             // ссылка уведомления — к задаче или сессии (ТЗ, §76).
             .setContentIntent(n.link?.let { openLink(context, it.toUri()) } ?: openApp(context))
@@ -68,6 +71,10 @@ class Notifier(private val context: Context) {
         )
 
         fun channelOf(c: NotificationCategory) = channel(c)
+
+        /** Версия для экрана блокировки: только что есть уведомление, без текста (A-12). */
+        fun lockScreen(context: Context, channel: String, title: String): AndroidNotification =
+            AndroidNotification.Builder(context, channel).setSmallIcon(android.R.drawable.stat_notify_more).setContentTitle(title).build()
 
         private fun channel(c: NotificationCategory) = "dpai-${c.name.lowercase()}"
 

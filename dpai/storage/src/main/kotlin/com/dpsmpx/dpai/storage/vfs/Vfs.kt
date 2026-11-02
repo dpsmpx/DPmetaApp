@@ -70,6 +70,13 @@ interface Vfs {
     @Throws(IOException::class)
     fun symlink(path: String, target: String): Unit = throw IOException("символьные ссылки не поддерживаются")
 
+    /**
+     * Запись [path] — символьная ссылка (сама запись, без перехода по ней).
+     * Нужна, где в каталог пишет и чужой код — гость Linux-среды (D-75): запись
+     * через его ссылку ушла бы к её цели. Где ссылок нет — `false`.
+     */
+    fun isSymlink(path: String): Boolean = false
+
     /** Права POSIX — младшие 9 бит [mode] (`rwxrwxrwx`); где прав POSIX нет (Windows), ничего не делает. */
     @Throws(IOException::class)
     fun setMode(path: String, mode: Int) {}
