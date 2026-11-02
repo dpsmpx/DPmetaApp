@@ -121,17 +121,21 @@ class EventJournal private constructor(
     /**
      * Записи с номера [from] по порядку, по одному сегменту в памяти;
      * [body] возвращает `false`, чтобы остановиться. Запечатанный сегмент,
-     * который не читается, — `IllegalStateException`: его записи когда-то
-     * были подтверждены (D-24), молча их пропустить нельзя.
+     * который не читается, — [JournalSegmentUnreadable]: его записи когда-то
+     * были подтверждены (D-24), молча их пропустить нельзя, а оболочка
+     * называет причину словами (аудит надёжности, A-6).
      */
     fun forEachRecord(from: Long = 1, body: (JournalRecord) -> Boolean) {
         val names = sealed.toList()
         for ((i, name) in names.withIndex()) {
             val nextFirst = names.getOrNull(i + 1)?.let(::firstOf) ?: (offset + 1)
             if (nextFirst <= from) continue
-            val bytes = checkNotNull(vfs.read(name)) { "запечатанный сегмент $name пропал" }
+            val bytes = vfs.read(name) ?: throw JournalSegmentUnreadable("запечатанный сегмент $name пропал")
             val scan = scan(bytes, null)
-            check(scan.badLine == null) { "запечатанный сегмент $name испорчен (запись №${scan.badLine})" }
+            if (scan.badLine != null) throw JournalSegmentUnreadable("запечатанный сегмент $name испорчен (запись №${scan.badLine})")
+            // Стык с началом следующего: разрыв — пропавший между ними сегмент, а не короткая история.
+            val last = scan.loaded.lastOrNull()?.position ?: (firstOf(name) - 1)
+            if (last + 1 != nextFirst) throw JournalSegmentUnreadable("пропали записи №${last + 1}…${nextFirst - 1} после сегмента $name")
             for (r in scan.loaded) if (r.position >= from && !body(r)) return
         }
         for (r in records) if (r.position >= from && !body(r)) return
@@ -272,6 +276,11 @@ class EventJournal private constructor(
             } catch (e: IOException) {
                 return Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "каталог журнала не прочитан", e, path))
             }.toMutableList()
+            // История начинается с записи №1: первый сегмент пропал — подтверждённые записи потеряны,
+            // а не «журнал короче» (D-24; аудит надёжности, A-6). Сегменты не удаляются намеренно.
+            sealed.firstOrNull()?.takeIf { firstOf(it) != 1L }?.let { first ->
+                return Outcome.failure(DiagCode.JOURNAL_CORRUPTED, "пропал запечатанный сегмент с записями №1…${firstOf(first) - 1}", first)
+            }
             // Стык: последняя запись последнего запечатанного сегмента — начало цепочки активного.
             var offset = 0L
             var baseHash = GENESIS
@@ -301,6 +310,15 @@ class EventJournal private constructor(
             val badLine = scan.badLine
             val linesAfterBad = scan.linesAfterBad
             val diags = mutableListOf<Diagnostic>()
+            // Первая запись активного цела сама по себе, но не стыкуется с последним сегментом: между ними пропал
+            // сегмент. Это не порча хвоста — карантин отрезал бы целый активный файл (A-6), поэтому отказ и при
+            // подтверждённом карантине.
+            if (badLine == 1) {
+                val own = scan(bytes, null).loaded.firstOrNull()?.position
+                if (own != null && own > offset + 1) {
+                    return Outcome.failure(DiagCode.JOURNAL_CORRUPTED, "пропал запечатанный сегмент с записями №${offset + 1}…${own - 1}", segmentName(path, offset + 1))
+                }
+            }
             if (badLine != null && linesAfterBad > 0 && !quarantineCorruption) {
                 return Outcome.failure(
                     DiagCode.JOURNAL_CORRUPTED,
@@ -483,3 +501,11 @@ class EventJournal private constructor(
         }
     }
 }
+
+/**
+ * Запечатанный сегмент журнала пропал или испорчен (D-24): его записи были
+ * подтверждены, пропустить их нельзя, а отрезать хвост — не поможет: сегмент
+ * не в хвосте. Отдельный тип — чтобы оболочка сказала это человеку, а не
+ * показала имя исключения.
+ */
+class JournalSegmentUnreadable(message: String) : IllegalStateException(message)

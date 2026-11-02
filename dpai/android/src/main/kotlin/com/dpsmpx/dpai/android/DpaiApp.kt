@@ -134,6 +134,10 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
+            } catch (e: com.dpsmpx.dpai.storage.journal.JournalSegmentUnreadable) {
+                failure = "старая часть журнала контроллера не читается (${e.message}): её записи подтверждены и молча не пропускаются — " +
+                    "контроллер не запустится, пока файл не восстановлен (папка live в данных приложения)"
+                null
             } catch (e: com.dpsmpx.dpai.ui.JournalNeedsConfirmation) {
                 corrupted = e.message
                 failure = "журнал контроллера испорчен — нужно ваше решение"

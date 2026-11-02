@@ -206,7 +206,29 @@ internal class LocalChannel(
     @Volatile
     private var done = false
 
+    /**
+     * Ввод — своим потоком (аудит надёжности 2 ноября 2026, A-7): запись в
+     * псевдотерминал блокируется, пока гость не читает (`apk add`, `npm i`),
+     * а пишут из главного потока под замком транспорта — вставка больше
+     * буфера ядра давала ANR. Очередь ограничена: гость не читает совсем —
+     * лишний ввод отбрасывается, а не копится в памяти.
+     */
+    private val input = java.util.concurrent.LinkedBlockingQueue<ByteArray>(MAX_PENDING_WRITES)
+
     init {
+        thread(name = "dpai-term-linux-in", isDaemon = true) {
+            try {
+                while (!done) {
+                    val b = input.poll(1, java.util.concurrent.TimeUnit.SECONDS) ?: continue
+                    child.stdin.write(b)
+                    child.stdin.flush()
+                }
+            } catch (_: java.io.IOException) {
+                // Оболочка вышла: поток вывода сообщит закрытие.
+            } catch (_: InterruptedException) {
+                // Канал закрыт.
+            }
+        }
         thread(name = "dpai-term-linux", isDaemon = true) {
             val buf = ByteArray(8192)
             try {
@@ -230,18 +252,18 @@ internal class LocalChannel(
     override val isOpen: Boolean get() = !done
 
     override fun write(bytes: ByteArray) {
-        try {
-            child.stdin.write(bytes)
-            child.stdin.flush()
-        } catch (_: java.io.IOException) {
-            // Оболочка уже вышла: поток вывода сообщит закрытие.
-        }
+        if (!done) input.offer(bytes)
     }
 
     override fun resize(cols: Int, rows: Int) = child.resize(com.dpsmpx.dpai.execution.linux.WindowSize(cols, rows))
 
     override fun close() {
         if (!done) com.dpsmpx.dpai.android.linux.LinuxSetup.hangUp(child)
+    }
+
+    private companion object {
+        /** Кусков ввода в очереди: вставка — несколько кусков, нажатия — по одному. */
+        const val MAX_PENDING_WRITES = 1024
     }
 }
 

@@ -95,10 +95,14 @@ class DemoModel(
         val targets = controller.targets()
         if (targets.any { it.configDir != null }) {
             val key = targets to controller.project()
-            if (live == null || liveFor != key) {
+            // Журнал закрыт после отказа записи (кончилось место, A-4): раз в минуту — контур заново, журнал
+            // открывается с проверкой хвоста; места всё ещё нет — следующая запись снова закроет его.
+            val broken = live?.orchestrator?.storageBroken == true && Clock.SYSTEM.monotonicNanos() - builtAt >= REOPEN_NANOS
+            if (live == null || liveFor != key || broken) {
                 // Потоки событий прежней системы (D-76) не переживают её: каналы SSH закрываются.
                 live?.close()
                 val started = Clock.SYSTEM.monotonicNanos()
+                builtAt = Clock.SYSTEM.monotonicNanos()
                 live = controller.live(key.first, key.second, onEvents, onProblem)
                 liveFor = key
                 perf("контроллер построен", started)
@@ -115,6 +119,9 @@ class DemoModel(
             }
             ).also { built = it }
     }
+
+    /** Когда контур построен последний раз — для пересборки после отказа журнала не чаще раза в минуту. */
+    private var builtAt = 0L
 
     private var drainedOf: ControlView? = null
     private var drained = 0L
@@ -509,6 +516,9 @@ class DemoModel(
 
         /** Сколько ждать итога команды: такт с вызовом target идёт секунды, не минуты. */
         private const val WAIT_MS = 30_000L
+
+        /** Пересборка контура со сломанным журналом — не чаще раза в минуту: сборка ходит по SSH. */
+        private val REOPEN_NANOS = TimeUnit.MINUTES.toNanos(1)
 
         /** Не дождались итога — команда в журнале (D-94): применится после текущего шага контура, переживёт перезапуск. */
         const val QUEUED = "принято: применится после текущего шага контура (идёт вызов target)"

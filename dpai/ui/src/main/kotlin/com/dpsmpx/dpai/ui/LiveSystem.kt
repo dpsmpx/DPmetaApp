@@ -128,7 +128,10 @@ class LiveSystem(
         }
         is Outcome.Failure -> {
             val corrupted = opened.errors.firstOrNull { it.code == com.dpsmpx.dpai.core.diagnostics.DiagCode.JOURNAL_CORRUPTED }
-            if (corrupted != null) throw JournalNeedsConfirmation(corrupted.message)
+            // Порча в активном файле лечится карантином хвоста — решением человека (D-24); в запечатанном
+            // сегменте — нет: хвост там ни при чём (A-6).
+            if (corrupted != null && corrupted.subject == "live.journal") throw JournalNeedsConfirmation(corrupted.message)
+            if (corrupted != null) throw com.dpsmpx.dpai.storage.journal.JournalSegmentUnreadable("${corrupted.message}: ${corrupted.subject}")
             error("журнал контроллера не открылся: ${opened.diagnostics.joinToString { "${it.code}: ${it.message}" }}")
         }
     }

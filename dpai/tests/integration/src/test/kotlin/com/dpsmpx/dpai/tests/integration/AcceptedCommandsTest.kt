@@ -99,6 +99,37 @@ class AcceptedCommandsTest {
         assertEquals(o.accepted, AcceptedProjection.decode(AcceptedProjection.encode(o.accepted)).valueOrNull())
     }
 
+    /**
+     * Аудит надёжности, A-4: журнал закрылся после отказа записи (кончилось
+     * место) — контур не делает внешних действий: команды — отказ с причиной,
+     * такт — ничего; оживляет его оболочка, открыв журнал заново.
+     */
+    @Test
+    fun brokenJournalStopsActions() {
+        var full = false
+        val vfs = object : com.dpsmpx.dpai.storage.vfs.Vfs by NioVfs(dir) {
+            override fun appendDurably(path: String, bytes: ByteArray) {
+                if (full) throw java.io.IOException("No space left on device")
+                NioVfs(dir).appendDurably(path, bytes)
+            }
+        }
+        journal = (EventJournal.open(vfs, "journal.log") as Outcome.Success).value
+        val runner = MockRunner.create(clock, RandomSource.seeded(1), host) { _, _ -> MockScenario.SLOW_OUTPUT }
+        val o = Orchestrator(
+            clock, ids, RandomSource.seeded(944), journal, runner, ProjectConfig(project, null, dir.toString(), null), targets, null,
+            Verifier({ _, _, _ -> Outcome.success(Completed(0, emptyList(), emptyList())) }, clock), AccountsState.EMPTY,
+        )
+        val task = o.addTask("задача", "цель").valueOrNull()!!
+        full = true
+        runCatching { o.addTask("вторая", "цель") }
+        assertTrue(o.storageBroken, "отказ записи закрыл журнал")
+        full = false
+        val r = o.execute(Command.Cancel(task))
+        assertEquals(DiagCode.STORAGE_UNAVAILABLE, r.diagnostics.first().code, "действие — не без записи итога")
+        o.tick()
+        assertTrue(host.runIds().isEmpty(), "ни одного хода, пока журнал не открыт заново")
+    }
+
     @Test
     fun closedJournalAcceptsNothing() {
         val o = boot()

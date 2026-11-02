@@ -37,6 +37,31 @@ class EventJournalSegmentsTest {
         assertEquals(9L, reopened.position)
     }
 
+    /** Аудит надёжности, A-6: пропавший запечатанный сегмент — своим типом, оболочка называет причину словами. */
+    @Test
+    fun missingSealedSegmentIsNamed() {
+        val vfs = SimulatedVfs()
+        val f = EventFactory()
+        val j = open(vfs)
+        repeat(11) { assertTrue(j.append(f.next()).isSuccess) }
+        val last = SimulatedVfs().also { copy -> vfs.list("data").forEach { n -> copy.write("data/$n", vfs.read("data/$n")!!) } }
+        val again = SimulatedVfs().also { copy -> vfs.list("data").forEach { n -> copy.write("data/$n", vfs.read("data/$n")!!) } }
+        // Пропал первый сегмент: история не «короче», а потеряна — отказ открытия.
+        vfs.delete("data/journal.log.seg-000000000001")
+        val first = EventJournal.open(vfs, path, segmentSize = 3)
+        assertEquals(DiagCode.JOURNAL_CORRUPTED, (first as Outcome.Failure).errors.single().code)
+        assertTrue("№1…3" in first.errors.single().message, first.errors.single().message)
+        // Пропал сегмент в середине: чтение истории называет разрыв, а не пропускает его.
+        again.delete("data/journal.log.seg-000000000004")
+        val e = kotlin.test.assertFailsWith<com.dpsmpx.dpai.storage.journal.JournalSegmentUnreadable> { open(again).records(1) }
+        assertTrue("№4…6" in e.message.orEmpty(), e.message)
+        // Пропал последний запечатанный: активный файл цел, но не стыкуется — не порча хвоста, и карантин его не режет.
+        last.delete("data/journal.log.seg-000000000007")
+        val gap = EventJournal.open(last, path, quarantineCorruption = true, segmentSize = 3)
+        assertEquals("data/journal.log.seg-000000000007", (gap as Outcome.Failure).errors.single().subject)
+        assertTrue(last.read(path)!!.isNotEmpty(), "активный файл не тронут")
+    }
+
     @Test
     fun groupCommitAndDuplicatesWithinActiveSegment() {
         val vfs = SimulatedVfs()

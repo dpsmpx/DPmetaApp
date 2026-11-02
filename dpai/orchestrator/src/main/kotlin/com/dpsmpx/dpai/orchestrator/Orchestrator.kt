@@ -643,6 +643,10 @@ class Orchestrator(
 
     /** Такт контура: команды — в начале и между вызовами target (D-42, п. 1). */
     fun tick() {
+        // Журнал закрыт после отказа записи (кончилось место): ни ходов, ни слияний, ни отмен — внешнее
+        // действие без записи итога разошлось бы с журналом (ТЗ, §80; аудит надёжности, A-4). Оживляет
+        // контур оболочка — открыв журнал заново, когда место есть.
+        if (journal.isBroken) return
         runCommands()
         deliverIdleQueues()
         commitTasks(tasksLogic.promote(tasks, clock.now()))
@@ -1865,6 +1869,12 @@ class Orchestrator(
     fun execute(command: Command): OperationResult<*> {
         val key = command.key
         val provenance = Provenance(Actor(ActorKind.USER, (command as? Command.AnswerRequest)?.by ?: "автор"))
+        if (journal.isBroken) {
+            return OperationResult.record(
+                command.operation, provenance, ids, clock,
+                Outcome.failure(DiagCode.STORAGE_UNAVAILABLE, "журнал не пишет (кончилось место?): действия остановлены, пока контроллер не откроет его заново"),
+            )
+        }
         if (key != null && !Command.KEY.matches(key)) {
             return OperationResult.record(command.operation, provenance, ids, clock, Outcome.failure(DiagCode.VALUE_INVALID, "ключ команды — [A-Za-z0-9_.:-]{8,80}"))
         }
@@ -2494,6 +2504,9 @@ class Orchestrator(
         }
         if (waits) ask(purpose, r.kind, r.subject, r.title, r.body, r.options, r.task, r.session)
     }
+
+    /** Журнал закрыт после отказа записи (A-4): контур стоит, пока оболочка не откроет журнал заново. */
+    val storageBroken: Boolean get() = journal.isBroken
 
     /** Сколько записей в журнале контура (рост хранилища, ТЗ, §116). */
     fun eventCount(): Long = journal.position
