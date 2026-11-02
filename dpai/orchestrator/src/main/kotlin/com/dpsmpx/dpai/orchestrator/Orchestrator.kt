@@ -34,6 +34,8 @@ import com.dpsmpx.dpai.core.clock.RandomSource
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.Diagnostic
 import com.dpsmpx.dpai.core.events.EventEnvelope
+import com.dpsmpx.dpai.core.events.EventType
+import com.dpsmpx.dpai.core.events.StreamRef
 import com.dpsmpx.dpai.core.ids.ApprovalId
 import com.dpsmpx.dpai.core.ids.ContextId
 import com.dpsmpx.dpai.core.ids.ExecutionTargetId
@@ -320,6 +322,17 @@ class Orchestrator(
     /** Очередь команд (D-42, п. 1): кладёт любой поток, исполняет поток такта ([runCommands]). */
     val inbox = CommandInbox()
 
+    /** Принятые и не исполненные команды (D-94) — из журнала; меняется только под [acceptLock]. */
+    var accepted: com.dpsmpx.dpai.orchestrator.commands.AcceptedState = com.dpsmpx.dpai.orchestrator.commands.AcceptedState.EMPTY
+        private set
+
+    /**
+     * Приём команды ([accept]) идёт из чужого потока, а снимок и отметка
+     * исполнения — из потока такта: замок держит их порознь, чтобы снимок не
+     * лёг между номером события в потоке и его записью (D-94).
+     */
+    private val acceptLock = Any()
+
     // Хранилища документов задач — выше `init`: его `loadTaskDocuments` пишет в них при перезапуске, а свойство,
     // объявленное ниже `init`, в этот миг ещё null (NullPointerException на устройстве, 11 октября 2026).
 
@@ -351,6 +364,7 @@ class Orchestrator(
             mergesState = restore(MergesProjection, MergesState.EMPTY)
             requests = restore(UserRequestsProjection, UserRequestsState.EMPTY)
             operations = restore(OperationsProjection, OperationsState.EMPTY)
+            accepted = restore(com.dpsmpx.dpai.orchestrator.commands.AcceptedProjection, com.dpsmpx.dpai.orchestrator.commands.AcceptedState.EMPTY)
             control = restore(com.dpsmpx.dpai.orchestrator.commands.ControlProjection, com.dpsmpx.dpai.orchestrator.commands.ControlState.EMPTY)
             lastSnapshotAt = journal.position
             // Дерево задачи узнаётся по её ветке (`prepareWorktree`): владельцы и пути — из журнала.
@@ -360,6 +374,16 @@ class Orchestrator(
         }
         documents?.let(::loadTaskDocuments)
         config.repository?.let { repo -> commitWorktrees(Worktrees.register(worktrees, repo, clock.now()).valueOrNull().orEmpty()) }
+        // Принятые до перезапуска и не исполненные команды (D-94) — снова в очередь, по порядку приёма.
+        for (a in accepted.pending.values) {
+            when (val parsed = com.dpsmpx.dpai.orchestrator.control.CommandCodec.decode(a.command, a.by)) {
+                is Outcome.Success -> inbox.submit(parsed.value.command, a.id)
+                is Outcome.Failure -> {
+                    problems += Diagnostic.of(DiagCode.STORAGE_CORRUPTED, "принятая команда ${a.id} не читается — не исполнена", causes = parsed.errors)
+                    settleAccepted(a.id, "UNREADABLE")
+                }
+            }
+        }
     }
 
     /** Ключ документа задачи: id в нижнем регистре — ключи документов строчные. */
@@ -463,7 +487,7 @@ class Orchestrator(
      * Снимки всех проекций, если с прошлого прошло [snapshotEvery] записей.
      * Зовётся между шагами, когда память совпадает с журналом (пачек нет).
      */
-    private fun maybeSnapshot() {
+    private fun maybeSnapshot(): Unit = synchronized(acceptLock) {
         val store = snapshots ?: return
         if (pending != null || journal.position - lastSnapshotAt < snapshotEvery) return
         fun <S> save(p: Projection<S>, state: S) {
@@ -478,6 +502,7 @@ class Orchestrator(
         save(MergesProjection, mergesState)
         save(UserRequestsProjection, requests)
         save(OperationsProjection, operations)
+        save(com.dpsmpx.dpai.orchestrator.commands.AcceptedProjection, accepted)
         save(com.dpsmpx.dpai.orchestrator.commands.ControlProjection, control)
         lastSnapshotAt = journal.position
     }
@@ -1784,7 +1809,54 @@ class Orchestrator(
      * Исполнить пришедшие команды — только поток такта и только в
      * безопасной точке: вне пачки, когда память совпадает с журналом.
      */
-    fun runCommands(): Int = if (pending != null) 0 else inbox.drain(::execute)
+    fun runCommands(): Int = if (pending != null) 0 else inbox.drain(::execute, ::settleAccepted)
+
+    /**
+     * Принять команду, когда такт занят вызовом target (D-94): сначала
+     * событие `COMMAND_ACCEPTED` в журнал — команда переживёт смерть процесса
+     * и пересборку контура, — затем в очередь. Любой поток. Журнал не принял
+     * запись — отказ, а не обещание «применится». У команды без ключа ключом
+     * становится id операции: исполненная до перезапуска второй раз не
+     * действует (ТЗ, §5.4); ответ на запрос повторяется без действия и так.
+     * Факт показа запроса (`Delivered`) — не решение человека: в журнал не
+     * пишется.
+     */
+    fun accept(command: Command): Outcome<java.util.concurrent.CompletableFuture<OperationResult<*>>> {
+        if (command is Command.Delivered) return Outcome.success(inbox.submit(command))
+        synchronized(acceptLock) {
+            val id = ids.next(IdKinds.OPERATION)
+            val by = (command as? Command.AnswerRequest)?.by ?: (command as? Command.Waive)?.by ?: "автор"
+            val c = if (command is Command.AnswerRequest || command.key != null) {
+                command
+            } else {
+                val json = com.dpsmpx.dpai.orchestrator.control.CommandCodec.encode(command)
+                com.dpsmpx.dpai.orchestrator.control.CommandCodec.decode(
+                    com.dpsmpx.dpai.core.serialization.JsonObject(LinkedHashMap(json.fields).apply { put("key", com.dpsmpx.dpai.core.serialization.JsonString(id.value)) }), by,
+                ).valueOrNull()?.command ?: command
+            }
+            val a = com.dpsmpx.dpai.orchestrator.commands.AcceptedCommand(id, by, com.dpsmpx.dpai.orchestrator.control.CommandCodec.encode(c), clock.now())
+            val env = recorder.envelope(EventType.COMMAND_ACCEPTED, StreamRef.of(id), a.at, com.dpsmpx.dpai.orchestrator.commands.AcceptedProjection.payload(a))
+            val r = journal.append(env)
+            if (r is Outcome.Failure) {
+                return Outcome.Failure(listOf(Diagnostic.of(DiagCode.STORAGE_UNAVAILABLE, "не принято: журнал не записал команду — повторите", causes = r.errors)))
+            }
+            accepted = com.dpsmpx.dpai.orchestrator.commands.AcceptedProjection.accepted(accepted, a)
+            return Outcome.success(inbox.submit(c, id))
+        }
+    }
+
+    /**
+     * Принятая команда исполнена (D-94) — с любым итогом: он сам в журнале.
+     * Запись не удалась — команда остаётся принятой: после перезапуска её
+     * повтор ключом не делает второго действия.
+     */
+    private fun settleAccepted(id: com.dpsmpx.dpai.core.ids.OperationId, status: String): Unit = synchronized(acceptLock) {
+        val env = recorder.envelope(EventType.COMMAND_SETTLED, StreamRef.of(id), clock.now(), com.dpsmpx.dpai.orchestrator.commands.AcceptedProjection.settledPayload(id, status))
+        when (val r = journal.append(env)) {
+            is Outcome.Success -> accepted = com.dpsmpx.dpai.orchestrator.commands.AcceptedProjection.settled(accepted, id)
+            is Outcome.Failure -> problems += Diagnostic.of(DiagCode.STORAGE_IO_FAILED, "исполненная команда $id не отмечена — после перезапуска повторится без действия", causes = r.errors)
+        }
+    }
 
     /**
      * Команда (D-06): с ключом — сначала по журналу ключей; уже была —

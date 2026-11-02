@@ -261,11 +261,31 @@ class RequestReceiver : BroadcastReceiver() {
     }
 }
 
-/** Применение ответа с любого канала (уведомление, окно, экран) и показ итога. */
+/**
+ * Применение ответа с любого канала (уведомление, окно, экран) и показ итога.
+ * Такт занят — ответ в журнале и применится после текущего шага (D-94):
+ * это «принято», а не «не принято» — кнопки не возвращаются, иначе второй
+ * вариант встал бы в очередь за первым (аудит надёжности, A-2); итог —
+ * уведомлением, когда такт исполнит ответ.
+ */
 object Answers {
+    /** Ответ принят в журнал, итога ещё нет (D-94). */
+    fun queued(r: Outcome<*>): Boolean = r is Outcome.Failure && r.diagnostics.all { it.code == com.dpsmpx.dpai.core.diagnostics.DiagCode.COMMAND_QUEUED }
+
     fun apply(context: Context, id: String, uri: String, text: String?, label: String, channel: String): Outcome<*> {
         val model = DemoModel.get(context)
-        val r = model.answer(uri, text, channel)
+        val r = model.answer(uri, text, channel) { later -> shown(context, model, id, label, later) }
+        if (queued(r)) {
+            RequestPresenter.sending(context, id, label)
+            RequestPresenter.result(context, id, "Принято: $label", "применится после текущего шага контура — итог придёт уведомлением")
+            RequestOverlay.waiting(id)
+        } else {
+            shown(context, model, id, label, r)
+        }
+        return r
+    }
+
+    private fun shown(context: Context, model: DemoModel, id: String, label: String, r: Outcome<com.dpsmpx.dpai.notifications.RequestAnswer>) {
         when (r) {
             is Outcome.Success -> {
                 context.getSystemService(NotificationManager::class.java).cancel(RequestPresenter.TAG, RequestPresenter.notificationId(id))
@@ -274,10 +294,13 @@ object Answers {
             }
             is Outcome.Failure -> {
                 RequestPresenter.result(context, id, "Не принято: $label", r.diagnostics.first().message)
-                if (model.pending().keys.any { it.value == id }) RequestPresenter.reshow(context, id)
-                else context.getSystemService(NotificationManager::class.java).cancel(RequestPresenter.TAG, RequestPresenter.notificationId(id))
+                if (model.pending().keys.any { it.value == id }) {
+                    RequestPresenter.reshow(context, id)
+                    RequestOverlay.again(id)
+                } else {
+                    context.getSystemService(NotificationManager::class.java).cancel(RequestPresenter.TAG, RequestPresenter.notificationId(id))
+                }
             }
         }
-        return r
     }
 }

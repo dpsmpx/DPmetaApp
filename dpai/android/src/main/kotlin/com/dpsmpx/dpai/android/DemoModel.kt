@@ -18,6 +18,8 @@ import com.dpsmpx.dpai.orchestrator.requests.RequestPurpose
 import com.dpsmpx.dpai.core.events.EventEnvelope
 import com.dpsmpx.dpai.orchestrator.commands.Command
 import com.dpsmpx.dpai.ui.RequestCard
+import com.dpsmpx.dpai.core.operation.OperationResult
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.locks.ReentrantLock
@@ -202,24 +204,54 @@ class DemoModel(
     }
 
     /**
-     * Команда контура (D-42): в очередь; замок свободен — исполнить сразу,
-     * иначе её исполнит такт в ближайшей безопасной точке. Ждёт итог не
-     * дольше [waitMs]: не дождались — честно «в очереди», команда не
-     * теряется и применится тактом.
+     * Команды в контур (D-42, D-94). Замок свободен — исполнить сразу на
+     * текущем контуре (под замком: пересборка не подменит его посреди
+     * исполнения). Занят такт — каждую сначала в журнал «принята»: так она
+     * переживёт смерть процесса и пересборку, а исполнит её такт.
      */
-    fun command(c: Command, waitMs: Long = WAIT_MS): Outcome<Any?> = intent(c) ?: try {
-        val v = built ?: lock.withLock { current() }
-        val f = v.orchestrator.submit(c)
+    private fun dispatch(cs: List<Command>): List<Outcome<CompletableFuture<OperationResult<*>>>> {
         if (lock.tryLock()) {
             try {
-                v.orchestrator.runCommands()
+                val o = current().orchestrator
+                val fs = cs.map { o.submit(it) }
+                o.runCommands()
+                return fs.map { Outcome.success(it) }
             } finally {
                 lock.unlock()
             }
         }
-        f.get(waitMs, TimeUnit.MILLISECONDS).outcome
+        val o = (built ?: lock.withLock { current() }).orchestrator
+        return cs.map { o.accept(it) }
+    }
+
+    /**
+     * Итог команды за [waitMs]. Не дождались — честно: команда в журнале и
+     * применится после текущего шага (D-94); [onLater] получит итог, когда
+     * такт её исполнит.
+     */
+    private fun <T> await(f: CompletableFuture<OperationResult<*>>, waitMs: Long, onLater: ((Outcome<T>) -> Unit)?, map: (OperationResult<*>) -> Outcome<T>): Outcome<T> = try {
+        map(f.get(waitMs, TimeUnit.MILLISECONDS))
     } catch (_: TimeoutException) {
-        Outcome.failure(DiagCode.COMMAND_QUEUED, "контур занят вызовом target: команда в очереди и применится в ближайшем такте")
+        onLater?.let { later ->
+            f.whenComplete { r, e ->
+                runCatching { later(if (r != null) map(r) else Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.INTERNAL_ERROR, "контроллер не исполнил команду", e)))) }
+            }
+        }
+        Outcome.failure(DiagCode.COMMAND_QUEUED, QUEUED)
+    } catch (e: Exception) {
+        Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.INTERNAL_ERROR, "контроллер не принял команду", e)))
+    }
+
+    /**
+     * Команда контура (D-42): замок свободен — исполнить сразу, иначе — в
+     * журнал и очередь (D-94). Ждёт итог не дольше [waitMs]: не дождались —
+     * «принято, применится после текущего шага», итог — в [onLater].
+     */
+    fun command(c: Command, waitMs: Long = WAIT_MS, onLater: ((Outcome<Any?>) -> Unit)? = null): Outcome<Any?> = intent(c) ?: try {
+        when (val f = dispatch(listOf(c)).single()) {
+            is Outcome.Failure -> f
+            is Outcome.Success -> await(f.value, waitMs, onLater) { it.outcome }
+        }
     } catch (e: Exception) {
         Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.INTERNAL_ERROR, "контроллер не принял команду", e)))
     }
@@ -260,28 +292,17 @@ class DemoModel(
      */
     fun commandAll(cs: List<Command>, waitMs: Long = WAIT_MS): List<Outcome<Any?>> {
         if (cs.isEmpty()) return emptyList()
-        val v = try {
-            built ?: lock.withLock { current() }
+        val fs = try {
+            dispatch(cs)
         } catch (e: Exception) {
             val f = Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.INTERNAL_ERROR, "контроллер не принял команды", e)))
             return cs.map { f }
         }
-        val fs = cs.map { v.orchestrator.submit(it) }
-        if (lock.tryLock()) {
-            try {
-                v.orchestrator.runCommands()
-            } finally {
-                lock.unlock()
-            }
-        }
         val deadline = Clock.SYSTEM.monotonicNanos() + waitMs * 1_000_000
         return fs.map { f ->
-            try {
-                f.get(((deadline - Clock.SYSTEM.monotonicNanos()) / 1_000_000).coerceAtLeast(0), TimeUnit.MILLISECONDS).outcome
-            } catch (_: TimeoutException) {
-                Outcome.failure(DiagCode.COMMAND_QUEUED, "контур занят вызовом target: команда в очереди и применится в ближайшем такте")
-            } catch (e: Exception) {
-                Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.INTERNAL_ERROR, "контроллер не принял команду", e)))
+            when (f) {
+                is Outcome.Failure -> f
+                is Outcome.Success -> await(f.value, ((deadline - Clock.SYSTEM.monotonicNanos()) / 1_000_000).coerceAtLeast(0), null) { it.outcome }
             }
         }
     }
@@ -321,19 +342,11 @@ class DemoModel(
         (built as? LiveSystem)?.orchestrator ?: if (hasLive()) runCatching { lock.withLock { (current() as? LiveSystem)?.orchestrator } }.getOrNull() else null
 
     /** Команда с полным итогом (`OperationResult`) — для канала `dpai`; как [command]. */
-    fun commandResult(c: Command, waitMs: Long = WAIT_MS): Outcome<com.dpsmpx.dpai.core.operation.OperationResult<*>> = try {
-        val v = built ?: lock.withLock { current() }
-        val f = v.orchestrator.submit(c)
-        if (lock.tryLock()) {
-            try {
-                v.orchestrator.runCommands()
-            } finally {
-                lock.unlock()
-            }
+    fun commandResult(c: Command, waitMs: Long = WAIT_MS): Outcome<OperationResult<*>> = try {
+        when (val f = dispatch(listOf(c)).single()) {
+            is Outcome.Failure -> f
+            is Outcome.Success -> await(f.value, waitMs, null) { Outcome.success(it) }
         }
-        Outcome.success(f.get(waitMs, TimeUnit.MILLISECONDS))
-    } catch (_: TimeoutException) {
-        Outcome.failure(DiagCode.COMMAND_QUEUED, "контур занят вызовом target: команда в очереди и применится в ближайшем такте")
     } catch (e: Exception) {
         Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.INTERNAL_ERROR, "контроллер не принял команду", e)))
     }
@@ -342,8 +355,9 @@ class DemoModel(
      * Ответ человека на запрос (D-44) — с кнопки уведомления, окна поверх
      * приложений или экрана; ссылку и хеш проверяет оркестратор.
      */
-    fun answer(uri: String, text: String?, channel: String): Outcome<RequestAnswer> =
-        command(Command.AnswerRequest(uri, text, ACTOR, channel)).then { v -> Outcome.success(v as RequestAnswer) }
+    fun answer(uri: String, text: String?, channel: String, onLater: ((Outcome<RequestAnswer>) -> Unit)? = null): Outcome<RequestAnswer> =
+        command(Command.AnswerRequest(uri, text, ACTOR, channel), onLater = onLater?.let { later -> { r: Outcome<Any?> -> later(r.then { v -> Outcome.success(v as RequestAnswer) }) } })
+            .then { v -> Outcome.success(v as RequestAnswer) }
 
     /** Проверочный запрос вида [kind] (экран «Запросы», `docs/DEVICE_CHECK.md`); [ttl] `null` — срок контура по умолчанию. */
     fun probe(kind: RequestKind, ttl: Duration?): Outcome<RequestId> =
@@ -495,6 +509,9 @@ class DemoModel(
 
         /** Сколько ждать итога команды: такт с вызовом target идёт секунды, не минуты. */
         private const val WAIT_MS = 30_000L
+
+        /** Не дождались итога — команда в журнале (D-94): применится после текущего шага контура, переживёт перезапуск. */
+        const val QUEUED = "принято: применится после текущего шага контура (идёт вызов target)"
 
         /** Сколько поиск ждёт конца такта ради событий: дольше — поиск без них, человек не ждёт. */
         private const val SEARCH_WAIT_MS = 1_500L

@@ -129,4 +129,8 @@ enum class EventType {
 
     // --- история чисел DPmetaApp (DPmetaApp:D-34): точка метрики, только добавляется ---
     METRIC_POINT_RECORDED,
+
+    // --- принятая команда контура (D-94): переживает смерть процесса ---
+    COMMAND_ACCEPTED,
+    COMMAND_SETTLED,
 }

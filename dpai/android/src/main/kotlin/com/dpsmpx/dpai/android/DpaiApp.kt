@@ -876,10 +876,9 @@ private fun ConfirmDialog(model: DemoModel, requests: List<RequestCard>, uri: St
                 TextButton(enabled = !busy, onClick = {
                     busy = true
                     scope.launch {
-                        when (val r = withContext(Dispatchers.IO) { Answers.apply(context, card.id.value, uri, null, button.label, "app") }) {
-                            is Outcome.Failure -> error = r.diagnostics.first().message
-                            is Outcome.Success -> onDone()
-                        }
+                        val r = withContext(Dispatchers.IO) { Answers.apply(context, card.id.value, uri, null, button.label, "app") }
+                        // Принято в журнал (D-94) — тоже готово: итог придёт уведомлением.
+                        if (r is Outcome.Success || Answers.queued(r)) onDone() else error = (r as Outcome.Failure).diagnostics.first().message
                         busy = false
                     }
                 }) { Text(if (busy) "Применяю…" else button.label, color = MaterialTheme.colorScheme.error) }

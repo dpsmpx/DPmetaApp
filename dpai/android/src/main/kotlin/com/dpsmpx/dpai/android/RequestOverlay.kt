@@ -89,6 +89,12 @@ object RequestOverlay {
         runCatching { NioVfs(context.filesDir.toPath()).write(POSITION, "$y\n".toByteArray()) }
     }
 
+    /** Ответ принят и ждёт такта (D-94): окно этого запроса убирается и до итога не возвращается. */
+    fun waiting(id: String) {
+        later += id
+        closed(id)
+    }
+
     /** Подтверждение из `dpai` (D-91): окно снова доступно запросу, даже скрытому «Скрыть окно». */
     fun again(id: String) {
         later -= id
@@ -204,9 +210,9 @@ object RequestOverlay {
                     worker.execute {
                         val r = Answers.apply(context, card.id.value, b.uri, typed, b.label, "overlay")
                         main.post {
-                            when (r) {
-                                is Outcome.Success -> hide()
-                                is Outcome.Failure -> {
+                            when {
+                                r is Outcome.Success || Answers.queued(r) -> hide()
+                                r is Outcome.Failure -> {
                                     isEnabled = true
                                     status.text = "Не принято: ${r.diagnostics.first().message}"
                                 }

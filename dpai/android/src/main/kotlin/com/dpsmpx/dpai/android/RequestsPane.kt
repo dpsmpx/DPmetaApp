@@ -119,9 +119,11 @@ private fun RequestItem(model: DemoModel, card: RequestCard) {
                         busy = true
                         scope.launch {
                             val r = withContext(Dispatchers.IO) { Answers.apply(context, card.id.value, b.uri, text.takeIf { b.needsText }, b.label, "app") }
-                            status = when (r) {
-                                is Outcome.Success -> "Принято"
-                                is Outcome.Failure -> "Не принято: ${r.diagnostics.first().message}"
+                            status = when {
+                                r is Outcome.Success -> "Принято"
+                                Answers.queued(r) -> "Принято: применится после текущего шага контура"
+                                r is Outcome.Failure -> "Не принято: ${r.diagnostics.first().message}"
+                                else -> null
                             }
                             busy = false
                         }

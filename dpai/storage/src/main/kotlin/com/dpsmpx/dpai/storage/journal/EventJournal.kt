@@ -64,6 +64,9 @@ class EventJournal private constructor(
     private val positionOf = HashMap<EventId, Long>().apply { loaded.forEach { put(it.event.id, it.position) } }
     private var broken = false
 
+    /** Закрыт [close]: этот экземпляр больше не пишет — журнал открыт заново другим (D-94). */
+    private var closed = false
+
     /** Номер последней записи (0 — журнал пуст). */
     val position: Long get() = offset + records.size
 
@@ -74,6 +77,16 @@ class EventJournal private constructor(
      * (D-87, D-13: неизвестное — не ноль).
      */
     val isBroken: Boolean get() = broken
+
+    /**
+     * Закрыть на запись (D-94): контур пересобран и открыл журнал заново, а
+     * прежний экземпляр с его номером и хешем не должен дописать ни строки —
+     * иначе в файле вилка цепочки. Чтение остаётся.
+     */
+    @Synchronized
+    fun close() {
+        closed = true
+    }
 
     val lastHash: ContentHash get() = records.lastOrNull()?.hash ?: baseHash
 
@@ -165,6 +178,7 @@ class EventJournal private constructor(
 
     @Synchronized
     fun append(event: EventEnvelope): Outcome<Long> {
+        if (closed) return Outcome.failure(DiagCode.STORAGE_UNAVAILABLE, "журнал закрыт: контур пересобран, пишет новый экземпляр", path)
         if (broken) return Outcome.failure(DiagCode.STORAGE_UNAVAILABLE, "журнал закрыт после отказа записи: нужно открыть заново", path)
         positionOf[event.id]?.let { known ->
             val same = records[(known - offset - 1).toInt()].event == event
@@ -198,6 +212,7 @@ class EventJournal private constructor(
      */
     @Synchronized
     fun appendAll(events: List<EventEnvelope>): Outcome<List<Long>> {
+        if (closed) return Outcome.failure(DiagCode.STORAGE_UNAVAILABLE, "журнал закрыт: контур пересобран, пишет новый экземпляр", path)
         if (broken) return Outcome.failure(DiagCode.STORAGE_UNAVAILABLE, "журнал закрыт после отказа записи: нужно открыть заново", path)
         val positions = ArrayList<Long>(events.size)
         val fresh = ArrayList<JournalRecord>()
