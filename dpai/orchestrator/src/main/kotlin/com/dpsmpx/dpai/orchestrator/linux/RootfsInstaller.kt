@@ -21,6 +21,11 @@ import java.util.zip.GZIPInputStream
  * тоже пропуск: архив испорчен, а память телефона не резиновая. Длинное имя
  * больше [MAX_META] и распакованное больше [MAX_TOTAL] — отказ всей
  * распаковки (аудит безопасности 1 ноября 2026, A-8).
+ *
+ * Каждый файл — с `fsync`, каталоги — `fsyncDir` в конце: признак
+ * готовности пишется после и не опережает файлы на диске (аудит надёжности
+ * 2 ноября 2026, A-10: перезагрузка в первые секунды давала «установлено»
+ * с пустыми файлами, а переустановки уже не было).
  */
 object RootfsInstaller {
     data class Summary(val files: Int, val dirs: Int, val symlinks: Int, val bytes: Long, val skipped: List<String>)
@@ -50,6 +55,8 @@ object RootfsInstaller {
         var bytes = 0L
         val skipped = mutableListOf<String>()
         val links = HashSet<String>()
+        // Каталоги с новыми записями: в конце — fsync каждого, чтобы признак готовности не лёг раньше файлов (A-10).
+        val touched = LinkedHashSet<String>().apply { add(dir) }
         var longName: String? = null
         vfs.mkdirs(dir)
         while (readBlock(tar, header)) {
@@ -99,6 +106,7 @@ object RootfsInstaller {
                 }
                 '2' -> {
                     vfs.mkdirs(Vfs.parentOf(path))
+                    touched += Vfs.parentOf(path)
                     vfs.symlink(path, text(header, 157, 100))
                     links += rel
                     symlinks++
@@ -115,6 +123,8 @@ object RootfsInstaller {
                         if (bytes > MAX_TOTAL) throw IOException("распаковано больше ${MAX_TOTAL / 1024 / 1024} МиБ: архив не тот")
                         vfs.mkdirs(Vfs.parentOf(path))
                         vfs.write(path, content)
+                        vfs.fsync(path)
+                        touched += Vfs.parentOf(path)
                         vfs.setMode(path, mode)
                         files++
                     }
@@ -129,6 +139,8 @@ object RootfsInstaller {
                     if (bytes > MAX_TOTAL) throw IOException("распаковано больше ${MAX_TOTAL / 1024 / 1024} МиБ: архив не тот")
                     vfs.mkdirs(Vfs.parentOf(path))
                     vfs.write(path, body(tar, size))
+                    vfs.fsync(path)
+                    touched += Vfs.parentOf(path)
                     vfs.setMode(path, mode)
                     files++
                     continue
@@ -137,6 +149,8 @@ object RootfsInstaller {
             }
             skip(tar, size + pad(size))
         }
+        // Записи каталогов (файлы, ссылки) — на диск до того, как установщик запишет признак готовности.
+        touched.forEach(vfs::fsyncDir)
         return Summary(files, dirs, symlinks, bytes, skipped)
     }
 

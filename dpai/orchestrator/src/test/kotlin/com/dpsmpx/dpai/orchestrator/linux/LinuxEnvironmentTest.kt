@@ -66,6 +66,24 @@ class LinuxEnvironmentTest {
         assertEquals("alpine-3.24.3", env.installed())
     }
 
+    /** A-10 аудита надёжности: признак готовности — после того, как файлы и каталоги на диске. */
+    @Test
+    fun readyMarkComesAfterFilesAreDurable() {
+        val log = mutableListOf<String>()
+        val v = object : Vfs by vfs() {
+            override fun write(path: String, bytes: ByteArray) = vfs().write(path, bytes).also { log += "write $path" }
+            override fun fsync(path: String) = log.add("fsync $path").let { }
+            override fun fsyncDir(dir: String) = log.add("fsyncDir $dir").let { }
+        }
+        val env = LinuxEnvironment(v)
+        assertTrue(env.install("alpine-3.24.3") { ByteArrayInputStream(archive(mapOf("etc/alpine-release" to "3.24.3\n", "bin/busybox" to "bb"))) }.isSuccess)
+        val ready = log.indexOf("write linux/rootfs.ready")
+        for (f in listOf("linux/rootfs/etc/alpine-release", "linux/rootfs/bin/busybox")) {
+            assertTrue(log.indexOf("fsync $f") in 0 until ready, "fsync $f — до признака: $log")
+        }
+        assertTrue(log.indexOf("fsyncDir linux/rootfs/etc") in 0 until ready, log.toString())
+    }
+
     @Test
     fun brokenArchiveLeavesNoReadyMark() {
         val env = LinuxEnvironment(vfs())

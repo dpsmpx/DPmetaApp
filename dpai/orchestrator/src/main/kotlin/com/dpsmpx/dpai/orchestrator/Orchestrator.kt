@@ -2344,7 +2344,12 @@ class Orchestrator(
         val r = requests.requests[id]
         val provenance = Provenance(Actor(ActorKind.USER, by), taskId = r?.task, sessionId = r?.session)
         val outcome: Outcome<RequestAnswer> = when (val c = UserRequests.check(requests, id, option, text, hash, clock.now())) {
-            is Outcome.Failure -> c.also { if (r != null && !r.terminal && r.expired(clock.now())) commitRequests(listOf(RequestEvent.Expired(id, clock.now()))) }
+            is Outcome.Failure -> c.also {
+                if (r != null && !r.terminal && r.expired(clock.now())) {
+                    commitRequests(listOf(RequestEvent.Expired(id, clock.now())))
+                    requests.requests[id]?.let(::reaskIfWaiting)
+                }
+            }
             is Outcome.Success -> when (val v = c.value) {
                 is AnswerCheck.Repeat -> Outcome.success(v.request.answer!!)
                 is AnswerCheck.Apply -> applyAnswer(v, by, channel)
@@ -2441,6 +2446,15 @@ class Orchestrator(
      */
     private fun settleRequests() {
         val now = clock.now()
+        // Первый такт после запуска: запросы, истёкшие, пока приложение не работало, — снова, если
+        // задача всё ещё ждёт (A-8). Не в `init`: уведомления и поля ниже него там ещё не готовы.
+        if (!reaskedAtStart) {
+            reaskedAtStart = true
+            requests.requests.values.groupBy { it.subject }.values
+                .map { rs -> rs.maxBy { it.createdAt.epochMillis } }
+                .sortedBy { it.subject }
+                .forEach(::reaskIfWaiting)
+        }
         val stale = requests.pending.filter { r ->
             val state = r.task?.let { tasks.tasks[it]?.state }
             when (RequestPurpose.of(r.purpose)) {
@@ -2451,9 +2465,34 @@ class Orchestrator(
                 else -> false
             }
         }
-        val es = UserRequests.expire(requests, now) + stale.filter { !it.expired(now) }.map { RequestEvent.Cancelled(it.id, DiagCode.REQUEST_NOT_PENDING, now) }
+        val expired = UserRequests.expire(requests, now)
+        val es = expired + stale.filter { !it.expired(now) }.map { RequestEvent.Cancelled(it.id, DiagCode.REQUEST_NOT_PENDING, now) }
         if (es.isNotEmpty()) commitRequests(es)
+        expired.mapNotNull { requests.requests[it.request] }.forEach(::reaskIfWaiting)
         askMerges()
+    }
+
+    /** Истёкшие до запуска запросы уже пересмотрены (первый такт). */
+    private var reaskedAtStart = false
+
+    /**
+     * Запрос истёк, а задача всё ещё ждёт человека (блок, «без проверки»,
+     * ревью без итога) — тот же вопрос снова (аудит надёжности 2 ноября 2026,
+     * A-8): телефон выключен сутки — и задача стояла молча, без уведомления.
+     * «Решу позже» — ответ, а не истечение: такой запрос сам не возвращается.
+     */
+    private fun reaskIfWaiting(r: UserRequest) {
+        if (r.state != com.dpsmpx.dpai.notifications.RequestState.EXPIRED || requests.pendingFor(r.subject) != null) return
+        val t = r.task?.let { tasks.tasks[it] } ?: return
+        if (t.archived) return
+        val purpose = RequestPurpose.of(r.purpose) ?: return
+        val waits = when (purpose) {
+            RequestPurpose.TASK_BLOCKED -> t.state == TaskState.BLOCKED
+            RequestPurpose.TASK_UNVERIFIED -> t.state == TaskState.COMPLETION_UNVERIFIED
+            RequestPurpose.TASK_REVIEW -> t.state == TaskState.VERIFIED && nextReview(t) == null
+            else -> false
+        }
+        if (waits) ask(purpose, r.kind, r.subject, r.title, r.body, r.options, r.task, r.session)
     }
 
     /** Сколько записей в журнале контура (рост хранилища, ТЗ, §116). */
@@ -2549,9 +2588,10 @@ class Orchestrator(
             // Последняя рабочая сессия: сессия ревью (D-73) запросов не принимает.
             val last = lastWork(task) ?: continue
             if (last.state !in WAIT_STATES && !last.terminal) continue
-            setQueued(task, emptyList())
             val r = sendToSession(last.id, list.joinToString("\n\n") { it.text }, list.lastOrNull { it.model != null }?.model, list.lastOrNull { it.effort != null }?.effort, false, echo = false)
-            if (r is Outcome.Failure) setQueued(task, list)
+            // Стереть — после отправки, как в `deliverQueued` (аудит надёжности, A-9): смерть процесса между
+            // стиранием и handoff теряла текст человека; теперь в худшем случае он уйдёт дважды.
+            if (r is Outcome.Success) setQueued(task, emptyList())
         }
     }
 

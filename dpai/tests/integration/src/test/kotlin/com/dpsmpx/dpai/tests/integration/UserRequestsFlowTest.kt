@@ -185,6 +185,37 @@ class UserRequestsFlowTest {
         assertEquals(emptyList(), third.invariants())
     }
 
+    /**
+     * Аудит надёжности 2 ноября 2026, A-8: запрос истёк (телефон выключен
+     * дольше срока), а задача всё ещё ждёт решения — тот же вопрос задаётся
+     * снова; и после перезапуска тоже. «Решу позже» — ответ: сам не возвращается.
+     */
+    @Test
+    fun expiredRequestIsAskedAgainWhileTaskWaits() {
+        val (o, runner) = boot()
+        val task = o.addTask("задача", "цель").valueOrNull()!!
+        run(o, runner, 3)
+        val first = requestFor(o, task)
+        clock.advance(3.hours)
+        o.tick()
+        assertEquals(RequestState.EXPIRED, o.requests.requests.getValue(first.id).state)
+        val again = requestFor(o, task)
+        assertTrue(again.id != first.id && again.subject == first.subject && again.purpose == "task.unverified", again.toString())
+
+        // Истёк, пока приложение не работало: первый такт после запуска спрашивает снова.
+        clock.advance(3.hours)
+        val (restarted, _) = boot()
+        restarted.tick()
+        val third = requestFor(restarted, task)
+        assertTrue(third.id != again.id, "новый запрос после перезапуска")
+
+        assertEquals(OperationStatus.SUCCEEDED, restarted.answer(uri(third, "later"), null, "автор").status)
+        clock.advance(3.hours)
+        restarted.tick()
+        assertTrue(restarted.pendingRequests().none { it.task == task }, "«решу позже» не возвращается само")
+        assertEquals(TaskState.COMPLETION_UNVERIFIED, restarted.tasks.tasks.getValue(task).state)
+    }
+
     @Test
     fun concurrentRequestsOfDifferentTasksDoNotMix() {
         val (o, runner) = boot()
