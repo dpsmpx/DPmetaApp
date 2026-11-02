@@ -200,7 +200,11 @@ CS_PROD_YOUTUBE_OAUTH: {rotated: 2026-10-05, expires: 2026-10-12}
    Затем проверки: `tools/check.sh --quick`, `python3 -m tools.cs health`,
    `python3 -m tools.cs site deploy --dry-run` — ничего не выкладывает,
    последняя строка «изменений: N».
-8. Выгрузка (разрешена, Д34): `git pull` в `~/DPmetaApp/socialmediaimage`, снова
+8. Выгрузка (разрешена, Д34; только проверенный сайт, Д47): `git pull` в
+   `~/DPmetaApp/socialmediaimage`; в `main` должна быть запись проверки
+   `data/website/site-check.json` — её пишет сессия полным
+   `tools/check.sh --release` и коммитит; после неё система не менялась
+   (одобрение автора — тоже правка: после него нужна новая проверка). Снова
    `python3 -m tools.cs site deploy --dry-run` — сверить, что удаляется,
    затем `python3 -m tools.cs site deploy` — или ярлыком ниже. В конце —
    проверка `/`, `/en/`, `/projects/` по `https://dpsmpx.com`: `✓` —
@@ -231,7 +235,11 @@ install -m 700 ~/DPmetaApp/socialmediaimage/tools/termux/dpsmpx-site-deploy.sh ~
 
 Что делает нажатие:
 1. Отказывает, если нет `~/.config/dpsmpx/deploy.env`, ветка не `main` или
-   есть незакоммиченное; затем `git pull --ff-only`.
+   есть незакоммиченное; затем `git pull --ff-only`. После него — сайт
+   проверен (Д47): нет `data/website/site-check.json` или после
+   проверенного коммита система менялась (кроме
+   `data/provenance/site-releases/` и самой записи) — отказ «нужна новая
+   проверка»; иначе — строка «Сайт проверен: <коммит>, <время>».
 2. `python3 -m tools.cs site deploy --dry-run` (Python из `pkg`, шаг 3).
    Ошибка — выгрузки нет. «изменений: 0» — «выгружать нечего», конец.
    Есть строки `*deleting` — предупреждает: удаляться должно только

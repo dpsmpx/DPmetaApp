@@ -41,6 +41,9 @@ DECISIONS_TEXT = """# Решения
 """
 
 CLEAN = {
+    "core/model/build.gradle.kts": 'plugins {\n    id("dpai.kotlin-library")\n}\n\ndependencies {\n    api("com.dpsmpx.dpai:core")\n}\n',
+    "core/formats/build.gradle.kts": 'dependencies {\n    api(project(":core:model"))\n}\n',
+    "core/model/src/main/kotlin/M.kt": "package m\n\nfun now(clock: Clock) = clock.now()\n",
     "CLAUDE.md": "# Правила\n\nРешение D-01; цель G-01; чужой контракт `DPmeta:C-06`; путь `docs/PROCESS.md`.\n",
     "TODO.md": "# TODO\n\n- `М` Пункт.\n",
     "LICENSE": "All rights reserved.\n",
@@ -250,7 +253,7 @@ def quiet_report(results, strict=False):
 
 
 class GradleTest(unittest.TestCase):
-    """build.gradle (ТЗ, §14): нет JDK — находка, а не зелёный (D-48); нет SDK — названный пропуск."""
+    """build.gradle (ТЗ, §14): нет JDK — находка, а не зелёный (D-51); нет SDK — названный пропуск."""
 
     @staticmethod
     def never(cmd, cwd):
@@ -261,7 +264,7 @@ class GradleTest(unittest.TestCase):
         return lambda cmd, cwd: (rc, out)
 
     def test_no_jdk_is_finding_not_green(self):
-        """Без JDK сборки не было: `full` не значит ничего (D-48, блокер аудита 30 октября 2026)."""
+        """Без JDK сборки не было: `full` не значит ничего (D-51, блокер аудита 30 октября 2026)."""
         r = check.check_gradle(ROOT, java="", sdk="/sdk", run=self.never)
         self.assertTrue(any("нет JDK" in f for f in r.findings))
         self.assertEqual([], r.skipped)
@@ -591,3 +594,44 @@ class RealRepoTest(CheckCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ModulesTest(CheckCase):
+    def test_wrong_direction(self):
+        s = self.sample({"core/model/build.gradle.kts": 'dependencies {\n    api(project(":core:formats"))\n}\n'})
+        self.assertCatches(s.run("modules.root"), ":core:model не может зависеть от :core:formats")
+
+    def test_metrics_cannot_use_network(self):
+        s = self.sample({"core/metrics/build.gradle.kts": 'dependencies {\n    api(project(":core:net"))\n}\n'})
+        self.assertCatches(s.run("modules.root"), ":core:metrics не может зависеть от :core:net")
+
+    def test_subsystem_is_not_core(self):
+        s = self.sample({"core/sync/build.gradle.kts": 'dependencies {\n    api("com.dpsmpx.dpai:orchestrator")\n}\n'})
+        self.assertCatches(s.run("modules.root"), "зависит от подсистемы dpai:orchestrator")
+
+    def test_unknown_module(self):
+        s = self.sample({"core/store/build.gradle.kts": "plugins {}\n"})
+        self.assertCatches(s.run("modules.root"), "модуль :core:store не описан")
+
+    def test_shells_depend_on_all(self):
+        s = self.sample({"cli/build.gradle.kts": 'dependencies {\n    implementation(project(":core:sync"))\n    implementation("com.dpsmpx.dpai:orchestrator")\n}\n'})
+        self.assertClean(s.run("modules.root"))
+
+    def test_code_rules(self):
+        for code, why in [
+            ("import android.content.Context\n", "Android-типы"),
+            ("val t = System.currentTimeMillis()\n", "через Clock"),
+            ("fun f() = Thread.sleep(1)\n", "без сна"),
+            ('fun f() = println("x")\n', "печать"),
+            ("fun f(s: Secret) = s.reveal()\n", "reveal()"),
+        ]:
+            with self.subTest(why):
+                s = self.sample({"core/sync/src/main/kotlin/S.kt": "package s\n\n" + code})
+                self.assertCatches(s.run("modules.root"), why)
+
+    def test_reveal_home_and_comments_pass(self):
+        s = self.sample({
+            "core/net/src/main/kotlin/com/dpsmpx/dpmeta/net/Auth.kt": "fun b(s: Secret) = s.reveal()\n",
+            "core/sync/src/main/kotlin/S.kt": "// System.currentTimeMillis — нельзя, берём Clock\nfun printlnLike() = 1\n",
+        })
+        self.assertClean(s.run("modules.root"))

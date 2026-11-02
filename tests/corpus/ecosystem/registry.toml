@@ -1,0 +1,28 @@
+# Синтетическая экосистема для dpmeta-cli sync --corpus (ТЗ, §6.2, :tests:corpus).
+schema = 1
+
+[[repo]]
+name = "Alpha"
+slug = "example/Alpha"
+clone = "alpha"
+place = "core"
+decisions = { path = "docs/direction/DECISIONS.md", id = "D-\\d+" }
+
+[[repo]]
+name = "Beta"
+slug = "example/Beta"
+clone = "beta"
+place = "support"
+decisions = { path = "docs/direction/DECISIONS.md", id = "Р\\d+" }
+
+[[repo]]
+name = "DPmeta"
+slug = "example/DPmeta"
+place = "sync"
+decisions = { path = "docs/DECISIONS.md", id = "M-\\d+" }
+
+[[repo]]
+name = "Gamma"
+slug = "example/Gamma"
+clone = "gamma"
+place = "archive"

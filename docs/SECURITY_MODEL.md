@@ -1,0 +1,26 @@
+# Модель безопасности
+
+Угрозы и защита DPmetaApp 1.0 — ТЗ, §11 (T-01…T-18); здесь — что из этого
+уже есть в коде, где и чем проверяется. Пункты проходятся целиком на
+выпуске (этап 8). Подсистемы — по своим документам (`dpai/docs/SECURITY_MODEL.md`,
+`dppass/docs/SECURITY_MODEL.md`).
+
+## Сделано (этапы 2–3)
+
+| | Угроза | Защита в коде | Где | Проверка |
+|---|---|---|---|---|
+| T-01 | Кража или потеря телефона | токен GitHub — под ключом Android Keystore (AES-256-GCM); ключ работает только после входа биометрией или PIN устройства, 5 минут; вход в пульт — `BiometricPrompt` (F-45) | `app/…/data/SecretStore.kt`, `app/…/Lock.kt` | на устройстве (`TODO.md`, «На устройстве») |
+| T-02 | Утечка секрета через журнал, снимок экрана, резервную копию | тип `Secret` (печатается как `<redacted>`); раскрытие — в одном месте `:core:net` (проверка `modules.root`); шифротекст — в `noBackupFilesDir`; окно пульта — `FLAG_SECURE`; ошибка запроса не несёт значения заголовка | `core/net/…/Auth.kt`, `core/net/…/JdkTransport.kt`, `UrlTransport.kt`, `app/…/PultActivity.kt` | `NetTest.badHeaderIsRefusedWithoutItsValue`, `GitHubTest.deviceFlowStepsWithoutWaiting`, `tools/check` (`modules.root`) |
+| T-03 | Вредоносное приложение на том же телефоне | активность пульта не экспортируется; открывает её оболочка явным интентом | `app/src/main/AndroidManifest.xml` | Lint |
+| T-04 | Подмена ответов сети | только https с системными корнями, своих `TrustManager` нет; переадресации выключены (адрес не уходит мимо списка); http — только сайт и без секрета | `core/net/…/Net.kt` (`AllowList`) | `NetTest.refusesHostsNotInListAndPlainHttpWithSecrets` |
+| T-07 | Лишние права токенов | PAT — только чтение (Contents, Pull requests, Metadata), так и просит экран; GitHub App — device flow (D-17) | `app/…/ui/PultUi.kt`, `core/github/…/DeviceFlow.kt` | `GitHubTest` |
+| T-09 | Цепочка поставки | сторонних зависимостей у модулей DPmetaApp нет: JDK, ядро `dpai/`, Compose из того же каталога, что у оболочки | `docs/PROVENANCE.md` | `tools/check` |
+
+## Ещё нет
+
+- T-05, T-06, T-17 — действия и чат Claude: этап 5 (`:core:actions`).
+- T-08 — экран блокировки и виджет: этап 7.
+- T-10 — ключ выпуска: этап 8.
+- T-11 — выгрузка сайта: в приложении её нет (D-40, D-48).
+- T-12…T-16 — площадки, мгновенный канал, слушатель уведомлений: этапы 6–7.
+- T-18 — журнал отладки файлом: этап 5.
