@@ -326,6 +326,12 @@ object Words {
         "ECOSYSTEM_DISABLED" -> "работа с экосистемой выключена"
         "ECOSYSTEM_UNAVAILABLE" -> "экосистема недоступна"
         "CONNECTOR_REPLY_INVALID" -> "внешний источник ответил не по формату"
+
+        // Сеть и GitHub модулей DPmetaApp (DPmetaApp:D-10, D-17).
+        "HOST_NOT_ALLOWED" -> "адрес не из списка разрешённых — запрос не отправлен"
+        "GITHUB_AUTH_EXPIRED" -> "GitHub не принял вход — войдите заново"
+        "GITHUB_RATE_LIMITED" -> "лимит запросов GitHub исчерпан — остальное после сброса"
+        "GITHUB_NOT_FOUND" -> "на GitHub не найдено или скрыто от входа"
         else -> code
     }
 }
