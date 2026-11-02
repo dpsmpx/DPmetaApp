@@ -62,6 +62,22 @@
         <receiver
             android:name=".RequestReceiver"
             android:exported="false" />
+        <!-- Диск приложения (D-96): корень системного выбора файлов; пока закрыт, корня нет.
+             Доступ только через системный выбор: MANAGE_DOCUMENTS есть лишь у системы. -->
+        <provider
+            android:name=".AppDiskProvider"
+            android:authorities="${applicationId}.disk"
+            android:exported="true"
+            android:grantUriPermissions="true"
+            android:permission="android.permission.MANAGE_DOCUMENTS">
+            <intent-filter>
+                <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
+            </intent-filter>
+        </provider>
+        <!-- «Закрыть» диск из уведомления — только через PendingIntent своего уведомления. -->
+        <receiver
+            android:name=".AppDiskCloseReceiver"
+            android:exported="false" />
         <service
             android:name=".ControllerService"
             android:exported="false"

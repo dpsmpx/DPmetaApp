@@ -14,5 +14,7 @@ class DpaiApplication : Application() {
         super.onCreate()
         CrashRecord.install(filesDir)
         CrashRecord.onFatal = { text -> AppLogs.get(this).fatal("падение", Redactor.STANDARD.redact(text)) }
+        // Диск открыт и после перезапуска процесса (D-96): уведомление «открыт» — снова в шторке.
+        runCatching { AppDiskNotice.sync(this) }
     }
 }

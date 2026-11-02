@@ -78,6 +78,9 @@ RULES = [
          # Список переменных, которые оркестратор УДАЛЯЕТ из окружения слота (D-29), и его тест.
          "accounts/src/main/kotlin/com/dpsmpx/dpai/accounts/SlotEnvironment.kt",
          "accounts/src/test/kotlin/com/dpsmpx/dpai/accounts/SlotEnvironmentTest.kt",
+         # Диск приложения (D-96): имя файла входа — чтобы СКРЫТЬ его от менеджеров файлов, и тест этого.
+         "ui/src/main/kotlin/com/dpsmpx/dpai/ui/AppDisk.kt",
+         "ui/src/test/kotlin/com/dpsmpx/dpai/ui/AppDiskTest.kt",
      ],
      "приватные адреса, cookies и вход claude.ai провайдера запрещены (D-04, D-27)", True),
 ]

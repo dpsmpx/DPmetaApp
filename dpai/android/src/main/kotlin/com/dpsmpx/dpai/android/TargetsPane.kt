@@ -172,6 +172,7 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
         }
         item(key = "control") { ControlCard(model) }
         item(key = "linux") { LinuxCard() }
+        item(key = "disk") { AppDiskCard() }
         item(key = "cli") { CliCard() }
         items(targets, key = { it.id.value }) { t ->
             Card(Modifier.fillMaxWidth()) {

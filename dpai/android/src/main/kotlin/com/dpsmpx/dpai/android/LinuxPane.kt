@@ -105,3 +105,35 @@ fun LinuxCard() {
 
 /** Строк вывода `apk` на карточке: хвост, где итог и ошибка. */
 private const val MAX_OUTPUT = 20
+
+/**
+ * Карточка «Диск приложения» (D-96): переключатель — данные приложения
+ * видны менеджерам файлов (Total Commander и др.) через системный выбор
+ * папки; без секретов, запись — только в Linux /root. Пока открыт — в
+ * шторке уведомление с «Закрыть».
+ */
+@Composable
+fun AppDiskCard() {
+    val context = LocalContext.current.applicationContext
+    var open by remember { mutableStateOf(com.dpsmpx.dpai.ui.AppDisk.isOpen(context)) }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Text("Диск приложения", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                androidx.compose.material3.Switch(checked = open, onCheckedChange = { v ->
+                    com.dpsmpx.dpai.ui.AppDisk.setOpen(context, v)
+                    open = com.dpsmpx.dpai.ui.AppDisk.isOpen(context)
+                })
+            }
+            Text(
+                if (open) {
+                    "Открыт: в менеджере файлов — «DPmetaApp» в системном выборе папки (в Total Commander — «Добавить место» → системный выбор). " +
+                        "Только чтение; файлы можно класть в Linux /root. Токена dpai и входов Claude на диске нет."
+                } else {
+                    "Закрыт: файлы приложения не видны другим программам. Откройте, чтобы смотреть журналы, копии журнала и файлы Linux менеджером файлов."
+                },
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+    }
+}
