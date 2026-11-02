@@ -11,6 +11,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -136,6 +137,12 @@ private const val MAX_OUTPUT = 20
 fun AppDiskCard() {
     val context = LocalContext.current.applicationContext
     var open by remember { mutableStateOf(com.dpsmpx.dpai.ui.AppDisk.isOpen(context)) }
+    // «Закрыть» в шторке — переключатель следом, пока экран открыт (A-26 аудита инструкции).
+    DisposableEffect(Unit) {
+        val listener: (Boolean) -> Unit = { open = it }
+        AppDiskNotice.listen(listener)
+        onDispose { AppDiskNotice.unlisten(listener) }
+    }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {

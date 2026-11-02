@@ -211,12 +211,30 @@ fun AppDisk.setOpen(context: Context, open: Boolean) {
     runCatching { if (open) vfs.write(AppDisk.OPEN_FLAG, "открыт человеком\n".toByteArray()) else vfs.delete(AppDisk.OPEN_FLAG) }
     context.contentResolver.notifyChange(DocumentsContract.buildRootsUri(AppDiskProvider.authority(context)), null)
     AppDiskNotice.sync(context)
+    AppDiskNotice.changed(AppDisk.isOpen(context))
 }
 
 /** Уведомление, пока диск открыт (D-96): в шторке видно, что файлы приложения открыты, и закрыть — одним нажатием. */
 object AppDiskNotice {
     private const val CHANNEL = "dpai-disk"
     private const val ID = 0x0D15C
+
+    /**
+     * Кто показывает переключатель: «Закрыть» в шторке меняет отметку на диске, и открытый
+     * экран должен это увидеть сразу — шторка не уводит экран в паузу (аудит инструкции
+     * 2 ноября 2026, A-26). Слушатели — на главном потоке: приёмник и переключатель — там же.
+     */
+    private val listeners = java.util.concurrent.CopyOnWriteArraySet<(Boolean) -> Unit>()
+
+    fun listen(listener: (Boolean) -> Unit) {
+        listeners += listener
+    }
+
+    fun unlisten(listener: (Boolean) -> Unit) {
+        listeners -= listener
+    }
+
+    internal fun changed(open: Boolean) = listeners.forEach { it(open) }
 
     fun sync(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java)
