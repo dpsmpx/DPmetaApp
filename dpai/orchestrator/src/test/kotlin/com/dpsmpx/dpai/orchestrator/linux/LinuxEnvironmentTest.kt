@@ -7,6 +7,7 @@ import com.dpsmpx.dpai.storage.vfs.NioVfs
 import com.dpsmpx.dpai.storage.vfs.Vfs
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.nio.file.Files
 import java.nio.file.Path
 import java.util.zip.GZIPOutputStream
 import kotlin.test.Test
@@ -15,6 +16,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.io.TempDir
 
 /** Linux-среда в приложении, шаг 5 D-75: установка один раз, DNS гостя, пакеты только по именам. */
@@ -85,6 +87,29 @@ class LinuxEnvironmentTest {
         assertEquals("nameserver 192.168.1.1\nnameserver fe80::1\n", dir.resolve("linux/rootfs/etc/resolv.conf").toFile().readText())
         assertFalse(LinuxEnvironment.isIpLiteral("01.2.3.4"), "ведущий ноль — не адрес")
         assertTrue(LinuxEnvironment.isIpLiteral("2001:db8::53"))
+    }
+
+    /**
+     * A-3 аудита безопасности 1 ноября 2026: гость кладёт ссылку на место
+     * `resolv.conf` или `/etc` — запись DNS не уходит к её цели.
+     */
+    @Test
+    fun dnsIsNeverWrittenThroughGuestLinks() {
+        val token = dir.resolve("control-token").also { it.toFile().writeText("TOKEN") }
+        val etc = dir.resolve("linux/rootfs/etc").also { it.toFile().mkdirs() }
+        assumeTrue(runCatching { Files.createSymbolicLink(etc.resolve("resolv.conf"), etc.fileSystem.getPath("../../../control-token")) }.isSuccess, "символьные ссылки недоступны")
+        val env = LinuxEnvironment(NioVfs(dir))
+        assertEquals(1, env.writeDns(listOf("10.0.0.1")).valueOrNull())
+        assertEquals("TOKEN", token.toFile().readText(), "файл приложения не затёрт")
+        assertFalse(Files.isSymbolicLink(etc.resolve("resolv.conf")), "ссылка заменена файлом")
+        assertEquals("nameserver 10.0.0.1\n", etc.resolve("resolv.conf").toFile().readText())
+
+        etc.toFile().deleteRecursively()
+        Files.createSymbolicLink(etc, etc.fileSystem.getPath("../.."))
+        val r = env.writeDns(listOf("10.0.0.2"))
+        assertEquals(DiagCode.OPERATION_NOT_ALLOWED, (r as Outcome.Failure).errors.single().code, "/etc гостя — ссылка: отказ")
+        assertFalse(dir.resolve("resolv.conf").toFile().exists())
+        assertEquals("TOKEN", token.toFile().readText())
     }
 
     @Test

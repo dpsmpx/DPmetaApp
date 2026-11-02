@@ -267,7 +267,11 @@ class Controller(private val root: File, val version: String?) {
         step(termux, "ключ хоста ${pc.label} в Termux", WorkspaceLink.termuxKnownHosts(pc), stdin = hostLines.joinToString("\n", postfix = "\n"))
             .let { if (it is Outcome.Failure) return it }
         // Ответ агента — строка JSON и при `"ok":false` (на ПК нет Claude Code — так и задумано): важен вход ключом.
-        return when (val r = step(termux, "вход с Termux на ${pc.label}", WorkspaceLink.termuxCheck(pc), accept = { WorkspaceLink.checked(it.stdout) })) {
+        val check = when (val c = WorkspaceLink.termuxCheck(pc)) {
+            is Outcome.Failure -> return c
+            is Outcome.Success -> c.value
+        }
+        return when (val r = step(termux, "вход с Termux на ${pc.label}", check, accept = { WorkspaceLink.checked(it.stdout) })) {
             is Outcome.Failure -> r
             is Outcome.Success -> Outcome.success(Unit)
         }

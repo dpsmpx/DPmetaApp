@@ -785,7 +785,7 @@ private fun RestoreCard(controller: Controller, onHide: () -> Unit, onRestored: 
             Row {
                 TextButton(enabled = command != null, onClick = {
                     val c = command ?: return@TextButton
-                    context.getSystemService(android.content.ClipboardManager::class.java).setPrimaryClip(android.content.ClipData.newPlainText("dpai", c))
+                    Clipboard.copy(context, "dpai", c, sensitive = true)
                     context.packageManager.getLaunchIntentForPackage("com.termux")?.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)?.let(context::startActivity)
                     message = "Команда скопирована. Вставьте её в Termux и вернитесь сюда."
                     waiting = true

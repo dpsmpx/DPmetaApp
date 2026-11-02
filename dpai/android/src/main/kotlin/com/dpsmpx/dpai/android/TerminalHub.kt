@@ -219,6 +219,9 @@ internal class LocalChannel(
                 // Псевдотерминал закрыт: оболочка вышла или её закрыли — итог ниже.
             }
             val code = runCatching { child.waitFor() }.getOrNull()
+            // Дескрипторы псевдотерминала — сразу после выхода: иначе по два на каждую закрытую вкладку (аудит безопасности, A-11).
+            runCatching { child.stdin.close() }
+            runCatching { child.stdout.close() }
             done = true
             onClosed(code)
         }

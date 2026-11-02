@@ -6,6 +6,7 @@ import com.dpsmpx.dpai.storage.vfs.NioVfs
 import com.dpsmpx.dpai.storage.vfs.Vfs
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.nio.file.Files
 import java.nio.file.Path
 import java.util.zip.GZIPOutputStream
 import kotlin.test.Test
@@ -100,6 +101,52 @@ class RootfsInstallerTest {
         assertFalse(File(dir.toFile(), "rootfs/out/escape").exists(), "запись через ссылку архива")
         assertEquals(3, s.skipped.size, s.skipped.toString())
         assertTrue(s.skipped.all { "вне каталога" in it })
+    }
+
+    /** Настоящая ссылка на диске; где их нельзя создать (Windows без прав) — проверка пропущена. */
+    private fun realLink(link: Path, target: String) {
+        link.parent.toFile().mkdirs()
+        assumeTrue(runCatching { Files.createSymbolicLink(link, link.fileSystem.getPath(target)) }.isSuccess, "символьные ссылки недоступны")
+    }
+
+    /**
+     * A-8 аудита безопасности 1 ноября 2026: файл на месте ссылки — вместо
+     * неё, а не сквозь неё; жёсткая ссылка из ссылки или через неё — пропуск;
+     * ссылка, оставшаяся на диске от оборванной установки, — тоже не дверь.
+     */
+    @Test
+    fun linksAreNeverWrittenThrough() {
+        val secret = dir.resolve("secret").also { it.toFile().writeText("s") }
+        realLink(dir.resolve("probe"), "secret")
+        val tar = ByteArrayOutputStream()
+        entry(tar, "./etc/x", '2', link = "../../secret")
+        entry(tar, "./etc/x", '0', "new".toByteArray())
+        entry(tar, "./etc/y", '2', link = "../../secret")
+        entry(tar, "./etc/h", '1', link = "./etc/y")
+        entry(tar, "./up", '2', link = "..")
+        entry(tar, "./h2", '1', link = "up/secret")
+        entry(tar, "./var/", '5')
+        entry(tar, "./var/log", '0', "log".toByteArray())
+        // Оборванная прошлая установка оставила ./var ссылкой наружу.
+        val outside = dir.resolve("outside").also { it.toFile().mkdirs() }
+        realLink(dir.resolve("rootfs/var"), outside.toString())
+        val s = assertIs<Outcome.Success<RootfsInstaller.Summary>>(RootfsInstaller.unpack(gz(tar).inputStream(), NioVfs(dir), "rootfs")).value
+        assertEquals("s", secret.toFile().readText(), "цель ссылки не тронута")
+        assertFalse(Files.isSymbolicLink(dir.resolve("rootfs/etc/x")))
+        assertEquals("new", dir.resolve("rootfs/etc/x").toFile().readText())
+        assertTrue(s.skipped.any { it.startsWith("etc/h ") } && s.skipped.any { it.startsWith("h2 ") }, s.skipped.toString())
+        assertFalse(Files.isSymbolicLink(dir.resolve("rootfs/var")), "каталог архива — вместо ссылки")
+        assertEquals("log", dir.resolve("rootfs/var/log").toFile().readText())
+        assertEquals(0, outside.toFile().list()!!.size, "наружу ничего не записано")
+    }
+
+    @Test
+    fun oversizedNameRecordFailsTheWholeUnpack() {
+        val tar = ByteArrayOutputStream()
+        entry(tar, "././@LongLink", 'L', ByteArray((RootfsInstaller.MAX_META + 1).toInt()) { 'a'.code.toByte() })
+        entry(tar, "ignored", '0', "x".toByteArray())
+        val r = RootfsInstaller.unpack(gz(tar).inputStream(), vfs(), "rootfs")
+        assertEquals(DiagCode.STORAGE_IO_FAILED, assertIs<Outcome.Failure>(r).errors.first().code, "отказ, а не исключение и не память телефона")
     }
 
     @Test

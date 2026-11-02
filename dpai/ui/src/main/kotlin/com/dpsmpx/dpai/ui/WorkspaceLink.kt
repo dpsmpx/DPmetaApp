@@ -1,5 +1,8 @@
 package com.dpsmpx.dpai.ui
 
+import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.core.result.map
+import com.dpsmpx.dpai.execution.ssh.RemoteShell
 import com.dpsmpx.dpai.execution.target.TargetPlatform
 import java.util.Base64
 
@@ -74,12 +77,20 @@ object WorkspaceLink {
         hostName(pc),
     )
 
-    /** В Termux: вход на ПК ключом связки так же строго, как пойдёт Claude Code; на ПК — `agent doctor`. */
-    fun termuxCheck(pc: TargetEntry): List<String> = proot(
-        "exec ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$KNOWN_HOSTS -o ConnectTimeout=15 " +
-            "-i $KEY -p \"\$1\" \"\$2\" \"\$3\" agent doctor",
-        pc.port.toString(), "${pc.user}@${pc.host}", pc.agent,
-    )
+    /**
+     * В Termux: вход на ПК ключом связки так же строго, как пойдёт Claude
+     * Code; на ПК — `agent doctor`. Команда ПК — одной строкой с кавычками
+     * оболочки ПК (`RemoteShell`): `ssh` склеивает аргументы, и путь агента
+     * с `;` или `$()` иначе стал бы командой (аудит безопасности 1 ноября
+     * 2026, A-6); неподдержанное на Windows — отказ.
+     */
+    fun termuxCheck(pc: TargetEntry): Outcome<List<String>> = RemoteShell.join(pc.platform, listOf(pc.agent, "agent", "doctor")).map { remote ->
+        proot(
+            "exec ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$KNOWN_HOSTS -o ConnectTimeout=15 " +
+                "-i $KEY -p \"\$1\" \"\$2\" \"\$3\"",
+            pc.port.toString(), "${pc.user}@${pc.host}", remote,
+        )
+    }
 
     /** Ответил ли агент ПК на [termuxCheck]: строка JSON — вход ключом удался. */
     fun checked(stdout: List<String>): Boolean = stdout.any { it.trim().startsWith("{") }
