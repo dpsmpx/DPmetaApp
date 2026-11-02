@@ -200,6 +200,17 @@ CASES = [
       "        d.show()\n    }\n}\n",
       "tools/verify/registry/secure_screens.txt":
       "android/src/main/kotlin/com/dpsmpx/dpai/android/TerminalActivity.kt:TerminalActivity\n"}, []),
+    ("check_secure_screens.py",
+     # Диалог Compose с кодом сопряжения (D-86): без защищённого окна — находка.
+     {"android/src/main/kotlin/com/dpsmpx/dpai/android/TargetsPane.kt":
+      "@Composable\nfun Code(c: String) {\n    AlertDialog(onDismissRequest = {}, text = { Text(c) }, confirmButton = {})\n}\n",
+      "tools/verify/registry/secure_screens.txt":
+      "android/src/main/kotlin/com/dpsmpx/dpai/android/TargetsPane.kt:PairingCode\n"},
+     {"android/src/main/kotlin/com/dpsmpx/dpai/android/TargetsPane.kt":
+      "@Composable\nfun Code(c: String) {\n    AlertDialog(onDismissRequest = {}, properties = DialogProperties(securePolicy = SecureFlagPolicy.SecureOn),\n"
+      "        text = { Text(c) }, confirmButton = {})\n}\n",
+      "tools/verify/registry/secure_screens.txt":
+      "android/src/main/kotlin/com/dpsmpx/dpai/android/TargetsPane.kt:PairingCode\n"}, []),
     ("readme_progress.py",
      {**BASE, "TODO.md": "## Раздел\n\n- [ ] пункт\n",
       "README.md": "<!-- progress:begin -->\nстарое\n<!-- progress:end -->\n"},

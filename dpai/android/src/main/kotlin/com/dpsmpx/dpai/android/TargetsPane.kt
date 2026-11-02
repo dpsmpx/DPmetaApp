@@ -623,8 +623,20 @@ private fun CliCard() {
             )
             if (!running) TextButton(onClick = { ControlServer.start(context) }) { Text("Открыть канал") }
             code?.let { c ->
-                Text("Код: $c", style = MaterialTheme.typography.headlineSmall)
-                Text("В Termux: dpai control pair $c  (код действует 2 минуты)", style = MaterialTheme.typography.bodySmall)
+                // Код — в своём окне с FLAG_SECURE (дубль D-86 аудита безопасности 1 ноября 2026): на главном
+                // экране он попадал в превью «недавних» и в снимки; остальные экраны снимать можно (§5.8).
+                AlertDialog(
+                    onDismissRequest = { code = null },
+                    properties = androidx.compose.ui.window.DialogProperties(securePolicy = androidx.compose.ui.window.SecureFlagPolicy.SecureOn),
+                    title = { Text("Код сопряжения dpai") },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(c, style = MaterialTheme.typography.headlineMedium)
+                            Text("В Termux: dpai control pair $c — код действует 2 минуты", style = MaterialTheme.typography.bodySmall)
+                        }
+                    },
+                    confirmButton = { TextButton(onClick = { code = null }) { Text("Готово") } },
+                )
             }
             Row {
                 TextButton(onClick = {

@@ -6,3 +6,5 @@
 #
 # Новый экран, показывающий секреты, — строка здесь, в том же изменении.
 android/src/main/kotlin/com/dpsmpx/dpai/android/TerminalActivity.kt:TerminalActivity
+# Код сопряжения dpai — диалог Compose с SecureFlagPolicy.SecureOn (аудит безопасности 1 ноября 2026, дубль D-86).
+android/src/main/kotlin/com/dpsmpx/dpai/android/TargetsPane.kt:PairingCode

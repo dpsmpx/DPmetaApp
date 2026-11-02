@@ -29,6 +29,8 @@ REGISTRY = "tools/verify/registry/secure_screens.txt"
 # Диалог со своим окном: FLAG_SECURE активности его не закрывает.
 DIALOG = re.compile(r"\b(?:AlertDialog|Dialog)\b")
 FLAG = "FLAG_SECURE"
+# Диалог Compose ставит флаг своему окну сам — через `DialogProperties(securePolicy = …)`.
+COMPOSE_SECURE = "SecureFlagPolicy.SecureOn"
 
 
 def entries():
@@ -69,7 +71,7 @@ def check():
             f.add(row, f"экран {rel} из реестра не найден")
             continue
         code = blank_strings(read(rel))
-        if FLAG not in code:
+        if FLAG not in code and COMPOSE_SECURE not in code:
             f.add(rel, f"экран показывает секреты, а {FLAG} не стоит (D-86)")
         # Диалог со своим окном: от объявления диалога до его показа флаг обязан быть.
         # Внутри диалога бывают `Toast.show()` — поэтому берём последний показ до
