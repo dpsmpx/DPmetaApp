@@ -104,6 +104,9 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
     // Сбой контроллера (журнал не открылся, target недоступен при запуске): показать, а не упасть —
     // иначе приложение падало бы при каждом запуске и target нельзя было бы исправить.
     var failure by remember { mutableStateOf<String?>(null) }
+
+    /** Журнал испорчен в середине (D-24): что именно — до решения человека контур не строится. */
+    var corrupted by remember { mutableStateOf<String?>(null) }
     // Глобальный поиск (ТЗ, §75) и задача, открытая из него, — лист задачи поверх любой вкладки.
     var searching by rememberSaveable { mutableStateOf(false) }
     var foundTask by remember { mutableStateOf<com.dpsmpx.dpai.core.ids.TaskId?>(null) }
@@ -131,6 +134,10 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
+            } catch (e: com.dpsmpx.dpai.ui.JournalNeedsConfirmation) {
+                corrupted = e.message
+                failure = "журнал контроллера испорчен — нужно ваше решение"
+                null
             } catch (e: Exception) {
                 failure = Redactor.STANDARD.redact("${e.javaClass.simpleName}: ${e.message}")
                 null
@@ -264,7 +271,29 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
         val s = snapshot
         // Клавиатура (D-64): содержимое — над ней; отступ панели вкладок уже учтён (consumeWindowInsets), не вдвое.
         Column(Modifier.padding(padding).consumeWindowInsets(padding).imePadding().fillMaxSize()) {
-            failure?.let {
+            corrupted?.let { what ->
+                // D-24: карантин хвоста — только явным решением; опасное — красным и вторым шагом.
+                var armed by remember { mutableStateOf(false) }
+                Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                    Text(
+                        "Журнал контроллера испорчен: $what. Записи после испорченной — решения, ответы, итоги задач — " +
+                            "можно отрезать в карантин (файл сохранится рядом), тогда контроллер откатится к последней целой записи. " +
+                            "Без этого контроллер не запустится; журнал — файл live/live.journal в данных приложения.",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    TextButton(onClick = {
+                        if (!armed) {
+                            armed = true
+                        } else {
+                            scope.launch(Dispatchers.IO) { controller.confirmJournalQuarantine() }
+                            corrupted = null
+                            failure = null
+                        }
+                    }) { Text(if (armed) "Точно отрезать хвост в карантин" else "Отрезать хвост в карантин", color = MaterialTheme.colorScheme.error) }
+                }
+            }
+            failure?.takeIf { corrupted == null }?.let {
                 Text(
                     "Контроллер не работает: $it. Проверьте targets на вкладке Targets.",
                     Modifier.fillMaxWidth().padding(12.dp),

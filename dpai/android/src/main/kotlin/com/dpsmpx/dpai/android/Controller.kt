@@ -156,15 +156,30 @@ class Controller(private val root: File, val version: String?) {
         project: ProjectEntry?,
         onEvents: (List<com.dpsmpx.dpai.core.events.EventEnvelope>) -> Unit = {},
         onProblem: (Diagnostic) -> Unit = {},
-    ): LiveSystem = LiveSystem(
-        Clock.SYSTEM, NioVfs(File(root, "live").apply { mkdirs() }.toPath()), targets,
-        { e, p -> JschProcessHost(e, p, identities = listOf(KeystoreKey.identity())) }, knownHostsFile,
-        controllerVersion = version,
-        project = project,
-        onEvents = onEvents,
-        onProblem = onProblem,
-        notificationsOk = notificationsOk,
-    )
+    ): LiveSystem {
+        val dir = NioVfs(File(root, "live").apply { mkdirs() }.toPath())
+        // Карантин хвоста журнала — только после «да» человека и только на одну сборку (D-24).
+        val confirmed = dir.exists(QUARANTINE_CONFIRMED)
+        return LiveSystem(
+            Clock.SYSTEM, dir, targets,
+            { e, p -> JschProcessHost(e, p, identities = listOf(KeystoreKey.identity())) }, knownHostsFile,
+            controllerVersion = version,
+            project = project,
+            onEvents = onEvents,
+            onProblem = onProblem,
+            notificationsOk = notificationsOk,
+            quarantineConfirmed = confirmed,
+        ).also { if (confirmed) runCatching { dir.delete(QUARANTINE_CONFIRMED) } }
+    }
+
+    /**
+     * Человек подтвердил: журнал испорчен в середине, хвост после порчи — в
+     * карантин (D-24; аудит надёжности, A-1). Следующая сборка контура
+     * откроет журнал с карантином; отметка одноразовая.
+     */
+    fun confirmJournalQuarantine() {
+        NioVfs(File(root, "live").apply { mkdirs() }.toPath()).write(QUARANTINE_CONFIRMED, "подтверждено человеком\n".toByteArray())
+    }
 
     /**
      * Строка открытого ключа приложения; копия — в `app_key.pub` каталога
@@ -369,6 +384,8 @@ class Controller(private val root: File, val version: String?) {
     }
 
     companion object {
+        /** Отметка «карантин хвоста журнала подтверждён» — в каталоге контура (D-24). */
+        private const val QUARANTINE_CONFIRMED = "quarantine-confirmed"
         private const val BOOK = "targets"
         private const val PROJECT = "project"
         private const val KNOWN_HOSTS = "known_hosts"

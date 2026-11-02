@@ -145,6 +145,36 @@ class LiveSystemTest {
         }
     }
 
+    /**
+     * D-24 (аудит надёжности 2 ноября 2026, A-1): порча в середине журнала —
+     * не молча отрезанные подтверждённые записи, а отказ открытия до решения
+     * человека; файл не тронут. После подтверждения — карантин хвоста, и
+     * потеря уходит в журнал приложения (D-43), а не только в короткий список.
+     */
+    @Test
+    fun corruptionInTheMiddleWaitsForTheHuman() {
+        val target = entry("сервер", "/home/dev/.claude-dpai")
+        system(target).also { s -> steps(s, 2) }.close()
+        val journal = dir.resolve("live.journal")
+        val bytes = java.nio.file.Files.readAllBytes(journal)
+        val firstEnd = bytes.indexOf('\n'.code.toByte())
+        assertTrue(firstEnd > 0 && firstEnd < bytes.size - 2, "в журнале больше одной записи")
+        val spoiled = bytes.copyOf().also { b -> b[firstEnd / 2] = if (b[firstEnd / 2] == 'X'.code.toByte()) 'Y'.code.toByte() else 'X'.code.toByte() }
+        java.nio.file.Files.write(journal, spoiled)
+
+        kotlin.test.assertFailsWith<JournalNeedsConfirmation> { system(target) }
+        assertTrue(spoiled.contentEquals(java.nio.file.Files.readAllBytes(journal)), "без решения человека журнал не тронут")
+
+        val told = mutableListOf<Diagnostic>()
+        val s = LiveSystem(clock, NioVfs(dir), listOf(target), { _, _ -> host }, "/known_hosts", RandomSource.seeded(79), onProblem = { told += it }, quarantineConfirmed = true)
+        try {
+            assertTrue(s.problems.any { it.code == DiagCode.JOURNAL_TAIL_TRUNCATED }, s.problems.toString())
+            assertTrue(told.any { it.code == DiagCode.JOURNAL_TAIL_TRUNCATED }, "потеря — в журнал приложения: $told")
+        } finally {
+            s.close()
+        }
+    }
+
     @Test
     fun slotWithoutLoginKeepsTasksWaiting() {
         loggedIn = false

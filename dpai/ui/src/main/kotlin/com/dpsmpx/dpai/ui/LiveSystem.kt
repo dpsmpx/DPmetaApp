@@ -98,6 +98,12 @@ class LiveSystem(
     onProblem: (Diagnostic) -> Unit = {},
     /** Разрешены ли уведомления (у оболочки — Android); неизвестно — `null`. */
     private val notificationsOk: () -> Boolean? = { null },
+    /**
+     * Человек подтвердил карантин хвоста после порчи в середине журнала
+     * (D-24). Без этого порча в середине — [JournalNeedsConfirmation], а не
+     * молча отрезанные подтверждённые записи (аудит надёжности, A-1).
+     */
+    quarantineConfirmed: Boolean = false,
 ) : ControlView, AutoCloseable {
     override val mode: String = "контроллер"
     private val ids = IdGenerator(clock, random)
@@ -112,7 +118,7 @@ class LiveSystem(
 
     // Сегменты и снимки (D-37): контроллер живёт неделями, память журнала не растёт с историей.
     private val journal: EventJournal = when (
-        val opened = EventJournal.open(vfs, "live.journal", quarantineCorruption = true, segmentSize = SEGMENT)
+        val opened = EventJournal.open(vfs, "live.journal", quarantineCorruption = quarantineConfirmed, segmentSize = SEGMENT)
     ) {
         is Outcome.Success -> {
             // Предупреждения открытия (`JOURNAL_TAIL_TRUNCATED`: что именно потеряно и где карантин)
@@ -120,7 +126,11 @@ class LiveSystem(
             journalDiagnostics += opened.diagnostics
             opened.value
         }
-        is Outcome.Failure -> error("журнал контроллера не открылся: ${opened.diagnostics.joinToString { "${it.code}: ${it.message}" }}")
+        is Outcome.Failure -> {
+            val corrupted = opened.errors.firstOrNull { it.code == com.dpsmpx.dpai.core.diagnostics.DiagCode.JOURNAL_CORRUPTED }
+            if (corrupted != null) throw JournalNeedsConfirmation(corrupted.message)
+            error("журнал контроллера не открылся: ${opened.diagnostics.joinToString { "${it.code}: ${it.message}" }}")
+        }
     }
     private val snapshots = SnapshotStore(DocumentStore(vfs, "snapshots"))
     private val usable = entries.filter { it.configDir != null }
@@ -186,8 +196,10 @@ class LiveSystem(
     val problems = mutableListOf<Diagnostic>()
 
     init {
-        // Потеря хвоста журнала и карантин — в те же «проблемы», что и остальные отказы (D-87).
+        // Потеря хвоста журнала и карантин — в те же «проблемы», что и остальные отказы (D-87),
+        // и в журнал приложения (D-43): список проблем на сводке короткий, а потеря записей — навсегда.
         problems += journalDiagnostics
+        journalDiagnostics.forEach { d -> runCatching { onProblem(d) } }
         for (e in (usable + listOfNotNull(projectEntry)).distinctBy { it.id }) manager.register(e.toTarget(knownHostsFile))
         for (e in usable) {
             val agent = manager.client(e.id).valueOrNull()!!
@@ -576,3 +588,10 @@ class LiveSystem(
         private const val SEGMENT = 20_000
     }
 }
+
+/**
+ * Журнал контроллера испорчен в середине (D-24): открыть можно, только
+ * отрезав всё после испорченной записи в карантин, — а это решает человек.
+ * Оболочка спрашивает его и строит контур заново с `quarantineConfirmed`.
+ */
+class JournalNeedsConfirmation(message: String) : IllegalStateException(message)
