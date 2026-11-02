@@ -398,7 +398,9 @@ class DemoModel(
 
     /** Последняя сессия задачи — куда ведёт ссылка `dpai://task/…` из уведомления. Чтение неизменяемого состояния — без замка. */
     fun sessionOf(task: TaskId): SessionId? = runCatching {
-        built?.orchestrator?.sessions?.sessions?.values?.filter { it.task == task }?.maxByOrNull { it.createdAt.epochMillis }?.id
+        // Рабочая сессия, а не ревью (аудит удобства, A-14): ревью только читает, писать туда нечего.
+        val own = built?.orchestrator?.sessions?.sessions?.values?.filter { it.task == task }.orEmpty()
+        (own.filter { it.review == null }.ifEmpty { own }).maxByOrNull { it.createdAt.epochMillis }?.id
     }.getOrNull()
 
     /** Кто чем занят (D-56): target → его идущие задачи с проектом — без замка. */

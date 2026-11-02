@@ -563,6 +563,7 @@ class LiveSystem(
             title = orchestrator.tasks.tasks[task]?.title,
             chat = Screens.chat(Screens.chatEntries(orchestrator.chat(task), orchestrator.turnMessages(task), orchestrator.tasks.tasks[task]), id, clock.now()),
             status = Screens.sessionStatus(record, orchestrator.tasks.tasks[task]?.state, running), workingFor = working,
+            noSend = Screens.noSend(id, orchestrator.sessions, orchestrator.tasks),
         )
     }
 

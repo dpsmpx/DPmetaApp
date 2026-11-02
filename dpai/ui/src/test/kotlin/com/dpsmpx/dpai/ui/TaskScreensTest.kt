@@ -187,5 +187,10 @@ class TaskScreensTest {
         assertTrue(SessionAction.REASSIGN !in Screens.sessionActions(work.id, sessions, TasksState(mapOf(id to task(TaskState.DONE)))))
         assertEquals("ревью кода", Screens.reviewLabel("CODE"))
         assertEquals("ревью STYLE", Screens.reviewLabel("STYLE"))
+        // A-14: почему не пишут — настоящая причина, а не «проверяется или завершена» на всё.
+        assertEquals(null, Screens.noSend(work.id, sessions, tasks), "в рабочую сессию ждущей задачи — пишут")
+        assertTrue("ревью только читает" in Screens.noSend(review.id, sessions, tasks).orEmpty())
+        assertEquals(null, Screens.noSend(work.id, sessions, TasksState(mapOf(id to task(TaskState.DONE)))), "в завершённую — пишут: сообщение её продолжает")
+        assertTrue("на проверке" in Screens.noSend(work.id, sessions, TasksState(mapOf(id to task(TaskState.VERIFIED)))).orEmpty())
     }
 }

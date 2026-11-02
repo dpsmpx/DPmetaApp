@@ -82,6 +82,8 @@ data class SessionScreen(
     val task: TaskId? = null,
     /** Состояние для кружка в заголовке (D-61). */
     val status: SessionStatus = SessionStatus.IDLE,
+    /** Почему сюда не пишут (A-14): ревью, не последняя сессия, проверка, завершена; пишут — `null`. */
+    val noSend: String? = null,
     /** Сколько идёт текущий ход — «5 мин» (от начала хода в журнале сессии); ход не идёт — `null`. */
     val workingFor: String? = null,
 )
@@ -102,8 +104,12 @@ enum class SessionAction(val label: String) {
     STOP("Остановить ход"),
     SEND("Запрос"),
     FRESH("Свежая сессия"),
-    /** Ход остановлен с handoff, следующая сессия задачи — на другом слоте (D-77; ТЗ, §74, Reassign). */
-    REASSIGN("Перенести на другой слот"),
+    /**
+     * Ход остановлен с handoff, следующая сессия задачи — на другом слоте
+     * (D-77; ТЗ, §74, Reassign). Имя — с «прервать» (аудит удобства, A-13):
+     * в листе задачи выбор слота следующего хода ход не прерывает (D-66).
+     */
+    REASSIGN("Прервать и перенести"),
 }
 
 /** Карточка задачи; [level] — глубина в DAG: 0 — без зависимостей, иначе 1 + наибольшая у зависимостей. */
@@ -258,6 +264,24 @@ object Screens {
             if (last && !running && taskState !in BUSY) add(SessionAction.FRESH)
             // Перенос — у последней рабочей сессии незавершённой задачи, пока она не на проверке (D-77).
             if (last && tasks.tasks[s.task]?.terminal == false && taskState !in CHECKING) add(SessionAction.REASSIGN)
+        }
+    }
+
+    /**
+     * Почему запрос в эту сессию не отправить — словами, для подсказки в
+     * поле (аудит удобства, A-14); можно — `null`. Прежде на всё было
+     * «задача проверяется или завершена», и при ждущем ответе тоже.
+     */
+    fun noSend(session: SessionId, sessions: SessionsState, tasks: TasksState): String? {
+        val s = sessions.sessions[session] ?: return "сессии нет"
+        if (SessionAction.SEND in sessionActions(session, sessions, tasks)) return null
+        val t = tasks.tasks[s.task]
+        return when {
+            s.review != null -> "сессия ревью только читает — сообщение в рабочую сессию задачи"
+            t == null -> "задачи нет"
+            t.terminal -> "задача завершена (${Words.task(t.state.name)})"
+            t.state in CHECKING -> "задача на проверке — сообщение после неё"
+            else -> "сообщение — в последнюю рабочую сессию задачи"
         }
     }
 

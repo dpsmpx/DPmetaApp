@@ -360,7 +360,8 @@ private fun MoveSection(model: DemoModel, task: TaskId, executor: String?, send:
         }
     }
     androidx.compose.material3.HorizontalDivider()
-    Text("Перенести на слот", style = MaterialTheme.typography.titleSmall)
+    // Не «Перенести» (A-13): это выбор слота следующего хода, идущий ход не прерывается (D-66).
+    Text("Слот следующего хода", style = MaterialTheme.typography.titleSmall)
     Text(
         (executor?.let { "Сейчас: $it. " } ?: "") + "Следующий ход пойдёт на выбранном слоте с контекстом задачи; идущий ход не прерывается.",
         style = MaterialTheme.typography.labelSmall,

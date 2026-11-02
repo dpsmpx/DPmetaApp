@@ -489,17 +489,31 @@ private fun SessionExtras(screen: SessionScreen, model: DemoModel) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         if (screen.task != null) TextButton(onClick = { context = true }) { Text("Контекст", style = MaterialTheme.typography.labelSmall) }
         if (reassign) {
-            TextButton(enabled = !busy, onClick = {
-                busy = true
-                val key = keys.next(com.dpsmpx.dpai.core.ids.IdKinds.OPERATION).value
-                scope.launch {
-                    status = when (val r = withContext(Dispatchers.IO) { model.command(com.dpsmpx.dpai.orchestrator.commands.Command.Reassign(screen.session, key)) }) {
-                        is Outcome.Success -> null
-                        is Outcome.Failure -> "Не принято: ${r.diagnostics.first().message}"
-                    }
-                    busy = false
-                }
-            }) { Text(com.dpsmpx.dpai.ui.SessionAction.REASSIGN.label, style = MaterialTheme.typography.labelSmall) }
+            // Прерывает идущий ход (D-77) — с подтверждением (аудит удобства, A-13).
+            var confirm by remember(screen.session) { mutableStateOf(false) }
+            TextButton(enabled = !busy, onClick = { confirm = true }) { Text(com.dpsmpx.dpai.ui.SessionAction.REASSIGN.label, style = MaterialTheme.typography.labelSmall) }
+            if (confirm) {
+                AlertDialog(
+                    onDismissRequest = { confirm = false },
+                    title = { Text("Прервать ход и перенести?") },
+                    text = { Text("Идущий ход остановится с передачей контекста; следующая сессия задачи пойдёт на другом слоте. Выбрать слот следующего хода без прерывания — в листе задачи («⚙»).") },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            confirm = false
+                            busy = true
+                            val key = keys.next(com.dpsmpx.dpai.core.ids.IdKinds.OPERATION).value
+                            scope.launch {
+                                status = when (val r = withContext(Dispatchers.IO) { model.command(com.dpsmpx.dpai.orchestrator.commands.Command.Reassign(screen.session, key)) }) {
+                                    is Outcome.Success -> null
+                                    is Outcome.Failure -> "Не принято: ${r.diagnostics.first().message}"
+                                }
+                                busy = false
+                            }
+                        }) { Text("Прервать и перенести", color = MaterialTheme.colorScheme.error) }
+                    },
+                    dismissButton = { TextButton(onClick = { confirm = false }) { Text("Отмена") } },
+                )
+            }
         }
     }
     status?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
@@ -638,6 +652,22 @@ private fun ChatInput(screen: SessionScreen, model: DemoModel, maxHeight: androi
         }
     }
     val typing = text.isNotEmpty()
+    // «■» — с подтверждением и с тем, как продолжить (аудит удобства, A-13): одно касание ставило задачу на паузу.
+    var confirmStop by remember(screen.session) { mutableStateOf(false) }
+    if (confirmStop) {
+        AlertDialog(
+            onDismissRequest = { confirmStop = false },
+            title = { Text("Остановить ход?") },
+            text = { Text("Ход остановится, задача встанет на паузу. Продолжить — «Продолжить» в листе задачи («⚙») или сообщением сюда.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmStop = false
+                    send({ k -> com.dpsmpx.dpai.orchestrator.commands.Command.StopSession(screen.session, k) })
+                }) { Text("Остановить", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { confirmStop = false }) { Text("Отмена") } },
+        )
+    }
     Column(Modifier.padding(horizontal = 6.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         status?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
         // Пусто — одна строка на всю ширину и рядом «стоп» (или «свежая сессия»); начали писать — поле растёт
@@ -645,15 +675,13 @@ private fun ChatInput(screen: SessionScreen, model: DemoModel, maxHeight: androi
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             OutlinedTextField(
                 text, { text = it }, Modifier.weight(1f).heightIn(max = maxHeight),
-                placeholder = { Text(if (canSend) "Сообщение Claude" else "Задача проверяется или завершена") },
+                placeholder = { Text(if (canSend) "Сообщение Claude" else (screen.noSend ?: "сюда не пишут").replaceFirstChar { it.uppercase() }) },
                 enabled = canSend, singleLine = !typing, maxLines = if (typing) Int.MAX_VALUE else 1,
                 textStyle = MaterialTheme.typography.bodyMedium,
             )
             if (!typing) {
                 when {
-                    running -> androidx.compose.material3.FilledTonalIconButton(enabled = !busy, onClick = {
-                        send({ k -> com.dpsmpx.dpai.orchestrator.commands.Command.StopSession(screen.session, k) })
-                    }) { Text("■") }
+                    running -> androidx.compose.material3.FilledTonalIconButton(enabled = !busy, onClick = { confirmStop = true }) { Text("■") }
                     fresh -> androidx.compose.material3.FilledTonalIconButton(enabled = !busy, onClick = {
                         send({ k -> com.dpsmpx.dpai.orchestrator.commands.Command.SendToSession(screen.session, null, modelName.ifEmpty { null }, effort.ifEmpty { null }, fresh = true, key = k) })
                     }) { Text("↻") }
