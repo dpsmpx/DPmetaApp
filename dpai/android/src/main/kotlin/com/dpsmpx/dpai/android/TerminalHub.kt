@@ -118,9 +118,9 @@ object TerminalHub {
         thread(name = "dpai-term-connect", isDaemon = true) {
             val (cols, rows) = tab.session.read { it.cols to it.rows }
             val target = tab.target
-            val o: Outcome<TermChannel>? = if (target == null) {
-                // Linux-среда в приложении: псевдотерминал через JNI, без SSH (D-75, шаг 5).
-                com.dpsmpx.dpai.android.linux.LinuxSetup.shell(app, com.dpsmpx.dpai.execution.linux.WindowSize(cols, rows)).map { child ->
+            val o: Outcome<TermChannel>? = if (target == null || target.inApp) {
+                // Linux-среда в приложении (и target «в приложении»): псевдотерминал через JNI, без SSH (D-75, шаг 5).
+                com.dpsmpx.dpai.android.linux.LinuxSetup.shell(app, com.dpsmpx.dpai.execution.linux.WindowSize(cols, rows), tab.command).map { child ->
                     LocalChannel(child, onOutput = { b, n -> tab.session.output(b, 0, n) }, onClosed = { code -> if (tab.transport === t) closed(tab, code) })
                 }
             } else {

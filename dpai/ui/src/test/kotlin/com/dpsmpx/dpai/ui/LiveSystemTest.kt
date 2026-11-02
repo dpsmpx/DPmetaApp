@@ -175,6 +175,37 @@ class LiveSystemTest {
         }
     }
 
+    /**
+     * D-75, шаг 5: target «в приложении» — без SSH, через агента процесса;
+     * ход идёт с каталогом слота в госте. Linux не установлен (агента нет) —
+     * контроллер работает с остальными targets, а этот назван в заметках.
+     */
+    @Test
+    fun inAppTargetRunsThroughTheAppAgent() {
+        val inApp = TargetForm.inApp(ids.next(IdKinds.TARGET), "Linux в приложении · слот 1", "/root/.claude-slot-1").valueOrNull()!!
+        val without = LiveSystem(clock, NioVfs(dir.resolve("without")), listOf(inApp), { _, _ -> error("SSH «в приложении» не нужен") }, "/known_hosts", RandomSource.seeded(80))
+        try {
+            assertTrue(without.notes.any { "не установлен" in it }, without.notes.toString())
+            steps(without, 1)
+            assertTrue(without.orchestrator.accounts.slots.isEmpty(), "без агента приложения — слота нет")
+        } finally {
+            without.close()
+        }
+
+        val s = LiveSystem(clock, NioVfs(dir.resolve("with")), listOf(inApp), { _, _ -> error("SSH «в приложении» не нужен") }, "/known_hosts", RandomSource.seeded(81), inAppHost = host)
+        try {
+            steps(s, 1)
+            assertEquals(AccountState.AVAILABLE, s.orchestrator.accounts.slots.values.single().state, s.problems.toString())
+            val task = s.addTask("В Alpine", "ответить одним словом").valueOrNull()!!
+            steps(s, 4)
+            val session = s.orchestrator.sessions.sessions.values.single { it.task == task }
+            assertEquals(inApp.id, session.target)
+            assertEquals("/root/.claude-slot-1", host.spec(session.id)!!.setEnv[SlotEnvironment.CONFIG_DIR], "каталог слота — путь гостя")
+        } finally {
+            s.close()
+        }
+    }
+
     @Test
     fun slotWithoutLoginKeepsTasksWaiting() {
         loggedIn = false

@@ -172,6 +172,8 @@ class Controller(private val root: File, val version: String?) {
         project: ProjectEntry?,
         onEvents: (List<com.dpsmpx.dpai.core.events.EventEnvelope>) -> Unit = {},
         onProblem: (Diagnostic) -> Unit = {},
+        /** Агент target «в приложении» (D-75, шаг 5); `null` — таких targets нет или Linux не установлен. */
+        inAppHost: com.dpsmpx.dpai.execution.process.ProcessHost? = null,
     ): LiveSystem {
         val dir = NioVfs(File(root, "live").apply { mkdirs() }.toPath())
         // Карантин хвоста журнала — только после «да» человека и только на одну сборку (D-24).
@@ -185,6 +187,7 @@ class Controller(private val root: File, val version: String?) {
             onProblem = onProblem,
             notificationsOk = notificationsOk,
             quarantineConfirmed = confirmed,
+            inAppHost = inAppHost,
         ).also { if (confirmed) runCatching { dir.delete(QUARANTINE_CONFIRMED) } }
     }
 
@@ -222,6 +225,25 @@ class Controller(private val root: File, val version: String?) {
         return when (val w = docs.write(BOOK, TargetBook.toJson(targets().filter { it.id != entry.id } + entry))) {
             is Outcome.Failure -> w
             is Outcome.Success -> Outcome.success(Unit)
+        }
+    }
+
+    /**
+     * Ещё один слот «в приложении» (D-75, шаг 5; D-29): target без SSH с
+     * каталогом слота `/root/.claude-slot-N` в госте — следующий свободный
+     * номер. Ключа хоста нет — сверять нечего.
+     */
+    @Synchronized
+    fun addInApp(id: com.dpsmpx.dpai.core.ids.ExecutionTargetId): Outcome<TargetEntry> {
+        val used = targets().filter { it.inApp }.mapNotNull { it.configDir?.substringAfterLast("-")?.toIntOrNull() }.toSet()
+        val n = (1..99).firstOrNull { it !in used } ?: return Outcome.failure(DiagCode.VALUE_INVALID, "слотов «в приложении» — не больше 99")
+        val entry = when (val e = TargetForm.inApp(id, "Linux в приложении · слот $n", com.dpsmpx.dpai.orchestrator.linux.LinuxEnvironment.slotDir(n))) {
+            is Outcome.Failure -> return e
+            is Outcome.Success -> e.value
+        }
+        return when (val w = docs.write(BOOK, TargetBook.toJson(targets() + entry))) {
+            is Outcome.Failure -> w
+            is Outcome.Success -> Outcome.success(entry)
         }
     }
 
@@ -388,12 +410,13 @@ class Controller(private val root: File, val version: String?) {
         return Outcome.success(lines)
     }
 
-    /** `dpai agent doctor` на target — по SSH с ключом приложения. */
-    fun doctor(entry: TargetEntry): Outcome<DoctorResult> {
+    /** `dpai agent doctor` на target — по SSH с ключом приложения; «в приложении» — агентом процесса [inAppHost] (D-75). */
+    fun doctor(entry: TargetEntry, inAppHost: com.dpsmpx.dpai.execution.process.ProcessHost? = null): Outcome<DoctorResult> {
         val manager = ExecutionTargetManager(
             Clock.SYSTEM,
             sshHost = { e, p -> JschProcessHost(e, p, identities = listOf(KeystoreKey.identity())) },
             controllerVersion = version,
+            inAppHost = inAppHost,
         )
         manager.register(entry.toTarget(knownHostsFile))
         return manager.doctor(entry.id)

@@ -94,6 +94,26 @@ fun LinuxCard() {
                         TextButton(enabled = busy == null && packages.isNotBlank(), onClick = { apk(LinuxEnvironment.Apk.DEL, "Убрать") }) { Text("Убрать") }
                         TextButton(enabled = busy == null, onClick = { apk(LinuxEnvironment.Apk.UPGRADE, "Обновить всё") }) { Text("Обновить всё") }
                     }
+                    // Target «в приложении» (D-75, шаг 5): задачи Claude — в этом Linux, без SSH; слот — каталог в госте (D-29).
+                    Text(
+                        "Задачи в этом Linux: «Добавить слот» — target «в приложении» на вкладке Targets; войти — его «Claude в терминале» → /login.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    TextButton(enabled = busy == null, onClick = {
+                        busy = "Добавляю слот…"
+                        scope.launch {
+                            val r = withContext(Dispatchers.IO) {
+                                val id = com.dpsmpx.dpai.core.ids.IdGenerator(com.dpsmpx.dpai.core.clock.Clock.SYSTEM, com.dpsmpx.dpai.core.clock.RandomSource.secure())
+                                    .next(com.dpsmpx.dpai.core.ids.IdKinds.TARGET)
+                                Controller.get(context.filesDir, null).addInApp(id)
+                            }
+                            note = when (r) {
+                                is Outcome.Success -> "Добавлен «${r.value.label}» (${r.value.configDir}): войдите в Claude в его терминале"
+                                is Outcome.Failure -> "Слот не добавлен: ${r.errors.first().message}"
+                            }
+                            busy = null
+                        }
+                    }) { Text("Добавить слот «в приложении»") }
                 }
             }
             busy?.takeIf { installed != null }?.let { Text(it, style = MaterialTheme.typography.labelSmall) }

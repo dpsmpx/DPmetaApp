@@ -42,17 +42,28 @@ data class TargetEntry(
      * сессий.
      */
     val configDir: String? = null,
+    /**
+     * Target «в приложении» (D-75, шаг 5): Alpine под proot в данных
+     * приложения, агент — в процессе приложения, без SSH. Каталог слота —
+     * путь гостя (`/root/.claude-slot-N`); адреса SSH у него нет.
+     */
+    val inApp: Boolean = false,
 ) {
-    /** Target того же телефона — Termux на `127.0.0.1` (D-26). */
+    /** Target того же телефона — Termux на `127.0.0.1` (D-26); «в приложении» — Alpine приложения (D-75). */
     val type: TargetType
         get() = when {
+            inApp -> TargetType.IN_APP
             platform == TargetPlatform.WINDOWS -> TargetType.WINDOWS_REMOTE
             host == "127.0.0.1" || host == "localhost" -> TargetType.TERMUX_LOCAL
             else -> TargetType.LINUX_SSH
         }
 
     fun toTarget(knownHostsFile: String): ExecutionTarget =
-        ExecutionTarget(id, type, label, platform, SshEndpoint.of(host, user, port, null, knownHostsFile).valueOrNull()!!, listOf(agent))
+        if (inApp) {
+            ExecutionTarget(id, type, label, platform, null, listOf(agent))
+        } else {
+            ExecutionTarget(id, type, label, platform, SshEndpoint.of(host, user, port, null, knownHostsFile).valueOrNull()!!, listOf(agent))
+        }
 }
 
 /** Форма нового target: проверки — те же, что у `SshEndpoint` (параметр `ssh` не подставить, T2). */
@@ -91,6 +102,20 @@ object TargetForm {
         }
     }
 
+    /**
+     * Target «в приложении» (D-75, шаг 5): имя и каталог слота в госте —
+     * абсолютный путь внутри Alpine (`/root/.claude-slot-N`, D-29).
+     */
+    fun inApp(id: ExecutionTargetId, label: String, configDir: String): Outcome<TargetEntry> {
+        if (label.isBlank() || label.length > 60) return Outcome.failure(DiagCode.VALUE_INVALID, "имя — от 1 до 60 знаков", "label")
+        val dir = Accounts.normalizeDir(configDir.trim()) ?: configDir.trim()
+        if (!dir.startsWith("/") || dir.any { it.isISOControl() }) return Outcome.failure(DiagCode.VALUE_INVALID, "каталог Claude — абсолютный путь в Linux приложения", "configDir")
+        return Outcome.success(TargetEntry(id, label.trim(), "", 0, "", TargetPlatform.POSIX, IN_APP_AGENT, dir, inApp = true))
+    }
+
+    /** Команда агента «в приложении» — имя для `AgentClient`: исполняет её агент процесса (`InAppAgentHost`). */
+    const val IN_APP_AGENT = "dpai"
+
     private fun absolute(path: String, windows: Boolean): Boolean =
         if (windows) Regex("""[A-Za-z]:[\\/].*""").matches(path) else path.startsWith("/")
 }
@@ -98,21 +123,34 @@ object TargetForm {
 /** Список targets приложения — документ `dpai.app-targets` (`docs/DATA_MODEL.md`). */
 object TargetBook {
     const val FORMAT = "dpai.app-targets"
-    /** v2 — каталог Claude слота (`configDir`); v1 читается, у его targets каталога нет. */
-    const val VERSION = 2
+
+    /** Вид target «в приложении» в формате v3. */
+    const val KIND_IN_APP = "in-app"
+    /**
+     * v3 — target «в приложении» (`"kind": "in-app"`, без адреса SSH; D-75,
+     * шаг 5); v2 — каталог Claude слота (`configDir`); v1 и v2 читаются.
+     */
+    const val VERSION = 3
 
     fun toJson(entries: List<TargetEntry>): JsonObject = JsonObject(
         linkedMapOf(
             *FormatHeader.write(FORMAT, VERSION),
             "targets" to JsonArray(
                 entries.map { e ->
-                    JsonObject(
-                        linkedMapOf(
-                            "id" to JsonString(e.id.value), "label" to JsonString(e.label), "host" to JsonString(e.host),
-                            "port" to JsonNumber.of(e.port.toLong()), "user" to JsonString(e.user),
-                            "platform" to JsonString(e.platform.name.lowercase()), "agent" to JsonString(e.agent),
-                        ).also { m -> e.configDir?.let { m["configDir"] = JsonString(it) } },
-                    )
+                    if (e.inApp) {
+                        JsonObject(
+                            linkedMapOf<String, JsonValue>("id" to JsonString(e.id.value), "label" to JsonString(e.label), "kind" to JsonString(KIND_IN_APP))
+                                .also { m -> e.configDir?.let { m["configDir"] = JsonString(it) } },
+                        )
+                    } else {
+                        JsonObject(
+                            linkedMapOf(
+                                "id" to JsonString(e.id.value), "label" to JsonString(e.label), "host" to JsonString(e.host),
+                                "port" to JsonNumber.of(e.port.toLong()), "user" to JsonString(e.user),
+                                "platform" to JsonString(e.platform.name.lowercase()), "agent" to JsonString(e.agent),
+                            ).also { m -> e.configDir?.let { m["configDir"] = JsonString(it) } },
+                        )
+                    }
                 },
             ),
         ),
@@ -131,6 +169,22 @@ object TargetBook {
                 return@mapIndexedNotNull null
             }
             val t = JsonFields(obj, "$.targets[$i]", d)
+            // «В приложении» (v3): только имя и каталог слота — адреса SSH нет.
+            if (version >= 3 && t.has("kind")) {
+                val kind = t.string("kind")
+                val id = t.string("id")?.let { IdKinds.TARGET.parse(it).valueOrNull() }
+                val label = t.string("label").orEmpty()
+                val dir = t.string("configDir")
+                t.finish()
+                if (kind != KIND_IN_APP || id == null || dir == null) {
+                    d.error(DiagCode.VALUE_INVALID, "target «в приложении» неполон или вид неизвестен: $kind", "$.targets[$i]")
+                    return@mapIndexedNotNull null
+                }
+                return@mapIndexedNotNull when (val e = TargetForm.inApp(id, label, dir)) {
+                    is Outcome.Success -> e.value
+                    is Outcome.Failure -> null.also { e.diagnostics.forEach { x -> d.error(x.code, x.message, "$.targets[$i]") } }
+                }
+            }
             val id = t.string("id")?.let { IdKinds.TARGET.parse(it).valueOrNull() }
             val label = t.string("label").orEmpty()
             val host = t.string("host").orEmpty()

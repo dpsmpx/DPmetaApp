@@ -110,4 +110,18 @@ class TargetsTest {
         assertEquals(emptyList(), ProjectForm.words("   "))
         assertEquals(null, ProjectForm.words("make 'test"))
     }
+
+    /** D-75, шаг 5: target «в приложении» — формат v3 туда-обратно; адреса SSH нет, вид — IN_APP. */
+    @Test
+    fun inAppTargetRoundTrip() {
+        val ids = com.dpsmpx.dpai.core.ids.IdGenerator(com.dpsmpx.dpai.core.clock.ManualClock(), com.dpsmpx.dpai.core.clock.RandomSource.seeded(31))
+        val inApp = TargetForm.inApp(ids.next(com.dpsmpx.dpai.core.ids.IdKinds.TARGET), "Linux в приложении", "/root/.claude-slot-1/").valueOrNull()!!
+        assertEquals(com.dpsmpx.dpai.execution.target.TargetType.IN_APP, inApp.type)
+        assertEquals("/root/.claude-slot-1", inApp.configDir, "каталог — без / в конце")
+        assertEquals(null, inApp.toTarget("/kh").ssh, "без SSH")
+        val back = TargetBook.fromJson(TargetBook.toJson(listOf(inApp))).valueOrNull()!!
+        assertEquals(listOf(inApp), back)
+        assertTrue("\"kind\":\"in-app\"" in com.dpsmpx.dpai.core.serialization.CanonicalJson.write(TargetBook.toJson(listOf(inApp))))
+        assertTrue(TargetForm.inApp(inApp.id, "x", "root/.claude") is com.dpsmpx.dpai.core.result.Outcome.Failure, "каталог — абсолютный путь гостя")
+    }
 }

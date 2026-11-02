@@ -195,7 +195,7 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
                 Column(Modifier.padding(12.dp)) {
                     Text(t.label, style = MaterialTheme.typography.titleSmall)
                     if (t.configDir != null) TargetSwitches(model, t)
-                    Text("${t.user}@${t.host}:${t.port} · ${Words.targetType(t.type.name)}", style = MaterialTheme.typography.bodySmall)
+                    Text(if (t.inApp) "Alpine в данных приложения, без SSH · ${Words.targetType(t.type.name)}" else "${t.user}@${t.host}:${t.port} · ${Words.targetType(t.type.name)}", style = MaterialTheme.typography.bodySmall)
                     Text(t.configDir?.let { "каталог Claude: $it" } ?: "без каталога Claude — только проверка агента", style = MaterialTheme.typography.bodySmall)
                     // Чем занят слот (D-56): идущие задачи с проектом; нет — свободен.
                     if (t.configDir != null) {
@@ -206,7 +206,17 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
                     Row {
                         TextButton(onClick = {
                             checks[t.id.value] = listOf(CheckLine("проверка", "идёт…", Tone.NEUTRAL))
-                            scope.launch { checks[t.id.value] = withContext(Dispatchers.IO) { TargetScreens.doctor(controller.doctor(t)) } }
+                            scope.launch {
+                                checks[t.id.value] = withContext(Dispatchers.IO) {
+                                    // «В приложении» — агентом процесса; Linux не установлен — причина, а не отказ SSH.
+                                    val inApp = if (t.inApp) com.dpsmpx.dpai.android.linux.LinuxSetup.agentHost(context, controller.version) else null
+                                    if (t.inApp && inApp == null) {
+                                        listOf(CheckLine("агент", "Linux в приложении не установлен — карточка «Linux в приложении»", Tone.WARNING))
+                                    } else {
+                                        TargetScreens.doctor(controller.doctor(t, inApp))
+                                    }
+                                }
+                            }
                         }) { Text("Проверить") }
                         if (t.configDir != null) {
                             // Проба ждёт такта с SSH — секунды: отклик сразу, повтор не встаёт в очередь, итог — словами (A-6).
@@ -226,7 +236,8 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
                             }) { Text(if (probing) "Проверяю…" else "Вход Claude") }
                         }
                         // Проект — у любого target: ход Claude может идти на другом, со своим входом (D-50).
-                        TextButton(onClick = { projectFor = t }) { Text("Проект") }
+                        // Проект на target «в приложении» — следующим шагом (Git и проверка внутри гостя).
+                        if (!t.inApp) TextButton(onClick = { projectFor = t }) { Text("Проект") }
                         TextButton(onClick = { renaming = t }) { Text("Имя") }
                         TextButton(onClick = { removing = t }) { Text("Удалить") }
                     }

@@ -104,6 +104,11 @@ class LiveSystem(
      * молча отрезанные подтверждённые записи (аудит надёжности, A-1).
      */
     quarantineConfirmed: Boolean = false,
+    /**
+     * Агент target «в приложении» (`InAppAgentHost`, D-75, шаг 5): процессы
+     * хода — в Alpine приложения; `null` — таких targets оболочка не даёт.
+     */
+    inAppHost: com.dpsmpx.dpai.execution.process.ProcessHost? = null,
 ) : ControlView, AutoCloseable {
     override val mode: String = "контроллер"
     private val ids = IdGenerator(clock, random)
@@ -136,7 +141,12 @@ class LiveSystem(
         }
     }
     private val snapshots = SnapshotStore(DocumentStore(vfs, "snapshots"))
-    private val usable = entries.filter { it.configDir != null }
+    /**
+     * Targets с каталогом Claude; «в приложении» — только когда агент
+     * приложения есть ([inAppHost]): без Linux такой target ходов не
+     * получает, а контроллер с остальными работает (D-75, шаг 5).
+     */
+    private val usable = entries.filter { it.configDir != null && (!it.inApp || inAppHost != null) }
 
     /** Target проекта: деревья, Git и проверка — на нём; каталог Claude ему нужен, только если ход тоже на нём. */
     private val projectEntry = project?.let { p -> entries.firstOrNull { it.id == p.target } }
@@ -164,7 +174,7 @@ class LiveSystem(
             usable.filter { it.id == id || (run != null && it.host == run.host && it.port == run.port && it.platform == run.platform) }
         }
     }
-    private val manager = ExecutionTargetManager(clock, sshHost = sshHost, controllerVersion = controllerVersion)
+    private val manager = ExecutionTargetManager(clock, sshHost = sshHost, controllerVersion = controllerVersion, inAppHost = inAppHost)
     private val runners = HashMap<ExecutionTargetId, ClaudeRunner>()
     private val streams = mutableListOf<FollowingEventSource>()
     private val probes = HashMap<ExecutionTargetId, Pair<SlotAuthProbe, SessionId>>()
@@ -192,6 +202,7 @@ class LiveSystem(
     private val accountsLogic = Accounts()
     override val orchestrator: Orchestrator
     val notes: List<String> = entries.filter { it.configDir == null && it.id != project?.target }.map { "${it.label}: нет каталога Claude — только проверка агента" } +
+        entries.filter { it.inApp && inAppHost == null }.map { "${it.label}: Linux в приложении не установлен — ходов нет («Targets» → «Linux в приложении»)" } +
         listOfNotNull(
             "проект: его target удалён — задачи не запускаются".takeIf { project != null && projectEntry == null },
             "проект: у target хода нет каталога Claude — задачи не запускаются".takeIf { project != null && projectEntry != null && working.isEmpty() },

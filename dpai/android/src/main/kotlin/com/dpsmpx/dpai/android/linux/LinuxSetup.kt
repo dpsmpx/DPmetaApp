@@ -79,12 +79,50 @@ object LinuxSetup {
      * Оболочка гостя для терминала: `sh -l` под proot с псевдотерминалом
      * (JNI, шаг 3). Окружение — гостя, не Android.
      */
-    fun shell(context: Context, size: WindowSize): Outcome<NativeChild> {
+    fun shell(context: Context, size: WindowSize, command: List<String> = emptyList()): Outcome<NativeChild> {
         if (environment(context).installed() == null) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "сначала установите Linux")
         refreshDns(context)
-        val spec = ProcessSpec(listOf("/bin/sh", "-l"), environment = ProotHost.GUEST_ENVIRONMENT + ("TERM" to "xterm-256color"))
+        // Команда вкладки (например, `claude` слота «в приложении») — через оболочку гостя по полному пути.
+        val argv = if (command.isEmpty()) listOf("/bin/sh", "-l") else command.mapIndexed { i, a -> if (i == 0 && a == "sh") "/bin/sh" else a }
+        val spec = ProcessSpec(argv, environment = ProotHost.GUEST_ENVIRONMENT + ("TERM" to "xterm-256color"))
         val wrapped = host(context).wrap(spec)
         return JniProcesses().spawn(wrapped.command, wrapped.environment.orEmpty(), null, size)
+    }
+
+    /** Каталог агента target «в приложении»: в данных приложения, гостю виден по тому же пути. */
+    private const val AGENT_HOME = "agent-in-app"
+
+    @Volatile
+    private var agent: com.dpsmpx.dpai.orchestrator.agent.InAppAgentHost? = null
+
+    /**
+     * Агент target «в приложении» (D-75, шаг 5) — один на процесс: его ходы
+     * держит поток ([com.dpsmpx.dpai.orchestrator.agent.ThreadSupervision]),
+     * и второй экземпляр их бы не видел. Процессы хода — в Alpine под proot;
+     * каталог агента привязан к гостю по тому же пути, поэтому пути ходов
+     * одни для агента и для гостя; окружение — гостя; DNS сети телефона —
+     * перед каждым запуском (D-90). Linux не установлен или не arm64 —
+     * `null`: target «в приложении» не регистрируется, причина — на экране.
+     */
+    fun agentHost(context: Context, version: String?): com.dpsmpx.dpai.orchestrator.agent.InAppAgentHost? {
+        if (!available(context) || environment(context).installed() == null) return null
+        agent?.let { return it }
+        synchronized(this) {
+            agent?.let { return it }
+            val home = File(context.filesDir, AGENT_HOME).apply { mkdirs() }.path
+            val native = JniProcesses()
+            val proot = ProotHost(NativeProcessHost(native, Clock.SYSTEM), layout(context).copy(binds = listOf(ProotLayout.Bind(home, home))))
+            val app = context.applicationContext
+            // DNS гостя — сети телефона на миг запуска: сеть могла смениться с прошлого хода (D-90).
+            val guest = object : com.dpsmpx.dpai.execution.process.ProcessHost {
+                override fun start(spec: ProcessSpec, onOutput: (com.dpsmpx.dpai.execution.process.OutputLine) -> Unit): Outcome<com.dpsmpx.dpai.execution.process.RunningProcess> {
+                    refreshDns(app)
+                    return proot.start(spec, onOutput)
+                }
+            }
+            return com.dpsmpx.dpai.orchestrator.agent.InAppAgentHost.create(home, Clock.SYSTEM, version ?: "dev", native, guest, ProotHost.GUEST_ENVIRONMENT)
+                .also { agent = it }
+        }
     }
 
     /** Завершить оболочку: процесс-лидер сеанса получает HUP, proot с `--kill-on-exit` уносит гостя с собой. */
