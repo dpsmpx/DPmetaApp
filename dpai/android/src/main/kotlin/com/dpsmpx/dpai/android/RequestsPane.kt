@@ -130,7 +130,7 @@ private fun RequestItem(model: DemoModel, card: RequestCard) {
                     }
                 }
             }
-            status?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
+            status?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = if (it.startsWith("Принято")) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error) }
         }
     }
 }

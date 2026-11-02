@@ -156,7 +156,23 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
                             Text("Claude — на $on (вход его слота), дерево — по SSH ключом ${c.identityFile}", style = MaterialTheme.typography.bodySmall)
                         }
                         Text(p.checks.firstOrNull()?.let { "проверка: ${it.command.joinToString(" ")}" } ?: "без проверки", style = MaterialTheme.typography.bodySmall)
-                        TextButton(onClick = { scope.launch { withContext(Dispatchers.IO) { controller.setProject(null) }; project = null } }) { Text("Убрать проект") }
+                        // Вторым нажатием и с проверкой итога (аудит удобства, A-18).
+                        var armed by remember { mutableStateOf(false) }
+                        var failed by remember { mutableStateOf<String?>(null) }
+                        TextButton(onClick = {
+                            if (!armed) {
+                                armed = true
+                            } else {
+                                scope.launch {
+                                    when (val r = withContext(Dispatchers.IO) { controller.setProject(null) }) {
+                                        is Outcome.Success -> project = null
+                                        is Outcome.Failure -> failed = "Не убран: ${r.errors.first().message}"
+                                    }
+                                    armed = false
+                                }
+                            }
+                        }) { Text(if (armed) "Точно убрать проект? Задачи пойдут без Git и проверки" else "Убрать проект", color = if (armed) MaterialTheme.colorScheme.error else androidx.compose.ui.graphics.Color.Unspecified) }
+                        failed?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
                     }
                 }
             }
@@ -646,11 +662,18 @@ private fun CliCard() {
                     until = u.epochMillis
                     note = null
                 }) { Text("Показать код") }
+                var armedRevoke by remember { mutableStateOf(false) }
                 TextButton(onClick = {
-                    ControlServer.pairing(context).revoke()
-                    code = null
-                    note = "Токен отозван: dpai нужно сопрячь заново"
-                }) { Text("Отозвать токен") }
+                    // Вторым нажатием (A-18): после отзыва каждый dpai нужно сопрячь заново.
+                    if (!armedRevoke) {
+                        armedRevoke = true
+                    } else {
+                        ControlServer.pairing(context).revoke()
+                        code = null
+                        armedRevoke = false
+                        note = "Токен отозван: dpai нужно сопрячь заново"
+                    }
+                }) { Text(if (armedRevoke) "Точно отозвать? Все dpai — заново" else "Отозвать токен", color = if (armedRevoke) MaterialTheme.colorScheme.error else androidx.compose.ui.graphics.Color.Unspecified) }
             }
             note?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
         }

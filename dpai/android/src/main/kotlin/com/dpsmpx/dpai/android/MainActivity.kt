@@ -24,7 +24,7 @@ import androidx.compose.ui.platform.LocalContext
  * Что пришло из своего уведомления: ссылка `dpai://…` или ответ, ждущий
  * подтверждения на экране (D-44). Экран забирает и очищает.
  */
-data class Incoming(val link: String? = null, val confirm: String? = null)
+data class Incoming(val link: String? = null, val confirm: String? = null, val stop: Boolean = false)
 
 /** Единственная activity: экраны — Compose (D-34), данные — контроллер или демо (D-35). */
 class MainActivity : ComponentActivity() {
@@ -39,6 +39,7 @@ class MainActivity : ComponentActivity() {
         when (intent.action) {
             OPEN -> intent.getStringExtra(EXTRA_LINK)?.let { incoming.value = Incoming(link = it) }
             CONFIRM -> intent.getStringExtra(EXTRA_URI)?.let { incoming.value = Incoming(confirm = it) }
+            STOP_CONFIRM -> incoming.value = Incoming(stop = true)
         }
     }
 
@@ -80,6 +81,9 @@ class MainActivity : ComponentActivity() {
     companion object {
         const val OPEN = "com.dpsmpx.dpai.OPEN_LINK"
         const val CONFIRM = "com.dpsmpx.dpai.CONFIRM_ANSWER"
+
+        /** «Остановить» из уведомления службы — подтверждение на экране (A-18). */
+        const val STOP_CONFIRM = "com.dpsmpx.dpai.CONFIRM_STOP"
         const val EXTRA_LINK = "link"
         const val EXTRA_URI = "uri"
 

@@ -62,7 +62,14 @@ class ControllerService : Service() {
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(CHANNEL, "Контроллер работает", NotificationManager.IMPORTANCE_MIN))
         val open = Notifier.openApp(this)
-        val stop = PendingIntent.getService(this, 1, Intent(this, ControllerService::class.java).setAction(STOP), PendingIntent.FLAG_IMMUTABLE)
+        // «Остановить» — через подтверждение в приложении (аудит удобства, A-18): одно касание в шторке
+        // останавливало такты, уведомления и запросы до ручного запуска.
+        val stop = PendingIntent.getActivity(
+            this, 1,
+            MainActivity.internal(this).setAction(MainActivity.STOP_CONFIRM)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
         val n = Notification.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.stat_notify_sync)
             .setContentTitle("DP AI: контроллер работает")
@@ -256,6 +263,11 @@ class ControllerService : Service() {
             } catch (_: IllegalStateException) {
                 false // ForegroundServiceStartNotAllowedException (API 31+) — её подкласс
             }
+        }
+
+        /** Остановить по подтверждению человека (A-18): как «Остановить» прежде — до явного запуска. */
+        fun stop(context: Context) {
+            runCatching { context.startService(Intent(context, ControllerService::class.java).setAction(STOP)) }
         }
 
         /** Явный запуск человеком после «Остановить». */

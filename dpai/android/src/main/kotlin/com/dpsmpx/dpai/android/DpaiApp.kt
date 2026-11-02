@@ -1,5 +1,6 @@
 package com.dpsmpx.dpai.android
 
+import androidx.compose.foundation.layout.widthIn
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateFloat
@@ -181,6 +182,23 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
         if (incoming != Incoming()) onIncoming()
     }
     confirmUri?.let { uri -> ConfirmDialog(model, snapshot?.requests.orEmpty(), uri) { confirmUri = null } }
+    // «Остановить» из уведомления службы (A-18): подтверждение — здесь, с тем, что встанет.
+    var confirmStop by remember { mutableStateOf(false) }
+    LaunchedEffect(incoming) { if (incoming.stop) confirmStop = true }
+    if (confirmStop) {
+        AlertDialog(
+            onDismissRequest = { confirmStop = false },
+            title = { Text("Остановить контроллер?") },
+            text = { Text("Такты, уведомления и запросы встанут, пока вы не запустите его снова; идущий ход доиграет.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmStop = false
+                    scope.launch(Dispatchers.IO) { ControllerService.stop(context) }
+                }) { Text("Остановить", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { confirmStop = false }) { Text("Отмена") } },
+        )
+    }
     // Найденное ведёт к сущности: сессия — её экран, задача — её лист, слоты и проекты — вкладка Targets.
     if (searching) {
         SearchDialog(model, onDone = { searching = false }) { link ->
@@ -837,7 +855,7 @@ internal fun NewTaskDialog(model: DemoModel, onDone: () -> Unit) {
                                 androidx.compose.material3.FilterChip(
                                     selected = c.id in deps,
                                     onClick = { deps = if (c.id in deps) deps - c.id else deps + c.id },
-                                    label = { Text(c.title.take(32)) },
+                                    label = { Text(c.title, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 220.dp)) },
                                 )
                             }
                         }

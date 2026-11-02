@@ -316,8 +316,24 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
                 show(TerminalHub.openLike(this, c))
             })
             tabsRow.addView(chip("×") {
-                TerminalHub.close(c)
-                if (TerminalHub.tabs.isEmpty()) finish() else show(TerminalHub.current)
+                fun closeTab() {
+                    TerminalHub.close(c)
+                    if (TerminalHub.tabs.isEmpty()) finish() else show(TerminalHub.current)
+                }
+                // Открытая вкладка — с подтверждением (аудит удобства, A-18): в ней может идти claude или сборка.
+                if (!c.open) {
+                    closeTab()
+                } else {
+                    val dialog = android.app.AlertDialog.Builder(this)
+                        .setTitle("Закрыть вкладку «${c.label}»?")
+                        .setMessage("Соединение закроется; программа в ней (claude, сборка) получит сигнал завершения.")
+                        .setPositiveButton("Закрыть") { _, _ -> closeTab() }
+                        .setNegativeButton("Отмена", null)
+                        .create()
+                    // У диалога своё окно: FLAG_SECURE активности его не закрывает (D-86).
+                    dialog.window?.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+                    dialog.show()
+                }
             })
         }
         val s = current?.status.orEmpty()

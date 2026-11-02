@@ -1,5 +1,7 @@
 package com.dpsmpx.dpai.android
 
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -112,7 +114,12 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
                 d.lastSession?.let { s -> androidx.compose.material3.Button(onClick = { onSession(s.value) }, Modifier.fillMaxWidth()) { Text("Открыть чат") } }
                 // Слово, а не идентификатор (D-88, U-3): человек читает экран, а не журнал событий.
                 Text("${Words.task(d.state)}${if (d.held) " · приостановлена" else ""} · приоритет ${Words.priority(d.priority)}", fontWeight = FontWeight.Bold)
-                Text(d.objective, style = MaterialTheme.typography.bodySmall, maxLines = 4)
+                // Цель длиннее четырёх строк — с многоточием и раскрытием нажатием (A-20).
+                var whole by remember(d.objective) { mutableStateOf(false) }
+                Text(
+                    d.objective, style = MaterialTheme.typography.bodySmall, maxLines = if (whole) Int.MAX_VALUE else 4,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.clickable { whole = !whole },
+                )
                 Text(
                     "класс «${Words.taskClass(d.taskClass.name)}» · модель ${d.model ?: "по классу"} · усилие ${d.effort ?: "по классу"} · бюджет хода ${d.budgetCents?.let { String.format(Locale.ROOT, "%.2f $", it / 100.0) } ?: "без предела"}",
                     style = MaterialTheme.typography.labelSmall,
@@ -168,7 +175,8 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
                     }
                     else -> Unit
                 }
-                status?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
+                // Цвет ошибки — только у отказа (аудит удобства, A-19): «Принято» и «В очереди» — обычным.
+                status?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = if ("Не принято" in it) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant) }
                 MoveSection(model, task, d.executor) { c -> send(c) }
                 ChangesSection(model, task)
             }
@@ -240,7 +248,7 @@ private fun ScopeEditor(d: TaskDetail, choices: List<com.dpsmpx.dpai.ui.Dependen
         if (all.isNotEmpty()) {
             Text("Зависит от", style = MaterialTheme.typography.labelSmall)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                for (c in all) FilterChip(selected = c.id in deps, onClick = { deps = if (c.id in deps) deps - c.id else deps + c.id }, label = { Text(c.title.take(32)) })
+                for (c in all) FilterChip(selected = c.id in deps, onClick = { deps = if (c.id in deps) deps - c.id else deps + c.id }, label = { Text(c.title, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 220.dp)) })
             }
         }
         TextButton(enabled = !busy, onClick = { onSave(com.dpsmpx.dpai.ui.NewTaskForm.scopePaths(paths), deps) }) { Text("Сохранить") }
