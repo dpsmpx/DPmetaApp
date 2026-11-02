@@ -1,5 +1,7 @@
 package com.dpsmpx.dpai.android
 
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -32,6 +34,7 @@ import com.dpsmpx.dpai.core.ids.IdGenerator
 import com.dpsmpx.dpai.core.ids.IdKinds
 import com.dpsmpx.dpai.core.ids.TaskId
 import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.core.text.Words
 import com.dpsmpx.dpai.orchestrator.commands.Command
 import com.dpsmpx.dpai.orchestrator.review.Review
 import com.dpsmpx.dpai.tasks.FindingSeverity
@@ -44,6 +47,7 @@ import com.dpsmpx.dpai.ui.TaskDetail
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.util.Locale
 import kotlinx.coroutines.withContext
 
 /**
@@ -108,16 +112,22 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
                 }
                 // Вывод модели — только в чате сессии (D-62): переход туда — первым.
                 d.lastSession?.let { s -> androidx.compose.material3.Button(onClick = { onSession(s.value) }, Modifier.fillMaxWidth()) { Text("Открыть чат") } }
-                Text("${d.state}${if (d.held) " · приостановлена" else ""} · приоритет ${d.priority}", fontWeight = FontWeight.Bold)
-                Text(d.objective, style = MaterialTheme.typography.bodySmall, maxLines = 4)
+                // Слово, а не идентификатор (D-88, U-3): человек читает экран, а не журнал событий.
+                Text("${Words.task(d.state)}${if (d.held) " · приостановлена" else ""} · приоритет ${Words.priority(d.priority)}", fontWeight = FontWeight.Bold)
+                // Цель длиннее четырёх строк — с многоточием и раскрытием нажатием (A-20).
+                var whole by remember(d.objective) { mutableStateOf(false) }
                 Text(
-                    "класс ${d.taskClass} · модель ${d.model ?: "по классу"} · усилие ${d.effort ?: "по классу"} · бюджет хода ${d.budgetCents?.let { "%.2f $".format(it / 100.0) } ?: "без предела"}",
+                    d.objective, style = MaterialTheme.typography.bodySmall, maxLines = if (whole) Int.MAX_VALUE else 4,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.clickable { whole = !whole },
+                )
+                Text(
+                    "класс «${Words.taskClass(d.taskClass.name)}» · модель ${d.model ?: "по классу"} · усилие ${d.effort ?: "по классу"} · бюджет хода ${d.budgetCents?.let { String.format(Locale.ROOT, "%.2f $", it / 100.0) } ?: "без предела"}",
                     style = MaterialTheme.typography.labelSmall,
                 )
                 d.usage?.let { Text("расход: $it", style = MaterialTheme.typography.labelSmall) }
                 d.scope?.let { Text("область: ${it.sorted().joinToString(", ")}", style = MaterialTheme.typography.labelSmall) }
                 if (d.dependencies.isNotEmpty()) {
-                    Text("зависит от: ${d.dependencies.joinToString(" · ") { "${it.title} (${it.state})" }}", style = MaterialTheme.typography.labelSmall)
+                    Text("зависит от: ${d.dependencies.joinToString(" · ") { "${it.title} (${Words.task(it.state)})" }}", style = MaterialTheme.typography.labelSmall)
                 }
                 d.reason?.let { Text("причина: $it · повторов: ${d.retries}", style = MaterialTheme.typography.labelSmall) }
                 // Кто выполняет и кому передавалась (D-56): слот — target и подписка.
@@ -151,7 +161,7 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
                 }
                 when (editor) {
                     TaskAction.PRIORITY -> FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        for (p in Priority.entries) FilterChip(selected = d.priority == p.name, onClick = { send { k -> Command.SetPriority(task, p, k) } }, label = { Text(p.name) })
+                        for (p in Priority.entries) FilterChip(selected = d.priority == p.name, onClick = { send { k -> Command.SetPriority(task, p, k) } }, label = { Text(Words.priority(p.name)) })
                     }
                     TaskAction.POLICY -> PolicyEditor(d, busy) { cls, m, e, b, r -> send { k -> Command.SetPolicy(task, cls, m, e, b, r, k) } }
                     TaskAction.REPLY -> ReplyEditor(busy) { text -> send { k -> Command.Retry(task, text, k) } }
@@ -165,7 +175,8 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
                     }
                     else -> Unit
                 }
-                status?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
+                // Цвет ошибки — только у отказа (аудит удобства, A-19): «Принято» и «В очереди» — обычным.
+                status?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = if ("Не принято" in it) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant) }
                 MoveSection(model, task, d.executor) { c -> send(c) }
                 ChangesSection(model, task)
             }
@@ -180,7 +191,7 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
-                        if (a == TaskAction.CANCEL) "Идущий ход будет остановлен, несохранённая работа хода пропадёт." else "Задача станет DONE без проверки — запишется исключение с причиной.",
+                        if (a == TaskAction.CANCEL) "Идущий ход будет остановлен, несохранённая работа хода пропадёт." else "Задача станет выполненной без проверки — запишется исключение с причиной.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                     if (a == TaskAction.WAIVE) OutlinedTextField(reason, { reason = it }, label = { Text("Почему") }, singleLine = true)
@@ -203,12 +214,12 @@ private fun PolicyEditor(d: TaskDetail, busy: Boolean, onSave: (TaskClass, Strin
     var reviews by remember { mutableStateOf(d.reviews.map { it.role }.toSet()) }
     var modelName by remember { mutableStateOf(d.model.orEmpty()) }
     var effort by remember { mutableStateOf(d.effort.orEmpty()) }
-    var budget by remember { mutableStateOf(d.budgetCents?.let { "%.2f".format(it / 100.0) }.orEmpty()) }
+    var budget by remember { mutableStateOf(d.budgetCents?.let { String.format(Locale.ROOT, "%.2f", it / 100.0) }.orEmpty()) }
     var error by remember { mutableStateOf<String?>(null) }
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text("Класс задачи — маршрут модели (D-40)", style = MaterialTheme.typography.labelSmall)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            for (c in TaskClass.entries) FilterChip(selected = cls == c, onClick = { cls = c }, label = { Text(c.name.lowercase()) })
+            for (c in TaskClass.entries) FilterChip(selected = cls == c, onClick = { cls = c }, label = { Text(Words.taskClass(c.name)) })
         }
         OutlinedTextField(modelName, { modelName = it }, label = { Text("Модель (пусто — по классу)") }, singleLine = true)
         OutlinedTextField(effort, { effort = it }, label = { Text("Усилие: low, medium, high (пусто — по классу)") }, singleLine = true)
@@ -237,7 +248,7 @@ private fun ScopeEditor(d: TaskDetail, choices: List<com.dpsmpx.dpai.ui.Dependen
         if (all.isNotEmpty()) {
             Text("Зависит от", style = MaterialTheme.typography.labelSmall)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                for (c in all) FilterChip(selected = c.id in deps, onClick = { deps = if (c.id in deps) deps - c.id else deps + c.id }, label = { Text(c.title.take(32)) })
+                for (c in all) FilterChip(selected = c.id in deps, onClick = { deps = if (c.id in deps) deps - c.id else deps + c.id }, label = { Text(c.title, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 220.dp)) })
             }
         }
         TextButton(enabled = !busy, onClick = { onSave(com.dpsmpx.dpai.ui.NewTaskForm.scopePaths(paths), deps) }) { Text("Сохранить") }
@@ -349,7 +360,8 @@ private fun MoveSection(model: DemoModel, task: TaskId, executor: String?, send:
         }
     }
     androidx.compose.material3.HorizontalDivider()
-    Text("Перенести на слот", style = MaterialTheme.typography.titleSmall)
+    // Не «Перенести» (A-13): это выбор слота следующего хода, идущий ход не прерывается (D-66).
+    Text("Слот следующего хода", style = MaterialTheme.typography.titleSmall)
     Text(
         (executor?.let { "Сейчас: $it. " } ?: "") + "Следующий ход пойдёт на выбранном слоте с контекстом задачи; идущий ход не прерывается.",
         style = MaterialTheme.typography.labelSmall,
@@ -382,7 +394,7 @@ private fun ReviewsSection(reviews: List<ReviewLine>) {
             r.note?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
             for (f in r.findings) {
                 Text(
-                    "${f.severity} · ${f.title}${f.where?.let { " ($it)" } ?: ""}",
+                    "${Words.severity(f.severity.name)} · ${f.title}${f.where?.let { " ($it)" } ?: ""}",
                     style = MaterialTheme.typography.bodySmall,
                     color = if (f.severity == FindingSeverity.BLOCKING) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
                 )

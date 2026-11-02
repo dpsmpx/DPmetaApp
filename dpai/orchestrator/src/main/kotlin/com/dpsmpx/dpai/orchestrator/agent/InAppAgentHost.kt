@@ -119,13 +119,16 @@ class InAppAgentHost(private val runtime: AgentRuntime, home: String) : ProcessH
          * Агент target «в приложении» (D-75): процессы хода — [guest]
          * (Alpine под proot поверх `NativeProcessHost`), супервизор хода —
          * поток, опознание и остановка процессов — по `/proc` через
-         * [native]; память для `doctor` — из `/proc/meminfo`.
+         * [native]; память для `doctor` — из `/proc/meminfo`. Окружение
+         * процессов хода строится от [guestEnvironment] (гостя, а не
+         * Android); `null` — от окружения процесса (тесты на JVM).
          */
-        fun create(home: String, clock: Clock, version: String, native: NativeProcesses, guest: ProcessHost): InAppAgentHost =
+        fun create(home: String, clock: Clock, version: String, native: NativeProcesses, guest: ProcessHost, guestEnvironment: Map<String, String>? = null): InAppAgentHost =
             InAppAgentHost(
                 AgentRuntime(
                     home, clock, version, selfCommand = emptyList(), host = guest,
                     jobHelper = null, supervision = ThreadSupervision(native, clock), osFacts = { OsFacts.NONE },
+                    baseEnvironment = guestEnvironment?.let { e -> { e } } ?: System::getenv,
                 ),
                 home,
             )

@@ -12,6 +12,9 @@ import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonParser
 import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.core.serialization.JsonValue
+import com.dpsmpx.dpai.core.text.Words
+import com.dpsmpx.dpai.notifications.RequestKind
+import com.dpsmpx.dpai.orchestrator.control.ControlAuth
 import com.dpsmpx.dpai.storage.vfs.NioVfs
 import com.dpsmpx.dpai.storage.vfs.Vfs
 import java.net.URI
@@ -21,7 +24,7 @@ import java.net.http.HttpResponse
 import java.nio.file.Paths
 import java.time.Duration
 
-/** Ответ канала: код HTTP и тело (null — канал недоступен, [error] — почему). */
+/** Ответ канала: код HTTP и тело (null — канал недоступен или ответ не от приложения, [error] — почему). */
 data class HttpReply(val status: Int, val body: JsonObject?, val error: String? = null)
 
 /** Транспорт к приложению: метод, путь, токен, тело. Подменяется в тестах. */
@@ -29,18 +32,56 @@ fun interface ControlTransport {
     fun call(method: String, path: String, token: String?, body: JsonObject?): HttpReply
 }
 
+/** Ответ на проводе: код, заголовки (имена — в нижнем регистре), тело строкой; [error] — связи нет. */
+data class WireReply(val status: Int, val headers: Map<String, String>, val body: String?, val error: String? = null)
+
+/** HTTP как есть: заголовки и тело — уже готовые. Подменяется в тестах подписи. */
+fun interface Wire {
+    fun send(method: String, path: String, headers: Map<String, String>, body: String?): WireReply
+}
+
 /** HTTP к `127.0.0.1:<port>` (или `DPAI_CONTROL_URL`, например туннель SSH с ПК). */
-class HttpTransport(private val base: String) : ControlTransport {
+class JdkWire(private val base: String) : Wire {
     private val client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build()
 
-    override fun call(method: String, path: String, token: String?, body: JsonObject?): HttpReply = try {
+    override fun send(method: String, path: String, headers: Map<String, String>, body: String?): WireReply = try {
         val b = HttpRequest.newBuilder(URI.create(base + path)).timeout(Duration.ofSeconds(60)).header("Content-Type", "application/json")
-        token?.let { b.header("Authorization", "Bearer $it") }
-        val publisher = body?.let { HttpRequest.BodyPublishers.ofString(CanonicalJson.write(it)) } ?: HttpRequest.BodyPublishers.noBody()
+        headers.forEach { (k, v) -> b.header(k, v) }
+        val publisher = body?.let { HttpRequest.BodyPublishers.ofString(it) } ?: HttpRequest.BodyPublishers.noBody()
         val r = client.send(b.method(method, publisher).build(), HttpResponse.BodyHandlers.ofString(Charsets.UTF_8))
-        HttpReply(r.statusCode(), JsonParser().parse(r.body()).valueOrNull() as? JsonObject)
+        WireReply(r.statusCode(), r.headers().map().mapNotNull { (k, v) -> v.firstOrNull()?.let { k.lowercase() to it } }.toMap(), r.body())
     } catch (e: Exception) {
-        HttpReply(0, null, "${e.javaClass.simpleName}: ${e.message}")
+        WireReply(0, emptyMap(), null, Words.failure(e))
+    }
+}
+
+/**
+ * Подписанный канал (D-92): токен в сеть не уходит — запрос несёт время,
+ * одноразовое значение и подпись, а ответ без верной подписи приложения
+ * не принимается: на порту могла оказаться чужая программа. Без токена —
+ * только сопряжение: подписывать ещё нечем.
+ */
+class SignedTransport(private val wire: Wire, private val clock: Clock = Clock.SYSTEM, private val random: RandomSource = RandomSource.secure()) : ControlTransport {
+    override fun call(method: String, path: String, token: String?, body: JsonObject?): HttpReply {
+        val text = body?.let(CanonicalJson::write)
+        if (token == null) return parsed(wire.send(method, path, emptyMap(), text))
+        if (!ControlAuth.validToken(token)) return HttpReply(0, null, "токен в ~/.config/dpai/control.json повреждён: dpai control pair <код>")
+        val nonce = ControlAuth.newNonce(random)
+        val r = wire.send(method, path, ControlAuth.requestHeaders(token, method, path, text, clock.now().epochMillis, nonce), text)
+        if (r.error != null) return HttpReply(0, null, r.error)
+        if (!ControlAuth.responseValid(token, nonce, r.status, r.body.orEmpty(), r.headers[ControlAuth.SIGNATURE])) {
+            // Отказ в подписи приложение не подписывает: тело ему не верим, а код объясняем.
+            return if (r.status == 401) HttpReply(401, null, UNSIGNED_401) else HttpReply(0, null, UNSIGNED)
+        }
+        return parsed(r)
+    }
+
+    private fun parsed(r: WireReply): HttpReply =
+        if (r.error != null) HttpReply(0, null, r.error) else HttpReply(r.status, r.body?.let { JsonParser().parse(it).valueOrNull() as? JsonObject })
+
+    companion object {
+        const val UNSIGNED = "ответ без верной подписи приложения: на порту — не DPmetaApp или его старая версия (D-92)"
+        const val UNSIGNED_401 = "отказ: подпись запроса не принята — токен отозван, часы расходятся больше чем на 2 мин или на порту не DPmetaApp"
     }
 }
 
@@ -54,7 +95,7 @@ class ControlCommand(
     private val out: (String) -> Unit,
     private val err: (String) -> Unit,
     private val config: Vfs = defaultConfig(),
-    private val transport: (Int) -> ControlTransport = { port -> HttpTransport(System.getenv("DPAI_CONTROL_URL") ?: "http://127.0.0.1:$port") },
+    private val transport: (Int) -> ControlTransport = { port -> SignedTransport(JdkWire(System.getenv("DPAI_CONTROL_URL") ?: "http://127.0.0.1:$port")) },
 ) {
     private val keys = IdGenerator(Clock.SYSTEM, RandomSource.secure())
     private var json = false
@@ -62,6 +103,8 @@ class ControlCommand(
     fun run(cmd: String, all: List<String>): Int {
         json = "--json" in all
         val args = all.filter { it != "--json" }
+        // Опечатка в ключе (`--priorty`) — отказ, а не молча пропущенный ключ (аудит удобства, A-16).
+        unknownFlag(args)?.let { return usage("неизвестный ключ «$it»: ${(VALUE_FLAGS + PLAIN_FLAGS).sorted().joinToString(" ")}") }
         return when (cmd) {
             "control" -> control(args)
             "status" -> status(args)
@@ -113,14 +156,14 @@ class ControlCommand(
         out("Задачи (${tasks.size}${if (tasks.size < all.size) ", в архиве ещё ${all.size - tasks.size}: dpai status --all" else ""}):")
         for (t in tasks) {
             val extra = listOfNotNull(
-                "архив".takeIf { bool(t, "archived") }, "пауза".takeIf { bool(t, "held") }, str(t, "model"), str(t, "reason"), str(t, "waiting")?.let { "ждёт: $it" },
+                "архив".takeIf { bool(t, "archived") }, "пауза".takeIf { bool(t, "held") }, str(t, "model"), str(t, "reason")?.let(Words::reason), str(t, "waiting")?.let { "ждёт: $it" },
                 reviewsLine(t), spend(t),
             ).joinToString(" · ")
-            out("  ${short(str(t, "id"))}  ${str(t, "state")}  ${str(t, "priority")}  ${str(t, "title")}${if (extra.isNotEmpty()) "  [$extra]" else ""}")
+            out("  ${short(str(t, "id"))}  ${str(t, "state")?.let(Words::task)}  ${str(t, "priority")?.let(Words::priority)}  ${str(t, "title")}${if (extra.isNotEmpty()) "  [$extra]" else ""}")
         }
         val live = list(s, "sessions").filter { str(it, "state") !in setOf("COMPLETED", "FAILED", "CANCELLED") }
         out("Сессии идут (${live.size}):")
-        for (x in live) out("  ${short(str(x, "id"))}  ${str(x, "state")}  ход ${num(x, "turn")}  задача ${short(str(x, "task"))}${str(x, "review")?.let { "  ревью $it" } ?: ""}${spend(x)?.let { "  [$it]" } ?: ""}")
+        for (x in live) out("  ${short(str(x, "id"))}  ${str(x, "state")?.let(Words::session)}  ход ${num(x, "turn")}  задача ${short(str(x, "task"))}${str(x, "review")?.let { "  ревью $it" } ?: ""}${spend(x)?.let { "  [$it]" } ?: ""}")
         val reqs = list(s, "requests")
         if (reqs.isNotEmpty()) out("Запросы ждут ответа: ${reqs.size} (dpai requests)")
         for (sub in list(s, "subscriptions")) {
@@ -128,9 +171,16 @@ class ControlCommand(
                 val name = if (str(w, "window") == "SESSION") "5 ч" else "неделя"
                 "$name ${num(w, "percent")?.let { "$it %" } ?: "?"}"
             }
-            out("Подписка «${str(sub, "label")}»: $windows; порог ${num(sub, "nearPercent")} %${if (bool(sub, "near")) " — у предела" else ""}${if (bool(sub, "rotation")) "; берёт задачи подписок у предела" else ""}")
+            out("Подписка «${str(sub, "label")}» ${short(str(sub, "id"))}: $windows; порог ${num(sub, "nearPercent")} %${if (bool(sub, "near")) " — у предела" else ""}${if (bool(sub, "rotation")) "; берёт задачи подписок у предела" else ""}")
         }
+        // Слоты и targets — с id (A-16): их ждут `dpai slot|target <id> on|off`.
         val control = s["control"] as? JsonObject
+        val off = names(control ?: JsonObject.of(), "disabledTargets").toSet()
+        val slots = list(s, "slots")
+        if (slots.isNotEmpty()) out("Слоты (dpai slot <id> on|off):")
+        for (sl in slots) out("  ${short(str(sl, "id"))}  ${str(sl, "state")?.let(Words::account)}${if (bool(sl, "disabled")) " · выключен" else ""}  target ${short(str(sl, "target"))}")
+        val targets = (slots.mapNotNull { str(it, "target") } + list(s, "sessions").mapNotNull { str(it, "target") }).distinct().sorted()
+        if (targets.isNotEmpty()) out("Targets (dpai target <id> on|off): " + targets.joinToString(", ") { t -> short(t) + if (t in off) " · не берёт задачи" else "" })
         control?.let { c -> num(c, "maxSessions")?.let { out("Предел сессий контура: $it") } }
         return OK
     }
@@ -149,7 +199,7 @@ class ControlCommand(
         if (json) return print(JsonObject.of("requests" to JsonArray(reqs)))
         if (reqs.isEmpty()) out("ждущих запросов нет")
         for (r in reqs) {
-            out("${short(str(r, "id"))}  ${str(r, "kind")}  ${str(r, "title")}")
+            out("${short(str(r, "id"))}  ${str(r, "kind")?.let { k -> RequestKind.entries.firstOrNull { it.name == k }?.label ?: k }}  ${str(r, "title")}")
             str(r, "body")?.let { out("    $it") }
             for (o in list(r, "options")) out("    ${str(o, "id")}: ${str(o, "label")}${if (bool(o, "needsText")) " (нужен --text)" else ""}${if (str(o, "role") == "DESTRUCTIVE") " (опасно: --yes)" else ""}")
         }
@@ -251,7 +301,7 @@ class ControlCommand(
         val ms = list(r, "messages")
         if (ms.isEmpty()) out("итоговых сообщений ходов пока нет")
         for (m in ms) {
-            out("── ход ${num(m, "turn")} · ${str(m, "status")}${str(m, "model")?.let { " · $it" } ?: ""}")
+            out("── ход ${num(m, "turn")} · ${str(m, "status")?.let(Words::turn)}${str(m, "model")?.let { " · $it" } ?: ""}")
             out(str(m, "text").orEmpty())
         }
         return OK
@@ -379,38 +429,48 @@ class ControlCommand(
     private fun send(c: MutableMap<String, JsonValue>, confirmed: Boolean = false, key: Boolean = true): Int {
         if (key) c["key"] = JsonString(keys.next(IdKinds.OPERATION).value)
         if (confirmed) c["confirmed"] = JsonBool(true)
-        val r = call("POST", "/v1/commands", JsonObject(c)) ?: return FAILED
+        var waiting = false
+        val r = call("POST", "/v1/commands", JsonObject(c)) { waiting = true } ?: return if (waiting) WAITING else FAILED
         if (json) return print(r)
-        out("${str(r, "status")}: ${str(r, "operation")}${str(r, "value")?.let { " → $it" } ?: ""}")
-        list(r, "diagnostics").forEach { out("  ${str(it, "code")}: ${str(it, "message")}") }
+        // Словами (D-89): «принято: task.hold», причина — фразой; коды — в --json.
+        out("${str(r, "status")?.let(Words::operation)}: ${str(r, "operation")}${str(r, "value")?.let { " → $it" } ?: ""}")
+        list(r, "diagnostics").forEach { out("  ${diagnostic(it)}") }
         return if (str(r, "status") == "FAILED") FAILED else OK
     }
 
     private fun state(): JsonObject? = call("GET", "/v1/state", null)
 
-    /** Вызов с токеном; отказ — сообщение и `null`. */
-    private fun call(method: String, path: String, body: JsonObject?): JsonObject? {
+    /** Вызов с подписью токеном (D-92); отказ — сообщение и `null`, `202` — ещё и [onWaiting]. */
+    private fun call(method: String, path: String, body: JsonObject?, onWaiting: () -> Unit = {}): JsonObject? {
         val cfg = config.read(FILE)?.let { JsonParser().parse(String(it, Charsets.UTF_8)).valueOrNull() as? JsonObject }
             ?: return null.also { err("нет сопряжения: в приложении Targets → «Командная строка» → «Показать код», затем dpai control pair <код>") }
         val port = (cfg["port"] as? JsonNumber)?.toLongExact()?.toInt() ?: DEFAULT_PORT
         val r = transport(port).call(method, path, str(cfg, "token"), body)
         if (r.status == 200 && r.body != null) return r.body
-        fail(r)
+        if (fail(r) == WAITING) onWaiting()
         return null
     }
 
     private fun fail(r: HttpReply): Int {
         when {
+            r.status == 401 -> err(r.error ?: "токен не подходит: dpai control pair <новый код>")
             r.body == null -> err("канал недоступен (${r.error ?: "код ${r.status}"}): приложение открыто и служба контроллера работает?")
-            r.status == 401 -> err("токен не подходит: dpai control pair <новый код>")
             r.status == 409 -> err("опасное действие: повторите с --yes")
-            else -> list(r.body, "diagnostics").forEach { err("${str(it, "code")}: ${str(it, "message")}") }
+            // Решающее (D-91): не применено, ждёт человека на телефоне — не успех и не сбой.
+            r.status == 202 -> {
+                list(r.body, "diagnostics").forEach { err(diagnostic(it)) }
+                return WAITING
+            }
+            else -> list(r.body, "diagnostics").forEach { err(diagnostic(it)) }
         }
         if (r.body != null && r.status == 200) return OK
         return FAILED
     }
 
     private fun fail(message: String): Int = FAILED.also { err(message) }
+
+    /** Диагностика для человека: причина словами и подробность (D-89); код — только в `--json`. */
+    private fun diagnostic(d: JsonObject): String = "${str(d, "code")?.let(Words::reason) ?: "?"}: ${str(d, "message").orEmpty()}"
 
     /** Полный id по однозначному началу или концу; иначе — сообщение. */
     private fun resolve(id: String, listName: String): String? = pickId(list(state() ?: return null, listName).mapNotNull { str(it, "id") }, id, listName)
@@ -419,8 +479,8 @@ class ControlCommand(
         val hits = ids.filter { it == id || it.startsWith(id) || it.endsWith(id) }.distinct()
         return when (hits.size) {
             1 -> hits.single()
-            0 -> null.also { err("$what: нет «$id»") }
-            else -> null.also { err("$what: «$id» неоднозначно (${hits.size}): уточните") }
+            0 -> null.also { err("${WHAT[what] ?: what}: нет «$id» — id и их начала видны в dpai status") }
+            else -> null.also { err("${WHAT[what] ?: what}: «$id» неоднозначно (${hits.size}): уточните") }
         }
     }
 
@@ -445,21 +505,49 @@ class ControlCommand(
         const val FAILED = 1
         const val USAGE_ERROR = 2
 
+        /** Решающее не применено: ждёт подтверждения на телефоне (D-91). */
+        const val WAITING = 3
+
+        /** Ключи со значением и без (A-16): неизвестный — отказ. */
+        private val VALUE_FLAGS = setOf("--text", "--reason", "--priority", "--class", "--model", "--effort", "--budget", "--review", "--scope", "--depends-on", "--port")
+        private val PLAIN_FLAGS = setOf("--yes", "--all", "--stat", "--json")
+
+        /** Первый неизвестный ключ; значение после ключа со значением — не ключ, даже если начинается с `--`. */
+        private fun unknownFlag(args: List<String>): String? {
+            var i = 0
+            while (i < args.size) {
+                val a = args[i]
+                when {
+                    a in VALUE_FLAGS -> i++
+                    a.startsWith("--") && a !in PLAIN_FLAGS -> return a
+                }
+                i++
+            }
+            return null
+        }
+
+        /** Что искали — словами в ответе «нет такого». */
+        private val WHAT = mapOf("tasks" to "задача", "sessions" to "сессия", "requests" to "запрос", "slots" to "слот", "subscriptions" to "подписка")
+
+        private const val CLASSES = "классы: trivial, classification, extraction, summarization, repository_recon, normal_engineering, complex_debugging, architecture, critical_review"
+
         private const val TASK_USAGE = "dpai task add «название» «что сделать» [--priority HIGH] [--class trivial] [--model haiku] [--effort low] [--budget 0.25] [--review code,security] [--scope путь,путь] [--depends-on id,id]\n" +
             "dpai task <id> hold|resume|first|retry [--text «…»]|verify|messages|diff [--stat]|reviews|priority <P>|policy --class <к> …|scope [путь…]|depends [id…]|archive|unarchive|cancel --yes|waive --reason «…» --yes\n" +
-            "dpai task archive-done   — все завершённые в архив"
+            "dpai task archive-done   — все завершённые в архив\n" + CLASSES
         private const val SESSION_USAGE = "dpai session <id> stop | reassign | send «запрос» [--model m] [--effort e] | fresh [«запрос»]"
 
         val USAGE = """
             |  dpai control pair <код>   сопряжение с приложением (код — Targets → «Командная строка»)
             |  dpai status [--all]       задачи (без архива), сессии, запросы, загрузка подписки
-            |  dpai task …               add | archive-done | <id> hold|resume|first|cancel|retry|verify|waive|priority|policy|archive|unarchive|messages|diff|reviews
+            |  dpai task …               add | archive-done | <id> hold|resume|first|cancel|retry|verify|waive|priority|policy|scope|depends|archive|unarchive|messages|diff|reviews
+            |                            приоритеты: critical, high, normal, low, background; классы — dpai task
             |  dpai session <id> …       stop | reassign | send «запрос» | fresh
             |  dpai requests             ждущие запросы;  dpai answer <запрос> <вариант> [--text] [--yes]
             |  dpai search «запрос»      поиск по задачам, сессиям, веткам, коммитам, событиям (ТЗ, §75)
             |  dpai limit <процент>      порог «у предела»;  dpai sessions-limit <n|off>
-            |  dpai target|slot <id> on|off
-            |  --json — ответ как есть; опасное — с --yes
+            |  dpai target|slot <id> on|off   id — из dpai status (можно начало или конец)
+            |  --json — ответ как есть; опасное — с --yes; решающее (слияние, «принять», исключение) —
+            |    подтверждением на телефоне: код выхода 3 — «ждёт телефона»
         """.trimMargin()
 
         private fun defaultConfig(): Vfs = NioVfs(Paths.get(System.getProperty("user.home") ?: ".", ".config", "dpai").also { it.toFile().mkdirs() })

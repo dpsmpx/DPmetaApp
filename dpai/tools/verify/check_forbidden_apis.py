@@ -66,6 +66,11 @@ RULES = [
     ("storage-secret", r"\bSecret\b",
      [],  # правило действует только в storage (см. ONLY_IN)
      "в хранилище секретов нет: только ссылки (D-25)", False),
+    ("locale-format",
+     r"\"[^\"\n]*%[-+ 0,(#]*\d*(?:\.\d+)?[fFeEgG][^\"\n]*\"\s*\.format\s*\(|"
+     r"\bString\.format\s*\(\s*\"[^\"\n]*%[-+ 0,(#]*\d*(?:\.\d+)?[fFeEgG]",
+     [],
+     "дробное число — только с явной локалью: String.format(Locale.ROOT, …) (D-85)", True),
     ("provider-private",
      r"claude\.ai/(?:api|chat|login|oauth)|\bsessionKey\b|\bCookieManager\b|\bCookieHandler\b|"
      r"\bHttpCookie\b|\.credentials\.json|CLAUDE_CODE_OAUTH_TOKEN|setup-token",
@@ -73,6 +78,9 @@ RULES = [
          # Список переменных, которые оркестратор УДАЛЯЕТ из окружения слота (D-29), и его тест.
          "accounts/src/main/kotlin/com/dpsmpx/dpai/accounts/SlotEnvironment.kt",
          "accounts/src/test/kotlin/com/dpsmpx/dpai/accounts/SlotEnvironmentTest.kt",
+         # Диск приложения (D-96): имя файла входа — чтобы СКРЫТЬ его от менеджеров файлов, и тест этого.
+         "ui/src/main/kotlin/com/dpsmpx/dpai/ui/AppDisk.kt",
+         "ui/src/test/kotlin/com/dpsmpx/dpai/ui/AppDiskTest.kt",
      ],
      "приватные адреса, cookies и вход claude.ai провайдера запрещены (D-04, D-27)", True),
 ]

@@ -14,6 +14,7 @@ import com.dpsmpx.dpai.core.ids.IdKinds
 import com.dpsmpx.dpai.core.ids.RequestId
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.notifications.RequestAction
+import com.dpsmpx.dpai.orchestrator.commands.Command
 import com.dpsmpx.dpai.ui.AnswerButton
 import com.dpsmpx.dpai.ui.RequestCard
 import java.util.concurrent.ConcurrentHashMap
@@ -38,6 +39,15 @@ object RequestPresenter {
     const val TAG = "dpai-request"
     const val CHANNEL = "dpai-request"
     const val EXTRA_REQUEST = "dpai.request"
+    const val EXTRA_SENDING = "dpai.request-sending"
+
+    /** Ответы, отправленные из этого процесса и ещё без итога. */
+    private val answering = ConcurrentHashMap.newKeySet<String>()
+
+    /** Итог ответа пришёл — запрос больше не «отправляется». */
+    fun answered(id: String) {
+        answering -= id
+    }
 
     /** Смахнутые человеком: до перезапуска процесса уведомление не возвращается само. */
     private val dismissed = ConcurrentHashMap.newKeySet<String>()
@@ -62,16 +72,19 @@ object RequestPresenter {
         channel(context)
         val manager = context.getSystemService(NotificationManager::class.java)
         val active = manager.activeNotifications.filter { it.tag == TAG }
-        val shown = active.mapNotNull { it.notification.extras.getString(EXTRA_REQUEST) }.toSet()
+        // «Отправлен» — показ, только пока этот процесс ждёт итог ответа; после перезапуска — запрос снова с кнопками.
+        val shown = active.mapNotNull { n -> n.notification.extras.getString(EXTRA_REQUEST) ?: n.notification.extras.getString(EXTRA_SENDING)?.takeIf { it in answering } }.toSet()
         for (n in active) {
-            val id = n.notification.extras.getString(EXTRA_REQUEST)
+            val id = n.notification.extras.getString(EXTRA_REQUEST) ?: n.notification.extras.getString(EXTRA_SENDING)
             if (id == null || pending.keys.none { it.value == id }) manager.cancel(TAG, n.id)
         }
         for ((id, card) in pending) {
             cards[id.value] = card
             if (id.value in shown || id.value in dismissed) continue
             show(context, card)
-            model.delivered(id, "notification")
+            // Показ — факт, если уведомление и правда в шторке: у приложения не больше 50, лишние
+            // система отбрасывает молча (аудит стабильности, A-4).
+            if (manager.activeNotifications.any { it.tag == TAG && it.id == notificationId(id.value) }) model.delivered(id, "notification")
         }
         cards.keys.retainAll(pending.keys.map { it.value }.toSet())
         RequestOverlay.sync(context, model, pending)
@@ -92,6 +105,9 @@ object RequestPresenter {
             .setOnlyAlertOnce(true)
             .setAutoCancel(false)
             .setExtras(Bundle().apply { putString(EXTRA_REQUEST, id) })
+            // Вопрос Claude и название задачи — не для экрана блокировки (аудит безопасности, A-12).
+            .setVisibility(AndroidNotification.VISIBILITY_PRIVATE)
+            .setPublicVersion(Notifier.lockScreen(context, CHANNEL, "Запрос контура: нужен ответ"))
             .setContentIntent(Notifier.openLink(context, card.task?.let { "dpai://task/${it.value}" } ?: card.session?.let { "dpai://session/${it.value}" } ?: "dpai://request/$id"))
             .setDeleteIntent(receiver(context, RequestReceiver.DISMISS, id, null, 0, mutable = false))
         // В уведомлении — до трёх кнопок (ограничение Android); остальные варианты — на экране «Запросы».
@@ -131,6 +147,46 @@ object RequestPresenter {
         dismissed += id
     }
 
+    /**
+     * Решающее пришло из `dpai` (D-91): запрос, который человек подтвердит
+     * здесь, — снова уведомлением и окном поверх приложений, даже смахнутый.
+     * Исключение задачи — её запрос с вариантом «принять» (без проверки, без
+     * ревью); такого нет — уведомление к листу задачи, где кнопка
+     * «Принять без проверки».
+     */
+    fun confirmFromCli(context: Context, model: DemoModel, c: Command) {
+        val pending = model.pending()
+        val id = when (c) {
+            is Command.AnswerRequest -> RequestAction.parse(c.uri).valueOrNull()?.request
+            is Command.Waive -> pending.values.firstOrNull { it.task == c.task && it.buttons.any { b -> b.confirm } }?.id
+            else -> null
+        }
+        val card = id?.let { pending[it] }
+        if (card != null) {
+            dismissed -= card.id.value
+            cards[card.id.value] = card
+            show(context, card)
+            RequestOverlay.again(card.id.value)
+            return
+        }
+        if (c !is Command.Waive) return
+        val title = model.liveOrchestrator()?.tasks?.tasks?.get(c.task)?.title ?: "задача"
+        val strict = com.dpsmpx.dpai.core.diagnostics.Redactor.STRICT
+        val channel = Notifier.channelOf(com.dpsmpx.dpai.notifications.NotificationCategory.APPROVAL)
+        Notifier(context)
+        val n = AndroidNotification.Builder(context, channel)
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setContentTitle("dpai просит исключение — подтвердите здесь")
+            .setContentText(strict.redact("«$title»: ${c.reason}"))
+            .setStyle(AndroidNotification.BigTextStyle().bigText(strict.redact("Задача «$title» станет выполненной без проверки. Причина из dpai: ${c.reason}\nПринять — на листе задачи, «Принять без проверки».")))
+            .setVisibility(AndroidNotification.VISIBILITY_PRIVATE)
+            .setPublicVersion(Notifier.lockScreen(context, channel, "Нужно подтверждение на телефоне"))
+            .setAutoCancel(true)
+            .setContentIntent(Notifier.openLink(context, "dpai://task/${c.task.value}"))
+            .build()
+        context.getSystemService(NotificationManager::class.java).notify("$TAG-waive", notificationId(c.task.value), n)
+    }
+
     /** Ответ не принят, а запрос ещё ждёт: показать его снова с кнопками. */
     fun reshow(context: Context, id: String) {
         cards[id]?.let { show(context, it) }
@@ -151,18 +207,26 @@ object RequestPresenter {
             .setContentText(strict.redact(text))
             .setAutoCancel(true)
             .setTimeoutAfter(RESULT_MS)
+            .setVisibility(AndroidNotification.VISIBILITY_PRIVATE)
+            .setPublicVersion(Notifier.lockScreen(context, Notifier.channelOf(com.dpsmpx.dpai.notifications.NotificationCategory.INFO), "Ответ на запрос"))
             .build()
         context.getSystemService(NotificationManager::class.java).notify(TAG + "-result", notificationId(id), n)
     }
 
-    /** «Отправляю…» сразу после нажатия: кнопки сняты — второе нажатие нечем сделать. */
+    /**
+     * «Отправляю…» сразу после нажатия: кнопки сняты — второе нажатие нечем
+     * сделать. Метка — не «запрос показан»: процесс умер посреди ответа —
+     * [sync] вернёт запрос с кнопками, а не будет сутки считать его
+     * показанным (аудит стабильности, A-2).
+     */
     fun sending(context: Context, id: String, label: String) {
+        answering += id
         val n = AndroidNotification.Builder(context, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setContentTitle("Ответ «$label» отправлен")
             .setContentText("контур применяет решение…")
             .setOnlyAlertOnce(true)
-            .setExtras(Bundle().apply { putString(EXTRA_REQUEST, id) })
+            .setExtras(Bundle().apply { putString(EXTRA_SENDING, id) })
             .build()
         context.getSystemService(NotificationManager::class.java).notify(TAG, notificationId(id), n)
     }
@@ -193,7 +257,10 @@ class RequestReceiver : BroadcastReceiver() {
         val pending = goAsync()
         // Такт держит замок модели, пока ходит по SSH: при работающей службе процесс жив
         // и без приёмника — широковещание отпускается сразу (ревью 8 октября 2026, A-23).
-        val detached = ControllerService.running
+        // Службы нет (процесс убит системой) — поднять её: нажатие на уведомление это разрешает. Иначе
+        // широковещание ждало сборку контура со сверкой по SSH — 60 с, ANR и потерянный ответ (аудит
+        // стабильности 2 ноября 2026, A-2).
+        val detached = ControllerService.running || (model(app) && ControllerService.start(app))
         if (detached) pending.finish()
         worker.execute {
             try {
@@ -203,6 +270,9 @@ class RequestReceiver : BroadcastReceiver() {
             }
         }
     }
+
+    /** Контроллер настоящий (не демо): только ему нужна служба. */
+    private fun model(app: Context): Boolean = runCatching { DemoModel.get(app).hasLive() }.getOrDefault(false)
 
     companion object {
         const val ANSWER = "com.dpsmpx.dpai.REQUEST_ANSWER"
@@ -215,11 +285,32 @@ class RequestReceiver : BroadcastReceiver() {
     }
 }
 
-/** Применение ответа с любого канала (уведомление, окно, экран) и показ итога. */
+/**
+ * Применение ответа с любого канала (уведомление, окно, экран) и показ итога.
+ * Такт занят — ответ в журнале и применится после текущего шага (D-94):
+ * это «принято», а не «не принято» — кнопки не возвращаются, иначе второй
+ * вариант встал бы в очередь за первым (аудит надёжности, A-2); итог —
+ * уведомлением, когда такт исполнит ответ.
+ */
 object Answers {
+    /** Ответ принят в журнал, итога ещё нет (D-94). */
+    fun queued(r: Outcome<*>): Boolean = r is Outcome.Failure && r.diagnostics.all { it.code == com.dpsmpx.dpai.core.diagnostics.DiagCode.COMMAND_QUEUED }
+
     fun apply(context: Context, id: String, uri: String, text: String?, label: String, channel: String): Outcome<*> {
         val model = DemoModel.get(context)
-        val r = model.answer(uri, text, channel)
+        val r = model.answer(uri, text, channel) { later -> shown(context, model, id, label, later) }
+        if (queued(r)) {
+            RequestPresenter.sending(context, id, label)
+            RequestPresenter.result(context, id, "Принято: $label", "применится после текущего шага контура — итог придёт уведомлением")
+            RequestOverlay.waiting(id)
+        } else {
+            shown(context, model, id, label, r)
+        }
+        return r
+    }
+
+    private fun shown(context: Context, model: DemoModel, id: String, label: String, r: Outcome<com.dpsmpx.dpai.notifications.RequestAnswer>) {
+        RequestPresenter.answered(id)
         when (r) {
             is Outcome.Success -> {
                 context.getSystemService(NotificationManager::class.java).cancel(RequestPresenter.TAG, RequestPresenter.notificationId(id))
@@ -228,10 +319,13 @@ object Answers {
             }
             is Outcome.Failure -> {
                 RequestPresenter.result(context, id, "Не принято: $label", r.diagnostics.first().message)
-                if (model.pending().keys.any { it.value == id }) RequestPresenter.reshow(context, id)
-                else context.getSystemService(NotificationManager::class.java).cancel(RequestPresenter.TAG, RequestPresenter.notificationId(id))
+                if (model.pending().keys.any { it.value == id }) {
+                    RequestPresenter.reshow(context, id)
+                    RequestOverlay.again(id)
+                } else {
+                    context.getSystemService(NotificationManager::class.java).cancel(RequestPresenter.TAG, RequestPresenter.notificationId(id))
+                }
             }
         }
-        return r
     }
 }

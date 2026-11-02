@@ -659,14 +659,17 @@ def gradle_run(cmd, cwd):
 def check_gradle(root, java=None, sdk=None, run=gradle_run):
     """build.gradle — `./gradlew build` из корня: ядро, подсистема dpai/ и, при Android SDK, приложение (ТЗ, §14).
 
-    Нет JDK — сборка пропущена; нет Android SDK — собрано всё, кроме оболочки. Пропуск назван,
-    в `full --strict` он — находка. Отказ загрузки зависимостей — сбой проверки (код 3), а не код.
+    Нет JDK — сборка не выполнена, и это **находка**, а не зелёный: без Kotlin-компиляции
+    `full` не значит ничего (аудит 30 октября 2026, DPmetaApp:D-51). Нет Android SDK —
+    собрано всё, кроме оболочки: это законный пропуск, он назван и в `--strict` становится
+    находкой. Отказ загрузки зависимостей — сбой проверки (код 3), а не код.
     """
     r = Result("build.gradle")
     t0 = time.monotonic()
     java = shutil.which("java") if java is None else java
     if not java:
-        r.skipped.append("нет JDK — сборка Gradle не проверена")
+        # Сборка не проверена вовсе: не «пропуск», а провал уровня full (D-51).
+        r.findings.append("нет JDK — сборка Gradle не проверена: `full` без сборки не значит ничего (установите JDK 21)")
         return r
     if not (android_sdk(root) if sdk is None else sdk):
         r.skipped.append("нет Android SDK — приложение (dpai/android) не собрано")

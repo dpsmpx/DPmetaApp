@@ -233,7 +233,7 @@ API не включён. Граница — этот раздел и реест�
 | `dpai.ecosystem-results` | 1 | `EcosystemRun` | документ `ecosystem-results` |
 | `dpai.backup-manifest` | 1 | `BackupService` | `manifest.json` копии |
 | `dpai.restore-marker` | 1 | `BackupService` | `restore.pending` — начатое восстановление |
-| `dpai.app-targets` | 2 (1–2) | `TargetBook` | документ `targets` приложения; v1 — без `configDir` |
+| `dpai.app-targets` | 3 (1–3) | `TargetBook` | документ `targets` приложения; v1 — без `configDir`; v3 — target «в приложении» (`kind`) |
 | `dpai.app-project` | 2 (1–2) | `ProjectBook` | документ `project` приложения; v1 — без маршрута `claude` (D-50) |
 | `dpai.agent-reply` | 2 | `AgentReply` | стандартный вывод агента; не хранится |
 | `dpai.run-spec` | 1 | `RunSpec` | стандартный вход `dpai agent start --spec-stdin`; внутри `dpai.agent-run` |
@@ -380,6 +380,9 @@ API не включён. Граница — этот раздел и реест�
 | `POST_NOTIFICATIONS` | уведомления; спрашивается при запуске на Android 13+, отказ — не ошибка (D-36) |
 | `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_SPECIAL_USE` | `ControllerService` типа `specialUse`: такт контроллера при закрытом экране (D-36) |
 | `WAKE_LOCK` | частичный wakelock службы контроллера: такт идёт при выключенном экране (D-39) |
+| `SYSTEM_ALERT_WINDOW` | окно запроса поверх приложений — если человек включил его и дал разрешение (D-44) |
+| `com.termux.permission.RUN_COMMAND` | запуск `sshd` Termux-target на этом телефоне — только эта команда (D-46) |
+| `ACCESS_NETWORK_STATE` | DNS сети телефона для Linux-среды в приложении: только чтение состояния сети (D-90) |
 
 Других разрешений нет. Экспортируется только `MainActivity` (запуск);
 `ApprovalReceiver` и `ControllerService` — `exported="false"`;

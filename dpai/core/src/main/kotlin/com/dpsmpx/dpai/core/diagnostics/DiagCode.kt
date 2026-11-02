@@ -257,6 +257,9 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     /** Репозиторий или файл не найден — или скрыт от токена (404 GitHub). */
     GITHUB_NOT_FOUND(Category.NETWORK, Severity.ERROR, Retryability.NON_RETRYABLE),
 
+    /** Запечатанный сегмент журнала пропал или испорчен — восстановлен из копии (D-95). */
+    JOURNAL_SEGMENT_RESTORED(Category.INTEGRITY, Severity.WARNING, Retryability.NON_RETRYABLE),
+
     // --- общее ---
     /** Строгая семантика (D-05): неподдержанное — явный отказ, а не «похожее». */
     UNSUPPORTED(Category.UNSUPPORTED, Severity.ERROR, Retryability.NON_RETRYABLE),

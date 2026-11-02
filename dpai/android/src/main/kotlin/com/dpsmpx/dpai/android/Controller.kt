@@ -98,18 +98,51 @@ class Controller(private val root: File, val version: String?) {
         root.mkdirs()
     }
 
-    @Synchronized
-    fun targets(): List<TargetEntry> {
-        val doc = docs.read(BOOK).valueOrNull() ?: return emptyList()
-        return TargetBook.fromJson(doc.content).valueOrNull().orEmpty()
+    /**
+     * Настройки восстановлены из прежней целой версии (`STORAGE_RECOVERED_LKG`) —
+     * об этом стоит сказать человеку: последняя правка targets не сохранилась
+     * (D-87). Список заполняется чтением [targets] и [project].
+     */
+    val recoveredNotices: List<com.dpsmpx.dpai.core.diagnostics.Diagnostic> get() = synchronized(notices) { notices.values.toList() }
+
+    /**
+     * По одной находке на код и предмет, не больше [MAX_NOTICES] (аудит
+     * стабильности 2 ноября 2026, A-3): настройки читаются около раза в
+     * секунду, и одно «прочитана прежняя версия» дописывалось каждый раз —
+     * за недели список съедал память.
+     */
+    private val notices = LinkedHashMap<Pair<String, String?>, com.dpsmpx.dpai.core.diagnostics.Diagnostic>()
+
+    private fun notice(ds: List<com.dpsmpx.dpai.core.diagnostics.Diagnostic>) = synchronized(notices) {
+        for (d in ds) {
+            notices.remove(d.code.name to d.subject)
+            notices[d.code.name to d.subject] = d
+        }
+        while (notices.size > MAX_NOTICES) notices.remove(notices.keys.first())
     }
+
+    /** Документ настроек целиком: предупреждения чтения — в [recoveredNotices], а не в мусор. */
+    private fun <T> bookDocument(key: String, parse: (com.dpsmpx.dpai.core.serialization.JsonObject) -> Outcome<T>): T? =
+        when (val read = docs.read(key)) {
+            is Outcome.Success -> {
+                notice(read.warnings)
+                read.value?.let { parse(it.content).valueOrNull() }
+            }
+            is Outcome.Failure -> {
+                notice(read.errors)
+                null
+            }
+        }
+
+    @Synchronized
+    fun targets(): List<TargetEntry> = bookDocument(BOOK) { TargetBook.fromJson(it) }.orEmpty()
 
     fun form(label: String, host: String, port: String, user: String, windows: Boolean, agent: String, configDir: String): Outcome<TargetEntry> =
         TargetForm.validate(ids.next(IdKinds.TARGET), label, host, port, user, windows, agent, configDir)
 
     /** Проект контроллера (один): репозиторий на target, деревья задач, проверка. */
     @Synchronized
-    fun project(): ProjectEntry? = docs.read(PROJECT).valueOrNull()?.let { ProjectBook.fromJson(it.content).valueOrNull() }
+    fun project(): ProjectEntry? = bookDocument(PROJECT) { ProjectBook.fromJson(it) }
 
     /** [claudeOn] — где идёт ход Claude, если не на [target] (D-50); ключ и known_hosts — пути на нём. */
     fun projectForm(
@@ -139,15 +172,36 @@ class Controller(private val root: File, val version: String?) {
         project: ProjectEntry?,
         onEvents: (List<com.dpsmpx.dpai.core.events.EventEnvelope>) -> Unit = {},
         onProblem: (Diagnostic) -> Unit = {},
-    ): LiveSystem = LiveSystem(
-        Clock.SYSTEM, NioVfs(File(root, "live").apply { mkdirs() }.toPath()), targets,
-        { e, p -> JschProcessHost(e, p, identities = listOf(KeystoreKey.identity())) }, knownHostsFile,
-        controllerVersion = version,
-        project = project,
-        onEvents = onEvents,
-        onProblem = onProblem,
-        notificationsOk = notificationsOk,
-    )
+        /** Агент target «в приложении» (D-75, шаг 5); `null` — таких targets нет или Linux не установлен. */
+        inAppHost: com.dpsmpx.dpai.execution.process.ProcessHost? = null,
+        /** Процессы гостя — Git проекта на target «в приложении». */
+        inAppGuest: com.dpsmpx.dpai.execution.process.ProcessHost? = null,
+    ): LiveSystem {
+        val dir = NioVfs(File(root, "live").apply { mkdirs() }.toPath())
+        // Карантин хвоста журнала — только после «да» человека и только на одну сборку (D-24).
+        val confirmed = dir.exists(QUARANTINE_CONFIRMED)
+        return LiveSystem(
+            Clock.SYSTEM, dir, targets,
+            { e, p -> JschProcessHost(e, p, identities = listOf(KeystoreKey.identity())) }, knownHostsFile,
+            controllerVersion = version,
+            project = project,
+            onEvents = onEvents,
+            onProblem = onProblem,
+            notificationsOk = notificationsOk,
+            quarantineConfirmed = confirmed,
+            inAppHost = inAppHost,
+            inAppGuest = inAppGuest,
+        ).also { if (confirmed) runCatching { dir.delete(QUARANTINE_CONFIRMED) } }
+    }
+
+    /**
+     * Человек подтвердил: журнал испорчен в середине, хвост после порчи — в
+     * карантин (D-24; аудит надёжности, A-1). Следующая сборка контура
+     * откроет журнал с карантином; отметка одноразовая.
+     */
+    fun confirmJournalQuarantine() {
+        NioVfs(File(root, "live").apply { mkdirs() }.toPath()).write(QUARANTINE_CONFIRMED, "подтверждено человеком\n".toByteArray())
+    }
 
     /**
      * Строка открытого ключа приложения; копия — в `app_key.pub` каталога
@@ -174,6 +228,25 @@ class Controller(private val root: File, val version: String?) {
         return when (val w = docs.write(BOOK, TargetBook.toJson(targets().filter { it.id != entry.id } + entry))) {
             is Outcome.Failure -> w
             is Outcome.Success -> Outcome.success(Unit)
+        }
+    }
+
+    /**
+     * Ещё один слот «в приложении» (D-75, шаг 5; D-29): target без SSH с
+     * каталогом слота `/root/.claude-slot-N` в госте — следующий свободный
+     * номер. Ключа хоста нет — сверять нечего.
+     */
+    @Synchronized
+    fun addInApp(id: com.dpsmpx.dpai.core.ids.ExecutionTargetId): Outcome<TargetEntry> {
+        val used = targets().filter { it.inApp }.mapNotNull { it.configDir?.substringAfterLast("-")?.toIntOrNull() }.toSet()
+        val n = (1..99).firstOrNull { it !in used } ?: return Outcome.failure(DiagCode.VALUE_INVALID, "слотов «в приложении» — не больше 99")
+        val entry = when (val e = TargetForm.inApp(id, "Linux в приложении · слот $n", com.dpsmpx.dpai.orchestrator.linux.LinuxEnvironment.slotDir(n))) {
+            is Outcome.Failure -> return e
+            is Outcome.Success -> e.value
+        }
+        return when (val w = docs.write(BOOK, TargetBook.toJson(targets() + entry))) {
+            is Outcome.Failure -> w
+            is Outcome.Success -> Outcome.success(entry)
         }
     }
 
@@ -250,7 +323,11 @@ class Controller(private val root: File, val version: String?) {
         step(termux, "ключ хоста ${pc.label} в Termux", WorkspaceLink.termuxKnownHosts(pc), stdin = hostLines.joinToString("\n", postfix = "\n"))
             .let { if (it is Outcome.Failure) return it }
         // Ответ агента — строка JSON и при `"ok":false` (на ПК нет Claude Code — так и задумано): важен вход ключом.
-        return when (val r = step(termux, "вход с Termux на ${pc.label}", WorkspaceLink.termuxCheck(pc), accept = { WorkspaceLink.checked(it.stdout) })) {
+        val check = when (val c = WorkspaceLink.termuxCheck(pc)) {
+            is Outcome.Failure -> return c
+            is Outcome.Success -> c.value
+        }
+        return when (val r = step(termux, "вход с Termux на ${pc.label}", check, accept = { WorkspaceLink.checked(it.stdout) })) {
             is Outcome.Failure -> r
             is Outcome.Success -> Outcome.success(Unit)
         }
@@ -336,18 +413,23 @@ class Controller(private val root: File, val version: String?) {
         return Outcome.success(lines)
     }
 
-    /** `dpai agent doctor` на target — по SSH с ключом приложения. */
-    fun doctor(entry: TargetEntry): Outcome<DoctorResult> {
+    /** `dpai agent doctor` на target — по SSH с ключом приложения; «в приложении» — агентом процесса [inAppHost] (D-75). */
+    fun doctor(entry: TargetEntry, inAppHost: com.dpsmpx.dpai.execution.process.ProcessHost? = null): Outcome<DoctorResult> {
         val manager = ExecutionTargetManager(
             Clock.SYSTEM,
             sshHost = { e, p -> JschProcessHost(e, p, identities = listOf(KeystoreKey.identity())) },
             controllerVersion = version,
+            inAppHost = inAppHost,
         )
         manager.register(entry.toTarget(knownHostsFile))
         return manager.doctor(entry.id)
     }
 
     companion object {
+        private const val MAX_NOTICES = 20
+
+        /** Отметка «карантин хвоста журнала подтверждён» — в каталоге контура (D-24). */
+        private const val QUARANTINE_CONFIRMED = "quarantine-confirmed"
         private const val BOOK = "targets"
         private const val PROJECT = "project"
         private const val KNOWN_HOSTS = "known_hosts"

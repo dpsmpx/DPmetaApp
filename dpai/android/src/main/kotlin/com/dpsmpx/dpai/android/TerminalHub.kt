@@ -3,6 +3,7 @@ package com.dpsmpx.dpai.android
 import android.content.Context
 import com.dpsmpx.dpai.core.diagnostics.Redactor
 import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.core.result.map
 import com.dpsmpx.dpai.jsch.JschShell
 import com.dpsmpx.dpai.jsch.ShellChannel
 import com.dpsmpx.dpai.terminal.TerminalListener
@@ -40,7 +41,13 @@ object TerminalHub {
 
     private var nextId = 1
 
-    class Tab internal constructor(val id: Int, val target: TargetEntry, val command: List<String>, val label: String) : TerminalListener {
+    /**
+     * Вкладка: к target по SSH ([target]) или к Linux-среде в приложении
+     * ([target] — `null`, D-75, шаг 5).
+     */
+    class Tab internal constructor(val id: Int, val target: TargetEntry?, val command: List<String>, val label: String) : TerminalListener {
+        val linux: Boolean get() = target == null
+
         val session = TerminalSession(80, 24, listener = this)
 
         @Volatile
@@ -80,8 +87,14 @@ object TerminalHub {
         override fun closed(exitCode: Int?) = Unit
     }
 
+    /** Вкладка к Linux-среде в приложении: `sh -l` гостя (D-75, шаг 5). */
+    fun openLinux(context: Context): Tab = open(context, null, emptyList(), "Linux")
+
+    /** Ещё одна вкладка туда же, куда [like]. */
+    fun openLike(context: Context, like: Tab): Tab = open(context, like.target, emptyList(), like.target?.label ?: "Linux")
+
     @Synchronized
-    fun open(context: Context, target: TargetEntry, command: List<String>, label: String): Tab {
+    fun open(context: Context, target: TargetEntry?, command: List<String>, label: String): Tab {
         val tab = Tab(nextId++, target, command, label)
         tabs += tab
         count.intValue = tabs.size
@@ -103,17 +116,22 @@ object TerminalHub {
         tab.session.attach(t)
         observer?.tabs()
         thread(name = "dpai-term-connect", isDaemon = true) {
-            val controller = Controller.get(app.filesDir, null)
-            val endpoint = tab.target.toTarget(controller.knownHostsFile).ssh
             val (cols, rows) = tab.session.read { it.cols to it.rows }
-            val o = if (endpoint == null) {
-                null
+            val target = tab.target
+            val o: Outcome<TermChannel>? = if (target == null || target.inApp) {
+                // Linux-среда в приложении (и target «в приложении»): псевдотерминал через JNI, без SSH (D-75, шаг 5).
+                com.dpsmpx.dpai.android.linux.LinuxSetup.shell(app, com.dpsmpx.dpai.execution.linux.WindowSize(cols, rows), tab.command).map { child ->
+                    LocalChannel(child, onOutput = { b, n -> tab.session.output(b, 0, n) }, onClosed = { code -> if (tab.transport === t) closed(tab, code) })
+                }
             } else {
-                JschShell(endpoint, tab.target.platform, identities = listOf(KeystoreKey.identity())).open(
-                    cols, rows, tab.command,
-                    onOutput = { b, n -> tab.session.output(b, 0, n) },
-                    onClosed = { code -> if (tab.transport === t) closed(tab, code) },
-                )
+                val controller = Controller.get(app.filesDir, null)
+                target.toTarget(controller.knownHostsFile).ssh?.let { endpoint ->
+                    JschShell(endpoint, target.platform, identities = listOf(KeystoreKey.identity())).open(
+                        cols, rows, tab.command,
+                        onOutput = { b, n -> tab.session.output(b, 0, n) },
+                        onClosed = { code -> if (tab.transport === t) closed(tab, code) },
+                    ).map { SshChannel(it) }
+                }
             }
             when (o) {
                 // Вкладку закрыли, пока шло подключение: канал закрывается сразу, а не живёт без вкладки.
@@ -124,7 +142,7 @@ object TerminalHub {
                 }
                 is Outcome.Failure -> {
                     tab.session.closed(null)
-                    tab.status = Redactor.STANDARD.redact("не подключился: ${o.diagnostics.first().code.name} — ${o.diagnostics.first().message}")
+                    tab.status = Redactor.STANDARD.redact("не подключился: ${com.dpsmpx.dpai.core.text.Words.reason(o.diagnostics.first().code.name)} — ${o.diagnostics.first().message}")
                 }
                 null -> {
                     tab.session.closed(null)
@@ -155,20 +173,114 @@ object TerminalHub {
     }
 }
 
+/** Канал вкладки к программе: SSH к target или псевдотерминал Linux-среды в приложении. */
+internal interface TermChannel {
+    val isOpen: Boolean
+
+    fun write(bytes: ByteArray)
+
+    fun resize(cols: Int, rows: Int)
+
+    fun close()
+}
+
+internal class SshChannel(private val c: ShellChannel) : TermChannel {
+    override val isOpen: Boolean get() = c.isOpen
+
+    override fun write(bytes: ByteArray) = c.write(bytes)
+
+    override fun resize(cols: Int, rows: Int) = c.resize(cols, rows)
+
+    override fun close() = c.close()
+}
+
+/**
+ * Оболочка гостя под proot с псевдотерминалом (D-75, шаг 5): вывод читает
+ * свой поток; закрытие — HUP лидеру сеанса, proot уносит гостя с собой.
+ */
+internal class LocalChannel(
+    private val child: com.dpsmpx.dpai.execution.linux.NativeChild,
+    onOutput: (ByteArray, Int) -> Unit,
+    onClosed: (Int?) -> Unit,
+) : TermChannel {
+    @Volatile
+    private var done = false
+
+    /**
+     * Ввод — своим потоком (аудит надёжности 2 ноября 2026, A-7): запись в
+     * псевдотерминал блокируется, пока гость не читает (`apk add`, `npm i`),
+     * а пишут из главного потока под замком транспорта — вставка больше
+     * буфера ядра давала ANR. Очередь ограничена: гость не читает совсем —
+     * лишний ввод отбрасывается, а не копится в памяти.
+     */
+    private val input = java.util.concurrent.LinkedBlockingQueue<ByteArray>(MAX_PENDING_WRITES)
+
+    init {
+        thread(name = "dpai-term-linux-in", isDaemon = true) {
+            try {
+                while (!done) {
+                    val b = input.poll(1, java.util.concurrent.TimeUnit.SECONDS) ?: continue
+                    child.stdin.write(b)
+                    child.stdin.flush()
+                }
+            } catch (_: java.io.IOException) {
+                // Оболочка вышла: поток вывода сообщит закрытие.
+            } catch (_: InterruptedException) {
+                // Канал закрыт.
+            }
+        }
+        thread(name = "dpai-term-linux", isDaemon = true) {
+            val buf = ByteArray(8192)
+            try {
+                while (true) {
+                    val n = child.stdout.read(buf)
+                    if (n < 0) break
+                    if (n > 0) onOutput(buf, n)
+                }
+            } catch (_: java.io.IOException) {
+                // Псевдотерминал закрыт: оболочка вышла или её закрыли — итог ниже.
+            }
+            val code = runCatching { child.waitFor() }.getOrNull()
+            // Дескрипторы псевдотерминала — сразу после выхода: иначе по два на каждую закрытую вкладку (аудит безопасности, A-11).
+            runCatching { child.stdin.close() }
+            runCatching { child.stdout.close() }
+            done = true
+            onClosed(code)
+        }
+    }
+
+    override val isOpen: Boolean get() = !done
+
+    override fun write(bytes: ByteArray) {
+        if (!done) input.offer(bytes)
+    }
+
+    override fun resize(cols: Int, rows: Int) = child.resize(com.dpsmpx.dpai.execution.linux.WindowSize(cols, rows))
+
+    override fun close() {
+        if (!done) com.dpsmpx.dpai.android.linux.LinuxSetup.hangUp(child)
+    }
+
+    private companion object {
+        /** Кусков ввода в очереди: вставка — несколько кусков, нажатия — по одному. */
+        const val MAX_PENDING_WRITES = 1024
+    }
+}
+
 /**
  * Канал вкладки: до конца подключения ответы эмулятора копятся (немного),
- * потом уходят в канал SSH по порядку.
+ * потом уходят в канал по порядку.
  */
 internal class ChannelTransport : TerminalTransport {
     private val pending = ArrayList<ByteArray>()
-    private var channel: ShellChannel? = null
+    private var channel: TermChannel? = null
     private var closed = false
 
     val isOpen: Boolean @Synchronized get() = channel?.isOpen == true
 
     /** Канал открылся. `false` — транспорт уже закрыт: канал закрывается здесь же. */
     @Synchronized
-    fun bind(c: ShellChannel): Boolean {
+    fun bind(c: TermChannel): Boolean {
         if (closed) {
             c.close()
             return false

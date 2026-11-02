@@ -6,6 +6,7 @@ import com.dpsmpx.dpai.core.ids.SessionId
 import com.dpsmpx.dpai.core.ids.TaskId
 import com.dpsmpx.dpai.core.measure.Measure
 import com.dpsmpx.dpai.core.state.TaskState
+import com.dpsmpx.dpai.core.text.Words
 import com.dpsmpx.dpai.monitoring.DashboardView
 import com.dpsmpx.dpai.monitoring.DisplayState
 import com.dpsmpx.dpai.monitoring.SelfDiagnosis
@@ -81,6 +82,8 @@ data class SessionScreen(
     val task: TaskId? = null,
     /** Состояние для кружка в заголовке (D-61). */
     val status: SessionStatus = SessionStatus.IDLE,
+    /** Почему сюда не пишут (A-14): ревью, не последняя сессия, проверка, завершена; пишут — `null`. */
+    val noSend: String? = null,
     /** Сколько идёт текущий ход — «5 мин» (от начала хода в журнале сессии); ход не идёт — `null`. */
     val workingFor: String? = null,
 )
@@ -101,8 +104,12 @@ enum class SessionAction(val label: String) {
     STOP("Остановить ход"),
     SEND("Запрос"),
     FRESH("Свежая сессия"),
-    /** Ход остановлен с handoff, следующая сессия задачи — на другом слоте (D-77; ТЗ, §74, Reassign). */
-    REASSIGN("Перенести на другой слот"),
+    /**
+     * Ход остановлен с handoff, следующая сессия задачи — на другом слоте
+     * (D-77; ТЗ, §74, Reassign). Имя — с «прервать» (аудит удобства, A-13):
+     * в листе задачи выбор слота следующего хода ход не прерывает (D-66).
+     */
+    REASSIGN("Прервать и перенести"),
 }
 
 /** Карточка задачи; [level] — глубина в DAG: 0 — без зависимостей, иначе 1 + наибольшая у зависимостей. */
@@ -122,7 +129,7 @@ data class TaskBoard(val columns: List<BoardColumn>)
 object Screens {
     /** [usage] — отчёт расхода (D-40): три меры на сводке, когда ходы уже были. */
     fun dashboard(view: DashboardView, health: SelfDiagnosis, usage: UsageReport? = null): DashboardScreen = DashboardScreen(
-        health = health.health.name,
+        health = Words.health(health.health.name),
         healthTone = when (health.health) {
             SystemHealth.HEALTHY -> Tone.DONE
             SystemHealth.DEGRADED, SystemHealth.RECOVERY -> Tone.WARNING
@@ -138,9 +145,9 @@ object Screens {
             Counter("Аккаунтов доступно", view.availableAccounts.toString(), Tone.NEUTRAL),
         ) + usageCounters(usage),
         sessions = view.rows.map { r ->
-            SessionLine(r.session, r.task, r.state.name, tone(r.state), silent(r.silentFor), r.next ?: "—", r.review?.let(::reviewLabel))
+            SessionLine(r.session, r.task, Words.display(r.state.name), tone(r.state), silent(r.silentFor), r.next ?: "—", r.review?.let(::reviewLabel))
         },
-        attention = view.attention.map { "${it.subject}: ${it.detail}" },
+        attention = view.attention.map { "${it.title}: ${it.detail}" },
     )
 
     /** Расход на сводке (`docs/EFFICIENCY.md`, §9): работа на расход, кеш prompt, сэкономленный контекст (оценка). */
@@ -257,6 +264,24 @@ object Screens {
             if (last && !running && taskState !in BUSY) add(SessionAction.FRESH)
             // Перенос — у последней рабочей сессии незавершённой задачи, пока она не на проверке (D-77).
             if (last && tasks.tasks[s.task]?.terminal == false && taskState !in CHECKING) add(SessionAction.REASSIGN)
+        }
+    }
+
+    /**
+     * Почему запрос в эту сессию не отправить — словами, для подсказки в
+     * поле (аудит удобства, A-14); можно — `null`. Прежде на всё было
+     * «задача проверяется или завершена», и при ждущем ответе тоже.
+     */
+    fun noSend(session: SessionId, sessions: SessionsState, tasks: TasksState): String? {
+        val s = sessions.sessions[session] ?: return "сессии нет"
+        if (SessionAction.SEND in sessionActions(session, sessions, tasks)) return null
+        val t = tasks.tasks[s.task]
+        return when {
+            s.review != null -> "сессия ревью только читает — сообщение в рабочую сессию задачи"
+            t == null -> "задачи нет"
+            t.terminal -> "задача завершена (${Words.task(t.state.name)})"
+            t.state in CHECKING -> "задача на проверке — сообщение после неё"
+            else -> "сообщение — в последнюю рабочую сессию задачи"
         }
     }
 

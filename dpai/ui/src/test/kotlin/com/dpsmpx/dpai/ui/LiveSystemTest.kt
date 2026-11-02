@@ -104,6 +104,108 @@ class LiveSystemTest {
         assertEquals("отказ 51", s.orchestrator.problems.first().message)
     }
 
+    /**
+     * D-87: хранилище «в порядке» — по факту, а не константой. Отказ хранилища в
+     * проблемах (диск полон, `STORAGE_*`) — сигнал `storageOk = false`: разрушительные
+     * записи останавливаются, как обещает `docs/RECOVERY.md`, §6.
+     */
+    @Test
+    fun storageTroubleIsVisibleInSelfDiagnostics() {
+        val s = system(entry("сервер", "/home/dev/.claude-dpai"))
+        assertEquals(true, s.storageOk(), "чистый контур — хранилище в порядке")
+        s.orchestrator.problems += Diagnostic.error(DiagCode.STORAGE_UNAVAILABLE, "журнал закрыт после отказа записи")
+        assertEquals(false, s.storageOk(), "отказ хранилища виден сигналом")
+        assertEquals(false, s.signals().storageOk, "и в самодиагностике экрана")
+    }
+
+    /**
+     * D-87: отрезанный хвост журнала не теряется молча. Испорченная запись после
+     * целых — `JOURNAL_TAIL_TRUNCATED` с числом байт и именем карантина; система
+     * открывается, а предупреждение стоит в её проблемах (раньше уходило в `.valueOrNull()`).
+     */
+    @Test
+    fun truncatedJournalTailIsReportedNotSwallowed() {
+        val target = entry("сервер", "/home/dev/.claude-dpai")
+        // Первый запуск пишет журнал, затем портим его хвост: обрываем последнюю строку.
+        system(target).also { s -> steps(s, 2) }.close()
+        val journal = dir.resolve("live.journal")
+        if (java.nio.file.Files.exists(journal)) {
+            val bytes = java.nio.file.Files.readAllBytes(journal)
+            // Обрезаем последние 10 байт: последняя запись не подтверждена — её отрежет open().
+            java.nio.file.Files.write(journal, bytes.copyOf((bytes.size - 10).coerceAtLeast(0)))
+        }
+        val s = system(target)
+        try {
+            assertTrue(
+                s.problems.any { it.code == DiagCode.JOURNAL_TAIL_TRUNCATED },
+                "потеря хвоста журнала — в проблемах контура: ${s.problems.map { it.code }}",
+            )
+        } finally {
+            s.close()
+        }
+    }
+
+    /**
+     * D-24 (аудит надёжности 2 ноября 2026, A-1): порча в середине журнала —
+     * не молча отрезанные подтверждённые записи, а отказ открытия до решения
+     * человека; файл не тронут. После подтверждения — карантин хвоста, и
+     * потеря уходит в журнал приложения (D-43), а не только в короткий список.
+     */
+    @Test
+    fun corruptionInTheMiddleWaitsForTheHuman() {
+        val target = entry("сервер", "/home/dev/.claude-dpai")
+        system(target).also { s -> steps(s, 2) }.close()
+        val journal = dir.resolve("live.journal")
+        val bytes = java.nio.file.Files.readAllBytes(journal)
+        val firstEnd = bytes.indexOf('\n'.code.toByte())
+        assertTrue(firstEnd > 0 && firstEnd < bytes.size - 2, "в журнале больше одной записи")
+        val spoiled = bytes.copyOf().also { b -> b[firstEnd / 2] = if (b[firstEnd / 2] == 'X'.code.toByte()) 'Y'.code.toByte() else 'X'.code.toByte() }
+        java.nio.file.Files.write(journal, spoiled)
+
+        kotlin.test.assertFailsWith<JournalNeedsConfirmation> { system(target) }
+        assertTrue(spoiled.contentEquals(java.nio.file.Files.readAllBytes(journal)), "без решения человека журнал не тронут")
+
+        val told = mutableListOf<Diagnostic>()
+        val s = LiveSystem(clock, NioVfs(dir), listOf(target), { _, _ -> host }, "/known_hosts", RandomSource.seeded(79), onProblem = { told += it }, quarantineConfirmed = true)
+        try {
+            assertTrue(s.problems.any { it.code == DiagCode.JOURNAL_TAIL_TRUNCATED }, s.problems.toString())
+            assertTrue(told.any { it.code == DiagCode.JOURNAL_TAIL_TRUNCATED }, "потеря — в журнал приложения: $told")
+        } finally {
+            s.close()
+        }
+    }
+
+    /**
+     * D-75, шаг 5: target «в приложении» — без SSH, через агента процесса;
+     * ход идёт с каталогом слота в госте. Linux не установлен (агента нет) —
+     * контроллер работает с остальными targets, а этот назван в заметках.
+     */
+    @Test
+    fun inAppTargetRunsThroughTheAppAgent() {
+        val inApp = TargetForm.inApp(ids.next(IdKinds.TARGET), "Linux в приложении · слот 1", "/root/.claude-slot-1").valueOrNull()!!
+        val without = LiveSystem(clock, NioVfs(dir.resolve("without")), listOf(inApp), { _, _ -> error("SSH «в приложении» не нужен") }, "/known_hosts", RandomSource.seeded(80))
+        try {
+            assertTrue(without.notes.any { "не установлен" in it }, without.notes.toString())
+            steps(without, 1)
+            assertTrue(without.orchestrator.accounts.slots.isEmpty(), "без агента приложения — слота нет")
+        } finally {
+            without.close()
+        }
+
+        val s = LiveSystem(clock, NioVfs(dir.resolve("with")), listOf(inApp), { _, _ -> error("SSH «в приложении» не нужен") }, "/known_hosts", RandomSource.seeded(81), inAppHost = host)
+        try {
+            steps(s, 1)
+            assertEquals(AccountState.AVAILABLE, s.orchestrator.accounts.slots.values.single().state, s.problems.toString())
+            val task = s.addTask("В Alpine", "ответить одним словом").valueOrNull()!!
+            steps(s, 4)
+            val session = s.orchestrator.sessions.sessions.values.single { it.task == task }
+            assertEquals(inApp.id, session.target)
+            assertEquals("/root/.claude-slot-1", host.spec(session.id)!!.setEnv[SlotEnvironment.CONFIG_DIR], "каталог слота — путь гостя")
+        } finally {
+            s.close()
+        }
+    }
+
     @Test
     fun slotWithoutLoginKeepsTasksWaiting() {
         loggedIn = false

@@ -29,6 +29,9 @@ enum class StreamKind(internal val idKind: IdKind<*>?) {
     REPOSITORY(IdKinds.REPOSITORY),
     WORKTREE(IdKinds.WORKTREE),
     REQUEST(IdKinds.REQUEST),
+
+    /** Принятая команда контура (D-94): принята — исполнена, два события. */
+    OPERATION(IdKinds.OPERATION),
 }
 
 /**

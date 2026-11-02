@@ -104,8 +104,9 @@ class OverlapTest {
         assertTrue(running(a) && running(b), "общий каталог — параллельно")
         assertTrue(!running(c), "критичный файл сборки — ждёт")
         val keys = o.posted.filterIsInstance<NotificationDecision.Post>().map { it.notification.key to it.notification.title }
-        assertTrue(("task:${b.value}:overlap" to "Возможный конфликт") in keys, keys.toString())
-        assertTrue(("task:${c.value}:overlap" to "Задача ждёт: критичный файл") in keys, keys.toString())
+        // В заголовке — название задачи (аудит 1 ноября 2026, A-11): по уведомлению видно, о какой речь.
+        assertTrue(("task:${b.value}:overlap" to "Возможный конфликт: b") in keys, keys.toString())
+        assertTrue(("task:${c.value}:overlap" to "Задача ждёт — критичный файл: c") in keys, keys.toString())
         finishAll()
         assertEquals(TaskState.DONE, o.tasks.tasks.getValue(c).state)
     }

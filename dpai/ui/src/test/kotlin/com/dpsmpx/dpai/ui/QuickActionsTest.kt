@@ -83,7 +83,7 @@ class QuickActionsTest {
         assertEquals("Контекст задачи v3", v.title)
         assertTrue(token !in v.sources[0].text!!, "секрет в тексте источника скрыт (D-14)")
         assertNull(v.sources[1].text, "секретный источник — без текста (ТЗ, §65)")
-        assertEquals("текст скрыт: SECRET", v.sources[1].hidden)
+        assertEquals("текст скрыт: секрет", v.sources[1].hidden)
         assertTrue(v.sources[2].text!!.endsWith("… ещё 10 знаков"))
         assertEquals(ContextScreens.MAX_CHARS + 10, v.sources[2].chars)
         assertEquals(listOf("doc:big.md — не вошёл по бюджету, ≈9000 ток.", "doc:copy.md — повтор doc:README.md"), v.omitted)

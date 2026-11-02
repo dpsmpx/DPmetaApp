@@ -19,12 +19,17 @@ import com.dpsmpx.dpai.execution.agent.MockAgentHost
 import com.dpsmpx.dpai.execution.claude.MockRunner
 import com.dpsmpx.dpai.execution.claude.MockScenario
 import com.dpsmpx.dpai.execution.process.Completed
+import com.dpsmpx.dpai.notifications.RequestAction
+import com.dpsmpx.dpai.notifications.RequestState
 import com.dpsmpx.dpai.orchestrator.Orchestrator
 import com.dpsmpx.dpai.orchestrator.ProjectConfig
 import com.dpsmpx.dpai.orchestrator.TargetSlot
 import com.dpsmpx.dpai.orchestrator.commands.Command
 import com.dpsmpx.dpai.orchestrator.control.CommandCodec
 import com.dpsmpx.dpai.orchestrator.control.ControlApi
+import com.dpsmpx.dpai.orchestrator.control.ControlAuth
+import com.dpsmpx.dpai.orchestrator.control.ControlRequest
+import com.dpsmpx.dpai.orchestrator.control.ControlResponse
 import com.dpsmpx.dpai.orchestrator.control.Pairing
 import com.dpsmpx.dpai.core.serialization.CanonicalJson
 import com.dpsmpx.dpai.core.serialization.JsonObject
@@ -73,19 +78,30 @@ class ControlApiTest {
     }
     private val project = ids.next(IdKinds.PROJECT)
 
-    private fun boot(): Orchestrator {
+    private lateinit var runner: MockRunner
+
+    /** [profiled] — с профилем проверки; без него «готово» хода — COMPLETION_UNVERIFIED и запрос человеку (D-23). */
+    private fun boot(profiled: Boolean = true, scenario: MockScenario = MockScenario.SLOW_OUTPUT): Orchestrator {
         val vfs = NioVfs(dir)
         val journal = (EventJournal.open(vfs, "journal.log") as Outcome.Success).value
-        val runner = MockRunner.create(clock, RandomSource.seeded(1), host) { _, _ -> MockScenario.SLOW_OUTPUT }
-        val profile = VerificationProfile(project, mapOf(VerifyLevel.NORMAL to listOf(VerifyStep("ок", listOf("ok")))))
+        runner = MockRunner.create(clock, RandomSource.seeded(1), host) { _, _ -> scenario }
+        val profile = VerificationProfile(project, mapOf(VerifyLevel.NORMAL to listOf(VerifyStep("ок", listOf("ok"))))).takeIf { profiled }
         return Orchestrator(
             clock, ids, RandomSource.seeded(444), journal, runner, ProjectConfig(project, null, dir.toString(), profile), targets, null,
             Verifier({ _, _, _ -> Outcome.success(Completed(0, emptyList(), emptyList())) }, clock), accounts, documents = DocumentStore(vfs, "docs"),
         )
     }
 
-    private fun api(o: Orchestrator, pairing: Pairing) = ControlApi(pairing, { o }) { c ->
+    private fun api(o: Orchestrator, pairing: Pairing, confirmOnPhone: (Command) -> Unit = {}) = ControlApi(pairing, { o }, confirmOnPhone = confirmOnPhone) { c ->
         ControlApi.OperationOutcome.Done(o.submit(c).also { o.runCommands() }.get())
+    }
+
+    private val nonces = RandomSource.seeded(4471)
+
+    /** Запрос, как его шлёт `dpai` (D-92): с токеном — подписанный, без — только сопряжение. */
+    private fun call(api: ControlApi, method: String, path: String, token: String?, body: String?): ControlResponse {
+        val headers = token?.let { ControlAuth.requestHeaders(it, method, path, body, clock.now().epochMillis, ControlAuth.newNonce(nonces)) }.orEmpty()
+        return api.handle(ControlRequest(method, path, headers, body))
     }
 
     private fun str(j: JsonObject, k: String) = (j[k] as JsonString).value
@@ -95,51 +111,51 @@ class ControlApiTest {
         val o = boot()
         val pairing = Pairing(NioVfs(dir.resolve("app").also { it.toFile().mkdirs() }), RandomSource.seeded(9), clock)
         val api = api(o, pairing)
-        assertEquals(401, api.handle("GET", "/v1/state", null, null).status, "без токена — отказ")
-        assertEquals(403, api.handle("POST", "/v1/pair", null, """{"code":"123456"}""").status, "кода нет")
+        assertEquals(401, call(api, "GET", "/v1/state", null, null).status, "без токена — отказ")
+        assertEquals(403, call(api, "POST", "/v1/pair", null, """{"code":"123456"}""").status, "кода нет")
         val (code, _) = pairing.newCode()
-        assertEquals(403, api.handle("POST", "/v1/pair", null, """{"code":"000000x"}""").status)
-        val ok = api.handle("POST", "/v1/pair", null, """{"code":"$code"}""")
+        assertEquals(403, call(api, "POST", "/v1/pair", null, """{"code":"000000x"}""").status)
+        val ok = call(api, "POST", "/v1/pair", null, """{"code":"$code"}""")
         assertEquals(200, ok.status, ok.body.toString())
-        val token = "Bearer " + str(ok.body, "token")
-        assertEquals(403, api.handle("POST", "/v1/pair", null, """{"code":"$code"}""").status, "код одноразовый")
-        assertEquals(401, api.handle("GET", "/v1/state", "Bearer " + "0".repeat(64), null).status, "чужой токен")
+        val token = str(ok.body, "token")
+        assertEquals(403, call(api, "POST", "/v1/pair", null, """{"code":"$code"}""").status, "код одноразовый")
+        assertEquals(401, call(api, "GET", "/v1/state", "0".repeat(64), null).status, "чужой токен")
 
-        val add = api.handle("POST", "/v1/commands", token, CanonicalJson.write(CommandCodec.encode(Command.AddTask("из dpai", "цель", key = "cli-key-00001"))))
+        val add = call(api, "POST", "/v1/commands", token, CanonicalJson.write(CommandCodec.encode(Command.AddTask("из dpai", "цель", key = "cli-key-00001"))))
         assertEquals(200, add.status, add.body.toString())
         val task = IdKinds.TASK.parse(str(add.body, "value")).valueOrNull()!!
         // Зависимости и область — при создании (D-42, п. 1).
-        val after = api.handle("POST", "/v1/commands", token, CanonicalJson.write(CommandCodec.encode(Command.AddTask("после", "цель 2", dependencies = setOf(task), scope = setOf("src/main.kt"), key = "cli-key-00002"))))
+        val after = call(api, "POST", "/v1/commands", token, CanonicalJson.write(CommandCodec.encode(Command.AddTask("после", "цель 2", dependencies = setOf(task), scope = setOf("src/main.kt"), key = "cli-key-00002"))))
         assertEquals(200, after.status, after.body.toString())
         val second = o.tasks.tasks.getValue(IdKinds.TASK.parse(str(after.body, "value")).valueOrNull()!!)
         assertEquals(setOf(task), second.dependencies)
         assertEquals(setOf("src/main.kt"), second.scope)
-        val bad = api.handle("POST", "/v1/commands", token, """{"command":"task.add","title":"x","objective":"y","dependencies":["не-id"]}""")
+        val bad = call(api, "POST", "/v1/commands", token, """{"command":"task.add","title":"x","objective":"y","dependencies":["не-id"]}""")
         assertEquals(400, bad.status, "зависимость — только TaskId")
-        val state = api.handle("GET", "/v1/state", token, null)
+        val state = call(api, "GET", "/v1/state", token, null)
         assertTrue("из dpai" in CanonicalJson.write(state.body))
         assertFalse(""""usage"""" in CanonicalJson.write(state.body), "ходов не было — расхода нет, а не нули")
-        assertEquals(400, api.handle("POST", "/v1/commands", token, """{"command":"task.hold","task":"${task.value}","лишнее":1}""").status, "лишнее поле — отказ")
+        assertEquals(400, call(api, "POST", "/v1/commands", token, """{"command":"task.hold","task":"${task.value}","лишнее":1}""").status, "лишнее поле — отказ")
         val cancel = CanonicalJson.write(CommandCodec.encode(Command.Cancel(task)))
-        assertEquals(409, api.handle("POST", "/v1/commands", token, cancel).status, "опасное без --yes")
-        val done = api.handle("POST", "/v1/commands", token, CanonicalJson.write(CommandCodec.encode(Command.Cancel(task), confirmed = true)))
+        assertEquals(409, call(api, "POST", "/v1/commands", token, cancel).status, "опасное без --yes")
+        val done = call(api, "POST", "/v1/commands", token, CanonicalJson.write(CommandCodec.encode(Command.Cancel(task), confirmed = true)))
         assertEquals(200, done.status, done.body.toString())
         assertEquals(TaskState.CANCELLED, o.tasks.tasks.getValue(task).state)
-        assertEquals(200, api.handle("GET", "/v1/tasks/${task.value}/messages", token, null).status)
+        assertEquals(200, call(api, "GET", "/v1/tasks/${task.value}/messages", token, null).status)
         // Изменения задачи (D-42): у проекта без репозитория — отказ с причиной, неверный id — 400.
-        val diff = api.handle("GET", "/v1/tasks/${task.value}/diff", token, null)
+        val diff = call(api, "GET", "/v1/tasks/${task.value}/diff", token, null)
         assertEquals(409, diff.status, diff.body.toString())
         assertTrue("репозитория" in CanonicalJson.write(diff.body))
-        assertEquals(400, api.handle("GET", "/v1/tasks/не-id/diff", token, null).status)
+        assertEquals(400, call(api, "GET", "/v1/tasks/не-id/diff", token, null).status)
 
         // Лимит попыток: шестая — отказ и для верного кода.
         val (code2, _) = pairing.newCode()
-        repeat(Pairing.MAX_ATTEMPTS) { api.handle("POST", "/v1/pair", null, """{"code":"999999"}""") }
-        assertEquals(403, api.handle("POST", "/v1/pair", null, """{"code":"$code2"}""").status)
+        repeat(Pairing.MAX_ATTEMPTS) { call(api, "POST", "/v1/pair", null, """{"code":"999999"}""") }
+        assertEquals(403, call(api, "POST", "/v1/pair", null, """{"code":"$code2"}""").status)
         // Срок кода.
         val (code3, _) = pairing.newCode()
         clock.advance(3.minutes)
-        assertEquals(403, api.handle("POST", "/v1/pair", null, """{"code":"$code3"}""").status)
+        assertEquals(403, call(api, "POST", "/v1/pair", null, """{"code":"$code3"}""").status)
     }
 
     /** Поиск (ТЗ, §75) для `dpai`: его даёт оболочка; запрос проверяется здесь, нет поиска или контура — 503 с причиной. */
@@ -149,21 +165,81 @@ class ControlApiTest {
         val pairing = Pairing(NioVfs(dir.resolve("app").also { it.toFile().mkdirs() }), RandomSource.seeded(10), clock)
         val (code, _) = pairing.newCode()
         val bare = api(o, pairing)
-        val token = "Bearer " + str(bare.handle("POST", "/v1/pair", null, """{"code":"$code"}""").body, "token")
-        assertEquals(503, bare.handle("POST", "/v1/search", token, """{"query":"задача"}""").status, "поиск не подключён")
+        val token = str(call(bare, "POST", "/v1/pair", null, """{"code":"$code"}""").body, "token")
+        assertEquals(503, call(bare, "POST", "/v1/search", token, """{"query":"задача"}""").status, "поиск не подключён")
         val asked = mutableListOf<String>()
         val api = ControlApi(pairing, { o }, { q -> asked += q; if (q == "нет контура") null else JsonObject.of("hits" to JsonString(q)) }) { c ->
             ControlApi.OperationOutcome.Done(o.submit(c).also { o.runCommands() }.get())
         }
-        assertEquals(401, api.handle("POST", "/v1/search", null, """{"query":"задача"}""").status, "без токена — отказ")
-        val ok = api.handle("POST", "/v1/search", token, """{"query":"  задача  "}""")
+        assertEquals(401, call(api, "POST", "/v1/search", null, """{"query":"задача"}""").status, "без токена — отказ")
+        val ok = call(api, "POST", "/v1/search", token, """{"query":"  задача  "}""")
         assertEquals(200, ok.status)
         assertEquals("задача", str(ok.body, "hits"))
-        assertEquals(400, api.handle("POST", "/v1/search", token, """{"query":"я"}""").status, "короче двух знаков")
-        assertEquals(400, api.handle("POST", "/v1/search", token, """{"query":"${"x".repeat(ControlApi.MAX_QUERY + 1)}"}""").status)
-        assertEquals(400, api.handle("POST", "/v1/search", token, """{"q":"задача"}""").status, "нет поля query")
-        assertEquals(503, api.handle("POST", "/v1/search", token, """{"query":"нет контура"}""").status)
+        assertEquals(400, call(api, "POST", "/v1/search", token, """{"query":"я"}""").status, "короче двух знаков")
+        assertEquals(400, call(api, "POST", "/v1/search", token, """{"query":"${"x".repeat(ControlApi.MAX_QUERY + 1)}"}""").status)
+        assertEquals(400, call(api, "POST", "/v1/search", token, """{"q":"задача"}""").status, "нет поля query")
+        assertEquals(503, call(api, "POST", "/v1/search", token, """{"query":"нет контура"}""").status)
         assertEquals(listOf("задача", "нет контура"), asked, "до поиска доходит только проверенный запрос")
+    }
+
+    /**
+     * D-91: «да» на решающий запрос и исключение из канала не применяются —
+     * `202`, запрос снова показан на телефоне, задача не тронута; «решу
+     * позже» и прочее — сразу, как прежде.
+     */
+    @Test
+    fun decisiveFromChannelWaitsForPhone() {
+        val o = boot(profiled = false, scenario = MockScenario.SUCCESS)
+        o.recover { AgentClient(host, listOf("dpai"), null, "target mock") }
+        val task = o.addTask("задача", "цель").valueOrNull()!!
+        repeat(4) {
+            o.tick()
+            for (s in host.runIds()) while (runner.advance(s)) continue
+            o.tick()
+            clock.advance(1.minutes)
+        }
+        assertEquals(TaskState.COMPLETION_UNVERIFIED, o.tasks.tasks.getValue(task).state)
+        val r = o.pendingRequests().single { it.task == task }
+        assertEquals("task.unverified", r.purpose)
+
+        val shown = mutableListOf<Command>()
+        val pairing = Pairing(NioVfs(dir.resolve("app").also { it.toFile().mkdirs() }), RandomSource.seeded(11), clock)
+        val api = api(o, pairing) { shown += it }
+        val (code, _) = pairing.newCode()
+        val token = str(call(api, "POST", "/v1/pair", null, """{"code":"$code"}""").body, "token")
+        fun answer(option: String, confirmed: Boolean = false) = call(
+            api, "POST", "/v1/commands", token,
+            CanonicalJson.write(CommandCodec.encode(Command.AnswerRequest(RequestAction(r.id, option, r.hash).toUri(), null, ControlApi.BY, "cli"), confirmed)),
+        )
+
+        assertEquals(409, answer("waive").status, "опасное — сперва --yes, как прежде")
+        val waive = answer("waive", confirmed = true)
+        assertEquals(202, waive.status, waive.body.toString())
+        assertEquals("CONFIRM_ON_PHONE", str(waive.body, "status"))
+        assertEquals(202, answer("verify").status, "«проверить снова» — тоже «да» на решающий запрос")
+        val byCommand = call(api, "POST", "/v1/commands", token, CanonicalJson.write(CommandCodec.encode(Command.Waive(task, "проверил", ControlApi.BY), confirmed = true)))
+        assertEquals(202, byCommand.status, "исключение командой — тоже через телефон")
+        assertEquals(TaskState.COMPLETION_UNVERIFIED, o.tasks.tasks.getValue(task).state, "задача не тронута")
+        assertTrue(o.requests.requests.getValue(r.id).state !in setOf(RequestState.ANSWERED, RequestState.FAILED), "запрос ждёт ответа на телефоне")
+        assertEquals(3, shown.size, "каждый раз — показ на телефоне")
+        assertTrue(shown.last() is Command.Waive)
+
+        val later = answer("later")
+        assertEquals(200, later.status, "«решу позже» — сразу: ${later.body}")
+        assertEquals(RequestState.ANSWERED, o.requests.requests.getValue(r.id).state)
+        assertEquals(3, shown.size)
+    }
+
+    /** A-21: канал принимает `dpai`, а не страницу браузера и не DNS rebinding. */
+    @Test
+    fun onlyLoopbackWithoutOriginIsAccepted() {
+        assertTrue(ControlApi.fromCli("127.0.0.1:47777", null))
+        assertTrue(ControlApi.fromCli("localhost:9000", null), "туннель SSH с ПК — тоже loopback")
+        assertTrue(ControlApi.fromCli("[::1]:47777", null))
+        assertFalse(ControlApi.fromCli("127.0.0.1:47777", "https://evil.example"), "страница браузера шлёт Origin")
+        assertFalse(ControlApi.fromCli("evil.example:47777", null), "DNS rebinding: чужое имя в Host")
+        assertFalse(ControlApi.fromCli("127.0.0.1.evil.example", null))
+        assertFalse(ControlApi.fromCli(null, null), "без Host — отказ")
     }
 
     @Test

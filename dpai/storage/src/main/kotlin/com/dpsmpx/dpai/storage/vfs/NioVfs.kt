@@ -33,6 +33,8 @@ class NioVfs(private val root: Path) : Vfs {
 
     override fun exists(path: String): Boolean = Files.isRegularFile(p(path))
 
+    override fun size(path: String): Long? = p(path).takeIf { Files.isRegularFile(it) }?.let(Files::size)
+
     override fun list(dir: String): List<String> {
         val d = p(dir)
         if (!Files.isDirectory(d)) return emptyList()
@@ -97,6 +99,8 @@ class NioVfs(private val root: Path) : Vfs {
         // Не Path.of: его (Java 11) нет в Android 11 (`check_android_api.py`).
         Files.createSymbolicLink(link, link.fileSystem.getPath(target))
     }
+
+    override fun isSymlink(path: String): Boolean = Files.isSymbolicLink(p(path))
 
     override fun setMode(path: String, mode: Int) {
         val view = Files.getFileAttributeView(p(path), PosixFileAttributeView::class.java, LinkOption.NOFOLLOW_LINKS) ?: return

@@ -144,6 +144,10 @@ CASES = [
     ("check_forbidden_apis.py",
      {"execution/src/main/kotlin/A.kt": "val p = \"~/.claude/\" + \".credentials.json\".substring(0) + \"/.credentials.json\"\n"},
      {"execution/src/main/kotlin/A.kt": "val env = mapOf(\"CLAUDE_CONFIG_DIR\" to dir)\n"}, []),
+    ("check_forbidden_apis.py",
+     {"monitoring/src/main/kotlin/A.kt": "fun f(v: Double) = \"%.1f %%\".format(v)\n"},
+     {"monitoring/src/main/kotlin/A.kt": "fun f(v: Double) = String.format(java.util.Locale.ROOT, \"%.1f %%\", v)\n"
+      "fun h(v: Double) = String.format(java.util.Locale.ROOT, \"%.2f\", v)\n"}, []),
     ("check_secrets.py",
      {"a.txt": "key = " + secret_sample() + "\n"},
      {"a.txt": "key = <из окружения>\n"}, []),
@@ -168,11 +172,61 @@ CASES = [
       ".github/workflows/ci.yml": "on: push\n"},
      {"gradle/libs.versions.toml": "[versions]\n", "docs/PROVENANCE.md": "<!-- provenance: begin -->\n<!-- provenance: end -->\n",
       "a/build.gradle.kts": "dependencies { implementation(libs.x) }\n"}, []),
+    ("check_secure_screens.py",
+     # Экран из реестра без флага — дыра: содержимое попадает в превью и снимки (D-86).
+     {"android/src/main/kotlin/com/dpsmpx/dpai/android/TerminalActivity.kt":
+      "class TerminalActivity : ComponentActivity() {\n    override fun onCreate(b: Bundle?) {\n        super.onCreate(b)\n    }\n}\n",
+      "tools/verify/registry/secure_screens.txt":
+      "# реестр\nandroid/src/main/kotlin/com/dpsmpx/dpai/android/TerminalActivity.kt:TerminalActivity\n"},
+     {"android/src/main/kotlin/com/dpsmpx/dpai/android/TerminalActivity.kt":
+      "class TerminalActivity : ComponentActivity() {\n    override fun onCreate(b: Bundle?) {\n"
+      "        window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)\n    }\n}\n",
+      "tools/verify/registry/secure_screens.txt":
+      "# реестр\nandroid/src/main/kotlin/com/dpsmpx/dpai/android/TerminalActivity.kt:TerminalActivity\n"}, []),
+    ("check_secure_screens.py",
+     # У диалога своё окно: флаг активности его не закрывает (D-86).
+     {"android/src/main/kotlin/com/dpsmpx/dpai/android/TerminalActivity.kt":
+      "class TerminalActivity : ComponentActivity() {\n    override fun onCreate(b: Bundle?) {\n"
+      "        window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)\n    }\n"
+      "    fun ask() {\n        AlertDialog.Builder(this).setTitle(\"x\").show()\n    }\n}\n",
+      "tools/verify/registry/secure_screens.txt":
+      "android/src/main/kotlin/com/dpsmpx/dpai/android/TerminalActivity.kt:TerminalActivity\n"},
+     {"android/src/main/kotlin/com/dpsmpx/dpai/android/TerminalActivity.kt":
+      "class TerminalActivity : ComponentActivity() {\n    override fun onCreate(b: Bundle?) {\n"
+      "        window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)\n    }\n"
+      "    fun ask() {\n"
+      "        val d = AlertDialog.Builder(this).setTitle(\"x\").create()\n"
+      "        d.window?.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)\n"
+      "        d.show()\n    }\n}\n",
+      "tools/verify/registry/secure_screens.txt":
+      "android/src/main/kotlin/com/dpsmpx/dpai/android/TerminalActivity.kt:TerminalActivity\n"}, []),
+    ("check_secure_screens.py",
+     # Диалог Compose с кодом сопряжения (D-86): без защищённого окна — находка.
+     {"android/src/main/kotlin/com/dpsmpx/dpai/android/TargetsPane.kt":
+      "@Composable\nfun Code(c: String) {\n    AlertDialog(onDismissRequest = {}, text = { Text(c) }, confirmButton = {})\n}\n",
+      "tools/verify/registry/secure_screens.txt":
+      "android/src/main/kotlin/com/dpsmpx/dpai/android/TargetsPane.kt:PairingCode\n"},
+     {"android/src/main/kotlin/com/dpsmpx/dpai/android/TargetsPane.kt":
+      "@Composable\nfun Code(c: String) {\n    AlertDialog(onDismissRequest = {}, properties = DialogProperties(securePolicy = SecureFlagPolicy.SecureOn),\n"
+      "        text = { Text(c) }, confirmButton = {})\n}\n",
+      "tools/verify/registry/secure_screens.txt":
+      "android/src/main/kotlin/com/dpsmpx/dpai/android/TargetsPane.kt:PairingCode\n"}, []),
     ("readme_progress.py",
      {**BASE, "TODO.md": "## Раздел\n\n- [ ] пункт\n",
       "README.md": "<!-- progress:begin -->\nстарое\n<!-- progress:end -->\n"},
      None, ["--check"]),
 ]
+
+# check_android_api.py --jars: сверяется jar текущей версии; прежний jar в
+# build/libs (осталась сборка до смены версии) — не замена текущему.
+ANDROID_ARCH = ("<!-- check_modules: begin -->\n| Модуль | Отвечает за | Может зависеть от | Этап |\n|---|---|---|---|\n"
+                "| `core` | ядро | — | 1 |\n| `android` | оболочка | `core` | 11 |\n<!-- check_modules: end -->\n")
+CASES += [("check_android_api.py",
+           {"docs/ARCHITECTURE.md": ANDROID_ARCH, "gradle.properties": "version=0.2.0\n",
+            "core/build/libs/core-0.1.0.jar": "старый\n"},
+           {"docs/ARCHITECTURE.md": ANDROID_ARCH, "gradle.properties": "version=0.2.0\n",
+            "core/build/libs/core-0.1.0.jar": "старый\n", "core/build/libs/core-0.2.0.jar": "текущий\n"},
+           ["--jars"])]
 
 # Плохих образцов больше, чем чистых: чистые идут по кругу, каждый встречается.
 CASES += [("gradle_log.py", {"build.log": bad}, {"build.log": GRADLE_RETRY[i % len(GRADLE_RETRY)]}, ["build.log"])

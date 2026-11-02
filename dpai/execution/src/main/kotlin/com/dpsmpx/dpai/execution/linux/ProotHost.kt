@@ -37,6 +37,11 @@ data class ProotLayout(
  * и `linkat` из `/proc/self/fd`, а это жёсткая ссылка, которую Android
  * запрещает; без `/proc` apk пишет временный файл и переименовывает его
  * (`docs/research/LINUX_IN_APP.md`, §9, третий прогон пробника).
+ *
+ * proot — не песочница: гость работает под UID приложения (угроза T13).
+ * Поэтому из `/dev` хоста гостю видны только [DEVICES], `/sys` — не виден
+ * вовсе (D-93): `/dev/binder` — путь к системным службам от имени
+ * приложения, коду из npm и репозитория он не нужен.
  */
 class ProotHost(private val host: ProcessHost, private val layout: ProotLayout) : ProcessHost {
     override fun start(spec: ProcessSpec, onOutput: (OutputLine) -> Unit): Outcome<RunningProcess> = host.start(wrap(spec), onOutput)
@@ -51,9 +56,17 @@ class ProotHost(private val host: ProcessHost, private val layout: ProotLayout) 
             add("-0")
             add("-r")
             add(layout.rootfs)
-            for (dir in if (proc) HOST_DIRS else HOST_DIRS - "/proc") {
+            for (dev in DEVICES) {
                 add("-b")
-                add(dir)
+                add(dev)
+            }
+            if (proc) {
+                add("-b")
+                add("/proc")
+                for ((from, to) in FD_LINKS) {
+                    add("-b")
+                    add("$from:$to")
+                }
             }
             for (b in layout.binds) {
                 add("-b")
@@ -71,8 +84,16 @@ class ProotHost(private val host: ProcessHost, private val layout: ProotLayout) 
     }
 
     companion object {
-        /** Каталоги ядра хоста, которые видит гость. */
-        val HOST_DIRS: List<String> = listOf("/dev", "/proc", "/sys")
+        /** Узлы `/dev` хоста, которые видит гость (D-93): терминал, пустые и случайные устройства — и только. */
+        val DEVICES: List<String> = listOf("/dev/null", "/dev/zero", "/dev/full", "/dev/random", "/dev/urandom", "/dev/tty", "/dev/ptmx", "/dev/pts")
+
+        /** Дескрипторы процесса — как в обычном Linux, из `/proc/self/fd`; без `/proc` (у `apk`) их нет. */
+        val FD_LINKS: List<Pair<String, String>> = listOf(
+            "/proc/self/fd" to "/dev/fd",
+            "/proc/self/fd/0" to "/dev/stdin",
+            "/proc/self/fd/1" to "/dev/stdout",
+            "/proc/self/fd/2" to "/dev/stderr",
+        )
 
         const val GUEST_HOME: String = "/root"
 

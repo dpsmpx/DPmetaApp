@@ -18,6 +18,8 @@ import com.dpsmpx.dpai.orchestrator.requests.RequestPurpose
 import com.dpsmpx.dpai.core.events.EventEnvelope
 import com.dpsmpx.dpai.orchestrator.commands.Command
 import com.dpsmpx.dpai.ui.RequestCard
+import com.dpsmpx.dpai.core.operation.OperationResult
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.locks.ReentrantLock
@@ -93,11 +95,18 @@ class DemoModel(
         val targets = controller.targets()
         if (targets.any { it.configDir != null }) {
             val key = targets to controller.project()
-            if (live == null || liveFor != key) {
+            // Журнал закрыт после отказа записи (кончилось место, A-4): раз в минуту — контур заново, журнал
+            // открывается с проверкой хвоста; места всё ещё нет — следующая запись снова закроет его.
+            val broken = live?.orchestrator?.storageBroken == true && Clock.SYSTEM.monotonicNanos() - builtAt >= REOPEN_NANOS
+            if (live == null || liveFor != key || broken) {
                 // Потоки событий прежней системы (D-76) не переживают её: каналы SSH закрываются.
                 live?.close()
                 val started = Clock.SYSTEM.monotonicNanos()
-                live = controller.live(key.first, key.second, onEvents, onProblem)
+                builtAt = Clock.SYSTEM.monotonicNanos()
+                // Target «в приложении» (D-75, шаг 5): агент — в процессе, ходы — в Alpine приложения.
+                val inApp = context?.takeIf { key.first.any { it.inApp } }?.let { com.dpsmpx.dpai.android.linux.LinuxSetup.agentHost(it, controller.version) }
+                val guest = inApp?.let { context.let(com.dpsmpx.dpai.android.linux.LinuxSetup::guestHost) }
+                live = controller.live(key.first, key.second, onEvents, onProblem, inApp, guest)
                 liveFor = key
                 perf("контроллер построен", started)
             }
@@ -113,6 +122,9 @@ class DemoModel(
             }
             ).also { built = it }
     }
+
+    /** Когда контур построен последний раз — для пересборки после отказа журнала не чаще раза в минуту. */
+    private var builtAt = 0L
 
     private var drainedOf: ControlView? = null
     private var drained = 0L
@@ -202,24 +214,54 @@ class DemoModel(
     }
 
     /**
-     * Команда контура (D-42): в очередь; замок свободен — исполнить сразу,
-     * иначе её исполнит такт в ближайшей безопасной точке. Ждёт итог не
-     * дольше [waitMs]: не дождались — честно «в очереди», команда не
-     * теряется и применится тактом.
+     * Команды в контур (D-42, D-94). Замок свободен — исполнить сразу на
+     * текущем контуре (под замком: пересборка не подменит его посреди
+     * исполнения). Занят такт — каждую сначала в журнал «принята»: так она
+     * переживёт смерть процесса и пересборку, а исполнит её такт.
      */
-    fun command(c: Command, waitMs: Long = WAIT_MS): Outcome<Any?> = intent(c) ?: try {
-        val v = built ?: lock.withLock { current() }
-        val f = v.orchestrator.submit(c)
+    private fun dispatch(cs: List<Command>): List<Outcome<CompletableFuture<OperationResult<*>>>> {
         if (lock.tryLock()) {
             try {
-                v.orchestrator.runCommands()
+                val o = current().orchestrator
+                val fs = cs.map { o.submit(it) }
+                o.runCommands()
+                return fs.map { Outcome.success(it) }
             } finally {
                 lock.unlock()
             }
         }
-        f.get(waitMs, TimeUnit.MILLISECONDS).outcome
+        val o = (built ?: lock.withLock { current() }).orchestrator
+        return cs.map { o.accept(it) }
+    }
+
+    /**
+     * Итог команды за [waitMs]. Не дождались — честно: команда в журнале и
+     * применится после текущего шага (D-94); [onLater] получит итог, когда
+     * такт её исполнит.
+     */
+    private fun <T> await(f: CompletableFuture<OperationResult<*>>, waitMs: Long, onLater: ((Outcome<T>) -> Unit)?, map: (OperationResult<*>) -> Outcome<T>): Outcome<T> = try {
+        map(f.get(waitMs, TimeUnit.MILLISECONDS))
     } catch (_: TimeoutException) {
-        Outcome.failure(DiagCode.COMMAND_QUEUED, "контур занят вызовом target: команда в очереди и применится в ближайшем такте")
+        onLater?.let { later ->
+            f.whenCompleteAsync({ r, e ->
+                runCatching { later(if (r != null) map(r) else Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.INTERNAL_ERROR, "контроллер не исполнил команду", e)))) }
+            }, laterExecutor)
+        }
+        Outcome.failure(DiagCode.COMMAND_QUEUED, QUEUED)
+    } catch (e: Exception) {
+        Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.INTERNAL_ERROR, "контроллер не принял команду", e)))
+    }
+
+    /**
+     * Команда контура (D-42): замок свободен — исполнить сразу, иначе — в
+     * журнал и очередь (D-94). Ждёт итог не дольше [waitMs]: не дождались —
+     * «принято, применится после текущего шага», итог — в [onLater].
+     */
+    fun command(c: Command, waitMs: Long = WAIT_MS, onLater: ((Outcome<Any?>) -> Unit)? = null): Outcome<Any?> = intent(c) ?: try {
+        when (val f = dispatch(listOf(c)).single()) {
+            is Outcome.Failure -> f
+            is Outcome.Success -> await(f.value, waitMs, onLater) { it.outcome }
+        }
     } catch (e: Exception) {
         Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.INTERNAL_ERROR, "контроллер не принял команду", e)))
     }
@@ -260,28 +302,17 @@ class DemoModel(
      */
     fun commandAll(cs: List<Command>, waitMs: Long = WAIT_MS): List<Outcome<Any?>> {
         if (cs.isEmpty()) return emptyList()
-        val v = try {
-            built ?: lock.withLock { current() }
+        val fs = try {
+            dispatch(cs)
         } catch (e: Exception) {
             val f = Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.INTERNAL_ERROR, "контроллер не принял команды", e)))
             return cs.map { f }
         }
-        val fs = cs.map { v.orchestrator.submit(it) }
-        if (lock.tryLock()) {
-            try {
-                v.orchestrator.runCommands()
-            } finally {
-                lock.unlock()
-            }
-        }
         val deadline = Clock.SYSTEM.monotonicNanos() + waitMs * 1_000_000
         return fs.map { f ->
-            try {
-                f.get(((deadline - Clock.SYSTEM.monotonicNanos()) / 1_000_000).coerceAtLeast(0), TimeUnit.MILLISECONDS).outcome
-            } catch (_: TimeoutException) {
-                Outcome.failure(DiagCode.COMMAND_QUEUED, "контур занят вызовом target: команда в очереди и применится в ближайшем такте")
-            } catch (e: Exception) {
-                Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.INTERNAL_ERROR, "контроллер не принял команду", e)))
+            when (f) {
+                is Outcome.Failure -> f
+                is Outcome.Success -> await(f.value, ((deadline - Clock.SYSTEM.monotonicNanos()) / 1_000_000).coerceAtLeast(0), null) { it.outcome }
             }
         }
     }
@@ -321,19 +352,11 @@ class DemoModel(
         (built as? LiveSystem)?.orchestrator ?: if (hasLive()) runCatching { lock.withLock { (current() as? LiveSystem)?.orchestrator } }.getOrNull() else null
 
     /** Команда с полным итогом (`OperationResult`) — для канала `dpai`; как [command]. */
-    fun commandResult(c: Command, waitMs: Long = WAIT_MS): Outcome<com.dpsmpx.dpai.core.operation.OperationResult<*>> = try {
-        val v = built ?: lock.withLock { current() }
-        val f = v.orchestrator.submit(c)
-        if (lock.tryLock()) {
-            try {
-                v.orchestrator.runCommands()
-            } finally {
-                lock.unlock()
-            }
+    fun commandResult(c: Command, waitMs: Long = WAIT_MS): Outcome<OperationResult<*>> = try {
+        when (val f = dispatch(listOf(c)).single()) {
+            is Outcome.Failure -> f
+            is Outcome.Success -> await(f.value, waitMs, null) { Outcome.success(it) }
         }
-        Outcome.success(f.get(waitMs, TimeUnit.MILLISECONDS))
-    } catch (_: TimeoutException) {
-        Outcome.failure(DiagCode.COMMAND_QUEUED, "контур занят вызовом target: команда в очереди и применится в ближайшем такте")
     } catch (e: Exception) {
         Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.INTERNAL_ERROR, "контроллер не принял команду", e)))
     }
@@ -342,8 +365,9 @@ class DemoModel(
      * Ответ человека на запрос (D-44) — с кнопки уведомления, окна поверх
      * приложений или экрана; ссылку и хеш проверяет оркестратор.
      */
-    fun answer(uri: String, text: String?, channel: String): Outcome<RequestAnswer> =
-        command(Command.AnswerRequest(uri, text, ACTOR, channel)).then { v -> Outcome.success(v as RequestAnswer) }
+    fun answer(uri: String, text: String?, channel: String, onLater: ((Outcome<RequestAnswer>) -> Unit)? = null): Outcome<RequestAnswer> =
+        command(Command.AnswerRequest(uri, text, ACTOR, channel), onLater = onLater?.let { later -> { r: Outcome<Any?> -> later(r.then { v -> Outcome.success(v as RequestAnswer) }) } })
+            .then { v -> Outcome.success(v as RequestAnswer) }
 
     /** Проверочный запрос вида [kind] (экран «Запросы», `docs/DEVICE_CHECK.md`); [ttl] `null` — срок контура по умолчанию. */
     fun probe(kind: RequestKind, ttl: Duration?): Outcome<RequestId> =
@@ -377,7 +401,9 @@ class DemoModel(
 
     /** Последняя сессия задачи — куда ведёт ссылка `dpai://task/…` из уведомления. Чтение неизменяемого состояния — без замка. */
     fun sessionOf(task: TaskId): SessionId? = runCatching {
-        built?.orchestrator?.sessions?.sessions?.values?.filter { it.task == task }?.maxByOrNull { it.createdAt.epochMillis }?.id
+        // Рабочая сессия, а не ревью (аудит удобства, A-14): ревью только читает, писать туда нечего.
+        val own = built?.orchestrator?.sessions?.sessions?.values?.filter { it.task == task }.orEmpty()
+        (own.filter { it.review == null }.ifEmpty { own }).maxByOrNull { it.createdAt.epochMillis }?.id
     }.getOrNull()
 
     /** Кто чем занят (D-56): target → его идущие задачи с проектом — без замка. */
@@ -473,20 +499,34 @@ class DemoModel(
         Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.INTERNAL_ERROR, "контроллер не запустился", e)))
     }
 
-    /** Обновить загрузку окон подписок через `/usage` (D-48): без хода, лимит не тратится. */
-    fun refreshUsage(only: Set<com.dpsmpx.dpai.core.ids.ExecutionTargetId>? = null) = lock.withLock {
+    /**
+     * Замок модели — недолго (аудит стабильности, A-7): такт с проверкой держит
+     * его десятки минут, и каждый заход на экран ставил ещё один поток IO
+     * ждать без отмены. Занят — `false`, действие пропущено (повторит
+     * следующий заход или такт).
+     */
+    private inline fun briefly(body: () -> Unit): Boolean {
+        if (!lock.tryLock(BRIEF_WAIT_MS, TimeUnit.MILLISECONDS)) return false
+        try {
+            body()
+        } finally {
+            lock.unlock()
+        }
+        return true
+    }
+
+    /** Обновить загрузку окон подписок через `/usage` (D-48): без хода, лимит не тратится. Такт занят — пропуск. */
+    fun refreshUsage(only: Set<com.dpsmpx.dpai.core.ids.ExecutionTargetId>? = null): Boolean = briefly {
         liveSystem().valueOrNull()?.refreshUsage(only)
-        Unit
     }
 
     /** Идёт ли обновление окон и когда оно последний раз пришло (без замка: поля потокобезопасны). */
     fun usageState(): Pair<Boolean, com.dpsmpx.dpai.core.clock.Timestamp?> =
         live?.let { it.usageRefreshing to it.usageRefreshedAt } ?: (false to null)
 
-    /** Проверить вход слота target заново — после входа автора в Claude. */
-    fun probe(target: ExecutionTargetId) = lock.withLock {
+    /** Проверить вход слота target заново — после входа автора в Claude. Такт занят — пропуск (`false`). */
+    fun probe(target: ExecutionTargetId): Boolean = briefly {
         liveSystem().valueOrNull()?.probeSlot(target)
-        Unit
     }
 
     companion object {
@@ -495,6 +535,21 @@ class DemoModel(
 
         /** Сколько ждать итога команды: такт с вызовом target идёт секунды, не минуты. */
         private const val WAIT_MS = 30_000L
+
+        /** Пересборка контура со сломанным журналом — не чаще раза в минуту: сборка ходит по SSH. */
+        private val REOPEN_NANOS = TimeUnit.MINUTES.toNanos(1)
+
+        /** Сколько экран ждёт замок модели ради проверки входа или лимитов (A-7). */
+        private const val BRIEF_WAIT_MS = 2_000L
+
+        /**
+         * Итоги команд, исполненных позже (D-94), — своим потоком (аудит стабильности, A-5):
+         * в потоке такта колбэк звал `pending()` → `current()` и мог пересобрать контур посреди такта.
+         */
+        private val laterExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "dpai-later").apply { isDaemon = true } }
+
+        /** Не дождались итога — команда в журнале (D-94): применится после текущего шага контура, переживёт перезапуск. */
+        const val QUEUED = "принято: применится после текущего шага контура (идёт вызов target)"
 
         /** Сколько поиск ждёт конца такта ради событий: дольше — поиск без них, человек не ждёт. */
         private const val SEARCH_WAIT_MS = 1_500L

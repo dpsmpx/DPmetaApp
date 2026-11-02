@@ -131,6 +131,11 @@ class UserRequestsFlowTest {
         assertEquals("task.blocked", r.purpose)
         assertTrue(o.posted.any { it is NotificationDecision.Post && it.notification.request == r.id }, "запрос показан уведомлением")
         assertEquals(listOf("retry", "reply", "cancel"), r.options.map { it.id })
+        // Причина — словами, без кода (D-89; аудит 1 ноября 2026, A-1): по запросу человек решает.
+        assertTrue(DiagCode.entries.none { it.name in r.body }, "в запросе нет кода причины: ${r.body}")
+        // И в чате сессии — «ход сорвался — <причина словами>», а не «ход прерван: failed · КОД».
+        val turnEvents = o.chat(task).filter { it.role == com.dpsmpx.dpai.orchestrator.ChatRole.EVENT && it.text.startsWith("ход ") }
+        assertTrue(turnEvents.isNotEmpty() && turnEvents.none { e -> DiagCode.entries.any { it.name in e.text } || "failed" in e.text }, turnEvents.toString())
 
         assertTrue(o.delivered(r.id, "notification").isSuccess)
         relogin(o)
@@ -178,6 +183,37 @@ class UserRequestsFlowTest {
         assertEquals(RequestState.ANSWERED, third.requests.requests.getValue(r.id).state, "ответ пережил перезапуск")
         assertEquals(OperationStatus.SUCCEEDED, third.answer(uri(r, "waive"), null, "автор").status, "повтор после перезапуска — тот же ответ")
         assertEquals(emptyList(), third.invariants())
+    }
+
+    /**
+     * Аудит надёжности 2 ноября 2026, A-8: запрос истёк (телефон выключен
+     * дольше срока), а задача всё ещё ждёт решения — тот же вопрос задаётся
+     * снова; и после перезапуска тоже. «Решу позже» — ответ: сам не возвращается.
+     */
+    @Test
+    fun expiredRequestIsAskedAgainWhileTaskWaits() {
+        val (o, runner) = boot()
+        val task = o.addTask("задача", "цель").valueOrNull()!!
+        run(o, runner, 3)
+        val first = requestFor(o, task)
+        clock.advance(3.hours)
+        o.tick()
+        assertEquals(RequestState.EXPIRED, o.requests.requests.getValue(first.id).state)
+        val again = requestFor(o, task)
+        assertTrue(again.id != first.id && again.subject == first.subject && again.purpose == "task.unverified", again.toString())
+
+        // Истёк, пока приложение не работало: первый такт после запуска спрашивает снова.
+        clock.advance(3.hours)
+        val (restarted, _) = boot()
+        restarted.tick()
+        val third = requestFor(restarted, task)
+        assertTrue(third.id != again.id, "новый запрос после перезапуска")
+
+        assertEquals(OperationStatus.SUCCEEDED, restarted.answer(uri(third, "later"), null, "автор").status)
+        clock.advance(3.hours)
+        restarted.tick()
+        assertTrue(restarted.pendingRequests().none { it.task == task }, "«решу позже» не возвращается само")
+        assertEquals(TaskState.COMPLETION_UNVERIFIED, restarted.tasks.tasks.getValue(task).state)
     }
 
     @Test

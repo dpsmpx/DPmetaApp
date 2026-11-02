@@ -113,6 +113,13 @@ class AgentRuntime(
     private val supervision: Supervision = ProcessSupervision(home, selfCommand, detacher ?: Detacher(), clock),
     /** Память машины для `doctor`: на JVM — сведения JDK ([JvmOsFacts]), в приложении — `/proc/meminfo`. */
     private val osFacts: () -> OsFacts = JvmOsFacts::read,
+    /**
+     * Окружение, от которого строится окружение процесса хода: на target —
+     * окружение агента; в приложении — гостя Linux (D-75, шаг 5): окружение
+     * Android (`PATH=/system/bin`, `ANDROID_*`) гостю не передаётся, иначе
+     * `claude`, установленный в Alpine, не нашёлся бы.
+     */
+    private val baseEnvironment: () -> Map<String, String> = System::getenv,
 ) {
     private val vfs = NioVfs(File(home).toPath())
     private val ids = IdGenerator(clock, RandomSource.secure())
@@ -216,7 +223,7 @@ class AgentRuntime(
             store.write(RUN_KEY, current.toJson())
             return AgentReply("supervise", ok = true, run = current.status(journal.position))
         }
-        val env = HashMap(System.getenv()).apply {
+        val env = HashMap(baseEnvironment()).apply {
             doc.spec.unsetEnv.forEach { remove(it) }
             putAll(doc.spec.setEnv)
         }

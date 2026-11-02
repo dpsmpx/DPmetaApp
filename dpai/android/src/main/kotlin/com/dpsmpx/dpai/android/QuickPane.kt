@@ -109,7 +109,8 @@ fun QuickRow(quick: QuickActions, live: Boolean, requests: Int, model: DemoModel
                             }.padding(vertical = 2.dp),
                         ) {
                             Text(c.title, style = MaterialTheme.typography.bodyMedium, maxLines = 2)
-                            Text(c.state + if (c.held) " · пауза" else "", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            // Слово, а не имя enum (аудит удобства, A-15).
+                            Text(com.dpsmpx.dpai.core.text.Words.task(c.state) + if (c.held) " · пауза" else "", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }

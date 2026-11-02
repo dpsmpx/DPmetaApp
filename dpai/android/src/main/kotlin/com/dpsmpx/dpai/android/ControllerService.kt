@@ -39,6 +39,16 @@ import java.util.concurrent.TimeUnit
  */
 class ControllerService : Service() {
     private var timer: ScheduledExecutorService? = null
+
+    /**
+     * Такт идёт: [keeper] продлевает wakelock раз в минуту (аудит стабильности
+     * 2 ноября 2026, A-1). Шаг проверки внутри такта идёт до 30 мин, а
+     * wakelock, взятый в начале такта на 10 мин, истекал посреди него — при
+     * выключенном экране процессор засыпал, и опрос агента вставал.
+     */
+    @Volatile
+    private var ticking = false
+    private var keeper: ScheduledExecutorService? = null
     private var wake: PowerManager.WakeLock? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -52,7 +62,14 @@ class ControllerService : Service() {
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(CHANNEL, "Контроллер работает", NotificationManager.IMPORTANCE_MIN))
         val open = Notifier.openApp(this)
-        val stop = PendingIntent.getService(this, 1, Intent(this, ControllerService::class.java).setAction(STOP), PendingIntent.FLAG_IMMUTABLE)
+        // «Остановить» — через подтверждение в приложении (аудит удобства, A-18): одно касание в шторке
+        // останавливало такты, уведомления и запросы до ручного запуска.
+        val stop = PendingIntent.getActivity(
+            this, 1,
+            MainActivity.internal(this).setAction(MainActivity.STOP_CONFIRM)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
         val n = Notification.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.stat_notify_sync)
             .setContentTitle("DP AI: контроллер работает")
@@ -90,51 +107,84 @@ class ControllerService : Service() {
             // Первая сводка и проверка sshd — в первом такте (поток службы: сеть в главном потоке запрещена).
             var lastSummary = Clock.SYSTEM.monotonicNanos() - TimeUnit.MINUTES.toNanos(1)
             var lastUsage = Clock.SYSTEM.monotonicNanos() - TimeUnit.MINUTES.toNanos(1)
+            // Сбои подряд — счётчик службы, а не одного такта (аудит надёжности, A-5): объявленный в теле
+            // такта, он обнулялся каждый раз, и служба без работающего контура крутилась вечно с wakelock.
+            var failures = 0
+            fun failed(what: String, reason: String) {
+                failures++
+                log.error(what, reason)
+                if (failures >= MAX_TICK_FAILURES) {
+                    log.error("служба контроллера", "такт падает $failures раз подряд — служба уходит, экран поднимет её снова")
+                    // `running` снимает `onDestroy` (аудит стабильности, A-6): снятый здесь, до ухода службы, он звал
+                    // экран к `startForegroundService` в гонке со `stopSelf` — система роняла приложение.
+                    stopSelf()
+                }
+            }
+            keeper = Executors.newSingleThreadScheduledExecutor().also { k ->
+                k.scheduleWithFixedDelay({
+                    runCatching { if (ticking) lock.acquire(TimeUnit.MINUTES.toMillis(WAKE_MINUTES)) }
+                }, 1, 1, TimeUnit.MINUTES)
+            }
             timer = Executors.newSingleThreadScheduledExecutor().also { t ->
                 t.scheduleWithFixedDelay({
-                    // Targets с каталогом Claude не осталось — контроллеру нечего опрашивать: служба уходит,
-                    // а не шагает демо в фоне (ревью 8 октября 2026, A-28). Экран поднимет её, когда target появится.
-                    if (!model.hasLive()) {
-                        log.step("служба контроллера: нет targets с каталогом Claude")
-                        stopSelf()
-                        return@scheduleWithFixedDelay
-                    }
-                    lock.acquire(TimeUnit.MINUTES.toMillis(WAKE_MINUTES))
-                    meter.begin()
-                    // Сбой такта — в журнал приложения, а не молча (D-43): контур идёт дальше.
-                    val ok = try {
-                        model.step(null).notifications.forEach(notifier::show)
-                        // Лимиты слотов с автообновлением — раз в минуту, и без открытой сводки.
-                        val auto = UsageAuto.enabled(app)
-                        val tick = Clock.SYSTEM.monotonicNanos()
-                        if (auto.isNotEmpty() && tick - lastUsage >= TimeUnit.MILLISECONDS.toNanos(UsageAuto.EVERY_MS)) {
-                            lastUsage = tick
-                            model.refreshUsage(auto)
-                        }
-                        // Копия настроек — после изменения и раз в час (D-51).
-                        SettingsBackups.tick(app, Controller.get(app.filesDir, null))
-                        true
-                    } catch (e: Exception) {
-                        log.error("такт", AppLogs.describe(e))
-                        false
-                    }
-                    meter.end(ok)
-                    // Запросы человеку — по ждущим в журнале: показать новые, убрать закрытые (D-44).
+                    // Всё тело такта — под защитой (D-87): у `ScheduledThreadPoolExecutor` исключение в
+                    // периодической задаче отменяет все её следующие запуски, а `Future` никто не хранит.
+                    // Такт, умерший молча, оставлял уведомление «контроллер работает», `running = true`
+                    // и застывший экран — приложение говорило «работаю», когда работа встала.
                     try {
-                        RequestPresenter.sync(app, model, model.pending())
-                    } catch (e: Exception) {
-                        log.error("запросы", AppLogs.describe(e))
-                    }
-                    val now = Clock.SYSTEM.monotonicNanos()
-                    if (now - lastSummary >= TimeUnit.MINUTES.toNanos(1)) {
-                        lastSummary = now
-                        summary(log, meter, model, device)
-                        // Termux-target на этом телефоне: sshd не слушает — запустить его в Termux (D-46).
-                        try {
-                            TermuxLauncher.ensureSshd(app, Controller.get(app.filesDir, null).targets())?.let { log.info("termux", it) }
-                        } catch (e: Exception) {
-                            log.warn("termux", AppLogs.describe(e))
+                        // Targets с каталогом Claude не осталось — контроллеру нечего опрашивать: служба уходит,
+                        // а не шагает демо в фоне (ревью 8 октября 2026, A-28). Экран поднимет её, когда target появится.
+                        if (!model.hasLive()) {
+                            log.step("служба контроллера: нет targets с каталогом Claude")
+                            stopSelf()
+                            return@scheduleWithFixedDelay
                         }
+                        lock.acquire(TimeUnit.MINUTES.toMillis(WAKE_MINUTES))
+                        ticking = true
+                        meter.begin()
+                        // Сбой такта — в журнал приложения, а не молча (D-43): контур идёт дальше.
+                        val ok = try {
+                            model.step(null).notifications.forEach(notifier::show)
+                            // Лимиты слотов с автообновлением — раз в минуту, и без открытой сводки.
+                            val auto = UsageAuto.enabled(app)
+                            val tick = Clock.SYSTEM.monotonicNanos()
+                            if (auto.isNotEmpty() && tick - lastUsage >= TimeUnit.MILLISECONDS.toNanos(UsageAuto.EVERY_MS)) {
+                                lastUsage = tick
+                                model.refreshUsage(auto)
+                            }
+                            // Копия настроек — после изменения и раз в час (D-51).
+                            SettingsBackups.tick(app, Controller.get(app.filesDir, null))
+                            true
+                        } catch (e: Exception) {
+                            // Сбой шага — тоже сбой подряд: контур, который не строится (журнал не открылся), не работает.
+                            failed("такт", AppLogs.describe(e))
+                            false
+                        }
+                        ticking = false
+                        if (ok) failures = 0
+                        meter.end(ok)
+                        // Запросы человеку — по ждущим в журнале: показать новые, убрать закрытые (D-44).
+                        try {
+                            RequestPresenter.sync(app, model, model.pending())
+                        } catch (e: Exception) {
+                            log.error("запросы", AppLogs.describe(e))
+                        }
+                        val now = Clock.SYSTEM.monotonicNanos()
+                        if (now - lastSummary >= TimeUnit.MINUTES.toNanos(1)) {
+                            lastSummary = now
+                            summary(log, meter, model, device)
+                            // Termux-target на этом телефоне: sshd не слушает — запустить его в Termux (D-46).
+                            try {
+                                TermuxLauncher.ensureSshd(app, Controller.get(app.filesDir, null).targets())?.let { log.info("termux", it) }
+                            } catch (e: Exception) {
+                                log.warn("termux", AppLogs.describe(e))
+                            }
+                        }
+                    } catch (e: Throwable) {
+                        // Сюда попадает то, что вне внутренних `try`: настройки с диска, wakelock (на части
+                        // прошивок `acquire` бросает), конец замера, сводка. Считаем сбои подряд и после
+                        // [MAX_TICK_FAILURES] уходим, а не делаем вид, что работаем: экран поднимет службу.
+                        failed("такт: сбой вне шага", AppLogs.describe(e))
                     }
                 }, 0, STEP_SECONDS, TimeUnit.SECONDS)
             }
@@ -166,6 +216,9 @@ class ControllerService : Service() {
         // Следующие такты отменены; после снятия wakelock идущий такт доделает работу, когда процессор проснётся.
         timer?.shutdown()
         timer = null
+        keeper?.shutdownNow()
+        keeper = null
+        ticking = false
         wake?.takeIf { it.isHeld }?.release()
         wake = null
         super.onDestroy()
@@ -176,6 +229,12 @@ class ControllerService : Service() {
         private const val ID = 1001
         private const val STOP = "com.dpsmpx.dpai.STOP_CONTROLLER"
         private const val STEP_SECONDS = 3L
+
+        /**
+         * Сколько сбоев такта подряд терпим, прежде чем уйти (D-87): такт, который падает
+         * раз за разом, — не «работает»; экран поднимет службу заново, а в журнале останется причина.
+         */
+        private const val MAX_TICK_FAILURES = 3
 
         /** Срок wakelock от последнего такта: такты встали — wakelock истёк (D-39). */
         private const val WAKE_MINUTES = 10L
@@ -204,6 +263,11 @@ class ControllerService : Service() {
             } catch (_: IllegalStateException) {
                 false // ForegroundServiceStartNotAllowedException (API 31+) — её подкласс
             }
+        }
+
+        /** Остановить по подтверждению человека (A-18): как «Остановить» прежде — до явного запуска. */
+        fun stop(context: Context) {
+            runCatching { context.startService(Intent(context, ControllerService::class.java).setAction(STOP)) }
         }
 
         /** Явный запуск человеком после «Остановить». */

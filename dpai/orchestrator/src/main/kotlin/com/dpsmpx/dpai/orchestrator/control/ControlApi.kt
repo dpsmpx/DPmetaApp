@@ -7,6 +7,7 @@ import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.Diagnostic
 import com.dpsmpx.dpai.core.ids.IdKinds
 import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.core.serialization.CanonicalJson
 import com.dpsmpx.dpai.core.serialization.JsonArray
 import com.dpsmpx.dpai.core.serialization.JsonBool
 import com.dpsmpx.dpai.core.serialization.JsonNumber
@@ -14,23 +15,33 @@ import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonParser
 import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.core.serialization.JsonValue
+import com.dpsmpx.dpai.notifications.OptionRole
 import com.dpsmpx.dpai.notifications.RequestAction
 import com.dpsmpx.dpai.orchestrator.Orchestrator
 import com.dpsmpx.dpai.orchestrator.commands.Command
+import com.dpsmpx.dpai.orchestrator.requests.RequestPurpose
 import com.dpsmpx.dpai.storage.vfs.Vfs
 import java.security.MessageDigest
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 
-/** Ответ канала: код HTTP и тело JSON. */
-data class ControlResponse(val status: Int, val body: JsonObject)
+/** Запрос к каналу: имена заголовков — в нижнем регистре; тело — как пришло, строкой UTF-8. */
+data class ControlRequest(val method: String, val path: String, val headers: Map<String, String> = emptyMap(), val body: String? = null)
+
+/**
+ * Ответ канала: код HTTP, тело JSON и подпись (D-92) — над телом в
+ * `CanonicalJson`, ровно так его и пишет оболочка; `null` — ответ без
+ * подписи (сопряжение, отказ в подписи запроса).
+ */
+data class ControlResponse(val status: Int, val body: JsonObject, val signature: String? = null)
 
 /**
  * Сопряжение `dpai` с приложением (D-47): код из шести цифр на
  * [codeTtl] — его показывает экран, не больше [MAX_ATTEMPTS] попыток на
  * код; верный код — постоянный токен (32 случайных байта, hex), он лежит в
  * файле приложения [TOKEN] через `Vfs` (D-24). Токен — секрет: в журнал и
- * ответы, кроме ответа на сопряжение, не попадает.
+ * ответы, кроме ответа на сопряжение, не попадает; запросы `dpai` и ответы
+ * приложения подписываются им, сам он в сеть больше не уходит (D-92).
  */
 class Pairing(private val vfs: Vfs, private val random: RandomSource, private val clock: Clock, private val codeTtl: Duration = 2.minutes) {
     private data class Code(val value: String, val until: Timestamp, var attempts: Int)
@@ -63,7 +74,7 @@ class Pairing(private val vfs: Vfs, private val random: RandomSource, private va
 
     /** Токен приложения: есть — прежний (несколько машин с одним токеном), нет — новый. */
     @Synchronized
-    fun token(): String = vfs.read(TOKEN)?.toString(Charsets.UTF_8)?.trim()?.takeIf { it.length == 64 } ?: run {
+    fun token(): String = stored() ?: run {
         val t = random.nextBytes(32).joinToString("") { "%02x".format(it.toInt() and 0xff) }
         vfs.write(TOKEN, "$t\n".toByteArray())
         vfs.fsync(TOKEN)
@@ -77,13 +88,43 @@ class Pairing(private val vfs: Vfs, private val random: RandomSource, private va
     @Synchronized
     fun revoke() {
         vfs.delete(TOKEN)
+        seen.clear()
     }
 
-    fun authorized(header: String?): Boolean {
-        val given = header?.removePrefix("Bearer ")?.trim() ?: return false
-        val have = vfs.read(TOKEN)?.toString(Charsets.UTF_8)?.trim() ?: return false
-        return have.length == 64 && same(given, have)
+    /** Одноразовые значения принятых запросов и когда приняты: повтор подписанного запроса — отказ (D-92). */
+    private val seen = HashMap<String, Timestamp>()
+
+    private fun stored(): String? = vfs.read(TOKEN)?.toString(Charsets.UTF_8)?.trim()?.takeIf(ControlAuth::validToken)
+
+    /**
+     * Запрос подписан токеном приложения (D-92): подпись верна, время —
+     * в пределах [ControlAuth.WINDOW] от часов телефона, значение — впервые.
+     * Время и значение смотрятся после подписи: без токена не узнать ничего
+     * и не забить память значений. Итог — значение запроса: им подписывается ответ.
+     */
+    @Synchronized
+    fun verify(method: String, path: String, headers: Map<String, String>, body: String?): Outcome<String> {
+        val token = stored() ?: return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "dpai не сопряжён")
+        val time = headers[ControlAuth.TIME]?.toLongOrNull()
+        val nonce = headers[ControlAuth.NONCE]?.takeIf(ControlAuth::validNonce)
+        val signature = headers[ControlAuth.SIGNATURE]?.takeIf(ControlAuth::validSignature)
+        if (time == null || nonce == null || signature == null) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "запрос без подписи: обновите dpai")
+        if (!ControlAuth.same(signature, ControlAuth.sign(token, ControlAuth.requestText(method, path, time, nonce, body)))) {
+            return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "подпись неверна")
+        }
+        val now = clock.now()
+        if (kotlin.math.abs(now.epochMillis - time) > ControlAuth.WINDOW.inWholeMilliseconds) {
+            return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "часы машины с dpai и телефона расходятся больше чем на ${ControlAuth.WINDOW.inWholeMinutes} мин")
+        }
+        // Значение живёт, пока запрос с ним ещё мог бы пройти по времени: два окна от приёма.
+        seen.entries.removeIf { now - it.value > ControlAuth.WINDOW * 2 }
+        if (seen.putIfAbsent(nonce, now) != null) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "повтор запроса")
+        return Outcome.success(nonce)
     }
+
+    /** Подпись ответа на запрос со значением [nonce]; токена нет (отозван) — `null`, и `dpai` ответу не поверит. */
+    fun signResponse(nonce: String, status: Int, body: String): String? =
+        stored()?.let { ControlAuth.sign(it, ControlAuth.responseText(nonce, status, body)) }
 
     /** Сравнение за постоянное время: подбор по времени ответа не проходит. */
     private fun same(a: String, b: String) = MessageDigest.isEqual(a.toByteArray(), b.toByteArray())
@@ -108,13 +149,18 @@ class Pairing(private val vfs: Vfs, private val random: RandomSource, private va
  *   оболочка ([search]) — поиск живёт в модуле `ui`, а не здесь;
  * - `POST /v1/commands` — команда ([CommandCodec]) через очередь контура:
  *   [submit] — та же, что у экрана (D-42, п. 1); опасное — только с
- *   `confirmed` (ТЗ, §68).
+ *   `confirmed` (ТЗ, §68); решающее — только подтверждением на телефоне
+ *   (D-91): `202`, а запрос снова показывает [confirmOnPhone].
+ *
+ * Всё, кроме сопряжения, — подписанные запросы, и ответы подписаны (D-92).
  */
 class ControlApi(
     private val pairing: Pairing,
     private val orchestrator: () -> Orchestrator?,
     /** Поиск по запросу — итог в JSON; `null` у функции или у итога — поиска нет (контура нет). */
     private val search: ((String) -> JsonObject?)? = null,
+    /** Решающее из канала (D-91): показать на телефоне то, что человек подтвердит там; оболочка без экрана — ничего. */
+    private val confirmOnPhone: (Command) -> Unit = {},
     private val submit: (Command) -> OperationOutcome,
 ) {
     /** Итог команды для канала: `OperationResult` в JSON или отказ до исполнения. */
@@ -124,9 +170,18 @@ class ControlApi(
         data class Refused(val diagnostics: List<Diagnostic>) : OperationOutcome
     }
 
-    fun handle(method: String, path: String, authorization: String?, body: String?): ControlResponse {
+    fun handle(request: ControlRequest): ControlResponse {
+        val (method, path, headers, body) = request
         if (method == "POST" && path == "/v1/pair") return pair(body)
-        if (!pairing.authorized(authorization)) return error(401, DiagCode.OPERATION_NOT_ALLOWED, "нет токена или он неверен: dpai control pair <код>")
+        val nonce = when (val v = pairing.verify(method, path, headers, body)) {
+            is Outcome.Failure -> return error(401, DiagCode.OPERATION_NOT_ALLOWED, "${v.errors.first().message}: dpai control pair <код>")
+            is Outcome.Success -> v.value
+        }
+        val r = route(method, path, body)
+        return r.copy(signature = pairing.signResponse(nonce, r.status, CanonicalJson.write(r.body)))
+    }
+
+    private fun route(method: String, path: String, body: String?): ControlResponse {
         val o = orchestrator() ?: return error(503, DiagCode.OPERATION_NOT_ALLOWED, "контроллер не запущен: в приложении нет target с каталогом Claude")
         return when {
             method == "GET" && path == "/v1/state" -> ControlResponse(200, ControlSnapshot.of(o))
@@ -172,6 +227,16 @@ class ControlApi(
         if ((CommandCodec.dangerous(c) || destructiveAnswer(o, c)) && !parsed.confirmed) {
             return error(409, DiagCode.APPROVAL_REQUIRED, "опасное действие: подтвердите явно (dpai … --yes)")
         }
+        if (decisive(o, c)) {
+            confirmOnPhone(c)
+            return ControlResponse(
+                202,
+                JsonObject.of(
+                    "status" to JsonString("CONFIRM_ON_PHONE"),
+                    "diagnostics" to CommandCodec.diagnostics(listOf(Diagnostic.warning(DiagCode.APPROVAL_REQUIRED, "решающее — только на телефоне: запрос показан там снова, подтвердите его (D-91)"))),
+                ),
+            )
+        }
         return when (val r = submit(c)) {
             is OperationOutcome.Refused -> ControlResponse(503, failure(r.diagnostics))
             is OperationOutcome.Done -> ControlResponse(200, CommandCodec.result(r.result))
@@ -185,6 +250,21 @@ class ControlApi(
         if (q.length !in 2..MAX_QUERY) return error(400, DiagCode.VALUE_INVALID, "запрос — от 2 до $MAX_QUERY знаков")
         val f = search ?: return error(503, DiagCode.UNSUPPORTED, "поиск не подключён в этой оболочке")
         return f(q)?.let { ControlResponse(200, it) } ?: error(503, DiagCode.OPERATION_NOT_ALLOWED, "контроллер не запущен: искать негде")
+    }
+
+    /**
+     * Решающее (D-91): «да» на слияние, на задачу без проверки, на ревью без
+     * итога и на сверку после перезапуска, а также исключение задачи. Токен
+     * канала лежит у того же пользователя, что и сессии Claude: канал не
+     * отличит автора от сессии под prompt injection, телефон — отличит.
+     */
+    private fun decisive(o: Orchestrator, c: Command): Boolean = when (c) {
+        is Command.Waive -> true
+        is Command.AnswerRequest -> RequestAction.parse(c.uri).valueOrNull()?.let { a ->
+            val r = o.requests.requests[a.request] ?: return@let false
+            RequestPurpose.of(r.purpose) in PHONE_ONLY && r.options.firstOrNull { it.id == a.option }?.role in DECISIVE_ROLES
+        } == true
+        else -> false
     }
 
     /** Ответ опасным вариантом запроса (D-44) — тоже только с подтверждением. */
@@ -209,6 +289,28 @@ class ControlApi(
 
         /** Длиннее запрос поиска не бывает: это строка из поля ввода, а не текст. */
         const val MAX_QUERY = 200
+
+        /**
+         * Запрос пришёл от `dpai`, а не от страницы в браузере телефона
+         * (аудит 1 ноября 2026, A-21): браузер шлёт `Origin` в каждом
+         * запросе `POST` и при DNS rebinding называет в `Host` чужой домен,
+         * указывающий на 127.0.0.1. `dpai` (`HttpClient` JDK) `Origin` не
+         * шлёт, а `Host` у него — 127.0.0.1 или localhost (туннель SSH с ПК —
+         * тоже на loopback). Нет заголовка `Host` — отказ: HTTP/1.1 его требует.
+         */
+        fun fromCli(host: String?, origin: String?): Boolean {
+            if (origin != null) return false
+            val h = host?.trim()?.lowercase() ?: return false
+            val name = if (h.startsWith("[")) h.substringBefore(']') + "]" else h.substringBefore(':')
+            return name in LOOPBACK
+        }
+
+        private val LOOPBACK = setOf("127.0.0.1", "localhost", "[::1]")
+
+        /** Запросы, «да» на которые из канала не применяется (D-91). */
+        private val PHONE_ONLY = setOf(RequestPurpose.TASK_MERGE, RequestPurpose.TASK_UNVERIFIED, RequestPurpose.TASK_REVIEW, RequestPurpose.RECOVERY)
+
+        private val DECISIVE_ROLES = setOf(OptionRole.ACCEPT, OptionRole.DESTRUCTIVE)
     }
 }
 

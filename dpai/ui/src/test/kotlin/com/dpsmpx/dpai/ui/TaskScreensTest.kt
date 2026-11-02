@@ -121,7 +121,7 @@ class TaskScreensTest {
         assertEquals("Termux (claude-slot-2) · подписка B", d.executor)
         assertEquals(2, d.assignments.size)
         assertTrue(d.assignments[0].contains("Termux (claude-slot-1) · подписка A — начата"), d.assignments.toString())
-        assertTrue(d.assignments[1].contains("Termux (claude-slot-2) · подписка B — передана другой подписке: предел подписки · RUNNING"), d.assignments.toString())
+        assertTrue(d.assignments[1].contains("Termux (claude-slot-2) · подписка B — передана другой подписке: предел подписки · идёт"), d.assignments.toString())
         assertEquals(null, TaskScreens.detail(task(TaskState.READY), SessionsState.EMPTY).executor, "сессий нет — исполнителя нет")
         val tasks = com.dpsmpx.dpai.tasks.TasksState(mapOf(id to task(TaskState.RUNNING)))
         val work = TaskScreens.work(sessions, tasks, "dpai-proj", java.time.ZoneOffset.UTC)
@@ -187,5 +187,10 @@ class TaskScreensTest {
         assertTrue(SessionAction.REASSIGN !in Screens.sessionActions(work.id, sessions, TasksState(mapOf(id to task(TaskState.DONE)))))
         assertEquals("ревью кода", Screens.reviewLabel("CODE"))
         assertEquals("ревью STYLE", Screens.reviewLabel("STYLE"))
+        // A-14: почему не пишут — настоящая причина, а не «проверяется или завершена» на всё.
+        assertEquals(null, Screens.noSend(work.id, sessions, tasks), "в рабочую сессию ждущей задачи — пишут")
+        assertTrue("ревью только читает" in Screens.noSend(review.id, sessions, tasks).orEmpty())
+        assertEquals(null, Screens.noSend(work.id, sessions, TasksState(mapOf(id to task(TaskState.DONE)))), "в завершённую — пишут: сообщение её продолжает")
+        assertTrue("на проверке" in Screens.noSend(work.id, sessions, TasksState(mapOf(id to task(TaskState.VERIFIED)))).orEmpty())
     }
 }

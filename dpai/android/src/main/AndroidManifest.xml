@@ -12,6 +12,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <!-- Окно запроса поверх приложений (D-44): только если человек включил его и дал разрешение в настройках. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- DNS сети телефона для Linux-среды в приложении (D-90): только чтение состояния сети, выдаётся при установке. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Запуск sshd Termux-target на этом телефоне (D-46): только эта команда; разрешение даёт человек. -->
     <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
 
@@ -23,6 +25,8 @@
     <application
         android:name=".DpaiApplication"
         android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
@@ -57,6 +61,22 @@
         <!-- Ответы на запросы — только через PendingIntent своего уведомления (D-44). -->
         <receiver
             android:name=".RequestReceiver"
+            android:exported="false" />
+        <!-- Диск приложения (D-96): корень системного выбора файлов; пока закрыт, корня нет.
+             Доступ только через системный выбор: MANAGE_DOCUMENTS есть лишь у системы. -->
+        <provider
+            android:name=".AppDiskProvider"
+            android:authorities="${applicationId}.disk"
+            android:exported="true"
+            android:grantUriPermissions="true"
+            android:permission="android.permission.MANAGE_DOCUMENTS">
+            <intent-filter>
+                <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
+            </intent-filter>
+        </provider>
+        <!-- «Закрыть» диск из уведомления — только через PendingIntent своего уведомления. -->
+        <receiver
+            android:name=".AppDiskCloseReceiver"
             android:exported="false" />
         <service
             android:name=".ControllerService"

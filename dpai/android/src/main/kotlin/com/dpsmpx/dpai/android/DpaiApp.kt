@@ -1,5 +1,6 @@
 package com.dpsmpx.dpai.android
 
+import androidx.compose.foundation.layout.widthIn
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateFloat
@@ -63,6 +64,7 @@ import androidx.compose.ui.unit.dp
 import com.dpsmpx.dpai.core.diagnostics.Redactor
 import com.dpsmpx.dpai.core.ids.SessionId
 import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.core.text.Words
 import com.dpsmpx.dpai.ui.DashboardScreen
 import com.dpsmpx.dpai.ui.RequestCard
 import com.dpsmpx.dpai.ui.SessionScreen
@@ -103,6 +105,9 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
     // Сбой контроллера (журнал не открылся, target недоступен при запуске): показать, а не упасть —
     // иначе приложение падало бы при каждом запуске и target нельзя было бы исправить.
     var failure by remember { mutableStateOf<String?>(null) }
+
+    /** Журнал испорчен в середине (D-24): что именно — до решения человека контур не строится. */
+    var corrupted by remember { mutableStateOf<String?>(null) }
     // Глобальный поиск (ТЗ, §75) и задача, открытая из него, — лист задачи поверх любой вкладки.
     var searching by rememberSaveable { mutableStateOf(false) }
     var foundTask by remember { mutableStateOf<com.dpsmpx.dpai.core.ids.TaskId?>(null) }
@@ -130,8 +135,17 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
+            } catch (e: com.dpsmpx.dpai.storage.journal.JournalSegmentUnreadable) {
+                failure = "старая часть журнала контроллера не читается (${e.message}): её записи подтверждены и молча не пропускаются — " +
+                    "контроллер не запустится, пока файл не восстановлен (папка live в данных приложения)"
+                null
+            } catch (e: com.dpsmpx.dpai.ui.JournalNeedsConfirmation) {
+                corrupted = e.message
+                failure = "журнал контроллера испорчен — нужно ваше решение"
+                null
             } catch (e: Exception) {
-                failure = Redactor.STANDARD.redact("${e.javaClass.simpleName}: ${e.message}")
+                // Словами (A-17); имя класса — в журнале приложения.
+                failure = Redactor.STANDARD.redact(com.dpsmpx.dpai.core.text.Words.failure(e))
                 null
             }
             if (next != null) {
@@ -169,6 +183,23 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
         if (incoming != Incoming()) onIncoming()
     }
     confirmUri?.let { uri -> ConfirmDialog(model, snapshot?.requests.orEmpty(), uri) { confirmUri = null } }
+    // «Остановить» из уведомления службы (A-18): подтверждение — здесь, с тем, что встанет.
+    var confirmStop by remember { mutableStateOf(false) }
+    LaunchedEffect(incoming) { if (incoming.stop) confirmStop = true }
+    if (confirmStop) {
+        AlertDialog(
+            onDismissRequest = { confirmStop = false },
+            title = { Text("Остановить контроллер?") },
+            text = { Text("Такты, уведомления и запросы встанут, пока вы не запустите его снова; идущий ход доиграет.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmStop = false
+                    scope.launch(Dispatchers.IO) { ControllerService.stop(context) }
+                }) { Text("Остановить", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { confirmStop = false }) { Text("Отмена") } },
+        )
+    }
     // Найденное ведёт к сущности: сессия — её экран, задача — её лист, слоты и проекты — вкладка Targets.
     if (searching) {
         SearchDialog(model, onDone = { searching = false }) { link ->
@@ -263,9 +294,31 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
         val s = snapshot
         // Клавиатура (D-64): содержимое — над ней; отступ панели вкладок уже учтён (consumeWindowInsets), не вдвое.
         Column(Modifier.padding(padding).consumeWindowInsets(padding).imePadding().fillMaxSize()) {
-            failure?.let {
+            corrupted?.let { what ->
+                // D-24: карантин хвоста — только явным решением; опасное — красным и вторым шагом.
+                var armed by remember { mutableStateOf(false) }
+                Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                    Text(
+                        "Журнал контроллера испорчен: $what. Записи после испорченной — решения, ответы, итоги задач — " +
+                            "можно отрезать в карантин (файл сохранится рядом), тогда контроллер откатится к последней целой записи. " +
+                            "Без этого контроллер не запустится; журнал — файл live/live.journal в данных приложения.",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    TextButton(onClick = {
+                        if (!armed) {
+                            armed = true
+                        } else {
+                            scope.launch(Dispatchers.IO) { controller.confirmJournalQuarantine() }
+                            corrupted = null
+                            failure = null
+                        }
+                    }) { Text(if (armed) "Точно отрезать хвост в карантин" else "Отрезать хвост в карантин", color = MaterialTheme.colorScheme.error) }
+                }
+            }
+            failure?.takeIf { corrupted == null }?.let {
                 Text(
-                    "Контроллер не работает: $it. Проверьте targets на вкладке Targets.",
+                    "Контроллер не работает: $it. Проверьте targets на вкладке Targets; подробности — в журнале приложения.",
                     Modifier.fillMaxWidth().padding(12.dp),
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall,
@@ -436,17 +489,31 @@ private fun SessionExtras(screen: SessionScreen, model: DemoModel) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         if (screen.task != null) TextButton(onClick = { context = true }) { Text("Контекст", style = MaterialTheme.typography.labelSmall) }
         if (reassign) {
-            TextButton(enabled = !busy, onClick = {
-                busy = true
-                val key = keys.next(com.dpsmpx.dpai.core.ids.IdKinds.OPERATION).value
-                scope.launch {
-                    status = when (val r = withContext(Dispatchers.IO) { model.command(com.dpsmpx.dpai.orchestrator.commands.Command.Reassign(screen.session, key)) }) {
-                        is Outcome.Success -> null
-                        is Outcome.Failure -> "Не принято: ${r.diagnostics.first().message}"
-                    }
-                    busy = false
-                }
-            }) { Text(com.dpsmpx.dpai.ui.SessionAction.REASSIGN.label, style = MaterialTheme.typography.labelSmall) }
+            // Прерывает идущий ход (D-77) — с подтверждением (аудит удобства, A-13).
+            var confirm by remember(screen.session) { mutableStateOf(false) }
+            TextButton(enabled = !busy, onClick = { confirm = true }) { Text(com.dpsmpx.dpai.ui.SessionAction.REASSIGN.label, style = MaterialTheme.typography.labelSmall) }
+            if (confirm) {
+                AlertDialog(
+                    onDismissRequest = { confirm = false },
+                    title = { Text("Прервать ход и перенести?") },
+                    text = { Text("Идущий ход остановится с передачей контекста; следующая сессия задачи пойдёт на другом слоте. Выбрать слот следующего хода без прерывания — в листе задачи («⚙»).") },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            confirm = false
+                            busy = true
+                            val key = keys.next(com.dpsmpx.dpai.core.ids.IdKinds.OPERATION).value
+                            scope.launch {
+                                status = when (val r = withContext(Dispatchers.IO) { model.command(com.dpsmpx.dpai.orchestrator.commands.Command.Reassign(screen.session, key)) }) {
+                                    is Outcome.Success -> null
+                                    is Outcome.Failure -> "Не принято: ${r.diagnostics.first().message}"
+                                }
+                                busy = false
+                            }
+                        }) { Text("Прервать и перенести", color = MaterialTheme.colorScheme.error) }
+                    },
+                    dismissButton = { TextButton(onClick = { confirm = false }) { Text("Отмена") } },
+                )
+            }
         }
     }
     status?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
@@ -585,6 +652,22 @@ private fun ChatInput(screen: SessionScreen, model: DemoModel, maxHeight: androi
         }
     }
     val typing = text.isNotEmpty()
+    // «■» — с подтверждением и с тем, как продолжить (аудит удобства, A-13): одно касание ставило задачу на паузу.
+    var confirmStop by remember(screen.session) { mutableStateOf(false) }
+    if (confirmStop) {
+        AlertDialog(
+            onDismissRequest = { confirmStop = false },
+            title = { Text("Остановить ход?") },
+            text = { Text("Ход остановится, задача встанет на паузу. Продолжить — «Продолжить» в листе задачи («⚙») или сообщением сюда.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmStop = false
+                    send({ k -> com.dpsmpx.dpai.orchestrator.commands.Command.StopSession(screen.session, k) })
+                }) { Text("Остановить", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { confirmStop = false }) { Text("Отмена") } },
+        )
+    }
     Column(Modifier.padding(horizontal = 6.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         status?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
         // Пусто — одна строка на всю ширину и рядом «стоп» (или «свежая сессия»); начали писать — поле растёт
@@ -592,15 +675,13 @@ private fun ChatInput(screen: SessionScreen, model: DemoModel, maxHeight: androi
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             OutlinedTextField(
                 text, { text = it }, Modifier.weight(1f).heightIn(max = maxHeight),
-                placeholder = { Text(if (canSend) "Сообщение Claude" else "Задача проверяется или завершена") },
+                placeholder = { Text(if (canSend) "Сообщение Claude" else (screen.noSend ?: "сюда не пишут").replaceFirstChar { it.uppercase() }) },
                 enabled = canSend, singleLine = !typing, maxLines = if (typing) Int.MAX_VALUE else 1,
                 textStyle = MaterialTheme.typography.bodyMedium,
             )
             if (!typing) {
                 when {
-                    running -> androidx.compose.material3.FilledTonalIconButton(enabled = !busy, onClick = {
-                        send({ k -> com.dpsmpx.dpai.orchestrator.commands.Command.StopSession(screen.session, k) })
-                    }) { Text("■") }
+                    running -> androidx.compose.material3.FilledTonalIconButton(enabled = !busy, onClick = { confirmStop = true }) { Text("■") }
                     fresh -> androidx.compose.material3.FilledTonalIconButton(enabled = !busy, onClick = {
                         send({ k -> com.dpsmpx.dpai.orchestrator.commands.Command.SendToSession(screen.session, null, modelName.ifEmpty { null }, effort.ifEmpty { null }, fresh = true, key = k) })
                     }) { Text("↻") }
@@ -782,13 +863,13 @@ internal fun NewTaskDialog(model: DemoModel, onDone: () -> Unit) {
                     Text("Приоритет", style = MaterialTheme.typography.labelSmall)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         for (p in com.dpsmpx.dpai.tasks.Priority.entries) {
-                            androidx.compose.material3.FilterChip(selected = priority == p, onClick = { priority = p }, label = { Text(p.name.lowercase()) })
+                            androidx.compose.material3.FilterChip(selected = priority == p, onClick = { priority = p }, label = { Text(Words.priority(p.name)) })
                         }
                     }
                     Text("Класс — маршрут модели (D-40)", style = MaterialTheme.typography.labelSmall)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         for (c in com.dpsmpx.dpai.tasks.TaskClass.entries) {
-                            androidx.compose.material3.FilterChip(selected = taskClass == c, onClick = { taskClass = c }, label = { Text(c.name.lowercase()) })
+                            androidx.compose.material3.FilterChip(selected = taskClass == c, onClick = { taskClass = c }, label = { Text(Words.taskClass(c.name)) })
                         }
                     }
                     OutlinedTextField(modelName, { modelName = it }, label = { Text("Модель (пусто — по классу)") }, singleLine = true)
@@ -803,7 +884,7 @@ internal fun NewTaskDialog(model: DemoModel, onDone: () -> Unit) {
                                 androidx.compose.material3.FilterChip(
                                     selected = c.id in deps,
                                     onClick = { deps = if (c.id in deps) deps - c.id else deps + c.id },
-                                    label = { Text(c.title.take(32)) },
+                                    label = { Text(c.title, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 220.dp)) },
                                 )
                             }
                         }
@@ -875,10 +956,9 @@ private fun ConfirmDialog(model: DemoModel, requests: List<RequestCard>, uri: St
                 TextButton(enabled = !busy, onClick = {
                     busy = true
                     scope.launch {
-                        when (val r = withContext(Dispatchers.IO) { Answers.apply(context, card.id.value, uri, null, button.label, "app") }) {
-                            is Outcome.Failure -> error = r.diagnostics.first().message
-                            is Outcome.Success -> onDone()
-                        }
+                        val r = withContext(Dispatchers.IO) { Answers.apply(context, card.id.value, uri, null, button.label, "app") }
+                        // Принято в журнал (D-94) — тоже готово: итог придёт уведомлением.
+                        if (r is Outcome.Success || Answers.queued(r)) onDone() else error = (r as Outcome.Failure).diagnostics.first().message
                         busy = false
                     }
                 }) { Text(if (busy) "Применяю…" else button.label, color = MaterialTheme.colorScheme.error) }
@@ -895,10 +975,11 @@ private fun TaskRow(card: TaskCard, modifier: Modifier = Modifier) {
             Row {
                 // Имя, заданное человеком в окне сессии (D-61), — и на карточке.
                 Text(SessionNames.name(androidx.compose.ui.platform.LocalContext.current, card.id) ?: card.title, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(card.state + if (card.held) " · пауза" else "", color = toneColor(card.tone), style = MaterialTheme.typography.labelMedium)
+                // Слово, а не идентификатор: `COMPLETION_UNVERIFIED` человеку ничего не говорит (D-88, U-3).
+                Text(Words.task(card.state) + if (card.held) " · пауза" else "", color = toneColor(card.tone), style = MaterialTheme.typography.labelMedium)
             }
             Text(
-                "приоритет ${card.priority}" + if (card.dependsOn.isEmpty()) "" else " · ждёт: ${card.dependsOn.joinToString()}",
+                "приоритет ${Words.priority(card.priority)}" + if (card.dependsOn.isEmpty()) "" else " · ждёт: ${card.dependsOn.joinToString()}",
                 style = MaterialTheme.typography.labelSmall,
             )
         }

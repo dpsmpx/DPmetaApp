@@ -14,6 +14,7 @@ import com.dpsmpx.dpai.core.ids.SessionId
 import com.dpsmpx.dpai.core.ids.TaskId
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.state.SessionState
+import com.dpsmpx.dpai.core.text.Words
 import com.dpsmpx.dpai.execution.agent.FollowingEventSource
 import com.dpsmpx.dpai.execution.claude.ClaudeCodeCliRunner
 import com.dpsmpx.dpai.execution.claude.ClaudeRunner
@@ -97,17 +98,64 @@ class LiveSystem(
     onProblem: (Diagnostic) -> Unit = {},
     /** Разрешены ли уведомления (у оболочки — Android); неизвестно — `null`. */
     private val notificationsOk: () -> Boolean? = { null },
+    /**
+     * Человек подтвердил карантин хвоста после порчи в середине журнала
+     * (D-24). Без этого порча в середине — [JournalNeedsConfirmation], а не
+     * молча отрезанные подтверждённые записи (аудит надёжности, A-1).
+     */
+    quarantineConfirmed: Boolean = false,
+    /**
+     * Агент target «в приложении» (`InAppAgentHost`, D-75, шаг 5): процессы
+     * хода — в Alpine приложения; `null` — таких targets оболочка не даёт.
+     */
+    inAppHost: com.dpsmpx.dpai.execution.process.ProcessHost? = null,
+    /**
+     * Процессы гостя Linux приложения — для Git проекта на target «в
+     * приложении» (D-75, шаг 5): как SSH у обычного target, только без
+     * сети. `null` — Linux не установлен.
+     */
+    private val inAppGuest: com.dpsmpx.dpai.execution.process.ProcessHost? = null,
 ) : ControlView, AutoCloseable {
     override val mode: String = "контроллер"
     private val ids = IdGenerator(clock, random)
+
+    /**
+     * Диагностика открытия журнала (D-87): отрезанный хвост и карантин —
+     * это потеря подтверждённых записей, о которой человек обязан узнать.
+     * Собирается до [problems], потому что журнал нужен оркестратору;
+     * переносится туда в `init`.
+     */
+    private val journalDiagnostics = mutableListOf<com.dpsmpx.dpai.core.diagnostics.Diagnostic>()
+
     // Сегменты и снимки (D-37): контроллер живёт неделями, память журнала не растёт с историей.
-    private val journal: EventJournal = EventJournal.open(vfs, "live.journal", quarantineCorruption = true, segmentSize = SEGMENT).valueOrNull()
-        ?: error("журнал контроллера не открылся")
+    private val journal: EventJournal = when (
+        val opened = EventJournal.open(vfs, "live.journal", quarantineCorruption = quarantineConfirmed, segmentSize = SEGMENT, keepCopies = true)
+    ) {
+        is Outcome.Success -> {
+            // Предупреждения открытия (`JOURNAL_TAIL_TRUNCATED`: что именно потеряно и где карантин)
+            // не выбрасываются: без этого состояние молча откатывается на границу целой записи (D-87).
+            journalDiagnostics += opened.diagnostics
+            opened.value
+        }
+        is Outcome.Failure -> {
+            val corrupted = opened.errors.firstOrNull { it.code == com.dpsmpx.dpai.core.diagnostics.DiagCode.JOURNAL_CORRUPTED }
+            // Порча в активном файле лечится карантином хвоста — решением человека (D-24); в запечатанном
+            // сегменте — нет: хвост там ни при чём (A-6).
+            if (corrupted != null && corrupted.subject == "live.journal") throw JournalNeedsConfirmation(corrupted.message)
+            if (corrupted != null) throw com.dpsmpx.dpai.storage.journal.JournalSegmentUnreadable("${corrupted.message}: ${corrupted.subject}")
+            error("журнал контроллера не открылся: ${opened.diagnostics.joinToString { "${it.code}: ${it.message}" }}")
+        }
+    }
     private val snapshots = SnapshotStore(DocumentStore(vfs, "snapshots"))
-    private val usable = entries.filter { it.configDir != null }
+    /**
+     * Targets с каталогом Claude; «в приложении» — только когда агент
+     * приложения есть ([inAppHost]): без Linux такой target ходов не
+     * получает, а контроллер с остальными работает (D-75, шаг 5).
+     */
+    private val usable = entries.filter { it.configDir != null && (!it.inApp || inAppHost != null) }
 
     /** Target проекта: деревья, Git и проверка — на нём; каталог Claude ему нужен, только если ход тоже на нём. */
-    private val projectEntry = project?.let { p -> entries.firstOrNull { it.id == p.target } }
+    private val projectEntry = project?.let { p -> entries.firstOrNull { it.id == p.target }?.takeIf { !it.inApp || inAppHost != null } }
 
     /**
      * Дерево на target проекта, ход — на другом (D-50): Claude Code там
@@ -132,7 +180,7 @@ class LiveSystem(
             usable.filter { it.id == id || (run != null && it.host == run.host && it.port == run.port && it.platform == run.platform) }
         }
     }
-    private val manager = ExecutionTargetManager(clock, sshHost = sshHost, controllerVersion = controllerVersion)
+    private val manager = ExecutionTargetManager(clock, sshHost = sshHost, controllerVersion = controllerVersion, inAppHost = inAppHost)
     private val runners = HashMap<ExecutionTargetId, ClaudeRunner>()
     private val streams = mutableListOf<FollowingEventSource>()
     private val probes = HashMap<ExecutionTargetId, Pair<SlotAuthProbe, SessionId>>()
@@ -160,6 +208,7 @@ class LiveSystem(
     private val accountsLogic = Accounts()
     override val orchestrator: Orchestrator
     val notes: List<String> = entries.filter { it.configDir == null && it.id != project?.target }.map { "${it.label}: нет каталога Claude — только проверка агента" } +
+        entries.filter { it.inApp && inAppHost == null }.map { "${it.label}: Linux в приложении не установлен — ходов нет («Targets» → «Linux в приложении»)" } +
         listOfNotNull(
             "проект: его target удалён — задачи не запускаются".takeIf { project != null && projectEntry == null },
             "проект: у target хода нет каталога Claude — задачи не запускаются".takeIf { project != null && projectEntry != null && working.isEmpty() },
@@ -167,6 +216,15 @@ class LiveSystem(
     val problems = mutableListOf<Diagnostic>()
 
     init {
+        // Потеря хвоста журнала и карантин — в те же «проблемы», что и остальные отказы (D-87),
+        // и в журнал приложения (D-43): список проблем на сводке короткий, а потеря записей — навсегда.
+        problems += journalDiagnostics
+        journalDiagnostics.forEach { d -> runCatching { onProblem(d) } }
+        // Сегмент восстановлен из копии или копия не записалась (D-95) — тоже в проблемы и журнал приложения.
+        journal.onRepair = { d ->
+            synchronized(problems) { problems += d }
+            runCatching { onProblem(d) }
+        }
         for (e in (usable + listOfNotNull(projectEntry)).distinctBy { it.id }) manager.register(e.toTarget(knownHostsFile))
         for (e in usable) {
             val agent = manager.client(e.id).valueOrNull()!!
@@ -183,14 +241,17 @@ class LiveSystem(
         } else {
             ProjectConfig(HOME_PROJECT, null, null, null)
         }
-        // Git на target — по SSH: команды `git -C <путь>` рабочего каталога не требуют (GitService).
-        val git = projectTarget?.let { t -> GitService(sshHost(t.toTarget(knownHostsFile).ssh!!, t.platform), GitCommands(ApprovalLedger()), clock) }
+        // Git на target — по SSH: команды `git -C <путь>` рабочего каталога не требуют (GitService);
+        // «в приложении» — процессами гостя, пути — гостя (D-75, шаг 5).
+        val git = projectTarget?.let { t ->
+            if (t.inApp) inAppGuest?.let { GitService(it, GitCommands(ApprovalLedger()), clock) } else GitService(sshHost(t.toTarget(knownHostsFile).ssh!!, t.platform), GitCommands(ApprovalLedger()), clock)
+        }
         // Шаги проверки — через агента target: по SSH рабочий каталог задаёт он (AgentStepRunner).
         val verifier = projectTarget?.let { t -> Verifier(AgentStepRunner(manager.client(t.id).valueOrNull()!!, ids, clock, onRetry = { d -> onProblem(com.dpsmpx.dpai.core.diagnostics.Diagnostic.of(d.code, "вызов агента повторён: ${d.message}", d.subject, causes = d.causes)) }), clock) }
             ?: Verifier({ _, _, _ -> Outcome.success(Completed(0, emptyList(), emptyList())) }, clock)
         o = Orchestrator(
             clock, ids, random, journal, router, config,
-            working.map { TargetSlot(it.id, emptySet(), maxSessions = 1) }, git, verifier,
+            working.map { TargetSlot(it.id, emptySet(), maxSessions = 1, label = it.label) }, git, verifier,
             snapshots = snapshots, snapshotEvery = SEGMENT.toLong(), documents = DocumentStore(vfs, "docs"),
             onEvents = onEvents, onProblem = onProblem,
         )
@@ -414,7 +475,13 @@ class LiveSystem(
      * Потоки событий ходов (D-76) — прочь: систему сменила новая (другие
      * targets или проект), а поток прежней держал бы канал SSH и JVM на target.
      */
+    /**
+     * Контур уходит (пересборка, D-94): потоки событий закрываются, журнал —
+     * на запись. Новый контур открыл тот же файл заново, и прежний экземпляр
+     * со своим номером и хешем не должен дописать ни строки.
+     */
     override fun close() {
+        journal.close()
         streams.forEach { it.close() }
     }
 
@@ -442,17 +509,29 @@ class LiveSystem(
      * Сигналы самодиагностики — из состояния контура, а не «всё в порядке»
      * (ревью A-84, D-13): сверка идёт, пока есть сессии `RECOVERY_PENDING`;
      * в сети — target без неудавшейся пробы входа (A-79) и без сессии, ждущей
-     * сверки (target не ответил). Хранилище: журнал открылся, а отказ записи
-     * — исключение контура, его видно сразу.
+     * сверки (target не ответил). Хранилище — по факту (D-87): журнал закрыт
+     * после отказа записи или в проблемах есть отказ хранилища, значит
+     * разрушительные записи остановлены, а не «всё хорошо».
      */
     internal fun signals(): SystemSignals {
         val waiting = orchestrator.sessions.sessions.values.filter { it.state == SessionState.RECOVERY_PENDING }
         val silent = waiting.map { it.target }.toSet()
         return SystemSignals(
-            storageOk = true, recoveryInProgress = waiting.isNotEmpty(), gitAvailable = orchestrator.gitOk, notificationsOk = notificationsOk(),
+            storageOk = storageOk(), recoveryInProgress = waiting.isNotEmpty(), gitAvailable = orchestrator.gitOk, notificationsOk = notificationsOk(),
             targetsOnline = usable.count { it.id !in probeFailedAt && it.id !in silent }, targetsTotal = usable.size,
             securityAlert = false, gitRequired = project != null,
         )
+    }
+
+    /**
+     * Хранилище в порядке? `false` — журнал закрыт после отказа записи или
+     * последний отказ — отказ хранилища (D-87, ТЗ §80): тогда разрушительные
+     * записи останавливаются. `null` — неизвестно (D-13), а не «да».
+     */
+    internal fun storageOk(): Boolean? = when {
+        journal.isBroken -> false
+        (problems + orchestrator.problems).any { it.isError && it.code.name.startsWith("STORAGE_") } -> false
+        else -> true
     }
 
     private var lastGitCheck = Long.MIN_VALUE / 2
@@ -468,7 +547,7 @@ class LiveSystem(
             }
         val retry = usable.filter { it.id in probeFailedAt && it.id !in slotOf }
             .map { "${it.label}: проба входа не удалась — повтор раз в минуту; «Вход Claude» — сразу" }
-        val extra = notes + login + retry + (problems + orchestrator.problems).takeLast(5).map { "${it.code}: ${it.message}" }
+        val extra = notes + login + retry + (problems + orchestrator.problems).takeLast(5).map { "${Words.reason(it.code.name)}: ${it.message}" }
         return base.copy(attention = base.attention + extra, limits = Screens.limits(orchestrator.accounts, clock.now(), labelOf = ::subscriptionName))
     }
 
@@ -504,6 +583,7 @@ class LiveSystem(
             title = orchestrator.tasks.tasks[task]?.title,
             chat = Screens.chat(Screens.chatEntries(orchestrator.chat(task), orchestrator.turnMessages(task), orchestrator.tasks.tasks[task]), id, clock.now()),
             status = Screens.sessionStatus(record, orchestrator.tasks.tasks[task]?.state, running), workingFor = working,
+            noSend = Screens.noSend(id, orchestrator.sessions, orchestrator.tasks),
         )
     }
 
@@ -537,3 +617,10 @@ class LiveSystem(
         private const val SEGMENT = 20_000
     }
 }
+
+/**
+ * Журнал контроллера испорчен в середине (D-24): открыть можно, только
+ * отрезав всё после испорченной записи в карантин, — а это решает человек.
+ * Оболочка спрашивает его и строит контур заново с `quarantineConfirmed`.
+ */
+class JournalNeedsConfirmation(message: String) : IllegalStateException(message)

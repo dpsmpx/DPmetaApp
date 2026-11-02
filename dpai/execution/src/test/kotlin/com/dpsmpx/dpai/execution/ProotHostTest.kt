@@ -15,8 +15,9 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * Команда proot Linux-среды в приложении (D-82): корень, каталоги ядра,
- * каталоги хоста, каталог и окружение гостя, правило «`apk` — без `/proc`».
+ * Команда proot Linux-среды в приложении (D-82): корень, узлы `/dev` и
+ * `/proc` без `/sys` (D-93), каталоги хоста, каталог и окружение гостя,
+ * правило «`apk` — без `/proc`».
  * Сам proot — aarch64 и запускается только на телефоне (`docs/DEVICE_CHECK.md`, §14).
  */
 class ProotHostTest {
@@ -46,7 +47,10 @@ class ProotHostTest {
         val spec = requireNotNull(rec.spec)
         val argv = spec.command
         assertEquals(listOf(layout.proot, "--kill-on-exit", "-0", "-r", layout.rootfs), argv.take(5))
-        assertEquals(listOf("/dev", "/proc", "/sys", "/data/user/0/app/files/work:/work"), pairs(argv, "-b"))
+        val fd = listOf("/proc/self/fd:/dev/fd", "/proc/self/fd/0:/dev/stdin", "/proc/self/fd/1:/dev/stdout", "/proc/self/fd/2:/dev/stderr")
+        assertEquals(ProotHost.DEVICES + "/proc" + fd + "/data/user/0/app/files/work:/work", pairs(argv, "-b"))
+        // D-93: ни всего /dev (там /dev/binder — службы системы от имени приложения), ни /sys.
+        assertTrue(pairs(argv, "-b").none { it == "/dev" || it.startsWith("/dev/binder") || it.startsWith("/sys") }, argv.toString())
         assertEquals(listOf("/work/repo"), pairs(argv, "-w"))
         assertEquals(listOf("git", "status"), argv.takeLast(2))
         assertNull(spec.workDir, "каталог гостя — через -w, а не каталог процесса хоста")
@@ -69,8 +73,8 @@ class ProotHostTest {
         val host = ProotHost(Recorder(), layout)
         for (apk in listOf("apk", "/sbin/apk")) {
             val argv = host.wrap(ProcessSpec(listOf(apk, "add", "git"))).command
-            assertFalse("/proc" in pairs(argv, "-b"), apk)
-            assertTrue("/dev" in pairs(argv, "-b") && "/sys" in pairs(argv, "-b"), apk)
+            assertFalse(pairs(argv, "-b").any { it.startsWith("/proc") }, apk)
+            assertEquals(ProotHost.DEVICES, pairs(argv, "-b").take(ProotHost.DEVICES.size), apk)
         }
         // Только сама программа apk: аргумент «apk» у другой программы /proc не убирает.
         assertTrue("/proc" in pairs(host.wrap(ProcessSpec(listOf("echo", "apk"))).command, "-b"))

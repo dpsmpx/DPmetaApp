@@ -86,6 +86,7 @@ fun RequestsPane(model: DemoModel, snapshot: Snapshot?) {
     }
 }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun RequestItem(model: DemoModel, card: RequestCard) {
     val context = LocalContext.current.applicationContext
@@ -101,7 +102,8 @@ private fun RequestItem(model: DemoModel, card: RequestCard) {
             Text(card.title, fontWeight = FontWeight.Bold)
             Text(card.body, style = MaterialTheme.typography.bodySmall)
             if (card.buttons.any { it.needsText }) OutlinedTextField(text, { text = it }, label = { Text("Ответ") }, minLines = 2, modifier = Modifier.fillMaxWidth())
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            // С переносом: у запроса бывает четыре-пять вариантов, в одну строку они не влезают (A-7).
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 for (b in card.buttons) {
                     AnswerChip(b, armed == b.uri, enabled = !busy) {
                         // Опасное — вторым нажатием (D-44).
@@ -117,16 +119,18 @@ private fun RequestItem(model: DemoModel, card: RequestCard) {
                         busy = true
                         scope.launch {
                             val r = withContext(Dispatchers.IO) { Answers.apply(context, card.id.value, b.uri, text.takeIf { b.needsText }, b.label, "app") }
-                            status = when (r) {
-                                is Outcome.Success -> "Принято"
-                                is Outcome.Failure -> "Не принято: ${r.diagnostics.first().message}"
+                            status = when {
+                                r is Outcome.Success -> "Принято"
+                                Answers.queued(r) -> "Принято: применится после текущего шага контура"
+                                r is Outcome.Failure -> "Не принято: ${r.diagnostics.first().message}"
+                                else -> null
                             }
                             busy = false
                         }
                     }
                 }
             }
-            status?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
+            status?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = if (it.startsWith("Принято")) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error) }
         }
     }
 }

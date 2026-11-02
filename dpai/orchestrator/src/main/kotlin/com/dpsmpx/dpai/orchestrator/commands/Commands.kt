@@ -215,24 +215,34 @@ sealed interface Command {
  * безопасных точках — в начале такта и между вызовами target, когда
  * память совпадает с журналом (пачек нет). Так ответ человека не ждёт
  * весь такт с вызовами по SSH и не берёт замок на весь такт.
+ *
+ * Команда, принятая в журнал (D-94), несёт id своей операции: после
+ * исполнения — [drain] зовёт `settled`, и контур пишет `COMMAND_SETTLED`.
  */
 class CommandInbox {
-    private class Pending(val command: Command, val result: CompletableFuture<OperationResult<*>>)
+    private class Pending(val command: Command, val result: CompletableFuture<OperationResult<*>>, val accepted: com.dpsmpx.dpai.core.ids.OperationId?)
 
     private val queue = LinkedBlockingDeque<Pending>()
 
-    fun submit(command: Command): CompletableFuture<OperationResult<*>> =
-        CompletableFuture<OperationResult<*>>().also { queue.put(Pending(command, it)) }
+    fun submit(command: Command, accepted: com.dpsmpx.dpai.core.ids.OperationId? = null): CompletableFuture<OperationResult<*>> =
+        CompletableFuture<OperationResult<*>>().also { queue.put(Pending(command, it, accepted)) }
 
     val size: Int get() = queue.size
 
-    /** Исполнить всё, что пришло к этому моменту; исключение исполнителя — итог-исключение у ждущего, очередь идёт дальше. */
-    fun drain(execute: (Command) -> OperationResult<*>): Int {
+    /**
+     * Исполнить всё, что пришло к этому моменту; исключение исполнителя —
+     * итог-исключение у ждущего, очередь идёт дальше. Принятая команда
+     * отмечается исполненной ([settled]) и при отказе: её итог — в журнале,
+     * повторять после перезапуска нечего.
+     */
+    fun drain(execute: (Command) -> OperationResult<*>, settled: (com.dpsmpx.dpai.core.ids.OperationId, String) -> Unit = { _, _ -> }): Int {
         var n = 0
         while (true) {
             val p = queue.poll() ?: return n
             try {
-                p.result.complete(execute(p.command))
+                val r = execute(p.command)
+                p.accepted?.let { settled(it, r.status.name) }
+                p.result.complete(r)
             } catch (e: Exception) {
                 p.result.completeExceptionally(e)
             }

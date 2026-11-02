@@ -42,6 +42,11 @@ class WorkspaceLinkTest {
     /** ПК с Linux (D-70): ключ связки — в authorized_keys пользователя, из частных сетей (D-84), прежняя строка заменяется. */
     @Test
     fun linuxPcGetsTheLinkKeyInItsOwnAuthorizedKeys() {
+        // Команда — POSIX (`sh`, `sed`): на Windows её не выполнить, там — пропуск (аудит, стабильность H-2).
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+            com.dpsmpx.dpai.testkit.Tools.posixAvailable(),
+            "нет POSIX-оболочки: команда для ПК с Linux проверяется на POSIX",
+        )
         val home = java.nio.file.Files.createTempDirectory("dpai-link").toFile()
         try {
             java.io.File(home, ".ssh").mkdirs()
@@ -72,11 +77,16 @@ class WorkspaceLinkTest {
 
     @Test
     fun termuxCommandsArePlainArgvForPosix() {
-        for (c in listOf(WorkspaceLink.termuxKey(), WorkspaceLink.termuxKnownHosts(pc), WorkspaceLink.termuxCheck(pc))) {
+        for (c in listOf(WorkspaceLink.termuxKey(), WorkspaceLink.termuxKnownHosts(pc), WorkspaceLink.termuxCheck(pc).valueOrNull()!!)) {
             assertEquals(listOf("proot-distro", "login", "alpine", "--", "sh", "-c"), c.take(6))
             assertIs<Outcome.Success<String>>(RemoteShell.join(TargetPlatform.POSIX, c))
         }
-        assertEquals(listOf("22", "dev@100.101.102.103", "C:/Users/dev/dpai-agent.cmd"), WorkspaceLink.termuxCheck(pc).takeLast(3))
+        assertEquals(listOf("22", "dev@100.101.102.103", "C:/Users/dev/dpai-agent.cmd agent doctor"), WorkspaceLink.termuxCheck(pc).valueOrNull()!!.takeLast(3))
+        // A-6: путь агента — аргумент, а не команда оболочки ПК.
+        val linux = pc.copy(platform = TargetPlatform.POSIX, agent = "/opt/dpai; touch /tmp/pwned")
+        assertEquals("'/opt/dpai; touch /tmp/pwned' agent doctor", WorkspaceLink.termuxCheck(linux).valueOrNull()!!.last())
+        assertEquals("\"C:/dpai.cmd & calc\" agent doctor", WorkspaceLink.termuxCheck(pc.copy(agent = "C:/dpai.cmd & calc")).valueOrNull()!!.last(), "на Windows — в кавычках cmd")
+        assertIs<Outcome.Failure>(WorkspaceLink.termuxCheck(pc.copy(agent = "C:/%TEMP%/dpai.cmd")), "% cmd раскрывает и в кавычках — отказ")
         assertTrue(WorkspaceLink.checked(listOf("{\"ok\":false}")))
         assertTrue(!WorkspaceLink.checked(listOf("Permission denied (publickey).")))
     }

@@ -34,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.core.text.Words
 import com.dpsmpx.dpai.jsch.ProbedHostKey
 import com.dpsmpx.dpai.ui.CheckLine
 import com.dpsmpx.dpai.ui.ProjectEntry
@@ -155,7 +156,23 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
                             Text("Claude — на $on (вход его слота), дерево — по SSH ключом ${c.identityFile}", style = MaterialTheme.typography.bodySmall)
                         }
                         Text(p.checks.firstOrNull()?.let { "проверка: ${it.command.joinToString(" ")}" } ?: "без проверки", style = MaterialTheme.typography.bodySmall)
-                        TextButton(onClick = { scope.launch { withContext(Dispatchers.IO) { controller.setProject(null) }; project = null } }) { Text("Убрать проект") }
+                        // Вторым нажатием и с проверкой итога (аудит удобства, A-18).
+                        var armed by remember { mutableStateOf(false) }
+                        var failed by remember { mutableStateOf<String?>(null) }
+                        TextButton(onClick = {
+                            if (!armed) {
+                                armed = true
+                            } else {
+                                scope.launch {
+                                    when (val r = withContext(Dispatchers.IO) { controller.setProject(null) }) {
+                                        is Outcome.Success -> project = null
+                                        is Outcome.Failure -> failed = "Не убран: ${r.errors.first().message}"
+                                    }
+                                    armed = false
+                                }
+                            }
+                        }) { Text(if (armed) "Точно убрать проект? Задачи пойдут без Git и проверки" else "Убрать проект", color = if (armed) MaterialTheme.colorScheme.error else androidx.compose.ui.graphics.Color.Unspecified) }
+                        failed?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
                     }
                 }
             }
@@ -170,13 +187,15 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
             }
         }
         item(key = "control") { ControlCard(model) }
+        item(key = "linux") { LinuxCard() }
+        item(key = "disk") { AppDiskCard() }
         item(key = "cli") { CliCard() }
         items(targets, key = { it.id.value }) { t ->
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
                     Text(t.label, style = MaterialTheme.typography.titleSmall)
                     if (t.configDir != null) TargetSwitches(model, t)
-                    Text("${t.user}@${t.host}:${t.port} · ${t.type.name}", style = MaterialTheme.typography.bodySmall)
+                    Text(if (t.inApp) "Alpine в данных приложения, без SSH · ${Words.targetType(t.type.name)}" else "${t.user}@${t.host}:${t.port} · ${Words.targetType(t.type.name)}", style = MaterialTheme.typography.bodySmall)
                     Text(t.configDir?.let { "каталог Claude: $it" } ?: "без каталога Claude — только проверка агента", style = MaterialTheme.typography.bodySmall)
                     // Чем занят слот (D-56): идущие задачи с проектом; нет — свободен.
                     if (t.configDir != null) {
@@ -187,12 +206,37 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
                     Row {
                         TextButton(onClick = {
                             checks[t.id.value] = listOf(CheckLine("проверка", "идёт…", Tone.NEUTRAL))
-                            scope.launch { checks[t.id.value] = withContext(Dispatchers.IO) { TargetScreens.doctor(controller.doctor(t)) } }
+                            scope.launch {
+                                checks[t.id.value] = withContext(Dispatchers.IO) {
+                                    // «В приложении» — агентом процесса; Linux не установлен — причина, а не отказ SSH.
+                                    val inApp = if (t.inApp) com.dpsmpx.dpai.android.linux.LinuxSetup.agentHost(context, controller.version) else null
+                                    if (t.inApp && inApp == null) {
+                                        listOf(CheckLine("агент", "Linux в приложении не установлен — карточка «Linux в приложении»", Tone.WARNING))
+                                    } else {
+                                        TargetScreens.doctor(controller.doctor(t, inApp))
+                                    }
+                                }
+                            }
                         }) { Text("Проверить") }
                         if (t.configDir != null) {
-                            TextButton(onClick = { scope.launch { withContext(Dispatchers.IO) { model.probe(t.id) } } }) { Text("Вход Claude") }
+                            // Проба ждёт такта с SSH — секунды: отклик сразу, повтор не встаёт в очередь, итог — словами (A-6).
+                            val probing = checks[t.id.value]?.firstOrNull()?.name == LOGIN && checks[t.id.value]?.firstOrNull()?.detail == PROBING
+                            TextButton(enabled = !probing, onClick = {
+                                checks[t.id.value] = listOf(CheckLine(LOGIN, PROBING, Tone.NEUTRAL))
+                                scope.launch {
+                                    val slots = withContext(Dispatchers.IO) {
+                                        model.probe(t.id)
+                                        model.slotsOf(t.id)
+                                    }
+                                    checks[t.id.value] = slots.map { sl ->
+                                        val ok = sl.state == com.dpsmpx.dpai.core.state.AccountState.AVAILABLE || sl.state == com.dpsmpx.dpai.core.state.AccountState.BUSY
+                                        CheckLine(LOGIN, "слот ${sl.configDir.substringAfterLast('/')}: ${Words.account(sl.state.name)}", if (ok) Tone.DONE else Tone.WARNING)
+                                    }.ifEmpty { listOf(CheckLine(LOGIN, "слота нет: войдите в Claude в каталоге слота («Claude в терминале») и проверьте снова", Tone.WARNING)) }
+                                }
+                            }) { Text(if (probing) "Проверяю…" else "Вход Claude") }
                         }
                         // Проект — у любого target: ход Claude может идти на другом, со своим входом (D-50).
+                        // Проект — и на target «в приложении»: Git и проверка — внутри гостя, пути — гостя (D-75, шаг 5).
                         TextButton(onClick = { projectFor = t }) { Text("Проект") }
                         TextButton(onClick = { renaming = t }) { Text("Имя") }
                         TextButton(onClick = { removing = t }) { Text("Удалить") }
@@ -556,7 +600,7 @@ private fun TargetSwitches(model: DemoModel, t: TargetEntry) {
     for (slot in slots) {
         val want = remember(tick, slot) { model.desired(com.dpsmpx.dpai.orchestrator.commands.Command.SetSlotEnabled(slot.id, !slot.disabled)) as? com.dpsmpx.dpai.orchestrator.commands.Command.SetSlotEnabled }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("слот ${slot.configDir.substringAfterLast('/')} · ${slot.state}" + if (want != null) " · применится" else "", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+            Text("слот ${slot.configDir.substringAfterLast('/')} · ${Words.account(slot.state.name)}" + if (want != null) " · применится" else "", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
             androidx.compose.material3.Switch(checked = want?.enabled ?: !slot.disabled, onCheckedChange = { v ->
                 scope.launch {
                     withContext(Dispatchers.IO) {
@@ -607,8 +651,20 @@ private fun CliCard() {
             )
             if (!running) TextButton(onClick = { ControlServer.start(context) }) { Text("Открыть канал") }
             code?.let { c ->
-                Text("Код: $c", style = MaterialTheme.typography.headlineSmall)
-                Text("В Termux: dpai control pair $c  (код действует 2 минуты)", style = MaterialTheme.typography.bodySmall)
+                // Код — в своём окне с FLAG_SECURE (дубль D-86 аудита безопасности 1 ноября 2026): на главном
+                // экране он попадал в превью «недавних» и в снимки; остальные экраны снимать можно (§5.8).
+                AlertDialog(
+                    onDismissRequest = { code = null },
+                    properties = androidx.compose.ui.window.DialogProperties(securePolicy = androidx.compose.ui.window.SecureFlagPolicy.SecureOn),
+                    title = { Text("Код сопряжения dpai") },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(c, style = MaterialTheme.typography.headlineMedium)
+                            Text("В Termux: dpai control pair $c — код действует 2 минуты", style = MaterialTheme.typography.bodySmall)
+                        }
+                    },
+                    confirmButton = { TextButton(onClick = { code = null }) { Text("Готово") } },
+                )
             }
             Row {
                 TextButton(onClick = {
@@ -617,11 +673,18 @@ private fun CliCard() {
                     until = u.epochMillis
                     note = null
                 }) { Text("Показать код") }
+                var armedRevoke by remember { mutableStateOf(false) }
                 TextButton(onClick = {
-                    ControlServer.pairing(context).revoke()
-                    code = null
-                    note = "Токен отозван: dpai нужно сопрячь заново"
-                }) { Text("Отозвать токен") }
+                    // Вторым нажатием (A-18): после отзыва каждый dpai нужно сопрячь заново.
+                    if (!armedRevoke) {
+                        armedRevoke = true
+                    } else {
+                        ControlServer.pairing(context).revoke()
+                        code = null
+                        armedRevoke = false
+                        note = "Токен отозван: dpai нужно сопрячь заново"
+                    }
+                }) { Text(if (armedRevoke) "Точно отозвать? Все dpai — заново" else "Отозвать токен", color = if (armedRevoke) MaterialTheme.colorScheme.error else androidx.compose.ui.graphics.Color.Unspecified) }
             }
             note?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
         }
@@ -769,7 +832,7 @@ private fun RestoreCard(controller: Controller, onHide: () -> Unit, onRestored: 
             Row {
                 TextButton(enabled = command != null, onClick = {
                     val c = command ?: return@TextButton
-                    context.getSystemService(android.content.ClipboardManager::class.java).setPrimaryClip(android.content.ClipData.newPlainText("dpai", c))
+                    Clipboard.copy(context, "dpai", c, sensitive = true)
                     context.packageManager.getLaunchIntentForPackage("com.termux")?.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)?.let(context::startActivity)
                     message = "Команда скопирована. Вставьте её в Termux и вернитесь сюда."
                     waiting = true
@@ -812,3 +875,7 @@ private fun UsageAutoSwitch(model: DemoModel, t: TargetEntry) {
         })
     }
 }
+
+/** Строка проверки входа Claude у target (аудит 1 ноября 2026, A-6). */
+private const val LOGIN = "вход Claude"
+private const val PROBING = "проверяю вход…"

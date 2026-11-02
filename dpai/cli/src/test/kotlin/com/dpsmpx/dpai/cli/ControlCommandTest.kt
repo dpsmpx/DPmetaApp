@@ -60,6 +60,12 @@ class ControlCommandTest {
         assertEquals(0, cli(out, err).run("control", listOf("pair", "123456")))
         assertEquals(0, cli(out, err).run("status", emptyList()))
         assertTrue(out.any { "Калькулятор" in it } && out.any { "5 ч 82 %" in it }, out.toString())
+        // Слова, а не идентификаторы (D-89): «готова к запуску · обычный», а не «READY  NORMAL».
+        val line = out.first { "Калькулятор" in it }
+        assertTrue("готова к запуску" in line && "обычный" in line && "READY" !in line && "NORMAL" !in line, line)
+        val reqs = mutableListOf<String>()
+        assertEquals(0, cli(reqs, err).run("requests", emptyList()))
+        assertTrue(reqs.any { "решение" in it } && reqs.none { "USER_RESOLUTION" in it }, reqs.toString())
         assertTrue(out.any { "ходов 2 · вход 1200 · выход 80 · \$0.04 (оценка)" in it }, "расход задачи (D-42, п. 4): $out")
 
         assertEquals(0, cli(out, err).run("task", listOf("5YK0", "hold")))
@@ -85,6 +91,14 @@ class ControlCommandTest {
         assertEquals(0, cli(out, err).run("session", listOf("SF4QD", "reassign")))
         assertEquals("session.reassign", field("command"))
         assertEquals("ses_01M4EY7BAXY3ZGE5VT0K6SF4QD", field("session"))
+        // A-16: опечатка в ключе — отказ с подсказкой, а не молча пропущенный ключ; значение ключа — не ключ.
+        err.clear()
+        assertEquals(2, cli(out, err).run("task", listOf("add", "Ещё", "Сделай", "--priorty", "high")))
+        assertTrue(err.single().startsWith("неизвестный ключ «--priorty»"), err.toString())
+        assertEquals(0, cli(out, err).run("session", listOf("SF4QD", "send", "x", "--model", "--opus")), "значение после ключа — не ключ")
+        err.clear()
+        assertEquals(1, cli(out, err).run("task", listOf("нет-такой", "hold")))
+        assertTrue(err.single().startsWith("задача: нет «нет-такой»"), err.toString())
         assertEquals(0, cli(out, err).run("sessions-limit", listOf("off")))
         assertEquals("control.session-limit", field("command"))
         assertTrue(sent.last().second!!["limit"] == null, "off — без предела")

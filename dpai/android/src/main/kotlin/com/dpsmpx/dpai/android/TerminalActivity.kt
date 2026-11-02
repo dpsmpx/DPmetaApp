@@ -46,6 +46,9 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Экран терминала — единственное место, где видны код входа Claude (`/login`) и содержимое
+        // сессии: в превью «недавних» и в снимках экрана его быть не должно (D-86, T8).
+        window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         // Отступы системных панелей и клавиатуры — свои: экран терминала сжимается над клавиатурой.
         enableEdgeToEdge()
@@ -53,7 +56,7 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         // После смерти процесса Android восстанавливает экран, а вкладок (только в памяти, D-27) уже нет:
         // открыть заново ту, с которой экран начинался, а не показывать мёртвый чёрный экран.
         if (savedInstanceState == null || TerminalHub.tabs.isEmpty()) handle(intent)
-        if (TerminalHub.tabs.isEmpty() && intent?.getStringExtra(EXTRA_TARGET) == null) finish()
+        if (TerminalHub.tabs.isEmpty() && intent?.getStringExtra(EXTRA_TARGET) == null && intent?.getBooleanExtra(EXTRA_LINUX, false) != true) finish()
     }
 
     // Приложение на экране — окно запроса поверх него не нужно (D-44), как у MainActivity: иначе
@@ -88,6 +91,11 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
 
     /** Новая вкладка по просьбе карточки target: target читается с диска — не в потоке интерфейса. */
     private fun handle(intent: Intent?) {
+        // Linux-среда в приложении (D-75, шаг 5): вкладка без target, подключение — в потоке вкладки.
+        if (intent?.getBooleanExtra(EXTRA_LINUX, false) == true) {
+            show(TerminalHub.openLinux(this))
+            return
+        }
         val id = intent?.getStringExtra(EXTRA_TARGET) ?: return
         val claude = intent.getBooleanExtra(EXTRA_CLAUDE, false)
         thread(name = "dpai-term-open", isDaemon = true) {
@@ -145,18 +153,21 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
                 Toast.makeText(this, "Программа на «${tab.label}» прислала для буфера обмена ${text.length} знаков — слишком много, не записано", Toast.LENGTH_LONG).show()
                 return@runOnUiThread
             }
-            AlertDialog.Builder(this)
+            val dialog = AlertDialog.Builder(this)
                 .setTitle("Запись в буфер обмена")
                 .setMessage("Программа на «${tab.label}» просит записать в буфер обмена:\n\n${text.take(PREVIEW)}")
                 .setPositiveButton("Записать") { _, _ ->
                     try {
                         getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("терминал", text))
                     } catch (e: RuntimeException) {
-                        Toast.makeText(this, "Не записано в буфер обмена: ${e.javaClass.simpleName}", Toast.LENGTH_LONG).show()
+                        Toast.makeText(this, "Не записано в буфер обмена: ${com.dpsmpx.dpai.core.text.Words.failure(e)}", Toast.LENGTH_LONG).show()
                     }
                 }
                 .setNegativeButton("Нет", null)
-                .show()
+                .create()
+            // У диалога своё окно, и FLAG_SECURE активности его не закрывает (D-86, как `Ui.secure` DPpass).
+            dialog.window?.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+            dialog.show()
         }
     }
 
@@ -302,11 +313,27 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         }
         current?.let { c ->
             tabsRow.addView(chip("+") {
-                show(TerminalHub.open(this, c.target, emptyList(), c.target.label))
+                show(TerminalHub.openLike(this, c))
             })
             tabsRow.addView(chip("×") {
-                TerminalHub.close(c)
-                if (TerminalHub.tabs.isEmpty()) finish() else show(TerminalHub.current)
+                fun closeTab() {
+                    TerminalHub.close(c)
+                    if (TerminalHub.tabs.isEmpty()) finish() else show(TerminalHub.current)
+                }
+                // Открытая вкладка — с подтверждением (аудит удобства, A-18): в ней может идти claude или сборка.
+                if (!c.open) {
+                    closeTab()
+                } else {
+                    val dialog = android.app.AlertDialog.Builder(this)
+                        .setTitle("Закрыть вкладку «${c.label}»?")
+                        .setMessage("Соединение закроется; программа в ней (claude, сборка) получит сигнал завершения.")
+                        .setPositiveButton("Закрыть") { _, _ -> closeTab() }
+                        .setNegativeButton("Отмена", null)
+                        .create()
+                    // У диалога своё окно: FLAG_SECURE активности его не закрывает (D-86).
+                    dialog.window?.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+                    dialog.show()
+                }
             })
         }
         val s = current?.status.orEmpty()
@@ -318,6 +345,7 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
     companion object {
         const val EXTRA_TARGET = "com.dpsmpx.dpai.terminal.TARGET"
         const val EXTRA_CLAUDE = "com.dpsmpx.dpai.terminal.CLAUDE"
+        const val EXTRA_LINUX = "com.dpsmpx.dpai.terminal.LINUX"
         private const val PREVIEW = 500
         private const val MAX_CLIP = 100_000
         private const val REPEAT_DELAY_MS = 400L
@@ -328,6 +356,13 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         fun start(context: Context, targetId: String?, claude: Boolean = false) {
             val i = Intent(context, TerminalActivity::class.java)
             if (targetId != null) i.putExtra(EXTRA_TARGET, targetId).putExtra(EXTRA_CLAUDE, claude)
+            if (context !is Activity) i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(i)
+        }
+
+        /** Открыть терминал Linux-среды в приложении (D-75, шаг 5). */
+        fun startLinux(context: Context) {
+            val i = Intent(context, TerminalActivity::class.java).putExtra(EXTRA_LINUX, true)
             if (context !is Activity) i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(i)
         }

@@ -34,6 +34,8 @@ import com.dpsmpx.dpai.core.clock.RandomSource
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.Diagnostic
 import com.dpsmpx.dpai.core.events.EventEnvelope
+import com.dpsmpx.dpai.core.events.EventType
+import com.dpsmpx.dpai.core.events.StreamRef
 import com.dpsmpx.dpai.core.ids.ApprovalId
 import com.dpsmpx.dpai.core.ids.ContextId
 import com.dpsmpx.dpai.core.ids.ExecutionTargetId
@@ -48,6 +50,7 @@ import com.dpsmpx.dpai.core.measure.Measure
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.state.SessionState
 import com.dpsmpx.dpai.core.state.TaskState
+import com.dpsmpx.dpai.core.text.Words
 import com.dpsmpx.dpai.execution.claude.ClaudeCodeCli
 import com.dpsmpx.dpai.execution.claude.ClaudeRequest
 import com.dpsmpx.dpai.execution.claude.ClaudeRunner
@@ -84,6 +87,7 @@ import com.dpsmpx.dpai.orchestrator.git.worktreeEnvelopes
 import com.dpsmpx.dpai.execution.agent.AgentClient
 import com.dpsmpx.dpai.contexts.ContextCodec
 import com.dpsmpx.dpai.storage.document.DocumentStore
+import com.dpsmpx.dpai.storage.document.StoredDocument
 import com.dpsmpx.dpai.storage.snapshot.Projection
 import com.dpsmpx.dpai.storage.snapshot.SnapshotStore
 import com.dpsmpx.dpai.storage.snapshot.StateRecovery
@@ -134,7 +138,8 @@ import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
 
 /** Target для планировщика: его возможности (ТЗ, §51) и предел одновременных сессий. */
-data class TargetSlot(val id: ExecutionTargetId, val capabilities: Set<String>, val maxSessions: Int = 4)
+/** Target контура; [label] — его подпись для человека (в уведомлениях и причинах вместо id). */
+data class TargetSlot(val id: ExecutionTargetId, val capabilities: Set<String>, val maxSessions: Int = 4, val label: String? = null)
 
 /**
  * Проект под оркестратором: репозиторий (необязателен), каталог рабочих
@@ -317,6 +322,17 @@ class Orchestrator(
     /** Очередь команд (D-42, п. 1): кладёт любой поток, исполняет поток такта ([runCommands]). */
     val inbox = CommandInbox()
 
+    /** Принятые и не исполненные команды (D-94) — из журнала; меняется только под [acceptLock]. */
+    var accepted: com.dpsmpx.dpai.orchestrator.commands.AcceptedState = com.dpsmpx.dpai.orchestrator.commands.AcceptedState.EMPTY
+        private set
+
+    /**
+     * Приём команды ([accept]) идёт из чужого потока, а снимок и отметка
+     * исполнения — из потока такта: замок держит их порознь, чтобы снимок не
+     * лёг между номером события в потоке и его записью (D-94).
+     */
+    private val acceptLock = Any()
+
     // Хранилища документов задач — выше `init`: его `loadTaskDocuments` пишет в них при перезапуске, а свойство,
     // объявленное ниже `init`, в этот миг ещё null (NullPointerException на устройстве, 11 октября 2026).
 
@@ -348,6 +364,7 @@ class Orchestrator(
             mergesState = restore(MergesProjection, MergesState.EMPTY)
             requests = restore(UserRequestsProjection, UserRequestsState.EMPTY)
             operations = restore(OperationsProjection, OperationsState.EMPTY)
+            accepted = restore(com.dpsmpx.dpai.orchestrator.commands.AcceptedProjection, com.dpsmpx.dpai.orchestrator.commands.AcceptedState.EMPTY)
             control = restore(com.dpsmpx.dpai.orchestrator.commands.ControlProjection, com.dpsmpx.dpai.orchestrator.commands.ControlState.EMPTY)
             lastSnapshotAt = journal.position
             // Дерево задачи узнаётся по её ветке (`prepareWorktree`): владельцы и пути — из журнала.
@@ -357,19 +374,47 @@ class Orchestrator(
         }
         documents?.let(::loadTaskDocuments)
         config.repository?.let { repo -> commitWorktrees(Worktrees.register(worktrees, repo, clock.now()).valueOrNull().orEmpty()) }
+        // Принятые до перезапуска и не исполненные команды (D-94) — снова в очередь, по порядку приёма.
+        for (a in accepted.pending.values) {
+            when (val parsed = com.dpsmpx.dpai.orchestrator.control.CommandCodec.decode(a.command, a.by)) {
+                is Outcome.Success -> inbox.submit(parsed.value.command, a.id)
+                is Outcome.Failure -> {
+                    problems += Diagnostic.of(DiagCode.STORAGE_CORRUPTED, "принятая команда ${a.id} не читается — не исполнена", causes = parsed.errors)
+                    settleAccepted(a.id, "UNREADABLE")
+                }
+            }
+        }
     }
 
     /** Ключ документа задачи: id в нижнем регистре — ключи документов строчные. */
     private fun docKey(kind: String, task: TaskId) = "$kind-${task.value.lowercase()}"
 
+    /**
+     * Документ задачи с находками чтения (D-87). «Основная версия испорчена или
+     * недописана — прочитана прежняя» (`STORAGE_RECOVERED_LKG`) — это откат
+     * последней правки слота, проекта, контекста или handoff; раньше такое
+     * предупреждение терялось в `.valueOrNull()`, и человек не узнавал о потере.
+     */
+    private fun storedDocument(store: DocumentStore, key: String): StoredDocument? =
+        when (val read = store.read(key)) {
+            is Outcome.Success -> {
+                problems += read.warnings
+                read.value
+            }
+            is Outcome.Failure -> {
+                problems += read.errors
+                null
+            }
+        }
+
     /** Контексты и handoff незавершённых задач — из документов (после перезапуска). */
     private fun loadTaskDocuments(store: DocumentStore) {
         // Очереди сообщений (D-60) — и у завершённых задач: сообщение их продолжит.
         for (t in tasks.tasks.values.filter { !it.archived }) {
-            store.read(docKey("queued", t.id)).valueOrNull()?.let { d -> QueuedMessages.fromJson(d.content).valueOrNull()?.takeIf { it.isNotEmpty() }?.let { queuedOf[t.id] = it } }
+            storedDocument(store, docKey("queued", t.id))?.let { d -> QueuedMessages.fromJson(d.content).valueOrNull()?.takeIf { it.isNotEmpty() }?.let { queuedOf[t.id] = it } }
         }
         for (t in tasks.tasks.values.filter { !it.terminal }) {
-            store.read(docKey("context", t.id)).valueOrNull()?.let { d ->
+            storedDocument(store, docKey("context", t.id))?.let { d ->
                 when (val c = ContextCodec.readContext(d.content)) {
                     is Outcome.Success -> {
                         contextOf[t.id] = c.value
@@ -380,7 +425,7 @@ class Orchestrator(
                     is Outcome.Failure -> problems += Diagnostic.of(DiagCode.STORAGE_CORRUPTED, "контекст задачи ${t.id} не читается", causes = c.errors)
                 }
             }
-            store.read(docKey("handoff", t.id)).valueOrNull()?.let { d ->
+            storedDocument(store, docKey("handoff", t.id))?.let { d ->
                 when (val h = ContextCodec.readHandoff(d.content)) {
                     is Outcome.Success -> handoffs.create(h.value)
                     is Outcome.Failure -> problems += Diagnostic.of(DiagCode.STORAGE_CORRUPTED, "handoff задачи ${t.id} не читается", causes = h.errors)
@@ -396,7 +441,15 @@ class Orchestrator(
      * контекста, а не новый контекст (`docs/CONTEXT_MODEL.md`).
      */
     private fun storedContext(task: TaskId, report: Boolean = true): ContextBundle? {
-        val d = documents?.read(docKey("context", task))?.valueOrNull() ?: return null
+        val d = documents?.let { store ->
+            when (val read = store.read(docKey("context", task))) {
+                is Outcome.Success -> {
+                    if (report) problems += read.warnings
+                    read.value
+                }
+                is Outcome.Failure -> null.also { if (report) problems += read.errors }
+            }
+        } ?: return null
         return when (val c = ContextCodec.readContext(d.content)) {
             is Outcome.Success -> c.value
             is Outcome.Failure -> null.also {
@@ -411,15 +464,30 @@ class Orchestrator(
         if (r is Outcome.Failure) problems += Diagnostic.of(DiagCode.STORAGE_IO_FAILED, "документ $kind задачи $task не записан", causes = r.errors)
     }
 
-    /** Проекция из снимка и хвоста журнала, а без снимка — из всей истории потоком (D-37). */
-    private fun <S> restore(p: Projection<S>, initial: S): S =
-        snapshots?.let { StateRecovery(p).recover(journal, it, initial).valueOrNull()?.state } ?: StateRecovery(p).replayAll(journal, initial)
+    /**
+     * Проекция из снимка и хвоста журнала, а без снимка — из всей истории потоком (D-37).
+     * Снимок, который не сошёлся с журналом (`SNAPSHOT_INVALID`), — не тишина (D-87):
+     * состояние пересчитано заново, и об этом стоит знать, если пересчёт окажется дорогим.
+     */
+    private fun <S> restore(p: Projection<S>, initial: S): S {
+        val snapshots = this.snapshots ?: return StateRecovery(p).replayAll(journal, initial)
+        return when (val recovered = StateRecovery(p).recover(journal, snapshots, initial)) {
+            is Outcome.Success -> {
+                problems += recovered.warnings
+                recovered.value.state
+            }
+            is Outcome.Failure -> {
+                problems += recovered.errors
+                StateRecovery(p).replayAll(journal, initial)
+            }
+        }
+    }
 
     /**
      * Снимки всех проекций, если с прошлого прошло [snapshotEvery] записей.
      * Зовётся между шагами, когда память совпадает с журналом (пачек нет).
      */
-    private fun maybeSnapshot() {
+    private fun maybeSnapshot(): Unit = synchronized(acceptLock) {
         val store = snapshots ?: return
         if (pending != null || journal.position - lastSnapshotAt < snapshotEvery) return
         fun <S> save(p: Projection<S>, state: S) {
@@ -434,6 +502,7 @@ class Orchestrator(
         save(MergesProjection, mergesState)
         save(UserRequestsProjection, requests)
         save(OperationsProjection, operations)
+        save(com.dpsmpx.dpai.orchestrator.commands.AcceptedProjection, accepted)
         save(com.dpsmpx.dpai.orchestrator.commands.ControlProjection, control)
         lastSnapshotAt = journal.position
     }
@@ -480,7 +549,7 @@ class Orchestrator(
         for (e in es) {
             val before = accounts
             accounts = Accounts.applyAll(accounts, listOf(e))
-            AccountNotifications.requests(e, before, accounts).forEach { notify(it) }
+            AccountNotifications.requests(e, before, accounts, ::targetName).forEach { notify(it) }
             AccountNotifications.resolvedKeys(e).forEach { notifications.resolve(it) }
         }
     }
@@ -574,6 +643,10 @@ class Orchestrator(
 
     /** Такт контура: команды — в начале и между вызовами target (D-42, п. 1). */
     fun tick() {
+        // Журнал закрыт после отказа записи (кончилось место): ни ходов, ни слияний, ни отмен — внешнее
+        // действие без записи итога разошлось бы с журналом (ТЗ, §80; аудит надёжности, A-4). Оживляет
+        // контур оболочка — открыв журнал заново, когда место есть.
+        if (journal.isBroken) return
         runCommands()
         deliverIdleQueues()
         commitTasks(tasksLogic.promote(tasks, clock.now()))
@@ -643,9 +716,9 @@ class Orchestrator(
             val key = "task:${task.value}:overlap"
             when (r.verdict) {
                 OverlapVerdict.ALLOW -> Unit
-                OverlapVerdict.WARN -> notify(key, NotificationCategory.WARNING, "Возможный конфликт", "общий каталог с идущей задачей: $files")
-                OverlapVerdict.SERIALIZE -> notify(key, NotificationCategory.INFO, "Задача ждёт", "те же файлы правит идущая задача: $files")
-                OverlapVerdict.REJECT -> notify(key, NotificationCategory.WARNING, "Задача ждёт: критичный файл", "критичный файл правит идущая задача: $files")
+                OverlapVerdict.WARN -> taskNotify(task, "overlap", NotificationCategory.WARNING, "Возможный конфликт", "общий каталог с идущей задачей: $files")
+                OverlapVerdict.SERIALIZE -> taskNotify(task, "overlap", NotificationCategory.INFO, "Задача ждёт", "те же файлы правит идущая задача: $files")
+                OverlapVerdict.REJECT -> taskNotify(task, "overlap", NotificationCategory.WARNING, "Задача ждёт — критичный файл", "критичный файл правит идущая задача: $files")
             }
         }
         return r.verdict == OverlapVerdict.ALLOW || r.verdict == OverlapVerdict.WARN
@@ -656,11 +729,15 @@ class Orchestrator(
     /** Почему готовая задача не начинается — последняя сказанная причина; уведомление — при её смене. */
     private val lastWaiting = HashMap<TaskId, String>()
 
-    /** Задача ждёт: причина — уведомлением и на сводке, один раз на смену причины (ТЗ, §36). */
-    private fun waiting(task: TaskId, why: String) {
+    /**
+     * Задача ждёт: причина — уведомлением и на сводке, один раз на смену
+     * причины (ТЗ, §36). [code] — настоящая причина: недоступный target —
+     * не «нет слота» (аудит 1 ноября 2026, A-3).
+     */
+    private fun waiting(task: TaskId, why: String, code: DiagCode = DiagCode.ACCOUNT_NONE_AVAILABLE) {
         if (lastWaiting.put(task, why) == why) return
-        notify("task:${task.value}:waiting", NotificationCategory.INFO, "Задача ждёт: ${taskTitle(task)}", why)
-        problems += Diagnostic.warning(DiagCode.ACCOUNT_NONE_AVAILABLE, "${taskTitle(task)}: $why", "task $task")
+        taskNotify(task, "waiting", NotificationCategory.INFO, "Задача ждёт", why)
+        problems += Diagnostic.warning(code, "${taskTitle(task)}: $why", "task $task")
     }
 
     /** Почему задача ждёт, если известно (лист задачи). */
@@ -729,7 +806,7 @@ class Orchestrator(
         val budgetMode = budgetMode(slot)
         if (budgetMode == BudgetMode.FRUGAL && efficiency.budget.deferBelow?.let { t.priority.ordinal > it.ordinal } == true) {
             // Подписка у предела (D-30): несрочное ждёт сброса окна (D-40, п. 5). Аренда не записана — снимать нечего.
-            notify("task:${task.value}:deferred", NotificationCategory.INFO, "Задача ждёт", "подписка у предела: приоритет ${t.priority} ждёт сброса окна")
+            taskNotify(task, "deferred", NotificationCategory.INFO, "Задача ждёт", "подписка у предела: приоритет «${Words.priority(t.priority.name)}» ждёт сброса окна")
             return
         }
         // Продолжение — прерванная сессия той же задачи или сессия, чья работа не прошла проверку (D-40).
@@ -788,7 +865,7 @@ class Orchestrator(
         )
         commitSessions(listOf(SessionEvent.PromptPrepared(session, facts, clock.now())))
         if (route.downgraded) {
-            notify("task:${task.value}:budget", NotificationCategory.WARNING, "Задача удешевлена", "подписка у предела: ${t.policy.taskClass} — ${route.model ?: "модель аккаунта"}, усилие ${route.effort ?: "по умолчанию"}")
+            taskNotify(task, "budget", NotificationCategory.WARNING, "Задача удешевлена", "подписка у предела: ${Words.taskClass(t.policy.taskClass.name)} — ${route.model ?: "модель аккаунта"}, усилие ${route.effort ?: "по умолчанию"}")
         }
         val step = ok(driver.launch(sessions, accounts, session, request), "сессия $session не запущена") ?: return failLaunch(task, session, DiagCode.SESSION_FAILED)
         // Пачка 2 — после вызова: состояние сессии, факты аккаунтов, задача в работе.
@@ -858,8 +935,8 @@ class Orchestrator(
         commitTasks(tasksLogic.start(tasks, task, clock.now()).valueOrNull().orEmpty())
         commitTasks(ok(tasksLogic.attemptFailed(tasks, task, code, code.retry, "${task.value}:launch:${code.name}", clock.now()), "повтор задачи").orEmpty())
         when (tasks.tasks[task]?.state) {
-            TaskState.BLOCKED -> askBlocked(task, null, "запуск не удался: ${tasks.tasks[task]?.lastReason ?: code}")
-            TaskState.FAILED -> progress(task, NotificationCategory.FAILURE, "Задача не выполнена", "попытки кончились: $code")
+            TaskState.BLOCKED -> askBlocked(task, null, "запуск не удался: ${Words.reason((tasks.tasks[task]?.lastReason ?: code).name)}")
+            TaskState.FAILED -> progress(task, NotificationCategory.FAILURE, "Задача не выполнена", "попытки кончились: ${Words.reason(code.name)}")
             else -> Unit
         }
     }
@@ -917,7 +994,18 @@ class Orchestrator(
 
     private fun poll(session: SessionId) {
         val before = sessions.sessions.getValue(session).state
-        val step = driver.poll(sessions, session).valueOrNull() ?: return
+        // Отказ опроса — не «ничего не произошло» (D-87): в нём приходят `RUN_RECONCILIATION_REQUIRED`
+        // (пропуск событий не закрыт сверкой), `EVENT_SEQUENCE_CONFLICT` (тот же номер с другим
+        // событием) и отказы связи. Молча выйти здесь — значит оставить сессию «устаревшей» без
+        // причины и собрать итог хода из дырявого потока.
+        val step = when (val polled = driver.poll(sessions, session)) {
+            is Outcome.Success -> polled.value
+            is Outcome.Failure -> {
+                // `problems` сам отправляет каждый отказ в `onProblem` (журнал приложения, D-43).
+                problems += polled.errors
+                return
+            }
+        }
         if (efficiency.workingSet.enabled && step.turns.isNotEmpty()) {
             val task = sessions.sessions.getValue(session).task
             val ws = workingOf.getOrPut(task) {
@@ -949,7 +1037,8 @@ class Orchestrator(
         // Ход кончился не итогом — одной строкой в ленте (D-59): почему модель остановилась.
         step.turns.filter { it.status != com.dpsmpx.dpai.execution.claude.TurnStatus.COMPLETED }.forEach { t ->
             val why = t.diagnostics.firstOrNull { it.isError }?.code?.name
-            say(sessions.sessions.getValue(session).task, ChatRole.EVENT, "ход прерван: ${t.status.name.lowercase()}" + (why?.let { " · $it" } ?: ""), session)
+            // Словами, а не `failed · КОД` (D-89): код — в журнале.
+            say(sessions.sessions.getValue(session).task, ChatRole.EVENT, "ход ${Words.turn(t.status.name)}" + (why?.let { " — ${Words.reason(it)}" } ?: ""), session)
         }
         val after = sessions.sessions.getValue(session)
         if (after.review != null) step.turns.lastOrNull()?.let { reviewOutput[session] = it.structured }
@@ -975,13 +1064,13 @@ class Orchestrator(
                     // Target недоступен до начала хода (сон ПК, нет сети) — не неудачная попытка задачи, а
                     // ожидание target (A-50): иначе за три отказа задача — BLOCKED «петлёй».
                     commitTasks(tasksLogic.move(tasks, task, TaskState.READY, clock.now(), code, notBefore = clock.now() + TARGET_RETRY).valueOrNull().orEmpty())
-                    waiting(task, "target недоступен (${code.name}): повтор через $TARGET_RETRY")
+                    waiting(task, "${targetName(record.target)}: ${Words.reason(code.name)}; повтор через ${Words.duration(TARGET_RETRY)}", code)
                     return
                 }
                 commitTasks(ok(tasksLogic.attemptFailed(tasks, task, code, code.retry, "${task.value}:${code.name}", clock.now()), "повтор задачи").orEmpty())
                 when (tasks.tasks[task]?.state) {
-                    TaskState.BLOCKED -> askBlocked(task, session, "попытка не удалась: ${tasks.tasks[task]?.lastReason ?: code}")
-                    TaskState.FAILED -> progress(task, NotificationCategory.FAILURE, "Задача не выполнена", "попытки кончились: $code")
+                    TaskState.BLOCKED -> askBlocked(task, session, "попытка не удалась: ${Words.reason((tasks.tasks[task]?.lastReason ?: code).name)}")
+                    TaskState.FAILED -> progress(task, NotificationCategory.FAILURE, "Задача не выполнена", "попытки кончились: ${Words.reason(code.name)}")
                     else -> Unit
                 }
             }
@@ -1174,9 +1263,9 @@ class Orchestrator(
         val t = tasks.tasks.getValue(task)
         val work = lastWork(task) ?: return recordReviewFailure(task, role, attempt, null, "у задачи нет рабочей сессии — неизвестно, где её дерево")
         val target = work.target
-        if (target in control.disabledTargets) return waiting(task, "${Review.label(role)} ждёт: target $target не принимает новые задачи")
+        if (target in control.disabledTargets) return waiting(task, "${Review.label(role)} ждёт: ${targetName(target)} не принимает новые задачи")
         val active = sessions.sessions.values.count { !it.terminal && it.target == target }
-        if (active >= (targets.firstOrNull { it.id == target }?.maxSessions ?: 0)) return waiting(task, "${Review.label(role)} ждёт места на target $target")
+        if (active >= (targets.firstOrNull { it.id == target }?.maxSessions ?: 0)) return waiting(task, "${Review.label(role)} ждёт места на ${targetName(target)}")
         control.maxSessions?.let { max -> if (sessions.sessions.values.count { !it.terminal } >= max) return waiting(task, "${Review.label(role)} ждёт: предел сессий контура $max") }
         if ("--json-schema" in unsupportedFlags[target].orEmpty()) return recordReviewFailure(task, role, attempt, null, "Claude Code на target $target не знает --json-schema: ответ ревью по схеме невозможен")
         val diff = when (val d = taskDiff(task, Review.MAX_PATCH_CHARS)) {
@@ -1262,7 +1351,7 @@ class Orchestrator(
                 val reason = sessions.sessions[session]?.lastReason
                 if (sessions.sessions[session]?.terminal == false) closeSession(task, session)
                 reviewOutput.remove(session)
-                recordReviewFailure(task, role, attempt, session, "сессия ревью ${state.name}" + (reason?.let { " ($it)" } ?: ""))
+                recordReviewFailure(task, role, attempt, session, "сессия ревью ${Words.session(state.name)}" + (reason?.let { " ($it)" } ?: ""))
             }
             else -> Unit
         }
@@ -1610,6 +1699,14 @@ class Orchestrator(
     private fun notify(key: String, category: NotificationCategory, title: String, body: String) =
         notify(NotificationRequest(key, category, title, body, null, clock.now()))
 
+    /**
+     * Уведомление о задаче: её название в заголовке и ссылка на неё — по
+     * нажатию открывается задача, а не просто приложение (аудит 1 ноября
+     * 2026, A-11).
+     */
+    private fun taskNotify(task: TaskId, what: String, category: NotificationCategory, title: String, body: String) =
+        notify(NotificationRequest("task:${task.value}:$what", category, "$title: ${taskTitle(task)}", body, DeepLink.of(DeepLink.Kind.TASK, task), clock.now()))
+
     private fun notify(r: NotificationRequest) {
         post(notifications.submit(r))
     }
@@ -1716,7 +1813,54 @@ class Orchestrator(
      * Исполнить пришедшие команды — только поток такта и только в
      * безопасной точке: вне пачки, когда память совпадает с журналом.
      */
-    fun runCommands(): Int = if (pending != null) 0 else inbox.drain(::execute)
+    fun runCommands(): Int = if (pending != null) 0 else inbox.drain(::execute, ::settleAccepted)
+
+    /**
+     * Принять команду, когда такт занят вызовом target (D-94): сначала
+     * событие `COMMAND_ACCEPTED` в журнал — команда переживёт смерть процесса
+     * и пересборку контура, — затем в очередь. Любой поток. Журнал не принял
+     * запись — отказ, а не обещание «применится». У команды без ключа ключом
+     * становится id операции: исполненная до перезапуска второй раз не
+     * действует (ТЗ, §5.4); ответ на запрос повторяется без действия и так.
+     * Факт показа запроса (`Delivered`) — не решение человека: в журнал не
+     * пишется.
+     */
+    fun accept(command: Command): Outcome<java.util.concurrent.CompletableFuture<OperationResult<*>>> {
+        if (command is Command.Delivered) return Outcome.success(inbox.submit(command))
+        synchronized(acceptLock) {
+            val id = ids.next(IdKinds.OPERATION)
+            val by = (command as? Command.AnswerRequest)?.by ?: (command as? Command.Waive)?.by ?: "автор"
+            val c = if (command is Command.AnswerRequest || command.key != null) {
+                command
+            } else {
+                val json = com.dpsmpx.dpai.orchestrator.control.CommandCodec.encode(command)
+                com.dpsmpx.dpai.orchestrator.control.CommandCodec.decode(
+                    com.dpsmpx.dpai.core.serialization.JsonObject(LinkedHashMap(json.fields).apply { put("key", com.dpsmpx.dpai.core.serialization.JsonString(id.value)) }), by,
+                ).valueOrNull()?.command ?: command
+            }
+            val a = com.dpsmpx.dpai.orchestrator.commands.AcceptedCommand(id, by, com.dpsmpx.dpai.orchestrator.control.CommandCodec.encode(c), clock.now())
+            val env = recorder.envelope(EventType.COMMAND_ACCEPTED, StreamRef.of(id), a.at, com.dpsmpx.dpai.orchestrator.commands.AcceptedProjection.payload(a))
+            val r = journal.append(env)
+            if (r is Outcome.Failure) {
+                return Outcome.Failure(listOf(Diagnostic.of(DiagCode.STORAGE_UNAVAILABLE, "не принято: журнал не записал команду — повторите", causes = r.errors)))
+            }
+            accepted = com.dpsmpx.dpai.orchestrator.commands.AcceptedProjection.accepted(accepted, a)
+            return Outcome.success(inbox.submit(c, id))
+        }
+    }
+
+    /**
+     * Принятая команда исполнена (D-94) — с любым итогом: он сам в журнале.
+     * Запись не удалась — команда остаётся принятой: после перезапуска её
+     * повтор ключом не делает второго действия.
+     */
+    private fun settleAccepted(id: com.dpsmpx.dpai.core.ids.OperationId, status: String): Unit = synchronized(acceptLock) {
+        val env = recorder.envelope(EventType.COMMAND_SETTLED, StreamRef.of(id), clock.now(), com.dpsmpx.dpai.orchestrator.commands.AcceptedProjection.settledPayload(id, status))
+        when (val r = journal.append(env)) {
+            is Outcome.Success -> accepted = com.dpsmpx.dpai.orchestrator.commands.AcceptedProjection.settled(accepted, id)
+            is Outcome.Failure -> problems += Diagnostic.of(DiagCode.STORAGE_IO_FAILED, "исполненная команда $id не отмечена — после перезапуска повторится без действия", causes = r.errors)
+        }
+    }
 
     /**
      * Команда (D-06): с ключом — сначала по журналу ключей; уже была —
@@ -1725,6 +1869,12 @@ class Orchestrator(
     fun execute(command: Command): OperationResult<*> {
         val key = command.key
         val provenance = Provenance(Actor(ActorKind.USER, (command as? Command.AnswerRequest)?.by ?: "автор"))
+        if (journal.isBroken) {
+            return OperationResult.record(
+                command.operation, provenance, ids, clock,
+                Outcome.failure(DiagCode.STORAGE_UNAVAILABLE, "журнал не пишет (кончилось место?): действия остановлены, пока контроллер не откроет его заново"),
+            )
+        }
         if (key != null && !Command.KEY.matches(key)) {
             return OperationResult.record(command.operation, provenance, ids, clock, Outcome.failure(DiagCode.VALUE_INVALID, "ключ команды — [A-Za-z0-9_.:-]{8,80}"))
         }
@@ -2156,7 +2306,7 @@ class Orchestrator(
     private fun askRecovery(q: Diagnostic) {
         ask(
             RequestPurpose.RECOVERY, RequestKind.ACKNOWLEDGEMENT, "recovery:${q.code.name}:${q.subject ?: "-"}",
-            "Сверка после перезапуска: нужен человек", "${q.code}: ${q.message}",
+            "Сверка после перезапуска: нужен человек", "${Words.reason(q.code.name)}: ${q.message}",
             listOf(RequestOption(ACK, "Понятно", OptionRole.ACCEPT)), null, null,
         )
     }
@@ -2204,7 +2354,12 @@ class Orchestrator(
         val r = requests.requests[id]
         val provenance = Provenance(Actor(ActorKind.USER, by), taskId = r?.task, sessionId = r?.session)
         val outcome: Outcome<RequestAnswer> = when (val c = UserRequests.check(requests, id, option, text, hash, clock.now())) {
-            is Outcome.Failure -> c.also { if (r != null && !r.terminal && r.expired(clock.now())) commitRequests(listOf(RequestEvent.Expired(id, clock.now()))) }
+            is Outcome.Failure -> c.also {
+                if (r != null && !r.terminal && r.expired(clock.now())) {
+                    commitRequests(listOf(RequestEvent.Expired(id, clock.now())))
+                    requests.requests[id]?.let(::reaskIfWaiting)
+                }
+            }
             is Outcome.Success -> when (val v = c.value) {
                 is AnswerCheck.Repeat -> Outcome.success(v.request.answer!!)
                 is AnswerCheck.Apply -> applyAnswer(v, by, channel)
@@ -2301,6 +2456,15 @@ class Orchestrator(
      */
     private fun settleRequests() {
         val now = clock.now()
+        // Первый такт после запуска: запросы, истёкшие, пока приложение не работало, — снова, если
+        // задача всё ещё ждёт (A-8). Не в `init`: уведомления и поля ниже него там ещё не готовы.
+        if (!reaskedAtStart) {
+            reaskedAtStart = true
+            requests.requests.values.groupBy { it.subject }.values
+                .map { rs -> rs.maxBy { it.createdAt.epochMillis } }
+                .sortedBy { it.subject }
+                .forEach(::reaskIfWaiting)
+        }
         val stale = requests.pending.filter { r ->
             val state = r.task?.let { tasks.tasks[it]?.state }
             when (RequestPurpose.of(r.purpose)) {
@@ -2311,10 +2475,38 @@ class Orchestrator(
                 else -> false
             }
         }
-        val es = UserRequests.expire(requests, now) + stale.filter { !it.expired(now) }.map { RequestEvent.Cancelled(it.id, DiagCode.REQUEST_NOT_PENDING, now) }
+        val expired = UserRequests.expire(requests, now)
+        val es = expired + stale.filter { !it.expired(now) }.map { RequestEvent.Cancelled(it.id, DiagCode.REQUEST_NOT_PENDING, now) }
         if (es.isNotEmpty()) commitRequests(es)
+        expired.mapNotNull { requests.requests[it.request] }.forEach(::reaskIfWaiting)
         askMerges()
     }
+
+    /** Истёкшие до запуска запросы уже пересмотрены (первый такт). */
+    private var reaskedAtStart = false
+
+    /**
+     * Запрос истёк, а задача всё ещё ждёт человека (блок, «без проверки»,
+     * ревью без итога) — тот же вопрос снова (аудит надёжности 2 ноября 2026,
+     * A-8): телефон выключен сутки — и задача стояла молча, без уведомления.
+     * «Решу позже» — ответ, а не истечение: такой запрос сам не возвращается.
+     */
+    private fun reaskIfWaiting(r: UserRequest) {
+        if (r.state != com.dpsmpx.dpai.notifications.RequestState.EXPIRED || requests.pendingFor(r.subject) != null) return
+        val t = r.task?.let { tasks.tasks[it] } ?: return
+        if (t.archived) return
+        val purpose = RequestPurpose.of(r.purpose) ?: return
+        val waits = when (purpose) {
+            RequestPurpose.TASK_BLOCKED -> t.state == TaskState.BLOCKED
+            RequestPurpose.TASK_UNVERIFIED -> t.state == TaskState.COMPLETION_UNVERIFIED
+            RequestPurpose.TASK_REVIEW -> t.state == TaskState.VERIFIED && nextReview(t) == null
+            else -> false
+        }
+        if (waits) ask(purpose, r.kind, r.subject, r.title, r.body, r.options, r.task, r.session)
+    }
+
+    /** Журнал закрыт после отказа записи (A-4): контур стоит, пока оболочка не откроет журнал заново. */
+    val storageBroken: Boolean get() = journal.isBroken
 
     /** Сколько записей в журнале контура (рост хранилища, ТЗ, §116). */
     fun eventCount(): Long = journal.position
@@ -2409,9 +2601,10 @@ class Orchestrator(
             // Последняя рабочая сессия: сессия ревью (D-73) запросов не принимает.
             val last = lastWork(task) ?: continue
             if (last.state !in WAIT_STATES && !last.terminal) continue
-            setQueued(task, emptyList())
             val r = sendToSession(last.id, list.joinToString("\n\n") { it.text }, list.lastOrNull { it.model != null }?.model, list.lastOrNull { it.effort != null }?.effort, false, echo = false)
-            if (r is Outcome.Failure) setQueued(task, list)
+            // Стереть — после отправки, как в `deliverQueued` (аудит надёжности, A-9): смерть процесса между
+            // стиранием и handoff теряла текст человека; теперь в худшем случае он уйдёт дважды.
+            if (r is Outcome.Success) setQueued(task, emptyList())
         }
     }
 
@@ -2432,6 +2625,9 @@ class Orchestrator(
             saveTaskDocument("pin", task, TaskPin.toJson(target))
         }
     }
+
+    /** Имя target для человека — его подпись; неизвестен — id (D-13). */
+    private fun targetName(target: ExecutionTargetId): String = targets.firstOrNull { it.id == target }?.label ?: target.value
 
     /** Имя слота target для ленты: подписка и каталог слота; слота нет — id target. */
     private fun slotLabel(target: ExecutionTargetId): String =

@@ -66,7 +66,9 @@ class FileLogSink(
     @Synchronized
     private fun write(line: String) {
         try {
-            if (size < 0) size = vfs.read(path)?.size?.toLong() ?: 0
+            // Размер — без чтения файла (аудит стабильности, A-8): после сбоя записи каждая строка
+            // читала до 1 МиБ ради одного числа.
+            if (size < 0) size = vfs.size(path) ?: 0
             if (size == 0L || size >= maxBytes) {
                 if (size >= maxBytes) {
                     vfs.delete("$path.1")
