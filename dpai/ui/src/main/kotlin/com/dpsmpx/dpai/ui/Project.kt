@@ -87,6 +87,11 @@ object ProjectForm {
             }
             else -> {
                 if (claudeOn.configDir == null) return Outcome.failure(DiagCode.VALUE_INVALID, "у ${claudeOn.label} нет каталога Claude", "claude")
+                // Дерево по SSH (D-50) — не для Linux в приложении: к нему снаружи по SSH не попасть, а из него к ПК —
+                // нужен свой ключ в госте. «В приложении» — Claude и дерево в одном Linux (D-75, шаг 5).
+                if (target.inApp || claudeOn.inApp) {
+                    return Outcome.failure(DiagCode.UNSUPPORTED, "«в приложении» — Claude и дерево в одном Linux: выберите тот же target", "claude")
+                }
                 val key = identityFile.trim()
                 val known = knownHostsFile.trim().takeIf { it.isNotEmpty() }
                 fun bad(p: String) = !p.startsWith("/") || p.any { it.isISOControl() || it == '\'' } || p.startsWith("-")

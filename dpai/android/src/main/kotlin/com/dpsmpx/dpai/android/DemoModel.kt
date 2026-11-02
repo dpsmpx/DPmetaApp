@@ -105,7 +105,8 @@ class DemoModel(
                 builtAt = Clock.SYSTEM.monotonicNanos()
                 // Target «в приложении» (D-75, шаг 5): агент — в процессе, ходы — в Alpine приложения.
                 val inApp = context?.takeIf { key.first.any { it.inApp } }?.let { com.dpsmpx.dpai.android.linux.LinuxSetup.agentHost(it, controller.version) }
-                live = controller.live(key.first, key.second, onEvents, onProblem, inApp)
+                val guest = inApp?.let { context?.let(com.dpsmpx.dpai.android.linux.LinuxSetup::guestHost) }
+                live = controller.live(key.first, key.second, onEvents, onProblem, inApp, guest)
                 liveFor = key
                 perf("контроллер построен", started)
             }

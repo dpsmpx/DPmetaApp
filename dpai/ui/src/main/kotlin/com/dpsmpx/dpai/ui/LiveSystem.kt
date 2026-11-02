@@ -109,6 +109,12 @@ class LiveSystem(
      * хода — в Alpine приложения; `null` — таких targets оболочка не даёт.
      */
     inAppHost: com.dpsmpx.dpai.execution.process.ProcessHost? = null,
+    /**
+     * Процессы гостя Linux приложения — для Git проекта на target «в
+     * приложении» (D-75, шаг 5): как SSH у обычного target, только без
+     * сети. `null` — Linux не установлен.
+     */
+    private val inAppGuest: com.dpsmpx.dpai.execution.process.ProcessHost? = null,
 ) : ControlView, AutoCloseable {
     override val mode: String = "контроллер"
     private val ids = IdGenerator(clock, random)
@@ -149,7 +155,7 @@ class LiveSystem(
     private val usable = entries.filter { it.configDir != null && (!it.inApp || inAppHost != null) }
 
     /** Target проекта: деревья, Git и проверка — на нём; каталог Claude ему нужен, только если ход тоже на нём. */
-    private val projectEntry = project?.let { p -> entries.firstOrNull { it.id == p.target } }
+    private val projectEntry = project?.let { p -> entries.firstOrNull { it.id == p.target }?.takeIf { !it.inApp || inAppHost != null } }
 
     /**
      * Дерево на target проекта, ход — на другом (D-50): Claude Code там
@@ -235,8 +241,11 @@ class LiveSystem(
         } else {
             ProjectConfig(HOME_PROJECT, null, null, null)
         }
-        // Git на target — по SSH: команды `git -C <путь>` рабочего каталога не требуют (GitService).
-        val git = projectTarget?.let { t -> GitService(sshHost(t.toTarget(knownHostsFile).ssh!!, t.platform), GitCommands(ApprovalLedger()), clock) }
+        // Git на target — по SSH: команды `git -C <путь>` рабочего каталога не требуют (GitService);
+        // «в приложении» — процессами гостя, пути — гостя (D-75, шаг 5).
+        val git = projectTarget?.let { t ->
+            if (t.inApp) inAppGuest?.let { GitService(it, GitCommands(ApprovalLedger()), clock) } else GitService(sshHost(t.toTarget(knownHostsFile).ssh!!, t.platform), GitCommands(ApprovalLedger()), clock)
+        }
         // Шаги проверки — через агента target: по SSH рабочий каталог задаёт он (AgentStepRunner).
         val verifier = projectTarget?.let { t -> Verifier(AgentStepRunner(manager.client(t.id).valueOrNull()!!, ids, clock, onRetry = { d -> onProblem(com.dpsmpx.dpai.core.diagnostics.Diagnostic.of(d.code, "вызов агента повторён: ${d.message}", d.subject, causes = d.causes)) }), clock) }
             ?: Verifier({ _, _, _ -> Outcome.success(Completed(0, emptyList(), emptyList())) }, clock)

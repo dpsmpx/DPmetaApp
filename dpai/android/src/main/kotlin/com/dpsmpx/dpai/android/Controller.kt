@@ -174,6 +174,8 @@ class Controller(private val root: File, val version: String?) {
         onProblem: (Diagnostic) -> Unit = {},
         /** Агент target «в приложении» (D-75, шаг 5); `null` — таких targets нет или Linux не установлен. */
         inAppHost: com.dpsmpx.dpai.execution.process.ProcessHost? = null,
+        /** Процессы гостя — Git проекта на target «в приложении». */
+        inAppGuest: com.dpsmpx.dpai.execution.process.ProcessHost? = null,
     ): LiveSystem {
         val dir = NioVfs(File(root, "live").apply { mkdirs() }.toPath())
         // Карантин хвоста журнала — только после «да» человека и только на одну сборку (D-24).
@@ -188,6 +190,7 @@ class Controller(private val root: File, val version: String?) {
             notificationsOk = notificationsOk,
             quarantineConfirmed = confirmed,
             inAppHost = inAppHost,
+            inAppGuest = inAppGuest,
         ).also { if (confirmed) runCatching { dir.delete(QUARANTINE_CONFIRMED) } }
     }
 

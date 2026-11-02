@@ -110,18 +110,27 @@ object LinuxSetup {
         synchronized(this) {
             agent?.let { return it }
             val home = File(context.filesDir, AGENT_HOME).apply { mkdirs() }.path
-            val native = JniProcesses()
-            val proot = ProotHost(NativeProcessHost(native, Clock.SYSTEM), layout(context).copy(binds = listOf(ProotLayout.Bind(home, home))))
-            val app = context.applicationContext
-            // DNS гостя — сети телефона на миг запуска: сеть могла смениться с прошлого хода (D-90).
-            val guest = object : com.dpsmpx.dpai.execution.process.ProcessHost {
-                override fun start(spec: ProcessSpec, onOutput: (com.dpsmpx.dpai.execution.process.OutputLine) -> Unit): Outcome<com.dpsmpx.dpai.execution.process.RunningProcess> {
-                    refreshDns(app)
-                    return proot.start(spec, onOutput)
-                }
-            }
-            return com.dpsmpx.dpai.orchestrator.agent.InAppAgentHost.create(home, Clock.SYSTEM, version ?: "dev", native, guest, ProotHost.GUEST_ENVIRONMENT)
+            return com.dpsmpx.dpai.orchestrator.agent.InAppAgentHost.create(home, Clock.SYSTEM, version ?: "dev", JniProcesses(), guestHost(context)!!, ProotHost.GUEST_ENVIRONMENT)
                 .also { agent = it }
+        }
+    }
+
+    /**
+     * Процессы гостя для контура (D-75, шаг 5): ходы агента «в приложении»
+     * и Git проекта на таком target. Каталог агента привязан к гостю по тому
+     * же пути — пути одни для агента и гостя; DNS сети телефона — на миг
+     * запуска (сеть могла смениться, D-90). Linux не установлен — `null`.
+     */
+    fun guestHost(context: Context): com.dpsmpx.dpai.execution.process.ProcessHost? {
+        if (!available(context) || environment(context).installed() == null) return null
+        val home = File(context.filesDir, AGENT_HOME).apply { mkdirs() }.path
+        val proot = ProotHost(NativeProcessHost(JniProcesses(), Clock.SYSTEM), layout(context).copy(binds = listOf(ProotLayout.Bind(home, home))))
+        val app = context.applicationContext
+        return object : com.dpsmpx.dpai.execution.process.ProcessHost {
+            override fun start(spec: ProcessSpec, onOutput: (com.dpsmpx.dpai.execution.process.OutputLine) -> Unit): Outcome<com.dpsmpx.dpai.execution.process.RunningProcess> {
+                refreshDns(app)
+                return proot.start(spec, onOutput)
+            }
         }
     }
 

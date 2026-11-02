@@ -236,8 +236,8 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
                             }) { Text(if (probing) "Проверяю…" else "Вход Claude") }
                         }
                         // Проект — у любого target: ход Claude может идти на другом, со своим входом (D-50).
-                        // Проект на target «в приложении» — следующим шагом (Git и проверка внутри гостя).
-                        if (!t.inApp) TextButton(onClick = { projectFor = t }) { Text("Проект") }
+                        // Проект — и на target «в приложении»: Git и проверка — внутри гостя, пути — гостя (D-75, шаг 5).
+                        TextButton(onClick = { projectFor = t }) { Text("Проект") }
                         TextButton(onClick = { renaming = t }) { Text("Имя") }
                         TextButton(onClick = { removing = t }) { Text("Удалить") }
                     }

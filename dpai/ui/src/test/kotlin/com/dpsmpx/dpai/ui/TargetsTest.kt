@@ -123,5 +123,10 @@ class TargetsTest {
         assertEquals(listOf(inApp), back)
         assertTrue("\"kind\":\"in-app\"" in com.dpsmpx.dpai.core.serialization.CanonicalJson.write(TargetBook.toJson(listOf(inApp))))
         assertTrue(TargetForm.inApp(inApp.id, "x", "root/.claude") is com.dpsmpx.dpai.core.result.Outcome.Failure, "каталог — абсолютный путь гостя")
+        // Проект «в приложении»: Claude и дерево — в одном Linux; дерево по SSH с другого target — отказ.
+        val pc = TargetForm.validate(ids.next(com.dpsmpx.dpai.core.ids.IdKinds.TARGET), "ПК", "10.0.0.2", "22", "dev", false, "/opt/dpai", "/home/dev/.claude").valueOrNull()!!
+        assertTrue(ProjectForm.validate(ids, inApp, "/root/repo", "/root/trees", "main", "", null).isSuccess, "проект на target «в приложении»")
+        val mixed = ProjectForm.validate(ids, pc, "/home/dev/repo", "/home/dev/trees", "main", "", inApp, "/root/.ssh/id", "")
+        assertEquals(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, (mixed as com.dpsmpx.dpai.core.result.Outcome.Failure).errors.single().code)
     }
 }
