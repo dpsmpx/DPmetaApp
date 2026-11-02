@@ -6,9 +6,9 @@ import kotlin.system.exitProcess
 /**
  * Точка входа `dpai` — оболочка JVM над ядром (D-02).
  *
- * Версия, справка (этап 0) и агент target `dpai agent` (этап 3). Сценарии
- * на MockRunner и режим без интерфейса появляются вместе с подсистемами
- * (этапы 4–14).
+ * Версия, справка (этап 0), агент target `dpai agent` (этап 3), пульт
+ * приложения (D-47) и глобальный прогон экосистемы `dpai ecosystem`
+ * (ТЗ, §43–§46; D-97).
  */
 fun main(args: Array<String>) {
     // Ответ агента — строки JSON в UTF-8 при любой локали target: System.out
@@ -37,6 +37,9 @@ class Cli(
     private val version: String = Cli::class.java.`package`?.implementationVersion ?: "dev",
     /** Стандартный вывод закрыт: поток `dpai agent follow` кончается (D-76). */
     private val outClosed: () -> Boolean = { false },
+    /** Ответ человека на вопрос команды (`dpai ecosystem run`); конец ввода — `null`. */
+    private val input: () -> String? = ::readlnOrNull,
+    private val control: () -> ControlCommand = { ControlCommand(out, err) },
 ) {
     fun run(args: List<String>): Int = when (args.firstOrNull()) {
         "version", "--version" -> {
@@ -46,7 +49,13 @@ class Cli(
         "agent" -> AgentCommand(out, err, version, outClosed = outClosed).run(args.drop(1))
         // Пульт приложения (D-47): те же команды, что на экране, через канал на loopback.
         "control", "status", "task", "session", "requests", "answer", "limit", "target", "slot", "sessions-limit", "search" ->
-            ControlCommand(out, err).run(args.first(), args.drop(1))
+            control().run(args.first(), args.drop(1))
+        // Глобальный прогон (ТЗ, §43–§46): манифест — файлом, задачи — контуру приложения тем же каналом.
+        "ecosystem" -> {
+            // Канал — только когда есть что ставить: `show` работает и без сопряжения.
+            val c by lazy(control)
+            EcosystemCommand(out, err, input, { s -> s.command()?.let { c.submit(it) } ?: ControlCommand.FAILED }).run(args.drop(1))
+        }
         "help", "--help", "-h" -> {
             out(USAGE)
             OK
@@ -72,6 +81,7 @@ class Cli(
             |  dpai version   версия
             |  dpai agent     агент на execution target (dpai agent без параметров — справка)
             |${ControlCommand.USAGE}
+            |${EcosystemCommand.USAGE}
             |  dpai help      эта справка
             |
             |Коды выхода: 0 — успех, 1 — отказ, 2 — неверный вызов.

@@ -423,6 +423,14 @@ class ControlCommand(
         return send(c)
     }
 
+    /**
+     * Команда, собранная не из аргументов (`dpai ecosystem run`): со своим
+     * ключом, если он есть (D-42), — повтор той же команды второго действия
+     * не делает.
+     */
+    fun submit(c: com.dpsmpx.dpai.orchestrator.commands.Command): Int =
+        send(LinkedHashMap(com.dpsmpx.dpai.orchestrator.control.CommandCodec.encode(c).fields), key = c.key == null)
+
     // ---- общее ----
 
     /** Команда в канал: с ключом нажатия (повтор не делает второго действия, D-42), опасное — с `--yes`. */
