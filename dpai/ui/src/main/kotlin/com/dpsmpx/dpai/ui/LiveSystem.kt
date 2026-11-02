@@ -118,7 +118,7 @@ class LiveSystem(
 
     // Сегменты и снимки (D-37): контроллер живёт неделями, память журнала не растёт с историей.
     private val journal: EventJournal = when (
-        val opened = EventJournal.open(vfs, "live.journal", quarantineCorruption = quarantineConfirmed, segmentSize = SEGMENT)
+        val opened = EventJournal.open(vfs, "live.journal", quarantineCorruption = quarantineConfirmed, segmentSize = SEGMENT, keepCopies = true)
     ) {
         is Outcome.Success -> {
             // Предупреждения открытия (`JOURNAL_TAIL_TRUNCATED`: что именно потеряно и где карантин)
@@ -203,6 +203,11 @@ class LiveSystem(
         // и в журнал приложения (D-43): список проблем на сводке короткий, а потеря записей — навсегда.
         problems += journalDiagnostics
         journalDiagnostics.forEach { d -> runCatching { onProblem(d) } }
+        // Сегмент восстановлен из копии или копия не записалась (D-95) — тоже в проблемы и журнал приложения.
+        journal.onRepair = { d ->
+            synchronized(problems) { problems += d }
+            runCatching { onProblem(d) }
+        }
         for (e in (usable + listOfNotNull(projectEntry)).distinctBy { it.id }) manager.register(e.toTarget(knownHostsFile))
         for (e in usable) {
             val agent = manager.client(e.id).valueOrNull()!!

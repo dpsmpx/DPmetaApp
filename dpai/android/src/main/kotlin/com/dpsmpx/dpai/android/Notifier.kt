@@ -41,6 +41,9 @@ class Notifier(private val context: Context) {
             // Названия задач и текст — не для экрана блокировки (аудит безопасности, A-12).
             .setVisibility(AndroidNotification.VISIBILITY_PRIVATE)
             .setPublicVersion(lockScreen(context, channel(n.category), title(n.category)))
+            // Срок жизни (аудит стабильности, A-4): у приложения не больше 50 уведомлений, лишние система
+            // молча отбрасывает — и с ними запросы человеку. Сведения устаревают сами; решения — запросы.
+            .apply { timeout(n.category)?.let { setTimeoutAfter(it) } }
             // Нажатие открывает приложение — то же окно, а не второе поверх (ревью 8 октября 2026);
             // ссылка уведомления — к задаче или сессии (ТЗ, §76).
             .setContentIntent(n.link?.let { openLink(context, it.toUri()) } ?: openApp(context))
@@ -71,6 +74,16 @@ class Notifier(private val context: Context) {
         )
 
         fun channelOf(c: NotificationCategory) = channel(c)
+
+        /** Сколько живёт уведомление категории; `null` — пока его не смахнут (сбои, безопасность). */
+        private fun timeout(c: NotificationCategory): Long? = when (c) {
+            NotificationCategory.INFO, NotificationCategory.PROGRESS -> 2 * HOUR_MS
+            NotificationCategory.SUCCESS, NotificationCategory.SYSTEM, NotificationCategory.WARNING -> 24 * HOUR_MS
+            NotificationCategory.BLOCKED, NotificationCategory.APPROVAL -> 72 * HOUR_MS
+            NotificationCategory.FAILURE, NotificationCategory.SECURITY -> null
+        }
+
+        private const val HOUR_MS = 3_600_000L
 
         /** Версия для экрана блокировки: только что есть уведомление, без текста (A-12). */
         fun lockScreen(context: Context, channel: String, title: String): AndroidNotification =

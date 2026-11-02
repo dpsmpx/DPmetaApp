@@ -240,9 +240,9 @@ class DemoModel(
         map(f.get(waitMs, TimeUnit.MILLISECONDS))
     } catch (_: TimeoutException) {
         onLater?.let { later ->
-            f.whenComplete { r, e ->
+            f.whenCompleteAsync({ r, e ->
                 runCatching { later(if (r != null) map(r) else Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.INTERNAL_ERROR, "контроллер не исполнил команду", e)))) }
-            }
+            }, laterExecutor)
         }
         Outcome.failure(DiagCode.COMMAND_QUEUED, QUEUED)
     } catch (e: Exception) {
@@ -494,20 +494,34 @@ class DemoModel(
         Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.INTERNAL_ERROR, "контроллер не запустился", e)))
     }
 
-    /** Обновить загрузку окон подписок через `/usage` (D-48): без хода, лимит не тратится. */
-    fun refreshUsage(only: Set<com.dpsmpx.dpai.core.ids.ExecutionTargetId>? = null) = lock.withLock {
+    /**
+     * Замок модели — недолго (аудит стабильности, A-7): такт с проверкой держит
+     * его десятки минут, и каждый заход на экран ставил ещё один поток IO
+     * ждать без отмены. Занят — `false`, действие пропущено (повторит
+     * следующий заход или такт).
+     */
+    private inline fun briefly(body: () -> Unit): Boolean {
+        if (!lock.tryLock(BRIEF_WAIT_MS, TimeUnit.MILLISECONDS)) return false
+        try {
+            body()
+        } finally {
+            lock.unlock()
+        }
+        return true
+    }
+
+    /** Обновить загрузку окон подписок через `/usage` (D-48): без хода, лимит не тратится. Такт занят — пропуск. */
+    fun refreshUsage(only: Set<com.dpsmpx.dpai.core.ids.ExecutionTargetId>? = null): Boolean = briefly {
         liveSystem().valueOrNull()?.refreshUsage(only)
-        Unit
     }
 
     /** Идёт ли обновление окон и когда оно последний раз пришло (без замка: поля потокобезопасны). */
     fun usageState(): Pair<Boolean, com.dpsmpx.dpai.core.clock.Timestamp?> =
         live?.let { it.usageRefreshing to it.usageRefreshedAt } ?: (false to null)
 
-    /** Проверить вход слота target заново — после входа автора в Claude. */
-    fun probe(target: ExecutionTargetId) = lock.withLock {
+    /** Проверить вход слота target заново — после входа автора в Claude. Такт занят — пропуск (`false`). */
+    fun probe(target: ExecutionTargetId): Boolean = briefly {
         liveSystem().valueOrNull()?.probeSlot(target)
-        Unit
     }
 
     companion object {
@@ -519,6 +533,15 @@ class DemoModel(
 
         /** Пересборка контура со сломанным журналом — не чаще раза в минуту: сборка ходит по SSH. */
         private val REOPEN_NANOS = TimeUnit.MINUTES.toNanos(1)
+
+        /** Сколько экран ждёт замок модели ради проверки входа или лимитов (A-7). */
+        private const val BRIEF_WAIT_MS = 2_000L
+
+        /**
+         * Итоги команд, исполненных позже (D-94), — своим потоком (аудит стабильности, A-5):
+         * в потоке такта колбэк звал `pending()` → `current()` и мог пересобрать контур посреди такта.
+         */
+        private val laterExecutor = java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "dpai-later").apply { isDaemon = true } }
 
         /** Не дождались итога — команда в журнале (D-94): применится после текущего шага контура, переживёт перезапуск. */
         const val QUEUED = "принято: применится после текущего шага контура (идёт вызов target)"

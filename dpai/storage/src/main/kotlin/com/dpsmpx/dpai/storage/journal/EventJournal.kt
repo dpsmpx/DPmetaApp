@@ -55,6 +55,8 @@ class EventJournal private constructor(
     private val vfs: Vfs,
     private val path: String,
     private val segmentSize: Int,
+    /** Каталог копий запечатанных сегментов (D-95); `null` — без копий. */
+    private val copies: String?,
     private val sealed: MutableList<String>,
     private var offset: Long,
     private var baseHash: ContentHash,
@@ -63,6 +65,13 @@ class EventJournal private constructor(
     private val records = ArrayList(loaded)
     private val positionOf = HashMap<EventId, Long>().apply { loaded.forEach { put(it.event.id, it.position) } }
     private var broken = false
+
+    /**
+     * Сегмент восстановлен из копии или копия не записалась (D-95) — для
+     * журнала приложения (D-43). Зовётся потоком, который читал или писал.
+     */
+    @Volatile
+    var onRepair: (Diagnostic) -> Unit = {}
 
     /** Закрыт [close]: этот экземпляр больше не пишет — журнал открыт заново другим (D-94). */
     private var closed = false
@@ -96,23 +105,34 @@ class EventJournal private constructor(
     /** Сколько сегментов запечатано. */
     val sealedSegments: Int get() = sealed.size
 
-    fun hashAt(position: Long): ContentHash? = when {
-        position == 0L -> GENESIS
-        position == offset -> baseHash
-        position > offset -> records.getOrNull((position - offset - 1).toInt())?.hash
-        else -> {
-            var found: ContentHash? = null
-            forEachRecord(position) { r -> if (r.position == position) found = r.hash; false }
-            found
+    fun hashAt(position: Long): ContentHash? {
+        synchronized(this) {
+            when {
+                position == 0L -> return GENESIS
+                position == offset -> return baseHash
+                position > offset -> return records.getOrNull((position - offset - 1).toInt())?.hash
+            }
         }
+        var found: ContentHash? = null
+        forEachRecord(position) { r -> if (r.position == position) found = r.hash; false }
+        return found
     }
+
+    /**
+     * Сегменты, начало активного и его записи — копией под монитором (аудит
+     * стабильности 2 ноября 2026, A-9): журнал дописывают поток такта и
+     * `accept` (D-94), а читают экраны — без копии чтение шло по списку,
+     * который в этот миг рос или очищался ротацией.
+     */
+    @Synchronized
+    private fun view(): Triple<List<String>, Long, List<JournalRecord>> = Triple(sealed.toList(), offset, ArrayList(records))
 
     /**
      * Записи с номера [from] включительно — списком. Для чтения всей истории
      * длинного журнала — [forEachRecord]: список держит её в памяти.
      */
     fun records(from: Long = 1): List<JournalRecord> {
-        if (from > offset) return records.drop((from - offset - 1).coerceAtLeast(0).toInt())
+        synchronized(this) { if (from > offset) return records.drop((from - offset - 1).coerceAtLeast(0).toInt()) }
         val out = ArrayList<JournalRecord>()
         forEachRecord(from) { out += it; true }
         return out
@@ -126,19 +146,43 @@ class EventJournal private constructor(
      * называет причину словами (аудит надёжности, A-6).
      */
     fun forEachRecord(from: Long = 1, body: (JournalRecord) -> Boolean) {
-        val names = sealed.toList()
+        val (names, active, records) = view()
         for ((i, name) in names.withIndex()) {
-            val nextFirst = names.getOrNull(i + 1)?.let(::firstOf) ?: (offset + 1)
+            val nextFirst = names.getOrNull(i + 1)?.let(::firstOf) ?: (active + 1)
             if (nextFirst <= from) continue
-            val bytes = vfs.read(name) ?: throw JournalSegmentUnreadable("запечатанный сегмент $name пропал")
-            val scan = scan(bytes, null)
-            if (scan.badLine != null) throw JournalSegmentUnreadable("запечатанный сегмент $name испорчен (запись №${scan.badLine})")
+            val read = vfs.read(name)
+            val own = read?.let { scan(it, null) }
+            // Пропал или испорчен — из копии, если она сходится (D-95); нет — подтверждённые записи потеряны.
+            val parsed = if (read == null || own == null || own.badLine != null || own.validEnd < read.size) {
+                val copy = copies?.let { restoreFromCopy(vfs, it, name, nextFirst) }
+                    ?: throw JournalSegmentUnreadable(if (read == null) "запечатанный сегмент $name пропал" else "запечатанный сегмент $name испорчен (запись №${own?.badLine})")
+                onRepair(restored(name))
+                scan(copy, null)
+            } else {
+                keepCopy(name, read)
+                own
+            }
             // Стык с началом следующего: разрыв — пропавший между ними сегмент, а не короткая история.
-            val last = scan.loaded.lastOrNull()?.position ?: (firstOf(name) - 1)
+            val last = parsed.loaded.lastOrNull()?.position ?: (firstOf(name) - 1)
             if (last + 1 != nextFirst) throw JournalSegmentUnreadable("пропали записи №${last + 1}…${nextFirst - 1} после сегмента $name")
-            for (r in scan.loaded) if (r.position >= from && !body(r)) return
+            for (r in parsed.loaded) if (r.position >= from && !body(r)) return
         }
         for (r in records) if (r.position >= from && !body(r)) return
+    }
+
+    /** Копия запечатанного сегмента, если её ещё нет (D-95); не записалась — сказать, а не молчать. */
+    private fun keepCopy(name: String, bytes: ByteArray) {
+        val dir = copies ?: return
+        val copy = copyOf(dir, name)
+        try {
+            if (vfs.exists(copy)) return
+            vfs.mkdirs(dir)
+            vfs.write(copy, bytes)
+            vfs.fsync(copy)
+            vfs.fsyncDir(dir)
+        } catch (e: IOException) {
+            onRepair(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "копия сегмента журнала не записана (D-95)", e, copy))
+        }
     }
 
     /** Файл журнала уже есть на диске: проверять каталог и делать fsync каталога больше не нужно. */
@@ -171,6 +215,8 @@ class EventJournal private constructor(
         } catch (_: IOException) {
             return
         }
+        // Копия запечатанного — один раз, он больше не меняется (D-95).
+        if (copies != null) runCatching { vfs.read(name) }.getOrNull()?.let { keepCopy(name, it) }
         sealed += name
         baseHash = lastHash
         offset = position
@@ -267,15 +313,64 @@ class EventJournal private constructor(
 
         private fun firstOf(name: String): Long = name.substringAfterLast(SEGMENT_MARK).toLong()
 
-        fun open(vfs: Vfs, path: String, quarantineCorruption: Boolean = false, segmentSize: Int = NO_SEGMENTS): Outcome<EventJournal> {
+        /** Каталог копий запечатанных сегментов рядом с журналом (D-95). */
+        const val COPIES = "journal-copies"
+
+        private fun copyOf(copies: String, name: String) = Vfs.join(copies, name.substringAfterLast('/'))
+
+        private fun restored(name: String) =
+            Diagnostic.warning(DiagCode.JOURNAL_SEGMENT_RESTORED, "запечатанный сегмент пропал или испорчен — восстановлен из копии (D-95)", name)
+
+        /**
+         * Вернуть сегмент [name] из копии, если она годна (D-95): читается
+         * целиком, записи — по цепочке хешей, номера — с начала сегмента и
+         * до [nextFirst] (известен — стык проверяется). Годна — записана на
+         * место с `fsync`; итог — её байты, иначе `null`.
+         */
+        private fun restoreFromCopy(vfs: Vfs, copies: String, name: String, nextFirst: Long?): ByteArray? {
+            val bytes = runCatching { vfs.read(copyOf(copies, name)) }.getOrNull() ?: return null
+            val scan = scan(bytes, null)
+            val first = scan.loaded.firstOrNull() ?: return null
+            if (scan.badLine != null || scan.validEnd < bytes.size || first.position != firstOf(name)) return null
+            if (nextFirst != null && scan.loaded.last().position + 1 != nextFirst) return null
+            return try {
+                vfs.write(name, bytes)
+                vfs.fsync(name)
+                vfs.fsyncDir(Vfs.parentOf(name))
+                bytes
+            } catch (_: IOException) {
+                null
+            }
+        }
+
+        /**
+         * [keepCopies] — копии запечатанных сегментов в каталоге [COPIES]
+         * рядом с журналом и восстановление из них (D-95): журнал контроллера.
+         */
+        fun open(vfs: Vfs, path: String, quarantineCorruption: Boolean = false, segmentSize: Int = NO_SEGMENTS, keepCopies: Boolean = false): Outcome<EventJournal> {
             require(segmentSize > 0) { "размер сегмента — положительный" }
             val dir = Vfs.parentOf(path)
+            val copiesDir = if (keepCopies) Vfs.join(dir, COPIES) else null
             val prefix = path.substringAfterLast('/') + SEGMENT_MARK
+            fun segments(d: String) = vfs.list(d).filter { it.startsWith(prefix) && it.removePrefix(prefix).all(Char::isDigit) }.sorted()
             val sealed = try {
-                vfs.list(dir).filter { it.startsWith(prefix) && it.removePrefix(prefix).all(Char::isDigit) }.sorted().map { Vfs.join(dir, it) }
+                segments(dir).map { Vfs.join(dir, it) }
             } catch (e: IOException) {
                 return Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "каталог журнала не прочитан", e, path))
             }.toMutableList()
+            val repairs = mutableListOf<Diagnostic>()
+            // Копия есть, а сегмента нет — он пропал: сегменты не удаляются намеренно (D-95).
+            if (copiesDir != null) {
+                val lost = runCatching { segments(copiesDir) }.getOrDefault(emptyList()).map { Vfs.join(dir, it) }.filter { it !in sealed }
+                for (name in lost) {
+                    val next = (sealed + lost).filter { firstOf(it) > firstOf(name) }.minOfOrNull(::firstOf)
+                    if (restoreFromCopy(vfs, copiesDir, name, next) != null) {
+                        sealed += name
+                        repairs += restored(name)
+                    }
+                }
+                sealed.sortBy(::firstOf)
+            }
             // История начинается с записи №1: первый сегмент пропал — подтверждённые записи потеряны,
             // а не «журнал короче» (D-24; аудит надёжности, A-6). Сегменты не удаляются намеренно.
             sealed.firstOrNull()?.takeIf { firstOf(it) != 1L }?.let { first ->
@@ -285,16 +380,22 @@ class EventJournal private constructor(
             var offset = 0L
             var baseHash = GENESIS
             sealed.lastOrNull()?.let { last ->
-                val bytes = try {
+                val read = try {
                     vfs.read(last)
                 } catch (e: IOException) {
                     return Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "сегмент журнала не прочитан", e, last))
-                } ?: return Outcome.failure(DiagCode.JOURNAL_CORRUPTED, "запечатанный сегмент пропал", last)
-                val scan = scan(bytes, null)
-                val tail = scan.loaded.lastOrNull()
-                if (scan.badLine != null || tail == null || scan.validEnd < bytes.size) {
-                    return Outcome.failure(DiagCode.JOURNAL_CORRUPTED, "запечатанный сегмент испорчен или пуст", last)
                 }
+                val own = read?.let { scan(it, null) }
+                val parsed = if (read == null || own == null || own.badLine != null || own.loaded.isEmpty() || own.validEnd < read.size) {
+                    // Испорчен или пуст — из копии (D-95); нет годной копии — как прежде, отказ.
+                    val copy = copiesDir?.let { restoreFromCopy(vfs, it, last, null) }
+                        ?: return Outcome.failure(DiagCode.JOURNAL_CORRUPTED, if (read == null) "запечатанный сегмент пропал" else "запечатанный сегмент испорчен или пуст", last)
+                    repairs += restored(last)
+                    scan(copy, null)
+                } else {
+                    own
+                }
+                val tail = parsed.loaded.last()
                 offset = tail.position
                 baseHash = tail.hash
             }
@@ -302,14 +403,14 @@ class EventJournal private constructor(
                 vfs.read(path)
             } catch (e: IOException) {
                 return Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "журнал не прочитан", e, path))
-            } ?: return Outcome.success(EventJournal(vfs, path, segmentSize, sealed, offset, baseHash, emptyList()))
+            } ?: return Outcome.success(EventJournal(vfs, path, segmentSize, copiesDir, sealed, offset, baseHash, emptyList()), repairs)
 
             val scan = scan(bytes, offset + 1 to baseHash)
             val loaded = scan.loaded
             val validEnd = scan.validEnd
             val badLine = scan.badLine
             val linesAfterBad = scan.linesAfterBad
-            val diags = mutableListOf<Diagnostic>()
+            val diags = repairs.toMutableList()
             // Первая запись активного цела сама по себе, но не стыкуется с последним сегментом: между ними пропал
             // сегмент. Это не порча хвоста — карантин отрезал бы целый активный файл (A-6), поэтому отказ и при
             // подтверждённом карантине.
@@ -341,7 +442,17 @@ class EventJournal private constructor(
                     return Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "хвост журнала не отрезан", e, path))
                 }
             }
-            return Outcome.success(EventJournal(vfs, path, segmentSize, sealed, offset, baseHash, loaded), diags)
+            val journal = EventJournal(vfs, path, segmentSize, copiesDir, sealed, offset, baseHash, loaded)
+            // Сегменты, запечатанные до копий (D-95), — копия один раз, если сегмент цел.
+            if (copiesDir != null) {
+                for (name in sealed) {
+                    if (runCatching { vfs.exists(copyOf(copiesDir, name)) }.getOrDefault(true)) continue
+                    val b = runCatching { vfs.read(name) }.getOrNull() ?: continue
+                    val sc = scan(b, null)
+                    if (sc.badLine == null && sc.validEnd == b.size && sc.loaded.isNotEmpty()) journal.keepCopy(name, b)
+                }
+            }
+            return Outcome.success(journal, diags)
         }
 
         /**

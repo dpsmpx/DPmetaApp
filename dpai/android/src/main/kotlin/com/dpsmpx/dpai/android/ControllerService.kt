@@ -39,6 +39,16 @@ import java.util.concurrent.TimeUnit
  */
 class ControllerService : Service() {
     private var timer: ScheduledExecutorService? = null
+
+    /**
+     * Такт идёт: [keeper] продлевает wakelock раз в минуту (аудит стабильности
+     * 2 ноября 2026, A-1). Шаг проверки внутри такта идёт до 30 мин, а
+     * wakelock, взятый в начале такта на 10 мин, истекал посреди него — при
+     * выключенном экране процессор засыпал, и опрос агента вставал.
+     */
+    @Volatile
+    private var ticking = false
+    private var keeper: ScheduledExecutorService? = null
     private var wake: PowerManager.WakeLock? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -98,9 +108,15 @@ class ControllerService : Service() {
                 log.error(what, reason)
                 if (failures >= MAX_TICK_FAILURES) {
                     log.error("служба контроллера", "такт падает $failures раз подряд — служба уходит, экран поднимет её снова")
-                    running = false
+                    // `running` снимает `onDestroy` (аудит стабильности, A-6): снятый здесь, до ухода службы, он звал
+                    // экран к `startForegroundService` в гонке со `stopSelf` — система роняла приложение.
                     stopSelf()
                 }
+            }
+            keeper = Executors.newSingleThreadScheduledExecutor().also { k ->
+                k.scheduleWithFixedDelay({
+                    runCatching { if (ticking) lock.acquire(TimeUnit.MINUTES.toMillis(WAKE_MINUTES)) }
+                }, 1, 1, TimeUnit.MINUTES)
             }
             timer = Executors.newSingleThreadScheduledExecutor().also { t ->
                 t.scheduleWithFixedDelay({
@@ -117,6 +133,7 @@ class ControllerService : Service() {
                             return@scheduleWithFixedDelay
                         }
                         lock.acquire(TimeUnit.MINUTES.toMillis(WAKE_MINUTES))
+                        ticking = true
                         meter.begin()
                         // Сбой такта — в журнал приложения, а не молча (D-43): контур идёт дальше.
                         val ok = try {
@@ -136,6 +153,7 @@ class ControllerService : Service() {
                             failed("такт", AppLogs.describe(e))
                             false
                         }
+                        ticking = false
                         if (ok) failures = 0
                         meter.end(ok)
                         // Запросы человеку — по ждущим в журнале: показать новые, убрать закрытые (D-44).
@@ -191,6 +209,9 @@ class ControllerService : Service() {
         // Следующие такты отменены; после снятия wakelock идущий такт доделает работу, когда процессор проснётся.
         timer?.shutdown()
         timer = null
+        keeper?.shutdownNow()
+        keeper = null
+        ticking = false
         wake?.takeIf { it.isHeld }?.release()
         wake = null
         super.onDestroy()

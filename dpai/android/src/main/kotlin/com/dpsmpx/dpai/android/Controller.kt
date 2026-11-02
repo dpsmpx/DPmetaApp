@@ -103,17 +103,33 @@ class Controller(private val root: File, val version: String?) {
      * об этом стоит сказать человеку: последняя правка targets не сохранилась
      * (D-87). Список заполняется чтением [targets] и [project].
      */
-    val recoveredNotices = mutableListOf<com.dpsmpx.dpai.core.diagnostics.Diagnostic>()
+    val recoveredNotices: List<com.dpsmpx.dpai.core.diagnostics.Diagnostic> get() = synchronized(notices) { notices.values.toList() }
+
+    /**
+     * По одной находке на код и предмет, не больше [MAX_NOTICES] (аудит
+     * стабильности 2 ноября 2026, A-3): настройки читаются около раза в
+     * секунду, и одно «прочитана прежняя версия» дописывалось каждый раз —
+     * за недели список съедал память.
+     */
+    private val notices = LinkedHashMap<Pair<String, String?>, com.dpsmpx.dpai.core.diagnostics.Diagnostic>()
+
+    private fun notice(ds: List<com.dpsmpx.dpai.core.diagnostics.Diagnostic>) = synchronized(notices) {
+        for (d in ds) {
+            notices.remove(d.code.name to d.subject)
+            notices[d.code.name to d.subject] = d
+        }
+        while (notices.size > MAX_NOTICES) notices.remove(notices.keys.first())
+    }
 
     /** Документ настроек целиком: предупреждения чтения — в [recoveredNotices], а не в мусор. */
     private fun <T> bookDocument(key: String, parse: (com.dpsmpx.dpai.core.serialization.JsonObject) -> Outcome<T>): T? =
         when (val read = docs.read(key)) {
             is Outcome.Success -> {
-                recoveredNotices += read.warnings
+                notice(read.warnings)
                 read.value?.let { parse(it.content).valueOrNull() }
             }
             is Outcome.Failure -> {
-                recoveredNotices += read.errors
+                notice(read.errors)
                 null
             }
         }
@@ -384,6 +400,8 @@ class Controller(private val root: File, val version: String?) {
     }
 
     companion object {
+        private const val MAX_NOTICES = 20
+
         /** Отметка «карантин хвоста журнала подтверждён» — в каталоге контура (D-24). */
         private const val QUARANTINE_CONFIRMED = "quarantine-confirmed"
         private const val BOOK = "targets"

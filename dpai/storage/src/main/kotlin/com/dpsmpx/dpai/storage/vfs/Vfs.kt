@@ -20,6 +20,10 @@ interface Vfs {
 
     fun exists(path: String): Boolean
 
+    /** Размер файла в байтах без чтения содержимого; нет файла — `null`. Где нельзя иначе — чтением. */
+    @Throws(IOException::class)
+    fun size(path: String): Long? = read(path)?.size?.toLong()
+
     /** Имена файлов прямо в каталоге [dir] (без подкаталогов), по порядку. */
     @Throws(IOException::class)
     fun list(dir: String): List<String>
