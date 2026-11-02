@@ -51,7 +51,7 @@ class JdkWire(private val base: String) : Wire {
         val r = client.send(b.method(method, publisher).build(), HttpResponse.BodyHandlers.ofString(Charsets.UTF_8))
         WireReply(r.statusCode(), r.headers().map().mapNotNull { (k, v) -> v.firstOrNull()?.let { k.lowercase() to it } }.toMap(), r.body())
     } catch (e: Exception) {
-        WireReply(0, emptyMap(), null, "${e.javaClass.simpleName}: ${e.message}")
+        WireReply(0, emptyMap(), null, Words.failure(e))
     }
 }
 
@@ -103,6 +103,8 @@ class ControlCommand(
     fun run(cmd: String, all: List<String>): Int {
         json = "--json" in all
         val args = all.filter { it != "--json" }
+        // Опечатка в ключе (`--priorty`) — отказ, а не молча пропущенный ключ (аудит удобства, A-16).
+        unknownFlag(args)?.let { return usage("неизвестный ключ «$it»: ${(VALUE_FLAGS + PLAIN_FLAGS).sorted().joinToString(" ")}") }
         return when (cmd) {
             "control" -> control(args)
             "status" -> status(args)
@@ -169,9 +171,16 @@ class ControlCommand(
                 val name = if (str(w, "window") == "SESSION") "5 ч" else "неделя"
                 "$name ${num(w, "percent")?.let { "$it %" } ?: "?"}"
             }
-            out("Подписка «${str(sub, "label")}»: $windows; порог ${num(sub, "nearPercent")} %${if (bool(sub, "near")) " — у предела" else ""}${if (bool(sub, "rotation")) "; берёт задачи подписок у предела" else ""}")
+            out("Подписка «${str(sub, "label")}» ${short(str(sub, "id"))}: $windows; порог ${num(sub, "nearPercent")} %${if (bool(sub, "near")) " — у предела" else ""}${if (bool(sub, "rotation")) "; берёт задачи подписок у предела" else ""}")
         }
+        // Слоты и targets — с id (A-16): их ждут `dpai slot|target <id> on|off`.
         val control = s["control"] as? JsonObject
+        val off = names(control ?: JsonObject.of(), "disabledTargets").toSet()
+        val slots = list(s, "slots")
+        if (slots.isNotEmpty()) out("Слоты (dpai slot <id> on|off):")
+        for (sl in slots) out("  ${short(str(sl, "id"))}  ${str(sl, "state")?.let(Words::account)}${if (bool(sl, "disabled")) " · выключен" else ""}  target ${short(str(sl, "target"))}")
+        val targets = (slots.mapNotNull { str(it, "target") } + list(s, "sessions").mapNotNull { str(it, "target") }).distinct().sorted()
+        if (targets.isNotEmpty()) out("Targets (dpai target <id> on|off): " + targets.joinToString(", ") { t -> short(t) + if (t in off) " · не берёт задачи" else "" })
         control?.let { c -> num(c, "maxSessions")?.let { out("Предел сессий контура: $it") } }
         return OK
     }
@@ -470,8 +479,8 @@ class ControlCommand(
         val hits = ids.filter { it == id || it.startsWith(id) || it.endsWith(id) }.distinct()
         return when (hits.size) {
             1 -> hits.single()
-            0 -> null.also { err("$what: нет «$id»") }
-            else -> null.also { err("$what: «$id» неоднозначно (${hits.size}): уточните") }
+            0 -> null.also { err("${WHAT[what] ?: what}: нет «$id» — id и их начала видны в dpai status") }
+            else -> null.also { err("${WHAT[what] ?: what}: «$id» неоднозначно (${hits.size}): уточните") }
         }
     }
 
@@ -499,20 +508,44 @@ class ControlCommand(
         /** Решающее не применено: ждёт подтверждения на телефоне (D-91). */
         const val WAITING = 3
 
+        /** Ключи со значением и без (A-16): неизвестный — отказ. */
+        private val VALUE_FLAGS = setOf("--text", "--reason", "--priority", "--class", "--model", "--effort", "--budget", "--review", "--scope", "--depends-on", "--port")
+        private val PLAIN_FLAGS = setOf("--yes", "--all", "--stat", "--json")
+
+        /** Первый неизвестный ключ; значение после ключа со значением — не ключ, даже если начинается с `--`. */
+        private fun unknownFlag(args: List<String>): String? {
+            var i = 0
+            while (i < args.size) {
+                val a = args[i]
+                when {
+                    a in VALUE_FLAGS -> i++
+                    a.startsWith("--") && a !in PLAIN_FLAGS -> return a
+                }
+                i++
+            }
+            return null
+        }
+
+        /** Что искали — словами в ответе «нет такого». */
+        private val WHAT = mapOf("tasks" to "задача", "sessions" to "сессия", "requests" to "запрос", "slots" to "слот", "subscriptions" to "подписка")
+
+        private const val CLASSES = "классы: trivial, classification, extraction, summarization, repository_recon, normal_engineering, complex_debugging, architecture, critical_review"
+
         private const val TASK_USAGE = "dpai task add «название» «что сделать» [--priority HIGH] [--class trivial] [--model haiku] [--effort low] [--budget 0.25] [--review code,security] [--scope путь,путь] [--depends-on id,id]\n" +
             "dpai task <id> hold|resume|first|retry [--text «…»]|verify|messages|diff [--stat]|reviews|priority <P>|policy --class <к> …|scope [путь…]|depends [id…]|archive|unarchive|cancel --yes|waive --reason «…» --yes\n" +
-            "dpai task archive-done   — все завершённые в архив"
+            "dpai task archive-done   — все завершённые в архив\n" + CLASSES
         private const val SESSION_USAGE = "dpai session <id> stop | reassign | send «запрос» [--model m] [--effort e] | fresh [«запрос»]"
 
         val USAGE = """
             |  dpai control pair <код>   сопряжение с приложением (код — Targets → «Командная строка»)
             |  dpai status [--all]       задачи (без архива), сессии, запросы, загрузка подписки
-            |  dpai task …               add | archive-done | <id> hold|resume|first|cancel|retry|verify|waive|priority|policy|archive|unarchive|messages|diff|reviews
+            |  dpai task …               add | archive-done | <id> hold|resume|first|cancel|retry|verify|waive|priority|policy|scope|depends|archive|unarchive|messages|diff|reviews
+            |                            приоритеты: critical, high, normal, low, background; классы — dpai task
             |  dpai session <id> …       stop | reassign | send «запрос» | fresh
             |  dpai requests             ждущие запросы;  dpai answer <запрос> <вариант> [--text] [--yes]
             |  dpai search «запрос»      поиск по задачам, сессиям, веткам, коммитам, событиям (ТЗ, §75)
             |  dpai limit <процент>      порог «у предела»;  dpai sessions-limit <n|off>
-            |  dpai target|slot <id> on|off
+            |  dpai target|slot <id> on|off   id — из dpai status (можно начало или конец)
             |  --json — ответ как есть; опасное — с --yes; решающее (слияние, «принять», исключение) —
             |    подтверждением на телефоне: код выхода 3 — «ждёт телефона»
         """.trimMargin()

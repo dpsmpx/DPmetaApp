@@ -160,7 +160,7 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
                     try {
                         getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("терминал", text))
                     } catch (e: RuntimeException) {
-                        Toast.makeText(this, "Не записано в буфер обмена: ${e.javaClass.simpleName}", Toast.LENGTH_LONG).show()
+                        Toast.makeText(this, "Не записано в буфер обмена: ${com.dpsmpx.dpai.core.text.Words.failure(e)}", Toast.LENGTH_LONG).show()
                     }
                 }
                 .setNegativeButton("Нет", null)

@@ -99,4 +99,13 @@ class WordsTest {
         assertEquals("НЕИЗВЕСТНОЕ_СОСТОЯНИЕ", Words.task("НЕИЗВЕСТНОЕ_СОСТОЯНИЕ"))
         assertEquals("NEW_CODE", Words.reason("NEW_CODE"))
     }
+
+    /** A-17 аудита удобства: сбой — словами, без имени класса исключения. */
+    @Test
+    fun failuresInWords() {
+        assertEquals("нет соединения: на том конце никто не слушает", Words.failure(java.net.ConnectException()))
+        assertEquals("истекло время ожидания (connect timed out)", Words.failure(java.net.SocketTimeoutException("connect timed out")))
+        assertEquals("журнал не открылся", Words.failure(IllegalStateException("журнал не открылся")))
+        assertTrue("Exception" !in Words.failure(RuntimeException()), Words.failure(RuntimeException()))
+    }
 }

@@ -129,6 +129,27 @@ object Words {
      * «3 дн 4 ч» — вместо `Duration.toString()` («1m», «2h 5m»). Одна на
      * всё приложение: сброс окна подписки, пауза слота, повтор, срок запроса.
      */
+    /**
+     * Сбой словами для экрана и `dpai` (аудит удобства 1 ноября 2026, A-17):
+     * «нет соединения», а не «ConnectException: null». Имя класса — только в
+     * журнале приложения, где его читают при разборе.
+     */
+    fun failure(e: Throwable): String {
+        val msg = e.message?.takeIf { it.isNotBlank() && it != "null" }
+        val what = when (e.javaClass.simpleName) {
+            "ConnectException" -> "нет соединения: на том конце никто не слушает"
+            "SocketTimeoutException", "HttpTimeoutException", "TimeoutException" -> "истекло время ожидания"
+            "UnknownHostException" -> "имя хоста не найдено"
+            "NoRouteToHostException" -> "нет пути до хоста (сеть или VPN)"
+            "FileNotFoundException", "NoSuchFileException" -> "файл не найден"
+            "AccessDeniedException", "SecurityException" -> "нет доступа"
+            "BindException" -> "порт уже занят"
+            "OutOfMemoryError" -> "не хватило памяти"
+            else -> return msg ?: "непредвиденный сбой (подробности — в журнале приложения)"
+        }
+        return if (msg == null) what else "$what ($msg)"
+    }
+
     fun duration(d: Duration): String {
         val m = d.inWholeMinutes.coerceAtLeast(0)
         return when {

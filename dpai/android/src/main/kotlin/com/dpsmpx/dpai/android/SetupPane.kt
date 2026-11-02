@@ -100,7 +100,7 @@ private fun SectionCard(s: GuideSection) {
                     OutlinedButton(onClick = {
                         when (a) {
                             GuideAction.SAVE_AGENT -> scope.launch {
-                                note = withContext(Dispatchers.IO) { runCatching { saveAgent(context) }.fold({ "Сохранено: Загрузки/dpai-agent.zip" }, { "Не сохранено: ${AppLogs.describe(it)}" }) }
+                                note = withContext(Dispatchers.IO) { runCatching { saveAgent(context) }.fold({ "Сохранено: Загрузки/dpai-agent.zip" }, { "Не сохранено: ${com.dpsmpx.dpai.core.text.Words.failure(it)}" }) }
                             }
                             GuideAction.APP_SETTINGS -> context.startActivity(
                                 Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),

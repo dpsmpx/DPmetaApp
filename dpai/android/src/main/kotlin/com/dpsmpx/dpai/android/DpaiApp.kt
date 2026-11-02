@@ -144,7 +144,8 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                 failure = "журнал контроллера испорчен — нужно ваше решение"
                 null
             } catch (e: Exception) {
-                failure = Redactor.STANDARD.redact("${e.javaClass.simpleName}: ${e.message}")
+                // Словами (A-17); имя класса — в журнале приложения.
+                failure = Redactor.STANDARD.redact(com.dpsmpx.dpai.core.text.Words.failure(e))
                 null
             }
             if (next != null) {
@@ -317,7 +318,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
             }
             failure?.takeIf { corrupted == null }?.let {
                 Text(
-                    "Контроллер не работает: $it. Проверьте targets на вкладке Targets.",
+                    "Контроллер не работает: $it. Проверьте targets на вкладке Targets; подробности — в журнале приложения.",
                     Modifier.fillMaxWidth().padding(12.dp),
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall,

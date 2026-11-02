@@ -99,8 +99,8 @@ object ControlServer {
             // (проверка на Redmi Note 13: канал открыт на [::1]:47777, dpai — ConnectException).
             ServerSocket(PORT, 8, InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1)))
         } catch (e: Exception) {
-            problem = AppLogs.describe(e)
-            log.warn("dpai", "канал не открыт на 127.0.0.1:$PORT: $problem")
+            problem = com.dpsmpx.dpai.core.diagnostics.Redactor.STANDARD.redact(com.dpsmpx.dpai.core.text.Words.failure(e))
+            log.warn("dpai", "канал не открыт на 127.0.0.1:$PORT: ${AppLogs.describe(e)}")
             return
         }
         problem = null
