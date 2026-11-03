@@ -2,6 +2,7 @@ package com.dpsmpx.dpai.execution.claude
 
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.ids.ExecutionTargetId
+import com.dpsmpx.dpai.core.ids.Executor
 import com.dpsmpx.dpai.core.ids.ProviderSessionId
 import com.dpsmpx.dpai.core.ids.SessionId
 import com.dpsmpx.dpai.core.result.Outcome
@@ -43,6 +44,6 @@ class RoutingRunner(
 
     override fun position(session: SessionId): Long? = targetOf(session)?.let(runnerFor)?.position(session)
 
-    override fun adopt(session: SessionId, provider: ProviderSessionId, afterSequence: Long, turnRunning: Boolean): Outcome<RunnerState> =
-        route(session) { adopt(session, provider, afterSequence, turnRunning) }
+    override fun adopt(session: SessionId, provider: ProviderSessionId, afterSequence: Long, turnRunning: Boolean, executor: Executor): Outcome<RunnerState> =
+        route(session) { adopt(session, provider, afterSequence, turnRunning, executor) }
 }

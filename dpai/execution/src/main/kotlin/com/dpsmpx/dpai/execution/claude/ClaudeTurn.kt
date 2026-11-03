@@ -2,7 +2,9 @@ package com.dpsmpx.dpai.execution.claude
 
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.Diagnostic
+import com.dpsmpx.dpai.core.ids.Executor
 import com.dpsmpx.dpai.core.ids.ProviderSessionId
+import com.dpsmpx.dpai.core.text.Words
 import com.dpsmpx.dpai.core.measure.Measure
 import com.dpsmpx.dpai.core.serialization.JsonValue
 import com.dpsmpx.dpai.execution.agent.ExitReason
@@ -41,8 +43,10 @@ data class ClaudeTurn(
  * `rate_limit_event`, `subtype` итога), а не из текста модели. Нет итога в
  * потоке — ход не завершён, что бы ни было в тексте (D-23).
  */
-class ClaudeTurnAssembler(private val session: ProviderSessionId) {
+class ClaudeTurnAssembler(private val session: ProviderSessionId, executor: Executor = Executor.CLAUDE) {
     private val parser = ClaudeStreamParser(session)
+    /** Поток Codex и Gemini — сначала в нормальную форму (D-100). */
+    private val normalizer = StreamNormalizer.of(executor, session)
     private val notes = mutableListOf<Diagnostic>()
     private var result: ClaudeEvent.Result? = null
     private var rateLimit: ClaudeEvent.RateLimit? = null
@@ -51,8 +55,20 @@ class ClaudeTurnAssembler(private val session: ProviderSessionId) {
     private var compacted = false
     private val tools = ToolTracker()
 
-    /** Строка вывода; возвращает событие, если строка его несёт. */
-    fun feed(line: String, truncated: Boolean = false): ClaudeEvent? {
+    /** Строка вывода; возвращает последнее событие, если строка его несёт. */
+    fun feed(line: String, truncated: Boolean = false): ClaudeEvent? = feedAll(line, truncated).lastOrNull()
+
+    /**
+     * Строка вывода исполнителя — все события нормальной формы, которые она
+     * несёт: у Codex один элемент хода — это вызов инструмента и его итог.
+     */
+    fun feedAll(line: String, truncated: Boolean = false): List<ClaudeEvent> =
+        if (truncated) listOfNotNull(feedNormal(line, true)) else normalizer.lines(line).mapNotNull { feedNormal(it, false) }
+
+    /** Строка stderr исполнителя: отказ входа Gemini виден только там (`docs/research/GEMINI_CLI.md`, §4). */
+    fun stderr(text: String) = normalizer.stderr(text)
+
+    private fun feedNormal(line: String, truncated: Boolean): ClaudeEvent? {
         val p = parser.feed(line, truncated)
         notes += p.diagnostics
         when (val e = p.event) {
@@ -88,6 +104,8 @@ class ClaudeTurnAssembler(private val session: ProviderSessionId) {
             mismatch -> TurnStatus.FAILED
             r == null -> {
                 diags += incomplete(exitCode, exitReason)
+                // Причина без итога — из ошибок и stderr исполнителя: вход или предел (D-100).
+                normalizer.failureHint()?.let { diags += Diagnostic.error(it, "исполнитель сообщил: ${Words.reason(it.name)}", ClaudeStreamParser.SUBJECT) }
                 if (exitReason == ExitReason.TIMEOUT || exitReason == ExitReason.STOPPED) TurnStatus.INCOMPLETE else TurnStatus.FAILED
             }
             !r.isError -> {
