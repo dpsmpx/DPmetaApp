@@ -232,6 +232,7 @@ dependencies {
     implementation(project(":jsch"))
     implementation(project(":terminal"))
     implementation(project(":providers"))
+    implementation(project(":files"))
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.material3)
     implementation(libs.activity.compose)

@@ -2851,7 +2851,7 @@ T16.
 **Проверка.** `FolderSyncTest` (план и применение: новые, изменённые,
 удалённые, конфликты, удаление в папке только с отметкой, пределы),
 `LocalTreeTest` (символьные ссылки, запись не за пределы корня),
-`FileLinkBookTest`, `TextFileTest`, `FileNamesTest`; на телефоне —
+`FileLinkBookTest` (документ связей, текст, имена, вложения); на телефоне —
 `docs/DEVICE_CHECK.md`, §19. Угроза — `docs/SECURITY_MODEL.md`, T17.
 
 ## Отложено
