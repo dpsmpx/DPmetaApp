@@ -263,7 +263,9 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
         }
         val ticked = tick(state, now)
         val s1 = ticked.fold(state, ::apply)
-        val previous = s1.taskSubscription[task]
+        // Подписка задачи у этого исполнителя (D-100): переход к другому исполнителю — у предела или
+        // ревьюером по выбору — не переход подписки D-57, его правила к нему не применяются.
+        val previous = s1.taskSubscription[task]?.get(executor ?: Executor.CLAUDE)
         val candidates = s1.slots.values
             .filter { it.state == AccountState.AVAILABLE && (target == null || it.targetId == target) && it.id != exclude && (executor == null || it.executor == executor) }
             .filter { slot ->
@@ -280,7 +282,7 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
             own.isNotEmpty() -> own
             else -> candidates.filter { s1.subscriptions.getValue(it.subscriptionId).rotationAllowed }
         }
-        if (pool.isEmpty()) return Outcome.failure(DiagCode.ACCOUNT_NONE_AVAILABLE, explainNone(s1, now, previous, target, urgent), "task $task")
+        if (pool.isEmpty()) return Outcome.failure(DiagCode.ACCOUNT_NONE_AVAILABLE, explainNone(s1, now, previous, target, urgent, executor), "task $task")
         val limit = policy.maxSwitchesPerTask
         if (switching && limit != null) {
             val recent = s1.switches[task].orEmpty().count { it > now - policy.switchWindow }
@@ -402,9 +404,18 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
         }
     }
 
-    private fun explainNone(state: AccountsState, now: Timestamp, previous: SubscriptionId?, target: ExecutionTargetId?, urgent: Boolean = false): String {
+    private fun explainNone(
+        state: AccountsState,
+        now: Timestamp,
+        previous: SubscriptionId?,
+        target: ExecutionTargetId?,
+        urgent: Boolean = false,
+        executor: Executor? = null,
+    ): String {
         if (state.slots.isEmpty()) return "нет ни одного слота: зарегистрируйте подписку и войдите формой Claude"
-        val parts = state.subscriptions.values.sortedBy { it.id.value }.map { sub ->
+        val subs = state.subscriptions.values.filter { executor == null || it.executor == executor }
+        if (subs.isEmpty()) return "нет подписок ${executor?.title}: заведите слот этого исполнителя"
+        val parts = subs.sortedBy { it.id.value }.map { sub ->
             val slots = state.slotsOf(sub.id).filter { target == null || it.targetId == target }
             val why = when {
                 slots.isEmpty() -> "нет слотов" + (target?.let { " на $it" } ?: "")
@@ -485,9 +496,10 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
             is SlotDisabled -> state.slot(event.slot) { it.copy(disabled = true) }
             is SlotEnabled -> state.slot(event.slot) { it.copy(disabled = false, login = LoginStatus.UNKNOWN) }
             is SessionLeased -> {
-                val sub = state.slots.getValue(event.slot).subscriptionId
+                val slot = state.slots.getValue(event.slot)
+                val own = state.taskSubscription[event.task].orEmpty() + (slot.executor to slot.subscriptionId)
                 state.slot(event.slot) { it.copy(sessions = it.sessions + (event.session to event.task)) }
-                    .copy(taskSubscription = state.taskSubscription + (event.task to sub))
+                    .copy(taskSubscription = state.taskSubscription + (event.task to own))
             }
             is SessionReleased -> state.slot(event.slot) { it.copy(sessions = it.sessions - event.session) }
             is SubscriptionSwitched -> state.copy(switches = state.switches + (event.task to state.switches[event.task].orEmpty() + event.at))

@@ -46,6 +46,16 @@ import kotlin.time.Duration.Companion.minutes
 /** Старт хода глазами Claude: сессия, запрос, сессия провайдера, `--resume` ли. */
 data class Start(val session: SessionId, val request: ClaudeRequest, val provider: ProviderSessionId?, val resume: Boolean)
 
+/** Что стенд даёт настройке аккаунтов: логика, состояние со слотом Claude, его target и слот. */
+data class AccountsHook(
+    val logic: Accounts,
+    val state: AccountsState,
+    val target: com.dpsmpx.dpai.core.ids.ExecutionTargetId,
+    val claudeSlot: com.dpsmpx.dpai.core.ids.AccountId,
+    val ids: IdGenerator,
+    val now: com.dpsmpx.dpai.core.clock.Timestamp,
+)
+
 /**
  * Стенд слоя D-40 (`docs/EFFICIENCY.md`): проект с настоящим Git, одна
  * подписка со слотом, заглушка Claude ([wrap] — обёртка поверх неё, например
@@ -60,6 +70,9 @@ class EfficiencyHarness(
     private val verify: (attempt: Int, lastPrompt: String) -> List<String>? = { _, _ -> null },
     private val scenario: (attempt: Int) -> MockScenario = { MockScenario.SUCCESS },
     sessionsPerTarget: Int = 2,
+    /** Аккаунты сверх слота Claude (D-100): подписки Codex и Gemini, пределы — до первого такта. */
+    accountsHook: (AccountsHook) -> AccountsState = { it.state },
+    // Последним: вызовы с замыкающей лямбдой оборачивают исполнителя.
     wrap: (ClaudeRunner) -> ClaudeRunner = { it },
 ) {
     val clock = ManualClock()
@@ -94,6 +107,7 @@ class EfficiencyHarness(
         accounts = Accounts.applyAll(accounts, logic.registerSlot(accounts, slot, sub, target, "/home/dev/.claude", clock.now()).valueOrNull()!!)
         val status = AuthStatus(true, AuthStatus.CLAUDE_AI, AuthStatus.FIRST_PARTY, AuthStatus.fingerprint("org", "a@example.org"), "max")
         accounts = Accounts.applyAll(accounts, logic.observeAuthStatus(accounts, slot, status, clock.now()).valueOrNull()!!)
+        accounts = accountsHook(AccountsHook(logic, accounts, target, slot, ids, clock.now()))
         val project = ids.next(IdKinds.PROJECT)
         val profile = VerificationProfile(project, mapOf(VerifyLevel.NORMAL to listOf(VerifyStep("тесты", listOf("gradle", "test")))))
         val steps = StepRunner { _, worktree, _ ->

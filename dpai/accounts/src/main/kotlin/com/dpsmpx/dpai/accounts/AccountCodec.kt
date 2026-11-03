@@ -229,7 +229,10 @@ object AccountCodec {
                 },
             ),
             "taskSubscription" to JsonArray(
-                s.taskSubscription.entries.sortedBy { it.key.value }.map { (k, v) -> obj("task" to id(k), "subscription" to id(v)) },
+                // По строке на исполнителя задачи (D-100): исполнитель — у подписки.
+                s.taskSubscription.entries.sortedBy { it.key.value }.flatMap { (k, m) ->
+                    m.entries.sortedBy { it.key.ordinal }.map { (_, v) -> obj("task" to id(k), "subscription" to id(v)) }
+                },
             ),
             "switches" to JsonArray(
                 s.switches.entries.sortedBy { it.key.value }.map { (k, v) ->
@@ -282,9 +285,10 @@ object AccountCodec {
                 }
             }.also { s.finish() }
         }
+        val subExecutor = subs.associate { it.id to it.executor }
         val taskSub = f.objects("taskSubscription").mapNotNull { p ->
             build(p.id("task", IdKinds.TASK), p.id("subscription", IdKinds.SUBSCRIPTION)) { a, b -> a to b }.also { p.finish() }
-        }.toMap()
+        }.groupBy({ it.first }, { it.second }).mapValues { (_, list) -> list.associateBy { subExecutor[it] ?: Executor.CLAUDE } }
         val switches = f.objects("switches").mapNotNull { p ->
             val times = p.array("at")?.items?.mapNotNull { (it as? JsonNumber)?.toLongExact()?.let(::Timestamp) }
             build(p.id("task", IdKinds.TASK)) { a -> times?.let { a to it } }.also { p.finish() }

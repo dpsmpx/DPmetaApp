@@ -37,12 +37,16 @@ object AppDisk {
      * каталоги слотов Claude в госте целиком, файлы входа и ключи SSH где
      * угодно.
      */
+    /** Каталоги слотов в домашней папке гостя: `.claude-slot-N`, `.codex-slot-N`, `.gemini-slot-N`. */
+    private val SLOT_PREFIXES = listOf(".claude-slot-", ".codex-slot-", ".gemini-slot-")
+
     fun hidden(rel: String): Boolean {
         val p = parts(rel)
         if (p.firstOrNull() == CONTROL_TOKEN) return true
         if (p.any { it == ".ssh" || it == ".credentials.json" }) return true
         val home = parts(LINUX_HOME)
-        return p.size > home.size && p.take(home.size) == home && p[home.size].startsWith(".claude-slot-")
+        // Каталоги слотов (D-29, D-100): в них — вход Claude, Codex и Gemini.
+        return p.size > home.size && p.take(home.size) == home && SLOT_PREFIXES.any { p[home.size].startsWith(it) }
     }
 
     /** Можно ли менять (создать, заменить, удалить, переименовать) документ [rel]: только внутри `/root` гостя. */

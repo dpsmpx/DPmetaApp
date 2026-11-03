@@ -196,7 +196,7 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
                     Text(t.label, style = MaterialTheme.typography.titleSmall)
                     if (t.configDir != null) TargetSwitches(model, t)
                     Text(if (t.inApp) "Alpine в данных приложения, без SSH · ${Words.targetType(t.type.name)}" else "${t.user}@${t.host}:${t.port} · ${Words.targetType(t.type.name)}", style = MaterialTheme.typography.bodySmall)
-                    Text(t.configDir?.let { "каталог Claude: $it" } ?: "без каталога Claude — только проверка агента", style = MaterialTheme.typography.bodySmall)
+                    Text(t.configDir?.let { "${t.executor.title} · каталог слота: $it" } ?: "без каталога слота — только проверка агента", style = MaterialTheme.typography.bodySmall)
                     // Чем занят слот (D-56): идущие задачи с проектом; нет — свободен.
                     if (t.configDir != null) {
                         UsageAutoSwitch(model, t)
@@ -231,9 +231,12 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
                                     checks[t.id.value] = slots.map { sl ->
                                         val ok = sl.state == com.dpsmpx.dpai.core.state.AccountState.AVAILABLE || sl.state == com.dpsmpx.dpai.core.state.AccountState.BUSY
                                         CheckLine(LOGIN, "слот ${sl.configDir.substringAfterLast('/')}: ${Words.account(sl.state.name)}", if (ok) Tone.DONE else Tone.WARNING)
-                                    }.ifEmpty { listOf(CheckLine(LOGIN, "слота нет: войдите в Claude в каталоге слота («Claude в терминале») и проверьте снова", Tone.WARNING)) }
+                                    }.ifEmpty {
+                                        val how = if (t.executor == com.dpsmpx.dpai.core.ids.Executor.CLAUDE) "«Claude в терминале» → /login" else "«Войти в ${t.executor.title}»"
+                                        listOf(CheckLine(LOGIN, "слота нет: войдите в каталоге слота ($how) и проверьте снова", Tone.WARNING))
+                                    }
                                 }
-                            }) { Text(if (probing) "Проверяю…" else "Вход Claude") }
+                            }) { Text(if (probing) "Проверяю…" else "Вход ${t.executor.title}") }
                         }
                         // Проект — у любого target: ход Claude может идти на другом, со своим входом (D-50).
                         // Проект — и на target «в приложении»: Git и проверка — внутри гостя, пути — гостя (D-75, шаг 5).
@@ -245,7 +248,11 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
                     Row {
                         TextButton(onClick = { TerminalActivity.start(context, t.id.value) }) { Text("Терминал") }
                         if (t.configDir != null && t.platform == com.dpsmpx.dpai.execution.target.TargetPlatform.POSIX) {
-                            TextButton(onClick = { TerminalActivity.start(context, t.id.value, claude = true) }) { Text("Claude в терминале") }
+                            TextButton(onClick = { TerminalActivity.start(context, t.id.value, claude = true) }) { Text("${t.executor.title} в терминале") }
+                            // Вход Codex и Gemini — своей командой (D-100): код устройства или ссылка без браузера здесь.
+                            if (t.executor != com.dpsmpx.dpai.core.ids.Executor.CLAUDE) {
+                                TextButton(onClick = { TerminalActivity.start(context, t.id.value, login = true) }) { Text("Войти в ${t.executor.title}") }
+                            }
                         }
                     }
                     checks[t.id.value]?.forEach { c -> CheckRow(c) }

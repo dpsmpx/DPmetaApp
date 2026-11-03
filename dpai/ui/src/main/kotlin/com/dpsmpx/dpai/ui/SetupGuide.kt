@@ -79,6 +79,10 @@ object SetupGuide {
                 ),
                 GuideStep("Команда claude — через proot; проверка версии (первый запуск — несколько секунд):", "cp ~/dpai/claude-proot.sh \$PREFIX/bin/claude && chmod +x \$PREFIX/bin/claude && claude --version"),
                 GuideStep("Проверка агента — одна строка JSON с \"ok\":true, у claude и git — \"found\":true:", "dpai agent doctor"),
+                GuideStep(
+                    "Необязательно — исполнители Codex и Gemini (D-100): слоты Codex и Gemini на этом target. Не ставятся в Termux — их место Linux в приложении (вкладка Targets):",
+                    "npm install -g @openai/codex @google/gemini-cli && codex --version && gemini --version",
+                ),
             ),
         ),
         GuideSection(

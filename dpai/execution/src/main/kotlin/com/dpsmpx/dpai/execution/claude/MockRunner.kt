@@ -2,6 +2,7 @@ package com.dpsmpx.dpai.execution.claude
 
 import com.dpsmpx.dpai.core.clock.Clock
 import com.dpsmpx.dpai.core.clock.RandomSource
+import com.dpsmpx.dpai.core.ids.Executor
 import com.dpsmpx.dpai.core.ids.IdGenerator
 import com.dpsmpx.dpai.core.ids.ProviderSessionId
 import com.dpsmpx.dpai.core.ids.SessionId
@@ -18,6 +19,7 @@ import com.dpsmpx.dpai.execution.agent.ExitReason
 import com.dpsmpx.dpai.execution.agent.MockAgentHost
 import com.dpsmpx.dpai.execution.agent.RunEventSource
 import com.dpsmpx.dpai.execution.agent.RunSpec
+import com.dpsmpx.dpai.execution.process.OutputStream
 
 /**
  * Сценарии `MockRunner` — ТЗ, §89: успех, отказ, тайм-аут, падение,
@@ -49,6 +51,9 @@ enum class MockScenario {
  *
  * `SLOW_OUTPUT` отдаёт по строке на каждый [advance]; `MISSING_EVENTS`
  * теряет событие в первом ответе агента — канал закрывает пропуск сверкой.
+ * Ход Codex или Gemini (D-100) «процесс» пишет в формате того CLI
+ * (`tests/data/codex-stream/`, `tests/data/gemini-stream/`): сценарий
+ * проходит и через нормализатор потока.
  */
 class MockRunner private constructor(
     private val runner: ClaudeCodeCliRunner,
@@ -86,7 +91,7 @@ class MockRunner private constructor(
             host.onStart = { run, spec, turn ->
                 val scenario = scenarioFor(run, turn)
                 val steps = ArrayDeque<() -> Unit>()
-                for (l in script(scenario, sessionOf(spec))) steps.addLast { host.output(run, l) }
+                for ((stream, l) in script(scenario, sessionOf(spec), executorOf(spec))) steps.addLast { host.output(run, l, stream) }
                 val exitCode: Int? = when (scenario) {
                     MockScenario.TIMEOUT -> null
                     MockScenario.CRASH -> 137
@@ -105,11 +110,15 @@ class MockRunner private constructor(
             return MockRunner(runner, host)
         }
 
+        /** Id сессии из команды хода; у Codex его нет — id потока он назначает сам (D-100). */
         private fun sessionOf(spec: RunSpec): String {
             val c = spec.command
             val i = c.indexOfFirst { it == "--session-id" || it == "--resume" }
-            return c[i + 1]
+            return if (i >= 0) c[i + 1] else ""
         }
+
+        /** Исполнитель — по имени команды (`ExecutorCli.DEFAULT_COMMANDS`). */
+        private fun executorOf(spec: RunSpec): Executor = Executor.byKey(spec.command.first()) ?: Executor.CLAUDE
 
         private fun line(vararg pairs: Pair<String, com.dpsmpx.dpai.core.serialization.JsonValue>): String = CanonicalJson.write(JsonObject.of(*pairs))
 
@@ -166,6 +175,74 @@ class MockRunner private constructor(
             MockScenario.REVIEW_BLOCK ->
                 listOf(init(sid, "u1"), result(sid, "u2", false, "success", "ревью готово", findings("BLOCKING", "деление на ноль при пустом списке")))
             MockScenario.REVIEW_NO_SCHEMA -> listOf(init(sid, "u1"), text(sid, "u2", "замечаний нет"), result(sid, "u3", false, "success", "замечаний нет"))
+        }
+
+        /** Вывод хода исполнителя по сценарию: поток и строка. Gemini без входа пишет только в stderr. */
+        fun script(s: MockScenario, sid: String, executor: Executor): List<Pair<OutputStream, String>> = when (executor) {
+            Executor.CLAUDE -> script(s, sid).map { OutputStream.STDOUT to it }
+            Executor.CODEX -> codex(s).map { OutputStream.STDOUT to it }
+            Executor.GEMINI ->
+                if (s == MockScenario.AUTH_ERROR) {
+                    listOf(OutputStream.STDERR to "Error authenticating: FatalAuthenticationError: Manual authorization is required but the current session is non-interactive.")
+                } else {
+                    gemini(s, sid).map { OutputStream.STDOUT to it }
+                }
+        }
+
+        /** Ответ ревью текстом (D-100): у Codex и Gemini нет `--json-schema`. */
+        private fun reviewText(severity: String, title: String) = "ревью готово\n```json\n${CanonicalJson.write(findings(severity, title))}\n```"
+
+        /** Поток Codex по сценарию; формы — как в корпусе `tests/data/codex-stream/`. */
+        private fun codex(s: MockScenario): List<String> {
+            val start = listOf(line("type" to json("thread.started"), "thread_id" to json("mock-thread")), line("type" to json("turn.started")))
+            fun msg(id: String, t: String) = line("type" to json("item.completed"), "item" to JsonObject.of("id" to json(id), "type" to json("agent_message"), "text" to json(t)))
+            val ok = line("type" to json("turn.completed"), "usage" to JsonObject.of("input_tokens" to json(10), "cached_input_tokens" to json(0), "output_tokens" to json(5)))
+            fun failed(m: String) = line("type" to json("turn.failed"), "error" to JsonObject.of("message" to json(m)))
+            return start + when (s) {
+                MockScenario.SUCCESS, MockScenario.SLOW_OUTPUT, MockScenario.MISSING_EVENTS -> listOf(msg("i1", "работаю"), msg("i2", "готово"), ok)
+                MockScenario.DUPLICATE_EVENTS -> listOf(msg("i1", "работаю"), msg("i1", "работаю"), msg("i2", "готово"), ok)
+                MockScenario.FAILURE, MockScenario.PARTIAL_COMPLETION -> listOf(failed("сбой"))
+                MockScenario.TIMEOUT -> listOf(msg("i1", "долго думаю"))
+                MockScenario.CRASH -> listOf(msg("i1", "работаю"))
+                MockScenario.RATE_LIMIT -> listOf(failed("You've hit your usage limit. Try again later."))
+                MockScenario.AUTH_ERROR -> listOf(failed("unexpected status 401 Unauthorized: Missing bearer or basic authentication in header"))
+                MockScenario.SLOW_TOOLS -> listOf(
+                    line(
+                        "type" to json("item.completed"),
+                        "item" to JsonObject.of("id" to json("i0"), "type" to json("command_execution"), "command" to json("cat a.kt"), "aggregated_output" to json(""), "exit_code" to json(0), "status" to json("completed")),
+                    ),
+                    msg("i1", "работаю"), msg("i2", "готово"), ok,
+                )
+                MockScenario.REVIEW_PASS -> listOf(msg("i1", reviewText("MAJOR", "нет теста на пустой ввод")), ok)
+                MockScenario.REVIEW_BLOCK -> listOf(msg("i1", reviewText("BLOCKING", "деление на ноль при пустом списке")), ok)
+                MockScenario.REVIEW_NO_SCHEMA -> listOf(msg("i1", "замечаний нет"), ok)
+            }
+        }
+
+        /** Поток Gemini по сценарию; формы — как в корпусе `tests/data/gemini-stream/`. */
+        private fun gemini(s: MockScenario, sid: String): List<String> {
+            val start = line("type" to json("init"), "session_id" to json(sid), "model" to json("mock"))
+            fun msg(t: String) = line("type" to json("message"), "role" to json("assistant"), "content" to json(t), "delta" to JsonBool(true))
+            val stats = JsonObject.of("input_tokens" to json(10), "output_tokens" to json(5), "total_tokens" to json(15))
+            val ok = line("type" to json("result"), "status" to json("success"), "stats" to stats)
+            fun failed(type: String, m: String) = line("type" to json("result"), "status" to json("error"), "error" to JsonObject.of("type" to json(type), "message" to json(m)), "stats" to stats)
+            return listOf(start) + when (s) {
+                MockScenario.SUCCESS, MockScenario.SLOW_OUTPUT, MockScenario.MISSING_EVENTS -> listOf(msg("работаю. "), msg("готово"), ok)
+                MockScenario.DUPLICATE_EVENTS -> listOf(msg("работаю. "), msg("готово"), ok, ok)
+                MockScenario.FAILURE, MockScenario.PARTIAL_COMPLETION -> listOf(failed("FatalToolExecutionError", "сбой"))
+                MockScenario.TIMEOUT -> listOf(msg("долго думаю"))
+                MockScenario.CRASH -> listOf(msg("работаю"))
+                MockScenario.RATE_LIMIT -> listOf(failed("RESOURCE_EXHAUSTED", "Quota exceeded for quota metric 'Requests per day'"))
+                MockScenario.AUTH_ERROR -> emptyList()
+                MockScenario.SLOW_TOOLS -> listOf(
+                    line("type" to json("tool_use"), "tool_name" to json("read_file"), "tool_id" to json("t1"), "parameters" to JsonObject.of("absolute_path" to json("a.kt"))),
+                    line("type" to json("tool_result"), "tool_id" to json("t1"), "status" to json("success"), "output" to json("")),
+                    msg("работаю. "), msg("готово"), ok,
+                )
+                MockScenario.REVIEW_PASS -> listOf(msg(reviewText("MAJOR", "нет теста на пустой ввод")), ok)
+                MockScenario.REVIEW_BLOCK -> listOf(msg(reviewText("BLOCKING", "деление на ноль при пустом списке")), ok)
+                MockScenario.REVIEW_NO_SCHEMA -> listOf(msg("замечаний нет"), ok)
+            }
         }
     }
 }

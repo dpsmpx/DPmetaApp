@@ -15,8 +15,11 @@ import kotlin.test.assertTrue
 class TerminalLaunchTest {
     private val ids = IdGenerator(ManualClock(), RandomSource.seeded(57))
 
-    private fun entry(platform: TargetPlatform = TargetPlatform.POSIX, configDir: String? = "/home/u/.dpai/slot a") =
-        TargetEntry(ids.next(IdKinds.TARGET), "пк", "10.0.0.2", 22, "u", platform, "/home/u/dpai-agent", configDir)
+    private fun entry(
+        platform: TargetPlatform = TargetPlatform.POSIX,
+        configDir: String? = "/home/u/.dpai/slot a",
+        executor: com.dpsmpx.dpai.core.ids.Executor = com.dpsmpx.dpai.core.ids.Executor.CLAUDE,
+    ) = TargetEntry(ids.next(IdKinds.TARGET), "пк", "10.0.0.2", 22, "u", platform, "/home/u/dpai-agent", configDir, executor = executor)
 
     @Test
     fun claudeRunsInTheSlotDirectoryThroughALoginShell() {
@@ -32,5 +35,24 @@ class TerminalLaunchTest {
         for (t in listOf(entry(TargetPlatform.WINDOWS), entry(configDir = null))) {
             assertEquals(DiagCode.UNSUPPORTED, (TerminalLaunch.claude(t) as Outcome.Failure).diagnostics.first().code)
         }
+    }
+    /** D-100: вход Codex — по коду устройства в каталоге слота; ключи API сняты. */
+    @Test
+    fun codexLoginUsesDeviceCodeInSlotHome() {
+        val t = entry(configDir = "/root/.codex-slot-1", executor = com.dpsmpx.dpai.core.ids.Executor.CODEX)
+        val login = TerminalLaunch.login(t).valueOrNull()!!
+        assertTrue(login[2].endsWith(" CODEX_HOME=/root/.codex-slot-1 codex login --device-auth"), login[2])
+        assertTrue("-u OPENAI_API_KEY " in login[2], login[2])
+        assertTrue(TerminalLaunch.claude(t).valueOrNull()!![2].endsWith(" codex"), "без входа — интерактивный codex")
+    }
+
+    /** D-100: Gemini — без браузера, способ входа «аккаунт Google» засевается, если его нет. */
+    @Test
+    fun geminiLoginSeedsGoogleAuthWithoutBrowser() {
+        val t = entry(configDir = "/root/.gemini-slot-1", executor = com.dpsmpx.dpai.core.ids.Executor.GEMINI)
+        val cmd = TerminalLaunch.login(t).valueOrNull()!![2]
+        assertTrue("GEMINI_CLI_HOME=/root/.gemini-slot-1 NO_BROWSER=true sh -c " in cmd, cmd)
+        assertTrue("oauth-personal" in cmd && cmd.endsWith("exec gemini'"), cmd)
+        assertTrue("-u GEMINI_API_KEY " in cmd && "-u GOOGLE_API_KEY " in cmd, cmd)
     }
 }

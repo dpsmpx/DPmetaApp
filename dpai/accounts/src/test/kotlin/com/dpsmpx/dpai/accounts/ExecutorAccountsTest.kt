@@ -94,4 +94,35 @@ class ExecutorAccountsTest {
         val decoded = AccountCodec.decode(AccountCodec.type(reg), reg.at, AccountCodec.payload(reg))!!.valueOrNull()
         assertEquals(reg, decoded)
     }
+    /** Подписка задачи — своя у каждого исполнителя (D-100): ревьюер Codex не делает рабочую подписку Claude чужой. */
+    @Test
+    fun taskSubscriptionPerExecutor() {
+        val f = Fixture()
+        val a = f.slot(f.subscription("Claude A"))
+        f.login(a)
+        val b = f.slot(f.subscription("Claude B"), dir = "~/.claude-b")
+        f.login(b, email = "b@example.org", org = "org-2")
+        val codex = f.slot(f.subscription("ChatGPT", executor = Executor.CODEX), dir = "~/.codex-slot-1")
+        f.record(f.accounts.observeAuthStatus(f.state, codex, AuthStatus(true, AuthStatus.CHATGPT, null, null, null), f.now))
+        val task = f.task()
+        fun lease(e: Executor): Accounts.Lease {
+            val l = f.accounts.lease(f.state, f.ids.next(com.dpsmpx.dpai.core.ids.IdKinds.SESSION), task, f.now, executor = e).valueOrNull()!!
+            f.events += l.events
+            f.state = Accounts.applyAll(f.state, l.events)
+            return l
+        }
+        val work = lease(Executor.CLAUDE)
+        val review = lease(Executor.CODEX)
+        assertEquals(codex, review.slot)
+        assertTrue(review.events.none { it is AccountEvent.SubscriptionSwitched }, "к другому исполнителю — не переход подписки")
+        // После ревью — снова своя подписка Claude, без перехода, хотя rotationAllowed ни у одной нет.
+        val again = lease(Executor.CLAUDE)
+        assertEquals(work.subscription, again.subscription)
+        assertTrue(again.events.none { it is AccountEvent.SubscriptionSwitched })
+        assertEquals(mapOf(Executor.CLAUDE to work.subscription, Executor.CODEX to review.subscription), f.state.taskSubscription[task])
+        assertEquals(f.state.taskSubscription, AccountCodec.decodeState(AccountCodec.encodeState(f.state)).valueOrNull()!!.taskSubscription)
+        // Причина отказа — только о подписках нужного исполнителя.
+        val none = assertIs<Outcome.Failure>(f.accounts.lease(f.state, f.ids.next(com.dpsmpx.dpai.core.ids.IdKinds.SESSION), f.task(), f.now, executor = Executor.GEMINI))
+        assertTrue("Gemini" in none.errors.single().message && "Claude A" !in none.errors.single().message, none.errors.single().message)
+    }
 }

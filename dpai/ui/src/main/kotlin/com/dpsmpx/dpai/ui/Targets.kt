@@ -3,6 +3,7 @@ package com.dpsmpx.dpai.ui
 import com.dpsmpx.dpai.accounts.Accounts
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.DiagnosticCollector
+import com.dpsmpx.dpai.core.ids.Executor
 import com.dpsmpx.dpai.core.ids.ExecutionTargetId
 import com.dpsmpx.dpai.core.ids.IdKinds
 import com.dpsmpx.dpai.core.result.Outcome
@@ -48,6 +49,12 @@ data class TargetEntry(
      * путь гостя (`/root/.claude-slot-N`); адреса SSH у него нет.
      */
     val inApp: Boolean = false,
+    /**
+     * Исполнитель слота target (D-100): Claude Code, Codex или Gemini; его
+     * каталог настроек — [configDir] (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`,
+     * `GEMINI_CLI_HOME`).
+     */
+    val executor: Executor = Executor.CLAUDE,
 ) {
     /** Target того же телефона — Termux на `127.0.0.1` (D-26); «в приложении» — Alpine приложения (D-75). */
     val type: TargetType
@@ -77,6 +84,7 @@ object TargetForm {
         windows: Boolean,
         agent: String,
         configDir: String? = null,
+        executor: Executor = Executor.CLAUDE,
     ): Outcome<TargetEntry> {
         val p = port.trim().toIntOrNull()?.takeIf { it in 1..65535 }
             ?: return Outcome.failure(DiagCode.VALUE_INVALID, "порт — число от 1 до 65535", "port")
@@ -97,7 +105,7 @@ object TargetForm {
         return when (val e = SshEndpoint.of(host.trim(), user.trim(), p)) {
             is Outcome.Failure -> e
             is Outcome.Success -> Outcome.success(
-                TargetEntry(id, label.trim(), e.value.host, p, e.value.user, if (windows) TargetPlatform.WINDOWS else TargetPlatform.POSIX, a, dir),
+                TargetEntry(id, label.trim(), e.value.host, p, e.value.user, if (windows) TargetPlatform.WINDOWS else TargetPlatform.POSIX, a, dir, executor = executor),
             )
         }
     }
@@ -106,11 +114,11 @@ object TargetForm {
      * Target «в приложении» (D-75, шаг 5): имя и каталог слота в госте —
      * абсолютный путь внутри Alpine (`/root/.claude-slot-N`, D-29).
      */
-    fun inApp(id: ExecutionTargetId, label: String, configDir: String): Outcome<TargetEntry> {
+    fun inApp(id: ExecutionTargetId, label: String, configDir: String, executor: Executor = Executor.CLAUDE): Outcome<TargetEntry> {
         if (label.isBlank() || label.length > 60) return Outcome.failure(DiagCode.VALUE_INVALID, "имя — от 1 до 60 знаков", "label")
         val dir = Accounts.normalizeDir(configDir.trim()) ?: configDir.trim()
         if (!dir.startsWith("/") || dir.any { it.isISOControl() }) return Outcome.failure(DiagCode.VALUE_INVALID, "каталог Claude — абсолютный путь в Linux приложения", "configDir")
-        return Outcome.success(TargetEntry(id, label.trim(), "", 0, "", TargetPlatform.POSIX, IN_APP_AGENT, dir, inApp = true))
+        return Outcome.success(TargetEntry(id, label.trim(), "", 0, "", TargetPlatform.POSIX, IN_APP_AGENT, dir, inApp = true, executor = executor))
     }
 
     /** Команда агента «в приложении» — имя для `AgentClient`: исполняет её агент процесса (`InAppAgentHost`). */
@@ -127,10 +135,12 @@ object TargetBook {
     /** Вид target «в приложении» в формате v3. */
     const val KIND_IN_APP = "in-app"
     /**
-     * v3 — target «в приложении» (`"kind": "in-app"`, без адреса SSH; D-75,
-     * шаг 5); v2 — каталог Claude слота (`configDir`); v1 и v2 читаются.
+     * v4 — исполнитель слота (`executor`, D-100; пишется, только если не
+     * `claude`); v3 — target «в приложении» (`"kind": "in-app"`, без адреса
+     * SSH; D-75, шаг 5); v2 — каталог Claude слота (`configDir`); v1…v3
+     * читаются как Claude.
      */
-    const val VERSION = 3
+    const val VERSION = 4
 
     fun toJson(entries: List<TargetEntry>): JsonObject = JsonObject(
         linkedMapOf(
@@ -140,7 +150,8 @@ object TargetBook {
                     if (e.inApp) {
                         JsonObject(
                             linkedMapOf<String, JsonValue>("id" to JsonString(e.id.value), "label" to JsonString(e.label), "kind" to JsonString(KIND_IN_APP))
-                                .also { m -> e.configDir?.let { m["configDir"] = JsonString(it) } },
+                                .also { m -> e.configDir?.let { m["configDir"] = JsonString(it) } }
+                                .also { m -> if (e.executor != Executor.CLAUDE) m["executor"] = JsonString(e.executor.key) },
                         )
                     } else {
                         JsonObject(
@@ -148,7 +159,8 @@ object TargetBook {
                                 "id" to JsonString(e.id.value), "label" to JsonString(e.label), "host" to JsonString(e.host),
                                 "port" to JsonNumber.of(e.port.toLong()), "user" to JsonString(e.user),
                                 "platform" to JsonString(e.platform.name.lowercase()), "agent" to JsonString(e.agent),
-                            ).also { m -> e.configDir?.let { m["configDir"] = JsonString(it) } },
+                            ).also { m -> e.configDir?.let { m["configDir"] = JsonString(it) } }
+                                .also { m -> if (e.executor != Executor.CLAUDE) m["executor"] = JsonString(e.executor.key) },
                         )
                     }
                 },
@@ -175,12 +187,13 @@ object TargetBook {
                 val id = t.string("id")?.let { IdKinds.TARGET.parse(it).valueOrNull() }
                 val label = t.string("label").orEmpty()
                 val dir = t.string("configDir")
+                val executor = readExecutor(t, version)
                 t.finish()
-                if (kind != KIND_IN_APP || id == null || dir == null) {
+                if (kind != KIND_IN_APP || id == null || dir == null || executor == null) {
                     d.error(DiagCode.VALUE_INVALID, "target «в приложении» неполон или вид неизвестен: $kind", "$.targets[$i]")
                     return@mapIndexedNotNull null
                 }
-                return@mapIndexedNotNull when (val e = TargetForm.inApp(id, label, dir)) {
+                return@mapIndexedNotNull when (val e = TargetForm.inApp(id, label, dir, executor)) {
                     is Outcome.Success -> e.value
                     is Outcome.Failure -> null.also { e.diagnostics.forEach { x -> d.error(x.code, x.message, "$.targets[$i]") } }
                 }
@@ -193,18 +206,26 @@ object TargetBook {
             val windows = t.string("platform") == "windows"
             val agent = t.string("agent").orEmpty()
             val configDir = if (version >= 2) t.optString("configDir") else null
+            val executor = readExecutor(t, version)
             t.finish()
-            if (id == null) {
+            if (id == null || executor == null) {
                 d.error(DiagCode.VALUE_INVALID, "id target недопустим", "$.targets[$i].id")
                 return@mapIndexedNotNull null
             }
-            val entry = TargetForm.validate(id, label, host, port, user, windows, agent, configDir)
+            val entry = TargetForm.validate(id, label, host, port, user, windows, agent, configDir, executor)
             when (entry) {
                 is Outcome.Success -> entry.value
                 is Outcome.Failure -> null.also { entry.diagnostics.forEach { x -> d.error(x.code, x.message, "$.targets[$i]") } }
             }
         }
         return if (d.hasErrors) Outcome.Failure(d.all) else Outcome.success(out)
+    }
+
+    /** Исполнитель записи (v4); нет поля — Claude; неизвестный — находка с путём (D-05), `null`. */
+    private fun readExecutor(t: JsonFields, version: Int): Executor? {
+        if (version < 4) return Executor.CLAUDE
+        val key = t.optString("executor") ?: return Executor.CLAUDE
+        return Executor.byKey(key) ?: null.also { t.diagnostics.error(DiagCode.VALUE_INVALID, "неизвестный исполнитель: $key", "${t.path}.executor") }
     }
 }
 

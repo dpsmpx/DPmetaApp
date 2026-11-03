@@ -845,6 +845,8 @@ internal fun NewTaskDialog(model: DemoModel, onDone: () -> Unit) {
     var paths by remember { mutableStateOf("") }
     var deps by remember { mutableStateOf(setOf<com.dpsmpx.dpai.core.ids.TaskId>()) }
     var reviews by remember { mutableStateOf(setOf<com.dpsmpx.dpai.tasks.ReviewRole>()) }
+    var executor by remember { mutableStateOf(com.dpsmpx.dpai.core.ids.Executor.CLAUDE) }
+    var reviewer by remember { mutableStateOf<com.dpsmpx.dpai.core.ids.Executor?>(null) }
     val choices = remember { model.dependencyChoices() }
     // Ключ нажатия (D-42): повтор «Поставить» в этом диалоге — та же задача, а не вторая.
     val keys = remember { com.dpsmpx.dpai.core.ids.IdGenerator(com.dpsmpx.dpai.core.clock.Clock.SYSTEM, com.dpsmpx.dpai.core.clock.RandomSource.secure()) }
@@ -877,7 +879,23 @@ internal fun NewTaskDialog(model: DemoModel, onDone: () -> Unit) {
                     OutlinedTextField(modelName, { modelName = it }, label = { Text("Модель (пусто — по классу)") }, singleLine = true)
                     OutlinedTextField(effort, { effort = it }, label = { Text("Усилие: low, medium, high (пусто — по классу)") }, singleLine = true)
                     OutlinedTextField(budget, { budget = it }, label = { Text("Предел стоимости хода, $ (пусто — без предела)") }, singleLine = true)
+                    // Исполнитель задачи и ревью (D-100): у предела — следующий по кругу с контекстом.
+                    Text("Исполнитель", style = MaterialTheme.typography.labelSmall)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        for (x in com.dpsmpx.dpai.core.ids.Executor.entries) {
+                            androidx.compose.material3.FilterChip(selected = executor == x, onClick = { executor = x }, label = { Text(x.title) })
+                        }
+                    }
                     ReviewChips(reviews) { reviews = it }
+                    if (reviews.isNotEmpty()) {
+                        Text("Ревьюер", style = MaterialTheme.typography.labelSmall)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            androidx.compose.material3.FilterChip(selected = reviewer == null, onClick = { reviewer = null }, label = { Text("как задача") })
+                            for (x in com.dpsmpx.dpai.core.ids.Executor.entries) {
+                                androidx.compose.material3.FilterChip(selected = reviewer == x, onClick = { reviewer = x }, label = { Text(x.title) })
+                            }
+                        }
+                    }
                     OutlinedTextField(paths, { paths = it }, label = { Text("Область: пути в репозитории, через запятую или с новой строки") }, minLines = 2)
                     if (choices.isNotEmpty()) {
                         Text("Зависит от (начнётся после них)", style = MaterialTheme.typography.labelSmall)
@@ -899,7 +917,7 @@ internal fun NewTaskDialog(model: DemoModel, onDone: () -> Unit) {
             TextButton(enabled = !busy, onClick = {
                 busy = true
                 scope.launch {
-                    val form = com.dpsmpx.dpai.ui.NewTaskForm.command(title, objective, key, priority, taskClass, modelName, effort, budget, paths, deps, reviews)
+                    val form = com.dpsmpx.dpai.ui.NewTaskForm.command(title, objective, key, priority, taskClass, modelName, effort, budget, paths, deps, reviews, executor, reviewer)
                     val r = when (form) {
                         is Outcome.Failure -> form
                         is Outcome.Success -> withContext(Dispatchers.IO) { model.addTask(form.value) }

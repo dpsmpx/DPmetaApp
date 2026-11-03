@@ -29,6 +29,9 @@ object NewTaskForm {
         scope: String = "",
         dependencies: Set<TaskId> = emptySet(),
         reviews: Set<ReviewRole> = emptySet(),
+        /** Исполнитель задачи и ревью (D-100); ревьюер `null` — тот же, что у задачи. */
+        executor: com.dpsmpx.dpai.core.ids.Executor = com.dpsmpx.dpai.core.ids.Executor.CLAUDE,
+        reviewExecutor: com.dpsmpx.dpai.core.ids.Executor? = null,
     ): Outcome<Command.AddTask> {
         if (title.isBlank()) return Outcome.failure(DiagCode.VALUE_INVALID, "нужно название", "title")
         if (objective.isBlank()) return Outcome.failure(DiagCode.VALUE_INVALID, "нужно «Что сделать»", "objective")
@@ -42,7 +45,10 @@ object NewTaskForm {
             return Outcome.failure(DiagCode.VALUE_INVALID, "путь области «$it»: относительный внутри репозитория, латиница, цифры и . _ @ + -", "scope")
         }
         val policy = try {
-            TaskPolicy(taskClass = taskClass, model = model.trim().ifEmpty { null }, effort = effort.trim().ifEmpty { null }, maxBudgetUsdCents = cents, reviews = reviews)
+            TaskPolicy(
+                taskClass = taskClass, model = model.trim().ifEmpty { null }, effort = effort.trim().ifEmpty { null }, maxBudgetUsdCents = cents, reviews = reviews,
+                executor = executor, reviewExecutor = reviewExecutor?.takeIf { it != executor },
+            )
         } catch (e: IllegalArgumentException) {
             return Outcome.failure(DiagCode.VALUE_INVALID, e.message ?: "политика недопустима", "policy")
         }

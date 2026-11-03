@@ -6,6 +6,7 @@ import com.dpsmpx.dpai.accounts.AuthStatus
 import com.dpsmpx.dpai.core.clock.ManualClock
 import com.dpsmpx.dpai.core.clock.RandomSource
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
+import com.dpsmpx.dpai.core.ids.Executor
 import com.dpsmpx.dpai.core.ids.IdGenerator
 import com.dpsmpx.dpai.core.ids.IdKinds
 import com.dpsmpx.dpai.core.ids.ProviderSessionId
@@ -86,7 +87,8 @@ class ReviewFlowTest {
         assertEquals(0, r.exitCode, (r.stderr + r.stdout).joinToString("\n"))
     }
 
-    private fun setUp() {
+    /** [codex] — ещё слот Codex с входом аккаунтом (D-100); переход разрешён, как у подписок приложения (D-56). */
+    private fun setUp(codex: Boolean = false) {
         val root = dir.resolve("repo").toFile().apply { mkdirs() }.path
         sh("init", "-q", "-b", "main", root)
         sh("-C", root, "config", "user.email", "dpai-test@example.org")
@@ -104,6 +106,13 @@ class ReviewFlowTest {
         accounts = Accounts.applyAll(accounts, logic.registerSlot(accounts, slot, sub, target, "/home/dev/.claude-0", clock.now()).valueOrNull()!!)
         val status = AuthStatus(true, AuthStatus.CLAUDE_AI, AuthStatus.FIRST_PARTY, AuthStatus.fingerprint("org", "a@example.org"), "max")
         accounts = Accounts.applyAll(accounts, logic.observeAuthStatus(accounts, slot, status, clock.now()).valueOrNull()!!)
+        if (codex) {
+            val cs = ids.next(IdKinds.SUBSCRIPTION)
+            accounts = Accounts.applyAll(accounts, logic.registerSubscription(accounts, cs, "Codex", clock.now(), maxParallelSessions = 8, rotationAllowed = true, executor = Executor.CODEX).valueOrNull()!!)
+            val c = ids.next(IdKinds.ACCOUNT)
+            accounts = Accounts.applyAll(accounts, logic.registerSlot(accounts, c, cs, target, "/home/dev/.codex-0", clock.now()).valueOrNull()!!)
+            accounts = Accounts.applyAll(accounts, logic.observeAuthStatus(accounts, c, AuthStatus(true, AuthStatus.CHATGPT, null, null, null), clock.now()).valueOrNull()!!)
+        }
         val java = File(File(System.getProperty("java.home"), "bin"), if (File.separatorChar == '\\') "java.exe" else "java").path
         val profile = VerificationProfile(ids.next(IdKinds.PROJECT), mapOf(VerifyLevel.NORMAL to listOf(VerifyStep("сборка", listOf(java, "-version")))))
         runner = MockRunner.create(clock, RandomSource.seeded(160)) { session, _ ->
@@ -123,8 +132,8 @@ class ReviewFlowTest {
     }
 
     /** Задача с ревью; «Claude» её первой попытки правит файл в своём дереве. */
-    private fun reviewedTask(vararg roles: ReviewRole): TaskId {
-        val t = orchestrator.addTask("фича", "цель: фича", policy = TaskPolicy(retryBackoff = 0.minutes, reviews = roles.toSet())).valueOrNull()!!
+    private fun reviewedTask(vararg roles: ReviewRole, reviewer: Executor? = null): TaskId {
+        val t = orchestrator.addTask("фича", "цель: фича", policy = TaskPolicy(retryBackoff = 0.minutes, reviews = roles.toSet(), reviewExecutor = reviewer)).valueOrNull()!!
         orchestrator.tick()
         val tree = orchestrator.worktrees.worktrees.values.single { it.owner != null }
         File(tree.path, "feature.txt").writeText("новая возможность\n")
@@ -171,6 +180,23 @@ class ReviewFlowTest {
         assertEquals(JsonString("MAJOR"), (((reviews.items[0] as JsonObject)["findings"] as JsonArray).items.single() as JsonObject)["severity"])
         val log = host.run(ProcessSpec(listOf("git", "-C", orchestrator.worktrees.worktrees.values.single { !it.removed }.path, "log", "--format=%s", "-n", "1")), 1.minutes).valueOrNull()!!.stdout
         assertEquals(listOf("dpai: фича"), log, "ревью — после коммита")
+    }
+
+    /** Ревьюер — Codex (D-100): ход только для чтения, без схемы; вердикт — из блока json в тексте ответа. */
+    @Test
+    fun codexReviewerAnswersInTextReadOnly() {
+        setUp(codex = true)
+        work += listOf(MockScenario.SLOW_OUTPUT, MockScenario.SUCCESS)
+        reviews["CODE"] = ArrayDeque(listOf(MockScenario.REVIEW_BLOCK, MockScenario.REVIEW_PASS))
+        val t = reviewedTask(ReviewRole.CODE, reviewer = Executor.CODEX)
+        runUntilQuiet()
+        assertEquals(TaskState.DONE, task(t).state, orchestrator.waitingReason(t))
+        assertEquals(1, task(t).retries, "блокирующее из текста Codex — попытка, как у Claude")
+        val reqs = reviewRequests().map { it.second }
+        assertEquals(2, reqs.size)
+        assertTrue(reqs.all { it.executor == Executor.CODEX && it.readOnly && it.jsonSchema == null && Review.JSON_ANSWER in it.prompt }, reqs.toString())
+        assertTrue(started.filter { (s, _) -> orchestrator.sessions.sessions[s]?.review == null }.all { it.second.executor == Executor.CLAUDE }, "работа — у исполнителя задачи")
+        assertEquals(FindingSeverity.MAJOR, task(t).reviews.getValue(ReviewRole.CODE).findings.single().severity)
     }
 
     @Test

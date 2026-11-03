@@ -758,7 +758,7 @@ class Orchestrator(
                     sessions.sessions.values.count { !it.terminal && it.target == t.id } < t.maxSessions
                 )
         }.map { it.id }
-        val own = accounts.taskSubscription[task]
+        val own = accounts.taskSubscription[task]?.get(tasks.tasks[task]?.policy?.executor ?: Executor.CLAUDE)
         fun ownSlot(id: ExecutionTargetId) = own != null && accounts.slots.values.any { it.targetId == id && it.subscriptionId == own }
         return open.sortedWith(compareBy<ExecutionTargetId>({ !ownSlot(it) }, { it != planned }, { it.value }))
     }

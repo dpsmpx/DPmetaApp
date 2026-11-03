@@ -48,6 +48,9 @@ object CommandCodec {
                 str("taskClass", c.policy.taskClass.name); str("model", c.policy.model); str("effort", c.policy.effort)
                 c.policy.maxBudgetUsdCents?.let { f["budgetCents"] = JsonNumber.of(it) }
                 if (c.policy.reviews.isNotEmpty()) f["reviews"] = roles(c.policy.reviews)
+                // Исполнитель и ревьюер (D-100): Claude не пишется — прежние команды те же.
+                if (c.policy.executor != com.dpsmpx.dpai.core.ids.Executor.CLAUDE) str("executor", c.policy.executor.key)
+                str("reviewExecutor", c.policy.reviewExecutor?.key)
                 if (c.scope.isNotEmpty()) f["scope"] = JsonArray(c.scope.sorted().map(::JsonString))
                 if (c.dependencies.isNotEmpty()) f["dependsOn"] = JsonArray(c.dependencies.map { JsonString(it.value) }.sortedBy { it.value })
             }
@@ -125,8 +128,18 @@ object CommandCodec {
                 val priority = enum("priority", Priority.entries.toTypedArray(), required = false) ?: Priority.NORMAL
                 val cls = enum("taskClass", TaskClass.entries.toTypedArray(), required = false) ?: TaskClass.NORMAL_ENGINEERING
                 val reviews = reviews(required = false)
+                fun executor(k: String): com.dpsmpx.dpai.core.ids.Executor? = f.optString(k)?.let { v ->
+                    com.dpsmpx.dpai.core.ids.Executor.byKey(v) ?: null.also { d.error(DiagCode.VALUE_INVALID, "неизвестный исполнитель: $v", "$.$k") }
+                }
+                val executor = executor("executor") ?: com.dpsmpx.dpai.core.ids.Executor.CLAUDE
+                val reviewExecutor = executor("reviewExecutor")
                 val policy = reviews?.let { r ->
-                    runCatching { TaskPolicy(taskClass = cls, model = f.optString("model"), effort = f.optString("effort"), maxBudgetUsdCents = f.optLong("budgetCents"), reviews = r) }
+                    runCatching {
+                        TaskPolicy(
+                            taskClass = cls, model = f.optString("model"), effort = f.optString("effort"), maxBudgetUsdCents = f.optLong("budgetCents"), reviews = r,
+                            executor = executor, reviewExecutor = reviewExecutor,
+                        )
+                    }
                         .getOrElse { d.error(DiagCode.VALUE_INVALID, it.message ?: "политика недопустима", "$"); null }
                 }
                 val scope = strings("scope", required = false)?.toSet()

@@ -129,4 +129,17 @@ class TargetsTest {
         val mixed = ProjectForm.validate(ids, pc, "/home/dev/repo", "/home/dev/trees", "main", "", inApp, "/root/.ssh/id", "")
         assertEquals(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, (mixed as com.dpsmpx.dpai.core.result.Outcome.Failure).errors.single().code)
     }
+    /** D-100: исполнитель target — в формате v4 только не-Claude; без поля — Claude. */
+    @Test
+    fun executorRoundTripsAndDefaultsToClaude() {
+        val ids = com.dpsmpx.dpai.core.ids.IdGenerator(com.dpsmpx.dpai.core.clock.ManualClock(), com.dpsmpx.dpai.core.clock.RandomSource.seeded(33))
+        val codex = TargetForm.inApp(ids.next(com.dpsmpx.dpai.core.ids.IdKinds.TARGET), "Codex", "/root/.codex-slot-1", com.dpsmpx.dpai.core.ids.Executor.CODEX).valueOrNull()!!
+        val claude = TargetForm.inApp(ids.next(com.dpsmpx.dpai.core.ids.IdKinds.TARGET), "Claude", "/root/.claude-slot-1").valueOrNull()!!
+        val json = com.dpsmpx.dpai.core.serialization.CanonicalJson.write(TargetBook.toJson(listOf(codex, claude)))
+        assertTrue("\"executor\":\"codex\"" in json)
+        assertEquals(1, Regex("\"executor\"").findAll(json).count(), "Claude — без поля")
+        assertEquals(listOf(codex, claude), TargetBook.fromJson(JsonParser().parse(json).valueOrNull()!!).valueOrNull())
+        val bad = json.replace("\"codex\"", "\"gpt\"")
+        assertTrue(TargetBook.fromJson(JsonParser().parse(bad).valueOrNull()!!) is com.dpsmpx.dpai.core.result.Outcome.Failure, "неизвестный исполнитель — отказ, а не Claude")
+    }
 }
