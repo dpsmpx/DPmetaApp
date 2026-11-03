@@ -96,18 +96,13 @@ class EcosystemRun(
             return null
         }
         if (active() >= policy.maxConcurrency) return null
-        val candidates = projects.filter { it.key in orchestrators }.flatMap { p -> p.suggestions.map { p to it } }
-            .filter { (p, s) -> (p.key to s.key) !in imported }
-            .sortedWith(compareBy({ priority(it.second)?.ordinal ?: Int.MAX_VALUE }, { it.first.key }, { it.second.key }))
-        for ((p, s) in candidates) {
-            val why = when {
-                p.key !in policy.allowedProjects -> "проект ${p.key} не разрешён прогону"
-                s.operation !in policy.allowedOperations -> "вид работы ${s.operation} не разрешён прогону"
-                priority(s) == null -> "неизвестный приоритет ${s.priority}"
-                else -> null
-            }
-            if (why != null) {
-                note(Diagnostic.warning(DiagCode.OPERATION_NOT_ALLOWED, why, "${p.key}/${s.key}"))
+        // Проекты без контура прогон не видит вовсе (их задачи ставить некуда), а не отказывает им.
+        val candidates = EcosystemPlan.of(projects.filter { it.key in orchestrators }, orchestrators.keys, policy.allowedProjects, policy.allowedOperations)
+            .filter { (it.project.key to it.suggestion.key) !in imported }
+        for (c in candidates) {
+            val (p, s) = c.project to c.suggestion
+            if (c.refusal != null) {
+                note(Diagnostic.warning(DiagCode.OPERATION_NOT_ALLOWED, c.refusal, "${p.key}/${s.key}"))
                 continue
             }
             if (!policy.confirm(p, s)) {
@@ -179,7 +174,7 @@ class EcosystemRun(
         if (notes.none { it.code == d.code && it.subject == d.subject && it.message == d.message }) notes += d
     }
 
-    private fun priority(s: SuggestedTask): Priority? = Priority.entries.firstOrNull { it.name == s.priority }
+    private fun priority(s: SuggestedTask): Priority? = EcosystemPlan.priority(s)
 
     companion object {
         const val FORMAT = "dpai.ecosystem-results"

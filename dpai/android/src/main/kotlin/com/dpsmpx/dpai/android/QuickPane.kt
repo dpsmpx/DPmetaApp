@@ -40,8 +40,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Быстрые действия сводки (ТЗ, §73): новая задача, пауза и продолжение
- * всех, задачи, которые ждут человека, запросы (одобрения — D-49). Каждое
+ * Быстрые действия сводки (ТЗ, §73): новая задача, задачи из экосистемы
+ * (ТЗ, §43–§46), пауза и продолжение всех, задачи, которые ждут человека,
+ * запросы (одобрения — D-49). Каждое
  * действие — команды задач с ключами нажатия, как в листе задачи (D-42).
  */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
@@ -50,6 +51,7 @@ fun QuickRow(quick: QuickActions, live: Boolean, requests: Int, model: DemoModel
     val scope = rememberCoroutineScope()
     val keys = remember { IdGenerator(Clock.SYSTEM, RandomSource.secure()) }
     var creating by remember { mutableStateOf(false) }
+    var ecosystem by remember { mutableStateOf(false) }
     var confirmHold by remember { mutableStateOf(false) }
     var waiting by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
@@ -69,6 +71,8 @@ fun QuickRow(quick: QuickActions, live: Boolean, requests: Int, model: DemoModel
     Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             if (live) OutlinedButton(onClick = { creating = true }) { Text("Новая задача") }
+            // Глобальный прогон (ТЗ, §43–§46): задачи из предложений манифеста экосистемы — по подтверждению.
+            if (live) OutlinedButton(onClick = { ecosystem = true }) { Text("Экосистема") }
             OutlinedButton(enabled = !busy && quick.holdable.isNotEmpty(), onClick = { confirmHold = true }) { Text("Пауза всем (${quick.holdable.size})") }
             OutlinedButton(enabled = !busy && quick.resumable.isNotEmpty(), onClick = { run("Продолжить", (model.quickNow() ?: quick).resumeAll(keys.next(IdKinds.OPERATION).value)) }) {
                 Text("Продолжить все (${quick.resumable.size})")
@@ -79,6 +83,7 @@ fun QuickRow(quick: QuickActions, live: Boolean, requests: Int, model: DemoModel
         status?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
     }
     if (creating) NewTaskDialog(model) { creating = false }
+    if (ecosystem) EcosystemDialog(model) { ecosystem = false }
     if (confirmHold) {
         // Пауза останавливает идущие ходы с handoff (D-42) — после подтверждения; ключ серии — один на нажатие «Да».
         AlertDialog(
