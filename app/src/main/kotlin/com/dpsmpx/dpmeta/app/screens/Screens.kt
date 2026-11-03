@@ -122,6 +122,7 @@ object Screens {
         val lastPull: Checked?,
         val lastMerged: Checked?,
         val panel: List<Panel>,
+        val files: List<Pair<String, String>>,
         val errors: List<String>,
     )
 
@@ -172,6 +173,9 @@ object Screens {
             lastPull = checked(openPulls.maxByOrNull { long(it, "updatedAt") ?: 0 }, "updatedAt"),
             lastMerged = checked(merged.maxByOrNull { long(it, "mergedAt") ?: 0 }, "mergedAt"),
             panel = objects(payload(p, "readme"), "blocks").map { Panel(str(it, "name").orEmpty(), str(it, "text").orEmpty()) },
+            files = listOf("readme" to "README", "decisions" to "Решения", "todo" to "TODO", "roadmap" to "ROADMAP").mapNotNull { (kind, title) ->
+                payload(p, kind)?.let { o -> str(o, "path")?.let { title to it } }
+            },
             errors = p.errors.map { "${it.kind}: ${it.code} — ${it.message} (${time(it.at)})" },
         )
     }

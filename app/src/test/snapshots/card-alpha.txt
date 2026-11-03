@@ -1,4 +1,5 @@
 Alpha — ядро, работает
+Файлы: README → README.md, Решения → docs/direction/DECISIONS.md, TODO → TODO.md, ROADMAP → ROADMAP/ROADMAP.md
 Решений: 2
   D-02 Второе (предложено)
   D-01 Первое (принято)

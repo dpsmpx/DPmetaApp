@@ -112,13 +112,33 @@ class GitHub(private val net: Net, private val token: Secret?, private val api: 
     }
 
     /** Содержимое файла как текст (`application/vnd.github.raw+json`); нет файла — `GITHUB_NOT_FOUND`. */
-    fun file(repo: RepoRef, path: String): Outcome<Page<String>> {
+    fun file(repo: RepoRef, path: String, store: Boolean = true): Outcome<Page<String>> {
         if (path.isEmpty() || path.startsWith("/") || path.split('/').any { it.isEmpty() || it == "." || it == ".." }) {
             return Outcome.failure(DiagCode.VALUE_INVALID, "путь файла — относительный, без «..»", path)
         }
-        val encoded = path.split('/').joinToString("/") { seg -> java.net.URLEncoder.encode(seg, Charsets.UTF_8).replace("+", "%20") }
-        return fetch("repos/$repo/contents/$encoded", "$repo:$path", RAW).then { f -> Outcome.success(Page(f.text, f)) }
+        return fetch("repos/$repo/contents/${encode(path)}", "$repo:$path", RAW, store).then { f -> Outcome.success(Page(f.text, f)) }
     }
+
+    /** Элемент каталога репозитория: имя, путь от корня, каталог ли (F-09). */
+    data class Entry(val name: String, val path: String, val dir: Boolean)
+
+    /** Содержимое каталога ([path] пустой — корень); каталоги — первыми, затем по имени. */
+    fun dir(repo: RepoRef, path: String): Outcome<List<Entry>> {
+        if (path.startsWith("/") || (path.isNotEmpty() && path.split('/').any { it.isEmpty() || it == "." || it == ".." })) {
+            return Outcome.failure(DiagCode.VALUE_INVALID, "путь каталога — относительный, без «..»", path)
+        }
+        val at = if (path.isEmpty()) "repos/$repo/contents" else "repos/$repo/contents/${encode(path)}"
+        return get(at, "$repo:$path/").then { p ->
+            val items = (p.value as? JsonArray)?.items ?: return@then Outcome.failure(DiagCode.VALUE_INVALID, "это файл, а не каталог", path)
+            val out = items.mapNotNull { v ->
+                val o = v as? JsonObject ?: return@mapNotNull null
+                Entry(str(o, "name") ?: return@mapNotNull null, str(o, "path") ?: return@mapNotNull null, str(o, "type") == "dir")
+            }
+            Outcome.success(out.sortedWith(compareBy<Entry> { !it.dir }.thenBy { it.name.lowercase() }))
+        }
+    }
+
+    private fun encode(path: String) = path.split('/').joinToString("/") { seg -> java.net.URLEncoder.encode(seg, Charsets.UTF_8).replace("+", "%20") }
 
     private fun get(path: String, subject: String): Outcome<Page<JsonValue>> = fetch(path, subject, JSON).then { f ->
         when (val v = json.parse(f.text)) {
@@ -127,9 +147,9 @@ class GitHub(private val net: Net, private val token: Secret?, private val api: 
         }
     }
 
-    private fun fetch(path: String, subject: String, accept: String): Outcome<Fetched> {
+    private fun fetch(path: String, subject: String, accept: String, store: Boolean = true): Outcome<Fetched> {
         val headers = mapOf("Accept" to accept, "X-GitHub-Api-Version" to API_VERSION, "User-Agent" to USER_AGENT)
-        val f = when (val r = net.get(api.resolve(path), headers, token)) {
+        val f = when (val r = net.get(api.resolve(path), headers, token, store)) {
             is Outcome.Failure -> return r
             is Outcome.Success -> r.value
         }

@@ -28,6 +28,7 @@ object ScreenText {
 
     fun card(c: Screens.Card): String = buildString {
         appendLine("${c.name} — ${c.place}, ${c.working}")
+        if (c.files.isNotEmpty()) appendLine("Файлы: " + c.files.joinToString(", ") { (t, p) -> "$t → $p" })
         appendLine("Решений: ${c.decisions}")
         for (d in c.lastDecisions) appendLine("  $d")
         appendLine("TODO: ${c.todo}, за автором ${c.forAuthor}")

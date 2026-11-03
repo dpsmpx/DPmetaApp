@@ -10,6 +10,7 @@ import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.storage.document.DocumentStore
 import com.dpsmpx.dpai.storage.vfs.Vfs
+import com.dpsmpx.dpmeta.app.screens.Links
 import com.dpsmpx.dpmeta.formats.RegistryFormat
 import com.dpsmpx.dpmeta.github.GitHub
 import com.dpsmpx.dpmeta.metrics.EcosystemState
@@ -18,6 +19,7 @@ import com.dpsmpx.dpmeta.metrics.FeedEvent
 import com.dpsmpx.dpmeta.metrics.Rules
 import com.dpsmpx.dpmeta.metrics.Store
 import com.dpsmpx.dpmeta.model.RepoRef
+import com.dpsmpx.dpmeta.model.Registry
 import com.dpsmpx.dpmeta.model.SourceFailure
 import com.dpsmpx.dpmeta.net.Net
 import com.dpsmpx.dpmeta.net.UrlTransport
@@ -43,6 +45,62 @@ class PultRepository(private val vfs: Vfs, private val clock: Clock, private val
 
     fun feed(): Outcome<List<FeedEvent>> = store.readFeed()
 
+    @Volatile private var registry: Registry? = null
+
+    private fun client(token: Secret): Pair<GitHub, StoredEtagCache> {
+        val etags = StoredEtagCache(DocumentStore(vfs, "dpmeta/cache"))
+        return GitHub(Net(UrlTransport(), cache = etags), token) to etags
+    }
+
+    private fun registry(gh: GitHub): Outcome<Registry> {
+        registry?.let { return Outcome.success(it) }
+        val host = RepoRef.parse(HOST).valueOrNull() ?: return Outcome.failure(DiagCode.INTERNAL_ERROR, "адрес DPmetaApp", HOST)
+        val text = when (val f = gh.file(host, REGISTRY)) {
+            is Outcome.Failure -> return f
+            is Outcome.Success -> f.value.value
+        }
+        return RegistryFormat.parse(text, REGISTRY).also { r -> (r as? Outcome.Success)?.let { registry = it.value } }
+    }
+
+    /** Имена, прежние имена и другие написания проектов → имя: ссылки `Проект:путь` (F-09). */
+    fun names(): Map<String, String> = registry?.projects.orEmpty().flatMap { p -> (listOf(p.name) + p.aliases + p.names).map { it to p.name } }.toMap()
+
+    /** Каталог проекта (F-09): пути — от корня проекта, у подсистемы — без её каталога в DPmetaApp. */
+    fun directory(token: Secret, project: String, dir: String): Outcome<List<GitHub.Entry>> {
+        val (gh, etags) = client(token)
+        val reg = when (val r = registry(gh)) {
+            is Outcome.Failure -> return r
+            is Outcome.Success -> r.value
+        }
+        val entry = reg.byName(project) ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "проекта нет в реестре", project)
+        val host = RepoRef.parse(HOST).valueOrNull()!!
+        val (repo, prefix) = GitHubReader(gh, host).where(entry)
+        val r = gh.dir(repo, (prefix + dir).trimEnd('/'))
+        etags.save()
+        return when (r) {
+            is Outcome.Failure -> r
+            is Outcome.Success -> Outcome.success(r.value.map { it.copy(path = it.path.removePrefix(prefix)) })
+        }
+    }
+
+    /** Файл проекта по запросу (F-09): тексты процесса — с кэшем ETag, код — без сохранения. */
+    fun document(token: Secret, project: String, path: String): Outcome<String> {
+        val (gh, etags) = client(token)
+        val reg = when (val r = registry(gh)) {
+            is Outcome.Failure -> return r
+            is Outcome.Success -> r.value
+        }
+        val entry = reg.byName(project) ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "проекта нет в реестре", project)
+        val host = RepoRef.parse(HOST).valueOrNull()!!
+        val (repo, prefix) = GitHubReader(gh, host).where(entry)
+        val r = gh.file(repo, prefix + path, store = Links.cacheable(path))
+        etags.save()
+        return when (r) {
+            is Outcome.Failure -> r
+            is Outcome.Success -> Outcome.success(r.value.value)
+        }
+    }
+
     /** Синхронизация целиком; зовётся не из главного потока. */
     fun sync(token: Secret): Outcome<SyncReport> {
         val previous = when (val r = store.readState()) {
@@ -59,7 +117,7 @@ class PultRepository(private val vfs: Vfs, private val clock: Clock, private val
         }
         val reg = when (val r = RegistryFormat.parse(text, REGISTRY)) {
             is Outcome.Failure -> return r
-            is Outcome.Success -> r.value
+            is Outcome.Success -> r.value.also { registry = it }
         }
         val known = previous?.projects.orEmpty().mapNotNull { p ->
             ((p.sections["roadmap"]?.payload as? JsonObject)?.get("path") as? JsonString)?.value?.let { (p.name to "roadmap") to it }

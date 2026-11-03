@@ -76,6 +76,9 @@ class GitHubReader(private val gh: GitHub, private val host: RepoRef, private va
 
     override fun commit(project: ProjectEntry, sha: String): Outcome<CommitInfo> = gh.commit(project.slug, sha)
 
+    /** Где лежат файлы проекта: репозиторий и каталог в нём (подсистема — в DPmetaApp). */
+    fun where(project: ProjectEntry): Pair<RepoRef, String> = subsystems[project.name]?.let { host to it } ?: (project.slug to "")
+
     override fun file(project: ProjectEntry, path: String): Outcome<Got<String>> {
         val dir = subsystems[project.name]
         val r = if (dir != null) gh.file(host, dir + path) else gh.file(project.slug, path)

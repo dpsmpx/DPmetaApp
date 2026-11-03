@@ -129,9 +129,10 @@ class Net(
 
     val remaining: Int get() = synchronized(lock) { budget - requests }
 
-    fun get(url: URI, headers: Map<String, String> = emptyMap(), auth: Secret? = null): Outcome<Fetched> {
+    /** [store] = false — ответ не кладётся в кэш (файлы кода, F-09: «без сохранения в кэше»). */
+    fun get(url: URI, headers: Map<String, String> = emptyMap(), auth: Secret? = null, store: Boolean = true): Outcome<Fetched> {
         val key = cacheKey(url, auth)
-        val cached = cache.get(key)
+        val cached = if (store) cache.get(key) else null
         val h = if (cached != null) headers + ("If-None-Match" to cached.etag) else headers
         val r = when (val s = send(HttpRequest("GET", url, h, null, auth))) {
             is Outcome.Failure -> return s
@@ -142,7 +143,7 @@ class Net(
             return Outcome.success(Fetched(200, cached.body, true, r.headers))
         }
         val etag = r.header("etag")
-        if (r.status == 200 && etag != null) cache.put(key, CachedResponse(etag, r.body))
+        if (store && r.status == 200 && etag != null) cache.put(key, CachedResponse(etag, r.body))
         return Outcome.success(Fetched(r.status, r.body, false, r.headers))
     }
 
