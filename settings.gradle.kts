@@ -54,7 +54,8 @@ rootProject.name = "DPmetaApp"
 // зависит (DP_AI_Orcestrator:D-55) — замен в обратную сторону нет.
 includeBuild("dpai") {
     dependencySubstitution {
-        for (m in listOf("core", "storage", "security", "notifications", "testkit")) {
+        // ui — чистый Kotlin подсистемы «AI»: пульт берёт оттуда разбор Markdown (D-53: «AI» — часть приложения).
+        for (m in listOf("core", "storage", "security", "notifications", "testkit", "ui")) {
             substitute(module("com.dpsmpx.dpai:$m")).using(project(":$m"))
         }
     }

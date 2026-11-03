@@ -22,7 +22,17 @@ import java.time.format.DateTimeParseException
 /** Ответ GitHub, разобранный в [value]; [fetched] — отпечаток и признак 304 для наблюдения. */
 class Page<T>(val value: T, val fetched: Fetched)
 
-data class PullRequest(val number: Int, val title: String, val draft: Boolean, val head: String, val author: String, val updatedAt: Timestamp)
+/** PR: [body] — описание (раздел «Проверки», F-15); [mergedAt] — когда влит, у открытых — null. */
+data class PullRequest(
+    val number: Int,
+    val title: String,
+    val draft: Boolean,
+    val head: String,
+    val author: String,
+    val updatedAt: Timestamp,
+    val body: String? = null,
+    val mergedAt: Timestamp? = null,
+)
 
 data class Branch(val name: String, val sha: String)
 
@@ -52,7 +62,14 @@ class GitHub(private val net: Net, private val token: Secret?, private val api: 
         Outcome.success(RateLimit(remaining, limit, Timestamp(reset * 1000)))
     }
 
-    fun pulls(repo: RepoRef): Outcome<Page<List<PullRequest>>> = get("repos/$repo/pulls?state=open&per_page=100", "$repo:pulls").then { p ->
+    fun pulls(repo: RepoRef): Outcome<Page<List<PullRequest>>> = pullsOf("repos/$repo/pulls?state=open&per_page=100", "$repo:pulls")
+
+    /** Последние закрытые PR (влитые — с `merged_at`): итог проверок последнего влитого (F-15), «влит / закрыт» ленты (F-05). */
+    fun closedPulls(repo: RepoRef): Outcome<Page<List<PullRequest>>> =
+        pullsOf("repos/$repo/pulls?state=closed&sort=updated&direction=desc&per_page=10", "$repo:closed")
+
+    private fun pullsOf(path: String, subject: String): Outcome<Page<List<PullRequest>>> = get(path, subject).then { p ->
+        val repo = subject.substringBefore(':')
         val items = (p.value as? JsonArray)?.items ?: return@then missing("[]", "$repo:pulls")
         val out = items.map { v ->
             val o = v as? JsonObject ?: return@then missing("pull", "$repo:pulls")
@@ -65,6 +82,8 @@ class GitHub(private val net: Net, private val token: Secret?, private val api: 
                 head = head ?: return@then missing("head.ref", "$repo:pulls"),
                 author = user ?: "?",
                 updatedAt = time(o, "updated_at") ?: return@then missing("updated_at", "$repo:pulls"),
+                body = str(o, "body"),
+                mergedAt = time(o, "merged_at"),
             )
         }
         Outcome.success(Page(out, p.fetched))
@@ -93,13 +112,33 @@ class GitHub(private val net: Net, private val token: Secret?, private val api: 
     }
 
     /** Содержимое файла как текст (`application/vnd.github.raw+json`); нет файла — `GITHUB_NOT_FOUND`. */
-    fun file(repo: RepoRef, path: String): Outcome<Page<String>> {
+    fun file(repo: RepoRef, path: String, store: Boolean = true): Outcome<Page<String>> {
         if (path.isEmpty() || path.startsWith("/") || path.split('/').any { it.isEmpty() || it == "." || it == ".." }) {
             return Outcome.failure(DiagCode.VALUE_INVALID, "путь файла — относительный, без «..»", path)
         }
-        val encoded = path.split('/').joinToString("/") { seg -> java.net.URLEncoder.encode(seg, Charsets.UTF_8).replace("+", "%20") }
-        return fetch("repos/$repo/contents/$encoded", "$repo:$path", RAW).then { f -> Outcome.success(Page(f.text, f)) }
+        return fetch("repos/$repo/contents/${encode(path)}", "$repo:$path", RAW, store).then { f -> Outcome.success(Page(f.text, f)) }
     }
+
+    /** Элемент каталога репозитория: имя, путь от корня, каталог ли (F-09). */
+    data class Entry(val name: String, val path: String, val dir: Boolean)
+
+    /** Содержимое каталога ([path] пустой — корень); каталоги — первыми, затем по имени. */
+    fun dir(repo: RepoRef, path: String): Outcome<List<Entry>> {
+        if (path.startsWith("/") || (path.isNotEmpty() && path.split('/').any { it.isEmpty() || it == "." || it == ".." })) {
+            return Outcome.failure(DiagCode.VALUE_INVALID, "путь каталога — относительный, без «..»", path)
+        }
+        val at = if (path.isEmpty()) "repos/$repo/contents" else "repos/$repo/contents/${encode(path)}"
+        return get(at, "$repo:$path/").then { p ->
+            val items = (p.value as? JsonArray)?.items ?: return@then Outcome.failure(DiagCode.VALUE_INVALID, "это файл, а не каталог", path)
+            val out = items.mapNotNull { v ->
+                val o = v as? JsonObject ?: return@mapNotNull null
+                Entry(str(o, "name") ?: return@mapNotNull null, str(o, "path") ?: return@mapNotNull null, str(o, "type") == "dir")
+            }
+            Outcome.success(out.sortedWith(compareBy<Entry> { !it.dir }.thenBy { it.name.lowercase() }))
+        }
+    }
+
+    private fun encode(path: String) = path.split('/').joinToString("/") { seg -> java.net.URLEncoder.encode(seg, Charsets.UTF_8).replace("+", "%20") }
 
     private fun get(path: String, subject: String): Outcome<Page<JsonValue>> = fetch(path, subject, JSON).then { f ->
         when (val v = json.parse(f.text)) {
@@ -108,9 +147,9 @@ class GitHub(private val net: Net, private val token: Secret?, private val api: 
         }
     }
 
-    private fun fetch(path: String, subject: String, accept: String): Outcome<Fetched> {
+    private fun fetch(path: String, subject: String, accept: String, store: Boolean = true): Outcome<Fetched> {
         val headers = mapOf("Accept" to accept, "X-GitHub-Api-Version" to API_VERSION, "User-Agent" to USER_AGENT)
-        val f = when (val r = net.get(api.resolve(path), headers, token)) {
+        val f = when (val r = net.get(api.resolve(path), headers, token, store)) {
             is Outcome.Failure -> return r
             is Outcome.Success -> r.value
         }

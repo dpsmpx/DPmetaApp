@@ -61,6 +61,15 @@ class ScreenSnapshotTest {
     fun questions() = snapshot("questions", ScreenText.questions(Screens.questions(state())))
 
     @Test
+    fun feedWithFilters() {
+        val events = listOf(
+            com.dpsmpx.dpmeta.metrics.FeedEvent(now, "Alpha", "pr.merged", "PR #2 влит: Этап 0"),
+            com.dpsmpx.dpmeta.metrics.FeedEvent(Timestamp(now.epochMillis - 3_600_000), "Beta", "decision", "новое решение Р2 — Порядок"),
+        )
+        snapshot("feed", ScreenText.feed(Screens.feed(events)) + ScreenText.feed(Screens.feed(events, project = "Beta")) + ScreenText.feed(Screens.feed(events, kind = "pr.merged")))
+    }
+
+    @Test
     fun unknownIsAWordNotZero() {
         val beta = Screens.card(state(), "Beta")!!
         assertEquals(Screens.UNKNOWN, beta.working)

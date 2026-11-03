@@ -12,6 +12,7 @@ import com.dpsmpx.dpai.core.serialization.JsonNumber
 import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.core.serialization.JsonValue
+import com.dpsmpx.dpmeta.formats.Checks
 import com.dpsmpx.dpmeta.formats.DecisionLog
 import com.dpsmpx.dpmeta.formats.ProcessDocument
 import com.dpsmpx.dpmeta.formats.Roadmap
@@ -28,10 +29,11 @@ import com.dpsmpx.dpmeta.model.SourceFailure
 
 /**
  * Вид источника и его приоритет при нехватке бюджета (ТЗ, §6.4): сводка и
- * открытые PR → ветки → файлы процесса.
+ * открытые PR → последние влитые → ветки → файлы процесса.
  */
 enum class SourceKind(val code: String) {
     PULLS("pulls"),
+    MERGED("merged"),
     BRANCHES("branches"),
     DECISIONS("decisions"),
     TODO("todo"),
@@ -54,6 +56,9 @@ interface SourceReader {
     fun hasActivity(project: ProjectEntry): Boolean
 
     fun pulls(project: ProjectEntry): Outcome<Got<List<PullRequest>>>
+
+    /** Последние закрытые PR (влитые — с [PullRequest.mergedAt]). */
+    fun closed(project: ProjectEntry): Outcome<Got<List<PullRequest>>>
 
     fun branches(project: ProjectEntry): Outcome<Got<List<Branch>>>
 
@@ -92,6 +97,12 @@ object Sync {
     /** Пути ROADMAP по порядку: у репозиториев экосистемы встречаются оба. */
     val ROADMAP_PATHS: List<String> = listOf("ROADMAP/ROADMAP.md", "docs/direction/ROADMAP/README.md")
 
+    /** Источники активности: у подсистем их нет (общие с DPmetaApp), у клонов — тоже. */
+    private val ACTIVITY = setOf(SourceKind.PULLS, SourceKind.MERGED, SourceKind.BRANCHES)
+
+    /** Сколько последних влитых PR хранить: итог проверок последнего и «влит» в ленте. */
+    const val MERGED_KEEP = 5
+
     /** «Файла нет» у GitHub и у каталога: следующий путь-кандидат. */
     private val NOT_FOUND = setOf(DiagCode.GITHUB_NOT_FOUND, DiagCode.ENTITY_NOT_FOUND)
 
@@ -104,7 +115,7 @@ object Sync {
         for (kind in SourceKind.entries) {
             for (p in registry.shown) {
                 val paths = when (kind) {
-                    SourceKind.PULLS, SourceKind.BRANCHES -> emptyList()
+                    SourceKind.PULLS, SourceKind.MERGED, SourceKind.BRANCHES -> emptyList()
                     SourceKind.DECISIONS -> p.decisions?.let { listOf(it.path) } ?: continue
                     SourceKind.TODO -> listOf("TODO.md")
                     SourceKind.ROADMAP -> known[p.name to kind.code]?.let { k -> listOf(k) + (ROADMAP_PATHS - k) } ?: ROADMAP_PATHS
@@ -135,7 +146,7 @@ object Sync {
                 deferred++
                 continue
             }
-            if ((t.kind == SourceKind.PULLS || t.kind == SourceKind.BRANCHES) && !reader.hasActivity(t.project)) continue
+            if (t.kind in ACTIVITY && !reader.hasActivity(t.project)) continue
             val r = fetch(t, reader, commits, parallel)
             when (r) {
                 is Outcome.Success -> {
@@ -158,12 +169,14 @@ object Sync {
 
     private fun schemaOf(kind: SourceKind, payload: JsonObject): String = (payload["schema"] as? JsonString)?.value ?: when (kind) {
         SourceKind.PULLS -> "github.pulls.v1"
+        SourceKind.MERGED -> "github.merged.v1"
         SourceKind.BRANCHES -> "github.branches.v1"
         else -> "unknown"
     }
 
     private fun fetch(t: SourceTask, reader: SourceReader, commits: MutableMap<String, CommitInfo>, parallel: Parallel): Outcome<Pair<JsonObject, ContentHash>> = when (t.kind) {
         SourceKind.PULLS -> reader.pulls(t.project).map { g -> pullsJson(g.value) to g.rawSha256 }
+        SourceKind.MERGED -> reader.closed(t.project).map { g -> pullsJson(g.value.filter { it.mergedAt != null }.sortedByDescending { it.mergedAt }.take(MERGED_KEEP)) to g.rawSha256 }
         SourceKind.BRANCHES -> when (val b = reader.branches(t.project)) {
             is Outcome.Failure -> b
             is Outcome.Success -> {
@@ -216,13 +229,20 @@ object Sync {
     private fun pullsJson(pulls: List<PullRequest>): JsonObject = JsonObject.of(
         "pulls" to JsonArray(
             pulls.sortedBy { it.number }.map { p ->
-                JsonObject.of(
-                    "number" to JsonNumber.of(p.number),
-                    "title" to JsonString(p.title),
-                    "draft" to JsonBool(p.draft),
-                    "head" to JsonString(p.head),
-                    "author" to JsonString(p.author),
-                    "updatedAt" to JsonNumber.of(p.updatedAt.epochMillis),
+                val checks = Checks.of(p.body)
+                JsonObject(
+                    linkedMapOf<String, JsonValue>(
+                        "number" to JsonNumber.of(p.number),
+                        "title" to JsonString(p.title),
+                        "draft" to JsonBool(p.draft),
+                        "head" to JsonString(p.head),
+                        "author" to JsonString(p.author),
+                        "updatedAt" to JsonNumber.of(p.updatedAt.epochMillis),
+                        "checks" to JsonString(checks.verdict.code),
+                    ).apply {
+                        checks.line?.let { put("checksLine", JsonString(it)) }
+                        p.mergedAt?.let { put("mergedAt", JsonNumber.of(it.epochMillis)) }
+                    },
                 )
             },
         ),

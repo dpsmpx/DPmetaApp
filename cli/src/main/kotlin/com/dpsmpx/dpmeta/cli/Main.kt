@@ -12,6 +12,7 @@ import com.dpsmpx.dpai.storage.vfs.NioVfs
 import com.dpsmpx.dpmeta.formats.RegistryFormat
 import com.dpsmpx.dpmeta.github.GitHub
 import com.dpsmpx.dpmeta.metrics.EcosystemState
+import com.dpsmpx.dpmeta.metrics.Feed
 import com.dpsmpx.dpmeta.metrics.Rules
 import com.dpsmpx.dpmeta.model.SourceFailure
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
@@ -162,6 +163,7 @@ class Cli(private val clock: Clock, private val env: (String) -> String? = Syste
         val state = EcosystemState.derive(reg, result.observations, result.failures + carried, previous, clock.now())
         store.writeState(state).orExit("запись состояния")
         val points = store.appendHistory(state.points()).orExit("история чисел")
+        val events = store.appendFeed(Feed.diff(previous, state)).orExit("лента")
         etags?.save()?.orExit("кэш условных запросов")
         val seconds = (clock.monotonicNanos() - started) / 1_000_000_000.0
         out("синхронизация: проектов ${state.projects.size}, наблюдений ${result.observations.size}, отказов ${result.failures.size}, отложено ${result.deferred}")
@@ -171,7 +173,7 @@ class Cli(private val clock: Clock, private val env: (String) -> String? = Syste
             val w = p.working(state.asOf).orNull()?.let { if (it) "работает" else "свободен" } ?: "неизвестно"
             out("  ${p.name} [${p.place}]: $w; решений ${p.decisions.orNull() ?: "?"}, TODO ${p.todoOpen.orNull() ?: "?"} (за автором ${p.forAuthor.orNull() ?: "?"}), ROADMAP ${p.roadmapPercent.orNull()?.let { "$it %" } ?: "?"}, PR ${p.openPulls.orNull() ?: "?"}")
         }
-        out("работают: ${state.activeProjects.orNull() ?: "?"}; вопросов автору: ${state.questionsOpen.orNull() ?: "?"}; точек истории: $points")
+        out("работают: ${state.activeProjects.orNull() ?: "?"}; вопросов автору: ${state.questionsOpen.orNull() ?: "?"}; точек истории: $points; событий ленты: $events")
         net?.stats?.let { s ->
             val share = if (s.requests == 0) 0 else s.notModified * 100 / s.requests
             out("A-02: запросов ${s.requests} (бюджет $budget), ответов 304 — ${s.notModified} ($share %), отказано ${s.refused}, ${"%.1f".format(seconds)} с")

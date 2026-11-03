@@ -1,6 +1,9 @@
 package com.dpsmpx.dpmeta.app.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -15,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -25,17 +29,26 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpmeta.app.screens.Links
 import com.dpsmpx.dpmeta.app.screens.Screens
+import com.dpsmpx.dpmeta.github.GitHub
 import com.dpsmpx.dpmeta.metrics.EcosystemState
+import com.dpsmpx.dpmeta.metrics.Feed
+import com.dpsmpx.dpmeta.metrics.FeedEvent
 
 /**
  * Токены оформления пульта (D-15; ТЗ, §9): свои цвета, светлая и тёмная
@@ -50,32 +63,61 @@ object Tokens {
 @Composable
 fun PultTheme(content: @Composable () -> Unit) = MaterialTheme(colorScheme = if (isSystemInDarkTheme()) Tokens.dark else Tokens.light, content = content)
 
-/** Состояние экрана, которое держит активность: срез, строка о синхронизации, есть ли токен. */
-data class PultView(val state: EcosystemState?, val status: String, val hasToken: Boolean, val busy: Boolean)
+/** Состояние экрана, которое держит активность: срез, лента, строка о синхронизации, есть ли токен. */
+data class PultView(
+    val state: EcosystemState?,
+    val status: String,
+    val hasToken: Boolean,
+    val busy: Boolean,
+    val feed: List<FeedEvent> = emptyList(),
+    val names: Map<String, String> = emptyMap(),
+)
 
-private enum class Tab(val title: String) { SUMMARY("Сводка"), PROJECTS("Проекты"), QUESTIONS("Вопросы"), SETTINGS("Настройки") }
+/** Загрузка по запросу (F-09): каталог и файл проекта; итог — в главном потоке. */
+interface Loader {
+    fun directory(project: String, dir: String, done: (Outcome<List<GitHub.Entry>>) -> Unit)
+
+    fun document(project: String, path: String, done: (Outcome<String>) -> Unit)
+}
+
+private enum class Tab(val title: String) { SUMMARY("Сводка"), PROJECTS("Проекты"), FEED("Лента"), QUESTIONS("Вопросы"), SETTINGS("Настройки") }
+
+/** Куда перешли внутри вкладки: карточка → каталог → документ; «назад» снимает верх. */
+private sealed interface Nav {
+    data class Card(val project: String) : Nav
+
+    data class Dir(val project: String, val path: String) : Nav
+
+    data class Doc(val project: String, val path: String, val anchor: String?) : Nav
+}
 
 @Composable
-fun PultApp(view: PultView, onSync: () -> Unit, onSaveToken: (String) -> Unit, onForgetToken: () -> Unit) {
+fun PultApp(view: PultView, loader: Loader, onSync: () -> Unit, onSaveToken: (String) -> Unit, onForgetToken: () -> Unit) {
     var tab by remember { mutableStateOf(if (view.hasToken) Tab.SUMMARY else Tab.SETTINGS) }
-    var open by remember { mutableStateOf<String?>(null) }
+    val stack = remember { mutableStateListOf<Nav>() }
+    val open: (Nav) -> Unit = { stack.add(it) }
+    val back: () -> Unit = { if (stack.isNotEmpty()) stack.removeAt(stack.size - 1) }
     Scaffold(
         bottomBar = {
             NavigationBar {
                 for (t in Tab.entries) {
-                    NavigationBarItem(selected = tab == t && open == null, onClick = { tab = t; open = null }, icon = {}, label = { Text(t.title) })
+                    NavigationBarItem(selected = tab == t && stack.isEmpty(), onClick = { tab = t; stack.clear() }, icon = {}, label = { Text(t.title) })
                 }
             }
         },
     ) { inner ->
         Column(Modifier.padding(inner).padding(Tokens.gap).fillMaxSize()) {
             val s = view.state
+            val top = stack.lastOrNull()
             when {
-                open != null && s != null -> Screens.card(s, open!!)?.let { CardScreen(it) { open = null } }
+                top is Nav.Card && s != null -> Screens.card(s, top.project)?.let { CardScreen(it, back, open) }
+                top is Nav.Dir -> DirScreen(top, loader, back, open)
+                top is Nav.Doc -> DocScreen(top, view.names, loader, back, open)
                 tab == Tab.SETTINGS -> Settings(view, onSync, onSaveToken, onForgetToken)
                 s == null -> Text(if (view.hasToken) "Среза ещё нет: «Обновить» в настройках." else "Нужен токен GitHub: вкладка «Настройки».")
                 tab == Tab.SUMMARY -> Summary(Screens.summary(s), view, onSync)
-                tab == Tab.PROJECTS -> Projects(Screens.projects(s)) { open = it }
+                tab == Tab.PROJECTS -> Projects(Screens.projects(s)) { open(Nav.Card(it)) }
+                tab == Tab.FEED -> FeedScreen(view.feed, s.projects.map { it.name })
                 tab == Tab.QUESTIONS -> Questions(Screens.questions(s))
             }
         }
@@ -115,10 +157,19 @@ private fun Projects(groups: List<Screens.Group>, onOpen: (String) -> Unit) = La
     }
 }
 
+private fun checked(c: Screens.Checked?): String =
+    c?.let { "#${it.number} — ${it.verdict}, ${it.age}" + (it.line?.let { l -> "; «$l»" } ?: "") } ?: Screens.UNKNOWN
+
 @Composable
-private fun CardScreen(c: Screens.Card, onBack: () -> Unit) = LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-    item { TextButton(onClick = onBack) { Text("← Проекты") } }
+private fun CardScreen(c: Screens.Card, onBack: () -> Unit, open: (Nav) -> Unit) = LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    item { TextButton(onClick = onBack) { Text("← Назад") } }
     item { Text("${c.name} — ${c.place}, ${c.working}", style = MaterialTheme.typography.titleMedium) }
+    item {
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            TextButton(onClick = { open(Nav.Dir(c.name, "")) }) { Text("Документы") }
+            for ((title, path) in c.files) TextButton(onClick = { open(Nav.Doc(c.name, path, null)) }) { Text(title) }
+        }
+    }
     item { Text("Решений: ${c.decisions}", fontWeight = FontWeight.SemiBold) }
     items(c.lastDecisions) { Text("  $it") }
     item { Text("TODO: ${c.todo}, за автором ${c.forAuthor}", fontWeight = FontWeight.SemiBold) }
@@ -126,11 +177,103 @@ private fun CardScreen(c: Screens.Card, onBack: () -> Unit) = LazyColumn(vertica
     items(c.stages) { s -> Text("  [${s.flag}] ${s.title}" + if (s.steps.isEmpty()) "" else " — ${s.steps}") }
     item { Text("PR: ${c.pulls.size}", fontWeight = FontWeight.SemiBold) }
     items(c.pulls) { p -> Text("  #${p.number} ${p.title}" + (if (p.draft) " (черновик)" else "") + " — ${p.head}, ${p.updated}") }
+    item { Text("Проверки последнего PR: ${checked(c.lastPull)}") }
+    item { Text("Проверки последнего влитого: ${checked(c.lastMerged)}") }
     item { Text("Ветки: ${c.branches.size}", fontWeight = FontWeight.SemiBold) }
     items(c.branches) { b -> Text("  ${if (b.recent) "●" else "○"} ${b.name} — ${b.updated}") }
+    for (p in c.panel) {
+        item { Text("О себе (${p.name})", fontWeight = FontWeight.SemiBold) }
+        item { Text(p.text, style = MaterialTheme.typography.bodySmall) }
+    }
     if (c.errors.isNotEmpty()) {
         item { Text("Ошибки источников", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold) }
         items(c.errors) { Text("  $it", color = MaterialTheme.colorScheme.error) }
+    }
+}
+
+@Composable
+private fun FeedScreen(events: List<FeedEvent>, projects: List<String>) {
+    var project by remember { mutableStateOf<String?>(null) }
+    var kind by remember { mutableStateOf<String?>(null) }
+    val rows = Screens.feed(events, project, kind)
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            FilterChip(selected = kind == null, onClick = { kind = null }, label = { Text("все виды") })
+            for ((code, title) in Feed.KINDS) FilterChip(selected = kind == code, onClick = { kind = if (kind == code) null else code }, label = { Text(title) })
+        }
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            FilterChip(selected = project == null, onClick = { project = null }, label = { Text("все проекты") })
+            for (p in projects) FilterChip(selected = project == p, onClick = { project = if (project == p) null else p }, label = { Text(p) })
+        }
+        if (rows.isEmpty()) Text("Событий нет: они появляются со второй синхронизации.")
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            items(rows) { r ->
+                Column {
+                    Text("${r.time} · ${r.project} · ${r.kind}", style = MaterialTheme.typography.bodySmall)
+                    Text(r.text)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DirScreen(nav: Nav.Dir, loader: Loader, onBack: () -> Unit, open: (Nav) -> Unit) {
+    var result by remember(nav) { mutableStateOf<Outcome<List<GitHub.Entry>>?>(null) }
+    LaunchedEffect(nav) { loader.directory(nav.project, nav.path) { result = it } }
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        item { TextButton(onClick = onBack) { Text("← Назад") } }
+        item { Text("${nav.project}: /${nav.path}", style = MaterialTheme.typography.titleMedium) }
+        when (val r = result) {
+            null -> item { Text("Загрузка…") }
+            is Outcome.Failure -> item { Text("Не загрузилось: ${r.diagnostics.first().code.name} — ${r.diagnostics.first().message}", color = MaterialTheme.colorScheme.error) }
+            is Outcome.Success -> items(r.value) { e ->
+                Text(
+                    (if (e.dir) "📁 " else "") + e.name,
+                    Modifier.fillMaxWidth().clickable { open(if (e.dir) Nav.Dir(nav.project, e.path) else Nav.Doc(nav.project, e.path, null)) }.padding(vertical = 6.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DocScreen(nav: Nav.Doc, names: Map<String, String>, loader: Loader, onBack: () -> Unit, open: (Nav) -> Unit) {
+    var result by remember(nav) { mutableStateOf<Outcome<String>?>(null) }
+    var anchor by remember(nav) { mutableStateOf(nav.anchor) }
+    LaunchedEffect(nav) { loader.document(nav.project, nav.path) { result = it } }
+    val scroll = rememberScrollState()
+    var layout by remember(nav) { mutableStateOf<TextLayoutResult?>(null) }
+    Column(Modifier.verticalScroll(scroll)) {
+        TextButton(onClick = onBack) { Text("← Назад") }
+        Text("${nav.project}: ${nav.path}", style = MaterialTheme.typography.titleMedium)
+        when (val r = result) {
+            null -> Text("Загрузка…")
+            is Outcome.Failure -> Text("Не загрузилось: ${r.diagnostics.first().code.name} — ${r.diagnostics.first().message}", color = MaterialTheme.colorScheme.error)
+            is Outcome.Success -> {
+                val markdown = nav.path.endsWith(".md", ignoreCase = true)
+                val doc = remember(r.value) { if (markdown) DocText.build(r.value) else null }
+                if (doc == null) {
+                    Text(r.value, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
+                } else {
+                    val text = remember(doc, names) {
+                        DocText.annotated(doc, names, nav.project, nav.path) { target ->
+                            when (target) {
+                                is Links.Target.Anchor -> anchor = target.anchor
+                                is Links.Target.File -> open(Nav.Doc(target.project, target.path, target.anchor))
+                                is Links.Target.External -> Unit
+                            }
+                        }
+                    }
+                    Text(text, onTextLayout = { layout = it })
+                    LaunchedEffect(anchor, layout) {
+                        val a = anchor ?: return@LaunchedEffect
+                        val l = layout ?: return@LaunchedEffect
+                        doc.headings.firstOrNull { Links.slug(it.second) == a }?.let { (offset, _) -> scroll.animateScrollTo(l.getLineTop(l.getLineForOffset(offset)).toInt()) }
+                    }
+                }
+            }
+        }
     }
 }
 

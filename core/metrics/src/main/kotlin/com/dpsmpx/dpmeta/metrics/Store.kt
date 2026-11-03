@@ -61,6 +61,24 @@ class Store(private val vfs: Vfs, private val clock: Clock, random: RandomSource
         }
     }
 
+    /** Лента (F-05): документ `feed`, последние [Rules.FEED_KEEP] событий. */
+    fun readFeed(): Outcome<List<FeedEvent>> = when (val r = documents.read(FEED_KEY)) {
+        is Outcome.Failure -> r
+        is Outcome.Success -> r.value?.let { Feed.fromJson(it.content) } ?: Outcome.success(emptyList())
+    }
+
+    fun appendFeed(fresh: List<FeedEvent>): Outcome<Int> {
+        if (fresh.isEmpty()) return Outcome.success(0)
+        val old = when (val r = readFeed()) {
+            is Outcome.Failure -> return r
+            is Outcome.Success -> r.value
+        }
+        return when (val w = documents.write(FEED_KEY, Feed.toJson(Feed.merge(old, fresh)))) {
+            is Outcome.Failure -> w
+            is Outcome.Success -> Outcome.success(fresh.size)
+        }
+    }
+
     /** История чисел: все точки по порядку записи; [metric] и [subject] — фильтр. */
     fun history(metric: String? = null, subject: String? = null): Outcome<List<MetricPoint>> {
         if (!vfs.exists(historyPath)) return Outcome.success(emptyList())
@@ -83,5 +101,6 @@ class Store(private val vfs: Vfs, private val clock: Clock, random: RandomSource
 
     companion object {
         const val STATE_KEY = "state"
+        const val FEED_KEY = "feed"
     }
 }

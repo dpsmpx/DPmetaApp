@@ -11,7 +11,10 @@ import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.storage.vfs.NioVfs
 import com.dpsmpx.dpmeta.app.data.PultRepository
 import com.dpsmpx.dpmeta.app.data.SecretStore
+import com.dpsmpx.dpai.core.diagnostics.DiagCode
+import com.dpsmpx.dpmeta.app.ui.Loader
 import com.dpsmpx.dpmeta.app.ui.PultApp
+import com.dpsmpx.dpmeta.github.GitHub
 import com.dpsmpx.dpmeta.app.ui.PultTheme
 import com.dpsmpx.dpmeta.app.ui.PultView
 import java.util.concurrent.ExecutorService
@@ -46,12 +49,32 @@ class PultActivity : ComponentActivity() {
     private fun open() {
         val state = (repo.state() as? Outcome.Success)?.value
         val hasToken = (secrets.load() as? Outcome.Success)?.value != null
-        view.value = PultView(state, "", hasToken, busy = false)
+        val feed = (repo.feed() as? Outcome.Success)?.value.orEmpty()
+        view.value = PultView(state, "", hasToken, busy = false, feed = feed, names = repo.names())
         setContent {
             PultTheme {
-                PultApp(view.value, onSync = ::sync, onSaveToken = ::saveToken, onForgetToken = ::forgetToken)
+                PultApp(view.value, loader, onSync = ::sync, onSaveToken = ::saveToken, onForgetToken = ::forgetToken)
             }
         }
+    }
+
+    /** Каталог и файл — в фоне, итог — в главном потоке; без токена — понятный отказ. */
+    private val loader = object : Loader {
+        private fun <T> run(work: (Secret) -> Outcome<T>, done: (Outcome<T>) -> Unit) {
+            val token = (secrets.load() as? Outcome.Success)?.value
+                ?: return done(Outcome.failure(DiagCode.GITHUB_AUTH_EXPIRED, "нет токена GitHub или нужен новый вход", "github"))
+            pool.execute {
+                val r = work(token)
+                runOnUiThread {
+                    done(r)
+                    view.value = view.value.copy(names = repo.names())
+                }
+            }
+        }
+
+        override fun directory(project: String, dir: String, done: (Outcome<List<GitHub.Entry>>) -> Unit) = run({ repo.directory(it, project, dir) }, done)
+
+        override fun document(project: String, path: String, done: (Outcome<String>) -> Unit) = run({ repo.document(it, project, path) }, done)
     }
 
     private fun saveToken(text: String) {
@@ -72,7 +95,13 @@ class PultActivity : ComponentActivity() {
             val state = (repo.state() as? Outcome.Success)?.value
             runOnUiThread {
                 view.value = when (r) {
-                    is Outcome.Success -> view.value.copy(state = state, busy = false, status = "Готово: ${r.value.line}.")
+                    is Outcome.Success -> view.value.copy(
+                        state = state,
+                        busy = false,
+                        status = "Готово: ${r.value.line}.",
+                        feed = (repo.feed() as? Outcome.Success)?.value.orEmpty(),
+                        names = repo.names(),
+                    )
                     is Outcome.Failure -> view.value.copy(busy = false, status = "Не вышло: ${r.diagnostics.first().code.name} — ${r.diagnostics.first().message}")
                 }
             }
