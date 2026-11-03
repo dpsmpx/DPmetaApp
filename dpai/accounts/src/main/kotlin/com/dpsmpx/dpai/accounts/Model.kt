@@ -1,5 +1,6 @@
 package com.dpsmpx.dpai.accounts
 
+import com.dpsmpx.dpai.core.ids.Executor
 import com.dpsmpx.dpai.core.clock.Timestamp
 import com.dpsmpx.dpai.core.hashing.ContentHash
 import com.dpsmpx.dpai.core.ids.AccountId
@@ -77,6 +78,8 @@ data class SubscriptionState(
     val nearPercent: Int = DEFAULT_NEAR_PERCENT,
     /** [rotationAllowed] задано событием `RotationSet` (D-56), а не значением при регистрации до D-56. */
     val rotationExplicit: Boolean = false,
+    /** Исполнитель подписки и всех её слотов (D-100). */
+    val executor: Executor = Executor.CLAUDE,
 ) {
     fun window(w: LimitWindow): WindowState = windows[w] ?: WindowState()
 
@@ -111,14 +114,20 @@ data class SlotState(
     /** Claude Code предупредил, что вход истекает; [loginExpiresAt] — если сообщил когда. */
     val loginExpiring: Boolean = false,
     val loginExpiresAt: Timestamp? = null,
+    /** Исполнитель — как у подписки слота (D-100): копия для отбора слотов задачи. */
+    val executor: Executor = Executor.CLAUDE,
 )
 
 /** Всё состояние аккаунтов: производное от событий (D-12). */
 data class AccountsState(
     val subscriptions: Map<SubscriptionId, SubscriptionState> = emptyMap(),
     val slots: Map<AccountId, SlotState> = emptyMap(),
-    /** На какой подписке задача шла последней — предпочтение при продолжении. */
-    val taskSubscription: Map<TaskId, SubscriptionId> = emptyMap(),
+    /**
+     * На какой подписке задача шла последней — предпочтение при продолжении;
+     * у каждого исполнителя своя (D-100): ревью Codex не делает подписку
+     * Claude, на которой задача работает, чужой.
+     */
+    val taskSubscription: Map<TaskId, Map<Executor, SubscriptionId>> = emptyMap(),
     /** Моменты переходов задачи между подписками — защита от петли (ТЗ, §22). */
     val switches: Map<TaskId, List<Timestamp>> = emptyMap(),
 ) {

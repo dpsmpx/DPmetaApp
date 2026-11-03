@@ -237,10 +237,11 @@ class Controller(private val root: File, val version: String?) {
      * номер. Ключа хоста нет — сверять нечего.
      */
     @Synchronized
-    fun addInApp(id: com.dpsmpx.dpai.core.ids.ExecutionTargetId): Outcome<TargetEntry> {
-        val used = targets().filter { it.inApp }.mapNotNull { it.configDir?.substringAfterLast("-")?.toIntOrNull() }.toSet()
+    fun addInApp(id: com.dpsmpx.dpai.core.ids.ExecutionTargetId, executor: com.dpsmpx.dpai.core.ids.Executor = com.dpsmpx.dpai.core.ids.Executor.CLAUDE): Outcome<TargetEntry> {
+        val used = targets().filter { it.inApp && it.executor == executor }.mapNotNull { it.configDir?.substringAfterLast("-")?.toIntOrNull() }.toSet()
         val n = (1..99).firstOrNull { it !in used } ?: return Outcome.failure(DiagCode.VALUE_INVALID, "слотов «в приложении» — не больше 99")
-        val entry = when (val e = TargetForm.inApp(id, "Linux в приложении · слот $n", com.dpsmpx.dpai.orchestrator.linux.LinuxEnvironment.slotDir(n))) {
+        val label = if (executor == com.dpsmpx.dpai.core.ids.Executor.CLAUDE) "Linux в приложении · слот $n" else "Linux в приложении · ${executor.title} $n"
+        val entry = when (val e = TargetForm.inApp(id, label, com.dpsmpx.dpai.orchestrator.linux.LinuxEnvironment.slotDir(n, executor), executor)) {
             is Outcome.Failure -> return e
             is Outcome.Success -> e.value
         }

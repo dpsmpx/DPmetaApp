@@ -7,6 +7,7 @@ import com.dpsmpx.dpai.core.diagnostics.Retryability
 import com.dpsmpx.dpai.core.diagnostics.Severity
 import com.dpsmpx.dpai.core.events.EventEnvelope
 import com.dpsmpx.dpai.core.events.EventType
+import com.dpsmpx.dpai.core.ids.Executor
 import com.dpsmpx.dpai.core.ids.ProviderSessionId
 import com.dpsmpx.dpai.core.ids.SessionId
 import com.dpsmpx.dpai.core.result.Outcome
@@ -90,7 +91,7 @@ interface ClaudeRunner {
      * §1): события агента после [afterSequence]; [turnRunning] — ход ещё
      * идёт, его итог будет собран из оставшихся событий.
      */
-    fun adopt(session: SessionId, provider: ProviderSessionId, afterSequence: Long, turnRunning: Boolean): Outcome<RunnerState>
+    fun adopt(session: SessionId, provider: ProviderSessionId, afterSequence: Long, turnRunning: Boolean, executor: Executor = Executor.CLAUDE): Outcome<RunnerState>
 }
 
 /**
@@ -102,10 +103,19 @@ class ClaudeCodeCliRunner(
     private val agent: AgentClient,
     private val newProviderSession: () -> ProviderSessionId,
     private val claudeCommand: List<String> = listOf("claude"),
+    /** Команды исполнителей Codex и Gemini на target (D-100); Claude — [claudeCommand]. */
+    private val commands: Map<Executor, List<String>> = ExecutorCli.DEFAULT_COMMANDS,
     private val stopGrace: Duration = 5.seconds,
     private val eventSource: RunEventSource = agent,
 ) : ClaudeRunner {
-    private class Live(val session: SessionId, val provider: ProviderSessionId, val channel: RunChannel, var providerStarted: Boolean) {
+    private class Live(
+        val session: SessionId,
+        val provider: ProviderSessionId,
+        val channel: RunChannel,
+        var providerStarted: Boolean,
+        /** Исполнитель сессии (D-100): по нему — команда хода и перевод потока. */
+        var executor: Executor = Executor.CLAUDE,
+    ) {
         var turn = 0
         var assembler: ClaudeTurnAssembler? = null
         var lastTurn: ClaudeTurn? = null
@@ -121,7 +131,7 @@ class ClaudeCodeCliRunner(
     override fun start(session: SessionId, request: ClaudeRequest, provider: ProviderSessionId?, resume: Boolean): Outcome<RunnerState> {
         if (session in live) return Outcome.failure(DiagCode.VALUE_INVALID, "сессия уже начата: продолжение — send или resume", "session $session")
         if (resume && provider == null) return Outcome.failure(DiagCode.VALUE_INVALID, "возобновить можно только известную сессию провайдера", "session $session")
-        val l = Live(session, provider ?: newProviderSession(), RunChannel(eventSource, session), providerStarted = resume)
+        val l = Live(session, provider ?: newProviderSession(), RunChannel(eventSource, session), providerStarted = resume, executor = request.executor)
         live[session] = l
         return turn(l, request)
     }
@@ -136,8 +146,10 @@ class ClaudeCodeCliRunner(
     private fun turn(l: Live, request: ClaudeRequest): Outcome<RunnerState> {
         if (l.terminated) return Outcome.failure(DiagCode.INVALID_TRANSITION, "сессия остановлена полностью", "session ${l.session}")
         if (l.assembler != null || l.run?.finished == false) return Outcome.failure(DiagCode.RUNNER_TURN_ACTIVE, "ход ${l.turn} ещё идёт", "session ${l.session}")
+        l.executor = request.executor
+        val command = if (request.executor == Executor.CLAUDE) claudeCommand else commands[request.executor] ?: ExecutorCli.DEFAULT_COMMANDS.getValue(request.executor)
         val spec = RunSpec(
-            command = ClaudeCodeCli.argv(claudeCommand, request, l.provider, resume = l.providerStarted),
+            command = ExecutorCli.argv(command, request, l.provider, resume = l.providerStarted),
             workDir = request.workDir,
             setEnv = request.setEnv,
             unsetEnv = request.unsetEnv,
@@ -206,23 +218,24 @@ class ClaudeCodeCliRunner(
     private fun translate(l: Live, e: EventEnvelope): List<RunnerUpdate> = when (e.type) {
         EventType.TARGET_PROCESS_STARTED -> {
             l.turn = (e.payload["turn"] as? JsonNumber)?.toLongExact()?.toInt() ?: (l.turn + 1)
-            l.assembler = ClaudeTurnAssembler(l.provider)
+            l.assembler = ClaudeTurnAssembler(l.provider, l.executor)
             listOf(RunnerUpdate.TurnStarted(l.turn))
         }
         EventType.TARGET_PROCESS_OUTPUT -> {
             val text = (e.payload["text"] as? JsonString)?.value.orEmpty()
             if ((e.payload["stream"] as? JsonString)?.value == "stderr") {
+                l.assembler?.stderr(text)
                 listOf(RunnerUpdate.Stderr(text))
             } else {
                 val truncated = (e.payload["truncated"] as? JsonBool)?.value ?: false
-                listOfNotNull(l.assembler?.feed(text, truncated)?.let { RunnerUpdate.Provider(it, e.sequence) })
+                l.assembler?.feedAll(text, truncated).orEmpty().map { RunnerUpdate.Provider(it, e.sequence) }
             }
         }
         EventType.TARGET_PROCESS_HEARTBEAT -> listOf(RunnerUpdate.Heartbeat(e.sequence))
         EventType.TARGET_PROCESS_EXITED -> {
             val code = (e.payload["exitCode"] as? JsonNumber)?.toLongExact()?.toInt()
             val reason = (e.payload["reason"] as? JsonString)?.value?.let { r -> ExitReason.entries.firstOrNull { it.name == r } }
-            val turn = (l.assembler ?: ClaudeTurnAssembler(l.provider)).finish(code, reason)
+            val turn = (l.assembler ?: ClaudeTurnAssembler(l.provider, l.executor)).finish(code, reason)
             l.assembler = null
             l.lastTurn = turn
             listOf(RunnerUpdate.TurnFinished(l.turn, turn))
@@ -263,9 +276,9 @@ class ClaudeCodeCliRunner(
     override fun position(session: SessionId): Long? = live[session]?.channel?.lastAccepted
 
     @Synchronized
-    override fun adopt(session: SessionId, provider: ProviderSessionId, afterSequence: Long, turnRunning: Boolean): Outcome<RunnerState> {
+    override fun adopt(session: SessionId, provider: ProviderSessionId, afterSequence: Long, turnRunning: Boolean, executor: Executor): Outcome<RunnerState> {
         if (session in live) return Outcome.failure(DiagCode.VALUE_INVALID, "сессия уже ведётся раннером", "session $session")
-        val l = Live(session, provider, RunChannel(eventSource, session, startAfter = afterSequence), providerStarted = true)
+        val l = Live(session, provider, RunChannel(eventSource, session, startAfter = afterSequence), providerStarted = true, executor = executor)
         if (turnRunning) replayTurn(l, afterSequence)
         live[session] = l
         return Outcome.success(state(l))
@@ -278,7 +291,7 @@ class ClaudeCodeCliRunner(
      * Агент не ответил — сборка с позиции, как раньше.
      */
     private fun replayTurn(l: Live, upTo: Long) {
-        l.assembler = ClaudeTurnAssembler(l.provider)
+        l.assembler = ClaudeTurnAssembler(l.provider, l.executor)
         var after = 0L
         while (after < upTo) {
             val page = agent.events(l.session, after, REPLAY_PAGE).valueOrNull() ?: return

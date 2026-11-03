@@ -1,5 +1,6 @@
 package com.dpsmpx.dpai.accounts
 
+import com.dpsmpx.dpai.core.ids.Executor
 import com.dpsmpx.dpai.core.clock.Timestamp
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.hashing.ContentHash
@@ -24,6 +25,8 @@ sealed interface AccountEvent {
         val maxParallelSessions: Int,
         val rotationAllowed: Boolean,
         override val at: Timestamp,
+        /** Исполнитель подписки (D-100): аккаунт Claude, ChatGPT (Codex) или Google (Gemini). */
+        val executor: Executor = Executor.CLAUDE,
     ) : AccountEvent
 
     data class SlotRegistered(

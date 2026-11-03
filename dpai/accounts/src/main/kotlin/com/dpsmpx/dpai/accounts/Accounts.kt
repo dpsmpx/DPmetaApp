@@ -16,6 +16,7 @@ import com.dpsmpx.dpai.accounts.AccountEvent.SlotRegistered
 import com.dpsmpx.dpai.accounts.AccountEvent.SlotStateChanged
 import com.dpsmpx.dpai.accounts.AccountEvent.SubscriptionRegistered
 import com.dpsmpx.dpai.accounts.AccountEvent.SubscriptionSwitched
+import com.dpsmpx.dpai.core.ids.Executor
 import com.dpsmpx.dpai.core.clock.Timestamp
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.Diagnostic
@@ -50,11 +51,12 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
         now: Timestamp,
         maxParallelSessions: Int = policy.defaultMaxParallelSessions,
         rotationAllowed: Boolean = false,
+        executor: Executor = Executor.CLAUDE,
     ): Outcome<List<AccountEvent>> {
         if (id in state.subscriptions) return Outcome.failure(DiagCode.VALUE_INVALID, "подписка уже зарегистрирована", "subscription $id")
         if (label.isBlank() || label.length > 100) return Outcome.failure(DiagCode.VALUE_INVALID, "метка подписки — от 1 до 100 знаков")
         if (maxParallelSessions !in 1..64) return Outcome.failure(DiagCode.VALUE_INVALID, "maxParallelSessions — от 1 до 64")
-        return Outcome.success(finish(state, listOf(SubscriptionRegistered(id, label.trim(), maxParallelSessions, rotationAllowed, now)), now))
+        return Outcome.success(finish(state, listOf(SubscriptionRegistered(id, label.trim(), maxParallelSessions, rotationAllowed, now, executor)), now))
     }
 
     fun registerSlot(
@@ -79,7 +81,12 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
         return Outcome.success(finish(state, listOf(SlotRegistered(id, subscription, target, dir, now)), now))
     }
 
-    /** Итог `claude auth status` слота: способ входа, аккаунт, пересечения (D-29, D-30). */
+    /**
+     * Итог проверки входа слота: способ входа, аккаунт, пересечения (D-29,
+     * D-30). Разрешённый способ — по исполнителю слота (D-100); у Codex и
+     * Gemini аккаунт не называется — проверки пересечения нет, и это не
+     * находка, а их устройство (`docs/ACCOUNT_MODEL.md`, §10).
+     */
     fun observeAuthStatus(state: AccountsState, slotId: AccountId, status: AuthStatus, now: Timestamp): Outcome<List<AccountEvent>> {
         val slot = state.slots[slotId] ?: return notFound(slotId)
         val sub = state.subscriptions.getValue(slot.subscriptionId)
@@ -88,14 +95,15 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
         val subject = "slot $slotId"
         val login: LoginStatus = when {
             !status.loggedIn -> LoginStatus.REQUIRED
-            !status.isClaudeLogin -> {
+            !status.isAllowed(slot.executor) -> {
                 notes += Diagnostic.warning(
                     DiagCode.ACCOUNT_AUTH_METHOD_FORBIDDEN,
-                    "Claude Code сообщает вход «${status.authMethod}»; разрешён только вход формой Claude (D-29): слот остановлен",
+                    "${slot.executor.title} сообщает вход «${status.authMethod}»; разрешён только ${AuthStatus.allowedPhrase(slot.executor)} (D-29, D-100): слот остановлен",
                     subject,
                 )
                 LoginStatus.FORBIDDEN_METHOD
             }
+            slot.executor != Executor.CLAUDE -> LoginStatus.OK
             status.identity == null -> {
                 notes += Diagnostic.warning(
                     DiagCode.ACCOUNT_IDENTITY_UNKNOWN,
@@ -243,6 +251,8 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
         urgent: Boolean = false,
         /** Слот, с которого задачу перенесли (D-77): на него она не идёт. */
         exclude: AccountId? = null,
+        /** Исполнитель задачи (D-100): слоты только его; `null` — любой (прежние вызовы). */
+        executor: Executor? = null,
     ): Outcome<Lease> {
         state.slotOf(session)?.let { s ->
             return if (s.sessions[session] == task) {
@@ -253,9 +263,11 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
         }
         val ticked = tick(state, now)
         val s1 = ticked.fold(state, ::apply)
-        val previous = s1.taskSubscription[task]
+        // Подписка задачи у этого исполнителя (D-100): переход к другому исполнителю — у предела или
+        // ревьюером по выбору — не переход подписки D-57, его правила к нему не применяются.
+        val previous = s1.taskSubscription[task]?.get(executor ?: Executor.CLAUDE)
         val candidates = s1.slots.values
-            .filter { it.state == AccountState.AVAILABLE && (target == null || it.targetId == target) && it.id != exclude }
+            .filter { it.state == AccountState.AVAILABLE && (target == null || it.targetId == target) && it.id != exclude && (executor == null || it.executor == executor) }
             .filter { slot ->
                 val sub = s1.subscriptions.getValue(slot.subscriptionId)
                 // Чужую задачу подписка у предела не берёт и срочную (D-57): переход ради того, чтобы сразу
@@ -270,7 +282,7 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
             own.isNotEmpty() -> own
             else -> candidates.filter { s1.subscriptions.getValue(it.subscriptionId).rotationAllowed }
         }
-        if (pool.isEmpty()) return Outcome.failure(DiagCode.ACCOUNT_NONE_AVAILABLE, explainNone(s1, now, previous, target, urgent), "task $task")
+        if (pool.isEmpty()) return Outcome.failure(DiagCode.ACCOUNT_NONE_AVAILABLE, explainNone(s1, now, previous, target, urgent, executor), "task $task")
         val limit = policy.maxSwitchesPerTask
         if (switching && limit != null) {
             val recent = s1.switches[task].orEmpty().count { it > now - policy.switchWindow }
@@ -294,6 +306,17 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
             if (switching) add(SubscriptionSwitched(task, previous, chosen.subscriptionId, now))
         }
         return Outcome.success(Lease(chosen.id, chosen.subscriptionId, ticked + finish(s1, facts, now)))
+    }
+
+    /**
+     * У исполнителя [executor] предел: слоты есть, и все включённые упёрлись
+     * в предел подписки (`RATE_LIMITED` или окно исчерпано). Тогда задача
+     * идёт к следующему исполнителю (D-100); занятые и без входа — не предел:
+     * задача ждёт своего исполнителя.
+     */
+    fun exhausted(state: AccountsState, executor: Executor, now: Timestamp): Boolean {
+        val own = state.slots.values.filter { it.executor == executor && !it.disabled }
+        return own.isNotEmpty() && own.all { it.state == AccountState.RATE_LIMITED || state.subscriptions.getValue(it.subscriptionId).limitedAt(now) }
     }
 
     fun release(state: AccountsState, session: SessionId, now: Timestamp): Outcome<List<AccountEvent>> {
@@ -381,9 +404,18 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
         }
     }
 
-    private fun explainNone(state: AccountsState, now: Timestamp, previous: SubscriptionId?, target: ExecutionTargetId?, urgent: Boolean = false): String {
+    private fun explainNone(
+        state: AccountsState,
+        now: Timestamp,
+        previous: SubscriptionId?,
+        target: ExecutionTargetId?,
+        urgent: Boolean = false,
+        executor: Executor? = null,
+    ): String {
         if (state.slots.isEmpty()) return "нет ни одного слота: зарегистрируйте подписку и войдите формой Claude"
-        val parts = state.subscriptions.values.sortedBy { it.id.value }.map { sub ->
+        val subs = state.subscriptions.values.filter { executor == null || it.executor == executor }
+        if (subs.isEmpty()) return "нет подписок ${executor?.title}: заведите слот этого исполнителя"
+        val parts = subs.sortedBy { it.id.value }.map { sub ->
             val slots = state.slotsOf(sub.id).filter { target == null || it.targetId == target }
             val why = when {
                 slots.isEmpty() -> "нет слотов" + (target?.let { " на $it" } ?: "")
@@ -428,11 +460,18 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
         fun apply(state: AccountsState, event: AccountEvent): AccountsState = when (event) {
             is SubscriptionRegistered -> state.copy(
                 subscriptions = state.subscriptions + (
-                    event.subscription to SubscriptionState(event.subscription, event.label, event.maxParallelSessions, event.rotationAllowed)
+                    event.subscription to SubscriptionState(
+                        event.subscription, event.label, event.maxParallelSessions, event.rotationAllowed, executor = event.executor,
+                    )
                     ),
             )
             is SlotRegistered -> state.copy(
-                slots = state.slots + (event.slot to SlotState(event.slot, event.subscription, event.target, event.configDir)),
+                slots = state.slots + (
+                    event.slot to SlotState(
+                        event.slot, event.subscription, event.target, event.configDir,
+                        executor = state.subscriptions[event.subscription]?.executor ?: Executor.CLAUDE,
+                    )
+                    ),
             )
             is LoginObserved -> state.slot(event.slot) {
                 it.copy(login = event.login, authMethod = event.authMethod, loginExpiring = if (event.login == LoginStatus.OK) it.loginExpiring else false)
@@ -457,9 +496,10 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
             is SlotDisabled -> state.slot(event.slot) { it.copy(disabled = true) }
             is SlotEnabled -> state.slot(event.slot) { it.copy(disabled = false, login = LoginStatus.UNKNOWN) }
             is SessionLeased -> {
-                val sub = state.slots.getValue(event.slot).subscriptionId
+                val slot = state.slots.getValue(event.slot)
+                val own = state.taskSubscription[event.task].orEmpty() + (slot.executor to slot.subscriptionId)
                 state.slot(event.slot) { it.copy(sessions = it.sessions + (event.session to event.task)) }
-                    .copy(taskSubscription = state.taskSubscription + (event.task to sub))
+                    .copy(taskSubscription = state.taskSubscription + (event.task to own))
             }
             is SessionReleased -> state.slot(event.slot) { it.copy(sessions = it.sessions - event.session) }
             is SubscriptionSwitched -> state.copy(switches = state.switches + (event.task to state.switches[event.task].orEmpty() + event.at))

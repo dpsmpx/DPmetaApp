@@ -1,5 +1,6 @@
 package com.dpsmpx.dpai.execution.claude
 
+import com.dpsmpx.dpai.core.ids.Executor
 import com.dpsmpx.dpai.core.ids.ProviderSessionId
 import com.dpsmpx.dpai.core.serialization.CanonicalJson
 import com.dpsmpx.dpai.core.serialization.JsonObject
@@ -44,6 +45,13 @@ data class ClaudeRequest(
     val timeout: Duration? = null,
     val setEnv: Map<String, String> = emptyMap(),
     val unsetEnv: List<String> = emptyList(),
+    /** Исполнитель хода (D-100): Claude Code, Codex CLI или Gemini CLI — по слоту сессии. */
+    val executor: Executor = Executor.CLAUDE,
+    /**
+     * Ход только для чтения (ревью, D-73): у Claude — набор инструментов
+     * [tools], у Codex — песочница `read-only`, у Gemini — режим `plan`.
+     */
+    val readOnly: Boolean = false,
 ) {
     init {
         require(prompt.isNotBlank()) { "пустой prompt" }

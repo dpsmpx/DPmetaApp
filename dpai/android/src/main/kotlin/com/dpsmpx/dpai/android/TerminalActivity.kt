@@ -106,6 +106,7 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         }
         val id = intent?.getStringExtra(EXTRA_TARGET) ?: return
         val claude = intent.getBooleanExtra(EXTRA_CLAUDE, false)
+        val login = intent.getBooleanExtra(EXTRA_LOGIN, false)
         thread(name = "dpai-term-open", isDaemon = true) {
             val target = Controller.get(filesDir, null).targets().firstOrNull { it.id.value == id }
             runOnUiThread {
@@ -114,10 +115,10 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
                     return@runOnUiThread
                 }
                 // Claude не запустить (Windows, нет каталога слота) — сказать, а не открыть вместо него оболочку (D-05).
-                val command = if (!claude) {
+                val command = if (!claude && !login) {
                     emptyList()
                 } else {
-                    when (val c = TerminalLaunch.claude(target)) {
+                    when (val c = if (login) TerminalLaunch.login(target) else TerminalLaunch.claude(target)) {
                         is Outcome.Success -> c.value
                         is Outcome.Failure -> {
                             Toast.makeText(this, c.diagnostics.first().message, Toast.LENGTH_LONG).show()
@@ -126,7 +127,7 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
                         }
                     }
                 }
-                val tab = TerminalHub.open(this, target, command, if (claude) "${target.label} · claude" else target.label)
+                val tab = TerminalHub.open(this, target, command, if (claude || login) "${target.label} · ${target.executor.key}${if (login) " · вход" else ""}" else target.label)
                 show(tab)
             }
         }
@@ -353,6 +354,7 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
     companion object {
         const val EXTRA_TARGET = "com.dpsmpx.dpai.terminal.TARGET"
         const val EXTRA_CLAUDE = "com.dpsmpx.dpai.terminal.CLAUDE"
+        const val EXTRA_LOGIN = "com.dpsmpx.dpai.terminal.LOGIN"
         const val EXTRA_LINUX = "com.dpsmpx.dpai.terminal.LINUX"
         const val EXTRA_DIR = "com.dpsmpx.dpai.terminal.DIR"
         private const val PREVIEW = 500
@@ -362,9 +364,9 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         private val ACTIVE = 0xff66ccff.toInt()
 
         /** Открыть терминал target: оболочку или `claude` слота; без target — открытые вкладки. */
-        fun start(context: Context, targetId: String?, claude: Boolean = false) {
+        fun start(context: Context, targetId: String?, claude: Boolean = false, login: Boolean = false) {
             val i = Intent(context, TerminalActivity::class.java)
-            if (targetId != null) i.putExtra(EXTRA_TARGET, targetId).putExtra(EXTRA_CLAUDE, claude)
+            if (targetId != null) i.putExtra(EXTRA_TARGET, targetId).putExtra(EXTRA_CLAUDE, claude).putExtra(EXTRA_LOGIN, login)
             if (context !is Activity) i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(i)
         }

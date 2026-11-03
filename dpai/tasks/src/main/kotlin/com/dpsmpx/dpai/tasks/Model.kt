@@ -1,5 +1,6 @@
 package com.dpsmpx.dpai.tasks
 
+import com.dpsmpx.dpai.core.ids.Executor
 import com.dpsmpx.dpai.core.clock.Timestamp
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.ids.AccountId
@@ -32,7 +33,9 @@ enum class ReviewRole { CODE, SECURITY }
  * (`docs/SCHEDULER.md`, §3). [taskClass] — маршрут модели (D-40); [model]
  * и [effort] — явный выбор автора: сильнее маршрута, без эскалации и
  * удешевления. [reviews] — роли ревью (D-73); по умолчанию ревью нет, у
- * класса `TRIVIAL` его не бывает.
+ * класса `TRIVIAL` его не бывает. [executor] — исполнитель задачи
+ * (D-100): Claude Code, Codex или Gemini; [reviewExecutor] — исполнитель
+ * ревью, `null` — тот же, что у задачи.
  */
 data class TaskPolicy(
     val maxRetries: Int = 3,
@@ -44,7 +47,12 @@ data class TaskPolicy(
     val model: String? = null,
     val effort: String? = null,
     val reviews: Set<ReviewRole> = emptySet(),
+    val executor: Executor = Executor.CLAUDE,
+    val reviewExecutor: Executor? = null,
 ) {
+    /** Исполнитель ревью этой задачи (D-100). */
+    val reviewer: Executor get() = reviewExecutor ?: executor
+
     init {
         require(reviews.isEmpty() || taskClass != TaskClass.TRIVIAL) { "у класса TRIVIAL ревью нет (D-73): смените класс или снимите роли" }
         require(model == null || NAME.matches(model)) { "модель — 1…100 знаков: буквы, цифры, «.», «-», «_», «[», «]»" }

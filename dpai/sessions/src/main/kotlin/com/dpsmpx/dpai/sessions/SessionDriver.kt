@@ -86,7 +86,7 @@ class SessionDriver(private val sessions: Sessions, private val runner: ClaudeRu
         }
         // id сессии провайдера — тот, что в журнале (D-08): по нему сверка после перезапуска узнаёт поток.
         val resume = r.continues?.let { prev -> state.sessions[prev]?.provider == r.provider } ?: false
-        val req = request.copy(setEnv = request.setEnv + binding.setEnv, unsetEnv = (request.unsetEnv + binding.unsetEnv).distinct())
+        val req = request.copy(setEnv = request.setEnv + binding.setEnv, unsetEnv = (request.unsetEnv + binding.unsetEnv).distinct(), executor = binding.executor)
         val started = runner.start(id, req, r.provider, resume)
         return when (started) {
             is Outcome.Success -> Outcome.success(Step(starting), started.diagnostics)
@@ -110,7 +110,7 @@ class SessionDriver(private val sessions: Sessions, private val runner: ClaudeRu
             is Outcome.Failure -> return b
             is Outcome.Success -> b.value
         }
-        val req = request.copy(setEnv = request.setEnv + binding.setEnv, unsetEnv = (request.unsetEnv + binding.unsetEnv).distinct())
+        val req = request.copy(setEnv = request.setEnv + binding.setEnv, unsetEnv = (request.unsetEnv + binding.unsetEnv).distinct(), executor = binding.executor)
         return runner.resume(id, req).let { r -> if (r is Outcome.Failure) r else Outcome.success(Step(emptyList()), r.diagnostics) }
     }
 

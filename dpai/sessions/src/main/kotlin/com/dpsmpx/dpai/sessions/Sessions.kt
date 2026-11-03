@@ -2,6 +2,7 @@ package com.dpsmpx.dpai.sessions
 
 import com.dpsmpx.dpai.accounts.AccountsState
 import com.dpsmpx.dpai.accounts.SlotEnvironment
+import com.dpsmpx.dpai.core.ids.Executor
 import com.dpsmpx.dpai.core.clock.Timestamp
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.Diagnostic
@@ -66,13 +67,15 @@ class Sessions(val policy: SessionPolicy = SessionPolicy()) {
     }
 
     /** Окружение хода для слота: что задать и что удалить в окружении агента target. */
-    data class SlotBinding(val setEnv: Map<String, String>, val unsetEnv: List<String>)
+    /** Окружение хода из слота сессии и исполнитель слота (D-100): ход идёт тем CLI, в который вошёл слот. */
+    data class SlotBinding(val setEnv: Map<String, String>, val unsetEnv: List<String>, val executor: Executor = Executor.CLAUDE)
 
     /**
      * Сверка перед каждым ходом (ТЗ, §66, §109): слот по-прежнему арендован
      * этой сессией, на том же target, с тем же каталогом настроек и в той
-     * же подписке. Окружение хода — из слота этой сессии: его
-     * `CLAUDE_CONFIG_DIR` и удаление переменных, перекрывающих вход
+     * же подписке. Окружение хода — из слота этой сессии: его каталог
+     * (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_CLI_HOME` — по исполнителю,
+     * D-100) и удаление переменных, перекрывающих вход
      * ([SlotEnvironment], D-29), — учётные данные другого слота в ход не
      * попадут.
      */
@@ -86,7 +89,9 @@ class Sessions(val policy: SessionPolicy = SessionPolicy()) {
             if (slot.subscriptionId != r.subscription) add("слот другой подписки")
         }
         if (problems.isNotEmpty()) return Outcome.failure(DiagCode.SESSION_BINDING_MISMATCH, problems.joinToString("; "), "session $id")
-        return Outcome.success(SlotBinding(mapOf(SlotEnvironment.CONFIG_DIR to slot.configDir), SlotEnvironment.OVERRIDING))
+        return Outcome.success(
+            SlotBinding(mapOf(SlotEnvironment.configVar(slot.executor) to slot.configDir), SlotEnvironment.overriding(slot.executor), slot.executor),
+        )
     }
 
     /** Переход по автомату `SessionLifecycle`; повтор в текущее состояние — без событий. */

@@ -2,33 +2,56 @@ package com.dpsmpx.dpai.ui
 
 import com.dpsmpx.dpai.accounts.SlotEnvironment
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
+import com.dpsmpx.dpai.core.ids.Executor
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.execution.ssh.RemoteShell
 import com.dpsmpx.dpai.execution.target.TargetPlatform
 
 /**
  * Что запускает свой терминал на target (D-71): пустая команда —
- * оболочка входа; «Claude» — интерактивный `claude` в каталоге слота
- * (`CLAUDE_CONFIG_DIR`, D-29): вход, `/usage`, ручная работа.
+ * оболочка входа; CLI слота — интерактивный `claude`, `codex` или `gemini`
+ * в каталоге слота (D-29, D-100): вход, `/usage`, ручная работа.
  */
 object TerminalLaunch {
     /**
-     * `claude` слота — через оболочку входа (`sh -l`): `PATH` пользователя
+     * CLI слота — через оболочку входа (`sh -l`): `PATH` пользователя
      * (`~/.local/bin`, `$PREFIX/bin` Termux) есть только в ней, а канал
      * `exec` её не читает. Профиль может выставить ключ API или Bedrock —
      * их `env -u` снимает уже после профиля (D-29, ревью 17 октября 2026):
-     * иначе интерактивный Claude слота шёл бы не на подписку слота.
-     * Windows и target без каталога слота — отказ.
+     * иначе CLI слота шёл бы не на подписку слота. Windows и target без
+     * каталога слота — отказ.
      */
-    fun claude(t: TargetEntry): Outcome<List<String>> {
-        val dir = t.configDir ?: return Outcome.failure(DiagCode.UNSUPPORTED, "у target нет каталога Claude слота", t.label)
+    fun claude(t: TargetEntry): Outcome<List<String>> = slot(t, login = false)
+
+    /**
+     * Вход слота (D-100): Claude — интерактивный `claude` (вход — `/login`),
+     * Codex — `codex login --device-auth` (ссылка и код для браузера
+     * телефона), Gemini — `gemini` без браузера на этом устройстве
+     * (`NO_BROWSER=true`) со способом входа «аккаунт Google» в
+     * `settings.json`, если способа ещё нет (`docs/research/GEMINI_CLI.md`).
+     */
+    fun login(t: TargetEntry): Outcome<List<String>> = slot(t, login = true)
+
+    private fun slot(t: TargetEntry, login: Boolean): Outcome<List<String>> {
+        val dir = t.configDir ?: return Outcome.failure(DiagCode.UNSUPPORTED, "у target нет каталога слота", t.label)
         if (t.platform != TargetPlatform.POSIX) {
-            return Outcome.failure(DiagCode.UNSUPPORTED, "Claude в терминале — на POSIX target; в Windows — из оболочки", t.label)
+            return Outcome.failure(DiagCode.UNSUPPORTED, "${t.executor.title} в терминале — на POSIX target; в Windows — из оболочки", t.label)
         }
-        val unset = SlotEnvironment.OVERRIDING.flatMap { listOf("-u", it) }
-        return when (val inner = RemoteShell.join(TargetPlatform.POSIX, listOf("env") + unset + listOf("${SlotEnvironment.CONFIG_DIR}=$dir", "claude"))) {
+        val unset = SlotEnvironment.overriding(t.executor).flatMap { listOf("-u", it) }
+        val env = listOf("env") + unset + listOf("${SlotEnvironment.configVar(t.executor)}=$dir")
+        val command = when (t.executor) {
+            Executor.CLAUDE -> listOf("claude")
+            Executor.CODEX -> if (login) listOf("codex", "login", "--device-auth") else listOf("codex")
+            Executor.GEMINI -> listOf("NO_BROWSER=true", "sh", "-c", GEMINI_SEED + " exec gemini")
+        }
+        return when (val inner = RemoteShell.join(TargetPlatform.POSIX, env + command)) {
             is Outcome.Failure -> inner
             is Outcome.Success -> Outcome.success(listOf("sh", "-lc", "exec ${inner.value}"))
         }
     }
+
+    /** Способ входа Gemini — аккаунт Google, если в `settings.json` слота его ещё нет (D-100). */
+    const val GEMINI_SEED: String =
+        "d=\"\$GEMINI_CLI_HOME/.gemini\"; mkdir -p \"\$d\"; " +
+            "[ -f \"\$d/settings.json\" ] || printf '%s\\n' '{\"security\":{\"auth\":{\"selectedType\":\"oauth-personal\"}}}' > \"\$d/settings.json\";"
 }

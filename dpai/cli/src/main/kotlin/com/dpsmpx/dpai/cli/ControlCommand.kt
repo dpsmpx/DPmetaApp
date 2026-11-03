@@ -220,6 +220,9 @@ class ControlCommand(
             opt(args, "--effort")?.let { c["effort"] = JsonString(it) }
             opt(args, "--budget")?.let { budget(it) ?: return usage("--budget — доллары, например 0.25") }?.let { c["budgetCents"] = JsonNumber.of(it) }
             opt(args, "--review")?.let { c["reviews"] = roles(it) }
+            // Исполнитель и ревьюер (D-100): claude, codex, gemini.
+            opt(args, "--executor")?.let { c["executor"] = JsonString(it.lowercase()) }
+            opt(args, "--reviewer")?.let { c["reviewExecutor"] = JsonString(it.lowercase()) }
             // Область и зависимости — списком через запятую (D-42, п. 1); короткие id задач — как у других команд.
             opt(args, "--scope")?.let { c["scope"] = JsonArray(csv(it).map(::JsonString)) }
             opt(args, "--depends-on")?.let { v -> c["dependsOn"] = JsonArray(csv(v).map { JsonString(resolve(it, "tasks") ?: return FAILED) }) }
@@ -517,7 +520,7 @@ class ControlCommand(
         const val WAITING = 3
 
         /** Ключи со значением и без (A-16): неизвестный — отказ. */
-        private val VALUE_FLAGS = setOf("--text", "--reason", "--priority", "--class", "--model", "--effort", "--budget", "--review", "--scope", "--depends-on", "--port")
+        private val VALUE_FLAGS = setOf("--text", "--reason", "--priority", "--class", "--model", "--effort", "--budget", "--review", "--scope", "--depends-on", "--port", "--executor", "--reviewer")
         private val PLAIN_FLAGS = setOf("--yes", "--all", "--stat", "--json")
 
         /** Первый неизвестный ключ; значение после ключа со значением — не ключ, даже если начинается с `--`. */
@@ -539,7 +542,7 @@ class ControlCommand(
 
         private const val CLASSES = "классы: trivial, classification, extraction, summarization, repository_recon, normal_engineering, complex_debugging, architecture, critical_review"
 
-        private const val TASK_USAGE = "dpai task add «название» «что сделать» [--priority HIGH] [--class trivial] [--model haiku] [--effort low] [--budget 0.25] [--review code,security] [--scope путь,путь] [--depends-on id,id]\n" +
+        private const val TASK_USAGE = "dpai task add «название» «что сделать» [--priority HIGH] [--class trivial] [--model haiku] [--effort low] [--budget 0.25] [--review code,security] [--executor codex] [--reviewer gemini] [--scope путь,путь] [--depends-on id,id]\n" +
             "dpai task <id> hold|resume|first|retry [--text «…»]|verify|messages|diff [--stat]|reviews|priority <P>|policy --class <к> …|scope [путь…]|depends [id…]|archive|unarchive|cancel --yes|waive --reason «…» --yes\n" +
             "dpai task archive-done   — все завершённые в архив\n" + CLASSES
         private const val SESSION_USAGE = "dpai session <id> stop | reassign | send «запрос» [--model m] [--effort e] | fresh [«запрос»]"

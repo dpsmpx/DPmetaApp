@@ -180,6 +180,22 @@ Windows — `AgentRuntimeTest.stopKillsBackgroundedDescendant`; протокол
 тайм-аут, падение, медленный вывод, повтор и пропуск событий, rate
 limit, ошибка аутентификации, частичное завершение.
 
+**Исполнители Codex и Gemini** (D-100). Ход задачи ведёт исполнитель её
+слота: тот же раннер собирает команду по `ClaudeRequest.executor`
+(`ExecutorCli`): Codex — `codex exec --json … -` (продолжение — `codex
+exec resume --last`), Gemini — `gemini -p " " --output-format
+stream-json` с `--session-id` или `--resume`; флаги — только из
+`docs/research/CODEX_CLI.md` и `docs/research/GEMINI_CLI.md`. Ревью
+(`readOnly`) — песочница `read-only` у Codex и `--approval-mode plan` у
+Gemini, вердикт — блок JSON в ответе (`Review.structuredFromText`).
+Поток исполнителя `StreamNormalizer` переводит в **нормальную форму** —
+события `stream-json` Claude Code — до `ClaudeTurnAssembler`: итог,
+расход, инструменты, файлы хода, отказы входа и предела разбираются
+одним кодом для всех. Gemini без входа пишет причину только в stderr —
+сборщик хода берёт её оттуда. Стоимость хода у них неизвестна (D-13).
+`MockRunner` пишет поток в формате исполнителя команды хода
+(`tests/data/codex-stream/`, `tests/data/gemini-stream/`).
+
 Ход оркестратора идёт с `--permission-mode auto` (D-38): в `-p` спросить
 человека некому, и без режима правки и команды отклонялись бы. Модель,
 усилие, запасная модель, запрет субагентов и общий кеш prompt

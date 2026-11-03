@@ -68,7 +68,8 @@ fun LinuxCard() {
             Text("Linux в приложении", style = MaterialTheme.typography.titleSmall)
             Text(
                 "Alpine в данных приложения — без Termux. Claude Code ставите сами в терминале " +
-                    "(apk add nodejs npm, затем npm i -g @anthropic-ai/claude-code) и входите в каталоге слота.",
+                    "(apk add nodejs npm, затем npm i -g @anthropic-ai/claude-code) и входите в каталоге слота; " +
+                    "Codex и Gemini (D-100) — кнопкой ниже.",
                 style = MaterialTheme.typography.bodySmall,
             )
             when {
@@ -100,21 +101,41 @@ fun LinuxCard() {
                         "Задачи в этом Linux: «Добавить слот» — target «в приложении» на вкладке Targets; войти — его «Claude в терминале» → /login.",
                         style = MaterialTheme.typography.bodySmall,
                     )
+                    // Codex CLI и Gemini CLI (D-100): Node.js и npm из Alpine, пакеты npm, в конце — версии.
                     TextButton(enabled = busy == null, onClick = {
-                        busy = "Добавляю слот…"
+                        busy = "Устанавливаю Codex и Gemini…"
+                        note = null
                         scope.launch {
-                            val r = withContext(Dispatchers.IO) {
-                                val id = com.dpsmpx.dpai.core.ids.IdGenerator(com.dpsmpx.dpai.core.clock.Clock.SYSTEM, com.dpsmpx.dpai.core.clock.RandomSource.secure())
-                                    .next(com.dpsmpx.dpai.core.ids.IdKinds.TARGET)
-                                Controller.get(context.filesDir, null).addInApp(id)
-                            }
-                            note = when (r) {
-                                is Outcome.Success -> "Добавлен «${r.value.label}» (${r.value.configDir}): войдите в Claude в его терминале"
-                                is Outcome.Failure -> "Слот не добавлен: ${r.errors.first().message}"
+                            val r = withContext(Dispatchers.IO) { LinuxSetup.run(context, LinuxEnvironment.executorsInstall()) }
+                            when (r) {
+                                is Outcome.Success -> {
+                                    note = if (r.value.ok) "Codex и Gemini: установлены" else "Установка завершилась с кодом ${r.value.exitCode} — причина в выводе ниже"
+                                    output = (r.value.stdout + r.value.stderr).takeLast(MAX_OUTPUT)
+                                }
+                                is Outcome.Failure -> note = "Установка: ${r.errors.first().message}"
                             }
                             busy = null
                         }
-                    }) { Text("Добавить слот «в приложении»") }
+                    }) { Text("Установить Codex и Gemini") }
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        for (x in com.dpsmpx.dpai.core.ids.Executor.entries) {
+                            TextButton(enabled = busy == null, onClick = {
+                                busy = "Добавляю слот…"
+                                scope.launch {
+                                    val r = withContext(Dispatchers.IO) {
+                                        val id = com.dpsmpx.dpai.core.ids.IdGenerator(com.dpsmpx.dpai.core.clock.Clock.SYSTEM, com.dpsmpx.dpai.core.clock.RandomSource.secure())
+                                            .next(com.dpsmpx.dpai.core.ids.IdKinds.TARGET)
+                                        Controller.get(context.filesDir, null).addInApp(id, x)
+                                    }
+                                    note = when (r) {
+                                        is Outcome.Success -> "Добавлен «${r.value.label}» (${r.value.configDir}): войдите в ${x.title} на его карточке во вкладке Targets"
+                                        is Outcome.Failure -> "Слот не добавлен: ${r.errors.first().message}"
+                                    }
+                                    busy = null
+                                }
+                            }) { Text("Слот ${x.title}") }
+                        }
+                    }
                 }
             }
             busy?.takeIf { installed != null }?.let { Text(it, style = MaterialTheme.typography.labelSmall) }

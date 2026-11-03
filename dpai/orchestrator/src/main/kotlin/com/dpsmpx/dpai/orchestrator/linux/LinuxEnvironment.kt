@@ -133,11 +133,28 @@ class LinuxEnvironment(private val vfs: Vfs, dir: String = DIR) {
             return Outcome.success(ProcessSpec(listOf("apk") + action.args + names))
         }
 
-        /** Каталог слота Claude в госте (`CLAUDE_CONFIG_DIR`, D-29): вход — в нём, по разу на слот. */
-        fun slotDir(n: Int): String {
+        /**
+         * Каталог слота в госте (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`,
+         * `GEMINI_CLI_HOME` — D-29, D-100): вход — в нём, по разу на слот.
+         */
+        fun slotDir(n: Int, executor: com.dpsmpx.dpai.core.ids.Executor = com.dpsmpx.dpai.core.ids.Executor.CLAUDE): String {
             require(n in 1..99) { "номер слота — 1…99" }
-            return "/root/.claude-slot-$n"
+            return "/root/.${executor.key}-slot-$n"
         }
+
+        /** Пакеты npm исполнителей Codex и Gemini (D-100): ставятся в госте глобально. */
+        val EXECUTOR_PACKAGES: List<String> = listOf("@openai/codex", "@google/gemini-cli")
+
+        /**
+         * Установка Codex CLI и Gemini CLI в госте (D-100): Node.js и npm из
+         * Alpine, затем пакеты npm; в конце — их версии.
+         */
+        fun executorsInstall(): ProcessSpec = ProcessSpec(
+            listOf(
+                "/bin/sh", "-lc",
+                "apk add nodejs npm && npm install -g ${EXECUTOR_PACKAGES.joinToString(" ")} && codex --version && gemini --version",
+            ),
+        )
 
         /** Адрес IPv4 (четыре числа 0…255) или IPv6 (шестнадцатеричные группы через `:`). */
         fun isIpLiteral(s: String): Boolean {

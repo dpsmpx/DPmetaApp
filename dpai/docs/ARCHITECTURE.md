@@ -69,7 +69,7 @@
 | `testkit` | property-тесты с зерном, генераторы, фикстуры; только для тестов | `core` | 1 |
 | `storage` | атомарная запись, журнал событий, снимки, миграции, резервные копии, повреждения | `core` | 2 |
 | `security` | уровни операций, одобрения с хешем предложения, границы секретности, ссылки на учётные данные | `core` | 5, 18 |
-| `execution` | `ExecutionTarget`, здоровье, процессы, `ClaudeRunner` и реализации, `MockRunner` | `core`, `security` | 3, 4 |
+| `execution` | `ExecutionTarget`, здоровье, процессы, `ClaudeRunner` и реализации, `MockRunner`; команды ходов Codex и Gemini и перевод их потоков в нормальную форму (D-100) | `core`, `security` | 3, 4 |
 | `accounts` | реестр `AIAccount`, возможности, здоровье, cooldown, выбор аккаунта | `core`, `security` | 5 |
 | `git` | репозитории, ветки, worktree и владельцы, diff, конфликты, безопасное слияние | `core`, `security` | 9 |
 | `contexts` | `ContextBundle`, манифест, версии, отбор, сжатие, handoff | `core`, `security` | 8 |
@@ -206,7 +206,7 @@ RECOVERY_PENDING ─► проба target и процесса ─► сверк�
 
 | Модуль, пакет | Содержимое |
 |---|---|
-| `accounts` | `Accounts`: решения (`registerSlot`, `observeAuthStatus`, `observeLimit`, `lease`, `tick`…) возвращают события `AccountEvent`; `apply` сворачивает их в `AccountsState` с проверкой переходов `AccountLifecycle`. `AuthStatus` — разбор `claude auth status --json`; `SlotEnvironment` — окружение процесса `claude` для слота (D-29); `AccountCodec` — события в `dpai.event` и состояние в `dpai.accounts-state` |
+| `accounts` | `Accounts`: решения (`registerSlot`, `observeAuthStatus`, `observeLimit`, `lease`, `tick`…) возвращают события `AccountEvent`; `apply` сворачивает их в `AccountsState` с проверкой переходов `AccountLifecycle`. `AuthStatus` — разбор `claude auth status --json`, `codex login status` и пробы входа Gemini (D-100); `SlotEnvironment` — окружение процесса исполнителя для слота (D-29, D-100); `AccountCodec` — события в `dpai.event` и состояние в `dpai.accounts-state` |
 | `notifications` | `NotificationEngine`: ключ предмета, окно агрегации, эскалация, предел частоты и сводка, `resolve`; `DeepLink` — `dpai://вид/id`; `UserRequest`, `UserRequests` — запрос человеку, его автомат и проверка ответа, `RequestAction` — кнопка `dpai://answer/…` (D-44) |
 | `orchestrator` | `EventRecorder` — конверты событий с номерами по потокам; `accounts.AccountsProjection` — проекция для снимков и восстановления (§5); `accounts.AccountNotifications` — какие события аккаунтов становятся уведомлениями |
 

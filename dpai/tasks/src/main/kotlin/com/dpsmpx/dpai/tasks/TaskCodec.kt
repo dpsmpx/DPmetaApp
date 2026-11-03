@@ -1,5 +1,6 @@
 package com.dpsmpx.dpai.tasks
 
+import com.dpsmpx.dpai.core.ids.Executor
 import com.dpsmpx.dpai.core.clock.Timestamp
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.Diagnostic
@@ -28,7 +29,9 @@ import kotlin.time.Duration.Companion.milliseconds
 object TaskCodec {
     const val STATE_FORMAT = "dpai.tasks-state"
     /**
-     * v7 — слот, с которого задачу перенесли (`excludedSlot`, D-77; пишется,
+     * v8 — исполнитель задачи и ревью в политике (`executor`,
+     * `reviewExecutor`, D-100; пишутся, только если не Claude и если
+     * заданы); v7 — слот, с которого задачу перенесли (`excludedSlot`, D-77; пишется,
      * только если есть); v6 — ревью (D-73): роли в политике (`reviews`) и итоги ревью у
      * задачи (`reviews`), пишутся, только если есть; v5 — архив
      * (`archived`, пишется, только если в архиве; D-42); v4 —
@@ -37,7 +40,7 @@ object TaskCodec {
      * если заданы); v2 — заявленная область задачи (`scope`); v1 читается,
      * область неизвестна.
      */
-    const val STATE_VERSION = 7
+    const val STATE_VERSION = 8
 
     fun type(e: TaskEvent): EventType = when (e) {
         is TaskEvent.Created -> EventType.TASK_CREATED
@@ -249,6 +252,9 @@ object TaskCodec {
         "effort" to (p.effort?.let(::JsonString) ?: JsonNull),
         // D-73: пишется, только если роли есть, — записи до D-73 читаются как прежде.
         "reviews" to (p.reviews.takeIf { it.isNotEmpty() }?.let { r -> JsonArray(r.sorted().map { JsonString(it.name) }) } ?: JsonNull),
+        // D-100: Claude не пишется — записи до D-100 читаются как Claude.
+        "executor" to (p.executor.takeIf { it != Executor.CLAUDE }?.let { JsonString(it.key) } ?: JsonNull),
+        "reviewExecutor" to (p.reviewExecutor?.let { JsonString(it.key) } ?: JsonNull),
     )
 
     private fun readPolicy(f: JsonFields): TaskPolicy? {
@@ -265,9 +271,16 @@ object TaskCodec {
         val reviews = if (f.has("reviews")) f.array("reviews")?.items.orEmpty().mapNotNull { v ->
             ReviewRole.entries.firstOrNull { it.name == (v as? JsonString)?.value } ?: null.also { f.diagnostics.error(DiagCode.VALUE_INVALID, "неизвестная роль ревью", "${f.path}.reviews") }
         }.toSet() else emptySet()
+        fun executor(key: String): Executor? = f.optString(key)?.let { k ->
+            Executor.byKey(k) ?: null.also { f.diagnostics.error(DiagCode.VALUE_INVALID, "неизвестный исполнитель: $k", "${f.path}.$key") }
+        }
+        val executor = executor("executor") ?: Executor.CLAUDE
+        val reviewExecutor = executor("reviewExecutor")
         f.finish()
         if (maxRetries == null || backoff == null || maxCont == null || timeout == null) return null
-        return runCatching { TaskPolicy(maxRetries, backoff.milliseconds, maxCont, timeout.milliseconds, budget, taskClass, model, effort, reviews) }.getOrNull()
+        return runCatching {
+            TaskPolicy(maxRetries, backoff.milliseconds, maxCont, timeout.milliseconds, budget, taskClass, model, effort, reviews, executor, reviewExecutor)
+        }.getOrNull()
             ?: null.also { f.diagnostics.error(DiagCode.VALUE_INVALID, "политика задачи недопустима", f.path) }
     }
 

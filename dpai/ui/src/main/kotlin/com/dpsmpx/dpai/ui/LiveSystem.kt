@@ -319,7 +319,8 @@ class LiveSystem(
      * слотом — без хода и без траты лимита. Уже идёт — ничего.
      */
     fun refreshUsage(only: Set<ExecutionTargetId>? = null) {
-        for (e in usable.filter { only == null || it.id in only }) {
+        // Загрузка окон (`/usage`, D-48) — только у Claude: Codex и Gemini окон не сообщают (D-100).
+        for (e in usable.filter { (only == null || it.id in only) && it.executor == com.dpsmpx.dpai.core.ids.Executor.CLAUDE }) {
             val slot = slotOf[e.id] ?: continue
             if (synchronized(usageProbes) { e.id in usageProbes }) continue
             val dir = orchestrator.accounts.slots[slot]?.configDir ?: continue
@@ -366,7 +367,7 @@ class LiveSystem(
             is Outcome.Success -> c.value
         }
         val probe = SlotAuthProbe(client)
-        when (val s = probe.start(ids.next(IdKinds.SESSION), entry.configDir!!)) {
+        when (val s = probe.start(ids.next(IdKinds.SESSION), entry.configDir!!, entry.executor)) {
             is Outcome.Failure -> {
                 problems += s.diagnostics
                 probeFailedAt[target] = clock.now().epochMillis
@@ -391,8 +392,12 @@ class LiveSystem(
         val o = orchestrator
         val sub = status.identity?.let { id -> o.accounts.subscriptions.values.firstOrNull { it.identity == id }?.id }
             ?: ids.next(IdKinds.SUBSCRIPTION).also { s ->
-                val label = status.plan?.let { "подписка $it (${e.label})" } ?: "подписка ${e.label}"
-                o.commitAccounts(accountsLogic.registerSubscription(o.accounts, s, label, clock.now(), maxParallelSessions = MAX_PARALLEL, rotationAllowed = true).valueOrNull()!!)
+                // Codex и Gemini аккаунт не называют (D-100): подписка — своя у каждого слота.
+                val kind = if (e.executor == com.dpsmpx.dpai.core.ids.Executor.CLAUDE) "подписка" else e.executor.title
+                val label = status.plan?.let { "$kind $it (${e.label})" } ?: "$kind ${e.label}"
+                o.commitAccounts(
+                    accountsLogic.registerSubscription(o.accounts, s, label, clock.now(), maxParallelSessions = MAX_PARALLEL, rotationAllowed = true, executor = e.executor).valueOrNull()!!,
+                )
             }
         val slot = ids.next(IdKinds.ACCOUNT)
         when (val r = accountsLogic.registerSlot(o.accounts, slot, sub, e.id, e.configDir!!, clock.now())) {

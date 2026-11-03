@@ -94,6 +94,13 @@ object LinuxSetup {
         return host(context).run(spec, 15.minutes, maxStdoutChars = 200_000)
     }
 
+    /** Команда в госте с выводом для экрана (установка Codex и Gemini, D-100): DNS — сети телефона. */
+    fun run(context: Context, spec: ProcessSpec): Outcome<Completed> {
+        if (environment(context).installed() == null) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "сначала установите Linux")
+        refreshDns(context)
+        return host(context).run(spec, 20.minutes, maxStdoutChars = 200_000)
+    }
+
     /**
      * Оболочка гостя для терминала: `sh -l` под proot с псевдотерминалом
      * (JNI, шаг 3). Окружение — гостя, не Android.

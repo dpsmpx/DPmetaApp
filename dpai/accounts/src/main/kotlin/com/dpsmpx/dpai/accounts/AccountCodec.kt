@@ -16,6 +16,7 @@ import com.dpsmpx.dpai.accounts.AccountEvent.SlotRegistered
 import com.dpsmpx.dpai.accounts.AccountEvent.SlotStateChanged
 import com.dpsmpx.dpai.accounts.AccountEvent.SubscriptionRegistered
 import com.dpsmpx.dpai.accounts.AccountEvent.SubscriptionSwitched
+import com.dpsmpx.dpai.core.ids.Executor
 import com.dpsmpx.dpai.core.clock.Timestamp
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.DiagnosticCollector
@@ -44,8 +45,12 @@ import com.dpsmpx.dpai.core.state.AccountState
  */
 object AccountCodec {
     const val STATE_FORMAT = "dpai.accounts-state"
-    /** v2 — загрузка окон (`utilizationBp`) и порог «у предела» (`nearPercent`), D-45; v1 читается без них. */
-    const val STATE_VERSION = 2
+    /**
+     * v3 — исполнитель подписки и слота (`executor`, D-100), пишется, только
+     * если не `claude`; v2 — загрузка окон (`utilizationBp`) и порог «у
+     * предела» (`nearPercent`), D-45; v1 и v2 читаются как Claude.
+     */
+    const val STATE_VERSION = 3
 
     fun type(e: AccountEvent): EventType = when (e) {
         is SubscriptionRegistered -> EventType.ACCOUNT_SUBSCRIPTION_REGISTERED
@@ -98,6 +103,7 @@ object AccountCodec {
         is SubscriptionRegistered -> obj(
             "subscription" to id(e.subscription), "label" to JsonString(e.label),
             "maxParallelSessions" to JsonNumber.of(e.maxParallelSessions), "rotationAllowed" to JsonBool(e.rotationAllowed),
+            "executor" to executor(e.executor),
         )
         is SlotRegistered -> obj(
             "slot" to id(e.slot), "subscription" to id(e.subscription), "target" to id(e.target), "configDir" to JsonString(e.configDir),
@@ -133,7 +139,7 @@ object AccountCodec {
         val event: AccountEvent? = when (type) {
             EventType.ACCOUNT_SUBSCRIPTION_REGISTERED -> build(
                 f.id("subscription", IdKinds.SUBSCRIPTION), f.string("label"), f.int("maxParallelSessions"), f.boolean("rotationAllowed"),
-            ) { a, b, c, e -> SubscriptionRegistered(a, b, c, e, at) }
+            ) { a, b, c, e -> optExecutor(f, d)?.let { x -> SubscriptionRegistered(a, b, c, e, at, x) } }
             EventType.ACCOUNT_SLOT_REGISTERED -> build(
                 f.id("slot", IdKinds.ACCOUNT), f.id("subscription", IdKinds.SUBSCRIPTION), f.id("target", IdKinds.TARGET), f.string("configDir"),
             ) { a, b, c, e -> SlotRegistered(a, b, c, e, at) }
@@ -194,6 +200,7 @@ object AccountCodec {
                         "rotationAllowed" to JsonBool(sub.rotationAllowed), "identity" to opt(sub.identity?.toString()), "plan" to opt(sub.plan),
                         "nearPercent" to sub.nearPercent.takeIf { it != DEFAULT_NEAR_PERCENT }?.let { JsonNumber.of(it) },
                         "rotationExplicit" to JsonBool(true).takeIf { sub.rotationExplicit },
+                        "executor" to executor(sub.executor),
                         "windows" to JsonArray(
                             LimitWindow.entries.map { w ->
                                 val ws = sub.window(w)
@@ -217,11 +224,15 @@ object AccountCodec {
                         ),
                         "errorStreak" to JsonNumber.of(slot.errorStreak), "cooldownUntil" to time(slot.cooldownUntil),
                         "loginExpiring" to JsonBool(slot.loginExpiring), "loginExpiresAt" to time(slot.loginExpiresAt),
+                        "executor" to executor(slot.executor),
                     )
                 },
             ),
             "taskSubscription" to JsonArray(
-                s.taskSubscription.entries.sortedBy { it.key.value }.map { (k, v) -> obj("task" to id(k), "subscription" to id(v)) },
+                // По строке на исполнителя задачи (D-100): исполнитель — у подписки.
+                s.taskSubscription.entries.sortedBy { it.key.value }.flatMap { (k, m) ->
+                    m.entries.sortedBy { it.key.ordinal }.map { (_, v) -> obj("task" to id(k), "subscription" to id(v)) }
+                },
             ),
             "switches" to JsonArray(
                 s.switches.entries.sortedBy { it.key.value }.map { (k, v) ->
@@ -247,6 +258,7 @@ object AccountCodec {
                     a, b, c, e, s.optHash("identity"), s.optString("plan"), LimitWindow.entries.associateWith { windows[it] ?: WindowState() },
                     s.optLong("nearPercent")?.toInt() ?: DEFAULT_NEAR_PERCENT,
                     (s.raw("rotationExplicit", required = false) as? JsonBool)?.value ?: false,
+                    optExecutor(s, d) ?: Executor.CLAUDE,
                 )
             }.also { s.finish() }
         }
@@ -268,13 +280,15 @@ object AccountCodec {
                     SlotState(
                         a, b, c, e, state, login, s.optString("authMethod"), disabled, sessions, streak,
                         s.optTime("cooldownUntil"), expiring, s.optTime("loginExpiresAt"),
+                        optExecutor(s, d) ?: Executor.CLAUDE,
                     )
                 }
             }.also { s.finish() }
         }
+        val subExecutor = subs.associate { it.id to it.executor }
         val taskSub = f.objects("taskSubscription").mapNotNull { p ->
             build(p.id("task", IdKinds.TASK), p.id("subscription", IdKinds.SUBSCRIPTION)) { a, b -> a to b }.also { p.finish() }
-        }.toMap()
+        }.groupBy({ it.first }, { it.second }).mapValues { (_, list) -> list.associateBy { subExecutor[it] ?: Executor.CLAUDE } }
         val switches = f.objects("switches").mapNotNull { p ->
             val times = p.array("at")?.items?.mapNotNull { (it as? JsonNumber)?.toLongExact()?.let(::Timestamp) }
             build(p.id("task", IdKinds.TASK)) { a -> times?.let { a to it } }.also { p.finish() }
@@ -344,4 +358,13 @@ object AccountCodec {
         if (a == null || b == null || c == null || e == null) null else f(a, b, c, e)
 
     private fun bp(u: Double): Long = Math.round(u.coerceIn(0.0, 1.0) * 10_000)
+
+    /** Исполнитель в JSON: `claude` не пишется — прежние формы читаются как Claude (D-100). */
+    private fun executor(e: Executor): JsonValue? = if (e == Executor.CLAUDE) null else JsonString(e.key)
+
+    /** Необязательное поле `executor`; незнакомое значение — находка, а не Claude (D-05). */
+    private fun optExecutor(f: JsonFields, d: DiagnosticCollector): Executor? {
+        val key = f.optString("executor") ?: return Executor.CLAUDE
+        return Executor.byKey(key) ?: null.also { d.error(DiagCode.VALUE_INVALID, "неизвестный исполнитель: $key", "executor") }
+    }
 }

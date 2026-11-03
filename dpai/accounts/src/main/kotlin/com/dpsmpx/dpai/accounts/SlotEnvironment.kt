@@ -2,6 +2,7 @@ package com.dpsmpx.dpai.accounts
 
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.Diagnostic
+import com.dpsmpx.dpai.core.ids.Executor
 import com.dpsmpx.dpai.core.result.Outcome
 
 /**
@@ -30,23 +31,51 @@ object SlotEnvironment {
         "ANTHROPIC_BASE_URL",
     )
 
+    /** Каталог настроек и входа слота по исполнителю (D-100). */
+    fun configVar(executor: Executor): String = when (executor) {
+        Executor.CLAUDE -> CONFIG_DIR
+        Executor.CODEX -> CODEX_HOME
+        Executor.GEMINI -> GEMINI_HOME
+    }
+
+    /** Переменные, которые перекрыли бы вход слота аккаунтом или увели запросы (D-29, D-100). */
+    fun overriding(executor: Executor): List<String> = when (executor) {
+        Executor.CLAUDE -> OVERRIDING
+        Executor.CODEX -> CODEX_OVERRIDING
+        Executor.GEMINI -> GEMINI_OVERRIDING
+    }
+
+    const val CODEX_HOME = "CODEX_HOME"
+    const val GEMINI_HOME = "GEMINI_CLI_HOME"
+
+    /** Ключи OpenAI и Codex, свой адрес API (`docs/research/CODEX_CLI.md`, §2). */
+    val CODEX_OVERRIDING: List<String> = listOf("OPENAI_API_KEY", "CODEX_API_KEY", "OPENAI_BASE_URL")
+
+    /** Ключи Gemini и Google, Vertex и облачный проект (`docs/research/GEMINI_CLI.md`, §2). */
+    val GEMINI_OVERRIDING: List<String> = listOf(
+        "GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GENAI_USE_VERTEXAI", "GOOGLE_GENAI_USE_GCA",
+        "GOOGLE_APPLICATION_CREDENTIALS", "GOOGLE_CLOUD_PROJECT",
+    )
+
     fun forSlot(base: Map<String, String>, slot: SlotState): Outcome<Map<String, String>> {
-        val removed = OVERRIDING.filter { it in base }
-        val env = base.filterKeys { it !in OVERRIDING }.toMutableMap()
-        val replacedDir = base[CONFIG_DIR]?.takeIf { it != slot.configDir }
-        env[CONFIG_DIR] = slot.configDir
+        val overriding = overriding(slot.executor)
+        val dirVar = configVar(slot.executor)
+        val removed = overriding.filter { it in base }
+        val env = base.filterKeys { it !in overriding }.toMutableMap()
+        val replacedDir = base[dirVar]?.takeIf { it != slot.configDir }
+        env[dirVar] = slot.configDir
         val notes = buildList {
             if (removed.isNotEmpty()) {
                 add(
                     Diagnostic.warning(
                         DiagCode.ACCOUNT_ENVIRONMENT_SANITIZED,
-                        "из окружения удалены переменные, перекрывающие вход формой Claude: ${removed.joinToString()}",
+                        "из окружения удалены переменные, перекрывающие ${AuthStatus.allowedPhrase(slot.executor)}: ${removed.joinToString()}",
                         "slot ${slot.id}",
                     ),
                 )
             }
             if (replacedDir != null) {
-                add(Diagnostic.warning(DiagCode.ACCOUNT_ENVIRONMENT_SANITIZED, "$CONFIG_DIR окружения заменён каталогом слота", "slot ${slot.id}"))
+                add(Diagnostic.warning(DiagCode.ACCOUNT_ENVIRONMENT_SANITIZED, "$dirVar окружения заменён каталогом слота", "slot ${slot.id}"))
             }
         }
         return Outcome.success(env.toSortedMap(), notes)
