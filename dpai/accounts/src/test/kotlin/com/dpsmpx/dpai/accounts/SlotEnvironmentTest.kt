@@ -1,6 +1,7 @@
 package com.dpsmpx.dpai.accounts
 
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
+import com.dpsmpx.dpai.core.diagnostics.Secret
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -36,5 +37,22 @@ class SlotEnvironmentTest {
         val r = SlotEnvironment.forSlot(mapOf("HOME" to "/home/u"), slot)
         assertTrue(r.warnings.isEmpty())
         assertEquals("~/.claude", r.valueOrNull()!!["CLAUDE_CONFIG_DIR"])
+    }
+
+    /**
+     * Ключ API-профиля не попадает в окружение `claude` (D-98, `DPmetaApp:D-44`):
+     * у профиля нет поля с ключом — его держит хранилище оболочки, — а
+     * переменные ключа Anthropic в окружении слот удаляет (D-29).
+     */
+    @Test
+    fun apiProfileKeyNeverReachesClaudeEnvironment() {
+        assertTrue(ApiProfile::class.java.declaredFields.none { it.type == Secret::class.java || it.name.contains("key", ignoreCase = true) })
+        val f = Fixture()
+        val id = f.slot(f.subscription())
+        val slot = f.state.slots.getValue(id)
+        val key = "s" + "k-ant-api03-" + "y".repeat(40)
+        val base = mapOf("PATH" to "/usr/bin", "ANTHROPIC_API_KEY" to key, "ANTHROPIC_AUTH_TOKEN" to key)
+        val env = SlotEnvironment.forSlot(base, slot).valueOrNull()!!
+        assertFalse(env.values.any { key in it })
     }
 }

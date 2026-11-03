@@ -80,13 +80,14 @@
 | `notifications` | категории, дедупликация, агрегация, cooldown, deep links, запросы человеку (D-44) | `core` | 12 |
 | `ecosystem` | `EcosystemProvider`, адаптер DPmeta | `core` | 15 |
 | `connectors` | GitHub и другие внешние сервисы | `core`, `security` | 15 |
+| `providers` | `AIProvider` (ТЗ, §52): провайдеры моделей по ключу — Anthropic, OpenAI-совместимые, Gemini; сеть со списком адресов `ProviderHosts`; переписка чата (D-98) | `core`, `accounts` | — |
 | `analytics` | учёт использования провайдера; телеметрия приложения — отдельно | `core` | 11, 17 |
 | `orchestrator` | сборка системы: команды, сверка, восстановление, продолжение, полуавтономный режим | `storage`, `security`, `execution`, `accounts`, `git`, `contexts`, `tasks`, `sessions`, `verification`, `monitoring`, `notifications`, `ecosystem`, `connectors`, `analytics` | 13, 14, 16 |
 | `ui` | представление без платформы: состояния экранов, форматирование, разбор `dpai://` | `orchestrator` | 11 |
 | `cli` | оболочка JVM: команда `dpai` | `orchestrator` | 0 |
 | `jsch` | SSH-хост на JVM (JSch) для targets там, где нет системного OpenSSH — приложение Android (D-35); интерактивная оболочка с PTY для терминала (D-71) | `execution` | 11 |
 | `terminal` | эмулятор xterm: экран, разбор последовательностей, ввод — свой терминал (D-71); без Android | `core` | — |
-| `android` | оболочка Android: интерфейс, Keystore, WorkManager, уведомления, экран терминала (D-71); нативный код процессов и псевдотерминала (`JniProcesses`, C через NDK; D-75); подключается при Android SDK | `ui`, `jsch`, `terminal` | 11 |
+| `android` | оболочка Android: интерфейс, Keystore, WorkManager, уведомления, экран терминала (D-71); нативный код процессов и псевдотерминала (`JniProcesses`, C через NDK; D-75); ключи API-профилей и чат (D-98); подключается при Android SDK | `ui`, `jsch`, `terminal`, `providers` | 11 |
 | `tests/integration` | межмодульные сценарии | `orchestrator` | 1 |
 <!-- check_modules: end -->
 

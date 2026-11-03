@@ -51,6 +51,8 @@ include(
     ":notifications",
     ":ecosystem",
     ":connectors",
+    // Провайдеры моделей по ключу (D-98): API-профили, сеть со списком адресов.
+    ":providers",
     ":analytics",
     ":orchestrator",
     ":ui",

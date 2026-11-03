@@ -257,6 +257,20 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     /** Репозиторий или файл не найден — или скрыт от токена (404 GitHub). */
     GITHUB_NOT_FOUND(Category.NETWORK, Severity.ERROR, Retryability.NON_RETRYABLE),
 
+    // --- провайдеры по ключу: API-профили (D-98) ---
+    /** Провайдер не принял ключ API-профиля (401, 403): ключ неверен, отозван или без прав. */
+    PROVIDER_AUTH_FAILED(Category.NETWORK, Severity.ERROR, Retryability.NON_RETRYABLE),
+    /** Предел запросов или расхода у провайдера (429): повтор — позже. */
+    PROVIDER_RATE_LIMITED(Category.NETWORK, Severity.ERROR, Retryability.RETRYABLE),
+    /** Провайдер перегружен или сбоит (5xx, 529, ошибка в потоке). */
+    PROVIDER_UNAVAILABLE(Category.NETWORK, Severity.ERROR, Retryability.RETRYABLE),
+    /** Провайдер отверг запрос (400, 404 и прочие 4xx): модель, параметры, длина. */
+    PROVIDER_REQUEST_REJECTED(Category.INPUT, Severity.ERROR, Retryability.NON_RETRYABLE),
+    /** Ответ провайдера не по формату или длиннее предела: не догадка, а отказ (D-87). */
+    PROVIDER_REPLY_INVALID(Category.FORMAT, Severity.ERROR, Retryability.UNKNOWN),
+    /** У API-профиля нет ключа или он не расшифровывается (новая установка, сброс Keystore). */
+    PROVIDER_KEY_MISSING(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
+
     /** Запечатанный сегмент журнала пропал или испорчен — восстановлен из копии (D-95). */
     JOURNAL_SEGMENT_RESTORED(Category.INTEGRITY, Severity.WARNING, Retryability.NON_RETRYABLE),
 

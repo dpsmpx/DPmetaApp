@@ -390,6 +390,14 @@ object Words {
         "GITHUB_AUTH_EXPIRED" -> "GitHub не принял вход — войдите заново"
         "GITHUB_RATE_LIMITED" -> "лимит запросов GitHub исчерпан — остальное после сброса"
         "GITHUB_NOT_FOUND" -> "на GitHub не найдено или скрыто от входа"
+
+        // Провайдеры по ключу (D-98).
+        "PROVIDER_AUTH_FAILED" -> "провайдер не принял ключ"
+        "PROVIDER_RATE_LIMITED" -> "предел запросов у провайдера — повторите позже"
+        "PROVIDER_UNAVAILABLE" -> "провайдер перегружен или недоступен"
+        "PROVIDER_REQUEST_REJECTED" -> "провайдер отверг запрос"
+        "PROVIDER_REPLY_INVALID" -> "провайдер ответил не по формату"
+        "PROVIDER_KEY_MISSING" -> "у профиля нет ключа — введите его заново"
         else -> code
     }
 }
