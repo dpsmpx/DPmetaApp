@@ -10,5 +10,5 @@
 ## Критерии выхода
 
 - [x] Каждый пункт структуры ссылается на факт, вывод или гипотезу <!-- gate: coverage:outline -->
-- [ ] Структура не менялась 30 дней <!-- gate: stable:docs/book/OUTLINE.md>=30 -->
+- [x] Структура не менялась 30 дней <!-- gate: stable:docs/book/OUTLINE.md>=30 -->
 - [ ] Автор утвердил структуру решением <!-- gate: decision-mark:outline-approved -->
