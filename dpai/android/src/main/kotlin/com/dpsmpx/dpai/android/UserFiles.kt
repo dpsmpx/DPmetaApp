@@ -96,7 +96,19 @@ class SafTree(private val context: Context, private val tree: Uri) : FileTree {
 
     private fun docUri(id: String): Uri = DocumentsContract.buildDocumentUriUsingTree(tree, id)
 
-    private fun children(parentId: String): List<Doc> {
+    /**
+     * Списки каталогов на время жизни дерева (один план или один проход
+     * синхронизации): путь ищется по именам от корня, и без кеша каждый файл
+     * заново читал бы все каталоги над ним. Запись и удаление сбрасывают
+     * список своего каталога.
+     */
+    private val cache = HashMap<String, List<Doc>>()
+
+    private fun children(parentId: String): List<Doc> = synchronized(cache) { cache[parentId] } ?: fetch(parentId).also { synchronized(cache) { cache[parentId] = it } }
+
+    private fun forget(parentId: String) = synchronized(cache) { cache.remove(parentId) }
+
+    private fun fetch(parentId: String): List<Doc> {
         val uri = DocumentsContract.buildChildDocumentsUriUsingTree(tree, parentId)
         val cols = arrayOf(Document.COLUMN_DOCUMENT_ID, Document.COLUMN_DISPLAY_NAME, Document.COLUMN_MIME_TYPE, Document.COLUMN_SIZE, Document.COLUMN_LAST_MODIFIED)
         return resolver.query(uri, cols, null, null, null)?.use { c -> rows(c) } ?: throw IOException("провайдер не ответил")
@@ -141,8 +153,10 @@ class SafTree(private val context: Context, private val tree: Uri) : FileTree {
         val d = find(path) ?: return@guard Outcome.failure(DiagCode.STORAGE_UNAVAILABLE, "нет такого файла", path)
         if (d.dir) return@guard Outcome.failure(DiagCode.VALUE_INVALID, "это папка", path)
         if (d.size > maxBytes) return@guard Outcome.failure(DiagCode.VALUE_INVALID, "файл больше ${maxBytes / 1024} КиБ", path)
-        val bytes = resolver.openInputStream(docUri(d.id))?.use { readLimited(it, maxBytes) } ?: throw IOException("поток не открылся")
-        bytes?.let { Outcome.success(it) } ?: Outcome.failure(DiagCode.VALUE_INVALID, "файл больше ${maxBytes / 1024} КиБ", path)
+        val input = resolver.openInputStream(docUri(d.id)) ?: throw IOException("поток не открылся")
+        // Размер у провайдера бывает неточным — предел держит и чтение.
+        input.use { readLimited(it, maxBytes) }?.let { Outcome.success(it) }
+            ?: Outcome.failure(DiagCode.VALUE_INVALID, "файл больше ${maxBytes / 1024} КиБ", path)
     }
 
     override fun write(path: String, bytes: ByteArray): Outcome<FileMeta> = guard(path, "файл не записан") {
@@ -153,6 +167,7 @@ class SafTree(private val context: Context, private val tree: Uri) : FileTree {
             val next = children(parent.id).firstOrNull { it.name == part }
             parent = when {
                 next == null -> {
+                    forget(parent.id)
                     val uri = DocumentsContract.createDocument(resolver, docUri(parent.id), Document.MIME_TYPE_DIR, part) ?: throw IOException("папка не создана")
                     Doc(DocumentsContract.getDocumentId(uri), part, Document.MIME_TYPE_DIR, 0, 0)
                 }
@@ -170,6 +185,7 @@ class SafTree(private val context: Context, private val tree: Uri) : FileTree {
         }
         // «wt» — с усечением: «w» у части провайдеров оставляет хвост прежнего файла.
         resolver.openOutputStream(docUri(id), "wt")?.use { it.write(bytes) } ?: throw IOException("поток записи не открылся")
+        forget(parent.id)
         val written = children(parent.id).firstOrNull { it.id == id }
         if (written == null || written.name != name) {
             return@guard Outcome.failure(DiagCode.STORAGE_IO_FAILED, "провайдер сохранил файл под другим именем: ${written?.name}", path)
@@ -181,8 +197,11 @@ class SafTree(private val context: Context, private val tree: Uri) : FileTree {
         val d = find(path) ?: return@guard Outcome.failure(DiagCode.STORAGE_UNAVAILABLE, "нет такого файла", path)
         if (d.dir) return@guard Outcome.failure(DiagCode.VALUE_INVALID, "удаляются только файлы", path)
         if (!DocumentsContract.deleteDocument(resolver, docUri(d.id))) throw IOException("провайдер не удалил")
+        forget(parentIdOf(path))
         Outcome.success(Unit)
     }
+
+    private fun parentIdOf(path: String): String = find(FileNames.parent(path))?.id ?: rootId
 
     /** Имя папки для экрана. */
     fun title(): String = guard("", "имя") { Outcome.success(resolverName().orEmpty()) }.valueOrNull().orEmpty().ifBlank { "папка" }
