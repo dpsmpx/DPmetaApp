@@ -37,9 +37,10 @@
 - [ ] `М` Release для замеров (`docs/DEVICE_CHECK.md`, §1.1, §4)
       собирает автор сам, на телефоне, своим ключом (ответ автора
       2 ноября 2026); облако — только отладочный APK
-      (`DPmetaApp:CLAUDE.md`, «Секреты и подпись»). Ярлык Termux автора
-      пока собирает только DPpass (`dppass/build/release-apk`): для
-      `dpai` нужен свой сценарий сборки release — по слову автора.
+      (`DPmetaApp:CLAUDE.md`, «Секреты и подпись»). Сценарий есть
+      (`DPmetaApp:tools/build-apk.sh release`, ярлык `apk-build` →
+      «DPmetaApp — пульт»; `docs/PROCESS.md`, §6): без ключа — отказ,
+      сверка подписи и `SHA256SUMS`. Осталось — первая сборка на телефоне.
 - [ ] `М` Этап 11: приёмка на Redmi Note 13 вручную (замер на Realme —
       `docs/PERFORMANCE.md`, §5).
 - [ ] `М` Профиль базовой линии приложения Android: первый прогон после

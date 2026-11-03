@@ -151,7 +151,10 @@ adb logcat -d -b crash > logcat-crash.txt
 Release для замеров (§4) облако DPmetaApp не собирает: облачная сессия
 собирает только отладочный или неподписанный APK (`DPmetaApp:CLAUDE.md`,
 «Секреты и подпись»). Замеры на debug занижены — их не делать; release
-собирается вашим ключом там, где ключ (`docs/PROCESS.md`, §6).
+собирается вашим ключом там, где ключ: на телефоне — ярлык `apk-build` →
+«DPmetaApp — пульт» (`DPmetaApp:tools/build-apk.sh release`; без свойств
+`dpai.release.*` — отказ; в конце — отпечаток сертификата и `SHA256SUMS`;
+`docs/PROCESS.md`, §6).
 
 Репозиторий приватный: ссылки `raw` без входа в GitHub отвечают 404,
 поэтому `curl` из Termux не подходит. На ПК (вход в GitHub у `git` уже

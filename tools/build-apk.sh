@@ -5,11 +5,18 @@
 #
 #   tools/build-apk.sh [release|debug]     по умолчанию release
 #
-# release подписан ключом выпуска из свойств dpai.release.* в
-# ~/.gradle/gradle.properties (dpai/android/build.gradle.kts), без них —
-# отладочным ключом: для своих устройств, не для раздачи (D-24). Android SDK —
-# ANDROID_HOME или sdk.dir в dpai/local.properties: без него модуль :android не
-# подключается (dpai/settings.gradle.kts). APK DPpass собирается отдельно (D-30).
+# release — как у DPpass (DP_AI_Orcestrator:D-97, ответ автора 2 ноября 2026):
+# подписан ключом выпуска из свойств dpai.release.* в ~/.gradle/gradle.properties
+# (dpai/android/build.gradle.kts). Без них Gradle подписал бы отладочным ключом —
+# такой APK не встанет поверх подписанного, поэтому сценарий его не выдаёт:
+# отказ, если только не задано DPAI_RELEASE_DEBUG_KEY=1 (замеры у себя, D-24).
+# После сборки — apksigner verify: подпись v2/v3, отпечаток SHA-256 сертификата;
+# свойство dpai.release.certSha256 (по желанию) — сверка с ним. Рядом с APK —
+# SHA256SUMS. Пароли не попадают ни в командную строку, ни в вывод.
+#
+# Android SDK — ANDROID_HOME или sdk.dir в dpai/local.properties: без него модуль
+# :android не подключается (dpai/settings.gradle.kts). APK DPpass собирается
+# отдельно (D-30).
 set -eu
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -19,11 +26,47 @@ case "$MODE" in
   debug) TASK=assembleDebug ;;
   *) echo "✗ вариант $MODE: есть release и debug"; exit 2 ;;
 esac
-if [ -z "${ANDROID_HOME:-}${ANDROID_SDK_ROOT:-}" ] && ! grep -q '^sdk\.dir=' "$ROOT/dpai/local.properties" 2>/dev/null; then
+SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+if [ -z "$SDK" ]; then
+  SDK="$(sed -n 's/^sdk\.dir=//p' "$ROOT/dpai/local.properties" 2>/dev/null | head -n 1)"
+fi
+if [ -z "$SDK" ]; then
   echo "✗ нет Android SDK: ANDROID_HOME или sdk.dir в dpai/local.properties"
   exit 2
 fi
 
 cd "$ROOT/dpai"
 sh ./gradlew --console=plain ":android:$TASK"
-ls "$ROOT/dpai/android/build/outputs/apk/$MODE/"*.apk
+OUT="$ROOT/dpai/android/build/outputs/apk/$MODE"
+ls "$OUT/"*.apk
+
+if [ "$MODE" = release ]; then
+  SIGNER="$(ls -d "$SDK"/build-tools/*/apksigner 2>/dev/null | tail -n 1)"
+  [ -n "$SIGNER" ] || { echo "✗ нет apksigner в $SDK/build-tools: подпись release не проверить"; exit 1; }
+  PROPS="${GRADLE_USER_HOME:-$HOME/.gradle}/gradle.properties"
+  WANT="$(sed -n 's/^dpai\.release\.certSha256=//p' "$PROPS" 2>/dev/null | tr -d ' :' | tr 'A-F' 'a-f' | head -n 1)"
+  for apk in "$OUT/"*.apk; do
+    CERTS="$("$SIGNER" verify --verbose --print-certs "$apk")" || { echo "✗ $apk: подпись не прошла apksigner verify"; exit 1; }
+    echo "$CERTS" | grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' ||
+      echo "$CERTS" | grep -q 'Verified using v3 scheme (APK Signature Scheme v3): true' ||
+      { echo "✗ $apk: нет подписи v2/v3"; exit 1; }
+    # «Signer #1 certificate SHA-256 digest: …» (старые apksigner) или «V2 Signer: certificate SHA-256 digest: …».
+    DIGEST="$(echo "$CERTS" | sed -n 's/^.*certificate SHA-256 digest: //p' | head -n 1)"
+    if echo "$CERTS" | grep -q 'certificate DN: .*CN=Android Debug'; then
+      if [ "${DPAI_RELEASE_DEBUG_KEY:-}" = 1 ]; then
+        echo "! $apk подписан отладочным ключом (DPAI_RELEASE_DEBUG_KEY=1): только для замеров у себя"
+      else
+        echo "✗ $apk подписан отладочным ключом: нет свойств dpai.release.* в $PROPS"
+        echo "  (storeFile, storePassword, keyAlias, keyPassword); для замеров у себя — DPAI_RELEASE_DEBUG_KEY=1"
+        rm -f "$apk"
+        exit 1
+      fi
+    elif [ -n "$WANT" ] && [ "$DIGEST" != "$WANT" ]; then
+      echo "✗ $apk: сертификат $DIGEST, а dpai.release.certSha256 — $WANT"
+      rm -f "$apk"
+      exit 1
+    fi
+    echo "✓ $(basename "$apk"): подпись v2/v3, сертификат SHA-256 $DIGEST${WANT:+ — совпал с dpai.release.certSha256}"
+  done
+fi
+(cd "$OUT" && sha256sum -- *.apk > SHA256SUMS && cat SHA256SUMS)
