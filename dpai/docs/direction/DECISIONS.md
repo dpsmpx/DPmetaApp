@@ -2913,18 +2913,21 @@ ChatGPT, Gemini CLI с аккаунтом Google — в Linux-среде, как
   (`apk add nodejs npm`, `npm install -g @openai/codex
   @google/gemini-cli`); Termux и ПК — команда в инструкции. Агент
   сообщает их версии в `doctor`.
-- **Форматы:** `dpai.accounts-state` v3, `dpai.tasks-state` v8,
-  `dpai.sessions-state` v5 — исполнитель пишется, только если не
-  `claude`: прежние версии читаются как Claude.
+- **Форматы:** `dpai.accounts-state` v3 (исполнитель подписки и слота),
+  `dpai.tasks-state` v8 (`executor`, `reviewExecutor` политики) —
+  исполнитель пишется, только если не `claude`: прежние версии читаются
+  как Claude. Исполнитель сессии — исполнитель её слота: формат сессий не
+  меняется.
 
 **Почему.** Слово автора: Codex и Gemini — исполнители задач, как Claude
 Code, с переходом у предела. Нормальная форма хода — чтобы три
 исполнителя не умножили разбор итога, восстановление и замер на три.
 
-**Проверка.** `CodexStreamTest`, `GeminiStreamTest` (перевод образцов в
-нормальную форму, отказы входа и предела), `ExecutorCliTest` (команды
-ходов), `AuthStatusTest`, `SlotEnvironmentTest`, `AccountsTest` (слоты
-по исполнителю, переход), кодеки форматов; на телефоне —
+**Проверка.** `ExecutorStreamTest` (перевод образцов в нормальную форму,
+отказы входа и предела, команды ходов и их флаги в исследованиях),
+`ExecutorAccountsTest` (вход Codex и Gemini, окружение слота, отбор
+слотов по исполнителю, формат v3), `TaskExecutorTest` (политика v8),
+переход у предела — тест оркестратора; на телефоне —
 `docs/DEVICE_CHECK.md`, §20.
 
 ## Отложено

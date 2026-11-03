@@ -4,6 +4,7 @@ import com.dpsmpx.dpai.core.clock.ManualClock
 import com.dpsmpx.dpai.core.clock.RandomSource
 import com.dpsmpx.dpai.core.ids.AccountId
 import com.dpsmpx.dpai.core.ids.ExecutionTargetId
+import com.dpsmpx.dpai.core.ids.Executor
 import com.dpsmpx.dpai.core.ids.IdGenerator
 import com.dpsmpx.dpai.core.ids.IdKinds
 import com.dpsmpx.dpai.core.ids.SessionId
@@ -31,8 +32,8 @@ class Fixture(val accounts: Accounts = Accounts(), seed: Long = 1) {
 
     fun ok(out: Outcome<List<AccountEvent>>): List<AccountEvent> = assertIs<Outcome.Success<List<AccountEvent>>>(record(out)).value
 
-    fun subscription(label: String = "основная", max: Int = 2, rotation: Boolean = false): SubscriptionId =
-        ids.next(IdKinds.SUBSCRIPTION).also { ok(accounts.registerSubscription(state, it, label, now, max, rotation)) }
+    fun subscription(label: String = "основная", max: Int = 2, rotation: Boolean = false, executor: Executor = Executor.CLAUDE): SubscriptionId =
+        ids.next(IdKinds.SUBSCRIPTION).also { ok(accounts.registerSubscription(state, it, label, now, max, rotation, executor)) }
 
     fun target(): ExecutionTargetId = ids.next(IdKinds.TARGET)
 

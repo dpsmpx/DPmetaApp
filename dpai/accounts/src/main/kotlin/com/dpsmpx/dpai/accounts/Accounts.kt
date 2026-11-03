@@ -16,6 +16,7 @@ import com.dpsmpx.dpai.accounts.AccountEvent.SlotRegistered
 import com.dpsmpx.dpai.accounts.AccountEvent.SlotStateChanged
 import com.dpsmpx.dpai.accounts.AccountEvent.SubscriptionRegistered
 import com.dpsmpx.dpai.accounts.AccountEvent.SubscriptionSwitched
+import com.dpsmpx.dpai.core.ids.Executor
 import com.dpsmpx.dpai.core.clock.Timestamp
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.Diagnostic
@@ -50,11 +51,12 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
         now: Timestamp,
         maxParallelSessions: Int = policy.defaultMaxParallelSessions,
         rotationAllowed: Boolean = false,
+        executor: Executor = Executor.CLAUDE,
     ): Outcome<List<AccountEvent>> {
         if (id in state.subscriptions) return Outcome.failure(DiagCode.VALUE_INVALID, "подписка уже зарегистрирована", "subscription $id")
         if (label.isBlank() || label.length > 100) return Outcome.failure(DiagCode.VALUE_INVALID, "метка подписки — от 1 до 100 знаков")
         if (maxParallelSessions !in 1..64) return Outcome.failure(DiagCode.VALUE_INVALID, "maxParallelSessions — от 1 до 64")
-        return Outcome.success(finish(state, listOf(SubscriptionRegistered(id, label.trim(), maxParallelSessions, rotationAllowed, now)), now))
+        return Outcome.success(finish(state, listOf(SubscriptionRegistered(id, label.trim(), maxParallelSessions, rotationAllowed, now, executor)), now))
     }
 
     fun registerSlot(
@@ -79,7 +81,12 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
         return Outcome.success(finish(state, listOf(SlotRegistered(id, subscription, target, dir, now)), now))
     }
 
-    /** Итог `claude auth status` слота: способ входа, аккаунт, пересечения (D-29, D-30). */
+    /**
+     * Итог проверки входа слота: способ входа, аккаунт, пересечения (D-29,
+     * D-30). Разрешённый способ — по исполнителю слота (D-100); у Codex и
+     * Gemini аккаунт не называется — проверки пересечения нет, и это не
+     * находка, а их устройство (`docs/ACCOUNT_MODEL.md`, §10).
+     */
     fun observeAuthStatus(state: AccountsState, slotId: AccountId, status: AuthStatus, now: Timestamp): Outcome<List<AccountEvent>> {
         val slot = state.slots[slotId] ?: return notFound(slotId)
         val sub = state.subscriptions.getValue(slot.subscriptionId)
@@ -88,14 +95,15 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
         val subject = "slot $slotId"
         val login: LoginStatus = when {
             !status.loggedIn -> LoginStatus.REQUIRED
-            !status.isClaudeLogin -> {
+            !status.isAllowed(slot.executor) -> {
                 notes += Diagnostic.warning(
                     DiagCode.ACCOUNT_AUTH_METHOD_FORBIDDEN,
-                    "Claude Code сообщает вход «${status.authMethod}»; разрешён только вход формой Claude (D-29): слот остановлен",
+                    "${slot.executor.title} сообщает вход «${status.authMethod}»; разрешён только ${AuthStatus.allowedPhrase(slot.executor)} (D-29, D-100): слот остановлен",
                     subject,
                 )
                 LoginStatus.FORBIDDEN_METHOD
             }
+            slot.executor != Executor.CLAUDE -> LoginStatus.OK
             status.identity == null -> {
                 notes += Diagnostic.warning(
                     DiagCode.ACCOUNT_IDENTITY_UNKNOWN,
@@ -243,6 +251,8 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
         urgent: Boolean = false,
         /** Слот, с которого задачу перенесли (D-77): на него она не идёт. */
         exclude: AccountId? = null,
+        /** Исполнитель задачи (D-100): слоты только его; `null` — любой (прежние вызовы). */
+        executor: Executor? = null,
     ): Outcome<Lease> {
         state.slotOf(session)?.let { s ->
             return if (s.sessions[session] == task) {
@@ -255,7 +265,7 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
         val s1 = ticked.fold(state, ::apply)
         val previous = s1.taskSubscription[task]
         val candidates = s1.slots.values
-            .filter { it.state == AccountState.AVAILABLE && (target == null || it.targetId == target) && it.id != exclude }
+            .filter { it.state == AccountState.AVAILABLE && (target == null || it.targetId == target) && it.id != exclude && (executor == null || it.executor == executor) }
             .filter { slot ->
                 val sub = s1.subscriptions.getValue(slot.subscriptionId)
                 // Чужую задачу подписка у предела не берёт и срочную (D-57): переход ради того, чтобы сразу
@@ -428,11 +438,18 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
         fun apply(state: AccountsState, event: AccountEvent): AccountsState = when (event) {
             is SubscriptionRegistered -> state.copy(
                 subscriptions = state.subscriptions + (
-                    event.subscription to SubscriptionState(event.subscription, event.label, event.maxParallelSessions, event.rotationAllowed)
+                    event.subscription to SubscriptionState(
+                        event.subscription, event.label, event.maxParallelSessions, event.rotationAllowed, executor = event.executor,
+                    )
                     ),
             )
             is SlotRegistered -> state.copy(
-                slots = state.slots + (event.slot to SlotState(event.slot, event.subscription, event.target, event.configDir)),
+                slots = state.slots + (
+                    event.slot to SlotState(
+                        event.slot, event.subscription, event.target, event.configDir,
+                        executor = state.subscriptions[event.subscription]?.executor ?: Executor.CLAUDE,
+                    )
+                    ),
             )
             is LoginObserved -> state.slot(event.slot) {
                 it.copy(login = event.login, authMethod = event.authMethod, loginExpiring = if (event.login == LoginStatus.OK) it.loginExpiring else false)
