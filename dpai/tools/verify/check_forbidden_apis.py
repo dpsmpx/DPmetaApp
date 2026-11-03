@@ -54,6 +54,10 @@ RULES = [
          # Сам Secret и его тест.
          "core/src/main/kotlin/com/dpsmpx/dpai/core/diagnostics/Secret.kt",
          "core/src/test/kotlin/com/dpsmpx/dpai/core/diagnostics/SecretTest.kt",
+         # Ключ API-профиля (D-98): в заголовок запроса — только транспорт провайдеров,
+         # в шифр Keystore — только хранилище ключей приложения.
+         "providers/src/main/kotlin/com/dpsmpx/dpai/providers/UrlTransport.kt",
+         "android/src/main/kotlin/com/dpsmpx/dpai/android/ApiKeys.kt",
      ],
      "reveal() — только в разрешённых местах (D-14)", False),
     ("file-write",
