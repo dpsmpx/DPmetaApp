@@ -73,7 +73,7 @@ class Reconciler(private val sessions: Sessions, private val clock: Clock, priva
     }
 
     /** Шаг 2: проба агента и сверка одной сессии в `RECOVERY_PENDING`. */
-    fun reconcile(state: SessionsState, id: SessionId, agent: AgentClient): Result {
+    fun reconcile(state: SessionsState, id: SessionId, agent: AgentClient, executor: com.dpsmpx.dpai.core.ids.Executor = com.dpsmpx.dpai.core.ids.Executor.CLAUDE): Result {
         val r = state.sessions[id] ?: return Result(id, Resolution.UNKNOWN, emptyList(), listOf(Diagnostic.error(DiagCode.ENTITY_NOT_FOUND, "нет такой сессии", "session $id")))
         if (r.state != SessionState.RECOVERY_PENDING) return Result(id, Resolution.UNKNOWN, emptyList(), emptyList())
         val now = clock.now()
@@ -106,7 +106,7 @@ class Reconciler(private val sessions: Sessions, private val clock: Clock, priva
                 }
             }
             RunState.EXITED -> {
-                val turn = lastTurn(id, r.provider, agent)
+                val turn = lastTurn(id, r.provider, agent, executor)
                 when (turn) {
                     TurnStatus.COMPLETED -> resolve(Resolution.RESOLVED_COMPLETED, SessionState.COMPLETED, null, "ход завершился, пока приложения не было")
                     TurnStatus.INCOMPLETE -> resolve(Resolution.RESOLVED_FAILED, SessionState.PAUSED, DiagCode.CLAUDE_STREAM_INCOMPLETE, "ход прерван, пока приложения не было")
@@ -117,7 +117,7 @@ class Reconciler(private val sessions: Sessions, private val clock: Clock, priva
     }
 
     /** Итог последнего хода — из событий агента: начало хода, вывод, выход. */
-    private fun lastTurn(id: SessionId, provider: com.dpsmpx.dpai.core.ids.ProviderSessionId, agent: AgentClient): TurnStatus? {
+    private fun lastTurn(id: SessionId, provider: com.dpsmpx.dpai.core.ids.ProviderSessionId, agent: AgentClient, executor: com.dpsmpx.dpai.core.ids.Executor): TurnStatus? {
         // Все страницы (ревью A-64): одна страница с начала — первые [pageSize] событий и не больше
         // объёма строки ответа агента; итог последнего хода длинной сессии оставался за ней.
         // В памяти — только хвост с последнего начала хода.
@@ -134,13 +134,16 @@ class Reconciler(private val sessions: Sessions, private val clock: Clock, priva
         }
         val startIdx = events.indexOfLast { it.type == EventType.TARGET_PROCESS_STARTED }
         if (startIdx < 0) return null
-        val asm = ClaudeTurnAssembler(provider)
+        val asm = ClaudeTurnAssembler(provider, executor)
         var exitCode: Int? = null
         var reason: ExitReason? = null
         for (e in events.drop(startIdx + 1)) {
             when (e.type) {
                 EventType.TARGET_PROCESS_OUTPUT -> if ((e.payload["stream"] as? JsonString)?.value == "stdout") {
-                    asm.feed((e.payload["text"] as? JsonString)?.value.orEmpty(), (e.payload["truncated"] as? JsonBool)?.value ?: false)
+                    asm.feedAll((e.payload["text"] as? JsonString)?.value.orEmpty(), (e.payload["truncated"] as? JsonBool)?.value ?: false)
+                } else {
+                    // Отказ входа Gemini — только в stderr (D-100).
+                    asm.stderr((e.payload["text"] as? JsonString)?.value.orEmpty())
                 }
                 EventType.TARGET_PROCESS_EXITED -> {
                     exitCode = (e.payload["exitCode"] as? JsonNumber)?.toLongExact()?.toInt()

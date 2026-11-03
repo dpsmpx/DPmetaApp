@@ -306,6 +306,17 @@ class Accounts(val policy: AccountPolicy = AccountPolicy()) {
         return Outcome.success(Lease(chosen.id, chosen.subscriptionId, ticked + finish(s1, facts, now)))
     }
 
+    /**
+     * У исполнителя [executor] предел: слоты есть, и все включённые упёрлись
+     * в предел подписки (`RATE_LIMITED` или окно исчерпано). Тогда задача
+     * идёт к следующему исполнителю (D-100); занятые и без входа — не предел:
+     * задача ждёт своего исполнителя.
+     */
+    fun exhausted(state: AccountsState, executor: Executor, now: Timestamp): Boolean {
+        val own = state.slots.values.filter { it.executor == executor && !it.disabled }
+        return own.isNotEmpty() && own.all { it.state == AccountState.RATE_LIMITED || state.subscriptions.getValue(it.subscriptionId).limitedAt(now) }
+    }
+
     fun release(state: AccountsState, session: SessionId, now: Timestamp): Outcome<List<AccountEvent>> {
         val slot = state.slotOf(session) ?: return Outcome.success(emptyList())
         return Outcome.success(finish(state, listOf(SessionReleased(slot.id, session, now)), now))

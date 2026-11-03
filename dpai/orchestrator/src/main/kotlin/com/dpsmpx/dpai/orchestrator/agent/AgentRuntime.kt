@@ -521,6 +521,8 @@ class AgentRuntime(
             memoryFreeBytes = availableMemory(meminfo(), os.freeBytes, os.totalBytes),
             claude = probeTool(listOf("claude", "--version")),
             git = probeTool(listOf("git", "--version")),
+            codex = probeTool(listOf("codex", "--version")),
+            gemini = probeTool(listOf("gemini", "--version")),
         )
         return AgentReply("doctor", ok = true, doctor = report)
     }

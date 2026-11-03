@@ -36,6 +36,7 @@ import com.dpsmpx.dpai.core.diagnostics.Diagnostic
 import com.dpsmpx.dpai.core.events.EventEnvelope
 import com.dpsmpx.dpai.core.events.EventType
 import com.dpsmpx.dpai.core.events.StreamRef
+import com.dpsmpx.dpai.core.ids.Executor
 import com.dpsmpx.dpai.core.ids.ApprovalId
 import com.dpsmpx.dpai.core.ids.ContextId
 import com.dpsmpx.dpai.core.ids.ExecutionTargetId
@@ -781,13 +782,26 @@ class Orchestrator(
             waiting(task, "ждёт слот ${slotLabel(pin)}, выбранный человеком")
             return
         }
-        for (candidate in order) {
-            lease = accountsLogic.lease(accounts, session, task, clock.now(), candidate, urgent = t.priority.ordinal <= Priority.HIGH.ordinal, exclude = t.excludedSlot)
-            if (lease is Outcome.Success) {
-                target = candidate
-                break
+        // Дерево на другом target (D-50) — маршрут MCP есть только у Claude Code.
+        if (config.remote != null && t.policy.executor != Executor.CLAUDE) {
+            waiting(task, "ход с деревом на другом target (D-50) ведёт только Claude Code, а исполнитель задачи — ${t.policy.executor.title}")
+            return
+        }
+        // Исполнитель задачи, а у всех его слотов предел — следующий по кругу (D-100).
+        val executors = if (config.remote != null) listOf(Executor.CLAUDE) else generateSequence(t.policy.executor) { it.next }.take(Executor.entries.size).toList()
+        executors@ for (x in executors) {
+            for (candidate in order) {
+                lease = accountsLogic.lease(
+                    accounts, session, task, clock.now(), candidate, urgent = t.priority.ordinal <= Priority.HIGH.ordinal, exclude = t.excludedSlot, executor = x,
+                )
+                if (lease is Outcome.Success) {
+                    target = candidate
+                    break@executors
+                }
+                if (first == null || candidate == planned) first = lease as Outcome.Failure
             }
-            if (first == null || candidate == planned) first = lease as Outcome.Failure
+            // К следующему исполнителю — только когда у этого предел, а не занятость или вход.
+            if (!accountsLogic.exhausted(accounts, x, clock.now())) break
         }
         if (lease is Outcome.Failure) {
             // Свободного слота нет: задача ждёт следующего такта — и человек видит почему (раньше — молча).
@@ -800,7 +814,8 @@ class Orchestrator(
         val slot = lease.valueOrNull()!!.slot
         // Кому передана задача (D-56): подписка и каталог слота — в уведомлении и журнале приложения.
         val leased = lease.valueOrNull()!!
-        val slotName = accounts.subscriptions[leased.subscription]?.label.orEmpty() +
+        val slotExec = accounts.slots[slot]?.executor ?: Executor.CLAUDE
+        val slotName = (if (slotExec == Executor.CLAUDE) "" else "${slotExec.title} · ") + accounts.subscriptions[leased.subscription]?.label.orEmpty() +
             (accounts.slots[slot]?.configDir?.substringAfterLast('/')?.let { " · $it" } ?: "")
         val switched = leased.events.filterIsInstance<AccountEvent.SubscriptionSwitched>().firstOrNull()
         val budgetMode = budgetMode(slot)
@@ -845,18 +860,32 @@ class Orchestrator(
         }
         val composed = PromptRenderer.compose(bundle, seen?.sources?.associate { it.key to it.hash }.orEmpty())
         sentOf[task] = bundle
-        val route = router.route(t, budgetMode)
+        // Лестница моделей и класс задачи (D-40) — у Claude; у Codex и Gemini — модель и усилие политики,
+        // если задача и шла к этому исполнителю (после перехода у предела они не переносятся, D-100).
+        val route = if (slotExec == Executor.CLAUDE) {
+            router.route(t, budgetMode)
+        } else {
+            val own = t.policy.executor == slotExec
+            com.dpsmpx.dpai.orchestrator.efficiency.RouteDecision(
+                model = t.policy.model.takeIf { own }, effort = t.policy.effort.takeIf { own && slotExec == Executor.CODEX },
+                fallbackModel = null, subagents = true, route = "executor:${slotExec.key}",
+            )
+        }
         val budget = t.policy.maxBudgetUsdCents?.let { BigDecimal(it).movePointLeft(2) }
         val unknown = unsupportedFlags[target].orEmpty()
-        val local = ClaudeRequest(
-            composed.text, model = route.model,
-            effort = route.effort.takeIf { "--effort" !in unknown },
-            fallbackModel = route.fallbackModel.takeIf { "--fallback-model" !in unknown },
-            shareSystemPromptCache = efficiency.shareSystemPromptCache && "--exclude-dynamic-system-prompt-sections" !in unknown,
-            permissionMode = ClaudeCodeCli.TURN_PERMISSION_MODE,
-            disallowedTools = if (route.subagents) emptyList() else listOf(ClaudeCodeCli.SUBAGENT_TOOL),
-            workDir = workDir, timeout = t.policy.turnTimeout, maxBudgetUsd = budget,
-        )
+        val local = if (slotExec != Executor.CLAUDE) {
+            ClaudeRequest(composed.text, model = route.model, effort = route.effort, workDir = workDir, timeout = t.policy.turnTimeout, executor = slotExec)
+        } else {
+            ClaudeRequest(
+                composed.text, model = route.model,
+                effort = route.effort.takeIf { "--effort" !in unknown },
+                fallbackModel = route.fallbackModel.takeIf { "--fallback-model" !in unknown },
+                shareSystemPromptCache = efficiency.shareSystemPromptCache && "--exclude-dynamic-system-prompt-sections" !in unknown,
+                permissionMode = ClaudeCodeCli.TURN_PERMISSION_MODE,
+                disallowedTools = if (route.subagents) emptyList() else listOf(ClaudeCodeCli.SUBAGENT_TOOL),
+                workDir = workDir, timeout = t.policy.turnTimeout, maxBudgetUsd = budget,
+            )
+        }
         // Дерево на target проекта, ход — на target слота: файлы и команды — через MCP-сервер дерева (D-50).
         val request = config.remote?.let { r -> ok(r.apply(local, workDir), "ход с деревом на другом target") ?: return failLaunch(task, session, DiagCode.SESSION_FAILED) } ?: local
         val facts = PromptFacts(
@@ -882,7 +911,8 @@ class Orchestrator(
         say(task, ChatRole.EVENT, "попытка $attempt · $slotName" + (switched?.let { " · передана с подписки у предела" } ?: ""), session)
         switched?.let { sw ->
             val from = accounts.subscriptions[sw.from]?.label ?: "прежняя подписка"
-            notify("task:${task.value}:switch", NotificationCategory.WARNING, "Задача передана другой подписке: ${taskTitle(task)}", "«$from» у предела — продолжает «$slotName» с handoff")
+            val other = if (slotExec != t.policy.executor) " (исполнитель ${slotExec.title} вместо ${t.policy.executor.title}, D-100)" else ""
+            notify("task:${task.value}:switch", NotificationCategory.WARNING, "Задача передана другой подписке: ${taskTitle(task)}", "«$from» у предела — продолжает «$slotName» с handoff$other")
         }
     }
 
@@ -1041,7 +1071,8 @@ class Orchestrator(
             say(sessions.sessions.getValue(session).task, ChatRole.EVENT, "ход ${Words.turn(t.status.name)}" + (why?.let { " — ${Words.reason(it)}" } ?: ""), session)
         }
         val after = sessions.sessions.getValue(session)
-        if (after.review != null) step.turns.lastOrNull()?.let { reviewOutput[session] = it.structured }
+        // Вердикт ревью — по схеме у Claude, JSON в тексте у Codex и Gemini (D-100).
+        if (after.review != null) step.turns.lastOrNull()?.let { reviewOutput[session] = it.structured ?: Review.structuredFromText(it.text) }
         if (after.state != before) react(after.task, session, after.state)
     }
 
@@ -1267,25 +1298,36 @@ class Orchestrator(
         val active = sessions.sessions.values.count { !it.terminal && it.target == target }
         if (active >= (targets.firstOrNull { it.id == target }?.maxSessions ?: 0)) return waiting(task, "${Review.label(role)} ждёт места на ${targetName(target)}")
         control.maxSessions?.let { max -> if (sessions.sessions.values.count { !it.terminal } >= max) return waiting(task, "${Review.label(role)} ждёт: предел сессий контура $max") }
-        if ("--json-schema" in unsupportedFlags[target].orEmpty()) return recordReviewFailure(task, role, attempt, null, "Claude Code на target $target не знает --json-schema: ответ ревью по схеме невозможен")
+        val reviewer = t.policy.reviewer
+        if (config.remote != null && reviewer != Executor.CLAUDE) return waiting(task, "${Review.label(role)} с деревом на другом target (D-50) ведёт только Claude Code")
+        if (reviewer == Executor.CLAUDE && "--json-schema" in unsupportedFlags[target].orEmpty()) return recordReviewFailure(task, role, attempt, null, "Claude Code на target $target не знает --json-schema: ответ ревью по схеме невозможен")
         val diff = when (val d = taskDiff(task, Review.MAX_PATCH_CHARS)) {
             is Outcome.Failure -> return recordReviewFailure(task, role, attempt, null, "изменения задачи не получены: ${d.errors.first().message}")
             is Outcome.Success -> d.value
         }
         val session = ids.next(IdKinds.SESSION)
-        val lease = accountsLogic.lease(accounts, session, task, clock.now(), target, urgent = t.priority.ordinal <= Priority.HIGH.ordinal)
-        if (lease is Outcome.Failure) return waiting(task, "${Review.label(role)} ждёт слот: ${lease.errors.first().message}")
+        val lease = accountsLogic.lease(accounts, session, task, clock.now(), target, urgent = t.priority.ordinal <= Priority.HIGH.ordinal, executor = reviewer)
+        if (lease is Outcome.Failure) return waiting(task, "${Review.label(role)} ждёт слот ${reviewer.title}: ${lease.errors.first().message}")
         val slot = lease.valueOrNull()!!.slot
-        val route = router.route(t, budgetMode(slot))
+        val route = if (reviewer == Executor.CLAUDE) {
+            router.route(t, budgetMode(slot))
+        } else {
+            com.dpsmpx.dpai.orchestrator.efficiency.RouteDecision(
+                model = t.policy.model.takeIf { t.policy.executor == reviewer }, effort = null, fallbackModel = null, subagents = true, route = "executor:${reviewer.key}",
+            )
+        }
         batch {
             commitAccounts(lease.valueOrNull()!!.events)
             ok(sessionsLogic.create(sessions, accounts, session, "task:${task.value}:review:${role.name}:${t.retries}:$attempt", task, slot, target, ProviderSessionId.newUuid(random), clock.now(), review = role.name), "сессия ревью $task не создана")
                 ?.also { commitSessions(it.events) }
         } ?: return releaseLease(session)
         val workDir = treePath(task) ?: config.worktreeRoot
-        val prompt = Review.prompt(role, t.title, t.objective, diff)
+        val prompt = Review.prompt(role, t.title, t.objective, diff, jsonInText = reviewer != Executor.CLAUDE)
         val unknown = unsupportedFlags[target].orEmpty()
-        val local = ClaudeRequest(
+        val local = if (reviewer != Executor.CLAUDE) {
+            // Только чтение (D-73): песочница read-only у Codex, режим plan у Gemini; вердикт — JSON в ответе (D-100).
+            ClaudeRequest(prompt, model = route.model, workDir = workDir, timeout = t.policy.turnTimeout, executor = reviewer, readOnly = true)
+        } else ClaudeRequest(
             prompt, model = route.model,
             effort = route.effort.takeIf { "--effort" !in unknown },
             fallbackModel = route.fallbackModel.takeIf { "--fallback-model" !in unknown },
@@ -1778,11 +1820,11 @@ class Orchestrator(
         val out = mutableListOf<Reconciler.Result>()
         for (r in sessions.sessions.values.filter { it.state == SessionState.RECOVERY_PENDING }.sortedBy { it.id.value }) {
             val agent = agentFor(r.target) ?: continue
-            val res = reconciler.reconcile(sessions, r.id, agent)
+            val res = reconciler.reconcile(sessions, r.id, agent, accounts.slots[r.slot]?.executor ?: Executor.CLAUDE)
             out += res
             commitSessions(res.events)
             val after = sessions.sessions.getValue(r.id)
-            if (res.resolution == Resolution.RESOLVED_RUNNING) runner.adopt(r.id, r.provider, r.agentSequence, turnRunning = true)
+            if (res.resolution == Resolution.RESOLVED_RUNNING) runner.adopt(r.id, r.provider, r.agentSequence, turnRunning = true, executor = accounts.slots[r.slot]?.executor ?: Executor.CLAUDE)
             if (after.terminal) applyFacts(listOf(AccountFact.Release(r.id)))
             when {
                 after.state == SessionState.RECOVERY_PENDING -> Unit

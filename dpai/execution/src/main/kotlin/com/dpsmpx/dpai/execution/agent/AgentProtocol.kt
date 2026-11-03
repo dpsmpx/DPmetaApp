@@ -128,6 +128,9 @@ data class DoctorReport(
     val memoryFreeBytes: Long?,
     val claude: ToolProbe,
     val git: ToolProbe,
+    /** Codex CLI и Gemini CLI (D-100); прежний агент о них не сообщает — `null`, а не «нет». */
+    val codex: ToolProbe? = null,
+    val gemini: ToolProbe? = null,
 ) {
     fun toJson(): JsonObject {
         val f = linkedMapOf<String, JsonValue>(
@@ -143,6 +146,8 @@ data class DoctorReport(
         memoryFreeBytes?.let { f["memoryFreeBytes"] = JsonNumber.of(it) }
         f["claude"] = claude.toJson()
         f["git"] = git.toJson()
+        codex?.let { f["codex"] = it.toJson() }
+        gemini?.let { f["gemini"] = it.toJson() }
         return JsonObject(f)
     }
 
@@ -160,6 +165,8 @@ data class DoctorReport(
                 memoryFreeBytes = f.optLong("memoryFreeBytes"),
                 claude = f.obj("claude")?.let(ToolProbe::read) ?: ToolProbe(false, null, null),
                 git = f.obj("git")?.let(ToolProbe::read) ?: ToolProbe(false, null, null),
+                codex = if (f.has("codex")) f.obj("codex")?.let(ToolProbe::read) else null,
+                gemini = if (f.has("gemini")) f.obj("gemini")?.let(ToolProbe::read) else null,
             )
             f.finish()
             return r

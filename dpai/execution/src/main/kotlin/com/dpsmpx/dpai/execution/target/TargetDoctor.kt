@@ -71,6 +71,9 @@ object TargetDoctor {
         }
         checks += tool("Claude Code", r.claude.found, r.claude.version, r.claude.detail, CheckStatus.FAIL)
         checks += tool("Git", r.git.found, r.git.version, r.git.detail, CheckStatus.WARN)
+        // Codex и Gemini (D-100) нужны только своим слотам: нет их — не отказ target, а сведение.
+        r.codex?.let { checks += tool("Codex", it.found, it.version, it.detail, CheckStatus.UNKNOWN) }
+        r.gemini?.let { checks += tool("Gemini", it.found, it.version, it.detail, CheckStatus.UNKNOWN) }
         checks += when (val free = r.diskFreeBytes) {
             null -> DoctorCheck("диск", CheckStatus.UNKNOWN, "свободное место неизвестно")
             else -> DoctorCheck(

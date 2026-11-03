@@ -6,6 +6,7 @@ import com.dpsmpx.dpai.accounts.SlotState
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.Diagnostic
 import com.dpsmpx.dpai.core.events.EventType
+import com.dpsmpx.dpai.core.ids.Executor
 import com.dpsmpx.dpai.core.ids.SessionId
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.serialization.JsonParser
@@ -31,20 +32,28 @@ import kotlin.time.Duration.Companion.seconds
  * процесс вышел, и `null`, пока идёт (D-07: время — у вызывающего).
  */
 class SlotAuthProbe(private val agent: AgentClient) {
-    fun start(run: SessionId, slot: SlotState): Outcome<SessionId> = start(run, slot.configDir)
+    /** Исполнитель каждой пробы: по нему — разбор итога. */
+    private val kinds = HashMap<SessionId, Executor>()
 
-    /** Проба каталога, у которого слота ещё нет: по итогу выбирается подписка слота. */
-    fun start(run: SessionId, configDir: String): Outcome<SessionId> {
-        val spec = RunSpec(
-            listOf("claude", "auth", "status", "--json"),
-            setEnv = mapOf(SlotEnvironment.CONFIG_DIR to configDir),
-            unsetEnv = SlotEnvironment.OVERRIDING,
-            timeout = 60.seconds,
-            capture = OutputCapture.AUTH_STATUS,
-        )
+    fun start(run: SessionId, slot: SlotState): Outcome<SessionId> = start(run, slot.configDir, slot.executor)
+
+    /**
+     * Проба каталога, у которого слота ещё нет: по итогу выбирается подписка
+     * слота. Команда — по исполнителю (D-100): `claude auth status --json`,
+     * `codex login status` или проба `settings.json` и файла входа Gemini
+     * (`docs/research/GEMINI_CLI.md`, §2; сам файл входа не читается).
+     */
+    fun start(run: SessionId, configDir: String, executor: Executor = Executor.CLAUDE): Outcome<SessionId> {
+        val env = mapOf(SlotEnvironment.configVar(executor) to configDir)
+        val unset = SlotEnvironment.overriding(executor)
+        val spec = when (executor) {
+            Executor.CLAUDE -> RunSpec(listOf("claude", "auth", "status", "--json"), setEnv = env, unsetEnv = unset, timeout = 60.seconds, capture = OutputCapture.AUTH_STATUS)
+            Executor.CODEX -> RunSpec(listOf("codex", "login", "status"), setEnv = env, unsetEnv = unset, timeout = 60.seconds)
+            Executor.GEMINI -> RunSpec(listOf("sh", "-c", GEMINI_PROBE), setEnv = env, unsetEnv = unset, timeout = 60.seconds)
+        }
         return when (val s = agent.start(run, spec)) {
             is Outcome.Failure -> s
-            is Outcome.Success -> Outcome.success(run)
+            is Outcome.Success -> Outcome.success(run).also { synchronized(kinds) { kinds[run] = executor } }
         }
     }
 
@@ -61,6 +70,15 @@ class SlotAuthProbe(private val agent: AgentClient) {
         }
         val stdout = events.filter { it.type == EventType.TARGET_PROCESS_OUTPUT && (it.payload["stream"] as? JsonString)?.value == "stdout" }
             .joinToString("\n") { (it.payload["text"] as? JsonString)?.value.orEmpty() }
+        val executor = synchronized(kinds) { kinds.remove(run) } ?: Executor.CLAUDE
+        if (executor != Executor.CLAUDE) {
+            if (status.reason == ExitReason.START_FAILED) {
+                return Outcome.failure(DiagCode.PROCESS_START_FAILED, "проба входа: ${executor.title} на target не запустился — установлен ли он и есть ли в PATH", "run $run")
+            }
+            // «Not logged in» Codex пишет и в stderr: строки входа ищутся во всём выводе.
+            val all = events.filter { it.type == EventType.TARGET_PROCESS_OUTPUT }.joinToString("\n") { (it.payload["text"] as? JsonString)?.value.orEmpty() }
+            return if (executor == Executor.CODEX) AuthStatus.fromCodexStatus(all) else AuthStatus.fromGeminiProbe(all)
+        }
         // Код 1 — «не вошёл», но JSON тот же (`docs/research/CLAUDE_CODE_CLI.md`, §4); агент свёл его в `dpai.auth-status`.
         return when (val json = JsonParser().parse(stdout)) {
             // Без сводки — сказать почему, а не гадать (D-05): старый агент спецификацию v2 отверг бы ещё
@@ -74,5 +92,17 @@ class SlotAuthProbe(private val agent: AgentClient) {
             )
             is Outcome.Success -> AuthStatus.fromAgentJson(json.value)
         }
+    }
+
+    companion object {
+        /**
+         * Проба входа Gemini (`docs/research/GEMINI_CLI.md`, §2): способ входа
+         * из `settings.json` и есть ли файл входа — без чтения файла входа.
+         */
+        const val GEMINI_PROBE: String =
+            "d=\"\$GEMINI_CLI_HOME/.gemini\"; " +
+                "t=\$(sed -n 's/.*\"selectedType\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p' \"\$d/settings.json\" 2>/dev/null | head -n 1); " +
+                "echo \"selectedType=\$t\"; " +
+                "if [ -s \"\$d/oauth_creds.json\" ]; then echo creds=yes; else echo creds=no; fi"
     }
 }
