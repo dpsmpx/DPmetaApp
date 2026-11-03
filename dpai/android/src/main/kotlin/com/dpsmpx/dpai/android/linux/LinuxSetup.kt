@@ -41,12 +41,31 @@ object LinuxSetup {
     fun layout(context: Context): ProotLayout {
         val lib = context.applicationInfo.nativeLibraryDir
         val tmp = File(context.cacheDir, "linux-tmp").apply { mkdirs() }
+        val rootfs = File(context.filesDir, environment(context).rootfs)
         return ProotLayout(
             proot = "$lib/libproot.so",
             loader = "$lib/libproot-loader.so",
-            rootfs = File(context.filesDir, environment(context).rootfs).path,
+            rootfs = rootfs.path,
             tmp = tmp.path,
+            binds = storageBinds(context, rootfs),
         )
+    }
+
+    /** Каталог гостя для общего хранилища в режиме всех файлов (D-99), как у `termux-setup-storage`. */
+    const val GUEST_SHARED = "/root/storage/shared"
+
+    /**
+     * Общее хранилище телефона — гостю, если «Доступ ко всем файлам»
+     * включён и разрешение дано (D-99, T17). Решается на каждый запуск
+     * процесса гостя: выключенный переключатель снимает привязку со
+     * следующего запуска.
+     */
+    private fun storageBinds(context: Context, rootfs: File): List<ProotLayout.Bind> {
+        if (!com.dpsmpx.dpai.android.AllFiles.active(context)) return emptyList()
+        val shared = android.os.Environment.getExternalStorageDirectory()
+        if (!shared.isDirectory || !rootfs.isDirectory) return emptyList()
+        File(rootfs, GUEST_SHARED.removePrefix("/")).mkdirs()
+        return listOf(ProotLayout.Bind(shared.path, GUEST_SHARED))
     }
 
     /** Распаковать Alpine из APK, если ещё не; `null` — уже установлена. */
@@ -124,12 +143,13 @@ object LinuxSetup {
     fun guestHost(context: Context): com.dpsmpx.dpai.execution.process.ProcessHost? {
         if (!available(context) || environment(context).installed() == null) return null
         val home = File(context.filesDir, AGENT_HOME).apply { mkdirs() }.path
-        val proot = ProotHost(NativeProcessHost(JniProcesses(), Clock.SYSTEM), layout(context).copy(binds = listOf(ProotLayout.Bind(home, home))))
         val app = context.applicationContext
         return object : com.dpsmpx.dpai.execution.process.ProcessHost {
             override fun start(spec: ProcessSpec, onOutput: (com.dpsmpx.dpai.execution.process.OutputLine) -> Unit): Outcome<com.dpsmpx.dpai.execution.process.RunningProcess> {
                 refreshDns(app)
-                return proot.start(spec, onOutput)
+                // Раскладка — на каждый запуск: привязка хранилища следует переключателю (D-99).
+                val layout = layout(app)
+                return ProotHost(NativeProcessHost(JniProcesses(), Clock.SYSTEM), layout.copy(binds = layout.binds + ProotLayout.Bind(home, home))).start(spec, onOutput)
             }
         }
     }

@@ -50,6 +50,7 @@ import com.dpsmpx.dpai.accounts.ApiProfiles
 import com.dpsmpx.dpai.accounts.ProviderKind
 import com.dpsmpx.dpai.core.diagnostics.Secret
 import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.core.result.map
 import com.dpsmpx.dpai.core.text.Words
 import com.dpsmpx.dpai.providers.ChatEntry
 import com.dpsmpx.dpai.providers.ChatRole
@@ -297,8 +298,25 @@ private fun kindName(k: ProviderKind): String = when (k) {
 /** Чат с моделью профиля: ответ идёт кусками; «Стоп» прерывает его. */
 @Composable
 private fun ChatPane(c: Conversation, p: ApiProfile?, live: ModelsStore.Running?, onBack: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var input by rememberSaveable(c.id.value) { mutableStateOf("") }
     var note by remember { mutableStateOf<String?>(null) }
+    // Файлы к вопросу (D-99): только выбором человека; текст уходит провайдеру вместе с вопросом.
+    var files by remember(c.id.value) { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    val attach = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            scope.launch {
+                when (val r = withContext(Dispatchers.IO) { readAttachment(context, uri) }) {
+                    is Outcome.Success -> {
+                        files = files + r.value
+                        note = null
+                    }
+                    is Outcome.Failure -> note = "файл не приложен: ${r.errors.first().message}"
+                }
+            }
+        }
+    }
     val list = rememberLazyListState()
     val count = c.entries.size + if (live != null) 1 else 0
     LaunchedEffect(count, live?.text?.length) { if (count > 0) list.scrollToItem(count - 1) }
@@ -316,14 +334,25 @@ private fun ChatPane(c: Conversation, p: ApiProfile?, live: ModelsStore.Running?
             live?.let { r -> item { EntryView(ChatEntry(ChatRole.ASSISTANT, r.text.ifEmpty { "…" }, p?.model), streaming = true) } }
         }
         note?.let { Text(it, Modifier.padding(horizontal = 12.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+        if (files.isNotEmpty()) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                for (f in files) {
+                    FilterChip(selected = true, onClick = { files = files - f }, label = { Text("${f.first} ✕", maxLines = 1, overflow = TextOverflow.Ellipsis) })
+                }
+            }
+        }
         Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.Bottom) {
+            TextButton(enabled = live == null, onClick = { attach.launch(arrayOf("text/*", "application/json", "application/xml", "application/x-sh", "*/*")) }) { Text("📎") }
             OutlinedTextField(input, { input = it }, Modifier.weight(1f), placeholder = { Text("Вопрос") }, maxLines = 6)
             if (live != null) {
                 TextButton(onClick = { ModelsStore.stop(c.id) }) { Text("Стоп") }
             } else {
-                TextButton(enabled = input.isNotBlank() && p != null, onClick = {
-                    note = ModelsStore.send(c.id, input.trim())
-                    if (note == null) input = ""
+                TextButton(enabled = (input.isNotBlank() || files.isNotEmpty()) && p != null, onClick = {
+                    note = ModelsStore.send(c.id, com.dpsmpx.dpai.files.ChatAttachments.message(input, files))
+                    if (note == null) {
+                        input = ""
+                        files = emptyList()
+                    }
                 }) { Text("Отправить") }
             }
         }
@@ -363,4 +392,26 @@ private fun EntryView(e: ChatEntry, streaming: Boolean = false) {
             TextButton(onClick = { Clipboard.copy(context, "ответ модели", e.text) }) { Text("Копировать", style = MaterialTheme.typography.labelSmall) }
         }
     }
+}
+
+/**
+ * Текстовый файл к вопросу чата (D-99): имя — из провайдера документов,
+ * текст — UTF-8 до [com.dpsmpx.dpai.files.ChatAttachments.MAX_BYTES];
+ * картинка и двоичный файл — отказ с причиной.
+ */
+private fun readAttachment(context: android.content.Context, uri: android.net.Uri): Outcome<Pair<String, String>> {
+    val max = com.dpsmpx.dpai.files.ChatAttachments.MAX_BYTES
+    val name = try {
+        context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+    } catch (_: SecurityException) {
+        null
+    } ?: "файл"
+    val bytes = try {
+        context.contentResolver.openInputStream(uri)?.use { SafTree.readLimited(it, max) }
+    } catch (e: java.io.IOException) {
+        return Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.STORAGE_IO_FAILED, "не прочитан: ${e.javaClass.simpleName}")
+    } catch (e: SecurityException) {
+        return Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.OPERATION_NOT_ALLOWED, "нет доступа: ${e.javaClass.simpleName}")
+    } ?: return Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.VALUE_INVALID, "больше ${max / 1024} КиБ")
+    return com.dpsmpx.dpai.files.TextFile.decode(bytes, max).map { name to it }
 }

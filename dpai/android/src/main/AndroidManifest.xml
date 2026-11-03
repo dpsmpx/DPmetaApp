@@ -1,8 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- SSH к targets из контроллера приложения (D-35). -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- «Доступ ко всем файлам» (D-99): переключатель вкладки «Файлы», по умолчанию выключен; хранилище —
+         в Linux приложения. ScopedStorage: приложение личное и не публикуется в магазинах (D-74). -->
+    <uses-permission
+        android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        tools:ignore="ScopedStorage" />
     <!-- Такт контроллера при выключенном экране — частичный wakelock службы (D-39). -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Уведомления контроллера (D-36); на Android 13+ разрешение спрашивается при запуске. -->

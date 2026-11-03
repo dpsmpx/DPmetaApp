@@ -93,7 +93,15 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
     private fun handle(intent: Intent?) {
         // Linux-среда в приложении (D-75, шаг 5): вкладка без target, подключение — в потоке вкладки.
         if (intent?.getBooleanExtra(EXTRA_LINUX, false) == true) {
-            show(TerminalHub.openLinux(this))
+            // «Открыть в терминале» вкладки «Файлы» (D-99): оболочка гостя сразу в этой папке.
+            val dir = intent.getStringExtra(EXTRA_DIR)
+            show(
+                if (dir == null) {
+                    TerminalHub.openLinux(this)
+                } else {
+                    TerminalHub.open(this, null, listOf("/bin/sh", "-c", "cd \"$1\" && exec /bin/sh -l", "sh", dir), "Linux · ${dir.substringAfterLast('/')}")
+                },
+            )
             return
         }
         val id = intent?.getStringExtra(EXTRA_TARGET) ?: return
@@ -346,6 +354,7 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         const val EXTRA_TARGET = "com.dpsmpx.dpai.terminal.TARGET"
         const val EXTRA_CLAUDE = "com.dpsmpx.dpai.terminal.CLAUDE"
         const val EXTRA_LINUX = "com.dpsmpx.dpai.terminal.LINUX"
+        const val EXTRA_DIR = "com.dpsmpx.dpai.terminal.DIR"
         private const val PREVIEW = 500
         private const val MAX_CLIP = 100_000
         private const val REPEAT_DELAY_MS = 400L
@@ -360,9 +369,10 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
             context.startActivity(i)
         }
 
-        /** Открыть терминал Linux-среды в приложении (D-75, шаг 5). */
-        fun startLinux(context: Context) {
+        /** Открыть терминал Linux-среды в приложении (D-75, шаг 5); [dir] — каталог гостя, в котором начать (D-99). */
+        fun startLinux(context: Context, dir: String? = null) {
             val i = Intent(context, TerminalActivity::class.java).putExtra(EXTRA_LINUX, true)
+            if (dir != null) i.putExtra(EXTRA_DIR, dir)
             if (context !is Activity) i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(i)
         }
