@@ -27,6 +27,7 @@ class ApiProfileCodecTest {
         val o = form(ProviderKind.OPENAI_COMPATIBLE, " https://llm.home.example/v1/ ", custom = true).valueOrNull()!!
         assertEquals("https://llm.home.example/v1", o.baseUrl)
         assertEquals("llm.home.example", o.host)
+        assertEquals("::1", form(ProviderKind.OPENAI_COMPATIBLE, "http://[::1]:8080/v1", custom = true).valueOrNull()!!.host)
     }
 
     @Test

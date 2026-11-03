@@ -38,6 +38,7 @@ class ProviderHostsTest {
         assertIs<Outcome.Success<Unit>>(check("http://192.168.1.5:11434/v1/models", setOf("192.168.1.5"), secret = null))
         refused(check("http://192.168.1.5:11434/v1/models", setOf("192.168.1.5")))
         assertIs<Outcome.Success<Unit>>(check("http://127.0.0.1:8080/v1/models", setOf("127.0.0.1")))
+        assertIs<Outcome.Success<Unit>>(check("http://[::1]:8080/v1/models", setOf(profile(ProviderKind.OPENAI_COMPATIBLE, "http://[::1]:8080/v1", custom = true).host)))
         refused(check("http://8.8.8.8/v1/models", setOf("8.8.8.8"), secret = null))
     }
 

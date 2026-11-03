@@ -122,9 +122,10 @@ object ModelsStore {
     /** Провайдер профиля с его ключом. */
     fun provider(p: ApiProfile, key: Secret? = null): AIProvider = Providers.of(p, key ?: ApiKeys.get(app, p.id))
 
-    /** Новый разговор — в списке сразу, в файле — с первой репликой. */
+    /** Новый разговор — в списке сразу, в файле — с первой репликой; пустой разговор профиля — переиспользуется. */
     @Synchronized
     fun newChat(profile: ApiProfile): Conversation {
+        chatFlow.value.firstOrNull { it.profile == profile.id && it.entries.isEmpty() }?.let { return it }
         val c = Conversation(ids.next(IdKinds.CORRELATION), profile.id, "", emptyList())
         chatFlow.value = chatFlow.value + c
         return c

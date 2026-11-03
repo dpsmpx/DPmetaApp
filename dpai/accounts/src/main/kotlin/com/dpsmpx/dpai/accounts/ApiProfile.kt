@@ -51,8 +51,8 @@ data class ApiProfile(
     val maxOutputTokens: Int?,
     val customHostAllowed: Boolean,
 ) {
-    /** Хост [baseUrl] в нижнем регистре; адрес проверен при создании. */
-    val host: String get() = URI(baseUrl).host.lowercase()
+    /** Хост [baseUrl] в нижнем регистре, IPv6 — без скобок (как сверяет список адресов); адрес проверен при создании. */
+    val host: String get() = URI(baseUrl).host.lowercase().removeSurrounding("[", "]")
 }
 
 /** Готовые адреса OpenAI-совместимых провайдеров (D-98): выбор вместо ручного ввода. */
