@@ -22,7 +22,7 @@ android {
         applicationId = "com.dpsmpx.dpai"
         minSdk = 30
         targetSdk = 36
-        versionCode = 8
+        versionCode = 9
         versionName = project.version.toString()
     }
 
@@ -232,6 +232,7 @@ dependencies {
     implementation(project(":jsch"))
     implementation(project(":terminal"))
     implementation(project(":providers"))
+    implementation(project(":files"))
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.material3)
     implementation(libs.activity.compose)

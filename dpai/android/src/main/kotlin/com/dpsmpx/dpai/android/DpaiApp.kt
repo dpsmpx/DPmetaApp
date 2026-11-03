@@ -251,7 +251,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                         TextButton(onClick = { sessionEvents = !sessionEvents }) { Text(if (sessionEvents) "Чат" else "События") }
                     } else {
                         Text(
-                            if (tab == 2) "DP AI · targets" else if (tab == 3) "DP AI · запросы" else if (tab == 4) "DP AI · журнал" else if (tab == 5) "DP AI · модели" else "DP AI · ${snapshot?.mode ?: "…"}",
+                            if (tab == 2) "DP AI · targets" else if (tab == 3) "DP AI · запросы" else if (tab == 4) "DP AI · журнал" else if (tab == 5) "DP AI · модели" else if (tab == 6) "DP AI · файлы" else "DP AI · ${snapshot?.mode ?: "…"}",
                             Modifier.weight(1f).padding(start = 12.dp), style = MaterialTheme.typography.titleMedium,
                         )
                         // Глобальный поиск (ТЗ, §75) — с любой вкладки.
@@ -272,7 +272,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                         selectedId = null
                     }
                     val waiting = snapshot?.requests?.size ?: 0
-                    for ((i, icon) in listOf("◉", "▦", "⇄", "?", "≡", "✦").withIndex()) {
+                    for ((i, icon) in listOf("◉", "▦", "⇄", "?", "≡", "✦", "▤").withIndex()) {
                         val selected = tab == i && selectedId == null
                         Box(
                             Modifier.weight(1f).fillMaxSize().clickable { go(i) },
@@ -338,6 +338,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                         screen == 3 -> RequestsPane(model, s)
                         screen == 4 -> LogPane(model)
                         screen == 5 -> ModelsPane()
+                        screen == 6 -> FilesPane()
                         s == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                         screen == SESSION_SCREEN -> SessionPane(s.session, model, sessionEvents)
                         screen == 0 -> Column(Modifier.fillMaxSize()) {
