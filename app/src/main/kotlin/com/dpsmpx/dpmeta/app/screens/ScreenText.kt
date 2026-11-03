@@ -37,10 +37,24 @@ object ScreenText {
         for (p in c.pulls) appendLine("  #${p.number} ${p.title}${if (p.draft) " (черновик)" else ""} — ${p.head}, ${p.updated}")
         appendLine("Ветки: ${c.branches.size}")
         for (b in c.branches) appendLine("  ${if (b.recent) "●" else "○"} ${b.name} — ${b.updated}")
+        appendLine("Проверки последнего PR: ${checked(c.lastPull)}")
+        appendLine("Проверки последнего влитого: ${checked(c.lastMerged)}")
+        for (p in c.panel) {
+            appendLine("О себе (${p.name}):")
+            for (l in p.text.lines()) appendLine("  $l")
+        }
         if (c.errors.isNotEmpty()) {
             appendLine("Ошибки источников:")
             for (e in c.errors) appendLine("  $e")
         }
+    }
+
+    private fun checked(c: Screens.Checked?): String =
+        c?.let { "#${it.number} — ${it.verdict}, ${it.age}" + (it.line?.let { l -> "; «$l»" } ?: "") } ?: Screens.UNKNOWN
+
+    fun feed(rows: List<Screens.FeedRow>): String = buildString {
+        appendLine("ЛЕНТА: ${rows.size}")
+        for (r in rows) appendLine("  ${r.time} ${r.project} [${r.kind}] ${r.text}")
     }
 
     fun questions(q: List<Screens.Question>): String = buildString {

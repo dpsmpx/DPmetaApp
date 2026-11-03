@@ -22,7 +22,17 @@ import java.time.format.DateTimeParseException
 /** Ответ GitHub, разобранный в [value]; [fetched] — отпечаток и признак 304 для наблюдения. */
 class Page<T>(val value: T, val fetched: Fetched)
 
-data class PullRequest(val number: Int, val title: String, val draft: Boolean, val head: String, val author: String, val updatedAt: Timestamp)
+/** PR: [body] — описание (раздел «Проверки», F-15); [mergedAt] — когда влит, у открытых — null. */
+data class PullRequest(
+    val number: Int,
+    val title: String,
+    val draft: Boolean,
+    val head: String,
+    val author: String,
+    val updatedAt: Timestamp,
+    val body: String? = null,
+    val mergedAt: Timestamp? = null,
+)
 
 data class Branch(val name: String, val sha: String)
 
@@ -52,7 +62,14 @@ class GitHub(private val net: Net, private val token: Secret?, private val api: 
         Outcome.success(RateLimit(remaining, limit, Timestamp(reset * 1000)))
     }
 
-    fun pulls(repo: RepoRef): Outcome<Page<List<PullRequest>>> = get("repos/$repo/pulls?state=open&per_page=100", "$repo:pulls").then { p ->
+    fun pulls(repo: RepoRef): Outcome<Page<List<PullRequest>>> = pullsOf("repos/$repo/pulls?state=open&per_page=100", "$repo:pulls")
+
+    /** Последние закрытые PR (влитые — с `merged_at`): итог проверок последнего влитого (F-15), «влит / закрыт» ленты (F-05). */
+    fun closedPulls(repo: RepoRef): Outcome<Page<List<PullRequest>>> =
+        pullsOf("repos/$repo/pulls?state=closed&sort=updated&direction=desc&per_page=10", "$repo:closed")
+
+    private fun pullsOf(path: String, subject: String): Outcome<Page<List<PullRequest>>> = get(path, subject).then { p ->
+        val repo = subject.substringBefore(':')
         val items = (p.value as? JsonArray)?.items ?: return@then missing("[]", "$repo:pulls")
         val out = items.map { v ->
             val o = v as? JsonObject ?: return@then missing("pull", "$repo:pulls")
@@ -65,6 +82,8 @@ class GitHub(private val net: Net, private val token: Secret?, private val api: 
                 head = head ?: return@then missing("head.ref", "$repo:pulls"),
                 author = user ?: "?",
                 updatedAt = time(o, "updated_at") ?: return@then missing("updated_at", "$repo:pulls"),
+                body = str(o, "body"),
+                mergedAt = time(o, "merged_at"),
             )
         }
         Outcome.success(Page(out, p.fetched))

@@ -24,6 +24,9 @@ object Rules {
      */
     val MISSING_RECHECK: Duration = 24.hours
 
+    /** Сколько событий ленты хранить (F-05): старше — уходят. */
+    const val FEED_KEEP: Int = 300
+
     /** Основная ветка проекта — по ней «коммит в main». */
     const val MAIN_BRANCH: String = "main"
 }

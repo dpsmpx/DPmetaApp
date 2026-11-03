@@ -8,6 +8,8 @@ import com.dpsmpx.dpai.core.serialization.JsonNumber
 import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpmeta.metrics.EcosystemState
+import com.dpsmpx.dpmeta.metrics.Feed
+import com.dpsmpx.dpmeta.metrics.FeedEvent
 import com.dpsmpx.dpmeta.metrics.ProjectState
 import com.dpsmpx.dpmeta.metrics.Rules
 import com.dpsmpx.dpmeta.model.Place
@@ -99,6 +101,12 @@ object Screens {
 
     data class BranchRow(val name: String, val updated: String, val recent: Boolean)
 
+    /** Итог проверок PR (F-15): номер, итог, первая строка раздела «Проверки», возраст. */
+    data class Checked(val number: Long, val verdict: String, val line: String?, val age: String)
+
+    /** Блок состояния README — «что проект пишет о себе» (F-10). */
+    data class Panel(val name: String, val text: String)
+
     data class Card(
         val name: String,
         val place: String,
@@ -111,6 +119,9 @@ object Screens {
         val stages: List<Stage>,
         val pulls: List<Pull>,
         val branches: List<BranchRow>,
+        val lastPull: Checked?,
+        val lastMerged: Checked?,
+        val panel: List<Panel>,
         val errors: List<String>,
     )
 
@@ -138,6 +149,12 @@ object Screens {
             val date = long(o, "date")
             BranchRow(str(o, "name").orEmpty(), date?.let { time(Timestamp(it)) } ?: UNKNOWN, date != null && date >= recentFrom)
         }.sortedWith(compareByDescending<BranchRow> { it.recent }.thenBy { it.name })
+        fun checked(o: JsonObject?, timeKey: String): Checked? = o?.let {
+            val at = long(it, timeKey) ?: return@let null
+            Checked(long(it, "number") ?: 0, verdictTitle(str(it, "checks")), str(it, "checksLine"), age(s.asOf, Timestamp(at)))
+        }
+        val openPulls = objects(payload(p, "pulls"), "pulls")
+        val merged = objects(payload(p, "merged"), "pulls")
         return Card(
             name = p.name,
             place = Place.of(p.place)?.title ?: p.place,
@@ -152,11 +169,40 @@ object Screens {
             stages = stages,
             pulls = pulls,
             branches = branches,
+            lastPull = checked(openPulls.maxByOrNull { long(it, "updatedAt") ?: 0 }, "updatedAt"),
+            lastMerged = checked(merged.maxByOrNull { long(it, "mergedAt") ?: 0 }, "mergedAt"),
+            panel = objects(payload(p, "readme"), "blocks").map { Panel(str(it, "name").orEmpty(), str(it, "text").orEmpty()) },
             errors = p.errors.map { "${it.kind}: ${it.code} — ${it.message} (${time(it.at)})" },
         )
     }
 
     const val LAST_DECISIONS = 5
+
+    fun verdictTitle(code: String?): String = when (code) {
+        "green" -> "зелёный"
+        "red" -> "красный"
+        else -> UNKNOWN
+    }
+
+    /** Возраст для показа: минуты, часы или дни от среза. */
+    fun age(now: Timestamp, at: Timestamp): String {
+        val minutes = (now.epochMillis - at.epochMillis) / 60_000
+        return when {
+            minutes < 0 -> "только что"
+            minutes < 60 -> "$minutes мин назад"
+            minutes < 48 * 60 -> "${minutes / 60} ч назад"
+            else -> "${minutes / (24 * 60)} дн назад"
+        }
+    }
+
+    // --- Лента (F-05) ---
+
+    data class FeedRow(val time: String, val project: String, val kind: String, val text: String)
+
+    /** Лента с фильтрами (F-05): [project] и [kind] — null, если не выбраны. */
+    fun feed(events: List<FeedEvent>, project: String? = null, kind: String? = null): List<FeedRow> =
+        events.filter { (project == null || it.project == project) && (kind == null || it.kind == kind) }
+            .map { FeedRow(time(it.at), it.project, Feed.KINDS[it.kind] ?: it.kind, it.text) }
 
     // --- Вопросы автору (F-24) ---
 

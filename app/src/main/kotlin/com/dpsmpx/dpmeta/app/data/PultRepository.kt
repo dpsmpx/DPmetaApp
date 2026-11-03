@@ -13,6 +13,8 @@ import com.dpsmpx.dpai.storage.vfs.Vfs
 import com.dpsmpx.dpmeta.formats.RegistryFormat
 import com.dpsmpx.dpmeta.github.GitHub
 import com.dpsmpx.dpmeta.metrics.EcosystemState
+import com.dpsmpx.dpmeta.metrics.Feed
+import com.dpsmpx.dpmeta.metrics.FeedEvent
 import com.dpsmpx.dpmeta.metrics.Rules
 import com.dpsmpx.dpmeta.metrics.Store
 import com.dpsmpx.dpmeta.model.RepoRef
@@ -38,6 +40,8 @@ class PultRepository(private val vfs: Vfs, private val clock: Clock, private val
     data class SyncReport(val line: String, val failures: List<SourceFailure>)
 
     fun state(): Outcome<EcosystemState?> = store.readState()
+
+    fun feed(): Outcome<List<FeedEvent>> = store.readFeed()
 
     /** Синхронизация целиком; зовётся не из главного потока. */
     fun sync(token: Secret): Outcome<SyncReport> {
@@ -74,6 +78,7 @@ class PultRepository(private val vfs: Vfs, private val clock: Clock, private val
         val state = EcosystemState.derive(reg, result.observations, result.failures + carried, previous, clock.now())
         store.writeState(state).let { if (it is Outcome.Failure) return it }
         store.appendHistory(state.points()).let { if (it is Outcome.Failure) return it }
+        store.appendFeed(Feed.diff(previous, state)).let { if (it is Outcome.Failure) return it }
         etags.save()
         val s = net.stats
         return Outcome.success(SyncReport("запросов ${s.requests}, без изменений ${s.notModified}, отказов источников ${result.failures.size}", result.failures))

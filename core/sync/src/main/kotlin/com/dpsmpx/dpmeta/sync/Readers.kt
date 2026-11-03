@@ -64,6 +64,11 @@ class GitHubReader(private val gh: GitHub, private val host: RepoRef, private va
         is Outcome.Success -> Outcome.success(Got(r.value.value, r.value.fetched.rawSha256, r.value.fetched.notModified))
     }
 
+    override fun closed(project: ProjectEntry): Outcome<Got<List<PullRequest>>> = when (val r = gh.closedPulls(project.slug)) {
+        is Outcome.Failure -> r
+        is Outcome.Success -> Outcome.success(Got(r.value.value, r.value.fetched.rawSha256, r.value.fetched.notModified))
+    }
+
     override fun branches(project: ProjectEntry): Outcome<Got<List<Branch>>> = when (val r = gh.branches(project.slug)) {
         is Outcome.Failure -> r
         is Outcome.Success -> Outcome.success(Got(r.value.value, r.value.fetched.rawSha256, r.value.fetched.notModified))
@@ -131,19 +136,27 @@ class DirectoryReader(private val root: Path, private val hostDir: String = "dpm
         }
     }
 
-    override fun pulls(project: ProjectEntry): Outcome<Got<List<PullRequest>>> {
-        val (items, bytes) = when (val r = array(project, PULLS)) {
+    override fun pulls(project: ProjectEntry): Outcome<Got<List<PullRequest>>> = pullsFrom(project, PULLS)
+
+    /** `merged.json` — те же поля и `mergedAt`; нет файла — пусто (в корпусе не у всех). */
+    override fun closed(project: ProjectEntry): Outcome<Got<List<PullRequest>>> =
+        if (Files.isRegularFile(dir(project).resolve(MERGED))) pullsFrom(project, MERGED) else Outcome.success(Got(emptyList(), Hashing.sha256(ByteArray(0))))
+
+    private fun pullsFrom(project: ProjectEntry, name: String): Outcome<Got<List<PullRequest>>> {
+        val (items, bytes) = when (val r = array(project, name)) {
             is Outcome.Failure -> return r
             is Outcome.Success -> r.value
         }
         val out = items.map { o ->
             PullRequest(
-                (o["number"] as? JsonNumber)?.toLongExact()?.toInt() ?: return bad(project, PULLS),
-                (o["title"] as? JsonString)?.value ?: return bad(project, PULLS),
+                (o["number"] as? JsonNumber)?.toLongExact()?.toInt() ?: return bad(project, name),
+                (o["title"] as? JsonString)?.value ?: return bad(project, name),
                 (o["draft"] as? JsonBool)?.value ?: false,
-                (o["head"] as? JsonString)?.value ?: return bad(project, PULLS),
+                (o["head"] as? JsonString)?.value ?: return bad(project, name),
                 (o["author"] as? JsonString)?.value ?: "?",
-                time(o, "updatedAt") ?: return bad(project, PULLS),
+                time(o, "updatedAt") ?: return bad(project, name),
+                (o["body"] as? JsonString)?.value,
+                time(o, "mergedAt"),
             )
         }
         return Outcome.success(Got(out, Hashing.sha256(bytes)))
@@ -183,6 +196,7 @@ class DirectoryReader(private val root: Path, private val hostDir: String = "dpm
 
     companion object {
         const val PULLS = "pulls.json"
+        const val MERGED = "merged.json"
         const val BRANCHES = "branches.json"
     }
 }
