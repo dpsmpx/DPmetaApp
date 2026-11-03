@@ -2854,6 +2854,79 @@ T16.
 `FileLinkBookTest` (документ связей, текст, имена, вложения); на телефоне —
 `docs/DEVICE_CHECK.md`, §19. Угроза — `docs/SECURITY_MODEL.md`, T17.
 
+### D-100 — Исполнители Codex CLI и Gemini CLI: слоты по входу аккаунта, выбор в задаче, переход у предела
+
+**Статус.** Принято 3 ноября 2026 — часть 4 полной версии (D-97) по
+ответам автора (форма вопросов 3 ноября 2026): выбор исполнителя — «В
+задаче + переход у предела»; ревью — «Да, ревьюер — по выбору»;
+установка — «Linux в приложении — кнопкой; Termux и ПК — командой».
+Исполняет `DPmetaApp:D-52` («Другие модели»: Codex CLI с аккаунтом
+ChatGPT, Gemini CLI с аккаунтом Google — в Linux-среде, как `claude`).
+Дополняет D-29, D-30, D-56, D-73; D-04 в силе.
+
+**Решение.**
+- **Исполнитель** (`Executor`: `claude`, `codex`, `gemini`) — у подписки
+  и её слотов, у задачи (`executor`, по умолчанию `claude`) и у ревью
+  задачи (`reviewExecutor`, по умолчанию — исполнитель задачи). Только
+  официальные CLI в неинтерактивном режиме (`docs/research/CODEX_CLI.md`,
+  `docs/research/GEMINI_CLI.md`): без cookies, приватных адресов и
+  разбора их файлов входа (D-04).
+- **Вход слота — только аккаунтом**, как D-29 у Claude: Codex — ChatGPT
+  (`codex login --device-auth`; `codex login status` — «Logged in using
+  ChatGPT»), Gemini — аккаунт Google (`settings.json`
+  `security.auth.selectedType = oauth-personal` и файл входа на месте).
+  Ключ API и другие способы — `ACCOUNT_AUTH_METHOD_FORBIDDEN`. Окружение
+  хода: каталог слота — `CODEX_HOME` или `GEMINI_CLI_HOME`; переменные
+  ключей и облачных провайдеров (`OPENAI_API_KEY`, `CODEX_API_KEY`,
+  `OPENAI_BASE_URL`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`,
+  `GOOGLE_GENAI_USE_VERTEXAI`, `GOOGLE_GENAI_USE_GCA`,
+  `GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_CLOUD_PROJECT`) удаляются.
+- **Подписка Codex и Gemini — по слоту.** Отпечатка аккаунта их CLI не
+  дают без чтения файлов входа, поэтому защиты D-30 от одного аккаунта в
+  двух подписках у них нет: каждый слот — своя подписка, а не завести два
+  слота одного аккаунта — дело человека (`docs/ACCOUNT_MODEL.md`, §10).
+- **Ход.** Codex — `codex exec --json --skip-git-repo-check -c
+  sandbox_mode="workspace-write" -`, продолжение — `codex exec resume
+  --last` в рабочем дереве задачи (id сессии Codex назначает сам; у
+  задачи своё дерево, у слота — свой `CODEX_HOME`). Gemini — `gemini -p " "
+  --output-format stream-json --skip-trust --approval-mode auto_edit`,
+  первый ход — `--session-id`, следующие — `--resume` с id, назначенным
+  оркестратором. Задание — стандартным вводом. Gemini в задаче правит
+  файлы, но команд оболочки не запускает: песочницы у него на Android
+  нет; у Codex — его песочница `workspace-write`. Ревью — только чтение:
+  `sandbox_mode="read-only"` и `--ephemeral` у Codex, `--approval-mode
+  plan` у Gemini; вердикт — JSON в последнем ответе, а не `--json-schema`.
+- **Поток** Codex и Gemini переводится в нормальную форму хода — события
+  `stream-json` Claude Code — до сборки итога (`ClaudeTurnAssembler`):
+  одни разбор итога, восстановление и замер для всех исполнителей. Цены
+  в их потоках нет — стоимость хода неизвестна (D-13); окон пределов нет —
+  отказ по пределу узнаётся по ошибке, слот уходит в `RATE_LIMITED`.
+- **Модель и усилие.** Лестница моделей и класс задачи (D-40) — только у
+  Claude. У Codex и Gemini модель — из политики задачи (`-m`) или по
+  умолчанию CLI; усилие — `model_reasoning_effort` у Codex (`max` —
+  `xhigh`), у Gemini его нет.
+- **Переход у предела.** Задача идёт на слот своего исполнителя; у всех
+  его слотов предел — с контекстом (handoff, D-56) на слот следующего
+  исполнителя по кругу Claude → Codex → Gemini. Модель и усилие политики
+  при этом не переносятся. Кто выполняет — видно на задаче и в сессии.
+- **Установка.** Linux в приложении — кнопка «Установить Codex и Gemini»
+  (`apk add nodejs npm`, `npm install -g @openai/codex
+  @google/gemini-cli`); Termux и ПК — команда в инструкции. Агент
+  сообщает их версии в `doctor`.
+- **Форматы:** `dpai.accounts-state` v3, `dpai.tasks-state` v8,
+  `dpai.sessions-state` v5 — исполнитель пишется, только если не
+  `claude`: прежние версии читаются как Claude.
+
+**Почему.** Слово автора: Codex и Gemini — исполнители задач, как Claude
+Code, с переходом у предела. Нормальная форма хода — чтобы три
+исполнителя не умножили разбор итога, восстановление и замер на три.
+
+**Проверка.** `CodexStreamTest`, `GeminiStreamTest` (перевод образцов в
+нормальную форму, отказы входа и предела), `ExecutorCliTest` (команды
+ходов), `AuthStatusTest`, `SlotEnvironmentTest`, `AccountsTest` (слоты
+по исполнителю, переход), кодеки форматов; на телефоне —
+`docs/DEVICE_CHECK.md`, §20.
+
 ## Отложено
 
 Решения, которые принимаются в начале своего этапа и до этого не
