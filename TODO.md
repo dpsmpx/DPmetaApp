@@ -22,7 +22,7 @@
   (`socialmediaimage/`, `dpvisualisation/`, `dpmeta/`, `dpprofile/`);
   Settings → Archive. Их ветки остаются как есть; PR #5 DPmeta — закрыть
   (он влит сюда). На 4 ноября 2026 не архивированы
-  (`DPmeta:docs/reports/2026-11-04-ECOSYSTEM_HEALTH.md`, SQ-30).
+  (`DPmeta:docs/reports/2026-11-04-ECOSYSTEM_HEALTH.md`, `DPmeta:SQ-30`).
 - `М` **Ветки сборок по версии** (D-33): `apk-0.1.0-dev.1-2026-10-11`
   (сборка 0.1.0-dev.1, 11 октября) и `linux-debug` (DPpass для Linux) —
   удалить на GitHub, когда их сборки будут в `apk_debug` и `linux_debug`
