@@ -72,7 +72,8 @@
 - **`static`** — после любой правки. Проверки: `repo.layout`,
   `format.text`, `format.scripts`, `security.secrets`, `docs.links`,
   `docs.refs`, `process.decisions`, `process.todo`, `process.roadmap`,
-  `process.files`, `readme.status`, `core.single`, `build.wrapper`. Что
+  `process.files`, `readme.status`, `core.single`, `modules.root`,
+  `code.forbidden` (запрещённое ТЗ, §6.5: A-06, A-07), `build.wrapper`. Что
   ловит каждая — строка документации в `tools/check/check.py`. Каталог
   `dpai/` — подсистема со своими проверками: её текст, ссылки и номера
   здесь не сверяются, секреты — сверяются (D-28).

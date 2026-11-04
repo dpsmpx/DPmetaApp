@@ -2,13 +2,9 @@ package com.dpsmpx.dpmeta.model
 
 import com.dpsmpx.dpai.core.clock.Timestamp
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
-import com.dpsmpx.dpai.core.diagnostics.DiagnosticCollector
 import com.dpsmpx.dpai.core.hashing.ContentHash
 import com.dpsmpx.dpai.core.hashing.Hashing
 import com.dpsmpx.dpai.core.result.Outcome
-import com.dpsmpx.dpai.core.serialization.FormatHeader
-import com.dpsmpx.dpai.core.serialization.JsonFields
-import com.dpsmpx.dpai.core.serialization.JsonNumber
 import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.core.serialization.JsonValue
@@ -76,10 +72,11 @@ enum class ObservationSource(val code: String) {
 
 /**
  * Наблюдение (ТЗ, §6.3): что получено, откуда и когда. [payload] —
- * нормализованный JSON, [rawSha256] — отпечаток исходного ответа. Только
- * добавляется; [id] — отпечаток содержимого без времени получения: то же
- * содержимое того же источника и предмета — то же наблюдение, повтор не
- * дублируется.
+ * нормализованный JSON, [rawSha256] — отпечаток исходного ответа.
+ * Наблюдение — вход вычисления состояния (D-34): после вычисления оно не
+ * хранится, хранятся состояние документом и история чисел. [id] —
+ * отпечаток содержимого без времени получения: то же содержимое того же
+ * источника и предмета — то же наблюдение, повтор не дублируется.
  */
 @ConsistentCopyVisibility
 data class Observation private constructor(
@@ -103,22 +100,7 @@ data class Observation private constructor(
         ),
     )
 
-    fun toJson(): JsonObject = JsonObject(
-        linkedMapOf(
-            *FormatHeader.write(FORMAT, VERSION),
-            "source" to JsonString(source.code),
-            "subject" to JsonString(subject),
-            "kind" to JsonString(kind),
-            "asOf" to JsonNumber.of(asOf.epochMillis),
-            "schema" to JsonString(schema),
-            "payload" to payload,
-            "rawSha256" to JsonString(rawSha256.toString()),
-        ),
-    )
-
     companion object {
-        const val FORMAT = "dpmeta.observation"
-        const val VERSION = 1
         private val TOKEN = Regex("[a-z][a-z0-9._-]{0,63}")
 
         fun of(
@@ -135,29 +117,6 @@ data class Observation private constructor(
             !TOKEN.matches(kind) -> Outcome.failure(DiagCode.VALUE_INVALID, "вид наблюдения — латиница в нижнем регистре", "kind")
             !TOKEN.matches(schema) -> Outcome.failure(DiagCode.VALUE_INVALID, "схема наблюдения — латиница в нижнем регистре", "schema")
             else -> Outcome.success(Observation(source, subject, kind, asOf, schema, payload, rawSha256))
-        }
-
-        fun fromJson(value: JsonValue): Outcome<Observation> {
-            val d = DiagnosticCollector()
-            val f = JsonFields.root(value, d) ?: return Outcome.Failure(d.all)
-            FormatHeader.read(f, FORMAT, VERSION..VERSION, d) ?: return Outcome.Failure(d.all)
-            val source = f.string("source")
-            val subject = f.string("subject")
-            val kind = f.string("kind")
-            val asOf = f.long("asOf")
-            val schema = f.string("schema")
-            val payload = f.raw("payload")
-            val raw = f.string("rawSha256")
-            f.finish()
-            if (d.hasErrors || source == null || subject == null || kind == null || asOf == null || schema == null || payload == null || raw == null) {
-                return Outcome.Failure(d.all)
-            }
-            val src = ObservationSource.of(source) ?: return Outcome.failure(DiagCode.VALUE_INVALID, "неизвестный источник наблюдения", source)
-            val hash = when (val h = ContentHash.parse(raw)) {
-                is Outcome.Failure -> return h
-                is Outcome.Success -> h.value
-            }
-            return of(src, subject, kind, Timestamp(asOf), schema, payload, hash)
         }
     }
 }

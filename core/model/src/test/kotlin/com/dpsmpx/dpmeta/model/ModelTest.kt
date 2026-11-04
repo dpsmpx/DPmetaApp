@@ -3,17 +3,15 @@ package com.dpsmpx.dpmeta.model
 import com.dpsmpx.dpai.core.clock.Timestamp
 import com.dpsmpx.dpai.core.hashing.Hashing
 import com.dpsmpx.dpai.core.result.Outcome
-import com.dpsmpx.dpai.core.serialization.CanonicalJson
 import com.dpsmpx.dpai.core.serialization.JsonNumber
 import com.dpsmpx.dpai.core.serialization.JsonObject
-import com.dpsmpx.dpai.core.serialization.JsonParser
 import com.dpsmpx.dpai.core.serialization.JsonString
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
 
-/** Типы предметной области (ТЗ, §6.3): строгие ссылки, наблюдение и его отпечаток. */
+/** Типы предметной области (ТЗ, §6.3): строгие ссылки, наблюдение и его отпечаток (вход вычисления, D-34). */
 class ModelTest {
     private val payload = JsonObject(linkedMapOf("open" to JsonNumber.of(3), "title" to JsonString("этап 2")))
 
@@ -29,15 +27,6 @@ class ModelTest {
     }
 
     @Test
-    fun observationRoundTripsThroughJson() {
-        val o = observation()
-        val text = CanonicalJson.write(o.toJson())
-        val back = Observation.fromJson(JsonParser().parse(text).valueOrNull()!!).valueOrNull()
-        assertEquals(o, back)
-        assertEquals(o.id, back!!.id)
-    }
-
-    @Test
     fun sameContentIsTheSameObservationRegardlessOfTime() {
         assertEquals(observation(asOf = 1).id, observation(asOf = 999_999).id, "повтор того же ответа не дублируется")
         assertNotEquals(observation(raw = "a").id, observation(raw = "b").id)
@@ -49,8 +38,6 @@ class ModelTest {
         assertIs<Outcome.Failure>(Observation.of(ObservationSource.SITE, "", "probe", Timestamp(0), "site.probe.v1", payload, h))
         assertIs<Outcome.Failure>(Observation.of(ObservationSource.SITE, "dpsmpx.com", "Probe", Timestamp(0), "site.probe.v1", payload, h))
         assertIs<Outcome.Failure>(Observation.of(ObservationSource.SITE, "dpsmpx.com\n", "probe", Timestamp(0), "site.probe.v1", payload, h))
-        val foreign = """{"format":"dpmeta.observation","version":2}"""
-        assertIs<Outcome.Failure>(Observation.fromJson(JsonParser().parse(foreign).valueOrNull()!!))
     }
 
     @Test

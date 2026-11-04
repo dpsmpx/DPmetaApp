@@ -596,6 +596,41 @@ def check_modules(repo, r):
                 r.add(f"{rel}:{i}", f"reveal() — только в {REVEAL_HOME} (секрет раскрывается в одном месте)")
 
 
+# Запрещённое по решениям (ТЗ, §6.5; A-06, A-07): признаки в коде приложения — Kotlin и Java
+# основных исходников всего репозитория, подсистемы тоже (второй, независимый поиск).
+# Выгрузку сайта держит только подсистема SocialMediaImage (D-40, D-48) — её каталог
+# правило выгрузки не смотрит. Автоответы и массовые действия (D-21, D-42) признаков в
+# тексте не имеют — их ловят тесты :core:actions (этап 5).
+FORBIDDEN_CODE = (
+    (re.compile(r"\bbeget\b|\brsync\b", re.I), ("socialmediaimage/",),
+     "выгрузка сайта — только подсистемой SocialMediaImage (D-40, A-07)"),
+    (re.compile(r"v1/organizations/(?!usage_report|cost_report)"), (),
+     "Admin API — только GET отчётов Usage и Cost; изменяющих вызовов нет (D-08, D-44)"),
+    (re.compile(r"\b(?:org\.jsoup|org\.openqa\.selenium|com\.microsoft\.playwright|org\.htmlunit|com\.gargoylesoftware\.htmlunit)\b"
+                r"|\.(?:evaluateJavascript|addJavascriptInterface)\s*\("), (),
+     "без скрейпинга и автоматизации браузера — только официальные API (D-20)"),
+)
+CODE_EXT = (".kt", ".kts", ".java")
+
+
+def check_forbidden(repo, r):
+    """code.forbidden — в коде приложения нет запрещённого ТЗ, §6.5: выгрузки сайта мимо
+    SocialMediaImage, изменяющих вызовов Admin API, скрейпинга и автоматизации браузера (A-06, A-07)."""
+    for rel in repo.files:
+        if not rel.endswith(CODE_EXT) or "/src/test/" in rel or rel.startswith("tests/") or "/tests/" in rel:
+            continue
+        text = repo.text(rel)
+        if text is None:
+            continue
+        r.scanned += 1
+        for i, line in enumerate(text.splitlines(), 1):
+            if line.lstrip().startswith(("//", "*", "/*")):
+                continue
+            for rx, allowed, why in FORBIDDEN_CODE:
+                if rx.search(line) and not rel.startswith(allowed):
+                    r.add(f"{rel}:{i}", why)
+
+
 def check_wrapper(repo, r):
     """build.wrapper — wrapper Gradle корня совпадает с wrapper подсистемы dpai/ байт в байт (D-28)."""
     for rel in WRAPPER:
@@ -708,6 +743,7 @@ CHECKS = [
     ("readme.status", check_status),
     ("core.single", check_core_single),
     ("modules.root", check_modules),
+    ("code.forbidden", check_forbidden),
     ("build.wrapper", check_wrapper),
 ]
 
