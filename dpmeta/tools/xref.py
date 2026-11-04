@@ -125,15 +125,16 @@ def find_clone(root: Path, repo: Repo) -> Path:
     return root / repo.clone
 
 
-def locate(root: Path, repo: Repo, repos: list[Repo]) -> Path:
+def locate(root: Path, repo: Repo, repos: list[Repo], overrides: dict[str, Path] | None = None) -> Path:
     """Где читать файлы проекта: подсистема (`dir`, M-16) — каталог в клоне
-    репозитория управления (DPmetaApp), остальные — свой клон ([find_clone]).
-    История до переезда — в замороженном репозитории: её смотрит activity.py
-    по [find_clone]."""
+    репозитория управления (DPmetaApp: ключ `--clone` его строки или клон под
+    `--root`), остальные — свой клон ([find_clone]). История до переезда — в
+    замороженном репозитории: её смотрит activity.py по [find_clone]."""
+    overrides = overrides or {}
     if repo.dir:
         host = next((r for r in repos if r.place == "control"), None)
         if host is not None:
-            return find_clone(root, host) / repo.dir
+            return (overrides.get(host.name) or find_clone(root, host)) / repo.dir
     return find_clone(root, repo)
 
 
@@ -342,7 +343,7 @@ def main(argv: list[str] | None = None) -> int:
             return 2
 
     for r in repos:
-        root = overrides.get(r.name) or locate(a.root, r, repos)
+        root = overrides.get(r.name) or locate(a.root, r, repos, overrides)
         if is_clone(root):
             r.root = root.resolve()
             r.head = git(r.root, "rev-parse", "--short", "HEAD").strip()

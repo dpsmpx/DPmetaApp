@@ -182,6 +182,22 @@ class XrefTest(unittest.TestCase):
         self.assertNotIn("| Alpha | нет клона |", report)
         self.assertIn("Ссылок распознано: 4; нет такого номера: 1.", report)
 
+    def test_control_clone_by_key_serves_subsystems(self):
+        # Клон строки управления не под --root, а по ключу --clone: подсистемы — из него.
+        host = self.root / "elsewhere" / "Host"
+        host.mkdir(parents=True)
+        subprocess.run(["git", "init", "-q", str(host)], check=True)
+        (self.root / "alpha" / ".git").rename(self.root / "alpha-git")
+        (self.root / "alpha").rename(host / "alpha")
+        subprocess.run(["git", "-C", str(host), "add", "-A"], check=True)
+        self.registry.write_text(REGISTRY.replace('clone = "alpha"', 'clone = "alpha"\ndir = "alpha"')
+                                 + '\n[[repo]]\nname = "Host"\nslug = "o/Host"\nclone = "host"\nplace = "control"\n',
+                                 encoding="utf-8")
+        code, report = self.run_xref("--clone", f"Host={host}")
+        self.assertEqual(code, 0)
+        self.assertNotIn("| Alpha | нет клона |", report)
+        self.assertIn("Ссылок распознано: 4; нет такого номера: 1.", report)
+
     def test_dir_and_periphery_are_checked(self):
         self.registry.write_text(REGISTRY.replace('clone = "alpha"', 'clone = "alpha"\nplace = "periphery"'), encoding="utf-8")
         self.assertEqual(xref.load_registry(self.registry)[0].place, "periphery")

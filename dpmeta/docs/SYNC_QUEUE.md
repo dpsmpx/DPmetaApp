@@ -57,7 +57,7 @@ DPvisualisation, DPmeta и DPprofile, как прежде DP_AI_Orcestrator, —
 | SQ-27 | DPmetaApp | ТЗ и журнал решений — только в невлитой ветке, а на них ссылаются | низкий | решено: влито в `main` DPmetaApp — PR #2 (`51fa0c7`, 11 октября 2026) |
 | SQ-28 | DPmetaApp | пункты о манифесте в TODO и контракте интеграции решены (M-11); «публичный» при закрытом — ответ автора записан там | средний (лицензия, границы) | сделано проходом 25.10: контракт интеграции и `TODO.md` подсистемы «AI» сведены с C-13 |
 | SQ-29 | DP_AI_Orcestrator | своё Android-приложение (`android/`, README), а по слову автора — в составе DPmetaApp | средний (архитектура) | решено автором: `DPmetaApp:D-28`, с 4.11 — `DPmetaApp:D-53`: приложение DPmetaApp — `:shell` корня, «AI» — вкладкой, `dpai/android` — библиотека |
-| SQ-30 | DP_AI_Orcestrator, DPpass | репозиторий заморожен (`DPmetaApp:D-28`, `DPmetaApp:D-30`), а сам об этом не говорит | низкий | частично: DP_AI_Orcestrator и DPpass архивированы; SocialMediaImage, DPvisualisation, DPmeta, DPprofile (с надписью) и DPmonetization (`DPmetaApp:D-58`) — архивирует автор; на 4.11 не архивированы |
+| SQ-30 | DP_AI_Orcestrator, DPpass | репозиторий заморожен (`DPmetaApp:D-28`, `DPmetaApp:D-30`), а сам об этом не говорит | низкий | частично: DP_AI_Orcestrator и DPpass архивированы; SocialMediaImage, DPvisualisation, DPmeta, DPprofile (с надписью) — архивирует автор; на 4.11 не архивированы |
 | SQ-31 | DPvisualisation, SocialMediaImage | узлы и факты: DP_AI_Orcestrator ещё «войдёт» в DPmetaApp, его приложение — отдельно | низкий (документы), публичный (сайт) | решено автором (M-16, `DPvisualisation:D-27`, `SocialMediaImage:Д46`): узел — модель DPvisualisation; счёт и факты сайта — сессия SocialMediaImage |
 | SQ-32 | DPlang | README: v0.2 «не начата», а по ROADMAP сделаны шаги 1–5; «Р0–Р60» при Р61 | низкий | открыт — активная разработка |
 | SQ-33 | DPvisualisation | модель отстала: стадии DP-Verify, DPlang, анализа рынка; мелочи ТЗ и форматов | низкий; публичный — комплект сайта | открыт — сессия DPvisualisation, вместе с моделью под переезды (`DPvisualisation:D-26`) |
@@ -96,7 +96,7 @@ DPvisualisation, DPmeta и DPprofile, как прежде DP_AI_Orcestrator, —
   обновлены (на `d66fb79` были `docs/PROCESS.md:303`,
   `docs/direction/DECISIONS.md:452` и `:475`).
 - **Проход 4 ноября 2026** (`80fd8a64`): `dpsmpx/C-` — `CLAUDE.md:48` и ещё
-  8 строк в 6 файлах (`docs/reports/2026-11-04-xref.md`, «Прежние имена»).
+  8 строк в 5 файлах (`docs/reports/2026-11-04-xref.md`, «Прежние имена»).
 - **Состояние:** открыт.
 
 ### SQ-02 — Значок сборки ведёт на Actions прежнего адреса
@@ -240,8 +240,9 @@ DPvisualisation, DPmeta и DPprofile, как прежде DP_AI_Orcestrator, —
   Р66, ворота v0.2 пройдены 19 октября 2026 (`DPlang:ROADMAP/ROADMAP.md`,
   аудит `DPlang:docs/audits/2026-10-17-v0.2-audit.md`).
 - **Проход 4 ноября 2026** (`0c40ca0`): README по-прежнему «v0.2 —
-  native-срез | следующая, не начата» (`README.md:21`); DPlang — отдельный
-  проект до завершения (`DPmetaApp:D-58`), правка — сессией DPlang.
+  native-срез | следующая, не начата» (`README.md:21`) и «Р0–Р71», а журнал
+  дошёл до Р77; DPlang — отдельный проект до завершения
+  (`DPmetaApp:D-58`), правка — сессией DPlang.
 - **Состояние:** открыт — активная разработка.
 
 ## DP-Verify
@@ -934,11 +935,11 @@ Code, управление — из Android-приложения (`DP_AI_Orcestr
 - **Проход 4 ноября 2026** (GitHub REST, `archived`): DP_AI_Orcestrator и
   DPpass — `true`; SocialMediaImage, DPvisualisation, DPmeta, DPprofile —
   `false`; их последние коммиты — надписи об архиве, работы в них нет
-  (`docs/reports/2026-11-04-activity.md`). DPmonetization — в архив по
-  `DPmetaApp:D-58`, тоже `false`.
+  (`docs/reports/2026-11-04-activity.md`). DPmonetization не заморожен —
+  его архив ведёт SQ-22.
 - **Состояние:** частично: DP_AI_Orcestrator и DPpass архивированы;
-  SocialMediaImage, DPvisualisation, DPmeta, DPprofile и DPmonetization —
-  архивирует автор (`DPmetaApp:TODO.md`).
+  SocialMediaImage, DPvisualisation, DPmeta, DPprofile — архивирует автор
+  (`DPmetaApp:TODO.md`).
 
 ## DPmetaApp
 

@@ -229,7 +229,7 @@ def main(argv: list[str] | None = None) -> int:
         overrides[name] = Path(path)
     roots = {}
     for r in repos:
-        root = overrides.get(r.name) or xref.locate(a.root, r, repos)
+        root = overrides.get(r.name) or xref.locate(a.root, r, repos, overrides)
         roots[r.name] = root.resolve() if xref.is_clone(root) else None
     try:
         text = build(repos, roots, queue_text, a.paths)

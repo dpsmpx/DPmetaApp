@@ -95,15 +95,25 @@ Andors-Love — в текущей системе (`DPvisualisation:D-23`,
 | репозиторий | что это | связи |
 |---|---|---|
 | `dpsmpx/DPvisualisation` (закрытый, заморожен) | обеспечение системы: модель экосистемы — узлы, потоки и активность по истории git клонов (`DPvisualisation:D-01`); собирает данные в схему и ничем не управляет, к сайту не обращается (`DPvisualisation:D-19`); лицензия — «все права защищены» (`DPvisualisation:D-17`). С 25 октября 2026 — подсистема `DPmetaApp:dpvisualisation/` (`DPvisualisation:D-25`): версия 1.0.0, этапы 5 из 5 (`DPmetaApp:dpvisualisation/README.md`); модель под переезды — `DPvisualisation:D-26` | читает реестр и контракты DPmeta (C-11) и клоны; отдаёт комплект схемы SocialMediaImage — на сайте полустатичная схема, обновляется при каждой выгрузке (C-12, `DPvisualisation:D-18`); по плану — слой визуализации DPmetaApp |
-| `dpsmpx/DPmonetization` (закрытый; с 4 ноября 2026 — `archive`, `DPmetaApp:D-58`: стадии и шлюзы готовности — метриками DPmetaApp) | с 5 октября 2026: «Strategic Project Intelligence» — анализ портфеля проектов: доказательства, стадии и шлюзы готовности, ценность, монетизация, решения (`DPmonetization:tools/dpmon/__init__.py`). В `main` — прерванный каркас ядра без тестов; README из одного заголовка, нет `CLAUDE.md` и журнала решений (SQ-22) | связей пока нет. **План** (описание PR #1 DPmonetization): реестр проектов по фактам DPmeta, зависимости по C-01, C-03, C-08, C-09, адаптеры к `report.json` DP-Verify и к `DecisionReport` DP_game_market_analytic_system, экспорт для сайта только одобренного автором |
+
+### Периферия (`periphery`)
+
+Текущая система вне ядра и поддерживающего слоя — слово автора
+25 октября 2026 (M-16); в реестре — с 4 ноября 2026 (SQ-36).
+
+| репозиторий | что это | связи |
+|---|---|---|
+| `dpsmpx/Andors-Love` (публичный) | пошаговая RPG на C++ (терминал и SDL), с 2023 года; работа снова идёт с 25 октября 2026 (PR #16) | владелец формата карт `data/maps/*.map` (C-08) |
+| `dpsmpx/TrueJointTileMaker` (публичный) | редактор пиксельной графики и карт на PascalABC.NET; с 5 октября 2026 переносится на C++ (`TrueJointTileMaker:docs/porting.md`), 25 октября — этап 10, версия 1.6 (PR #12) | читает и пишет карты Andors-Love, берёт имена его тайлов; тесты переноса — на клоне игры (C-08) |
+| `dpsmpx/AIM_Trainer_pas` (DP AIM Trainer) | тренажёр реакции и меткости на C++20 и SDL3 для Windows и Linux; Pascal-версия — в архиве (`DP AIM Trainer:README.md`) | связей с другими репозиториями нет; узел схемы — `DPvisualisation:D-23` |
+| `dpsmpx/DP_Clock` | своё Android-приложение часов: будильники, таймеры, мировые часы, виджеты, свои и постоянные задачи (`DP_Clock:README.md`); DP_Repeated_Tasks — его часть (`DPmetaApp:D-55`) | связей с другими репозиториями нет; узел схемы — `DPvisualisation:D-23` |
 
 ### Профиль и архив
 
 | репозиторий | место | что это | связи |
 |---|---|---|---|
 | `dpsmpx/dpsmpx` (публичный) | — (не проект, C-07) | README страницы профиля GitHub | читают DPprofile (`DPprofile:docs/sources/REGISTRY.md`, S-04) и SocialMediaImage (`SocialMediaImage:IC-04`…`SocialMediaImage:IC-06`); правит только автор (C-07) |
-| `dpsmpx/Andors-Love` (публичный) | периферия (M-16, с 4 ноября 2026 — и в реестре) | пошаговая RPG на C++ (терминал и SDL), с 2023 года; работа снова идёт с 25 октября 2026 (PR #16) | владелец формата карт `data/maps/*.map` (C-08) |
-| `dpsmpx/TrueJointTileMaker` (публичный) | периферия (M-16, с 4 ноября 2026 — и в реестре) | редактор пиксельной графики и карт на PascalABC.NET; с 5 октября 2026 переносится на C++ (`TrueJointTileMaker:docs/porting.md`), 25 октября — этап 10, версия 1.6 (PR #12) | читает и пишет карты Andors-Love, берёт имена его тайлов; тесты переноса — на клоне игры (C-08) |
+| `dpsmpx/DPmonetization` (закрытый) | архив (`DPmetaApp:D-58`, 4 ноября 2026) | с 5 октября 2026: «Strategic Project Intelligence» — анализ портфеля проектов; прерванный каркас ядра без тестов (SQ-22). Стадии и шлюзы готовности — метриками DPmetaApp, второй системы портфеля нет | связей нет |
 | DP_Ecosystem, DP_Repeated_Tasks, PixRogue, tanks_blitz_stat_chat и другие публичные | архив | ранние и малые проекты; DP_Ecosystem и DP_Repeated_Tasks начаты после Galdhold, но автор их убрал; DP_Repeated_Tasks — часть DP_Clock (`DPmetaApp:D-55`, 4 ноября 2026) | источники DPprofile (`DPprofile:D-13`) |
 | форки (`andors-trail-load`, `gravitydefied`, `CreepyCodeCollection`, `pascalabcnet`) | — | чужие проекты | вне предмета, кроме коммитов автора (`DPprofile:D-13`) |
 | репозитории 2023–2024 (`day_plan`, `rnd_day` и другие) | архив | старые проекты | не упоминаются (`SocialMediaImage:docs/identity/PROJECT_MAP.md`) |
@@ -143,7 +153,7 @@ Andors-Love — в текущей системе (`DPvisualisation:D-23`,
   DPmeta ── tools/manifest.py: проекты, места, открытые SQ ──► DPmetaApp: подсистема «AI» dpai/ (прежде DP_AI_Orcestrator)
 
 Без связей, кроме счёта прогресса (C-10): DP_game_market_analytic_system
-Пока без связей (план — §2): DPmonetization
+DPmonetization — в архиве (`DPmetaApp:D-58`): связей нет.
 
 С 25 октября 2026 обе стороны C-10…C-13 — подсистемы DPmetaApp
 (socialmediaimage/, dpvisualisation/, dpmeta/, dpai/): связи остаются

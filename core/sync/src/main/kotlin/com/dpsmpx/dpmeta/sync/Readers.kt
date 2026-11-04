@@ -81,7 +81,10 @@ class DirectoryReader(private val root: Path, private val hostDir: String = "dpm
     override val source: ObservationSource = ObservationSource.DIRECTORY
     private val json = JsonParser()
 
-    private fun dir(project: ProjectEntry): Path = project.dir?.let { root.resolve(hostDir).resolve(it) }
+    /** Клон DPmetaApp: `hostDir` или имя репозитория — сессии кладут клоны и так, и так. */
+    private val host: Path by lazy { listOf(hostDir, "DPmetaApp").map(root::resolve).firstOrNull(Files::isDirectory) ?: root.resolve(hostDir) }
+
+    private fun dir(project: ProjectEntry): Path = project.dir?.let { host.resolve(it) }
         ?: root.resolve(project.clone ?: project.name)
 
     override fun hasActivity(project: ProjectEntry): Boolean = Files.isRegularFile(dir(project).resolve(PULLS))

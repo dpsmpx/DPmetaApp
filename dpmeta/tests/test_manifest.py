@@ -192,6 +192,26 @@ class ManifestTest(unittest.TestCase):
         self.assertEqual((alpha["state"]["branch"], alpha["state"]["updated"]), ("main", "2026-10-08"))
         self.assertEqual(alpha["documents"], ["CLAUDE.md"])
 
+    def test_subsystem_dir_is_read_from_control_clone(self):
+        # Строка подсистемы с `dir` (M-16): документы — из каталога в клоне строки
+        # управления, без ключа подсистемы; клон строки управления — и по ключу.
+        origin = Path(self.tmp.name) / "origin-host"
+        origin.mkdir()
+        git(origin, "init", "-q", "-b", "main")
+        (origin / "sub").mkdir()
+        commit(origin, "sub/CLAUDE.md", "# S\n", "2026-10-08T10:00:00+00:00")
+        commit(origin, "other.txt", "o\n", "2026-10-09T10:00:00+00:00")
+        elsewhere = Path(self.tmp.name) / "elsewhere"
+        elsewhere.mkdir()
+        git(elsewhere, "clone", "-q", str(origin), "Host")
+        self.registry.write_text(REGISTRY.replace('clone = "alpha"', 'clone = "alpha"\ndir = "sub"')
+                                 + '\n[[repo]]\nname = "Host"\nslug = "o/Host"\nclone = "host"\nplace = "control"\n',
+                                 encoding="utf-8")
+        _, text = self.run_tool("--clone", f"Host={elsewhere / 'Host'}")
+        alpha = assert_reader_accepts(self, text)["projects"][0]
+        self.assertEqual(alpha["documents"], ["CLAUDE.md"], "документы — из каталога подсистемы, а не из клона alpha")
+        self.assertEqual((alpha["state"]["branch"], alpha["state"]["updated"]), ("main", "2026-10-08"))
+
     def test_suggestions_are_what_a_session_can_do(self):
         # M-11: без RISK-NN, без «за автором», не «открытый вопрос», только с «Предложением»
         _, text = self.run_tool()

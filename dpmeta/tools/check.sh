@@ -38,17 +38,12 @@ repos = xref.load_registry(pathlib.Path(sys.argv[1]) / "ecosystem.toml")
 print(sum((xref.find_clone(root, r) / ".git").exists() for r in repos if r.name != "DPmeta"))
 EOF
 )
-# Подсистемы DPmetaApp (M-14): пока реестр ведёт их в замороженные
-# репозитории (SQ-36), их журналы — в каталогах DPmetaApp рядом с DPmeta
-# (docs/PROCESS.md, раздел 1).
+# Подсистемы DPmetaApp (M-14, M-16): строки реестра несут `dir`, их файлы — в каталогах
+# DPmetaApp, в котором лежит DPmeta; xref берёт их по ключу строки управления.
 APP="$(dirname "$ROOT")"
 SUBS=()
-if [ -d "$APP/dpai" ] && git -C "$APP" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+if git -C "$APP" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   SUBS+=(--clone "DPmetaApp=$APP")
-  for pair in DP_AI_Orcestrator=dpai DPpass=dppass SocialMediaImage=socialmediaimage \
-              DPvisualisation=dpvisualisation DPprofile=dpprofile; do
-    [ -d "$APP/${pair#*=}" ] && SUBS+=(--clone "${pair%%=*}=$APP/${pair#*=}")
-  done
 fi
 
 if [ "${others:-0}" -gt 0 ]; then
