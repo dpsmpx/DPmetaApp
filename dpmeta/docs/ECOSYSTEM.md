@@ -104,7 +104,7 @@ Andors-Love — в текущей системе (`DPvisualisation:D-23`,
 | `dpsmpx/dpsmpx` (публичный) | — (не проект, C-07) | README страницы профиля GitHub | читают DPprofile (`DPprofile:docs/sources/REGISTRY.md`, S-04) и SocialMediaImage (`SocialMediaImage:IC-04`…`SocialMediaImage:IC-06`); правит только автор (C-07) |
 | `dpsmpx/Andors-Love` (публичный) | периферия (M-16, с 4 ноября 2026 — и в реестре) | пошаговая RPG на C++ (терминал и SDL), с 2023 года; работа снова идёт с 25 октября 2026 (PR #16) | владелец формата карт `data/maps/*.map` (C-08) |
 | `dpsmpx/TrueJointTileMaker` (публичный) | периферия (M-16, с 4 ноября 2026 — и в реестре) | редактор пиксельной графики и карт на PascalABC.NET; с 5 октября 2026 переносится на C++ (`TrueJointTileMaker:docs/porting.md`), 25 октября — этап 10, версия 1.6 (PR #12) | читает и пишет карты Andors-Love, берёт имена его тайлов; тесты переноса — на клоне игры (C-08) |
-| DP_Ecosystem, DP_Repeated_Tasks, PixRogue, tanks_blitz_stat_chat и другие публичные | архив | ранние и малые проекты; DP_Ecosystem и DP_Repeated_Tasks начаты после Galdhold, но автор их убрал | источники DPprofile (`DPprofile:D-13`) |
+| DP_Ecosystem, DP_Repeated_Tasks, PixRogue, tanks_blitz_stat_chat и другие публичные | архив | ранние и малые проекты; DP_Ecosystem и DP_Repeated_Tasks начаты после Galdhold, но автор их убрал; DP_Repeated_Tasks — часть DP_Clock (`DPmetaApp:D-55`, 4 ноября 2026) | источники DPprofile (`DPprofile:D-13`) |
 | форки (`andors-trail-load`, `gravitydefied`, `CreepyCodeCollection`, `pascalabcnet`) | — | чужие проекты | вне предмета, кроме коммитов автора (`DPprofile:D-13`) |
 | репозитории 2023–2024 (`day_plan`, `rnd_day` и другие) | архив | старые проекты | не упоминаются (`SocialMediaImage:docs/identity/PROJECT_MAP.md`) |
 
