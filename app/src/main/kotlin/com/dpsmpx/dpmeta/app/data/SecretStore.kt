@@ -2,6 +2,7 @@ package com.dpsmpx.dpmeta.app.data
 
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
+import android.security.keystore.UserNotAuthenticatedException
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.Secret
 import com.dpsmpx.dpai.core.result.Outcome
@@ -47,6 +48,8 @@ class SecretStore(private val vfs: Vfs, private val path: String = "github.token
         vfs.mkdirs("")
         vfs.write(path, sealed)
         Outcome.success(Unit)
+    } catch (e: UserNotAuthenticatedException) {
+        Outcome.failure(DiagCode.DEVICE_AUTH_REQUIRED, "нужен вход по PIN или биометрии", path)
     } catch (e: GeneralSecurityException) {
         Outcome.failure(DiagCode.STORAGE_IO_FAILED, "секрет не зашифрован: ${e.javaClass.simpleName}", path)
     } catch (e: IOException) {
@@ -59,10 +62,16 @@ class SecretStore(private val vfs: Vfs, private val path: String = "github.token
         return try {
             val c = Cipher.getInstance(TRANSFORMATION).apply { init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, sealed, 0, IV)) }
             Outcome.success(Secret(c.doFinal(sealed, IV, sealed.size - IV).toString(Charsets.UTF_8)))
+        } catch (e: UserNotAuthenticatedException) {
+            // Вход был раньше [AUTH_SECONDS] — секрет цел, нужен новый вход (D-59): не «испорчен».
+            Outcome.failure(DiagCode.DEVICE_AUTH_REQUIRED, "нужен вход по PIN или биометрии", path)
         } catch (e: GeneralSecurityException) {
             Outcome.failure(DiagCode.STORAGE_CORRUPTED, "секрет не расшифрован: ${e.javaClass.simpleName}", path)
         }
     }
+
+    /** Секрет сохранён — без расшифровки и без входа: «есть ли токен» не спрашивает PIN. */
+    fun exists(): Boolean = vfs.exists(path)
 
     fun clear() {
         if (vfs.exists(path)) vfs.delete(path)

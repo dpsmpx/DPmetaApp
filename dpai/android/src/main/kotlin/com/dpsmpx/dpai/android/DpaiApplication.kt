@@ -8,8 +8,10 @@ import com.dpsmpx.dpai.core.diagnostics.Redactor
  * (ревью 8 октября 2026, A-36). Из `Activity.onCreate` она не ловила
  * падения службы контроллера и приёмника запросов, запущенных без окна, а
  * каждое пересоздание окна добавляло ещё один обработчик в цепочку.
+ * Открыт для наследования: приложение DPmetaApp добавляет вход на все окна
+ * (DPmetaApp:D-59, D-103), отдельная сборка «AI» — без него.
  */
-class DpaiApplication : Application() {
+open class DpaiApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         CrashRecord.install(filesDir)

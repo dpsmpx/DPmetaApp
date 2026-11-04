@@ -42,7 +42,33 @@ open class PultActivity : ComponentActivity() {
         pool = Executors.newFixedThreadPool(THREADS)
         repo = PultRepository(NioVfs(filesDir.toPath().resolve("dpmeta")), Clock.SYSTEM, pool)
         secrets = SecretStore(NioVfs(noBackupFilesDir.toPath().resolve("dpmeta")))
-        Lock.ask(this, onOpen = ::open, onDenied = { finish() })
+        // Блокировка всего приложения (D-59) уже закрыла окно экраном входа — своей не нужно.
+        if (AppLock.installed) open() else Lock.ask(this, "Вход в пульт", pinOnly = false, onOpen = ::open, onDenied = { finish() })
+    }
+
+    /**
+     * Токен для запроса: ключ Keystore открыт 5 минут после входа (T-01); закрыт — вход здесь же, и
+     * запрос продолжается (D-59). Нет токена или отказ от входа — `null` и причина в [status].
+     */
+    private fun withToken(done: (Secret?) -> Unit) {
+        when (val r = secrets.load()) {
+            is Outcome.Success -> r.value?.let(done) ?: noToken("нет токена GitHub: вкладка «Настройки»", done)
+            is Outcome.Failure -> if (r.diagnostics.first().code == DiagCode.DEVICE_AUTH_REQUIRED) {
+                Lock.ask(this, "Открыть токен GitHub", pinOnly = false, onOpen = {
+                    when (val again = secrets.load()) {
+                        is Outcome.Success -> again.value?.let(done) ?: noToken("нет токена GitHub", done)
+                        is Outcome.Failure -> noToken("токен не открыт: ${again.diagnostics.first().message}", done)
+                    }
+                }, onDenied = { noToken("токен не открыт: нет входа", done) })
+            } else {
+                noToken("токен не открыт: ${r.diagnostics.first().message}", done)
+            }
+        }
+    }
+
+    private fun noToken(why: String, done: (Secret?) -> Unit) {
+        view.value = view.value.copy(status = why.replaceFirstChar { it.uppercase() } + ".")
+        done(null)
     }
 
     /** Вход в подсистему «AI» (D-53); нет — вкладки «AI» нет: пульт сам о подсистеме не знает. */
@@ -55,7 +81,7 @@ open class PultActivity : ComponentActivity() {
 
     private fun open() {
         val state = (repo.state() as? Outcome.Success)?.value
-        val hasToken = (secrets.load() as? Outcome.Success)?.value != null
+        val hasToken = secrets.exists()
         val feed = (repo.feed() as? Outcome.Success)?.value.orEmpty()
         view.value = PultView(state, "", hasToken, busy = false, feed = feed, names = repo.names())
         setContent {
@@ -67,14 +93,16 @@ open class PultActivity : ComponentActivity() {
 
     /** Каталог и файл — в фоне, итог — в главном потоке; без токена — понятный отказ. */
     private val loader = object : Loader {
-        private fun <T> run(work: (Secret) -> Outcome<T>, done: (Outcome<T>) -> Unit) {
-            val token = (secrets.load() as? Outcome.Success)?.value
-                ?: return done(Outcome.failure(DiagCode.GITHUB_AUTH_EXPIRED, "нет токена GitHub или нужен новый вход", "github"))
-            pool.execute {
-                val r = work(token)
-                runOnUiThread {
-                    done(r)
-                    view.value = view.value.copy(names = repo.names())
+        private fun <T> run(work: (Secret) -> Outcome<T>, done: (Outcome<T>) -> Unit) = withToken { token ->
+            if (token == null) {
+                done(Outcome.failure(DiagCode.GITHUB_AUTH_EXPIRED, "нет токена GitHub или нужен новый вход", "github"))
+            } else {
+                pool.execute {
+                    val r = work(token)
+                    runOnUiThread {
+                        done(r)
+                        view.value = view.value.copy(names = repo.names())
+                    }
                 }
             }
         }
@@ -93,7 +121,16 @@ open class PultActivity : ComponentActivity() {
 
     private fun saveToken(text: String) {
         val r = secrets.save(Secret(text))
-        view.value = view.value.copy(hasToken = r is Outcome.Success, status = if (r is Outcome.Success) "Токен сохранён." else "Токен не сохранён: ${r.diagnostics.first().message}")
+        if (r is Outcome.Failure && r.diagnostics.first().code == DiagCode.DEVICE_AUTH_REQUIRED) {
+            // Ключ закрыт (вход был давно) — вход и повтор (D-59).
+            Lock.ask(this, "Сохранить токен GitHub", pinOnly = false, onOpen = { saved(secrets.save(Secret(text))) }, onDenied = { saved(r) })
+        } else {
+            saved(r)
+        }
+    }
+
+    private fun saved(r: Outcome<Unit>) {
+        view.value = view.value.copy(hasToken = r is Outcome.Success || secrets.exists(), status = if (r is Outcome.Success) "Токен сохранён." else "Токен не сохранён: ${r.diagnostics.first().message}")
     }
 
     private fun forgetToken() {
@@ -101,8 +138,9 @@ open class PultActivity : ComponentActivity() {
         view.value = view.value.copy(hasToken = false, status = "Токен удалён.")
     }
 
-    private fun sync() {
-        val token = (secrets.load() as? Outcome.Success)?.value ?: return
+    private fun sync() = withToken { token -> if (token != null) sync(token) }
+
+    private fun sync(token: Secret) {
         view.value = view.value.copy(busy = true, status = "")
         pool.execute {
             val r = repo.sync(token)

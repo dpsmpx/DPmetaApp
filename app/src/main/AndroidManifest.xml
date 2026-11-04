@@ -10,5 +10,10 @@
         <activity
             android:name="com.dpsmpx.dpmeta.app.PultActivity"
             android:exported="false" />
+        <!-- Экран входа на всё приложение (D-59): только изнутри, поверх любого окна. -->
+        <activity
+            android:name="com.dpsmpx.dpmeta.app.LockActivity"
+            android:exported="false"
+            android:excludeFromRecents="true" />
     </application>
 </manifest>

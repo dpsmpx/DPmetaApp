@@ -9,7 +9,7 @@
 
 | | Угроза | Защита в коде | Где | Проверка |
 |---|---|---|---|---|
-| T-01 | Кража или потеря телефона | токен GitHub — под ключом Android Keystore (AES-256-GCM); ключ работает только после входа биометрией или PIN устройства, 5 минут; вход в пульт — `BiometricPrompt` (F-45) | `app/…/data/SecretStore.kt`, `app/…/Lock.kt` | на устройстве (`TODO.md`, «На устройстве») |
+| T-01 | Кража или потеря телефона | вход по PIN устройства на всё приложение — пульт и «AI», в том числе из уведомлений и «недавних»: раз за запуск процесса и после часа в фоне; отказ закрывает окна, служба «AI» и уведомления работают (D-59); токен GitHub — под ключом Android Keystore (AES-256-GCM), ключ открыт 5 минут после входа, закрыт — пульт просит вход, когда токен нужен | `app/…/AppLock.kt`, `app/…/LockPolicy.kt`, `app/…/LockActivity.kt`, `shell/…/DpmetaApplication.kt`, `app/…/data/SecretStore.kt` | `LockPolicyTest`; на устройстве (`TODO.md`, «На устройстве») |
 | T-02 | Утечка секрета через журнал, снимок экрана, резервную копию | тип `Secret` (печатается как `<redacted>`); раскрытие — в одном месте `:core:net` (проверка `modules.root`); шифротекст — в `noBackupFilesDir`; окно пульта — `FLAG_SECURE`; ошибка запроса не несёт значения заголовка | `core/net/…/Auth.kt`, `core/net/…/JdkTransport.kt`, `UrlTransport.kt`, `app/…/PultActivity.kt` | `NetTest.badHeaderIsRefusedWithoutItsValue`, `GitHubTest.deviceFlowStepsWithoutWaiting`, `tools/check` (`modules.root`) |
 | T-03 | Вредоносное приложение на том же телефоне | из активностей экспортирован только вход лаунчера — `DpmetaActivity` (пульт за входом биометрией или PIN, F-45); экран «AI» и `PultActivity` не экспортируются, вход «AI» из лаунчера снят; «AI» открывается из своей вкладки явным интентом (D-53); ещё наружу — поставщик диска «AI» `AppDiskProvider`, только под `MANAGE_DOCUMENTS` системы (`DP_AI_Orcestrator:D-96`) | `shell/src/main/AndroidManifest.xml`, `app/src/main/AndroidManifest.xml` | Lint; манифест APK (`aapt2 dump badging`) |
 | T-04 | Подмена ответов сети | только https с системными корнями, своих `TrustManager` нет; переадресации выключены (адрес не уходит мимо списка); http — только сайт и без секрета | `core/net/…/Net.kt` (`AllowList`) | `NetTest.refusesHostsNotInListAndPlainHttpWithSecrets` |
@@ -19,13 +19,6 @@
 | T-11 | Обход правил выгрузки сайта через приложение | выгрузки сайта в коде приложения нет — ни команды, ни адреса, ни ключа хостинга; выгружает только подсистема SocialMediaImage (D-40, D-48); изменяющих вызовов Admin API, скрейпинга и автоматизации браузера нет (D-08, D-20) | весь код приложения | `tools/check` (`code.forbidden`; A-06, A-07) |
 
 ## Ещё нет
-
-- **Вход в «AI» мимо блокировки пульта** (F-45, T-01; проверка ветки
-  4 ноября 2026). В приложении `:shell` экран «AI» открывается и не из
-  пульта: из своих уведомлений (`Notifier`, `ControllerService`,
-  `RequestPresenter` подсистемы) и из «недавних»; блокировки и
-  `FLAG_SECURE` у него нет — так было и в отдельной сборке «AI». Нужна ли
-  блокировка всему приложению — `TODO.md`, «За автором».
 
 - T-05, T-06, T-17 — действия и чат Claude: этап 5 (`:core:actions`).
 - T-08 — экран блокировки и виджет: этап 7.
