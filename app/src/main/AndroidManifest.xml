@@ -13,7 +13,7 @@
         <!-- Экран входа на всё приложение (D-59): только изнутри, поверх любого окна. -->
         <activity
             android:name="com.dpsmpx.dpmeta.app.LockActivity"
-            android:exported="false"
-            android:excludeFromRecents="true" />
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density|fontScale|locale|layoutDirection"
+            android:exported="false" />
     </application>
 </manifest>

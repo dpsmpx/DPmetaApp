@@ -51,20 +51,31 @@ open class PultActivity : ComponentActivity() {
      * запрос продолжается (D-59). Нет токена или отказ от входа — `null` и причина в [status].
      */
     private fun withToken(done: (Secret?) -> Unit) {
+        // Окно входа уже открыто другим запросом — ждать его итога, а не открывать второе.
+        waiting?.let { it += done; return }
         when (val r = secrets.load()) {
             is Outcome.Success -> r.value?.let(done) ?: noToken("нет токена GitHub: вкладка «Настройки»", done)
             is Outcome.Failure -> if (r.diagnostics.first().code == DiagCode.DEVICE_AUTH_REQUIRED) {
+                val queue = mutableListOf(done)
+                waiting = queue
+                fun finish(token: Secret?, why: String) {
+                    waiting = null
+                    queue.forEach { if (token != null) it(token) else noToken(why, it) }
+                }
                 Lock.ask(this, "Открыть токен GitHub", pinOnly = false, onOpen = {
                     when (val again = secrets.load()) {
-                        is Outcome.Success -> again.value?.let(done) ?: noToken("нет токена GitHub", done)
-                        is Outcome.Failure -> noToken("токен не открыт: ${again.diagnostics.first().message}", done)
+                        is Outcome.Success -> finish(again.value, "нет токена GitHub")
+                        is Outcome.Failure -> finish(null, "токен не открыт: ${again.diagnostics.first().message}")
                     }
-                }, onDenied = { noToken("токен не открыт: нет входа", done) })
+                }, onDenied = { finish(null, "токен не открыт: нет входа") })
             } else {
                 noToken("токен не открыт: ${r.diagnostics.first().message}", done)
             }
         }
     }
+
+    /** Запросы, ждущие окна входа для токена (D-59): одно окно на всех. */
+    private var waiting: MutableList<(Secret?) -> Unit>? = null
 
     private fun noToken(why: String, done: (Secret?) -> Unit) {
         view.value = view.value.copy(status = why.replaceFirstChar { it.uppercase() } + ".")
@@ -134,7 +145,7 @@ open class PultActivity : ComponentActivity() {
     }
 
     private fun forgetToken() {
-        secrets.clear()
+        secrets.forget()
         view.value = view.value.copy(hasToken = false, status = "Токен удалён.")
     }
 

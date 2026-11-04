@@ -3,55 +3,71 @@ package com.dpsmpx.dpmeta.app
 import android.app.Activity
 import android.app.Application
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
-import com.dpsmpx.dpai.core.clock.Clock
+import android.os.SystemClock
 
 /**
  * Вход на всё приложение (D-59): ставит его приложение `:shell` в своём
- * `Application`. Любое окно — пульт, «AI», в том числе из уведомлений и
- * «недавних» — до входа закрыто экраном [LockActivity]; когда входить,
- * решает [LockPolicy]. Службы и уведомления блокировка не трогает: она
- * смотрит только на окна.
+ * `Application`. Пока [LockPolicy] закрыта, любое окно — пульт, «AI», в том
+ * числе из уведомлений (в своей задаче) и «недавних» — невидимо и при каждом
+ * показе закрыто экраном [LockActivity]: залипающего «вход уже спрошен» нет.
+ * Отказ закрывает все окна приложения во всех задачах. Службы и уведомления
+ * блокировка не трогает: она смотрит только на окна.
  */
 object AppLock {
     private var policy: LockPolicy? = null
     private var visible = 0
-    private var prompting = false
+    private val windows = LinkedHashSet<Activity>()
 
     /** Блокировка всего приложения включена — у окон своей нет. */
     val installed: Boolean get() = policy != null
 
-    fun install(app: Application, clock: Clock = Clock.SYSTEM) {
+    fun install(app: Application, elapsedMs: () -> Long = SystemClock::elapsedRealtime) {
         if (policy != null) return
-        policy = LockPolicy(clock)
+        policy = LockPolicy(elapsedMs)
         app.registerActivityLifecycleCallbacks(callbacks)
     }
 
+    /** Вход удался: экраны входа закрываются, под ними — прерванные окна. */
     internal fun unlocked() {
         policy?.unlocked()
-        prompting = false
+        windows.filterIsInstance<LockActivity>().forEach { it.finish() }
     }
 
+    /** Отказ от входа: закрыть все окна приложения во всех задачах; службы работают. */
     internal fun denied() {
-        prompting = false
+        windows.toList().forEach { it.finishAndRemoveTask() }
     }
 
-    /** Окно закрыть экраном входа — ещё до первого кадра ([Activity.onCreate]) или при возвращении из фона. */
-    private fun guard(a: Activity) {
-        val p = policy ?: return
-        if (a is LockActivity || !p.locked || prompting) return
-        prompting = true
-        a.startActivity(Intent(a, LockActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION))
+    private fun locked(a: Activity): Boolean = a !is LockActivity && policy?.locked == true
+
+    private fun hide(a: Activity, hidden: Boolean) {
+        a.window?.decorView?.alpha = if (hidden) 0f else 1f
     }
 
     private val callbacks = object : Application.ActivityLifecycleCallbacks {
-        override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) = guard(activity)
+        override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {
+            windows += activity
+            // «Недавние» без снимка окна (API 33+): до входа там нечего видеть, а снимки экрана — можно.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && activity !is LockActivity) activity.setRecentsScreenshotEnabled(false)
+        }
 
         override fun onActivityStarted(activity: Activity) {
             if (visible++ == 0) policy?.foreground()
+            // До первого кадра: закрытое окно невидимо, пока не будет входа.
+            if (locked(activity)) hide(activity, true)
         }
 
-        override fun onActivityResumed(activity: Activity) = guard(activity)
+        override fun onActivityResumed(activity: Activity) {
+            if (activity is LockActivity) return
+            if (locked(activity)) {
+                hide(activity, true)
+                activity.startActivity(Intent(activity, LockActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION))
+            } else {
+                hide(activity, false)
+            }
+        }
 
         override fun onActivityPaused(activity: Activity) = Unit
 
@@ -62,6 +78,8 @@ object AppLock {
 
         override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) = Unit
 
-        override fun onActivityDestroyed(activity: Activity) = Unit
+        override fun onActivityDestroyed(activity: Activity) {
+            windows -= activity
+        }
     }
 }

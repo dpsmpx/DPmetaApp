@@ -12,7 +12,7 @@ import android.os.CancellationSignal
  * сильная биометрия. Отказ — [onDenied] с причиной.
  */
 object Lock {
-    fun ask(activity: Activity, subtitle: String, pinOnly: Boolean, onOpen: () -> Unit, onDenied: (String) -> Unit) {
+    fun ask(activity: Activity, subtitle: String, pinOnly: Boolean, signal: CancellationSignal = CancellationSignal(), onOpen: () -> Unit, onDenied: (String) -> Unit) {
         val allowed = if (pinOnly) Authenticators.DEVICE_CREDENTIAL else Authenticators.BIOMETRIC_STRONG or Authenticators.DEVICE_CREDENTIAL
         val prompt = BiometricPrompt.Builder(activity)
             .setTitle("DPmetaApp")
@@ -20,7 +20,7 @@ object Lock {
             .setAllowedAuthenticators(allowed)
             .build()
         prompt.authenticate(
-            CancellationSignal(),
+            signal,
             activity.mainExecutor,
             object : BiometricPrompt.AuthenticationCallback() {
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) = onOpen()

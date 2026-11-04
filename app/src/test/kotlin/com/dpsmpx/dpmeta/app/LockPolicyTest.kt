@@ -1,15 +1,17 @@
 package com.dpsmpx.dpmeta.app
 
-import com.dpsmpx.dpai.core.clock.ManualClock
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
-import kotlin.time.Duration.Companion.minutes
 
 /** Вход в приложение (D-59): раз за запуск и после часа в фоне. */
 class LockPolicyTest {
-    private val clock = ManualClock()
-    private val policy = LockPolicy(clock)
+    private var now = 1_000_000L
+    private val policy = LockPolicy({ now })
+
+    private fun minutes(m: Long) {
+        now += m * 60_000
+    }
 
     @Test
     fun firstLaunchAsksOnceThenStaysOpen() {
@@ -17,7 +19,7 @@ class LockPolicyTest {
         policy.unlocked()
         assertFalse(policy.locked)
         policy.background()
-        clock.advance(10.minutes)
+        minutes(10)
         policy.foreground()
         assertFalse(policy.locked, "меньше часа в фоне — без входа")
     }
@@ -26,9 +28,9 @@ class LockPolicyTest {
     fun hourInBackgroundAsksAgain() {
         policy.unlocked()
         policy.background()
-        clock.advance(59.minutes)
+        minutes(59)
         policy.background() // повторный уход в фон не сдвигает начало
-        clock.advance(1.minutes)
+        minutes(1)
         policy.foreground()
         assertTrue(policy.locked, "час в фоне — снова вход")
         policy.unlocked()
@@ -38,7 +40,7 @@ class LockPolicyTest {
     @Test
     fun foregroundWithoutBackgroundChangesNothing() {
         policy.unlocked()
-        clock.advance(120.minutes)
+        minutes(120)
         policy.foreground()
         assertFalse(policy.locked, "на экране всё время — вход не нужен")
     }
