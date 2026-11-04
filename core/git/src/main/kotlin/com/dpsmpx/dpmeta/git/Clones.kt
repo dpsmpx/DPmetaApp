@@ -4,11 +4,14 @@ import com.dpsmpx.dpai.core.clock.Timestamp
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.Secret
 import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpmeta.net.AllowList
+import com.dpsmpx.dpmeta.net.HttpRequest
 import com.dpsmpx.dpmeta.net.Secrets
 import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.api.MergeCommand
 import org.eclipse.jgit.api.errors.GitAPIException
 import org.eclipse.jgit.api.errors.InvalidRemoteException
+import org.eclipse.jgit.api.errors.JGitInternalException
 import org.eclipse.jgit.api.errors.TransportException
 import org.eclipse.jgit.errors.MissingObjectException
 import org.eclipse.jgit.lib.Config
@@ -46,7 +49,7 @@ import java.net.URL
  * проверяется до любого обращения JGit. Токен — PAT только для чтения (D-17):
  * в адрес и журнал не попадает, раскрывается только для JGit на время вызова.
  */
-class Clones(private val root: File, private val gate: Gate) {
+class Clones(private val root: File, private val gate: Gate, private val schemes: Set<String> = setOf("https")) {
     init {
         guard(gate)
     }
@@ -85,6 +88,8 @@ class Clones(private val root: File, private val gate: Gate) {
      * перемоткой и только при чистом дереве; иначе — конфликт.
      */
     fun sync(project: String, remote: URI, token: Secret?, excluded: (String) -> Boolean): Outcome<Report> {
+        // Только https (D-10): у git://, file: и локальных путей JGit свои сокеты — мимо пропуска HTTP.
+        if (remote.scheme?.lowercase() !in schemes) return failure(DiagCode.HOST_NOT_ALLOWED, "для клона разрешён только https", remote.host ?: project)
         gate.check(remote).let { if (it is Outcome.Failure) return it }
         val dir = dir(project)
         val creds = token?.let { UsernamePasswordCredentialsProvider("x-access-token", Secrets.gitPassword(it)) }
@@ -98,6 +103,11 @@ class Clones(private val root: File, private val gate: Gate) {
             failure(DiagCode.STORAGE_IO_FAILED, "git: ${e.javaClass.simpleName}", project)
         } catch (e: IOException) {
             failure(DiagCode.STORAGE_IO_FAILED, "клон не записан: ${e.javaClass.simpleName}", project)
+        } catch (e: JGitInternalException) {
+            // Внутренний отказ JGit (ввод-вывод, нет места) — RuntimeException: ожидаемый отказ, а не падение процесса.
+            failure(DiagCode.STORAGE_IO_FAILED, "git: ${e.javaClass.simpleName}", project)
+        } finally {
+            creds?.clear()
         }
     }
 
@@ -106,7 +116,7 @@ class Clones(private val root: File, private val gate: Gate) {
         val refs = Git.lsRemoteRepository().setRemote(remote.toString()).setTags(false).setCredentialsProvider(creds).callAsMap()
         val head = refs[Constants.HEAD]?.target?.name?.removePrefix(Constants.R_HEADS)
         val heads = refs.keys.filter { it.startsWith(Constants.R_HEADS) }.map { it.removePrefix(Constants.R_HEADS) }
-        val main = head ?: heads.firstOrNull { it == "main" } ?: heads.firstOrNull() ?: return failure(DiagCode.GITHUB_NOT_FOUND, "в репозитории нет веток", project)
+        val main = head?.takeIf { it in heads } ?: heads.firstOrNull { it == "main" } ?: heads.firstOrNull() ?: return failure(DiagCode.GITHUB_NOT_FOUND, "в репозитории нет веток", project)
         val keep = heads.filter { it == main || !excluded(it) }.sorted()
         val tmp = File(dir.parentFile, ".${dir.name}.part").also { it.deleteRecursively() }
         dir.parentFile.mkdirs()
@@ -216,6 +226,8 @@ class Clones(private val root: File, private val gate: Gate) {
             open(dir).use { Outcome.success(work(it)) }
         } catch (e: IOException) {
             failure(DiagCode.STORAGE_IO_FAILED, "клон не читается: ${e.javaClass.simpleName}", project)
+        } catch (e: JGitInternalException) {
+            failure(DiagCode.STORAGE_IO_FAILED, "клон не читается: ${e.javaClass.simpleName}", project)
         }
     }
 
@@ -223,6 +235,9 @@ class Clones(private val root: File, private val gate: Gate) {
 
     private fun transport(e: TransportException, project: String): Outcome<Nothing> {
         val text = e.message.orEmpty().lowercase()
+        if (generateSequence<Throwable>(e) { it.cause }.any { it is GateRefused }) {
+            return failure(DiagCode.HOST_NOT_ALLOWED, "переадресация на адрес не из списка разрешённых", project)
+        }
         return when {
             "not authorized" in text || "authentication" in text || "401" in text -> failure(DiagCode.GITHUB_AUTH_EXPIRED, "токен не подошёл для git", project)
             "not found" in text || "404" in text -> failure(DiagCode.GITHUB_NOT_FOUND, "репозиторий не найден или скрыт от токена", project)
@@ -232,6 +247,9 @@ class Clones(private val root: File, private val gate: Gate) {
 
     private fun failure(code: DiagCode, message: String, at: String): Outcome<Nothing> = Outcome.failure(code, message, at)
 
+    /** Отказ пропуска внутри JGit — узнаётся по цепочке причин и показывается как `HOST_NOT_ALLOWED`. */
+    private class GateRefused(message: String) : IOException(message)
+
     /**
      * Каждое HTTP-соединение JGit — и переадресации — через пропуск: адрес не
      * из списка не открывается, даже если на него переадресовал сервер (D-10).
@@ -240,9 +258,10 @@ class Clones(private val root: File, private val gate: Gate) {
         override fun create(url: URL): HttpConnection = create(url, null)
 
         override fun create(url: URL, proxy: Proxy?): HttpConnection {
-            val g = current ?: throw IOException("сеть git закрыта")
+            val g = current ?: throw GateRefused("сеть git закрыта")
+            if (url.protocol.lowercase() != "https") throw GateRefused("разрешён только https: ${url.host}")
             val ok = runCatching { g.check(url.toURI()) }.getOrNull()
-            if (ok !is Outcome.Success) throw IOException("адреса нет в списке разрешённых: ${url.host}")
+            if (ok !is Outcome.Success) throw GateRefused("адреса нет в списке разрешённых: ${url.host}")
             return if (proxy == null) inner.create(url) else inner.create(url, proxy)
         }
     }
@@ -296,8 +315,21 @@ class Clones(private val root: File, private val gate: Gate) {
             if (r !is Isolated) SystemReader.setInstance(Isolated(r))
         }
 
-        /** Каталог клона — имя проекта без знаков, опасных для пути. */
-        fun safe(project: String): String = project.replace(Regex("[^A-Za-z0-9._-]"), "_")
+        /**
+         * Каталог клона — однозначное имя без знаков, опасных для пути: всё,
+         * кроме латиницы, цифр, «.» и «-», — `_` и код байта (`DP AIM Trainer` →
+         * `DP_20AIM_20Trainer`, `DP_AIM` → `DP_5fAIM`); `.` и `..` — тоже кодом.
+         */
+        fun safe(project: String): String {
+            val out = project.toByteArray(Charsets.UTF_8).joinToString("") { b ->
+                val c = (b.toInt() and 0xFF).toChar()
+                if (c in 'A'..'Z' || c in 'a'..'z' || c in '0'..'9' || c == '.' || c == '-') c.toString() else "_%02x".format(b.toInt() and 0xFF)
+            }
+            return if (out.isEmpty() || out.all { it == '.' }) out.replace(".", "_2e").ifEmpty { "_" } else out
+        }
+
+        /** Пропуск по списку адресов `:core:net` (D-10): тот же, что у запросов REST. */
+        fun allowList(list: AllowList = AllowList.CORE): Gate = Gate { uri -> list.check(HttpRequest("GET", uri)) }
 
         /** Адрес клона на GitHub: только `https://github.com/<владелец>/<имя>.git`, токен — не в адресе. */
         fun github(slug: String): URI = URI("https://github.com/$slug.git")

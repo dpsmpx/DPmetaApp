@@ -148,7 +148,7 @@ object Screens {
                 is Measure.Unknown -> "? ${c.title} — ${m.reason}"
             }
         } + gate.notApplicable.map { "· ${it.title} — не применимо (D-64)" }
-        val waiting = p.waitingAuthor(now).orNull()?.let { (n, oldest) -> "ждут автора $n" + (oldest?.let { ", самый старый — ${it / DAY_MS} дн" } ?: "") } ?: "ждут автора — $UNKNOWN"
+        val waiting = p.waitingAuthor(now).orNull()?.let { (n, oldest) -> "ждут автора $n" + (oldest?.let { ", дольше всех без движения — ${it / DAY_MS} дн" } ?: "") } ?: "ждут автора — $UNKNOWN"
         val drafts = "черновиков ${show(p.draftPulls)}"
         val lead = p.leadTime.orNull()?.let { (m, high) -> "до вливания: медиана ${hours(m)}, P${Rules.LEAD_TIME_PERCENTILE} ${hours(high)}" } ?: "до вливания — $UNKNOWN"
         return Ready(stage, verdict, criteria, "$waiting; $drafts; $lead")

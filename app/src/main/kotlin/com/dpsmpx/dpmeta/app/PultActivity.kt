@@ -49,14 +49,29 @@ open class PultActivity : ComponentActivity() {
      * Что экспортируется (F-36), пока системный выбор ищет место: формат и срок
      * переживают пересоздание окна (поворот), текст собирается заново из истории.
      */
-    private var pending: Pair<Boolean, Stats.Period>? = null
+    private var pending: Pending? = null
+
+    /** Экспорт в ожидании места: формат, срок и срез (время), по которому названо имя файла. */
+    private data class Pending(val json: Boolean, val period: Stats.Period, val asOf: Long)
+
+    /** Поколение истории: из двух фоновых чтений на экран попадает более позднее (вход и синхронизация идут вперемешку). */
+    private val historyGen = java.util.concurrent.atomic.AtomicLong()
+
+    @Volatile
+    private var historyShown = 0L
+
+    /** Первый вход процесса в окно, а не пересоздание (поворот): тогда чистится каталог «Поделиться» (D-67). */
+    private var coldStart = true
     private val saveCsv = registerForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { writeExport(it) }
     private val saveJson = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { writeExport(it) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        coldStart = savedInstanceState == null
         savedInstanceState?.getString(PENDING_PERIOD)?.let { p ->
-            Stats.Period.entries.firstOrNull { it.name == p }?.let { pending = savedInstanceState.getBoolean(PENDING_JSON) to it }
+            Stats.Period.entries.firstOrNull { it.name == p }?.let {
+                pending = Pending(savedInstanceState.getBoolean(PENDING_JSON), it, savedInstanceState.getLong(PENDING_AS_OF))
+            }
         }
         window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         pool = Executors.newFixedThreadPool(THREADS)
@@ -126,9 +141,10 @@ open class PultActivity : ComponentActivity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        pending?.let { (json, period) ->
-            outState.putBoolean(PENDING_JSON, json)
-            outState.putString(PENDING_PERIOD, period.name)
+        pending?.let { p ->
+            outState.putBoolean(PENDING_JSON, p.json)
+            outState.putString(PENDING_PERIOD, p.period.name)
+            outState.putLong(PENDING_AS_OF, p.asOf)
         }
     }
 
@@ -138,12 +154,9 @@ open class PultActivity : ComponentActivity() {
         val feed = (repo.feed() as? Outcome.Success)?.value.orEmpty()
         view.value = PultView(state, "", hasToken, busy = false, feed = feed, names = repo.names())
         // История растёт с каждой синхронизацией — читается в фоне, холодный старт её не ждёт (N-02).
-        pool.execute {
-            val history = (repo.history() as? Outcome.Success)?.value.orEmpty()
-            runOnUiThread { view.value = view.value.copy(history = history) }
-        }
-        // Файлы прежних «Поделиться» (D-67) живут до следующего входа в пульт.
-        pool.execute { File(cacheDir, EXPORT_DIR).deleteRecursively() }
+        loadHistory()
+        // Файлы прежних «Поделиться» (D-67) живут до следующего входа в пульт — не до поворота.
+        if (coldStart) pool.execute { File(cacheDir, EXPORT_DIR).deleteRecursively() }
         setContent {
             PultTheme {
                 PultApp(view.value, loader, onSync = ::sync, onSaveToken = ::saveToken, onForgetToken = ::forgetToken, onAi = aiIntent()?.let { i -> { startActivity(i) } }, onExport = ::export)
@@ -155,27 +168,47 @@ open class PultActivity : ComponentActivity() {
      * Экспорт истории за срок (F-36): CSV или JSON, место выбирает человек
      * (системный выбор файла — «Загрузки», облако); сеть приложение не трогает.
      */
+    /** История — в фоне; на экран — только более позднее чтение, чем уже показанное. */
+    private fun loadHistory() {
+        if (pool.isShutdown) return
+        val gen = historyGen.incrementAndGet()
+        pool.execute {
+            val history = (repo.history() as? Outcome.Success)?.value.orEmpty()
+            runOnUiThread {
+                if (gen > historyShown) {
+                    historyShown = gen
+                    view.value = view.value.copy(history = history)
+                }
+            }
+        }
+    }
+
     private fun export(json: Boolean, period: Stats.Period, share: Boolean) {
         val s = view.value.state ?: return
         val name = Export.fileName(period, s.asOf, if (json) "json" else "csv")
+        val what = Pending(json, period, s.asOf.epochMillis)
         if (share) {
             if (pool.isShutdown) return
             pool.execute {
-                val text = exportText(json, period)
+                val text = exportText(what)
                 runOnUiThread { if (text == null) noExport() else shareExport(name, text, if (json) "application/json" else "text/csv") }
             }
             return
         }
-        pending = json to period
+        pending = what
         if (json) saveJson.launch(name) else saveCsv.launch(name)
     }
 
-    /** Текст экспорта — из сохранённого среза и истории, не из экрана: после пересоздания окна он тот же. Не в главном потоке. */
-    private fun exportText(json: Boolean, period: Stats.Period): String? {
-        val s = (repo.state() as? Outcome.Success)?.value ?: return null
+    /**
+     * Текст экспорта — из истории на диске за срок до среза, по которому
+     * названо имя файла: после пересоздания окна и после синхронизации,
+     * прошедшей во время выбора места, он тот же. Не в главном потоке.
+     */
+    private fun exportText(what: Pending): String? {
         val history = (repo.history() as? Outcome.Success)?.value ?: return null
-        val points = Export.points(history, period, s.asOf)
-        return if (json) Export.json(points, period, s.asOf) else Export.csv(points)
+        val asOf = com.dpsmpx.dpai.core.clock.Timestamp(what.asOf)
+        val points = Export.points(history, what.period, asOf).filter { it.asOf.epochMillis <= what.asOf }
+        return if (what.json) Export.json(points, what.period, asOf) else Export.csv(points)
     }
 
     private fun noExport() {
@@ -204,9 +237,9 @@ open class PultActivity : ComponentActivity() {
     private fun writeExport(uri: Uri?) {
         val what = pending
         pending = null
-        if (uri == null || what == null || pool.isShutdown) return
+        if (uri == null || pool.isShutdown) return
         pool.execute {
-            val text = exportText(what.first, what.second)
+            val text = what?.let(::exportText)
             val ok = text != null && runCatching { contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray(Charsets.UTF_8)) } ?: error("нет потока") }.isSuccess
             // Выбор места уже создал файл: не записан — убрать пустой, а не оставить его в «Загрузках».
             if (!ok) runCatching { DocumentsContract.deleteDocument(contentResolver, uri) }
@@ -270,7 +303,6 @@ open class PultActivity : ComponentActivity() {
             val r = repo.sync(token)
             val state = (repo.state() as? Outcome.Success)?.value
             val feed = (repo.feed() as? Outcome.Success)?.value.orEmpty()
-            val history = (repo.history() as? Outcome.Success)?.value.orEmpty()
             runOnUiThread {
                 view.value = when (r) {
                     is Outcome.Success -> view.value.copy(
@@ -279,8 +311,7 @@ open class PultActivity : ComponentActivity() {
                         status = "Готово: ${r.value.line}.",
                         feed = feed,
                         names = repo.names(),
-                        history = history,
-                    )
+                    ).also { loadHistory() }
                     is Outcome.Failure -> view.value.copy(busy = false, status = "Не вышло: ${r.diagnostics.first().code.name} — ${r.diagnostics.first().message}")
                 }
             }
@@ -292,6 +323,7 @@ open class PultActivity : ComponentActivity() {
         const val EXPORT_DIR = "pult-export"
         private const val PENDING_JSON = "export.json"
         private const val PENDING_PERIOD = "export.period"
+        private const val PENDING_AS_OF = "export.asOf"
 
         /** Запросы дат коммитов — пулом (D-50); тот же предел, что у `dpmeta-cli`. */
         const val THREADS = 8

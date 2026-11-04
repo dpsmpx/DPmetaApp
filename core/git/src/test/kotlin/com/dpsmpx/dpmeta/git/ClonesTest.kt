@@ -61,7 +61,8 @@ class ClonesTest {
         git.commit().setMessage(message).setAuthor(who).setCommitter(who).call()
     }
 
-    private fun clones() = Clones(File(tmp, "clones"), open)
+    // В тестах «GitHub» — локальный репозиторий: file: разрешён только здесь, в приложении — только https.
+    private fun clones() = Clones(File(tmp, "clones"), open, setOf("file"))
 
     @Test
     fun clonesWithoutBuildBranchesAndReadsFilesFromGitHubBranches() {
@@ -128,11 +129,31 @@ class ClonesTest {
     }
 
     @Test
+    fun onlyHttpsAndOnlyListedHosts() {
+        val c = Clones(File(tmp, "clones"), Clones.allowList())
+        for (bad in listOf("git://github.com/dpsmpx/DPmetaApp.git", "http://github.com/dpsmpx/DPmetaApp.git", "file:///etc", "https://example.org/x.git")) {
+            val r = c.sync("X", URI(bad), null, build)
+            assertEquals(DiagCode.HOST_NOT_ALLOWED, (r as Outcome.Failure).diagnostics.first().code, bad)
+        }
+        assertIs<Outcome.Success<Unit>>(Clones.allowList().check(Clones.github("dpsmpx/DPmetaApp")), "github.com по https — в списке")
+    }
+
+    @Test
+    fun internalGitFailureIsAnOutcomeNotACrash() {
+        val uri = remote()
+        val blocked = File(tmp, "file-not-dir").apply { writeText("") }
+        val r = Clones(File(blocked, "clones"), open, setOf("file")).sync("Alpha", uri, null, build)
+        assertIs<Outcome.Failure>(r, "каталог клонов не создаётся — отказ, а не исключение")
+    }
+
+    @Test
     fun missingCloneIsNotFoundAndNamesAreSafe() {
         val c = clones()
         assertEquals(DiagCode.ENTITY_NOT_FOUND, (c.heads("Нет") as Outcome.Failure).diagnostics.first().code)
-        assertEquals("DP_AIM_Trainer", Clones.safe("DP AIM Trainer"))
-        assertEquals("_.._x", Clones.safe("/../x"))
+        assertEquals("DP_20AIM_20Trainer", Clones.safe("DP AIM Trainer"))
+        assertEquals("DP_5fAIM_5fTrainer", Clones.safe("DP_AIM_Trainer"), "имена не совпадают — каталоги разные")
+        assertEquals("_2f.._2fx", Clones.safe("/../x"))
+        assertEquals("_2e_2e", Clones.safe(".."), "«..» — не родительский каталог")
         assertEquals(URI("https://github.com/dpsmpx/DPmetaApp.git"), Clones.github("dpsmpx/DPmetaApp"))
     }
 }
