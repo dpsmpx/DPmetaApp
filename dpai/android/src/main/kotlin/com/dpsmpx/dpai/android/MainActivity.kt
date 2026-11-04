@@ -89,6 +89,10 @@ class MainActivity : ComponentActivity() {
 
         /** Намерение во внутренний вход экрана — для своих `PendingIntent`. */
         fun internal(context: Context): Intent = Intent().setClassName(context, INTERNAL_ENTRY)
+
+        /** Подтверждение опасного ответа на экране (D-44, D-104) — для уведомления и окна поверх приложений. */
+        fun confirm(context: Context, uri: String): Intent = internal(context).setAction(CONFIRM).putExtra(EXTRA_URI, uri)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
     }
 }
 

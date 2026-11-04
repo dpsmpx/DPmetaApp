@@ -4,7 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-/** Вход в приложение (D-59): раз за запуск и после часа в фоне. */
+/** Вход в приложение (D-59, D-61): раз за запуск и после часа в фоне. */
 class LockPolicyTest {
     private var now = 1_000_000L
     private val policy = LockPolicy({ now })
@@ -35,6 +35,18 @@ class LockPolicyTest {
         assertTrue(policy.locked, "час в фоне — снова вход")
         policy.unlocked()
         assertFalse(policy.locked)
+    }
+
+    @Test
+    fun ongoingBackgroundCountsWithoutForeground() {
+        policy.unlocked()
+        policy.background()
+        minutes(59)
+        assertFalse(policy.locked, "фон длится меньше часа — окно поверх приложений отвечает без входа (D-61)")
+        minutes(1)
+        assertTrue(policy.locked, "фон длится час — опасный ответ окна поверх приложений только после входа (D-61)")
+        policy.foreground()
+        assertTrue(policy.locked, "вернулись после часа — вход")
     }
 
     @Test

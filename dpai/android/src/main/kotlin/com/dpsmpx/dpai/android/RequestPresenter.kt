@@ -138,8 +138,7 @@ object RequestPresenter {
 
     private fun confirm(context: Context, uri: String, index: Int): PendingIntent = PendingIntent.getActivity(
         context, uri.hashCode() * 31 + index,
-        MainActivity.internal(context).setAction(MainActivity.CONFIRM).putExtra(MainActivity.EXTRA_URI, uri)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+        MainActivity.confirm(context, uri),
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     )
 
