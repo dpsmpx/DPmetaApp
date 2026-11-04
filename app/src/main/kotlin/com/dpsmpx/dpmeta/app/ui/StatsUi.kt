@@ -157,7 +157,15 @@ fun Tiles(tiles: List<Stats.Tile>) {
  * карточки, `null` — сравнение всех проектов. Рядом с графиком — таблица (N-07).
  */
 @Composable
-fun StatsScreen(history: List<MetricPoint>, projects: List<String>, project: String?, now: Timestamp, onBack: () -> Unit) {
+fun StatsScreen(
+    history: List<MetricPoint>,
+    projects: List<String>,
+    project: String?,
+    now: Timestamp,
+    onBack: () -> Unit,
+    status: String = "",
+    onExport: ((Boolean, Stats.Period) -> Unit)? = null,
+) {
     var metric by remember { mutableStateOf(Stats.CATALOG.first()) }
     var period by remember { mutableStateOf(Stats.Period.MONTH) }
     var subject by remember { mutableStateOf(project) }
@@ -184,6 +192,15 @@ fun StatsScreen(history: List<MetricPoint>, projects: List<String>, project: Str
                     for (p in projects) FilterChip(selected = subject == p, onClick = { subject = p }, label = { Text(p) })
                 }
             }
+        }
+        if (onExport != null) {
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    TextButton(onClick = { onExport(false, period) }) { Text("Экспорт CSV") }
+                    TextButton(onClick = { onExport(true, period) }) { Text("Экспорт JSON") }
+                }
+            }
+            if (status.isNotEmpty()) item { Text(status, style = MaterialTheme.typography.bodySmall) }
         }
         if (chart.empty) {
             item { Text("Точек за ${period.title} нет: история копится с каждой синхронизацией.") }
