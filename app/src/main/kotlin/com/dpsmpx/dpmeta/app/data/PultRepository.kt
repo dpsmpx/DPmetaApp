@@ -103,6 +103,7 @@ class PultRepository(private val vfs: Vfs, private val clock: Clock, private val
 
     /** Синхронизация целиком; зовётся не из главного потока. */
     fun sync(token: Secret): Outcome<SyncReport> {
+        val started = clock.monotonicNanos()
         val previous = when (val r = store.readState()) {
             is Outcome.Failure -> return r
             is Outcome.Success -> r.value
@@ -139,7 +140,12 @@ class PultRepository(private val vfs: Vfs, private val clock: Clock, private val
         store.appendFeed(Feed.diff(previous, state)).let { if (it is Outcome.Failure) return it }
         etags.save()
         val s = net.stats
-        return Outcome.success(SyncReport("запросов ${s.requests}, без изменений ${s.notModified}, отказов источников ${result.failures.size}", result.failures))
+        // Числа замера A-02 (ТЗ; как строка `dpmeta-cli sync --live`): запросы, доля 304, время.
+        val share = if (s.requests == 0) 0 else s.notModified * 100 / s.requests
+        val seconds = (clock.monotonicNanos() - started) / 1_000_000_000.0
+        val line = "запросов ${s.requests}, без изменений ${s.notModified} ($share %), отказов источников ${result.failures.size}, " +
+            "не спрашивалось ${carried.size}, ${"%.1f".format(java.util.Locale.ROOT, seconds)} с"
+        return Outcome.success(SyncReport(line, result.failures))
     }
 
     companion object {
