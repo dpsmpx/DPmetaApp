@@ -34,6 +34,11 @@
       фаза B; с его стороны — `DPmetaApp:D-26`), теперь в том же
       репозитории.
 
+- [ ] `М` **DPmonetization — в архив** (`DPmetaApp:D-58`, 4 ноября 2026): в
+      реестре DPmeta место `archive`; узел `dpmonetization` модели — из
+      поддерживающего слоя в архив (как `DPvisualisation:D-20`), поток
+      `work.dpmonetization` — по нему.
+
 ## Долг
 
 - [ ] `С` **`CLONE_SHALLOW` не всегда видит неполный клон** (было до D-24;
