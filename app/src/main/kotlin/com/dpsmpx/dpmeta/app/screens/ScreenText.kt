@@ -13,6 +13,8 @@ object ScreenText {
         appendLine("Открытых PR: ${s.pullsWaiting}")
         appendLine("Проектов: ${s.projects}")
         appendLine("Ошибок источников: ${s.sourceErrors}")
+        appendLine("Шлюз готов: ${s.gatesReady}")
+        appendLine("Синхронизация: ${s.syncHealth} источников")
     }
 
     fun projects(groups: List<Screens.Group>): String = buildString {
@@ -32,6 +34,9 @@ object ScreenText {
         appendLine("Решений: ${c.decisions}")
         for (d in c.lastDecisions) appendLine("  $d")
         appendLine("TODO: ${c.todo}, за автором ${c.forAuthor}")
+        appendLine("Готовность: ${c.ready.stage}; ${c.ready.verdict}")
+        for (l in c.ready.criteria) appendLine("  $l")
+        appendLine("Ход PR: ${c.ready.pulls}")
         appendLine("ROADMAP: ${c.roadmap}")
         for (s in c.stages) appendLine("  [${s.flag}] ${s.title}${if (s.steps.isEmpty()) "" else " — ${s.steps}"}")
         appendLine("PR: ${c.pulls.size}")

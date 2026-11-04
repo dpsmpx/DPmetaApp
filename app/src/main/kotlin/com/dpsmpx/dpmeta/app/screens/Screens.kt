@@ -11,6 +11,7 @@ import com.dpsmpx.dpmeta.metrics.EcosystemState
 import com.dpsmpx.dpmeta.metrics.Feed
 import com.dpsmpx.dpmeta.metrics.FeedEvent
 import com.dpsmpx.dpmeta.metrics.ProjectState
+import com.dpsmpx.dpmeta.metrics.Readiness
 import com.dpsmpx.dpmeta.metrics.Rules
 import com.dpsmpx.dpmeta.model.Place
 import java.time.Instant
@@ -59,6 +60,10 @@ object Screens {
         val pullsWaiting: String,
         val projects: Int,
         val sourceErrors: Int,
+        /** Шлюз готовности (D-64): у скольких проектов «готов закрыть этап» и у скольких он известен. */
+        val gatesReady: String,
+        /** Доля удачных источников последней синхронизации (ТЗ, §8, `app.sync.health`). */
+        val syncHealth: String,
     )
 
     fun summary(s: EcosystemState): Summary = Summary(
@@ -70,6 +75,12 @@ object Screens {
         },
         projects = s.projects.size,
         sourceErrors = s.projects.sumOf { it.errors.size },
+        gatesReady = s.projects.map { Readiness.gate(it, s.asOf).ready }.let { gates ->
+            val known = gates.mapNotNull { it.orNull() }
+            val unknown = gates.size - known.size
+            if (known.isEmpty()) UNKNOWN else "${known.count { it }} из ${known.size}" + if (unknown > 0) " (неизвестно — $unknown)" else ""
+        },
+        syncHealth = show(s.syncHealth, " %"),
     )
 
     // --- Проекты по местам (F-02, F-06) ---
@@ -107,6 +118,46 @@ object Screens {
     /** Блок состояния README — «что проект пишет о себе» (F-10). */
     data class Panel(val name: String, val text: String)
 
+    /**
+     * Готовность (D-64): текущий этап, итог шлюза и критерии строками
+     * («✓», «✗», «?» и причина неизвестного); PR — ждут автора, черновики,
+     * время до вливания (ТЗ, §8).
+     */
+    data class Ready(val stage: String, val verdict: String, val criteria: List<String>, val pulls: String)
+
+    fun ready(p: ProjectState, now: Timestamp): Ready {
+        val gate = Readiness.gate(p, now)
+        val stage = when (val st = gate.stage) {
+            is Measure.Unknown -> "этап неизвестен"
+            is Measure.Known -> st.value.let { s ->
+                "этап ${s.number} из ${s.total} «${s.title}»" + when {
+                    s.allDone -> " — все этапы закрыты"
+                    s.stepsTotal > 0 -> ", шагов ${s.stepsDone} из ${s.stepsTotal}"
+                    else -> ""
+                }
+            }
+        }
+        val verdict = when (gate.ready.orNull()) {
+            true -> "готов закрыть этап"
+            false -> "не готов (не выполнено ${gate.blocking.size} из ${gate.results.size})"
+            null -> "$UNKNOWN (известно ${gate.results.values.count { it is Measure.Known }} из ${gate.results.size})"
+        }
+        val criteria = gate.results.map { (c, m) ->
+            when (m) {
+                is Measure.Known -> "${if (m.value) "✓" else "✗"} ${c.title}"
+                is Measure.Unknown -> "? ${c.title} — ${m.reason}"
+            }
+        }
+        val waiting = p.waitingAuthor(now).orNull()?.let { (n, oldest) -> "ждут автора $n" + (oldest?.let { ", самый старый — ${it / DAY_MS} дн" } ?: "") } ?: "ждут автора — $UNKNOWN"
+        val drafts = "черновиков ${show(p.draftPulls)}"
+        val lead = p.leadTime.orNull()?.let { (m, high) -> "до вливания: медиана ${hours(m)}, P${Rules.LEAD_TIME_PERCENTILE} ${hours(high)}" } ?: "до вливания — $UNKNOWN"
+        return Ready(stage, verdict, criteria, "$waiting; $drafts; $lead")
+    }
+
+    private const val DAY_MS = 24 * 60 * 60 * 1000L
+
+    private fun hours(minutes: Long): String = if (minutes < 120) "$minutes мин" else "${minutes / 60} ч"
+
     data class Card(
         val name: String,
         val place: String,
@@ -116,6 +167,7 @@ object Screens {
         val todo: String,
         val forAuthor: String,
         val roadmap: String,
+        val ready: Ready,
         val stages: List<Stage>,
         val pulls: List<Pull>,
         val branches: List<BranchRow>,
@@ -167,6 +219,7 @@ object Screens {
             todo = show(p.todoOpen),
             forAuthor = show(p.forAuthor),
             roadmap = show(p.roadmapPercent, " %"),
+            ready = ready(p, s.asOf),
             stages = stages,
             pulls = pulls,
             branches = branches,

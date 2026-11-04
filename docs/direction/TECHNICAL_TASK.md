@@ -759,7 +759,8 @@ SocialMediaImage и одобрения версий за автора (`SocialMe
 | `repo.decisions.new` | новые решения за период | история наблюдений журнала | шт. | П |
 | `repo.todo.items` | пункты `TODO.md` по меткам `М`/`С`/`Т`/`К` и «За автором» | `TODO.md` | шт. | З |
 | `repo.roadmap.progress` | доля отмеченных шагов и этапов ROADMAP | ROADMAP | % | З |
-| `repo.stage` | стадия из блока состояния README | README | этап из N | З |
+| `repo.stage` | стадия — текущий этап ROADMAP (D-64) | ROADMAP | этап из N | З |
+| `repo.gate` | шлюз готовности этапа: критерии «да / нет / неизвестно» и итог — готов ли закрыть этап (D-64) | `repo.decisions.count`, `TODO.md`, ROADMAP, `repo.checks.last`, `repo.pr.waiting_author` | критериев, да/нет | П |
 | `repo.checks.last` | итог раздела «Проверки»: зелёный / красный / неизвестно; возраст | описание PR | состояние, часы | З |
 | `eco.active_projects` | проекты в состоянии «работает» | `repo.activity.state` | шт. | П |
 | `eco.questions_open` | открытые вопросы автору | F-24 | шт. | П |

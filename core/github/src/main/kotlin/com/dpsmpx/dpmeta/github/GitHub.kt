@@ -32,6 +32,8 @@ data class PullRequest(
     val updatedAt: Timestamp,
     val body: String? = null,
     val mergedAt: Timestamp? = null,
+    /** Время открытия — для «ждёт автора» и времени до вливания (ТЗ, §8); из того же ответа, без запроса. */
+    val createdAt: Timestamp? = null,
 )
 
 data class Branch(val name: String, val sha: String)
@@ -84,6 +86,7 @@ class GitHub(private val net: Net, private val token: Secret?, private val api: 
                 updatedAt = time(o, "updated_at") ?: return@then missing("updated_at", "$repo:pulls"),
                 body = str(o, "body"),
                 mergedAt = time(o, "merged_at"),
+                createdAt = time(o, "created_at"),
             )
         }
         Outcome.success(Page(out, p.fetched))

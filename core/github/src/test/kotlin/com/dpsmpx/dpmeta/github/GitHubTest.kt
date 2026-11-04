@@ -33,7 +33,7 @@ class GitHubTest {
     fun parsesPullsBranchesCommitsAndFiles() {
         val fake = Fake(
             mapOf(
-                "/repos/example/Alpha/pulls?state=open&per_page=100" to (200 to """[{"number":7,"title":"Этап 2","draft":true,"head":{"ref":"claude/x"},"user":{"login":"bot"},"updated_at":"2026-11-01T10:00:00Z","extra":1}]"""),
+                "/repos/example/Alpha/pulls?state=open&per_page=100" to (200 to """[{"number":7,"title":"Этап 2","draft":true,"head":{"ref":"claude/x"},"user":{"login":"bot"},"updated_at":"2026-11-01T10:00:00Z","created_at":"2026-11-01T08:00:00Z","extra":1}]"""),
                 "/repos/example/Alpha/branches?per_page=100" to (200 to """[{"name":"main","commit":{"sha":"$sha"}}]"""),
                 "/repos/example/Alpha/commits/$sha" to (200 to """{"sha":"$sha","commit":{"committer":{"date":"2026-11-01T09:30:00Z"}},"author":{"login":"dpsmpx"}}"""),
                 "/repos/example/Alpha/contents/docs/%D0%BF%D1%83%D1%82%D1%8C%20x.md" to (200 to "# текст"),
@@ -41,8 +41,9 @@ class GitHubTest {
         )
         val gh = GitHub(Net(fake), Secret("t"))
         val pr = (gh.pulls(repo) as Outcome.Success).value.value.single()
-        assertEquals(PullRequest(7, "Этап 2", true, "claude/x", "bot", pr.updatedAt), pr)
+        assertEquals(PullRequest(7, "Этап 2", true, "claude/x", "bot", pr.updatedAt, createdAt = pr.createdAt), pr)
         assertEquals(1_793_527_200_000, pr.updatedAt.epochMillis)
+        assertEquals(1_793_527_200_000 - 2 * 3_600_000, pr.createdAt?.epochMillis, "время открытия — из того же ответа (ТЗ, §8)")
         assertEquals(listOf(Branch("main", sha)), (gh.branches(repo) as Outcome.Success).value.value)
         assertEquals("dpsmpx", (gh.commit(repo, sha) as Outcome.Success).value.author)
         assertEquals("# текст", (gh.file(repo, "docs/путь x.md") as Outcome.Success).value.value)

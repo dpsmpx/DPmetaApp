@@ -58,6 +58,56 @@ data class ProjectState(val name: String, val place: String, val sections: Map<S
         get() = (payload("pulls")?.get("pulls") as? JsonArray)?.let { Measure.observed(it.items.size.toLong()) }
             ?: Measure.unknown("нет данных о PR")
 
+    private fun pulls(kind: String): List<JsonObject>? = (payload(kind)?.get("pulls") as? JsonArray)?.items?.mapNotNull { it as? JsonObject }
+
+    private fun time(o: JsonObject, key: String): Long? = (o[key] as? JsonNumber)?.toLongExact()
+
+    /** Черновики среди открытых PR (ТЗ, §8, `repo.pr.open`). */
+    val draftPulls: Measure<Long>
+        get() = pulls("pulls")?.let { l -> Measure.observed(l.count { (it["draft"] as? JsonBool)?.value == true }.toLong()) }
+            ?: Measure.unknown("нет данных о PR")
+
+    /**
+     * PR ждут автора (ТЗ, §8, `repo.pr.waiting_author`; [Rules.PR_WAITING_LIMIT]):
+     * открыт и не черновик. Сколько их и сколько миллисекунд ждёт самый старый —
+     * с открытия, а без времени открытия — с последнего обновления; никто не
+     * ждёт — `null`.
+     */
+    fun waitingAuthor(now: Timestamp): Measure<Pair<Long, Long?>> {
+        val list = pulls("pulls") ?: return Measure.unknown("нет данных о PR")
+        val waiting = list.filter { (it["draft"] as? JsonBool)?.value != true }
+        val oldest = waiting.mapNotNull { time(it, "createdAt") ?: time(it, "updatedAt") }.minOrNull()?.let { now.epochMillis - it }
+        return Measure.observed(waiting.size.toLong() to oldest)
+    }
+
+    /**
+     * Время до вливания (ТЗ, §8, `repo.pr.lead_time`), минуты: медиана и
+     * перцентиль [Rules.LEAD_TIME_PERCENTILE] по последним влитым PR, у которых
+     * известно время открытия.
+     */
+    val leadTime: Measure<Pair<Long, Long>>
+        get() {
+            val merged = pulls("merged") ?: return Measure.unknown("нет данных о влитых PR")
+            val minutes = merged.mapNotNull { o ->
+                val m = time(o, "mergedAt")
+                val c = time(o, "createdAt")
+                if (m != null && c != null && m >= c) (m - c) / 60_000 else null
+            }.sorted()
+            if (minutes.isEmpty()) return Measure.unknown("у влитых PR нет времени открытия")
+            return Measure.observed(percentile(minutes, 50) to percentile(minutes, Rules.LEAD_TIME_PERCENTILE))
+        }
+
+    /** Итог проверок последнего влитого PR (ТЗ, §8, `repo.checks.last`): зелёный — да, красный — нет. */
+    val lastChecksGreen: Measure<Boolean>
+        get() {
+            val last = pulls("merged")?.maxByOrNull { time(it, "mergedAt") ?: Long.MIN_VALUE } ?: return Measure.unknown("влитых PR нет")
+            return when ((last["checks"] as? JsonString)?.value) {
+                "green" -> Measure.observed(true)
+                "red" -> Measure.observed(false)
+                else -> Measure.unknown("итог проверок не распознан")
+            }
+        }
+
     /**
      * Доля отмеченного в ROADMAP, в процентах вниз до целого (ТЗ, §8,
      * `repo.roadmap.progress`): по шагам, а если шагов нет — по этапам.
@@ -106,6 +156,9 @@ data class ProjectState(val name: String, val place: String, val sections: Map<S
     )
 }
 
+/** Перцентиль по ближайшему рангу: [sorted] — по возрастанию, не пуст. */
+internal fun percentile(sorted: List<Long>, p: Int): Long = sorted[((p * sorted.size + 99) / 100 - 1).coerceIn(0, sorted.lastIndex)]
+
 /** Точка истории чисел (ТЗ, §6.3): только добавляется; версия правил — при ней. */
 data class MetricPoint(val metric: String, val subject: String, val value: Long, val asOf: Timestamp, val rulesVersion: Int) {
     fun toJson(): JsonObject = JsonObject.of(
@@ -121,8 +174,14 @@ data class MetricPoint(val metric: String, val subject: String, val value: Long,
  * Состояние экосистемы (D-34): хранится готовым, текущее заменяется новым.
  * Порядок проектов — порядок реестра (порядок показа, F-01).
  */
-data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projects: List<ProjectState>) {
+data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projects: List<ProjectState>, val syncHealthPercent: Long? = null) {
     fun project(name: String): ProjectState? = projects.firstOrNull { it.name == name }
+
+    /**
+     * Доля удачных источников последней синхронизации (ТЗ, §8, `app.sync.health`),
+     * процентов: файла нет (404) — не неудача, а ответ.
+     */
+    val syncHealth: Measure<Long> get() = syncHealthPercent?.let { Measure.observed(it) } ?: Measure.unknown("синхронизаций ещё не было")
 
     val activeProjects: Measure<Long>
         get() {
@@ -143,15 +202,32 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
         fun add(metric: String, subject: String, m: Measure<Long>) {
             m.orNull()?.let { out += MetricPoint(metric, subject, it, asOf, rulesVersion) }
         }
+        fun flag(m: Measure<Boolean>): Measure<Long> = m.orNull()?.let { Measure.observed(if (it) 1L else 0L) } ?: Measure.unknown("")
         for (p in projects) {
             add("repo.pr.open", p.name, p.openPulls)
-            add("repo.activity.state", p.name, p.working(asOf).let { w -> w.orNull()?.let { Measure.observed(if (it) 1L else 0L) } ?: Measure.unknown("") })
+            add("repo.activity.state", p.name, flag(p.working(asOf)))
             add("repo.decisions.count", p.name, p.decisions)
             add("repo.todo.items", p.name, p.todoOpen)
             add("repo.roadmap.progress", p.name, p.roadmapPercent)
+            // С правил 2 (этап 4, D-64): PR, проверки, стадия и шлюз.
+            add("repo.pr.open.drafts", p.name, p.draftPulls)
+            p.waitingAuthor(asOf).orNull()?.let { (count, oldest) ->
+                add("repo.pr.waiting_author", p.name, Measure.observed(count))
+                oldest?.let { add("repo.pr.waiting_author.days", p.name, Measure.observed(it / DAY_MS)) }
+            }
+            p.leadTime.orNull()?.let { (median, high) ->
+                add("repo.pr.lead_time.median", p.name, Measure.observed(median))
+                add("repo.pr.lead_time.p${Rules.LEAD_TIME_PERCENTILE}", p.name, Measure.observed(high))
+            }
+            add("repo.checks.last", p.name, flag(p.lastChecksGreen))
+            val gate = Readiness.gate(p, asOf)
+            add("repo.stage", p.name, gate.stage.orNull()?.let { Measure.observed(it.number.toLong()) } ?: Measure.unknown(""))
+            add("repo.gate.passed", p.name, Measure.observed(gate.passed.toLong()))
+            add("repo.gate.ready", p.name, flag(gate.ready))
         }
         add("eco.active_projects", "eco", activeProjects)
         add("eco.questions_open", "eco", questionsOpen)
+        add("app.sync.health", "app", syncHealth)
         return out
     }
 
@@ -164,12 +240,15 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
         ).apply {
             activeProjects.orNull()?.let { put("activeProjects", JsonNumber.of(it)) }
             questionsOpen.orNull()?.let { put("questionsOpen", JsonNumber.of(it)) }
+            syncHealthPercent?.let { put("syncHealth", JsonNumber.of(it)) }
         },
     )
 
     companion object {
         const val FORMAT = "dpmeta.state"
         const val VERSION = 1
+        private const val DAY_MS = 24 * 60 * 60 * 1000L
+        private val NOT_FOUND = setOf(DiagCode.GITHUB_NOT_FOUND, DiagCode.ENTITY_NOT_FOUND)
 
         /**
          * Новое состояние (ТЗ, §6.3, §6.4): для каждого проекта реестра,
@@ -198,7 +277,9 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
                     .map { f -> SourceError(f.kind, f.diagnostic.code.name, f.diagnostic.message, f.at) }
                 ProjectState(entry.name, entry.place.code, (before + fresh).toSortedMap(), errors)
             }
-            return EcosystemState(now, Rules.RULES_VERSION, projects)
+            val failed = failures.count { it.diagnostic.code !in NOT_FOUND }
+            val health = (observations.size + failed).takeIf { it > 0 }?.let { observations.size * 100L / it }
+            return EcosystemState(now, Rules.RULES_VERSION, projects, health)
         }
 
         /** Прежнее состояние из документа: другая версия формата — отказ, а не догадка. */
@@ -211,6 +292,7 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
             val projects = f.array("projects")
             f.raw("activeProjects", required = false)
             f.raw("questionsOpen", required = false)
+            val health = f.optLong("syncHealth")
             f.finish()
             if (d.hasErrors || asOf == null || rules == null || projects == null) return Outcome.Failure(d.all)
             val out = projects.items.map { p ->
@@ -237,7 +319,7 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
                 }
                 ProjectState(name, place, sections.associateBy { it.kind }.toSortedMap(), errors)
             }
-            return Outcome.success(EcosystemState(Timestamp(asOf), rules.toInt(), out))
+            return Outcome.success(EcosystemState(Timestamp(asOf), rules.toInt(), out, health))
         }
     }
 }

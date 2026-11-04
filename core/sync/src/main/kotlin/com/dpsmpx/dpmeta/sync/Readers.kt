@@ -144,6 +144,7 @@ class DirectoryReader(private val root: Path, private val hostDir: String = "dpm
                 time(o, "updatedAt") ?: return bad(project, name),
                 (o["body"] as? JsonString)?.value,
                 time(o, "mergedAt"),
+                time(o, "createdAt"),
             )
         }
         return Outcome.success(Got(out, Hashing.sha256(bytes)))
