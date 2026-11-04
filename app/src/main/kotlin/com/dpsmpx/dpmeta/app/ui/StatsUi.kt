@@ -60,8 +60,10 @@ object ChartColors {
         Stats.Hue.AI to Color(0xFFF0C27A),
         Stats.Hue.HUMAN to Color(0xFF7FD8DC),
     )
-    private val seriesLight = listOf(0xFF2F5D8A, 0xFF8A5A00, 0xFF00696E, 0xFF6A3FA0, 0xFF5B6B7A, 0xFF7A4E2D).map(::Color)
-    private val seriesDark = listOf(0xFF9CC3EA, 0xFFF0C27A, 0xFF7FD8DC, 0xFFD0B8F5, 0xFFB7C4D1, 0xFFE3B48F).map(::Color)
+    // Ряды сравнения — свои оттенки, ни одного смыслового (N-08); проектов больше восьми — цвета
+    // повторяются, проект различает легенда и подсказка касанием.
+    private val seriesLight = listOf(0xFF1F6F8B, 0xFF9C4221, 0xFF4E6E1E, 0xFF8B2F6B, 0xFF3F3F9F, 0xFF6B5B1E, 0xFF2E6B5A, 0xFF7A3B3B).map(::Color)
+    private val seriesDark = listOf(0xFF8FD3EE, 0xFFF5B08F, 0xFFC2E08A, 0xFFF0A6D6, 0xFFB4B4F5, 0xFFE8D58A, 0xFF9EDCC8, 0xFFF0B0B0).map(::Color)
 
     fun hue(h: Stats.Hue, isDark: Boolean): Color = (if (isDark) dark else light).getValue(h)
 
@@ -83,13 +85,24 @@ fun LineChart(chart: Stats.Chart, modifier: Modifier = Modifier) {
             Modifier.fillMaxWidth().height(180.dp)
                 .semantics { contentDescription = chart.description }
                 .pointerInput(chart) {
-                    detectTapGestures { o -> if (days.isNotEmpty()) picked = ((o.x / size.width) * (days.size - 1) + 0.5f).toInt().coerceIn(0, days.lastIndex) }
+                    detectTapGestures { o ->
+                        if (days.isNotEmpty()) {
+                            // Ближайший по дате день к точке касания.
+                            val first = days.first().toEpochDay()
+                            val span = (days.last().toEpochDay() - first).coerceAtLeast(1)
+                            val at = first + (o.x / size.width) * span
+                            picked = days.indices.minBy { kotlin.math.abs(days[it].toEpochDay() - at) }
+                        }
+                    }
                 },
         ) {
             if (days.isEmpty()) return@Canvas
             val low = minOf(0L, values.min())
             val high = maxOf(values.max(), low + 1)
-            fun x(i: Int) = if (days.size == 1) size.width / 2 else size.width * i / (days.size - 1)
+            // Ось — по датам, а не по номеру точки: пропуски во времени видны (временной ряд не сжимается).
+            val first = days.first().toEpochDay()
+            val span = (days.last().toEpochDay() - first).coerceAtLeast(1)
+            fun x(i: Int) = if (days.size == 1) size.width / 2 else size.width * (days[i].toEpochDay() - first) / span.toFloat()
             fun y(v: Long) = size.height - size.height * (v - low) / (high - low).toFloat()
             drawLine(axis, Offset(0f, y(low)), Offset(size.width, y(low)), strokeWidth = 1f)
             chart.series.forEachIndexed { si, s ->

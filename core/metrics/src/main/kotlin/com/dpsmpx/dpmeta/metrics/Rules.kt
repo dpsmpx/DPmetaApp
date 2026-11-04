@@ -9,7 +9,7 @@ import kotlin.time.Duration.Companion.hours
  * `docs/CHANGELOG.md`; прежние точки истории остаются со своей версией.
  */
 object Rules {
-    const val RULES_VERSION: Int = 2
+    const val RULES_VERSION: Int = 3
 
     /** «Кто работает» (F-16, `DPmeta:M-08`): коммит в `main` за это окно. */
     val MAIN_COMMIT_WINDOW: Duration = 6.hours
@@ -37,6 +37,10 @@ object Rules {
      */
     val PR_WAITING_LIMIT: Duration = 72.hours
 
-    /** Время до вливания (ТЗ, §8, `repo.pr.lead_time`): перцентиль «долгого» PR рядом с медианой. */
+    /**
+     * Время до вливания (ТЗ, §8, `repo.pr.lead_time`): перцентиль «долгого» PR
+     * рядом с медианой — по последним влитым (до пяти, `Sync.MERGED_KEEP`): при
+     * пяти PR P90 — самый долгий. Точка истории — `repo.pr.lead_time.p90`.
+     */
     const val LEAD_TIME_PERCENTILE: Int = 90
 }

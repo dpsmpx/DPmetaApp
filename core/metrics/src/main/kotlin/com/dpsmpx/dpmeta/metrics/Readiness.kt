@@ -28,9 +28,17 @@ object Readiness {
     /** Текущий этап ROADMAP: [number] — по порядку с 1, из [total]; все закрыты — последний. */
     data class Stage(val number: Int, val total: Int, val title: String, val stepsDone: Int, val stepsTotal: Int, val allDone: Boolean)
 
-    /** Шлюз: итог каждого критерия; [ready] — все «да»; хоть одно «нет» — «нет»; иначе неизвестно. */
-    data class Gate(val stage: Measure<Stage>, val results: Map<Criterion, Measure<Boolean>>) {
+    /**
+     * Шлюз: итог каждого применимого критерия; [ready] — все «да»; хоть одно
+     * «нет» — «нет»; иначе неизвестно. [notApplicable] — критерии, источника
+     * которых у проекта нет по реестру (PR и проверки подсистемы — у
+     * DPmetaApp; журнала решений нет в реестре): в итог не входят.
+     */
+    data class Gate(val stage: Measure<Stage>, val results: Map<Criterion, Measure<Boolean>>, val notApplicable: List<Criterion> = emptyList()) {
         val passed: Int get() = results.values.count { it.orNull() == true }
+
+        /** Хоть один критерий известен — иначе число выполненных не пишется в историю (0 из неизвестного — не 0). */
+        val anyKnown: Boolean get() = results.values.any { it is Measure.Known }
 
         val ready: Measure<Boolean>
             get() = when {
@@ -47,18 +55,33 @@ object Readiness {
 
     fun gate(p: ProjectState, now: Timestamp): Gate {
         val stage = stage(p)
-        return Gate(
-            stage,
-            linkedMapOf(
-                Criterion.DECISIONS to p.decisions.let { d -> d.orNull()?.let { Measure.observed(it > 0) } ?: absent(p, "decisions") ?: Measure.unknown("журнал решений не наблюдается") },
-                Criterion.PROCESS to process(p),
-                Criterion.CHECKS to p.lastChecksGreen,
-                Criterion.AUTHOR to (p.forAuthor.orNull()?.let { Measure.observed(it == 0L) } ?: absent(p, "todo") ?: Measure.unknown("нет TODO.md")),
-                Criterion.PULLS to (p.waitingAuthor(now).orNull()?.let { (_, oldest) -> Measure.observed(oldest == null || oldest < Rules.PR_WAITING_LIMIT.inWholeMilliseconds) } ?: Measure.unknown("нет данных о PR")),
-                // Нет ROADMAP — этапа нет: «неизвестно», а отсутствие файла уже держит [Criterion.PROCESS].
-                Criterion.STAGE to (stage.orNull()?.let { Measure.observed(it.allDone || (it.stepsTotal > 0 && it.stepsDone == it.stepsTotal)) } ?: Measure.unknown("нет ROADMAP")),
-            ),
+        val skip = buildList {
+            if ("decisions" in p.skipped) add(Criterion.DECISIONS)
+            if ("pulls" in p.skipped) addAll(listOf(Criterion.CHECKS, Criterion.PULLS))
+        }
+        val all = linkedMapOf(
+            Criterion.DECISIONS to p.decisions.let { d -> d.orNull()?.let { Measure.observed(it > 0) } ?: absent(p, "decisions") ?: Measure.unknown("журнал решений не наблюдается") },
+            Criterion.PROCESS to process(p),
+            Criterion.CHECKS to p.lastChecksGreen,
+            Criterion.AUTHOR to (p.forAuthor.orNull()?.let { Measure.observed(it == 0L) } ?: absent(p, "todo") ?: Measure.unknown("нет TODO.md")),
+            Criterion.PULLS to (p.waitingAuthor(now).orNull()?.let { (_, oldest) -> Measure.observed(oldest == null || oldest < Rules.PR_WAITING_LIMIT.inWholeMilliseconds) } ?: Measure.unknown("нет данных о PR")),
+            // Нет ROADMAP — этапа нет: «неизвестно», а отсутствие файла уже держит [Criterion.PROCESS].
+            Criterion.STAGE to stageDone(stage),
         )
+        return Gate(stage, all.filterKeys { it !in skip }, skip)
+    }
+
+    /**
+     * Шаги текущего этапа отмечены. У этапа без шагов (ROADMAP таблицей
+     * «Состояние» — DPpass, «AI») отметок нет — «неизвестно», а не «нет».
+     */
+    private fun stageDone(stage: Measure<Stage>): Measure<Boolean> {
+        val s = stage.orNull() ?: return Measure.unknown("нет ROADMAP")
+        return when {
+            s.allDone -> Measure.observed(true)
+            s.stepsTotal == 0 -> Measure.unknown("у этапа нет шагов")
+            else -> Measure.observed(s.stepsDone == s.stepsTotal)
+        }
     }
 
     /** Текущий этап: первый «идёт», иначе первый не сделанный; все сделаны — последний. */

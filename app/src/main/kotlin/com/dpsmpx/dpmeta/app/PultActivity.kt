@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.os.CancellationSignal
+import android.provider.DocumentsContract
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -44,13 +45,19 @@ open class PultActivity : ComponentActivity() {
     private lateinit var secrets: SecretStore
     private val view = mutableStateOf(PultView(null, "", hasToken = false, busy = false))
 
-    /** Текст экспорта (F-36), ждущий места от системного выбора; окно пересоздано — потерян, экспорт повторяется. */
-    private var pendingExport: String? = null
+    /**
+     * Что экспортируется (F-36), пока системный выбор ищет место: формат и срок
+     * переживают пересоздание окна (поворот), текст собирается заново из истории.
+     */
+    private var pending: Pair<Boolean, Stats.Period>? = null
     private val saveCsv = registerForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { writeExport(it) }
     private val saveJson = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { writeExport(it) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        savedInstanceState?.getString(PENDING_PERIOD)?.let { p ->
+            Stats.Period.entries.firstOrNull { it.name == p }?.let { pending = savedInstanceState.getBoolean(PENDING_JSON) to it }
+        }
         window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         pool = Executors.newFixedThreadPool(THREADS)
         repo = PultRepository(NioVfs(filesDir.toPath().resolve("dpmeta")), Clock.SYSTEM, pool)
@@ -117,12 +124,26 @@ open class PultActivity : ComponentActivity() {
         super.onDestroy()
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        pending?.let { (json, period) ->
+            outState.putBoolean(PENDING_JSON, json)
+            outState.putString(PENDING_PERIOD, period.name)
+        }
+    }
+
     private fun open() {
         val state = (repo.state() as? Outcome.Success)?.value
         val hasToken = secrets.exists()
         val feed = (repo.feed() as? Outcome.Success)?.value.orEmpty()
-        val history = (repo.history() as? Outcome.Success)?.value.orEmpty()
-        view.value = PultView(state, "", hasToken, busy = false, feed = feed, names = repo.names(), history = history)
+        view.value = PultView(state, "", hasToken, busy = false, feed = feed, names = repo.names())
+        // История растёт с каждой синхронизацией — читается в фоне, холодный старт её не ждёт (N-02).
+        pool.execute {
+            val history = (repo.history() as? Outcome.Success)?.value.orEmpty()
+            runOnUiThread { view.value = view.value.copy(history = history) }
+        }
+        // Файлы прежних «Поделиться» (D-67) живут до следующего входа в пульт.
+        pool.execute { File(cacheDir, EXPORT_DIR).deleteRecursively() }
         setContent {
             PultTheme {
                 PultApp(view.value, loader, onSync = ::sync, onSaveToken = ::saveToken, onForgetToken = ::forgetToken, onAi = aiIntent()?.let { i -> { startActivity(i) } }, onExport = ::export)
@@ -136,27 +157,42 @@ open class PultActivity : ComponentActivity() {
      */
     private fun export(json: Boolean, period: Stats.Period, share: Boolean) {
         val s = view.value.state ?: return
-        val points = Export.points(view.value.history, period, s.asOf)
-        val text = if (json) Export.json(points, period, s.asOf) else Export.csv(points)
         val name = Export.fileName(period, s.asOf, if (json) "json" else "csv")
         if (share) {
-            shareExport(name, text, if (json) "application/json" else "text/csv")
+            if (pool.isShutdown) return
+            pool.execute {
+                val text = exportText(json, period)
+                runOnUiThread { if (text == null) noExport() else shareExport(name, text, if (json) "application/json" else "text/csv") }
+            }
             return
         }
-        pendingExport = text
+        pending = json to period
         if (json) saveJson.launch(name) else saveCsv.launch(name)
     }
 
+    /** Текст экспорта — из сохранённого среза и истории, не из экрана: после пересоздания окна он тот же. Не в главном потоке. */
+    private fun exportText(json: Boolean, period: Stats.Period): String? {
+        val s = (repo.state() as? Outcome.Success)?.value ?: return null
+        val history = (repo.history() as? Outcome.Success)?.value ?: return null
+        val points = Export.points(history, period, s.asOf)
+        return if (json) Export.json(points, period, s.asOf) else Export.csv(points)
+    }
+
+    private fun noExport() {
+        view.value = view.value.copy(status = "Экспорт не собран: нет среза или истории.")
+    }
+
     /**
-     * «Поделиться» (D-67): файл — в каталоге экспорта кэша (прежние стираются),
-     * получателю — право чтения только этого файла через `FileProvider`.
+     * «Поделиться» (D-67): у каждой отправки — свой каталог в кэше экспорта
+     * (повторное нажатие не стирает файл, который ещё читает прошлый
+     * получатель); получателю — право чтения только этого файла через
+     * [ExportProvider]. Каталог чистится при следующем входе в пульт.
      */
     private fun shareExport(name: String, text: String, mime: String) {
         val ok = runCatching {
-            val dir = File(cacheDir, EXPORT_DIR).apply { mkdirs() }
-            dir.listFiles()?.forEach { it.delete() }
+            val dir = File(File(cacheDir, EXPORT_DIR), System.nanoTime().toString()).apply { mkdirs() }
             val file = File(dir, name).apply { writeText(text, Charsets.UTF_8) }
-            val uri = FileProvider.getUriForFile(this, "$packageName.pult.export", file)
+            val uri = FileProvider.getUriForFile(this, ExportProvider.authority(this), file)
             val send = Intent(Intent.ACTION_SEND).setType(mime).putExtra(Intent.EXTRA_STREAM, uri)
                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             send.clipData = ClipData.newRawUri(name, uri)
@@ -166,15 +202,14 @@ open class PultActivity : ComponentActivity() {
     }
 
     private fun writeExport(uri: Uri?) {
-        val text = pendingExport
-        pendingExport = null
-        if (uri == null) return
-        if (text == null || pool.isShutdown) {
-            view.value = view.value.copy(status = "Экспорт не сохранён: экран пересоздан — повторите.")
-            return
-        }
+        val what = pending
+        pending = null
+        if (uri == null || what == null || pool.isShutdown) return
         pool.execute {
-            val ok = runCatching { contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray(Charsets.UTF_8)) } ?: error("нет потока") }.isSuccess
+            val text = exportText(what.first, what.second)
+            val ok = text != null && runCatching { contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray(Charsets.UTF_8)) } ?: error("нет потока") }.isSuccess
+            // Выбор места уже создал файл: не записан — убрать пустой, а не оставить его в «Загрузках».
+            if (!ok) runCatching { DocumentsContract.deleteDocument(contentResolver, uri) }
             runOnUiThread { view.value = view.value.copy(status = if (ok) "Экспорт сохранён." else "Экспорт не сохранён: файл не записан.") }
         }
     }
@@ -234,15 +269,17 @@ open class PultActivity : ComponentActivity() {
         pool.execute {
             val r = repo.sync(token)
             val state = (repo.state() as? Outcome.Success)?.value
+            val feed = (repo.feed() as? Outcome.Success)?.value.orEmpty()
+            val history = (repo.history() as? Outcome.Success)?.value.orEmpty()
             runOnUiThread {
                 view.value = when (r) {
                     is Outcome.Success -> view.value.copy(
                         state = state,
                         busy = false,
                         status = "Готово: ${r.value.line}.",
-                        feed = (repo.feed() as? Outcome.Success)?.value.orEmpty(),
+                        feed = feed,
                         names = repo.names(),
-                        history = (repo.history() as? Outcome.Success)?.value.orEmpty(),
+                        history = history,
                     )
                     is Outcome.Failure -> view.value.copy(busy = false, status = "Не вышло: ${r.diagnostics.first().code.name} — ${r.diagnostics.first().message}")
                 }
@@ -251,8 +288,10 @@ open class PultActivity : ComponentActivity() {
     }
 
     companion object {
-        /** Каталог экспорта в кэше — единственный, что виден `FileProvider` (`res/xml/pult_export_paths.xml`). */
+        /** Каталог экспорта в кэше — единственный, что виден [ExportProvider] (`res/xml/pult_export_paths.xml`). */
         const val EXPORT_DIR = "pult-export"
+        private const val PENDING_JSON = "export.json"
+        private const val PENDING_PERIOD = "export.period"
 
         /** Запросы дат коммитов — пулом (D-50); тот же предел, что у `dpmeta-cli`. */
         const val THREADS = 8

@@ -14,7 +14,7 @@ object ScreenText {
         appendLine("Проектов: ${s.projects}")
         appendLine("Ошибок источников: ${s.sourceErrors}")
         appendLine("Шлюз готов: ${s.gatesReady}")
-        appendLine("Синхронизация: ${s.syncHealth} источников")
+        appendLine("Синхронизация: ${s.syncHealth}")
     }
 
     /** График (F-34) строками: описание для TalkBack и таблица значений (N-07) — то, что рядом с рисунком. */

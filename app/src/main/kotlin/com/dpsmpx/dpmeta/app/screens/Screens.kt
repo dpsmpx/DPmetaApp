@@ -80,7 +80,7 @@ object Screens {
             val unknown = gates.size - known.size
             if (known.isEmpty()) UNKNOWN else "${known.count { it }} из ${known.size}" + if (unknown > 0) " (неизвестно — $unknown)" else ""
         },
-        syncHealth = show(s.syncHealth, " %"),
+        syncHealth = s.syncHealth.orNull()?.let { "$it % источников" } ?: UNKNOWN,
     )
 
     // --- Проекты по местам (F-02, F-06) ---
@@ -130,7 +130,7 @@ object Screens {
         val stage = when (val st = gate.stage) {
             is Measure.Unknown -> "этап неизвестен"
             is Measure.Known -> st.value.let { s ->
-                "этап ${s.number} из ${s.total} «${s.title}»" + when {
+                "«${s.title}» (${s.number}-й по порядку из ${s.total})" + when {
                     s.allDone -> " — все этапы закрыты"
                     s.stepsTotal > 0 -> ", шагов ${s.stepsDone} из ${s.stepsTotal}"
                     else -> ""
@@ -147,7 +147,7 @@ object Screens {
                 is Measure.Known -> "${if (m.value) "✓" else "✗"} ${c.title}"
                 is Measure.Unknown -> "? ${c.title} — ${m.reason}"
             }
-        }
+        } + gate.notApplicable.map { "· ${it.title} — не применимо (D-64)" }
         val waiting = p.waitingAuthor(now).orNull()?.let { (n, oldest) -> "ждут автора $n" + (oldest?.let { ", самый старый — ${it / DAY_MS} дн" } ?: "") } ?: "ждут автора — $UNKNOWN"
         val drafts = "черновиков ${show(p.draftPulls)}"
         val lead = p.leadTime.orNull()?.let { (m, high) -> "до вливания: медиана ${hours(m)}, P${Rules.LEAD_TIME_PERCENTILE} ${hours(high)}" } ?: "до вливания — $UNKNOWN"

@@ -162,8 +162,12 @@ private fun Summary(s: Screens.Summary, view: PultView, onSync: () -> Unit, onSt
     Line("Проектов", s.projects.toString())
     Line("Ошибок источников", s.sourceErrors.toString())
     Line("Шлюз готов", s.gatesReady)
-    Line("Синхронизация", "${s.syncHealth} источников")
-    view.state?.let { st -> Tiles(Stats.tiles(view.history, st.asOf)) }
+    Line("Синхронизация", s.syncHealth)
+    view.state?.let { st ->
+        // Плитки — один раз на историю и срез, не на каждую перерисовку сводки.
+        val tiles = remember(view.history, st.asOf) { Stats.tiles(view.history, st.asOf) }
+        Tiles(tiles)
+    }
     TextButton(onClick = onStats) { Text("Статистика →") }
     Button(onClick = onSync, enabled = !view.busy) { Text(if (view.busy) "Синхронизация…" else "Обновить") }
     if (view.status.isNotEmpty()) Text(view.status, style = MaterialTheme.typography.bodySmall)

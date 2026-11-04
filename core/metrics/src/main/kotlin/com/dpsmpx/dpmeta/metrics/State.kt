@@ -43,7 +43,14 @@ data class SourceError(val kind: String, val code: String, val message: String, 
 }
 
 /** Состояние проекта: секции источников и отказы последнего прогона. */
-data class ProjectState(val name: String, val place: String, val sections: Map<String, SourceSection>, val errors: List<SourceError>) {
+data class ProjectState(
+    val name: String,
+    val place: String,
+    val sections: Map<String, SourceSection>,
+    val errors: List<SourceError>,
+    /** Виды источников, которых у проекта нет по реестру (D-64): PR подсистемы — у DPmetaApp, журнала решений нет в реестре. */
+    val skipped: Set<String> = emptySet(),
+) {
     private fun payload(kind: String): JsonObject? = sections[kind]?.payload as? JsonObject
 
     private fun long(kind: String, field: String): Measure<Long> =
@@ -70,13 +77,14 @@ data class ProjectState(val name: String, val place: String, val sections: Map<S
     /**
      * PR ждут автора (ТЗ, §8, `repo.pr.waiting_author`; [Rules.PR_WAITING_LIMIT]):
      * открыт и не черновик. Сколько их и сколько миллисекунд ждёт самый старый —
-     * с открытия, а без времени открытия — с последнего обновления; никто не
-     * ждёт — `null`.
+     * с последнего обновления PR (правила 3: открытие черновиком сразу после
+     * первого пуша — не ожидание автора); никто не ждёт — `null`.
      */
     fun waitingAuthor(now: Timestamp): Measure<Pair<Long, Long?>> {
         val list = pulls("pulls") ?: return Measure.unknown("нет данных о PR")
         val waiting = list.filter { (it["draft"] as? JsonBool)?.value != true }
-        val oldest = waiting.mapNotNull { time(it, "createdAt") ?: time(it, "updatedAt") }.minOrNull()?.let { now.epochMillis - it }
+        // С последнего обновления: черновик живёт с первого пуша, а ждать автора начинает, когда готов (правила 3).
+        val oldest = waiting.mapNotNull { time(it, "updatedAt") ?: time(it, "createdAt") }.minOrNull()?.let { now.epochMillis - it }
         return Measure.observed(waiting.size.toLong() to oldest)
     }
 
@@ -151,6 +159,7 @@ data class ProjectState(val name: String, val place: String, val sections: Map<S
             "sections" to JsonArray(sections.keys.sorted().map { sections.getValue(it).toJson() }),
             "errors" to JsonArray(errors.map { it.toJson() }),
         ).apply {
+            if (skipped.isNotEmpty()) put("skipped", JsonArray(skipped.sorted().map(::JsonString)))
             working(now).orNull()?.let { put("working", JsonBool(it)) }
         },
     )
@@ -217,12 +226,13 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
             }
             p.leadTime.orNull()?.let { (median, high) ->
                 add("repo.pr.lead_time.median", p.name, Measure.observed(median))
-                add("repo.pr.lead_time.p${Rules.LEAD_TIME_PERCENTILE}", p.name, Measure.observed(high))
+                // Имя точки — устойчивое (правила 3); перцентиль меняется только с новым именем.
+                add("repo.pr.lead_time.p90", p.name, Measure.observed(high))
             }
             add("repo.checks.last", p.name, flag(p.lastChecksGreen))
             val gate = Readiness.gate(p, asOf)
             add("repo.stage", p.name, gate.stage.orNull()?.let { Measure.observed(it.number.toLong()) } ?: Measure.unknown(""))
-            add("repo.gate.passed", p.name, Measure.observed(gate.passed.toLong()))
+            if (gate.anyKnown) add("repo.gate.passed", p.name, Measure.observed(gate.passed.toLong()))
             add("repo.gate.ready", p.name, flag(gate.ready))
         }
         add("eco.active_projects", "eco", activeProjects)
@@ -275,7 +285,11 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
                 val errors = failures.filter { it.project == entry.name }
                     .sortedWith(compareBy({ it.kind }, { it.diagnostic.code.name }, { it.at }))
                     .map { f -> SourceError(f.kind, f.diagnostic.code.name, f.diagnostic.message, f.at) }
-                ProjectState(entry.name, entry.place.code, (before + fresh).toSortedMap(), errors)
+                val skipped = buildSet {
+                    if (entry.dir != null) addAll(listOf("pulls", "merged", "branches"))
+                    if (entry.decisions == null) add("decisions")
+                }
+                ProjectState(entry.name, entry.place.code, (before + fresh).toSortedMap(), errors, skipped)
             }
             val failed = failures.count { it.diagnostic.code !in NOT_FOUND }
             val health = (observations.size + failed).takeIf { it > 0 }?.let { observations.size * 100L / it }
@@ -317,7 +331,8 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
                         Timestamp((eo["at"] as? JsonNumber)?.toLongExact() ?: return Outcome.failure(DiagCode.FIELD_MISSING, "нет времени отказа", name)),
                     )
                 }
-                ProjectState(name, place, sections.associateBy { it.kind }.toSortedMap(), errors)
+                val skipped = (o["skipped"] as? JsonArray)?.items.orEmpty().mapNotNull { (it as? JsonString)?.value }.toSet()
+                ProjectState(name, place, sections.associateBy { it.kind }.toSortedMap(), errors, skipped)
             }
             return Outcome.success(EcosystemState(Timestamp(asOf), rules.toInt(), out, health))
         }

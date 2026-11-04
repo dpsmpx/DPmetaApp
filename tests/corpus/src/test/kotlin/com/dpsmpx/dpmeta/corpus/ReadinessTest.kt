@@ -69,13 +69,30 @@ class ReadinessTest {
         assertEquals(listOf(Criterion.CHECKS), failing(project(section("merged", """{"pulls":[{"number":1,"mergedAt":1,"checks":"red"}]}"""), roadmapDone, todoClean, decisions, noPulls)))
         assertEquals(listOf(Criterion.AUTHOR), failing(project(green, roadmapDone, section("todo", """{"open":2,"forAuthor":1,"sections":[]}"""), decisions, noPulls)))
         val old = now.epochMillis - Rules.PR_WAITING_LIMIT.inWholeMilliseconds - hour
-        assertEquals(listOf(Criterion.PULLS), failing(project(green, roadmapDone, todoClean, decisions, section("pulls", """{"pulls":[{"number":5,"draft":false,"createdAt":$old,"updatedAt":${now.epochMillis}}]}"""))))
+        assertEquals(listOf(Criterion.PULLS), failing(project(green, roadmapDone, todoClean, decisions, section("pulls", """{"pulls":[{"number":5,"draft":false,"createdAt":$old,"updatedAt":$old}]}"""))))
+        assertEquals(
+            emptyList(),
+            failing(project(green, roadmapDone, todoClean, decisions, section("pulls", """{"pulls":[{"number":5,"draft":false,"createdAt":$old,"updatedAt":${now.epochMillis}}]}"""))),
+            "черновик, ставший готовым час назад, ждёт час, а не с открытия (правила 3)",
+        )
         assertEquals(
             emptyList(),
             failing(project(green, roadmapDone, todoClean, decisions, section("pulls", """{"pulls":[{"number":5,"draft":true,"createdAt":$old,"updatedAt":$old}]}"""))),
             "черновик автора не ждёт",
         )
         assertEquals(listOf(Criterion.STAGE), failing(project(green, section("roadmap", """{"stages":[{"title":"Этап 0","flag":"active","stepsDone":1,"stepsTotal":2}]}"""), todoClean, decisions, noPulls)))
+    }
+
+    @Test
+    fun stageWithoutStepsIsUnknownAndInapplicableCriteriaAreOut() {
+        val table = section("roadmap", """{"stages":[{"title":"Этап 2","flag":"active","stepsDone":0,"stepsTotal":0}]}""")
+        val gate = Readiness.gate(project(green, table, todoClean, decisions, noPulls), now)
+        assertIs<Measure.Unknown>(gate.results[Criterion.STAGE], "ROADMAP таблицей — без шагов: неизвестно, а не «нет»")
+        assertTrue(gate.blocking.isEmpty())
+        val subsystem = ProjectState("S", "core", mapOf(roadmapDone, todoClean).toSortedMap(), emptyList(), skipped = setOf("pulls", "merged", "branches", "decisions"))
+        val g = Readiness.gate(subsystem, now)
+        assertEquals(listOf(Criterion.DECISIONS, Criterion.CHECKS, Criterion.PULLS), g.notApplicable)
+        assertEquals(Measure.observed(true), g.ready, "неприменимое в итог не входит: подсистема может быть готова")
     }
 
     @Test
@@ -100,7 +117,7 @@ class ReadinessTest {
             ),
         )
         assertEquals(Measure.observed(1L), p.draftPulls)
-        assertEquals(Measure.observed(1L to 50 * hour), p.waitingAuthor(now))
+        assertEquals(Measure.observed(1L to 0L), p.waitingAuthor(now), "ждёт с последнего обновления (правила 3)")
         assertEquals(Measure.observed(60L to 180L), p.leadTime, "медиана и P90 по ближайшему рангу; без времени открытия — не в счёт")
     }
 
@@ -118,8 +135,11 @@ class ReadinessTest {
         assertEquals(0L, points["repo.gate.ready"], "красные проверки держат шлюз")
         assertEquals(1L, points["repo.pr.open.drafts"])
         assertEquals(100L, state.syncHealth.orNull(), "404 подсистемы — ответ, а не неудача")
+        assertEquals(setOf("pulls", "merged", "branches"), state.project("DPmeta")!!.skipped, "подсистема: PR и ветки — у DPmetaApp")
+        assertTrue(state.points().none { it.subject == "DPmeta" && it.metric == "repo.gate.passed" } || Readiness.gate(state.project("DPmeta")!!, now).anyKnown)
         val back = (EcosystemState.fromJson(state.toJson()) as Outcome.Success).value
         assertEquals(state.syncHealth, back.syncHealth, "доля переживает запись состояния")
+        assertEquals(state.project("DPmeta")!!.skipped, back.project("DPmeta")!!.skipped, "неприменимое переживает запись состояния")
         assertTrue(state.points().all { it.rulesVersion == Rules.RULES_VERSION })
     }
 }

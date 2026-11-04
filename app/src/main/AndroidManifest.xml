@@ -18,7 +18,7 @@
         <!-- «Поделиться» экспортом (D-67): не экспортируется, права на файл — только
              получателю одной отправки; виден только каталог экспорта в кэше. -->
         <provider
-            android:name="androidx.core.content.FileProvider"
+            android:name="com.dpsmpx.dpmeta.app.ExportProvider"
             android:authorities="${applicationId}.pult.export"
             android:exported="false"
             android:grantUriPermissions="true">
