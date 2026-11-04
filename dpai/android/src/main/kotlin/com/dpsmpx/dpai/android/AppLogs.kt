@@ -32,7 +32,9 @@ object AppLogs {
         instance ?: run {
             val app = context.applicationContext
             val dir = app.filesDir
-            val version = runCatching { app.packageManager.getPackageInfo(app.packageName, 0).versionName }.getOrNull() ?: "?"
+            // Версия «AI» — своя; APK приложения DPmetaApp — со своей версией (DPmetaApp:D-54): обе в заголовке.
+            val apk = runCatching { app.packageManager.getPackageInfo(app.packageName, 0).versionName }.getOrNull() ?: "?"
+            val version = BuildConfig.DPAI_VERSION + if (apk != BuildConfig.DPAI_VERSION) " · приложение $apk" else ""
             val sink = FileLogSink(
                 NioVfs(dir.toPath()), header = {
                     listOf(

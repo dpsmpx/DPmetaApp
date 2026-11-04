@@ -91,8 +91,9 @@ private sealed interface Nav {
     data class Doc(val project: String, val path: String, val anchor: String?) : Nav
 }
 
+/** [onAi] — вкладка «AI» перед «Настройками» (D-53): открывает оболочку подсистемы; `null` — вкладки нет. */
 @Composable
-fun PultApp(view: PultView, loader: Loader, onSync: () -> Unit, onSaveToken: (String) -> Unit, onForgetToken: () -> Unit) {
+fun PultApp(view: PultView, loader: Loader, onSync: () -> Unit, onSaveToken: (String) -> Unit, onForgetToken: () -> Unit, onAi: (() -> Unit)? = null) {
     var tab by remember { mutableStateOf(if (view.hasToken) Tab.SUMMARY else Tab.SETTINGS) }
     val stack = remember { mutableStateListOf<Nav>() }
     val open: (Nav) -> Unit = { stack.add(it) }
@@ -101,6 +102,7 @@ fun PultApp(view: PultView, loader: Loader, onSync: () -> Unit, onSaveToken: (St
         bottomBar = {
             NavigationBar {
                 for (t in Tab.entries) {
+                    if (t == Tab.SETTINGS && onAi != null) NavigationBarItem(selected = false, onClick = onAi, icon = {}, label = { Text("AI") })
                     NavigationBarItem(selected = tab == t && stack.isEmpty(), onClick = { tab = t; stack.clear() }, icon = {}, label = { Text(t.title) })
                 }
             }

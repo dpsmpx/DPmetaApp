@@ -1,5 +1,6 @@
 package com.dpsmpx.dpmeta.app
 
+import android.content.Intent
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
@@ -23,10 +24,11 @@ import java.util.concurrent.Executors
 /**
  * Экран пульта (этап 3): сводка, проекты, карточка, вопросы автору — только
  * чтение. Окно закрыто от снимков (`FLAG_SECURE`, T-02: на экране — токен и
- * закрытые проекты); вход — через [Lock] (F-45). Оболочка открывает его
- * явным интентом; наружу активность не экспортируется.
+ * закрытые проекты); вход — через [Lock] (F-45). Первым экраном приложения
+ * его делает наследник в модуле корня `:android` (D-53) — он же даёт
+ * [aiIntent]: вкладка «AI» открывает оболочку подсистемы.
  */
-class PultActivity : ComponentActivity() {
+open class PultActivity : ComponentActivity() {
     private lateinit var pool: ExecutorService
     private lateinit var repo: PultRepository
     private lateinit var secrets: SecretStore
@@ -41,6 +43,9 @@ class PultActivity : ComponentActivity() {
         Lock.ask(this, onOpen = ::open, onDenied = { finish() })
     }
 
+    /** Вход в подсистему «AI» (D-53); нет — вкладки «AI» нет: пульт сам о подсистеме не знает. */
+    protected open fun aiIntent(): Intent? = null
+
     override fun onDestroy() {
         if (::pool.isInitialized) pool.shutdownNow()
         super.onDestroy()
@@ -53,7 +58,7 @@ class PultActivity : ComponentActivity() {
         view.value = PultView(state, "", hasToken, busy = false, feed = feed, names = repo.names())
         setContent {
             PultTheme {
-                PultApp(view.value, loader, onSync = ::sync, onSaveToken = ::saveToken, onForgetToken = ::forgetToken)
+                PultApp(view.value, loader, onSync = ::sync, onSaveToken = ::saveToken, onForgetToken = ::forgetToken, onAi = aiIntent()?.let { i -> { startActivity(i) } })
             }
         }
     }

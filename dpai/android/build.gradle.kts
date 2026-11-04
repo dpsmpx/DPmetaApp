@@ -1,7 +1,8 @@
-// Оболочка Android (D-02, D-34): Compose рисует состояния экранов из ui;
-// логики здесь нет. Подключается только при Android SDK
-// (settings.gradle.kts). Плагин Android объявляет сам модуль, а не
-// build-logic: без Google Maven ядро собирается (docs/ARCHITECTURE.md, §2).
+// Оболочка Android (D-02, D-34) — библиотека (D-103, DPmetaApp:D-53): Compose рисует
+// состояния экранов из ui; логики здесь нет. APK собирают тонкие приложения: отдельная
+// сборка «AI» `android-app` и приложение DPmetaApp из корня; личность пакета, версия,
+// подпись и упаковка — у них. Подключается только при Android SDK (settings.gradle.kts).
+// Плагины Android и Compose — convention-плагин build-logic (D-102).
 import java.net.URI
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -10,8 +11,7 @@ import java.util.zip.GZIPInputStream
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.compose)
+    id("dpai.android-library")
 }
 
 android {
@@ -19,36 +19,15 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.dpsmpx.dpai"
         minSdk = 30
-        targetSdk = 36
-        versionCode = 10
-        versionName = project.version.toString()
-    }
-
-    // Ключ выпуска — у автора вне репозитория (docs/PROCESS.md, §6): путь и
-    // пароли — свойства dpai.release.* в ~/.gradle/gradle.properties или
-    // ORG_GRADLE_PROJECT_*. Нет их — release подписан отладочным ключом (для
-    // замеров на устройстве, docs/TESTING.md, §9), не для раздачи.
-    val releaseKey = listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
-        .associateWith { providers.gradleProperty("dpai.release.$it").orNull }
-    if (releaseKey.values.all { it != null }) {
-        signingConfigs.create("release") {
-            storeFile = file(releaseKey.getValue("storeFile")!!)
-            storePassword = releaseKey.getValue("storePassword")
-            keyAlias = releaseKey.getValue("keyAlias")
-            keyPassword = releaseKey.getValue("keyPassword")
-        }
-    }
-
-    buildTypes {
-        release {
-            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
-        }
+        // Версия подсистемы «AI» — не версия APK (DPmetaApp:D-54): с ней `doctor` сверяет
+        // версию агента, и её показывает вкладка «AI» в приложении DPmetaApp.
+        buildConfigField("String", "DPAI_VERSION", "\"${project.version}\"")
     }
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     // Процессы и псевдотерминал Linux-среды — свой код на C через JNI (D-75, шаг 3; D-17: NDK — только здесь).
@@ -66,13 +45,6 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    packaging {
-        // proot — из каталога библиотек, распакованным на диск: запуск из каталога данных при
-        // targetSdk 29+ запрещён (docs/research/LINUX_IN_APP.md, §1).
-        jniLibs.useLegacyPackaging = true
-        resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
 }
 
@@ -182,10 +154,12 @@ androidComponents {
         v.sources.jniLibs?.addStaticSourceDirectory(layout.buildDirectory.dir("generated/linux-jni").get().asFile.path)
     }
 }
-// Каталоги читают слияние ресурсов и библиотек и lint (generate…LintReportModel и др.) — все зависят от задач явно.
+// Каталоги читают слияние и упаковка ресурсов и библиотек и lint (generate…LintReportModel и др.) — все
+// зависят от задач явно; у библиотеки ресурсы упаковывает package…Assets, библиотеки — copy…JniLibs….
 tasks.matching {
     it.name != packAgent.name && it.name != linuxFiles.name && (
-        it.name.startsWith("merge") && (it.name.endsWith("Assets") || it.name.endsWith("JniLibFolders") || it.name.endsWith("NativeLibs")) ||
+        (it.name.startsWith("merge") || it.name.startsWith("package") || it.name.startsWith("copy")) &&
+            (it.name.endsWith("Assets") || it.name.contains("JniLib") || it.name.endsWith("NativeLibs")) ||
             it.name.contains("lint", ignoreCase = true)
         )
 }.configureEach { dependsOn(packAgent, linuxFiles) }

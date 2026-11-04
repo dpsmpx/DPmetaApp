@@ -43,7 +43,7 @@ ROOT_ALLOW = {
     "MESTER_TECHNICAL_TASK_ROADMAP.md",
     ".claude", ".github", "docs", "ROADMAP", "tools", "tests",
     "settings.gradle.kts", "build.gradle.kts", "gradle.properties", "gradlew", "gradlew.bat",
-    "gradle", "build-logic", "app", "core", "cli", "config",
+    "gradle", "build-logic", "app", "android", "core", "cli", "config",
     "dpai", "dppass", "socialmediaimage", "dpvisualisation", "dpmeta", "dpprofile",
 }
 # Пакетный файл Windows создан Gradle с CRLF — так и хранится (`.gitattributes`).
@@ -541,8 +541,8 @@ ROOT_MODULES = {
     ":core:actions": {":core:model"},
     ":core:sync": {":core:model", ":core:formats", ":core:net", ":core:github", ":core:site", ":core:social"},
 }
-# Оболочки и тесты зависят от всех (ТЗ, §6.2).
-ROOT_SHELLS = (":cli", ":app", ":tests:")
+# Оболочки и тесты зависят от всех (ТЗ, §6.2); :android — приложение из корня (D-53).
+ROOT_SHELLS = (":cli", ":app", ":android", ":tests:")
 DPAI_CORE = {"core", "storage", "security", "notifications"}
 MODULE_DEP = re.compile(r'project\(\s*"(:[\w:-]+)"\s*\)|"com\.dpsmpx\.dpai:([\w-]+)"')
 # Код модулей корня (не оболочек): правила кода CLAUDE.md — Android только в оболочке,
@@ -565,7 +565,7 @@ def module_of(rel):
 def check_modules(repo, r):
     """modules.root — направления зависимостей модулей корня и правила их кода (ТЗ, §6.2; D-03, D-28)."""
     builds = [rel for rel in repo.files
-              if rel.endswith("/build.gradle.kts") and rel.split("/")[0] in ("core", "cli", "app", "tests")]
+              if rel.endswith("/build.gradle.kts") and rel.split("/")[0] in ("core", "cli", "app", "android", "tests")]
     for rel in builds:
         r.scanned += 1
         mod = module_of(rel)
