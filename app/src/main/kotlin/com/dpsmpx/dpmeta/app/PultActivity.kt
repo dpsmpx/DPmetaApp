@@ -1,5 +1,6 @@
 package com.dpsmpx.dpmeta.app
 
+import android.content.ClipData
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -9,6 +10,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.mutableStateOf
+import androidx.core.content.FileProvider
 import com.dpsmpx.dpai.core.clock.Clock
 import com.dpsmpx.dpai.core.diagnostics.Secret
 import com.dpsmpx.dpai.core.result.Outcome
@@ -25,6 +27,7 @@ import com.dpsmpx.dpmeta.formats.PanelFormat
 import com.dpsmpx.dpmeta.github.GitHub
 import com.dpsmpx.dpmeta.app.ui.PultTheme
 import com.dpsmpx.dpmeta.app.ui.PultView
+import java.io.File
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -131,12 +134,35 @@ open class PultActivity : ComponentActivity() {
      * Экспорт истории за срок (F-36): CSV или JSON, место выбирает человек
      * (системный выбор файла — «Загрузки», облако); сеть приложение не трогает.
      */
-    private fun export(json: Boolean, period: Stats.Period) {
+    private fun export(json: Boolean, period: Stats.Period, share: Boolean) {
         val s = view.value.state ?: return
         val points = Export.points(view.value.history, period, s.asOf)
-        pendingExport = if (json) Export.json(points, period, s.asOf) else Export.csv(points)
+        val text = if (json) Export.json(points, period, s.asOf) else Export.csv(points)
         val name = Export.fileName(period, s.asOf, if (json) "json" else "csv")
+        if (share) {
+            shareExport(name, text, if (json) "application/json" else "text/csv")
+            return
+        }
+        pendingExport = text
         if (json) saveJson.launch(name) else saveCsv.launch(name)
+    }
+
+    /**
+     * «Поделиться» (D-67): файл — в каталоге экспорта кэша (прежние стираются),
+     * получателю — право чтения только этого файла через `FileProvider`.
+     */
+    private fun shareExport(name: String, text: String, mime: String) {
+        val ok = runCatching {
+            val dir = File(cacheDir, EXPORT_DIR).apply { mkdirs() }
+            dir.listFiles()?.forEach { it.delete() }
+            val file = File(dir, name).apply { writeText(text, Charsets.UTF_8) }
+            val uri = FileProvider.getUriForFile(this, "$packageName.pult.export", file)
+            val send = Intent(Intent.ACTION_SEND).setType(mime).putExtra(Intent.EXTRA_STREAM, uri)
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            send.clipData = ClipData.newRawUri(name, uri)
+            startActivity(Intent.createChooser(send, "Поделиться: $name"))
+        }.isSuccess
+        if (!ok) view.value = view.value.copy(status = "Не поделиться: файл экспорта не создан.")
     }
 
     private fun writeExport(uri: Uri?) {
@@ -225,6 +251,9 @@ open class PultActivity : ComponentActivity() {
     }
 
     companion object {
+        /** Каталог экспорта в кэше — единственный, что виден `FileProvider` (`res/xml/pult_export_paths.xml`). */
+        const val EXPORT_DIR = "pult-export"
+
         /** Запросы дат коммитов — пулом (D-50); тот же предел, что у `dpmeta-cli`. */
         const val THREADS = 8
     }

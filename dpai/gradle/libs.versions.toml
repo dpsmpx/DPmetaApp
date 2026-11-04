@@ -15,6 +15,9 @@ junit = "6.1.3"
 agp = "9.4.1"
 compose-bom = "2026.09.00"
 activity-compose = "1.13.0"
+# FileProvider — «Поделиться» экспортом пульта DPmetaApp (DPmetaApp:D-67); прежде приходила
+# транзитивно от activity-compose той же версии.
+androidx-core = "1.18.0"
 # SSH на JVM для приложения Android (D-35).
 jsch = "2.28.7"
 
@@ -27,6 +30,7 @@ junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "compose-bom" }
 compose-material3 = { module = "androidx.compose.material3:material3" }
 activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activity-compose" }
+androidx-core = { module = "androidx.core:core", version.ref = "androidx-core" }
 jsch = { module = "com.github.mwiede:jsch", version.ref = "jsch" }
 
 # Плагины для build-logic (подключаются как обычные зависимости): Kotlin, Android и

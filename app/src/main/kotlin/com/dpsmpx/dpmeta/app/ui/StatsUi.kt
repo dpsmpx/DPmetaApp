@@ -164,11 +164,12 @@ fun StatsScreen(
     now: Timestamp,
     onBack: () -> Unit,
     status: String = "",
-    onExport: ((Boolean, Stats.Period) -> Unit)? = null,
+    onExport: ((json: Boolean, period: Stats.Period, share: Boolean) -> Unit)? = null,
 ) {
     var metric by remember { mutableStateOf(Stats.CATALOG.first()) }
     var period by remember { mutableStateOf(Stats.Period.MONTH) }
     var subject by remember { mutableStateOf(project) }
+    var json by remember { mutableStateOf(false) }
     val chart = remember(history, metric, period, subject) {
         Stats.chart(history, metric, period, subject?.let(::listOf) ?: projects, now)
     }
@@ -195,9 +196,11 @@ fun StatsScreen(
         }
         if (onExport != null) {
             item {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    TextButton(onClick = { onExport(false, period) }) { Text("Экспорт CSV") }
-                    TextButton(onClick = { onExport(true, period) }) { Text("Экспорт JSON") }
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterChip(selected = !json, onClick = { json = false }, label = { Text("CSV") })
+                    FilterChip(selected = json, onClick = { json = true }, label = { Text("JSON") })
+                    TextButton(onClick = { onExport(json, period, false) }) { Text("Сохранить") }
+                    TextButton(onClick = { onExport(json, period, true) }) { Text("Поделиться") }
                 }
             }
             if (status.isNotEmpty()) item { Text(status, style = MaterialTheme.typography.bodySmall) }

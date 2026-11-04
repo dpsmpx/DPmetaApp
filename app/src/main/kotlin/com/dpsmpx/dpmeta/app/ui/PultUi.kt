@@ -112,7 +112,7 @@ fun PultApp(
     onSaveToken: (String) -> Unit,
     onForgetToken: () -> Unit,
     onAi: (() -> Unit)? = null,
-    onExport: ((Boolean, Stats.Period) -> Unit)? = null,
+    onExport: ((json: Boolean, period: Stats.Period, share: Boolean) -> Unit)? = null,
 ) {
     var tab by remember { mutableStateOf(if (view.hasToken) Tab.SUMMARY else Tab.SETTINGS) }
     val stack = remember { mutableStateListOf<Nav>() }

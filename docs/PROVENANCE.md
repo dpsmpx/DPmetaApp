@@ -20,9 +20,9 @@ DP-Verify и других репозиториев автора — источн
 
 ## Зависимости
 
-У модулей DPmetaApp сторонних зависимостей нет: на этапе 2 (`:core:*`,
-`:cli`, `:tests:corpus`) — только ядро `dpai/` (`core`, `storage`) и JDK
-(`java.net.http` — транспорт `dpmeta-cli`; TLS — системными корнями).
+Модули `:core:*`, `:cli` и `:tests:corpus` сторонних зависимостей не имеют —
+только ядро `dpai/` (`core`, `storage`) и JDK (`java.net.http` — транспорт
+`dpmeta-cli`; TLS — системными корнями).
 Каждая новая зависимость — строка ниже и запись в каталоге версий;
 кандидаты и их лицензии — ТЗ, §6.1.
 Зависимости подсистемы «AI» и ядра (Kotlin, JUnit, Android Gradle Plugin,
@@ -31,6 +31,7 @@ Compose, JSch; wrapper Gradle со сверкой SHA-256) — `dpai/docs/PROVEN
 
 | Компонент | Версия | Лицензия | Зачем | Модуль | Решение |
 |---|---|---|---|---|---|
+| AndroidX Core (`androidx.core:core`, каталог `androidx-core`) | 1.18.0 | Apache-2.0 | `FileProvider` — «Поделиться» экспортом истории (F-36) | `:app` | D-67 |
 
 ## Данные
 

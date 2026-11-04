@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- «Поделиться» экспортом (D-67, F-36): провайдер видит только каталог экспорта в кэше. -->
+<paths>
+    <cache-path name="export" path="pult-export/" />
+</paths>
