@@ -24,6 +24,7 @@ D-17). `tools/verify/check_dependencies.py` сверяет таблицу §2 с
 | `compose-bom` (Compose BOM: Material 3, UI, Foundation, Runtime) | 2026.09.00 | Apache-2.0 | приложение Android во время выполнения | Google Maven, `androidx.compose` | 7 октября 2026 |
 | `activity-compose` (AndroidX Activity Compose) | 1.13.0 | Apache-2.0 | приложение Android во время выполнения | Google Maven, `androidx.activity` | 7 октября 2026 |
 | `androidx-core` (AndroidX Core: `FileProvider`) | 1.18.0 | Apache-2.0 | пульт DPmetaApp (`:app`) во время выполнения — «Поделиться» экспортом (`DPmetaApp:D-67`); та же версия прежде приходила транзитивно от `activity-compose` | Google Maven, `androidx.core` | 4 ноября 2026 |
+| `jgit` (Eclipse JGit; с ним JavaEWAH 1.1.13 — Apache-2.0, SLF4J API 1.7.30 — MIT) | 5.13.3.202401111512-r | EDL-1.0 (BSD-3-Clause) | пульт DPmetaApp (`:core:git` → приложение) во время выполнения — клоны репозиториев (`DPmetaApp:D-65`); ветка 5.13 — последняя для Java 8, на Android без недостающих API JDK 11+ | Maven Central, `org.eclipse.jgit` | 4 ноября 2026 |
 | `jsch` (JSch, форк mwiede) | 2.28.7 | BSD-3-Clause, ISC | модуль `jsch` → приложение Android во время выполнения | Maven Central, `com.github.mwiede` | 7 октября 2026 |
 <!-- provenance: end -->
 
