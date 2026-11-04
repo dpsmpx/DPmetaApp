@@ -44,11 +44,14 @@ APP="$(dirname "$ROOT")"
 SUBS=()
 if git -C "$APP" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   SUBS+=(--clone "DPmetaApp=$APP")
+else
+  # Не внутри DPmetaApp (копия каталога отдельно) — DPmeta по своему ключу (M-14).
+  SUBS+=(--clone "DPmeta=$ROOT")
 fi
 
 if [ "${others:-0}" -gt 0 ]; then
   step "ссылки DPmeta на другие репозитории ($others клонов)" \
-    python3 "$ROOT/tools/xref.py" --root "$CLONES" --clone "DPmeta=$ROOT" \
+    python3 "$ROOT/tools/xref.py" --root "$CLONES" \
       ${SUBS[@]+"${SUBS[@]}"} --only DPmeta --strict DPmeta --out /dev/null
 else
   echo "○ ссылки DPmeta на другие репозитории — пропущено: рядом нет клонов ($CLONES)"

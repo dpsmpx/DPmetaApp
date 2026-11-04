@@ -48,7 +48,7 @@ class SecretStore(private val vfs: Vfs, private val path: String = "github.token
             try {
                 init(Cipher.ENCRYPT_MODE, key())
             } catch (e: KeyPermanentlyInvalidatedException) {
-                // Ключ закрыт навсегда (сняли блокировку экрана, сменили биометрию) — новый ключ, иначе токен не сохранить никогда.
+                // Ключ закрыт навсегда (блокировку экрана снимали) — новый ключ, иначе токен не сохранить никогда.
                 dropKey()
                 init(Cipher.ENCRYPT_MODE, key())
             }
@@ -75,10 +75,11 @@ class SecretStore(private val vfs: Vfs, private val path: String = "github.token
             // Вход был раньше [AUTH_SECONDS] — секрет цел, нужен новый вход (D-59): не «испорчен».
             Outcome.failure(DiagCode.DEVICE_AUTH_REQUIRED, "нужен вход по PIN или биометрии", path)
         } catch (e: KeyPermanentlyInvalidatedException) {
-            // Блокировку экрана сняли или сменили биометрию — Keystore навсегда закрыл ключ: секрет не восстановить.
+            // Блокировку экрана сняли (или сбросили) — Keystore навсегда закрыл ключ: секрет не восстановить.
+            // Смена биометрии ключ со сроком действия ([AUTH_SECONDS]) не закрывает.
             dropKey()
             clear()
-            Outcome.failure(DiagCode.STORAGE_CORRUPTED, "ключ сброшен: блокировку экрана сняли или сменили биометрию — введите токен заново", path)
+            Outcome.failure(DiagCode.STORAGE_CORRUPTED, "ключ сброшен: блокировку экрана снимали — введите токен заново", path)
         } catch (e: GeneralSecurityException) {
             Outcome.failure(DiagCode.STORAGE_CORRUPTED, "секрет не расшифрован: ${e.javaClass.simpleName}", path)
         }

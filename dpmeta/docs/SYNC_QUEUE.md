@@ -59,7 +59,7 @@ DPvisualisation, DPmeta и DPprofile, как прежде DP_AI_Orcestrator, —
 | SQ-29 | DP_AI_Orcestrator | своё Android-приложение (`android/`, README), а по слову автора — в составе DPmetaApp | средний (архитектура) | решено автором: `DPmetaApp:D-28`, с 4.11 — `DPmetaApp:D-53`: приложение DPmetaApp — `:shell` корня, «AI» — вкладкой, `dpai/android` — библиотека |
 | SQ-30 | DP_AI_Orcestrator, DPpass | репозиторий заморожен (`DPmetaApp:D-28`, `DPmetaApp:D-30`), а сам об этом не говорит | низкий | частично: DP_AI_Orcestrator и DPpass архивированы; SocialMediaImage, DPvisualisation, DPmeta, DPprofile (с надписью) — архивирует автор; на 4.11 не архивированы |
 | SQ-31 | DPvisualisation, SocialMediaImage | узлы и факты: DP_AI_Orcestrator ещё «войдёт» в DPmetaApp, его приложение — отдельно | низкий (документы), публичный (сайт) | решено автором (M-16, `DPvisualisation:D-27`, `SocialMediaImage:Д46`): узел — модель DPvisualisation; счёт и факты сайта — сессия SocialMediaImage |
-| SQ-32 | DPlang | README: v0.2 «не начата», а по ROADMAP сделаны шаги 1–5; «Р0–Р60» при Р61 | низкий | открыт — активная разработка |
+| SQ-32 | DPlang | README: v0.2 «не начата», а по ROADMAP сделаны шаги 1–5; «Р0–Р71» при Р77 (4.11; было «Р0–Р60» при Р61) | низкий | открыт — активная разработка |
 | SQ-33 | DPvisualisation | модель отстала: стадии DP-Verify, DPlang, анализа рынка; мелочи ТЗ и форматов | низкий; публичный — комплект сайта | открыт — сессия DPvisualisation, вместе с моделью под переезды (`DPvisualisation:D-26`) |
 | SQ-34 | SocialMediaImage | факты отстали: DPmetaApp после D-27…D-29, стадия DP-Verify; повторы в реестре фактов | низкий; публичный — сайт | частично: стадия DP-Verify — VRF-NOW; APP-WHAT, ECO-NEW и повтор AU-EARLY — открыт |
 | SQ-35 | SocialMediaImage | план на странице «Путь» после D-28 и имена убранных проектов | низкий; публичный — сайт | решено автором: план — `SocialMediaImage:Д44`; имена убранных — по именам (`SocialMediaImage:Д46`) |
@@ -1062,8 +1062,8 @@ PR #1 «WIP: … каркас ядра (прервано)» влит в `main` �
   общий процесс (`CLAUDE.md`, проверки) — решение автора, как RISK-05.
   По плану PR #1 DPmonetization будет читать DPmeta (реестр и контракты
   C-01, C-03, C-08, C-09), DP-Verify (`report.json`) и
-  DP_game_market_analytic_system (`DecisionReport`) — это ещё план, а не
-  контракт (`DPmeta:docs/ECOSYSTEM.md`, §2).
+  DP_game_market_analytic_system (`DecisionReport`) — это был план, а не
+  контракт; с 4 ноября 2026 он снят (`DPmetaApp:D-58`).
 - **Проход 4 ноября 2026** (`f6d30fe`): без изменений. Слово автора того же
   дня (`DPmetaApp:D-58`): второй системы портфеля нет — стадии и шлюзы
   готовности будут метриками DPmetaApp, DPmonetization — в архив (место
