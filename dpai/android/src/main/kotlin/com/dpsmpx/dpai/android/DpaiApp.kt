@@ -944,8 +944,9 @@ internal fun NewTaskDialog(model: DemoModel, onDone: () -> Unit) {
 }
 
 /**
- * Подтверждение опасного ответа из уведомления (D-44): текст — из ждущего
- * запроса оркестратора, а не из намерения; запрос уже закрыт — сказать.
+ * Подтверждение опасного ответа из уведомления и окна поверх приложений
+ * (D-44, D-104): текст — из ждущего запроса оркестратора, а не из намерения;
+ * запрос уже закрыт — сказать; вход приложения нужен — не применять.
  */
 @Composable
 private fun ConfirmDialog(model: DemoModel, requests: List<RequestCard>, uri: String, onDone: () -> Unit) {
@@ -974,6 +975,12 @@ private fun ConfirmDialog(model: DemoModel, requests: List<RequestCard>, uri: St
         confirmButton = {
             if (card != null && button != null) {
                 TextButton(enabled = !busy, onClick = {
+                    // Запас к входу приложения (D-104): диалог — своё окно, экран входа мог его не закрыть.
+                    if ((context as? DpaiApplication)?.loginNeeded() == true) {
+                        error = "Нужен вход по PIN: войдите и подтвердите снова"
+                        return@TextButton
+                    }
+                    error = null
                     busy = true
                     scope.launch {
                         val r = withContext(Dispatchers.IO) { Answers.apply(context, card.id.value, uri, null, button.label, "app") }

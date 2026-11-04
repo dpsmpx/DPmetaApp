@@ -12,8 +12,12 @@ class LockPolicy(private val elapsedMs: () -> Long, private val backgroundLimitM
     private var open = false
     private var backgroundSince: Long? = null
 
-    /** Нужен вход: процесс только запущен или фон длился час и больше. */
-    val locked: Boolean get() = !open
+    /**
+     * Нужен вход: процесс только запущен или фон длился час и больше —
+     * считая и фон, который длится сейчас: окно запроса поверх приложений
+     * спрашивает, пока окон приложения нет (D-61).
+     */
+    val locked: Boolean get() = !open || backgroundSince?.let { elapsedMs() - it >= backgroundLimitMs } == true
 
     /** Вход удался. */
     fun unlocked() {

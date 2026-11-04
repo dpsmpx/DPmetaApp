@@ -23,6 +23,13 @@ object AppLock {
     /** Блокировка всего приложения включена — у окон своей нет. */
     val installed: Boolean get() = policy != null
 
+    /**
+     * Нужен ли вход сейчас — для окна запроса «AI» поверх приложений (D-61):
+     * считает и фон, который длится. Блокировка не включена — нет. Только из
+     * главного потока, как и всё здесь.
+     */
+    val loginNeeded: Boolean get() = policy?.locked == true
+
     fun install(app: Application, elapsedMs: () -> Long = SystemClock::elapsedRealtime) {
         if (policy != null) return
         policy = LockPolicy(elapsedMs)

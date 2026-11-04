@@ -35,8 +35,9 @@ import java.util.concurrent.Executors
  * перетаскивается за верхнюю строку и запоминает место: в любом
  * постоянном месте оно что-то закрывает — шапку, клавиатуру (проверка на
  * Redmi Note 13, 8 октября 2026). Касания вне окна идут приложению под ним. Опасный вариант — вторым
- * нажатием; вариант с текстом — с полем ввода. «Скрыть окно» убирает окно, а
- * запрос остаётся в уведомлении и на экране «Запросы».
+ * нажатием, а если приложение требует вход (D-104, `DPmetaApp:D-61`), — на
+ * экране приложения после входа; вариант с текстом — с полем ввода. «Скрыть
+ * окно» убирает окно, а запрос остаётся в уведомлении и на экране «Запросы».
  */
 object RequestOverlay {
     private const val FLAG = "overlay-enabled"
@@ -81,6 +82,9 @@ object RequestOverlay {
             if (runCatching { show(context.applicationContext, next) }.isSuccess) worker.execute { model.delivered(next.id, "overlay") }
         }
     }
+
+    /** Вход приложения нужен (D-104): спрашивается в момент нажатия — за время показа окна вход мог истечь. */
+    private fun loginNeeded(context: Context): Boolean = (context.applicationContext as? DpaiApplication)?.loginNeeded() == true
 
     private fun position(context: Context): Int? =
         runCatching { NioVfs(context.filesDir.toPath()).read(POSITION)?.toString(Charsets.UTF_8)?.trim()?.toIntOrNull() }.getOrNull()
@@ -189,15 +193,31 @@ object RequestOverlay {
         val wide = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         for (b in card.buttons) {
             var armed = false
+            var armedLogin = false
             row.addView(Button(context).apply {
                 text = b.label
                 isAllCaps = false
                 setOnClickListener {
-                    if (b.confirm && !armed) {
-                        // Опасное — вторым нажатием: одно касание по ошибке ничего не делает (D-44).
+                    val login = b.confirm && loginNeeded(context)
+                    // Опасное — вторым нажатием: одно касание по ошибке ничего не делает (D-44). Вход стал нужен
+                    // или не нужен между нажатиями — подтверждение заново: подсказка обещает то, что случится (D-104).
+                    if (b.confirm && (!armed || login != armedLogin)) {
                         armed = true
+                        armedLogin = login
                         text = "Точно: ${b.label}?"
-                        status.text = "Опасное действие: нажмите ещё раз, чтобы подтвердить"
+                        status.text = if (login) "Опасное действие: нажмите ещё раз — вход по PIN и подтверждение в приложении" else "Опасное действие: нажмите ещё раз, чтобы подтвердить"
+                        return@setOnClickListener
+                    }
+                    if (login) {
+                        // Вход приложения нужен — опасное подтверждается на его экране после входа, а не здесь (D-104).
+                        // Окно убирает сам экран (`MainActivity.onResume`): запуск из фона прошивка может молча не пустить
+                        // (MIUI — разрешение на всплывающие окна в фоне), и тогда окно с подсказкой остаётся.
+                        if (runCatching { context.startActivity(MainActivity.confirm(context, b.uri)) }.isSuccess) {
+                            later += card.id.value
+                            status.text = "Открываю приложение: вход по PIN. Не открылось — откройте его сами: запрос на экране «Запросы»"
+                        } else {
+                            status.text = "Нужен вход: откройте приложение — запрос на экране «Запросы»"
+                        }
                         return@setOnClickListener
                     }
                     val typed = input?.text?.toString()?.takeIf { b.needsText }
