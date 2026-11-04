@@ -34,7 +34,7 @@ class LockActivity : ComponentActivity() {
     private var asking: CancellationSignal? = null
     private val noPin = mutableStateOf(false)
 
-    /** Окно PIN закрыто не человеком (система, блокировка попыток) — причина и кнопки «Войти», «Закрыть». */
+    /** Окно PIN закрыто без входа (кем угодно: человек, система, блокировка попыток) — причина и «Войти», «Закрыть». */
     private val failed = mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
