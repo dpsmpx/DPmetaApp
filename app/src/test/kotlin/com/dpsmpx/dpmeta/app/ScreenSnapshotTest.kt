@@ -3,6 +3,7 @@ package com.dpsmpx.dpmeta.app
 import com.dpsmpx.dpai.core.clock.ManualClock
 import com.dpsmpx.dpai.core.clock.Timestamp
 import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpmeta.app.screens.Export
 import com.dpsmpx.dpmeta.app.screens.ScreenText
 import com.dpsmpx.dpmeta.app.screens.Screens
 import com.dpsmpx.dpmeta.app.screens.Stats
@@ -96,6 +97,19 @@ class ScreenSnapshotTest {
         assertEquals(listOf(40L, 45L, 50L), roadmap.series.first().points.map { it.second }, "старше 30 дней — мимо; за день — поздняя точка")
         val questions = Stats.chart(h, Stats.metric("eco.questions_open")!!, Stats.Period.WEEK, emptyList(), now)
         snapshot("stats", ScreenText.stats(roadmap) + ScreenText.stats(questions) + ScreenText.tiles(Stats.tiles(h, now)))
+    }
+
+    @Test
+    fun exportCsvAndJson() {
+        val week = Export.points(history(), Stats.Period.WEEK, now)
+        assertTrue(week.none { it.asOf.epochMillis < now.epochMillis - 7 * 86_400_000L }, "старше срока — не в экспорте")
+        assertEquals(Export.json(week, Stats.Period.WEEK, now), Export.json(week.reversed().let { Export.points(it, Stats.Period.WEEK, now) }, Stats.Period.WEEK, now), "порядок не зависит от порядка истории")
+        val tricky = Export.csv(listOf(MetricPoint("m", "a,\"b\"", 1, now, 2))).split("\r\n")[1]
+        assertEquals("${Export.iso(now)},m,\"a,\"\"b\"\"\",1,2", tricky, "поле с запятой и кавычкой — в кавычках, кавычка удвоена (RFC 4180)")
+        val csv = Export.csv(week)
+        assertTrue(csv.endsWith("\r\n") && csv.count { it == '\n' } == csv.split("\r\n").size - 1, "CSV — строки CRLF (RFC 4180)")
+        // Снимок в репозитории — с LF (format.text): CRLF проверен выше.
+        snapshot("export", csv.replace("\r\n", "\n") + Export.json(week, Stats.Period.WEEK, now) + "\n")
     }
 
     @Test

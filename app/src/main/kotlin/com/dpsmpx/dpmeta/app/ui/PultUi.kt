@@ -105,7 +105,15 @@ private sealed interface Nav {
 
 /** [onAi] — вкладка «AI» перед «Настройками» (D-53): открывает оболочку подсистемы; `null` — вкладки нет. */
 @Composable
-fun PultApp(view: PultView, loader: Loader, onSync: () -> Unit, onSaveToken: (String) -> Unit, onForgetToken: () -> Unit, onAi: (() -> Unit)? = null) {
+fun PultApp(
+    view: PultView,
+    loader: Loader,
+    onSync: () -> Unit,
+    onSaveToken: (String) -> Unit,
+    onForgetToken: () -> Unit,
+    onAi: (() -> Unit)? = null,
+    onExport: ((Boolean, Stats.Period) -> Unit)? = null,
+) {
     var tab by remember { mutableStateOf(if (view.hasToken) Tab.SUMMARY else Tab.SETTINGS) }
     val stack = remember { mutableStateListOf<Nav>() }
     val open: (Nav) -> Unit = { stack.add(it) }
@@ -127,7 +135,7 @@ fun PultApp(view: PultView, loader: Loader, onSync: () -> Unit, onSaveToken: (St
                 top is Nav.Card && s != null -> Screens.card(s, top.project)?.let { CardScreen(it, loader, back, open) }
                 top is Nav.Dir -> DirScreen(top, loader, back, open)
                 top is Nav.Doc -> DocScreen(top, view.names, loader, back, open)
-                top is Nav.Stats && s != null -> StatsScreen(view.history, s.projects.map { it.name }, top.project, s.asOf, back)
+                top is Nav.Stats && s != null -> StatsScreen(view.history, s.projects.map { it.name }, top.project, s.asOf, back, view.status, onExport)
                 tab == Tab.SETTINGS -> Settings(view, onSync, onSaveToken, onForgetToken)
                 s == null -> Text(if (view.hasToken) "Среза ещё нет: «Обновить» в настройках." else "Нужен токен GitHub: вкладка «Настройки».")
                 tab == Tab.SUMMARY -> Summary(Screens.summary(s), view, onSync) { open(Nav.Stats(null)) }

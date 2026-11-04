@@ -1,11 +1,13 @@
 package com.dpsmpx.dpmeta.app
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.os.CancellationSignal
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.mutableStateOf
 import com.dpsmpx.dpai.core.clock.Clock
 import com.dpsmpx.dpai.core.diagnostics.Secret
@@ -13,6 +15,8 @@ import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.storage.vfs.NioVfs
 import com.dpsmpx.dpmeta.app.data.PultRepository
 import com.dpsmpx.dpmeta.app.data.SecretStore
+import com.dpsmpx.dpmeta.app.screens.Export
+import com.dpsmpx.dpmeta.app.screens.Stats
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpmeta.app.ui.Loader
 import com.dpsmpx.dpmeta.app.ui.PultApp
@@ -36,6 +40,11 @@ open class PultActivity : ComponentActivity() {
     private lateinit var repo: PultRepository
     private lateinit var secrets: SecretStore
     private val view = mutableStateOf(PultView(null, "", hasToken = false, busy = false))
+
+    /** Текст экспорта (F-36), ждущий места от системного выбора; окно пересоздано — потерян, экспорт повторяется. */
+    private var pendingExport: String? = null
+    private val saveCsv = registerForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { writeExport(it) }
+    private val saveJson = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { writeExport(it) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -113,8 +122,34 @@ open class PultActivity : ComponentActivity() {
         view.value = PultView(state, "", hasToken, busy = false, feed = feed, names = repo.names(), history = history)
         setContent {
             PultTheme {
-                PultApp(view.value, loader, onSync = ::sync, onSaveToken = ::saveToken, onForgetToken = ::forgetToken, onAi = aiIntent()?.let { i -> { startActivity(i) } })
+                PultApp(view.value, loader, onSync = ::sync, onSaveToken = ::saveToken, onForgetToken = ::forgetToken, onAi = aiIntent()?.let { i -> { startActivity(i) } }, onExport = ::export)
             }
+        }
+    }
+
+    /**
+     * Экспорт истории за срок (F-36): CSV или JSON, место выбирает человек
+     * (системный выбор файла — «Загрузки», облако); сеть приложение не трогает.
+     */
+    private fun export(json: Boolean, period: Stats.Period) {
+        val s = view.value.state ?: return
+        val points = Export.points(view.value.history, period, s.asOf)
+        pendingExport = if (json) Export.json(points, period, s.asOf) else Export.csv(points)
+        val name = Export.fileName(period, s.asOf, if (json) "json" else "csv")
+        if (json) saveJson.launch(name) else saveCsv.launch(name)
+    }
+
+    private fun writeExport(uri: Uri?) {
+        val text = pendingExport
+        pendingExport = null
+        if (uri == null) return
+        if (text == null || pool.isShutdown) {
+            view.value = view.value.copy(status = "Экспорт не сохранён: экран пересоздан — повторите.")
+            return
+        }
+        pool.execute {
+            val ok = runCatching { contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray(Charsets.UTF_8)) } ?: error("нет потока") }.isSuccess
+            runOnUiThread { view.value = view.value.copy(status = if (ok) "Экспорт сохранён." else "Экспорт не сохранён: файл не записан.") }
         }
     }
 

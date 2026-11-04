@@ -1,0 +1,9 @@
+asOf,metric,subject,value,rulesVersion
+2026-10-26T13:00:00+03:00,eco.questions_open,eco,5,2
+2026-10-29T11:00:00+03:00,repo.roadmap.progress,Alpha,44,2
+2026-10-29T13:00:00+03:00,repo.roadmap.progress,Alpha,45,2
+2026-10-29T13:00:00+03:00,repo.roadmap.progress,Beta,50,2
+2026-11-01T13:00:00+03:00,app.sync.health,app,100,2
+2026-11-01T13:00:00+03:00,eco.questions_open,eco,3,2
+2026-11-01T13:00:00+03:00,repo.roadmap.progress,Alpha,50,2
+{"exportedAt":"2026-11-01T13:00:00+03:00","format":"dpmeta.history-export","period":"week","points":[{"asOf":"2026-10-26T13:00:00+03:00","metric":"eco.questions_open","rulesVersion":2,"subject":"eco","value":5},{"asOf":"2026-10-29T11:00:00+03:00","metric":"repo.roadmap.progress","rulesVersion":2,"subject":"Alpha","value":44},{"asOf":"2026-10-29T13:00:00+03:00","metric":"repo.roadmap.progress","rulesVersion":2,"subject":"Alpha","value":45},{"asOf":"2026-10-29T13:00:00+03:00","metric":"repo.roadmap.progress","rulesVersion":2,"subject":"Beta","value":50},{"asOf":"2026-11-01T13:00:00+03:00","metric":"app.sync.health","rulesVersion":2,"subject":"app","value":100},{"asOf":"2026-11-01T13:00:00+03:00","metric":"eco.questions_open","rulesVersion":2,"subject":"eco","value":3},{"asOf":"2026-11-01T13:00:00+03:00","metric":"repo.roadmap.progress","rulesVersion":2,"subject":"Alpha","value":50}],"version":1}
