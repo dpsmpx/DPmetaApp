@@ -9,7 +9,7 @@ import kotlin.time.Duration.Companion.hours
  * `docs/CHANGELOG.md`; прежние точки истории остаются со своей версией.
  */
 object Rules {
-    const val RULES_VERSION: Int = 1
+    const val RULES_VERSION: Int = 2
 
     /** «Кто работает» (F-16, `DPmeta:M-08`): коммит в `main` за это окно. */
     val MAIN_COMMIT_WINDOW: Duration = 6.hours
@@ -29,4 +29,14 @@ object Rules {
 
     /** Основная ветка проекта — по ней «коммит в main». */
     const val MAIN_BRANCH: String = "main"
+
+    /**
+     * PR ждёт автора (ТЗ, §8, `repo.pr.waiting_author`): открыт и не
+     * черновик — дальше решает автор. Шлюз готовности (D-64): никто не ждёт
+     * дольше этого срока.
+     */
+    val PR_WAITING_LIMIT: Duration = 72.hours
+
+    /** Время до вливания (ТЗ, §8, `repo.pr.lead_time`): перцентиль «долгого» PR рядом с медианой. */
+    const val LEAD_TIME_PERCENTILE: Int = 90
 }

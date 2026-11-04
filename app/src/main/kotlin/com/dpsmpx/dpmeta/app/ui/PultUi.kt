@@ -145,6 +145,8 @@ private fun Summary(s: Screens.Summary, view: PultView, onSync: () -> Unit) = Co
     Line("Открытых PR", s.pullsWaiting)
     Line("Проектов", s.projects.toString())
     Line("Ошибок источников", s.sourceErrors.toString())
+    Line("Шлюз готов", s.gatesReady)
+    Line("Синхронизация", "${s.syncHealth} источников")
     Button(onClick = onSync, enabled = !view.busy) { Text(if (view.busy) "Синхронизация…" else "Обновить") }
     if (view.status.isNotEmpty()) Text(view.status, style = MaterialTheme.typography.bodySmall)
 }
@@ -209,6 +211,9 @@ private fun CardList(c: Screens.Card, panel: Outcome<Panel>?, loader: Loader, on
     item { Text("Решений: ${c.decisions}", fontWeight = FontWeight.SemiBold) }
     items(c.lastDecisions) { Text("  $it") }
     item { Text("TODO: ${c.todo}, за автором ${c.forAuthor}", fontWeight = FontWeight.SemiBold) }
+    item { Text("Готовность: ${c.ready.stage}; ${c.ready.verdict}", fontWeight = FontWeight.SemiBold) }
+    items(c.ready.criteria) { Text("  $it") }
+    item { Text("Ход PR: ${c.ready.pulls}") }
     item { Text("ROADMAP: ${c.roadmap}", fontWeight = FontWeight.SemiBold) }
     items(c.stages) { s -> Text("  [${s.flag}] ${s.title}" + if (s.steps.isEmpty()) "" else " — ${s.steps}") }
     item { Text("PR: ${c.pulls.size}", fontWeight = FontWeight.SemiBold) }

@@ -242,6 +242,7 @@ object Sync {
                     ).apply {
                         checks.line?.let { put("checksLine", JsonString(it)) }
                         p.mergedAt?.let { put("mergedAt", JsonNumber.of(it.epochMillis)) }
+                        p.createdAt?.let { put("createdAt", JsonNumber.of(it.epochMillis)) }
                     },
                 )
             },
