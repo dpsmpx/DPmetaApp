@@ -193,23 +193,28 @@ object RequestOverlay {
         val wide = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         for (b in card.buttons) {
             var armed = false
+            var armedLogin = false
             row.addView(Button(context).apply {
                 text = b.label
                 isAllCaps = false
                 setOnClickListener {
                     val login = b.confirm && loginNeeded(context)
-                    if (b.confirm && !armed) {
-                        // Опасное — вторым нажатием: одно касание по ошибке ничего не делает (D-44).
+                    // Опасное — вторым нажатием: одно касание по ошибке ничего не делает (D-44). Вход стал нужен
+                    // или не нужен между нажатиями — подтверждение заново: подсказка обещает то, что случится (D-104).
+                    if (b.confirm && (!armed || login != armedLogin)) {
                         armed = true
+                        armedLogin = login
                         text = "Точно: ${b.label}?"
                         status.text = if (login) "Опасное действие: нажмите ещё раз — вход по PIN и подтверждение в приложении" else "Опасное действие: нажмите ещё раз, чтобы подтвердить"
                         return@setOnClickListener
                     }
                     if (login) {
-                        // Вход приложения истёк — опасное подтверждается на его экране после входа, а не здесь (D-104).
+                        // Вход приложения нужен — опасное подтверждается на его экране после входа, а не здесь (D-104).
+                        // Окно убирает сам экран (`MainActivity.onResume`): запуск из фона прошивка может молча не пустить
+                        // (MIUI — разрешение на всплывающие окна в фоне), и тогда окно с подсказкой остаётся.
                         if (runCatching { context.startActivity(MainActivity.confirm(context, b.uri)) }.isSuccess) {
                             later += card.id.value
-                            hide()
+                            status.text = "Открываю приложение: вход по PIN. Не открылось — откройте его сами: запрос на экране «Запросы»"
                         } else {
                             status.text = "Нужен вход: откройте приложение — запрос на экране «Запросы»"
                         }
