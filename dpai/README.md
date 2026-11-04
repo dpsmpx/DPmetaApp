@@ -139,4 +139,4 @@ Actions не используется (D-15).
 
 ## Лицензия
 
-Apache License 2.0 — `LICENSE`.
+Все права защищены — `LICENSE` (D-101, `DPmetaApp:D-47`).

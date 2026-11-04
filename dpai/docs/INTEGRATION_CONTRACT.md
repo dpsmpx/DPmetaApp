@@ -28,7 +28,7 @@ DP_AI_Orcestrator заморожен. Разделы ниже о «перено�
 |---|---|
 | Имя | `DP_AI_Orcestrator` — как создал автор; в коде — `dpai`: пакет `com.dpsmpx.dpai`, команда `dpai`, ссылки `dpai://` (D-01) |
 | Вид | control plane для сессий Claude Code: модули на чистом Kotlin/JVM и две оболочки — `cli` и `android` (D-02) |
-| Лицензия | Apache-2.0 (`LICENSE`); репозиторий публичный (D-16) |
+| Лицензия | все права защищены (`LICENSE`, D-101); репозиторий закрытый — DPmetaApp |
 | Место в экосистеме | первый специализированный control plane; в DPmetaApp — подсистема «AI» над сессиями Claude (ТЗ, §156) |
 | Ссылки извне | `DP_AI_Orcestrator:D-NN`, `DP_AI_Orcestrator:путь` (шапка журнала решений) |
 
