@@ -109,7 +109,8 @@ open class PultActivity : ComponentActivity() {
         val state = (repo.state() as? Outcome.Success)?.value
         val hasToken = secrets.exists()
         val feed = (repo.feed() as? Outcome.Success)?.value.orEmpty()
-        view.value = PultView(state, "", hasToken, busy = false, feed = feed, names = repo.names())
+        val history = (repo.history() as? Outcome.Success)?.value.orEmpty()
+        view.value = PultView(state, "", hasToken, busy = false, feed = feed, names = repo.names(), history = history)
         setContent {
             PultTheme {
                 PultApp(view.value, loader, onSync = ::sync, onSaveToken = ::saveToken, onForgetToken = ::forgetToken, onAi = aiIntent()?.let { i -> { startActivity(i) } })
@@ -180,6 +181,7 @@ open class PultActivity : ComponentActivity() {
                         status = "Готово: ${r.value.line}.",
                         feed = (repo.feed() as? Outcome.Success)?.value.orEmpty(),
                         names = repo.names(),
+                        history = (repo.history() as? Outcome.Success)?.value.orEmpty(),
                     )
                     is Outcome.Failure -> view.value.copy(busy = false, status = "Не вышло: ${r.diagnostics.first().code.name} — ${r.diagnostics.first().message}")
                 }
