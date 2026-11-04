@@ -543,9 +543,11 @@ ROOT_MODULES = {
     ":core:site": {":core:net", ":core:model", ":core:formats"},
     ":core:social": {":core:net", ":core:model", ":core:formats"},
     ":core:metrics": {":core:model"},
+    # Клоны репозиториев (D-65): JGit; сеть — через пропуск списка :core:net.
+    ":core:git": {":core:model", ":core:net"},
     ":core:notify": {":core:model"},
     ":core:actions": {":core:model"},
-    ":core:sync": {":core:model", ":core:formats", ":core:net", ":core:github", ":core:site", ":core:social"},
+    ":core:sync": {":core:model", ":core:formats", ":core:net", ":core:github", ":core:git", ":core:site", ":core:social"},
 }
 # Оболочки и тесты зависят от всех (ТЗ, §6.2); :shell — приложение из корня (D-35, D-53).
 ROOT_SHELLS = (":cli", ":app", ":shell", ":tests:")

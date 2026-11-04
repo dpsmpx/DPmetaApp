@@ -38,4 +38,10 @@ object FormBody {
 /** Байты секрета для шифрования на устройстве (`:app`, Keystore): раскрытие — здесь, в `:core:net`. */
 object Secrets {
     fun bytes(secret: Secret): ByteArray = secret.reveal().toByteArray(Charsets.UTF_8)
+
+    /**
+     * Пароль для git по HTTPS (`:core:git`, D-65): токен — паролем при имени
+     * `x-access-token`, не в адресе; раскрытие — здесь, в `:core:net`.
+     */
+    fun gitPassword(secret: Secret): CharArray = secret.reveal().toCharArray()
 }

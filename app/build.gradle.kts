@@ -69,6 +69,8 @@ dependencies {
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.material3)
     implementation(libs.activity.compose)
+    // FileProvider — «Поделиться» экспортом (D-67).
+    implementation(libs.androidx.core)
     testImplementation(kotlin("test-junit5"))
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)

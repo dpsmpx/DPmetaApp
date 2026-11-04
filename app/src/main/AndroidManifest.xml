@@ -15,5 +15,16 @@
             android:name="com.dpsmpx.dpmeta.app.LockActivity"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density|fontScale|locale|layoutDirection"
             android:exported="false" />
+        <!-- «Поделиться» экспортом (D-67): не экспортируется, права на файл — только
+             получателю одной отправки; виден только каталог экспорта в кэше. -->
+        <provider
+            android:name="com.dpsmpx.dpmeta.app.ExportProvider"
+            android:authorities="${applicationId}.pult.export"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/pult_export_paths" />
+        </provider>
     </application>
 </manifest>

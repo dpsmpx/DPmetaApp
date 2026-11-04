@@ -59,6 +59,7 @@ include(":core:net")
 include(":core:github")
 include(":core:metrics")
 include(":core:sync")
+include(":core:git")
 include(":cli")
 include(":tests:corpus")
 
