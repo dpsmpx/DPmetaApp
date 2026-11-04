@@ -1,0 +1,8 @@
+schema = 1
+project = "Alpha"
+
+[[item]]
+title = "Этапы"
+kind = "roadmap"
+path = "ROADMAP.md"
+url = "https://example.com/roadmap"

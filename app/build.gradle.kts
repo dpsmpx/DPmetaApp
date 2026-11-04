@@ -40,6 +40,13 @@ android {
     }
 }
 
+// Панели проектов (F-10) — config/projects/*.toml корня в ресурсах APK: assets/projects/<Проект>.toml.
+androidComponents {
+    onVariants { v ->
+        v.sources.assets?.addStaticSourceDirectory(rootProject.layout.projectDirectory.dir("config").asFile.path)
+    }
+}
+
 kotlin {
     compilerOptions {
         allWarningsAsErrors.set(true)

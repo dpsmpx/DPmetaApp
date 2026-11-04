@@ -1,0 +1,7 @@
+schema = 1
+project = "Alpha"
+
+[[item]]
+title = "Решения"
+kind = "decisions"
+path = "DECISIONS.md"

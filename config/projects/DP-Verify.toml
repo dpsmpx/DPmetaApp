@@ -1,0 +1,8 @@
+# Панель DP-Verify (ТЗ, F-10, приложение А): ТЗ с вопросами Q-NN — документом.
+schema = 1
+project = "DP-Verify"
+
+[[item]]
+title = "ТЗ"
+kind = "document"
+path = "docs/direction/TECHNICAL_TASK.md"

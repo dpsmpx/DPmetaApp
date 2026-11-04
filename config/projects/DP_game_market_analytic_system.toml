@@ -1,0 +1,8 @@
+# Панель DP_game_market_analytic_system (ТЗ, F-10, приложение А): фазы и передача — документом.
+schema = 1
+project = "DP_game_market_analytic_system"
+
+[[item]]
+title = "Передача между сессиями"
+kind = "document"
+path = "docs/HANDOFF.md"

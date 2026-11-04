@@ -1,0 +1,36 @@
+# Синтетическая панель: по пункту каждого вида.
+schema = 1
+project = "Alpha"
+
+[[item]]
+title = "Готовность"
+kind = "readme-block"
+path = "README.md"
+block = "progress"
+
+[[item]]
+title = "Этапы"
+kind = "roadmap"
+path = "ROADMAP/ROADMAP.md"
+
+[[item]]
+title = "Решения"
+kind = "decisions"
+path = "docs/DECISIONS.md"
+id = "A-\\d+"
+
+[[item]]
+title = "Хвосты"
+kind = "todo"
+path = "TODO.md"
+
+[[item]]
+title = "Фактов"
+kind = "count"
+path = "docs/facts"
+glob = "F-*.md"
+
+[[item]]
+title = "Хронология"
+kind = "document"
+path = "docs/timeline/TIMELINE.md"

@@ -1,0 +1,25 @@
+# Панель DPprofile (ТЗ, F-10, приложение А): счётчики фактов и выводов, источники и хронология.
+schema = 1
+project = "DPprofile"
+
+[[item]]
+title = "Фактов"
+kind = "count"
+path = "docs/facts"
+glob = "F-*.md"
+
+[[item]]
+title = "Выводов"
+kind = "count"
+path = "docs/insights"
+glob = "I-*.md"
+
+[[item]]
+title = "Источники"
+kind = "document"
+path = "docs/sources/REGISTRY.md"
+
+[[item]]
+title = "Хронология"
+kind = "document"
+path = "docs/timeline/TIMELINE.md"

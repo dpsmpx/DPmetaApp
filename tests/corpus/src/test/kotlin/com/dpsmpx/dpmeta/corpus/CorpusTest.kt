@@ -4,6 +4,7 @@ import com.dpsmpx.dpai.core.diagnostics.Severity
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.serialization.CanonicalJson
 import com.dpsmpx.dpmeta.formats.DecisionLog
+import com.dpsmpx.dpmeta.formats.PanelFormat
 import com.dpsmpx.dpmeta.formats.PrDescription
 import com.dpsmpx.dpmeta.formats.RegistryFormat
 import com.dpsmpx.dpmeta.formats.Roadmap
@@ -49,6 +50,11 @@ class CorpusTest {
         }
         "pr" -> PrDescription.parse(text, "").map { p ->
             "template=${p.toJson()["template"]} " + p.sections.keys.joinToString(",").ifEmpty { "-" }
+        }
+        "panel" -> PanelFormat.parse(text, "").map { p ->
+            p.project + " " + p.items.joinToString(",") { i ->
+                "${i.kind.code}:${i.path}" + (i.block?.let { "#$it" } ?: "") + (i.id?.let { "~$it" } ?: "") + (i.glob?.let { "*$it" } ?: "")
+            }
         }
         else -> fail("неизвестный формат корпуса: $format")
     }

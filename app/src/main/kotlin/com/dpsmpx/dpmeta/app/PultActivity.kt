@@ -15,6 +15,8 @@ import com.dpsmpx.dpmeta.app.data.SecretStore
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpmeta.app.ui.Loader
 import com.dpsmpx.dpmeta.app.ui.PultApp
+import com.dpsmpx.dpmeta.formats.Panel
+import com.dpsmpx.dpmeta.formats.PanelFormat
 import com.dpsmpx.dpmeta.github.GitHub
 import com.dpsmpx.dpmeta.app.ui.PultTheme
 import com.dpsmpx.dpmeta.app.ui.PultView
@@ -80,6 +82,13 @@ open class PultActivity : ComponentActivity() {
         override fun directory(project: String, dir: String, done: (Outcome<List<GitHub.Entry>>) -> Unit) = run({ repo.directory(it, project, dir) }, done)
 
         override fun document(project: String, path: String, done: (Outcome<String>) -> Unit) = run({ repo.document(it, project, path) }, done)
+
+        /** Панель (F-10) — файл `config/projects/<Проект>.toml`, собранный в APK; нет файла — нет панели. */
+        override fun panel(project: String): Outcome<Panel>? {
+            val name = "projects/$project.toml"
+            val text = runCatching { assets.open(name).use { String(it.readBytes(), Charsets.UTF_8) } }.getOrNull() ?: return null
+            return PanelFormat.parse(text, name)
+        }
     }
 
     private fun saveToken(text: String) {
