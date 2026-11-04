@@ -16,6 +16,7 @@ import com.dpsmpx.dpmeta.github.GitHub
 import com.dpsmpx.dpmeta.metrics.EcosystemState
 import com.dpsmpx.dpmeta.metrics.Feed
 import com.dpsmpx.dpmeta.metrics.FeedEvent
+import com.dpsmpx.dpmeta.metrics.MetricPoint
 import com.dpsmpx.dpmeta.metrics.Rules
 import com.dpsmpx.dpmeta.metrics.Store
 import com.dpsmpx.dpmeta.model.RepoRef
@@ -44,6 +45,9 @@ class PultRepository(private val vfs: Vfs, private val clock: Clock, private val
     fun state(): Outcome<EcosystemState?> = store.readState()
 
     fun feed(): Outcome<List<FeedEvent>> = store.readFeed()
+
+    /** История чисел (D-34) — графики и плитки (F-34); читается целиком, фильтрует экран. */
+    fun history(): Outcome<List<MetricPoint>> = store.history()
 
     @Volatile private var registry: Registry? = null
 

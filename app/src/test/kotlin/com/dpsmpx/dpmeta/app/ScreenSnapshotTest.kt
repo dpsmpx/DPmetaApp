@@ -5,8 +5,10 @@ import com.dpsmpx.dpai.core.clock.Timestamp
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpmeta.app.screens.ScreenText
 import com.dpsmpx.dpmeta.app.screens.Screens
+import com.dpsmpx.dpmeta.app.screens.Stats
 import com.dpsmpx.dpmeta.formats.RegistryFormat
 import com.dpsmpx.dpmeta.metrics.EcosystemState
+import com.dpsmpx.dpmeta.metrics.MetricPoint
 import com.dpsmpx.dpmeta.sync.DirectoryReader
 import com.dpsmpx.dpmeta.sync.Sync
 import java.io.File
@@ -67,6 +69,33 @@ class ScreenSnapshotTest {
             com.dpsmpx.dpmeta.metrics.FeedEvent(Timestamp(now.epochMillis - 3_600_000), "Beta", "decision", "новое решение Р2 — Порядок"),
         )
         snapshot("feed", ScreenText.feed(Screens.feed(events)) + ScreenText.feed(Screens.feed(events, project = "Beta")) + ScreenText.feed(Screens.feed(events, kind = "pr.merged")))
+    }
+
+    /** История для графиков: две точки за день (берётся поздняя), точка старше месяца, второй проект, экосистема. */
+    private fun history(): List<MetricPoint> {
+        val day = 86_400_000L
+        fun p(metric: String, subject: String, value: Long, daysAgo: Long, hours: Long = 0) =
+            MetricPoint(metric, subject, value, Timestamp(now.epochMillis - daysAgo * day + hours * 3_600_000), 2)
+        return listOf(
+            p("repo.roadmap.progress", "Alpha", 10, 40),
+            p("repo.roadmap.progress", "Alpha", 40, 10),
+            p("repo.roadmap.progress", "Alpha", 44, 3, -2),
+            p("repo.roadmap.progress", "Alpha", 45, 3),
+            p("repo.roadmap.progress", "Alpha", 50, 0),
+            p("repo.roadmap.progress", "Beta", 50, 3),
+            p("eco.questions_open", "eco", 5, 6),
+            p("eco.questions_open", "eco", 3, 0),
+            p("app.sync.health", "app", 100, 0),
+        )
+    }
+
+    @Test
+    fun statsChartsTablesAndTiles() {
+        val h = history()
+        val roadmap = Stats.chart(h, Stats.metric("repo.roadmap.progress")!!, Stats.Period.MONTH, listOf("Alpha", "Beta"), now)
+        assertEquals(listOf(40L, 45L, 50L), roadmap.series.first().points.map { it.second }, "старше 30 дней — мимо; за день — поздняя точка")
+        val questions = Stats.chart(h, Stats.metric("eco.questions_open")!!, Stats.Period.WEEK, emptyList(), now)
+        snapshot("stats", ScreenText.stats(roadmap) + ScreenText.stats(questions) + ScreenText.tiles(Stats.tiles(h, now)))
     }
 
     @Test

@@ -17,6 +17,19 @@ object ScreenText {
         appendLine("Синхронизация: ${s.syncHealth} источников")
     }
 
+    /** График (F-34) строками: описание для TalkBack и таблица значений (N-07) — то, что рядом с рисунком. */
+    fun stats(c: Stats.Chart): String = buildString {
+        appendLine("ГРАФИК «${c.metric.title}» — ${c.period.title}")
+        appendLine(c.description)
+        appendLine(c.table.header.joinToString(" | "))
+        for (r in c.table.rows) appendLine(r.joinToString(" | "))
+    }
+
+    fun tiles(tiles: List<Stats.Tile>): String = buildString {
+        appendLine("ПЛИТКИ")
+        for (t in tiles) appendLine("  ${t.metric.title}: ${t.value}${if (t.change.isEmpty()) "" else " (${t.change})"}; дней в спарклайне ${t.spark.size}")
+    }
+
     fun projects(groups: List<Screens.Group>): String = buildString {
         appendLine("ПРОЕКТЫ")
         for (g in groups) {

@@ -46,11 +46,13 @@ import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpmeta.app.screens.Links
 import com.dpsmpx.dpmeta.app.screens.Panels
 import com.dpsmpx.dpmeta.app.screens.Screens
+import com.dpsmpx.dpmeta.app.screens.Stats
 import com.dpsmpx.dpmeta.formats.Panel
 import com.dpsmpx.dpmeta.github.GitHub
 import com.dpsmpx.dpmeta.metrics.EcosystemState
 import com.dpsmpx.dpmeta.metrics.Feed
 import com.dpsmpx.dpmeta.metrics.FeedEvent
+import com.dpsmpx.dpmeta.metrics.MetricPoint
 
 /**
  * Токены оформления пульта (D-15; ТЗ, §9): свои цвета, светлая и тёмная
@@ -73,6 +75,8 @@ data class PultView(
     val busy: Boolean,
     val feed: List<FeedEvent> = emptyList(),
     val names: Map<String, String> = emptyMap(),
+    /** История чисел (D-34) — для статистики и плиток сводки (F-34). */
+    val history: List<MetricPoint> = emptyList(),
 )
 
 /** Загрузка по запросу (F-09): каталог и файл проекта; итог — в главном потоке. */
@@ -94,6 +98,9 @@ private sealed interface Nav {
     data class Dir(val project: String, val path: String) : Nav
 
     data class Doc(val project: String, val path: String, val anchor: String?) : Nav
+
+    /** Статистика (F-34): [project] — из карточки, `null` — сравнение всех проектов. */
+    data class Stats(val project: String?) : Nav
 }
 
 /** [onAi] — вкладка «AI» перед «Настройками» (D-53): открывает оболочку подсистемы; `null` — вкладки нет. */
@@ -120,9 +127,10 @@ fun PultApp(view: PultView, loader: Loader, onSync: () -> Unit, onSaveToken: (St
                 top is Nav.Card && s != null -> Screens.card(s, top.project)?.let { CardScreen(it, loader, back, open) }
                 top is Nav.Dir -> DirScreen(top, loader, back, open)
                 top is Nav.Doc -> DocScreen(top, view.names, loader, back, open)
+                top is Nav.Stats && s != null -> StatsScreen(view.history, s.projects.map { it.name }, top.project, s.asOf, back)
                 tab == Tab.SETTINGS -> Settings(view, onSync, onSaveToken, onForgetToken)
                 s == null -> Text(if (view.hasToken) "Среза ещё нет: «Обновить» в настройках." else "Нужен токен GitHub: вкладка «Настройки».")
-                tab == Tab.SUMMARY -> Summary(Screens.summary(s), view, onSync)
+                tab == Tab.SUMMARY -> Summary(Screens.summary(s), view, onSync) { open(Nav.Stats(null)) }
                 tab == Tab.PROJECTS -> Projects(Screens.projects(s)) { open(Nav.Card(it)) }
                 tab == Tab.FEED -> FeedScreen(view.feed, s.projects.map { it.name })
                 tab == Tab.QUESTIONS -> Questions(Screens.questions(s))
@@ -138,7 +146,7 @@ private fun Line(label: String, value: String) = Row(Modifier.fillMaxWidth(), ho
 }
 
 @Composable
-private fun Summary(s: Screens.Summary, view: PultView, onSync: () -> Unit) = Column(verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+private fun Summary(s: Screens.Summary, view: PultView, onSync: () -> Unit, onStats: () -> Unit) = Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
     Text("Срез ${s.asOf}", style = MaterialTheme.typography.titleMedium)
     Line("Работают", s.active)
     Line("Вопросов автору", s.questions)
@@ -147,6 +155,8 @@ private fun Summary(s: Screens.Summary, view: PultView, onSync: () -> Unit) = Co
     Line("Ошибок источников", s.sourceErrors.toString())
     Line("Шлюз готов", s.gatesReady)
     Line("Синхронизация", "${s.syncHealth} источников")
+    view.state?.let { st -> Tiles(Stats.tiles(view.history, st.asOf)) }
+    TextButton(onClick = onStats) { Text("Статистика →") }
     Button(onClick = onSync, enabled = !view.busy) { Text(if (view.busy) "Синхронизация…" else "Обновить") }
     if (view.status.isNotEmpty()) Text(view.status, style = MaterialTheme.typography.bodySmall)
 }
@@ -211,6 +221,7 @@ private fun CardList(c: Screens.Card, panel: Outcome<Panel>?, loader: Loader, on
     item { Text("Решений: ${c.decisions}", fontWeight = FontWeight.SemiBold) }
     items(c.lastDecisions) { Text("  $it") }
     item { Text("TODO: ${c.todo}, за автором ${c.forAuthor}", fontWeight = FontWeight.SemiBold) }
+    item { TextButton(onClick = { open(Nav.Stats(c.name)) }) { Text("Графики проекта →") } }
     item { Text("Готовность: ${c.ready.stage}; ${c.ready.verdict}", fontWeight = FontWeight.SemiBold) }
     items(c.ready.criteria) { Text("  $it") }
     item { Text("Ход PR: ${c.ready.pulls}") }
