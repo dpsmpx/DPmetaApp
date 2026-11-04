@@ -271,6 +271,10 @@ class Ecosystem(unittest.TestCase):
         self.assertTrue(page_csp(page), "без разрешения каталога скрипт — нарушение")
         api = json.loads((self.out / "api/v1/index.json").read_text(encoding="utf-8"))
         self.assertEqual(api["resources"]["ecosystem"], "/ecosystem/dpvis-data.json")
+        # Д48: признак сборки — коммит (или null без git), правки, время UTC.
+        self.assertEqual(set(api["build"]), {"commit", "dirty", "built"})
+        self.assertRegex(api["build"]["built"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+        self.assertTrue(api["build"]["commit"] is None or re.fullmatch(r"[0-9a-f]{40}", api["build"]["commit"]))
 
     def test_csp_by_path(self):
         root = "script-src 'none'"

@@ -1137,6 +1137,23 @@ ContentItem: цель · аудитория · площадка · утверж�
   `tests/test_termux_shortcut.py`, `docs/platforms/WEBSITE.md`,
   `docs/operations/CREDENTIALS.md`, Д45 (выгрузка — «если проверен»).
 
+### Д48. Признак сборки в API сайта: коммит, правки и время
+- **Решение.**
+  - `/api/v1/index.json` несёт поле `build`: `commit` — коммит, из которого
+    собран сайт; `dirty` — были ли незакоммиченные правки системы; `built`
+    — время сборки UTC (`YYYY-MM-DDTHH:MM:SSZ`). Нет git — `commit` и
+    `dirty` — `null`, а не выдуманные.
+  - Поле добавлено к версии 1 (`"version": 1`): старые клиенты его не
+    читают, адреса и прочие поля не меняются.
+- **Почему.** Ответ автора на `DPmetaApp:Q-12` (`DPmetaApp:D-49`, 1.11.2026):
+  «да, коммит и время сборки в `/api/v1/index.json`» — по нему DPmetaApp
+  видит, что `main` системы новее выгрузки (`DPmetaApp:F-30`), а не
+  оценивает по датам. Правка подсистемы разрешена словом автора
+  4.11.2026 (опрос сессии DPmetaApp).
+- **Следствия.** `tools/cs/site/feeds.py` (`build_marker`),
+  `tools/cs/site/build.py`, `tests/test_site.py`,
+  `docs/platforms/WEBSITE.md`. Выгрузку не открывает и не меняет (Д47).
+
 ## 3. Открытые решения (решает автор)
 
 | № | Вопрос | Правило до решения | Срочность |
@@ -1593,3 +1610,9 @@ SocialMediaImage, PR #32 — начат 25.10 до надписи об архи�
 Затронуто: `tools/check.sh`, `tools/termux/dpsmpx-site-deploy.sh`,
 `tests/test_termux_shortcut.py`, `docs/platforms/WEBSITE.md`,
 `docs/operations/CREDENTIALS.md`.
+
+**4 ноября 2026.** Д48 — признак сборки в `/api/v1/index.json` (коммит,
+правки, время UTC) по ответу автора на `DPmetaApp:Q-12`; правка подсистемы
+— по слову автора 4.11 в опросе сессии DPmetaApp. Затронуто:
+`tools/cs/site/feeds.py`, `tools/cs/site/build.py`, `tests/test_site.py`,
+`docs/platforms/WEBSITE.md`.

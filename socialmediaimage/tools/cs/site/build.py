@@ -920,6 +920,7 @@ class SiteBuild:
         robots = "User-agent: *\nDisallow: /\n" if self.noindex else f"User-agent: *\nAllow: /\nSitemap: {self.base}/sitemap.xml\n"
         self.write(out, "/robots.txt", robots)
         api = feeds.api(self, entries)
+        api["index.json"]["build"] = feeds.build_marker(self.repo.root)  # Д48: коммит и время сборки
         if eco_page:
             api["index.json"]["resources"]["ecosystem"] = f"{eco_page.path}dpvis-data.json"
         if self._progress:  # данные графиков страницы прогресса — только если страница видна в этом окружении
