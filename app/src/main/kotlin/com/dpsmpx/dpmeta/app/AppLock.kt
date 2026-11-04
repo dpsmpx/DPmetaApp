@@ -63,6 +63,8 @@ object AppLock {
             if (activity is LockActivity) return
             if (locked(activity)) {
                 hide(activity, true)
+                // Прежний экран входа (под этим окном или в другой задаче) — закрыть: окно PIN одно.
+                windows.filterIsInstance<LockActivity>().forEach { it.finish() }
                 activity.startActivity(Intent(activity, LockActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION))
             } else {
                 hide(activity, false)

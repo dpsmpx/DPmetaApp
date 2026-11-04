@@ -48,7 +48,7 @@ class SecretStore(private val vfs: Vfs, private val path: String = "github.token
             try {
                 init(Cipher.ENCRYPT_MODE, key())
             } catch (e: KeyPermanentlyInvalidatedException) {
-                // Ключ испорчен сменой блокировки экрана — новый ключ, иначе токен не сохранить никогда.
+                // Ключ закрыт навсегда (сняли блокировку экрана, сменили биометрию) — новый ключ, иначе токен не сохранить никогда.
                 dropKey()
                 init(Cipher.ENCRYPT_MODE, key())
             }
@@ -75,10 +75,10 @@ class SecretStore(private val vfs: Vfs, private val path: String = "github.token
             // Вход был раньше [AUTH_SECONDS] — секрет цел, нужен новый вход (D-59): не «испорчен».
             Outcome.failure(DiagCode.DEVICE_AUTH_REQUIRED, "нужен вход по PIN или биометрии", path)
         } catch (e: KeyPermanentlyInvalidatedException) {
-            // Блокировку экрана сменили или сняли — ключ больше не работает: секрет не восстановить.
+            // Блокировку экрана сняли или сменили биометрию — Keystore навсегда закрыл ключ: секрет не восстановить.
             dropKey()
             clear()
-            Outcome.failure(DiagCode.STORAGE_CORRUPTED, "ключ сброшен сменой блокировки экрана — введите токен заново", path)
+            Outcome.failure(DiagCode.STORAGE_CORRUPTED, "ключ сброшен: блокировку экрана сняли или сменили биометрию — введите токен заново", path)
         } catch (e: GeneralSecurityException) {
             Outcome.failure(DiagCode.STORAGE_CORRUPTED, "секрет не расшифрован: ${e.javaClass.simpleName}", path)
         }
@@ -87,11 +87,11 @@ class SecretStore(private val vfs: Vfs, private val path: String = "github.token
     /** Секрет сохранён — без расшифровки и без входа: «есть ли токен» не спрашивает PIN. */
     fun exists(): Boolean = vfs.exists(path)
 
-    /** «Забыть токен»: файл и ключ — следующий токен ляжет под новый ключ. */
     fun clear() {
         if (vfs.exists(path)) vfs.delete(path)
     }
 
+    /** «Забыть токен»: файл и ключ — следующий токен ляжет под новый ключ. */
     fun forget() {
         clear()
         dropKey()

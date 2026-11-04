@@ -2,6 +2,7 @@ package com.dpsmpx.dpmeta.app
 
 import android.content.Intent
 import android.os.Bundle
+import android.os.CancellationSignal
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -43,7 +44,7 @@ open class PultActivity : ComponentActivity() {
         repo = PultRepository(NioVfs(filesDir.toPath().resolve("dpmeta")), Clock.SYSTEM, pool)
         secrets = SecretStore(NioVfs(noBackupFilesDir.toPath().resolve("dpmeta")))
         // Блокировка всего приложения (D-59) уже закрыла окно экраном входа — своей не нужно.
-        if (AppLock.installed) open() else Lock.ask(this, "Вход в пульт", pinOnly = false, onOpen = ::open, onDenied = { finish() })
+        if (AppLock.installed) open() else Lock.ask(this, "Вход в пульт", pinOnly = false, onOpen = ::open, onDenied = { _, _ -> finish() })
     }
 
     /**
@@ -51,34 +52,47 @@ open class PultActivity : ComponentActivity() {
      * запрос продолжается (D-59). Нет токена или отказ от входа — `null` и причина в [status].
      */
     private fun withToken(done: (Secret?) -> Unit) {
-        // Окно входа уже открыто другим запросом — ждать его итога, а не открывать второе.
-        waiting?.let { it += done; return }
         when (val r = secrets.load()) {
             is Outcome.Success -> r.value?.let(done) ?: noToken("нет токена GitHub: вкладка «Настройки»", done)
             is Outcome.Failure -> if (r.diagnostics.first().code == DiagCode.DEVICE_AUTH_REQUIRED) {
-                val queue = mutableListOf(done)
-                waiting = queue
-                fun finish(token: Secret?, why: String) {
-                    waiting = null
-                    queue.forEach { if (token != null) it(token) else noToken(why, it) }
-                }
-                Lock.ask(this, "Открыть токен GitHub", pinOnly = false, onOpen = {
-                    when (val again = secrets.load()) {
-                        is Outcome.Success -> finish(again.value, "нет токена GitHub")
-                        is Outcome.Failure -> finish(null, "токен не открыт: ${again.diagnostics.first().message}")
+                afterAuth("Открыть токен GitHub") { ok ->
+                    if (!ok) {
+                        noToken("токен не открыт: нет входа", done)
+                    } else {
+                        when (val again = secrets.load()) {
+                            is Outcome.Success -> again.value?.let(done) ?: noToken("нет токена GitHub", done)
+                            is Outcome.Failure -> noToken("токен не открыт: ${again.diagnostics.first().message}", done)
+                        }
                     }
-                }, onDenied = { finish(null, "токен не открыт: нет входа") })
+                }
             } else {
                 noToken("токен не открыт: ${r.diagnostics.first().message}", done)
             }
         }
     }
 
-    /** Запросы, ждущие окна входа для токена (D-59): одно окно на всех. */
-    private var waiting: MutableList<(Secret?) -> Unit>? = null
+    /** Ждут входа для ключа Keystore (D-59): одно окно на все запросы — каталог, файл, сохранение. */
+    private var authWaiting: MutableList<(Boolean) -> Unit>? = null
+    private var authSignal: CancellationSignal? = null
+
+    private fun afterAuth(subtitle: String, then: (Boolean) -> Unit) {
+        authWaiting?.let { it += then; return }
+        val queue = mutableListOf(then)
+        val signal = CancellationSignal()
+        authWaiting = queue
+        authSignal = signal
+        fun done(ok: Boolean) {
+            authWaiting = null
+            authSignal = null
+            // Окно пересоздано или закрыто (поворот) — ответ не этому экземпляру.
+            if (!isDestroyed && !signal.isCanceled) queue.forEach { it(ok) }
+        }
+        Lock.ask(this, subtitle, pinOnly = false, signal = signal, onOpen = { done(true) }, onDenied = { _, _ -> done(false) })
+    }
 
     private fun noToken(why: String, done: (Secret?) -> Unit) {
-        view.value = view.value.copy(status = why.replaceFirstChar { it.uppercase() } + ".")
+        // Ключ мог быть сброшен (блокировку экрана сняли) — вместе с ним удалён и токен.
+        view.value = view.value.copy(hasToken = secrets.exists(), status = why.replaceFirstChar { it.uppercase() } + ".")
         done(null)
     }
 
@@ -86,6 +100,7 @@ open class PultActivity : ComponentActivity() {
     protected open fun aiIntent(): Intent? = null
 
     override fun onDestroy() {
+        authSignal?.cancel()
         if (::pool.isInitialized) pool.shutdownNow()
         super.onDestroy()
     }
@@ -107,7 +122,7 @@ open class PultActivity : ComponentActivity() {
         private fun <T> run(work: (Secret) -> Outcome<T>, done: (Outcome<T>) -> Unit) = withToken { token ->
             if (token == null) {
                 done(Outcome.failure(DiagCode.GITHUB_AUTH_EXPIRED, "нет токена GitHub или нужен новый вход", "github"))
-            } else {
+            } else if (!pool.isShutdown) {
                 pool.execute {
                     val r = work(token)
                     runOnUiThread {
@@ -134,7 +149,7 @@ open class PultActivity : ComponentActivity() {
         val r = secrets.save(Secret(text))
         if (r is Outcome.Failure && r.diagnostics.first().code == DiagCode.DEVICE_AUTH_REQUIRED) {
             // Ключ закрыт (вход был давно) — вход и повтор (D-59).
-            Lock.ask(this, "Сохранить токен GitHub", pinOnly = false, onOpen = { saved(secrets.save(Secret(text))) }, onDenied = { saved(r) })
+            afterAuth("Сохранить токен GitHub") { ok -> saved(if (ok) secrets.save(Secret(text)) else r) }
         } else {
             saved(r)
         }
@@ -152,6 +167,7 @@ open class PultActivity : ComponentActivity() {
     private fun sync() = withToken { token -> if (token != null) sync(token) }
 
     private fun sync(token: Secret) {
+        if (pool.isShutdown) return
         view.value = view.value.copy(busy = true, status = "")
         pool.execute {
             val r = repo.sync(token)
