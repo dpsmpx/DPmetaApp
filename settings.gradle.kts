@@ -47,7 +47,7 @@ includeBuild("dpai") {
         for (m in listOf("core", "storage", "security", "notifications", "testkit", "ui")) {
             substitute(module("com.dpsmpx.dpai:$m")).using(project(":$m"))
         }
-        // Оболочка «AI» — библиотека (DP_AI_Orcestrator:D-103): её берёт приложение корня :android (D-53).
+        // Оболочка «AI» — библиотека (DP_AI_Orcestrator:D-103): её берёт приложение корня :shell (D-53).
         substitute(module("com.dpsmpx.dpai:android")).using(project(":android"))
     }
 }
@@ -63,7 +63,7 @@ include(":cli")
 include(":tests:corpus")
 
 // Пульт DPmetaApp (этап 3): Android-библиотека :app — экраны на Compose, хранилище с
-// Keystore, блокировка; приложение :android (D-53) — один APK: пульт первым экраном,
+// Keystore, блокировка; приложение :shell (D-53) — один APK: пульт первым экраном,
 // оболочка «AI» вкладкой. Только при найденном Android SDK, как оболочка dpai/android:
 // без SDK модули корня собираются и проверяются как прежде.
 val androidSdk = run {
@@ -71,4 +71,4 @@ val androidSdk = run {
         ?.firstOrNull { it.startsWith("sdk.dir=") }?.substringAfter("=")?.replace("""\:""", ":")?.replace("""\\""", "/")
     listOf(local, System.getenv("ANDROID_HOME"), System.getenv("ANDROID_SDK_ROOT")).firstOrNull { !it.isNullOrBlank() }?.takeIf { file(it).isDirectory }
 }
-if (androidSdk != null) include(":app", ":android")
+if (androidSdk != null) include(":app", ":shell")

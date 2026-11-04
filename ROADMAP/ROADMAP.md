@@ -122,7 +122,8 @@ Baseline. Свой план подсистемы —
       README (панели по данным `config/projects/*.toml` — `TODO.md`).
 - [+] Снимки экранов на JVM (текстом, `app/src/test/snapshots/`);
       `docs/SECURITY_MODEL.md`.
-- [ ] Подключение к оболочке `dpai/android` (`TODO.md`, `docs/ARCHITECTURE.md`).
+- [+] Один APK из корня — приложение `:shell`: пульт первым экраном, «AI»
+      вкладкой; версия `0.3.0-dev.N` (D-53, D-54; `docs/ARCHITECTURE.md`).
 - [ ] Первая установка на телефон; пункты «На устройстве» — в `TODO.md`.
 
 ### <a id="task-4"></a>[ ] Этап 4. Статистика и графики — `С`

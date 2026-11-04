@@ -10,8 +10,7 @@
         tools:replace="android:label">
         <activity
             android:name=".DpmetaActivity"
-            android:exported="true"
-            android:label="DPmetaApp">
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

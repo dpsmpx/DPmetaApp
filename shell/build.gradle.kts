@@ -1,4 +1,4 @@
-// Приложение DPmetaApp — один APK (D-53, D-54): пульт :app первым экраном, оболочка «AI»
+// Приложение DPmetaApp — своя оболочка (D-35), один APK (D-53, D-54): пульт :app первым экраном, оболочка «AI»
 // (dpai/android, библиотека — DP_AI_Orcestrator:D-103) вкладкой. Личность пакета прежняя —
 // com.dpsmpx.dpai (D-49): APK ставится поверх отдельной сборки «AI», данные и ключи Keystore
 // сохраняются. Плагины — convention-плагин dpai/build-logic (DP_AI_Orcestrator:D-102).
@@ -22,7 +22,7 @@ fun versionCodeOf(version: String): Int {
 }
 
 android {
-    namespace = "com.dpsmpx.dpmeta.android"
+    namespace = "com.dpsmpx.dpmeta.shell"
     compileSdk = 37
 
     defaultConfig {
@@ -56,10 +56,16 @@ android {
         compose = true
     }
 
-    // Предупреждения Lint — ошибки (CLAUDE.md, «Правила кода»).
+    // Предупреждения Lint — ошибки (CLAUDE.md, «Правила кода»). Код библиотек проверяет Lint своих
+    // модулей по правилам их подсистем (пульт — :app, «AI» — dpai/android); здесь — модуль и
+    // слитый манифест.
     lint {
         warningsAsErrors = true
         abortOnError = true
+        checkDependencies = false
+        // targetSdk 36 — как у отдельной сборки «AI» (DP_AI_Orcestrator: docs/PROVENANCE.md, §2):
+        // поднимается вместе с ней, иначе одно приложение вело бы себя по-разному в двух сборках.
+        disable += "OldTargetApi"
     }
 
     compileOptions {
@@ -85,4 +91,6 @@ kotlin {
 dependencies {
     implementation(project(":app"))
     implementation("com.dpsmpx.dpai:android")
+    // DpmetaActivity наследует пульт — ComponentActivity нужна и на classpath компиляции.
+    implementation(libs.activity.compose)
 }

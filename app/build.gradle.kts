@@ -1,6 +1,6 @@
 // Пульт DPmetaApp (этап 3; ТЗ, §6.2, §9): Android-библиотека — экраны на Compose,
 // модели экранов на чистом Kotlin (снимки — тестами на JVM), хранилище с Keystore,
-// блокировка (F-45). Приложение одно (D-27, D-49): APK собирает модуль корня :android
+// блокировка (F-45). Приложение одно (D-27, D-49): APK собирает модуль корня :shell
 // (D-53); своего applicationId у пульта нет. Плагины — convention-плагин dpai/build-logic.
 plugins {
     id("dpai.android-library")

@@ -311,8 +311,8 @@ Release нужен только §4 (замеры): debug медленнее, и
 сборки (`docs/PROCESS.md`, §6):
 
 ```sh
-cd DPmetaApp/dpai && ./gradlew :android:assembleRelease
-adb install -r android/build/outputs/apk/release/android-release.apk
+cd DPmetaApp/dpai && ./gradlew :android-app:assembleRelease
+adb install -r android-app/build/outputs/apk/release/android-app-release.apk
 ```
 
 Свойства `dpai.release.*` — те же, что для `resign-apk.sh`; без них

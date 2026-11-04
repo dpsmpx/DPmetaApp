@@ -1,4 +1,4 @@
-package com.dpsmpx.dpmeta.android
+package com.dpsmpx.dpmeta.shell
 
 import android.content.Intent
 import com.dpsmpx.dpai.android.MainActivity

@@ -1,21 +1,22 @@
 #!/bin/sh
-# APK DPmetaApp — оболочка dpai/android, первая форма приложения (D-28), — на
-# любом Linux с JDK 21 и Android SDK (D-31): телефон автора (proot, ярлык
-# tools/termux/apk-build.sh), компьютер, облачная сессия.
+# APK DPmetaApp — приложение корня :shell (D-35, D-53): пульт первым экраном, оболочка
+# «AI» вкладкой, — на любом Linux с JDK 21 и Android SDK (D-31): телефон автора
+# (proot, ярлык tools/termux/apk-build.sh), компьютер, облачная сессия. Отдельная
+# сборка «AI» — `cd dpai && ./gradlew :android-app:assemble…` (D-35).
 #
 #   tools/build-apk.sh [release|debug]     по умолчанию release
 #
 # release — как у DPpass (DP_AI_Orcestrator:D-97, ответ автора 2 ноября 2026):
 # подписан ключом выпуска из свойств dpai.release.* в ~/.gradle/gradle.properties
-# (dpai/android/build.gradle.kts). Без них Gradle подписал бы отладочным ключом —
+# (shell/build.gradle.kts — тот же ключ, что у сборки «AI»: APK ставится поверх). Без них Gradle подписал бы отладочным ключом —
 # такой APK не встанет поверх подписанного, поэтому сценарий его не выдаёт:
 # отказ, если только не задано DPAI_RELEASE_DEBUG_KEY=1 (замеры у себя, D-24).
 # После сборки — apksigner verify: подпись v2/v3, отпечаток SHA-256 сертификата;
 # свойство dpai.release.certSha256 (по желанию) — сверка с ним. Рядом с APK —
 # SHA256SUMS. Пароли не попадают ни в командную строку, ни в вывод.
 #
-# Android SDK — ANDROID_HOME или sdk.dir в dpai/local.properties: без него модуль
-# :android не подключается (dpai/settings.gradle.kts). APK DPpass собирается
+# Android SDK — ANDROID_HOME или sdk.dir в local.properties корня или dpai/: без него
+# модули :app и :shell не подключаются (settings.gradle.kts). APK DPpass собирается
 # отдельно (D-30).
 set -eu
 
@@ -28,16 +29,16 @@ case "$MODE" in
 esac
 SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
 if [ -z "$SDK" ]; then
-  SDK="$(sed -n 's/^sdk\.dir=//p' "$ROOT/dpai/local.properties" 2>/dev/null | head -n 1)"
+  SDK="$(cat "$ROOT/local.properties" "$ROOT/dpai/local.properties" 2>/dev/null | sed -n 's/^sdk\.dir=//p' | head -n 1)"
 fi
 if [ -z "$SDK" ]; then
-  echo "✗ нет Android SDK: ANDROID_HOME или sdk.dir в dpai/local.properties"
+  echo "✗ нет Android SDK: ANDROID_HOME или sdk.dir в local.properties корня или dpai/"
   exit 2
 fi
 
-cd "$ROOT/dpai"
-sh ./gradlew --console=plain ":android:$TASK"
-OUT="$ROOT/dpai/android/build/outputs/apk/$MODE"
+cd "$ROOT"
+sh ./gradlew --console=plain ":shell:$TASK"
+OUT="$ROOT/shell/build/outputs/apk/$MODE"
 ls "$OUT/"*.apk
 
 if [ "$MODE" = release ]; then

@@ -2961,6 +2961,66 @@ Codex — только чтение, вердикт из текста); на т�
 строка лицензии в `docs/INTEGRATION_CONTRACT.md` — по этому решению;
 правило зависимостей — `docs/PROCESS.md`, «Зависимости».
 
+### D-102 — Плагины Android и Compose — в `build-logic`: плагин Kotlin загружается один раз
+
+**Статус.** Принято 4 ноября 2026 — ответ автора (форма сессии DPmetaApp)
+на вопрос о предупреждении Gradle «The Kotlin Gradle plugin was loaded
+multiple times»: «у меня есть все build tools в соответствующем
+репозитории на гитхабе. Нужно использовать его». Заменяет правило
+`docs/ARCHITECTURE.md`, §2 «плагин Android объявляет сам модуль, а не
+`build-logic`: без Google Maven ядро собирается».
+
+**Решение.**
+- Android Gradle Plugin и плагин Compose — зависимости `build-logic`, как
+  плагин Kotlin; модули Android применяют convention-плагины
+  `dpai.android-library` и `dpai.android-application`, своих версий
+  плагинов у них нет. Корень DPmetaApp берёт те же плагины — второго
+  набора нет (`DPmetaApp:D-28`).
+- `build-logic` разрешает AGP из Google Maven при каждой сборке, даже без
+  Android SDK; где Google Maven закрыт — из build_tools автора
+  (`DPmetaApp:tools/build_tools_install.py` ставит его копию Google Maven
+  первым репозиторием групп Google).
+
+**Почему.** Плагины из разных classpath грузили плагин Kotlin дважды
+(разбор 17 октября 2026: `:accounts` через `build-logic` и `:android`
+своими `alias(...)`): предупреждение Gradle и риск несовместимых классов
+Kotlin между модулями. Довод «ядро без Google Maven» снят словом автора:
+build_tools держит всё нужное сборке.
+
+**Проверка.** Сборка из корня DPmetaApp и из `dpai/` без строки «The
+Kotlin Gradle plugin was loaded multiple times» в выводе Gradle;
+`tools/verify/check_dependencies.py` — версии плагинов только в каталоге.
+
+### D-103 — Оболочка `android` — библиотека; APK — тонкие приложения
+
+**Статус.** Принято 4 ноября 2026 — исполняет `DPmetaApp:D-53` (один APK
+собирает корень DPmetaApp: пульт первым экраном, «AI» — вкладкой) и
+`DPmetaApp:D-54` (версия приложения — по этапам DPmetaApp). Дополняет
+D-34 (оболочка Android) и `DPmetaApp:D-35` (каждая подсистема собирается
+и отдельно).
+
+**Решение.**
+- Модуль `android` — Android-библиотека: экраны, службы, нативный код,
+  вложения (агент, Linux-среда) и манифест с ними. Личность пакета,
+  версия, подпись и упаковка — у приложений:
+  - `android-app` — отдельная сборка подсистемы «AI»
+    (`com.dpsmpx.dpai`, версия подсистемы, свой `versionCode`);
+  - `DPmetaApp::shell` — приложение DPmetaApp из корня (тот же
+    `applicationId`, версия и `versionCode` DPmetaApp, `DPmetaApp:D-54`).
+- Версия подсистемы для сверки с агентом (`doctor`) — `BuildConfig.DPAI_VERSION`
+  библиотеки, а не `versionName` пакета: в приложении DPmetaApp они
+  разные. Заголовок журнала приложения называет обе.
+- APK отдельной сборки «AI» — `android-app/build/outputs/apk/`.
+
+**Почему.** Включённая сборка `dpai/` не видит модулей корня DPmetaApp,
+поэтому пульт не встраивается в оболочку; наоборот — корень берёт
+оболочку библиотекой (`DPmetaApp:D-53`, пробная сборка 3 ноября 2026).
+
+**Проверка.** `./gradlew :android-app:assembleDebug` в `dpai/` и
+`./gradlew :shell:assembleDebug` в корне DPmetaApp собирают APK;
+`versionName` и `versionCode` в манифестах APK; на телефоне —
+`DPmetaApp:TODO.md`, «На устройстве».
+
 ## Отложено
 
 Решения, которые принимаются в начале своего этапа и до этого не
