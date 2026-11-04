@@ -130,7 +130,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
             val next = try {
                 withContext(Dispatchers.IO) {
                     // Копия настроек — после изменения и раз в час (D-51); служба делает то же в своём такте.
-                    runCatching { SettingsBackups.tick(context.applicationContext, Controller.get(context.filesDir, null)) }
+                    runCatching { SettingsBackups.tick(context.applicationContext, Controller.get(context.filesDir)) }
                     if (background) model.view(s) else model.step(s)
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {

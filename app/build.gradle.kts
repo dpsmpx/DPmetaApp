@@ -40,12 +40,21 @@ android {
     }
 }
 
-// Панели проектов (F-10) — config/projects/*.toml корня в ресурсах APK: assets/projects/<Проект>.toml.
+// Панели проектов (F-10, D-57) — только config/projects/*.toml корня, в ресурсах APK —
+// assets/projects/<Проект>.toml; другие файлы config/ в APK не попадают.
+val panelAssets = tasks.register<Sync>("panelAssets") {
+    from(rootProject.layout.projectDirectory.dir("config/projects")) { include("*.toml") }
+    into(layout.buildDirectory.dir("generated/panel-assets/projects"))
+}
 androidComponents {
     onVariants { v ->
-        v.sources.assets?.addStaticSourceDirectory(rootProject.layout.projectDirectory.dir("config").asFile.path)
+        v.sources.assets?.addStaticSourceDirectory(layout.buildDirectory.dir("generated/panel-assets").get().asFile.path)
     }
 }
+// Каталог читают слияние ресурсов и lint — зависят от задачи явно (как linuxFiles в dpai/android).
+tasks.matching {
+    it.name != panelAssets.name && ((it.name.startsWith("merge") || it.name.startsWith("package")) && it.name.endsWith("Assets") || it.name.contains("lint", ignoreCase = true))
+}.configureEach { dependsOn(panelAssets) }
 
 kotlin {
     compilerOptions {

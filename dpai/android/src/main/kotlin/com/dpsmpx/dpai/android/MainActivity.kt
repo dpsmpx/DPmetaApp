@@ -68,7 +68,7 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             registerForActivityResult(ActivityResultContracts.RequestPermission()) {}.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
-        val controller = Controller.get(filesDir, BuildConfig.DPAI_VERSION)
+        val controller = Controller.get(filesDir)
         val model = DemoModel.get(this)
         AppLogs.get(this).step("экран открыт")
         setContent {

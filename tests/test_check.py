@@ -657,7 +657,7 @@ class ForbiddenTest(CheckCase):
             # Выгрузка — у подсистемы сайта (D-40, D-48); отчёты Usage и Cost — только чтение (D-08).
             "socialmediaimage/app/src/main/kotlin/Deploy.kt": 'val cmd = listOf("rsync", "-a")\n',
             "dpai/providers/src/main/kotlin/Usage.kt": 'val u = "https://api.anthropic.com/v1/organizations/usage_report/messages"\n',
-            "core/sync/src/main/kotlin/S.kt": "// без rsync и jsoup — D-20, D-40\nval x = 1\n",
+            "core/sync/src/main/kotlin/S.kt": "// без rsync и jsoup — D-20, D-40\nval x = 1 // не rsync: D-40\n",
             "core/sync/src/test/kotlin/T.kt": 'val sample = "rsync"\n',
         })
         self.assertClean(s.run("code.forbidden"))

@@ -41,8 +41,10 @@ data class Panel(val project: String, val items: List<Item>) {
     }
 
     data class Item(val title: String, val kind: Kind, val path: String, val glob: String?, val id: String?, val block: String?) {
+        private val mask: Regex? by lazy { glob?.let(::globRegex) }
+
         /** Имя файла подходит под маску [glob]: `*` — любые знаки, `?` — один; без маски — любое. */
-        fun matches(name: String): Boolean = glob == null || globRegex(glob).matches(name)
+        fun matches(name: String): Boolean = mask?.matches(name) ?: true
     }
 
     companion object {
@@ -52,9 +54,9 @@ data class Panel(val project: String, val items: List<Item>) {
 }
 
 /**
- * Строгий разбор панели: другая схема, неизвестный ключ, неизвестный вид,
- * путь с «..» или от корня, ключ не к своему виду — отказ с местом
- * (`REGISTRY_SCHEMA_UNSUPPORTED`, `FIELD_MISSING`, `FIELD_TYPE`, `VALUE_INVALID`).
+ * Строгий разбор панели — отказ с местом: другая схема — `FORMAT_VERSION_UNSUPPORTED`,
+ * неизвестный ключ — `FIELD_UNKNOWN`, нет ключа или пунктов — `FIELD_MISSING`, не строка —
+ * `FIELD_TYPE`, неизвестный вид, путь с «..» или от корня, ключ не к своему виду — `VALUE_INVALID`.
  */
 object PanelFormat {
     const val SCHEMA = 1
@@ -70,13 +72,15 @@ object PanelFormat {
         }
         unknown(doc, TOP, source)?.let { return it }
         val schema = (doc["schema"] as? JsonNumber)?.toLongExact()
-            ?: return unsupported("нет целого ключа schema", "$source:schema")
-        if (schema != SCHEMA.toLong()) return unsupported("схема $schema не поддержана (поддержана $SCHEMA)", "$source:schema")
+            ?: return missing("schema", source)
+        if (schema != SCHEMA.toLong()) {
+            return Outcome.failure(DiagCode.FORMAT_VERSION_UNSUPPORTED, "схема $schema не поддержана (поддержана $SCHEMA)", "$source:schema")
+        }
         val project = str(doc, "project") ?: return missing("project", source)
-        val list = doc["item"] as? JsonArray ?: return unsupported("нет пунктов [[item]]", "$source:item")
+        val list = doc["item"] as? JsonArray ?: return missing("item", source)
         val items = list.items.mapIndexed { i, v ->
             val at = "$source:item[$i]"
-            val obj = v as? JsonObject ?: return unsupported("пункт — не таблица", at)
+            val obj = v as? JsonObject ?: return Outcome.failure(DiagCode.FIELD_TYPE, "пункт — не таблица", at)
             when (val r = item(obj, at)) {
                 is Outcome.Failure -> return r
                 is Outcome.Success -> r.value
@@ -90,7 +94,7 @@ object PanelFormat {
         for (key in ITEM) if (obj[key] != null && obj[key] !is JsonString) return typeError(key, at)
         val title = str(obj, "title") ?: return missing("title", at)
         val kindText = str(obj, "kind") ?: return missing("kind", at)
-        val kind = Panel.Kind.of(kindText) ?: return unsupported("неизвестный вид «$kindText»", "$at.kind")
+        val kind = Panel.Kind.of(kindText) ?: return Outcome.failure(DiagCode.VALUE_INVALID, "неизвестный вид «$kindText»", "$at.kind")
         val path = str(obj, "path") ?: return missing("path", at)
         if (path.startsWith("/") || path.split('/').any { it.isEmpty() || it == "." || it == ".." }) {
             return Outcome.failure(DiagCode.VALUE_INVALID, "путь — относительный, без «..» и пустых частей", "$at.path")
@@ -110,9 +114,7 @@ object PanelFormat {
     private fun str(obj: JsonObject, key: String): String? = (obj[key] as? JsonString)?.value?.takeIf { it.isNotBlank() }
 
     private fun unknown(obj: JsonObject, allowed: Set<String>, at: String): Outcome.Failure? =
-        obj.fields.keys.firstOrNull { it !in allowed }?.let { unsupported("неизвестный ключ «$it»", "$at.$it") }
-
-    private fun unsupported(message: String, at: String) = Outcome.failure(DiagCode.REGISTRY_SCHEMA_UNSUPPORTED, message, at)
+        obj.fields.keys.firstOrNull { it !in allowed }?.let { Outcome.failure(DiagCode.FIELD_UNKNOWN, "неизвестный ключ «$it»", "$at.$it") }
 
     private fun missing(key: String, at: String) = Outcome.failure(DiagCode.FIELD_MISSING, "нет ключа $key", "$at.$key")
 

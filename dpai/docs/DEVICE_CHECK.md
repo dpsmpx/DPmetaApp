@@ -160,7 +160,8 @@ Release для замеров (§4) облако DPmetaApp не собирает
 собирает только отладочный или неподписанный APK (`DPmetaApp:CLAUDE.md`,
 «Секреты и подпись»). Замеры на debug занижены — их не делать; release
 собирается вашим ключом там, где ключ: на телефоне — ярлык `apk-build` →
-«DPmetaApp — пульт» (`DPmetaApp:tools/build-apk.sh release`; без свойств
+«DPmetaApp — пульт и «AI»» (`DPmetaApp:tools/build-apk.sh release`, отдельная
+«AI» — `… release ai`; без свойств
 `dpai.release.*` — отказ; в конце — отпечаток сертификата и `SHA256SUMS`;
 `docs/PROCESS.md`, §6).
 

@@ -153,7 +153,7 @@ class ControllerService : Service() {
                                 model.refreshUsage(auto)
                             }
                             // Копия настроек — после изменения и раз в час (D-51).
-                            SettingsBackups.tick(app, Controller.get(app.filesDir, null))
+                            SettingsBackups.tick(app, Controller.get(app.filesDir))
                             true
                         } catch (e: Exception) {
                             // Сбой шага — тоже сбой подряд: контур, который не строится (журнал не открылся), не работает.
@@ -175,7 +175,7 @@ class ControllerService : Service() {
                             summary(log, meter, model, device)
                             // Termux-target на этом телефоне: sshd не слушает — запустить его в Termux (D-46).
                             try {
-                                TermuxLauncher.ensureSshd(app, Controller.get(app.filesDir, null).targets())?.let { log.info("termux", it) }
+                                TermuxLauncher.ensureSshd(app, Controller.get(app.filesDir).targets())?.let { log.info("termux", it) }
                             } catch (e: Exception) {
                                 log.warn("termux", AppLogs.describe(e))
                             }

@@ -100,15 +100,16 @@ def build_marker(root, now=None) -> dict:
     import datetime as dt
     import subprocess
 
-    def git(*args):
-        try:
-            r = subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, timeout=30)
-        except (OSError, subprocess.SubprocessError):
-            return None
-        return r.stdout.strip() if r.returncode == 0 else None
+    from ..mark.release import git_head  # тот же коммит, что пишет реестр выпусков (Д41)
 
-    commit = git("rev-parse", "HEAD")
-    status = git("status", "--porcelain", "--", ".") if commit else None
+    commit = git_head(root)
+    status = None
+    if commit:
+        try:
+            r = subprocess.run(["git", "status", "--porcelain", "--", "."], cwd=root, capture_output=True, text=True, timeout=30)
+            status = r.stdout.strip() if r.returncode == 0 else None
+        except (OSError, subprocess.SubprocessError):
+            status = None
     when = now or dt.datetime.now(dt.timezone.utc)
     return {"commit": commit or None, "dirty": None if status is None else bool(status),
             "built": when.strftime("%Y-%m-%dT%H:%M:%SZ")}

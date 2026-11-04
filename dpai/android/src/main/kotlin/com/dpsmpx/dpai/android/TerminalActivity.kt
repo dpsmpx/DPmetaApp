@@ -108,7 +108,7 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         val claude = intent.getBooleanExtra(EXTRA_CLAUDE, false)
         val login = intent.getBooleanExtra(EXTRA_LOGIN, false)
         thread(name = "dpai-term-open", isDaemon = true) {
-            val target = Controller.get(filesDir, null).targets().firstOrNull { it.id.value == id }
+            val target = Controller.get(filesDir).targets().firstOrNull { it.id.value == id }
             runOnUiThread {
                 if (target == null) {
                     if (TerminalHub.tabs.isEmpty()) finish()

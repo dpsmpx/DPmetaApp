@@ -190,7 +190,14 @@ private fun checked(c: Screens.Checked?): String =
     c?.let { "#${it.number} — ${it.verdict}, ${it.age}" + (it.line?.let { l -> "; «$l»" } ?: "") } ?: Screens.UNKNOWN
 
 @Composable
-private fun CardScreen(c: Screens.Card, loader: Loader, onBack: () -> Unit, open: (Nav) -> Unit) = LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+private fun CardScreen(c: Screens.Card, loader: Loader, onBack: () -> Unit, open: (Nav) -> Unit) {
+    // Панель (F-10) — один раз на карточку: файл из APK и его разбор не повторяются при перерисовке.
+    val panel = remember(c.name) { loader.panel(c.name) }
+    CardList(c, panel, loader, onBack, open)
+}
+
+@Composable
+private fun CardList(c: Screens.Card, panel: Outcome<Panel>?, loader: Loader, onBack: () -> Unit, open: (Nav) -> Unit) = LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
     item { TextButton(onClick = onBack) { Text("← Назад") } }
     item { Text("${c.name} — ${c.place}, ${c.working}", style = MaterialTheme.typography.titleMedium) }
     item {
@@ -214,7 +221,7 @@ private fun CardScreen(c: Screens.Card, loader: Loader, onBack: () -> Unit, open
         item { Text("О себе (${p.name})", fontWeight = FontWeight.SemiBold) }
         item { Text(p.text, style = MaterialTheme.typography.bodySmall) }
     }
-    when (val panel = loader.panel(c.name)) {
+    when (panel) {
         null -> Unit
         is Outcome.Failure -> item { Text("Панель: ${Panels.failed(panel).first()}", color = MaterialTheme.colorScheme.error) }
         is Outcome.Success -> {

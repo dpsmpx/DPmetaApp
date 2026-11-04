@@ -23,17 +23,6 @@ import java.nio.file.Path
 import java.time.Instant
 import java.time.format.DateTimeParseException
 
-/**
- * Подсистемы DPmetaApp (D-28, D-30, D-43): их работа идёт в каталоге
- * DPmetaApp, а не в замороженных репозиториях из `slug` реестра. Локальная
- * настройка поверх реестра (F-02) — до поля каталога подсистемы в реестре
- * DPmeta (D-46, `DPmeta:M-16`); появится поле — берётся оттуда.
- */
-/** Хозяин подсистем — DPmetaApp: их каталоги — поле `dir` реестра (D-46, `DPmeta:M-16`). */
-object Subsystems {
-    val HOST: String = "DPmetaApp"
-}
-
 private fun checkPath(path: String): Outcome<Unit> =
     if (path.isEmpty() || path.startsWith("/") || path.split('/').any { it.isEmpty() || it == "." || it == ".." }) {
         Outcome.failure(DiagCode.VALUE_INVALID, "путь файла — относительный, без «..»", path)

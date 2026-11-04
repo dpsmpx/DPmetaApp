@@ -124,7 +124,7 @@ object TerminalHub {
                     LocalChannel(child, onOutput = { b, n -> tab.session.output(b, 0, n) }, onClosed = { code -> if (tab.transport === t) closed(tab, code) })
                 }
             } else {
-                val controller = Controller.get(app.filesDir, null)
+                val controller = Controller.get(app.filesDir)
                 target.toTarget(controller.knownHostsFile).ssh?.let { endpoint ->
                     JschShell(endpoint, target.platform, identities = listOf(KeystoreKey.identity())).open(
                         cols, rows, tab.command,

@@ -125,7 +125,7 @@ fun LinuxCard() {
                                     val r = withContext(Dispatchers.IO) {
                                         val id = com.dpsmpx.dpai.core.ids.IdGenerator(com.dpsmpx.dpai.core.clock.Clock.SYSTEM, com.dpsmpx.dpai.core.clock.RandomSource.secure())
                                             .next(com.dpsmpx.dpai.core.ids.IdKinds.TARGET)
-                                        Controller.get(context.filesDir, null).addInApp(id, x)
+                                        Controller.get(context.filesDir).addInApp(id, x)
                                     }
                                     note = when (r) {
                                         is Outcome.Success -> "Добавлен «${r.value.label}» (${r.value.configDir}): войдите в ${x.title} на его карточке во вкладке Targets"

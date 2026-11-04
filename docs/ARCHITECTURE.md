@@ -17,13 +17,16 @@ DPmetaApp/                        сборка Gradle из корня: ./gradlew
 │   ├── accounts execution sessions tasks contexts git verification
 │   │   monitoring ecosystem connectors analytics orchestrator   ← контур «AI»
 │   ├── ui cli jsch               представление без платформы, команда dpai, SSH на JVM
-│   └── android                   оболочка Android — первая форма приложения DPmetaApp
+│   ├── android                   оболочка Android — библиотека (DP_AI_Orcestrator:D-103)
+│   └── android-app               отдельная сборка «AI» (D-35)
 ├── dppass/                       подсистема DPpass (D-30): свой процесс, сборка и APK, ядро — пока своё
 ├── socialmediaimage/             подсистема SocialMediaImage (D-43): контент и сайт, Python, свой процесс
 ├── dpvisualisation/              подсистема DPvisualisation (D-43): модель экосистемы и просмотрщик, свой процесс
 ├── dpmeta/                       подсистема DPmeta (D-43): реестр экосистемы, контракты, очередь, свой процесс
 ├── dpprofile/                    подсистема DPprofile (D-43): проверяемая история пути автора, свой процесс
-├── (этап 1+) core/ cli/ app/     модули DPmetaApp на ядре dpai/ (ТЗ, §6.2)
+├── core/ cli/ app/               модули DPmetaApp на ядре dpai/ (ТЗ, §6.2); app — пульт
+├── shell/                        приложение DPmetaApp — один APK: пульт и «AI» (D-53)
+├── config/projects/              панели проектов (F-10, D-57)
 ├── docs/ ROADMAP/ TODO.md        процесс приложения целиком
 └── tools/check/                  проверки корня; подсистемы — dpai/tools/verify/, dppass/tools/hostcheck/,
                                   socialmediaimage/tools/check.sh, dpvisualisation/tools/check/,

@@ -4,7 +4,8 @@
 # (proot, ярлык tools/termux/apk-build.sh), компьютер, облачная сессия. Отдельная
 # сборка «AI» — `cd dpai && ./gradlew :android-app:assemble…` (D-35).
 #
-#   tools/build-apk.sh [release|debug]     по умолчанию release
+#   tools/build-apk.sh [release|debug] [ai]     по умолчанию release; ai — отдельная сборка
+#                                               «AI» dpai/android-app (D-35), тот же ключ
 #
 # release — как у DPpass (DP_AI_Orcestrator:D-97, ответ автора 2 ноября 2026):
 # подписан ключом выпуска из свойств dpai.release.* в ~/.gradle/gradle.properties
@@ -22,6 +23,12 @@ set -eu
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MODE="${1:-release}"
+WHAT="${2:-app}"
+case "$WHAT" in
+  app) DIR="$ROOT"; MODULE=":shell"; OUT_DIR="$ROOT/shell" ;;
+  ai) DIR="$ROOT/dpai"; MODULE=":android-app"; OUT_DIR="$ROOT/dpai/android-app" ;;
+  *) echo "✗ сборка $WHAT: есть app (DPmetaApp) и ai (отдельная «AI»)"; exit 2 ;;
+esac
 case "$MODE" in
   release) TASK=assembleRelease ;;
   debug) TASK=assembleDebug ;;
@@ -36,9 +43,11 @@ if [ -z "$SDK" ]; then
   exit 2
 fi
 
-cd "$ROOT"
-sh ./gradlew --console=plain ":shell:$TASK"
-OUT="$ROOT/shell/build/outputs/apk/$MODE"
+# Один SDK — и корню, и включённой сборке dpai/: каждая ищет его в своём local.properties.
+export ANDROID_HOME="$SDK"
+cd "$DIR"
+sh ./gradlew --console=plain "$MODULE:$TASK"
+OUT="$OUT_DIR/build/outputs/apk/$MODE"
 ls "$OUT/"*.apk
 
 if [ "$MODE" = release ]; then

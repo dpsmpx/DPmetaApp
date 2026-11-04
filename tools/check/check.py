@@ -617,6 +617,7 @@ FORBIDDEN_CODE = (
      "без скрейпинга и автоматизации браузера — только официальные API (D-20)"),
 )
 CODE_EXT = (".kt", ".kts", ".java")
+TRAILING_COMMENT = re.compile(r"\s//\s.*$")
 
 
 def check_forbidden(repo, r):
@@ -632,6 +633,8 @@ def check_forbidden(repo, r):
         for i, line in enumerate(text.splitlines(), 1):
             if line.lstrip().startswith(("//", "*", "/*")):
                 continue
+            # Хвостовой комментарий « // …» — не код; «://» адреса им не считается.
+            line = TRAILING_COMMENT.sub("", line)
             for rx, allowed, why in FORBIDDEN_CODE:
                 if rx.search(line) and not rel.startswith(allowed):
                     r.add(f"{rel}:{i}", why)
@@ -681,13 +684,14 @@ TASKS_DONE = re.compile(r"^(\d+) actionable tasks?", re.M)
 
 
 def android_sdk(root):
-    """Android SDK, как его ищет dpai/settings.gradle.kts: dpai/local.properties или переменные окружения."""
-    local = os.path.join(root, "dpai", "local.properties")
+    """Android SDK, как его ищут settings.gradle.kts корня и dpai/: local.properties одного из них
+    или переменные окружения."""
     candidates = []
-    if os.path.isfile(local):
-        for line in open(local, encoding="utf-8"):
-            if line.startswith("sdk.dir="):
-                candidates.append(line.split("=", 1)[1].strip().replace("\\:", ":").replace("\\\\", "/"))
+    for local in (os.path.join(root, "local.properties"), os.path.join(root, "dpai", "local.properties")):
+        if os.path.isfile(local):
+            for line in open(local, encoding="utf-8"):
+                if line.startswith("sdk.dir="):
+                    candidates.append(line.split("=", 1)[1].strip().replace("\\:", ":").replace("\\\\", "/"))
     candidates += [os.environ.get("ANDROID_HOME"), os.environ.get("ANDROID_SDK_ROOT")]
     return next((c for c in candidates if c and os.path.isdir(c)), None)
 
@@ -712,8 +716,13 @@ def check_gradle(root, java=None, sdk=None, run=gradle_run):
         # Сборка не проверена вовсе: не «пропуск», а провал уровня full (D-51).
         r.findings.append("нет JDK — сборка Gradle не проверена: `full` без сборки не значит ничего (установите JDK 21)")
         return r
-    if not (android_sdk(root) if sdk is None else sdk):
-        r.skipped.append("нет Android SDK — приложение (dpai/android) не собрано")
+    found = android_sdk(root) if sdk is None else sdk
+    if not found:
+        r.skipped.append("нет Android SDK — приложение :shell и оболочка dpai/android не собраны")
+    elif sdk is None and not os.environ.get("ANDROID_HOME"):
+        # Корень и включённая сборка dpai/ ищут SDK каждая в своём local.properties: один SDK — обеим
+        # (иначе :shell ждёт библиотеку dpai/android, которой во включённой сборке нет).
+        os.environ["ANDROID_HOME"] = found
     rc, out = run([os.path.join(root, "gradlew"), "build", "--console=plain"], root)
     m = TASKS_DONE.search(out)
     r.scanned = int(m.group(1)) if m else 0
