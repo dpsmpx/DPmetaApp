@@ -78,10 +78,14 @@
     со второго круга до вливания (`DPmeta:M-13`, «Проверка»; описание
     PR #105).
 
-- `Т` **Общий APK со всеми подсистемами** (D-35): своя оболочка DPmetaApp
-  — когда в общий APK войдёт вторая подсистема; тогда `dpai/android` —
-  отдельная сборка подсистемы. DPpass — в общем APK после сведения ядра
-  (пункт ниже); имена и `applicationId` сборок — ТЗ, Q-10.
+- `Т` **DPpass — в общий APK** (D-35): своя оболочка DPmetaApp — `:shell`
+  (D-53); DPpass входит в неё библиотекой после сведения ядра (пункт ниже),
+  с VPN-службой в том же приложении; имена и `applicationId` сборок — ТЗ,
+  Q-10, D-49.
+- `М` **Сборка `:shell` в `apk_debug`** (D-33, D-53): отладочный APK
+  0.3.0-dev.N — из `main` после вливания PR #152, каталогом `dpmetaapp/`
+  рядом с `dpai/` и `dppass/`; принудительный пуш в ветку сборок —
+  по слову автора.
 
 - `Т` **Ядро DPpass — к ядру `dpai/`** (D-30): `Outcome`, `Diagnostic`,
   `DiagCode`, `Secret`, `Clock` DPpass — пока свои (`core.single`,
@@ -116,22 +120,6 @@
     скачивает его `build-apk.sh` (этого JDK требует для демона сам форк);
   - DPpass из меню — как прежний ярлык: тот же `~/dppass-build/build.sh`.
 
-- `М` **Gradle: «The Kotlin Gradle plugin was loaded multiple times»** —
-  предупреждение при сборке из корня (11 октября 2026, этап 2). Разбор
-  17 октября 2026 (`--info`): плагин загружен дважды в **подсистеме
-  `dpai/`** — в `:accounts` (convention-плагин `dpai/build-logic`) и в
-  `:android` (свои `alias(libs.plugins.android.application)` и
-  `alias(libs.plugins.kotlin.compose)` с версиями). Корень DPmetaApp ни при
-  чём: `apply false` в корне не помогло. Средства есть, но каждое меняет
-  решение `dpai/` «без Google Maven ядро собирается» (`dpai/build-logic`
-  без AGP, `dpai/docs/ARCHITECTURE.md`, §2):
-  1. объявить плагины Android и Compose в `dpai/build.gradle.kts` с
-     `apply false` — тогда AGP разрешается из Google Maven при каждой
-     настройке, даже без SDK;
-  2. перенести AGP и плагин Compose на classpath `dpai/build-logic` —
-     то же следствие.
-  Сборка и тесты проходят; выбор — решением подсистемы `dpai/`, не
-  попутной правкой.
 - `С` **На устройстве (`DP_AI_Orcestrator:D-56`, подсистема «AI»):** задача у предела одной
   подписки продолжает на слоте другой с handoff; «Выполняет» и «Кому
   передавалась» в листе задачи; «Сейчас: …» на карточке слота;
