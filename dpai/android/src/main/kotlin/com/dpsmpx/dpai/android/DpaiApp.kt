@@ -980,6 +980,7 @@ private fun ConfirmDialog(model: DemoModel, requests: List<RequestCard>, uri: St
                         error = "Нужен вход по PIN: войдите и подтвердите снова"
                         return@TextButton
                     }
+                    error = null
                     busy = true
                     scope.launch {
                         val r = withContext(Dispatchers.IO) { Answers.apply(context, card.id.value, uri, null, button.label, "app") }
