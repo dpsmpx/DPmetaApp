@@ -16,12 +16,11 @@
    реестре. Клоны только читаются.
    **Подсистемы DPmetaApp.** DP_AI_Orcestrator, DPpass, SocialMediaImage,
    DPvisualisation, DPmeta и DPprofile живут каталогами DPmetaApp
-   (`DPmetaApp:D-28`, `DPmetaApp:D-30`, `DPmetaApp:D-43`), а их строки
-   реестра пока ведут в замороженные репозитории (SQ-36). До правки
-   реестра `xref.py` и `manifest.py` получают их каталоги ключами
-   `--clone`: `DPmetaApp=<DPmetaApp>`, `DP_AI_Orcestrator=<DPmetaApp>/dpai`,
-   `DPpass=<DPmetaApp>/dppass` и так же `socialmediaimage`,
-   `dpvisualisation`, `dpprofile`, а `DPmeta=.`. Клон — и каталог внутри
+   (`DPmetaApp:D-28`, `DPmetaApp:D-30`, `DPmetaApp:D-43`); их строки
+   реестра несут `dir` — каталог в DPmetaApp (M-16, SQ-36). `xref.py` и
+   `manifest.py` берут файлы подсистемы из клона DPmetaApp (строка
+   `place = "control"`) и её каталога без ключей `--clone`; ключ
+   по-прежнему главнее (`DPmeta=.`). Клон — и каталог внутри
    рабочего дерева; файл принадлежит самому глубокому клону, поэтому
    подсистема не считается второй раз за DPmetaApp. `activity.py`
    читает замороженные репозитории без ключей — так видно, не работает

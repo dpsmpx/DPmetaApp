@@ -165,6 +165,33 @@ class XrefTest(unittest.TestCase):
             _, report = self.run_xref("--clone", f"Alpha={plain}")
         self.assertIn("| Alpha | нет клона | — |", report)
 
+    def test_subsystem_dir_is_read_from_control_clone(self):
+        # Строка подсистемы с `dir` (M-16): файлы — в клоне репозитория управления,
+        # без ключа --clone; свой клон замороженного репозитория не нужен.
+        host = self.root / "host"
+        host.mkdir()
+        subprocess.run(["git", "init", "-q", str(host)], check=True)
+        (self.root / "alpha" / ".git").rename(self.root / "alpha-git")
+        (self.root / "alpha").rename(host / "alpha")
+        subprocess.run(["git", "-C", str(host), "add", "-A"], check=True)
+        self.registry.write_text(REGISTRY.replace('clone = "alpha"', 'clone = "alpha"\ndir = "alpha"')
+                                 + '\n[[repo]]\nname = "Host"\nslug = "o/Host"\nclone = "host"\nplace = "control"\n',
+                                 encoding="utf-8")
+        code, report = self.run_xref()
+        self.assertEqual(code, 0)
+        self.assertNotIn("| Alpha | нет клона |", report)
+        self.assertIn("Ссылок распознано: 4; нет такого номера: 1.", report)
+
+    def test_dir_and_periphery_are_checked(self):
+        self.registry.write_text(REGISTRY.replace('clone = "alpha"', 'clone = "alpha"\nplace = "periphery"'), encoding="utf-8")
+        self.assertEqual(xref.load_registry(self.registry)[0].place, "periphery")
+        self.registry.write_text(REGISTRY.replace('clone = "alpha"', 'clone = "alpha"\ndir = "../alpha"'), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "одно имя каталога"):
+            xref.load_registry(self.registry)
+        self.registry.write_text(REGISTRY.replace('clone = "alpha"', 'clone = "alpha"\ndir = "alpha"'), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "репозитория управления"):
+            xref.load_registry(self.registry)
+
     def test_bad_registry_and_unknown_name_give_code_2(self):
         self.registry.write_text("schema = 2\n", encoding="utf-8")
         self.assertEqual(xref.main(["--registry", str(self.registry)]), 2)

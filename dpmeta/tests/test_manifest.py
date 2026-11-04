@@ -240,10 +240,18 @@ class ManifestTest(unittest.TestCase):
         self.assertEqual(self.run_tool()[0], 2)
 
     def test_unknown_place_is_refused(self):
-        self.registry.write_text(REGISTRY.replace('"support"', '"periphery"'), encoding="utf-8")
+        # periphery — место M-16; неизвестное — любое другое.
+        self.registry.write_text(REGISTRY.replace('"support"', '"edge"'), encoding="utf-8")
         with self.assertRaises(ValueError):
             xref.load_registry(self.registry)
         self.assertEqual(self.run_tool()[0], 2)
+
+    def test_periphery_is_in_manifest(self):
+        # Периферия — текущая система (M-16): в манифест входит, архив — нет.
+        self.registry.write_text(REGISTRY.replace('"support"', '"periphery"'), encoding="utf-8")
+        code, text = self.run_tool()
+        self.assertEqual(code, 0)
+        self.assertIn('"name": "Beta_Tool"', text)
 
     def test_duplicate_keys_are_refused(self):
         self.registry.write_text(REGISTRY.replace('name = "Beta_Tool"', 'name = "alpha"'), encoding="utf-8")

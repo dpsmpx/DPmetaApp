@@ -29,17 +29,9 @@ import java.time.format.DateTimeParseException
  * настройка поверх реестра (F-02) — до поля каталога подсистемы в реестре
  * DPmeta (D-46, `DPmeta:M-16`); появится поле — берётся оттуда.
  */
+/** Хозяин подсистем — DPmetaApp: их каталоги — поле `dir` реестра (D-46, `DPmeta:M-16`). */
 object Subsystems {
     val HOST: String = "DPmetaApp"
-
-    val DIRS: Map<String, String> = linkedMapOf(
-        "DP_AI_Orcestrator" to "dpai/",
-        "DPpass" to "dppass/",
-        "SocialMediaImage" to "socialmediaimage/",
-        "DPvisualisation" to "dpvisualisation/",
-        "DPmeta" to "dpmeta/",
-        "DPprofile" to "dpprofile/",
-    )
 }
 
 private fun checkPath(path: String): Outcome<Unit> =
@@ -54,10 +46,10 @@ private fun checkPath(path: String): Outcome<Unit> =
  * каталога; её PR и ветки — общие с DPmetaApp, поэтому «кто работает» у
  * подсистемы не выводится (неизвестно, а не «свободен»).
  */
-class GitHubReader(private val gh: GitHub, private val host: RepoRef, private val subsystems: Map<String, String> = Subsystems.DIRS) : SourceReader {
+class GitHubReader(private val gh: GitHub, private val host: RepoRef) : SourceReader {
     override val source: ObservationSource = ObservationSource.GITHUB
 
-    override fun hasActivity(project: ProjectEntry): Boolean = project.name !in subsystems
+    override fun hasActivity(project: ProjectEntry): Boolean = project.dir == null
 
     override fun pulls(project: ProjectEntry): Outcome<Got<List<PullRequest>>> = when (val r = gh.pulls(project.slug)) {
         is Outcome.Failure -> r
@@ -77,11 +69,11 @@ class GitHubReader(private val gh: GitHub, private val host: RepoRef, private va
     override fun commit(project: ProjectEntry, sha: String): Outcome<CommitInfo> = gh.commit(project.slug, sha)
 
     /** Где лежат файлы проекта: репозиторий и каталог в нём (подсистема — в DPmetaApp). */
-    fun where(project: ProjectEntry): Pair<RepoRef, String> = subsystems[project.name]?.let { host to it } ?: (project.slug to "")
+    fun where(project: ProjectEntry): Pair<RepoRef, String> = project.dir?.let { host to "$it/" } ?: (project.slug to "")
 
     override fun file(project: ProjectEntry, path: String): Outcome<Got<String>> {
-        val dir = subsystems[project.name]
-        val r = if (dir != null) gh.file(host, dir + path) else gh.file(project.slug, path)
+        val (repo, prefix) = where(project)
+        val r = gh.file(repo, prefix + path)
         return when (r) {
             is Outcome.Failure -> r
             is Outcome.Success -> Outcome.success(Got(r.value.value, r.value.fetched.rawSha256, r.value.fetched.notModified))
@@ -96,11 +88,11 @@ class GitHubReader(private val gh: GitHub, private val host: RepoRef, private va
  * `pulls.json` и `branches.json` каталога проекта, если они есть (корпус):
  * у клонов их нет, и «кто работает» неизвестно.
  */
-class DirectoryReader(private val root: Path, private val hostDir: String = "dpmetaapp", private val subsystems: Map<String, String> = Subsystems.DIRS) : SourceReader {
+class DirectoryReader(private val root: Path, private val hostDir: String = "dpmetaapp") : SourceReader {
     override val source: ObservationSource = ObservationSource.DIRECTORY
     private val json = JsonParser()
 
-    private fun dir(project: ProjectEntry): Path = subsystems[project.name]?.let { root.resolve(hostDir).resolve(it.trimEnd('/')) }
+    private fun dir(project: ProjectEntry): Path = project.dir?.let { root.resolve(hostDir).resolve(it) }
         ?: root.resolve(project.clone ?: project.name)
 
     override fun hasActivity(project: ProjectEntry): Boolean = Files.isRegularFile(dir(project).resolve(PULLS))

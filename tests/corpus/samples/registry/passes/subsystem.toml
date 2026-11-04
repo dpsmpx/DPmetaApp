@@ -1,0 +1,14 @@
+# Подсистема в DPmetaApp (D-46, DPmeta:M-16): строка замороженного репозитория с каталогом.
+schema = 1
+
+[[repo]]
+name = "Host"
+slug = "example/Host"
+place = "control"
+
+[[repo]]
+name = "Delta"
+slug = "example/Delta"
+place = "core"
+dir = "delta"
+decisions = { path = "docs/DECISIONS.md", id = "D-\\d+" }

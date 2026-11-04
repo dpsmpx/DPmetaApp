@@ -44,7 +44,11 @@ data class IdSource(val path: String, val pattern: String) {
     fun toJson(): JsonObject = JsonObject.of("path" to JsonString(path), "id" to JsonString(pattern))
 }
 
-/** Строка реестра DPmeta (ТЗ, F-01): один проект экосистемы. */
+/**
+ * Строка реестра DPmeta (ТЗ, F-01): один проект экосистемы. [dir] — каталог
+ * подсистемы в DPmetaApp (D-46, `DPmeta:M-16`): файлы проекта — там, а
+ * [slug] — замороженный репозиторий с историей до переезда.
+ */
 data class ProjectEntry(
     val name: String,
     val slug: RepoRef,
@@ -54,6 +58,7 @@ data class ProjectEntry(
     val names: List<String>,
     val decisions: IdSource?,
     val defs: List<IdSource>,
+    val dir: String? = null,
 ) {
     fun toJson(): JsonObject = JsonObject(
         linkedMapOf<String, JsonValue>(
@@ -62,6 +67,7 @@ data class ProjectEntry(
             "place" to JsonString(place.code),
         ).apply {
             clone?.let { put("clone", JsonString(it)) }
+            dir?.let { put("dir", JsonString(it)) }
             if (aliases.isNotEmpty()) put("aliases", JsonArray(aliases.map(::JsonString)))
             if (names.isNotEmpty()) put("names", JsonArray(names.map(::JsonString)))
             decisions?.let { put("decisions", it.toJson()) }

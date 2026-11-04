@@ -19,6 +19,7 @@ decisions = { path = "docs/direction/DECISIONS.md", id = "Р\\d+" }
 name = "DPmeta"
 slug = "example/DPmeta"
 place = "sync"
+dir = "dpmeta"
 decisions = { path = "docs/DECISIONS.md", id = "M-\\d+" }
 
 [[repo]]

@@ -33,7 +33,7 @@ class CorpusTest {
     private fun parse(format: String, text: String, e: Map<String, String>): Outcome<String> = when (format) {
         "toml" -> Toml.parse(text, "").map { CanonicalJson.write(it) }
         "registry" -> RegistryFormat.parse(text, "").map { r ->
-            r.projects.joinToString(",") { "${it.name}:${it.place.code}" } + " shown=${r.shown.size}"
+            r.projects.joinToString(",") { "${it.name}:${it.place.code}" + (it.dir?.let { d -> "@$d" } ?: "") } + " shown=${r.shown.size}"
         }
         "decisions" -> DecisionLog.parse(text, Regex(e.getValue("pattern")), "").map { d ->
             d.entries.joinToString(",") { "${it.id}=${it.status ?: "-"}" }
