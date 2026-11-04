@@ -38,7 +38,7 @@ DPvisualisation, DPmeta и DPprofile, как прежде DP_AI_Orcestrator, —
 | SQ-08 | DP-Verify | устаревшие сведения о состоянии других репозиториев | низкий | открыт: пункт `TODO.md` о хуке DPpass снят; «Порядок» ROADMAP и §12.4 ТЗ — прежние |
 | SQ-09 | DP-Verify | VoxelRPG — имя проекта в ссылках и профиле | средний | открыт — RISK-04 |
 | SQ-10 | DPprofile | — | — | расхождений нет; с 25.10 — подсистема `DPmetaApp:dpprofile/` |
-| SQ-11 | DPpass | лицензия и поставка DP-Verify | высокий | решено автором: лицензия DPmetaApp — «все права защищены» (`DPmetaApp:D-47`); замена файлов — в DPmetaApp |
+| SQ-11 | DPpass | лицензия и поставка DP-Verify | высокий | сделано: лицензии заменены — `dppass/` 30.10, корень и `dpai/` 4.11.2026 (`DPmetaApp:D-47`) |
 | SQ-12 | SocialMediaImage | карта проектов и черновик README профиля устарели | низкий | частично: карта — сделано; черновик README профиля — сверить с правкой автора (`dpsmpx` `1e0b8ba`) |
 | SQ-13 | DP_game_market_analytic_system | README — один заголовок | низкий | сделано сессией проекта (PR #2, `9edf18c`); ветка `dpmeta/docs-sync` устарела |
 | SQ-14 | DP_game_market_analytic_system | `docs/TODO.md` не совпадает с кодом | низкий | сделано сессией проекта (PR #2, `9edf18c`); ветка `dpmeta/docs-sync` устарела |
@@ -49,21 +49,21 @@ DPvisualisation, DPmeta и DPprofile, как прежде DP_AI_Orcestrator, —
 | SQ-19 | SocialMediaImage | на хостинг выгружен весь репозиторий; восстановлено | высокий (утечка) | ведёт SocialMediaImage; защиты влиты; остаются окно доступности, переписка, ключ на телефоне |
 | SQ-20 | TrueJointTileMaker | `tools/gen_maps.py` игры вместо `tools/check_maps.py` | низкий | открыт — активная разработка |
 | SQ-21 | DPlang, SocialMediaImage | онлайн-компилятор: адрес `/api/v1/` занят, страница не в планах сайта | средний (публичный адрес) | открыт — RISK-09; часть DPlang сделана (`78defb1`) |
-| SQ-22 | DPmonetization | код ссылается на решения и документы, которых нет; WIP в `main` | низкий (документы) | открыт — активная разработка |
+| SQ-22 | DPmonetization | код ссылается на решения и документы, которых нет; WIP в `main` | низкий (документы) | решено автором: в архив (`DPmetaApp:D-58`) — стадии и шлюзы готовности метриками DPmetaApp |
 | SQ-23 | SocialMediaImage | DPmonetization нет ни в счёте прогресса, ни в списке «вне счёта» | низкий | сделано: решение автора 9.10 влито в `main` SocialMediaImage до переезда |
 | SQ-24 | SocialMediaImage | Д35 и ROADMAP: «UNKNOWN» и «за автором» о сделанном | низкий | сделано сессией SocialMediaImage 16–17.10.2026, до переезда |
 | SQ-25 | DPvisualisation, SocialMediaImage | схема сайта — из невлитой ветки; связи не записаны в DPmeta | низкий (документы), публичный (сайт) | сделано: ветки влиты — DPvisualisation и SocialMediaImage до переезда, DPmeta — с переездом (PR #5, M-14) |
 | SQ-26 | DP_AI_Orcestrator | строка состояния README расходится с «Прогрессом» | низкий | сделано в `DPmetaApp:dpai/README.md`; репозиторий заморожен (SQ-30) |
 | SQ-27 | DPmetaApp | ТЗ и журнал решений — только в невлитой ветке, а на них ссылаются | низкий | решено: влито в `main` DPmetaApp — PR #2 (`51fa0c7`, 11 октября 2026) |
 | SQ-28 | DPmetaApp | пункты о манифесте в TODO и контракте интеграции решены (M-11); «публичный» при закрытом — ответ автора записан там | средний (лицензия, границы) | сделано проходом 25.10: контракт интеграции и `TODO.md` подсистемы «AI» сведены с C-13 |
-| SQ-29 | DP_AI_Orcestrator | своё Android-приложение (`android/`, README), а по слову автора — в составе DPmetaApp | средний (архитектура) | решено автором: `DPmetaApp:D-28` — оболочка `dpai/android` и есть приложение DPmetaApp |
-| SQ-30 | DP_AI_Orcestrator, DPpass | репозиторий заморожен (`DPmetaApp:D-28`, `DPmetaApp:D-30`), а сам об этом не говорит | низкий | частично: DP_AI_Orcestrator и DPpass архивированы; четыре переехавших 25.10 (с надписью, `DPmetaApp:D-43`) — архивировать решает автор |
+| SQ-29 | DP_AI_Orcestrator | своё Android-приложение (`android/`, README), а по слову автора — в составе DPmetaApp | средний (архитектура) | решено автором: `DPmetaApp:D-28`, с 4.11 — `DPmetaApp:D-53`: приложение DPmetaApp — `:shell` корня, «AI» — вкладкой, `dpai/android` — библиотека |
+| SQ-30 | DP_AI_Orcestrator, DPpass | репозиторий заморожен (`DPmetaApp:D-28`, `DPmetaApp:D-30`), а сам об этом не говорит | низкий | частично: DP_AI_Orcestrator и DPpass архивированы; SocialMediaImage, DPvisualisation, DPmeta, DPprofile (с надписью) — архивирует автор; на 4.11 не архивированы |
 | SQ-31 | DPvisualisation, SocialMediaImage | узлы и факты: DP_AI_Orcestrator ещё «войдёт» в DPmetaApp, его приложение — отдельно | низкий (документы), публичный (сайт) | решено автором (M-16, `DPvisualisation:D-27`, `SocialMediaImage:Д46`): узел — модель DPvisualisation; счёт и факты сайта — сессия SocialMediaImage |
-| SQ-32 | DPlang | README: v0.2 «не начата», а по ROADMAP сделаны шаги 1–5; «Р0–Р60» при Р61 | низкий | открыт — активная разработка |
+| SQ-32 | DPlang | README: v0.2 «не начата», а по ROADMAP сделаны шаги 1–5; «Р0–Р71» при Р77 (4.11; было «Р0–Р60» при Р61) | низкий | открыт — активная разработка |
 | SQ-33 | DPvisualisation | модель отстала: стадии DP-Verify, DPlang, анализа рынка; мелочи ТЗ и форматов | низкий; публичный — комплект сайта | открыт — сессия DPvisualisation, вместе с моделью под переезды (`DPvisualisation:D-26`) |
 | SQ-34 | SocialMediaImage | факты отстали: DPmetaApp после D-27…D-29, стадия DP-Verify; повторы в реестре фактов | низкий; публичный — сайт | частично: стадия DP-Verify — VRF-NOW; APP-WHAT, ECO-NEW и повтор AU-EARLY — открыт |
 | SQ-35 | SocialMediaImage | план на странице «Путь» после D-28 и имена убранных проектов | низкий; публичный — сайт | решено автором: план — `SocialMediaImage:Д44`; имена убранных — по именам (`SocialMediaImage:Д46`) |
-| SQ-36 | DPmeta | реестр: шесть систем ведут в замороженные репозитории; периферия — `archive` при слове автора «в текущей системе» | средний (формат для DPmetaApp) | решено автором (M-16, `DPmetaApp:D-46`); правка реестра — следующий шаг |
+| SQ-36 | DPmeta | реестр: шесть систем ведут в замороженные репозитории; периферия — `archive` при слове автора «в текущей системе» | средний (формат для DPmetaApp) | сделано 4 ноября 2026 (M-16): поле `dir`, место `periphery` |
 | SQ-37 | SocialMediaImage | счёт прогресса: история переехавших систем — и в DPmetaApp, и в своих строках | низкий; публичный — сайт | решено автором: как в схеме (`SocialMediaImage:Д46`); набор — сессией SocialMediaImage |
 | SQ-38 | DPmetaApp | путь DPpass `dppass-build/build.sh` — скрипт автора вне репозитория | низкий | сделано этим проходом |
 
@@ -95,6 +95,8 @@ DPvisualisation, DPmeta и DPprofile, как прежде DP_AI_Orcestrator, —
 - **Проход 11 октября 2026** (`d7a9d43`): всё на месте; строки в «Где»
   обновлены (на `d66fb79` были `docs/PROCESS.md:303`,
   `docs/direction/DECISIONS.md:452` и `:475`).
+- **Проход 4 ноября 2026** (`80fd8a64`): `dpsmpx/C-` — `CLAUDE.md:48` и ещё
+  8 строк в 5 файлах (`docs/reports/2026-11-04-xref.md`, «Прежние имена»).
 - **Состояние:** открыт.
 
 ### SQ-02 — Значок сборки ведёт на Actions прежнего адреса
@@ -237,6 +239,10 @@ DPvisualisation, DPmeta и DPprofile, как прежде DP_AI_Orcestrator, —
   следующая, не начата» (`README.md:21`) и «Р0–Р60» (`:15`), а в журнале —
   Р66, ворота v0.2 пройдены 19 октября 2026 (`DPlang:ROADMAP/ROADMAP.md`,
   аудит `DPlang:docs/audits/2026-10-17-v0.2-audit.md`).
+- **Проход 4 ноября 2026** (`0c40ca0`): README по-прежнему «v0.2 —
+  native-срез | следующая, не начата» (`README.md:21`) и «Р0–Р71», а журнал
+  дошёл до Р77; DPlang — отдельный проект до завершения
+  (`DPmetaApp:D-58`), правка — сессией DPlang.
 - **Состояние:** открыт — активная разработка.
 
 ## DP-Verify
@@ -356,8 +362,9 @@ Galdhold); DP Verify 1.0.0-rc2 поставлен в DPpass (этап 6) и Gald
 - **Ответ автора 25 октября 2026:** лицензия всего DPmetaApp — «все права
   защищены», Apache-2.0 в корне, `dpai/` и `dppass/` заменяется, копия DP
   Verify — по его лицензии (`DPmetaApp:D-47`, ответ на Q-01).
-- **Состояние:** решено автором (`DPmetaApp:D-47`); замена файлов — в
-  DPmetaApp (`DPmetaApp:TODO.md`).
+- **Состояние:** сделано: `dppass/LICENSE` — 30 октября 2026
+  (`DPpass:D-96`), `LICENSE` корня и `dpai/` — 4 ноября 2026
+  (`DP_AI_Orcestrator:D-101`); копия DP Verify — по его лицензии.
 
 ## SocialMediaImage
 
@@ -894,7 +901,11 @@ Code, управление — из Android-приложения (`DP_AI_Orcestr
 - **Решено автором** 10 октября 2026 — `DPmetaApp:D-28`, «всё в одном
   сейчас»: код оркестратора — в `DPmetaApp:dpai/`, Android-оболочка
   `dpai/android` — первая форма приложения DPmetaApp, второго APK нет.
-- **Состояние:** решено автором (`DPmetaApp:D-28`).
+- **Уточнено автором 3 и 4 ноября 2026** (`DPmetaApp:D-53`): APK собирает
+  корень — приложение `:shell` (пульт первым экраном, «AI» вкладкой),
+  `dpai/android` — библиотека, отдельная сборка «AI» —
+  `DPmetaApp:dpai/android-app` (`DP_AI_Orcestrator:D-103`).
+- **Состояние:** решено автором (`DPmetaApp:D-28`, `DPmetaApp:D-53`).
 
 ### SQ-30 — Репозиторий заморожен, а сам об этом не говорит
 
@@ -921,9 +932,14 @@ Code, управление — из Android-приложения (`DP_AI_Orcestr
   DPmeta, DPprofile. Невлитые ветки замороженного DPmeta
   (`ccr-ddc9eb14-p13f4u`, `claude/dreamy-bardeen-xe4k6r`) уже в DPmetaApp
   — с PR #5; сам PR #5 закрыть — автору (`DPmetaApp:TODO.md`).
+- **Проход 4 ноября 2026** (GitHub REST, `archived`): DP_AI_Orcestrator и
+  DPpass — `true`; SocialMediaImage, DPvisualisation, DPmeta, DPprofile —
+  `false`; их последние коммиты — надписи об архиве, работы в них нет
+  (`docs/reports/2026-11-04-activity.md`). DPmonetization не заморожен —
+  его архив ведёт SQ-22.
 - **Состояние:** частично: DP_AI_Orcestrator и DPpass архивированы;
-  SocialMediaImage, DPvisualisation, DPmeta и DPprofile — архивировать
-  решает автор (`DPmetaApp:TODO.md`).
+  SocialMediaImage, DPvisualisation, DPmeta, DPprofile — архивирует автор
+  (`DPmetaApp:TODO.md`).
 
 ## DPmetaApp
 
@@ -1046,9 +1062,13 @@ PR #1 «WIP: … каркас ядра (прервано)» влит в `main` �
   общий процесс (`CLAUDE.md`, проверки) — решение автора, как RISK-05.
   По плану PR #1 DPmonetization будет читать DPmeta (реестр и контракты
   C-01, C-03, C-08, C-09), DP-Verify (`report.json`) и
-  DP_game_market_analytic_system (`DecisionReport`) — это ещё план, а не
-  контракт (`DPmeta:docs/ECOSYSTEM.md`, §2).
-- **Состояние:** открыт — активная разработка.
+  DP_game_market_analytic_system (`DecisionReport`) — это был план, а не
+  контракт; с 4 ноября 2026 он снят (`DPmetaApp:D-58`).
+- **Проход 4 ноября 2026** (`f6d30fe`): без изменений. Слово автора того же
+  дня (`DPmetaApp:D-58`): второй системы портфеля нет — стадии и шлюзы
+  готовности будут метриками DPmetaApp, DPmonetization — в архив (место
+  `archive` реестра; архив на GitHub — автор).
+- **Состояние:** решено автором: в архив (`DPmetaApp:D-58`).
 
 ## Andors-Love
 
@@ -1056,7 +1076,7 @@ PR #1 «WIP: … каркас ядра (прервано)» влит в `main` �
 уже в нём — правка в ветке `dpmeta/docs-sync` (коммит `0d2525c`).
 С 25 октября 2026 работа снова идёт (PR #16, `0e231a3`) — слово автора
 того же дня: периферийный проект в текущей системе (`DPvisualisation:D-23`,
-`SocialMediaImage:Д44`); в реестре DPmeta — пока `archive` (SQ-36).
+`SocialMediaImage:Д44`); в реестре DPmeta — `periphery` с 4 ноября 2026 (SQ-36).
 
 ### SQ-16 — В описании формата карт нет символа `:`
 
@@ -1173,5 +1193,10 @@ PR #1 «WIP: … каркас ядра (прервано)» влит в `main` �
   других» (место `core`, в схеме — снова узел, `DPvisualisation:D-27`);
   периферия — новое место `periphery`, AIM Trainer и DP_Clock — в реестр
   (M-16, `DPmetaApp:D-46`).
-- **Состояние:** решено автором (M-16); правка реестра и инструментов —
-  следующий шаг поручения.
+- **Состояние:** сделано 4 ноября 2026 (ветка DPmetaApp
+  `ccr-d89d85c4-h08aww`, PR #152): у шести подсистем — `dir` (каталог в
+  DPmetaApp), `xref.py` и `manifest.py` читают их файлы оттуда без ключей
+  `--clone`, `activity.py` — по-прежнему замороженные репозитории;
+  Andors-Love и TrueJointTileMaker — `periphery`, DP AIM Trainer и DP_Clock
+  — в реестре (`periphery`); разборщик и образцы корпуса DPmetaApp
+  (`DPmetaApp:D-46`) — там же.

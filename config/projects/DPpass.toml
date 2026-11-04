@@ -1,0 +1,9 @@
+# Панель DPpass (ТЗ, F-10, приложение А): план по этапам — в каталоге, не одним файлом.
+schema = 1
+project = "DPpass"
+
+[[item]]
+title = "Этапов в плане"
+kind = "count"
+path = "docs/direction/ROADMAP"
+glob = "0*.md"

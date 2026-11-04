@@ -2,6 +2,7 @@ package com.dpsmpx.dpmeta.corpus
 
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpmeta.formats.DecisionLog
+import com.dpsmpx.dpmeta.formats.PanelFormat
 import com.dpsmpx.dpmeta.formats.RegistryFormat
 import com.dpsmpx.dpmeta.formats.Roadmap
 import com.dpsmpx.dpmeta.formats.StatusBlocks
@@ -47,6 +48,20 @@ class OwnDocumentsTest {
         val numbers = ids.map { it.removePrefix("D-").toInt() }
         assertEquals((1..numbers.size).toList(), numbers, "номера журнала — подряд")
         assertTrue(log.entries.all { it.status != null }, "у каждого решения — статус")
+    }
+
+    /** Панели проектов (F-10): каждый файл разбирается, называет проект реестра своим именем. */
+    @Test
+    fun projectPanelsParseAndNameRegistryProjects() {
+        val r = RegistryFormat.parse(text("dpmeta/tools/ecosystem.toml")).ok("реестр DPmeta")
+        val files = File(repo, "config/projects").listFiles { f -> f.extension == "toml" }.orEmpty().sortedBy { it.name }
+        assertTrue(files.size >= 5, "панелей: ${files.size}")
+        for (f in files) {
+            val panel = PanelFormat.parse(f.readText(), "config/projects/${f.name}").ok(f.name)
+            assertEquals(f.nameWithoutExtension, panel.project, "${f.name}: имя файла — имя проекта")
+            assertTrue(r.byName(panel.project) != null, "${f.name}: проекта ${panel.project} нет в реестре")
+            assertTrue(panel.items.isNotEmpty(), "${f.name}: пустая панель")
+        }
     }
 
     @Test

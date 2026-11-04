@@ -390,6 +390,7 @@ object Words {
         "GITHUB_AUTH_EXPIRED" -> "GitHub не принял вход — войдите заново"
         "GITHUB_RATE_LIMITED" -> "лимит запросов GitHub исчерпан — остальное после сброса"
         "GITHUB_NOT_FOUND" -> "на GitHub не найдено или скрыто от входа"
+        "DEVICE_AUTH_REQUIRED" -> "нужен вход по PIN или биометрии"
 
         // Провайдеры по ключу (D-98).
         "PROVIDER_AUTH_FAILED" -> "провайдер не принял ключ"

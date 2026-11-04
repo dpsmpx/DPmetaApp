@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Приложение DPmetaApp (D-53): манифесты пульта :app и оболочки «AI» сливаются сюда.
+     Подпись — «DPmetaApp» (D-49); первый экран — пульт; экран «AI» — только из своей
+     вкладки и своих уведомлений, наружу не экспортируется (ТЗ, T-03). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Процесс — DpmetaApplication: процесс «AI» и вход по PIN на все окна (D-59). -->
+    <application
+        android:name=".DpmetaApplication"
+        android:label="DPmetaApp"
+        tools:replace="android:name,android:label">
+        <activity
+            android:name=".DpmetaActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name="com.dpsmpx.dpai.android.MainActivity"
+            android:exported="false"
+            tools:replace="android:exported">
+            <intent-filter tools:node="removeAll" />
+        </activity>
+    </application>
+</manifest>

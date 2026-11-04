@@ -564,7 +564,7 @@ class DemoModel(
         fun get(context: android.content.Context): DemoModel = instance ?: synchronized(this) {
             instance ?: run {
                 val app = context.applicationContext
-                val controller = Controller.get(app.filesDir, app.packageManager.getPackageInfo(app.packageName, 0).versionName)
+                val controller = Controller.get(app.filesDir)
                 // Уведомления — у Android: отключены человеком — «недоступны», иначе работают.
                 controller.notificationsOk = { app.getSystemService(android.app.NotificationManager::class.java).areNotificationsEnabled() }
                 DemoModel(app.cacheDir, controller, AppLogs.events(app), AppLogs.problems(app), app).also { instance = it }

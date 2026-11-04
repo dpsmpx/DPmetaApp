@@ -43,7 +43,7 @@ ROOT_ALLOW = {
     "MESTER_TECHNICAL_TASK_ROADMAP.md",
     ".claude", ".github", "docs", "ROADMAP", "tools", "tests",
     "settings.gradle.kts", "build.gradle.kts", "gradle.properties", "gradlew", "gradlew.bat",
-    "gradle", "build-logic", "app", "core", "cli", "config",
+    "gradle", "build-logic", "app", "shell", "core", "cli", "config",
     "dpai", "dppass", "socialmediaimage", "dpvisualisation", "dpmeta", "dpprofile",
 }
 # Пакетный файл Windows создан Gradle с CRLF — так и хранится (`.gitattributes`).
@@ -95,6 +95,12 @@ PLANNED = {
     "docs/RELEASE.md": "отпечаток ключа и порядок выпуска — этап 8",
     "tools/release/": "сборка неподписанного APK — этап 8",
     "tools/notify/": "набор хуков уведомлений Claude Code (F-56) — этап 7",
+    # Каталог config/ появился с панелями проектов (D-57); остальные файлы ТЗ — со своими этапами.
+    "config/site.toml": "адреса и пробы сайта (F-27…F-30) — этап 6",
+    "config/commands.toml": "реестр команд (ТЗ, приложение Б) — этап 6",
+    "config/platforms.toml": "каталог возможностей площадок (F-67) — этап 6",
+    "config/events.toml": "каталог событий (F-51) — этап 7",
+    "config/alerts.toml": "правила тревог (F-37) — этап 7",
 }
 
 SECRETS = [
@@ -541,8 +547,8 @@ ROOT_MODULES = {
     ":core:actions": {":core:model"},
     ":core:sync": {":core:model", ":core:formats", ":core:net", ":core:github", ":core:site", ":core:social"},
 }
-# Оболочки и тесты зависят от всех (ТЗ, §6.2).
-ROOT_SHELLS = (":cli", ":app", ":tests:")
+# Оболочки и тесты зависят от всех (ТЗ, §6.2); :shell — приложение из корня (D-35, D-53).
+ROOT_SHELLS = (":cli", ":app", ":shell", ":tests:")
 DPAI_CORE = {"core", "storage", "security", "notifications"}
 MODULE_DEP = re.compile(r'project\(\s*"(:[\w:-]+)"\s*\)|"com\.dpsmpx\.dpai:([\w-]+)"')
 # Код модулей корня (не оболочек): правила кода CLAUDE.md — Android только в оболочке,
@@ -565,7 +571,7 @@ def module_of(rel):
 def check_modules(repo, r):
     """modules.root — направления зависимостей модулей корня и правила их кода (ТЗ, §6.2; D-03, D-28)."""
     builds = [rel for rel in repo.files
-              if rel.endswith("/build.gradle.kts") and rel.split("/")[0] in ("core", "cli", "app", "tests")]
+              if rel.endswith("/build.gradle.kts") and rel.split("/")[0] in ("core", "cli", "app", "shell", "tests")]
     for rel in builds:
         r.scanned += 1
         mod = module_of(rel)
@@ -594,6 +600,44 @@ def check_modules(repo, r):
                     r.add(f"{rel}:{i}", why)
             if REVEAL.search(line) and rel != REVEAL_HOME:
                 r.add(f"{rel}:{i}", f"reveal() — только в {REVEAL_HOME} (секрет раскрывается в одном месте)")
+
+
+# Запрещённое по решениям (ТЗ, §6.5; A-06, A-07): признаки в коде приложения — Kotlin и Java
+# основных исходников всего репозитория, подсистемы тоже (второй, независимый поиск).
+# Выгрузку сайта держит только подсистема SocialMediaImage (D-40, D-48) — её каталог
+# правило выгрузки не смотрит. Автоответы и массовые действия (D-21, D-42) признаков в
+# тексте не имеют — их ловят тесты :core:actions (этап 5).
+FORBIDDEN_CODE = (
+    (re.compile(r"\bbeget\b|\brsync\b", re.I), ("socialmediaimage/",),
+     "выгрузка сайта — только подсистемой SocialMediaImage (D-40, A-07)"),
+    (re.compile(r"v1/organizations/(?!usage_report|cost_report)"), (),
+     "Admin API — только GET отчётов Usage и Cost; изменяющих вызовов нет (D-08, D-44)"),
+    (re.compile(r"\b(?:org\.jsoup|org\.openqa\.selenium|com\.microsoft\.playwright|org\.htmlunit|com\.gargoylesoftware\.htmlunit)\b"
+                r"|\.(?:evaluateJavascript|addJavascriptInterface)\s*\("), (),
+     "без скрейпинга и автоматизации браузера — только официальные API (D-20)"),
+)
+CODE_EXT = (".kt", ".kts", ".java")
+TRAILING_COMMENT = re.compile(r"\s//\s.*$")
+
+
+def check_forbidden(repo, r):
+    """code.forbidden — в коде приложения нет запрещённого ТЗ, §6.5: выгрузки сайта мимо
+    SocialMediaImage, изменяющих вызовов Admin API, скрейпинга и автоматизации браузера (A-06, A-07)."""
+    for rel in repo.files:
+        if not rel.endswith(CODE_EXT) or "/src/test/" in rel or rel.startswith("tests/") or "/tests/" in rel:
+            continue
+        text = repo.text(rel)
+        if text is None:
+            continue
+        r.scanned += 1
+        for i, line in enumerate(text.splitlines(), 1):
+            if line.lstrip().startswith(("//", "*", "/*")):
+                continue
+            # Хвостовой комментарий « // …» — не код; «://» адреса им не считается.
+            line = TRAILING_COMMENT.sub("", line)
+            for rx, allowed, why in FORBIDDEN_CODE:
+                if rx.search(line) and not rel.startswith(allowed):
+                    r.add(f"{rel}:{i}", why)
 
 
 def check_wrapper(repo, r):
@@ -640,13 +684,14 @@ TASKS_DONE = re.compile(r"^(\d+) actionable tasks?", re.M)
 
 
 def android_sdk(root):
-    """Android SDK, как его ищет dpai/settings.gradle.kts: dpai/local.properties или переменные окружения."""
-    local = os.path.join(root, "dpai", "local.properties")
+    """Android SDK, как его ищут settings.gradle.kts корня и dpai/: local.properties одного из них
+    или переменные окружения."""
     candidates = []
-    if os.path.isfile(local):
-        for line in open(local, encoding="utf-8"):
-            if line.startswith("sdk.dir="):
-                candidates.append(line.split("=", 1)[1].strip().replace("\\:", ":").replace("\\\\", "/"))
+    for local in (os.path.join(root, "local.properties"), os.path.join(root, "dpai", "local.properties")):
+        if os.path.isfile(local):
+            for line in open(local, encoding="utf-8"):
+                if line.startswith("sdk.dir="):
+                    candidates.append(line.split("=", 1)[1].strip().replace("\\:", ":").replace("\\\\", "/"))
     candidates += [os.environ.get("ANDROID_HOME"), os.environ.get("ANDROID_SDK_ROOT")]
     return next((c for c in candidates if c and os.path.isdir(c)), None)
 
@@ -671,8 +716,13 @@ def check_gradle(root, java=None, sdk=None, run=gradle_run):
         # Сборка не проверена вовсе: не «пропуск», а провал уровня full (D-51).
         r.findings.append("нет JDK — сборка Gradle не проверена: `full` без сборки не значит ничего (установите JDK 21)")
         return r
-    if not (android_sdk(root) if sdk is None else sdk):
-        r.skipped.append("нет Android SDK — приложение (dpai/android) не собрано")
+    found = android_sdk(root) if sdk is None else sdk
+    if not found:
+        r.skipped.append("нет Android SDK — приложение :shell и оболочка dpai/android не собраны")
+    elif sdk is None and not os.environ.get("ANDROID_HOME"):
+        # Корень и включённая сборка dpai/ ищут SDK каждая в своём local.properties: один SDK — обеим
+        # (иначе :shell ждёт библиотеку dpai/android, которой во включённой сборке нет).
+        os.environ["ANDROID_HOME"] = found
     rc, out = run([os.path.join(root, "gradlew"), "build", "--console=plain"], root)
     m = TASKS_DONE.search(out)
     r.scanned = int(m.group(1)) if m else 0
@@ -708,6 +758,7 @@ CHECKS = [
     ("readme.status", check_status),
     ("core.single", check_core_single),
     ("modules.root", check_modules),
+    ("code.forbidden", check_forbidden),
     ("build.wrapper", check_wrapper),
 ]
 

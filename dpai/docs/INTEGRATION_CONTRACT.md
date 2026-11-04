@@ -28,7 +28,7 @@ DP_AI_Orcestrator заморожен. Разделы ниже о «перено�
 |---|---|
 | Имя | `DP_AI_Orcestrator` — как создал автор; в коде — `dpai`: пакет `com.dpsmpx.dpai`, команда `dpai`, ссылки `dpai://` (D-01) |
 | Вид | control plane для сессий Claude Code: модули на чистом Kotlin/JVM и две оболочки — `cli` и `android` (D-02) |
-| Лицензия | Apache-2.0 (`LICENSE`); репозиторий публичный (D-16) |
+| Лицензия | все права защищены (`LICENSE`, D-101); репозиторий закрытый — DPmetaApp |
 | Место в экосистеме | первый специализированный control plane; в DPmetaApp — подсистема «AI» над сессиями Claude (ТЗ, §156) |
 | Ссылки извне | `DP_AI_Orcestrator:D-NN`, `DP_AI_Orcestrator:путь` (шапка журнала решений) |
 
@@ -64,7 +64,7 @@ claude.ai (D-27), не принимает решений планировщик�
 | Что | Версия | Где |
 |---|---|---|
 | Модули, jar, дистрибутив `dpai` | `0.1.0-dev.10` (сборка для проверки на устройстве — ветка `apk_debug` DPmetaApp, каталог `dpai/`, D-81, `DPmetaApp:D-33`) | `gradle.properties`, `version`; в jar `cli` — `Implementation-Version`, его печатает `dpai version` |
-| Приложение Android | `versionName` — версия проекта, `versionCode` — 6 | `android/build.gradle.kts` |
+| Приложение Android | отдельная сборка «AI»: `versionName` — версия проекта, `versionCode` — 10; в приложении DPmetaApp — версия DPmetaApp (`DPmetaApp:D-54`), версия «AI» — `BuildConfig.DPAI_VERSION` (D-103) | `android-app/build.gradle.kts`, `android/build.gradle.kts` |
 | Форматы хранения | свой номер у каждого (раздел 10) | `docs/DATA_MODEL.md`, §4 |
 | Реестры | 116 кодов диагностики, 67 типов событий (8 октября 2026) | `tools/verify/registry/` |
 | Решения | D-01…D-39, заменённых нет | `docs/direction/DECISIONS.md` |

@@ -24,7 +24,7 @@ import re
 
 from common import ARCHITECTURE, Findings, files, main, module_of, read, root
 
-ALLOWED_ABSENT = {"android"}  # docs/ARCHITECTURE.md, §2: подключается при Android SDK
+ALLOWED_ABSENT = {"android", "android-app"}  # docs/ARCHITECTURE.md, §2: подключаются при Android SDK
 TEST_ONLY = {"testkit"}
 TABLE = re.compile(r"<!-- check_modules: begin -->(.*?)<!-- check_modules: end -->", re.S)
 INCLUDE_ARG = re.compile(r'"(:[\w:-]+)"')

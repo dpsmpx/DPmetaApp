@@ -77,4 +77,5 @@ val androidSdk = run {
     // Пустая переменная — как её нет: демон Gradle держит окружение первого запуска, и `ANDROID_HOME=` ломал `file("")`.
     listOf(local, System.getenv("ANDROID_HOME"), System.getenv("ANDROID_SDK_ROOT")).firstOrNull { !it.isNullOrBlank() }?.takeIf { file(it).isDirectory }
 }
-if (androidSdk != null) include(":android")
+// Оболочка — библиотека, APK отдельной сборки «AI» — тонкое приложение android-app (D-103).
+if (androidSdk != null) include(":android", ":android-app")

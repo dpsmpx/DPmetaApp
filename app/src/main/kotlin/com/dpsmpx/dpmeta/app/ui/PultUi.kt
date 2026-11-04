@@ -2,8 +2,6 @@ package com.dpsmpx.dpmeta.app.ui
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -15,6 +13,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ColorScheme
@@ -44,7 +44,9 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpmeta.app.screens.Links
+import com.dpsmpx.dpmeta.app.screens.Panels
 import com.dpsmpx.dpmeta.app.screens.Screens
+import com.dpsmpx.dpmeta.formats.Panel
 import com.dpsmpx.dpmeta.github.GitHub
 import com.dpsmpx.dpmeta.metrics.EcosystemState
 import com.dpsmpx.dpmeta.metrics.Feed
@@ -78,6 +80,9 @@ interface Loader {
     fun directory(project: String, dir: String, done: (Outcome<List<GitHub.Entry>>) -> Unit)
 
     fun document(project: String, path: String, done: (Outcome<String>) -> Unit)
+
+    /** Панель проекта (F-10) — `config/projects/<Проект>.toml` в APK; нет файла — `null`. */
+    fun panel(project: String): Outcome<Panel>? = null
 }
 
 private enum class Tab(val title: String) { SUMMARY("Сводка"), PROJECTS("Проекты"), FEED("Лента"), QUESTIONS("Вопросы"), SETTINGS("Настройки") }
@@ -91,8 +96,9 @@ private sealed interface Nav {
     data class Doc(val project: String, val path: String, val anchor: String?) : Nav
 }
 
+/** [onAi] — вкладка «AI» перед «Настройками» (D-53): открывает оболочку подсистемы; `null` — вкладки нет. */
 @Composable
-fun PultApp(view: PultView, loader: Loader, onSync: () -> Unit, onSaveToken: (String) -> Unit, onForgetToken: () -> Unit) {
+fun PultApp(view: PultView, loader: Loader, onSync: () -> Unit, onSaveToken: (String) -> Unit, onForgetToken: () -> Unit, onAi: (() -> Unit)? = null) {
     var tab by remember { mutableStateOf(if (view.hasToken) Tab.SUMMARY else Tab.SETTINGS) }
     val stack = remember { mutableStateListOf<Nav>() }
     val open: (Nav) -> Unit = { stack.add(it) }
@@ -101,6 +107,7 @@ fun PultApp(view: PultView, loader: Loader, onSync: () -> Unit, onSaveToken: (St
         bottomBar = {
             NavigationBar {
                 for (t in Tab.entries) {
+                    if (t == Tab.SETTINGS && onAi != null) NavigationBarItem(selected = false, onClick = onAi, icon = {}, label = { Text("AI") })
                     NavigationBarItem(selected = tab == t && stack.isEmpty(), onClick = { tab = t; stack.clear() }, icon = {}, label = { Text(t.title) })
                 }
             }
@@ -110,7 +117,7 @@ fun PultApp(view: PultView, loader: Loader, onSync: () -> Unit, onSaveToken: (St
             val s = view.state
             val top = stack.lastOrNull()
             when {
-                top is Nav.Card && s != null -> Screens.card(s, top.project)?.let { CardScreen(it, back, open) }
+                top is Nav.Card && s != null -> Screens.card(s, top.project)?.let { CardScreen(it, loader, back, open) }
                 top is Nav.Dir -> DirScreen(top, loader, back, open)
                 top is Nav.Doc -> DocScreen(top, view.names, loader, back, open)
                 tab == Tab.SETTINGS -> Settings(view, onSync, onSaveToken, onForgetToken)
@@ -157,11 +164,40 @@ private fun Projects(groups: List<Screens.Group>, onOpen: (String) -> Unit) = La
     }
 }
 
+/** Пункт панели (F-10): читается при показе карточки; документ — переход в просмотр (F-09). */
+@Composable
+private fun PanelRow(project: String, item: Panel.Item, loader: Loader, open: (Nav) -> Unit) {
+    if (item.kind == Panel.Kind.DOCUMENT) {
+        TextButton(onClick = { open(Nav.Doc(project, item.path, null)) }) { Text(item.title) }
+        return
+    }
+    var lines by remember(project, item) { mutableStateOf<List<String>?>(null) }
+    LaunchedEffect(project, item) {
+        if (item.kind == Panel.Kind.COUNT) {
+            loader.directory(project, item.path) { r -> lines = if (r is Outcome.Success) Panels.fromDirectory(item, r.value) else Panels.failed(r as Outcome.Failure) }
+        } else {
+            loader.document(project, item.path) { r -> lines = if (r is Outcome.Success) Panels.fromText(item, r.value) else Panels.failed(r as Outcome.Failure) }
+        }
+    }
+    val shown = lines
+    Column {
+        Text("${item.title}: ${shown?.firstOrNull() ?: "…"}")
+        shown?.drop(1)?.forEach { Text("  $it", style = MaterialTheme.typography.bodySmall) }
+    }
+}
+
 private fun checked(c: Screens.Checked?): String =
     c?.let { "#${it.number} — ${it.verdict}, ${it.age}" + (it.line?.let { l -> "; «$l»" } ?: "") } ?: Screens.UNKNOWN
 
 @Composable
-private fun CardScreen(c: Screens.Card, onBack: () -> Unit, open: (Nav) -> Unit) = LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+private fun CardScreen(c: Screens.Card, loader: Loader, onBack: () -> Unit, open: (Nav) -> Unit) {
+    // Панель (F-10) — один раз на карточку: файл из APK и его разбор не повторяются при перерисовке.
+    val panel = remember(c.name) { loader.panel(c.name) }
+    CardList(c, panel, loader, onBack, open)
+}
+
+@Composable
+private fun CardList(c: Screens.Card, panel: Outcome<Panel>?, loader: Loader, onBack: () -> Unit, open: (Nav) -> Unit) = LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
     item { TextButton(onClick = onBack) { Text("← Назад") } }
     item { Text("${c.name} — ${c.place}, ${c.working}", style = MaterialTheme.typography.titleMedium) }
     item {
@@ -184,6 +220,14 @@ private fun CardScreen(c: Screens.Card, onBack: () -> Unit, open: (Nav) -> Unit)
     for (p in c.panel) {
         item { Text("О себе (${p.name})", fontWeight = FontWeight.SemiBold) }
         item { Text(p.text, style = MaterialTheme.typography.bodySmall) }
+    }
+    when (panel) {
+        null -> Unit
+        is Outcome.Failure -> item { Text("Панель: ${Panels.failed(panel).first()}", color = MaterialTheme.colorScheme.error) }
+        is Outcome.Success -> {
+            item { Text("Панель", fontWeight = FontWeight.SemiBold) }
+            items(panel.value.items) { PanelRow(c.name, it, loader, open) }
+        }
     }
     if (c.errors.isNotEmpty()) {
         item { Text("Ошибки источников", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold) }

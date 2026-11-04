@@ -1,7 +1,9 @@
 package com.dpsmpx.dpmeta.app.data
 
 import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.security.keystore.KeyProperties
+import android.security.keystore.UserNotAuthenticatedException
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.Secret
 import com.dpsmpx.dpai.core.result.Outcome
@@ -42,11 +44,21 @@ class SecretStore(private val vfs: Vfs, private val path: String = "github.token
     }
 
     fun save(secret: Secret): Outcome<Unit> = try {
-        val c = Cipher.getInstance(TRANSFORMATION).apply { init(Cipher.ENCRYPT_MODE, key()) }
+        val c = Cipher.getInstance(TRANSFORMATION).apply {
+            try {
+                init(Cipher.ENCRYPT_MODE, key())
+            } catch (e: KeyPermanentlyInvalidatedException) {
+                // Ключ закрыт навсегда (блокировку экрана снимали) — новый ключ, иначе токен не сохранить никогда.
+                dropKey()
+                init(Cipher.ENCRYPT_MODE, key())
+            }
+        }
         val sealed = c.iv + c.doFinal(Secrets.bytes(secret))
         vfs.mkdirs("")
         vfs.write(path, sealed)
         Outcome.success(Unit)
+    } catch (e: UserNotAuthenticatedException) {
+        Outcome.failure(DiagCode.DEVICE_AUTH_REQUIRED, "нужен вход по PIN или биометрии", path)
     } catch (e: GeneralSecurityException) {
         Outcome.failure(DiagCode.STORAGE_IO_FAILED, "секрет не зашифрован: ${e.javaClass.simpleName}", path)
     } catch (e: IOException) {
@@ -59,13 +71,41 @@ class SecretStore(private val vfs: Vfs, private val path: String = "github.token
         return try {
             val c = Cipher.getInstance(TRANSFORMATION).apply { init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, sealed, 0, IV)) }
             Outcome.success(Secret(c.doFinal(sealed, IV, sealed.size - IV).toString(Charsets.UTF_8)))
+        } catch (e: UserNotAuthenticatedException) {
+            // Вход был раньше [AUTH_SECONDS] — секрет цел, нужен новый вход (D-59): не «испорчен».
+            Outcome.failure(DiagCode.DEVICE_AUTH_REQUIRED, "нужен вход по PIN или биометрии", path)
+        } catch (e: KeyPermanentlyInvalidatedException) {
+            // Блокировку экрана сняли (или сбросили) — Keystore навсегда закрыл ключ: секрет не восстановить.
+            // Смена биометрии ключ со сроком действия ([AUTH_SECONDS]) не закрывает.
+            dropKey()
+            clear()
+            Outcome.failure(DiagCode.STORAGE_CORRUPTED, "ключ сброшен: блокировку экрана снимали — введите токен заново", path)
         } catch (e: GeneralSecurityException) {
             Outcome.failure(DiagCode.STORAGE_CORRUPTED, "секрет не расшифрован: ${e.javaClass.simpleName}", path)
         }
     }
 
+    /** Секрет сохранён — без расшифровки и без входа: «есть ли токен» не спрашивает PIN. */
+    fun exists(): Boolean = vfs.exists(path)
+
     fun clear() {
         if (vfs.exists(path)) vfs.delete(path)
+    }
+
+    /** «Забыть токен»: файл и ключ — следующий токен ляжет под новый ключ. */
+    fun forget() {
+        clear()
+        dropKey()
+    }
+
+    private fun dropKey() {
+        try {
+            KeyStore.getInstance(KEYSTORE).apply { load(null) }.deleteEntry(ALIAS)
+        } catch (e: GeneralSecurityException) {
+            // Нет ключа или Keystore недоступен — новый ключ создастся при сохранении.
+        } catch (e: IOException) {
+            // То же.
+        }
     }
 
     companion object {

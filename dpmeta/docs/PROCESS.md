@@ -16,19 +16,20 @@
    реестре. Клоны только читаются.
    **Подсистемы DPmetaApp.** DP_AI_Orcestrator, DPpass, SocialMediaImage,
    DPvisualisation, DPmeta и DPprofile живут каталогами DPmetaApp
-   (`DPmetaApp:D-28`, `DPmetaApp:D-30`, `DPmetaApp:D-43`), а их строки
-   реестра пока ведут в замороженные репозитории (SQ-36). До правки
-   реестра `xref.py` и `manifest.py` получают их каталоги ключами
-   `--clone`: `DPmetaApp=<DPmetaApp>`, `DP_AI_Orcestrator=<DPmetaApp>/dpai`,
-   `DPpass=<DPmetaApp>/dppass` и так же `socialmediaimage`,
-   `dpvisualisation`, `dpprofile`, а `DPmeta=.`. Клон — и каталог внутри
+   (`DPmetaApp:D-28`, `DPmetaApp:D-30`, `DPmetaApp:D-43`); их строки
+   реестра несут `dir` — каталог в DPmetaApp (M-16, SQ-36). `xref.py` и
+   `manifest.py` берут файлы подсистемы из клона DPmetaApp (строка
+   `place = "control"`: ключ `--clone DPmetaApp=…` или клон под `--root`)
+   и её каталога, без ключей подсистем; ключ подсистемы по-прежнему
+   главнее (`DPmeta=.`). Клон — и каталог внутри
    рабочего дерева; файл принадлежит самому глубокому клону, поэтому
    подсистема не считается второй раз за DPmetaApp. `activity.py`
    читает замороженные репозитории без ключей — так видно, не работает
    ли кто-то в них; подкаталог он отметил бы «признаки в строке его
    репозитория». Без `--root` инструменты ищут клоны рядом с DPmeta — в
-   корне DPmetaApp — и находят лишь часть подсистем по их каталогам; на
-   проходе `--root` обязателен.
+   корне DPmetaApp — и не находят ни клона DPmetaApp, ни подсистем; на
+   проходе `--root` обязателен (`tools/check.sh` передаёт клон DPmetaApp
+   ключом сам).
 2. **Кто работает** (раздел 2) — до чтения документов: от этого зависит,
    можно ли что-то править. `python3 tools/activity.py --root <клоны>`
    плюс открытые PR и список сессий.

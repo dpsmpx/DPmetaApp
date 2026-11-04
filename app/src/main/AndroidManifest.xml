@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Пульт DPmetaApp (этап 3): библиотека; её активность сливается в манифест оболочки
-     dpai/android, когда оболочка подключит :app. Наружу не экспортируется (ТЗ, T-03). -->
+<!-- Пульт DPmetaApp (этап 3): библиотека; её активность сливается в манифест приложения
+     корня :shell (D-53), подпись — у приложения. Наружу не экспортируется (ТЗ, T-03). -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
@@ -9,7 +9,11 @@
     <application>
         <activity
             android:name="com.dpsmpx.dpmeta.app.PultActivity"
-            android:exported="false"
-            android:label="DPmetaApp" />
+            android:exported="false" />
+        <!-- Экран входа на всё приложение (D-59): только изнутри, поверх любого окна. -->
+        <activity
+            android:name="com.dpsmpx.dpmeta.app.LockActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density|fontScale|locale|layoutDirection"
+            android:exported="false" />
     </application>
 </manifest>

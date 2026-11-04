@@ -1,0 +1,7 @@
+schema = 1
+
+[[repo]]
+name = "Delta"
+slug = "example/Delta"
+place = "core"
+dir = "../delta"

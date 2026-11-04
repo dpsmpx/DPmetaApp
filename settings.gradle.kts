@@ -15,19 +15,8 @@ pluginManagement {
         mavenCentral()
         gradlePluginPortal()
     }
-    // Версия AGP — из каталога dpai/ (один каталог, D-28): плагин библиотеки :app.
-    val agp = file("dpai/gradle/libs.versions.toml").readLines()
-        .first { it.startsWith("agp = ") }.substringAfter("\"").substringBefore("\"")
-    plugins {
-        id("com.android.library") version agp
-    }
-    // Плагин библиотеки — из того же модуля AGP, что и плагин приложения: отдельный
-    // маркер не нужен (набор build_tools облачной сессии держит модуль, а не маркер).
-    resolutionStrategy {
-        eachPlugin {
-            if (requested.id.id == "com.android.library") useModule("com.android.tools.build:gradle:$agp")
-        }
-    }
+    // Плагины Android и Compose — convention-плагины dpai/build-logic (DP_AI_Orcestrator:D-102):
+    // с одного classpath с Kotlin, без своих версий здесь.
 }
 
 dependencyResolutionManagement {
@@ -58,6 +47,8 @@ includeBuild("dpai") {
         for (m in listOf("core", "storage", "security", "notifications", "testkit", "ui")) {
             substitute(module("com.dpsmpx.dpai:$m")).using(project(":$m"))
         }
+        // Оболочка «AI» — библиотека (DP_AI_Orcestrator:D-103): её берёт приложение корня :shell (D-53).
+        substitute(module("com.dpsmpx.dpai:android")).using(project(":android"))
     }
 }
 
@@ -72,12 +63,12 @@ include(":cli")
 include(":tests:corpus")
 
 // Пульт DPmetaApp (этап 3): Android-библиотека :app — экраны на Compose, хранилище с
-// Keystore, блокировка. Только при найденном Android SDK, как оболочка dpai/android:
-// без SDK модули корня собираются и проверяются как прежде. В оболочку подключается
-// отдельным шагом (docs/ARCHITECTURE.md, «Пульт»).
+// Keystore, блокировка; приложение :shell (D-53) — один APK: пульт первым экраном,
+// оболочка «AI» вкладкой. Только при найденном Android SDK, как оболочка dpai/android:
+// без SDK модули корня собираются и проверяются как прежде.
 val androidSdk = run {
     val local = file("local.properties").takeIf { it.isFile }?.readLines()
         ?.firstOrNull { it.startsWith("sdk.dir=") }?.substringAfter("=")?.replace("""\:""", ":")?.replace("""\\""", "/")
     listOf(local, System.getenv("ANDROID_HOME"), System.getenv("ANDROID_SDK_ROOT")).firstOrNull { !it.isNullOrBlank() }?.takeIf { file(it).isDirectory }
 }
-if (androidSdk != null) include(":app")
+if (androidSdk != null) include(":app", ":shell")

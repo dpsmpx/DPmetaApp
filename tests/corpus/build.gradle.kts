@@ -23,5 +23,6 @@ tasks.withType<Test>().configureEach {
     for (f in listOf("dpmeta/tools/ecosystem.toml", "docs/direction/DECISIONS.md", "TODO.md", "ROADMAP/ROADMAP.md", "README.md")) {
         inputs.file(repo.file(f)).withPropertyName("own:$f")
     }
+    inputs.dir(repo.dir("config/projects")).withPropertyName("own:config/projects")
     systemProperty("corpus.repo", repo.asFile.absolutePath)
 }

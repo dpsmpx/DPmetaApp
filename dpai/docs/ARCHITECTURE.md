@@ -88,7 +88,8 @@
 | `cli` | оболочка JVM: команда `dpai` | `orchestrator` | 0 |
 | `jsch` | SSH-хост на JVM (JSch) для targets там, где нет системного OpenSSH — приложение Android (D-35); интерактивная оболочка с PTY для терминала (D-71) | `execution` | 11 |
 | `terminal` | эмулятор xterm: экран, разбор последовательностей, ввод — свой терминал (D-71); без Android | `core` | — |
-| `android` | оболочка Android: интерфейс, Keystore, WorkManager, уведомления, экран терминала (D-71); нативный код процессов и псевдотерминала (`JniProcesses`, C через NDK; D-75); ключи API-профилей и чат (D-98); файлы пользователя — папки системного окна и всё хранилище (D-99); подключается при Android SDK | `ui`, `jsch`, `terminal`, `providers`, `files` | 11 |
+| `android` | оболочка Android — библиотека (D-103): интерфейс, Keystore, WorkManager, уведомления, экран терминала (D-71); нативный код процессов и псевдотерминала (`JniProcesses`, C через NDK; D-75); ключи API-профилей и чат (D-98); файлы пользователя — папки системного окна и всё хранилище (D-99); подключается при Android SDK | `ui`, `jsch`, `terminal`, `providers`, `files` | 11 |
+| `android-app` | отдельная сборка «AI» (D-103): `applicationId`, версия, подпись, упаковка APK; своего кода нет; подключается при Android SDK | `android` | — |
 | `tests/integration` | межмодульные сценарии | `orchestrator` | 1 |
 <!-- check_modules: end -->
 
@@ -97,10 +98,11 @@
 - `android.*` и `androidx.*` — только в модуле `android` (D-02).
 - `testkit` — только в тестовых конфигурациях (`testImplementation`); в
   основном коде любого модуля — нельзя.
-- Модуль `android` может отсутствовать в `settings.gradle.kts`: он
-  подключается на этапе 11 и только при найденном Android SDK, как в
-  `DPpass:settings.gradle.kts`. Плагин Android объявляет сам модуль, а не
-  `build-logic`: без Google Maven ядро собирается.
+- Модули `android` и `android-app` могут отсутствовать в
+  `settings.gradle.kts`: они подключаются только при найденном Android
+  SDK, как в `DPpass:settings.gradle.kts`. Плагины Android и Compose —
+  convention-плагины `build-logic` (D-102): плагин Kotlin загружается
+  один раз; AGP — из Google Maven или build_tools автора.
 - Запуск процессов — только в `execution` (D-03); системное время и
   случайность — только в `core`, пакет `clock` (D-07)
   (`tools/verify/check_forbidden_apis.py`).
@@ -109,7 +111,8 @@
 `com.dpsmpx.dpai.tests.integration`).
 
 Сборка: convention-плагины в `build-logic/` (`dpai.kotlin-library`,
-`dpai.kotlin-application`, `dpai.test-suite`), версии —
+`dpai.kotlin-application`, `dpai.test-suite`, `dpai.android-library`,
+`dpai.android-application`), версии —
 `gradle/libs.versions.toml`. Байт-код — Java 17, инструменты — JDK 21,
 предупреждения компилятора — ошибки.
 

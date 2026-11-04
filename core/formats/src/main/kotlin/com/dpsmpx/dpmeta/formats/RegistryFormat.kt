@@ -19,14 +19,15 @@ import com.dpsmpx.dpmeta.model.Registry
  * Строго, с перечнем ключей: другая схема, неизвестный ключ, неизвестное
  * место — `REGISTRY_SCHEMA_UNSUPPORTED` с путём к ключу; приложение тогда
  * работает на последнем распознанном реестре (F-01) — это решает вызывающий.
- * Ключ каталога подсистемы (D-46) появится, когда его запишет DPmeta
- * (`DPmeta:M-16`); до того он — неизвестный ключ.
+ * `dir` — каталог подсистемы в DPmetaApp (D-46, `DPmeta:M-16`): одно имя
+ * каталога, без «/» и «..».
  */
 object RegistryFormat {
     const val SCHEMA = 1
 
     private val TOP = setOf("schema", "repo")
-    private val REPO = setOf("name", "slug", "clone", "place", "aliases", "names", "decisions", "defs")
+    private val REPO = setOf("name", "slug", "clone", "place", "aliases", "names", "decisions", "defs", "dir")
+    private val DIR = Regex("[a-z0-9][a-z0-9_-]{0,63}")
     private val ID_SOURCE = setOf("path", "id")
 
     fun parse(text: String, source: String = "ecosystem.toml"): Outcome<Registry> {
@@ -65,6 +66,10 @@ object RegistryFormat {
         val placeText = str(obj, "place") ?: return missing("place", at)
         val place = Place.of(placeText) ?: return unsupported("неизвестное место «$placeText»", "$at.place")
         val clone = obj["clone"]?.let { (it as? JsonString)?.value ?: return typeError("clone", at) }
+        val dir = obj["dir"]?.let { (it as? JsonString)?.value ?: return typeError("dir", at) }
+        if (dir != null && !DIR.matches(dir)) {
+            return Outcome.failure(DiagCode.VALUE_INVALID, "каталог подсистемы — одно имя строчными, без «/» и «..»", "$at.dir")
+        }
         val aliases = strings(obj, "aliases") ?: return typeError("aliases", at)
         val names = strings(obj, "names") ?: return typeError("names", at)
         val decisions = obj["decisions"]?.let { v ->
@@ -83,7 +88,7 @@ object RegistryFormat {
             }
             else -> return typeError("defs", at)
         }
-        return Outcome.success(ProjectEntry(name, slug, clone, place, aliases, names, decisions, defs))
+        return Outcome.success(ProjectEntry(name, slug, clone, place, aliases, names, decisions, defs, dir))
     }
 
     private fun idSource(v: JsonValue, at: String): Outcome<IdSource> {

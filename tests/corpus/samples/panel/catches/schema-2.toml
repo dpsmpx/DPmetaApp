@@ -1,0 +1,7 @@
+schema = 2
+project = "Alpha"
+
+[[item]]
+title = "Этапы"
+kind = "roadmap"
+path = "ROADMAP.md"

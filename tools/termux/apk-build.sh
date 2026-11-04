@@ -41,9 +41,9 @@ PROJECTS="dpmetaapp dppass galdhold galdhold-polygon gravitydefied andors-trail"
 project() {
   case "$1" in
     dpmetaapp)
-      REPO=DPmetaApp; TITLE="DPmetaApp — пульт (dpai/android, release)"
+      REPO=DPmetaApp; TITLE="DPmetaApp — пульт и «AI» (release)"
       SCRIPT=tools/build-apk.sh; CMD="sh tools/build-apk.sh release"
-      OUT=dpai/android/build/outputs/apk ;;
+      OUT=shell/build/outputs/apk ;;
     dppass)
       REPO=DPmetaApp; TITLE="DPpass — подпись ключом dppass-dev"
       SCRIPT=; CMD=

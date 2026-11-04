@@ -33,9 +33,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 MAX_BYTES = 2_000_000
-# Место проекта в экосистеме (M-10, M-12): управление, ядро, поддерживающий слой,
-# слой синхронизации (DPmeta), архив — вне текущей системы.
-PLACES = {"control", "core", "support", "sync", "archive"}
+# Место проекта в экосистеме (M-10, M-12, M-16): управление, ядро, поддерживающий слой,
+# слой синхронизации (DPmeta), периферия — текущая система вне ядра и поддерживающего
+# слоя, архив — вне текущей системы.
+PLACES = {"control", "core", "support", "sync", "periphery", "archive"}
+# Каталог подсистемы в репозитории управления (M-16): одно имя, без «/» и «..».
+DIR_NAME = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")
 SAMPLES = 5
 
 
@@ -49,6 +52,7 @@ class Repo:
     decisions: dict | None = None
     defs: list[dict] = field(default_factory=list)
     place: str = ""
+    dir: str = ""
     root: Path | None = None
     head: str = ""
     ids: set[str] = field(default_factory=set)
@@ -63,7 +67,7 @@ def load_registry(path: Path) -> list[Repo]:
     data = tomllib.loads(path.read_text(encoding="utf-8"))
     if data.get("schema") != 1:
         raise ValueError(f"{path}: schema должна быть 1")
-    known = {"name", "slug", "clone", "aliases", "names", "decisions", "defs", "place"}
+    known = {"name", "slug", "clone", "aliases", "names", "decisions", "defs", "place", "dir"}
     repos = []
     for entry in data.get("repo", []):
         extra = set(entry) - known
@@ -72,7 +76,11 @@ def load_registry(path: Path) -> list[Repo]:
         if "place" in entry and entry["place"] not in PLACES:
             raise ValueError(f"{path}: place {entry['place']!r} у {entry.get('name')} — "
                              f"одно из {', '.join(sorted(PLACES))} (M-10)")
+        if "dir" in entry and not DIR_NAME.fullmatch(str(entry["dir"])):
+            raise ValueError(f"{path}: dir {entry['dir']!r} у {entry.get('name')} — одно имя каталога (M-16)")
         repos.append(Repo(**entry))
+    if any(r.dir for r in repos) and not any(r.place == "control" for r in repos):
+        raise ValueError(f"{path}: у подсистем есть dir, а репозитория управления (place = \"control\") нет (M-16)")
     names = [n for r in repos for n in r.all_names]
     if len(names) != len(set(names)):
         raise ValueError(f"{path}: одно имя у двух репозиториев")
@@ -115,6 +123,19 @@ def find_clone(root: Path, repo: Repo) -> Path:
         if (root / c / ".git").exists():
             return root / c
     return root / repo.clone
+
+
+def locate(root: Path, repo: Repo, repos: list[Repo], overrides: dict[str, Path] | None = None) -> Path:
+    """Где читать файлы проекта: подсистема (`dir`, M-16) — каталог в клоне
+    репозитория управления (DPmetaApp: ключ `--clone` его строки или клон под
+    `--root`), остальные — свой клон ([find_clone]). История до переезда — в
+    замороженном репозитории: её смотрит activity.py по [find_clone]."""
+    overrides = overrides or {}
+    if repo.dir:
+        host = next((r for r in repos if r.place == "control"), None)
+        if host is not None:
+            return (overrides.get(host.name) or find_clone(root, host)) / repo.dir
+    return find_clone(root, repo)
 
 
 def is_clone(root: Path) -> bool:
@@ -322,7 +343,7 @@ def main(argv: list[str] | None = None) -> int:
             return 2
 
     for r in repos:
-        root = overrides.get(r.name) or find_clone(a.root, r)
+        root = overrides.get(r.name) or locate(a.root, r, repos, overrides)
         if is_clone(root):
             r.root = root.resolve()
             r.head = git(r.root, "rev-parse", "--short", "HEAD").strip()

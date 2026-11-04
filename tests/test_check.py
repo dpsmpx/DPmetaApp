@@ -635,3 +635,29 @@ class ModulesTest(CheckCase):
             "core/sync/src/main/kotlin/S.kt": "// System.currentTimeMillis — нельзя, берём Clock\nfun printlnLike() = 1\n",
         })
         self.assertClean(s.run("modules.root"))
+
+
+class ForbiddenTest(CheckCase):
+    """code.forbidden — запрещённое ТЗ, §6.5 (A-06, A-07)."""
+
+    def test_catches_each_sign(self):
+        for code, why in [
+            ('val cmd = listOf("rsync", "-a", "dist/", host)\n', "выгрузка сайта"),
+            ('const val HOST = "ssh.beget.com"\n', "выгрузка сайта"),
+            ('val url = "https://api.anthropic.com/v1/organizations/invites"\n', "Admin API"),
+            ("import org.jsoup.Jsoup\n", "скрейпинга"),
+            ('fun f(w: WebView) = w.evaluateJavascript("x", null)\n', "автоматизации браузера"),
+        ]:
+            with self.subTest(code):
+                s = self.sample({"dpai/providers/src/main/kotlin/P.kt": "package p\n\n" + code})
+                self.assertCatches(s.run("code.forbidden"), why)
+
+    def test_allowed_places_and_reports_pass(self):
+        s = self.sample({
+            # Выгрузка — у подсистемы сайта (D-40, D-48); отчёты Usage и Cost — только чтение (D-08).
+            "socialmediaimage/app/src/main/kotlin/Deploy.kt": 'val cmd = listOf("rsync", "-a")\n',
+            "dpai/providers/src/main/kotlin/Usage.kt": 'val u = "https://api.anthropic.com/v1/organizations/usage_report/messages"\n',
+            "core/sync/src/main/kotlin/S.kt": "// без rsync и jsoup — D-20, D-40\nval x = 1 // не rsync: D-40\n",
+            "core/sync/src/test/kotlin/T.kt": 'val sample = "rsync"\n',
+        })
+        self.assertClean(s.run("code.forbidden"))

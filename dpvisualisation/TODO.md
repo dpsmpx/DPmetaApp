@@ -33,11 +33,11 @@
 - [ ] `М` **Живой режим схемы в приложении** — задача DPmetaApp (D-18,
       фаза B; с его стороны — `DPmetaApp:D-26`), теперь в том же
       репозитории.
-- [ ] `М` **DPmeta.** AIM_Trainer_pas и DP_Clock — в реестр `DPmeta:tools/ecosystem.toml`
-      (D-23: узлы `aimtrainer`, `dpclock` в модели есть, сбор пишет их в
-      `not_in_registry`); Andors-Love и TrueJointTileMaker — из `archive` в
-      новое место `periphery` (`DPmeta:M-16`). Правка — в `dpmeta/` по его
-      правилам (`DPmeta:M-14`).
+
+- [ ] `М` **DPmonetization — в архив** (`DPmetaApp:D-58`, 4 ноября 2026): в
+      реестре DPmeta место `archive`; узел `dpmonetization` модели — из
+      поддерживающего слоя в архив (как `DPvisualisation:D-20`), поток
+      `work.dpmonetization` — по нему.
 
 ## Долг
 

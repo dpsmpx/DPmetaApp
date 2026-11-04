@@ -98,7 +98,8 @@ tools/verify/run.sh doctor     # окружение проверок: JDK, Pytho
 1. **Причина** — в описании изменения.
 2. **Журнал изменений** между версиями прочитан: ломающие изменения,
    поведение по умолчанию, новые сетевые обращения и сбор данных.
-3. **Лицензия** той версии, что берётся, — совместима с Apache-2.0.
+3. **Лицензия** той версии, что берётся, — разрешает использование в
+   закрытом личном приложении (D-101): Apache-2.0, MIT, BSD и подобные.
 4. **Каталог** — версия только в `gradle/libs.versions.toml`.
 5. **Запись** в `docs/PROVENANCE.md` в том же изменении.
 6. **Gradle**: `./gradlew wrapper --gradle-version X --distribution-type
@@ -156,8 +157,10 @@ dpai.release.keyPassword=…
 Без этих свойств `assembleRelease` подписывает отладочным ключом — такой
 APK только для замеров, не для раздачи.
 
-Сценарий release — `DPmetaApp:tools/build-apk.sh release` (D-31; на
-телефоне — ярлык `apk-build` → «DPmetaApp — пульт», в proot Alpine), как у
+Сценарий release — `DPmetaApp:tools/build-apk.sh release` — приложение
+DPmetaApp с «AI» вкладкой (`DPmetaApp:D-53`), а `… release ai` — отдельная
+сборка «AI» `android-app` (D-103) тем же ключом (D-31; на телефоне — ярлык
+`apk-build` → «DPmetaApp — пульт и «AI»», в proot Alpine), как у
 DPpass (D-97, ответ автора 2 ноября 2026): после сборки `apksigner verify`
 — подпись v2/v3 и отпечаток SHA-256 сертификата; APK с отладочным ключом
 (нет свойств `dpai.release.*`) сценарий удаляет и отказывает, если не задано

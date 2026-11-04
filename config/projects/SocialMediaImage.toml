@@ -1,0 +1,14 @@
+# Панель SocialMediaImage (ТЗ, F-10, приложение А): объекты контента и передача между сессиями.
+schema = 1
+project = "SocialMediaImage"
+
+[[item]]
+title = "Объектов контента"
+kind = "count"
+path = "content/items"
+glob = "CI-*"
+
+[[item]]
+title = "Передача между сессиями"
+kind = "document"
+path = "docs/session/HANDOFF.md"

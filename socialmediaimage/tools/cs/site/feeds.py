@@ -93,6 +93,28 @@ def sitemap(site, pages) -> str:
     return "\n".join(out) + "\n"
 
 
+def build_marker(root, now=None) -> dict:
+    """Признак сборки в `/api/v1/index.json` (Д48, `DPmetaApp:D-49`, Q-12): коммит, из которого
+    собран сайт, были ли незакоммиченные правки системы и время сборки (UTC). По нему DPmetaApp
+    видит, что `main` новее выгрузки (`DPmetaApp:F-30`). Нет git — коммит и правки неизвестны (null)."""
+    import datetime as dt
+    import subprocess
+
+    from ..mark.release import git_head  # тот же коммит, что пишет реестр выпусков (Д41)
+
+    commit = git_head(root)
+    status = None
+    if commit:
+        try:
+            r = subprocess.run(["git", "status", "--porcelain", "--", "."], cwd=root, capture_output=True, text=True, timeout=30)
+            status = r.stdout.strip() if r.returncode == 0 else None
+        except (OSError, subprocess.SubprocessError):
+            status = None
+    when = now or dt.datetime.now(dt.timezone.utc)
+    return {"commit": commit or None, "dirty": None if status is None else bool(status),
+            "built": when.strftime("%Y-%m-%dT%H:%M:%SZ")}
+
+
 def api(site, entries) -> dict:
     """Статический API v1 (§35): только то, что уже есть на страницах; версия — в адресе."""
     projects = []

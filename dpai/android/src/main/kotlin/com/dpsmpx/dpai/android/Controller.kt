@@ -439,9 +439,13 @@ class Controller(private val root: File, val version: String?) {
         @Volatile
         private var instance: Controller? = null
 
-        /** [version] — версия приложения: `doctor` сверяет с ней версию агента. */
-        fun get(filesDir: File, version: String?): Controller = instance ?: synchronized(this) {
-            instance ?: Controller(File(filesDir, "controller"), version).also { instance = it }
+        /**
+         * Одна система на процесс; версия — подсистемы «AI» ([BuildConfig.DPAI_VERSION], D-103): с ней
+         * `doctor` сверяет версию агента. Кто бы ни создал контроллер первым (экран, служба после
+         * перезапуска, терминал), версия та же — и в приложении DPmetaApp, где у APK своя версия.
+         */
+        fun get(filesDir: File): Controller = instance ?: synchronized(this) {
+            instance ?: Controller(File(filesDir, "controller"), BuildConfig.DPAI_VERSION).also { instance = it }
         }
     }
 }

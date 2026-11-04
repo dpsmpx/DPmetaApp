@@ -1,0 +1,7 @@
+schema = 1
+project = "Alpha"
+
+[[item]]
+title = "Чужое"
+kind = "document"
+path = "../secret.md"

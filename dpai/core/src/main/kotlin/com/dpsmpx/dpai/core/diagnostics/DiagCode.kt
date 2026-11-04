@@ -256,6 +256,8 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     GITHUB_RATE_LIMITED(Category.NETWORK, Severity.ERROR, Retryability.RETRYABLE),
     /** Репозиторий или файл не найден — или скрыт от токена (404 GitHub). */
     GITHUB_NOT_FOUND(Category.NETWORK, Severity.ERROR, Retryability.NON_RETRYABLE),
+    /** Ключ Keystore ждёт входа пользователя (DPmetaApp:D-59, T-01): секрет откроется после PIN или биометрии. */
+    DEVICE_AUTH_REQUIRED(Category.STATE, Severity.ERROR, Retryability.RETRYABLE),
 
     // --- провайдеры по ключу: API-профили (D-98) ---
     /** Провайдер не принял ключ API-профиля (401, 403): ключ неверен, отозван или без прав. */

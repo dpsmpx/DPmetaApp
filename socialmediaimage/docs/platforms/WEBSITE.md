@@ -47,7 +47,8 @@ Claude Code после его «да» (Д36). Домен зарегистрир
 /feed.xml /rss.xml /feed.json   фиды
 /sitemap.xml /robots.txt /404.html /en/404.html
 /api/v1/index.json /api/v1/projects.json /api/v1/news.json /api/v1/progress.json (если страница прогресса видна);
-                        данные схемы — /ecosystem/dpvis-data.json (resources.ecosystem в index.json)
+                        данные схемы — /ecosystem/dpvis-data.json (resources.ecosystem в index.json);
+                        признак сборки — build в index.json: commit, dirty, built (Д48)
 /media/<объект>/…  /fonts/…  /style.css  /favicon.svg
 /.htaccess              заголовки, 404 и выбор языка для Apache (Beget, Д35); /en/.htaccess — своя 404;
                         /_headers — для Cloudflare Pages и Netlify

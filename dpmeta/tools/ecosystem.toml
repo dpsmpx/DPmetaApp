@@ -14,10 +14,14 @@
 #   decisions  — журнал решений: путь и шаблон номера (регулярное выражение);
 #   defs       — где ещё определены номера, на которые ссылаются другие
 #                репозитории (ТЗ, реестры); шаблон — тот же формат;
-#   place      — место в экосистеме по слову автора (M-10, M-12): control —
-#                управление, core — ядро, support — поддерживающий слой,
-#                sync — слой синхронизации (DPmeta), archive — вне текущей
-#                системы (в манифест dpai.ecosystem не входит, M-11).
+#   place      — место в экосистеме по слову автора (M-10, M-12, M-16):
+#                control — управление, core — ядро, support — поддерживающий
+#                слой, sync — слой синхронизации (DPmeta), periphery — текущая
+#                система вне ядра и поддерживающего слоя, archive — вне текущей
+#                системы (в манифест dpai.ecosystem не входит, M-11);
+#   dir        — каталог подсистемы в репозитории управления (DPmetaApp, M-16):
+#                журнал, ссылки и документы — оттуда, а slug и clone —
+#                замороженный репозиторий с историей до переезда.
 # Порядок записей — порядок строк и столбцов в отчёте.
 
 schema = 1
@@ -53,6 +57,7 @@ name = "DPpass"
 slug = "dpsmpx/DPpass"
 clone = "dppass"
 place = "core"
+dir = "dppass"
 decisions = { path = "docs/direction/DECISIONS.md", id = "D-\\d+" }
 
 [[repo]]
@@ -60,6 +65,7 @@ name = "DPprofile"
 slug = "dpsmpx/DPprofile"
 clone = "dpprofile"
 place = "core"
+dir = "dpprofile"
 decisions = { path = "docs/direction/DECISIONS.md", id = "D-\\d+" }
 
 [[repo]]
@@ -74,6 +80,7 @@ name = "SocialMediaImage"
 slug = "dpsmpx/SocialMediaImage"
 clone = "socialmediaimage"
 place = "core"
+dir = "socialmediaimage"
 decisions = { path = "docs/direction/DECISIONS.md", id = "Д\\d+" }
 defs = [{ path = "docs/identity/IDENTITY_CONFLICTS.md", id = "IC-\\d+" }]
 
@@ -85,14 +92,15 @@ place = "core"
 names = ["dpmarket"]
 decisions = { path = "docs/DECISIONS.md", id = "ADR-\\d+" }
 
-# Новый (5 октября 2026); поддерживающий слой — слово автора 9 октября 2026 (M-10).
-# Журнала решений ещё нет: код ссылается на D-NN, которых негде сверить.
+# Новый (5 октября 2026); поддерживающий слой — слово автора 9 октября 2026 (M-10);
+# в архив — слово автора 4 ноября 2026 (DPmetaApp:D-58): стадии и шлюзы готовности —
+# метриками DPmetaApp, второй системы портфеля нет.
 
 [[repo]]
 name = "DPmonetization"
 slug = "dpsmpx/DPmonetization"
 clone = "dpmonetization"
-place = "support"
+place = "archive"
 
 # Новые (5–6 октября 2026), записаны четвёртым проходом 9 октября 2026; места —
 # слово автора (M-10). У DPmetaApp журнал решений — в `main` с 11 октября 2026
@@ -110,6 +118,7 @@ name = "DPvisualisation"
 slug = "dpsmpx/DPvisualisation"
 clone = "dpvisualisation"
 place = "support"
+dir = "dpvisualisation"
 decisions = { path = "docs/direction/DECISIONS.md", id = "D-\\d+" }
 
 [[repo]]
@@ -117,28 +126,45 @@ name = "DP_AI_Orcestrator"
 slug = "dpsmpx/DP_AI_Orcestrator"
 clone = "dp_ai_orcestrator"
 place = "core"
+dir = "dpai"
 decisions = { path = "docs/direction/DECISIONS.md", id = "D-\\d+" }
 
-# Архив: вне текущей системы (M-10) — ранние проекты до репозитория игры и убранные
-# автором; в реестре остаются ради контракта C-08 (формат карт) и сверки ссылок.
+# Периферия: текущая система вне ядра и поддерживающего слоя — слово автора
+# 25 октября 2026 (M-16). Andors-Love и TrueJointTileMaker — из архива M-10;
+# DP AIM Trainer и DP_Clock — новые; DP_Repeated_Tasks — часть DP_Clock
+# (DPmetaApp:D-55), своей строки у него нет.
 
 [[repo]]
 name = "Andors-Love"
 slug = "dpsmpx/Andors-Love"
 clone = "andors-love"
-place = "archive"
+place = "periphery"
 
 [[repo]]
 name = "TrueJointTileMaker"
 slug = "dpsmpx/TrueJointTileMaker"
 clone = "truejointtilemaker"
-place = "archive"
+place = "periphery"
+
+[[repo]]
+name = "DP AIM Trainer"
+slug = "dpsmpx/AIM_Trainer_pas"
+clone = "aim_trainer_pas"
+place = "periphery"
+names = ["AIM Trainer"]
+
+[[repo]]
+name = "DP_Clock"
+slug = "dpsmpx/DP_Clock"
+clone = "dp_clock"
+place = "periphery"
 
 [[repo]]
 name = "DPmeta"
 slug = "dpsmpx/DPmeta"
 clone = "DPmeta"
 place = "sync"
+dir = "dpmeta"
 decisions = { path = "docs/DECISIONS.md", id = "M-\\d+" }
 defs = [
   { path = "docs/CONTRACTS.md", id = "C-\\d+" },
