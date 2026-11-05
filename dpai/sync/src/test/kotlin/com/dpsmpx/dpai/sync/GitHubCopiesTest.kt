@@ -87,7 +87,8 @@ class GitHubCopiesTest {
         // По пути уже лежит блоб c: новая установка его не знает.
         val t = Fake(::routes)
         val c = GitHubCopies(t, "me", "copies", Secret(token))
-        assertEquals(DiagCode.STATE_CONFLICT, (c.upload("dpai-cloud/redmi.bin", byteArrayOf(1), "m", expected = null) as Outcome.Failure).diagnostics.first().code)
+        val foreign = (c.upload("dpai-cloud/redmi.bin", byteArrayOf(1), "m", expected = null) as Outcome.Failure).diagnostics.first()
+        assertEquals(DiagCode.STATE_CONFLICT to GitHubCopies.FOREIGN, foreign.code to foreign.subject, "чужая копия — свой предмет, не гонка за ветку")
         assertTrue(t.calls.none { it.method == "POST" || it.method == "PATCH" }, "ни одной записи")
         assertTrue(c.upload("dpai-cloud/redmi.bin", byteArrayOf(1), "m", expected = sha('c')) is Outcome.Success, "своя прошлая копия — заменяется")
         assertTrue(c.upload("dpai-cloud/redmi.bin", byteArrayOf(1), "m", expected = null, overwrite = true) is Outcome.Success, "слово человека — заменяется")
@@ -99,7 +100,7 @@ class GitHubCopiesTest {
         // Как у GitHub: base64 с переводом строки через 60 знаков — экранированным в строке JSON.
         val b64 = Base64.getEncoder().encodeToString(big).chunked(60).joinToString("\\n")
         val c = GitHubCopies(Fake { call -> if (call.url.path.endsWith("/git/blobs/${sha('c')}")) 200 to "{\"content\": \"$b64\", \"encoding\": \"base64\"}" else routes(call) }, "me", "copies", Secret(token))
-        assertContentEquals(big, (c.download("dpai-cloud/redmi.bin") as Outcome.Success).value)
+        assertContentEquals(big, (c.download("dpai-cloud/redmi.bin") as Outcome.Success).value.second)
     }
 
     @Test
@@ -127,7 +128,9 @@ class GitHubCopiesTest {
     @Test
     fun downloadDecodesTheBlobAndListShowsFiles() {
         val c = GitHubCopies(Fake(::routes), "me", "copies", Secret(token))
-        assertContentEquals("копия".toByteArray(), (c.download("dpai-cloud/redmi.bin") as Outcome.Success).value)
+        val (blob, bytes) = (c.download("dpai-cloud/redmi.bin") as Outcome.Success).value
+        assertContentEquals("копия".toByteArray(), bytes)
+        assertEquals(sha('c'), blob, "блоб копии — чтобы первая отправка после восстановления узнала её своей")
         assertEquals(listOf("redmi.bin"), (c.list("dpai-cloud") as Outcome.Success).value)
         assertEquals(DiagCode.GITHUB_NOT_FOUND, (c.download("dpai-cloud/none.bin") as Outcome.Failure).diagnostics.first().code)
         val empty = GitHubCopies(Fake { call -> if (call.url.path.endsWith("/contents/dpai-cloud")) 404 to "{}" else routes(call) }, "me", "copies", Secret(token))

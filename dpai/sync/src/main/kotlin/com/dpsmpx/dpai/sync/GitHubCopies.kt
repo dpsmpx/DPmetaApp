@@ -80,7 +80,7 @@ class GitHubCopies(private val transport: Transport, private val owner: String, 
             is Outcome.Success -> r.value
         }
         if (present != null && present != expected && !overwrite) {
-            return Outcome.failure(DiagCode.STATE_CONFLICT, "по пути $path уже лежит копия, отправленная не с этой установки: восстановите её или подтвердите замену", "github")
+            return Outcome.failure(DiagCode.STATE_CONFLICT, "по пути $path уже лежит копия, отправленная не с этой установки: восстановите её или подтвердите замену", FOREIGN)
         }
         val blob = when (val r = sha("POST", "/git/blobs", obj("content" to JsonString(Base64.getEncoder().encodeToString(bytes)), "encoding" to JsonString("base64")), cancel)) {
             is Outcome.Failure -> return r
@@ -108,8 +108,11 @@ class GitHubCopies(private val transport: Transport, private val owner: String, 
             is Outcome.Failure -> if (r.diagnostics.any { it.code == DiagCode.GITHUB_NOT_FOUND }) Outcome.success(null) else r
         }
 
-    /** Файл [path] ветки по умолчанию; нет его — `GITHUB_NOT_FOUND`. */
-    fun download(path: String, cancel: Cancel = Cancel()): Outcome<ByteArray> {
+    /**
+     * Файл [path] ветки по умолчанию и его блоб (по блобу следующая отправка
+     * узнаёт копию, из которой восстановились); нет файла — `GITHUB_NOT_FOUND`.
+     */
+    fun download(path: String, cancel: Cancel = Cancel()): Outcome<Pair<String, ByteArray>> {
         pathProblem(path)?.let { return Outcome.failure(DiagCode.VALUE_INVALID, it, "github") }
         val repoInfo = when (val r = check(cancel)) {
             is Outcome.Failure -> return r
@@ -127,7 +130,7 @@ class GitHubCopies(private val transport: Transport, private val owner: String, 
         if ((o["encoding"] as? JsonString)?.value != "base64") return bad("блоб не в base64")
         val content = (o["content"] as? JsonString)?.value ?: return bad("в блобе нет содержимого")
         return try {
-            Outcome.success(Base64.getMimeDecoder().decode(content))
+            Outcome.success(blob to Base64.getMimeDecoder().decode(content))
         } catch (_: IllegalArgumentException) {
             bad("содержимое блоба — не base64")
         }
@@ -203,6 +206,9 @@ class GitHubCopies(private val transport: Transport, private val owner: String, 
 
     companion object {
         const val HOST = "api.github.com"
+
+        /** Предмет отказа «по пути — чужая копия»: отличает его от гонки за ветку (422, тоже `STATE_CONFLICT`). */
+        const val FOREIGN = "github:foreign-copy"
         const val API = "https://$HOST"
 
         /**

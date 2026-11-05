@@ -147,6 +147,8 @@ object CloudSync {
         val s = settings(app)
         if (!s.daily || !ready(app) || sending.get()) return
         val p = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        // По пути — чужая копия: решает человек («Заменить…» или восстановление), такт не шифрует её зря каждый час.
+        if (p.getString("lastNote", null)?.let(::isForeignCopy) == true) return
         val now = Clock.SYSTEM.now().epochMillis
         if (now - p.getLong("lastAt", 0) < DAY_MS || now - p.getLong("lastTry", 0) < RETRY_MS) return
         p.edit().putLong("lastTry", now).apply()
@@ -198,7 +200,7 @@ object CloudSync {
         // Блоб прошлой отправки этой установки — по нему GitHubCopies узнаёт свою копию.
         val mine = prefs.getString("lastBlob", null)?.takeIf { prefs.getString("lastBlobDevice", null) == s.device }
         return when (val r = c.upload("$DIR/${s.device}.bin", sealed, "Копия контура «AI»: ${s.device}", mine, overwrite)) {
-            is Outcome.Failure -> if (r.diagnostics.any { it.code == com.dpsmpx.dpai.core.diagnostics.DiagCode.STATE_CONFLICT } && !overwrite) {
+            is Outcome.Failure -> if (r.diagnostics.any { it.subject == GitHubCopies.FOREIGN } && !overwrite) {
                 note(context, "$FOREIGN «${s.device}» — отправленная не с этой установки. Восстановите её или замените словом в окне.", false)
             } else {
                 note(context, "Не отправлено: ${r.errors.firstOrNull()?.message}", false)
@@ -219,11 +221,14 @@ object CloudSync {
         }
     }
 
+    /** Загруженная копия: что за копия, её файлы и блоб в репозитории. */
+    class Fetched(val info: CopyInfo, val entries: List<CopyEntry>, val device: String, val blob: String)
+
     /** Загрузить и расшифровать копию [device] паролем [passphrase]; файлы сверены с оглавлением. */
-    fun fetch(context: Context, device: String, passphrase: Secret): Outcome<Pair<CopyInfo, List<CopyEntry>>> {
+    fun fetch(context: Context, device: String, passphrase: Secret): Outcome<Fetched> {
         CloudArchive.deviceProblem(device)?.let { return Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.VALUE_INVALID, it) }
         val c = copies(context) ?: return Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.FIELD_MISSING, "нет настроек или токена копии")
-        val sealed = when (val r = c.download("$DIR/$device.bin")) {
+        val (blob, sealed) = when (val r = c.download("$DIR/$device.bin")) {
             is Outcome.Failure -> return r
             is Outcome.Success -> r.value
         }
@@ -231,11 +236,20 @@ object CloudSync {
             is Outcome.Failure -> return r
             is Outcome.Success -> r.value
         }
-        return CloudArchive.unpack(plain)
+        return when (val r = CloudArchive.unpack(plain)) {
+            is Outcome.Failure -> r
+            is Outcome.Success -> Outcome.success(Fetched(r.value.first, r.value.second, device, blob))
+        }
     }
 
-    /** Разложить проверенную копию: применит её `Controller` при следующем запуске. */
-    fun stage(context: Context, entries: List<CopyEntry>): Outcome<String> = restore(context).stage(entries)
+    /**
+     * Разложить проверенную копию: применит её `Controller` при следующем
+     * запуске. Её блоб запоминается своим: первая отправка после
+     * восстановления заменит её без «чужая копия».
+     */
+    fun stage(context: Context, f: Fetched): Outcome<String> = restore(context).stage(f.entries).also {
+        if (it is Outcome.Success) context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString("lastBlob", f.blob).putString("lastBlobDevice", f.device).remove("lastNote").apply()
+    }
 
     private fun restore(context: Context) = CloudRestore(NioVfs(Controller.get(context.filesDir).dataRoot.toPath()), Clock.SYSTEM)
 
@@ -345,7 +359,8 @@ internal fun CloudCard(model: DemoModel) {
                 if (s?.canRestore == true) TextButton(enabled = busy == null, onClick = { restoring = true }) { Text("Восстановить…") }
             }
             (busy ?: message)?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-            if (busy == null && message?.let(CloudSync::isForeignCopy) == true) {
+            // Отказ «чужая копия» — и от кнопки, и от такта службы (последняя отправка).
+            if (busy == null && (message ?: s?.last?.second)?.let(CloudSync::isForeignCopy) == true) {
                 TextButton(onClick = { replacing = true }) { Text("Заменить копию в репозитории…", color = MaterialTheme.colorScheme.error) }
             }
         }
@@ -484,7 +499,7 @@ private fun CloudRestoreDialog(onDismiss: () -> Unit) {
     var pass by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var problem by remember { mutableStateOf<String?>(null) }
-    var found by remember { mutableStateOf<Pair<CopyInfo, List<CopyEntry>>?>(null) }
+    var found by remember { mutableStateOf<CloudSync.Fetched?>(null) }
     var staged by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         when (val r = withContext(Dispatchers.IO) { runCatching { CloudSync.list(context) }.getOrElse { Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.INTERNAL_ERROR, AppLogs.describe(it)) } }) {
@@ -510,7 +525,7 @@ private fun CloudRestoreDialog(onDismiss: () -> Unit) {
                         style = MaterialTheme.typography.bodySmall,
                     )
                     f != null -> Text(
-                        "Копия «${f.first.device}» от ${EcosystemAuto.stamp(f.first.createdAt)}: файлов ${f.first.files}, ${f.first.bytes / 1024} КиБ. " +
+                        "Копия «${f.info.device}» от ${EcosystemAuto.stamp(f.info.createdAt)}: файлов ${f.info.files}, ${f.info.bytes / 1024} КиБ. " +
                             "Восстановить — заменить ею журнал, задачи, targets и проект этого телефона?",
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -543,10 +558,10 @@ private fun CloudRestoreDialog(onDismiss: () -> Unit) {
                 f != null -> TextButton(enabled = !busy, onClick = {
                     busy = true
                     scope.launch {
-                        when (val r = withContext(Dispatchers.IO) { runCatching { CloudSync.stage(context, f.second) }.getOrElse { Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.INTERNAL_ERROR, AppLogs.describe(it)) } }) {
+                        when (val r = withContext(Dispatchers.IO) { runCatching { CloudSync.stage(context, f) }.getOrElse { Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.INTERNAL_ERROR, AppLogs.describe(it)) } }) {
                             is Outcome.Success -> {
                                 staged = true
-                                AppLogs.get(context).info("облачная копия", "копия «${f.first.device}» разложена человеком: применится при запуске")
+                                AppLogs.get(context).info("облачная копия", "копия «${f.info.device}» разложена человеком: применится при запуске")
                             }
                             is Outcome.Failure -> problem = "Не разложена: ${r.errors.firstOrNull()?.message}"
                         }

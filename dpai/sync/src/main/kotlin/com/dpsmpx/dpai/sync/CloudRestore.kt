@@ -29,7 +29,12 @@ class CloudRestore(private val vfs: Vfs, private val clock: Clock) {
             vfs.mkdirs(Vfs.parentOf(path))
             vfs.write(path, e.bytes)
             vfs.fsync(path)
-            dirs += Vfs.parentOf(path)
+            // Все каталоги цепочки до раскладки — их записи тоже на носитель.
+            var d = Vfs.parentOf(path)
+            while (d.length > dir.length) {
+                dirs += d
+                d = Vfs.parentOf(d)
+            }
         }
         // Каталог, которого в копии нет, всё равно заменяется (пустым): восстановленный контур — только из копии.
         for (root in CloudArchive.ROOTS) if (root != KNOWN_HOSTS) vfs.mkdirs(Vfs.join(dir, root)).also { dirs += Vfs.join(dir, root) }
@@ -48,6 +53,8 @@ class CloudRestore(private val vfs: Vfs, private val clock: Clock) {
     /** Отменить разложенное: отметка снимается, при запуске ничего не заменится; раскладка остаётся на диске. */
     fun cancel(): Outcome<Unit> = io("отметка не снята") {
         vfs.delete(MARKER)
+        // Снятие отметки — на носитель: после сбоя питания отменённое не применится.
+        vfs.fsyncDir("")
         Outcome.success(Unit)
     }
 
