@@ -231,6 +231,8 @@ API не включён. Граница — этот раздел и реест�
 | `dpai.verification-report` | 1 | `VerificationReport` | только пишется; контур хранит вердикт и хеш |
 | `dpai.ecosystem` | 1 | `ManifestEcosystem` | файл DPmeta или пользователя; только читается |
 | `dpai.ecosystem-results` | 1 | `EcosystemRun` | документ `ecosystem-results` |
+| `dpai.auto-policy` | 1 | `AutoPolicy`, `AutoEcosystem` | документ `auto-policy` контроллера приложения (D-106) |
+| `dpai.ecosystem-auto` | 1 | `AutoEcosystem` | документ `ecosystem-auto` контроллера приложения (D-106) |
 | `dpai.backup-manifest` | 1 | `BackupService` | `manifest.json` копии |
 | `dpai.restore-marker` | 1 | `BackupService` | `restore.pending` — начатое восстановление |
 | `dpai.app-targets` | 3 (1–3) | `TargetBook` | документ `targets` приложения; v1 — без `configDir`; v3 — target «в приложении» (`kind`) |
