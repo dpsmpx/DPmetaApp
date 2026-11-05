@@ -153,7 +153,7 @@ class AutoEcosystemTest {
     fun placementFailureIsReportedAndNotRecorded() {
         val a = auto()
         a.enable(policy())
-        val r = (a.pass(projects, setOf("app"), { true }) { Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "нет контроллера") } as Outcome.Success).value
+        val r = (a.pass(projects, setOf("app"), { true }, { Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "нет контроллера") }) as Outcome.Success).value
         assertTrue(r.placed.isEmpty())
         assertEquals(2, r.failures.size)
         assertEquals(emptyList(), (a.entries() as Outcome.Success).value)

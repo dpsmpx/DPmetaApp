@@ -172,7 +172,7 @@ class AutoEcosystem(private val store: DocumentStore, private val clock: Clock) 
             is Outcome.Success -> p.value ?: return Outcome.success(AutoPass.NONE)
         }
         val now = clock.now()
-        if (policy.expired(now)) return Outcome.success(AutoPass(emptyList(), listOf("политика" to "срок политики истёк"), emptyList()))
+        if (policy.expired(now)) return Outcome.success(AutoPass(emptyList(), emptyList(), listOf("политика" to "срок политики истёк"), emptyList()))
         val ledger = when (val e = entries()) {
             is Outcome.Failure -> return e
             is Outcome.Success -> e.value.toMutableList()
