@@ -47,25 +47,33 @@ object ApiKeys {
     }
 
     /** Ключ профиля; пустой — удалить. Сбой Keystore — `false`: ключ не сохранён, человеку — сказать. */
+    fun put(context: Context, id: AccountId, secret: Secret): Boolean = putNamed(context, id.value, secret)
+
+    /**
+     * Секрет по имени — для секретов приложения, не профилей: токен и пароль
+     * облачной копии (D-107). Имена не похожи на id профилей (`acc_…`).
+     */
     @Synchronized
-    fun put(context: Context, id: AccountId, secret: Secret): Boolean {
+    fun putNamed(context: Context, name: String, secret: Secret): Boolean {
         if (secret.isEmpty) {
-            remove(context, id)
+            removeNamed(context, name)
             return true
         }
         return try {
             val c = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()) }
             val sealed = c.iv + c.doFinal(secret.reveal().toByteArray(Charsets.UTF_8))
-            prefs(context).edit().putString(id.value, Base64.encodeToString(sealed, Base64.NO_WRAP)).commit()
+            prefs(context).edit().putString(name, Base64.encodeToString(sealed, Base64.NO_WRAP)).commit()
         } catch (_: GeneralSecurityException) {
             false
         }
     }
 
     /** Ключ профиля или `null`: нет его или шифр не расшифровать (новая установка, сброс Keystore). */
+    fun get(context: Context, id: AccountId): Secret? = getNamed(context, id.value)
+
     @Synchronized
-    fun get(context: Context, id: AccountId): Secret? {
-        val text = prefs(context).getString(id.value, null) ?: return null
+    fun getNamed(context: Context, name: String): Secret? {
+        val text = prefs(context).getString(name, null) ?: return null
         return try {
             val sealed = Base64.decode(text, Base64.NO_WRAP)
             if (sealed.size <= IV_BYTES) return null
@@ -81,9 +89,13 @@ object ApiKeys {
 
     fun has(context: Context, id: AccountId): Boolean = prefs(context).contains(id.value)
 
+    fun hasNamed(context: Context, name: String): Boolean = prefs(context).contains(name)
+
+    fun remove(context: Context, id: AccountId) = removeNamed(context, id.value)
+
     @Synchronized
-    fun remove(context: Context, id: AccountId) {
-        prefs(context).edit().remove(id.value).commit()
+    fun removeNamed(context: Context, name: String) {
+        prefs(context).edit().remove(name).commit()
     }
 
     /** Длина IV у AES-GCM Keystore. */

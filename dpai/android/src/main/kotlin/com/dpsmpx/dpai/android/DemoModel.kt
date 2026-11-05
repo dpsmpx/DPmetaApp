@@ -515,6 +515,20 @@ class DemoModel(
         return true
     }
 
+    /**
+     * Сделать [body], пока контур стоит (D-107: снимок файлов контура для
+     * облачной копии — журнал и снимки не меняются посередине). Такт занят
+     * дольше [waitMs] — `null`, ничего не сделано.
+     */
+    fun <T> whileStill(waitMs: Long, body: () -> T): T? {
+        if (!lock.tryLock(waitMs, TimeUnit.MILLISECONDS)) return null
+        try {
+            return body()
+        } finally {
+            lock.unlock()
+        }
+    }
+
     /** Обновить загрузку окон подписок через `/usage` (D-48): без хода, лимит не тратится. Такт занят — пропуск. */
     fun refreshUsage(only: Set<com.dpsmpx.dpai.core.ids.ExecutionTargetId>? = null): Boolean = briefly {
         liveSystem().valueOrNull()?.refreshUsage(only)

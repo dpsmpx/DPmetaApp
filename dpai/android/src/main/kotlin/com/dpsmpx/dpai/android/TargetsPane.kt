@@ -125,6 +125,7 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
                 project = controller.project()
             }
         }
+        item(key = "cloud") { CloudCard(model) }
         item {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {

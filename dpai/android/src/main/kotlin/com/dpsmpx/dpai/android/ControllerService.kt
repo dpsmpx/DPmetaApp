@@ -100,6 +100,11 @@ class ControllerService : Service() {
             wake = lock
             running = true
             log.step("служба контроллера запущена")
+            // Облачная копия, применённая при запуске (D-107), — в журнал: человек видит, что данные заменены.
+            when (val restored = Controller.get(app.filesDir).cloudRestored) {
+                is com.dpsmpx.dpai.core.result.Outcome.Success -> if (restored.value) log.info("облачная копия", "копия применена при запуске; прежние данные — *.replaced-…")
+                is com.dpsmpx.dpai.core.result.Outcome.Failure -> log.error("облачная копия", "копия не применена: ${restored.errors.firstOrNull()?.message}")
+            }
             // Канал dpai (D-47) — пока работает служба контроллера.
             ControlServer.start(app)
             val meter = TickMeter(Clock.SYSTEM)
@@ -159,6 +164,12 @@ class ControllerService : Service() {
                                 EcosystemAuto.tick(app, model, notifier, log)
                             } catch (e: Exception) {
                                 log.error("экосистема", AppLogs.describe(e))
+                            }
+                            // Облачная копия — раз в сутки, если включена (D-107); после шага такта контур стоит.
+                            try {
+                                CloudSync.tick(app, model, log)
+                            } catch (e: Exception) {
+                                log.error("облачная копия", AppLogs.describe(e))
                             }
                             true
                         } catch (e: Exception) {
