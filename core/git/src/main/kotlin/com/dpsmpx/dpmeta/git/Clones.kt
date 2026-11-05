@@ -36,6 +36,11 @@ import java.io.IOException
 import java.net.Proxy
 import java.net.URI
 import java.net.URL
+import java.security.KeyManagementException
+import java.security.SecureRandom
+import javax.net.ssl.HostnameVerifier
+import javax.net.ssl.KeyManager
+import javax.net.ssl.TrustManager
 
 /**
  * Локальные клоны репозиториев (D-65): полная история основной и рабочих
@@ -262,7 +267,25 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
             if (url.protocol.lowercase() != "https") throw GateRefused("разрешён только https: ${url.host}")
             val ok = runCatching { g.check(url.toURI()) }.getOrNull()
             if (ok !is Outcome.Success) throw GateRefused("адреса нет в списке разрешённых: ${url.host}")
-            return if (proxy == null) inner.create(url) else inner.create(url, proxy)
+            return Verified(if (proxy == null) inner.create(url) else inner.create(url, proxy))
+        }
+    }
+
+    /**
+     * Соединение JGit без права отключить проверку TLS: свой `TrustManager`
+     * и `HostnameVerifier` JGit ставит только при `http.sslVerify=false`
+     * (`HttpSupport.disableSslVerify` — пустой `X509TrustManager`, его видит
+     * Lint). Настройки git клоны и так не читают ([Isolated]), а здесь это
+     * закрыто и кодом: такая попытка — отказ, а не тихое доверие любому
+     * сертификату (D-10).
+     */
+    private class Verified(private val c: HttpConnection) : HttpConnection by c {
+        override fun configure(km: Array<out KeyManager>?, tm: Array<out TrustManager>?, random: SecureRandom?) {
+            throw KeyManagementException("своя проверка TLS для git запрещена: только системная")
+        }
+
+        override fun setHostnameVerifier(hostnameverifier: HostnameVerifier?) {
+            throw KeyManagementException("своя проверка имени хоста для git запрещена: только системная")
         }
     }
 
