@@ -33,6 +33,8 @@ class NioVfs(private val root: Path) : Vfs {
 
     override fun exists(path: String): Boolean = Files.isRegularFile(p(path))
 
+    override fun isDirectory(path: String): Boolean = Files.isDirectory(p(path), java.nio.file.LinkOption.NOFOLLOW_LINKS)
+
     override fun size(path: String): Long? = p(path).takeIf { Files.isRegularFile(it) }?.let(Files::size)
 
     override fun list(dir: String): List<String> {

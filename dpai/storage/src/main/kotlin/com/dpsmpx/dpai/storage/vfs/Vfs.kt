@@ -20,6 +20,9 @@ interface Vfs {
 
     fun exists(path: String): Boolean
 
+    /** Есть ли каталог [path] — не файл и не ссылка ([exists] видит только файлы). Где каталогов нет — `false`. */
+    fun isDirectory(path: String): Boolean = false
+
     /** Размер файла в байтах без чтения содержимого; нет файла — `null`. Где нельзя иначе — чтением. */
     @Throws(IOException::class)
     fun size(path: String): Long? = read(path)?.size?.toLong()

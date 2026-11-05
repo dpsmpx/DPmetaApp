@@ -57,6 +57,7 @@ include(
     ":files",
     // LocalAIService (D-105): подсказки локальной модели; ядро от неё не зависит.
     ":localai",
+    ":sync",
     ":analytics",
     ":orchestrator",
     ":ui",
