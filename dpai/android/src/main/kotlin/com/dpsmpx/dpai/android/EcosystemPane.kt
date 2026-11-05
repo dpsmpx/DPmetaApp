@@ -81,22 +81,24 @@ fun EcosystemDialog(model: DemoModel, onDone: () -> Unit) {
                     is Outcome.Success -> {
                         projects = r.value
                         error = null
-                        val before = withContext(Dispatchers.IO) { EcosystemChoice.manifest(context) }
-                        kept = withContext(Dispatchers.IO) { EcosystemChoice.keepManifest(context, uri) }
-                        // Другой файл — другие предложения: политика, включённая над прежним, выключается (D-106, T19).
-                        if (before != null && before != uri) {
-                            val off = withContext(Dispatchers.IO) {
-                                val auto = Controller.get(context.filesDir).ecosystemAuto
-                                if (auto.policy().valueOrNull() != null) {
-                                    auto.disable()
-                                    AppLogs.get(context).info("экосистема", "политика прогона выключена: выбран другой манифест")
-                                    true
-                                } else {
-                                    false
+                        // Другой файл — другие предложения: политика, включённая над прежним, выключается до того,
+                        // как проход такта прочтёт новый файл (D-106, T19).
+                        // Итог: можно ли сохранить новый файл и что сказать человеку.
+                        val (keep, note) = withContext(Dispatchers.IO) {
+                            val before = EcosystemChoice.manifest(context)
+                            val auto = Controller.get(context.filesDir).ecosystemAuto
+                            if (before == null || before == uri || auto.policy().valueOrNull() == null) {
+                                true to null
+                            } else {
+                                when (val d = auto.disable()) {
+                                    is Outcome.Success -> true to "Выбран другой манифест — политика прогона выключена: включите её заново."
+                                        .also { AppLogs.get(context).info("экосистема", "политика прогона выключена: выбран другой манифест") }
+                                    is Outcome.Failure -> false to "Политика не выключилась (${d.errors.firstOrNull()?.message}) — новый манифест не сохранён"
                                 }
                             }
-                            if (off) status = "Выбран другой манифест — политика прогона выключена: включите её заново."
                         }
+                        if (keep) kept = withContext(Dispatchers.IO) { EcosystemChoice.keepManifest(context, uri) }
+                        note?.let { status = it }
                     }
                     is Outcome.Failure -> error = "Манифест не читается: ${r.errors.joinToString("; ") { it.message }}"
                 }

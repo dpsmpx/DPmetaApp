@@ -89,6 +89,9 @@ object EcosystemAuto {
         }
         // Что контур знает о ключе (D-42, D-94): итог исполнения или «ждёт в очереди» — команда политики или человека.
         val known: (String) -> Outcome<com.dpsmpx.dpai.core.ids.TaskId>? = { key ->
+            // Сначала очередь, потом итоги: такт пишет итог раньше, чем снимает команду из очереди, —
+            // в обратном порядке исполненная между чтениями команда не нашлась бы нигде.
+            val waiting = orchestrator.accepted.pending.values.any { (it.command.fields["key"] as? com.dpsmpx.dpai.core.serialization.JsonString)?.value == key }
             orchestrator.operations.byKey[key]?.let { r ->
                 if (r.status == com.dpsmpx.dpai.core.operation.OperationStatus.FAILED) {
                     Outcome.failure(r.code ?: com.dpsmpx.dpai.core.diagnostics.DiagCode.INTERNAL_ERROR, "контур отказал в задаче политики", key)
@@ -96,8 +99,7 @@ object EcosystemAuto {
                     r.value?.let { com.dpsmpx.dpai.core.ids.IdKinds.TASK.parse(it) }
                         ?: Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.INTERNAL_ERROR, "у команды нет id задачи", key)
                 }
-            } ?: orchestrator.accepted.pending.values.firstOrNull { (it.command.fields["key"] as? com.dpsmpx.dpai.core.serialization.JsonString)?.value == key }
-                ?.let { Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.COMMAND_QUEUED, "команда ждёт очереди контура", key) }
+            } ?: if (waiting) Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.COMMAND_QUEUED, "команда ждёт очереди контура", key) else null
         }
         val r = when (val p = auto.pass(projects, setOf(project), open, model::addTask, known)) {
             is Outcome.Failure -> return "След политики не читается: ${p.errors.firstOrNull()?.message}".also { log.error(TAG, it) }
