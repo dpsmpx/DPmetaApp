@@ -2,6 +2,7 @@ package com.dpsmpx.dpmeta.metrics
 
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
+import kotlin.time.Duration.Companion.minutes
 
 /**
  * Все пороги, окна и веса DPmetaApp — здесь и только здесь (D-34, ТЗ, §6.3).
@@ -9,7 +10,7 @@ import kotlin.time.Duration.Companion.hours
  * `docs/CHANGELOG.md`; прежние точки истории остаются со своей версией.
  */
 object Rules {
-    const val RULES_VERSION: Int = 3
+    const val RULES_VERSION: Int = 4
 
     /** «Кто работает» (F-16, `DPmeta:M-08`): коммит в `main` за это окно. */
     val MAIN_COMMIT_WINDOW: Duration = 6.hours
@@ -29,6 +30,19 @@ object Rules {
 
     /** Основная ветка проекта — по ней «коммит в main». */
     const val MAIN_BRANCH: String = "main"
+
+    /**
+     * Ветки сборок экосистемы (D-65): сироты с APK и архивами — в клоны не
+     * берутся и в ветки проекта не входят (не работа, а выкладка): DPmetaApp
+     * и DPpass — `apk_debug`, Galdhold — `apk-build` и `windows-debug-build`,
+     * DPlang — `apk-builds`, AIM Trainer — `win_debug_builds`.
+     */
+    val BUILD_BRANCHES: Set<String> = setOf("apk_debug", "apk-build", "apk-builds", "windows-debug-build", "win_debug_builds")
+
+    fun isBuildBranch(name: String): Boolean = name in BUILD_BRANCHES
+
+    /** Синхронизация при входе в приложение (D-65): не чаще этого срока — вход за входом не повторяет её. */
+    val ENTRY_SYNC_EVERY: Duration = 15.minutes
 
     /**
      * PR ждёт автора (ТЗ, §8, `repo.pr.waiting_author`): открыт и не

@@ -75,7 +75,8 @@ open class PultActivity : ComponentActivity() {
         }
         window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         pool = Executors.newFixedThreadPool(THREADS)
-        repo = PultRepository(NioVfs(filesDir.toPath().resolve("dpmeta")), Clock.SYSTEM, pool)
+        // Клоны репозиториев (D-65) — свой каталог в памяти приложения, рядом с данными пульта.
+        repo = PultRepository(NioVfs(filesDir.toPath().resolve("dpmeta")), Clock.SYSTEM, pool, File(filesDir, CLONES_DIR))
         secrets = SecretStore(NioVfs(noBackupFilesDir.toPath().resolve("dpmeta")))
         // Блокировка всего приложения (D-59) уже закрыла окно экраном входа — своей не нужно.
         if (AppLock.installed) open() else Lock.ask(this, "Вход в пульт", pinOnly = false, onOpen = ::open, onDenied = { _, _ -> finish() })
@@ -157,6 +158,10 @@ open class PultActivity : ComponentActivity() {
         loadHistory()
         // Файлы прежних «Поделиться» (D-67) живут до следующего входа в пульт — не до поворота.
         if (coldStart) pool.execute { File(cacheDir, EXPORT_DIR).deleteRecursively() }
+        // Синхронизация при входе (D-65): не чаще ENTRY_SYNC_EVERY; ключ токена открыт входом — без второго окна PIN.
+        if (coldStart && hasToken && (state == null || Clock.SYSTEM.now() - state.asOf >= com.dpsmpx.dpmeta.metrics.Rules.ENTRY_SYNC_EVERY)) {
+            (secrets.load() as? Outcome.Success)?.value?.let(::sync)
+        }
         setContent {
             PultTheme {
                 PultApp(view.value, loader, onSync = ::sync, onSaveToken = ::saveToken, onForgetToken = ::forgetToken, onAi = aiIntent()?.let { i -> { startActivity(i) } }, onExport = ::export)
@@ -327,5 +332,8 @@ open class PultActivity : ComponentActivity() {
 
         /** Запросы дат коммитов — пулом (D-50); тот же предел, что у `dpmeta-cli`. */
         const val THREADS = 8
+
+        /** Каталог клонов репозиториев экосистемы (D-65) в `filesDir`. */
+        const val CLONES_DIR = "clones"
     }
 }
