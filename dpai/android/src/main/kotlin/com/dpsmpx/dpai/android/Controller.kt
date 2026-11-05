@@ -105,6 +105,17 @@ class Controller(private val root: File, val version: String?) {
     }
 
     /**
+     * Облачная копия, разложенная прошлым запуском (D-107), применяется здесь —
+     * при создании контроллера, до первого чтения документов и журнала
+     * (свойства инициализируются по порядку: это — после [vfs] и до всего,
+     * что читает данные). Итог: `true` — применена; отказ — с причиной.
+     */
+    val cloudRestored: com.dpsmpx.dpai.core.result.Outcome<Boolean> = com.dpsmpx.dpai.sync.CloudRestore(vfs, Clock.SYSTEM).applyPending()
+
+    /** Каталог данных контура — для облачной копии (D-107). */
+    val dataRoot: File get() = root
+
+    /**
      * Настройки восстановлены из прежней целой версии (`STORAGE_RECOVERED_LKG`) —
      * об этом стоит сказать человеку: последняя правка targets не сохранилась
      * (D-87). Список заполняется чтением [targets] и [project].

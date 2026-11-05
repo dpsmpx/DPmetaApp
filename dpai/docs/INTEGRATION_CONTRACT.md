@@ -233,6 +233,8 @@ API не включён. Граница — этот раздел и реест�
 | `dpai.ecosystem-results` | 1 | `EcosystemRun` | документ `ecosystem-results` |
 | `dpai.auto-policy` | 1 | `AutoPolicy`, `AutoEcosystem` | документ `auto-policy` контроллера приложения (D-106) |
 | `dpai.ecosystem-auto` | 1 | `AutoEcosystem` | документ `ecosystem-auto` контроллера приложения (D-106) |
+| `dpai.cloud-copy` | 1 | `CloudCrypto` | файл `dpai-cloud/<устройство>.bin` приватного репозитория GitHub человека (D-107) |
+| `dpai.cloud-archive` | 1 | `CloudArchive` | внутри `dpai.cloud-copy`, после расшифровки (D-107) |
 | `dpai.backup-manifest` | 1 | `BackupService` | `manifest.json` копии |
 | `dpai.restore-marker` | 1 | `BackupService` | `restore.pending` — начатое восстановление |
 | `dpai.app-targets` | 3 (1–3) | `TargetBook` | документ `targets` приложения; v1 — без `configDir`; v3 — target «в приложении» (`kind`) |

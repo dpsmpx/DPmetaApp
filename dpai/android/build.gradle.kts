@@ -208,6 +208,7 @@ dependencies {
     implementation(project(":providers"))
     // Подсказки локальной модели (D-105).
     implementation(project(":localai"))
+    implementation(project(":sync"))
     implementation(project(":files"))
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.material3)
