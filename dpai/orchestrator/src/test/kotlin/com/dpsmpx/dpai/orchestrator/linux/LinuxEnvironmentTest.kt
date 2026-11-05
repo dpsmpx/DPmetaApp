@@ -107,6 +107,25 @@ class LinuxEnvironmentTest {
         assertTrue(LinuxEnvironment.isIpLiteral("2001:db8::53"))
     }
 
+    /** Ключ сервера модели (D-105, T18) — как DNS (A-3): ни через ссылку на месте файла, ни через ссылку-каталог. */
+    @Test
+    fun llamaKeyIsNeverWrittenThroughGuestLinks() {
+        val token = dir.resolve("control-token").also { it.toFile().writeText("TOKEN") }
+        val llama = dir.resolve("linux/rootfs/root/.config/llama").also { it.toFile().mkdirs() }
+        assumeTrue(runCatching { Files.createSymbolicLink(llama.resolve("api-key"), llama.fileSystem.getPath("../../../../../control-token")) }.isSuccess, "символьные ссылки недоступны")
+        val env = LinuxEnvironment(NioVfs(dir))
+        assertIs<Outcome.Success<Unit>>(env.writeLlamaKey("KEY".toByteArray()))
+        assertEquals("TOKEN", token.toFile().readText(), "файл приложения не затёрт")
+        assertFalse(Files.isSymbolicLink(llama.resolve("api-key")), "ссылка заменена файлом")
+        assertEquals("KEY", llama.resolve("api-key").toFile().readText())
+        // Ссылка на месте каталога — отказ, цель не трогается.
+        llama.toFile().deleteRecursively()
+        Files.createSymbolicLink(llama, llama.fileSystem.getPath("../../../.."))
+        assertEquals(DiagCode.OPERATION_NOT_ALLOWED, (env.writeLlamaKey("X".toByteArray()) as Outcome.Failure).errors.single().code)
+        assertEquals("TOKEN", token.toFile().readText())
+        assertFalse(dir.resolve("api-key").toFile().exists(), "мимо ссылки-каталога — ничего")
+    }
+
     /**
      * A-3 аудита безопасности 1 ноября 2026: гость кладёт ссылку на место
      * `resolv.conf` или `/etc` — запись DNS не уходит к её цели.
@@ -142,5 +161,27 @@ class LinuxEnvironmentTest {
         assertEquals(DiagCode.FIELD_MISSING, (LinuxEnvironment.apk(LinuxEnvironment.Apk.DEL, emptyList()) as Outcome.Failure).errors.single().code)
         assertEquals(listOf("apk", "upgrade", "-U", "--no-progress"), LinuxEnvironment.apk(LinuxEnvironment.Apk.UPGRADE, emptyList()).valueOrNull()!!.command)
         assertEquals("/root/.claude-slot-2", LinuxEnvironment.slotDir(2))
+    }
+
+    @Test
+    fun llamaServerListensOnlyOnThisDeviceAndTakesOnlyGgufFromUserDirs() {
+        assertEquals(listOf("/bin/sh", "-lc", "apk add llama-server && llama-server --version"), LinuxEnvironment.llamaInstall().command)
+        val ok = LinuxEnvironment.llamaServe("/root/files/models/qwen2.5-1.5b q4.gguf", 8080, 4096, 4).valueOrNull()!!
+        assertEquals(
+            listOf(
+                "llama-server", "-m", "/root/files/models/qwen2.5-1.5b q4.gguf", "--host", "127.0.0.1", "--port", "8080",
+                "--ctx-size", "4096", "--threads", "4", "--parallel", "1",
+                "--api-key-file", LinuxEnvironment.LLAMA_KEY_FILE, "--no-webui", "--no-slots",
+            ),
+            ok.command,
+            "путь — отдельным аргументом, без оболочки; только 127.0.0.1, ключ файлом, без веб-интерфейса и /slots (T18)",
+        )
+        assertTrue(LinuxEnvironment.llamaServe("/root/storage/shared/Download/Модели/модель q4.gguf", 8080, 4096, 4) is Outcome.Success, "русские имена папок")
+        for (bad in listOf("/root/models/../.ssh/id.gguf", "/etc/passwd", "/root/models/x.bin", "/tmp/x.gguf", "/root/models/x.gguf;rm -rf /", "models/x.gguf")) {
+            assertEquals(DiagCode.VALUE_INVALID, (LinuxEnvironment.llamaServe(bad, 8080, 4096, 4) as Outcome.Failure).errors.single().code, bad)
+        }
+        assertEquals(DiagCode.VALUE_INVALID, (LinuxEnvironment.llamaServe("/root/models/x.gguf", 80, 4096, 4) as Outcome.Failure).errors.single().code, "порт ниже 1024")
+        assertEquals(DiagCode.VALUE_INVALID, (LinuxEnvironment.llamaServe("/root/models/x.gguf", 8080, 100, 4) as Outcome.Failure).errors.single().code)
+        assertEquals(DiagCode.VALUE_INVALID, (LinuxEnvironment.llamaServe("/root/models/x.gguf", 8080, 4096, 64) as Outcome.Failure).errors.single().code)
     }
 }

@@ -160,6 +160,8 @@ object ModelsStore {
         val conv = chatFlow.value.firstOrNull { it.id == conversationId } ?: return "разговор не найден"
         val profile = profileFlow.value.firstOrNull { it.id == conv.profile } ?: return "профиль разговора удалён"
         if (profile.model.isBlank()) return "в профиле не выбрана модель: «Изменить» → «Проверить ключ»"
+        // Сервер телефона не запущен — на его порту может слушать кто угодно (T18): не спрашивать.
+        if (LocalModel.isOwn(app, profile) && !LocalModel.usable(profile)) return "сервер llama.cpp на телефоне не запущен: вкладка Linux → «Запустить»"
         if (conversationId in runningFlow.value) return "ответ ещё идёт"
         val withUser = conv.plus(ChatEntry(ChatRole.USER, text)).let { if (it.title.isBlank()) it.copy(title = Conversation.title(text)) else it }
         upsert(withUser)

@@ -45,8 +45,11 @@ object AppDisk {
         if (p.firstOrNull() == CONTROL_TOKEN) return true
         if (p.any { it == ".ssh" || it == ".credentials.json" }) return true
         val home = parts(LINUX_HOME)
+        if (p.size <= home.size || p.take(home.size) != home) return false
         // Каталоги слотов (D-29, D-100): в них — вход Claude, Codex и Gemini.
-        return p.size > home.size && p.take(home.size) == home && SLOT_PREFIXES.any { p[home.size].startsWith(it) }
+        if (SLOT_PREFIXES.any { p[home.size].startsWith(it) }) return true
+        // Ключ сервера локальной модели (D-105, T18): `~/.config/llama`.
+        return p.drop(home.size).take(2) == listOf(".config", "llama")
     }
 
     /** Можно ли менять (создать, заменить, удалить, переименовать) документ [rel]: только внутри `/root` гостя. */

@@ -104,6 +104,19 @@ fun ModelsPane() {
         items(profiles, key = { "p:${it.id.value}" }) { p ->
             ProfileCard(p, onChat = { open = ModelsStore.newChat(p).id.value }, onEdit = { editing = p })
         }
+        // Локальный ИИ (D-105): какой профиль на этом устройстве или в частной сети спрашивать о подсказках.
+        val local = LocalHints.candidates(profiles)
+        if (local.isNotEmpty()) {
+            item {
+                var chosen by remember(profiles) { mutableStateOf<com.dpsmpx.dpai.core.ids.AccountId?>(null) }
+                // Выбор читается из настроек в фоне, не на главном потоке.
+                LaunchedEffect(profiles) { chosen = withContext(Dispatchers.IO) { LocalHints.chosen(context, profiles)?.id } }
+                Text("Локальный ИИ — подсказки на сводке", style = MaterialTheme.typography.titleMedium)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    for (p in local) FilterChip(selected = chosen == p.id, onClick = { LocalHints.choose(context, p); chosen = p.id }, label = { Text(p.name) })
+                }
+            }
+        }
         if (chats.isNotEmpty()) item { Text("Чаты", style = MaterialTheme.typography.titleMedium) }
         items(chats.reversed(), key = { "c:${it.id.value}" }) { c ->
             val p = profiles.firstOrNull { it.id == c.profile }
@@ -204,6 +217,11 @@ private fun ProfileDialog(existing: ApiProfile?, onDone: () -> Unit) {
                 if (kind == ProviderKind.OPENAI_COMPATIBLE) {
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         for (pr in ApiPresets.OPENAI_COMPATIBLE) {
+                            FilterChip(selected = baseUrl == pr.baseUrl, onClick = { baseUrl = pr.baseUrl; models = emptyList() }, label = { Text(pr.name) })
+                        }
+                        // Локальные модели (D-105): адрес ПК в частной сети — заменить на свой.
+                        for (pr in listOf(ApiPresets.phoneLlama(), ApiPresets.pcOllama(PC_HOST_HINT), ApiPresets.pcLlama(PC_HOST_HINT))) {
+                            // Отметку своего сервера ставит человек (D-98): заготовка её не ставит.
                             FilterChip(selected = baseUrl == pr.baseUrl, onClick = { baseUrl = pr.baseUrl; models = emptyList() }, label = { Text(pr.name) })
                         }
                     }
@@ -415,3 +433,6 @@ private fun readAttachment(context: android.content.Context, uri: android.net.Ur
     } ?: return Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.VALUE_INVALID, "больше ${max / 1024} КиБ")
     return com.dpsmpx.dpai.files.TextFile.decode(bytes, max).map { name to it }
 }
+
+/** Адрес ПК в заготовках Ollama и llama.cpp (D-105): образец частной сети — человек ставит адрес своего ПК. */
+private const val PC_HOST_HINT = "192.168.1.2"

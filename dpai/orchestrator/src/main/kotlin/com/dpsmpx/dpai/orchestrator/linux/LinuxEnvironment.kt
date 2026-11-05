@@ -34,6 +34,7 @@ class LinuxEnvironment(private val vfs: Vfs, dir: String = DIR) {
 
     /** Черновик `resolv.conf` — вне корня гостя: гость его не видит и ссылкой не подменит. */
     private val dnsDraft = Vfs.join(dir, "resolv.conf.draft")
+    private val keyDraft = Vfs.join(dir, "llama-key.draft")
 
     /** Версия установленной корневой системы; `null` — не установлена или установка оборвалась. */
     fun installed(): String? = vfs.read(ready)?.toString(Charsets.UTF_8)?.trim()?.ifEmpty { null }
@@ -86,6 +87,31 @@ class LinuxEnvironment(private val vfs: Vfs, dir: String = DIR) {
             Outcome.success(good.size)
         } catch (e: IOException) {
             Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "/etc/resolv.conf гостя не записан", e, path)))
+        }
+    }
+
+    /**
+     * Ключ API сервера локальной модели в госте (D-105, T18), как
+     * [writeDns] (A-3): каталоги `~/.config` и `~/.config/llama` пишет и гость
+     * — ссылка на их месте — отказ; ключ пишется черновиком вне корня гостя
+     * и встаёт на место переименованием: ссылка на месте файла заменяется
+     * файлом, её цель не трогается.
+     */
+    fun writeLlamaKey(key: ByteArray): Outcome<Unit> {
+        val rel = LLAMA_KEY_FILE.removePrefix("/")
+        val path = Vfs.join(rootfs, rel)
+        val dirs = rel.split('/').dropLast(1).runningFold(rootfs) { acc, part -> Vfs.join(acc, part) }.drop(1)
+        return try {
+            for (d in dirs) {
+                if (vfs.isSymlink(d)) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "каталог гостя — символьная ссылка: ключ сервера не записан", d)
+                vfs.mkdirs(d)
+                if (vfs.isSymlink(d)) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "каталог гостя — символьная ссылка: ключ сервера не записан", d)
+            }
+            vfs.write(keyDraft, key)
+            vfs.rename(keyDraft, path)
+            Outcome.success(Unit)
+        } catch (e: IOException) {
+            Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "ключ сервера не записан", e, path)))
         }
     }
 
@@ -155,6 +181,55 @@ class LinuxEnvironment(private val vfs: Vfs, dir: String = DIR) {
                 "apk add nodejs npm && npm install -g ${EXECUTOR_PACKAGES.joinToString(" ")} && codex --version && gemini --version",
             ),
         )
+
+        /**
+         * Установка llama.cpp (D-105): сервер модели из пакетов Alpine
+         * (`community`, aarch64); в конце — его версия.
+         */
+        fun llamaInstall(): ProcessSpec = ProcessSpec(listOf("/bin/sh", "-lc", "apk add llama-server && llama-server --version"))
+
+        /** Каталоги гостя, откуда берётся модель (D-105): свои модели, копии папок (D-99) и всё хранилище. */
+        val MODEL_DIRS: List<String> = listOf("/root/models/", "/root/files/", "/root/storage/shared/")
+
+        /** Путь модели: буквы любого алфавита (имена папок автора бывают русскими), цифры, пробел и `._()+@-` — аргумент идёт без оболочки. */
+        private val MODEL_PATH = Regex("/[\\p{L}\\p{N}._/ ()+@-]+\\.gguf")
+
+        /** Файл ключа API сервера в госте (D-105, T18): права владельца, не в аргументах процесса. */
+        const val LLAMA_KEY_FILE = "/root/.config/llama/api-key"
+
+        /** Что не так с путём модели (D-105); годится — `null`. */
+        fun modelPathProblem(model: String): String? = when {
+            model.split('/').any { it == ".." || it == "." } -> "в пути модели — «..» или «.»"
+            !model.endsWith(".gguf") -> "модель — файл .gguf"
+            !MODEL_PATH.matches(model) -> "в пути модели — знаки вне букв, цифр, пробела и «._()+@-»"
+            MODEL_DIRS.none { model.startsWith(it) } -> "модель — из ${MODEL_DIRS.joinToString(", ")}"
+            else -> null
+        }
+
+        /**
+         * Запуск сервера модели (D-105, T18): только `127.0.0.1` (это все
+         * приложения телефона — поэтому ключ API из [LLAMA_KEY_FILE], без веб-
+         * интерфейса и `/slots`); один слот — окно контекста не делится;
+         * модель — файл `.gguf` из [MODEL_DIRS], без `..`; путь — отдельным
+         * аргументом, без оболочки.
+         */
+        fun llamaServe(model: String, port: Int, contextTokens: Int, threads: Int): Outcome<ProcessSpec> {
+            modelPathProblem(model)?.let { return Outcome.failure(DiagCode.VALUE_INVALID, it, model) }
+            return when {
+                port !in 1024..65535 -> Outcome.failure(DiagCode.VALUE_INVALID, "порт — 1024…65535", "$port")
+                contextTokens !in 512..131_072 -> Outcome.failure(DiagCode.VALUE_INVALID, "контекст — 512…131072 токенов", "$contextTokens")
+                threads !in 1..16 -> Outcome.failure(DiagCode.VALUE_INVALID, "потоков — 1…16", "$threads")
+                else -> Outcome.success(
+                    ProcessSpec(
+                        listOf(
+                            "llama-server", "-m", model, "--host", "127.0.0.1", "--port", "$port",
+                            "--ctx-size", "$contextTokens", "--threads", "$threads", "--parallel", "1",
+                            "--api-key-file", LLAMA_KEY_FILE, "--no-webui", "--no-slots",
+                        ),
+                    ),
+                )
+            }
+        }
 
         /** Адрес IPv4 (четыре числа 0…255) или IPv6 (шестнадцатеричные группы через `:`). */
         fun isIpLiteral(s: String): Boolean {

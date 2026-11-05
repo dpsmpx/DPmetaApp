@@ -410,6 +410,8 @@ private fun DashboardPane(screen: DashboardScreen, model: DemoModel) {
             item { Text("Внимание", style = MaterialTheme.typography.titleMedium) }
             items(screen.attention) { Text("· $it", color = toneColor(Tone.WARNING), style = MaterialTheme.typography.bodySmall) }
         }
+        // Подсказки локальной модели (D-105): по кнопке, ядро от них не зависит.
+        item { LocalHintsCard(screen) }
     }
 }
 

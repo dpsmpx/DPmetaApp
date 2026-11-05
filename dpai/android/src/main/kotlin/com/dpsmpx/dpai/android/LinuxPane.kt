@@ -136,6 +136,8 @@ fun LinuxCard() {
                             }) { Text("Слот ${x.title}") }
                         }
                     }
+                    // Локальная модель (D-105): llama.cpp в этом Linux, сервер только на этом телефоне.
+                    LocalModelSection()
                 }
             }
             busy?.takeIf { installed != null }?.let { Text(it, style = MaterialTheme.typography.labelSmall) }

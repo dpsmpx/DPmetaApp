@@ -206,6 +206,8 @@ dependencies {
     implementation(project(":jsch"))
     implementation(project(":terminal"))
     implementation(project(":providers"))
+    // Подсказки локальной модели (D-105).
+    implementation(project(":localai"))
     implementation(project(":files"))
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.material3)

@@ -65,6 +65,19 @@ object ApiPresets {
         Preset("DeepSeek", "https://api.deepseek.com/v1"),
         Preset("Mistral", "https://api.mistral.ai/v1"),
     )
+
+    /**
+     * Локальные модели (D-105): llama.cpp на телефоне — свой порт на
+     * `127.0.0.1`; на ПК — Ollama или сервер llama.cpp по адресу частной
+     * сети, который вводит человек (D-68). Ключа у них нет.
+     */
+    const val PHONE_LLAMA_PORT: Int = 8080
+
+    fun phoneLlama(port: Int = PHONE_LLAMA_PORT): Preset = Preset("Телефон: llama.cpp", "http://127.0.0.1:$port/v1")
+
+    fun pcOllama(host: String): Preset = Preset("ПК: Ollama", "http://$host:11434/v1")
+
+    fun pcLlama(host: String): Preset = Preset("ПК: llama.cpp", "http://$host:8080/v1")
 }
 
 /** Проверка полей профиля: что сохраняется, то и годится для запроса. */
