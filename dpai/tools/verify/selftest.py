@@ -96,6 +96,10 @@ CASES = [
     ("check_docs.py",
      {**BASE, "a.md": "Решение D-02 и ТЗ, §2.\n"},
      {**BASE, "a.md": "Решение D-01 и ТЗ, §5.1, этап 0.\n"}, []),
+    # Трёхзначные номера (D-100 и дальше) сверяются так же.
+    ("check_docs.py",
+     {**BASE, "docs/direction/DECISIONS.md": DECISIONS + "### D-101 — Решение\n\n**Проверка.** тест.\n", "a.md": "Решение D-106.\n"},
+     {**BASE, "docs/direction/DECISIONS.md": DECISIONS + "### D-101 — Решение\n\n**Проверка.** тест.\n", "a.md": "Решение D-101.\n"}, []),
     ("check_docs.py",
      {**BASE, "tools/audit/final_stability.py": 'MAP = [("A", "x", ["GoneTest.ok"], None)]\n'},
      {**BASE, "tools/audit/final_stability.py": 'MAP = [("A", "x", ["FooTest.ok"], None)]\n',

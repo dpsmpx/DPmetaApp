@@ -66,7 +66,7 @@ def criteria(rel):
 
 def decisions_summary():
     text = read(DECISIONS)
-    accepted = re.findall(r"^### (D-\d{2})\b", text, re.M)
+    accepted = re.findall(r"^### (D-\d{2,3})\b", text, re.M)
     replaced = len(re.findall(r"^\*\*Состояние\.\*\*.*заменено", text, re.M))
     deferred = 0
     if "## Отложено" in text:

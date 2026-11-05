@@ -35,7 +35,7 @@ from common import (DECISIONS, ROADMAP, SECURITY, TZ, Findings, files, is_text, 
 PREFIXES = r"(?:docs|tools|gradle|build-logic|\.claude|\.github)"
 PATH_REF = re.compile(r"(?<![\w/.:-])(" + PREFIXES + r"/[A-Za-z0-9_./*-]*[A-Za-z0-9_*/])")
 NAME_REF = re.compile(r"(?<![\w/.:-])`([\w-]+\.md)`")
-DECISION_REF = re.compile(r"(?<![\w:])D-(\d{2})\b")
+DECISION_REF = re.compile(r"(?<![\w:])D-(\d{2,3})\b")
 DOC = r"`?((?:[\w.-]+/)*[\w.-]+\.md)`?"
 SECTION_REF = re.compile(r"(?<![\w/.:-])" + DOC + r"\s*,\s*(?:раздел\s+)?«([^»]+)»")
 PARA_REF = re.compile(r"(?<![\w/.:-])" + DOC + r"\s*,\s*§\s*(\d+)")
@@ -117,7 +117,8 @@ def check():
     by_name = {}
     for p in all_files:
         by_name.setdefault(os.path.basename(p), []).append(p)
-    decisions = set(re.findall(r"^### D-(\d{2})\b", read(DECISIONS), re.M)) if os.path.isfile(
+    # Номера решений — двух- и трёхзначные (D-100 и дальше).
+    decisions = set(re.findall(r"^### D-(\d{2,3})\b", read(DECISIONS), re.M)) if os.path.isfile(
         os.path.join(root(), DECISIONS)) else set()
     threats = set(re.findall(r"^### T(\d{1,2})\b", read(SECURITY), re.M)) if os.path.isfile(
         os.path.join(root(), SECURITY)) else set()
