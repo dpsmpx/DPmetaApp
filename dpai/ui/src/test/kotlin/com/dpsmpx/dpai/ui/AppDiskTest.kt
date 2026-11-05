@@ -32,11 +32,14 @@ class AppDiskTest {
         file("${AppDisk.LINUX_HOME}/.ssh/id_ed25519")
         file("${AppDisk.LINUX_HOME}/.claude/.credentials.json")
         file("${AppDisk.LINUX_HOME}/project/main.kt")
+        file("${AppDisk.LINUX_HOME}/.config/llama/api-key", "KEY")
+        file("${AppDisk.LINUX_HOME}/.config/other/settings")
 
         assertEquals(listOf("journal-copies", "linux", "live"), AppDisk.children(root, ""), "токена нет в списке")
-        assertEquals(listOf(".claude", "project"), AppDisk.children(root, AppDisk.LINUX_HOME), "каталоги слотов и .ssh — не видны")
+        assertEquals(listOf(".claude", ".config", "project"), AppDisk.children(root, AppDisk.LINUX_HOME), "каталоги слотов и .ssh — не видны")
+        assertEquals(listOf("other"), AppDisk.children(root, "${AppDisk.LINUX_HOME}/.config"), "ключ сервера локальной модели — не виден (D-105)")
         assertEquals(emptyList(), AppDisk.children(root, "${AppDisk.LINUX_HOME}/.claude"), ".credentials.json — не виден нигде")
-        for (secret in listOf("control-token", "${AppDisk.LINUX_HOME}/.claude-slot-1/settings.json", "${AppDisk.LINUX_HOME}/.ssh/id_ed25519", "${AppDisk.LINUX_HOME}/.claude/.credentials.json")) {
+        for (secret in listOf("control-token", "${AppDisk.LINUX_HOME}/.config/llama/api-key", "${AppDisk.LINUX_HOME}/.claude-slot-1/settings.json", "${AppDisk.LINUX_HOME}/.ssh/id_ed25519", "${AppDisk.LINUX_HOME}/.claude/.credentials.json")) {
             assertNull(AppDisk.resolve(root, secret), "по прямому пути — тоже нет: $secret")
         }
         assertNotNull(AppDisk.resolve(root, "live/live.journal"))

@@ -2,15 +2,19 @@ package com.dpsmpx.dpai.android
 
 import android.content.Context
 import com.dpsmpx.dpai.accounts.ApiPresets
+import com.dpsmpx.dpai.accounts.ApiProfile
 import com.dpsmpx.dpai.accounts.ApiProfiles
 import com.dpsmpx.dpai.accounts.ProviderKind
 import com.dpsmpx.dpai.android.linux.LinuxSetup
+import com.dpsmpx.dpai.core.clock.Clock
 import com.dpsmpx.dpai.core.clock.RandomSource
 import com.dpsmpx.dpai.core.diagnostics.Secret
 import com.dpsmpx.dpai.core.ids.AccountId
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.execution.process.RunningProcess
 import com.dpsmpx.dpai.orchestrator.linux.LinuxEnvironment
+import com.dpsmpx.dpai.providers.ProviderHosts
+import com.dpsmpx.dpai.providers.Providers
 import com.dpsmpx.dpai.storage.vfs.NioVfs
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,8 +22,6 @@ import kotlinx.coroutines.flow.update
 import java.io.File
 import java.net.InetAddress
 import java.net.ServerSocket
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -87,15 +89,24 @@ object LocalModel {
     fun ownProfile(context: Context): AccountId? =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_PROFILE, null)?.let { id -> ModelsStore.profiles.value.firstOrNull { it.id.value == id }?.id }
 
-    fun isOwn(context: Context, id: AccountId): Boolean = ownProfile(context) == id
+    /** Свой профиль сервера телефона: по id и с адресом этого устройства — перенастроенный человеком уже не он. */
+    fun isOwn(context: Context, profile: ApiProfile): Boolean = ownProfile(context) == profile.id && ProviderHosts.isLoopback(profile.host)
 
     /** Идёт ли сервер на самом деле: процесс мог выйти сам (память, плохой файл). */
     fun alive(): Boolean = state.value.running && process?.isAlive == true
 
     /**
+     * Свой профиль можно спрашивать (T18): сервер идёт и профиль указывает
+     * на порт этого запуска; иначе на прежнем порту может слушать кто угодно.
+     */
+    fun usable(profile: ApiProfile): Boolean = alive() && profile.baseUrl == state.value.port?.let { ApiPresets.phoneLlama(it).baseUrl }
+
+    /**
      * Запустить сервер с моделью [model] (путь гостя); прежний — остановить.
-     * Блокирующий вызов — с фонового потока: ждёт, пока сервер начнёт слушать.
-     * Итог — текст отказа или `null`.
+     * Блокирующий вызов — с фонового потока: ждёт, пока сервер ответит своим
+     * ключом на `/v1/models` (модель загружена, порт — наш), потом сохраняет
+     * свой профиль и только тогда считает сервер готовым (T18). Итог — текст
+     * отказа или `null`.
      */
     @Synchronized
     fun start(context: Context, model: String): String? {
@@ -111,11 +122,9 @@ object LocalModel {
             is Outcome.Success -> s.value
         }
         val gen = ++generation
-        val listening = CountDownLatch(1)
         val tail = ArrayDeque<String>()
-        state.value = Status(running = true, model = model, port = port)
+        state.value = Status(running = false, model = model, port = port)
         val p = when (val r = host.start(spec) { line ->
-            if ("listening" in line.text) listening.countDown()
             synchronized(tail) {
                 tail.addLast(line.text)
                 while (tail.size > TAIL) tail.removeFirst()
@@ -127,14 +136,28 @@ object LocalModel {
             is Outcome.Success -> r.value
         }
         process = p
-        watchExit(p, gen)
-        // Профиль — только когда сервер слушает: на занятом порту или с плохим файлом его нет (T18).
-        if (!listening.await(START_SECONDS, TimeUnit.SECONDS) || !p.isAlive) {
+        // Готовность — ответ своим ключом на своём порту; вышел процесс — сразу отказ, без ожидания до конца срока.
+        val probe = ApiProfiles.form(ModelsStore.newProfileId(), "проба", ProviderKind.OPENAI_COMPATIBLE, ApiPresets.phoneLlama(port).baseUrl, "probe", null, true)
+            .valueOrNull()?.let { Providers.of(it, Secret(key)) }
+        val clock = Clock.SYSTEM
+        val deadline = clock.monotonicNanos() + START_SECONDS * 1_000_000_000L
+        var ready = false
+        while (!ready && p.isAlive && clock.monotonicNanos() < deadline) {
+            ready = probe?.models()?.let { it is Outcome.Success } ?: false
+            if (!ready) p.awaitExit(1.seconds)
+        }
+        if (!ready) {
             stop()
-            return "сервер не начал слушать за $START_SECONDS с — причина в выводе"
+            return if (!p.isAlive) "сервер вышел при запуске — причина в выводе" else "сервер не ответил за $START_SECONDS с — причина в выводе"
         }
         ModelsStore.init(context)
-        return saveProfile(context, model, port, key)?.let { why -> "сервер запущен, но профиль не сохранён: $why" }
+        saveProfile(context, model, port, key)?.let { why ->
+            stop()
+            return "сервер остановлен: профиль не сохранён — $why"
+        }
+        state.update { if (gen == generation) it.copy(running = true) else it }
+        watchExit(p, gen)
+        return null
     }
 
     /** Остановить сервер, если идёт. */
@@ -187,8 +210,14 @@ object LocalModel {
 
     /**
      * Ключ — файлом гостя, не в аргументах процесса (T18): домашняя папка
-     * Linux лежит в закрытых данных приложения, другим приложениям не видна.
+     * Linux — в закрытых данных приложения; диск приложения и вкладка
+     * «Файлы» каталог `~/.config/llama` не показывают (D-96, `AppDisk.hidden`).
      */
     private fun writeKey(context: Context, key: String): Boolean =
-        runCatching { NioVfs(GuestPaths.home(context).toPath()).write(LinuxEnvironment.LLAMA_KEY_FILE.removePrefix("/root/"), key.toByteArray()) }.isSuccess
+        runCatching {
+            val vfs = NioVfs(GuestPaths.home(context).toPath())
+            val rel = LinuxEnvironment.LLAMA_KEY_FILE.removePrefix("/root/")
+            vfs.mkdirs(rel.substringBeforeLast('/'))
+            vfs.write(rel, key.toByteArray())
+        }.isSuccess
 }

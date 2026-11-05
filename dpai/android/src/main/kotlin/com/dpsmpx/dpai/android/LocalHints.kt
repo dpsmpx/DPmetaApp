@@ -66,7 +66,7 @@ object LocalHints {
         ModelsStore.init(context)
         val profile = chosen(context, ModelsStore.profiles.value) ?: return "Нет локальной модели: запустите llama.cpp во вкладке Linux или добавьте профиль ПК (Ollama, llama.cpp) во вкладке «Модели»."
         // Сервер телефона не запущен — на его порту может слушать кто угодно (T18): не спрашивать.
-        if (LocalModel.isOwn(context, profile.id) && !LocalModel.alive()) return "Сервер llama.cpp на телефоне не запущен: вкладка Linux → «Запустить»."
+        if (LocalModel.isOwn(context, profile) && !LocalModel.usable(profile)) return "Сервер llama.cpp на телефоне не запущен: вкладка Linux → «Запустить»."
         return runCatching { ask(context, profile, screen, cancel) }.getOrElse { "Локальный ИИ: ${it.javaClass.simpleName}" }
     }
 
