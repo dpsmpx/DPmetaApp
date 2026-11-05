@@ -28,7 +28,19 @@ data class PlannedSuggestion(val project: EcosystemProject, val suggestion: Sugg
  * Порядок детерминирован (D-22): приоритет, затем проект и ключ.
  */
 object EcosystemPlan {
-    fun key(project: String, suggestion: String): String = "ecosystem:$project/$suggestion"
+    /**
+     * Ключ команды постановки (D-42): `ecosystem:<проект>:<предложение>` —
+     * если обе части из `[A-Za-z0-9_-]` и ключ проходит `Command.KEY`;
+     * иначе — `ecosystem.<40 hex>` от обеих частей: контур принимает
+     * только короткую латиницу, а ключи манифеста задаёт источник.
+     */
+    fun key(project: String, suggestion: String): String {
+        val plain = "ecosystem:$project:$suggestion"
+        if (PART.matches(project) && PART.matches(suggestion) && Command.KEY.matches(plain)) return plain
+        return "ecosystem." + com.dpsmpx.dpai.core.hashing.Hashing.sha256("$project\n$suggestion").hex.take(40)
+    }
+
+    private val PART = Regex("[A-Za-z0-9_-]+")
 
     fun priority(s: SuggestedTask): Priority? = Priority.entries.firstOrNull { it.name == s.priority }
 

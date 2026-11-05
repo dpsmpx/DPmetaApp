@@ -6,6 +6,7 @@ import com.dpsmpx.dpai.tasks.Priority
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /** Отбор предложений экосистемы (ТЗ, §45, §46): порядок, причины отказа, команда с ключом (D-42). */
 class EcosystemPlanTest {
@@ -37,10 +38,22 @@ class EcosystemPlanTest {
     }
 
     @Test
+    fun keyIsAcceptedByTheContour() {
+        // Ключ с косой чертой контур отвергал (Command.KEY): задача из предложения не ставилась вовсе.
+        val readable = EcosystemPlan.key("dpmetaapp", "sq-12")
+        assertEquals("ecosystem:dpmetaapp:sq-12", readable)
+        val odd = listOf(EcosystemPlan.key("проект", "sq-1"), EcosystemPlan.key("a:b", "c"), EcosystemPlan.key("a", "b:c"), EcosystemPlan.key("p".repeat(70), "s".repeat(20)))
+        for (k in odd + readable) assertTrue(com.dpsmpx.dpai.orchestrator.commands.Command.KEY.matches(k), k)
+        assertTrue(odd.all { it.startsWith("ecosystem.") }, "не латиница или длинно — отпечаток")
+        assertEquals(odd.size, odd.toSet().size, "разные предложения — разные ключи, двоеточие внутри частей не склеивает их")
+        assertEquals(EcosystemPlan.key("проект", "sq-1"), EcosystemPlan.key("проект", "sq-1"), "ключ устойчив")
+    }
+
+    @Test
     fun commandCarriesStableKeyAndOnlyForAllowed() {
         val plan = EcosystemPlan.of(projects, setOf("alpha"), setOf("alpha"), setOf("docs"))
         val ok = plan.single { it.suggestion.key == "sq-3" }.command()!!
-        assertEquals("ecosystem:alpha/sq-3", ok.key)
+        assertEquals("ecosystem:alpha:sq-3", ok.key)
         assertEquals(Priority.LOW, ok.priority)
         assertEquals("задача sq-3" to "цель sq-3", ok.title to ok.objective)
         assertNull(plan.single { it.suggestion.key == "sq-4" }.command(), "не разрешено — команды нет")

@@ -9,6 +9,7 @@ import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.ids.IdGenerator
 import com.dpsmpx.dpai.core.ids.IdKinds
 import com.dpsmpx.dpai.core.ids.ProjectId
+import com.dpsmpx.dpai.core.ids.TaskId
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.state.TaskState
 import com.dpsmpx.dpai.ecosystem.EcosystemProject
@@ -20,6 +21,9 @@ import com.dpsmpx.dpai.execution.process.LocalProcessHost
 import com.dpsmpx.dpai.orchestrator.Orchestrator
 import com.dpsmpx.dpai.orchestrator.ProjectConfig
 import com.dpsmpx.dpai.orchestrator.TargetSlot
+import com.dpsmpx.dpai.orchestrator.commands.Command
+import com.dpsmpx.dpai.orchestrator.ecosystem.AutoEcosystem
+import com.dpsmpx.dpai.orchestrator.ecosystem.AutoPolicy
 import com.dpsmpx.dpai.orchestrator.ecosystem.EcosystemRun
 import com.dpsmpx.dpai.orchestrator.ecosystem.EcosystemSources
 import com.dpsmpx.dpai.orchestrator.ecosystem.RunPolicy
@@ -27,6 +31,7 @@ import com.dpsmpx.dpai.orchestrator.verification.ProcessStepRunner
 import com.dpsmpx.dpai.storage.document.DocumentStore
 import com.dpsmpx.dpai.storage.journal.EventJournal
 import com.dpsmpx.dpai.storage.vfs.NioVfs
+import com.dpsmpx.dpai.tasks.Priority
 import com.dpsmpx.dpai.verification.VerificationProfile
 import com.dpsmpx.dpai.verification.Verifier
 import com.dpsmpx.dpai.verification.VerifyLevel
@@ -145,6 +150,33 @@ class EcosystemTest {
         val t = o.addTask("ручная", "без экосистемы").valueOrNull()!!
         repeat(5) { o.tick() }
         assertEquals(TaskState.DONE, o.tasks.tasks.getValue(t).state)
+    }
+
+    /**
+     * Политика прогона на настоящем контуре (D-106): ключ команды контур
+     * принимает (`Command.KEY`), задачи созданы, повтор прохода второй не
+     * ставит, след — с id настоящих задач.
+     */
+    @Test
+    fun policyPassPlacesTasksInTheRealContour() {
+        val o = orchestrator(ids.next(IdKinds.PROJECT), slots = 1)
+        val projects = ManifestEcosystem { manifest }.projects().valueOrNull()!!
+        val auto = AutoEcosystem(DocumentStore(NioVfs(Files.createTempDirectory(dir, "auto")), "docs"), clock)
+        auto.enable(AutoPolicy(setOf("dplang"), setOf("fix", "docs", "destructive"), setOf(Priority.HIGH, Priority.NORMAL), 10, 5, null))
+        val place: (Command.AddTask) -> Outcome<TaskId> = { c ->
+            when (val r = o.execute(c).outcome) {
+                is Outcome.Failure -> r
+                is Outcome.Success -> (r.value as? TaskId)?.let { Outcome.success(it) } ?: IdKinds.TASK.parse(r.value.toString())
+            }
+        }
+        val known: (String) -> Outcome<TaskId>? = { key -> o.operations.byKey[key]?.value?.let { IdKinds.TASK.parse(it) } }
+        val first = (auto.pass(projects, setOf("dplang"), { true }, place, known) as Outcome.Success).value
+        assertEquals(emptyList(), first.failures, "контур принял ключи команд")
+        assertEquals(listOf("fix-contract", "docs"), first.placed.map { it.suggestion }, "CRITICAL политика не пустила")
+        assertEquals(first.placed.map { it.task }.toSet(), o.tasks.tasks.keys, "задачи — в контуре")
+        val second = (auto.pass(projects, setOf("dplang"), { true }, place, known) as Outcome.Success).value
+        assertTrue(second.placed.isEmpty())
+        assertEquals(2, o.tasks.tasks.size, "повтор прохода задач не множит")
     }
 
     @Test

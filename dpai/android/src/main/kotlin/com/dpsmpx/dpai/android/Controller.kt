@@ -91,6 +91,12 @@ object KeystoreKey {
 class Controller(private val root: File, val version: String?) {
     private val vfs = NioVfs(root.toPath())
     private val docs = DocumentStore(vfs, "docs")
+
+    /**
+     * Политика прогона и след её задач (D-106): документы контроллера, не
+     * копия настроек (D-51) — после переустановки политика выключена.
+     */
+    val ecosystemAuto = com.dpsmpx.dpai.orchestrator.ecosystem.AutoEcosystem(docs, Clock.SYSTEM)
     val knownHostsFile: String = File(root, KNOWN_HOSTS).path
     private val ids = IdGenerator(Clock.SYSTEM, RandomSource.secure())
 
