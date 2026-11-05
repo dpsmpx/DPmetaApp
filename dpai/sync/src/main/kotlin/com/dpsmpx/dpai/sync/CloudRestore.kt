@@ -22,23 +22,34 @@ class CloudRestore(private val vfs: Vfs, private val clock: Clock) {
     /** Разложить файлы копии; итог — каталог раскладки. Прежняя неприменённая раскладка заменяется отметкой. */
     fun stage(entries: List<CopyEntry>): Outcome<String> = io("копия не разложена") {
         val dir = "$STAGE_PREFIX${clock.now().epochMillis}"
+        val dirs = sortedSetOf(dir)
         for (e in entries) {
             CloudArchive.pathProblem(e.path)?.let { return@io Outcome.failure(DiagCode.BACKUP_INVALID, it, e.path) }
             val path = Vfs.join(dir, e.path)
             vfs.mkdirs(Vfs.parentOf(path))
             vfs.write(path, e.bytes)
             vfs.fsync(path)
+            dirs += Vfs.parentOf(path)
         }
         // Каталог, которого в копии нет, всё равно заменяется (пустым): восстановленный контур — только из копии.
-        for (root in CloudArchive.ROOTS) if (root != KNOWN_HOSTS) vfs.mkdirs(Vfs.join(dir, root))
+        for (root in CloudArchive.ROOTS) if (root != KNOWN_HOSTS) vfs.mkdirs(Vfs.join(dir, root)).also { dirs += Vfs.join(dir, root) }
+        // Записи каталогов — на носитель до отметки (D-24): иначе после сбоя питания отметка есть, а файлов нет.
+        for (d in dirs) vfs.fsyncDir(d)
         vfs.write(MARKER_TMP, "$dir\n".toByteArray(Charsets.UTF_8))
         vfs.fsync(MARKER_TMP)
         vfs.rename(MARKER_TMP, MARKER)
+        vfs.fsyncDir("")
         Outcome.success(dir)
     }
 
     /** Ждёт ли раскладка применения при следующем запуске. */
     fun pending(): Boolean = vfs.exists(MARKER)
+
+    /** Отменить разложенное: отметка снимается, при запуске ничего не заменится; раскладка остаётся на диске. */
+    fun cancel(): Outcome<Unit> = io("отметка не снята") {
+        vfs.delete(MARKER)
+        Outcome.success(Unit)
+    }
 
     /**
      * Применить разложенную копию, если она есть: до открытия журнала
@@ -53,7 +64,7 @@ class CloudRestore(private val vfs: Vfs, private val clock: Clock) {
         for (root in CloudArchive.ROOTS) {
             val staged = Vfs.join(dir, root)
             if (!present(staged)) continue // уже перенесён прерванным применением
-            if (present(root)) vfs.rename(root, "$root$REPLACED$stamp")
+            if (present(root)) vfs.rename(root, free("$root$REPLACED$stamp"))
             vfs.rename(staged, root)
         }
         vfs.fsyncDir("")
@@ -63,10 +74,20 @@ class CloudRestore(private val vfs: Vfs, private val clock: Clock) {
 
     private fun present(path: String): Boolean = vfs.exists(path) || vfs.isDirectory(path)
 
+    /**
+     * Свободное имя для прежнего корня: прерванное применение могло уже
+     * занять [base], а контур — создать на месте корня новый пустой; оба
+     * сохраняются, ничего не затирается.
+     */
+    private fun free(base: String): String = generateSequence(0) { it + 1 }.map { if (it == 0) base else "$base-$it" }.first { !present(it) }
+
     private inline fun <T> io(message: String, block: () -> Outcome<T>): Outcome<T> = try {
         block()
     } catch (e: IOException) {
         Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, message, e)))
+    } catch (e: IllegalArgumentException) {
+        // Путь, который файловая система не принимает (`InvalidPathException`), — отказ, а не падение запуска.
+        Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.BACKUP_INVALID, message, e)))
     }
 
     companion object {

@@ -21,6 +21,9 @@ import java.util.Base64
 /** Репозиторий копий: приватный ли, ветка по умолчанию, можно ли писать токеном. */
 data class CopyRepo(val private: Boolean, val branch: String, val canPush: Boolean)
 
+/** Итог отправки: коммит и блоб копии — по блобу следующая отправка узнаёт свою копию. */
+data class Uploaded(val commit: String, val blob: String)
+
 /**
  * Копии контура в приватном репозитории GitHub (D-107, T20): Git Data API
  * на `api.github.com` — блоб, дерево поверх прежнего, коммит, сдвиг ветки
@@ -50,8 +53,14 @@ class GitHubCopies(private val transport: Transport, private val owner: String, 
         }
     }
 
-    /** Положить [bytes] по [path] новым коммитом ветки по умолчанию; итог — id коммита. */
-    fun upload(path: String, bytes: ByteArray, message: String, cancel: Cancel = Cancel()): Outcome<String> {
+    /**
+     * Положить [bytes] по [path] новым коммитом ветки по умолчанию. Файл по
+     * пути уже есть и это не [expected] (блоб прошлой отправки этой
+     * установки) — отказ `STATE_CONFLICT`, пока человек не скажет
+     * [overwrite]: новая установка не затрёт молча копию, из которой её
+     * ещё не восстановили.
+     */
+    fun upload(path: String, bytes: ByteArray, message: String, expected: String?, overwrite: Boolean = false, cancel: Cancel = Cancel()): Outcome<Uploaded> {
         pathProblem(path)?.let { return Outcome.failure(DiagCode.VALUE_INVALID, it, "github") }
         if (bytes.size > MAX_COPY_BYTES) return Outcome.failure(DiagCode.VALUE_INVALID, "копия ${bytes.size / 1024 / 1024} МиБ — больше ${MAX_COPY_BYTES / 1024 / 1024} МиБ: GitHub её не примет", "github")
         val repoInfo = when (val r = check(cancel)) {
@@ -65,6 +74,13 @@ class GitHubCopies(private val transport: Transport, private val owner: String, 
         val baseTree = when (val r = sha("GET", "/git/commits/$head", null, cancel, "tree")) {
             is Outcome.Failure -> return r
             is Outcome.Success -> r.value
+        }
+        val present = when (val r = blobAt(path, repoInfo.branch, cancel)) {
+            is Outcome.Failure -> return r
+            is Outcome.Success -> r.value
+        }
+        if (present != null && present != expected && !overwrite) {
+            return Outcome.failure(DiagCode.STATE_CONFLICT, "по пути $path уже лежит копия, отправленная не с этой установки: восстановите её или подтвердите замену", "github")
         }
         val blob = when (val r = sha("POST", "/git/blobs", obj("content" to JsonString(Base64.getEncoder().encodeToString(bytes)), "encoding" to JsonString("base64")), cancel)) {
             is Outcome.Failure -> return r
@@ -81,9 +97,16 @@ class GitHubCopies(private val transport: Transport, private val owner: String, 
         }
         return when (val r = json("PATCH", "/git/refs/heads/${repoInfo.branch}", obj("sha" to JsonString(commit), "force" to JsonBool(false)), cancel)) {
             is Outcome.Failure -> r
-            is Outcome.Success -> Outcome.success(commit)
+            is Outcome.Success -> Outcome.success(Uploaded(commit, blob))
         }
     }
+
+    /** Блоб файла [path] ветки [branch]; файла нет — `null`. */
+    private fun blobAt(path: String, branch: String, cancel: Cancel): Outcome<String?> =
+        when (val r = sha("GET", "/contents/$path?ref=$branch", null, cancel, accept = OBJECT)) {
+            is Outcome.Success -> r
+            is Outcome.Failure -> if (r.diagnostics.any { it.code == DiagCode.GITHUB_NOT_FOUND }) Outcome.success(null) else r
+        }
 
     /** Файл [path] ветки по умолчанию; нет его — `GITHUB_NOT_FOUND`. */
     fun download(path: String, cancel: Cancel = Cancel()): Outcome<ByteArray> {
@@ -92,8 +115,8 @@ class GitHubCopies(private val transport: Transport, private val owner: String, 
             is Outcome.Failure -> return r
             is Outcome.Success -> r.value
         }
-        // Оглавление по пути даёт sha блоба; содержимое больше 1 МиБ отдаёт только API блобов.
-        val blob = when (val r = sha("GET", "/contents/$path?ref=${repoInfo.branch}", null, cancel)) {
+        // Оглавление по пути (вид `object` — и для файлов больше 1 МиБ) даёт sha блоба; содержимое — API блобов.
+        val blob = when (val r = sha("GET", "/contents/$path?ref=${repoInfo.branch}", null, cancel, accept = OBJECT)) {
             is Outcome.Failure -> return r
             is Outcome.Success -> r.value
         }
@@ -129,7 +152,7 @@ class GitHubCopies(private val transport: Transport, private val owner: String, 
     private fun nameProblem(): String? =
         if (NAME.matches(owner) && NAME.matches(repo) && owner != "." && owner != ".." && repo != "." && repo != "..") null else "владелец и репозиторий — латиница, цифры, «.», «-», «_»"
 
-    private fun sha(method: String, path: String, body: JsonObject?, cancel: Cancel, inner: String? = null): Outcome<String> = when (val r = json(method, path, body, cancel)) {
+    private fun sha(method: String, path: String, body: JsonObject?, cancel: Cancel, inner: String? = null, accept: String = JSON): Outcome<String> = when (val r = json(method, path, body, cancel, accept)) {
         is Outcome.Failure -> r
         is Outcome.Success -> {
             val o = (r.value as? JsonObject)?.let { if (inner == null) it else it[inner] as? JsonObject }
@@ -137,11 +160,11 @@ class GitHubCopies(private val transport: Transport, private val owner: String, 
         }
     }
 
-    private fun json(method: String, path: String, body: JsonObject?, cancel: Cancel): Outcome<JsonValue> {
+    private fun json(method: String, path: String, body: JsonObject?, cancel: Cancel, accept: String = JSON): Outcome<JsonValue> {
         nameProblem()?.let { return Outcome.failure(DiagCode.VALUE_INVALID, it, "github") }
         val url = URI.create("$API/repos/$owner/$repo$path")
         if (url.scheme != "https" || url.host != HOST) return Outcome.failure(DiagCode.HOST_NOT_ALLOWED, "копии — только на $HOST", url.host)
-        val headers = linkedMapOf("Accept" to "application/vnd.github+json", "X-GitHub-Api-Version" to "2022-11-28", "User-Agent" to "dpai-cloud-sync")
+        val headers = linkedMapOf("Accept" to accept, "X-GitHub-Api-Version" to "2022-11-28", "User-Agent" to "dpai-cloud-sync")
         if (body != null) headers["Content-Type"] = "application/json"
         val call = HttpCall(method, url, headers, body?.let { CanonicalJson.bytes(it) }, SecretHeader("Authorization", "Bearer ", token))
         val reply = when (val r = transport.open(call, cancel)) {
@@ -155,7 +178,11 @@ class GitHubCopies(private val transport: Transport, private val owner: String, 
                 return@use Outcome.failure(DiagCode.NETWORK_UNREACHABLE, "ответ GitHub не дочитан: ${e.javaClass.simpleName}", HOST)
             }
             when (rep.status) {
-                in 200..299 -> JsonParser().parse(text).valueOrNull()?.let { Outcome.success(it) } ?: bad("ответ GitHub — не JSON")
+                // Предел разбора — как предел ответа: блоб копии у предела размера тоже разбирается.
+                in 200..299 -> when (val j = JsonParser(JsonParser.Limits(maxChars = MAX_REPLY_CHARS)).parse(text)) {
+                    is Outcome.Success -> j
+                    is Outcome.Failure -> Outcome.failure(DiagCode.CONNECTOR_REPLY_INVALID, "ответ GitHub не разобран: ${j.errors.firstOrNull()?.message}", HOST)
+                }
                 401 -> Outcome.failure(DiagCode.GITHUB_AUTH_EXPIRED, "токен не принят: проверьте его срок и доступ к $owner/$repo", HOST)
                 403, 429 -> if (rep.header("x-ratelimit-remaining") == "0" || rep.status == 429) {
                     Outcome.failure(DiagCode.GITHUB_RATE_LIMITED, "предел запросов GitHub — позже", HOST)
@@ -180,13 +207,19 @@ class GitHubCopies(private val transport: Transport, private val owner: String, 
 
         /**
          * Предел копии: загрузка держит блоб в памяти несколько раз (строка
-         * ответа, текст, base64), а телефону нужна память и на остальное;
-         * GitHub к тому же предупреждает о файлах больше 50 МиБ.
+         * ответа, текст, строка JSON, байты), а телефону нужна память и на
+         * остальное; GitHub к тому же предупреждает о файлах больше 50 МиБ.
          */
-        const val MAX_COPY_BYTES = 20 * 1024 * 1024
+        const val MAX_COPY_BYTES = 10 * 1024 * 1024
 
-        /** Предел ответа в знаках и строки транспорта в байтах: блоб 20 МиБ в base64 — около 28 млн. */
-        const val MAX_REPLY_CHARS = 32 * 1024 * 1024
+        /**
+         * Предел ответа в знаках, разбора JSON и строки транспорта в байтах:
+         * блоб 10 МиБ в base64 с экранированными переводами строк — около
+         * 14,4 млн знаков, с запасом.
+         */
+        const val MAX_REPLY_CHARS = 20 * 1024 * 1024
+        private const val JSON = "application/vnd.github+json"
+        private const val OBJECT = "application/vnd.github.object+json"
         private val NAME = Regex("[A-Za-z0-9_.-]{1,100}")
         private val BRANCH = Regex("[A-Za-z0-9_./-]{1,100}")
         private val SHA = Regex("[0-9a-f]{40}")

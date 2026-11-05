@@ -40,6 +40,8 @@ object CloudArchive {
     /** Документы приложения, которые в копию не идут: политику прогона включает только человек (D-106). */
     private const val DOCS = "docs"
     private const val EXCLUDED = "$DOCS/auto-policy"
+    private const val QUARANTINE = "live/quarantine-confirmed"
+    private const val JOURNAL_COPIES = "live/journal-copies/"
 
     const val MAX_FILES = 100_000
     const val MAX_BYTES = 512L * 1024 * 1024
@@ -48,16 +50,23 @@ object CloudArchive {
 
     /** Что не так с путём файла копии; `null` — годится. */
     fun pathProblem(path: String): String? = when {
+        path.any { it < ' ' || it == '\u007f' } -> "путь с управляющими знаками"
         !Vfs.isSafeRelative(path) -> "путь «$path» — не относительный или с `..`"
         !(path == "known_hosts" || path.startsWith("live/") || path.startsWith("$DOCS/")) -> "путь «$path» — вне разрешённых каталогов копии"
         // Сам документ и его прежняя и временная версии (`.prev`, `.tmp` DocumentStore).
         path == EXCLUDED || path.startsWith("$EXCLUDED.") -> "файл «$path» в копию не идёт"
+        // Одноразовое «да» человека карантину журнала (D-24) — только этому телефону и этой сборке.
+        path == QUARANTINE -> "файл «$path» в копию не идёт"
         else -> null
     }
 
-    /** Брать ли файл каталога контура в копию: временные файлы и вытесненное прежними восстановлениями — нет. */
+    /**
+     * Брать ли файл каталога контура в копию: временные файлы, вытесненное
+     * прежними восстановлениями и копии сегментов журнала (D-95: запас на
+     * порчу носителя, а не данные — копия удвоила бы журнал) — нет.
+     */
     fun wanted(path: String): Boolean =
-        pathProblem(path) == null && !path.endsWith(".tmp") && ".replaced-" !in path
+        pathProblem(path) == null && !path.endsWith(".tmp") && ".replaced-" !in path && !path.startsWith(JOURNAL_COPIES)
 
     fun deviceProblem(device: String): String? = if (DEVICE.matches(device)) null else "имя устройства — латиница, цифры, «-» и «_», до 40 знаков"
 

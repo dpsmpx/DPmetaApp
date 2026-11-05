@@ -74,6 +74,10 @@ object CloudSync {
     /** Сколько ждать стоящего контура для снимка файлов. */
     private const val STILL_WAIT_MS = 30_000L
 
+    /** Заголовок шифра и тег GCM — с запасом. */
+    private const val SEAL_OVERHEAD = 4096
+    private const val FOREIGN = "В репозитории уже есть копия"
+
     data class Settings(val owner: String, val repo: String, val device: String, val daily: Boolean)
 
     fun settings(context: Context): Settings {
@@ -82,10 +86,19 @@ object CloudSync {
     }
 
     /** Есть ли всё для отправки: адрес, токен и пароль. */
-    fun ready(context: Context): Boolean {
+    fun ready(context: Context): Boolean = canRestore(context) && ApiKeys.hasNamed(context, PASSPHRASE)
+
+    /** Есть ли всё для восстановления: адрес и токен; пароль вводится в окне восстановления. */
+    fun canRestore(context: Context): Boolean {
         val s = settings(context)
-        return s.owner.isNotEmpty() && s.repo.isNotEmpty() && ApiKeys.hasNamed(context, TOKEN) && ApiKeys.hasNamed(context, PASSPHRASE)
+        return s.owner.isNotEmpty() && s.repo.isNotEmpty() && ApiKeys.hasNamed(context, TOKEN)
     }
+
+    /** Разложенная копия ждёт перезапуска (D-107). */
+    fun restorePending(context: Context): Boolean = restore(context).pending()
+
+    /** Отменить ожидающее восстановление: при запуске ничего не заменится. */
+    fun cancelRestore(context: Context): Outcome<Unit> = restore(context).cancel()
 
     /** Последняя отправка: когда (мс эпохи) и итог словами. */
     fun last(context: Context): Pair<Long, String>? {
@@ -125,19 +138,45 @@ object CloudSync {
         }
     }
 
-    /** Такт службы: копия раз в сутки, если включено; сбой — повтор через час. */
+    /**
+     * Такт службы: копия раз в сутки, если включено; сбой — повтор через
+     * час. Отправка — в своём потоке: вывод ключа и сеть не держат такт
+     * контура (замок — только на снимок файлов).
+     */
     fun tick(app: Context, model: DemoModel, log: AppLog) {
         val s = settings(app)
-        if (!s.daily || !ready(app)) return
+        if (!s.daily || !ready(app) || sending.get()) return
         val p = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val now = Clock.SYSTEM.now().epochMillis
         if (now - p.getLong("lastAt", 0) < DAY_MS || now - p.getLong("lastTry", 0) < RETRY_MS) return
         p.edit().putLong("lastTry", now).apply()
-        log.info(TAG, send(app, model))
+        Thread {
+            log.info(TAG, runCatching { send(app, model) }.getOrElse { "сбой отправки: ${AppLogs.describe(it)}" })
+        }.apply { isDaemon = true; name = "dpai-cloud-copy" }.start()
     }
 
-    /** Отправить копию сейчас; итог — строка для экрана. Блокирующий вызов — с фонового потока. */
-    fun send(context: Context, model: DemoModel): String {
+    /** Отправка идёт: вторая (кнопка и такт разом) не начинается. */
+    private val sending = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /** Отказ отправки «по пути — чужая копия»: окно предлагает заменить её словом человека. */
+    fun isForeignCopy(note: String): Boolean = note.startsWith(FOREIGN)
+
+    /**
+     * Отправить копию сейчас; итог — строка для экрана. Блокирующий вызов —
+     * с фонового потока. Файл по пути, отправленный не этой установкой, без
+     * [overwrite] не заменяется (новая установка не затрёт копию, из которой
+     * её ещё не восстановили).
+     */
+    fun send(context: Context, model: DemoModel, overwrite: Boolean = false): String {
+        if (!sending.compareAndSet(false, true)) return "Отправка уже идёт"
+        try {
+            return sendNow(context, model, overwrite)
+        } finally {
+            sending.set(false)
+        }
+    }
+
+    private fun sendNow(context: Context, model: DemoModel, overwrite: Boolean): String {
         val s = settings(context)
         val c = copies(context) ?: return "Нет настроек или токена копии"
         val passphrase = ApiKeys.getNamed(context, PASSPHRASE) ?: return "Нет пароля копии (или Keystore сброшен): задайте его заново"
@@ -147,13 +186,27 @@ object CloudSync {
             is Outcome.Failure -> return note(context, "Копия не собрана: ${r.errors.firstOrNull()?.message}", false)
             is Outcome.Success -> r.value
         }
+        // Предел — до вывода ключа: копия, переросшая его, не шифруется зря каждый час.
+        if (packed.size > GitHubCopies.MAX_COPY_BYTES - SEAL_OVERHEAD) {
+            return note(context, "Копия ${packed.size / 1024 / 1024} МиБ — больше предела ${GitHubCopies.MAX_COPY_BYTES / 1024 / 1024} МиБ: не отправлена", false)
+        }
         val sealed = when (val r = CloudCrypto.seal(packed, passphrase, RandomSource.secure())) {
             is Outcome.Failure -> return note(context, "Копия не зашифрована: ${r.errors.firstOrNull()?.message}", false)
             is Outcome.Success -> r.value
         }
-        return when (val r = c.upload("$DIR/${s.device}.bin", sealed, "Копия контура «AI»: ${s.device}, файлов ${entries.size}")) {
-            is Outcome.Failure -> note(context, "Не отправлено: ${r.errors.firstOrNull()?.message}", false)
-            is Outcome.Success -> note(context, "Отправлено: ${entries.size} файлов, ${sealed.size / 1024} КиБ, коммит ${r.value.take(7)}", true)
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        // Блоб прошлой отправки этой установки — по нему GitHubCopies узнаёт свою копию.
+        val mine = prefs.getString("lastBlob", null)?.takeIf { prefs.getString("lastBlobDevice", null) == s.device }
+        return when (val r = c.upload("$DIR/${s.device}.bin", sealed, "Копия контура «AI»: ${s.device}", mine, overwrite)) {
+            is Outcome.Failure -> if (r.diagnostics.any { it.code == com.dpsmpx.dpai.core.diagnostics.DiagCode.STATE_CONFLICT } && !overwrite) {
+                note(context, "$FOREIGN «${s.device}» — отправленная не с этой установки. Восстановите её или замените словом в окне.", false)
+            } else {
+                note(context, "Не отправлено: ${r.errors.firstOrNull()?.message}", false)
+            }
+            is Outcome.Success -> {
+                prefs.edit().putString("lastBlob", r.value.blob).putString("lastBlobDevice", s.device).apply()
+                note(context, "Отправлено: ${entries.size} файлов, ${sealed.size / 1024} КиБ, коммит ${r.value.commit.take(7)}", true)
+            }
         }
     }
 
@@ -182,8 +235,9 @@ object CloudSync {
     }
 
     /** Разложить проверенную копию: применит её `Controller` при следующем запуске. */
-    fun stage(context: Context, entries: List<CopyEntry>): Outcome<String> =
-        CloudRestore(NioVfs(Controller.get(context.filesDir).dataRoot.toPath()), Clock.SYSTEM).stage(entries)
+    fun stage(context: Context, entries: List<CopyEntry>): Outcome<String> = restore(context).stage(entries)
+
+    private fun restore(context: Context) = CloudRestore(NioVfs(Controller.get(context.filesDir).dataRoot.toPath()), Clock.SYSTEM)
 
     /**
      * Файлы контура для копии: корни [CloudArchive.ROOTS], без ссылок и
@@ -233,11 +287,16 @@ internal fun CloudCard(model: DemoModel) {
     val scope = rememberCoroutineScope()
     var editing by remember { mutableStateOf(false) }
     var restoring by remember { mutableStateOf(false) }
+    var replacing by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf<String?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
-    var state by remember { mutableStateOf<Pair<Boolean, Pair<Long, String>?>?>(null) }
+    var state by remember { mutableStateOf<CardState?>(null) }
     var version by remember { mutableIntStateOf(0) }
-    LaunchedEffect(version) { state = withContext(Dispatchers.IO) { CloudSync.ready(context) to CloudSync.last(context) } }
+    LaunchedEffect(version) {
+        state = withContext(Dispatchers.IO) {
+            runCatching { CardState(CloudSync.ready(context), CloudSync.canRestore(context), CloudSync.last(context), CloudSync.restorePending(context)) }.getOrNull()
+        }
+    }
 
     fun work(label: String, job: () -> String) {
         busy = label
@@ -253,31 +312,70 @@ internal fun CloudCard(model: DemoModel) {
             Text("Облачная копия", style = MaterialTheme.typography.titleMedium)
             Text(
                 "Журнал и задачи контура — зашифрованной копией в ваш приватный репозиторий GitHub. " +
-                    "Без пароля копию не прочесть никому, в том числе GitHub. Ключи и вход аккаунтов в копию не входят.",
+                    "Без пароля копию не прочесть никому, в том числе GitHub. Ключи, API-профили и вход аккаунтов в копию не входят.",
                 style = MaterialTheme.typography.bodySmall,
             )
             val s = state
             Text(
                 when {
                     s == null -> "…"
-                    !s.first -> "Не настроена."
-                    else -> s.second?.let { (at, note) -> (if (at > 0) "Последняя отправка: ${EcosystemAuto.stamp(com.dpsmpx.dpai.core.clock.Timestamp(at))}. " else "") + note } ?: "Настроена, копий ещё не было."
+                    !s.canRestore -> "Не настроена."
+                    !s.ready -> "Пароль копии не задан: отправка выключена, восстановление — можно."
+                    else -> s.last?.let { (at, note) -> (if (at > 0) "Последняя отправка: ${EcosystemAuto.stamp(com.dpsmpx.dpai.core.clock.Timestamp(at))}. " else "") + note } ?: "Настроена, копий ещё не было."
                 },
                 style = MaterialTheme.typography.bodySmall,
             )
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                TextButton(enabled = busy == null, onClick = { editing = true }) { Text(if (s?.first == true) "Настройки…" else "Настроить…") }
-                if (s?.first == true) {
-                    TextButton(enabled = busy == null, onClick = { work("Отправляю…") { CloudSync.send(context, model) } }) { Text("Отправить копию") }
-                    TextButton(enabled = busy == null, onClick = { restoring = true }) { Text("Восстановить…") }
+            if (s?.pending == true) {
+                Text("Копия из облака разложена и заменит данные контура при следующем запуске.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                Row {
+                    TextButton(onClick = { android.os.Process.killProcess(android.os.Process.myPid()) }) { Text("Перезапустить") }
+                    TextButton(enabled = busy == null, onClick = {
+                        work("Отменяю…") {
+                            when (val r = CloudSync.cancelRestore(context)) {
+                                is Outcome.Success -> "Восстановление отменено: данные не заменятся"
+                                is Outcome.Failure -> "Не отменено: ${r.errors.firstOrNull()?.message}"
+                            }
+                        }
+                    }) { Text("Отменить восстановление") }
                 }
             }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(enabled = busy == null, onClick = { editing = true }) { Text(if (s?.canRestore == true) "Настройки…" else "Настроить…") }
+                if (s?.ready == true) TextButton(enabled = busy == null, onClick = { work("Отправляю…") { CloudSync.send(context, model) } }) { Text("Отправить копию") }
+                if (s?.canRestore == true) TextButton(enabled = busy == null, onClick = { restoring = true }) { Text("Восстановить…") }
+            }
             (busy ?: message)?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            if (busy == null && message?.let(CloudSync::isForeignCopy) == true) {
+                TextButton(onClick = { replacing = true }) { Text("Заменить копию в репозитории…", color = MaterialTheme.colorScheme.error) }
+            }
         }
     }
     if (editing) CloudSettingsDialog(onDismiss = { editing = false; version++ }) { text -> message = text }
     if (restoring) CloudRestoreDialog(onDismiss = { restoring = false; version++ })
+    if (replacing) {
+        AlertDialog(
+            onDismissRequest = { replacing = false },
+            title = { Text("Заменить копию?") },
+            text = {
+                Text(
+                    "В репозитории под этим именем устройства лежит копия, отправленная не этой установкой — возможно, та, из которой вы хотели восстановиться. " +
+                        "Заменить её копией этого телефона? Прежняя останется только в истории репозитория.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    replacing = false
+                    work("Отправляю…") { CloudSync.send(context, model, overwrite = true) }
+                }) { Text("Заменить", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { replacing = false }) { Text("Отмена") } },
+        )
+    }
 }
+
+/** Что показывает карточка: можно ли отправлять и восстанавливать, последняя отправка, ждёт ли восстановление. */
+private data class CardState(val ready: Boolean, val canRestore: Boolean, val last: Pair<Long, String>?, val pending: Boolean)
 
 @Composable
 private fun CloudSettingsDialog(onDismiss: () -> Unit, onNote: (String) -> Unit) {
@@ -293,6 +391,7 @@ private fun CloudSettingsDialog(onDismiss: () -> Unit, onNote: (String) -> Unit)
     var pass2 by remember { mutableStateOf("") }
     var problem by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
+    var forgetting by remember { mutableStateOf(false) }
     // Токен и пароль копии — не в снимки «недавних» и запись экрана (D-86, T20).
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -337,12 +436,14 @@ private fun CloudSettingsDialog(onDismiss: () -> Unit, onNote: (String) -> Unit)
                 }
                 busy = true
                 scope.launch {
-                    val why = withContext(Dispatchers.IO) { CloudSync.save(context, CloudSync.Settings(owner, repo, device, daily), Secret(token), Secret(pass)) }
+                    val why = withContext(Dispatchers.IO) {
+                        runCatching { CloudSync.save(context, CloudSync.Settings(owner, repo, device, daily), Secret(token), Secret(pass)) }.getOrElse { "сбой: ${AppLogs.describe(it)}" }
+                    }
                     if (why != null) {
                         problem = why
                         busy = false
                     } else {
-                        val checked = withContext(Dispatchers.IO) { CloudSync.check(context) }
+                        val checked = withContext(Dispatchers.IO) { runCatching { CloudSync.check(context) }.getOrElse { "Проверка: ${AppLogs.describe(it)}" } }
                         busy = false
                         onNote(checked)
                         onDismiss()
@@ -352,11 +453,17 @@ private fun CloudSettingsDialog(onDismiss: () -> Unit, onNote: (String) -> Unit)
         },
         dismissButton = {
             Row {
+                // Забытый пароль не вернуть: второе нажатие — подтверждение.
                 TextButton(enabled = !busy, onClick = {
-                    CloudSync.forget(context)
-                    onNote("Настройки, токен и пароль копии забыты; копии в GitHub остались")
-                    onDismiss()
-                }) { Text("Забыть") }
+                    if (!forgetting) {
+                        forgetting = true
+                        problem = "Ещё раз «Забыть точно» — токен и пароль копии будут стёрты с телефона; без пароля прежние копии не прочесть."
+                    } else {
+                        CloudSync.forget(context)
+                        onNote("Настройки, токен и пароль копии забыты; копии в GitHub остались")
+                        onDismiss()
+                    }
+                }) { Text(if (forgetting) "Забыть точно" else "Забыть") }
                 TextButton(onClick = onDismiss) { Text("Отмена") }
             }
         },
@@ -380,7 +487,7 @@ private fun CloudRestoreDialog(onDismiss: () -> Unit) {
     var found by remember { mutableStateOf<Pair<CopyInfo, List<CopyEntry>>?>(null) }
     var staged by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        when (val r = withContext(Dispatchers.IO) { CloudSync.list(context) }) {
+        when (val r = withContext(Dispatchers.IO) { runCatching { CloudSync.list(context) }.getOrElse { Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.INTERNAL_ERROR, AppLogs.describe(it)) } }) {
             is Outcome.Success -> {
                 devices = r.value
                 chosen = r.value.firstOrNull { it == CloudSync.settings(context).device } ?: r.value.firstOrNull()
@@ -389,7 +496,8 @@ private fun CloudRestoreDialog(onDismiss: () -> Unit) {
         }
     }
     AlertDialog(
-        onDismissRequest = { if (!busy) onDismiss() },
+        // Разложенная копия: окно не закрывается мимо «Перезапустить» — иначе замена случилась бы при каком-нибудь запуске без предупреждения.
+        onDismissRequest = { if (!busy && !staged) onDismiss() },
         properties = DialogProperties(securePolicy = SecureFlagPolicy.SecureOn),
         title = { Text(if (staged) "Копия готова" else "Восстановить из облака") },
         text = {
@@ -435,7 +543,7 @@ private fun CloudRestoreDialog(onDismiss: () -> Unit) {
                 f != null -> TextButton(enabled = !busy, onClick = {
                     busy = true
                     scope.launch {
-                        when (val r = withContext(Dispatchers.IO) { CloudSync.stage(context, f.second) }) {
+                        when (val r = withContext(Dispatchers.IO) { runCatching { CloudSync.stage(context, f.second) }.getOrElse { Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.INTERNAL_ERROR, AppLogs.describe(it)) } }) {
                             is Outcome.Success -> {
                                 staged = true
                                 AppLogs.get(context).info("облачная копия", "копия «${f.first.device}» разложена человеком: применится при запуске")
@@ -451,7 +559,8 @@ private fun CloudRestoreDialog(onDismiss: () -> Unit) {
                     val device = chosen!!
                     val secret = Secret(pass)
                     scope.launch {
-                        when (val r = withContext(Dispatchers.IO) { CloudSync.fetch(context, device, secret) }) {
+                        // Загрузка держит копию в памяти: нехватка памяти — отказ на экране, а не падение приложения.
+                        when (val r = withContext(Dispatchers.IO) { runCatching { CloudSync.fetch(context, device, secret) }.getOrElse { Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.INTERNAL_ERROR, AppLogs.describe(it)) } }) {
                             is Outcome.Success -> found = r.value
                             is Outcome.Failure -> problem = r.errors.firstOrNull()?.message ?: "копия не прочитана"
                         }

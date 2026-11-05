@@ -57,7 +57,7 @@ class GitHubCopiesTest {
             "POST /git/trees" -> 201 to "{\"sha\": \"${sha('d')}\"}"
             "POST /git/commits" -> 201 to "{\"sha\": \"${sha('e')}\"}"
             "PATCH /git/refs/heads/main" -> 200 to "{\"object\": {\"sha\": \"${sha('e')}\"}}"
-            "GET /contents/dpai-cloud/redmi.bin" -> 200 to "{\"sha\": \"${sha('c')}\", \"size\": 5}"
+            "GET /contents/dpai-cloud/redmi.bin" -> 200 to "{\"type\": \"file\", \"sha\": \"${sha('c')}\", \"size\": 5}"
             // GitHub отдаёт base64 с переводами строк внутри строки JSON.
             "GET /git/blobs/${sha('c')}" -> 200 to "{\"content\": \"${Base64.getEncoder().encodeToString("копия".toByteArray()).chunked(4).joinToString("\\n")}\", \"encoding\": \"base64\"}"
             "GET /contents/dpai-cloud" -> 200 to "[{\"type\": \"file\", \"name\": \"redmi.bin\"}, {\"type\": \"dir\", \"name\": \"x\"}]"
@@ -68,27 +68,48 @@ class GitHubCopiesTest {
     @Test
     fun uploadGoesBlobTreeCommitRefWithTheTokenOnlyInTheHeader() {
         val t = Fake(::routes)
-        val r = GitHubCopies(t, "me", "copies", Secret(token)).upload("dpai-cloud/redmi.bin", "шифр".toByteArray(), "Копия контура")
-        assertEquals(sha('e'), (r as Outcome.Success).value)
+        val r = GitHubCopies(t, "me", "copies", Secret(token)).upload("dpai-cloud/new.bin", "шифр".toByteArray(), "Копия контура", expected = null)
+        assertEquals(Uploaded(sha('e'), sha('c')), (r as Outcome.Success).value)
         assertEquals(
-            listOf("GET ", "GET /git/ref/heads/main", "GET /git/commits/${sha('a')}", "POST /git/blobs", "POST /git/trees", "POST /git/commits", "PATCH /git/refs/heads/main"),
+            listOf("GET ", "GET /git/ref/heads/main", "GET /git/commits/${sha('a')}", "GET /contents/dpai-cloud/new.bin", "POST /git/blobs", "POST /git/trees", "POST /git/commits", "PATCH /git/refs/heads/main"),
             t.calls.map { "${it.method} ${it.url.path.removePrefix("/repos/me/copies")}" },
         )
         assertTrue(t.calls.all { it.url.scheme == "https" && it.url.host == "api.github.com" })
         assertTrue(t.calls.all { it.secret?.name == "Authorization" && token !in it.url.toString() && it.headers.values.none { v -> token in v } })
         val tree = t.calls.single { it.url.path.endsWith("/git/trees") }.body!!.toString(Charsets.UTF_8)
-        assertTrue("\"base_tree\":\"${sha('b')}\"" in tree && "dpai-cloud/redmi.bin" in tree, tree)
+        assertTrue("\"base_tree\":\"${sha('b')}\"" in tree && "dpai-cloud/new.bin" in tree, tree)
+        assertEquals("application/vnd.github.object+json", t.calls.single { it.url.path.contains("/contents/") }.headers["Accept"], "файлы больше 1 МиБ — только видом object")
         assertTrue("\"force\":false" in t.calls.last().body!!.toString(Charsets.UTF_8), "ветка — без силы")
+    }
+
+    @Test
+    fun foreignCopyIsNotOverwrittenWithoutTheWord() {
+        // По пути уже лежит блоб c: новая установка его не знает.
+        val t = Fake(::routes)
+        val c = GitHubCopies(t, "me", "copies", Secret(token))
+        assertEquals(DiagCode.STATE_CONFLICT, (c.upload("dpai-cloud/redmi.bin", byteArrayOf(1), "m", expected = null) as Outcome.Failure).diagnostics.first().code)
+        assertTrue(t.calls.none { it.method == "POST" || it.method == "PATCH" }, "ни одной записи")
+        assertTrue(c.upload("dpai-cloud/redmi.bin", byteArrayOf(1), "m", expected = sha('c')) is Outcome.Success, "своя прошлая копия — заменяется")
+        assertTrue(c.upload("dpai-cloud/redmi.bin", byteArrayOf(1), "m", expected = null, overwrite = true) is Outcome.Success, "слово человека — заменяется")
+    }
+
+    @Test
+    fun copyAtTheSizeLimitIsReadBack() {
+        val big = ByteArray(GitHubCopies.MAX_COPY_BYTES) { (it * 31).toByte() }
+        // Как у GitHub: base64 с переводом строки через 60 знаков — экранированным в строке JSON.
+        val b64 = Base64.getEncoder().encodeToString(big).chunked(60).joinToString("\\n")
+        val c = GitHubCopies(Fake { call -> if (call.url.path.endsWith("/git/blobs/${sha('c')}")) 200 to "{\"content\": \"$b64\", \"encoding\": \"base64\"}" else routes(call) }, "me", "copies", Secret(token))
+        assertContentEquals(big, (c.download("dpai-cloud/redmi.bin") as Outcome.Success).value)
     }
 
     @Test
     fun publicRepositoryOrReadOnlyTokenIsRefusedBeforeAnyWrite() {
         val public = Fake { c -> if (c.url.path == "/repos/me/copies") 200 to repo(private = false) else routes(c) }
-        val r = GitHubCopies(public, "me", "copies", Secret(token)).upload("dpai-cloud/redmi.bin", byteArrayOf(1), "m")
+        val r = GitHubCopies(public, "me", "copies", Secret(token)).upload("dpai-cloud/redmi.bin", byteArrayOf(1), "m", expected = null)
         assertEquals(DiagCode.OPERATION_NOT_ALLOWED, (r as Outcome.Failure).diagnostics.first().code)
         assertEquals(1, public.calls.size, "после отказа — ни одного запроса записи")
         val readOnly = Fake { c -> if (c.url.path == "/repos/me/copies") 200 to repo(push = false) else routes(c) }
-        assertEquals(DiagCode.GITHUB_AUTH_EXPIRED, (GitHubCopies(readOnly, "me", "copies", Secret(token)).upload("dpai-cloud/redmi.bin", byteArrayOf(1), "m") as Outcome.Failure).diagnostics.first().code)
+        assertEquals(DiagCode.GITHUB_AUTH_EXPIRED, (GitHubCopies(readOnly, "me", "copies", Secret(token)).upload("dpai-cloud/redmi.bin", byteArrayOf(1), "m", expected = null) as Outcome.Failure).diagnostics.first().code)
     }
 
     @Test
@@ -98,8 +119,8 @@ class GitHubCopiesTest {
             assertEquals(DiagCode.VALUE_INVALID, (GitHubCopies(t, owner, repo, Secret(token)).check() as Outcome.Failure).diagnostics.first().code, "$owner/$repo")
         }
         val c = GitHubCopies(t, "me", "copies", Secret(token))
-        assertTrue(c.upload("../x", byteArrayOf(1), "m") is Outcome.Failure)
-        assertTrue(c.upload("dpai-cloud/x.bin", ByteArray(GitHubCopies.MAX_COPY_BYTES + 1), "m") is Outcome.Failure)
+        assertTrue(c.upload("../x", byteArrayOf(1), "m", expected = null) is Outcome.Failure)
+        assertTrue(c.upload("dpai-cloud/x.bin", ByteArray(GitHubCopies.MAX_COPY_BYTES + 1), "m", expected = null) is Outcome.Failure)
         assertTrue(t.calls.isEmpty())
     }
 

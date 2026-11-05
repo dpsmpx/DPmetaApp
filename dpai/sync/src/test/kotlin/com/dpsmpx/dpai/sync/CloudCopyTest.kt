@@ -93,7 +93,10 @@ class CloudCopyTest {
         }
         assertFalse(CloudArchive.wanted("$D/targets.tmp"))
         assertFalse(CloudArchive.wanted("live.replaced-1/x"))
-        assertTrue(CloudArchive.wanted("$D/api-profiles"))
+        assertTrue(CloudArchive.wanted("$D/project"))
+        assertFalse(CloudArchive.wanted("live/journal-copies/live.journal.3"), "копии сегментов журнала — не данные")
+        assertTrue(CloudArchive.pathProblem("live/quarantine-confirmed") != null, "одноразовое «да» карантину — не в копию")
+        assertTrue(CloudArchive.pathProblem("live/a\u0000b") != null, "управляющие знаки — отказ")
         assertIs<Outcome.Failure>(CloudArchive.pack(entries(), clock.now(), "имя"), "имя устройства — латиницей")
     }
 
@@ -125,6 +128,28 @@ class CloudCopyTest {
         assertContentEquals("old".toByteArray(), vfs.read("docs${CloudRestore.REPLACED}$stamp/targets"))
         assertContentEquals("old\n".toByteArray(), vfs.read("known_hosts${CloudRestore.REPLACED}$stamp"))
         assertEquals(false, (restore.applyPending() as Outcome.Success).value, "второй раз — ничего")
+    }
+
+    @Test
+    fun busyReplacedNameIsNotOverwrittenAndStagingCanBeCancelled() {
+        val vfs = NioVfs(Files.createDirectories(dir.resolve("c2")))
+        vfs.mkdirs("live")
+        vfs.write("live/x", "сейчас".toByteArray())
+        val restore = CloudRestore(vfs, clock)
+        val staged = (restore.stage(entries()) as Outcome.Success).value
+        val stamp = staged.removePrefix(CloudRestore.STAGE_PREFIX)
+        // Прерванное применение уже заняло имя прежнего каталога, а контур создал новый пустой.
+        vfs.mkdirs("live${CloudRestore.REPLACED}$stamp")
+        vfs.write("live${CloudRestore.REPLACED}$stamp/x", "раньше".toByteArray())
+        assertEquals(true, (restore.applyPending() as Outcome.Success).value)
+        assertContentEquals("раньше".toByteArray(), vfs.read("live${CloudRestore.REPLACED}$stamp/x"), "занятое имя не затёрто")
+        assertContentEquals("сейчас".toByteArray(), vfs.read("live${CloudRestore.REPLACED}$stamp-1/x"))
+
+        clock.advance(1.minutes)
+        restore.stage(entries())
+        assertTrue(restore.pending())
+        assertTrue(restore.cancel() is Outcome.Success)
+        assertEquals(false, (restore.applyPending() as Outcome.Success).value, "отменённое не применяется")
     }
 
     @Test
