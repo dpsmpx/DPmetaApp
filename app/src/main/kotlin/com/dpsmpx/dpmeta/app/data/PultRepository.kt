@@ -113,6 +113,9 @@ class PultRepository(
         }
     }
 
+    /** Идёт ли синхронизация (на процесс): окно после поворота не запускает вторую и говорит «идёт». */
+    fun syncing(): Boolean = running.get()
+
     /**
      * Синхронизация целиком; зовётся не из главного потока. Вторая разом (вход
      * и «Обновить», окно после поворота) не начинается: клоны и состояние —
@@ -192,7 +195,9 @@ class PultRepository(
         val now = clock.now()
         val jobs = byKey.keys.sorted().map { key ->
             clonePool.submit<Pair<String, Outcome<com.dpsmpx.dpmeta.git.Clones.Report>>> {
-                key to clones.sync(key, com.dpsmpx.dpmeta.git.Clones.github(key), token, Rules::isBuildBranch)
+                // Сбой одного клона — его отказ, а не исключение из get(): иначе остальные клоны шли бы без защиты running.
+                key to runCatching { clones.sync(key, com.dpsmpx.dpmeta.git.Clones.github(key), token, Rules::isBuildBranch) }
+                    .getOrElse { Outcome.failure(DiagCode.INTERNAL_ERROR, "клон: ${it.javaClass.simpleName}", key) }
             }
         }
         var ok = 0

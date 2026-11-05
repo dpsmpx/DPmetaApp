@@ -157,7 +157,7 @@ open class PultActivity : ComponentActivity() {
      */
     private fun entrySync() {
         val v = view.value
-        if (v.busy || !secrets.exists()) return
+        if (v.busy || !secrets.exists() || repo.syncing()) return
         val now = Clock.SYSTEM.now()
         if (v.state?.let { now - it.asOf < com.dpsmpx.dpmeta.metrics.Rules.ENTRY_SYNC_EVERY } == true) return
         entryAt?.let { if (now - it < com.dpsmpx.dpmeta.metrics.Rules.ENTRY_SYNC_EVERY) return }
@@ -330,6 +330,11 @@ open class PultActivity : ComponentActivity() {
 
     private fun sync(token: Secret) {
         if (pool.isShutdown) return
+        // Идёт синхронизация прежнего окна (поворот) — не ошибка: итог будет у «Обновить» после неё.
+        if (repo.syncing()) {
+            view.value = view.value.copy(status = "Синхронизация уже идёт — «Обновить», когда закончится.")
+            return
+        }
         view.value = view.value.copy(busy = true, status = "")
         pool.execute {
             // Сбой внутри синхронизации — отказ на экране, а не падение процесса со службами «AI» (D-59).
