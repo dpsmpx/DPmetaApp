@@ -156,6 +156,40 @@ class LinuxEnvironment(private val vfs: Vfs, dir: String = DIR) {
             ),
         )
 
+        /**
+         * Установка llama.cpp (D-105): сервер модели из пакетов Alpine
+         * (`community`, aarch64); в конце — его версия.
+         */
+        fun llamaInstall(): ProcessSpec = ProcessSpec(listOf("/bin/sh", "-lc", "apk add llama-server && llama-server --version"))
+
+        /** Каталоги гостя, откуда берётся модель (D-105): свои модели, копии папок (D-99) и всё хранилище. */
+        val MODEL_DIRS: List<String> = listOf("/root/models/", "/root/files/", "/root/storage/shared/")
+
+        private val MODEL_PATH = Regex("/[A-Za-z0-9._/ ()+@-]+\\.gguf")
+
+        /**
+         * Запуск сервера модели (D-105): только `127.0.0.1` — к нему ходит
+         * только это устройство; модель — файл `.gguf` из [MODEL_DIRS], без
+         * `..`; путь — отдельным аргументом, без оболочки.
+         */
+        fun llamaServe(model: String, port: Int, contextTokens: Int, threads: Int): Outcome<ProcessSpec> = when {
+            !MODEL_PATH.matches(model) || model.split('/').any { it == ".." || it == "." } ->
+                Outcome.failure(DiagCode.VALUE_INVALID, "модель — путь к файлу .gguf без «..»", model)
+            MODEL_DIRS.none { model.startsWith(it) } ->
+                Outcome.failure(DiagCode.VALUE_INVALID, "модель — из ${MODEL_DIRS.joinToString(", ")}", model)
+            port !in 1024..65535 -> Outcome.failure(DiagCode.VALUE_INVALID, "порт — 1024…65535", "$port")
+            contextTokens !in 512..131_072 -> Outcome.failure(DiagCode.VALUE_INVALID, "контекст — 512…131072 токенов", "$contextTokens")
+            threads !in 1..16 -> Outcome.failure(DiagCode.VALUE_INVALID, "потоков — 1…16", "$threads")
+            else -> Outcome.success(
+                ProcessSpec(
+                    listOf(
+                        "llama-server", "-m", model, "--host", "127.0.0.1", "--port", "$port",
+                        "--ctx-size", "$contextTokens", "--threads", "$threads",
+                    ),
+                ),
+            )
+        }
+
         /** Адрес IPv4 (четыре числа 0…255) или IPv6 (шестнадцатеричные группы через `:`). */
         fun isIpLiteral(s: String): Boolean {
             if (IPV4.matches(s)) return s.split('.').all { it.toInt() in 0..255 && (it == "0" || !it.startsWith("0")) }

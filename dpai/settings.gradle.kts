@@ -55,6 +55,8 @@ include(
     ":providers",
     // Файлы пользователя (D-99): копия папок с синхронизацией, текст.
     ":files",
+    // LocalAIService (D-105): подсказки локальной модели; ядро от неё не зависит.
+    ":localai",
     ":analytics",
     ":orchestrator",
     ":ui",

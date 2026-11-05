@@ -143,4 +143,21 @@ class LinuxEnvironmentTest {
         assertEquals(listOf("apk", "upgrade", "-U", "--no-progress"), LinuxEnvironment.apk(LinuxEnvironment.Apk.UPGRADE, emptyList()).valueOrNull()!!.command)
         assertEquals("/root/.claude-slot-2", LinuxEnvironment.slotDir(2))
     }
+
+    @Test
+    fun llamaServerListensOnlyOnThisDeviceAndTakesOnlyGgufFromUserDirs() {
+        assertEquals(listOf("/bin/sh", "-lc", "apk add llama-server && llama-server --version"), LinuxEnvironment.llamaInstall().command)
+        val ok = LinuxEnvironment.llamaServe("/root/files/models/qwen2.5-1.5b q4.gguf", 8080, 4096, 4).valueOrNull()!!
+        assertEquals(
+            listOf("llama-server", "-m", "/root/files/models/qwen2.5-1.5b q4.gguf", "--host", "127.0.0.1", "--port", "8080", "--ctx-size", "4096", "--threads", "4"),
+            ok.command,
+            "путь — отдельным аргументом, без оболочки; только 127.0.0.1",
+        )
+        for (bad in listOf("/root/models/../.ssh/id.gguf", "/etc/passwd", "/root/models/x.bin", "/tmp/x.gguf", "/root/models/x.gguf;rm -rf /", "models/x.gguf")) {
+            assertEquals(DiagCode.VALUE_INVALID, (LinuxEnvironment.llamaServe(bad, 8080, 4096, 4) as Outcome.Failure).errors.single().code, bad)
+        }
+        assertEquals(DiagCode.VALUE_INVALID, (LinuxEnvironment.llamaServe("/root/models/x.gguf", 80, 4096, 4) as Outcome.Failure).errors.single().code, "порт ниже 1024")
+        assertEquals(DiagCode.VALUE_INVALID, (LinuxEnvironment.llamaServe("/root/models/x.gguf", 8080, 100, 4) as Outcome.Failure).errors.single().code)
+        assertEquals(DiagCode.VALUE_INVALID, (LinuxEnvironment.llamaServe("/root/models/x.gguf", 8080, 4096, 64) as Outcome.Failure).errors.single().code)
+    }
 }
