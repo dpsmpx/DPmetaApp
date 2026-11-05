@@ -211,11 +211,15 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
     }
 
     /** Основная ветка — одно правило для чтения и обновления: отметка, цель `origin/HEAD`, `main`, текущая ветка. */
-    private fun mainOf(repo: Repository): String =
-        repo.config.getString("dpmeta", null, "main")
-            ?: repo.exactRef(Constants.R_REMOTES + "origin/HEAD")?.takeIf { it.isSymbolic }?.target?.name?.removePrefix(Constants.R_REMOTES + "origin/")
-            ?: "main".takeIf { repo.exactRef(Constants.R_REMOTES + "origin/main") != null }
+    private fun mainOf(repo: Repository): String {
+        // Кандидат годится, только если его ветка GitHub в клоне есть: основную на GitHub могли переименовать.
+        fun present(b: String?) = b?.takeIf { repo.exactRef(Constants.R_REMOTES + "origin/" + it) != null }
+        return present(repo.config.getString("dpmeta", null, "main"))
+            ?: present(repo.exactRef(Constants.R_REMOTES + "origin/HEAD")?.takeIf { it.isSymbolic }?.target?.name?.removePrefix(Constants.R_REMOTES + "origin/"))
+            ?: present("main")
+            ?: repo.config.getString("dpmeta", null, "main")
             ?: repo.branch
+    }
 
     /** Ветки GitHub в клоне с головами; клона нет — `ENTITY_NOT_FOUND`. Символьная `origin/HEAD` — не ветка. */
     fun heads(project: String): Outcome<List<Head>> = withRepo(project) { repo ->

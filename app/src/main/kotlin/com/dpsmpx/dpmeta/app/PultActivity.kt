@@ -187,10 +187,12 @@ open class PultActivity : ComponentActivity() {
                     is Outcome.Success -> {
                         clonesToken = token
                         // До первого выбора (и после «Позже») отмечен реестр (D-70); дальше — выбор автора.
-                        val checked = if (first || !clonesAsked()) r.value.filter { it.registry }.map { it.slug }.toSet() else chosen
-                        // Отмеченные, которых в списке больше нет (нет доступа, переименован, в архиве), — видны: их можно снять.
-                        val listed = r.value.map { it.slug.lowercase() }.toSet()
-                        val gone = chosen.filter { it.lowercase() !in listed }.map { com.dpsmpx.dpmeta.app.data.PultRepository.CloneOption(it, registry = false, private = true, gone = true) }
+                        // Выбор сверяется со списком без регистра: переименованный лишь регистром — та же отметка, с новым именем.
+                        val bySlug = r.value.associateBy { it.slug.lowercase() }
+                        val kept = chosen.mapNotNull { bySlug[it.lowercase()]?.slug }.toSet()
+                        // Отмеченные, которых в списке больше нет (нет доступа, переименован, в архиве), — видны отмеченными: их можно снять.
+                        val gone = chosen.filter { it.lowercase() !in bySlug }.map { com.dpsmpx.dpmeta.app.data.PultRepository.CloneOption(it, registry = false, private = true, gone = true) }
+                        val checked = if (first || !clonesAsked()) r.value.filter { it.registry }.map { it.slug }.toSet() else kept + gone.map { it.slug }
                         view.value = view.value.copy(busy = false, status = "", clonePrompt = ClonePrompt(r.value + gone, checked, first))
                     }
                     is Outcome.Failure -> {
@@ -431,7 +433,7 @@ open class PultActivity : ComponentActivity() {
                         feed = feed,
                         names = repo.names(),
                     ).also { loadHistory() }
-                    is Outcome.Failure -> view.value.copy(busy = false, status = "Не вышло: ${r.diagnostics.first().code.name} — ${r.diagnostics.first().message}")
+                    is Outcome.Failure -> view.value.copy(busy = false, status = "Не вышло: ${r.diagnostics.first().code.name} — ${r.diagnostics.first().message}" + (note?.let { " $it" } ?: ""))
                 }
             }
         }
