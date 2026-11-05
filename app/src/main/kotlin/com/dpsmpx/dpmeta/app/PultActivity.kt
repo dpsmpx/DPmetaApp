@@ -30,7 +30,6 @@ import com.dpsmpx.dpmeta.app.ui.PultTheme
 import com.dpsmpx.dpmeta.app.ui.PultView
 import java.io.File
 import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
 
 /**
  * Экран пульта (этап 3): сводка, проекты, карточка, вопросы автору — только
@@ -74,9 +73,10 @@ open class PultActivity : ComponentActivity() {
             }
         }
         window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
-        pool = Executors.newFixedThreadPool(THREADS)
+        // Пул — на процесс (D-59, D-65): синхронизация переживает окно.
+        pool = com.dpsmpx.dpmeta.app.data.PultPool.work
         // Клоны репозиториев (D-65) — свой каталог в памяти приложения, рядом с данными пульта.
-        repo = PultRepository(NioVfs(filesDir.toPath().resolve("dpmeta")), Clock.SYSTEM, pool, File(filesDir, CLONES_DIR))
+        repo = PultRepository(NioVfs(filesDir.toPath().resolve("dpmeta")), Clock.SYSTEM, pool, File(filesDir, CLONES_DIR), com.dpsmpx.dpmeta.app.data.PultPool.clones)
         secrets = SecretStore(NioVfs(noBackupFilesDir.toPath().resolve("dpmeta")))
         // Блокировка всего приложения (D-59) уже закрыла окно экраном входа — своей не нужно.
         if (AppLock.installed) open() else Lock.ask(this, "Вход в пульт", pinOnly = false, onOpen = ::open, onDenied = { _, _ -> finish() })
@@ -136,9 +136,38 @@ open class PultActivity : ComponentActivity() {
 
     override fun onDestroy() {
         authSignal?.cancel()
-        if (::pool.isInitialized) pool.shutdownNow()
+        // Пул не останавливается: он на процесс, и прерванная синхронизация роняла бы процесс вместе со службами «AI».
         super.onDestroy()
     }
+
+    override fun onResume() {
+        super.onResume()
+        if (opened) entrySync()
+    }
+
+    /** Окно открыто входом ([open]) — до этого синхронизации при входе нет. */
+    private var opened = false
+
+    /**
+     * Синхронизация при входе (D-65): при каждом возвращении в пульт — после
+     * входа по PIN и из фона, — если последняя старше `Rules.ENTRY_SYNC_EVERY`.
+     * Токен — только если ключ Keystore уже открыт (вход в приложение или
+     * разблокировка телефона в последние 5 минут, T-01): второго окна PIN
+     * нет; закрыт — синхронизирует «Обновить» или следующий вход.
+     */
+    private fun entrySync() {
+        val v = view.value
+        if (v.busy || !secrets.exists()) return
+        val now = Clock.SYSTEM.now()
+        if (v.state?.let { now - it.asOf < com.dpsmpx.dpmeta.metrics.Rules.ENTRY_SYNC_EVERY } == true) return
+        entryAt?.let { if (now - it < com.dpsmpx.dpmeta.metrics.Rules.ENTRY_SYNC_EVERY) return }
+        val token = (secrets.load() as? Outcome.Success)?.value ?: return
+        entryAt = now
+        sync(token)
+    }
+
+    /** Когда началась последняя синхронизация при входе — не повторять её при каждом возвращении в окно. */
+    private var entryAt: com.dpsmpx.dpai.core.clock.Timestamp? = null
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
@@ -158,10 +187,8 @@ open class PultActivity : ComponentActivity() {
         loadHistory()
         // Файлы прежних «Поделиться» (D-67) живут до следующего входа в пульт — не до поворота.
         if (coldStart) pool.execute { File(cacheDir, EXPORT_DIR).deleteRecursively() }
-        // Синхронизация при входе (D-65): не чаще ENTRY_SYNC_EVERY; ключ токена открыт входом — без второго окна PIN.
-        if (coldStart && hasToken && (state == null || Clock.SYSTEM.now() - state.asOf >= com.dpsmpx.dpmeta.metrics.Rules.ENTRY_SYNC_EVERY)) {
-            (secrets.load() as? Outcome.Success)?.value?.let(::sync)
-        }
+        opened = true
+        entrySync()
         setContent {
             PultTheme {
                 PultApp(view.value, loader, onSync = ::sync, onSaveToken = ::saveToken, onForgetToken = ::forgetToken, onAi = aiIntent()?.let { i -> { startActivity(i) } }, onExport = ::export)
@@ -305,7 +332,8 @@ open class PultActivity : ComponentActivity() {
         if (pool.isShutdown) return
         view.value = view.value.copy(busy = true, status = "")
         pool.execute {
-            val r = repo.sync(token)
+            // Сбой внутри синхронизации — отказ на экране, а не падение процесса со службами «AI» (D-59).
+            val r = runCatching { repo.sync(token) }.getOrElse { Outcome.failure(DiagCode.INTERNAL_ERROR, "синхронизация прервана: ${it.javaClass.simpleName}") }
             val state = (repo.state() as? Outcome.Success)?.value
             val feed = (repo.feed() as? Outcome.Success)?.value.orEmpty()
             runOnUiThread {
@@ -329,9 +357,6 @@ open class PultActivity : ComponentActivity() {
         private const val PENDING_JSON = "export.json"
         private const val PENDING_PERIOD = "export.period"
         private const val PENDING_AS_OF = "export.asOf"
-
-        /** Запросы дат коммитов — пулом (D-50); тот же предел, что у `dpmeta-cli`. */
-        const val THREADS = 8
 
         /** Каталог клонов репозиториев экосистемы (D-65) в `filesDir`. */
         const val CLONES_DIR = "clones"

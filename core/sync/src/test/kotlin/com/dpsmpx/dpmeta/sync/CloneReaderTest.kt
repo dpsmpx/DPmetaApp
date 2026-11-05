@@ -91,7 +91,7 @@ class CloneReaderTest {
     fun branchesCommitsAndFilesComeFromTheCloneAndPullsFromRest() {
         val clones = Clones(File(tmp, "clones"), { Outcome.success(Unit) }, setOf("file"))
         val alpha = project("dpsmpx/Alpha")
-        // Ветка сборок не клонируется вовсе — читатель её и не увидит.
+        // Клон взял и ветку сборок (excluded — { false }): читатель её отсеивает сам.
         clones.sync("dpsmpx/Alpha", remote("alpha", mapOf("TODO.md" to "- [ ] пункт\n")), null, { false })
         val rest = Rest()
         val r = CloneReader(clones, rest, host, build)

@@ -37,7 +37,14 @@ import java.util.concurrent.ExecutorService
  * `dpai/storage` в каталоге приложения (D-34). Запускается по кнопке; фон по
  * расписанию — этап 7 (WorkManager, D-18).
  */
-class PultRepository(private val vfs: Vfs, private val clock: Clock, private val pool: ExecutorService, private val clonesDir: java.io.File) {
+class PultRepository(
+    private val vfs: Vfs,
+    private val clock: Clock,
+    private val pool: ExecutorService,
+    private val clonesDir: java.io.File,
+    /** Пул клонов (D-65): первое клонирование не занимает потоки [pool]. */
+    private val clonePool: ExecutorService = pool,
+) {
     private val store = Store(vfs, clock, RandomSource.secure())
 
     /** Итог синхронизации для экрана: строка «что вышло» и отказы источников. */
@@ -106,8 +113,21 @@ class PultRepository(private val vfs: Vfs, private val clock: Clock, private val
         }
     }
 
-    /** Синхронизация целиком; зовётся не из главного потока. */
+    /**
+     * Синхронизация целиком; зовётся не из главного потока. Вторая разом (вход
+     * и «Обновить», окно после поворота) не начинается: клоны и состояние —
+     * одни на процесс.
+     */
     fun sync(token: Secret): Outcome<SyncReport> {
+        if (!running.compareAndSet(false, true)) return Outcome.failure(DiagCode.STATE_CONFLICT, "синхронизация уже идёт", "sync")
+        try {
+            return syncNow(token)
+        } finally {
+            running.set(false)
+        }
+    }
+
+    private fun syncNow(token: Secret): Outcome<SyncReport> {
         val started = clock.monotonicNanos()
         val previous = when (val r = store.readState()) {
             is Outcome.Failure -> return r
@@ -142,7 +162,7 @@ class PultRepository(private val vfs: Vfs, private val clock: Clock, private val
         // Клоны (D-65): каждый репозиторий реестра — клонировать или обновить; подсистемы — в клоне DPmetaApp.
         val clones = com.dpsmpx.dpmeta.git.Clones(clonesDir, com.dpsmpx.dpmeta.git.Clones.allowList())
         val reader = CloneReader(clones, GitHubReader(gh, host), host, Rules::isBuildBranch)
-        val cloned = cloneAll(reg, clones, reader, token, parallel)
+        val cloned = cloneAll(reg, clones, reader, token)
         val result = Sync.run(Sync.plan(reg, known, carried.map { it.project to it.kind }.toSet()), reader, clock, commits, parallel)
         val state = EcosystemState.derive(reg, result.observations, result.failures + cloned.failures + carried, previous, clock.now())
         store.writeState(state).let { if (it is Outcome.Failure) return it }
@@ -167,19 +187,18 @@ class PultRepository(private val vfs: Vfs, private val clock: Clock, private val
      * отказ источника `clone` проекта: видны в «Ошибках источников», клон
      * сам не чинится. Клон DPmetaApp — отказом проекта DPmetaApp.
      */
-    private fun cloneAll(reg: Registry, clones: com.dpsmpx.dpmeta.git.Clones, reader: CloneReader, token: Secret, parallel: Parallel): Cloned {
+    private fun cloneAll(reg: Registry, clones: com.dpsmpx.dpmeta.git.Clones, reader: CloneReader, token: Secret): Cloned {
         val byKey = reg.shown.groupBy { reader.key(it) }
         val now = clock.now()
         val jobs = byKey.keys.sorted().map { key ->
-            {
-                val remote = java.net.URI.create("https://github.com/$key.git")
-                key to clones.sync(key, remote, token, Rules::isBuildBranch)
+            clonePool.submit<Pair<String, Outcome<com.dpsmpx.dpmeta.git.Clones.Report>>> {
+                key to clones.sync(key, com.dpsmpx.dpmeta.git.Clones.github(key), token, Rules::isBuildBranch)
             }
         }
         var ok = 0
         var created = 0
         val failures = mutableListOf<SourceFailure>()
-        for ((key, r) in parallel.all(jobs)) {
+        for ((key, r) in jobs.map { it.get() }) {
             val owner = byKey.getValue(key).let { ps -> ps.firstOrNull { it.dir == null } ?: ps.first() }.name
             when (r) {
                 is Outcome.Failure -> failures += SourceFailure(owner, CLONE, r.diagnostics.first(), now)
@@ -187,7 +206,9 @@ class PultRepository(private val vfs: Vfs, private val clock: Clock, private val
                     ok++
                     if (r.value.action == com.dpsmpx.dpmeta.git.Clones.Action.CLONED) created++
                     for (c in r.value.conflicts) {
-                        failures += SourceFailure(owner, CLONE, Diagnostic.error(DiagCode.STATE_CONFLICT, "клон разошёлся с GitHub: ${c.kind.title} (${c.branch}) — сам не чинится", owner), now)
+                        // Перезаписанную историю клон берёт по GitHub (fetch с «+») — сообщение одно; остальное сам не чинит.
+                        val tail = if (c.kind == com.dpsmpx.dpmeta.git.Clones.ConflictKind.REWRITTEN) "клон взял историю GitHub" else "сам не чинится"
+                        failures += SourceFailure(owner, CLONE, Diagnostic.error(DiagCode.STATE_CONFLICT, "клон разошёлся с GitHub: ${c.kind.title} (${c.branch}) — $tail", owner), now)
                     }
                 }
             }
@@ -202,5 +223,8 @@ class PultRepository(private val vfs: Vfs, private val clock: Clock, private val
 
         /** Вид отказа источника для клона (D-65): «Ошибки источников» показывают его рядом с файлами. */
         const val CLONE = "clone"
+
+        /** Синхронизация идёт (на процесс): клоны и состояние одни. */
+        private val running = java.util.concurrent.atomic.AtomicBoolean(false)
     }
 }

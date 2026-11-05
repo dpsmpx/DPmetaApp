@@ -32,14 +32,17 @@ object Rules {
     const val MAIN_BRANCH: String = "main"
 
     /**
-     * Ветки сборок экосистемы (D-65): сироты с APK и архивами — в клоны не
-     * берутся и в ветки проекта не входят (не работа, а выкладка): DPmetaApp
-     * и DPpass — `apk_debug`, Galdhold — `apk-build` и `windows-debug-build`,
-     * DPlang — `apk-builds`, AIM Trainer — `win_debug_builds`.
+     * Ветки сборок экосистемы (D-65, D-33): сироты с APK и архивами — в
+     * клоны не берутся и в ветки проекта не входят (не работа, а выкладка).
+     * Имена: Galdhold — `windows-debug-build`, DPlang — `apk-builds`, AIM
+     * Trainer — `win_debug_builds`, прежняя DPmetaApp — `linux-debug`; шаблоны
+     * ([isBuildBranch], как у хука начала сессии): `*_debug` (`apk_debug`,
+     * `linux_debug`, `windows_debug` DPmetaApp и DPpass — D-33) и `apk-*`
+     * (`apk-build` Galdhold и прежние сборки по версиям).
      */
-    val BUILD_BRANCHES: Set<String> = setOf("apk_debug", "apk-build", "apk-builds", "windows-debug-build", "win_debug_builds")
+    val BUILD_BRANCHES: Set<String> = setOf("windows-debug-build", "apk-builds", "win_debug_builds", "linux-debug")
 
-    fun isBuildBranch(name: String): Boolean = name in BUILD_BRANCHES
+    fun isBuildBranch(name: String): Boolean = name in BUILD_BRANCHES || name.endsWith("_debug") || name.startsWith("apk-")
 
     /** Синхронизация при входе в приложение (D-65): не чаще этого срока — вход за входом не повторяет её. */
     val ENTRY_SYNC_EVERY: Duration = 15.minutes
