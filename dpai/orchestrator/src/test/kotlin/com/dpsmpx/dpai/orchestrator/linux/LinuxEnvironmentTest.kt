@@ -107,6 +107,25 @@ class LinuxEnvironmentTest {
         assertTrue(LinuxEnvironment.isIpLiteral("2001:db8::53"))
     }
 
+    /** Ключ сервера модели (D-105, T18) — как DNS (A-3): ни через ссылку на месте файла, ни через ссылку-каталог. */
+    @Test
+    fun llamaKeyIsNeverWrittenThroughGuestLinks() {
+        val token = dir.resolve("control-token").also { it.toFile().writeText("TOKEN") }
+        val llama = dir.resolve("linux/rootfs/root/.config/llama").also { it.toFile().mkdirs() }
+        assumeTrue(runCatching { Files.createSymbolicLink(llama.resolve("api-key"), llama.fileSystem.getPath("../../../../../control-token")) }.isSuccess, "символьные ссылки недоступны")
+        val env = LinuxEnvironment(NioVfs(dir))
+        assertIs<Outcome.Success<Unit>>(env.writeLlamaKey("KEY".toByteArray()))
+        assertEquals("TOKEN", token.toFile().readText(), "файл приложения не затёрт")
+        assertFalse(Files.isSymbolicLink(llama.resolve("api-key")), "ссылка заменена файлом")
+        assertEquals("KEY", llama.resolve("api-key").toFile().readText())
+        // Ссылка на месте каталога — отказ, цель не трогается.
+        llama.toFile().deleteRecursively()
+        Files.createSymbolicLink(llama, llama.fileSystem.getPath("../../../.."))
+        assertEquals(DiagCode.OPERATION_NOT_ALLOWED, (env.writeLlamaKey("X".toByteArray()) as Outcome.Failure).errors.single().code)
+        assertEquals("TOKEN", token.toFile().readText())
+        assertFalse(dir.resolve("api-key").toFile().exists(), "мимо ссылки-каталога — ничего")
+    }
+
     /**
      * A-3 аудита безопасности 1 ноября 2026: гость кладёт ссылку на место
      * `resolv.conf` или `/etc` — запись DNS не уходит к её цели.

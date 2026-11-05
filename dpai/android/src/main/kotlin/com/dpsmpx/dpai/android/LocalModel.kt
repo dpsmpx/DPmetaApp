@@ -15,7 +15,6 @@ import com.dpsmpx.dpai.execution.process.RunningProcess
 import com.dpsmpx.dpai.orchestrator.linux.LinuxEnvironment
 import com.dpsmpx.dpai.providers.ProviderHosts
 import com.dpsmpx.dpai.providers.Providers
-import com.dpsmpx.dpai.storage.vfs.NioVfs
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
@@ -123,8 +122,11 @@ object LocalModel {
         }
         val gen = ++generation
         val tail = ArrayDeque<String>()
+        // Пробовать порт — только когда свой процесс сказал, что слушает его: иначе ключ уйдёт тому, кто занял порт первым.
+        val own = java.util.concurrent.atomic.AtomicBoolean(false)
         state.value = Status(running = false, model = model, port = port)
         val p = when (val r = host.start(spec) { line ->
+            if ("listening" in line.text && "$port" in line.text) own.set(true)
             synchronized(tail) {
                 tail.addLast(line.text)
                 while (tail.size > TAIL) tail.removeFirst()
@@ -143,7 +145,7 @@ object LocalModel {
         val deadline = clock.monotonicNanos() + START_SECONDS * 1_000_000_000L
         var ready = false
         while (!ready && p.isAlive && clock.monotonicNanos() < deadline) {
-            ready = probe?.models()?.let { it is Outcome.Success } ?: false
+            ready = own.get() && probe?.models()?.let { it is Outcome.Success } ?: false
             if (!ready) p.awaitExit(1.seconds)
         }
         if (!ready) {
@@ -209,15 +211,10 @@ object LocalModel {
     private fun newKey(): String = RandomSource.secure().nextBytes(32).joinToString("") { "%02x".format(it) }
 
     /**
-     * Ключ — файлом гостя, не в аргументах процесса (T18): домашняя папка
-     * Linux — в закрытых данных приложения; диск приложения и вкладка
-     * «Файлы» каталог `~/.config/llama` не показывают (D-96, `AppDisk.hidden`).
+     * Ключ — файлом гостя, не в аргументах процесса (T18), без следования
+     * ссылкам гостя (A-3, `LinuxEnvironment.writeLlamaKey`); диск приложения
+     * и вкладка «Файлы» каталог `~/.config/llama` не показывают (D-96).
      */
     private fun writeKey(context: Context, key: String): Boolean =
-        runCatching {
-            val vfs = NioVfs(GuestPaths.home(context).toPath())
-            val rel = LinuxEnvironment.LLAMA_KEY_FILE.removePrefix("/root/")
-            vfs.mkdirs(rel.substringBeforeLast('/'))
-            vfs.write(rel, key.toByteArray())
-        }.isSuccess
+        LinuxSetup.environment(context).writeLlamaKey(key.toByteArray()) is Outcome.Success
 }

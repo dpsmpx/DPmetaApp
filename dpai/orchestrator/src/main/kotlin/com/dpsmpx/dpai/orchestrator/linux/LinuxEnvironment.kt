@@ -34,6 +34,7 @@ class LinuxEnvironment(private val vfs: Vfs, dir: String = DIR) {
 
     /** Черновик `resolv.conf` — вне корня гостя: гость его не видит и ссылкой не подменит. */
     private val dnsDraft = Vfs.join(dir, "resolv.conf.draft")
+    private val keyDraft = Vfs.join(dir, "llama-key.draft")
 
     /** Версия установленной корневой системы; `null` — не установлена или установка оборвалась. */
     fun installed(): String? = vfs.read(ready)?.toString(Charsets.UTF_8)?.trim()?.ifEmpty { null }
@@ -86,6 +87,31 @@ class LinuxEnvironment(private val vfs: Vfs, dir: String = DIR) {
             Outcome.success(good.size)
         } catch (e: IOException) {
             Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "/etc/resolv.conf гостя не записан", e, path)))
+        }
+    }
+
+    /**
+     * Ключ API сервера локальной модели в госте (D-105, T18), как
+     * [writeDns] (A-3): каталоги `~/.config` и `~/.config/llama` пишет и гость
+     * — ссылка на их месте — отказ; ключ пишется черновиком вне корня гостя
+     * и встаёт на место переименованием: ссылка на месте файла заменяется
+     * файлом, её цель не трогается.
+     */
+    fun writeLlamaKey(key: ByteArray): Outcome<Unit> {
+        val rel = LLAMA_KEY_FILE.removePrefix("/")
+        val path = Vfs.join(rootfs, rel)
+        val dirs = rel.split('/').dropLast(1).runningFold(rootfs) { acc, part -> Vfs.join(acc, part) }.drop(1)
+        return try {
+            for (d in dirs) {
+                if (vfs.isSymlink(d)) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "каталог гостя — символьная ссылка: ключ сервера не записан", d)
+                vfs.mkdirs(d)
+                if (vfs.isSymlink(d)) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "каталог гостя — символьная ссылка: ключ сервера не записан", d)
+            }
+            vfs.write(keyDraft, key)
+            vfs.rename(keyDraft, path)
+            Outcome.success(Unit)
+        } catch (e: IOException) {
+            Outcome.Failure(listOf(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "ключ сервера не записан", e, path)))
         }
     }
 
