@@ -172,7 +172,7 @@ fun EcosystemDialog(model: DemoModel, onDone: () -> Unit) {
 }
 
 /** Вид работы, который выгружает DPmeta (`DPmeta:C-13`): по умолчанию — только он. */
-private const val DOCS = "docs"
+internal const val DOCS = "docs"
 
 /** Манифест больше этого — не манифест: файл, выбранный по ошибке, не читается в память целиком. */
 private const val MAX_MANIFEST_BYTES = 4 * 1024 * 1024

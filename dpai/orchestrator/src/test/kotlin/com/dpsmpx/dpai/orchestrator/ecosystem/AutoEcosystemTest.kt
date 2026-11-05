@@ -95,6 +95,8 @@ class AutoEcosystemTest {
         assertEquals(setOf("ecosystem:app/a1", "ecosystem:app/a4"), c.byKey.keys)
         assertEquals(policy().digest(), r.placed.first().policy, "в записи — отпечаток политики")
         assertEquals(r.placed, (a.entries() as Outcome.Success).value, "след сохранён")
+        val queued = AutoEntry(clock.now(), "app", "a9", null, "0123456789abcdef")
+        assertEquals(listOf(queued), (AutoEcosystem.readLedger(AutoEcosystem.ledgerJson(listOf(queued))) as Outcome.Success).value, "запись без id — команда в очереди")
     }
 
     @Test
@@ -155,6 +157,40 @@ class AutoEcosystemTest {
         assertTrue(r.placed.isEmpty())
         assertEquals(2, r.failures.size)
         assertEquals(emptyList(), (a.entries() as Outcome.Success).value)
+    }
+
+    @Test
+    fun queuedCommandGetsItsTaskLaterAndHumanPlacedIsNotThePolicys() {
+        val a = auto()
+        a.enable(policy(perDay = 1))
+        val ops = HashMap<String, Outcome<TaskId>>()
+        // a4 человек поставил сам из окна — до политики.
+        ops["ecosystem:app/a4"] = Outcome.success(ids.next(IdKinds.TASK))
+        val queuedPass = (a.pass(projects, setOf("app"), { true }, { Outcome.failure(DiagCode.COMMAND_QUEUED, "в очереди") }) { ops[it] } as Outcome.Success).value
+        assertEquals(listOf("a1"), queuedPass.queued.map { it.suggestion }, "очередь контура — тоже задача политики, с записью")
+        assertTrue(queuedPass.placed.isEmpty(), "без id — без сообщения о постановке")
+        assertTrue(queuedPass.refused.none { it.first == "ecosystem:app/a4" }, "поставленное человеком — не политики и не отказ")
+        val id = ids.next(IdKinds.TASK)
+        ops["ecosystem:app/a1"] = Outcome.success(id)
+        val c = Contour(ids)
+        val later = (a.pass(projects, setOf("app"), c::open, c::place) { ops[it] } as Outcome.Success).value
+        assertEquals(listOf<TaskId?>(id), later.placed.map { it.task }, "контур исполнил очередь — id в следе и сообщение")
+        assertEquals(0, c.calls)
+        assertEquals(listOf("a1"), (a.entries() as Outcome.Success).value.map { it.suggestion })
+    }
+
+    @Test
+    fun queuedCommandRefusedByTheContourLeavesTheLedger() {
+        val a = auto()
+        a.enable(policy(perDay = 1))
+        val ops = HashMap<String, Outcome<TaskId>>()
+        a.pass(projects, setOf("app"), { true }, { Outcome.failure(DiagCode.COMMAND_QUEUED, "в очереди") }) { ops[it] }
+        ops["ecosystem:app/a1"] = Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "отказ контура")
+        val r = (a.pass(projects, setOf("app"), { true }, { Outcome.failure(DiagCode.COMMAND_QUEUED, "в очереди") }) { ops[it] } as Outcome.Success).value
+        assertEquals(DiagCode.OPERATION_NOT_ALLOWED, r.failures.single().code)
+        assertTrue(r.placed.isEmpty())
+        assertEquals(listOf("a4"), r.queued.map { it.suggestion }, "место отказавшей команды свободно")
+        assertEquals(listOf("a4"), (a.entries() as Outcome.Success).value.map { it.suggestion })
     }
 
     @Test

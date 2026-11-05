@@ -86,26 +86,40 @@ object EcosystemAuto {
         val open: (com.dpsmpx.dpai.core.ids.TaskId) -> Boolean = { id ->
             orchestrator == null || orchestrator.tasks.tasks[id]?.state?.let { it !in TaskLifecycle.table.terminal } == true
         }
-        val r = when (val p = auto.pass(projects, setOf(project), open, model::addTask)) {
+        // Итог команды с ключом, если контур её уже исполнил (D-42): команда политики из очереди или поставленная человеком.
+        val known: (String) -> Outcome<com.dpsmpx.dpai.core.ids.TaskId>? = { key ->
+            orchestrator?.operations?.byKey?.get(key)?.let { r ->
+                if (r.status == com.dpsmpx.dpai.core.operation.OperationStatus.FAILED) {
+                    Outcome.failure(r.code ?: com.dpsmpx.dpai.core.diagnostics.DiagCode.INTERNAL_ERROR, "контур отказал в задаче политики", key)
+                } else {
+                    r.value?.let { com.dpsmpx.dpai.core.ids.IdKinds.TASK.parse(it) }
+                        ?: Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.INTERNAL_ERROR, "у команды нет id задачи", key)
+                }
+            }
+        }
+        val r = when (val p = auto.pass(projects, setOf(project), open, model::addTask, known)) {
             is Outcome.Failure -> return "След политики не читается: ${p.errors.firstOrNull()?.message}".also { log.error(TAG, it) }
             is Outcome.Success -> p.value
         }
         val titles = projects.flatMap { p -> p.suggestions.map { s -> "${p.key}/${s.key}" to s.title } }.toMap()
         val at = Clock.SYSTEM.now()
+        for (e in r.queued) log.info(TAG, "по политике ${e.policy}: ${e.project}/${e.suggestion} — ждёт очереди контура")
         for (e in r.placed) {
+            val task = e.task ?: continue
             val title = titles["${e.project}/${e.suggestion}"] ?: e.suggestion
-            log.info(TAG, "по политике ${e.policy}: ${e.project}/${e.suggestion} → ${e.task.value}")
+            log.info(TAG, "по политике ${e.policy}: ${e.project}/${e.suggestion} → ${task.value}")
             notifier.show(
                 Notification(
                     "ecosystem-auto:${e.key}", NotificationCategory.WARNING, "Поставлена по политике",
                     "«$title» — ${e.project}/${e.suggestion}. Без подтверждения: по политике прогона.",
-                    DeepLink.of(DeepLink.Kind.TASK, e.task), 1, at, at,
+                    DeepLink.of(DeepLink.Kind.TASK, task), 1, at, at,
                 ),
             )
         }
         r.failures.forEach { log.warn(TAG, "задача политики не поставлена: ${it.message}") }
         return buildString {
             append("Поставлено по политике: ${r.placed.size}")
+            if (r.queued.isNotEmpty()) append("; ждут очереди контура: ${r.queued.size}")
             if (r.refused.isNotEmpty()) append("; политика не пропустила: ${r.refused.size}")
             if (r.failures.isNotEmpty()) append("; отказы: ${r.failures.joinToString("; ") { it.message }}")
         }
@@ -180,7 +194,7 @@ internal fun AutoPolicySection(model: DemoModel, project: EcosystemProject?, man
             }
         }
         for (e in entries.takeLast(5).asReversed()) {
-            Text("${EcosystemAuto.stamp(e.at)} · ${e.project}/${e.suggestion} → ${e.task.value}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("${EcosystemAuto.stamp(e.at)} · ${e.project}/${e.suggestion} → ${e.task?.value ?: "в очереди контура"}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         status?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
     }

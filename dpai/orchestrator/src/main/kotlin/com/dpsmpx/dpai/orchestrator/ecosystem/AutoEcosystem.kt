@@ -94,18 +94,23 @@ data class AutoPolicy(
     }
 }
 
-/** Задача, которую поставила политика (D-106): когда, откуда, какая и по какой версии рамок. */
-data class AutoEntry(val at: Timestamp, val project: String, val suggestion: String, val task: TaskId, val policy: String) {
+/**
+ * Задача, которую поставила политика (D-106): когда, откуда, какая и по
+ * какой версии рамок. [task] `null` — команда ждёт в очереди контура
+ * (`COMMAND_QUEUED`, D-94): id появится, когда контур её исполнит.
+ */
+data class AutoEntry(val at: Timestamp, val project: String, val suggestion: String, val task: TaskId?, val policy: String) {
     val key: String get() = EcosystemPlan.key(project, suggestion)
 }
 
 /**
- * Итог прохода: поставленные задачи; предложения, которые политика не
+ * Итог прохода: поставленные задачи (с id — о каждой человеку сообщают);
+ * команды, ждущие очереди контура; предложения, которые политика не
  * пустила, с причиной (для экрана); отказы постановки.
  */
-data class AutoPass(val placed: List<AutoEntry>, val refused: List<Pair<String, String>>, val failures: List<Diagnostic>) {
+data class AutoPass(val placed: List<AutoEntry>, val queued: List<AutoEntry>, val refused: List<Pair<String, String>>, val failures: List<Diagnostic>) {
     companion object {
-        val NONE = AutoPass(emptyList(), emptyList(), emptyList())
+        val NONE = AutoPass(emptyList(), emptyList(), emptyList(), emptyList())
     }
 }
 
@@ -147,8 +152,12 @@ class AutoEcosystem(private val store: DocumentStore, private val clock: Clock) 
     /**
      * Проход: предложения [projects] с контуром в [connected] → рамки
      * политики → [place] каждой разрешённой задачи. [isOpen] — задача ещё
-     * не кончилась (для предела открытых). Политики нет, срок вышел или след
-     * не читается — ни одной задачи.
+     * не кончилась (для предела открытых). [known] — итог команды с этим
+     * ключом, если контур её уже исполнил (D-42): так ждавшая очереди
+     * команда политики получает id, а задача, которую человек поставил сам
+     * («Поставить задачу…», `dpai ecosystem run`), не записывается задачей
+     * политики. Политики нет, срок вышел или след не читается — ни одной
+     * задачи.
      */
     @Synchronized
     fun pass(
@@ -156,6 +165,7 @@ class AutoEcosystem(private val store: DocumentStore, private val clock: Clock) 
         connected: Set<String>,
         isOpen: (TaskId) -> Boolean,
         place: (Command.AddTask) -> Outcome<TaskId>,
+        known: (String) -> Outcome<TaskId>? = { null },
     ): Outcome<AutoPass> {
         val policy = when (val p = policy()) {
             is Outcome.Failure -> return p
@@ -167,15 +177,34 @@ class AutoEcosystem(private val store: DocumentStore, private val clock: Clock) 
             is Outcome.Failure -> return e
             is Outcome.Success -> e.value.toMutableList()
         }
+        val placed = mutableListOf<AutoEntry>()
+        val queued = mutableListOf<AutoEntry>()
+        val refused = mutableListOf<Pair<String, String>>()
+        val failures = mutableListOf<Diagnostic>()
+        var changed = false
+        // Команды, ждавшие очереди: исполнены — с id (и сообщение человеку), отказ — из следа вон.
+        val cursor = ledger.listIterator()
+        while (cursor.hasNext()) {
+            val e = cursor.next()
+            if (e.task != null) continue
+            when (val k = known(e.key)) {
+                null -> queued += e
+                is Outcome.Success -> e.copy(task = k.value).also { filled -> cursor.set(filled); placed += filled; changed = true }
+                is Outcome.Failure -> {
+                    cursor.remove()
+                    failures += k.errors.ifEmpty { k.diagnostics }
+                    changed = true
+                }
+            }
+        }
         val done = ledger.mapTo(HashSet()) { it.key }
         val dayAgo = Timestamp(now.epochMillis - DAY_MS)
         var recent = ledger.count { it.at > dayAgo }
-        var open = ledger.count { isOpen(it.task) }
-        val placed = mutableListOf<AutoEntry>()
-        val refused = mutableListOf<Pair<String, String>>()
-        val failures = mutableListOf<Diagnostic>()
+        var open = ledger.count { e -> e.task?.let(isOpen) ?: true }
         for (c in EcosystemPlan.of(projects, connected, policy.projects, policy.operations)) {
             if (c.key in done) continue
+            // Команду с этим ключом контур уже исполнил без политики — её поставил человек.
+            if (known(c.key) != null) continue
             val why = c.refusal
                 ?: EcosystemPlan.priority(c.suggestion)?.takeIf { it !in policy.priorities }?.let { "приоритет ${it.name} не разрешён политикой" }
                 ?: "предел ${policy.maxPerDay} задач за 24 часа исчерпан".takeIf { recent >= policy.maxPerDay }
@@ -185,25 +214,27 @@ class AutoEcosystem(private val store: DocumentStore, private val clock: Clock) 
                 continue
             }
             val command = c.command() ?: continue
-            when (val t = place(command)) {
-                is Outcome.Failure -> failures += t.errors.ifEmpty { t.diagnostics }
-                is Outcome.Success -> {
-                    val e = AutoEntry(now, c.project.key, c.suggestion.key, t.value, policy.digest())
-                    ledger += e
-                    placed += e
-                    done += e.key
-                    recent++
-                    open++
-                }
+            val t = place(command)
+            val waiting = t is Outcome.Failure && t.diagnostics.isNotEmpty() && t.diagnostics.all { it.code == DiagCode.COMMAND_QUEUED }
+            if (t is Outcome.Failure && !waiting) {
+                failures += t.errors.ifEmpty { t.diagnostics }
+                continue
             }
+            val e = AutoEntry(now, c.project.key, c.suggestion.key, t.valueOrNull(), policy.digest())
+            ledger += e
+            if (e.task != null) placed += e else queued += e
+            done += e.key
+            changed = true
+            recent++
+            open++
         }
-        if (placed.isNotEmpty()) {
+        if (changed) {
             when (val w = store.write(LEDGER_KEY, ledgerJson(ledger.takeLast(KEEP)))) {
                 is Outcome.Failure -> failures += w.errors
                 is Outcome.Success -> Unit
             }
         }
-        return Outcome.success(AutoPass(placed, refused, failures))
+        return Outcome.success(AutoPass(placed, queued, refused, failures))
     }
 
     companion object {
@@ -221,9 +252,11 @@ class AutoEcosystem(private val store: DocumentStore, private val clock: Clock) 
                 *FormatHeader.write(LEDGER_FORMAT, LEDGER_VERSION),
                 "entries" to JsonArray(
                     entries.map { e ->
-                        JsonObject.of(
-                            "at" to JsonNumber.of(e.at.epochMillis), "project" to JsonString(e.project), "suggestion" to JsonString(e.suggestion),
-                            "task" to JsonString(e.task.value), "policy" to JsonString(e.policy),
+                        JsonObject(
+                            linkedMapOf<String, JsonValue>(
+                                "at" to JsonNumber.of(e.at.epochMillis), "project" to JsonString(e.project), "suggestion" to JsonString(e.suggestion),
+                                "policy" to JsonString(e.policy),
+                            ).also { m -> e.task?.let { m["task"] = JsonString(it.value) } },
                         )
                     },
                 ),
@@ -245,10 +278,10 @@ class AutoEcosystem(private val store: DocumentStore, private val clock: Clock) 
             val at = f.long("at")
             val project = f.string("project")
             val suggestion = f.string("suggestion")
-            val task = f.string("task")?.let { t -> IdKinds.TASK.parse(t).valueOrNull() ?: null.also { d.error(DiagCode.ID_INVALID, "не id задачи", JsonPath.field(path, "task")) } }
+            val task = f.optString("task")?.let { t -> IdKinds.TASK.parse(t).valueOrNull() ?: null.also { d.error(DiagCode.ID_INVALID, "не id задачи", JsonPath.field(path, "task")) } }
             val policy = f.string("policy")
             f.finish()
-            if (at == null || project == null || suggestion == null || task == null || policy == null) return null
+            if (at == null || project == null || suggestion == null || policy == null) return null
             return AutoEntry(Timestamp(at), project, suggestion, task, policy)
         }
     }
