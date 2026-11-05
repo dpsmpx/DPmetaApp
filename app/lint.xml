@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Подавления Lint пульта — только с причиной (CLAUDE.md, «Правила кода»).
+-->
+<lint>
+    <!--
+      JGit (D-65, :core:git): в библиотеке есть пустой X509TrustManager — его ставит
+      HttpSupport.disableSslVerify только при http.sslVerify=false. Клоны настроек git не
+      читают (Clones.Isolated), а соединение JGit отвергает любую свою проверку TLS
+      (Clones.Verified: configure и setHostnameVerifier — отказ). Проверка TLS — системная.
+    -->
+    <issue id="TrustAllX509TrustManager">
+        <ignore path="**/org.eclipse.jgit-*.jar" />
+    </issue>
+</lint>

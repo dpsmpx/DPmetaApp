@@ -41,6 +41,8 @@ android {
         warningsAsErrors = true
         abortOnError = true
         checkDependencies = false
+        // Подавления — с причиной в самом файле (JGit, D-65): байт-код библиотек в APK Lint смотрит и так.
+        lintConfig = file("lint.xml")
         // targetSdk 36 — как у отдельной сборки «AI» (DP_AI_Orcestrator: docs/PROVENANCE.md, §2):
         // поднимается вместе с ней, иначе одно приложение вело бы себя по-разному в двух сборках.
         disable += "OldTargetApi"

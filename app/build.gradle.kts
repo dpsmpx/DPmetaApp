@@ -32,6 +32,8 @@ android {
     lint {
         warningsAsErrors = true
         abortOnError = true
+        // Подавления — с причиной в самом файле (JGit, D-65).
+        lintConfig = file("lint.xml")
     }
 
     compileOptions {

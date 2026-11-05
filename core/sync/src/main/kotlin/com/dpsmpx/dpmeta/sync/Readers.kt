@@ -188,3 +188,67 @@ class DirectoryReader(private val root: Path, private val hostDir: String = "dpm
         const val BRANCHES = "branches.json"
     }
 }
+
+/**
+ * Клоны репозиториев (D-65): ветки, коммиты и файлы процесса — из
+ * локального клона, без запросов REST; PR — по-прежнему [rest] (в git их
+ * нет). Подсистема читается из клона DPmetaApp ([host]) в своём каталоге.
+ * Клона ещё нет (первое клонирование не прошло) — тот же ответ из [rest]:
+ * синхронизация не беднеет, пока клон не готов. Ветки сборок ([excluded])
+ * в клоне не держатся и в ветки не попадают.
+ */
+class CloneReader(
+    private val clones: com.dpsmpx.dpmeta.git.Clones,
+    private val rest: SourceReader,
+    private val host: RepoRef,
+    private val excluded: (String) -> Boolean,
+) : SourceReader {
+    override val source: ObservationSource = rest.source
+
+    /** Головы веток последнего чтения: `commit` по ним не спрашивает ни клон, ни REST. */
+    private val heads = java.util.concurrent.ConcurrentHashMap<String, CommitInfo>()
+
+    override fun hasActivity(project: ProjectEntry): Boolean = rest.hasActivity(project)
+
+    override fun pulls(project: ProjectEntry): Outcome<Got<List<PullRequest>>> = rest.pulls(project)
+
+    override fun closed(project: ProjectEntry): Outcome<Got<List<PullRequest>>> = rest.closed(project)
+
+    override fun branches(project: ProjectEntry): Outcome<Got<List<Branch>>> {
+        // У подсистемы своих веток нет: ветки DPmetaApp — его, как у GitHubReader (hasActivity — нет).
+        if (project.dir != null) return rest.branches(project)
+        val key = key(project)
+        if (clones.main(key) == null) {
+            return when (val r = rest.branches(project)) {
+                is Outcome.Failure -> r
+                is Outcome.Success -> Outcome.success(Got(r.value.value.filter { !excluded(it.name) }, r.value.rawSha256, r.value.notModified))
+            }
+        }
+        return when (val r = clones.heads(key)) {
+            is Outcome.Failure -> r
+            is Outcome.Success -> {
+                val list = r.value.filter { !excluded(it.name) }
+                list.forEach { heads[it.sha] = CommitInfo(it.sha, it.time, it.author) }
+                val raw = list.joinToString("\n") { "${it.name} ${it.sha}" }
+                Outcome.success(Got(list.map { Branch(it.name, it.sha) }, Hashing.sha256(raw)))
+            }
+        }
+    }
+
+    override fun commit(project: ProjectEntry, sha: String): Outcome<CommitInfo> = heads[sha]?.let { Outcome.success(it) } ?: rest.commit(project, sha)
+
+    override fun file(project: ProjectEntry, path: String): Outcome<Got<String>> {
+        checkPath(path).let { if (it is Outcome.Failure) return it }
+        val key = key(project)
+        val main = clones.main(key) ?: return rest.file(project, path)
+        val full = project.dir?.let { "$it/$path" } ?: path
+        return when (val r = clones.file(key, main, full)) {
+            is Outcome.Failure -> r
+            is Outcome.Success -> r.value?.let { bytes -> Outcome.success(Got(bytes.toString(Charsets.UTF_8), Hashing.sha256(bytes))) }
+                ?: Outcome.failure(DiagCode.GITHUB_NOT_FOUND, "файла нет в клоне: $full", "${project.name}:$path")
+        }
+    }
+
+    /** Клон проекта: подсистема — клон DPmetaApp, остальные — свой. */
+    fun key(project: ProjectEntry): String = if (project.dir != null) host.toString() else project.slug.toString()
+}
