@@ -193,15 +193,17 @@ class DirectoryReader(private val root: Path, private val hostDir: String = "dpm
  * Клоны репозиториев (D-65): ветки, коммиты и файлы процесса — из
  * локального клона, без запросов REST; PR — по-прежнему [rest] (в git их
  * нет). Подсистема читается из клона DPmetaApp ([host]) в своём каталоге.
- * Клона ещё нет (первое клонирование не прошло) — тот же ответ из [rest]:
- * синхронизация не беднеет, пока клон не готов. Ветки сборок ([excluded])
- * в клоне не держатся и в ветки не попадают.
+ * Клона нет или он не отмечен автором ([selected], D-70) — тот же ответ из
+ * [rest]: синхронизация не беднеет, а снятый с выбора клон, где может
+ * лежать работа ИИ, не читается и не удаляется. Ветки сборок ([excluded])
+ * в ветки не попадают.
  */
 class CloneReader(
     private val clones: com.dpsmpx.dpmeta.git.Clones,
     private val rest: SourceReader,
     private val host: RepoRef,
     private val excluded: (String) -> Boolean,
+    private val selected: (String) -> Boolean = { true },
 ) : SourceReader {
     override val source: ObservationSource = rest.source
 
@@ -218,7 +220,7 @@ class CloneReader(
         // У подсистемы своих веток нет: ветки DPmetaApp — его, как у GitHubReader (hasActivity — нет).
         if (project.dir != null) return rest.branches(project)
         val key = key(project)
-        if (clones.main(key) == null) {
+        if (!selected(key) || clones.main(key) == null) {
             return when (val r = rest.branches(project)) {
                 is Outcome.Failure -> r
                 is Outcome.Success -> Outcome.success(Got(r.value.value.filter { !excluded(it.name) }, r.value.rawSha256, r.value.notModified))
@@ -240,7 +242,7 @@ class CloneReader(
     override fun file(project: ProjectEntry, path: String): Outcome<Got<String>> {
         checkPath(path).let { if (it is Outcome.Failure) return it }
         val key = key(project)
-        val main = clones.main(key) ?: return rest.file(project, path)
+        val main = clones.main(key)?.takeIf { selected(key) } ?: return rest.file(project, path)
         val full = project.dir?.let { "$it/$path" } ?: path
         return when (val r = clones.file(key, main, full)) {
             is Outcome.Failure -> r

@@ -117,6 +117,18 @@ class CloneReaderTest {
     }
 
     @Test
+    fun anUnselectedCloneIsNeitherReadNorRemoved() {
+        val clones = Clones(File(tmp, "clones"), { Outcome.success(Unit) }, setOf("file"))
+        clones.sync("dpsmpx/Alpha", remote("alpha", mapOf("TODO.md" to "- [ ] из клона\n")), null, build)
+        val rest = Rest()
+        // Автор снял отметку (D-70): клон, где может быть работа ИИ, остаётся, но пульт читает GitHub.
+        val r = CloneReader(clones, rest, host, build) { false }
+        assertEquals("rest:TODO.md", (r.file(project("dpsmpx/Alpha"), "TODO.md") as Outcome.Success).value.value)
+        assertEquals(listOf("main"), (r.branches(project("dpsmpx/Alpha")) as Outcome.Success).value.value.map { it.name })
+        assertTrue(File(clones.dir("dpsmpx/Alpha"), ".git").isDirectory, "клон не удалён")
+    }
+
+    @Test
     fun withoutACloneTheAnswerIsRestsWithoutBuildBranches() {
         val clones = Clones(File(tmp, "clones"), { Outcome.success(Unit) }, setOf("file"))
         val rest = Rest()

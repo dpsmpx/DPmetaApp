@@ -11,6 +11,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.mutableStateOf
+import androidx.core.content.edit
 import androidx.core.content.FileProvider
 import com.dpsmpx.dpai.core.clock.Clock
 import com.dpsmpx.dpai.core.diagnostics.Secret
@@ -21,6 +22,7 @@ import com.dpsmpx.dpmeta.app.data.SecretStore
 import com.dpsmpx.dpmeta.app.screens.Export
 import com.dpsmpx.dpmeta.app.screens.Stats
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
+import com.dpsmpx.dpmeta.app.ui.ClonePrompt
 import com.dpsmpx.dpmeta.app.ui.Loader
 import com.dpsmpx.dpmeta.app.ui.PultApp
 import com.dpsmpx.dpmeta.formats.Panel
@@ -163,8 +165,73 @@ open class PultActivity : ComponentActivity() {
         entryAt?.let { if (now - it < com.dpsmpx.dpmeta.metrics.Rules.ENTRY_SYNC_EVERY) return }
         val token = (secrets.load() as? Outcome.Success)?.value ?: return
         entryAt = now
-        sync(token)
+        // Первый вход (D-70): сначала — какие репозитории клонировать; без ответа клонов нет.
+        if (!clonesAsked()) askClones(token, first = true) else sync(token)
     }
+
+    /** Токен, ждущий ответа окна клонов: после выбора — синхронизация. */
+    private var clonesToken: Secret? = null
+
+    /** Что дописать к итогу ближайшей синхронизации (причина, почему окна клонов не было). */
+    private var syncNote: String? = null
+
+    /** Окно выбора клонов (D-70): все репозитории аккаунта, реестр — сверху; первый раз отмечен реестр. */
+    private fun askClones(token: Secret, first: Boolean) {
+        if (pool.isShutdown || view.value.busy) return
+        view.value = view.value.copy(busy = true, status = "Ищу репозитории аккаунта…")
+        pool.execute {
+            val r = runCatching { repo.cloneOptions(token) }.getOrElse { Outcome.failure(DiagCode.INTERNAL_ERROR, "список репозиториев: ${it.javaClass.simpleName}") }
+            val chosen = clonesSelected()
+            runOnUiThread {
+                when (r) {
+                    is Outcome.Success -> {
+                        clonesToken = token
+                        // До первого выбора (и после «Позже») отмечен реестр (D-70); дальше — выбор автора.
+                        // Выбор сверяется со списком без регистра: переименованный лишь регистром — та же отметка, с новым именем.
+                        val bySlug = r.value.associateBy { it.slug.lowercase() }
+                        val kept = chosen.mapNotNull { bySlug[it.lowercase()]?.slug }.toSet()
+                        // Отмеченные, которых в списке больше нет (нет доступа, переименован, в архиве), — видны отмеченными: их можно снять.
+                        val gone = chosen.filter { it.lowercase() !in bySlug }.map { com.dpsmpx.dpmeta.app.data.PultRepository.CloneOption(it, registry = false, private = true, gone = true) }
+                        val checked = if (first || !clonesAsked()) r.value.filter { it.registry }.map { it.slug }.toSet() else kept + gone.map { it.slug }
+                        view.value = view.value.copy(busy = false, status = "", clonePrompt = ClonePrompt(r.value + gone, checked, first))
+                    }
+                    is Outcome.Failure -> {
+                        view.value = view.value.copy(busy = false)
+                        val why = "Список репозиториев не получен: ${r.diagnostics.first().message}."
+                        // Первый вход без списка — синхронизация без клонов (причина — в её итоге); окно спросит при следующем входе.
+                        if (first) {
+                            syncNote = why
+                            sync(token)
+                        } else {
+                            view.value = view.value.copy(status = why)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /** Ответ окна клонов: выбор — сохранить и синхронизировать; «Позже» на первом входе — синхронизация без клонов. */
+    private fun clonesChosen(selected: Set<String>?) {
+        val prompt = view.value.clonePrompt ?: return
+        val token = clonesToken
+        clonesToken = null
+        view.value = view.value.copy(clonePrompt = null)
+        if (selected != null) {
+            getSharedPreferences(CLONES_PREFS, MODE_PRIVATE).edit {
+                putBoolean(CLONES_ASKED, true)
+                putStringSet(CLONES_SELECTED, selected)
+            }
+            view.value = view.value.copy(clones = clonesLine())
+        }
+        if (token != null && (selected != null || prompt.first)) sync(token)
+    }
+
+    private fun clonesAsked(): Boolean = getSharedPreferences(CLONES_PREFS, MODE_PRIVATE).getBoolean(CLONES_ASKED, false)
+
+    private fun clonesSelected(): Set<String> = getSharedPreferences(CLONES_PREFS, MODE_PRIVATE).getStringSet(CLONES_SELECTED, null).orEmpty().toSet()
+
+    private fun clonesLine(): String = if (!clonesAsked()) "Выбор ещё не сделан." else "Отмечено: ${clonesSelected().size}."
 
     /** Когда началась последняя синхронизация при входе — не повторять её при каждом возвращении в окно. */
     private var entryAt: com.dpsmpx.dpai.core.clock.Timestamp? = null
@@ -182,16 +249,29 @@ open class PultActivity : ComponentActivity() {
         val state = (repo.state() as? Outcome.Success)?.value
         val hasToken = secrets.exists()
         val feed = (repo.feed() as? Outcome.Success)?.value.orEmpty()
-        view.value = PultView(state, "", hasToken, busy = false, feed = feed, names = repo.names())
+        view.value = PultView(state, "", hasToken, busy = false, feed = feed, names = repo.names(), clones = clonesLine())
         // История растёт с каждой синхронизацией — читается в фоне, холодный старт её не ждёт (N-02).
         loadHistory()
         // Файлы прежних «Поделиться» (D-67) живут до следующего входа в пульт — не до поворота.
         if (coldStart) pool.execute { File(cacheDir, EXPORT_DIR).deleteRecursively() }
+        // Клоны 0.4.0-dev.8 — плоскими каталогами «владелец_2fимя», без работы ИИ (Linux их не видел): место — назад (D-72).
+        // Один раз и без перехода по ссылкам: каталог клонов теперь доступен гостю Linux на запись.
+        val prefs = getSharedPreferences(CLONES_PREFS, MODE_PRIVATE)
+        if (!prefs.getBoolean(CLONES_FLAT_GONE, false)) {
+            prefs.edit { putBoolean(CLONES_FLAT_GONE, true) }
+            pool.execute {
+                File(filesDir, CLONES_DIR).listFiles()?.filter { "_2f" in it.name }?.forEach { runCatching { com.dpsmpx.dpmeta.git.Clones.deleteTree(it) } }
+            }
+        }
         opened = true
         entrySync()
         setContent {
             PultTheme {
-                PultApp(view.value, loader, onSync = ::sync, onSaveToken = ::saveToken, onForgetToken = ::forgetToken, onAi = aiIntent()?.let { i -> { startActivity(i) } }, onExport = ::export)
+                PultApp(
+                    view.value, loader, onSync = ::sync, onSaveToken = ::saveToken, onForgetToken = ::forgetToken,
+                    onAi = aiIntent()?.let { i -> { startActivity(i) } }, onExport = ::export,
+                    onClones = { withToken { token -> if (token != null) askClones(token, first = false) } }, onClonesChosen = ::clonesChosen,
+                )
             }
         }
     }
@@ -326,7 +406,8 @@ open class PultActivity : ComponentActivity() {
         view.value = view.value.copy(hasToken = false, status = "Токен удалён.")
     }
 
-    private fun sync() = withToken { token -> if (token != null) sync(token) }
+    /** «Обновить»: до первого выбора клонов (D-70) — сначала окно выбора. */
+    private fun sync() = withToken { token -> if (token != null) { if (!clonesAsked()) askClones(token, first = true) else sync(token) } }
 
     private fun sync(token: Secret) {
         if (pool.isShutdown) return
@@ -336,9 +417,11 @@ open class PultActivity : ComponentActivity() {
             return
         }
         view.value = view.value.copy(busy = true, status = "")
+        val note = syncNote
+        syncNote = null
         pool.execute {
             // Сбой внутри синхронизации — отказ на экране, а не падение процесса со службами «AI» (D-59).
-            val r = runCatching { repo.sync(token) }.getOrElse { Outcome.failure(DiagCode.INTERNAL_ERROR, "синхронизация прервана: ${it.javaClass.simpleName}") }
+            val r = runCatching { repo.sync(token, clonesSelected()) }.getOrElse { Outcome.failure(DiagCode.INTERNAL_ERROR, "синхронизация прервана: ${it.javaClass.simpleName}") }
             val state = (repo.state() as? Outcome.Success)?.value
             val feed = (repo.feed() as? Outcome.Success)?.value.orEmpty()
             runOnUiThread {
@@ -346,11 +429,11 @@ open class PultActivity : ComponentActivity() {
                     is Outcome.Success -> view.value.copy(
                         state = state,
                         busy = false,
-                        status = "Готово: ${r.value.line}.",
+                        status = "Готово: ${r.value.line}." + (note?.let { " $it" } ?: ""),
                         feed = feed,
                         names = repo.names(),
                     ).also { loadHistory() }
-                    is Outcome.Failure -> view.value.copy(busy = false, status = "Не вышло: ${r.diagnostics.first().code.name} — ${r.diagnostics.first().message}")
+                    is Outcome.Failure -> view.value.copy(busy = false, status = "Не вышло: ${r.diagnostics.first().code.name} — ${r.diagnostics.first().message}" + (note?.let { " $it" } ?: ""))
                 }
             }
         }
@@ -365,5 +448,11 @@ open class PultActivity : ComponentActivity() {
 
         /** Каталог клонов репозиториев экосистемы (D-65) в `filesDir`. */
         const val CLONES_DIR = "clones"
+
+        /** Выбор клонов автора (D-70): спрошен ли, какие отмечены (`владелец/имя`). */
+        private const val CLONES_PREFS = "dpmeta.clones"
+        private const val CLONES_ASKED = "asked"
+        private const val CLONES_SELECTED = "selected"
+        private const val CLONES_FLAT_GONE = "flat-removed"
     }
 }

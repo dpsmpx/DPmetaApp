@@ -51,6 +51,23 @@ class GitHubTest {
     }
 
     @Test
+    fun reposListsEveryPageSortedAndSkipsBadNames() {
+        val page1 = (1..100).joinToString(",", "[", "]") { i -> "{\"full_name\":\"dpsmpx/r${"%03d".format(i)}\",\"private\":${i % 2 == 0},\"archived\":false}" }
+        val page2 = "[{\"full_name\":\"dpsmpx/DPmetaApp\",\"private\":false,\"archived\":false},{\"full_name\":\"не адрес\"},{\"full_name\":\"dpsmpx/Old\",\"private\":true,\"archived\":true}]"
+        val fake = Fake(
+            mapOf(
+                "/user/repos?per_page=100&sort=full_name&page=1" to (200 to page1),
+                "/user/repos?per_page=100&sort=full_name&page=2" to (200 to page2),
+            ),
+        )
+        val repos = (GitHub(Net(fake), Secret("t")).repos() as Outcome.Success).value
+        assertEquals(102, repos.size, "обе страницы, без строки с плохим адресом")
+        assertEquals("dpsmpx/DPmetaApp", repos.first().slug.toString(), "по алфавиту без регистра")
+        assertTrue(repos.single { it.slug.toString() == "dpsmpx/Old" }.archived)
+        assertEquals(2, fake.seen.size, "неполная страница — последняя")
+    }
+
+    @Test
     fun mapsStatusesToCodes() {
         fun code(status: Int, headers: Map<String, List<String>> = emptyMap()): DiagCode {
             val gh = GitHub(Net(Fake(mapOf("/repos/example/Alpha/branches?per_page=100" to (status to "{}")), headers)), null)

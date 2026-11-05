@@ -79,7 +79,7 @@ class ClonesTest {
     }
 
     @Test
-    fun fetchFastForwardsCleanMainAndDropsDeletedBranches() {
+    fun fetchUpdatesGitHubBranchesLeavesTheWorkingTreeAndDropsDeletedBranches() {
         val uri = remote()
         val c = clones()
         c.sync("Alpha", uri, null, build)
@@ -92,12 +92,12 @@ class ClonesTest {
         assertEquals(Clones.Action.FETCHED, r.action)
         assertEquals(listOf("main"), (c.heads("Alpha") as Outcome.Success).value.map { it.name }, "удалённая на GitHub ветка уходит")
         assertEquals("- [x] пункт\n", String((c.file("Alpha", "main", "TODO.md") as Outcome.Success).value!!))
-        assertEquals("- [x] пункт\n", File(c.dir("Alpha"), "TODO.md").readText(), "чистое дерево — перемотка")
+        assertEquals("- [ ] пункт\n", File(c.dir("Alpha"), "TODO.md").readText(), "рабочее дерево — ИИ (D-70): обновление его не трогает")
         assertTrue(r.conflicts.isEmpty())
     }
 
     @Test
-    fun divergenceIsAConflictAndTheCloneIsNotTouched() {
+    fun localWorkIsNotAConflictAndRewrittenHistoryIsNoted() {
         val uri = remote()
         val c = clones()
         c.sync("Alpha", uri, null, build)
@@ -111,12 +111,49 @@ class ClonesTest {
             commit(git, "other.txt", "иначе\n", "Иначе")
             git.push().setRemote("origin").add("work").setForce(true).call()
         }
+        // И своя ветка ИИ, которой нет на GitHub.
+        Git.open(c.dir("Alpha")).use { git -> git.branchCreate().setName("ai/task").call() }
         val r = (c.sync("Alpha", uri, null, build) as Outcome.Success).value
-        assertEquals(
-            setOf(Clones.ConflictKind.DIRTY to "main", Clones.ConflictKind.AHEAD to "main", Clones.ConflictKind.REWRITTEN to "work"),
-            r.conflicts.map { it.kind to it.branch }.toSet(),
-        )
-        assertEquals("правка\n", File(c.dir("Alpha"), "TODO.md").readText(), "клон с конфликтом не перезаписывается")
+        assertEquals(listOf(Clones.ConflictKind.REWRITTEN to "work"), r.conflicts.map { it.kind to it.branch }, "работа ИИ в клоне — не конфликт (D-70)")
+        assertEquals("правка\n", File(c.dir("Alpha"), "TODO.md").readText(), "правка ИИ цела")
+        Git.open(c.dir("Alpha")).use { git ->
+            assertEquals("Своё", git.log().setMaxCount(1).call().first().shortMessage, "коммит ИИ цел")
+            assertTrue(git.repository.findRef("ai/task") != null, "ветка ИИ цела")
+        }
+        assertEquals("- [ ] пункт\n", String((c.file("Alpha", "main", "TODO.md") as Outcome.Success).value!!), "пульт читает GitHub, а не правку ИИ")
+    }
+
+    @Test
+    fun aCloneMadeByAModelKeepsGitHubMainAsItsMain() {
+        val uri = remote()
+        val c = clones()
+        // Модель клонировала сама, git-ом Linux-среды (D-72): отметки dpmeta.main нет, работа — в своей ветке.
+        Git.cloneRepository().setURI(uri.toString()).setDirectory(c.dir("dpsmpx/Beta")).call().use { git ->
+            // Как `git clone`: символьная origin/HEAD → origin/main (JGit её сам не пишет).
+            git.repository.updateRef(org.eclipse.jgit.lib.Constants.R_REMOTES + "origin/HEAD").link(org.eclipse.jgit.lib.Constants.R_REMOTES + "origin/main")
+            git.checkout().setCreateBranch(true).setName("ai/task").call()
+        }
+        assertEquals("main", c.main("dpsmpx/Beta"), "основная — ветка GitHub, а не ветка работы ИИ")
+        // Обновление пультом: символьная origin/HEAD не стирает origin/main и не считается веткой.
+        assertIs<Outcome.Success<*>>(c.sync("dpsmpx/Beta", uri, null, build))
+        assertIs<Outcome.Success<*>>(c.sync("dpsmpx/Beta", uri, null, build), "и второй раз")
+        assertEquals(listOf("main", "work"), (c.heads("dpsmpx/Beta") as Outcome.Success).value.map { it.name })
+        assertEquals("main", c.main("dpsmpx/Beta"))
+        assertEquals("- [ ] пункт\n", String((c.file("dpsmpx/Beta", c.main("dpsmpx/Beta")!!, "TODO.md") as Outcome.Success).value!!))
+    }
+
+    @Test
+    fun namesAsOnGitHubAndDeletionDoesNotFollowLinks() {
+        val c = clones()
+        assertEquals(File(File(File(tmp, "clones"), "dpsmpx"), "AIM_Trainer_pas"), c.dir("dpsmpx/AIM_Trainer_pas"), "имя как на GitHub — там же, куда клонирует модель (D-72)")
+        assertEquals("_2e_2e", c.dir("dpsmpx/..").name, "«..» — не родительский каталог")
+        val outside = File(tmp, "outside").apply { mkdirs() }
+        File(outside, "keep.txt").writeText("данные приложения")
+        val victim = File(tmp, "victim").apply { mkdirs() }
+        java.nio.file.Files.createSymbolicLink(File(victim, "link").toPath(), outside.toPath())
+        Clones.deleteTree(victim)
+        assertTrue(!victim.exists(), "каталог удалён")
+        assertTrue(File(outside, "keep.txt").isFile, "по ссылке удаление не ушло")
     }
 
     @Test
@@ -155,5 +192,8 @@ class ClonesTest {
         assertEquals("_2f.._2fx", Clones.safe("/../x"))
         assertEquals("_2e_2e", Clones.safe(".."), "«..» — не родительский каталог")
         assertEquals(URI("https://github.com/dpsmpx/DPmetaApp.git"), Clones.github("dpsmpx/DPmetaApp"))
+        // Владелец/имя — вложенными каталогами: в Linux-среде — /root/repos/<владелец>/<имя> (D-70).
+        assertEquals(File(File(File(tmp, "clones"), "dpsmpx"), "DPmetaApp"), c.dir("dpsmpx/DPmetaApp"))
+        assertEquals(File(File(tmp, "clones"), "_2e_2e"), c.dir("..").let { File(File(tmp, "clones"), it.name) })
     }
 }

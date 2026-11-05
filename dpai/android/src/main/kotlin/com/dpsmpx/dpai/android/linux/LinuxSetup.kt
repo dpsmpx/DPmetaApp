@@ -47,8 +47,30 @@ object LinuxSetup {
             loader = "$lib/libproot-loader.so",
             rootfs = rootfs.path,
             tmp = tmp.path,
-            binds = storageBinds(context, rootfs),
+            binds = storageBinds(context, rootfs) + sharedBinds(rootfs),
         )
+    }
+
+    /**
+     * Каталоги приложения, которые оболочка показывает гостю (`DPmetaApp:D-70`:
+     * клоны репозиториев пульта — `/root/repos`, «AI» работает в них).
+     * Регистрирует приложение при запуске; подсистема о самих каталогах не
+     * знает. Гостевой путь — только внутри `/root`, без `..`.
+     */
+    private val shared = java.util.concurrent.CopyOnWriteArrayList<ProotLayout.Bind>()
+
+    fun share(host: File, guest: String) {
+        require(guest.startsWith("/root/") && guest.split('/').none { it == ".." || it == "." } && !guest.endsWith("/")) { "каталог гостя — внутри /root, без «..»: $guest" }
+        if (shared.none { it.guest == guest }) shared += ProotLayout.Bind(host.path, guest)
+    }
+
+    /** Привязки [share]: каталог приложения создаётся, точка в госте — тоже, если Linux уже установлен. */
+    private fun sharedBinds(rootfs: File): List<ProotLayout.Bind> = shared.mapNotNull { b ->
+        val host = File(b.host)
+        if (!host.isDirectory && !host.mkdirs()) return@mapNotNull null
+        if (!rootfs.isDirectory) return@mapNotNull null
+        File(rootfs, b.guest.removePrefix("/")).mkdirs()
+        b
     }
 
     /** Каталог гостя для общего хранилища в режиме всех файлов (D-99), как у `termux-setup-storage`. */
