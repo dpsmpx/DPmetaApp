@@ -165,29 +165,44 @@ class LinuxEnvironment(private val vfs: Vfs, dir: String = DIR) {
         /** Каталоги гостя, откуда берётся модель (D-105): свои модели, копии папок (D-99) и всё хранилище. */
         val MODEL_DIRS: List<String> = listOf("/root/models/", "/root/files/", "/root/storage/shared/")
 
-        private val MODEL_PATH = Regex("/[A-Za-z0-9._/ ()+@-]+\\.gguf")
+        /** Путь модели: буквы любого алфавита (имена папок автора бывают русскими), цифры, пробел и `._()+@-` — аргумент идёт без оболочки. */
+        private val MODEL_PATH = Regex("/[\\p{L}\\p{N}._/ ()+@-]+\\.gguf")
+
+        /** Файл ключа API сервера в госте (D-105, T18): права владельца, не в аргументах процесса. */
+        const val LLAMA_KEY_FILE = "/root/.config/llama/api-key"
+
+        /** Что не так с путём модели (D-105); годится — `null`. */
+        fun modelPathProblem(model: String): String? = when {
+            model.split('/').any { it == ".." || it == "." } -> "в пути модели — «..» или «.»"
+            !model.endsWith(".gguf") -> "модель — файл .gguf"
+            !MODEL_PATH.matches(model) -> "в пути модели — знаки вне букв, цифр, пробела и «._()+@-»"
+            MODEL_DIRS.none { model.startsWith(it) } -> "модель — из ${MODEL_DIRS.joinToString(", ")}"
+            else -> null
+        }
 
         /**
-         * Запуск сервера модели (D-105): только `127.0.0.1` — к нему ходит
-         * только это устройство; модель — файл `.gguf` из [MODEL_DIRS], без
-         * `..`; путь — отдельным аргументом, без оболочки.
+         * Запуск сервера модели (D-105, T18): только `127.0.0.1` (это все
+         * приложения телефона — поэтому ключ API из [LLAMA_KEY_FILE], без веб-
+         * интерфейса и `/slots`); один слот — окно контекста не делится;
+         * модель — файл `.gguf` из [MODEL_DIRS], без `..`; путь — отдельным
+         * аргументом, без оболочки.
          */
-        fun llamaServe(model: String, port: Int, contextTokens: Int, threads: Int): Outcome<ProcessSpec> = when {
-            !MODEL_PATH.matches(model) || model.split('/').any { it == ".." || it == "." } ->
-                Outcome.failure(DiagCode.VALUE_INVALID, "модель — путь к файлу .gguf без «..»", model)
-            MODEL_DIRS.none { model.startsWith(it) } ->
-                Outcome.failure(DiagCode.VALUE_INVALID, "модель — из ${MODEL_DIRS.joinToString(", ")}", model)
-            port !in 1024..65535 -> Outcome.failure(DiagCode.VALUE_INVALID, "порт — 1024…65535", "$port")
-            contextTokens !in 512..131_072 -> Outcome.failure(DiagCode.VALUE_INVALID, "контекст — 512…131072 токенов", "$contextTokens")
-            threads !in 1..16 -> Outcome.failure(DiagCode.VALUE_INVALID, "потоков — 1…16", "$threads")
-            else -> Outcome.success(
-                ProcessSpec(
-                    listOf(
-                        "llama-server", "-m", model, "--host", "127.0.0.1", "--port", "$port",
-                        "--ctx-size", "$contextTokens", "--threads", "$threads",
+        fun llamaServe(model: String, port: Int, contextTokens: Int, threads: Int): Outcome<ProcessSpec> {
+            modelPathProblem(model)?.let { return Outcome.failure(DiagCode.VALUE_INVALID, it, model) }
+            return when {
+                port !in 1024..65535 -> Outcome.failure(DiagCode.VALUE_INVALID, "порт — 1024…65535", "$port")
+                contextTokens !in 512..131_072 -> Outcome.failure(DiagCode.VALUE_INVALID, "контекст — 512…131072 токенов", "$contextTokens")
+                threads !in 1..16 -> Outcome.failure(DiagCode.VALUE_INVALID, "потоков — 1…16", "$threads")
+                else -> Outcome.success(
+                    ProcessSpec(
+                        listOf(
+                            "llama-server", "-m", model, "--host", "127.0.0.1", "--port", "$port",
+                            "--ctx-size", "$contextTokens", "--threads", "$threads", "--parallel", "1",
+                            "--api-key-file", LLAMA_KEY_FILE, "--no-webui", "--no-slots",
+                        ),
                     ),
-                ),
-            )
+                )
+            }
         }
 
         /** Адрес IPv4 (четыре числа 0…255) или IPv6 (шестнадцатеричные группы через `:`). */

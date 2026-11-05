@@ -50,17 +50,22 @@ sealed interface Suggestion {
 /**
  * LocalAIService (ТЗ, §77, §78; D-105): подсказки модели на этом устройстве
  * или в частной сети. Данные — через строгий [Redactor] и с пределом
- * длины, обёрнутые как данные, а не инструкции (T5, prompt injection);
+ * длины, обёрнутые как данные, а не инструкции (T3, prompt injection; T18);
  * ответ — строго JSON по схеме задания, иначе `PROVIDER_REPLY_INVALID`.
  * Ядро и планировщик от неё не зависят: отказ здесь — пустая подсказка, а
  * не сбой работы.
  */
 class LocalAI private constructor(private val provider: AIProvider, private val model: String, private val limits: Limits) {
-    /** Пределы: длина данных в знаках, длина ответа в токенах, число строк и пунктов. */
-    data class Limits(val maxInputChars: Int = 16_000, val maxOutputTokens: Int = 1024, val maxItems: Int = 200)
+    /**
+     * Пределы: длина данных в знаках, длина ответа в токенах, число строк и
+     * пунктов. 8000 знаков русского текста — около 3–4 тыс. токенов: с
+     * ответом и подсказкой входит в окно сервера телефона (8192, D-105).
+     */
+    data class Limits(val maxInputChars: Int = 8_000, val maxOutputTokens: Int = 1024, val maxItems: Int = 200)
 
+    // Заголовок — тоже данные: в системную подсказку текст извне не попадает.
     fun summarize(title: String, lines: List<String>, cancel: Cancel = Cancel()): Outcome<Suggestion.Text> =
-        text(Job.SUMMARY, "Кратко перескажи по-русски, что произошло в «${clean(title)}»: 3–6 предложений, только по данным.", lines, cancel)
+        text(Job.SUMMARY, "Кратко перескажи по-русски, что произошло: 3–6 предложений, только по данным; первая строка данных — заголовок.", listOf("Заголовок: $title") + lines, cancel)
 
     fun notifications(lines: List<String>, cancel: Cancel = Cancel()): Outcome<Suggestion.Text> =
         text(Job.NOTIFICATION_SUMMARY, "Сведи уведомления в одну короткую сводку по-русски: что требует внимания человека — первым.", lines, cancel)
@@ -76,7 +81,7 @@ class LocalAI private constructor(private val provider: AIProvider, private val 
     fun category(task: String, categories: List<String>, cancel: Cancel = Cancel()): Outcome<Suggestion.Choice> {
         if (categories.isEmpty()) return Outcome.failure(DiagCode.FIELD_MISSING, "нет списка категорий", "localai")
         val list = categories.take(limits.maxItems)
-        return ask(Job.TASK_CATEGORY, "Выбери одну категорию задачи строго из списка: ${list.joinToString(", ") { "«${clean(it)}»" }}.", """{"category": "…"}""", listOf(task), cancel) { o ->
+        return ask(Job.TASK_CATEGORY, "Выбери одну категорию задачи строго из списка: ${list.joinToString(", ") { "«${clean(it)}»" }}.", """{"category": "…"}""", listOf(clean(task)), cancel) { o ->
             val c = (o["category"] as? JsonString)?.value ?: return@ask null
             if (c in list) Suggestion.Choice(Job.TASK_CATEGORY, c) else null
         }
@@ -85,7 +90,7 @@ class LocalAI private constructor(private val provider: AIProvider, private val 
     fun rank(query: String, items: List<Pair<String, String>>, cancel: Cancel = Cancel()): Outcome<Suggestion.Order> {
         val list = items.take(limits.maxItems)
         val ids = list.map { it.first }
-        val data = listOf("Запрос: ${clean(query)}") + list.map { (id, text) -> "[$id] ${clean(text)}" }
+        val data = listOf("Запрос: ${clean(query)}") + list.map { (id, text) -> "[${clean(id)}] ${clean(text)}" }
         return ask(Job.CONTEXT_RANKING, "Упорядочь источники контекста по пользе для запроса: самый нужный — первым. Только id из квадратных скобок.", """{"order": ["id", "…"]}""", data, cancel) { o ->
             val order = strings(o, "order") ?: return@ask null
             if (order.any { it !in ids } || order.toSet().size != order.size) return@ask null
@@ -158,8 +163,14 @@ class LocalAI private constructor(private val provider: AIProvider, private val 
             is Outcome.Success -> Outcome.success(LocalAI(provider, profile.model, limits))
         }
 
-        /** Первый объект JSON в тексте ответа: модели оборачивают его в ```json или пишут слово перед ним. */
-        internal fun firstObject(text: String): JsonObject? {
+        private val THINK = Regex("<think>.*?</think>", RegexOption.DOT_MATCHES_ALL)
+
+        /**
+         * Первый объект JSON в тексте ответа: модели оборачивают его в ```json
+         * или пишут слово перед ним; рассуждения `<think>…</think>` — мимо.
+         */
+        internal fun firstObject(raw: String): JsonObject? {
+            val text = raw.replace(THINK, "")
             val start = text.indexOf('{')
             val end = text.lastIndexOf('}')
             if (start < 0 || end <= start) return null

@@ -108,7 +108,9 @@ fun ModelsPane() {
         val local = LocalHints.candidates(profiles)
         if (local.isNotEmpty()) {
             item {
-                var chosen by remember(profiles) { mutableStateOf(LocalHints.chosen(context, profiles)?.id) }
+                var chosen by remember(profiles) { mutableStateOf<com.dpsmpx.dpai.core.ids.AccountId?>(null) }
+                // Выбор читается из настроек в фоне, не на главном потоке.
+                LaunchedEffect(profiles) { chosen = withContext(Dispatchers.IO) { LocalHints.chosen(context, profiles)?.id } }
                 Text("Локальный ИИ — подсказки на сводке", style = MaterialTheme.typography.titleMedium)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     for (p in local) FilterChip(selected = chosen == p.id, onClick = { LocalHints.choose(context, p); chosen = p.id }, label = { Text(p.name) })
@@ -219,7 +221,8 @@ private fun ProfileDialog(existing: ApiProfile?, onDone: () -> Unit) {
                         }
                         // Локальные модели (D-105): адрес ПК в частной сети — заменить на свой.
                         for (pr in listOf(ApiPresets.phoneLlama(), ApiPresets.pcOllama(PC_HOST_HINT), ApiPresets.pcLlama(PC_HOST_HINT))) {
-                            FilterChip(selected = baseUrl == pr.baseUrl, onClick = { baseUrl = pr.baseUrl; custom = true; models = emptyList(); if (name.isBlank()) name = pr.name }, label = { Text(pr.name) })
+                            // Отметку своего сервера ставит человек (D-98): заготовка её не ставит.
+                            FilterChip(selected = baseUrl == pr.baseUrl, onClick = { baseUrl = pr.baseUrl; models = emptyList() }, label = { Text(pr.name) })
                         }
                     }
                     OutlinedTextField(baseUrl, { baseUrl = it; models = emptyList() }, label = { Text("Адрес API (…/v1)") }, singleLine = true, modifier = Modifier.fillMaxWidth())

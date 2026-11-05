@@ -149,10 +149,15 @@ class LinuxEnvironmentTest {
         assertEquals(listOf("/bin/sh", "-lc", "apk add llama-server && llama-server --version"), LinuxEnvironment.llamaInstall().command)
         val ok = LinuxEnvironment.llamaServe("/root/files/models/qwen2.5-1.5b q4.gguf", 8080, 4096, 4).valueOrNull()!!
         assertEquals(
-            listOf("llama-server", "-m", "/root/files/models/qwen2.5-1.5b q4.gguf", "--host", "127.0.0.1", "--port", "8080", "--ctx-size", "4096", "--threads", "4"),
+            listOf(
+                "llama-server", "-m", "/root/files/models/qwen2.5-1.5b q4.gguf", "--host", "127.0.0.1", "--port", "8080",
+                "--ctx-size", "4096", "--threads", "4", "--parallel", "1",
+                "--api-key-file", LinuxEnvironment.LLAMA_KEY_FILE, "--no-webui", "--no-slots",
+            ),
             ok.command,
-            "путь — отдельным аргументом, без оболочки; только 127.0.0.1",
+            "путь — отдельным аргументом, без оболочки; только 127.0.0.1, ключ файлом, без веб-интерфейса и /slots (T18)",
         )
+        assertTrue(LinuxEnvironment.llamaServe("/root/storage/shared/Download/Модели/модель q4.gguf", 8080, 4096, 4) is Outcome.Success, "русские имена папок")
         for (bad in listOf("/root/models/../.ssh/id.gguf", "/etc/passwd", "/root/models/x.bin", "/tmp/x.gguf", "/root/models/x.gguf;rm -rf /", "models/x.gguf")) {
             assertEquals(DiagCode.VALUE_INVALID, (LinuxEnvironment.llamaServe(bad, 8080, 4096, 4) as Outcome.Failure).errors.single().code, bad)
         }

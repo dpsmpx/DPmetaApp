@@ -9,6 +9,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,13 +39,19 @@ object LocalHints {
     private const val PREFS = "localai"
     private const val KEY = "profile"
 
-    /** Профили, которые годятся локальному ИИ. */
-    fun candidates(all: List<ApiProfile>): List<ApiProfile> = all.filter { LocalAI.local(it) is Outcome.Success }
+    /** Профили, которые годятся локальному ИИ: устройство или частная сеть и отметка своего сервера (D-98). */
+    fun candidates(all: List<ApiProfile>): List<ApiProfile> = all.filter { it.customHostAllowed && LocalAI.local(it) is Outcome.Success }
 
+    /**
+     * Кого спрашивать: выбранный человеком профиль, иначе — свой профиль
+     * сервера телефона; любой другой частный профиль сам не берётся.
+     * Читает настройки — не с главного потока.
+     */
     fun chosen(context: Context, all: List<ApiProfile>): ApiProfile? {
         val local = candidates(all)
         val id = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, null)
-        return local.firstOrNull { it.id.value == id } ?: local.firstOrNull { it.name == com.dpsmpx.dpai.accounts.ApiPresets.phoneLlama().name } ?: local.firstOrNull()
+        val own = LocalModel.ownProfile(context)
+        return local.firstOrNull { it.id.value == id } ?: local.firstOrNull { it.id == own }
     }
 
     fun choose(context: Context, profile: ApiProfile) {
@@ -57,6 +65,12 @@ object LocalHints {
     fun dashboard(context: Context, screen: DashboardScreen, cancel: Cancel): String {
         ModelsStore.init(context)
         val profile = chosen(context, ModelsStore.profiles.value) ?: return "Нет локальной модели: запустите llama.cpp во вкладке Linux или добавьте профиль ПК (Ollama, llama.cpp) во вкладке «Модели»."
+        // Сервер телефона не запущен — на его порту может слушать кто угодно (T18): не спрашивать.
+        if (LocalModel.isOwn(context, profile.id) && !LocalModel.alive()) return "Сервер llama.cpp на телефоне не запущен: вкладка Linux → «Запустить»."
+        return runCatching { ask(context, profile, screen, cancel) }.getOrElse { "Локальный ИИ: ${it.javaClass.simpleName}" }
+    }
+
+    private fun ask(context: Context, profile: ApiProfile, screen: DashboardScreen, cancel: Cancel): String {
         val ai = when (val r = LocalAI.of(profile, ModelsStore.provider(profile))) {
             is Outcome.Failure -> return "Локальный ИИ: ${r.errors.first().message}"
             is Outcome.Success -> r.value
@@ -85,7 +99,11 @@ fun LocalHintsCard(screen: DashboardScreen) {
     val profiles by ModelsStore.profiles.collectAsState()
     var busy by remember { mutableStateOf(false) }
     var answer by remember { mutableStateOf<String?>(null) }
-    val profile = remember(profiles) { LocalHints.chosen(context, profiles) }
+    var profile by remember { mutableStateOf<ApiProfile?>(null) }
+    // Профили читаются в фоне и не ждут вкладки «Модели»; настройки — тоже не на главном потоке.
+    LaunchedEffect(profiles) { profile = withContext(Dispatchers.IO) { ModelsStore.init(context); LocalHints.chosen(context, ModelsStore.profiles.value) } }
+    val cancel = remember { Cancel() }
+    DisposableEffect(Unit) { onDispose { cancel.cancel() } }
     Card {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("Подсказки локальной модели", style = MaterialTheme.typography.titleSmall)
@@ -97,7 +115,7 @@ fun LocalHintsCard(screen: DashboardScreen) {
             TextButton(enabled = !busy, onClick = {
                 busy = true
                 scope.launch {
-                    answer = withContext(Dispatchers.IO) { LocalHints.dashboard(context, screen, Cancel()) }
+                    answer = withContext(Dispatchers.IO) { LocalHints.dashboard(context, screen, cancel) }
                     busy = false
                 }
             }) { Text(if (busy) "Спрашиваю…" else "Спросить модель") }

@@ -52,8 +52,9 @@ fun LocalModelSection() {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text("Локальная модель (llama.cpp)", style = MaterialTheme.typography.titleSmall)
         Text(
-            "Модель — файл GGUF из ${LinuxEnvironment.MODEL_DIRS.joinToString(", ")} (свои файлы, вкладка «Файлы»). " +
-                "Сервер слушает только этот телефон; модель берёт память — начинайте с маленькой (1–3 млрд параметров, Q4).",
+            "Модель — файл GGUF: в /root/models (скачать терминалом) или в общем хранилище при «Доступе ко всем файлам» " +
+                "(например, Download). Связанная папка копирует файлы до 32 МиБ — модели в неё не входят. " +
+                "Сервер — на этом телефоне, с ключом этого запуска; модель берёт память — начинайте с маленькой (1–3 млрд параметров, Q4).",
             style = MaterialTheme.typography.bodySmall,
         )
         FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -76,8 +77,7 @@ fun LocalModelSection() {
             if (status.running) TextButton(enabled = busy == null, onClick = { work("Останавливаю…") { LocalModel.stop(); "Сервер остановлен" } }) { Text("Остановить") }
         }
         val state = when {
-            status.running && LocalModel.alive() -> "Идёт: ${status.model?.substringAfterLast('/')}, порт ${status.port}"
-            status.running -> "Сервер вышел — причина в выводе ниже"
+            status.running -> "Идёт: ${status.model?.substringAfterLast('/')}, порт ${status.port}"
             else -> "Не запущен"
         }
         Text(state, style = MaterialTheme.typography.labelSmall)
