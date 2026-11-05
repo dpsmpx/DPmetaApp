@@ -38,6 +38,9 @@ data class PullRequest(
 
 data class Branch(val name: String, val sha: String)
 
+/** Репозиторий, видный токену (D-70): адрес, закрытый ли, в архиве ли. */
+data class RepoInfo(val slug: RepoRef, val private: Boolean, val archived: Boolean)
+
 data class CommitInfo(val sha: String, val date: Timestamp, val author: String?)
 
 data class RateLimit(val remaining: Int, val limit: Int, val reset: Timestamp)
@@ -100,6 +103,28 @@ class GitHub(private val net: Net, private val token: Secret?, private val api: 
             Branch(str(o, "name") ?: return@then missing("name", "$repo:branches"), sha ?: return@then missing("commit.sha", "$repo:branches"))
         }
         Outcome.success(Page(out, p.fetched))
+    }
+
+    /**
+     * Репозитории, видные токену (D-70: окно выбора клонов), — по 100 на
+     * страницу, не больше [MAX_REPO_PAGES] страниц; по алфавиту.
+     */
+    fun repos(): Outcome<List<RepoInfo>> {
+        val out = mutableListOf<RepoInfo>()
+        for (page in 1..MAX_REPO_PAGES) {
+            val items = when (val r = get("user/repos?per_page=100&sort=full_name&page=$page", "user:repos")) {
+                is Outcome.Failure -> return r
+                is Outcome.Success -> (r.value.value as? JsonArray)?.items ?: return missing("[]", "user:repos")
+            }
+            for (v in items) {
+                val o = v as? JsonObject ?: return missing("repo", "user:repos")
+                val name = str(o, "full_name") ?: return missing("full_name", "user:repos")
+                val slug = RepoRef.parse(name).valueOrNull() ?: continue
+                out += RepoInfo(slug, (o["private"] as? JsonBool)?.value ?: true, (o["archived"] as? JsonBool)?.value ?: false)
+            }
+            if (items.size < 100) break
+        }
+        return Outcome.success(out.distinctBy { it.slug.toString() }.sortedBy { it.slug.toString().lowercase() })
     }
 
     /** Коммит по SHA — неизменяемый: вызывающий хранит уже известные и не спрашивает снова. */
@@ -188,6 +213,9 @@ class GitHub(private val net: Net, private val token: Secret?, private val api: 
                 null
             }
         }
+
+        /** Предел страниц списка репозиториев: 1000 репозиториев — с запасом для одного автора. */
+        const val MAX_REPO_PAGES = 10
 
         private fun missing(field: String, subject: String) =
             Outcome.failure(DiagCode.FIELD_MISSING, "в ответе GitHub нет поля $field", subject)

@@ -8,7 +8,6 @@ import com.dpsmpx.dpmeta.net.AllowList
 import com.dpsmpx.dpmeta.net.HttpRequest
 import com.dpsmpx.dpmeta.net.Secrets
 import org.eclipse.jgit.api.Git
-import org.eclipse.jgit.api.MergeCommand
 import org.eclipse.jgit.api.errors.GitAPIException
 import org.eclipse.jgit.api.errors.InvalidRemoteException
 import org.eclipse.jgit.api.errors.JGitInternalException
@@ -47,8 +46,9 @@ import javax.net.ssl.TrustManager
  * веток, ветки сборок — мимо ([sync], `excluded`). Есть клон — обновление,
  * нет — клонирование. Данные для приложения читаются из веток GitHub в клоне
  * (`refs/remotes/origin/…`), а не из рабочего дерева: правки ИИ в клоне
- * числа не меняют. Клон, разошедшийся с GitHub, сам не чинится и не
- * перезаписывается — расхождение возвращается [Conflict]ом.
+ * числа не меняют. Рабочее дерево и локальные ветки — работа ИИ (D-70):
+ * обновление их не трогает и конфликтом не считает; перезаписанная на
+ * GitHub история — сведение [Conflict] (`REWRITTEN`), а не ошибка.
  *
  * Сеть — только через [gate] (список адресов `:core:net`, D-10): адрес
  * проверяется до любого обращения JGit. Токен — PAT только для чтения (D-17):
@@ -66,12 +66,9 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
 
     enum class Action { CLONED, FETCHED }
 
-    /** Расхождение клона с GitHub (D-65): видно в «Ошибках источников», клон не трогается. */
+    /** Сведение обновления (D-70): история ветки на GitHub перезаписана — клон взял её; локальная работа — не расхождение. */
     enum class ConflictKind(val title: String) {
-        DIRTY("незакоммиченные правки в клоне"),
-        AHEAD("коммиты клона, которых нет на GitHub"),
         REWRITTEN("история ветки на GitHub перезаписана"),
-        LOCAL_ONLY("ветка есть только в клоне"),
     }
 
     data class Conflict(val kind: ConflictKind, val branch: String) {
@@ -84,7 +81,14 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
     /** Голова ветки GitHub в клоне: SHA, время коммита (коммиттера), автор коммита. */
     data class Head(val name: String, val sha: String, val time: Timestamp, val author: String?)
 
-    fun dir(project: String): File = File(root, safe(project))
+    /**
+     * Каталог клона: `владелец/имя` — вложенными каталогами (D-70: в Linux-среде
+     * клоны видны как `/root/repos/<владелец>/<имя>`); каждая часть — [safe].
+     */
+    fun dir(project: String): File {
+        val parts = project.split('/')
+        return if (parts.size == 2) File(File(root, safe(parts[0])), safe(parts[1])) else File(root, safe(project))
+    }
 
     /**
      * Клонировать или обновить клон [project] из [remote]. [excluded] —
@@ -158,25 +162,18 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
                 val name = r.name.removePrefix(Constants.R_REMOTES + "origin/")
                 if (name !in keep) repo.updateRef(r.name).apply { isForceUpdate = true }.delete()
             }
-            val conflicts = conflicts(repo, git, keep, before)
-            if (conflicts.none { it.branch == main } && repo.branch == main) {
-                val target = repo.resolve(Constants.R_REMOTES + "origin/" + main)
-                if (target != null && target != repo.resolve(Constants.R_HEADS + main)) {
-                    git.merge().include(target).setFastForward(MergeCommand.FastForwardMode.FF_ONLY).call()
-                }
-            }
-            Outcome.success(Report(project, Action.FETCHED, main, keep, conflicts))
+            // Рабочее дерево и локальные ветки — работа ИИ (D-70): синхронизация их не трогает, только `origin/*`.
+            Outcome.success(Report(project, Action.FETCHED, main, keep, rewritten(repo, keep, before)))
         }
     }
 
     /**
-     * Расхождения: незакоммиченное в дереве; локальная ветка с коммитами,
-     * которых нет на GitHub; ветка GitHub, история которой перезаписана
-     * (прежняя голова больше не её предок); ветка только в клоне.
+     * Сведения обновления: ветка GitHub, история которой перезаписана
+     * (прежняя голова больше не её предок), — клон взял историю GitHub.
+     * Локальная работа в клоне (ветки, коммиты, правки) — не конфликт (D-70).
      */
-    private fun conflicts(repo: Repository, git: Git, keep: List<String>, before: Map<String, ObjectId?>): List<Conflict> {
+    private fun rewritten(repo: Repository, keep: List<String>, before: Map<String, ObjectId?>): List<Conflict> {
         val out = mutableListOf<Conflict>()
-        if (git.status().call().hasUncommittedChanges()) out += Conflict(ConflictKind.DIRTY, repo.branch)
         RevWalk(repo).use { walk ->
             fun ancestor(a: ObjectId, b: ObjectId): Boolean = try {
                 walk.reset()
@@ -189,23 +186,25 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
                 val now = repo.resolve(Constants.R_REMOTES + "origin/" + name) ?: continue
                 if (old != now && !ancestor(old, now)) out += Conflict(ConflictKind.REWRITTEN, name)
             }
-            for (r in repo.refDatabase.getRefsByPrefix(Constants.R_HEADS)) {
-                val name = r.name.removePrefix(Constants.R_HEADS)
-                val upstream = repo.resolve(Constants.R_REMOTES + "origin/" + name)
-                when {
-                    upstream == null -> out += Conflict(ConflictKind.LOCAL_ONLY, name)
-                    r.objectId != upstream && !ancestor(r.objectId, upstream) -> out += Conflict(ConflictKind.AHEAD, name)
-                }
-            }
         }
-        return out.distinct()
+        return out
     }
 
-    /** Основная ветка клона (GitHub `HEAD` при клонировании); клона нет — `null`. */
+    /**
+     * Основная ветка клона (GitHub `HEAD` при клонировании); клона нет —
+     * `null`. Клон, сделанный в Linux-среде моделью (D-70), отметки не
+     * имеет: тогда — цель `origin/HEAD`, затем `main`, и только потом текущая
+     * ветка (её могла взять работа ИИ).
+     */
     fun main(project: String): String? {
         val dir = dir(project)
         if (!File(dir, ".git").isDirectory) return null
-        return open(dir).use { it.config.getString("dpmeta", null, "main") ?: it.branch }
+        return open(dir).use { repo ->
+            repo.config.getString("dpmeta", null, "main")
+                ?: repo.exactRef(Constants.R_REMOTES + "origin/HEAD")?.target?.name?.removePrefix(Constants.R_REMOTES + "origin/")?.takeIf { it != "HEAD" }
+                ?: "main".takeIf { repo.exactRef(Constants.R_REMOTES + "origin/main") != null }
+                ?: repo.branch
+        }
     }
 
     /** Ветки GitHub в клоне с головами; клона нет — `ENTITY_NOT_FOUND`. */

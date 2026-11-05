@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -77,7 +78,18 @@ data class PultView(
     val names: Map<String, String> = emptyMap(),
     /** История чисел (D-34) — для статистики и плиток сводки (F-34). */
     val history: List<MetricPoint> = emptyList(),
+    /** Окно выбора клонов (D-70); `null` — закрыто. */
+    val clonePrompt: ClonePrompt? = null,
+    /** Сколько репозиториев отмечено для клонов — строка настроек. */
+    val clones: String = "",
 )
+
+/**
+ * Окно выбора клонов (D-70): все репозитории аккаунта, реестр — сверху;
+ * [checked] — отмеченные заранее (при первом входе — реестр); [first] —
+ * первый вход: «Позже» спросит снова.
+ */
+data class ClonePrompt(val options: List<com.dpsmpx.dpmeta.app.data.PultRepository.CloneOption>, val checked: Set<String>, val first: Boolean)
 
 /** Загрузка по запросу (F-09): каталог и файл проекта; итог — в главном потоке. */
 interface Loader {
@@ -113,6 +125,10 @@ fun PultApp(
     onForgetToken: () -> Unit,
     onAi: (() -> Unit)? = null,
     onExport: ((json: Boolean, period: Stats.Period, share: Boolean) -> Unit)? = null,
+    /** «Клоны…» в настройках (D-70). */
+    onClones: () -> Unit = {},
+    /** Итог окна клонов: отмеченные или `null` — «Позже» / «Отмена». */
+    onClonesChosen: (Set<String>?) -> Unit = {},
 ) {
     var tab by remember { mutableStateOf(if (view.hasToken) Tab.SUMMARY else Tab.SETTINGS) }
     val stack = remember { mutableStateListOf<Nav>() }
@@ -136,7 +152,7 @@ fun PultApp(
                 top is Nav.Dir -> DirScreen(top, loader, back, open)
                 top is Nav.Doc -> DocScreen(top, view.names, loader, back, open)
                 top is Nav.Stats && s != null -> StatsScreen(view.history, s.projects.map { it.name }, top.project, s.asOf, back, view.status, onExport)
-                tab == Tab.SETTINGS -> Settings(view, onSync, onSaveToken, onForgetToken)
+                tab == Tab.SETTINGS -> Settings(view, onSync, onSaveToken, onForgetToken, onClones)
                 s == null -> Text(if (view.hasToken) "Среза ещё нет: «Обновить» в настройках." else "Нужен токен GitHub: вкладка «Настройки».")
                 tab == Tab.SUMMARY -> Summary(Screens.summary(s), view, onSync) { open(Nav.Stats(null)) }
                 tab == Tab.PROJECTS -> Projects(Screens.projects(s)) { open(Nav.Card(it)) }
@@ -145,6 +161,7 @@ fun PultApp(
             }
         }
     }
+    view.clonePrompt?.let { ClonesDialog(it, onClonesChosen) }
 }
 
 @Composable
@@ -356,7 +373,7 @@ private fun Questions(q: List<Screens.Question>) = LazyColumn(verticalArrangemen
 }
 
 @Composable
-private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -> Unit, onForget: () -> Unit) = Column(verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -> Unit, onForget: () -> Unit, onClones: () -> Unit) = Column(verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
     var token by remember { mutableStateOf("") }
     Text("GitHub", style = MaterialTheme.typography.titleMedium)
     Text(
@@ -374,4 +391,55 @@ private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -
     Spacer(Modifier.height(Tokens.gap))
     Button(onClick = onSync, enabled = view.hasToken && !view.busy) { Text(if (view.busy) "Синхронизация…" else "Обновить") }
     if (view.status.isNotEmpty()) Text(view.status, style = MaterialTheme.typography.bodySmall)
+    Spacer(Modifier.height(Tokens.gap))
+    Text("Клоны репозиториев", style = MaterialTheme.typography.titleMedium)
+    Text(
+        "Отмеченные репозитории клонируются в приложение: «AI» работает в них (Linux-среда, /root/repos), пульт берёт из них файлы. " +
+            view.clones,
+        style = MaterialTheme.typography.bodySmall,
+    )
+    TextButton(onClick = onClones, enabled = view.hasToken && !view.busy) { Text("Клоны…") }
+}
+
+/**
+ * Выбор клонов (D-70): репозиторий — строкой с отметкой; реестр — сверху.
+ * Снятая отметка клон не удаляет: в нём может быть работа ИИ — он просто не
+ * обновляется и не читается.
+ */
+@Composable
+fun ClonesDialog(prompt: ClonePrompt, onDone: (Set<String>?) -> Unit) {
+    var checked by remember(prompt) { mutableStateOf(prompt.checked) }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = { onDone(null) },
+        title = { Text("Какие репозитории клонировать?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+                Text(
+                    "Клон — полная копия в приложении: «AI» работает в нём, пульт берёт из него файлы без запросов. " +
+                        "Первое клонирование — долгое, лучше по Wi-Fi. Неотмеченные пульт читает с GitHub. Выбор меняется в «Настройках».",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                // Список — не выше половины экрана: кнопки окна остаются видны.
+                LazyColumn(Modifier.heightIn(max = 360.dp)) {
+                    items(prompt.options, key = { it.slug }) { o ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable { checked = if (o.slug in checked) checked - o.slug else checked + o.slug },
+                            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                        ) {
+                            androidx.compose.material3.Checkbox(checked = o.slug in checked, onCheckedChange = null)
+                            Column(Modifier.padding(start = 6.dp)) {
+                                Text(o.slug, style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    listOfNotNull("реестр".takeIf { o.registry }, "закрытый".takeIf { o.private }).joinToString(" · "),
+                                    style = MaterialTheme.typography.labelSmall,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onDone(checked) }) { Text("Клонировать отмеченные (${checked.size})") } },
+        dismissButton = { TextButton(onClick = { onDone(null) }) { Text(if (prompt.first) "Позже" else "Отмена") } },
+    )
 }
