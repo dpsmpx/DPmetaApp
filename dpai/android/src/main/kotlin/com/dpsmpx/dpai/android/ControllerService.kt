@@ -154,6 +154,12 @@ class ControllerService : Service() {
                             }
                             // Копия настроек — после изменения и раз в час (D-51).
                             SettingsBackups.tick(app, Controller.get(app.filesDir))
+                            // Задачи из экосистемы по политике прогона — раз в час (D-106); сбой — в журнал, такт идёт.
+                            try {
+                                EcosystemAuto.tick(app, model, notifier, log)
+                            } catch (e: Exception) {
+                                log.error("экосистема", AppLogs.describe(e))
+                            }
                             true
                         } catch (e: Exception) {
                             // Сбой шага — тоже сбой подряд: контур, который не строится (журнал не открылся), не работает.

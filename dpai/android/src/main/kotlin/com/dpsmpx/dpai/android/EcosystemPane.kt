@@ -20,6 +20,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,7 +50,9 @@ import kotlinx.coroutines.withContext
  * задача из предложения ставится после «Поставить» в окне подтверждения
  * (`docs/direction/V1_SCOPE.md`, §3) командой с ключом
  * `ecosystem:<проект>/<предложение>` — повтор задачу не дублирует (D-42).
- * Отбор — тот же `EcosystemPlan`, что у `dpai ecosystem`.
+ * Отбор — тот же `EcosystemPlan`, что у `dpai ecosystem`. Без
+ * подтверждения — только по политике прогона, которую человек включает
+ * здесь же (D-106, `AutoPolicySection`).
  */
 @Composable
 fun EcosystemDialog(model: DemoModel, onDone: () -> Unit) {
@@ -61,6 +64,16 @@ fun EcosystemDialog(model: DemoModel, onDone: () -> Unit) {
     var allOperations by remember { mutableStateOf(false) }
     var confirm by remember { mutableStateOf<PlannedSuggestion?>(null) }
     var status by remember { mutableStateOf<String?>(null) }
+    var kept by remember { mutableStateOf(false) }
+    // Выбранный прежде манифест — сразу: его же читает проход политики (D-106).
+    LaunchedEffect(Unit) {
+        val uri = withContext(Dispatchers.IO) { EcosystemChoice.manifest(context) } ?: return@LaunchedEffect
+        kept = true
+        when (val r = withContext(Dispatchers.IO) { readManifest(context, uri) }) {
+            is Outcome.Success -> projects = r.value
+            is Outcome.Failure -> error = "Сохранённый манифест не читается: ${r.errors.joinToString("; ") { it.message }}"
+        }
+    }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             scope.launch {
@@ -68,6 +81,7 @@ fun EcosystemDialog(model: DemoModel, onDone: () -> Unit) {
                     is Outcome.Success -> {
                         projects = r.value
                         error = null
+                        kept = withContext(Dispatchers.IO) { EcosystemChoice.keepManifest(context, uri) }
                     }
                     is Outcome.Failure -> error = "Манифест не читается: ${r.errors.joinToString("; ") { it.message }}"
                 }
@@ -124,6 +138,7 @@ fun EcosystemDialog(model: DemoModel, onDone: () -> Unit) {
                             }
                         }
                     }
+                    if (ps.isNotEmpty()) AutoPolicySection(model, chosen, kept)
                 }
                 status?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             }
@@ -162,7 +177,7 @@ private const val DOCS = "docs"
 /** Манифест больше этого — не манифест: файл, выбранный по ошибке, не читается в память целиком. */
 private const val MAX_MANIFEST_BYTES = 4 * 1024 * 1024
 
-private fun readManifest(context: Context, uri: Uri): Outcome<List<EcosystemProject>> {
+internal fun readManifest(context: Context, uri: Uri): Outcome<List<EcosystemProject>> {
     val text = try {
         context.contentResolver.openInputStream(uri)?.use { input ->
             val buf = ByteArrayOutputStream()
@@ -183,14 +198,38 @@ private fun readManifest(context: Context, uri: Uri): Outcome<List<EcosystemProj
     return ManifestEcosystem { text }.projects()
 }
 
-/** Какой проект манифеста — этот контур: выбор человека, в настройках приложения. */
-private object EcosystemChoice {
+/**
+ * Какой проект манифеста — этот контур, и какой файл — манифест: выбор
+ * человека, в настройках приложения. Разрешение на чтение файла
+ * сохраняется (D-106): его читает проход политики без окна; прежнее
+ * разрешение при выборе нового файла отпускается.
+ */
+internal object EcosystemChoice {
     private const val PREFS = "dpai.ecosystem"
     private const val PROJECT = "project"
+    private const val MANIFEST = "manifest"
 
     fun project(context: Context): String? = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(PROJECT, null)
 
     fun remember(context: Context, key: String) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(PROJECT, key).apply()
+    }
+
+    fun manifest(context: Context): Uri? = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(MANIFEST, null)?.let(Uri::parse)
+
+    /** Сохранить выбранный манифест; файл без постоянного разрешения — `false`: проход политики его не прочтёт. */
+    fun keepManifest(context: Context, uri: Uri): Boolean {
+        val resolver = context.contentResolver
+        val flags = android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+        val kept = try {
+            resolver.takePersistableUriPermission(uri, flags)
+            true
+        } catch (_: SecurityException) {
+            false
+        }
+        val previous = manifest(context)
+        if (previous != null && previous != uri) runCatching { resolver.releasePersistableUriPermission(previous, flags) }
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().apply { if (kept) putString(MANIFEST, uri.toString()) else remove(MANIFEST) }.apply()
+        return kept
     }
 }
