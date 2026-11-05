@@ -89,10 +89,10 @@ class AutoEcosystemTest {
         val r = pass(a, c)
         assertEquals(listOf("a1", "a4"), r.placed.map { it.suggestion }, "docs, NORMAL и LOW проекта app")
         val why = r.refused.toMap()
-        assertEquals("вид работы code не разрешён прогону", why["ecosystem:app/a2"])
-        assertEquals("приоритет CRITICAL не разрешён политикой", why["ecosystem:app/a3"])
-        assertEquals("проект other не разрешён прогону", why["ecosystem:other/o1"])
-        assertEquals(setOf("ecosystem:app/a1", "ecosystem:app/a4"), c.byKey.keys)
+        assertEquals("вид работы code не разрешён прогону", why["ecosystem:app:a2"])
+        assertEquals("приоритет CRITICAL не разрешён политикой", why["ecosystem:app:a3"])
+        assertEquals("проект other не разрешён прогону", why["ecosystem:other:o1"])
+        assertEquals(setOf("ecosystem:app:a1", "ecosystem:app:a4"), c.byKey.keys)
         assertEquals(policy().digest(), r.placed.first().policy, "в записи — отпечаток политики")
         assertEquals(r.placed, (a.entries() as Outcome.Success).value, "след сохранён")
         val queued = AutoEntry(clock.now(), "app", "a9", null, "0123456789abcdef")
@@ -118,7 +118,7 @@ class AutoEcosystemTest {
         val c = Contour(ids)
         val first = pass(a, c)
         assertEquals(listOf("a1"), first.placed.map { it.suggestion })
-        assertEquals("предел 1 задач за 24 часа исчерпан", first.refused.toMap()["ecosystem:app/a4"])
+        assertEquals("предел 1 задач за 24 часа исчерпан", first.refused.toMap()["ecosystem:app:a4"])
         assertTrue(pass(a, c).placed.isEmpty(), "в те же сутки — больше ни одной")
         clock.advance(25.hours)
         assertEquals(listOf("a4"), pass(a, c).placed.map { it.suggestion }, "через сутки — следующая")
@@ -127,8 +127,8 @@ class AutoEcosystemTest {
         b.enable(policy(open = 1))
         val d = Contour(ids)
         assertEquals(listOf("a1"), pass(b, d).placed.map { it.suggestion })
-        assertEquals("предел 1 открытых задач политики", pass(b, d).refused.toMap()["ecosystem:app/a4"])
-        d.finished += d.byKey.getValue("ecosystem:app/a1")
+        assertEquals("предел 1 открытых задач политики", pass(b, d).refused.toMap()["ecosystem:app:a4"])
+        d.finished += d.byKey.getValue("ecosystem:app:a1")
         assertEquals(listOf("a4"), pass(b, d).placed.map { it.suggestion }, "задача кончилась — место свободно")
     }
 
@@ -165,13 +165,13 @@ class AutoEcosystemTest {
         a.enable(policy(perDay = 1))
         val ops = HashMap<String, Outcome<TaskId>>()
         // a4 человек поставил сам из окна — до политики.
-        ops["ecosystem:app/a4"] = Outcome.success(ids.next(IdKinds.TASK))
+        ops["ecosystem:app:a4"] = Outcome.success(ids.next(IdKinds.TASK))
         val queuedPass = (a.pass(projects, setOf("app"), { true }, { Outcome.failure(DiagCode.COMMAND_QUEUED, "в очереди") }) { ops[it] } as Outcome.Success).value
         assertEquals(listOf("a1"), queuedPass.queued.map { it.suggestion }, "очередь контура — тоже задача политики, с записью")
         assertTrue(queuedPass.placed.isEmpty(), "без id — без сообщения о постановке")
-        assertTrue(queuedPass.refused.none { it.first == "ecosystem:app/a4" }, "поставленное человеком — не политики и не отказ")
+        assertTrue(queuedPass.refused.none { it.first == "ecosystem:app:a4" }, "поставленное человеком — не политики и не отказ")
         val id = ids.next(IdKinds.TASK)
-        ops["ecosystem:app/a1"] = Outcome.success(id)
+        ops["ecosystem:app:a1"] = Outcome.success(id)
         val c = Contour(ids)
         val later = (a.pass(projects, setOf("app"), c::open, c::place) { ops[it] } as Outcome.Success).value
         assertEquals(listOf<TaskId?>(id), later.placed.map { it.task }, "контур исполнил очередь — id в следе и сообщение")
@@ -185,12 +185,42 @@ class AutoEcosystemTest {
         a.enable(policy(perDay = 1))
         val ops = HashMap<String, Outcome<TaskId>>()
         a.pass(projects, setOf("app"), { true }, { Outcome.failure(DiagCode.COMMAND_QUEUED, "в очереди") }) { ops[it] }
-        ops["ecosystem:app/a1"] = Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "отказ контура")
+        ops["ecosystem:app:a1"] = Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "отказ контура")
         val r = (a.pass(projects, setOf("app"), { true }, { Outcome.failure(DiagCode.COMMAND_QUEUED, "в очереди") }) { ops[it] } as Outcome.Success).value
         assertEquals(DiagCode.OPERATION_NOT_ALLOWED, r.failures.single().code)
         assertTrue(r.placed.isEmpty())
         assertEquals(listOf("a4"), r.queued.map { it.suggestion }, "место отказавшей команды свободно")
         assertEquals(listOf("a4"), (a.entries() as Outcome.Success).value.map { it.suggestion })
+    }
+
+    @Test
+    fun bookingIsWrittenBeforeThePlacementAndStalePendingFreesItsPlace() {
+        val a = auto()
+        a.enable(policy(perDay = 1))
+        var seen: List<AutoEntry>? = null
+        // Контур отверг команду до записи итога (ключ, журнал): о ключе он не знает.
+        a.pass(projects, setOf("app"), { true }, { c ->
+            seen = (a.entries() as Outcome.Success).value
+            Outcome.failure(DiagCode.COMMAND_QUEUED, "в очереди ${c.key}")
+        })
+        assertEquals(listOf<TaskId?>(null), seen!!.map { it.task }, "бронь — на диске до постановки")
+        val c = Contour(ids)
+        assertTrue(pass(a, c, setOf("app")).placed.isEmpty(), "бронь держит место в пределах")
+        assertEquals(0, c.calls)
+        clock.advance(25.hours)
+        val r = pass(a, c, setOf("app"))
+        assertTrue(r.failures.any { "не дошла до контура" in it.message }, "бронь без следа в контуре сутки — снята")
+        assertEquals(listOf("a1"), r.placed.map { it.suggestion }, "место свободно — предложение ставится снова")
+    }
+
+    @Test
+    fun commandTheHumanQueuedIsNotThePolicys() {
+        val a = auto()
+        a.enable(policy())
+        val c = Contour(ids)
+        val r = (a.pass(projects, setOf("app"), c::open, c::place) { key -> if (key == "ecosystem:app:a1") Outcome.failure(DiagCode.COMMAND_QUEUED, "человек поставил, ждёт такта") else null } as Outcome.Success).value
+        assertEquals(listOf("a4"), r.placed.map { it.suggestion })
+        assertEquals(setOf("ecosystem:app:a4"), c.byKey.keys)
     }
 
     @Test

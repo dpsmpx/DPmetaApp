@@ -49,7 +49,7 @@ import kotlinx.coroutines.withContext
  * (D-16). Проект этого контура выбирает человек (выбор запоминается);
  * задача из предложения ставится после «Поставить» в окне подтверждения
  * (`docs/direction/V1_SCOPE.md`, §3) командой с ключом
- * `ecosystem:<проект>/<предложение>` — повтор задачу не дублирует (D-42).
+ * `ecosystem:<проект>:<предложение>` — повтор задачу не дублирует (D-42).
  * Отбор — тот же `EcosystemPlan`, что у `dpai ecosystem`. Без
  * подтверждения — только по политике прогона, которую человек включает
  * здесь же (D-106, `AutoPolicySection`).
@@ -81,7 +81,22 @@ fun EcosystemDialog(model: DemoModel, onDone: () -> Unit) {
                     is Outcome.Success -> {
                         projects = r.value
                         error = null
+                        val before = withContext(Dispatchers.IO) { EcosystemChoice.manifest(context) }
                         kept = withContext(Dispatchers.IO) { EcosystemChoice.keepManifest(context, uri) }
+                        // Другой файл — другие предложения: политика, включённая над прежним, выключается (D-106, T19).
+                        if (before != null && before != uri) {
+                            val off = withContext(Dispatchers.IO) {
+                                val auto = Controller.get(context.filesDir).ecosystemAuto
+                                if (auto.policy().valueOrNull() != null) {
+                                    auto.disable()
+                                    AppLogs.get(context).info("экосистема", "политика прогона выключена: выбран другой манифест")
+                                    true
+                                } else {
+                                    false
+                                }
+                            }
+                            if (off) status = "Выбран другой манифест — политика прогона выключена: включите её заново."
+                        }
                     }
                     is Outcome.Failure -> error = "Манифест не читается: ${r.errors.joinToString("; ") { it.message }}"
                 }

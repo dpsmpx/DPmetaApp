@@ -40,7 +40,7 @@ class EcosystemCommandTest {
     @Test
     fun runAsksForEachAndSubmitsOnlyConfirmedWithStableKeys() {
         assertEquals(0, cmd(listOf("да", "нет")).run(listOf("run", "m.json", "--project", "alpha")))
-        assertEquals(listOf("ecosystem:alpha/sq-03"), submitted.map { it.key }, "HIGH — первым, второе не подтверждено")
+        assertEquals(listOf("ecosystem:alpha:sq-03"), submitted.map { it.key }, "HIGH — первым, второе не подтверждено")
         assertTrue(out.any { it.startsWith("пропущено sq-02: вид работы code") })
         assertTrue(out.any { it == "не поставлено sq-01: нет подтверждения" })
     }

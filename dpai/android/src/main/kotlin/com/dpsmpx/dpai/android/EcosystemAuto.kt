@@ -81,21 +81,23 @@ object EcosystemAuto {
             is Outcome.Failure -> return "Манифест не читается: ${m.errors.firstOrNull()?.message}".also { log.warn(TAG, it) }
             is Outcome.Success -> m.value
         }
-        val orchestrator = model.liveOrchestrator()
-        // Нет контура — задача не открыта, но и не поставится; неизвестная задача (архив, сброс) места не держит.
+        // Без собранного контура о ключах ничего не узнать (брони сняло бы по сроку) — и задачу не поставить.
+        val orchestrator = model.liveOrchestrator() ?: return "Контур не запущен — задачи не ставятся"
+        // Неизвестная задача (архив, сброс) места не держит.
         val open: (com.dpsmpx.dpai.core.ids.TaskId) -> Boolean = { id ->
-            orchestrator == null || orchestrator.tasks.tasks[id]?.state?.let { it !in TaskLifecycle.table.terminal } == true
+            orchestrator.tasks.tasks[id]?.state?.let { it !in TaskLifecycle.table.terminal } == true
         }
-        // Итог команды с ключом, если контур её уже исполнил (D-42): команда политики из очереди или поставленная человеком.
+        // Что контур знает о ключе (D-42, D-94): итог исполнения или «ждёт в очереди» — команда политики или человека.
         val known: (String) -> Outcome<com.dpsmpx.dpai.core.ids.TaskId>? = { key ->
-            orchestrator?.operations?.byKey?.get(key)?.let { r ->
+            orchestrator.operations.byKey[key]?.let { r ->
                 if (r.status == com.dpsmpx.dpai.core.operation.OperationStatus.FAILED) {
                     Outcome.failure(r.code ?: com.dpsmpx.dpai.core.diagnostics.DiagCode.INTERNAL_ERROR, "контур отказал в задаче политики", key)
                 } else {
                     r.value?.let { com.dpsmpx.dpai.core.ids.IdKinds.TASK.parse(it) }
                         ?: Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.INTERNAL_ERROR, "у команды нет id задачи", key)
                 }
-            }
+            } ?: orchestrator.accepted.pending.values.firstOrNull { (it.command.fields["key"] as? com.dpsmpx.dpai.core.serialization.JsonString)?.value == key }
+                ?.let { Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.COMMAND_QUEUED, "команда ждёт очереди контура", key) }
         }
         val r = when (val p = auto.pass(projects, setOf(project), open, model::addTask, known)) {
             is Outcome.Failure -> return "След политики не читается: ${p.errors.firstOrNull()?.message}".also { log.error(TAG, it) }
@@ -171,7 +173,9 @@ internal fun AutoPolicySection(model: DemoModel, project: EcosystemProject?, man
             when (val p = policy) {
                 null -> "…"
                 is Outcome.Failure -> "Политика не читается (${p.errors.firstOrNull()?.message}) — задачи не ставятся; «Включить…» заменит её."
-                is Outcome.Success -> p.value?.let { "Включена: ${EcosystemAuto.describe(it)}." }
+                is Outcome.Success -> p.value?.let {
+                    if (it.expired(Clock.SYSTEM.now())) "Срок истёк — задачи не ставятся: ${EcosystemAuto.describe(it)}." else "Включена: ${EcosystemAuto.describe(it)}."
+                }
                     ?: "Выключена: каждая задача — после «Поставить задачу…»."
             },
             style = MaterialTheme.typography.bodySmall,
@@ -227,7 +231,9 @@ private fun AutoPolicyDialog(project: EcosystemProject, current: AutoPolicy?, on
     var priorities by remember { mutableStateOf(current?.priorities ?: setOf(Priority.NORMAL, Priority.LOW, Priority.BACKGROUND)) }
     var perDay by remember { mutableIntStateOf(current?.maxPerDay ?: 3) }
     var open by remember { mutableIntStateOf(current?.maxOpen ?: 1) }
-    var days by remember { mutableIntStateOf(7) }
+    // «Изменить…» не сбрасывает срок молча: по умолчанию — как сейчас (KEEP), если он ещё не прошёл.
+    val keep = current?.until?.takeIf { it > Clock.SYSTEM.now() }
+    var days by remember { mutableIntStateOf(if (current == null) 7 else if (current.until == null) 0 else if (keep != null) KEEP else 7) }
     var confirming by remember { mutableStateOf<AutoPolicy?>(null) }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -262,9 +268,10 @@ private fun AutoPolicyDialog(project: EcosystemProject, current: AutoPolicy?, on
                     }
                     Text("Срок", style = MaterialTheme.typography.labelMedium)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        for ((label, d) in listOf("День" to 1, "Неделя" to 7, "Месяц" to 30, "Без срока" to 0)) FilterChip(selected = days == d, onClick = { days = d }, label = { Text(label) })
+                        val choices = listOfNotNull(keep?.let { "Как сейчас (до ${EcosystemAuto.stamp(it)})" to KEEP }) + listOf("День" to 1, "Неделя" to 7, "Месяц" to 30, "Без срока" to 0)
+                        for ((label, d) in choices) FilterChip(selected = days == d, onClick = { days = d }, label = { Text(label) })
                     }
-                    val problem = draft(project, ops, priorities, perDay, open, days).problem()
+                    val problem = draft(project, ops, priorities, perDay, open, days, keep).problem()
                     problem?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
                 }
             }
@@ -274,7 +281,7 @@ private fun AutoPolicyDialog(project: EcosystemProject, current: AutoPolicy?, on
             if (c != null) {
                 TextButton(onClick = { onEnable(c) }) { Text("Включить") }
             } else {
-                val d = draft(project, ops, priorities, perDay, open, days)
+                val d = draft(project, ops, priorities, perDay, open, days, keep)
                 TextButton(enabled = d.problem() == null, onClick = { confirming = d }) { Text("Далее") }
             }
         },
@@ -282,5 +289,8 @@ private fun AutoPolicyDialog(project: EcosystemProject, current: AutoPolicy?, on
     )
 }
 
-private fun draft(project: EcosystemProject, ops: Set<String>, priorities: Set<Priority>, perDay: Int, open: Int, days: Int): AutoPolicy =
-    AutoPolicy(setOf(project.key), ops, priorities, perDay, open, if (days > 0) Clock.SYSTEM.now() + days.days else null)
+/** Выбор срока «как сейчас». */
+private const val KEEP = -1
+
+private fun draft(project: EcosystemProject, ops: Set<String>, priorities: Set<Priority>, perDay: Int, open: Int, days: Int, keep: Timestamp?): AutoPolicy =
+    AutoPolicy(setOf(project.key), ops, priorities, perDay, open, if (days == KEEP) keep else if (days > 0) Clock.SYSTEM.now() + days.days else null)

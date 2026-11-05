@@ -119,7 +119,7 @@ data class AutoPass(val placed: List<AutoEntry>, val queued: List<AutoEntry>, va
  * документ `dpai.auto-policy`, след — `dpai.ecosystem-auto` в [store].
  * Отбор — тот же [EcosystemPlan], что у окна и `dpai ecosystem`, плюс рамки
  * политики; задача ставится той же командой с ключом
- * `ecosystem:<проект>/<предложение>` (D-42) — одно предложение, одна задача.
+ * `ecosystem:<проект>:<предложение>` (D-42) — одно предложение, одна задача.
  * Без подтверждения — только постановка: исполнение идёт по обычным
  * правилам контура (подтверждения по уровням, проверка, D-23).
  */
@@ -152,12 +152,17 @@ class AutoEcosystem(private val store: DocumentStore, private val clock: Clock) 
     /**
      * Проход: предложения [projects] с контуром в [connected] → рамки
      * политики → [place] каждой разрешённой задачи. [isOpen] — задача ещё
-     * не кончилась (для предела открытых). [known] — итог команды с этим
-     * ключом, если контур её уже исполнил (D-42): так ждавшая очереди
-     * команда политики получает id, а задача, которую человек поставил сам
-     * («Поставить задачу…», `dpai ecosystem run`), не записывается задачей
-     * политики. Политики нет, срок вышел или след не читается — ни одной
-     * задачи.
+     * не кончилась (для предела открытых). [known] — что контур знает о
+     * команде с этим ключом (D-42, D-94): `null` — ничего; отказ только с
+     * `COMMAND_QUEUED` — ждёт в его очереди; иначе — итог исполнения. Так
+     * ждавшая очереди команда политики получает id, а задачу, которую
+     * поставил человек («Поставить задачу…», `dpai ecosystem run`) — в том
+     * числе ещё в очереди, — политика своей не записывает. Политики нет,
+     * срок вышел или след не читается — ни одной задачи.
+     *
+     * Запись следа — до постановки («бронь» без id): пределы держатся,
+     * даже если после постановки след не запишется — следующий проход
+     * получит id по ключу.
      */
     @Synchronized
     fun pass(
@@ -182,15 +187,23 @@ class AutoEcosystem(private val store: DocumentStore, private val clock: Clock) 
         val refused = mutableListOf<Pair<String, String>>()
         val failures = mutableListOf<Diagnostic>()
         var changed = false
-        // Команды, ждавшие очереди: исполнены — с id (и сообщение человеку), отказ — из следа вон.
+        val dayAgo = Timestamp(now.epochMillis - DAY_MS)
+        // Брони и команды, ждавшие очереди: исполнены — с id (и сообщение человеку), отказ — из следа вон;
+        // контур о ключе не знает сутки — команда до него не дошла (журнал не принял её): место свободно.
         val cursor = ledger.listIterator()
         while (cursor.hasNext()) {
             val e = cursor.next()
             if (e.task != null) continue
-            when (val k = known(e.key)) {
-                null -> queued += e
-                is Outcome.Success -> e.copy(task = k.value).also { filled -> cursor.set(filled); placed += filled; changed = true }
-                is Outcome.Failure -> {
+            val k = known(e.key)
+            when {
+                k == null && e.at <= dayAgo -> {
+                    cursor.remove()
+                    failures += Diagnostic.warning(DiagCode.OPERATION_NOT_ALLOWED, "команда политики не дошла до контура за 24 часа — место освобождено", e.key)
+                    changed = true
+                }
+                k == null || waiting(k) -> queued += e
+                k is Outcome.Success -> e.copy(task = k.value).also { filled -> cursor.set(filled); placed += filled; changed = true }
+                k is Outcome.Failure -> {
                     cursor.remove()
                     failures += k.errors.ifEmpty { k.diagnostics }
                     changed = true
@@ -198,12 +211,11 @@ class AutoEcosystem(private val store: DocumentStore, private val clock: Clock) 
             }
         }
         val done = ledger.mapTo(HashSet()) { it.key }
-        val dayAgo = Timestamp(now.epochMillis - DAY_MS)
         var recent = ledger.count { it.at > dayAgo }
         var open = ledger.count { e -> e.task?.let(isOpen) ?: true }
         for (c in EcosystemPlan.of(projects, connected, policy.projects, policy.operations)) {
             if (c.key in done) continue
-            // Команду с этим ключом контур уже исполнил без политики — её поставил человек.
+            // Команду с этим ключом контур уже знает без политики — её поставил человек.
             if (known(c.key) != null) continue
             val why = c.refusal
                 ?: EcosystemPlan.priority(c.suggestion)?.takeIf { it !in policy.priorities }?.let { "приоритет ${it.name} не разрешён политикой" }
@@ -214,28 +226,51 @@ class AutoEcosystem(private val store: DocumentStore, private val clock: Clock) 
                 continue
             }
             val command = c.command() ?: continue
-            val t = place(command)
-            val waiting = t is Outcome.Failure && t.diagnostics.isNotEmpty() && t.diagnostics.all { it.code == DiagCode.COMMAND_QUEUED }
-            if (t is Outcome.Failure && !waiting) {
-                failures += t.errors.ifEmpty { t.diagnostics }
-                continue
+            val booked = AutoEntry(now, c.project.key, c.suggestion.key, null, policy.digest())
+            ledger += booked
+            when (val w = write(ledger)) {
+                is Outcome.Failure -> {
+                    // Без брони — без задачи: иначе пределы не удержать.
+                    ledger.removeAt(ledger.lastIndex)
+                    failures += w.errors.ifEmpty { w.diagnostics }
+                    break
+                }
+                is Outcome.Success -> Unit
             }
-            val e = AutoEntry(now, c.project.key, c.suggestion.key, t.valueOrNull(), policy.digest())
-            ledger += e
-            if (e.task != null) placed += e else queued += e
-            done += e.key
-            changed = true
+            val t = place(command)
+            when {
+                t is Outcome.Success -> {
+                    val e = booked.copy(task = t.value)
+                    ledger[ledger.lastIndex] = e
+                    placed += e
+                    changed = true
+                }
+                // Бронь уже на диске: id придёт следующим проходом.
+                waiting(t) -> queued += booked
+                else -> {
+                    ledger.removeAt(ledger.lastIndex)
+                    failures += t.errors.ifEmpty { t.diagnostics }
+                    changed = true
+                    continue
+                }
+            }
+            done += booked.key
             recent++
             open++
         }
         if (changed) {
-            when (val w = store.write(LEDGER_KEY, ledgerJson(ledger.takeLast(KEEP)))) {
-                is Outcome.Failure -> failures += w.errors
+            when (val w = write(ledger)) {
+                is Outcome.Failure -> failures += w.errors.ifEmpty { w.diagnostics }
                 is Outcome.Success -> Unit
             }
         }
         return Outcome.success(AutoPass(placed, queued, refused, failures))
     }
+
+    private fun write(ledger: List<AutoEntry>): Outcome<Unit> = store.write(LEDGER_KEY, ledgerJson(ledger.takeLast(KEEP))).map { }
+
+    /** Отказ только «в очереди контура» (D-94): команда принята, итог будет позже. */
+    private fun waiting(o: Outcome<*>): Boolean = o is Outcome.Failure && o.diagnostics.isNotEmpty() && o.diagnostics.all { it.code == DiagCode.COMMAND_QUEUED }
 
     companion object {
         const val POLICY_KEY = "auto-policy"
