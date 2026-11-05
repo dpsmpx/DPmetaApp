@@ -129,10 +129,31 @@ class ClonesTest {
         val c = clones()
         // Модель клонировала сама, git-ом Linux-среды (D-72): отметки dpmeta.main нет, работа — в своей ветке.
         Git.cloneRepository().setURI(uri.toString()).setDirectory(c.dir("dpsmpx/Beta")).call().use { git ->
+            // Как `git clone`: символьная origin/HEAD → origin/main (JGit её сам не пишет).
+            git.repository.updateRef(org.eclipse.jgit.lib.Constants.R_REMOTES + "origin/HEAD").link(org.eclipse.jgit.lib.Constants.R_REMOTES + "origin/main")
             git.checkout().setCreateBranch(true).setName("ai/task").call()
         }
         assertEquals("main", c.main("dpsmpx/Beta"), "основная — ветка GitHub, а не ветка работы ИИ")
+        // Обновление пультом: символьная origin/HEAD не стирает origin/main и не считается веткой.
+        assertIs<Outcome.Success<*>>(c.sync("dpsmpx/Beta", uri, null, build))
+        assertIs<Outcome.Success<*>>(c.sync("dpsmpx/Beta", uri, null, build), "и второй раз")
+        assertEquals(listOf("main", "work"), (c.heads("dpsmpx/Beta") as Outcome.Success).value.map { it.name })
+        assertEquals("main", c.main("dpsmpx/Beta"))
         assertEquals("- [ ] пункт\n", String((c.file("dpsmpx/Beta", c.main("dpsmpx/Beta")!!, "TODO.md") as Outcome.Success).value!!))
+    }
+
+    @Test
+    fun namesAsOnGitHubAndDeletionDoesNotFollowLinks() {
+        val c = clones()
+        assertEquals(File(File(File(tmp, "clones"), "dpsmpx"), "AIM_Trainer_pas"), c.dir("dpsmpx/AIM_Trainer_pas"), "имя как на GitHub — там же, куда клонирует модель (D-72)")
+        assertEquals("_2e_2e", c.dir("dpsmpx/..").name, "«..» — не родительский каталог")
+        val outside = File(tmp, "outside").apply { mkdirs() }
+        File(outside, "keep.txt").writeText("данные приложения")
+        val victim = File(tmp, "victim").apply { mkdirs() }
+        java.nio.file.Files.createSymbolicLink(File(victim, "link").toPath(), outside.toPath())
+        Clones.deleteTree(victim)
+        assertTrue(!victim.exists(), "каталог удалён")
+        assertTrue(File(outside, "keep.txt").isFile, "по ссылке удаление не ушло")
     }
 
     @Test

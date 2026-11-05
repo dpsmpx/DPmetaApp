@@ -50,8 +50,12 @@ class PultRepository(
     /** Итог синхронизации для экрана: строка «что вышло» и отказы источников. */
     data class SyncReport(val line: String, val failures: List<SourceFailure>)
 
-    /** Строка окна выбора клонов (D-70): репозиторий, из реестра ли, закрытый ли. */
-    data class CloneOption(val slug: String, val registry: Boolean, val private: Boolean)
+    /**
+     * Строка окна выбора клонов (D-70): репозиторий, из реестра ли, закрытый ли;
+     * [gone] — отмечен прежде, а в списке аккаунта его нет (доступ, имя, архив):
+     * виден, чтобы его можно было снять.
+     */
+    data class CloneOption(val slug: String, val registry: Boolean, val private: Boolean, val gone: Boolean = false)
 
     /**
      * Репозитории для окна выбора клонов (D-70): все, что видны токену, без
@@ -69,10 +73,11 @@ class PultRepository(
         }
         etags.save()
         val host = RepoRef.parse(HOST).valueOrNull()!!
-        val ours = reg.shown.map { if (it.dir != null) host.toString() else it.slug.toString() }.toSet()
+        // Адрес реестра и `full_name` GitHub сверяются без регистра: в реестре могут написать иначе.
+        val ours = reg.shown.map { (if (it.dir != null) host.toString() else it.slug.toString()).lowercase() }.toSet()
         return Outcome.success(
             repos.filter { !it.archived }
-                .map { CloneOption(it.slug.toString(), it.slug.toString() in ours, it.private) }
+                .map { CloneOption(it.slug.toString(), it.slug.toString().lowercase() in ours, it.private) }
                 .sortedWith(compareBy({ !it.registry }, { it.slug.lowercase() })),
         )
     }
@@ -192,8 +197,11 @@ class PultRepository(
         }
         // Клоны (D-65): каждый репозиторий реестра — клонировать или обновить; подсистемы — в клоне DPmetaApp.
         val clones = com.dpsmpx.dpmeta.git.Clones(clonesDir, com.dpsmpx.dpmeta.git.Clones.allowList())
-        val reader = CloneReader(clones, GitHubReader(gh, host), host, Rules::isBuildBranch) { it in selected }
-        val cloned = cloneAll(reg, clones, reader, token, selected)
+        // Выбор записан как `full_name` GitHub, ключи клонов реестра — как в реестре: один каталог на репозиторий, сверка без регистра.
+        val regKeys = reg.shown.map { if (it.dir != null) host.toString() else it.slug.toString() }.toSet()
+        val chosen = selected.map { s -> regKeys.firstOrNull { it.equals(s, ignoreCase = true) } ?: s }.toSet()
+        val reader = CloneReader(clones, GitHubReader(gh, host), host, Rules::isBuildBranch) { it in chosen }
+        val cloned = cloneAll(reg, clones, reader, token, chosen)
         val result = Sync.run(Sync.plan(reg, known, carried.map { it.project to it.kind }.toSet()), reader, clock, commits, parallel)
         val state = EcosystemState.derive(reg, result.observations, result.failures + cloned.failures + carried, previous, clock.now())
         store.writeState(state).let { if (it is Outcome.Failure) return it }
@@ -220,10 +228,11 @@ class PultRepository(
     private class Cloned(val ok: Int, val created: Int, val lost: Int, val rewritten: Int, val failures: List<SourceFailure>)
 
     /**
-     * Клонировать или обновить клоны всех показываемых проектов (D-65), по
-     * одному на репозиторий. Конфликт (клон разошёлся с GitHub) и отказ —
-     * отказ источника `clone` проекта: видны в «Ошибках источников», клон
-     * сам не чинится. Клон DPmetaApp — отказом проекта DPmetaApp.
+     * Клонировать или обновить отмеченные автором клоны (D-70), по одному на
+     * репозиторий. Отказ обновления клона реестра — отказ источника `clone`
+     * проекта («Ошибки источников»; клон DPmetaApp — отказом DPmetaApp);
+     * работа ИИ в клоне — не конфликт, перезаписанная на GitHub история —
+     * сведение в строке итога.
      */
     private fun cloneAll(reg: Registry, clones: com.dpsmpx.dpmeta.git.Clones, reader: CloneReader, token: Secret, selected: Set<String>): Cloned {
         val byKey = reg.shown.groupBy { reader.key(it) }

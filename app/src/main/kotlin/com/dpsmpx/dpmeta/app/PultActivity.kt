@@ -172,6 +172,9 @@ open class PultActivity : ComponentActivity() {
     /** Токен, ждущий ответа окна клонов: после выбора — синхронизация. */
     private var clonesToken: Secret? = null
 
+    /** Что дописать к итогу ближайшей синхронизации (причина, почему окна клонов не было). */
+    private var syncNote: String? = null
+
     /** Окно выбора клонов (D-70): все репозитории аккаунта, реестр — сверху; первый раз отмечен реестр. */
     private fun askClones(token: Secret, first: Boolean) {
         if (pool.isShutdown || view.value.busy) return
@@ -183,13 +186,23 @@ open class PultActivity : ComponentActivity() {
                 when (r) {
                     is Outcome.Success -> {
                         clonesToken = token
-                        val checked = if (first) r.value.filter { it.registry }.map { it.slug }.toSet() else chosen
-                        view.value = view.value.copy(busy = false, status = "", clonePrompt = ClonePrompt(r.value, checked, first))
+                        // До первого выбора (и после «Позже») отмечен реестр (D-70); дальше — выбор автора.
+                        val checked = if (first || !clonesAsked()) r.value.filter { it.registry }.map { it.slug }.toSet() else chosen
+                        // Отмеченные, которых в списке больше нет (нет доступа, переименован, в архиве), — видны: их можно снять.
+                        val listed = r.value.map { it.slug.lowercase() }.toSet()
+                        val gone = chosen.filter { it.lowercase() !in listed }.map { com.dpsmpx.dpmeta.app.data.PultRepository.CloneOption(it, registry = false, private = true, gone = true) }
+                        view.value = view.value.copy(busy = false, status = "", clonePrompt = ClonePrompt(r.value + gone, checked, first))
                     }
                     is Outcome.Failure -> {
-                        view.value = view.value.copy(busy = false, status = "Список репозиториев не получен: ${r.diagnostics.first().message}.")
-                        // Первый вход без списка — синхронизация без клонов; окно спросит при следующем входе.
-                        if (first) sync(token)
+                        view.value = view.value.copy(busy = false)
+                        val why = "Список репозиториев не получен: ${r.diagnostics.first().message}."
+                        // Первый вход без списка — синхронизация без клонов (причина — в её итоге); окно спросит при следующем входе.
+                        if (first) {
+                            syncNote = why
+                            sync(token)
+                        } else {
+                            view.value = view.value.copy(status = why)
+                        }
                     }
                 }
             }
@@ -239,8 +252,15 @@ open class PultActivity : ComponentActivity() {
         loadHistory()
         // Файлы прежних «Поделиться» (D-67) живут до следующего входа в пульт — не до поворота.
         if (coldStart) pool.execute { File(cacheDir, EXPORT_DIR).deleteRecursively() }
-        // Клоны 0.4.0-dev.8 — плоскими каталогами «владелец_2fимя», без работы ИИ (Linux их не видел): место — назад (D-70).
-        if (coldStart) pool.execute { File(filesDir, CLONES_DIR).listFiles()?.filter { "_2f" in it.name }?.forEach { it.deleteRecursively() } }
+        // Клоны 0.4.0-dev.8 — плоскими каталогами «владелец_2fимя», без работы ИИ (Linux их не видел): место — назад (D-72).
+        // Один раз и без перехода по ссылкам: каталог клонов теперь доступен гостю Linux на запись.
+        val prefs = getSharedPreferences(CLONES_PREFS, MODE_PRIVATE)
+        if (!prefs.getBoolean(CLONES_FLAT_GONE, false)) {
+            prefs.edit { putBoolean(CLONES_FLAT_GONE, true) }
+            pool.execute {
+                File(filesDir, CLONES_DIR).listFiles()?.filter { "_2f" in it.name }?.forEach { runCatching { com.dpsmpx.dpmeta.git.Clones.deleteTree(it) } }
+            }
+        }
         opened = true
         entrySync()
         setContent {
@@ -384,7 +404,8 @@ open class PultActivity : ComponentActivity() {
         view.value = view.value.copy(hasToken = false, status = "Токен удалён.")
     }
 
-    private fun sync() = withToken { token -> if (token != null) sync(token) }
+    /** «Обновить»: до первого выбора клонов (D-70) — сначала окно выбора. */
+    private fun sync() = withToken { token -> if (token != null) { if (!clonesAsked()) askClones(token, first = true) else sync(token) } }
 
     private fun sync(token: Secret) {
         if (pool.isShutdown) return
@@ -394,6 +415,8 @@ open class PultActivity : ComponentActivity() {
             return
         }
         view.value = view.value.copy(busy = true, status = "")
+        val note = syncNote
+        syncNote = null
         pool.execute {
             // Сбой внутри синхронизации — отказ на экране, а не падение процесса со службами «AI» (D-59).
             val r = runCatching { repo.sync(token, clonesSelected()) }.getOrElse { Outcome.failure(DiagCode.INTERNAL_ERROR, "синхронизация прервана: ${it.javaClass.simpleName}") }
@@ -404,7 +427,7 @@ open class PultActivity : ComponentActivity() {
                     is Outcome.Success -> view.value.copy(
                         state = state,
                         busy = false,
-                        status = "Готово: ${r.value.line}.",
+                        status = "Готово: ${r.value.line}." + (note?.let { " $it" } ?: ""),
                         feed = feed,
                         names = repo.names(),
                     ).also { loadHistory() }
@@ -428,5 +451,6 @@ open class PultActivity : ComponentActivity() {
         private const val CLONES_PREFS = "dpmeta.clones"
         private const val CLONES_ASKED = "asked"
         private const val CLONES_SELECTED = "selected"
+        private const val CLONES_FLAT_GONE = "flat-removed"
     }
 }

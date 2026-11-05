@@ -82,19 +82,21 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
     data class Head(val name: String, val sha: String, val time: Timestamp, val author: String?)
 
     /**
-     * Каталог клона: `владелец/имя` — вложенными каталогами (D-70: в Linux-среде
-     * клоны видны как `/root/repos/<владелец>/<имя>`); каждая часть — [safe].
+     * Каталог клона: `владелец/имя` — вложенными каталогами, имена как на
+     * GitHub (D-72: в Linux-среде — `/root/repos/<владелец>/<имя>`, там же,
+     * куда клонирует модель). Часть, которой нет в `[A-Za-z0-9._-]` или
+     * которая `.` либо `..`, — [safe]; другое имя — целиком [safe].
      */
     fun dir(project: String): File {
         val parts = project.split('/')
-        return if (parts.size == 2) File(File(root, safe(parts[0])), safe(parts[1])) else File(root, safe(project))
+        fun part(p: String) = if (PART.matches(p) && p != "." && p != "..") p else safe(p)
+        return if (parts.size == 2) File(File(root, part(parts[0])), part(parts[1])) else File(root, safe(project))
     }
 
     /**
      * Клонировать или обновить клон [project] из [remote]. [excluded] —
      * ветки, которые не берутся (сборки); основная ветка не исключается
-     * никогда. Основная ветка рабочего дерева продвигается только
-     * перемоткой и только при чистом дереве; иначе — конфликт.
+     * никогда. Рабочее дерево и локальные ветки не трогаются (D-70).
      */
     fun sync(project: String, remote: URI, token: Secret?, excluded: (String) -> Boolean): Outcome<Report> {
         // Только https (D-10): у git://, file: и локальных путей JGit свои сокеты — мимо пропуска HTTP.
@@ -127,7 +129,8 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
         val heads = refs.keys.filter { it.startsWith(Constants.R_HEADS) }.map { it.removePrefix(Constants.R_HEADS) }
         val main = head?.takeIf { it in heads } ?: heads.firstOrNull { it == "main" } ?: heads.firstOrNull() ?: return failure(DiagCode.GITHUB_NOT_FOUND, "в репозитории нет веток", project)
         val keep = heads.filter { it == main || !excluded(it) }.sorted()
-        val tmp = File(dir.parentFile, ".${dir.name}.part").also { it.deleteRecursively() }
+        // Каталог владельца доступен гостю на запись (D-72): прежний «.part» удаляется без перехода по ссылкам.
+        val tmp = File(dir.parentFile, ".${dir.name}.part").also { deleteTree(it) }
         dir.parentFile.mkdirs()
         Git.cloneRepository()
             .setURI(remote.toString())
@@ -145,9 +148,12 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
 
     private fun fetch(project: String, remote: URI, dir: File, creds: CredentialsProvider?, excluded: (String) -> Boolean): Outcome<Report> = open(dir).use { repo ->
         Git(repo).use { git ->
-            val main = repo.config.getString("dpmeta", null, "main") ?: repo.branch
+            val main = mainOf(repo)
             // Адрес — тот, что прошёл пропуск: переименованный в реестре репозиторий не тянется со старого адреса.
-            repo.config.apply { setString("remote", "origin", "url", remote.toString()) }.save()
+            // Пишется, только если другой: конфиг клона правит и git гостя (D-72) — лишняя запись спорит с ним.
+            if (repo.config.getString("remote", "origin", "url") != remote.toString()) {
+                repo.config.apply { setString("remote", "origin", "url", remote.toString()) }.save()
+            }
             val refs = Git.lsRemoteRepository().setRemote(remote.toString()).setHeads(true).setCredentialsProvider(creds).call()
                 .map { it.name.removePrefix(Constants.R_HEADS) }
             val keep = refs.filter { it == main || !excluded(it) }.sorted()
@@ -157,10 +163,12 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
                 .setRefSpecs(keep.map { RefSpec("+${Constants.R_HEADS}$it:${Constants.R_REMOTES}origin/$it") })
                 .setCredentialsProvider(creds)
                 .call()
-            // Ветки, которых на GitHub больше нет или которые стали исключёнными, — мимо.
+            // Ветки, которых на GitHub больше нет или которые стали исключёнными, — мимо. Символьная
+            // `origin/HEAD` (её пишет `git clone` гостя) не трогается: удаление по ней сняло бы её цель — `origin/main`.
             for (r in repo.refDatabase.getRefsByPrefix(Constants.R_REMOTES + "origin/")) {
+                if (r.isSymbolic) continue
                 val name = r.name.removePrefix(Constants.R_REMOTES + "origin/")
-                if (name !in keep) repo.updateRef(r.name).apply { isForceUpdate = true }.delete()
+                if (name !in keep) repo.updateRef(r.name, true).apply { isForceUpdate = true }.delete()
             }
             // Рабочее дерево и локальные ветки — работа ИИ (D-70): синхронизация их не трогает, только `origin/*`.
             Outcome.success(Report(project, Action.FETCHED, main, keep, rewritten(repo, keep, before)))
@@ -199,18 +207,20 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
     fun main(project: String): String? {
         val dir = dir(project)
         if (!File(dir, ".git").isDirectory) return null
-        return open(dir).use { repo ->
-            repo.config.getString("dpmeta", null, "main")
-                ?: repo.exactRef(Constants.R_REMOTES + "origin/HEAD")?.target?.name?.removePrefix(Constants.R_REMOTES + "origin/")?.takeIf { it != "HEAD" }
-                ?: "main".takeIf { repo.exactRef(Constants.R_REMOTES + "origin/main") != null }
-                ?: repo.branch
-        }
+        return open(dir).use(::mainOf)
     }
 
-    /** Ветки GitHub в клоне с головами; клона нет — `ENTITY_NOT_FOUND`. */
+    /** Основная ветка — одно правило для чтения и обновления: отметка, цель `origin/HEAD`, `main`, текущая ветка. */
+    private fun mainOf(repo: Repository): String =
+        repo.config.getString("dpmeta", null, "main")
+            ?: repo.exactRef(Constants.R_REMOTES + "origin/HEAD")?.takeIf { it.isSymbolic }?.target?.name?.removePrefix(Constants.R_REMOTES + "origin/")
+            ?: "main".takeIf { repo.exactRef(Constants.R_REMOTES + "origin/main") != null }
+            ?: repo.branch
+
+    /** Ветки GitHub в клоне с головами; клона нет — `ENTITY_NOT_FOUND`. Символьная `origin/HEAD` — не ветка. */
     fun heads(project: String): Outcome<List<Head>> = withRepo(project) { repo ->
         RevWalk(repo).use { walk ->
-            repo.refDatabase.getRefsByPrefix(Constants.R_REMOTES + "origin/").sortedBy { it.name }.map { r ->
+            repo.refDatabase.getRefsByPrefix(Constants.R_REMOTES + "origin/").filter { !it.isSymbolic }.sortedBy { it.name }.map { r ->
                 val c: RevCommit = walk.parseCommit(r.objectId)
                 Head(r.name.removePrefix(Constants.R_REMOTES + "origin/"), c.name, Timestamp(c.commitTime * 1000L), c.authorIdent?.name)
             }
@@ -348,6 +358,34 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
                 if (c in 'A'..'Z' || c in 'a'..'z' || c in '0'..'9' || c == '.' || c == '-') c.toString() else "_%02x".format(b.toInt() and 0xFF)
             }
             return if (out.isEmpty() || out.all { it == '.' }) out.replace(".", "_2e").ifEmpty { "_" } else out
+        }
+
+        /** Часть адреса GitHub, которую можно взять именем каталога как есть. */
+        private val PART = Regex("[A-Za-z0-9._-]+")
+
+        /**
+         * Удалить каталог целиком, не переходя по символьным ссылкам: ссылка
+         * удаляется сама, а не то, на что указывает. Каталог клонов виден гостю
+         * Linux на запись (D-72): подложенная ссылка не уводит удаление наружу.
+         */
+        fun deleteTree(dir: File) {
+            val start = dir.toPath()
+            if (!java.nio.file.Files.exists(start, java.nio.file.LinkOption.NOFOLLOW_LINKS)) return
+            java.nio.file.Files.walkFileTree(
+                start,
+                object : java.nio.file.SimpleFileVisitor<java.nio.file.Path>() {
+                    override fun visitFile(file: java.nio.file.Path, attrs: java.nio.file.attribute.BasicFileAttributes): java.nio.file.FileVisitResult {
+                        java.nio.file.Files.delete(file)
+                        return java.nio.file.FileVisitResult.CONTINUE
+                    }
+
+                    override fun postVisitDirectory(d: java.nio.file.Path, exc: IOException?): java.nio.file.FileVisitResult {
+                        if (exc != null) throw exc
+                        java.nio.file.Files.delete(d)
+                        return java.nio.file.FileVisitResult.CONTINUE
+                    }
+                },
+            )
         }
 
         /** Пропуск по списку адресов `:core:net` (D-10): тот же, что у запросов REST. */

@@ -430,7 +430,7 @@ fun ClonesDialog(prompt: ClonePrompt, onDone: (Set<String>?) -> Unit) {
                             Column(Modifier.padding(start = 6.dp)) {
                                 Text(o.slug, style = MaterialTheme.typography.bodyMedium)
                                 Text(
-                                    listOfNotNull("реестр".takeIf { o.registry }, "закрытый".takeIf { o.private }).joinToString(" · "),
+                                    if (o.gone) "нет в списке аккаунта — снимите отметку, если не нужен" else listOfNotNull("реестр".takeIf { o.registry }, "закрытый".takeIf { o.private }).joinToString(" · "),
                                     style = MaterialTheme.typography.labelSmall,
                                 )
                             }
