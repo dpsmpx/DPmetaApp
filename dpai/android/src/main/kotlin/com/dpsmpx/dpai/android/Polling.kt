@@ -7,6 +7,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -76,3 +77,6 @@ internal fun <T> contentKeys(list: List<T>, of: (T) -> Any): List<String> {
         "$k#$n"
     }
 }
+
+/** Предел ширины содержимого «AI» на планшете и в альбомной ориентации (AI:A-24): строки не растягиваются во всю ширину. */
+internal val CONTENT_MAX = 640.dp

@@ -19,6 +19,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
@@ -37,6 +42,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.produceState
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -73,6 +79,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.style.TextOverflow
@@ -229,6 +236,15 @@ private val Section.icon: Int get() = when (this) {
 /** Высота панели пульта — та же, что у панели «AI» (D-73, `DP_AI_Orcestrator:D-112`: 48 dp); крупный шрифт её растит. */
 private val PANEL_HEIGHT = 48.dp
 
+/** Широкий экран (UX-24): от этой ширины — две панели «проекты | карточка». */
+private val WIDE = 600.dp
+
+/** Предел ширины содержимого: строки на планшете и в альбомной ориентации не растягиваются во всю ширину. */
+private val CONTENT_MAX = 640.dp
+
+/** Предел ширины двух панелей. */
+private val TWO_PANE_MAX = 1100.dp
+
 /** Куда перешли внутри вкладки: карточка → каталог → документ; «назад» снимает верх. */
 private sealed interface Nav {
     data class Card(val project: String) : Nav
@@ -360,10 +376,29 @@ fun PultApp(
             }
         },
     ) { inner ->
-        Column(Modifier.padding(inner).padding(Tokens.gap).fillMaxSize()) {
-            val s = view.state
-            val top = stack.lastOrNull()
+        // Широкий экран (UX-24): содержимое — не шире CONTENT_MAX по центру, вырез сбоку — отступом;
+        // от WIDE — список проектов и карточка двумя панелями.
+        androidx.compose.foundation.layout.BoxWithConstraints(
+            Modifier.padding(inner).fillMaxSize().windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal)),
+            contentAlignment = androidx.compose.ui.Alignment.TopCenter,
+        ) {
+        val s = view.state
+        val top = stack.lastOrNull()
+        val twoPane = maxWidth >= WIDE && tab == Section.DEV && devTab == DevTab.PROJECTS && s != null && (top == null || top is Nav.Card)
+        Column(Modifier.widthIn(max = if (twoPane) TWO_PANE_MAX else CONTENT_MAX).fillMaxSize().padding(Tokens.gap)) {
             when {
+                twoPane -> Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+                    val chosen = top?.project
+                    Column(Modifier.weight(2f).fillMaxSize()) {
+                        DevTabs(devTab) { devTab = it }
+                        // Другой проект — вместо открытой карточки, а не поверх неё: «Назад» — к списку.
+                        Projects(remember(s) { Screens.projects(s) }, chosen) { stacks[tab] = listOf(Nav.Card(it)) }
+                    }
+                    Column(Modifier.weight(3f).fillMaxSize()) {
+                        val card = chosen?.let { remember(s, it) { Screens.card(s, it) } }
+                        if (card != null) CardScreen(card, loader, back, open) else Text("Выберите проект слева.", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
                 // Модели экранов — один раз на срез, а не на каждую перекомпозицию (UX-20).
                 top is Nav.Card && s != null -> remember(s, top.project) { Screens.card(s, top.project) }?.let { CardScreen(it, loader, back, open) }
                 top is Nav.Dir -> DirScreen(top, loader, back, open)
@@ -402,6 +437,7 @@ fun PultApp(
                 }
             }
         }
+        }
     }
     view.clonePrompt?.let { ClonesDialog(it, onClonesChosen, onDeleteClone, busy = view.busy) }
 }
@@ -432,7 +468,8 @@ private fun RowScope.PanelItem(label: String, icon: Int, selected: Boolean?, onC
 @Composable
 private fun Header(title: String, view: PultView, onSync: () -> Unit, onCancel: () -> Unit) {
     Surface(tonalElevation = 3.dp) {
-        Column(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars)) {
+        // Сверху — строка состояния, сбоку — вырез в альбомной ориентации (UX-24).
+        Column(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))) {
             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             Column(Modifier.weight(1f).padding(horizontal = Tokens.gap, vertical = 6.dp)) {
                 Text(title, style = MaterialTheme.typography.titleMedium)
@@ -517,11 +554,16 @@ private const val SUMMARY_EVENTS = 3
  * ошибки источников — «⚠ N» цветом ошибки; решения — в карточке.
  */
 @Composable
-private fun Projects(groups: List<Screens.Group>, onOpen: (String) -> Unit) = LazyColumn(verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+private fun Projects(groups: List<Screens.Group>, selected: String? = null, onOpen: (String) -> Unit) = LazyColumn(verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
     for (g in groups) {
         item { Text(g.title, style = MaterialTheme.typography.titleMedium) }
         items(g.rows, key = { "row:${g.title}:${it.name}" }) { r ->
-            Card(Modifier.fillMaxWidth().clickable(onClickLabel = "открыть карточку") { onOpen(r.name) }) {
+            // Открытый в соседней панели (UX-24) — выделен цветом и для TalkBack.
+            val chosen = r.name == selected
+            Card(
+                Modifier.fillMaxWidth().semantics { this.selected = chosen }.clickable(onClickLabel = "открыть карточку") { onOpen(r.name) },
+                colors = if (chosen) CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer) else CardDefaults.cardColors(),
+            ) {
                 Column(Modifier.padding(Tokens.gap)) {
                     Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                         Text(r.name, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))

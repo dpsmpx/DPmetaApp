@@ -142,15 +142,17 @@ object RequestOverlay {
             setTextColor(fg)
             if (bold) setTypeface(typeface, android.graphics.Typeface.BOLD)
         }
+        // На широком экране окно не тянется во всю ширину (AI:A-24): не шире 560 dp, по центру.
+        val screen = context.resources.displayMetrics.widthPixels
         val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
+            if (screen > OVERLAY_MAX_DP * dp) (OVERLAY_MAX_DP * dp).toInt() else WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             // Касания вне окна — приложению под ним; клавиатуру окно получает только с полем ввода.
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or (if (card.buttons.none { it.needsText }) WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE else 0),
             PixelFormat.TRANSLUCENT,
         ).apply {
-            gravity = Gravity.TOP
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
             y = position(context) ?: (48 * dp).toInt()
             horizontalMargin = 0.03f
         }
@@ -328,6 +330,9 @@ object RequestOverlay {
 
 /** Пауза между нажатиями опасного ответа: быстрее — двойное касание, а не решение (AI:A-4). */
 private const val ARM_PAUSE_MS = 500L
+
+/** Предел ширины окна поверх приложений на широком экране, dp (AI:A-24). */
+private const val OVERLAY_MAX_DP = 560f
 
 /** Сколько живёт взвод опасного ответа: дольше — первое нажатие снова (AI:A-4). */
 private const val ARM_TTL_MS = 5_000L

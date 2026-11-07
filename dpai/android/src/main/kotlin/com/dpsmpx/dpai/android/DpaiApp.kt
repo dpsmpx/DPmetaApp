@@ -27,7 +27,11 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -280,7 +284,8 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                 // Узкая строка (D-61): больше места чату; в окне сессии — кружок состояния и имя (нажатие — переименовать).
                 androidx.compose.material3.Surface(tonalElevation = 3.dp) {
                     Row(
-                        Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).heightIn(min = 48.dp).padding(horizontal = 4.dp),
+                        // Сверху — строка состояния, сбоку — вырез в альбомной ориентации (AI:A-24).
+                        Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)).heightIn(min = 48.dp).padding(horizontal = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         if (selectedId != null) {
@@ -371,7 +376,12 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
         ) { padding ->
             val s = snapshot
             // Клавиатура (D-64): содержимое — над ней; отступ панели вкладок уже учтён (consumeWindowInsets), не вдвое.
-            Column(Modifier.padding(padding).consumeWindowInsets(padding).imePadding().fillMaxSize()) {
+            // Широкий экран (AI:A-24): содержимое — не шире CONTENT_MAX по центру, вырез сбоку — отступом.
+            Column(
+                Modifier.padding(padding).consumeWindowInsets(padding).imePadding()
+                    .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
+                    .fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = CONTENT_MAX).fillMaxWidth(),
+            ) {
                 corrupted?.let { what ->
                     // D-24: карантин хвоста — только явным решением; необратимое — окном (AI:A-4).
                     var asking by remember { mutableStateOf(false) }
