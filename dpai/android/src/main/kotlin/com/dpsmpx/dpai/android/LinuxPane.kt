@@ -18,6 +18,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,27 +52,27 @@ fun LinuxScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     val available = remember { LinuxSetup.available(context) }
     var installed by remember { mutableStateOf(LinuxSetup.environment(context).installed()) }
+    // Долгое — вне экрана (AI:A-14): ход, вывод и итог переживают уход с экрана; повтор не запускается.
+    val jobs = remember { LongJobs.get(context) }
+    val state by jobs.state.collectAsState()
+    val install = state[JOB_INSTALL]
+    val work = state[JOB_APK]
+    val running = install?.running == true || work?.running == true
+    LaunchedEffect(install?.running) { if (install?.running == false) installed = LinuxSetup.environment(context).installed() }
     var busy by remember { mutableStateOf<String?>(null) }
     var note by remember { mutableStateOf<String?>(null) }
-    var output by remember { mutableStateOf<List<String>>(emptyList()) }
     var allOutput by remember { mutableStateOf(false) }
     var packages by rememberSaveable { mutableStateOf("") }
     var howto by rememberSaveable { mutableStateOf(false) }
     var slotMenu by remember { mutableStateOf(false) }
 
-    fun run(label: String, job: suspend () -> Outcome<com.dpsmpx.dpai.execution.process.Completed>, done: (com.dpsmpx.dpai.execution.process.Completed) -> String) {
-        busy = "$label…"
-        note = null
-        scope.launch {
-            when (val r = withContext(Dispatchers.IO) { job() }) {
-                is Outcome.Success -> {
-                    note = done(r.value)
-                    output = (r.value.stdout + r.value.stderr).takeLast(MAX_OUTPUT)
-                    allOutput = false
-                }
-                is Outcome.Failure -> note = "$label: ${r.errors.first().message}"
+    fun run(label: String, job: () -> Outcome<com.dpsmpx.dpai.execution.process.Completed>, done: (com.dpsmpx.dpai.execution.process.Completed) -> String) {
+        allOutput = false
+        jobs.start(JOB_APK, label) {
+            when (val r = job()) {
+                is Outcome.Success -> LongJobs.Done(done(r.value), (r.value.stdout + r.value.stderr).takeLast(MAX_OUTPUT))
+                is Outcome.Failure -> LongJobs.Done("$label: ${r.errors.first().message}")
             }
-            busy = null
         }
     }
     fun apk(action: LinuxEnvironment.Apk, label: String) = run(label, {
@@ -84,30 +86,25 @@ fun LinuxScreen(onBack: () -> Unit) {
         Text("Alpine в данных приложения — без Termux.", style = MaterialTheme.typography.bodySmall)
         when {
             !available -> Text("Недоступно на этом телефоне: нужен процессор arm64.", style = MaterialTheme.typography.bodySmall)
-            installed == null -> Button(enabled = busy == null, onClick = {
-                busy = "Устанавливаю Alpine…"
-                note = null
-                scope.launch {
-                    val r = withContext(Dispatchers.IO) { LinuxSetup.install(context) }
-                    note = when (r) {
-                        is Outcome.Success -> r.value?.let { "Установлено: файлов ${it.files}, ${it.bytes / 1_048_576} МБ" } ?: "Уже установлено"
-                        is Outcome.Failure -> "Не установлено: ${r.errors.first().message}"
+            installed == null -> Button(enabled = !running, onClick = {
+                jobs.start(JOB_INSTALL, "Установка Alpine") {
+                    when (val r = LinuxSetup.install(context)) {
+                        is Outcome.Success -> LongJobs.Done(r.value?.let { "Установлено: файлов ${it.files}, ${it.bytes / 1_048_576} МБ" } ?: "Уже установлено")
+                        is Outcome.Failure -> LongJobs.Done("Не установлено: ${r.errors.first().message}")
                     }
-                    installed = LinuxSetup.environment(context).installed()
-                    busy = null
                 }
-            }) { Text(busy ?: "Установить Alpine") }
+            }) { Text(if (install?.running == true) "Устанавливаю Alpine…" else "Установить Alpine") }
             else -> {
                 Text("Установлено: $installed", style = MaterialTheme.typography.bodySmall)
                 // Терминал — первым и заметным (терминал §4, п. 9).
                 Button(onClick = { TerminalActivity.startLinux(context) }) { Text("Терминал") }
                 OutlinedTextField(packages, { packages = it }, label = { Text("Пакеты, например: git nodejs npm") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TextButton(enabled = busy == null && packages.isNotBlank(), onClick = { apk(LinuxEnvironment.Apk.ADD, "Поставить") }) { Text("Поставить") }
-                    TextButton(enabled = busy == null && packages.isNotBlank(), onClick = { apk(LinuxEnvironment.Apk.DEL, "Убрать") }) { Text("Убрать") }
-                    TextButton(enabled = busy == null, onClick = { apk(LinuxEnvironment.Apk.UPGRADE, "Обновить всё") }) { Text("Обновить всё") }
+                    TextButton(enabled = !running && packages.isNotBlank(), onClick = { apk(LinuxEnvironment.Apk.ADD, "Поставить") }) { Text("Поставить") }
+                    TextButton(enabled = !running && packages.isNotBlank(), onClick = { apk(LinuxEnvironment.Apk.DEL, "Убрать") }) { Text("Убрать") }
+                    TextButton(enabled = !running, onClick = { apk(LinuxEnvironment.Apk.UPGRADE, "Обновить всё") }) { Text("Обновить всё") }
                     // Codex CLI и Gemini CLI (D-100): Node.js и npm из Alpine, пакеты npm, в конце — версии.
-                    TextButton(enabled = busy == null, onClick = {
+                    TextButton(enabled = !running, onClick = {
                         run("Установка Codex и Gemini", { LinuxSetup.run(context, LinuxEnvironment.executorsInstall()) }) {
                             if (it.ok) "Codex и Gemini: установлены" else "Установка завершилась с кодом ${it.exitCode} — причина в выводе ниже"
                         }
@@ -115,7 +112,7 @@ fun LinuxScreen(onBack: () -> Unit) {
                 }
                 // Target «в приложении» (D-75, шаг 5): задачи — в этом Linux, без SSH; слот — каталог в госте (D-29).
                 androidx.compose.foundation.layout.Box {
-                    OutlinedButton(enabled = busy == null, onClick = { slotMenu = true }) { Text("Добавить слот ▾") }
+                    OutlinedButton(enabled = busy == null && !running, onClick = { slotMenu = true }) { Text("Добавить слот ▾") }
                     androidx.compose.material3.DropdownMenu(expanded = slotMenu, onDismissRequest = { slotMenu = false }) {
                         for (x in com.dpsmpx.dpai.core.ids.Executor.entries) {
                             androidx.compose.material3.DropdownMenuItem(text = { Text(x.title) }, onClick = {
@@ -154,8 +151,18 @@ fun LinuxScreen(onBack: () -> Unit) {
                 }
             }
         }
-        busy?.takeIf { installed != null }?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
+        // Ход — полосой (AI:A-14); итог операции — строкой, пока его не убрали.
+        for (j in listOfNotNull(install, work)) {
+            if (j.running) {
+                Text("${j.label}…", style = MaterialTheme.typography.labelSmall)
+                androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth())
+            } else {
+                j.note?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
+            }
+        }
+        busy?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
         note?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
+        val output = work?.output.orEmpty()
         // Вывод — последней строкой с «показать всё» (терминал §4, п. 9): итог и ошибка — в хвосте.
         if (output.isNotEmpty()) {
             Text((if (allOutput) output else output.takeLast(1)).joinToString("\n"), style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace)
@@ -163,6 +170,10 @@ fun LinuxScreen(onBack: () -> Unit) {
         }
     }
 }
+
+/** Ключи долгих операций экрана Linux: установка среды и всё, что идёт через `apk` и npm гостя (один процесс за раз). */
+private const val JOB_INSTALL = "linux-install"
+private const val JOB_APK = "linux-apk"
 
 /** Строк вывода `apk` на экране: хвост, где итог и ошибка. */
 private const val MAX_OUTPUT = 20

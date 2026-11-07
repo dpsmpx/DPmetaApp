@@ -309,6 +309,7 @@ open class PultActivity : ComponentActivity() {
                     view.value, loader, onSync = ::sync, onSaveToken = ::saveToken, onForgetToken = ::forgetToken,
                     onAi = ai, onExport = ::export,
                     onClones = { withToken { token -> if (token != null) askClones(token, first = false) } }, onClonesChosen = ::clonesChosen,
+                    onCancelSync = { repo.cancelClones() },
                 )
             }
         }
@@ -480,7 +481,9 @@ open class PultActivity : ComponentActivity() {
         syncNote = null
         pool.execute {
             // Сбой внутри синхронизации — отказ на экране, а не падение процесса со службами «AI» (D-59).
-            val r = runCatching { repo.sync(token, clonesSelected()) }.getOrElse { Outcome.failure(DiagCode.INTERNAL_ERROR, "синхронизация прервана: ${it.javaClass.simpleName}") }
+            // Ход (UX-10) — в заголовок, из потока синхронизации на главный.
+            val progress: (String) -> Unit = { p -> runOnUiThread { if (view.value.busy) view.value = view.value.copy(progress = p) } }
+            val r = runCatching { repo.sync(token, clonesSelected(), progress) }.getOrElse { Outcome.failure(DiagCode.INTERNAL_ERROR, "синхронизация прервана: ${it.javaClass.simpleName}") }
             val state = (repo.state() as? Outcome.Success)?.value
             val feed = (repo.feed() as? Outcome.Success)?.value.orEmpty()
             runOnUiThread {
@@ -492,11 +495,12 @@ open class PultActivity : ComponentActivity() {
                         statusDetails = "",
                         syncEnded = view.value.syncEnded + 1,
                         syncEnd = SyncEnd.DONE,
+                        progress = null,
                         feed = feed,
                         names = repo.names(),
                     ).also { loadHistory() }
                     is Outcome.Failure -> Screens.failure(r.diagnostics.first()).let { f ->
-                        view.value.copy(busy = false, status = "Не вышло: ${f.text}." + (note?.let { " $it" } ?: ""), statusDetails = f.details, syncEnded = view.value.syncEnded + 1, syncEnd = SyncEnd.FAILED)
+                        view.value.copy(busy = false, status = "Не вышло: ${f.text}." + (note?.let { " $it" } ?: ""), statusDetails = f.details, syncEnded = view.value.syncEnded + 1, syncEnd = SyncEnd.FAILED, progress = null)
                     }
                 }
             }

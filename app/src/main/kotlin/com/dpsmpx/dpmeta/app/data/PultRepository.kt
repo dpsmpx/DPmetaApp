@@ -202,17 +202,25 @@ class PultRepository(
      * и «Обновить», окно после поворота) не начинается: клоны и состояние —
      * одни на процесс.
      */
-    fun sync(token: Secret, selected: Set<String> = emptySet()): Outcome<SyncReport> {
+    fun sync(token: Secret, selected: Set<String> = emptySet(), progress: (String) -> Unit = {}): Outcome<SyncReport> {
         if (!running.compareAndSet(false, true)) return Outcome.failure(DiagCode.STATE_CONFLICT, "синхронизация уже идёт", "sync")
+        cancel.set(false)
         try {
-            return syncNow(token, selected)
+            return syncNow(token, selected, progress)
         } finally {
             running.set(false)
         }
     }
 
+    /**
+     * «Отменить» (UX-10): клоны, ещё не начатые, не трогаются; начатый
+     * доходит до конца — между репозиториями, а не посреди записи клона.
+     * Остальная синхронизация идёт с тем, что есть.
+     */
+    fun cancelClones() = cancel.set(true)
+
     /** [selected] — отмеченные автором клоны (D-70), `владелец/имя`; остальные — через REST. */
-    private fun syncNow(token: Secret, selected: Set<String>): Outcome<SyncReport> {
+    private fun syncNow(token: Secret, selected: Set<String>, progress: (String) -> Unit): Outcome<SyncReport> {
         val started = clock.monotonicNanos()
         val previous = when (val r = store.readState()) {
             is Outcome.Failure -> return r
@@ -250,7 +258,8 @@ class PultRepository(
         val regKeys = reg.shown.map { if (it.dir != null) host.toString() else it.slug.toString() }.toSet()
         val chosen = selected.map { s -> regKeys.firstOrNull { it.equals(s, ignoreCase = true) } ?: s }.toSet()
         val reader = CloneReader(clones, GitHubReader(gh, host), host, Rules::isBuildBranch) { it in chosen }
-        val cloned = cloneAll(reg, clones, reader, token, chosen)
+        val cloned = cloneAll(reg, clones, reader, token, chosen, progress)
+        progress("Источники…")
         val result = Sync.run(Sync.plan(reg, known, carried.map { it.project to it.kind }.toSet()), reader, clock, commits, parallel)
         val state = EcosystemState.derive(reg, result.observations, result.failures + cloned.failures + carried, previous, clock.now())
         store.writeState(state).let { if (it is Outcome.Failure) return it }
@@ -264,6 +273,7 @@ class PultRepository(
         val line = "запросов ${s.requests}, без изменений ${s.notModified} ($share %), отказов источников ${result.failures.size + cloned.failures.size}, " +
             "не спрашивалось ${carried.size}, клонов ${cloned.ok} (новых ${cloned.created}" +
             (if (cloned.lost > 0) ", не обновлено ${cloned.lost}" else "") +
+            (if (cloned.skipped > 0) ", отменено ${cloned.skipped}" else "") +
             (if (cloned.rewritten > 0) ", с перезаписанной историей ${cloned.rewritten}" else "") +
             "), ${"%.1f".format(java.util.Locale.ROOT, seconds)} с"
         return Outcome.success(SyncReport(line, result.failures + cloned.failures))
@@ -274,7 +284,7 @@ class PultRepository(
      * обновилось, у скольких GitHub перезаписал историю (сведение, D-70);
      * отказы клонов репозиториев реестра — отказами источника «clone».
      */
-    private class Cloned(val ok: Int, val created: Int, val lost: Int, val rewritten: Int, val failures: List<SourceFailure>)
+    private class Cloned(val ok: Int, val created: Int, val lost: Int, val rewritten: Int, val failures: List<SourceFailure>, val skipped: Int = 0)
 
     /**
      * Клонировать или обновить отмеченные автором клоны (D-70), по одному на
@@ -283,12 +293,14 @@ class PultRepository(
      * работа ИИ в клоне — не конфликт, перезаписанная на GitHub история —
      * сведение в строке итога.
      */
-    private fun cloneAll(reg: Registry, clones: com.dpsmpx.dpmeta.git.Clones, reader: CloneReader, token: Secret, selected: Set<String>): Cloned {
+    private fun cloneAll(reg: Registry, clones: com.dpsmpx.dpmeta.git.Clones, reader: CloneReader, token: Secret, selected: Set<String>, progress: (String) -> Unit): Cloned {
         val byKey = reg.shown.groupBy { reader.key(it) }
         val now = clock.now()
         // Только отмеченные автором (D-70) — из реестра и любые другие репозитории аккаунта.
         val jobs = selected.sorted().map { key ->
             clonePool.submit<Pair<String, Outcome<com.dpsmpx.dpmeta.git.Clones.Report>>> {
+                // «Отменить» (UX-10) — между репозиториями: ещё не начатый клон не трогается.
+                if (cancel.get()) return@submit key to Outcome.failure(DiagCode.CANCELLED_BY_USER, "отменено", key)
                 // Сбой одного клона — его отказ, а не исключение из get(): иначе остальные клоны шли бы без защиты running.
                 key to runCatching { clones.sync(key, com.dpsmpx.dpmeta.git.Clones.github(key), token, Rules::isBuildBranch) }
                     .getOrElse { Outcome.failure(DiagCode.INTERNAL_ERROR, "клон: ${it.javaClass.simpleName}", key) }
@@ -298,8 +310,17 @@ class PultRepository(
         var created = 0
         var lost = 0
         var rewritten = 0
+        var skipped = 0
         val failures = mutableListOf<SourceFailure>()
-        for ((key, r) in jobs.map { it.get() }) {
+        if (jobs.isNotEmpty()) progress("Клоны: 0 из ${jobs.size}")
+        for ((done, job) in jobs.withIndex()) {
+            val (key, r) = job.get()
+            progress("Клоны: ${done + 1} из ${jobs.size}")
+            // Отменённый — не отказ источника: его просто не трогали.
+            if (r is Outcome.Failure && r.diagnostics.first().code == DiagCode.CANCELLED_BY_USER) {
+                skipped++
+                continue
+            }
             // Отказ клона репозитория реестра — его отказ источника; не из реестра — только счёт в строке итога.
             val owner = byKey[key]?.let { ps -> ps.firstOrNull { it.dir == null } ?: ps.first() }?.name
             when (r) {
@@ -315,7 +336,7 @@ class PultRepository(
                 }
             }
         }
-        return Cloned(ok, created, lost, rewritten, failures)
+        return Cloned(ok, created, lost, rewritten, failures, skipped)
     }
 
     companion object {
@@ -328,5 +349,8 @@ class PultRepository(
 
         /** Синхронизация идёт (на процесс): клоны и состояние одни. */
         private val running = java.util.concurrent.atomic.AtomicBoolean(false)
+
+        /** «Отменить» клоны текущей синхронизации (UX-10). */
+        private val cancel = java.util.concurrent.atomic.AtomicBoolean(false)
     }
 }

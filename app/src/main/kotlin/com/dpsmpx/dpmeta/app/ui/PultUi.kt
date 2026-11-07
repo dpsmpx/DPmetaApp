@@ -172,6 +172,8 @@ data class PultView(
     val syncEnded: Int = 0,
     /** Чем она кончилась — текст и переход снэкбара. */
     val syncEnd: SyncEnd = SyncEnd.DONE,
+    /** Ход синхронизации (UX-10): «Клоны: 3 из 12», «Источники…»; `null` — не идёт или ход неизвестен. */
+    val progress: String? = null,
 )
 
 /**
@@ -278,6 +280,8 @@ fun PultApp(
     onExport: ((json: Boolean, period: Stats.Period, share: Boolean) -> Unit)? = null,
     /** «Клоны…» в настройках (D-70). */
     onClones: () -> Unit = {},
+    /** «Отменить» клоны идущей синхронизации (UX-10). */
+    onCancelSync: () -> Unit = {},
     /** Итог окна клонов: отмеченные или `null` — «Позже» / «Отмена». */
     onClonesChosen: (Set<String>?) -> Unit = {},
 ) {
@@ -311,7 +315,7 @@ fun PultApp(
     }
     Scaffold(
         snackbarHost = { SnackbarHost(snack) },
-        topBar = { Header(tab.title, view, onSync) },
+        topBar = { Header(tab.title, view, onSync, onCancelSync) },
         bottomBar = {
             // Панель — своя, как у «AI» (D-73): значки и подписи, 48 dp, роль вкладки и «выбрано» для TalkBack.
             Surface(tonalElevation = 3.dp) {
@@ -391,7 +395,7 @@ private fun RowScope.PanelItem(label: String, icon: Int, selected: Boolean?, onC
  * «обновляется»; во время синхронизации — тонкая полоса хода под ним.
  */
 @Composable
-private fun Header(title: String, view: PultView, onSync: () -> Unit) {
+private fun Header(title: String, view: PultView, onSync: () -> Unit, onCancel: () -> Unit) {
     Surface(tonalElevation = 3.dp) {
         Column(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars)) {
             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
@@ -400,7 +404,7 @@ private fun Header(title: String, view: PultView, onSync: () -> Unit) {
                 val asOf = view.state?.let { "срез ${Screens.time(it.asOf)}" }
                 Text(
                     when {
-                        view.busy -> "Обновляется…" + (asOf?.let { " · $it" } ?: "")
+                        view.busy -> "Обновляется…" + (view.progress?.let { " · $it" } ?: asOf?.let { " · $it" } ?: "")
                         asOf != null -> asOf.replaceFirstChar { it.uppercase() }
                         else -> "Среза ещё нет"
                     },
@@ -408,9 +412,13 @@ private fun Header(title: String, view: PultView, onSync: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            // «Обновить» — одно, значком в заголовке любого экрана (UX-6).
-            IconButton(onClick = onSync, enabled = view.hasToken && !view.busy) {
-                Icon(painterResource(R.drawable.ic_pult_refresh), contentDescription = "Обновить")
+            // Клоны идут — «Отменить» между репозиториями (UX-10); иначе — «Обновить», одно, значком (UX-6).
+            if (view.busy && view.progress?.startsWith("Клоны") == true) {
+                TextButton(onClick = onCancel) { Text("Отменить") }
+            } else {
+                IconButton(onClick = onSync, enabled = view.hasToken && !view.busy) {
+                    Icon(painterResource(R.drawable.ic_pult_refresh), contentDescription = "Обновить")
+                }
             }
             }
             // Полоса — того же места и без синхронизации: заголовок не прыгает.
@@ -821,6 +829,8 @@ private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -
     Spacer(Modifier.height(Tokens.gap))
     // Полный итог синхронизации — здесь (UX-6): на сводке только снэкбар.
     Text("Синхронизация", style = MaterialTheme.typography.titleMedium)
+    // Постоянная строка последней синхронизации (UX-10); временные итоги — снэкбаром.
+    view.state?.let { st -> Text("Последняя: ${Screens.time(st.asOf)} · ${Screens.summary(st).syncHealth}", style = MaterialTheme.typography.bodySmall) }
     Button(onClick = onSync, enabled = view.hasToken && !view.busy) { Text(if (view.busy) "Синхронизация…" else "Обновить") }
     if (view.status.isNotEmpty()) StatusText(view)
     Spacer(Modifier.height(Tokens.gap))
