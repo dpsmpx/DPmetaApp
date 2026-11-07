@@ -22,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -179,10 +180,12 @@ fun StatsScreen(
     status: String = "",
     onExport: ((json: Boolean, period: Stats.Period, share: Boolean) -> Unit)? = null,
 ) {
-    var metric by remember { mutableStateOf(Stats.CATALOG.first()) }
-    var period by remember { mutableStateOf(Stats.Period.MONTH) }
-    var subject by remember { mutableStateOf(project) }
-    var json by remember { mutableStateOf(false) }
+    // Выбор — rememberSaveable: поворот и смерть процесса не сбрасывают метрику и срок (UX-3).
+    var metricId by rememberSaveable { mutableStateOf(Stats.CATALOG.first().id) }
+    val metric = Stats.metric(metricId) ?: Stats.CATALOG.first()
+    var period by rememberSaveable { mutableStateOf(Stats.Period.MONTH) }
+    var subject by rememberSaveable { mutableStateOf(project) }
+    var json by rememberSaveable { mutableStateOf(false) }
     val chart = remember(history, metric, period, subject) {
         Stats.chart(history, metric, period, subject?.let(::listOf) ?: projects, now)
     }
@@ -191,7 +194,7 @@ fun StatsScreen(
         item { Text("Статистика", style = MaterialTheme.typography.titleMedium) }
         item {
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                for (m in Stats.CATALOG) FilterChip(selected = metric == m, onClick = { metric = m }, label = { Text(m.title) })
+                for (m in Stats.CATALOG) FilterChip(selected = metric == m, onClick = { metricId = m.id }, label = { Text(m.title) })
             }
         }
         item {

@@ -28,6 +28,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -60,7 +61,7 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
     var form by remember { mutableStateOf(false) }
     var project by remember { mutableStateOf(controller.project()) }
     var projectFor by remember { mutableStateOf<TargetEntry?>(null) }
-    var guide by remember { mutableStateOf(false) }
+    var guide by rememberSaveable { mutableStateOf(false) }
     var removing by remember { mutableStateOf<TargetEntry?>(null) }
     var restoring by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf<TargetEntry?>(null) }
@@ -88,11 +89,14 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
         }
     }
     if (guide) {
-        SetupPane(controller, model) {
+        val close = {
             guide = false
             targets = controller.targets()
             project = controller.project()
         }
+        // Системный «назад» из инструкции — к Targets, а не из «AI» (AI:A-2).
+        androidx.activity.compose.BackHandler(onBack = close)
+        SetupPane(controller, model, close)
         return
     }
 

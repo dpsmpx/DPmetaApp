@@ -17,5 +17,6 @@ class DpmetaActivity : PultActivity() {
         AiBackground.attach(this)
     }
 
-    override fun aiIntent(): Intent = Intent(this, MainActivity::class.java)
+    // Окно «AI» — одно: уже открытое выходит вперёд, второго экземпляра нет (UX-1).
+    override fun aiIntent(): Intent = Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
 }

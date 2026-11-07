@@ -41,6 +41,7 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
     private lateinit var reconnect: TextView
     private lateinit var ctrlKey: TextView
     private lateinit var altKey: TextView
+    private lateinit var keysRow: View
     private var ctrl = false
     private var alt = false
 
@@ -54,6 +55,7 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         // Терминал всегда тёмный: значки панелей — светлые и при светлой теме телефона (терминал:A-20).
         enableEdgeToEdge(SystemBarStyle.dark(Color.TRANSPARENT), SystemBarStyle.dark(Color.TRANSPARENT))
         setContentView(layout())
+        applyKeyboard()
         // После смерти процесса Android восстанавливает экран, а вкладок (только в памяти, D-27) уже нет:
         // открыть заново ту, с которой экран начинался, а не показывать мёртвый чёрный экран.
         if (savedInstanceState == null || TerminalHub.tabs.isEmpty()) handle(intent)
@@ -92,6 +94,10 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
 
     /** Новая вкладка по просьбе карточки target: target читается с диска — не в потоке интерфейса. */
     private fun handle(intent: Intent?) {
+        if (intent?.getBooleanExtra(EXTRA_CLOSE_ALL, false) == true) {
+            askCloseAll()
+            return
+        }
         // Linux-среда в приложении (D-75, шаг 5): вкладка без target, подключение — в потоке вкладки.
         if (intent?.getBooleanExtra(EXTRA_LINUX, false) == true) {
             // «Открыть в терминале» вкладки «Файлы» (D-99): оболочка гостя сразу в этой папке.
@@ -199,16 +205,23 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
     }
 
     /**
-     * Клавиша с повтором при удержании (стрелки, листание): удержание
+     * Клавиша ряда (терминал:A-3): касание — [action]; у стрелок удержание
      * дольше [REPEAT_DELAY_MS] — повтор каждые [REPEAT_EVERY_MS], как у
-     * клавиатуры; короткое нажатие — одна клавиша при отпускании. Палец
-     * ушёл в прокрутку ряда (CANCEL) — ничего не отправлено: смахивание
-     * ряда не должно двигать выбор в меню Claude (ревью 18 октября 2026).
+     * клавиатуры; смахивание вверх — второй знак [secondary] ([onUp]), он же
+     * мелко над подписью. Палец ушёл (CANCEL) — ничего не отправлено:
+     * смахивание не должно двигать выбор в меню Claude (ревью 18 октября 2026).
      */
     @android.annotation.SuppressLint("ClickableViewAccessibility") // нажатие для TalkBack — тот же onClick
-    private fun repeatChip(text: String, action: () -> Unit): TextView = chip(text, action).apply {
+    private fun key(primary: String, secondary: String, repeat: Boolean = false, onUp: () -> Unit, action: () -> Unit): TextView = chip(primary, action).apply {
+        text = android.text.SpannableString("$secondary\n$primary").apply {
+            setSpan(android.text.style.RelativeSizeSpan(0.55f), 0, secondary.length, 0)
+            setSpan(android.text.style.ForegroundColorSpan(Color.GRAY), 0, secondary.length, 0)
+        }
+        contentDescription = "$primary; смахнуть вверх — $secondary"
+        var downY = 0f
+        var swiped = false
         var repeated = false
-        val repeat = object : Runnable {
+        val again = object : Runnable {
             override fun run() {
                 repeated = true
                 action()
@@ -219,21 +232,69 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
             when (e.actionMasked) {
                 android.view.MotionEvent.ACTION_DOWN -> {
                     v.isPressed = true
+                    downY = e.y
+                    swiped = false
                     repeated = false
-                    v.postDelayed(repeat, REPEAT_DELAY_MS)
+                    if (repeat) v.postDelayed(again, REPEAT_DELAY_MS)
+                }
+                android.view.MotionEvent.ACTION_MOVE -> if (!swiped && downY - e.y > dp(SWIPE_DP)) {
+                    swiped = true
+                    v.removeCallbacks(again)
+                    v.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
                 }
                 android.view.MotionEvent.ACTION_UP -> {
                     v.isPressed = false
-                    v.removeCallbacks(repeat)
-                    if (!repeated) action()
+                    v.removeCallbacks(again)
+                    when {
+                        swiped -> onUp()
+                        !repeated -> action()
+                    }
                 }
                 android.view.MotionEvent.ACTION_CANCEL -> {
                     v.isPressed = false
-                    v.removeCallbacks(repeat)
+                    v.removeCallbacks(again)
                 }
             }
             true
         }
+    }
+
+    private fun moreChip(): TextView = chip("⋯") {}.apply {
+        contentDescription = "Ещё клавиши"
+        setOnClickListener { v -> more(v) }
+    }
+
+    /** «⋯» ряда (терминал:A-3): то, что не поместилось, — Вставить, клавиатура, знаки, листание. */
+    private fun more(anchor: View) {
+        val items = listOf<Pair<String, () -> Unit>>(
+            "Вставить" to ::paste,
+            "Клавиатура" to { view.toggleKeyboard() },
+            "HOME" to { view.key(Key.HOME) },
+            "END" to { view.key(Key.END) },
+            "PGUP" to { view.key(Key.PAGE_UP) },
+            "PGDN" to { view.key(Key.PAGE_DOWN) },
+        ) + listOf("-", "/", "\\", "|", "~").map { s -> s to { view.input(s) } }
+        val popup = android.widget.PopupMenu(this, anchor)
+        items.forEachIndexed { i, (title, _) -> popup.menu.add(android.view.Menu.NONE, i, i, title) }
+        popup.setOnMenuItemClickListener { item -> items.getOrNull(item.itemId)?.second?.invoke(); true }
+        popup.show()
+    }
+
+    /** Подключена ли внешняя клавиатура: тогда ряд клавиш скрыт (терминал:A-3, §4, п. 2). */
+    private fun hardKeyboard(): Boolean = resources.configuration.let {
+        it.keyboard != android.content.res.Configuration.KEYBOARD_NOKEYS &&
+            it.hardKeyboardHidden == android.content.res.Configuration.HARDKEYBOARDHIDDEN_NO
+    }
+
+    private fun applyKeyboard() {
+        keysRow.visibility = if (hardKeyboard()) View.GONE else View.VISIBLE
+        renderTabs()
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // Клавиатуру подключили или отключили — без пересоздания экрана (configChanges keyboard|keyboardHidden).
+        if (::keysRow.isInitialized) applyKeyboard()
     }
 
     private fun scrollRow(row: LinearLayout) = HorizontalScrollView(this).apply {
@@ -260,31 +321,36 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
             addView(status, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             addView(reconnect)
         }
+        // Ряд клавиш (терминал:A-3, §4, п. 1): девять клавиш видны целиком, без прокрутки; смахивание вверх по
+        // клавише — второй знак (ESC ~, TAB |, ← HOME, ↓ PGDN, ↑ PGUP, → END); «⋯» — остальное.
         val keys = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         ctrlKey = chip("CTRL") { ctrl = !ctrl; markMods() }
         altKey = chip("ALT") { alt = !alt; markMods() }
-        keys.addView(chip("ESC") { view.key(Key.ESCAPE) })
-        keys.addView(ctrlKey)
-        keys.addView(altKey)
-        keys.addView(chip("TAB") { view.key(Key.TAB) })
-        keys.addView(repeatChip("←") { view.key(Key.LEFT) })
-        keys.addView(repeatChip("↓") { view.key(Key.DOWN) })
-        keys.addView(repeatChip("↑") { view.key(Key.UP) })
-        keys.addView(repeatChip("→") { view.key(Key.RIGHT) })
-        keys.addView(chip("HOME") { view.key(Key.HOME) })
-        keys.addView(chip("END") { view.key(Key.END) })
-        keys.addView(repeatChip("PGUP") { view.key(Key.PAGE_UP) })
-        keys.addView(repeatChip("PGDN") { view.key(Key.PAGE_DOWN) })
-        for (s in listOf("-", "/", "|", "~", "\\")) keys.addView(chip(s) { view.input(s) })
-        keys.addView(chip("Вставить") { paste() })
-        keys.addView(chip("⌨") { view.toggleKeyboard() })
+        val row = listOf(
+            key("ESC", "~", onUp = { view.input("~") }) { view.key(Key.ESCAPE) },
+            ctrlKey,
+            altKey,
+            key("TAB", "|", onUp = { view.input("|") }) { view.key(Key.TAB) },
+            key("←", "HOME", repeat = true, onUp = { view.key(Key.HOME) }) { view.key(Key.LEFT) },
+            key("↓", "PGDN", repeat = true, onUp = { view.key(Key.PAGE_DOWN) }) { view.key(Key.DOWN) },
+            key("↑", "PGUP", repeat = true, onUp = { view.key(Key.PAGE_UP) }) { view.key(Key.UP) },
+            key("→", "END", repeat = true, onUp = { view.key(Key.END) }) { view.key(Key.RIGHT) },
+            moreChip(),
+        )
+        for (k in row) {
+            k.setPadding(dp(2), dp(8), dp(2), dp(8))
+            k.minWidth = 0
+            keys.addView(k, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        }
+        keys.setBackgroundColor(0xff1a1a1a.toInt())
+        keysRow = keys
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.BLACK)
             addView(scrollRow(tabsRow))
             addView(statusRow)
             addView(view, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
-            addView(scrollRow(keys))
+            addView(keys)
         }
         root.setOnApplyWindowInsetsListener { v, insets ->
             val i = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.ime() or WindowInsets.Type.displayCutout())
@@ -342,6 +408,23 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         dialog.show()
     }
 
+    /** «Закрыть все» — с подтверждением (терминал:A-1): одно касание в шторке не обрывает все сеансы. */
+    private fun askCloseAll() {
+        if (TerminalHub.tabs.isEmpty()) return
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("Закрыть все вкладки терминала?")
+            .setMessage("Вкладок: ${TerminalHub.tabs.size}. Соединения закроются, программы в них (claude, сборка) получат сигнал завершения; экран и история пропадут.")
+            .setPositiveButton("Закрыть все") { _, _ ->
+                TerminalHub.tabs.toList().forEach(TerminalHub::close)
+                finish()
+            }
+            .setNegativeButton("Отмена", null)
+            .create()
+        // У диалога своё окно: FLAG_SECURE активности его не закрывает (D-86).
+        dialog.window?.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+        dialog.show()
+    }
+
     private fun renderTabs() {
         tabsRow.removeAllViews()
         val current = TerminalHub.current
@@ -374,6 +457,8 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
                 }
             })
         }
+        // Внешняя клавиатура — ряд клавиш скрыт, «⋯» — в ряду вкладок (терминал:A-3, §4, п. 2).
+        if (hardKeyboard()) tabsRow.addView(moreChip())
         val s = current?.status.orEmpty()
         status.text = s
         statusRow.visibility = if (s.isEmpty()) View.GONE else View.VISIBLE
@@ -386,6 +471,12 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         const val EXTRA_LOGIN = "com.dpsmpx.dpai.terminal.LOGIN"
         const val EXTRA_LINUX = "com.dpsmpx.dpai.terminal.LINUX"
         const val EXTRA_DIR = "com.dpsmpx.dpai.terminal.DIR"
+
+        /** «Закрыть все» из уведомления службы терминала — подтверждение здесь (терминал:A-1). */
+        const val EXTRA_CLOSE_ALL = "com.dpsmpx.dpai.terminal.CLOSE_ALL"
+
+        /** Сколько смахнуть вверх по клавише ряда, чтобы получить её второй знак, dp. */
+        private const val SWIPE_DP = 24
         private const val PREVIEW = 500
         private const val MAX_CLIP = 100_000
         private const val REPEAT_DELAY_MS = 400L

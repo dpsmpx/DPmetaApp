@@ -53,6 +53,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Modifier
@@ -232,6 +234,9 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
         }
     }
     // Обратимое — сразу и со снэкбаром «Отменить» (AI:A-4): хост — у оболочки, действия — во вкладках.
+    val tabStates = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
+    // Пульт под «AI» есть в приложении DPmetaApp (D-73); в отдельной сборке «AI» — нет.
+    val pultBelow = remember { (context.applicationContext as? DpaiApplication)?.parentIntent() != null }
     val snack = remember { androidx.compose.material3.SnackbarHostState() }
     val undo = remember(scope) { Undo(snack, scope) }
     androidx.compose.runtime.CompositionLocalProvider(LocalUndo provides undo) {
@@ -255,10 +260,19 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                             sessionScreen?.task?.let { t -> TextButton(onClick = { taskSheet = t }) { Text("⚙", style = MaterialTheme.typography.titleMedium) } }
                             TextButton(onClick = { sessionEvents = !sessionEvents }) { Text(if (sessionEvents) "Чат" else "События") }
                         } else {
+                            // Путь к пульту виден (DPmetaApp:D-73, UX-1): «AI» стоит над ним, «←» — просто закрыть окно «AI».
+                            val activity = androidx.activity.compose.LocalActivity.current
+                            if (pultBelow) {
+                                TextButton(
+                                    onClick = { activity?.finish() },
+                                    modifier = Modifier.semantics { contentDescription = "Пульт" },
+                                ) { Text("← Пульт") }
+                            }
                             Text(
                                 // Одно имя подсистемы — «AI», как у вкладки пульта; в заголовке — открытая вкладка (AI:A-1, AI:A-11).
                                 "AI · " + TAB_TITLES.getOrElse(tab) { "…" } + (if (snapshot?.mode == "демо") " · демо" else ""),
-                                Modifier.weight(1f).padding(start = 12.dp), style = MaterialTheme.typography.titleMedium,
+                                Modifier.weight(1f).padding(start = if (pultBelow) 0.dp else 12.dp), style = MaterialTheme.typography.titleMedium,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis,
                             )
                             // Глобальный поиск (ТЗ, §75) — с любой вкладки.
                             TextButton(onClick = { searching = true }) { Text("Найти") }
@@ -344,21 +358,25 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                     }
                 }
                 // Смена вкладки или экрана — плавно, без скачка содержимого; кадр перехода рисует свой экран.
+                // Состояние вкладки (место в «Файлах», открытый разговор, прокрутка) — своё у каждой и переживает
+                // смену вкладки (AI:A-2, AI:A-21): rememberSaveable внутри держит хранитель по номеру экрана.
                 Crossfade(targetState = if (selectedId != null) SESSION_SCREEN else tab, label = "screen", modifier = Modifier.weight(1f).fillMaxWidth()) { screen ->
-                    Box(Modifier.fillMaxSize()) {
-                        when {
-                            screen == 2 -> TargetsPane(controller, model)
-                            screen == 3 -> RequestsPane(model, s)
-                            screen == 4 -> LogPane(model)
-                            screen == 5 -> ModelsPane()
-                            screen == 6 -> FilesPane()
-                            s == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-                            screen == SESSION_SCREEN -> SessionPane(s.session, model, sessionEvents)
-                            screen == 0 -> Column(Modifier.fillMaxSize()) {
-                                QuickRow(s.quick, s.live, s.requests.size, model, onTask = { foundTask = it }) { selectedId = null; tab = 3 }
-                                Box(Modifier.weight(1f)) { DashboardPane(s.dashboard, model) }
+                    tabStates.SaveableStateProvider(screen) {
+                        Box(Modifier.fillMaxSize()) {
+                            when {
+                                screen == 2 -> TargetsPane(controller, model)
+                                screen == 3 -> RequestsPane(model, s)
+                                screen == 4 -> LogPane(model)
+                                screen == 5 -> ModelsPane()
+                                screen == 6 -> FilesPane()
+                                s == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
+                                screen == SESSION_SCREEN -> SessionPane(s.session, model, sessionEvents)
+                                screen == 0 -> Column(Modifier.fillMaxSize()) {
+                                    QuickRow(s.quick, s.live, s.requests.size, model, onTask = { foundTask = it }) { selectedId = null; tab = 3 }
+                                    Box(Modifier.weight(1f)) { DashboardPane(s.dashboard, model) }
+                                }
+                                else -> BoardPane(s.board, s.live, model, s.archived) { selectedId = it }
                             }
-                            else -> BoardPane(s.board, s.live, model, s.archived) { selectedId = it }
                         }
                     }
                 }
@@ -652,7 +670,9 @@ private fun ChatBubble(line: com.dpsmpx.dpai.ui.ChatLine) {
 private fun ChatInput(screen: SessionScreen, model: DemoModel, maxHeight: androidx.compose.ui.unit.Dp) {
     val scope = rememberCoroutineScope()
     val keys = remember { com.dpsmpx.dpai.core.ids.IdGenerator(com.dpsmpx.dpai.core.clock.Clock.SYSTEM, com.dpsmpx.dpai.core.clock.RandomSource.secure()) }
-    var text by remember(screen.session) { mutableStateOf("") }
+    // Черновик — по сессии и вне окна: смена вкладки или сессии его не теряет (AI:A-13).
+    var text by remember(screen.session) { mutableStateOf(Drafts.get(Drafts.chat(screen.session.value)).orEmpty()) }
+    androidx.compose.runtime.SideEffect { Drafts.set(Drafts.chat(screen.session.value), text) }
     var modelName by remember(screen.session) { mutableStateOf("") }
     var effort by remember(screen.session) { mutableStateOf("") }
     var params by remember(screen.session) { mutableStateOf(false) }

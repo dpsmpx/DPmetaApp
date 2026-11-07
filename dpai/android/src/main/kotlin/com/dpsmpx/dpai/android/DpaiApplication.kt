@@ -1,6 +1,7 @@
 package com.dpsmpx.dpai.android
 
 import android.app.Application
+import android.content.Intent
 import com.dpsmpx.dpai.core.diagnostics.Redactor
 
 /**
@@ -27,4 +28,11 @@ open class DpaiApplication : Application() {
      * отвечает по своему входу (`DPmetaApp:D-61`). Вызывается из главного потока.
      */
     open fun loginNeeded(): Boolean = false
+
+    /**
+     * Окно, над которым открывается «AI» (`DPmetaApp:D-73`; аудит UI/UX
+     * 5 ноября 2026, UX-1): в приложении DPmetaApp — пульт, и «назад» из
+     * «AI» ведёт в него. В подсистеме — нет: «AI» сама первое окно.
+     */
+    open fun parentIntent(): Intent? = null
 }

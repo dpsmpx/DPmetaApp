@@ -39,6 +39,10 @@ object TerminalHub {
     @Volatile
     var current: Tab? = null
 
+    /** Контекст приложения — для службы терминала при закрытии вкладки (терминал:A-1). */
+    @Volatile
+    private var app: Context? = null
+
     private var nextId = 1
 
     /**
@@ -99,6 +103,9 @@ object TerminalHub {
         tabs += tab
         count.intValue = tabs.size
         current = tab
+        app = context.applicationContext
+        // Пока есть вкладки — служба переднего плана держит процесс и сеансы (терминал:A-1).
+        TerminalService.sync(context)
         connect(context, tab)
         return tab
     }
@@ -169,6 +176,7 @@ object TerminalHub {
         tabs -= tab
         count.intValue = tabs.size
         if (current === tab) current = tabs.lastOrNull()
+        app?.let(TerminalService::sync)
         observer?.tabs()
     }
 }

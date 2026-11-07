@@ -7,8 +7,11 @@
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
 
     <application>
+        <!-- Поворот, тема, шрифт — без пересоздания, как у «AI» и экрана входа: место, итог синхронизации
+             и окно клонов не теряются (аудит UI/UX 5 ноября 2026, UX-3). -->
         <activity
             android:name="com.dpsmpx.dpmeta.app.PultActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density|fontScale|locale|layoutDirection"
             android:exported="false" />
         <!-- Экран входа на всё приложение (D-59): только изнутри, поверх любого окна. -->
         <activity

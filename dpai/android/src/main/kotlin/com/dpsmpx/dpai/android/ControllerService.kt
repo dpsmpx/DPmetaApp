@@ -66,8 +66,7 @@ class ControllerService : Service() {
         // останавливало такты, уведомления и запросы до ручного запуска.
         val stop = PendingIntent.getActivity(
             this, 1,
-            MainActivity.internal(this).setAction(MainActivity.STOP_CONFIRM)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            MainActivity.internal(this).setAction(MainActivity.STOP_CONFIRM).addFlags(MainActivity.FRONT),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val n = Notification.Builder(this, CHANNEL)

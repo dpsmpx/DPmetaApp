@@ -1,5 +1,6 @@
 package com.dpsmpx.dpmeta.app.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -15,8 +16,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -34,11 +35,13 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextLayoutResult
@@ -120,7 +123,48 @@ private sealed interface Nav {
 
     /** Статистика (F-34): [project] — из карточки, `null` — сравнение всех проектов. */
     data class Stats(val project: String?) : Nav
+
+    companion object {
+        private const val SEP = "\u0001"
+
+        /** Строкой — для сохранения места при смерти процесса (UX-3); поля разделены непечатным знаком. */
+        fun encode(n: Nav): String = when (n) {
+            is Card -> listOf("card", n.project)
+            is Dir -> listOf("dir", n.project, n.path)
+            is Doc -> listOf("doc", n.project, n.path, n.anchor.orEmpty())
+            is Stats -> listOf("stats", n.project.orEmpty())
+        }.joinToString(SEP)
+
+        fun decode(s: String): Nav? {
+            val p = s.split(SEP)
+            return when (p.firstOrNull()) {
+                "card" -> p.getOrNull(1)?.let(::Card)
+                "dir" -> if (p.size >= 3) Dir(p[1], p[2]) else null
+                "doc" -> if (p.size >= 4) Doc(p[1], p[2], p[3].ifEmpty { null }) else null
+                "stats" -> Stats(p.getOrNull(1)?.ifEmpty { null })
+                else -> null
+            }
+        }
+    }
 }
+
+/**
+ * Стеки вкладок (UX-2, UX-3): у каждой вкладки — свой, и они переживают
+ * поворот и смерть процесса. Сохраняются строками «вкладка, переход».
+ */
+private val StacksSaver = listSaver<SnapshotStateMap<Tab, List<Nav>>, String>(
+    save = { m -> m.flatMap { (t, l) -> l.map { "${t.name}\u0002${Nav.encode(it)}" } } },
+    restore = { list ->
+        mutableStateMapOf<Tab, List<Nav>>().apply {
+            for (e in list) {
+                val (t, n) = e.split("\u0002", limit = 2).let { it[0] to it.getOrElse(1) { "" } }
+                val tab = Tab.entries.firstOrNull { it.name == t } ?: continue
+                val nav = Nav.decode(n) ?: continue
+                this[tab] = this[tab].orEmpty() + nav
+            }
+        }
+    },
+)
 
 /** [onAi] — вкладка «AI» перед «Настройками» (D-53): открывает оболочку подсистемы; `null` — вкладки нет. */
 @Composable
@@ -137,16 +181,21 @@ fun PultApp(
     /** Итог окна клонов: отмеченные или `null` — «Позже» / «Отмена». */
     onClonesChosen: (Set<String>?) -> Unit = {},
 ) {
-    var tab by remember { mutableStateOf(if (view.hasToken) Tab.SUMMARY else Tab.SETTINGS) }
-    val stack = remember { mutableStateListOf<Nav>() }
-    val open: (Nav) -> Unit = { stack.add(it) }
-    val back: () -> Unit = { if (stack.isNotEmpty()) stack.removeAt(stack.size - 1) }
+    // Вкладка и стеки — rememberSaveable: поворот, тема и шрифт больше не сбрасывают место (UX-3).
+    var tab by rememberSaveable { mutableStateOf(if (view.hasToken) Tab.SUMMARY else Tab.SETTINGS) }
+    val stacks = rememberSaveable(saver = StacksSaver) { mutableStateMapOf() }
+    val stack = stacks[tab].orEmpty()
+    val open: (Nav) -> Unit = { stacks[tab] = stacks[tab].orEmpty() + it }
+    val back: () -> Unit = { stacks[tab]?.takeIf { it.isNotEmpty() }?.let { stacks[tab] = it.dropLast(1) } }
+    // Системный «назад» — шаг вверх по стеку вкладки, а не выход из приложения (UX-2).
+    BackHandler(enabled = stack.isNotEmpty(), onBack = back)
     Scaffold(
         bottomBar = {
             NavigationBar {
                 for (t in Tab.entries) {
                     if (t == Tab.SETTINGS && onAi != null) NavigationBarItem(selected = false, onClick = onAi, icon = {}, label = { Text("AI") })
-                    NavigationBarItem(selected = tab == t && stack.isEmpty(), onClick = { tab = t; stack.clear() }, icon = {}, label = { Text(t.title) })
+                    // Вкладка выделена и во вложенном экране; касание открытой — к её началу, другой — туда, где оставили.
+                    NavigationBarItem(selected = tab == t, onClick = { if (tab == t) stacks[t] = emptyList() else tab = t }, icon = {}, label = { Text(t.title) })
                 }
             }
         },
@@ -289,8 +338,8 @@ private fun CardList(c: Screens.Card, panel: Outcome<Panel>?, loader: Loader, on
 
 @Composable
 private fun FeedScreen(events: List<FeedEvent>, projects: List<String>) {
-    var project by remember { mutableStateOf<String?>(null) }
-    var kind by remember { mutableStateOf<String?>(null) }
+    var project by rememberSaveable { mutableStateOf<String?>(null) }
+    var kind by rememberSaveable { mutableStateOf<String?>(null) }
     val rows = Screens.feed(events, project, kind)
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
