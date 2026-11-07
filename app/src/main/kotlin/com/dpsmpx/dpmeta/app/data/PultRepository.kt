@@ -145,6 +145,55 @@ class PultRepository(
         }
     }
 
+    /** Клон проекта для чтения: ключ клона, путь подсистемы в нём, основная ветка. */
+    private class Local(val clones: com.dpsmpx.dpmeta.git.Clones, val key: String, val prefix: String, val main: String)
+
+    /**
+     * Склонированный и отмеченный автором репозиторий проекта (D-65, D-70);
+     * `null` — клона нет, он не отмечен или реестра нет ни в памяти, ни в
+     * отмеченном клоне DPmetaApp: тогда — REST.
+     */
+    private fun local(project: String, selected: Set<String>): Local? {
+        val clones = com.dpsmpx.dpmeta.git.Clones(clonesDir, com.dpsmpx.dpmeta.git.Clones.allowList())
+        val host = RepoRef.parse(HOST).valueOrNull() ?: return null
+        val reg = registry ?: localRegistry(clones, host, selected) ?: return null
+        val entry = reg.byName(project) ?: return null
+        val key = if (entry.dir != null) host.toString() else entry.slug.toString()
+        if (key !in selected) return null
+        val main = clones.main(key) ?: return null
+        return Local(clones, key, entry.dir?.let { "$it/" } ?: "", main)
+    }
+
+    /** Реестр из отмеченного клона DPmetaApp — без сети и токена (окно открыли до первой синхронизации). */
+    private fun localRegistry(clones: com.dpsmpx.dpmeta.git.Clones, host: RepoRef, selected: Set<String>): Registry? {
+        if (host.toString() !in selected) return null
+        val main = clones.main(host.toString()) ?: return null
+        val bytes = (clones.file(host.toString(), main, REGISTRY) as? Outcome.Success)?.value ?: return null
+        return (RegistryFormat.parse(bytes.toString(Charsets.UTF_8), REGISTRY) as? Outcome.Success)?.value?.also { registry = it }
+    }
+
+    /**
+     * Каталог склонированного проекта — из клона (UX-9): без сети, токена и
+     * входа по PIN; `null` — клона нет или он не отмечен, тогда [directory].
+     */
+    fun localDirectory(project: String, dir: String, selected: Set<String>): Outcome<List<GitHub.Entry>>? {
+        val l = local(project, selected) ?: return null
+        return when (val r = l.clones.list(l.key, l.main, (l.prefix + dir).trimEnd('/'))) {
+            is Outcome.Failure -> r
+            is Outcome.Success -> r.value?.let { list -> Outcome.success(list.map { GitHub.Entry(it.name, if (dir.isEmpty()) it.name else "${dir.trimEnd('/')}/${it.name}", it.dir) }) }
+                ?: Outcome.failure(DiagCode.GITHUB_NOT_FOUND, "каталога нет в клоне", "$project:$dir")
+        }
+    }
+
+    /** Файл склонированного проекта — из клона (UX-9); `null` — клона нет или он не отмечен, тогда [document]. */
+    fun localDocument(project: String, path: String, selected: Set<String>): Outcome<String>? {
+        val l = local(project, selected) ?: return null
+        return when (val r = l.clones.file(l.key, l.main, l.prefix + path)) {
+            is Outcome.Failure -> r
+            is Outcome.Success -> r.value?.let { Outcome.success(it.toString(Charsets.UTF_8)) } ?: Outcome.failure(DiagCode.GITHUB_NOT_FOUND, "файла нет в клоне", "$project:$path")
+        }
+    }
+
     /** Идёт ли синхронизация (на процесс): окно после поворота не запускает вторую и говорит «идёт». */
     fun syncing(): Boolean = running.get()
 

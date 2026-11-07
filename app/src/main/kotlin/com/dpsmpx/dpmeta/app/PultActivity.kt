@@ -413,9 +413,23 @@ open class PultActivity : ComponentActivity() {
             }
         }
 
-        override fun directory(project: String, dir: String, done: (Outcome<List<GitHub.Entry>>) -> Unit) = run({ repo.directory(it, project, dir) }, done)
+        /**
+         * Сначала клон (UX-9): склонированное читается без сети, токена и окна PIN;
+         * клона нет или он не отмечен — GitHub по токену.
+         */
+        private fun <T> localFirst(local: () -> Outcome<T>?, remote: (Secret) -> Outcome<T>, done: (Outcome<T>) -> Unit) {
+            if (pool.isShutdown) return
+            pool.execute {
+                val r = runCatching(local).getOrNull()
+                runOnUiThread { if (r != null) done(r) else run(remote, done) }
+            }
+        }
 
-        override fun document(project: String, path: String, done: (Outcome<String>) -> Unit) = run({ repo.document(it, project, path) }, done)
+        override fun directory(project: String, dir: String, done: (Outcome<List<GitHub.Entry>>) -> Unit) =
+            localFirst({ repo.localDirectory(project, dir, clonesSelected()) }, { repo.directory(it, project, dir) }, done)
+
+        override fun document(project: String, path: String, done: (Outcome<String>) -> Unit) =
+            localFirst({ repo.localDocument(project, path, clonesSelected()) }, { repo.document(it, project, path) }, done)
 
         /** Панель (F-10) — файл `config/projects/<Проект>.toml`, собранный в APK; нет файла — нет панели. */
         override fun panel(project: String): Outcome<Panel>? {

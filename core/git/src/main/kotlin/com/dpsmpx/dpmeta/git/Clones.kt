@@ -237,6 +237,29 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
         TreeWalk.forPath(repo, path, tree)?.use { tw -> repo.open(tw.getObjectId(0)).bytes }
     }
 
+    /** Строка каталога клона: имя и вид; каталоги — первыми, как в REST (F-09). */
+    data class Entry(val name: String, val dir: Boolean)
+
+    /**
+     * Каталог ветки GitHub [branch] по пути от корня ([path] пустой — корень),
+     * без сети и токена (UX-9: пульт читает склонированное из клона); нет
+     * такого каталога — `null`, нет клона или ветки — отказ. Каталоги — первыми,
+     * затем по имени.
+     */
+    fun list(project: String, branch: String, path: String): Outcome<List<Entry>?> = withRepo(project) { repo ->
+        val tree = repo.resolve("${Constants.R_REMOTES}origin/$branch^{tree}") ?: return@withRepo null
+        val at = if (path.isEmpty()) {
+            tree
+        } else {
+            TreeWalk.forPath(repo, path, tree)?.use { tw -> if (tw.isSubtree) tw.getObjectId(0) else null } ?: return@withRepo null
+        }
+        TreeWalk(repo).use { tw ->
+            tw.addTree(at)
+            tw.isRecursive = false
+            buildList { while (tw.next()) add(Entry(tw.nameString, tw.isSubtree)) }
+        }.sortedWith(compareBy({ !it.dir }, { it.name }))
+    }
+
     private fun <T> withRepo(project: String, work: (Repository) -> T): Outcome<T> {
         val dir = dir(project)
         if (!File(dir, ".git").isDirectory) return failure(DiagCode.ENTITY_NOT_FOUND, "клона ещё нет", project)

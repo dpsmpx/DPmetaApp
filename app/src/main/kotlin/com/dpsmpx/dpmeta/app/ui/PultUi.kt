@@ -28,6 +28,13 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import com.dpsmpx.dpai.ui.LinkTaps
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.runtime.toMutableStateList
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.runtime.produceState
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -351,7 +358,7 @@ fun PultApp(
                     DevTabs(devTab) { devTab = it }
                     when (devTab) {
                         DevTab.PROJECTS -> Projects(Screens.projects(s)) { open(Nav.Card(it)) }
-                        DevTab.QUESTIONS -> Questions(Screens.questions(s))
+                        DevTab.QUESTIONS -> Questions(Screens.questions(s), open)
                     }
                 }
             }
@@ -497,9 +504,6 @@ private fun PanelRow(project: String, item: Panel.Item, loader: Loader, open: (N
     }
 }
 
-private fun checked(c: Screens.Checked?): String =
-    c?.let { "#${it.number} — ${it.verdict}, ${it.age}" + (it.line?.let { l -> "; «$l»" } ?: "") } ?: Screens.UNKNOWN
-
 @Composable
 private fun CardScreen(c: Screens.Card, loader: Loader, onBack: () -> Unit, open: (Nav) -> Unit) {
     // Панель (F-10) — один раз на карточку: файл из APK и его разбор не повторяются при перерисовке.
@@ -507,46 +511,91 @@ private fun CardScreen(c: Screens.Card, loader: Loader, onBack: () -> Unit, open
     CardList(c, panel, loader, onBack, open)
 }
 
+/**
+ * Карточка проекта (UX-8; F-06, F-07): сверху — «Внимание», если есть что
+ * сказать; документы — чипами; разделы — свёрнутыми строками с итогом;
+ * решение — касанием открывает журнал на своём якоре.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun CardList(c: Screens.Card, panel: Outcome<Panel>?, loader: Loader, onBack: () -> Unit, open: (Nav) -> Unit) = LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-    item { TextButton(onClick = onBack) { Text("← Назад") } }
-    item { Text("${c.name} — ${c.place}, ${c.working}", style = MaterialTheme.typography.titleMedium) }
-    item {
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            TextButton(onClick = { open(Nav.Dir(c.name, "")) }) { Text("Документы") }
-            for ((title, path) in c.files) TextButton(onClick = { open(Nav.Doc(c.name, path, null)) }) { Text(title) }
+private fun CardList(c: Screens.Card, panel: Outcome<Panel>?, loader: Loader, onBack: () -> Unit, open: (Nav) -> Unit) {
+    val view = remember(c) { Screens.cardView(c) }
+    val opened = rememberSaveable(c.name, saver = listSaver(save = { it.toList() }, restore = { it.toMutableStateList() })) { mutableStateListOf<String>() }
+    val decisionsPath = c.files.firstOrNull { it.first == "Решения" }?.second
+    val todoPath = c.files.firstOrNull { it.first == "TODO" }?.second
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        item {
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                TextButton(onClick = onBack) { Text("← Назад") }
+                androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+                TextButton(onClick = { open(Nav.Stats(c.name)) }) { Text("Графики ▸") }
+            }
         }
-    }
-    item { Text("Решений: ${c.decisions}", fontWeight = FontWeight.SemiBold) }
-    items(c.lastDecisions) { Text("  $it") }
-    item { Text("TODO: ${c.todo}, за автором ${c.forAuthor}", fontWeight = FontWeight.SemiBold) }
-    item { TextButton(onClick = { open(Nav.Stats(c.name)) }) { Text("Графики проекта →") } }
-    item { Text("Готовность: ${c.ready.stage}; ${c.ready.verdict}", fontWeight = FontWeight.SemiBold) }
-    items(c.ready.criteria) { Text("  $it") }
-    item { Text("Ход PR: ${c.ready.pulls}") }
-    item { Text("ROADMAP: ${c.roadmap}", fontWeight = FontWeight.SemiBold) }
-    items(c.stages) { s -> Text("  [${s.flag}] ${s.title}" + if (s.steps.isEmpty()) "" else " — ${s.steps}") }
-    item { Text("PR: ${c.pulls.size}", fontWeight = FontWeight.SemiBold) }
-    items(c.pulls) { p -> Text("  #${p.number} ${p.title}" + (if (p.draft) " (черновик)" else "") + " — ${p.head}, ${p.updated}") }
-    item { Text("Проверки последнего PR: ${checked(c.lastPull)}") }
-    item { Text("Проверки последнего влитого: ${checked(c.lastMerged)}") }
-    item { Text("Ветки: ${c.branches.size}", fontWeight = FontWeight.SemiBold) }
-    items(c.branches) { b -> Text("  ${if (b.recent) "●" else "○"} ${b.name} — ${b.updated}") }
-    for (p in c.panel) {
-        item { Text("О себе (${p.name})", fontWeight = FontWeight.SemiBold) }
-        item { Text(p.text, style = MaterialTheme.typography.bodySmall) }
-    }
-    when (panel) {
-        null -> Unit
-        is Outcome.Failure -> item { Text("Панель: ${Panels.failed(panel).first()}", color = MaterialTheme.colorScheme.error) }
-        is Outcome.Success -> {
-            item { Text("Панель", fontWeight = FontWeight.SemiBold) }
-            items(panel.value.items) { PanelRow(c.name, it, loader, open) }
+        item { Text("${c.name} — ${c.place}, ${c.working}", style = MaterialTheme.typography.titleMedium) }
+        if (view.attention.isNotEmpty()) {
+            item {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(Tokens.gap), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("Внимание", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
+                        for (a in view.attention) Text(a, color = MaterialTheme.colorScheme.error)
+                        // Ошибки источников — здесь, а не в конце карточки: конфликт клона виден сразу (D-65).
+                        for (e in c.errors) Text("  $e", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
         }
-    }
-    if (c.errors.isNotEmpty()) {
-        item { Text("Ошибки источников", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold) }
-        items(c.errors) { Text("  $it", color = MaterialTheme.colorScheme.error) }
+        item {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                for ((title, path) in c.files) AssistChip(onClick = { open(Nav.Doc(c.name, path, null)) }, label = { Text(title) })
+                AssistChip(onClick = { open(Nav.Dir(c.name, "")) }, label = { Text("Все файлы") })
+            }
+        }
+        for (sec in view.sections) {
+            val key = sec.kind.name
+            val expanded = key in opened
+            val expandable = sec.lines.isNotEmpty() || (sec.kind == Screens.CardSection.Kind.ABOUT && panel != null)
+            item(key = key) {
+                Text(
+                    sec.title + when {
+                        sec.kind == Screens.CardSection.Kind.TODO && todoPath != null -> " ▸"
+                        !expandable -> ""
+                        expanded -> " ▾"
+                        else -> " ▸"
+                    },
+                    Modifier.fillMaxWidth().clickable(enabled = expandable || (sec.kind == Screens.CardSection.Kind.TODO && todoPath != null)) {
+                        if (sec.kind == Screens.CardSection.Kind.TODO && todoPath != null) {
+                            open(Nav.Doc(c.name, todoPath, null))
+                        } else if (expanded) {
+                            opened.remove(key)
+                        } else {
+                            opened.add(key)
+                        }
+                    }.padding(vertical = 8.dp),
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            if (expanded) {
+                if (sec.kind == Screens.CardSection.Kind.DECISIONS) {
+                    // Решение — касанием к журналу на его якоре (F-07); без id — просто строка.
+                    items(c.lastDecisions) { d ->
+                        val anchor = d.id?.let(Links::slug)
+                        Text(
+                            "  ${d.text}",
+                            Modifier.fillMaxWidth().clickable(enabled = anchor != null && decisionsPath != null) { open(Nav.Doc(c.name, decisionsPath!!, anchor)) }.padding(vertical = 4.dp),
+                        )
+                    }
+                } else {
+                    items(sec.lines) { Text("  $it", style = MaterialTheme.typography.bodySmall) }
+                }
+                if (sec.kind == Screens.CardSection.Kind.ABOUT) {
+                    when (panel) {
+                        null -> Unit
+                        is Outcome.Failure -> item { Text("Панель: ${Panels.failed(panel).first()}", color = MaterialTheme.colorScheme.error) }
+                        is Outcome.Success -> items(panel.value.items) { PanelRow(c.name, it, loader, open) }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -598,39 +647,86 @@ private fun DirScreen(nav: Nav.Dir, loader: Loader, onBack: () -> Unit, open: (N
     }
 }
 
+/**
+ * Документ (F-09, UX-9, UX-21): разбор и стили — не в главном потоке,
+ * абзацы — списком (якорь — номер абзаца), поиск по тексту, выделение и
+ * копирование; внешняя ссылка — по D-75 ([external]).
+ */
 @Composable
 private fun DocScreen(nav: Nav.Doc, names: Map<String, String>, loader: Loader, onBack: () -> Unit, open: (Nav) -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     var result by remember(nav) { mutableStateOf<Outcome<String>?>(null) }
     var anchor by remember(nav) { mutableStateOf(nav.anchor) }
     LaunchedEffect(nav) { loader.document(nav.project, nav.path) { result = it } }
-    val scroll = rememberScrollState()
-    var layout by remember(nav) { mutableStateOf<TextLayoutResult?>(null) }
-    Column(Modifier.verticalScroll(scroll)) {
-        TextButton(onClick = onBack) { Text("← Назад") }
+    val taps = remember { LinkTaps() }
+    val linkColor = MaterialTheme.colorScheme.primary
+    val markdown = nav.path.endsWith(".md", ignoreCase = true)
+    val blocks by produceState<DocText.Blocks?>(null, result, names, linkColor) {
+        val r = result as? Outcome.Success ?: run {
+            value = null
+            return@produceState
+        }
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            if (markdown) {
+                val doc = DocText.build(r.value)
+                val text = DocText.annotated(doc, names, nav.project, nav.path, linkColor) { target ->
+                    when (target) {
+                        is Links.Target.Anchor -> anchor = target.anchor
+                        is Links.Target.File -> open(Nav.Doc(target.project, target.path, target.anchor))
+                        is Links.Target.External -> external(context, taps, target.url)
+                    }
+                }
+                DocText.blocks(text, doc.headings, markdown = true)
+            } else {
+                DocText.blocks(androidx.compose.ui.text.AnnotatedString(r.value), emptyList(), markdown = false)
+            }
+        }
+    }
+    val list = androidx.compose.foundation.lazy.rememberLazyListState()
+    var searching by rememberSaveable(nav) { mutableStateOf(false) }
+    var query by rememberSaveable(nav) { mutableStateOf("") }
+    var hit by remember(nav) { mutableStateOf<Int?>(null) }
+    LaunchedEffect(anchor, blocks) {
+        val a = anchor ?: return@LaunchedEffect
+        blocks?.anchorIndex(a)?.let { list.animateScrollToItem(it) }
+    }
+    LaunchedEffect(hit) { hit?.let { list.animateScrollToItem(it) } }
+    Column {
+        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            TextButton(onClick = onBack) { Text("← Назад") }
+            androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+            TextButton(onClick = { searching = !searching }) { Text(if (searching) "Скрыть поиск" else "Найти") }
+        }
         Text("${nav.project}: ${nav.path}", style = MaterialTheme.typography.titleMedium)
+        if (searching) {
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                OutlinedTextField(
+                    query, { query = it; hit = blocks?.find(it) }, label = { Text("Найти в документе") }, singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(enabled = query.isNotBlank(), onClick = { hit = blocks?.find(query, hit ?: -1) }) { Text("Далее") }
+            }
+            if (query.isNotBlank() && hit == null && blocks != null) Text("Не найдено", style = MaterialTheme.typography.bodySmall)
+        }
         when (val r = result) {
-            null -> Text("Загрузка…")
+            null -> androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical = 8.dp))
             is Outcome.Failure -> FailureText("Не загрузилось", Screens.failure(r.diagnostics.first()))
             is Outcome.Success -> {
-                val markdown = nav.path.endsWith(".md", ignoreCase = true)
-                val doc = remember(r.value) { if (markdown) DocText.build(r.value) else null }
-                if (doc == null) {
-                    Text(r.value, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
+                val b = blocks
+                if (b == null) {
+                    androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical = 8.dp))
                 } else {
-                    val text = remember(doc, names) {
-                        DocText.annotated(doc, names, nav.project, nav.path) { target ->
-                            when (target) {
-                                is Links.Target.Anchor -> anchor = target.anchor
-                                is Links.Target.File -> open(Nav.Doc(target.project, target.path, target.anchor))
-                                is Links.Target.External -> Unit
+                    // Выделение и копирование (UX-21): документ — текст, а не картинка.
+                    androidx.compose.foundation.text.selection.SelectionContainer {
+                        LazyColumn(state = list, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            itemsIndexed(b.items) { _, t ->
+                                if (markdown) {
+                                    Text(t)
+                                } else {
+                                    Text(t, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
+                                }
                             }
                         }
-                    }
-                    Text(text, onTextLayout = { layout = it })
-                    LaunchedEffect(anchor, layout) {
-                        val a = anchor ?: return@LaunchedEffect
-                        val l = layout ?: return@LaunchedEffect
-                        doc.headings.firstOrNull { Links.slug(it.second) == a }?.let { (offset, _) -> scroll.animateScrollTo(l.getLineTop(l.getLineForOffset(offset)).toInt()) }
                     }
                 }
             }
@@ -638,10 +734,47 @@ private fun DocScreen(nav: Nav.Doc, names: Map<String, String>, loader: Loader, 
     }
 }
 
+/**
+ * Внешняя ссылка (D-75): первое касание копирует и показывает адрес целиком,
+ * второе той же — открывает в браузере телефона, только `https`. Адрес — не
+ * секрет: копия без «чувствительного» флага.
+ */
+private fun external(context: android.content.Context, taps: LinkTaps, url: String) {
+    fun say(text: String) = android.widget.Toast.makeText(context, text, android.widget.Toast.LENGTH_LONG).show()
+    when (val act = taps.tap(url, com.dpsmpx.dpai.core.clock.Clock.SYSTEM.monotonicNanos() / 1_000_000)) {
+        is LinkTaps.Act.Copy -> {
+            context.getSystemService(android.content.ClipboardManager::class.java)?.setPrimaryClip(android.content.ClipData.newPlainText("ссылка", url))
+            say(act.text)
+        }
+        is LinkTaps.Act.Open -> try {
+            context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(act.url)))
+        } catch (_: android.content.ActivityNotFoundException) {
+            say("Нет приложения для ссылки — адрес скопирован")
+        }
+        is LinkTaps.Act.Refuse -> say(act.text)
+    }
+}
+
+/**
+ * Вопросы автору (F-24, UX-17): по проектам, метка — чипом, касание —
+ * `TODO.md` проекта на разделе вопроса.
+ */
 @Composable
-private fun Questions(q: List<Screens.Question>) = LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+private fun Questions(q: List<Screens.Question>, open: (Nav) -> Unit) = LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
     item { Text("Вопросов автору: ${q.size}", style = MaterialTheme.typography.titleMedium) }
-    items(q) { i -> Text("${i.project}: " + (i.label?.let { "[$it] " } ?: "") + i.title) }
+    for ((project, items) in Screens.questionGroups(q)) {
+        item(key = "p:$project") { Text(project, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp)) }
+        items(items) { i ->
+            Row(
+                Modifier.fillMaxWidth().clickable(enabled = i.path != null) { open(Nav.Doc(i.project, i.path!!, i.section?.let(Links::slug))) }.padding(vertical = 4.dp),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            ) {
+                i.label?.let { AssistChip(onClick = {}, enabled = false, label = { Text(it) }, modifier = Modifier.padding(end = 6.dp)) }
+                Text(i.title, Modifier.weight(1f))
+                if (i.path != null) Text("▸")
+            }
+        }
+    }
 }
 
 @Composable

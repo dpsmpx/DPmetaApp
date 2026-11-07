@@ -37,43 +37,34 @@ object ScreenText {
         }
     }
 
+    /** Карточка (UX-8): то, что рисует экран, — «Внимание», документы, разделы с итогом и их содержимое. */
     fun card(c: Screens.Card): String = buildString {
         appendLine("${c.name} — ${c.place}, ${c.working}")
-        if (c.files.isNotEmpty()) appendLine("Файлы: " + c.files.joinToString(", ") { (t, p) -> "$t → $p" })
-        appendLine("Решений: ${c.decisions}")
-        for (d in c.lastDecisions) appendLine("  $d")
-        appendLine("TODO: ${c.todo}, за автором ${c.forAuthor}")
-        appendLine("Готовность: ${c.ready.stage}; ${c.ready.verdict}")
-        for (l in c.ready.criteria) appendLine("  $l")
-        appendLine("Ход PR: ${c.ready.pulls}")
-        appendLine("ROADMAP: ${c.roadmap}")
-        for (s in c.stages) appendLine("  [${s.flag}] ${s.title}${if (s.steps.isEmpty()) "" else " — ${s.steps}"}")
-        appendLine("PR: ${c.pulls.size}")
-        for (p in c.pulls) appendLine("  #${p.number} ${p.title}${if (p.draft) " (черновик)" else ""} — ${p.head}, ${p.updated}")
-        appendLine("Ветки: ${c.branches.size}")
-        for (b in c.branches) appendLine("  ${if (b.recent) "●" else "○"} ${b.name} — ${b.updated}")
-        appendLine("Проверки последнего PR: ${checked(c.lastPull)}")
-        appendLine("Проверки последнего влитого: ${checked(c.lastMerged)}")
-        for (p in c.panel) {
-            appendLine("О себе (${p.name}):")
-            for (l in p.text.lines()) appendLine("  $l")
+        val v = Screens.cardView(c)
+        if (v.attention.isNotEmpty()) {
+            appendLine("ВНИМАНИЕ:")
+            for (a in v.attention) appendLine("  $a")
+            // Сами ошибки — в блоке «Внимание», а не в конце карточки (UX-8, D-65).
+            for (e in c.errors) appendLine("    $e")
         }
-        if (c.errors.isNotEmpty()) {
-            appendLine("Ошибки источников:")
-            for (e in c.errors) appendLine("  $e")
+        if (c.files.isNotEmpty()) appendLine("Файлы: " + c.files.joinToString(", ") { (t, p) -> "$t → $p" })
+        for (s in v.sections) {
+            appendLine("${s.title} ▸")
+            for (l in s.lines) appendLine("  $l")
         }
     }
-
-    private fun checked(c: Screens.Checked?): String =
-        c?.let { "#${it.number} — ${it.verdict}, ${it.age}" + (it.line?.let { l -> "; «$l»" } ?: "") } ?: Screens.UNKNOWN
 
     fun feed(rows: List<Screens.FeedRow>): String = buildString {
         appendLine("ЛЕНТА: ${rows.size}")
         for (r in rows) appendLine("  ${r.time} ${r.project} [${r.kind}] ${r.text}")
     }
 
+    /** Вопросы автору (UX-17): по проектам, метка, куда ведёт касание. */
     fun questions(q: List<Screens.Question>): String = buildString {
         appendLine("ВОПРОСЫ АВТОРУ: ${q.size}")
-        for (i in q) appendLine("  ${i.project}: ${i.label?.let { "[$it] " } ?: ""}${i.title}")
+        for ((project, items) in Screens.questionGroups(q)) {
+            appendLine("$project:")
+            for (i in items) appendLine("  ${i.label?.let { "[$it] " } ?: ""}${i.title}" + (i.path?.let { " → $project:$it" + (i.section?.let { s -> " «$s»" } ?: "") } ?: ""))
+        }
     }
 }
