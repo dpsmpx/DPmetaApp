@@ -252,6 +252,10 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
             renaming = false
         }
     }
+    var creating by rememberSaveable { mutableStateOf(false) }
+    var ecosystem by rememberSaveable { mutableStateOf(false) }
+    if (creating) NewTaskDialog(model, onEcosystem = { creating = false; ecosystem = true }) { creating = false }
+    if (ecosystem) EcosystemDialog(model) { ecosystem = false }
     // Обратимое — сразу и со снэкбаром «Отменить» (AI:A-4): хост — у оболочки, действия — во вкладках.
     val tabStates = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     // Пульт под «AI» есть в приложении DPmetaApp (D-73); в отдельной сборке «AI» — нет.
@@ -261,6 +265,13 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
     androidx.compose.runtime.CompositionLocalProvider(LocalUndo provides undo) {
         Scaffold(
             snackbarHost = { androidx.compose.material3.SnackbarHost(snack) },
+            // «Новая задача» — плавающей кнопкой на «Сводке» и «Задачах» (AI:A-6); в демо задач не ставят.
+            floatingActionButton = {
+                val onBoard = tab == AiTab.SUMMARY.ordinal || tab == AiTab.TASKS.ordinal
+                if (snapshot?.live == true && selectedId == null && !settings && onBoard) {
+                    androidx.compose.material3.ExtendedFloatingActionButton(onClick = { creating = true }, text = { Text("Новая задача") }, icon = { Text("+", style = MaterialTheme.typography.titleLarge) })
+                }
+            },
             topBar = {
                 // Узкая строка (D-61): больше места чату; в окне сессии — кружок состояния и имя (нажатие — переименовать).
                 androidx.compose.material3.Surface(tonalElevation = 3.dp) {
@@ -416,10 +427,10 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                                 s == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                                 screen == SESSION_SCREEN -> SessionPane(s.session, model, sessionEvents)
                                 screen == AiTab.SUMMARY.ordinal -> Column(Modifier.fillMaxSize()) {
-                                    QuickRow(s.quick, s.live, s.requests.size, model, onTask = { foundTask = it }) { openTab(AiTab.REQUESTS) }
-                                    Box(Modifier.weight(1f)) { DashboardPane(s.dashboard, model) }
+                                    QuickRow(s.quick, model)
+                                    Box(Modifier.weight(1f)) { DashboardPane(s.dashboard, s.quick, model) { foundTask = it } }
                                 }
-                                else -> BoardPane(s.board, s.live, model, s.archived) { selectedId = it }
+                                else -> BoardPane(s.board, model, s.archived) { selectedId = it }
                             }
                         }
                     }
@@ -468,7 +479,7 @@ private fun rememberVisible(): Boolean {
 }
 
 @Composable
-private fun DashboardPane(screen: DashboardScreen, model: DemoModel) {
+private fun DashboardPane(screen: DashboardScreen, quick: com.dpsmpx.dpai.ui.QuickActions, model: DemoModel, onTask: (com.dpsmpx.dpai.core.ids.TaskId) -> Unit) {
     // Загрузка окон — из `/usage` раз в минуту, пока сводка видна (D-48).
     if (screen.limits.isNotEmpty() && rememberVisible()) {
         LaunchedEffect(Unit) {
@@ -478,30 +489,42 @@ private fun DashboardPane(screen: DashboardScreen, model: DemoModel) {
             }
         }
     }
-    // Сводка — подписки (D-65): лимиты, порог и передача задач сверху, затем состояние, счётчики и «Внимание»;
+    var usageOpen by rememberSaveable { mutableStateOf(false) }
+    // Сводка — подписки (D-65): лимиты сверху, затем состояние, «Ждёт вас» одним списком и ненулевые счётчики (AI:A-6);
     // задачи и их сессии — во вкладке «Задачи», оттуда — сразу чат (D-62).
-    LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    LazyColumn(contentPadding = PaddingValues(start = 12.dp, top = 12.dp, end = 12.dp, bottom = FAB_ROOM), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (screen.limits.isEmpty()) item { Text("Подписок пока нет: они появятся после первой пробы входа слотов.", style = MaterialTheme.typography.bodySmall) }
         items(screen.limits, key = { "limits:${it.subscription.value}" }) { LimitsCard(it, model) }
         item {
             Text("Состояние: ${screen.health}", color = toneColor(screen.healthTone), fontWeight = FontWeight.Bold)
             screen.reasons.forEach { Text("· $it", style = MaterialTheme.typography.bodySmall) }
         }
-        item { Counters(screen) }
-        if (screen.attention.isNotEmpty()) {
+        // «Ждут человека» и «Внимание» — один список (AI:A-6): задача — касанием к её листу.
+        if (quick.waiting.isNotEmpty() || screen.attention.isNotEmpty()) {
             item { Text("Ждёт вас", style = MaterialTheme.typography.titleMedium) }
+            items(quick.waiting, key = { "w:${it.id.value}" }) { c ->
+                Column(Modifier.fillMaxWidth().clickable { onTask(c.id) }.padding(vertical = 4.dp)) {
+                    Text(c.title, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(Words.task(c.state) + (if (c.held) " · пауза" else "") + " ▸", style = MaterialTheme.typography.labelSmall, color = toneColor(Tone.WARNING))
+                }
+            }
             items(screen.attention) { Text("· $it", color = toneColor(Tone.WARNING), style = MaterialTheme.typography.bodySmall) }
         }
-        // Подсказки локальной модели (D-105): по кнопке, ядро от них не зависит.
+        if (screen.shownCounters.isNotEmpty()) item { Counters(screen.shownCounters) }
+        if (screen.usage.isNotEmpty()) {
+            item { TextButton(onClick = { usageOpen = !usageOpen }) { Text(if (usageOpen) "Расход ▾" else "Расход ▸") } }
+            if (usageOpen) item { Counters(screen.usage) }
+        }
+        // Подсказки локальной модели (D-105): карточкой, только если модель выбрана (AI:A-6).
         item { LocalHintsCard(screen) }
     }
 }
 
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun Counters(screen: DashboardScreen) {
+private fun Counters(counters: List<com.dpsmpx.dpai.ui.Counter>) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        screen.counters.forEach { c ->
+        counters.forEach { c ->
             Card {
                 Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                     Text(c.value, style = MaterialTheme.typography.titleLarge, color = toneColor(c.tone))
@@ -808,15 +831,12 @@ private fun ChatInput(screen: SessionScreen, model: DemoModel, maxHeight: androi
 }
 
 @Composable
-private fun BoardPane(board: TaskBoard, live: Boolean, model: DemoModel, archived: Int, onSession: (String) -> Unit) {
-    var creating by remember { mutableStateOf(false) }
+private fun BoardPane(board: TaskBoard, model: DemoModel, archived: Int, onSession: (String) -> Unit) {
     val scope = rememberCoroutineScope()
     var showArchived by remember { mutableStateOf(model.showArchived) }
     var opened by remember { mutableStateOf<com.dpsmpx.dpai.core.ids.TaskId?>(null) }
-    LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        if (live) {
-            item(key = "new") { Button(onClick = { creating = true }) { Text("Новая задача") } }
-        }
+    // Снизу — место плавающей «Новой задаче» (AI:A-6): последняя карточка не прячется под ней.
+    LazyColumn(contentPadding = PaddingValues(start = 12.dp, top = 12.dp, end = 12.dp, bottom = FAB_ROOM), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         // Архив (D-42): завершённые — с доски, история в журнале остаётся.
         item(key = "archive") {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -844,7 +864,6 @@ private fun BoardPane(board: TaskBoard, live: Boolean, model: DemoModel, archive
             }
         }
     }
-    if (creating) NewTaskDialog(model) { creating = false }
     opened?.let { t -> TaskSheet(model, t, onSession = { s -> opened = null; onSession(s) }) { opened = null } }
 }
 
@@ -922,7 +941,7 @@ private fun SearchDialog(model: DemoModel, onDone: () -> Unit, onOpen: (com.dpsm
  */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-internal fun NewTaskDialog(model: DemoModel, onDone: () -> Unit) {
+internal fun NewTaskDialog(model: DemoModel, onEcosystem: (() -> Unit)? = null, onDone: () -> Unit) {
     val scope = rememberCoroutineScope()
     var title by remember { mutableStateOf("") }
     var objective by remember { mutableStateOf("") }
@@ -1041,7 +1060,13 @@ internal fun NewTaskDialog(model: DemoModel, onDone: () -> Unit) {
                 }
             }) { Text(if (busy) "Ставлю…" else "Поставить") }
         },
-        dismissButton = { TextButton(onClick = onDone) { Text("Отмена") } },
+        dismissButton = {
+            Row {
+                // Задачи из манифеста экосистемы (ТЗ, §43–§46) — отсюда, а не кнопкой сводки (AI:A-6).
+                onEcosystem?.let { TextButton(onClick = it) { Text("Из экосистемы…") } }
+                TextButton(onClick = onDone) { Text("Отмена") }
+            }
+        },
     )
 }
 
@@ -1154,8 +1179,17 @@ private fun LimitsCard(l: com.dpsmpx.dpai.ui.SubscriptionLimits, model: DemoMode
             var tick by remember { mutableStateOf(0) }
             val wantNear = remember(tick, l) { model.desired(com.dpsmpx.dpai.orchestrator.commands.Command.SetNearPercent(l.subscription, l.nearPercent)) as? com.dpsmpx.dpai.orchestrator.commands.Command.SetNearPercent }
             val wantRotation = remember(tick, l) { model.desired(com.dpsmpx.dpai.orchestrator.commands.Command.SetRotation(l.subscription, l.rotation)) as? com.dpsmpx.dpai.orchestrator.commands.Command.SetRotation }
-            Text("Порог «у предела»: выше — несрочные задачи ждут сброса окна, чужие задачи сюда не передаются" + if (wantNear != null) " · применится" else "", style = MaterialTheme.typography.labelSmall)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            // Порог и передачу меняют редко — одной строкой с раскрытием (AI:A-6); D-65: они на сводке, у подписки.
+            var setting by rememberSaveable(l.subscription.value) { mutableStateOf(false) }
+            val near = wantNear?.percent ?: l.nearPercent
+            val rotation = wantRotation?.allowed ?: l.rotation
+            Text(
+                "Порог $near %" + (if (rotation) " · берёт чужие задачи" else "") + (if (wantNear != null || wantRotation != null) " · применится" else "") + if (setting) " ▾" else " ▸",
+                Modifier.fillMaxWidth().clickable { setting = !setting }.padding(vertical = 6.dp),
+                style = MaterialTheme.typography.labelMedium,
+            )
+            if (setting) Text("Порог «у предела»: выше — несрочные задачи ждут сброса окна, чужие задачи сюда не передаются", style = MaterialTheme.typography.labelSmall)
+            if (setting) FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 for (p in listOf(50, 60, 70, 80, 90, 95, 100)) {
                     androidx.compose.material3.FilterChip(selected = (wantNear?.percent ?: l.nearPercent) == p, onClick = {
                         scope.launch {
@@ -1169,7 +1203,7 @@ private fun LimitsCard(l: com.dpsmpx.dpai.ui.SubscriptionLimits, model: DemoMode
                 }
             }
             // Передача задач при пределе (D-56): подписка берёт задачи других подписок, упёршихся в 5 ч или неделю.
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            if (setting) Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Брать задачи подписок у предела (с handoff)" + if (wantRotation != null) " · применится" else "", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall)
                 androidx.compose.material3.Switch(checked = wantRotation?.allowed ?: l.rotation, onCheckedChange = { on ->
                     scope.launch {
@@ -1186,7 +1220,9 @@ private fun LimitsCard(l: com.dpsmpx.dpai.ui.SubscriptionLimits, model: DemoMode
     }
 }
 
-/** Названия вкладок «AI» по порядку значков панели — для заголовка (AI:A-1). */
+/** Место под плавающей кнопкой «Новая задача» внизу списков (AI:A-6). */
+private val FAB_ROOM = 88.dp
+
 /** Значок вкладки (D-112): свои векторные рисунки, без новой зависимости. */
 private fun tabIcon(t: AiTab): Int = when (t) {
     AiTab.SUMMARY -> R.drawable.ic_ai_summary

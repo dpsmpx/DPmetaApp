@@ -42,7 +42,17 @@ data class DashboardScreen(
     val attention: List<String>,
     /** Загрузка окон подписок и порог «у предела» (D-42, D-45). */
     val limits: List<SubscriptionLimits> = emptyList(),
-)
+    /** Расход (D-40) — отдельно от счётчиков: на сводке он свёрнут «Расход ▸» (AI:A-6). */
+    val usage: List<Counter> = emptyList(),
+    /** Активных сессий — числом: строка «AI» на сводке пульта (DPmetaApp:D-76). */
+    val active: Int = 0,
+) {
+    /**
+     * Счётчики, которые стоит показать (AI:A-6): «0» ничего не говорит и
+     * скрыт; неизвестное («?») — показывается (D-13).
+     */
+    val shownCounters: List<Counter> get() = counters.filter { it.value != "0" }
+}
 
 /** Окно подписки на экране: «5 ч — 42 % · сброс 15:00»; загрузка неизвестна — «?» (D-13). */
 data class WindowLine(val window: String, val percent: String, val reset: String?, val tone: Tone)
@@ -145,7 +155,9 @@ object Screens {
             Counter("Упало", view.failed.toString(), if (view.failed > 0) Tone.ERROR else Tone.NEUTRAL),
             Counter("Запросы ждут ответа", count(view.waitingApproval), if ((view.waitingApproval.orNull() ?: 0) > 0) Tone.WARNING else Tone.NEUTRAL),
             Counter("Аккаунтов доступно", view.availableAccounts.toString(), Tone.NEUTRAL),
-        ) + usageCounters(usage),
+        ),
+        usage = usageCounters(usage),
+        active = view.activeSessions,
         sessions = view.rows.map { r ->
             SessionLine(r.session, r.task, Words.display(r.state.name), tone(r.state), silent(r.silentFor), r.next ?: "—", r.review?.let(::reviewLabel))
         },

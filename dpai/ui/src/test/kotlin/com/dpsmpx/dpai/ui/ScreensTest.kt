@@ -35,6 +35,17 @@ class ScreensTest {
     }
 
     @Test
+    fun summaryHidesZeroCountersButKeepsUnknown() {
+        val view = DashboardView(2, 0, 0, 0, Measure.Unknown("нет связи"), 0, 0, emptyList(), emptyList())
+        val health = SelfDiagnostics.evaluate(SystemSignals(true, false, true, true, 1, 1, false))
+        val screen = Screens.dashboard(view, health)
+        // «0» скрыт (AI:A-6), неизвестное — «?», а не ноль (D-13); активные — и числом для пульта (D-76).
+        assertEquals(listOf("Активных сессий" to "2", "Запросы ждут ответа" to "?"), screen.shownCounters.map { it.label to it.value })
+        assertEquals(2, screen.active)
+        assertEquals(emptyList(), screen.usage)
+    }
+
+    @Test
     fun boardPlacesDependentTasksDeeperInDag() {
         val ids = IdGenerator(clock, RandomSource.seeded(3))
         val tasks = Tasks()
