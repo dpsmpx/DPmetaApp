@@ -148,6 +148,22 @@ open class PultActivity : ComponentActivity() {
      */
     protected open fun aiCounts(): com.dpsmpx.dpmeta.app.screens.Screens.AiCounts? = null
 
+    /** Версия подсистемы «AI» для «О программе» (UX-23, D-54); `null` — подсистемы нет. */
+    protected open fun aiVersion(): String? = null
+
+    /** «О программе» (UX-23, D-54): версия DPmetaApp из пакета и версия «AI» от оболочки. */
+    private fun about(): String {
+        val app = runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull() ?: "?"
+        return "DPmetaApp $app" + (aiVersion()?.let { " · AI $it" } ?: "")
+    }
+
+    /** Пояс показа выбран в «Ещё» (UX-22): сохраняется, действует сразу и для «AI». */
+    private fun zoneChosen(minutes: Int) {
+        getSharedPreferences(SETTINGS_PREFS, MODE_PRIVATE).edit { putInt(ZONE_MINUTES, minutes) }
+        applyZone(this)
+        view.value = view.value.copy(zone = minutes)
+    }
+
     /** Опрос чисел «AI», пока пульт на экране: дёшево — оболочка читает уже опубликованный снимок. */
     private val ui = android.os.Handler(android.os.Looper.getMainLooper())
     private val aiTick = object : Runnable {
@@ -289,7 +305,7 @@ open class PultActivity : ComponentActivity() {
 
     private fun open() {
         val hasToken = secrets.exists()
-        view.value = PultView(null, "", hasToken, busy = false, clones = clonesLine(), loading = true)
+        view.value = PultView(null, "", hasToken, busy = false, clones = clonesLine(), loading = true, zone = zoneMinutes(this), about = about())
         // Срез и лента — в фоне, как история (UX-20, N-02): окно не ждёт диска; вход синхронизирует после чтения.
         loadState()
         // История растёт с каждой синхронизацией — читается в фоне, холодный старт её не ждёт (N-02).
@@ -322,6 +338,7 @@ open class PultActivity : ComponentActivity() {
                         view.value = view.value.copy(cancelling = true)
                     },
                     onDeleteClone = ::deleteClone,
+                    onZone = ::zoneChosen,
                 )
             }
         }
@@ -583,6 +600,21 @@ open class PultActivity : ComponentActivity() {
 
         /** Выбор клонов автора (D-70): спрошен ли, какие отмечены (`владелец/имя`). */
         private const val CLONES_PREFS = "dpmeta.clones"
+        private const val SETTINGS_PREFS = "dpmeta.settings"
+        private const val ZONE_MINUTES = "zone_minutes"
+
+        /** Пояс показа, минуты от UTC (ТЗ, §6.3; UX-22): по умолчанию +03:00. */
+        fun zoneMinutes(context: android.content.Context): Int =
+            context.getSharedPreferences(SETTINGS_PREFS, MODE_PRIVATE).getInt(ZONE_MINUTES, com.dpsmpx.dpmeta.app.screens.Screens.DEFAULT_ZONE.totalSeconds / 60)
+
+        /**
+         * Пояс показа — всему приложению (UX-22): пульт и «AI» читают его из
+         * ядра ([com.dpsmpx.dpai.core.clock.DisplayZone]). Зовёт оболочка при
+         * запуске процесса и «Ещё» при выборе.
+         */
+        fun applyZone(context: android.content.Context) {
+            com.dpsmpx.dpai.core.clock.DisplayZone.current = java.time.ZoneOffset.ofTotalSeconds(zoneMinutes(context) * 60)
+        }
         private const val CLONES_ASKED = "asked"
         private const val CLONES_SELECTED = "selected"
 

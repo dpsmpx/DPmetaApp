@@ -16,7 +16,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableStateOf
@@ -52,18 +59,23 @@ class LockActivity : ComponentActivity() {
             PultTheme {
                 // Фон и цвет текста — из темы: без Surface текст был чёрным на тёмном окне (UX-5).
                 Surface(Modifier.fillMaxSize()) {
-                    Column(Modifier.safeDrawingPadding().padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    // По центру — значок, имя и одно главное действие (UX-19): «Закрыть приложение» — текстовой кнопкой.
+                    Column(
+                        Modifier.safeDrawingPadding().padding(24.dp).fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Icon(painterResource(R.drawable.ic_pult_lock), contentDescription = null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
+                        Text("DPmetaApp закрыто", style = MaterialTheme.typography.headlineSmall)
                         if (noPin.value) {
-                            Text("Вход в DPmetaApp — по PIN устройства, а у телефона нет блокировки экрана: задайте PIN.")
+                            Text("У телефона нет блокировки экрана, а вход — по PIN устройства: задайте PIN.", textAlign = TextAlign.Center)
                             Button(onClick = ::openSecuritySettings) { Text("Задать PIN") }
-                            Button(onClick = AppLock::denied) { Text("Закрыть") }
                         } else {
-                            failed.value?.let { why ->
-                                Text("Вход не выполнен: $why")
-                                Button(onClick = ::ask) { Text("Войти") }
-                                Button(onClick = AppLock::denied) { Text("Закрыть") }
-                            }
+                            Text("Войдите PIN устройства", textAlign = TextAlign.Center)
+                            failed.value?.let { why -> Text(why, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center) }
+                            Button(onClick = ::ask) { Text("Войти") }
                         }
+                        TextButton(onClick = AppLock::denied) { Text("Закрыть приложение") }
                     }
                 }
             }
@@ -91,12 +103,13 @@ class LockActivity : ComponentActivity() {
         Lock.ask(this, "Вход в приложение", pinOnly = true, signal = signal, onOpen = {
             asking = null
             AppLock.unlocked()
-        }, onDenied = { code, why ->
+        }, onDenied = { code, _ ->
             asking = null
             // Экран входа закрыт или заменён новым — его окно PIN уже не в счёт. Иначе — не отказ: код
             // «отменил человек» система шлёт и на «Домой», и на погасший экран (SystemUI). Отказ — только
             // «Закрыть» или «назад» на этом экране; здесь — причина, кнопка «Войти» и окно PIN при показе.
-            if (!signal.isCanceled && !isFinishing && !isDestroyed) failed.value = why.ifBlank { "код $code" }
+            // Причина — словами, без кода и строки системы (UX-19).
+            if (!signal.isCanceled && !isFinishing && !isDestroyed) failed.value = LockPolicy.reason(code)
         })
     }
 

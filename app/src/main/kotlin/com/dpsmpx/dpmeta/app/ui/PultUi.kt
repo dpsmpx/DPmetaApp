@@ -189,6 +189,10 @@ data class PultView(
     val cancelling: Boolean = false,
     /** Срез и лента ещё читаются с диска (UX-20): не «среза нет», а «читаю». */
     val loading: Boolean = false,
+    /** Пояс показа, минуты от UTC (UX-22): ключ перерисовки строк со временем. */
+    val zone: Int = 180,
+    /** «О программе» (UX-23): версии DPmetaApp и «AI». */
+    val about: String = "",
 )
 
 /**
@@ -322,6 +326,8 @@ fun PultApp(
     onCancelSync: () -> Unit = {},
     /** Удалить не отмеченный клон (UX-11) — после вопроса. */
     onDeleteClone: (String) -> Unit = {},
+    /** Пояс показа выбран (UX-22): минуты от UTC. */
+    onZone: (Int) -> Unit = {},
     /** Итог окна клонов: отмеченные или `null` — «Позже» / «Отмена». */
     onClonesChosen: (Set<String>?) -> Unit = {},
 ) {
@@ -395,17 +401,17 @@ fun PultApp(
                         Projects(remember(s) { Screens.projects(s) }, chosen) { stacks[tab] = listOf(Nav.Card(it)) }
                     }
                     Column(Modifier.weight(3f).fillMaxSize()) {
-                        val card = chosen?.let { remember(s, it) { Screens.card(s, it) } }
+                        val card = chosen?.let { remember(s, it, view.zone) { Screens.card(s, it) } }
                         if (card != null) CardScreen(card, loader, back, open) else Text("Выберите проект слева.", style = MaterialTheme.typography.bodySmall)
                     }
                 }
                 // Модели экранов — один раз на срез, а не на каждую перекомпозицию (UX-20).
-                top is Nav.Card && s != null -> remember(s, top.project) { Screens.card(s, top.project) }?.let { CardScreen(it, loader, back, open) }
+                top is Nav.Card && s != null -> remember(s, top.project, view.zone) { Screens.card(s, top.project) }?.let { CardScreen(it, loader, back, open) }
                 top is Nav.Dir -> DirScreen(top, loader, back, open)
                 top is Nav.Doc -> DocScreen(top, view.names, loader, back, open)
                 top is Nav.Stats && s != null -> StatsScreen(view.history, s.projects.map { it.name }, top.project, s.asOf, back, view.status, onExport)
                 top is Nav.Feed && s != null -> FeedScreen(view.feed, s.projects.map { it.name }, back) { open(Nav.Card(it)) }
-                tab == Section.MORE -> Settings(view, onSync, onSaveToken, onForgetToken, onClones)
+                tab == Section.MORE -> Settings(view, onSync, onSaveToken, onForgetToken, onClones, onZone)
                 s == null && view.loading -> Text("Читаю срез…", style = MaterialTheme.typography.bodySmall)
                 // Пустое состояние ведёт дальше (UX-11): кнопкой, а не словами «где-то в настройках».
                 s == null -> Column(verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
@@ -417,7 +423,7 @@ fun PultApp(
                     }
                 }
                 tab == Section.SUMMARY -> Summary(
-                    remember(s) { Screens.summary(s) }, view, onSync, onAi,
+                    remember(s, view.zone) { Screens.summary(s) }, view, onSync, onAi,
                     onTile = { g ->
                         when (g) {
                             Screens.Goes.PROJECTS -> { tab = Section.DEV; devTab = DevTab.PROJECTS }
@@ -911,7 +917,7 @@ private fun Questions(q: List<Screens.Question>, open: (Nav) -> Unit) = LazyColu
 
 @Composable
 // Листается (UX-15): при шрифте 200 % и в альбомной ориентации «Клоны…» не уходят за край.
-private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -> Unit, onForget: () -> Unit, onClones: () -> Unit) = Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -> Unit, onForget: () -> Unit, onClones: () -> Unit, onZone: (Int) -> Unit = {}) = Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
     var token by remember { mutableStateOf("") }
     // Пока токен сохранён — одна строка, поле — по «Заменить» (UX-12): пустое поле при сохранённом токене путало.
     var replacing by rememberSaveable { mutableStateOf(false) }
@@ -966,6 +972,28 @@ private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -
         style = MaterialTheme.typography.bodySmall,
     )
     TextButton(onClick = onClones, enabled = view.hasToken && !view.busy) { Text("Клоны…") }
+    // Пояс показа — один на приложение (ТЗ, §6.3; UX-22): время пульта и «AI» — в нём.
+    Text("Время", style = MaterialTheme.typography.titleMedium)
+    var zones by remember { mutableStateOf(false) }
+    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        Text("Часовой пояс показа", Modifier.weight(1f))
+        androidx.compose.foundation.layout.Box {
+            TextButton(onClick = { zones = true }) { Text(Screens.zoneName(view.zone) + " ▾") }
+            androidx.compose.material3.DropdownMenu(expanded = zones, onDismissRequest = { zones = false }) {
+                for (h in -12..14) {
+                    androidx.compose.material3.DropdownMenuItem(text = { Text(Screens.zoneName(h * 60)) }, onClick = {
+                        zones = false
+                        onZone(h * 60)
+                    })
+                }
+            }
+        }
+    }
+    // «О программе» (UX-23, D-54): версия приложения и подсистемы «AI».
+    if (view.about.isNotEmpty()) {
+        Text("О программе", style = MaterialTheme.typography.titleMedium)
+        Text(view.about, style = MaterialTheme.typography.bodySmall)
+    }
 }
 
 /**

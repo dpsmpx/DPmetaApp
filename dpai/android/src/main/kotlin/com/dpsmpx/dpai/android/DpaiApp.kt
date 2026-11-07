@@ -1246,7 +1246,7 @@ private fun LimitsCard(l: com.dpsmpx.dpai.ui.SubscriptionLimits, model: DemoMode
                 Text(
                     when {
                         refreshing -> "Обновляю…"
-                        at != null -> "Обновлено в ${java.text.SimpleDateFormat("HH:mm", java.util.Locale.ROOT).format(java.util.Date(at.epochMillis))}"
+                        at != null -> "Обновлено в ${java.time.format.DateTimeFormatter.ofPattern("HH:mm").withZone(com.dpsmpx.dpai.core.clock.DisplayZone.current).format(java.time.Instant.ofEpochMilli(at.epochMillis))}"
                         else -> "Из последнего хода"
                     },
                     Modifier.weight(1f), style = MaterialTheme.typography.labelSmall,

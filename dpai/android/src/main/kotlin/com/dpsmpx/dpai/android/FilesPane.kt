@@ -255,7 +255,7 @@ private fun LinkCard(l: FileLink, onSync: () -> Unit, onOpen: (Kind) -> Unit) {
                 }
             }
             Text(
-                "копия: ~/files/${l.dir} · " + (l.lastSync?.let { "синхронизировано ${SimpleDateFormat("d MMM HH:mm", Locale.forLanguageTag("ru")).format(Date(it))}" } ?: "не синхронизировано") +
+                "копия: ~/files/${l.dir} · " + (l.lastSync?.let { "синхронизировано ${java.time.format.DateTimeFormatter.ofPattern("d MMM HH:mm", Locale.forLanguageTag("ru")).withZone(com.dpsmpx.dpai.core.clock.DisplayZone.current).format(java.time.Instant.ofEpochMilli(it))}" } ?: "не синхронизировано") +
                     " · файлов: ${l.base.size}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

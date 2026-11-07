@@ -13,6 +13,8 @@ class DpmetaApplication : DpaiApplication() {
     override fun onCreate() {
         super.onCreate()
         AppLock.install(this)
+        // Пояс показа — всему приложению с запуска процесса: «AI» строит экраны и без открытого пульта (UX-22).
+        com.dpsmpx.dpmeta.app.PultActivity.applyZone(this)
         // Клоны репозиториев пульта (D-70) — в Linux-среде «AI» как /root/repos: модели работают в них.
         com.dpsmpx.dpai.android.linux.LinuxSetup.share(java.io.File(filesDir, com.dpsmpx.dpmeta.app.PultActivity.CLONES_DIR), "/root/repos")
     }

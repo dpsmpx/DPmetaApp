@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Монохромный слой (тематические иконки Android 13+): те же плитки. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:pathData="M37,33h10a4,4 0 0,1 4,4v10a4,4 0 0,1 -4,4h-10a4,4 0 0,1 -4,-4v-10a4,4 0 0,1 4,-4z M61,33h10a4,4 0 0,1 4,4v10a4,4 0 0,1 -4,4h-10a4,4 0 0,1 -4,-4v-10a4,4 0 0,1 4,-4z M37,57h10a4,4 0 0,1 4,4v10a4,4 0 0,1 -4,4h-10a4,4 0 0,1 -4,-4v-10a4,4 0 0,1 4,-4z" android:fillColor="#FF000000" />
+    <path android:pathData="M66,57l2,6l6,2l-6,2l-2,6l-2,-6l-6,-2l6,-2z" android:fillColor="#FF000000" />
+</vector>
