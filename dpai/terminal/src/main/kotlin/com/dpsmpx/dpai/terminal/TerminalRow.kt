@@ -117,6 +117,22 @@ class TerminalRow(cols: Int) {
         if (newCols > 0 && newCols < old && chars[newCols - 1] != EMPTY && CharWidth.of(chars[newCols - 1]) == 2) chars[newCols - 1] = EMPTY
     }
 
+    /**
+     * Копия в [dst] без новых массивов, если ширина та же: снимок кадра
+     * экрана под замком сессии — каждый кадр (терминал:A-10).
+     */
+    fun copyInto(dst: TerminalRow) {
+        if (dst.chars.size != cols) {
+            dst.chars = IntArray(cols)
+            dst.styles = LongArray(cols)
+        }
+        System.arraycopy(chars, 0, dst.chars, 0, cols)
+        System.arraycopy(styles, 0, dst.styles, 0, cols)
+        dst.combining = combining?.takeIf { it.isNotEmpty() }?.let { HashMap(it) }
+        dst.links = links?.takeIf { it.isNotEmpty() }?.let { HashMap(it) }
+        dst.wrapped = wrapped
+    }
+
     fun copy(): TerminalRow = TerminalRow(0).also { r ->
         r.chars = chars.copyOf()
         r.styles = styles.copyOf()

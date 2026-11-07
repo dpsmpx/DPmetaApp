@@ -1143,32 +1143,7 @@ class TerminalEmulator(
         return null
     }
 
-    fun linkCells(line: Int): BooleanArray {
-        if (line !in 0 until lineCount) return BooleanArray(0)
-        val r = line(line)
-        val out = BooleanArray(r.cols) { r.linkAt(it) != null }
-        var first = line
-        while (first > 0 && line(first - 1).wrapped) first--
-        var last = line
-        while (last < lineCount - 1 && line(last).wrapped) last++
-        val text = StringBuilder()
-        // Начало текста каждой ячейки строки [line] в логической строке.
-        val starts = IntArray(r.cols) { -1 }
-        for (l in first..last) {
-            val row = line(l)
-            for (c in 0 until row.cols) {
-                if (l == line) starts[c] = text.length
-                text.append(row.text(c))
-            }
-        }
-        for (m in LINK.findAll(text)) {
-            val end = m.range.first + m.value.trimEnd('.', ',', ';', ':', '!', '?', ')', ']', '»', '"', '\'').length
-            for (c in 0 until r.cols) if (starts[c] in m.range.first until end) out[c] = true
-        }
-        // Правая половина широкого знака — как левая.
-        for (c in 1 until r.cols) if (r.codePoint(c) == TerminalRow.WIDE_TAIL && out[c - 1]) out[c] = true
-        return out
-    }
+    fun linkCells(line: Int): BooleanArray = linkCells(lineCount, ::line, line)
 
     fun linkAt(line: Int, col: Int): String? {
         if (line !in 0 until lineCount) return null
@@ -1214,6 +1189,38 @@ class TerminalEmulator(
     }
 
     companion object {
+        /**
+         * Ячейки-ссылки строки [line] среди [count] строк [row]: OSC 8 и
+         * адреса в тексте, в том числе перенесённые с соседних строк. Тот же
+         * разбор — у снимка кадра экрана без замка сессии (терминал:A-10).
+         */
+        fun linkCells(count: Int, row: (Int) -> TerminalRow, line: Int): BooleanArray {
+            if (line !in 0 until count) return BooleanArray(0)
+            val r = row(line)
+            val out = BooleanArray(r.cols) { r.linkAt(it) != null }
+            var first = line
+            while (first > 0 && row(first - 1).wrapped) first--
+            var last = line
+            while (last < count - 1 && row(last).wrapped) last++
+            val text = StringBuilder()
+            // Начало текста каждой ячейки строки [line] в логической строке.
+            val starts = IntArray(r.cols) { -1 }
+            for (l in first..last) {
+                val cur = row(l)
+                for (c in 0 until cur.cols) {
+                    if (l == line) starts[c] = text.length
+                    text.append(cur.text(c))
+                }
+            }
+            for (m in LINK.findAll(text)) {
+                val end = m.range.first + m.value.trimEnd('.', ',', ';', ':', '!', '?', ')', ']', '»', '"', '\'').length
+                for (c in 0 until r.cols) if (starts[c] in m.range.first until end) out[c] = true
+            }
+            // Правая половина широкого знака — как левая.
+            for (c in 1 until r.cols) if (r.codePoint(c) == TerminalRow.WIDE_TAIL && out[c - 1]) out[c] = true
+            return out
+        }
+
         private val LINK = Regex("https?://[^\\s<>\"'`]+")
         const val MAX_COLS = 1_000
         const val MAX_ROWS = 500

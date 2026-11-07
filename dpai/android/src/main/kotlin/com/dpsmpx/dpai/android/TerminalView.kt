@@ -862,20 +862,55 @@ class TerminalView(context: Context) : View(context) {
             canvas.drawColor(0xff000000.toInt())
             return
         }
+        // Под замком сессии — только снимок; рисование — без замка (терминал:A-10).
+        t.session.read { emu -> capture(emu) }
         // Щипок — масштаб рисования до конца жеста (терминал:A-9).
         if (pinch != 1f) {
             canvas.save()
             canvas.scale(pinch, pinch)
         }
-        t.session.read { emu -> draw(canvas, emu) }
+        paint(canvas)
         if (pinch != 1f) canvas.restore()
         speakable()
     }
 
-    private fun draw(canvas: Canvas, emu: TerminalEmulator) {
-        val defFg = 0xff000000.toInt() or (if (emu.reverseVideo) emu.backgroundRgb else emu.foregroundRgb)
-        val defBg = 0xff000000.toInt() or (if (emu.reverseVideo) emu.foregroundRgb else emu.backgroundRgb)
-        canvas.drawColor(defBg)
+    /**
+     * Снимок кадра (терминал:A-10): под замком сессии — копия видимых строк
+     * и курсора, а рисование идёт без замка, и поток вывода не ждёт конца
+     * кадра. Строки снимка переиспользуются от кадра к кадру. Сверху и снизу —
+     * до [LINK_SPAN] строк продолжения переноса: адрес, начатый за краем
+     * экрана, подчёркнут и на экране.
+     */
+    private class Frame {
+        var rows: Array<TerminalRow> = emptyArray()
+        var count = 0
+        var top = 0
+        var visible = 0
+        var first = 0
+        var cols = 0
+        var screenRows = 0
+        var lineCount = 0
+        var defFg = 0
+        var defBg = 0
+        var cursorX = 0
+        var cursorY = 0
+        var cursorOn = false
+        var cursorShape = 0
+        var cursorBlink = false
+
+        fun row(i: Int): TerminalRow {
+            if (i >= rows.size) {
+                val old = rows
+                rows = Array(maxOf(i + 1, old.size * 2)) { if (it < old.size) old[it] else TerminalRow(0) }
+            }
+            return rows[i]
+        }
+    }
+
+    private val frame = Frame()
+    private val frameRow: (Int) -> TerminalRow = { frame.rows[it] }
+
+    private fun capture(emu: TerminalEmulator) {
         if (anchored) {
             val dropped = (emu.historyDropped - seenDropped).toInt()
             val added = (emu.historyAdded - seenAdded).toInt()
@@ -903,23 +938,40 @@ class TerminalView(context: Context) : View(context) {
             awayShown = away
             post { onAway?.invoke(away) }
         }
-        val first = emu.scrollbackSize - scrollBack
+        val f = frame
+        f.defFg = 0xff000000.toInt() or (if (emu.reverseVideo) emu.backgroundRgb else emu.foregroundRgb)
+        f.defBg = 0xff000000.toInt() or (if (emu.reverseVideo) emu.foregroundRgb else emu.backgroundRgb)
+        f.first = emu.scrollbackSize - scrollBack
+        f.cols = emu.cols
+        f.screenRows = emu.rows
+        f.lineCount = emu.lineCount
+        val end = minOf(f.first + emu.rows, emu.lineCount)
+        var from = f.first
+        while (from > 0 && f.first - from < LINK_SPAN && emu.line(from - 1).wrapped) from--
+        var to = end
+        while (to < emu.lineCount && to - end < LINK_SPAN && emu.line(to - 1).wrapped) to++
+        f.top = f.first - from
+        f.visible = end - f.first
+        f.count = to - from
+        for (i in 0 until f.count) emu.line(from + i).copyInto(f.row(i))
+        f.cursorX = emu.cursorX
+        f.cursorY = emu.cursorY
+        f.cursorOn = emu.cursorVisible
+        f.cursorShape = emu.cursorShape
+        f.cursorBlink = emu.cursorBlink
+    }
+
+    private fun paint(canvas: Canvas) {
+        val f = frame
+        canvas.drawColor(f.defBg)
         val sel = selection?.let(::ordered)
-        for (y in 0 until emu.rows) {
-            val line = first + y
-            if (line >= emu.lineCount) break
-            val row = emu.line(line)
+        for (y in 0 until f.visible) {
             // Адреса и ссылки OSC 8 — подчёркнуты (терминал:A-19): видно, что касание их откроет.
-            val links = emu.linkCells(line)
-            for (x in 0 until minOf(emu.cols, row.cols)) {
-                val cp = row.codePoint(x)
-                if (cp == TerminalRow.WIDE_TAIL) continue
-                val selected = sel != null && inSelection(sel, line, x)
-                val st = row.style(x)
-                drawCell(canvas, row, x, y, if (x < links.size && links[x] && !st.has(Attr.UNDERLINE)) st.with(Attr.UNDERLINE, true) else st, selected, defFg, defBg)
-            }
+            val links = TerminalEmulator.linkCells(f.count, frameRow, f.top + y)
+            drawRow(canvas, f.rows[f.top + y], y, f.first + y, links, sel)
         }
-        val blink = emu.cursorBlink && hasFocus() && scrollBack == 0 && emu.cursorVisible && android.animation.ValueAnimator.areAnimatorsEnabled()
+        val cursor = scrollBack == 0 && f.cursorOn && f.cursorY < f.visible
+        val blink = cursor && f.cursorBlink && hasFocus() && android.animation.ValueAnimator.areAnimatorsEnabled()
         if (!blink) {
             blinkOn = true
             if (blinkPosted) {
@@ -930,13 +982,13 @@ class TerminalView(context: Context) : View(context) {
             blinkPosted = true
             postDelayed(blinker, BLINK_MS)
         }
-        if (scrollBack == 0 && emu.cursorVisible && blinkOn) drawCursor(canvas, emu, defFg, defBg)
-        if (sel != null) drawHandles(canvas, sel, first)
+        if (cursor && blinkOn) drawCursor(canvas)
+        if (sel != null) drawHandles(canvas, sel, f.first)
         // Указатель места в истории (терминал:A-4): тонкая полоса справа, пока экран не внизу.
-        if (scrollBack > 0 && emu.lineCount > 0) {
-            val total = emu.lineCount.toFloat()
-            val h = (height * emu.rows / total).coerceAtLeast(dp(24f))
-            val top = (height - h) * first / (total - emu.rows).coerceAtLeast(1f)
+        if (scrollBack > 0 && f.lineCount > 0) {
+            val total = f.lineCount.toFloat()
+            val h = (height * f.screenRows / total).coerceAtLeast(dp(24f))
+            val top = (height - h) * f.first / (total - f.screenRows).coerceAtLeast(1f)
             fill.color = HANDLE_COLOR
             canvas.drawRect(width - dp(3f), top, width.toFloat(), top + h, fill)
         }
@@ -972,82 +1024,166 @@ class TerminalView(context: Context) : View(context) {
         }
     }
 
-    private fun drawCell(canvas: Canvas, row: TerminalRow, x: Int, y: Int, style: Style, selected: Boolean, defFg: Int, defBg: Int) {
-        val bold = style.has(Attr.BOLD)
-        var fg = color(style.fg, true, bold, defFg, defBg)
-        var bg = color(style.bg, false, false, defFg, defBg)
+    /** Стиль ячейки на экране: адрес или ссылка OSC 8 — с подчёркиванием (терминал:A-19). */
+    private fun shown(row: TerminalRow, x: Int, links: BooleanArray): Style {
+        val st = row.style(x)
+        return if (x < links.size && links[x] && !st.has(Attr.UNDERLINE)) st.with(Attr.UNDERLINE, true) else st
+    }
+
+    /** Цвета ячейки — в [cellFg] и [cellBg], без объектов на каждую ячейку кадра. */
+    private var cellFg = 0
+    private var cellBg = 0
+
+    private fun colors(style: Style, selected: Boolean) {
+        val f = frame
+        var fg = color(style.fg, true, style.has(Attr.BOLD), f.defFg, f.defBg)
+        var bg = color(style.bg, false, false, f.defFg, f.defBg)
         if (style.has(Attr.INVERSE) != selected) {
             val k = fg
             fg = bg
             bg = k
         }
         if (style.has(Attr.DIM)) fg = (fg and 0x00ffffff) or 0x99000000.toInt()
-        val wide = x + 1 < row.cols && row.codePoint(x + 1) == TerminalRow.WIDE_TAIL
-        val left = x * cellW
+        cellFg = fg
+        cellBg = bg
+    }
+
+    private fun wideAt(row: TerminalRow, x: Int): Boolean = x + 1 < row.cols && row.codePoint(x + 1) == TerminalRow.WIDE_TAIL
+
+    /** Буфер куска ASCII одного стиля: одна строка — один `drawText` (терминал:A-10). */
+    private val run = CharArray(TerminalEmulator.MAX_COLS)
+
+    /**
+     * Строка экрана (терминал:A-10): сначала фон — подряд идущие ячейки
+     * одного цвета одним прямоугольником, потом текст — подряд идущий ASCII
+     * одного стиля одним `drawText` и без замера ширины (у моноширинного
+     * шрифта она равна ячейке); прочие знаки — по ячейке.
+     */
+    private fun drawRow(canvas: Canvas, row: TerminalRow, y: Int, line: Int, links: BooleanArray, sel: IntArray?) {
+        val n = minOf(frame.cols, row.cols)
         val top = y * cellH
-        val right = left + cellW * (if (wide) 2 else 1)
-        if (bg != defBg) {
-            fill.color = bg
-            canvas.drawRect(left, top, right, top + cellH, fill)
-        }
-        val cp = row.codePoint(x)
-        if (cp == TerminalRow.EMPTY || style.has(Attr.INVISIBLE)) return
-        if (!box(canvas, row, x, left, top, right - left, fg)) {
-            paint.color = fg
-            paint.isFakeBoldText = bold
-            paint.textSkewX = if (style.has(Attr.ITALIC)) -0.25f else 0f
-            val text = row.text(x)
-            val base = top + ascent
-            // Знак шрифта бывает шире своих ячеек (широкие, эмодзи): сжать, чтобы не налезал на соседа.
-            val need = right - left
-            val w = paint.measureText(text)
-            if (w > need * 1.05f) {
-                canvas.save()
-                canvas.scale(need / w, 1f, left, base)
-                canvas.drawText(text, left, base, paint)
-                canvas.restore()
-            } else {
-                canvas.drawText(text, left, base, paint)
+        var start = 0
+        var end = 0
+        var bgRun = frame.defBg
+        for (x in 0 until n) {
+            if (row.codePoint(x) == TerminalRow.WIDE_TAIL) continue
+            colors(shown(row, x, links), sel != null && inSelection(sel, line, x))
+            val span = if (wideAt(row, x)) 2 else 1
+            if (cellBg == bgRun && x == end) {
+                end = x + span
+                continue
             }
+            if (bgRun != frame.defBg && end > start) {
+                fill.color = bgRun
+                canvas.drawRect(start * cellW, top, end * cellW, top + cellH, fill)
+            }
+            bgRun = cellBg
+            start = x
+            end = x + span
         }
+        if (bgRun != frame.defBg && end > start) {
+            fill.color = bgRun
+            canvas.drawRect(start * cellW, top, end * cellW, top + cellH, fill)
+        }
+        var x = 0
+        while (x < n) {
+            val cp = row.codePoint(x)
+            if (cp == TerminalRow.WIDE_TAIL || cp == TerminalRow.EMPTY) {
+                x++
+                continue
+            }
+            val style = shown(row, x, links)
+            val selected = sel != null && inSelection(sel, line, x)
+            colors(style, selected)
+            if (style.has(Attr.INVISIBLE)) {
+                x++
+                continue
+            }
+            val left = x * cellW
+            if (cp in ASCII && row.combiningAt(x) == null) {
+                var k = 0
+                var next = x
+                while (next < n) {
+                    val c = row.codePoint(next)
+                    if (c !in ASCII || row.combiningAt(next) != null) break
+                    if (next > x && (shown(row, next, links) != style || (sel != null && inSelection(sel, line, next)) != selected)) break
+                    run[k++] = c.toChar()
+                    next++
+                }
+                text(style)
+                canvas.drawText(run, 0, k, left, top + ascent, paint)
+                decorate(canvas, style, left, next * cellW, top)
+                x = next
+                continue
+            }
+            val right = left + cellW * (if (wideAt(row, x)) 2 else 1)
+            if (!box(canvas, row, x, left, top, right - left, cellFg)) {
+                text(style)
+                val s = row.text(x)
+                val base = top + ascent
+                // Знак шрифта бывает шире своих ячеек (широкие, эмодзи): сжать, чтобы не налезал на соседа.
+                val need = right - left
+                val w = paint.measureText(s)
+                if (w > need * 1.05f) {
+                    canvas.save()
+                    canvas.scale(need / w, 1f, left, base)
+                    canvas.drawText(s, left, base, paint)
+                    canvas.restore()
+                } else {
+                    canvas.drawText(s, left, base, paint)
+                }
+            }
+            decorate(canvas, style, left, right, top)
+            x++
+        }
+    }
+
+    private fun text(style: Style) {
+        paint.color = cellFg
+        paint.isFakeBoldText = style.has(Attr.BOLD)
+        paint.textSkewX = if (style.has(Attr.ITALIC)) -0.25f else 0f
+    }
+
+    /** Подчёркивание, зачёркивание и надчёркивание куска `left..right` цветом текста. */
+    private fun decorate(canvas: Canvas, style: Style, left: Float, right: Float, top: Float) {
         if (style.has(Attr.UNDERLINE) || style.has(Attr.DOUBLE_UNDERLINE)) {
-            fill.color = fg
+            fill.color = cellFg
             canvas.drawRect(left, top + cellH - 2f, right, top + cellH - 1f, fill)
             if (style.has(Attr.DOUBLE_UNDERLINE)) canvas.drawRect(left, top + cellH - 4f, right, top + cellH - 3f, fill)
         }
         if (style.has(Attr.STRIKE)) {
-            fill.color = fg
+            fill.color = cellFg
             canvas.drawRect(left, top + cellH / 2, right, top + cellH / 2 + 1f, fill)
         }
         if (style.has(Attr.OVERLINE)) {
-            fill.color = fg
+            fill.color = cellFg
             canvas.drawRect(left, top, right, top + 1f, fill)
         }
     }
 
-    private fun drawCursor(canvas: Canvas, emu: TerminalEmulator, defFg: Int, defBg: Int) {
-        val x = emu.cursorX
-        val y = emu.cursorY
+    private fun drawCursor(canvas: Canvas) {
+        val f = frame
+        val x = f.cursorX
+        val y = f.cursorY
         val left = x * cellW
         val top = y * cellH
-        val row = emu.screenRow(y)
-        val wide = x + 1 < row.cols && row.codePoint(x + 1) == TerminalRow.WIDE_TAIL
-        val right = left + cellW * (if (wide) 2 else 1)
-        fill.color = defFg
+        val row = f.rows[f.top + y]
+        val right = left + cellW * (if (wideAt(row, x)) 2 else 1)
+        fill.color = f.defFg
         if (!hasFocus()) {
             fill.style = Paint.Style.STROKE
             canvas.drawRect(left + 0.5f, top + 0.5f, right - 0.5f, top + cellH - 0.5f, fill)
             fill.style = Paint.Style.FILL
             return
         }
-        when (emu.cursorShape) {
+        when (f.cursorShape) {
             3, 4 -> canvas.drawRect(left, top + cellH - 3f, right, top + cellH, fill)
             5, 6 -> canvas.drawRect(left, top, left + 3f, top + cellH, fill)
             else -> {
                 canvas.drawRect(left, top, right, top + cellH, fill)
-                val cp = row.codePoint(x)
-                if (cp != TerminalRow.EMPTY && cp != TerminalRow.WIDE_TAIL && !box(canvas, row, x, left, top, right - left, defBg)) {
-                    paint.color = defBg
+                val cp = if (x < row.cols) row.codePoint(x) else TerminalRow.EMPTY
+                if (cp != TerminalRow.EMPTY && cp != TerminalRow.WIDE_TAIL && !box(canvas, row, x, left, top, right - left, f.defBg)) {
+                    paint.color = f.defBg
                     paint.isFakeBoldText = false
                     paint.textSkewX = 0f
                     canvas.drawText(row.text(x), left, top + ascent, paint)
@@ -1064,6 +1200,12 @@ class TerminalView(context: Context) : View(context) {
         private const val FONT_PX = "font_px"
         private const val SHIFT_ENTER = "shift_enter_newline"
         private const val BOLD_BRIGHT = "bold_bright"
+
+        /** Печатный ASCII: его ширина — ячейка, кусок рисуется одним вызовом. */
+        private val ASCII = 0x20..0x7E
+
+        /** Строк продолжения переноса над и под экраном в снимке кадра — для подчёркивания адресов. */
+        private const val LINK_SPAN = 8
 
         /** Полупериод мигания курсора, мс — как у xterm и VTE. */
         private const val BLINK_MS = 530L

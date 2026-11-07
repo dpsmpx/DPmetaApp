@@ -209,6 +209,27 @@ class TerminalEmulatorTest {
         assertTrue(!cells[0] && !cells[33])
     }
 
+    /**
+     * Снимок кадра (терминал:A-10): копия строки — те же знаки, стили и
+     * ссылки, массивы переиспользуются; адрес, перенесённый со строки над
+     * экраном, находится и в снимке.
+     */
+    @Test
+    fun snapshotRowsKeepCellsAndLinks() {
+        val t = TerminalEmulator(20, 4)
+        t.feed("Open https://example.org/sign/in?code=abc123xyz \u001b[1mB\u001b[0m")
+        val snap = List(t.lineCount) { TerminalRow(0) }
+        for (i in 0 until t.lineCount) t.line(i).copyInto(snap[i])
+        assertEquals(t.line(2).text(), snap[2].text())
+        assertEquals(t.line(2).style(4).bits, snap[2].style(4).bits)
+        val arrays = snap[0].chars
+        t.line(0).copyInto(snap[0])
+        assertTrue(arrays === snap[0].chars, "та же ширина — тот же массив")
+        // Продолжение адреса на второй строке — ссылка и по снимку.
+        val cells = TerminalEmulator.linkCells(snap.size, { snap[it] }, 1)
+        assertTrue(cells[0] && cells.contentEquals(t.linkCells(1)))
+    }
+
     /** Эмодзи-кластеры (терминал:A-17): как у программ — две ячейки, курсор за ними. */
     @Test
     fun emojiClustersTakeTwoCells() {
