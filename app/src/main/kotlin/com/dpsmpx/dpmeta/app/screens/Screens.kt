@@ -101,8 +101,17 @@ object Screens {
     /** Вкладки сверху «Разработки» (D-73): проекты и вопросы автору; позже — PR (F-11). */
     enum class DevTab(val title: String) { PROJECTS("Проекты"), QUESTIONS("Вопросы") }
 
-    /** Подписи панели по порядку (D-73): «AI» — перед «Ещё», если подсистема есть. С «Соцсетями» — шесть. */
-    fun panel(ai: Boolean): List<String> = Section.entries.flatMap { if (it == Section.MORE && ai) listOf("AI", it.title) else listOf(it.title) }
+    /**
+     * Пункты панели по порядку (D-73) — по нему рисует экран: `null` — вход
+     * «AI» перед «Ещё», если подсистема есть. С «Соцсетями» — шесть.
+     */
+    fun panelItems(ai: Boolean): List<Section?> = Section.entries.flatMap { if (it == Section.MORE && ai) listOf(null, it) else listOf(it) }
+
+    /** Подписи панели — для снимка (D-73). */
+    fun panel(ai: Boolean): List<String> = panelItems(ai).map { it?.title ?: AI_TITLE }
+
+    /** Подпись входа в подсистему «AI» на панели (D-53). */
+    const val AI_TITLE = "AI"
 
     /** Куда ведёт касание плитки сводки (UX-6; ТЗ, F-04: «каждая плитка ведёт на свой экран»). */
     enum class Goes(val title: String) { PROJECTS("Проекты"), QUESTIONS("Вопросы"), SYNC("Ещё") }

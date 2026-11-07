@@ -312,10 +312,14 @@ fun PultApp(
                     Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.navigationBars).heightIn(min = PANEL_HEIGHT).selectableGroup(),
                     verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
                 ) {
-                    for (t in Section.entries) {
-                        if (t == Section.MORE && onAi != null) PanelItem("AI", R.drawable.ic_pult_ai, selected = null) { onAi(false) }
-                        // Пункт выделен и во вложенном экране; касание открытого — к его началу, другого — туда, где оставили.
-                        PanelItem(t.title, t.icon, selected = tab == t) { if (tab == t) stacks[t] = emptyList() else tab = t }
+                    // Порядок — Screens.panelItems: тот же, что сверяет тест панели.
+                    for (t in Screens.panelItems(ai = onAi != null)) {
+                        if (t == null) {
+                            PanelItem(Screens.AI_TITLE, R.drawable.ic_pult_ai, selected = null) { onAi?.invoke(false) }
+                        } else {
+                            // Пункт выделен и во вложенном экране; касание открытого — к его началу, другого — туда, где оставили.
+                            PanelItem(t.title, t.icon, selected = tab == t) { if (tab == t) stacks[t] = emptyList() else tab = t }
+                        }
                     }
                 }
             }
