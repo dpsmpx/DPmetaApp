@@ -38,7 +38,8 @@ object TerminalLaunch {
             return Outcome.failure(DiagCode.UNSUPPORTED, "${t.executor.title} в терминале — на POSIX target; в Windows — из оболочки", t.label)
         }
         val unset = SlotEnvironment.overriding(t.executor).flatMap { listOf("-u", it) }
-        val env = listOf("env") + unset + listOf("${SlotEnvironment.configVar(t.executor)}=$dir")
+        // 24-битный цвет (терминал:A-23): библиотеки цвета CLI смотрят на COLORTERM, без него — 256 цветов.
+        val env = listOf("env") + unset + listOf("COLORTERM=$COLORTERM", "${SlotEnvironment.configVar(t.executor)}=$dir")
         val command = when (t.executor) {
             Executor.CLAUDE -> listOf("claude")
             Executor.CODEX -> if (login) listOf("codex", "login", "--device-auth") else listOf("codex")
@@ -49,6 +50,9 @@ object TerminalLaunch {
             is Outcome.Success -> Outcome.success(listOf("sh", "-lc", "exec ${inner.value}"))
         }
     }
+
+    /** Эмулятор понимает `38;2;r;g;b` (D-71): программы узнают об этом по `COLORTERM`, как у kitty и Windows Terminal. */
+    const val COLORTERM: String = "truecolor"
 
     /** Способ входа Gemini — аккаунт Google, если в `settings.json` слота его ещё нет (D-100). */
     const val GEMINI_SEED: String =

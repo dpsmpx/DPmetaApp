@@ -69,6 +69,9 @@ class TerminalView(context: Context) : View(context) {
     private val fill = Paint()
     private var cellW = 1f
 
+    /** Левый край сетки (терминал:A-24): поле не меньше 4 dp, остаток ширины — поровну слева и справа. */
+    private var originX = 0f
+
     /** Рамки и блоки — по сетке, а не шрифтом (терминал:A-18): толщина тонкой линии от ячейки. */
     private var boxLight = 1
     private var boxCanvas: Canvas? = null
@@ -298,8 +301,9 @@ class TerminalView(context: Context) : View(context) {
         metrics()
         val t = tab ?: return
         if (width <= 0 || height <= 0) return
-        val cols = (width / cellW).toInt().coerceIn(1, TerminalEmulator.MAX_COLS)
+        val cols = ((width - 2 * dp(SIDE_DP)) / cellW).toInt().coerceIn(1, TerminalEmulator.MAX_COLS)
         val rows = (height / cellH).toInt().coerceIn(1, TerminalEmulator.MAX_ROWS)
+        originX = ((width - cols * cellW) / 2f).coerceAtLeast(0f)
         if (t.session.read { it.cols != cols || it.rows != rows }) {
             // Строки перестроены: прежние номера строк истории и выделения ничего не значат.
             t.session.resize(cols, rows)
@@ -367,7 +371,7 @@ class TerminalView(context: Context) : View(context) {
         val t = tab
         val cols = t?.session?.read { it.cols } ?: 1
         val rows = t?.session?.read { it.rows } ?: 1
-        return (x / cellW).toInt().coerceIn(0, cols - 1) to (y / cellH).toInt().coerceIn(0, rows - 1)
+        return ((x - originX) / cellW).toInt().coerceIn(0, cols - 1) to (y / cellH).toInt().coerceIn(0, rows - 1)
     }
 
     private fun scrollLines(lines: Int, e: MotionEvent) {
@@ -388,8 +392,54 @@ class TerminalView(context: Context) : View(context) {
         }
     }
 
+    /**
+     * «Мышь программе» (терминал:A-22): пока включено и программа слушает
+     * мышь, палец — это мышь: нажатие, протяжка и отпускание уходят
+     * программе (выделение в `tmux` и `vim`, границы панелей). Выключено —
+     * касание и прокрутка, как всегда; выделение — долгим нажатием.
+     */
+    var mouseToProgram = false
+        set(value) {
+            field = value
+            mouseCell = null
+        }
+
+    /** Ячейка последнего события мыши программе: движение — только при смене ячейки. */
+    private var mouseCell: Pair<Int, Int>? = null
+
+    private fun programMouse(event: MotionEvent): Boolean {
+        val t = tab ?: return false
+        if (!mouseToProgram || selecting || event.pointerCount > 1 || scale.isInProgress) {
+            if (mouseCell != null && event.pointerCount > 1) {
+                // Второй палец (щипок) — отпустить кнопку, а не оставить её зажатой в программе.
+                mouseCell?.let { (c, r) -> t.session.mouse(MouseButton.LEFT, c, r, pressed = false, motion = false) }
+                mouseCell = null
+            }
+            return false
+        }
+        if (t.session.read { it.mouseMode } == MouseMode.NONE) return false
+        val (c, r) = cellAt(event.x, event.y)
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                toBottom()
+                mouseCell = c to r
+                t.session.mouse(MouseButton.LEFT, c, r, pressed = true, motion = false)
+            }
+            MotionEvent.ACTION_MOVE -> if (mouseCell != null && mouseCell != (c to r)) {
+                mouseCell = c to r
+                t.session.mouse(MouseButton.LEFT, c, r, pressed = true, motion = true)
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> if (mouseCell != null) {
+                mouseCell = null
+                t.session.mouse(MouseButton.LEFT, c, r, pressed = false, motion = false)
+            }
+        }
+        return true
+    }
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
         scale.onTouchEvent(event)
+        if (programMouse(event)) return true
         // Палец на ручке выделения — тянуть её (терминал:A-2); выделение — по порядку, чтобы ручки не путались.
         val sel = selection
         if (!selecting && sel != null && event.actionMasked == MotionEvent.ACTION_DOWN) {
@@ -453,7 +503,7 @@ class TerminalView(context: Context) : View(context) {
         val s = ordered(selection ?: return null)
         val first = tab?.session?.read { it.scrollbackSize - scrollBack } ?: return null
         val r = dp(HANDLE_DP)
-        return (s[1] * cellW to (s[0] - first + 1) * cellH + r) to ((s[3] + 1) * cellW to (s[2] - first + 1) * cellH + r)
+        return (originX + s[1] * cellW to (s[0] - first + 1) * cellH + r) to (originX + (s[3] + 1) * cellW to (s[2] - first + 1) * cellH + r)
     }
 
     private fun handleAt(x: Float, y: Float): Int {
@@ -826,9 +876,16 @@ class TerminalView(context: Context) : View(context) {
         super.onDetachedFromWindow()
     }
 
+    // Фокус для программы (1004) — фокус окна и экрана вместе (терминал:A-24): уход приложения в фон программа видит.
     override fun onFocusChanged(gainFocus: Boolean, direction: Int, previouslyFocusedRect: Rect?) {
         super.onFocusChanged(gainFocus, direction, previouslyFocusedRect)
-        tab?.session?.focus(gainFocus)
+        tab?.session?.focus(gainFocus && hasWindowFocus())
+        invalidate()
+    }
+
+    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+        super.onWindowFocusChanged(hasWindowFocus)
+        tab?.session?.focus(hasWindowFocus && hasFocus())
         invalidate()
     }
 
@@ -865,12 +922,13 @@ class TerminalView(context: Context) : View(context) {
         // Под замком сессии — только снимок; рисование — без замка (терминал:A-10).
         t.session.read { emu -> capture(emu) }
         // Щипок — масштаб рисования до конца жеста (терминал:A-9).
-        if (pinch != 1f) {
-            canvas.save()
-            canvas.scale(pinch, pinch)
-        }
+        canvas.drawColor(frame.defBg)
+        canvas.save()
+        if (pinch != 1f) canvas.scale(pinch, pinch)
+        canvas.translate(originX, 0f)
         paint(canvas)
-        if (pinch != 1f) canvas.restore()
+        canvas.restore()
+        place(canvas)
         speakable()
     }
 
@@ -963,7 +1021,6 @@ class TerminalView(context: Context) : View(context) {
 
     private fun paint(canvas: Canvas) {
         val f = frame
-        canvas.drawColor(f.defBg)
         val sel = selection?.let(::ordered)
         for (y in 0 until f.visible) {
             // Адреса и ссылки OSC 8 — подчёркнуты (терминал:A-19): видно, что касание их откроет.
@@ -984,7 +1041,11 @@ class TerminalView(context: Context) : View(context) {
         }
         if (cursor && blinkOn) drawCursor(canvas)
         if (sel != null) drawHandles(canvas, sel, f.first)
-        // Указатель места в истории (терминал:A-4): тонкая полоса справа, пока экран не внизу.
+    }
+
+    /** Указатель места в истории (терминал:A-4): тонкая полоса у правого края окна, пока экран не внизу. */
+    private fun place(canvas: Canvas) {
+        val f = frame
         if (scrollBack > 0 && f.lineCount > 0) {
             val total = f.lineCount.toFloat()
             val h = (height * f.screenRows / total).coerceAtLeast(dp(24f))
@@ -1200,6 +1261,18 @@ class TerminalView(context: Context) : View(context) {
         private const val FONT_PX = "font_px"
         private const val SHIFT_ENTER = "shift_enter_newline"
         private const val BOLD_BRIGHT = "bold_bright"
+        private const val KEEP_ON = "keep_screen_on"
+
+        /** Поле сетки слева и справа, dp (терминал:A-24). */
+        private const val SIDE_DP = 4f
+
+        /** «Не гасить экран», пока открыт терминал (терминал:A-24); по умолчанию — да. */
+        fun keepScreenOn(context: Context): Boolean =
+            runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEEP_ON, true) }.getOrDefault(true)
+
+        fun setKeepScreenOn(context: Context, on: Boolean) {
+            runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEEP_ON, on).apply() }
+        }
 
         /** Печатный ASCII: его ширина — ячейка, кусок рисуется одним вызовом. */
         private val ASCII = 0x20..0x7E

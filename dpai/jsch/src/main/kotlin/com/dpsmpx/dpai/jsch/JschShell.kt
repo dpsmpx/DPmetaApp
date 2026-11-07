@@ -62,12 +62,15 @@ class JschShell(
             val opened: Pair<Channel, (Int, Int) -> Unit> = if (line == null) {
                 val c = session.openChannel("shell") as ChannelShell
                 c.setPtyType(TERM, cols, rows, 0, 0)
+                // 24-битный цвет (терминал:A-23): сервер примет, только если в AcceptEnv есть COLORTERM; нет — без изменений.
+                c.setEnv("COLORTERM", COLORTERM)
                 c to { x: Int, y: Int -> c.setPtySize(x, y, 0, 0) }
             } else {
                 val c = session.openChannel("exec") as ChannelExec
                 c.setCommand(line)
                 c.setPty(true)
                 c.setPtyType(TERM, cols, rows, 0, 0)
+                c.setEnv("COLORTERM", COLORTERM)
                 c to { x: Int, y: Int -> c.setPtySize(x, y, 0, 0) }
             }
             val (channel, ptySize) = opened
@@ -86,6 +89,7 @@ class JschShell(
 
     companion object {
         const val TERM = "xterm-256color"
+        const val COLORTERM = "truecolor"
     }
 }
 

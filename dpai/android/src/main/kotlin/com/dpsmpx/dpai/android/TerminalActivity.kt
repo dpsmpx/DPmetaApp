@@ -56,7 +56,8 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         // Экран терминала — единственное место, где видны код входа Claude (`/login`) и содержимое
         // сессии: в превью «недавних» и в снимках экрана его быть не должно (D-86, T8).
         window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // «Не гасить экран» — настройкой в «⋯» (терминал:A-24), по умолчанию — да.
+        if (TerminalView.keepScreenOn(this)) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         // Отступы системных панелей и клавиатуры — свои: экран терминала сжимается над клавиатурой.
         // Терминал всегда тёмный: значки панелей — светлые и при светлой теме телефона (терминал:A-20).
         enableEdgeToEdge(SystemBarStyle.dark(Color.TRANSPARENT), SystemBarStyle.dark(Color.TRANSPARENT))
@@ -64,7 +65,19 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         applyKeyboard()
         // После смерти процесса Android восстанавливает экран, а вкладок (только в памяти, D-27) уже нет:
         // открыть заново ту, с которой экран начинался, а не показывать мёртвый чёрный экран.
+        val lost = savedInstanceState != null && TerminalHub.tabs.isEmpty()
         if (savedInstanceState == null || TerminalHub.tabs.isEmpty()) handle(intent)
+        // Новая сессия вместо прежней — словами, а не молча (терминал:A-24).
+        if (lost) {
+            TerminalHub.current?.let { t ->
+                t.notice = "прежняя сессия потеряна: приложение перезапускалось"
+                // Строка — на время, а не навсегда: дальше вкладка как вкладка.
+                view.postDelayed({
+                    t.notice = null
+                    renderTabs()
+                }, NOTICE_MS)
+            }
+        }
         if (TerminalHub.tabs.isEmpty() && intent?.getStringExtra(EXTRA_TARGET) == null && intent?.getBooleanExtra(EXTRA_LINUX, false) != true) finish()
     }
 
@@ -89,11 +102,13 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         super.onStart()
         TerminalHub.observer = this
         show(TerminalHub.current)
-        // Клавиатура — когда окно уже прикреплено: до этого контроллера вставок нет.
-        view.post { view.showKeyboard() }
+        // Клавиатура — когда окно уже прикреплено: до этого контроллера вставок нет. Открывается при первом
+        // показе и если была открыта при уходе; иначе — касанием (терминал:A-24): не закрывает полэкрана вывода.
+        if (keyboardWas) view.post { view.showKeyboard() } else view.post { view.requestFocus() }
     }
 
     override fun onStop() {
+        keyboardWas = view.rootWindowInsets?.isVisible(android.view.WindowInsets.Type.ime()) == true
         if (TerminalHub.observer === this) TerminalHub.observer = null
         super.onStop()
     }
@@ -237,16 +252,27 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
                 Toast.makeText(this, "Программа на «${tab.label}» прислала для буфера обмена ${text.length} знаков — слишком много, не записано", Toast.LENGTH_LONG).show()
                 return@runOnUiThread
             }
+            fun write() {
+                try {
+                    // Экран терминала несёт секреты (D-86): с пометкой «чувствительное» (терминал:A-11).
+                    Clipboard.copy(this, "терминал", text, sensitive = true)
+                } catch (e: RuntimeException) {
+                    Toast.makeText(this, "Не записано в буфер обмена: ${com.dpsmpx.dpai.core.text.Words.failure(e)}", Toast.LENGTH_LONG).show()
+                }
+            }
+            // Разрешено до закрытия вкладки (терминал:A-24) — без вопроса; предел — тот же.
+            if (tab.clipboardAllowed) {
+                write()
+                return@runOnUiThread
+            }
+            val always = android.widget.CheckBox(this).apply { this.text = "Разрешать этой вкладке до закрытия" }
             val dialog = AlertDialog.Builder(this)
                 .setTitle("Запись в буфер обмена")
                 .setMessage("Программа на «${tab.label}» просит записать в буфер обмена:\n\n${text.take(PREVIEW)}")
+                .setView(android.widget.FrameLayout(this).apply { setPadding(dp(20), 0, dp(20), 0); addView(always) })
                 .setPositiveButton("Записать") { _, _ ->
-                    try {
-                        // Экран терминала несёт секреты (D-86): с пометкой «чувствительное» (терминал:A-11).
-                        Clipboard.copy(this, "терминал", text, sensitive = true)
-                    } catch (e: RuntimeException) {
-                        Toast.makeText(this, "Не записано в буфер обмена: ${com.dpsmpx.dpai.core.text.Words.failure(e)}", Toast.LENGTH_LONG).show()
-                    }
+                    if (always.isChecked) tab.clipboardAllowed = true
+                    write()
                 }
                 .setNegativeButton("Нет", null)
                 .create()
@@ -351,6 +377,85 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         setOnClickListener { v -> more(v) }
     }
 
+    /** Меню ярлыка (терминал:A-21): закрыть с вопросом, переименовать, переподключить. */
+    private fun tabMenu(anchor: View, t: TerminalHub.Tab) {
+        val items = buildList<Pair<String, () -> Unit>> {
+            add("Закрыть…" to { confirmClose(t) })
+            add("Переименовать…" to { rename(t) })
+            if (!t.open && t.status != CONNECTING) add("Переподключить" to { TerminalHub.connect(this@TerminalActivity, t) })
+        }
+        popup(anchor, items)
+    }
+
+    /** «+» (терминал:A-21): такая же вкладка, оболочка или CLI слота на том же target, Linux в приложении. */
+    private fun newTab(anchor: View, like: TerminalHub.Tab) {
+        val target = like.target
+        val items = buildList<Pair<String, () -> Unit>> {
+            add("Такая же" to { show(TerminalHub.openLike(this@TerminalActivity, like)) })
+            if (target != null) {
+                add("Оболочка: ${target.label}" to { show(TerminalHub.open(this@TerminalActivity, target, emptyList(), target.label)) })
+                TerminalLaunch.claude(target).valueOrNull()?.let { cmd ->
+                    add("${target.executor.title}: ${target.label}" to { show(TerminalHub.open(this@TerminalActivity, target, cmd, "${target.label} · ${target.executor.key}")) })
+                }
+            }
+            if (com.dpsmpx.dpai.android.linux.LinuxSetup.available(this@TerminalActivity)) add("Linux в приложении" to { show(TerminalHub.openLinux(this@TerminalActivity)) })
+        }
+        popup(anchor, items)
+    }
+
+    private fun popup(anchor: View, items: List<Pair<String, () -> Unit>>) {
+        val popup = android.widget.PopupMenu(this, anchor)
+        items.forEachIndexed { i, (title, _) -> popup.menu.add(android.view.Menu.NONE, i, i, title) }
+        popup.setOnMenuItemClickListener { item -> items.getOrNull(item.itemId)?.second?.invoke(); true }
+        popup.show()
+    }
+
+    /** Закрыть вкладку; открытую — с вопросом (аудит удобства, A-18): в ней может идти claude или сборка. */
+    private fun confirmClose(t: TerminalHub.Tab) {
+        fun closeTab() {
+            TerminalHub.close(t)
+            if (TerminalHub.tabs.isEmpty()) finish() else show(TerminalHub.current)
+        }
+        if (!t.open) {
+            closeTab()
+            return
+        }
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("Закрыть вкладку «${t.label}»?")
+            .setMessage("Соединение закроется; программа в ней (claude, сборка) получит сигнал завершения.")
+            .setPositiveButton("Закрыть") { _, _ -> closeTab() }
+            .setNegativeButton("Отмена", null)
+            .create()
+        // У диалога своё окно: FLAG_SECURE активности его не закрывает (D-86).
+        dialog.window?.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+        dialog.show()
+    }
+
+    /** Новое имя ярлыка: от 1 до 40 знаков; уведомление службы — с ним же. */
+    private fun rename(t: TerminalHub.Tab) {
+        val field = android.widget.EditText(this).apply {
+            setText(t.label)
+            setSelection(text.length)
+            isSingleLine = true
+            filters = arrayOf(android.text.InputFilter.LengthFilter(LABEL_MAX))
+        }
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("Имя вкладки")
+            .setView(field)
+            .setPositiveButton("Сохранить") { _, _ ->
+                val name = field.text.toString().trim().filterNot { it.isISOControl() }
+                if (name.isNotEmpty()) {
+                    t.label = name
+                    renderTabs()
+                    TerminalService.refresh(this)
+                }
+            }
+            .setNegativeButton("Отмена", null)
+            .create()
+        dialog.window?.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+        dialog.show()
+    }
+
     /** «⋯» ряда (терминал:A-3): то, что не поместилось, — Вставить, клавиатура, знаки, листание. */
     private fun more(anchor: View) {
         val shiftEnter = TerminalView.shiftEnterNewline(this)
@@ -366,8 +471,18 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
             "Шрифт мельче" to { view.fontStep(false) },
             "Шрифт: 80 столбцов" to { view.fitColumns(80) },
             (if (shiftEnter) "Shift+Enter — новая строка: да" else "Shift+Enter — новая строка: нет") to { TerminalView.setShiftEnterNewline(this, !shiftEnter) },
+            // Экран не гаснет, пока открыт терминал (терминал:A-24): выключается здесь.
+            (if (TerminalView.keepScreenOn(this)) "Не гасить экран: да" else "Не гасить экран: нет") to {
+                val on = !TerminalView.keepScreenOn(this)
+                TerminalView.setKeepScreenOn(this, on)
+                if (on) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            },
+            // Палец — мышь программы: протяжка в tmux и vim (терминал:A-22).
+            (if (view.mouseToProgram) "Мышь программе: да" else "Мышь программе: нет") to { view.mouseToProgram = !view.mouseToProgram },
             // Жирный восьми основных цветов — ярким (терминал:A-18).
             (if (view.boldBright) "Жирный ярче: да" else "Жирный ярче: нет") to { view.boldBright = !view.boldBright },
+            // Закрыть вкладку — и здесь, не только долгим нажатием на ярлык (терминал:A-21).
+            "Закрыть вкладку…" to { TerminalHub.current?.let(::confirmClose) },
             "HOME" to { view.key(Key.HOME) },
             "END" to { view.key(Key.END) },
             "PGUP" to { view.key(Key.PAGE_UP) },
@@ -580,46 +695,48 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         tabsRow.removeAllViews()
         val current = TerminalHub.current
         for (t in TerminalHub.tabs) {
-            // Точка — фоновая вкладка подала сигнал (терминал:A-8).
-            val name = (if (t.attention && t !== current) "● " else "") + t.label + (t.title.takeIf { it.isNotBlank() }?.let { " · ${it.take(24)}" } ?: "")
+            // Значок состояния у ярлыка (терминал:A-21, §4, п. 3): ● на связи, ◌ подключается, ✕ закрыта;
+            // точка в конце — фоновая вкладка подала сигнал (A-8). Заголовок программы — только у текущей.
+            val connecting = !t.open && t.status == CONNECTING
+            val state = when {
+                t.open -> "●"
+                connecting -> "◌"
+                else -> "✕"
+            }
+            val title = if (t === current) t.title.takeIf { it.isNotBlank() }?.let { " · " + if (it.length > TITLE_MAX) it.take(TITLE_MAX - 1) + "…" else it }.orEmpty() else ""
+            val bell = t.attention && t !== current
             // Текущая вкладка — и подчёркиванием, и для TalkBack, а не только цветом (терминал:A-12).
-            tabsRow.addView(chip(name) { show(t) }.apply {
+            tabsRow.addView(chip("$state ${t.label}$title${if (bell) " •" else ""}") { show(t) }.apply {
                 setTextColor(if (t === current) Color.WHITE else Color.GRAY)
                 if (t === current) paintFlags = paintFlags or android.graphics.Paint.UNDERLINE_TEXT_FLAG
-                stateDescription = if (t === current) "выбрана" else null
+                stateDescription = listOfNotNull(
+                    if (t === current) "выбрана" else null,
+                    when {
+                        t.open -> "на связи"
+                        connecting -> "подключается"
+                        else -> "закрыта"
+                    },
+                    if (bell) "ждёт" else null,
+                ).joinToString(", ")
+                // Закрыть, переименовать, переподключить — долгим нажатием на ярлык (терминал:A-21).
+                setOnLongClickListener { v ->
+                    tabMenu(v, t)
+                    true
+                }
             })
         }
-        current?.let { c ->
-            tabsRow.addView(chip("+") {
-                show(TerminalHub.openLike(this, c))
-            }.apply { contentDescription = "Новая вкладка" })
-            tabsRow.addView(chip("×") {
-                fun closeTab() {
-                    TerminalHub.close(c)
-                    if (TerminalHub.tabs.isEmpty()) finish() else show(TerminalHub.current)
-                }
-                // Открытая вкладка — с подтверждением (аудит удобства, A-18): в ней может идти claude или сборка.
-                if (!c.open) {
-                    closeTab()
-                } else {
-                    val dialog = android.app.AlertDialog.Builder(this)
-                        .setTitle("Закрыть вкладку «${c.label}»?")
-                        .setMessage("Соединение закроется; программа в ней (claude, сборка) получит сигнал завершения.")
-                        .setPositiveButton("Закрыть") { _, _ -> closeTab() }
-                        .setNegativeButton("Отмена", null)
-                        .create()
-                    // У диалога своё окно: FLAG_SECURE активности его не закрывает (D-86).
-                    dialog.window?.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
-                    dialog.show()
-                }
-            }.apply { contentDescription = "Закрыть вкладку «${c.label}»" })
+        if (current != null) {
+            tabsRow.addView(chip("+") {}.apply {
+                contentDescription = "Новая вкладка"
+                setOnClickListener { v -> newTab(v, current) }
+            })
         }
         // Внешняя клавиатура — ряд клавиш скрыт, «⋯» — в ряду вкладок (терминал:A-3, §4, п. 2).
         if (hardKeyboard()) tabsRow.addView(moreChip())
         val s = current?.status.orEmpty()
-        status.text = s
-        statusRow.visibility = if (s.isEmpty()) View.GONE else View.VISIBLE
-        reconnect.visibility = if (current != null && !current.open && s != "подключение…") View.VISIBLE else View.GONE
+        status.text = listOfNotNull(s.ifEmpty { null }, current?.notice).joinToString(" · ")
+        statusRow.visibility = if (status.text.isEmpty()) View.GONE else View.VISIBLE
+        reconnect.visibility = if (current != null && !current.open && s != CONNECTING) View.VISIBLE else View.GONE
     }
 
     companion object {
@@ -628,6 +745,24 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         const val EXTRA_LOGIN = "com.dpsmpx.dpai.terminal.LOGIN"
         const val EXTRA_LINUX = "com.dpsmpx.dpai.terminal.LINUX"
         const val EXTRA_DIR = "com.dpsmpx.dpai.terminal.DIR"
+
+        /**
+         * Была ли открыта клавиатура при уходе с экрана (терминал:A-24): при
+         * возврате она открывается только тогда; первый показ — с клавиатурой.
+         */
+        private var keyboardWas = true
+
+        /** Сколько видна строка «прежняя сессия потеряна», мс. */
+        private const val NOTICE_MS = 20_000L
+
+        /** Состояние вкладки во время подключения — как его пишет [TerminalHub]. */
+        private const val CONNECTING = TerminalHub.CONNECTING
+
+        /** Заголовок программы у ярлыка — не длиннее, с «…». */
+        private const val TITLE_MAX = 24
+
+        /** Имя вкладки — не длиннее. */
+        private const val LABEL_MAX = 40
 
         /** «Закрыть все» из уведомления службы терминала — подтверждение здесь (терминал:A-1). */
         const val EXTRA_CLOSE_ALL = "com.dpsmpx.dpai.terminal.CLOSE_ALL"
