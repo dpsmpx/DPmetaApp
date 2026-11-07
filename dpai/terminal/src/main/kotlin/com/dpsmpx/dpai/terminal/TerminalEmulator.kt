@@ -119,6 +119,12 @@ class TerminalEmulator(
 
     private var lastChar = 0
 
+    /** Был ZWJ (U+200D): следующий знак — часть того же эмодзи, в той же ячейке (терминал:A-17). */
+    private var joinNext = false
+
+    /** Ссылка OSC 8, открытая программой (терминал:A-19): печатаемые знаки несут её, пока не закрыта. */
+    private var hyperlink: String? = null
+
     private class Saved(val x: Int, val y: Int, val style: Style, val origin: Boolean, val wrap: Boolean, val g0: Charset, val g1: Charset, val useG1: Boolean)
 
     private var savedMain: Saved? = null
@@ -585,6 +591,9 @@ class TerminalEmulator(
                     k += 2
                 }
             }
+            // OSC 8 ; параметры ; адрес — ссылка у следующих знаков; пустой адрес закрывает (терминал:A-19).
+            // Только http(s) и не длиннее предела: `intent:`, `file:` программа на target не подсунет.
+            8 -> hyperlink = arg.substringAfter(';', "").takeIf { it.length <= MAX_LINK && LINK_SCHEME.matches(it) }
             10 -> if (arg == "?") reply("${ESC_S}]10;${rgbSpec(foregroundRgb)}$end")
             11 -> if (arg == "?") reply("${ESC_S}]11;${rgbSpec(backgroundRgb)}$end")
             52 -> {
@@ -616,6 +625,22 @@ class TerminalEmulator(
             combineWithPrevious(cp)
             return
         }
+        // Эмодзи-кластеры (терминал:A-17): знак после ZWJ и вторая буква флага — в ту же ячейку, ширина 2.
+        val prev = previousCell()
+        val r0 = row()
+        if (joinNext) {
+            joinNext = false
+            if (prev >= 0 && r0.codePoint(prev) != TerminalRow.EMPTY) {
+                r0.combine(prev, cp)
+                widen(prev)
+                return
+            }
+        }
+        if (CharWidth.regional(cp) && prev >= 0 && CharWidth.regional(r0.codePoint(prev)) && r0.combiningAt(prev) == null) {
+            r0.combine(prev, cp)
+            widen(prev)
+            return
+        }
         if (pendingWrap) {
             if (autoWrap) {
                 row().wrapped = true
@@ -640,6 +665,10 @@ class TerminalEmulator(
         clearWideAround(r, cursorX, w)
         r.set(cursorX, cp, style)
         if (w == 2) r.set(cursorX + 1, TerminalRow.WIDE_TAIL, style)
+        hyperlink?.let { url ->
+            r.setLink(cursorX, url)
+            if (w == 2) r.setLink(cursorX + 1, url)
+        }
         lastChar = cp
         cursorX += w
         if (cursorX >= cols) {
@@ -657,10 +686,42 @@ class TerminalEmulator(
 
     private fun combineWithPrevious(cp: Int) {
         val r = row()
+        val x = previousCell()
+        if (x < 0 || r.codePoint(x) == TerminalRow.EMPTY) return
+        r.combine(x, cp)
+        when (cp) {
+            // VS16 — вид эмодзи: знак шириной 1 становится шириной 2 (терминал:A-17).
+            0xFE0F -> if (CharWidth.emojiCapable(r.codePoint(x))) widen(x)
+            ZWJ -> joinNext = true
+        }
+    }
+
+    /** Ячейка последнего знака: с учётом ожидающего переноса и правой половины широкого; нет — -1. */
+    private fun previousCell(): Int {
+        val r = row()
         var x = if (pendingWrap) cursorX else cursorX - 1
-        if (x < 0) return
+        if (x < 0) return -1
         if (r.codePoint(x) == TerminalRow.WIDE_TAIL && x > 0) x--
-        if (r.codePoint(x) != TerminalRow.EMPTY) r.combine(x, cp)
+        return x
+    }
+
+    /**
+     * Знак в ячейке [x] стал шириной 2: правая половина — следующая ячейка,
+     * курсор — за ней. У края строки не расширяется (как у xterm: знак
+     * остаётся в одной ячейке, а не переносится задним числом).
+     */
+    private fun widen(x: Int) {
+        val r = row()
+        if (x + 1 >= cols || r.codePoint(x + 1) == TerminalRow.WIDE_TAIL) return
+        clearWideAround(r, x + 1, 1)
+        r.set(x + 1, TerminalRow.WIDE_TAIL, r.style(x))
+        if (!pendingWrap && cursorX == x + 1) {
+            cursorX = x + 2
+            if (cursorX >= cols) {
+                cursorX = cols - 1
+                pendingWrap = autoWrap
+            }
+        }
     }
 
     private fun decGraphics(cp: Int): Int = if (cp >= 0x80) cp else when (cp.toChar()) {
@@ -853,6 +914,8 @@ class TerminalEmulator(
 
     /** RIS: всё в исходное состояние, прокрутка назад сохраняется. */
     fun reset() {
+        hyperlink = null
+        joinNext = false
         softReset()
         newLineMode = false
         reverseVideo = false
@@ -917,7 +980,7 @@ class TerminalEmulator(
         version++
     }
 
-    private class Cell(val cp: Int, val style: Long, val combining: String?)
+    private class Cell(val cp: Int, val style: Long, val combining: String?, val link: String? = null)
 
     /** Перестройка истории и основного экрана; итог — экран и новое место курсора (строка экрана, столбец). */
     private fun reflow(screenRows: Array<TerminalRow>, newCols: Int, newRows: Int, cursor: Pair<Int, Int>?): Pair<Array<TerminalRow>, Pair<Int, Int>?> {
@@ -946,7 +1009,7 @@ class TerminalEmulator(
                 for (c in 0 until width) {
                     val cp = r.codePoint(c)
                     if (cp == TerminalRow.WIDE_TAIL) continue
-                    cells += Cell(cp, r.styles[c], r.combiningAt(c))
+                    cells += Cell(cp, r.styles[c], r.combiningAt(c), r.linkAt(c))
                 }
                 if (!r.wrapped || i == last) break
                 i++
@@ -965,7 +1028,7 @@ class TerminalEmulator(
             }
             for ((k, cell) in cells.withIndex()) {
                 // Широкий знак в один столбец не входит: занимает одну ячейку, без правой половины.
-                val wide = cell.cp != TerminalRow.EMPTY && CharWidth.of(cell.cp) == 2 && newCols >= 2
+                val wide = cell.cp != TerminalRow.EMPTY && CharWidth.cluster(cell.cp, cell.combining) == 2 && newCols >= 2
                 val w = if (wide) 2 else 1
                 if (x + w > newCols) {
                     row.wrapped = true
@@ -976,7 +1039,11 @@ class TerminalEmulator(
                 placeCursorIfHere(k)
                 row.set(x, cell.cp, Style(cell.style))
                 cell.combining?.codePoints()?.forEach { row.combine(x, it) }
-                if (wide) row.set(x + 1, TerminalRow.WIDE_TAIL, Style(cell.style))
+                row.setLink(x, cell.link)
+                if (wide) {
+                    row.set(x + 1, TerminalRow.WIDE_TAIL, Style(cell.style))
+                    row.setLink(x + 1, cell.link)
+                }
                 x += w
             }
             if (!cursorPlaced && cursorOffset >= 0) {
@@ -1035,10 +1102,44 @@ class TerminalEmulator(
      * ширине экрана. Другие схемы (`intent:`, `file:`) не ссылки — их
      * программа на target могла бы подсунуть.
      */
+    /**
+     * Какие ячейки строки [line] — ссылка (терминал:A-19): OSC 8 и найденные
+     * адреса `http(s)` логической строки; экран их подчёркивает. Один разбор
+     * на строку, а не на ячейку.
+     */
+    fun linkCells(line: Int): BooleanArray {
+        if (line !in 0 until lineCount) return BooleanArray(0)
+        val r = line(line)
+        val out = BooleanArray(r.cols) { r.linkAt(it) != null }
+        var first = line
+        while (first > 0 && line(first - 1).wrapped) first--
+        var last = line
+        while (last < lineCount - 1 && line(last).wrapped) last++
+        val text = StringBuilder()
+        // Начало текста каждой ячейки строки [line] в логической строке.
+        val starts = IntArray(r.cols) { -1 }
+        for (l in first..last) {
+            val row = line(l)
+            for (c in 0 until row.cols) {
+                if (l == line) starts[c] = text.length
+                text.append(row.text(c))
+            }
+        }
+        for (m in LINK.findAll(text)) {
+            val end = m.range.first + m.value.trimEnd('.', ',', ';', ':', '!', '?', ')', ']', '»', '"', '\'').length
+            for (c in 0 until r.cols) if (starts[c] in m.range.first until end) out[c] = true
+        }
+        // Правая половина широкого знака — как левая.
+        for (c in 1 until r.cols) if (r.codePoint(c) == TerminalRow.WIDE_TAIL && out[c - 1]) out[c] = true
+        return out
+    }
+
     fun linkAt(line: Int, col: Int): String? {
         if (line !in 0 until lineCount) return null
         // Правая половина широкого знака — тот же знак: иначе касание попадало бы в следующую ячейку.
         val cell = if (col > 0 && col < line(line).cols && line(line).codePoint(col) == TerminalRow.WIDE_TAIL) col - 1 else col
+        // Ссылка OSC 8 у ячейки — первой: её адрес назвала программа (терминал:A-19).
+        if (cell in 0 until line(line).cols) line(line).linkAt(cell)?.let { return it }
         var first = line
         while (first > 0 && line(first - 1).wrapped) first--
         var last = line
@@ -1081,6 +1182,13 @@ class TerminalEmulator(
         const val MAX_COLS = 1_000
         const val MAX_ROWS = 500
         private const val ESC = 0x1b
+
+        /** Адрес ссылки OSC 8: только http(s), не длиннее [MAX_LINK]. */
+        private val LINK_SCHEME = Regex("(?i)https?://\\S+")
+        private const val MAX_LINK = 2_048
+
+        /** Соединитель эмодзи (ZERO WIDTH JOINER). */
+        private const val ZWJ = 0x200D
         private const val BEL = 0x07
         private const val ST_C1 = 0x9c
         private const val ESC_S = "\u001b"

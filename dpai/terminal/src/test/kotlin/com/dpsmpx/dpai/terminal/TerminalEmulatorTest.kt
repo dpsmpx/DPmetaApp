@@ -154,6 +154,66 @@ class TerminalEmulatorTest {
         assertEquals(0, t.cursorY)
     }
 
+    /** OSC 8 (терминал:A-19): ссылка у ячеек текста, только http(s); пустой адрес закрывает. */
+    @Test
+    fun osc8LinksAreKeptOnCells() {
+        val t = term(cols = 30)
+        t.feed("\u001b]8;;https://example.org/doc\u001b\\docs\u001b]8;;\u001b\\ plain")
+        assertEquals("https://example.org/doc", t.linkAt(t.scrollbackSize, 0))
+        assertEquals("https://example.org/doc", t.linkAt(t.scrollbackSize, 3))
+        assertEquals(null, t.linkAt(t.scrollbackSize, 6), "после закрытия — без ссылки")
+        // Чужая схема не принимается: программа на target не подсунет intent:/file:.
+        val u = term(cols = 30)
+        u.feed("\u001b]8;;intent://x#Intent;end\u0007text\u001b]8;;\u0007")
+        assertEquals(null, u.linkAt(u.scrollbackSize, 0))
+        // Ссылка переживает вставку слева и смену ширины.
+        t.feed("\r\u001b[2@")
+        assertEquals("https://example.org/doc", t.linkAt(t.scrollbackSize, 2))
+        t.resize(10, 5)
+        assertEquals("https://example.org/doc", t.linkAt(t.scrollbackSize, 2))
+    }
+
+    /** Подчёркивание (терминал:A-19): ячейки найденного адреса и ссылки OSC 8 — да, прочие — нет. */
+    @Test
+    fun linkCellsMarkAddressesAndOsc8() {
+        val t = term(cols = 40)
+        t.feed("see https://example.org/a. and \u001b]8;;https://example.org/b\u0007b\u001b]8;;\u0007 x")
+        val cells = t.linkCells(t.scrollbackSize)
+        assertTrue(cells[4] && cells[24], "адрес — от «h» до последней буквы")
+        assertTrue(!cells[25], "точка после адреса — не ссылка")
+        assertTrue(cells[31], "знак со ссылкой OSC 8")
+        assertTrue(!cells[0] && !cells[33])
+    }
+
+    /** Эмодзи-кластеры (терминал:A-17): как у программ — две ячейки, курсор за ними. */
+    @Test
+    fun emojiClustersTakeTwoCells() {
+        // VS16: «❤» (ширина 1) с U+FE0F — эмодзи в две ячейки.
+        val h = term(cols = 6)
+        h.feed("\u2764\uFE0Fx")
+        assertEquals(TerminalRow.WIDE_TAIL, h.screenRow(0).codePoint(1))
+        assertEquals("\u2764\uFE0Fx", h.screenRow(0).text().trimEnd())
+        assertEquals(3, h.cursorX)
+        // ZWJ-последовательность «семья» — одна ячейка шириной 2.
+        val z = term(cols = 8)
+        z.feed("\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67!")
+        assertEquals(TerminalRow.WIDE_TAIL, z.screenRow(0).codePoint(1))
+        assertEquals('!'.code, z.screenRow(0).codePoint(2))
+        assertEquals(3, z.cursorX)
+        // Флаг — пара региональных индикаторов: одна ячейка шириной 2.
+        val f = term(cols = 8)
+        f.feed("\uD83C\uDDF7\uD83C\uDDFA-")
+        assertEquals(TerminalRow.WIDE_TAIL, f.screenRow(0).codePoint(1))
+        assertEquals('-'.code, f.screenRow(0).codePoint(2))
+        // Третья буква — новый флаг, а не продолжение первого.
+        f.feed("\uD83C\uDDE9\uD83C\uDDEA")
+        assertEquals(TerminalRow.WIDE_TAIL, f.screenRow(0).codePoint(4))
+        assertEquals(5, f.cursorX)
+        // Ширина кластера переживает смену ширины экрана.
+        h.resize(4, 5)
+        assertEquals(TerminalRow.WIDE_TAIL, h.screenRow(0).codePoint(1))
+    }
+
     @Test
     fun wideAndCombiningCharacters() {
         val t = term(cols = 6)

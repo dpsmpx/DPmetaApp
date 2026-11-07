@@ -697,11 +697,14 @@ class TerminalView(context: Context) : View(context) {
             val line = first + y
             if (line >= emu.lineCount) break
             val row = emu.line(line)
+            // Адреса и ссылки OSC 8 — подчёркнуты (терминал:A-19): видно, что касание их откроет.
+            val links = emu.linkCells(line)
             for (x in 0 until minOf(emu.cols, row.cols)) {
                 val cp = row.codePoint(x)
                 if (cp == TerminalRow.WIDE_TAIL) continue
                 val selected = sel != null && inSelection(sel, line, x)
-                drawCell(canvas, row, x, y, row.style(x), selected, defFg, defBg)
+                val st = row.style(x)
+                drawCell(canvas, row, x, y, if (x < links.size && links[x] && !st.has(Attr.UNDERLINE)) st.with(Attr.UNDERLINE, true) else st, selected, defFg, defBg)
             }
         }
         if (scrollBack == 0 && emu.cursorVisible) drawCursor(canvas, emu, defFg, defBg)
