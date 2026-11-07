@@ -6,6 +6,7 @@ import android.content.Intent
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Rect
+import android.graphics.RectF
 import android.graphics.Typeface
 import android.text.InputType
 import android.util.TypedValue
@@ -25,6 +26,7 @@ import android.view.inputmethod.InputConnection
 import android.widget.Toast
 import com.dpsmpx.dpai.core.clock.Clock
 import com.dpsmpx.dpai.terminal.Attr
+import com.dpsmpx.dpai.terminal.BoxDrawing
 import com.dpsmpx.dpai.terminal.Key
 import com.dpsmpx.dpai.terminal.Mod
 import com.dpsmpx.dpai.terminal.MouseButton
@@ -36,6 +38,7 @@ import com.dpsmpx.dpai.terminal.TerminalRow
 import com.dpsmpx.dpai.terminal.TerminalSelection
 import kotlin.math.abs
 import kotlin.math.ceil
+import kotlin.math.roundToInt
 
 /**
  * Экран своего терминала (D-71): сетка эмулятора на Canvas, курсор,
@@ -65,6 +68,72 @@ class TerminalView(context: Context) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Typeface.MONOSPACE }
     private val fill = Paint()
     private var cellW = 1f
+
+    /** Рамки и блоки — по сетке, а не шрифтом (терминал:A-18): толщина тонкой линии от ячейки. */
+    private var boxLight = 1
+    private var boxCanvas: Canvas? = null
+    private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    private val oval = RectF()
+    private val boxSink = object : BoxDrawing.Sink {
+        override fun rect(l: Float, t: Float, r: Float, b: Float, alpha: Float) {
+            val c = boxCanvas ?: return
+            if (alpha >= 1f) {
+                c.drawRect(l, t, r, b, fill)
+                return
+            }
+            val keep = fill.alpha
+            fill.alpha = (keep * alpha).roundToInt()
+            c.drawRect(l, t, r, b, fill)
+            fill.alpha = keep
+        }
+
+        override fun arc(l: Float, t: Float, r: Float, b: Float, startDeg: Float, stroke: Float) {
+            val c = boxCanvas ?: return
+            this@TerminalView.stroke.color = fill.color
+            this@TerminalView.stroke.strokeWidth = stroke
+            oval.set(l, t, r, b)
+            c.drawArc(oval, startDeg, 90f, false, this@TerminalView.stroke)
+        }
+
+        override fun line(x0: Float, y0: Float, x1: Float, y1: Float, stroke: Float) {
+            val c = boxCanvas ?: return
+            this@TerminalView.stroke.color = fill.color
+            this@TerminalView.stroke.strokeWidth = stroke
+            c.drawLine(x0, y0, x1, y1, this@TerminalView.stroke)
+        }
+    }
+
+    /** Нарисовать знак рамки или блока цветом [color]; `false` — знак рисует шрифт. */
+    private fun box(canvas: Canvas, row: TerminalRow, x: Int, left: Float, top: Float, w: Float, color: Int): Boolean {
+        val cp = row.codePoint(x)
+        if (!BoxDrawing.covers(cp) || row.combiningAt(x) != null) return false
+        fill.color = color
+        boxCanvas = canvas
+        BoxDrawing.draw(cp, left, top, w, cellH, boxLight, boxSink)
+        boxCanvas = null
+        return true
+    }
+
+    /**
+     * Мигание курсора (терминал:A-18) — когда его просит программа
+     * (DECSCUSR, режим 12), экран в фокусе и анимации не выключены в
+     * системе; после ввода курсор сразу виден.
+     */
+    private var blinkOn = true
+    private var blinkPosted = false
+    private val blinker = Runnable {
+        blinkPosted = false
+        blinkOn = !blinkOn
+        invalidate()
+    }
+
+    /** «Жирный ярче» (терминал:A-18): жирный текст восьми основных цветов — яркими, как в xterm; настройка. */
+    var boldBright: Boolean = runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(BOLD_BRIGHT, true) }.getOrDefault(true)
+        set(value) {
+            field = value
+            runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(BOLD_BRIGHT, value).apply() }
+            invalidate()
+        }
     private var cellH = 1f
     private var ascent = 0f
 
@@ -221,6 +290,7 @@ class TerminalView(context: Context) : View(context) {
         val fm = paint.fontMetrics
         cellH = ceil(fm.descent - fm.ascent).coerceAtLeast(1f)
         ascent = -fm.ascent
+        boxLight = BoxDrawing.lightWidth(cellW)
     }
 
     /** Размер сетки по размеру окна и шрифту; программа узнаёт о нём по SIGWINCH. */
@@ -568,6 +638,13 @@ class TerminalView(context: Context) : View(context) {
     }
 
     private fun toBottom() {
+        // Ввод — курсор виден сразу, мигание начинается заново.
+        if (!blinkOn || blinkPosted) {
+            blinkOn = true
+            removeCallbacks(blinker)
+            blinkPosted = false
+            invalidate()
+        }
         if (scrollBack != 0) {
             scrollBack = 0
             invalidate()
@@ -741,6 +818,14 @@ class TerminalView(context: Context) : View(context) {
         return super.onGenericMotionEvent(event)
     }
 
+    override fun onDetachedFromWindow() {
+        // Мигание не держит экран: снятый с окна — без отложенных перерисовок.
+        removeCallbacks(blinker)
+        blinkPosted = false
+        blinkOn = true
+        super.onDetachedFromWindow()
+    }
+
     override fun onFocusChanged(gainFocus: Boolean, direction: Int, previouslyFocusedRect: Rect?) {
         super.onFocusChanged(gainFocus, direction, previouslyFocusedRect)
         tab?.session?.focus(gainFocus)
@@ -834,7 +919,18 @@ class TerminalView(context: Context) : View(context) {
                 drawCell(canvas, row, x, y, if (x < links.size && links[x] && !st.has(Attr.UNDERLINE)) st.with(Attr.UNDERLINE, true) else st, selected, defFg, defBg)
             }
         }
-        if (scrollBack == 0 && emu.cursorVisible) drawCursor(canvas, emu, defFg, defBg)
+        val blink = emu.cursorBlink && hasFocus() && scrollBack == 0 && emu.cursorVisible && android.animation.ValueAnimator.areAnimatorsEnabled()
+        if (!blink) {
+            blinkOn = true
+            if (blinkPosted) {
+                removeCallbacks(blinker)
+                blinkPosted = false
+            }
+        } else if (!blinkPosted) {
+            blinkPosted = true
+            postDelayed(blinker, BLINK_MS)
+        }
+        if (scrollBack == 0 && emu.cursorVisible && blinkOn) drawCursor(canvas, emu, defFg, defBg)
         if (sel != null) drawHandles(canvas, sel, first)
         // Указатель места в истории (терминал:A-4): тонкая полоса справа, пока экран не внизу.
         if (scrollBack > 0 && emu.lineCount > 0) {
@@ -870,8 +966,8 @@ class TerminalView(context: Context) : View(context) {
         TermColor.isRgb(c) -> 0xff000000.toInt() or TermColor.rgbValue(c)
         else -> {
             var i = TermColor.index(c)
-            // Жирный — ярче для восьми основных цветов, как в xterm.
-            if (fg && bold && i < 8) i += 8
+            // Жирный — ярче для восьми основных цветов, как в xterm; выключается настройкой (терминал:A-18).
+            if (fg && bold && i < 8 && boldBright) i += 8
             0xff000000.toInt() or TermColor.PALETTE[i]
         }
     }
@@ -896,21 +992,23 @@ class TerminalView(context: Context) : View(context) {
         }
         val cp = row.codePoint(x)
         if (cp == TerminalRow.EMPTY || style.has(Attr.INVISIBLE)) return
-        paint.color = fg
-        paint.isFakeBoldText = bold
-        paint.textSkewX = if (style.has(Attr.ITALIC)) -0.25f else 0f
-        val text = row.text(x)
-        val base = top + ascent
-        // Знак шрифта бывает шире своих ячеек (широкие, эмодзи): сжать, чтобы не налезал на соседа.
-        val need = right - left
-        val w = paint.measureText(text)
-        if (w > need * 1.05f) {
-            canvas.save()
-            canvas.scale(need / w, 1f, left, base)
-            canvas.drawText(text, left, base, paint)
-            canvas.restore()
-        } else {
-            canvas.drawText(text, left, base, paint)
+        if (!box(canvas, row, x, left, top, right - left, fg)) {
+            paint.color = fg
+            paint.isFakeBoldText = bold
+            paint.textSkewX = if (style.has(Attr.ITALIC)) -0.25f else 0f
+            val text = row.text(x)
+            val base = top + ascent
+            // Знак шрифта бывает шире своих ячеек (широкие, эмодзи): сжать, чтобы не налезал на соседа.
+            val need = right - left
+            val w = paint.measureText(text)
+            if (w > need * 1.05f) {
+                canvas.save()
+                canvas.scale(need / w, 1f, left, base)
+                canvas.drawText(text, left, base, paint)
+                canvas.restore()
+            } else {
+                canvas.drawText(text, left, base, paint)
+            }
         }
         if (style.has(Attr.UNDERLINE) || style.has(Attr.DOUBLE_UNDERLINE)) {
             fill.color = fg
@@ -948,7 +1046,7 @@ class TerminalView(context: Context) : View(context) {
             else -> {
                 canvas.drawRect(left, top, right, top + cellH, fill)
                 val cp = row.codePoint(x)
-                if (cp != TerminalRow.EMPTY && cp != TerminalRow.WIDE_TAIL) {
+                if (cp != TerminalRow.EMPTY && cp != TerminalRow.WIDE_TAIL && !box(canvas, row, x, left, top, right - left, defBg)) {
                     paint.color = defBg
                     paint.isFakeBoldText = false
                     paint.textSkewX = 0f
@@ -965,6 +1063,10 @@ class TerminalView(context: Context) : View(context) {
         private const val PREFS = "terminal"
         private const val FONT_PX = "font_px"
         private const val SHIFT_ENTER = "shift_enter_newline"
+        private const val BOLD_BRIGHT = "bold_bright"
+
+        /** Полупериод мигания курсора, мс — как у xterm и VTE. */
+        private const val BLINK_MS = 530L
         private const val FONT_STEP = 1.1f
 
         /** Строк за один щелчок колеса мыши. */

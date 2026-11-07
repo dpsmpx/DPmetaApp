@@ -366,6 +366,8 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
             "Шрифт мельче" to { view.fontStep(false) },
             "Шрифт: 80 столбцов" to { view.fitColumns(80) },
             (if (shiftEnter) "Shift+Enter — новая строка: да" else "Shift+Enter — новая строка: нет") to { TerminalView.setShiftEnterNewline(this, !shiftEnter) },
+            // Жирный восьми основных цветов — ярким (терминал:A-18).
+            (if (view.boldBright) "Жирный ярче: да" else "Жирный ярче: нет") to { view.boldBright = !view.boldBright },
             "HOME" to { view.key(Key.HOME) },
             "END" to { view.key(Key.END) },
             "PGUP" to { view.key(Key.PAGE_UP) },
