@@ -159,12 +159,8 @@ class TerminalView(context: Context) : View(context) {
         }
 
         override fun onLongPress(e: MotionEvent) {
-            val t = tab ?: return
-            val (c, r) = cell(e)
             // Долгое нажатие выделяет слово, как принято в Android (терминал:A-2); палец дальше тянет конец.
-            val (line, word) = t.session.read { val l = it.scrollbackSize - scrollBack + r; l to TerminalSelection.word(it.line(l), c) }
-            menu?.finish()
-            selection = intArrayOf(line, word.first, line, word.last)
+            if (!selectWord(e)) return
             selecting = true
             dragging = HANDLE_END
             performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
@@ -172,18 +168,48 @@ class TerminalView(context: Context) : View(context) {
         }
     })
 
+    /** Масштаб рисования во время щипка (терминал:A-9): сетка не перестраивается на каждом шаге жеста. */
+    private var pinch = 1f
+
     private val scale = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScale(d: ScaleGestureDetector): Boolean {
-            fontPx = (fontPx * d.scaleFactor).coerceIn(sp(MIN_SP), sp(MAX_SP))
-            regrid()
+            pinch = (pinch * d.scaleFactor).coerceIn(sp(MIN_SP) / fontPx, sp(MAX_SP) / fontPx)
+            invalidate()
             return true
         }
+
+        // Сетка и SIGWINCH программе — один раз, в конце жеста (терминал:A-9).
+        override fun onScaleEnd(d: ScaleGestureDetector) {
+            setFont(fontPx * pinch)
+            pinch = 1f
+        }
     })
+
+    /** Действия экрана терминала с клавиатуры (терминал:A-14): вкладки и поиск — у активности. */
+    enum class Shortcut { NEW_TAB, NEXT_TAB, PREV_TAB, SEARCH }
+
+    var onShortcut: ((Shortcut) -> Unit)? = null
+
+    /** Шрифт — в пределах и запомненным (терминал:A-9): размер переживает перезапуск приложения. */
+    fun setFont(px: Float) {
+        fontPx = px.coerceIn(sp(MIN_SP), sp(MAX_SP))
+        regrid()
+        invalidate()
+        runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putFloat(FONT_PX, fontPx).apply() }
+    }
+
+    /** Шрифт на шаг крупнее или мельче (Ctrl+= и Ctrl+-, ⋮ экрана). */
+    fun fontStep(up: Boolean) = setFont(fontPx * if (up) FONT_STEP else 1 / FONT_STEP)
+
+    /** Шрифт по ширине: [columns] столбцов во всю ширину окна (⋮ «80 столбцов»). */
+    fun fitColumns(columns: Int = 80) {
+        if (width > 0) setFont(fontPx * width / (columns * cellW))
+    }
 
     init {
         isFocusable = true
         isFocusableInTouchMode = true
-        if (fontPx <= 0f) fontPx = sp(DEFAULT_SP)
+        if (fontPx <= 0f) fontPx = runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getFloat(FONT_PX, 0f) }.getOrDefault(0f).takeIf { it > 0f } ?: sp(DEFAULT_SP)
         metrics()
     }
 
@@ -256,6 +282,16 @@ class TerminalView(context: Context) : View(context) {
     }
 
     private fun cell(e: MotionEvent): Pair<Int, Int> = cellAt(e.x, e.y)
+
+    /** Выделить слово под [e] (долгое нажатие, правая кнопка мыши); вкладки нет — `false`. */
+    private fun selectWord(e: MotionEvent): Boolean {
+        val t = tab ?: return false
+        val (c, r) = cell(e)
+        val (line, word) = t.session.read { val l = it.scrollbackSize - scrollBack + r; l to TerminalSelection.word(it.line(l), c) }
+        menu?.finish()
+        selection = intArrayOf(line, word.first, line, word.last)
+        return true
+    }
 
     private fun cellAt(x: Float, y: Float): Pair<Int, Int> {
         val t = tab
@@ -507,6 +543,30 @@ class TerminalView(context: Context) : View(context) {
 
     // ---- ввод ----
 
+    /** Новых строк, пока экран не внизу (терминал:A-4). */
+    private var newLines = 0
+    private var awayShown: Int? = null
+
+    /** Экран ушёл от конца: число новых строк с тех пор; вернулся — `null`. Для «↓ к концу». */
+    var onAway: ((Int?) -> Unit)? = null
+
+    /** К концу — «↓ к концу» экрана. */
+    fun toEnd() = toBottom()
+
+    /** Верх видимой части — сквозной номер строки: поиск идёт от неё. */
+    fun firstVisibleLine(): Int = tab?.session?.read { it.scrollbackSize - scrollBack } ?: 0
+
+    /** Совпадение поиска — на экране, выделением (терминал:A-4). */
+    fun reveal(m: com.dpsmpx.dpai.terminal.TerminalEmulator.Match) {
+        val t = tab ?: return
+        val (history, rows) = t.session.read { it.scrollbackSize to it.rows }
+        val top = (m.line - rows / 2).coerceIn(0, history)
+        scrollBack = history - top
+        menu?.finish()
+        selection = intArrayOf(m.line, m.cols.first, m.line, m.cols.last)
+        invalidate()
+    }
+
     private fun toBottom() {
         if (scrollBack != 0) {
             scrollBack = 0
@@ -584,6 +644,28 @@ class TerminalView(context: Context) : View(context) {
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         val t = tab ?: return super.onKeyDown(keyCode, event)
+        // Сочетания терминала (терминал:A-14) — до программы: Ctrl+Shift+буква программе не нужна.
+        if (event.isCtrlPressed && event.isShiftPressed && !event.isAltPressed) {
+            when (keyCode) {
+                KeyEvent.KEYCODE_C -> { copySelection(); return true }
+                KeyEvent.KEYCODE_V -> { pasteClipboard(); return true }
+                KeyEvent.KEYCODE_T -> { onShortcut?.invoke(Shortcut.NEW_TAB); return true }
+                KeyEvent.KEYCODE_F -> { onShortcut?.invoke(Shortcut.SEARCH); return true }
+                KeyEvent.KEYCODE_TAB -> { onShortcut?.invoke(Shortcut.PREV_TAB); return true }
+            }
+        }
+        if (event.isCtrlPressed && !event.isShiftPressed && !event.isAltPressed) {
+            when (keyCode) {
+                KeyEvent.KEYCODE_TAB -> { onShortcut?.invoke(Shortcut.NEXT_TAB); return true }
+                KeyEvent.KEYCODE_EQUALS, KeyEvent.KEYCODE_PLUS, KeyEvent.KEYCODE_NUMPAD_ADD -> { fontStep(true); return true }
+                KeyEvent.KEYCODE_MINUS, KeyEvent.KEYCODE_NUMPAD_SUBTRACT -> { fontStep(false); return true }
+            }
+        }
+        // Shift+Enter — новая строка в запросе Claude Code (терминал:A-6): ESC CR, как Alt+Enter; Enter отправляет.
+        if ((keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER) && event.isShiftPressed && !event.isCtrlPressed && !event.isAltPressed && shiftEnterNewline(context)) {
+            newLine()
+            return true
+        }
         var mods = 0
         if (event.isShiftPressed) mods = mods or Mod.SHIFT
         if (event.isAltPressed) mods = mods or Mod.ALT
@@ -631,6 +713,34 @@ class TerminalView(context: Context) : View(context) {
         return super.onKeyDown(keyCode, event)
     }
 
+    /** Новая строка без отправки (терминал:A-6): ESC CR — Claude Code и readline понимают его как перенос. */
+    fun newLine() = key(Key.ENTER, Mod.ALT)
+
+    /**
+     * Мышь и тачпад (терминал:A-14): колесо — та же прокрутка, что пальцем;
+     * правая кнопка — слово под указателем и меню выделения.
+     */
+    override fun onGenericMotionEvent(event: MotionEvent): Boolean {
+        if (event.isFromSource(android.view.InputDevice.SOURCE_CLASS_POINTER)) {
+            when (event.actionMasked) {
+                MotionEvent.ACTION_SCROLL -> {
+                    val v = event.getAxisValue(MotionEvent.AXIS_VSCROLL)
+                    if (v != 0f) {
+                        scrollLines((-v * WHEEL_LINES).toInt().let { if (it == 0) (if (v > 0) -1 else 1) else it }, event)
+                        return true
+                    }
+                }
+                MotionEvent.ACTION_BUTTON_PRESS -> if (event.actionButton == MotionEvent.BUTTON_SECONDARY) {
+                    selectWord(event)
+                    selecting = false
+                    showMenu()
+                    return true
+                }
+            }
+        }
+        return super.onGenericMotionEvent(event)
+    }
+
     override fun onFocusChanged(gainFocus: Boolean, direction: Int, previouslyFocusedRect: Rect?) {
         super.onFocusChanged(gainFocus, direction, previouslyFocusedRect)
         tab?.session?.focus(gainFocus)
@@ -667,7 +777,13 @@ class TerminalView(context: Context) : View(context) {
             canvas.drawColor(0xff000000.toInt())
             return
         }
+        // Щипок — масштаб рисования до конца жеста (терминал:A-9).
+        if (pinch != 1f) {
+            canvas.save()
+            canvas.scale(pinch, pinch)
+        }
         t.session.read { emu -> draw(canvas, emu) }
+        if (pinch != 1f) canvas.restore()
         speakable()
     }
 
@@ -677,7 +793,11 @@ class TerminalView(context: Context) : View(context) {
         canvas.drawColor(defBg)
         if (anchored) {
             val dropped = (emu.historyDropped - seenDropped).toInt()
-            if (scrollBack > 0) scrollBack += (emu.historyAdded - seenAdded).toInt()
+            val added = (emu.historyAdded - seenAdded).toInt()
+            if (scrollBack > 0) {
+                scrollBack += added
+                newLines += added
+            }
             selection?.let { s ->
                 s[0] -= dropped
                 s[2] -= dropped
@@ -691,6 +811,13 @@ class TerminalView(context: Context) : View(context) {
         seenAdded = emu.historyAdded
         seenDropped = emu.historyDropped
         scrollBack = scrollBack.coerceIn(0, emu.scrollbackSize)
+        if (scrollBack == 0) newLines = 0
+        // «↓ к концу» с числом новых строк (терминал:A-4) — экрану, когда меняется; не во время рисования.
+        val away = if (scrollBack > 0) newLines else null
+        if (away != awayShown) {
+            awayShown = away
+            post { onAway?.invoke(away) }
+        }
         val first = emu.scrollbackSize - scrollBack
         val sel = selection?.let(::ordered)
         for (y in 0 until emu.rows) {
@@ -709,6 +836,14 @@ class TerminalView(context: Context) : View(context) {
         }
         if (scrollBack == 0 && emu.cursorVisible) drawCursor(canvas, emu, defFg, defBg)
         if (sel != null) drawHandles(canvas, sel, first)
+        // Указатель места в истории (терминал:A-4): тонкая полоса справа, пока экран не внизу.
+        if (scrollBack > 0 && emu.lineCount > 0) {
+            val total = emu.lineCount.toFloat()
+            val h = (height * emu.rows / total).coerceAtLeast(dp(24f))
+            val top = (height - h) * first / (total - emu.rows).coerceAtLeast(1f)
+            fill.color = HANDLE_COLOR
+            canvas.drawRect(width - dp(3f), top, width.toFloat(), top + h, fill)
+        }
     }
 
     /** Ручки выделения (терминал:A-2): кружки под началом и концом, их тянут пальцем. */
@@ -825,6 +960,23 @@ class TerminalView(context: Context) : View(context) {
 
     companion object {
         private const val DEFAULT_SP = 13f
+
+        /** Настройки экрана терминала (не секреты): размер шрифта, Shift+Enter. */
+        private const val PREFS = "terminal"
+        private const val FONT_PX = "font_px"
+        private const val SHIFT_ENTER = "shift_enter_newline"
+        private const val FONT_STEP = 1.1f
+
+        /** Строк за один щелчок колеса мыши. */
+        private const val WHEEL_LINES = 3f
+
+        /** Shift+Enter — новая строка (терминал:A-6); по умолчанию — да. */
+        fun shiftEnterNewline(context: Context): Boolean =
+            runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(SHIFT_ENTER, true) }.getOrDefault(true)
+
+        fun setShiftEnterNewline(context: Context, on: Boolean) {
+            runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(SHIFT_ENTER, on).apply() }
+        }
         private const val MIN_SP = 6f
         private const val MAX_SP = 40f
         private const val SYNC_REDRAW_MS = 150L

@@ -45,6 +45,12 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
     private var ctrl = false
     private var alt = false
 
+    /** Строка поиска по истории (терминал:A-4) и «↓ к концу»; где поиск остановился — сквозной номер строки. */
+    private lateinit var searchRow: LinearLayout
+    private lateinit var searchField: android.widget.EditText
+    private lateinit var toEnd: TextView
+    private var searchAt = -1
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Экран терминала — единственное место, где видны код входа Claude (`/login`) и содержимое
@@ -142,8 +148,69 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
 
     private fun show(tab: TerminalHub.Tab?) {
         TerminalHub.current = tab
+        // Открытая вкладка — увиденная: точка сигнала снимается (терминал:A-8).
+        if (tab?.attention == true) {
+            tab.attention = false
+            TerminalService.refresh(this)
+        }
         view.tab = tab
         renderTabs()
+    }
+
+    /** Поиск по истории (терминал:A-4): строка над экраном, совпадение — выделением. */
+    private fun openSearch() {
+        searchRow.visibility = View.VISIBLE
+        searchAt = -1
+        searchField.requestFocus()
+        getSystemService(android.view.inputmethod.InputMethodManager::class.java)?.showSoftInput(searchField, 0)
+    }
+
+    private fun closeSearch() {
+        searchRow.visibility = View.GONE
+        searchAt = -1
+        view.requestFocus()
+    }
+
+    private fun find(up: Boolean) {
+        val tab = TerminalHub.current ?: return
+        val q = searchField.text.toString()
+        if (q.isEmpty()) return
+        val from = if (searchAt >= 0) searchAt else if (up) tab.session.read { it.lineCount } else view.firstVisibleLine() - 1
+        val m = tab.session.read { it.find(q, from, up) }
+        if (m == null) {
+            Toast.makeText(this, if (up) "Выше не найдено" else "Ниже не найдено", Toast.LENGTH_SHORT).show()
+            return
+        }
+        searchAt = m.line
+        view.reveal(m)
+    }
+
+    /**
+     * Поле составления (терминал:A-5): текст для Claude — с подсказками и
+     * голосом клавиатуры, но без её обучения (A-11); «Отправить» — вставкой
+     * (скобки 2004, фильтр управляющих знаков), Enter — отдельно.
+     */
+    private fun compose() {
+        val tab = TerminalHub.current ?: return
+        val field = android.widget.EditText(this).apply {
+            minLines = 4
+            gravity = Gravity.TOP
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE or android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            imeOptions = android.view.inputmethod.EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Текст в «${tab.label}»")
+            .setView(field)
+            .setPositiveButton("Отправить и Enter") { _, _ ->
+                field.text.toString().takeIf { it.isNotEmpty() }?.let { tab.session.paste(it) }
+                tab.session.key(Key.ENTER)
+            }
+            .setNeutralButton("Отправить") { _, _ -> field.text.toString().takeIf { it.isNotEmpty() }?.let { tab.session.paste(it) } }
+            .setNegativeButton("Отмена", null)
+            .create()
+        // У диалога своё окно: FLAG_SECURE активности его не закрывает (D-86).
+        dialog.window?.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+        dialog.show()
     }
 
     // ---- TerminalHub.Observer: вызовы из потоков сети ----
@@ -157,7 +224,8 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
     }
 
     override fun bell(tab: TerminalHub.Tab) {
-        view.post { view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP) }
+        // Вибрация — только от текущей вкладки; фоновая — точкой у ярлыка (терминал:A-8).
+        if (tab === TerminalHub.current) view.post { view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP) }
     }
 
     /** OSC 52: программа просит записать в буфер обмена — решает человек. */
@@ -285,9 +353,19 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
 
     /** «⋯» ряда (терминал:A-3): то, что не поместилось, — Вставить, клавиатура, знаки, листание. */
     private fun more(anchor: View) {
+        val shiftEnter = TerminalView.shiftEnterNewline(this)
         val items = listOf<Pair<String, () -> Unit>>(
             "Вставить" to ::paste,
             "Клавиатура" to { view.toggleKeyboard() },
+            // Перенос строки без отправки (терминал:A-6) и поле составления (A-5).
+            "⏎ строка" to { view.newLine() },
+            "Поле составления…" to ::compose,
+            "Найти…" to ::openSearch,
+            // Шрифт (терминал:A-9): размер запоминается.
+            "Шрифт крупнее" to { view.fontStep(true) },
+            "Шрифт мельче" to { view.fontStep(false) },
+            "Шрифт: 80 столбцов" to { view.fitColumns(80) },
+            (if (shiftEnter) "Shift+Enter — новая строка: да" else "Shift+Enter — новая строка: нет") to { TerminalView.setShiftEnterNewline(this, !shiftEnter) },
             "HOME" to { view.key(Key.HOME) },
             "END" to { view.key(Key.END) },
             "PGUP" to { view.key(Key.PAGE_UP) },
@@ -326,6 +404,44 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         view = TerminalView(this)
         view.stickyMods = ::consumeMods
         view.onPaste = ::pasteAsk
+        // Сочетания внешней клавиатуры (терминал:A-14): вкладки и поиск — здесь.
+        view.onShortcut = { s ->
+            val c = TerminalHub.current
+            val i = TerminalHub.tabs.indexOf(c)
+            when (s) {
+                TerminalView.Shortcut.NEW_TAB -> c?.let { show(TerminalHub.openLike(this, it)) }
+                TerminalView.Shortcut.NEXT_TAB -> TerminalHub.tabs.getOrNull((i + 1) % TerminalHub.tabs.size.coerceAtLeast(1))?.let(::show)
+                TerminalView.Shortcut.PREV_TAB -> TerminalHub.tabs.getOrNull((i - 1 + TerminalHub.tabs.size) % TerminalHub.tabs.size.coerceAtLeast(1))?.let(::show)
+                TerminalView.Shortcut.SEARCH -> openSearch()
+            }
+        }
+        toEnd = chip("↓ к концу") { view.toEnd() }.apply {
+            setBackgroundColor(0xcc262626.toInt())
+            visibility = View.GONE
+        }
+        view.onAway = { n ->
+            toEnd.visibility = if (n == null) View.GONE else View.VISIBLE
+            toEnd.text = if (n != null && n > 0) "↓ к концу (+$n)" else "↓ к концу"
+        }
+        searchField = android.widget.EditText(this).apply {
+            hint = "Найти в истории"
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.GRAY)
+            setSingleLine()
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH or android.view.inputmethod.EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
+            setOnEditorActionListener { _, _, _ -> find(up = true); true }
+        }
+        searchRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setBackgroundColor(0xff262626.toInt())
+            visibility = View.GONE
+            addView(searchField, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            addView(chip("▲") { find(up = true) }.apply { contentDescription = "Найти выше" })
+            addView(chip("▼") { find(up = false) }.apply { contentDescription = "Найти ниже" })
+            addView(chip("✕") { closeSearch() }.apply { contentDescription = "Закрыть поиск" })
+        }
         tabsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         status = TextView(this).apply {
             setTextColor(0xffffcc66.toInt())
@@ -369,7 +485,15 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
             setBackgroundColor(Color.BLACK)
             addView(scrollRow(tabsRow))
             addView(statusRow)
-            addView(view, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+            addView(searchRow)
+            // «↓ к концу» — поверх экрана, у правого нижнего угла (терминал:A-4).
+            addView(
+                android.widget.FrameLayout(this@TerminalActivity).apply {
+                    addView(view)
+                    addView(toEnd, android.widget.FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM or Gravity.END))
+                },
+                LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f),
+            )
             addView(keys)
         }
         root.setOnApplyWindowInsetsListener { v, insets ->
@@ -454,7 +578,8 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         tabsRow.removeAllViews()
         val current = TerminalHub.current
         for (t in TerminalHub.tabs) {
-            val name = t.label + (t.title.takeIf { it.isNotBlank() }?.let { " · ${it.take(24)}" } ?: "")
+            // Точка — фоновая вкладка подала сигнал (терминал:A-8).
+            val name = (if (t.attention && t !== current) "● " else "") + t.label + (t.title.takeIf { it.isNotBlank() }?.let { " · ${it.take(24)}" } ?: "")
             // Текущая вкладка — и подчёркиванием, и для TalkBack, а не только цветом (терминал:A-12).
             tabsRow.addView(chip(name) { show(t) }.apply {
                 setTextColor(if (t === current) Color.WHITE else Color.GRAY)

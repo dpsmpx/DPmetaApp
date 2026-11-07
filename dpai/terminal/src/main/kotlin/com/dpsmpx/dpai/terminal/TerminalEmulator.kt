@@ -594,6 +594,9 @@ class TerminalEmulator(
             // OSC 8 ; параметры ; адрес — ссылка у следующих знаков; пустой адрес закрывает (терминал:A-19).
             // Только http(s) и не длиннее предела: `intent:`, `file:` программа на target не подсунет.
             8 -> hyperlink = arg.substringAfter(';', "").takeIf { it.length <= MAX_LINK && LINK_SCHEME.matches(it) }
+            // OSC 9 и 777;notify — уведомление программы (терминал:A-8): как звонок, без текста (T8).
+            9 -> host.bell()
+            777 -> if (arg.startsWith("notify")) host.bell()
             10 -> if (arg == "?") reply("${ESC_S}]10;${rgbSpec(foregroundRgb)}$end")
             11 -> if (arg == "?") reply("${ESC_S}]11;${rgbSpec(backgroundRgb)}$end")
             52 -> {
@@ -1107,6 +1110,39 @@ class TerminalEmulator(
      * адреса `http(s)` логической строки; экран их подчёркивает. Один разбор
      * на строку, а не на ячейку.
      */
+    /** Найденное поиском: строка (сквозной номер) и столбцы совпадения. */
+    data class Match(val line: Int, val cols: IntRange)
+
+    /**
+     * Поиск по истории и экрану (терминал:A-4): без регистра, по строкам;
+     * [up] — к старым, от строки перед [from], иначе — к новым, от строки
+     * после [from]; нет — `null`. Совпадение — столбцами, для подсветки.
+     */
+    fun find(query: String, from: Int, up: Boolean): Match? {
+        if (query.isEmpty()) return null
+        val range = if (up) (minOf(from, lineCount) - 1) downTo 0 else (maxOf(from, -1) + 1) until lineCount
+        for (l in range) {
+            val r = line(l)
+            val text = StringBuilder()
+            val colOf = IntArray(r.cols * 2 + 8)
+            var n = 0
+            for (c in 0 until r.cols) {
+                val piece = r.text(c)
+                for (ch in piece) {
+                    if (n >= colOf.size) break
+                    colOf[n++] = c
+                    text.append(ch)
+                }
+            }
+            val at = text.indexOf(query, ignoreCase = true)
+            if (at >= 0) {
+                val end = at + query.length - 1
+                return Match(l, colOf[at]..colOf[end.coerceAtMost(n - 1)])
+            }
+        }
+        return null
+    }
+
     fun linkCells(line: Int): BooleanArray {
         if (line !in 0 until lineCount) return BooleanArray(0)
         val r = line(line)

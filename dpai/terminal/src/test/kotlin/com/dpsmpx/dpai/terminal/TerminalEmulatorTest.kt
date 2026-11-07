@@ -154,6 +154,30 @@ class TerminalEmulatorTest {
         assertEquals(0, t.cursorY)
     }
 
+    /** Поиск по истории (терминал:A-4): к старым и к новым, без регистра, со столбцами совпадения. */
+    @Test
+    fun findGoesUpAndDownWithColumns() {
+        val t = term(cols = 20, rows = 3)
+        t.feed("alpha\r\nBuild ok\r\ngamma\r\nbuild fail\r\nend")
+        val last = t.lineCount
+        val m = t.find("build", last, up = true)!!
+        assertEquals(3, m.line)
+        assertEquals(0..4, m.cols)
+        assertEquals(1, t.find("build", m.line, up = true)!!.line, "дальше вверх — старое совпадение")
+        assertEquals(null, t.find("build", 1, up = true), "выше — нет")
+        assertEquals(3, t.find("BUILD", 1, up = false)!!.line, "вниз — к новым")
+        assertEquals(6..9, t.find("fail", last, up = true)!!.cols)
+    }
+
+    /** OSC 9 и 777;notify — сигнал программы, как звонок (терминал:A-8). */
+    @Test
+    fun programNotificationsRingTheBell() {
+        val h = Recorder()
+        val t = term(host = h)
+        t.feed("\u001b]9;готово\u0007\u001b]777;notify;Claude;ждёт\u0007")
+        assertEquals(2, h.bells)
+    }
+
     /** OSC 8 (терминал:A-19): ссылка у ячеек текста, только http(s); пустой адрес закрывает. */
     @Test
     fun osc8LinksAreKeptOnCells() {

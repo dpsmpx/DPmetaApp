@@ -80,8 +80,19 @@ object TerminalHub {
             observer?.tabs()
         }
 
+        /** Сигнал (звонок, OSC 9/777) в вкладке, которую сейчас не видят (терминал:A-8): точка у ярлыка. */
+        @Volatile
+        var attention: Boolean = false
+
         override fun bell() {
-            observer?.bell(this)
+            val screen = observer
+            if (screen == null || current !== this) {
+                attention = true
+                screen?.tabs()
+                // Экрана терминала нет — строкой уведомления службы, без текста программы (T8).
+                if (screen == null) app?.let(TerminalService::attention)
+            }
+            screen?.bell(this)
         }
 
         override fun clipboard(text: String) {
