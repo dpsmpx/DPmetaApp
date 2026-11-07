@@ -26,6 +26,16 @@ class LongJobsTest {
     }
 
     @Test
+    fun guestProcessesRunOneAtATime() {
+        val gate = CompletableDeferred<Unit>()
+        val jobs = LongJobs(CoroutineScope(Dispatchers.Unconfined))
+        jobs.start(LongJobs.LINUX_APK, "Поставить", excludes = LongJobs.GUEST) { gate.await(); LongJobs.Done("готово") }
+        assertFalse(jobs.start(LongJobs.LLAMA, "Установка llama.cpp", excludes = LongJobs.GUEST) { LongJobs.Done("готово") }, "apk гостя — один процесс за раз")
+        gate.complete(Unit)
+        assertTrue(jobs.start(LongJobs.LLAMA, "Установка llama.cpp", excludes = LongJobs.GUEST) { LongJobs.Done("готово") })
+    }
+
+    @Test
     fun failureBecomesANoteNotACrash() {
         val jobs = LongJobs(CoroutineScope(Dispatchers.Unconfined))
         jobs.start("llama", "Поставить llama.cpp") { error("нет места") }

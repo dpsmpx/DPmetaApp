@@ -219,6 +219,8 @@ open class PultActivity : ComponentActivity() {
                 if (o is Outcome.Success) Outcome.success(o.value.map { it.copy(bytes = runCatching { repo.cloneBytes(it.slug) }.getOrNull()) }) else o
             }
             val chosen = clonesSelected()
+            val listed = (r as? Outcome.Success)?.value?.map { it.slug.lowercase() }?.toSet().orEmpty()
+            val goneSizes = chosen.filter { it.lowercase() !in listed }.map { it to runCatching { repo.cloneBytes(it) }.getOrNull() }
             runOnUiThread {
                 when (r) {
                     is Outcome.Success -> {
@@ -228,7 +230,9 @@ open class PultActivity : ComponentActivity() {
                         val bySlug = r.value.associateBy { it.slug.lowercase() }
                         val kept = chosen.mapNotNull { bySlug[it.lowercase()]?.slug }.toSet()
                         // Отмеченные, которых в списке больше нет (нет доступа, переименован, в архиве), — видны отмеченными: их можно снять.
-                        val gone = chosen.filter { it.lowercase() !in bySlug }.map { com.dpsmpx.dpmeta.app.data.PultRepository.CloneOption(it, registry = false, private = true, gone = true) }
+                        // Их клоны занимают место — размер и «Удалить…» и у них (проверка PR #173); размер — уже посчитан в фоне.
+                        val gone = goneSizes.map { (s, b) -> com.dpsmpx.dpmeta.app.data.PultRepository.CloneOption(s, registry = false, private = true, gone = true, bytes = b) }
+                            .filter { it.slug.lowercase() !in bySlug }
                         val checked = if (first || !clonesAsked()) r.value.filter { it.registry }.map { it.slug }.toSet() else kept + gone.map { it.slug }
                         view.value = view.value.copy(busy = false, statusDetails = "", status = "", clonePrompt = ClonePrompt(r.value + gone, checked, first))
                     }
@@ -312,7 +316,11 @@ open class PultActivity : ComponentActivity() {
                     view.value, loader, onSync = ::sync, onSaveToken = ::saveToken, onForgetToken = ::forgetToken,
                     onAi = ai, onExport = ::export,
                     onClones = { withToken { token -> if (token != null) askClones(token, first = false) } }, onClonesChosen = ::clonesChosen,
-                    onCancelSync = { repo.cancelClones() },
+                    onCancelSync = {
+                        repo.cancelClones()
+                        // Отклик сразу (проверка PR #173): начатый клон ещё доходит до конца.
+                        view.value = view.value.copy(cancelling = true)
+                    },
                     onDeleteClone = ::deleteClone,
                 )
             }
@@ -426,7 +434,15 @@ open class PultActivity : ComponentActivity() {
             if (pool.isShutdown) return
             pool.execute {
                 val r = runCatching(local).getOrNull()
-                runOnUiThread { if (r != null) done(r) else run(remote, done) }
+                runOnUiThread {
+                    if (r != null) {
+                        done(r)
+                        // Реестр мог прочитаться из клона — ссылки `Проект:путь` работают и до синхронизации.
+                        view.value = view.value.copy(names = repo.names())
+                    } else {
+                        run(remote, done)
+                    }
+                }
             }
         }
 
@@ -460,14 +476,19 @@ open class PultActivity : ComponentActivity() {
         if (r is Outcome.Success) sync()
     }
 
-    /** Удалить не отмеченный клон (UX-11) — после вопроса на экране; окно клонов перечитывает размеры. */
+    /** Удалить не отмеченный клон (UX-11) — после вопроса на экране; окно перечитывает его размер и говорит итог. */
     private fun deleteClone(slug: String) {
         if (pool.isShutdown) return
         pool.execute {
-            runCatching { repo.deleteClone(slug) }
+            val r = runCatching { repo.deleteClone(slug) }.getOrElse { Outcome.failure(DiagCode.INTERNAL_ERROR, "клон: ${it.javaClass.simpleName}", slug) }
+            val left = runCatching { repo.cloneBytes(slug) }.getOrNull()
             runOnUiThread {
                 val p = view.value.clonePrompt ?: return@runOnUiThread
-                view.value = view.value.copy(clonePrompt = p.copy(options = p.options.map { if (it.slug == slug) it.copy(bytes = null) else it }))
+                val note = when (r) {
+                    is Outcome.Success -> "Клон $slug удалён."
+                    is Outcome.Failure -> "Клон $slug не удалён: ${r.diagnostics.first().message}."
+                }
+                view.value = view.value.copy(clonePrompt = p.copy(options = p.options.map { if (it.slug == slug) it.copy(bytes = left) else it }, note = note))
             }
         }
     }
@@ -514,11 +535,12 @@ open class PultActivity : ComponentActivity() {
                         syncEnded = view.value.syncEnded + 1,
                         syncEnd = SyncEnd.DONE,
                         progress = null,
+                        cancelling = false,
                         feed = feed,
                         names = repo.names(),
                     ).also { loadHistory() }
                     is Outcome.Failure -> Screens.failure(r.diagnostics.first()).let { f ->
-                        view.value.copy(busy = false, status = "Не вышло: ${f.text}." + (note?.let { " $it" } ?: ""), statusDetails = f.details, syncEnded = view.value.syncEnded + 1, syncEnd = SyncEnd.FAILED, progress = null)
+                        view.value.copy(busy = false, status = "Не вышло: ${f.text}." + (note?.let { " $it" } ?: ""), statusDetails = f.details, syncEnded = view.value.syncEnded + 1, syncEnd = SyncEnd.FAILED, progress = null, cancelling = false)
                     }
                 }
             }

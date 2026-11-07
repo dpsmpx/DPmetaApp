@@ -176,6 +176,8 @@ data class PultView(
     val syncEnd: SyncEnd = SyncEnd.DONE,
     /** Ход синхронизации (UX-10): «Клоны: 3 из 12», «Источники…»; `null` — не идёт или ход неизвестен. */
     val progress: String? = null,
+    /** «Отменить» нажато — начатый клон доходит до конца (UX-10). */
+    val cancelling: Boolean = false,
 )
 
 /**
@@ -183,7 +185,7 @@ data class PultView(
  * [checked] — отмеченные заранее (при первом входе — реестр); [first] —
  * первый вход: «Позже» спросит снова.
  */
-data class ClonePrompt(val options: List<com.dpsmpx.dpmeta.app.data.PultRepository.CloneOption>, val checked: Set<String>, val first: Boolean)
+data class ClonePrompt(val options: List<com.dpsmpx.dpmeta.app.data.PultRepository.CloneOption>, val checked: Set<String>, val first: Boolean, val note: String? = null)
 
 /** Итог «Обновить» для снэкбара (UX-6): обновлено, не вышло, не начато (нет токена, уже идёт). */
 enum class SyncEnd { DONE, FAILED, REFUSED }
@@ -380,7 +382,7 @@ fun PultApp(
             }
         }
     }
-    view.clonePrompt?.let { ClonesDialog(it, onClonesChosen, onDeleteClone) }
+    view.clonePrompt?.let { ClonesDialog(it, onClonesChosen, onDeleteClone, busy = view.busy) }
 }
 
 /** Пункт панели: значок над подписью; [selected] `null` — не вкладка, а вход («AI»). */
@@ -425,8 +427,8 @@ private fun Header(title: String, view: PultView, onSync: () -> Unit, onCancel: 
                 )
             }
             // Клоны идут — «Отменить» между репозиториями (UX-10); иначе — «Обновить», одно, значком (UX-6).
-            if (view.busy && view.progress?.startsWith("Клоны") == true) {
-                TextButton(onClick = onCancel) { Text("Отменить") }
+            if (view.busy && (view.cancelling || view.progress?.startsWith("Клоны") == true)) {
+                TextButton(onClick = onCancel, enabled = !view.cancelling) { Text(if (view.cancelling) "Отменяю…" else "Отменить") }
             } else {
                 IconButton(onClick = onSync, enabled = view.hasToken && !view.busy) {
                     Icon(painterResource(R.drawable.ic_pult_refresh), contentDescription = "Обновить")
@@ -863,7 +865,7 @@ private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -
  * удаляет: в нём может быть работа ИИ; удалить — отдельно, с вопросом.
  */
 @Composable
-fun ClonesDialog(prompt: ClonePrompt, onDone: (Set<String>?) -> Unit, onDelete: (String) -> Unit = {}) {
+fun ClonesDialog(prompt: ClonePrompt, onDone: (Set<String>?) -> Unit, onDelete: (String) -> Unit = {}, busy: Boolean = false) {
     var checked by remember(prompt.first, prompt.checked) { mutableStateOf(prompt.checked) }
     var query by remember { mutableStateOf("") }
     var deleting by remember { mutableStateOf<String?>(null) }
@@ -881,6 +883,7 @@ fun ClonesDialog(prompt: ClonePrompt, onDone: (Set<String>?) -> Unit, onDelete: 
                     style = MaterialTheme.typography.bodySmall,
                 )
                 OutlinedTextField(query, { query = it }, label = { Text("Найти репозиторий") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                prompt.note?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                 Row(horizontalArrangement = Arrangement.spacedBy(Tokens.gap)) {
                     TextButton(onClick = { checked = checked + shown.filter { !it.gone }.map { it.slug } }) { Text("Все") }
                     TextButton(onClick = { checked = checked - shown.map { it.slug }.toSet() }) { Text("Ни одного") }
@@ -899,7 +902,7 @@ fun ClonesDialog(prompt: ClonePrompt, onDone: (Set<String>?) -> Unit, onDelete: 
                                 val marks = listOfNotNull(
                                     "реестр".takeIf { o.registry },
                                     "закрытый".takeIf { o.private },
-                                    o.bytes?.let { "склонирован · ${it / 1_048_576} МБ" },
+                                    o.bytes?.let { "склонирован · " + if (it < 1_048_576) "меньше 1 МБ" else "${it / 1_048_576} МБ" },
                                 )
                                 Text(
                                     if (o.gone) "нет в списке аккаунта — снимите отметку, если не нужен" else marks.joinToString(" · "),
@@ -907,7 +910,8 @@ fun ClonesDialog(prompt: ClonePrompt, onDone: (Set<String>?) -> Unit, onDelete: 
                                 )
                             }
                             // Удалить — только не отмеченный клон и не при первом входе; с вопросом (D-70: в клоне может быть работа ИИ).
-                            if (!prompt.first && !on && o.bytes != null) TextButton(onClick = { deleting = o.slug }) { Text("Удалить…", color = MaterialTheme.colorScheme.error) }
+                            // Не во время синхронизации: клон может обновляться прямо сейчас.
+                            if (!prompt.first && !on && o.bytes != null) TextButton(enabled = !busy, onClick = { deleting = o.slug }) { Text("Удалить…", color = MaterialTheme.colorScheme.error) }
                         }
                     }
                 }

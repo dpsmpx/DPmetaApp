@@ -34,14 +34,15 @@ fun LocalModelSection() {
     // Долгое — вне экрана (AI:A-14): установка и поиск переживают уход с вкладки; повтор не запускается.
     val jobs = remember { LongJobs.get(context) }
     val state by jobs.state.collectAsState()
-    val job = state[JOB_LLAMA]
-    val busy = job?.takeIf { it.running }?.label
+    val job = state[LongJobs.LLAMA]
+    // Процессы гостя — по одному: пока экран Linux ставит пакеты, llama.cpp ждёт (база apk под замком).
+    val busy = job?.takeIf { it.running }?.label ?: LongJobs.GUEST.firstNotNullOfOrNull { k -> state[k]?.takeIf { it.running }?.label }
     val note = job?.takeIf { !it.running }?.note
     // Найденные модели — вывод поиска: остаются и после ухода с экрана.
     val found = job?.takeIf { !it.running && it.label == FIND }?.output.orEmpty()
 
     fun work(label: String, job: () -> String?) {
-        jobs.start(JOB_LLAMA, label) { LongJobs.Done(job() ?: "$label: готово") }
+        jobs.start(LongJobs.LLAMA, label, excludes = LongJobs.GUEST) { LongJobs.Done(job() ?: "$label: готово") }
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -55,7 +56,7 @@ fun LocalModelSection() {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             TextButton(enabled = busy == null, onClick = { work("Установка llama.cpp") { LocalModel.install(context) } }) { Text("Поставить llama.cpp") }
             TextButton(enabled = busy == null, onClick = {
-                jobs.start(JOB_LLAMA, FIND) {
+                jobs.start(LongJobs.LLAMA, FIND, excludes = LongJobs.GUEST) {
                     val models = LocalModel.models(context)
                     LongJobs.Done(if (models.isEmpty()) "Файлов .gguf не нашлось" else "Найдено моделей: ${models.size}", models)
                 }
@@ -85,6 +86,5 @@ fun LocalModelSection() {
     }
 }
 
-/** Долгие операции локальной модели — один ключ: установка, поиск, запуск идут по одной. */
-private const val JOB_LLAMA = "llama"
+/** Подпись поиска моделей: его вывод — найденные файлы. */
 private const val FIND = "Поиск моделей"

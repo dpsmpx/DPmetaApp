@@ -35,23 +35,22 @@ import androidx.compose.ui.unit.dp
  * Инструкция и Linux — своими экранами; «Назад» — к настройкам.
  */
 @Composable
-fun AiSettingsPane(controller: Controller, model: DemoModel) {
-    var sub by rememberSaveable { mutableStateOf<String?>(null) }
+fun AiSettingsPane(controller: Controller, model: DemoModel, sub: String?, onSub: (String?) -> Unit) {
     when (sub) {
         GUIDE -> {
-            BackHandler { sub = null }
-            SetupPane(controller, model) { sub = null }
+            BackHandler { onSub(null) }
+            SetupPane(controller, model) { onSub(null) }
             return
         }
         LINUX -> {
-            BackHandler { sub = null }
-            LinuxScreen(onBack = { sub = null })
+            BackHandler { onSub(null) }
+            LinuxScreen(onBack = { onSub(null) })
             return
         }
         LOG -> {
-            BackHandler { sub = null }
+            BackHandler { onSub(null) }
             Column(Modifier.fillMaxSize()) {
-                androidx.compose.material3.TextButton(onClick = { sub = null }, modifier = Modifier.padding(start = 4.dp)) { Text("← Настройки") }
+                androidx.compose.material3.TextButton(onClick = { onSub(null) }, modifier = Modifier.padding(start = 4.dp)) { Text("← Настройки") }
                 Text("Журнал", Modifier.padding(start = 12.dp, bottom = 4.dp), style = MaterialTheme.typography.titleMedium)
                 Box(Modifier.weight(1f)) { LogPane(model) }
             }
@@ -64,12 +63,12 @@ fun AiSettingsPane(controller: Controller, model: DemoModel) {
             Card(Modifier.fillMaxWidth()) {
                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("Termux, агент, ключ, вход, проект, dpai — по шагам", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                    Button(onClick = { sub = GUIDE }) { Text("Инструкция") }
+                    Button(onClick = { onSub(GUIDE) }) { Text("Инструкция") }
                 }
             }
         }
-        item(key = "linux") { Entry("Linux в приложении", "Alpine, пакеты, слоты") { sub = LINUX } }
-        item(key = "log") { Entry("Журнал", "строки журнала, выгрузка, отладка") { sub = LOG } }
+        item(key = "linux") { Entry("Linux в приложении", "Alpine, пакеты, слоты") { onSub(LINUX) } }
+        item(key = "log") { Entry("Журнал", "строки журнала, выгрузка, отладка") { onSub(LOG) } }
         item(key = "key") { AppKeyCard(controller) }
         item(key = "control") { ControlCard(model) }
         // Три копии — одной карточкой (AI:A-3, §4, п. 6): копия настроек, восстановление доступа, облако.
@@ -110,4 +109,7 @@ private fun Entry(title: String, detail: String, onOpen: () -> Unit) {
 
 private const val GUIDE = "guide"
 private const val LINUX = "linux"
-private const val LOG = "log"
+
+/** Под-экран журнала — его открывает и «Журнал» у сбоя контроллера (AI:A-17). */
+internal const val SETTINGS_LOG = "log"
+private const val LOG = SETTINGS_LOG

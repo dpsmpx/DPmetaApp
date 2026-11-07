@@ -93,6 +93,8 @@ class ClonesTest {
         assertNull((c.list("Alpha", "main", "нет") as Outcome.Success).value, "нет каталога — null")
         assertNull((c.list("Alpha", "main", "TODO.md") as Outcome.Success).value, "файл — не каталог")
         assertTrue(c.list("Beta", "main", "") is Outcome.Failure, "нет клона — отказ")
+        assertNull((c.file("Alpha", "main", "docs") as Outcome.Success).value, "каталог — не файл: байты дерева не отдаются")
+        assertEquals(2L, (c.size("Alpha", "main", "docs/a.md") as Outcome.Success).value)
     }
 
     @Test

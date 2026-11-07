@@ -30,10 +30,14 @@ class LongJobs(private val scope: CoroutineScope, private val onDone: (String, S
     /** Идёт ли хоть одна из [keys] — у экрана, где кнопки делят один процесс (пакеты, установка). */
     fun busy(vararg keys: String): Boolean = keys.any { flow.value[it]?.running == true }
 
-    /** Запустить, если [key] не идёт; `false` — уже идёт, повтор не запущен. */
-    fun start(key: String, label: String, work: suspend () -> Done): Boolean {
+    /**
+     * Запустить, если не идёт ни [key], ни что-то из [excludes] (например,
+     * `apk` гостя — один процесс за раз: база пакетов под замком); `false` —
+     * не запущено.
+     */
+    fun start(key: String, label: String, excludes: Set<String> = emptySet(), work: suspend () -> Done): Boolean {
         synchronized(this) {
-            if (flow.value[key]?.running == true) return false
+            if ((excludes + key).any { flow.value[it]?.running == true }) return false
             flow.value = flow.value + (key to Job(label, running = true))
         }
         scope.launch {
@@ -56,6 +60,18 @@ class LongJobs(private val scope: CoroutineScope, private val onDone: (String, S
     }
 
     companion object {
+        /** Установка Alpine. */
+        const val LINUX_INSTALL = "linux-install"
+
+        /** `apk` и npm гостя: пакеты, Codex и Gemini. */
+        const val LINUX_APK = "linux-apk"
+
+        /** Локальная модель: установка llama.cpp (тоже `apk`), поиск, запуск. */
+        const val LLAMA = "llama"
+
+        /** Всё, что запускает процессы гостя: идут по одному. */
+        val GUEST = setOf(LINUX_INSTALL, LINUX_APK, LLAMA)
+
         @Volatile
         private var instance: LongJobs? = null
 

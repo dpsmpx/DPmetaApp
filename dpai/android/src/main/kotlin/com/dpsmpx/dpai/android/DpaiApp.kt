@@ -114,6 +114,8 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
     // «Настройки AI» — экран поверх вкладок (D-112): вход — значком в заголовке, выход — «←» и «Назад».
     var settings by rememberSaveable { mutableStateOf(false) }
+    // Под-экран «Настроек AI» (инструкция, Linux, журнал) — здесь: «Журнал» у сбоя открывает именно журнал.
+    var settingsSub by rememberSaveable { mutableStateOf<String?>(null) }
     /** Открыть вкладку: экран сессии и «Настройки AI» закрываются. */
     fun openTab(t: AiTab) {
         tab = t.ordinal
@@ -312,7 +314,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                             TextButton(onClick = { searching = true }) { Text("Найти") }
                             // «Настройки AI» (D-112): журнал, позже — настройка из Targets (AI:A-3).
                             Labeled(AI_SETTINGS_TITLE) {
-                                androidx.compose.material3.IconButton(onClick = { settings = true }) {
+                                androidx.compose.material3.IconButton(onClick = { settings = true; settingsSub = null }) {
                                     androidx.compose.material3.Icon(
                                         androidx.compose.ui.res.painterResource(R.drawable.ic_ai_settings),
                                         contentDescription = AI_SETTINGS_TITLE,
@@ -404,7 +406,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                         Text("Контроллер не работает: $it.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                         Row {
                             TextButton(onClick = { openTab(AiTab.TARGETS) }) { Text("Открыть Targets") }
-                            TextButton(onClick = { selectedId = null; settings = true }) { Text("Журнал (Настройки AI)") }
+                            TextButton(onClick = { selectedId = null; settings = true; settingsSub = SETTINGS_LOG }) { Text("Журнал") }
                         }
                     }
                 }
@@ -435,7 +437,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                     tabStates.SaveableStateProvider(screen) {
                         Box(Modifier.fillMaxSize()) {
                             when {
-                                screen == SETTINGS_SCREEN -> AiSettingsPane(controller, model)
+                                screen == SETTINGS_SCREEN -> AiSettingsPane(controller, model, settingsSub) { settingsSub = it }
                                 screen == AiTab.TARGETS.ordinal -> TargetsPane(controller, model)
                                 screen == AiTab.REQUESTS.ordinal -> RequestsPane(model, s)
                                 screen == AiTab.MODELS.ordinal -> ModelsPane()

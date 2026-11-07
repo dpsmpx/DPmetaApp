@@ -55,9 +55,10 @@ fun LinuxScreen(onBack: () -> Unit) {
     // Долгое — вне экрана (AI:A-14): ход, вывод и итог переживают уход с экрана; повтор не запускается.
     val jobs = remember { LongJobs.get(context) }
     val state by jobs.state.collectAsState()
-    val install = state[JOB_INSTALL]
-    val work = state[JOB_APK]
-    val running = install?.running == true || work?.running == true
+    val install = state[LongJobs.LINUX_INSTALL]
+    val work = state[LongJobs.LINUX_APK]
+    // Процессы гостя — по одному (база apk под замком): и llama.cpp во «Моделях» тоже.
+    val running = LongJobs.GUEST.any { state[it]?.running == true }
     LaunchedEffect(install?.running) { if (install?.running == false) installed = LinuxSetup.environment(context).installed() }
     var busy by remember { mutableStateOf<String?>(null) }
     var note by remember { mutableStateOf<String?>(null) }
@@ -68,7 +69,7 @@ fun LinuxScreen(onBack: () -> Unit) {
 
     fun run(label: String, job: () -> Outcome<com.dpsmpx.dpai.execution.process.Completed>, done: (com.dpsmpx.dpai.execution.process.Completed) -> String) {
         allOutput = false
-        jobs.start(JOB_APK, label) {
+        jobs.start(LongJobs.LINUX_APK, label, excludes = LongJobs.GUEST) {
             when (val r = job()) {
                 is Outcome.Success -> LongJobs.Done(done(r.value), (r.value.stdout + r.value.stderr).takeLast(MAX_OUTPUT))
                 is Outcome.Failure -> LongJobs.Done("$label: ${r.errors.first().message}")
@@ -87,7 +88,7 @@ fun LinuxScreen(onBack: () -> Unit) {
         when {
             !available -> Text("Недоступно на этом телефоне: нужен процессор arm64.", style = MaterialTheme.typography.bodySmall)
             installed == null -> Button(enabled = !running, onClick = {
-                jobs.start(JOB_INSTALL, "Установка Alpine") {
+                jobs.start(LongJobs.LINUX_INSTALL, "Установка Alpine", excludes = LongJobs.GUEST) {
                     when (val r = LinuxSetup.install(context)) {
                         is Outcome.Success -> LongJobs.Done(r.value?.let { "Установлено: файлов ${it.files}, ${it.bytes / 1_048_576} МБ" } ?: "Уже установлено")
                         is Outcome.Failure -> LongJobs.Done("Не установлено: ${r.errors.first().message}")
@@ -170,10 +171,6 @@ fun LinuxScreen(onBack: () -> Unit) {
         }
     }
 }
-
-/** Ключи долгих операций экрана Linux: установка среды и всё, что идёт через `apk` и npm гостя (один процесс за раз). */
-private const val JOB_INSTALL = "linux-install"
-private const val JOB_APK = "linux-apk"
 
 /** Строк вывода `apk` на экране: хвост, где итог и ошибка. */
 private const val MAX_OUTPUT = 20

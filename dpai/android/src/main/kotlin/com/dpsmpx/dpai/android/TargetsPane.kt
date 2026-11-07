@@ -70,6 +70,8 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
     var linux by rememberSaveable { mutableStateOf(false) }
     var removing by remember { mutableStateOf<TargetEntry?>(null) }
     var restoring by remember { mutableStateOf(false) }
+    // «Скрыть» у карточки, показанной по признаку переустановки, — скрывает её (AI:A-3), пока жив экран.
+    var restoreHidden by rememberSaveable { mutableStateOf(false) }
     var renaming by remember { mutableStateOf<TargetEntry?>(null) }
     // Признак переустановки (AI:A-3): targets нет, а Termux есть — его агент и входы целы.
     val reinstalled = remember(targets) { targets.isEmpty() && TermuxLauncher.installed(context) }
@@ -141,10 +143,10 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
                 }
             }
         }
-        if (restoring || reinstalled) {
+        if (restoring || (reinstalled && !restoreHidden)) {
             item(key = "restore") {
                 // После восстановления карточка остаётся с отчётом, пока её не скроют.
-                RestoreCard(controller, onHide = { restoring = false }) {
+                RestoreCard(controller, onHide = { restoring = false; restoreHidden = true }) {
                     targets = controller.targets()
                     project = controller.project()
                     restoring = true
