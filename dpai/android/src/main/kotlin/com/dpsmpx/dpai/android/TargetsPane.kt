@@ -92,12 +92,7 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
     }
     // Кто чем занят (D-56) — раз в 5 с, пока экран открыт.
     var work by remember { mutableStateOf(emptyMap<com.dpsmpx.dpai.core.ids.ExecutionTargetId, List<String>>()) }
-    androidx.compose.runtime.LaunchedEffect(Unit) {
-        while (true) {
-            work = withContext(Dispatchers.IO) { model.work() }
-            kotlinx.coroutines.delay(5_000)
-        }
-    }
+    Poll(periodMs = 5_000) { work = withContext(Dispatchers.IO) { model.work() } }
     if (guide) {
         val close = {
             guide = false
@@ -316,11 +311,12 @@ private fun TargetCard(
 @Composable
 private fun LinuxEntry(onOpen: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current.applicationContext
-    val installed = remember { com.dpsmpx.dpai.android.linux.LinuxSetup.environment(context).installed() }
+    // null — ещё читается (AI:A-16): метка установки — файл на диске.
+    val installed = rememberRead(Unit, initial = null as Boolean?) { com.dpsmpx.dpai.android.linux.LinuxSetup.environment(context).installed() != null }
     Card(Modifier.fillMaxWidth().clickable(onClick = onOpen)) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Linux в приложении", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-            Text((if (installed != null) "установлен" else "не установлен") + " ▸", style = MaterialTheme.typography.bodySmall)
+            Text((when (installed) { true -> "установлен"; false -> "не установлен"; null -> "…" }) + " ▸", style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -588,12 +584,9 @@ internal fun TermuxCard(port: Int, framed: Boolean = true) {
             context.startActivity(TermuxLauncher.appSettings(context))
         }
     }
-    LaunchedEffect(port) {
-        while (true) {
-            listening = withContext(Dispatchers.IO) { TermuxLauncher.listening(port) }
-            permitted = TermuxLauncher.permitted(context)
-            kotlinx.coroutines.delay(3000)
-        }
+    Poll(port, periodMs = 3000) {
+        listening = withContext(Dispatchers.IO) { TermuxLauncher.listening(port) }
+        permitted = TermuxLauncher.permitted(context)
     }
     Framed(framed) {
         Column(if (framed) Modifier.padding(12.dp) else Modifier) {
@@ -647,13 +640,10 @@ internal fun ControlCard(model: DemoModel) {
     var limit by remember { mutableStateOf(model.control()?.maxSessions) }
     var live by remember { mutableStateOf(model.control() != null) }
     var note by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            val c = withContext(Dispatchers.IO) { model.control() }
-            live = c != null
-            limit = c?.maxSessions
-            kotlinx.coroutines.delay(3000)
-        }
+    Poll(periodMs = 3000) {
+        val c = withContext(Dispatchers.IO) { model.control() }
+        live = c != null
+        limit = c?.maxSessions
     }
     if (!live) return
     Card(Modifier.fillMaxWidth()) {
@@ -689,13 +679,10 @@ private fun TargetSwitches(model: DemoModel, t: TargetEntry) {
     var slots by remember { mutableStateOf(model.slotsOf(t.id)) }
     // Намерения (D-57): переключатель показывает желаемое, пока контур занят, и не откатывается.
     var tick by remember { mutableStateOf(0) }
-    LaunchedEffect(t.id) {
-        while (true) {
-            enabled = withContext(Dispatchers.IO) { model.control()?.let { t.id !in it.disabledTargets } }
-            slots = withContext(Dispatchers.IO) { model.slotsOf(t.id) }
-            tick++
-            kotlinx.coroutines.delay(3000)
-        }
+    Poll(t.id, periodMs = 3000) {
+        enabled = withContext(Dispatchers.IO) { model.control()?.let { t.id !in it.disabledTargets } }
+        slots = withContext(Dispatchers.IO) { model.slotsOf(t.id) }
+        tick++
     }
     val on = enabled ?: return
     val wantTarget = remember(tick, on) { model.desired(com.dpsmpx.dpai.orchestrator.commands.Command.SetTargetEnabled(t.id, on)) as? com.dpsmpx.dpai.orchestrator.commands.Command.SetTargetEnabled }
@@ -743,12 +730,9 @@ internal fun CliCard() {
             Text("Командная строка dpai", style = MaterialTheme.typography.titleMedium)
             var running by remember { mutableStateOf(ControlServer.running) }
             var problem by remember { mutableStateOf(ControlServer.problem) }
-            LaunchedEffect(Unit) {
-                while (true) {
-                    running = ControlServer.running
-                    problem = ControlServer.problem
-                    kotlinx.coroutines.delay(2000)
-                }
+            Poll(periodMs = 2000) {
+                running = ControlServer.running
+                problem = ControlServer.problem
             }
             Text(
                 when {

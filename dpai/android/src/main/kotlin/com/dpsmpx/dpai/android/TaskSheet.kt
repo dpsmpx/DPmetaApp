@@ -21,7 +21,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,7 +47,6 @@ import com.dpsmpx.dpai.ui.TaskAction
 import com.dpsmpx.dpai.ui.Tone
 import com.dpsmpx.dpai.ui.TaskDetail
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlinx.coroutines.withContext
@@ -69,12 +67,7 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
     var confirm by remember { mutableStateOf<TaskAction?>(null) }
     var editor by remember { mutableStateOf<TaskAction?>(null) }
     val keys = remember { IdGenerator(Clock.SYSTEM, RandomSource.secure()) }
-    LaunchedEffect(task) {
-        while (true) {
-            detail = withContext(Dispatchers.IO) { model.taskDetail(task) }
-            delay(1500)
-        }
-    }
+    Poll(task, periodMs = 1500) { detail = withContext(Dispatchers.IO) { model.taskDetail(task) } }
     // Несколько команд — по очереди, до первого отказа (область, затем зависимости).
     fun sendAll(vararg cs: (String) -> Command) {
         busy = true
@@ -399,12 +392,7 @@ private fun MoveSection(model: DemoModel, task: TaskId, executor: String?, send:
     val slots = remember { model.slotTargets() }
     if (slots.size < 2) return
     var pinned by remember { mutableStateOf(model.pinned(task)) }
-    LaunchedEffect(task) {
-        while (true) {
-            pinned = withContext(Dispatchers.IO) { model.pinned(task) }
-            delay(1500)
-        }
-    }
+    Poll(task, periodMs = 1500) { pinned = withContext(Dispatchers.IO) { model.pinned(task) } }
     androidx.compose.material3.HorizontalDivider()
     // Не «Перенести» (A-13): это выбор слота следующего хода, идущий ход не прерывается (D-66).
     Text("Где пойдёт следующий ход", style = MaterialTheme.typography.titleSmall)

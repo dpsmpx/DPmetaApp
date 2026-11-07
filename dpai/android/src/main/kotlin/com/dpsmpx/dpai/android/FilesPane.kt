@@ -166,7 +166,8 @@ fun FilesPane(onLinux: () -> Unit = {}) {
         Browser(p, onPlace = { placeKey = it.key() }) { placeKey = null }
         return
     }
-    val linux = LinuxSetup.available(context) && LinuxSetup.environment(context).installed() != null
+    // Готова ли среда — файл на диске: не в главном потоке и не на каждую перекомпозицию (AI:A-16).
+    val linux = rememberRead(Unit, initial = false) { LinuxSetup.available(context) && LinuxSetup.environment(context).installed() != null }
     LazyColumn(contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
             SwitchRow(wanted && granted, onChange = { on ->

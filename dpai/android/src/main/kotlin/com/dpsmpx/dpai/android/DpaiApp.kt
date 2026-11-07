@@ -478,26 +478,6 @@ internal fun toneColor(t: Tone): Color {
     }
 }
 
-/**
- * Видно ли окно (активность между ON_START и ON_STOP). Цикл Compose сам не
- * останавливается, когда приложение свёрнуто или экран гаснет (Redmi Note 13:
- * пробы `/usage` шли при выключенном экране), — циклы экрана привязаны к этому признаку.
- */
-@Composable
-private fun rememberVisible(): Boolean {
-    val lifecycle = (androidx.activity.compose.LocalActivity.current as? androidx.activity.ComponentActivity)?.lifecycle
-    var visible by remember { mutableStateOf(lifecycle?.currentState?.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED) ?: true) }
-    androidx.compose.runtime.DisposableEffect(lifecycle) {
-        val observer = androidx.lifecycle.LifecycleEventObserver { _, e ->
-            if (e == androidx.lifecycle.Lifecycle.Event.ON_START) visible = true
-            if (e == androidx.lifecycle.Lifecycle.Event.ON_STOP) visible = false
-        }
-        lifecycle?.addObserver(observer)
-        onDispose { lifecycle?.removeObserver(observer) }
-    }
-    return visible
-}
-
 @Composable
 private fun DashboardPane(screen: DashboardScreen, quick: com.dpsmpx.dpai.ui.QuickActions, model: DemoModel, onTargets: () -> Unit, onTask: (com.dpsmpx.dpai.core.ids.TaskId) -> Unit) {
     // Загрузка окон — из `/usage` раз в минуту, пока сводка видна (D-48).
@@ -1214,12 +1194,7 @@ private fun LimitsCard(l: com.dpsmpx.dpai.ui.SubscriptionLimits, model: DemoMode
                 Text("${w.window}: ${w.percent}${w.reset?.let { " · сброс $it" } ?: ""}", color = toneColor(w.tone), style = MaterialTheme.typography.bodySmall)
             }
             var usage by remember { mutableStateOf(model.usageState()) }
-            LaunchedEffect(Unit) {
-                while (true) {
-                    usage = model.usageState()
-                    kotlinx.coroutines.delay(1000)
-                }
-            }
+            Poll(periodMs = 1000) { usage = model.usageState() }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 val (refreshing, at) = usage
                 Text(

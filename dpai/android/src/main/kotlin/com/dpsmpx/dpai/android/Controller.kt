@@ -138,28 +138,62 @@ class Controller(private val root: File, val version: String?) {
         while (notices.size > MAX_NOTICES) notices.remove(notices.keys.first())
     }
 
-    /** Документ настроек целиком: предупреждения чтения — в [recoveredNotices], а не в мусор. */
-    private fun <T> bookDocument(key: String, parse: (com.dpsmpx.dpai.core.serialization.JsonObject) -> Outcome<T>): T? =
+    /**
+     * Документ настроек целиком: предупреждения чтения — в [recoveredNotices],
+     * а не в мусор. Первое — прочитан ли документ (нет его — тоже «да»).
+     */
+    private fun <T> bookDocument(key: String, parse: (com.dpsmpx.dpai.core.serialization.JsonObject) -> Outcome<T>): Pair<Boolean, T?> =
         when (val read = docs.read(key)) {
             is Outcome.Success -> {
                 notice(read.warnings)
-                read.value?.let { parse(it.content).valueOrNull() }
+                true to read.value?.let { parse(it.content).valueOrNull() }
             }
             is Outcome.Failure -> {
                 notice(read.errors)
-                null
+                false to null
             }
         }
 
+    /**
+     * Targets и проект — в памяти (AI:A-16): экраны спрашивают их часто и
+     * из главного потока, а документы меняет только этот контроллер
+     * (единственный в процессе). С диска — первое чтение и после неудачной
+     * записи; неудачное чтение не запоминается.
+     */
+    @Volatile
+    private var targetsCache: List<TargetEntry>? = null
+
+    @Volatile
+    private var projectCache: ProjectEntry? = null
+
+    @Volatile
+    private var projectKnown = false
+
     @Synchronized
-    fun targets(): List<TargetEntry> = bookDocument(BOOK) { TargetBook.fromJson(it) }.orEmpty()
+    fun targets(): List<TargetEntry> {
+        targetsCache?.let { return it }
+        val (ok, value) = bookDocument(BOOK) { TargetBook.fromJson(it) }
+        return value.orEmpty().also { if (ok) targetsCache = it }
+    }
+
+    /** Записать список targets; кэш — записанное, а при отказе — сброс до чтения с диска. */
+    private fun writeTargets(list: List<TargetEntry>) =
+        docs.write(BOOK, TargetBook.toJson(list)).also { targetsCache = if (it is Outcome.Success) list else null }
 
     fun form(label: String, host: String, port: String, user: String, windows: Boolean, agent: String, configDir: String): Outcome<TargetEntry> =
         TargetForm.validate(ids.next(IdKinds.TARGET), label, host, port, user, windows, agent, configDir)
 
     /** Проект контроллера (один): репозиторий на target, деревья задач, проверка. */
     @Synchronized
-    fun project(): ProjectEntry? = bookDocument(PROJECT) { ProjectBook.fromJson(it) }
+    fun project(): ProjectEntry? {
+        if (projectKnown) return projectCache
+        val (ok, value) = bookDocument(PROJECT) { ProjectBook.fromJson(it) }
+        if (ok) {
+            projectCache = value
+            projectKnown = true
+        }
+        return value
+    }
 
     /** [claudeOn] — где идёт ход Claude, если не на [target] (D-50); ключ и known_hosts — пути на нём. */
     fun projectForm(
@@ -176,6 +210,8 @@ class Controller(private val root: File, val version: String?) {
     @Synchronized
     fun setProject(p: ProjectEntry?): Outcome<Unit> {
         val r = if (p == null) docs.delete(PROJECT) else docs.write(PROJECT, ProjectBook.toJson(p)).let { w -> if (w is Outcome.Failure) w else Outcome.success(Unit) }
+        projectCache = p
+        projectKnown = r is Outcome.Success
         return r
     }
 
@@ -242,7 +278,7 @@ class Controller(private val root: File, val version: String?) {
         } catch (e: java.io.IOException) {
             return Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "known_hosts не записан", e, KNOWN_HOSTS))
         }
-        return when (val w = docs.write(BOOK, TargetBook.toJson(targets().filter { it.id != entry.id } + entry))) {
+        return when (val w = writeTargets(targets().filter { it.id != entry.id } + entry)) {
             is Outcome.Failure -> w
             is Outcome.Success -> Outcome.success(Unit)
         }
@@ -262,7 +298,7 @@ class Controller(private val root: File, val version: String?) {
             is Outcome.Failure -> return e
             is Outcome.Success -> e.value
         }
-        return when (val w = docs.write(BOOK, TargetBook.toJson(targets() + entry))) {
+        return when (val w = writeTargets(targets() + entry)) {
             is Outcome.Failure -> w
             is Outcome.Success -> Outcome.success(entry)
         }
@@ -275,7 +311,7 @@ class Controller(private val root: File, val version: String?) {
         if (name.isEmpty() || name.length > 60 || name.any { it.isISOControl() }) {
             return Outcome.failure(DiagCode.VALUE_INVALID, "имя — от 1 до 60 знаков", "label")
         }
-        return when (val w = docs.write(BOOK, TargetBook.toJson(targets().map { if (it.id == entry.id) it.copy(label = name) else it }))) {
+        return when (val w = writeTargets(targets().map { if (it.id == entry.id) it.copy(label = name) else it })) {
             is Outcome.Failure -> w
             is Outcome.Success -> Outcome.success(Unit)
         }
@@ -283,7 +319,7 @@ class Controller(private val root: File, val version: String?) {
 
     @Synchronized
     fun remove(entry: TargetEntry): Outcome<Unit> =
-        when (val w = docs.write(BOOK, TargetBook.toJson(targets().filter { it.id != entry.id }))) {
+        when (val w = writeTargets(targets().filter { it.id != entry.id })) {
             is Outcome.Failure -> w
             is Outcome.Success -> Outcome.success(Unit)
         }
@@ -306,7 +342,7 @@ class Controller(private val root: File, val version: String?) {
         } catch (e: java.io.IOException) {
             return Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "known_hosts не записан", e, KNOWN_HOSTS))
         }
-        docs.write(BOOK, TargetBook.toJson(s.targets)).let { if (it is Outcome.Failure) return it }
+        writeTargets(s.targets).let { if (it is Outcome.Failure) return it }
         return setProject(s.project)
     }
 

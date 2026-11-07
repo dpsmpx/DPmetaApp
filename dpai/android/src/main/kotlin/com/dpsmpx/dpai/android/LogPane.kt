@@ -12,7 +12,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -31,7 +30,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -51,11 +49,9 @@ fun LogPane(model: DemoModel) {
     var note by remember { mutableStateOf<String?>(null) }
     val undo = LocalUndo.current
     val scope = rememberCoroutineScope()
-    LaunchedEffect(filter) {
-        while (true) {
-            lines = log.lines(filter = filter, max = MAX_LINES).reversed()
-            delay(REFRESH_MS)
-        }
+    // Файлы журнала — с диска, не в главном потоке (AI:A-16); только пока окно видно (AI:A-15).
+    Poll(filter, periodMs = REFRESH_MS) {
+        lines = withContext(Dispatchers.IO) { log.lines(filter = filter, max = MAX_LINES).reversed() }
     }
     Column(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
         Text("Файл: ${log.location}", style = MaterialTheme.typography.labelSmall)
@@ -65,11 +61,17 @@ fun LogPane(model: DemoModel) {
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = {
-                val text = log.export()
-                Clipboard.copy(context, "журнал dpai", text)
-                if (!Clipboard.systemConfirms) undo.tell("Скопировано знаков: ${text.length}") { note = it }
-            }) { Text("Копировать журнал") }
+            var copying by remember { mutableStateOf(false) }
+            OutlinedButton(enabled = !copying, onClick = {
+                // Файлы журнала (до 1 МиБ и прежний) — с диска не в главном потоке (AI:A-16).
+                copying = true
+                scope.launch {
+                    val text = withContext(Dispatchers.IO) { log.export() }
+                    copying = false
+                    Clipboard.copy(context, "журнал dpai", text)
+                    if (!Clipboard.systemConfirms) undo.tell("Скопировано знаков: ${text.length}") { note = it }
+                }
+            }) { Text(if (copying) "Копирую…" else "Копировать журнал") }
             OutlinedButton(onClick = {
                 scope.launch {
                     // Сохранено — снэкбаром (AI:A-19); отказ — строкой на месте.

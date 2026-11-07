@@ -64,12 +64,7 @@ internal fun OverlayCard() {
     var overlayOn by remember { mutableStateOf(RequestOverlay.enabled(context)) }
     var permitted by remember { mutableStateOf(RequestOverlay.permitted(context)) }
     // Разрешение даётся в настройках системы: перечитать, когда человек вернулся (раз в 2 с, пока карточка видна).
-    LaunchedEffect(Unit) {
-        while (true) {
-            permitted = RequestOverlay.permitted(context)
-            kotlinx.coroutines.delay(2_000)
-        }
-    }
+    Poll(periodMs = 2_000) { permitted = RequestOverlay.permitted(context) }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("Окно поверх приложений", fontWeight = FontWeight.Bold)

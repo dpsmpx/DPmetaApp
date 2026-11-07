@@ -21,7 +21,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -52,12 +51,7 @@ fun SetupPane(controller: Controller, model: DemoModel, onBack: () -> Unit) {
     val context = LocalContext.current.applicationContext
     var state by remember { mutableStateOf(SetupState()) }
     // Отметки — заново раз в несколько секунд: человек выполняет шаги в Termux и возвращается.
-    LaunchedEffect(Unit) {
-        while (true) {
-            state = withContext(Dispatchers.IO) { setupState(context, controller, model) }
-            kotlinx.coroutines.delay(3000)
-        }
-    }
+    Poll(periodMs = 3000) { state = withContext(Dispatchers.IO) { setupState(context, controller, model) } }
     LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
