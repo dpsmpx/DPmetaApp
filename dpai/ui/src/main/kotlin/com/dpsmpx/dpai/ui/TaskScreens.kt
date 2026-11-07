@@ -91,6 +91,26 @@ object TaskScreens {
     private val WAITS_TO_RUN = setOf(TaskState.QUEUED, TaskState.READY, TaskState.WAITING)
     private val HOLDABLE = setOf(TaskState.BACKLOG, TaskState.QUEUED, TaskState.READY, TaskState.RUNNING, TaskState.WAITING, TaskState.BLOCKED)
 
+    /**
+     * Главные действия листа задачи (AI:A-9): одно-два по состоянию —
+     * заливными; остальные [TaskDetail.actions] — в ⋮. Пауза — сначала
+     * «Продолжить»; ждёт ответа — «Ответить и повторить»; без проверки —
+     * «Проверить снова»; в очереди — «Запустить первой»; упала или
+     * отменена — «Повторить».
+     */
+    fun primary(d: TaskDetail): List<TaskAction> {
+        val want = buildList {
+            if (d.held) add(TaskAction.RESUME)
+            when (d.state) {
+                TaskState.BLOCKED.name -> add(TaskAction.REPLY)
+                TaskState.COMPLETION_UNVERIFIED.name -> add(TaskAction.VERIFY)
+                TaskState.FAILED.name, TaskState.CANCELLED.name -> add(TaskAction.RETRY)
+                in WAITS_TO_RUN.map { it.name } -> add(TaskAction.RUN_FIRST)
+            }
+        }
+        return want.filter { it in d.actions }.take(2)
+    }
+
     fun actions(t: TaskRecord): List<TaskAction> = buildList {
         if (!t.terminal) add(TaskAction.PRIORITY)
         if (t.state in WAITS_TO_RUN) add(TaskAction.RUN_FIRST)

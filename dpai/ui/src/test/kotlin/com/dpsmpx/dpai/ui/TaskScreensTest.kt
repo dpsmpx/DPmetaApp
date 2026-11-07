@@ -72,6 +72,18 @@ class TaskScreensTest {
         assertTrue("dpai task <id> diff" in long.lines.last().text, "длинное — целиком в dpai")
     }
 
+    /** Главные действия листа (AI:A-9): одно-два по состоянию, остальное — в ⋮. */
+    @Test
+    fun primaryActionsFollowState() {
+        fun primary(t: TaskRecord) = TaskScreens.primary(TaskScreens.detail(t, SessionsState.EMPTY))
+        assertEquals(listOf(TaskAction.REPLY), primary(task(TaskState.BLOCKED)))
+        assertEquals(listOf(TaskAction.VERIFY), primary(task(TaskState.COMPLETION_UNVERIFIED)))
+        assertEquals(listOf(TaskAction.RETRY), primary(task(TaskState.FAILED)))
+        assertEquals(listOf(TaskAction.RUN_FIRST), primary(task(TaskState.QUEUED)))
+        assertEquals(emptyList(), primary(task(TaskState.RUNNING)), "идёт — главного действия нет")
+        assertEquals(TaskAction.RESUME, primary(task(TaskState.QUEUED).copy(held = true)).first(), "на паузе — сначала «Продолжить»")
+    }
+
     @Test
     fun usageOfTaskAndSessionOnScreen() {
         fun session(u: com.dpsmpx.dpai.sessions.UsageTotals, task: com.dpsmpx.dpai.core.ids.TaskId = id) = com.dpsmpx.dpai.sessions.SessionRecord(

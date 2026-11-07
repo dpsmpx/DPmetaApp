@@ -8,10 +8,18 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.semantics.Role
@@ -112,5 +120,47 @@ internal fun SwitchRow(checked: Boolean, onChange: (Boolean) -> Unit, label: @Co
     ) {
         label()
         androidx.compose.material3.Switch(checked = checked, onCheckedChange = null)
+    }
+}
+
+/**
+ * Полноэкранная форма (AI:A-9): строка сверху — «×» (закрыть), название,
+ * главное действие ([action]) и ⋮ ([menu], пункты получают «закрыть меню»);
+ * содержимое — во всю высоту, прокрутку даёт само. Подтверждения поверх —
+ * окнами, как прежде (AI:A-4).
+ */
+@Composable
+internal fun FullScreenDialog(
+    onDismissRequest: () -> Unit,
+    title: String,
+    action: (@Composable () -> Unit)? = null,
+    menu: (@Composable androidx.compose.foundation.layout.ColumnScope.(close: () -> Unit) -> Unit)? = null,
+    content: @Composable () -> Unit,
+) {
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onDismissRequest,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        androidx.compose.material3.Surface(Modifier.fillMaxSize()) {
+            androidx.compose.foundation.layout.Column(Modifier.fillMaxSize().windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.systemBars)) {
+                Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.material3.IconButton(onClick = onDismissRequest, modifier = Modifier.semantics { contentDescription = "Закрыть" }) {
+                        Text("×", style = MaterialTheme.typography.titleLarge)
+                    }
+                    Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    action?.invoke()
+                    if (menu != null) {
+                        var open by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+                        androidx.compose.foundation.layout.Box {
+                            androidx.compose.material3.IconButton(onClick = { open = true }, modifier = Modifier.semantics { contentDescription = "Ещё действия" }) {
+                                Text("⋮", style = MaterialTheme.typography.titleLarge)
+                            }
+                            androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }) { menu { open = false } }
+                        }
+                    }
+                }
+                androidx.compose.foundation.layout.Box(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp)) { content() }
+            }
+        }
     }
 }

@@ -1009,12 +1009,46 @@ internal fun NewTaskDialog(model: DemoModel, onEcosystem: (() -> Unit)? = null, 
     var error by remember { mutableStateOf<String?>(null) }
     // Второе нажатие, пока первое ставит задачу, не создаёт дубль (два хода Claude с одной целью).
     var busy by remember { mutableStateOf(false) }
-    AlertDialog(
+    fun submit() {
+        busy = true
+        scope.launch {
+            val form = com.dpsmpx.dpai.ui.NewTaskForm.command(
+                title, objective, key, priority,
+                // Скрытое не уходит в политику: класс — только у Claude, усилие — не у Gemini (AI:A-10).
+                if (com.dpsmpx.dpai.ui.ExecutorOptions.hasClass(executor)) taskClass else com.dpsmpx.dpai.tasks.TaskClass.NORMAL_ENGINEERING,
+                modelName, effort.takeIf { com.dpsmpx.dpai.ui.ExecutorOptions.efforts(executor).isNotEmpty() }.orEmpty(),
+                budget, paths, deps, reviews, executor, reviewer,
+            )
+            val r = when (form) {
+                is Outcome.Failure -> form
+                is Outcome.Success -> withContext(Dispatchers.IO) { model.addTask(form.value) }
+            }
+            when (r) {
+                is Outcome.Failure -> {
+                    val d = r.diagnostics.first()
+                    // «В очереди» — команда применится в такте: окно закрывается, задача появится на доске.
+                    if (d.code == com.dpsmpx.dpai.core.diagnostics.DiagCode.COMMAND_QUEUED) {
+                        onDone()
+                    } else {
+                        error = d.message
+                        key = keys.next(com.dpsmpx.dpai.core.ids.IdKinds.OPERATION).value
+                    }
+                }
+                is Outcome.Success -> onDone()
+            }
+            busy = false
+        }
+    }
+    // Во весь экран (AI:A-9): «×», название и «Поставить» сверху; «Дополнительно» — как прежде.
+    FullScreenDialog(
         onDismissRequest = onDone,
-        title = { Text("Новая задача") },
-        text = {
+        title = "Новая задача",
+        action = { TextButton(enabled = !busy, onClick = { submit() }) { Text(if (busy) "Ставлю…" else "Поставить") } },
+    ) {
             Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                OutlinedTextField(title, { title = it }, label = { Text("Название") }, singleLine = true)
+                // Задачи из манифеста экосистемы (ТЗ, §43–§46) — отсюда и с «Задач» (AI:A-6).
+                onEcosystem?.let { TextButton(onClick = it) { Text("Из экосистемы…") } }
+                OutlinedTextField(title, { title = it }, label = { Text("Название") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(objective, { objective = it }, label = { Text("Что сделать") }, minLines = 3)
                 TextButton(onClick = { more = !more }) { Text(if (more) "Дополнительно ▾" else "Дополнительно ▸") }
                 if (more) {
@@ -1040,9 +1074,16 @@ internal fun NewTaskDialog(model: DemoModel, onEcosystem: (() -> Unit)? = null, 
                             }
                         }
                     }
-                    OutlinedTextField(modelName, { modelName = it }, label = { Text(com.dpsmpx.dpai.ui.ExecutorOptions.modelHint(executor)) }, singleLine = true)
+                    // Модель и усилие — выбором из вариантов исполнителя (AI:A-9, A-10); свободным текстом — только модель Codex и Gemini.
+                    val models = com.dpsmpx.dpai.ui.ExecutorOptions.models(executor)
+                    if (models.isNotEmpty()) {
+                        Pick("Модель", modelName.ifEmpty { "по классу" }, listOf("" to "по классу") + models.map { it to it }) { modelName = it }
+                    } else {
+                        OutlinedTextField(modelName, { modelName = it }, label = { Text(com.dpsmpx.dpai.ui.ExecutorOptions.modelHint(executor)) }, singleLine = true)
+                    }
                     if (com.dpsmpx.dpai.ui.ExecutorOptions.efforts(executor).isNotEmpty()) {
-                        OutlinedTextField(effort, { effort = it }, label = { Text(com.dpsmpx.dpai.ui.ExecutorOptions.effortHint(executor)) }, singleLine = true)
+                        val byClass = if (com.dpsmpx.dpai.ui.ExecutorOptions.hasClass(executor)) "по классу" else "по умолчанию"
+                        Pick("Усилие", effort.ifEmpty { byClass }, listOf("" to byClass) + com.dpsmpx.dpai.ui.ExecutorOptions.efforts(executor).map { it to it }) { effort = it }
                     }
                     OutlinedTextField(budget, { budget = it }, label = { Text("Предел стоимости хода, $ (пусто — без предела)") }, singleLine = true)
                     ReviewChips(reviews) { reviews = it }
@@ -1071,47 +1112,19 @@ internal fun NewTaskDialog(model: DemoModel, onEcosystem: (() -> Unit)? = null, 
                 }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
-        },
-        confirmButton = {
-            TextButton(enabled = !busy, onClick = {
-                busy = true
-                scope.launch {
-                    val form = com.dpsmpx.dpai.ui.NewTaskForm.command(
-                        title, objective, key, priority,
-                        // Скрытое не уходит в политику: класс — только у Claude, усилие — не у Gemini (AI:A-10).
-                        if (com.dpsmpx.dpai.ui.ExecutorOptions.hasClass(executor)) taskClass else com.dpsmpx.dpai.tasks.TaskClass.NORMAL_ENGINEERING,
-                        modelName, effort.takeIf { com.dpsmpx.dpai.ui.ExecutorOptions.efforts(executor).isNotEmpty() }.orEmpty(),
-                        budget, paths, deps, reviews, executor, reviewer,
-                    )
-                    val r = when (form) {
-                        is Outcome.Failure -> form
-                        is Outcome.Success -> withContext(Dispatchers.IO) { model.addTask(form.value) }
-                    }
-                    when (r) {
-                        is Outcome.Failure -> {
-                            val d = r.diagnostics.first()
-                            // «В очереди» — команда применится в такте: окно закрывается, задача появится на доске.
-                            if (d.code == com.dpsmpx.dpai.core.diagnostics.DiagCode.COMMAND_QUEUED) {
-                                onDone()
-                            } else {
-                                error = d.message
-                                key = keys.next(com.dpsmpx.dpai.core.ids.IdKinds.OPERATION).value
-                            }
-                        }
-                        is Outcome.Success -> onDone()
-                    }
-                    busy = false
-                }
-            }) { Text(if (busy) "Ставлю…" else "Поставить") }
-        },
-        dismissButton = {
-            Row {
-                // Задачи из манифеста экосистемы (ТЗ, §43–§46) — отсюда, а не кнопкой сводки (AI:A-6).
-                onEcosystem?.let { TextButton(onClick = it) { Text("Из экосистемы…") } }
-                TextButton(onClick = onDone) { Text("Отмена") }
-            }
-        },
-    )
+    }
+}
+
+/** Выбор из вариантов (AI:A-9, A-10): «Подпись: выбранное ▾», меню — по касанию. */
+@Composable
+internal fun Pick(label: String, current: String, options: List<Pair<String, String>>, onPick: (String) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        androidx.compose.material3.OutlinedButton(onClick = { open = true }) { Text("$label: $current ▾", maxLines = 1) }
+        androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            for ((value, title) in options) androidx.compose.material3.DropdownMenuItem(text = { Text(title) }, onClick = { open = false; onPick(value) })
+        }
+    }
 }
 
 /**
