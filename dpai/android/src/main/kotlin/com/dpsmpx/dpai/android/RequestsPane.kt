@@ -52,6 +52,12 @@ fun RequestsPane(model: DemoModel, snapshot: Snapshot?) {
         item {
             Text(if (requests.isEmpty()) "Ждущих запросов нет" else "Ждут ответа: ${requests.size}", style = MaterialTheme.typography.titleMedium)
             if (snapshot?.live == false) Text("Демо: запросы живут до перезапуска приложения", style = MaterialTheme.typography.labelSmall)
+            // Окно поверх выключено — подсказка, где включить (AI:A-26); сам выключатель — в «Настройках AI».
+            val context = LocalContext.current.applicationContext
+            // Метка — файл: не в главном потоке (AI:A-16); до ответа подсказки нет.
+            if (!rememberRead(Unit, initial = true) { RequestOverlay.enabled(context) }) {
+                Text("Окно поверх приложений выключено: запросы — только в шторке и здесь. Включить — «Настройки AI».", style = MaterialTheme.typography.labelSmall)
+            }
         }
         items(requests, key = { it.id.value }) { RequestItem(model, it) }
     }

@@ -1015,7 +1015,8 @@ private fun UsageAutoSwitch(model: DemoModel, t: TargetEntry) {
         UsageAuto.set(context, t.id, v)
         if (v) scope.launch { withContext(Dispatchers.IO) { model.refreshUsage(setOf(t.id)) } }
     }) {
-        Text("Лимиты: обновлять раз в минуту", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+        // У target — фон (службой, без открытой сводки); на сводке — когда обновлено (AI:A-26).
+        Text("Обновлять лимиты в фоне", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
     }
 }
 

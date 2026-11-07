@@ -893,8 +893,25 @@ private fun BoardPane(board: TaskBoard, model: DemoModel, archived: Int, onEcosy
         // Архив (D-42): завершённые — с доски, история в журнале остаётся.
         item(key = "archive") {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                val undo = LocalUndo.current
                 TextButton(onClick = {
-                    scope.launch { withContext(Dispatchers.IO) { model.command(com.dpsmpx.dpai.orchestrator.commands.Command.ArchiveFinished()) } }
+                    // Отклик и «Отменить» (AI:A-26): сколько убрано — снэкбаром, отмена возвращает те же задачи.
+                    scope.launch {
+                        val (ids, r) = withContext(Dispatchers.IO) {
+                            val before = model.liveOrchestrator()?.tasks?.tasks?.values?.filter { it.terminal && !it.archived }?.map { it.id }.orEmpty()
+                            before to model.command(com.dpsmpx.dpai.orchestrator.commands.Command.ArchiveFinished())
+                        }
+                        val n = (r as? Outcome.Success)?.value as? Int
+                        when {
+                            Answers.queued(r) -> undo?.say("Уберу после текущего шага контура")
+                            r is Outcome.Failure -> undo?.say("Не убрано: ${r.diagnostics.first().message}")
+                            n == 0 -> undo?.say("Завершённых нет")
+                            ids.isNotEmpty() && undo != null -> undo.revertible("Убрано: ${n ?: ids.size}") {
+                                ids.forEach { model.command(com.dpsmpx.dpai.orchestrator.commands.Command.Archive(it, archived = false)) }
+                            }
+                            else -> undo?.say("Убрано: ${n ?: "?"}")
+                        }
+                    }
                 }) { Text("Убрать завершённые") }
                 // Вся надпись с переключателем — одна цель нажатия (на Redmi нажимали надпись — ничего).
                 Row(
@@ -1229,7 +1246,7 @@ private fun LimitsCard(l: com.dpsmpx.dpai.ui.SubscriptionLimits, model: DemoMode
                 Text(
                     when {
                         refreshing -> "Обновляю…"
-                        at != null -> "Обновлено в ${java.text.SimpleDateFormat("HH:mm", java.util.Locale.ROOT).format(java.util.Date(at.epochMillis))} · раз в минуту"
+                        at != null -> "Обновлено в ${java.text.SimpleDateFormat("HH:mm", java.util.Locale.ROOT).format(java.util.Date(at.epochMillis))}"
                         else -> "Из последнего хода"
                     },
                     Modifier.weight(1f), style = MaterialTheme.typography.labelSmall,

@@ -223,31 +223,44 @@ private fun LinkCard(l: FileLink, onSync: () -> Unit, onOpen: (Kind) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val undo = LocalUndo.current
-    Card(Modifier.fillMaxWidth()) {
+    // Касание карточки — копия в Linux; на виду — «Синхронизировать»; остальное — в ⋮ со словами, что откроется (AI:A-26).
+    var menu by remember { mutableStateOf(false) }
+    Card(Modifier.fillMaxWidth().clickable(onClickLabel = "открыть копию") { onOpen(Kind.COPY) }) {
         Column(Modifier.padding(12.dp)) {
-            Text(l.title, style = MaterialTheme.typography.titleSmall)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(l.title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                androidx.compose.foundation.layout.Box {
+                    androidx.compose.material3.IconButton(onClick = { menu = true }, modifier = Modifier.semantics { contentDescription = "Ещё действия" }) {
+                        Text("⋮", style = MaterialTheme.typography.titleLarge)
+                    }
+                    androidx.compose.material3.DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        androidx.compose.material3.DropdownMenuItem(text = { Text("Открыть папку телефона") }, onClick = {
+                            menu = false
+                            onOpen(Kind.FOLDER)
+                        })
+                        androidx.compose.material3.DropdownMenuItem(text = { Text("Копия в терминале") }, onClick = {
+                            menu = false
+                            TerminalActivity.startLinux(context, GuestPaths.guestCopy(l.dir))
+                        })
+                        // Обратимое — сразу и со снэкбаром «Отменить» (AI:A-4): копия в Linux остаётся.
+                        androidx.compose.material3.DropdownMenuItem(text = { Text("Отвязать", color = MaterialTheme.colorScheme.error) }, onClick = {
+                            menu = false
+                            if (undo != null) {
+                                undo.run("link:${l.id.value}", "Папка «${l.title}» отвязана, копия осталась") { FileLinks.remove(l) }
+                            } else {
+                                scope.launch(Dispatchers.IO) { FileLinks.remove(l) }
+                            }
+                        })
+                    }
+                }
+            }
             Text(
                 "копия: ~/files/${l.dir} · " + (l.lastSync?.let { "синхронизировано ${SimpleDateFormat("d MMM HH:mm", Locale.forLanguageTag("ru")).format(Date(it))}" } ?: "не синхронизировано") +
                     " · файлов: ${l.base.size}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Row {
-                TextButton(onClick = onSync) { Text("Синхронизировать") }
-                TextButton(onClick = { TerminalActivity.startLinux(context, GuestPaths.guestCopy(l.dir)) }) { Text("В терминале") }
-            }
-            Row {
-                TextButton(onClick = { onOpen(Kind.COPY) }) { Text("Копия") }
-                TextButton(onClick = { onOpen(Kind.FOLDER) }) { Text("Папка") }
-                // Обратимое — сразу и со снэкбаром «Отменить» (AI:A-4): копия в Linux остаётся.
-                TextButton(onClick = {
-                    if (undo != null) {
-                        undo.run("link:${l.id.value}", "Папка «${l.title}» отвязана, копия осталась") { FileLinks.remove(l) }
-                    } else {
-                        scope.launch(Dispatchers.IO) { FileLinks.remove(l) }
-                    }
-                }) { Text("Отвязать", color = MaterialTheme.colorScheme.error) }
-            }
+            TextButton(onClick = onSync) { Text("Синхронизировать") }
         }
     }
 }

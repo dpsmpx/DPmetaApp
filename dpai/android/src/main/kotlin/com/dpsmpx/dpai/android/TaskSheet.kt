@@ -334,6 +334,8 @@ private fun ChangesSection(model: DemoModel, task: TaskId) {
             TextButton(onClick = {
                 // Изменения задачи — что угодно из дерева, в том числе случайный секрет: без превью буфера.
                 Clipboard.copy(context, "изменения задачи", v.text, sensitive = true)
+                // Своё «Скопировано» — только до Android 13: дальше его показывает система (AI:A-26).
+                if (!Clipboard.systemConfirms) android.widget.Toast.makeText(context, "Скопировано", android.widget.Toast.LENGTH_SHORT).show()
             }) { Text("Копировать") }
         }
         TextButton(enabled = !loading, onClick = { load() }) { Text(if (loading) "Загружаю…" else if (view == null) "Показать" else "Обновить") }

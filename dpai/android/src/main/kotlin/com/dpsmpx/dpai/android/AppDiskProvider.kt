@@ -242,12 +242,18 @@ object AppDiskNotice {
             manager.cancel(ID)
             return
         }
-        manager.createNotificationChannel(NotificationChannel(CHANNEL, "Диск приложения", NotificationManager.IMPORTANCE_LOW))
+        NotifyGroups.ensure(manager)
+        manager.createNotificationChannel(
+            NotificationChannel(CHANNEL, "Диск приложения", NotificationManager.IMPORTANCE_LOW).apply {
+                group = NotifyGroups.SERVICE
+                description = "Пока открыт: файлы видны менеджерам файлов"
+            },
+        )
         val close = PendingIntent.getBroadcast(
             context, ID, Intent(context, AppDiskCloseReceiver::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val n = AndroidNotification.Builder(context, CHANNEL)
-            .setSmallIcon(android.R.drawable.stat_notify_sdcard)
+            .setSmallIcon(R.drawable.ic_notify_ai)
             .setContentTitle("Диск приложения открыт")
             .setContentText("Файлы DPmetaApp видны менеджерам файлов (без секретов)")
             .setOngoing(true)

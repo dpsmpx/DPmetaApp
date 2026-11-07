@@ -57,9 +57,11 @@ object RequestPresenter {
 
     private fun channel(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java)
+        NotifyGroups.ensure(manager)
         manager.createNotificationChannel(
             NotificationChannel(CHANNEL, "Запросы: нужен ответ", NotificationManager.IMPORTANCE_HIGH).apply {
                 description = "Вопросы и подтверждения контура: ответ — кнопкой в уведомлении"
+                group = NotifyGroups.DECISIONS
             },
         )
     }
@@ -96,7 +98,7 @@ object RequestPresenter {
         channel(context)
         val id = card.id.value
         val builder = AndroidNotification.Builder(context, CHANNEL)
-            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setSmallIcon(R.drawable.ic_ai_requests)
             .setContentTitle(card.title)
             .setContentText(card.body)
             .setSubText(card.origin)
@@ -174,7 +176,7 @@ object RequestPresenter {
         val channel = Notifier.channelOf(com.dpsmpx.dpai.notifications.NotificationCategory.APPROVAL)
         Notifier(context)
         val n = AndroidNotification.Builder(context, channel)
-            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setSmallIcon(R.drawable.ic_ai_requests)
             .setContentTitle("dpai просит исключение — подтвердите здесь")
             .setContentText(strict.redact("«$title»: ${c.reason}"))
             .setStyle(AndroidNotification.BigTextStyle().bigText(strict.redact("Задача «$title» станет выполненной без проверки. Причина из dpai: ${c.reason}\nПринять — на листе задачи, «Принять без проверки».")))
@@ -201,7 +203,7 @@ object RequestPresenter {
         channel(context)
         val strict = com.dpsmpx.dpai.core.diagnostics.Redactor.STRICT
         val n = AndroidNotification.Builder(context, Notifier.channelOf(com.dpsmpx.dpai.notifications.NotificationCategory.INFO))
-            .setSmallIcon(android.R.drawable.stat_notify_more)
+            .setSmallIcon(R.drawable.ic_notify_ai)
             .setContentTitle(strict.redact(title))
             .setContentText(strict.redact(text))
             .setAutoCancel(true)
@@ -221,7 +223,7 @@ object RequestPresenter {
     fun sending(context: Context, id: String, label: String) {
         answering += id
         val n = AndroidNotification.Builder(context, CHANNEL)
-            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setSmallIcon(R.drawable.ic_ai_requests)
             .setContentTitle("Ответ «$label» отправлен")
             .setContentText("контур применяет решение…")
             .setOnlyAlertOnce(true)
@@ -297,27 +299,30 @@ object Answers {
 
     fun apply(context: Context, id: String, uri: String, text: String?, label: String, channel: String): Outcome<*> {
         val model = DemoModel.get(context)
-        val r = model.answer(uri, text, channel) { later -> shown(context, model, id, label, later) }
+        // Ответ на экране — итог там же (AI:A-18): уведомление о нём — двойной отклик. Отложенный итог
+        // (такт был занят) — уведомлением всегда: экран к тому времени может быть закрыт.
+        val inApp = channel == "app"
+        val r = model.answer(uri, text, channel) { later -> shown(context, model, id, label, later, notify = true) }
         if (queued(r)) {
             RequestPresenter.sending(context, id, label)
-            RequestPresenter.result(context, id, "Принято: $label", "применится после текущего шага контура — итог придёт уведомлением")
+            if (!inApp) RequestPresenter.result(context, id, "Принято: $label", "применится после текущего шага контура — итог придёт уведомлением")
             RequestOverlay.waiting(id)
         } else {
-            shown(context, model, id, label, r)
+            shown(context, model, id, label, r, notify = !inApp)
         }
         return r
     }
 
-    private fun shown(context: Context, model: DemoModel, id: String, label: String, r: Outcome<com.dpsmpx.dpai.notifications.RequestAnswer>) {
+    private fun shown(context: Context, model: DemoModel, id: String, label: String, r: Outcome<com.dpsmpx.dpai.notifications.RequestAnswer>, notify: Boolean) {
         RequestPresenter.answered(id)
         when (r) {
             is Outcome.Success -> {
                 context.getSystemService(NotificationManager::class.java).cancel(RequestPresenter.TAG, RequestPresenter.notificationId(id))
-                RequestPresenter.result(context, id, "Принято: $label", r.value.effect ?: "записано")
+                if (notify) RequestPresenter.result(context, id, "Принято: $label", r.value.effect ?: "записано")
                 RequestOverlay.closed(id)
             }
             is Outcome.Failure -> {
-                RequestPresenter.result(context, id, "Не принято: $label", r.diagnostics.first().message)
+                if (notify) RequestPresenter.result(context, id, "Не принято: $label", r.diagnostics.first().message)
                 if (model.pending().keys.any { it.value == id }) {
                     RequestPresenter.reshow(context, id)
                     RequestOverlay.again(id)

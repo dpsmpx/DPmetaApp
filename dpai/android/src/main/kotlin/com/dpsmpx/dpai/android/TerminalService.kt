@@ -50,7 +50,13 @@ class TerminalService : Service() {
          */
         private fun notification(context: Context, n: Int): Notification {
             val manager = context.getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(NotificationChannel(CHANNEL, "Терминал", NotificationManager.IMPORTANCE_LOW))
+            NotifyGroups.ensure(manager)
+            manager.createNotificationChannel(
+                NotificationChannel(CHANNEL, "Терминал", NotificationManager.IMPORTANCE_LOW).apply {
+                    group = NotifyGroups.SERVICE
+                    description = "Открытые вкладки терминала и сигналы фоновых вкладок"
+                },
+            )
             return build(context, n)
         }
 
@@ -86,7 +92,7 @@ class TerminalService : Service() {
         )
         val waiting = TerminalHub.tabs.filter { it.attention }.map { it.label }
         return Notification.Builder(context, CHANNEL)
-            .setSmallIcon(android.R.drawable.ic_menu_manage)
+            .setSmallIcon(R.drawable.ic_notify_ai)
             .setContentTitle("Терминал: ${tabsWord(n)}")
             .apply { if (waiting.isNotEmpty()) setContentText(waiting.joinToString(", ") { "Вкладка «$it» ждёт" }) }
             .setContentIntent(open)

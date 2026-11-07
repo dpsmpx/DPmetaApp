@@ -23,8 +23,14 @@ class Notifier(private val context: Context) {
     private val manager = context.getSystemService(NotificationManager::class.java)
 
     init {
+        NotifyGroups.ensure(manager)
         for (c in NotificationCategory.entries) {
-            manager.createNotificationChannel(NotificationChannel(channel(c), title(c), importance(c)))
+            manager.createNotificationChannel(
+                NotificationChannel(channel(c), title(c), importance(c)).apply {
+                    group = NotifyGroups.of(c)
+                    description = NotifyGroups.description(c)
+                },
+            )
         }
     }
 
@@ -32,7 +38,7 @@ class Notifier(private val context: Context) {
         // Запрос человеку показывает RequestPresenter — по ждущим запросам, а не по потоку (D-44).
         if (n.request != null) return
         val builder = AndroidNotification.Builder(context, channel(n.category))
-            .setSmallIcon(android.R.drawable.stat_notify_more)
+            .setSmallIcon(R.drawable.ic_notify_ai)
             .setContentTitle(n.title + if (n.count > 1) " (×${n.count})" else "")
             .setContentText(n.body)
             .setStyle(AndroidNotification.BigTextStyle().bigText(n.body))
@@ -87,7 +93,7 @@ class Notifier(private val context: Context) {
 
         /** Версия для экрана блокировки: только что есть уведомление, без текста (A-12). */
         fun lockScreen(context: Context, channel: String, title: String): AndroidNotification =
-            AndroidNotification.Builder(context, channel).setSmallIcon(android.R.drawable.stat_notify_more).setContentTitle(title).build()
+            AndroidNotification.Builder(context, channel).setSmallIcon(R.drawable.ic_notify_ai).setContentTitle(title).build()
 
         private fun channel(c: NotificationCategory) = "dpai-${c.name.lowercase()}"
 

@@ -72,6 +72,18 @@ class Undo(private val host: SnackbarHostState, private val scope: CoroutineScop
         scope.launch { host.showSnackbar(text, withDismissAction = true, duration = SnackbarDuration.Short) }
     }
 
+    /**
+     * Сделанное сразу — снэкбаром с «Отменить» (AI:A-26): нажато — [revert]
+     * в фоне. Для обратимого, у которого итог (сколько) известен только после
+     * действия: «Убрано 3 · Отменить».
+     */
+    fun revertible(message: String, revert: () -> Unit) {
+        scope.launch {
+            val r = host.showSnackbar(message, actionLabel = "Отменить", withDismissAction = true, duration = SnackbarDuration.Long)
+            if (r == SnackbarResult.ActionPerformed) withContext(Dispatchers.IO) { revert() }
+        }
+    }
+
     fun run(key: String, message: String, commit: () -> Unit) {
         hidden[key] = true
         scope.launch {
