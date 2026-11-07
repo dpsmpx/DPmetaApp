@@ -72,7 +72,7 @@ class ControllerService : Service() {
         )
         val n = Notification.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.stat_notify_sync)
-            .setContentTitle("DP AI: контроллер работает")
+            .setContentTitle("AI: контроллер работает")
             .setContentText("опрос targets и задач")
             .setContentIntent(open)
             .addAction(Notification.Action.Builder(null, "Остановить", stop).build())

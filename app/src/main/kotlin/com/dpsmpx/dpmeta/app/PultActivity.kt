@@ -9,6 +9,7 @@ import android.provider.DocumentsContract
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.mutableStateOf
 import androidx.core.content.edit
@@ -20,6 +21,7 @@ import com.dpsmpx.dpai.storage.vfs.NioVfs
 import com.dpsmpx.dpmeta.app.data.PultRepository
 import com.dpsmpx.dpmeta.app.data.SecretStore
 import com.dpsmpx.dpmeta.app.screens.Export
+import com.dpsmpx.dpmeta.app.screens.Screens
 import com.dpsmpx.dpmeta.app.screens.Stats
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpmeta.app.ui.ClonePrompt
@@ -129,7 +131,7 @@ open class PultActivity : ComponentActivity() {
 
     private fun noToken(why: String, done: (Secret?) -> Unit) {
         // Ключ мог быть сброшен (блокировку экрана сняли) — вместе с ним удалён и токен.
-        view.value = view.value.copy(hasToken = secrets.exists(), status = why.replaceFirstChar { it.uppercase() } + ".")
+        view.value = view.value.copy(hasToken = secrets.exists(), statusDetails = "", status = why.replaceFirstChar { it.uppercase() } + ".")
         done(null)
     }
 
@@ -178,7 +180,7 @@ open class PultActivity : ComponentActivity() {
     /** Окно выбора клонов (D-70): все репозитории аккаунта, реестр — сверху; первый раз отмечен реестр. */
     private fun askClones(token: Secret, first: Boolean) {
         if (pool.isShutdown || view.value.busy) return
-        view.value = view.value.copy(busy = true, status = "Ищу репозитории аккаунта…")
+        view.value = view.value.copy(busy = true, statusDetails = "", status = "Ищу репозитории аккаунта…")
         pool.execute {
             val r = runCatching { repo.cloneOptions(token) }.getOrElse { Outcome.failure(DiagCode.INTERNAL_ERROR, "список репозиториев: ${it.javaClass.simpleName}") }
             val chosen = clonesSelected()
@@ -193,7 +195,7 @@ open class PultActivity : ComponentActivity() {
                         // Отмеченные, которых в списке больше нет (нет доступа, переименован, в архиве), — видны отмеченными: их можно снять.
                         val gone = chosen.filter { it.lowercase() !in bySlug }.map { com.dpsmpx.dpmeta.app.data.PultRepository.CloneOption(it, registry = false, private = true, gone = true) }
                         val checked = if (first || !clonesAsked()) r.value.filter { it.registry }.map { it.slug }.toSet() else kept + gone.map { it.slug }
-                        view.value = view.value.copy(busy = false, status = "", clonePrompt = ClonePrompt(r.value + gone, checked, first))
+                        view.value = view.value.copy(busy = false, statusDetails = "", status = "", clonePrompt = ClonePrompt(r.value + gone, checked, first))
                     }
                     is Outcome.Failure -> {
                         view.value = view.value.copy(busy = false)
@@ -203,7 +205,7 @@ open class PultActivity : ComponentActivity() {
                             syncNote = why
                             sync(token)
                         } else {
-                            view.value = view.value.copy(status = why)
+                            view.value = view.value.copy(statusDetails = "", status = why)
                         }
                     }
                 }
@@ -265,6 +267,8 @@ open class PultActivity : ComponentActivity() {
         }
         opened = true
         entrySync()
+        // От края до края (Android 15+ — всегда): отступы панелей даёт Scaffold, значки — по теме экрана (UX-5).
+        enableEdgeToEdge()
         setContent {
             PultTheme {
                 PultApp(
@@ -324,7 +328,7 @@ open class PultActivity : ComponentActivity() {
     }
 
     private fun noExport() {
-        view.value = view.value.copy(status = "Экспорт не собран: нет среза или истории.")
+        view.value = view.value.copy(statusDetails = "", status = "Экспорт не собран: нет среза или истории.")
     }
 
     /**
@@ -343,7 +347,7 @@ open class PultActivity : ComponentActivity() {
             send.clipData = ClipData.newRawUri(name, uri)
             startActivity(Intent.createChooser(send, "Поделиться: $name"))
         }.isSuccess
-        if (!ok) view.value = view.value.copy(status = "Не поделиться: файл экспорта не создан.")
+        if (!ok) view.value = view.value.copy(statusDetails = "", status = "Не поделиться: файл экспорта не создан.")
     }
 
     private fun writeExport(uri: Uri?) {
@@ -355,7 +359,7 @@ open class PultActivity : ComponentActivity() {
             val ok = text != null && runCatching { contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray(Charsets.UTF_8)) } ?: error("нет потока") }.isSuccess
             // Выбор места уже создал файл: не записан — убрать пустой, а не оставить его в «Загрузках».
             if (!ok) runCatching { DocumentsContract.deleteDocument(contentResolver, uri) }
-            runOnUiThread { view.value = view.value.copy(status = if (ok) "Экспорт сохранён." else "Экспорт не сохранён: файл не записан.") }
+            runOnUiThread { view.value = view.value.copy(statusDetails = "", status = if (ok) "Экспорт сохранён." else "Экспорт не сохранён: файл не записан.") }
         }
     }
 
@@ -398,12 +402,12 @@ open class PultActivity : ComponentActivity() {
     }
 
     private fun saved(r: Outcome<Unit>) {
-        view.value = view.value.copy(hasToken = r is Outcome.Success || secrets.exists(), status = if (r is Outcome.Success) "Токен сохранён." else "Токен не сохранён: ${r.diagnostics.first().message}")
+        view.value = view.value.copy(hasToken = r is Outcome.Success || secrets.exists(), statusDetails = "", status = if (r is Outcome.Success) "Токен сохранён." else "Токен не сохранён: ${r.diagnostics.first().message}")
     }
 
     private fun forgetToken() {
         secrets.forget()
-        view.value = view.value.copy(hasToken = false, status = "Токен удалён.")
+        view.value = view.value.copy(hasToken = false, statusDetails = "", status = "Токен удалён.")
     }
 
     /** «Обновить»: до первого выбора клонов (D-70) — сначала окно выбора. */
@@ -413,10 +417,10 @@ open class PultActivity : ComponentActivity() {
         if (pool.isShutdown) return
         // Идёт синхронизация прежнего окна (поворот) — не ошибка: итог будет у «Обновить» после неё.
         if (repo.syncing()) {
-            view.value = view.value.copy(status = "Синхронизация уже идёт — «Обновить», когда закончится.")
+            view.value = view.value.copy(statusDetails = "", status = "Синхронизация уже идёт — «Обновить», когда закончится.")
             return
         }
-        view.value = view.value.copy(busy = true, status = "")
+        view.value = view.value.copy(busy = true, statusDetails = "", status = "")
         val note = syncNote
         syncNote = null
         pool.execute {
@@ -430,10 +434,13 @@ open class PultActivity : ComponentActivity() {
                         state = state,
                         busy = false,
                         status = "Готово: ${r.value.line}." + (note?.let { " $it" } ?: ""),
+                        statusDetails = "",
                         feed = feed,
                         names = repo.names(),
                     ).also { loadHistory() }
-                    is Outcome.Failure -> view.value.copy(busy = false, status = "Не вышло: ${r.diagnostics.first().code.name} — ${r.diagnostics.first().message}" + (note?.let { " $it" } ?: ""))
+                    is Outcome.Failure -> Screens.failure(r.diagnostics.first()).let { f ->
+                        view.value.copy(busy = false, status = "Не вышло: ${f.text}." + (note?.let { " $it" } ?: ""), statusDetails = f.details)
+                    }
                 }
             }
         }

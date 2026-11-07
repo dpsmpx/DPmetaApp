@@ -113,6 +113,7 @@ fun FilesPane() {
         return
     }
     val links by FileLinks.links.collectAsState()
+    val undo = LocalUndo.current
     val problem by FileLinks.problem.collectAsState()
     var place by remember { mutableStateOf<Place?>(null) }
     var syncing by remember { mutableStateOf<FileLink?>(null) }
@@ -177,7 +178,8 @@ fun FilesPane() {
             if (!linux) Text("Нужна Linux-среда приложения: Targets → Linux в приложении.", style = MaterialTheme.typography.bodySmall)
             note?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         }
-        items(links, key = { it.id.value }) { l ->
+        // Отвязанная, но ещё не подтверждённая снэкбаром — не видна (AI:A-4).
+        items(links.filter { undo?.hidden?.containsKey("link:${it.id.value}") != true }, key = { it.id.value }) { l ->
             LinkCard(l, onSync = { syncing = l }, onOpen = { place = Place(it, l, "") })
         }
         if (wanted && granted) {
@@ -196,7 +198,7 @@ fun FilesPane() {
 private fun LinkCard(l: FileLink, onSync: () -> Unit, onOpen: (Kind) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var armed by remember { mutableStateOf(false) }
+    val undo = LocalUndo.current
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
             Text(l.title, style = MaterialTheme.typography.titleSmall)
@@ -213,9 +215,14 @@ private fun LinkCard(l: FileLink, onSync: () -> Unit, onOpen: (Kind) -> Unit) {
             Row {
                 TextButton(onClick = { onOpen(Kind.COPY) }) { Text("Копия") }
                 TextButton(onClick = { onOpen(Kind.FOLDER) }) { Text("Папка") }
-                TextButton(onClick = { if (armed) scope.launch(Dispatchers.IO) { FileLinks.remove(l) } else armed = true }) {
-                    Text(if (armed) "Точно отвязать (копия останется)" else "Отвязать", color = MaterialTheme.colorScheme.error)
-                }
+                // Обратимое — сразу и со снэкбаром «Отменить» (AI:A-4): копия в Linux остаётся.
+                TextButton(onClick = {
+                    if (undo != null) {
+                        undo.run("link:${l.id.value}", "Папка «${l.title}» отвязана, копия осталась") { FileLinks.remove(l) }
+                    } else {
+                        scope.launch(Dispatchers.IO) { FileLinks.remove(l) }
+                    }
+                }) { Text("Отвязать", color = MaterialTheme.colorScheme.error) }
             }
         }
     }

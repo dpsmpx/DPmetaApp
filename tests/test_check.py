@@ -44,6 +44,8 @@ CLEAN = {
     "core/model/build.gradle.kts": 'plugins {\n    id("dpai.kotlin-library")\n}\n\ndependencies {\n    api("com.dpsmpx.dpai:core")\n}\n',
     "core/formats/build.gradle.kts": 'dependencies {\n    api(project(":core:model"))\n}\n',
     "core/model/src/main/kotlin/M.kt": "package m\n\nfun now(clock: Clock) = clock.now()\n",
+    # Экран пульта: на экране — слово для человека, без номера решения (ui.words).
+    "app/src/main/kotlin/Screen.kt": 'val title = "Вход по PIN устройства"\n',
     "CLAUDE.md": "# Правила\n\nРешение D-01; цель G-01; чужой контракт `DPmeta:C-06`; путь `docs/PROCESS.md`.\n",
     "TODO.md": "# TODO\n\n- `М` Пункт.\n",
     "LICENSE": "All rights reserved.\n",
@@ -635,6 +637,30 @@ class ModulesTest(CheckCase):
             "core/sync/src/main/kotlin/S.kt": "// System.currentTimeMillis — нельзя, берём Clock\nfun printlnLike() = 1\n",
         })
         self.assertClean(s.run("modules.root"))
+
+
+class UiWordsTest(CheckCase):
+    """ui.words — номеров решений в строках экранов нет (UX-13, AI:A-10)."""
+
+    def test_catches_decision_number_in_screen_string(self):
+        for rel, code in [
+            ("app/src/main/kotlin/P.kt", 'Text("Токен только для чтения (D-17).")\n'),
+            ("dpai/android/src/main/kotlin/A.kt", 'val hint = "Класс — маршрут модели (D-40)"\n'),
+            ("dpai/ui/src/main/kotlin/G.kt", 'GuideStep("Разрешите (DPmetaApp:D-46), затем «Разрешить»")\n'),
+        ]:
+            with self.subTest(rel):
+                s = self.sample({rel: "package p\n\n" + code})
+                self.assertCatches(s.run("ui.words"), "номер решения")
+
+    def test_comments_tests_and_other_modules_pass(self):
+        s = self.sample({
+            # KDoc и комментарии — место номера; тесты и модули без экранов правило не смотрит.
+            "app/src/main/kotlin/P.kt": '/** Вход по PIN (D-59). */\nval t = "Вход по PIN" // D-59\n// Text("(D-17)")\n',
+            "app/src/test/kotlin/T.kt": 'val s = "(D-17)"\n',
+            "core/sync/src/main/kotlin/S.kt": 'val why = "клоны (D-65)"\n',
+            "dpai/ui/src/main/kotlin/W.kt": 'val name = "D-day"\nval v = "RD-12x"\n',
+        })
+        self.assertClean(s.run("ui.words"))
 
 
 class ForbiddenTest(CheckCase):

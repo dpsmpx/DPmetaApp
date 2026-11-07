@@ -157,22 +157,27 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
                             Text("Claude — на $on (вход его слота), дерево — по SSH ключом ${c.identityFile}", style = MaterialTheme.typography.bodySmall)
                         }
                         Text(p.checks.firstOrNull()?.let { "проверка: ${it.command.joinToString(" ")}" } ?: "без проверки", style = MaterialTheme.typography.bodySmall)
-                        // Вторым нажатием и с проверкой итога (аудит удобства, A-18).
-                        var armed by remember { mutableStateOf(false) }
+                        // Окном (AI:A-4) и с проверкой итога (аудит удобства, A-18): поля проекта придётся вводить заново.
+                        var asking by remember { mutableStateOf(false) }
                         var failed by remember { mutableStateOf<String?>(null) }
-                        TextButton(onClick = {
-                            if (!armed) {
-                                armed = true
-                            } else {
-                                scope.launch {
-                                    when (val r = withContext(Dispatchers.IO) { controller.setProject(null) }) {
-                                        is Outcome.Success -> project = null
-                                        is Outcome.Failure -> failed = "Не убран: ${r.errors.first().message}"
+                        TextButton(onClick = { asking = true }) { Text("Убрать проект…") }
+                        if (asking) {
+                            ConfirmDialog(
+                                "Убрать проект?",
+                                "Задачи пойдут без Git и проверки. Поля проекта — репозиторий, деревья, ветку, проверки — придётся вводить заново.",
+                                "Убрать",
+                                onConfirm = {
+                                    asking = false
+                                    scope.launch {
+                                        when (val r = withContext(Dispatchers.IO) { controller.setProject(null) }) {
+                                            is Outcome.Success -> project = null
+                                            is Outcome.Failure -> failed = "Не убран: ${r.errors.first().message}"
+                                        }
                                     }
-                                    armed = false
-                                }
-                            }
-                        }) { Text(if (armed) "Точно убрать проект? Задачи пойдут без Git и проверки" else "Убрать проект", color = if (armed) MaterialTheme.colorScheme.error else androidx.compose.ui.graphics.Color.Unspecified) }
+                                },
+                                onDismiss = { asking = false },
+                            )
+                        }
                         failed?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
                     }
                 }
@@ -218,12 +223,13 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
                                     }
                                 }
                             }
-                        }) { Text("Проверить") }
+                        }) { Text("Проверить связь") }
                         if (t.configDir != null) {
                             // Проба ждёт такта с SSH — секунды: отклик сразу, повтор не встаёт в очередь, итог — словами (A-6).
-                            val probing = checks[t.id.value]?.firstOrNull()?.name == LOGIN && checks[t.id.value]?.firstOrNull()?.detail == PROBING
+                            val login = "вход ${t.executor.title}"
+                            val probing = checks[t.id.value]?.firstOrNull()?.name == login && checks[t.id.value]?.firstOrNull()?.detail == PROBING
                             TextButton(enabled = !probing, onClick = {
-                                checks[t.id.value] = listOf(CheckLine(LOGIN, PROBING, Tone.NEUTRAL))
+                                checks[t.id.value] = listOf(CheckLine(login, PROBING, Tone.NEUTRAL))
                                 scope.launch {
                                     val slots = withContext(Dispatchers.IO) {
                                         model.probe(t.id)
@@ -231,13 +237,14 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
                                     }
                                     checks[t.id.value] = slots.map { sl ->
                                         val ok = sl.state == com.dpsmpx.dpai.core.state.AccountState.AVAILABLE || sl.state == com.dpsmpx.dpai.core.state.AccountState.BUSY
-                                        CheckLine(LOGIN, "слот ${sl.configDir.substringAfterLast('/')}: ${Words.account(sl.state.name)}", if (ok) Tone.DONE else Tone.WARNING)
+                                        CheckLine(login, "слот ${sl.configDir.substringAfterLast('/')}: ${Words.account(sl.state.name)}", if (ok) Tone.DONE else Tone.WARNING)
                                     }.ifEmpty {
                                         val how = if (t.executor == com.dpsmpx.dpai.core.ids.Executor.CLAUDE) "«Claude в терминале» → /login" else "«Войти в ${t.executor.title}»"
-                                        listOf(CheckLine(LOGIN, "слота нет: войдите в каталоге слота ($how) и проверьте снова", Tone.WARNING))
+                                        listOf(CheckLine(login, "слота нет: войдите в каталоге слота ($how) и проверьте снова", Tone.WARNING))
                                     }
                                 }
-                            }) { Text(if (probing) "Проверяю…" else "Вход ${t.executor.title}") }
+                            // «Проверить вход» — проверяет, а не входит; входят «Войти в …» и терминал (AI:A-11, терминал:A-16).
+                            }) { Text(if (probing) "Проверяю…" else "Проверить вход") }
                         }
                         // Проект — у любого target: ход Claude может идти на другом, со своим входом (D-50).
                         // Проект — и на target «в приложении»: Git и проверка — внутри гостя, пути — гостя (D-75, шаг 5).
@@ -681,18 +688,23 @@ private fun CliCard() {
                     until = u.epochMillis
                     note = null
                 }) { Text("Показать код") }
-                var armedRevoke by remember { mutableStateOf(false) }
-                TextButton(onClick = {
-                    // Вторым нажатием (A-18): после отзыва каждый dpai нужно сопрячь заново.
-                    if (!armedRevoke) {
-                        armedRevoke = true
-                    } else {
-                        ControlServer.pairing(context).revoke()
-                        code = null
-                        armedRevoke = false
-                        note = "Токен отозван: dpai нужно сопрячь заново"
-                    }
-                }) { Text(if (armedRevoke) "Точно отозвать? Все dpai — заново" else "Отозвать токен", color = if (armedRevoke) MaterialTheme.colorScheme.error else androidx.compose.ui.graphics.Color.Unspecified) }
+                // Окном (AI:A-4): после отзыва каждый dpai нужно сопрячь заново.
+                var asking by remember { mutableStateOf(false) }
+                TextButton(onClick = { asking = true }) { Text("Отозвать токен…") }
+                if (asking) {
+                    ConfirmDialog(
+                        "Отозвать токен командной строки?",
+                        "Все сопряжённые dpai перестанут управлять приложением; каждый нужно будет сопрячь заново новым кодом.",
+                        "Отозвать",
+                        onConfirm = {
+                            asking = false
+                            ControlServer.pairing(context).revoke()
+                            code = null
+                            note = "Токен отозван: dpai нужно сопрячь заново"
+                        },
+                        onDismiss = { asking = false },
+                    )
+                }
             }
             note?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
         }
@@ -810,7 +822,7 @@ private fun RestoreCard(controller: Controller, onHide: () -> Unit, onRestored: 
             is Outcome.Success -> {
                 SettingsBackups.clearRestoreNonce(context)
                 report = r.value
-                message = "Готово. Проверьте targets кнопкой «Проверить»; вход Claude — «Вход Claude»."
+                message = "Готово. Проверьте targets кнопкой «Проверить связь»; вход — «Проверить вход»."
                 onRestored()
                 true
             }
@@ -861,7 +873,7 @@ private fun RenameDialog(t: TargetEntry, onDone: (String?) -> Unit) {
     var name by remember { mutableStateOf(t.label) }
     AlertDialog(
         onDismissRequest = { onDone(null) },
-        title = { Text("Имя слота") },
+        title = { Text("Имя target") },
         text = { OutlinedTextField(name, { name = it.take(60) }, label = { Text("Имя") }, singleLine = true) },
         confirmButton = { TextButton(enabled = name.isNotBlank(), onClick = { onDone(name) }) { Text("Сохранить") } },
         dismissButton = { TextButton(onClick = { onDone(null) }) { Text("Отмена") } },
@@ -884,6 +896,4 @@ private fun UsageAutoSwitch(model: DemoModel, t: TargetEntry) {
     }
 }
 
-/** Строка проверки входа Claude у target (аудит 1 ноября 2026, A-6). */
-private const val LOGIN = "вход Claude"
 private const val PROBING = "проверяю вход…"

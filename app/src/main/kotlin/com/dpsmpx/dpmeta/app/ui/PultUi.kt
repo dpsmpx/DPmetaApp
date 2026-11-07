@@ -16,6 +16,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ColorScheme
@@ -35,12 +37,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.dpsmpx.dpai.core.result.Outcome
@@ -80,6 +85,8 @@ data class PultView(
     val history: List<MetricPoint> = emptyList(),
     /** Окно выбора клонов (D-70); `null` — закрыто. */
     val clonePrompt: ClonePrompt? = null,
+    /** Код и сообщение отказа к [status] — под «Подробнее» (UX-13); пусто — нет. */
+    val statusDetails: String = "",
     /** Сколько репозиториев отмечено для клонов — строка настроек. */
     val clones: String = "",
 )
@@ -187,7 +194,7 @@ private fun Summary(s: Screens.Summary, view: PultView, onSync: () -> Unit, onSt
     }
     TextButton(onClick = onStats) { Text("Статистика →") }
     Button(onClick = onSync, enabled = !view.busy) { Text(if (view.busy) "Синхронизация…" else "Обновить") }
-    if (view.status.isNotEmpty()) Text(view.status, style = MaterialTheme.typography.bodySmall)
+    if (view.status.isNotEmpty()) StatusText(view)
 }
 
 @Composable
@@ -315,7 +322,7 @@ private fun DirScreen(nav: Nav.Dir, loader: Loader, onBack: () -> Unit, open: (N
         item { Text("${nav.project}: /${nav.path}", style = MaterialTheme.typography.titleMedium) }
         when (val r = result) {
             null -> item { Text("Загрузка…") }
-            is Outcome.Failure -> item { Text("Не загрузилось: ${r.diagnostics.first().code.name} — ${r.diagnostics.first().message}", color = MaterialTheme.colorScheme.error) }
+            is Outcome.Failure -> item { FailureText("Не загрузилось", Screens.failure(r.diagnostics.first())) }
             is Outcome.Success -> items(r.value) { e ->
                 Text(
                     (if (e.dir) "📁 " else "") + e.name,
@@ -338,7 +345,7 @@ private fun DocScreen(nav: Nav.Doc, names: Map<String, String>, loader: Loader, 
         Text("${nav.project}: ${nav.path}", style = MaterialTheme.typography.titleMedium)
         when (val r = result) {
             null -> Text("Загрузка…")
-            is Outcome.Failure -> Text("Не загрузилось: ${r.diagnostics.first().code.name} — ${r.diagnostics.first().message}", color = MaterialTheme.colorScheme.error)
+            is Outcome.Failure -> FailureText("Не загрузилось", Screens.failure(r.diagnostics.first()))
             is Outcome.Success -> {
                 val markdown = nav.path.endsWith(".md", ignoreCase = true)
                 val doc = remember(r.value) { if (markdown) DocText.build(r.value) else null }
@@ -375,22 +382,47 @@ private fun Questions(q: List<Screens.Question>) = LazyColumn(verticalArrangemen
 @Composable
 private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -> Unit, onForget: () -> Unit, onClones: () -> Unit) = Column(verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
     var token by remember { mutableStateOf("") }
+    // Пока токен сохранён — одна строка, поле — по «Заменить» (UX-12): пустое поле при сохранённом токене путало.
+    var replacing by rememberSaveable { mutableStateOf(false) }
+    var forgetting by remember { mutableStateOf(false) }
     Text("GitHub", style = MaterialTheme.typography.titleMedium)
-    Text(
-        if (view.hasToken) {
-            "Токен сохранён под ключом Keystore."
-        } else {
-            "Fine-grained PAT только для чтения: Contents, Pull requests, Metadata (D-17)."
-        },
-    )
-    OutlinedTextField(value = token, onValueChange = { token = it.trim() }, label = { Text("Токен") }, visualTransformation = PasswordVisualTransformation(), singleLine = true, modifier = Modifier.fillMaxWidth())
-    Row(horizontalArrangement = Arrangement.spacedBy(Tokens.gap)) {
-        Button(onClick = { onSaveToken(token); token = "" }, enabled = token.isNotEmpty()) { Text("Сохранить") }
-        if (view.hasToken) TextButton(onClick = onForget) { Text("Забыть токен") }
+    if (view.hasToken && !replacing) {
+        Text("Токен GitHub сохранён под ключом Keystore.")
+        Row(horizontalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+            TextButton(onClick = { replacing = true }) { Text("Заменить") }
+            TextButton(onClick = { forgetting = true }) { Text("Забыть токен…", color = MaterialTheme.colorScheme.error) }
+        }
+    } else {
+        Text("Fine-grained PAT только для чтения: Contents, Pull requests, Metadata.")
+        // Тип «пароль» для клавиатуры: без подсказок и запоминания набранного, а не только точки на экране (UX-12).
+        OutlinedTextField(
+            value = token, onValueChange = { token = it.trim() }, label = { Text("Токен") }, visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false, imeAction = ImeAction.Done),
+            singleLine = true, modifier = Modifier.fillMaxWidth(),
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+            Button(onClick = { onSaveToken(token); token = ""; replacing = false }, enabled = token.isNotEmpty()) { Text("Сохранить") }
+            if (replacing) TextButton(onClick = { replacing = false; token = "" }) { Text("Отмена") }
+        }
+    }
+    // Необратимое — окном (UX-12, AI:A-4): fine-grained PAT GitHub показывает один раз.
+    if (forgetting) {
+        AlertDialog(
+            onDismissRequest = { forgetting = false },
+            title = { Text("Забыть токен GitHub?") },
+            text = {
+                Text(
+                    "Токен удалится с телефона, и пульт перестанет обновляться. На GitHub он останется действующим — " +
+                        "отзовите его там. Показать его ещё раз GitHub не сможет: для пульта нужен будет новый.",
+                )
+            },
+            confirmButton = { TextButton(onClick = { forgetting = false; onForget() }) { Text("Забыть", color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = { forgetting = false }) { Text("Отмена") } },
+        )
     }
     Spacer(Modifier.height(Tokens.gap))
     Button(onClick = onSync, enabled = view.hasToken && !view.busy) { Text(if (view.busy) "Синхронизация…" else "Обновить") }
-    if (view.status.isNotEmpty()) Text(view.status, style = MaterialTheme.typography.bodySmall)
+    if (view.status.isNotEmpty()) StatusText(view)
     Spacer(Modifier.height(Tokens.gap))
     Text("Клоны репозиториев", style = MaterialTheme.typography.titleMedium)
     Text(
@@ -442,4 +474,25 @@ fun ClonesDialog(prompt: ClonePrompt, onDone: (Set<String>?) -> Unit) {
         confirmButton = { TextButton(onClick = { onDone(checked) }) { Text("Клонировать отмеченные (${checked.size})") } },
         dismissButton = { TextButton(onClick = { onDone(null) }) { Text(if (prompt.first) "Позже" else "Отмена") } },
     )
+}
+
+/** Отказ: причина словом, код и сообщение — по «Подробнее» (ТЗ, §6.9; UX-13). */
+@Composable
+private fun FailureText(what: String, f: Screens.Failure) = Column {
+    Text("$what: ${f.text}", color = MaterialTheme.colorScheme.error)
+    Details(f.details)
+}
+
+/** Строка итога синхронизации и действий; у отказа — «Подробнее». */
+@Composable
+private fun StatusText(view: PultView) = Column {
+    Text(view.status, style = MaterialTheme.typography.bodySmall)
+    if (view.statusDetails.isNotEmpty()) Details(view.statusDetails)
+}
+
+@Composable
+private fun Details(details: String) {
+    var shown by rememberSaveable(details) { mutableStateOf(false) }
+    TextButton(onClick = { shown = !shown }) { Text(if (shown) "Скрыть" else "Подробнее") }
+    if (shown) Text(details, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
 }

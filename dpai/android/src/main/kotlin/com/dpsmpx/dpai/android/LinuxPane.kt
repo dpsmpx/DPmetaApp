@@ -69,7 +69,7 @@ fun LinuxCard() {
             Text(
                 "Alpine в данных приложения — без Termux. Claude Code ставите сами в терминале " +
                     "(apk add nodejs npm, затем npm i -g @anthropic-ai/claude-code) и входите в каталоге слота; " +
-                    "Codex и Gemini (D-100) — кнопкой ниже.",
+                    "Codex и Gemini — кнопкой ниже.",
                 style = MaterialTheme.typography.bodySmall,
             )
             when {

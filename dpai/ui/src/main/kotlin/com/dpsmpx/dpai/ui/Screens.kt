@@ -86,6 +86,8 @@ data class SessionScreen(
     val noSend: String? = null,
     /** Сколько идёт текущий ход — «5 мин» (от начала хода в журнале сессии); ход не идёт — `null`. */
     val workingFor: String? = null,
+    /** Исполнитель сессии — исполнитель её слота (D-100): от него подсказка поля и варианты модели (AI:A-10). */
+    val executor: com.dpsmpx.dpai.core.ids.Executor = com.dpsmpx.dpai.core.ids.Executor.CLAUDE,
 )
 
 /** Состояние сессии одним знаком в заголовке окна (D-61): идёт, готово, ошибка или ждёт. */
@@ -141,7 +143,7 @@ object Screens {
             Counter("В очереди", view.queuedTasks.toString(), Tone.NEUTRAL),
             Counter("Заблокировано", view.blocked.toString(), if (view.blocked > 0) Tone.WARNING else Tone.NEUTRAL),
             Counter("Упало", view.failed.toString(), if (view.failed > 0) Tone.ERROR else Tone.NEUTRAL),
-            Counter("Ждут одобрения", count(view.waitingApproval), if ((view.waitingApproval.orNull() ?: 0) > 0) Tone.WARNING else Tone.NEUTRAL),
+            Counter("Запросы ждут ответа", count(view.waitingApproval), if ((view.waitingApproval.orNull() ?: 0) > 0) Tone.WARNING else Tone.NEUTRAL),
             Counter("Аккаунтов доступно", view.availableAccounts.toString(), Tone.NEUTRAL),
         ) + usageCounters(usage),
         sessions = view.rows.map { r ->
@@ -381,7 +383,7 @@ object Screens {
     private val COLUMNS = listOf(
         "Очередь" to setOf(TaskState.BACKLOG, TaskState.QUEUED, TaskState.READY),
         "В работе" to setOf(TaskState.RUNNING, TaskState.WAITING, TaskState.IMPLEMENTED, TaskState.VERIFYING, TaskState.VERIFIED),
-        "Внимание" to setOf(TaskState.BLOCKED, TaskState.COMPLETION_UNVERIFIED, TaskState.FAILED),
+        "Ждёт вас" to setOf(TaskState.BLOCKED, TaskState.COMPLETION_UNVERIFIED, TaskState.FAILED),
         "Готово" to setOf(TaskState.DONE, TaskState.CANCELLED),
     )
 

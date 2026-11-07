@@ -16,6 +16,7 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.dpsmpx.dpai.core.clock.Clock
 import com.dpsmpx.dpai.core.ids.RequestId
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.storage.vfs.NioVfs
@@ -152,7 +153,7 @@ object RequestOverlay {
             horizontalMargin = 0.03f
         }
         // Верхняя строка — ручка: перетаскивание по вертикали, место запоминается.
-        root.addView(text("⠿ DP AI · ${card.kind} · ${card.origin}", 12f).apply {
+        root.addView(text("⠿ AI · ${card.kind} · ${card.origin}", 12f).apply {
             var startY = 0f
             var startParam = 0
             setOnTouchListener { v, e ->
@@ -193,6 +194,7 @@ object RequestOverlay {
         val wide = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
         for (b in card.buttons) {
             var armed = false
+            var armedAt = 0L
             var armedLogin = false
             row.addView(Button(context).apply {
                 text = b.label
@@ -201,13 +203,29 @@ object RequestOverlay {
                     val login = b.confirm && loginNeeded(context)
                     // Опасное — вторым нажатием: одно касание по ошибке ничего не делает (D-44). Вход стал нужен
                     // или не нужен между нажатиями — подтверждение заново: подсказка обещает то, что случится (D-104).
-                    if (b.confirm && (!armed || login != armedLogin)) {
+                    // Второе нажатие — не раньше ARM_PAUSE_MS (двойное касание и дрожь пальца — не подтверждение)
+                    // и не позже ARM_TTL_MS: взвод гаснет сам (аудит UI/UX 5 ноября 2026, AI:A-4).
+                    val now = Clock.SYSTEM.monotonicNanos() / 1_000_000
+                    if (b.confirm && armed && now - armedAt < ARM_PAUSE_MS) return@setOnClickListener
+                    val fresh = armed && now - armedAt <= ARM_TTL_MS
+                    if (b.confirm && (!fresh || login != armedLogin)) {
                         armed = true
+                        armedAt = now
                         armedLogin = login
                         text = "Точно: ${b.label}?"
+                        postDelayed({
+                            if (armed && Clock.SYSTEM.monotonicNanos() / 1_000_000 - armedAt >= ARM_TTL_MS) {
+                                armed = false
+                                text = b.label
+                                status.text = ""
+                            }
+                        }, ARM_TTL_MS)
                         status.text = if (login) "Опасное действие: нажмите ещё раз — вход по PIN и подтверждение в приложении" else "Опасное действие: нажмите ещё раз, чтобы подтвердить"
                         return@setOnClickListener
                     }
+                    // Подтверждено: взвод гаснет — повтор после отказа снова с двумя нажатиями, а сброс по времени
+                    // не стирает «Отправляю…» и подсказку (ревью PR #170).
+                    armed = false
                     if (login) {
                         // Вход приложения нужен — опасное подтверждается на его экране после входа, а не здесь (D-104).
                         // Окно убирает сам экран (`MainActivity.onResume`): запуск из фона прошивка может молча не пустить
@@ -256,3 +274,9 @@ object RequestOverlay {
         shown = card.id.value to root
     }
 }
+
+/** Пауза между нажатиями опасного ответа: быстрее — двойное касание, а не решение (AI:A-4). */
+private const val ARM_PAUSE_MS = 500L
+
+/** Сколько живёт взвод опасного ответа: дольше — первое нажатие снова (AI:A-4). */
+private const val ARM_TTL_MS = 5_000L

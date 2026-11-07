@@ -39,9 +39,9 @@ object Panels {
     fun fromDirectory(item: Panel.Item, entries: List<GitHub.Entry>): List<String> =
         listOf(entries.count { item.matches(it.name) }.toString())
 
-    /** Отказ чтения — строка с причиной (ТЗ, §6.9: код и сообщение). */
+    /** Отказ чтения — причина словом, код — в конце (ТЗ, §6.9; UX-13: слово, а не имя кода). */
     fun failed(f: Outcome.Failure): List<String> =
-        listOf(f.diagnostics.firstOrNull()?.let { "не прочитано: ${it.code.name} — ${it.message}" } ?: "не прочитано")
+        listOf(f.diagnostics.firstOrNull()?.let { "не прочитано: ${Screens.failure(it).text} — ${it.message} (${it.code.name})" } ?: "не прочитано")
 
     private fun <T> Outcome<T>.lines(show: (T) -> List<String>): List<String> = when (this) {
         is Outcome.Success -> show(value)

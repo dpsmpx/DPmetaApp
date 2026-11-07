@@ -132,7 +132,7 @@ object EcosystemAuto {
     /** Политика словами — для экрана и окна включения. */
     fun describe(p: AutoPolicy): String =
         "проекты: ${p.projects.sorted().joinToString()}; виды работ: ${p.operations.sorted().joinToString()}; " +
-            "приоритеты: ${p.priorities.sortedBy { it.ordinal }.joinToString { it.name }}; " +
+            "приоритеты: ${p.priorities.sortedBy { it.ordinal }.joinToString { com.dpsmpx.dpai.core.text.Words.priority(it.name) }}; " +
             "не больше ${p.maxPerDay} за 24 часа и ${p.maxOpen} открытых сразу; " +
             (p.until?.let { "до ${stamp(it)}" } ?: "без срока")
 
@@ -258,7 +258,7 @@ private fun AutoPolicyDialog(project: EcosystemProject, current: AutoPolicy?, on
                     }
                     Text("Приоритеты", style = MaterialTheme.typography.labelMedium)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        for (p in Priority.entries) FilterChip(selected = p in priorities, onClick = { priorities = if (p in priorities) priorities - p else priorities + p }, label = { Text(p.name) })
+                        for (p in Priority.entries) FilterChip(selected = p in priorities, onClick = { priorities = if (p in priorities) priorities - p else priorities + p }, label = { Text(com.dpsmpx.dpai.core.text.Words.priority(p.name)) })
                     }
                     Text("Задач за 24 часа", style = MaterialTheme.typography.labelMedium)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {

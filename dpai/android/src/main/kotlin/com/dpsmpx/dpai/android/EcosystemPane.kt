@@ -147,7 +147,7 @@ fun EcosystemDialog(model: DemoModel, onDone: () -> Unit) {
                             Column(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
                                 Text(s.suggestion.title, style = MaterialTheme.typography.bodyMedium)
                                 Text(
-                                    "${s.suggestion.priority} · ${s.suggestion.operation}" + (s.refusal?.let { " · $it" } ?: ""),
+                                    "${com.dpsmpx.dpai.core.text.Words.priority(s.suggestion.priority.uppercase())} · ${s.suggestion.operation}" + (s.refusal?.let { " · $it" } ?: ""),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )

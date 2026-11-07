@@ -468,17 +468,22 @@ private fun CloudSettingsDialog(onDismiss: () -> Unit, onNote: (String) -> Unit)
         },
         dismissButton = {
             Row {
-                // Забытый пароль не вернуть: второе нажатие — подтверждение.
-                TextButton(enabled = !busy, onClick = {
-                    if (!forgetting) {
-                        forgetting = true
-                        problem = "Ещё раз «Забыть точно» — токен и пароль копии будут стёрты с телефона; без пароля прежние копии не прочесть."
-                    } else {
-                        CloudSync.forget(context)
-                        onNote("Настройки, токен и пароль копии забыты; копии в GitHub остались")
-                        onDismiss()
-                    }
-                }) { Text(if (forgetting) "Забыть точно" else "Забыть") }
+                // Забытый пароль не вернуть — окном (AI:A-4).
+                TextButton(enabled = !busy, onClick = { forgetting = true }) { Text("Забыть…") }
+                if (forgetting) {
+                    ConfirmDialog(
+                        "Забыть облачную копию?",
+                        "Токен и пароль копии сотрутся с телефона. Копии в GitHub останутся, но без пароля их не прочесть.",
+                        "Забыть",
+                        onConfirm = {
+                            forgetting = false
+                            CloudSync.forget(context)
+                            onNote("Настройки, токен и пароль копии забыты; копии в GitHub остались")
+                            onDismiss()
+                        },
+                        onDismiss = { forgetting = false },
+                    )
+                }
                 TextButton(onClick = onDismiss) { Text("Отмена") }
             }
         },

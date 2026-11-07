@@ -10,11 +10,14 @@ import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.Button
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
@@ -43,18 +46,23 @@ class LockActivity : ComponentActivity() {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() = AppLock.denied()
         })
+        // От края до края: значки строки состояния — по теме экрана, а не по теме окна (UX-5).
+        enableEdgeToEdge()
         setContent {
             PultTheme {
-                Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    if (noPin.value) {
-                        Text("Вход в DPmetaApp — по PIN устройства (D-59), а у телефона нет блокировки экрана.")
-                        Button(onClick = ::openSecuritySettings) { Text("Задать PIN") }
-                        Button(onClick = AppLock::denied) { Text("Закрыть") }
-                    } else {
-                        failed.value?.let { why ->
-                            Text("Вход не выполнен: $why")
-                            Button(onClick = ::ask) { Text("Войти") }
+                // Фон и цвет текста — из темы: без Surface текст был чёрным на тёмном окне (UX-5).
+                Surface(Modifier.fillMaxSize()) {
+                    Column(Modifier.safeDrawingPadding().padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        if (noPin.value) {
+                            Text("Вход в DPmetaApp — по PIN устройства, а у телефона нет блокировки экрана: задайте PIN.")
+                            Button(onClick = ::openSecuritySettings) { Text("Задать PIN") }
                             Button(onClick = AppLock::denied) { Text("Закрыть") }
+                        } else {
+                            failed.value?.let { why ->
+                                Text("Вход не выполнен: $why")
+                                Button(onClick = ::ask) { Text("Войти") }
+                                Button(onClick = AppLock::denied) { Text("Закрыть") }
+                            }
                         }
                     }
                 }

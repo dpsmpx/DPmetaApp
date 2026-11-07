@@ -30,7 +30,7 @@ class ScreensTest {
         val view = DashboardView(0, 0, 0, 0, Measure.Unknown("нет связи"), 0, 0, emptyList(), emptyList())
         val health = SelfDiagnostics.evaluate(SystemSignals(true, false, true, true, 1, 1, false))
         val screen = Screens.dashboard(view, health)
-        assertEquals("?", screen.counters.first { it.label == "Ждут одобрения" }.value)
+        assertEquals("?", screen.counters.first { it.label == "Запросы ждут ответа" }.value)
         assertEquals(Tone.DONE, screen.healthTone)
     }
 

@@ -64,6 +64,8 @@ data class TaskDetail(
     val usage: String? = null,
     /** Кто выполняет задачу сейчас (D-56): слот — target и подписка; идущей сессии нет — `null`. */
     val executor: String? = null,
+    /** Исполнитель задачи по политике (D-100): от него варианты класса, модели и усилия (AI:A-10). */
+    val taskExecutor: com.dpsmpx.dpai.core.ids.Executor = com.dpsmpx.dpai.core.ids.Executor.CLAUDE,
     /** Кому и когда задача передавалась (D-56): по сессии на строку, с причиной перехода между подписками. */
     val assignments: List<String> = emptyList(),
     /** Роли ревью задачи (D-73) — из политики — и итог каждой; без ревью — пусто. */
@@ -193,6 +195,7 @@ object TaskScreens {
         id = t.id, title = t.title, objective = t.objective,
         state = t.state.name, tone = Screens.tone(t.state), held = t.held, priority = t.priority.name,
         taskClass = t.policy.taskClass, model = t.policy.model, effort = t.policy.effort, budgetCents = t.policy.maxBudgetUsdCents,
+        taskExecutor = t.policy.executor,
         retries = t.retries, reason = t.lastReason?.takeIf { t.state != TaskState.DONE }?.let { Words.reason(it.name) },
         lastSession = sessions.sessions.values.filter { it.task == t.id }.maxByOrNull { it.createdAt.epochMillis }?.id,
         actions = actions(t),

@@ -90,8 +90,8 @@ private fun SectionCard(s: GuideSection) {
                         Column(Modifier.padding(8.dp)) {
                             SelectionContainer { Text(cmd, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall) }
                             TextButton(onClick = {
-                                context.getSystemService(android.content.ClipboardManager::class.java).setPrimaryClip(android.content.ClipData.newPlainText("dpai", cmd))
-                                note = "Скопировано"
+                                Clipboard.copy(context, "команда", cmd)
+                                if (!Clipboard.systemConfirms) note = "Скопировано"
                             }) { Text("Копировать") }
                         }
                     }

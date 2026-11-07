@@ -25,6 +25,16 @@ import java.time.format.DateTimeFormatter
  * Неизвестное показывается словом «неизвестно», а не нулём.
  */
 object Screens {
+    /**
+     * Отказ на экране (ТЗ, §6.9, N-11; UX-13): причина — словом из словаря
+     * ядра (`Words`, DP_AI_Orcestrator:D-89), код и сообщение — подробностью
+     * («Подробнее»), а не заголовком.
+     */
+    data class Failure(val text: String, val details: String)
+
+    fun failure(d: com.dpsmpx.dpai.core.diagnostics.Diagnostic): Failure =
+        Failure(com.dpsmpx.dpai.core.text.Words.reason(d.code.name), "${d.code.name} — ${d.message}")
+
     /** Часовой пояс показа (ТЗ, §6.3): по умолчанию +03:00. */
     val ZONE: ZoneOffset = ZoneOffset.ofHours(3)
     private val TIME = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm").withZone(ZONE)
@@ -147,7 +157,7 @@ object Screens {
                 is Measure.Known -> "${if (m.value) "✓" else "✗"} ${c.title}"
                 is Measure.Unknown -> "? ${c.title} — ${m.reason}"
             }
-        } + gate.notApplicable.map { "· ${it.title} — не применимо (D-64)" }
+        } + gate.notApplicable.map { "· ${it.title} — не применимо" }
         val waiting = p.waitingAuthor(now).orNull()?.let { (n, oldest) -> "ждут автора $n" + (oldest?.let { ", дольше всех без движения — ${it / DAY_MS} дн" } ?: "") } ?: "ждут автора — $UNKNOWN"
         val drafts = "черновиков ${show(p.draftPulls)}"
         val lead = p.leadTime.orNull()?.let { (m, high) -> "до вливания: медиана ${hours(m)}, P${Rules.LEAD_TIME_PERCENTILE} ${hours(high)}" } ?: "до вливания — $UNKNOWN"
@@ -229,7 +239,7 @@ object Screens {
             files = listOf("readme" to "README", "decisions" to "Решения", "todo" to "TODO", "roadmap" to "ROADMAP").mapNotNull { (kind, title) ->
                 payload(p, kind)?.let { o -> str(o, "path")?.let { title to it } }
             },
-            errors = p.errors.map { "${it.kind}: ${it.code} — ${it.message} (${time(it.at)})" },
+            errors = p.errors.map { "${it.kind}: ${com.dpsmpx.dpai.core.text.Words.reason(it.code)} — ${it.message} (${it.code}, ${time(it.at)})" },
         )
     }
 

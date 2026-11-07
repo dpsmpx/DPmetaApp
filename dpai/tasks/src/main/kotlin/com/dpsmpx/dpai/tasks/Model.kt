@@ -54,7 +54,7 @@ data class TaskPolicy(
     val reviewer: Executor get() = reviewExecutor ?: executor
 
     init {
-        require(reviews.isEmpty() || taskClass != TaskClass.TRIVIAL) { "у класса TRIVIAL ревью нет (D-73): смените класс или снимите роли" }
+        require(reviews.isEmpty() || taskClass != TaskClass.TRIVIAL) { "у простых задач ревью нет: смените класс или снимите роли" }
         require(model == null || NAME.matches(model)) { "модель — 1…100 знаков: буквы, цифры, «.», «-», «_», «[», «]»" }
         require(effort == null || NAME.matches(effort)) { "усилие — 1…100 знаков: буквы, цифры, «.», «-», «_»" }
         require(maxRetries in 0..100) { "maxRetries — 0…100" }
