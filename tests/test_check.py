@@ -44,6 +44,8 @@ CLEAN = {
     "core/model/build.gradle.kts": 'plugins {\n    id("dpai.kotlin-library")\n}\n\ndependencies {\n    api("com.dpsmpx.dpai:core")\n}\n',
     "core/formats/build.gradle.kts": 'dependencies {\n    api(project(":core:model"))\n}\n',
     "core/model/src/main/kotlin/M.kt": "package m\n\nfun now(clock: Clock) = clock.now()\n",
+    # Экран пульта: на экране — слово для человека, без номера решения (ui.words).
+    "app/src/main/kotlin/Screen.kt": 'val title = "Вход по PIN устройства"\n',
     "CLAUDE.md": "# Правила\n\nРешение D-01; цель G-01; чужой контракт `DPmeta:C-06`; путь `docs/PROCESS.md`.\n",
     "TODO.md": "# TODO\n\n- `М` Пункт.\n",
     "LICENSE": "All rights reserved.\n",
