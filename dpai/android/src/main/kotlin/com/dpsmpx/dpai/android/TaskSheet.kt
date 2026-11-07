@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -99,13 +101,37 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
     }
     fun send(c: (String) -> Command) = sendAll(c)
     val d = detail
-    AlertDialog(
+    // Действие листа: команда сразу, опасное — окном, с полями — своим окном редактора (AI:A-9).
+    fun act(a: TaskAction) {
+        when (a) {
+            TaskAction.HOLD -> send { Command.Hold(task, it) }
+            TaskAction.RESUME -> send { Command.Resume(task, it) }
+            TaskAction.RUN_FIRST -> send { Command.RunFirst(task, it) }
+            TaskAction.RETRY -> send { Command.Retry(task, null, it) }
+            TaskAction.VERIFY -> send { Command.Verify(task, it) }
+            TaskAction.ARCHIVE -> send { Command.Archive(task, true, it) }
+            TaskAction.UNARCHIVE -> send { Command.Archive(task, false, it) }
+            TaskAction.CANCEL, TaskAction.WAIVE -> confirm = a
+            TaskAction.PRIORITY, TaskAction.POLICY, TaskAction.SCOPE, TaskAction.REPLY -> editor = a
+        }
+    }
+    val primary = d?.let(com.dpsmpx.dpai.ui.TaskScreens::primary).orEmpty()
+    // Во весь экран (AI:A-9): «×», название и ⋮ сверху, главное действие — заливной кнопкой, остальное — в ⋮.
+    FullScreenDialog(
         onDismissRequest = onDone,
-        // Почти во весь экран: итоги ходов бывают длинными (D-42).
-        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
-        modifier = Modifier.fillMaxWidth(0.96f),
-        title = { Text(d?.title ?: "Задача") },
-        text = {
+        title = d?.title ?: "Задача",
+        menu = d?.actions?.filter { it !in primary }?.takeIf { it.isNotEmpty() }?.let { rest ->
+            { close ->
+                for (a in rest) {
+                    androidx.compose.material3.DropdownMenuItem(
+                        enabled = !busy,
+                        text = { Text(a.label + if (a == TaskAction.CANCEL || a == TaskAction.WAIVE) "…" else "", color = if (a.dangerous) MaterialTheme.colorScheme.error else androidx.compose.ui.graphics.Color.Unspecified) },
+                        onClick = { close(); act(a) },
+                    )
+                }
+            }
+        },
+    ) {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (d == null) {
                     Text("Загружаю…")
@@ -139,51 +165,53 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
                 }
                 if (d.reviews.isNotEmpty()) ReviewsSection(d.reviews)
                 d.waiting?.let { Text("Ждёт: $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    for (a in d.actions) {
-                        OutlinedButton(
-                            enabled = !busy,
-                            colors = if (a.dangerous) ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error) else ButtonDefaults.outlinedButtonColors(),
-                            onClick = {
-                                when (a) {
-                                    TaskAction.HOLD -> send { Command.Hold(task, it) }
-                                    TaskAction.RESUME -> send { Command.Resume(task, it) }
-                                    TaskAction.RUN_FIRST -> send { Command.RunFirst(task, it) }
-                                    TaskAction.RETRY -> send { Command.Retry(task, null, it) }
-                                    TaskAction.VERIFY -> send { Command.Verify(task, it) }
-                                    TaskAction.ARCHIVE -> send { Command.Archive(task, true, it) }
-                                    TaskAction.UNARCHIVE -> send { Command.Archive(task, false, it) }
-                                    TaskAction.CANCEL, TaskAction.WAIVE -> confirm = a
-                                    TaskAction.PRIORITY, TaskAction.POLICY, TaskAction.SCOPE, TaskAction.REPLY -> editor = a
-                                }
-                            },
-                        ) { Text(a.label) }
+                // Ждущий запрос задачи — с его вариантами здесь же (AI:A-7), а не только «Повторить».
+                model.published?.requests.orEmpty().filter { it.task == task }.forEach { RequestItem(model, it) }
+                // Одно-два действия по состоянию — заливными (AI:A-9); остальные — в ⋮ сверху.
+                if (primary.isNotEmpty()) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        for (a in primary) androidx.compose.material3.Button(enabled = !busy, onClick = { act(a) }) { Text(a.label) }
                     }
-                }
-                when (editor) {
-                    TaskAction.PRIORITY -> FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        for (p in Priority.entries) FilterChip(selected = d.priority == p.name, onClick = { send { k -> Command.SetPriority(task, p, k) } }, label = { Text(Words.priority(p.name)) })
-                    }
-                    TaskAction.POLICY -> PolicyEditor(d, busy) { cls, m, e, b, r -> send { k -> Command.SetPolicy(task, cls, m, e, b, r, k) } }
-                    TaskAction.REPLY -> ReplyEditor(busy) { text -> send { k -> Command.Retry(task, text, k) } }
-                    TaskAction.SCOPE -> ScopeEditor(d, remember(task) { model.dependencyChoices(except = task) }, busy) { paths, deps ->
-                        // Неизменённое не шлётся: лишняя команда записала бы пустое изменение в журнал.
-                        val cs = buildList<(String) -> Command> {
-                            if (paths != d.scope.orEmpty()) add { k -> Command.SetScope(task, paths, k) }
-                            if (deps != d.dependencies.map { it.id }.toSet()) add { k -> Command.SetDependencies(task, deps, k) }
-                        }
-                        if (cs.isEmpty()) editor = null else sendAll(*cs.toTypedArray())
-                    }
-                    else -> Unit
                 }
                 // Цвет ошибки — только у отказа (аудит удобства, A-19): «Принято» и «В очереди» — обычным.
                 status?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = if ("Не принято" in it) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant) }
-                MoveSection(model, task, d.executor) { c -> send(c) }
+                // Редкое — свёрнутыми разделами (AI:A-9).
+                var moving by rememberSaveable(task.value) { mutableStateOf(false) }
+                Text(if (moving) "Слот следующего хода ▾" else "Слот следующего хода ▸", Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { moving = !moving }.padding(vertical = 12.dp), fontWeight = FontWeight.SemiBold)
+                if (moving) MoveSection(model, task, d.executor) { c -> send(c) }
                 ChangesSection(model, task)
             }
-        },
-        confirmButton = { TextButton(onClick = onDone) { Text("Закрыть") } },
-    )
+    }
+    // Редакторы — своим окном, а не вставкой между кнопками (AI:A-9).
+    val dd = detail
+    editor?.takeIf { dd != null }?.let { a ->
+        AlertDialog(
+            onDismissRequest = { editor = null },
+            title = { Text(a.label) },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    when (a) {
+                        TaskAction.PRIORITY -> FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            for (p in Priority.entries) FilterChip(selected = dd!!.priority == p.name, onClick = { send { k -> Command.SetPriority(task, p, k) } }, label = { Text(Words.priority(p.name)) })
+                        }
+                        TaskAction.POLICY -> PolicyEditor(dd!!, busy) { cls, m, e, b, r -> send { k -> Command.SetPolicy(task, cls, m, e, b, r, k) } }
+                        TaskAction.REPLY -> ReplyEditor(busy) { text -> send { k -> Command.Retry(task, text, k) } }
+                        TaskAction.SCOPE -> ScopeEditor(dd!!, remember(task) { model.dependencyChoices(except = task) }, busy) { paths, deps ->
+                            // Неизменённое не шлётся: лишняя команда записала бы пустое изменение в журнал.
+                            val cs = buildList<(String) -> Command> {
+                                if (paths != dd.scope.orEmpty()) add { k -> Command.SetScope(task, paths, k) }
+                                if (deps != dd.dependencies.map { it.id }.toSet()) add { k -> Command.SetDependencies(task, deps, k) }
+                            }
+                            if (cs.isEmpty()) editor = null else sendAll(*cs.toTypedArray())
+                        }
+                        else -> Unit
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { editor = null }) { Text("Отмена") } },
+        )
+    }
     confirm?.let { a ->
         var reason by remember(a) { mutableStateOf("") }
         AlertDialog(
@@ -228,9 +256,16 @@ private fun PolicyEditor(d: TaskDetail, busy: Boolean, onSave: (TaskClass, Strin
                 for (c in TaskClass.entries) FilterChip(selected = cls == c, onClick = { cls = c }, label = { Text(Words.taskClass(c.name)) })
             }
         }
-        OutlinedTextField(modelName, { modelName = it }, label = { Text(com.dpsmpx.dpai.ui.ExecutorOptions.modelHint(x)) }, singleLine = true)
+        // Модель и усилие — выбором из вариантов исполнителя (AI:A-9, A-10); свободным текстом — только модель Codex и Gemini.
+        val byClass = if (com.dpsmpx.dpai.ui.ExecutorOptions.hasClass(x)) "по классу" else "по умолчанию"
+        val models = com.dpsmpx.dpai.ui.ExecutorOptions.models(x)
+        if (models.isNotEmpty()) {
+            Pick("Модель", modelName.ifEmpty { byClass }, listOf("" to byClass) + models.map { it to it }) { modelName = it }
+        } else {
+            OutlinedTextField(modelName, { modelName = it }, label = { Text(com.dpsmpx.dpai.ui.ExecutorOptions.modelHint(x)) }, singleLine = true)
+        }
         if (com.dpsmpx.dpai.ui.ExecutorOptions.efforts(x).isNotEmpty()) {
-            OutlinedTextField(effort, { effort = it }, label = { Text(com.dpsmpx.dpai.ui.ExecutorOptions.effortHint(x)) }, singleLine = true)
+            Pick("Усилие", effort.ifEmpty { byClass }, listOf("" to byClass) + com.dpsmpx.dpai.ui.ExecutorOptions.efforts(x).map { it to it }) { effort = it }
         }
         OutlinedTextField(budget, { budget = it }, label = { Text("Предел стоимости хода, $ (пусто — без предела)") }, singleLine = true)
         ReviewChips(reviews) { reviews = it }

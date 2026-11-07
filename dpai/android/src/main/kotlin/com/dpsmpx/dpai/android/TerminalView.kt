@@ -639,6 +639,28 @@ class TerminalView(context: Context) : View(context) {
 
     // ---- рисование ----
 
+    /** Когда текст экрана для TalkBack обновлялся последний раз (терминал:A-12): не чаще раза в [SPEAK_EVERY_MS]. */
+    private var spokenAt = 0L
+
+    /**
+     * Текст видимых строк — описанием экрана, пока включена доступность
+     * (терминал:A-12): TalkBack читает экран терминала, как у Termux. Без
+     * доступности — ничего не считается.
+     */
+    private fun speakable() {
+        val am = context.getSystemService(android.view.accessibility.AccessibilityManager::class.java) ?: return
+        if (!am.isEnabled) return
+        val now = Clock.SYSTEM.monotonicNanos() / 1_000_000
+        if (now - spokenAt < SPEAK_EVERY_MS) return
+        spokenAt = now
+        val t = tab ?: return
+        val text = t.session.read { emu ->
+            val first = (emu.scrollbackSize - scrollBack).coerceAtLeast(0)
+            emu.text(first, 0, (first + emu.rows - 1).coerceAtMost(emu.lineCount - 1), emu.cols - 1)
+        }.lines().map { it.trimEnd() }.dropLastWhile { it.isEmpty() }.joinToString("\n")
+        contentDescription = "Терминал «${t.label}»: " + text.takeLast(SPEAK_MAX)
+    }
+
     override fun onDraw(canvas: Canvas) {
         val t = tab
         if (t == null) {
@@ -646,6 +668,7 @@ class TerminalView(context: Context) : View(context) {
             return
         }
         t.session.read { emu -> draw(canvas, emu) }
+        speakable()
     }
 
     private fun draw(canvas: Canvas, emu: TerminalEmulator) {
@@ -813,6 +836,10 @@ class TerminalView(context: Context) : View(context) {
 
         /** Шаг прокрутки истории, пока палец с ручкой у края. */
         private const val EDGE_MS = 60L
+
+        /** Текст экрана для TalkBack — не чаще раза в полсекунды и не длиннее 4000 знаков (терминал:A-12). */
+        private const val SPEAK_EVERY_MS = 500L
+        private const val SPEAK_MAX = 4_000
 
         /** Больше — «Поделиться» не проходит через binder: только копировать. */
         private const val MAX_SHARE = 100_000

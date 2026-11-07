@@ -158,6 +158,17 @@ object Screens {
 
     data class Group(val title: String, val rows: List<ProjectRow>)
 
+    /**
+     * Вторая строка проекта в списке (UX-18): ROADMAP, PR, TODO — без
+     * «неизвестно» трижды; решения — в карточке. Ничего не известно —
+     * так и сказано одним словом.
+     */
+    fun projectLine(r: ProjectRow): String =
+        listOf("ROADMAP" to r.roadmap, "PR" to r.pulls, "TODO" to r.todo)
+            .filter { it.second != UNKNOWN }
+            .joinToString(" · ") { "${it.first} ${it.second}" }
+            .ifEmpty { "данных пока нет" }
+
     fun projects(s: EcosystemState): List<Group> = Place.entries.filter { it.shown }.mapNotNull { place ->
         val rows = s.projects.filter { it.place == place.code }.map { p ->
             ProjectRow(

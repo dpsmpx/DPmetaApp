@@ -37,6 +37,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -191,7 +193,7 @@ private fun ChatRow(c: Conversation, p: ApiProfile?, live: Boolean, onOpen: () -
         val undo = LocalUndo.current
         TextButton(onClick = {
             if (undo != null && c.entries.isNotEmpty()) undo.run("chat:${c.id.value}", "Разговор удалён") { ModelsStore.deleteChat(c.id) } else ModelsStore.deleteChat(c.id)
-        }) { Text("✕") }
+        }, modifier = Modifier.semantics { contentDescription = "Удалить разговор" }) { Text("✕") }
     }
 }
 
@@ -366,7 +368,7 @@ private fun ChatPane(c: Conversation, p: ApiProfile?, live: ModelsStore.Running?
     LaunchedEffect(count, live?.text?.length) { if (count > 0) list.scrollToItem(count - 1) }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onBack) { Text("←") }
+            TextButton(onClick = onBack, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("←") }
             Column(Modifier.weight(1f)) {
                 Text(c.title.ifBlank { "Новый чат" }, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(p?.let { "${it.name} · ${it.model}" } ?: "профиль удалён", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -386,7 +388,7 @@ private fun ChatPane(c: Conversation, p: ApiProfile?, live: ModelsStore.Running?
             }
         }
         Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.Bottom) {
-            TextButton(enabled = live == null, onClick = { attach.launch(arrayOf("text/*", "application/json", "application/xml", "application/x-sh", "*/*")) }) { Text("📎") }
+            TextButton(enabled = live == null, onClick = { attach.launch(arrayOf("text/*", "application/json", "application/xml", "application/x-sh", "*/*")) }, modifier = Modifier.semantics { contentDescription = "Приложить файл" }) { Text("📎") }
             OutlinedTextField(input, { input = it }, Modifier.weight(1f), placeholder = { Text("Вопрос") }, maxLines = 6)
             if (live != null) {
                 TextButton(onClick = { ModelsStore.stop(c.id) }) { Text("Стоп") }

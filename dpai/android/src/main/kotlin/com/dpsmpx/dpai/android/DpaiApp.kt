@@ -64,6 +64,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.graphics.graphicsLayer
@@ -279,21 +280,21 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                 // Узкая строка (D-61): больше места чату; в окне сессии — кружок состояния и имя (нажатие — переименовать).
                 androidx.compose.material3.Surface(tonalElevation = 3.dp) {
                     Row(
-                        Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).height(48.dp).padding(horizontal = 4.dp),
+                        Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).heightIn(min = 48.dp).padding(horizontal = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         if (selectedId != null) {
-                            TextButton(onClick = { selectedId = null }) { Text("←") }
+                            TextButton(onClick = { selectedId = null }, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("←") }
                             sessionScreen?.let { sc -> StatusDot(sc.status) }
                             Text(
                                 sessionScreen?.let { sc -> SessionNames.name(context, sc.task) ?: sc.title } ?: "Сессия",
                                 Modifier.weight(1f).padding(start = 8.dp).clickable(enabled = sessionScreen?.task != null) { renaming = true },
                                 style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
                             )
-                            sessionScreen?.task?.let { t -> TextButton(onClick = { taskSheet = t }) { Text("⚙", style = MaterialTheme.typography.titleMedium) } }
+                            sessionScreen?.task?.let { t -> TextButton(onClick = { taskSheet = t }, modifier = Modifier.semantics { contentDescription = "Лист задачи" }) { Text("⚙", style = MaterialTheme.typography.titleMedium) } }
                             TextButton(onClick = { sessionEvents = !sessionEvents }) { Text(if (sessionEvents) "Чат" else "События") }
                         } else if (settings) {
-                            TextButton(onClick = { settings = false }) { Text("←") }
+                            TextButton(onClick = { settings = false }, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("←") }
                             Text(AI_SETTINGS_TITLE, Modifier.weight(1f).padding(start = 8.dp), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         } else {
                             // Путь к пульту виден (DPmetaApp:D-73, UX-1): «AI» стоит над ним, «←» — просто закрыть окно «AI».
@@ -443,7 +444,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                                 screen == AiTab.MODELS.ordinal -> ModelsPane()
                                 screen == AiTab.FILES.ordinal -> FilesPane(onLinux = { openTab(AiTab.TARGETS) })
                                 s == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-                                screen == SESSION_SCREEN -> SessionPane(s.session, model, sessionEvents)
+                                screen == SESSION_SCREEN -> SessionPane(s.session, model, sessionEvents, s.requests)
                                 screen == AiTab.SUMMARY.ordinal -> Column(Modifier.fillMaxSize()) {
                                     QuickRow(s.quick, model)
                                     Box(Modifier.weight(1f)) { DashboardPane(s.dashboard, s.quick, model, onTargets = { openTab(AiTab.TARGETS) }) { foundTask = it } }
@@ -563,7 +564,7 @@ private fun Counters(counters: List<com.dpsmpx.dpai.ui.Counter>) {
 }
 
 @Composable
-private fun SessionPane(screen: SessionScreen?, model: DemoModel, events: Boolean) {
+private fun SessionPane(screen: SessionScreen?, model: DemoModel, events: Boolean, requests: List<RequestCard> = emptyList()) {
     if (screen == null) {
         Box(Modifier.fillMaxSize()) { CircularProgressIndicator(Modifier.align(Alignment.Center)) }
         return
@@ -577,6 +578,13 @@ private fun SessionPane(screen: SessionScreen?, model: DemoModel, events: Boolea
     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
     val inputMax = maxHeight - 56.dp
     Column(Modifier.fillMaxSize()) {
+        // Ждущий запрос задачи — закреплён над лентой (AI:A-7): все варианты сразу, без поиска вкладки «Запросы».
+        val waiting = requests.filter { it.task != null && it.task == screen.task }
+        if (waiting.isNotEmpty()) {
+            Column(Modifier.fillMaxWidth().heightIn(max = 320.dp).verticalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 4.dp)) {
+                for (r in waiting) RequestItem(model, r)
+            }
+        }
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = list, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             // Расход и строка состояния — мелко в начале ленты, а не над ней (D-61).
             item {
@@ -664,7 +672,7 @@ private fun WorkingLine(duration: String?) {
         animationSpec = androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(2400, easing = androidx.compose.animation.core.LinearEasing)),
         label = "angle",
     )
-    Row(Modifier.fillMaxWidth().height(20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         CircularProgressIndicator(
             progress = { 0.3f }, modifier = Modifier.size(12.dp).graphicsLayer { rotationZ = angle }, strokeWidth = 2.dp,
         )
@@ -691,7 +699,14 @@ private fun StatusDot(status: com.dpsmpx.dpai.ui.SessionStatus) {
         label = "scale",
     )
     val k = if (status == com.dpsmpx.dpai.ui.SessionStatus.RUNNING) scale else 1f
-    Box(Modifier.size(14.dp), contentAlignment = Alignment.Center) {
+    // Состояние — и словом для TalkBack, а не только цветом (AI:A-5).
+    val word = when (status) {
+        com.dpsmpx.dpai.ui.SessionStatus.RUNNING -> "идёт"
+        com.dpsmpx.dpai.ui.SessionStatus.DONE -> "готово"
+        com.dpsmpx.dpai.ui.SessionStatus.ERROR -> "ошибка"
+        com.dpsmpx.dpai.ui.SessionStatus.IDLE -> "ждёт"
+    }
+    Box(Modifier.size(14.dp).semantics { stateDescription = word }, contentAlignment = Alignment.Center) {
         Box(Modifier.size(12.dp * k).background(base.copy(alpha = if (status == com.dpsmpx.dpai.ui.SessionStatus.RUNNING) 0.5f + 0.5f * k else 1f), androidx.compose.foundation.shape.CircleShape))
     }
 }
@@ -822,10 +837,10 @@ private fun ChatInput(screen: SessionScreen, model: DemoModel, maxHeight: androi
             )
             if (!typing) {
                 when {
-                    running -> androidx.compose.material3.FilledTonalIconButton(enabled = !busy, onClick = { confirmStop = true }) { Text("■") }
+                    running -> androidx.compose.material3.FilledTonalIconButton(enabled = !busy, onClick = { confirmStop = true }, modifier = Modifier.semantics { contentDescription = "Остановить ход" }) { Text("■") }
                     fresh -> androidx.compose.material3.FilledTonalIconButton(enabled = !busy, onClick = {
                         send({ k -> com.dpsmpx.dpai.orchestrator.commands.Command.SendToSession(screen.session, null, modelName.ifEmpty { null }, effort.ifEmpty { null }, fresh = true, key = k) })
-                    }) { Text("↻") }
+                    }, modifier = Modifier.semantics { contentDescription = "Свежая сессия" }) { Text("↻") }
                 }
             }
         }
@@ -994,12 +1009,46 @@ internal fun NewTaskDialog(model: DemoModel, onEcosystem: (() -> Unit)? = null, 
     var error by remember { mutableStateOf<String?>(null) }
     // Второе нажатие, пока первое ставит задачу, не создаёт дубль (два хода Claude с одной целью).
     var busy by remember { mutableStateOf(false) }
-    AlertDialog(
+    fun submit() {
+        busy = true
+        scope.launch {
+            val form = com.dpsmpx.dpai.ui.NewTaskForm.command(
+                title, objective, key, priority,
+                // Скрытое не уходит в политику: класс — только у Claude, усилие — не у Gemini (AI:A-10).
+                if (com.dpsmpx.dpai.ui.ExecutorOptions.hasClass(executor)) taskClass else com.dpsmpx.dpai.tasks.TaskClass.NORMAL_ENGINEERING,
+                modelName, effort.takeIf { com.dpsmpx.dpai.ui.ExecutorOptions.efforts(executor).isNotEmpty() }.orEmpty(),
+                budget, paths, deps, reviews, executor, reviewer,
+            )
+            val r = when (form) {
+                is Outcome.Failure -> form
+                is Outcome.Success -> withContext(Dispatchers.IO) { model.addTask(form.value) }
+            }
+            when (r) {
+                is Outcome.Failure -> {
+                    val d = r.diagnostics.first()
+                    // «В очереди» — команда применится в такте: окно закрывается, задача появится на доске.
+                    if (d.code == com.dpsmpx.dpai.core.diagnostics.DiagCode.COMMAND_QUEUED) {
+                        onDone()
+                    } else {
+                        error = d.message
+                        key = keys.next(com.dpsmpx.dpai.core.ids.IdKinds.OPERATION).value
+                    }
+                }
+                is Outcome.Success -> onDone()
+            }
+            busy = false
+        }
+    }
+    // Во весь экран (AI:A-9): «×», название и «Поставить» сверху; «Дополнительно» — как прежде.
+    FullScreenDialog(
         onDismissRequest = onDone,
-        title = { Text("Новая задача") },
-        text = {
+        title = "Новая задача",
+        action = { TextButton(enabled = !busy, onClick = { submit() }) { Text(if (busy) "Ставлю…" else "Поставить") } },
+    ) {
             Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                OutlinedTextField(title, { title = it }, label = { Text("Название") }, singleLine = true)
+                // Задачи из манифеста экосистемы (ТЗ, §43–§46) — отсюда и с «Задач» (AI:A-6).
+                onEcosystem?.let { TextButton(onClick = it) { Text("Из экосистемы…") } }
+                OutlinedTextField(title, { title = it }, label = { Text("Название") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(objective, { objective = it }, label = { Text("Что сделать") }, minLines = 3)
                 TextButton(onClick = { more = !more }) { Text(if (more) "Дополнительно ▾" else "Дополнительно ▸") }
                 if (more) {
@@ -1025,9 +1074,16 @@ internal fun NewTaskDialog(model: DemoModel, onEcosystem: (() -> Unit)? = null, 
                             }
                         }
                     }
-                    OutlinedTextField(modelName, { modelName = it }, label = { Text(com.dpsmpx.dpai.ui.ExecutorOptions.modelHint(executor)) }, singleLine = true)
+                    // Модель и усилие — выбором из вариантов исполнителя (AI:A-9, A-10); свободным текстом — только модель Codex и Gemini.
+                    val models = com.dpsmpx.dpai.ui.ExecutorOptions.models(executor)
+                    if (models.isNotEmpty()) {
+                        Pick("Модель", modelName.ifEmpty { "по классу" }, listOf("" to "по классу") + models.map { it to it }) { modelName = it }
+                    } else {
+                        OutlinedTextField(modelName, { modelName = it }, label = { Text(com.dpsmpx.dpai.ui.ExecutorOptions.modelHint(executor)) }, singleLine = true)
+                    }
                     if (com.dpsmpx.dpai.ui.ExecutorOptions.efforts(executor).isNotEmpty()) {
-                        OutlinedTextField(effort, { effort = it }, label = { Text(com.dpsmpx.dpai.ui.ExecutorOptions.effortHint(executor)) }, singleLine = true)
+                        val byClass = if (com.dpsmpx.dpai.ui.ExecutorOptions.hasClass(executor)) "по классу" else "по умолчанию"
+                        Pick("Усилие", effort.ifEmpty { byClass }, listOf("" to byClass) + com.dpsmpx.dpai.ui.ExecutorOptions.efforts(executor).map { it to it }) { effort = it }
                     }
                     OutlinedTextField(budget, { budget = it }, label = { Text("Предел стоимости хода, $ (пусто — без предела)") }, singleLine = true)
                     ReviewChips(reviews) { reviews = it }
@@ -1056,47 +1112,19 @@ internal fun NewTaskDialog(model: DemoModel, onEcosystem: (() -> Unit)? = null, 
                 }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
-        },
-        confirmButton = {
-            TextButton(enabled = !busy, onClick = {
-                busy = true
-                scope.launch {
-                    val form = com.dpsmpx.dpai.ui.NewTaskForm.command(
-                        title, objective, key, priority,
-                        // Скрытое не уходит в политику: класс — только у Claude, усилие — не у Gemini (AI:A-10).
-                        if (com.dpsmpx.dpai.ui.ExecutorOptions.hasClass(executor)) taskClass else com.dpsmpx.dpai.tasks.TaskClass.NORMAL_ENGINEERING,
-                        modelName, effort.takeIf { com.dpsmpx.dpai.ui.ExecutorOptions.efforts(executor).isNotEmpty() }.orEmpty(),
-                        budget, paths, deps, reviews, executor, reviewer,
-                    )
-                    val r = when (form) {
-                        is Outcome.Failure -> form
-                        is Outcome.Success -> withContext(Dispatchers.IO) { model.addTask(form.value) }
-                    }
-                    when (r) {
-                        is Outcome.Failure -> {
-                            val d = r.diagnostics.first()
-                            // «В очереди» — команда применится в такте: окно закрывается, задача появится на доске.
-                            if (d.code == com.dpsmpx.dpai.core.diagnostics.DiagCode.COMMAND_QUEUED) {
-                                onDone()
-                            } else {
-                                error = d.message
-                                key = keys.next(com.dpsmpx.dpai.core.ids.IdKinds.OPERATION).value
-                            }
-                        }
-                        is Outcome.Success -> onDone()
-                    }
-                    busy = false
-                }
-            }) { Text(if (busy) "Ставлю…" else "Поставить") }
-        },
-        dismissButton = {
-            Row {
-                // Задачи из манифеста экосистемы (ТЗ, §43–§46) — отсюда, а не кнопкой сводки (AI:A-6).
-                onEcosystem?.let { TextButton(onClick = it) { Text("Из экосистемы…") } }
-                TextButton(onClick = onDone) { Text("Отмена") }
-            }
-        },
-    )
+    }
+}
+
+/** Выбор из вариантов (AI:A-9, A-10): «Подпись: выбранное ▾», меню — по касанию. */
+@Composable
+internal fun Pick(label: String, current: String, options: List<Pair<String, String>>, onPick: (String) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        androidx.compose.material3.OutlinedButton(onClick = { open = true }) { Text("$label: $current ▾", maxLines = 1) }
+        androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            for ((value, title) in options) androidx.compose.material3.DropdownMenuItem(text = { Text(title) }, onClick = { open = false; onPick(value) })
+        }
+    }
 }
 
 /**
@@ -1232,9 +1260,8 @@ private fun LimitsCard(l: com.dpsmpx.dpai.ui.SubscriptionLimits, model: DemoMode
                 }
             }
             // Передача задач при пределе (D-56): подписка берёт задачи других подписок, упёршихся в 5 ч или неделю.
-            if (setting) Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Брать задачи подписок у предела (с handoff)" + if (wantRotation != null) " · применится" else "", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall)
-                androidx.compose.material3.Switch(checked = wantRotation?.allowed ?: l.rotation, onCheckedChange = { on ->
+            if (setting) {
+                SwitchRow(wantRotation?.allowed ?: l.rotation, onChange = { on ->
                     scope.launch {
                         status = when (val r = withContext(Dispatchers.IO) { model.command(com.dpsmpx.dpai.orchestrator.commands.Command.SetRotation(l.subscription, on)) }) {
                             is Outcome.Success -> null
@@ -1242,7 +1269,9 @@ private fun LimitsCard(l: com.dpsmpx.dpai.ui.SubscriptionLimits, model: DemoMode
                         }
                         tick++
                     }
-                })
+                }) {
+                    Text("Брать задачи подписок у предела (с handoff)" + if (wantRotation != null) " · применится" else "", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall)
+                }
             }
             status?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall) }
         }

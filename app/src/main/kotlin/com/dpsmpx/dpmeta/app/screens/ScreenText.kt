@@ -30,9 +30,10 @@ object ScreenText {
         appendLine("ПРОЕКТЫ")
         for (g in groups) {
             appendLine("— ${g.title}")
+            // Строка — как на экране (UX-18): имя и состояние, ниже — числа; ошибки — «⚠ N».
             for (r in g.rows) {
-                append("  ${r.name}: ${r.working}; решений ${r.decisions}, TODO ${r.todo}, ROADMAP ${r.roadmap}, PR ${r.pulls}")
-                appendLine(if (r.errors > 0) "; ошибок ${r.errors}" else "")
+                appendLine("  ${r.name} — ${r.working}" + if (r.errors > 0) " · ⚠ ${r.errors}" else "")
+                appendLine("    ${Screens.projectLine(r)}")
             }
         }
     }

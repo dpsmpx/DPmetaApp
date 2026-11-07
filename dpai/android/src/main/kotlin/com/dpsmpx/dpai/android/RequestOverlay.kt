@@ -123,14 +123,16 @@ object RequestOverlay {
         val dp = context.resources.displayMetrics.density
         val pad = (12 * dp).toInt()
         val night = (context.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
-        val fg = if (night) 0xFFEDEDED.toInt() else 0xFF1B1B1B.toInt()
+        // Цвета — роли схемы приложения (AI:A-8, DPmetaApp:D-74): контраст текста к фону — не ниже 4,5 : 1 (AppPaletteTest).
+        val scheme = com.dpsmpx.dpai.ui.AppPalette.scheme(night)
+        val fg = scheme.onSurface.toInt()
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, pad, pad, pad)
             background = GradientDrawable().apply {
                 cornerRadius = 16 * dp
-                setColor(if (night) 0xF0262626.toInt() else 0xF8FFFFFF.toInt())
-                setStroke((1 * dp).toInt(), 0x33888888)
+                setColor(scheme.surfaceContainerHigh.toInt())
+                setStroke((1 * dp).toInt(), scheme.outlineVariant.toInt())
             }
             elevation = 8 * dp
         }
@@ -152,8 +154,11 @@ object RequestOverlay {
             y = position(context) ?: (48 * dp).toInt()
             horizontalMargin = 0.03f
         }
-        // Верхняя строка — ручка: перетаскивание по вертикали, место запоминается.
-        root.addView(text("⠿ AI · ${card.kind} · ${card.origin}", 12f).apply {
+        // Верхняя строка — ручка: перетаскивание по вертикали, место запоминается; «×» — скрыть окно (AI:A-8).
+        val head = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        head.addView(text("⠿ AI · ${card.kind} · ${card.origin}", 12f).apply {
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
             var startY = 0f
             var startParam = 0
             setOnTouchListener { v, e ->
@@ -174,9 +179,31 @@ object RequestOverlay {
                 }
                 true
             }
+        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        // Только прячет окно — на запрос не отвечает (в отличие от варианта «Решу позже»).
+        head.addView(TextView(context).apply {
+            text = "×"
+            textSize = 22f
+            setTextColor(fg)
+            gravity = Gravity.CENTER
+            contentDescription = "Скрыть окно"
+            minWidth = (48 * dp).toInt()
+            minHeight = (48 * dp).toInt()
+            setOnClickListener {
+                later += card.id.value
+                hide()
+            }
         })
-        root.addView(text(card.title, 16f, bold = true))
-        root.addView(text(card.body, 14f))
+        root.addView(head)
+        root.addView(text(card.title, 16f, bold = true).apply {
+            maxLines = 2
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        })
+        // Окно — маленькое (AI:A-8): текст до четырёх строк, целиком — в приложении («Ещё…»).
+        root.addView(text(card.body, 14f).apply {
+            maxLines = 4
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        })
         // Ошибка — смысловым цветом под тему окна: прежний красный на тёмном фоне давал 2,7 : 1 (AI:A-8, D-74).
         val status = text("", 12f).apply { setTextColor(com.dpsmpx.dpai.ui.AppPalette.semantic(com.dpsmpx.dpai.ui.AppPalette.Role.ERROR, night).toInt()) }
         val input = if (card.buttons.any { it.needsText }) {
@@ -190,16 +217,35 @@ object RequestOverlay {
             null
         }
         root.addView(status)
-        // Кнопки — столбцом во всю ширину: у запроса бывает пять вариантов, в строку на ~393 dp они не влезают (аудит 1 ноября 2026, A-7).
-        val row = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
-        val wide = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-        for (b in card.buttons) {
+        // Варианты — по два в строке (AI:A-8); больше трёх — два первых и «Ещё…» в приложение на этом запросе.
+        val shownButtons = if (card.buttons.size > 3) card.buttons.take(2) else card.buttons
+        val grid = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        var line: LinearLayout? = null
+        fun place(v: android.view.View) {
+            val l = line?.takeIf { it.childCount < 2 } ?: LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }.also {
+                grid.addView(it)
+                line = it
+            }
+            l.addView(v, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins((2 * dp).toInt(), (2 * dp).toInt(), (2 * dp).toInt(), (2 * dp).toInt()) })
+        }
+        // Вес по роли (AI:A-8): «принять» — заливная, остальные — контурные, опасный — цветом ошибки.
+        fun styled(btn: Button, tone: com.dpsmpx.dpai.ui.Tone, danger: Boolean) = btn.apply {
+            isAllCaps = false
+            minHeight = (48 * dp).toInt()
+            val accept = tone == com.dpsmpx.dpai.ui.Tone.ACTIVE && !danger
+            val error = com.dpsmpx.dpai.ui.AppPalette.semantic(com.dpsmpx.dpai.ui.AppPalette.Role.ERROR, night).toInt()
+            setTextColor(if (accept) scheme.onPrimary.toInt() else if (danger) error else scheme.primary.toInt())
+            background = GradientDrawable().apply {
+                cornerRadius = 20 * dp
+                if (accept) setColor(scheme.primary.toInt()) else setStroke((1 * dp).toInt(), if (danger) error else scheme.outline.toInt())
+            }
+        }
+        for (b in shownButtons) {
             var armed = false
             var armedAt = 0L
             var armedLogin = false
-            row.addView(Button(context).apply {
+            place(styled(Button(context), b.tone, b.confirm || b.tone == com.dpsmpx.dpai.ui.Tone.ERROR).apply {
                 text = b.label
-                isAllCaps = false
                 setOnClickListener {
                     val login = b.confirm && loginNeeded(context)
                     // Опасное — вторым нажатием: одно касание по ошибке ничего не делает (D-44). Вход стал нужен
@@ -259,18 +305,22 @@ object RequestOverlay {
                         }
                     }
                 }
-            }, wide)
+            })
         }
-        // Только прячет окно — на запрос не отвечает (в отличие от варианта «Решу позже»).
-        row.addView(Button(context).apply {
-            text = "Скрыть окно"
-            isAllCaps = false
-            setOnClickListener {
-                later += card.id.value
-                hide()
-            }
-        }, wide)
-        root.addView(row)
+        if (card.buttons.size > 3) {
+            place(styled(Button(context), com.dpsmpx.dpai.ui.Tone.NEUTRAL, danger = false).apply {
+                text = "Ещё…"
+                contentDescription = "Все варианты — в приложении"
+                setOnClickListener {
+                    // Приложение на этом запросе — все варианты; окно больше не всплывает ему (как «×»).
+                    val link = com.dpsmpx.dpai.notifications.DeepLink.of(com.dpsmpx.dpai.notifications.DeepLink.Kind.REQUEST, card.id).toUri()
+                    runCatching { context.startActivity(MainActivity.internal(context).setAction(MainActivity.OPEN).putExtra(MainActivity.EXTRA_LINK, link).addFlags(MainActivity.FRONT)) }
+                    later += card.id.value
+                    hide()
+                }
+            })
+        }
+        root.addView(grid)
         wm.addView(root, params)
         shown = card.id.value to root
     }
