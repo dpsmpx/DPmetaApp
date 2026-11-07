@@ -81,6 +81,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpmeta.app.R
 import com.dpsmpx.dpmeta.app.screens.Links
@@ -766,7 +767,7 @@ private fun external(context: android.content.Context, taps: LinkTaps, url: Stri
             say(act.text)
         }
         is LinkTaps.Act.Open -> try {
-            context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(act.url)))
+            context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, act.url.toUri()))
         } catch (_: android.content.ActivityNotFoundException) {
             say("Нет приложения для ссылки — адрес скопирован")
         }
