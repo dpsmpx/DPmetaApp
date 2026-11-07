@@ -1,6 +1,8 @@
 package com.dpsmpx.dpai.android
 
+import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Rect
@@ -9,7 +11,10 @@ import android.text.InputType
 import android.util.TypedValue
 import android.view.GestureDetector
 import android.view.HapticFeedbackConstants
+import android.view.ActionMode
 import android.view.KeyEvent
+import android.view.Menu
+import android.view.MenuItem
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
@@ -18,6 +23,7 @@ import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.widget.Toast
+import com.dpsmpx.dpai.core.clock.Clock
 import com.dpsmpx.dpai.terminal.Attr
 import com.dpsmpx.dpai.terminal.Key
 import com.dpsmpx.dpai.terminal.Mod
@@ -27,6 +33,7 @@ import com.dpsmpx.dpai.terminal.Style
 import com.dpsmpx.dpai.terminal.TermColor
 import com.dpsmpx.dpai.terminal.TerminalEmulator
 import com.dpsmpx.dpai.terminal.TerminalRow
+import com.dpsmpx.dpai.terminal.TerminalSelection
 import kotlin.math.abs
 import kotlin.math.ceil
 
@@ -43,6 +50,7 @@ class TerminalView(context: Context) : View(context) {
             field = value
             scrollBack = 0
             selection = null
+            menu?.finish()
             anchored = false
             // Инерция прежней вкладки не листает новую (стрелки в vim, колесо в TUI).
             flinger.forceFinished(true)
@@ -77,6 +85,30 @@ class TerminalView(context: Context) : View(context) {
     private var selection: IntArray? = null
     private var selecting = false
 
+    /** Какую ручку выделения тянет палец: [HANDLE_START], [HANDLE_END]; 0 — никакую (терминал:A-2). */
+    private var dragging = 0
+
+    /** Меню выделения — плавающая панель Android: Копировать, Вставить, Выделить всё, ссылка, Поделиться. */
+    private var menu: ActionMode? = null
+
+    /** Прокрутка истории, пока палец с ручкой у края экрана: −1 — назад, +1 — к концу, 0 — нет. */
+    private var edge = 0
+    private var edgeX = 0f
+    private var edgeY = 0f
+    private val edgeScroll = object : Runnable {
+        override fun run() {
+            if (edge == 0 || !selecting) return
+            val history = tab?.session?.read { it.scrollbackSize } ?: return
+            scrollBack = (scrollBack - edge).coerceIn(0, history)
+            moveDragged(edgeX, edgeY)
+            postDelayed(this, EDGE_MS)
+        }
+    }
+
+    /** Ссылка последнего касания (DPmetaApp:D-75): второе касание той же — открыть. */
+    private var tappedLink: String? = null
+    private var tappedAt = 0L
+
     /** Инерция прокрутки истории после смахивания. */
     private val flinger = android.widget.OverScroller(context)
     private var flingLastY = 0
@@ -99,8 +131,7 @@ class TerminalView(context: Context) : View(context) {
 
         override fun onSingleTapUp(e: MotionEvent): Boolean {
             if (selection != null) {
-                selection = null
-                invalidate()
+                clearSelection()
                 return true
             }
             val t = tab ?: return true
@@ -111,9 +142,10 @@ class TerminalView(context: Context) : View(context) {
                 t.session.mouse(MouseButton.LEFT, c, r, pressed = false, motion = false)
                 return true
             }
-            // Ссылка под пальцем (адрес входа Claude из `/login`) — в браузер; иначе — клавиатура.
+            // Ссылка под пальцем (адрес входа Claude из `/login`): первое касание — копия, второе — браузер
+            // (DPmetaApp:D-75); иначе — клавиатура.
             val link = t.session.read { it.linkAt(it.scrollbackSize - scrollBack + r, c) }
-            if (link != null) openLink(link) else showKeyboard()
+            if (link != null) tapLink(link) else showKeyboard()
             return true
         }
 
@@ -130,9 +162,12 @@ class TerminalView(context: Context) : View(context) {
         override fun onLongPress(e: MotionEvent) {
             val t = tab ?: return
             val (c, r) = cell(e)
-            val line = t.session.read { it.scrollbackSize - scrollBack + r }
-            selection = intArrayOf(line, c, line, c)
+            // Долгое нажатие выделяет слово, как принято в Android (терминал:A-2); палец дальше тянет конец.
+            val (line, word) = t.session.read { val l = it.scrollbackSize - scrollBack + r; l to TerminalSelection.word(it.line(l), c) }
+            menu?.finish()
+            selection = intArrayOf(line, word.first, line, word.last)
             selecting = true
+            dragging = HANDLE_END
             performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
             invalidate()
         }
@@ -175,6 +210,7 @@ class TerminalView(context: Context) : View(context) {
             t.session.resize(cols, rows)
             scrollBack = 0
             selection = null
+            menu?.finish()
             anchored = false
             flinger.forceFinished(true)
             scrollAccum = 0f
@@ -219,11 +255,13 @@ class TerminalView(context: Context) : View(context) {
         }
     }
 
-    private fun cell(e: MotionEvent): Pair<Int, Int> {
+    private fun cell(e: MotionEvent): Pair<Int, Int> = cellAt(e.x, e.y)
+
+    private fun cellAt(x: Float, y: Float): Pair<Int, Int> {
         val t = tab
         val cols = t?.session?.read { it.cols } ?: 1
         val rows = t?.session?.read { it.rows } ?: 1
-        return (e.x / cellW).toInt().coerceIn(0, cols - 1) to (e.y / cellH).toInt().coerceIn(0, rows - 1)
+        return (x / cellW).toInt().coerceIn(0, cols - 1) to (y / cellH).toInt().coerceIn(0, rows - 1)
     }
 
     private fun scrollLines(lines: Int, e: MotionEvent) {
@@ -246,21 +284,210 @@ class TerminalView(context: Context) : View(context) {
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         scale.onTouchEvent(event)
+        // Палец на ручке выделения — тянуть её (терминал:A-2); выделение — по порядку, чтобы ручки не путались.
+        val sel = selection
+        if (!selecting && sel != null && event.actionMasked == MotionEvent.ACTION_DOWN) {
+            val h = handleAt(event.x, event.y)
+            if (h != 0) {
+                selection = ordered(sel)
+                dragging = h
+                selecting = true
+                menu?.finish()
+                return true
+            }
+        }
         if (selecting && event.actionMasked == MotionEvent.ACTION_MOVE) {
-            val t = tab ?: return true
-            val (c, r) = cell(event)
-            val line = t.session.read { it.scrollbackSize - scrollBack + r }
-            selection?.let { it[2] = line; it[3] = c }
-            invalidate()
+            moveDragged(event.x, event.y)
+            // У края — прокрутка истории, пока палец там: блок длиннее экрана выделяется целиком.
+            edge = when {
+                event.y < cellH -> -1
+                event.y > height - cellH -> 1
+                else -> 0
+            }
+            edgeX = event.x
+            edgeY = event.y
+            removeCallbacks(edgeScroll)
+            if (edge != 0) postDelayed(edgeScroll, EDGE_MS)
             return true
         }
         if (selecting && (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL)) {
             selecting = false
-            copySelection()
+            dragging = 0
+            edge = 0
+            removeCallbacks(edgeScroll)
+            // Отпускание не копирует: выделение можно поправить ручками, копирование — из меню (терминал:A-2).
+            showMenu()
             return true
         }
         if (scale.isInProgress) return true
         return gestures.onTouchEvent(event) || super.onTouchEvent(event)
+    }
+
+    /** Тянуть ручку [dragging] к ячейке под (x, y). */
+    private fun moveDragged(x: Float, y: Float) {
+        val t = tab ?: return
+        val (c, r) = cellAt(x, y)
+        val line = t.session.read { it.scrollbackSize - scrollBack + r }
+        selection?.let {
+            if (dragging == HANDLE_START) {
+                it[0] = line
+                it[1] = c
+            } else {
+                it[2] = line
+                it[3] = c
+            }
+        }
+        invalidate()
+    }
+
+    private fun dp(v: Float) = v * resources.displayMetrics.density
+
+    /** Центры ручек на экране: начало — под левым краем первой ячейки, конец — под правым краем последней. */
+    private fun handles(): Pair<Pair<Float, Float>, Pair<Float, Float>>? {
+        val s = ordered(selection ?: return null)
+        val first = tab?.session?.read { it.scrollbackSize - scrollBack } ?: return null
+        val r = dp(HANDLE_DP)
+        return (s[1] * cellW to (s[0] - first + 1) * cellH + r) to ((s[3] + 1) * cellW to (s[2] - first + 1) * cellH + r)
+    }
+
+    private fun handleAt(x: Float, y: Float): Int {
+        val (start, end) = handles() ?: return 0
+        val reach = dp(HANDLE_REACH_DP)
+        fun near(p: Pair<Float, Float>) = abs(p.first - x) < reach && abs(p.second - y) < reach
+        return when {
+            near(end) -> HANDLE_END
+            near(start) -> HANDLE_START
+            else -> 0
+        }
+    }
+
+    private fun clearSelection() {
+        selection = null
+        selecting = false
+        dragging = 0
+        menu?.finish()
+        invalidate()
+    }
+
+    private fun selectedText(): String {
+        val t = tab ?: return ""
+        val s = ordered(selection ?: return "")
+        return t.session.read { it.text(s[0], s[1], s[2], s[3]) }
+    }
+
+    /**
+     * Меню выделения (терминал:A-2, A-19) — плавающая панель Android над
+     * выделением: Копировать, Вставить, Выделить всё, Открыть и Копировать
+     * ссылку (если выделен адрес `http(s)`), Поделиться.
+     */
+    private fun showMenu() {
+        if (selection == null) return
+        menu?.finish()
+        menu = startActionMode(object : ActionMode.Callback2() {
+            override fun onCreateActionMode(mode: ActionMode, m: Menu): Boolean {
+                m.add(Menu.NONE, M_COPY, 0, "Копировать")
+                m.add(Menu.NONE, M_PASTE, 1, "Вставить")
+                m.add(Menu.NONE, M_ALL, 2, "Выделить всё")
+                if (TerminalSelection.link(selectedText()) != null) {
+                    m.add(Menu.NONE, M_OPEN, 3, "Открыть ссылку")
+                    m.add(Menu.NONE, M_COPY_LINK, 4, "Копировать ссылку")
+                }
+                m.add(Menu.NONE, M_SHARE, 5, "Поделиться")
+                return true
+            }
+
+            override fun onPrepareActionMode(mode: ActionMode, m: Menu): Boolean = false
+
+            override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean {
+                when (item.itemId) {
+                    M_COPY -> {
+                        copySelection()
+                        clearSelection()
+                    }
+                    M_PASTE -> {
+                        clearSelection()
+                        pasteClipboard()
+                    }
+                    M_ALL -> {
+                        val t = tab ?: return true
+                        selection = t.session.read { intArrayOf(0, 0, it.lineCount - 1, it.cols - 1) }
+                        invalidate()
+                        mode.invalidateContentRect()
+                    }
+                    M_OPEN -> {
+                        TerminalSelection.link(selectedText())?.let(::openHttps)
+                        clearSelection()
+                    }
+                    M_COPY_LINK -> {
+                        TerminalSelection.link(selectedText())?.let { Clipboard.copy(context, "ссылка", it, sensitive = true) }
+                        clearSelection()
+                    }
+                    M_SHARE -> {
+                        share(selectedText())
+                        clearSelection()
+                    }
+                }
+                return true
+            }
+
+            override fun onDestroyActionMode(mode: ActionMode) {
+                if (menu === mode) menu = null
+            }
+
+            override fun onGetContentRect(mode: ActionMode, view: View, outRect: Rect) {
+                val (start, end) = handles() ?: return
+                val top = (minOf(start.second, end.second) - cellH - dp(HANDLE_DP)).coerceIn(0f, height.toFloat())
+                val bottom = (maxOf(start.second, end.second)).coerceIn(top, height.toFloat())
+                outRect.set(0, top.toInt(), width, bottom.toInt())
+            }
+        }, ActionMode.TYPE_FLOATING)
+    }
+
+    /** «Вставить» меню — как кнопка ряда: с вопросом у многострочной вставки (терминал:A-7). */
+    private fun pasteClipboard() {
+        val clip = context.getSystemService(ClipboardManager::class.java).primaryClip ?: return
+        if (clip.itemCount == 0) return
+        val text = clip.getItemAt(0).coerceToText(context).toString()
+        if (text.isEmpty()) return
+        onPaste?.invoke(text) ?: tab?.session?.paste(text)
+    }
+
+    /** «Поделиться» выделенным — системным окном; человек сам выбирает, кому. */
+    private fun share(text: String) {
+        if (text.isEmpty()) return
+        if (text.length > MAX_SHARE) {
+            Toast.makeText(context, "Выделено ${text.length} знаков — для «Поделиться» слишком много; скопируйте", Toast.LENGTH_LONG).show()
+            return
+        }
+        val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
+        context.startActivity(Intent.createChooser(send, "Поделиться").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+
+    /**
+     * Ссылка по касанию (DPmetaApp:D-75): первое — копия и адрес целиком на
+     * экране, второе той же в течение [LINK_AGAIN_MS] — открыть.
+     */
+    private fun tapLink(link: String) {
+        val now = Clock.SYSTEM.monotonicNanos() / 1_000_000
+        if (link == tappedLink && now - tappedAt <= LINK_AGAIN_MS) {
+            tappedLink = null
+            openHttps(link)
+            return
+        }
+        tappedLink = link
+        tappedAt = now
+        Clipboard.copy(context, "ссылка", link, sensitive = true)
+        Toast.makeText(context, "Скопировано: $link — коснитесь ещё раз, чтобы открыть", Toast.LENGTH_LONG).show()
+    }
+
+    /** Открывается только `https` (DPmetaApp:D-75); прочее — уже скопировано, на экране — почему. */
+    private fun openHttps(url: String) {
+        if (url.startsWith("https://")) {
+            openLink(url)
+        } else {
+            Clipboard.copy(context, "ссылка", url, sensitive = true)
+            Toast.makeText(context, "Открывается только https — адрес скопирован", Toast.LENGTH_LONG).show()
+        }
     }
 
     /** Начало и конец выделения по порядку. */
@@ -439,7 +666,10 @@ class TerminalView(context: Context) : View(context) {
             selection?.let { s ->
                 s[0] -= dropped
                 s[2] -= dropped
-                if (s[0] < 0 || s[2] < 0) selection = null
+                if (s[0] < 0 || s[2] < 0) {
+                    selection = null
+                    post { menu?.finish() }
+                }
             }
         }
         anchored = true
@@ -460,6 +690,19 @@ class TerminalView(context: Context) : View(context) {
             }
         }
         if (scrollBack == 0 && emu.cursorVisible) drawCursor(canvas, emu, defFg, defBg)
+        if (sel != null) drawHandles(canvas, sel, first)
+    }
+
+    /** Ручки выделения (терминал:A-2): кружки под началом и концом, их тянут пальцем. */
+    private fun drawHandles(canvas: Canvas, s: IntArray, first: Int) {
+        fill.color = HANDLE_COLOR
+        val r = dp(HANDLE_DP)
+        for ((x, line) in listOf(s[1] * cellW to s[0], (s[3] + 1) * cellW to s[2])) {
+            val y = (line - first + 1) * cellH
+            if (y < 0 || y > height) continue
+            canvas.drawRect(x - 1f, y - cellH, x + 1f, y, fill)
+            canvas.drawCircle(x, y + r, r, fill)
+        }
     }
 
     private fun inSelection(s: IntArray, line: Int, col: Int): Boolean {
@@ -567,6 +810,30 @@ class TerminalView(context: Context) : View(context) {
         private const val MIN_SP = 6f
         private const val MAX_SP = 40f
         private const val SYNC_REDRAW_MS = 150L
+
+        private const val HANDLE_START = 1
+        private const val HANDLE_END = 2
+
+        /** Радиус ручки и сколько вокруг неё ловит палец, dp. */
+        private const val HANDLE_DP = 9f
+        private const val HANDLE_REACH_DP = 28f
+        private const val HANDLE_COLOR = 0xff4fc3f7.toInt()
+
+        /** Шаг прокрутки истории, пока палец с ручкой у края. */
+        private const val EDGE_MS = 60L
+
+        /** Сколько ждёт второе касание той же ссылки (DPmetaApp:D-75). */
+        private const val LINK_AGAIN_MS = 10_000L
+
+        /** Больше — «Поделиться» не проходит через binder: только копировать. */
+        private const val MAX_SHARE = 100_000
+
+        private const val M_COPY = 1
+        private const val M_PASTE = 2
+        private const val M_ALL = 3
+        private const val M_OPEN = 4
+        private const val M_COPY_LINK = 5
+        private const val M_SHARE = 6
 
         /** Размер шрифта — общий для вкладок, пока жив процесс. */
         private var fontPx = 0f

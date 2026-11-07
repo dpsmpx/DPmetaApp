@@ -85,6 +85,15 @@
         <receiver
             android:name=".AppDiskCloseReceiver"
             android:exported="false" />
+        <!-- Служба своего терминала (терминал:A-1): держит процесс, пока открыты вкладки. -->
+        <service
+            android:name=".TerminalService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Открытые вкладки своего терминала: SSH-сеансы к своим targets и оболочка Linux-среды приложения" />
+        </service>
         <service
             android:name=".ControllerService"
             android:exported="false"
