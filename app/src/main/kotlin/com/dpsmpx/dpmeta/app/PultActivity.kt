@@ -92,7 +92,7 @@ open class PultActivity : ComponentActivity() {
      */
     private fun withToken(done: (Secret?) -> Unit) {
         when (val r = secrets.load()) {
-            is Outcome.Success -> r.value?.let(done) ?: noToken("нет токена GitHub: вкладка «Настройки»", done)
+            is Outcome.Success -> r.value?.let(done) ?: noToken("нет токена GitHub: пункт «Ещё»", done)
             is Outcome.Failure -> if (r.diagnostics.first().code == DiagCode.DEVICE_AUTH_REQUIRED) {
                 afterAuth("Открыть токен GitHub") { ok ->
                     if (!ok) {

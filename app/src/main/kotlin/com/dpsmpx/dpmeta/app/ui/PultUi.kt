@@ -8,11 +8,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -22,12 +25,18 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
@@ -44,6 +53,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -52,6 +62,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpmeta.app.R
 import com.dpsmpx.dpmeta.app.screens.Links
 import com.dpsmpx.dpmeta.app.screens.Panels
 import com.dpsmpx.dpmeta.app.screens.Screens
@@ -150,7 +161,20 @@ interface Loader {
     fun panel(project: String): Outcome<Panel>? = null
 }
 
-private enum class Tab(val title: String) { SUMMARY("Сводка"), PROJECTS("Проекты"), FEED("Лента"), QUESTIONS("Вопросы"), SETTINGS("Настройки") }
+/**
+ * Пункты панели пульта (D-73; ТЗ, §9): пять со значками и подписями — «AI»
+ * между «Статистикой» и «Ещё» открывает подсистему (D-53) и пунктом этого
+ * списка не считается. С «Соцсетями» пунктов станет шесть.
+ */
+private enum class Section(val title: String, val icon: Int) {
+    SUMMARY("Сводка", R.drawable.ic_pult_summary),
+    DEV("Разработка", R.drawable.ic_pult_dev),
+    STATS("Статистика", R.drawable.ic_pult_stats),
+    MORE("Ещё", R.drawable.ic_pult_more),
+}
+
+/** Вкладки сверху «Разработки» (D-73): проекты и вопросы автору; позже — PR (F-11). */
+private enum class DevTab(val title: String) { PROJECTS("Проекты"), QUESTIONS("Вопросы") }
 
 /** Куда перешли внутри вкладки: карточка → каталог → документ; «назад» снимает верх. */
 private sealed interface Nav {
@@ -163,6 +187,9 @@ private sealed interface Nav {
     /** Статистика (F-34): [project] — из карточки, `null` — сравнение всех проектов. */
     data class Stats(val project: String?) : Nav
 
+    /** Вся лента событий (F-05) — со сводки (D-73). */
+    data object Feed : Nav
+
     companion object {
         private const val SEP = "\u0001"
 
@@ -172,6 +199,7 @@ private sealed interface Nav {
             is Dir -> listOf("dir", n.project, n.path)
             is Doc -> listOf("doc", n.project, n.path, n.anchor.orEmpty())
             is Stats -> listOf("stats", n.project.orEmpty())
+            Feed -> listOf("feed")
         }.joinToString(SEP)
 
         fun decode(s: String): Nav? {
@@ -181,6 +209,7 @@ private sealed interface Nav {
                 "dir" -> if (p.size >= 3) Dir(p[1], p[2]) else null
                 "doc" -> if (p.size >= 4) Doc(p[1], p[2], p[3].ifEmpty { null }) else null
                 "stats" -> Stats(p.getOrNull(1)?.ifEmpty { null })
+                "feed" -> Feed
                 else -> null
             }
         }
@@ -191,13 +220,13 @@ private sealed interface Nav {
  * Стеки вкладок (UX-2, UX-3): у каждой вкладки — свой, и они переживают
  * поворот и смерть процесса. Сохраняются строками «вкладка, переход».
  */
-private val StacksSaver = listSaver<SnapshotStateMap<Tab, List<Nav>>, String>(
+private val StacksSaver = listSaver<SnapshotStateMap<Section, List<Nav>>, String>(
     save = { m -> m.flatMap { (t, l) -> l.map { "${t.name}\u0002${Nav.encode(it)}" } } },
     restore = { list ->
-        mutableStateMapOf<Tab, List<Nav>>().apply {
+        mutableStateMapOf<Section, List<Nav>>().apply {
             for (e in list) {
                 val (t, n) = e.split("\u0002", limit = 2).let { it[0] to it.getOrElse(1) { "" } }
-                val tab = Tab.entries.firstOrNull { it.name == t } ?: continue
+                val tab = Section.entries.firstOrNull { it.name == t } ?: continue
                 val nav = Nav.decode(n) ?: continue
                 this[tab] = this[tab].orEmpty() + nav
             }
@@ -205,7 +234,7 @@ private val StacksSaver = listSaver<SnapshotStateMap<Tab, List<Nav>>, String>(
     },
 )
 
-/** [onAi] — вкладка «AI» перед «Настройками» (D-53): открывает оболочку подсистемы; `null` — вкладки нет. */
+/** [onAi] — пункт «AI» перед «Ещё» (D-53, D-73): открывает оболочку подсистемы; `null` — пункта нет. */
 @Composable
 fun PultApp(
     view: PultView,
@@ -220,21 +249,30 @@ fun PultApp(
     /** Итог окна клонов: отмеченные или `null` — «Позже» / «Отмена». */
     onClonesChosen: (Set<String>?) -> Unit = {},
 ) {
-    // Вкладка и стеки — rememberSaveable: поворот, тема и шрифт больше не сбрасывают место (UX-3).
-    var tab by rememberSaveable { mutableStateOf(if (view.hasToken) Tab.SUMMARY else Tab.SETTINGS) }
+    // Пункт и стеки — rememberSaveable: поворот, тема и шрифт больше не сбрасывают место (UX-3).
+    var tab by rememberSaveable { mutableStateOf(if (view.hasToken) Section.SUMMARY else Section.MORE) }
+    var devTab by rememberSaveable { mutableStateOf(DevTab.PROJECTS) }
     val stacks = rememberSaveable(saver = StacksSaver) { mutableStateMapOf() }
     val stack = stacks[tab].orEmpty()
     val open: (Nav) -> Unit = { stacks[tab] = stacks[tab].orEmpty() + it }
     val back: () -> Unit = { stacks[tab]?.takeIf { it.isNotEmpty() }?.let { stacks[tab] = it.dropLast(1) } }
-    // Системный «назад» — шаг вверх по стеку вкладки, а не выход из приложения (UX-2).
+    // Системный «назад» — шаг вверх по стеку пункта, а не выход из приложения (UX-2).
     BackHandler(enabled = stack.isNotEmpty(), onBack = back)
     Scaffold(
+        topBar = { Header(tab.title, view) },
         bottomBar = {
             NavigationBar {
-                for (t in Tab.entries) {
-                    if (t == Tab.SETTINGS && onAi != null) NavigationBarItem(selected = false, onClick = onAi, icon = {}, label = { Text("AI") })
-                    // Вкладка выделена и во вложенном экране; касание открытой — к её началу, другой — туда, где оставили.
-                    NavigationBarItem(selected = tab == t, onClick = { if (tab == t) stacks[t] = emptyList() else tab = t }, icon = {}, label = { Text(t.title) })
+                for (t in Section.entries) {
+                    if (t == Section.MORE && onAi != null) {
+                        NavigationBarItem(selected = false, onClick = onAi, icon = { Icon(painterResource(R.drawable.ic_pult_ai), contentDescription = null) }, label = { Text("AI") })
+                    }
+                    // Пункт выделен и во вложенном экране; касание открытого — к его началу, другого — туда, где оставили.
+                    NavigationBarItem(
+                        selected = tab == t,
+                        onClick = { if (tab == t) stacks[t] = emptyList() else tab = t },
+                        icon = { Icon(painterResource(t.icon), contentDescription = null) },
+                        label = { Text(t.title, maxLines = 1) },
+                    )
                 }
             }
         },
@@ -247,16 +285,58 @@ fun PultApp(
                 top is Nav.Dir -> DirScreen(top, loader, back, open)
                 top is Nav.Doc -> DocScreen(top, view.names, loader, back, open)
                 top is Nav.Stats && s != null -> StatsScreen(view.history, s.projects.map { it.name }, top.project, s.asOf, back, view.status, onExport)
-                tab == Tab.SETTINGS -> Settings(view, onSync, onSaveToken, onForgetToken, onClones)
-                s == null -> Text(if (view.hasToken) "Среза ещё нет: «Обновить» в настройках." else "Нужен токен GitHub: вкладка «Настройки».")
-                tab == Tab.SUMMARY -> Summary(Screens.summary(s), view, onSync) { open(Nav.Stats(null)) }
-                tab == Tab.PROJECTS -> Projects(Screens.projects(s)) { open(Nav.Card(it)) }
-                tab == Tab.FEED -> FeedScreen(view.feed, s.projects.map { it.name })
-                tab == Tab.QUESTIONS -> Questions(Screens.questions(s))
+                top is Nav.Feed && s != null -> FeedScreen(view.feed, s.projects.map { it.name }, back)
+                tab == Section.MORE -> Settings(view, onSync, onSaveToken, onForgetToken, onClones)
+                s == null -> Text(if (view.hasToken) "Среза ещё нет: «Обновить» в пункте «Ещё»." else "Нужен токен GitHub: пункт «Ещё».")
+                tab == Section.SUMMARY -> Summary(Screens.summary(s), view, onSync, onStats = { tab = Section.STATS }) { open(Nav.Feed) }
+                tab == Section.STATS -> StatsScreen(view.history, s.projects.map { it.name }, null, s.asOf, null, view.status, onExport)
+                tab == Section.DEV -> Column(Modifier.fillMaxSize()) {
+                    DevTabs(devTab) { devTab = it }
+                    when (devTab) {
+                        DevTab.PROJECTS -> Projects(Screens.projects(s)) { open(Nav.Card(it)) }
+                        DevTab.QUESTIONS -> Questions(Screens.questions(s))
+                    }
+                }
             }
         }
     }
     view.clonePrompt?.let { ClonesDialog(it, onClonesChosen) }
+}
+
+/**
+ * Заголовок каждого экрана пульта (D-73; ТЗ, §9): пункт, время среза или
+ * «обновляется»; во время синхронизации — тонкая полоса хода под ним.
+ */
+@Composable
+private fun Header(title: String, view: PultView) {
+    Surface(tonalElevation = 3.dp) {
+        Column(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars)) {
+            Column(Modifier.padding(horizontal = Tokens.gap, vertical = 6.dp)) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                val asOf = view.state?.let { "срез ${Screens.time(it.asOf)}" }
+                Text(
+                    when {
+                        view.busy -> "Обновляется…" + (asOf?.let { " · $it" } ?: "")
+                        asOf != null -> asOf.replaceFirstChar { it.uppercase() }
+                        else -> "Среза ещё нет"
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            // Полоса — того же места и без синхронизации: заголовок не прыгает.
+            if (view.busy) LinearProgressIndicator(Modifier.fillMaxWidth()) else Spacer(Modifier.height(4.dp))
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DevTabs(selected: DevTab, onSelect: (DevTab) -> Unit) {
+    PrimaryTabRow(selectedTabIndex = selected.ordinal) {
+        for (t in DevTab.entries) Tab(selected = t == selected, onClick = { onSelect(t) }, text = { Text(t.title) })
+    }
+    Spacer(Modifier.height(Tokens.gap))
 }
 
 @Composable
@@ -266,8 +346,8 @@ private fun Line(label: String, value: String) = Row(Modifier.fillMaxWidth(), ho
 }
 
 @Composable
-private fun Summary(s: Screens.Summary, view: PultView, onSync: () -> Unit, onStats: () -> Unit) = Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
-    Text("Срез ${s.asOf}", style = MaterialTheme.typography.titleMedium)
+private fun Summary(s: Screens.Summary, view: PultView, onSync: () -> Unit, onStats: () -> Unit, onFeed: () -> Unit) = Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+    // Время среза — в заголовке (D-73).
     Line("Работают", s.active)
     Line("Вопросов автору", s.questions)
     Line("Открытых PR", s.pullsWaiting)
@@ -280,7 +360,10 @@ private fun Summary(s: Screens.Summary, view: PultView, onSync: () -> Unit, onSt
         val tiles = remember(view.history, st.asOf) { Stats.tiles(view.history, st.asOf) }
         Tiles(tiles)
     }
-    TextButton(onClick = onStats) { Text("Статистика →") }
+    Row {
+        TextButton(onClick = onStats) { Text("Статистика →") }
+        TextButton(onClick = onFeed) { Text("Лента →") }
+    }
     Button(onClick = onSync, enabled = !view.busy) { Text(if (view.busy) "Синхронизация…" else "Обновить") }
     if (view.status.isNotEmpty()) StatusText(view)
 }
@@ -376,11 +459,13 @@ private fun CardList(c: Screens.Card, panel: Outcome<Panel>?, loader: Loader, on
 }
 
 @Composable
-private fun FeedScreen(events: List<FeedEvent>, projects: List<String>) {
+private fun FeedScreen(events: List<FeedEvent>, projects: List<String>, onBack: () -> Unit) {
     var project by rememberSaveable { mutableStateOf<String?>(null) }
     var kind by rememberSaveable { mutableStateOf<String?>(null) }
     val rows = Screens.feed(events, project, kind)
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        TextButton(onClick = onBack) { Text("← Назад") }
+        Text("Лента", style = MaterialTheme.typography.titleMedium)
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             FilterChip(selected = kind == null, onClick = { kind = null }, label = { Text("все виды") })
             for ((code, title) in Feed.KINDS) FilterChip(selected = kind == code, onClick = { kind = if (kind == code) null else code }, label = { Text(title) })
@@ -536,7 +621,7 @@ fun ClonesDialog(prompt: ClonePrompt, onDone: (Set<String>?) -> Unit) {
             Column(verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
                 Text(
                     "Клон — полная копия в приложении: «AI» работает в нём, пульт берёт из него файлы без запросов. " +
-                        "Первое клонирование — долгое, лучше по Wi-Fi. Неотмеченные пульт читает с GitHub. Выбор меняется в «Настройках».",
+                        "Первое клонирование — долгое, лучше по Wi-Fi. Неотмеченные пульт читает с GitHub. Выбор меняется в пункте «Ещё».",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 // Список — не выше половины экрана: кнопки окна остаются видны.

@@ -170,7 +170,8 @@ fun StatsScreen(
     projects: List<String>,
     project: String?,
     now: Timestamp,
-    onBack: () -> Unit,
+    /** `null` — экран пункта «Статистика» (D-73): назад некуда. */
+    onBack: (() -> Unit)?,
     status: String = "",
     onExport: ((json: Boolean, period: Stats.Period, share: Boolean) -> Unit)? = null,
 ) {
@@ -184,7 +185,7 @@ fun StatsScreen(
         Stats.chart(history, metric, period, subject?.let(::listOf) ?: projects, now)
     }
     LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        item { TextButton(onClick = onBack) { Text("← Назад") } }
+        onBack?.let { b -> item { TextButton(onClick = b) { Text("← Назад") } } }
         item { Text("Статистика", style = MaterialTheme.typography.titleMedium) }
         item {
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
