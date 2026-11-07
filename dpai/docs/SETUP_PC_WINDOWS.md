@@ -93,7 +93,7 @@ Targets → «Добавить»: «Хост» — адрес ПК в общей
 Get-ChildItem C:\ProgramData\ssh\ssh_host_*_key.pub | ForEach-Object { ssh-keygen -l -f $_.FullName }
 ```
 
-Затем «Проверить».
+Затем «Проверить связь».
 
 ## 6. Вход в Claude и проект
 

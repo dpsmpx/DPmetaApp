@@ -175,10 +175,11 @@ private fun ChatRow(c: Conversation, p: ApiProfile?, live: Boolean, onOpen: () -
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        // Обратимое — сразу и со снэкбаром «Отменить» (AI:A-4); удаляется, когда снэкбар ушёл.
+        // Обратимое — сразу и со снэкбаром «Отменить» (AI:A-4); удаляется, когда снэкбар ушёл. Пустой — сразу:
+        // терять нечего, а «Чат» профиля переиспользует пустой разговор и открыл бы ждущий удаления (ревью PR #170).
         val undo = LocalUndo.current
         TextButton(onClick = {
-            if (undo != null) undo.run("chat:${c.id.value}", "Разговор удалён") { ModelsStore.deleteChat(c.id) } else ModelsStore.deleteChat(c.id)
+            if (undo != null && c.entries.isNotEmpty()) undo.run("chat:${c.id.value}", "Разговор удалён") { ModelsStore.deleteChat(c.id) } else ModelsStore.deleteChat(c.id)
         }) { Text("✕") }
     }
 }

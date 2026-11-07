@@ -123,7 +123,14 @@ private fun RequestItem(model: DemoModel, card: RequestCard) {
             androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 for (b in card.buttons) {
                     // Опасное (D-44) — окном с тем, на что отвечаем, а не вторым нажатием (AI:A-4).
-                    AnswerChip(b, enabled = !busy) { if (b.confirm) confirming = b else answer(b) }
+                    // Нужен текст — сказать до окна: подтверждать «нельзя отменить», а потом узнать про текст — нелепо (ревью PR #170).
+                    AnswerChip(b, enabled = !busy) {
+                        when {
+                            b.needsText && text.isBlank() -> status = "Нужен текст ответа"
+                            b.confirm -> confirming = b
+                            else -> answer(b)
+                        }
+                    }
                 }
             }
             confirming?.let { b ->

@@ -7,7 +7,6 @@ import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
-import android.os.SystemClock
 import android.provider.Settings
 import android.text.InputType
 import android.view.Gravity
@@ -17,6 +16,7 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.dpsmpx.dpai.core.clock.Clock
 import com.dpsmpx.dpai.core.ids.RequestId
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.storage.vfs.NioVfs
@@ -205,7 +205,7 @@ object RequestOverlay {
                     // или не нужен между нажатиями — подтверждение заново: подсказка обещает то, что случится (D-104).
                     // Второе нажатие — не раньше ARM_PAUSE_MS (двойное касание и дрожь пальца — не подтверждение)
                     // и не позже ARM_TTL_MS: взвод гаснет сам (аудит UI/UX 5 ноября 2026, AI:A-4).
-                    val now = SystemClock.uptimeMillis()
+                    val now = Clock.SYSTEM.monotonicNanos() / 1_000_000
                     if (b.confirm && armed && now - armedAt < ARM_PAUSE_MS) return@setOnClickListener
                     val fresh = armed && now - armedAt <= ARM_TTL_MS
                     if (b.confirm && (!fresh || login != armedLogin)) {
@@ -214,7 +214,7 @@ object RequestOverlay {
                         armedLogin = login
                         text = "Точно: ${b.label}?"
                         postDelayed({
-                            if (armed && SystemClock.uptimeMillis() - armedAt >= ARM_TTL_MS) {
+                            if (armed && Clock.SYSTEM.monotonicNanos() / 1_000_000 - armedAt >= ARM_TTL_MS) {
                                 armed = false
                                 text = b.label
                                 status.text = ""
@@ -223,6 +223,9 @@ object RequestOverlay {
                         status.text = if (login) "Опасное действие: нажмите ещё раз — вход по PIN и подтверждение в приложении" else "Опасное действие: нажмите ещё раз, чтобы подтвердить"
                         return@setOnClickListener
                     }
+                    // Подтверждено: взвод гаснет — повтор после отказа снова с двумя нажатиями, а сброс по времени
+                    // не стирает «Отправляю…» и подсказку (ревью PR #170).
+                    armed = false
                     if (login) {
                         // Вход приложения нужен — опасное подтверждается на его экране после входа, а не здесь (D-104).
                         // Окно убирает сам экран (`MainActivity.onResume`): запуск из фона прошивка может молча не пустить

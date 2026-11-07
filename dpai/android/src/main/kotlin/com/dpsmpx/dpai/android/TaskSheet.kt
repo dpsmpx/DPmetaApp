@@ -219,7 +219,9 @@ private fun PolicyEditor(d: TaskDetail, busy: Boolean, onSave: (TaskClass, Strin
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         // Варианты — исполнителя задачи (AI:A-10): класс — только у Claude, усилия у Gemini нет.
         val x = d.taskExecutor
-        if (com.dpsmpx.dpai.ui.ExecutorOptions.hasClass(x)) {
+        // Класс, заданный раньше (cli, прежний исполнитель), виден и у Codex и Gemini: «простая» запрещает ревью,
+        // и без выбора на экране его не снять (ревью PR #170).
+        if (com.dpsmpx.dpai.ui.ExecutorOptions.hasClass(x) || d.taskClass != TaskClass.NORMAL_ENGINEERING) {
             Text("Класс задачи — какую модель брать", style = MaterialTheme.typography.labelSmall)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 for (c in TaskClass.entries) FilterChip(selected = cls == c, onClick = { cls = c }, label = { Text(Words.taskClass(c.name)) })
@@ -332,14 +334,17 @@ private fun ChangesSection(model: DemoModel, task: TaskId) {
         b.toAnnotatedString()
     }
     androidx.compose.material3.Card(Modifier.fillMaxWidth()) {
-        androidx.compose.foundation.text.selection.SelectionContainer {
-            Text(
-                text,
-                style = MaterialTheme.typography.bodySmall,
-                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                softWrap = false,
-                modifier = Modifier.horizontalScroll(rememberScrollState()).padding(8.dp),
-            )
+        // Изменения задачи — что угодно из дерева: копирование выделением — тоже «чувствительное».
+        Clipboard.Sensitive {
+            androidx.compose.foundation.text.selection.SelectionContainer {
+                Text(
+                    text,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    softWrap = false,
+                    modifier = Modifier.horizontalScroll(rememberScrollState()).padding(8.dp),
+                )
+            }
         }
     }
 }

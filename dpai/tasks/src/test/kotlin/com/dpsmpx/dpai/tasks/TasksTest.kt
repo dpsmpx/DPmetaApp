@@ -358,7 +358,7 @@ class TasksTest {
     @Test
     fun reviewsGateDoneAndBlockingReviewIsAnAttempt() {
         val refused = runCatching { TaskPolicy(taskClass = TaskClass.TRIVIAL, reviews = setOf(ReviewRole.CODE)) }
-        assertTrue(refused.isFailure && "TRIVIAL" in refused.exceptionOrNull()!!.message!!)
+        assertTrue(refused.isFailure && "простых задач" in refused.exceptionOrNull()!!.message!!)
         val t = verified(TaskPolicy(retryBackoff = 0.minutes, reviews = setOf(ReviewRole.SECURITY, ReviewRole.CODE)))
         assertEquals(listOf(ReviewRole.CODE, ReviewRole.SECURITY), state.tasks.getValue(t).reviewsLeft())
         assertEquals(DiagCode.REVIEW_REQUIRED, (tasks.complete(state, t, clock.now()) as Outcome.Failure).errors.single().code)

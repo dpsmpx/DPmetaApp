@@ -5,6 +5,11 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.os.Build
 import android.os.PersistableBundle
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 
 /**
  * Буфер обмена приложения. Секрет — команда восстановления с одноразовым
@@ -26,7 +31,30 @@ object Clipboard {
 
     fun copy(context: Context, label: String, text: String, sensitive: Boolean = false) {
         val clip = ClipData.newPlainText(label, text)
-        if (sensitive) clip.description.extras = PersistableBundle().apply { putBoolean(IS_SENSITIVE, true) }
+        if (sensitive) mark(clip)
         context.getSystemService(ClipboardManager::class.java).setPrimaryClip(clip)
+    }
+
+    private fun mark(clip: ClipData) {
+        clip.description.extras = PersistableBundle().apply { putBoolean(IS_SENSITIVE, true) }
+    }
+
+    /**
+     * Выделение текста Compose («Копировать» долгим нажатием) внутри [content]
+     * — тоже с пометкой «чувствительное»: иначе выделение было бы вторым путём
+     * в буфер мимо [copy] (ревью PR #170).
+     */
+    @Composable
+    fun Sensitive(content: @Composable () -> Unit) {
+        val inner = LocalClipboard.current
+        val marked = remember(inner) {
+            object : androidx.compose.ui.platform.Clipboard by inner {
+                override suspend fun setClipEntry(clipEntry: ClipEntry?) {
+                    clipEntry?.clipData?.let(::mark)
+                    inner.setClipEntry(clipEntry)
+                }
+            }
+        }
+        CompositionLocalProvider(LocalClipboard provides marked, content = content)
     }
 }

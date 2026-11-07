@@ -328,7 +328,9 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
             tab.session.paste(text)
             return
         }
-        val why = if (bracketed) "Текст большой: ${text.length} знаков." else "Строк: ${com.dpsmpx.dpai.terminal.PasteGuard.lines(text)} — программа на «${tab.label}» выполнит каждую сразу."
+        // Причина — то условие, что сработало: однострочный большой текст без скобок — не «выполнит каждую» (ревью PR #170).
+        val lines = com.dpsmpx.dpai.terminal.PasteGuard.lines(text)
+        val why = if (!bracketed && lines > 1) "Строк: $lines — программа на «${tab.label}» выполнит каждую сразу." else "Текст большой: ${text.length} знаков."
         val dialog = AlertDialog.Builder(this)
             .setTitle("Вставить в терминал?")
             .setMessage("$why\n\n${text.take(PREVIEW)}")

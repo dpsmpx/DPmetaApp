@@ -628,8 +628,11 @@ private fun ChatBubble(line: com.dpsmpx.dpai.ui.ChatLine) {
                     val code = MaterialTheme.colorScheme.surface
                     val link = MaterialTheme.colorScheme.primary
                     val rendered = remember(line.text) { if (line.mine) null else com.dpsmpx.dpai.ui.Markdown.render(line.text) }
-                    androidx.compose.foundation.text.selection.SelectionContainer {
-                        if (rendered != null) Text(annotated(rendered, code, link), style = MaterialTheme.typography.bodyMedium) else Text(line.text, style = MaterialTheme.typography.bodyMedium)
+                    // Чат сессии несёт вывод инструментов и коды: копирование выделением — «чувствительное» (D-86).
+                    Clipboard.Sensitive {
+                        androidx.compose.foundation.text.selection.SelectionContainer {
+                            if (rendered != null) Text(annotated(rendered, code, link), style = MaterialTheme.typography.bodyMedium) else Text(line.text, style = MaterialTheme.typography.bodyMedium)
+                        }
                     }
                     Text(line.time, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }

@@ -784,7 +784,7 @@ class Orchestrator(
         }
         // Дерево на другом target (D-50) — маршрут MCP есть только у Claude Code.
         if (config.remote != null && t.policy.executor != Executor.CLAUDE) {
-            waiting(task, "ход с деревом на другом target (D-50) ведёт только Claude Code, а исполнитель задачи — ${t.policy.executor.title}")
+            waiting(task, "ход с деревом на другом target ведёт только Claude Code, а исполнитель задачи — ${t.policy.executor.title}")
             return
         }
         // Исполнитель задачи, а у всех его слотов предел — следующий по кругу (D-100).
@@ -1299,7 +1299,7 @@ class Orchestrator(
         if (active >= (targets.firstOrNull { it.id == target }?.maxSessions ?: 0)) return waiting(task, "${Review.label(role)} ждёт места на ${targetName(target)}")
         control.maxSessions?.let { max -> if (sessions.sessions.values.count { !it.terminal } >= max) return waiting(task, "${Review.label(role)} ждёт: предел сессий контура $max") }
         val reviewer = t.policy.reviewer
-        if (config.remote != null && reviewer != Executor.CLAUDE) return waiting(task, "${Review.label(role)} с деревом на другом target (D-50) ведёт только Claude Code")
+        if (config.remote != null && reviewer != Executor.CLAUDE) return waiting(task, "${Review.label(role)} с деревом на другом target ведёт только Claude Code")
         if (reviewer == Executor.CLAUDE && "--json-schema" in unsupportedFlags[target].orEmpty()) return recordReviewFailure(task, role, attempt, null, "Claude Code на target $target не знает --json-schema: ответ ревью по схеме невозможен")
         val diff = when (val d = taskDiff(task, Review.MAX_PATCH_CHARS)) {
             is Outcome.Failure -> return recordReviewFailure(task, role, attempt, null, "изменения задачи не получены: ${d.errors.first().message}")
@@ -2053,7 +2053,7 @@ class Orchestrator(
      */
     private fun reviewsUnsupported(policy: TaskPolicy): Outcome.Failure? =
         if (policy.reviews.isNotEmpty() && (git == null || config.repository == null || config.integrationBranch == null)) {
-            Outcome.Failure(listOf(Diagnostic.error(DiagCode.UNSUPPORTED, "ревью — у проекта с Git: ревьюер читает изменения ветки задачи (D-73)", "policy")))
+            Outcome.Failure(listOf(Diagnostic.error(DiagCode.UNSUPPORTED, "ревью — у проекта с Git: ревьюер читает изменения ветки задачи", "policy")))
         } else {
             null
         }

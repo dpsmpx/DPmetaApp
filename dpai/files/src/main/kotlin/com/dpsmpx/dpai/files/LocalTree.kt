@@ -28,7 +28,7 @@ class LocalTree(private val root: Path, private val hidden: (String) -> Boolean 
     /** Путь внутри корня без ссылок в частях; [leafMayBeMissing] — для записи нового файла. */
     private fun resolve(rel: String, leafMayBeMissing: Boolean = false): Outcome<Path> {
         if (rel.isNotEmpty() && !FileNames.pathValid(rel)) return Outcome.failure(DiagCode.VALUE_INVALID, "путь недопустим", rel)
-        if (rel.isNotEmpty() && hidden(rel)) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "секрет — не показывается (D-96)", rel)
+        if (rel.isNotEmpty() && hidden(rel)) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "секрет — не показывается", rel)
         var p = root
         val parts = if (rel.isEmpty()) emptyList() else rel.split('/')
         for ((i, part) in parts.withIndex()) {
