@@ -11,8 +11,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -40,20 +40,19 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Быстрые действия сводки (ТЗ, §73): новая задача, задачи из экосистемы
- * (ТЗ, §43–§46), пауза и продолжение всех, задачи, которые ждут человека,
- * запросы (одобрения — D-49). Каждое
- * действие — команды задач с ключами нажатия, как в листе задачи (D-42).
+ * Быстрые действия сводки (ТЗ, §73): пауза и продолжение всех — только когда
+ * есть что приостановить или продолжить (AI:A-6): «0» не показывается.
+ * «Новая задача» — плавающей кнопкой, задачи из экосистемы — из неё,
+ * ждущее человека — списком «Ждёт вас» на сводке, запросы — значком
+ * вкладки. Каждое действие — команды задач с ключами нажатия, как в листе
+ * задачи (D-42).
  */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-fun QuickRow(quick: QuickActions, live: Boolean, requests: Int, model: DemoModel, onTask: (TaskId) -> Unit, onRequests: () -> Unit) {
+fun QuickRow(quick: QuickActions, model: DemoModel) {
     val scope = rememberCoroutineScope()
     val keys = remember { IdGenerator(Clock.SYSTEM, RandomSource.secure()) }
-    var creating by remember { mutableStateOf(false) }
-    var ecosystem by remember { mutableStateOf(false) }
     var confirmHold by remember { mutableStateOf(false) }
-    var waiting by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
     fun run(what: String, cs: List<Command>) {
@@ -68,23 +67,23 @@ fun QuickRow(quick: QuickActions, live: Boolean, requests: Int, model: DemoModel
             busy = false
         }
     }
-    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+    // Приостанавливать стало нечего — окно подтверждения закрывается и само уже не всплывёт (проверка PR #172).
+    val nothingToHold = quick.holdable.isEmpty()
+    LaunchedEffect(nothingToHold) { if (nothingToHold) confirmHold = false }
+    if (quick.holdable.isNotEmpty() || quick.resumable.isNotEmpty() || status != null) Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            if (live) OutlinedButton(onClick = { creating = true }) { Text("Новая задача") }
-            // Глобальный прогон (ТЗ, §43–§46): задачи из предложений манифеста экосистемы — по подтверждению.
-            if (live) OutlinedButton(onClick = { ecosystem = true }) { Text("Экосистема") }
-            OutlinedButton(enabled = !busy && quick.holdable.isNotEmpty(), onClick = { confirmHold = true }) { Text("Пауза всем (${quick.holdable.size})") }
-            OutlinedButton(enabled = !busy && quick.resumable.isNotEmpty(), onClick = { run("Продолжить", (model.quickNow() ?: quick).resumeAll(keys.next(IdKinds.OPERATION).value)) }) {
-                Text("Продолжить все (${quick.resumable.size})")
+            if (quick.holdable.isNotEmpty()) {
+                AssistChip(enabled = !busy, onClick = { confirmHold = true }, label = { Text("Пауза всем (${quick.holdable.size})") })
             }
-            OutlinedButton(enabled = quick.waiting.isNotEmpty(), onClick = { waiting = true }) { Text("Ждёт вас (${quick.waiting.size})") }
-            OutlinedButton(enabled = requests > 0, onClick = onRequests) { Text("Запросы ($requests)") }
+            if (quick.resumable.isNotEmpty()) {
+                AssistChip(enabled = !busy, onClick = { run("Продолжить", (model.quickNow() ?: quick).resumeAll(keys.next(IdKinds.OPERATION).value)) }, label = {
+                    Text("Продолжить все (${quick.resumable.size})")
+                })
+            }
         }
         status?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
     }
-    if (creating) NewTaskDialog(model) { creating = false }
-    if (ecosystem) EcosystemDialog(model) { ecosystem = false }
-    if (confirmHold) {
+    if (confirmHold && !nothingToHold) {
         // Пауза останавливает идущие ходы с handoff (D-42) — после подтверждения; ключ серии — один на нажатие «Да».
         AlertDialog(
             onDismissRequest = { confirmHold = false },
@@ -98,29 +97,6 @@ fun QuickRow(quick: QuickActions, live: Boolean, requests: Int, model: DemoModel
                 }) { Text("Приостановить") }
             },
             dismissButton = { TextButton(onClick = { confirmHold = false }) { Text("Отмена") } },
-        )
-    }
-    if (waiting) {
-        AlertDialog(
-            onDismissRequest = { waiting = false },
-            title = { Text("Ждёт вас") },
-            text = {
-                LazyColumn(Modifier.heightIn(max = 420.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    items(quick.waiting, key = { it.id.value }) { c ->
-                        Column(
-                            Modifier.fillMaxWidth().clickable {
-                                waiting = false
-                                onTask(c.id)
-                            }.padding(vertical = 2.dp),
-                        ) {
-                            Text(c.title, style = MaterialTheme.typography.bodyMedium, maxLines = 2)
-                            // Слово, а не имя enum (аудит удобства, A-15).
-                            Text(com.dpsmpx.dpai.core.text.Words.task(c.state) + if (c.held) " · пауза" else "", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { waiting = false }) { Text("Закрыть") } },
         )
     }
 }

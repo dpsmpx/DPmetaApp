@@ -75,7 +75,7 @@ object LocalHints {
             is Outcome.Failure -> return "Локальный ИИ: ${r.errors.first().message}"
             is Outcome.Success -> r.value
         }
-        val metrics = listOf("состояние" to screen.health) + screen.reasons.map { "причина" to it } + screen.counters.map { it.label to it.value }
+        val metrics = listOf("состояние" to screen.health) + screen.reasons.map { "причина" to it } + (screen.counters + screen.usage).map { it.label to it.value }
         val out = mutableListOf<String>()
         when (val h = ai.anomalies(metrics, cancel)) {
             is Outcome.Success -> out += if (h.value.hints.isEmpty()) "Отклонений модель не видит." else h.value.hints.joinToString("\n") { "· $it" }
@@ -104,12 +104,13 @@ fun LocalHintsCard(screen: DashboardScreen) {
     LaunchedEffect(profiles) { profile = withContext(Dispatchers.IO) { ModelsStore.init(context); LocalHints.chosen(context, ModelsStore.profiles.value) } }
     val cancel = remember { Cancel() }
     DisposableEffect(Unit) { onDispose { cancel.cancel() } }
+    // Модели нет — карточки нет (AI:A-6): выбор модели — во вкладке «Модели» (D-113).
+    val chosen = profile ?: return
     Card {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("Подсказки локальной модели", style = MaterialTheme.typography.titleSmall)
             Text(
-                profile?.let { "Модель: ${it.name} (${it.model}). Подсказка — непроверенная, решает человек." }
-                    ?: "Локальной модели нет: llama.cpp — вкладка Linux; ПК — профиль Ollama или llama.cpp во вкладке «Модели».",
+                "Модель: ${chosen.name} (${chosen.model}). Подсказка — непроверенная, решает человек.",
                 style = MaterialTheme.typography.bodySmall,
             )
             TextButton(enabled = !busy, onClick = {

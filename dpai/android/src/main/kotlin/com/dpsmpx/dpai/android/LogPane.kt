@@ -36,7 +36,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Вкладка «Журнал» (D-43): последние строки журнала приложения с
+ * Журнал в «Настройках AI» (D-43, D-112): последние строки журнала приложения с
  * фильтром по уровню и выгрузка — начало и хвост файла — в буфер обмена
  * или файлом в «Загрузки/dpai-logs» (длинный журнал в буфер не влезает,
  * файл передаётся целиком). Выгрузка — только кнопкой человека: наружу
@@ -49,6 +49,7 @@ fun LogPane(model: DemoModel) {
     var filter by remember { mutableStateOf(LogFilter.ALL) }
     var lines by remember { mutableStateOf<List<LogLine>>(emptyList()) }
     var note by remember { mutableStateOf<String?>(null) }
+    val undo = LocalUndo.current
     val scope = rememberCoroutineScope()
     LaunchedEffect(filter) {
         while (true) {
@@ -67,13 +68,14 @@ fun LogPane(model: DemoModel) {
             OutlinedButton(onClick = {
                 val text = log.export()
                 Clipboard.copy(context, "журнал dpai", text)
-                if (!Clipboard.systemConfirms) note = "скопировано знаков: ${text.length}"
+                if (!Clipboard.systemConfirms) undo.tell("Скопировано знаков: ${text.length}") { note = it }
             }) { Text("Копировать журнал") }
             OutlinedButton(onClick = {
                 scope.launch {
-                    note = when (val r = withContext(Dispatchers.IO) { saveLog(context, log.export(maxChars = Int.MAX_VALUE)) }) {
-                        is Outcome.Success -> "Сохранено: Загрузки/$LOG_DIR/${r.value}"
-                        is Outcome.Failure -> "Не сохранено: ${r.errors.first().message}"
+                    // Сохранено — снэкбаром (AI:A-19); отказ — строкой на месте.
+                    when (val r = withContext(Dispatchers.IO) { saveLog(context, log.export(maxChars = Int.MAX_VALUE)) }) {
+                        is Outcome.Success -> undo.tell("Сохранено: Загрузки/$LOG_DIR/${r.value}") { note = it }
+                        is Outcome.Failure -> note = "Не сохранено: ${r.errors.first().message}"
                     }
                 }
             }) { Text("В Загрузки") }

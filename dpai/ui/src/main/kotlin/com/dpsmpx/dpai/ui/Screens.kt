@@ -42,7 +42,18 @@ data class DashboardScreen(
     val attention: List<String>,
     /** Загрузка окон подписок и порог «у предела» (D-42, D-45). */
     val limits: List<SubscriptionLimits> = emptyList(),
-)
+    /** Расход (D-40) — отдельно от счётчиков: на сводке он свёрнут «Расход ▸» (AI:A-6). */
+    val usage: List<Counter> = emptyList(),
+    /** Активных сессий — числом: строка «AI» на сводке пульта (DPmetaApp:D-76). */
+    val active: Int = 0,
+) {
+    /**
+     * Счётчики, которые стоит показать (AI:A-6): обычный «0» ничего не
+     * говорит и скрыт; «0» с тревогой (нет аккаунтов) и неизвестное («?») —
+     * показываются (D-13).
+     */
+    val shownCounters: List<Counter> get() = counters.filter { it.value != "0" || it.tone != Tone.NEUTRAL }
+}
 
 /** Окно подписки на экране: «5 ч — 42 % · сброс 15:00»; загрузка неизвестна — «?» (D-13). */
 data class WindowLine(val window: String, val percent: String, val reset: String?, val tone: Tone)
@@ -144,8 +155,11 @@ object Screens {
             Counter("Заблокировано", view.blocked.toString(), if (view.blocked > 0) Tone.WARNING else Tone.NEUTRAL),
             Counter("Упало", view.failed.toString(), if (view.failed > 0) Tone.ERROR else Tone.NEUTRAL),
             Counter("Запросы ждут ответа", count(view.waitingApproval), if ((view.waitingApproval.orNull() ?: 0) > 0) Tone.WARNING else Tone.NEUTRAL),
-            Counter("Аккаунтов доступно", view.availableAccounts.toString(), Tone.NEUTRAL),
-        ) + usageCounters(usage),
+            // Ни одного аккаунта — ничто не может идти: «0» здесь — предупреждение, и он виден (проверка PR #172).
+            Counter("Аккаунтов доступно", view.availableAccounts.toString(), if (view.availableAccounts == 0) Tone.WARNING else Tone.NEUTRAL),
+        ),
+        usage = usageCounters(usage),
+        active = view.activeSessions,
         sessions = view.rows.map { r ->
             SessionLine(r.session, r.task, Words.display(r.state.name), tone(r.state), silent(r.silentFor), r.next ?: "—", r.review?.let(::reviewLabel))
         },

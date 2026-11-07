@@ -31,6 +31,7 @@ import com.dpsmpx.dpmeta.formats.Panel
 import com.dpsmpx.dpmeta.formats.PanelFormat
 import com.dpsmpx.dpmeta.github.GitHub
 import com.dpsmpx.dpmeta.app.ui.PultTheme
+import com.dpsmpx.dpmeta.app.ui.SyncEnd
 import com.dpsmpx.dpmeta.app.ui.PultView
 import java.io.File
 import java.util.concurrent.ExecutorService
@@ -40,7 +41,7 @@ import java.util.concurrent.ExecutorService
  * чтение. Окно закрыто от снимков (`FLAG_SECURE`, T-02: на экране — токен и
  * закрытые проекты); вход — через [Lock] (F-45). Первым экраном приложения
  * его делает наследник в модуле корня `:shell` (D-53) — он же даёт
- * [aiIntent]: вкладка «AI» открывает оболочку подсистемы.
+ * [aiIntent]: пункт «AI» открывает оболочку подсистемы.
  */
 open class PultActivity : ComponentActivity() {
     private lateinit var pool: ExecutorService
@@ -92,7 +93,7 @@ open class PultActivity : ComponentActivity() {
      */
     private fun withToken(done: (Secret?) -> Unit) {
         when (val r = secrets.load()) {
-            is Outcome.Success -> r.value?.let(done) ?: noToken("нет токена GitHub: вкладка «Настройки»", done)
+            is Outcome.Success -> r.value?.let(done) ?: noToken("нет токена GitHub: пункт «Ещё»", done)
             is Outcome.Failure -> if (r.diagnostics.first().code == DiagCode.DEVICE_AUTH_REQUIRED) {
                 afterAuth("Открыть токен GitHub") { ok ->
                     if (!ok) {
@@ -135,8 +136,32 @@ open class PultActivity : ComponentActivity() {
         done(null)
     }
 
-    /** Вход в подсистему «AI» (D-53); нет — вкладки «AI» нет: пульт сам о подсистеме не знает. */
+    /** Вход в подсистему «AI» (D-53); нет — пункта «AI» нет: пульт сам о подсистеме не знает. */
     protected open fun aiIntent(): Intent? = null
+
+    /** Вход в «AI» со строки сводки (D-76): [requests] — сразу на «Запросы». */
+    protected open fun aiIntent(requests: Boolean): Intent? = aiIntent()
+
+    /**
+     * Числа строки «AI» на сводке (D-76) — их даёт оболочка `:shell`;
+     * `null` — строки нет. Вызывается не на главном потоке.
+     */
+    protected open fun aiCounts(): com.dpsmpx.dpmeta.app.screens.Screens.AiCounts? = null
+
+    /** Опрос чисел «AI», пока пульт на экране: дёшево — оболочка читает уже опубликованный снимок. */
+    private val ui = android.os.Handler(android.os.Looper.getMainLooper())
+    private val aiTick = object : Runnable {
+        override fun run() {
+            if (!pool.isShutdown) {
+                pool.execute {
+                    // Сбой чтения — прежние числа, а не пропавшая строка.
+                    val c = runCatching { aiCounts() }.getOrElse { view.value.ai }
+                    runOnUiThread { if (view.value.ai != c) view.value = view.value.copy(ai = c) }
+                }
+            }
+            ui.postDelayed(this, AI_REFRESH_MS)
+        }
+    }
 
     override fun onDestroy() {
         authSignal?.cancel()
@@ -147,6 +172,13 @@ open class PultActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         if (opened) entrySync()
+        // Опрос — только с оболочкой «AI» (D-76): без неё строки нет.
+        if (aiIntent() != null) ui.post(aiTick)
+    }
+
+    override fun onPause() {
+        ui.removeCallbacks(aiTick)
+        super.onPause()
     }
 
     /** Окно открыто входом ([open]) — до этого синхронизации при входе нет. */
@@ -269,11 +301,13 @@ open class PultActivity : ComponentActivity() {
         entrySync()
         // От края до края (Android 15+ — всегда): отступы панелей даёт Scaffold, значки — по теме экрана (UX-5).
         enableEdgeToEdge()
+        // Пункт и строка «AI» — только с оболочкой подсистемы (D-53, D-76).
+        val ai: ((Boolean) -> Unit)? = if (aiIntent() != null) { requests -> aiIntent(requests)?.let(::startActivity) } else null
         setContent {
             PultTheme {
                 PultApp(
                     view.value, loader, onSync = ::sync, onSaveToken = ::saveToken, onForgetToken = ::forgetToken,
-                    onAi = aiIntent()?.let { i -> { startActivity(i) } }, onExport = ::export,
+                    onAi = ai, onExport = ::export,
                     onClones = { withToken { token -> if (token != null) askClones(token, first = false) } }, onClonesChosen = ::clonesChosen,
                 )
             }
@@ -411,13 +445,20 @@ open class PultActivity : ComponentActivity() {
     }
 
     /** «Обновить»: до первого выбора клонов (D-70) — сначала окно выбора. */
-    private fun sync() = withToken { token -> if (token != null) { if (!clonesAsked()) askClones(token, first = true) else sync(token) } }
+    private fun sync() = withToken { token ->
+        if (token != null) {
+            if (!clonesAsked()) askClones(token, first = true) else sync(token)
+        } else {
+            // Нет токена или входа — «Обновить» не началось: сказать снэкбаром, а не молча (проверка PR #172).
+            view.value = view.value.copy(syncEnded = view.value.syncEnded + 1, syncEnd = SyncEnd.REFUSED)
+        }
+    }
 
     private fun sync(token: Secret) {
         if (pool.isShutdown) return
         // Идёт синхронизация прежнего окна (поворот) — не ошибка: итог будет у «Обновить» после неё.
         if (repo.syncing()) {
-            view.value = view.value.copy(statusDetails = "", status = "Синхронизация уже идёт — «Обновить», когда закончится.")
+            view.value = view.value.copy(statusDetails = "", status = "Синхронизация уже идёт — «Обновить», когда закончится.", syncEnded = view.value.syncEnded + 1, syncEnd = SyncEnd.REFUSED)
             return
         }
         view.value = view.value.copy(busy = true, statusDetails = "", status = "")
@@ -435,11 +476,13 @@ open class PultActivity : ComponentActivity() {
                         busy = false,
                         status = "Готово: ${r.value.line}." + (note?.let { " $it" } ?: ""),
                         statusDetails = "",
+                        syncEnded = view.value.syncEnded + 1,
+                        syncEnd = SyncEnd.DONE,
                         feed = feed,
                         names = repo.names(),
                     ).also { loadHistory() }
                     is Outcome.Failure -> Screens.failure(r.diagnostics.first()).let { f ->
-                        view.value.copy(busy = false, status = "Не вышло: ${f.text}." + (note?.let { " $it" } ?: ""), statusDetails = f.details)
+                        view.value.copy(busy = false, status = "Не вышло: ${f.text}." + (note?.let { " $it" } ?: ""), statusDetails = f.details, syncEnded = view.value.syncEnded + 1, syncEnd = SyncEnd.FAILED)
                     }
                 }
             }
@@ -447,6 +490,9 @@ open class PultActivity : ComponentActivity() {
     }
 
     companion object {
+        /** Как часто строка «AI» сводки перечитывает числа, пока пульт на экране (D-76). */
+        private const val AI_REFRESH_MS = 5_000L
+
         /** Каталог экспорта в кэше — единственный, что виден [ExportProvider] (`res/xml/pult_export_paths.xml`). */
         const val EXPORT_DIR = "pult-export"
         private const val PENDING_JSON = "export.json"

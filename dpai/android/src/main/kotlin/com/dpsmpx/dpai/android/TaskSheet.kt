@@ -43,6 +43,7 @@ import com.dpsmpx.dpai.tasks.ReviewRole
 import com.dpsmpx.dpai.tasks.TaskClass
 import com.dpsmpx.dpai.ui.ReviewLine
 import com.dpsmpx.dpai.ui.TaskAction
+import com.dpsmpx.dpai.ui.Tone
 import com.dpsmpx.dpai.ui.TaskDetail
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -314,7 +315,9 @@ private fun ChangesSection(model: DemoModel, task: TaskId) {
     Text(v.summary, style = MaterialTheme.typography.bodySmall)
     if (v.lines.isEmpty()) return
     val colors = MaterialTheme.colorScheme
-    val text = remember(v) {
+    // Добавленные строки — смысловой «готово» под тему (AI:A-12): тёмно-зелёный на тёмной теме не читался.
+    val added = toneColor(Tone.DONE)
+    val text = remember(v, added) {
         val b = androidx.compose.ui.text.AnnotatedString.Builder()
         v.lines.forEachIndexed { i, l ->
             if (i > 0) b.append("\n")
@@ -322,7 +325,7 @@ private fun ChangesSection(model: DemoModel, task: TaskId) {
                 com.dpsmpx.dpai.ui.DiffKind.SECTION -> androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold, color = colors.primary)
                 com.dpsmpx.dpai.ui.DiffKind.FILE -> androidx.compose.ui.text.SpanStyle(fontWeight = FontWeight.Bold)
                 com.dpsmpx.dpai.ui.DiffKind.HUNK -> androidx.compose.ui.text.SpanStyle(color = colors.tertiary)
-                com.dpsmpx.dpai.ui.DiffKind.ADDED -> androidx.compose.ui.text.SpanStyle(color = ADDED, background = ADDED.copy(alpha = 0.08f))
+                com.dpsmpx.dpai.ui.DiffKind.ADDED -> androidx.compose.ui.text.SpanStyle(color = added, background = added.copy(alpha = 0.08f))
                 com.dpsmpx.dpai.ui.DiffKind.REMOVED -> androidx.compose.ui.text.SpanStyle(color = colors.error, background = colors.error.copy(alpha = 0.08f))
                 com.dpsmpx.dpai.ui.DiffKind.NOTE -> androidx.compose.ui.text.SpanStyle(fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, color = colors.outline)
                 com.dpsmpx.dpai.ui.DiffKind.STAT, com.dpsmpx.dpai.ui.DiffKind.CONTEXT -> null
@@ -348,9 +351,6 @@ private fun ChangesSection(model: DemoModel, task: TaskId) {
         }
     }
 }
-
-/** Цвет добавленных строк: зелёный, различимый на светлой и тёмной теме. */
-private val ADDED = androidx.compose.ui.graphics.Color(0xFF2E7D32)
 
 /**
  * Ручной перенос задачи на слот (D-66): следующий ход — на выбранном слоте

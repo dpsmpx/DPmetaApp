@@ -10,8 +10,11 @@
         android:name=".DpmetaApplication"
         android:label="DPmetaApp"
         tools:replace="android:name,android:label">
+        <!-- Поворот, тема, шрифт — без пересоздания, как у PultActivity (UX-3): здесь первый экран — наследник,
+             и без этих флагов место, итог синхронизации и окно клонов терялись в APK (проверка PR #172). -->
         <activity
             android:name=".DpmetaActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density|fontScale|locale|layoutDirection"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

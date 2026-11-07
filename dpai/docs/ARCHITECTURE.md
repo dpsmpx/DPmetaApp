@@ -284,7 +284,8 @@ target:     start ─► Detacher ─► supervise ─► процесс; выв
 свежести, ТЗ, §122), `Timeline` (ТЗ, §40), `SelfDiagnostics` (ТЗ, §79,
 §80: что разрешено в деградации). Модуль `ui`: `Screens` — состояния
 экранов (сводка, экран сессии, доска задач с уровнями DAG) и смысл цвета
-`Tone`; `DashboardText` — те же экраны текстом для `cli`; `DemoSystem` —
+`Tone`; `AppPalette` — смысловые цвета всего приложения и запасная схема
+Android 11 (`DPmetaApp:D-74`); `DashboardText` — те же экраны текстом для `cli`; `DemoSystem` —
 настоящий `Orchestrator` на `MockRunner` для показа и замеров;
 `LiveSystem` — контроллер приложения (D-35) над targets из
 `dpai.app-targets`: слот на target, `SlotAuthProbe`, `RoutingRunner`;

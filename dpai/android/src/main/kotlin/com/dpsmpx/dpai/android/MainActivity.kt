@@ -115,15 +115,52 @@ class MainActivity : ComponentActivity() {
 /** Имена внутренних действий и вход (D-44). */
 private const val INTERNAL_ENTRY = "com.dpsmpx.dpai.android.InternalEntry"
 
-/** Тема: цвета системы (Android 12+) или стандартные Material 3, светлая и тёмная. */
+/**
+ * Тема всего приложения (DPmetaApp:D-74): цвета обоев телефона (Android 12+),
+ * на Android 11 — запасная схема `AppPalette`; светлая и тёмная — по теме
+ * телефона. Смысловые цвета — не отсюда, а `toneColor` (тоже `AppPalette`).
+ */
 @Composable
 fun DpaiTheme(content: @Composable () -> Unit) {
     val dark = isSystemInDarkTheme()
     val context = LocalContext.current
     val scheme = when {
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        dark -> darkColorScheme()
-        else -> lightColorScheme()
+        else -> fallbackScheme(dark)
     }
     MaterialTheme(colorScheme = scheme, content = content)
+}
+
+/**
+ * Запасная схема Android 11 из `AppPalette` — все роли, а не три цвета поверх фиолетовых по умолчанию (UX-5).
+ * Копия — у пульта (`DPmetaApp:app/…/ui/PultUi.kt`, он не зависит от оболочки «AI»): новая роль — в обе.
+ */
+fun fallbackScheme(dark: Boolean): androidx.compose.material3.ColorScheme {
+    val p = com.dpsmpx.dpai.ui.AppPalette.scheme(dark)
+    fun c(v: Long) = androidx.compose.ui.graphics.Color(v)
+    return if (dark) {
+        darkColorScheme(
+            primary = c(p.primary), onPrimary = c(p.onPrimary), primaryContainer = c(p.primaryContainer), onPrimaryContainer = c(p.onPrimaryContainer),
+            secondary = c(p.secondary), onSecondary = c(p.onSecondary), secondaryContainer = c(p.secondaryContainer), onSecondaryContainer = c(p.onSecondaryContainer),
+            tertiary = c(p.tertiary), onTertiary = c(p.onTertiary), tertiaryContainer = c(p.tertiaryContainer), onTertiaryContainer = c(p.onTertiaryContainer),
+            background = c(p.background), onBackground = c(p.onBackground), surface = c(p.surface), onSurface = c(p.onSurface),
+            surfaceVariant = c(p.surfaceVariant), onSurfaceVariant = c(p.onSurfaceVariant), outline = c(p.outline), outlineVariant = c(p.outlineVariant),
+            error = c(p.error), onError = c(p.onError), errorContainer = c(p.errorContainer), onErrorContainer = c(p.onErrorContainer),
+            surfaceContainerLowest = c(p.surfaceContainerLowest), surfaceContainerLow = c(p.surfaceContainerLow), surfaceContainer = c(p.surfaceContainer),
+            surfaceContainerHigh = c(p.surfaceContainerHigh), surfaceContainerHighest = c(p.surfaceContainerHighest),
+            inverseSurface = c(p.inverseSurface), inverseOnSurface = c(p.inverseOnSurface), inversePrimary = c(p.inversePrimary),
+        )
+    } else {
+        lightColorScheme(
+            primary = c(p.primary), onPrimary = c(p.onPrimary), primaryContainer = c(p.primaryContainer), onPrimaryContainer = c(p.onPrimaryContainer),
+            secondary = c(p.secondary), onSecondary = c(p.onSecondary), secondaryContainer = c(p.secondaryContainer), onSecondaryContainer = c(p.onSecondaryContainer),
+            tertiary = c(p.tertiary), onTertiary = c(p.onTertiary), tertiaryContainer = c(p.tertiaryContainer), onTertiaryContainer = c(p.onTertiaryContainer),
+            background = c(p.background), onBackground = c(p.onBackground), surface = c(p.surface), onSurface = c(p.onSurface),
+            surfaceVariant = c(p.surfaceVariant), onSurfaceVariant = c(p.onSurfaceVariant), outline = c(p.outline), outlineVariant = c(p.outlineVariant),
+            error = c(p.error), onError = c(p.onError), errorContainer = c(p.errorContainer), onErrorContainer = c(p.onErrorContainer),
+            surfaceContainerLowest = c(p.surfaceContainerLowest), surfaceContainerLow = c(p.surfaceContainerLow), surfaceContainer = c(p.surfaceContainer),
+            surfaceContainerHigh = c(p.surfaceContainerHigh), surfaceContainerHighest = c(p.surfaceContainerHighest),
+            inverseSurface = c(p.inverseSurface), inverseOnSurface = c(p.inverseOnSurface), inversePrimary = c(p.inversePrimary),
+        )
+    }
 }

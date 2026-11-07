@@ -7,13 +7,21 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -22,12 +30,22 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
@@ -35,6 +53,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -44,6 +63,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -52,9 +74,12 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpmeta.app.R
 import com.dpsmpx.dpmeta.app.screens.Links
 import com.dpsmpx.dpmeta.app.screens.Panels
 import com.dpsmpx.dpmeta.app.screens.Screens
+import com.dpsmpx.dpmeta.app.screens.Screens.DevTab
+import com.dpsmpx.dpmeta.app.screens.Screens.Section
 import com.dpsmpx.dpmeta.app.screens.Stats
 import com.dpsmpx.dpmeta.formats.Panel
 import com.dpsmpx.dpmeta.github.GitHub
@@ -63,18 +88,60 @@ import com.dpsmpx.dpmeta.metrics.Feed
 import com.dpsmpx.dpmeta.metrics.FeedEvent
 import com.dpsmpx.dpmeta.metrics.MetricPoint
 
-/**
- * Токены оформления пульта (D-15; ТЗ, §9): свои цвета, светлая и тёмная
- * схемы по системе. Цвета — здесь и только здесь.
- */
+/** Отступы пульта (ТЗ, §9). Цвета — не здесь: тема приложения одна (D-74), смысловые — `AppPalette`. */
 object Tokens {
-    val light: ColorScheme = lightColorScheme(primary = Color(0xFF2F5D8A), secondary = Color(0xFF5B6B7A), error = Color(0xFFB3261E))
-    val dark: ColorScheme = darkColorScheme(primary = Color(0xFF9CC3EA), secondary = Color(0xFFB7C4D1), error = Color(0xFFF2B8B5))
     val gap = 12.dp
 }
 
+/**
+ * Тема пульта — та же, что у «AI» (D-74; UX-5): цвета обоев телефона
+ * (Android 12+), на Android 11 — запасная схема `AppPalette` всеми ролями.
+ */
 @Composable
-fun PultTheme(content: @Composable () -> Unit) = MaterialTheme(colorScheme = if (isSystemInDarkTheme()) Tokens.dark else Tokens.light, content = content)
+fun PultTheme(content: @Composable () -> Unit) {
+    val dark = isSystemInDarkTheme()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scheme = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+        if (dark) androidx.compose.material3.dynamicDarkColorScheme(context) else androidx.compose.material3.dynamicLightColorScheme(context)
+    } else {
+        fallbackScheme(dark)
+    }
+    MaterialTheme(colorScheme = scheme, content = content)
+}
+
+/**
+ * Запасная схема Android 11 — роли `AppPalette`. Копия `fallbackScheme` оболочки «AI»
+ * (`dpai/android`, `MainActivity.kt`): пульт от неё не зависит (D-53); новая роль — в обе.
+ */
+private fun fallbackScheme(dark: Boolean): ColorScheme {
+    val p = com.dpsmpx.dpai.ui.AppPalette.scheme(dark)
+    fun c(v: Long) = Color(v)
+    return if (dark) {
+        darkColorScheme(
+            primary = c(p.primary), onPrimary = c(p.onPrimary), primaryContainer = c(p.primaryContainer), onPrimaryContainer = c(p.onPrimaryContainer),
+            secondary = c(p.secondary), onSecondary = c(p.onSecondary), secondaryContainer = c(p.secondaryContainer), onSecondaryContainer = c(p.onSecondaryContainer),
+            tertiary = c(p.tertiary), onTertiary = c(p.onTertiary), tertiaryContainer = c(p.tertiaryContainer), onTertiaryContainer = c(p.onTertiaryContainer),
+            background = c(p.background), onBackground = c(p.onBackground), surface = c(p.surface), onSurface = c(p.onSurface),
+            surfaceVariant = c(p.surfaceVariant), onSurfaceVariant = c(p.onSurfaceVariant), outline = c(p.outline), outlineVariant = c(p.outlineVariant),
+            error = c(p.error), onError = c(p.onError), errorContainer = c(p.errorContainer), onErrorContainer = c(p.onErrorContainer),
+            surfaceContainerLowest = c(p.surfaceContainerLowest), surfaceContainerLow = c(p.surfaceContainerLow), surfaceContainer = c(p.surfaceContainer),
+            surfaceContainerHigh = c(p.surfaceContainerHigh), surfaceContainerHighest = c(p.surfaceContainerHighest),
+            inverseSurface = c(p.inverseSurface), inverseOnSurface = c(p.inverseOnSurface), inversePrimary = c(p.inversePrimary),
+        )
+    } else {
+        lightColorScheme(
+            primary = c(p.primary), onPrimary = c(p.onPrimary), primaryContainer = c(p.primaryContainer), onPrimaryContainer = c(p.onPrimaryContainer),
+            secondary = c(p.secondary), onSecondary = c(p.onSecondary), secondaryContainer = c(p.secondaryContainer), onSecondaryContainer = c(p.onSecondaryContainer),
+            tertiary = c(p.tertiary), onTertiary = c(p.onTertiary), tertiaryContainer = c(p.tertiaryContainer), onTertiaryContainer = c(p.onTertiaryContainer),
+            background = c(p.background), onBackground = c(p.onBackground), surface = c(p.surface), onSurface = c(p.onSurface),
+            surfaceVariant = c(p.surfaceVariant), onSurfaceVariant = c(p.onSurfaceVariant), outline = c(p.outline), outlineVariant = c(p.outlineVariant),
+            error = c(p.error), onError = c(p.onError), errorContainer = c(p.errorContainer), onErrorContainer = c(p.onErrorContainer),
+            surfaceContainerLowest = c(p.surfaceContainerLowest), surfaceContainerLow = c(p.surfaceContainerLow), surfaceContainer = c(p.surfaceContainer),
+            surfaceContainerHigh = c(p.surfaceContainerHigh), surfaceContainerHighest = c(p.surfaceContainerHighest),
+            inverseSurface = c(p.inverseSurface), inverseOnSurface = c(p.inverseOnSurface), inversePrimary = c(p.inversePrimary),
+        )
+    }
+}
 
 /** Состояние экрана, которое держит активность: срез, лента, строка о синхронизации, есть ли токен. */
 data class PultView(
@@ -92,6 +159,12 @@ data class PultView(
     val statusDetails: String = "",
     /** Сколько репозиториев отмечено для клонов — строка настроек. */
     val clones: String = "",
+    /** Числа «AI» от оболочки `:shell` (D-76); `null` — строки «AI» нет. */
+    val ai: Screens.AiCounts? = null,
+    /** Номер законченной (или не начатой) синхронизации — итог снэкбаром один раз (UX-6); 0 — ещё не было. */
+    val syncEnded: Int = 0,
+    /** Чем она кончилась — текст и переход снэкбара. */
+    val syncEnd: SyncEnd = SyncEnd.DONE,
 )
 
 /**
@@ -100,6 +173,9 @@ data class PultView(
  * первый вход: «Позже» спросит снова.
  */
 data class ClonePrompt(val options: List<com.dpsmpx.dpmeta.app.data.PultRepository.CloneOption>, val checked: Set<String>, val first: Boolean)
+
+/** Итог «Обновить» для снэкбара (UX-6): обновлено, не вышло, не начато (нет токена, уже идёт). */
+enum class SyncEnd { DONE, FAILED, REFUSED }
 
 /** Загрузка по запросу (F-09): каталог и файл проекта; итог — в главном потоке. */
 interface Loader {
@@ -111,7 +187,16 @@ interface Loader {
     fun panel(project: String): Outcome<Panel>? = null
 }
 
-private enum class Tab(val title: String) { SUMMARY("Сводка"), PROJECTS("Проекты"), FEED("Лента"), QUESTIONS("Вопросы"), SETTINGS("Настройки") }
+/** Значки пунктов панели (D-73): свои векторные рисунки. */
+private val Section.icon: Int get() = when (this) {
+    Section.SUMMARY -> R.drawable.ic_pult_summary
+    Section.DEV -> R.drawable.ic_pult_dev
+    Section.STATS -> R.drawable.ic_pult_stats
+    Section.MORE -> R.drawable.ic_pult_more
+}
+
+/** Высота панели пульта — та же, что у панели «AI» (D-73, `DP_AI_Orcestrator:D-112`: 48 dp); крупный шрифт её растит. */
+private val PANEL_HEIGHT = 48.dp
 
 /** Куда перешли внутри вкладки: карточка → каталог → документ; «назад» снимает верх. */
 private sealed interface Nav {
@@ -124,6 +209,9 @@ private sealed interface Nav {
     /** Статистика (F-34): [project] — из карточки, `null` — сравнение всех проектов. */
     data class Stats(val project: String?) : Nav
 
+    /** Вся лента событий (F-05) — со сводки (D-73). */
+    data object Feed : Nav
+
     companion object {
         private const val SEP = "\u0001"
 
@@ -133,6 +221,7 @@ private sealed interface Nav {
             is Dir -> listOf("dir", n.project, n.path)
             is Doc -> listOf("doc", n.project, n.path, n.anchor.orEmpty())
             is Stats -> listOf("stats", n.project.orEmpty())
+            Feed -> listOf("feed")
         }.joinToString(SEP)
 
         fun decode(s: String): Nav? {
@@ -142,6 +231,7 @@ private sealed interface Nav {
                 "dir" -> if (p.size >= 3) Dir(p[1], p[2]) else null
                 "doc" -> if (p.size >= 4) Doc(p[1], p[2], p[3].ifEmpty { null }) else null
                 "stats" -> Stats(p.getOrNull(1)?.ifEmpty { null })
+                "feed" -> Feed
                 else -> null
             }
         }
@@ -152,13 +242,13 @@ private sealed interface Nav {
  * Стеки вкладок (UX-2, UX-3): у каждой вкладки — свой, и они переживают
  * поворот и смерть процесса. Сохраняются строками «вкладка, переход».
  */
-private val StacksSaver = listSaver<SnapshotStateMap<Tab, List<Nav>>, String>(
+private val StacksSaver = listSaver<SnapshotStateMap<Section, List<Nav>>, String>(
     save = { m -> m.flatMap { (t, l) -> l.map { "${t.name}\u0002${Nav.encode(it)}" } } },
     restore = { list ->
-        mutableStateMapOf<Tab, List<Nav>>().apply {
+        mutableStateMapOf<Section, List<Nav>>().apply {
             for (e in list) {
                 val (t, n) = e.split("\u0002", limit = 2).let { it[0] to it.getOrElse(1) { "" } }
-                val tab = Tab.entries.firstOrNull { it.name == t } ?: continue
+                val tab = Section.entries.firstOrNull { it.name == t } ?: continue
                 val nav = Nav.decode(n) ?: continue
                 this[tab] = this[tab].orEmpty() + nav
             }
@@ -166,7 +256,10 @@ private val StacksSaver = listSaver<SnapshotStateMap<Tab, List<Nav>>, String>(
     },
 )
 
-/** [onAi] — вкладка «AI» перед «Настройками» (D-53): открывает оболочку подсистемы; `null` — вкладки нет. */
+/**
+ * [onAi] — пункт «AI» перед «Ещё» (D-53, D-73): открывает оболочку подсистемы
+ * (`true` — на «Запросах», D-76); `null` — пункта нет.
+ */
 @Composable
 fun PultApp(
     view: PultView,
@@ -174,28 +267,60 @@ fun PultApp(
     onSync: () -> Unit,
     onSaveToken: (String) -> Unit,
     onForgetToken: () -> Unit,
-    onAi: (() -> Unit)? = null,
+    onAi: ((requests: Boolean) -> Unit)? = null,
     onExport: ((json: Boolean, period: Stats.Period, share: Boolean) -> Unit)? = null,
     /** «Клоны…» в настройках (D-70). */
     onClones: () -> Unit = {},
     /** Итог окна клонов: отмеченные или `null` — «Позже» / «Отмена». */
     onClonesChosen: (Set<String>?) -> Unit = {},
 ) {
-    // Вкладка и стеки — rememberSaveable: поворот, тема и шрифт больше не сбрасывают место (UX-3).
-    var tab by rememberSaveable { mutableStateOf(if (view.hasToken) Tab.SUMMARY else Tab.SETTINGS) }
+    // Пункт и стеки — rememberSaveable: поворот, тема и шрифт больше не сбрасывают место (UX-3).
+    var tab by rememberSaveable { mutableStateOf(if (view.hasToken) Section.SUMMARY else Section.MORE) }
+    var devTab by rememberSaveable { mutableStateOf(DevTab.PROJECTS) }
     val stacks = rememberSaveable(saver = StacksSaver) { mutableStateMapOf() }
     val stack = stacks[tab].orEmpty()
     val open: (Nav) -> Unit = { stacks[tab] = stacks[tab].orEmpty() + it }
     val back: () -> Unit = { stacks[tab]?.takeIf { it.isNotEmpty() }?.let { stacks[tab] = it.dropLast(1) } }
-    // Системный «назад» — шаг вверх по стеку вкладки, а не выход из приложения (UX-2).
+    // Системный «назад» — шаг вверх по стеку пункта, а не выход из приложения (UX-2).
     BackHandler(enabled = stack.isNotEmpty(), onBack = back)
+    // Итог синхронизации — снэкбаром один раз (UX-6): «Обновлено», ошибки и отказ — с переходом к причине.
+    val snack = remember { SnackbarHostState() }
+    // Номер итога живёт в окне, а не в сохранённом состоянии: новое окно (смерть процесса) начинает с 0 и
+    // не показывает «Обновлено» без синхронизации (проверка PR #172).
+    var shownSync by remember { mutableIntStateOf(view.syncEnded) }
+    LaunchedEffect(view.syncEnded) {
+        if (view.syncEnded <= shownSync) return@LaunchedEffect
+        shownSync = view.syncEnded
+        val errors = view.state?.projects?.sumOf { it.errors.size } ?: 0
+        val text = when {
+            view.syncEnd == SyncEnd.FAILED -> "Не обновилось — причина в «Ещё»"
+            view.syncEnd == SyncEnd.REFUSED -> view.status.ifEmpty { "Не обновилось" }
+            errors > 0 -> "Обновлено · ошибок источников $errors"
+            else -> "Обновлено"
+        }
+        val more = view.syncEnd != SyncEnd.DONE || errors > 0
+        val r = snack.showSnackbar(text, actionLabel = if (more) "Подробнее" else null, withDismissAction = true, duration = SnackbarDuration.Short)
+        if (r == SnackbarResult.ActionPerformed) tab = if (view.syncEnd != SyncEnd.DONE) Section.MORE else Section.DEV.also { devTab = DevTab.PROJECTS }
+    }
     Scaffold(
+        snackbarHost = { SnackbarHost(snack) },
+        topBar = { Header(tab.title, view, onSync) },
         bottomBar = {
-            NavigationBar {
-                for (t in Tab.entries) {
-                    if (t == Tab.SETTINGS && onAi != null) NavigationBarItem(selected = false, onClick = onAi, icon = {}, label = { Text("AI") })
-                    // Вкладка выделена и во вложенном экране; касание открытой — к её началу, другой — туда, где оставили.
-                    NavigationBarItem(selected = tab == t, onClick = { if (tab == t) stacks[t] = emptyList() else tab = t }, icon = {}, label = { Text(t.title) })
+            // Панель — своя, как у «AI» (D-73): значки и подписи, 48 dp, роль вкладки и «выбрано» для TalkBack.
+            Surface(tonalElevation = 3.dp) {
+                Row(
+                    Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.navigationBars).heightIn(min = PANEL_HEIGHT).selectableGroup(),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                ) {
+                    // Порядок — Screens.panelItems: тот же, что сверяет тест панели.
+                    for (t in Screens.panelItems(ai = onAi != null)) {
+                        if (t == null) {
+                            PanelItem(Screens.AI_TITLE, R.drawable.ic_pult_ai, selected = null) { onAi?.invoke(false) }
+                        } else {
+                            // Пункт выделен и во вложенном экране; касание открытого — к его началу, другого — туда, где оставили.
+                            PanelItem(t.title, t.icon, selected = tab == t) { if (tab == t) stacks[t] = emptyList() else tab = t }
+                        }
+                    }
                 }
             }
         },
@@ -208,43 +333,132 @@ fun PultApp(
                 top is Nav.Dir -> DirScreen(top, loader, back, open)
                 top is Nav.Doc -> DocScreen(top, view.names, loader, back, open)
                 top is Nav.Stats && s != null -> StatsScreen(view.history, s.projects.map { it.name }, top.project, s.asOf, back, view.status, onExport)
-                tab == Tab.SETTINGS -> Settings(view, onSync, onSaveToken, onForgetToken, onClones)
-                s == null -> Text(if (view.hasToken) "Среза ещё нет: «Обновить» в настройках." else "Нужен токен GitHub: вкладка «Настройки».")
-                tab == Tab.SUMMARY -> Summary(Screens.summary(s), view, onSync) { open(Nav.Stats(null)) }
-                tab == Tab.PROJECTS -> Projects(Screens.projects(s)) { open(Nav.Card(it)) }
-                tab == Tab.FEED -> FeedScreen(view.feed, s.projects.map { it.name })
-                tab == Tab.QUESTIONS -> Questions(Screens.questions(s))
+                top is Nav.Feed && s != null -> FeedScreen(view.feed, s.projects.map { it.name }, back)
+                tab == Section.MORE -> Settings(view, onSync, onSaveToken, onForgetToken, onClones)
+                s == null -> Text(if (view.hasToken) "Среза ещё нет: «Обновить» в пункте «Ещё»." else "Нужен токен GitHub: пункт «Ещё».")
+                tab == Section.SUMMARY -> Summary(
+                    Screens.summary(s), view, onSync, onAi,
+                    onTile = { g ->
+                        when (g) {
+                            Screens.Goes.PROJECTS -> { tab = Section.DEV; devTab = DevTab.PROJECTS }
+                            Screens.Goes.QUESTIONS -> { tab = Section.DEV; devTab = DevTab.QUESTIONS }
+                            Screens.Goes.SYNC -> tab = Section.MORE
+                        }
+                    },
+                ) { open(Nav.Feed) }
+                tab == Section.STATS -> StatsScreen(view.history, s.projects.map { it.name }, null, s.asOf, null, view.status, onExport)
+                tab == Section.DEV -> Column(Modifier.fillMaxSize()) {
+                    DevTabs(devTab) { devTab = it }
+                    when (devTab) {
+                        DevTab.PROJECTS -> Projects(Screens.projects(s)) { open(Nav.Card(it)) }
+                        DevTab.QUESTIONS -> Questions(Screens.questions(s))
+                    }
+                }
             }
         }
     }
     view.clonePrompt?.let { ClonesDialog(it, onClonesChosen) }
 }
 
+/** Пункт панели: значок над подписью; [selected] `null` — не вкладка, а вход («AI»). */
 @Composable
-private fun Line(label: String, value: String) = Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-    Text(label)
-    Text(value, fontWeight = FontWeight.SemiBold)
+private fun RowScope.PanelItem(label: String, icon: Int, selected: Boolean?, onClick: () -> Unit) {
+    val color = if (selected == true) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+    val action = if (selected == null) {
+        Modifier.clickable(role = Role.Button, onClick = onClick)
+    } else {
+        Modifier.selectable(selected = selected, role = Role.Tab, onClick = onClick)
+    }
+    Column(
+        Modifier.weight(1f).heightIn(min = PANEL_HEIGHT).then(action).padding(vertical = 2.dp),
+        horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Icon(painterResource(icon), contentDescription = null, tint = color, modifier = Modifier.size(22.dp))
+        Text(label, style = MaterialTheme.typography.labelSmall, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
 }
 
+/**
+ * Заголовок каждого экрана пульта (D-73; ТЗ, §9): пункт, время среза или
+ * «обновляется»; во время синхронизации — тонкая полоса хода под ним.
+ */
 @Composable
-private fun Summary(s: Screens.Summary, view: PultView, onSync: () -> Unit, onStats: () -> Unit) = Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
-    Text("Срез ${s.asOf}", style = MaterialTheme.typography.titleMedium)
-    Line("Работают", s.active)
-    Line("Вопросов автору", s.questions)
-    Line("Открытых PR", s.pullsWaiting)
-    Line("Проектов", s.projects.toString())
-    Line("Ошибок источников", s.sourceErrors.toString())
-    Line("Шлюз готов", s.gatesReady)
-    Line("Синхронизация", s.syncHealth)
-    view.state?.let { st ->
-        // Плитки — один раз на историю и срез, не на каждую перерисовку сводки.
-        val tiles = remember(view.history, st.asOf) { Stats.tiles(view.history, st.asOf) }
-        Tiles(tiles)
+private fun Header(title: String, view: PultView, onSync: () -> Unit) {
+    Surface(tonalElevation = 3.dp) {
+        Column(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars)) {
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).padding(horizontal = Tokens.gap, vertical = 6.dp)) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                val asOf = view.state?.let { "срез ${Screens.time(it.asOf)}" }
+                Text(
+                    when {
+                        view.busy -> "Обновляется…" + (asOf?.let { " · $it" } ?: "")
+                        asOf != null -> asOf.replaceFirstChar { it.uppercase() }
+                        else -> "Среза ещё нет"
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            // «Обновить» — одно, значком в заголовке любого экрана (UX-6).
+            IconButton(onClick = onSync, enabled = view.hasToken && !view.busy) {
+                Icon(painterResource(R.drawable.ic_pult_refresh), contentDescription = "Обновить")
+            }
+            }
+            // Полоса — того же места и без синхронизации: заголовок не прыгает.
+            if (view.busy) LinearProgressIndicator(Modifier.fillMaxWidth()) else Spacer(Modifier.height(4.dp))
+        }
     }
-    TextButton(onClick = onStats) { Text("Статистика →") }
-    Button(onClick = onSync, enabled = !view.busy) { Text(if (view.busy) "Синхронизация…" else "Обновить") }
-    if (view.status.isNotEmpty()) StatusText(view)
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DevTabs(selected: DevTab, onSelect: (DevTab) -> Unit) {
+    PrimaryTabRow(selectedTabIndex = selected.ordinal) {
+        for (t in DevTab.entries) Tab(selected = t == selected, onClick = { onSelect(t) }, text = { Text(t.title) })
+    }
+    Spacer(Modifier.height(Tokens.gap))
+}
+
+/**
+ * Сводка (UX-6; ТЗ, F-04, §9): одна сетка плиток — у каждой свой экран,
+ * строка «AI» (D-76), последние события и вся лента. «Обновить» — в
+ * заголовке и жестом «потянуть»; итог — снэкбаром.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun Summary(
+    s: Screens.Summary,
+    view: PultView,
+    onSync: () -> Unit,
+    onAi: ((requests: Boolean) -> Unit)?,
+    onTile: (Screens.Goes) -> Unit,
+    onFeed: () -> Unit,
+) = PullToRefreshBox(isRefreshing = view.busy, onRefresh = { if (view.hasToken) onSync() }, modifier = Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+        val history = remember(view.history, view.state?.asOf) { view.state?.let { Stats.tiles(view.history, it.asOf) }.orEmpty().associateBy { it.metric.id } }
+        SummaryTiles(Screens.tiles(s), history, onTile)
+        view.ai?.let { c ->
+            Card(Modifier.fillMaxWidth().clickable(enabled = onAi != null) { onAi?.invoke(Screens.aiToRequests(c)) }) {
+                Text(Screens.aiLine(c) + " ▸", Modifier.padding(Tokens.gap))
+            }
+        }
+        val recent = remember(view.feed) { Screens.feed(view.feed).take(SUMMARY_EVENTS) }
+        Text("Последние события", style = MaterialTheme.typography.titleSmall)
+        if (recent.isEmpty()) Text("Событий нет: они появляются со второй синхронизации.", style = MaterialTheme.typography.bodySmall)
+        for (r in recent) {
+            Column {
+                Text("${r.time} · ${r.project} · ${r.kind}", style = MaterialTheme.typography.bodySmall)
+                Text(r.text, maxLines = 2)
+            }
+        }
+        TextButton(onClick = onFeed) { Text("Вся лента ▸") }
+    }
+}
+
+/** Сколько последних событий на сводке; остальные — «Вся лента ▸». */
+private const val SUMMARY_EVENTS = 3
 
 @Composable
 private fun Projects(groups: List<Screens.Group>, onOpen: (String) -> Unit) = LazyColumn(verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
@@ -337,11 +551,13 @@ private fun CardList(c: Screens.Card, panel: Outcome<Panel>?, loader: Loader, on
 }
 
 @Composable
-private fun FeedScreen(events: List<FeedEvent>, projects: List<String>) {
+private fun FeedScreen(events: List<FeedEvent>, projects: List<String>, onBack: () -> Unit) {
     var project by rememberSaveable { mutableStateOf<String?>(null) }
     var kind by rememberSaveable { mutableStateOf<String?>(null) }
     val rows = Screens.feed(events, project, kind)
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        TextButton(onClick = onBack) { Text("← Назад") }
+        Text("Лента", style = MaterialTheme.typography.titleMedium)
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             FilterChip(selected = kind == null, onClick = { kind = null }, label = { Text("все виды") })
             for ((code, title) in Feed.KINDS) FilterChip(selected = kind == code, onClick = { kind = if (kind == code) null else code }, label = { Text(title) })
@@ -470,6 +686,8 @@ private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -
         )
     }
     Spacer(Modifier.height(Tokens.gap))
+    // Полный итог синхронизации — здесь (UX-6): на сводке только снэкбар.
+    Text("Синхронизация", style = MaterialTheme.typography.titleMedium)
     Button(onClick = onSync, enabled = view.hasToken && !view.busy) { Text(if (view.busy) "Синхронизация…" else "Обновить") }
     if (view.status.isNotEmpty()) StatusText(view)
     Spacer(Modifier.height(Tokens.gap))
@@ -497,7 +715,7 @@ fun ClonesDialog(prompt: ClonePrompt, onDone: (Set<String>?) -> Unit) {
             Column(verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
                 Text(
                     "Клон — полная копия в приложении: «AI» работает в нём, пульт берёт из него файлы без запросов. " +
-                        "Первое клонирование — долгое, лучше по Wi-Fi. Неотмеченные пульт читает с GitHub. Выбор меняется в «Настройках».",
+                        "Первое клонирование — долгое, лучше по Wi-Fi. Неотмеченные пульт читает с GitHub. Выбор меняется в пункте «Ещё».",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 // Список — не выше половины экрана: кнопки окна остаются видны.

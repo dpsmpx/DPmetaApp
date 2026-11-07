@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Пункт «Сводка»: плитки. Свой рисунок (D-73): линии 2 dp, цвет — оттенком из темы. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:pathData="M4,4h6v7h-6z M14,4h6v4h-6z M14,12h6v8h-6z M4,15h6v5h-6z" android:strokeColor="#FF000000" android:strokeWidth="2" android:strokeLineCap="round" android:strokeLineJoin="round" />
+</vector>
