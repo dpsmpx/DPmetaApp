@@ -139,6 +139,8 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
                 }
                 if (d.reviews.isNotEmpty()) ReviewsSection(d.reviews)
                 d.waiting?.let { Text("Ждёт: $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+                // Ждущий запрос задачи — с его вариантами здесь же (AI:A-7), а не только «Повторить».
+                model.published?.requests.orEmpty().filter { it.task == task }.forEach { RequestItem(model, it) }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     for (a in d.actions) {
                         OutlinedButton(

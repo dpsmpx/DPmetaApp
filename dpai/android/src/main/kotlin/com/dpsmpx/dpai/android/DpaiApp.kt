@@ -443,7 +443,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                                 screen == AiTab.MODELS.ordinal -> ModelsPane()
                                 screen == AiTab.FILES.ordinal -> FilesPane(onLinux = { openTab(AiTab.TARGETS) })
                                 s == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-                                screen == SESSION_SCREEN -> SessionPane(s.session, model, sessionEvents)
+                                screen == SESSION_SCREEN -> SessionPane(s.session, model, sessionEvents, s.requests)
                                 screen == AiTab.SUMMARY.ordinal -> Column(Modifier.fillMaxSize()) {
                                     QuickRow(s.quick, model)
                                     Box(Modifier.weight(1f)) { DashboardPane(s.dashboard, s.quick, model, onTargets = { openTab(AiTab.TARGETS) }) { foundTask = it } }
@@ -563,7 +563,7 @@ private fun Counters(counters: List<com.dpsmpx.dpai.ui.Counter>) {
 }
 
 @Composable
-private fun SessionPane(screen: SessionScreen?, model: DemoModel, events: Boolean) {
+private fun SessionPane(screen: SessionScreen?, model: DemoModel, events: Boolean, requests: List<RequestCard> = emptyList()) {
     if (screen == null) {
         Box(Modifier.fillMaxSize()) { CircularProgressIndicator(Modifier.align(Alignment.Center)) }
         return
@@ -577,6 +577,13 @@ private fun SessionPane(screen: SessionScreen?, model: DemoModel, events: Boolea
     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
     val inputMax = maxHeight - 56.dp
     Column(Modifier.fillMaxSize()) {
+        // Ждущий запрос задачи — закреплён над лентой (AI:A-7): все варианты сразу, без поиска вкладки «Запросы».
+        val waiting = requests.filter { it.task != null && it.task == screen.task }
+        if (waiting.isNotEmpty()) {
+            Column(Modifier.fillMaxWidth().heightIn(max = 320.dp).verticalScroll(rememberScrollState()).padding(horizontal = 10.dp, vertical = 4.dp)) {
+                for (r in waiting) RequestItem(model, r)
+            }
+        }
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = list, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             // Расход и строка состояния — мелко в начале ленты, а не над ней (D-61).
             item {

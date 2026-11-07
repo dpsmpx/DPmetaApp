@@ -33,6 +33,7 @@ import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.notifications.RequestKind
 import com.dpsmpx.dpai.ui.AnswerButton
 import com.dpsmpx.dpai.ui.RequestCard
+import com.dpsmpx.dpai.ui.Tone
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -94,9 +95,14 @@ internal fun OverlayCard() {
     }
 }
 
+/**
+ * Карточка ждущего запроса (D-44): на «Запросах», а также над чатом сессии и
+ * в листе задачи (AI:A-7) — касание уведомления сразу показывает все
+ * варианты, а не только первые три.
+ */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun RequestItem(model: DemoModel, card: RequestCard) {
+internal fun RequestItem(model: DemoModel, card: RequestCard) {
     val context = LocalContext.current.applicationContext
     val scope = rememberCoroutineScope()
     var text by remember(card.id) { mutableStateOf("") }
@@ -155,10 +161,18 @@ private fun RequestItem(model: DemoModel, card: RequestCard) {
     }
 }
 
+/**
+ * Вариант ответа — по роли (AI:A-8): «принять» — заливная кнопка, главное
+ * действие; нейтральные — контурные; опасный — контурный цветом ошибки
+ * (подтверждение — окном, AI:A-4).
+ */
 @Composable
 private fun AnswerChip(b: AnswerButton, enabled: Boolean, onClick: () -> Unit) {
-    val colors = if (b.confirm) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error) else ButtonDefaults.buttonColors()
-    Button(onClick = onClick, enabled = enabled, colors = colors) { Text(b.label) }
+    when {
+        b.confirm || b.tone == Tone.ERROR -> OutlinedButton(onClick = onClick, enabled = enabled, colors = ButtonDefaults.outlinedButtonColors(contentColor = toneColor(Tone.ERROR))) { Text(b.label) }
+        b.tone == Tone.ACTIVE -> Button(onClick = onClick, enabled = enabled) { Text(b.label) }
+        else -> OutlinedButton(onClick = onClick, enabled = enabled) { Text(b.label) }
+    }
 }
 
 /**
