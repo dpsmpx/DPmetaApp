@@ -64,6 +64,8 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
     var targets by remember { mutableStateOf(controller.targets()) }
     val checks = remember { mutableStateMapOf<String, List<CheckLine>>() }
     var form by remember { mutableStateOf(false) }
+    // Только что добавленный target — проверить сразу (AI:A-22), без отдельного нажатия.
+    var checkNew by remember { mutableStateOf<String?>(null) }
     var project by remember { mutableStateOf(controller.project()) }
     var projectFor by remember { mutableStateOf<TargetEntry?>(null) }
     var guide by rememberSaveable { mutableStateOf(false) }
@@ -157,6 +159,8 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
                 onProject = { projectFor = t },
                 onRename = { renaming = t },
                 onRemove = { removing = t },
+                checkNow = checkNew == t.id.value,
+                onChecked = { checkNew = null },
             )
         }
         item(key = "project") { ProjectCard(controller, targets, project) { project = it } }
@@ -180,9 +184,10 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
     }
 
     if (form) {
-        AddTargetDialog(controller, onDone = {
+        AddTargetDialog(controller, onDone = { added ->
             form = false
             targets = controller.targets()
+            checkNew = added?.id?.value
         })
     }
 }
@@ -205,6 +210,8 @@ private fun TargetCard(
     onProject: () -> Unit,
     onRename: () -> Unit,
     onRemove: () -> Unit,
+    checkNow: Boolean = false,
+    onChecked: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -247,6 +254,12 @@ private fun TargetCard(
                     listOf(CheckLine(login, "слота нет: войдите в каталоге слота ($how) и проверьте снова", Tone.WARNING))
                 },
             )
+        }
+    }
+    LaunchedEffect(checkNow) {
+        if (checkNow) {
+            onChecked()
+            check()
         }
     }
     Card(Modifier.fillMaxWidth()) {
@@ -407,7 +420,7 @@ private fun CheckRow(c: CheckLine) {
  * показывает target (`ssh-keygen -l -f <ключ хоста>.pub`) → сохранение.
  */
 @Composable
-private fun AddTargetDialog(controller: Controller, onDone: () -> Unit) {
+private fun AddTargetDialog(controller: Controller, onDone: (TargetEntry?) -> Unit) {
     val scope = rememberCoroutineScope()
     var label by remember { mutableStateOf("") }
     var host by remember { mutableStateOf("127.0.0.1") }
@@ -422,17 +435,45 @@ private fun AddTargetDialog(controller: Controller, onDone: () -> Unit) {
 
     val probed = pending
     AlertDialog(
-        onDismissRequest = onDone,
+        onDismissRequest = { onDone(null) },
         title = { Text(if (probed == null) "Новый target" else "Ключ хоста") },
         text = {
             if (probed == null) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    // Заготовки (AI:A-22): хост, порт, команда агента и каталог слота — одним касанием; дальше — правка.
+                    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        androidx.compose.material3.AssistChip(onClick = {
+                            if (label.isBlank()) label = "Termux"
+                            host = "127.0.0.1"
+                            port = "8022"
+                            agent = com.dpsmpx.dpai.ui.SetupGuide.AGENT
+                            configDir = com.dpsmpx.dpai.ui.SetupGuide.SLOT_DIR
+                            windows = false
+                        }, label = { Text("Termux на этом телефоне") })
+                        androidx.compose.material3.AssistChip(onClick = {
+                            if (label.isBlank()) label = "ПК с Windows"
+                            port = "22"
+                            configDir = ""
+                            windows = true
+                        }, label = { Text("ПК с Windows") })
+                        androidx.compose.material3.AssistChip(onClick = {
+                            if (label.isBlank()) label = "ПК с Linux"
+                            port = "22"
+                            configDir = ""
+                            windows = false
+                        }, label = { Text("ПК с Linux") })
+                    }
+                    val mono = androidx.compose.ui.text.TextStyle(fontFamily = FontFamily.Monospace)
                     OutlinedTextField(label, { label = it }, label = { Text("Имя") }, singleLine = true)
-                    OutlinedTextField(host, { host = it }, label = { Text("Хост") }, singleLine = true)
-                    OutlinedTextField(port, { port = it }, label = { Text("Порт") }, singleLine = true)
-                    OutlinedTextField(user, { user = it }, label = { Text("Пользователь") }, singleLine = true)
-                    OutlinedTextField(agent, { agent = it }, label = { Text("Команда агента dpai") }, singleLine = true)
-                    OutlinedTextField(configDir, { configDir = it }, label = { Text("Каталог Claude слота (для сессий)") }, singleLine = true)
+                    OutlinedTextField(host, { host = it }, label = { Text("Хост") }, singleLine = true, textStyle = mono)
+                    // Порт — цифровой клавиатурой (AI:A-22).
+                    OutlinedTextField(
+                        port, { v -> port = v.filter { it.isDigit() }.take(5) }, label = { Text("Порт") }, singleLine = true, textStyle = mono,
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                    )
+                    OutlinedTextField(user, { user = it }, label = { Text("Пользователь") }, singleLine = true, textStyle = mono)
+                    OutlinedTextField(agent, { agent = it }, label = { Text("Команда агента dpai") }, singleLine = true, textStyle = mono)
+                    OutlinedTextField(configDir, { configDir = it }, label = { Text("Каталог Claude слота (для сессий)") }, singleLine = true, textStyle = mono)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(windows, { windows = it })
                         Text("Windows")
@@ -474,13 +515,14 @@ private fun AddTargetDialog(controller: Controller, onDone: () -> Unit) {
                     scope.launch {
                         when (val a = withContext(Dispatchers.IO) { controller.add(probed.first, probed.second) }) {
                             is Outcome.Failure -> error = a.diagnostics.first().message
-                            is Outcome.Success -> onDone()
+                            // Сохранён — сразу «Проверить» на его карточке (AI:A-22).
+                            is Outcome.Success -> onDone(probed.first)
                         }
                     }
                 }) { Text("Совпадает — сохранить") }
             }
         },
-        dismissButton = { TextButton(onClick = onDone) { Text("Отмена") } },
+        dismissButton = { TextButton(onClick = { onDone(null) }) { Text("Отмена") } },
     )
 }
 

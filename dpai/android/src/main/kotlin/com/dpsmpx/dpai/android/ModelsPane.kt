@@ -420,7 +420,8 @@ private fun EntryView(e: ChatEntry, streaming: Boolean = false) {
         SelectionContainer {
             if (e.role == ChatRole.ASSISTANT && !streaming) {
                 // Разбор Markdown — один раз на текст, а не на каждую перекомпозицию (AI:A-25).
-                val shown = remember(e.text, code, link) { annotated(Markdown.render(e.text), code, link) }
+                val tap = rememberLinkTap()
+                val shown = remember(e.text, code, link, tap) { annotated(Markdown.render(e.text), code, link, tap) }
                 Text(shown, style = MaterialTheme.typography.bodyMedium)
             } else {
                 Text(e.text, style = MaterialTheme.typography.bodyMedium)

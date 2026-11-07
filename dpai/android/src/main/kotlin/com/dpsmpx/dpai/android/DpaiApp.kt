@@ -756,13 +756,27 @@ private fun ChatBubble(line: com.dpsmpx.dpai.ui.ChatLine) {
                     val code = MaterialTheme.colorScheme.surface
                     val link = MaterialTheme.colorScheme.primary
                     val rendered = remember(line.text) { if (line.mine) null else com.dpsmpx.dpai.ui.Markdown.render(line.text) }
+                    // Ссылки ответа — касанием по D-75 (AI:A-20): первое копирует, второе открывает https.
+                    val tap = rememberLinkTap()
+                    val shown = remember(rendered, code, link, tap) { rendered?.let { annotated(it, code, link, tap) } }
                     // Чат сессии несёт вывод инструментов и коды: копирование выделением — «чувствительное» (D-86).
                     Clipboard.Sensitive {
                         androidx.compose.foundation.text.selection.SelectionContainer {
-                            if (rendered != null) Text(annotated(rendered, code, link), style = MaterialTheme.typography.bodyMedium) else Text(line.text, style = MaterialTheme.typography.bodyMedium)
+                            if (shown != null) Text(shown, style = MaterialTheme.typography.bodyMedium) else Text(line.text, style = MaterialTheme.typography.bodyMedium)
                         }
                     }
-                    Text(line.time, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(line.time, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                        // Ответ целиком — одной кнопкой, как в «Моделях» (AI:A-20).
+                        if (!line.mine && line.text.isNotEmpty()) {
+                            val context = androidx.compose.ui.platform.LocalContext.current
+                            val undo = LocalUndo.current
+                            androidx.compose.material3.TextButton(onClick = {
+                                Clipboard.copy(context, "ответ", line.text, sensitive = true)
+                                if (!Clipboard.systemConfirms) undo?.say("Скопировано")
+                            }) { Text("Копировать", style = MaterialTheme.typography.labelSmall) }
+                        }
+                    }
                 }
             }
         }
