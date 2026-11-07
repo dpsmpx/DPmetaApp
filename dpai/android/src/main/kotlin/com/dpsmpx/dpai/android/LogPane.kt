@@ -1,7 +1,5 @@
 package com.dpsmpx.dpai.android
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -68,8 +66,8 @@ fun LogPane(model: DemoModel) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = {
                 val text = log.export()
-                context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("dpai.log", text))
-                note = "скопировано знаков: ${text.length}"
+                Clipboard.copy(context, "журнал dpai", text)
+                if (!Clipboard.systemConfirms) note = "скопировано знаков: ${text.length}"
             }) { Text("Копировать журнал") }
             OutlinedButton(onClick = {
                 scope.launch {

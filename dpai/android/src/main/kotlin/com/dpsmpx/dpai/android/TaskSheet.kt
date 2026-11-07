@@ -295,8 +295,8 @@ private fun ChangesSection(model: DemoModel, task: TaskId) {
         Text("Изменения", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
         view?.let { v ->
             TextButton(onClick = {
-                context.getSystemService(android.content.ClipboardManager::class.java)
-                    .setPrimaryClip(android.content.ClipData.newPlainText("dpai", v.text))
+                // Изменения задачи — что угодно из дерева, в том числе случайный секрет: без превью буфера.
+                Clipboard.copy(context, "изменения задачи", v.text, sensitive = true)
             }) { Text("Копировать") }
         }
         TextButton(enabled = !loading, onClick = { load() }) { Text(if (loading) "Загружаю…" else if (view == null) "Показать" else "Обновить") }

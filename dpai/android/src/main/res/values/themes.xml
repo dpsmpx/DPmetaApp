@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Тема окна приложения (аудит UI/UX 5 ноября 2026, UX-5, AI:A-19): светлая, а в ночном
+     режиме телефона — тёмная (values-night). Цвета экранов задаёт Compose (DPmetaApp:D-74);
+     окно лишь не вспыхивает тёмным до первого кадра и не прячет значки строки состояния. -->
+<resources>
+    <style name="Theme.Dpai" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <!-- Терминал (терминал:A-20): всегда тёмный — цвета ANSI рисуются на чёрном. -->
+    <style name="Theme.Dpai.Terminal" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
+</resources>

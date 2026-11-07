@@ -37,7 +37,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@android:style/Theme.Material.NoActionBar">
+        android:theme="@style/Theme.Dpai">
         <!-- Поворот, тема, размер окна — без пересоздания: экраны на Compose перерисовываются сами, а диалоги
              и введённое (в том числе полученный ключ хоста) не теряются (ревью 8 октября 2026, A-39). -->
         <activity
@@ -60,6 +60,7 @@
         <!-- Свой терминал к target по SSH (D-71): только из своего экрана; поворот и клавиатура — без пересоздания. -->
         <activity
             android:name=".TerminalActivity"
+            android:theme="@style/Theme.Dpai.Terminal"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode|density|fontScale|locale|layoutDirection"
             android:exported="false"
             android:launchMode="singleTop"

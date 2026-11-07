@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ColorScheme
@@ -41,6 +42,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.dpsmpx.dpai.core.result.Outcome
@@ -383,7 +386,12 @@ private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -
             "Fine-grained PAT только для чтения: Contents, Pull requests, Metadata (D-17)."
         },
     )
-    OutlinedTextField(value = token, onValueChange = { token = it.trim() }, label = { Text("Токен") }, visualTransformation = PasswordVisualTransformation(), singleLine = true, modifier = Modifier.fillMaxWidth())
+    // Тип «пароль» для клавиатуры: без подсказок и запоминания набранного, а не только точки на экране (UX-12).
+    OutlinedTextField(
+        value = token, onValueChange = { token = it.trim() }, label = { Text("Токен") }, visualTransformation = PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false, imeAction = ImeAction.Done),
+        singleLine = true, modifier = Modifier.fillMaxWidth(),
+    )
     Row(horizontalArrangement = Arrangement.spacedBy(Tokens.gap)) {
         Button(onClick = { onSaveToken(token); token = "" }, enabled = token.isNotEmpty()) { Text("Сохранить") }
         if (view.hasToken) TextButton(onClick = onForget) { Text("Забыть токен") }

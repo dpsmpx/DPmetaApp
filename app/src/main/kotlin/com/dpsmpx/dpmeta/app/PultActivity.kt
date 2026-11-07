@@ -9,6 +9,7 @@ import android.provider.DocumentsContract
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.mutableStateOf
 import androidx.core.content.edit
@@ -265,6 +266,8 @@ open class PultActivity : ComponentActivity() {
         }
         opened = true
         entrySync()
+        // От края до края (Android 15+ — всегда): отступы панелей даёт Scaffold, значки — по теме экрана (UX-5).
+        enableEdgeToEdge()
         setContent {
             PultTheme {
                 PultApp(

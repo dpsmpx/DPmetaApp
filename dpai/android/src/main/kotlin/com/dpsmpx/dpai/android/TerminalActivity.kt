@@ -2,9 +2,9 @@ package com.dpsmpx.dpai.android
 
 import android.app.Activity
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import android.app.AlertDialog
-import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
@@ -51,7 +51,8 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         // Отступы системных панелей и клавиатуры — свои: экран терминала сжимается над клавиатурой.
-        enableEdgeToEdge()
+        // Терминал всегда тёмный: значки панелей — светлые и при светлой теме телефона (терминал:A-20).
+        enableEdgeToEdge(SystemBarStyle.dark(Color.TRANSPARENT), SystemBarStyle.dark(Color.TRANSPARENT))
         setContentView(layout())
         // После смерти процесса Android восстанавливает экран, а вкладок (только в памяти, D-27) уже нет:
         // открыть заново ту, с которой экран начинался, а не показывать мёртвый чёрный экран.
@@ -167,7 +168,8 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
                 .setMessage("Программа на «${tab.label}» просит записать в буфер обмена:\n\n${text.take(PREVIEW)}")
                 .setPositiveButton("Записать") { _, _ ->
                     try {
-                        getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("терминал", text))
+                        // Экран терминала несёт секреты (D-86): с пометкой «чувствительное» (терминал:A-11).
+                        Clipboard.copy(this, "терминал", text, sensitive = true)
                     } catch (e: RuntimeException) {
                         Toast.makeText(this, "Не записано в буфер обмена: ${com.dpsmpx.dpai.core.text.Words.failure(e)}", Toast.LENGTH_LONG).show()
                     }

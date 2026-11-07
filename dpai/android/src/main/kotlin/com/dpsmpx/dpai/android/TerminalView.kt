@@ -1,7 +1,5 @@
 package com.dpsmpx.dpai.android
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
@@ -274,9 +272,9 @@ class TerminalView(context: Context) : View(context) {
         val s = ordered(selection ?: return)
         val text = t.session.read { it.text(s[0], s[1], s[2], s[3]) }
         if (text.isEmpty()) return
-        val cm = context.getSystemService(ClipboardManager::class.java)
-        cm.setPrimaryClip(ClipData.newPlainText("терминал", text))
-        Toast.makeText(context, "Скопировано: ${text.length} симв.", Toast.LENGTH_SHORT).show()
+        // Код входа, вставленный пароль — с пометкой «чувствительное» (D-86, терминал:A-11).
+        Clipboard.copy(context, "терминал", text, sensitive = true)
+        if (!Clipboard.systemConfirms) Toast.makeText(context, "Скопировано: ${text.length} симв.", Toast.LENGTH_SHORT).show()
     }
 
     fun showKeyboard() {
@@ -328,7 +326,9 @@ class TerminalView(context: Context) : View(context) {
     override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection {
         // Без подсказок и автоисправлений: клавиатура шлёт символы, а не слова.
         outAttrs.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-        outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN or EditorInfo.IME_FLAG_NO_EXTRACT_UI or EditorInfo.IME_ACTION_NONE
+        // Без обучения клавиатуры: тип «видимый пароль» его не запрещает, а здесь набирают коды и пароли (терминал:A-11).
+        outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN or EditorInfo.IME_FLAG_NO_EXTRACT_UI or EditorInfo.IME_ACTION_NONE or
+            EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING
         return object : BaseInputConnection(this, true) {
             private fun flush() {
                 val e = editable ?: return
