@@ -516,7 +516,8 @@ private fun DashboardPane(screen: DashboardScreen, quick: com.dpsmpx.dpai.ui.Qui
                     Text(Words.task(c.state) + (if (c.held) " · пауза" else "") + " ▸", style = MaterialTheme.typography.labelSmall, color = toneColor(Tone.WARNING))
                 }
             }
-            items(screen.attention) { Text("· $it", color = toneColor(Tone.WARNING), style = MaterialTheme.typography.bodySmall) }
+            val keys = contentKeys(screen.attention) { it }
+            items(screen.attention.size, key = { "attention:${keys[it]}" }) { Text("· ${screen.attention[it]}", color = toneColor(Tone.WARNING), style = MaterialTheme.typography.bodySmall) }
         }
         if (screen.shownCounters.isNotEmpty()) item { Counters(screen.shownCounters) }
         if (screen.usage.isNotEmpty()) {
@@ -574,7 +575,10 @@ private fun SessionPane(screen: SessionScreen?, model: DemoModel, events: Boolea
                 SessionExtras(screen, model)
             }
             if (events) {
-                items(screen.timeline) { e ->
+                // Ключи по содержимому (AI:A-25): обрезка начала ленты не перерисовывает её целиком.
+                val keys = contentKeys(screen.timeline) { "${it.time}|${it.text.hashCode()}" }
+                items(screen.timeline.size, key = { "t:${keys[it]}" }) { i ->
+                    val e = screen.timeline[i]
                     Row {
                         Text(e.time, style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(64.dp))
                         Text(e.text, style = MaterialTheme.typography.bodySmall)
@@ -582,7 +586,8 @@ private fun SessionPane(screen: SessionScreen?, model: DemoModel, events: Boolea
                 }
             } else {
                 if (screen.chat.isEmpty()) item { Text("Сообщений пока нет: лента пишется с этой версии приложения.", style = MaterialTheme.typography.bodySmall) }
-                items(screen.chat) { line -> ChatBubble(line) }
+                val keys = contentKeys(screen.chat) { "${it.time}|${it.mine}|${it.event}|${it.thinking}|${it.text.hashCode()}" }
+                items(screen.chat.size, key = { "c:${keys[it]}" }) { i -> ChatBubble(screen.chat[i]) }
             }
             // Ход идёт (D-59): одной строкой — медленно крутящийся кружок и «работает N мин»; без инструментов и команд.
             if (screen.live != null || screen.workingFor != null) {

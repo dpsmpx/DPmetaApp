@@ -61,3 +61,18 @@ internal fun <T> rememberRead(vararg keys: Any?, initial: T, read: () -> T): T {
     LaunchedEffect(*keys) { value = withContext(Dispatchers.IO) { current() } }
     return value
 }
+
+/**
+ * Ключи списка без своих id (AI:A-25): содержимое и номер повтора. Элемент
+ * держит своё состояние, когда начало списка обрезано или сдвинуто, — без
+ * ключа сдвиг перерисовывал бы все строки.
+ */
+internal fun <T> contentKeys(list: List<T>, of: (T) -> Any): List<String> {
+    val seen = HashMap<Any, Int>()
+    return list.map { item ->
+        val k = of(item)
+        val n = (seen[k] ?: 0) + 1
+        seen[k] = n
+        "$k#$n"
+    }
+}

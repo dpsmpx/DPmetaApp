@@ -193,7 +193,8 @@ open class PultActivity : ComponentActivity() {
      */
     private fun entrySync() {
         val v = view.value
-        if (v.busy || !secrets.exists() || repo.syncing()) return
+        // Срез ещё читается — свежесть неизвестна; вход проверит её, когда чтение кончится (UX-20).
+        if (v.loading || v.busy || !secrets.exists() || repo.syncing()) return
         val now = Clock.SYSTEM.now()
         if (v.state?.let { now - it.asOf < com.dpsmpx.dpmeta.metrics.Rules.ENTRY_SYNC_EVERY } == true) return
         entryAt?.let { if (now - it < com.dpsmpx.dpmeta.metrics.Rules.ENTRY_SYNC_EVERY) return }
@@ -287,10 +288,10 @@ open class PultActivity : ComponentActivity() {
     }
 
     private fun open() {
-        val state = (repo.state() as? Outcome.Success)?.value
         val hasToken = secrets.exists()
-        val feed = (repo.feed() as? Outcome.Success)?.value.orEmpty()
-        view.value = PultView(state, "", hasToken, busy = false, feed = feed, names = repo.names(), clones = clonesLine())
+        view.value = PultView(null, "", hasToken, busy = false, clones = clonesLine(), loading = true)
+        // Срез и лента — в фоне, как история (UX-20, N-02): окно не ждёт диска; вход синхронизирует после чтения.
+        loadState()
         // История растёт с каждой синхронизацией — читается в фоне, холодный старт её не ждёт (N-02).
         loadHistory()
         // Файлы прежних «Поделиться» (D-67) живут до следующего входа в пульт — не до поворота.
@@ -305,7 +306,6 @@ open class PultActivity : ComponentActivity() {
             }
         }
         opened = true
-        entrySync()
         // От края до края (Android 15+ — всегда): отступы панелей даёт Scaffold, значки — по теме экрана (UX-5).
         enableEdgeToEdge()
         // Пункт и строка «AI» — только с оболочкой подсистемы (D-53, D-76).
@@ -331,6 +331,27 @@ open class PultActivity : ComponentActivity() {
      * Экспорт истории за срок (F-36): CSV или JSON, место выбирает человек
      * (системный выбор файла — «Загрузки», облако); сеть приложение не трогает.
      */
+    /**
+     * Срез, лента и имена — в фоне при открытии окна (UX-20); на экран — если
+     * синхронизация не успела раньше. Затем — синхронизация при входе.
+     */
+    private fun loadState() {
+        if (pool.isShutdown) {
+            view.value = view.value.copy(loading = false)
+            return
+        }
+        pool.execute {
+            val state = (repo.state() as? Outcome.Success)?.value
+            val feed = (repo.feed() as? Outcome.Success)?.value.orEmpty()
+            val names = repo.names()
+            runOnUiThread {
+                if (!view.value.loading) return@runOnUiThread
+                view.value = view.value.copy(state = view.value.state ?: state, feed = view.value.feed.ifEmpty { feed }, names = view.value.names.ifEmpty { names }, loading = false)
+                entrySync()
+            }
+        }
+    }
+
     /** История — в фоне; на экран — только более позднее чтение, чем уже показанное. */
     private fun loadHistory() {
         if (pool.isShutdown) return

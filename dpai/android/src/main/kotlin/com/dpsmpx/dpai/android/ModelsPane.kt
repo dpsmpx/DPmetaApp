@@ -376,7 +376,8 @@ private fun ChatPane(c: Conversation, p: ApiProfile?, live: ModelsStore.Running?
         }
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = list, contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (c.entries.isEmpty() && live == null) item { Text("Напишите вопрос — ответит ${p?.model ?: "модель"}.", style = MaterialTheme.typography.bodySmall) }
-            items(c.entries.size) { i -> EntryView(c.entries[i]) }
+            // Ответы только дописываются в конец: ключ — номер (AI:A-25).
+            items(c.entries.size, key = { it }) { i -> EntryView(c.entries[i]) }
             live?.let { r -> item { EntryView(ChatEntry(ChatRole.ASSISTANT, r.text.ifEmpty { "…" }, p?.model), streaming = true) } }
         }
         note?.let { Text(it, Modifier.padding(horizontal = 12.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
@@ -418,7 +419,9 @@ private fun EntryView(e: ChatEntry, streaming: Boolean = false) {
         )
         SelectionContainer {
             if (e.role == ChatRole.ASSISTANT && !streaming) {
-                Text(annotated(Markdown.render(e.text), code, link), style = MaterialTheme.typography.bodyMedium)
+                // Разбор Markdown — один раз на текст, а не на каждую перекомпозицию (AI:A-25).
+                val shown = remember(e.text, code, link) { annotated(Markdown.render(e.text), code, link) }
+                Text(shown, style = MaterialTheme.typography.bodyMedium)
             } else {
                 Text(e.text, style = MaterialTheme.typography.bodyMedium)
             }

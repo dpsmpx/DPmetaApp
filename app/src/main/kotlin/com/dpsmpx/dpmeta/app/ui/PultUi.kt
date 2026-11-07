@@ -180,7 +180,23 @@ data class PultView(
     val progress: String? = null,
     /** «Отменить» нажато — начатый клон доходит до конца (UX-10). */
     val cancelling: Boolean = false,
+    /** Срез и лента ещё читаются с диска (UX-20): не «среза нет», а «читаю». */
+    val loading: Boolean = false,
 )
+
+/**
+ * Ключи списка без своих id (UX-20): содержимое и номер повтора — сдвиг
+ * или обрезка начала не перерисовывает весь список.
+ */
+private fun <T> contentKeys(list: List<T>, of: (T) -> Any): List<String> {
+    val seen = HashMap<Any, Int>()
+    return list.map { item ->
+        val k = of(item)
+        val n = (seen[k] ?: 0) + 1
+        seen[k] = n
+        "$k#$n"
+    }
+}
 
 /**
  * Окно выбора клонов (D-70): все репозитории аккаунта, реестр — сверху;
@@ -348,12 +364,14 @@ fun PultApp(
             val s = view.state
             val top = stack.lastOrNull()
             when {
-                top is Nav.Card && s != null -> Screens.card(s, top.project)?.let { CardScreen(it, loader, back, open) }
+                // Модели экранов — один раз на срез, а не на каждую перекомпозицию (UX-20).
+                top is Nav.Card && s != null -> remember(s, top.project) { Screens.card(s, top.project) }?.let { CardScreen(it, loader, back, open) }
                 top is Nav.Dir -> DirScreen(top, loader, back, open)
                 top is Nav.Doc -> DocScreen(top, view.names, loader, back, open)
                 top is Nav.Stats && s != null -> StatsScreen(view.history, s.projects.map { it.name }, top.project, s.asOf, back, view.status, onExport)
                 top is Nav.Feed && s != null -> FeedScreen(view.feed, s.projects.map { it.name }, back) { open(Nav.Card(it)) }
                 tab == Section.MORE -> Settings(view, onSync, onSaveToken, onForgetToken, onClones)
+                s == null && view.loading -> Text("Читаю срез…", style = MaterialTheme.typography.bodySmall)
                 // Пустое состояние ведёт дальше (UX-11): кнопкой, а не словами «где-то в настройках».
                 s == null -> Column(verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
                     Text(if (view.hasToken) "Среза ещё нет." else "Нужен токен GitHub — только для чтения.")
@@ -364,7 +382,7 @@ fun PultApp(
                     }
                 }
                 tab == Section.SUMMARY -> Summary(
-                    Screens.summary(s), view, onSync, onAi,
+                    remember(s) { Screens.summary(s) }, view, onSync, onAi,
                     onTile = { g ->
                         when (g) {
                             Screens.Goes.PROJECTS -> { tab = Section.DEV; devTab = DevTab.PROJECTS }
@@ -378,8 +396,8 @@ fun PultApp(
                 tab == Section.DEV -> Column(Modifier.fillMaxSize()) {
                     DevTabs(devTab) { devTab = it }
                     when (devTab) {
-                        DevTab.PROJECTS -> Projects(Screens.projects(s)) { open(Nav.Card(it)) }
-                        DevTab.QUESTIONS -> Questions(Screens.questions(s), open)
+                        DevTab.PROJECTS -> Projects(remember(s) { Screens.projects(s) }) { open(Nav.Card(it)) }
+                        DevTab.QUESTIONS -> Questions(remember(s) { Screens.questions(s) }, open)
                     }
                 }
             }
@@ -502,7 +520,7 @@ private const val SUMMARY_EVENTS = 3
 private fun Projects(groups: List<Screens.Group>, onOpen: (String) -> Unit) = LazyColumn(verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
     for (g in groups) {
         item { Text(g.title, style = MaterialTheme.typography.titleMedium) }
-        items(g.rows) { r ->
+        items(g.rows, key = { "row:${g.title}:${it.name}" }) { r ->
             Card(Modifier.fillMaxWidth().clickable(onClickLabel = "открыть карточку") { onOpen(r.name) }) {
                 Column(Modifier.padding(Tokens.gap)) {
                     Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
@@ -666,7 +684,9 @@ private fun FeedScreen(events: List<FeedEvent>, projects: List<String>, onBack: 
             }
         }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            items(rows) { r ->
+            val keys = contentKeys(rows) { "${it.time}|${it.project}|${it.kind}|${it.text.hashCode()}" }
+            items(rows.size, key = { "feed:${keys[it]}" }) { i ->
+                val r = rows[i]
                 Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClickLabel = "карточка проекта") { onProject(r.project) }.padding(vertical = 4.dp)) {
                     Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("${r.time} · ${r.project}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
@@ -701,7 +721,7 @@ private fun DirScreen(nav: Nav.Dir, loader: Loader, onBack: () -> Unit, open: (N
         when (val r = result) {
             null -> item { Text("Загрузка…") }
             is Outcome.Failure -> item { FailureText("Не загрузилось", Screens.failure(r.diagnostics.first())) }
-            is Outcome.Success -> items(r.value) { e ->
+            is Outcome.Success -> items(r.value, key = { "entry:${it.name}" }) { e ->
                 // Строка — 48 dp, папка — словом для TalkBack, а не названием знака (UX-15).
                 Text(
                     (if (e.dir) "📁 " else "") + e.name,
@@ -832,7 +852,9 @@ private fun Questions(q: List<Screens.Question>, open: (Nav) -> Unit) = LazyColu
     item { Text("Вопросов автору: ${q.size}", style = MaterialTheme.typography.titleMedium) }
     for ((project, items) in Screens.questionGroups(q)) {
         item(key = "p:$project") { Text(project, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp)) }
-        items(items) { i ->
+        val keys = contentKeys(items) { "${it.title}|${it.label}" }
+        items(items.size, key = { "q:$project:${keys[it]}" }) { n ->
+            val i = items[n]
             Row(
                 Modifier.fillMaxWidth().clickable(enabled = i.path != null) { open(Nav.Doc(i.project, i.path!!, i.section?.let(Links::slug))) }.padding(vertical = 4.dp),
                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,

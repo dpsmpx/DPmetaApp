@@ -518,13 +518,25 @@ private fun FileView(p: Place, path: String, onClose: () -> Unit) {
                 textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
             )
             bitmap != null -> Image(bitmap!!, FileNames.name(path), Modifier.fillMaxSize().padding(8.dp))
-            text != null -> SelectionContainer(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)) {
+            text != null && text.orEmpty().length <= WHOLE_TEXT_MAX -> SelectionContainer(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)) {
                 Text(text.orEmpty(), style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace))
+            }
+            // Большой файл (до 2 МиБ) — по строкам (AI:A-25): одним Text он раскладывался бы целиком на каждом кадре.
+            text != null -> {
+                val lines = remember(text) { text.orEmpty().lines() }
+                SelectionContainer(Modifier.fillMaxSize()) {
+                    LazyColumn(contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp)) {
+                        items(lines.size, key = { it }) { i -> Text(lines[i], style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)) }
+                    }
+                }
             }
             error == null -> CircularProgressIndicator(Modifier.padding(12.dp))
         }
     }
 }
+
+/** Текст файла до стольких знаков — одним блоком (выделение через строки); больше — по строкам. */
+private const val WHOLE_TEXT_MAX = 64 * 1024
 
 /** Картинка больше этого не читается в память целиком. */
 private const val IMAGE_MAX: Long = 32L * 1024 * 1024
