@@ -89,6 +89,8 @@ fun ModelsPane() {
     var creating by remember { mutableStateOf(false) }
     val conv = chats.firstOrNull { it.id.value == open }
     if (conv != null) {
+        // Системный «назад» из разговора — к списку «Моделей» (AI:A-2).
+        androidx.activity.compose.BackHandler { open = null }
         ChatPane(conv, profiles.firstOrNull { it.id == conv.profile }, running[conv.id]) { open = null }
         return
     }

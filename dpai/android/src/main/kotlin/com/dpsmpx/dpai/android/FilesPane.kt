@@ -35,6 +35,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -67,6 +68,21 @@ import kotlinx.coroutines.withContext
 
 /** Где смотрим: копия папки в Linux, сама папка (SAF), хранилище телефона, домашняя папка Linux. */
 private enum class Kind { COPY, FOLDER, SHARED, HOME }
+
+/**
+ * Место в «Файлах» строкой — для хранителя состояния вкладки (AI:A-2): связь
+ * — по id, при чтении — из нынешних связей; отвязанной уже нет — места нет.
+ */
+private fun Place.key(): String = listOf(kind.name, link?.id?.value.orEmpty(), dir).joinToString("\u0001")
+
+private fun placeOf(key: String, links: List<FileLink>): Place? {
+    val p = key.split("\u0001")
+    if (p.size != 3) return null
+    val kind = Kind.entries.firstOrNull { it.name == p[0] } ?: return null
+    val link = links.firstOrNull { it.id.value == p[1] }
+    if ((kind == Kind.COPY || kind == Kind.FOLDER) && link == null) return null
+    return Place(kind, link, p[2])
+}
 
 private data class Place(val kind: Kind, val link: FileLink?, val dir: String) {
     val title: String
@@ -115,7 +131,9 @@ fun FilesPane() {
     val links by FileLinks.links.collectAsState()
     val undo = LocalUndo.current
     val problem by FileLinks.problem.collectAsState()
-    var place by remember { mutableStateOf<Place?>(null) }
+    // Место — строкой в сохранённом состоянии вкладки: смена вкладки его не сбрасывает (AI:A-2).
+    var placeKey by rememberSaveable { mutableStateOf<String?>(null) }
+    val place = placeKey?.let { placeOf(it, links) }
     var syncing by remember { mutableStateOf<FileLink?>(null) }
     var note by remember { mutableStateOf<String?>(null) }
     // Разрешение даётся в системном окне: по возвращении — перечитать.
@@ -143,7 +161,7 @@ fun FilesPane() {
         }
     }
     place?.let { p ->
-        Browser(p, onPlace = { place = it }) { place = null }
+        Browser(p, onPlace = { placeKey = it.key() }) { placeKey = null }
         return
     }
     val linux = LinuxSetup.available(context) && LinuxSetup.environment(context).installed() != null
@@ -350,7 +368,9 @@ private fun Browser(p: Place, onPlace: (Place) -> Unit, onClose: () -> Unit) {
     val context = LocalContext.current
     var entries by remember(p) { mutableStateOf<List<FileEntry>?>(null) }
     var error by remember(p) { mutableStateOf<String?>(null) }
-    var file by remember(p) { mutableStateOf<String?>(null) }
+    var file by rememberSaveable(p.key()) { mutableStateOf<String?>(null) }
+    // Системный «назад» — на папку вверх, из корня места — к списку «Файлов» (AI:A-2); у открытого файла — свой.
+    androidx.activity.compose.BackHandler(enabled = file == null) { if (p.dir.isEmpty()) onClose() else onPlace(p.copy(dir = FileNames.parent(p.dir))) }
     LaunchedEffect(p) {
         when (val r = withContext(Dispatchers.IO) { treeOf(context, p).list(p.dir) }) {
             is Outcome.Success -> entries = r.value
@@ -414,8 +434,48 @@ private fun FileView(p: Place, path: String, onClose: () -> Unit) {
     var text by remember { mutableStateOf<String?>(null) }
     var bitmap by remember { mutableStateOf<ImageBitmap?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
-    var editing by remember { mutableStateOf<String?>(null) }
+    // Правка — черновиком вне окна (Drafts): смена вкладки её не теряет; несохранённая — с вопросом (AI:A-2).
+    val draftKey = "file:${p.key()}\u0001$path"
+    var editing by remember(draftKey) { mutableStateOf(Drafts.get(draftKey)) }
+    androidx.compose.runtime.SideEffect { Drafts.set(draftKey, editing) }
     var status by remember { mutableStateOf<String?>(null) }
+    var leaving by remember { mutableStateOf(false) }
+    val changed = editing != null && editing != text
+    // Уходя, черновик снимается явно: экран уходит в том же кадре, и SideEffect его уже не снимет.
+    val drop = { editing = null; Drafts.set(draftKey, null) }
+    val leave = { if (changed) leaving = true else { drop(); onClose() } }
+    androidx.activity.compose.BackHandler(onBack = leave)
+    suspend fun saveEdit(e: String): Boolean {
+        val r = withContext(Dispatchers.IO) { treeOf(context, p).write(path, TextFile.encode(e)) }
+        return if (r is Outcome.Success) {
+            text = e
+            drop()
+            status = "сохранено"
+            true
+        } else {
+            status = "не сохранено: ${(r as Outcome.Failure).errors.first().message}"
+            false
+        }
+    }
+    if (leaving) {
+        AlertDialog(
+            onDismissRequest = { leaving = false },
+            title = { Text("Сохранить правку?") },
+            text = { Text("В «${FileNames.name(path)}» есть несохранённые изменения.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    leaving = false
+                    scope.launch { editing?.let { if (saveEdit(it)) onClose() } }
+                }) { Text("Сохранить") }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = { leaving = false; drop(); onClose() }) { Text("Не сохранять", color = MaterialTheme.colorScheme.error) }
+                    TextButton(onClick = { leaving = false }) { Text("Отмена") }
+                }
+            },
+        )
+    }
     LaunchedEffect(path) {
         withContext(Dispatchers.IO) {
             when (val r = treeOf(context, p).read(path, if (image) IMAGE_MAX else TextFile.MAX_EDIT_BYTES)) {
@@ -434,24 +494,13 @@ private fun FileView(p: Place, path: String, onClose: () -> Unit) {
     }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onClose) { Text("←") }
+            TextButton(onClick = leave) { Text("←") }
             Text(FileNames.name(path), Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val t = text
             if (t != null && editing == null) TextButton(onClick = { editing = t }) { Text("Править") }
             editing?.let { e ->
-                TextButton(onClick = {
-                    scope.launch {
-                        val r = withContext(Dispatchers.IO) { treeOf(context, p).write(path, TextFile.encode(e)) }
-                        if (r is Outcome.Success) {
-                            text = e
-                            editing = null
-                            status = "сохранено"
-                        } else {
-                            status = "не сохранено: ${(r as Outcome.Failure).errors.first().message}"
-                        }
-                    }
-                }) { Text("Сохранить") }
-                TextButton(onClick = { editing = null }) { Text("Отмена") }
+                TextButton(onClick = { scope.launch { saveEdit(e) } }) { Text("Сохранить") }
+                TextButton(onClick = drop) { Text("Отмена") }
             }
         }
         status?.let { Text(it, Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.bodySmall) }
