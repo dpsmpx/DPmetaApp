@@ -295,6 +295,9 @@ class TerminalView(context: Context) : View(context) {
         }
     }
 
+    /** Вставка с вопросом у экрана терминала (терминал:A-7); `null` — сразу. */
+    var onPaste: ((String) -> Unit)? = null
+
     /** Текст с экранной клавиатуры или ряда клавиш. */
     fun input(text: String) {
         val t = tab ?: return
@@ -303,7 +306,8 @@ class TerminalView(context: Context) : View(context) {
         // Несколько строк или управляющие знаки разом — вставка из буфера клавиатуры, а не набор:
         // через фильтр и скобки 2004, как «Вставить» (ревью 17 октября 2026).
         if (text.length > 1 && text.any { it == '\n' || it == '\r' || it.isISOControl() }) {
-            t.session.paste(text)
+            // Тот же вопрос, что у «Вставить» (терминал:A-7): без скобок 2004 строки выполнятся сразу.
+            onPaste?.invoke(text) ?: t.session.paste(text)
             return
         }
         text.codePoints().forEach { cp ->

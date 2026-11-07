@@ -157,22 +157,27 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
                             Text("Claude — на $on (вход его слота), дерево — по SSH ключом ${c.identityFile}", style = MaterialTheme.typography.bodySmall)
                         }
                         Text(p.checks.firstOrNull()?.let { "проверка: ${it.command.joinToString(" ")}" } ?: "без проверки", style = MaterialTheme.typography.bodySmall)
-                        // Вторым нажатием и с проверкой итога (аудит удобства, A-18).
-                        var armed by remember { mutableStateOf(false) }
+                        // Окном (AI:A-4) и с проверкой итога (аудит удобства, A-18): поля проекта придётся вводить заново.
+                        var asking by remember { mutableStateOf(false) }
                         var failed by remember { mutableStateOf<String?>(null) }
-                        TextButton(onClick = {
-                            if (!armed) {
-                                armed = true
-                            } else {
-                                scope.launch {
-                                    when (val r = withContext(Dispatchers.IO) { controller.setProject(null) }) {
-                                        is Outcome.Success -> project = null
-                                        is Outcome.Failure -> failed = "Не убран: ${r.errors.first().message}"
+                        TextButton(onClick = { asking = true }) { Text("Убрать проект…") }
+                        if (asking) {
+                            ConfirmDialog(
+                                "Убрать проект?",
+                                "Задачи пойдут без Git и проверки. Поля проекта — репозиторий, деревья, ветку, проверки — придётся вводить заново.",
+                                "Убрать",
+                                onConfirm = {
+                                    asking = false
+                                    scope.launch {
+                                        when (val r = withContext(Dispatchers.IO) { controller.setProject(null) }) {
+                                            is Outcome.Success -> project = null
+                                            is Outcome.Failure -> failed = "Не убран: ${r.errors.first().message}"
+                                        }
                                     }
-                                    armed = false
-                                }
-                            }
-                        }) { Text(if (armed) "Точно убрать проект? Задачи пойдут без Git и проверки" else "Убрать проект", color = if (armed) MaterialTheme.colorScheme.error else androidx.compose.ui.graphics.Color.Unspecified) }
+                                },
+                                onDismiss = { asking = false },
+                            )
+                        }
                         failed?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
                     }
                 }
@@ -683,18 +688,23 @@ private fun CliCard() {
                     until = u.epochMillis
                     note = null
                 }) { Text("Показать код") }
-                var armedRevoke by remember { mutableStateOf(false) }
-                TextButton(onClick = {
-                    // Вторым нажатием (A-18): после отзыва каждый dpai нужно сопрячь заново.
-                    if (!armedRevoke) {
-                        armedRevoke = true
-                    } else {
-                        ControlServer.pairing(context).revoke()
-                        code = null
-                        armedRevoke = false
-                        note = "Токен отозван: dpai нужно сопрячь заново"
-                    }
-                }) { Text(if (armedRevoke) "Точно отозвать? Все dpai — заново" else "Отозвать токен", color = if (armedRevoke) MaterialTheme.colorScheme.error else androidx.compose.ui.graphics.Color.Unspecified) }
+                // Окном (AI:A-4): после отзыва каждый dpai нужно сопрячь заново.
+                var asking by remember { mutableStateOf(false) }
+                TextButton(onClick = { asking = true }) { Text("Отозвать токен…") }
+                if (asking) {
+                    ConfirmDialog(
+                        "Отозвать токен командной строки?",
+                        "Все сопряжённые dpai перестанут управлять приложением; каждый нужно будет сопрячь заново новым кодом.",
+                        "Отозвать",
+                        onConfirm = {
+                            asking = false
+                            ControlServer.pairing(context).revoke()
+                            code = null
+                            note = "Токен отозван: dpai нужно сопрячь заново"
+                        },
+                        onDismiss = { asking = false },
+                    )
+                }
             }
             note?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
         }

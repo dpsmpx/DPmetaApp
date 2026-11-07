@@ -92,7 +92,7 @@ private fun RequestItem(model: DemoModel, card: RequestCard) {
     val context = LocalContext.current.applicationContext
     val scope = rememberCoroutineScope()
     var text by remember(card.id) { mutableStateOf("") }
-    var armed by remember(card.id) { mutableStateOf<String?>(null) }
+    var confirming by remember(card.id) { mutableStateOf<AnswerButton?>(null) }
     var status by remember(card.id) { mutableStateOf<String?>(null) }
     var busy by remember(card.id) { mutableStateOf(false) }
     LaunchedEffect(card.id) { withContext(Dispatchers.IO) { model.delivered(card.id, "app") } }
@@ -103,32 +103,37 @@ private fun RequestItem(model: DemoModel, card: RequestCard) {
             Text(card.body, style = MaterialTheme.typography.bodySmall)
             if (card.buttons.any { it.needsText }) OutlinedTextField(text, { text = it }, label = { Text("Ответ") }, minLines = 2, modifier = Modifier.fillMaxWidth())
             // С переносом: у запроса бывает четыре-пять вариантов, в одну строку они не влезают (A-7).
+            fun answer(b: AnswerButton) {
+                if (b.needsText && text.isBlank()) {
+                    status = "Нужен текст ответа"
+                    return
+                }
+                busy = true
+                scope.launch {
+                    val r = withContext(Dispatchers.IO) { Answers.apply(context, card.id.value, b.uri, text.takeIf { b.needsText }, b.label, "app") }
+                    status = when {
+                        r is Outcome.Success -> "Принято"
+                        Answers.queued(r) -> "Принято: применится после текущего шага контура"
+                        r is Outcome.Failure -> "Не принято: ${r.diagnostics.first().message}"
+                        else -> null
+                    }
+                    busy = false
+                }
+            }
             androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 for (b in card.buttons) {
-                    AnswerChip(b, armed == b.uri, enabled = !busy) {
-                        // Опасное — вторым нажатием (D-44).
-                        if (b.confirm && armed != b.uri) {
-                            armed = b.uri
-                            status = "Опасное действие: нажмите «${b.label}» ещё раз"
-                            return@AnswerChip
-                        }
-                        if (b.needsText && text.isBlank()) {
-                            status = "Нужен текст ответа"
-                            return@AnswerChip
-                        }
-                        busy = true
-                        scope.launch {
-                            val r = withContext(Dispatchers.IO) { Answers.apply(context, card.id.value, b.uri, text.takeIf { b.needsText }, b.label, "app") }
-                            status = when {
-                                r is Outcome.Success -> "Принято"
-                                Answers.queued(r) -> "Принято: применится после текущего шага контура"
-                                r is Outcome.Failure -> "Не принято: ${r.diagnostics.first().message}"
-                                else -> null
-                            }
-                            busy = false
-                        }
-                    }
+                    // Опасное (D-44) — окном с тем, на что отвечаем, а не вторым нажатием (AI:A-4).
+                    AnswerChip(b, enabled = !busy) { if (b.confirm) confirming = b else answer(b) }
                 }
+            }
+            confirming?.let { b ->
+                ConfirmDialog(
+                    "«${b.label}»?",
+                    "${card.title}\n\nОтвет нельзя отменить: контур выполнит его сразу.",
+                    b.label,
+                    onConfirm = { confirming = null; answer(b) },
+                    onDismiss = { confirming = null },
+                )
             }
             status?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = if (it.startsWith("Принято")) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error) }
         }
@@ -136,9 +141,9 @@ private fun RequestItem(model: DemoModel, card: RequestCard) {
 }
 
 @Composable
-private fun AnswerChip(b: AnswerButton, armed: Boolean, enabled: Boolean, onClick: () -> Unit) {
+private fun AnswerChip(b: AnswerButton, enabled: Boolean, onClick: () -> Unit) {
     val colors = if (b.confirm) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error) else ButtonDefaults.buttonColors()
-    Button(onClick = onClick, enabled = enabled, colors = colors) { Text(if (armed) "Точно: ${b.label}?" else b.label) }
+    Button(onClick = onClick, enabled = enabled, colors = colors) { Text(b.label) }
 }
 
 /**

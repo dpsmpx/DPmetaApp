@@ -245,6 +245,7 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
     private fun layout(): View {
         view = TerminalView(this)
         view.stickyMods = ::consumeMods
+        view.onPaste = ::pasteAsk
         tabsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         status = TextView(this).apply {
             setTextColor(0xffffcc66.toInt())
@@ -312,7 +313,31 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         val clip = getSystemService(ClipboardManager::class.java).primaryClip ?: return
         if (clip.itemCount == 0) return
         val text = clip.getItemAt(0).coerceToText(this).toString()
-        if (text.isNotEmpty()) TerminalHub.current?.session?.paste(text)
+        if (text.isNotEmpty()) pasteAsk(text)
+    }
+
+    /**
+     * Вставка (терминал:A-7): несколько строк без вставки в скобках или
+     * большой текст — с вопросом и первыми строками; без скобок 2004 каждая
+     * строка выполняется сразу, а в буфере легко оказывается чужое.
+     */
+    private fun pasteAsk(text: String) {
+        val tab = TerminalHub.current ?: return
+        val bracketed = tab.session.read { it.bracketedPaste }
+        if (!com.dpsmpx.dpai.terminal.PasteGuard.needsConfirm(text, bracketed)) {
+            tab.session.paste(text)
+            return
+        }
+        val why = if (bracketed) "Текст большой: ${text.length} знаков." else "Строк: ${com.dpsmpx.dpai.terminal.PasteGuard.lines(text)} — программа на «${tab.label}» выполнит каждую сразу."
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Вставить в терминал?")
+            .setMessage("$why\n\n${text.take(PREVIEW)}")
+            .setPositiveButton("Вставить") { _, _ -> tab.session.paste(text) }
+            .setNegativeButton("Нет", null)
+            .create()
+        // У диалога своё окно, и FLAG_SECURE активности его не закрывает (D-86): в буфере бывают секреты.
+        dialog.window?.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+        dialog.show()
     }
 
     private fun renderTabs() {

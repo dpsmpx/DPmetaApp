@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ColorScheme
@@ -381,23 +382,43 @@ private fun Questions(q: List<Screens.Question>) = LazyColumn(verticalArrangemen
 @Composable
 private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -> Unit, onForget: () -> Unit, onClones: () -> Unit) = Column(verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
     var token by remember { mutableStateOf("") }
+    // Пока токен сохранён — одна строка, поле — по «Заменить» (UX-12): пустое поле при сохранённом токене путало.
+    var replacing by rememberSaveable { mutableStateOf(false) }
+    var forgetting by remember { mutableStateOf(false) }
     Text("GitHub", style = MaterialTheme.typography.titleMedium)
-    Text(
-        if (view.hasToken) {
-            "Токен сохранён под ключом Keystore."
-        } else {
-            "Fine-grained PAT только для чтения: Contents, Pull requests, Metadata."
-        },
-    )
-    // Тип «пароль» для клавиатуры: без подсказок и запоминания набранного, а не только точки на экране (UX-12).
-    OutlinedTextField(
-        value = token, onValueChange = { token = it.trim() }, label = { Text("Токен") }, visualTransformation = PasswordVisualTransformation(),
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false, imeAction = ImeAction.Done),
-        singleLine = true, modifier = Modifier.fillMaxWidth(),
-    )
-    Row(horizontalArrangement = Arrangement.spacedBy(Tokens.gap)) {
-        Button(onClick = { onSaveToken(token); token = "" }, enabled = token.isNotEmpty()) { Text("Сохранить") }
-        if (view.hasToken) TextButton(onClick = onForget) { Text("Забыть токен") }
+    if (view.hasToken && !replacing) {
+        Text("Токен GitHub сохранён под ключом Keystore.")
+        Row(horizontalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+            TextButton(onClick = { replacing = true }) { Text("Заменить") }
+            TextButton(onClick = { forgetting = true }) { Text("Забыть токен…", color = MaterialTheme.colorScheme.error) }
+        }
+    } else {
+        Text("Fine-grained PAT только для чтения: Contents, Pull requests, Metadata.")
+        // Тип «пароль» для клавиатуры: без подсказок и запоминания набранного, а не только точки на экране (UX-12).
+        OutlinedTextField(
+            value = token, onValueChange = { token = it.trim() }, label = { Text("Токен") }, visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false, imeAction = ImeAction.Done),
+            singleLine = true, modifier = Modifier.fillMaxWidth(),
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+            Button(onClick = { onSaveToken(token); token = ""; replacing = false }, enabled = token.isNotEmpty()) { Text("Сохранить") }
+            if (replacing) TextButton(onClick = { replacing = false; token = "" }) { Text("Отмена") }
+        }
+    }
+    // Необратимое — окном (UX-12, AI:A-4): fine-grained PAT GitHub показывает один раз.
+    if (forgetting) {
+        AlertDialog(
+            onDismissRequest = { forgetting = false },
+            title = { Text("Забыть токен GitHub?") },
+            text = {
+                Text(
+                    "Токен удалится с телефона, и пульт перестанет обновляться. На GitHub он останется действующим — " +
+                        "отзовите его там. Показать его ещё раз GitHub не сможет: для пульта нужен будет новый.",
+                )
+            },
+            confirmButton = { TextButton(onClick = { forgetting = false; onForget() }) { Text("Забыть", color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = { forgetting = false }) { Text("Отмена") } },
+        )
     }
     Spacer(Modifier.height(Tokens.gap))
     Button(onClick = onSync, enabled = view.hasToken && !view.busy) { Text(if (view.busy) "Синхронизация…" else "Обновить") }

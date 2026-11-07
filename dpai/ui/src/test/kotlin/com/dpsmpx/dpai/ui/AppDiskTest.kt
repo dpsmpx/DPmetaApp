@@ -71,7 +71,7 @@ class AppDiskTest {
         assertNull(AppDisk.resolve(root, "${AppDisk.LINUX_HOME}/token"))
         assertNull(AppDisk.resolve(root, "${AppDisk.LINUX_HOME}/up/control-token"), "через ссылку-каталог — тоже нет")
         // Подмена после проверки: настоящий путь открытого файла сверяется ещё раз.
-        assertEquals("секрет — не на диске (D-96)", AppDisk.refuseOpened(root, root.toRealPath().resolve("control-token").toString()))
+        assertEquals("секрет — на диск не выводится", AppDisk.refuseOpened(root, root.toRealPath().resolve("control-token").toString()))
         assertEquals("файл вне данных приложения", AppDisk.refuseOpened(root, "/etc/passwd"))
         assertNull(AppDisk.refuseOpened(root, root.toRealPath().resolve("${AppDisk.LINUX_HOME}/ok.txt").toString()))
     }

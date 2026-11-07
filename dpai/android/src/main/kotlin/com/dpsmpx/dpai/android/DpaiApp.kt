@@ -231,122 +231,135 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
             renaming = false
         }
     }
-    Scaffold(
-        topBar = {
-            // Узкая строка (D-61): больше места чату; в окне сессии — кружок состояния и имя (нажатие — переименовать).
-            androidx.compose.material3.Surface(tonalElevation = 3.dp) {
-                Row(
-                    Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).height(48.dp).padding(horizontal = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    if (selectedId != null) {
-                        TextButton(onClick = { selectedId = null }) { Text("←") }
-                        sessionScreen?.let { sc -> StatusDot(sc.status) }
-                        Text(
-                            sessionScreen?.let { sc -> SessionNames.name(context, sc.task) ?: sc.title } ?: "Сессия",
-                            Modifier.weight(1f).padding(start = 8.dp).clickable(enabled = sessionScreen?.task != null) { renaming = true },
-                            style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        )
-                        sessionScreen?.task?.let { t -> TextButton(onClick = { taskSheet = t }) { Text("⚙", style = MaterialTheme.typography.titleMedium) } }
-                        TextButton(onClick = { sessionEvents = !sessionEvents }) { Text(if (sessionEvents) "Чат" else "События") }
-                    } else {
-                        Text(
-                            // Одно имя подсистемы — «AI», как у вкладки пульта; в заголовке — открытая вкладка (AI:A-1, AI:A-11).
-                            "AI · " + TAB_TITLES.getOrElse(tab) { "…" } + (if (snapshot?.mode == "демо") " · демо" else ""),
-                            Modifier.weight(1f).padding(start = 12.dp), style = MaterialTheme.typography.titleMedium,
-                        )
-                        // Глобальный поиск (ТЗ, §75) — с любой вкладки.
-                        TextButton(onClick = { searching = true }) { Text("Найти") }
+    // Обратимое — сразу и со снэкбаром «Отменить» (AI:A-4): хост — у оболочки, действия — во вкладках.
+    val snack = remember { androidx.compose.material3.SnackbarHostState() }
+    val undo = remember(scope) { Undo(snack, scope) }
+    androidx.compose.runtime.CompositionLocalProvider(LocalUndo provides undo) {
+        Scaffold(
+            snackbarHost = { androidx.compose.material3.SnackbarHost(snack) },
+            topBar = {
+                // Узкая строка (D-61): больше места чату; в окне сессии — кружок состояния и имя (нажатие — переименовать).
+                androidx.compose.material3.Surface(tonalElevation = 3.dp) {
+                    Row(
+                        Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).height(48.dp).padding(horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (selectedId != null) {
+                            TextButton(onClick = { selectedId = null }) { Text("←") }
+                            sessionScreen?.let { sc -> StatusDot(sc.status) }
+                            Text(
+                                sessionScreen?.let { sc -> SessionNames.name(context, sc.task) ?: sc.title } ?: "Сессия",
+                                Modifier.weight(1f).padding(start = 8.dp).clickable(enabled = sessionScreen?.task != null) { renaming = true },
+                                style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            )
+                            sessionScreen?.task?.let { t -> TextButton(onClick = { taskSheet = t }) { Text("⚙", style = MaterialTheme.typography.titleMedium) } }
+                            TextButton(onClick = { sessionEvents = !sessionEvents }) { Text(if (sessionEvents) "Чат" else "События") }
+                        } else {
+                            Text(
+                                // Одно имя подсистемы — «AI», как у вкладки пульта; в заголовке — открытая вкладка (AI:A-1, AI:A-11).
+                                "AI · " + TAB_TITLES.getOrElse(tab) { "…" } + (if (snapshot?.mode == "демо") " · демо" else ""),
+                                Modifier.weight(1f).padding(start = 12.dp), style = MaterialTheme.typography.titleMedium,
+                            )
+                            // Глобальный поиск (ТЗ, §75) — с любой вкладки.
+                            TextButton(onClick = { searching = true }) { Text("Найти") }
+                        }
                     }
                 }
-            }
-        },
-        bottomBar = {
-            // Панель — всегда: её исчезновение на экране сессии сдвигало всё содержимое. Без подписей, узкая (D-61).
-            androidx.compose.material3.Surface(tonalElevation = 3.dp) {
-                Row(
-                    Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.navigationBars).height(44.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    fun go(t: Int) {
-                        tab = t
-                        selectedId = null
-                    }
-                    val waiting = snapshot?.requests?.size ?: 0
-                    for ((i, icon) in listOf("◉", "▦", "⇄", "?", "≡", "✦", "▤").withIndex()) {
-                        val selected = tab == i && selectedId == null
-                        Box(
-                            Modifier.weight(1f).fillMaxSize().clickable { go(i) },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            val color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                            // Число — значком поверх: ширина пункта не меняется с числом запросов.
-                            if (i == 3) {
-                                BadgedBox(badge = { if (waiting > 0) Badge { Text("$waiting") } }) { Text(icon, color = color, style = MaterialTheme.typography.titleMedium) }
-                            } else {
-                                Text(icon, color = color, style = MaterialTheme.typography.titleMedium)
+            },
+            bottomBar = {
+                // Панель — всегда: её исчезновение на экране сессии сдвигало всё содержимое. Без подписей, узкая (D-61).
+                androidx.compose.material3.Surface(tonalElevation = 3.dp) {
+                    Row(
+                        Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.navigationBars).height(44.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        fun go(t: Int) {
+                            tab = t
+                            selectedId = null
+                        }
+                        val waiting = snapshot?.requests?.size ?: 0
+                        for ((i, icon) in listOf("◉", "▦", "⇄", "?", "≡", "✦", "▤").withIndex()) {
+                            val selected = tab == i && selectedId == null
+                            Box(
+                                Modifier.weight(1f).fillMaxSize().clickable { go(i) },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                val color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                // Число — значком поверх: ширина пункта не меняется с числом запросов.
+                                if (i == 3) {
+                                    BadgedBox(badge = { if (waiting > 0) Badge { Text("$waiting") } }) { Text(icon, color = color, style = MaterialTheme.typography.titleMedium) }
+                                } else {
+                                    Text(icon, color = color, style = MaterialTheme.typography.titleMedium)
+                                }
                             }
                         }
                     }
                 }
-            }
-        },
-    ) { padding ->
-        val s = snapshot
-        // Клавиатура (D-64): содержимое — над ней; отступ панели вкладок уже учтён (consumeWindowInsets), не вдвое.
-        Column(Modifier.padding(padding).consumeWindowInsets(padding).imePadding().fillMaxSize()) {
-            corrupted?.let { what ->
-                // D-24: карантин хвоста — только явным решением; опасное — красным и вторым шагом.
-                var armed by remember { mutableStateOf(false) }
-                Column(Modifier.fillMaxWidth().padding(12.dp)) {
+            },
+        ) { padding ->
+            val s = snapshot
+            // Клавиатура (D-64): содержимое — над ней; отступ панели вкладок уже учтён (consumeWindowInsets), не вдвое.
+            Column(Modifier.padding(padding).consumeWindowInsets(padding).imePadding().fillMaxSize()) {
+                corrupted?.let { what ->
+                    // D-24: карантин хвоста — только явным решением; необратимое — окном (AI:A-4).
+                    var asking by remember { mutableStateOf(false) }
+                    Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                        Text(
+                            "Журнал контроллера испорчен: $what. Записи после испорченной — решения, ответы, итоги задач — " +
+                                "можно отрезать в карантин (файл сохранится рядом), тогда контроллер откатится к последней целой записи. " +
+                                "Без этого контроллер не запустится; журнал — файл live/live.journal в данных приложения.",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        TextButton(onClick = { asking = true }) { Text("Отрезать хвост в карантин…", color = MaterialTheme.colorScheme.error) }
+                        if (asking) {
+                            ConfirmDialog(
+                                "Отрезать хвост журнала?",
+                                "Записи после испорченной — решения, ответы, итоги задач — уйдут в файл карантина рядом с журналом, " +
+                                    "а контроллер откатится к последней целой записи. В работу они не вернутся.",
+                                "Отрезать",
+                                onConfirm = {
+                                    asking = false
+                                    scope.launch(Dispatchers.IO) { controller.confirmJournalQuarantine() }
+                                    corrupted = null
+                                    failure = null
+                                },
+                                onDismiss = { asking = false },
+                            )
+                        }
+                    }
+                }
+                failure?.takeIf { corrupted == null }?.let {
                     Text(
-                        "Журнал контроллера испорчен: $what. Записи после испорченной — решения, ответы, итоги задач — " +
-                            "можно отрезать в карантин (файл сохранится рядом), тогда контроллер откатится к последней целой записи. " +
-                            "Без этого контроллер не запустится; журнал — файл live/live.journal в данных приложения.",
+                        "Контроллер не работает: $it. Проверьте targets на вкладке Targets; подробности — в журнале приложения.",
+                        Modifier.fillMaxWidth().padding(12.dp),
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodySmall,
                     )
-                    TextButton(onClick = {
-                        if (!armed) {
-                            armed = true
-                        } else {
-                            scope.launch(Dispatchers.IO) { controller.confirmJournalQuarantine() }
-                            corrupted = null
-                            failure = null
-                        }
-                    }) { Text(if (armed) "Точно отрезать хвост в карантин" else "Отрезать хвост в карантин", color = MaterialTheme.colorScheme.error) }
                 }
-            }
-            failure?.takeIf { corrupted == null }?.let {
-                Text(
-                    "Контроллер не работает: $it. Проверьте targets на вкладке Targets; подробности — в журнале приложения.",
-                    Modifier.fillMaxWidth().padding(12.dp),
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-            if (stopped) {
-                Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Контроллер остановлен: такты не идут, уведомлений нет.", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                    Button(onClick = { scope.launch(Dispatchers.IO) { ControllerService.resume(context) }; stopped = false }) { Text("Запустить") }
+                if (stopped) {
+                    Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Контроллер остановлен: такты не идут, уведомлений нет.", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                        Button(onClick = { scope.launch(Dispatchers.IO) { ControllerService.resume(context) }; stopped = false }) { Text("Запустить") }
+                    }
                 }
-            }
-            // Смена вкладки или экрана — плавно, без скачка содержимого; кадр перехода рисует свой экран.
-            Crossfade(targetState = if (selectedId != null) SESSION_SCREEN else tab, label = "screen", modifier = Modifier.weight(1f).fillMaxWidth()) { screen ->
-                Box(Modifier.fillMaxSize()) {
-                    when {
-                        screen == 2 -> TargetsPane(controller, model)
-                        screen == 3 -> RequestsPane(model, s)
-                        screen == 4 -> LogPane(model)
-                        screen == 5 -> ModelsPane()
-                        screen == 6 -> FilesPane()
-                        s == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-                        screen == SESSION_SCREEN -> SessionPane(s.session, model, sessionEvents)
-                        screen == 0 -> Column(Modifier.fillMaxSize()) {
-                            QuickRow(s.quick, s.live, s.requests.size, model, onTask = { foundTask = it }) { selectedId = null; tab = 3 }
-                            Box(Modifier.weight(1f)) { DashboardPane(s.dashboard, model) }
+                // Смена вкладки или экрана — плавно, без скачка содержимого; кадр перехода рисует свой экран.
+                Crossfade(targetState = if (selectedId != null) SESSION_SCREEN else tab, label = "screen", modifier = Modifier.weight(1f).fillMaxWidth()) { screen ->
+                    Box(Modifier.fillMaxSize()) {
+                        when {
+                            screen == 2 -> TargetsPane(controller, model)
+                            screen == 3 -> RequestsPane(model, s)
+                            screen == 4 -> LogPane(model)
+                            screen == 5 -> ModelsPane()
+                            screen == 6 -> FilesPane()
+                            s == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
+                            screen == SESSION_SCREEN -> SessionPane(s.session, model, sessionEvents)
+                            screen == 0 -> Column(Modifier.fillMaxSize()) {
+                                QuickRow(s.quick, s.live, s.requests.size, model, onTask = { foundTask = it }) { selectedId = null; tab = 3 }
+                                Box(Modifier.weight(1f)) { DashboardPane(s.dashboard, model) }
+                            }
+                            else -> BoardPane(s.board, s.live, model, s.archived) { selectedId = it }
                         }
-                        else -> BoardPane(s.board, s.live, model, s.archived) { selectedId = it }
                     }
                 }
             }

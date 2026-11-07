@@ -81,6 +81,7 @@ fun ModelsPane() {
     }
     val profiles by ModelsStore.profiles.collectAsState()
     val chats by ModelsStore.chats.collectAsState()
+    val undo = LocalUndo.current
     val running by ModelsStore.running.collectAsState()
     val problem by ModelsStore.problem.collectAsState()
     var open by rememberSaveable { mutableStateOf<String?>(null) }
@@ -118,7 +119,8 @@ fun ModelsPane() {
             }
         }
         if (chats.isNotEmpty()) item { Text("Разговоры", style = MaterialTheme.typography.titleMedium) }
-        items(chats.reversed(), key = { "c:${it.id.value}" }) { c ->
+        // Удалённый, но ещё не подтверждённый снэкбаром — не виден (AI:A-4).
+        items(chats.reversed().filter { undo?.hidden?.containsKey("chat:${it.id.value}") != true }, key = { "c:${it.id.value}" }) { c ->
             val p = profiles.firstOrNull { it.id == c.profile }
             ChatRow(c, p, running[c.id] != null) { open = c.id.value }
         }
@@ -133,7 +135,7 @@ fun ModelsPane() {
 
 @Composable
 private fun ProfileCard(p: ApiProfile, onChat: () -> Unit, onEdit: () -> Unit) {
-    var armed by remember { mutableStateOf(false) }
+    var asking by remember { mutableStateOf(false) }
     val hasKey = remember(p) { ModelsStore.hasKey(p.id) }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
@@ -146,9 +148,17 @@ private fun ProfileCard(p: ApiProfile, onChat: () -> Unit, onEdit: () -> Unit) {
             Row {
                 TextButton(onClick = onChat) { Text("Чат") }
                 TextButton(onClick = onEdit) { Text("Изменить") }
-                TextButton(onClick = {
-                    if (armed) ModelsStore.deleteProfile(p.id) else armed = true
-                }) { Text(if (armed) "Точно удалить с ключом и чатами" else "Удалить", color = MaterialTheme.colorScheme.error) }
+                // Необратимое — окном (AI:A-4): ключ из Keystore и разговоры профиля не вернуть.
+                TextButton(onClick = { asking = true }) { Text("Удалить…", color = MaterialTheme.colorScheme.error) }
+            }
+            if (asking) {
+                ConfirmDialog(
+                    "Удалить профиль «${p.name}»?",
+                    "Ключ API сотрётся с телефона, разговоры профиля удалятся. Вернуть их нельзя; ключ у провайдера останется действующим.",
+                    "Удалить",
+                    onConfirm = { asking = false; ModelsStore.deleteProfile(p.id) },
+                    onDismiss = { asking = false },
+                )
             }
         }
     }
@@ -165,7 +175,11 @@ private fun ChatRow(c: Conversation, p: ApiProfile?, live: Boolean, onOpen: () -
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        TextButton(onClick = { ModelsStore.deleteChat(c.id) }) { Text("✕") }
+        // Обратимое — сразу и со снэкбаром «Отменить» (AI:A-4); удаляется, когда снэкбар ушёл.
+        val undo = LocalUndo.current
+        TextButton(onClick = {
+            if (undo != null) undo.run("chat:${c.id.value}", "Разговор удалён") { ModelsStore.deleteChat(c.id) } else ModelsStore.deleteChat(c.id)
+        }) { Text("✕") }
     }
 }
 
