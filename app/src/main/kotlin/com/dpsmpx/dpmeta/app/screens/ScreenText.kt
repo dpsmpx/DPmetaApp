@@ -6,15 +6,11 @@ package com.dpsmpx.dpmeta.app.screens
  * изменился снимок, это видно в диффе PR.
  */
 object ScreenText {
-    fun summary(s: Screens.Summary): String = buildString {
+    /** Сводка (UX-6): плитки и куда ведёт каждая; строка «AI» — если её дала оболочка (D-76). */
+    fun summary(s: Screens.Summary, ai: Screens.AiCounts? = null): String = buildString {
         appendLine("СВОДКА — срез ${s.asOf}")
-        appendLine("Работают: ${s.active}")
-        appendLine("Вопросов автору: ${s.questions}")
-        appendLine("Открытых PR: ${s.pullsWaiting}")
-        appendLine("Проектов: ${s.projects}")
-        appendLine("Ошибок источников: ${s.sourceErrors}")
-        appendLine("Шлюз готов: ${s.gatesReady}")
-        appendLine("Синхронизация: ${s.syncHealth}")
+        for (t in Screens.tiles(s)) appendLine("${t.title}: ${t.value} → ${t.goes.title}")
+        ai?.let { appendLine(Screens.aiLine(it) + if (Screens.aiToRequests(it)) " → Запросы" else " → AI") }
     }
 
     /** График (F-34) строками: описание для TalkBack и таблица значений (N-07) — то, что рядом с рисунком. */

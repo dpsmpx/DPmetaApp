@@ -2,6 +2,7 @@ package com.dpsmpx.dpmeta.app
 
 import com.dpsmpx.dpai.core.clock.ManualClock
 import com.dpsmpx.dpai.core.clock.Timestamp
+import com.dpsmpx.dpai.core.measure.Measure
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpmeta.app.screens.Export
 import com.dpsmpx.dpmeta.app.screens.ScreenText
@@ -50,6 +51,16 @@ class ScreenSnapshotTest {
 
     @Test
     fun summary() = snapshot("summary", ScreenText.summary(Screens.summary(state())))
+
+    /** Строка «AI» (D-76): с контуром — числа и переход к запросам; без контура — «не настроено». */
+    @Test
+    fun summaryWithAi() = snapshot(
+        "summary-ai",
+        ScreenText.summary(
+            Screens.summary(state()),
+            Screens.AiCounts(true, Measure.observed(2L), Measure.observed(1L), Measure.unknown("нет снимка")),
+        ) + ScreenText.summary(Screens.summary(state()), Screens.AiCounts(false, Measure.unknown("нет"), Measure.unknown("нет"), Measure.unknown("нет"))),
+    )
 
     @Test
     fun projects() = snapshot("projects", ScreenText.projects(Screens.projects(state())))

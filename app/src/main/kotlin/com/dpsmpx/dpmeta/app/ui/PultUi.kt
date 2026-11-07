@@ -27,6 +27,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -35,6 +36,11 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
@@ -142,6 +148,12 @@ data class PultView(
     val statusDetails: String = "",
     /** Сколько репозиториев отмечено для клонов — строка настроек. */
     val clones: String = "",
+    /** Числа «AI» от оболочки `:shell` (D-76); `null` — строки «AI» нет. */
+    val ai: Screens.AiCounts? = null,
+    /** Номер законченной синхронизации — итог снэкбаром один раз (UX-6); 0 — ещё не было. */
+    val syncEnded: Int = 0,
+    /** Последняя синхронизация не вышла — снэкбар ведёт к причине в «Ещё». */
+    val syncFailed: Boolean = false,
 )
 
 /**
@@ -234,7 +246,10 @@ private val StacksSaver = listSaver<SnapshotStateMap<Section, List<Nav>>, String
     },
 )
 
-/** [onAi] — пункт «AI» перед «Ещё» (D-53, D-73): открывает оболочку подсистемы; `null` — пункта нет. */
+/**
+ * [onAi] — пункт «AI» перед «Ещё» (D-53, D-73): открывает оболочку подсистемы
+ * (`true` — на «Запросах», D-76); `null` — пункта нет.
+ */
 @Composable
 fun PultApp(
     view: PultView,
@@ -242,7 +257,7 @@ fun PultApp(
     onSync: () -> Unit,
     onSaveToken: (String) -> Unit,
     onForgetToken: () -> Unit,
-    onAi: (() -> Unit)? = null,
+    onAi: ((requests: Boolean) -> Unit)? = null,
     onExport: ((json: Boolean, period: Stats.Period, share: Boolean) -> Unit)? = null,
     /** «Клоны…» в настройках (D-70). */
     onClones: () -> Unit = {},
@@ -258,13 +273,29 @@ fun PultApp(
     val back: () -> Unit = { stacks[tab]?.takeIf { it.isNotEmpty() }?.let { stacks[tab] = it.dropLast(1) } }
     // Системный «назад» — шаг вверх по стеку пункта, а не выход из приложения (UX-2).
     BackHandler(enabled = stack.isNotEmpty(), onBack = back)
+    // Итог синхронизации — снэкбаром один раз (UX-6): «Обновлено», ошибки и отказ — с переходом к причине.
+    val snack = remember { SnackbarHostState() }
+    var shownSync by rememberSaveable { mutableStateOf(view.syncEnded) }
+    LaunchedEffect(view.syncEnded) {
+        if (view.syncEnded == shownSync) return@LaunchedEffect
+        shownSync = view.syncEnded
+        val errors = view.state?.projects?.sumOf { it.errors.size } ?: 0
+        val text = when {
+            view.syncFailed -> "Не обновилось"
+            errors > 0 -> "Обновлено · ошибок источников $errors"
+            else -> "Обновлено"
+        }
+        val r = snack.showSnackbar(text, actionLabel = if (view.syncFailed || errors > 0) "Подробнее" else null, withDismissAction = true, duration = SnackbarDuration.Short)
+        if (r == SnackbarResult.ActionPerformed) tab = if (view.syncFailed) Section.MORE else Section.DEV.also { devTab = DevTab.PROJECTS }
+    }
     Scaffold(
-        topBar = { Header(tab.title, view) },
+        snackbarHost = { SnackbarHost(snack) },
+        topBar = { Header(tab.title, view, onSync) },
         bottomBar = {
             NavigationBar {
                 for (t in Section.entries) {
                     if (t == Section.MORE && onAi != null) {
-                        NavigationBarItem(selected = false, onClick = onAi, icon = { Icon(painterResource(R.drawable.ic_pult_ai), contentDescription = null) }, label = { Text("AI") })
+                        NavigationBarItem(selected = false, onClick = { onAi(false) }, icon = { Icon(painterResource(R.drawable.ic_pult_ai), contentDescription = null) }, label = { Text("AI") })
                     }
                     // Пункт выделен и во вложенном экране; касание открытого — к его началу, другого — туда, где оставили.
                     NavigationBarItem(
@@ -288,7 +319,16 @@ fun PultApp(
                 top is Nav.Feed && s != null -> FeedScreen(view.feed, s.projects.map { it.name }, back)
                 tab == Section.MORE -> Settings(view, onSync, onSaveToken, onForgetToken, onClones)
                 s == null -> Text(if (view.hasToken) "Среза ещё нет: «Обновить» в пункте «Ещё»." else "Нужен токен GitHub: пункт «Ещё».")
-                tab == Section.SUMMARY -> Summary(Screens.summary(s), view, onSync, onStats = { tab = Section.STATS }) { open(Nav.Feed) }
+                tab == Section.SUMMARY -> Summary(
+                    Screens.summary(s), view, onSync, onAi,
+                    onTile = { g ->
+                        when (g) {
+                            Screens.Goes.PROJECTS -> { tab = Section.DEV; devTab = DevTab.PROJECTS }
+                            Screens.Goes.QUESTIONS -> { tab = Section.DEV; devTab = DevTab.QUESTIONS }
+                            Screens.Goes.SYNC -> tab = Section.MORE
+                        }
+                    },
+                ) { open(Nav.Feed) }
                 tab == Section.STATS -> StatsScreen(view.history, s.projects.map { it.name }, null, s.asOf, null, view.status, onExport)
                 tab == Section.DEV -> Column(Modifier.fillMaxSize()) {
                     DevTabs(devTab) { devTab = it }
@@ -308,10 +348,11 @@ fun PultApp(
  * «обновляется»; во время синхронизации — тонкая полоса хода под ним.
  */
 @Composable
-private fun Header(title: String, view: PultView) {
+private fun Header(title: String, view: PultView, onSync: () -> Unit) {
     Surface(tonalElevation = 3.dp) {
         Column(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars)) {
-            Column(Modifier.padding(horizontal = Tokens.gap, vertical = 6.dp)) {
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).padding(horizontal = Tokens.gap, vertical = 6.dp)) {
                 Text(title, style = MaterialTheme.typography.titleMedium)
                 val asOf = view.state?.let { "срез ${Screens.time(it.asOf)}" }
                 Text(
@@ -323,6 +364,11 @@ private fun Header(title: String, view: PultView) {
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+            // «Обновить» — одно, значком в заголовке любого экрана (UX-6).
+            IconButton(onClick = onSync, enabled = view.hasToken && !view.busy) {
+                Icon(painterResource(R.drawable.ic_pult_refresh), contentDescription = "Обновить")
+            }
             }
             // Полоса — того же места и без синхронизации: заголовок не прыгает.
             if (view.busy) LinearProgressIndicator(Modifier.fillMaxWidth()) else Spacer(Modifier.height(4.dp))
@@ -339,34 +385,44 @@ private fun DevTabs(selected: DevTab, onSelect: (DevTab) -> Unit) {
     Spacer(Modifier.height(Tokens.gap))
 }
 
+/**
+ * Сводка (UX-6; ТЗ, F-04, §9): одна сетка плиток — у каждой свой экран,
+ * строка «AI» (D-76), последние события и вся лента. «Обновить» — в
+ * заголовке и жестом «потянуть»; итог — снэкбаром.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun Line(label: String, value: String) = Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-    Text(label)
-    Text(value, fontWeight = FontWeight.SemiBold)
+private fun Summary(
+    s: Screens.Summary,
+    view: PultView,
+    onSync: () -> Unit,
+    onAi: ((requests: Boolean) -> Unit)?,
+    onTile: (Screens.Goes) -> Unit,
+    onFeed: () -> Unit,
+) = PullToRefreshBox(isRefreshing = view.busy, onRefresh = { if (view.hasToken) onSync() }, modifier = Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+        val history = remember(view.history, view.state?.asOf) { view.state?.let { Stats.tiles(view.history, it.asOf) }.orEmpty().associateBy { it.metric.id } }
+        SummaryTiles(Screens.tiles(s), history, onTile)
+        view.ai?.let { c ->
+            Card(Modifier.fillMaxWidth().clickable(enabled = onAi != null) { onAi?.invoke(Screens.aiToRequests(c)) }) {
+                Text(Screens.aiLine(c) + " ▸", Modifier.padding(Tokens.gap))
+            }
+        }
+        val recent = remember(view.feed) { Screens.feed(view.feed).take(SUMMARY_EVENTS) }
+        Text("Последние события", style = MaterialTheme.typography.titleSmall)
+        if (recent.isEmpty()) Text("Событий нет: они появляются со второй синхронизации.", style = MaterialTheme.typography.bodySmall)
+        for (r in recent) {
+            Column {
+                Text("${r.time} · ${r.project} · ${r.kind}", style = MaterialTheme.typography.bodySmall)
+                Text(r.text, maxLines = 2)
+            }
+        }
+        TextButton(onClick = onFeed) { Text("Вся лента ▸") }
+    }
 }
 
-@Composable
-private fun Summary(s: Screens.Summary, view: PultView, onSync: () -> Unit, onStats: () -> Unit, onFeed: () -> Unit) = Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
-    // Время среза — в заголовке (D-73).
-    Line("Работают", s.active)
-    Line("Вопросов автору", s.questions)
-    Line("Открытых PR", s.pullsWaiting)
-    Line("Проектов", s.projects.toString())
-    Line("Ошибок источников", s.sourceErrors.toString())
-    Line("Шлюз готов", s.gatesReady)
-    Line("Синхронизация", s.syncHealth)
-    view.state?.let { st ->
-        // Плитки — один раз на историю и срез, не на каждую перерисовку сводки.
-        val tiles = remember(view.history, st.asOf) { Stats.tiles(view.history, st.asOf) }
-        Tiles(tiles)
-    }
-    Row {
-        TextButton(onClick = onStats) { Text("Статистика →") }
-        TextButton(onClick = onFeed) { Text("Лента →") }
-    }
-    Button(onClick = onSync, enabled = !view.busy) { Text(if (view.busy) "Синхронизация…" else "Обновить") }
-    if (view.status.isNotEmpty()) StatusText(view)
-}
+/** Сколько последних событий на сводке; остальные — «Вся лента ▸». */
+private const val SUMMARY_EVENTS = 3
 
 @Composable
 private fun Projects(groups: List<Screens.Group>, onOpen: (String) -> Unit) = LazyColumn(verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
@@ -594,6 +650,8 @@ private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -
         )
     }
     Spacer(Modifier.height(Tokens.gap))
+    // Полный итог синхронизации — здесь (UX-6): на сводке только снэкбар.
+    Text("Синхронизация", style = MaterialTheme.typography.titleMedium)
     Button(onClick = onSync, enabled = view.hasToken && !view.busy) { Text(if (view.busy) "Синхронизация…" else "Обновить") }
     if (view.status.isNotEmpty()) StatusText(view)
     Spacer(Modifier.height(Tokens.gap))

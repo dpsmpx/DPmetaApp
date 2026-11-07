@@ -59,6 +59,8 @@ kotlin {
 dependencies {
     implementation(project(":app"))
     implementation("com.dpsmpx.dpai:android")
+    // Числа строки «AI» сводки (D-76) — `Measure` ядра: передаются из «AI» в пульт через этот модуль.
+    implementation("com.dpsmpx.dpai:core")
     // DpmetaActivity наследует пульт — ComponentActivity нужна и на classpath компиляции.
     implementation(libs.activity.compose)
 }

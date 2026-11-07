@@ -138,6 +138,29 @@ open class PultActivity : ComponentActivity() {
     /** Вход в подсистему «AI» (D-53); нет — вкладки «AI» нет: пульт сам о подсистеме не знает. */
     protected open fun aiIntent(): Intent? = null
 
+    /** Вход в «AI» со строки сводки (D-76): [requests] — сразу на «Запросы». */
+    protected open fun aiIntent(requests: Boolean): Intent? = aiIntent()
+
+    /**
+     * Числа строки «AI» на сводке (D-76) — их даёт оболочка `:shell`;
+     * `null` — строки нет. Вызывается не на главном потоке.
+     */
+    protected open fun aiCounts(): com.dpsmpx.dpmeta.app.screens.Screens.AiCounts? = null
+
+    /** Опрос чисел «AI», пока пульт на экране: дёшево — оболочка читает уже опубликованный снимок. */
+    private val ui = android.os.Handler(android.os.Looper.getMainLooper())
+    private val aiTick = object : Runnable {
+        override fun run() {
+            if (!pool.isShutdown) {
+                pool.execute {
+                    val c = runCatching { aiCounts() }.getOrNull()
+                    runOnUiThread { if (view.value.ai != c) view.value = view.value.copy(ai = c) }
+                }
+            }
+            ui.postDelayed(this, AI_REFRESH_MS)
+        }
+    }
+
     override fun onDestroy() {
         authSignal?.cancel()
         // Пул не останавливается: он на процесс, и прерванная синхронизация роняла бы процесс вместе со службами «AI».
@@ -147,6 +170,12 @@ open class PultActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         if (opened) entrySync()
+        ui.post(aiTick)
+    }
+
+    override fun onPause() {
+        ui.removeCallbacks(aiTick)
+        super.onPause()
     }
 
     /** Окно открыто входом ([open]) — до этого синхронизации при входе нет. */
@@ -269,11 +298,13 @@ open class PultActivity : ComponentActivity() {
         entrySync()
         // От края до края (Android 15+ — всегда): отступы панелей даёт Scaffold, значки — по теме экрана (UX-5).
         enableEdgeToEdge()
+        // Пункт и строка «AI» — только с оболочкой подсистемы (D-53, D-76).
+        val ai: ((Boolean) -> Unit)? = if (aiIntent() != null) { requests -> aiIntent(requests)?.let(::startActivity) } else null
         setContent {
             PultTheme {
                 PultApp(
                     view.value, loader, onSync = ::sync, onSaveToken = ::saveToken, onForgetToken = ::forgetToken,
-                    onAi = aiIntent()?.let { i -> { startActivity(i) } }, onExport = ::export,
+                    onAi = ai, onExport = ::export,
                     onClones = { withToken { token -> if (token != null) askClones(token, first = false) } }, onClonesChosen = ::clonesChosen,
                 )
             }
@@ -435,11 +466,13 @@ open class PultActivity : ComponentActivity() {
                         busy = false,
                         status = "Готово: ${r.value.line}." + (note?.let { " $it" } ?: ""),
                         statusDetails = "",
+                        syncEnded = view.value.syncEnded + 1,
+                        syncFailed = false,
                         feed = feed,
                         names = repo.names(),
                     ).also { loadHistory() }
                     is Outcome.Failure -> Screens.failure(r.diagnostics.first()).let { f ->
-                        view.value.copy(busy = false, status = "Не вышло: ${f.text}." + (note?.let { " $it" } ?: ""), statusDetails = f.details)
+                        view.value.copy(busy = false, status = "Не вышло: ${f.text}." + (note?.let { " $it" } ?: ""), statusDetails = f.details, syncEnded = view.value.syncEnded + 1, syncFailed = true)
                     }
                 }
             }
@@ -447,6 +480,9 @@ open class PultActivity : ComponentActivity() {
     }
 
     companion object {
+        /** Как часто строка «AI» сводки перечитывает числа, пока пульт на экране (D-76). */
+        private const val AI_REFRESH_MS = 5_000L
+
         /** Каталог экспорта в кэше — единственный, что виден [ExportProvider] (`res/xml/pult_export_paths.xml`). */
         const val EXPORT_DIR = "pult-export"
         private const val PENDING_JSON = "export.json"

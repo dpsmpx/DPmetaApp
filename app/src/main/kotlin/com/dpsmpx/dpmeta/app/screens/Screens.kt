@@ -93,6 +93,45 @@ object Screens {
         syncHealth = s.syncHealth.orNull()?.let { "$it % источников" } ?: UNKNOWN,
     )
 
+    /** Куда ведёт касание плитки сводки (UX-6; ТЗ, F-04: «каждая плитка ведёт на свой экран»). */
+    enum class Goes(val title: String) { PROJECTS("Проекты"), QUESTIONS("Вопросы"), SYNC("Ещё") }
+
+    /** Плитка сводки: [metric] — ряд истории для изменения и спарклайна (F-34), нет — без них. */
+    data class Tile(val title: String, val value: String, val goes: Goes, val metric: String? = null)
+
+    /**
+     * Сводка — одной сеткой плиток (UX-6): «Работают N из M» вместо двух строк,
+     * у каждой — свой экран. PR — к проектам, пока нет экрана PR (F-11).
+     */
+    fun tiles(s: Summary): List<Tile> = listOf(
+        Tile("Работают", if (s.active == UNKNOWN) UNKNOWN else "${s.active} из ${s.projects}", Goes.PROJECTS, "eco.active_projects"),
+        Tile("Вопросов автору", s.questions, Goes.QUESTIONS, "eco.questions_open"),
+        Tile("PR ждут", s.pullsWaiting, Goes.PROJECTS),
+        Tile("Ошибок источников", s.sourceErrors.toString(), Goes.PROJECTS),
+        Tile("Шлюз готов", s.gatesReady, Goes.PROJECTS),
+        Tile("Синхронизация", s.syncHealth, Goes.SYNC, "app.sync.health"),
+    )
+
+    // --- Строка «AI» (D-76) ---
+
+    /**
+     * Числа «AI» для сводки: их передаёт оболочка `:shell` из состояния
+     * контура — пульт об «AI» не знает (D-53). [configured] — `false`: демо
+     * или не настроено.
+     */
+    data class AiCounts(val configured: Boolean, val waiting: Measure<Long>, val running: Measure<Long>, val nearLimit: Measure<Long>)
+
+    /** Строка «AI» сводки; неизвестное — словом, не нулём. */
+    fun aiLine(c: AiCounts): String =
+        if (!c.configured) {
+            "AI: не настроено"
+        } else {
+            "AI: ждут ответа ${show(c.waiting)} · в работе ${show(c.running)} · подписки у предела ${show(c.nearLimit)}"
+        }
+
+    /** Касание строки «AI» — на «Запросы», если ответа ждут (D-76). */
+    fun aiToRequests(c: AiCounts): Boolean = c.configured && (c.waiting.orNull() ?: 0L) > 0L
+
     // --- Проекты по местам (F-02, F-06) ---
 
     data class ProjectRow(val name: String, val working: String, val decisions: String, val todo: String, val roadmap: String, val pulls: String, val errors: Int)

@@ -7,6 +7,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -36,6 +37,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.dpsmpx.dpai.core.clock.Timestamp
 import com.dpsmpx.dpai.ui.AppPalette
+import com.dpsmpx.dpmeta.app.screens.Screens
 import com.dpsmpx.dpmeta.app.screens.Stats
 import com.dpsmpx.dpmeta.metrics.MetricPoint
 import java.time.format.DateTimeFormatter
@@ -142,19 +144,33 @@ fun Sparkline(values: List<Long>, color: Color, modifier: Modifier = Modifier) =
     drawPath(path, color, style = Stroke(width = 2f))
 }
 
-/** Плитки сводки (F-34): число, изменение и спарклайн; у плитки — подпись для TalkBack. */
+/**
+ * Плитки сводки (UX-6; F-04, F-34): сетка в две колонки — число, изменение и
+ * спарклайн, где есть история; касание — экран плитки, у плитки — подпись
+ * для TalkBack.
+ */
 @Composable
-fun Tiles(tiles: List<Stats.Tile>) {
+fun SummaryTiles(tiles: List<Screens.Tile>, history: Map<String, Stats.Tile>, onOpen: (Screens.Goes) -> Unit) {
     val isDark = isSystemInDarkTheme()
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        for (t in tiles) {
-            Card(Modifier.semantics { contentDescription = "${t.metric.title}: ${t.value}${if (t.change.isEmpty()) "" else ", ${t.change}"}" }) {
-                Column(Modifier.padding(8.dp)) {
-                    Text(t.metric.title, style = MaterialTheme.typography.labelSmall)
-                    Text(t.value, fontWeight = FontWeight.SemiBold)
-                    if (t.change.isNotEmpty()) Text(t.change, style = MaterialTheme.typography.labelSmall)
-                    Sparkline(t.spark, ChartColors.hue(t.metric.hue, isDark))
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        for (row in tiles.chunked(2)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                for (t in row) {
+                    val h = t.metric?.let(history::get)
+                    val change = h?.change.orEmpty()
+                    Card(
+                        onClick = { onOpen(t.goes) },
+                        modifier = Modifier.weight(1f).semantics { contentDescription = "${t.title}: ${t.value}${if (change.isEmpty()) "" else ", $change"}; открыть «${t.goes.title}»" },
+                    ) {
+                        Column(Modifier.padding(8.dp)) {
+                            Text(t.title, style = MaterialTheme.typography.labelSmall)
+                            Text(t.value, fontWeight = FontWeight.SemiBold)
+                            if (change.isNotEmpty()) Text(change, style = MaterialTheme.typography.labelSmall)
+                            h?.let { Sparkline(it.spark, ChartColors.hue(it.metric.hue, isDark)) }
+                        }
+                    }
                 }
+                if (row.size == 1) Spacer(Modifier.weight(1f))
             }
         }
     }
