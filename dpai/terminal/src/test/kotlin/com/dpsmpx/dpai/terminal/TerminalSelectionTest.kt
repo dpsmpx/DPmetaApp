@@ -19,8 +19,8 @@ class TerminalSelectionTest {
         assertEquals(4..25, TerminalSelection.word(r, 10), "путь — одно слово")
         assertEquals(0..2, TerminalSelection.word(r, 1))
         assertEquals(27..27, TerminalSelection.word(r, 27), "«|» — не слово: один столбец")
-        val u = row("open https://claude.ai/oauth?code=x1 now")
-        assertEquals(5..35, TerminalSelection.word(u, 20))
+        val u = row("open https://example.org/oauth?code=x1 now")
+        assertEquals(5..37, TerminalSelection.word(u, 20))
     }
 
     @Test
@@ -33,7 +33,7 @@ class TerminalSelectionTest {
 
     @Test
     fun linkOnlyWhenSelectionIsOneUrl() {
-        assertEquals("https://claude.ai/oauth?code=1", TerminalSelection.link("  https://claude.ai/oauth?code=1).\n"))
+        assertEquals("https://example.org/oauth?code=1", TerminalSelection.link("  https://example.org/oauth?code=1).\n"))
         assertEquals("https://a.b/c", TerminalSelection.link("https://a.b/\nc"), "перенос строки программы — не конец адреса")
         assertNull(TerminalSelection.link("см. https://a.b/c"))
         assertNull(TerminalSelection.link("intent://x"))
