@@ -642,6 +642,33 @@ def check_forbidden(repo, r):
                     r.add(f"{rel}:{i}", why)
 
 
+# Номер решения на экране — ссылка для разработчика, а не слово для человека (аудит UI/UX
+# 5 ноября 2026: UX-13, AI:A-10; DP_AI_Orcestrator:D-88). В строках экранов пульта, оболочки и
+# «AI» его нет; в KDoc и комментариях он остаётся. Строка вне экрана (журнал, диагностика для
+# разработчика) — тоже без номера: её показывают «Журнал» и «Подробнее».
+UI_ROOTS = ("app/src/main/", "shell/src/main/", "dpai/android/src/main/", "dpai/ui/src/main/")
+STRING_LITERAL = re.compile(r'"(?:[^"\\]|\\.)*"')
+DECISION_REF = re.compile(r"\b(?:[A-Za-z_]+:)?D-\d{2,3}\b")
+
+
+def check_ui_words(repo, r):
+    """ui.words — в строках экранов (пульт, оболочка, «AI») нет номеров решений `D-NN`: человеку —
+    слово, номер — в KDoc (UX-13, AI:A-10)."""
+    for rel in repo.files:
+        if not rel.endswith((".kt", ".java")) or not rel.startswith(UI_ROOTS):
+            continue
+        text = repo.text(rel)
+        if text is None:
+            continue
+        r.scanned += 1
+        for i, line in enumerate(text.splitlines(), 1):
+            if line.lstrip().startswith(("//", "*", "/*")):
+                continue
+            line = TRAILING_COMMENT.sub("", line)
+            if any(DECISION_REF.search(m.group(0)) for m in STRING_LITERAL.finditer(line)):
+                r.add(f"{rel}:{i}", "номер решения в строке экрана — человеку слово, номер — в KDoc (UX-13, AI:A-10)")
+
+
 def check_wrapper(repo, r):
     """build.wrapper — wrapper Gradle корня совпадает с wrapper подсистемы dpai/ байт в байт (D-28)."""
     for rel in WRAPPER:
@@ -761,6 +788,7 @@ CHECKS = [
     ("core.single", check_core_single),
     ("modules.root", check_modules),
     ("code.forbidden", check_forbidden),
+    ("ui.words", check_ui_words),
     ("build.wrapper", check_wrapper),
 ]
 

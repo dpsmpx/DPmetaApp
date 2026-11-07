@@ -152,7 +152,7 @@ object RequestOverlay {
             horizontalMargin = 0.03f
         }
         // Верхняя строка — ручка: перетаскивание по вертикали, место запоминается.
-        root.addView(text("⠿ DP AI · ${card.kind} · ${card.origin}", 12f).apply {
+        root.addView(text("⠿ AI · ${card.kind} · ${card.origin}", 12f).apply {
             var startY = 0f
             var startParam = 0
             setOnTouchListener { v, e ->

@@ -160,7 +160,7 @@ object GlobalSearch {
         if (source.events == null) {
             notes += "события, контексты и последние отказы не просмотрены: шёл такт контура — повторите поиск"
         } else {
-            if (source.eventsFrom > 1) notes += "события — с записи журнала №${source.eventsFrom}: старшие лежат в сегментах на диске и в поиск не входят (D-37)"
+            if (source.eventsFrom > 1) notes += "события — с записи журнала №${source.eventsFrom}: старшие лежат в сегментах на диске и в поиск не входят"
             if (capped) notes += "событий нашлось больше $EVENT_CAP — посчитаны новые $EVENT_CAP"
             notes += "контексты и handoff — только задач в памяти контура, отказы — последние ${com.dpsmpx.dpai.orchestrator.Orchestrator.KEPT_PROBLEMS}"
         }

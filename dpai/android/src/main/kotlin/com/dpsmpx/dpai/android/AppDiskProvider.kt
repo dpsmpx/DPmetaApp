@@ -117,7 +117,7 @@ class AppDiskProvider : DocumentsProvider() {
         val r = rel(documentId)
         val p = path(documentId)
         val write = mode != "r"
-        if (write && !AppDisk.writable(r)) throw SecurityException("диск приложения: запись — только в Linux /root (D-96)")
+        if (write && !AppDisk.writable(r)) throw SecurityException("диск приложения: запись — только в папке Linux /root")
         val flags = OsConstants.O_NOFOLLOW or OsConstants.O_CLOEXEC or when (mode) {
             "r" -> OsConstants.O_RDONLY
             "w", "wt" -> OsConstants.O_WRONLY or OsConstants.O_CREAT or OsConstants.O_TRUNC
@@ -149,7 +149,7 @@ class AppDiskProvider : DocumentsProvider() {
     override fun createDocument(parentDocumentId: String, mimeType: String, displayName: String): String {
         guard()
         val parent = rel(parentDocumentId)
-        if (!AppDisk.canCreateIn(parent) || !AppDisk.validName(displayName)) throw SecurityException("диск приложения: создать можно только в Linux /root (D-96)")
+        if (!AppDisk.canCreateIn(parent) || !AppDisk.validName(displayName)) throw SecurityException("диск приложения: создать можно только в папке Linux /root")
         val dir = path(parentDocumentId)
         if (Files.exists(dir.resolve(displayName), LinkOption.NOFOLLOW_LINKS)) throw IllegalStateException("«$displayName» уже есть")
         // Запись — через Vfs (D-24), пути — относительные от корня данных.
@@ -161,7 +161,7 @@ class AppDiskProvider : DocumentsProvider() {
     override fun deleteDocument(documentId: String) {
         guard()
         val r = rel(documentId)
-        if (!AppDisk.writable(r)) throw SecurityException("диск приложения: удалить можно только в Linux /root (D-96)")
+        if (!AppDisk.writable(r)) throw SecurityException("диск приложения: удалить можно только в папке Linux /root")
         val p = path(documentId)
         // Каталог — вглубь без следования ссылкам: ссылка удаляется сама, а не то, на что она указывает.
         val all = if (Files.isDirectory(p, LinkOption.NOFOLLOW_LINKS)) Files.walk(p).use { s -> s.iterator().asSequence().toList() } else listOf(p)
@@ -173,7 +173,7 @@ class AppDiskProvider : DocumentsProvider() {
     override fun renameDocument(documentId: String, displayName: String): String {
         guard()
         val r = rel(documentId)
-        if (!AppDisk.writable(r) || !AppDisk.validName(displayName)) throw SecurityException("диск приложения: переименовать можно только в Linux /root (D-96)")
+        if (!AppDisk.writable(r) || !AppDisk.validName(displayName)) throw SecurityException("диск приложения: переименовать можно только в папке Linux /root")
         val p = path(documentId)
         if (Files.exists(p.resolveSibling(displayName), LinkOption.NOFOLLOW_LINKS)) throw IllegalStateException("«$displayName» уже есть")
         val parent = r.substringBeforeLast('/', "")

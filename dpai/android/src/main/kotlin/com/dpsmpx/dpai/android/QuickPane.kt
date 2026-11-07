@@ -77,7 +77,7 @@ fun QuickRow(quick: QuickActions, live: Boolean, requests: Int, model: DemoModel
             OutlinedButton(enabled = !busy && quick.resumable.isNotEmpty(), onClick = { run("Продолжить", (model.quickNow() ?: quick).resumeAll(keys.next(IdKinds.OPERATION).value)) }) {
                 Text("Продолжить все (${quick.resumable.size})")
             }
-            OutlinedButton(enabled = quick.waiting.isNotEmpty(), onClick = { waiting = true }) { Text("Ждут человека (${quick.waiting.size})") }
+            OutlinedButton(enabled = quick.waiting.isNotEmpty(), onClick = { waiting = true }) { Text("Ждёт вас (${quick.waiting.size})") }
             OutlinedButton(enabled = requests > 0, onClick = onRequests) { Text("Запросы ($requests)") }
         }
         status?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
@@ -103,7 +103,7 @@ fun QuickRow(quick: QuickActions, live: Boolean, requests: Int, model: DemoModel
     if (waiting) {
         AlertDialog(
             onDismissRequest = { waiting = false },
-            title = { Text("Ждут человека") },
+            title = { Text("Ждёт вас") },
             text = {
                 LazyColumn(Modifier.heightIn(max = 420.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     items(quick.waiting, key = { it.id.value }) { c ->

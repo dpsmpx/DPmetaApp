@@ -217,12 +217,18 @@ private fun PolicyEditor(d: TaskDetail, busy: Boolean, onSave: (TaskClass, Strin
     var budget by remember { mutableStateOf(d.budgetCents?.let { String.format(Locale.ROOT, "%.2f", it / 100.0) }.orEmpty()) }
     var error by remember { mutableStateOf<String?>(null) }
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text("Класс задачи — маршрут модели (D-40)", style = MaterialTheme.typography.labelSmall)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            for (c in TaskClass.entries) FilterChip(selected = cls == c, onClick = { cls = c }, label = { Text(Words.taskClass(c.name)) })
+        // Варианты — исполнителя задачи (AI:A-10): класс — только у Claude, усилия у Gemini нет.
+        val x = d.taskExecutor
+        if (com.dpsmpx.dpai.ui.ExecutorOptions.hasClass(x)) {
+            Text("Класс задачи — какую модель брать", style = MaterialTheme.typography.labelSmall)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                for (c in TaskClass.entries) FilterChip(selected = cls == c, onClick = { cls = c }, label = { Text(Words.taskClass(c.name)) })
+            }
         }
-        OutlinedTextField(modelName, { modelName = it }, label = { Text("Модель (пусто — по классу)") }, singleLine = true)
-        OutlinedTextField(effort, { effort = it }, label = { Text("Усилие: low, medium, high (пусто — по классу)") }, singleLine = true)
+        OutlinedTextField(modelName, { modelName = it }, label = { Text(com.dpsmpx.dpai.ui.ExecutorOptions.modelHint(x)) }, singleLine = true)
+        if (com.dpsmpx.dpai.ui.ExecutorOptions.efforts(x).isNotEmpty()) {
+            OutlinedTextField(effort, { effort = it }, label = { Text(com.dpsmpx.dpai.ui.ExecutorOptions.effortHint(x)) }, singleLine = true)
+        }
         OutlinedTextField(budget, { budget = it }, label = { Text("Предел стоимости хода, $ (пусто — без предела)") }, singleLine = true)
         ReviewChips(reviews) { reviews = it }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall) }
@@ -361,7 +367,7 @@ private fun MoveSection(model: DemoModel, task: TaskId, executor: String?, send:
     }
     androidx.compose.material3.HorizontalDivider()
     // Не «Перенести» (A-13): это выбор слота следующего хода, идущий ход не прерывается (D-66).
-    Text("Слот следующего хода", style = MaterialTheme.typography.titleSmall)
+    Text("Где пойдёт следующий ход", style = MaterialTheme.typography.titleSmall)
     Text(
         (executor?.let { "Сейчас: $it. " } ?: "") + "Следующий ход пойдёт на выбранном слоте с контекстом задачи; идущий ход не прерывается.",
         style = MaterialTheme.typography.labelSmall,
@@ -377,7 +383,7 @@ private fun MoveSection(model: DemoModel, task: TaskId, executor: String?, send:
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun ReviewChips(selected: Set<ReviewRole>, onChange: (Set<ReviewRole>) -> Unit) {
-    Text("Ревью после проверки — отдельной сессией (D-73)", style = MaterialTheme.typography.labelSmall)
+    Text("Ревью после проверки — отдельной сессией", style = MaterialTheme.typography.labelSmall)
     FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         for (r in ReviewRole.entries) {
             FilterChip(selected = r in selected, onClick = { onChange(if (r in selected) selected - r else selected + r) }, label = { Text(Review.label(r)) })

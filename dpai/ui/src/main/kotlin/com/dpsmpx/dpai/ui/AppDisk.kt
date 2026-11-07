@@ -94,7 +94,7 @@ object AppDisk {
         val base = root.toRealPath().toString().trimEnd('/')
         if (real != base && !real.startsWith("$base/")) return "файл вне данных приложения"
         val rel = real.removePrefix(base).trimStart('/')
-        return if (hidden(rel)) "секрет — не на диске (D-96)" else null
+        return if (hidden(rel)) "секрет — на диск не выводится" else null
     }
 
     /** Имя нового документа допустимо: одна часть пути, не секрет. */

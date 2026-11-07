@@ -637,6 +637,30 @@ class ModulesTest(CheckCase):
         self.assertClean(s.run("modules.root"))
 
 
+class UiWordsTest(CheckCase):
+    """ui.words — номеров решений в строках экранов нет (UX-13, AI:A-10)."""
+
+    def test_catches_decision_number_in_screen_string(self):
+        for rel, code in [
+            ("app/src/main/kotlin/P.kt", 'Text("Токен только для чтения (D-17).")\n'),
+            ("dpai/android/src/main/kotlin/A.kt", 'val hint = "Класс — маршрут модели (D-40)"\n'),
+            ("dpai/ui/src/main/kotlin/G.kt", 'GuideStep("Разрешите (DPmetaApp:D-46), затем «Разрешить»")\n'),
+        ]:
+            with self.subTest(rel):
+                s = self.sample({rel: "package p\n\n" + code})
+                self.assertCatches(s.run("ui.words"), "номер решения")
+
+    def test_comments_tests_and_other_modules_pass(self):
+        s = self.sample({
+            # KDoc и комментарии — место номера; тесты и модули без экранов правило не смотрит.
+            "app/src/main/kotlin/P.kt": '/** Вход по PIN (D-59). */\nval t = "Вход по PIN" // D-59\n// Text("(D-17)")\n',
+            "app/src/test/kotlin/T.kt": 'val s = "(D-17)"\n',
+            "core/sync/src/main/kotlin/S.kt": 'val why = "клоны (D-65)"\n',
+            "dpai/ui/src/main/kotlin/W.kt": 'val name = "D-day"\nval v = "RD-12x"\n',
+        })
+        self.assertClean(s.run("ui.words"))
+
+
 class ForbiddenTest(CheckCase):
     """code.forbidden — запрещённое ТЗ, §6.5 (A-06, A-07)."""
 

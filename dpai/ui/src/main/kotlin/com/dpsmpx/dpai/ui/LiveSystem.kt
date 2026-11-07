@@ -201,7 +201,7 @@ class LiveSystem(
     /**
      * Когда не удалась проба входа target (ревью A-79): нет связи, SSH до
      * добавления ключа, сон ПК. Target без слота пробуется снова раз в
-     * [PROBE_RETRY_MS], а не ждёт «Вход Claude». Ответ «не вошли» — не
+     * [PROBE_RETRY_MS], а не ждёт «Проверить вход». Ответ «не вошли» — не
      * отказ: такой target ждёт входа и кнопки, без проб каждую минуту.
      */
     private val probeFailedAt = HashMap<ExecutionTargetId, Long>()
@@ -543,15 +543,15 @@ class LiveSystem(
 
     override fun dashboard(): DashboardScreen {
         val base = Screens.dashboard(orchestrator.dashboard(), diagnosis(), orchestrator.usage())
-        val login = usable.filter { it.id in waitingLogin }.map { "${it.label}: войдите в Claude в каталоге ${it.configDir}, затем «Вход Claude»" } +
+        val login = usable.filter { it.id in waitingLogin }.map { "${it.label}: войдите в Claude в каталоге ${it.configDir}, затем «Проверить вход»" } +
             usable.mapNotNull { e ->
                 loginRecheckAt(e.id)?.let { at ->
                     val min = ((at - clock.now().epochMillis).coerceAtLeast(0) + 59_999) / 60_000
-                    "${e.label}: Claude ответил «нужен вход» — после сбоя сети так бывает; проверю вход сам через $min мин, «Вход Claude» — сразу"
+                    "${e.label}: Claude ответил «нужен вход» — после сбоя сети так бывает; проверю вход сам через $min мин, «Проверить вход» — сразу"
                 }
             }
         val retry = usable.filter { it.id in probeFailedAt && it.id !in slotOf }
-            .map { "${it.label}: проба входа не удалась — повтор раз в минуту; «Вход Claude» — сразу" }
+            .map { "${it.label}: проба входа не удалась — повтор раз в минуту; «Проверить вход» — сразу" }
         val extra = notes + login + retry + (problems + orchestrator.problems).takeLast(5).map { "${Words.reason(it.code.name)}: ${it.message}" }
         return base.copy(attention = base.attention + extra, limits = Screens.limits(orchestrator.accounts, clock.now(), labelOf = ::subscriptionName))
     }
@@ -589,6 +589,7 @@ class LiveSystem(
             chat = Screens.chat(Screens.chatEntries(orchestrator.chat(task), orchestrator.turnMessages(task), orchestrator.tasks.tasks[task]), id, clock.now()),
             status = Screens.sessionStatus(record, orchestrator.tasks.tasks[task]?.state, running), workingFor = working,
             noSend = Screens.noSend(id, orchestrator.sessions, orchestrator.tasks),
+            executor = record?.let { orchestrator.accounts.slots[it.slot]?.executor } ?: com.dpsmpx.dpai.core.ids.Executor.CLAUDE,
         )
     }
 

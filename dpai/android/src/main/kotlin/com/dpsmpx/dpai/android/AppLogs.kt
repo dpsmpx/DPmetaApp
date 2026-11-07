@@ -38,7 +38,7 @@ object AppLogs {
             val sink = FileLogSink(
                 NioVfs(dir.toPath()), header = {
                     listOf(
-                        "DP AI $version · Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) · ${Build.MANUFACTURER} ${Build.MODEL}",
+                        "AI $version · Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) · ${Build.MANUFACTURER} ${Build.MODEL}",
                     )
                 },
                 location = File(dir, FileLogSink.DEFAULT_PATH).path,

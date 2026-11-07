@@ -117,7 +117,7 @@ fun ModelsPane() {
                 }
             }
         }
-        if (chats.isNotEmpty()) item { Text("Чаты", style = MaterialTheme.typography.titleMedium) }
+        if (chats.isNotEmpty()) item { Text("Разговоры", style = MaterialTheme.typography.titleMedium) }
         items(chats.reversed(), key = { "c:${it.id.value}" }) { c ->
             val p = profiles.firstOrNull { it.id == c.profile }
             ChatRow(c, p, running[c.id] != null) { open = c.id.value }

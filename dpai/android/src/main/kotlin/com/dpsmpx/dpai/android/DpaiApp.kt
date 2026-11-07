@@ -251,7 +251,8 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                         TextButton(onClick = { sessionEvents = !sessionEvents }) { Text(if (sessionEvents) "Чат" else "События") }
                     } else {
                         Text(
-                            if (tab == 2) "DP AI · targets" else if (tab == 3) "DP AI · запросы" else if (tab == 4) "DP AI · журнал" else if (tab == 5) "DP AI · модели" else if (tab == 6) "DP AI · файлы" else "DP AI · ${snapshot?.mode ?: "…"}",
+                            // Одно имя подсистемы — «AI», как у вкладки пульта; в заголовке — открытая вкладка (AI:A-1, AI:A-11).
+                            "AI · " + TAB_TITLES.getOrElse(tab) { "…" } + (if (snapshot?.mode == "демо") " · демо" else ""),
                             Modifier.weight(1f).padding(start = 12.dp), style = MaterialTheme.typography.titleMedium,
                         )
                         // Глобальный поиск (ТЗ, §75) — с любой вкладки.
@@ -407,7 +408,7 @@ private fun DashboardPane(screen: DashboardScreen, model: DemoModel) {
         }
         item { Counters(screen) }
         if (screen.attention.isNotEmpty()) {
-            item { Text("Внимание", style = MaterialTheme.typography.titleMedium) }
+            item { Text("Ждёт вас", style = MaterialTheme.typography.titleMedium) }
             items(screen.attention) { Text("· $it", color = toneColor(Tone.WARNING), style = MaterialTheme.typography.bodySmall) }
         }
         // Подсказки локальной модели (D-105): по кнопке, ядро от них не зависит.
@@ -679,7 +680,7 @@ private fun ChatInput(screen: SessionScreen, model: DemoModel, maxHeight: androi
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             OutlinedTextField(
                 text, { text = it }, Modifier.weight(1f).heightIn(max = maxHeight),
-                placeholder = { Text(if (canSend) "Сообщение Claude" else (screen.noSend ?: "сюда не пишут").replaceFirstChar { it.uppercase() }) },
+                placeholder = { Text(if (canSend) "Сообщение ${screen.executor.title}" else (screen.noSend ?: "сюда не пишут").replaceFirstChar { it.uppercase() }) },
                 enabled = canSend, singleLine = !typing, maxLines = if (typing) Int.MAX_VALUE else 1,
                 textStyle = MaterialTheme.typography.bodyMedium,
             )
@@ -695,10 +696,11 @@ private fun ChatInput(screen: SessionScreen, model: DemoModel, maxHeight: androi
         if (typing) {
             if (params) {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    for (m in listOf("", "haiku", "sonnet", "opus")) {
+                    // Варианты — исполнителя сессии: лестница Claude у Codex и Gemini не подействует (AI:A-10).
+                    for (m in listOf("") + com.dpsmpx.dpai.ui.ExecutorOptions.models(screen.executor)) {
                         androidx.compose.material3.FilterChip(selected = modelName == m, onClick = { modelName = m }, label = { Text(m.ifEmpty { "модель задачи" }) })
                     }
-                    for (e in listOf("", "low", "medium", "high")) {
+                    for (e in com.dpsmpx.dpai.ui.ExecutorOptions.efforts(screen.executor).let { if (it.isEmpty()) it else listOf("") + it }) {
                         androidx.compose.material3.FilterChip(selected = effort == e, onClick = { effort = e }, label = { Text(e.ifEmpty { "усилие задачи" }) })
                     }
                 }
@@ -708,7 +710,8 @@ private fun ChatInput(screen: SessionScreen, model: DemoModel, maxHeight: androi
                     val t = text
                     send({ k -> com.dpsmpx.dpai.orchestrator.commands.Command.SendToSession(screen.session, t, modelName.ifEmpty { null }, effort.ifEmpty { null }, key = k) }) { text = "" }
                 }) { Text("Отправить") }
-                TextButton(onClick = { params = !params }) { Text(if (params) "Скрыть параметры" else "Модель и усилие") }
+                val tunable = com.dpsmpx.dpai.ui.ExecutorOptions.models(screen.executor).isNotEmpty() || com.dpsmpx.dpai.ui.ExecutorOptions.efforts(screen.executor).isNotEmpty()
+                if (tunable) TextButton(onClick = { params = !params }) { Text(if (params) "Скрыть параметры" else "Модель и усилие") }
                 if (fresh) TextButton(enabled = !busy, onClick = {
                     val t = text
                     send({ k -> com.dpsmpx.dpai.orchestrator.commands.Command.SendToSession(screen.session, t, modelName.ifEmpty { null }, effort.ifEmpty { null }, fresh = true, key = k) }) { text = "" }
@@ -872,22 +875,27 @@ internal fun NewTaskDialog(model: DemoModel, onDone: () -> Unit) {
                             androidx.compose.material3.FilterChip(selected = priority == p, onClick = { priority = p }, label = { Text(Words.priority(p.name)) })
                         }
                     }
-                    Text("Класс — маршрут модели (D-40)", style = MaterialTheme.typography.labelSmall)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        for (c in com.dpsmpx.dpai.tasks.TaskClass.entries) {
-                            androidx.compose.material3.FilterChip(selected = taskClass == c, onClick = { taskClass = c }, label = { Text(Words.taskClass(c.name)) })
-                        }
-                    }
-                    OutlinedTextField(modelName, { modelName = it }, label = { Text("Модель (пусто — по классу)") }, singleLine = true)
-                    OutlinedTextField(effort, { effort = it }, label = { Text("Усилие: low, medium, high (пусто — по классу)") }, singleLine = true)
-                    OutlinedTextField(budget, { budget = it }, label = { Text("Предел стоимости хода, $ (пусто — без предела)") }, singleLine = true)
                     // Исполнитель задачи и ревью (D-100): у предела — следующий по кругу с контекстом.
+                    // Он — первым: от него зависят класс, модель и усилие ниже (AI:A-10).
                     Text("Исполнитель", style = MaterialTheme.typography.labelSmall)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         for (x in com.dpsmpx.dpai.core.ids.Executor.entries) {
                             androidx.compose.material3.FilterChip(selected = executor == x, onClick = { executor = x }, label = { Text(x.title) })
                         }
                     }
+                    if (com.dpsmpx.dpai.ui.ExecutorOptions.hasClass(executor)) {
+                        Text("Класс — какую модель брать", style = MaterialTheme.typography.labelSmall)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            for (c in com.dpsmpx.dpai.tasks.TaskClass.entries) {
+                                androidx.compose.material3.FilterChip(selected = taskClass == c, onClick = { taskClass = c }, label = { Text(Words.taskClass(c.name)) })
+                            }
+                        }
+                    }
+                    OutlinedTextField(modelName, { modelName = it }, label = { Text(com.dpsmpx.dpai.ui.ExecutorOptions.modelHint(executor)) }, singleLine = true)
+                    if (com.dpsmpx.dpai.ui.ExecutorOptions.efforts(executor).isNotEmpty()) {
+                        OutlinedTextField(effort, { effort = it }, label = { Text(com.dpsmpx.dpai.ui.ExecutorOptions.effortHint(executor)) }, singleLine = true)
+                    }
+                    OutlinedTextField(budget, { budget = it }, label = { Text("Предел стоимости хода, $ (пусто — без предела)") }, singleLine = true)
                     ReviewChips(reviews) { reviews = it }
                     if (reviews.isNotEmpty()) {
                         Text("Ревьюер", style = MaterialTheme.typography.labelSmall)
@@ -919,7 +927,13 @@ internal fun NewTaskDialog(model: DemoModel, onDone: () -> Unit) {
             TextButton(enabled = !busy, onClick = {
                 busy = true
                 scope.launch {
-                    val form = com.dpsmpx.dpai.ui.NewTaskForm.command(title, objective, key, priority, taskClass, modelName, effort, budget, paths, deps, reviews, executor, reviewer)
+                    val form = com.dpsmpx.dpai.ui.NewTaskForm.command(
+                        title, objective, key, priority,
+                        // Скрытое не уходит в политику: класс — только у Claude, усилие — не у Gemini (AI:A-10).
+                        if (com.dpsmpx.dpai.ui.ExecutorOptions.hasClass(executor)) taskClass else com.dpsmpx.dpai.tasks.TaskClass.NORMAL_ENGINEERING,
+                        modelName, effort.takeIf { com.dpsmpx.dpai.ui.ExecutorOptions.efforts(executor).isNotEmpty() }.orEmpty(),
+                        budget, paths, deps, reviews, executor, reviewer,
+                    )
                     val r = when (form) {
                         is Outcome.Failure -> form
                         is Outcome.Success -> withContext(Dispatchers.IO) { model.addTask(form.value) }
@@ -1085,3 +1099,6 @@ private fun LimitsCard(l: com.dpsmpx.dpai.ui.SubscriptionLimits, model: DemoMode
         }
     }
 }
+
+/** Названия вкладок «AI» по порядку значков панели — для заголовка (AI:A-1). */
+private val TAB_TITLES = listOf("Сводка", "Задачи", "Targets", "Запросы", "Журнал", "Модели", "Файлы")

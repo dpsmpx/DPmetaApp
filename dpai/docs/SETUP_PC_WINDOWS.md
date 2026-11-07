@@ -101,7 +101,7 @@ Get-ChildItem C:\ProgramData\ssh\ssh_host_*_key.pub | ForEach-Object { ssh-keyge
 $env:CLAUDE_CONFIG_DIR = "$HOME\.claude-slot-1"; claude
 ```
 
-Войти аккаунтом с подпиской, `/exit`; в приложении — «Вход Claude».
+Войти аккаунтом с подпиской, `/exit`; в приложении — «Проверить вход».
 Проект: репозиторий Git на ПК, Targets → «Проект» (каталоги — пути
 `C:/Users/<пользователь>/…`).
 

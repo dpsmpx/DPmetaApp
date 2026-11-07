@@ -54,7 +54,7 @@ class LockActivity : ComponentActivity() {
                 Surface(Modifier.fillMaxSize()) {
                     Column(Modifier.safeDrawingPadding().padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         if (noPin.value) {
-                            Text("Вход в DPmetaApp — по PIN устройства (D-59), а у телефона нет блокировки экрана.")
+                            Text("Вход в DPmetaApp — по PIN устройства, а у телефона нет блокировки экрана: задайте PIN.")
                             Button(onClick = ::openSecuritySettings) { Text("Задать PIN") }
                             Button(onClick = AppLock::denied) { Text("Закрыть") }
                         } else {

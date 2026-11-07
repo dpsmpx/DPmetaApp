@@ -39,7 +39,7 @@ object TermuxRestore {
             "echo 'from=\"127.0.0.1,::1\" ${appKey.trim()}' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && " +
             "printf %s $nonce > ~/.dpai/restore-code && chmod 600 ~/.dpai/restore-code && " +
             "{ pgrep -x sshd >/dev/null || sshd -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no; } && " +
-            "echo 'Готово: вернитесь в DP AI'"
+            "echo 'Готово: вернитесь в приложение'"
     }
 
     /** Что есть в Termux: код, пользователь, агент, каталоги слотов (`~/.claude-slot-*`, D-29; вход в них проверяет проба слота приложения), ключ связки, копия настроек. */
