@@ -20,6 +20,11 @@ class DpmetaApplication : DpaiApplication() {
     /** Опасный ответ окна поверх приложений — только после входа (D-61). */
     override fun loginNeeded(): Boolean = AppLock.loginNeeded
 
+    /** Манифест экосистемы для «AI» — из реестра и клонов пульта (DP_AI_Orcestrator:D-114). */
+    override fun ecosystemManifest(): com.dpsmpx.dpai.core.result.Outcome<String> = com.dpsmpx.dpmeta.app.PultActivity.ecosystemManifest(this)
+
+    override val ecosystemRegistry: Boolean get() = true
+
     /** «AI» открывается над пультом, «назад» из неё — в пульт (D-73, UX-1). */
     override fun parentIntent(): android.content.Intent = android.content.Intent(this, DpmetaActivity::class.java)
 }

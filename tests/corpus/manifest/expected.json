@@ -1,0 +1,56 @@
+{
+ "format": "dpai.ecosystem",
+ "version": 1,
+ "projects": [
+  {
+   "key": "alpha",
+   "name": "Alpha",
+   "state": {
+    "place": "core",
+    "clone": "нет"
+   },
+   "documents": [],
+   "suggestions": [
+    {
+     "key": "sq-01",
+     "title": "SQ-01: старый адрес в README.md",
+     "objective": "Где: (abc1234): README.md:3, docs/GUIDE.md:10. Предложение: заменить адрес:; в README.md;; в docs/GUIDE.md. (DPmeta:SQ-01)",
+     "priority": "LOW",
+     "operation": "docs"
+    },
+    {
+     "key": "sq-03",
+     "title": "SQ-03: общий термин",
+     "objective": "Где: docs/TERMS.md в обоих. Предложение: одно слово для одного понятия. Пункт касается и Beta Tool: здесь — только часть для Alpha. (DPmeta:SQ-03)",
+     "priority": "LOW",
+     "operation": "docs"
+    }
+   ]
+  },
+  {
+   "key": "beta-tool",
+   "name": "Beta Tool",
+   "state": {
+    "place": "support",
+    "clone": "нет"
+   },
+   "documents": [],
+   "suggestions": [
+    {
+     "key": "sq-03",
+     "title": "SQ-03: общий термин",
+     "objective": "Где: docs/TERMS.md в обоих. Предложение: одно слово для одного понятия. Пункт касается и Alpha: здесь — только часть для Beta Tool. (DPmeta:SQ-03)",
+     "priority": "LOW",
+     "operation": "docs"
+    },
+    {
+     "key": "sq-10",
+     "title": "SQ-10: опечатка",
+     "objective": "Где: TODO.md:7. Предложение: исправить «првка». (DPmeta:SQ-10)",
+     "priority": "LOW",
+     "operation": "docs"
+    }
+   ]
+  }
+ ]
+}

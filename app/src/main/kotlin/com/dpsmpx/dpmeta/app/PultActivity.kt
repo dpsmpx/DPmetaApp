@@ -585,6 +585,18 @@ open class PultActivity : ComponentActivity() {
         private const val CLONES_PREFS = "dpmeta.clones"
         private const val CLONES_ASKED = "asked"
         private const val CLONES_SELECTED = "selected"
+
+        /**
+         * Манифест экосистемы для «AI» (`DP_AI_Orcestrator:D-114`) — из реестра
+         * и отмеченных клонов пульта, без сети и токена; вызывает оболочка
+         * `:shell` (D-53), с фонового потока.
+         */
+        fun ecosystemManifest(context: android.content.Context): Outcome<String> {
+            val app = context.applicationContext
+            val selected = app.getSharedPreferences(CLONES_PREFS, MODE_PRIVATE).getStringSet(CLONES_SELECTED, null).orEmpty().toSet()
+            val repo = PultRepository(NioVfs(app.filesDir.toPath().resolve("dpmeta")), Clock.SYSTEM, com.dpsmpx.dpmeta.app.data.PultPool.work, File(app.filesDir, CLONES_DIR))
+            return repo.ecosystemManifest(selected)
+        }
         private const val CLONES_FLAT_GONE = "flat-removed"
     }
 }

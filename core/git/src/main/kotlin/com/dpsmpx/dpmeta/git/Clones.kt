@@ -231,6 +231,24 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
         }
     }
 
+    /**
+     * Последний коммит ветки GitHub [branch], менявший [path] (пусто — весь
+     * репозиторий, иначе — каталог подсистемы): короткий хеш и дата коммита в
+     * поясе коммитившего, `ГГГГ-ММ-ДД` — как `git log -1 --format='%h %cs'`
+     * у `DPmeta:tools/manifest.py` (`DP_AI_Orcestrator:D-114`); нет — `null`.
+     */
+    fun last(project: String, branch: String, path: String = ""): Outcome<Pair<String, String>?> = withRepo(project) { repo ->
+        val head = repo.resolve("${Constants.R_REMOTES}origin/$branch") ?: return@withRepo null
+        RevWalk(repo).use { walk ->
+            walk.markStart(walk.parseCommit(head))
+            val p = path.trim('/')
+            if (p.isNotEmpty()) walk.treeFilter = org.eclipse.jgit.treewalk.filter.AndTreeFilter.create(org.eclipse.jgit.treewalk.filter.PathFilter.create(p), org.eclipse.jgit.treewalk.filter.TreeFilter.ANY_DIFF)
+            val c = walk.next() ?: return@use null
+            val zone = c.committerIdent?.timeZone?.toZoneId() ?: java.time.ZoneOffset.UTC
+            c.abbreviate(7).name() to java.time.Instant.ofEpochSecond(c.commitTime.toLong()).atZone(zone).toLocalDate().toString()
+        }
+    }
+
     /** Файл ветки GitHub [branch] по пути от корня; нет файла (или это каталог) — `null`, нет клона или ветки — отказ. */
     fun file(project: String, branch: String, path: String): Outcome<ByteArray?> = withRepo(project) { repo ->
         val tree = repo.resolve("${Constants.R_REMOTES}origin/$branch^{tree}") ?: return@withRepo null

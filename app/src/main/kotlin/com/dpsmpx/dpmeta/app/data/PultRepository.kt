@@ -188,6 +188,38 @@ class PultRepository(
         return Local(clones, key, entry.dir?.let { "$it/" } ?: "", main)
     }
 
+    /**
+     * Манифест `dpai.ecosystem` v1 для «AI» (`DP_AI_Orcestrator:D-114`): реестр
+     * (в памяти или из отмеченного клона DPmetaApp) и факты отмеченных клонов
+     * — ветка, последний коммит (у подсистемы — её каталога), документы;
+     * предложения — из очереди DPmeta в клоне DPmetaApp. Без сети и токена.
+     * Реестра нет — отказ словами: «AI» предложит файл с ПК.
+     */
+    fun ecosystemManifest(selected: Set<String>): Outcome<String> {
+        val clones = com.dpsmpx.dpmeta.git.Clones(clonesDir, com.dpsmpx.dpmeta.git.Clones.allowList())
+        val host = RepoRef.parse(HOST).valueOrNull() ?: return Outcome.failure(DiagCode.INTERNAL_ERROR, "адрес DPmetaApp не разбирается")
+        val reg = registry ?: localRegistry(clones, host, selected)
+            ?: return Outcome.failure(DiagCode.ECOSYSTEM_UNAVAILABLE, "реестра нет: отметьте клон DPmetaApp в пульте («Ещё» → «Клоны…») или выберите файл манифеста")
+        fun chosen(key: String) = selected.any { it.equals(key, ignoreCase = true) }
+        val facts = linkedMapOf<String, com.dpsmpx.dpmeta.formats.DpaiManifest.Clone>()
+        for (e in reg.shown) {
+            val key = if (e.dir != null) host.toString() else e.slug.toString()
+            if (!chosen(key)) continue
+            val main = clones.main(key) ?: continue
+            val prefix = e.dir?.let { "$it/" } ?: ""
+            val last = (clones.last(key, main, e.dir.orEmpty()) as? Outcome.Success)?.value
+            val docs = com.dpsmpx.dpmeta.formats.DpaiManifest.wanted(reg, e.name).filter { p -> (clones.size(key, main, prefix + p) as? Outcome.Success)?.value != null }
+            facts[e.name] = com.dpsmpx.dpmeta.formats.DpaiManifest.Clone(main, last?.first, last?.second, docs)
+        }
+        // Очередь DPmeta — в клоне DPmetaApp; его нет — предложений нет, проекты и состояние — есть.
+        val queue = if (chosen(host.toString())) {
+            clones.main(host.toString())?.let { main -> (clones.file(host.toString(), main, com.dpsmpx.dpmeta.formats.DpaiManifest.QUEUE) as? Outcome.Success)?.value?.toString(Charsets.UTF_8) }
+        } else {
+            null
+        }
+        return com.dpsmpx.dpmeta.formats.DpaiManifest.build(reg, facts, queue.orEmpty())
+    }
+
     /** Реестр из отмеченного клона DPmetaApp — без сети и токена (окно открыли до первой синхронизации). */
     private fun localRegistry(clones: com.dpsmpx.dpmeta.git.Clones, host: RepoRef, selected: Set<String>): Registry? {
         if (selected.none { it.equals(host.toString(), ignoreCase = true) }) return null

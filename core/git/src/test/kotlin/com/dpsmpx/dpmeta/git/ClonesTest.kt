@@ -97,6 +97,25 @@ class ClonesTest {
         assertEquals(2L, (c.size("Alpha", "main", "docs/a.md") as Outcome.Success).value)
     }
 
+    /** Последний коммит каталога (DP_AI_Orcestrator:D-114): у подсистемы — менявший её каталог, а не весь репозиторий. */
+    @Test
+    fun lastCommitOfRepositoryAndOfADirectory() {
+        val uri = remote()
+        Git.open(work).use { git ->
+            commit(git, "sub/a.md", "a\n", "Подсистема")
+            commit(git, "other.md", "o\n", "Другое")
+            git.push().setRemote("origin").add("main").call()
+        }
+        val c = clones()
+        c.sync("Alpha", uri, null, build)
+        val all = (c.last("Alpha", "main") as Outcome.Success).value!!
+        val sub = (c.last("Alpha", "main", "sub") as Outcome.Success).value!!
+        assertTrue(all.first != sub.first, "у каталога — свой последний коммит")
+        assertEquals(7, sub.first.length)
+        assertTrue(Regex("\\d{4}-\\d{2}-\\d{2}").matches(sub.second), sub.second)
+        assertNull((c.last("Alpha", "main", "нет") as Outcome.Success).value, "каталог без коммитов — null")
+    }
+
     @Test
     fun fetchUpdatesGitHubBranchesLeavesTheWorkingTreeAndDropsDeletedBranches() {
         val uri = remote()

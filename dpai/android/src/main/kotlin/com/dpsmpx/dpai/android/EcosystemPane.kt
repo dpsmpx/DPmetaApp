@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -65,13 +64,29 @@ fun EcosystemDialog(model: DemoModel, onDone: () -> Unit) {
     var confirm by remember { mutableStateOf<PlannedSuggestion?>(null) }
     var status by remember { mutableStateOf<String?>(null) }
     var kept by remember { mutableStateOf(false) }
-    // Выбранный прежде манифест — сразу: его же читает проход политики (D-106).
-    LaunchedEffect(Unit) {
-        val uri = withContext(Dispatchers.IO) { EcosystemChoice.manifest(context) } ?: return@LaunchedEffect
-        kept = true
-        when (val r = withContext(Dispatchers.IO) { readManifest(context, uri) }) {
+    // Источник (D-114): реестр пульта — по умолчанию в DPmetaApp, файл с ПК — запасной.
+    val registry = remember { EcosystemChoice.registryAvailable(context) }
+    var source by remember { mutableStateOf(EcosystemChoice.source(context)) }
+    var loading by remember { mutableStateOf(false) }
+    // Манифест выбранного источника — сразу: его же читает проход политики (D-106).
+    LaunchedEffect(source) {
+        projects = null
+        error = null
+        val file = withContext(Dispatchers.IO) { EcosystemChoice.manifest(context) }
+        if (source == EcosystemChoice.Source.FILE && file == null) return@LaunchedEffect
+        loading = true
+        kept = source == EcosystemChoice.Source.REGISTRY || file != null
+        when (val r = withContext(Dispatchers.IO) { EcosystemChoice.load(context) }) {
             is Outcome.Success -> projects = r.value
-            is Outcome.Failure -> error = "Сохранённый манифест не читается: ${r.errors.joinToString("; ") { it.message }}"
+            is Outcome.Failure -> error = (if (source == EcosystemChoice.Source.REGISTRY) "Реестр не читается: " else "Сохранённый манифест не читается: ") + r.errors.joinToString("; ") { it.message }
+        }
+        loading = false
+    }
+    fun choose(to: EcosystemChoice.Source) {
+        scope.launch {
+            val (ok, note) = withContext(Dispatchers.IO) { EcosystemChoice.setSource(context, to) }
+            if (ok) source = to
+            note?.let { status = it }
         }
     }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -105,63 +120,70 @@ fun EcosystemDialog(model: DemoModel, onDone: () -> Unit) {
             }
         }
     }
-    AlertDialog(
-        onDismissRequest = onDone,
-        title = { Text("Экосистема") },
-        text = {
-            Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(
-                    "Манифест строит DPmeta: python3 dpmeta/tools/manifest.py --out ecosystem.json. " +
-                        "Задачи ставятся этому контуру — по одной, после подтверждения.",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                TextButton(onClick = { pick.launch(arrayOf("application/json", "text/plain", "*/*")) }) {
-                    Text(if (projects == null) "Выбрать манифест…" else "Другой манифест…")
+    // Экран, а не окно в окне (AI:A-23): вход — «Экосистема…» на «Задачах» и в «Новой задаче».
+    FullScreenDialog(onDismissRequest = onDone, title = "Экосистема") {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Задачи из предложений ставятся этому контуру — по одной, после подтверждения.", style = MaterialTheme.typography.bodySmall)
+            Text("Откуда проекты и предложения:", style = MaterialTheme.typography.labelMedium)
+            if (registry) {
+                Row(Modifier.fillMaxWidth().clickable { choose(EcosystemChoice.Source.REGISTRY) }, verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(selected = source == EcosystemChoice.Source.REGISTRY, onClick = null)
+                    Text("Реестр пульта — без ПК", Modifier.padding(start = 6.dp), style = MaterialTheme.typography.bodyMedium)
                 }
-                error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-                projects?.let { ps ->
-                    if (ps.isEmpty()) Text("В манифесте нет проектов.", style = MaterialTheme.typography.bodySmall)
-                    if (ps.isNotEmpty()) Text("Проект этого контура:", style = MaterialTheme.typography.labelMedium)
-                    for (p in ps) {
-                        Row(
-                            Modifier.fillMaxWidth().clickable {
-                                project = p.key
-                                EcosystemChoice.remember(context, p.key)
-                            },
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            RadioButton(selected = project == p.key, onClick = null)
-                            Text("${p.name} (${p.key})", Modifier.padding(start = 6.dp), style = MaterialTheme.typography.bodyMedium)
-                        }
-                    }
-                    Row(Modifier.fillMaxWidth().clickable { allOperations = !allOperations }, verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = allOperations, onCheckedChange = null)
-                        Text("Все виды работ, не только docs", Modifier.padding(start = 6.dp), style = MaterialTheme.typography.bodySmall)
-                    }
-                    val chosen = ps.firstOrNull { it.key == project }
-                    if (chosen == null && ps.isNotEmpty()) Text("Выберите проект, чтобы увидеть его предложения.", style = MaterialTheme.typography.bodySmall)
-                    chosen?.let { p ->
-                        val plan = EcosystemPlan.of(listOf(p), setOf(p.key), setOf(p.key), if (allOperations) null else setOf(DOCS))
-                        if (plan.isEmpty()) Text("У проекта нет предложений.", style = MaterialTheme.typography.bodySmall)
-                        for (s in plan) {
-                            Column(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-                                Text(s.suggestion.title, style = MaterialTheme.typography.bodyMedium)
-                                Text(
-                                    "${com.dpsmpx.dpai.core.text.Words.priority(s.suggestion.priority.uppercase())} · ${s.suggestion.operation}" + (s.refusal?.let { " · $it" } ?: ""),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                if (s.allowed) TextButton(onClick = { confirm = s }) { Text("Поставить задачу…") }
-                            }
-                        }
-                    }
-                    if (ps.isNotEmpty()) AutoPolicySection(model, chosen, kept)
-                }
-                status?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             }
-        },
-        confirmButton = { TextButton(onClick = onDone) { Text("Закрыть") } },
-    )
+            Row(Modifier.fillMaxWidth().clickable { choose(EcosystemChoice.Source.FILE) }, verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(selected = source == EcosystemChoice.Source.FILE, onClick = null)
+                Text("Файл манифеста с ПК", Modifier.padding(start = 6.dp), style = MaterialTheme.typography.bodyMedium)
+            }
+            if (source == EcosystemChoice.Source.FILE) {
+                Text("Файл строит DPmeta на ПК: python3 dpmeta/tools/manifest.py --out ecosystem.json", style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = { pick.launch(arrayOf("application/json", "text/plain", "*/*")) }) {
+                    Text(if (projects == null) "Выбрать файл…" else "Другой файл…")
+                }
+            }
+            if (loading) Text("Читаю…", style = MaterialTheme.typography.bodySmall)
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            projects?.let { ps ->
+                if (ps.isEmpty()) Text("Проектов нет.", style = MaterialTheme.typography.bodySmall)
+                if (ps.isNotEmpty()) Text("Проект этого контура:", style = MaterialTheme.typography.labelMedium)
+                for (p in ps) {
+                    Row(
+                        Modifier.fillMaxWidth().clickable {
+                            project = p.key
+                            EcosystemChoice.remember(context, p.key)
+                        },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(selected = project == p.key, onClick = null)
+                        Text(p.name, Modifier.padding(start = 6.dp), style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+                Row(Modifier.fillMaxWidth().clickable { allOperations = !allOperations }, verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = allOperations, onCheckedChange = null)
+                    Text("Все виды работ, не только документы", Modifier.padding(start = 6.dp), style = MaterialTheme.typography.bodySmall)
+                }
+                val chosen = ps.firstOrNull { it.key == project }
+                if (chosen == null && ps.isNotEmpty()) Text("Выберите проект, чтобы увидеть его предложения.", style = MaterialTheme.typography.bodySmall)
+                chosen?.let { p ->
+                    val plan = EcosystemPlan.of(listOf(p), setOf(p.key), setOf(p.key), if (allOperations) null else setOf(DOCS))
+                    if (plan.isEmpty()) Text("У проекта нет предложений.", style = MaterialTheme.typography.bodySmall)
+                    for (s in plan) {
+                        Column(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                            Text(s.suggestion.title, style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                "${com.dpsmpx.dpai.core.text.Words.priority(s.suggestion.priority.uppercase())} · ${s.suggestion.operation}" + (s.refusal?.let { " · $it" } ?: ""),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            if (s.allowed) TextButton(onClick = { confirm = s }) { Text("Поставить задачу…") }
+                        }
+                    }
+                }
+                if (ps.isNotEmpty()) AutoPolicySection(model, chosen, kept)
+            }
+            status?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+        }
+    }
     confirm?.let { s ->
         AlertDialog(
             onDismissRequest = { confirm = null },
@@ -175,8 +197,9 @@ fun EcosystemDialog(model: DemoModel, onDone: () -> Unit) {
                             s.command()?.let(model::addTask) ?: Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "предложение не разрешено")
                         }
                         status = when {
-                            r is Outcome.Success -> "Поставлена: ${s.suggestion.key}"
-                            r is Outcome.Failure && r.diagnostics.all { it.code == DiagCode.COMMAND_QUEUED } -> "В очереди: ${s.suggestion.key} поставится следующим тактом"
+                            // Итог — по названию, а не ключу предложения (AI:A-23).
+                            r is Outcome.Success -> "Поставлена: «${s.suggestion.title}»"
+                            r is Outcome.Failure && r.diagnostics.all { it.code == DiagCode.COMMAND_QUEUED } -> "В очереди: «${s.suggestion.title}» поставится следующим тактом"
                             r is Outcome.Failure -> "Не поставлена: ${r.diagnostics.first().message}"
                             else -> null
                         }
@@ -225,6 +248,52 @@ internal object EcosystemChoice {
     private const val PREFS = "dpai.ecosystem"
     private const val PROJECT = "project"
     private const val MANIFEST = "manifest"
+    private const val SOURCE = "source"
+
+    /** Откуда манифест (D-114): реестр приложения (по умолчанию, если он есть) или файл с ПК. */
+    enum class Source { REGISTRY, FILE }
+
+    /** Есть ли у приложения свой реестр (сборка DPmetaApp): без него — только файл. */
+    fun registryAvailable(context: Context): Boolean = (context.applicationContext as? DpaiApplication)?.ecosystemRegistry == true
+
+    fun source(context: Context): Source {
+        val saved = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(SOURCE, null)?.let { s -> Source.entries.firstOrNull { it.name == s } }
+        return when {
+            !registryAvailable(context) -> Source.FILE
+            else -> saved ?: Source.REGISTRY
+        }
+    }
+
+    /**
+     * Сменить источник: другой источник — другие предложения, поэтому
+     * включённая политика выключается (D-114, как при смене файла, D-106);
+     * не выключилась — источник не меняется. Итог — строка для человека.
+     */
+    fun setSource(context: Context, to: Source): Pair<Boolean, String?> {
+        if (source(context) == to) return true to null
+        val auto = Controller.get(context.filesDir).ecosystemAuto
+        val note = if (auto.policy().valueOrNull() == null) {
+            null
+        } else {
+            when (val d = auto.disable()) {
+                is Outcome.Success -> "Источник манифеста сменён — политика прогона выключена: включите её заново."
+                    .also { AppLogs.get(context).info("экосистема", "политика прогона выключена: сменён источник манифеста") }
+                is Outcome.Failure -> return false to "Политика не выключилась (${d.errors.firstOrNull()?.message}) — источник не сменён"
+            }
+        }
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(SOURCE, to.name).apply()
+        return true to note
+    }
+
+    /** Проекты манифеста из выбранного источника — для экрана и прохода политики. Блокирующий вызов. */
+    fun load(context: Context): Outcome<List<EcosystemProject>> = when (source(context)) {
+        Source.REGISTRY -> when (val m = (context.applicationContext as? DpaiApplication)?.ecosystemManifest()) {
+            null -> Outcome.failure(DiagCode.ECOSYSTEM_UNAVAILABLE, "у этой сборки нет реестра — выберите файл манифеста")
+            is Outcome.Failure -> m
+            is Outcome.Success -> ManifestEcosystem { m.value }.projects()
+        }
+        Source.FILE -> manifest(context)?.let { readManifest(context, it) } ?: Outcome.failure(DiagCode.ECOSYSTEM_UNAVAILABLE, "файл манифеста не выбран")
+    }
 
     fun project(context: Context): String? = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(PROJECT, null)
 

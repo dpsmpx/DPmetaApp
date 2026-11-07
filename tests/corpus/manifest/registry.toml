@@ -1,0 +1,21 @@
+# Синтетический реестр для манифеста dpai.ecosystem (DP_AI_Orcestrator:D-114): проекты выдуманы.
+schema = 1
+
+[[repo]]
+name = "Alpha"
+slug = "example/Alpha"
+clone = "alpha"
+place = "core"
+decisions = { path = "docs/DECISIONS.md", id = "A-\\d+" }
+
+[[repo]]
+name = "Beta Tool"
+slug = "example/beta-tool"
+clone = "beta"
+place = "support"
+
+[[repo]]
+name = "Gamma"
+slug = "example/Gamma"
+clone = "gamma"
+place = "archive"
