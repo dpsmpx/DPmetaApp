@@ -37,6 +37,18 @@ object SetupGuide {
     const val SLOT_DIR = "$HOME/.claude-slot-1"
 
     fun sections(s: SetupState): List<GuideSection> = listOf(
+        // Выбор пути — первым (AI:A-17): без Termux — три шага в самом приложении; с Termux — разделы ниже.
+        GuideSection(
+            "path", "С чего начать",
+            "Два пути. Linux в приложении — без Termux, три шага ниже. Termux на этом телефоне — разделы 1–9 этой инструкции. " +
+                "ПК — раздел «ПК», после любого из них.",
+            listOf(
+                GuideStep("Linux в приложении, шаг 1: «Targets» → «Linux в приложении» → «Установить Alpine»."),
+                GuideStep("Шаг 2: поле «Пакеты» — nodejs npm → «Поставить»; затем «Терминал» и в нём:", "npm i -g @anthropic-ai/claude-code"),
+                GuideStep("Шаг 3: «Добавить слот ▾» → Claude; на вкладке «Targets» у нового target — «Терминал ▾» → «Claude в терминале» → /login; затем ⋮ → «Проверить вход»."),
+            ),
+            done = s.loggedIn.takeIf { it },
+        ),
         GuideSection(
             "overview", "Что получится",
             "AI управляет сессиями Claude Code, которые работают в Termux на этом же телефоне. Приложение подключается к Termux по SSH " +

@@ -214,7 +214,10 @@ open class PultActivity : ComponentActivity() {
         if (pool.isShutdown || view.value.busy) return
         view.value = view.value.copy(busy = true, statusDetails = "", status = "Ищу репозитории аккаунта…")
         pool.execute {
-            val r = runCatching { repo.cloneOptions(token) }.getOrElse { Outcome.failure(DiagCode.INTERNAL_ERROR, "список репозиториев: ${it.javaClass.simpleName}") }
+            val r = runCatching { repo.cloneOptions(token) }.getOrElse { Outcome.failure(DiagCode.INTERNAL_ERROR, "список репозиториев: ${it.javaClass.simpleName}") }.let { o ->
+                // Какие уже склонированы и сколько заняли (UX-11) — здесь же, в фоне.
+                if (o is Outcome.Success) Outcome.success(o.value.map { it.copy(bytes = runCatching { repo.cloneBytes(it.slug) }.getOrNull()) }) else o
+            }
             val chosen = clonesSelected()
             runOnUiThread {
                 when (r) {
@@ -310,6 +313,7 @@ open class PultActivity : ComponentActivity() {
                     onAi = ai, onExport = ::export,
                     onClones = { withToken { token -> if (token != null) askClones(token, first = false) } }, onClonesChosen = ::clonesChosen,
                     onCancelSync = { repo.cancelClones() },
+                    onDeleteClone = ::deleteClone,
                 )
             }
         }
@@ -452,6 +456,20 @@ open class PultActivity : ComponentActivity() {
 
     private fun saved(r: Outcome<Unit>) {
         view.value = view.value.copy(hasToken = r is Outcome.Success || secrets.exists(), statusDetails = "", status = if (r is Outcome.Success) "Токен сохранён." else "Токен не сохранён: ${r.diagnostics.first().message}")
+        // Первый вход (UX-11, D-70): после токена — сразу окно клонов и синхронизация, а не «Токен сохранён.» и тишина.
+        if (r is Outcome.Success) sync()
+    }
+
+    /** Удалить не отмеченный клон (UX-11) — после вопроса на экране; окно клонов перечитывает размеры. */
+    private fun deleteClone(slug: String) {
+        if (pool.isShutdown) return
+        pool.execute {
+            runCatching { repo.deleteClone(slug) }
+            runOnUiThread {
+                val p = view.value.clonePrompt ?: return@runOnUiThread
+                view.value = view.value.copy(clonePrompt = p.copy(options = p.options.map { if (it.slug == slug) it.copy(bytes = null) else it }))
+            }
+        }
     }
 
     private fun forgetToken() {

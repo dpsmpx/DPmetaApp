@@ -399,12 +399,23 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                     }
                 }
                 failure?.takeIf { corrupted == null }?.let {
-                    Text(
-                        "Контроллер не работает: $it. Проверьте targets на вкладке Targets; подробности — в журнале приложения.",
-                        Modifier.fillMaxWidth().padding(12.dp),
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
+                    // Пустое состояние ведёт дальше (AI:A-17): к targets и к журналу.
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+                        Text("Контроллер не работает: $it.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                        Row {
+                            TextButton(onClick = { openTab(AiTab.TARGETS) }) { Text("Открыть Targets") }
+                            TextButton(onClick = { selectedId = null; settings = true }) { Text("Журнал (Настройки AI)") }
+                        }
+                    }
+                }
+                // Демо (AI:A-17): данные ненастоящие — сказано над каждой вкладкой, с путём к настоящей работе.
+                if (snapshot?.live == false && corrupted == null) {
+                    androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
+                        Row(Modifier.padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text("Демо: данные ненастоящие. Чтобы работать — добавьте target или Linux в приложении.", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                            if (tab != AiTab.TARGETS.ordinal || settings || selectedId != null) TextButton(onClick = { openTab(AiTab.TARGETS) }) { Text("Начать") }
+                        }
+                    }
                 }
                 if (stopped) {
                     Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -428,12 +439,12 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                                 screen == AiTab.TARGETS.ordinal -> TargetsPane(controller, model)
                                 screen == AiTab.REQUESTS.ordinal -> RequestsPane(model, s)
                                 screen == AiTab.MODELS.ordinal -> ModelsPane()
-                                screen == AiTab.FILES.ordinal -> FilesPane()
+                                screen == AiTab.FILES.ordinal -> FilesPane(onLinux = { openTab(AiTab.TARGETS) })
                                 s == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                                 screen == SESSION_SCREEN -> SessionPane(s.session, model, sessionEvents)
                                 screen == AiTab.SUMMARY.ordinal -> Column(Modifier.fillMaxSize()) {
                                     QuickRow(s.quick, model)
-                                    Box(Modifier.weight(1f)) { DashboardPane(s.dashboard, s.quick, model) { foundTask = it } }
+                                    Box(Modifier.weight(1f)) { DashboardPane(s.dashboard, s.quick, model, onTargets = { openTab(AiTab.TARGETS) }) { foundTask = it } }
                                 }
                                 else -> BoardPane(s.board, model, s.archived, onEcosystem = if (s.live) ({ ecosystem = true }) else null) { selectedId = it }
                             }
@@ -485,7 +496,7 @@ private fun rememberVisible(): Boolean {
 }
 
 @Composable
-private fun DashboardPane(screen: DashboardScreen, quick: com.dpsmpx.dpai.ui.QuickActions, model: DemoModel, onTask: (com.dpsmpx.dpai.core.ids.TaskId) -> Unit) {
+private fun DashboardPane(screen: DashboardScreen, quick: com.dpsmpx.dpai.ui.QuickActions, model: DemoModel, onTargets: () -> Unit, onTask: (com.dpsmpx.dpai.core.ids.TaskId) -> Unit) {
     // Загрузка окон — из `/usage` раз в минуту, пока сводка видна (D-48).
     if (screen.limits.isNotEmpty() && rememberVisible()) {
         LaunchedEffect(Unit) {
@@ -499,7 +510,15 @@ private fun DashboardPane(screen: DashboardScreen, quick: com.dpsmpx.dpai.ui.Qui
     // Сводка — подписки (D-65): лимиты сверху, затем состояние, «Ждёт вас» одним списком и ненулевые счётчики (AI:A-6);
     // задачи и их сессии — во вкладке «Задачи», оттуда — сразу чат (D-62).
     LazyColumn(contentPadding = PaddingValues(start = 12.dp, top = 12.dp, end = 12.dp, bottom = FAB_ROOM), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (screen.limits.isEmpty()) item { Text("Подписок пока нет: они появятся после первой пробы входа слотов.", style = MaterialTheme.typography.bodySmall) }
+        if (screen.limits.isEmpty()) {
+            item {
+                // Пустое состояние — с действием (AI:A-17): войти в слот на Targets.
+                Column {
+                    Text("Подписок пока нет: они появятся после первой пробы входа слотов.", style = MaterialTheme.typography.bodySmall)
+                    TextButton(onClick = onTargets) { Text("Войти в слот ▸") }
+                }
+            }
+        }
         items(screen.limits, key = { "limits:${it.subscription.value}" }) { LimitsCard(it, model) }
         item {
             Text("Состояние: ${screen.health}", color = toneColor(screen.healthTone), fontWeight = FontWeight.Bold)

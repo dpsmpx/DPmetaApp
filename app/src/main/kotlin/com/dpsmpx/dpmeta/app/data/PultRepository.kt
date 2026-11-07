@@ -55,7 +55,23 @@ class PultRepository(
      * [gone] — отмечен прежде, а в списке аккаунта его нет (доступ, имя, архив):
      * виден, чтобы его можно было снять.
      */
-    data class CloneOption(val slug: String, val registry: Boolean, val private: Boolean, val gone: Boolean = false)
+    data class CloneOption(val slug: String, val registry: Boolean, val private: Boolean, val gone: Boolean = false, val bytes: Long? = null)
+
+    /** Сколько занимает клон [slug] на телефоне; клона нет — `null` (UX-11: «склонирован · 120 МБ»). Не на главном потоке. */
+    fun cloneBytes(slug: String): Long? {
+        val dir = com.dpsmpx.dpmeta.git.Clones(clonesDir, com.dpsmpx.dpmeta.git.Clones.allowList()).dir(slug)
+        if (!java.io.File(dir, ".git").isDirectory) return null
+        return dir.walkTopDown().onEnter { !java.nio.file.Files.isSymbolicLink(it.toPath()) }.filter { it.isFile }.sumOf { it.length() }
+    }
+
+    /**
+     * Удалить клон [slug] (UX-11; D-70): место — назад, работа ИИ в нём —
+     * тоже, поэтому только по вопросу на экране и только не отмеченного.
+     * Ссылки внутри не проходятся (`Clones.deleteTree`).
+     */
+    fun deleteClone(slug: String) {
+        com.dpsmpx.dpmeta.git.Clones.deleteTree(com.dpsmpx.dpmeta.git.Clones(clonesDir, com.dpsmpx.dpmeta.git.Clones.allowList()).dir(slug))
+    }
 
     /**
      * Репозитории для окна выбора клонов (D-70): все, что видны токену, без

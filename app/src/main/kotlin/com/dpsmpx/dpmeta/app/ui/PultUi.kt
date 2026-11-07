@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -282,6 +283,8 @@ fun PultApp(
     onClones: () -> Unit = {},
     /** «Отменить» клоны идущей синхронизации (UX-10). */
     onCancelSync: () -> Unit = {},
+    /** Удалить не отмеченный клон (UX-11) — после вопроса. */
+    onDeleteClone: (String) -> Unit = {},
     /** Итог окна клонов: отмеченные или `null` — «Позже» / «Отмена». */
     onClonesChosen: (Set<String>?) -> Unit = {},
 ) {
@@ -346,7 +349,15 @@ fun PultApp(
                 top is Nav.Stats && s != null -> StatsScreen(view.history, s.projects.map { it.name }, top.project, s.asOf, back, view.status, onExport)
                 top is Nav.Feed && s != null -> FeedScreen(view.feed, s.projects.map { it.name }, back)
                 tab == Section.MORE -> Settings(view, onSync, onSaveToken, onForgetToken, onClones)
-                s == null -> Text(if (view.hasToken) "Среза ещё нет: «Обновить» в пункте «Ещё»." else "Нужен токен GitHub: пункт «Ещё».")
+                // Пустое состояние ведёт дальше (UX-11): кнопкой, а не словами «где-то в настройках».
+                s == null -> Column(verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+                    Text(if (view.hasToken) "Среза ещё нет." else "Нужен токен GitHub — только для чтения.")
+                    if (view.hasToken) {
+                        Button(onClick = onSync, enabled = !view.busy) { Text("Обновить") }
+                    } else {
+                        Button(onClick = { tab = Section.MORE }) { Text("Ввести токен") }
+                    }
+                }
                 tab == Section.SUMMARY -> Summary(
                     Screens.summary(s), view, onSync, onAi,
                     onTile = { g ->
@@ -368,7 +379,7 @@ fun PultApp(
             }
         }
     }
-    view.clonePrompt?.let { ClonesDialog(it, onClonesChosen) }
+    view.clonePrompt?.let { ClonesDialog(it, onClonesChosen, onDeleteClone) }
 }
 
 /** Пункт панели: значок над подписью; [selected] `null` — не вкладка, а вход («AI»). */
@@ -844,46 +855,78 @@ private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -
 }
 
 /**
- * Выбор клонов (D-70): репозиторий — строкой с отметкой; реестр — сверху.
- * Снятая отметка клон не удаляет: в нём может быть работа ИИ — он просто не
- * обновляется и не читается.
+ * Выбор клонов (D-70, UX-11): полноэкранный лист — поиск, «Все» и «Ни
+ * одного», строка — флажок (роль для TalkBack, цель 48 dp) с пометкой
+ * «склонирован · N МБ»; реестр — сверху. Закрывается только кнопками и
+ * жестом «назад», касание мимо — не «Позже». Снятая отметка клон не
+ * удаляет: в нём может быть работа ИИ; удалить — отдельно, с вопросом.
  */
 @Composable
-fun ClonesDialog(prompt: ClonePrompt, onDone: (Set<String>?) -> Unit) {
-    var checked by remember(prompt) { mutableStateOf(prompt.checked) }
-    androidx.compose.material3.AlertDialog(
+fun ClonesDialog(prompt: ClonePrompt, onDone: (Set<String>?) -> Unit, onDelete: (String) -> Unit = {}) {
+    var checked by remember(prompt.first, prompt.checked) { mutableStateOf(prompt.checked) }
+    var query by remember { mutableStateOf("") }
+    var deleting by remember { mutableStateOf<String?>(null) }
+    val shown = prompt.options.filter { query.isBlank() || it.slug.contains(query.trim(), ignoreCase = true) }
+    androidx.compose.ui.window.Dialog(
         onDismissRequest = { onDone(null) },
-        title = { Text("Какие репозитории клонировать?") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false),
+    ) {
+        Surface(Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars).windowInsetsPadding(WindowInsets.navigationBars).padding(Tokens.gap), verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+                Text("Какие репозитории клонировать?", style = MaterialTheme.typography.titleLarge)
                 Text(
                     "Клон — полная копия в приложении: «AI» работает в нём, пульт берёт из него файлы без запросов. " +
                         "Первое клонирование — долгое, лучше по Wi-Fi. Неотмеченные пульт читает с GitHub. Выбор меняется в пункте «Ещё».",
                     style = MaterialTheme.typography.bodySmall,
                 )
-                // Список — не выше половины экрана: кнопки окна остаются видны.
-                LazyColumn(Modifier.heightIn(max = 360.dp)) {
-                    items(prompt.options, key = { it.slug }) { o ->
+                OutlinedTextField(query, { query = it }, label = { Text("Найти репозиторий") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Row(horizontalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+                    TextButton(onClick = { checked = checked + shown.filter { !it.gone }.map { it.slug } }) { Text("Все") }
+                    TextButton(onClick = { checked = checked - shown.map { it.slug }.toSet() }) { Text("Ни одного") }
+                }
+                LazyColumn(Modifier.weight(1f)) {
+                    items(shown, key = { it.slug }) { o ->
+                        val on = o.slug in checked
                         Row(
-                            Modifier.fillMaxWidth().clickable { checked = if (o.slug in checked) checked - o.slug else checked + o.slug },
+                            Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                                .toggleable(value = on, role = Role.Checkbox) { checked = if (on) checked - o.slug else checked + o.slug },
                             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
                         ) {
-                            androidx.compose.material3.Checkbox(checked = o.slug in checked, onCheckedChange = null)
-                            Column(Modifier.padding(start = 6.dp)) {
+                            androidx.compose.material3.Checkbox(checked = on, onCheckedChange = null)
+                            Column(Modifier.weight(1f).padding(start = 6.dp)) {
                                 Text(o.slug, style = MaterialTheme.typography.bodyMedium)
+                                val marks = listOfNotNull(
+                                    "реестр".takeIf { o.registry },
+                                    "закрытый".takeIf { o.private },
+                                    o.bytes?.let { "склонирован · ${it / 1_048_576} МБ" },
+                                )
                                 Text(
-                                    if (o.gone) "нет в списке аккаунта — снимите отметку, если не нужен" else listOfNotNull("реестр".takeIf { o.registry }, "закрытый".takeIf { o.private }).joinToString(" · "),
+                                    if (o.gone) "нет в списке аккаунта — снимите отметку, если не нужен" else marks.joinToString(" · "),
                                     style = MaterialTheme.typography.labelSmall,
                                 )
                             }
+                            // Удалить — только не отмеченный клон и не при первом входе; с вопросом (D-70: в клоне может быть работа ИИ).
+                            if (!prompt.first && !on && o.bytes != null) TextButton(onClick = { deleting = o.slug }) { Text("Удалить…", color = MaterialTheme.colorScheme.error) }
                         }
                     }
                 }
+                Row(horizontalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+                    TextButton(onClick = { onDone(null) }) { Text(if (prompt.first) "Позже" else "Отмена") }
+                    androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+                    Button(onClick = { onDone(checked) }) { Text("Клонировать отмеченные (${checked.size})") }
+                }
             }
-        },
-        confirmButton = { TextButton(onClick = { onDone(checked) }) { Text("Клонировать отмеченные (${checked.size})") } },
-        dismissButton = { TextButton(onClick = { onDone(null) }) { Text(if (prompt.first) "Позже" else "Отмена") } },
-    )
+        }
+    }
+    deleting?.let { slug ->
+        AlertDialog(
+            onDismissRequest = { deleting = null },
+            title = { Text("Удалить клон $slug?") },
+            text = { Text("Место на телефоне освободится. Работа ИИ в этом клоне — ветки и незакоммиченное, чего нет на GitHub, — пропадёт. Отметить и склонировать снова можно потом.") },
+            confirmButton = { TextButton(onClick = { deleting = null; onDelete(slug) }) { Text("Удалить", color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = { deleting = null }) { Text("Отмена") } },
+        )
+    }
 }
 
 /** Отказ: причина словом, код и сообщение — по «Подробнее» (ТЗ, §6.9; UX-13). */
