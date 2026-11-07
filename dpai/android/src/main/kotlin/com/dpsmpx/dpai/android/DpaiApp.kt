@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -36,6 +38,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -53,6 +56,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Alignment
@@ -67,6 +72,8 @@ import com.dpsmpx.dpai.core.diagnostics.Redactor
 import com.dpsmpx.dpai.core.ids.SessionId
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.text.Words
+import com.dpsmpx.dpai.ui.AI_SETTINGS_TITLE
+import com.dpsmpx.dpai.ui.AiTab
 import com.dpsmpx.dpai.ui.DashboardScreen
 import com.dpsmpx.dpai.ui.RequestCard
 import com.dpsmpx.dpai.ui.SessionScreen
@@ -85,6 +92,9 @@ private const val STEP_MS = 1000L
 /** Экран сессии в переходе между экранами (вкладки — 0…4). */
 private const val SESSION_SCREEN = -1
 
+/** Номер экрана «Настроек AI» в переходах (D-112): не вкладка. */
+private const val SETTINGS_SCREEN = -2
+
 /** Период шага контроллера: каждый шаг — вызовы агентов по SSH. */
 private const val LIVE_STEP_MS = 3000L
 
@@ -99,8 +109,16 @@ private const val SEARCH_PAUSE_MS = 350L
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incoming(), onIncoming: () -> Unit = {}) {
-    var tab by rememberSaveable { mutableIntStateOf(0) }
+    var tab by rememberSaveable { mutableIntStateOf(AiTab.SUMMARY.ordinal) }
     var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
+    // «Настройки AI» — экран поверх вкладок (D-112): вход — значком в заголовке, выход — «←» и «Назад».
+    var settings by rememberSaveable { mutableStateOf(false) }
+    /** Открыть вкладку: экран сессии и «Настройки AI» закрываются. */
+    fun openTab(t: AiTab) {
+        tab = t.ordinal
+        selectedId = null
+        settings = false
+    }
     var snapshot by remember { mutableStateOf<Snapshot?>(null) }
     // Контроллер остановлен кнопкой «Остановить»: экран его не поднимает сам (D-39).
     var stopped by remember { mutableStateOf(false) }
@@ -164,6 +182,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
         }
     }
     BackHandler(enabled = selectedId != null) { selectedId = null }
+    BackHandler(enabled = selectedId == null && settings) { settings = false }
     // Ссылка из уведомления (ТЗ, §76): сессия — её экран; задача — экран её последней сессии, иначе доска;
     // запрос — вкладка «Запросы». Разбор строгий (DeepLink.parse): чужое ничего не открывает.
     var confirmUri by remember { mutableStateOf<String?>(null) }
@@ -175,9 +194,9 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                 com.dpsmpx.dpai.notifications.DeepLink.Kind.TASK -> {
                     val task = com.dpsmpx.dpai.core.ids.IdKinds.TASK.parse(parsed.id).valueOrNull()
                     val session = task?.let { withContext(Dispatchers.IO) { model.sessionOf(it) } }
-                    if (session != null) selectedId = session.value else { selectedId = null; tab = 1 }
+                    if (session != null) selectedId = session.value else openTab(AiTab.TASKS)
                 }
-                com.dpsmpx.dpai.notifications.DeepLink.Kind.REQUEST -> { selectedId = null; tab = 3 }
+                com.dpsmpx.dpai.notifications.DeepLink.Kind.REQUEST -> openTab(AiTab.REQUESTS)
                 else -> Unit
             }
         }
@@ -209,11 +228,11 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
             when (link.kind) {
                 com.dpsmpx.dpai.notifications.DeepLink.Kind.SESSION -> selectedId = link.id
                 com.dpsmpx.dpai.notifications.DeepLink.Kind.TASK -> foundTask = com.dpsmpx.dpai.core.ids.IdKinds.TASK.parse(link.id).valueOrNull()
-                com.dpsmpx.dpai.notifications.DeepLink.Kind.REQUEST -> { selectedId = null; tab = 3 }
+                com.dpsmpx.dpai.notifications.DeepLink.Kind.REQUEST -> openTab(AiTab.REQUESTS)
                 com.dpsmpx.dpai.notifications.DeepLink.Kind.EVENT -> Unit
                 // Подписки и их окна — на сводке (LimitsCard); слоты и проект — на вкладке Targets.
-                com.dpsmpx.dpai.notifications.DeepLink.Kind.SUBSCRIPTION -> { selectedId = null; tab = 0 }
-                else -> { selectedId = null; tab = 2 }
+                com.dpsmpx.dpai.notifications.DeepLink.Kind.SUBSCRIPTION -> openTab(AiTab.SUMMARY)
+                else -> openTab(AiTab.TARGETS)
             }
         }
     }
@@ -259,6 +278,9 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                             )
                             sessionScreen?.task?.let { t -> TextButton(onClick = { taskSheet = t }) { Text("⚙", style = MaterialTheme.typography.titleMedium) } }
                             TextButton(onClick = { sessionEvents = !sessionEvents }) { Text(if (sessionEvents) "Чат" else "События") }
+                        } else if (settings) {
+                            TextButton(onClick = { settings = false }) { Text("←") }
+                            Text(AI_SETTINGS_TITLE, Modifier.weight(1f).padding(start = 8.dp), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         } else {
                             // Путь к пульту виден (DPmetaApp:D-73, UX-1): «AI» стоит над ним, «←» — просто закрыть окно «AI».
                             val activity = androidx.activity.compose.LocalActivity.current
@@ -270,40 +292,57 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                             }
                             Text(
                                 // Одно имя подсистемы — «AI», как у вкладки пульта; в заголовке — открытая вкладка (AI:A-1, AI:A-11).
-                                "AI · " + TAB_TITLES.getOrElse(tab) { "…" } + (if (snapshot?.mode == "демо") " · демо" else ""),
+                                "AI · " + AiTab.of(tab).title + (if (snapshot?.mode == "демо") " · демо" else ""),
                                 Modifier.weight(1f).padding(start = if (pultBelow) 0.dp else 12.dp), style = MaterialTheme.typography.titleMedium,
                                 maxLines = 1, overflow = TextOverflow.Ellipsis,
                             )
                             // Глобальный поиск (ТЗ, §75) — с любой вкладки.
                             TextButton(onClick = { searching = true }) { Text("Найти") }
+                            // «Настройки AI» (D-112): журнал, позже — настройка из Targets (AI:A-3).
+                            Labeled(AI_SETTINGS_TITLE) {
+                                androidx.compose.material3.IconButton(onClick = { settings = true }) {
+                                    androidx.compose.material3.Icon(
+                                        androidx.compose.ui.res.painterResource(R.drawable.ic_ai_settings),
+                                        contentDescription = AI_SETTINGS_TITLE,
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             },
             bottomBar = {
-                // Панель — всегда: её исчезновение на экране сессии сдвигало всё содержимое. Без подписей, узкая (D-61).
+                // Панель — всегда: её исчезновение на экране сессии сдвигало всё содержимое. Значки без подписей (D-61);
+                // подпись — долгим нажатием, для TalkBack — роль вкладки, «выбрано» и название; строка — 48 dp (D-112).
                 androidx.compose.material3.Surface(tonalElevation = 3.dp) {
                     Row(
-                        Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.navigationBars).height(44.dp),
+                        Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.navigationBars).height(48.dp).selectableGroup(),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        fun go(t: Int) {
-                            tab = t
-                            selectedId = null
-                        }
                         val waiting = snapshot?.requests?.size ?: 0
-                        for ((i, icon) in listOf("◉", "▦", "⇄", "?", "≡", "✦", "▤").withIndex()) {
-                            val selected = tab == i && selectedId == null
-                            Box(
-                                Modifier.weight(1f).fillMaxSize().clickable { go(i) },
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                val color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                // Число — значком поверх: ширина пункта не меняется с числом запросов.
-                                if (i == 3) {
-                                    BadgedBox(badge = { if (waiting > 0) Badge { Text("$waiting") } }) { Text(icon, color = color, style = MaterialTheme.typography.titleMedium) }
-                                } else {
-                                    Text(icon, color = color, style = MaterialTheme.typography.titleMedium)
+                        for (t in AiTab.entries) {
+                            val selected = tab == t.ordinal && selectedId == null && !settings
+                            Labeled(t.title, Modifier.weight(1f)) {
+                                Box(
+                                    Modifier.fillMaxSize()
+                                        .selectable(selected = selected, role = Role.Tab, onClick = { openTab(t) })
+                                        .semantics { contentDescription = t.spoken(waiting) },
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    val color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    val icon = @Composable {
+                                        androidx.compose.material3.Icon(
+                                            androidx.compose.ui.res.painterResource(tabIcon(t)),
+                                            contentDescription = null,
+                                            tint = color,
+                                        )
+                                    }
+                                    // Число — значком поверх: ширина пункта не меняется с числом запросов; читается в описании пункта.
+                                    if (t == AiTab.REQUESTS && waiting > 0) {
+                                        BadgedBox(badge = { Badge(Modifier.clearAndSetSemantics { }) { Text("$waiting") } }) { icon() }
+                                    } else {
+                                        icon()
+                                    }
                                 }
                             }
                         }
@@ -360,19 +399,24 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                 // Смена вкладки или экрана — плавно, без скачка содержимого; кадр перехода рисует свой экран.
                 // Состояние вкладки (место в «Файлах», открытый разговор, прокрутка) — своё у каждой и переживает
                 // смену вкладки (AI:A-2, AI:A-21): rememberSaveable внутри держит хранитель по номеру экрана.
-                Crossfade(targetState = if (selectedId != null) SESSION_SCREEN else tab, label = "screen", modifier = Modifier.weight(1f).fillMaxWidth()) { screen ->
+                val target = when {
+                    selectedId != null -> SESSION_SCREEN
+                    settings -> SETTINGS_SCREEN
+                    else -> tab
+                }
+                Crossfade(targetState = target, label = "screen", modifier = Modifier.weight(1f).fillMaxWidth()) { screen ->
                     tabStates.SaveableStateProvider(screen) {
                         Box(Modifier.fillMaxSize()) {
                             when {
-                                screen == 2 -> TargetsPane(controller, model)
-                                screen == 3 -> RequestsPane(model, s)
-                                screen == 4 -> LogPane(model)
-                                screen == 5 -> ModelsPane()
-                                screen == 6 -> FilesPane()
+                                screen == SETTINGS_SCREEN -> AiSettingsPane(model)
+                                screen == AiTab.TARGETS.ordinal -> TargetsPane(controller, model)
+                                screen == AiTab.REQUESTS.ordinal -> RequestsPane(model, s)
+                                screen == AiTab.MODELS.ordinal -> ModelsPane()
+                                screen == AiTab.FILES.ordinal -> FilesPane()
                                 s == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                                 screen == SESSION_SCREEN -> SessionPane(s.session, model, sessionEvents)
-                                screen == 0 -> Column(Modifier.fillMaxSize()) {
-                                    QuickRow(s.quick, s.live, s.requests.size, model, onTask = { foundTask = it }) { selectedId = null; tab = 3 }
+                                screen == AiTab.SUMMARY.ordinal -> Column(Modifier.fillMaxSize()) {
+                                    QuickRow(s.quick, s.live, s.requests.size, model, onTask = { foundTask = it }) { openTab(AiTab.REQUESTS) }
                                     Box(Modifier.weight(1f)) { DashboardPane(s.dashboard, model) }
                                 }
                                 else -> BoardPane(s.board, s.live, model, s.archived) { selectedId = it }
@@ -1143,4 +1187,40 @@ private fun LimitsCard(l: com.dpsmpx.dpai.ui.SubscriptionLimits, model: DemoMode
 }
 
 /** Названия вкладок «AI» по порядку значков панели — для заголовка (AI:A-1). */
-private val TAB_TITLES = listOf("Сводка", "Задачи", "Targets", "Запросы", "Журнал", "Модели", "Файлы")
+/** Значок вкладки (D-112): свои векторные рисунки, без новой зависимости. */
+private fun tabIcon(t: AiTab): Int = when (t) {
+    AiTab.SUMMARY -> R.drawable.ic_ai_summary
+    AiTab.TASKS -> R.drawable.ic_ai_tasks
+    AiTab.TARGETS -> R.drawable.ic_ai_targets
+    AiTab.REQUESTS -> R.drawable.ic_ai_requests
+    AiTab.MODELS -> R.drawable.ic_ai_models
+    AiTab.FILES -> R.drawable.ic_ai_files
+}
+
+/**
+ * Подпись значка — долгим нажатием (D-112): подсказка Material 3 над значком;
+ * касание проходит к самому значку.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun Labeled(label: String, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    androidx.compose.material3.TooltipBox(
+        positionProvider = androidx.compose.material3.TooltipDefaults.rememberTooltipPositionProvider(androidx.compose.material3.TooltipAnchorPosition.Above),
+        tooltip = { PlainTooltip { Text(label) } },
+        state = androidx.compose.material3.rememberTooltipState(),
+        modifier = modifier,
+        content = content,
+    )
+}
+
+/**
+ * «Настройки AI» (D-112): журнал приложения — здесь, а не вкладкой. Настройка
+ * из Targets (ключ, контур, копии, диск) переедет сюда пакетом аудита AI:A-3.
+ */
+@Composable
+private fun AiSettingsPane(model: DemoModel) {
+    Column(Modifier.fillMaxSize()) {
+        Text("Журнал", Modifier.padding(start = 12.dp, top = 8.dp, bottom = 4.dp), style = MaterialTheme.typography.titleMedium)
+        Box(Modifier.weight(1f)) { LogPane(model) }
+    }
+}
