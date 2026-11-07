@@ -10,6 +10,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.Modifier
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -79,4 +81,13 @@ internal fun Undo?.tell(text: String, line: (String?) -> Unit) {
     } else {
         line(text)
     }
+}
+
+/**
+ * Рамка карточки — или без неё, когда карточка стала разделом другой
+ * («Копии и восстановление» в «Настройках AI», AI:A-3).
+ */
+@Composable
+internal fun Framed(framed: Boolean, content: @Composable () -> Unit) {
+    if (framed) androidx.compose.material3.Card(Modifier.fillMaxWidth()) { content() } else content()
 }

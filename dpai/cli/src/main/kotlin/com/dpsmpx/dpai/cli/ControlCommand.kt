@@ -454,7 +454,7 @@ class ControlCommand(
     /** Вызов с подписью токеном (D-92); отказ — сообщение и `null`, `202` — ещё и [onWaiting]. */
     private fun call(method: String, path: String, body: JsonObject?, onWaiting: () -> Unit = {}): JsonObject? {
         val cfg = config.read(FILE)?.let { JsonParser().parse(String(it, Charsets.UTF_8)).valueOrNull() as? JsonObject }
-            ?: return null.also { err("нет сопряжения: в приложении Targets → «Командная строка» → «Показать код», затем dpai control pair <код>") }
+            ?: return null.also { err("нет сопряжения: в приложении «Настройки AI» → «Командная строка dpai» → «Показать код», затем dpai control pair <код>") }
         val port = (cfg["port"] as? JsonNumber)?.toLongExact()?.toInt() ?: DEFAULT_PORT
         val r = transport(port).call(method, path, str(cfg, "token"), body)
         if (r.status == 200 && r.body != null) return r.body
@@ -548,7 +548,7 @@ class ControlCommand(
         private const val SESSION_USAGE = "dpai session <id> stop | reassign | send «запрос» [--model m] [--effort e] | fresh [«запрос»]"
 
         val USAGE = """
-            |  dpai control pair <код>   сопряжение с приложением (код — Targets → «Командная строка»)
+            |  dpai control pair <код>   сопряжение с приложением (код — «Настройки AI» → «Командная строка dpai»)
             |  dpai status [--all]       задачи (без архива), сессии, запросы, загрузка подписки
             |  dpai task …               add | archive-done | <id> hold|resume|first|cancel|retry|verify|waive|priority|policy|scope|depends|archive|unarchive|messages|diff|reviews
             |                            приоритеты: critical, high, normal, low, background; классы — dpai task

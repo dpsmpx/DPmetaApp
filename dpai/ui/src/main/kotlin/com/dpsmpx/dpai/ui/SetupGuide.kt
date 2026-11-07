@@ -96,7 +96,7 @@ object SetupGuide {
                     "mkdir -p ~/.termux/boot && printf '#!/data/data/com.termux/files/usr/bin/sh\\ntermux-wake-lock\\npgrep -x sshd >/dev/null || sshd -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no\\n' > ~/.termux/boot/10-dpai-sshd && chmod 700 ~/.termux/boot/10-dpai-sshd",
                 ),
                 GuideStep(
-                    "Termux из F-Droid или GitHub: разрешите приложению запускать sshd само, затем на карточке Termux во вкладке Targets — «Разрешить»:",
+                    "Termux из F-Droid или GitHub: разрешите приложению запускать sshd само, затем во вкладке Targets у target Termux — «Настройки target ▸» → «Разрешить»:",
                     "mkdir -p ~/.termux && grep -q '^allow-external-apps' ~/.termux/termux.properties 2>/dev/null || echo 'allow-external-apps = true' >> ~/.termux/termux.properties",
                 ),
             ),
@@ -120,7 +120,7 @@ object SetupGuide {
                 GuideStep("Команда агента dpai:", AGENT),
                 GuideStep("Каталог Claude слота:", SLOT_DIR),
                 GuideStep("«Получить ключ хоста» — сверьте отпечаток целиком со строкой того же типа (ECDSA, ED25519):", "for k in \$PREFIX/etc/ssh/ssh_host_*_key.pub; do ssh-keygen -l -f \"\$k\"; done"),
-                GuideStep("Совпал — «Совпадает — сохранить». Затем на карточке target — «Проверить связь»: связь, агент, Claude Code, Git — со знаком ✓, без красных строк."),
+                GuideStep("Совпал — «Совпадает — сохранить». Затем на карточке target — «Проверить»: связь, агент, Claude Code, Git — со знаком ✓, без красных строк."),
             ),
             done = s.hasTarget,
         ),
@@ -130,7 +130,7 @@ object SetupGuide {
             listOf(
                 GuideStep("Должно напечатать 0:", "env | grep -c '^ANTHROPIC_'"),
                 GuideStep("Вход: выберите аккаунт Claude с подпиской, откройте ссылку (долгое нажатие), вставьте код; затем /exit.", "mkdir -p ~/.claude-slot-1 && CLAUDE_CONFIG_DIR=\$HOME/.claude-slot-1 claude"),
-                GuideStep("В приложении: Targets → у target «Проверить вход». На сводке появится подписка и «Аккаунтов доступно: 1»."),
+                GuideStep("В приложении: Targets → у target ⋮ → «Проверить вход». На сводке появится подписка и «Аккаунтов доступно: 1»."),
             ),
             done = s.loggedIn,
         ),
@@ -140,7 +140,7 @@ object SetupGuide {
             listOf(
                 GuideStep("Имя и почта для коммитов (подставьте свои):", "git config --global user.name \"Имя\" && git config --global user.email \"you@example.org\""),
                 GuideStep("Пустой репозиторий для начала:", "mkdir -p ~/dpai-proj ~/dpai-trees && cd ~/dpai-proj && git init -q -b main && git commit -q --allow-empty -m 'начало'; cd ~"),
-                GuideStep("Targets → у target «Проект»: каталог репозитория — $HOME/dpai-proj, деревьев задач — $HOME/dpai-trees, ветка — main, команда проверки — например python -m unittest -v."),
+                GuideStep("Targets → у target ⋮ → «Проект…»: каталог репозитория — $HOME/dpai-proj, деревьев задач — $HOME/dpai-trees, ветка — main, команда проверки — например python -m unittest -v."),
             ),
             done = s.hasProject,
             optional = true,
@@ -149,7 +149,7 @@ object SetupGuide {
             "cli", "9. Командная строка dpai",
             "Команды dpai в Termux управляют приложением: задачи, сессии, запросы, лимиты.",
             listOf(
-                GuideStep("Targets → «Командная строка» → «Показать код», затем в Termux (вместо 123456 — код с экрана):", "dpai control pair 123456"),
+                GuideStep("«Настройки AI» → «Командная строка dpai» → «Показать код», затем в Termux (вместо 123456 — код с экрана):", "dpai control pair 123456"),
                 GuideStep("Проверка:", "dpai status"),
                 GuideStep("Справка по командам:", "dpai help"),
             ),
@@ -170,7 +170,7 @@ object SetupGuide {
                 PcSetup.command(s.appKey)?.let {
                     GuideStep("На ПК: PowerShell от администратора, вставить команду (5–10 минут; повторять безопасно). В конце — поля для «Добавить» и отпечатки ключа хоста:", it)
                 } ?: GuideStep("Ключ приложения ещё не создан — откройте эту инструкцию снова через секунду."),
-                GuideStep("Targets → «Добавить» по выведенным полям («Хост» — адрес ПК в общей сети, команда покажет адреса ПК), «Каталог Claude слота» — пусто, «Windows» — отметить; «Получить ключ хоста» — сверить с отпечатками; затем «Проверить связь». Не подключается — сеть Windows должна быть «Частной», команда подскажет."),
+                GuideStep("Targets → «Добавить» по выведенным полям («Хост» — адрес ПК в общей сети, команда покажет адреса ПК), «Каталог Claude слота» — пусто, «Windows» — отметить; «Получить ключ хоста» — сверить с отпечатками; затем «Проверить». Не подключается — сеть Windows должна быть «Частной», команда подскажет."),
                 GuideStep("У target ПК — «Проект»: каталоги репозитория и деревьев на ПК (вида C:/Users/имя/…); «Где работает Claude» — Termux; «Связать автоматически» — приложение само даст Claude в Termux ключ для входа на ПК и проверит вход; «Сохранить»."),
             ),
             optional = true,
@@ -189,7 +189,7 @@ object SetupGuide {
                 PcSetup.linuxCommand(s.appKey)?.let {
                     GuideStep("На ПК: терминал от своего пользователя (не root), в bash или zsh (в fish сначала наберите bash), вставить команду целиком; sudo спросит пароль (5–10 минут; повторять безопасно). В конце — поля для «Добавить» и отпечатки ключа хоста:", it)
                 } ?: GuideStep("Ключ приложения ещё не создан — откройте эту инструкцию снова через секунду."),
-                GuideStep("Targets → «Добавить» по выведенным полям, «Каталог Claude слота» — пусто, «Windows» — не отмечать; «Получить ключ хоста» — сверить с отпечатками; затем «Проверить связь»."),
+                GuideStep("Targets → «Добавить» по выведенным полям, «Каталог Claude слота» — пусто, «Windows» — не отмечать; «Получить ключ хоста» — сверить с отпечатками; затем «Проверить»."),
                 GuideStep("У target ПК — «Проект»: каталоги репозитория и деревьев на ПК (вида /home/имя/…); «Где работает Claude» — Termux; «Связать автоматически»; «Сохранить»."),
             ),
             optional = true,
@@ -200,7 +200,7 @@ object SetupGuide {
             listOf(
                 GuideStep("«sshd на порту 8022: не слушает» — запустить снова:", "pgrep -x sshd >/dev/null || sshd -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no"),
                 GuideStep("«[Process completed (signal 9)]» в Termux — ограничения дочерних процессов (раздел 1)."),
-                GuideStep("«Claude Code: тайм-аут» при «Проверить связь» — первый запуск proot медленный: нажмите «Проверить связь» ещё раз."),
+                GuideStep("«Claude Code: тайм-аут» при «Проверить» — первый запуск proot медленный: нажмите «Проверить» ещё раз."),
                 GuideStep("dpai: «канал недоступен» — откройте приложение; «токен не подходит» — новый код и dpai control pair."),
                 GuideStep("После переустановки приложения — карточка «Восстановление после переустановки» во вкладке Targets: одна команда в Termux, остальное приложение делает само."),
             ),

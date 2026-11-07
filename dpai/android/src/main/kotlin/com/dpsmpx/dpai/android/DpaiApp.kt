@@ -424,7 +424,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                     tabStates.SaveableStateProvider(screen) {
                         Box(Modifier.fillMaxSize()) {
                             when {
-                                screen == SETTINGS_SCREEN -> AiSettingsPane(model)
+                                screen == SETTINGS_SCREEN -> AiSettingsPane(controller, model)
                                 screen == AiTab.TARGETS.ordinal -> TargetsPane(controller, model)
                                 screen == AiTab.REQUESTS.ordinal -> RequestsPane(model, s)
                                 screen == AiTab.MODELS.ordinal -> ModelsPane()
@@ -1257,14 +1257,3 @@ internal fun Labeled(label: String, modifier: Modifier = Modifier, content: @Com
     )
 }
 
-/**
- * «Настройки AI» (D-112): журнал приложения — здесь, а не вкладкой. Настройка
- * из Targets (ключ, контур, копии, диск) переедет сюда пакетом аудита AI:A-3.
- */
-@Composable
-private fun AiSettingsPane(model: DemoModel) {
-    Column(Modifier.fillMaxSize()) {
-        Text("Журнал", Modifier.padding(start = 12.dp, top = 8.dp, bottom = 4.dp), style = MaterialTheme.typography.titleMedium)
-        Box(Modifier.weight(1f)) { LogPane(model) }
-    }
-}

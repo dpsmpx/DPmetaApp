@@ -294,9 +294,9 @@ object CloudSync {
     private fun defaultDevice(): String = Build.MODEL.replace(Regex("[^A-Za-z0-9_-]+"), "-").trim('-').take(40).ifEmpty { "phone" }
 }
 
-/** Карточка «Облачная копия» во вкладке Targets (D-107). */
+/** «Облачная копия» (D-107) — раздел «Копий и восстановления» в «Настройках AI» (AI:A-3). */
 @Composable
-internal fun CloudCard(model: DemoModel) {
+internal fun CloudCard(model: DemoModel, framed: Boolean = true) {
     val context = LocalContext.current.applicationContext
     val scope = rememberCoroutineScope()
     var editing by remember { mutableStateOf(false) }
@@ -321,7 +321,7 @@ internal fun CloudCard(model: DemoModel) {
         }
     }
 
-    Card(Modifier.fillMaxWidth()) {
+    Framed(framed) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("Облачная копия", style = MaterialTheme.typography.titleMedium)
             Text(

@@ -1,6 +1,8 @@
 package com.dpsmpx.dpai.android
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -32,6 +34,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.dpsmpx.dpai.core.result.Outcome
@@ -47,24 +51,28 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Targets приложения (D-35): ключ приложения для `authorized_keys`,
- * список, новый target с подтверждением отпечатка ключа хоста (T2) и
- * проверка агента. Всё сетевое — вне главного потока.
+ * Targets приложения (D-35): список targets первым (AI:A-3) — строка
+ * «Targets (N) · Терминалы (N) · Добавить», вход в «Linux в приложении» и
+ * карточки targets; новый target — с подтверждением отпечатка ключа хоста
+ * (T2). Настройка (ключ, контур, копии, `dpai`, диск) — в «Настройках AI».
+ * Всё сетевое — вне главного потока.
  */
 @Composable
 fun TargetsPane(controller: Controller, model: DemoModel) {
     val scope = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
     var targets by remember { mutableStateOf(controller.targets()) }
-    var publicKey by remember { mutableStateOf<String?>(null) }
     val checks = remember { mutableStateMapOf<String, List<CheckLine>>() }
     var form by remember { mutableStateOf(false) }
     var project by remember { mutableStateOf(controller.project()) }
     var projectFor by remember { mutableStateOf<TargetEntry?>(null) }
     var guide by rememberSaveable { mutableStateOf(false) }
+    var linux by rememberSaveable { mutableStateOf(false) }
     var removing by remember { mutableStateOf<TargetEntry?>(null) }
     var restoring by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf<TargetEntry?>(null) }
+    // Признак переустановки (AI:A-3): targets нет, а Termux есть — его агент и входы целы.
+    val reinstalled = remember(targets) { targets.isEmpty() && TermuxLauncher.installed(context) }
     renaming?.let { r ->
         RenameDialog(r) { name ->
             if (name == null) {
@@ -99,21 +107,41 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
         SetupPane(controller, model, close)
         return
     }
+    if (linux) {
+        val close = {
+            linux = false
+            targets = controller.targets()
+        }
+        androidx.activity.compose.BackHandler(onBack = close)
+        LinuxScreen(onBack = close)
+        return
+    }
 
     LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        item(key = "guide") {
-            Card(Modifier.fillMaxWidth()) {
-                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        if (targets.isEmpty()) "Ещё не настроено: Termux, агент, вход в Claude — по шагам" else "Termux, агент, ключ, вход, проект, dpai — по шагам",
-                        Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
-                    )
-                    Button(onClick = { guide = true }) { Text("Инструкция") }
+        item(key = "head") {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Targets (${targets.size})", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                // Открытые вкладки терминала живут, пока жив процесс (D-71): вернуться к ним.
+                val terminals = TerminalHub.count.intValue
+                if (terminals > 0) TextButton(onClick = { TerminalActivity.start(context, null) }) { Text("Терминалы ($terminals)") }
+                Button(onClick = { form = true }) { Text("Добавить") }
+            }
+        }
+        // Пустой список ведёт дальше (AI:A-17): по шагам или Linux без Termux.
+        if (targets.isEmpty()) {
+            item(key = "empty") {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Ещё не настроено: Termux, агент, вход в Claude — по шагам, или Linux в приложении без Termux.", style = MaterialTheme.typography.bodySmall)
+                        Row {
+                            Button(onClick = { guide = true }) { Text("Инструкция") }
+                            TextButton(onClick = { linux = true }) { Text("Linux в приложении") }
+                        }
+                    }
                 }
             }
         }
-        if (targets.any(TermuxLauncher::local)) item(key = "termux") { TermuxCard(targets.first(TermuxLauncher::local).port) }
-        if (restoring || targets.none(TermuxLauncher::local)) {
+        if (restoring || reinstalled) {
             item(key = "restore") {
                 // После восстановления карточка остаётся с отчётом, пока её не скроют.
                 RestoreCard(controller, onHide = { restoring = false }) {
@@ -123,154 +151,18 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
                 }
             }
         }
-        item(key = "backup") {
-            BackupCard(controller, onRestoreAccess = { restoring = true }) {
-                targets = controller.targets()
-                project = controller.project()
-            }
-        }
-        item(key = "cloud") { CloudCard(model) }
-        item {
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(12.dp)) {
-                    Text("Ключ приложения", style = MaterialTheme.typography.titleMedium)
-                    Text("Добавьте строку в ~/.ssh/authorized_keys на target.", style = MaterialTheme.typography.bodySmall)
-                    val key = publicKey
-                    if (key == null) {
-                        TextButton(onClick = { scope.launch { publicKey = withContext(Dispatchers.IO) { controller.publicKeyLine() } } }) {
-                            Text("Показать открытый ключ")
-                        }
-                    } else {
-                        SelectionContainer { Text(key, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall) }
-                    }
-                }
-            }
-        }
-        item {
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(12.dp)) {
-                    Text("Проект", style = MaterialTheme.typography.titleMedium)
-                    val p = project
-                    if (p == null) {
-                        Text("Нет: задачи идут в каталоге агента, без Git и проверки. Задайте у target с репозиторием.", style = MaterialTheme.typography.bodySmall)
-                    } else {
-                        val place = targets.firstOrNull { it.id == p.target }?.label ?: "target удалён"
-                        Text("$place: репозиторий ${p.root}; деревья ${p.worktreeRoot}; ветка ${p.integrationBranch}", style = MaterialTheme.typography.bodySmall)
-                        p.claude?.let { c ->
-                            val on = targets.firstOrNull { it.id == c.target }?.label ?: "target удалён"
-                            Text("Claude — на $on (вход его слота), дерево — по SSH ключом ${c.identityFile}", style = MaterialTheme.typography.bodySmall)
-                        }
-                        Text(p.checks.firstOrNull()?.let { "проверка: ${it.command.joinToString(" ")}" } ?: "без проверки", style = MaterialTheme.typography.bodySmall)
-                        // Окном (AI:A-4) и с проверкой итога (аудит удобства, A-18): поля проекта придётся вводить заново.
-                        var asking by remember { mutableStateOf(false) }
-                        var failed by remember { mutableStateOf<String?>(null) }
-                        TextButton(onClick = { asking = true }) { Text("Убрать проект…") }
-                        if (asking) {
-                            ConfirmDialog(
-                                "Убрать проект?",
-                                "Задачи пойдут без Git и проверки. Поля проекта — репозиторий, деревья, ветку, проверки — придётся вводить заново.",
-                                "Убрать",
-                                onConfirm = {
-                                    asking = false
-                                    scope.launch {
-                                        when (val r = withContext(Dispatchers.IO) { controller.setProject(null) }) {
-                                            is Outcome.Success -> project = null
-                                            is Outcome.Failure -> failed = "Не убран: ${r.errors.first().message}"
-                                        }
-                                    }
-                                },
-                                onDismiss = { asking = false },
-                            )
-                        }
-                        failed?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
-                    }
-                }
-            }
-        }
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Targets (${targets.size})", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                // Открытые вкладки терминала живут, пока жив процесс (D-71): вернуться к ним.
-                val terminals = TerminalHub.count.intValue
-                if (terminals > 0) TextButton(onClick = { TerminalActivity.start(context, null) }) { Text("Терминалы ($terminals)") }
-                Button(onClick = { form = true }) { Text("Добавить") }
-            }
-        }
-        item(key = "control") { ControlCard(model) }
-        item(key = "linux") { LinuxCard() }
-        item(key = "disk") { AppDiskCard() }
-        item(key = "cli") { CliCard() }
+        // Вход в среду (AI:A-3, терминал §4, п. 9): её экран — отдельно, здесь — одна строка.
+        if (targets.isNotEmpty()) item(key = "linux") { LinuxEntry { linux = true } }
         items(targets, key = { it.id.value }) { t ->
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(12.dp)) {
-                    Text(t.label, style = MaterialTheme.typography.titleSmall)
-                    if (t.configDir != null) TargetSwitches(model, t)
-                    Text(if (t.inApp) "Alpine в данных приложения, без SSH · ${Words.targetType(t.type.name)}" else "${t.user}@${t.host}:${t.port} · ${Words.targetType(t.type.name)}", style = MaterialTheme.typography.bodySmall)
-                    Text(t.configDir?.let { "${t.executor.title} · каталог слота: $it" } ?: "без каталога слота — только проверка агента", style = MaterialTheme.typography.bodySmall)
-                    // Чем занят слот (D-56): идущие задачи с проектом; нет — свободен.
-                    if (t.configDir != null) {
-                        UsageAutoSwitch(model, t)
-                        val busy = work[t.id].orEmpty()
-                        Text(if (busy.isEmpty()) "Сейчас: свободен" else "Сейчас: " + busy.joinToString("; "), style = MaterialTheme.typography.bodySmall)
-                    }
-                    Row {
-                        TextButton(onClick = {
-                            checks[t.id.value] = listOf(CheckLine("проверка", "идёт…", Tone.NEUTRAL))
-                            scope.launch {
-                                checks[t.id.value] = withContext(Dispatchers.IO) {
-                                    // «В приложении» — агентом процесса; Linux не установлен — причина, а не отказ SSH.
-                                    val inApp = if (t.inApp) com.dpsmpx.dpai.android.linux.LinuxSetup.agentHost(context, controller.version) else null
-                                    if (t.inApp && inApp == null) {
-                                        listOf(CheckLine("агент", "Linux в приложении не установлен — карточка «Linux в приложении»", Tone.WARNING))
-                                    } else {
-                                        TargetScreens.doctor(controller.doctor(t, inApp))
-                                    }
-                                }
-                            }
-                        }) { Text("Проверить связь") }
-                        if (t.configDir != null) {
-                            // Проба ждёт такта с SSH — секунды: отклик сразу, повтор не встаёт в очередь, итог — словами (A-6).
-                            val login = "вход ${t.executor.title}"
-                            val probing = checks[t.id.value]?.firstOrNull()?.name == login && checks[t.id.value]?.firstOrNull()?.detail == PROBING
-                            TextButton(enabled = !probing, onClick = {
-                                checks[t.id.value] = listOf(CheckLine(login, PROBING, Tone.NEUTRAL))
-                                scope.launch {
-                                    val slots = withContext(Dispatchers.IO) {
-                                        model.probe(t.id)
-                                        model.slotsOf(t.id)
-                                    }
-                                    checks[t.id.value] = slots.map { sl ->
-                                        val ok = sl.state == com.dpsmpx.dpai.core.state.AccountState.AVAILABLE || sl.state == com.dpsmpx.dpai.core.state.AccountState.BUSY
-                                        CheckLine(login, "слот ${sl.configDir.substringAfterLast('/')}: ${Words.account(sl.state.name)}", if (ok) Tone.DONE else Tone.WARNING)
-                                    }.ifEmpty {
-                                        val how = if (t.executor == com.dpsmpx.dpai.core.ids.Executor.CLAUDE) "«Claude в терминале» → /login" else "«Войти в ${t.executor.title}»"
-                                        listOf(CheckLine(login, "слота нет: войдите в каталоге слота ($how) и проверьте снова", Tone.WARNING))
-                                    }
-                                }
-                            // «Проверить вход» — проверяет, а не входит; входят «Войти в …» и терминал (AI:A-11, терминал:A-16).
-                            }) { Text(if (probing) "Проверяю…" else "Проверить вход") }
-                        }
-                        // Проект — у любого target: ход Claude может идти на другом, со своим входом (D-50).
-                        // Проект — и на target «в приложении»: Git и проверка — внутри гостя, пути — гостя (D-75, шаг 5).
-                        TextButton(onClick = { projectFor = t }) { Text("Проект") }
-                        TextButton(onClick = { renaming = t }) { Text("Имя") }
-                        TextButton(onClick = { removing = t }) { Text("Удалить") }
-                    }
-                    // Свой терминал (D-71): оболочка target или интерактивный claude слота (вход, /usage).
-                    Row {
-                        TextButton(onClick = { TerminalActivity.start(context, t.id.value) }) { Text("Терминал") }
-                        if (t.configDir != null && t.platform == com.dpsmpx.dpai.execution.target.TargetPlatform.POSIX) {
-                            TextButton(onClick = { TerminalActivity.start(context, t.id.value, claude = true) }) { Text("${t.executor.title} в терминале") }
-                            // Вход Codex и Gemini — своей командой (D-100): код устройства или ссылка без браузера здесь.
-                            if (t.executor != com.dpsmpx.dpai.core.ids.Executor.CLAUDE) {
-                                TextButton(onClick = { TerminalActivity.start(context, t.id.value, login = true) }) { Text("Войти в ${t.executor.title}") }
-                            }
-                        }
-                    }
-                    checks[t.id.value]?.forEach { c -> CheckRow(c) }
-                }
-            }
+            TargetCard(
+                t, model, controller, work[t.id].orEmpty(), checks[t.id.value],
+                onChecks = { checks[t.id.value] = it },
+                onProject = { projectFor = t },
+                onRename = { renaming = t },
+                onRemove = { removing = t },
+            )
         }
+        item(key = "project") { ProjectCard(controller, targets, project) { project = it } }
     }
 
     removing?.let { t ->
@@ -295,6 +187,205 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
             form = false
             targets = controller.targets()
         })
+    }
+}
+
+/**
+ * Карточка target (AI:A-3; терминал §4, п. 7, A-16): на виду — «Проверить» и
+ * «Терминал ▾» (оболочка, исполнитель в терминале, вход Codex или Gemini);
+ * в ⋮ — «Проверить вход», «Проект», «Имя», «Удалить». Переключатели, слоты,
+ * лимиты и Termux — в раскрытии «Настройки target ▸». Адрес и каталог —
+ * одной строкой.
+ */
+@Composable
+private fun TargetCard(
+    t: TargetEntry,
+    model: DemoModel,
+    controller: Controller,
+    busy: List<String>,
+    lines: List<CheckLine>?,
+    onChecks: (List<CheckLine>) -> Unit,
+    onProject: () -> Unit,
+    onRename: () -> Unit,
+    onRemove: () -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var settings by rememberSaveable(t.id.value) { mutableStateOf(false) }
+    var terminalMenu by remember { mutableStateOf(false) }
+    var more by remember { mutableStateOf(false) }
+    val posixSlot = t.configDir != null && t.platform == com.dpsmpx.dpai.execution.target.TargetPlatform.POSIX
+    // Проба ждёт такта с SSH — секунды: отклик сразу, повтор не встаёт в очередь, итог — словами (A-6).
+    val login = "вход ${t.executor.title}"
+    val probing = lines?.firstOrNull()?.name == login && lines.firstOrNull()?.detail == PROBING
+    fun check() {
+        onChecks(listOf(CheckLine("проверка", "идёт…", Tone.NEUTRAL)))
+        scope.launch {
+            onChecks(
+                withContext(Dispatchers.IO) {
+                    // «В приложении» — агентом процесса; Linux не установлен — причина, а не отказ SSH.
+                    val inApp = if (t.inApp) com.dpsmpx.dpai.android.linux.LinuxSetup.agentHost(context, controller.version) else null
+                    if (t.inApp && inApp == null) {
+                        listOf(CheckLine("агент", "Linux в приложении не установлен — «Linux в приложении» на этой вкладке", Tone.WARNING))
+                    } else {
+                        TargetScreens.doctor(controller.doctor(t, inApp))
+                    }
+                },
+            )
+        }
+    }
+    fun probe() {
+        onChecks(listOf(CheckLine(login, PROBING, Tone.NEUTRAL)))
+        scope.launch {
+            val slots = withContext(Dispatchers.IO) {
+                model.probe(t.id)
+                model.slotsOf(t.id)
+            }
+            onChecks(
+                slots.map { sl ->
+                    val ok = sl.state == com.dpsmpx.dpai.core.state.AccountState.AVAILABLE || sl.state == com.dpsmpx.dpai.core.state.AccountState.BUSY
+                    CheckLine(login, "слот ${sl.configDir.substringAfterLast('/')}: ${Words.account(sl.state.name)}", if (ok) Tone.DONE else Tone.WARNING)
+                }.ifEmpty {
+                    val how = if (t.executor == com.dpsmpx.dpai.core.ids.Executor.CLAUDE) "«Терминал ▾» → «Claude в терминале» → /login" else "«Терминал ▾» → «Войти в ${t.executor.title}»"
+                    listOf(CheckLine(login, "слота нет: войдите в каталоге слота ($how) и проверьте снова", Tone.WARNING))
+                },
+            )
+        }
+    }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp)) {
+            Text(t.label, style = MaterialTheme.typography.titleSmall)
+            val place = if (t.inApp) "Alpine в приложении" else "${t.user}@${t.host}:${t.port}"
+            val slot = t.configDir?.let { "${t.executor.title} · $it" } ?: "без слота — только проверка агента"
+            Text("$place · ${Words.targetType(t.type.name)} · $slot", style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            // Чем занят слот (D-56): идущие задачи с проектом; нет — свободен.
+            if (t.configDir != null) Text(if (busy.isEmpty()) "Сейчас: свободен" else "Сейчас: " + busy.joinToString("; "), style = MaterialTheme.typography.bodySmall)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = ::check) { Text("Проверить") }
+                // Свой терминал (D-71): оболочка target или интерактивный исполнитель слота (вход, /usage).
+                Box {
+                    TextButton(onClick = { if (posixSlot) terminalMenu = true else TerminalActivity.start(context, t.id.value) }) { Text(if (posixSlot) "Терминал ▾" else "Терминал") }
+                    androidx.compose.material3.DropdownMenu(expanded = terminalMenu, onDismissRequest = { terminalMenu = false }) {
+                        androidx.compose.material3.DropdownMenuItem(text = { Text("Оболочка") }, onClick = { terminalMenu = false; TerminalActivity.start(context, t.id.value) })
+                        androidx.compose.material3.DropdownMenuItem(text = { Text("${t.executor.title} в терминале") }, onClick = { terminalMenu = false; TerminalActivity.start(context, t.id.value, claude = true) })
+                        // Вход Codex и Gemini — своей командой (D-100): код устройства или ссылка без браузера здесь.
+                        if (t.executor != com.dpsmpx.dpai.core.ids.Executor.CLAUDE) {
+                            androidx.compose.material3.DropdownMenuItem(text = { Text("Войти в ${t.executor.title}") }, onClick = { terminalMenu = false; TerminalActivity.start(context, t.id.value, login = true) })
+                        }
+                    }
+                }
+                androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+                Box {
+                    androidx.compose.material3.IconButton(onClick = { more = true }, modifier = Modifier.semantics { contentDescription = "Ещё действия: ${t.label}" }) { Text("⋮", style = MaterialTheme.typography.titleMedium) }
+                    androidx.compose.material3.DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
+                        // «Проверить вход» — проверяет, а не входит; входят «Терминал ▾» (AI:A-11, терминал:A-16).
+                        if (t.configDir != null) {
+                            androidx.compose.material3.DropdownMenuItem(enabled = !probing, text = { Text(if (probing) "Проверяю вход…" else "Проверить вход") }, onClick = { more = false; probe() })
+                        }
+                        // Проект — у любого target: ход Claude может идти на другом, со своим входом (D-50); и «в приложении» (D-75, шаг 5).
+                        androidx.compose.material3.DropdownMenuItem(text = { Text("Проект…") }, onClick = { more = false; onProject() })
+                        androidx.compose.material3.DropdownMenuItem(text = { Text("Имя…") }, onClick = { more = false; onRename() })
+                        androidx.compose.material3.DropdownMenuItem(text = { Text("Удалить…", color = MaterialTheme.colorScheme.error) }, onClick = { more = false; onRemove() })
+                    }
+                }
+            }
+            lines?.forEach { c -> CheckRow(c) }
+            val local = TermuxLauncher.local(t)
+            if (t.configDir != null || local) {
+                Text(
+                    if (settings) "Настройки target ▾" else "Настройки target ▸",
+                    Modifier.fillMaxWidth().clickable { settings = !settings }.padding(vertical = 8.dp),
+                    style = MaterialTheme.typography.labelLarge,
+                )
+                if (settings) {
+                    if (t.configDir != null) {
+                        TargetSwitches(model, t)
+                        UsageAutoSwitch(model, t)
+                    }
+                    // Termux на этом телефоне (D-46) — у его target, а не отдельной карточкой (AI:A-3).
+                    if (local) TermuxCard(t.port, framed = false)
+                }
+            }
+        }
+    }
+}
+
+/** Строка входа в «Linux в приложении» (AI:A-3): среда — своим экраном. */
+@Composable
+private fun LinuxEntry(onOpen: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current.applicationContext
+    val installed = remember { com.dpsmpx.dpai.android.linux.LinuxSetup.environment(context).installed() }
+    Card(Modifier.fillMaxWidth().clickable(onClick = onOpen)) {
+        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Linux в приложении", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+            Text((if (installed != null) "установлен" else "не установлен") + " ▸", style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+/** Проект контура (D-50): где репозиторий, кто ходит, какая проверка; убрать — окном (AI:A-4). */
+@Composable
+private fun ProjectCard(controller: Controller, targets: List<TargetEntry>, project: ProjectEntry?, onChanged: (ProjectEntry?) -> Unit) {
+    val scope = rememberCoroutineScope()
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp)) {
+            Text("Проект", style = MaterialTheme.typography.titleMedium)
+            val p = project
+            if (p == null) {
+                Text("Нет: задачи идут в каталоге агента, без Git и проверки. Задайте у target с репозиторием: ⋮ → «Проект…».", style = MaterialTheme.typography.bodySmall)
+            } else {
+                val place = targets.firstOrNull { it.id == p.target }?.label ?: "target удалён"
+                Text("$place: репозиторий ${p.root}; деревья ${p.worktreeRoot}; ветка ${p.integrationBranch}", style = MaterialTheme.typography.bodySmall)
+                p.claude?.let { c ->
+                    val on = targets.firstOrNull { it.id == c.target }?.label ?: "target удалён"
+                    Text("Claude — на $on (вход его слота), дерево — по SSH ключом ${c.identityFile}", style = MaterialTheme.typography.bodySmall)
+                }
+                Text(p.checks.firstOrNull()?.let { "проверка: ${it.command.joinToString(" ")}" } ?: "без проверки", style = MaterialTheme.typography.bodySmall)
+                // Окном (AI:A-4) и с проверкой итога (аудит удобства, A-18): поля проекта придётся вводить заново.
+                var asking by remember { mutableStateOf(false) }
+                var failed by remember { mutableStateOf<String?>(null) }
+                TextButton(onClick = { asking = true }) { Text("Убрать проект…") }
+                if (asking) {
+                    ConfirmDialog(
+                        "Убрать проект?",
+                        "Задачи пойдут без Git и проверки. Поля проекта — репозиторий, деревья, ветку, проверки — придётся вводить заново.",
+                        "Убрать",
+                        onConfirm = {
+                            asking = false
+                            scope.launch {
+                                when (val r = withContext(Dispatchers.IO) { controller.setProject(null) }) {
+                                    is Outcome.Success -> onChanged(null)
+                                    is Outcome.Failure -> failed = "Не убран: ${r.errors.first().message}"
+                                }
+                            }
+                        },
+                        onDismiss = { asking = false },
+                    )
+                }
+                failed?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
+            }
+        }
+    }
+}
+
+/** Ключ приложения для `~/.ssh/authorized_keys` на target (D-35). */
+@Composable
+internal fun AppKeyCard(controller: Controller) {
+    val scope = rememberCoroutineScope()
+    var publicKey by remember { mutableStateOf<String?>(null) }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp)) {
+            Text("Ключ приложения", style = MaterialTheme.typography.titleMedium)
+            Text("Добавьте строку в ~/.ssh/authorized_keys на target.", style = MaterialTheme.typography.bodySmall)
+            val key = publicKey
+            if (key == null) {
+                TextButton(onClick = { scope.launch { publicKey = withContext(Dispatchers.IO) { controller.publicKeyLine() } } }) {
+                    Text("Показать открытый ключ")
+                }
+            } else {
+                SelectionContainer { Text(key, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall) }
+            }
+        }
     }
 }
 
@@ -481,7 +572,7 @@ private fun ProjectDialog(controller: Controller, target: TargetEntry, withClaud
  * запускает его и сама, если порт закрыт.
  */
 @Composable
-private fun TermuxCard(port: Int) {
+internal fun TermuxCard(port: Int, framed: Boolean = true) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
     var permitted by remember { mutableStateOf(TermuxLauncher.permitted(context)) }
@@ -502,9 +593,9 @@ private fun TermuxCard(port: Int) {
             kotlinx.coroutines.delay(3000)
         }
     }
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(12.dp)) {
-            Text("Termux на этом телефоне", style = MaterialTheme.typography.titleMedium)
+    Framed(framed) {
+        Column(if (framed) Modifier.padding(12.dp) else Modifier) {
+            Text("Termux на этом телефоне", style = MaterialTheme.typography.titleSmall)
             Text(
                 "sshd на порту $port: " + when (listening) {
                     true -> "слушает"
@@ -549,7 +640,7 @@ private fun TermuxCard(port: Int) {
  */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun ControlCard(model: DemoModel) {
+internal fun ControlCard(model: DemoModel) {
     val scope = rememberCoroutineScope()
     var limit by remember { mutableStateOf(model.control()?.maxSessions) }
     var live by remember { mutableStateOf(model.control() != null) }
@@ -641,7 +732,7 @@ private fun TargetSwitches(model: DemoModel, t: TargetEntry) {
  * сопряжения — здесь, на две минуты.
  */
 @Composable
-private fun CliCard() {
+internal fun CliCard() {
     val context = androidx.compose.ui.platform.LocalContext.current.applicationContext
     var code by remember { mutableStateOf<String?>(null) }
     var until by remember { mutableStateOf<Long?>(null) }
@@ -750,7 +841,7 @@ private fun RemoveDialog(t: TargetEntry, model: DemoModel, onCancel: () -> Unit,
  * строку надо снова добавить в authorized_keys targets.
  */
 @Composable
-private fun BackupCard(controller: Controller, onRestoreAccess: () -> Unit, onRestored: () -> Unit) {
+internal fun BackupCard(controller: Controller, framed: Boolean = true, onRestoreAccess: () -> Unit, onRestored: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current.applicationContext
     val scope = rememberCoroutineScope()
     var last by remember { mutableStateOf(SettingsBackups.last(context)) }
@@ -771,7 +862,7 @@ private fun BackupCard(controller: Controller, onRestoreAccess: () -> Unit, onRe
             }
         }
     }
-    Card(Modifier.fillMaxWidth()) {
+    Framed(framed) {
         Column(Modifier.padding(12.dp)) {
             Text("Копия настроек", style = MaterialTheme.typography.titleMedium)
             Text(
@@ -807,7 +898,7 @@ private fun BackupCard(controller: Controller, onRestoreAccess: () -> Unit, onRe
  * команды карточка сама ждёт возвращения из Termux и пробует каждые 5 с.
  */
 @Composable
-private fun RestoreCard(controller: Controller, onHide: () -> Unit, onRestored: () -> Unit) {
+internal fun RestoreCard(controller: Controller, framed: Boolean = true, onHide: () -> Unit, onRestored: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current.applicationContext
     val scope = rememberCoroutineScope()
     val nonce = remember { SettingsBackups.restoreNonce(context) }
@@ -829,7 +920,7 @@ private fun RestoreCard(controller: Controller, onHide: () -> Unit, onRestored: 
             is Outcome.Success -> {
                 SettingsBackups.clearRestoreNonce(context)
                 report = r.value
-                message = "Готово. Проверьте targets кнопкой «Проверить связь»; вход — «Проверить вход»."
+                message = "Готово. Проверьте targets кнопкой «Проверить»; вход — ⋮ → «Проверить вход»."
                 onRestored()
                 true
             }
@@ -848,7 +939,7 @@ private fun RestoreCard(controller: Controller, onHide: () -> Unit, onRestored: 
         }
         waiting = false
     }
-    Card(Modifier.fillMaxWidth()) {
+    Framed(framed) {
         Column(Modifier.padding(12.dp)) {
             Text("Восстановление после переустановки", style = MaterialTheme.typography.titleMedium)
             Text(
