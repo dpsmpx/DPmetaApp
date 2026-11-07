@@ -200,8 +200,27 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         gravity = Gravity.CENTER
         setPadding(dp(12), dp(8), dp(12), dp(8))
         minWidth = dp(40)
+        // Цель касания — 48 dp (терминал:A-12): строка 15 sp с отступами давала около 36 dp.
+        minHeight = dp(48)
         isClickable = true
         setOnClickListener { onClick() }
+    }
+
+    /** Названия знаков ряда для TalkBack (терминал:A-12): «стрелка влево» вместо глифа, «Escape» вместо «ESC». */
+    private fun spoken(label: String): String = when (label) {
+        "←" -> "Влево"
+        "→" -> "Вправо"
+        "↑" -> "Вверх"
+        "↓" -> "Вниз"
+        "ESC" -> "Escape"
+        "TAB" -> "Tab"
+        "PGUP" -> "Page Up"
+        "PGDN" -> "Page Down"
+        "HOME" -> "Home"
+        "END" -> "End"
+        "~" -> "тильда"
+        "|" -> "вертикальная черта"
+        else -> label
     }
 
     /**
@@ -217,7 +236,7 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
             setSpan(android.text.style.RelativeSizeSpan(0.55f), 0, secondary.length, 0)
             setSpan(android.text.style.ForegroundColorSpan(Color.GRAY), 0, secondary.length, 0)
         }
-        contentDescription = "$primary; смахнуть вверх — $secondary"
+        contentDescription = "${spoken(primary)}; смахнуть вверх — ${spoken(secondary)}"
         var downY = 0f
         var swiped = false
         var repeated = false
@@ -324,8 +343,9 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         // Ряд клавиш (терминал:A-3, §4, п. 1): девять клавиш видны целиком, без прокрутки; смахивание вверх по
         // клавише — второй знак (ESC ~, TAB |, ← HOME, ↓ PGDN, ↑ PGUP, → END); «⋯» — остальное.
         val keys = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        ctrlKey = chip("CTRL") { ctrl = !ctrl; markMods() }
-        altKey = chip("ALT") { alt = !alt; markMods() }
+        ctrlKey = chip("CTRL") { ctrl = !ctrl; markMods() }.apply { contentDescription = "Control" }
+        altKey = chip("ALT") { alt = !alt; markMods() }.apply { contentDescription = "Alt" }
+        markMods()
         val row = listOf(
             key("ESC", "~", onUp = { view.input("~") }) { view.key(Key.ESCAPE) },
             ctrlKey,
@@ -373,6 +393,11 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
     private fun markMods() {
         ctrlKey.setTextColor(if (ctrl) ACTIVE else Color.LTGRAY)
         altKey.setTextColor(if (alt) ACTIVE else Color.LTGRAY)
+        // Залипание — не только цветом (терминал:A-12): подчёркнуто и сказано TalkBack.
+        for ((v, on) in listOf(ctrlKey to ctrl, altKey to alt)) {
+            v.paintFlags = if (on) v.paintFlags or android.graphics.Paint.UNDERLINE_TEXT_FLAG else v.paintFlags and android.graphics.Paint.UNDERLINE_TEXT_FLAG.inv()
+            v.stateDescription = if (on) "включён" else "выключен"
+        }
     }
 
     private fun paste() {
@@ -430,12 +455,17 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         val current = TerminalHub.current
         for (t in TerminalHub.tabs) {
             val name = t.label + (t.title.takeIf { it.isNotBlank() }?.let { " · ${it.take(24)}" } ?: "")
-            tabsRow.addView(chip(name) { show(t) }.apply { setTextColor(if (t === current) Color.WHITE else Color.GRAY) })
+            // Текущая вкладка — и подчёркиванием, и для TalkBack, а не только цветом (терминал:A-12).
+            tabsRow.addView(chip(name) { show(t) }.apply {
+                setTextColor(if (t === current) Color.WHITE else Color.GRAY)
+                if (t === current) paintFlags = paintFlags or android.graphics.Paint.UNDERLINE_TEXT_FLAG
+                stateDescription = if (t === current) "выбрана" else null
+            })
         }
         current?.let { c ->
             tabsRow.addView(chip("+") {
                 show(TerminalHub.openLike(this, c))
-            })
+            }.apply { contentDescription = "Новая вкладка" })
             tabsRow.addView(chip("×") {
                 fun closeTab() {
                     TerminalHub.close(c)
@@ -455,7 +485,7 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
                     dialog.window?.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
                     dialog.show()
                 }
-            })
+            }.apply { contentDescription = "Закрыть вкладку «${c.label}»" })
         }
         // Внешняя клавиатура — ряд клавиш скрыт, «⋯» — в ряду вкладок (терминал:A-3, §4, п. 2).
         if (hardKeyboard()) tabsRow.addView(moreChip())

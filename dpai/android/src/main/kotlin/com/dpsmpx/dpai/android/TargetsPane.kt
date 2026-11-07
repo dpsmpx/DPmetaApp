@@ -699,20 +699,17 @@ private fun TargetSwitches(model: DemoModel, t: TargetEntry) {
     }
     val on = enabled ?: return
     val wantTarget = remember(tick, on) { model.desired(com.dpsmpx.dpai.orchestrator.commands.Command.SetTargetEnabled(t.id, on)) as? com.dpsmpx.dpai.orchestrator.commands.Command.SetTargetEnabled }
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    SwitchRow(wantTarget?.enabled ?: on, onChange = { v ->
+        scope.launch {
+            withContext(Dispatchers.IO) { model.command(com.dpsmpx.dpai.orchestrator.commands.Command.SetTargetEnabled(t.id, v)) }
+            tick++
+        }
+    }) {
         Text("Принимает новые задачи" + if (wantTarget != null) " · применится" else "", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-        androidx.compose.material3.Switch(checked = wantTarget?.enabled ?: on, onCheckedChange = { v ->
-            scope.launch {
-                withContext(Dispatchers.IO) { model.command(com.dpsmpx.dpai.orchestrator.commands.Command.SetTargetEnabled(t.id, v)) }
-                tick++
-            }
-        })
     }
     for (slot in slots) {
         val want = remember(tick, slot) { model.desired(com.dpsmpx.dpai.orchestrator.commands.Command.SetSlotEnabled(slot.id, !slot.disabled)) as? com.dpsmpx.dpai.orchestrator.commands.Command.SetSlotEnabled }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("слот ${slot.configDir.substringAfterLast('/')} · ${Words.account(slot.state.name)}" + if (want != null) " · применится" else "", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-            androidx.compose.material3.Switch(checked = want?.enabled ?: !slot.disabled, onCheckedChange = { v ->
+        SwitchRow(want?.enabled ?: !slot.disabled, onChange = { v ->
                 scope.launch {
                     withContext(Dispatchers.IO) {
                         model.command(com.dpsmpx.dpai.orchestrator.commands.Command.SetSlotEnabled(slot.id, v))
@@ -722,7 +719,8 @@ private fun TargetSwitches(model: DemoModel, t: TargetEntry) {
                     tick++
                     slots = withContext(Dispatchers.IO) { model.slotsOf(t.id) }
                 }
-            })
+        }) {
+            Text("слот ${slot.configDir.substringAfterLast('/')} · ${Words.account(slot.state.name)}" + if (want != null) " · применится" else "", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
         }
         model.refusal(com.dpsmpx.dpai.orchestrator.commands.Command.SetSlotEnabled(slot.id, true))?.let { Text("Не применено: $it", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall) }
     }
@@ -986,13 +984,12 @@ private fun UsageAutoSwitch(model: DemoModel, t: TargetEntry) {
     val context = androidx.compose.ui.platform.LocalContext.current.applicationContext
     val scope = rememberCoroutineScope()
     var on by remember { mutableStateOf(t.id in UsageAuto.enabled(context)) }
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    SwitchRow(on, onChange = { v ->
+        on = v
+        UsageAuto.set(context, t.id, v)
+        if (v) scope.launch { withContext(Dispatchers.IO) { model.refreshUsage(setOf(t.id)) } }
+    }) {
         Text("Лимиты: обновлять раз в минуту", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-        androidx.compose.material3.Switch(checked = on, onCheckedChange = { v ->
-            on = v
-            UsageAuto.set(context, t.id, v)
-            if (v) scope.launch { withContext(Dispatchers.IO) { model.refreshUsage(setOf(t.id)) } }
-        })
     }
 }
 

@@ -73,6 +73,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.font.FontFamily
@@ -548,7 +550,7 @@ private fun CardList(c: Screens.Card, panel: Outcome<Panel>?, loader: Loader, on
     LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         item {
             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                TextButton(onClick = onBack) { Text("← Назад") }
+                TextButton(onClick = onBack, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("← Назад") }
                 androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
                 TextButton(onClick = { open(Nav.Stats(c.name)) }) { Text("Графики ▸") }
             }
@@ -627,7 +629,7 @@ private fun FeedScreen(events: List<FeedEvent>, projects: List<String>, onBack: 
     var kind by rememberSaveable { mutableStateOf<String?>(null) }
     val rows = Screens.feed(events, project, kind)
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        TextButton(onClick = onBack) { Text("← Назад") }
+        TextButton(onClick = onBack, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("← Назад") }
         Text("Лента", style = MaterialTheme.typography.titleMedium)
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             FilterChip(selected = kind == null, onClick = { kind = null }, label = { Text("все виды") })
@@ -654,15 +656,19 @@ private fun DirScreen(nav: Nav.Dir, loader: Loader, onBack: () -> Unit, open: (N
     var result by remember(nav) { mutableStateOf<Outcome<List<GitHub.Entry>>?>(null) }
     LaunchedEffect(nav) { loader.directory(nav.project, nav.path) { result = it } }
     LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        item { TextButton(onClick = onBack) { Text("← Назад") } }
+        item { TextButton(onClick = onBack, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("← Назад") } }
         item { Text("${nav.project}: /${nav.path}", style = MaterialTheme.typography.titleMedium) }
         when (val r = result) {
             null -> item { Text("Загрузка…") }
             is Outcome.Failure -> item { FailureText("Не загрузилось", Screens.failure(r.diagnostics.first())) }
             is Outcome.Success -> items(r.value) { e ->
+                // Строка — 48 dp, папка — словом для TalkBack, а не названием знака (UX-15).
                 Text(
                     (if (e.dir) "📁 " else "") + e.name,
-                    Modifier.fillMaxWidth().clickable { open(if (e.dir) Nav.Dir(nav.project, e.path) else Nav.Doc(nav.project, e.path, null)) }.padding(vertical = 6.dp),
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                        .clickable(onClickLabel = if (e.dir) "открыть папку" else "открыть файл") { open(if (e.dir) Nav.Dir(nav.project, e.path) else Nav.Doc(nav.project, e.path, null)) }
+                        .semantics { contentDescription = (if (e.dir) "папка " else "файл ") + e.name }
+                        .padding(vertical = 12.dp),
                 )
             }
         }
@@ -715,7 +721,7 @@ private fun DocScreen(nav: Nav.Doc, names: Map<String, String>, loader: Loader, 
     LaunchedEffect(hit) { hit?.let { list.animateScrollToItem(it) } }
     Column {
         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-            TextButton(onClick = onBack) { Text("← Назад") }
+            TextButton(onClick = onBack, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("← Назад") }
             androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
             TextButton(onClick = { searching = !searching }) { Text(if (searching) "Скрыть поиск" else "Найти") }
         }
@@ -800,7 +806,8 @@ private fun Questions(q: List<Screens.Question>, open: (Nav) -> Unit) = LazyColu
 }
 
 @Composable
-private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -> Unit, onForget: () -> Unit, onClones: () -> Unit) = Column(verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+// Листается (UX-15): при шрифте 200 % и в альбомной ориентации «Клоны…» не уходят за край.
+private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -> Unit, onForget: () -> Unit, onClones: () -> Unit) = Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
     var token by remember { mutableStateOf("") }
     // Пока токен сохранён — одна строка, поле — по «Заменить» (UX-12): пустое поле при сохранённом токене путало.
     var replacing by rememberSaveable { mutableStateOf(false) }

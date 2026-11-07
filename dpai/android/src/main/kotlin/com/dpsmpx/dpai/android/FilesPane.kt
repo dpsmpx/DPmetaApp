@@ -39,6 +39,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
@@ -167,7 +169,11 @@ fun FilesPane(onLinux: () -> Unit = {}) {
     val linux = LinuxSetup.available(context) && LinuxSetup.environment(context).installed() != null
     LazyColumn(contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            SwitchRow(wanted && granted, onChange = { on ->
+                AllFiles.set(context, on)
+                wanted = on
+                if (on && !granted) context.startActivity(AllFiles.settingsIntent(context))
+            }) {
                 Column(Modifier.weight(1f)) {
                     Text("Доступ ко всем файлам", style = MaterialTheme.typography.titleSmall)
                     Text(
@@ -180,11 +186,6 @@ fun FilesPane(onLinux: () -> Unit = {}) {
                         color = if (wanted && !granted) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Switch(checked = wanted && granted, onCheckedChange = { on ->
-                    AllFiles.set(context, on)
-                    wanted = on
-                    if (on && !granted) context.startActivity(AllFiles.settingsIntent(context))
-                })
             }
         }
         item {
@@ -387,7 +388,7 @@ private fun Browser(p: Place, onPlace: (Place) -> Unit, onClose: () -> Unit) {
     }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = { if (p.dir.isEmpty()) onClose() else onPlace(p.copy(dir = FileNames.parent(p.dir))) }) { Text("←") }
+            TextButton(onClick = { if (p.dir.isEmpty()) onClose() else onPlace(p.copy(dir = FileNames.parent(p.dir))) }, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("←") }
             Text(p.title, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             p.guestDir?.let { g -> TextButton(onClick = { TerminalActivity.startLinux(context, g) }) { Text("В терминале") } }
         }
@@ -498,7 +499,7 @@ private fun FileView(p: Place, path: String, onClose: () -> Unit) {
     }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = leave) { Text("←") }
+            TextButton(onClick = leave, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("←") }
             Text(FileNames.name(path), Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val t = text
             if (t != null && editing == null) TextButton(onClick = { editing = t }) { Text("Править") }

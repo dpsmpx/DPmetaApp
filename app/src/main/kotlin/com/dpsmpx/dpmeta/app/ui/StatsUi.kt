@@ -32,6 +32,10 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -158,9 +162,13 @@ fun SummaryTiles(tiles: List<Screens.Tile>, history: Map<String, Stats.Tile>, on
                 for (t in row) {
                     val h = t.metric?.let(history::get)
                     val change = h?.change.orEmpty()
+                    // Одно описание на плитку (UX-15): дочерние тексты не читаются второй раз.
                     Card(
-                        onClick = { onOpen(t.goes) },
-                        modifier = Modifier.weight(1f).semantics { contentDescription = "${t.title}: ${t.value}${if (change.isEmpty()) "" else ", $change"}; открыть «${t.goes.title}»" },
+                        modifier = Modifier.weight(1f).clearAndSetSemantics {
+                            contentDescription = "${t.title}: ${t.value}${if (change.isEmpty()) "" else ", $change"}"
+                            role = androidx.compose.ui.semantics.Role.Button
+                            onClick(label = "открыть «${t.goes.title}»") { onOpen(t.goes); true }
+                        }.clickable { onOpen(t.goes) },
                     ) {
                         Column(Modifier.padding(8.dp)) {
                             Text(t.title, style = MaterialTheme.typography.labelSmall)
@@ -201,7 +209,7 @@ fun StatsScreen(
         Stats.chart(history, metric, period, subject?.let(::listOf) ?: projects, now)
     }
     LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        onBack?.let { b -> item { TextButton(onClick = b) { Text("← Назад") } } }
+        onBack?.let { b -> item { TextButton(onClick = b, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("← Назад") } } }
         item { Text("Статистика", style = MaterialTheme.typography.titleMedium) }
         item {
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {

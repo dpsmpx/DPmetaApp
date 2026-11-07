@@ -193,12 +193,11 @@ fun AppDiskCard() {
     }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            SwitchRow(open, onChange = { v ->
+                com.dpsmpx.dpai.ui.AppDisk.setOpen(context, v)
+                open = com.dpsmpx.dpai.ui.AppDisk.isOpen(context)
+            }) {
                 Text("Диск приложения", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                androidx.compose.material3.Switch(checked = open, onCheckedChange = { v ->
-                    com.dpsmpx.dpai.ui.AppDisk.setOpen(context, v)
-                    open = com.dpsmpx.dpai.ui.AppDisk.isOpen(context)
-                })
             }
             Text(
                 if (open) {

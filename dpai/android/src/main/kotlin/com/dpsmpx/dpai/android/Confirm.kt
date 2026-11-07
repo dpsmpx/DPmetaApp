@@ -12,6 +12,13 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Row
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -90,4 +97,20 @@ internal fun Undo?.tell(text: String, line: (String?) -> Unit) {
 @Composable
 internal fun Framed(framed: Boolean, content: @Composable () -> Unit) {
     if (framed) androidx.compose.material3.Card(Modifier.fillMaxWidth()) { content() } else content()
+}
+
+/**
+ * Строка «подпись + переключатель» — одна цель касания (AI:A-5): вся
+ * строка переключает, TalkBack читает «выключатель», подпись и состояние;
+ * высота — не меньше 48 dp, при крупном шрифте растёт.
+ */
+@Composable
+internal fun SwitchRow(checked: Boolean, onChange: (Boolean) -> Unit, label: @Composable RowScope.() -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(value = checked, role = Role.Switch, onValueChange = onChange),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        label()
+        androidx.compose.material3.Switch(checked = checked, onCheckedChange = null)
+    }
 }

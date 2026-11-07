@@ -64,6 +64,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.graphics.graphicsLayer
@@ -279,21 +280,21 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                 // Узкая строка (D-61): больше места чату; в окне сессии — кружок состояния и имя (нажатие — переименовать).
                 androidx.compose.material3.Surface(tonalElevation = 3.dp) {
                     Row(
-                        Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).height(48.dp).padding(horizontal = 4.dp),
+                        Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).heightIn(min = 48.dp).padding(horizontal = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         if (selectedId != null) {
-                            TextButton(onClick = { selectedId = null }) { Text("←") }
+                            TextButton(onClick = { selectedId = null }, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("←") }
                             sessionScreen?.let { sc -> StatusDot(sc.status) }
                             Text(
                                 sessionScreen?.let { sc -> SessionNames.name(context, sc.task) ?: sc.title } ?: "Сессия",
                                 Modifier.weight(1f).padding(start = 8.dp).clickable(enabled = sessionScreen?.task != null) { renaming = true },
                                 style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
                             )
-                            sessionScreen?.task?.let { t -> TextButton(onClick = { taskSheet = t }) { Text("⚙", style = MaterialTheme.typography.titleMedium) } }
+                            sessionScreen?.task?.let { t -> TextButton(onClick = { taskSheet = t }, modifier = Modifier.semantics { contentDescription = "Лист задачи" }) { Text("⚙", style = MaterialTheme.typography.titleMedium) } }
                             TextButton(onClick = { sessionEvents = !sessionEvents }) { Text(if (sessionEvents) "Чат" else "События") }
                         } else if (settings) {
-                            TextButton(onClick = { settings = false }) { Text("←") }
+                            TextButton(onClick = { settings = false }, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("←") }
                             Text(AI_SETTINGS_TITLE, Modifier.weight(1f).padding(start = 8.dp), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         } else {
                             // Путь к пульту виден (DPmetaApp:D-73, UX-1): «AI» стоит над ним, «←» — просто закрыть окно «AI».
@@ -671,7 +672,7 @@ private fun WorkingLine(duration: String?) {
         animationSpec = androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(2400, easing = androidx.compose.animation.core.LinearEasing)),
         label = "angle",
     )
-    Row(Modifier.fillMaxWidth().height(20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         CircularProgressIndicator(
             progress = { 0.3f }, modifier = Modifier.size(12.dp).graphicsLayer { rotationZ = angle }, strokeWidth = 2.dp,
         )
@@ -698,7 +699,14 @@ private fun StatusDot(status: com.dpsmpx.dpai.ui.SessionStatus) {
         label = "scale",
     )
     val k = if (status == com.dpsmpx.dpai.ui.SessionStatus.RUNNING) scale else 1f
-    Box(Modifier.size(14.dp), contentAlignment = Alignment.Center) {
+    // Состояние — и словом для TalkBack, а не только цветом (AI:A-5).
+    val word = when (status) {
+        com.dpsmpx.dpai.ui.SessionStatus.RUNNING -> "идёт"
+        com.dpsmpx.dpai.ui.SessionStatus.DONE -> "готово"
+        com.dpsmpx.dpai.ui.SessionStatus.ERROR -> "ошибка"
+        com.dpsmpx.dpai.ui.SessionStatus.IDLE -> "ждёт"
+    }
+    Box(Modifier.size(14.dp).semantics { stateDescription = word }, contentAlignment = Alignment.Center) {
         Box(Modifier.size(12.dp * k).background(base.copy(alpha = if (status == com.dpsmpx.dpai.ui.SessionStatus.RUNNING) 0.5f + 0.5f * k else 1f), androidx.compose.foundation.shape.CircleShape))
     }
 }
@@ -829,10 +837,10 @@ private fun ChatInput(screen: SessionScreen, model: DemoModel, maxHeight: androi
             )
             if (!typing) {
                 when {
-                    running -> androidx.compose.material3.FilledTonalIconButton(enabled = !busy, onClick = { confirmStop = true }) { Text("■") }
+                    running -> androidx.compose.material3.FilledTonalIconButton(enabled = !busy, onClick = { confirmStop = true }, modifier = Modifier.semantics { contentDescription = "Остановить ход" }) { Text("■") }
                     fresh -> androidx.compose.material3.FilledTonalIconButton(enabled = !busy, onClick = {
                         send({ k -> com.dpsmpx.dpai.orchestrator.commands.Command.SendToSession(screen.session, null, modelName.ifEmpty { null }, effort.ifEmpty { null }, fresh = true, key = k) })
-                    }) { Text("↻") }
+                    }, modifier = Modifier.semantics { contentDescription = "Свежая сессия" }) { Text("↻") }
                 }
             }
         }
@@ -1239,9 +1247,8 @@ private fun LimitsCard(l: com.dpsmpx.dpai.ui.SubscriptionLimits, model: DemoMode
                 }
             }
             // Передача задач при пределе (D-56): подписка берёт задачи других подписок, упёршихся в 5 ч или неделю.
-            if (setting) Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Брать задачи подписок у предела (с handoff)" + if (wantRotation != null) " · применится" else "", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall)
-                androidx.compose.material3.Switch(checked = wantRotation?.allowed ?: l.rotation, onCheckedChange = { on ->
+            if (setting) {
+                SwitchRow(wantRotation?.allowed ?: l.rotation, onChange = { on ->
                     scope.launch {
                         status = when (val r = withContext(Dispatchers.IO) { model.command(com.dpsmpx.dpai.orchestrator.commands.Command.SetRotation(l.subscription, on)) }) {
                             is Outcome.Success -> null
@@ -1249,7 +1256,9 @@ private fun LimitsCard(l: com.dpsmpx.dpai.ui.SubscriptionLimits, model: DemoMode
                         }
                         tick++
                     }
-                })
+                }) {
+                    Text("Брать задачи подписок у предела (с handoff)" + if (wantRotation != null) " · применится" else "", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall)
+                }
             }
             status?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall) }
         }

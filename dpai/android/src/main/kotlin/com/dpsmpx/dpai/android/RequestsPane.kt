@@ -73,12 +73,11 @@ internal fun OverlayCard() {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("Окно поверх приложений", fontWeight = FontWeight.Bold)
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            SwitchRow(overlayOn, onChange = {
+                overlayOn = it
+                RequestOverlay.setEnabled(context, it)
+            }) {
                 Text("Показывать запросы окном", Modifier.weight(1f))
-                Switch(checked = overlayOn, onCheckedChange = {
-                    overlayOn = it
-                    RequestOverlay.setEnabled(context, it)
-                })
             }
             Text(
                 when {
@@ -191,9 +190,8 @@ fun ProbePanel(model: DemoModel) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("Проверка запросов", fontWeight = FontWeight.Bold)
             Text("Проверочный запрос: ответ только записывается в журнал контура.", style = MaterialTheme.typography.bodySmall)
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            SwitchRow(shortTtl, onChange = { shortTtl = it }) {
                 Text("Короткий срок (1 мин) — проверить истечение", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                Switch(checked = shortTtl, onCheckedChange = { shortTtl = it })
             }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 for (k in RequestKind.entries) {
