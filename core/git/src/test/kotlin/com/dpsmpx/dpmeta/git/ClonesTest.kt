@@ -78,6 +78,25 @@ class ClonesTest {
         assertTrue(r.conflicts.isEmpty())
     }
 
+    /** Каталог из клона (UX-9): корень и подкаталог ветки GitHub, без сети; нет каталога — null. */
+    @Test
+    fun listsDirectoriesOfGitHubBranchWithoutNetwork() {
+        val uri = remote()
+        Git.open(work).use { git ->
+            commit(git, "docs/a.md", "a\n", "Документ")
+            git.push().setRemote("origin").add("main").call()
+        }
+        val c = clones()
+        c.sync("Alpha", uri, null, build)
+        assertEquals(listOf(Clones.Entry("docs", true), Clones.Entry("TODO.md", false)), (c.list("Alpha", "main", "") as Outcome.Success).value)
+        assertEquals(listOf(Clones.Entry("a.md", false)), (c.list("Alpha", "main", "docs") as Outcome.Success).value)
+        assertNull((c.list("Alpha", "main", "нет") as Outcome.Success).value, "нет каталога — null")
+        assertNull((c.list("Alpha", "main", "TODO.md") as Outcome.Success).value, "файл — не каталог")
+        assertTrue(c.list("Beta", "main", "") is Outcome.Failure, "нет клона — отказ")
+        assertNull((c.file("Alpha", "main", "docs") as Outcome.Success).value, "каталог — не файл: байты дерева не отдаются")
+        assertEquals(2L, (c.size("Alpha", "main", "docs/a.md") as Outcome.Success).value)
+    }
+
     @Test
     fun fetchUpdatesGitHubBranchesLeavesTheWorkingTreeAndDropsDeletedBranches() {
         val uri = remote()

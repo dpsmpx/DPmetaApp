@@ -214,8 +214,13 @@ open class PultActivity : ComponentActivity() {
         if (pool.isShutdown || view.value.busy) return
         view.value = view.value.copy(busy = true, statusDetails = "", status = "Ищу репозитории аккаунта…")
         pool.execute {
-            val r = runCatching { repo.cloneOptions(token) }.getOrElse { Outcome.failure(DiagCode.INTERNAL_ERROR, "список репозиториев: ${it.javaClass.simpleName}") }
+            val r = runCatching { repo.cloneOptions(token) }.getOrElse { Outcome.failure(DiagCode.INTERNAL_ERROR, "список репозиториев: ${it.javaClass.simpleName}") }.let { o ->
+                // Какие уже склонированы и сколько заняли (UX-11) — здесь же, в фоне.
+                if (o is Outcome.Success) Outcome.success(o.value.map { it.copy(bytes = runCatching { repo.cloneBytes(it.slug) }.getOrNull()) }) else o
+            }
             val chosen = clonesSelected()
+            val listed = (r as? Outcome.Success)?.value?.map { it.slug.lowercase() }?.toSet().orEmpty()
+            val goneSizes = chosen.filter { it.lowercase() !in listed }.map { it to runCatching { repo.cloneBytes(it) }.getOrNull() }
             runOnUiThread {
                 when (r) {
                     is Outcome.Success -> {
@@ -225,7 +230,9 @@ open class PultActivity : ComponentActivity() {
                         val bySlug = r.value.associateBy { it.slug.lowercase() }
                         val kept = chosen.mapNotNull { bySlug[it.lowercase()]?.slug }.toSet()
                         // Отмеченные, которых в списке больше нет (нет доступа, переименован, в архиве), — видны отмеченными: их можно снять.
-                        val gone = chosen.filter { it.lowercase() !in bySlug }.map { com.dpsmpx.dpmeta.app.data.PultRepository.CloneOption(it, registry = false, private = true, gone = true) }
+                        // Их клоны занимают место — размер и «Удалить…» и у них (проверка PR #173); размер — уже посчитан в фоне.
+                        val gone = goneSizes.map { (s, b) -> com.dpsmpx.dpmeta.app.data.PultRepository.CloneOption(s, registry = false, private = true, gone = true, bytes = b) }
+                            .filter { it.slug.lowercase() !in bySlug }
                         val checked = if (first || !clonesAsked()) r.value.filter { it.registry }.map { it.slug }.toSet() else kept + gone.map { it.slug }
                         view.value = view.value.copy(busy = false, statusDetails = "", status = "", clonePrompt = ClonePrompt(r.value + gone, checked, first))
                     }
@@ -309,6 +316,12 @@ open class PultActivity : ComponentActivity() {
                     view.value, loader, onSync = ::sync, onSaveToken = ::saveToken, onForgetToken = ::forgetToken,
                     onAi = ai, onExport = ::export,
                     onClones = { withToken { token -> if (token != null) askClones(token, first = false) } }, onClonesChosen = ::clonesChosen,
+                    onCancelSync = {
+                        repo.cancelClones()
+                        // Отклик сразу (проверка PR #173): начатый клон ещё доходит до конца.
+                        view.value = view.value.copy(cancelling = true)
+                    },
+                    onDeleteClone = ::deleteClone,
                 )
             }
         }
@@ -413,9 +426,31 @@ open class PultActivity : ComponentActivity() {
             }
         }
 
-        override fun directory(project: String, dir: String, done: (Outcome<List<GitHub.Entry>>) -> Unit) = run({ repo.directory(it, project, dir) }, done)
+        /**
+         * Сначала клон (UX-9): склонированное читается без сети, токена и окна PIN;
+         * клона нет или он не отмечен — GitHub по токену.
+         */
+        private fun <T> localFirst(local: () -> Outcome<T>?, remote: (Secret) -> Outcome<T>, done: (Outcome<T>) -> Unit) {
+            if (pool.isShutdown) return
+            pool.execute {
+                val r = runCatching(local).getOrNull()
+                runOnUiThread {
+                    if (r != null) {
+                        done(r)
+                        // Реестр мог прочитаться из клона — ссылки `Проект:путь` работают и до синхронизации.
+                        view.value = view.value.copy(names = repo.names())
+                    } else {
+                        run(remote, done)
+                    }
+                }
+            }
+        }
 
-        override fun document(project: String, path: String, done: (Outcome<String>) -> Unit) = run({ repo.document(it, project, path) }, done)
+        override fun directory(project: String, dir: String, done: (Outcome<List<GitHub.Entry>>) -> Unit) =
+            localFirst({ repo.localDirectory(project, dir, clonesSelected()) }, { repo.directory(it, project, dir) }, done)
+
+        override fun document(project: String, path: String, done: (Outcome<String>) -> Unit) =
+            localFirst({ repo.localDocument(project, path, clonesSelected()) }, { repo.document(it, project, path) }, done)
 
         /** Панель (F-10) — файл `config/projects/<Проект>.toml`, собранный в APK; нет файла — нет панели. */
         override fun panel(project: String): Outcome<Panel>? {
@@ -437,6 +472,25 @@ open class PultActivity : ComponentActivity() {
 
     private fun saved(r: Outcome<Unit>) {
         view.value = view.value.copy(hasToken = r is Outcome.Success || secrets.exists(), statusDetails = "", status = if (r is Outcome.Success) "Токен сохранён." else "Токен не сохранён: ${r.diagnostics.first().message}")
+        // Первый вход (UX-11, D-70): после токена — сразу окно клонов и синхронизация, а не «Токен сохранён.» и тишина.
+        if (r is Outcome.Success) sync()
+    }
+
+    /** Удалить не отмеченный клон (UX-11) — после вопроса на экране; окно перечитывает его размер и говорит итог. */
+    private fun deleteClone(slug: String) {
+        if (pool.isShutdown) return
+        pool.execute {
+            val r = runCatching { repo.deleteClone(slug) }.getOrElse { Outcome.failure(DiagCode.INTERNAL_ERROR, "клон: ${it.javaClass.simpleName}", slug) }
+            val left = runCatching { repo.cloneBytes(slug) }.getOrNull()
+            runOnUiThread {
+                val p = view.value.clonePrompt ?: return@runOnUiThread
+                val note = when (r) {
+                    is Outcome.Success -> "Клон $slug удалён."
+                    is Outcome.Failure -> "Клон $slug не удалён: ${r.diagnostics.first().message}."
+                }
+                view.value = view.value.copy(clonePrompt = p.copy(options = p.options.map { if (it.slug == slug) it.copy(bytes = left) else it }, note = note))
+            }
+        }
     }
 
     private fun forgetToken() {
@@ -466,7 +520,9 @@ open class PultActivity : ComponentActivity() {
         syncNote = null
         pool.execute {
             // Сбой внутри синхронизации — отказ на экране, а не падение процесса со службами «AI» (D-59).
-            val r = runCatching { repo.sync(token, clonesSelected()) }.getOrElse { Outcome.failure(DiagCode.INTERNAL_ERROR, "синхронизация прервана: ${it.javaClass.simpleName}") }
+            // Ход (UX-10) — в заголовок, из потока синхронизации на главный.
+            val progress: (String) -> Unit = { p -> runOnUiThread { if (view.value.busy) view.value = view.value.copy(progress = p) } }
+            val r = runCatching { repo.sync(token, clonesSelected(), progress) }.getOrElse { Outcome.failure(DiagCode.INTERNAL_ERROR, "синхронизация прервана: ${it.javaClass.simpleName}") }
             val state = (repo.state() as? Outcome.Success)?.value
             val feed = (repo.feed() as? Outcome.Success)?.value.orEmpty()
             runOnUiThread {
@@ -478,11 +534,13 @@ open class PultActivity : ComponentActivity() {
                         statusDetails = "",
                         syncEnded = view.value.syncEnded + 1,
                         syncEnd = SyncEnd.DONE,
+                        progress = null,
+                        cancelling = false,
                         feed = feed,
                         names = repo.names(),
                     ).also { loadHistory() }
                     is Outcome.Failure -> Screens.failure(r.diagnostics.first()).let { f ->
-                        view.value.copy(busy = false, status = "Не вышло: ${f.text}." + (note?.let { " $it" } ?: ""), statusDetails = f.details, syncEnded = view.value.syncEnded + 1, syncEnd = SyncEnd.FAILED)
+                        view.value.copy(busy = false, status = "Не вышло: ${f.text}." + (note?.let { " $it" } ?: ""), statusDetails = f.details, syncEnded = view.value.syncEnded + 1, syncEnd = SyncEnd.FAILED, progress = null, cancelling = false)
                     }
                 }
             }

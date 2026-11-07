@@ -107,6 +107,15 @@ fun ModelsPane() {
         items(profiles, key = { "p:${it.id.value}" }) { p ->
             ProfileCard(p, onChat = { open = ModelsStore.newChat(p).id.value }, onEdit = { editing = p })
         }
+        // Локальная модель на телефоне (D-105) — здесь, рядом с профилем «Телефон: llama.cpp» (`DP_AI_Orcestrator:D-113`).
+        item(key = "local-model") {
+            androidx.compose.material3.Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp)) {
+                    LocalModelSection()
+                    Text("Нужен Linux в приложении: «Настройки AI» → «Linux в приложении».", style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
         // Локальный ИИ (D-105): какой профиль на этом устройстве или в частной сети спрашивать о подсказках.
         val local = LocalHints.candidates(profiles)
         if (local.isNotEmpty()) {

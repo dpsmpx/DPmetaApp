@@ -1,20 +1,29 @@
 package com.dpsmpx.dpai.android
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -29,97 +38,86 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Карточка «Linux в приложении» (D-75, шаг 5): Alpine под proot в данных
- * приложения — установка из APK, терминал к ней и пакеты. Claude Code
- * человек ставит сам и входит в каталоге слота (D-27, D-29); приложение
- * его не скачивает.
+ * Экран «Linux в приложении» (D-75, шаг 5; AI:A-3, терминал §4, п. 9):
+ * Alpine под proot в данных приложения — установка из APK, терминал первой
+ * кнопкой, пакеты (с ними — Codex и Gemini), слот одной кнопкой «Добавить
+ * слот ▾». Claude Code человек ставит сам и входит в каталоге слота (D-27,
+ * D-29) — как, сказано в свёрнутом «Как поставить Claude Code»; приложение
+ * его не скачивает. Локальная модель — во «Моделях» (`DP_AI_Orcestrator:D-113`).
  */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-fun LinuxCard() {
+fun LinuxScreen(onBack: () -> Unit) {
     val context = LocalContext.current.applicationContext
     val scope = rememberCoroutineScope()
     val available = remember { LinuxSetup.available(context) }
     var installed by remember { mutableStateOf(LinuxSetup.environment(context).installed()) }
+    // Долгое — вне экрана (AI:A-14): ход, вывод и итог переживают уход с экрана; повтор не запускается.
+    val jobs = remember { LongJobs.get(context) }
+    val state by jobs.state.collectAsState()
+    val install = state[LongJobs.LINUX_INSTALL]
+    val work = state[LongJobs.LINUX_APK]
+    // Процессы гостя — по одному (база apk под замком): и llama.cpp во «Моделях» тоже.
+    val running = LongJobs.GUEST.any { state[it]?.running == true }
+    LaunchedEffect(install?.running) { if (install?.running == false) installed = LinuxSetup.environment(context).installed() }
     var busy by remember { mutableStateOf<String?>(null) }
     var note by remember { mutableStateOf<String?>(null) }
-    var output by remember { mutableStateOf<List<String>>(emptyList()) }
-    var packages by remember { mutableStateOf("") }
+    var allOutput by remember { mutableStateOf(false) }
+    var packages by rememberSaveable { mutableStateOf("") }
+    var howto by rememberSaveable { mutableStateOf(false) }
+    var slotMenu by remember { mutableStateOf(false) }
 
-    fun apk(action: LinuxEnvironment.Apk, label: String) {
-        busy = "$label…"
-        note = null
-        scope.launch {
-            val names = if (action == LinuxEnvironment.Apk.UPGRADE) emptyList() else packages.split(' ', ',', '\n')
-            val r = withContext(Dispatchers.IO) { LinuxSetup.apk(context, action, names) }
-            when (r) {
-                is Outcome.Success -> {
-                    note = if (r.value.ok) "$label: готово" else "$label: apk завершился с кодом ${r.value.exitCode} — причина в выводе ниже"
-                    output = (r.value.stdout + r.value.stderr).takeLast(MAX_OUTPUT)
-                }
-                is Outcome.Failure -> note = "$label: ${r.errors.first().message}"
+    fun run(label: String, job: () -> Outcome<com.dpsmpx.dpai.execution.process.Completed>, done: (com.dpsmpx.dpai.execution.process.Completed) -> String) {
+        allOutput = false
+        jobs.start(LongJobs.LINUX_APK, label, excludes = LongJobs.GUEST) {
+            when (val r = job()) {
+                is Outcome.Success -> LongJobs.Done(done(r.value), (r.value.stdout + r.value.stderr).takeLast(MAX_OUTPUT))
+                is Outcome.Failure -> LongJobs.Done("$label: ${r.errors.first().message}")
             }
-            busy = null
         }
     }
+    fun apk(action: LinuxEnvironment.Apk, label: String) = run(label, {
+        val names = if (action == LinuxEnvironment.Apk.UPGRADE) emptyList() else packages.split(' ', ',', '\n')
+        LinuxSetup.apk(context, action, names)
+    }) { if (it.ok) "$label: готово" else "$label: apk завершился с кодом ${it.exitCode} — причина в выводе ниже" }
 
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("Linux в приложении", style = MaterialTheme.typography.titleSmall)
-            Text(
-                "Alpine в данных приложения — без Termux. Claude Code ставите сами в терминале " +
-                    "(apk add nodejs npm, затем npm i -g @anthropic-ai/claude-code) и входите в каталоге слота; " +
-                    "Codex и Gemini — кнопкой ниже.",
-                style = MaterialTheme.typography.bodySmall,
-            )
-            when {
-                !available -> Text("Недоступно на этом телефоне: нужен процессор arm64.", style = MaterialTheme.typography.bodySmall)
-                installed == null -> TextButton(enabled = busy == null, onClick = {
-                    busy = "Устанавливаю Alpine…"
-                    note = null
-                    scope.launch {
-                        val r = withContext(Dispatchers.IO) { LinuxSetup.install(context) }
-                        note = when (r) {
-                            is Outcome.Success -> r.value?.let { "Установлено: файлов ${it.files}, ${it.bytes / 1_048_576} МБ" } ?: "Уже установлено"
-                            is Outcome.Failure -> "Не установлено: ${r.errors.first().message}"
-                        }
-                        installed = LinuxSetup.environment(context).installed()
-                        busy = null
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        TextButton(onClick = onBack) { Text("← Назад") }
+        Text("Linux в приложении", style = MaterialTheme.typography.titleMedium)
+        Text("Alpine в данных приложения — без Termux.", style = MaterialTheme.typography.bodySmall)
+        when {
+            !available -> Text("Недоступно на этом телефоне: нужен процессор arm64.", style = MaterialTheme.typography.bodySmall)
+            installed == null -> Button(enabled = !running, onClick = {
+                jobs.start(LongJobs.LINUX_INSTALL, "Установка Alpine", excludes = LongJobs.GUEST) {
+                    when (val r = LinuxSetup.install(context)) {
+                        is Outcome.Success -> LongJobs.Done(r.value?.let { "Установлено: файлов ${it.files}, ${it.bytes / 1_048_576} МБ" } ?: "Уже установлено")
+                        is Outcome.Failure -> LongJobs.Done("Не установлено: ${r.errors.first().message}")
                     }
-                }) { Text(busy ?: "Установить Alpine") }
-                else -> {
-                    Text("Установлено: $installed", style = MaterialTheme.typography.bodySmall)
-                    TextButton(onClick = { TerminalActivity.startLinux(context) }) { Text("Терминал") }
-                    OutlinedTextField(packages, { packages = it }, label = { Text("Пакеты, например: git nodejs npm") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        TextButton(enabled = busy == null && packages.isNotBlank(), onClick = { apk(LinuxEnvironment.Apk.ADD, "Поставить") }) { Text("Поставить") }
-                        TextButton(enabled = busy == null && packages.isNotBlank(), onClick = { apk(LinuxEnvironment.Apk.DEL, "Убрать") }) { Text("Убрать") }
-                        TextButton(enabled = busy == null, onClick = { apk(LinuxEnvironment.Apk.UPGRADE, "Обновить всё") }) { Text("Обновить всё") }
-                    }
-                    // Target «в приложении» (D-75, шаг 5): задачи Claude — в этом Linux, без SSH; слот — каталог в госте (D-29).
-                    Text(
-                        "Задачи в этом Linux: «Добавить слот» — target «в приложении» на вкладке Targets; войти — его «Claude в терминале» → /login.",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
+                }
+            }) { Text(if (install?.running == true) "Устанавливаю Alpine…" else "Установить Alpine") }
+            else -> {
+                Text("Установлено: $installed", style = MaterialTheme.typography.bodySmall)
+                // Терминал — первым и заметным (терминал §4, п. 9).
+                Button(onClick = { TerminalActivity.startLinux(context) }) { Text("Терминал") }
+                OutlinedTextField(packages, { packages = it }, label = { Text("Пакеты, например: git nodejs npm") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(enabled = !running && packages.isNotBlank(), onClick = { apk(LinuxEnvironment.Apk.ADD, "Поставить") }) { Text("Поставить") }
+                    TextButton(enabled = !running && packages.isNotBlank(), onClick = { apk(LinuxEnvironment.Apk.DEL, "Убрать") }) { Text("Убрать") }
+                    TextButton(enabled = !running, onClick = { apk(LinuxEnvironment.Apk.UPGRADE, "Обновить всё") }) { Text("Обновить всё") }
                     // Codex CLI и Gemini CLI (D-100): Node.js и npm из Alpine, пакеты npm, в конце — версии.
-                    TextButton(enabled = busy == null, onClick = {
-                        busy = "Устанавливаю Codex и Gemini…"
-                        note = null
-                        scope.launch {
-                            val r = withContext(Dispatchers.IO) { LinuxSetup.run(context, LinuxEnvironment.executorsInstall()) }
-                            when (r) {
-                                is Outcome.Success -> {
-                                    note = if (r.value.ok) "Codex и Gemini: установлены" else "Установка завершилась с кодом ${r.value.exitCode} — причина в выводе ниже"
-                                    output = (r.value.stdout + r.value.stderr).takeLast(MAX_OUTPUT)
-                                }
-                                is Outcome.Failure -> note = "Установка: ${r.errors.first().message}"
-                            }
-                            busy = null
+                    TextButton(enabled = !running, onClick = {
+                        run("Установка Codex и Gemini", { LinuxSetup.run(context, LinuxEnvironment.executorsInstall()) }) {
+                            if (it.ok) "Codex и Gemini: установлены" else "Установка завершилась с кодом ${it.exitCode} — причина в выводе ниже"
                         }
                     }) { Text("Установить Codex и Gemini") }
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                }
+                // Target «в приложении» (D-75, шаг 5): задачи — в этом Linux, без SSH; слот — каталог в госте (D-29).
+                androidx.compose.foundation.layout.Box {
+                    OutlinedButton(enabled = busy == null && !running, onClick = { slotMenu = true }) { Text("Добавить слот ▾") }
+                    androidx.compose.material3.DropdownMenu(expanded = slotMenu, onDismissRequest = { slotMenu = false }) {
                         for (x in com.dpsmpx.dpai.core.ids.Executor.entries) {
-                            TextButton(enabled = busy == null, onClick = {
+                            androidx.compose.material3.DropdownMenuItem(text = { Text(x.title) }, onClick = {
+                                slotMenu = false
                                 busy = "Добавляю слот…"
                                 scope.launch {
                                     val r = withContext(Dispatchers.IO) {
@@ -133,21 +131,48 @@ fun LinuxCard() {
                                     }
                                     busy = null
                                 }
-                            }) { Text("Слот ${x.title}") }
+                            })
                         }
                     }
-                    // Локальная модель (D-105): llama.cpp в этом Linux, сервер только на этом телефоне.
-                    LocalModelSection()
+                }
+                // Как поставить Claude Code (терминал:A-13): apk в интерактивной оболочке с /proc не работает (D-82) —
+                // пакеты ставятся полем выше, npm — в терминале.
+                Text(
+                    if (howto) "Как поставить Claude Code ▾" else "Как поставить Claude Code ▸",
+                    Modifier.fillMaxWidth().clickable { howto = !howto }.padding(vertical = 6.dp),
+                    style = MaterialTheme.typography.labelLarge,
+                )
+                if (howto) {
+                    Text(
+                        "1. Поставьте nodejs npm полем «Пакеты» выше (apk в терминале здесь не сработает).\n" +
+                            "2. В терминале — npm i -g @anthropic-ai/claude-code.\n" +
+                            "3. «Добавить слот ▾» → Claude: появится target «в приложении» на вкладке Targets; войдите его «Терминал ▾» → «Claude в терминале» → /login.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                 }
             }
-            busy?.takeIf { installed != null }?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
-            note?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
-            if (output.isNotEmpty()) Text(output.joinToString("\n"), style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace)
+        }
+        // Ход — полосой (AI:A-14); итог операции — строкой, пока его не убрали.
+        for (j in listOfNotNull(install, work)) {
+            if (j.running) {
+                Text("${j.label}…", style = MaterialTheme.typography.labelSmall)
+                androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth())
+            } else {
+                j.note?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
+            }
+        }
+        busy?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
+        note?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
+        val output = work?.output.orEmpty()
+        // Вывод — последней строкой с «показать всё» (терминал §4, п. 9): итог и ошибка — в хвосте.
+        if (output.isNotEmpty()) {
+            Text((if (allOutput) output else output.takeLast(1)).joinToString("\n"), style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace)
+            if (output.size > 1) TextButton(onClick = { allOutput = !allOutput }) { Text(if (allOutput) "Свернуть вывод" else "Показать весь вывод (${output.size} строк)") }
         }
     }
 }
 
-/** Строк вывода `apk` на карточке: хвост, где итог и ошибка. */
+/** Строк вывода `apk` на экране: хвост, где итог и ошибка. */
 private const val MAX_OUTPUT = 20
 
 /**

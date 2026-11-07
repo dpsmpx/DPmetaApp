@@ -105,9 +105,8 @@ class TerminalView(context: Context) : View(context) {
         }
     }
 
-    /** Ссылка последнего касания (DPmetaApp:D-75): второе касание той же — открыть. */
-    private var tappedLink: String? = null
-    private var tappedAt = 0L
+    /** Касания ссылок (DPmetaApp:D-75): одно правило на всё приложение — `LinkTaps`. */
+    private val linkTaps = com.dpsmpx.dpai.ui.LinkTaps()
 
     /** Инерция прокрутки истории после смахивания. */
     private val flinger = android.widget.OverScroller(context)
@@ -249,7 +248,8 @@ class TerminalView(context: Context) : View(context) {
 
     private fun openLink(url: String) {
         try {
-            context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+            // Схема — строчными: «HTTPS://» проходит LinkTaps, а фильтры браузеров сравнивают её с учётом регистра.
+            context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url).normalizeScheme()).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
         } catch (_: android.content.ActivityNotFoundException) {
             Toast.makeText(context, "Нет приложения для ссылки — скопируйте её долгим нажатием", Toast.LENGTH_LONG).show()
         }
@@ -415,11 +415,14 @@ class TerminalView(context: Context) : View(context) {
                         mode.invalidateContentRect()
                     }
                     M_OPEN -> {
-                        TerminalSelection.link(selectedText())?.let(::openHttps)
+                        // «Открыть» из меню — явный выбор; открывается только https (DPmetaApp:D-75).
+                        TerminalSelection.link(selectedText())?.let { url ->
+                            if (com.dpsmpx.dpai.ui.LinkTaps.openable(url)) openLink(url) else Toast.makeText(context, "Открывается только https", Toast.LENGTH_LONG).show()
+                        }
                         clearSelection()
                     }
                     M_COPY_LINK -> {
-                        TerminalSelection.link(selectedText())?.let { Clipboard.copy(context, "ссылка", it, sensitive = true) }
+                        TerminalSelection.link(selectedText())?.let { Clipboard.copy(context, "ссылка", it) }
                         clearSelection()
                     }
                     M_SHARE -> {
@@ -465,28 +468,17 @@ class TerminalView(context: Context) : View(context) {
 
     /**
      * Ссылка по касанию (DPmetaApp:D-75): первое — копия и адрес целиком на
-     * экране, второе той же в течение [LINK_AGAIN_MS] — открыть.
+     * экране, второе той же — открыть, только `https` (`LinkTaps`).
      */
     private fun tapLink(link: String) {
-        val now = Clock.SYSTEM.monotonicNanos() / 1_000_000
-        if (link == tappedLink && now - tappedAt <= LINK_AGAIN_MS) {
-            tappedLink = null
-            openHttps(link)
-            return
-        }
-        tappedLink = link
-        tappedAt = now
-        Clipboard.copy(context, "ссылка", link, sensitive = true)
-        Toast.makeText(context, "Скопировано: $link — коснитесь ещё раз, чтобы открыть", Toast.LENGTH_LONG).show()
-    }
-
-    /** Открывается только `https` (DPmetaApp:D-75); прочее — уже скопировано, на экране — почему. */
-    private fun openHttps(url: String) {
-        if (url.startsWith("https://")) {
-            openLink(url)
-        } else {
-            Clipboard.copy(context, "ссылка", url, sensitive = true)
-            Toast.makeText(context, "Открывается только https — адрес скопирован", Toast.LENGTH_LONG).show()
+        when (val act = linkTaps.tap(link, Clock.SYSTEM.monotonicNanos() / 1_000_000)) {
+            is com.dpsmpx.dpai.ui.LinkTaps.Act.Copy -> {
+                // Адрес — не секрет (DPmetaApp:D-75): без «чувствительного» флага, превью буфера его покажет.
+                Clipboard.copy(context, "ссылка", link)
+                Toast.makeText(context, act.text, Toast.LENGTH_LONG).show()
+            }
+            is com.dpsmpx.dpai.ui.LinkTaps.Act.Open -> openLink(act.url)
+            is com.dpsmpx.dpai.ui.LinkTaps.Act.Refuse -> Toast.makeText(context, act.text, Toast.LENGTH_LONG).show()
         }
     }
 
@@ -821,9 +813,6 @@ class TerminalView(context: Context) : View(context) {
 
         /** Шаг прокрутки истории, пока палец с ручкой у края. */
         private const val EDGE_MS = 60L
-
-        /** Сколько ждёт второе касание той же ссылки (DPmetaApp:D-75). */
-        private const val LINK_AGAIN_MS = 10_000L
 
         /** Больше — «Поделиться» не проходит через binder: только копировать. */
         private const val MAX_SHARE = 100_000

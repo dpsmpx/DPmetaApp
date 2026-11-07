@@ -55,7 +55,30 @@ class PultRepository(
      * [gone] — отмечен прежде, а в списке аккаунта его нет (доступ, имя, архив):
      * виден, чтобы его можно было снять.
      */
-    data class CloneOption(val slug: String, val registry: Boolean, val private: Boolean, val gone: Boolean = false)
+    data class CloneOption(val slug: String, val registry: Boolean, val private: Boolean, val gone: Boolean = false, val bytes: Long? = null)
+
+    /** Сколько занимает клон [slug] на телефоне; клона нет — `null` (UX-11: «склонирован · 120 МБ»). Не на главном потоке. */
+    fun cloneBytes(slug: String): Long? {
+        val dir = com.dpsmpx.dpmeta.git.Clones(clonesDir, com.dpsmpx.dpmeta.git.Clones.allowList()).dir(cloneKey(slug))
+        if (!java.io.File(dir, ".git").isDirectory) return null
+        return dir.walkTopDown().onEnter { !java.nio.file.Files.isSymbolicLink(it.toPath()) }.filter { it.isFile }.sumOf { it.length() }
+    }
+
+    /**
+     * Удалить клон [slug] (UX-11; D-70): место — назад, работа ИИ в нём —
+     * тоже, поэтому только по вопросу на экране и только не отмеченного.
+     * Ссылки внутри не проходятся (`Clones.deleteTree`).
+     */
+    fun deleteClone(slug: String): Outcome<Unit> {
+        // Не во время синхронизации (проверка PR #173): удаление рядом с fetch JGit оставило бы полуудалённый `.git`.
+        if (running.get()) return Outcome.failure(DiagCode.STATE_CONFLICT, "идёт синхронизация — удалите клон после неё", slug)
+        return try {
+            com.dpsmpx.dpmeta.git.Clones.deleteTree(com.dpsmpx.dpmeta.git.Clones(clonesDir, com.dpsmpx.dpmeta.git.Clones.allowList()).dir(cloneKey(slug)))
+            Outcome.success(Unit)
+        } catch (e: java.io.IOException) {
+            Outcome.failure(DiagCode.STORAGE_IO_FAILED, "клон удалён не весь: ${e.javaClass.simpleName}", slug)
+        }
+    }
 
     /**
      * Репозитории для окна выбора клонов (D-70): все, что видны токену, без
@@ -145,6 +168,70 @@ class PultRepository(
         }
     }
 
+    /** Клон проекта для чтения: ключ клона, путь подсистемы в нём, основная ветка. */
+    private class Local(val clones: com.dpsmpx.dpmeta.git.Clones, val key: String, val prefix: String, val main: String)
+
+    /**
+     * Склонированный и отмеченный автором репозиторий проекта (D-65, D-70);
+     * `null` — клона нет, он не отмечен или реестра нет ни в памяти, ни в
+     * отмеченном клоне DPmetaApp: тогда — REST.
+     */
+    private fun local(project: String, selected: Set<String>): Local? {
+        val clones = com.dpsmpx.dpmeta.git.Clones(clonesDir, com.dpsmpx.dpmeta.git.Clones.allowList())
+        val host = RepoRef.parse(HOST).valueOrNull() ?: return null
+        val reg = registry ?: localRegistry(clones, host, selected) ?: return null
+        val entry = reg.byName(project) ?: return null
+        val key = if (entry.dir != null) host.toString() else entry.slug.toString()
+        // Выбор — как `full_name` GitHub, ключ — как в реестре: сверка без регистра, как у синхронизации.
+        if (selected.none { it.equals(key, ignoreCase = true) }) return null
+        val main = clones.main(key) ?: return null
+        return Local(clones, key, entry.dir?.let { "$it/" } ?: "", main)
+    }
+
+    /** Реестр из отмеченного клона DPmetaApp — без сети и токена (окно открыли до первой синхронизации). */
+    private fun localRegistry(clones: com.dpsmpx.dpmeta.git.Clones, host: RepoRef, selected: Set<String>): Registry? {
+        if (selected.none { it.equals(host.toString(), ignoreCase = true) }) return null
+        val main = clones.main(host.toString()) ?: return null
+        val bytes = (clones.file(host.toString(), main, REGISTRY) as? Outcome.Success)?.value ?: return null
+        // Только для чтения из клона: в общий реестр (REST, окно клонов) он не кладётся — клон доступен гостю Linux на запись.
+        return (RegistryFormat.parse(bytes.toString(Charsets.UTF_8), REGISTRY) as? Outcome.Success)?.value
+    }
+
+    /**
+     * Каталог склонированного проекта — из клона (UX-9): без сети, токена и
+     * входа по PIN; `null` — клона нет или он не отмечен, тогда [directory].
+     */
+    fun localDirectory(project: String, dir: String, selected: Set<String>): Outcome<List<GitHub.Entry>>? {
+        val l = local(project, selected) ?: return null
+        return when (val r = l.clones.list(l.key, l.main, (l.prefix + dir).trimEnd('/'))) {
+            is Outcome.Failure -> r
+            is Outcome.Success -> r.value?.let { list -> Outcome.success(list.map { GitHub.Entry(it.name, if (dir.isEmpty()) it.name else "${dir.trimEnd('/')}/${it.name}", it.dir) }) }
+                ?: Outcome.failure(DiagCode.GITHUB_NOT_FOUND, "каталога нет в клоне", "$project:$dir")
+        }
+    }
+
+    /** Файл склонированного проекта — из клона (UX-9); `null` — клона нет или он не отмечен, тогда [document]. */
+    fun localDocument(project: String, path: String, selected: Set<String>): Outcome<String>? {
+        val l = local(project, selected) ?: return null
+        // Предел — до чтения в память (проверка PR #173): большой файл — словами, а не нехваткой памяти.
+        val size = (l.clones.size(l.key, l.main, l.prefix + path) as? Outcome.Success)?.value
+        if (size != null && size > MAX_DOCUMENT) return Outcome.failure(DiagCode.JSON_TOO_LARGE, "файл больше ${MAX_DOCUMENT / 1_048_576} МБ — на телефоне не открывается", "$project:$path")
+        return when (val r = l.clones.file(l.key, l.main, l.prefix + path)) {
+            is Outcome.Failure -> r
+            is Outcome.Success -> r.value?.let { Outcome.success(it.toString(Charsets.UTF_8)) } ?: run {
+                val dir = (l.clones.list(l.key, l.main, l.prefix + path.trimEnd('/')) as? Outcome.Success)?.value != null
+                Outcome.failure(DiagCode.GITHUB_NOT_FOUND, if (dir) "это каталог — откройте его в «Все файлы»" else "файла нет в клоне", "$project:$path")
+            }
+        }
+    }
+
+    /** Ключ клона по `full_name` GitHub: у репозитория реестра — написание реестра (каталог клона создан по нему). */
+    private fun cloneKey(slug: String): String {
+        val host = RepoRef.parse(HOST).valueOrNull()?.toString()
+        val keys = registry?.shown.orEmpty().map { if (it.dir != null) host.orEmpty() else it.slug.toString() } + listOfNotNull(host)
+        return keys.firstOrNull { it.equals(slug, ignoreCase = true) } ?: slug
+    }
+
     /** Идёт ли синхронизация (на процесс): окно после поворота не запускает вторую и говорит «идёт». */
     fun syncing(): Boolean = running.get()
 
@@ -153,17 +240,25 @@ class PultRepository(
      * и «Обновить», окно после поворота) не начинается: клоны и состояние —
      * одни на процесс.
      */
-    fun sync(token: Secret, selected: Set<String> = emptySet()): Outcome<SyncReport> {
+    fun sync(token: Secret, selected: Set<String> = emptySet(), progress: (String) -> Unit = {}): Outcome<SyncReport> {
         if (!running.compareAndSet(false, true)) return Outcome.failure(DiagCode.STATE_CONFLICT, "синхронизация уже идёт", "sync")
+        cancel.set(false)
         try {
-            return syncNow(token, selected)
+            return syncNow(token, selected, progress)
         } finally {
             running.set(false)
         }
     }
 
+    /**
+     * «Отменить» (UX-10): клоны, ещё не начатые, не трогаются; начатый
+     * доходит до конца — между репозиториями, а не посреди записи клона.
+     * Остальная синхронизация идёт с тем, что есть.
+     */
+    fun cancelClones() = cancel.set(true)
+
     /** [selected] — отмеченные автором клоны (D-70), `владелец/имя`; остальные — через REST. */
-    private fun syncNow(token: Secret, selected: Set<String>): Outcome<SyncReport> {
+    private fun syncNow(token: Secret, selected: Set<String>, progress: (String) -> Unit): Outcome<SyncReport> {
         val started = clock.monotonicNanos()
         val previous = when (val r = store.readState()) {
             is Outcome.Failure -> return r
@@ -201,7 +296,8 @@ class PultRepository(
         val regKeys = reg.shown.map { if (it.dir != null) host.toString() else it.slug.toString() }.toSet()
         val chosen = selected.map { s -> regKeys.firstOrNull { it.equals(s, ignoreCase = true) } ?: s }.toSet()
         val reader = CloneReader(clones, GitHubReader(gh, host), host, Rules::isBuildBranch) { it in chosen }
-        val cloned = cloneAll(reg, clones, reader, token, chosen)
+        val cloned = cloneAll(reg, clones, reader, token, chosen, progress)
+        progress("Источники…")
         val result = Sync.run(Sync.plan(reg, known, carried.map { it.project to it.kind }.toSet()), reader, clock, commits, parallel)
         val state = EcosystemState.derive(reg, result.observations, result.failures + cloned.failures + carried, previous, clock.now())
         store.writeState(state).let { if (it is Outcome.Failure) return it }
@@ -215,6 +311,7 @@ class PultRepository(
         val line = "запросов ${s.requests}, без изменений ${s.notModified} ($share %), отказов источников ${result.failures.size + cloned.failures.size}, " +
             "не спрашивалось ${carried.size}, клонов ${cloned.ok} (новых ${cloned.created}" +
             (if (cloned.lost > 0) ", не обновлено ${cloned.lost}" else "") +
+            (if (cloned.skipped > 0) ", отменено ${cloned.skipped}" else "") +
             (if (cloned.rewritten > 0) ", с перезаписанной историей ${cloned.rewritten}" else "") +
             "), ${"%.1f".format(java.util.Locale.ROOT, seconds)} с"
         return Outcome.success(SyncReport(line, result.failures + cloned.failures))
@@ -225,7 +322,7 @@ class PultRepository(
      * обновилось, у скольких GitHub перезаписал историю (сведение, D-70);
      * отказы клонов репозиториев реестра — отказами источника «clone».
      */
-    private class Cloned(val ok: Int, val created: Int, val lost: Int, val rewritten: Int, val failures: List<SourceFailure>)
+    private class Cloned(val ok: Int, val created: Int, val lost: Int, val rewritten: Int, val failures: List<SourceFailure>, val skipped: Int = 0)
 
     /**
      * Клонировать или обновить отмеченные автором клоны (D-70), по одному на
@@ -234,12 +331,14 @@ class PultRepository(
      * работа ИИ в клоне — не конфликт, перезаписанная на GitHub история —
      * сведение в строке итога.
      */
-    private fun cloneAll(reg: Registry, clones: com.dpsmpx.dpmeta.git.Clones, reader: CloneReader, token: Secret, selected: Set<String>): Cloned {
+    private fun cloneAll(reg: Registry, clones: com.dpsmpx.dpmeta.git.Clones, reader: CloneReader, token: Secret, selected: Set<String>, progress: (String) -> Unit): Cloned {
         val byKey = reg.shown.groupBy { reader.key(it) }
         val now = clock.now()
         // Только отмеченные автором (D-70) — из реестра и любые другие репозитории аккаунта.
         val jobs = selected.sorted().map { key ->
             clonePool.submit<Pair<String, Outcome<com.dpsmpx.dpmeta.git.Clones.Report>>> {
+                // «Отменить» (UX-10) — между репозиториями: ещё не начатый клон не трогается.
+                if (cancel.get()) return@submit key to Outcome.failure(DiagCode.CANCELLED_BY_USER, "отменено", key)
                 // Сбой одного клона — его отказ, а не исключение из get(): иначе остальные клоны шли бы без защиты running.
                 key to runCatching { clones.sync(key, com.dpsmpx.dpmeta.git.Clones.github(key), token, Rules::isBuildBranch) }
                     .getOrElse { Outcome.failure(DiagCode.INTERNAL_ERROR, "клон: ${it.javaClass.simpleName}", key) }
@@ -249,8 +348,21 @@ class PultRepository(
         var created = 0
         var lost = 0
         var rewritten = 0
+        var skipped = 0
         val failures = mutableListOf<SourceFailure>()
-        for ((key, r) in jobs.map { it.get() }) {
+        if (jobs.isNotEmpty()) progress("Клоны: 0 из ${jobs.size}")
+        for ((done, job) in jobs.withIndex()) {
+            val (key, r) = job.get()
+            progress("Клоны: ${done + 1} из ${jobs.size}")
+            // Отменённый (UX-10): у репозитория реестра — отказ источника «не обновлён»: срез читает прежний клон,
+            // и это видно в «Ошибках источников», а не выдаётся за свежее (проверка PR #173).
+            if (r is Outcome.Failure && r.diagnostics.first().code == DiagCode.CANCELLED_BY_USER) {
+                skipped++
+                byKey[key]?.let { ps -> ps.firstOrNull { it.dir == null } ?: ps.first() }?.name?.let { owner ->
+                    failures += SourceFailure(owner, CLONE, com.dpsmpx.dpai.core.diagnostics.Diagnostic.error(DiagCode.CANCELLED_BY_USER, "клон не обновлён: отменено", key), now)
+                }
+                continue
+            }
             // Отказ клона репозитория реестра — его отказ источника; не из реестра — только счёт в строке итога.
             val owner = byKey[key]?.let { ps -> ps.firstOrNull { it.dir == null } ?: ps.first() }?.name
             when (r) {
@@ -266,7 +378,7 @@ class PultRepository(
                 }
             }
         }
-        return Cloned(ok, created, lost, rewritten, failures)
+        return Cloned(ok, created, lost, rewritten, failures, skipped)
     }
 
     companion object {
@@ -279,5 +391,11 @@ class PultRepository(
 
         /** Синхронизация идёт (на процесс): клоны и состояние одни. */
         private val running = java.util.concurrent.atomic.AtomicBoolean(false)
+
+        /** Предел документа из клона: больше — не читается в память (журнал решений DPmetaApp — около 0,3 МБ). */
+        private const val MAX_DOCUMENT = 2L * 1_048_576
+
+        /** «Отменить» клоны текущей синхронизации (UX-10). */
+        private val cancel = java.util.concurrent.atomic.AtomicBoolean(false)
     }
 }

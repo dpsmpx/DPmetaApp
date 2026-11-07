@@ -39,18 +39,13 @@ import kotlinx.coroutines.withContext
 import kotlin.time.Duration.Companion.minutes
 
 /**
- * Вкладка «Запросы» (D-44): ждущие запросы с вариантами ответа и окно
- * поверх приложений (выключатель и разрешение системы); проверка канала —
- * в «Журнал» → «Отладка» ([ProbePanel]).
+ * Вкладка «Запросы» (D-44): ждущие запросы с вариантами ответа. Окно поверх
+ * приложений — в «Настройках AI» ([OverlayCard], AI:A-3); проверка канала —
+ * там же, «Журнал» → «Отладка» ([ProbePanel]).
  */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun RequestsPane(model: DemoModel, snapshot: Snapshot?) {
-    val context = LocalContext.current.applicationContext
-    var overlayOn by remember { mutableStateOf(RequestOverlay.enabled(context)) }
-    var permitted by remember { mutableStateOf(RequestOverlay.permitted(context)) }
-    // Разрешение даётся в настройках системы: перечитать с каждым снимком (раз в 1–3 с).
-    LaunchedEffect(snapshot) { permitted = RequestOverlay.permitted(context) }
     val requests = snapshot?.requests.orEmpty()
     LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
@@ -58,29 +53,42 @@ fun RequestsPane(model: DemoModel, snapshot: Snapshot?) {
             if (snapshot?.live == false) Text("Демо: запросы живут до перезапуска приложения", style = MaterialTheme.typography.labelSmall)
         }
         items(requests, key = { it.id.value }) { RequestItem(model, it) }
-        item {
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Окно поверх приложений", fontWeight = FontWeight.Bold)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Показывать запросы окном", Modifier.weight(1f))
-                        Switch(checked = overlayOn, onCheckedChange = {
-                            overlayOn = it
-                            RequestOverlay.setEnabled(context, it)
-                        })
-                    }
-                    Text(
-                        when {
-                            !overlayOn -> "Выключено: запросы приходят уведомлением."
-                            permitted -> "Разрешение системы есть: окно появится при новом запросе."
-                            else -> "Нет разрешения системы: запросы приходят уведомлением. Дайте разрешение «Поверх других приложений»."
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    if (overlayOn && !permitted) {
-                        OutlinedButton(onClick = { context.startActivity(RequestOverlay.permissionIntent(context)) }) { Text("Открыть настройку разрешения") }
-                    }
-                }
+    }
+}
+
+/** Окно поверх приложений (D-44): выключатель и разрешение системы — в «Настройках AI» (AI:A-3). */
+@Composable
+internal fun OverlayCard() {
+    val context = LocalContext.current.applicationContext
+    var overlayOn by remember { mutableStateOf(RequestOverlay.enabled(context)) }
+    var permitted by remember { mutableStateOf(RequestOverlay.permitted(context)) }
+    // Разрешение даётся в настройках системы: перечитать, когда человек вернулся (раз в 2 с, пока карточка видна).
+    LaunchedEffect(Unit) {
+        while (true) {
+            permitted = RequestOverlay.permitted(context)
+            kotlinx.coroutines.delay(2_000)
+        }
+    }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Окно поверх приложений", fontWeight = FontWeight.Bold)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Показывать запросы окном", Modifier.weight(1f))
+                Switch(checked = overlayOn, onCheckedChange = {
+                    overlayOn = it
+                    RequestOverlay.setEnabled(context, it)
+                })
+            }
+            Text(
+                when {
+                    !overlayOn -> "Выключено: запросы приходят уведомлением."
+                    permitted -> "Разрешение системы есть: окно появится при новом запросе."
+                    else -> "Нет разрешения системы: запросы приходят уведомлением. Дайте разрешение «Поверх других приложений»."
+                },
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if (overlayOn && !permitted) {
+                OutlinedButton(onClick = { context.startActivity(RequestOverlay.permissionIntent(context)) }) { Text("Открыть настройку разрешения") }
             }
         }
     }

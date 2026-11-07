@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -28,6 +29,13 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import com.dpsmpx.dpai.ui.LinkTaps
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.runtime.toMutableStateList
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.runtime.produceState
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -73,6 +81,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpmeta.app.R
 import com.dpsmpx.dpmeta.app.screens.Links
@@ -165,6 +174,10 @@ data class PultView(
     val syncEnded: Int = 0,
     /** Чем она кончилась — текст и переход снэкбара. */
     val syncEnd: SyncEnd = SyncEnd.DONE,
+    /** Ход синхронизации (UX-10): «Клоны: 3 из 12», «Источники…»; `null` — не идёт или ход неизвестен. */
+    val progress: String? = null,
+    /** «Отменить» нажато — начатый клон доходит до конца (UX-10). */
+    val cancelling: Boolean = false,
 )
 
 /**
@@ -172,7 +185,7 @@ data class PultView(
  * [checked] — отмеченные заранее (при первом входе — реестр); [first] —
  * первый вход: «Позже» спросит снова.
  */
-data class ClonePrompt(val options: List<com.dpsmpx.dpmeta.app.data.PultRepository.CloneOption>, val checked: Set<String>, val first: Boolean)
+data class ClonePrompt(val options: List<com.dpsmpx.dpmeta.app.data.PultRepository.CloneOption>, val checked: Set<String>, val first: Boolean, val note: String? = null)
 
 /** Итог «Обновить» для снэкбара (UX-6): обновлено, не вышло, не начато (нет токена, уже идёт). */
 enum class SyncEnd { DONE, FAILED, REFUSED }
@@ -271,6 +284,10 @@ fun PultApp(
     onExport: ((json: Boolean, period: Stats.Period, share: Boolean) -> Unit)? = null,
     /** «Клоны…» в настройках (D-70). */
     onClones: () -> Unit = {},
+    /** «Отменить» клоны идущей синхронизации (UX-10). */
+    onCancelSync: () -> Unit = {},
+    /** Удалить не отмеченный клон (UX-11) — после вопроса. */
+    onDeleteClone: (String) -> Unit = {},
     /** Итог окна клонов: отмеченные или `null` — «Позже» / «Отмена». */
     onClonesChosen: (Set<String>?) -> Unit = {},
 ) {
@@ -304,7 +321,7 @@ fun PultApp(
     }
     Scaffold(
         snackbarHost = { SnackbarHost(snack) },
-        topBar = { Header(tab.title, view, onSync) },
+        topBar = { Header(tab.title, view, onSync, onCancelSync) },
         bottomBar = {
             // Панель — своя, как у «AI» (D-73): значки и подписи, 48 dp, роль вкладки и «выбрано» для TalkBack.
             Surface(tonalElevation = 3.dp) {
@@ -335,7 +352,15 @@ fun PultApp(
                 top is Nav.Stats && s != null -> StatsScreen(view.history, s.projects.map { it.name }, top.project, s.asOf, back, view.status, onExport)
                 top is Nav.Feed && s != null -> FeedScreen(view.feed, s.projects.map { it.name }, back)
                 tab == Section.MORE -> Settings(view, onSync, onSaveToken, onForgetToken, onClones)
-                s == null -> Text(if (view.hasToken) "Среза ещё нет: «Обновить» в пункте «Ещё»." else "Нужен токен GitHub: пункт «Ещё».")
+                // Пустое состояние ведёт дальше (UX-11): кнопкой, а не словами «где-то в настройках».
+                s == null -> Column(verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+                    Text(if (view.hasToken) "Среза ещё нет." else "Нужен токен GitHub — только для чтения.")
+                    if (view.hasToken) {
+                        Button(onClick = onSync, enabled = !view.busy) { Text("Обновить") }
+                    } else {
+                        Button(onClick = { tab = Section.MORE }) { Text("Ввести токен") }
+                    }
+                }
                 tab == Section.SUMMARY -> Summary(
                     Screens.summary(s), view, onSync, onAi,
                     onTile = { g ->
@@ -351,13 +376,13 @@ fun PultApp(
                     DevTabs(devTab) { devTab = it }
                     when (devTab) {
                         DevTab.PROJECTS -> Projects(Screens.projects(s)) { open(Nav.Card(it)) }
-                        DevTab.QUESTIONS -> Questions(Screens.questions(s))
+                        DevTab.QUESTIONS -> Questions(Screens.questions(s), open)
                     }
                 }
             }
         }
     }
-    view.clonePrompt?.let { ClonesDialog(it, onClonesChosen) }
+    view.clonePrompt?.let { ClonesDialog(it, onClonesChosen, onDeleteClone, busy = view.busy) }
 }
 
 /** Пункт панели: значок над подписью; [selected] `null` — не вкладка, а вход («AI»). */
@@ -384,7 +409,7 @@ private fun RowScope.PanelItem(label: String, icon: Int, selected: Boolean?, onC
  * «обновляется»; во время синхронизации — тонкая полоса хода под ним.
  */
 @Composable
-private fun Header(title: String, view: PultView, onSync: () -> Unit) {
+private fun Header(title: String, view: PultView, onSync: () -> Unit, onCancel: () -> Unit) {
     Surface(tonalElevation = 3.dp) {
         Column(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars)) {
             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
@@ -393,7 +418,7 @@ private fun Header(title: String, view: PultView, onSync: () -> Unit) {
                 val asOf = view.state?.let { "срез ${Screens.time(it.asOf)}" }
                 Text(
                     when {
-                        view.busy -> "Обновляется…" + (asOf?.let { " · $it" } ?: "")
+                        view.busy -> "Обновляется…" + (view.progress?.let { " · $it" } ?: asOf?.let { " · $it" } ?: "")
                         asOf != null -> asOf.replaceFirstChar { it.uppercase() }
                         else -> "Среза ещё нет"
                     },
@@ -401,9 +426,13 @@ private fun Header(title: String, view: PultView, onSync: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            // «Обновить» — одно, значком в заголовке любого экрана (UX-6).
-            IconButton(onClick = onSync, enabled = view.hasToken && !view.busy) {
-                Icon(painterResource(R.drawable.ic_pult_refresh), contentDescription = "Обновить")
+            // Клоны идут — «Отменить» между репозиториями (UX-10); иначе — «Обновить», одно, значком (UX-6).
+            if (view.busy && (view.cancelling || view.progress?.startsWith("Клоны") == true)) {
+                TextButton(onClick = onCancel, enabled = !view.cancelling) { Text(if (view.cancelling) "Отменяю…" else "Отменить") }
+            } else {
+                IconButton(onClick = onSync, enabled = view.hasToken && !view.busy) {
+                    Icon(painterResource(R.drawable.ic_pult_refresh), contentDescription = "Обновить")
+                }
             }
             }
             // Полоса — того же места и без синхронизации: заголовок не прыгает.
@@ -497,9 +526,6 @@ private fun PanelRow(project: String, item: Panel.Item, loader: Loader, open: (N
     }
 }
 
-private fun checked(c: Screens.Checked?): String =
-    c?.let { "#${it.number} — ${it.verdict}, ${it.age}" + (it.line?.let { l -> "; «$l»" } ?: "") } ?: Screens.UNKNOWN
-
 @Composable
 private fun CardScreen(c: Screens.Card, loader: Loader, onBack: () -> Unit, open: (Nav) -> Unit) {
     // Панель (F-10) — один раз на карточку: файл из APK и его разбор не повторяются при перерисовке.
@@ -507,46 +533,91 @@ private fun CardScreen(c: Screens.Card, loader: Loader, onBack: () -> Unit, open
     CardList(c, panel, loader, onBack, open)
 }
 
+/**
+ * Карточка проекта (UX-8; F-06, F-07): сверху — «Внимание», если есть что
+ * сказать; документы — чипами; разделы — свёрнутыми строками с итогом;
+ * решение — касанием открывает журнал на своём якоре.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun CardList(c: Screens.Card, panel: Outcome<Panel>?, loader: Loader, onBack: () -> Unit, open: (Nav) -> Unit) = LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-    item { TextButton(onClick = onBack) { Text("← Назад") } }
-    item { Text("${c.name} — ${c.place}, ${c.working}", style = MaterialTheme.typography.titleMedium) }
-    item {
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            TextButton(onClick = { open(Nav.Dir(c.name, "")) }) { Text("Документы") }
-            for ((title, path) in c.files) TextButton(onClick = { open(Nav.Doc(c.name, path, null)) }) { Text(title) }
+private fun CardList(c: Screens.Card, panel: Outcome<Panel>?, loader: Loader, onBack: () -> Unit, open: (Nav) -> Unit) {
+    val view = remember(c) { Screens.cardView(c) }
+    val opened = rememberSaveable(c.name, saver = listSaver(save = { it.toList() }, restore = { it.toMutableStateList() })) { mutableStateListOf<String>() }
+    val decisionsPath = c.files.firstOrNull { it.first == "Решения" }?.second
+    val todoPath = c.files.firstOrNull { it.first == "TODO" }?.second
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        item {
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                TextButton(onClick = onBack) { Text("← Назад") }
+                androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+                TextButton(onClick = { open(Nav.Stats(c.name)) }) { Text("Графики ▸") }
+            }
         }
-    }
-    item { Text("Решений: ${c.decisions}", fontWeight = FontWeight.SemiBold) }
-    items(c.lastDecisions) { Text("  $it") }
-    item { Text("TODO: ${c.todo}, за автором ${c.forAuthor}", fontWeight = FontWeight.SemiBold) }
-    item { TextButton(onClick = { open(Nav.Stats(c.name)) }) { Text("Графики проекта →") } }
-    item { Text("Готовность: ${c.ready.stage}; ${c.ready.verdict}", fontWeight = FontWeight.SemiBold) }
-    items(c.ready.criteria) { Text("  $it") }
-    item { Text("Ход PR: ${c.ready.pulls}") }
-    item { Text("ROADMAP: ${c.roadmap}", fontWeight = FontWeight.SemiBold) }
-    items(c.stages) { s -> Text("  [${s.flag}] ${s.title}" + if (s.steps.isEmpty()) "" else " — ${s.steps}") }
-    item { Text("PR: ${c.pulls.size}", fontWeight = FontWeight.SemiBold) }
-    items(c.pulls) { p -> Text("  #${p.number} ${p.title}" + (if (p.draft) " (черновик)" else "") + " — ${p.head}, ${p.updated}") }
-    item { Text("Проверки последнего PR: ${checked(c.lastPull)}") }
-    item { Text("Проверки последнего влитого: ${checked(c.lastMerged)}") }
-    item { Text("Ветки: ${c.branches.size}", fontWeight = FontWeight.SemiBold) }
-    items(c.branches) { b -> Text("  ${if (b.recent) "●" else "○"} ${b.name} — ${b.updated}") }
-    for (p in c.panel) {
-        item { Text("О себе (${p.name})", fontWeight = FontWeight.SemiBold) }
-        item { Text(p.text, style = MaterialTheme.typography.bodySmall) }
-    }
-    when (panel) {
-        null -> Unit
-        is Outcome.Failure -> item { Text("Панель: ${Panels.failed(panel).first()}", color = MaterialTheme.colorScheme.error) }
-        is Outcome.Success -> {
-            item { Text("Панель", fontWeight = FontWeight.SemiBold) }
-            items(panel.value.items) { PanelRow(c.name, it, loader, open) }
+        item { Text("${c.name} — ${c.place}, ${c.working}", style = MaterialTheme.typography.titleMedium) }
+        if (view.attention.isNotEmpty()) {
+            item {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(Tokens.gap), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("Внимание", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
+                        for (a in view.attention) Text(a, color = MaterialTheme.colorScheme.error)
+                        // Ошибки источников — здесь, а не в конце карточки: конфликт клона виден сразу (D-65).
+                        for (e in c.errors) Text("  $e", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
         }
-    }
-    if (c.errors.isNotEmpty()) {
-        item { Text("Ошибки источников", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold) }
-        items(c.errors) { Text("  $it", color = MaterialTheme.colorScheme.error) }
+        item {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                for ((title, path) in c.files) AssistChip(onClick = { open(Nav.Doc(c.name, path, null)) }, label = { Text(title) })
+                AssistChip(onClick = { open(Nav.Dir(c.name, "")) }, label = { Text("Все файлы") })
+            }
+        }
+        for (sec in view.sections) {
+            val key = sec.kind.name
+            val expanded = key in opened
+            val expandable = sec.lines.isNotEmpty() || (sec.kind == Screens.CardSection.Kind.ABOUT && panel != null)
+            item(key = key) {
+                Text(
+                    sec.title + when {
+                        sec.kind == Screens.CardSection.Kind.TODO && todoPath != null -> " ▸"
+                        !expandable -> ""
+                        expanded -> " ▾"
+                        else -> " ▸"
+                    },
+                    Modifier.fillMaxWidth().clickable(enabled = expandable || (sec.kind == Screens.CardSection.Kind.TODO && todoPath != null)) {
+                        if (sec.kind == Screens.CardSection.Kind.TODO && todoPath != null) {
+                            open(Nav.Doc(c.name, todoPath, null))
+                        } else if (expanded) {
+                            opened.remove(key)
+                        } else {
+                            opened.add(key)
+                        }
+                    }.padding(vertical = 8.dp),
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            if (expanded) {
+                if (sec.kind == Screens.CardSection.Kind.DECISIONS) {
+                    // Решение — касанием к журналу на его якоре (F-07); без id — просто строка.
+                    items(c.lastDecisions) { d ->
+                        val anchor = d.id?.let(Links::slug)
+                        Text(
+                            "  ${d.text}",
+                            Modifier.fillMaxWidth().clickable(enabled = anchor != null && decisionsPath != null) { open(Nav.Doc(c.name, decisionsPath!!, anchor)) }.padding(vertical = 4.dp),
+                        )
+                    }
+                } else {
+                    items(sec.lines) { Text("  $it", style = MaterialTheme.typography.bodySmall) }
+                }
+                if (sec.kind == Screens.CardSection.Kind.ABOUT) {
+                    when (panel) {
+                        null -> Unit
+                        is Outcome.Failure -> item { Text("Панель: ${Panels.failed(panel).first()}", color = MaterialTheme.colorScheme.error) }
+                        is Outcome.Success -> items(panel.value.items) { PanelRow(c.name, it, loader, open) }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -598,39 +669,86 @@ private fun DirScreen(nav: Nav.Dir, loader: Loader, onBack: () -> Unit, open: (N
     }
 }
 
+/**
+ * Документ (F-09, UX-9, UX-21): разбор и стили — не в главном потоке,
+ * абзацы — списком (якорь — номер абзаца), поиск по тексту, выделение и
+ * копирование; внешняя ссылка — по D-75 ([external]).
+ */
 @Composable
 private fun DocScreen(nav: Nav.Doc, names: Map<String, String>, loader: Loader, onBack: () -> Unit, open: (Nav) -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     var result by remember(nav) { mutableStateOf<Outcome<String>?>(null) }
     var anchor by remember(nav) { mutableStateOf(nav.anchor) }
     LaunchedEffect(nav) { loader.document(nav.project, nav.path) { result = it } }
-    val scroll = rememberScrollState()
-    var layout by remember(nav) { mutableStateOf<TextLayoutResult?>(null) }
-    Column(Modifier.verticalScroll(scroll)) {
-        TextButton(onClick = onBack) { Text("← Назад") }
+    val taps = remember { LinkTaps() }
+    val linkColor = MaterialTheme.colorScheme.primary
+    val markdown = nav.path.endsWith(".md", ignoreCase = true)
+    val blocks by produceState<DocText.Blocks?>(null, result, names, linkColor) {
+        val r = result as? Outcome.Success ?: run {
+            value = null
+            return@produceState
+        }
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            if (markdown) {
+                val doc = DocText.build(r.value)
+                val text = DocText.annotated(doc, names, nav.project, nav.path, linkColor) { target ->
+                    when (target) {
+                        is Links.Target.Anchor -> anchor = target.anchor
+                        is Links.Target.File -> open(Nav.Doc(target.project, target.path, target.anchor))
+                        is Links.Target.External -> external(context, taps, target.url)
+                    }
+                }
+                DocText.blocks(text, doc.headings, markdown = true)
+            } else {
+                DocText.blocks(androidx.compose.ui.text.AnnotatedString(r.value), emptyList(), markdown = false)
+            }
+        }
+    }
+    val list = androidx.compose.foundation.lazy.rememberLazyListState()
+    var searching by rememberSaveable(nav) { mutableStateOf(false) }
+    var query by rememberSaveable(nav) { mutableStateOf("") }
+    var hit by remember(nav) { mutableStateOf<Int?>(null) }
+    LaunchedEffect(anchor, blocks) {
+        val a = anchor ?: return@LaunchedEffect
+        blocks?.anchorIndex(a)?.let { list.animateScrollToItem(it) }
+    }
+    LaunchedEffect(hit) { hit?.let { list.animateScrollToItem(it) } }
+    Column {
+        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            TextButton(onClick = onBack) { Text("← Назад") }
+            androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+            TextButton(onClick = { searching = !searching }) { Text(if (searching) "Скрыть поиск" else "Найти") }
+        }
         Text("${nav.project}: ${nav.path}", style = MaterialTheme.typography.titleMedium)
+        if (searching) {
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                OutlinedTextField(
+                    query, { query = it; hit = blocks?.find(it) }, label = { Text("Найти в документе") }, singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(enabled = query.isNotBlank(), onClick = { hit = blocks?.find(query, hit ?: -1) }) { Text("Далее") }
+            }
+            if (query.isNotBlank() && hit == null && blocks != null) Text("Не найдено", style = MaterialTheme.typography.bodySmall)
+        }
         when (val r = result) {
-            null -> Text("Загрузка…")
+            null -> androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical = 8.dp))
             is Outcome.Failure -> FailureText("Не загрузилось", Screens.failure(r.diagnostics.first()))
             is Outcome.Success -> {
-                val markdown = nav.path.endsWith(".md", ignoreCase = true)
-                val doc = remember(r.value) { if (markdown) DocText.build(r.value) else null }
-                if (doc == null) {
-                    Text(r.value, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
+                val b = blocks
+                if (b == null) {
+                    androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical = 8.dp))
                 } else {
-                    val text = remember(doc, names) {
-                        DocText.annotated(doc, names, nav.project, nav.path) { target ->
-                            when (target) {
-                                is Links.Target.Anchor -> anchor = target.anchor
-                                is Links.Target.File -> open(Nav.Doc(target.project, target.path, target.anchor))
-                                is Links.Target.External -> Unit
+                    // Выделение и копирование (UX-21): документ — текст, а не картинка.
+                    androidx.compose.foundation.text.selection.SelectionContainer {
+                        LazyColumn(state = list, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            itemsIndexed(b.items) { _, t ->
+                                if (markdown) {
+                                    Text(t)
+                                } else {
+                                    Text(t, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
+                                }
                             }
                         }
-                    }
-                    Text(text, onTextLayout = { layout = it })
-                    LaunchedEffect(anchor, layout) {
-                        val a = anchor ?: return@LaunchedEffect
-                        val l = layout ?: return@LaunchedEffect
-                        doc.headings.firstOrNull { Links.slug(it.second) == a }?.let { (offset, _) -> scroll.animateScrollTo(l.getLineTop(l.getLineForOffset(offset)).toInt()) }
                     }
                 }
             }
@@ -638,10 +756,47 @@ private fun DocScreen(nav: Nav.Doc, names: Map<String, String>, loader: Loader, 
     }
 }
 
+/**
+ * Внешняя ссылка (D-75): первое касание копирует и показывает адрес целиком,
+ * второе той же — открывает в браузере телефона, только `https`. Адрес — не
+ * секрет: копия без «чувствительного» флага.
+ */
+private fun external(context: android.content.Context, taps: LinkTaps, url: String) {
+    fun say(text: String) = android.widget.Toast.makeText(context, text, android.widget.Toast.LENGTH_LONG).show()
+    when (val act = taps.tap(url, com.dpsmpx.dpai.core.clock.Clock.SYSTEM.monotonicNanos() / 1_000_000)) {
+        is LinkTaps.Act.Copy -> {
+            context.getSystemService(android.content.ClipboardManager::class.java)?.setPrimaryClip(android.content.ClipData.newPlainText("ссылка", url))
+            say(act.text)
+        }
+        is LinkTaps.Act.Open -> try {
+            context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, act.url.toUri()))
+        } catch (_: android.content.ActivityNotFoundException) {
+            say("Нет приложения для ссылки — адрес скопирован")
+        }
+        is LinkTaps.Act.Refuse -> say(act.text)
+    }
+}
+
+/**
+ * Вопросы автору (F-24, UX-17): по проектам, метка — чипом, касание —
+ * `TODO.md` проекта на разделе вопроса.
+ */
 @Composable
-private fun Questions(q: List<Screens.Question>) = LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+private fun Questions(q: List<Screens.Question>, open: (Nav) -> Unit) = LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
     item { Text("Вопросов автору: ${q.size}", style = MaterialTheme.typography.titleMedium) }
-    items(q) { i -> Text("${i.project}: " + (i.label?.let { "[$it] " } ?: "") + i.title) }
+    for ((project, items) in Screens.questionGroups(q)) {
+        item(key = "p:$project") { Text(project, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp)) }
+        items(items) { i ->
+            Row(
+                Modifier.fillMaxWidth().clickable(enabled = i.path != null) { open(Nav.Doc(i.project, i.path!!, i.section?.let(Links::slug))) }.padding(vertical = 4.dp),
+                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            ) {
+                i.label?.let { AssistChip(onClick = {}, enabled = false, label = { Text(it) }, modifier = Modifier.padding(end = 6.dp)) }
+                Text(i.title, Modifier.weight(1f))
+                if (i.path != null) Text("▸")
+            }
+        }
+    }
 }
 
 @Composable
@@ -688,6 +843,8 @@ private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -
     Spacer(Modifier.height(Tokens.gap))
     // Полный итог синхронизации — здесь (UX-6): на сводке только снэкбар.
     Text("Синхронизация", style = MaterialTheme.typography.titleMedium)
+    // Постоянная строка последней синхронизации (UX-10); временные итоги — снэкбаром.
+    view.state?.let { st -> Text("Последняя: ${Screens.time(st.asOf)} · ${Screens.summary(st).syncHealth}", style = MaterialTheme.typography.bodySmall) }
     Button(onClick = onSync, enabled = view.hasToken && !view.busy) { Text(if (view.busy) "Синхронизация…" else "Обновить") }
     if (view.status.isNotEmpty()) StatusText(view)
     Spacer(Modifier.height(Tokens.gap))
@@ -701,46 +858,80 @@ private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -
 }
 
 /**
- * Выбор клонов (D-70): репозиторий — строкой с отметкой; реестр — сверху.
- * Снятая отметка клон не удаляет: в нём может быть работа ИИ — он просто не
- * обновляется и не читается.
+ * Выбор клонов (D-70, UX-11): полноэкранный лист — поиск, «Все» и «Ни
+ * одного», строка — флажок (роль для TalkBack, цель 48 dp) с пометкой
+ * «склонирован · N МБ»; реестр — сверху. Закрывается только кнопками и
+ * жестом «назад», касание мимо — не «Позже». Снятая отметка клон не
+ * удаляет: в нём может быть работа ИИ; удалить — отдельно, с вопросом.
  */
 @Composable
-fun ClonesDialog(prompt: ClonePrompt, onDone: (Set<String>?) -> Unit) {
-    var checked by remember(prompt) { mutableStateOf(prompt.checked) }
-    androidx.compose.material3.AlertDialog(
+fun ClonesDialog(prompt: ClonePrompt, onDone: (Set<String>?) -> Unit, onDelete: (String) -> Unit = {}, busy: Boolean = false) {
+    var checked by remember(prompt.first, prompt.checked) { mutableStateOf(prompt.checked) }
+    var query by remember { mutableStateOf("") }
+    var deleting by remember { mutableStateOf<String?>(null) }
+    val shown = prompt.options.filter { query.isBlank() || it.slug.contains(query.trim(), ignoreCase = true) }
+    androidx.compose.ui.window.Dialog(
         onDismissRequest = { onDone(null) },
-        title = { Text("Какие репозитории клонировать?") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false),
+    ) {
+        Surface(Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars).windowInsetsPadding(WindowInsets.navigationBars).padding(Tokens.gap), verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+                Text("Какие репозитории клонировать?", style = MaterialTheme.typography.titleLarge)
                 Text(
                     "Клон — полная копия в приложении: «AI» работает в нём, пульт берёт из него файлы без запросов. " +
                         "Первое клонирование — долгое, лучше по Wi-Fi. Неотмеченные пульт читает с GitHub. Выбор меняется в пункте «Ещё».",
                     style = MaterialTheme.typography.bodySmall,
                 )
-                // Список — не выше половины экрана: кнопки окна остаются видны.
-                LazyColumn(Modifier.heightIn(max = 360.dp)) {
-                    items(prompt.options, key = { it.slug }) { o ->
+                OutlinedTextField(query, { query = it }, label = { Text("Найти репозиторий") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                prompt.note?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                Row(horizontalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+                    TextButton(onClick = { checked = checked + shown.filter { !it.gone }.map { it.slug } }) { Text("Все") }
+                    TextButton(onClick = { checked = checked - shown.map { it.slug }.toSet() }) { Text("Ни одного") }
+                }
+                LazyColumn(Modifier.weight(1f)) {
+                    items(shown, key = { it.slug }) { o ->
+                        val on = o.slug in checked
                         Row(
-                            Modifier.fillMaxWidth().clickable { checked = if (o.slug in checked) checked - o.slug else checked + o.slug },
+                            Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                                .toggleable(value = on, role = Role.Checkbox) { checked = if (on) checked - o.slug else checked + o.slug },
                             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
                         ) {
-                            androidx.compose.material3.Checkbox(checked = o.slug in checked, onCheckedChange = null)
-                            Column(Modifier.padding(start = 6.dp)) {
+                            androidx.compose.material3.Checkbox(checked = on, onCheckedChange = null)
+                            Column(Modifier.weight(1f).padding(start = 6.dp)) {
                                 Text(o.slug, style = MaterialTheme.typography.bodyMedium)
+                                val marks = listOfNotNull(
+                                    "реестр".takeIf { o.registry },
+                                    "закрытый".takeIf { o.private },
+                                    o.bytes?.let { "склонирован · " + if (it < 1_048_576) "меньше 1 МБ" else "${it / 1_048_576} МБ" },
+                                )
                                 Text(
-                                    if (o.gone) "нет в списке аккаунта — снимите отметку, если не нужен" else listOfNotNull("реестр".takeIf { o.registry }, "закрытый".takeIf { o.private }).joinToString(" · "),
+                                    if (o.gone) "нет в списке аккаунта — снимите отметку, если не нужен" else marks.joinToString(" · "),
                                     style = MaterialTheme.typography.labelSmall,
                                 )
                             }
+                            // Удалить — только не отмеченный клон и не при первом входе; с вопросом (D-70: в клоне может быть работа ИИ).
+                            // Не во время синхронизации: клон может обновляться прямо сейчас.
+                            if (!prompt.first && !on && o.bytes != null) TextButton(enabled = !busy, onClick = { deleting = o.slug }) { Text("Удалить…", color = MaterialTheme.colorScheme.error) }
                         }
                     }
                 }
+                Row(horizontalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+                    TextButton(onClick = { onDone(null) }) { Text(if (prompt.first) "Позже" else "Отмена") }
+                    androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+                    Button(onClick = { onDone(checked) }) { Text("Клонировать отмеченные (${checked.size})") }
+                }
             }
-        },
-        confirmButton = { TextButton(onClick = { onDone(checked) }) { Text("Клонировать отмеченные (${checked.size})") } },
-        dismissButton = { TextButton(onClick = { onDone(null) }) { Text(if (prompt.first) "Позже" else "Отмена") } },
-    )
+        }
+    }
+    deleting?.let { slug ->
+        AlertDialog(
+            onDismissRequest = { deleting = null },
+            title = { Text("Удалить клон $slug?") },
+            text = { Text("Место на телефоне освободится. Работа ИИ в этом клоне — ветки и незакоммиченное, чего нет на GitHub, — пропадёт. Отметить и склонировать снова можно потом.") },
+            confirmButton = { TextButton(onClick = { deleting = null; onDelete(slug) }) { Text("Удалить", color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = { deleting = null }) { Text("Отмена") } },
+        )
+    }
 }
 
 /** Отказ: причина словом, код и сообщение — по «Подробнее» (ТЗ, §6.9; UX-13). */

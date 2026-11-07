@@ -13,7 +13,7 @@ object Links {
         /** Якорь в том же документе. */
         data class Anchor(val anchor: String) : Target
 
-        /** Адрес вне репозиториев: показывается, но не открывается из пульта. */
+        /** Адрес вне репозиториев: первое касание копирует, второе открывает — только `https` (D-75, `LinkTaps`). */
         data class External(val url: String) : Target
     }
 

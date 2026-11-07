@@ -177,6 +177,55 @@ object Screens {
 
     data class Stage(val title: String, val flag: String, val steps: String)
 
+    /** Решение в карточке (F-07): [id] — якорь журнала (касание открывает решение), [text] — строка. */
+    data class Decision(val id: String?, val text: String)
+
+    /**
+     * Карточка на экране (UX-8): сверху — «Внимание» (ошибки источников,
+     * красные проверки последнего и влитого PR, вопросы за автором), если
+     * есть что сказать; ниже — разделы свёрнутыми строками с итогом.
+     */
+    data class CardView(val attention: List<String>, val sections: List<CardSection>)
+
+    /** Раздел карточки: [title] — строка с итогом, [lines] — что под раскрытием; [kind] — что рисует экран. */
+    data class CardSection(val kind: Kind, val title: String, val lines: List<String>) {
+        enum class Kind { READY, ROADMAP, PULLS, BRANCHES, DECISIONS, TODO, ABOUT }
+    }
+
+    fun cardView(c: Card): CardView {
+        val attention = buildList {
+            if (c.errors.isNotEmpty()) add("Ошибки источников: ${c.errors.size}")
+            c.lastPull?.takeIf { it.verdict == verdictTitle("red") }?.let { add("Проверки PR #${it.number} — красные") }
+            c.lastMerged?.takeIf { it.verdict == verdictTitle("red") }?.let { add("Проверки влитого PR #${it.number} — красные") }
+            if (c.forAuthor != UNKNOWN && c.forAuthor != "0") add("За автором в TODO: ${c.forAuthor}")
+        }
+        val fresh = c.branches.count { it.recent }
+        val pullVerdict = c.lastPull?.let { " · последние проверки: ${it.verdict}" }.orEmpty()
+        val current = c.stages.firstOrNull { it.flag != "сделано" }?.title
+        return CardView(
+            attention,
+            listOf(
+                CardSection(CardSection.Kind.READY, "Готовность: ${c.ready.verdict}", listOf("Этап: ${c.ready.stage}") + c.ready.criteria + "Ход PR: ${c.ready.pulls}"),
+                CardSection(CardSection.Kind.ROADMAP, "ROADMAP ${c.roadmap}" + (current?.let { ": $it" } ?: ""), c.stages.map { s -> "[${s.flag}] ${s.title}" + if (s.steps.isEmpty()) "" else " — ${s.steps}" }),
+                CardSection(
+                    CardSection.Kind.PULLS,
+                    "PR ${c.pulls.size}$pullVerdict",
+                    c.pulls.map { p -> "#${p.number} ${p.title}" + (if (p.draft) " (черновик)" else "") + " — ${p.head}, ${p.updated}" } +
+                        "Проверки последнего PR: ${checkedLine(c.lastPull)}" + "Проверки последнего влитого: ${checkedLine(c.lastMerged)}",
+                ),
+                // «●» и «○» без легенды не читались (UX-8): свежесть — словом.
+                CardSection(CardSection.Kind.BRANCHES, "Ветки ${c.branches.size}, свежих $fresh", c.branches.map { b -> "${b.name} — ${b.updated}" + if (b.recent) " · свежая" else "" }),
+                CardSection(CardSection.Kind.DECISIONS, "Решений ${c.decisions}", c.lastDecisions.map { it.text }),
+                CardSection(CardSection.Kind.TODO, "TODO ${c.todo}, за автором ${c.forAuthor}", emptyList()),
+                CardSection(CardSection.Kind.ABOUT, "О себе", c.panel.flatMap { listOf("${it.name}:") + it.text.lines().map { l -> "  $l" } }),
+            ),
+        )
+    }
+
+    /** Итог проверок PR строкой (F-15). */
+    fun checkedLine(c: Checked?): String =
+        c?.let { "#${it.number} — ${it.verdict}, ${it.age}" + (it.line?.let { l -> "; «$l»" } ?: "") } ?: UNKNOWN
+
     data class Pull(val number: Long, val title: String, val draft: Boolean, val head: String, val updated: String)
 
     data class BranchRow(val name: String, val updated: String, val recent: Boolean)
@@ -232,7 +281,7 @@ object Screens {
         val place: String,
         val working: String,
         val decisions: String,
-        val lastDecisions: List<String>,
+        val lastDecisions: List<Decision>,
         val todo: String,
         val forAuthor: String,
         val roadmap: String,
@@ -283,7 +332,7 @@ object Screens {
             working = working(p, s.asOf),
             decisions = show(p.decisions),
             lastDecisions = decisions.takeLast(LAST_DECISIONS).reversed().map { o ->
-                listOfNotNull(str(o, "id"), str(o, "title"), str(o, "status")?.let { "($it)" }).joinToString(" ")
+                Decision(str(o, "id"), listOfNotNull(str(o, "id"), str(o, "title"), str(o, "status")?.let { "($it)" }).joinToString(" "))
             },
             todo = show(p.todoOpen),
             forAuthor = show(p.forAuthor),
@@ -332,13 +381,22 @@ object Screens {
 
     // --- Вопросы автору (F-24) ---
 
-    data class Question(val project: String, val title: String, val label: String?)
+    /**
+     * Вопрос автору (F-24, UX-17): [path] и [section] — где он в `TODO.md`
+     * проекта (источник `Проект:TODO.md`); касание открывает файл на разделе.
+     */
+    data class Question(val project: String, val title: String, val label: String?, val path: String? = null, val section: String? = null)
 
     fun questions(s: EcosystemState): List<Question> = s.projects.flatMap { p ->
-        objects(payload(p, "todo"), "sections").filter { (it["forAuthor"] as? JsonBool)?.value == true }.flatMap { sec ->
+        val todo = payload(p, "todo")
+        val path = todo?.let { str(it, "path") }
+        objects(todo, "sections").filter { (it["forAuthor"] as? JsonBool)?.value == true }.flatMap { sec ->
             objects(sec, "items").filter { (it["done"] as? JsonBool)?.value != true }.map { i ->
-                Question(p.name, str(i, "title").orEmpty(), str(i, "label"))
+                Question(p.name, str(i, "title").orEmpty(), str(i, "label"), path, str(sec, "title"))
             }
         }
     }
+
+    /** Вопросы по проектам (UX-17): группа — проект, порядок — как в `TODO.md`. */
+    fun questionGroups(q: List<Question>): List<Pair<String, List<Question>>> = q.groupBy { it.project }.toList()
 }

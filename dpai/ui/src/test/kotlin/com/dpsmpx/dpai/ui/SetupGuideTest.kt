@@ -33,4 +33,13 @@ class SetupGuideTest {
         assertEquals(false, done["cli"])
         assertEquals(null, done["termux"], "что приложение проверить не может — без отметки")
     }
+
+    /** Выбор пути — первым разделом (AI:A-17): Linux в приложении — три шага с командой npm. */
+    @Test
+    fun pathChoiceComesFirst() {
+        val all = SetupGuide.sections(SetupState())
+        assertEquals("path", all.first().id)
+        assertEquals(3, all.first().steps.size)
+        assertTrue(all.first().steps.any { it.command == "npm i -g @anthropic-ai/claude-code" })
+    }
 }

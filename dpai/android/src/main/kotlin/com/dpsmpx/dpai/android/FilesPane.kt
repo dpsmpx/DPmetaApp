@@ -116,7 +116,7 @@ private fun treeOf(context: android.content.Context, p: Place): FileTree = when 
  * правка текста, «Открыть в терминале».
  */
 @Composable
-fun FilesPane() {
+fun FilesPane(onLinux: () -> Unit = {}) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var ready by remember { mutableStateOf(false) }
@@ -193,7 +193,11 @@ fun FilesPane() {
                 Text("Папки — копией в Linux", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
                 TextButton(enabled = linux, onClick = { pick.launch(null) }) { Text("+ Папка") }
             }
-            if (!linux) Text("Нужна Linux-среда приложения: Targets → Linux в приложении.", style = MaterialTheme.typography.bodySmall)
+            // Пустое состояние — с действием (AI:A-17): к установке среды.
+            if (!linux) {
+                Text("Нужна Linux-среда приложения.", style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = onLinux) { Text("Установить: «Targets» → «Linux в приложении» ▸") }
+            }
             note?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         }
         // Отвязанная, но ещё не подтверждённая снэкбаром — не видна (AI:A-4).
