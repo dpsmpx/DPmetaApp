@@ -300,18 +300,17 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
 
 @Composable
 private fun CheckRow(c: CheckLine) {
+    // Состояние — и знаком, а не только цветом (AI:A-12): «✓», «!», «✕».
+    val mark = when (c.tone) {
+        Tone.DONE -> "✓ "
+        Tone.WARNING -> "! "
+        Tone.ERROR -> "✕ "
+        Tone.ACTIVE, Tone.NEUTRAL -> ""
+    }
     Row(Modifier.padding(vertical = 2.dp)) {
-        Text(c.name, Modifier.weight(0.35f), color = toneOf(c.tone), style = MaterialTheme.typography.labelMedium)
+        Text(mark + c.name, Modifier.weight(0.35f), color = toneColor(c.tone), style = MaterialTheme.typography.labelMedium)
         Text(c.detail, Modifier.weight(0.65f), style = MaterialTheme.typography.bodySmall)
     }
-}
-
-@Composable
-private fun toneOf(t: Tone) = when (t) {
-    Tone.ERROR -> MaterialTheme.colorScheme.error
-    Tone.WARNING -> MaterialTheme.colorScheme.tertiary
-    Tone.DONE, Tone.ACTIVE -> MaterialTheme.colorScheme.primary
-    Tone.NEUTRAL -> MaterialTheme.colorScheme.onSurfaceVariant
 }
 
 /**
@@ -647,6 +646,7 @@ private fun CliCard() {
     var code by remember { mutableStateOf<String?>(null) }
     var until by remember { mutableStateOf<Long?>(null) }
     var note by remember { mutableStateOf<String?>(null) }
+    val undo = LocalUndo.current
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
             Text("Командная строка dpai", style = MaterialTheme.typography.titleMedium)
@@ -704,7 +704,7 @@ private fun CliCard() {
                             asking = false
                             ControlServer.pairing(context).revoke()
                             code = null
-                            note = "Токен отозван: dpai нужно сопрячь заново"
+                            undo?.say("Токен отозван: dpai нужно сопрячь заново") ?: run { note = "Токен отозван: dpai нужно сопрячь заново" }
                         },
                         onDismiss = { asking = false },
                     )
@@ -755,6 +755,7 @@ private fun BackupCard(controller: Controller, onRestoreAccess: () -> Unit, onRe
     val scope = rememberCoroutineScope()
     var last by remember { mutableStateOf(SettingsBackups.last(context)) }
     var message by remember { mutableStateOf<String?>(null) }
+    val undo = LocalUndo.current
     val pick = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             scope.launch {
@@ -783,10 +784,12 @@ private fun BackupCard(controller: Controller, onRestoreAccess: () -> Unit, onRe
                 TextButton(onClick = {
                     scope.launch {
                         val r = withContext(Dispatchers.IO) { SettingsBackups.save(context, controller.snapshot(), controller) }
-                        message = when (r) {
+                        // Сохранено — снэкбаром (AI:A-19); отказ — строкой на месте.
+                        val text = when (r) {
                             is com.dpsmpx.dpai.core.result.Outcome.Success -> "Сохранено: Загрузки/dpai-backup/${r.value}"
                             is com.dpsmpx.dpai.core.result.Outcome.Failure -> "Не сохранено: ${r.errors.firstOrNull()?.message}"
                         }
+                        message = if (r is com.dpsmpx.dpai.core.result.Outcome.Success && undo != null) null.also { undo.say(text) } else text
                         last = SettingsBackups.last(context)
                     }
                 }) { Text("Сохранить сейчас") }

@@ -98,8 +98,9 @@ Python, DPprofile — документы и проверки на Python; в с�
 
 Android-библиотека корня (своего `applicationId` нет, D-27, D-49): модели
 экранов на чистом Kotlin (`app/…/screens/`, снимки текстом на JVM —
-`app/src/test/snapshots/`), экраны Compose (`app/…/ui/`, токены оформления
-`Tokens`), хранилище токена под Keystore, блокировка `BiometricPrompt`
+`app/src/test/snapshots/`), экраны Compose (`app/…/ui/`, тема — цвета обоев,
+смысловые цвета — `AppPalette` из `dpai/ui`, D-74), хранилище токена под
+Keystore, блокировка `BiometricPrompt`
 (F-45), синхронизация по кнопке; лента событий из разницы состояний (F-05),
 итог проверок PR (F-15), «о себе» — блоки состояния README и панель
 проекта по данным `config/projects/<Проект>.toml` (F-10, D-57: пункты

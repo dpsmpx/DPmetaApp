@@ -177,7 +177,8 @@ object RequestOverlay {
         })
         root.addView(text(card.title, 16f, bold = true))
         root.addView(text(card.body, 14f))
-        val status = text("", 12f).apply { setTextColor(0xFFC62828.toInt()) }
+        // Ошибка — смысловым цветом под тему окна: прежний красный на тёмном фоне давал 2,7 : 1 (AI:A-8, D-74).
+        val status = text("", 12f).apply { setTextColor(com.dpsmpx.dpai.ui.AppPalette.semantic(com.dpsmpx.dpai.ui.AppPalette.Role.ERROR, night).toInt()) }
         val input = if (card.buttons.any { it.needsText }) {
             EditText(context).apply {
                 hint = "ответ"

@@ -49,6 +49,7 @@ fun LogPane(model: DemoModel) {
     var filter by remember { mutableStateOf(LogFilter.ALL) }
     var lines by remember { mutableStateOf<List<LogLine>>(emptyList()) }
     var note by remember { mutableStateOf<String?>(null) }
+    val undo = LocalUndo.current
     val scope = rememberCoroutineScope()
     LaunchedEffect(filter) {
         while (true) {
@@ -67,13 +68,14 @@ fun LogPane(model: DemoModel) {
             OutlinedButton(onClick = {
                 val text = log.export()
                 Clipboard.copy(context, "журнал dpai", text)
-                if (!Clipboard.systemConfirms) note = "скопировано знаков: ${text.length}"
+                if (!Clipboard.systemConfirms) undo?.say("Скопировано знаков: ${text.length}") ?: run { note = "скопировано знаков: ${text.length}" }
             }) { Text("Копировать журнал") }
             OutlinedButton(onClick = {
                 scope.launch {
-                    note = when (val r = withContext(Dispatchers.IO) { saveLog(context, log.export(maxChars = Int.MAX_VALUE)) }) {
-                        is Outcome.Success -> "Сохранено: Загрузки/$LOG_DIR/${r.value}"
-                        is Outcome.Failure -> "Не сохранено: ${r.errors.first().message}"
+                    // Сохранено — снэкбаром (AI:A-19); отказ — строкой на месте.
+                    when (val r = withContext(Dispatchers.IO) { saveLog(context, log.export(maxChars = Int.MAX_VALUE)) }) {
+                        is Outcome.Success -> undo?.say("Сохранено: Загрузки/$LOG_DIR/${r.value}") ?: run { note = "Сохранено: Загрузки/$LOG_DIR/${r.value}" }
+                        is Outcome.Failure -> note = "Не сохранено: ${r.errors.first().message}"
                     }
                 }
             }) { Text("В Загрузки") }

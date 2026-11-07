@@ -63,18 +63,57 @@ import com.dpsmpx.dpmeta.metrics.Feed
 import com.dpsmpx.dpmeta.metrics.FeedEvent
 import com.dpsmpx.dpmeta.metrics.MetricPoint
 
-/**
- * Токены оформления пульта (D-15; ТЗ, §9): свои цвета, светлая и тёмная
- * схемы по системе. Цвета — здесь и только здесь.
- */
+/** Отступы пульта (ТЗ, §9). Цвета — не здесь: тема приложения одна (D-74), смысловые — `AppPalette`. */
 object Tokens {
-    val light: ColorScheme = lightColorScheme(primary = Color(0xFF2F5D8A), secondary = Color(0xFF5B6B7A), error = Color(0xFFB3261E))
-    val dark: ColorScheme = darkColorScheme(primary = Color(0xFF9CC3EA), secondary = Color(0xFFB7C4D1), error = Color(0xFFF2B8B5))
     val gap = 12.dp
 }
 
+/**
+ * Тема пульта — та же, что у «AI» (D-74; UX-5): цвета обоев телефона
+ * (Android 12+), на Android 11 — запасная схема `AppPalette` всеми ролями.
+ */
 @Composable
-fun PultTheme(content: @Composable () -> Unit) = MaterialTheme(colorScheme = if (isSystemInDarkTheme()) Tokens.dark else Tokens.light, content = content)
+fun PultTheme(content: @Composable () -> Unit) {
+    val dark = isSystemInDarkTheme()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scheme = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+        if (dark) androidx.compose.material3.dynamicDarkColorScheme(context) else androidx.compose.material3.dynamicLightColorScheme(context)
+    } else {
+        fallbackScheme(dark)
+    }
+    MaterialTheme(colorScheme = scheme, content = content)
+}
+
+/** Запасная схема Android 11 — роли `AppPalette` (как у «AI», `fallbackScheme` её оболочки). */
+private fun fallbackScheme(dark: Boolean): ColorScheme {
+    val p = com.dpsmpx.dpai.ui.AppPalette.scheme(dark)
+    fun c(v: Long) = Color(v)
+    return if (dark) {
+        darkColorScheme(
+            primary = c(p.primary), onPrimary = c(p.onPrimary), primaryContainer = c(p.primaryContainer), onPrimaryContainer = c(p.onPrimaryContainer),
+            secondary = c(p.secondary), onSecondary = c(p.onSecondary), secondaryContainer = c(p.secondaryContainer), onSecondaryContainer = c(p.onSecondaryContainer),
+            tertiary = c(p.tertiary), onTertiary = c(p.onTertiary), tertiaryContainer = c(p.tertiaryContainer), onTertiaryContainer = c(p.onTertiaryContainer),
+            background = c(p.background), onBackground = c(p.onBackground), surface = c(p.surface), onSurface = c(p.onSurface),
+            surfaceVariant = c(p.surfaceVariant), onSurfaceVariant = c(p.onSurfaceVariant), outline = c(p.outline), outlineVariant = c(p.outlineVariant),
+            error = c(p.error), onError = c(p.onError), errorContainer = c(p.errorContainer), onErrorContainer = c(p.onErrorContainer),
+            surfaceContainerLowest = c(p.surfaceContainerLowest), surfaceContainerLow = c(p.surfaceContainerLow), surfaceContainer = c(p.surfaceContainer),
+            surfaceContainerHigh = c(p.surfaceContainerHigh), surfaceContainerHighest = c(p.surfaceContainerHighest),
+            inverseSurface = c(p.inverseSurface), inverseOnSurface = c(p.inverseOnSurface), inversePrimary = c(p.inversePrimary),
+        )
+    } else {
+        lightColorScheme(
+            primary = c(p.primary), onPrimary = c(p.onPrimary), primaryContainer = c(p.primaryContainer), onPrimaryContainer = c(p.onPrimaryContainer),
+            secondary = c(p.secondary), onSecondary = c(p.onSecondary), secondaryContainer = c(p.secondaryContainer), onSecondaryContainer = c(p.onSecondaryContainer),
+            tertiary = c(p.tertiary), onTertiary = c(p.onTertiary), tertiaryContainer = c(p.tertiaryContainer), onTertiaryContainer = c(p.onTertiaryContainer),
+            background = c(p.background), onBackground = c(p.onBackground), surface = c(p.surface), onSurface = c(p.onSurface),
+            surfaceVariant = c(p.surfaceVariant), onSurfaceVariant = c(p.onSurfaceVariant), outline = c(p.outline), outlineVariant = c(p.outlineVariant),
+            error = c(p.error), onError = c(p.onError), errorContainer = c(p.errorContainer), onErrorContainer = c(p.onErrorContainer),
+            surfaceContainerLowest = c(p.surfaceContainerLowest), surfaceContainerLow = c(p.surfaceContainerLow), surfaceContainer = c(p.surfaceContainer),
+            surfaceContainerHigh = c(p.surfaceContainerHigh), surfaceContainerHighest = c(p.surfaceContainerHighest),
+            inverseSurface = c(p.inverseSurface), inverseOnSurface = c(p.inverseOnSurface), inversePrimary = c(p.inversePrimary),
+        )
+    }
+}
 
 /** Состояние экрана, которое держит активность: срез, лента, строка о синхронизации, есть ли токен. */
 data class PultView(

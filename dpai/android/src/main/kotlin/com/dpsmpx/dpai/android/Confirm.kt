@@ -34,7 +34,7 @@ fun ConfirmDialog(title: String, text: String, confirm: String, onConfirm: () ->
 }
 
 /**
- * Обратимое действие со снэкбаром «Отменить» (AI:A-4): предмет скрыт сразу
+ * Снэкбары оболочки «AI». Обратимое действие — со снэкбаром «Отменить» (AI:A-4): предмет скрыт сразу
  * ([hidden]), а само действие выполняется, когда снэкбар ушёл без
  * «Отменить». Окно закрыли раньше — действие не выполняется и предмет
  * остаётся: безопасная сторона (лучше не удалить, чем удалить без ведома).
@@ -42,6 +42,15 @@ fun ConfirmDialog(title: String, text: String, confirm: String, onConfirm: () ->
 class Undo(private val host: SnackbarHostState, private val scope: CoroutineScope) {
     /** Ключи предметов, ждущих своего действия: экран их не показывает. */
     val hidden = mutableStateMapOf<String, Boolean>()
+
+    /**
+     * Временный итог («Сохранено: …», «Токен отозван») — снэкбаром, который
+     * уходит сам (AI:A-19), а не строкой до ухода с экрана. Отказ остаётся
+     * строкой на месте: его надо прочесть и исправить.
+     */
+    fun say(text: String) {
+        scope.launch { host.showSnackbar(text, withDismissAction = true, duration = SnackbarDuration.Short) }
+    }
 
     fun run(key: String, message: String, commit: () -> Unit) {
         hidden[key] = true

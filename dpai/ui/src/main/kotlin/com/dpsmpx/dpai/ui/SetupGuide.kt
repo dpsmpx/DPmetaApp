@@ -120,7 +120,7 @@ object SetupGuide {
                 GuideStep("Команда агента dpai:", AGENT),
                 GuideStep("Каталог Claude слота:", SLOT_DIR),
                 GuideStep("«Получить ключ хоста» — сверьте отпечаток целиком со строкой того же типа (ECDSA, ED25519):", "for k in \$PREFIX/etc/ssh/ssh_host_*_key.pub; do ssh-keygen -l -f \"\$k\"; done"),
-                GuideStep("Совпал — «Совпадает — сохранить». Затем на карточке target — «Проверить связь»: связь, агент, Claude Code, Git — зелёные."),
+                GuideStep("Совпал — «Совпадает — сохранить». Затем на карточке target — «Проверить связь»: связь, агент, Claude Code, Git — со знаком ✓, без красных строк."),
             ),
             done = s.hasTarget,
         ),

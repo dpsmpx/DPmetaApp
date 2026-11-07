@@ -385,15 +385,21 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
     }
 }
 
+/**
+ * Цвет состояния — один на все экраны «AI» и пульт (DPmetaApp:D-74, AI:A-12):
+ * «готово», «предупреждение» и «ошибка» — смысловые цвета `AppPalette` с
+ * контрастом не ниже 4,5 : 1 на обеих темах, а не оттенок обоев.
+ */
 @Composable
 internal fun toneColor(t: Tone): Color {
     val dark = androidx.compose.foundation.isSystemInDarkTheme()
+    fun of(role: com.dpsmpx.dpai.ui.AppPalette.Role) = Color(com.dpsmpx.dpai.ui.AppPalette.semantic(role, dark))
     return when (t) {
         Tone.NEUTRAL -> MaterialTheme.colorScheme.onSurfaceVariant
         Tone.ACTIVE -> MaterialTheme.colorScheme.primary
-        Tone.WARNING -> if (dark) Color(0xFFFFB74D) else Color(0xFFB26A00)
-        Tone.ERROR -> MaterialTheme.colorScheme.error
-        Tone.DONE -> if (dark) Color(0xFF81C784) else Color(0xFF2E7D32)
+        Tone.WARNING -> of(com.dpsmpx.dpai.ui.AppPalette.Role.WARNING)
+        Tone.ERROR -> of(com.dpsmpx.dpai.ui.AppPalette.Role.ERROR)
+        Tone.DONE -> of(com.dpsmpx.dpai.ui.AppPalette.Role.DONE)
     }
 }
 

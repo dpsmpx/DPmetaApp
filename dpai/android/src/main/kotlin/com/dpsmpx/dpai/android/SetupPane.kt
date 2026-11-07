@@ -74,6 +74,7 @@ private fun SectionCard(s: GuideSection) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var note by remember { mutableStateOf<String?>(null) }
+    val undo = LocalUndo.current
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             val mark = when (s.done) {
@@ -91,7 +92,7 @@ private fun SectionCard(s: GuideSection) {
                             SelectionContainer { Text(cmd, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall) }
                             TextButton(onClick = {
                                 Clipboard.copy(context, "команда", cmd)
-                                if (!Clipboard.systemConfirms) note = "Скопировано"
+                                if (!Clipboard.systemConfirms) undo?.say("Скопировано") ?: run { note = "Скопировано" }
                             }) { Text("Копировать") }
                         }
                     }
@@ -100,7 +101,9 @@ private fun SectionCard(s: GuideSection) {
                     OutlinedButton(onClick = {
                         when (a) {
                             GuideAction.SAVE_AGENT -> scope.launch {
-                                note = withContext(Dispatchers.IO) { runCatching { saveAgent(context) }.fold({ "Сохранено: Загрузки/dpai-agent.zip" }, { "Не сохранено: ${com.dpsmpx.dpai.core.text.Words.failure(it)}" }) }
+                                val r = withContext(Dispatchers.IO) { runCatching { saveAgent(context) } }
+                                // Сохранено — снэкбаром (AI:A-19); отказ — строкой на месте.
+                                if (r.isSuccess && undo != null) undo.say("Сохранено: Загрузки/dpai-agent.zip") else note = r.fold({ "Сохранено: Загрузки/dpai-agent.zip" }, { "Не сохранено: ${com.dpsmpx.dpai.core.text.Words.failure(it)}" })
                             }
                             GuideAction.APP_SETTINGS -> context.startActivity(
                                 Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),

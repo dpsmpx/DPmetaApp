@@ -35,6 +35,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.dpsmpx.dpai.core.clock.Timestamp
+import com.dpsmpx.dpai.ui.AppPalette
 import com.dpsmpx.dpmeta.app.screens.Stats
 import com.dpsmpx.dpmeta.metrics.MetricPoint
 import java.time.format.DateTimeFormatter
@@ -45,28 +46,21 @@ import java.time.format.DateTimeFormatter
  * Сравнение проектов — нейтральная палитра рядов, без смысловых цветов.
  */
 object ChartColors {
-    private val light = mapOf(
-        Stats.Hue.NEUTRAL to Color(0xFF2F5D8A),
-        Stats.Hue.DECISIONS to Color(0xFF6A3FA0),
-        Stats.Hue.VERIFIED to Color(0xFF2E7D32),
-        Stats.Hue.ALERT to Color(0xFFB3261E),
-        Stats.Hue.AI to Color(0xFF8A5A00),
-        Stats.Hue.HUMAN to Color(0xFF00696E),
-    )
-    private val dark = mapOf(
-        Stats.Hue.NEUTRAL to Color(0xFF9CC3EA),
-        Stats.Hue.DECISIONS to Color(0xFFD0B8F5),
-        Stats.Hue.VERIFIED to Color(0xFF8FD694),
-        Stats.Hue.ALERT to Color(0xFFF2B8B5),
-        Stats.Hue.AI to Color(0xFFF0C27A),
-        Stats.Hue.HUMAN to Color(0xFF7FD8DC),
-    )
+    // Смысловые цвета — общие для всего приложения (N-08, D-74): те же, что у состояний «AI».
+    private fun role(h: Stats.Hue): AppPalette.Role = when (h) {
+        Stats.Hue.NEUTRAL -> AppPalette.Role.NEUTRAL
+        Stats.Hue.DECISIONS -> AppPalette.Role.DECISIONS
+        Stats.Hue.VERIFIED -> AppPalette.Role.DONE
+        Stats.Hue.ALERT -> AppPalette.Role.ERROR
+        Stats.Hue.AI -> AppPalette.Role.AI
+        Stats.Hue.HUMAN -> AppPalette.Role.HUMAN
+    }
     // Ряды сравнения — свои оттенки, ни одного смыслового (N-08); проектов больше восьми — цвета
     // повторяются, проект различает легенда и подсказка касанием.
     private val seriesLight = listOf(0xFF1F6F8B, 0xFF9C4221, 0xFF4E6E1E, 0xFF8B2F6B, 0xFF3F3F9F, 0xFF6B5B1E, 0xFF2E6B5A, 0xFF7A3B3B).map(::Color)
     private val seriesDark = listOf(0xFF8FD3EE, 0xFFF5B08F, 0xFFC2E08A, 0xFFF0A6D6, 0xFFB4B4F5, 0xFFE8D58A, 0xFF9EDCC8, 0xFFF0B0B0).map(::Color)
 
-    fun hue(h: Stats.Hue, isDark: Boolean): Color = (if (isDark) dark else light).getValue(h)
+    fun hue(h: Stats.Hue, isDark: Boolean): Color = Color(AppPalette.semantic(role(h), isDark))
 
     fun series(i: Int, isDark: Boolean): Color = (if (isDark) seriesDark else seriesLight).let { it[i % it.size] }
 }
