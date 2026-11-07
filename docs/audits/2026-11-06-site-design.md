@@ -1,9 +1,9 @@
 # Аудит оформления сайта dpsmpx.com
 
-**Дата:** 6 ноября 2026  
-**Опора:** `docs/WEB_DESIGN_APPROACHES_2026.md`  
-**Объект:** статический сайт экосистемы (подсистема SocialMediaImage → `socialmediaimage/website/`, выгрузка на dpsmpx.com)  
-**Источники кода:** `website/static/style.css`, `website/templates/base.html`, `assets/brand/tokens.json`, `docs/brand/VISUAL_SYSTEM.md`
+- **Дата:** 6 ноября 2026
+- **Опора:** `docs/WEB_DESIGN_APPROACHES_2026.md`
+- **Объект:** статический сайт экосистемы (подсистема SocialMediaImage → `socialmediaimage/website/`, выгрузка на dpsmpx.com)
+- **Источники кода:** `socialmediaimage/website/static/style.css`, `socialmediaimage/website/templates/base.html`, `socialmediaimage/assets/brand/tokens.json`, `socialmediaimage/docs/brand/VISUAL_SYSTEM.md`
 
 Цель аудита — найти отклонения от актуальных подходов 2026 (performance-first, accessibility-first, mobile-first, осмысленный визуал) и зафиксировать приоритеты. Это не «сделать модно», а проверить фундамент и ясность.
 
@@ -63,9 +63,9 @@
 
 ## Приоритет работ
 
-1. **S-01** (reduced-motion) — быстро, без визуального риска.  
-2. **S-02** (размеры изображений) — проверить генератор страниц и LCP.  
-3. **S-03** (touch targets навигации) — мелкий CSS-фикс.  
+1. **S-01** (reduced-motion) — быстро, без визуального риска.
+2. **S-02** (размеры изображений) — проверить генератор страниц и LCP.
+3. **S-03** (touch targets навигации) — мелкий CSS-фикс.
 4. Остальное — по желанию / при следующем редизайне секций.
 
 ---
