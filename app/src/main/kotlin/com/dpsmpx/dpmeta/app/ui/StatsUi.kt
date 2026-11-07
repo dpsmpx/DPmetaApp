@@ -15,6 +15,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Card
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -105,18 +109,19 @@ fun LineChart(chart: Stats.Chart, modifier: Modifier = Modifier) {
             val span = (days.last().toEpochDay() - first).coerceAtLeast(1)
             fun x(i: Int) = if (days.size == 1) size.width / 2 else size.width * (days[i].toEpochDay() - first) / span.toFloat()
             fun y(v: Long) = size.height - size.height * (v - low) / (high - low).toFloat()
-            drawLine(axis, Offset(0f, y(low)), Offset(size.width, y(low)), strokeWidth = 1f)
+            drawLine(axis, Offset(0f, y(low)), Offset(size.width, y(low)), strokeWidth = 1.dp.toPx())
             chart.series.forEachIndexed { si, s ->
                 val color = if (chart.series.size == 1) ChartColors.hue(chart.metric.hue, isDark) else ChartColors.series(si, isDark)
                 val path = Path()
                 s.points.forEachIndexed { pi, (d, v) ->
                     val p = Offset(x(days.indexOf(d)), y(v))
                     if (pi == 0) path.moveTo(p.x, p.y) else path.lineTo(p.x, p.y)
-                    drawCircle(color, radius = 4f, center = p)
+                    drawCircle(color, radius = 3.dp.toPx(), center = p)
                 }
-                drawPath(path, color, style = Stroke(width = 3f))
+                // Толщины — в dp (UX-14): 3 px на экране плотностью 3× — около 1 dp.
+                drawPath(path, color, style = Stroke(width = 2.dp.toPx()))
             }
-            picked?.let { i -> drawLine(axis, Offset(x(i), 0f), Offset(x(i), size.height), strokeWidth = 1f) }
+            picked?.let { i -> drawLine(axis, Offset(x(i), 0f), Offset(x(i), size.height), strokeWidth = 1.dp.toPx()) }
         }
         picked?.let { i ->
             val d = days[i]
@@ -204,53 +209,66 @@ fun StatsScreen(
     val metric = Stats.metric(metricId) ?: Stats.CATALOG.first()
     var period by rememberSaveable { mutableStateOf(Stats.Period.MONTH) }
     var subject by rememberSaveable { mutableStateOf(project) }
-    var json by rememberSaveable { mutableStateOf(false) }
     val chart = remember(history, metric, period, subject) {
         Stats.chart(history, metric, period, subject?.let(::listOf) ?: projects, now)
     }
+    var table by rememberSaveable { mutableStateOf(false) }
+    var menu by remember { mutableStateOf(false) }
     LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        onBack?.let { b -> item { TextButton(onClick = b, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("← Назад") } } }
-        item { Text("Статистика", style = MaterialTheme.typography.titleMedium) }
         item {
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                for (m in Stats.CATALOG) FilterChip(selected = metric == m, onClick = { metricId = m.id }, label = { Text(m.title) })
+            // Экспорт — в ⋮ (UX-14): редкое действие не стоит рядом с выбором; формат — пунктом меню.
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                onBack?.let { b -> TextButton(onClick = b, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("← Назад") } }
+                Text("Статистика", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                if (onExport != null) {
+                    androidx.compose.foundation.layout.Box {
+                        androidx.compose.material3.IconButton(onClick = { menu = true }, modifier = Modifier.semantics { contentDescription = "Экспорт" }) { Text("⋮", style = MaterialTheme.typography.titleMedium) }
+                        androidx.compose.material3.DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                            for ((title, json, share) in listOf(Triple("Сохранить CSV", false, false), Triple("Сохранить JSON", true, false), Triple("Поделиться CSV…", false, true), Triple("Поделиться JSON…", true, true))) {
+                                androidx.compose.material3.DropdownMenuItem(text = { Text(title) }, onClick = { menu = false; onExport(json, period, share) })
+                            }
+                        }
+                    }
+                }
             }
         }
+        // Метрика и проекты — выпадающими (их много), срок — сегментами (UX-14).
+        item { Choice("Метрика", metric.title, Stats.CATALOG.map { it.id to it.title }) { metricId = it } }
         item {
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                for (p in Stats.Period.entries) FilterChip(selected = period == p, onClick = { period = p }, label = { Text(p.title) })
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                Stats.Period.entries.forEachIndexed { i, p ->
+                    SegmentedButton(selected = period == p, onClick = { period = p }, shape = SegmentedButtonDefaults.itemShape(i, Stats.Period.entries.size)) { Text(p.title, maxLines = 1) }
+                }
             }
         }
         if (metric.scope == Stats.Scope.PROJECT) {
-            item {
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    FilterChip(selected = subject == null, onClick = { subject = null }, label = { Text("Сравнить все") })
-                    for (p in projects) FilterChip(selected = subject == p, onClick = { subject = p }, label = { Text(p) })
-                }
-            }
+            item { Choice("Проекты", subject ?: "все", listOf<Pair<String?, String>>(null to "Сравнить все") + projects.map { it to it }) { subject = it } }
         }
-        if (onExport != null) {
-            item {
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    FilterChip(selected = !json, onClick = { json = false }, label = { Text("CSV") })
-                    FilterChip(selected = json, onClick = { json = true }, label = { Text("JSON") })
-                    TextButton(onClick = { onExport(json, period, false) }) { Text("Сохранить") }
-                    TextButton(onClick = { onExport(json, period, true) }) { Text("Поделиться") }
-                }
-            }
-            if (status.isNotEmpty()) item { Text(status, style = MaterialTheme.typography.bodySmall) }
-        }
+        if (onExport != null && status.isNotEmpty()) item { Text(status, style = MaterialTheme.typography.bodySmall) }
         if (chart.empty) {
             item { Text("Точек за ${period.title} нет: история копится с каждой синхронизацией.") }
         } else {
             item { LineChart(chart) }
-            item { Text("Таблица значений", fontWeight = FontWeight.SemiBold) }
+            // Таблица (N-07) — сеткой со столбцами, свёрнутой строкой под графиком (UX-14).
             item {
-                Column(Modifier.horizontalScroll(rememberScrollState())) {
-                    Text(chart.table.header.joinToString("  |  "), fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
-                    for (r in chart.table.rows.asReversed()) Text(r.joinToString("  |  "), style = MaterialTheme.typography.bodySmall)
-                }
+                Text(
+                    if (table) "Таблица значений ▾" else "Таблица значений ▸",
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { table = !table }.padding(vertical = 12.dp),
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
+            if (table) item { ValueTable(chart.table) }
         }
     }
 }
+
+/** Таблица значений — сеткой: столбцы выровнены, TalkBack читает ячейки, а не «вертикальная черта». */
+@Composable
+private fun ValueTable(t: Stats.Table) {
+    Column(Modifier.horizontalScroll(rememberScrollState())) {
+        Row { for (h in t.header) Text(h, Modifier.width(CELL).padding(4.dp), fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall) }
+        for (r in t.rows.asReversed()) Row { for (c in r) Text(c, Modifier.width(CELL).padding(4.dp), style = MaterialTheme.typography.bodySmall) }
+    }
+}
+
+private val CELL = 96.dp

@@ -352,7 +352,7 @@ fun PultApp(
                 top is Nav.Dir -> DirScreen(top, loader, back, open)
                 top is Nav.Doc -> DocScreen(top, view.names, loader, back, open)
                 top is Nav.Stats && s != null -> StatsScreen(view.history, s.projects.map { it.name }, top.project, s.asOf, back, view.status, onExport)
-                top is Nav.Feed && s != null -> FeedScreen(view.feed, s.projects.map { it.name }, back)
+                top is Nav.Feed && s != null -> FeedScreen(view.feed, s.projects.map { it.name }, back) { open(Nav.Card(it)) }
                 tab == Section.MORE -> Settings(view, onSync, onSaveToken, onForgetToken, onClones)
                 // Пустое состояние ведёт дальше (UX-11): кнопкой, а не словами «где-то в настройках».
                 s == null -> Column(verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
@@ -372,6 +372,7 @@ fun PultApp(
                             Screens.Goes.SYNC -> tab = Section.MORE
                         }
                     },
+                    onProject = { open(Nav.Card(it)) },
                 ) { open(Nav.Feed) }
                 tab == Section.STATS -> StatsScreen(view.history, s.projects.map { it.name }, null, s.asOf, null, view.status, onExport)
                 tab == Section.DEV -> Column(Modifier.fillMaxSize()) {
@@ -465,6 +466,7 @@ private fun Summary(
     onSync: () -> Unit,
     onAi: ((requests: Boolean) -> Unit)?,
     onTile: (Screens.Goes) -> Unit,
+    onProject: (String) -> Unit,
     onFeed: () -> Unit,
 ) = PullToRefreshBox(isRefreshing = view.busy, onRefresh = { if (view.hasToken) onSync() }, modifier = Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
@@ -479,7 +481,7 @@ private fun Summary(
         Text("Последние события", style = MaterialTheme.typography.titleSmall)
         if (recent.isEmpty()) Text("Событий нет: они появляются со второй синхронизации.", style = MaterialTheme.typography.bodySmall)
         for (r in recent) {
-            Column {
+            Column(Modifier.fillMaxWidth().clickable(onClickLabel = "карточка проекта") { onProject(r.project) }.padding(vertical = 4.dp)) {
                 Text("${r.time} · ${r.project} · ${r.kind}", style = MaterialTheme.typography.bodySmall)
                 Text(r.text, maxLines = 2)
             }
@@ -491,15 +493,28 @@ private fun Summary(
 /** Сколько последних событий на сводке; остальные — «Вся лента ▸». */
 private const val SUMMARY_EVENTS = 3
 
+/**
+ * Список проектов (UX-18): место — заголовком, строка — имя и состояние
+ * словом и цветом, ниже — ROADMAP, PR, TODO без «неизвестно» трижды;
+ * ошибки источников — «⚠ N» цветом ошибки; решения — в карточке.
+ */
 @Composable
 private fun Projects(groups: List<Screens.Group>, onOpen: (String) -> Unit) = LazyColumn(verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
     for (g in groups) {
         item { Text(g.title, style = MaterialTheme.typography.titleMedium) }
         items(g.rows) { r ->
-            Card(Modifier.fillMaxWidth().clickable { onOpen(r.name) }) {
+            Card(Modifier.fillMaxWidth().clickable(onClickLabel = "открыть карточку") { onOpen(r.name) }) {
                 Column(Modifier.padding(Tokens.gap)) {
-                    Text(r.name, fontWeight = FontWeight.SemiBold)
-                    Text("${r.working}; решений ${r.decisions}, TODO ${r.todo}, ROADMAP ${r.roadmap}, PR ${r.pulls}" + if (r.errors > 0) "; ошибок ${r.errors}" else "")
+                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        Text(r.name, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                        if (r.errors > 0) Text("⚠ ${r.errors}", color = MaterialTheme.colorScheme.error, modifier = Modifier.semantics { contentDescription = "ошибок источников: ${r.errors}" })
+                    }
+                    Text(
+                        r.working,
+                        color = if (r.working == "работает") Color(com.dpsmpx.dpai.ui.AppPalette.semantic(com.dpsmpx.dpai.ui.AppPalette.Role.DONE, isSystemInDarkTheme())) else MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Text(Screens.projectLine(r), style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
@@ -623,30 +638,55 @@ private fun CardList(c: Screens.Card, panel: Outcome<Panel>?, loader: Loader, on
     }
 }
 
+/**
+ * Лента (UX-16): «Вид ▾» и «Проект ▾» в одном ряду, выбранное видно; без
+ * совпадений — «Нет событий по фильтру · Сбросить»; вид — меткой; касание
+ * события — карточка проекта.
+ */
 @Composable
-private fun FeedScreen(events: List<FeedEvent>, projects: List<String>, onBack: () -> Unit) {
+private fun FeedScreen(events: List<FeedEvent>, projects: List<String>, onBack: () -> Unit, onProject: (String) -> Unit) {
     var project by rememberSaveable { mutableStateOf<String?>(null) }
     var kind by rememberSaveable { mutableStateOf<String?>(null) }
     val rows = Screens.feed(events, project, kind)
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         TextButton(onClick = onBack, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("← Назад") }
         Text("Лента", style = MaterialTheme.typography.titleMedium)
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            FilterChip(selected = kind == null, onClick = { kind = null }, label = { Text("все виды") })
-            for ((code, title) in Feed.KINDS) FilterChip(selected = kind == code, onClick = { kind = if (kind == code) null else code }, label = { Text(title) })
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Choice("Вид", kind?.let { Feed.KINDS[it] ?: it } ?: "все", listOf<Pair<String?, String>>(null to "все виды") + Feed.KINDS.map { (c, t) -> c to t }) { kind = it }
+            Choice("Проект", project ?: "все", listOf<Pair<String?, String>>(null to "все проекты") + projects.map { it to it }) { project = it }
         }
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            FilterChip(selected = project == null, onClick = { project = null }, label = { Text("все проекты") })
-            for (p in projects) FilterChip(selected = project == p, onClick = { project = if (project == p) null else p }, label = { Text(p) })
+        if (rows.isEmpty()) {
+            if (project != null || kind != null) {
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Text("Нет событий по фильтру", Modifier.weight(1f))
+                    TextButton(onClick = { project = null; kind = null }) { Text("Сбросить") }
+                }
+            } else {
+                Text("Событий нет: они появляются со второй синхронизации.")
+            }
         }
-        if (rows.isEmpty()) Text("Событий нет: они появляются со второй синхронизации.")
         LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             items(rows) { r ->
-                Column {
-                    Text("${r.time} · ${r.project} · ${r.kind}", style = MaterialTheme.typography.bodySmall)
+                Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClickLabel = "карточка проекта") { onProject(r.project) }.padding(vertical = 4.dp)) {
+                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("${r.time} · ${r.project}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                        Text(r.kind, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    }
                     Text(r.text)
                 }
             }
+        }
+    }
+}
+
+/** Выбор из списка (UX-14, UX-16): «Подпись: выбранное ▾», меню — по касанию; выбранное видно без меню. */
+@Composable
+internal fun <T> Choice(label: String, current: String, options: List<Pair<T, String>>, onPick: (T) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    androidx.compose.foundation.layout.Box {
+        androidx.compose.material3.OutlinedButton(onClick = { open = true }) { Text("$label: $current ▾", maxLines = 1) }
+        androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            for ((value, title) in options) androidx.compose.material3.DropdownMenuItem(text = { Text(title) }, onClick = { open = false; onPick(value) })
         }
     }
 }
