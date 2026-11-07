@@ -131,7 +131,10 @@ fun DpaiTheme(content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = scheme, content = content)
 }
 
-/** Запасная схема Android 11 из `AppPalette` — все роли, а не три цвета поверх фиолетовых по умолчанию (UX-5). */
+/**
+ * Запасная схема Android 11 из `AppPalette` — все роли, а не три цвета поверх фиолетовых по умолчанию (UX-5).
+ * Копия — у пульта (`DPmetaApp:app/…/ui/PultUi.kt`, он не зависит от оболочки «AI»): новая роль — в обе.
+ */
 fun fallbackScheme(dark: Boolean): androidx.compose.material3.ColorScheme {
     val p = com.dpsmpx.dpai.ui.AppPalette.scheme(dark)
     fun c(v: Long) = androidx.compose.ui.graphics.Color(v)

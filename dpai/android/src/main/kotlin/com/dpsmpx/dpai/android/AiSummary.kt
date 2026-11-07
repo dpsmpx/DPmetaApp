@@ -13,8 +13,8 @@ import com.dpsmpx.dpai.notifications.DeepLink
 object AiSummary {
     /**
      * [configured] — есть target с каталогом Claude (иначе — демо: «не
-     * настроено»). Числа — из последнего снимка; снимка ещё нет —
-     * неизвестны, а не ноль (D-13). [request] — ссылка на первый ждущий
+     * настроено»). Числа — из последнего снимка службы контроллера; снимка
+     * ещё нет или служба остановлена — неизвестны, а не ноль (D-13). [request] — ссылка на первый ждущий
      * запрос: касание строки открывает «Запросы».
      */
     data class Counts(
@@ -33,6 +33,8 @@ object AiSummary {
     fun read(context: Context): Counts {
         val model = DemoModel.get(context)
         if (!model.hasLive()) return Counts(false, NONE, NONE, NONE, null)
+        // Контроллер остановлен (D-39) — снимок замер: числа неизвестны, а не «в работе 2» навсегда (D-13).
+        if (!ControllerService.running) return Counts(true, STOPPED, STOPPED, STOPPED, null)
         val s = model.published?.takeIf { it.live } ?: return Counts(true, NOT_YET, NOT_YET, NOT_YET, null)
         return Counts(
             configured = true,
@@ -53,4 +55,5 @@ object AiSummary {
 
     private val NONE = Measure.unknown("контур «AI» не настроен")
     private val NOT_YET = Measure.unknown("контур «AI» ещё не опубликовал состояние")
+    private val STOPPED = Measure.unknown("контроллер «AI» остановлен")
 }

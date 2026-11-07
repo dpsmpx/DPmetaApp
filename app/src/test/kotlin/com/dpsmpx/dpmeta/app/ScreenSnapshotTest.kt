@@ -52,6 +52,14 @@ class ScreenSnapshotTest {
     @Test
     fun summary() = snapshot("summary", ScreenText.summary(Screens.summary(state())))
 
+    /** Панель пульта (D-73): пять пунктов с «AI», четыре — без подсистемы; «Разработка» — две вкладки. */
+    @Test
+    fun panel() {
+        assertEquals(listOf("Сводка", "Разработка", "Статистика", "AI", "Ещё"), Screens.panel(ai = true))
+        assertEquals(listOf("Сводка", "Разработка", "Статистика", "Ещё"), Screens.panel(ai = false))
+        assertEquals(listOf("Проекты", "Вопросы"), Screens.DevTab.entries.map { it.title })
+    }
+
     /** Строка «AI» (D-76): с контуром — числа и переход к запросам; без контура — «не настроено». */
     @Test
     fun summaryWithAi() = snapshot(

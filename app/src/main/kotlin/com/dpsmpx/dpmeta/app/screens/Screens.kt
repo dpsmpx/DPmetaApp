@@ -93,6 +93,17 @@ object Screens {
         syncHealth = s.syncHealth.orNull()?.let { "$it % источников" } ?: UNKNOWN,
     )
 
+    // --- Панель пульта (D-73) ---
+
+    /** Пункты панели пульта со своими экранами; «AI» — не пункт, а вход в подсистему (D-53). */
+    enum class Section(val title: String) { SUMMARY("Сводка"), DEV("Разработка"), STATS("Статистика"), MORE("Ещё") }
+
+    /** Вкладки сверху «Разработки» (D-73): проекты и вопросы автору; позже — PR (F-11). */
+    enum class DevTab(val title: String) { PROJECTS("Проекты"), QUESTIONS("Вопросы") }
+
+    /** Подписи панели по порядку (D-73): «AI» — перед «Ещё», если подсистема есть. С «Соцсетями» — шесть. */
+    fun panel(ai: Boolean): List<String> = Section.entries.flatMap { if (it == Section.MORE && ai) listOf("AI", it.title) else listOf(it.title) }
+
     /** Куда ведёт касание плитки сводки (UX-6; ТЗ, F-04: «каждая плитка ведёт на свой экран»). */
     enum class Goes(val title: String) { PROJECTS("Проекты"), QUESTIONS("Вопросы"), SYNC("Ещё") }
 

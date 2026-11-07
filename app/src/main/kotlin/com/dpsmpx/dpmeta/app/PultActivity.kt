@@ -31,6 +31,7 @@ import com.dpsmpx.dpmeta.formats.Panel
 import com.dpsmpx.dpmeta.formats.PanelFormat
 import com.dpsmpx.dpmeta.github.GitHub
 import com.dpsmpx.dpmeta.app.ui.PultTheme
+import com.dpsmpx.dpmeta.app.ui.SyncEnd
 import com.dpsmpx.dpmeta.app.ui.PultView
 import java.io.File
 import java.util.concurrent.ExecutorService
@@ -40,7 +41,7 @@ import java.util.concurrent.ExecutorService
  * чтение. Окно закрыто от снимков (`FLAG_SECURE`, T-02: на экране — токен и
  * закрытые проекты); вход — через [Lock] (F-45). Первым экраном приложения
  * его делает наследник в модуле корня `:shell` (D-53) — он же даёт
- * [aiIntent]: вкладка «AI» открывает оболочку подсистемы.
+ * [aiIntent]: пункт «AI» открывает оболочку подсистемы.
  */
 open class PultActivity : ComponentActivity() {
     private lateinit var pool: ExecutorService
@@ -135,7 +136,7 @@ open class PultActivity : ComponentActivity() {
         done(null)
     }
 
-    /** Вход в подсистему «AI» (D-53); нет — вкладки «AI» нет: пульт сам о подсистеме не знает. */
+    /** Вход в подсистему «AI» (D-53); нет — пункта «AI» нет: пульт сам о подсистеме не знает. */
     protected open fun aiIntent(): Intent? = null
 
     /** Вход в «AI» со строки сводки (D-76): [requests] — сразу на «Запросы». */
@@ -153,7 +154,8 @@ open class PultActivity : ComponentActivity() {
         override fun run() {
             if (!pool.isShutdown) {
                 pool.execute {
-                    val c = runCatching { aiCounts() }.getOrNull()
+                    // Сбой чтения — прежние числа, а не пропавшая строка.
+                    val c = runCatching { aiCounts() }.getOrElse { view.value.ai }
                     runOnUiThread { if (view.value.ai != c) view.value = view.value.copy(ai = c) }
                 }
             }
@@ -170,7 +172,8 @@ open class PultActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         if (opened) entrySync()
-        ui.post(aiTick)
+        // Опрос — только с оболочкой «AI» (D-76): без неё строки нет.
+        if (aiIntent() != null) ui.post(aiTick)
     }
 
     override fun onPause() {
@@ -442,13 +445,20 @@ open class PultActivity : ComponentActivity() {
     }
 
     /** «Обновить»: до первого выбора клонов (D-70) — сначала окно выбора. */
-    private fun sync() = withToken { token -> if (token != null) { if (!clonesAsked()) askClones(token, first = true) else sync(token) } }
+    private fun sync() = withToken { token ->
+        if (token != null) {
+            if (!clonesAsked()) askClones(token, first = true) else sync(token)
+        } else {
+            // Нет токена или входа — «Обновить» не началось: сказать снэкбаром, а не молча (проверка PR #172).
+            view.value = view.value.copy(syncEnded = view.value.syncEnded + 1, syncEnd = SyncEnd.REFUSED)
+        }
+    }
 
     private fun sync(token: Secret) {
         if (pool.isShutdown) return
         // Идёт синхронизация прежнего окна (поворот) — не ошибка: итог будет у «Обновить» после неё.
         if (repo.syncing()) {
-            view.value = view.value.copy(statusDetails = "", status = "Синхронизация уже идёт — «Обновить», когда закончится.")
+            view.value = view.value.copy(statusDetails = "", status = "Синхронизация уже идёт — «Обновить», когда закончится.", syncEnded = view.value.syncEnded + 1, syncEnd = SyncEnd.REFUSED)
             return
         }
         view.value = view.value.copy(busy = true, statusDetails = "", status = "")
@@ -467,12 +477,12 @@ open class PultActivity : ComponentActivity() {
                         status = "Готово: ${r.value.line}." + (note?.let { " $it" } ?: ""),
                         statusDetails = "",
                         syncEnded = view.value.syncEnded + 1,
-                        syncFailed = false,
+                        syncEnd = SyncEnd.DONE,
                         feed = feed,
                         names = repo.names(),
                     ).also { loadHistory() }
                     is Outcome.Failure -> Screens.failure(r.diagnostics.first()).let { f ->
-                        view.value.copy(busy = false, status = "Не вышло: ${f.text}." + (note?.let { " $it" } ?: ""), statusDetails = f.details, syncEnded = view.value.syncEnded + 1, syncFailed = true)
+                        view.value.copy(busy = false, status = "Не вышло: ${f.text}." + (note?.let { " $it" } ?: ""), statusDetails = f.details, syncEnded = view.value.syncEnded + 1, syncEnd = SyncEnd.FAILED)
                     }
                 }
             }

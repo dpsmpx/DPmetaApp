@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -89,7 +90,7 @@ import kotlinx.coroutines.withContext
 /** Период шага демо и обновления экрана. */
 private const val STEP_MS = 1000L
 
-/** Экран сессии в переходе между экранами (вкладки — 0…4). */
+/** Экран сессии в переходе между экранами (вкладки — номера `AiTab`, от 0). */
 private const val SESSION_SCREEN = -1
 
 /** Номер экрана «Настроек AI» в переходах (D-112): не вкладка. */
@@ -333,26 +334,30 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                         val waiting = snapshot?.requests?.size ?: 0
                         for (t in AiTab.entries) {
                             val selected = tab == t.ordinal && selectedId == null && !settings
-                            Labeled(t.title, Modifier.weight(1f)) {
-                                Box(
-                                    Modifier.fillMaxSize()
-                                        .selectable(selected = selected, role = Role.Tab, onClick = { openTab(t) })
-                                        .semantics { contentDescription = t.spoken(waiting) },
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    val color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                    val icon = @Composable {
-                                        androidx.compose.material3.Icon(
-                                            androidx.compose.ui.res.painterResource(tabIcon(t)),
-                                            contentDescription = null,
-                                            tint = color,
-                                        )
-                                    }
-                                    // Число — значком поверх: ширина пункта не меняется с числом запросов; читается в описании пункта.
-                                    if (t == AiTab.REQUESTS && waiting > 0) {
-                                        BadgedBox(badge = { Badge(Modifier.clearAndSetSemantics { }) { Text("$waiting") } }) { icon() }
-                                    } else {
-                                        icon()
+                            // Вес — на обёртку: TooltipBox отдаёт свой модификатор внутреннему узлу, и weight до Row не доходил —
+                            // первая вкладка забирала всю строку (проверка PR #172).
+                            Box(Modifier.weight(1f).fillMaxHeight()) {
+                                Labeled(t.title, Modifier.fillMaxSize()) {
+                                    Box(
+                                        Modifier.fillMaxSize()
+                                            .selectable(selected = selected, role = Role.Tab, onClick = { openTab(t) })
+                                            .semantics { contentDescription = t.spoken(waiting) },
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        val color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                        val icon = @Composable {
+                                            androidx.compose.material3.Icon(
+                                                androidx.compose.ui.res.painterResource(tabIcon(t)),
+                                                contentDescription = null,
+                                                tint = color,
+                                            )
+                                        }
+                                        // Число — значком поверх: ширина пункта не меняется с числом запросов; читается в описании пункта.
+                                        if (t == AiTab.REQUESTS && waiting > 0) {
+                                            BadgedBox(badge = { Badge(Modifier.clearAndSetSemantics { }) { Text("$waiting") } }) { icon() }
+                                        } else {
+                                            icon()
+                                        }
                                     }
                                 }
                             }
@@ -430,7 +435,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                                     QuickRow(s.quick, model)
                                     Box(Modifier.weight(1f)) { DashboardPane(s.dashboard, s.quick, model) { foundTask = it } }
                                 }
-                                else -> BoardPane(s.board, model, s.archived) { selectedId = it }
+                                else -> BoardPane(s.board, model, s.archived, onEcosystem = if (s.live) ({ ecosystem = true }) else null) { selectedId = it }
                             }
                         }
                     }
@@ -451,7 +456,8 @@ internal fun toneColor(t: Tone): Color {
     fun of(role: com.dpsmpx.dpai.ui.AppPalette.Role) = Color(com.dpsmpx.dpai.ui.AppPalette.semantic(role, dark))
     return when (t) {
         Tone.NEUTRAL -> MaterialTheme.colorScheme.onSurfaceVariant
-        Tone.ACTIVE -> MaterialTheme.colorScheme.primary
+        // «В работе» — смысловой синий, а не акцент обоев (D-74): не тревога и не «готово».
+        Tone.ACTIVE -> of(com.dpsmpx.dpai.ui.AppPalette.Role.NEUTRAL)
         Tone.WARNING -> of(com.dpsmpx.dpai.ui.AppPalette.Role.WARNING)
         Tone.ERROR -> of(com.dpsmpx.dpai.ui.AppPalette.Role.ERROR)
         Tone.DONE -> of(com.dpsmpx.dpai.ui.AppPalette.Role.DONE)
@@ -831,12 +837,14 @@ private fun ChatInput(screen: SessionScreen, model: DemoModel, maxHeight: androi
 }
 
 @Composable
-private fun BoardPane(board: TaskBoard, model: DemoModel, archived: Int, onSession: (String) -> Unit) {
+private fun BoardPane(board: TaskBoard, model: DemoModel, archived: Int, onEcosystem: (() -> Unit)?, onSession: (String) -> Unit) {
     val scope = rememberCoroutineScope()
     var showArchived by remember { mutableStateOf(model.showArchived) }
     var opened by remember { mutableStateOf<com.dpsmpx.dpai.core.ids.TaskId?>(null) }
     // Снизу — место плавающей «Новой задаче» (AI:A-6): последняя карточка не прячется под ней.
     LazyColumn(contentPadding = PaddingValues(start = 12.dp, top = 12.dp, end = 12.dp, bottom = FAB_ROOM), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        // Экосистема (ТЗ, §43–§46; политика авто-задач — D-106) — здесь и в окне «Новой задачи» (AI:A-6).
+        onEcosystem?.let { open -> item(key = "ecosystem") { TextButton(onClick = open) { Text("Экосистема…") } } }
         // Архив (D-42): завершённые — с доски, история в журнале остаётся.
         item(key = "archive") {
             Row(verticalAlignment = Alignment.CenterVertically) {

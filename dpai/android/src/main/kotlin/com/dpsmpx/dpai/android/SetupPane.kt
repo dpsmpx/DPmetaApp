@@ -92,7 +92,7 @@ private fun SectionCard(s: GuideSection) {
                             SelectionContainer { Text(cmd, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall) }
                             TextButton(onClick = {
                                 Clipboard.copy(context, "команда", cmd)
-                                if (!Clipboard.systemConfirms) undo?.say("Скопировано") ?: run { note = "Скопировано" }
+                                if (!Clipboard.systemConfirms) undo.tell("Скопировано") { note = it }
                             }) { Text("Копировать") }
                         }
                     }
@@ -103,7 +103,7 @@ private fun SectionCard(s: GuideSection) {
                             GuideAction.SAVE_AGENT -> scope.launch {
                                 val r = withContext(Dispatchers.IO) { runCatching { saveAgent(context) } }
                                 // Сохранено — снэкбаром (AI:A-19); отказ — строкой на месте.
-                                if (r.isSuccess && undo != null) undo.say("Сохранено: Загрузки/dpai-agent.zip") else note = r.fold({ "Сохранено: Загрузки/dpai-agent.zip" }, { "Не сохранено: ${com.dpsmpx.dpai.core.text.Words.failure(it)}" })
+                                r.fold({ undo.tell("Сохранено: Загрузки/dpai-agent.zip") { note = it } }, { note = "Не сохранено: ${com.dpsmpx.dpai.core.text.Words.failure(it)}" })
                             }
                             GuideAction.APP_SETTINGS -> context.startActivity(
                                 Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),

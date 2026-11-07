@@ -28,7 +28,8 @@ object AppPalette {
         Role.DONE to Pair(0xFF1B6B23, 0xFF8FD694),
         Role.WARNING to Pair(0xFF8A4F00, 0xFFFFB74D),
         Role.ERROR to Pair(0xFFB3261E, 0xFFF2B8B5),
-        Role.AI to Pair(0xFF7A4F00, 0xFFF0C27A),
+        // ИИ — пурпурный, а не янтарный: янтарный — «предупреждение» (один цвет — один смысл, D-74; проверка PR #172).
+        Role.AI to Pair(0xFF8E2A68, 0xFFF2B0D8),
         Role.HUMAN to Pair(0xFF00676C, 0xFF7FD8DC),
         Role.DECISIONS to Pair(0xFF6A3FA0, 0xFFD0B8F5),
         Role.NEUTRAL to Pair(0xFF2F5D8A, 0xFF9CC3EA),

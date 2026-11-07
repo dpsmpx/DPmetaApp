@@ -196,7 +196,7 @@ object SetupGuide {
         ),
         GuideSection(
             "trouble", "Если что-то не работает",
-            "Подробности ошибок — во вкладке «Журнал».",
+            "Подробности ошибок — в «Настройках AI» → «Журнал».",
             listOf(
                 GuideStep("«sshd на порту 8022: не слушает» — запустить снова:", "pgrep -x sshd >/dev/null || sshd -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no"),
                 GuideStep("«[Process completed (signal 9)]» в Termux — ограничения дочерних процессов (раздел 1)."),

@@ -67,3 +67,16 @@ class Undo(private val host: SnackbarHostState, private val scope: CoroutineScop
 
 /** Снэкбар «Отменить» оболочки «AI»; вне её — `null`, и обратимое делается сразу. */
 val LocalUndo = staticCompositionLocalOf<Undo?> { null }
+
+/**
+ * Временный итог (AI:A-19): снэкбаром, а строка на месте стирается — прежний
+ * отказ не висит рядом с новым успехом; хоста снэкбаров нет — итог строкой.
+ */
+internal fun Undo?.tell(text: String, line: (String?) -> Unit) {
+    if (this != null) {
+        say(text)
+        line(null)
+    } else {
+        line(text)
+    }
+}

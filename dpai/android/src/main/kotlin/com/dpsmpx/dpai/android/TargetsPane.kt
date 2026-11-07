@@ -704,7 +704,7 @@ private fun CliCard() {
                             asking = false
                             ControlServer.pairing(context).revoke()
                             code = null
-                            undo?.say("Токен отозван: dpai нужно сопрячь заново") ?: run { note = "Токен отозван: dpai нужно сопрячь заново" }
+                            undo.tell("Токен отозван: dpai нужно сопрячь заново") { note = it }
                         },
                         onDismiss = { asking = false },
                     )
@@ -789,7 +789,7 @@ private fun BackupCard(controller: Controller, onRestoreAccess: () -> Unit, onRe
                             is com.dpsmpx.dpai.core.result.Outcome.Success -> "Сохранено: Загрузки/dpai-backup/${r.value}"
                             is com.dpsmpx.dpai.core.result.Outcome.Failure -> "Не сохранено: ${r.errors.firstOrNull()?.message}"
                         }
-                        message = if (r is com.dpsmpx.dpai.core.result.Outcome.Success && undo != null) null.also { undo.say(text) } else text
+                        if (r is com.dpsmpx.dpai.core.result.Outcome.Success) undo.tell(text) { message = it } else message = text
                         last = SettingsBackups.last(context)
                     }
                 }) { Text("Сохранить сейчас") }

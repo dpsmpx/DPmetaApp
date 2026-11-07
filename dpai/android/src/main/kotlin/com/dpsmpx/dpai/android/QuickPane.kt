@@ -67,8 +67,10 @@ fun QuickRow(quick: QuickActions, model: DemoModel) {
             busy = false
         }
     }
-    if (quick.holdable.isEmpty() && quick.resumable.isEmpty() && status == null) return
-    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+    // Приостанавливать стало нечего — окно подтверждения закрывается и само уже не всплывёт (проверка PR #172).
+    val nothingToHold = quick.holdable.isEmpty()
+    LaunchedEffect(nothingToHold) { if (nothingToHold) confirmHold = false }
+    if (quick.holdable.isNotEmpty() || quick.resumable.isNotEmpty() || status != null) Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             if (quick.holdable.isNotEmpty()) {
                 AssistChip(enabled = !busy, onClick = { confirmHold = true }, label = { Text("Пауза всем (${quick.holdable.size})") })
@@ -81,7 +83,7 @@ fun QuickRow(quick: QuickActions, model: DemoModel) {
         }
         status?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
     }
-    if (confirmHold) {
+    if (confirmHold && !nothingToHold) {
         // Пауза останавливает идущие ходы с handoff (D-42) — после подтверждения; ключ серии — один на нажатие «Да».
         AlertDialog(
             onDismissRequest = { confirmHold = false },

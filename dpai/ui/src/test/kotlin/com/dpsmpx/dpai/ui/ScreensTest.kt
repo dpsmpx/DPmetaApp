@@ -40,7 +40,10 @@ class ScreensTest {
         val health = SelfDiagnostics.evaluate(SystemSignals(true, false, true, true, 1, 1, false))
         val screen = Screens.dashboard(view, health)
         // «0» скрыт (AI:A-6), неизвестное — «?», а не ноль (D-13); активные — и числом для пульта (D-76).
-        assertEquals(listOf("Активных сессий" to "2", "Запросы ждут ответа" to "?"), screen.shownCounters.map { it.label to it.value })
+        // «0» аккаунтов — тревога и остаётся: ничто не может идти.
+        assertEquals(listOf("Активных сессий" to "2", "Запросы ждут ответа" to "?", "Аккаунтов доступно" to "0"), screen.shownCounters.map { it.label to it.value })
+        val withAccounts = Screens.dashboard(view.copy(availableAccounts = 1), health)
+        assertEquals(listOf("Активных сессий", "Запросы ждут ответа", "Аккаунтов доступно"), withAccounts.shownCounters.map { it.label })
         assertEquals(2, screen.active)
         assertEquals(emptyList(), screen.usage)
     }
