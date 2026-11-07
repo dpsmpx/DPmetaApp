@@ -198,15 +198,15 @@ fun FilesPane() {
         }
         // Отвязанная, но ещё не подтверждённая снэкбаром — не видна (AI:A-4).
         items(links.filter { undo?.hidden?.containsKey("link:${it.id.value}") != true }, key = { it.id.value }) { l ->
-            LinkCard(l, onSync = { syncing = l }, onOpen = { place = Place(it, l, "") })
+            LinkCard(l, onSync = { syncing = l }, onOpen = { placeKey = Place(it, l, "").key() })
         }
         if (wanted && granted) {
             item {
-                TextButton(onClick = { place = Place(Kind.SHARED, null, "") }) { Text("Хранилище телефона…") }
+                TextButton(onClick = { placeKey = Place(Kind.SHARED, null, "").key() }) { Text("Хранилище телефона…") }
             }
         }
         if (linux) {
-            item { TextButton(onClick = { place = Place(Kind.HOME, null, "") }) { Text("Домашняя папка Linux…") } }
+            item { TextButton(onClick = { placeKey = Place(Kind.HOME, null, "").key() }) { Text("Домашняя папка Linux…") } }
         }
     }
     syncing?.let { l -> SyncDialog(l) { syncing = null } }

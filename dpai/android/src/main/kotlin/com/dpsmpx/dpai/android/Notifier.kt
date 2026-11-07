@@ -57,7 +57,7 @@ class Notifier(private val context: Context) {
         /** Открыть приложение: существующее окно выходит вперёд, нового не создаётся. */
         fun openApp(context: Context): PendingIntent = PendingIntent.getActivity(
             context, 0,
-            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            Intent(context, MainActivity::class.java).addFlags(MainActivity.FRONT),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
@@ -69,7 +69,7 @@ class Notifier(private val context: Context) {
         fun openLink(context: Context, link: String): PendingIntent = PendingIntent.getActivity(
             context, link.hashCode(),
             MainActivity.internal(context).setAction(MainActivity.OPEN).putExtra(MainActivity.EXTRA_LINK, link)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+                .addFlags(MainActivity.FRONT),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 

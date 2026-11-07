@@ -62,6 +62,16 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Корнем задачи «AI» не бывает, если над ней есть пульт (DPmetaApp:D-73, UX-1): уведомление после перезагрузки
+        // или обновления открыло её первой — стек строится заново «пульт → AI», и «назад» ведёт в пульт, а не на
+        // рабочий стол; ярлык потом не кладёт пульт поверх «AI». Намерение (ссылка, подтверждение) едет с собой.
+        val parent = (application as? DpaiApplication)?.parentIntent()
+        if (savedInstanceState == null && isTaskRoot && parent != null) {
+            val again = Intent(intent).setFlags(0)
+            startActivities(arrayOf(parent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK), again))
+            finish()
+            return
+        }
         if (savedInstanceState == null) take(intent)
         enableEdgeToEdge()
         // Android 13+: без разрешения уведомления не показываются; отказ — не ошибка, сводка видна в приложении.
@@ -93,6 +103,12 @@ class MainActivity : ComponentActivity() {
         /** Подтверждение опасного ответа на экране (D-44, D-104) — для уведомления и окна поверх приложений. */
         fun confirm(context: Context, uri: String): Intent = internal(context).setAction(CONFIRM).putExtra(EXTRA_URI, uri)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+
+        /**
+         * Флаги своих уведомлений (UX-1): окно «AI» выходит вперёд, если оно есть, — второго не создаётся,
+         * и открытый терминал не закрывается (без CLEAR_TOP; он — только у подтверждения ответа).
+         */
+        const val FRONT: Int = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
     }
 }
 

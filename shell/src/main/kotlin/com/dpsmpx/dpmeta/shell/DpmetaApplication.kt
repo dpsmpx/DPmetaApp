@@ -19,4 +19,7 @@ class DpmetaApplication : DpaiApplication() {
 
     /** Опасный ответ окна поверх приложений — только после входа (D-61). */
     override fun loginNeeded(): Boolean = AppLock.loginNeeded
+
+    /** «AI» открывается над пультом, «назад» из неё — в пульт (D-73, UX-1). */
+    override fun parentIntent(): android.content.Intent = android.content.Intent(this, DpmetaActivity::class.java)
 }

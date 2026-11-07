@@ -53,6 +53,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Modifier
@@ -233,6 +235,8 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
     }
     // Обратимое — сразу и со снэкбаром «Отменить» (AI:A-4): хост — у оболочки, действия — во вкладках.
     val tabStates = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
+    // Пульт под «AI» есть в приложении DPmetaApp (D-73); в отдельной сборке «AI» — нет.
+    val pultBelow = remember { (context.applicationContext as? DpaiApplication)?.parentIntent() != null }
     val snack = remember { androidx.compose.material3.SnackbarHostState() }
     val undo = remember(scope) { Undo(snack, scope) }
     androidx.compose.runtime.CompositionLocalProvider(LocalUndo provides undo) {
@@ -256,10 +260,19 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                             sessionScreen?.task?.let { t -> TextButton(onClick = { taskSheet = t }) { Text("⚙", style = MaterialTheme.typography.titleMedium) } }
                             TextButton(onClick = { sessionEvents = !sessionEvents }) { Text(if (sessionEvents) "Чат" else "События") }
                         } else {
+                            // Путь к пульту виден (DPmetaApp:D-73, UX-1): «AI» стоит над ним, «←» — просто закрыть окно «AI».
+                            val activity = androidx.activity.compose.LocalActivity.current
+                            if (pultBelow) {
+                                TextButton(
+                                    onClick = { activity?.finish() },
+                                    modifier = Modifier.semantics { contentDescription = "Пульт" },
+                                ) { Text("← Пульт") }
+                            }
                             Text(
                                 // Одно имя подсистемы — «AI», как у вкладки пульта; в заголовке — открытая вкладка (AI:A-1, AI:A-11).
                                 "AI · " + TAB_TITLES.getOrElse(tab) { "…" } + (if (snapshot?.mode == "демо") " · демо" else ""),
-                                Modifier.weight(1f).padding(start = 12.dp), style = MaterialTheme.typography.titleMedium,
+                                Modifier.weight(1f).padding(start = if (pultBelow) 0.dp else 12.dp), style = MaterialTheme.typography.titleMedium,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis,
                             )
                             // Глобальный поиск (ТЗ, §75) — с любой вкладки.
                             TextButton(onClick = { searching = true }) { Text("Найти") }
