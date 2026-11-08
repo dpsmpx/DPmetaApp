@@ -22,6 +22,13 @@ object TmuxSession {
     /** Код выхода «вернуть без потерь нельзя»: экран предлагает «Переподключить» (EX_TEMPFAIL). */
     const val NOT_RESUMED_CODE = 75
 
+    /**
+     * Сколько секунд tmux может проработать и всё ещё считаться «не
+     * запустившимся»: дольше — сессия была и кончилась (`kill-server`, сбой
+     * сервера), и программа заново сама не запускается.
+     */
+    const val START_SECONDS = 5
+
     private val NAME = Regex("[a-z0-9-]+")
 
     /**
@@ -61,9 +68,13 @@ object TmuxSession {
             "if command -v tmux >/dev/null 2>&1 && $tmux has-session -t =$name 2>/dev/null; then $tmux -u attach -t =$name && exit 0; fi; " +
                 "printf '%s\\n' '$NOT_RESUMED'; exit $NOT_RESUMED_CODE"
         } else {
-            // Без exec: tmux, который не запустился, — не конец вкладки, а запасной путь.
-            val fallback = full?.let { "exec $it" } ?: "exec \"\${SHELL:-/bin/sh}\" -l"
-            "if command -v tmux >/dev/null 2>&1; then $tmux -u new -A -s $name$quoted && exit 0; printf '%s\\n' '$TMUX_FAILED'; " +
+            // Без exec: tmux, который не запустился, — не конец вкладки, а запасной путь. Проработал дольше
+            // START_SECONDS и кончился с ошибкой — сессия была: вкладка закрывается с его кодом, программа заново не идёт.
+            // Запасной путь — уже в оболочке входа: команда `sh -lc X` — сразу X, профиль не читается дважды.
+            val direct = if (command.size == 3 && command[0] == "sh" && command[1] == "-lc" && command[2].startsWith("exec ")) command[2] else null
+            val fallback = direct ?: full?.let { "exec $it" } ?: "exec \"\${SHELL:-/bin/sh}\" -l"
+            "if command -v tmux >/dev/null 2>&1; then s=\$(date +%s 2>/dev/null || echo 0); $tmux -u new -A -s $name$quoted && exit 0; c=\$?; " +
+                "[ \$((\$(date +%s 2>/dev/null || echo 0) - s)) -ge $START_SECONDS ] && exit \$c; printf '%s\\n' '$TMUX_FAILED'; " +
                 "else printf '%s\\n' '$NO_TMUX'; fi; $fallback"
         }
         return Outcome.success(listOf("sh", "-lc", script))

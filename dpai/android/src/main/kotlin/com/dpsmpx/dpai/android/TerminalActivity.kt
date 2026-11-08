@@ -63,6 +63,8 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         enableEdgeToEdge(SystemBarStyle.dark(Color.TRANSPARENT), SystemBarStyle.dark(Color.TRANSPARENT))
         setContentView(layout())
         applyKeyboard()
+        // Метка устройства, targets и незавершённые сессии tmux — с диска заранее, не в главном потоке (D-111).
+        thread(name = "dpai-term-warm", isDaemon = true) { TerminalHub.warm(applicationContext) }
         // После смерти процесса Android восстанавливает экран, а вкладок (только в памяти, D-27) уже нет:
         // открыть заново ту, с которой экран начинался, а не показывать мёртвый чёрный экран.
         val lost = savedInstanceState != null && TerminalHub.tabs.isEmpty()
