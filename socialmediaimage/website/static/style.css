@@ -40,7 +40,7 @@ nav a { display: inline-block; padding: 8px 0; white-space: nowrap; text-decorat
 nav a.current, nav a:hover { color: var(--paper); }
 /* меню шапки — цели не меньше 44 × 44 px (2.5.5, Д49); зазор 16 px — меню с «EN» в одну строку с брендом на компьютере */
 .site-header nav { column-gap: 16px; }
-.site-header nav a { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; min-width: 44px; padding: 0; }
+.site-header nav a { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; min-width: 44px; padding-block: 0; }
 nav .lang { margin-left: 4px; padding: 0 10px; border: 1px solid var(--line); border-radius: 4px; }
 
 .banner { background: var(--graphite); border-bottom: 2px solid var(--human); color: var(--paper);
