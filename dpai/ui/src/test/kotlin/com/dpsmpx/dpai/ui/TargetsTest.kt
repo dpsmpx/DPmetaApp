@@ -142,4 +142,24 @@ class TargetsTest {
         val bad = json.replace("\"codex\"", "\"gpt\"")
         assertTrue(TargetBook.fromJson(JsonParser().parse(bad).valueOrNull()!!) is com.dpsmpx.dpai.core.result.Outcome.Failure, "неизвестный исполнитель — отказ, а не Claude")
     }
+
+    /** D-111: «Держать сессию в tmux» — в формате v5 пишется только «выключено»; без поля и до v5 — включено. */
+    @Test
+    fun tmuxSettingDefaultsOnAndOnlyOffIsWritten() {
+        val ids = com.dpsmpx.dpai.core.ids.IdGenerator(com.dpsmpx.dpai.core.clock.ManualClock(), com.dpsmpx.dpai.core.clock.RandomSource.seeded(34))
+        val on = TargetForm.validate(ids.next(com.dpsmpx.dpai.core.ids.IdKinds.TARGET), "ПК", "10.0.0.2", "22", "u", false, "/home/u/dpai/bin/dpai").valueOrNull()!!
+        assertTrue(on.tmux, "по умолчанию — включено")
+        val off = on.copy(id = ids.next(com.dpsmpx.dpai.core.ids.IdKinds.TARGET), tmux = false)
+        val inApp = TargetForm.inApp(ids.next(com.dpsmpx.dpai.core.ids.IdKinds.TARGET), "Слот", "/root/.claude-slot-1").valueOrNull()!!.copy(tmux = false)
+        val json = com.dpsmpx.dpai.core.serialization.CanonicalJson.write(TargetBook.toJson(listOf(on, off, inApp)))
+        assertEquals(2, Regex("\"tmux\":false").findAll(json).count(), "пишется только выключено")
+        assertTrue("\"tmux\":true" !in json)
+        assertEquals(listOf(on, off, inApp), TargetBook.fromJson(JsonParser().parse(json).valueOrNull()!!).valueOrNull())
+        // Документ v4 (до D-111): поля нет — включено и у старых targets.
+        val v4 = com.dpsmpx.dpai.core.serialization.CanonicalJson.write(TargetBook.toJson(listOf(on))).replace("\"version\":5", "\"version\":4")
+        assertTrue(TargetBook.fromJson(JsonParser().parse(v4).valueOrNull()!!).valueOrNull()!!.single().tmux)
+        // В v4 поля tmux не было: оно там — неизвестное поле (D-09).
+        val v4off = json.replace("\"version\":5", "\"version\":4")
+        assertTrue(TargetBook.fromJson(JsonParser().parse(v4off).valueOrNull()!!) is com.dpsmpx.dpai.core.result.Outcome.Failure)
+    }
 }

@@ -55,6 +55,12 @@ data class TargetEntry(
      * `GEMINI_CLI_HOME`).
      */
     val executor: Executor = Executor.CLAUDE,
+    /**
+     * Держать вкладку терминала в `tmux` на target (D-111): по умолчанию —
+     * да, и у targets, заведённых раньше; работает только там, где `tmux`
+     * есть, и только на POSIX.
+     */
+    val tmux: Boolean = true,
 ) {
     /** Target того же телефона — Termux на `127.0.0.1` (D-26); «в приложении» — Alpine приложения (D-75). */
     val type: TargetType
@@ -135,12 +141,13 @@ object TargetBook {
     /** Вид target «в приложении» в формате v3. */
     const val KIND_IN_APP = "in-app"
     /**
-     * v4 — исполнитель слота (`executor`, D-100; пишется, только если не
-     * `claude`); v3 — target «в приложении» (`"kind": "in-app"`, без адреса
-     * SSH; D-75, шаг 5); v2 — каталог Claude слота (`configDir`); v1…v3
-     * читаются как Claude.
+     * v5 — «Держать сессию в tmux» (`tmux`, D-111; пишется только `false`,
+     * нет поля — включено); v4 — исполнитель слота (`executor`, D-100;
+     * пишется, только если не `claude`); v3 — target «в приложении»
+     * (`"kind": "in-app"`, без адреса SSH; D-75, шаг 5); v2 — каталог Claude
+     * слота (`configDir`); v1…v3 читаются как Claude.
      */
-    const val VERSION = 4
+    const val VERSION = 5
 
     fun toJson(entries: List<TargetEntry>): JsonObject = JsonObject(
         linkedMapOf(
@@ -151,7 +158,8 @@ object TargetBook {
                         JsonObject(
                             linkedMapOf<String, JsonValue>("id" to JsonString(e.id.value), "label" to JsonString(e.label), "kind" to JsonString(KIND_IN_APP))
                                 .also { m -> e.configDir?.let { m["configDir"] = JsonString(it) } }
-                                .also { m -> if (e.executor != Executor.CLAUDE) m["executor"] = JsonString(e.executor.key) },
+                                .also { m -> if (e.executor != Executor.CLAUDE) m["executor"] = JsonString(e.executor.key) }
+                                .also { m -> if (!e.tmux) m["tmux"] = com.dpsmpx.dpai.core.serialization.JsonBool(false) },
                         )
                     } else {
                         JsonObject(
@@ -160,7 +168,8 @@ object TargetBook {
                                 "port" to JsonNumber.of(e.port.toLong()), "user" to JsonString(e.user),
                                 "platform" to JsonString(e.platform.name.lowercase()), "agent" to JsonString(e.agent),
                             ).also { m -> e.configDir?.let { m["configDir"] = JsonString(it) } }
-                                .also { m -> if (e.executor != Executor.CLAUDE) m["executor"] = JsonString(e.executor.key) },
+                                .also { m -> if (e.executor != Executor.CLAUDE) m["executor"] = JsonString(e.executor.key) }
+                                .also { m -> if (!e.tmux) m["tmux"] = com.dpsmpx.dpai.core.serialization.JsonBool(false) },
                         )
                     }
                 },
@@ -188,13 +197,14 @@ object TargetBook {
                 val label = t.string("label").orEmpty()
                 val dir = t.string("configDir")
                 val executor = readExecutor(t, version)
+                val tmux = readTmux(t, version)
                 t.finish()
                 if (kind != KIND_IN_APP || id == null || dir == null || executor == null) {
                     d.error(DiagCode.VALUE_INVALID, "target «в приложении» неполон или вид неизвестен: $kind", "$.targets[$i]")
                     return@mapIndexedNotNull null
                 }
                 return@mapIndexedNotNull when (val e = TargetForm.inApp(id, label, dir, executor)) {
-                    is Outcome.Success -> e.value
+                    is Outcome.Success -> e.value.copy(tmux = tmux)
                     is Outcome.Failure -> null.also { e.diagnostics.forEach { x -> d.error(x.code, x.message, "$.targets[$i]") } }
                 }
             }
@@ -207,6 +217,7 @@ object TargetBook {
             val agent = t.string("agent").orEmpty()
             val configDir = if (version >= 2) t.optString("configDir") else null
             val executor = readExecutor(t, version)
+            val tmux = readTmux(t, version)
             t.finish()
             if (id == null || executor == null) {
                 d.error(DiagCode.VALUE_INVALID, "id target недопустим", "$.targets[$i].id")
@@ -214,12 +225,15 @@ object TargetBook {
             }
             val entry = TargetForm.validate(id, label, host, port, user, windows, agent, configDir, executor)
             when (entry) {
-                is Outcome.Success -> entry.value
+                is Outcome.Success -> entry.value.copy(tmux = tmux)
                 is Outcome.Failure -> null.also { entry.diagnostics.forEach { x -> d.error(x.code, x.message, "$.targets[$i]") } }
             }
         }
         return if (d.hasErrors) Outcome.Failure(d.all) else Outcome.success(out)
     }
+
+    /** «Держать сессию в tmux» (v5, D-111): нет поля — да; до v5 поля нет — тоже да. */
+    private fun readTmux(t: JsonFields, version: Int): Boolean = if (version < 5) true else t.optBoolean("tmux") ?: true
 
     /** Исполнитель записи (v4); нет поля — Claude; неизвестный — находка с путём (D-05), `null`. */
     private fun readExecutor(t: JsonFields, version: Int): Executor? {

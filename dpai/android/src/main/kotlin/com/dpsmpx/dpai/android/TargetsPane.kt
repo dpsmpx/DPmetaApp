@@ -301,7 +301,8 @@ private fun TargetCard(
             }
             lines?.forEach { c -> CheckRow(c) }
             val local = TermuxLauncher.local(t)
-            if (t.configDir != null || local) {
+            val posix = t.platform == com.dpsmpx.dpai.execution.target.TargetPlatform.POSIX
+            if (t.configDir != null || local || posix) {
                 Text(
                     if (settings) "Настройки target ▾" else "Настройки target ▸",
                     Modifier.fillMaxWidth().clickable { settings = !settings }.padding(vertical = 8.dp),
@@ -312,6 +313,7 @@ private fun TargetCard(
                         TargetSwitches(model, t)
                         UsageAutoSwitch(model, t)
                     }
+                    if (posix) TmuxSwitch(controller, t)
                     // Termux на этом телефоне (D-46) — у его target, а не отдельной карточкой (AI:A-3).
                     if (local) TermuxCard(t.port, framed = false)
                 }
@@ -1018,6 +1020,36 @@ private fun UsageAutoSwitch(model: DemoModel, t: TargetEntry) {
         // У target — фон (службой, без открытой сводки); на сводке — когда обновлено (AI:A-26).
         Text("Обновлять лимиты в фоне", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
     }
+}
+
+/**
+ * «Держать сессию в tmux» (D-111): вкладка терминала — в `tmux new -A` на
+ * target; после обрыва связи или перезапуска приложения — та же сессия.
+ * По умолчанию включено; `tmux` на target ставит человек.
+ */
+@Composable
+private fun TmuxSwitch(controller: Controller, t: TargetEntry) {
+    val scope = rememberCoroutineScope()
+    var on by remember(t.id) { mutableStateOf(t.tmux) }
+    var note by remember(t.id) { mutableStateOf<String?>(null) }
+    SwitchRow(on, onChange = { v ->
+        on = v
+        scope.launch {
+            when (val r = withContext(Dispatchers.IO) { controller.setTmux(t, v) }) {
+                is Outcome.Success -> note = null
+                is Outcome.Failure -> {
+                    on = !v
+                    note = "Не сохранено: ${r.diagnostics.first().message}"
+                }
+            }
+        }
+    }) {
+        Column(Modifier.weight(1f)) {
+            Text("Держать сессию в tmux", style = MaterialTheme.typography.bodySmall)
+            Text("После обрыва связи вкладка вернётся в ту же сессию; нужен tmux на target", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+    note?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall) }
 }
 
 private const val PROBING = "проверяю вход…"
