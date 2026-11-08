@@ -23,6 +23,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -298,27 +299,28 @@ object CloudSync {
 @Composable
 internal fun CloudCard(model: DemoModel, framed: Boolean = true) {
     val context = LocalContext.current.applicationContext
-    val scope = rememberCoroutineScope()
     var editing by remember { mutableStateOf(false) }
     var restoring by remember { mutableStateOf(false) }
     var replacing by remember { mutableStateOf(false) }
-    var busy by remember { mutableStateOf<String?>(null) }
-    var message by remember { mutableStateOf<String?>(null) }
+    // Отправка и отмена восстановления — вне экрана (AI:A-14): уход из «Копий» не теряет ход и итог, повтор не запускается.
+    val jobs = remember { LongJobs.get(context) }
+    val jobState by jobs.state.collectAsState()
+    val job = jobState[LongJobs.CLOUD]
+    val busy = job?.takeIf { it.running }?.label
+    // Итог окна настроек — свой; новая операция его стирает.
+    var note by remember { mutableStateOf<String?>(null) }
+    val message = note ?: job?.takeIf { !it.running }?.note
     var state by remember { mutableStateOf<CardState?>(null) }
     var version by remember { mutableIntStateOf(0) }
-    LaunchedEffect(version) {
+    LaunchedEffect(version, job?.running) {
         state = withContext(Dispatchers.IO) {
             runCatching { CardState(CloudSync.ready(context), CloudSync.canRestore(context), CloudSync.last(context), CloudSync.restorePending(context)) }.getOrNull()
         }
     }
 
-    fun work(label: String, job: () -> String) {
-        busy = label
-        scope.launch {
-            message = withContext(Dispatchers.IO) { runCatching(job).getOrElse { "Сбой: ${AppLogs.describe(it)}" } }
-            busy = null
-            version++
-        }
+    fun work(label: String, work: () -> String) {
+        note = null
+        jobs.start(LongJobs.CLOUD, label) { LongJobs.Done(runCatching(work).getOrElse { "Сбой: ${AppLogs.describe(it)}" }) }
     }
 
     Framed(framed) {
@@ -344,7 +346,7 @@ internal fun CloudCard(model: DemoModel, framed: Boolean = true) {
                 Row {
                     TextButton(onClick = { android.os.Process.killProcess(android.os.Process.myPid()) }) { Text("Перезапустить") }
                     TextButton(enabled = busy == null, onClick = {
-                        work("Отменяю…") {
+                        work("Отмена восстановления") {
                             when (val r = CloudSync.cancelRestore(context)) {
                                 is Outcome.Success -> "Восстановление отменено: данные не заменятся"
                                 is Outcome.Failure -> "Не отменено: ${r.errors.firstOrNull()?.message}"
@@ -355,17 +357,23 @@ internal fun CloudCard(model: DemoModel, framed: Boolean = true) {
             }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 TextButton(enabled = busy == null, onClick = { editing = true }) { Text(if (s?.canRestore == true) "Настройки…" else "Настроить…") }
-                if (s?.ready == true) TextButton(enabled = busy == null, onClick = { work("Отправляю…") { CloudSync.send(context, model) } }) { Text("Отправить копию") }
+                if (s?.ready == true) TextButton(enabled = busy == null, onClick = { work("Отправка копии") { CloudSync.send(context, model) } }) { Text("Отправить копию") }
                 if (s?.canRestore == true) TextButton(enabled = busy == null, onClick = { restoring = true }) { Text("Восстановить…") }
             }
-            (busy ?: message)?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            // Ход — полосой (AI:A-14), итог — строкой.
+            if (busy != null) {
+                Text("$busy…", style = MaterialTheme.typography.bodySmall)
+                androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth())
+            } else {
+                message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            }
             // Отказ «чужая копия» — и от кнопки, и от такта службы (последняя отправка).
             if (busy == null && (message ?: s?.last?.second)?.let(CloudSync::isForeignCopy) == true) {
                 TextButton(onClick = { replacing = true }) { Text("Заменить копию в репозитории…", color = MaterialTheme.colorScheme.error) }
             }
         }
     }
-    if (editing) CloudSettingsDialog(onDismiss = { editing = false; version++ }) { text -> message = text }
+    if (editing) CloudSettingsDialog(onDismiss = { editing = false; version++ }) { text -> note = text }
     if (restoring) CloudRestoreDialog(onDismiss = { restoring = false; version++ })
     if (replacing) {
         AlertDialog(
@@ -381,7 +389,7 @@ internal fun CloudCard(model: DemoModel, framed: Boolean = true) {
             confirmButton = {
                 TextButton(onClick = {
                     replacing = false
-                    work("Отправляю…") { CloudSync.send(context, model, overwrite = true) }
+                    work("Замена копии") { CloudSync.send(context, model, overwrite = true) }
                 }) { Text("Заменить", color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = { TextButton(onClick = { replacing = false }) { Text("Отмена") } },
