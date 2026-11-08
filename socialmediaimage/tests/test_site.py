@@ -20,7 +20,7 @@ from tools.cs.common import ROOT
 from tools.cs.core import textdoc
 from tools.cs.core.content import approval_state, find
 from tools.cs.platform_checks import page_a11y, page_csp, page_images
-from tools.cs.site.build import SiteBuild, build
+from tools.cs.site.build import SiteBuild, build, theme_contrast
 from tools.cs.site.preview import PAGE_DIR, preview
 from tools.cs.site.serve import _Handler, server
 from tests.platform_fixture import approve, make_repo
@@ -154,6 +154,46 @@ class Accessibility(unittest.TestCase):
         self.assertEqual(page_csp('<script type="application/ld+json">{}</script>'), [])
 
 
+class Themes(unittest.TestCase):
+    """Светлая тема по настройке системы (Д49): токены site_light, контраст текста в обеих темах."""
+
+    def test_light_theme_follows_system(self):
+        repo = make_repo(git=False)
+        out = repo.path("build", "s")
+        rep = build(repo, "staging", out)
+        self.assertEqual(rep.errors, [])
+        css = (out / "style.css").read_text(encoding="utf-8")
+        self.assertIn("color-scheme: dark light", css)
+        self.assertIn("@media (prefers-color-scheme: light) { :root { --ink: #F7F7F5;", css)
+        home = (out / "index.html").read_text(encoding="utf-8")
+        self.assertIn('<meta name="theme-color" content="#111214" media="(prefers-color-scheme: dark)">', home)
+        self.assertIn('<meta name="theme-color" content="#F7F7F5" media="(prefers-color-scheme: light)">', home)
+
+    def test_figure_rows_hold_contrast_in_both_themes(self):
+        """Ряды и линии фигур (--c-*, кроме тепловой шкалы) — не ниже 3 к фону и панелям в обеих темах (Д49, WCAG 1.4.11)."""
+        from tools.cs.visual import contrast, luminance
+        css = (ROOT / "website/static/style.css").read_text(encoding="utf-8")
+        light_at = css.index("@media (prefers-color-scheme: light)")
+        rows = lambda text: dict(re.findall(r"--c-(gald|core|bg|deferred|periphery|hidden):\s*(#[0-9a-fA-F]{6})", text))
+        dark, light = rows(css[:light_at]), rows(css[light_at:css.index("}", light_at)])
+        self.assertEqual(set(dark), set(light), "у каждого ряда — значение в обеих темах")
+        tokens = json.loads((ROOT / "assets/brand/tokens.json").read_text(encoding="utf-8"))
+        for name, vals, pal in (("тёмная", dark, tokens["color"]), ("светлая", light, tokens["site_light"]["color"])):
+            for row, hex_ in vals.items():
+                for bg in ("ink", "graphite"):
+                    k = contrast(luminance(hex_), luminance(pal[bg]["hex"]))
+                    self.assertGreaterEqual(k, 3.0, f"{name}: --c-{row} к {bg} — {k:.2f}")
+
+    def test_contrast_rule(self):
+        tokens = json.loads((ROOT / "assets/brand/tokens.json").read_text(encoding="utf-8"))
+        self.assertEqual(theme_contrast(tokens), [], "токены автора держат контраст в обеих темах")
+        bad = json.loads(json.dumps(tokens))
+        bad["site_light"]["color"]["mist"]["hex"] = "#A3A6AD"  # тёмный «mist» на светлом фоне
+        msgs = " ".join(theme_contrast(bad))
+        self.assertIn("светлая: mist к ink", msgs)
+        self.assertIn("светлая: mist к graphite", msgs)
+
+
 class HostFiles(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -274,6 +314,7 @@ class Ecosystem(unittest.TestCase):
         self.assertIn('<script src="/ecosystem/dpvis.js" defer></script>', page)
         self.assertIn('<link rel="stylesheet" href="/ecosystem/dpvis.css">', page)
         self.assertIn('data-src="/ecosystem/dpvis-data.json"', page)
+        self.assertIn('data-theme="auto"', page, "схема — в теме системы, как сайт (Д49)")
         self.assertIn("Система по слоям", page, "без JavaScript — та же система списком")
         for name in ("dpvis.js", "dpvis.css", "dpvis-data.json"):
             self.assertTrue((self.out / "ecosystem" / name).is_file(), name)

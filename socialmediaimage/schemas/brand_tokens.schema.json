@@ -19,6 +19,21 @@
         "properties": {"hex": {"type": "string", "pattern": "^#[0-9A-F]{6}$"}, "role": {"type": "string"}}
       }
     },
+    "site_light": {
+      "type": "object", "description": "Светлая тема страниц сайта (Д49): те же роли, что у color.",
+      "required": ["color"], "additionalProperties": false,
+      "properties": {
+        "note": {"type": "string"},
+        "color": {
+          "type": "object",
+          "required": ["ink", "graphite", "line", "mist", "paper", "human", "ai", "verified"],
+          "additionalProperties": {
+            "type": "object", "required": ["hex", "role"], "additionalProperties": false,
+            "properties": {"hex": {"type": "string", "pattern": "^#[0-9A-F]{6}$"}, "role": {"type": "string"}}
+          }
+        }
+      }
+    },
     "semantic": {"type": "object", "additionalProperties": {"enum": ["ink", "graphite", "line", "mist", "paper", "human", "ai", "verified"]}},
     "font": {"type": "object"},
     "allowed_fonts": {"type": "array", "items": {"type": "string"}, "minItems": 1},

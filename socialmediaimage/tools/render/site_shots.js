@@ -3,7 +3,8 @@
 //   node tools/render/site_shots.js <job.json>
 //
 // job.json: {"base": "http://127.0.0.1:PORT", "pages": ["/", "/about/"], "widths": [390, 1280],
-//            "height": 900, "out": "<каталог снимков>"}
+//            "themes": ["dark", "light"], "height": 900, "out": "<каталог снимков>"}
+// Тема — настройка системы посетителя (prefers-color-scheme, Д49); снимок светлой — «…-light.png».
 // На выходе (stdout) — JSON: по странице и ширине — снимок, высота, прокрутка вбок,
 // элементы за краем экрана, сломанные изображения, шрифты, нарушения CSP,
 // ошибки консоли и запросов, мелкий текст, малые цели касания. Правила по этим
@@ -86,6 +87,13 @@ function measure() {
     const r = el.getBoundingClientRect();
     if (r.height < 24 || r.width < 24) targets.push(`${label(el)}: ${Math.round(r.width)}×${Math.round(r.height)}`);
   }
+  // Пункты меню шапки — не меньше 44 × 44 (WCAG 2.5.5, Д49), на любой ширине; оглавление и «крошки» — 24.
+  const nav = [];
+  for (const el of document.querySelectorAll('.site-header nav a')) {
+    if (!visible(el)) continue;
+    const r = el.getBoundingClientRect();
+    if (r.height < 43.5 || r.width < 43.5) nav.push(`${label(el)}: ${Math.round(r.width)}×${Math.round(r.height)}`);
+  }
   return {
     viewport: vw,
     scrollWidth: document.documentElement.scrollWidth,
@@ -98,6 +106,8 @@ function measure() {
     minFont: minFont === 1e9 ? null : minFont,
     smallText: small,
     smallTargets: targets.slice(0, 8),
+    navTargets: nav.slice(0, 8),
+    headerHeight: (() => { const hd = document.querySelector('.site-header'); return hd ? Math.round(hd.getBoundingClientRect().height) : null; })(),
     h1: document.querySelectorAll('h1').length,
     csp: (window.__cspViolations || []).slice(0, 5),
   };
@@ -112,8 +122,8 @@ function measure() {
   fs.mkdirSync(job.out, { recursive: true });
   const results = [];
   try {
-    for (const width of job.widths) {
-      const ctx = await browser.newContext({ viewport: { width, height: job.height || 900 }, deviceScaleFactor: 1 });
+    for (const theme of job.themes || ['dark']) for (const width of job.widths) {
+      const ctx = await browser.newContext({ viewport: { width, height: job.height || 900 }, deviceScaleFactor: 1, colorScheme: theme });
       await ctx.addInitScript(() => {
         window.__cspViolations = [];
         document.addEventListener('securitypolicyviolation', (e) => {
@@ -138,9 +148,9 @@ function measure() {
         const resp = await page.goto(job.base + p, { waitUntil: 'networkidle' });
         await page.evaluate(() => document.fonts.ready);
         const m = await page.evaluate(measure);
-        const shot = path.join(job.out, `${slug(p)}-${width}.png`);
+        const shot = path.join(job.out, `${slug(p)}-${width}${theme === 'dark' ? '' : '-' + theme}.png`);
         await page.screenshot({ path: shot, fullPage: true });
-        results.push({ path: p, width, status: resp ? resp.status() : 0, shot, console: console_, failed, ...m });
+        results.push({ path: p, width, theme, status: resp ? resp.status() : 0, shot, console: console_, failed, ...m });
         await page.close();
       }
       await ctx.close();
