@@ -76,7 +76,13 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
     }
 
     /** Итог синхронизации клона: что сделано, основная ветка, ветки GitHub в клоне, конфликты. */
-    data class Report(val project: String, val action: Action, val main: String, val branches: List<String>, val conflicts: List<Conflict>)
+    /**
+     * Итог клонирования или обновления. [mainSha] — голова основной ветки по
+     * ответу GitHub (`ls-remote`), а не по ссылке клона: ссылки клона может
+     * переписать Linux-среда (D-72), ответ GitHub — нет
+     * (`DP_AI_Orcestrator:D-114`, T19).
+     */
+    data class Report(val project: String, val action: Action, val main: String, val branches: List<String>, val conflicts: List<Conflict>, val mainSha: String? = null)
 
     /** Голова ветки GitHub в клоне: SHA, время коммита (коммиттера), автор коммита. */
     data class Head(val name: String, val sha: String, val time: Timestamp, val author: String?)
@@ -143,7 +149,7 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
             .use { git -> git.repository.config.apply { setString("dpmeta", null, "main", main) }.save() }
         // Клон появляется целиком: прерванное клонирование не оставляет полуклона под именем проекта.
         if (!tmp.renameTo(dir)) throw IOException("rename")
-        return Outcome.success(Report(project, Action.CLONED, main, keep, emptyList()))
+        return Outcome.success(Report(project, Action.CLONED, main, keep, emptyList(), refs[Constants.R_HEADS + main]?.objectId?.name))
     }
 
     private fun fetch(project: String, remote: URI, dir: File, creds: CredentialsProvider?, excluded: (String) -> Boolean): Outcome<Report> = open(dir).use { repo ->
@@ -154,8 +160,9 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
             if (repo.config.getString("remote", "origin", "url") != remote.toString()) {
                 repo.config.apply { setString("remote", "origin", "url", remote.toString()) }.save()
             }
-            val refs = Git.lsRemoteRepository().setRemote(remote.toString()).setHeads(true).setCredentialsProvider(creds).call()
-                .map { it.name.removePrefix(Constants.R_HEADS) }
+            val remoteRefs = Git.lsRemoteRepository().setRemote(remote.toString()).setHeads(true).setCredentialsProvider(creds).call()
+            val mainSha = remoteRefs.firstOrNull { it.name == Constants.R_HEADS + main }?.objectId?.name
+            val refs = remoteRefs.map { it.name.removePrefix(Constants.R_HEADS) }
             val keep = refs.filter { it == main || !excluded(it) }.sorted()
             val before = keep.associateWith { repo.resolve(Constants.R_REMOTES + "origin/" + it) }
             git.fetch()
@@ -171,7 +178,7 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
                 if (name !in keep) repo.updateRef(r.name, true).apply { isForceUpdate = true }.delete()
             }
             // Рабочее дерево и локальные ветки — работа ИИ (D-70): синхронизация их не трогает, только `origin/*`.
-            Outcome.success(Report(project, Action.FETCHED, main, keep, rewritten(repo, keep, before)))
+            Outcome.success(Report(project, Action.FETCHED, main, keep, rewritten(repo, keep, before), mainSha))
         }
     }
 
@@ -207,7 +214,16 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
     fun main(project: String): String? {
         val dir = dir(project)
         if (!File(dir, ".git").isDirectory) return null
-        return open(dir).use(::mainOf)
+        // Испорченный клон (конфиг правит и гость, D-72) — как нет клона: читается REST, а не падение экрана.
+        return try {
+            open(dir).use(::mainOf)
+        } catch (e: IOException) {
+            null
+        } catch (e: JGitInternalException) {
+            null
+        } catch (e: IllegalArgumentException) {
+            null
+        }
     }
 
     /** Основная ветка — одно правило для чтения и обновления: отметка, цель `origin/HEAD`, `main`, текущая ветка. */
@@ -248,6 +264,27 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
             c.abbreviate(7).name() to java.time.Instant.ofEpochSecond(c.commitTime.toLong()).atZone(zone).toLocalDate().toString()
         }
     }
+
+    /**
+     * Файл на коммите [commit] (полный SHA): объекты адресуются содержимым,
+     * и подмена ссылок клона прочитанное не меняет (`DP_AI_Orcestrator:D-114`).
+     * Нет файла — `null`; нет коммита (объекты удалены) — отказ, а не другое
+     * содержимое.
+     */
+    fun fileAt(project: String, commit: String, path: String): Outcome<ByteArray?> {
+        if (!Regex("[0-9a-f]{40}").matches(commit)) return failure(DiagCode.VALUE_INVALID, "не SHA коммита", project)
+        return withRepo(project) { repo ->
+            val tree = try {
+                RevWalk(repo).use { it.parseCommit(ObjectId.fromString(commit)).tree }
+            } catch (e: MissingObjectException) {
+                return@withRepo null
+            }
+            TreeWalk.forPath(repo, path, tree)?.use { tw -> if (tw.isSubtree) null else repo.open(tw.getObjectId(0)).bytes }
+        }.let { r -> if (r is Outcome.Success && r.value == null && !hasCommit(project, commit)) failure(DiagCode.ENTITY_NOT_FOUND, "коммита нет в клоне", project) else r }
+    }
+
+    private fun hasCommit(project: String, commit: String): Boolean =
+        (withRepo(project) { repo -> repo.objectDatabase.has(ObjectId.fromString(commit)) } as? Outcome.Success)?.value == true
 
     /** Файл ветки GitHub [branch] по пути от корня; нет файла (или это каталог) — `null`, нет клона или ветки — отказ. */
     fun file(project: String, branch: String, path: String): Outcome<ByteArray?> = withRepo(project) { repo ->

@@ -627,7 +627,9 @@ open class PultActivity : ComponentActivity() {
             val app = context.applicationContext
             val selected = app.getSharedPreferences(CLONES_PREFS, MODE_PRIVATE).getStringSet(CLONES_SELECTED, null).orEmpty().toSet()
             val repo = PultRepository(NioVfs(app.filesDir.toPath().resolve("dpmeta")), Clock.SYSTEM, com.dpsmpx.dpmeta.app.data.PultPool.work, File(app.filesDir, CLONES_DIR))
-            return repo.ecosystemManifest(selected)
+            // Испорченный клон или сбой JGit — отказ словами, а не падение окна «Экосистема».
+            return runCatching { repo.ecosystemManifest(selected) }
+                .getOrElse { Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.ECOSYSTEM_UNAVAILABLE, "манифест из реестра не собран: ${it.javaClass.simpleName}") }
         }
         private const val CLONES_FLAT_GONE = "flat-removed"
     }

@@ -595,7 +595,9 @@ class TerminalEmulator(
             // Только http(s) и не длиннее предела: `intent:`, `file:` программа на target не подсунет.
             8 -> hyperlink = arg.substringAfter(';', "").takeIf { it.length <= MAX_LINK && LINK_SCHEME.matches(it) }
             // OSC 9 и 777;notify — уведомление программы (терминал:A-8): как звонок, без текста (T8).
-            9 -> host.bell()
+            // Уведомление программы — `9;<текст>`; служебные формы ConEmu и Windows Terminal (`9;4;…` — ход,
+            // `9;9;<каталог>` — каталог у каждого приглашения) — не сигнал, как в ghostty.
+            9 -> if (!OSC9_SERVICE.containsMatchIn(arg)) host.bell()
             777 -> if (arg.startsWith("notify")) host.bell()
             10 -> if (arg == "?") reply("${ESC_S}]10;${rgbSpec(foregroundRgb)}$end")
             11 -> if (arg == "?") reply("${ESC_S}]11;${rgbSpec(backgroundRgb)}$end")
@@ -1222,6 +1224,9 @@ class TerminalEmulator(
         }
 
         private val LINK = Regex("https?://[^\\s<>\"'`]+")
+
+        /** Служебный OSC 9: число и `;` или конец (`9;4;1;50`, `9;9;C:\\`). */
+        private val OSC9_SERVICE = Regex("^\\d+(;|$)")
         const val MAX_COLS = 1_000
         const val MAX_ROWS = 500
         private const val ESC = 0x1b

@@ -198,27 +198,50 @@ class PultRepository(
     fun ecosystemManifest(selected: Set<String>): Outcome<String> {
         val clones = com.dpsmpx.dpmeta.git.Clones(clonesDir, com.dpsmpx.dpmeta.git.Clones.allowList())
         val host = RepoRef.parse(HOST).valueOrNull() ?: return Outcome.failure(DiagCode.INTERNAL_ERROR, "адрес DPmetaApp не разбирается")
-        val reg = registry ?: localRegistry(clones, host, selected)
-            ?: return Outcome.failure(DiagCode.ECOSYSTEM_UNAVAILABLE, "реестра нет: отметьте клон DPmetaApp в пульте («Ещё» → «Клоны…») или выберите файл манифеста")
         fun chosen(key: String) = selected.any { it.equals(key, ignoreCase = true) }
+        // Реестр и очередь — из клона DPmetaApp на голове, которую назвал GitHub при последней синхронизации
+        // (T19): ссылки клона может переписать Linux-среда, объекты на этом SHA — нет.
+        if (!chosen(host.toString())) return Outcome.failure(DiagCode.ECOSYSTEM_UNAVAILABLE, "клон DPmetaApp не отмечен: отметьте его в пульте («Ещё» → «Клоны…») или выберите файл манифеста")
+        val sha = trustedHost() ?: return Outcome.failure(DiagCode.ECOSYSTEM_UNAVAILABLE, "пульт ещё не синхронизировал клон DPmetaApp: «Обновить» в пульте — или выберите файл манифеста")
+        val regText = when (val r = clones.fileAt(host.toString(), sha, REGISTRY)) {
+            is Outcome.Failure -> return Outcome.failure(DiagCode.ECOSYSTEM_UNAVAILABLE, "реестр не читается из клона DPmetaApp: ${r.diagnostics.first().message}")
+            is Outcome.Success -> r.value?.toString(Charsets.UTF_8) ?: return Outcome.failure(DiagCode.ECOSYSTEM_UNAVAILABLE, "в клоне DPmetaApp нет реестра $REGISTRY")
+        }
+        val reg = when (val r = RegistryFormat.parse(regText, REGISTRY)) {
+            is Outcome.Failure -> return r
+            is Outcome.Success -> r.value
+        }
         val facts = linkedMapOf<String, com.dpsmpx.dpmeta.formats.DpaiManifest.Clone>()
         for (e in reg.shown) {
             val key = if (e.dir != null) host.toString() else e.slug.toString()
             if (!chosen(key)) continue
             val main = clones.main(key) ?: continue
+            // Ветки GitHub в клоне нет — «без основной ветки», как у DPmeta:tools/manifest.py.
+            if ((clones.heads(key) as? Outcome.Success)?.value?.any { it.name == main } != true) {
+                facts[e.name] = com.dpsmpx.dpmeta.formats.DpaiManifest.Clone(null)
+                continue
+            }
             val prefix = e.dir?.let { "$it/" } ?: ""
             val last = (clones.last(key, main, e.dir.orEmpty()) as? Outcome.Success)?.value
-            val docs = com.dpsmpx.dpmeta.formats.DpaiManifest.wanted(reg, e.name).filter { p -> (clones.size(key, main, prefix + p) as? Outcome.Success)?.value != null }
+            val docs = com.dpsmpx.dpmeta.formats.DpaiManifest.wanted(reg, e.name).filter { p ->
+                // Подсистема — на проверенной голове DPmetaApp; свой репозиторий — по своей ветке.
+                if (key == host.toString()) (clones.fileAt(key, sha, prefix + p) as? Outcome.Success)?.value != null else (clones.size(key, main, prefix + p) as? Outcome.Success)?.value != null
+            }
             facts[e.name] = com.dpsmpx.dpmeta.formats.DpaiManifest.Clone(main, last?.first, last?.second, docs)
         }
-        // Очередь DPmeta — в клоне DPmetaApp; его нет — предложений нет, проекты и состояние — есть.
-        val queue = if (chosen(host.toString())) {
-            clones.main(host.toString())?.let { main -> (clones.file(host.toString(), main, com.dpsmpx.dpmeta.formats.DpaiManifest.QUEUE) as? Outcome.Success)?.value?.toString(Charsets.UTF_8) }
-        } else {
-            null
-        }
+        val queue = (clones.fileAt(host.toString(), sha, com.dpsmpx.dpmeta.formats.DpaiManifest.QUEUE) as? Outcome.Success)?.value?.toString(Charsets.UTF_8)
         return com.dpsmpx.dpmeta.formats.DpaiManifest.build(reg, facts, queue.orEmpty())
     }
+
+    /** Голова DPmetaApp по ответу GitHub при последней синхронизации (T19): в хранилище пульта, не в клоне. */
+    private fun trustHost(sha: String) {
+        runCatching {
+            vfs.mkdirs(TRUSTED_HOST.substringBeforeLast('/'))
+            vfs.write(TRUSTED_HOST, sha.toByteArray(Charsets.UTF_8))
+        }
+    }
+
+    private fun trustedHost(): String? = runCatching { vfs.read(TRUSTED_HOST)?.toString(Charsets.UTF_8)?.trim() }.getOrNull()?.takeIf { Regex("[0-9a-f]{40}").matches(it) }
 
     /** Реестр из отмеченного клона DPmetaApp — без сети и токена (окно открыли до первой синхронизации). */
     private fun localRegistry(clones: com.dpsmpx.dpmeta.git.Clones, host: RepoRef, selected: Set<String>): Registry? {
@@ -404,6 +427,8 @@ class PultRepository(
                 }
                 is Outcome.Success -> {
                     ok++
+                    // Голова DPmetaApp по ответу GitHub — в хранилище пульта, куда Linux-среда не пишет (D-114, T19).
+                    if (key.equals(HOST, ignoreCase = true)) r.value.mainSha?.let(::trustHost)
                     if (r.value.action == com.dpsmpx.dpmeta.git.Clones.Action.CLONED) created++
                     // Перезаписанная на GitHub история — сведение (D-70): клон взял её; работа ИИ в клоне — не расхождение.
                     if (r.value.conflicts.isNotEmpty()) rewritten++
@@ -416,6 +441,9 @@ class PultRepository(
     companion object {
         const val HOST = "dpsmpx/DPmetaApp"
         const val REGISTRY = "dpmeta/tools/ecosystem.toml"
+
+        /** Голова DPmetaApp от GitHub для манифеста «AI» (T19, D-114) — файл хранилища пульта. */
+        private const val TRUSTED_HOST = "trusted/dpmetaapp-main"
         private val MISSING = setOf(DiagCode.GITHUB_NOT_FOUND.name, DiagCode.ENTITY_NOT_FOUND.name)
 
         /** Вид отказа источника для клона (D-65): «Ошибки источников» показывают его рядом с файлами. */

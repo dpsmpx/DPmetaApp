@@ -257,10 +257,35 @@ internal object EcosystemChoice {
     fun registryAvailable(context: Context): Boolean = (context.applicationContext as? DpaiApplication)?.ecosystemRegistry == true
 
     fun source(context: Context): Source {
-        val saved = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(SOURCE, null)?.let { s -> Source.entries.firstOrNull { it.name == s } }
-        return when {
-            !registryAvailable(context) -> Source.FILE
-            else -> saved ?: Source.REGISTRY
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val saved = prefs.getString(SOURCE, null)?.let { s -> Source.entries.firstOrNull { it.name == s } }
+        return defaultSource(registryAvailable(context), saved, prefs.getString(MANIFEST, null) != null)
+    }
+
+    /**
+     * Источник без выбора человека (D-114): нет реестра — файл; выбран — он;
+     * не выбран, а файл сохранён (выбор до D-114, возможно с политикой) —
+     * файл: обновление приложения источник молча не меняет, политика читает
+     * то, над чем её включили; иначе — реестр.
+     */
+    internal fun defaultSource(registry: Boolean, saved: Source?, fileKept: Boolean): Source = when {
+        !registry -> Source.FILE
+        saved != null -> saved
+        fileKept -> Source.FILE
+        else -> Source.REGISTRY
+    }
+
+    /**
+     * Смена источника (D-114): тот же — ничего; политика включена — сначала
+     * выключить её ([disable]); не выключилась — источник не меняется. Итог —
+     * можно ли сменить и что сказать человеку.
+     */
+    internal fun switch(from: Source, to: Source, policyOn: Boolean, disable: () -> Outcome<*>): Pair<Boolean, String?> = when {
+        from == to -> true to null
+        !policyOn -> true to null
+        else -> when (val d = disable()) {
+            is Outcome.Success -> true to "Источник манифеста сменён — политика прогона выключена: включите её заново."
+            is Outcome.Failure -> false to "Политика не выключилась (${d.diagnostics.firstOrNull()?.message}) — источник не сменён"
         }
     }
 
@@ -270,24 +295,17 @@ internal object EcosystemChoice {
      * не выключилась — источник не меняется. Итог — строка для человека.
      */
     fun setSource(context: Context, to: Source): Pair<Boolean, String?> {
-        if (source(context) == to) return true to null
         val auto = Controller.get(context.filesDir).ecosystemAuto
-        val note = if (auto.policy().valueOrNull() == null) {
-            null
-        } else {
-            when (val d = auto.disable()) {
-                is Outcome.Success -> "Источник манифеста сменён — политика прогона выключена: включите её заново."
-                    .also { AppLogs.get(context).info("экосистема", "политика прогона выключена: сменён источник манифеста") }
-                is Outcome.Failure -> return false to "Политика не выключилась (${d.errors.firstOrNull()?.message}) — источник не сменён"
-            }
-        }
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(SOURCE, to.name).apply()
-        return true to note
+        val r = switch(source(context), to, auto.policy().valueOrNull() != null) { auto.disable() }
+        if (r.second != null && r.first) AppLogs.get(context).info("экосистема", "политика прогона выключена: сменён источник манифеста")
+        if (r.first) context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(SOURCE, to.name).apply()
+        return r
     }
 
     /** Проекты манифеста из выбранного источника — для экрана и прохода политики. Блокирующий вызов. */
     fun load(context: Context): Outcome<List<EcosystemProject>> = when (source(context)) {
-        Source.REGISTRY -> when (val m = (context.applicationContext as? DpaiApplication)?.ecosystemManifest()) {
+        // Сбой оболочки — отказ словами, а не падение окна или такта.
+        Source.REGISTRY -> when (val m = runCatching { (context.applicationContext as? DpaiApplication)?.ecosystemManifest() }.getOrElse { Outcome.failure(DiagCode.ECOSYSTEM_UNAVAILABLE, "манифест из реестра не собран: ${it.javaClass.simpleName}") }) {
             null -> Outcome.failure(DiagCode.ECOSYSTEM_UNAVAILABLE, "у этой сборки нет реестра — выберите файл манифеста")
             is Outcome.Failure -> m
             is Outcome.Success -> ManifestEcosystem { m.value }.projects()

@@ -108,7 +108,10 @@ object DpaiManifest {
     private val BLOCKED = Regex("RISK-\\d+|за автором|(?:правит|решает)(?: только)? автор|только автор", RegexOption.IGNORE_CASE)
 
     /** Текст Markdown одной строкой: без обратных кавычек и звёздочек. */
-    private fun plain(text: String): String = text.replace("`", "").replace("**", "").replace(Regex("\\s+"), " ").trim()
+    private fun plain(text: String): String = text.replace("`", "").replace("**", "").replace(SPACES, " ").trim()
+
+    /** Пробелы Unicode, как `\s` Python 3 (неразрывные — тоже). */
+    private val SPACES = Regex("(?U)\\s+")
 
     /** Пункты очереди по номеру — как `read_queue` DPmeta. */
     internal fun readQueue(text: String): Map<String, QueueItem> {
@@ -175,7 +178,8 @@ object DpaiManifest {
         queue.entries.sortedBy { it.key.substringAfter('-').toIntOrNull() ?: Int.MAX_VALUE }.filter { (_, item) ->
             name in item.repos && item.proposal.isNotEmpty() && open(item)
         }.map { (num, item) ->
-            val where = item.fields["Где"] ?: item.fields["Где и что"]
+            // Пустое «Где» — как нет его (`or` у DPmeta).
+            val where = item.fields["Где"]?.takeIf { it.isNotEmpty() } ?: item.fields["Где и что"]?.takeIf { it.isNotEmpty() }
             val parts = mutableListOf<String>()
             where?.let { parts += "Где: $it" }
             parts += "Предложение: ${item.proposal}"

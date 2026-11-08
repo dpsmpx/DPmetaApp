@@ -99,10 +99,15 @@ object TerminalHub {
         override fun bell() {
             val screen = observer
             if (screen == null || current !== this) {
+                // Ярлыки и уведомление — только при первом сигнале: поток BEL (`cat` двоичного файла) не
+                // перерисовывает ряд вкладок тысячи раз в секунду.
+                val first = !attention
                 attention = true
-                screen?.tabs()
-                // Экрана терминала нет — строкой уведомления службы, без текста программы (T8).
-                if (screen == null) app?.let(TerminalService::attention)
+                if (first) {
+                    screen?.tabs()
+                    // Экрана терминала нет — строкой уведомления службы, без текста программы (T8).
+                    if (screen == null) app?.let(TerminalService::attention)
+                }
             }
             screen?.bell(this)
         }

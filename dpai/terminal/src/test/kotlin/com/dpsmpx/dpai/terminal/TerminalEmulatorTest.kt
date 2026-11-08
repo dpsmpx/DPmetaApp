@@ -176,6 +176,9 @@ class TerminalEmulatorTest {
         val t = term(host = h)
         t.feed("\u001b]9;готово\u0007\u001b]777;notify;Claude;ждёт\u0007")
         assertEquals(2, h.bells)
+        // Служебные OSC 9 ConEmu и Windows Terminal — ход и каталог у приглашения — не сигнал.
+        t.feed("\u001b]9;4;1;50\u0007\u001b]9;9;C:\\Users\u0007\u001b]9;4\u0007")
+        assertEquals(2, h.bells)
     }
 
     /** OSC 8 (терминал:A-19): ссылка у ячеек текста, только http(s); пустой адрес закрывает. */

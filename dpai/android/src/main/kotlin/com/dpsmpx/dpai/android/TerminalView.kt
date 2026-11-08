@@ -275,7 +275,8 @@ class TerminalView(context: Context) : View(context) {
 
     /** Шрифт по ширине: [columns] столбцов во всю ширину окна (⋮ «80 столбцов»). */
     fun fitColumns(columns: Int = 80) {
-        if (width > 0) setFont(fontPx * width / (columns * cellW))
+        // Ширина сетки — без полей по краям (терминал:A-24): иначе выходило 78–79 столбцов.
+        if (width > 0) setFont(fontPx * (width - 2 * dp(SIDE_DP)) / (columns * cellW))
     }
 
     init {

@@ -116,6 +116,32 @@ class ClonesTest {
         assertNull((c.last("Alpha", "main", "нет") as Outcome.Success).value, "каталог без коммитов — null")
     }
 
+    /**
+     * Голова от GitHub (DP_AI_Orcestrator:D-114, T19): `mainSha` — ответ
+     * `ls-remote`; подменённая в клоне ссылка `origin/main` не меняет файл,
+     * прочитанный на этом SHA.
+     */
+    @Test
+    fun mainShaIsGitHubsAndFileAtIgnoresTamperedRefs() {
+        val uri = remote()
+        val c = clones()
+        val sha = (c.sync("Alpha", uri, null, build) as Outcome.Success).value.mainSha!!
+        val github = Git.open(remoteDir).use { it.repository.resolve("refs/heads/main").name }
+        assertEquals(github, sha)
+        // Гость клона пишет свой коммит и переставляет origin/main на него.
+        Git.open(c.dir("Alpha")).use { git ->
+            commit(git, "TODO.md", "- [ ] подмена\n", "Подмена")
+            git.repository.updateRef("refs/remotes/origin/main").apply { setNewObjectId(git.repository.resolve("HEAD")); isForceUpdate = true }.forceUpdate()
+        }
+        assertEquals("- [ ] подмена\n", String((c.file("Alpha", "main", "TODO.md") as Outcome.Success).value!!), "по ссылке — подмена")
+        assertEquals("- [ ] пункт\n", String((c.fileAt("Alpha", sha, "TODO.md") as Outcome.Success).value!!), "по SHA от GitHub — прежнее")
+        assertNull((c.fileAt("Alpha", sha, "нет.md") as Outcome.Success).value)
+        assertTrue(c.fileAt("Alpha", "0".repeat(40), "TODO.md") is Outcome.Failure, "нет коммита — отказ")
+        assertTrue(c.fileAt("Alpha", "main", "TODO.md") is Outcome.Failure, "не SHA — отказ")
+        // Повторная синхронизация: снова голова GitHub, и ссылка возвращена.
+        assertEquals(github, (c.sync("Alpha", uri, null, build) as Outcome.Success).value.mainSha)
+    }
+
     @Test
     fun fetchUpdatesGitHubBranchesLeavesTheWorkingTreeAndDropsDeletedBranches() {
         val uri = remote()
