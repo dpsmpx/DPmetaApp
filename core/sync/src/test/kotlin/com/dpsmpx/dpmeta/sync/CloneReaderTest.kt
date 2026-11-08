@@ -122,10 +122,26 @@ class CloneReaderTest {
         clones.sync("dpsmpx/Alpha", remote("alpha", mapOf("TODO.md" to "- [ ] из клона\n")), null, build)
         val rest = Rest()
         // Автор снял отметку (D-70): клон, где может быть работа ИИ, остаётся, но пульт читает GitHub.
-        val r = CloneReader(clones, rest, host, build) { false }
+        val r = CloneReader(clones, rest, host, build, selected = { false })
         assertEquals("rest:TODO.md", (r.file(project("dpsmpx/Alpha"), "TODO.md") as Outcome.Success).value.value)
         assertEquals(listOf("main"), (r.branches(project("dpsmpx/Alpha")) as Outcome.Success).value.value.map { it.name })
         assertTrue(File(clones.dir("dpsmpx/Alpha"), ".git").isDirectory, "клон не удалён")
+    }
+
+    @Test
+    fun historyComesOnlyFromASelectedCloneOfTheProjectItself() {
+        val clones = Clones(File(tmp, "clones"), { Outcome.success(Unit) }, setOf("file"))
+        clones.sync("dpsmpx/Alpha", remote("alpha", mapOf("TODO.md" to "- [ ] пункт\n")), null, build)
+        clones.sync(host.toString(), remote("host", mapOf("dpai/TODO.md" to "- [ ] «AI»\n")), null, build)
+        val rules = CloneReader.HistoryRules(java.time.ZoneOffset.ofHours(3), setOf("Claude"), setOf("dpsmpx"))
+        val alpha = project("dpsmpx/Alpha")
+        val h = (CloneReader(clones, Rest(), host, build, rules).history(alpha) as Outcome.Success).value.value
+        assertEquals(2, h.days.sumOf { it.commits }, "main и work, без ветки сборок")
+        assertEquals(listOf("work"), h.ahead.map { it.name })
+        assertEquals(null, CloneReader(clones, Rest(), host, build).history(alpha), "без правил — истории нет")
+        assertEquals(null, CloneReader(clones, Rest(), host, build, rules, selected = { false }).history(alpha), "клон не отмечен — истории нет")
+        assertEquals(null, CloneReader(clones, Rest(), host, build, rules).history(project("dpsmpx/DP_AI_Orcestrator", dir = "dpai")), "подсистема — в истории DPmetaApp")
+        assertEquals(null, CloneReader(clones, Rest(), host, build, rules).history(project("dpsmpx/Beta")), "клона нет — истории нет, без отказа")
     }
 
     @Test

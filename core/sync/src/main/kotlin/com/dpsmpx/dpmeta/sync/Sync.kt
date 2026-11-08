@@ -39,6 +39,9 @@ enum class SourceKind(val code: String) {
     TODO("todo"),
     ROADMAP("roadmap"),
     README("readme"),
+
+    /** История из клона (D-66): только у читателя клонов, последней — она тяжелее остальных. */
+    HISTORY("history"),
 }
 
 /** Получено из источника: значение, отпечаток исходного ответа, признак 304. */
@@ -65,6 +68,13 @@ interface SourceReader {
     fun commit(project: ProjectEntry, sha: String): Outcome<CommitInfo>
 
     fun file(project: ProjectEntry, path: String): Outcome<Got<String>>
+
+    /**
+     * История проекта из клона (D-66); `null` — у этого источника её нет
+     * (REST, корпус, подсистема, клона нет): задача пропускается молча, без
+     * отказа в «Ошибках источников».
+     */
+    fun history(project: ProjectEntry): Outcome<Got<com.dpsmpx.dpmeta.git.CommitHistory>>? = null
 }
 
 /** Задача плана: проект, вид источника, пути-кандидаты файла (первый найденный). */
@@ -115,7 +125,7 @@ object Sync {
         for (kind in SourceKind.entries) {
             for (p in registry.shown) {
                 val paths = when (kind) {
-                    SourceKind.PULLS, SourceKind.MERGED, SourceKind.BRANCHES -> emptyList()
+                    SourceKind.PULLS, SourceKind.MERGED, SourceKind.BRANCHES, SourceKind.HISTORY -> emptyList()
                     SourceKind.DECISIONS -> p.decisions?.let { listOf(it.path) } ?: continue
                     SourceKind.TODO -> listOf("TODO.md")
                     SourceKind.ROADMAP -> known[p.name to kind.code]?.let { k -> listOf(k) + (ROADMAP_PATHS - k) } ?: ROADMAP_PATHS
@@ -147,7 +157,12 @@ object Sync {
                 continue
             }
             if (t.kind in ACTIVITY && !reader.hasActivity(t.project)) continue
-            val r = fetch(t, reader, commits, parallel)
+            val r = if (t.kind == SourceKind.HISTORY) {
+                val h = reader.history(t.project) ?: continue
+                h.map { g -> historyJson(g.value) to g.rawSha256 }
+            } else {
+                fetch(t, reader, commits, parallel)
+            }
             when (r) {
                 is Outcome.Success -> {
                     val (payload, raw) = r.value
@@ -171,6 +186,7 @@ object Sync {
         SourceKind.PULLS -> "github.pulls.v1"
         SourceKind.MERGED -> "github.merged.v1"
         SourceKind.BRANCHES -> "github.branches.v1"
+        SourceKind.HISTORY -> HISTORY_SCHEMA
         else -> "unknown"
     }
 
@@ -247,6 +263,24 @@ object Sync {
                 )
             },
         ),
+    )
+
+    /** Схема наблюдения истории из клона (D-66). */
+    const val HISTORY_SCHEMA = "clone.history.v1"
+
+    /**
+     * История из клона одной строкой JSON: дни — `[дата, коммиты, ИИ, человек,
+     * в основной, только в ветках, слияния PR]`, журнал — `[дата, записей]`
+     * в дни перемен, ветки впереди основной — имя, коммитов сверх неё, время
+     * последнего. Ни авторов, ни сообщений, ни путей.
+     */
+    fun historyJson(h: com.dpsmpx.dpmeta.git.CommitHistory): JsonObject = JsonObject(
+        linkedMapOf<String, JsonValue>(
+            "complete" to JsonBool(h.complete),
+            "days" to JsonArray(h.days.map { d -> JsonArray(listOf(JsonString(d.date)) + listOf(d.commits, d.ai, d.human, d.mainline, d.branchOnly, d.merges).map { JsonNumber.of(it.toLong()) }) }),
+            "decisions" to JsonArray(h.decisions.map { (d, n) -> JsonArray(listOf(JsonString(d), JsonNumber.of(n.toLong()))) }),
+            "ahead" to JsonArray(h.ahead.map { a -> JsonObject.of("name" to JsonString(a.name), "commits" to JsonNumber.of(a.commits.toLong()), "last" to JsonNumber.of(a.last.epochMillis)) }),
+        ).apply { h.first?.let { put("first", JsonString(it)) } },
     )
 
     private fun branchesJson(items: List<Pair<Branch, CommitInfo>>): JsonObject = JsonObject.of(
