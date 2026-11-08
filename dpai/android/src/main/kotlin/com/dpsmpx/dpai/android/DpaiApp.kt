@@ -471,7 +471,10 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                                         Row(Modifier.fillMaxSize()) {
                                             Box(Modifier.weight(3f).fillMaxHeight()) { SessionPane(s.session, model, sessionEvents, s.requests) }
                                             androidx.compose.material3.VerticalDivider()
-                                            TaskSheet(model, t, onSession = { selectedId = it }, embedded = true, shownSession = selectedId, modifier = Modifier.weight(2f)) { taskPanel = false }
+                                            // Своё состояние у листа каждой задачи: другая сессия из уведомления — не со строкой итога прежней.
+                                            androidx.compose.runtime.key(t) {
+                                                TaskSheet(model, t, onSession = { selectedId = it }, embedded = true, shownSession = selectedId, modifier = Modifier.weight(2f)) { taskPanel = false }
+                                            }
                                         }
                                     } else {
                                         SessionPane(s.session, model, sessionEvents, s.requests)
