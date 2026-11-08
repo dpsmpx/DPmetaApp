@@ -7,7 +7,10 @@
   ошибка — прокрутка вбок; элемент за краем экрана; сломанное изображение;
            нарушение CSP (сервер отдаёт заголовки сайта, П2-12); ошибка в
            консоли; несработавший запрос; не загрузился IBM Plex Sans;
-           цель касания меньше 24 px на телефоне; не один `h1`
+           цель касания меньше 24 px на телефоне; пункт меню меньше
+           44 × 44 px (Д49); не один `h1`
+
+Каждая страница — в обеих темах сайта (настройка системы, Д49).
   предупреждение — текст мельче 12 px
   заметка — снимки в каталоге сборки для глаз
 
@@ -31,6 +34,7 @@ from .build import SiteBuild
 from .serve import server
 
 WIDTHS = (390, 1280)
+THEMES = ("dark", "light")
 MOBILE_MAX = 480
 SCRIPT = ROOT / "tools" / "render" / "site_shots.js"
 
@@ -45,7 +49,7 @@ def available() -> str | None:
 
 
 def shoot(root: Path, pages: list[str], out: Path, headers: dict | None = None,
-          widths: tuple = WIDTHS, path_headers: dict | None = None) -> list[dict]:
+          widths: tuple = WIDTHS, path_headers: dict | None = None, themes: tuple = THEMES) -> list[dict]:
     """Снять страницы каталога root (корень сайта) через локальный сервер с заголовками headers
     (и заголовками по пути — как .htaccess каталога)."""
     srv = server(root, 0, headers, quiet=True, path_headers=path_headers)
@@ -53,7 +57,7 @@ def shoot(root: Path, pages: list[str], out: Path, headers: dict | None = None,
     th.start()
     try:
         job = {"base": f"http://127.0.0.1:{srv.server_address[1]}", "pages": pages, "widths": list(widths),
-               "height": 900, "out": str(out)}
+               "themes": list(themes), "height": 900, "out": str(out)}
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
             json.dump(job, f)
         env = dict(os.environ)
@@ -71,7 +75,7 @@ def shoot(root: Path, pages: list[str], out: Path, headers: dict | None = None,
 def findings(results: list[dict], expect_404: set[str] = frozenset({"/404.html", "/en/404.html"})) -> list[Finding]:
     out: list[Finding] = []
     for m in results:
-        where = f"{m['path']} @{m['width']}"
+        where = f"{m['path']} @{m['width']}" + ("" if m.get("theme", "dark") == "dark" else f" {m['theme']}")
         E = lambda s: out.append(Finding("error", f"{where}: {s}"))  # noqa: E731
         if m["status"] >= 400 and m["path"] not in expect_404:
             E(f"страница отвечает HTTP {m['status']}")
@@ -95,6 +99,8 @@ def findings(results: list[dict], expect_404: set[str] = frozenset({"/404.html",
         if m["width"] <= MOBILE_MAX:
             for tgt in m["smallTargets"]:
                 E(f"цель касания меньше 24 px: {tgt}")
+        for tgt in m.get("navTargets", []):
+            E(f"пункт меню меньше 44 × 44 px: {tgt}")
         for s in m["smallText"]:
             out.append(Finding("warn", f"{where}: текст мельче 12 px — {s}"))
     return out
@@ -102,7 +108,7 @@ def findings(results: list[dict], expect_404: set[str] = frozenset({"/404.html",
 
 def check(repo: Repo | None = None, out: Path | None = None) -> Report:
     repo = repo or Repo()
-    r = Report("siteshots — страницы сайта в браузере: 390 и 1280 px (П2-17)")
+    r = Report("siteshots — страницы сайта в браузере: 390 и 1280 px, тёмная и светлая темы (П2-17, Д49)")
     why = available()
     if why:
         (r.note if "CS_SKIP_RENDER" in why else r.warn)(why)
@@ -120,5 +126,5 @@ def check(repo: Repo | None = None, out: Path | None = None) -> Report:
             r.warn(f"снимки не сняты: {e}")
             return r
     r.add(findings(results))
-    r.note(f"страниц {len(pages)} × ширины {', '.join(map(str, WIDTHS))}; снимки — {out.relative_to(repo.root) if out.is_relative_to(repo.root) else out}")
+    r.note(f"страниц {len(pages)} × ширины {', '.join(map(str, WIDTHS))} × темы {', '.join(THEMES)}; снимки — {out.relative_to(repo.root) if out.is_relative_to(repo.root) else out}")
     return r

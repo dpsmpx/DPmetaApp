@@ -20,7 +20,7 @@ from tools.cs.common import ROOT
 from tools.cs.core import textdoc
 from tools.cs.core.content import approval_state, find
 from tools.cs.platform_checks import page_a11y, page_csp, page_images
-from tools.cs.site.build import SiteBuild, build
+from tools.cs.site.build import SiteBuild, build, theme_contrast
 from tools.cs.site.preview import PAGE_DIR, preview
 from tools.cs.site.serve import _Handler, server
 from tests.platform_fixture import approve, make_repo
@@ -152,6 +152,31 @@ class Accessibility(unittest.TestCase):
         self.assertEqual(page_images('<img src="/x.png" alt="x" width="1280" height="720">'), [])
         self.assertEqual(len(page_images('<img src="/x.png" alt="x" width="1280">')), 1)
         self.assertEqual(page_csp('<script type="application/ld+json">{}</script>'), [])
+
+
+class Themes(unittest.TestCase):
+    """Светлая тема по настройке системы (Д49): токены site_light, контраст текста в обеих темах."""
+
+    def test_light_theme_follows_system(self):
+        repo = make_repo(git=False)
+        out = repo.path("build", "s")
+        rep = build(repo, "staging", out)
+        self.assertEqual(rep.errors, [])
+        css = (out / "style.css").read_text(encoding="utf-8")
+        self.assertIn("color-scheme: dark light", css)
+        self.assertIn("@media (prefers-color-scheme: light) { :root { --ink: #F7F7F5;", css)
+        home = (out / "index.html").read_text(encoding="utf-8")
+        self.assertIn('<meta name="theme-color" content="#111214" media="(prefers-color-scheme: dark)">', home)
+        self.assertIn('<meta name="theme-color" content="#F7F7F5" media="(prefers-color-scheme: light)">', home)
+
+    def test_contrast_rule(self):
+        tokens = json.loads((ROOT / "assets/brand/tokens.json").read_text(encoding="utf-8"))
+        self.assertEqual(theme_contrast(tokens), [], "токены автора держат контраст в обеих темах")
+        bad = json.loads(json.dumps(tokens))
+        bad["site_light"]["color"]["mist"]["hex"] = "#A3A6AD"  # тёмный «mist» на светлом фоне
+        msgs = " ".join(theme_contrast(bad))
+        self.assertIn("светлая: mist к ink", msgs)
+        self.assertIn("светлая: mist к graphite", msgs)
 
 
 class HostFiles(unittest.TestCase):

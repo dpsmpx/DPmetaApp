@@ -7,6 +7,15 @@
 @font-face { font-family: "IBM Plex Mono"; font-weight: 400; font-display: swap; src: url("/fonts/IBMPlexMono-Regular.woff2") format("woff2"); }
 
 * { box-sizing: border-box; }
+/* Цвета фигур — не токены бренда: группы, состояния, тепловая шкала, «Путь». Тёмная тема — основная (Д9);
+   светлая — по настройке системы (Д49): ряды и линии не ниже 3 к фону, шкала — от светлого к тёмному. */
+:root { --c-gald: #c98500; --c-core: #3987e5; --c-bg: #d55181; --c-deferred: #9085e9; --c-periphery: #2a9d8f; --c-hidden: #6b6e75;
+  --c-h1: #184f95; --c-h2: #256abf; --c-h3: #3987e5; --c-h4: #6da7ec; --c-h5: #9ec5f4; --c-h6: #cde2fb; }
+@media (prefers-color-scheme: light) {
+  :root { --c-gald: #8a5d00; --c-core: #2f74c9; --c-bg: #c2416f; --c-deferred: #6e62d6; --c-periphery: #1d7f73; --c-hidden: #6b6e75;
+    --c-h1: #cde2fb; --c-h2: #9ec5f4; --c-h3: #6da7ec; --c-h4: #3987e5; --c-h5: #256abf; --c-h6: #184f95; }
+}
+
 html { background: var(--ink); color: var(--paper); }
 body { margin: 0; font: 17px/1.6 "IBM Plex Sans", system-ui, sans-serif; }
 a { color: var(--paper); text-decoration-color: var(--human); text-underline-offset: 3px; }
@@ -24,11 +33,12 @@ main { max-width: 860px; margin: 0 auto; padding: 24px 20px 64px; }
   align-items: baseline; justify-content: space-between; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
 .brand { font-weight: 700; font-size: 20px; text-decoration: none; }
 .brand .dot { color: var(--human); }
-/* пункты меню не рвутся по словам; высота цели касания ≥ 24 px (WCAG 2.2, 2.5.8) */
+/* пункты меню не рвутся по словам; цель касания — не меньше 44 × 44 px (WCAG 2.2, 2.5.5; Д49) */
 nav { display: flex; flex-wrap: wrap; align-items: center; column-gap: 18px; }
-nav a { display: inline-block; padding: 8px 0; white-space: nowrap; text-decoration: none; color: var(--mist); }
+nav a { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; min-width: 44px;
+  white-space: nowrap; text-decoration: none; color: var(--mist); }
 nav a.current, nav a:hover { color: var(--paper); }
-nav .lang { margin-left: 4px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 4px; }
+nav .lang { margin-left: 4px; padding: 0 10px; border: 1px solid var(--line); border-radius: 4px; }
 
 .banner { background: var(--graphite); border-bottom: 2px solid var(--human); color: var(--paper);
   padding: 8px 20px; font-size: 14px; text-align: center; }
@@ -124,13 +134,13 @@ g:hover > .c-hit { fill: var(--paper); fill-opacity: .06; }
 .c-ver { fill: var(--verified); background: var(--verified); }
 .c-paper { fill: var(--paper); background: var(--paper); }
 /* группы репозиториев и состояния веток */
-.c-gald { fill: #c98500; background: #c98500; }
-.c-core { fill: #3987e5; background: #3987e5; }
-.c-bg { fill: #d55181; background: #d55181; }
-.c-st-in_review { fill: #3987e5; background: #3987e5; }
-.c-st-active { fill: #c98500; background: #c98500; }
-.c-st-docs { fill: #d55181; background: #d55181; }
-.c-st-deferred { fill: #9085e9; background: #9085e9; }
+.c-gald { fill: var(--c-gald); background: var(--c-gald); }
+.c-core { fill: var(--c-core); background: var(--c-core); }
+.c-bg { fill: var(--c-bg); background: var(--c-bg); }
+.c-st-in_review { fill: var(--c-core); background: var(--c-core); }
+.c-st-active { fill: var(--c-gald); background: var(--c-gald); }
+.c-st-docs { fill: var(--c-bg); background: var(--c-bg); }
+.c-st-deferred { fill: var(--c-deferred); background: var(--c-deferred); }
 /* площади и линии */
 .c-fill { fill-opacity: .4; }
 .c-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
@@ -139,16 +149,16 @@ g:hover > .c-hit { fill: var(--paper); fill-opacity: .06; }
 .c-ai-line { stroke: var(--ai); }
 .c-ver-line { stroke: var(--verified); }
 .c-paper-line { stroke: var(--paper); }
-.c-core-line { stroke: #3987e5; }
+.c-core-line { stroke: var(--c-core); }
 .c-dot { stroke: var(--graphite); stroke-width: 2; }
-/* тепловая карта: 0 — подложка, дальше — одна синяя шкала от тёмного к светлому */
+/* тепловая карта: 0 — подложка, дальше — одна синяя шкала, к большему — ярче на фоне (в светлой теме — темнее) */
 .c-h0 { fill: var(--line); fill-opacity: .55; background: var(--line); }
-.c-h1 { fill: #184f95; background: #184f95; }
-.c-h2 { fill: #256abf; background: #256abf; }
-.c-h3 { fill: #3987e5; background: #3987e5; }
-.c-h4 { fill: #6da7ec; background: #6da7ec; }
-.c-h5 { fill: #9ec5f4; background: #9ec5f4; }
-.c-h6 { fill: #cde2fb; background: #cde2fb; }
+.c-h1 { fill: var(--c-h1); background: var(--c-h1); }
+.c-h2 { fill: var(--c-h2); background: var(--c-h2); }
+.c-h3 { fill: var(--c-h3); background: var(--c-h3); }
+.c-h4 { fill: var(--c-h4); background: var(--c-h4); }
+.c-h5 { fill: var(--c-h5); background: var(--c-h5); }
+.c-h6 { fill: var(--c-h6); background: var(--c-h6); }
 
 /* подпись фигуры: легенда, вид данных, источник */
 .pfig figcaption { margin-top: 10px; font-size: 13px; color: var(--mist); line-height: 1.5; }
@@ -258,11 +268,11 @@ nav.crumbs a { padding: 4px 0; }
    игра, ядро на срезе 5 октября, новые после среза; без публичного имени — нейтральный. */
 .page-path .lead { font-size: 19px; color: var(--paper); }
 .page-path h2 { scroll-margin-top: 16px; }
-.pv-game { fill: #c98500; background: #c98500; }
-.pv-core { fill: #3987e5; background: #3987e5; }
-.pv-new { fill: #9085e9; background: #9085e9; }
-.pv-periphery { fill: #2a9d8f; background: #2a9d8f; }
-.pv-hidden { fill: #6b6e75; background: #6b6e75; }
+.pv-game { fill: var(--c-gald); background: var(--c-gald); }
+.pv-core { fill: var(--c-core); background: var(--c-core); }
+.pv-new { fill: var(--c-deferred); background: var(--c-deferred); }
+.pv-periphery { fill: var(--c-periphery); background: var(--c-periphery); }
+.pv-hidden { fill: var(--c-hidden); background: var(--c-hidden); }
 .sq-new { stroke: var(--paper); stroke-width: 1.5; }
 .sq-fin { fill-opacity: .45; stroke: var(--verified); stroke-width: 1.2; stroke-dasharray: 2 2; }
 .r-year { fill: none; stroke: var(--line); stroke-width: 1.5; }

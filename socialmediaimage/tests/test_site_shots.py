@@ -34,16 +34,18 @@ class SiteShots(unittest.TestCase):
         msgs = " | ".join(f.msg for f in shots.findings(res) if f.level == "error")
         for expected in ("прокрутка вбок", "за краем экрана", "изображение не загрузилось", "нарушение CSP: style-src",
                          "нарушение CSP: script-src", "запрос не удался: /nope.png", "IBM Plex Sans не загружен",
-                         "h1: 2", "цель касания меньше 24 px"):
+                         "h1: 2", "цель касания меньше 24 px", "пункт меню меньше 44 × 44 px", "@390 light"):
             self.assertIn(expected, msgs)
         self.assertTrue((d / "out/bad-390.png").is_file())
+        self.assertTrue((d / "out/bad-390-light.png").is_file(), "светлая тема снимается отдельно (Д49)")
 
     def test_staging_fixture_clean(self):
         repo = make_repo(git=False)
         out = repo.path("build", "shots")
         r = shots.check(repo, out)
         self.assertEqual(r.errors, [])
-        for name in ("home-390.png", "home-1280.png", "news-test-news-390.png", "projects-galdhold-1280.png", "404-html-390.png"):
+        for name in ("home-390.png", "home-1280.png", "news-test-news-390.png", "projects-galdhold-1280.png", "404-html-390.png",
+                     "home-390-light.png", "projects-galdhold-1280-light.png"):
             self.assertTrue((out / name).is_file(), name)
 
 

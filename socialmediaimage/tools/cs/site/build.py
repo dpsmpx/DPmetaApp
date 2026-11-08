@@ -59,6 +59,28 @@ SECURITY_HEADERS = {
 }
 
 
+TEXT_TOKENS = ("paper", "mist", "human", "ai", "verified")
+"""Токены, которыми на сайте пишется текст: им нужен контраст к фону и панелям."""
+
+
+def theme_contrast(tokens: dict) -> list[str]:
+    """Контраст текста к фону (`ink`) и панелям (`graphite`) в обеих темах сайта (Д9, Д49):
+    не ниже `limits.min_contrast_normal` — иначе ошибка сборки."""
+    from ..visual import contrast, luminance
+    need = tokens["limits"]["min_contrast_normal"]
+    out = []
+    themes = [("тёмная", tokens["color"])]
+    if (tokens.get("site_light") or {}).get("color"):
+        themes.append(("светлая", tokens["site_light"]["color"]))
+    for name, c in themes:
+        for fg in TEXT_TOKENS:
+            for bg in ("ink", "graphite"):
+                v = contrast(luminance(c[fg]["hex"]), luminance(c[bg]["hex"]))
+                if v < need:
+                    out.append(f"тема сайта {name}: {fg} к {bg} — контраст {v:.2f} < {need}")
+    return out
+
+
 def img_tag(e: "Entry", cls: str | None = None) -> str:
     """Изображение записи с размерами из файла (S-02): браузер занимает место до загрузки."""
     attrs = f' class="{cls}"' if cls else ""
@@ -643,6 +665,7 @@ class SiteBuild:
                      f'<p>IBM Plex fonts — SIL OFL 1.1 (<a href="/fonts/OFL-IBM-Plex.txt">license</a>).</p>'))
         return tpl.substitute(lang=page.lang, title=E(page.title), description=E(page.description), head="\n".join(head),
                               banner=banner, home="/en/" if page.lang == "en" else "/", theme=self.tokens()["color"]["ink"]["hex"],
+                              theme_light=((self.tokens().get("site_light") or {}).get("color") or self.tokens()["color"])["ink"]["hex"],
                               skip=E(t(page.lang, "skip")), nav_label=E(t(page.lang, "nav_label")),
                               brand="dpsmpx", nav=self.nav(page.lang, current, page.alternates), main=page.main, footer=footer)
 
@@ -660,7 +683,15 @@ class SiteBuild:
         return self._tokens
 
     def css(self) -> str:
-        root = ":root { " + " ".join(f"--{k}: {v['hex']};" for k, v in self.tokens()["color"].items()) + " }\n"
+        """Токены — переменными :root: тёмная тема — основная (Д9), светлая — по настройке системы (Д49)."""
+        tok = self.tokens()
+        root = ":root { color-scheme: dark light; " + " ".join(f"--{k}: {v['hex']};" for k, v in tok["color"].items()) + " }\n"
+        light = (tok.get("site_light") or {}).get("color") or {}
+        if light:
+            root += ("@media (prefers-color-scheme: light) { :root { "
+                     + " ".join(f"--{k}: {v['hex']};" for k, v in light.items()) + " } }\n")
+        for msg in theme_contrast(tok):
+            self.report.errors.append(msg)
         return root + self.repo.path("website", "static", "style.css").read_text(encoding="utf-8")
 
     def favicon(self) -> str:

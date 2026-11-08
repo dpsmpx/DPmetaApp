@@ -54,7 +54,7 @@ assets:
   - id: A-003
     kind: other
     path: assets/brand/tokens.json
-    sha256: 41b3a2315d8e0c2b22d4ed1f059aee2d1421c7b833416a1cc1dad5887a6868fc   # правка токенов — изменение основ (docs/PROCESS.md): хэш обновляется вместе с записью в DECISIONS
+    sha256: c152fd72e4c5e24a0a6717747ce30e8c8e482b940d60f569c4f497809bfa42ec   # правка токенов — изменение основ (docs/PROCESS.md): хэш обновляется вместе с записью в DECISIONS
     source: создано в этом репозитории (docs/brand/VISUAL_SYSTEM.md)
     creator: сессия Claude Code по заданию автора
     date: 2026-10-04
