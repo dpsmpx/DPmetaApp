@@ -57,4 +57,23 @@ class TerminalLaunchTest {
         assertTrue("oauth-personal" in cmd && cmd.endsWith("exec gemini'"), cmd)
         assertTrue("-u GEMINI_API_KEY " in cmd && "-u GOOGLE_API_KEY " in cmd, cmd)
     }
+
+    /** Имя сессии tmux (D-111): латиница, цифры, `-`; target, вид и номер. */
+    @Test
+    fun tmuxNameIsSafeAndStable() {
+        val n = TerminalLaunch.tmuxName("a1b2", "tgt_01HX9ABCDEF", "Claude", 2)
+        assertTrue(Regex("dpai-a1b2-[a-z0-9-]+-claude-2").matches(n), n)
+        assertEquals(n, TerminalLaunch.tmuxName("a1b2", "tgt_01HX9ABCDEF", "Claude", 2), "то же имя — та же сессия")
+        assertTrue(n != TerminalLaunch.tmuxName("c3d4", "tgt_01HX9ABCDEF", "Claude", 2), "другое устройство — другая сессия")
+        assertTrue(TerminalLaunch.tmuxName("..", "x;rm -rf /", "sh", 1).all { it.isLetterOrDigit() || it == '-' })
+    }
+
+    /** Команда с tmux (D-111): та же, что у `TmuxSession` (проверка настоящим `sh` — в `execution`). */
+    @Test
+    fun inTmuxDelegatesToTmuxSession() {
+        val name = TerminalLaunch.tmuxName("d", "t1", "sh", 1)
+        val cmd = TerminalLaunch.inTmux(emptyList(), name).valueOrNull()!!
+        assertEquals(listOf("sh", "-lc"), cmd.take(2))
+        assertTrue("tmux -u new -A -s $name && exit 0" in cmd[2] && TerminalLaunch.NO_TMUX in cmd[2], cmd[2])
+    }
 }

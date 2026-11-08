@@ -118,6 +118,12 @@ fun LinuxScreen(onBack: () -> Unit) {
                             if (it.ok) "Codex и Gemini: установлены" else "Установка завершилась с кодом ${it.exitCode} — причина в выводе ниже"
                         }
                     }) { Text("Установить Codex и Gemini") }
+                    // tmux (D-111): вкладка слота «в приложении» держит сессию в нём, как на других targets.
+                    TextButton(enabled = !running, onClick = {
+                        run("Установка tmux", { LinuxSetup.apk(context, LinuxEnvironment.Apk.ADD, listOf("tmux")) }) {
+                            if (it.ok) "tmux: установлен" else "apk завершился с кодом ${it.exitCode} — причина в выводе ниже"
+                        }
+                    }) { Text("Поставить tmux") }
                 }
                 // Target «в приложении» (D-75, шаг 5): задачи — в этом Linux, без SSH; слот — каталог в госте (D-29).
                 androidx.compose.foundation.layout.Box {

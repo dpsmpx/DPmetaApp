@@ -49,7 +49,32 @@ object TerminalHub {
      * Вкладка: к target по SSH ([target]) или к Linux-среде в приложении
      * ([target] — `null`, D-75, шаг 5).
      */
-    class Tab internal constructor(val id: Int, val target: TargetEntry?, val command: List<String>, label: String) : TerminalListener {
+    class Tab internal constructor(val id: Int, val target: TargetEntry?, val command: List<String>, label: String, val tmux: String? = null) : TerminalListener {
+        /**
+         * Связь оборвалась, а не программа кончилась (D-111): закрытие без
+         * кода выхода или неудачное подключение. Такую вкладку с оболочкой
+         * или с сессией в `tmux` приложение переподключает само, когда
+         * возвращается сеть.
+         */
+        @Volatile
+        internal var lost = false
+
+        /** Когда приложение в последний раз само переподключало вкладку (монотонные мс): не чаще [AUTO_EVERY_MS]. */
+        @Volatile
+        internal var autoAt = Long.MIN_VALUE / 2
+
+        /** Подключение идёт — для экрана: «◌» и без «Переподключить». */
+        val busy: Boolean get() = connecting
+
+        /** Вкладку закрыли (под `synchronized(this)`): подключение после этого не начинается и не привязывается. */
+        internal var removed = false
+
+        /** Сервер `tmux` вкладки — свой (`-L`) у target «в приложении»: у каждой вкладки свой proot. */
+        val tmuxSocket: String? get() = tmux?.takeIf { target?.inApp == true }
+
+        /** Сама возвращается при сети: оболочка или сессия в `tmux`; CLI слота без `tmux` — только по кнопке. */
+        val autoReconnect: Boolean get() = target != null && (tmux != null || command.isEmpty())
+
         val linux: Boolean get() = target == null
 
         /** Записи программы в буфер обмена (OSC 52) — без вопроса до закрытия вкладки (терминал:A-24). */
@@ -125,47 +150,174 @@ object TerminalHub {
 
     fun openLinux(context: Context): Tab = open(context, null, emptyList(), "Linux")
 
-    /** Ещё одна вкладка туда же, куда [like]. */
-    fun openLike(context: Context, like: Tab): Tab = open(context, like.target, emptyList(), like.target?.label ?: "Linux")
+    /** Ещё одна вкладка туда же, куда [like]: оболочка. */
+    fun openLike(context: Context, like: Tab): Tab {
+        val target = like.target?.let { fresh(context, it) }
+        return open(context, target, emptyList(), target?.label ?: "Linux", kind = SHELL)
+    }
 
+    /** Target, каким он записан сейчас (настройка tmux могла смениться, пока вкладка открыта); из памяти контроллера. */
+    fun fresh(context: Context, t: TargetEntry): TargetEntry =
+        runCatching { Controller.get(context.applicationContext.filesDir).targets().firstOrNull { it.id == t.id } }.getOrNull() ?: t
+
+    /** Вид вкладки оболочки для имени сессии `tmux` (D-111); CLI слота — ключ исполнителя. */
+    const val SHELL = "sh"
+
+    /**
+     * Новая вкладка. [kind] — вид для сессии `tmux` (D-111): [SHELL] или ключ
+     * исполнителя; `null` — без `tmux` (вход в аккаунт, Linux без target,
+     * папка «Файлов»). Сессия — только на POSIX target с включённой
+     * настройкой; номер — наименьший свободный среди открытых вкладок того же
+     * target и вида: после перезапуска приложения вкладка возвращается в ту
+     * же сессию.
+     */
     @Synchronized
-    fun open(context: Context, target: TargetEntry?, command: List<String>, label: String): Tab {
-        val tab = Tab(nextId++, target, command, label)
+    fun open(context: Context, target: TargetEntry?, command: List<String>, label: String, kind: String? = null): Tab {
+        val session = if (kind != null && target != null && target.tmux && target.platform == com.dpsmpx.dpai.execution.target.TargetPlatform.POSIX) {
+            // Занятые: открытые вкладки и сессии, которые ещё не удалось завершить (закрыты без сети).
+            val used = tabs.mapNotNull { it.tmux }.toSet() + pendingEnds.map { it.second }
+            val device = device(context)
+            generateSequence(1) { it + 1 }.map { com.dpsmpx.dpai.ui.TerminalLaunch.tmuxName(device, target.id.value, kind, it) }.first { it !in used }
+        } else {
+            null
+        }
+        val tab = Tab(nextId++, target, command, label, session)
         tabs += tab
         count.intValue = tabs.size
         current = tab
         app = context.applicationContext
+        watchNetwork(context.applicationContext)
         // Пока есть вкладки — служба переднего плана держит процесс и сеансы (терминал:A-1).
         TerminalService.sync(context)
         connect(context, tab)
         return tab
     }
 
-    /** Подключить (и переподключить) вкладку: экран сохраняется, канал — новый. */
-    fun connect(context: Context, tab: Tab) {
-        synchronized(tab) {
-            if (tab.open || tab.connecting) return
-            tab.connecting = true
+    @Volatile
+    private var watching = false
+
+    /**
+     * Метка устройства в имени сессии `tmux` (D-111): у установки — своя,
+     * постоянная; копия настроек на другом телефоне (D-51, D-107) не входит в
+     * сессии этого.
+     */
+    private fun device(context: Context): String {
+        val prefs = context.applicationContext.getSharedPreferences("terminal", Context.MODE_PRIVATE)
+        prefs.getString(DEVICE, null)?.let { return it }
+        val made = com.dpsmpx.dpai.core.clock.RandomSource.secure().nextBytes(2).joinToString("") { "%02x".format(it) }
+        prefs.edit().putString(DEVICE, made).apply()
+        return made
+    }
+
+    private const val DEVICE = "tmux_device"
+
+    /** Сессии закрытых вкладок, которые не удалось завершить (нет сети): повтор, когда сеть вернётся. */
+    private val pendingEnds = CopyOnWriteArrayList<Pair<TargetEntry, String>>()
+
+    /**
+     * Сеть вернулась (D-111) — вкладки с оборванной связью, которые можно
+     * вернуть без потерь (оболочка, сессия в `tmux`), переподключаются сами
+     * с «переподключаюсь…»; CLI слота без `tmux` молча заново не
+     * запускается — его строка предлагает «Переподключить».
+     */
+    private fun watchNetwork(app: Context) {
+        if (watching) return
+        watching = true
+        val cm = app.getSystemService(android.net.ConnectivityManager::class.java) ?: return
+        runCatching {
+            cm.registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: android.net.Network) {
+                    for (tab in tabs) auto(app, tab, force = true)
+                    for (p in pendingEnds) {
+                        pendingEnds.remove(p)
+                        endSession(app, p.first, p.second)
+                    }
+                }
+            })
         }
-        val app = context.applicationContext
+    }
+
+    /**
+     * Вернуть вкладку с оборванной связью, если можно без потерь (D-111).
+     * [force] — сеть только что появилась; иначе — не чаще раза в
+     * [AUTO_EVERY_MS] (сервер рвёт связь сразу после входа — не по кругу).
+     */
+    private fun auto(app: Context, tab: Tab, force: Boolean) {
+        if (!tab.lost || !tab.autoReconnect || tab.open || tab.connecting || tab !in tabs) return
+        val now = com.dpsmpx.dpai.core.clock.Clock.SYSTEM.monotonicNanos() / 1_000_000
+        if (!force && now - tab.autoAt < AUTO_EVERY_MS) return
+        tab.autoAt = now
+        connect(app, tab, RECONNECTING)
+    }
+
+    /** Есть ли сейчас сеть с выходом наружу. */
+    private fun online(app: Context): Boolean = runCatching {
+        val cm = app.getSystemService(android.net.ConnectivityManager::class.java)
+        cm.getNetworkCapabilities(cm.activeNetwork)?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+    }.getOrDefault(false)
+
+    private const val AUTO_EVERY_MS = 15_000L
+
+    /**
+     * Завершить сессию `tmux` вкладки на target (D-111): отдельной командой
+     * `tmux kill-session`; нет tmux или сессии — тихо. Имя — только
+     * латиница, цифры и `-` ([com.dpsmpx.dpai.ui.TerminalLaunch.tmuxName]).
+     */
+    private fun endSession(app: Context, target: TargetEntry, name: String) {
+        if (!Regex("[a-z0-9-]+").matches(name)) return
+        // Только точное имя (`=имя`): иначе tmux возьмёт и сессию с тем же началом (…-1 и …-10).
+        val cmd = com.dpsmpx.dpai.execution.ssh.TmuxSession.kill(name, name.takeIf { target.inApp })
+        thread(name = "dpai-term-tmux-end", isDaemon = true) {
+            val r = runCatching {
+                if (target.inApp) {
+                    com.dpsmpx.dpai.android.linux.LinuxSetup.shell(app, com.dpsmpx.dpai.execution.linux.WindowSize(80, 24), cmd)
+                        .map { child -> LocalChannel(child, onOutput = { _, _ -> }, onClosed = {}) }
+                } else {
+                    target.toTarget(Controller.get(app.filesDir).knownHostsFile).ssh?.let { endpoint ->
+                        // Команда кончается — канал и сессия SSH закрываются сами.
+                        JschShell(endpoint, target.platform, identities = listOf(KeystoreKey.identity())).open(80, 24, cmd, onOutput = { _, _ -> }, onClosed = {})
+                    }
+                }
+            }.getOrNull()
+            // Не дошло (нет сети) — повторить, когда сеть вернётся: номер сессии до того не занимается.
+            if (r !is Outcome.Success && !target.inApp) pendingEnds += target to name
+        }
+    }
+
+    /** Состояние вкладки, пока приложение само возвращает связь (D-111). */
+    const val RECONNECTING = "переподключаюсь…"
+
+    /** Подключить (и переподключить) вкладку: экран сохраняется, канал — новый. */
+    fun connect(context: Context, tab: Tab, status: String = CONNECTING) {
         val t = ChannelTransport()
-        tab.transport = t
-        tab.status = CONNECTING
+        // Проверка, отметка и новый канал — под одним замком с [close]: закрытая вкладка не подключается.
+        synchronized(tab) {
+            if (tab.removed || tab.open || tab.connecting) return
+            tab.connecting = true
+            tab.transport = t
+        }
+        tab.lost = false
+        val app = context.applicationContext
+        // Автопереподключение CLI слота (D-111): только вход в живую сессию tmux, заново программа не запускается.
+        val resumeOnly = status == RECONNECTING && tab.command.isNotEmpty()
+        tab.status = status
         tab.session.attach(t)
         observer?.tabs()
         thread(name = "dpai-term-connect", isDaemon = true) {
             val (cols, rows) = tab.session.read { it.cols to it.rows }
             val target = tab.target
+            // Сессия в tmux (D-111): `tmux new -A -s имя` — та же сессия после обрыва; нет tmux на target — строка и прежняя команда.
+            val command = tab.tmux?.let { name -> com.dpsmpx.dpai.ui.TerminalLaunch.inTmux(tab.command, name, tab.tmuxSocket, resumeOnly).valueOrNull() } ?: tab.command
             val o: Outcome<TermChannel>? = if (target == null || target.inApp) {
                 // Linux-среда в приложении (и target «в приложении»): псевдотерминал через JNI, без SSH (D-75, шаг 5).
-                com.dpsmpx.dpai.android.linux.LinuxSetup.shell(app, com.dpsmpx.dpai.execution.linux.WindowSize(cols, rows), tab.command).map { child ->
+                com.dpsmpx.dpai.android.linux.LinuxSetup.shell(app, com.dpsmpx.dpai.execution.linux.WindowSize(cols, rows), command).map { child ->
                     LocalChannel(child, onOutput = { b, n -> tab.session.output(b, 0, n) }, onClosed = { code -> if (tab.transport === t) closed(tab, code) })
                 }
             } else {
                 val controller = Controller.get(app.filesDir)
                 target.toTarget(controller.knownHostsFile).ssh?.let { endpoint ->
                     JschShell(endpoint, target.platform, identities = listOf(KeystoreKey.identity())).open(
-                        cols, rows, tab.command,
+                        cols, rows, command,
                         onOutput = { b, n -> tab.session.output(b, 0, n) },
                         onClosed = { code -> if (tab.transport === t) closed(tab, code) },
                     ).map { SshChannel(it) }
@@ -180,6 +332,8 @@ object TerminalHub {
                 }
                 is Outcome.Failure -> {
                     tab.session.closed(null)
+                    // Сети нет или target не ответил — вернётся сам, когда сеть появится (D-111); ключ хоста или вход — нет.
+                    tab.lost = o.diagnostics.first().code.retry == com.dpsmpx.dpai.core.diagnostics.Retryability.RETRYABLE
                     tab.status = Redactor.STANDARD.redact("не подключился: ${com.dpsmpx.dpai.core.text.Words.reason(o.diagnostics.first().code.name)} — ${o.diagnostics.first().message}")
                 }
                 null -> {
@@ -187,22 +341,46 @@ object TerminalHub {
                     tab.status = "у target нет адреса SSH"
                 }
             }
-            synchronized(tab) { tab.connecting = false }
+            val ended = synchronized(tab) {
+                tab.connecting = false
+                tab.removed
+            }
+            // Вкладку закрыли, пока шло подключение: сессия tmux завершается теперь — иначе new -A создал бы её после kill.
+            val name = tab.tmux
+            if (ended && target != null && name != null) endSession(app, target, name)
             observer?.tabs()
         }
     }
 
     private fun closed(tab: Tab, code: Int?) {
         tab.session.closed(code)
-        tab.status = "соединение закрыто" + (code?.let { ", код $it" } ?: "")
+        // Без кода выхода — оборвалась связь, а не кончилась программа (D-111).
+        tab.lost = code == null
+        tab.status = when {
+            code == com.dpsmpx.dpai.execution.ssh.TmuxSession.NOT_RESUMED_CODE && tab.tmux != null -> "сессии tmux нет — «Переподключить» запустит программу заново"
+            code != null -> "соединение закрыто, код $code"
+            tab.autoReconnect -> "связь потеряна — вернусь, когда появится сеть"
+            else -> "связь потеряна — «Переподключить» запустит программу заново"
+        }
         tab.session.output("\r\n\u001b[2m[${tab.status}]\u001b[0m\r\n".toByteArray())
         observer?.tabs()
+        // Сеть уже есть (связь оборвалась на смене сети и обнаружилась позже) — вернуть сразу (D-111).
+        app?.let { a -> if (tab.lost && online(a)) auto(a, tab, force = false) }
     }
 
     fun close(tab: Tab) {
         // Канал закрывается и тогда, когда подключение ещё идёт (ChannelTransport помнит закрытие).
-        tab.transport?.close()
-        tab.transport = null
+        val connecting = synchronized(tab) {
+            tab.removed = true
+            tab.transport?.close()
+            tab.transport = null
+            tab.connecting
+        }
+        // Закрыть вкладку — намерение, а не обрыв (D-111): её сессия в tmux на target завершается;
+        // подключение ещё идёт — после него (иначе new -A создаст сессию уже после kill).
+        val target = tab.target
+        val session = tab.tmux
+        if (!connecting && target != null && session != null) app?.let { endSession(it, target, session) }
         tab.session.close()
         tabs -= tab
         count.intValue = tabs.size

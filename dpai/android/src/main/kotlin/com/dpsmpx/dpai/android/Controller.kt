@@ -304,6 +304,14 @@ class Controller(private val root: File, val version: String?) {
         }
     }
 
+    /** «Держать сессию в tmux» (D-111): настройка target; остальное не меняется. */
+    @Synchronized
+    fun setTmux(entry: TargetEntry, on: Boolean): Outcome<Unit> =
+        when (val w = writeTargets(targets().map { if (it.id == entry.id) it.copy(tmux = on) else it })) {
+            is Outcome.Failure -> w
+            is Outcome.Success -> Outcome.success(Unit)
+        }
+
     /** Переименовать target (слот): имя — от 1 до 60 знаков, как в форме; остальное не меняется. */
     @Synchronized
     fun rename(entry: TargetEntry, label: String): Outcome<Unit> {

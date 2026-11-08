@@ -155,7 +155,13 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
                         }
                     }
                 }
-                val tab = TerminalHub.open(this, target, command, if (claude || login) "${target.label} · ${target.executor.key}${if (login) " · вход" else ""}" else target.label)
+                // Сессия в tmux (D-111): оболочка и CLI слота; вход в аккаунт — разовый, без неё.
+                val kind = when {
+                    login -> null
+                    claude -> target.executor.key
+                    else -> TerminalHub.SHELL
+                }
+                val tab = TerminalHub.open(this, target, command, if (claude || login) "${target.label} · ${target.executor.key}${if (login) " · вход" else ""}" else target.label, kind)
                 show(tab)
             }
         }
@@ -382,20 +388,21 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         val items = buildList<Pair<String, () -> Unit>> {
             add("Закрыть…" to { confirmClose(t) })
             add("Переименовать…" to { rename(t) })
-            if (!t.open && t.status != CONNECTING) add("Переподключить" to { TerminalHub.connect(this@TerminalActivity, t) })
+            if (!t.open && !t.busy) add("Переподключить" to { TerminalHub.connect(this@TerminalActivity, t) })
         }
         popup(anchor, items)
     }
 
     /** «+» (терминал:A-21): такая же вкладка, оболочка или CLI слота на том же target, Linux в приложении. */
     private fun newTab(anchor: View, like: TerminalHub.Tab) {
-        val target = like.target
+        // Target — как записан сейчас: настройка tmux могла смениться, пока вкладка открыта.
+        val target = like.target?.let { TerminalHub.fresh(this, it) }
         val items = buildList<Pair<String, () -> Unit>> {
             add("Такая же" to { show(TerminalHub.openLike(this@TerminalActivity, like)) })
             if (target != null) {
-                add("Оболочка: ${target.label}" to { show(TerminalHub.open(this@TerminalActivity, target, emptyList(), target.label)) })
+                add("Оболочка: ${target.label}" to { show(TerminalHub.open(this@TerminalActivity, target, emptyList(), target.label, kind = TerminalHub.SHELL)) })
                 TerminalLaunch.claude(target).valueOrNull()?.let { cmd ->
-                    add("${target.executor.title}: ${target.label}" to { show(TerminalHub.open(this@TerminalActivity, target, cmd, "${target.label} · ${target.executor.key}")) })
+                    add("${target.executor.title}: ${target.label}" to { show(TerminalHub.open(this@TerminalActivity, target, cmd, "${target.label} · ${target.executor.key}", kind = target.executor.key)) })
                 }
             }
             if (com.dpsmpx.dpai.android.linux.LinuxSetup.available(this@TerminalActivity)) add("Linux в приложении" to { show(TerminalHub.openLinux(this@TerminalActivity)) })
@@ -416,13 +423,20 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
             TerminalHub.close(t)
             if (TerminalHub.tabs.isEmpty()) finish() else show(TerminalHub.current)
         }
-        if (!t.open) {
+        // Сессия в tmux живёт на target и без связи (D-111): её закрытие — тоже с вопросом.
+        if (!t.open && t.tmux == null) {
             closeTab()
             return
         }
         val dialog = android.app.AlertDialog.Builder(this)
             .setTitle("Закрыть вкладку «${t.label}»?")
-            .setMessage("Соединение закроется; программа в ней (claude, сборка) получит сигнал завершения.")
+            .setMessage(
+                if (t.tmux != null) {
+                    "Сессия tmux на target завершится; программа в ней (claude, сборка) получит сигнал завершения."
+                } else {
+                    "Соединение закроется; программа в ней (claude, сборка) получит сигнал завершения."
+                },
+            )
             .setPositiveButton("Закрыть") { _, _ -> closeTab() }
             .setNegativeButton("Отмена", null)
             .create()
@@ -697,7 +711,7 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         for (t in TerminalHub.tabs) {
             // Значок состояния у ярлыка (терминал:A-21, §4, п. 3): ● на связи, ◌ подключается, ✕ закрыта;
             // точка в конце — фоновая вкладка подала сигнал (A-8). Заголовок программы — только у текущей.
-            val connecting = !t.open && t.status == CONNECTING
+            val connecting = !t.open && t.busy
             val state = when {
                 t.open -> "●"
                 connecting -> "◌"
@@ -736,7 +750,7 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         val s = current?.status.orEmpty()
         status.text = listOfNotNull(s.ifEmpty { null }, current?.notice).joinToString(" · ")
         statusRow.visibility = if (status.text.isEmpty()) View.GONE else View.VISIBLE
-        reconnect.visibility = if (current != null && !current.open && s != CONNECTING) View.VISIBLE else View.GONE
+        reconnect.visibility = if (current != null && !current.open && !current.busy) View.VISIBLE else View.GONE
     }
 
     companion object {
@@ -755,8 +769,6 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         /** Сколько видна строка «прежняя сессия потеряна», мс. */
         private const val NOTICE_MS = 20_000L
 
-        /** Состояние вкладки во время подключения — как его пишет [TerminalHub]. */
-        private const val CONNECTING = TerminalHub.CONNECTING
 
         /** Заголовок программы у ярлыка — не длиннее, с «…». */
         private const val TITLE_MAX = 24

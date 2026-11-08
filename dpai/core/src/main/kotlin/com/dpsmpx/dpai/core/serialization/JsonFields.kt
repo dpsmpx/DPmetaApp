@@ -46,6 +46,8 @@ class JsonFields(private val obj: JsonObject, val path: String, private val diag
 
     fun boolean(name: String): Boolean? = typed(name, true, "true или false") { (it as? JsonBool)?.value }
 
+    fun optBoolean(name: String): Boolean? = typed(name, false, "true или false") { (it as? JsonBool)?.value }
+
     fun obj(name: String): JsonFields? = typed(name, true, "объект") { it as? JsonObject }?.let { child(name, it) }
 
     fun optObj(name: String): JsonFields? = typed(name, false, "объект") { it as? JsonObject }?.let { child(name, it) }
