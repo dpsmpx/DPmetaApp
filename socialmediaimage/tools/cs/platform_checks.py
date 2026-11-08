@@ -227,10 +227,8 @@ def _site_findings(rep, out: Path, r: Report, label: str) -> None:
             target = out / href.lstrip("/")
             if not (target.is_file() or (target / "index.html").is_file()):
                 r.error(f"{label}: {page.relative_to(out)} → {href} — нет такого файла")
-        rel = page.relative_to(out).as_posix()
-        eco = (rep.eco_path or "").strip("/")
-        allow = (f"/{eco}/dpvis.js",) if eco and rel.startswith(f"{eco}/") else ()
-        for msg in page_a11y(text) + page_csp(text, allow) + page_images(text):
+        # Скриптов на сайте нет нигде (Д51): исключений по каталогу нет.
+        for msg in page_a11y(text) + page_csp(text) + page_images(text):
             r.error(f"{label}: {page.relative_to(out)}: {msg}")
     headers = out / ".htaccess" if (out / ".htaccess").is_file() else out / "_headers"
     if not headers.is_file() or "Content-Security-Policy" not in headers.read_text(encoding="utf-8"):

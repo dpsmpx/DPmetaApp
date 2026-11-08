@@ -164,6 +164,16 @@ _CODE_PARENS = re.compile(r"\s*\((?:[^()]*?\s)?(?:" + _CODE + r")(?:[^()]*)\)")
 _CODE_ALONE = re.compile(r"\b(DPmeta|DPmetaApp|Galdhold|DPlang|DP-Verify|SocialMediaImage)[ :](?:C|M|D|E|SQ|RISK|ADR)-\d+(?:\s*[…,–-]\s*(?:C|M|D|E|SQ|RISK|ADR)-\d+)*")
 
 
+_TIP = re.compile(r"<g><title>[^<]*</title>")
+_HIT = re.compile(r'<(?:rect|circle)\b[^>]*class="c-hit"/>')
+
+
+def light_svg(svg: str) -> str:
+    """SVG без подсказок наведения и невидимых целей под них (Д51): у фигуры остаются свои `<title>` и `<desc>`."""
+    out = _HIT.sub("", _TIP.sub("<g>", svg))
+    return out.replace("<g></g>", "")
+
+
 def public_text(text: str) -> str:
     """Текст без внутренних кодов (Д50): «(Д5)», «(DPmeta C-07)» — прочь; «DPmeta C-01» — «DPmeta»."""
     return _CODE_ALONE.sub(r"\1", _CODE_PARENS.sub("", text)).strip()
@@ -229,7 +239,9 @@ class Fig:
         return max((str(e["date"]) for e in ev if e.get("date")), default=None)
 
     def both(self, wide: str, narrow: str) -> str:
-        return f'<div class="fig-wide">{wide}</div><div class="fig-narrow">{narrow}</div>'
+        """Лёгкий сайт (Д51): на страницу идёт одна раскладка — узкая, на любой ширине не шире 480 px;
+        без подсказок у столбцов и клеток (значения — в «Таблице значений»). Широкая не выводится."""
+        return f'<div class="fig-one">{light_svg(narrow)}</div>'
 
     def caption(self, kinds: list[str], source: str, legend: list[tuple[str, str]] = (), note: str = "") -> str:
         keys = "".join(f'<span class="key"><span class="sw {cls}"></span>{E(name)}</span>' for cls, name in legend)

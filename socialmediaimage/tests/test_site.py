@@ -2,6 +2,7 @@
 имени автора на сайте нет (Д37, Д40), «Экосистема» (Д43), «Путь» (Д44)."""
 from __future__ import annotations
 
+import html
 import json
 import re
 import shutil
@@ -308,44 +309,41 @@ class Ecosystem(unittest.TestCase):
         man["files"][name] = hashlib.sha256((kit / name).read_bytes()).hexdigest()
         (kit / "MANIFEST.json").write_text(json.dumps(man), encoding="utf-8")
 
-    def test_page_nav_and_script_only_here(self):
+    def test_static_page_without_scripts(self):
+        """Д51: «Экосистема» — список по слоям; ни скрипта, ни стилей и данных схемы — на всём сайте."""
         self.assertEqual(self.rep.errors, [])
         page = (self.out / "ecosystem/index.html").read_text(encoding="utf-8")
-        self.assertIn('<script src="/ecosystem/dpvis.js" defer></script>', page)
-        self.assertIn('<link rel="stylesheet" href="/ecosystem/dpvis.css">', page)
-        self.assertIn('data-src="/ecosystem/dpvis-data.json"', page)
-        self.assertIn('data-theme="auto"', page, "схема — в теме системы, как сайт (Д49)")
-        self.assertIn("Система по слоям", page, "без JavaScript — та же система списком")
+        self.assertIn("Система по слоям", page)
+        self.assertIn("Срез на ", page)
+        for gone in ("dpvis", "<script src=", "data-src="):
+            self.assertNotIn(gone, page)
         for name in ("dpvis.js", "dpvis.css", "dpvis-data.json"):
-            self.assertTrue((self.out / "ecosystem" / name).is_file(), name)
+            self.assertFalse((self.out / "ecosystem" / name).exists(), f"{name} на сайт не выгружается")
         self.assertIn('href="/ecosystem/"', (self.out / "index.html").read_text(encoding="utf-8"))
         self.assertNotIn("/ecosystem/", (self.out / "en/index.html").read_text(encoding="utf-8"), "раздел только на русском")
-        others = [f for f in self.out.rglob("*.html") if "<script src=" in f.read_text(encoding="utf-8")]
-        self.assertEqual([f.relative_to(self.out).as_posix() for f in others], ["ecosystem/index.html"])
-        self.assertEqual(page_csp(page, ("/ecosystem/dpvis.js",)), [])
-        self.assertTrue(page_csp(page), "без разрешения каталога скрипт — нарушение")
+        scripted = [f.relative_to(self.out).as_posix() for f in self.out.rglob("*.html") if "<script src=" in f.read_text(encoding="utf-8")]
+        self.assertEqual(scripted, [], "скриптов на сайте нет")
+        self.assertEqual(page_csp(page), [])
         api = json.loads((self.out / "api/v1/index.json").read_text(encoding="utf-8"))
-        self.assertEqual(api["resources"]["ecosystem"], "/ecosystem/dpvis-data.json")
+        self.assertNotIn("ecosystem", api["resources"])
         # Д48: признак сборки — коммит (или null без git), правки, время UTC.
         self.assertEqual(set(api["build"]), {"commit", "dirty", "built"})
         self.assertRegex(api["build"]["built"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
         self.assertTrue(api["build"]["commit"] is None or re.fullmatch(r"[0-9a-f]{40}", api["build"]["commit"]))
 
-    def test_csp_by_path(self):
-        root = "script-src 'none'"
-        eco = self.sb.path_headers()["/ecosystem/"]["Content-Security-Policy"]
-        self.assertIn("script-src 'self'", eco)
-        self.assertNotIn("unsafe", eco)
+    def test_one_csp_everywhere(self):
+        """Д51: своих заголовков у каталога нет — CSP сайта везде `script-src 'none'`."""
+        self.assertEqual(self.sb.path_headers(), {})
         h = (self.out / "_headers").read_text(encoding="utf-8")
-        self.assertIn(root, h.split("/ecosystem/*", 1)[0])
-        self.assertIn("script-src 'self'", h.split("/ecosystem/*", 1)[1])
+        self.assertIn("script-src 'none'", h)
+        self.assertNotIn("script-src 'self'", h)
         sb, rep, out = self.build(self.repo("beget"), "production")
         self.assertEqual(rep.errors, [])
-        self.assertIn(root, (out / ".htaccess").read_text(encoding="utf-8"))
-        self.assertIn(f'Content-Security-Policy "{eco}"', (out / "ecosystem/.htaccess").read_text(encoding="utf-8"))
+        self.assertIn("script-src 'none'", (out / ".htaccess").read_text(encoding="utf-8"))
+        self.assertFalse((out / "ecosystem/.htaccess").exists())
 
     @mock.patch.object(_Handler, "log_request", lambda *a, **k: None)
-    def test_server_sends_path_csp(self):
+    def test_server_sends_one_csp(self):
         srv = server(self.out, 0, self.sb._headers(), quiet=True, path_headers=self.sb.path_headers())
         port = srv.server_address[1]
         threading.Thread(target=srv.serve_forever, daemon=True).start()
@@ -355,27 +353,21 @@ class Ecosystem(unittest.TestCase):
                     r.read()  # дочитать тело: иначе сервер пишет в закрытое соединение
                     return r.headers["Content-Security-Policy"]
             self.assertIn("script-src 'none'", get("/"))
-            self.assertIn("script-src 'self'", get("/ecosystem/"))
-            self.assertIn("script-src 'self'", get("/ecosystem/dpvis.js"))
+            self.assertIn("script-src 'none'", get("/ecosystem/"))
         finally:
             srv.shutdown()
             srv.server_close()
 
     def test_roles_and_stages_only_from_facts(self):
-        data = json.loads((self.out / "ecosystem/dpvis-data.json").read_text(encoding="utf-8"))
-        repos = {n["id"]: n for n in data["model"]["nodes"] if n["kind"] == "repo"}
-        self.assertEqual(repos["galdhold"]["role"], self.sb.fact("GH-GENRE", "ru"))
-        self.assertEqual(repos["galdhold"]["stage"], self.sb.fact("GH-STAGES", "ru"))
+        page = (self.out / "ecosystem/index.html").read_text(encoding="utf-8")
+        self.assertIn(html.escape(self.sb.fact("GH-GENRE", "ru")), page)
+        self.assertIn(html.escape(self.sb.fact("GH-STAGES", "ru")), page)
 
         def drop(cfg, repo):
             del cfg["ecosystem"]["roles"]["market"]
             del cfg["ecosystem"]["stages"]["market"]
         _, rep, out = self.build(self.repo(mutate=drop))
-        market = next(n for n in json.loads((out / "ecosystem/dpvis-data.json").read_text(encoding="utf-8"))["model"]["nodes"]
-                      if n["id"] == "market")
-        self.assertNotIn("role", market, "нет факта — нет утверждения о проекте")
-        self.assertNotIn("stage", market)
-        self.assertTrue(any("market" in w for w in rep.warnings), rep.warnings)
+        self.assertTrue(any("market" in w for w in rep.warnings), "нет факта — нет утверждения о проекте, предупреждение")
 
     def test_kit_must_match_manifest(self):
         repo = self.repo()

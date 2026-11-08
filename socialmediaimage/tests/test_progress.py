@@ -120,7 +120,11 @@ class Figures(unittest.TestCase):
         # подпись неполного последнего дня — без чужой даты (раньше было зашито «5 октября»)
         act, _ = render(self.p, "activity", "ru")
         self.assertNotIn("5 октября учтено", act)
-        self.assertIn("9 октября, пт — учтено до 19:00", act)
+        # Лёгкий сайт (Д51): одна раскладка, без подсказок наведения и целей под них; значения — в таблице.
+        self.assertEqual(act.count("<svg"), 1)
+        self.assertNotIn("<g><title>", act)
+        self.assertNotIn("c-hit", act)
+        self.assertIn("Таблица значений", act)
         archived = {x["slug"].split("/")[-1] for x in self.p.scope["excluded"] if x["kind"] == "archive"}
         for fid in ("repos", "ecosystem", "snapshot"):
             html_, _ = render(self.p, fid, "ru")

@@ -141,7 +141,6 @@ class BuildReport:
     warnings: list = field(default_factory=list)
     errors: list = field(default_factory=list)
     entries: list = field(default_factory=list)
-    eco_path: str | None = None  # раздел «Экосистема» в этой сборке (Д43)
 
 
 class SiteBuild:
@@ -760,39 +759,38 @@ class SiteBuild:
         return self.repo.path(*self.eco_cfg()["kit"].split("/"))
 
     def page_ecosystem(self) -> Page | None:
-        """Интерактивная модель экосистемы из комплекта DPvisualisation; без комплекта — ошибка сборки."""
+        """Система по слоям — статичным списком из данных комплекта DPvisualisation (Д51: без скрипта схемы);
+        без комплекта — ошибка сборки."""
         c = self.eco_cfg()
         kit = self.eco_kit()
         bad = ecosystem.kit_problems(kit)
         if bad:
             self.report.errors += bad
             return None
-        data, warn = ecosystem.apply_facts(ecosystem.load(kit), c.get("roles") or {}, c.get("stages") or {},
-                                           lambda fid: self.fact(fid, "ru"))
+        # «ID@N» — N-я формулировка факта (как what_idx у «Прогресса»); без номера — первая.
+        def fact(spec: str) -> str | None:
+            fid, _, idx = spec.partition("@")
+            return self.fact(fid, "ru", int(idx) if idx.isdigit() else 0)
+        data, warn = ecosystem.apply_facts(ecosystem.load(kit), c.get("roles") or {}, c.get("stages") or {}, fact)
         self.report.warnings += warn
         from ..claims import scan
         from ..facts import rules
         for text in ecosystem.texts(data):
             for rule, frag in scan(text, rules()):
                 self.report.errors.append(f"экосистема: «{frag}» — {rule['id']}: {rule.get('why') or rule.get('reason') or 'запрещённая формулировка'}")
-        self._eco_data = data
         as_of = (data.get("state") or {}).get("as_of") or data["model"].get("as_of") or ""
         day = as_of[:10]
         as_of_text = f"{day[8:10]}.{day[5:7]}.{day[:4]}" if len(day) == 10 else "—"
         path = c["path"]
         page = Page(path, "ru", t("ru", "ecosystem"),
-                    "Интерактивная схема системы проектов dpsmpx: слои, потоки работы и прогресс по истории git.",
+                    "Система проектов dpsmpx по слоям: что делает каждый проект и на какой он стадии.",
                     ecosystem.page_main(data, path, as_of_text, self.path_href("ru") if self.path_cfg() else None),
                     lastmod=day or None)
-        page.head = [f'<link rel="stylesheet" href="{path}dpvis.css">', f'<script src="{path}dpvis.js" defer></script>']
         return page
 
     def path_headers(self) -> dict:
-        """Заголовки по пути: раздел «Экосистема» — CSP со своими скриптами (Д43)."""
-        c = self.eco_cfg()
-        if not c:
-            return {}
-        return {c["path"]: {"Content-Security-Policy": ecosystem.csp_with_scripts(self._headers()["Content-Security-Policy"])}}
+        """Заголовки по пути: своих нет — на сайте ни одного скрипта, CSP везде общая (Д51)."""
+        return {}
 
     # ------------------------------------------------------- раздел «Путь» (Д44)
     def path_cfg(self) -> dict | None:
@@ -901,7 +899,6 @@ class SiteBuild:
         eco_page = pg(self.page_ecosystem) if self.eco_cfg() else None
         if eco_page:
             pages.append(eco_page)
-            self.report.eco_path = eco_page.path
         for e in self._pages:
             pages.append(pg(self.page_entry, e))
         posts = [e for e in entries if e.is_post]
@@ -934,30 +931,18 @@ class SiteBuild:
             else:
                 self.report.warnings.append(f"og_default {og['file']} — файла нет")
         # тема, значок, заголовки, шрифты, фиды, карта, robots, API
-        self.write(out, "/style.css", self.css())
+        css = self.css()
+        self.write(out, "/style.css", css)
         self.write(out, "/favicon.svg", self.favicon())
         self.write(out, *self.headers_file())
-        if eco_page:
-            # комплект и CSP раздела: только этот каталог — со своими скриптами (Д43)
-            kit = self.eco_kit()
-            for name in ("dpvis.js", "dpvis.css"):
-                self.write(out, f"{eco_page.path}{name}", (kit / name).read_bytes())
-            # данные — с ролями и стадиями из реестра фактов (apply_facts), не байт в байт с комплектом
-            self.write(out, f"{eco_page.path}dpvis-data.json",
-                       json.dumps(self._eco_data, ensure_ascii=False, separators=(",", ":")) + "\n")
-            if self.cfg.get("hosting") == "beget":
-                csp = self.path_headers()[eco_page.path]["Content-Security-Policy"]
-                self.write(out, f"{eco_page.path}.htaccess",
-                           "# Создаёт tools/cs/site/build.py (Д43); на сервере не править.\n"
-                           "<IfModule mod_headers.c>\n"
-                           f'  Header always set Content-Security-Policy "{csp}"\n'
-                           "</IfModule>\n")
         if self.cfg.get("hosting") == "beget" and "en" in langs:
             # Apache: своя 404 для /en/ (П2-18); заголовки и Options наследуются из корня
             self.write(out, "/en/.htaccess", "# Создаёт tools/cs/site/build.py (П2-18); на сервере не править.\n"
                                              "ErrorDocument 404 /en/404.html\n")
+        # Шрифты — только те, на которые ссылаются стили (Д51), и лицензия.
+        used = set(re.findall(r'url\("/fonts/([^"]+)"\)', css))
         for f in sorted(self.repo.path("assets", "brand", "fonts").glob("*")):
-            if f.suffix in (".woff2", ".txt"):
+            if f.suffix == ".txt" or f.name in used:
                 self.write(out, f"/fonts/{f.name}", f.read_bytes())
         visible = [e for e in posts if not (self.env == "production" and e.draft)]
         self.write(out, "/feed.xml", feeds.atom(self, visible))
@@ -968,8 +953,6 @@ class SiteBuild:
         self.write(out, "/robots.txt", robots)
         api = feeds.api(self, entries)
         api["index.json"]["build"] = feeds.build_marker(self.repo.root)  # Д48: коммит и время сборки
-        if eco_page:
-            api["index.json"]["resources"]["ecosystem"] = f"{eco_page.path}dpvis-data.json"
         if self._progress:  # данные графиков страницы прогресса — только если страница видна в этом окружении
             api["progress.json"] = {"version": 1, "datasets": [progress_set(self.repo, ds).public() for ds in sorted(self._progress)]}
             api["index.json"]["resources"]["progress"] = "/api/v1/progress.json"
