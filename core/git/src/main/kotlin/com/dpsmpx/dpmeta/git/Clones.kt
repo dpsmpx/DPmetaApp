@@ -16,6 +16,7 @@ import org.eclipse.jgit.errors.MissingObjectException
 import org.eclipse.jgit.lib.Config
 import org.eclipse.jgit.lib.Constants
 import org.eclipse.jgit.lib.ObjectId
+import org.eclipse.jgit.lib.ObjectInserter
 import org.eclipse.jgit.lib.Repository
 import org.eclipse.jgit.revwalk.RevCommit
 import org.eclipse.jgit.revwalk.RevWalk
@@ -266,25 +267,52 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
     }
 
     /**
-     * Файл на коммите [commit] (полный SHA): объекты адресуются содержимым,
-     * и подмена ссылок клона прочитанное не меняет (`DP_AI_Orcestrator:D-114`).
-     * Нет файла — `null`; нет коммита (объекты удалены) — отказ, а не другое
-     * содержимое.
+     * Файл на коммите [commit] (полный SHA) — с проверкой содержимого
+     * (`DP_AI_Orcestrator:D-114`, T19): коммит, каждое дерево по пути и
+     * сам файл читаются по одному, и у каждого id пересчитывается по байтам.
+     * JGit при чтении хеш не сверяет, а гость Linux может подложить в клон
+     * свой объект под доверенный id — тогда отказ, а не чужое содержимое.
+     * Нет файла (или это каталог) — `null`; нет коммита или объект подменён —
+     * отказ.
      */
     fun fileAt(project: String, commit: String, path: String): Outcome<ByteArray?> {
         if (!Regex("[0-9a-f]{40}").matches(commit)) return failure(DiagCode.VALUE_INVALID, "не SHA коммита", project)
+        val parts = path.trim('/').split('/').filter { it.isNotEmpty() }
+        if (parts.isEmpty()) return Outcome.success(null)
         return withRepo(project) { repo ->
-            val tree = try {
-                RevWalk(repo).use { it.parseCommit(ObjectId.fromString(commit)).tree }
-            } catch (e: MissingObjectException) {
-                return@withRepo null
+            val commitBytes = verified(repo, ObjectId.fromString(commit), Constants.OBJ_COMMIT)
+            var tree: ObjectId = RevCommit.parse(commitBytes).tree.copy()
+            for ((i, part) in parts.withIndex()) {
+                val parser = org.eclipse.jgit.treewalk.CanonicalTreeParser()
+                parser.reset(verified(repo, tree, Constants.OBJ_TREE))
+                var found: Pair<ObjectId, org.eclipse.jgit.lib.FileMode>? = null
+                while (!parser.eof()) {
+                    if (parser.entryPathString == part) {
+                        found = parser.entryObjectId.copy() to parser.entryFileMode
+                        break
+                    }
+                    parser.next()
+                }
+                val (id, mode) = found ?: return@withRepo null
+                val last = i == parts.lastIndex
+                when {
+                    !last && mode == org.eclipse.jgit.lib.FileMode.TREE -> tree = id
+                    // Каталог, подмодуль или путь сквозь файл — не файл.
+                    !last || mode == org.eclipse.jgit.lib.FileMode.TREE || mode == org.eclipse.jgit.lib.FileMode.GITLINK -> return@withRepo null
+                    else -> return@withRepo verified(repo, id, Constants.OBJ_BLOB)
+                }
             }
-            TreeWalk.forPath(repo, path, tree)?.use { tw -> if (tw.isSubtree) null else repo.open(tw.getObjectId(0)).bytes }
-        }.let { r -> if (r is Outcome.Success && r.value == null && !hasCommit(project, commit)) failure(DiagCode.ENTITY_NOT_FOUND, "коммита нет в клоне", project) else r }
+            null
+        }
     }
 
-    private fun hasCommit(project: String, commit: String): Boolean =
-        (withRepo(project) { repo -> repo.objectDatabase.has(ObjectId.fromString(commit)) } as? Outcome.Success)?.value == true
+    /** Байты объекта [id] вида [type], если id совпадает с хешем содержимого; иначе — `CorruptObjectException`. */
+    private fun verified(repo: Repository, id: ObjectId, type: Int): ByteArray {
+        val bytes = repo.open(id, type).bytes
+        val actual = ObjectInserter.Formatter().idFor(type, bytes)
+        if (actual != id) throw org.eclipse.jgit.errors.CorruptObjectException(id, "содержимое не совпадает с id")
+        return bytes
+    }
 
     /** Файл ветки GitHub [branch] по пути от корня; нет файла (или это каталог) — `null`, нет клона или ветки — отказ. */
     fun file(project: String, branch: String, path: String): Outcome<ByteArray?> = withRepo(project) { repo ->

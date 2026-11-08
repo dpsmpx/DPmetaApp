@@ -276,7 +276,8 @@ class TerminalView(context: Context) : View(context) {
     /** Шрифт по ширине: [columns] столбцов во всю ширину окна (⋮ «80 столбцов»). */
     fun fitColumns(columns: Int = 80) {
         // Ширина сетки — без полей по краям (терминал:A-24): иначе выходило 78–79 столбцов.
-        if (width > 0) setFont(fontPx * (width - 2 * dp(SIDE_DP)) / (columns * cellW))
+        // Чуть меньше расчётного: округление float и замер шрифта иначе дают 79.
+        if (width > 0) setFont(fontPx * (width - 2 * dp(SIDE_DP)) / (columns * cellW) * FIT_SLACK)
     }
 
     init {
@@ -1263,6 +1264,9 @@ class TerminalView(context: Context) : View(context) {
         private const val SHIFT_ENTER = "shift_enter_newline"
         private const val BOLD_BRIGHT = "bold_bright"
         private const val KEEP_ON = "keep_screen_on"
+
+        /** Запас «N столбцов»: размер шрифта чуть меньше расчётного, чтобы столбцов было не меньше N. */
+        private const val FIT_SLACK = 0.995f
 
         /** Поле сетки слева и справа, dp (терминал:A-24). */
         private const val SIDE_DP = 4f

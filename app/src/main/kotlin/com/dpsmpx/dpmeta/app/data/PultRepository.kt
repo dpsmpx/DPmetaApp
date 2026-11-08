@@ -427,7 +427,7 @@ class PultRepository(
                 }
                 is Outcome.Success -> {
                     ok++
-                    // Голова DPmetaApp по ответу GitHub — в хранилище пульта, куда Linux-среда не пишет (D-114, T19).
+                    // Голова DPmetaApp по ответу GitHub — в данных пульта: гостю Linux они не смонтированы (D-114, T19; обход proot — T13).
                     if (key.equals(HOST, ignoreCase = true)) r.value.mainSha?.let(::trustHost)
                     if (r.value.action == com.dpsmpx.dpmeta.git.Clones.Action.CLONED) created++
                     // Перезаписанная на GitHub история — сведение (D-70): клон взял её; работа ИИ в клоне — не расхождение.
