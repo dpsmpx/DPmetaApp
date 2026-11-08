@@ -23,11 +23,13 @@ import html
 import json
 import re
 import shutil
+import struct
 import urllib.parse
 from dataclasses import dataclass, field
 from pathlib import Path
 from string import Template
 
+from ..common import image_size
 from ..core import markup, sensitive
 from ..core.content import (POST_CATEGORIES, CItem, Variant, approval_state, load_items, resolved_alt, resolved_body,
                             stale_reasons)
@@ -57,6 +59,13 @@ SECURITY_HEADERS = {
 }
 
 
+def img_tag(e: "Entry", cls: str | None = None) -> str:
+    """Изображение записи с размерами из файла (S-02): браузер занимает место до загрузки."""
+    attrs = f' class="{cls}"' if cls else ""
+    size = f' width="{e.image_size[0]}" height="{e.image_size[1]}"' if e.image_size else ""
+    return f'<img{attrs} src="{e.image}" alt="{E(e.image_alt or "")}"{size}>'
+
+
 @dataclass
 class Entry:
     """Запись или страница сайта из варианта website.<язык>."""
@@ -73,6 +82,7 @@ class Entry:
     stale: bool
     image: str | None = None
     image_alt: str | None = None
+    image_size: tuple[int, int] | None = None
     social: list = field(default_factory=list)
 
     @property
@@ -185,7 +195,7 @@ class SiteBuild:
                 date = str(rec.get("ts") or "")[:10] or str(v.m("date") or item.data.get("created") or "")
                 title = v.m("title") or item.data.get("title")
                 summary = v.m("summary") or markup.first_text(blocks)
-                img = alt = None
+                img = alt = size = None
                 media = v.m("media") or []
                 if media:
                     img = f"/media/{item.id}/{Path(media[0]).name}"
@@ -193,9 +203,15 @@ class SiteBuild:
                     alt = alts[0].text if alts else None
                     if not alt:
                         self.report.errors.append(f"{item.id}/{vid}: у {media[0]} нет media_alt — изображение без текста-замены")
+                    # Размеры — из файла: место под картинку занято до загрузки, страница не сдвигается (аудит сайта, S-02).
+                    try:
+                        w, h, _ = image_size(item.dir / media[0])
+                        size = (w, h)
+                    except (OSError, ValueError, struct.error) as err:
+                        self.report.errors.append(f"{item.id}/{vid}: размеры {media[0]} не прочитать ({err}) — страница сдвинется при загрузке")
                 out.append(Entry(item, v, v.lang, item.url_path(v.lang), title, summary,
                                  markup.to_html(blocks), date, item.category,
-                                 draft=not (approved and published), stale=stale, image=img, image_alt=alt,
+                                 draft=not (approved and published), stale=stale, image=img, image_alt=alt, image_size=size,
                                  social=self._social(item)))
         return out
 
@@ -303,7 +319,7 @@ class SiteBuild:
             parts.append(self.draft_note(about))
             parts.append(f'<p class="lead">{E(about.summary)}</p>')
             if about.image:
-                parts.append(f'<img src="{about.image}" alt="{E(about.image_alt or "")}" width="1280" height="720">')
+                parts.append(img_tag(about))
         parts.append("</section>")
         projects = [p for p in sorted(self.repo.projects().values(), key=lambda x: x.get("order", 99)) if p.get("page")]
         prim = [p for p in projects if p.get("weight") == "primary"]
@@ -485,7 +501,7 @@ class SiteBuild:
         main = (f'<article class="{"article" if e.is_article else "post"}">{crumbs[0]}<h1>{E(e.title)}</h1>'
                 f"{meta}{self.draft_note(e)}")
         if e.image:
-            main += f'<img class="cover" src="{e.image}" alt="{E(e.image_alt or "")}">'
+            main += img_tag(e, "cover")
         main += lead + body + (f"<p>{tags}</p>" if tags else "")
         if e.social:
             main += f'<h3>{E(t(e.lang, "discuss"))}</h3><ul class="links">' + "".join(

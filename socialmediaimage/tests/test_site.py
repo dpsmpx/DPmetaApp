@@ -19,7 +19,7 @@ import yaml
 from tools.cs.common import ROOT
 from tools.cs.core import textdoc
 from tools.cs.core.content import approval_state, find
-from tools.cs.platform_checks import page_a11y, page_csp
+from tools.cs.platform_checks import page_a11y, page_csp, page_images
 from tools.cs.site.build import SiteBuild, build
 from tools.cs.site.preview import PAGE_DIR, preview
 from tools.cs.site.serve import _Handler, server
@@ -105,9 +105,11 @@ class Accessibility(unittest.TestCase):
         self.assertGreater(len(pages), 5)
         for page in pages:
             text = page.read_text(encoding="utf-8")
-            self.assertEqual(page_a11y(text) + page_csp(text), [], page.relative_to(out))
+            self.assertEqual(page_a11y(text) + page_csp(text) + page_images(text), [], page.relative_to(out))
         post = (out / "news/test-news/index.html").read_text(encoding="utf-8")
         self.assertIn('alt="Обложка: Galdhold, C++20 и Vulkan"', post)
+        # Размеры обложки — из самого файла (S-02): место занято до загрузки.
+        self.assertIn('alt="Обложка: Galdhold, C++20 и Vulkan" width="1280" height="720">', post)
         self.assertIn('aria-current="page"', post)
         self.assertIn('<a class="skip" href="#main">К содержимому</a>', post)
 
@@ -116,6 +118,14 @@ class Accessibility(unittest.TestCase):
         with_media(repo, None)
         rep = build(repo, "staging", repo.path("build", "s"))
         self.assertTrue(any("нет media_alt" in e for e in rep.errors), rep.errors)
+
+    def test_unreadable_media_size_is_an_error(self):
+        repo = make_repo(git=False)
+        with_media(repo, "Обложка")
+        (find(repo, "CI-0101").dir / "exports/cover.jpg").write_bytes(b"not an image")
+        repo.reset()
+        rep = build(repo, "staging", repo.path("build", "s"))
+        self.assertTrue(any("размеры exports/cover.jpg не прочитать" in e for e in rep.errors), rep.errors)
 
     def test_alt_is_part_of_what_the_author_approves(self):
         repo = make_repo(git=False)
@@ -137,6 +147,10 @@ class Accessibility(unittest.TestCase):
         csp = " ".join(page_csp(bad))
         for part in ("скрипт", "стиль", "on…="):
             self.assertIn(part, csp)
+        # S-02: без width и height — находка; с ними — чисто.
+        self.assertEqual(len(page_images(bad)), 2)
+        self.assertEqual(page_images('<img src="/x.png" alt="x" width="1280" height="720">'), [])
+        self.assertEqual(len(page_images('<img src="/x.png" alt="x" width="1280">')), 1)
         self.assertEqual(page_csp('<script type="application/ld+json">{}</script>'), [])
 
 
