@@ -56,6 +56,29 @@ class TmuxSessionTest {
         assertTrue("tmux -u new -A -s $name && exit 0;" in shell && shell.endsWith("exec \"\${SHELL:-/bin/sh}\" -l"), shell)
     }
 
+    /**
+     * tmux проработал дольше [TmuxSession.START_SECONDS] и кончился с ошибкой
+     * (`kill-server`, сбой сервера): сессия была — вкладка закрывается с его
+     * кодом, программа заново сама не запускается. Время — поддельным `date`.
+     */
+    @Test
+    fun aCrashedSessionDoesNotStartTheProgramAgain() {
+        val cmd = TmuxSession.wrap(listOf("sh", "-lc", "exec echo запущено"), name).valueOrNull()!!
+        val dir = java.nio.file.Files.createTempDirectory("tmux").toFile()
+        try {
+            val bin = bin(dir, "exit 1")
+            File(bin, "date").apply {
+                writeText("#!/bin/sh\nf=${dir.path}/clock\nn=100; [ -f \"\$f\" ] && read n < \"\$f\"\necho \"\$n\"\necho \$((n+100)) > \"\$f\"\n")
+                setExecutable(true)
+            }
+            val (code, out) = run(cmd, bin)
+            assertEquals(1, code)
+            assertTrue("запущено" !in out && TmuxSession.TMUX_FAILED !in out, out)
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
     /** Автопереподключение CLI слота (D-111): только вход в живую сессию, иначе — код 75 без запуска программы. */
     @Test
     fun resumeOnlyNeverStartsTheProgramAgain() {
@@ -84,7 +107,8 @@ class TmuxSessionTest {
         assertFailsWith<IllegalArgumentException> { TmuxSession.wrap(emptyList(), name, socket = "a b") }
         val cmd = TmuxSession.wrap(listOf("sh", "-lc", "exec env -u ANTHROPIC_API_KEY 'CLAUDE_CONFIG_DIR=/home/u/slot a' claude"), name, socket = name).valueOrNull()!!
         assertTrue("tmux -L $name -u new -A -s $name 'sh -lc '" in cmd[2], cmd[2])
-        assertTrue(cmd[2].endsWith("exec sh -lc 'exec env -u ANTHROPIC_API_KEY '\\''CLAUDE_CONFIG_DIR=/home/u/slot a'\\'' claude'"), cmd[2])
+        // Запасной путь — сразу команда: профиль оболочки входа не читается второй раз.
+        assertTrue(cmd[2].endsWith("; exec env -u ANTHROPIC_API_KEY 'CLAUDE_CONFIG_DIR=/home/u/slot a' claude"), cmd[2])
         // Закрытие — только точное имя: иначе tmux берёт и сессию с тем же началом (dpai-…-1 и dpai-…-10).
         assertEquals("tmux kill-session -t =$name 2>/dev/null; true", TmuxSession.kill(name)[2])
         assertEquals("tmux -L $name kill-session -t =$name 2>/dev/null; true", TmuxSession.kill(name, name)[2])
