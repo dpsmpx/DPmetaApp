@@ -52,30 +52,30 @@ object TerminalLaunch {
     }
 
     /**
-     * Имя сессии `tmux` вкладки (D-111): постоянное у вкладки — target,
-     * вид (`sh`, `claude`, `codex`, `gemini`) и номер среди открытых вкладок
-     * того же target и вида; после обрыва связи или перезапуска приложения
-     * вкладка с тем же номером возвращается в ту же сессию. Только латиница,
-     * цифры и `-`: имя идёт в командную строку target.
+     * Имя сессии `tmux` вкладки (D-111): постоянное у вкладки — устройство
+     * ([device]: копия настроек на втором телефоне не входит в чужие сессии),
+     * target, вид (`sh`, `claude`, `codex`, `gemini`) и номер среди открытых
+     * вкладок того же target и вида; после обрыва связи или перезапуска
+     * приложения вкладка с тем же номером возвращается в ту же сессию. Только
+     * латиница, цифры и `-`: имя идёт в командную строку target.
      */
-    fun tmuxName(target: String, kind: String, n: Int): String {
+    fun tmuxName(device: String, target: String, kind: String, n: Int): String {
         fun clean(s: String) = s.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
+        val d = clean(device).take(TMUX_DEVICE_CHARS).trim('-').ifEmpty { "d" }
         val t = clean(target).takeLast(TMUX_TARGET_CHARS).trim('-').ifEmpty { "t" }
-        return "dpai-$t-${clean(kind).ifEmpty { "sh" }}-$n"
+        return "dpai-$d-$t-${clean(kind).ifEmpty { "sh" }}-$n"
     }
 
-    /**
-     * Команда вкладки на POSIX target с сессией в `tmux` (D-111) —
-     * [com.dpsmpx.dpai.execution.ssh.TmuxSession.wrap]: есть `tmux` —
-     * `tmux new -A -s <имя>`, нет — строка, как поставить, и прежняя команда.
-     */
-    fun inTmux(command: List<String>, name: String): Outcome<List<String>> = com.dpsmpx.dpai.execution.ssh.TmuxSession.wrap(command, name)
+    /** Команда вкладки с сессией в `tmux` (D-111) — [com.dpsmpx.dpai.execution.ssh.TmuxSession.wrap]. */
+    fun inTmux(command: List<String>, name: String, socket: String? = null, resumeOnly: Boolean = false): Outcome<List<String>> =
+        com.dpsmpx.dpai.execution.ssh.TmuxSession.wrap(command, name, socket, resumeOnly)
 
     /** Строка в терминале, когда `tmux` на target нет (D-111). */
     const val NO_TMUX: String = com.dpsmpx.dpai.execution.ssh.TmuxSession.NO_TMUX
 
-    /** Сколько последних знаков id target в имени сессии: различить targets одного хоста (слоты Termux). */
-    private const val TMUX_TARGET_CHARS = 8
+    /** Сколько знаков метки устройства и id target в имени сессии. */
+    private const val TMUX_DEVICE_CHARS = 4
+    private const val TMUX_TARGET_CHARS = 6
 
     /** Эмулятор понимает `38;2;r;g;b` (D-71): программы узнают об этом по `COLORTERM`, как у kitty и Windows Terminal. */
     const val COLORTERM: String = "truecolor"

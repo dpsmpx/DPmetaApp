@@ -1032,7 +1032,11 @@ private fun TmuxSwitch(controller: Controller, t: TargetEntry) {
     val scope = rememberCoroutineScope()
     var on by remember(t.id) { mutableStateOf(t.tmux) }
     var note by remember(t.id) { mutableStateOf<String?>(null) }
+    // Запись — по одной: второе касание до конца первой записи не обгонит её на диске.
+    var saving by remember(t.id) { mutableStateOf(false) }
     SwitchRow(on, onChange = { v ->
+        if (saving) return@SwitchRow
+        saving = true
         on = v
         scope.launch {
             when (val r = withContext(Dispatchers.IO) { controller.setTmux(t, v) }) {
@@ -1042,6 +1046,7 @@ private fun TmuxSwitch(controller: Controller, t: TargetEntry) {
                     note = "Не сохранено: ${r.diagnostics.first().message}"
                 }
             }
+            saving = false
         }
     }) {
         Column(Modifier.weight(1f)) {

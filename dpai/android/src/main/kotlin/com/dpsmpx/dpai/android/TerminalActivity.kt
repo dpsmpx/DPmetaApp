@@ -395,7 +395,8 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
 
     /** «+» (терминал:A-21): такая же вкладка, оболочка или CLI слота на том же target, Linux в приложении. */
     private fun newTab(anchor: View, like: TerminalHub.Tab) {
-        val target = like.target
+        // Target — как записан сейчас: настройка tmux могла смениться, пока вкладка открыта.
+        val target = like.target?.let { TerminalHub.fresh(this, it) }
         val items = buildList<Pair<String, () -> Unit>> {
             add("Такая же" to { show(TerminalHub.openLike(this@TerminalActivity, like)) })
             if (target != null) {
