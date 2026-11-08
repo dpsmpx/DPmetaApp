@@ -231,5 +231,21 @@ class SitePage(unittest.TestCase):
         self.assertEqual(rep.errors, [])
 
 
+
+
+class PublicText(unittest.TestCase):
+    """На «Прогрессе» внутренних кодов нет (Д50): номера контрактов и решений убираются, текст остаётся."""
+
+    def test_codes_are_removed(self):
+        from tools.cs.progress.figures import public_text
+        self.assertEqual(public_text("DPmeta C-01"), "DPmeta")
+        self.assertEqual(public_text("форк чужого проекта — вне иерархии проектов (Д5)"), "форк чужого проекта — вне иерархии проектов")
+        self.assertEqual(public_text("README профиля GitHub — не проект; правит только автор (DPmeta C-07)"),
+                         "README профиля GitHub — не проект; правит только автор")
+        # Скобки без кода и текст без кода — как были.
+        self.assertEqual(public_text("реестр (через DPmeta)"), "реестр (через DPmeta)")
+        self.assertEqual(public_text("одиночный скрипт вне карты проектов"), "одиночный скрипт вне карты проектов")
+
+
 if __name__ == "__main__":
     unittest.main()

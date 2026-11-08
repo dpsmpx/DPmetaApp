@@ -294,7 +294,11 @@ export class Viewer {
     if (!v) return;
     const f = this.f;
     // шапка: время среза всегда видно (F-31)
-    if (v.asOf) {
+    if (v.asOf && this.root.dataset.embed === "site") {
+      // На сайте схема полустатичная (D-28): дата среза, без «N дней назад · устарел».
+      this.el.asof.textContent = `срез на ${fmtDate(v.asOf)}`;
+      this.el.stale.hidden = true;
+    } else if (v.asOf) {
       this.el.asof.textContent = `срез ${fmtDateTime(v.asOf)} · ${fmtAge(v.asOf)}`;
       this.el.stale.hidden = !isStale(v.asOf);
     } else {

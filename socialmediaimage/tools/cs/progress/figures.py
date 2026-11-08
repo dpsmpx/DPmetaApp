@@ -157,6 +157,18 @@ BINS = [2, 5, 10, 20, 40]
 CYCLE_EDGES = [15, 30, 60, 180, 720]
 
 
+# Внутренние коды (номера контрактов, решений, рисков, пунктов очереди) на публичной странице не нужны (Д50):
+# посетителю они ничего не говорят; источник остаётся в данных (scope.yaml) и в документах.
+_CODE = r"(?:(?:DPmeta|DPmetaApp|Galdhold|DPlang|DP-Verify|SocialMediaImage)[ :])?(?:C|M|D|E|SQ|RISK|ADR)-\d+|[ДРP]\d+"
+_CODE_PARENS = re.compile(r"\s*\((?:[^()]*?\s)?(?:" + _CODE + r")(?:[^()]*)\)")
+_CODE_ALONE = re.compile(r"\b(DPmeta|DPmetaApp|Galdhold|DPlang|DP-Verify|SocialMediaImage)[ :](?:C|M|D|E|SQ|RISK|ADR)-\d+(?:\s*[…,–-]\s*(?:C|M|D|E|SQ|RISK|ADR)-\d+)*")
+
+
+def public_text(text: str) -> str:
+    """Текст без внутренних кодов (Д50): «(Д5)», «(DPmeta C-07)» — прочь; «DPmeta C-01» — «DPmeta»."""
+    return _CODE_ALONE.sub(r"\1", _CODE_PARENS.sub("", text)).strip()
+
+
 class Fig:
     """Сборщик фигур одного набора на одном языке."""
 
@@ -549,7 +561,7 @@ class Fig:
             arrow = "⇄" if r.get("both") else "→"
             plan = f' <span class="meta">({E(t["planned"])})</span>' if r.get("planned") else ""
             rels.append(f'<li><b>{E(p.name(r["from"], self.lang))} {arrow} {E(p.name(r["to"], self.lang))}</b> — '
-                        f'{E(r[self.lang])}{plan} <span class="meta">{E(r["source"])}</span></li>')
+                        f'{E(r[self.lang])}{plan} <span class="meta">{E(public_text(r["source"]))}</span></li>')
         body = (f'<div class="layers">{"".join(layers)}</div><p class="mult-t">{E(t["relations"])}</p>'
                 f'<ul class="rels">{"".join(rels)}</ul>'
                 + self.caption(["facts"], f'{t["src_scope"]}; {t["src_facts"]}', note=self.totals_note()))
@@ -579,7 +591,7 @@ class Fig:
             rows.append(f'<tr><th scope="row"><code>{E(mid)}</code></th><td>{E(getattr(m, self.lang))}</td>'
                         f'<td class="num">{E(p.formatted(mid, self.lang))}</td></tr>')
         excluded = p.scope.get("excluded", [])
-        excl = "".join(f'<li><code>{E(x["slug"].split("/")[-1])}</code> — {E(x["reason"])}</li>'
+        excl = "".join(f'<li><code>{E(x["slug"].split("/")[-1])}</code> — {E(public_text(x["reason"]))}</li>'
                        for x in excluded if x.get("kind") not in ("personal", "archive"))
         personal = sum(1 for x in excluded if x.get("kind") == "personal")
         if personal:  # личные репозитории — без имён (Д2, ОР-8; фильтр Д39)

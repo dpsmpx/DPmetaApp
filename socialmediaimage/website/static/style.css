@@ -29,6 +29,9 @@ main:focus { outline: none; }
 img { max-width: 100%; height: auto; }
 code, .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
 main { max-width: 860px; margin: 0 auto; padding: 24px 20px 64px; }
+/* строка текста — не шире ~70 знаков (Д50); графики, таблицы и схемы — на всю колонку 860 px */
+main p, main li { max-width: 70ch; }
+main figure p, main figure li, main table p, main table li, main .tile p, main .layers li, main .nodes li { max-width: none; }
 
 .site-header { max-width: 860px; margin: 0 auto; padding: 20px; display: flex; gap: 24px;
   align-items: baseline; justify-content: space-between; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
