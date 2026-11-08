@@ -251,8 +251,14 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
     var renaming by remember { mutableStateOf(false) }
     // Лист задачи — кнопкой из чата (D-62): вывод модели — в чате, настройки и действия задачи — в листе.
     var taskSheet by remember { mutableStateOf<com.dpsmpx.dpai.core.ids.TaskId?>(null) }
-    taskSheet?.let { t -> TaskSheet(model, t, onSession = { s -> taskSheet = null; selectedId = s }) { taskSheet = null } }
     val sessionScreen = if (selectedId != null) snapshot?.session else null
+    // Широкий экран (AI:A-24, DPmetaApp:D-77): лист задачи — панелью рядом с чатом; ⚙ прячет и показывает её.
+    val windowWidth = androidx.compose.ui.platform.LocalWindowInfo.current.containerSize.width
+    val wide = with(androidx.compose.ui.platform.LocalDensity.current) { windowWidth.toDp() } >= TASK_PANEL_MIN
+    var taskPanel by rememberSaveable { mutableStateOf(true) }
+    val twoPane = wide && taskPanel && sessionScreen?.task != null
+    // Окно листа поверх той же задачи, что уже в панели (поворот экрана), — не нужно.
+    taskSheet?.takeIf { !(twoPane && it == sessionScreen.task) }?.let { t -> TaskSheet(model, t, onSession = { s -> taskSheet = null; selectedId = s }) { taskSheet = null } }
     val renameTask = sessionScreen?.task
     if (renaming && renameTask != null) {
         RenameSessionDialog(SessionNames.name(context, renameTask) ?: sessionScreen.title.orEmpty()) { name ->
@@ -296,7 +302,12 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                                 Modifier.weight(1f).padding(start = 8.dp).clickable(enabled = sessionScreen?.task != null) { renaming = true },
                                 style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
                             )
-                            sessionScreen?.task?.let { t -> TextButton(onClick = { taskSheet = t }, modifier = Modifier.semantics { contentDescription = "Лист задачи" }) { Text("⚙", style = MaterialTheme.typography.titleMedium) } }
+                            sessionScreen?.task?.let { t ->
+                                TextButton(
+                                    onClick = { if (wide) taskPanel = !taskPanel else taskSheet = t },
+                                    modifier = Modifier.semantics { contentDescription = if (twoPane) "Скрыть лист задачи" else "Лист задачи" },
+                                ) { Text("⚙", style = MaterialTheme.typography.titleMedium) }
+                            }
                             TextButton(onClick = { sessionEvents = !sessionEvents }) { Text(if (sessionEvents) "Чат" else "События") }
                         } else if (settings) {
                             TextButton(onClick = { settings = false }, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("←") }
@@ -380,7 +391,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
             Column(
                 Modifier.padding(padding).consumeWindowInsets(padding).imePadding()
                     .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
-                    .fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = CONTENT_MAX).fillMaxWidth(),
+                    .fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = if (twoPane) TWO_PANE_MAX else CONTENT_MAX).fillMaxWidth(),
             ) {
                 corrupted?.let { what ->
                     // D-24: карантин хвоста — только явным решением; необратимое — окном (AI:A-4).
@@ -454,7 +465,18 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                                 screen == AiTab.MODELS.ordinal -> ModelsPane()
                                 screen == AiTab.FILES.ordinal -> FilesPane(onLinux = { openTab(AiTab.TARGETS) })
                                 s == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-                                screen == SESSION_SCREEN -> SessionPane(s.session, model, sessionEvents, s.requests)
+                                screen == SESSION_SCREEN -> {
+                                    val t = s.session?.task
+                                    if (wide && taskPanel && t != null) {
+                                        Row(Modifier.fillMaxSize()) {
+                                            Box(Modifier.weight(3f).fillMaxHeight()) { SessionPane(s.session, model, sessionEvents, s.requests) }
+                                            androidx.compose.material3.VerticalDivider()
+                                            TaskSheet(model, t, onSession = { selectedId = it }, embedded = true, shownSession = selectedId, modifier = Modifier.weight(2f)) { taskPanel = false }
+                                        }
+                                    } else {
+                                        SessionPane(s.session, model, sessionEvents, s.requests)
+                                    }
+                                }
                                 screen == AiTab.SUMMARY.ordinal -> Column(Modifier.fillMaxSize()) {
                                     QuickRow(s.quick, model)
                                     Box(Modifier.weight(1f)) { DashboardPane(s.dashboard, s.quick, model, onTargets = { openTab(AiTab.TARGETS) }) { foundTask = it } }

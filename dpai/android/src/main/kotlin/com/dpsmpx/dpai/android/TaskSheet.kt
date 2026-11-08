@@ -55,10 +55,22 @@ import kotlinx.coroutines.withContext
  * Лист задачи (D-42, п. 2): что с задачей, её модель и бюджет, действия.
  * Каждое действие — команда контура с ключом нажатия (повтор нажатия не
  * делает второго действия); опасное — после подтверждения (ТЗ, §68).
+ *
+ * [embedded] — панелью рядом с чатом на широком экране (AI:A-24,
+ * `DPmetaApp:D-77`), иначе — во весь экран; [shownSession] — сессия, чат
+ * которой уже открыт: «Открыть чат» к ней не ведёт.
  */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDone: () -> Unit) {
+fun TaskSheet(
+    model: DemoModel,
+    task: TaskId,
+    onSession: (String) -> Unit,
+    embedded: Boolean = false,
+    shownSession: String? = null,
+    modifier: Modifier = Modifier,
+    onDone: () -> Unit,
+) {
     val scope = rememberCoroutineScope()
     // Сразу с данными (чтение неизменяемого состояния, без замка): лист не меняет размер после «Загружаю…».
     var detail by remember { mutableStateOf(model.taskDetail(task)) }
@@ -110,28 +122,26 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
     }
     val primary = d?.let(com.dpsmpx.dpai.ui.TaskScreens::primary).orEmpty()
     // Во весь экран (AI:A-9): «×», название и ⋮ сверху, главное действие — заливной кнопкой, остальное — в ⋮.
-    FullScreenDialog(
-        onDismissRequest = onDone,
-        title = d?.title ?: "Задача",
-        menu = d?.actions?.filter { it !in primary }?.takeIf { it.isNotEmpty() }?.let { rest ->
-            { close ->
-                for (a in rest) {
-                    androidx.compose.material3.DropdownMenuItem(
-                        enabled = !busy,
-                        text = { Text(a.label + if (a == TaskAction.CANCEL || a == TaskAction.WAIVE) "…" else "", color = if (a.dangerous) MaterialTheme.colorScheme.error else androidx.compose.ui.graphics.Color.Unspecified) },
-                        onClick = { close(); act(a) },
-                    )
-                }
+    val title = d?.title ?: "Задача"
+    val menu: FormMenu? = d?.actions?.filter { it !in primary }?.takeIf { it.isNotEmpty() }?.let { rest ->
+        { close ->
+            for (a in rest) {
+                androidx.compose.material3.DropdownMenuItem(
+                    enabled = !busy,
+                    text = { Text(a.label + if (a == TaskAction.CANCEL || a == TaskAction.WAIVE) "…" else "", color = if (a.dangerous) MaterialTheme.colorScheme.error else androidx.compose.ui.graphics.Color.Unspecified) },
+                    onClick = { close(); act(a) },
+                )
             }
-        },
-    ) {
+        }
+    }
+    val body: @Composable () -> Unit = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (d == null) {
                     Text("Загружаю…")
                     return@Column
                 }
                 // Вывод модели — только в чате сессии (D-62): переход туда — первым.
-                d.lastSession?.let { s -> androidx.compose.material3.Button(onClick = { onSession(s.value) }, Modifier.fillMaxWidth()) { Text("Открыть чат") } }
+                d.lastSession?.takeIf { it.value != shownSession }?.let { s -> androidx.compose.material3.Button(onClick = { onSession(s.value) }, Modifier.fillMaxWidth()) { Text("Открыть чат") } }
                 // Слово, а не идентификатор (D-88, U-3): человек читает экран, а не журнал событий.
                 Text("${Words.task(d.state)}${if (d.held) " · приостановлена" else ""} · приоритет ${Words.priority(d.priority)}", fontWeight = FontWeight.Bold)
                 // Цель длиннее четырёх строк — с многоточием и раскрытием нажатием (A-20).
@@ -175,6 +185,7 @@ fun TaskSheet(model: DemoModel, task: TaskId, onSession: (String) -> Unit, onDon
                 ChangesSection(model, task)
             }
     }
+    if (embedded) SidePanel(onDone, title, modifier, menu = menu, content = body) else FullScreenDialog(onDone, title, menu = menu, content = body)
     // Редакторы — своим окном, а не вставкой между кнопками (AI:A-9).
     val dd = detail
     editor?.takeIf { dd != null }?.let { a ->
