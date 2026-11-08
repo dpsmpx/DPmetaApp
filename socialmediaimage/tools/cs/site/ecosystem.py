@@ -143,7 +143,7 @@ def page_main(data: dict, base_path: str, as_of_text: str, path_href: str | None
         '<p class="lead">Система, которую я строю: проекты по слоям и потоки работы между ними. '
         "Числа — из истории git на дату среза; цвет потока — кто его движет: мои решения, "
         "работа сессий ИИ, проверки, данные. Нажмите проект — появятся его роль, стадия и коммиты по дням.</p>"
-        f'<div class="dpvis-host" data-dpvis data-embed="site" data-theme="dark" data-src="{E(src)}">'
+        f'<div class="dpvis-host" data-dpvis data-embed="site" data-theme="auto" data-src="{E(src)}">'
         '<p class="muted">Схема загружается…</p></div>'
         "<noscript><p>Схема интерактивная и работает на JavaScript. Ниже — та же система списком.</p></noscript>"
         f'<section class="eco-static" aria-label="Система списком"><h2>Система по слоям</h2>{static_summary(data)}'

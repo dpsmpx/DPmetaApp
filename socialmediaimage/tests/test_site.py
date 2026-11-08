@@ -299,6 +299,7 @@ class Ecosystem(unittest.TestCase):
         self.assertIn('<script src="/ecosystem/dpvis.js" defer></script>', page)
         self.assertIn('<link rel="stylesheet" href="/ecosystem/dpvis.css">', page)
         self.assertIn('data-src="/ecosystem/dpvis-data.json"', page)
+        self.assertIn('data-theme="auto"', page, "схема — в теме системы, как сайт (Д49)")
         self.assertIn("Система по слоям", page, "без JavaScript — та же система списком")
         for name in ("dpvis.js", "dpvis.css", "dpvis-data.json"):
             self.assertTrue((self.out / "ecosystem" / name).is_file(), name)

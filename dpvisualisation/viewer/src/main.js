@@ -10,6 +10,23 @@ import { flowPanel, nodePanel } from "./panel.js";
 import { reconView, tablesView } from "./tables.js";
 
 const THEME_KEY = "dpvis-theme";
+const LIGHT_QUERY = "(prefers-color-scheme: light)";
+
+/**
+ * Тема схемы: выбор человека кнопкой (`stored`) — главный; иначе — тема
+ * страницы-хозяина (`host`); `auto` — настройка системы (`prefersLight`),
+ * так её задаёт сайт автора (SocialMediaImage:Д49). Неизвестное — тёмная.
+ */
+export function themeFor(stored, host, prefersLight) {
+  const t = stored || host;
+  if (t === "light" || t === "dark") return t;
+  if (t === "auto") return prefersLight ? "light" : "dark";
+  return "dark";
+}
+
+function prefersLight() {
+  return typeof matchMedia === "function" && matchMedia(LIGHT_QUERY).matches;
+}
 
 function storeGet(k) {
   try {
@@ -70,7 +87,16 @@ export class Viewer {
   buildShell() {
     const r = this.root;
     r.classList.add("dpvis");
-    r.dataset.theme = storeGet(THEME_KEY) || r.dataset.theme || "dark";
+    const host = r.dataset.theme;
+    r.dataset.theme = themeFor(storeGet(THEME_KEY), host, prefersLight());
+    // «auto» без выбора человека — вслед за настройкой системы, без перезагрузки страницы.
+    if (host === "auto" && typeof matchMedia === "function") {
+      matchMedia(LIGHT_QUERY).addEventListener("change", () => {
+        if (storeGet(THEME_KEY)) return;
+        r.dataset.theme = themeFor(null, "auto", prefersLight());
+        this.updateThemeBtn();
+      });
+    }
     r.replaceChildren();
     this.el = {};
     const e = this.el;

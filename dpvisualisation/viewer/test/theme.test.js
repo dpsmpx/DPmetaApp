@@ -4,6 +4,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { themeFor } from "../src/main.js";
 
 const css = readFileSync(new URL("../style.css", import.meta.url), "utf8");
 
@@ -60,4 +61,14 @@ test("цвета — только в переменных двух блоков 
 
 test("без анимаций (D-16)", () => {
   assert.doesNotMatch(css, /@keyframes|\banimation\s*:|\btransition\s*:/);
+});
+
+test("тема: выбор кнопкой, иначе тема хозяина; «auto» — настройка системы (SocialMediaImage:Д49)", () => {
+  assert.equal(themeFor(null, "auto", true), "light");
+  assert.equal(themeFor(null, "auto", false), "dark");
+  assert.equal(themeFor("dark", "auto", true), "dark", "выбор человека главнее системы");
+  assert.equal(themeFor("light", "dark", false), "light");
+  assert.equal(themeFor(null, "light", false), "light", "явная тема хозяина — без системы");
+  assert.equal(themeFor(null, undefined, true), "dark", "без темы — тёмная, как раньше");
+  assert.equal(themeFor("blue", "auto", true), "dark", "неизвестное — тёмная");
 });
