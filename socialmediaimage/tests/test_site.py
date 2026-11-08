@@ -169,6 +169,21 @@ class Themes(unittest.TestCase):
         self.assertIn('<meta name="theme-color" content="#111214" media="(prefers-color-scheme: dark)">', home)
         self.assertIn('<meta name="theme-color" content="#F7F7F5" media="(prefers-color-scheme: light)">', home)
 
+    def test_figure_rows_hold_contrast_in_both_themes(self):
+        """Ряды и линии фигур (--c-*, кроме тепловой шкалы) — не ниже 3 к фону и панелям в обеих темах (Д49, WCAG 1.4.11)."""
+        from tools.cs.visual import contrast, luminance
+        css = (ROOT / "website/static/style.css").read_text(encoding="utf-8")
+        light_at = css.index("@media (prefers-color-scheme: light)")
+        rows = lambda text: dict(re.findall(r"--c-(gald|core|bg|deferred|periphery|hidden):\s*(#[0-9a-fA-F]{6})", text))
+        dark, light = rows(css[:light_at]), rows(css[light_at:css.index("}", light_at)])
+        self.assertEqual(set(dark), set(light), "у каждого ряда — значение в обеих темах")
+        tokens = json.loads((ROOT / "assets/brand/tokens.json").read_text(encoding="utf-8"))
+        for name, vals, pal in (("тёмная", dark, tokens["color"]), ("светлая", light, tokens["site_light"]["color"])):
+            for row, hex_ in vals.items():
+                for bg in ("ink", "graphite"):
+                    k = contrast(luminance(hex_), luminance(pal[bg]["hex"]))
+                    self.assertGreaterEqual(k, 3.0, f"{name}: --c-{row} к {bg} — {k:.2f}")
+
     def test_contrast_rule(self):
         tokens = json.loads((ROOT / "assets/brand/tokens.json").read_text(encoding="utf-8"))
         self.assertEqual(theme_contrast(tokens), [], "токены автора держат контраст в обеих темах")

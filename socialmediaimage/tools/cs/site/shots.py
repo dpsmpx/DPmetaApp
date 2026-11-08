@@ -7,8 +7,9 @@
   ошибка — прокрутка вбок; элемент за краем экрана; сломанное изображение;
            нарушение CSP (сервер отдаёт заголовки сайта, П2-12); ошибка в
            консоли; несработавший запрос; не загрузился IBM Plex Sans;
-           цель касания меньше 24 px на телефоне; пункт меню меньше
-           44 × 44 px (Д49); не один `h1`
+           цель касания меньше 24 px на телефоне; пункт меню шапки меньше
+           44 × 44 px (Д49); шапка разной высоты на страницах одной ширины
+           компьютера (меню перенеслось — шапка прыгает); не один `h1`
 
 Каждая страница — в обеих темах сайта (настройка системы, Д49).
   предупреждение — текст мельче 12 px
@@ -103,6 +104,15 @@ def findings(results: list[dict], expect_404: set[str] = frozenset({"/404.html",
             E(f"пункт меню меньше 44 × 44 px: {tgt}")
         for s in m["smallText"]:
             out.append(Finding("warn", f"{where}: текст мельче 12 px — {s}"))
+    # Шапка одной высоты на всех страницах ширины компьютера: иначе меню перенеслось и при переходе прыгает (Д49).
+    heights: dict[tuple, dict[int, list[str]]] = {}
+    for m in results:
+        if m["width"] > MOBILE_MAX and m.get("headerHeight") is not None:
+            heights.setdefault((m["width"], m.get("theme", "dark")), {}).setdefault(m["headerHeight"], []).append(m["path"])
+    for (width, theme), by in sorted(heights.items()):
+        if max(by) - min(by) > 1:
+            parts = "; ".join(f"{h} px — {', '.join(sorted(ps)[:3])}" for h, ps in sorted(by.items()))
+            out.append(Finding("error", f"@{width}{'' if theme == 'dark' else ' ' + theme}: шапка разной высоты ({parts}) — меню переносится"))
     return out
 
 

@@ -14,8 +14,8 @@
 
 Происхождение: DPvisualisation 1.0.0, коммит `3d17055` (ветка
 `claude/tender-hypatia-mbrwf9`); 8.11.2026 — `dpvis.js` пересобран в
-DPmetaApp (`dpvisualisation/`, ветка `ccr-9d427584-116aer`): тема хозяина
-`auto` — настройка системы (SocialMediaImage:Д49); стили и данные — те же.
+DPmetaApp из `dpvisualisation/` (DPmetaApp PR #181): тема хозяина `auto`
+— настройка системы (SocialMediaImage:Д49); стили и данные — те же.
 Срез — 25.10.2026 (10:18 UTC), по полным клонам
 репозиториев текущей системы: архива — ранних проектов до репозитория
 игры и убранных автором — в схеме нет (DPvisualisation D-20). Схема без

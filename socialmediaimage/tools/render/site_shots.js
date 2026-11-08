@@ -87,9 +87,9 @@ function measure() {
     const r = el.getBoundingClientRect();
     if (r.height < 24 || r.width < 24) targets.push(`${label(el)}: ${Math.round(r.width)}×${Math.round(r.height)}`);
   }
-  // Пункты меню — не меньше 44 × 44 (WCAG 2.5.5, Д49), на любой ширине.
+  // Пункты меню шапки — не меньше 44 × 44 (WCAG 2.5.5, Д49), на любой ширине; оглавление и «крошки» — 24.
   const nav = [];
-  for (const el of document.querySelectorAll('nav a')) {
+  for (const el of document.querySelectorAll('.site-header nav a')) {
     if (!visible(el)) continue;
     const r = el.getBoundingClientRect();
     if (r.height < 43.5 || r.width < 43.5) nav.push(`${label(el)}: ${Math.round(r.width)}×${Math.round(r.height)}`);
@@ -107,6 +107,7 @@ function measure() {
     smallText: small,
     smallTargets: targets.slice(0, 8),
     navTargets: nav.slice(0, 8),
+    headerHeight: (() => { const hd = document.querySelector('.site-header'); return hd ? Math.round(hd.getBoundingClientRect().height) : null; })(),
     h1: document.querySelectorAll('h1').length,
     csp: (window.__cspViolations || []).slice(0, 5),
   };

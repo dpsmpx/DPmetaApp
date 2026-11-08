@@ -8,12 +8,13 @@
 
 * { box-sizing: border-box; }
 /* Цвета фигур — не токены бренда: группы, состояния, тепловая шкала, «Путь». Тёмная тема — основная (Д9);
-   светлая — по настройке системы (Д49): ряды и линии не ниже 3 к фону, шкала — от светлого к тёмному. */
+   светлая — по настройке системы (Д49): ряды и линии не ниже 3 к фону и панелям (тест), шкала — от светлого
+   к тёмному, шаг 1 отличим от нуля (≈ 1,5, как в тёмной); шкала ниже 3 — с таблицей значений у каждой фигуры. */
 :root { --c-gald: #c98500; --c-core: #3987e5; --c-bg: #d55181; --c-deferred: #9085e9; --c-periphery: #2a9d8f; --c-hidden: #6b6e75;
   --c-h1: #184f95; --c-h2: #256abf; --c-h3: #3987e5; --c-h4: #6da7ec; --c-h5: #9ec5f4; --c-h6: #cde2fb; }
 @media (prefers-color-scheme: light) {
   :root { --c-gald: #8a5d00; --c-core: #2f74c9; --c-bg: #c2416f; --c-deferred: #6e62d6; --c-periphery: #1d7f73; --c-hidden: #6b6e75;
-    --c-h1: #cde2fb; --c-h2: #9ec5f4; --c-h3: #6da7ec; --c-h4: #3987e5; --c-h5: #256abf; --c-h6: #184f95; }
+    --c-h1: #8fbcef; --c-h2: #5f9fe6; --c-h3: #3a83d6; --c-h4: #2a6bbd; --c-h5: #1f5499; --c-h6: #163d70; }
 }
 
 html { background: var(--ink); color: var(--paper); }
@@ -33,11 +34,13 @@ main { max-width: 860px; margin: 0 auto; padding: 24px 20px 64px; }
   align-items: baseline; justify-content: space-between; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
 .brand { font-weight: 700; font-size: 20px; text-decoration: none; }
 .brand .dot { color: var(--human); }
-/* пункты меню не рвутся по словам; цель касания — не меньше 44 × 44 px (WCAG 2.2, 2.5.5; Д49) */
+/* пункты меню не рвутся по словам; высота цели касания ≥ 24 px (WCAG 2.2, 2.5.8) — и в оглавлении, и в «крошках» */
 nav { display: flex; flex-wrap: wrap; align-items: center; column-gap: 18px; }
-nav a { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; min-width: 44px;
-  white-space: nowrap; text-decoration: none; color: var(--mist); }
+nav a { display: inline-block; padding: 8px 0; white-space: nowrap; text-decoration: none; color: var(--mist); }
 nav a.current, nav a:hover { color: var(--paper); }
+/* меню шапки — цели не меньше 44 × 44 px (2.5.5, Д49); зазор 16 px — меню с «EN» в одну строку с брендом на компьютере */
+.site-header nav { column-gap: 16px; }
+.site-header nav a { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; min-width: 44px; padding: 0; }
 nav .lang { margin-left: 4px; padding: 0 10px; border: 1px solid var(--line); border-radius: 4px; }
 
 .banner { background: var(--graphite); border-bottom: 2px solid var(--human); color: var(--paper);

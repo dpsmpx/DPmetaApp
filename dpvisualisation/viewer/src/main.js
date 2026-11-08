@@ -80,6 +80,7 @@ export class Viewer {
     this.view = null;
     this.vis = null;
     this.playTimer = 0;
+    this.themeChosen = false;
     this.buildShell();
   }
 
@@ -92,7 +93,8 @@ export class Viewer {
     // «auto» без выбора человека — вслед за настройкой системы, без перезагрузки страницы.
     if (host === "auto" && typeof matchMedia === "function") {
       matchMedia(LIGHT_QUERY).addEventListener("change", () => {
-        if (storeGet(THEME_KEY)) return;
+        // Выбор кнопкой — и в памяти: без хранилища браузера (приватный режим) система его не перебивает.
+        if (this.themeChosen || storeGet(THEME_KEY)) return;
         r.dataset.theme = themeFor(null, "auto", prefersLight());
         this.updateThemeBtn();
       });
@@ -521,6 +523,7 @@ export class Viewer {
   toggleTheme() {
     const t = this.root.dataset.theme === "dark" ? "light" : "dark";
     this.root.dataset.theme = t;
+    this.themeChosen = true;
     storeSet(THEME_KEY, t);
     this.updateThemeBtn();
   }
