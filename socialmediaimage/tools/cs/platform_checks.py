@@ -230,7 +230,7 @@ def _site_findings(rep, out: Path, r: Report, label: str) -> None:
         rel = page.relative_to(out).as_posix()
         eco = (rep.eco_path or "").strip("/")
         allow = (f"/{eco}/dpvis.js",) if eco and rel.startswith(f"{eco}/") else ()
-        for msg in page_a11y(text) + page_csp(text, allow):
+        for msg in page_a11y(text) + page_csp(text, allow) + page_images(text):
             r.error(f"{label}: {page.relative_to(out)}: {msg}")
     headers = out / ".htaccess" if (out / ".htaccess").is_file() else out / "_headers"
     if not headers.is_file() or "Content-Security-Policy" not in headers.read_text(encoding="utf-8"):
@@ -256,6 +256,16 @@ def page_a11y(text: str) -> list[str]:
     for a in re.findall(r'<a\b[^>]*class="current"[^>]*>', text):
         if 'aria-current="page"' not in a:
             out.append("текущий раздел без aria-current")
+    return out
+
+
+def page_images(text: str) -> list[str]:
+    """Изображение страницы — с width и height (аудит сайта, S-02): без них место под картинку
+    не занято до загрузки, и текст под ней прыгает (CLS)."""
+    out = []
+    for img in re.findall(r"<img\b[^>]*>", text):
+        if not (re.search(r'\swidth="\d+"', img) and re.search(r'\sheight="\d+"', img)):
+            out.append(f"изображение без width и height: {img[:80]}")
     return out
 
 
