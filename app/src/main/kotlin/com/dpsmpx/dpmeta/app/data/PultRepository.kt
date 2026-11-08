@@ -229,7 +229,12 @@ class PultRepository(
             }
             facts[e.name] = com.dpsmpx.dpmeta.formats.DpaiManifest.Clone(main, last?.first, last?.second, docs)
         }
-        val queue = (clones.fileAt(host.toString(), sha, com.dpsmpx.dpmeta.formats.DpaiManifest.QUEUE) as? Outcome.Success)?.value?.toString(Charsets.UTF_8)
+        // Очередь не читается (подложенный объект, удалённые паки) — отказ всего манифеста, а не тихое «предложений нет»:
+        // окно и журнал прохода политики это покажут (T19). Очереди нет в основной ветке — предложений нет.
+        val queue = when (val q = clones.fileAt(host.toString(), sha, com.dpsmpx.dpmeta.formats.DpaiManifest.QUEUE)) {
+            is Outcome.Failure -> return Outcome.failure(DiagCode.ECOSYSTEM_UNAVAILABLE, "очередь DPmeta не читается из клона DPmetaApp: ${q.diagnostics.first().message}")
+            is Outcome.Success -> q.value?.toString(Charsets.UTF_8)
+        }
         return com.dpsmpx.dpmeta.formats.DpaiManifest.build(reg, facts, queue.orEmpty())
     }
 
