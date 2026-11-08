@@ -556,11 +556,23 @@ open class PultActivity : ComponentActivity() {
         view.value = view.value.copy(busy = true, statusDetails = "", status = "")
         val note = syncNote
         syncNote = null
+        val app = applicationContext
+        val selected = clonesSelected()
         pool.execute {
+            // Новый клон — под службой переднего плана (D-78): прошивка не выгрузит процесс на середине клона.
+            // Окно уже в фоне или система отказала — клонирование идёт в пуле, как прежде.
+            val service = selected.isNotEmpty() && runCatching { repo.missingClones(selected) }.getOrDefault(false) && CloneService.start(app)
             // Сбой внутри синхронизации — отказ на экране, а не падение процесса со службами «AI» (D-59).
-            // Ход (UX-10) — в заголовок, из потока синхронизации на главный.
-            val progress: (String) -> Unit = { p -> runOnUiThread { if (view.value.busy) view.value = view.value.copy(progress = p) } }
-            val r = runCatching { repo.sync(token, clonesSelected(), progress) }.getOrElse { Outcome.failure(DiagCode.INTERNAL_ERROR, "синхронизация прервана: ${it.javaClass.simpleName}") }
+            // Ход (UX-10) — в заголовок, из потока синхронизации на главный; при службе — и в её уведомление.
+            val progress: (String) -> Unit = { p ->
+                if (service) CloneService.progress(app, p)
+                runOnUiThread { if (view.value.busy) view.value = view.value.copy(progress = p) }
+            }
+            val r = try {
+                runCatching { repo.sync(token, selected, progress) }.getOrElse { Outcome.failure(DiagCode.INTERNAL_ERROR, "синхронизация прервана: ${it.javaClass.simpleName}") }
+            } finally {
+                if (service) CloneService.stop(app)
+            }
             val state = (repo.state() as? Outcome.Success)?.value
             val feed = (repo.feed() as? Outcome.Success)?.value.orEmpty()
             runOnUiThread {

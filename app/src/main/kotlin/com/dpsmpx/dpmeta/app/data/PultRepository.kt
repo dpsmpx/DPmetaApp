@@ -317,6 +317,16 @@ class PultRepository(
      */
     fun cancelClones() = cancel.set(true)
 
+    /**
+     * Есть ли среди отмеченных [selected] клон, которого ещё нет на телефоне:
+     * такая синхронизация клонирует — и идёт под службой (D-78). Читает диск —
+     * не на главном потоке.
+     */
+    fun missingClones(selected: Set<String>): Boolean {
+        val clones = com.dpsmpx.dpmeta.git.Clones(clonesDir, com.dpsmpx.dpmeta.git.Clones.allowList())
+        return selected.any { !java.io.File(clones.dir(cloneKey(it)), ".git").isDirectory }
+    }
+
     /** [selected] — отмеченные автором клоны (D-70), `владелец/имя`; остальные — через REST. */
     private fun syncNow(token: Secret, selected: Set<String>, progress: (String) -> Unit): Outcome<SyncReport> {
         val started = clock.monotonicNanos()
@@ -462,5 +472,8 @@ class PultRepository(
 
         /** «Отменить» клоны текущей синхронизации (UX-10). */
         private val cancel = java.util.concurrent.atomic.AtomicBoolean(false)
+
+        /** «Отменить» из уведомления службы клонов (D-78): та же отмена, что на экране. */
+        fun cancelRunningClones() = cancel.set(true)
     }
 }
