@@ -97,6 +97,86 @@ class ClonesTest {
         assertEquals(2L, (c.size("Alpha", "main", "docs/a.md") as Outcome.Success).value)
     }
 
+    /** Последний коммит каталога (DP_AI_Orcestrator:D-114): у подсистемы — менявший её каталог, а не весь репозиторий. */
+    @Test
+    fun lastCommitOfRepositoryAndOfADirectory() {
+        val uri = remote()
+        Git.open(work).use { git ->
+            commit(git, "sub/a.md", "a\n", "Подсистема")
+            commit(git, "other.md", "o\n", "Другое")
+            git.push().setRemote("origin").add("main").call()
+        }
+        val c = clones()
+        c.sync("Alpha", uri, null, build)
+        val all = (c.last("Alpha", "main") as Outcome.Success).value!!
+        val sub = (c.last("Alpha", "main", "sub") as Outcome.Success).value!!
+        assertTrue(all.first != sub.first, "у каталога — свой последний коммит")
+        assertEquals(7, sub.first.length)
+        assertTrue(Regex("\\d{4}-\\d{2}-\\d{2}").matches(sub.second), sub.second)
+        assertNull((c.last("Alpha", "main", "нет") as Outcome.Success).value, "каталог без коммитов — null")
+    }
+
+    /**
+     * Голова от GitHub (DP_AI_Orcestrator:D-114, T19): `mainSha` — ответ
+     * `ls-remote`; подменённая в клоне ссылка `origin/main` не меняет файл,
+     * прочитанный на этом SHA.
+     */
+    @Test
+    fun mainShaIsGitHubsAndFileAtIgnoresTamperedRefs() {
+        val uri = remote()
+        val c = clones()
+        val sha = (c.sync("Alpha", uri, null, build) as Outcome.Success).value.mainSha!!
+        val github = Git.open(remoteDir).use { it.repository.resolve("refs/heads/main").name }
+        assertEquals(github, sha)
+        // Гость клона пишет свой коммит и переставляет origin/main на него.
+        Git.open(c.dir("Alpha")).use { git ->
+            commit(git, "TODO.md", "- [ ] подмена\n", "Подмена")
+            git.repository.updateRef("refs/remotes/origin/main").apply { setNewObjectId(git.repository.resolve("HEAD")); isForceUpdate = true }.forceUpdate()
+        }
+        assertEquals("- [ ] подмена\n", String((c.file("Alpha", "main", "TODO.md") as Outcome.Success).value!!), "по ссылке — подмена")
+        assertEquals("- [ ] пункт\n", String((c.fileAt("Alpha", sha, "TODO.md") as Outcome.Success).value!!), "по SHA от GitHub — прежнее")
+        assertNull((c.fileAt("Alpha", sha, "нет.md") as Outcome.Success).value)
+        assertTrue(c.fileAt("Alpha", "0".repeat(40), "TODO.md") is Outcome.Failure, "нет коммита — отказ")
+        assertTrue(c.fileAt("Alpha", "main", "TODO.md") is Outcome.Failure, "не SHA — отказ")
+        // Повторная синхронизация: снова голова GitHub, и ссылка возвращена.
+        assertEquals(github, (c.sync("Alpha", uri, null, build) as Outcome.Success).value.mainSha)
+    }
+
+    /**
+     * Подложенный объект (T19): JGit хеш при чтении не сверяет — гость пишет
+     * loose-объект под доверенный id блоба и убирает паки. `fileAt`
+     * пересчитывает id каждого объекта: подмена — отказ, без подмены — то же
+     * содержимое.
+     */
+    @Test
+    fun fileAtRefusesAForgedObjectUnderATrustedId() {
+        val uri = remote()
+        val c = clones()
+        val sha = (c.sync("Alpha", uri, null, build) as Outcome.Success).value.mainSha!!
+        val git = File(c.dir("Alpha"), ".git")
+        val (commit, tree, blob) = Git.open(c.dir("Alpha")).use { g ->
+            val r = g.repository
+            val cm = r.parseCommit(org.eclipse.jgit.lib.ObjectId.fromString(sha))
+            val b = org.eclipse.jgit.treewalk.TreeWalk.forPath(r, "TODO.md", cm.tree)!!.use { it.getObjectId(0) }
+            Triple(cm.id to r.open(cm.id).bytes, cm.tree.id to r.open(cm.tree.id).bytes, b)
+        }
+        fun loose(id: org.eclipse.jgit.lib.ObjectId, type: String, data: ByteArray) {
+            val f = File(git, "objects/${id.name.substring(0, 2)}/${id.name.substring(2)}").apply { parentFile.mkdirs(); delete() }
+            java.util.zip.DeflaterOutputStream(f.outputStream()).use { it.write("$type ${data.size}\u0000".toByteArray() + data) }
+        }
+        // Паки — прочь, объекты — по одному: коммит и дерево настоящие.
+        File(git, "objects/pack").listFiles()?.forEach { it.delete() }
+        loose(commit.first, "commit", commit.second)
+        loose(tree.first, "tree", tree.second)
+        loose(blob, "blob", "- [ ] пункт\n".toByteArray())
+        assertEquals("- [ ] пункт\n", String((c.fileAt("Alpha", sha, "TODO.md") as Outcome.Success).value!!), "без подмены — то же")
+        loose(blob, "blob", "- [ ] подмена\n".toByteArray())
+        assertTrue(c.fileAt("Alpha", sha, "TODO.md") is Outcome.Failure, "подложенный блоб — отказ")
+        loose(blob, "blob", "- [ ] пункт\n".toByteArray())
+        loose(tree.first, "tree", tree.second.copyOf(tree.second.size - 1) + 0)
+        assertTrue(c.fileAt("Alpha", sha, "TODO.md") is Outcome.Failure, "подложенное дерево — отказ")
+    }
+
     @Test
     fun fetchUpdatesGitHubBranchesLeavesTheWorkingTreeAndDropsDeletedBranches() {
         val uri = remote()

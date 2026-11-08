@@ -166,7 +166,8 @@ fun FilesPane(onLinux: () -> Unit = {}) {
         Browser(p, onPlace = { placeKey = it.key() }) { placeKey = null }
         return
     }
-    val linux = LinuxSetup.available(context) && LinuxSetup.environment(context).installed() != null
+    // Готова ли среда — файл на диске: не в главном потоке и не на каждую перекомпозицию (AI:A-16).
+    val linux = rememberRead(Unit, initial = false) { LinuxSetup.available(context) && LinuxSetup.environment(context).installed() != null }
     LazyColumn(contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
             SwitchRow(wanted && granted, onChange = { on ->
@@ -222,31 +223,44 @@ private fun LinkCard(l: FileLink, onSync: () -> Unit, onOpen: (Kind) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val undo = LocalUndo.current
-    Card(Modifier.fillMaxWidth()) {
+    // Касание карточки — копия в Linux; на виду — «Синхронизировать»; остальное — в ⋮ со словами, что откроется (AI:A-26).
+    var menu by remember { mutableStateOf(false) }
+    Card(Modifier.fillMaxWidth().clickable(onClickLabel = "открыть копию") { onOpen(Kind.COPY) }) {
         Column(Modifier.padding(12.dp)) {
-            Text(l.title, style = MaterialTheme.typography.titleSmall)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(l.title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                androidx.compose.foundation.layout.Box {
+                    androidx.compose.material3.IconButton(onClick = { menu = true }, modifier = Modifier.semantics { contentDescription = "Ещё действия" }) {
+                        Text("⋮", style = MaterialTheme.typography.titleLarge)
+                    }
+                    androidx.compose.material3.DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        androidx.compose.material3.DropdownMenuItem(text = { Text("Открыть папку телефона") }, onClick = {
+                            menu = false
+                            onOpen(Kind.FOLDER)
+                        })
+                        androidx.compose.material3.DropdownMenuItem(text = { Text("Копия в терминале") }, onClick = {
+                            menu = false
+                            TerminalActivity.startLinux(context, GuestPaths.guestCopy(l.dir))
+                        })
+                        // Обратимое — сразу и со снэкбаром «Отменить» (AI:A-4): копия в Linux остаётся.
+                        androidx.compose.material3.DropdownMenuItem(text = { Text("Отвязать", color = MaterialTheme.colorScheme.error) }, onClick = {
+                            menu = false
+                            if (undo != null) {
+                                undo.run("link:${l.id.value}", "Папка «${l.title}» отвязана, копия осталась") { FileLinks.remove(l) }
+                            } else {
+                                scope.launch(Dispatchers.IO) { FileLinks.remove(l) }
+                            }
+                        })
+                    }
+                }
+            }
             Text(
-                "копия: ~/files/${l.dir} · " + (l.lastSync?.let { "синхронизировано ${SimpleDateFormat("d MMM HH:mm", Locale.forLanguageTag("ru")).format(Date(it))}" } ?: "не синхронизировано") +
+                "копия: ~/files/${l.dir} · " + (l.lastSync?.let { "синхронизировано ${java.time.format.DateTimeFormatter.ofPattern("d MMM HH:mm", Locale.forLanguageTag("ru")).withZone(com.dpsmpx.dpai.core.clock.DisplayZone.current).format(java.time.Instant.ofEpochMilli(it))}" } ?: "не синхронизировано") +
                     " · файлов: ${l.base.size}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Row {
-                TextButton(onClick = onSync) { Text("Синхронизировать") }
-                TextButton(onClick = { TerminalActivity.startLinux(context, GuestPaths.guestCopy(l.dir)) }) { Text("В терминале") }
-            }
-            Row {
-                TextButton(onClick = { onOpen(Kind.COPY) }) { Text("Копия") }
-                TextButton(onClick = { onOpen(Kind.FOLDER) }) { Text("Папка") }
-                // Обратимое — сразу и со снэкбаром «Отменить» (AI:A-4): копия в Linux остаётся.
-                TextButton(onClick = {
-                    if (undo != null) {
-                        undo.run("link:${l.id.value}", "Папка «${l.title}» отвязана, копия осталась") { FileLinks.remove(l) }
-                    } else {
-                        scope.launch(Dispatchers.IO) { FileLinks.remove(l) }
-                    }
-                }) { Text("Отвязать", color = MaterialTheme.colorScheme.error) }
-            }
+            TextButton(onClick = onSync) { Text("Синхронизировать") }
         }
     }
 }
@@ -517,13 +531,25 @@ private fun FileView(p: Place, path: String, onClose: () -> Unit) {
                 textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
             )
             bitmap != null -> Image(bitmap!!, FileNames.name(path), Modifier.fillMaxSize().padding(8.dp))
-            text != null -> SelectionContainer(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)) {
+            text != null && text.orEmpty().length <= WHOLE_TEXT_MAX -> SelectionContainer(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)) {
                 Text(text.orEmpty(), style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace))
+            }
+            // Большой файл (до 2 МиБ) — по строкам (AI:A-25): одним Text он раскладывался бы целиком на каждом кадре.
+            text != null -> {
+                val lines = remember(text) { text.orEmpty().lines() }
+                SelectionContainer(Modifier.fillMaxSize()) {
+                    LazyColumn(contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp)) {
+                        items(lines.size, key = { it }) { i -> Text(lines[i], style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)) }
+                    }
+                }
             }
             error == null -> CircularProgressIndicator(Modifier.padding(12.dp))
         }
     }
 }
+
+/** Текст файла до стольких знаков — одним блоком (выделение через строки); больше — по строкам. */
+private const val WHOLE_TEXT_MAX = 64 * 1024
 
 /** Картинка больше этого не читается в память целиком. */
 private const val IMAGE_MAX: Long = 32L * 1024 * 1024

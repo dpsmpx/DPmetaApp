@@ -68,6 +68,30 @@ object CharWidth {
         else -> 1
     }
 
+    /** Региональный индикатор (буква флага): пара — один флаг в две ячейки (терминал:A-17). */
+    fun regional(cp: Int): Boolean = cp in 0x1F1E6..0x1F1FF
+
+    /**
+     * Знак, который VS16 (U+FE0F) делает эмодзи шириной 2 (терминал:A-17):
+     * символы и пиктограммы, цифры и `#`, `*` (клавиши-эмодзи), ©, ®.
+     */
+    fun emojiCapable(cp: Int): Boolean =
+        cp in 0x2000..0x2BFF || cp in 0x1F000..0x1FAFF || cp in 0x30..0x39 || cp == 0x23 || cp == 0x2A ||
+            cp == 0xA9 || cp == 0xAE || cp == 0x3030 || cp == 0x303D || cp == 0x3297 || cp == 0x3299
+
+    /**
+     * Ширина кластера — знака [cp] с присоединёнными [tail] (терминал:A-17):
+     * VS16 после знака с видом эмодзи, ZWJ-последовательность и флаг из двух
+     * индикаторов — две ячейки, как у программ (`wcwidth` современных libc).
+     */
+    fun cluster(cp: Int, tail: String?): Int {
+        val base = of(cp)
+        if (base == 2 || tail.isNullOrEmpty()) return base
+        if (base == 1 && emojiCapable(cp) && (0xFE0F in tail.codePoints().toArray() || 0x200D in tail.codePoints().toArray())) return 2
+        if (regional(cp) && tail.codePoints().anyMatch { regional(it) }) return 2
+        return base
+    }
+
     private fun ranges(vararg bounds: Int): IntArray {
         require(bounds.size % 2 == 0)
         for (i in 2 until bounds.size step 2) require(bounds[i] > bounds[i - 1]) { "диапазоны — по возрастанию: ${bounds[i].toString(16)}" }

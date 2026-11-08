@@ -21,6 +21,9 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.selection.toggleable
@@ -67,6 +70,18 @@ class Undo(private val host: SnackbarHostState, private val scope: CoroutineScop
      */
     fun say(text: String) {
         scope.launch { host.showSnackbar(text, withDismissAction = true, duration = SnackbarDuration.Short) }
+    }
+
+    /**
+     * Сделанное сразу — снэкбаром с «Отменить» (AI:A-26): нажато — [revert]
+     * в фоне. Для обратимого, у которого итог (сколько) известен только после
+     * действия: «Убрано 3 · Отменить».
+     */
+    fun revertible(message: String, revert: () -> Unit) {
+        scope.launch {
+            val r = host.showSnackbar(message, actionLabel = "Отменить", withDismissAction = true, duration = SnackbarDuration.Long)
+            if (r == SnackbarResult.ActionPerformed) withContext(Dispatchers.IO) { revert() }
+        }
     }
 
     fun run(key: String, message: String, commit: () -> Unit) {
@@ -142,7 +157,8 @@ internal fun FullScreenDialog(
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
     ) {
         androidx.compose.material3.Surface(Modifier.fillMaxSize()) {
-            androidx.compose.foundation.layout.Column(Modifier.fillMaxSize().windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.systemBars)) {
+            // Системные панели и вырез сбоку — отступом (AI:A-24).
+            androidx.compose.foundation.layout.Column(Modifier.fillMaxSize().windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing)) {
                 Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     androidx.compose.material3.IconButton(onClick = onDismissRequest, modifier = Modifier.semantics { contentDescription = "Закрыть" }) {
                         Text("×", style = MaterialTheme.typography.titleLarge)
@@ -159,7 +175,10 @@ internal fun FullScreenDialog(
                         }
                     }
                 }
-                androidx.compose.foundation.layout.Box(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp)) { content() }
+                // На широком экране — не шире CONTENT_MAX по центру (AI:A-24).
+                androidx.compose.foundation.layout.Box(
+                    Modifier.weight(1f).fillMaxWidth().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = CONTENT_MAX).fillMaxWidth().padding(horizontal = 16.dp),
+                ) { content() }
             }
         }
     }

@@ -103,7 +103,8 @@ fun ModelsPane() {
                 style = MaterialTheme.typography.bodySmall,
             )
             problem?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-            TextButton(onClick = { creating = true }) { Text("+ Профиль") }
+            // «Добавить профиль» — заметной кнопкой, а не текстом под пояснением (AI:A-26).
+            androidx.compose.material3.FilledTonalButton(onClick = { creating = true }, modifier = Modifier.padding(top = 4.dp)) { Text("Добавить профиль") }
         }
         if (profiles.isEmpty()) item { Text("Профилей нет: добавьте ключ Anthropic, OpenAI-совместимого провайдера или Gemini.", style = MaterialTheme.typography.bodySmall) }
         items(profiles, key = { "p:${it.id.value}" }) { p ->
@@ -148,7 +149,6 @@ fun ModelsPane() {
 
 @Composable
 private fun ProfileCard(p: ApiProfile, onChat: () -> Unit, onEdit: () -> Unit) {
-    var asking by remember { mutableStateOf(false) }
     val hasKey = remember(p) { ModelsStore.hasKey(p.id) }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
@@ -160,18 +160,8 @@ private fun ProfileCard(p: ApiProfile, onChat: () -> Unit, onEdit: () -> Unit) {
             )
             Row {
                 TextButton(onClick = onChat) { Text("Чат") }
+                // «Удалить» — в окне «Изменить», а не рядом с «Чат» (AI:A-26).
                 TextButton(onClick = onEdit) { Text("Изменить") }
-                // Необратимое — окном (AI:A-4): ключ из Keystore и разговоры профиля не вернуть.
-                TextButton(onClick = { asking = true }) { Text("Удалить…", color = MaterialTheme.colorScheme.error) }
-            }
-            if (asking) {
-                ConfirmDialog(
-                    "Удалить профиль «${p.name}»?",
-                    "Ключ API сотрётся с телефона, разговоры профиля удалятся. Вернуть их нельзя; ключ у провайдера останется действующим.",
-                    "Удалить",
-                    onConfirm = { asking = false; ModelsStore.deleteProfile(p.id) },
-                    onDismiss = { asking = false },
-                )
             }
         }
     }
@@ -222,6 +212,20 @@ private fun ProfileDialog(existing: ApiProfile?, onDone: () -> Unit) {
     var status by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     val id = remember { existing?.id ?: ModelsStore.newProfileId() }
+    var asking by remember { mutableStateOf(false) }
+    if (asking && existing != null) {
+        ConfirmDialog(
+            "Удалить профиль «${existing.name}»?",
+            "Ключ API сотрётся с телефона, разговоры профиля удалятся. Вернуть их нельзя; ключ у провайдера останется действующим.",
+            "Удалить",
+            onConfirm = {
+                asking = false
+                ModelsStore.deleteProfile(existing.id)
+                onDone()
+            },
+            onDismiss = { asking = false },
+        )
+    }
     val host = runCatching { URI(baseUrl.trim()).host?.lowercase() }.getOrNull()
     val ownHost = kind == ProviderKind.OPENAI_COMPATIBLE && host != null && host !in ProviderHosts.BUILT_IN
 
@@ -331,7 +335,13 @@ private fun ProfileDialog(existing: ApiProfile?, onDone: () -> Unit) {
                 }
             }) { Text("Сохранить") }
         },
-        dismissButton = { TextButton(onClick = onDone) { Text("Отмена") } },
+        dismissButton = {
+            Row {
+                // Необратимое — окном (AI:A-4): ключ из Keystore и разговоры профиля не вернуть.
+                if (existing != null) TextButton(onClick = { asking = true }) { Text("Удалить…", color = MaterialTheme.colorScheme.error) }
+                TextButton(onClick = onDone) { Text("Отмена") }
+            }
+        },
     )
 }
 
@@ -376,7 +386,8 @@ private fun ChatPane(c: Conversation, p: ApiProfile?, live: ModelsStore.Running?
         }
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = list, contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (c.entries.isEmpty() && live == null) item { Text("Напишите вопрос — ответит ${p?.model ?: "модель"}.", style = MaterialTheme.typography.bodySmall) }
-            items(c.entries.size) { i -> EntryView(c.entries[i]) }
+            // Ответы только дописываются в конец: ключ — номер (AI:A-25).
+            items(c.entries.size, key = { it }) { i -> EntryView(c.entries[i]) }
             live?.let { r -> item { EntryView(ChatEntry(ChatRole.ASSISTANT, r.text.ifEmpty { "…" }, p?.model), streaming = true) } }
         }
         note?.let { Text(it, Modifier.padding(horizontal = 12.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
@@ -418,7 +429,10 @@ private fun EntryView(e: ChatEntry, streaming: Boolean = false) {
         )
         SelectionContainer {
             if (e.role == ChatRole.ASSISTANT && !streaming) {
-                Text(annotated(Markdown.render(e.text), code, link), style = MaterialTheme.typography.bodyMedium)
+                // Разбор Markdown — один раз на текст, а не на каждую перекомпозицию (AI:A-25).
+                val tap = rememberLinkTap()
+                val shown = remember(e.text, code, link, tap) { annotated(Markdown.render(e.text), code, link, tap) }
+                Text(shown, style = MaterialTheme.typography.bodyMedium)
             } else {
                 Text(e.text, style = MaterialTheme.typography.bodyMedium)
             }

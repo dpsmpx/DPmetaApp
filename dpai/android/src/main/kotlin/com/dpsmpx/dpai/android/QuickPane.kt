@@ -146,7 +146,13 @@ fun ContextDialog(model: DemoModel, task: TaskId, onDone: () -> Unit) {
                                 Text("Следующее действие", style = MaterialTheme.typography.labelSmall)
                                 Text(it, style = MaterialTheme.typography.bodySmall)
                             }
-                            Text(v.hash, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                            // Хеш контекста — не для чтения человеком (AI:A-26): под «Подробнее».
+                            var hashShown by remember { mutableStateOf(false) }
+                            if (hashShown) {
+                                Text(v.hash, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                            } else {
+                                TextButton(onClick = { hashShown = true }) { Text("Подробнее", style = MaterialTheme.typography.labelSmall) }
+                            }
                             Text("Источники (${v.sources.size})", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 6.dp))
                         }
                     }

@@ -76,8 +76,8 @@ object EcosystemAuto {
         }
         if (policy.expired(Clock.SYSTEM.now())) return "Срок политики истёк — задачи не ставятся"
         val project = EcosystemChoice.project(context) ?: return "Проект контура не выбран — задачи не ставятся".also { log.warn(TAG, it) }
-        val uri = EcosystemChoice.manifest(context) ?: return "Манифест не выбран — задачи не ставятся".also { log.warn(TAG, it) }
-        val projects = when (val m = readManifest(context, uri)) {
+        // Манифест — из выбранного источника (D-114): реестр приложения или файл.
+        val projects = when (val m = EcosystemChoice.load(context)) {
             is Outcome.Failure -> return "Манифест не читается: ${m.errors.firstOrNull()?.message}".also { log.warn(TAG, it) }
             is Outcome.Success -> m.value
         }

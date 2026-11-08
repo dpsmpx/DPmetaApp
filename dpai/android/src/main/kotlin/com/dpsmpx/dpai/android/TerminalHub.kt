@@ -49,8 +49,20 @@ object TerminalHub {
      * Вкладка: к target по SSH ([target]) или к Linux-среде в приложении
      * ([target] — `null`, D-75, шаг 5).
      */
-    class Tab internal constructor(val id: Int, val target: TargetEntry?, val command: List<String>, val label: String) : TerminalListener {
+    class Tab internal constructor(val id: Int, val target: TargetEntry?, val command: List<String>, label: String) : TerminalListener {
         val linux: Boolean get() = target == null
+
+        /** Записи программы в буфер обмена (OSC 52) — без вопроса до закрытия вкладки (терминал:A-24). */
+        @Volatile
+        var clipboardAllowed = false
+
+        /** Строка о вкладке сверх состояния соединения (терминал:A-24): «прежняя сессия потеряна…». */
+        @Volatile
+        var notice: String? = null
+
+        /** Имя ярлыка; меняется «Переименовать» в меню ярлыка (терминал:A-21). */
+        @Volatile
+        var label: String = label
 
         val session = TerminalSession(80, 24, listener = this)
 
@@ -62,7 +74,7 @@ object TerminalHub {
 
         /** Пусто — на связи; иначе — что с соединением («подключение…», отказ, закрыто). */
         @Volatile
-        var status: String = "подключение…"
+        var status: String = CONNECTING
             internal set
 
         @Volatile
@@ -80,8 +92,24 @@ object TerminalHub {
             observer?.tabs()
         }
 
+        /** Сигнал (звонок, OSC 9/777) в вкладке, которую сейчас не видят (терминал:A-8): точка у ярлыка. */
+        @Volatile
+        var attention: Boolean = false
+
         override fun bell() {
-            observer?.bell(this)
+            val screen = observer
+            if (screen == null || current !== this) {
+                // Ярлыки и уведомление — только при первом сигнале: поток BEL (`cat` двоичного файла) не
+                // перерисовывает ряд вкладок тысячи раз в секунду.
+                val first = !attention
+                attention = true
+                if (first) {
+                    screen?.tabs()
+                    // Экрана терминала нет — строкой уведомления службы, без текста программы (T8).
+                    if (screen == null) app?.let(TerminalService::attention)
+                }
+            }
+            screen?.bell(this)
         }
 
         override fun clipboard(text: String) {
@@ -92,6 +120,9 @@ object TerminalHub {
     }
 
     /** Вкладка к Linux-среде в приложении: `sh -l` гостя (D-75, шаг 5). */
+    /** Состояние вкладки во время подключения: экран по нему рисует «◌» и прячет «Переподключить». */
+    const val CONNECTING = "подключение…"
+
     fun openLinux(context: Context): Tab = open(context, null, emptyList(), "Linux")
 
     /** Ещё одна вкладка туда же, куда [like]. */
@@ -119,7 +150,7 @@ object TerminalHub {
         val app = context.applicationContext
         val t = ChannelTransport()
         tab.transport = t
-        tab.status = "подключение…"
+        tab.status = CONNECTING
         tab.session.attach(t)
         observer?.tabs()
         thread(name = "dpai-term-connect", isDaemon = true) {

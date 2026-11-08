@@ -165,7 +165,7 @@ object TaskScreens {
         accounts: com.dpsmpx.dpai.accounts.AccountsState?,
         targetLabel: (com.dpsmpx.dpai.core.ids.ExecutionTargetId) -> String,
         handoffs: List<com.dpsmpx.dpai.contexts.Handoff> = emptyList(),
-        zone: java.time.ZoneId = java.time.ZoneId.systemDefault(),
+        zone: java.time.ZoneId = com.dpsmpx.dpai.core.clock.DisplayZone.current,
     ): List<String> {
         val own = sessions.sessions.values.filter { it.task == task }.sortedWith(compareBy({ it.createdAt.epochMillis }, { it.id.value }))
         return own.mapIndexed { i, s ->
@@ -191,7 +191,7 @@ object TaskScreens {
         sessions: SessionsState,
         tasks: com.dpsmpx.dpai.tasks.TasksState,
         project: String?,
-        zone: java.time.ZoneId = java.time.ZoneId.systemDefault(),
+        zone: java.time.ZoneId = com.dpsmpx.dpai.core.clock.DisplayZone.current,
     ): Map<com.dpsmpx.dpai.core.ids.ExecutionTargetId, List<String>> =
         sessions.sessions.values.filter { !it.terminal }.sortedWith(compareBy({ it.createdAt.epochMillis }, { it.id.value }))
             .groupBy { it.target }

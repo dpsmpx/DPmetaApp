@@ -6,6 +6,7 @@ import android.content.Intent
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Rect
+import android.graphics.RectF
 import android.graphics.Typeface
 import android.text.InputType
 import android.util.TypedValue
@@ -25,6 +26,7 @@ import android.view.inputmethod.InputConnection
 import android.widget.Toast
 import com.dpsmpx.dpai.core.clock.Clock
 import com.dpsmpx.dpai.terminal.Attr
+import com.dpsmpx.dpai.terminal.BoxDrawing
 import com.dpsmpx.dpai.terminal.Key
 import com.dpsmpx.dpai.terminal.Mod
 import com.dpsmpx.dpai.terminal.MouseButton
@@ -36,6 +38,7 @@ import com.dpsmpx.dpai.terminal.TerminalRow
 import com.dpsmpx.dpai.terminal.TerminalSelection
 import kotlin.math.abs
 import kotlin.math.ceil
+import kotlin.math.roundToInt
 
 /**
  * Экран своего терминала (D-71): сетка эмулятора на Canvas, курсор,
@@ -65,6 +68,75 @@ class TerminalView(context: Context) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = Typeface.MONOSPACE }
     private val fill = Paint()
     private var cellW = 1f
+
+    /** Левый край сетки (терминал:A-24): поле не меньше 4 dp, остаток ширины — поровну слева и справа. */
+    private var originX = 0f
+
+    /** Рамки и блоки — по сетке, а не шрифтом (терминал:A-18): толщина тонкой линии от ячейки. */
+    private var boxLight = 1
+    private var boxCanvas: Canvas? = null
+    private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    private val oval = RectF()
+    private val boxSink = object : BoxDrawing.Sink {
+        override fun rect(l: Float, t: Float, r: Float, b: Float, alpha: Float) {
+            val c = boxCanvas ?: return
+            if (alpha >= 1f) {
+                c.drawRect(l, t, r, b, fill)
+                return
+            }
+            val keep = fill.alpha
+            fill.alpha = (keep * alpha).roundToInt()
+            c.drawRect(l, t, r, b, fill)
+            fill.alpha = keep
+        }
+
+        override fun arc(l: Float, t: Float, r: Float, b: Float, startDeg: Float, stroke: Float) {
+            val c = boxCanvas ?: return
+            this@TerminalView.stroke.color = fill.color
+            this@TerminalView.stroke.strokeWidth = stroke
+            oval.set(l, t, r, b)
+            c.drawArc(oval, startDeg, 90f, false, this@TerminalView.stroke)
+        }
+
+        override fun line(x0: Float, y0: Float, x1: Float, y1: Float, stroke: Float) {
+            val c = boxCanvas ?: return
+            this@TerminalView.stroke.color = fill.color
+            this@TerminalView.stroke.strokeWidth = stroke
+            c.drawLine(x0, y0, x1, y1, this@TerminalView.stroke)
+        }
+    }
+
+    /** Нарисовать знак рамки или блока цветом [color]; `false` — знак рисует шрифт. */
+    private fun box(canvas: Canvas, row: TerminalRow, x: Int, left: Float, top: Float, w: Float, color: Int): Boolean {
+        val cp = row.codePoint(x)
+        if (!BoxDrawing.covers(cp) || row.combiningAt(x) != null) return false
+        fill.color = color
+        boxCanvas = canvas
+        BoxDrawing.draw(cp, left, top, w, cellH, boxLight, boxSink)
+        boxCanvas = null
+        return true
+    }
+
+    /**
+     * Мигание курсора (терминал:A-18) — когда его просит программа
+     * (DECSCUSR, режим 12), экран в фокусе и анимации не выключены в
+     * системе; после ввода курсор сразу виден.
+     */
+    private var blinkOn = true
+    private var blinkPosted = false
+    private val blinker = Runnable {
+        blinkPosted = false
+        blinkOn = !blinkOn
+        invalidate()
+    }
+
+    /** «Жирный ярче» (терминал:A-18): жирный текст восьми основных цветов — яркими, как в xterm; настройка. */
+    var boldBright: Boolean = runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(BOLD_BRIGHT, true) }.getOrDefault(true)
+        set(value) {
+            field = value
+            runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(BOLD_BRIGHT, value).apply() }
+            invalidate()
+        }
     private var cellH = 1f
     private var ascent = 0f
 
@@ -159,12 +231,8 @@ class TerminalView(context: Context) : View(context) {
         }
 
         override fun onLongPress(e: MotionEvent) {
-            val t = tab ?: return
-            val (c, r) = cell(e)
             // Долгое нажатие выделяет слово, как принято в Android (терминал:A-2); палец дальше тянет конец.
-            val (line, word) = t.session.read { val l = it.scrollbackSize - scrollBack + r; l to TerminalSelection.word(it.line(l), c) }
-            menu?.finish()
-            selection = intArrayOf(line, word.first, line, word.last)
+            if (!selectWord(e)) return
             selecting = true
             dragging = HANDLE_END
             performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
@@ -172,18 +240,50 @@ class TerminalView(context: Context) : View(context) {
         }
     })
 
+    /** Масштаб рисования во время щипка (терминал:A-9): сетка не перестраивается на каждом шаге жеста. */
+    private var pinch = 1f
+
     private val scale = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScale(d: ScaleGestureDetector): Boolean {
-            fontPx = (fontPx * d.scaleFactor).coerceIn(sp(MIN_SP), sp(MAX_SP))
-            regrid()
+            pinch = (pinch * d.scaleFactor).coerceIn(sp(MIN_SP) / fontPx, sp(MAX_SP) / fontPx)
+            invalidate()
             return true
         }
+
+        // Сетка и SIGWINCH программе — один раз, в конце жеста (терминал:A-9).
+        override fun onScaleEnd(d: ScaleGestureDetector) {
+            setFont(fontPx * pinch)
+            pinch = 1f
+        }
     })
+
+    /** Действия экрана терминала с клавиатуры (терминал:A-14): вкладки и поиск — у активности. */
+    enum class Shortcut { NEW_TAB, NEXT_TAB, PREV_TAB, SEARCH }
+
+    var onShortcut: ((Shortcut) -> Unit)? = null
+
+    /** Шрифт — в пределах и запомненным (терминал:A-9): размер переживает перезапуск приложения. */
+    fun setFont(px: Float) {
+        fontPx = px.coerceIn(sp(MIN_SP), sp(MAX_SP))
+        regrid()
+        invalidate()
+        runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putFloat(FONT_PX, fontPx).apply() }
+    }
+
+    /** Шрифт на шаг крупнее или мельче (Ctrl+= и Ctrl+-, ⋮ экрана). */
+    fun fontStep(up: Boolean) = setFont(fontPx * if (up) FONT_STEP else 1 / FONT_STEP)
+
+    /** Шрифт по ширине: [columns] столбцов во всю ширину окна (⋮ «80 столбцов»). */
+    fun fitColumns(columns: Int = 80) {
+        // Ширина сетки — без полей по краям (терминал:A-24): иначе выходило 78–79 столбцов.
+        // Чуть меньше расчётного: округление float и замер шрифта иначе дают 79.
+        if (width > 0) setFont(fontPx * (width - 2 * dp(SIDE_DP)) / (columns * cellW) * FIT_SLACK)
+    }
 
     init {
         isFocusable = true
         isFocusableInTouchMode = true
-        if (fontPx <= 0f) fontPx = sp(DEFAULT_SP)
+        if (fontPx <= 0f) fontPx = runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getFloat(FONT_PX, 0f) }.getOrDefault(0f).takeIf { it > 0f } ?: sp(DEFAULT_SP)
         metrics()
     }
 
@@ -195,6 +295,7 @@ class TerminalView(context: Context) : View(context) {
         val fm = paint.fontMetrics
         cellH = ceil(fm.descent - fm.ascent).coerceAtLeast(1f)
         ascent = -fm.ascent
+        boxLight = BoxDrawing.lightWidth(cellW)
     }
 
     /** Размер сетки по размеру окна и шрифту; программа узнаёт о нём по SIGWINCH. */
@@ -202,8 +303,9 @@ class TerminalView(context: Context) : View(context) {
         metrics()
         val t = tab ?: return
         if (width <= 0 || height <= 0) return
-        val cols = (width / cellW).toInt().coerceIn(1, TerminalEmulator.MAX_COLS)
+        val cols = ((width - 2 * dp(SIDE_DP)) / cellW).toInt().coerceIn(1, TerminalEmulator.MAX_COLS)
         val rows = (height / cellH).toInt().coerceIn(1, TerminalEmulator.MAX_ROWS)
+        originX = ((width - cols * cellW) / 2f).coerceAtLeast(0f)
         if (t.session.read { it.cols != cols || it.rows != rows }) {
             // Строки перестроены: прежние номера строк истории и выделения ничего не значат.
             t.session.resize(cols, rows)
@@ -257,11 +359,21 @@ class TerminalView(context: Context) : View(context) {
 
     private fun cell(e: MotionEvent): Pair<Int, Int> = cellAt(e.x, e.y)
 
+    /** Выделить слово под [e] (долгое нажатие, правая кнопка мыши); вкладки нет — `false`. */
+    private fun selectWord(e: MotionEvent): Boolean {
+        val t = tab ?: return false
+        val (c, r) = cell(e)
+        val (line, word) = t.session.read { val l = it.scrollbackSize - scrollBack + r; l to TerminalSelection.word(it.line(l), c) }
+        menu?.finish()
+        selection = intArrayOf(line, word.first, line, word.last)
+        return true
+    }
+
     private fun cellAt(x: Float, y: Float): Pair<Int, Int> {
         val t = tab
         val cols = t?.session?.read { it.cols } ?: 1
         val rows = t?.session?.read { it.rows } ?: 1
-        return (x / cellW).toInt().coerceIn(0, cols - 1) to (y / cellH).toInt().coerceIn(0, rows - 1)
+        return ((x - originX) / cellW).toInt().coerceIn(0, cols - 1) to (y / cellH).toInt().coerceIn(0, rows - 1)
     }
 
     private fun scrollLines(lines: Int, e: MotionEvent) {
@@ -282,8 +394,54 @@ class TerminalView(context: Context) : View(context) {
         }
     }
 
+    /**
+     * «Мышь программе» (терминал:A-22): пока включено и программа слушает
+     * мышь, палец — это мышь: нажатие, протяжка и отпускание уходят
+     * программе (выделение в `tmux` и `vim`, границы панелей). Выключено —
+     * касание и прокрутка, как всегда; выделение — долгим нажатием.
+     */
+    var mouseToProgram = false
+        set(value) {
+            field = value
+            mouseCell = null
+        }
+
+    /** Ячейка последнего события мыши программе: движение — только при смене ячейки. */
+    private var mouseCell: Pair<Int, Int>? = null
+
+    private fun programMouse(event: MotionEvent): Boolean {
+        val t = tab ?: return false
+        if (!mouseToProgram || selecting || event.pointerCount > 1 || scale.isInProgress) {
+            if (mouseCell != null && event.pointerCount > 1) {
+                // Второй палец (щипок) — отпустить кнопку, а не оставить её зажатой в программе.
+                mouseCell?.let { (c, r) -> t.session.mouse(MouseButton.LEFT, c, r, pressed = false, motion = false) }
+                mouseCell = null
+            }
+            return false
+        }
+        if (t.session.read { it.mouseMode } == MouseMode.NONE) return false
+        val (c, r) = cellAt(event.x, event.y)
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                toBottom()
+                mouseCell = c to r
+                t.session.mouse(MouseButton.LEFT, c, r, pressed = true, motion = false)
+            }
+            MotionEvent.ACTION_MOVE -> if (mouseCell != null && mouseCell != (c to r)) {
+                mouseCell = c to r
+                t.session.mouse(MouseButton.LEFT, c, r, pressed = true, motion = true)
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> if (mouseCell != null) {
+                mouseCell = null
+                t.session.mouse(MouseButton.LEFT, c, r, pressed = false, motion = false)
+            }
+        }
+        return true
+    }
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
         scale.onTouchEvent(event)
+        if (programMouse(event)) return true
         // Палец на ручке выделения — тянуть её (терминал:A-2); выделение — по порядку, чтобы ручки не путались.
         val sel = selection
         if (!selecting && sel != null && event.actionMasked == MotionEvent.ACTION_DOWN) {
@@ -347,7 +505,7 @@ class TerminalView(context: Context) : View(context) {
         val s = ordered(selection ?: return null)
         val first = tab?.session?.read { it.scrollbackSize - scrollBack } ?: return null
         val r = dp(HANDLE_DP)
-        return (s[1] * cellW to (s[0] - first + 1) * cellH + r) to ((s[3] + 1) * cellW to (s[2] - first + 1) * cellH + r)
+        return (originX + s[1] * cellW to (s[0] - first + 1) * cellH + r) to (originX + (s[3] + 1) * cellW to (s[2] - first + 1) * cellH + r)
     }
 
     private fun handleAt(x: Float, y: Float): Int {
@@ -507,7 +665,38 @@ class TerminalView(context: Context) : View(context) {
 
     // ---- ввод ----
 
+    /** Новых строк, пока экран не внизу (терминал:A-4). */
+    private var newLines = 0
+    private var awayShown: Int? = null
+
+    /** Экран ушёл от конца: число новых строк с тех пор; вернулся — `null`. Для «↓ к концу». */
+    var onAway: ((Int?) -> Unit)? = null
+
+    /** К концу — «↓ к концу» экрана. */
+    fun toEnd() = toBottom()
+
+    /** Верх видимой части — сквозной номер строки: поиск идёт от неё. */
+    fun firstVisibleLine(): Int = tab?.session?.read { it.scrollbackSize - scrollBack } ?: 0
+
+    /** Совпадение поиска — на экране, выделением (терминал:A-4). */
+    fun reveal(m: com.dpsmpx.dpai.terminal.TerminalEmulator.Match) {
+        val t = tab ?: return
+        val (history, rows) = t.session.read { it.scrollbackSize to it.rows }
+        val top = (m.line - rows / 2).coerceIn(0, history)
+        scrollBack = history - top
+        menu?.finish()
+        selection = intArrayOf(m.line, m.cols.first, m.line, m.cols.last)
+        invalidate()
+    }
+
     private fun toBottom() {
+        // Ввод — курсор виден сразу, мигание начинается заново.
+        if (!blinkOn || blinkPosted) {
+            blinkOn = true
+            removeCallbacks(blinker)
+            blinkPosted = false
+            invalidate()
+        }
         if (scrollBack != 0) {
             scrollBack = 0
             invalidate()
@@ -584,6 +773,28 @@ class TerminalView(context: Context) : View(context) {
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         val t = tab ?: return super.onKeyDown(keyCode, event)
+        // Сочетания терминала (терминал:A-14) — до программы: Ctrl+Shift+буква программе не нужна.
+        if (event.isCtrlPressed && event.isShiftPressed && !event.isAltPressed) {
+            when (keyCode) {
+                KeyEvent.KEYCODE_C -> { copySelection(); return true }
+                KeyEvent.KEYCODE_V -> { pasteClipboard(); return true }
+                KeyEvent.KEYCODE_T -> { onShortcut?.invoke(Shortcut.NEW_TAB); return true }
+                KeyEvent.KEYCODE_F -> { onShortcut?.invoke(Shortcut.SEARCH); return true }
+                KeyEvent.KEYCODE_TAB -> { onShortcut?.invoke(Shortcut.PREV_TAB); return true }
+            }
+        }
+        if (event.isCtrlPressed && !event.isShiftPressed && !event.isAltPressed) {
+            when (keyCode) {
+                KeyEvent.KEYCODE_TAB -> { onShortcut?.invoke(Shortcut.NEXT_TAB); return true }
+                KeyEvent.KEYCODE_EQUALS, KeyEvent.KEYCODE_PLUS, KeyEvent.KEYCODE_NUMPAD_ADD -> { fontStep(true); return true }
+                KeyEvent.KEYCODE_MINUS, KeyEvent.KEYCODE_NUMPAD_SUBTRACT -> { fontStep(false); return true }
+            }
+        }
+        // Shift+Enter — новая строка в запросе Claude Code (терминал:A-6): ESC CR, как Alt+Enter; Enter отправляет.
+        if ((keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER) && event.isShiftPressed && !event.isCtrlPressed && !event.isAltPressed && shiftEnterNewline(context)) {
+            newLine()
+            return true
+        }
         var mods = 0
         if (event.isShiftPressed) mods = mods or Mod.SHIFT
         if (event.isAltPressed) mods = mods or Mod.ALT
@@ -631,9 +842,52 @@ class TerminalView(context: Context) : View(context) {
         return super.onKeyDown(keyCode, event)
     }
 
+    /** Новая строка без отправки (терминал:A-6): ESC CR — Claude Code и readline понимают его как перенос. */
+    fun newLine() = key(Key.ENTER, Mod.ALT)
+
+    /**
+     * Мышь и тачпад (терминал:A-14): колесо — та же прокрутка, что пальцем;
+     * правая кнопка — слово под указателем и меню выделения.
+     */
+    override fun onGenericMotionEvent(event: MotionEvent): Boolean {
+        if (event.isFromSource(android.view.InputDevice.SOURCE_CLASS_POINTER)) {
+            when (event.actionMasked) {
+                MotionEvent.ACTION_SCROLL -> {
+                    val v = event.getAxisValue(MotionEvent.AXIS_VSCROLL)
+                    if (v != 0f) {
+                        scrollLines((-v * WHEEL_LINES).toInt().let { if (it == 0) (if (v > 0) -1 else 1) else it }, event)
+                        return true
+                    }
+                }
+                MotionEvent.ACTION_BUTTON_PRESS -> if (event.actionButton == MotionEvent.BUTTON_SECONDARY) {
+                    selectWord(event)
+                    selecting = false
+                    showMenu()
+                    return true
+                }
+            }
+        }
+        return super.onGenericMotionEvent(event)
+    }
+
+    override fun onDetachedFromWindow() {
+        // Мигание не держит экран: снятый с окна — без отложенных перерисовок.
+        removeCallbacks(blinker)
+        blinkPosted = false
+        blinkOn = true
+        super.onDetachedFromWindow()
+    }
+
+    // Фокус для программы (1004) — фокус окна и экрана вместе (терминал:A-24): уход приложения в фон программа видит.
     override fun onFocusChanged(gainFocus: Boolean, direction: Int, previouslyFocusedRect: Rect?) {
         super.onFocusChanged(gainFocus, direction, previouslyFocusedRect)
-        tab?.session?.focus(gainFocus)
+        tab?.session?.focus(gainFocus && hasWindowFocus())
+        invalidate()
+    }
+
+    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+        super.onWindowFocusChanged(hasWindowFocus)
+        tab?.session?.focus(hasWindowFocus && hasFocus())
         invalidate()
     }
 
@@ -667,17 +921,63 @@ class TerminalView(context: Context) : View(context) {
             canvas.drawColor(0xff000000.toInt())
             return
         }
-        t.session.read { emu -> draw(canvas, emu) }
+        // Под замком сессии — только снимок; рисование — без замка (терминал:A-10).
+        t.session.read { emu -> capture(emu) }
+        // Щипок — масштаб рисования до конца жеста (терминал:A-9).
+        canvas.drawColor(frame.defBg)
+        canvas.save()
+        if (pinch != 1f) canvas.scale(pinch, pinch)
+        canvas.translate(originX, 0f)
+        paint(canvas)
+        canvas.restore()
+        place(canvas)
         speakable()
     }
 
-    private fun draw(canvas: Canvas, emu: TerminalEmulator) {
-        val defFg = 0xff000000.toInt() or (if (emu.reverseVideo) emu.backgroundRgb else emu.foregroundRgb)
-        val defBg = 0xff000000.toInt() or (if (emu.reverseVideo) emu.foregroundRgb else emu.backgroundRgb)
-        canvas.drawColor(defBg)
+    /**
+     * Снимок кадра (терминал:A-10): под замком сессии — копия видимых строк
+     * и курсора, а рисование идёт без замка, и поток вывода не ждёт конца
+     * кадра. Строки снимка переиспользуются от кадра к кадру. Сверху и снизу —
+     * до [LINK_SPAN] строк продолжения переноса: адрес, начатый за краем
+     * экрана, подчёркнут и на экране.
+     */
+    private class Frame {
+        var rows: Array<TerminalRow> = emptyArray()
+        var count = 0
+        var top = 0
+        var visible = 0
+        var first = 0
+        var cols = 0
+        var screenRows = 0
+        var lineCount = 0
+        var defFg = 0
+        var defBg = 0
+        var cursorX = 0
+        var cursorY = 0
+        var cursorOn = false
+        var cursorShape = 0
+        var cursorBlink = false
+
+        fun row(i: Int): TerminalRow {
+            if (i >= rows.size) {
+                val old = rows
+                rows = Array(maxOf(i + 1, old.size * 2)) { if (it < old.size) old[it] else TerminalRow(0) }
+            }
+            return rows[i]
+        }
+    }
+
+    private val frame = Frame()
+    private val frameRow: (Int) -> TerminalRow = { frame.rows[it] }
+
+    private fun capture(emu: TerminalEmulator) {
         if (anchored) {
             val dropped = (emu.historyDropped - seenDropped).toInt()
-            if (scrollBack > 0) scrollBack += (emu.historyAdded - seenAdded).toInt()
+            val added = (emu.historyAdded - seenAdded).toInt()
+            if (scrollBack > 0) {
+                scrollBack += added
+                newLines += added
+            }
             selection?.let { s ->
                 s[0] -= dropped
                 s[2] -= dropped
@@ -691,21 +991,70 @@ class TerminalView(context: Context) : View(context) {
         seenAdded = emu.historyAdded
         seenDropped = emu.historyDropped
         scrollBack = scrollBack.coerceIn(0, emu.scrollbackSize)
-        val first = emu.scrollbackSize - scrollBack
-        val sel = selection?.let(::ordered)
-        for (y in 0 until emu.rows) {
-            val line = first + y
-            if (line >= emu.lineCount) break
-            val row = emu.line(line)
-            for (x in 0 until minOf(emu.cols, row.cols)) {
-                val cp = row.codePoint(x)
-                if (cp == TerminalRow.WIDE_TAIL) continue
-                val selected = sel != null && inSelection(sel, line, x)
-                drawCell(canvas, row, x, y, row.style(x), selected, defFg, defBg)
-            }
+        if (scrollBack == 0) newLines = 0
+        // «↓ к концу» с числом новых строк (терминал:A-4) — экрану, когда меняется; не во время рисования.
+        val away = if (scrollBack > 0) newLines else null
+        if (away != awayShown) {
+            awayShown = away
+            post { onAway?.invoke(away) }
         }
-        if (scrollBack == 0 && emu.cursorVisible) drawCursor(canvas, emu, defFg, defBg)
-        if (sel != null) drawHandles(canvas, sel, first)
+        val f = frame
+        f.defFg = 0xff000000.toInt() or (if (emu.reverseVideo) emu.backgroundRgb else emu.foregroundRgb)
+        f.defBg = 0xff000000.toInt() or (if (emu.reverseVideo) emu.foregroundRgb else emu.backgroundRgb)
+        f.first = emu.scrollbackSize - scrollBack
+        f.cols = emu.cols
+        f.screenRows = emu.rows
+        f.lineCount = emu.lineCount
+        val end = minOf(f.first + emu.rows, emu.lineCount)
+        var from = f.first
+        while (from > 0 && f.first - from < LINK_SPAN && emu.line(from - 1).wrapped) from--
+        var to = end
+        while (to < emu.lineCount && to - end < LINK_SPAN && emu.line(to - 1).wrapped) to++
+        f.top = f.first - from
+        f.visible = end - f.first
+        f.count = to - from
+        for (i in 0 until f.count) emu.line(from + i).copyInto(f.row(i))
+        f.cursorX = emu.cursorX
+        f.cursorY = emu.cursorY
+        f.cursorOn = emu.cursorVisible
+        f.cursorShape = emu.cursorShape
+        f.cursorBlink = emu.cursorBlink
+    }
+
+    private fun paint(canvas: Canvas) {
+        val f = frame
+        val sel = selection?.let(::ordered)
+        for (y in 0 until f.visible) {
+            // Адреса и ссылки OSC 8 — подчёркнуты (терминал:A-19): видно, что касание их откроет.
+            val links = TerminalEmulator.linkCells(f.count, frameRow, f.top + y)
+            drawRow(canvas, f.rows[f.top + y], y, f.first + y, links, sel)
+        }
+        val cursor = scrollBack == 0 && f.cursorOn && f.cursorY < f.visible
+        val blink = cursor && f.cursorBlink && hasFocus() && android.animation.ValueAnimator.areAnimatorsEnabled()
+        if (!blink) {
+            blinkOn = true
+            if (blinkPosted) {
+                removeCallbacks(blinker)
+                blinkPosted = false
+            }
+        } else if (!blinkPosted) {
+            blinkPosted = true
+            postDelayed(blinker, BLINK_MS)
+        }
+        if (cursor && blinkOn) drawCursor(canvas)
+        if (sel != null) drawHandles(canvas, sel, f.first)
+    }
+
+    /** Указатель места в истории (терминал:A-4): тонкая полоса у правого края окна, пока экран не внизу. */
+    private fun place(canvas: Canvas) {
+        val f = frame
+        if (scrollBack > 0 && f.lineCount > 0) {
+            val total = f.lineCount.toFloat()
+            val h = (height * f.screenRows / total).coerceAtLeast(dp(24f))
+            val top = (height - h) * f.first / (total - f.screenRows).coerceAtLeast(1f)
+            fill.color = HANDLE_COLOR
+            canvas.drawRect(width - dp(3f), top, width.toFloat(), top + h, fill)
+        }
     }
 
     /** Ручки выделения (терминал:A-2): кружки под началом и концом, их тянут пальцем. */
@@ -732,86 +1081,172 @@ class TerminalView(context: Context) : View(context) {
         TermColor.isRgb(c) -> 0xff000000.toInt() or TermColor.rgbValue(c)
         else -> {
             var i = TermColor.index(c)
-            // Жирный — ярче для восьми основных цветов, как в xterm.
-            if (fg && bold && i < 8) i += 8
+            // Жирный — ярче для восьми основных цветов, как в xterm; выключается настройкой (терминал:A-18).
+            if (fg && bold && i < 8 && boldBright) i += 8
             0xff000000.toInt() or TermColor.PALETTE[i]
         }
     }
 
-    private fun drawCell(canvas: Canvas, row: TerminalRow, x: Int, y: Int, style: Style, selected: Boolean, defFg: Int, defBg: Int) {
-        val bold = style.has(Attr.BOLD)
-        var fg = color(style.fg, true, bold, defFg, defBg)
-        var bg = color(style.bg, false, false, defFg, defBg)
+    /** Стиль ячейки на экране: адрес или ссылка OSC 8 — с подчёркиванием (терминал:A-19). */
+    private fun shown(row: TerminalRow, x: Int, links: BooleanArray): Style {
+        val st = row.style(x)
+        return if (x < links.size && links[x] && !st.has(Attr.UNDERLINE)) st.with(Attr.UNDERLINE, true) else st
+    }
+
+    /** Цвета ячейки — в [cellFg] и [cellBg], без объектов на каждую ячейку кадра. */
+    private var cellFg = 0
+    private var cellBg = 0
+
+    private fun colors(style: Style, selected: Boolean) {
+        val f = frame
+        var fg = color(style.fg, true, style.has(Attr.BOLD), f.defFg, f.defBg)
+        var bg = color(style.bg, false, false, f.defFg, f.defBg)
         if (style.has(Attr.INVERSE) != selected) {
             val k = fg
             fg = bg
             bg = k
         }
         if (style.has(Attr.DIM)) fg = (fg and 0x00ffffff) or 0x99000000.toInt()
-        val wide = x + 1 < row.cols && row.codePoint(x + 1) == TerminalRow.WIDE_TAIL
-        val left = x * cellW
+        cellFg = fg
+        cellBg = bg
+    }
+
+    private fun wideAt(row: TerminalRow, x: Int): Boolean = x + 1 < row.cols && row.codePoint(x + 1) == TerminalRow.WIDE_TAIL
+
+    /** Буфер куска ASCII одного стиля: одна строка — один `drawText` (терминал:A-10). */
+    private val run = CharArray(TerminalEmulator.MAX_COLS)
+
+    /**
+     * Строка экрана (терминал:A-10): сначала фон — подряд идущие ячейки
+     * одного цвета одним прямоугольником, потом текст — подряд идущий ASCII
+     * одного стиля одним `drawText` и без замера ширины (у моноширинного
+     * шрифта она равна ячейке); прочие знаки — по ячейке.
+     */
+    private fun drawRow(canvas: Canvas, row: TerminalRow, y: Int, line: Int, links: BooleanArray, sel: IntArray?) {
+        val n = minOf(frame.cols, row.cols)
         val top = y * cellH
-        val right = left + cellW * (if (wide) 2 else 1)
-        if (bg != defBg) {
-            fill.color = bg
-            canvas.drawRect(left, top, right, top + cellH, fill)
+        var start = 0
+        var end = 0
+        var bgRun = frame.defBg
+        for (x in 0 until n) {
+            if (row.codePoint(x) == TerminalRow.WIDE_TAIL) continue
+            colors(shown(row, x, links), sel != null && inSelection(sel, line, x))
+            val span = if (wideAt(row, x)) 2 else 1
+            if (cellBg == bgRun && x == end) {
+                end = x + span
+                continue
+            }
+            if (bgRun != frame.defBg && end > start) {
+                fill.color = bgRun
+                canvas.drawRect(start * cellW, top, end * cellW, top + cellH, fill)
+            }
+            bgRun = cellBg
+            start = x
+            end = x + span
         }
-        val cp = row.codePoint(x)
-        if (cp == TerminalRow.EMPTY || style.has(Attr.INVISIBLE)) return
-        paint.color = fg
-        paint.isFakeBoldText = bold
+        if (bgRun != frame.defBg && end > start) {
+            fill.color = bgRun
+            canvas.drawRect(start * cellW, top, end * cellW, top + cellH, fill)
+        }
+        var x = 0
+        while (x < n) {
+            val cp = row.codePoint(x)
+            if (cp == TerminalRow.WIDE_TAIL || cp == TerminalRow.EMPTY) {
+                x++
+                continue
+            }
+            val style = shown(row, x, links)
+            val selected = sel != null && inSelection(sel, line, x)
+            colors(style, selected)
+            if (style.has(Attr.INVISIBLE)) {
+                x++
+                continue
+            }
+            val left = x * cellW
+            if (cp in ASCII && row.combiningAt(x) == null) {
+                var k = 0
+                var next = x
+                while (next < n) {
+                    val c = row.codePoint(next)
+                    if (c !in ASCII || row.combiningAt(next) != null) break
+                    if (next > x && (shown(row, next, links) != style || (sel != null && inSelection(sel, line, next)) != selected)) break
+                    run[k++] = c.toChar()
+                    next++
+                }
+                text(style)
+                canvas.drawText(run, 0, k, left, top + ascent, paint)
+                decorate(canvas, style, left, next * cellW, top)
+                x = next
+                continue
+            }
+            val right = left + cellW * (if (wideAt(row, x)) 2 else 1)
+            if (!box(canvas, row, x, left, top, right - left, cellFg)) {
+                text(style)
+                val s = row.text(x)
+                val base = top + ascent
+                // Знак шрифта бывает шире своих ячеек (широкие, эмодзи): сжать, чтобы не налезал на соседа.
+                val need = right - left
+                val w = paint.measureText(s)
+                if (w > need * 1.05f) {
+                    canvas.save()
+                    canvas.scale(need / w, 1f, left, base)
+                    canvas.drawText(s, left, base, paint)
+                    canvas.restore()
+                } else {
+                    canvas.drawText(s, left, base, paint)
+                }
+            }
+            decorate(canvas, style, left, right, top)
+            x++
+        }
+    }
+
+    private fun text(style: Style) {
+        paint.color = cellFg
+        paint.isFakeBoldText = style.has(Attr.BOLD)
         paint.textSkewX = if (style.has(Attr.ITALIC)) -0.25f else 0f
-        val text = row.text(x)
-        val base = top + ascent
-        // Знак шрифта бывает шире своих ячеек (широкие, эмодзи): сжать, чтобы не налезал на соседа.
-        val need = right - left
-        val w = paint.measureText(text)
-        if (w > need * 1.05f) {
-            canvas.save()
-            canvas.scale(need / w, 1f, left, base)
-            canvas.drawText(text, left, base, paint)
-            canvas.restore()
-        } else {
-            canvas.drawText(text, left, base, paint)
-        }
+    }
+
+    /** Подчёркивание, зачёркивание и надчёркивание куска `left..right` цветом текста. */
+    private fun decorate(canvas: Canvas, style: Style, left: Float, right: Float, top: Float) {
         if (style.has(Attr.UNDERLINE) || style.has(Attr.DOUBLE_UNDERLINE)) {
-            fill.color = fg
+            fill.color = cellFg
             canvas.drawRect(left, top + cellH - 2f, right, top + cellH - 1f, fill)
             if (style.has(Attr.DOUBLE_UNDERLINE)) canvas.drawRect(left, top + cellH - 4f, right, top + cellH - 3f, fill)
         }
         if (style.has(Attr.STRIKE)) {
-            fill.color = fg
+            fill.color = cellFg
             canvas.drawRect(left, top + cellH / 2, right, top + cellH / 2 + 1f, fill)
         }
         if (style.has(Attr.OVERLINE)) {
-            fill.color = fg
+            fill.color = cellFg
             canvas.drawRect(left, top, right, top + 1f, fill)
         }
     }
 
-    private fun drawCursor(canvas: Canvas, emu: TerminalEmulator, defFg: Int, defBg: Int) {
-        val x = emu.cursorX
-        val y = emu.cursorY
+    private fun drawCursor(canvas: Canvas) {
+        val f = frame
+        val x = f.cursorX
+        val y = f.cursorY
         val left = x * cellW
         val top = y * cellH
-        val row = emu.screenRow(y)
-        val wide = x + 1 < row.cols && row.codePoint(x + 1) == TerminalRow.WIDE_TAIL
-        val right = left + cellW * (if (wide) 2 else 1)
-        fill.color = defFg
+        val row = f.rows[f.top + y]
+        val right = left + cellW * (if (wideAt(row, x)) 2 else 1)
+        fill.color = f.defFg
         if (!hasFocus()) {
             fill.style = Paint.Style.STROKE
             canvas.drawRect(left + 0.5f, top + 0.5f, right - 0.5f, top + cellH - 0.5f, fill)
             fill.style = Paint.Style.FILL
             return
         }
-        when (emu.cursorShape) {
+        when (f.cursorShape) {
             3, 4 -> canvas.drawRect(left, top + cellH - 3f, right, top + cellH, fill)
             5, 6 -> canvas.drawRect(left, top, left + 3f, top + cellH, fill)
             else -> {
                 canvas.drawRect(left, top, right, top + cellH, fill)
-                val cp = row.codePoint(x)
-                if (cp != TerminalRow.EMPTY && cp != TerminalRow.WIDE_TAIL) {
-                    paint.color = defBg
+                val cp = if (x < row.cols) row.codePoint(x) else TerminalRow.EMPTY
+                if (cp != TerminalRow.EMPTY && cp != TerminalRow.WIDE_TAIL && !box(canvas, row, x, left, top, right - left, f.defBg)) {
+                    paint.color = f.defBg
                     paint.isFakeBoldText = false
                     paint.textSkewX = 0f
                     canvas.drawText(row.text(x), left, top + ascent, paint)
@@ -822,6 +1257,48 @@ class TerminalView(context: Context) : View(context) {
 
     companion object {
         private const val DEFAULT_SP = 13f
+
+        /** Настройки экрана терминала (не секреты): размер шрифта, Shift+Enter. */
+        private const val PREFS = "terminal"
+        private const val FONT_PX = "font_px"
+        private const val SHIFT_ENTER = "shift_enter_newline"
+        private const val BOLD_BRIGHT = "bold_bright"
+        private const val KEEP_ON = "keep_screen_on"
+
+        /** Запас «N столбцов»: размер шрифта чуть меньше расчётного, чтобы столбцов было не меньше N. */
+        private const val FIT_SLACK = 0.995f
+
+        /** Поле сетки слева и справа, dp (терминал:A-24). */
+        private const val SIDE_DP = 4f
+
+        /** «Не гасить экран», пока открыт терминал (терминал:A-24); по умолчанию — да. */
+        fun keepScreenOn(context: Context): Boolean =
+            runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEEP_ON, true) }.getOrDefault(true)
+
+        fun setKeepScreenOn(context: Context, on: Boolean) {
+            runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEEP_ON, on).apply() }
+        }
+
+        /** Печатный ASCII: его ширина — ячейка, кусок рисуется одним вызовом. */
+        private val ASCII = 0x20..0x7E
+
+        /** Строк продолжения переноса над и под экраном в снимке кадра — для подчёркивания адресов. */
+        private const val LINK_SPAN = 8
+
+        /** Полупериод мигания курсора, мс — как у xterm и VTE. */
+        private const val BLINK_MS = 530L
+        private const val FONT_STEP = 1.1f
+
+        /** Строк за один щелчок колеса мыши. */
+        private const val WHEEL_LINES = 3f
+
+        /** Shift+Enter — новая строка (терминал:A-6); по умолчанию — да. */
+        fun shiftEnterNewline(context: Context): Boolean =
+            runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(SHIFT_ENTER, true) }.getOrDefault(true)
+
+        fun setShiftEnterNewline(context: Context, on: Boolean) {
+            runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(SHIFT_ENTER, on).apply() }
+        }
         private const val MIN_SP = 6f
         private const val MAX_SP = 40f
         private const val SYNC_REDRAW_MS = 150L

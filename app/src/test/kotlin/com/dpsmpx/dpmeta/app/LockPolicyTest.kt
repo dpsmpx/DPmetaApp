@@ -6,6 +6,15 @@ import kotlin.test.assertTrue
 
 /** Вход в приложение (D-59, D-61): раз за запуск и после часа в фоне. */
 class LockPolicyTest {
+    /** Причина отказа — словами, без кода (UX-19). */
+    @Test
+    fun reasonIsWordsNotCode() {
+        kotlin.test.assertEquals("Отменено", LockPolicy.reason(10))
+        kotlin.test.assertEquals("Слишком много попыток — подождите", LockPolicy.reason(7))
+        kotlin.test.assertEquals("Не вышло", LockPolicy.reason(99))
+        assertFalse(LockPolicy.reason(42).any { it.isDigit() }, "без кода")
+    }
+
     private var now = 1_000_000L
     private val policy = LockPolicy({ now })
 

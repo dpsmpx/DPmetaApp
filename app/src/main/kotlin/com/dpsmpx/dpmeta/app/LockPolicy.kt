@@ -38,6 +38,21 @@ class LockPolicy(private val elapsedMs: () -> Long, private val backgroundLimitM
     }
 
     companion object {
+        /**
+         * Почему окно PIN закрылось без входа — словами, без кода (UX-19).
+         * Коды — `BiometricPrompt.BIOMETRIC_ERROR_*` Android: отмена — 5, 10,
+         * 13; время вышло — 3; попыток много — 7 (подождать), 9 (разблокировать
+         * телефон); нет PIN — 14.
+         */
+        fun reason(code: Int): String = when (code) {
+            5, 10, 13 -> "Отменено"
+            3 -> "Время вышло"
+            7 -> "Слишком много попыток — подождите"
+            9 -> "Слишком много попыток — разблокируйте телефон и попробуйте снова"
+            14 -> "У телефона нет PIN"
+            else -> "Не вышло"
+        }
+
         /** Час в фоне — снова вход (слово автора, D-59). */
         const val BACKGROUND_LIMIT_MS: Long = 60 * 60 * 1000L
     }

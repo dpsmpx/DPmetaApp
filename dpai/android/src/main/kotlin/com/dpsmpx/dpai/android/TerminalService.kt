@@ -29,26 +29,7 @@ class TerminalService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        val manager = getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(NotificationChannel(CHANNEL, "Терминал", NotificationManager.IMPORTANCE_LOW))
-        val open = PendingIntent.getActivity(
-            this, 0, Intent(this, TerminalActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
-        // «Закрыть все» — через подтверждение на экране терминала: одно касание в шторке обрывало бы все сеансы.
-        val closeAll = PendingIntent.getActivity(
-            this, 1,
-            Intent(this, TerminalActivity::class.java).putExtra(TerminalActivity.EXTRA_CLOSE_ALL, true)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
-        val notification = Notification.Builder(this, CHANNEL)
-            .setSmallIcon(android.R.drawable.ic_menu_manage)
-            .setContentTitle("Терминал: ${tabsWord(n)}")
-            .setContentIntent(open)
-            .setOngoing(true)
-            .addAction(Notification.Action.Builder(null, "Закрыть все", closeAll).build())
-            .build()
+        val notification = notification(this, n)
         // Повторный запуск из фона система может не пустить: тогда служба уходит, а не падает по кругу.
         try {
             if (Build.VERSION.SDK_INT >= 34) startForeground(ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE) else startForeground(ID, notification)
@@ -61,6 +42,64 @@ class TerminalService : Service() {
     companion object {
         private const val CHANNEL = "dpai.terminal"
         private const val ID = 4207
+
+        /**
+         * Уведомление службы: «Терминал: N вкладок», а если фоновая вкладка
+         * подала сигнал — «Вкладка «…» ждёт» (терминал:A-8), без текста
+         * программы (T8).
+         */
+        private fun notification(context: Context, n: Int): Notification {
+            val manager = context.getSystemService(NotificationManager::class.java)
+            NotifyGroups.ensure(manager)
+            manager.createNotificationChannel(
+                NotificationChannel(CHANNEL, "Терминал", NotificationManager.IMPORTANCE_LOW).apply {
+                    group = NotifyGroups.SERVICE
+                    description = "Открытые вкладки терминала и сигналы фоновых вкладок"
+                },
+            )
+            return build(context, n)
+        }
+
+        /** Сигнал фоновой вкладки — строкой уведомления, не чаще раза в [ATTENTION_EVERY_MS] (терминал:A-8). */
+        fun attention(context: Context) {
+            val now = com.dpsmpx.dpai.core.clock.Clock.SYSTEM.monotonicNanos() / 1_000_000
+            if (now - lastAttention < ATTENTION_EVERY_MS || TerminalHub.tabs.isEmpty()) return
+            lastAttention = now
+            refresh(context)
+        }
+
+        /** Перерисовать уведомление (вкладку увидели — строка «ждёт» уходит). */
+        fun refresh(context: Context) {
+            if (TerminalHub.tabs.isEmpty()) return
+            runCatching { context.getSystemService(NotificationManager::class.java).notify(ID, notification(context.applicationContext, TerminalHub.tabs.size)) }
+        }
+
+        @Volatile
+        private var lastAttention = 0L
+        private const val ATTENTION_EVERY_MS = 5_000L
+
+        private fun build(context: Context, n: Int): Notification {
+        val open = PendingIntent.getActivity(
+            context, 0, Intent(context, TerminalActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        // «Закрыть все» — через подтверждение на экране терминала: одно касание в шторке обрывало бы все сеансы.
+        val closeAll = PendingIntent.getActivity(
+            context, 1,
+            Intent(context, TerminalActivity::class.java).putExtra(TerminalActivity.EXTRA_CLOSE_ALL, true)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val waiting = TerminalHub.tabs.filter { it.attention }.map { it.label }
+        return Notification.Builder(context, CHANNEL)
+            .setSmallIcon(R.drawable.ic_notify_ai)
+            .setContentTitle("Терминал: ${tabsWord(n)}")
+            .apply { if (waiting.isNotEmpty()) setContentText(waiting.joinToString(", ") { "Вкладка «$it» ждёт" }) }
+            .setContentIntent(open)
+            .setOngoing(true)
+            .addAction(Notification.Action.Builder(null, "Закрыть все", closeAll).build())
+            .build()
+        }
 
         /** «1 вкладка», «2 вкладки», «5 вкладок». */
         fun tabsWord(n: Int): String {

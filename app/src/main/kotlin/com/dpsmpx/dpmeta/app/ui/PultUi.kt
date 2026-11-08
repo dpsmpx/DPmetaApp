@@ -19,6 +19,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
@@ -37,6 +42,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.produceState
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -73,6 +79,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.style.TextOverflow
@@ -180,7 +187,27 @@ data class PultView(
     val progress: String? = null,
     /** «Отменить» нажато — начатый клон доходит до конца (UX-10). */
     val cancelling: Boolean = false,
+    /** Срез и лента ещё читаются с диска (UX-20): не «среза нет», а «читаю». */
+    val loading: Boolean = false,
+    /** Пояс показа, минуты от UTC (UX-22): ключ перерисовки строк со временем. */
+    val zone: Int = 180,
+    /** «О программе» (UX-23): версии DPmetaApp и «AI». */
+    val about: String = "",
 )
+
+/**
+ * Ключи списка без своих id (UX-20): содержимое и номер повтора — сдвиг
+ * или обрезка начала не перерисовывает весь список.
+ */
+private fun <T> contentKeys(list: List<T>, of: (T) -> Any): List<String> {
+    val seen = HashMap<Any, Int>()
+    return list.map { item ->
+        val k = of(item)
+        val n = (seen[k] ?: 0) + 1
+        seen[k] = n
+        "$k#$n"
+    }
+}
 
 /**
  * Окно выбора клонов (D-70): все репозитории аккаунта, реестр — сверху;
@@ -212,6 +239,15 @@ private val Section.icon: Int get() = when (this) {
 
 /** Высота панели пульта — та же, что у панели «AI» (D-73, `DP_AI_Orcestrator:D-112`: 48 dp); крупный шрифт её растит. */
 private val PANEL_HEIGHT = 48.dp
+
+/** Широкий экран (UX-24): от этой ширины — две панели «проекты | карточка». */
+private val WIDE = 600.dp
+
+/** Предел ширины содержимого: строки на планшете и в альбомной ориентации не растягиваются во всю ширину. */
+private val CONTENT_MAX = 640.dp
+
+/** Предел ширины двух панелей. */
+private val TWO_PANE_MAX = 1100.dp
 
 /** Куда перешли внутри вкладки: карточка → каталог → документ; «назад» снимает верх. */
 private sealed interface Nav {
@@ -290,6 +326,8 @@ fun PultApp(
     onCancelSync: () -> Unit = {},
     /** Удалить не отмеченный клон (UX-11) — после вопроса. */
     onDeleteClone: (String) -> Unit = {},
+    /** Пояс показа выбран (UX-22): минуты от UTC. */
+    onZone: (Int) -> Unit = {},
     /** Итог окна клонов: отмеченные или `null` — «Позже» / «Отмена». */
     onClonesChosen: (Set<String>?) -> Unit = {},
 ) {
@@ -344,16 +382,37 @@ fun PultApp(
             }
         },
     ) { inner ->
-        Column(Modifier.padding(inner).padding(Tokens.gap).fillMaxSize()) {
-            val s = view.state
-            val top = stack.lastOrNull()
+        // Широкий экран (UX-24): содержимое — не шире CONTENT_MAX по центру, вырез сбоку — отступом;
+        // от WIDE — список проектов и карточка двумя панелями.
+        androidx.compose.foundation.layout.BoxWithConstraints(
+            Modifier.padding(inner).fillMaxSize().windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal)),
+            contentAlignment = androidx.compose.ui.Alignment.TopCenter,
+        ) {
+        val s = view.state
+        val top = stack.lastOrNull()
+        val twoPane = maxWidth >= WIDE && tab == Section.DEV && devTab == DevTab.PROJECTS && s != null && (top == null || top is Nav.Card)
+        Column(Modifier.widthIn(max = if (twoPane) TWO_PANE_MAX else CONTENT_MAX).fillMaxSize().padding(Tokens.gap)) {
             when {
-                top is Nav.Card && s != null -> Screens.card(s, top.project)?.let { CardScreen(it, loader, back, open) }
+                twoPane -> Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+                    val chosen = top?.project
+                    Column(Modifier.weight(2f).fillMaxSize()) {
+                        DevTabs(devTab) { devTab = it }
+                        // Другой проект — вместо открытой карточки, а не поверх неё: «Назад» — к списку.
+                        Projects(remember(s) { Screens.projects(s) }, chosen) { stacks[tab] = listOf(Nav.Card(it)) }
+                    }
+                    Column(Modifier.weight(3f).fillMaxSize()) {
+                        val card = chosen?.let { remember(s, it, view.zone) { Screens.card(s, it) } }
+                        if (card != null) CardScreen(card, loader, back, open) else Text("Выберите проект слева.", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                // Модели экранов — один раз на срез, а не на каждую перекомпозицию (UX-20).
+                top is Nav.Card && s != null -> remember(s, top.project, view.zone) { Screens.card(s, top.project) }?.let { CardScreen(it, loader, back, open) }
                 top is Nav.Dir -> DirScreen(top, loader, back, open)
                 top is Nav.Doc -> DocScreen(top, view.names, loader, back, open)
                 top is Nav.Stats && s != null -> StatsScreen(view.history, s.projects.map { it.name }, top.project, s.asOf, back, view.status, onExport)
                 top is Nav.Feed && s != null -> FeedScreen(view.feed, s.projects.map { it.name }, back) { open(Nav.Card(it)) }
-                tab == Section.MORE -> Settings(view, onSync, onSaveToken, onForgetToken, onClones)
+                tab == Section.MORE -> Settings(view, onSync, onSaveToken, onForgetToken, onClones, onZone)
+                s == null && view.loading -> Text("Читаю срез…", style = MaterialTheme.typography.bodySmall)
                 // Пустое состояние ведёт дальше (UX-11): кнопкой, а не словами «где-то в настройках».
                 s == null -> Column(verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
                     Text(if (view.hasToken) "Среза ещё нет." else "Нужен токен GitHub — только для чтения.")
@@ -364,7 +423,7 @@ fun PultApp(
                     }
                 }
                 tab == Section.SUMMARY -> Summary(
-                    Screens.summary(s), view, onSync, onAi,
+                    remember(s, view.zone) { Screens.summary(s) }, view, onSync, onAi,
                     onTile = { g ->
                         when (g) {
                             Screens.Goes.PROJECTS -> { tab = Section.DEV; devTab = DevTab.PROJECTS }
@@ -378,11 +437,12 @@ fun PultApp(
                 tab == Section.DEV -> Column(Modifier.fillMaxSize()) {
                     DevTabs(devTab) { devTab = it }
                     when (devTab) {
-                        DevTab.PROJECTS -> Projects(Screens.projects(s)) { open(Nav.Card(it)) }
-                        DevTab.QUESTIONS -> Questions(Screens.questions(s), open)
+                        DevTab.PROJECTS -> Projects(remember(s) { Screens.projects(s) }) { open(Nav.Card(it)) }
+                        DevTab.QUESTIONS -> Questions(remember(s) { Screens.questions(s) }, open)
                     }
                 }
             }
+        }
         }
     }
     view.clonePrompt?.let { ClonesDialog(it, onClonesChosen, onDeleteClone, busy = view.busy) }
@@ -414,7 +474,8 @@ private fun RowScope.PanelItem(label: String, icon: Int, selected: Boolean?, onC
 @Composable
 private fun Header(title: String, view: PultView, onSync: () -> Unit, onCancel: () -> Unit) {
     Surface(tonalElevation = 3.dp) {
-        Column(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars)) {
+        // Сверху — строка состояния, сбоку — вырез в альбомной ориентации (UX-24).
+        Column(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))) {
             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             Column(Modifier.weight(1f).padding(horizontal = Tokens.gap, vertical = 6.dp)) {
                 Text(title, style = MaterialTheme.typography.titleMedium)
@@ -499,11 +560,16 @@ private const val SUMMARY_EVENTS = 3
  * ошибки источников — «⚠ N» цветом ошибки; решения — в карточке.
  */
 @Composable
-private fun Projects(groups: List<Screens.Group>, onOpen: (String) -> Unit) = LazyColumn(verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+private fun Projects(groups: List<Screens.Group>, selected: String? = null, onOpen: (String) -> Unit) = LazyColumn(verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
     for (g in groups) {
         item { Text(g.title, style = MaterialTheme.typography.titleMedium) }
-        items(g.rows) { r ->
-            Card(Modifier.fillMaxWidth().clickable(onClickLabel = "открыть карточку") { onOpen(r.name) }) {
+        items(g.rows, key = { "row:${g.title}:${it.name}" }) { r ->
+            // Открытый в соседней панели (UX-24) — выделен цветом и для TalkBack.
+            val chosen = r.name == selected
+            Card(
+                Modifier.fillMaxWidth().semantics { this.selected = chosen }.clickable(onClickLabel = "открыть карточку") { onOpen(r.name) },
+                colors = if (chosen) CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer) else CardDefaults.cardColors(),
+            ) {
                 Column(Modifier.padding(Tokens.gap)) {
                     Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                         Text(r.name, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
@@ -666,7 +732,9 @@ private fun FeedScreen(events: List<FeedEvent>, projects: List<String>, onBack: 
             }
         }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            items(rows) { r ->
+            val keys = contentKeys(rows) { "${it.time}|${it.project}|${it.kind}|${it.text.hashCode()}" }
+            items(rows.size, key = { "feed:${keys[it]}" }) { i ->
+                val r = rows[i]
                 Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClickLabel = "карточка проекта") { onProject(r.project) }.padding(vertical = 4.dp)) {
                     Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text("${r.time} · ${r.project}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
@@ -701,7 +769,7 @@ private fun DirScreen(nav: Nav.Dir, loader: Loader, onBack: () -> Unit, open: (N
         when (val r = result) {
             null -> item { Text("Загрузка…") }
             is Outcome.Failure -> item { FailureText("Не загрузилось", Screens.failure(r.diagnostics.first())) }
-            is Outcome.Success -> items(r.value) { e ->
+            is Outcome.Success -> items(r.value, key = { "entry:${it.name}" }) { e ->
                 // Строка — 48 dp, папка — словом для TalkBack, а не названием знака (UX-15).
                 Text(
                     (if (e.dir) "📁 " else "") + e.name,
@@ -832,7 +900,9 @@ private fun Questions(q: List<Screens.Question>, open: (Nav) -> Unit) = LazyColu
     item { Text("Вопросов автору: ${q.size}", style = MaterialTheme.typography.titleMedium) }
     for ((project, items) in Screens.questionGroups(q)) {
         item(key = "p:$project") { Text(project, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp)) }
-        items(items) { i ->
+        val keys = contentKeys(items) { "${it.title}|${it.label}" }
+        items(items.size, key = { "q:$project:${keys[it]}" }) { n ->
+            val i = items[n]
             Row(
                 Modifier.fillMaxWidth().clickable(enabled = i.path != null) { open(Nav.Doc(i.project, i.path!!, i.section?.let(Links::slug))) }.padding(vertical = 4.dp),
                 verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
@@ -847,7 +917,7 @@ private fun Questions(q: List<Screens.Question>, open: (Nav) -> Unit) = LazyColu
 
 @Composable
 // Листается (UX-15): при шрифте 200 % и в альбомной ориентации «Клоны…» не уходят за край.
-private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -> Unit, onForget: () -> Unit, onClones: () -> Unit) = Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -> Unit, onForget: () -> Unit, onClones: () -> Unit, onZone: (Int) -> Unit = {}) = Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
     var token by remember { mutableStateOf("") }
     // Пока токен сохранён — одна строка, поле — по «Заменить» (UX-12): пустое поле при сохранённом токене путало.
     var replacing by rememberSaveable { mutableStateOf(false) }
@@ -902,6 +972,28 @@ private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -
         style = MaterialTheme.typography.bodySmall,
     )
     TextButton(onClick = onClones, enabled = view.hasToken && !view.busy) { Text("Клоны…") }
+    // Пояс показа — один на приложение (ТЗ, §6.3; UX-22): время пульта и «AI» — в нём.
+    Text("Время", style = MaterialTheme.typography.titleMedium)
+    var zones by remember { mutableStateOf(false) }
+    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        Text("Часовой пояс показа", Modifier.weight(1f))
+        androidx.compose.foundation.layout.Box {
+            TextButton(onClick = { zones = true }) { Text(Screens.zoneName(view.zone) + " ▾") }
+            androidx.compose.material3.DropdownMenu(expanded = zones, onDismissRequest = { zones = false }) {
+                for (h in -12..14) {
+                    androidx.compose.material3.DropdownMenuItem(text = { Text(Screens.zoneName(h * 60)) }, onClick = {
+                        zones = false
+                        onZone(h * 60)
+                    })
+                }
+            }
+        }
+    }
+    // «О программе» (UX-23, D-54): версия приложения и подсистемы «AI».
+    if (view.about.isNotEmpty()) {
+        Text("О программе", style = MaterialTheme.typography.titleMedium)
+        Text(view.about, style = MaterialTheme.typography.bodySmall)
+    }
 }
 
 /**

@@ -51,7 +51,9 @@ fun LinuxScreen(onBack: () -> Unit) {
     val context = LocalContext.current.applicationContext
     val scope = rememberCoroutineScope()
     val available = remember { LinuxSetup.available(context) }
-    var installed by remember { mutableStateOf(LinuxSetup.environment(context).installed()) }
+    // Метка установки — файл на диске: читается не в главном потоке (AI:A-16); до ответа — «Проверяю…».
+    var installed by remember { mutableStateOf<String?>(null) }
+    var checked by remember { mutableStateOf(false) }
     // Долгое — вне экрана (AI:A-14): ход, вывод и итог переживают уход с экрана; повтор не запускается.
     val jobs = remember { LongJobs.get(context) }
     val state by jobs.state.collectAsState()
@@ -59,7 +61,12 @@ fun LinuxScreen(onBack: () -> Unit) {
     val work = state[LongJobs.LINUX_APK]
     // Процессы гостя — по одному (база apk под замком): и llama.cpp во «Моделях» тоже.
     val running = LongJobs.GUEST.any { state[it]?.running == true }
-    LaunchedEffect(install?.running) { if (install?.running == false) installed = LinuxSetup.environment(context).installed() }
+    LaunchedEffect(install?.running) {
+        if (install?.running != true) {
+            installed = withContext(Dispatchers.IO) { LinuxSetup.environment(context).installed() }
+            checked = true
+        }
+    }
     var busy by remember { mutableStateOf<String?>(null) }
     var note by remember { mutableStateOf<String?>(null) }
     var allOutput by remember { mutableStateOf(false) }
@@ -87,6 +94,7 @@ fun LinuxScreen(onBack: () -> Unit) {
         Text("Alpine в данных приложения — без Termux.", style = MaterialTheme.typography.bodySmall)
         when {
             !available -> Text("Недоступно на этом телефоне: нужен процессор arm64.", style = MaterialTheme.typography.bodySmall)
+            !checked -> Text("Проверяю…", style = MaterialTheme.typography.bodySmall)
             installed == null -> Button(enabled = !running, onClick = {
                 jobs.start(LongJobs.LINUX_INSTALL, "Установка Alpine", excludes = LongJobs.GUEST) {
                     when (val r = LinuxSetup.install(context)) {

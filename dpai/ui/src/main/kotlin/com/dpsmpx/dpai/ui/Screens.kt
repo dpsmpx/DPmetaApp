@@ -244,7 +244,7 @@ object Screens {
         entries: List<com.dpsmpx.dpai.orchestrator.ChatEntry>,
         session: SessionId?,
         now: com.dpsmpx.dpai.core.clock.Timestamp,
-        zone: java.time.ZoneId = java.time.ZoneId.systemDefault(),
+        zone: java.time.ZoneId = com.dpsmpx.dpai.core.clock.DisplayZone.current,
     ): List<ChatLine> {
         val today = java.time.Instant.ofEpochMilli(now.epochMillis).atZone(zone).toLocalDate()
         return entries.map { e ->
@@ -312,7 +312,7 @@ object Screens {
     fun limits(
         accounts: com.dpsmpx.dpai.accounts.AccountsState,
         now: com.dpsmpx.dpai.core.clock.Timestamp,
-        zone: java.time.ZoneId = java.time.ZoneId.systemDefault(),
+        zone: java.time.ZoneId = com.dpsmpx.dpai.core.clock.DisplayZone.current,
         labelOf: (com.dpsmpx.dpai.accounts.SubscriptionState) -> String = { it.label },
     ): List<SubscriptionLimits> =
         accounts.subscriptions.values.sortedBy { it.id.value }.map { sub ->

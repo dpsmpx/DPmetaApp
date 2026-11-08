@@ -60,7 +60,13 @@ class ControllerService : Service() {
             return START_NOT_STICKY
         }
         val manager = getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(NotificationChannel(CHANNEL, "Контроллер работает", NotificationManager.IMPORTANCE_MIN))
+        NotifyGroups.ensure(manager)
+        manager.createNotificationChannel(
+            NotificationChannel(CHANNEL, "Контроллер работает", NotificationManager.IMPORTANCE_MIN).apply {
+                group = NotifyGroups.SERVICE
+                description = "Пока идёт: такты контура, запросы и уведомления «AI»"
+            },
+        )
         val open = Notifier.openApp(this)
         // «Остановить» — через подтверждение в приложении (аудит удобства, A-18): одно касание в шторке
         // останавливало такты, уведомления и запросы до ручного запуска.
@@ -70,7 +76,7 @@ class ControllerService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val n = Notification.Builder(this, CHANNEL)
-            .setSmallIcon(android.R.drawable.stat_notify_sync)
+            .setSmallIcon(R.drawable.ic_notify_ai)
             .setContentTitle("AI: контроллер работает")
             .setContentText("опрос targets и задач")
             .setContentIntent(open)

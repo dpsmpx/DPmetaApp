@@ -52,6 +52,12 @@ fun RequestsPane(model: DemoModel, snapshot: Snapshot?) {
         item {
             Text(if (requests.isEmpty()) "Ждущих запросов нет" else "Ждут ответа: ${requests.size}", style = MaterialTheme.typography.titleMedium)
             if (snapshot?.live == false) Text("Демо: запросы живут до перезапуска приложения", style = MaterialTheme.typography.labelSmall)
+            // Окно поверх выключено — подсказка, где включить (AI:A-26); сам выключатель — в «Настройках AI».
+            val context = LocalContext.current.applicationContext
+            // Метка — файл: не в главном потоке (AI:A-16); до ответа подсказки нет.
+            if (!rememberRead(Unit, initial = true) { RequestOverlay.enabled(context) }) {
+                Text("Окно поверх приложений выключено: запросы — только в шторке и здесь. Включить — «Настройки AI».", style = MaterialTheme.typography.labelSmall)
+            }
         }
         items(requests, key = { it.id.value }) { RequestItem(model, it) }
     }
@@ -64,12 +70,7 @@ internal fun OverlayCard() {
     var overlayOn by remember { mutableStateOf(RequestOverlay.enabled(context)) }
     var permitted by remember { mutableStateOf(RequestOverlay.permitted(context)) }
     // Разрешение даётся в настройках системы: перечитать, когда человек вернулся (раз в 2 с, пока карточка видна).
-    LaunchedEffect(Unit) {
-        while (true) {
-            permitted = RequestOverlay.permitted(context)
-            kotlinx.coroutines.delay(2_000)
-        }
-    }
+    Poll(periodMs = 2_000) { permitted = RequestOverlay.permitted(context) }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("Окно поверх приложений", fontWeight = FontWeight.Bold)

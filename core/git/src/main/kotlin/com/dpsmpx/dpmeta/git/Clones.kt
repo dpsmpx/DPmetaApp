@@ -16,6 +16,7 @@ import org.eclipse.jgit.errors.MissingObjectException
 import org.eclipse.jgit.lib.Config
 import org.eclipse.jgit.lib.Constants
 import org.eclipse.jgit.lib.ObjectId
+import org.eclipse.jgit.lib.ObjectInserter
 import org.eclipse.jgit.lib.Repository
 import org.eclipse.jgit.revwalk.RevCommit
 import org.eclipse.jgit.revwalk.RevWalk
@@ -76,7 +77,13 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
     }
 
     /** Итог синхронизации клона: что сделано, основная ветка, ветки GitHub в клоне, конфликты. */
-    data class Report(val project: String, val action: Action, val main: String, val branches: List<String>, val conflicts: List<Conflict>)
+    /**
+     * Итог клонирования или обновления. [mainSha] — голова основной ветки по
+     * ответу GitHub (`ls-remote`), а не по ссылке клона: ссылки клона может
+     * переписать Linux-среда (D-72), ответ GitHub — нет
+     * (`DP_AI_Orcestrator:D-114`, T19).
+     */
+    data class Report(val project: String, val action: Action, val main: String, val branches: List<String>, val conflicts: List<Conflict>, val mainSha: String? = null)
 
     /** Голова ветки GitHub в клоне: SHA, время коммита (коммиттера), автор коммита. */
     data class Head(val name: String, val sha: String, val time: Timestamp, val author: String?)
@@ -143,7 +150,7 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
             .use { git -> git.repository.config.apply { setString("dpmeta", null, "main", main) }.save() }
         // Клон появляется целиком: прерванное клонирование не оставляет полуклона под именем проекта.
         if (!tmp.renameTo(dir)) throw IOException("rename")
-        return Outcome.success(Report(project, Action.CLONED, main, keep, emptyList()))
+        return Outcome.success(Report(project, Action.CLONED, main, keep, emptyList(), refs[Constants.R_HEADS + main]?.objectId?.name))
     }
 
     private fun fetch(project: String, remote: URI, dir: File, creds: CredentialsProvider?, excluded: (String) -> Boolean): Outcome<Report> = open(dir).use { repo ->
@@ -154,8 +161,9 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
             if (repo.config.getString("remote", "origin", "url") != remote.toString()) {
                 repo.config.apply { setString("remote", "origin", "url", remote.toString()) }.save()
             }
-            val refs = Git.lsRemoteRepository().setRemote(remote.toString()).setHeads(true).setCredentialsProvider(creds).call()
-                .map { it.name.removePrefix(Constants.R_HEADS) }
+            val remoteRefs = Git.lsRemoteRepository().setRemote(remote.toString()).setHeads(true).setCredentialsProvider(creds).call()
+            val mainSha = remoteRefs.firstOrNull { it.name == Constants.R_HEADS + main }?.objectId?.name
+            val refs = remoteRefs.map { it.name.removePrefix(Constants.R_HEADS) }
             val keep = refs.filter { it == main || !excluded(it) }.sorted()
             val before = keep.associateWith { repo.resolve(Constants.R_REMOTES + "origin/" + it) }
             git.fetch()
@@ -171,7 +179,7 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
                 if (name !in keep) repo.updateRef(r.name, true).apply { isForceUpdate = true }.delete()
             }
             // Рабочее дерево и локальные ветки — работа ИИ (D-70): синхронизация их не трогает, только `origin/*`.
-            Outcome.success(Report(project, Action.FETCHED, main, keep, rewritten(repo, keep, before)))
+            Outcome.success(Report(project, Action.FETCHED, main, keep, rewritten(repo, keep, before), mainSha))
         }
     }
 
@@ -207,7 +215,16 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
     fun main(project: String): String? {
         val dir = dir(project)
         if (!File(dir, ".git").isDirectory) return null
-        return open(dir).use(::mainOf)
+        // Испорченный клон (конфиг правит и гость, D-72) — как нет клона: читается REST, а не падение экрана.
+        return try {
+            open(dir).use(::mainOf)
+        } catch (e: IOException) {
+            null
+        } catch (e: JGitInternalException) {
+            null
+        } catch (e: IllegalArgumentException) {
+            null
+        }
     }
 
     /** Основная ветка — одно правило для чтения и обновления: отметка, цель `origin/HEAD`, `main`, текущая ветка. */
@@ -229,6 +246,72 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
                 Head(r.name.removePrefix(Constants.R_REMOTES + "origin/"), c.name, Timestamp(c.commitTime * 1000L), c.authorIdent?.name)
             }
         }
+    }
+
+    /**
+     * Последний коммит ветки GitHub [branch], менявший [path] (пусто — весь
+     * репозиторий, иначе — каталог подсистемы): короткий хеш и дата коммита в
+     * поясе коммитившего, `ГГГГ-ММ-ДД` — как `git log -1 --format='%h %cs'`
+     * у `DPmeta:tools/manifest.py` (`DP_AI_Orcestrator:D-114`); нет — `null`.
+     */
+    fun last(project: String, branch: String, path: String = ""): Outcome<Pair<String, String>?> = withRepo(project) { repo ->
+        val head = repo.resolve("${Constants.R_REMOTES}origin/$branch") ?: return@withRepo null
+        RevWalk(repo).use { walk ->
+            walk.markStart(walk.parseCommit(head))
+            val p = path.trim('/')
+            if (p.isNotEmpty()) walk.treeFilter = org.eclipse.jgit.treewalk.filter.AndTreeFilter.create(org.eclipse.jgit.treewalk.filter.PathFilter.create(p), org.eclipse.jgit.treewalk.filter.TreeFilter.ANY_DIFF)
+            val c = walk.next() ?: return@use null
+            val zone = c.committerIdent?.timeZone?.toZoneId() ?: java.time.ZoneOffset.UTC
+            c.abbreviate(7).name() to java.time.Instant.ofEpochSecond(c.commitTime.toLong()).atZone(zone).toLocalDate().toString()
+        }
+    }
+
+    /**
+     * Файл на коммите [commit] (полный SHA) — с проверкой содержимого
+     * (`DP_AI_Orcestrator:D-114`, T19): коммит, каждое дерево по пути и
+     * сам файл читаются по одному, и у каждого id пересчитывается по байтам.
+     * JGit при чтении хеш не сверяет, а гость Linux может подложить в клон
+     * свой объект под доверенный id — тогда отказ, а не чужое содержимое.
+     * Нет файла (или это каталог) — `null`; нет коммита или объект подменён —
+     * отказ.
+     */
+    fun fileAt(project: String, commit: String, path: String): Outcome<ByteArray?> {
+        if (!Regex("[0-9a-f]{40}").matches(commit)) return failure(DiagCode.VALUE_INVALID, "не SHA коммита", project)
+        val parts = path.trim('/').split('/').filter { it.isNotEmpty() }
+        if (parts.isEmpty()) return Outcome.success(null)
+        return withRepo(project) { repo ->
+            val commitBytes = verified(repo, ObjectId.fromString(commit), Constants.OBJ_COMMIT)
+            var tree: ObjectId = RevCommit.parse(commitBytes).tree.copy()
+            for ((i, part) in parts.withIndex()) {
+                val parser = org.eclipse.jgit.treewalk.CanonicalTreeParser()
+                parser.reset(verified(repo, tree, Constants.OBJ_TREE))
+                var found: Pair<ObjectId, org.eclipse.jgit.lib.FileMode>? = null
+                while (!parser.eof()) {
+                    if (parser.entryPathString == part) {
+                        found = parser.entryObjectId.copy() to parser.entryFileMode
+                        break
+                    }
+                    parser.next()
+                }
+                val (id, mode) = found ?: return@withRepo null
+                val last = i == parts.lastIndex
+                when {
+                    !last && mode == org.eclipse.jgit.lib.FileMode.TREE -> tree = id
+                    // Каталог, подмодуль или путь сквозь файл — не файл.
+                    !last || mode == org.eclipse.jgit.lib.FileMode.TREE || mode == org.eclipse.jgit.lib.FileMode.GITLINK -> return@withRepo null
+                    else -> return@withRepo verified(repo, id, Constants.OBJ_BLOB)
+                }
+            }
+            null
+        }
+    }
+
+    /** Байты объекта [id] вида [type], если id совпадает с хешем содержимого; иначе — `CorruptObjectException`. */
+    private fun verified(repo: Repository, id: ObjectId, type: Int): ByteArray {
+        val bytes = repo.open(id, type).bytes
+        val actual = ObjectInserter.Formatter().idFor(type, bytes)
+        if (actual != id) throw org.eclipse.jgit.errors.CorruptObjectException(id, "содержимое не совпадает с id")
+        return bytes
     }
 
     /** Файл ветки GitHub [branch] по пути от корня; нет файла (или это каталог) — `null`, нет клона или ветки — отказ. */

@@ -15,6 +15,10 @@ tasks.withType<Test>().configureEach {
     val samples = layout.projectDirectory.dir("samples")
     inputs.dir(samples).withPropertyName("samples")
     systemProperty("corpus.samples", samples.asFile.absolutePath)
+    // Манифест dpai.ecosystem из реестра пульта (DP_AI_Orcestrator:D-114): вход и вывод DPmeta:tools/manifest.py.
+    val manifest = layout.projectDirectory.dir("manifest")
+    inputs.dir(manifest).withPropertyName("manifest")
+    systemProperty("corpus.manifest", manifest.asFile.absolutePath)
     val ecosystem = layout.projectDirectory.dir("ecosystem")
     inputs.dir(ecosystem).withPropertyName("ecosystem")
     systemProperty("corpus.ecosystem", ecosystem.asFile.absolutePath)

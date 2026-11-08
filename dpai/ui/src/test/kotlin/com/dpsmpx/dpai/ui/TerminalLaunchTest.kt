@@ -28,6 +28,8 @@ class TerminalLaunchTest {
         assertTrue(cmd[2].startsWith("exec env -u ") && cmd[2].endsWith(" 'CLAUDE_CONFIG_DIR=/home/u/.dpai/slot a' claude"), cmd[2])
         // Переменные, перекрывающие вход слота (D-29), сняты после профиля оболочки входа.
         for (v in com.dpsmpx.dpai.accounts.SlotEnvironment.OVERRIDING) assertTrue("-u $v " in cmd[2], v)
+        // 24-битный цвет (терминал:A-23).
+        assertTrue(" COLORTERM=truecolor " in cmd[2], cmd[2])
     }
 
     @Test

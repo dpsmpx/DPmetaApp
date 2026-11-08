@@ -29,6 +29,11 @@ import kotlin.test.assertTrue
  * (переменная окружения `SNAPSHOTS_UPDATE=1`), затем посмотреть дифф.
  */
 class ScreenSnapshotTest {
+    init {
+        // Снимки — в поясе показа по умолчанию (+03:00, ТЗ, §6.3): в приложении его задаёт настройка «Ещё» (UX-22).
+        com.dpsmpx.dpai.core.clock.DisplayZone.current = com.dpsmpx.dpmeta.app.screens.Screens.DEFAULT_ZONE
+    }
+
     private val corpus = Path.of(System.getProperty("corpus.ecosystem") ?: error("нет corpus.ecosystem"))
     private val dir = File(System.getProperty("snapshots.dir") ?: error("нет snapshots.dir"))
     private val now = Timestamp(Instant.parse("2026-11-01T10:00:00Z").toEpochMilli())

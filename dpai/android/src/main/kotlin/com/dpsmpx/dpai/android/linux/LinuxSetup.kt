@@ -132,7 +132,8 @@ object LinuxSetup {
         refreshDns(context)
         // Команда вкладки (например, `claude` слота «в приложении») — через оболочку гостя по полному пути.
         val argv = if (command.isEmpty()) listOf("/bin/sh", "-l") else command.mapIndexed { i, a -> if (i == 0 && a == "sh") "/bin/sh" else a }
-        val spec = ProcessSpec(argv, environment = ProotHost.GUEST_ENVIRONMENT + ("TERM" to "xterm-256color"))
+        // 24-битный цвет (терминал:A-23): COLORTERM — как у kitty и Windows Terminal.
+        val spec = ProcessSpec(argv, environment = ProotHost.GUEST_ENVIRONMENT + ("TERM" to "xterm-256color") + ("COLORTERM" to com.dpsmpx.dpai.ui.TerminalLaunch.COLORTERM))
         val wrapped = host(context).wrap(spec)
         return JniProcesses().spawn(wrapped.command, wrapped.environment.orEmpty(), null, size)
     }

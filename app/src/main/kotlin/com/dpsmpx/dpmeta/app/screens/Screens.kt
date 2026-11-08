@@ -35,11 +35,21 @@ object Screens {
     fun failure(d: com.dpsmpx.dpai.core.diagnostics.Diagnostic): Failure =
         Failure(com.dpsmpx.dpai.core.text.Words.reason(d.code.name), "${d.code.name} — ${d.message}")
 
-    /** Часовой пояс показа (ТЗ, §6.3): по умолчанию +03:00. */
-    val ZONE: ZoneOffset = ZoneOffset.ofHours(3)
-    private val TIME = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm").withZone(ZONE)
+    /** Пояс показа по умолчанию (ТЗ, §6.3): +03:00. */
+    val DEFAULT_ZONE: ZoneOffset = ZoneOffset.ofHours(3)
 
-    fun time(t: Timestamp): String = TIME.format(Instant.ofEpochMilli(t.epochMillis))
+    /**
+     * Часовой пояс показа (ТЗ, §6.3; UX-22) — один на приложение
+     * ([com.dpsmpx.dpai.core.clock.DisplayZone]): его задаёт настройка «Ещё»,
+     * «AI» показывает время в нём же.
+     */
+    val ZONE: java.time.ZoneId get() = com.dpsmpx.dpai.core.clock.DisplayZone.current
+    private val TIME = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
+
+    fun time(t: Timestamp): String = TIME.withZone(ZONE).format(Instant.ofEpochMilli(t.epochMillis))
+
+    /** Пояс строкой: «UTC+03:00». */
+    fun zoneName(minutes: Int): String = "UTC" + ZoneOffset.ofTotalSeconds(minutes * 60).id.let { if (it == "Z") "+00:00" else it }
 
     fun <T> show(m: Measure<T>, unit: String = ""): String = when (m) {
         is Measure.Known -> "${m.value}$unit"

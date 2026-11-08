@@ -64,6 +64,8 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
     var targets by remember { mutableStateOf(controller.targets()) }
     val checks = remember { mutableStateMapOf<String, List<CheckLine>>() }
     var form by remember { mutableStateOf(false) }
+    // Только что добавленный target — проверить сразу (AI:A-22), без отдельного нажатия.
+    var checkNew by remember { mutableStateOf<String?>(null) }
     var project by remember { mutableStateOf(controller.project()) }
     var projectFor by remember { mutableStateOf<TargetEntry?>(null) }
     var guide by rememberSaveable { mutableStateOf(false) }
@@ -92,12 +94,7 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
     }
     // Кто чем занят (D-56) — раз в 5 с, пока экран открыт.
     var work by remember { mutableStateOf(emptyMap<com.dpsmpx.dpai.core.ids.ExecutionTargetId, List<String>>()) }
-    androidx.compose.runtime.LaunchedEffect(Unit) {
-        while (true) {
-            work = withContext(Dispatchers.IO) { model.work() }
-            kotlinx.coroutines.delay(5_000)
-        }
-    }
+    Poll(periodMs = 5_000) { work = withContext(Dispatchers.IO) { model.work() } }
     if (guide) {
         val close = {
             guide = false
@@ -162,6 +159,8 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
                 onProject = { projectFor = t },
                 onRename = { renaming = t },
                 onRemove = { removing = t },
+                checkNow = checkNew == t.id.value,
+                onChecked = { checkNew = null },
             )
         }
         item(key = "project") { ProjectCard(controller, targets, project) { project = it } }
@@ -185,9 +184,10 @@ fun TargetsPane(controller: Controller, model: DemoModel) {
     }
 
     if (form) {
-        AddTargetDialog(controller, onDone = {
+        AddTargetDialog(controller, onDone = { added ->
             form = false
             targets = controller.targets()
+            checkNew = added?.id?.value
         })
     }
 }
@@ -210,6 +210,8 @@ private fun TargetCard(
     onProject: () -> Unit,
     onRename: () -> Unit,
     onRemove: () -> Unit,
+    checkNow: Boolean = false,
+    onChecked: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -252,6 +254,12 @@ private fun TargetCard(
                     listOf(CheckLine(login, "слота нет: войдите в каталоге слота ($how) и проверьте снова", Tone.WARNING))
                 },
             )
+        }
+    }
+    LaunchedEffect(checkNow) {
+        if (checkNow) {
+            onChecked()
+            check()
         }
     }
     Card(Modifier.fillMaxWidth()) {
@@ -316,11 +324,12 @@ private fun TargetCard(
 @Composable
 private fun LinuxEntry(onOpen: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current.applicationContext
-    val installed = remember { com.dpsmpx.dpai.android.linux.LinuxSetup.environment(context).installed() }
+    // null — ещё читается (AI:A-16): метка установки — файл на диске.
+    val installed = rememberRead(Unit, initial = null as Boolean?) { com.dpsmpx.dpai.android.linux.LinuxSetup.environment(context).installed() != null }
     Card(Modifier.fillMaxWidth().clickable(onClick = onOpen)) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Linux в приложении", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-            Text((if (installed != null) "установлен" else "не установлен") + " ▸", style = MaterialTheme.typography.bodySmall)
+            Text((when (installed) { true -> "установлен"; false -> "не установлен"; null -> "…" }) + " ▸", style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -411,7 +420,7 @@ private fun CheckRow(c: CheckLine) {
  * показывает target (`ssh-keygen -l -f <ключ хоста>.pub`) → сохранение.
  */
 @Composable
-private fun AddTargetDialog(controller: Controller, onDone: () -> Unit) {
+private fun AddTargetDialog(controller: Controller, onDone: (TargetEntry?) -> Unit) {
     val scope = rememberCoroutineScope()
     var label by remember { mutableStateOf("") }
     var host by remember { mutableStateOf("127.0.0.1") }
@@ -426,17 +435,45 @@ private fun AddTargetDialog(controller: Controller, onDone: () -> Unit) {
 
     val probed = pending
     AlertDialog(
-        onDismissRequest = onDone,
+        onDismissRequest = { onDone(null) },
         title = { Text(if (probed == null) "Новый target" else "Ключ хоста") },
         text = {
             if (probed == null) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    // Заготовки (AI:A-22): хост, порт, команда агента и каталог слота — одним касанием; дальше — правка.
+                    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        androidx.compose.material3.AssistChip(onClick = {
+                            if (label.isBlank()) label = "Termux"
+                            host = "127.0.0.1"
+                            port = "8022"
+                            agent = com.dpsmpx.dpai.ui.SetupGuide.AGENT
+                            configDir = com.dpsmpx.dpai.ui.SetupGuide.SLOT_DIR
+                            windows = false
+                        }, label = { Text("Termux на этом телефоне") })
+                        androidx.compose.material3.AssistChip(onClick = {
+                            if (label.isBlank()) label = "ПК с Windows"
+                            port = "22"
+                            configDir = ""
+                            windows = true
+                        }, label = { Text("ПК с Windows") })
+                        androidx.compose.material3.AssistChip(onClick = {
+                            if (label.isBlank()) label = "ПК с Linux"
+                            port = "22"
+                            configDir = ""
+                            windows = false
+                        }, label = { Text("ПК с Linux") })
+                    }
+                    val mono = androidx.compose.ui.text.TextStyle(fontFamily = FontFamily.Monospace)
                     OutlinedTextField(label, { label = it }, label = { Text("Имя") }, singleLine = true)
-                    OutlinedTextField(host, { host = it }, label = { Text("Хост") }, singleLine = true)
-                    OutlinedTextField(port, { port = it }, label = { Text("Порт") }, singleLine = true)
-                    OutlinedTextField(user, { user = it }, label = { Text("Пользователь") }, singleLine = true)
-                    OutlinedTextField(agent, { agent = it }, label = { Text("Команда агента dpai") }, singleLine = true)
-                    OutlinedTextField(configDir, { configDir = it }, label = { Text("Каталог Claude слота (для сессий)") }, singleLine = true)
+                    OutlinedTextField(host, { host = it }, label = { Text("Хост") }, singleLine = true, textStyle = mono)
+                    // Порт — цифровой клавиатурой (AI:A-22).
+                    OutlinedTextField(
+                        port, { v -> port = v.filter { it.isDigit() }.take(5) }, label = { Text("Порт") }, singleLine = true, textStyle = mono,
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                    )
+                    OutlinedTextField(user, { user = it }, label = { Text("Пользователь") }, singleLine = true, textStyle = mono)
+                    OutlinedTextField(agent, { agent = it }, label = { Text("Команда агента dpai") }, singleLine = true, textStyle = mono)
+                    OutlinedTextField(configDir, { configDir = it }, label = { Text("Каталог Claude слота (для сессий)") }, singleLine = true, textStyle = mono)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(windows, { windows = it })
                         Text("Windows")
@@ -478,13 +515,14 @@ private fun AddTargetDialog(controller: Controller, onDone: () -> Unit) {
                     scope.launch {
                         when (val a = withContext(Dispatchers.IO) { controller.add(probed.first, probed.second) }) {
                             is Outcome.Failure -> error = a.diagnostics.first().message
-                            is Outcome.Success -> onDone()
+                            // Сохранён — сразу «Проверить» на его карточке (AI:A-22).
+                            is Outcome.Success -> onDone(probed.first)
                         }
                     }
                 }) { Text("Совпадает — сохранить") }
             }
         },
-        dismissButton = { TextButton(onClick = onDone) { Text("Отмена") } },
+        dismissButton = { TextButton(onClick = { onDone(null) }) { Text("Отмена") } },
     )
 }
 
@@ -588,12 +626,9 @@ internal fun TermuxCard(port: Int, framed: Boolean = true) {
             context.startActivity(TermuxLauncher.appSettings(context))
         }
     }
-    LaunchedEffect(port) {
-        while (true) {
-            listening = withContext(Dispatchers.IO) { TermuxLauncher.listening(port) }
-            permitted = TermuxLauncher.permitted(context)
-            kotlinx.coroutines.delay(3000)
-        }
+    Poll(port, periodMs = 3000) {
+        listening = withContext(Dispatchers.IO) { TermuxLauncher.listening(port) }
+        permitted = TermuxLauncher.permitted(context)
     }
     Framed(framed) {
         Column(if (framed) Modifier.padding(12.dp) else Modifier) {
@@ -647,13 +682,10 @@ internal fun ControlCard(model: DemoModel) {
     var limit by remember { mutableStateOf(model.control()?.maxSessions) }
     var live by remember { mutableStateOf(model.control() != null) }
     var note by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            val c = withContext(Dispatchers.IO) { model.control() }
-            live = c != null
-            limit = c?.maxSessions
-            kotlinx.coroutines.delay(3000)
-        }
+    Poll(periodMs = 3000) {
+        val c = withContext(Dispatchers.IO) { model.control() }
+        live = c != null
+        limit = c?.maxSessions
     }
     if (!live) return
     Card(Modifier.fillMaxWidth()) {
@@ -689,13 +721,10 @@ private fun TargetSwitches(model: DemoModel, t: TargetEntry) {
     var slots by remember { mutableStateOf(model.slotsOf(t.id)) }
     // Намерения (D-57): переключатель показывает желаемое, пока контур занят, и не откатывается.
     var tick by remember { mutableStateOf(0) }
-    LaunchedEffect(t.id) {
-        while (true) {
-            enabled = withContext(Dispatchers.IO) { model.control()?.let { t.id !in it.disabledTargets } }
-            slots = withContext(Dispatchers.IO) { model.slotsOf(t.id) }
-            tick++
-            kotlinx.coroutines.delay(3000)
-        }
+    Poll(t.id, periodMs = 3000) {
+        enabled = withContext(Dispatchers.IO) { model.control()?.let { t.id !in it.disabledTargets } }
+        slots = withContext(Dispatchers.IO) { model.slotsOf(t.id) }
+        tick++
     }
     val on = enabled ?: return
     val wantTarget = remember(tick, on) { model.desired(com.dpsmpx.dpai.orchestrator.commands.Command.SetTargetEnabled(t.id, on)) as? com.dpsmpx.dpai.orchestrator.commands.Command.SetTargetEnabled }
@@ -743,12 +772,9 @@ internal fun CliCard() {
             Text("Командная строка dpai", style = MaterialTheme.typography.titleMedium)
             var running by remember { mutableStateOf(ControlServer.running) }
             var problem by remember { mutableStateOf(ControlServer.problem) }
-            LaunchedEffect(Unit) {
-                while (true) {
-                    running = ControlServer.running
-                    problem = ControlServer.problem
-                    kotlinx.coroutines.delay(2000)
-                }
+            Poll(periodMs = 2000) {
+                running = ControlServer.running
+                problem = ControlServer.problem
             }
             Text(
                 when {
@@ -989,7 +1015,8 @@ private fun UsageAutoSwitch(model: DemoModel, t: TargetEntry) {
         UsageAuto.set(context, t.id, v)
         if (v) scope.launch { withContext(Dispatchers.IO) { model.refreshUsage(setOf(t.id)) } }
     }) {
-        Text("Лимиты: обновлять раз в минуту", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+        // У target — фон (службой, без открытой сводки); на сводке — когда обновлено (AI:A-26).
+        Text("Обновлять лимиты в фоне", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
     }
 }
 

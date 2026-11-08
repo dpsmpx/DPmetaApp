@@ -27,7 +27,11 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.displayCutout
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -280,7 +284,8 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                 // Узкая строка (D-61): больше места чату; в окне сессии — кружок состояния и имя (нажатие — переименовать).
                 androidx.compose.material3.Surface(tonalElevation = 3.dp) {
                     Row(
-                        Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).heightIn(min = 48.dp).padding(horizontal = 4.dp),
+                        // Сверху — строка состояния, сбоку — вырез в альбомной ориентации (AI:A-24).
+                        Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)).heightIn(min = 48.dp).padding(horizontal = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         if (selectedId != null) {
@@ -371,7 +376,12 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
         ) { padding ->
             val s = snapshot
             // Клавиатура (D-64): содержимое — над ней; отступ панели вкладок уже учтён (consumeWindowInsets), не вдвое.
-            Column(Modifier.padding(padding).consumeWindowInsets(padding).imePadding().fillMaxSize()) {
+            // Широкий экран (AI:A-24): содержимое — не шире CONTENT_MAX по центру, вырез сбоку — отступом.
+            Column(
+                Modifier.padding(padding).consumeWindowInsets(padding).imePadding()
+                    .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
+                    .fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = CONTENT_MAX).fillMaxWidth(),
+            ) {
                 corrupted?.let { what ->
                     // D-24: карантин хвоста — только явным решением; необратимое — окном (AI:A-4).
                     var asking by remember { mutableStateOf(false) }
@@ -478,26 +488,6 @@ internal fun toneColor(t: Tone): Color {
     }
 }
 
-/**
- * Видно ли окно (активность между ON_START и ON_STOP). Цикл Compose сам не
- * останавливается, когда приложение свёрнуто или экран гаснет (Redmi Note 13:
- * пробы `/usage` шли при выключенном экране), — циклы экрана привязаны к этому признаку.
- */
-@Composable
-private fun rememberVisible(): Boolean {
-    val lifecycle = (androidx.activity.compose.LocalActivity.current as? androidx.activity.ComponentActivity)?.lifecycle
-    var visible by remember { mutableStateOf(lifecycle?.currentState?.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED) ?: true) }
-    androidx.compose.runtime.DisposableEffect(lifecycle) {
-        val observer = androidx.lifecycle.LifecycleEventObserver { _, e ->
-            if (e == androidx.lifecycle.Lifecycle.Event.ON_START) visible = true
-            if (e == androidx.lifecycle.Lifecycle.Event.ON_STOP) visible = false
-        }
-        lifecycle?.addObserver(observer)
-        onDispose { lifecycle?.removeObserver(observer) }
-    }
-    return visible
-}
-
 @Composable
 private fun DashboardPane(screen: DashboardScreen, quick: com.dpsmpx.dpai.ui.QuickActions, model: DemoModel, onTargets: () -> Unit, onTask: (com.dpsmpx.dpai.core.ids.TaskId) -> Unit) {
     // Загрузка окон — из `/usage` раз в минуту, пока сводка видна (D-48).
@@ -536,7 +526,8 @@ private fun DashboardPane(screen: DashboardScreen, quick: com.dpsmpx.dpai.ui.Qui
                     Text(Words.task(c.state) + (if (c.held) " · пауза" else "") + " ▸", style = MaterialTheme.typography.labelSmall, color = toneColor(Tone.WARNING))
                 }
             }
-            items(screen.attention) { Text("· $it", color = toneColor(Tone.WARNING), style = MaterialTheme.typography.bodySmall) }
+            val keys = contentKeys(screen.attention) { it }
+            items(screen.attention.size, key = { "attention:${keys[it]}" }) { Text("· ${screen.attention[it]}", color = toneColor(Tone.WARNING), style = MaterialTheme.typography.bodySmall) }
         }
         if (screen.shownCounters.isNotEmpty()) item { Counters(screen.shownCounters) }
         if (screen.usage.isNotEmpty()) {
@@ -594,7 +585,10 @@ private fun SessionPane(screen: SessionScreen?, model: DemoModel, events: Boolea
                 SessionExtras(screen, model)
             }
             if (events) {
-                items(screen.timeline) { e ->
+                // Ключи по содержимому (AI:A-25): обрезка начала ленты не перерисовывает её целиком.
+                val keys = contentKeys(screen.timeline) { "${it.time}|${it.text.hashCode()}" }
+                items(screen.timeline.size, key = { "t:${keys[it]}" }) { i ->
+                    val e = screen.timeline[i]
                     Row {
                         Text(e.time, style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(64.dp))
                         Text(e.text, style = MaterialTheme.typography.bodySmall)
@@ -602,7 +596,8 @@ private fun SessionPane(screen: SessionScreen?, model: DemoModel, events: Boolea
                 }
             } else {
                 if (screen.chat.isEmpty()) item { Text("Сообщений пока нет: лента пишется с этой версии приложения.", style = MaterialTheme.typography.bodySmall) }
-                items(screen.chat) { line -> ChatBubble(line) }
+                val keys = contentKeys(screen.chat) { "${it.time}|${it.mine}|${it.event}|${it.thinking}|${it.text.hashCode()}" }
+                items(screen.chat.size, key = { "c:${keys[it]}" }) { i -> ChatBubble(screen.chat[i]) }
             }
             // Ход идёт (D-59): одной строкой — медленно крутящийся кружок и «работает N мин»; без инструментов и команд.
             if (screen.live != null || screen.workingFor != null) {
@@ -761,13 +756,27 @@ private fun ChatBubble(line: com.dpsmpx.dpai.ui.ChatLine) {
                     val code = MaterialTheme.colorScheme.surface
                     val link = MaterialTheme.colorScheme.primary
                     val rendered = remember(line.text) { if (line.mine) null else com.dpsmpx.dpai.ui.Markdown.render(line.text) }
+                    // Ссылки ответа — касанием по D-75 (AI:A-20): первое копирует, второе открывает https.
+                    val tap = rememberLinkTap()
+                    val shown = remember(rendered, code, link, tap) { rendered?.let { annotated(it, code, link, tap) } }
                     // Чат сессии несёт вывод инструментов и коды: копирование выделением — «чувствительное» (D-86).
                     Clipboard.Sensitive {
                         androidx.compose.foundation.text.selection.SelectionContainer {
-                            if (rendered != null) Text(annotated(rendered, code, link), style = MaterialTheme.typography.bodyMedium) else Text(line.text, style = MaterialTheme.typography.bodyMedium)
+                            if (shown != null) Text(shown, style = MaterialTheme.typography.bodyMedium) else Text(line.text, style = MaterialTheme.typography.bodyMedium)
                         }
                     }
-                    Text(line.time, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(line.time, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                        // Ответ целиком — одной кнопкой, как в «Моделях» (AI:A-20).
+                        if (!line.mine && line.text.isNotEmpty()) {
+                            val context = androidx.compose.ui.platform.LocalContext.current
+                            val undo = LocalUndo.current
+                            androidx.compose.material3.TextButton(onClick = {
+                                Clipboard.copy(context, "ответ", line.text, sensitive = true)
+                                if (!Clipboard.systemConfirms) undo?.say("Скопировано")
+                            }) { Text("Копировать", style = MaterialTheme.typography.labelSmall) }
+                        }
+                    }
                 }
             }
         }
@@ -884,8 +893,25 @@ private fun BoardPane(board: TaskBoard, model: DemoModel, archived: Int, onEcosy
         // Архив (D-42): завершённые — с доски, история в журнале остаётся.
         item(key = "archive") {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                val undo = LocalUndo.current
                 TextButton(onClick = {
-                    scope.launch { withContext(Dispatchers.IO) { model.command(com.dpsmpx.dpai.orchestrator.commands.Command.ArchiveFinished()) } }
+                    // Отклик и «Отменить» (AI:A-26): сколько убрано — снэкбаром, отмена возвращает те же задачи.
+                    scope.launch {
+                        val (ids, r) = withContext(Dispatchers.IO) {
+                            val before = model.liveOrchestrator()?.tasks?.tasks?.values?.filter { it.terminal && !it.archived }?.map { it.id }.orEmpty()
+                            before to model.command(com.dpsmpx.dpai.orchestrator.commands.Command.ArchiveFinished())
+                        }
+                        val n = (r as? Outcome.Success)?.value as? Int
+                        when {
+                            Answers.queued(r) -> undo?.say("Уберу после текущего шага контура")
+                            r is Outcome.Failure -> undo?.say("Не убрано: ${r.diagnostics.first().message}")
+                            n == 0 -> undo?.say("Завершённых нет")
+                            ids.isNotEmpty() && undo != null -> undo.revertible("Убрано: ${n ?: ids.size}") {
+                                ids.forEach { model.command(com.dpsmpx.dpai.orchestrator.commands.Command.Archive(it, archived = false)) }
+                            }
+                            else -> undo?.say("Убрано: ${n ?: "?"}")
+                        }
+                    }
                 }) { Text("Убрать завершённые") }
                 // Вся надпись с переключателем — одна цель нажатия (на Redmi нажимали надпись — ничего).
                 Row(
@@ -1214,18 +1240,13 @@ private fun LimitsCard(l: com.dpsmpx.dpai.ui.SubscriptionLimits, model: DemoMode
                 Text("${w.window}: ${w.percent}${w.reset?.let { " · сброс $it" } ?: ""}", color = toneColor(w.tone), style = MaterialTheme.typography.bodySmall)
             }
             var usage by remember { mutableStateOf(model.usageState()) }
-            LaunchedEffect(Unit) {
-                while (true) {
-                    usage = model.usageState()
-                    kotlinx.coroutines.delay(1000)
-                }
-            }
+            Poll(periodMs = 1000) { usage = model.usageState() }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 val (refreshing, at) = usage
                 Text(
                     when {
                         refreshing -> "Обновляю…"
-                        at != null -> "Обновлено в ${java.text.SimpleDateFormat("HH:mm", java.util.Locale.ROOT).format(java.util.Date(at.epochMillis))} · раз в минуту"
+                        at != null -> "Обновлено в ${java.time.format.DateTimeFormatter.ofPattern("HH:mm").withZone(com.dpsmpx.dpai.core.clock.DisplayZone.current).format(java.time.Instant.ofEpochMilli(at.epochMillis))}"
                         else -> "Из последнего хода"
                     },
                     Modifier.weight(1f), style = MaterialTheme.typography.labelSmall,

@@ -22,7 +22,7 @@ object Export {
     const val FORMAT = "dpmeta.history-export"
     const val VERSION = 1
 
-    private val ISO = DateTimeFormatter.ISO_OFFSET_DATE_TIME.withZone(Screens.ZONE)
+    private val ISO: DateTimeFormatter get() = DateTimeFormatter.ISO_OFFSET_DATE_TIME.withZone(Screens.ZONE)
 
     fun iso(t: Timestamp): String = ISO.format(Instant.ofEpochMilli(t.epochMillis))
 

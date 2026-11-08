@@ -154,6 +154,114 @@ class TerminalEmulatorTest {
         assertEquals(0, t.cursorY)
     }
 
+    /** Поиск по истории (терминал:A-4): к старым и к новым, без регистра, со столбцами совпадения. */
+    @Test
+    fun findGoesUpAndDownWithColumns() {
+        val t = term(cols = 20, rows = 3)
+        t.feed("alpha\r\nBuild ok\r\ngamma\r\nbuild fail\r\nend")
+        val last = t.lineCount
+        val m = t.find("build", last, up = true)!!
+        assertEquals(3, m.line)
+        assertEquals(0..4, m.cols)
+        assertEquals(1, t.find("build", m.line, up = true)!!.line, "дальше вверх — старое совпадение")
+        assertEquals(null, t.find("build", 1, up = true), "выше — нет")
+        assertEquals(3, t.find("BUILD", 1, up = false)!!.line, "вниз — к новым")
+        assertEquals(6..9, t.find("fail", last, up = true)!!.cols)
+    }
+
+    /** OSC 9 и 777;notify — сигнал программы, как звонок (терминал:A-8). */
+    @Test
+    fun programNotificationsRingTheBell() {
+        val h = Recorder()
+        val t = term(host = h)
+        t.feed("\u001b]9;готово\u0007\u001b]777;notify;Claude;ждёт\u0007")
+        assertEquals(2, h.bells)
+        // Служебные OSC 9 ConEmu и Windows Terminal — ход и каталог у приглашения — не сигнал.
+        t.feed("\u001b]9;4;1;50\u0007\u001b]9;9;C:\\Users\u0007\u001b]9;4\u0007")
+        assertEquals(2, h.bells)
+    }
+
+    /** OSC 8 (терминал:A-19): ссылка у ячеек текста, только http(s); пустой адрес закрывает. */
+    @Test
+    fun osc8LinksAreKeptOnCells() {
+        val t = term(cols = 30)
+        t.feed("\u001b]8;;https://example.org/doc\u001b\\docs\u001b]8;;\u001b\\ plain")
+        assertEquals("https://example.org/doc", t.linkAt(t.scrollbackSize, 0))
+        assertEquals("https://example.org/doc", t.linkAt(t.scrollbackSize, 3))
+        assertEquals(null, t.linkAt(t.scrollbackSize, 6), "после закрытия — без ссылки")
+        // Чужая схема не принимается: программа на target не подсунет intent:/file:.
+        val u = term(cols = 30)
+        u.feed("\u001b]8;;intent://x#Intent;end\u0007text\u001b]8;;\u0007")
+        assertEquals(null, u.linkAt(u.scrollbackSize, 0))
+        // Ссылка переживает вставку слева и смену ширины.
+        t.feed("\r\u001b[2@")
+        assertEquals("https://example.org/doc", t.linkAt(t.scrollbackSize, 2))
+        t.resize(10, 5)
+        assertEquals("https://example.org/doc", t.linkAt(t.scrollbackSize, 2))
+    }
+
+    /** Подчёркивание (терминал:A-19): ячейки найденного адреса и ссылки OSC 8 — да, прочие — нет. */
+    @Test
+    fun linkCellsMarkAddressesAndOsc8() {
+        val t = term(cols = 40)
+        t.feed("see https://example.org/a. and \u001b]8;;https://example.org/b\u0007b\u001b]8;;\u0007 x")
+        val cells = t.linkCells(t.scrollbackSize)
+        assertTrue(cells[4] && cells[24], "адрес — от «h» до последней буквы")
+        assertTrue(!cells[25], "точка после адреса — не ссылка")
+        assertTrue(cells[31], "знак со ссылкой OSC 8")
+        assertTrue(!cells[0] && !cells[33])
+    }
+
+    /**
+     * Снимок кадра (терминал:A-10): копия строки — те же знаки, стили и
+     * ссылки, массивы переиспользуются; адрес, перенесённый со строки над
+     * экраном, находится и в снимке.
+     */
+    @Test
+    fun snapshotRowsKeepCellsAndLinks() {
+        val t = TerminalEmulator(20, 4)
+        t.feed("Open https://example.org/sign/in?code=abc123xyz \u001b[1mB\u001b[0m")
+        val snap = List(t.lineCount) { TerminalRow(0) }
+        for (i in 0 until t.lineCount) t.line(i).copyInto(snap[i])
+        assertEquals(t.line(2).text(), snap[2].text())
+        assertEquals(t.line(2).style(4).bits, snap[2].style(4).bits)
+        val arrays = snap[0].chars
+        t.line(0).copyInto(snap[0])
+        assertTrue(arrays === snap[0].chars, "та же ширина — тот же массив")
+        // Продолжение адреса на второй строке — ссылка и по снимку.
+        val cells = TerminalEmulator.linkCells(snap.size, { snap[it] }, 1)
+        assertTrue(cells[0] && cells.contentEquals(t.linkCells(1)))
+    }
+
+    /** Эмодзи-кластеры (терминал:A-17): как у программ — две ячейки, курсор за ними. */
+    @Test
+    fun emojiClustersTakeTwoCells() {
+        // VS16: «❤» (ширина 1) с U+FE0F — эмодзи в две ячейки.
+        val h = term(cols = 6)
+        h.feed("\u2764\uFE0Fx")
+        assertEquals(TerminalRow.WIDE_TAIL, h.screenRow(0).codePoint(1))
+        assertEquals("\u2764\uFE0Fx", h.screenRow(0).text().trimEnd())
+        assertEquals(3, h.cursorX)
+        // ZWJ-последовательность «семья» — одна ячейка шириной 2.
+        val z = term(cols = 8)
+        z.feed("\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67!")
+        assertEquals(TerminalRow.WIDE_TAIL, z.screenRow(0).codePoint(1))
+        assertEquals('!'.code, z.screenRow(0).codePoint(2))
+        assertEquals(3, z.cursorX)
+        // Флаг — пара региональных индикаторов: одна ячейка шириной 2.
+        val f = term(cols = 8)
+        f.feed("\uD83C\uDDF7\uD83C\uDDFA-")
+        assertEquals(TerminalRow.WIDE_TAIL, f.screenRow(0).codePoint(1))
+        assertEquals('-'.code, f.screenRow(0).codePoint(2))
+        // Третья буква — новый флаг, а не продолжение первого.
+        f.feed("\uD83C\uDDE9\uD83C\uDDEA")
+        assertEquals(TerminalRow.WIDE_TAIL, f.screenRow(0).codePoint(4))
+        assertEquals(5, f.cursorX)
+        // Ширина кластера переживает смену ширины экрана.
+        h.resize(4, 5)
+        assertEquals(TerminalRow.WIDE_TAIL, h.screenRow(0).codePoint(1))
+    }
+
     @Test
     fun wideAndCombiningCharacters() {
         val t = term(cols = 6)
