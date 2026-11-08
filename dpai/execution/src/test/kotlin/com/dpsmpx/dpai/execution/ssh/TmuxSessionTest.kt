@@ -1,5 +1,7 @@
 package com.dpsmpx.dpai.execution.ssh
 
+import com.dpsmpx.dpai.execution.process.run
+
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -18,13 +20,13 @@ class TmuxSessionTest {
         assertEquals(listOf("sh", "-lc"), cmd.take(2))
         val dir = java.nio.file.Files.createTempDirectory("tmux").toFile()
         try {
+            // Процесс — через LocalProcessHost модуля: окружение — только PATH теста.
             fun run(path: String): String {
-                val p = ProcessBuilder("/bin/sh", "-c", cmd[2]).redirectErrorStream(true)
-                p.environment()["PATH"] = path
-                val proc = p.start()
-                val out = proc.inputStream.readBytes().toString(Charsets.UTF_8)
-                proc.waitFor()
-                return out
+                val r = com.dpsmpx.dpai.execution.process.LocalProcessHost().run(
+                    com.dpsmpx.dpai.execution.process.ProcessSpec(listOf("/bin/sh", "-c", cmd[2]), environment = mapOf("PATH" to path)),
+                    kotlin.time.Duration.parse("30s"),
+                )
+                return r.valueOrNull()!!.stdout.joinToString("\n")
             }
             // PATH — только свой каталог: настоящий tmux в системе тест не видит.
             val bin = java.io.File(dir, "bin").apply { mkdirs() }
