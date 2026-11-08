@@ -149,7 +149,7 @@ internal fun FullScreenDialog(
     onDismissRequest: () -> Unit,
     title: String,
     action: (@Composable () -> Unit)? = null,
-    menu: (@Composable androidx.compose.foundation.layout.ColumnScope.(close: () -> Unit) -> Unit)? = null,
+    menu: FormMenu? = null,
     content: @Composable () -> Unit,
 ) {
     androidx.compose.ui.window.Dialog(
@@ -159,26 +159,55 @@ internal fun FullScreenDialog(
         androidx.compose.material3.Surface(Modifier.fillMaxSize()) {
             // Системные панели и вырез сбоку — отступом (AI:A-24).
             androidx.compose.foundation.layout.Column(Modifier.fillMaxSize().windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing)) {
-                Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    androidx.compose.material3.IconButton(onClick = onDismissRequest, modifier = Modifier.semantics { contentDescription = "Закрыть" }) {
-                        Text("×", style = MaterialTheme.typography.titleLarge)
-                    }
-                    Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                    action?.invoke()
-                    if (menu != null) {
-                        var open by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
-                        androidx.compose.foundation.layout.Box {
-                            androidx.compose.material3.IconButton(onClick = { open = true }, modifier = Modifier.semantics { contentDescription = "Ещё действия" }) {
-                                Text("⋮", style = MaterialTheme.typography.titleLarge)
-                            }
-                            androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }) { menu { open = false } }
-                        }
-                    }
-                }
+                FormBar(onDismissRequest, title, action, menu)
                 // На широком экране — не шире CONTENT_MAX по центру (AI:A-24).
                 androidx.compose.foundation.layout.Box(
                     Modifier.weight(1f).fillMaxWidth().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = CONTENT_MAX).fillMaxWidth().padding(horizontal = 16.dp),
                 ) { content() }
+            }
+        }
+    }
+}
+
+/**
+ * Та же форма панелью внутри экрана (AI:A-24, `DPmetaApp:D-77`): на широком
+ * экране — рядом с основным содержимым, а не окном поверх него. Строка
+ * сверху — как у [FullScreenDialog]; «×» прячет панель.
+ */
+@Composable
+internal fun SidePanel(
+    onClose: () -> Unit,
+    title: String,
+    modifier: Modifier = Modifier,
+    action: (@Composable () -> Unit)? = null,
+    menu: FormMenu? = null,
+    content: @Composable () -> Unit,
+) {
+    androidx.compose.foundation.layout.Column(modifier.fillMaxSize()) {
+        FormBar(onClose, title, action, menu, closeLabel = "Скрыть панель")
+        androidx.compose.foundation.layout.Box(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp)) { content() }
+    }
+}
+
+/** Пункты ⋮ формы: получают «закрыть меню». */
+internal typealias FormMenu = @Composable androidx.compose.foundation.layout.ColumnScope.(close: () -> Unit) -> Unit
+
+/** Строка формы: «×», название, главное действие и ⋮ (AI:A-9). */
+@Composable
+private fun FormBar(onClose: () -> Unit, title: String, action: (@Composable () -> Unit)?, menu: FormMenu?, closeLabel: String = "Закрыть") {
+    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        androidx.compose.material3.IconButton(onClick = onClose, modifier = Modifier.semantics { contentDescription = closeLabel }) {
+            Text("×", style = MaterialTheme.typography.titleLarge)
+        }
+        Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+        action?.invoke()
+        if (menu != null) {
+            var open by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+            androidx.compose.foundation.layout.Box {
+                androidx.compose.material3.IconButton(onClick = { open = true }, modifier = Modifier.semantics { contentDescription = "Ещё действия" }) {
+                    Text("⋮", style = MaterialTheme.typography.titleLarge)
+                }
+                androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }) { menu { open = false } }
             }
         }
     }

@@ -67,22 +67,7 @@ class ControllerService : Service() {
                 description = "Пока идёт: такты контура, запросы и уведомления «AI»"
             },
         )
-        val open = Notifier.openApp(this)
-        // «Остановить» — через подтверждение в приложении (аудит удобства, A-18): одно касание в шторке
-        // останавливало такты, уведомления и запросы до ручного запуска.
-        val stop = PendingIntent.getActivity(
-            this, 1,
-            MainActivity.internal(this).setAction(MainActivity.STOP_CONFIRM).addFlags(MainActivity.FRONT),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
-        val n = Notification.Builder(this, CHANNEL)
-            .setSmallIcon(R.drawable.ic_notify_ai)
-            .setContentTitle("AI: контроллер работает")
-            .setContentText("опрос targets и задач")
-            .setContentIntent(open)
-            .addAction(Notification.Action.Builder(null, "Остановить", stop).build())
-            .setOngoing(true)
-            .build()
+        val n = notification(shown ?: STARTING)
         // Перезапуск по START_STICKY после смерти процесса идёт из фона: система может
         // отказать службе переднего плана — тогда служба уходит, а не падает по кругу.
         try {
@@ -185,6 +170,16 @@ class ControllerService : Service() {
                         ticking = false
                         if (ok) failures = 0
                         meter.end(ok)
+                        // Строка уведомления — числа контура (AI:A-26), без текста задач; только когда изменилась.
+                        try {
+                            val line = counts(model)
+                            if (line != shown) {
+                                shown = line
+                                getSystemService(NotificationManager::class.java).notify(ID, notification(line))
+                            }
+                        } catch (e: Exception) {
+                            log.warn("уведомление службы", AppLogs.describe(e))
+                        }
                         // Запросы человеку — по ждущим в журнале: показать новые, убрать закрытые (D-44).
                         try {
                             RequestPresenter.sync(app, model, model.pending())
@@ -246,7 +241,45 @@ class ControllerService : Service() {
         super.onDestroy()
     }
 
+    /** Последняя строка уведомления службы — новая пишется, только когда числа сменились. */
+    @Volatile
+    private var shown: String? = null
+
+    /**
+     * Уведомление службы: заголовок и строка [text] — «открытых задач: N ·
+     * идёт сессий: M» (AI:A-26). Касание — приложение, «Остановить» — через
+     * подтверждение в приложении (аудит удобства, A-18): одно касание в
+     * шторке останавливало такты, уведомления и запросы до ручного запуска.
+     */
+    private fun notification(text: String): Notification {
+        val open = Notifier.openApp(this)
+        val stop = PendingIntent.getActivity(
+            this, 1,
+            MainActivity.internal(this).setAction(MainActivity.STOP_CONFIRM).addFlags(MainActivity.FRONT),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        return Notification.Builder(this, CHANNEL)
+            .setSmallIcon(R.drawable.ic_notify_ai)
+            .setContentTitle("AI: контроллер работает")
+            .setContentText(text)
+            .setContentIntent(open)
+            .addAction(Notification.Action.Builder(null, "Остановить", stop).build())
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .build()
+    }
+
+    /** Числа контура для строки уведомления (AI:A-26): только счётчики, без названий задач (T8); контура нет — словом. */
+    private fun counts(model: DemoModel): String {
+        val o = model.liveOrchestrator() ?: return STARTING
+        val tasks = o.tasks.tasks.values.count { !it.archived && it.state !in com.dpsmpx.dpai.core.state.TaskLifecycle.table.terminal }
+        val sessions = o.sessions.sessions.values.count { !it.terminal }
+        return "открытых задач: $tasks · идёт сессий: $sessions"
+    }
+
     companion object {
+        /** Строка уведомления, пока контур не собран (первый такт). */
+        private const val STARTING = "контур собирается…"
         private const val CHANNEL = "dpai-controller"
         private const val ID = 1001
         private const val STOP = "com.dpsmpx.dpai.STOP_CONTROLLER"
