@@ -139,8 +139,9 @@ Baseline. Свой план подсистемы —
       вливания), `repo.checks.last`, `app.sync.health`; из клонов (D-65,
       D-66, правила 5) — коммиты по дням (всего, ИИ, человек, в основной,
       только в ветках, слияния PR), `repo.commits.ai_share`,
-      `repo.branches.unmerged`, `repo.decisions.new`. Осталось — счётчики
-      DPmeta (`eco.*`).
+      `repo.branches.unmerged`, `repo.decisions.new`; счётчики DPmeta
+      (`eco.contracts`, `eco.risks_open`, `eco.sync_queue`, `eco.reports`).
+      Осталось — сверка с наборами сайта на настоящих клонах.
 - [ ] Синхронизация клонами (D-65): модуль клонов на JGit, файлы, ветки и
       коммиты — из клонов, PR — REST; конфликты — в «Ошибках источников»;
       при входе и после включения телефона. Сделано: `:core:git`,

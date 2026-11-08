@@ -262,6 +262,15 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
             return if (known.isEmpty()) Measure.unknown("нет ни одного TODO.md") else Measure.observed(known.sum())
         }
 
+    /**
+     * Счётчик документов DPmeta (ТЗ, §8, `eco.*`): поле секции `dpmeta`
+     * (`dpmeta.counters.v1`) проекта DPmeta; секции или поля нет —
+     * неизвестно.
+     */
+    fun dpmetaCount(field: String): Measure<Long> =
+        projects.firstNotNullOfOrNull { (it.sections["dpmeta"]?.payload as? JsonObject)?.get(field) as? JsonNumber }?.toLongExact()
+            ?.let { Measure.observed(it) } ?: Measure.unknown("нет счётчиков DPmeta: $field")
+
     /** Точки истории этого среза: неизвестное — без точки, а не ноль (D-13 подсистемы, D-34). */
     fun points(): List<MetricPoint> {
         val out = mutableListOf<MetricPoint>()
@@ -301,6 +310,11 @@ data class EcosystemState(val asOf: Timestamp, val rulesVersion: Int, val projec
         }
         add("eco.active_projects", "eco", activeProjects)
         add("eco.questions_open", "eco", questionsOpen)
+        // С правил 5: документы DPmeta (контракты, открытые риски, очередь, срезы).
+        add("eco.contracts", "eco", dpmetaCount("contracts"))
+        add("eco.risks_open", "eco", dpmetaCount("risksOpen"))
+        add("eco.sync_queue", "eco", dpmetaCount("syncQueue"))
+        add("eco.reports", "eco", dpmetaCount("reports"))
         add("app.sync.health", "app", syncHealth)
         return out
     }

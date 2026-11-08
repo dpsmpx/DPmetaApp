@@ -13,7 +13,11 @@
   `AI_SHARE_DAYS` (30 дней, `repo.commits.ai_share`) и
   `DECISIONS_NEW_DAYS` (7 дней, `repo.decisions.new`). Новые точки истории:
   `repo.commits.ai_share`, `repo.branches.unmerged`,
-  `repo.branches.unmerged.commits`, `repo.decisions.new`.
+  `repo.branches.unmerged.commits`, `repo.decisions.new`; счётчики документов
+  DPmeta — `eco.contracts`, `eco.risks_open`, `eco.sync_queue`,
+  `eco.reports` (заголовки `C-`, `RISK-`, `SQ-`, как у наборов прогресса;
+  риск открыт, если его «Статус» начинается с «открыт» или «частично» или
+  поля нет).
 - **Почему.** D-66: коммиты по дням, доля ИИ и решения по дням считаются из
   клонов с первого коммита, теми же определениями, что у наборов прогресса
   сайта (`socialmediaimage/data/progress/scope.yaml`,
@@ -27,7 +31,9 @@
   впереди основной. У подсистем своей истории нет — она в истории
   DPmetaApp; без клона — секции нет (неизвестно, а не ноль). Точки правил 4
   не пересчитываются.
-- **Как проверить.** `CommitHistoryTest` (определения на синтетическом
+- **Как проверить.** `DpmetaDocsTest`, `DpmetaCountersTest`, корпус
+  (`EcosystemSyncTest`: документы DPmeta в `tests/corpus/ecosystem/`);
+  `CommitHistoryTest` (определения на синтетическом
   репозитории: пояс, копия после cherry-pick, слияние PR, чужой автор, ветка
   сборок, журнал), `HistoryMetricsTest` (окна, неизвестное — не ноль),
   `CloneReaderTest` (подсистема, неотмеченный клон — без истории).

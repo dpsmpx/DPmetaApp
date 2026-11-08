@@ -108,12 +108,16 @@ class CloneReaderTest {
     @Test
     fun subsystemReadsTheHostCloneInItsDirectory() {
         val clones = Clones(File(tmp, "clones"), { Outcome.success(Unit) }, setOf("file"))
-        clones.sync(host.toString(), remote("host", mapOf("dpai/TODO.md" to "- [ ] «AI»\n", "TODO.md" to "- [ ] корень\n")), null, build)
+        clones.sync(host.toString(), remote("host", mapOf("dpai/TODO.md" to "- [ ] «AI»\n", "TODO.md" to "- [ ] корень\n", "dpai/docs/reports/2026-11-01-xref.md" to "# срез\n")), null, build)
         val r = CloneReader(clones, Rest(), host, build)
         val ai = project("dpsmpx/DP_AI_Orcestrator", dir = "dpai")
         assertEquals("dpsmpx/DPmetaApp", r.key(ai))
         assertEquals("- [ ] «AI»\n", (r.file(ai, "TODO.md") as Outcome.Success).value.value)
         assertTrue(r.file(ai, "../TODO.md") is Outcome.Failure, "путь вне каталога подсистемы — отказ")
+        // Каталог подсистемы — из клона DPmetaApp (срезы DPmeta, eco.reports).
+        assertEquals(listOf("2026-11-01-xref.md"), (r.names(ai, "docs/reports") as Outcome.Success).value)
+        assertTrue(r.names(ai, "nope") is Outcome.Failure, "каталога нет — «нет»")
+        assertEquals(null, r.names(project("dpsmpx/Beta"), "docs"), "клона нет — каталоги не показываются")
     }
 
     @Test
