@@ -151,6 +151,13 @@ open class PultActivity : ComponentActivity() {
     /** Версия подсистемы «AI» для «О программе» (UX-23, D-54); `null` — подсистемы нет. */
     protected open fun aiVersion(): String? = null
 
+    /**
+     * Строка журнала отладки приложения (D-39, F-71): итоги синхронизации и действий пульта —
+     * вид, цель, итог или код, без содержимого. Журнал ведёт оболочка (`:shell` — журнал
+     * подсистемы «AI», один на приложение); у пульта без оболочки — никуда.
+     */
+    protected open fun debugLog(tag: String, line: String) {}
+
     /** «О программе» (UX-23, D-54): версия DPmetaApp из пакета и версия «AI» от оболочки. */
     private fun about(): String {
         val app = runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull() ?: "?"
@@ -507,14 +514,22 @@ open class PultActivity : ComponentActivity() {
          */
         override fun act(request: com.dpsmpx.dpmeta.app.screens.PullActions.Request, done: (Outcome<com.dpsmpx.dpmeta.actions.ActionResult>) -> Unit) {
             val c = request.command
-            fun go(confirm: (com.dpsmpx.dpmeta.actions.Actions) -> com.dpsmpx.dpmeta.actions.Confirmation) = run({ repo.act(it, c, confirm, request.text) }, done)
+            // Итог — и в журнал отладки (D-39): вид, цель, уровень, итог или код; без текста команды.
+            val logged: (Outcome<com.dpsmpx.dpmeta.actions.ActionResult>) -> Unit = { r ->
+                debugLog("действия", "${c.kind.code} ${c.target.display} ур.${c.level.code}: " + when (r) {
+                    is Outcome.Success -> "готово"
+                    is Outcome.Failure -> "${r.errors.first().code}"
+                })
+                done(r)
+            }
+            fun go(confirm: (com.dpsmpx.dpmeta.actions.Actions) -> com.dpsmpx.dpmeta.actions.Confirmation) = run({ repo.act(it, c, confirm, request.text) }, logged)
             when (request.way) {
                 com.dpsmpx.dpmeta.app.screens.PullActions.Way.SHOWN -> go { it.shown(c) }
                 com.dpsmpx.dpmeta.app.screens.PullActions.Way.TYPED -> go { it.typedName(c, request.typed) }
                 com.dpsmpx.dpmeta.app.screens.PullActions.Way.DEVICE -> Lock.ask(
                     this@PultActivity, "Подтвердите: ${c.kind.what}", pinOnly = false,
                     onOpen = { go { it.deviceConfirmed(c) } },
-                    onDenied = { _, why -> done(Outcome.failure(DiagCode.DEVICE_AUTH_REQUIRED, "не подтверждено: $why", c.target.display)) },
+                    onDenied = { _, why -> logged(Outcome.failure(DiagCode.DEVICE_AUTH_REQUIRED, "не подтверждено: $why", c.target.display)) },
                 )
             }
         }
@@ -626,7 +641,7 @@ open class PultActivity : ComponentActivity() {
                     is Outcome.Success -> view.value.copy(
                         state = state,
                         busy = false,
-                        status = "Готово: ${r.value.line}." + (note?.let { " $it" } ?: ""),
+                        status = "Готово: ${r.value.line}.".also { debugLog("пульт", "синхронизация: ${r.value.line}") } + (note?.let { " $it" } ?: ""),
                         statusDetails = "",
                         syncEnded = view.value.syncEnded + 1,
                         syncEnd = SyncEnd.DONE,
@@ -636,6 +651,7 @@ open class PultActivity : ComponentActivity() {
                         names = repo.names(),
                     ).also { loadHistory() }
                     is Outcome.Failure -> Screens.failure(r.diagnostics.first()).let { f ->
+                        debugLog("пульт", "синхронизация не вышла: ${r.diagnostics.first().code}")
                         view.value.copy(busy = false, status = "Не вышло: ${f.text}." + (note?.let { " $it" } ?: ""), statusDetails = f.details, syncEnded = view.value.syncEnded + 1, syncEnd = SyncEnd.FAILED, progress = null, cancelling = false)
                     }
                 }

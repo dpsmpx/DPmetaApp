@@ -28,6 +28,14 @@ object AppLogs {
     @Volatile
     private var instance: AppLog? = null
 
+    /**
+     * Строка журнала от оболочки DPmetaApp (пульт, `DPmetaApp:D-39`): один журнал отладки на
+     * приложение, без типов оркестратора у вызывающего; текст проходит Redactor журнала.
+     */
+    fun info(context: Context, tag: String, text: String) {
+        get(context).info(tag, text)
+    }
+
     fun get(context: Context): AppLog = instance ?: synchronized(this) {
         instance ?: run {
             val app = context.applicationContext

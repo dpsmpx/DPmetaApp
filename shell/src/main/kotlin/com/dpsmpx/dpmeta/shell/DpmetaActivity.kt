@@ -31,5 +31,8 @@ class DpmetaActivity : PultActivity() {
 
     override fun aiVersion(): String = com.dpsmpx.dpai.android.BuildConfig.DPAI_VERSION
 
+    /** Строки пульта — в журнал приложения подсистемы «AI» (D-39: один журнал отладки на приложение; там же Redactor). */
+    override fun debugLog(tag: String, line: String) = com.dpsmpx.dpai.android.AppLogs.info(applicationContext, tag, line)
+
     override fun aiCounts(): Screens.AiCounts = AiSummary.read(this).also { lastAi = it }.let { Screens.AiCounts(it.configured, it.waiting, it.running, it.nearLimit) }
 }

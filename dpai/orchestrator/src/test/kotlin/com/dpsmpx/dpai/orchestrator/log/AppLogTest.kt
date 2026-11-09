@@ -131,6 +131,24 @@ class AppLogTest {
         assertEquals(0, sink.dropped)
     }
 
+    /**
+     * `DPmetaApp:D-39`: в файл журнала отладки секрет не попадает, даже если строку
+     * написал пульт оболочки (`AppLogs.info`); образец собран из частей.
+     */
+    @Test
+    fun secretNeverReachesTheLogFile() {
+        val vfs = NioVfs(dir)
+        val sink = FileLogSink(vfs, maxBytes = 4_096, header = { emptyList() })
+        val log = AppLog(clock, sink)
+        val token = "gh" + "p_" + "Q7w8E9r0".repeat(5)
+        log.info("пульт", "синхронизация: токен $token")
+        log.warn("действия", "comment dpsmpx/DPmetaApp ур.1: Authorization: Bearer $token")
+        sink.close()
+        val all = sink.readAll()!!
+        assertTrue("синхронизация" in all && "действия" in all, all)
+        assertTrue(token !in all, "токен в файле журнала")
+    }
+
     @Test
     fun diskFailureDropsLinesInsteadOfCrashing() {
         val broken = object : Vfs by NioVfs(dir) {
