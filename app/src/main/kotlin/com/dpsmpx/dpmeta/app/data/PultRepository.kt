@@ -132,6 +132,14 @@ class PultRepository(
         return Outcome.success(GitHubReader(gh, RepoRef.parse(HOST).valueOrNull()!!).where(entry).first)
     }
 
+    /** Репозиторий проекта — для действий над ним (issue, F-26). */
+    fun repoFor(token: Secret, project: String): Outcome<RepoRef> {
+        val (gh, etags) = client(token)
+        val r = repoOf(gh, project)
+        etags.save()
+        return r
+    }
+
     /** PR перед действием (F-12): свежий, с репозиторием проекта. */
     fun pull(token: Secret, project: String, number: Int): Outcome<Pair<RepoRef, com.dpsmpx.dpmeta.github.PullDetail>> {
         val (gh, etags) = client(token)

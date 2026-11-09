@@ -99,6 +99,7 @@ import com.dpsmpx.dpmeta.actions.ActionResult
 import com.dpsmpx.dpmeta.actions.ActionStatus
 import com.dpsmpx.dpmeta.app.screens.PullActions
 import com.dpsmpx.dpmeta.app.screens.BranchActions
+import com.dpsmpx.dpmeta.app.screens.IssueActions
 import com.dpsmpx.dpmeta.github.PullDetail
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.OutlinedButton
@@ -245,6 +246,10 @@ interface Loader {
     /** Действие (F-12): подтверждение способом [PullActions.Request.way] создаёт активность — после PIN, если нужен. */
     fun act(request: PullActions.Request, done: (Outcome<ActionResult>) -> Unit) =
         done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "действий здесь нет", request.command.target.display))
+
+    /** Репозиторий проекта — для действий над ним (issue, F-26). */
+    fun repo(project: String, done: (Outcome<com.dpsmpx.dpmeta.model.RepoRef>) -> Unit) =
+        done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "действий здесь нет", project))
 
     /** Ветка перед действием (F-14): основная, голова, сравнение — свежие. */
     fun branch(project: String, name: String, done: (Outcome<BranchActions.View>) -> Unit) =
@@ -679,6 +684,7 @@ private fun CardList(c: Screens.Card, panel: Outcome<Panel>?, loader: Loader, on
     val view = remember(c) { Screens.cardView(c) }
     val opened = rememberSaveable(c.name, saver = listSaver(save = { it.toList() }, restore = { it.toMutableStateList() })) { mutableStateListOf<String>() }
     val decisionsPath = c.files.firstOrNull { it.first == "Решения" }?.second
+    var issueOpen by rememberSaveable(c.name) { mutableStateOf(false) }
     val todoPath = c.files.firstOrNull { it.first == "TODO" }?.second
     LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         item {
@@ -705,7 +711,9 @@ private fun CardList(c: Screens.Card, panel: Outcome<Panel>?, loader: Loader, on
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 for ((title, path) in c.files) AssistChip(onClick = { open(Nav.Doc(c.name, path, null)) }, label = { Text(title) })
                 AssistChip(onClick = { open(Nav.Dir(c.name, "")) }, label = { Text("Все файлы") })
+                AssistChip(onClick = { issueOpen = true }, label = { Text("Новый issue…") })
             }
+            if (issueOpen) IssueDialog(c.name, loader) { issueOpen = false }
         }
         for (sec in view.sections) {
             val key = sec.kind.name
@@ -1440,5 +1448,69 @@ private fun DangerDialog(title: String, losses: List<String>, name: String, type
             TextButton(onClick = onConfirm, enabled = typed.trim() == name) { Text("Удалить навсегда", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
+    )
+}
+
+/**
+ * Новый issue в репозитории проекта (F-26): заголовок и текст → окно «Что уйдёт» →
+ * «Отправить» (уровень 1, D-07). Итог — строкой в окне и в журнале действий.
+ */
+@Composable
+private fun IssueDialog(project: String, loader: Loader, onClose: () -> Unit) {
+    var title by rememberSaveable { mutableStateOf("") }
+    var body by rememberSaveable { mutableStateOf("") }
+    var command by remember { mutableStateOf<com.dpsmpx.dpmeta.actions.ActionCommand?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    var result by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
+    val c = command
+    AlertDialog(
+        onDismissRequest = { if (!busy) onClose() },
+        title = { Text(if (c == null) "Новый issue — $project" else "Что уйдёт") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (c == null) {
+                    OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Заголовок") }, singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = !busy)
+                    OutlinedTextField(value = body, onValueChange = { body = it }, label = { Text("Текст") }, minLines = 3, modifier = Modifier.fillMaxWidth(), enabled = !busy)
+                    IssueActions.invalid(title)?.takeIf { title.isNotEmpty() }?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                } else {
+                    for (line in IssueActions.preview(c)) Text(line)
+                }
+                if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+                result?.let { (ok, line) -> Text(line, color = if (ok) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error) }
+            }
+        },
+        confirmButton = {
+            when {
+                result?.first == true -> TextButton(onClick = onClose) { Text("Готово") }
+                c == null -> TextButton(
+                    enabled = IssueActions.invalid(title) == null && !busy,
+                    onClick = {
+                        busy = true
+                        result = null
+                        loader.repo(project) { r ->
+                            busy = false
+                            when (r) {
+                                is Outcome.Success -> command = IssueActions.command(r.value, title, body)
+                                is Outcome.Failure -> result = false to "Не выйдет: ${r.errors.first().message}"
+                            }
+                        }
+                    },
+                ) { Text("Дальше") }
+                else -> TextButton(
+                    enabled = !busy,
+                    onClick = {
+                        busy = true
+                        loader.act(PullActions.Request(c, PullActions.Way.SHOWN)) { r ->
+                            busy = false
+                            result = when (r) {
+                                is Outcome.Success -> true to ("Готово: ${r.value.detail}" + (r.value.link?.let { " — $it" } ?: ""))
+                                is Outcome.Failure -> false to "Не выполнено: ${r.errors.first().message}"
+                            }
+                        }
+                    },
+                ) { Text("Отправить") }
+            }
+        },
+        dismissButton = { if (result?.first != true) TextButton(onClick = onClose, enabled = !busy) { Text("Отмена") } },
     )
 }

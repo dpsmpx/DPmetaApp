@@ -519,6 +519,8 @@ open class PultActivity : ComponentActivity() {
             }
         }
 
+        override fun repo(project: String, done: (Outcome<com.dpsmpx.dpmeta.model.RepoRef>) -> Unit) = run({ repo.repoFor(it, project) }, done)
+
         override fun branch(project: String, name: String, done: (Outcome<com.dpsmpx.dpmeta.app.screens.BranchActions.View>) -> Unit) =
             run({ repo.branch(it, project, name) }, done)
 

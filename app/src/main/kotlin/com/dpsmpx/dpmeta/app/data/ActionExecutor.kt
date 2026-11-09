@@ -12,13 +12,19 @@ import com.dpsmpx.dpmeta.github.Written
 /**
  * Исполнитель действий пульта (F-12, F-14): вид команды → запросы [GitHubWrite]. Политику
  * и журнал проходит раньше `:core:actions`; сюда команда приходит уже подтверждённой.
- * Чего в пульте ещё нет (файлы, настройки репозитория) — отказ `UNSUPPORTED`.
+ * Чего в пульте ещё нет (файлы, настройки репозитория) — отказ `UNSUPPORTED`. Issue (F-26) —
+ * с меткой [ISSUE_LABEL].
  */
 object ActionExecutor {
+    /** Метка issue, записанного с телефона (ТЗ, F-26). */
+    const val ISSUE_LABEL: String = "from-dpmetaapp"
+
     fun execute(w: GitHubWrite, c: ActionCommand): Outcome<ActionResult> {
         val r: Outcome<Written> = when (c.kind) {
             ActionKind.COMMENT, ActionKind.REVIEW, ActionKind.PR_READY, ActionKind.PR_MERGE, ActionKind.PR_CLOSE -> pull(w, c)
             ActionKind.BRANCH_DELETE_MERGED, ActionKind.BRANCH_DELETE_UNMERGED -> deleteBranch(w, c)
+            // F-26: метка — всегда своя, из кода, а не из параметров.
+            ActionKind.ISSUE_OPEN -> w.issue(c.target.repo, c.params["title"].orEmpty(), c.params["body"].orEmpty(), listOf(ISSUE_LABEL))
             else -> return Outcome.failure(DiagCode.UNSUPPORTED, "в пульте этого действия пока нет: ${c.kind.what}", c.target.display)
         }
         return when (r) {
@@ -81,6 +87,7 @@ object ActionExecutor {
         ActionKind.PR_READY -> "PR — из черновика"
         ActionKind.PR_MERGE -> "PR влит"
         ActionKind.PR_CLOSE -> "PR закрыт"
+        ActionKind.ISSUE_OPEN -> "issue создан"
         ActionKind.BRANCH_DELETE_MERGED, ActionKind.BRANCH_DELETE_UNMERGED ->
             "ветка ${c.target.branch} удалена; её последний коммит ${w.sha.orEmpty()} — по нему её можно восстановить"
         else -> "готово"

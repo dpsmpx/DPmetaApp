@@ -110,6 +110,15 @@ class GitHubWrite(private val net: Net, private val token: Secret, private val a
     fun comment(repo: RepoRef, number: Int, body: String): Outcome<Written> =
         call("POST", "repos/$repo/issues/$number/comments", JsonObject.of("body" to JsonString(body)), "$repo#$number").then { link(it) }
 
+    /**
+     * Новый issue (уровень 1, F-26): задача, записанная с телефона, — с меткой [labels]
+     * (по ТЗ — `from-dpmetaapp`; нет такой метки в репозитории — GitHub её создаёт).
+     */
+    fun issue(repo: RepoRef, title: String, body: String, labels: List<String>): Outcome<Written> {
+        val payload = JsonObject.of("title" to JsonString(title), "body" to JsonString(body), "labels" to JsonArray(labels.map(::JsonString)))
+        return call("POST", "repos/$repo/issues", payload, "$repo").then { link(it) }
+    }
+
     /** Ревью PR (уровень 1): одобрить или запросить изменения. */
     fun review(repo: RepoRef, number: Int, approve: Boolean, body: String): Outcome<Written> {
         val event = if (approve) "APPROVE" else "REQUEST_CHANGES"

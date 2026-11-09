@@ -13,6 +13,7 @@ import com.dpsmpx.dpmeta.actions.ActionStatus
 import com.dpsmpx.dpmeta.actions.Actions
 import com.dpsmpx.dpmeta.app.data.ActionExecutor
 import com.dpsmpx.dpmeta.app.screens.BranchActions
+import com.dpsmpx.dpmeta.app.screens.IssueActions
 import com.dpsmpx.dpmeta.app.screens.PullActions
 import com.dpsmpx.dpmeta.github.BranchDetail
 import com.dpsmpx.dpmeta.github.Comparison
@@ -164,5 +165,24 @@ class PullActionsTest {
         val moved = Branches(ahead = 0, sha = "f".repeat(40))
         assertIs<Outcome.Failure>(run(moved, merged, actions.deviceConfirmed(merged)))
         assertTrue(moved.seen.none { it.startsWith("DELETE") }, "новый коммит в ветке — не удаляем")
+    }
+
+    /** F-26: issue — уровень 1, метка `from-dpmetaapp` — всегда, из кода. */
+    @Test
+    fun issueIsLevelOneWithOwnLabel() {
+        assertEquals("нужен заголовок", IssueActions.invalid(" "))
+        assertNull(IssueActions.invalid("Сверить ROADMAP"))
+        val c = IssueActions.command(repo, " Сверить ROADMAP ", "с телефона")
+        assertEquals(ActionLevel.REVERSIBLE to "Сверить ROADMAP", c.level to c.params["title"])
+        val sent = mutableListOf<String>()
+        val t = Transport { r ->
+            sent += String(r.body!!)
+            Outcome.success(HttpResponse(201, emptyMap(), """{"html_url":"https://github.com/dpsmpx/DPmetaApp/issues/9"}""".toByteArray()))
+        }
+        val clock = ManualClock()
+        val actions = Actions(ActionLog(NioVfs(dir), clock, RandomSource.seeded(1)), clock, RandomSource.seeded(2))
+        val r = actions.run(c, actions.shown(c)) { ActionExecutor.execute(GitHubWrite(Net(t), Secret("t")), c) }
+        assertEquals("https://github.com/dpsmpx/DPmetaApp/issues/9", r.valueOrNull()?.link)
+        assertTrue(sent.single().contains("from-dpmetaapp"))
     }
 }

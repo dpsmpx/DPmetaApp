@@ -98,6 +98,15 @@ class GitHubWriteTest {
     }
 
     @Test
+    fun issueCarriesTitleBodyAndLabel() {
+        val (fake, w) = gh("POST /repos/example/Alpha/issues" to (201 to """{"number":5,"html_url":"https://github.com/example/Alpha/issues/5"}"""))
+        assertEquals("https://github.com/example/Alpha/issues/5", w.issue(repo, "Сверить ROADMAP", "С телефона", listOf("from-dpmetaapp")).valueOrNull()?.link)
+        val b = body(fake.seen.single())
+        assertEquals("Сверить ROADMAP", (b["title"] as JsonString).value)
+        assertEquals("from-dpmetaapp", ((b["labels"] as com.dpsmpx.dpai.core.serialization.JsonArray).items.single() as JsonString).value)
+    }
+
+    @Test
     fun defaultBranchAndBranchHead() {
         val (_, w) = gh(
             "GET /repos/example/Alpha" to (200 to """{"full_name":"example/Alpha","default_branch":"main"}"""),
