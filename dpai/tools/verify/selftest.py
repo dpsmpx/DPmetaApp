@@ -176,6 +176,12 @@ CASES = [
       ".github/workflows/ci.yml": "on: push\n"},
      {"gradle/libs.versions.toml": "[versions]\n", "docs/PROVENANCE.md": "<!-- provenance: begin -->\n<!-- provenance: end -->\n",
       "a/build.gradle.kts": "dependencies { implementation(libs.x) }\n"}, []),
+    ("check_dependencies.py",
+     # Двоичный файл без строки с суммой — находка; заголовок C — текст, как исходник (D-115).
+     {"gradle/libs.versions.toml": "[versions]\n", "docs/PROVENANCE.md": "<!-- provenance: begin -->\n<!-- provenance: end -->\n",
+      "tools/linux/libx.so": "\x7fELF"},
+     {"gradle/libs.versions.toml": "[versions]\n", "docs/PROVENANCE.md": "<!-- provenance: begin -->\n<!-- provenance: end -->\n",
+      "tools/linux/compat.h": "#define A 1\n"}, []),
     ("check_secure_screens.py",
      # Экран из реестра без флага — дыра: содержимое попадает в превью и снимки (D-86).
      {"android/src/main/kotlin/com/dpsmpx/dpai/android/TerminalActivity.kt":

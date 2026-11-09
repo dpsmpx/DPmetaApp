@@ -221,7 +221,12 @@
          (шаги `apk` без `/proc`, затем npm; так же — Codex, Gemini,
          llama.cpp), на машине сборки рецепт и ход без входа проверены на
          настоящем proot (`ProotLiveTest`, `LinuxInstallLiveTest`,
-         `tools/linux/host-env.sh`). Осталось: на телефоне — §15, п. 4–11
+         `tools/linux/host-env.sh`). 9 ноября 2026 на телефоне установка
+         упала с кодом 159: фильтр seccomp Android убивал node, bash, python
+         и gh (SIGSYS, `docs/research/LINUX_IN_APP.md`, §10); слово автора —
+         proot из форка Termux (D-115): собран статически под musl, проверки
+         на машине сборки — под имитацией фильтра Android. Осталось: на
+         телефоне — `docs/DEVICE_CHECK.md`, §26, затем §15, п. 4–11
          (установка Claude Code, вход, target и проект «в приложении»). Вход —
          заново в терминале среды, по разу на слот (слово автора
          23 октября 2026): учётные данные из Termux не переносятся (D-27).
@@ -443,6 +448,9 @@
 
 ## На устройстве (Redmi Note 13)
 
+- [ ] `К` proot Termux под фильтром Android (D-115): `docs/DEVICE_CHECK.md`,
+      §26 — сборка 0.4.0-dev.14: node, bash, python, «Поставить Claude
+      Code», вход и команда Claude, `gh` в репозитории, Codex и Gemini.
 - [ ] `М` Ревью задачи (D-73): `docs/DEVICE_CHECK.md`, §8.11 — сборка
       0.1.0-dev.10.
 - [ ] `М` Поток событий хода (D-76): `docs/DEVICE_CHECK.md`, §7.7 —

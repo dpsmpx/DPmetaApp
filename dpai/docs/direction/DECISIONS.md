@@ -2190,6 +2190,9 @@ README ветки коммит `main`, из которого собрана. А�
 
 ### D-82 — proot в B2 — из Alpine как есть; `apk` — без `/proc` у гостя
 
+**Статус.** Заменено D-115 в части proot (9 ноября 2026): proot — форк
+Termux, собранный из исходников; правило «`apk` — без `/proc`» действует.
+
 **Решение.** Слово автора (23 октября 2026), после пробы шага 1 D-75:
 Linux-среда B2 берёт `proot-static` Alpine (5.4.0, GPL-2.0-or-later) и
 его вшитый загрузчик без изменений — те же файлы и суммы, что у пробника
@@ -3387,6 +3390,50 @@ llama.cpp». В карточке «Linux в приложении» остают�
 
 **Проверка.** Тест: манифест из реестра совпадает по формату с образцом
 `dpai.ecosystem` v1; смена источника выключает политику.
+
+### D-115 — proot — форк Termux, собранный статически под musl: вызов, запрещённый Android, — ENOSYS
+
+**Статус.** Принято 9 ноября 2026 — слово автора (ответ на вопрос сессии
+«Как чинить?»: «Сразу форк proot Termux»). Заменяет D-82 в части proot;
+правило D-82 «`apk` — без `/proc`» остаётся.
+
+**Решение.**
+- proot Linux-среды — форк Termux (`termux/proot`), коммит
+  `52d65a4dc140ca554d241a1438ddd4f6b00c9813` (тег `v5.1.107.102` — версия
+  пакета proot Termux), без правок кода.
+- Сборка — своя, статически под musl, как Alpine собирает proot-static:
+  `tools/linux/build-proot.sh` (clang из NDK, sysroot — пакеты Alpine 3.24 по
+  закреплённым суммам, talloc — `talloc-static`); недостающее musl —
+  заголовок `tools/linux/proot-musl-compat.h`. APK собирает aarch64 задачей
+  `linuxFiles`; загрузчик — отдельный файл, путь — `PROOT_LOADER`, как прежде.
+- Проверки на машине сборки идут под фильтром seccomp, как у приложения
+  Android 15 (`tools/linux/android-seccomp.py` по спискам bionic): тот же
+  скрипт собирает proot для x86_64 (`tools/linux/host-env.sh`).
+
+**Почему.** На телефоне установка Claude Code падала с кодом 159
+(`docs/research/LINUX_IN_APP.md`, §10): фильтр seccomp приложений Android
+запрещает `io_uring_*`, `faccessat2` и др. и убивает процесс сигналом
+SIGSYS. Node 24 зовёт `io_uring_setup` при каждом запуске (libuv 1.52
+выключает это только в сборке под Android), bash и python — `faccessat2`
+в `test -x` и `access`, Go (`gh`) — тоже. proot 5.4.0 Alpine сигнал
+пропускает, и процесс умирает; форк Termux перехватывает его как
+трассировщик и отвечает вызову `ENOSYS` или подменяет его разрешённым —
+программа идёт обычным запасным путём, Go тоже (обработчик в самой
+программе Go не помог бы). Прокладка `LD_PRELOAD` в госте чинила бы только
+программы с musl, но не Go. Своя сборка, а не пакет Termux: пакет —
+динамически под bionic с `libtalloc.so` и путями Termux; статически под
+musl — та же схема запуска из `nativeLibraryDir`, что проверена в D-82.
+
+**Следствия.** В APK — `libproot.so` и `libproot-loader.so` своей сборки
+(`docs/PROVENANCE.md`, §4; `android/linux/NOTICE.txt`). Сборка APK — на
+Linux или macOS (скрипт `sh`, git, curl, tar). Жёсткие ссылки
+(`--link2symlink` форка) не включаются: `apk` по-прежнему без `/proc`.
+Claude Code ставится вместе с bash — его оболочкой команд.
+
+**Проверка.** `ProotLiveTest.callsAndroidForbidsDoNotKillGuest` (под
+имитацией фильтра Android: фильтров два; node и `bash test -x` — код 0);
+`LinuxInstallLiveTest` — установка Claude Code под тем же фильтром; на
+телефоне — `docs/DEVICE_CHECK.md`, §26.
 
 ## Отложено
 

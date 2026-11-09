@@ -21,14 +21,16 @@ import kotlin.time.Duration.Companion.seconds
 import org.junit.jupiter.api.Assumptions.assumeTrue
 
 /**
- * Linux-среда приложения на настоящем proot (D-75, D-82): тот же `ProotHost`, тот же
- * proot-static 5.4.0 и Alpine 3.24.3, что в APK, но для машины сборки — среду готовит
- * `tools/linux/host-env.sh` (`docs/TESTING.md`, «Слои»). Только явно:
- * `-Ddpai.test.proot=<каталог среды>`; без него тест пропускается.
+ * Linux-среда приложения на настоящем proot (D-75, D-115): тот же `ProotHost`, тот же proot
+ * (форк Termux) и Alpine 3.24.3, что в APK, но для машины сборки — среду готовит
+ * `tools/linux/host-env.sh` (`docs/TESTING.md`, «Слои»), и proot там работает под фильтром
+ * seccomp, как у приложения Android. Только явно: `-Ddpai.test.proot=<каталог среды>`; без
+ * него тест пропускается.
  *
  * Проверяет то, чего не видно на подделке процессов: `apk` без `/proc`, узкий `/dev`
- * без `/sys` (D-93), Claude Code из npm в госте и разбор его потока — отказ входа в
- * пустом каталоге слота (D-27, D-29) даёт `CLAUDE_AUTH_REQUIRED`, без запроса к модели.
+ * без `/sys` (D-93), вызовы, запрещённые Android, — без смерти процесса (D-115), Claude Code
+ * из npm в госте и разбор его потока — отказ входа в пустом каталоге слота (D-27, D-29) даёт
+ * `CLAUDE_AUTH_REQUIRED`, без запроса к модели.
  */
 class ProotLiveTest {
     private lateinit var proot: ProotHost
@@ -68,6 +70,24 @@ class ProotLiveTest {
         assertTrue(dev.stdout.all { it in allowed }, "лишнее в /dev: ${dev.stdout - allowed}")
         val sys = guest("/bin/sh", "-c", "ls /sys 2>/dev/null | wc -l")
         assertEquals(listOf("0"), sys.stdout.map { it.trim() })
+    }
+
+    /**
+     * Фильтр seccomp, как у приложения Android, на месте (фильтров — его и proot, два), и
+     * запрещённое им не убивает процесс (D-115): node зовёт `io_uring_setup` при запуске цикла
+     * событий, bash в `test -x` — `faccessat2`; на телефоне с proot Alpine оба падали с кодом 159.
+     */
+    @Test
+    fun callsAndroidForbidsDoNotKillGuest() {
+        val status = guest("/bin/grep", "Seccomp_filters", "/proc/self/status")
+        val filters = status.stdout.single().substringAfter(':').trim().toInt()
+        assertTrue(filters >= 2, "фильтра Android нет — среда не из host-env.sh: ${status.stdout}")
+        val node = guest("node", "-e", "require('fs').readFile('/etc/alpine-release', (e, d) => console.log(String(d).trim()))")
+        assertEquals(0, node.exitCode, (node.stdout + node.stderr).joinToString("\n"))
+        assertEquals(listOf("3.24.3"), node.stdout)
+        val bash = guest("bash", "-c", "test -x /bin/sh && echo можно")
+        assertEquals(0, bash.exitCode, (bash.stdout + bash.stderr).joinToString("\n"))
+        assertEquals(listOf("можно"), bash.stdout)
     }
 
     @Test

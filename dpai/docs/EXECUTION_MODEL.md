@@ -272,20 +272,24 @@ Claude Code сам запускает `ssh` и говорит с `dpai agent mcp
 и контур разберёт итог как обычно.
 
 
-## 8. Linux-среда в приложении (D-75, D-82)
+## 8. Linux-среда в приложении (D-75, D-82, D-115)
 
 Вариант B2 терминала: Alpine под proot в каталоге данных приложения, без
 Termux. Готово (шаги 2 и 3 D-75):
 
 - **Файлы в APK.** Сборка модуля `android` (задача `linuxFiles`)
-  загружает `proot-static` Alpine 5.4.0 и minirootfs 3.24.3, сверяет их
-  по SHA-256 из `docs/PROVENANCE.md`, §4 и кладёт без изменений:
-  `lib/arm64-v8a/libproot.so`, `libproot-loader.so` (вшитый загрузчик
-  proot) и `assets/linux/rootfs.tgz`; рядом — `assets/linux/NOTICE.txt`
-  (ссылки на исходники) и текст GPL-2.0. Библиотеки — распакованными на
+  собирает proot — форк Termux, статически под musl, скриптом
+  `tools/linux/build-proot.sh` (D-115: закреплённый коммит, clang из NDK,
+  sysroot из пакетов Alpine по суммам), загружает minirootfs 3.24.3 и
+  сверяет её по SHA-256 (`docs/PROVENANCE.md`, §4), и кладёт
+  `lib/arm64-v8a/libproot.so`, `libproot-loader.so` (загрузчик proot) и
+  `assets/linux/rootfs.tgz`; рядом — `assets/linux/NOTICE.txt` (ссылки на
+  исходники и лицензии вшитого) и текст GPL-2.0. Вызов, запрещённый
+  фильтром seccomp Android, proot превращает в ответ `ENOSYS`, а не в
+  смерть процесса (`docs/research/LINUX_IN_APP.md`, §10). Библиотеки — распакованными на
   диск (`useLegacyPackaging`): запускать файлы из каталога данных при
   targetSdk 29+ нельзя, из каталога библиотек — можно
-  (`docs/research/LINUX_IN_APP.md`, §1, §9). proot Alpine — только
+  (`docs/research/LINUX_IN_APP.md`, §1, §9). proot в APK — только
   aarch64: на устройстве другой архитектуры приложение ставится, но без
   Linux-среды.
 - **Корневая система.** `orchestrator.linux.RootfsInstaller` распаковывает

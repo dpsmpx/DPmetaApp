@@ -247,3 +247,56 @@ Android 15 (SDK 35), ядро `5.15.194-android13`, страница памят�
 - **Не проверено:** ход Claude Code под proot приложения против
   `proot-distro` Termux (§8, п. 3) — нужен вход в Claude, у пробника его
   нет; ядро со страницами 16 КБ (§8, п. 5).
+
+## 10. Фильтр seccomp Android: код 159 у Node, bash, python и Go
+
+9 ноября 2026, Xiaomi 23124RA7EO (Android 15, API 35), сборка 0.4.0-dev.13:
+«Поставить Claude Code» — «Установка завершилась с кодом 159» через ~15 с
+после `apk add` (журнал приложения, присланный автором). 159 = 128 + 31:
+процесс убит сигналом 31, SIGSYS.
+
+- **Фильтр приложений.** Android ставит процессу приложения фильтр seccomp;
+  вызов не из списка — `SECCOMP_RET_TRAP`, то есть SIGSYS. Список для
+  arm64 — по файлам bionic ветки `android15-release` (коммит `361ba867`,
+  `libc/SYSCALLS.TXT` и `SECCOMP_*.TXT`, прочитано 9 ноября 2026; правило
+  сборки — `libc/tools/genseccomp.py`: вызовы libc и белые списки минус
+  чёрные). Нет в нём, среди прочего: `io_uring_setup`, `io_uring_enter`,
+  `io_uring_register`, `faccessat2`, `openat2`, `rseq`, `set_robust_list`,
+  `futex_waitv`, `landlock_*`; запрещены `setuid`/`setgid`/`setgroups` и
+  родственные, `chroot`, `mount`, `sethostname` и др.
+- **Кто их зовёт** (`strace` в Alpine 3.24 x86_64 на машине сборки, 9 ноября
+  2026). `node` 24.22.1 и `npm` 11.12.1 — `io_uring_setup` при каждом
+  запуске: libuv 1.52.1, вшитый в Node, открывает кольцо io_uring для
+  пакетной `epoll_ctl` всегда; `UV_USE_IO_URING=0` выключает только кольцо
+  файловых операций, а пропуск io_uring целиком — только в сборке под
+  Android (`#if defined(__ANDROID_API__)`, `src/unix/linux.c` v1.52.1).
+  `bash` 5 в `test -x` и `python3` в `os.access(…, effective_ids=True)` —
+  `faccessat2` (musl 1.2.6 пробует его первым при флаге `AT_EACCESS`).
+  `gh` 2.97.0 (Go) — `faccessat2` в `exec.LookPath` перед запуском `git`.
+  `claude` 2.1.319 (`--version`, `doctor`) и `git` — ничего запрещённого.
+- **Воспроизведено на машине сборки.** Тот же фильтр (списки bionic выше,
+  arm64 → x86_64: старые вызовы x86_64 разрешены, если разрешён их
+  arm64-аналог) поверх proot 5.4.0 Alpine: `node`, `npm` — «Bad system
+  call», код 159; `bash -c 'test -x /bin/sh'` и `python3` с `os.access` —
+  159; `gh pr list` в репозитории — «SIGSYS: bad system call» (паника Go);
+  `sh`, `git`, `claude --version` — код 0.
+- **proot 5.4.0 и форк Termux.** proot 5.4.0 (`proot-me/proot`) SIGSYS
+  трассируемого не обрабатывает — сигнал доходит до процесса. Форк Termux
+  (`termux/proot`, коммит `52d65a4d`, тег `v5.1.107.102`, прочитано 9
+  ноября 2026) перехватывает SIGSYS от чужого фильтра
+  (`src/tracee/seccomp.c`, `handle_seccomp_event`): часть вызовов
+  заменяет разрешёнными (`open` → `openat` и др.) или изображает
+  (`setgroups`, `mount` и др.), остальным отвечает `-ENOSYS`. Собранный
+  статически под musl (D-115), под тем же фильтром: `node`, `npm`, `bash
+  test -x`, `python3`, `claude --version`, `gh` в репозитории (дошёл до
+  сети), `apk`, фоновый процесс с `--kill-on-exit` — код 0; установка
+  `npm install -g @anthropic-ai/claude-code` — 9 с, `claude -p` без входа —
+  обычный отказ входа, код 1.
+- **Прокладка `LD_PRELOAD` в госте** (проба, в продукт не вошла):
+  обработчик SIGSYS с ответом `-ENOSYS` чинит программы с musl (node, bash,
+  python), но не Go — среда Go ставит свой обработчик SIGSYS.
+- **Claude Code и оболочка.** Без bash или zsh Claude Code команды не
+  выполняет: строка «No suitable shell found» и проверка «valid bash/zsh
+  path» в `claude.exe` 2.1.319; в minirootfs Alpine — только `sh` busybox.
+  Поиск — встроенный ripgrep: `claude doctor` — «Search: OK (bundled)» в
+  Alpine x86_64.

@@ -2365,3 +2365,34 @@ target и вход в нём (§24, п. 8). Около 15 мин.
 
 В отчёт: пункты 1–7 «да/нет», текст отказов, время списка и отправки.
 Токены, вход и почта — не присылать (§0.5).
+
+## 26. Linux приложения под фильтром Android: proot Termux (D-115; с 0.4.0-dev.14 DPmetaApp)
+
+Нужно: сборка 0.4.0-dev.14 или новее, Linux установлен (§24, п. 1). До
+неё «Поставить Claude Code» падала с кодом 159 (SIGSYS,
+`docs/research/LINUX_IN_APP.md`, §10). Около 15 мин.
+
+1. **proot.** Терминал Linux: `uname -m` — `aarch64`; `cat
+   /etc/alpine-release` — `3.24.3`. Прежняя корневая система остаётся —
+   переустанавливать Linux не нужно.
+2. **Node.** `apk add nodejs npm` (если ещё нет), затем `node -e
+   'require("fs").readFile("/etc/alpine-release", (e, d) => console.log(String(d)))'`
+   — версия Alpine, а не «Bad system call»; `npm --version` — версия.
+3. **bash и python.** `apk add bash python3`, затем `bash -c 'test -x
+   /bin/sh && echo можно'` — «можно»; `python3 -c 'import os;
+   print(os.access("/bin/sh", os.X_OK, effective_ids=True))'` — `True`.
+4. **Claude Code.** «Настройки AI» → Linux → «Поставить Claude Code»: итог
+   — «Claude Code: 2.1.… (Claude Code)», в выводе — установка bash, Node и
+   пакета npm. Затем терминал: `claude` → вход по ссылке (код из браузера
+   — в терминал) → `/status` — вход есть; один короткий запрос — ответ.
+5. **Команды Claude.** В том же сеансе — просьба «выполни `ls /` и
+   скажи, что видишь»: Claude запускает команду (bash найден), ответ —
+   список каталогов.
+6. **gh (Go).** `apk add github-cli`; в клоне с `origin` на GitHub — `gh pr
+   list`: «gh auth login…» или список, но не «SIGSYS: bad system call».
+7. **Codex и Gemini.** «Поставить Codex и Gemini» — итог с версиями обоих
+   (раньше на этом месте был код 1 или 159).
+
+В отчёт: пункты 1–7 «да/нет», текст отказов и, если что-то упало, строки
+под кнопкой целиком (их теперь пишет и журнал приложения). Вход и токены
+— не присылать (§0.5).

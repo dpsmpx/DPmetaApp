@@ -78,8 +78,8 @@ fun LinuxScreen(onBack: () -> Unit) {
         allOutput = false
         jobs.start(LongJobs.LINUX_APK, label, excludes = LongJobs.GUEST) {
             when (val r = job()) {
-                is Outcome.Success -> LongJobs.Done(done(r.value), (r.value.stdout + r.value.stderr).takeLast(MAX_OUTPUT))
-                is Outcome.Failure -> LongJobs.Done("$label: ${r.errors.first().message}")
+                is Outcome.Success -> LongJobs.Done(done(r.value), (r.value.stdout + r.value.stderr).takeLast(MAX_OUTPUT), failed = !r.value.ok)
+                is Outcome.Failure -> LongJobs.Done("$label: ${r.errors.first().message}", failed = true)
             }
         }
     }

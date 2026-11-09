@@ -183,12 +183,14 @@ class LinuxEnvironment(private val vfs: Vfs, dir: String = DIR) {
             (apk(Apk.ADD, names.toList()) as Outcome.Success).value
 
         /**
-         * Установка Claude Code в госте (D-75, шаг 5): Git, Node.js и npm из Alpine — отдельным
-         * шагом `apk` без `/proc` (D-82), затем пакет npm оболочкой гостя; в конце — версия.
+         * Установка Claude Code в госте (D-75, шаг 5): Git, Node.js, npm и bash из Alpine —
+         * отдельным шагом `apk` без `/proc` (D-82), затем пакет npm оболочкой гостя; в конце —
+         * версия. bash — оболочка команд Claude Code: без bash или zsh он их не выполняет
+         * («No suitable shell found»), а в minirootfs Alpine есть только `sh` busybox.
          * Вход — по разу на слот, в терминале (D-27, D-29).
          */
         fun claudeInstall(): List<ProcessSpec> = listOf(
-            apkAdd("git", "nodejs", "npm"),
+            apkAdd("git", "nodejs", "npm", "bash"),
             ProcessSpec(listOf("/bin/sh", "-lc", "npm install -g $CLAUDE_PACKAGE && claude --version")),
         )
 

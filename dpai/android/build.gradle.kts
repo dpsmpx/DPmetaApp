@@ -7,7 +7,6 @@ import java.net.URI
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.security.MessageDigest
-import java.util.zip.GZIPInputStream
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -62,28 +61,29 @@ val packAgent by tasks.registering(Zip::class) {
     isReproducibleFileOrder = true
 }
 
-// Linux-среда в приложении (D-75, D-82): proot-static Alpine, его вшитый загрузчик и minirootfs — без
-// изменений; proot-static Alpine — только aarch64: на устройстве другой архитектуры приложение ставится, но
-// без Linux-среды (каталог библиотек ABI устройства proot не содержит). В репозиторий двоичные файлы не кладутся: сборка загружает их и сверяет по SHA-256 (docs/PROVENANCE.md,
-// §4; суммы закреплены 23 октября 2026 после проверки цепочки Alpine: ключи из minirootfs → подпись APKINDEX →
-// контрольная сумма пакета в индексе → datahash данных). Загрузки — в домашнем каталоге Gradle: `clean` их не
-// стирает, и сборка без сети идёт из кеша. Действие — без ссылок на объект скрипта: так его хранит кеш конфигурации.
+// Linux-среда в приложении (D-75, D-115): proot — форк Termux, собранный здесь же статически под musl
+// (tools/linux/build-proot.sh: закреплённый коммит, clang из NDK, sysroot из пакетов Alpine по суммам), и
+// minirootfs Alpine — без изменений. Только aarch64: на устройстве другой архитектуры приложение ставится, но
+// без Linux-среды (каталог библиотек ABI устройства proot не содержит). В репозиторий двоичные файлы не
+// кладутся (docs/PROVENANCE.md, §4; сумма minirootfs закреплена 23 октября 2026 после проверки цепочки Alpine:
+// ключи из minirootfs → подпись APKINDEX → контрольная сумма пакета в индексе → datahash данных). Загрузки — в
+// домашнем каталоге Gradle: `clean` их не стирает, и сборка без сети идёт из кеша. Сборка proot — sh, git, curl,
+// tar (Linux или macOS). Действие — без ссылок на объект скрипта: так его хранит кеш конфигурации.
 val linuxFiles = tasks.register("linuxFiles") {
     val cache = File(gradle.gradleUserHomeDir, "caches/dpai-linux")
     val jni = layout.buildDirectory.dir("generated/linux-jni")
     val assets = layout.buildDirectory.dir("generated/linux-assets")
     val notice = file("linux/NOTICE.txt")
     val gpl = file("linux/GPL-2.0.txt")
+    val buildProot = file("../tools/linux/build-proot.sh")
+    val compat = file("../tools/linux/proot-musl-compat.h")
+    val ndk = androidComponents.sdkComponents.ndkDirectory
+    val work = temporaryDir
     // Адрес → закреплённая сумма SHA-256.
     val minirootfs = "https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/aarch64/alpine-minirootfs-3.24.3-aarch64.tar.gz" to
         "4d3f80afaebd447c5591a63a73bde380a149fe8b2d85488cafabb2ff97551f50"
-    val prootPackage = "https://dl-cdn.alpinelinux.org/alpine/v3.24/community/aarch64/proot-static-5.4.0-r2.apk" to
-        "31d0e21ee87435ed819112cef84b8ce7d004c2835d8f61eeabe422e122b4b6cf"
-    // proot.static из пакета и вшитый в него загрузчик (второй ELF файла, до конца таблицы разделов).
-    val prootSha256 = "05e07c2dca260a720b3c191bb1c85c80126bb28991ba9060115bf19c8ba0a9a0"
-    val loaderSha256 = "2ce2923d28939c1166e6e7b0676a4fcc3eb741d6fe1feb3e3dcd15819d58eef8"
-    inputs.property("pins", listOf(minirootfs, prootPackage).joinToString() + prootSha256 + loaderSha256)
-    inputs.files(notice, gpl)
+    inputs.property("pins", minirootfs.toList().joinToString())
+    inputs.files(notice, gpl, buildProot, compat)
     outputs.dirs(jni, assets)
     doLast {
         fun sha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
@@ -102,35 +102,23 @@ val linuxFiles = tasks.register("linuxFiles") {
             return bytes
         }
 
-        // Файл из tar.gz; пакет apk — несколько потоков gzip подряд, GZIPInputStream читает их все.
-        fun fromTarGz(bytes: ByteArray, name: String): ByteArray {
-            val tar = GZIPInputStream(bytes.inputStream()).readBytes()
-            var off = 0
-            while (off + 512 <= tar.size) {
-                val header = tar.copyOfRange(off, off + 512)
-                if (header.all { it.toInt() == 0 }) break
-                val entry = String(header, 0, 100, Charsets.UTF_8).trimEnd('\u0000')
-                val size = String(header, 124, 12, Charsets.US_ASCII).trim('\u0000', ' ').toLong(8).toInt()
-                if (entry.removePrefix("./") == name) return tar.copyOfRange(off + 512, off + 512 + size)
-                off += 512 + (size + 511) / 512 * 512
-            }
-            throw GradleException("в архиве нет $name")
+        // proot и загрузчик для aarch64 — скриптом; его вывод — в ошибку сборки, если он не справился.
+        val built = work.resolve("proot-aarch64")
+        val process = ProcessBuilder("sh", buildProot.path, "aarch64", built.path, cache.resolve("proot").path)
+            .redirectErrorStream(true)
+            .apply { environment()["NDK"] = ndk.get().asFile.path }
+            .start()
+        val log = process.inputStream.bufferedReader().readText()
+        if (process.waitFor() != 0) throw GradleException("сборка proot (tools/linux/build-proot.sh):\n" + log.lines().takeLast(40).joinToString("\n"))
+        logger.info(log)
+        val proot = built.resolve("proot").readBytes()
+        val loader = built.resolve("loader").readBytes()
+        // Заголовок ELF: 64 бита, aarch64 (e_machine 183) — а не то, что оказалось в каталоге.
+        for ((name, elf) in listOf("proot" to proot, "загрузчик" to loader)) {
+            val ok = elf.size > 64 && elf[0] == 0x7f.toByte() && elf[4] == 2.toByte() &&
+                ByteBuffer.wrap(elf, 18, 2).order(ByteOrder.LITTLE_ENDIAN).short.toInt() == 183
+            if (!ok) throw GradleException("$name: не ELF aarch64")
         }
-
-        // Вшитый загрузчик proot: второй ELF в файле, длина — до конца таблицы разделов его заголовка.
-        fun embeddedLoader(proot: ByteArray): ByteArray {
-            val magic = byteArrayOf(0x7f, 'E'.code.toByte(), 'L'.code.toByte(), 'F'.code.toByte())
-            val at = (1 until proot.size - 64).firstOrNull { i -> (0..3).all { proot[i + it] == magic[it] } }
-                ?: throw GradleException("в proot.static нет вшитого загрузчика")
-            val buf = ByteBuffer.wrap(proot, at, proot.size - at).slice().order(ByteOrder.LITTLE_ENDIAN)
-            val end = buf.getLong(0x28) + buf.getShort(0x3a).toLong() * buf.getShort(0x3c).toLong()
-            return proot.copyOfRange(at, at + end.toInt())
-        }
-
-        val proot = fromTarGz(fetch(prootPackage), "usr/bin/proot.static")
-        if (sha256(proot) != prootSha256) throw GradleException("proot.static: SHA-256 ${sha256(proot)}, а закреплена $prootSha256")
-        val loader = embeddedLoader(proot)
-        if (sha256(loader) != loaderSha256) throw GradleException("загрузчик proot: SHA-256 ${sha256(loader)}, а закреплена $loaderSha256")
         // Выходы — заново: от прошлой сборки в APK не остаётся лишнего.
         jni.get().asFile.deleteRecursively()
         assets.get().asFile.deleteRecursively()
