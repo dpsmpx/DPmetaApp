@@ -107,7 +107,9 @@ cat > "$B/build.h" <<EOF
 EOF
 
 # Загрузчик — отдельным файлом (PROOT_UNBUNDLE_LOADER): его путь даёт PROOT_LOADER (ProotHost).
+# Пути каталогов — без машины сборки (строки __FILE__ в assert): итог не зависит от того, где собирали.
 CPPFLAGS="-D_FILE_OFFSET_BITS=64 -D_GNU_SOURCE -D_LARGEFILE64_SOURCE -I$B -I$S -include $HERE/proot-musl-compat.h"
+CPPFLAGS="$CPPFLAGS -ffile-prefix-map=$S/=proot/ -ffile-prefix-map=$B/=build/ -ffile-prefix-map=$HERE/=tools/linux/"
 compile() { # исходник объект флаги…
     src=$1; obj=$2; shift 2
     mkdir -p "$(dirname "$obj")"

@@ -87,6 +87,12 @@ Sysroot сборки proot — пакеты Alpine 3.24 `main` (в APK из ни
 
 Компилятор — clang из NDK (`android/build.gradle.kts`, `ndkVersion`); его
 `libclang_rt.builtins` вшиты в proot (Apache-2.0 WITH LLVM-exception).
+Сборка воспроизводима: пути машины сборки в итог не попадают
+(`-ffile-prefix-map`), и две сборки из разных каталогов совпали байт в байт.
+Итог с NDK 28.2.13676358 на Linux x86_64, 9 ноября 2026: `libproot.so` —
+`c046291a578e5f0a8b6af66b13fd2b848364f15a9bba4be9ef67288a23f05195`,
+`libproot-loader.so` — `54cf685e738b8c362badf98a4c01fb67c0a7b292de5d0dad91735fced80abd50`
+(сверка, а не замок сборки: другой clang даёт другие байты).
 
 Для проверок на машине сборки — те же выпуски для x86_64; в APK и в
 репозиторий не идут: `tools/linux/host-env.sh` загружает их в каталог
