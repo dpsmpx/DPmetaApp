@@ -25,9 +25,10 @@ import kotlin.time.Duration.Companion.minutes
  * ([runner], как шаги проверки — рабочий каталог задаёт он), отправка ветки — `git push`
  * ([git]). Вывод `gh` — данные со стороны (T3): разбирает [GitHubCommands] строго.
  *
- * Уровни действий — `DPmetaApp:D-07`, `DPmetaApp:D-36`: список и карточка — 0 (чтение);
- * отправка ветки задачи с PR — 1 (обратимое и видимое; экран показывает, что уйдёт).
- * Каждое действие с уровнем — строкой в [journal], итог и отказ — тоже.
+ * Уровни действий — `DPmetaApp:D-07`, `DPmetaApp:D-36`, `DPmetaApp:D-80`: список и карточка —
+ * 0 (чтение); отправка ветки задачи с PR — 1; комментарий — 2 (экран «что уйдёт» и PIN
+ * устройства — у оболочки); «Слить» — 3 (красный экран и ввод `владелец/имя`; имя
+ * сверяется и здесь). Каждое действие с уровнем — строкой в [journal], итог и отказ — тоже.
  */
 class GitHubDesk(
     private val runner: StepRunner,
@@ -72,6 +73,29 @@ class GitHubDesk(
         return record(1, "pr.create", branch, made)
     }
 
+    /** Комментарий к PR (уровень 2, `DPmetaApp:D-80`): подтверждение PIN — у оболочки, до вызова. */
+    fun comment(number: Int, body: String): Outcome<Unit> {
+        val argv = GitHubCommands.prComment(number, body)
+        if (argv is Outcome.Failure) return record(2, "pr.comment", "#$number", argv)
+        return record(2, "pr.comment", "#$number", gh("gh pr comment", (argv as Outcome.Success).value).then { Outcome.success(Unit) })
+    }
+
+    /**
+     * Слить PR (уровень 3, `DPmetaApp:D-80`): merge-коммитом и только коммита [shown] — того,
+     * что был на экране. [typed] — имя `владелец/имя`, введённое человеком; не совпало с
+     * репозиторием PR — отказ без вызова `gh`.
+     */
+    fun merge(shown: GhPrDetail, typed: String): Outcome<Unit> {
+        val subject = "#${shown.pr.number}"
+        val repo = GitHubCommands.repoOf(shown.pr.url)
+        if (repo == null || typed.trim() != repo) {
+            return record(3, "pr.merge", subject, Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.OPERATION_NOT_ALLOWED, "имя репозитория не совпало — слияние не выполнено", "github"))
+        }
+        val argv = GitHubCommands.prMerge(shown.pr.number, shown.headSha)
+        if (argv is Outcome.Failure) return record(3, "pr.merge", subject, argv)
+        return record(3, "pr.merge", subject, gh("gh pr merge", (argv as Outcome.Success).value).then { Outcome.success(Unit) })
+    }
+
     private fun existing(branch: String): String? =
         GitHubCommands.prState(branch).valueOrNull()?.let { argv -> gh("gh pr view", argv).valueOrNull() }
             ?.let { com.dpsmpx.dpai.core.serialization.JsonParser().parse(it.joinToString("\n")).valueOrNull() as? JsonObject }
@@ -85,7 +109,7 @@ class GitHubDesk(
 
     private fun <T> record(level: Int, action: String, subject: String, r: Outcome<T>): Outcome<T> {
         journal.append(ActionRecord(clock.now().epochMillis, level, action, repository, subject, r is Outcome.Success, when (r) {
-            is Outcome.Success -> r.value.toString().take(300)
+            is Outcome.Success -> (if (r.value == Unit) "готово" else r.value.toString()).take(300)
             is Outcome.Failure -> r.errors.first().let { "${it.code}: ${it.message}" }.take(300)
         }))
         return r

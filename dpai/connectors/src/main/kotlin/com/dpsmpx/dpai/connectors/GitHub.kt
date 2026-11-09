@@ -46,7 +46,39 @@ object GitHubCommands {
     const val LIST_FIELDS: String = "number,title,state,isDraft,url,headRefName,baseRefName,author,updatedAt,reviewDecision,statusCheckRollup"
 
     /** Поля карточки PR (`gh pr view --json`): поля списка, описание, можно ли слить, комментарии и отзывы. */
-    const val VIEW_FIELDS: String = "$LIST_FIELDS,body,mergeable,comments,reviews"
+    const val VIEW_FIELDS: String = "$LIST_FIELDS,body,mergeable,comments,reviews,headRefOid"
+
+    /** Предел своего комментария: экран телефона, а не выгрузка (у GitHub предел больше). */
+    const val MAX_COMMENT: Int = 5_000
+
+    private val SHA = Regex("[0-9a-f]{40}")
+    private val PR_URL = Regex("""https://github\.com/([A-Za-z0-9-]{1,39})/([A-Za-z0-9._-]{1,100})/pull/\d+""")
+
+    /**
+     * `gh pr comment N --body …` (D-108; уровень 2 по `DPmetaApp:D-80`): текст — аргументом, без
+     * оболочки (агент передаёт аргументы списком); 1…[MAX_COMMENT] знаков, без управляющих, кроме
+     * перевода строки и табуляции.
+     */
+    fun prComment(number: Int, body: String): Outcome<List<String>> = when {
+        number < 1 -> Outcome.failure(DiagCode.VALUE_INVALID, "номер PR — с 1", "github")
+        body.isBlank() || body.length > MAX_COMMENT -> Outcome.failure(DiagCode.VALUE_INVALID, "комментарий — 1…$MAX_COMMENT знаков", "github")
+        body.any { (it.isISOControl() && it != '\n' && it != '\t') || it in BIDI } -> Outcome.failure(DiagCode.VALUE_INVALID, "в комментарии — управляющие знаки", "github")
+        else -> Outcome.success(listOf("gh", "pr", "comment", "$number", "--body", body))
+    }
+
+    /**
+     * `gh pr merge N --merge --match-head-commit SHA` (уровень 3 по `DPmetaApp:D-80`): слияние
+     * merge-коммитом — без перезаписи истории — и только показанного на экране коммита: ветку
+     * обновили после показа — GitHub откажет.
+     */
+    fun prMerge(number: Int, headSha: String): Outcome<List<String>> = when {
+        number < 1 -> Outcome.failure(DiagCode.VALUE_INVALID, "номер PR — с 1", "github")
+        !SHA.matches(headSha) -> Outcome.failure(DiagCode.VALUE_INVALID, "коммит головы PR — 40 знаков hex", "github")
+        else -> Outcome.success(listOf("gh", "pr", "merge", "$number", "--merge", "--match-head-commit", headSha))
+    }
+
+    /** `владелец/имя` из адреса PR — его человек вводит, подтверждая слияние (уровень 3, `DPmetaApp:D-37`). */
+    fun repoOf(prUrl: String): String? = PR_URL.matchEntire(prUrl)?.let { "${it.groupValues[1]}/${it.groupValues[2]}" }
 
     /** Сколько PR в списке — экран телефона, а не выгрузка репозитория. */
     const val LIST_LIMIT: Int = 30
@@ -83,6 +115,10 @@ object GitHubCommands {
         val pr = pr(f)
         val body = f.string("body")?.let(::external)
         val mergeable = f.string("mergeable")
+        val headSha = f.string("headRefOid")?.takeIf { SHA.matches(it) } ?: run {
+            if (f.has("headRefOid")) f.diagnostics.error(DiagCode.CONNECTOR_REPLY_INVALID, "коммит головы — не 40 знаков hex", "$.headRefOid")
+            null
+        }
         val notes = mutableListOf<GhNote>()
         f.array("comments")?.items?.forEachIndexed { i, v ->
             val c = (v as? JsonObject)?.let { JsonFields(it, "$.comments[$i]", d) } ?: return@forEachIndexed
@@ -100,10 +136,10 @@ object GitHubCommands {
             if (who != null && state != null && text != null) notes += GhNote(who, state, external(text), at)
         }
         f.finish()
-        if (d.hasErrors || pr == null || body == null || mergeable == null) {
+        if (d.hasErrors || pr == null || body == null || mergeable == null || headSha == null) {
             return Outcome.Failure(listOf(Diagnostic.of(DiagCode.CONNECTOR_REPLY_INVALID, "gh pr view: ответ не по формату", "github", causes = d.all)))
         }
-        return Outcome.success(GhPrDetail(pr, body, mergeable, notes.sortedBy { it.at }))
+        return Outcome.success(GhPrDetail(pr, body, mergeable, notes.sortedBy { it.at }, headSha))
     }
 
     /**
@@ -200,5 +236,8 @@ data class GhPr(
 /** Комментарий ([review] = `null`) или отзыв с его итогом — для ленты карточки PR. */
 data class GhNote(val author: String, val review: String?, val body: String, val at: String)
 
-/** Карточка PR (D-108): [mergeable] — `MERGEABLE`, `CONFLICTING` или `UNKNOWN`, пока GitHub считает. */
-data class GhPrDetail(val pr: GhPr, val body: String, val mergeable: String, val notes: List<GhNote>)
+/**
+ * Карточка PR (D-108): [mergeable] — `MERGEABLE`, `CONFLICTING` или `UNKNOWN`, пока GitHub считает;
+ * [headSha] — коммит головы на момент показа: слияние — только его (`DPmetaApp:D-80`).
+ */
+data class GhPrDetail(val pr: GhPr, val body: String, val mergeable: String, val notes: List<GhNote>, val headSha: String)

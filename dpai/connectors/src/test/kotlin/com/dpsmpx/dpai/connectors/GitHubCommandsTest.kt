@@ -93,4 +93,23 @@ class GitHubCommandsTest {
         assertEquals(DiagCode.PROCESS_EXIT_NONZERO, other.code)
         assertTrue("код 1" in other.message, other.message)
     }
+
+    /** Комментарий и слияние (`DPmetaApp:D-80`): строгие аргументы; слияние — merge-коммитом и только показанного коммита. */
+    @Test
+    fun commentAndMergeArguments() {
+        assertEquals(listOf("gh", "pr", "comment", "12", "--body", "Спасибо\nпосмотрю"), GitHubCommands.prComment(12, "Спасибо\nпосмотрю").valueOrNull())
+        for (bad in listOf("", "   ", "a".repeat(GitHubCommands.MAX_COMMENT + 1), "звонок\u0007", "подмена\u202e")) {
+            assertEquals(DiagCode.VALUE_INVALID, (GitHubCommands.prComment(12, bad) as Outcome.Failure).errors.single().code, bad.take(20))
+        }
+        val sha = "1".repeat(40)
+        assertEquals(listOf("gh", "pr", "merge", "12", "--merge", "--match-head-commit", sha), GitHubCommands.prMerge(12, sha).valueOrNull())
+        for (bad in listOf("HEAD", "1".repeat(39), "Z".repeat(40), "--admin")) assertIs<Outcome.Failure>(GitHubCommands.prMerge(12, bad), bad)
+        assertIs<Outcome.Failure>(GitHubCommands.prMerge(0, sha))
+        assertEquals("o/r", GitHubCommands.repoOf("https://github.com/o/r/pull/12"))
+        assertNull(GitHubCommands.repoOf("https://example.org/o/r/pull/12"))
+        assertNull(GitHubCommands.repoOf("https://github.com/o/r/pull/12/../../x"))
+        assertEquals("1".repeat(40), GitHubCommands.parsePrView(corpus("pr-view.json")).valueOrNull()!!.headSha)
+        val badSha = corpus("pr-view.json").single().replace("\"headRefOid\":\"${"1".repeat(40)}\"", "\"headRefOid\":\"main\"")
+        assertIs<Outcome.Failure>(GitHubCommands.parsePrView(listOf(badSha)), "голова — только 40 знаков hex")
+    }
 }

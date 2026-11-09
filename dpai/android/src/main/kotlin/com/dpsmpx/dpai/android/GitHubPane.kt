@@ -76,7 +76,7 @@ fun GitHubPane(model: DemoModel, onBack: () -> Unit) {
 
     detail?.let { v ->
         androidx.activity.compose.BackHandler { detail = null }
-        PrCard(v, loading, onBack = { detail = null }, onLink = link)
+        PrCard(v, desk, loading, onBack = { detail = null }, onLink = link, onChanged = { open(v.pr.number) })
         return
     }
     Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -112,7 +112,14 @@ fun GitHubPane(model: DemoModel, onBack: () -> Unit) {
 }
 
 @Composable
-private fun PrCard(v: GhPrDetail, loading: Boolean, onBack: () -> Unit, onLink: (String) -> Unit) {
+private fun PrCard(
+    v: GhPrDetail,
+    desk: com.dpsmpx.dpai.orchestrator.github.GitHubDesk?,
+    loading: Boolean,
+    onBack: () -> Unit,
+    onLink: (String) -> Unit,
+    onChanged: () -> Unit,
+) {
     LazyColumn(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         item { TextButton(onClick = onBack) { Text("← Список PR") } }
         item {
@@ -140,14 +147,8 @@ private fun PrCard(v: GhPrDetail, loading: Boolean, onBack: () -> Unit, onLink: 
                 }
             }
         }
-        // Комментарий и «Слить» — после решения автора об их уровнях (D-108 против DPmetaApp:D-07, D-36).
-        item {
-            HorizontalDivider()
-            Text(
-                "Комментарий и слияние — пока на GitHub по ссылке выше: в приложении появятся, когда будет решено, как их подтверждать.",
-                style = MaterialTheme.typography.labelSmall,
-            )
-        }
+        // Комментарий — уровень 2, «Слить» — уровень 3 (DPmetaApp:D-80).
+        if (desk != null) item { PrActions(v, desk, onChanged) }
     }
 }
 
@@ -230,4 +231,100 @@ private fun mergeableWord(m: String) = when (m) {
     "MERGEABLE" -> "можно слить"
     "CONFLICTING" -> "конфликт"
     else -> "GitHub ещё считает"
+}
+
+/**
+ * Действия с PR (`DPmetaApp:D-80`): комментарий — уровень 2 (окно «что уйдёт», затем PIN
+ * устройства); «Слить» — уровень 3 (красное окно, ввод `владелец/имя`, без биометрии). Итог —
+ * строкой; карточка перечитывается.
+ */
+@Composable
+private fun PrActions(v: GhPrDetail, desk: com.dpsmpx.dpai.orchestrator.github.GitHubDesk, onChanged: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = rememberCoroutineScope()
+    var text by androidx.compose.runtime.saveable.rememberSaveable(v.pr.number) { mutableStateOf("") }
+    var askComment by remember { mutableStateOf(false) }
+    var askMerge by remember { mutableStateOf(false) }
+    var typed by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var note by remember { mutableStateOf<String?>(null) }
+    val repo = com.dpsmpx.dpai.connectors.GitHubCommands.repoOf(v.pr.url)
+
+    fun run(label: String, after: () -> Unit = {}, action: () -> Outcome<Unit>) {
+        busy = true
+        scope.launch {
+            val r = withContext(Dispatchers.IO) { action() }
+            busy = false
+            when (r) {
+                is Outcome.Success -> {
+                    note = "$label: готово"
+                    after()
+                    onChanged()
+                }
+                is Outcome.Failure -> note = "$label: ${r.errors.first().message}"
+            }
+        }
+    }
+
+    HorizontalDivider()
+    Text("Комментарий", style = MaterialTheme.typography.titleSmall)
+    androidx.compose.material3.OutlinedTextField(
+        text, { if (it.length <= com.dpsmpx.dpai.connectors.GitHubCommands.MAX_COMMENT) text = it },
+        label = { Text("Текст комментария") }, minLines = 2, modifier = Modifier.fillMaxWidth(),
+    )
+    TextButton(enabled = !busy && text.isNotBlank(), onClick = { askComment = true }) { Text("Отправить комментарий…") }
+    HorizontalDivider()
+    androidx.compose.material3.Button(
+        enabled = !busy && repo != null && v.pr.state == "OPEN",
+        onClick = { typed = ""; askMerge = true },
+        colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error, contentColor = MaterialTheme.colorScheme.onError),
+    ) { Text("Слить…") }
+    if (busy) Text("Выполняю…", style = MaterialTheme.typography.labelSmall)
+    note?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
+
+    if (askComment) {
+        AlertDialog(
+            onDismissRequest = { askComment = false },
+            title = { Text("Отправить комментарий?") },
+            text = { Text("В PR #${v.pr.number} (${repo ?: v.pr.url}) от вашего входа gh уйдёт:\n\n$text\n\nДальше — PIN устройства.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    askComment = false
+                    val body = text
+                    DeviceConfirm.ask(context, "Комментарий к PR #${v.pr.number}", onOk = {
+                        run("Комментарий", after = { text = "" }) { desk.comment(v.pr.number, body) }
+                    }, onDenied = { why -> note = "Комментарий: $why" })
+                }) { Text("Дальше — PIN") }
+            },
+            dismissButton = { TextButton(onClick = { askComment = false }) { Text("Отмена") } },
+        )
+    }
+    if (askMerge && repo != null) {
+        AlertDialog(
+            onDismissRequest = { askMerge = false },
+            containerColor = MaterialTheme.colorScheme.errorContainer,
+            titleContentColor = MaterialTheme.colorScheme.onErrorContainer,
+            textContentColor = MaterialTheme.colorScheme.onErrorContainer,
+            title = { Text("Слить PR #${v.pr.number}?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Ветка ${v.pr.head} войдёт в ${v.pr.base} репозитория $repo на GitHub merge-коммитом — только коммит " +
+                            "${v.headSha.take(7)}, показанный здесь. Вернуть можно только новым коммитом (revert). " +
+                            "Слияние: ${mergeableWord(v.mergeable)}" + (checksLine(v.pr.checks)?.let { "; проверки: $it" } ?: "") + ".",
+                    )
+                    Text("Чтобы подтвердить, введите имя репозитория: $repo")
+                    androidx.compose.material3.OutlinedTextField(typed, { typed = it }, singleLine = true, label = { Text(repo) }, modifier = Modifier.fillMaxWidth())
+                }
+            },
+            confirmButton = {
+                TextButton(enabled = typed.trim() == repo, onClick = {
+                    askMerge = false
+                    val name = typed
+                    run("Слияние") { desk.merge(v, name) }
+                }) { Text("Слить") }
+            },
+            dismissButton = { TextButton(onClick = { askMerge = false }) { Text("Отмена") } },
+        )
+    }
 }

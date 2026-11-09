@@ -147,4 +147,30 @@ class GitHubDeskTest {
         journal.append(ActionRecord(2, 1, "branch.push", repo, "task/y", false, "GIT_COMMAND_FAILED: …"))
         assertEquals(listOf("task/x", "task/y"), journal.last().map { it.subject })
     }
+
+    /** Комментарий — уровень 2 (`DPmetaApp:D-80`): команда `gh pr comment`, строка в журнале. */
+    @Test
+    fun commentIsLevelTwoAndJournaled() {
+        assertIs<Outcome.Success<Unit>>(desk().comment(12, "Посмотрю"))
+        assertEquals(listOf(GitHubCommands.prComment(12, "Посмотрю").valueOrNull()!! to repo), calls)
+        val rec = journal.last().single()
+        assertEquals(listOf("pr.comment", "#12", "готово"), listOf(rec.action, rec.subject, rec.detail))
+        assertEquals(2, rec.level)
+        assertIs<Outcome.Failure>(desk().comment(12, " "))
+        assertEquals(1, calls.size, "пустой комментарий до gh не доходит")
+    }
+
+    /** «Слить» — уровень 3: имя `владелец/имя` сверяется и здесь; слияние — только показанного коммита. */
+    @Test
+    fun mergeNeedsExactRepositoryNameAndShownCommit() {
+        replies += Completed(0, corpus("pr-view.json"), emptyList())
+        val shown = desk().view(12).valueOrNull()!!
+        calls.clear()
+        val wrong = desk().merge(shown, "o/other")
+        assertEquals(DiagCode.OPERATION_NOT_ALLOWED, assertIs<Outcome.Failure>(wrong).errors.single().code)
+        assertTrue(calls.isEmpty(), "при неверном имени gh не вызывается")
+        assertIs<Outcome.Success<Unit>>(desk().merge(shown, " o/r "))
+        assertEquals(listOf("gh", "pr", "merge", "12", "--merge", "--match-head-commit", "1".repeat(40)), calls.single().first)
+        assertEquals(listOf(3 to false, 3 to true), journal.last().map { it.level to it.ok })
+    }
 }
