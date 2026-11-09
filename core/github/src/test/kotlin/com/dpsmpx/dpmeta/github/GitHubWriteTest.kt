@@ -1,0 +1,110 @@
+package com.dpsmpx.dpmeta.github
+
+import com.dpsmpx.dpai.core.diagnostics.DiagCode
+import com.dpsmpx.dpai.core.diagnostics.Secret
+import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.core.serialization.JsonObject
+import com.dpsmpx.dpai.core.serialization.JsonParser
+import com.dpsmpx.dpai.core.serialization.JsonString
+import com.dpsmpx.dpmeta.model.RepoRef
+import com.dpsmpx.dpmeta.net.HttpRequest
+import com.dpsmpx.dpmeta.net.HttpResponse
+import com.dpsmpx.dpmeta.net.Net
+import com.dpsmpx.dpmeta.net.Transport
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import kotlin.test.assertTrue
+
+/** Запись в репозитории через GitHub (D-36, F-12…F-14) на синтетических ответах. */
+class GitHubWriteTest {
+    private class Fake(val routes: Map<String, Pair<Int, String>>) : Transport {
+        val seen = mutableListOf<HttpRequest>()
+
+        override fun send(request: HttpRequest): Outcome<HttpResponse> {
+            seen += request
+            val (status, body) = routes["${request.method} ${request.url.rawPath}"] ?: (404 to """{"message":"Not Found"}""")
+            return Outcome.success(HttpResponse(status, emptyMap(), body.toByteArray()))
+        }
+    }
+
+    private val repo = RepoRef.parse("example/Alpha").valueOrNull()!!
+    private val head = "b".repeat(40)
+
+    private fun gh(vararg routes: Pair<String, Pair<Int, String>>) = Fake(routes.toMap()).let { it to GitHubWrite(Net(it), Secret("t")) }
+
+    private fun body(r: HttpRequest): JsonObject = JsonParser().parse(r.body!!.toString(Charsets.UTF_8)).valueOrNull() as JsonObject
+
+    private fun code(r: Outcome<*>) = assertIs<Outcome.Failure>(r).errors.single().code
+
+    private val pullJson = """{"number":7,"title":"Этап 5","state":"open","draft":true,"merged":false,"mergeable":true,"mergeable_state":"clean",
+        "head":{"sha":"$head","ref":"claude/x"},"base":{"ref":"main"},"node_id":"PR_kw1","html_url":"https://github.com/example/Alpha/pull/7"}"""
+
+    @Test
+    fun pullDetailIsFreshAndFull() {
+        val (fake, w) = gh("GET /repos/example/Alpha/pulls/7" to (200 to pullJson))
+        val p = w.pull(repo, 7).valueOrNull()!!
+        assertEquals(PullDetail(7, "Этап 5", "open", true, false, true, "clean", head, "claude/x", "main", "PR_kw1", "https://github.com/example/Alpha/pull/7"), p)
+        assertTrue(fake.seen.single().headers["If-None-Match"] == null, "без кэша ETag")
+    }
+
+    /** «Влить» — merge-коммитом и только показанного коммита (F-13); новый коммит — 409, отказ. */
+    @Test
+    fun mergeUsesMergeCommitOfShownHead() {
+        val (fake, w) = gh("PUT /repos/example/Alpha/pulls/7/merge" to (200 to """{"sha":"${"c".repeat(40)}","merged":true,"message":"Pull Request successfully merged"}"""))
+        val r = w.merge(repo, 7, head).valueOrNull()!!
+        assertEquals(Written("https://github.com/example/Alpha/pull/7", "c".repeat(40)), r)
+        val req = fake.seen.single()
+        assertEquals("PUT", req.method)
+        assertEquals(mapOf("merge_method" to "merge", "sha" to head), body(req).fields.mapValues { (it.value as JsonString).value })
+        val (_, moved) = gh("PUT /repos/example/Alpha/pulls/7/merge" to (409 to """{"message":"Head branch was modified. Review and try the merge again."}"""))
+        assertEquals(DiagCode.OPERATION_NOT_ALLOWED, code(moved.merge(repo, 7, head)))
+        val (_, blocked) = gh("PUT /repos/example/Alpha/pulls/7/merge" to (405 to """{"message":"Pull Request is not mergeable"}"""))
+        val why = assertIs<Outcome.Failure>(blocked.merge(repo, 7, head)).errors.single().message
+        assertTrue("not mergeable" in why, why)
+        assertEquals(DiagCode.VALUE_INVALID, code(w.merge(repo, 7, "main")), "не SHA — запрос не уходит")
+        assertEquals(1, fake.seen.size)
+    }
+
+    @Test
+    fun commentReviewCloseAndDeleteSendTheRightRequests() {
+        val (fake, w) = gh(
+            "POST /repos/example/Alpha/issues/7/comments" to (201 to """{"html_url":"https://github.com/example/Alpha/pull/7#issuecomment-1"}"""),
+            "POST /repos/example/Alpha/pulls/7/reviews" to (200 to """{"html_url":"https://github.com/example/Alpha/pull/7#pullrequestreview-2"}"""),
+            "PATCH /repos/example/Alpha/pulls/7" to (200 to """{"state":"closed","html_url":"https://github.com/example/Alpha/pull/7"}"""),
+            "DELETE /repos/example/Alpha/git/refs/heads/claude/x" to (204 to ""),
+        )
+        assertEquals("https://github.com/example/Alpha/pull/7#issuecomment-1", w.comment(repo, 7, "Посмотрю").valueOrNull()?.link)
+        assertIs<Outcome.Success<Written>>(w.review(repo, 7, approve = false, body = "Нужен тест"))
+        assertIs<Outcome.Success<Written>>(w.close(repo, 7))
+        assertIs<Outcome.Success<Written>>(w.deleteBranch(repo, "claude/x"))
+        assertEquals(listOf("POST", "POST", "PATCH", "DELETE"), fake.seen.map { it.method })
+        assertEquals("Посмотрю", (body(fake.seen[0])["body"] as JsonString).value)
+        assertEquals("REQUEST_CHANGES", (body(fake.seen[1])["event"] as JsonString).value)
+        assertEquals("closed", (body(fake.seen[2])["state"] as JsonString).value)
+        assertTrue(fake.seen.all { it.auth != null && it.headers["Authorization"] == null }, "токен — только полем auth")
+    }
+
+    /** Из черновика — мутацией GraphQL по node_id; ошибка GraphQL при коде 200 — отказ, а не успех. */
+    @Test
+    fun readyForReviewGoesThroughGraphQl() {
+        val pull = PullDetail(7, "t", "open", true, false, true, "clean", head, "claude/x", "main", "PR_kw1", "https://github.com/example/Alpha/pull/7")
+        val (fake, w) = gh("POST /graphql" to (200 to """{"data":{"markPullRequestReadyForReview":{"pullRequest":{"url":"https://github.com/example/Alpha/pull/7"}}}}"""))
+        assertIs<Outcome.Success<Written>>(w.ready(pull))
+        assertEquals("PR_kw1", ((body(fake.seen.single())["variables"] as JsonObject)["id"] as JsonString).value)
+        val (_, bad) = gh("POST /graphql" to (200 to """{"errors":[{"message":"Resource not accessible by integration"}]}"""))
+        assertEquals(DiagCode.OPERATION_NOT_ALLOWED, code(bad.ready(pull)))
+    }
+
+    @Test
+    fun compareTellsMergedBranchesAndNoRightsIsNamed() {
+        val (_, w) = gh(
+            "GET /repos/example/Alpha/compare/main...claude/x" to (200 to """{"status":"behind","ahead_by":0,"behind_by":3}"""),
+            "GET /repos/example/Alpha/compare/main...claude/y" to (200 to """{"status":"diverged","ahead_by":2,"behind_by":1}"""),
+        )
+        assertTrue(w.compare(repo, "main", "claude/x").valueOrNull()!!.merged)
+        assertEquals(false, w.compare(repo, "main", "claude/y").valueOrNull()!!.merged)
+        val (_, ro) = gh("POST /repos/example/Alpha/issues/7/comments" to (403 to """{"message":"Resource not accessible by personal access token"}"""))
+        assertEquals(DiagCode.GITHUB_AUTH_EXPIRED, code(ro.comment(repo, 7, "x")), "токен только на чтение — отказ «нет прав»")
+    }
+}
