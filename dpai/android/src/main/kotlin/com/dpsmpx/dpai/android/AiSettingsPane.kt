@@ -31,7 +31,8 @@ import androidx.compose.ui.unit.dp
  * «Настройки AI» (`DP_AI_Orcestrator:D-112`; AI:A-3): редкое, что раньше
  * стояло над списком targets, — инструкция, Linux в приложении, ключ
  * приложения, контур, копии и восстановление одной карточкой, командная
- * строка `dpai`, диск приложения, окно поверх приложений — и журнал.
+ * строка `dpai`, диск приложения, окно поверх приложений, маршруты
+ * Claude Code (D-116) — и журнал.
  * Инструкция и Linux — своими экранами; «Назад» — к настройкам.
  */
 @Composable
@@ -50,6 +51,11 @@ fun AiSettingsPane(controller: Controller, model: DemoModel, sub: String?, onSub
         GITHUB -> {
             BackHandler { onSub(null) }
             GitHubPane(model, onBack = { onSub(null) })
+            return
+        }
+        ROUTINES -> {
+            BackHandler { onSub(null) }
+            RoutinesPane(model, onBack = { onSub(null) })
             return
         }
         LOG -> {
@@ -74,6 +80,7 @@ fun AiSettingsPane(controller: Controller, model: DemoModel, sub: String?, onSub
         }
         item(key = "linux") { Entry("Linux в приложении", "Alpine, пакеты, слоты") { onSub(LINUX) } }
         item(key = "github") { Entry("PR на GitHub", "открытые PR проекта, проверки, отзывы — через gh") { onSub(GITHUB) } }
+        item(key = "routines") { Entry("Маршруты Claude Code", "облачные сессии по токену маршрута — для поручений из пульта") { onSub(ROUTINES) } }
         item(key = "log") { Entry("Журнал", "строки журнала, выгрузка, отладка") { onSub(LOG) } }
         item(key = "key") { AppKeyCard(controller) }
         item(key = "control") { ControlCard(model) }
@@ -116,6 +123,7 @@ private fun Entry(title: String, detail: String, onOpen: () -> Unit) {
 private const val GUIDE = "guide"
 private const val LINUX = "linux"
 private const val GITHUB = "github"
+private const val ROUTINES = "routines"
 
 /** Под-экран журнала — его открывает и «Журнал» у сбоя контроллера (AI:A-17). */
 internal const val SETTINGS_LOG = "log"

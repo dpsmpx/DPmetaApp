@@ -3,6 +3,8 @@ package com.dpsmpx.dpai.android
 import android.content.Context
 import com.dpsmpx.dpai.accounts.ApiProfile
 import com.dpsmpx.dpai.accounts.ApiProfileBook
+import com.dpsmpx.dpai.accounts.Routine
+import com.dpsmpx.dpai.accounts.RoutineBook
 import com.dpsmpx.dpai.core.clock.Clock
 import com.dpsmpx.dpai.core.clock.RandomSource
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
@@ -26,6 +28,8 @@ import com.dpsmpx.dpai.providers.Conversation
 import com.dpsmpx.dpai.providers.EntryStatus
 import com.dpsmpx.dpai.providers.ModelInfo
 import com.dpsmpx.dpai.providers.Providers
+import com.dpsmpx.dpai.providers.RoutineClient
+import com.dpsmpx.dpai.providers.RoutineFired
 import com.dpsmpx.dpai.providers.StopKind
 import com.dpsmpx.dpai.storage.document.DocumentStore
 import com.dpsmpx.dpai.storage.vfs.NioVfs
@@ -39,7 +43,8 @@ import kotlinx.coroutines.launch
 
 /**
  * Состояние вкладки «Модели» (D-98) на процесс: API-профили, переписка и
- * ответы, которые идут сейчас. Документы — в `app_models/` данных
+ * ответы, которые идут сейчас; и маршруты Claude Code (D-116) — тоже вид
+ * аккаунта с ключом в Keystore. Документы — в `app_models/` данных
  * приложения: вне диска приложения (D-96 отдаёт только `files/`) и вне
  * копий (`allowBackup="false"`). Ответ идёт в своей области корутин, а не
  * на экране: уход с экрана и поворот его не обрывают.
@@ -47,6 +52,7 @@ import kotlinx.coroutines.launch
 object ModelsStore {
     private const val PROFILES = "api-profiles"
     private const val CHATS = "api-chats"
+    private const val ROUTINES = "routines"
 
     /** Ответ, который идёт сейчас: текст до сих пор и отмена. */
     data class Running(val text: String, val cancel: Cancel)
@@ -58,12 +64,14 @@ object ModelsStore {
 
     private val profileFlow = MutableStateFlow<List<ApiProfile>>(emptyList())
     private val chatFlow = MutableStateFlow<List<Conversation>>(emptyList())
+    private val routineFlow = MutableStateFlow<List<Routine>>(emptyList())
     private val runningFlow = MutableStateFlow<Map<CorrelationId, Running>>(emptyMap())
     private val problemFlow = MutableStateFlow<String?>(null)
     private val readyFlow = MutableStateFlow(false)
 
     val profiles: StateFlow<List<ApiProfile>> = profileFlow
     val chats: StateFlow<List<Conversation>> = chatFlow
+    val routines: StateFlow<List<Routine>> = routineFlow
     val running: StateFlow<Map<CorrelationId, Running>> = runningFlow
     /** Документ не прочитан (D-87: не молча): что и почему; новая запись заменит его. */
     val problem: StateFlow<String?> = problemFlow
@@ -78,6 +86,7 @@ object ModelsStore {
         docs = d
         profileFlow.value = read(d, PROFILES, "профили") { ApiProfileBook.fromJson(it) }.orEmpty()
         chatFlow.value = read(d, CHATS, "переписка") { ChatBook.fromJson(it) }.orEmpty()
+        routineFlow.value = read(d, ROUTINES, "маршруты") { RoutineBook.fromJson(it) }.orEmpty()
         readyFlow.value = true
     }
 
@@ -117,6 +126,38 @@ object ModelsStore {
         ApiKeys.remove(app, id)
         chatFlow.value.filter { it.profile == id }.forEach { c -> runningFlow.value[c.id]?.cancel?.cancel() }
         writeChats(chatFlow.value.filter { it.profile != id })
+    }
+
+    /** Сохранить маршрут; [token] — новый токен (`null` — оставить прежний). Итог — текст отказа или `null`. */
+    @Synchronized
+    fun saveRoutine(r: Routine, token: Secret?): String? {
+        val d = docs ?: return "хранилище не готово"
+        if (token != null && !token.isEmpty && !ApiKeys.put(app, r.id, token)) return "токен не сохранён: Keystore отказал"
+        val next = routineFlow.value.filter { it.id != r.id } + r
+        return when (val w = d.write(ROUTINES, RoutineBook.toJson(next))) {
+            is Outcome.Failure -> "маршрут не сохранён: ${w.errors.first().message}"
+            is Outcome.Success -> null.also { routineFlow.value = next }
+        }
+    }
+
+    /** Маршрут и его токен. */
+    @Synchronized
+    fun deleteRoutine(id: AccountId) {
+        val d = docs ?: return
+        val next = routineFlow.value.filter { it.id != id }
+        if (d.write(ROUTINES, RoutineBook.toJson(next)) is Outcome.Success) routineFlow.value = next
+        ApiKeys.remove(app, id)
+    }
+
+    /**
+     * Запуск маршрута (D-116): блокирующий вызов — с фонового потока. Цену
+     * и журнал действия держит вызывающий (пульт — `:core:actions`, D-07).
+     */
+    fun fireRoutine(id: AccountId, text: String): Outcome<RoutineFired> {
+        val r = routineFlow.value.firstOrNull { it.id == id }
+            ?: return Outcome.failure(DiagCode.VALUE_INVALID, "маршрут не найден — удалён?", RoutineClient.SUBJECT)
+        return runCatching { RoutineClient().fire(r, ApiKeys.get(app, r.id), text) }
+            .getOrElse { e -> Outcome.failure(DiagCode.INTERNAL_ERROR, "сбой: ${e.javaClass.simpleName}", RoutineClient.SUBJECT) }
     }
 
     /** Провайдер профиля с его ключом. */

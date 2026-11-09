@@ -201,6 +201,7 @@ Mistral, свой сервер) и Google Gemini.
   сообщил — «?», не ноль (D-13). Отчёты расхода организации (Admin-ключ,
   `DPmetaApp:D-44`) — не в этой части.
 
+
 ## 10. Исполнители Codex и Gemini (D-100)
 
 Подписка и слот бывают трёх исполнителей: Claude Code, Codex CLI и
@@ -226,3 +227,21 @@ Gemini CLI. Исполнитель — у подписки и всех её сл
   `ACCOUNT_SWITCHED` не пишется. Ревью Codex не делает рабочую подписку
   Claude чужой: следующий ход работы — снова на ней. Причина отказа
   аренды называет только подписки нужного исполнителя.
+
+## 11. Маршруты Claude Code (D-116)
+
+Маршрут — тоже отдельный вид аккаунта, не слот (`DPmetaApp:D-08`,
+`DPmetaApp:D-44`): облачная сессия Claude Code запускается вызовом `/fire`
+своего маршрута по его токену (`docs/research/ROUTINES_FIRE.md`).
+
+- Маршрут — `Routine` (модуль `accounts`), документ `dpai.routines`
+  (`docs/DATA_MODEL.md`); токена в нём нет: токен — `Secret` в Keystore
+  (`ApiKeys` оболочки) под id маршрута. Адрес — только
+  `api.anthropic.com/v1/claude_code/routines/<trig_…>/fire`: иной адрес
+  форма не принимает.
+- Запуск — `RoutineClient` (модуль `providers`) по списку адресов
+  `ProviderHosts`, без повтора: у `/fire` нет идемпотентности. Ссылка
+  ответа — только `https://claude.ai/code/…`.
+- Завести и удалить — «Настройки AI» → «Маршруты Claude Code»; запускает
+  пульт DPmetaApp действием уровня 1 с записью в журнал действий
+  (`DPmetaApp:D-07`; ТЗ DPmetaApp, F-22).

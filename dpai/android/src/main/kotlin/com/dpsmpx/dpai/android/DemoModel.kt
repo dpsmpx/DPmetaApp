@@ -473,6 +473,10 @@ class DemoModel(
     fun slotsOf(target: ExecutionTargetId): List<com.dpsmpx.dpai.accounts.SlotState> =
         runCatching { (built as? LiveSystem)?.orchestrator?.accounts?.slots?.values?.filter { it.targetId == target }?.sortedBy { it.id.value } }.getOrNull().orEmpty()
 
+    /** Подписки Claude — для подписи маршрута (D-116): в какой подписке он создан. */
+    fun subscriptions(): List<com.dpsmpx.dpai.accounts.SubscriptionState> =
+        runCatching { (built as? LiveSystem)?.orchestrator?.accounts?.subscriptions?.values?.sortedBy { it.id.value } }.getOrNull().orEmpty()
+
     /** Есть ли настоящий контроллер: тогда такт — в службе переднего плана. */
     fun hasLive(): Boolean = controller.targets().any { it.configDir != null }
 
