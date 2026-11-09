@@ -40,6 +40,7 @@ L = {
         "groups": {"game": "игра", "core": "ядро на срезе 5 октября", "new": "новые после среза", "periphery": "периферия",
                    "hidden": "без публичного имени"},
         "finished": "впереди — те же системы, доведённые до законченных",
+        "new_sq": "обводка — репозиторий появился на этой станции",
         "exists": "есть сейчас", "planned": "план",
         "goal_note": "Сплошная рамка — есть сейчас, пунктир — план. Сегодня проекты не зависят друг от друга; "
                      "связи схемы — то, что появится.",
@@ -67,6 +68,7 @@ L = {
         "groups": {"game": "the game", "core": "core as of the 5 October snapshot", "new": "new after the snapshot", "periphery": "periphery",
                    "hidden": "no public name"},
         "finished": "ahead — the same systems, brought to finished",
+        "new_sq": "outlined — the repository appears at this station",
         "exists": "exists now", "planned": "planned",
         "goal_note": "Solid frame — exists now, dashed — planned. Today the projects do not depend on each other; "
                      "the links in the diagram are what comes next.",
@@ -291,17 +293,57 @@ def _slots(stations: list[dict]) -> list[tuple[str, dict | None]]:
     return out
 
 
+def _stacks(slots: list[tuple[str, dict | None]]) -> list[tuple[list[str], list[str]]]:
+    """Квадраты над каждой станцией: (все с работой к ней, новые на ней); у «сейчас» — пусто."""
+    out, cum = [], []
+    for kind, st in slots:
+        if kind == "now":
+            out.append(([], []))
+            continue
+        new = [r for r in st.get("repos") or [] if r not in cum]
+        cum = [r for r in cum + new if r not in (st.get("merged") or {})]  # вошедший в другой — без своего квадрата
+        out.append((list(cum), new))
+    return out
+
+
 def route_svg(data: dict, lang: str, goal_name: str) -> str:
-    """Широкий рисунок маршрута: линия станций; над станцией — квадраты репозиториев с работой к ней."""
+    """Широкий рисунок маршрута: линия станций; над станцией — квадраты репозиториев с работой к ней.
+
+    Шаг станций — по ширине их подписей (P-16: соседние подписи не сходятся), верх — по высоте
+    самой высокой стопки с рамкой цели и её подписью, скобка года — ниже самой длинной подписи.
+    """
     lab = L[lang]
     nodes = data["nodes"]
     slots = _slots(data["stations"])
-    W, x0 = W_WIDE, 44
-    step = (W - 2 * x0) / (len(slots) - 1)
-    SQ, GAP = 12, 3
-    BASE, LINE = 140, 160
-    parts, cum, years = [], [], []
-    xs = [x0 + i * step for i in range(len(slots))]
+    stacks = _stacks(slots)
+    W, PAD = W_WIDE, 4
+    SQ, GAP, LH, WRAP = 12, 3, 16, 60
+    titles, needs = [], []
+    for i, (kind, st) in enumerate(slots):
+        if kind == "now":
+            lines = [lab["now"]]
+            day = when_short({"date": data["as_of"]}, lang)
+        else:
+            lines = wrap(label(st["title"], lang), WRAP, 13)
+            day = when_short(st, lang)
+            if st.get("started"):  # фаза плана, которая уже идёт
+                lines = lines + [lab["active"]]
+        titles.append(lines)
+        need = max([tw(x, 13) for x in lines] + [len(day) * 12 * 0.6, 2 * SQ + GAP + 14])
+        if i == len(slots) - 1 and st and st.get("plan") and stacks[i][0]:
+            need = max(need, tw(goal_name, 13))
+        needs.append(need + 12)
+    # центры станций: ширина каждой — по её подписи, остаток поровну между станциями
+    extra = max(0.0, (W - 2 * PAD - sum(needs)) / max(1, len(slots) - 1))
+    xs, x = [], PAD + needs[0] / 2
+    for i, need in enumerate(needs):
+        if i:
+            x += (needs[i - 1] + need) / 2 + extra
+        xs.append(x)
+    rows = max(math.ceil(len(c) / 2) for c, _ in stacks)
+    BASE = max(140, rows * (SQ + GAP) + 6 + 7 + 18)   # над стопкой — рамка цели (6) и её подпись (7 + кегль)
+    LINE = BASE + 20
+    parts, years = [], []
     # линия: пройденное — сплошная; годы между первыми проектами и игрой — точками; план — пунктир
     for i in range(len(slots) - 1):
         s1, s2 = slots[i][1], slots[i + 1][1]
@@ -321,11 +363,9 @@ def route_svg(data: dict, lang: str, goal_name: str) -> str:
                          f'<circle cx="{x:.1f}" cy="{LINE}" r="3.5" class="r-nowdot"/>')
             parts.append(_text(x, LINE + 24, when_short({"date": data["as_of"]}, lang), "t-axis t-num", "middle"))
             parts.append(_text(x, LINE + 44, lab["now"], "t-lab r-nowt", "middle"))
-            years.append((x, _date(data["as_of"]).year))
+            years.append((i, _date(data["as_of"]).year))
             continue
-        new = [r for r in st.get("repos") or [] if r not in cum]
-        cum += new
-        cum = [r for r in cum if r not in (st.get("merged") or {})]  # вошедший в другой — без своего квадрата
+        cum, new = stacks[i]
         plan = bool(st.get("plan"))
         last = i == len(slots) - 1
         # квадраты: два столбца снизу вверх, в порядке появления
@@ -338,8 +378,7 @@ def route_svg(data: dict, lang: str, goal_name: str) -> str:
             parts.append(f'<rect x="{sx:.1f}" y="{sy:.1f}" width="{SQ}" height="{SQ}" rx="2" class="{cls}">'
                          f'<title>{E(name_of(node, lang))}</title></rect>')
         if last and plan and cum:
-            rows = math.ceil(len(cum) / 2)
-            top = BASE - rows * (SQ + GAP) - 6
+            top = BASE - math.ceil(len(cum) / 2) * (SQ + GAP) - 6
             fw = 2 * SQ + GAP + 14
             parts.append(f'<rect x="{x - fw / 2:.1f}" y="{top:.1f}" width="{fw:.1f}" height="{BASE - top + 6:.1f}" '
                          f'rx="6" class="r-frame"/>')
@@ -348,18 +387,18 @@ def route_svg(data: dict, lang: str, goal_name: str) -> str:
         parts.append(f'<circle cx="{x:.1f}" cy="{LINE}" r="7" class="{dot}"/>')
         parts.append(_text(x, LINE + 24, when_short(st, lang), "t-axis t-num", "middle"))
         if st.get("date"):
-            years.append((x, _date(st["date"]).year))
-        title = wrap(label(st["title"], lang), step - 8, 13)
-        parts.append(_lines(x, LINE + 44, title, "t-lab r-title", 16, "middle"))
-        if st.get("started"):  # фаза плана, которая уже идёт
-            parts.append(_text(x, LINE + 44 + 16 * len(title), lab["active"], "t-lab r-activet", "middle"))
-    # год скобкой под станциями, у которых подпись дня без года
-    yb = LINE + 44 + 2 * 16 + 6
+            years.append((i, _date(st["date"]).year))
+        title = titles[i][:-1] if st.get("started") else titles[i]
+        parts.append(_lines(x, LINE + 44, title, "t-lab r-title", LH, "middle"))
+        if st.get("started"):
+            parts.append(_text(x, LINE + 44 + LH * len(title), lab["active"], "t-lab r-activet", "middle"))
+    # год скобкой под станциями, у которых подпись дня без года: ниже самой длинной подписи
+    yb = LINE + 44 + LH * (max(len(t) for t in titles) - 1) + 14
     for year in sorted({yr for _, yr in years}):
-        xs_y = [x for x, yr in years if yr == year]
-        if year < 2026 and len(xs_y) == 1:
+        idx = [i for i, yr in years if yr == year]
+        if year < 2026 and len(idx) == 1:
             continue
-        a, b = min(xs_y) - step / 2 + 8, max(xs_y) + step / 2 - 8
+        a, b = xs[min(idx)] - needs[min(idx)] / 2 + 4, xs[max(idx)] + needs[max(idx)] / 2 - 4
         parts.append(f'<path d="M{a:.1f} {yb - 5} V{yb} H{b:.1f} V{yb - 5}" class="r-year"/>')
         parts.append(_text((a + b) / 2, yb + 18, str(year), "t-axis t-num", "middle"))
     H = yb + 26
@@ -371,7 +410,8 @@ def route_legend(lang: str, groups_used: list[str]) -> str:
     lab = L[lang]
     keys = "".join(f'<span class="key"><span class="sw pv-{g}" aria-hidden="true"></span>{E(lab["groups"][g])}</span>'
                    for g in groups_used)
-    keys += (f'<span class="key"><span class="sw sw-fin" aria-hidden="true"></span>{E(lab["finished"])}</span>')
+    keys += (f'<span class="key"><span class="sw sw-new" aria-hidden="true"></span>{E(lab["new_sq"])}</span>'
+             f'<span class="key"><span class="sw sw-fin" aria-hidden="true"></span>{E(lab["finished"])}</span>')
     return f'<div class="legend">{keys}</div>'
 
 

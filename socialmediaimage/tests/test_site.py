@@ -637,6 +637,34 @@ class JourneyPath(unittest.TestCase):
         app_box = _re.search(r'<rect[^>]*class="(g-box[^"]*)"/><text[^>]*class="t-lab g-appt"', page)
         self.assertEqual(app_box.group(1), "g-box", "приложение уже есть — сплошная рамка")
 
+    def test_route_labels_fit(self):
+        """P-16 аудита страниц 8.11.2026: подписи соседних станций не сходятся, подпись рамки цели — внутри
+        SVG, скобка года — ниже всех подписей; обводка «новых» квадратов объяснена в легенде.
+        Ширина — оценкой (`tw`); настоящую раскладку держит `siteshots` (подпись за рамкой, наложение)."""
+        import re as _re
+        from tools.cs.site.path import route_legend, route_svg, tw
+        data = yaml.safe_load((ROOT / "data/website/path.yaml").read_text(encoding="utf-8"))
+        for lang in ("ru", "en"):
+            svg = route_svg(data, lang, "DPmetaApp")
+            w = float(_re.search(r'viewBox="0 0 ([\d.]+) ', svg).group(1))
+            texts = [(float(x), float(y), cls, html.unescape(s)) for x, y, cls, s in
+                     _re.findall(r'<text x="([\d.-]+)" y="([\d.-]+)" class="([^"]+)"[^>]*>([^<]*)</text>', svg)]
+            self.assertTrue(all(y - 13 >= 0 for _, y, _, _ in texts), (lang, "текст выше верха SVG"))
+            by_row: dict[float, list] = {}
+            for x, y, cls, s in texts:
+                if "t-lab" in cls and "r-framet" not in cls:
+                    by_row.setdefault(y, []).append((x - tw(s, 13) / 2, x + tw(s, 13) / 2, s))
+            for y, row in by_row.items():
+                row.sort()
+                self.assertGreaterEqual(row[0][0], 0, (lang, row[0][2]))
+                self.assertLessEqual(row[-1][1], w, (lang, row[-1][2]))
+                for (a1, b1, s1), (a2, b2, s2) in zip(row, row[1:]):
+                    self.assertGreaterEqual(a2 - b1, 4, (lang, s1, s2))
+            lowest = max(y for _, y, cls, _ in texts if "t-lab" in cls)
+            for yb in _re.findall(r'<path d="M[\d.]+ [\d.]+ V([\d.]+) H', svg):
+                self.assertGreater(float(yb), lowest + 4, (lang, "скобка года на подписи"))
+        self.assertIn("sw-new", route_legend("ru", ["core"]))
+
     def test_phase_b_started(self):
         """Ответ автора 25.10.2026: фаза B — «идёт» с 11.10 (DPmetaApp D-29), а не «план»."""
         page = self.page()
