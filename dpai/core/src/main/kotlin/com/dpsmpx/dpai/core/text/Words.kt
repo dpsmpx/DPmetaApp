@@ -399,6 +399,10 @@ object Words {
         "PROVIDER_REQUEST_REJECTED" -> "провайдер отверг запрос"
         "PROVIDER_REPLY_INVALID" -> "провайдер ответил не по формату"
         "PROVIDER_KEY_MISSING" -> "у профиля нет ключа — введите его заново"
+
+        // Маршруты Claude Code (D-116).
+        "ROUTINE_TOKEN_INVALID" -> "токен маршрута не принят — выпустите новый"
+        "ROUTINE_LIMIT_REACHED" -> "предел запусков маршрута — позже или другим маршрутом"
         else -> code
     }
 }

@@ -66,10 +66,10 @@ class RoutineClientTest {
         fun err(body: String) = """{"type":"error","error":{"type":"x","message":"$body"}}"""
         val cases = listOf(
             Triple(400, err("Routine is paused"), DiagCode.PROVIDER_REQUEST_REJECTED),
-            Triple(401, err("Invalid bearer token"), DiagCode.PROVIDER_AUTH_FAILED),
-            Triple(403, err("Forbidden"), DiagCode.PROVIDER_AUTH_FAILED),
+            Triple(401, err("Invalid bearer token"), DiagCode.ROUTINE_TOKEN_INVALID),
+            Triple(403, err("Forbidden"), DiagCode.ROUTINE_TOKEN_INVALID),
             Triple(404, err("Not found"), DiagCode.PROVIDER_REQUEST_REJECTED),
-            Triple(429, err("Too many"), DiagCode.PROVIDER_RATE_LIMITED),
+            Triple(429, err("Too many"), DiagCode.ROUTINE_LIMIT_REACHED),
             Triple(500, err("Internal"), DiagCode.PROVIDER_UNAVAILABLE),
             Triple(503, err("Overloaded"), DiagCode.PROVIDER_UNAVAILABLE),
             Triple(302, "", DiagCode.PROVIDER_REQUEST_REJECTED),

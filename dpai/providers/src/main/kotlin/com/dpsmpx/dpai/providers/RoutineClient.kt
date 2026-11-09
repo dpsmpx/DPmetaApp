@@ -82,10 +82,10 @@ class RoutineClient(private val transport: Transport = UrlTransport()) {
         }
         val tail = detail?.let { ": $it" }.orEmpty()
         return when (status) {
-            401 -> Outcome.failure(DiagCode.PROVIDER_AUTH_FAILED, "токен маршрута не принят (401) — выпустите новый в настройках маршрута$tail", SUBJECT)
-            403 -> Outcome.failure(DiagCode.PROVIDER_AUTH_FAILED, "нет права запускать маршрут (403)$tail", SUBJECT)
+            401 -> Outcome.failure(DiagCode.ROUTINE_TOKEN_INVALID, "токен маршрута не принят (401) — выпустите новый в настройках маршрута$tail", SUBJECT)
+            403 -> Outcome.failure(DiagCode.ROUTINE_TOKEN_INVALID, "нет права запускать маршрут (403)$tail", SUBJECT)
             404 -> Outcome.failure(DiagCode.PROVIDER_REQUEST_REJECTED, "маршрут не найден (404) — проверьте адрес /fire$tail", SUBJECT)
-            429 -> Outcome.failure(DiagCode.PROVIDER_RATE_LIMITED, "предел запусков (429): $LIMITS" + retryAfter(reply) + tail, SUBJECT)
+            429 -> Outcome.failure(DiagCode.ROUTINE_LIMIT_REACHED, "предел запусков (429): $LIMITS" + retryAfter(reply) + tail, SUBJECT)
             in 300..399 -> Outcome.failure(DiagCode.PROVIDER_REQUEST_REJECTED, "переадресация ($status) не выполняется", SUBJECT)
             in 500..599 -> Outcome.failure(DiagCode.PROVIDER_UNAVAILABLE, "сервис недоступен ($status): запуск мог не состояться — сверьте сессии в Claude до повтора$tail", SUBJECT)
             else -> Outcome.failure(DiagCode.PROVIDER_REQUEST_REJECTED, "запуск отвергнут ($status)$tail", SUBJECT)

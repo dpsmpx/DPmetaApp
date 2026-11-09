@@ -12,12 +12,12 @@ import com.dpsmpx.dpai.core.result.Outcome
  * Вызовы — не на главном потоке.
  */
 object PultRoutes {
-    /** Маршрут глазами пульта: id `acc_…`, имя, проект, шаблон, есть ли токен. */
-    data class View(val id: String, val name: String, val project: String?, val brief: String?, val hasToken: Boolean)
+    /** Маршрут глазами пульта: id `acc_…`, имя, проект, шаблон, есть ли токен, подписка `sub_…`. */
+    data class View(val id: String, val name: String, val project: String?, val brief: String?, val hasToken: Boolean, val subscription: String?)
 
     fun list(context: Context): List<View> {
         ModelsStore.init(context)
-        return ModelsStore.routines.value.map { View(it.id.value, it.name, it.project, it.brief, ModelsStore.hasKey(it.id)) }
+        return ModelsStore.routines.value.map { View(it.id.value, it.name, it.project, it.brief, ModelsStore.hasKey(it.id), it.subscription?.value) }
     }
 
     /** Запуск: итог — id сессии и ссылка на неё (`https://claude.ai/code/…`). */

@@ -273,6 +273,12 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     /** У API-профиля нет ключа или он не расшифровывается (новая установка, сброс Keystore). */
     PROVIDER_KEY_MISSING(Category.STATE, Severity.ERROR, Retryability.NON_RETRYABLE),
 
+    // --- маршруты Claude Code (D-116; DPmetaApp: ТЗ, §6.9, F-18, F-20) ---
+    /** Сервис не принял токен маршрута `/fire` (401, 403): токен неверен или отозван — нужен новый. */
+    ROUTINE_TOKEN_INVALID(Category.NETWORK, Severity.ERROR, Retryability.NON_RETRYABLE),
+    /** Предел запусков маршрута (429): 30 в час на маршрут, 100 — на аккаунт; повтор — позже или другим маршрутом. */
+    ROUTINE_LIMIT_REACHED(Category.NETWORK, Severity.ERROR, Retryability.RETRYABLE),
+
     /** Запечатанный сегмент журнала пропал или испорчен — восстановлен из копии (D-95). */
     JOURNAL_SEGMENT_RESTORED(Category.INTEGRITY, Severity.WARNING, Retryability.NON_RETRYABLE),
 

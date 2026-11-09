@@ -82,6 +82,43 @@ class RouteActionsTest {
         assertFalse(last.params.values.any { "ветка x" in it }, "текст поручения в журнал не попал")
     }
 
+    /** F-19: запуски за час — по журналу; «итог неизвестен» — тоже запуск; аккаунт — маршруты одной подписки. */
+    @Test
+    fun hourlyCountsFromJournal() {
+        val clock = ManualClock()
+        val log = ActionLog(NioVfs(dir), clock, RandomSource.seeded(1))
+        val actions = Actions(log, clock, RandomSource.seeded(2))
+        val subRoutes = listOf(
+            RouteActions.Route("acc_A", "А", null, null, true, "sub_1"),
+            RouteActions.Route("acc_B", "Б", null, null, true, "sub_1"),
+            RouteActions.Route("acc_C", "В", null, null, true, null),
+        )
+        fun fire(r: RouteActions.Route, ok: Boolean) {
+            val c = RouteActions.command(r, "DPmetaApp", repo, brief, "т")
+            actions.run(c, actions.shown(c)) {
+                if (ok) Outcome.success(com.dpsmpx.dpmeta.actions.ActionResult("ок", null)) else Outcome.failure(DiagCode.ROUTINE_LIMIT_REACHED, "предел", "routine")
+            }
+        }
+        fire(subRoutes[0], true)
+        clock.advance(kotlin.time.Duration.parse("61m"))
+        fire(subRoutes[0], true)
+        fire(subRoutes[1], true)
+        fire(subRoutes[1], false)
+        fire(subRoutes[2], true)
+        val entries = log.entries().valueOrNull()!!
+        assertEquals("acc_A", entries.first().params["route_id"], "id маршрута в журнале не вырезан")
+        assertEquals(RouteActions.HourCount(1, 2), RouteActions.firedLastHour(entries, subRoutes, subRoutes[0], clock.now()))
+        assertEquals(RouteActions.HourCount(1, null), RouteActions.firedLastHour(entries, subRoutes, subRoutes[2], clock.now()))
+        assertTrue("1 из 30 у маршрута; 2 из 100 у аккаунта" in RouteActions.hourLine(RouteActions.HourCount(1, 2)))
+    }
+
+    @Test
+    fun limitHintOffersAnotherRoute() {
+        assertEquals("", RouteActions.limitHint(DiagCode.ROUTINE_TOKEN_INVALID, routes, "acc_3"))
+        assertTrue("«Общий»" in RouteActions.limitHint(DiagCode.ROUTINE_LIMIT_REACHED, routes, "acc_3"))
+        assertTrue("нет" in RouteActions.limitHint(DiagCode.ROUTINE_LIMIT_REACHED, routes.take(2), "acc_2"))
+    }
+
     @Test
     fun questionSourceNamesProjectFileAndSection() {
         val q = Screens.Question("DPpass", "Какой формат?", "М", "TODO.md", "За автором")

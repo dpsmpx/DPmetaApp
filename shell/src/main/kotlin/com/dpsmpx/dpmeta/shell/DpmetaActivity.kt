@@ -41,7 +41,7 @@ class DpmetaActivity : PultActivity() {
 
     /** Маршруты Claude Code (F-22) — из подсистемы «AI» (`DP_AI_Orcestrator:D-116`): токен остаётся там. */
     override fun routes(): List<RouteActions.Route> =
-        PultRoutes.list(applicationContext).map { RouteActions.Route(it.id, it.name, it.project, it.brief, it.hasToken) }
+        PultRoutes.list(applicationContext).map { RouteActions.Route(it.id, it.name, it.project, it.brief, it.hasToken, it.subscription) }
 
     /** Запуск маршрута: цену и журнал действия уже прошёл пульт (`:core:actions`); здесь — только вызов. */
     override fun fireRoute(id: String, text: String): Outcome<RouteActions.Fired> =

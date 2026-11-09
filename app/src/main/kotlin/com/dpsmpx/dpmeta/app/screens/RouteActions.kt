@@ -1,10 +1,13 @@
 package com.dpsmpx.dpmeta.app.screens
 
+import com.dpsmpx.dpai.core.clock.Timestamp
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpmeta.actions.ActionCommand
+import com.dpsmpx.dpmeta.actions.ActionEntry
 import com.dpsmpx.dpmeta.actions.ActionKind
 import com.dpsmpx.dpmeta.actions.ActionResult
+import com.dpsmpx.dpmeta.actions.ActionStatus
 import com.dpsmpx.dpmeta.actions.ActionTarget
 import com.dpsmpx.dpmeta.formats.Brief
 import com.dpsmpx.dpmeta.model.RepoRef
@@ -17,8 +20,54 @@ import com.dpsmpx.dpmeta.model.RepoRef
  * исполнитель сверяет текст с ними. Чистый Kotlin.
  */
 object RouteActions {
-    /** Маршрут глазами пульта: id, имя, проект и шаблон по умолчанию, есть ли токен. */
-    data class Route(val id: String, val name: String, val project: String?, val brief: String?, val hasToken: Boolean)
+    /**
+     * Маршрут глазами пульта: id, имя, проект и шаблон по умолчанию, есть ли токен;
+     * [subscription] — подписка (аккаунт) маршрута, если указана: у аккаунта свой предел.
+     */
+    data class Route(val id: String, val name: String, val project: String?, val brief: String?, val hasToken: Boolean, val subscription: String? = null)
+
+    /** Пределы запусков (приложение В ТЗ; `DP_AI_Orcestrator:docs/research/ROUTINES_FIRE.md`). */
+    const val ROUTE_PER_HOUR: Int = 30
+    const val ACCOUNT_PER_HOUR: Int = 100
+
+    /** Расход подписки — страница claude.ai: приложение его не знает и не придумывает (F-19, L-03). */
+    const val USAGE_PAGE: String = "https://claude.ai/settings/usage"
+
+    /** Запуски за последний час, известные пульту: у маршрута и у аккаунта (`null` — подписка не указана). */
+    data class HourCount(val route: Int, val account: Int?)
+
+    /**
+     * F-19: сколько раз за час пульт запустил маршрут и маршруты его аккаунта — по журналу
+     * действий; итог «неизвестен» считается запуском (мог состояться). Запуски с других
+     * устройств и из Claude («Run now») сюда не попадают — строка экрана так и говорит.
+     */
+    fun firedLastHour(entries: List<ActionEntry>, routes: List<Route>, route: Route, now: Timestamp): HourCount {
+        val since = now.epochMillis - HOUR_MILLIS
+        val fired = entries.filter {
+            it.kind == ActionKind.ROUTE_RUN.code && it.at.epochMillis > since && it.at.epochMillis <= now.epochMillis &&
+                (it.status == ActionStatus.DONE || it.status == ActionStatus.UNKNOWN)
+        }.mapNotNull { it.params["route_id"] }
+        val sameAccount = route.subscription?.let { s -> routes.filter { it.subscription == s }.map { it.id }.toSet() + route.id }
+        return HourCount(fired.count { it == route.id }, sameAccount?.let { ids -> fired.count { it in ids } })
+    }
+
+    /** Строка экрана о пределах (F-19): что знает приложение и о чём не знает. */
+    fun hourLine(c: HourCount): String =
+        "С этого телефона за час: ${c.route} из $ROUTE_PER_HOUR у маршрута" +
+            (c.account?.let { "; $it из $ACCOUNT_PER_HOUR у аккаунта" } ?: "; подписка маршрута не указана") +
+            ". Запуски из Claude и с других устройств сюда не входят."
+
+    /**
+     * F-20: отказ по пределу ([DiagCode.ROUTINE_LIMIT_REACHED]) — подсказка о другом маршруте
+     * с токеном; сам пульт не переключает. Иначе — пусто.
+     */
+    fun limitHint(code: DiagCode, routes: List<Route>, routeId: String?): String {
+        if (code != DiagCode.ROUTINE_LIMIT_REACHED) return ""
+        val other = routes.firstOrNull { it.hasToken && it.id != routeId } ?: return " Другого маршрута с токеном нет — повторите позже."
+        return " Можно поручить другим маршрутом — выберите его выше, например «${other.name}»."
+    }
+
+    private const val HOUR_MILLIS: Long = 3_600_000
 
     /** Запуск состоялся: облачная сессия и ссылка на неё (`https://claude.ai/code/…`). */
     data class Fired(val sessionId: String, val url: String)

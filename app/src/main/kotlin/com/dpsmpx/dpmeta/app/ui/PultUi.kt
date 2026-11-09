@@ -1500,11 +1500,14 @@ private fun BriefScreen(nav: Nav.Brief, loader: Loader, onBack: () -> Unit) {
     var routes by remember(nav) { mutableStateOf<List<RouteActions.Route>?>(null) }
     var briefs by remember(nav) { mutableStateOf<Outcome<List<com.dpsmpx.dpmeta.formats.Brief>>?>(null) }
     var base by remember(nav) { mutableStateOf<Outcome<Pair<com.dpsmpx.dpmeta.model.RepoRef, String>>?>(null) }
+    var journal by remember(nav) { mutableStateOf<List<ActionEntry>>(emptyList()) }
+    var reloadJournal by remember(nav) { mutableIntStateOf(0) }
     LaunchedEffect(nav) {
         loader.routes { routes = it }
         loader.briefs { briefs = it }
         loader.base(nav.project) { base = it }
     }
+    LaunchedEffect(nav, reloadJournal) { loader.journal { r -> journal = r.valueOrNull().orEmpty() } }
     var routeId by rememberSaveable(nav) { mutableStateOf<String?>(null) }
     var briefKey by rememberSaveable(nav) { mutableStateOf(nav.brief) }
     val values = remember(nav) {
@@ -1547,6 +1550,12 @@ private fun BriefScreen(nav: Nav.Brief, loader: Loader, onBack: () -> Unit) {
                     Row(Modifier.fillMaxWidth().toggleable(value = r.id == route?.id, enabled = r.hasToken && !running, role = Role.RadioButton) { routeId = r.id }.padding(vertical = 4.dp)) {
                         Text((if (r.id == route?.id) "● " else "○ ") + r.name + listOfNotNull(r.project, if (r.hasToken) null else "нет токена").joinToString(" · ").let { if (it.isEmpty()) "" else " — $it" })
                     }
+                }
+                // F-19: только то, что знает приложение; расход подписки — на claude.ai.
+                if (route != null) {
+                    val count = RouteActions.firedLastHour(journal, rs, route, com.dpsmpx.dpai.core.clock.Clock.SYSTEM.now())
+                    Text(RouteActions.hourLine(count), style = MaterialTheme.typography.bodySmall)
+                    TextButton(onClick = { external(context, taps, RouteActions.USAGE_PAGE) }) { Text("Расход подписки — на claude.ai") }
                 }
                 Text("Поручение", fontWeight = FontWeight.SemiBold)
                 for (x in list) {
@@ -1604,8 +1613,13 @@ private fun BriefScreen(nav: Nav.Brief, loader: Loader, onBack: () -> Unit) {
                                 result = true to "Готово: ${r.value.detail}"
                                 link = r.value.link
                             }
-                            is Outcome.Failure -> result = false to "Не выполнено: ${r.errors.first().message}"
+                            is Outcome.Failure -> {
+                                val e = r.errors.first()
+                                // F-20: при пределе — подсказка о другом маршруте; сам пульт не переключает.
+                                result = false to "Не выполнено: ${e.message}" + RouteActions.limitHint(e.code, routes.orEmpty(), c.params["route_id"])
+                            }
                         }
+                        reloadJournal++
                     }
                 }) { Text("Поручить") }
             },
