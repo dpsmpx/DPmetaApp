@@ -7,8 +7,9 @@
 
 Рисунки — SVG без скриптов и встроенных стилей (CSP сайта, П2-12): цвета и шрифты — классы
 `style.css`. Маршрут: широкий рисунок для компьютера (на телефоне скрыт) и список-маршрут для
-всех ширин — он же текст рисунка для экранного диктора. Цель: широкий и узкий рисунки и список
-направлений. Ширина рисунка в единицах viewBox равна ширине колонки — текст не мельче 12 px.
+всех ширин — он же текст рисунка для экранного диктора. Цель: широкий и узкий рисунки и схема
+цели списком — приложение, ядра, направления и основание теми же формулировками (текст рисунка для
+диктора). Ширина рисунка в единицах viewBox равна ширине колонки — текст не мельче 12 px.
 """
 from __future__ import annotations
 
@@ -42,7 +43,8 @@ L = {
         "exists": "есть сейчас", "planned": "план",
         "goal_note": "Сплошная рамка — есть сейчас, пунктир — план. Сегодня проекты не зависят друг от друга; "
                      "связи схемы — то, что появится.",
-        "directions": "Направления цели списком: роли и стадии проектов",
+        "directions": "Схема цели списком: приложение, ядра, направления и основание",
+        "cores": "Два ядра", "base": "Основание",
         "rule_by": "dpsmpx, план экосистемы",
         "sources": "Тексты страницы — из реестра фактов сайта и вех страницы прогресса: у каждого утверждения "
                    "есть документ проекта и дата.",
@@ -68,7 +70,8 @@ L = {
         "exists": "exists now", "planned": "planned",
         "goal_note": "Solid frame — exists now, dashed — planned. Today the projects do not depend on each other; "
                      "the links in the diagram are what comes next.",
-        "directions": "The goal's directions as a list: roles and stages of the projects",
+        "directions": "The goal diagram as a list: the app, the cores, the directions and the base",
+        "cores": "Two cores", "base": "Base",
         "rule_by": "dpsmpx, the ecosystem plan",
         "sources": "The page's texts come from the site's fact registry and the progress page milestones: every "
                    "claim has a project document and a date.",
@@ -542,9 +545,22 @@ class _Goal:
                 f'height="{H:.0f}" role="img" aria-label="{E(lab["goal_aria"])}">{"".join(parts)}</svg></div>')
 
     def directions(self, role_of) -> str:
-        """Направления цели списком: имя — роль (стадия) из реестра фактов; план — помечен."""
+        """Схема цели списком — текст рисунка для экранного диктора (у SVG `role="img"`, P-04 аудита
+        страниц 8.11.2026): приложение и ядра — те же формулировки фактов, что в рамках; направления —
+        имя, роль и стадия из реестра фактов; основание. План — помечен."""
         lab = L[self.lang]
         secs = []
+        app = self.goal["app"]
+        app_node = self.nodes[app["node"]]
+        app_name = name_of(app_node, self.lang)
+        app_text = strip_name(self.say(app["text"]) or "", app_name)
+        state = lab["plan"] if app_node.get("plan") else lab["exists"]
+        secs.append(f'<div class="dir"><h3>{E(app_name)}</h3><p>{E(sentence(app_text))} '
+                    f'<span class="muted">({E(state)})</span></p></div>')
+        cores = "".join(f'<li><strong>{E(label(c["title"], self.lang))}</strong> — '
+                        f'{E(sentence(self.say(c["text"]) or ""))} <span class="muted">({E(lab["plan"])})</span></li>'
+                        for c in self.goal["cores"])
+        secs.append(f'<div class="dir"><h3>{E(lab["cores"])}</h3><ul>{cores}</ul></div>')
         for d in self.goal["domains"]:
             lis = []
             for nid in d["nodes"]:
@@ -557,6 +573,11 @@ class _Goal:
                     tail += f' <span class="muted">({E(lab["plan"])})</span>'
                 lis.append(f"<li><strong>{E(name_of(n, self.lang))}</strong>{tail}</li>")
             secs.append(f'<div class="dir"><h3>{E(label(d["title"], self.lang))}</h3><ul>{"".join(lis)}</ul></div>')
+        base = self.goal["base"]
+        base_node = self.nodes[base["node"]]
+        state = lab["plan"] if base_node.get("plan") else lab["exists"]
+        secs.append(f'<div class="dir"><h3>{E(lab["base"])}: {E(name_of(base_node, self.lang))}</h3>'
+                    f'<p>{E(sentence(self.say(base["text"]) or ""))} <span class="muted">({E(state)})</span></p></div>')
         return f'<div class="dirs">{"".join(secs)}</div>'
 
 

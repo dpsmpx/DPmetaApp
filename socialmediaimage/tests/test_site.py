@@ -468,6 +468,24 @@ class JourneyPath(unittest.TestCase):
         self.assertIn("DPmetaApp", page)
         self.assertIn("«Сначала построить качественные самостоятельные системы.", page)
 
+    def test_goal_text_outside_svg(self):
+        """P-04 аудита страниц 8.11.2026: у рисунка цели `role="img"` — диктор не читает текст внутри SVG,
+        поэтому приложение, оба ядра и основание есть в списке под схемой теми же формулировками."""
+        import html as _html
+        import re as _re
+        facts = {f["id"]: f for f in yaml.safe_load((ROOT / "data/facts/facts.yaml").read_text(encoding="utf-8"))["facts"]}
+        goal = yaml.safe_load((ROOT / "data/website/path.yaml").read_text(encoding="utf-8"))["goal"]
+        for rel, lang, words in (("path/index.html", "ru", ("Два ядра", "Основание: DPvisualisation")),
+                                 ("en/path/index.html", "en", ("Two cores", "Base: DPvisualisation"))):
+            outside = _html.unescape(_re.sub(r"<svg\b.*?</svg>", "", self.page(rel), flags=_re.S))
+            for word in words:
+                self.assertIn(word, outside, (lang, word))
+            for c in goal["cores"]:
+                self.assertIn(c["title"][lang], outside, (lang, "ядро вне SVG"))
+            for src in (goal["base"]["text"], goal["cores"][0]["text"]):
+                wording = facts[src["fact"]]["allowed_wording"][lang][src.get("idx", 0)]
+                self.assertIn(wording[1:-1], outside, (lang, src))
+
     def test_texts_only_from_facts_and_milestones(self):
         import html as _html
         facts = {f["id"]: f for f in yaml.safe_load((ROOT / "data/facts/facts.yaml").read_text(encoding="utf-8"))["facts"]}
