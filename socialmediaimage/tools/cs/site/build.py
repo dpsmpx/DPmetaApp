@@ -60,6 +60,7 @@ SECURITY_HEADERS = {
 
 
 TEXT_TOKENS = ("paper", "mist", "human", "ai", "verified")
+DESCRIPTION_MAX = 160  # знаков в meta description: длиннее поиск обрезает (P-14 аудита страниц 8.11.2026)
 """Токены, которыми на сайте пишется текст: им нужен контраст к фону и панелям."""
 
 
@@ -627,16 +628,25 @@ class SiteBuild:
         return f"/media/{og['item']}/{Path(og['file']).name}"
 
     # ------------------------------------------------------- запись
+    def doc_title(self, page: Page) -> str:
+        """`<title>` — с именем сайта: «Путь — dpsmpx» (P-14 аудита страниц 8.11.2026); og:title — без него,
+        имя сайта — в og:site_name."""
+        site = self.signature(page.lang)
+        return page.title if page.title == site or page.title.endswith(" — " + site) else f"{page.title} — {site}"
+
     def render(self, page: Page) -> str:
         tpl = Template(self.repo.path("website", "templates", "base.html").read_text(encoding="utf-8"))
         url = self.base + page.path
+        # Карточка с большим изображением — только когда изображение есть (P-14): без og:image она пустая.
+        card = "summary_large_image" if page.image else "summary"
         head = [f'<link rel="canonical" href="{E(self.repo.canonical_base().rstrip("/") + page.path if self.env == "production" else url)}">',
                 f'<meta property="og:title" content="{E(page.title)}">',
                 f'<meta property="og:description" content="{E(page.description)}">',
                 f'<meta property="og:type" content="{page.kind}">',
                 f'<meta property="og:url" content="{E(url)}">',
+                f'<meta property="og:site_name" content="{E(self.signature(page.lang))}">',
                 f'<meta property="og:locale" content="{"ru_RU" if page.lang == "ru" else "en_US"}">',
-                '<meta name="twitter:card" content="summary_large_image">']
+                f'<meta name="twitter:card" content="{card}">']
         if page.image:
             head.append(f'<meta property="og:image" content="{E(self.base + page.image)}">')
         if self.noindex or page.draft:
@@ -645,7 +655,12 @@ class SiteBuild:
             for lg, p in page.alternates.items():
                 head.append(f'<link rel="alternate" hreflang="{lg}" href="{E(self.base + p)}">')
             head.append(f'<link rel="alternate" hreflang="x-default" href="{E(self.base + page.alternates.get("ru", page.path))}">')
-        for ld in page.jsonld:
+        jsonld = page.jsonld
+        if not jsonld and not page.path.endswith("404.html"):
+            # Страница без своего JSON-LD («Путь», «Экосистема», списки) — WebPage (P-14).
+            jsonld = [{"@context": "https://schema.org", "@type": "WebPage", "name": page.title,
+                       "description": page.description, "inLanguage": page.lang, "url": url}]
+        for ld in jsonld:
             head.append('<script type="application/ld+json">' + json.dumps(ld, ensure_ascii=False).replace("</", "<\\/") + "</script>")
         head += page.head
         banner = f'<div class="banner" role="note">{E(t(page.lang, "staging"))}</div>' if self.noindex else ""
@@ -662,7 +677,7 @@ class SiteBuild:
                   f'<a href="/feed.xml">Atom</a> · <a href="/rss.xml">RSS</a> · <a href="/feed.json">JSON Feed</a></p>'
                   + (f'<p>Шрифты IBM Plex — SIL OFL 1.1 (<a href="/fonts/OFL-IBM-Plex.txt">лицензия</a>).</p>' if page.lang == "ru" else
                      f'<p>IBM Plex fonts — SIL OFL 1.1 (<a href="/fonts/OFL-IBM-Plex.txt">license</a>).</p>'))
-        return tpl.substitute(lang=page.lang, title=E(page.title), description=E(page.description), head="\n".join(head),
+        return tpl.substitute(lang=page.lang, title=E(self.doc_title(page)), description=E(page.description), head="\n".join(head),
                               banner=banner, home="/en/" if page.lang == "en" else "/", theme=self.tokens()["color"]["ink"]["hex"],
                               theme_light=((self.tokens().get("site_light") or {}).get("color") or self.tokens()["color"])["ink"]["hex"],
                               skip=E(t(page.lang, "skip")), nav_label=E(t(page.lang, "nav_label")),
@@ -911,6 +926,10 @@ class SiteBuild:
         for tg, ps in sorted(tags.items()):
             pages.append(pg(self.page_tag, tg, ps))
         for page in pages:
+            if len(page.description) > DESCRIPTION_MAX:
+                # Описание — текст объекта (Д12): короче — только новой версией варианта, сборка лишь говорит (P-14).
+                self.report.warnings.append(f"{page.path}: описание {len(page.description)} знаков — длиннее "
+                                            f"{DESCRIPTION_MAX}, поиск его обрежет")
             self.write(out, page.path, self.render(page))
             self.report.pages.append(page.path)
         for lang in ("ru", "en") if "en" in langs else ("ru",):

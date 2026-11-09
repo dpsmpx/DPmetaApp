@@ -114,6 +114,48 @@ class Accessibility(unittest.TestCase):
         self.assertIn('aria-current="page"', post)
         self.assertIn('<a class="skip" href="#main">К содержимому</a>', post)
 
+    def test_head_names_the_site(self):
+        """P-14 аудита страниц 8.11.2026: «Страница — dpsmpx» в `<title>`, og:site_name; без изображения —
+        карточка summary, а не summary_large_image; у страниц без своего JSON-LD — WebPage (кроме 404)."""
+        repo = make_repo(git=False)
+        with_media(repo, "Обложка")
+        out = repo.path("build", "s")
+        rep = build(repo, "staging", out)
+        self.assertEqual(rep.errors, [])
+        for page in out.rglob("*.html"):
+            text = page.read_text(encoding="utf-8")
+            title = html.unescape(re.search(r"<title>([^<]*)</title>", text).group(1))
+            self.assertTrue(title == "dpsmpx" or title.endswith(" — dpsmpx"), (page.name, title))
+            self.assertNotIn(" — dpsmpx — dpsmpx", title)
+            self.assertIn('<meta property="og:site_name" content="dpsmpx">', text)
+            card = re.search(r'name="twitter:card" content="([^"]+)"', text).group(1)
+            self.assertEqual(card, "summary_large_image" if 'property="og:image"' in text else "summary", page)
+            has_ld = "application/ld+json" in text
+            self.assertEqual(has_ld, page.name != "404.html", page.relative_to(out))
+        post = (out / "news/test-news/index.html").read_text(encoding="utf-8")
+        self.assertIn('content="summary_large_image"', post, "у записи с обложкой — большая карточка")
+
+    def test_long_description_is_a_warning(self):
+        """Описание длиннее 160 знаков — предупреждение сборки, текст правится только новой версией (P-14)."""
+        from tools.cs.site.build import DESCRIPTION_MAX
+        repo = make_repo(git=False)
+        v = find(repo, "CI-0101").variants()["website.ru"]
+        v.doc.meta["summary"] = "длинно " * (DESCRIPTION_MAX // 7 + 2)
+        textdoc.save(v.doc, v.path)
+        repo.reset()
+        rep = build(repo, "staging", repo.path("build", "s"))
+        self.assertEqual(rep.errors, [])
+        self.assertTrue(any("описание" in w and "длиннее 160" in w for w in rep.warnings), rep.warnings)
+        clean = build(make_repo(git=False), "staging", repo.path("build", "c"))
+        self.assertFalse(any("длиннее 160" in w for w in clean.warnings), clean.warnings)
+
+    def test_headings_wrap_long_words(self):
+        """P-13: длинное слово `h1` на 320 px переносится, а не уводит страницу вбок (WCAG 1.4.10)."""
+        css = (ROOT / "website/static/style.css").read_text(encoding="utf-8")
+        rule = re.search(r"^h1, h2, h3 \{([^}]*)\}", css, re.M)
+        self.assertIsNotNone(rule)
+        self.assertIn("overflow-wrap: break-word", rule.group(1))
+
     def test_media_without_alt_is_an_error(self):
         repo = make_repo(git=False)
         with_media(repo, None)
