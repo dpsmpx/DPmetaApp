@@ -419,6 +419,10 @@ object Screens {
         }
     }
 
+    /** Где записан вопрос — для поручения «записать ответ» (F-25): `Проект:путь`, раздел. */
+    fun questionSource(q: Question): String =
+        "${q.project}:${q.path ?: "TODO.md"}" + (q.section?.let { ", раздел «$it»" } ?: "")
+
     /** Вопросы по проектам (UX-17): группа — проект, порядок — как в `TODO.md`. */
     fun questionGroups(q: List<Question>): List<Pair<String, List<Question>>> = q.groupBy { it.project }.toList()
 }

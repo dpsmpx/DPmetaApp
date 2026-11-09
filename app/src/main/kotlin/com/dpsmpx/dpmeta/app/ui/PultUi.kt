@@ -102,6 +102,7 @@ import com.dpsmpx.dpmeta.app.screens.BranchActions
 import com.dpsmpx.dpmeta.app.screens.IssueActions
 import com.dpsmpx.dpmeta.app.screens.EditActions
 import com.dpsmpx.dpmeta.app.screens.LineDiff
+import com.dpsmpx.dpmeta.app.screens.RouteActions
 import com.dpsmpx.dpmeta.github.PullDetail
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.OutlinedButton
@@ -264,6 +265,16 @@ interface Loader {
     /** Журнал действий (F-44). */
     fun journal(done: (Outcome<List<ActionEntry>>) -> Unit) = done(Outcome.success(emptyList()))
 
+    /** Маршруты Claude Code (F-22) — из подсистемы «AI» через оболочку; без оболочки — пусто. */
+    fun routes(done: (List<RouteActions.Route>) -> Unit) = done(emptyList())
+
+    /** Шаблоны поручений (F-23) — `config/briefs/<ключ>.md` в APK; отказ разбора — строкой. */
+    fun briefs(done: (Outcome<List<com.dpsmpx.dpmeta.formats.Brief>>) -> Unit) = done(Outcome.success(emptyList()))
+
+    /** Репозиторий проекта и основная ветка — места шаблона (F-23). */
+    fun base(project: String, done: (Outcome<Pair<com.dpsmpx.dpmeta.model.RepoRef, String>>) -> Unit) =
+        done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "поручений здесь нет", project))
+
     /** Поделиться текстом (экспорт журнала, F-44). */
     fun share(subject: String, text: String) {}
 }
@@ -314,6 +325,12 @@ private sealed interface Nav {
     /** Правка файла проекта (F-69) — из документа. */
     data class Edit(val project: String, val path: String) : Nav
 
+    /**
+     * Поручение Claude маршрутом (F-22, F-23) — из карточки; ответ на вопрос (F-25) — из
+     * «Вопросов»: [brief] — шаблон, [source] и [question] — его поля.
+     */
+    data class Brief(val project: String, val brief: String?, val source: String?, val question: String?) : Nav
+
     companion object {
         private const val SEP = "\u0001"
 
@@ -328,6 +345,7 @@ private sealed interface Nav {
             Journal -> listOf("journal")
             is Branch -> listOf("branch", n.project, n.name)
             is Edit -> listOf("edit", n.project, n.path)
+            is Brief -> listOf("brief", n.project, n.brief.orEmpty(), n.source.orEmpty(), n.question.orEmpty())
         }.joinToString(SEP)
 
         fun decode(s: String): Nav? {
@@ -342,6 +360,7 @@ private sealed interface Nav {
                 "journal" -> Journal
                 "branch" -> if (p.size >= 3) Branch(p[1], p[2]) else null
                 "edit" -> if (p.size >= 3) Edit(p[1], p[2]) else null
+                "brief" -> if (p.size >= 5) Brief(p[1], p[2].ifEmpty { null }, p[3].ifEmpty { null }, p[4].ifEmpty { null }) else null
                 else -> null
             }
         }
@@ -476,6 +495,7 @@ fun PultApp(
                 }
                 top is Nav.Journal -> JournalScreen(loader, back)
                 top is Nav.Edit -> EditScreen(top.project, top.path, loader, back)
+                top is Nav.Brief -> BriefScreen(top, loader, back)
                 top is Nav.Branch -> {
                     val pulls = remember(s, top) { s?.let { Screens.card(it, top.project) }?.pulls?.filter { it.head == top.name }?.map { it.number }.orEmpty() }
                     BranchScreen(top.project, top.name, pulls, loader, back)
@@ -724,6 +744,7 @@ private fun CardList(c: Screens.Card, panel: Outcome<Panel>?, loader: Loader, on
                 for ((title, path) in c.files) AssistChip(onClick = { open(Nav.Doc(c.name, path, null)) }, label = { Text(title) })
                 AssistChip(onClick = { open(Nav.Dir(c.name, "")) }, label = { Text("Все файлы") })
                 AssistChip(onClick = { issueOpen = true }, label = { Text("Новый issue…") })
+                AssistChip(onClick = { open(Nav.Brief(c.name, null, null, null)) }, label = { Text("Поручить Claude…") })
             }
             if (issueOpen) IssueDialog(c.name, loader) { issueOpen = false }
         }
@@ -1001,6 +1022,8 @@ private fun Questions(q: List<Screens.Question>, open: (Nav) -> Unit) = LazyColu
             ) {
                 i.label?.let { AssistChip(onClick = {}, enabled = false, label = { Text(it) }, modifier = Modifier.padding(end = 6.dp)) }
                 Text(i.title, Modifier.weight(1f))
+                // F-25: ответ — поручением сессии репозитория-владельца по шаблону «записать ответ».
+                TextButton(onClick = { open(Nav.Brief(i.project, ANSWER_BRIEF, Screens.questionSource(i), i.title)) }) { Text("Ответить") }
                 if (i.path != null) Text("▸")
             }
         }
@@ -1462,6 +1485,132 @@ private fun DangerDialog(title: String, losses: List<String>, name: String, type
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
     )
+}
+
+/** Шаблон ответа на вопрос (F-25): `config/briefs/answer-question.md`. */
+private const val ANSWER_BRIEF = "answer-question"
+
+/**
+ * Поручение Claude (F-22, F-23, F-25; D-07): маршрут, шаблон и его поля → окно «Что
+ * уйдёт» с текстом целиком → «Поручить» (уровень 1). Маршруты — из подсистемы «AI»;
+ * итог — ссылка на облачную сессию (открыть — касанием, D-75) и строка журнала действий.
+ */
+@Composable
+private fun BriefScreen(nav: Nav.Brief, loader: Loader, onBack: () -> Unit) {
+    var routes by remember(nav) { mutableStateOf<List<RouteActions.Route>?>(null) }
+    var briefs by remember(nav) { mutableStateOf<Outcome<List<com.dpsmpx.dpmeta.formats.Brief>>?>(null) }
+    var base by remember(nav) { mutableStateOf<Outcome<Pair<com.dpsmpx.dpmeta.model.RepoRef, String>>?>(null) }
+    LaunchedEffect(nav) {
+        loader.routes { routes = it }
+        loader.briefs { briefs = it }
+        loader.base(nav.project) { base = it }
+    }
+    var routeId by rememberSaveable(nav) { mutableStateOf<String?>(null) }
+    var briefKey by rememberSaveable(nav) { mutableStateOf(nav.brief) }
+    val values = remember(nav) {
+        mutableStateMapOf<String, String>().apply {
+            nav.source?.let { put("source", it) }
+            nav.question?.let { put("question", it) }
+        }
+    }
+    var pending by remember { mutableStateOf<Triple<com.dpsmpx.dpmeta.actions.ActionCommand, com.dpsmpx.dpmeta.formats.Brief, String>?>(null) }
+    var running by remember { mutableStateOf(false) }
+    var result by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
+    var link by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+    val taps = remember { LinkTaps() }
+    Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        TextButton(onClick = onBack, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("← Назад") }
+        Text("Поручить Claude — ${nav.project}", style = MaterialTheme.typography.titleMedium)
+        result?.let { (ok, line) -> Text(line, color = if (ok) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error) }
+        link?.let { url -> Button(onClick = { external(context, taps, url) }) { Text("Открыть сессию") } }
+        val rs = routes
+        val bs = briefs
+        val b = base
+        when {
+            rs == null || bs == null || b == null -> Text("Читаю маршруты и шаблоны…", style = MaterialTheme.typography.bodySmall)
+            bs is Outcome.Failure -> Text("Шаблоны не разобраны: " + bs.errors.first().let { "${it.message} (${it.subject})" }, color = MaterialTheme.colorScheme.error)
+            b is Outcome.Failure -> Text("Не выйдет: ${b.errors.first().message}", color = MaterialTheme.colorScheme.error)
+            rs.none { it.hasToken } -> Text(
+                "Маршрутов с токеном нет. Завести маршрут: вкладка «AI» → «Настройки AI» → «Маршруты Claude Code».",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            bs is Outcome.Success -> {
+                val list = bs.value
+                val (repo, branch) = (b as Outcome.Success).value
+                val route = rs.firstOrNull { it.id == routeId && it.hasToken } ?: RouteActions.pick(rs, nav.project)
+                val brief = list.firstOrNull { it.key == briefKey } ?: RouteActions.pickBrief(list, route, nav.brief)
+                Text("$repo · основная ветка $branch", style = MaterialTheme.typography.bodySmall)
+                Text("Маршрут", fontWeight = FontWeight.SemiBold)
+                for (r in rs) {
+                    Row(Modifier.fillMaxWidth().toggleable(value = r.id == route?.id, enabled = r.hasToken && !running, role = Role.RadioButton) { routeId = r.id }.padding(vertical = 4.dp)) {
+                        Text((if (r.id == route?.id) "● " else "○ ") + r.name + listOfNotNull(r.project, if (r.hasToken) null else "нет токена").joinToString(" · ").let { if (it.isEmpty()) "" else " — $it" })
+                    }
+                }
+                Text("Поручение", fontWeight = FontWeight.SemiBold)
+                for (x in list) {
+                    Row(Modifier.fillMaxWidth().toggleable(value = x.key == brief?.key, enabled = !running, role = Role.RadioButton) { briefKey = x.key }.padding(vertical = 4.dp)) {
+                        Text((if (x.key == brief?.key) "● " else "○ ") + x.title)
+                    }
+                }
+                if (brief != null) {
+                    for (f in brief.fields) {
+                        OutlinedTextField(
+                            value = values[f.name].orEmpty(), onValueChange = { values[f.name] = it }, label = { Text(f.label) },
+                            singleLine = !f.multiline, minLines = if (f.multiline) 3 else 1, enabled = !running, modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    val rendered = brief.render(RouteActions.builtIn(nav.project, repo, branch), values.toMap())
+                    if (rendered is Outcome.Failure && brief.missing(values.toMap()).isEmpty()) {
+                        Text(rendered.errors.first().message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    }
+                    Button(
+                        enabled = rendered is Outcome.Success && route != null && !running,
+                        onClick = {
+                            val text = (rendered as Outcome.Success).value
+                            result = null
+                            link = null
+                            pending = Triple(RouteActions.command(route!!, nav.project, repo, brief, text), brief, text)
+                        },
+                    ) { Text("Дальше: что уйдёт") }
+                }
+            }
+        }
+        if (running) LinearProgressIndicator(Modifier.fillMaxWidth())
+    }
+    pending?.let { (c, brief, text) ->
+        AlertDialog(
+            onDismissRequest = { pending = null },
+            title = { Text("Что уйдёт") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    for (line in RouteActions.preview(c, brief)) Text(line, style = MaterialTheme.typography.bodySmall)
+                    androidx.compose.foundation.layout.Box(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
+                        androidx.compose.foundation.text.selection.SelectionContainer {
+                            Text(text, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace))
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    pending = null
+                    running = true
+                    loader.act(PullActions.Request(c, PullActions.Way.SHOWN, text = text)) { r ->
+                        running = false
+                        when (r) {
+                            is Outcome.Success -> {
+                                result = true to "Готово: ${r.value.detail}"
+                                link = r.value.link
+                            }
+                            is Outcome.Failure -> result = false to "Не выполнено: ${r.errors.first().message}"
+                        }
+                    }
+                }) { Text("Поручить") }
+            },
+            dismissButton = { TextButton(onClick = { pending = null }) { Text("Отмена") } },
+        )
+    }
 }
 
 /**

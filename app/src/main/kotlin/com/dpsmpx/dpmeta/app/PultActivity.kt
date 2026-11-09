@@ -158,6 +158,17 @@ open class PultActivity : ComponentActivity() {
      */
     protected open fun debugLog(tag: String, line: String) {}
 
+    /**
+     * Маршруты Claude Code (F-22): их ведёт подсистема «AI» (`DP_AI_Orcestrator:D-116`), пульт
+     * видит имя, проект и шаблон. Даёт оболочка `:shell`; без неё маршрутов нет.
+     * Вызывается не на главном потоке.
+     */
+    protected open fun routes(): List<com.dpsmpx.dpmeta.app.screens.RouteActions.Route> = emptyList()
+
+    /** Запуск маршрута [id] с поручением [text] — через оболочку; не на главном потоке. */
+    protected open fun fireRoute(id: String, text: String): Outcome<com.dpsmpx.dpmeta.app.screens.RouteActions.Fired> =
+        Outcome.failure(DiagCode.UNSUPPORTED, "маршрутов нет: их ведёт подсистема «AI»", "route")
+
     /** «О программе» (UX-23, D-54): версия DPmetaApp из пакета и версия «AI» от оболочки. */
     private fun about(): String {
         val app = runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull() ?: "?"
@@ -522,7 +533,13 @@ open class PultActivity : ComponentActivity() {
                 })
                 done(r)
             }
-            fun go(confirm: (com.dpsmpx.dpmeta.actions.Actions) -> com.dpsmpx.dpmeta.actions.Confirmation) = run({ repo.act(it, c, confirm, request.text) }, logged)
+            fun go(confirm: (com.dpsmpx.dpmeta.actions.Actions) -> com.dpsmpx.dpmeta.actions.Confirmation) =
+                if (c.kind == com.dpsmpx.dpmeta.actions.ActionKind.ROUTE_RUN) {
+                    // Маршрут (F-22): токен GitHub не нужен — запуск идёт мостом к «AI».
+                    background({ repo.fire(c, confirm, request.text.orEmpty()) { id, t -> fireRoute(id, t) } }, logged)
+                } else {
+                    run({ repo.act(it, c, confirm, request.text) }, logged)
+                }
             when (request.way) {
                 com.dpsmpx.dpmeta.app.screens.PullActions.Way.SHOWN -> go { it.shown(c) }
                 com.dpsmpx.dpmeta.app.screens.PullActions.Way.TYPED -> go { it.typedName(c, request.typed) }
@@ -542,10 +559,34 @@ open class PultActivity : ComponentActivity() {
         override fun branch(project: String, name: String, done: (Outcome<com.dpsmpx.dpmeta.app.screens.BranchActions.View>) -> Unit) =
             run({ repo.branch(it, project, name) }, done)
 
-        override fun journal(done: (Outcome<List<com.dpsmpx.dpmeta.actions.ActionEntry>>) -> Unit) {
+        override fun journal(done: (Outcome<List<com.dpsmpx.dpmeta.actions.ActionEntry>>) -> Unit) = background({ repo.journal() }, done)
+
+        override fun routes(done: (List<com.dpsmpx.dpmeta.app.screens.RouteActions.Route>) -> Unit) =
+            background({ runCatching { this@PultActivity.routes() }.getOrDefault(emptyList()) }, done)
+
+        /** Шаблоны (F-23) — файлы `config/briefs/<ключ>.md`, собранные в APK; один не разобран — отказ с местом. */
+        override fun briefs(done: (Outcome<List<com.dpsmpx.dpmeta.formats.Brief>>) -> Unit) = background({
+            val names = runCatching { assets.list("briefs")?.filter { it.endsWith(".md") }?.sorted() }.getOrNull().orEmpty()
+            val out = mutableListOf<com.dpsmpx.dpmeta.formats.Brief>()
+            var bad: Outcome.Failure? = null
+            for (n in names) {
+                val text = runCatching { assets.open("briefs/$n").use { String(it.readBytes(), Charsets.UTF_8) } }.getOrNull() ?: continue
+                when (val b = com.dpsmpx.dpmeta.formats.BriefFormat.parse(text, n.removeSuffix(".md"), "briefs/$n")) {
+                    is Outcome.Success -> out += b.value
+                    is Outcome.Failure -> if (bad == null) bad = b
+                }
+            }
+            bad ?: Outcome.success(out.toList())
+        }, done)
+
+        override fun base(project: String, done: (Outcome<Pair<com.dpsmpx.dpmeta.model.RepoRef, String>>) -> Unit) =
+            run({ repo.base(it, project) }, done)
+
+        /** Работа без токена GitHub — в пуле, итог — на главном потоке. */
+        private fun <T> background(work: () -> T, done: (T) -> Unit) {
             if (pool.isShutdown) return
             pool.execute {
-                val r = repo.journal()
+                val r = work()
                 runOnUiThread { done(r) }
             }
         }

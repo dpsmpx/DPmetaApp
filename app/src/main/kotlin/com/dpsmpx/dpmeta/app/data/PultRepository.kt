@@ -195,6 +195,30 @@ class PultRepository(
     ): Outcome<com.dpsmpx.dpmeta.actions.ActionResult> =
         actions.run(command, confirm(actions)) { ActionExecutor.execute(com.dpsmpx.dpmeta.github.GitHubWrite(Net(UrlTransport()), token), command, text) }
 
+    /**
+     * Запуск маршрута (F-22): та же политика и журнал (D-07), исполнитель — [fire] оболочки,
+     * мост к подсистеме «AI»; токен GitHub не нужен. [text] — поручение; в журнал не идёт.
+     */
+    fun fire(
+        command: com.dpsmpx.dpmeta.actions.ActionCommand,
+        confirm: (com.dpsmpx.dpmeta.actions.Actions) -> com.dpsmpx.dpmeta.actions.Confirmation?,
+        text: String,
+        fire: (String, String) -> Outcome<com.dpsmpx.dpmeta.app.screens.RouteActions.Fired>,
+    ): Outcome<com.dpsmpx.dpmeta.actions.ActionResult> =
+        actions.run(command, confirm(actions)) { com.dpsmpx.dpmeta.app.screens.RouteActions.execute(command, text, fire) }
+
+    /** Репозиторий проекта и его основная ветка — для мест шаблона поручения (F-23). */
+    fun base(token: Secret, project: String): Outcome<Pair<RepoRef, String>> {
+        val repo = when (val r = repoFor(token, project)) {
+            is Outcome.Failure -> return r
+            is Outcome.Success -> r.value
+        }
+        return when (val b = com.dpsmpx.dpmeta.github.GitHubWrite(Net(UrlTransport()), token).defaultBranch(repo)) {
+            is Outcome.Failure -> b
+            is Outcome.Success -> Outcome.success(repo to b.value)
+        }
+    }
+
     /** Файл к правке (F-69): репозиторий и путь — как у документа проекта, блоб — с основной ветки. */
     fun editable(token: Secret, project: String, path: String): Outcome<com.dpsmpx.dpmeta.app.screens.EditActions.Edit> {
         val (gh, etags) = client(token)

@@ -2,6 +2,7 @@ package com.dpsmpx.dpmeta.corpus
 
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpmeta.formats.DecisionLog
+import com.dpsmpx.dpmeta.formats.BriefFormat
 import com.dpsmpx.dpmeta.formats.PanelFormat
 import com.dpsmpx.dpmeta.formats.RegistryFormat
 import com.dpsmpx.dpmeta.formats.Roadmap
@@ -61,6 +62,23 @@ class OwnDocumentsTest {
             assertEquals(f.nameWithoutExtension, panel.project, "${f.name}: имя файла — имя проекта")
             assertTrue(r.byName(panel.project) != null, "${f.name}: проекта ${panel.project} нет в реестре")
             assertTrue(panel.items.isNotEmpty(), "${f.name}: пустая панель")
+        }
+    }
+
+    /** Шаблоны поручений (F-23): шесть из ТЗ на месте, каждый разбирается и собирается без пустых мест. */
+    @Test
+    fun ownBriefsParseAndRender() {
+        val files = File(repo, "config/briefs").listFiles { f -> f.extension == "md" }.orEmpty().sortedBy { it.name }
+        val keys = files.map { it.nameWithoutExtension }.toSet()
+        for (k in listOf("continue-branch", "roadmap-task", "answer-question", "fix-checks", "dpmeta-pass", "dpmeta-doc-audit")) {
+            assertTrue(k in keys, "нет шаблона $k")
+        }
+        val builtIn = mapOf("project" to "DPmetaApp", "repo" to "dpsmpx/DPmetaApp", "base" to "main")
+        for (f in files) {
+            val b = BriefFormat.parse(f.readText(), f.nameWithoutExtension, "config/briefs/${f.name}").ok(f.name)
+            val text = b.render(builtIn, b.fields.associate { it.name to "значение ${it.name}" }).ok("${f.name}: сборка")
+            assertTrue("{{" !in text && "}}" !in text, "${f.name}: в тексте осталось место")
+            b.fields.forEach { assertTrue("значение ${it.name}" in text, "${f.name}: поле ${it.name} не подставлено") }
         }
     }
 

@@ -42,11 +42,19 @@ android {
     }
 }
 
-// Панели проектов (F-10, D-57) — только config/projects/*.toml корня, в ресурсах APK —
-// assets/projects/<Проект>.toml; другие файлы config/ в APK не попадают.
+// Панели проектов (F-10, D-57) и шаблоны поручений (F-23) — только config/projects/*.toml и
+// config/briefs/*.md корня, в ресурсах APK — assets/projects/<Проект>.toml и
+// assets/briefs/<ключ>.md; другие файлы config/ в APK не попадают.
 val panelAssets = tasks.register<Sync>("panelAssets") {
-    from(rootProject.layout.projectDirectory.dir("config/projects")) { include("*.toml") }
-    into(layout.buildDirectory.dir("generated/panel-assets/projects"))
+    from(rootProject.layout.projectDirectory.dir("config/projects")) {
+        include("*.toml")
+        into("projects")
+    }
+    from(rootProject.layout.projectDirectory.dir("config/briefs")) {
+        include("*.md")
+        into("briefs")
+    }
+    into(layout.buildDirectory.dir("generated/panel-assets"))
 }
 androidComponents {
     onVariants { v ->

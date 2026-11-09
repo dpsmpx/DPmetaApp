@@ -5,7 +5,10 @@ import android.os.Bundle
 import com.dpsmpx.dpai.android.AiBackground
 import com.dpsmpx.dpai.android.AiSummary
 import com.dpsmpx.dpai.android.MainActivity
+import com.dpsmpx.dpai.android.PultRoutes
+import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpmeta.app.PultActivity
+import com.dpsmpx.dpmeta.app.screens.RouteActions
 import com.dpsmpx.dpmeta.app.screens.Screens
 
 /**
@@ -35,4 +38,15 @@ class DpmetaActivity : PultActivity() {
     override fun debugLog(tag: String, line: String) = com.dpsmpx.dpai.android.AppLogs.info(applicationContext, tag, line)
 
     override fun aiCounts(): Screens.AiCounts = AiSummary.read(this).also { lastAi = it }.let { Screens.AiCounts(it.configured, it.waiting, it.running, it.nearLimit) }
+
+    /** Маршруты Claude Code (F-22) — из подсистемы «AI» (`DP_AI_Orcestrator:D-116`): токен остаётся там. */
+    override fun routes(): List<RouteActions.Route> =
+        PultRoutes.list(applicationContext).map { RouteActions.Route(it.id, it.name, it.project, it.brief, it.hasToken) }
+
+    /** Запуск маршрута: цену и журнал действия уже прошёл пульт (`:core:actions`); здесь — только вызов. */
+    override fun fireRoute(id: String, text: String): Outcome<RouteActions.Fired> =
+        when (val r = PultRoutes.fire(applicationContext, id, text)) {
+            is Outcome.Failure -> r
+            is Outcome.Success -> Outcome.success(RouteActions.Fired(r.value.first, r.value.second))
+        }
 }

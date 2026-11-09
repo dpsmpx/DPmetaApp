@@ -28,5 +28,6 @@ tasks.withType<Test>().configureEach {
         inputs.file(repo.file(f)).withPropertyName("own:$f")
     }
     inputs.dir(repo.dir("config/projects")).withPropertyName("own:config/projects")
+    inputs.dir(repo.dir("config/briefs")).withPropertyName("own:config/briefs")
     systemProperty("corpus.repo", repo.asFile.absolutePath)
 }
