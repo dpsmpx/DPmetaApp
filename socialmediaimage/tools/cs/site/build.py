@@ -36,6 +36,7 @@ from ..core.content import (POST_CATEGORIES, CItem, Variant, approval_state, loa
 from ..core.inject import progress_set, resolve
 from ..core.ledger import Ledger
 from ..core.repo import Repo
+from ..progress.dataset import fmt_date
 from ..progress.figures import FIGURE_MARK
 from ..progress.figures import render as render_figure
 from . import ecosystem, feeds
@@ -80,6 +81,11 @@ def theme_contrast(tokens: dict) -> list[str]:
                 if v < need:
                     out.append(f"тема сайта {name}: {fg} к {bg} — контраст {v:.2f} < {need}")
     return out
+
+
+def date_tag(day: str, lang: str) -> str:
+    """Дата записи по языку страницы — «5 октября 2026», «5 October 2026»; ISO — в `datetime` (P-23)."""
+    return f'<time datetime="{E(day)}">{E(fmt_date(day, lang))}</time>'
 
 
 def img_tag(e: "Entry", cls: str | None = None) -> str:
@@ -356,12 +362,12 @@ class SiteBuild:
             parts.append(journey.home_block(self.path_data(), lang, self.path_href(lang)))
         arts = self.articles_for(lang)[:3]
         if arts:
-            parts.append(f'<h2>{E(t(lang, "latest_articles"))}</h2>' + self.post_list(arts, lang)
+            parts.append(f'<h2>{E(t(lang, "latest_articles"))}</h2>' + self.post_list(arts, lang, 3)
                          + f'<p><a href="{self.articles_path(lang)}">{E(t(lang, "all_articles"))} →</a></p>')
         posts = [e for e in entries if e.is_post and not e.is_article and e.lang == "ru"][:3]
         dates = [e.date for e in posts + arts + ([about] if about else [])]
         if posts:
-            parts.append(f'<h2>{E(t(lang, "latest"))}</h2>' + self.post_list(posts, lang)
+            parts.append(f'<h2>{E(t(lang, "latest"))}</h2>' + self.post_list(posts, lang, 3)
                          + f'<p><a href="/news/">{E(t(lang, "all_posts"))} →</a></p>')
         parts.append(f'<h2>{E(t(lang, "follow"))}</h2>' + self.link_list(home.get("social_links", []), lang))
         if home.get("contact"):
@@ -411,18 +417,32 @@ class SiteBuild:
         return FIGURE_MARK.sub(sub, body)
 
     @staticmethod
-    def toc(body: str, lang: str) -> tuple[str, str]:
-        """Оглавление по заголовкам h2 длинной страницы (website.toc): (оглавление, текст с якорями)."""
-        heads = []
+    def slug(text: str, taken: set[str]) -> str:
+        """Якорь из заголовка (P-22): «Как считалось» → «как-считалось»; занятый — с номером."""
+        base = re.sub(r"[^\w]+", "-", html.unescape(re.sub(r"<[^>]+>", "", text)).lower()).strip("-_") or "section"
+        out, n = base, 1
+        while out in taken:
+            n += 1
+            out = f"{base}-{n}"
+        taken.add(out)
+        return out
+
+    @classmethod
+    def toc(cls, body: str, lang: str) -> tuple[str, str]:
+        """Оглавление по заголовкам h2 длинной страницы (website.toc): (оглавление, текст с якорями).
+
+        Нумерованный список в столбик; якорь — из текста заголовка, а не «s1…s14» (P-22)."""
+        heads: list[tuple[str, str]] = []
+        taken = set(re.findall(r'\bid="([^"]+)"', body))
 
         def anchor(m: re.Match) -> str:
-            heads.append(m.group(1))
-            return f'<h2 id="s{len(heads)}">{m.group(1)}</h2>'
+            heads.append((cls.slug(m.group(1), taken), m.group(1)))
+            return f'<h2 id="{E(heads[-1][0])}">{m.group(1)}</h2>'
         body = re.sub(r"<h2>(.*?)</h2>", anchor, body)
         if len(heads) < 3:
             return "", body
-        items = "".join(f'<a href="#s{i}">{h}</a>' for i, h in enumerate(heads, 1))
-        return f'<nav class="toc" aria-label="{E(t(lang, "toc"))}">{items}</nav>', body
+        items = "".join(f'<li><a href="#{E(a)}">{h}</a></li>' for a, h in heads)
+        return f'<nav class="toc" aria-label="{E(t(lang, "toc"))}"><ol>{items}</ol></nav>', body
 
     def page_entry(self, e: Entry) -> Page:
         """Страница из варианта website.* с website.path (кроме «Обо мне»): текст, фигуры, оглавление."""
@@ -470,7 +490,7 @@ class SiteBuild:
             main += f'<h2>{E(t(lang, "links"))}</h2>' + self.link_list(p["links"], lang)
         related = [e for e in entries if e.is_post and p["id"] in (e.item.data.get("source_projects") or [])]
         if related:
-            main += f'<h2>{E(t(lang, "related"))}</h2>' + self.post_list(related, lang)
+            main += f'<h2>{E(t(lang, "related"))}</h2>' + self.post_list(related, lang, 3)
         desc = tag or p["name"]
         return Page(f"{pre}/projects/{p['id']}/", lang, p["name"], desc, main,
                     alternates=self._alt(f"/projects/{p['id']}/", f"/en/projects/{p['id']}/"), image=self.og_default(),
@@ -478,14 +498,16 @@ class SiteBuild:
                              "description": desc, "url": self.base + f"{pre}/projects/{p['id']}/",
                              "author": {"@type": "Person", "name": self.author(lang)}}])
 
-    def post_list(self, posts: list[Entry], lang: str) -> str:
+    def post_list(self, posts: list[Entry], lang: str, level: int = 2) -> str:
+        """Список записей; заголовок записи — h{level} (под разделом h2 страницы — h3), дата — по языку (P-23)."""
         lis = []
         for e in posts:
             cat = t(lang, "cat").get(e.category, e.category)
             mark = " · черновик" if e.draft and lang == "ru" else (" · draft" if e.draft else "")
             mins = f" · {self.minutes(e)} {t(lang, 'minutes')}" if e.is_article else ""
-            lis.append(f'<li><time datetime="{E(e.date)}">{E(e.date)}</time> · <span class="muted">{E(cat)}{E(mins)}{mark}</span><br>'
-                       f'<a href="{e.path}">{E(e.title)}</a><br><span class="muted">{E(e.summary)}</span></li>')
+            lis.append(f'<li>{date_tag(e.date, lang)} · <span class="muted">{E(cat)}{E(mins)}{mark}</span>'
+                       f'<h{level} class="pt"><a href="{e.path}">{E(e.title)}</a></h{level}>'
+                       f'<span class="muted">{E(e.summary)}</span></li>')
         return f'<ul class="posts">{"".join(lis)}</ul>'
 
     def page_news(self, entries: list[Entry]) -> Page:
@@ -506,7 +528,7 @@ class SiteBuild:
 
     def page_post(self, e: Entry) -> Page:
         cat = t(e.lang, "cat").get(e.category, e.category)
-        meta = f'<p class="meta">{E(e.date)} · {E(cat)}'
+        meta = f'<p class="meta">{date_tag(e.date, e.lang)} · {E(cat)}'
         if e.is_article:
             meta += f" · {self.minutes(e)} {E(t(e.lang, 'minutes'))}"
         projects = self.repo.projects()

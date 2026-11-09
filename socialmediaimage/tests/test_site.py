@@ -114,6 +114,35 @@ class Accessibility(unittest.TestCase):
         self.assertIn('aria-current="page"', post)
         self.assertIn('<a class="skip" href="#main">К содержимому</a>', post)
 
+    def test_toc_list_and_anchors_from_headings(self):
+        """P-22 аудита страниц 8.11.2026: оглавление — нумерованный список в столбик; якорь — из текста
+        заголовка, а не «s1…s14»; повтор и занятый id — с номером."""
+        body = '<p id="как-считалось">x</p><h2>Как считалось</h2><h2>Итог <em>дня</em></h2><h2>Итог дня</h2>'
+        toc, out = SiteBuild.toc(body, "ru")
+        self.assertTrue(toc.startswith('<nav class="toc" aria-label="Разделы страницы"><ol><li><a href="#'), toc)
+        self.assertIn('<h2 id="как-считалось-2">Как считалось</h2>', out)
+        self.assertIn('<h2 id="итог-дня">Итог <em>дня</em></h2>', out)
+        self.assertIn('<h2 id="итог-дня-2">Итог дня</h2>', out)
+        self.assertIn('<li><a href="#итог-дня-2">Итог дня</a></li></ol></nav>', toc)
+        self.assertNotRegex(out, r'id="s\d+"')
+        self.assertEqual(SiteBuild.toc("<h2>Один</h2><h2>Два</h2>", "ru")[0], "", "меньше трёх разделов — без оглавления")
+
+    def test_post_dates_by_language_and_titles_as_headings(self):
+        """P-23 аудита страниц 8.11.2026: дата записи — по языку страницы (ISO — в `datetime`); заголовок
+        записи в списке — заголовком: h2 на странице списка, h3 под разделом h2."""
+        repo = make_repo(git=False)
+        out = repo.path("build", "s")
+        build(repo, "staging", out)
+        news = (out / "news/index.html").read_text(encoding="utf-8")
+        m = re.search(r'<time datetime="(\d{4})-(\d{2})-(\d{2})">([^<]+)</time>', news)
+        self.assertIsNotNone(m, "дата в списке записей")
+        self.assertRegex(m.group(4), rf"^{int(m.group(3))} [а-я]+ {m.group(1)}$")
+        self.assertIn('<h2 class="pt"><a href="/news/', news)
+        home = (out / "index.html").read_text(encoding="utf-8")
+        self.assertIn('<h3 class="pt"><a href="/news/', home, "на главной список — под разделом h2")
+        post = (out / "news/test-news/index.html").read_text(encoding="utf-8")
+        self.assertRegex(post, r'<p class="meta"><time datetime="\d{4}-\d{2}-\d{2}">\d{1,2} [а-я]+ \d{4}</time> · ')
+
     def test_head_names_the_site(self):
         """P-14 аудита страниц 8.11.2026: «Страница — dpsmpx» в `<title>`, og:site_name; без изображения —
         карточка summary, а не summary_large_image; у страниц без своего JSON-LD — WebPage (кроме 404)."""

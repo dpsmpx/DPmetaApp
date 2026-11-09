@@ -79,6 +79,7 @@ h3 { font-size: 19px; margin: 24px 0 8px; }
 .posts { list-style: none; padding: 0; }
 .posts li { padding: 10px 0; border-bottom: 1px solid var(--line); }
 .posts time, .meta { color: var(--mist); font-size: 14px; font-family: "IBM Plex Mono", monospace; }
+.posts .pt { font-size: 17px; margin: 4px 0 2px; }  /* заголовок записи в списке (P-23) */
 .tag { display: inline-block; font-size: 13px; color: var(--ai); margin-right: 8px; padding: 4px 0; }
 
 .links { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 20px; }
@@ -110,9 +111,11 @@ h3 { font-size: 19px; margin: 24px 0 8px; }
    ΔE ≥ 13 при дальтонизме и ≥ 19 обычным зрением; шкала — монотонная, шаг ΔL ≥ 0,06). */
 .page-progress .lead { font-size: 19px; color: var(--paper); }
 .page-progress h2 { scroll-margin-top: 16px; }
-nav.toc { flex-wrap: wrap; gap: 0 16px; margin: 16px 0 8px; padding: 6px 14px; background: var(--graphite);
+nav.toc { display: block; margin: 16px 0 8px; padding: 6px 14px; background: var(--graphite);
   border: 1px solid var(--line); border-radius: 8px; font-size: 14px; }
-nav.toc a { padding: 6px 0; white-space: normal; color: var(--mist); }
+nav.toc ol { margin: 0; padding: 0; list-style: none; }  /* в столбик (P-22); номера — в самих заголовках */
+nav.toc li { color: var(--mist); }
+nav.toc a { padding: 3px 0; white-space: normal; color: var(--mist); }
 nav.toc a:hover { color: var(--paper); }
 
 .pfig { margin: 16px 0 32px; padding: 16px 16px 12px; background: var(--graphite); border: 1px solid var(--line); border-radius: 8px; }
