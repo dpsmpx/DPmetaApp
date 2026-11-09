@@ -518,6 +518,9 @@ open class PultActivity : ComponentActivity() {
         override fun pull(project: String, number: Int, done: (Outcome<Pair<com.dpsmpx.dpmeta.model.RepoRef, com.dpsmpx.dpmeta.github.PullDetail>>) -> Unit) =
             run({ repo.pull(it, project, number) }, done)
 
+        override fun pullCard(project: String, number: Int, done: (Outcome<com.dpsmpx.dpmeta.app.screens.PullActions.Card>) -> Unit) =
+            run({ repo.pullCard(it, project, number) }, done)
+
         /**
          * Действие с PR (F-12; D-07): подтверждение создаётся здесь и только после ответа
          * человека — окно экрана (уровень 1) или ещё PIN или отпечаток (уровень 2). Отмена

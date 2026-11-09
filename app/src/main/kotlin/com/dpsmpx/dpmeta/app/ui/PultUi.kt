@@ -246,6 +246,10 @@ interface Loader {
     fun pull(project: String, number: Int, done: (Outcome<Pair<com.dpsmpx.dpmeta.model.RepoRef, PullDetail>>) -> Unit) =
         done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "действий с PR здесь нет", project))
 
+    /** Карточка PR (F-11): коммиты, файлы, обсуждение — по кнопке, свежие с GitHub. */
+    fun pullCard(project: String, number: Int, done: (Outcome<PullActions.Card>) -> Unit) =
+        done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "карточки PR здесь нет", project))
+
     /** Действие (F-12): подтверждение способом [PullActions.Request.way] создаёт активность — после PIN, если нужен. */
     fun act(request: PullActions.Request, done: (Outcome<ActionResult>) -> Unit) =
         done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "действий здесь нет", request.command.target.display))
@@ -412,6 +416,8 @@ fun PultApp(
     // Пункт и стеки — rememberSaveable: поворот, тема и шрифт больше не сбрасывают место (UX-3).
     var tab by rememberSaveable { mutableStateOf(if (view.hasToken) Section.SUMMARY else Section.MORE) }
     var devTab by rememberSaveable { mutableStateOf(DevTab.PROJECTS) }
+    var pullFilter by rememberSaveable { mutableStateOf(Screens.PullFilter.WAITING) }
+    var pullProject by rememberSaveable { mutableStateOf<String?>(null) }
     val stacks = rememberSaveable(saver = StacksSaver) { mutableStateMapOf() }
     val stack = stacks[tab].orEmpty()
     val open: (Nav) -> Unit = { stacks[tab] = stacks[tab].orEmpty() + it }
@@ -516,6 +522,8 @@ fun PultApp(
                     onTile = { g ->
                         when (g) {
                             Screens.Goes.PROJECTS -> { tab = Section.DEV; devTab = DevTab.PROJECTS }
+                            // Плитка считает все открытые PR (`repo.pr.open`) — и список открывается на «Все».
+                            Screens.Goes.PULLS -> { tab = Section.DEV; devTab = DevTab.PULLS; pullFilter = Screens.PullFilter.ALL; pullProject = null }
                             Screens.Goes.QUESTIONS -> { tab = Section.DEV; devTab = DevTab.QUESTIONS }
                             Screens.Goes.SYNC -> tab = Section.MORE
                         }
@@ -527,6 +535,7 @@ fun PultApp(
                     DevTabs(devTab) { devTab = it }
                     when (devTab) {
                         DevTab.PROJECTS -> Projects(remember(s) { Screens.projects(s) }) { open(Nav.Card(it)) }
+                        DevTab.PULLS -> Pulls(remember(s) { Screens.pulls(s) }, s.asOf, pullFilter, pullProject, { pullFilter = it }, { pullProject = it }) { r -> open(Nav.Pull(r.project, r.number.toInt())) }
                         DevTab.QUESTIONS -> Questions(remember(s) { Screens.questions(s) }, open)
                     }
                 }
@@ -1005,6 +1014,51 @@ private fun external(context: android.content.Context, taps: LinkTaps, url: Stri
 }
 
 /**
+ * PR всех проектов (F-11): фильтры «Все», «Ждут автора», «Черновики», «Давние» и проект;
+ * касание — экран PR с карточкой и действиями (F-12). Данные — из среза синхронизации.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun Pulls(
+    rows: List<Screens.PullRow>,
+    now: com.dpsmpx.dpai.core.clock.Timestamp,
+    filter: Screens.PullFilter,
+    project: String?,
+    onFilter: (Screens.PullFilter) -> Unit,
+    onProject: (String?) -> Unit,
+    open: (Screens.PullRow) -> Unit,
+) {
+    val shown = remember(rows, filter, project) { Screens.filterPulls(rows, filter, project) }
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        item(key = "filters") {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    for (f in Screens.PullFilter.entries) {
+                        val n = Screens.filterPulls(rows, f, project).size
+                        FilterChip(selected = f == filter, onClick = { onFilter(f) }, label = { Text("${f.title} $n") })
+                    }
+                }
+                val projects = rows.map { it.project }.distinct().sorted()
+                if (projects.size > 1) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        FilterChip(selected = project == null, onClick = { onProject(null) }, label = { Text("Все проекты") })
+                        for (p in projects) FilterChip(selected = p == project, onClick = { onProject(if (p == project) null else p) }, label = { Text(p) })
+                    }
+                }
+                Text("PR: ${shown.size}", style = MaterialTheme.typography.titleMedium)
+            }
+        }
+        items(shown.size, key = { "pr:${shown[it].project}:${shown[it].number}" }) { n ->
+            val r = shown[n]
+            Column(Modifier.fillMaxWidth().clickable { open(r) }.padding(vertical = 4.dp)) {
+                Text("#${r.number} ${r.title}", fontWeight = FontWeight.SemiBold)
+                Text(Screens.pullLine(r, now), style = MaterialTheme.typography.bodySmall, color = if (r.stale) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+/**
  * Вопросы автору (F-24, UX-17): по проектам, метка — чипом, касание —
  * `TODO.md` проекта на разделе вопроса.
  */
@@ -1213,6 +1267,53 @@ private fun Details(details: String) {
 }
 
 /**
+ * Карточка PR (F-11): описание — разделы «Сделано / Осталось / Проверки» выделены, прочие
+ * свёрнуты под ними; коммиты, файлы со статистикой и обсуждение — по кнопке (три запроса).
+ */
+@Composable
+private fun PullCardView(project: String, p: PullDetail, loader: Loader) {
+    val sections = remember(p) { PullActions.sections(p) }
+    var card by remember(project, p.number) { mutableStateOf<Outcome<PullActions.Card>?>(null) }
+    var loading by remember(project, p.number) { mutableStateOf(false) }
+    var more by rememberSaveable(project, p.number) { mutableStateOf(false) }
+    for ((title, text) in sections) {
+        val main = PullActions.isMain(title)
+        if (!main && !more) continue
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(title, fontWeight = FontWeight.SemiBold, color = if (main) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+                androidx.compose.foundation.text.selection.SelectionContainer { Text(text, style = MaterialTheme.typography.bodySmall) }
+            }
+        }
+    }
+    val hidden = sections.count { !PullActions.isMain(it.first) }
+    if (hidden > 0) TextButton(onClick = { more = !more }) { Text(if (more) "Скрыть прочие разделы" else "Прочие разделы описания: $hidden") }
+    when (val c = card) {
+        null -> TextButton(enabled = !loading, onClick = {
+            loading = true
+            loader.pullCard(project, p.number) { card = it; loading = false }
+        }) { Text("Коммиты, файлы и обсуждение") }
+        is Outcome.Failure -> {
+            Text("Не прочитано: ${c.errors.first().message}", color = MaterialTheme.colorScheme.error)
+            TextButton(onClick = { card = null }) { Text("Повторить") }
+        }
+        is Outcome.Success -> {
+            val v = c.value
+            Text("Коммиты: ${v.commits.size}" + if (v.commits.size >= com.dpsmpx.dpmeta.github.GitHubWrite.MAX_LIST) " (первые)" else "", fontWeight = FontWeight.SemiBold)
+            for (x in v.commits) Text(PullActions.commitLine(x), style = MaterialTheme.typography.bodySmall)
+            Text("Файлы: ${v.files.size}" + if (v.files.size >= com.dpsmpx.dpmeta.github.GitHubWrite.MAX_LIST) " (первые)" else "", fontWeight = FontWeight.SemiBold)
+            for (f in v.files) Text(PullActions.fileLine(f), style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace))
+            Text("Обсуждение: ${v.notes.size}", fontWeight = FontWeight.SemiBold)
+            for (n in v.notes) {
+                Text(PullActions.noteHead(n), style = MaterialTheme.typography.labelMedium)
+                if (n.text.isNotEmpty()) androidx.compose.foundation.text.selection.SelectionContainer { Text(n.text, style = MaterialTheme.typography.bodySmall) }
+            }
+        }
+    }
+    if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+}
+
+/**
  * PR из карточки (F-12, F-13): свежий PR с GitHub и действия с уровнями (D-07, D-36).
  * Комментарий, ревью и «Из черновика» — окно «что уйдёт» и «Отправить» (уровень 1);
  * «Влить» и «Закрыть» — окно «что изменится», затем PIN или отпечаток (уровень 2). Если
@@ -1247,7 +1348,9 @@ private fun PullScreen(project: String, number: Int, checks: String?, loader: Lo
                 val (repo, p) = l.value
                 Text(p.title, fontWeight = FontWeight.SemiBold)
                 for (line in PullActions.lines(p, checks)) Text(line, style = MaterialTheme.typography.bodySmall)
+                PullActions.sizeLine(p).takeIf { it.isNotEmpty() }?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                 if (p.url.isNotEmpty()) TextButton(onClick = { external(context, taps, p.url) }) { Text("Ссылка на GitHub") }
+                PullCardView(project, p, loader)
                 if (PullActions.open(p)) {
                     OutlinedTextField(
                         value = text, onValueChange = { text = it }, label = { Text("Комментарий или текст ревью") },

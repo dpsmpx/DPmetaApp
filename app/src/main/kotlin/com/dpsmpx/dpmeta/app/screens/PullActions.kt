@@ -3,7 +3,11 @@ package com.dpsmpx.dpmeta.app.screens
 import com.dpsmpx.dpmeta.actions.ActionCommand
 import com.dpsmpx.dpmeta.actions.ActionKind
 import com.dpsmpx.dpmeta.actions.ActionTarget
+import com.dpsmpx.dpmeta.formats.PrDescription
+import com.dpsmpx.dpmeta.github.PullCommit
 import com.dpsmpx.dpmeta.github.PullDetail
+import com.dpsmpx.dpmeta.github.PullFile
+import com.dpsmpx.dpmeta.github.PullNote
 import com.dpsmpx.dpmeta.model.RepoRef
 
 /**
@@ -55,6 +59,61 @@ object PullActions {
         p.mergeableState == "behind" -> "ветка отстаёт от ${p.baseRef}"
         p.mergeableState == "unstable" -> "есть непройденные проверки"
         else -> "без конфликта"
+    }
+
+    // --- Карточка PR (F-11) ---
+
+    /** Коммиты, файлы и обсуждение PR — по кнопке, свежие с GitHub. */
+    data class Card(val commits: List<PullCommit>, val files: List<PullFile>, val notes: List<PullNote>)
+
+    /** Автор и размер: строки плюс и минус, файлы, коммиты; неизвестное — не ноль, а пропуск. */
+    fun sizeLine(p: PullDetail): String = listOfNotNull(
+        p.author.takeIf { it.isNotEmpty() }?.let { "автор $it" },
+        if (p.additions != null && p.deletions != null) "+${p.additions} −${p.deletions}" else null,
+        p.changedFiles?.let { "файлов $it" },
+        p.commits?.let { "коммитов $it" },
+    ).joinToString(" · ")
+
+    /**
+     * Описание по разделам (F-11): «Сделано», «Осталось», «Проверки» — первыми и выделены;
+     * прочие разделы — после. Без разделов второго уровня — описание целиком одним куском.
+     */
+    fun sections(p: PullDetail): List<Pair<String, String>> {
+        if (p.body.isBlank()) return emptyList()
+        val all = PrDescription.parse(p.body).valueOrNull()?.sections.orEmpty()
+        if (all.isEmpty()) return listOf("Описание" to p.body)
+        val main = PrDescription.REQUIRED.mapNotNull { k -> all[k]?.let { k to it } }
+        return main + all.filterKeys { it !in PrDescription.REQUIRED }.toList()
+    }
+
+    /** Раздел шаблона «Сделано / Осталось / Проверки» — выделяется на экране. */
+    fun isMain(title: String): Boolean = title in PrDescription.REQUIRED
+
+    fun commitLine(c: PullCommit): String = "${c.sha.take(7)} ${c.message}" + listOfNotNull(c.author.takeIf { it.isNotEmpty() }, date(c.date)).joinToString(" · ").let { if (it.isEmpty()) "" else " — $it" }
+
+    fun fileLine(f: PullFile): String = "${f.path} +${f.additions} −${f.deletions}" + when (f.status) {
+        "added" -> " (новый)"
+        "removed" -> " (удалён)"
+        "renamed" -> " (переименован)"
+        else -> ""
+    }
+
+    fun noteHead(n: PullNote): String = listOfNotNull(
+        n.author.ifEmpty { "?" },
+        when (val r = n.review) {
+            null -> null
+            "APPROVED" -> "одобрил"
+            "CHANGES_REQUESTED" -> "просит изменений"
+            "COMMENTED" -> "отзыв"
+            "DISMISSED" -> "отзыв снят"
+            else -> r.lowercase()
+        },
+        date(n.date),
+    ).joinToString(" · ")
+
+    /** Дата GitHub (ISO 8601, UTC) — «2026-11-09 12:00 UTC»; неразборчивое — как есть. */
+    private fun date(iso: String): String? = iso.takeIf { it.isNotEmpty() }?.let {
+        Regex("(\\d{4}-\\d{2}-\\d{2})T(\\d{2}:\\d{2}).*").matchEntire(it)?.let { m -> "${m.groupValues[1]} ${m.groupValues[2]} UTC" } ?: it
     }
 
     /** Действия с PR есть только у открытого PR. */

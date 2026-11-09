@@ -141,6 +141,27 @@ class PultRepository(
     }
 
     /** PR перед действием (F-12): свежий, с репозиторием проекта. */
+    /** Карточка PR (F-11): коммиты, файлы и обсуждение — свежие, три списка по одной странице. */
+    fun pullCard(token: Secret, project: String, number: Int): Outcome<com.dpsmpx.dpmeta.app.screens.PullActions.Card> {
+        val repo = when (val r = repoFor(token, project)) {
+            is Outcome.Failure -> return r
+            is Outcome.Success -> r.value
+        }
+        val w = com.dpsmpx.dpmeta.github.GitHubWrite(Net(UrlTransport()), token)
+        val commits = when (val r = w.pullCommits(repo, number)) {
+            is Outcome.Failure -> return r
+            is Outcome.Success -> r.value
+        }
+        val files = when (val r = w.pullFiles(repo, number)) {
+            is Outcome.Failure -> return r
+            is Outcome.Success -> r.value
+        }
+        return when (val r = w.discussion(repo, number)) {
+            is Outcome.Failure -> r
+            is Outcome.Success -> Outcome.success(com.dpsmpx.dpmeta.app.screens.PullActions.Card(commits, files, r.value))
+        }
+    }
+
     fun pull(token: Secret, project: String, number: Int): Outcome<Pair<RepoRef, com.dpsmpx.dpmeta.github.PullDetail>> {
         val (gh, etags) = client(token)
         val repo = repoOf(gh, project)

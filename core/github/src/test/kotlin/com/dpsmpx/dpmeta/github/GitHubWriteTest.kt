@@ -40,6 +40,27 @@ class GitHubWriteTest {
     private val pullJson = """{"number":7,"title":"Этап 5","state":"open","draft":true,"merged":false,"mergeable":true,"mergeable_state":"clean",
         "head":{"sha":"$head","ref":"claude/x"},"base":{"ref":"main"},"node_id":"PR_kw1","html_url":"https://github.com/example/Alpha/pull/7"}"""
 
+    /** Карточка PR (F-11): описание и размер — из того же ответа; коммиты, файлы, обсуждение — свежие, по одному запросу. */
+    @Test
+    fun pullCardReads() {
+        val full = pullJson.trimEnd('}') + ""","body":"## Сделано\r\nвсё\u0007","user":{"login":"dpsmpx"},"additions":12,"deletions":3,"changed_files":2,"commits":4}"""
+        val (fake, w) = gh(
+            "GET /repos/example/Alpha/pulls/7" to (200 to full),
+            "GET /repos/example/Alpha/pulls/7/commits" to (200 to """[{"sha":"$head","commit":{"message":"Этап 5: запись\n\nподробно","author":{"name":"Claude","date":"2026-11-09T10:00:00Z"}},"author":null},{"sha":"плохой"}]"""),
+            "GET /repos/example/Alpha/pulls/7/files" to (200 to """[{"filename":"app/A.kt","status":"modified","additions":10,"deletions":2},{"status":"added"}]"""),
+            "GET /repos/example/Alpha/issues/7/comments" to (200 to """[{"user":{"login":"dpsmpx"},"created_at":"2026-11-09T12:00:00Z","body":"Проверю"}]"""),
+            "GET /repos/example/Alpha/pulls/7/reviews" to (200 to """[{"user":{"login":"bot"},"submitted_at":"2026-11-09T11:00:00Z","state":"COMMENTED","body":""},{"user":{"login":"dpsmpx"},"submitted_at":"2026-11-09T13:00:00Z","state":"APPROVED","body":""}]"""),
+        )
+        val p = w.pull(repo, 7).valueOrNull()!!
+        assertEquals("## Сделано\nвсё", p.body, "перевод строки — один, управляющие знаки вырезаны")
+        assertEquals(listOf("dpsmpx", "12", "3", "2", "4"), listOf(p.author, "${p.additions}", "${p.deletions}", "${p.changedFiles}", "${p.commits}"))
+        assertEquals(listOf(PullCommit(head, "Этап 5: запись", "Claude", "2026-11-09T10:00:00Z")), w.pullCommits(repo, 7).valueOrNull())
+        assertEquals(listOf(PullFile("app/A.kt", "modified", 10, 2)), w.pullFiles(repo, 7).valueOrNull())
+        val notes = w.discussion(repo, 7).valueOrNull()!!
+        assertEquals(listOf("Проверю" to null, "" to "APPROVED"), notes.map { it.text to it.review }, "пустой отзыв без вердикта пропущен; по времени")
+        assertTrue(fake.seen.all { it.method == "GET" && it.url.query?.contains("per_page=100") != false })
+    }
+
     @Test
     fun pullDetailIsFreshAndFull() {
         val (fake, w) = gh("GET /repos/example/Alpha/pulls/7" to (200 to pullJson))

@@ -57,12 +57,21 @@ class ScreenSnapshotTest {
     @Test
     fun summary() = snapshot("summary", ScreenText.summary(Screens.summary(state())))
 
+    /** PR всех проектов (F-11) по корпусу: один черновик Alpha — в «Черновиках», не в «Ждут автора». */
+    @Test
+    fun pullsOfAllProjects() {
+        val rows = Screens.pulls(state())
+        assertEquals(listOf("Alpha" to 3L), rows.map { it.project to it.number })
+        assertEquals(1, Screens.filterPulls(rows, Screens.PullFilter.DRAFTS, null).size)
+        assertEquals(0, Screens.filterPulls(rows, Screens.PullFilter.WAITING, null).size)
+    }
+
     /** Панель пульта (D-73): пять пунктов с «AI», четыре — без подсистемы; «Разработка» — две вкладки. */
     @Test
     fun panel() {
         assertEquals(listOf("Сводка", "Разработка", "Статистика", "AI", "Ещё"), Screens.panel(ai = true))
         assertEquals(listOf("Сводка", "Разработка", "Статистика", "Ещё"), Screens.panel(ai = false))
-        assertEquals(listOf("Проекты", "Вопросы"), Screens.DevTab.entries.map { it.title })
+        assertEquals(listOf("Проекты", "PR", "Вопросы"), Screens.DevTab.entries.map { it.title })
     }
 
     /** Строка «AI» (D-76): с контуром — числа и переход к запросам; без контура — «не настроено». */

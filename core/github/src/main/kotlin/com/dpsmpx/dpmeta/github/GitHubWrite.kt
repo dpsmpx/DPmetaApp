@@ -40,7 +40,23 @@ data class PullDetail(
     val baseRef: String,
     val nodeId: String,
     val url: String,
+    /** Карточка PR (F-11): описание, автор и размер — из того же ответа, без запросов сверху. */
+    val body: String = "",
+    val author: String = "",
+    val additions: Int? = null,
+    val deletions: Int? = null,
+    val changedFiles: Int? = null,
+    val commits: Int? = null,
 )
+
+/** Коммит PR (F-11): SHA, первая строка сообщения, автор, время ISO 8601. */
+data class PullCommit(val sha: String, val message: String, val author: String, val date: String)
+
+/** Файл PR (F-11): путь, вид изменения (`added`, `modified`, `removed`, `renamed`…), строки плюс и минус. */
+data class PullFile(val path: String, val status: String, val additions: Int, val deletions: Int)
+
+/** Реплика обсуждения PR (F-11): комментарий или отзыв ([review] — его вид), автор, время, текст. */
+data class PullNote(val author: String, val date: String, val text: String, val review: String? = null)
 
 /** Файл для правки (F-69): текст и SHA блоба — запись с ним не затрёт чужую правку. */
 data class FileBlob(val path: String, val sha: String, val text: String, val ref: String)
@@ -85,8 +101,55 @@ class GitHubWrite(private val net: Net, private val token: Secret, private val a
                 baseRef = base?.let { str(it, "ref") }.orEmpty(),
                 nodeId = str(o, "node_id").orEmpty(),
                 url = str(o, "html_url").orEmpty(),
+                body = text(str(o, "body").orEmpty(), MAX_BODY),
+                author = (o["user"] as? JsonObject)?.let { str(it, "login") }.orEmpty(),
+                additions = int(o, "additions"),
+                deletions = int(o, "deletions"),
+                changedFiles = int(o, "changed_files"),
+                commits = int(o, "commits"),
             ),
         )
+    }
+
+    /** Коммиты PR (F-11): первые [MAX_LIST] — одна страница GitHub. */
+    fun pullCommits(repo: RepoRef, number: Int): Outcome<List<PullCommit>> =
+        list("repos/$repo/pulls/$number/commits?per_page=$MAX_LIST", "$repo#$number:commits") { o ->
+            val c = o["commit"] as? JsonObject
+            val sha = str(o, "sha")?.takeIf { SHA.matches(it) } ?: return@list null
+            val a = c?.get("author") as? JsonObject
+            PullCommit(sha, text(str(c, "message").orEmpty().lineSequence().firstOrNull().orEmpty(), MAX_LINE), (o["author"] as? JsonObject)?.let { str(it, "login") } ?: str(a, "name").orEmpty(), str(a, "date").orEmpty())
+        }
+
+    /** Файлы PR (F-11): путь, вид, строки — первые [MAX_LIST]. */
+    fun pullFiles(repo: RepoRef, number: Int): Outcome<List<PullFile>> =
+        list("repos/$repo/pulls/$number/files?per_page=$MAX_LIST", "$repo#$number:files") { o ->
+            val path = str(o, "filename") ?: return@list null
+            PullFile(path, str(o, "status").orEmpty(), int(o, "additions") ?: 0, int(o, "deletions") ?: 0)
+        }
+
+    /** Обсуждение PR (F-11): комментарии и отзывы с текстом или вердиктом — по времени, первые [MAX_LIST] каждого вида. */
+    fun discussion(repo: RepoRef, number: Int): Outcome<List<PullNote>> {
+        val comments = when (val r = list("repos/$repo/issues/$number/comments?per_page=$MAX_LIST", "$repo#$number:comments") { o ->
+            PullNote((o["user"] as? JsonObject)?.let { str(it, "login") }.orEmpty(), str(o, "created_at").orEmpty(), text(str(o, "body").orEmpty(), MAX_NOTE))
+        }) {
+            is Outcome.Failure -> return r
+            is Outcome.Success -> r.value
+        }
+        val reviews = when (val r = list("repos/$repo/pulls/$number/reviews?per_page=$MAX_LIST", "$repo#$number:reviews") { o ->
+            val state = str(o, "state").orEmpty()
+            val body = text(str(o, "body").orEmpty(), MAX_NOTE)
+            if (body.isEmpty() && state == "COMMENTED") null else PullNote((o["user"] as? JsonObject)?.let { str(it, "login") }.orEmpty(), str(o, "submitted_at").orEmpty(), body, state)
+        }) {
+            is Outcome.Failure -> return r
+            is Outcome.Success -> r.value
+        }
+        // Время ISO 8601 в UTC сравнивается строкой.
+        return Outcome.success((comments + reviews).sortedBy { it.date })
+    }
+
+    private fun <T> list(path: String, subject: String, item: (JsonObject) -> T?): Outcome<List<T>> = call("GET", path, null, subject).then { v ->
+        val a = v as? JsonArray ?: return@then invalid(subject)
+        Outcome.success(a.items.mapNotNull { (it as? JsonObject)?.let(item) })
     }
 
     /** Основная ветка репозитория (`default_branch`): с ней сравниваются ветки (F-14). */
@@ -264,6 +327,21 @@ class GitHubWrite(private val net: Net, private val token: Secret, private val a
     companion object {
         private val SHA = Regex("[0-9a-f]{40}")
 
+        /** Карточка PR (F-11): одна страница списков, пределы текста описания, реплики и строки. */
+        const val MAX_LIST: Int = 100
+        const val MAX_BODY: Int = 20_000
+        const val MAX_NOTE: Int = 4_000
+        private const val MAX_LINE = 200
+
+        /**
+         * Текст GitHub на экран (F-11): чужие данные (T3) — без управляющих знаков, кроме
+         * перевода строки, с пределом длины; похожее на секрет вырезается.
+         */
+        private fun text(s: String, max: Int): String {
+            val t = Redactor.STANDARD.redact(s.replace("\r\n", "\n").filter { it == '\n' || it == '\t' || !it.isISOControl() }).trim()
+            return if (t.length > max) t.take(max) + "…" else t
+        }
+
         /** Предел файла для правки с телефона (F-69): тексты процесса меньше. */
         const val MAX_EDIT_BYTES: Int = 512 * 1024
 
@@ -273,7 +351,7 @@ class GitHubWrite(private val net: Net, private val token: Secret, private val a
         /** Текст GitHub на экран и в журнал: одна строка, без секретов, не длиннее 300 знаков. */
         private fun clean(s: String) = Redactor.STANDARD.redact(s.replace(Regex("\\s+"), " ").trim()).take(300)
 
-        private fun str(o: JsonObject, k: String): String? = (o[k] as? JsonString)?.value
+        private fun str(o: JsonObject?, k: String): String? = (o?.get(k) as? JsonString)?.value
 
         private fun int(o: JsonObject, k: String): Int? = (o[k] as? JsonNumber)?.toLongExact()?.toInt()
 
