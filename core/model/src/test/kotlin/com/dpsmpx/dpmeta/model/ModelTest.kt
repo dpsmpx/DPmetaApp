@@ -40,8 +40,10 @@ class ModelTest {
         assertIs<Outcome.Failure>(Observation.of(ObservationSource.SITE, "dpsmpx.com\n", "probe", Timestamp(0), "site.probe.v1", payload, h))
     }
 
+    /** Уровни 0–3 по порядку (D-07; уровень 3 — D-37: доступен с предупреждением и вводом имени). */
     @Test
-    fun noLevelThreeExists() {
-        assertEquals(listOf(0, 1, 2), ActionLevel.entries.map { it.code }, "уровень 3 в коде отсутствует (D-07)")
+    fun levelsZeroToThree() {
+        assertEquals(listOf(0, 1, 2, 3), ActionLevel.entries.map { it.code })
+        assertEquals(ActionLevel.DANGEROUS, ActionLevel.entries.last())
     }
 }

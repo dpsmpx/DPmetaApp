@@ -60,6 +60,7 @@ include(":core:github")
 include(":core:metrics")
 include(":core:sync")
 include(":core:git")
+include(":core:actions")
 include(":cli")
 include(":tests:corpus")
 
