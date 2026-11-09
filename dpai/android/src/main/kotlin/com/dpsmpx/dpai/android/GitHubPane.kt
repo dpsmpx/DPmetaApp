@@ -140,10 +140,11 @@ private fun PrCard(v: GhPrDetail, loading: Boolean, onBack: () -> Unit, onLink: 
                 }
             }
         }
+        // Комментарий и «Слить» — после решения автора об их уровнях (D-108 против DPmetaApp:D-07, D-36).
         item {
             HorizontalDivider()
             Text(
-                "Комментарий и «Слить» — после решения автора об их уровнях (D-108 и DPmetaApp:D-07, D-36). Пока — на GitHub по ссылке выше.",
+                "Комментарий и слияние — пока на GitHub по ссылке выше: в приложении появятся, когда будет решено, как их подтверждать.",
                 style = MaterialTheme.typography.labelSmall,
             )
         }
