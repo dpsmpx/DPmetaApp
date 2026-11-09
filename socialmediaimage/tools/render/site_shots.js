@@ -72,14 +72,56 @@ function measure() {
     src: img.getAttribute('src'), ok: img.complete && img.naturalWidth > 0, alt: img.getAttribute('alt'),
   }));
   let minFont = 1e9;
+  let minSvgFont = 1e9;
   const small = [];
+  const smallSvg = [];
+  // Текст в SVG масштабируется вместе с viewBox: кегль на экране — кегль стиля × ширина SVG на
+  // экране / ширина viewBox (P-03 аудита страниц 8.11.2026). Иначе 12 px стиля в viewBox 360,
+  // ужатом до 324 px, — это 10,8 px, а замер видел бы 12.
+  const svgScale = (el) => {
+    const svg = el.closest && el.closest('svg');
+    if (!svg || !svg.viewBox || !svg.viewBox.baseVal || !svg.viewBox.baseVal.width) return null;
+    return svg.getBoundingClientRect().width / svg.viewBox.baseVal.width;
+  };
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   while (walker.nextNode()) {
     const n = walker.currentNode;
     if (!n.textContent.trim() || !n.parentElement || !visible(n.parentElement)) continue;
+    if (n.parentElement.closest('title, desc')) continue;  // имя и описание SVG не рисуются
     const fs = parseFloat(getComputedStyle(n.parentElement).fontSize);
+    const scale = svgScale(n.parentElement);
+    if (scale !== null) {
+      const real = Math.round(fs * scale * 10) / 10;
+      if (real < minSvgFont) minSvgFont = real;
+      if (real < 12 && smallSvg.length < 8) smallSvg.push(`${label(n.parentElement)}: ${real}px (${fs}px × ${scale.toFixed(2)})`);
+      continue;
+    }
     if (fs < minFont) minFont = fs;
     if (fs < 12 && small.length < 5) small.push(`${label(n.parentElement)}: ${fs}px`);
+  }
+  // Подписи графиков: за рамкой своего SVG и наложенные друг на друга (P-19 аудита страниц 8.11.2026).
+  const svgOutside = [];
+  const svgOverlap = [];
+  for (const svg of document.querySelectorAll('svg')) {
+    if (!visible(svg) || clipped(svg)) continue;
+    const sr = svg.getBoundingClientRect();
+    const texts = [...svg.querySelectorAll('text')].filter(visible).map((t) => ({ t, r: t.getBoundingClientRect() }));
+    for (const { t, r } of texts) {
+      if (r.left < sr.left - 1 || r.right > sr.right + 1 || r.top < sr.top - 1 || r.bottom > sr.bottom + 1) {
+        if (svgOutside.length < 8) svgOutside.push(`${label(t)} (${Math.round(r.left - sr.left)}…${Math.round(r.right - sr.left)} из ${Math.round(sr.width)} px)`);
+      }
+    }
+    for (let i = 0; i < texts.length; i++) {
+      for (let j = i + 1; j < texts.length; j++) {
+        const a = texts[i].r, b = texts[j].r;
+        const w = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+        const h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+        // наложение — больше пятой части меньшей подписи; касание краями — не находка
+        if (w > 0 && h > 0 && w * h > 0.2 * Math.min(a.width * a.height, b.width * b.height) && svgOverlap.length < 8) {
+          svgOverlap.push(`${label(texts[i].t)} и «${(texts[j].t.textContent || '').trim().slice(0, 20)}»`);
+        }
+      }
+    }
   }
   const targets = [];
   for (const el of document.querySelectorAll('nav a, .links a, button, a.lang, footer a')) {
@@ -104,7 +146,11 @@ function measure() {
     plex: [...document.fonts].some((f) => f.family.replace(/["']/g, '') === 'IBM Plex Sans' && f.status === 'loaded'),
     fontFamily: getComputedStyle(document.body).fontFamily,
     minFont: minFont === 1e9 ? null : minFont,
+    minSvgFont: minSvgFont === 1e9 ? null : minSvgFont,
     smallText: small,
+    smallSvgText: smallSvg,
+    svgOutside,
+    svgOverlap,
     smallTargets: targets.slice(0, 8),
     navTargets: nav.slice(0, 8),
     headerHeight: (() => { const hd = document.querySelector('.site-header'); return hd ? Math.round(hd.getBoundingClientRect().height) : null; })(),

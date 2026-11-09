@@ -13,10 +13,12 @@ h1, h2, h3 { overflow-wrap: break-word; hyphens: auto; }
    светлая — по настройке системы (Д49): ряды и линии не ниже 3 к фону и панелям (тест), шкала — от светлого
    к тёмному, шаг 1 отличим от нуля (≈ 1,5, как в тёмной); шкала ниже 3 — с таблицей значений у каждой фигуры. */
 :root { --c-gald: #c98500; --c-core: #3987e5; --c-bg: #d55181; --c-deferred: #9085e9; --c-periphery: #2a9d8f; --c-hidden: #6b6e75;
-  --c-h1: #184f95; --c-h2: #256abf; --c-h3: #3987e5; --c-h4: #6da7ec; --c-h5: #9ec5f4; --c-h6: #cde2fb; }
+  --c-h1: #184f95; --c-h2: #256abf; --c-h3: #3987e5; --c-h4: #6da7ec; --c-h5: #9ec5f4; --c-h6: #cde2fb;
+  --scroll-shadow: rgba(255, 255, 255, .4); }
 @media (prefers-color-scheme: light) {
   :root { --c-gald: #8a5d00; --c-core: #2f74c9; --c-bg: #c2416f; --c-deferred: #6e62d6; --c-periphery: #1d7f73; --c-hidden: #6b6e75;
-    --c-h1: #8fbcef; --c-h2: #5f9fe6; --c-h3: #3a83d6; --c-h4: #2a6bbd; --c-h5: #1f5499; --c-h6: #163d70; }
+    --c-h1: #8fbcef; --c-h2: #5f9fe6; --c-h3: #3a83d6; --c-h4: #2a6bbd; --c-h5: #1f5499; --c-h6: #163d70;
+    --scroll-shadow: rgba(0, 0, 0, .35); }
 }
 
 html { background: var(--ink); color: var(--paper); }
@@ -188,6 +190,16 @@ g:hover > .c-hit { fill: var(--paper); fill-opacity: .06; }
 .fdata summary { cursor: pointer; padding: 4px 0; color: var(--mist); }
 .fdata summary:hover { color: var(--paper); }
 .tscroll { overflow-x: auto; }
+/* признак прокрутки вбок — тени у края, где ещё есть столбцы (P-10 аудита страниц): фон цвета фигуры
+   прокручивается вместе с таблицей (local) и закрывает тень у начала и у конца; без скриптов (CSP) */
+.pfig .tscroll {
+  background:
+    linear-gradient(to right, var(--graphite) 30%, transparent) left / 32px 100% no-repeat local,
+    linear-gradient(to left, var(--graphite) 30%, transparent) right / 32px 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, var(--scroll-shadow), transparent) left / 16px 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, var(--scroll-shadow), transparent) right / 16px 100% no-repeat scroll;
+}
+.tscroll:focus-visible { outline-offset: 2px; }
 .num-table th, .num-table td { padding: 4px 10px 4px 0; font-size: 13px; width: auto; white-space: nowrap; }
 .num-table .num { text-align: right; font-family: "IBM Plex Mono", monospace; }
 
@@ -245,9 +257,18 @@ g:hover > .c-hit { fill: var(--paper); fill-opacity: .06; }
   .page-progress .lead { font-size: 17px; }
   .facts-dl { grid-template-columns: 1fr; gap: 0; }
   .facts-dl dd { margin-bottom: 6px; }
-  .facts.formulas code { white-space: normal; overflow-wrap: anywhere; }
+  /* «Как считалось» на телефоне — карточками (P-10): величина, формула, значение — строками, а не столбцами;
+     имя величины целиком в строке и переносится только если не помещается вся */
+  .facts.formulas thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%);
+    white-space: nowrap; }
+  .facts.formulas tr { display: block; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .facts.formulas th, .facts.formulas td { display: block; padding: 2px 0; border: 0; }
+  .facts.formulas .num { text-align: left; }
+  .facts.formulas code { white-space: normal; overflow-wrap: break-word; }
   /* таблица стадий на телефоне — карточками: колонки не помещаются в 360 px */
-  .facts.stages thead { display: none; }
+  /* заголовки столбцов спрятаны от глаз, но остаются в дереве доступности (P-20 аудита страниц) */
+  .facts.stages thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%);
+    white-space: nowrap; }
   .facts.stages tr { display: block; padding: 8px 0; border-bottom: 1px solid var(--line); }
   .facts.stages th, .facts.stages td { display: block; padding: 2px 0; border: 0; }
   .facts.stages th { color: var(--paper); font-weight: 600; }

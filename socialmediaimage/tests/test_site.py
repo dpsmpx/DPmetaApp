@@ -197,6 +197,40 @@ class Accessibility(unittest.TestCase):
         self.assertEqual(page_csp('<script type="application/ld+json">{}</script>'), [])
 
 
+class SiteShotRules(unittest.TestCase):
+    """Правила `siteshots` по замерам Chromium (без браузера): текст в SVG — с масштабом viewBox (P-03),
+    подписи графиков за рамкой и наложенные (P-19 аудита страниц 8.11.2026)."""
+
+    @staticmethod
+    def measured(**over):
+        m = {"path": "/progress/", "width": 390, "theme": "dark", "status": 200, "viewport": 390, "scrollWidth": 390,
+             "overflow": [], "images": [], "csp": [], "console": [], "failed": [], "plex": True, "fontFamily": "IBM Plex Sans",
+             "h1": 1, "smallTargets": [], "navTargets": [], "smallText": [], "headerHeight": 60,
+             "smallSvgText": [], "svgOutside": [], "svgOverlap": []}
+        m.update(over)
+        return m
+
+    def errors(self, **over):
+        from tools.cs.site.shots import findings
+        return [f.msg for f in findings([self.measured(**over)]) if f.level == "error"]
+
+    def test_clean_measurement_has_no_errors(self):
+        self.assertEqual(self.errors(), [])
+
+    def test_small_text_in_svg_is_an_error(self):
+        errs = self.errors(smallSvgText=["svg#pf-act-n text.t-axis: 10.8px (12px × 0.90)"])
+        self.assertTrue(any("мельче 12 px" in e and "viewBox" in e for e in errs), errs)
+
+    def test_labels_outside_or_overlapping_are_errors(self):
+        self.assertTrue(any("за рамкой SVG" in e for e in self.errors(svgOutside=["svg#pf-loc-n text.t-axis (-14…35 из 348 px)"])))
+        self.assertTrue(any("наложены" in e for e in self.errors(svgOverlap=["svg#pf-cc text.t-axis и «15»"])))
+
+    def test_html_small_text_stays_a_warning(self):
+        from tools.cs.site.shots import findings
+        out = findings([self.measured(smallText=["p.x «a»: 11px"])])
+        self.assertEqual([f.level for f in out], ["warn"])
+
+
 class Themes(unittest.TestCase):
     """Светлая тема по настройке системы (Д49): токены site_light, контраст текста в обеих темах."""
 
