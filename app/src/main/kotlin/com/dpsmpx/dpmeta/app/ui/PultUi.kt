@@ -1535,6 +1535,7 @@ private fun BriefScreen(nav: Nav.Brief, loader: Loader, onBack: () -> Unit) {
                 "Маршрутов с токеном нет. Завести маршрут: вкладка «AI» → «Настройки AI» → «Маршруты Claude Code».",
                 style = MaterialTheme.typography.bodySmall,
             )
+            bs is Outcome.Success && bs.value.isEmpty() -> Text("Шаблонов поручений в сборке нет.", color = MaterialTheme.colorScheme.error)
             bs is Outcome.Success -> {
                 val list = bs.value
                 val (repo, branch) = (b as Outcome.Success).value
