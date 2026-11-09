@@ -1,0 +1,232 @@
+package com.dpsmpx.dpai.android
+
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import com.dpsmpx.dpai.connectors.GhCheck
+import com.dpsmpx.dpai.connectors.GhPr
+import com.dpsmpx.dpai.connectors.GhPrDetail
+import com.dpsmpx.dpai.core.ids.TaskId
+import com.dpsmpx.dpai.core.result.Outcome
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+/**
+ * PR проекта на GitHub (D-108): открытые PR, проверки, отзывы и комментарии — командами `gh`
+ * на target проекта, его входом; токена GitHub у приложения нет (D-14). Уровень 0 — только
+ * чтение. Текст PR — данные со стороны (T3): очищен при разборе, ссылки — по D-75.
+ */
+@Composable
+fun GitHubPane(model: DemoModel, onBack: () -> Unit) {
+    val desk = remember { model.github() }
+    val scope = rememberCoroutineScope()
+    val link = rememberLinkTap()
+    var prs by remember { mutableStateOf<List<GhPr>?>(null) }
+    var detail by remember { mutableStateOf<GhPrDetail?>(null) }
+    var failure by remember { mutableStateOf<String?>(null) }
+    var loading by remember { mutableStateOf(false) }
+
+    fun load() {
+        val d = desk ?: return
+        loading = true
+        scope.launch {
+            when (val r = withContext(Dispatchers.IO) { d.list() }) {
+                is Outcome.Success -> { prs = r.value; failure = null }
+                is Outcome.Failure -> failure = r.errors.first().message
+            }
+            loading = false
+        }
+    }
+
+    fun open(n: Int) {
+        val d = desk ?: return
+        loading = true
+        scope.launch {
+            when (val r = withContext(Dispatchers.IO) { d.view(n) }) {
+                is Outcome.Success -> { detail = r.value; failure = null }
+                is Outcome.Failure -> failure = r.errors.first().message
+            }
+            loading = false
+        }
+    }
+    LaunchedEffect(Unit) { load() }
+
+    detail?.let { v ->
+        androidx.activity.compose.BackHandler { detail = null }
+        PrCard(v, loading, onBack = { detail = null }, onLink = link)
+        return
+    }
+    Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        TextButton(onClick = onBack) { Text("← Назад") }
+        Text("PR на GitHub", style = MaterialTheme.typography.titleMedium)
+        if (desk == null) {
+            Text(
+                "Нет проекта с репозиторием: Targets → у target ⋮ → «Проект…». PR читаются командой gh на его target — " +
+                    "в Linux приложения: пакет github-cli и в терминале gh auth login.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            return
+        }
+        Text("Репозиторий ${desk.repository} · открытые PR · gh на target проекта", style = MaterialTheme.typography.bodySmall)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(enabled = !loading, onClick = { load() }) { Text(if (loading) "Загружаю…" else "Обновить") }
+        }
+        failure?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+        val list = prs ?: return
+        if (list.isEmpty()) Text("Открытых PR нет.", style = MaterialTheme.typography.bodySmall)
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            items(list, key = { it.number }) { pr ->
+                Card(Modifier.fillMaxWidth().clickable(enabled = !loading) { open(pr.number) }) {
+                    Column(Modifier.padding(10.dp)) {
+                        Text("#${pr.number} ${pr.title}", style = MaterialTheme.typography.titleSmall)
+                        Text("${pr.head} → ${pr.base} · ${pr.author}" + if (pr.draft) " · черновик" else "", style = MaterialTheme.typography.labelSmall)
+                        Text(listOfNotNull(checksLine(pr.checks), reviewWord(pr.review)).joinToString(" · ").ifEmpty { "проверок нет" }, style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PrCard(v: GhPrDetail, loading: Boolean, onBack: () -> Unit, onLink: (String) -> Unit) {
+    LazyColumn(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        item { TextButton(onClick = onBack) { Text("← Список PR") } }
+        item {
+            Text("#${v.pr.number} ${v.pr.title}", style = MaterialTheme.typography.titleMedium)
+            Text("${v.pr.head} → ${v.pr.base} · ${v.pr.author}" + if (v.pr.draft) " · черновик" else "", style = MaterialTheme.typography.bodySmall)
+            Text("Слияние: ${mergeableWord(v.mergeable)}" + (reviewWord(v.pr.review)?.let { " · $it" } ?: ""), style = MaterialTheme.typography.bodySmall)
+            TextButton(onClick = { onLink(v.pr.url) }) { Text(v.pr.url) }
+            if (loading) Text("Загружаю…", style = MaterialTheme.typography.labelSmall)
+        }
+        if (v.pr.checks.isNotEmpty()) {
+            item { HorizontalDivider(); Text("Проверки", style = MaterialTheme.typography.titleSmall) }
+            items(v.pr.checks) { c -> Text("${checkMark(c)} ${c.name} — ${c.state.lowercase()}", style = MaterialTheme.typography.bodySmall) }
+        }
+        item {
+            HorizontalDivider()
+            Text("Описание", style = MaterialTheme.typography.titleSmall)
+            Text(v.body.ifBlank { "без описания" }, style = MaterialTheme.typography.bodySmall)
+        }
+        if (v.notes.isNotEmpty()) {
+            item { HorizontalDivider(); Text("Отзывы и комментарии", style = MaterialTheme.typography.titleSmall) }
+            items(v.notes) { n ->
+                Column(Modifier.padding(vertical = 4.dp)) {
+                    Text("${n.author}${n.review?.let { " · ${reviewWord(it) ?: it.lowercase()}" } ?: ""} · ${n.at.take(16).replace('T', ' ')}", style = MaterialTheme.typography.labelSmall)
+                    if (n.body.isNotBlank()) Text(n.body, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+        item {
+            HorizontalDivider()
+            Text(
+                "Комментарий и «Слить» — после решения автора об их уровнях (D-108 и DPmetaApp:D-07, D-36). Пока — на GitHub по ссылке выше.",
+                style = MaterialTheme.typography.labelSmall,
+            )
+        }
+    }
+}
+
+/**
+ * Отправка ветки задачи на GitHub с PR (D-108; уровень 1 по `DPmetaApp:D-36`): до нажатия
+ * окно показывает, что уйдёт, — ветку, удалённый, базу и заголовок; итог — адрес PR.
+ */
+@Composable
+internal fun GitHubSendSection(model: DemoModel, task: TaskId, title: String) {
+    val desk = remember { model.github() } ?: return
+    val scope = rememberCoroutineScope()
+    val link = rememberLinkTap()
+    var asking by remember(task) { mutableStateOf(false) }
+    var busy by remember(task) { mutableStateOf(false) }
+    var result by remember(task) { mutableStateOf<String?>(null) }
+    var failure by remember(task) { mutableStateOf<String?>(null) }
+    val plan = remember(task) { desk.plan(task) }
+    val prTitle = title.lineSequence().firstOrNull().orEmpty().take(120).ifBlank { "Задача ${task.value}" }
+    HorizontalDivider()
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("GitHub", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+        TextButton(enabled = !busy, onClick = { asking = true }) { Text(if (busy) "Отправляю…" else "Отправить ветку и открыть PR…") }
+    }
+    result?.let { url -> TextButton(onClick = { link(url) }) { Text("PR: $url") } }
+    failure?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
+    if (asking) {
+        AlertDialog(
+            onDismissRequest = { asking = false },
+            title = { Text("Отправить на GitHub?") },
+            text = {
+                Text(
+                    "Ветка ${plan.branch} уйдёт в ${plan.remote} (репозиторий ${plan.repository}), и откроется PR в ${plan.base} " +
+                        "с заголовком «$prTitle». Это увидят на GitHub; PR можно закрыть, ветку — удалить. Запись — в журнал действий.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    asking = false
+                    busy = true
+                    scope.launch {
+                        val body = "Задача ${task.value} контура «AI» DPmetaApp, ветка ${plan.branch}."
+                        when (val r = withContext(Dispatchers.IO) { desk.send(task, prTitle, body) }) {
+                            is Outcome.Success -> { result = r.value; failure = null }
+                            is Outcome.Failure -> failure = r.errors.first().message
+                        }
+                        busy = false
+                    }
+                }) { Text("Отправить") }
+            },
+            dismissButton = { TextButton(onClick = { asking = false }) { Text("Отмена") } },
+        )
+    }
+}
+
+private fun checksLine(checks: List<GhCheck>): String? {
+    if (checks.isEmpty()) return null
+    val ok = checks.count { it.passed }
+    val bad = checks.count { it.failed }
+    val going = checks.size - ok - bad
+    return listOfNotNull("✓ $ok".takeIf { ok > 0 }, "✗ $bad".takeIf { bad > 0 }, "… $going".takeIf { going > 0 }).joinToString(" ")
+}
+
+private fun checkMark(c: GhCheck) = when {
+    c.passed -> "✓"
+    c.failed -> "✗"
+    else -> "…"
+}
+
+private fun reviewWord(r: String?): String? = when (r) {
+    null -> null
+    "APPROVED" -> "одобрен"
+    "CHANGES_REQUESTED" -> "просят правок"
+    "REVIEW_REQUIRED" -> "ждёт отзыва"
+    "COMMENTED" -> "комментарий"
+    "DISMISSED" -> "отзыв снят"
+    else -> r.lowercase()
+}
+
+private fun mergeableWord(m: String) = when (m) {
+    "MERGEABLE" -> "можно слить"
+    "CONFLICTING" -> "конфликт"
+    else -> "GitHub ещё считает"
+}

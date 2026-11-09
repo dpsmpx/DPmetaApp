@@ -47,6 +47,11 @@ fun AiSettingsPane(controller: Controller, model: DemoModel, sub: String?, onSub
             LinuxScreen(onBack = { onSub(null) })
             return
         }
+        GITHUB -> {
+            BackHandler { onSub(null) }
+            GitHubPane(model, onBack = { onSub(null) })
+            return
+        }
         LOG -> {
             BackHandler { onSub(null) }
             Column(Modifier.fillMaxSize()) {
@@ -68,6 +73,7 @@ fun AiSettingsPane(controller: Controller, model: DemoModel, sub: String?, onSub
             }
         }
         item(key = "linux") { Entry("Linux в приложении", "Alpine, пакеты, слоты") { onSub(LINUX) } }
+        item(key = "github") { Entry("PR на GitHub", "открытые PR проекта, проверки, отзывы — через gh") { onSub(GITHUB) } }
         item(key = "log") { Entry("Журнал", "строки журнала, выгрузка, отладка") { onSub(LOG) } }
         item(key = "key") { AppKeyCard(controller) }
         item(key = "control") { ControlCard(model) }
@@ -109,6 +115,7 @@ private fun Entry(title: String, detail: String, onOpen: () -> Unit) {
 
 private const val GUIDE = "guide"
 private const val LINUX = "linux"
+private const val GITHUB = "github"
 
 /** Под-экран журнала — его открывает и «Журнал» у сбоя контроллера (AI:A-17). */
 internal const val SETTINGS_LOG = "log"

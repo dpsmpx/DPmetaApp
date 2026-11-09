@@ -437,6 +437,9 @@ class DemoModel(
         runCatching { built?.orchestrator?.taskDiff(task) }.getOrNull()
             ?: Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "контроллер не запущен", "task $task")
 
+    /** PR проекта через `gh` на его target (D-108): `null` — контур не запущен или у него нет проекта с репозиторием. */
+    fun github(): com.dpsmpx.dpai.orchestrator.github.GitHubDesk? = runCatching { (built as? LiveSystem)?.github }.getOrNull()
+
     /** Итоговые сообщения ходов задачи (D-42) — целиком; из памяти контура или документа задачи, без замка. */
     fun taskMessages(task: TaskId): List<com.dpsmpx.dpai.orchestrator.TurnMessage> =
         runCatching { built?.orchestrator?.turnMessages(task) }.getOrNull().orEmpty()
