@@ -15,8 +15,11 @@ object PullActions {
     /** Как подтверждено: показом (уровень 1), PIN устройства (2), вводом имени (3). */
     enum class Way { SHOWN, DEVICE, TYPED }
 
-    /** Команда и способ подтверждения — от экрана к активности: подтверждение создаёт она. */
-    data class Request(val command: ActionCommand, val way: Way, val typed: String = "")
+    /**
+     * Команда и способ подтверждения — от экрана к активности: подтверждение создаёт она.
+     * [text] — новый текст файла у правки (F-69): идёт исполнителю, не в журнал.
+     */
+    data class Request(val command: ActionCommand, val way: Way, val typed: String = "", val text: String? = null)
 
     fun comment(repo: RepoRef, p: PullDetail, body: String) =
         ActionCommand(ActionKind.COMMENT, ActionTarget(repo), mapOf("number" to "${p.number}", "body" to body))

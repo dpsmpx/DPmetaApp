@@ -42,6 +42,9 @@ data class PullDetail(
     val url: String,
 )
 
+/** Файл для правки (F-69): текст и SHA блоба — запись с ним не затрёт чужую правку. */
+data class FileBlob(val path: String, val sha: String, val text: String, val ref: String)
+
 /** Ветка перед действием (F-14): голова и защищена ли правилами (такую GitHub не удалит). */
 data class BranchDetail(val name: String, val sha: String, val protected: Boolean)
 
@@ -119,6 +122,60 @@ class GitHubWrite(private val net: Net, private val token: Secret, private val a
         return call("POST", "repos/$repo/issues", payload, "$repo").then { link(it) }
     }
 
+    /**
+     * Файл для правки (F-69): текст UTF-8 и SHA блоба на ветке [ref]. Каталог, двоичный
+     * файл или больше [MAX_EDIT_BYTES] — отказ: правка с телефона — для текстов процесса.
+     */
+    fun fileForEdit(repo: RepoRef, path: String, ref: String): Outcome<FileBlob> =
+        call("GET", "repos/$repo/contents/${ref(path)}?ref=${java.net.URLEncoder.encode(ref, Charsets.UTF_8)}", null, "$repo:$path").then { v ->
+            val o = v as? JsonObject ?: return@then Outcome.failure(DiagCode.VALUE_INVALID, "это каталог, а не файл", path)
+            if (str(o, "type") != "file") return@then Outcome.failure(DiagCode.VALUE_INVALID, "это не файл", path)
+            val sha = str(o, "sha")?.takeIf { SHA.matches(it) } ?: return@then missing("sha", path)
+            val size = int(o, "size") ?: 0
+            if (size > MAX_EDIT_BYTES) return@then Outcome.failure(DiagCode.VALUE_INVALID, "файл больше ${MAX_EDIT_BYTES / 1024} КБ — правьте на ПК", path)
+            val bytes = try {
+                java.util.Base64.getMimeDecoder().decode(str(o, "content").orEmpty())
+            } catch (e: IllegalArgumentException) {
+                return@then Outcome.failure(DiagCode.CONNECTOR_REPLY_INVALID, "содержимое файла не прочитано", path)
+            }
+            val text = try {
+                Charsets.UTF_8.newDecoder().decode(java.nio.ByteBuffer.wrap(bytes)).toString()
+            } catch (e: java.nio.charset.CharacterCodingException) {
+                return@then Outcome.failure(DiagCode.VALUE_INVALID, "файл не текст UTF-8", path)
+            }
+            Outcome.success(FileBlob(path, sha, text, ref))
+        }
+
+    /** Новая ветка [name] от коммита [fromSha] (F-69: правка — в своей ветке). Есть такая — отказ. */
+    fun createBranch(repo: RepoRef, name: String, fromSha: String): Outcome<Written> {
+        if (!SHA.matches(fromSha)) return Outcome.failure(DiagCode.VALUE_INVALID, "SHA — 40 знаков hex", fromSha)
+        val payload = JsonObject.of("ref" to JsonString("refs/heads/$name"), "sha" to JsonString(fromSha))
+        return call("POST", "repos/$repo/git/refs", payload, "$repo@$name").then { Outcome.success(Written(null, fromSha)) }
+    }
+
+    /**
+     * Записать файл коммитом в [branch] (F-69): поверх блоба [blobSha] — если на GitHub файл
+     * успели изменить, GitHub ответит 409, и правка не затрёт чужую.
+     */
+    fun putFile(repo: RepoRef, path: String, branch: String, blobSha: String, text: String, message: String): Outcome<Written> {
+        val payload = JsonObject.of(
+            "message" to JsonString(message),
+            "content" to JsonString(java.util.Base64.getEncoder().encodeToString(text.toByteArray(Charsets.UTF_8))),
+            "sha" to JsonString(blobSha),
+            "branch" to JsonString(branch),
+        )
+        return call("PUT", "repos/$repo/contents/${ref(path)}", payload, "$repo:$path").then { v ->
+            val commit = (v as? JsonObject)?.get("commit") as? JsonObject ?: return@then invalid("$repo:$path")
+            Outcome.success(Written(str(commit, "html_url"), str(commit, "sha")))
+        }
+    }
+
+    /** Открыть PR из [head] в [base] (F-69: правка в ветке — через PR). */
+    fun openPull(repo: RepoRef, head: String, base: String, title: String, body: String): Outcome<Written> {
+        val payload = JsonObject.of("title" to JsonString(title), "head" to JsonString(head), "base" to JsonString(base), "body" to JsonString(body))
+        return call("POST", "repos/$repo/pulls", payload, "$repo $head→$base").then { link(it) }
+    }
+
     /** Ревью PR (уровень 1): одобрить или запросить изменения. */
     fun review(repo: RepoRef, number: Int, approve: Boolean, body: String): Outcome<Written> {
         val event = if (approve) "APPROVE" else "REQUEST_CHANGES"
@@ -189,7 +246,7 @@ class GitHubWrite(private val net: Net, private val token: Secret, private val a
         if (r.status == 405 || r.status == 409 || r.status == 422) {
             val message = (json.parse(r.text).valueOrNull() as? JsonObject)?.let { str(it, "message") }.orEmpty()
             val why = when (r.status) {
-                409 -> "в ветке PR новый коммит или конфликт — действие не выполнено"
+                409 -> "на GitHub изменилось с тех пор, как было на экране (новый коммит или конфликт) — действие не выполнено"
                 405 -> "GitHub не разрешил"
                 else -> "GitHub не принял"
             }
@@ -206,6 +263,9 @@ class GitHubWrite(private val net: Net, private val token: Secret, private val a
 
     companion object {
         private val SHA = Regex("[0-9a-f]{40}")
+
+        /** Предел файла для правки с телефона (F-69): тексты процесса меньше. */
+        const val MAX_EDIT_BYTES: Int = 512 * 1024
 
         /** Имя ветки в пути: сегменты кодируются, косая черта остаётся (как у ссылок GitHub). */
         private fun ref(name: String) = name.split('/').joinToString("/") { java.net.URLEncoder.encode(it, Charsets.UTF_8).replace("+", "%20") }

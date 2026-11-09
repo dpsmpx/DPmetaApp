@@ -190,8 +190,31 @@ class PultRepository(
         token: Secret,
         command: com.dpsmpx.dpmeta.actions.ActionCommand,
         confirm: (com.dpsmpx.dpmeta.actions.Actions) -> com.dpsmpx.dpmeta.actions.Confirmation?,
+        /** Новый текст файла для правки (F-69); в журнал не идёт. */
+        text: String? = null,
     ): Outcome<com.dpsmpx.dpmeta.actions.ActionResult> =
-        actions.run(command, confirm(actions)) { ActionExecutor.execute(com.dpsmpx.dpmeta.github.GitHubWrite(Net(UrlTransport()), token), command) }
+        actions.run(command, confirm(actions)) { ActionExecutor.execute(com.dpsmpx.dpmeta.github.GitHubWrite(Net(UrlTransport()), token), command, text) }
+
+    /** Файл к правке (F-69): репозиторий и путь — как у документа проекта, блоб — с основной ветки. */
+    fun editable(token: Secret, project: String, path: String): Outcome<com.dpsmpx.dpmeta.app.screens.EditActions.Edit> {
+        val (gh, etags) = client(token)
+        val reg = when (val r = registry(gh)) {
+            is Outcome.Failure -> return r
+            is Outcome.Success -> r.value
+        }
+        etags.save()
+        val entry = reg.byName(project) ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "проекта нет в реестре", project)
+        val (repo, prefix) = GitHubReader(gh, RepoRef.parse(HOST).valueOrNull()!!).where(entry)
+        val w = com.dpsmpx.dpmeta.github.GitHubWrite(Net(UrlTransport()), token)
+        val base = when (val r = w.defaultBranch(repo)) {
+            is Outcome.Failure -> return r
+            is Outcome.Success -> r.value
+        }
+        return when (val r = w.fileForEdit(repo, prefix + path, base)) {
+            is Outcome.Failure -> r
+            is Outcome.Success -> Outcome.success(com.dpsmpx.dpmeta.app.screens.EditActions.Edit(project, repo, base, r.value))
+        }
+    }
 
     @Volatile private var registry: Registry? = null
 

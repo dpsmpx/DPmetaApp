@@ -97,6 +97,38 @@ class GitHubWriteTest {
         assertEquals(DiagCode.OPERATION_NOT_ALLOWED, code(bad.ready(pull)))
     }
 
+    /** Правка файла (F-69): текст и блоб, ветка, запись поверх блоба, PR; чужая правка — 409. */
+    @Test
+    fun fileEditRoundTrip() {
+        val text = "# ROADMAP\nстрока\n"
+        val b64 = java.util.Base64.getMimeEncoder().encodeToString(text.toByteArray())
+        val blob = "1".repeat(40)
+        val (fake, w) = gh(
+            "GET /repos/example/Alpha/contents/docs/ROADMAP.md" to (200 to """{"type":"file","sha":"$blob","size":${text.toByteArray().size},"encoding":"base64","content":"${b64.replace("\r\n", "\\n")}"}"""),
+            "POST /repos/example/Alpha/git/refs" to (201 to """{"ref":"refs/heads/dpmetaapp/edit"}"""),
+            "PUT /repos/example/Alpha/contents/docs/ROADMAP.md" to (200 to """{"commit":{"sha":"${"2".repeat(40)}","html_url":"https://github.com/example/Alpha/commit/2"}}"""),
+            "POST /repos/example/Alpha/pulls" to (201 to """{"html_url":"https://github.com/example/Alpha/pull/8"}"""),
+        )
+        val f = w.fileForEdit(repo, "docs/ROADMAP.md", "main").valueOrNull()!!
+        assertEquals(FileBlob("docs/ROADMAP.md", blob, text, "main"), f)
+        assertTrue(fake.seen.single().url.rawQuery == "ref=main")
+        assertIs<Outcome.Success<Written>>(w.createBranch(repo, "dpmetaapp/edit", head))
+        val put = w.putFile(repo, "docs/ROADMAP.md", "dpmetaapp/edit", blob, text + "ещё\n", "ROADMAP: строка").valueOrNull()!!
+        assertEquals("2".repeat(40), put.sha)
+        val sent = body(fake.seen[2])
+        assertEquals(blob to "dpmetaapp/edit", (sent["sha"] as JsonString).value to (sent["branch"] as JsonString).value)
+        assertEquals(text + "ещё\n", String(java.util.Base64.getDecoder().decode((sent["content"] as JsonString).value)))
+        assertEquals("https://github.com/example/Alpha/pull/8", w.openPull(repo, "dpmetaapp/edit", "main", "t", "b").valueOrNull()?.link)
+
+        val (_, conflict) = gh("PUT /repos/example/Alpha/contents/docs/ROADMAP.md" to (409 to """{"message":"docs/ROADMAP.md does not match $blob"}"""))
+        assertEquals(DiagCode.OPERATION_NOT_ALLOWED, code(conflict.putFile(repo, "docs/ROADMAP.md", "main", blob, "x", "m")))
+        val (_, exists) = gh("POST /repos/example/Alpha/git/refs" to (422 to """{"message":"Reference already exists"}"""))
+        assertEquals(DiagCode.OPERATION_NOT_ALLOWED, code(exists.createBranch(repo, "dpmetaapp/edit", head)))
+        val bin = java.util.Base64.getEncoder().encodeToString(byteArrayOf(0xff.toByte(), 0xfe.toByte(), 0))
+        val (_, binary) = gh("GET /repos/example/Alpha/contents/logo.png" to (200 to """{"type":"file","sha":"$blob","size":3,"content":"$bin"}"""))
+        assertEquals(DiagCode.VALUE_INVALID, code(binary.fileForEdit(repo, "logo.png", "main")))
+    }
+
     @Test
     fun issueCarriesTitleBodyAndLabel() {
         val (fake, w) = gh("POST /repos/example/Alpha/issues" to (201 to """{"number":5,"html_url":"https://github.com/example/Alpha/issues/5"}"""))

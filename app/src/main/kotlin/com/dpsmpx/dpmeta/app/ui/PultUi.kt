@@ -100,6 +100,8 @@ import com.dpsmpx.dpmeta.actions.ActionStatus
 import com.dpsmpx.dpmeta.app.screens.PullActions
 import com.dpsmpx.dpmeta.app.screens.BranchActions
 import com.dpsmpx.dpmeta.app.screens.IssueActions
+import com.dpsmpx.dpmeta.app.screens.EditActions
+import com.dpsmpx.dpmeta.app.screens.LineDiff
 import com.dpsmpx.dpmeta.github.PullDetail
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.OutlinedButton
@@ -251,6 +253,10 @@ interface Loader {
     fun repo(project: String, done: (Outcome<com.dpsmpx.dpmeta.model.RepoRef>) -> Unit) =
         done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "действий здесь нет", project))
 
+    /** Файл к правке (F-69): с основной ветки, с блобом — свежий. */
+    fun editable(project: String, path: String, done: (Outcome<EditActions.Edit>) -> Unit) =
+        done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "правки здесь нет", project))
+
     /** Ветка перед действием (F-14): основная, голова, сравнение — свежие. */
     fun branch(project: String, name: String, done: (Outcome<BranchActions.View>) -> Unit) =
         done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "действий с ветками здесь нет", project))
@@ -305,6 +311,9 @@ private sealed interface Nav {
     /** Ветка проекта с действиями (F-14) — из карточки. */
     data class Branch(val project: String, val name: String) : Nav
 
+    /** Правка файла проекта (F-69) — из документа. */
+    data class Edit(val project: String, val path: String) : Nav
+
     companion object {
         private const val SEP = "\u0001"
 
@@ -318,6 +327,7 @@ private sealed interface Nav {
             is Pull -> listOf("pull", n.project, n.number.toString())
             Journal -> listOf("journal")
             is Branch -> listOf("branch", n.project, n.name)
+            is Edit -> listOf("edit", n.project, n.path)
         }.joinToString(SEP)
 
         fun decode(s: String): Nav? {
@@ -331,6 +341,7 @@ private sealed interface Nav {
                 "pull" -> p.getOrNull(2)?.toIntOrNull()?.let { Pull(p[1], it) }
                 "journal" -> Journal
                 "branch" -> if (p.size >= 3) Branch(p[1], p[2]) else null
+                "edit" -> if (p.size >= 3) Edit(p[1], p[2]) else null
                 else -> null
             }
         }
@@ -464,6 +475,7 @@ fun PultApp(
                     PullScreen(top.project, top.number, checks, loader, back)
                 }
                 top is Nav.Journal -> JournalScreen(loader, back)
+                top is Nav.Edit -> EditScreen(top.project, top.path, loader, back)
                 top is Nav.Branch -> {
                     val pulls = remember(s, top) { s?.let { Screens.card(it, top.project) }?.pulls?.filter { it.head == top.name }?.map { it.number }.orEmpty() }
                     BranchScreen(top.project, top.name, pulls, loader, back)
@@ -911,6 +923,7 @@ private fun DocScreen(nav: Nav.Doc, names: Map<String, String>, loader: Loader, 
             TextButton(onClick = onBack, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("← Назад") }
             androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
             TextButton(onClick = { searching = !searching }) { Text(if (searching) "Скрыть поиск" else "Найти") }
+            TextButton(onClick = { open(Nav.Edit(nav.project, nav.path)) }) { Text("Править…") }
         }
         Text("${nav.project}: ${nav.path}", style = MaterialTheme.typography.titleMedium)
         if (searching) {
@@ -1514,3 +1527,118 @@ private fun IssueDialog(project: String, loader: Loader, onClose: () -> Unit) {
         dismissButton = { if (result?.first != true) TextButton(onClick = onClose, enabled = !busy) { Text("Отмена") } },
     )
 }
+
+/**
+ * Правка файла проекта (F-69; D-36): текст с основной ветки GitHub, сообщение коммита и
+ * куда — новая ветка с PR (уровень 1: окно «что уйдёт») или прямо в основную (уровень 2:
+ * окно «что изменится» и PIN). В окне — дифф по строкам. Файл на GitHub изменили, пока он
+ * был открыт, — отказ, правка не затирает чужую.
+ */
+@Composable
+private fun EditScreen(project: String, path: String, loader: Loader, onBack: () -> Unit) {
+    var loaded by remember(project, path) { mutableStateOf<Outcome<EditActions.Edit>?>(null) }
+    var reload by remember { mutableIntStateOf(0) }
+    LaunchedEffect(project, path, reload) {
+        loaded = null
+        loader.editable(project, path) { loaded = it }
+    }
+    var text by rememberSaveable(project, path, reload) { mutableStateOf<String?>(null) }
+    var message by rememberSaveable(project, path) { mutableStateOf("") }
+    var toDefault by rememberSaveable(project, path) { mutableStateOf(false) }
+    var pending by remember { mutableStateOf<PullActions.Request?>(null) }
+    var running by remember { mutableStateOf(false) }
+    var result by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
+    val context = LocalContext.current
+    val taps = remember { LinkTaps() }
+    Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        TextButton(onClick = onBack, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("← Назад") }
+        Text("Правка: $project · $path", style = MaterialTheme.typography.titleMedium)
+        result?.let { (ok, line) ->
+            Text(line, color = if (ok) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error)
+            line.substringAfter(" — ", "").takeIf { it.startsWith("https://") }?.let { url -> TextButton(onClick = { external(context, taps, url) }) { Text("Ссылка") } }
+        }
+        when (val l = loaded) {
+            null -> Text("Читаю файл с GitHub…", style = MaterialTheme.typography.bodySmall)
+            is Outcome.Failure -> {
+                Text("Файл не прочитан: ${l.errors.first().message}", color = MaterialTheme.colorScheme.error)
+                TextButton(onClick = { reload++ }) { Text("Повторить") }
+            }
+            is Outcome.Success -> {
+                val e = l.value
+                val current = text ?: e.blob.text
+                // Сообщение по умолчанию — один раз после загрузки; стереть его человек может.
+                LaunchedEffect(e) { if (message.isEmpty()) message = EditActions.defaultMessage(e) }
+                Text("${e.repo} · ветка ${e.base} · блоб ${e.blob.sha.take(7)}", style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(
+                    value = current, onValueChange = { text = it }, label = { Text("Текст") }, enabled = !running,
+                    textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), modifier = Modifier.fillMaxWidth(), minLines = 8,
+                )
+                OutlinedTextField(value = message, onValueChange = { message = it }, label = { Text("Сообщение коммита") }, enabled = !running, modifier = Modifier.fillMaxWidth())
+                Row(Modifier.fillMaxWidth().toggleable(value = !toDefault, role = Role.RadioButton) { toDefault = false }.padding(vertical = 4.dp)) {
+                    Text((if (!toDefault) "● " else "○ ") + "Новая ветка и PR")
+                }
+                Row(Modifier.fillMaxWidth().toggleable(value = toDefault, role = Role.RadioButton) { toDefault = true }.padding(vertical = 4.dp)) {
+                    Text((if (toDefault) "● " else "○ ") + "Прямо в ${e.base} — с PIN")
+                }
+                val why = EditActions.invalid(e, current, message)
+                Button(
+                    enabled = why == null && !running,
+                    onClick = {
+                        val branch = EditActions.branchName(e, com.dpsmpx.dpai.core.clock.Clock.SYSTEM.now())
+                        val c = EditActions.command(e, current, message, toDefault, branch)
+                        pending = PullActions.Request(c, if (toDefault) PullActions.Way.DEVICE else PullActions.Way.SHOWN, text = current)
+                    },
+                ) { Text("Показать изменения…") }
+                why?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                if (running) LinearProgressIndicator(Modifier.fillMaxWidth())
+                pending?.let { req ->
+                    val hunks = remember(req) { LineDiff.hunks(LineDiff.diff(e.blob.text, req.text.orEmpty())) }
+                    AlertDialog(
+                        onDismissRequest = { pending = null },
+                        title = { Text(if (req.way == PullActions.Way.SHOWN) "Что уйдёт" else "Что изменится") },
+                        text = {
+                            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                for (line in EditActions.preview(req.command)) Text(line)
+                                for (h in hunks.take(MAX_DIFF_LINES)) {
+                                    Text(
+                                        h, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                        color = when {
+                                            h.startsWith("+ ") -> Color(com.dpsmpx.dpai.ui.AppPalette.semantic(com.dpsmpx.dpai.ui.AppPalette.Role.DONE, isSystemInDarkTheme()))
+                                            h.startsWith("- ") -> MaterialTheme.colorScheme.error
+                                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
+                                    )
+                                }
+                                if (hunks.size > MAX_DIFF_LINES) Text("… ещё ${hunks.size - MAX_DIFF_LINES} строк", style = MaterialTheme.typography.bodySmall)
+                                if (req.way == PullActions.Way.DEVICE) Text("Дальше — PIN или отпечаток.", style = MaterialTheme.typography.bodySmall)
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                pending = null
+                                running = true
+                                result = null
+                                loader.act(req) { r ->
+                                    running = false
+                                    result = when (r) {
+                                        is Outcome.Success -> true to ("Готово: ${r.value.detail}" + (r.value.link?.let { " — $it" } ?: ""))
+                                        is Outcome.Failure -> false to "Не выполнено: ${r.errors.first().message}"
+                                    }
+                                    if (r is Outcome.Success) {
+                                        text = null
+                                        message = ""
+                                        reload++
+                                    }
+                                }
+                            }) { Text(if (req.way == PullActions.Way.SHOWN) "Отправить" else "Дальше — PIN") }
+                        },
+                        dismissButton = { TextButton(onClick = { pending = null }) { Text("Отмена") } },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Сколько строк диффа показывает окно правки — остальное счётом. */
+private const val MAX_DIFF_LINES = 400
