@@ -91,6 +91,21 @@ GPL-2.0-or-later.
 (`docs/research/CLAUDE_CODE_CLI.md`, §9, §10, 2.1.292 через
 `proot-distro` Termux).
 
+Проверено **9 ноября 2026** на машине сборки (x86_64, облачная сессия
+DPmetaApp): тот же proot-static 5.4.0 и Alpine 3.24.3, что в APK, но
+x86_64 (`tools/linux/host-env.sh`). `npm install -g
+@anthropic-ai/claude-code` — версия **2.1.319**: обёртка ставит пакет
+платформы (`claude-code-linux-x64-musl`), и её `postinstall` кладёт его
+бинарник в `bin/claude.exe` — сначала жёсткой ссылкой, при отказе ссылки
+(`EPERM`, `EXDEV` или повторный отказ после удаления заглушки) — копией.
+Бинарник — 326 МБ, зависимость одна — `libc.musl-x86_64.so.1`; на Android
+жёсткая ссылка запрещена (§9), так что на телефоне ждать копии — около
+0,7 ГБ вместе с пакетом. `claude --version` — 2.1.319; ход без входа в
+пустом `CLAUDE_CONFIG_DIR` — поток `stream-json` с
+`error: authentication_failed` и кодом выхода 1, запроса к модели нет
+(образец `tests/data/claude-stream/auth-failed-alpine.jsonl`). Пакеты
+`libgcc`, `libstdc++`, `ripgrep` для этой сборки не понадобились.
+
 ## 5. Процессы приложения в фоне
 
 По источникам, **18 октября 2026** (документы agnostic-apollo,

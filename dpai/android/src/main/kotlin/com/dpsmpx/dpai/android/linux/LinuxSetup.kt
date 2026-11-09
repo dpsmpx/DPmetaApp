@@ -116,11 +116,28 @@ object LinuxSetup {
         return host(context).run(spec, 15.minutes, maxStdoutChars = 200_000)
     }
 
-    /** Команда в госте с выводом для экрана (установка Codex и Gemini, D-100): DNS — сети телефона. */
-    fun run(context: Context, spec: ProcessSpec): Outcome<Completed> {
+    /**
+     * Шаги установки в госте по очереди (Claude Code, Codex и Gemini, llama.cpp): `apk` — без
+     * `/proc` (D-82), остальное — с ним; первый неудачный шаг — итог. Вывод — всех шагов, для
+     * экрана; DNS — сети телефона.
+     */
+    fun runSteps(context: Context, steps: List<ProcessSpec>): Outcome<Completed> {
         if (environment(context).installed() == null) return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "сначала установите Linux")
         refreshDns(context)
-        return host(context).run(spec, 20.minutes, maxStdoutChars = 200_000)
+        val out = mutableListOf<String>()
+        val err = mutableListOf<String>()
+        var cut = false
+        for (spec in steps) {
+            val r = when (val one = host(context).run(spec, 20.minutes, maxStdoutChars = 200_000)) {
+                is Outcome.Failure -> return one
+                is Outcome.Success -> one.value
+            }
+            out += r.stdout
+            err += r.stderr
+            cut = cut || r.truncated
+            if (!r.ok) return Outcome.success(Completed(r.exitCode, out, err, cut))
+        }
+        return Outcome.success(Completed(0, out, err, cut))
     }
 
     /**

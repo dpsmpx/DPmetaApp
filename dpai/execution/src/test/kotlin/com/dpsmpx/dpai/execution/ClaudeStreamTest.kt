@@ -67,6 +67,19 @@ class ClaudeStreamTest {
         assertTrue(DiagCode.CLAUDE_AUTH_REQUIRED in t.codes())
     }
 
+    /**
+     * Тот же отказ входа — Claude Code 2.1.319 на Alpine под proot (как Linux-среда приложения, D-75):
+     * у `result` — новые поля (`terminal_reason`, `subagent_stats`…), `subtype` по-прежнему `success`.
+     */
+    @Test
+    fun recordedAuthFailureOnAlpineUnderProot() {
+        val alpine = ProviderSessionId.parse("6f1c2f9e-0d1a-4b8e-9a51-3c4d5e6f7a8c").valueOrNull()!!
+        val t = turn("auth-failed-alpine.jsonl", alpine, exit = 1)
+        assertEquals(TurnStatus.FAILED, t.status)
+        assertTrue(DiagCode.CLAUDE_AUTH_REQUIRED in t.codes(), t.diagnostics.toString())
+        assertTrue(t.diagnostics.none { it.code == DiagCode.CLAUDE_STREAM_MALFORMED }, t.diagnostics.toString())
+    }
+
     @Test
     fun corruptedSamples() {
         val truncated = turn("truncated-result.jsonl", exit = 1)

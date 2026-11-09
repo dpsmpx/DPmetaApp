@@ -342,8 +342,15 @@ Termux. Готово (шаги 2 и 3 D-75):
   Alpine, без `/proc`, подписи проверяет `apk`. На Android —
   `android.linux.LinuxSetup` и карточка «Linux в приложении»: установка,
   пакеты, терминал к среде (`sh -l` гостя с псевдотерминалом JNI).
-  Claude Code человек ставит сам (`npm`) и входит в каталоге слота
-  `/root/.claude-slot-N` (D-27, D-29).
+  Claude Code — кнопкой «Поставить Claude Code» (9 ноября 2026,
+  `LinuxEnvironment.claudeInstall`): шаг `apk add git nodejs npm` без
+  `/proc`, затем `npm install -g @anthropic-ai/claude-code` оболочкой
+  гостя; так же по шагам — Codex и Gemini (D-100) и llama.cpp (D-105):
+  `apk` внутри оболочки с `/proc` на Android не работает (D-82). Входит
+  человек сам, в терминале, в каталоге слота `/root/.claude-slot-N`
+  (D-27, D-29). На машине сборки та же среда для x86_64 —
+  `tools/linux/host-env.sh` и тесты `ProotLiveTest`,
+  `LinuxInstallLiveTest` (`docs/TESTING.md`, «Слои»).
 
 - **Target «в приложении»** (шаг 5, 2 ноября 2026). Запись списка targets
   `dpai.app-targets` v3 с `"kind": "in-app"`: имя и каталог слота в госте

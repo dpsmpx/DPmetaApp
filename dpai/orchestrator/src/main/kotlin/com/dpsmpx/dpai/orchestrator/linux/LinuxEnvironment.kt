@@ -172,21 +172,40 @@ class LinuxEnvironment(private val vfs: Vfs, dir: String = DIR) {
         val EXECUTOR_PACKAGES: List<String> = listOf("@openai/codex", "@google/gemini-cli")
 
         /**
-         * Установка Codex CLI и Gemini CLI в госте (D-100): Node.js и npm из
-         * Alpine, затем пакеты npm; в конце — их версии.
+         * Пакет npm Claude Code: ставит готовый бинарник платформы (`linux-arm64-musl` на
+         * телефоне) — Node.js нужен только установщику. Бинарник ~330 МБ; жёсткую ссылку
+         * Android запрещает, и установщик пакета его копирует — на диске около 0,7 ГБ.
          */
-        fun executorsInstall(): ProcessSpec = ProcessSpec(
-            listOf(
-                "/bin/sh", "-lc",
-                "apk add nodejs npm && npm install -g ${EXECUTOR_PACKAGES.joinToString(" ")} && codex --version && gemini --version",
-            ),
+        const val CLAUDE_PACKAGE: String = "@anthropic-ai/claude-code"
+
+        /** Шаг `apk add` с именами из кода (они заведомо проходят [PACKAGE]). */
+        private fun apkAdd(vararg names: String): ProcessSpec =
+            (apk(Apk.ADD, names.toList()) as Outcome.Success).value
+
+        /**
+         * Установка Claude Code в госте (D-75, шаг 5): Git, Node.js и npm из Alpine — отдельным
+         * шагом `apk` без `/proc` (D-82), затем пакет npm оболочкой гостя; в конце — версия.
+         * Вход — по разу на слот, в терминале (D-27, D-29).
+         */
+        fun claudeInstall(): List<ProcessSpec> = listOf(
+            apkAdd("git", "nodejs", "npm"),
+            ProcessSpec(listOf("/bin/sh", "-lc", "npm install -g $CLAUDE_PACKAGE && claude --version")),
+        )
+
+        /**
+         * Установка Codex CLI и Gemini CLI в госте (D-100): Node.js и npm из
+         * Alpine — шагом `apk` без `/proc` (D-82), затем пакеты npm; в конце — их версии.
+         */
+        fun executorsInstall(): List<ProcessSpec> = listOf(
+            apkAdd("nodejs", "npm"),
+            ProcessSpec(listOf("/bin/sh", "-lc", "npm install -g ${EXECUTOR_PACKAGES.joinToString(" ")} && codex --version && gemini --version")),
         )
 
         /**
          * Установка llama.cpp (D-105): сервер модели из пакетов Alpine
-         * (`community`, aarch64); в конце — его версия.
+         * (`community`, aarch64) — шагом `apk` без `/proc` (D-82); в конце — его версия.
          */
-        fun llamaInstall(): ProcessSpec = ProcessSpec(listOf("/bin/sh", "-lc", "apk add llama-server && llama-server --version"))
+        fun llamaInstall(): List<ProcessSpec> = listOf(apkAdd("llama-server"), ProcessSpec(listOf("llama-server", "--version")))
 
         /** Каталоги гостя, откуда берётся модель (D-105): свои модели, копии папок (D-99) и всё хранилище. */
         val MODEL_DIRS: List<String> = listOf("/root/models/", "/root/files/", "/root/storage/shared/")

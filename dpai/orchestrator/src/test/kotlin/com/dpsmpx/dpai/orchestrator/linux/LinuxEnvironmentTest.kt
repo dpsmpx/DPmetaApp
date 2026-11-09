@@ -163,9 +163,32 @@ class LinuxEnvironmentTest {
         assertEquals("/root/.claude-slot-2", LinuxEnvironment.slotDir(2))
     }
 
+    /**
+     * Установки — по шагам: `apk` — только своим шагом, без `/proc` (D-82); внутри оболочки гостя
+     * (с `/proc`) apk-tools 3 на Android откажет — жёсткая ссылка из `/proc/self/fd`.
+     */
+    @Test
+    fun installsRunApkOnlyAsItsOwnStepWithoutProc() {
+        val recipes = mapOf(
+            "claude" to LinuxEnvironment.claudeInstall(),
+            "codex и gemini" to LinuxEnvironment.executorsInstall(),
+            "llama.cpp" to LinuxEnvironment.llamaInstall(),
+        )
+        for ((name, steps) in recipes) {
+            assertTrue(ProotHost.needsNoProc(steps.first().command), "$name: первый шаг — apk без /proc")
+            for (step in steps.drop(1)) {
+                assertFalse(step.command.any { Regex("""(^|[;&|\s])apk\s""").containsMatchIn(it) }, "$name: apk внутри оболочки — ${step.command}")
+            }
+        }
+        val claude = LinuxEnvironment.claudeInstall()
+        assertEquals(listOf("apk", "add", "-U", "--no-progress", "git", "nodejs", "npm"), claude[0].command)
+        assertEquals(listOf("/bin/sh", "-lc", "npm install -g @anthropic-ai/claude-code && claude --version"), claude[1].command)
+        assertEquals(listOf("llama-server", "--version"), LinuxEnvironment.llamaInstall().last().command)
+    }
+
     @Test
     fun llamaServerListensOnlyOnThisDeviceAndTakesOnlyGgufFromUserDirs() {
-        assertEquals(listOf("/bin/sh", "-lc", "apk add llama-server && llama-server --version"), LinuxEnvironment.llamaInstall().command)
+        assertEquals(listOf("apk", "add", "-U", "--no-progress", "llama-server"), LinuxEnvironment.llamaInstall().first().command)
         val ok = LinuxEnvironment.llamaServe("/root/files/models/qwen2.5-1.5b q4.gguf", 8080, 4096, 4).valueOrNull()!!
         assertEquals(
             listOf(

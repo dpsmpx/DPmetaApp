@@ -112,9 +112,16 @@ fun LinuxScreen(onBack: () -> Unit) {
                     TextButton(enabled = !running && packages.isNotBlank(), onClick = { apk(LinuxEnvironment.Apk.ADD, "Поставить") }) { Text("Поставить") }
                     TextButton(enabled = !running && packages.isNotBlank(), onClick = { apk(LinuxEnvironment.Apk.DEL, "Убрать") }) { Text("Убрать") }
                     TextButton(enabled = !running, onClick = { apk(LinuxEnvironment.Apk.UPGRADE, "Обновить всё") }) { Text("Обновить всё") }
+                    // Claude Code (D-75, шаг 5): Git, Node.js и npm — apk без /proc, затем npm; в конце — версия.
+                    TextButton(enabled = !running, onClick = {
+                        run("Установка Claude Code", { LinuxSetup.runSteps(context, LinuxEnvironment.claudeInstall()) }) {
+                            if (it.ok) "Claude Code: ${it.stdout.lastOrNull { l -> l.isNotBlank() } ?: "установлен"}"
+                            else "Установка завершилась с кодом ${it.exitCode} — причина в выводе ниже"
+                        }
+                    }) { Text("Поставить Claude Code") }
                     // Codex CLI и Gemini CLI (D-100): Node.js и npm из Alpine, пакеты npm, в конце — версии.
                     TextButton(enabled = !running, onClick = {
-                        run("Установка Codex и Gemini", { LinuxSetup.run(context, LinuxEnvironment.executorsInstall()) }) {
+                        run("Установка Codex и Gemini", { LinuxSetup.runSteps(context, LinuxEnvironment.executorsInstall()) }) {
                             if (it.ok) "Codex и Gemini: установлены" else "Установка завершилась с кодом ${it.exitCode} — причина в выводе ниже"
                         }
                     }) { Text("Установить Codex и Gemini") }
@@ -158,9 +165,10 @@ fun LinuxScreen(onBack: () -> Unit) {
                 )
                 if (howto) {
                     Text(
-                        "1. Поставьте nodejs npm полем «Пакеты» выше (apk в терминале здесь не сработает).\n" +
-                            "2. В терминале — npm i -g @anthropic-ai/claude-code.\n" +
-                            "3. «Добавить слот ▾» → Claude: появится target «в приложении» на вкладке Targets; войдите его «Терминал ▾» → «Claude в терминале» → /login.",
+                        "1. «Поставить Claude Code» выше: Git, Node.js и npm из Alpine, затем Claude Code из npm (нужно около 1 ГБ свободного места).\n" +
+                            "2. «Добавить слот ▾» → Claude: появится target «в приложении» на вкладке Targets.\n" +
+                            "3. Войдите: его «Терминал ▾» → «Claude в терминале» → /login — по разу на слот.\n" +
+                            "Пакеты Alpine — полем «Пакеты»: apk в терминале здесь не сработает.",
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
