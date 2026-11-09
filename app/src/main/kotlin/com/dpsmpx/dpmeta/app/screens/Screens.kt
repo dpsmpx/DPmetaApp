@@ -247,7 +247,8 @@ object Screens {
     fun checkedLine(c: Checked?): String =
         c?.let { "#${it.number} — ${it.verdict}, ${it.age}" + (it.line?.let { l -> "; «$l»" } ?: "") } ?: UNKNOWN
 
-    data class Pull(val number: Long, val title: String, val draft: Boolean, val head: String, val updated: String)
+    /** PR в карточке; [checks] — вердикт раздела «Проверки» описания (`green`, `red`, `null`, F-15) — для «Влить» (F-13). */
+    data class Pull(val number: Long, val title: String, val draft: Boolean, val head: String, val updated: String, val checks: String? = null)
 
     data class BranchRow(val name: String, val updated: String, val recent: Boolean)
 
@@ -334,7 +335,7 @@ object Screens {
             )
         }
         val pulls = objects(payload(p, "pulls"), "pulls").map { o ->
-            Pull(long(o, "number") ?: 0, str(o, "title").orEmpty(), (o["draft"] as? JsonBool)?.value ?: false, str(o, "head").orEmpty(), long(o, "updatedAt")?.let { time(Timestamp(it)) }.orEmpty())
+            Pull(long(o, "number") ?: 0, str(o, "title").orEmpty(), (o["draft"] as? JsonBool)?.value ?: false, str(o, "head").orEmpty(), long(o, "updatedAt")?.let { time(Timestamp(it)) }.orEmpty(), str(o, "checks"))
         }
         val recentFrom = (s.asOf - Rules.BRANCH_OR_PR_WINDOW).epochMillis
         val branches = objects(payload(p, "branches"), "branches").map { o ->

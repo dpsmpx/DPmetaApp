@@ -49,8 +49,9 @@ data class Comparison(val status: String, val aheadBy: Int, val behindBy: Int) {
 
 /**
  * Запись в репозитории автора через GitHub REST и GraphQL (D-36, F-12…F-14): комментарий,
- * ревью, перевод из черновика, слияние merge-коммитом показанного коммита, закрытие,
- * удаление ветки. Уровни и подтверждения — у `:core:actions` и экранов; здесь — только
+ * ревью, перевод из черновика и закрытие (GraphQL), слияние merge-коммитом показанного
+ * коммита, удаление ветки. Методы — POST, PUT, DELETE и GET: PATCH телефон не отправит.
+ * Уровни и подтверждения — у `:core:actions` и экранов; здесь — только
  * запросы. Кэша ETag нет: перед действием нужно свежее, а запись не повторяется из кэша.
  *
  * Отказы — как у [GitHub] (401, 403, 404, 429, 5xx), плюс 405, 409 и 422 — действие
@@ -101,18 +102,29 @@ class GitHubWrite(private val net: Net, private val token: Secret, private val a
     }
 
     /** Перевести PR из черновика в готовые (уровень 1): у REST этого нет — мутация GraphQL. */
-    fun ready(pull: PullDetail): Outcome<Written> {
+    fun ready(pull: PullDetail): Outcome<Written> =
+        graphql(pull, "markPullRequestReadyForReview", "GitHub не перевёл PR из черновика").then { Outcome.success(Written(pull.url.ifEmpty { null })) }
+
+    /**
+     * Закрыть PR без слияния (уровень 2) — мутацией GraphQL: PATCH REST телефон не
+     * отправит (`HttpURLConnection` его не знает), а POST есть везде.
+     */
+    fun close(pull: PullDetail): Outcome<Written> =
+        graphql(pull, "closePullRequest", "GitHub не закрыл PR").then { Outcome.success(Written(pull.url.ifEmpty { null })) }
+
+    /** Мутация GraphQL над PR по его `node_id`; ошибка в ответе с кодом 200 — отказ, а не успех. */
+    private fun graphql(pull: PullDetail, mutation: String, refused: String): Outcome<JsonObject> {
         if (pull.nodeId.isEmpty()) return missing("node_id", "#${pull.number}")
-        val query = "mutation(\$id: ID!) { markPullRequestReadyForReview(input: {pullRequestId: \$id}) { pullRequest { url } } }"
+        val query = "mutation(\$id: ID!) { $mutation(input: {pullRequestId: \$id}) { pullRequest { url } } }"
         val payload = JsonObject.of("query" to JsonString(query), "variables" to JsonObject.of("id" to JsonString(pull.nodeId)))
         return call("POST", "graphql", payload, "#${pull.number}").then { v ->
             val o = v as? JsonObject ?: return@then invalid("#${pull.number}")
             val errors = (o["errors"] as? JsonArray)?.items.orEmpty()
             if (errors.isNotEmpty()) {
                 val message = (errors.first() as? JsonObject)?.let { str(it, "message") } ?: "ошибка GraphQL"
-                return@then Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "GitHub не перевёл PR из черновика: ${clean(message)}", "#${pull.number}")
+                return@then Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "$refused: ${clean(message)}", "#${pull.number}")
             }
-            Outcome.success(Written(pull.url.ifEmpty { null }))
+            Outcome.success(o)
         }
     }
 
@@ -130,14 +142,6 @@ class GitHubWrite(private val net: Net, private val token: Secret, private val a
             Outcome.success(Written("https://github.com/$repo/pull/$number", str(o, "sha")))
         }
     }
-
-    /** Закрыть PR без слияния (уровень 2). */
-    fun close(repo: RepoRef, number: Int): Outcome<Written> =
-        call("PATCH", "repos/$repo/pulls/$number", JsonObject.of("state" to JsonString("closed")), "$repo#$number").then { v ->
-            val o = v as? JsonObject ?: return@then invalid("$repo#$number")
-            if (str(o, "state") != "closed") return@then Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "PR не закрылся", "$repo#$number")
-            Outcome.success(Written(str(o, "html_url")))
-        }
 
     /** Удалить ветку (влитую — уровень 2, невлитую — 3, F-14): ссылку `heads/<ветка>`. */
     fun deleteBranch(repo: RepoRef, branch: String): Outcome<Written> =

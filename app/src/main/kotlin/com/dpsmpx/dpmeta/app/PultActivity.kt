@@ -496,6 +496,44 @@ open class PultActivity : ComponentActivity() {
             val text = runCatching { assets.open(name).use { String(it.readBytes(), Charsets.UTF_8) } }.getOrNull() ?: return null
             return PanelFormat.parse(text, name)
         }
+
+        override fun pull(project: String, number: Int, done: (Outcome<Pair<com.dpsmpx.dpmeta.model.RepoRef, com.dpsmpx.dpmeta.github.PullDetail>>) -> Unit) =
+            run({ repo.pull(it, project, number) }, done)
+
+        /**
+         * Действие с PR (F-12; D-07): подтверждение создаётся здесь и только после ответа
+         * человека — окно экрана (уровень 1) или ещё PIN или отпечаток (уровень 2). Отмена
+         * PIN — «не подтверждено», исполнитель не вызывается.
+         */
+        override fun act(request: com.dpsmpx.dpmeta.app.screens.PullActions.Request, done: (Outcome<com.dpsmpx.dpmeta.actions.ActionResult>) -> Unit) {
+            val c = request.command
+            fun go(confirm: (com.dpsmpx.dpmeta.actions.Actions) -> com.dpsmpx.dpmeta.actions.Confirmation) = run({ repo.act(it, c, confirm) }, done)
+            when (request.way) {
+                com.dpsmpx.dpmeta.app.screens.PullActions.Way.SHOWN -> go { it.shown(c) }
+                com.dpsmpx.dpmeta.app.screens.PullActions.Way.TYPED -> go { it.typedName(c, request.typed) }
+                com.dpsmpx.dpmeta.app.screens.PullActions.Way.DEVICE -> Lock.ask(
+                    this@PultActivity, "Подтвердите: ${c.kind.what}", pinOnly = false,
+                    onOpen = { go { it.deviceConfirmed(c) } },
+                    onDenied = { _, why -> done(Outcome.failure(DiagCode.DEVICE_AUTH_REQUIRED, "не подтверждено: $why", c.target.display)) },
+                )
+            }
+        }
+
+        override fun journal(done: (Outcome<List<com.dpsmpx.dpmeta.actions.ActionEntry>>) -> Unit) {
+            if (pool.isShutdown) return
+            pool.execute {
+                val r = repo.journal()
+                runOnUiThread { done(r) }
+            }
+        }
+
+        /** Экспорт журнала (F-44): текстом через системное «Поделиться». */
+        override fun share(subject: String, text: String) {
+            val send = android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain")
+                .putExtra(android.content.Intent.EXTRA_SUBJECT, subject)
+                .putExtra(android.content.Intent.EXTRA_TEXT, text)
+            startActivity(android.content.Intent.createChooser(send, subject))
+        }
     }
 
     private fun saveToken(text: String) {

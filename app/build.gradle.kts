@@ -67,6 +67,7 @@ kotlin {
 dependencies {
     implementation(project(":core:sync"))
     implementation(project(":core:metrics"))
+    implementation(project(":core:actions"))
     implementation("com.dpsmpx.dpai:ui")
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.material3)

@@ -66,29 +66,30 @@ class GitHubWriteTest {
         assertEquals(1, fake.seen.size)
     }
 
+    private val pull = PullDetail(7, "t", "open", true, false, true, "clean", head, "claude/x", "main", "PR_kw1", "https://github.com/example/Alpha/pull/7")
+
     @Test
     fun commentReviewCloseAndDeleteSendTheRightRequests() {
         val (fake, w) = gh(
             "POST /repos/example/Alpha/issues/7/comments" to (201 to """{"html_url":"https://github.com/example/Alpha/pull/7#issuecomment-1"}"""),
             "POST /repos/example/Alpha/pulls/7/reviews" to (200 to """{"html_url":"https://github.com/example/Alpha/pull/7#pullrequestreview-2"}"""),
-            "PATCH /repos/example/Alpha/pulls/7" to (200 to """{"state":"closed","html_url":"https://github.com/example/Alpha/pull/7"}"""),
+            "POST /graphql" to (200 to """{"data":{"closePullRequest":{"pullRequest":{"url":"https://github.com/example/Alpha/pull/7"}}}}"""),
             "DELETE /repos/example/Alpha/git/refs/heads/claude/x" to (204 to ""),
         )
         assertEquals("https://github.com/example/Alpha/pull/7#issuecomment-1", w.comment(repo, 7, "Посмотрю").valueOrNull()?.link)
         assertIs<Outcome.Success<Written>>(w.review(repo, 7, approve = false, body = "Нужен тест"))
-        assertIs<Outcome.Success<Written>>(w.close(repo, 7))
+        assertIs<Outcome.Success<Written>>(w.close(pull))
         assertIs<Outcome.Success<Written>>(w.deleteBranch(repo, "claude/x"))
-        assertEquals(listOf("POST", "POST", "PATCH", "DELETE"), fake.seen.map { it.method })
+        assertEquals(listOf("POST", "POST", "POST", "DELETE"), fake.seen.map { it.method }, "без PATCH: его HttpURLConnection не отправит")
         assertEquals("Посмотрю", (body(fake.seen[0])["body"] as JsonString).value)
         assertEquals("REQUEST_CHANGES", (body(fake.seen[1])["event"] as JsonString).value)
-        assertEquals("closed", (body(fake.seen[2])["state"] as JsonString).value)
+        assertTrue((body(fake.seen[2])["query"] as JsonString).value.contains("closePullRequest"))
         assertTrue(fake.seen.all { it.auth != null && it.headers["Authorization"] == null }, "токен — только полем auth")
     }
 
     /** Из черновика — мутацией GraphQL по node_id; ошибка GraphQL при коде 200 — отказ, а не успех. */
     @Test
     fun readyForReviewGoesThroughGraphQl() {
-        val pull = PullDetail(7, "t", "open", true, false, true, "clean", head, "claude/x", "main", "PR_kw1", "https://github.com/example/Alpha/pull/7")
         val (fake, w) = gh("POST /graphql" to (200 to """{"data":{"markPullRequestReadyForReview":{"pullRequest":{"url":"https://github.com/example/Alpha/pull/7"}}}}"""))
         assertIs<Outcome.Success<Written>>(w.ready(pull))
         assertEquals("PR_kw1", ((body(fake.seen.single())["variables"] as JsonObject)["id"] as JsonString).value)

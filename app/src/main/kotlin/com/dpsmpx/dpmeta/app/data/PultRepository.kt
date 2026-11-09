@@ -112,6 +112,51 @@ class PultRepository(
     /** История чисел (D-34) — графики и плитки (F-34); читается целиком, фильтрует экран. */
     fun history(): Outcome<List<MetricPoint>> = store.history()
 
+    /**
+     * Журнал действий (F-44) и политика уровней (`:core:actions`, D-07) — одни на
+     * репозиторий: одобрение экрана однократно в пределах одного [Actions].
+     */
+    private val actionLog = com.dpsmpx.dpmeta.actions.ActionLog(vfs, clock, RandomSource.secure())
+    private val actions = com.dpsmpx.dpmeta.actions.Actions(actionLog, clock, RandomSource.secure())
+
+    /** Журнал действий по порядку; порча — отказ `JOURNAL_CORRUPTED`. Не на главном потоке. */
+    fun journal(): Outcome<List<com.dpsmpx.dpmeta.actions.ActionEntry>> = actionLog.entries()
+
+    /** Репозиторий проекта для действий с PR — тот же, откуда синхронизация берёт его PR. */
+    private fun repoOf(gh: GitHub, project: String): Outcome<RepoRef> {
+        val reg = when (val r = registry(gh)) {
+            is Outcome.Failure -> return r
+            is Outcome.Success -> r.value
+        }
+        val entry = reg.byName(project) ?: return Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "проекта нет в реестре", project)
+        return Outcome.success(GitHubReader(gh, RepoRef.parse(HOST).valueOrNull()!!).where(entry).first)
+    }
+
+    /** PR перед действием (F-12): свежий, с репозиторием проекта. */
+    fun pull(token: Secret, project: String, number: Int): Outcome<Pair<RepoRef, com.dpsmpx.dpmeta.github.PullDetail>> {
+        val (gh, etags) = client(token)
+        val repo = repoOf(gh, project)
+        etags.save()
+        return when (repo) {
+            is Outcome.Failure -> repo
+            is Outcome.Success -> when (val r = com.dpsmpx.dpmeta.github.GitHubWrite(Net(UrlTransport()), token).pull(repo.value, number)) {
+                is Outcome.Failure -> r
+                is Outcome.Success -> Outcome.success(repo.value to r.value)
+            }
+        }
+    }
+
+    /**
+     * Действие с PR (F-12): политика уровня, журнал, исполнение (D-07, A-06). Подтверждение
+     * создаёт [confirm] — после окна экрана и, для уровня 2, PIN устройства.
+     */
+    fun act(
+        token: Secret,
+        command: com.dpsmpx.dpmeta.actions.ActionCommand,
+        confirm: (com.dpsmpx.dpmeta.actions.Actions) -> com.dpsmpx.dpmeta.actions.Confirmation?,
+    ): Outcome<com.dpsmpx.dpmeta.actions.ActionResult> =
+        actions.run(command, confirm(actions)) { PullExecutor.execute(com.dpsmpx.dpmeta.github.GitHubWrite(Net(UrlTransport()), token), command) }
+
     @Volatile private var registry: Registry? = null
 
     private fun client(token: Secret): Pair<GitHub, StoredEtagCache> {

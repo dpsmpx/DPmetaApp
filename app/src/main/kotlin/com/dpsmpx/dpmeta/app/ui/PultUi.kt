@@ -93,6 +93,15 @@ import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpmeta.app.R
+import com.dpsmpx.dpmeta.actions.ActionEntry
+import com.dpsmpx.dpmeta.actions.ActionKind
+import com.dpsmpx.dpmeta.actions.ActionResult
+import com.dpsmpx.dpmeta.actions.ActionStatus
+import com.dpsmpx.dpmeta.app.screens.PullActions
+import com.dpsmpx.dpmeta.github.PullDetail
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.ui.platform.LocalContext
 import com.dpsmpx.dpmeta.app.screens.Links
 import com.dpsmpx.dpmeta.app.screens.Panels
 import com.dpsmpx.dpmeta.app.screens.Screens
@@ -227,6 +236,20 @@ interface Loader {
 
     /** Панель проекта (F-10) — `config/projects/<Проект>.toml` в APK; нет файла — `null`. */
     fun panel(project: String): Outcome<Panel>? = null
+
+    /** PR перед действием (F-12): репозиторий проекта и свежий PR с GitHub. */
+    fun pull(project: String, number: Int, done: (Outcome<Pair<com.dpsmpx.dpmeta.model.RepoRef, PullDetail>>) -> Unit) =
+        done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "действий с PR здесь нет", project))
+
+    /** Действие (F-12): подтверждение способом [PullActions.Request.way] создаёт активность — после PIN, если нужен. */
+    fun act(request: PullActions.Request, done: (Outcome<ActionResult>) -> Unit) =
+        done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "действий здесь нет", request.command.target.display))
+
+    /** Журнал действий (F-44). */
+    fun journal(done: (Outcome<List<ActionEntry>>) -> Unit) = done(Outcome.success(emptyList()))
+
+    /** Поделиться текстом (экспорт журнала, F-44). */
+    fun share(subject: String, text: String) {}
 }
 
 /** Значки пунктов панели (D-73): свои векторные рисунки. */
@@ -263,6 +286,12 @@ private sealed interface Nav {
     /** Вся лента событий (F-05) — со сводки (D-73). */
     data object Feed : Nav
 
+    /** PR проекта с действиями (F-12) — из карточки. */
+    data class Pull(val project: String, val number: Int) : Nav
+
+    /** Журнал действий (F-44) — из «Ещё». */
+    data object Journal : Nav
+
     companion object {
         private const val SEP = "\u0001"
 
@@ -273,6 +302,8 @@ private sealed interface Nav {
             is Doc -> listOf("doc", n.project, n.path, n.anchor.orEmpty())
             is Stats -> listOf("stats", n.project.orEmpty())
             Feed -> listOf("feed")
+            is Pull -> listOf("pull", n.project, n.number.toString())
+            Journal -> listOf("journal")
         }.joinToString(SEP)
 
         fun decode(s: String): Nav? {
@@ -283,6 +314,8 @@ private sealed interface Nav {
                 "doc" -> if (p.size >= 4) Doc(p[1], p[2], p[3].ifEmpty { null }) else null
                 "stats" -> Stats(p.getOrNull(1)?.ifEmpty { null })
                 "feed" -> Feed
+                "pull" -> p.getOrNull(2)?.toIntOrNull()?.let { Pull(p[1], it) }
+                "journal" -> Journal
                 else -> null
             }
         }
@@ -411,7 +444,12 @@ fun PultApp(
                 top is Nav.Doc -> DocScreen(top, view.names, loader, back, open)
                 top is Nav.Stats && s != null -> StatsScreen(view.history, s.projects.map { it.name }, top.project, s.asOf, back, view.status, onExport)
                 top is Nav.Feed && s != null -> FeedScreen(view.feed, s.projects.map { it.name }, back) { open(Nav.Card(it)) }
-                tab == Section.MORE -> Settings(view, onSync, onSaveToken, onForgetToken, onClones, onZone)
+                top is Nav.Pull -> {
+                    val checks = remember(s, top) { s?.let { Screens.card(it, top.project) }?.pulls?.firstOrNull { it.number == top.number.toLong() }?.checks }
+                    PullScreen(top.project, top.number, checks, loader, back)
+                }
+                top is Nav.Journal -> JournalScreen(loader, back)
+                tab == Section.MORE -> Settings(view, onSync, onSaveToken, onForgetToken, onClones, onZone, onJournal = { open(Nav.Journal) })
                 s == null && view.loading -> Text("Читаю срез…", style = MaterialTheme.typography.bodySmall)
                 // Пустое состояние ведёт дальше (UX-11): кнопкой, а не словами «где-то в настройках».
                 s == null -> Column(verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
@@ -689,6 +727,16 @@ private fun CardList(c: Screens.Card, panel: Outcome<Panel>?, loader: Loader, on
                             Modifier.fillMaxWidth().clickable(enabled = anchor != null && decisionsPath != null) { open(Nav.Doc(c.name, decisionsPath!!, anchor)) }.padding(vertical = 4.dp),
                         )
                     }
+                } else if (sec.kind == Screens.CardSection.Kind.PULLS) {
+                    // PR — касанием к его экрану с действиями (F-12); строки проверок — как прежде.
+                    items(c.pulls) { pr ->
+                        Text(
+                            "  #${pr.number} ${pr.title}" + (if (pr.draft) " (черновик)" else "") + " — ${pr.head}, ${pr.updated} ▸",
+                            Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClickLabel = "PR и действия") { open(Nav.Pull(c.name, pr.number.toInt())) }.padding(vertical = 4.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    items(sec.lines.drop(c.pulls.size)) { Text("  $it", style = MaterialTheme.typography.bodySmall) }
                 } else {
                     items(sec.lines) { Text("  $it", style = MaterialTheme.typography.bodySmall) }
                 }
@@ -917,7 +965,7 @@ private fun Questions(q: List<Screens.Question>, open: (Nav) -> Unit) = LazyColu
 
 @Composable
 // Листается (UX-15): при шрифте 200 % и в альбомной ориентации «Клоны…» не уходят за край.
-private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -> Unit, onForget: () -> Unit, onClones: () -> Unit, onZone: (Int) -> Unit = {}) = Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -> Unit, onForget: () -> Unit, onClones: () -> Unit, onZone: (Int) -> Unit = {}, onJournal: () -> Unit = {}) = Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
     var token by remember { mutableStateOf("") }
     // Пока токен сохранён — одна строка, поле — по «Заменить» (UX-12): пустое поле при сохранённом токене путало.
     var replacing by rememberSaveable { mutableStateOf(false) }
@@ -930,7 +978,7 @@ private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -
             TextButton(onClick = { forgetting = true }) { Text("Забыть токен…", color = MaterialTheme.colorScheme.error) }
         }
     } else {
-        Text("Fine-grained PAT только для чтения: Contents, Pull requests, Metadata.")
+        Text("Fine-grained PAT: Contents, Pull requests, Metadata. Для чтения хватит «Read-only»; для действий с PR (комментарий, ревью, «Влить», «Закрыть») — Pull requests и Contents «Read and write».")
         // Тип «пароль» для клавиатуры: без подсказок и запоминания набранного, а не только точки на экране (UX-12).
         OutlinedTextField(
             value = token, onValueChange = { token = it.trim() }, label = { Text("Токен") }, visualTransformation = PasswordVisualTransformation(),
@@ -959,6 +1007,9 @@ private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -
     }
     Spacer(Modifier.height(Tokens.gap))
     // Полный итог синхронизации — здесь (UX-6): на сводке только снэкбар.
+    Text("Действия", style = MaterialTheme.typography.titleMedium)
+    Text("Всё, что пульт сделал в репозиториях, и отказы — в журнале.", style = MaterialTheme.typography.bodySmall)
+    TextButton(onClick = onJournal) { Text("Журнал действий ▸") }
     Text("Синхронизация", style = MaterialTheme.typography.titleMedium)
     // Постоянная строка последней синхронизации (UX-10); временные итоги — снэкбаром.
     view.state?.let { st -> Text("Последняя: ${Screens.time(st.asOf)} · ${Screens.summary(st).syncHealth}", style = MaterialTheme.typography.bodySmall) }
@@ -1093,3 +1144,160 @@ private fun Details(details: String) {
     TextButton(onClick = { shown = !shown }) { Text(if (shown) "Скрыть" else "Подробнее") }
     if (shown) Text(details, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
 }
+
+/**
+ * PR из карточки (F-12, F-13): свежий PR с GitHub и действия с уровнями (D-07, D-36).
+ * Комментарий, ревью и «Из черновика» — окно «что уйдёт» и «Отправить» (уровень 1);
+ * «Влить» и «Закрыть» — окно «что изменится», затем PIN или отпечаток (уровень 2). Если
+ * «Влить» не чист (F-13: проверки описания не зелёные, GitHub видит препятствие) — причины
+ * и отметка «понимаю»; черновик и конфликт — кнопка недоступна. Итог — строкой и в журнале.
+ */
+@Composable
+private fun PullScreen(project: String, number: Int, checks: String?, loader: Loader, onBack: () -> Unit) {
+    var loaded by remember(project, number) { mutableStateOf<Outcome<Pair<com.dpsmpx.dpmeta.model.RepoRef, PullDetail>>?>(null) }
+    var reload by remember { mutableIntStateOf(0) }
+    LaunchedEffect(project, number, reload) {
+        loaded = null
+        loader.pull(project, number) { loaded = it }
+    }
+    var text by rememberSaveable(project, number) { mutableStateOf("") }
+    var pending by remember { mutableStateOf<PullActions.Request?>(null) }
+    var accept by remember { mutableStateOf(false) }
+    var running by remember { mutableStateOf(false) }
+    var result by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
+    val context = LocalContext.current
+    val taps = remember { LinkTaps() }
+    Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        TextButton(onClick = onBack, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("← Назад") }
+        Text("$project · PR #$number", style = MaterialTheme.typography.titleMedium)
+        when (val l = loaded) {
+            null -> Text("Читаю PR с GitHub…", style = MaterialTheme.typography.bodySmall)
+            is Outcome.Failure -> {
+                Text("PR не прочитан: ${l.errors.first().message}", color = MaterialTheme.colorScheme.error)
+                TextButton(onClick = { reload++ }) { Text("Повторить") }
+            }
+            is Outcome.Success -> {
+                val (repo, p) = l.value
+                Text(p.title, fontWeight = FontWeight.SemiBold)
+                for (line in PullActions.lines(p, checks)) Text(line, style = MaterialTheme.typography.bodySmall)
+                if (p.url.isNotEmpty()) TextButton(onClick = { external(context, taps, p.url) }) { Text("Ссылка на GitHub") }
+                if (PullActions.open(p)) {
+                    OutlinedTextField(
+                        value = text, onValueChange = { text = it }, label = { Text("Комментарий или текст ревью") },
+                        modifier = Modifier.fillMaxWidth(), minLines = 2, enabled = !running,
+                    )
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Button(onClick = { pending = PullActions.Request(PullActions.comment(repo, p, text.trim()), PullActions.Way.SHOWN) }, enabled = text.isNotBlank() && !running) { Text("Комментарий…") }
+                        OutlinedButton(onClick = { pending = PullActions.Request(PullActions.review(repo, p, true, text.trim()), PullActions.Way.SHOWN) }, enabled = !running) { Text("Одобрить…") }
+                        OutlinedButton(onClick = { pending = PullActions.Request(PullActions.review(repo, p, false, text.trim()), PullActions.Way.SHOWN) }, enabled = text.isNotBlank() && !running) { Text("Запросить изменения…") }
+                        if (p.draft) OutlinedButton(onClick = { pending = PullActions.Request(PullActions.ready(repo, p), PullActions.Way.SHOWN) }, enabled = !running) { Text("Из черновика…") }
+                    }
+                    val blocked = PullActions.mergeBlocked(p)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Button(onClick = { accept = false; pending = PullActions.Request(PullActions.merge(repo, p), PullActions.Way.DEVICE) }, enabled = blocked == null && !running) { Text("Влить…") }
+                        OutlinedButton(onClick = { pending = PullActions.Request(PullActions.close(repo, p), PullActions.Way.DEVICE) }, enabled = !running) {
+                            Text("Закрыть…", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                    blocked?.let { Text("Влить нельзя: $it", style = MaterialTheme.typography.bodySmall) }
+                }
+                if (running) LinearProgressIndicator(Modifier.fillMaxWidth())
+                result?.let { (ok, line) -> Text(line, color = if (ok) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error) }
+                pending?.let { req ->
+                    val warnings = if (req.command.kind == ActionKind.PR_MERGE) PullActions.mergeWarnings(p, checks) else emptyList()
+                    AlertDialog(
+                        onDismissRequest = { pending = null },
+                        title = { Text(if (req.way == PullActions.Way.SHOWN) "Что уйдёт" else "Что изменится") },
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                for (line in PullActions.preview(req.command, p)) Text(line)
+                                if (warnings.isNotEmpty()) {
+                                    Text("Внимание:", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
+                                    for (w in warnings) Text("• $w", color = MaterialTheme.colorScheme.error)
+                                    Row(
+                                        Modifier.fillMaxWidth().toggleable(value = accept, role = Role.Checkbox) { accept = it },
+                                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                                    ) {
+                                        Checkbox(checked = accept, onCheckedChange = null)
+                                        Text("Понимаю, влить всё равно")
+                                    }
+                                }
+                                if (req.way == PullActions.Way.DEVICE) Text("Дальше — PIN или отпечаток.", style = MaterialTheme.typography.bodySmall)
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(
+                                enabled = warnings.isEmpty() || accept,
+                                onClick = {
+                                    pending = null
+                                    running = true
+                                    result = null
+                                    loader.act(req) { r ->
+                                        running = false
+                                        result = when (r) {
+                                            is Outcome.Success -> true to ("Готово: ${r.value.detail}" + (r.value.link?.let { " — $it" } ?: ""))
+                                            is Outcome.Failure -> false to "Не выполнено: ${r.errors.first().message}"
+                                        }
+                                        if (r is Outcome.Success) {
+                                            text = ""
+                                            reload++
+                                        }
+                                    }
+                                },
+                            ) { Text(if (req.way == PullActions.Way.SHOWN) "Отправить" else "Дальше — PIN") }
+                        },
+                        dismissButton = { TextButton(onClick = { pending = null }) { Text("Отмена") } },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Журнал действий (F-44): новые сверху; что, где, когда, как подтверждено и чем
+ * кончилось; поиск по всем полям; «Поделиться» — текстом, найденное.
+ */
+@Composable
+private fun JournalScreen(loader: Loader, onBack: () -> Unit) {
+    var entries by remember { mutableStateOf<Outcome<List<ActionEntry>>?>(null) }
+    LaunchedEffect(Unit) { loader.journal { entries = it } }
+    var query by rememberSaveable { mutableStateOf("") }
+    val context = LocalContext.current
+    val taps = remember { LinkTaps() }
+    val rows = (entries as? Outcome.Success)?.value?.filter { it.matches(query) }?.asReversed().orEmpty()
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        item {
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                TextButton(onClick = onBack, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("← Назад") }
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = { loader.share("Журнал действий DPmetaApp", rows.joinToString("\n") { journalLine(it) }) }, enabled = rows.isNotEmpty()) { Text("Поделиться") }
+            }
+        }
+        item { Text("Журнал действий", style = MaterialTheme.typography.titleMedium) }
+        item {
+            OutlinedTextField(value = query, onValueChange = { query = it }, label = { Text("Поиск") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        }
+        when (val e = entries) {
+            null -> item { Text("Читаю журнал…", style = MaterialTheme.typography.bodySmall) }
+            is Outcome.Failure -> item { Text("Журнал не прочитан: ${e.errors.first().message}", color = MaterialTheme.colorScheme.error) }
+            is Outcome.Success -> if (rows.isEmpty()) {
+                item { Text(if (e.value.isEmpty()) "Действий из пульта ещё не было." else "Нет записей по поиску.", style = MaterialTheme.typography.bodySmall) }
+            } else {
+                items(rows, key = { it.id }) { r ->
+                    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                        Text("${Screens.time(r.at)} · уровень ${r.level} · ${r.target}", style = MaterialTheme.typography.bodySmall)
+                        Text(ActionKind.of(r.kind)?.what ?: r.kind, fontWeight = FontWeight.SemiBold)
+                        val bad = r.status == ActionStatus.FAILED || r.status == ActionStatus.REFUSED || r.status == ActionStatus.UNKNOWN
+                        Text(r.status.word + (r.detail.takeIf { it.isNotEmpty() }?.let { ": $it" } ?: ""), color = if (bad) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+                        r.link?.let { url -> Text(url, Modifier.clickable(onClickLabel = "ссылка") { external(context, taps, url) }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Строка журнала для «Поделиться»: время, уровень, действие, цель, итог, ссылка. */
+private fun journalLine(r: ActionEntry): String =
+    listOf(Screens.time(r.at), "ур. ${r.level}", r.kind, r.target, r.status.word, r.detail, r.link.orEmpty()).filter { it.isNotEmpty() }.joinToString(" · ")
