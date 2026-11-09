@@ -98,6 +98,18 @@ class GitHubWriteTest {
     }
 
     @Test
+    fun defaultBranchAndBranchHead() {
+        val (_, w) = gh(
+            "GET /repos/example/Alpha" to (200 to """{"full_name":"example/Alpha","default_branch":"main"}"""),
+            "GET /repos/example/Alpha/branches/claude/x" to (200 to """{"name":"claude/x","commit":{"sha":"$head"},"protected":false}"""),
+            "GET /repos/example/Alpha/branches/main" to (200 to """{"name":"main","commit":{"sha":"$head"},"protected":true}"""),
+        )
+        assertEquals("main", w.defaultBranch(repo).valueOrNull())
+        assertEquals(BranchDetail("claude/x", head, false), w.branch(repo, "claude/x").valueOrNull())
+        assertTrue(w.branch(repo, "main").valueOrNull()!!.protected)
+    }
+
+    @Test
     fun compareTellsMergedBranchesAndNoRightsIsNamed() {
         val (_, w) = gh(
             "GET /repos/example/Alpha/compare/main...claude/x" to (200 to """{"status":"behind","ahead_by":0,"behind_by":3}"""),

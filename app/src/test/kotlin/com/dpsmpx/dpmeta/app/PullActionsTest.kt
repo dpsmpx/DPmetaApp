@@ -11,8 +11,11 @@ import com.dpsmpx.dpmeta.actions.ActionLog
 import com.dpsmpx.dpmeta.actions.ActionResult
 import com.dpsmpx.dpmeta.actions.ActionStatus
 import com.dpsmpx.dpmeta.actions.Actions
-import com.dpsmpx.dpmeta.app.data.PullExecutor
+import com.dpsmpx.dpmeta.app.data.ActionExecutor
+import com.dpsmpx.dpmeta.app.screens.BranchActions
 import com.dpsmpx.dpmeta.app.screens.PullActions
+import com.dpsmpx.dpmeta.github.BranchDetail
+import com.dpsmpx.dpmeta.github.Comparison
 import com.dpsmpx.dpmeta.github.GitHubWrite
 import com.dpsmpx.dpmeta.github.PullDetail
 import com.dpsmpx.dpmeta.model.ActionLevel
@@ -91,7 +94,7 @@ class PullActionsTest {
         val fake = Fake()
         val write = GitHubWrite(Net(fake), Secret("t"))
         fun run(c: com.dpsmpx.dpmeta.actions.ActionCommand, conf: com.dpsmpx.dpmeta.actions.Confirmation): Outcome<ActionResult> =
-            actions.run(c, conf) { PullExecutor.execute(write, c) }
+            actions.run(c, conf) { ActionExecutor.execute(write, c) }
 
         val comment = PullActions.comment(repo, pr(), "Проверю на телефоне")
         assertEquals("комментарий отправлен", run(comment, actions.shown(comment)).valueOrNull()?.detail)
@@ -102,5 +105,64 @@ class PullActionsTest {
         assertTrue(String(fake.seen.last().body!!).contains(head))
         val log = ActionLog(NioVfs(dir), clock, RandomSource.seeded(3)).entries().valueOrNull()!!
         assertEquals(listOf(ActionKind.COMMENT.code to ActionStatus.DONE, ActionKind.PR_MERGE.code to ActionStatus.REFUSED, ActionKind.PR_MERGE.code to ActionStatus.DONE), log.map { it.kind to it.status })
+    }
+
+    private fun branchView(ahead: Int, name: String = "claude/x", protected: Boolean = false) =
+        BranchActions.View(repo, "main", BranchDetail(name, head, protected), if (name == "main") null else Comparison(if (ahead == 0) "behind" else "diverged", ahead, 1))
+
+    /** F-14: влитая — уровень 2, невлитая — 3 с именем ветки; основную и защищённую не удаляем. */
+    @Test
+    fun branchDeleteLevelFollowsMergedState() {
+        assertEquals(ActionKind.BRANCH_DELETE_MERGED, BranchActions.delete(branchView(0)).kind)
+        val unmerged = BranchActions.delete(branchView(3))
+        assertEquals(ActionLevel.DANGEROUS to "claude/x", unmerged.level to unmerged.nameToType)
+        assertEquals(head, unmerged.params["head"])
+        assertTrue(BranchActions.losses(branchView(3), listOf(12)).joinToString().let { "3" in it && head in it && "#12" in it })
+        assertTrue(BranchActions.deleteBlocked(branchView(0, name = "main"))!!.contains("основную"))
+        assertTrue(BranchActions.deleteBlocked(branchView(0, protected = true))!!.contains("защищена"))
+        assertNull(BranchActions.deleteBlocked(branchView(3)))
+    }
+
+    private class Branches(val ahead: Int, val sha: String) : Transport {
+        val seen = mutableListOf<String>()
+
+        override fun send(request: HttpRequest): Outcome<HttpResponse> {
+            val key = "${request.method} ${request.url.rawPath}"
+            seen += key
+            val body = when (key) {
+                "GET /repos/dpsmpx/DPmetaApp" -> 200 to """{"default_branch":"main"}"""
+                "GET /repos/dpsmpx/DPmetaApp/branches/claude/x" -> 200 to """{"name":"claude/x","commit":{"sha":"$sha"},"protected":false}"""
+                "GET /repos/dpsmpx/DPmetaApp/compare/main...claude/x" -> 200 to """{"status":"x","ahead_by":$ahead,"behind_by":0}"""
+                "DELETE /repos/dpsmpx/DPmetaApp/git/refs/heads/claude/x" -> 204 to ""
+                else -> 404 to """{"message":"Not Found"}"""
+            }
+            return Outcome.success(HttpResponse(body.first, emptyMap(), body.second.toByteArray()))
+        }
+    }
+
+    /** Удаление ветки: уровень 3 без верного имени до GitHub не доходит; исполнитель сверяет всё заново. */
+    @Test
+    fun branchDeleteChecksAgainBeforeDeleting() {
+        val clock = ManualClock()
+        val actions = Actions(ActionLog(NioVfs(dir), clock, RandomSource.seeded(1)), clock, RandomSource.seeded(2))
+        fun run(t: Branches, c: com.dpsmpx.dpmeta.actions.ActionCommand, conf: com.dpsmpx.dpmeta.actions.Confirmation) =
+            actions.run(c, conf) { ActionExecutor.execute(GitHubWrite(Net(t), Secret("t")), c) }
+
+        val unmerged = BranchActions.delete(branchView(3))
+        val t1 = Branches(ahead = 3, sha = head)
+        assertIs<Outcome.Failure>(run(t1, unmerged, actions.typedName(unmerged, "claude/y")))
+        assertEquals(emptyList(), t1.seen, "без верного имени — ни одного запроса")
+        val done = run(t1, unmerged, actions.typedName(unmerged, "claude/x")).valueOrNull()!!
+        assertTrue(head in done.detail, "SHA головы — в итоге и журнале")
+        assertEquals("DELETE /repos/dpsmpx/DPmetaApp/git/refs/heads/claude/x", t1.seen.last())
+
+        val merged = BranchActions.delete(branchView(0))
+        val grew = Branches(ahead = 2, sha = head)
+        val r = run(grew, merged, actions.deviceConfirmed(merged))
+        assertTrue(assertIs<Outcome.Failure>(r).errors.single().message.contains("невлитых"))
+        assertTrue(grew.seen.none { it.startsWith("DELETE") }, "влитая на экране, а сейчас нет — не удаляем по PIN")
+        val moved = Branches(ahead = 0, sha = "f".repeat(40))
+        assertIs<Outcome.Failure>(run(moved, merged, actions.deviceConfirmed(merged)))
+        assertTrue(moved.seen.none { it.startsWith("DELETE") }, "новый коммит в ветке — не удаляем")
     }
 }

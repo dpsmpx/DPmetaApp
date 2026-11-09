@@ -519,6 +519,9 @@ open class PultActivity : ComponentActivity() {
             }
         }
 
+        override fun branch(project: String, name: String, done: (Outcome<com.dpsmpx.dpmeta.app.screens.BranchActions.View>) -> Unit) =
+            run({ repo.branch(it, project, name) }, done)
+
         override fun journal(done: (Outcome<List<com.dpsmpx.dpmeta.actions.ActionEntry>>) -> Unit) {
             if (pool.isShutdown) return
             pool.execute {

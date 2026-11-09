@@ -42,6 +42,9 @@ data class PullDetail(
     val url: String,
 )
 
+/** Ветка перед действием (F-14): голова и защищена ли правилами (такую GitHub не удалит). */
+data class BranchDetail(val name: String, val sha: String, val protected: Boolean)
+
 /** Ветка против основной (F-14): [aheadBy] — коммитов, которых нет в основной; 0 — влита. */
 data class Comparison(val status: String, val aheadBy: Int, val behindBy: Int) {
     val merged: Boolean get() = aheadBy == 0
@@ -81,6 +84,19 @@ class GitHubWrite(private val net: Net, private val token: Secret, private val a
                 url = str(o, "html_url").orEmpty(),
             ),
         )
+    }
+
+    /** Основная ветка репозитория (`default_branch`): с ней сравниваются ветки (F-14). */
+    fun defaultBranch(repo: RepoRef): Outcome<String> = call("GET", "repos/$repo", null, "$repo").then { v ->
+        val o = v as? JsonObject ?: return@then invalid("$repo")
+        str(o, "default_branch")?.takeIf { it.isNotEmpty() }?.let { Outcome.success(it) } ?: missing("default_branch", "$repo")
+    }
+
+    /** Ветка: голова и защита — свежие, без кэша. */
+    fun branch(repo: RepoRef, name: String): Outcome<BranchDetail> = call("GET", "repos/$repo/branches/${ref(name)}", null, "$repo@$name").then { v ->
+        val o = v as? JsonObject ?: return@then invalid("$repo@$name")
+        val sha = (o["commit"] as? JsonObject)?.let { str(it, "sha") }?.takeIf { SHA.matches(it) } ?: return@then missing("commit.sha", "$repo@$name")
+        Outcome.success(BranchDetail(str(o, "name") ?: name, sha, (o["protected"] as? JsonBool)?.value == true))
     }
 
     /** Ветка [head] против [base] (F-14): сколько коммитов впереди и позади. */

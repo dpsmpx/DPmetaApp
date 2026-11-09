@@ -146,16 +146,44 @@ class PultRepository(
         }
     }
 
+    /** Ветка перед действием (F-14): основная ветка, голова, защита и сравнение с основной — свежие. */
+    fun branch(token: Secret, project: String, name: String): Outcome<com.dpsmpx.dpmeta.app.screens.BranchActions.View> {
+        val (gh, etags) = client(token)
+        val repo = when (val r = repoOf(gh, project)) {
+            is Outcome.Failure -> return r
+            is Outcome.Success -> r.value
+        }
+        etags.save()
+        val w = com.dpsmpx.dpmeta.github.GitHubWrite(Net(UrlTransport()), token)
+        val base = when (val r = w.defaultBranch(repo)) {
+            is Outcome.Failure -> return r
+            is Outcome.Success -> r.value
+        }
+        val branch = when (val r = w.branch(repo, name)) {
+            is Outcome.Failure -> return r
+            is Outcome.Success -> r.value
+        }
+        val cmp = if (name == base) {
+            null
+        } else {
+            when (val r = w.compare(repo, base, name)) {
+                is Outcome.Failure -> return r
+                is Outcome.Success -> r.value
+            }
+        }
+        return Outcome.success(com.dpsmpx.dpmeta.app.screens.BranchActions.View(repo, base, branch, cmp))
+    }
+
     /**
-     * Действие с PR (F-12): политика уровня, журнал, исполнение (D-07, A-06). Подтверждение
-     * создаёт [confirm] — после окна экрана и, для уровня 2, PIN устройства.
+     * Действие (F-12, F-14): политика уровня, журнал, исполнение (D-07, A-06). Подтверждение
+     * создаёт [confirm] — после окна экрана, PIN устройства (уровень 2) или ввода имени (3).
      */
     fun act(
         token: Secret,
         command: com.dpsmpx.dpmeta.actions.ActionCommand,
         confirm: (com.dpsmpx.dpmeta.actions.Actions) -> com.dpsmpx.dpmeta.actions.Confirmation?,
     ): Outcome<com.dpsmpx.dpmeta.actions.ActionResult> =
-        actions.run(command, confirm(actions)) { PullExecutor.execute(com.dpsmpx.dpmeta.github.GitHubWrite(Net(UrlTransport()), token), command) }
+        actions.run(command, confirm(actions)) { ActionExecutor.execute(com.dpsmpx.dpmeta.github.GitHubWrite(Net(UrlTransport()), token), command) }
 
     @Volatile private var registry: Registry? = null
 

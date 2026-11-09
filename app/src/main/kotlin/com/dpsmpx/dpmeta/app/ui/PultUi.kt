@@ -98,6 +98,7 @@ import com.dpsmpx.dpmeta.actions.ActionKind
 import com.dpsmpx.dpmeta.actions.ActionResult
 import com.dpsmpx.dpmeta.actions.ActionStatus
 import com.dpsmpx.dpmeta.app.screens.PullActions
+import com.dpsmpx.dpmeta.app.screens.BranchActions
 import com.dpsmpx.dpmeta.github.PullDetail
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.OutlinedButton
@@ -245,6 +246,10 @@ interface Loader {
     fun act(request: PullActions.Request, done: (Outcome<ActionResult>) -> Unit) =
         done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "действий здесь нет", request.command.target.display))
 
+    /** Ветка перед действием (F-14): основная, голова, сравнение — свежие. */
+    fun branch(project: String, name: String, done: (Outcome<BranchActions.View>) -> Unit) =
+        done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "действий с ветками здесь нет", project))
+
     /** Журнал действий (F-44). */
     fun journal(done: (Outcome<List<ActionEntry>>) -> Unit) = done(Outcome.success(emptyList()))
 
@@ -292,6 +297,9 @@ private sealed interface Nav {
     /** Журнал действий (F-44) — из «Ещё». */
     data object Journal : Nav
 
+    /** Ветка проекта с действиями (F-14) — из карточки. */
+    data class Branch(val project: String, val name: String) : Nav
+
     companion object {
         private const val SEP = "\u0001"
 
@@ -304,6 +312,7 @@ private sealed interface Nav {
             Feed -> listOf("feed")
             is Pull -> listOf("pull", n.project, n.number.toString())
             Journal -> listOf("journal")
+            is Branch -> listOf("branch", n.project, n.name)
         }.joinToString(SEP)
 
         fun decode(s: String): Nav? {
@@ -316,6 +325,7 @@ private sealed interface Nav {
                 "feed" -> Feed
                 "pull" -> p.getOrNull(2)?.toIntOrNull()?.let { Pull(p[1], it) }
                 "journal" -> Journal
+                "branch" -> if (p.size >= 3) Branch(p[1], p[2]) else null
                 else -> null
             }
         }
@@ -449,6 +459,10 @@ fun PultApp(
                     PullScreen(top.project, top.number, checks, loader, back)
                 }
                 top is Nav.Journal -> JournalScreen(loader, back)
+                top is Nav.Branch -> {
+                    val pulls = remember(s, top) { s?.let { Screens.card(it, top.project) }?.pulls?.filter { it.head == top.name }?.map { it.number }.orEmpty() }
+                    BranchScreen(top.project, top.name, pulls, loader, back)
+                }
                 tab == Section.MORE -> Settings(view, onSync, onSaveToken, onForgetToken, onClones, onZone, onJournal = { open(Nav.Journal) })
                 s == null && view.loading -> Text("Читаю срез…", style = MaterialTheme.typography.bodySmall)
                 // Пустое состояние ведёт дальше (UX-11): кнопкой, а не словами «где-то в настройках».
@@ -737,6 +751,15 @@ private fun CardList(c: Screens.Card, panel: Outcome<Panel>?, loader: Loader, on
                         )
                     }
                     items(sec.lines.drop(c.pulls.size)) { Text("  $it", style = MaterialTheme.typography.bodySmall) }
+                } else if (sec.kind == Screens.CardSection.Kind.BRANCHES) {
+                    // Ветка — касанием к её экрану: влита ли, удалить (F-14).
+                    items(c.branches) { b ->
+                        Text(
+                            "  ${b.name} — ${b.updated}" + (if (b.recent) " · свежая" else "") + " ▸",
+                            Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClickLabel = "ветка и действия") { open(Nav.Branch(c.name, b.name)) }.padding(vertical = 4.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
                 } else {
                     items(sec.lines) { Text("  $it", style = MaterialTheme.typography.bodySmall) }
                 }
@@ -1301,3 +1324,121 @@ private fun JournalScreen(loader: Loader, onBack: () -> Unit) {
 /** Строка журнала для «Поделиться»: время, уровень, действие, цель, итог, ссылка. */
 private fun journalLine(r: ActionEntry): String =
     listOf(Screens.time(r.at), "ур. ${r.level}", r.kind, r.target, r.status.word, r.detail, r.link.orEmpty()).filter { it.isNotEmpty() }.joinToString(" · ")
+
+/**
+ * Ветка из карточки (F-14; D-36, D-37): влита ли в основную, голова, защита; удалить.
+ * Влитая — окно «что изменится» и PIN (уровень 2); невлитая — красный экран «что будет
+ * потеряно безвозвратно» и ввод имени ветки, без биометрии (уровень 3). Основную и
+ * защищённую пульт не удаляет. Итог — строкой и в журнале действий (с SHA головы).
+ */
+@Composable
+private fun BranchScreen(project: String, name: String, openPulls: List<Long>, loader: Loader, onBack: () -> Unit) {
+    var loaded by remember(project, name) { mutableStateOf<Outcome<BranchActions.View>?>(null) }
+    var reload by remember { mutableIntStateOf(0) }
+    LaunchedEffect(project, name, reload) {
+        loaded = null
+        loader.branch(project, name) { loaded = it }
+    }
+    var asking by remember { mutableStateOf(false) }
+    var typed by remember { mutableStateOf("") }
+    var running by remember { mutableStateOf(false) }
+    var result by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
+    Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        TextButton(onClick = onBack, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("← Назад") }
+        Text("$project · ветка $name", style = MaterialTheme.typography.titleMedium)
+        result?.let { (ok, line) -> Text(line, color = if (ok) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error) }
+        when (val l = loaded) {
+            null -> Text("Читаю ветку с GitHub…", style = MaterialTheme.typography.bodySmall)
+            is Outcome.Failure -> {
+                // После удаления ветки на GitHub нет — это не ошибка экрана, а итог выше.
+                if (result?.first != true) Text("Ветка не прочитана: ${l.errors.first().message}", color = MaterialTheme.colorScheme.error)
+                TextButton(onClick = { reload++ }) { Text("Повторить") }
+            }
+            is Outcome.Success -> {
+                val v = l.value
+                for (line in BranchActions.lines(v)) Text(line, style = MaterialTheme.typography.bodySmall)
+                if (openPulls.isNotEmpty()) Text("Открытые PR из неё: " + openPulls.joinToString(", ") { "#$it" }, style = MaterialTheme.typography.bodySmall)
+                val blocked = BranchActions.deleteBlocked(v)
+                if (blocked != null) {
+                    Text("Удалить нельзя: $blocked", style = MaterialTheme.typography.bodySmall)
+                } else {
+                    OutlinedButton(onClick = { typed = ""; asking = true }, enabled = !running) {
+                        Text(if (v.merged) "Удалить влитую ветку…" else "Удалить невлитую ветку…", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+                if (running) LinearProgressIndicator(Modifier.fillMaxWidth())
+                if (asking) {
+                    val command = BranchActions.delete(v)
+                    val go: (PullActions.Request) -> Unit = { req ->
+                        asking = false
+                        running = true
+                        result = null
+                        loader.act(req) { r ->
+                            running = false
+                            result = when (r) {
+                                is Outcome.Success -> true to "Готово: ${r.value.detail}"
+                                is Outcome.Failure -> false to "Не выполнено: ${r.errors.first().message}"
+                            }
+                            if (r is Outcome.Success) reload++
+                        }
+                    }
+                    if (v.merged) {
+                        AlertDialog(
+                            onDismissRequest = { asking = false },
+                            title = { Text("Что изменится") },
+                            text = {
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    for (line in BranchActions.preview(v, openPulls)) Text(line)
+                                    Text("Дальше — PIN или отпечаток.", style = MaterialTheme.typography.bodySmall)
+                                }
+                            },
+                            confirmButton = { TextButton(onClick = { go(PullActions.Request(command, PullActions.Way.DEVICE)) }) { Text("Дальше — PIN") } },
+                            dismissButton = { TextButton(onClick = { asking = false }) { Text("Отмена") } },
+                        )
+                    } else {
+                        DangerDialog(
+                            title = "Что будет потеряно безвозвратно",
+                            losses = BranchActions.losses(v, openPulls),
+                            name = command.nameToType,
+                            typed = typed,
+                            onTyped = { typed = it },
+                            onDismiss = { asking = false },
+                            onConfirm = { go(PullActions.Request(command, PullActions.Way.TYPED, typed)) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Красный экран уровня 3 (D-37, F-70): что будет потеряно безвозвратно и ввод [name] —
+ * кнопка включается только при точном совпадении (ядро сверяет ещё раз). Без биометрии —
+ * слово автора: ввод имени и есть подтверждение.
+ */
+@Composable
+private fun DangerDialog(title: String, losses: List<String>, name: String, typed: String, onTyped: (String) -> Unit, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.errorContainer,
+        titleContentColor = MaterialTheme.colorScheme.onErrorContainer,
+        textContentColor = MaterialTheme.colorScheme.onErrorContainer,
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                for (line in losses) Text("• $line")
+                Text("Чтобы подтвердить, введите: $name", fontWeight = FontWeight.SemiBold)
+                OutlinedTextField(
+                    value = typed, onValueChange = onTyped, singleLine = true, label = { Text("Имя") },
+                    keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Ascii, imeAction = ImeAction.Done),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm, enabled = typed.trim() == name) { Text("Удалить навсегда", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
+    )
+}
