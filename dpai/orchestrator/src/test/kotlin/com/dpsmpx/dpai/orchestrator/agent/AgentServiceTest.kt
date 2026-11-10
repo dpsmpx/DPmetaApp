@@ -176,6 +176,13 @@ class AgentServiceTest {
         assertTrue("Restart=on-failure" in unit)
         assertTrue("ExecStart=\"/opt/java 21/bin/java\" -cp /a/lib/*:/b%%x com.dpsmpx.dpai.cli.MainKt agent serve --home /home/u/.dpai-agent" in unit, unit)
         assertEquals("\"a\\\\b \\\"c\\\"\"", AgentServiceSetup.systemdArg("a\\b \"c\""))
+        // Окружение оболочки установщика: PATH с каталогом npm и UTF-8; без UTF-8 — C.UTF-8.
+        val env = AgentServiceSetup.serviceEnvironment(mapOf("PATH" to "/home/u/.npm-global/bin:/usr/bin", "LANG" to "ru_RU.UTF-8", "TERM" to "x"))
+        assertEquals(mapOf("PATH" to "/home/u/.npm-global/bin:/usr/bin", "LANG" to "ru_RU.UTF-8"), env)
+        assertEquals("C.UTF-8", AgentServiceSetup.serviceEnvironment(mapOf("LANG" to "C"))["LANG"])
+        val withEnv = AgentServiceSetup.unit(listOf("/usr/bin/java"), "/h", env)
+        assertTrue("Environment=\"PATH=/home/u/.npm-global/bin:/usr/bin\"\nEnvironment=\"LANG=ru_RU.UTF-8\"\nRestart=on-failure" in withEnv, withEnv)
+        assertEquals("Environment=\"A=50%% \\\"x\\\"\"", AgentServiceSetup.systemdEnv("A", "50% \"x\""))
         assertEquals("\$\$HOME", AgentServiceSetup.systemdArg("\$HOME"))
         val args = AgentServiceSetup.argFile(listOf("-cp", "C:\\Users\\u\\dpai\\lib\\*", "agent"))
         assertEquals("\"-cp\"\r\n\"C:/Users/u/dpai/lib/*\"\r\n\"agent\"\r\n", args)

@@ -2424,9 +2424,11 @@ Windows), Claude на ПК или в приложении. Около 20 мин.
    конце «служба: running, процесс N». «linger не включён» — выполнить
    `sudo loginctl enable-linger $USER` и повторить установку.
    `systemctl --user status dpai-agent` — `active (running)`.
-2. **Ход через службу.** Задача на этот target → ход идёт. На ПК:
+2. **Ход через службу.** Задача на этот target с текстом по-русски → ход
+   идёт, Claude отвечает (кириллица дошла, `claude` найден). На ПК:
    `systemctl --user status dpai-agent` — в дереве службы видны
-   `dpai agent supervise` и `claude`.
+   `dpai agent supervise` и `claude`; `systemctl --user show dpai-agent -p
+   Environment` — ваш `PATH` и локаль UTF-8.
 3. **Обрыв.** Во время хода выключить Wi-Fi телефона на 2 мин и включить —
    ход дошёл, события без пропусков. Выйти из всех сеансов на ПК (`exit`
    во всех SSH и локальных) — ход идёт (`systemctl --user status`).

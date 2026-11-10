@@ -59,7 +59,7 @@ class AgentServiceSetup(
         val warnings = mutableListOf<Diagnostic>()
         try {
             val dir = NioVfs(File(unitDir()).toPath().also { it.toFile().mkdirs() })
-            dir.write(UNIT, unit(selfCommand, home).toByteArray(Charsets.UTF_8))
+            dir.write(UNIT, unit(selfCommand, home, serviceEnvironment(env)).toByteArray(Charsets.UTF_8))
             dir.fsync(UNIT)
         } catch (e: IOException) {
             return Outcome.failure(Diagnostic.fromThrowable(DiagCode.STORAGE_IO_FAILED, "файл службы не записан", e, "${unitDir()}/$UNIT"))
@@ -136,8 +136,25 @@ class AgentServiceSetup(
         const val ARGS = "service.args"
         private val TIMEOUT = 60.seconds
 
+        /**
+         * Окружение службы — из оболочки, где её ставят: у служб systemd своё, бедное
+         * окружение, а ход берёт его у супервизора. `PATH` — чтобы нашёлся `claude`,
+         * поставленный в каталог пользователя (npm); локаль — UTF-8 из `LC_ALL`,
+         * `LC_CTYPE` или `LANG`, иначе `C.UTF-8`: без неё аргумент кириллицей не
+         * передать процессу хода (`PROCESS_ARGUMENT_UNENCODABLE`).
+         */
+        fun serviceEnvironment(env: Map<String, String>): Map<String, String> {
+            val out = linkedMapOf<String, String>()
+            env["PATH"]?.takeIf { it.isNotBlank() }?.let { out["PATH"] = it }
+            val locale = listOf("LC_ALL", "LC_CTYPE", "LANG").mapNotNull { env[it] }.firstOrNull { v ->
+                v.lowercase().replace("-", "").contains("utf8")
+            }
+            out["LANG"] = locale ?: "C.UTF-8"
+            return out
+        }
+
         /** Юнит службы пользователя systemd: ходы — потомки службы, и `KillMode=process` их не трогает. */
-        fun unit(selfCommand: List<String>, home: String): String = """
+        fun unit(selfCommand: List<String>, home: String, environment: Map<String, String> = emptyMap()): String = """
             |# Служба агента dpai (DP_AI_Orcestrator:D-109): ходы Claude живут со службой, а не с сеансом SSH.
             |# Ставит и снимает: dpai agent service install|remove.
             |[Unit]
@@ -147,7 +164,7 @@ class AgentServiceSetup(
             |Type=simple
             |ExecStart=${(selfCommand + listOf("agent", "serve", "--home", home)).joinToString(" ") { systemdArg(it) }}
             |WorkingDirectory=${home.replace("%", "%%")}
-            |Restart=on-failure
+            |${environment.entries.joinToString("") { (k, v) -> systemdEnv(k, v) + "\n" }}Restart=on-failure
             |RestartSec=5
             |KillMode=process
             |
@@ -155,6 +172,13 @@ class AgentServiceSetup(
             |WantedBy=default.target
             |
         """.trimMargin()
+
+        /**
+         * Строка `Environment=` в кавычках: `%` — `%%` (спецификаторы), `\\` и `"` —
+         * экранированием; `$` в `Environment=` не подставляется — остаётся как есть.
+         */
+        fun systemdEnv(name: String, value: String): String =
+            "Environment=\"" + "$name=$value".replace("%", "%%").replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
         /**
          * Аргумент `ExecStart`: без пробелов и особых знаков — как есть; иначе — в

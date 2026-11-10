@@ -68,7 +68,9 @@ Targets → «Добавить» по выведенным полям: «Ком�
 ~/dpai-agent agent service install
 ```
 
-Ожидается в конце строка «служба: running». «linger не включён» —
+Ставить — в той оболочке, где `claude` находится (`command -v claude`):
+служба берёт оттуда `PATH` и локаль. Ожидается в конце строка «служба:
+running». «linger не включён» —
 выполнить `sudo loginctl enable-linger $USER`: без linger служба уходит с
 последним выходом из системы. Снять — `~/dpai-agent agent service
 remove`; идущие ходы снятие не трогает.

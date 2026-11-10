@@ -81,7 +81,9 @@ WARN, больше 5 мин — FAIL. Неизвестное — UNKNOWN, а н�
 **Служба агента на ПК (D-109, D-120).** `dpai agent service install`
 ставит `dpai agent serve` службой пользователя systemd
 (`~/.config/systemd/user/dpai-agent.service`, `KillMode=process`,
-`Restart=on-failure`, linger — `loginctl enable-linger`) или задачей
+`Restart=on-failure`, linger — `loginctl enable-linger`; `PATH` и
+UTF-8-локаль — из оболочки установщика строками `Environment=`, иначе ход
+не нашёл бы `claude` из npm пользователя и не передал бы кириллицу) или задачей
 планировщика Windows при входе (`dpai-agent`, `javaw.exe` с файлом
 аргументов `service.args`, без предела времени); прав администратора не
 нужно, Termux — отказ. Служба раз в 5 с пишет признак жизни
