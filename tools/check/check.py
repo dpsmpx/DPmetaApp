@@ -612,8 +612,10 @@ def check_modules(repo, r):
 FORBIDDEN_CODE = (
     (re.compile(r"\bbeget\b|\brsync\b", re.I), ("socialmediaimage/",),
      "выгрузка сайта — только подсистемой SocialMediaImage (D-40, A-07)"),
-    (re.compile(r"v1/organizations/(?!usage_report|cost_report)"), (),
-     "Admin API — только GET отчётов Usage и Cost; изменяющих вызовов нет (D-08, D-44)"),
+    # Пути чтения — список D-81: аналитика расхода и стоимости, лимиты скорости организации,
+    # прежние отчёты Usage и Cost. Остальное (участники, ключи, workspace и их лимиты) — нет.
+    (re.compile(r"v1/organizations/(?!analytics/(?:usage|cost)\b|rate_limits\b|usage_report\b|cost_report\b)"), (),
+     "Admin API — только GET отчётов расхода, стоимости и лимитов; изменяющих вызовов нет (D-08, D-44, D-81)"),
     (re.compile(r"\b(?:org\.jsoup|org\.openqa\.selenium|com\.microsoft\.playwright|org\.htmlunit|com\.gargoylesoftware\.htmlunit)\b"
                 r"|\.(?:evaluateJavascript|addJavascriptInterface)\s*\("), (),
      "без скрейпинга и автоматизации браузера — только официальные API (D-20)"),

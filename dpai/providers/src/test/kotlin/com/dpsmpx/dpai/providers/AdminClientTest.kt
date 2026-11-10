@@ -98,6 +98,16 @@ class AdminClientTest {
         assertEquals(BigDecimal("3.50"), AdminReports.total(c.take(2)))
     }
 
+    @Test
+    fun screenLines() {
+        assertEquals("$412.80", UsageText.usd(BigDecimal("412.80000000")))
+        assertEquals("неизвестно", UsageText.usd(null))
+        assertEquals("вход 1\u00A0000 · запись кэша 12 · чтение кэша неизвестно · выход 50 · запросов 4", UsageText.tokens(UsageRow("d", "m", 1000, 12, null, 50, 4)))
+        assertEquals("запросов в минуту 4\u00A0000 — claude-opus-5-5", UsageText.limits(RateLimitRow("g", listOf("claude-opus-5-5"), 4000, null, null)))
+        assertEquals("пределы в минуту не сообщены", UsageText.limits(RateLimitRow("batch", emptyList(), null, null, null)))
+        assertEquals("2026-11-09 08:00 UTC", UsageText.stamp("2026-11-09T08:00:00Z"))
+    }
+
     /** `DPmetaApp:D-44`: в коде модуля нет изменяющих вызовов Admin API — пути только из списка, метод только GET. */
     @Test
     fun onlyGetAndOnlyListedPaths() {

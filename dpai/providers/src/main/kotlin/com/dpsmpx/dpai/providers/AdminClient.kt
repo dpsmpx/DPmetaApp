@@ -213,3 +213,35 @@ object AdminReports {
     /** Стоимость за период: `null`, если хоть один день не известен. */
     fun total(cost: List<CostRow>): BigDecimal? = if (cost.any { it.usd == null }) null else cost.sumOf { it.usd!! }
 }
+
+/** Строки экрана расхода (F-19): числа с разрядами, неизвестное — словом, не нулём (D-13). */
+object UsageText {
+    const val UNKNOWN = "неизвестно"
+
+    fun number(n: Long?): String = n?.let { "%,d".format(java.util.Locale.ROOT, it).replace(',', ' ') } ?: UNKNOWN
+
+    /** Доллары с центами: `$412.80`. */
+    fun usd(v: BigDecimal?): String = v?.let { "$" + it.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString() } ?: UNKNOWN
+
+    fun tokens(r: UsageRow): String = listOf(
+        "вход " + number(r.uncachedInput),
+        "запись кэша " + number(r.cacheWrite),
+        "чтение кэша " + number(r.cacheRead),
+        "выход " + number(r.output),
+        "запросов " + number(r.requests),
+    ).joinToString(" · ")
+
+    fun limits(l: RateLimitRow): String {
+        val parts = listOfNotNull(
+            l.requestsPerMinute?.let { "запросов в минуту " + number(it) },
+            l.inputPerMinute?.let { "токенов входа в минуту " + number(it) },
+            l.outputPerMinute?.let { "токенов выхода в минуту " + number(it) },
+        )
+        return (if (parts.isEmpty()) "пределы в минуту не сообщены" else parts.joinToString(" · ")) +
+            if (l.models.isEmpty()) "" else " — " + l.models.joinToString(", ")
+    }
+
+    /** Время ISO 8601 в UTC — «2026-11-09 08:00 UTC»; неразборчивое — как есть. */
+    fun stamp(iso: String): String =
+        Regex("(\\d{4}-\\d{2}-\\d{2})T(\\d{2}:\\d{2}).*").matchEntire(iso)?.let { "${it.groupValues[1]} ${it.groupValues[2]} UTC" } ?: iso
+}

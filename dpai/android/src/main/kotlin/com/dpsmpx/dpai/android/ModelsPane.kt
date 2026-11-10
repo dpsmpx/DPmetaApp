@@ -30,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -54,12 +55,14 @@ import com.dpsmpx.dpai.core.diagnostics.Secret
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.result.map
 import com.dpsmpx.dpai.core.text.Words
+import com.dpsmpx.dpai.providers.AdminReports
 import com.dpsmpx.dpai.providers.ChatEntry
 import com.dpsmpx.dpai.providers.ChatRole
 import com.dpsmpx.dpai.providers.Conversation
 import com.dpsmpx.dpai.providers.EntryStatus
 import com.dpsmpx.dpai.providers.ModelInfo
 import com.dpsmpx.dpai.providers.ProviderHosts
+import com.dpsmpx.dpai.providers.UsageText
 import com.dpsmpx.dpai.providers.Providers
 import com.dpsmpx.dpai.ui.Markdown
 import java.net.URI
@@ -87,6 +90,7 @@ fun ModelsPane() {
     val running by ModelsStore.running.collectAsState()
     val problem by ModelsStore.problem.collectAsState()
     var open by rememberSaveable { mutableStateOf<String?>(null) }
+    var usageOf by rememberSaveable { mutableStateOf<String?>(null) }
     var editing by remember { mutableStateOf<ApiProfile?>(null) }
     var creating by remember { mutableStateOf(false) }
     val conv = chats.firstOrNull { it.id.value == open }
@@ -94,6 +98,11 @@ fun ModelsPane() {
         // Системный «назад» из разговора — к списку «Моделей» (AI:A-2).
         androidx.activity.compose.BackHandler { open = null }
         ChatPane(conv, profiles.firstOrNull { it.id == conv.profile }, running[conv.id]) { open = null }
+        return
+    }
+    profiles.firstOrNull { it.id.value == usageOf }?.let { p ->
+        androidx.activity.compose.BackHandler { usageOf = null }
+        UsagePane(p) { usageOf = null }
         return
     }
     LazyColumn(contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -108,7 +117,7 @@ fun ModelsPane() {
         }
         if (profiles.isEmpty()) item { Text("Профилей нет: добавьте ключ Anthropic, OpenAI-совместимого провайдера или Gemini.", style = MaterialTheme.typography.bodySmall) }
         items(profiles, key = { "p:${it.id.value}" }) { p ->
-            ProfileCard(p, onChat = { open = ModelsStore.newChat(p).id.value }, onEdit = { editing = p })
+            ProfileCard(p, onChat = { open = ModelsStore.newChat(p).id.value }, onEdit = { editing = p }, onUsage = { usageOf = p.id.value })
         }
         // Локальная модель на телефоне (D-105) — здесь, рядом с профилем «Телефон: llama.cpp» (`DP_AI_Orcestrator:D-113`).
         item(key = "local-model") {
@@ -148,8 +157,9 @@ fun ModelsPane() {
 }
 
 @Composable
-private fun ProfileCard(p: ApiProfile, onChat: () -> Unit, onEdit: () -> Unit) {
+private fun ProfileCard(p: ApiProfile, onChat: () -> Unit, onEdit: () -> Unit, onUsage: () -> Unit) {
     val hasKey = remember(p) { ModelsStore.hasKey(p.id) }
+    val hasAdmin = remember(p) { p.kind == ProviderKind.ANTHROPIC && ModelsStore.hasAdminKey(p.id) }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
             Text(p.name, style = MaterialTheme.typography.titleSmall)
@@ -162,6 +172,8 @@ private fun ProfileCard(p: ApiProfile, onChat: () -> Unit, onEdit: () -> Unit) {
                 TextButton(onClick = onChat) { Text("Чат") }
                 // «Удалить» — в окне «Изменить», а не рядом с «Чат» (AI:A-26).
                 TextButton(onClick = onEdit) { Text("Изменить") }
+                // Расход и лимиты — отчёты по Admin-ключу, только чтение (`DPmetaApp:D-44`).
+                if (hasAdmin) TextButton(onClick = onUsage) { Text("Расход") }
             }
         }
     }
@@ -206,6 +218,9 @@ private fun ProfileDialog(existing: ApiProfile?, onDone: () -> Unit) {
     var baseUrl by remember { mutableStateOf(existing?.baseUrl ?: ApiPresets.OPENAI_COMPATIBLE.first().baseUrl) }
     var custom by remember { mutableStateOf(existing?.customHostAllowed ?: false) }
     var key by remember { mutableStateOf("") }
+    var admin by remember { mutableStateOf("") }
+    var adminStatus by remember { mutableStateOf<String?>(null) }
+    var adminRemove by remember { mutableStateOf(false) }
     var model by remember { mutableStateOf(existing?.model ?: "") }
     var max by remember { mutableStateOf(existing?.maxOutputTokens?.toString() ?: "") }
     var models by remember { mutableStateOf<List<ModelInfo>>(emptyList()) }
@@ -317,6 +332,41 @@ private fun ProfileDialog(existing: ApiProfile?, onDone: () -> Unit) {
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
                 )
+                // Admin-ключ организации Console — только для отчётов расхода и лимитов (`DPmetaApp:D-44`): необязателен.
+                if (kind == ProviderKind.ANTHROPIC) {
+                    val stored = existing != null && ModelsStore.hasAdminKey(id)
+                    OutlinedTextField(
+                        admin, { admin = it; adminRemove = false },
+                        label = { Text(if (stored) "Admin-ключ (пусто — прежний)" else "Admin-ключ — для расхода (можно без)") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text(
+                        "Только чтение отчётов: расход, стоимость, лимиты. Ключ организации Console; у личного аккаунта Admin API нет.",
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                    Row {
+                        TextButton(enabled = !busy && admin.isNotBlank(), onClick = {
+                            busy = true
+                            adminStatus = "проверяю…"
+                            val typed = Secret(admin.trim())
+                            scope.launch {
+                                val err = withContext(Dispatchers.IO) { ModelsStore.checkAdminKey(typed) }
+                                busy = false
+                                adminStatus = err ?: "Admin-ключ принят: отчёт за сутки получен"
+                            }
+                        }) { Text("Проверить Admin-ключ") }
+                        if (stored) {
+                            TextButton(enabled = !busy, onClick = { adminRemove = !adminRemove; admin = "" }) {
+                                Text(if (adminRemove) "Не стирать" else "Стереть Admin-ключ", color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    }
+                    if (adminRemove) Text("Admin-ключ сотрётся с телефона при сохранении.", style = MaterialTheme.typography.bodySmall)
+                    adminStatus?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                }
             }
         },
         confirmButton = {
@@ -327,7 +377,11 @@ private fun ProfileDialog(existing: ApiProfile?, onDone: () -> Unit) {
                         val typed = key.trim().takeIf { it.isNotEmpty() }?.let(::Secret)
                         busy = true
                         scope.launch {
-                            val err = withContext(Dispatchers.IO) { ModelsStore.saveProfile(f.value, typed) }
+                            val typedAdmin = admin.trim().takeIf { it.isNotEmpty() && kind == ProviderKind.ANTHROPIC }?.let(::Secret)
+                            val err = withContext(Dispatchers.IO) {
+                                // У иного провайдера Admin-ключа нет: сменили вид — прежний стирается.
+                                ModelsStore.saveProfile(f.value, typed) ?: ModelsStore.saveAdminKey(f.value.id, typedAdmin, remove = adminRemove || kind != ProviderKind.ANTHROPIC)
+                            }
                             busy = false
                             if (err == null) onDone() else status = err
                         }
@@ -343,6 +397,80 @@ private fun ProfileDialog(existing: ApiProfile?, onDone: () -> Unit) {
             }
         },
     )
+}
+
+/**
+ * Расход и лимиты API-профиля Anthropic (`DPmetaApp:D-44`, ТЗ DPmetaApp, F-19): стоимость и
+ * токены по дням и моделям за 7 или 30 полных суток по UTC и лимиты скорости. Только
+ * чтение отчётов Admin API; неизвестное показывается «неизвестно», не нулём (D-13).
+ */
+@Composable
+private fun UsagePane(p: ApiProfile, onBack: () -> Unit) {
+    var days by rememberSaveable { mutableIntStateOf(7) }
+    var view by remember(p.id) { mutableStateOf<Outcome<ModelsStore.AdminView>?>(null) }
+    var reload by remember { mutableIntStateOf(0) }
+    LaunchedEffect(p.id, days, reload) {
+        view = null
+        view = withContext(Dispatchers.IO) { ModelsStore.adminReport(p.id, days) }
+    }
+    LazyColumn(contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        item(key = "head") {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = onBack) { Text("← Модели") }
+                Text("Расход и лимиты — ${p.name}", style = MaterialTheme.typography.titleMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    for (d in listOf(7, 30)) FilterChip(selected = days == d, onClick = { days = d }, label = { Text("$d дней") })
+                }
+                Text("Полные сутки по UTC, до вчера. Данные Anthropic приходят с задержкой до суток.", style = MaterialTheme.typography.labelSmall)
+            }
+        }
+        when (val v = view) {
+            null -> item(key = "wait") { CircularProgressIndicator() }
+            is Outcome.Failure -> item(key = "fail") {
+                Column {
+                    Text(v.errors.first().let { "${Words.reason(it.code.name)}: ${it.message}" }, color = MaterialTheme.colorScheme.error)
+                    TextButton(onClick = { reload++ }) { Text("Повторить") }
+                }
+            }
+            is Outcome.Success -> {
+                val r = v.value
+                item(key = "total") {
+                    Card(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(12.dp)) {
+                            Text("Стоимость за период: " + UsageText.usd(AdminReports.total(r.cost).takeIf { r.cost.isNotEmpty() }), style = MaterialTheme.typography.titleSmall)
+                            Text(r.refreshedAt?.let { "Данные полны до ${UsageText.stamp(it)}" } ?: "Данных за период ещё нет", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+                val totals = AdminReports.totals(r.usage)
+                if (totals.isNotEmpty()) item(key = "models-title") { Text("По моделям", style = MaterialTheme.typography.titleSmall) }
+                items(totals, key = { "m:${it.model}" }) { m ->
+                    Column {
+                        Text(m.model ?: "без модели", style = MaterialTheme.typography.bodyMedium)
+                        Text(UsageText.tokens(m), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                val byDay = AdminReports.days(r.usage, r.cost).reversed()
+                if (byDay.isNotEmpty()) item(key = "days-title") { Text("По дням", style = MaterialTheme.typography.titleSmall) }
+                items(byDay, key = { "d:${it.day}" }) { d ->
+                    Column {
+                        Text("${d.day} — ${UsageText.usd(d.usd)}", style = MaterialTheme.typography.bodyMedium)
+                        for (m in d.models) {
+                            Text("${m.model ?: "без модели"}: ${UsageText.tokens(m)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+                if (r.limits.isNotEmpty()) item(key = "limits-title") { Text("Лимиты скорости", style = MaterialTheme.typography.titleSmall) }
+                items(r.limits.size, key = { "l:$it" }) { i ->
+                    val l = r.limits[i]
+                    Column {
+                        Text(l.group.ifEmpty { "группа" }, style = MaterialTheme.typography.bodyMedium)
+                        Text(UsageText.limits(l), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
+    }
 }
 
 private fun kindName(k: ProviderKind): String = when (k) {

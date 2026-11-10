@@ -112,6 +112,48 @@ object ModelsStore {
 
     fun adminKey(id: AccountId): Secret? = ApiKeys.getNamed(app, adminName(id))
 
+    /** Отчёты Admin API для экрана (F-19): расход, стоимость и лимиты скорости. */
+    data class AdminView(
+        val usage: List<com.dpsmpx.dpai.providers.UsageRow>,
+        val cost: List<com.dpsmpx.dpai.providers.CostRow>,
+        val limits: List<com.dpsmpx.dpai.providers.RateLimitRow>,
+        val refreshedAt: String?,
+    )
+
+    /** F-18: Admin-ключ проверяется отчётом о расходе за последние сутки; итог — текст отказа или `null`. */
+    fun checkAdminKey(key: Secret): String? = when (val r = runCatching { com.dpsmpx.dpai.providers.AdminClient().check(key, Clock.SYSTEM.now()) }.getOrElse { fail(it) }) {
+        is Outcome.Success -> null
+        is Outcome.Failure -> r.errors.first().let { "${Words.reason(it.code.name)}: ${it.message}" }
+    }
+
+    /**
+     * Расход и стоимость за [days] полных суток по UTC (до вчера: корзины — сутки UTC,
+     * сегодняшние данные ещё неполны) и лимиты скорости. Блокирующий — с фонового потока.
+     */
+    fun adminReport(id: AccountId, days: Int): Outcome<AdminView> {
+        val key = adminKey(id)
+        val end = java.time.Instant.ofEpochMilli(Clock.SYSTEM.now().epochMillis).truncatedTo(java.time.temporal.ChronoUnit.DAYS)
+        val from = com.dpsmpx.dpai.core.clock.Timestamp(end.minus(days.toLong(), java.time.temporal.ChronoUnit.DAYS).toEpochMilli())
+        val to = com.dpsmpx.dpai.core.clock.Timestamp(end.toEpochMilli())
+        return runCatching {
+            val client = com.dpsmpx.dpai.providers.AdminClient()
+            val usage = when (val r = client.usage(key, from, to)) {
+                is Outcome.Failure -> return r
+                is Outcome.Success -> r.value
+            }
+            val cost = when (val r = client.cost(key, from, to)) {
+                is Outcome.Failure -> return r
+                is Outcome.Success -> r.value
+            }
+            when (val r = client.rateLimits(key)) {
+                is Outcome.Failure -> r
+                is Outcome.Success -> Outcome.success(AdminView(usage.rows, cost.rows, r.value, usage.refreshedAt ?: cost.refreshedAt))
+            }
+        }.getOrElse { fail(it) }
+    }
+
+    private fun fail(e: Throwable): Outcome.Failure = Outcome.failure(DiagCode.INTERNAL_ERROR, "сбой: ${e.javaClass.simpleName}", "admin")
+
     /** Сохранить Admin-ключ ([key] — новый) или стереть его ([remove]). Итог — текст отказа или `null`. */
     fun saveAdminKey(id: AccountId, key: Secret?, remove: Boolean): String? {
         if (remove) {

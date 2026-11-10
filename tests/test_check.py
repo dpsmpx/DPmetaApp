@@ -671,6 +671,9 @@ class ForbiddenTest(CheckCase):
             ('val cmd = listOf("rsync", "-a", "dist/", host)\n', "выгрузка сайта"),
             ('const val HOST = "ssh.beget.com"\n', "выгрузка сайта"),
             ('val url = "https://api.anthropic.com/v1/organizations/invites"\n', "Admin API"),
+            # Лимиты workspace меняются POST — пути нет в списке чтения (D-44, D-81).
+            ('val url = "https://api.anthropic.com/v1/organizations/workspaces/w/rate_limits/r"\n', "Admin API"),
+            ('val url = "https://api.anthropic.com/v1/organizations/analytics/usage_admin"\n', "Admin API"),
             ("import org.jsoup.Jsoup\n", "скрейпинга"),
             ('fun f(w: WebView) = w.evaluateJavascript("x", null)\n', "автоматизации браузера"),
         ]:
@@ -683,6 +686,8 @@ class ForbiddenTest(CheckCase):
             # Выгрузка — у подсистемы сайта (D-40, D-48); отчёты Usage и Cost — только чтение (D-08).
             "socialmediaimage/app/src/main/kotlin/Deploy.kt": 'val cmd = listOf("rsync", "-a")\n',
             "dpai/providers/src/main/kotlin/Usage.kt": 'val u = "https://api.anthropic.com/v1/organizations/usage_report/messages"\n',
+            # Список чтения D-81: аналитика расхода и стоимости, лимиты скорости организации.
+            "dpai/providers/src/main/kotlin/Admin.kt": 'val a = "/v1/organizations/analytics/usage"\nval c = "/v1/organizations/analytics/cost"\nval l = "/v1/organizations/rate_limits"\n',
             "core/sync/src/main/kotlin/S.kt": "// без rsync и jsoup — D-20, D-40\nval x = 1 // не rsync: D-40\n",
             "core/sync/src/test/kotlin/T.kt": 'val sample = "rsync"\n',
         })
