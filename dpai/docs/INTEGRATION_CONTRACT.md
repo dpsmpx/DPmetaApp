@@ -388,7 +388,7 @@ API не включён. Граница — этот раздел и реест�
 | `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_SPECIAL_USE` | `ControllerService` типа `specialUse`: такт контроллера при закрытом экране (D-36) |
 | `WAKE_LOCK` | частичный wakelock службы контроллера: такт идёт при выключенном экране (D-39) |
 | `SYSTEM_ALERT_WINDOW` | окно запроса поверх приложений — если человек включил его и дал разрешение (D-44) |
-| `com.termux.permission.RUN_COMMAND` | запуск `sshd` Termux-target на этом телефоне — только эта команда (D-46) |
+| `com.termux.permission.RUN_COMMAND` | запуск `sshd` Termux-target на этом телефоне — от «AI» только эта команда (D-46); пульт DPmetaApp объявляет то же разрешение для команд своего реестра и пробы готовности (`DPmetaApp:D-84`) |
 | `ACCESS_NETWORK_STATE` | DNS сети телефона для Linux-среды в приложении: только чтение состояния сети (D-90) |
 
 Других разрешений нет. Экспортируется только `MainActivity` (запуск);

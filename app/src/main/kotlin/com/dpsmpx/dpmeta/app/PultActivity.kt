@@ -69,6 +69,13 @@ open class PultActivity : ComponentActivity() {
     private val saveCsv = registerForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { writeExport(it) }
     private val saveJson = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { writeExport(it) }
 
+    /** Ответ на просьбу разрешения Termux (D-84): экран проверяет готовность снова. */
+    private var termuxAsked: (() -> Unit)? = null
+    private val askTermux = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+        termuxAsked?.invoke()
+        termuxAsked = null
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         coldStart = savedInstanceState == null
@@ -209,6 +216,23 @@ open class PultActivity : ComponentActivity() {
         onStop: (() -> Unit) -> Unit,
     ): Outcome<com.dpsmpx.dpmeta.app.screens.CommandActions.Exit> =
         Outcome.failure(DiagCode.UNSUPPORTED, "Linux-среды нет: её даёт подсистема «AI»", "linux")
+
+    /**
+     * Команда реестра в Termux (F-41; D-84): вызов уходит в Termux, итог приходит
+     * целиком, когда команда кончится; остановить её отсюда нельзя — Termux этого не
+     * умеет. Не на главном потоке.
+     */
+    private fun termuxRun(call: com.dpsmpx.dpmeta.app.screens.TermuxActions.Call, minutes: Int, onLine: (String) -> Unit): Outcome<com.dpsmpx.dpmeta.app.screens.CommandActions.Exit> {
+        onLine("Отправлено в Termux, каталог ${call.workdir}. Вывод придёт целиком, когда команда кончится.")
+        return when (val r = com.dpsmpx.dpmeta.app.data.TermuxBridge.run(this, call, minutes * 60_000L)) {
+            is Outcome.Failure -> r
+            is Outcome.Success -> {
+                val res = r.value ?: return com.dpsmpx.dpmeta.app.screens.TermuxActions.noResult(minutes)
+                com.dpsmpx.dpmeta.app.screens.TermuxActions.lines(res).forEach(onLine)
+                com.dpsmpx.dpmeta.app.screens.TermuxActions.exit(res)
+            }
+        }
+    }
 
     /** «О программе» (UX-23, D-54): версия DPmetaApp из пакета и версия «AI» от оболочки. */
     private fun about(): String {
@@ -714,14 +738,18 @@ open class PultActivity : ComponentActivity() {
          * (D-39): id, проект, итог; без вывода.
          */
         override fun commandStart(spec: com.dpsmpx.dpmeta.formats.CommandSpec, checked: com.dpsmpx.dpmeta.app.screens.CommandActions.Checked) {
-            val key = com.dpsmpx.dpmeta.app.data.CommandSession.key(spec.id, checked.spot.project)
+            val termux = checked.where == com.dpsmpx.dpmeta.app.screens.CommandActions.Where.TERMUX
+            val call = checked.termux
+            if (termux && call == null) return
+            val key = com.dpsmpx.dpmeta.app.data.CommandSession.key(spec.id, checked.spot.project, termux)
             val argv = com.dpsmpx.dpmeta.app.screens.CommandActions.argv(spec)
             val job = com.dpsmpx.dpmeta.app.data.CommandSession.Job { onLine, onStop ->
                 val started = com.dpsmpx.dpai.core.clock.Clock.SYSTEM.now().epochMillis
                 fun seconds() = (com.dpsmpx.dpai.core.clock.Clock.SYSTEM.now().epochMillis - started) / 1000
-                fun run() = commandRun(checked.spot.guestDir, argv, spec.timeoutMinutes, onLine, onStop)
+                fun run(): Outcome<com.dpsmpx.dpmeta.app.screens.CommandActions.Exit> =
+                    if (call != null) termuxRun(call, spec.timeoutMinutes, onLine) else commandRun(checked.spot.guestDir, argv, spec.timeoutMinutes, onLine, onStop)
                 if (spec.level == 1) {
-                    val c = com.dpsmpx.dpmeta.app.screens.CommandActions.command(spec, checked.spot, checked.tree)
+                    val c = com.dpsmpx.dpmeta.app.screens.CommandActions.command(spec, checked.spot, checked.tree, checked.where, checked.dir)
                     when (val r = repo.runCommand(c, { it.shown(c) }, ::run)) {
                         is Outcome.Failure -> r
                         is Outcome.Success -> Outcome.success("Готово: ${r.value.detail} (${seconds()} с).")
@@ -738,11 +766,71 @@ open class PultActivity : ComponentActivity() {
                 }
             }
             com.dpsmpx.dpmeta.app.data.CommandSession.start(key, job) { r ->
-                debugLog("команды", "${spec.id} ${checked.spot.project} ур.${spec.level}: " + when (r) {
+                debugLog("команды", "${spec.id} ${checked.spot.project} ур.${spec.level}" + (if (termux) " в Termux" else "") + ": " + when (r) {
                     is Outcome.Success -> "готово"
                     is Outcome.Failure -> "${r.errors.first().code}"
                 })
             }
+        }
+
+        override fun termuxFolder(): String = termuxFolder(this@PultActivity)
+
+        override fun setTermuxFolder(input: String): Outcome<String> {
+            val folder = com.dpsmpx.dpmeta.app.screens.TermuxActions.normalizeFolder(input)
+            com.dpsmpx.dpmeta.app.screens.TermuxActions.folderProblem(folder)?.let { return Outcome.failure(DiagCode.VALUE_INVALID, it, "termux") }
+            getSharedPreferences(SETTINGS_PREFS, MODE_PRIVATE).edit { putString(TERMUX_FOLDER, folder) }
+            return Outcome.success(folder)
+        }
+
+        /**
+         * Готовность в Termux (F-42; D-84): что знает пакетный менеджер, затем — проба
+         * `ls` папки, клона, программы и скрипта (только чтение), если Termux можно спросить.
+         */
+        override fun termuxCheck(
+            spec: com.dpsmpx.dpmeta.formats.CommandSpec,
+            registry: com.dpsmpx.dpmeta.model.Registry,
+            project: String?,
+            done: (Outcome<com.dpsmpx.dpmeta.app.screens.CommandActions.Checked>) -> Unit,
+        ) = background({
+            val t = com.dpsmpx.dpmeta.app.screens.TermuxActions
+            when (val sp = com.dpsmpx.dpmeta.app.screens.CommandActions.spot(spec, registry, project)) {
+                is Outcome.Failure -> sp
+                is Outcome.Success -> {
+                    val spot = sp.value
+                    val folder = termuxFolder(this@PultActivity)
+                    var facts = com.dpsmpx.dpmeta.app.data.TermuxBridge.facts(this@PultActivity)
+                    if (t.folderProblem(folder) == null && facts.installed && facts.runCommand && t.versionOk(facts.versionName) && facts.permitted) {
+                        val probe = t.probe(t.probePaths(spec, spot, folder))
+                        facts = when (val r = com.dpsmpx.dpmeta.app.data.TermuxBridge.run(this@PultActivity, probe, t.PROBE_SECONDS * 1000L)) {
+                            is Outcome.Failure -> facts.copy(probe = com.dpsmpx.dpmeta.app.screens.TermuxActions.Result("", "", null, 1, r.errors.first().message), probeSent = true)
+                            is Outcome.Success -> facts.copy(probe = r.value, probeSent = true)
+                        }
+                    }
+                    val ready = t.readiness(spec, spot, folder, facts)
+                    val dir = ready.clone?.let { t.dir(folder, it, spot) } ?: t.dir(folder, spot.repo.name, spot)
+                    Outcome.success(
+                        com.dpsmpx.dpmeta.app.screens.CommandActions.Checked(
+                            spot,
+                            null,
+                            ready.steps,
+                            where = com.dpsmpx.dpmeta.app.screens.CommandActions.Where.TERMUX,
+                            dir = dir,
+                            termux = ready.call?.takeIf { ready.ready },
+                        ),
+                    )
+                }
+            }
+        }, done)
+
+        override fun termuxPermit(done: () -> Unit) {
+            termuxAsked = done
+            askTermux.launch(com.dpsmpx.dpmeta.app.data.TermuxBridge.PERMISSION)
+        }
+
+        override fun appSettings() {
+            startActivity(
+                android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.fromParts("package", packageName, null)),
+            )
         }
 
         /** Экспорт журнала (F-44): текстом через системное «Поделиться». */
@@ -874,6 +962,12 @@ open class PultActivity : ComponentActivity() {
         private const val CLONES_PREFS = "dpmeta.clones"
         private const val SETTINGS_PREFS = "dpmeta.settings"
         private const val ZONE_MINUTES = "zone_minutes"
+        private const val TERMUX_FOLDER = "termux_folder"
+
+        /** Папка проектов Termux (D-83): выбранная в «Командах» или по умолчанию. */
+        fun termuxFolder(context: android.content.Context): String =
+            context.getSharedPreferences(SETTINGS_PREFS, MODE_PRIVATE).getString(TERMUX_FOLDER, null)
+                ?: com.dpsmpx.dpmeta.app.screens.TermuxActions.DEFAULT_FOLDER
 
         /** Пояс показа, минуты от UTC (ТЗ, §6.3; UX-22): по умолчанию +03:00. */
         fun zoneMinutes(context: android.content.Context): Int =

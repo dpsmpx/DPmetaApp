@@ -70,9 +70,24 @@ object CommandActions {
     /** Реестр команд для экрана: команды, реестр проектов и проекты для команды «любой проект». */
     data class Catalog(val commands: List<CommandSpec>, val registry: Registry, val anyProjects: List<String>)
 
-    /** Команда на месте: где идёт, рабочее дерево клона, готовность по шагам и каких пакетов нет. */
-    data class Checked(val spot: Spot, val tree: Clones.Worktree?, val steps: List<Step>, val missing: List<String> = emptyList()) {
-        val ready: Boolean get() = ready(steps)
+    /** Где идёт команда: Linux-среда приложения (D-82) или Termux — мостом (F-41; D-84). */
+    enum class Where { LINUX, TERMUX }
+
+    /**
+     * Команда на месте: где идёт, рабочее дерево клона, готовность по шагам и каких пакетов
+     * нет. У Termux — его каталог [dir] и готовый вызов [termux]; рабочего дерева пульта нет:
+     * клон Termux — свой.
+     */
+    data class Checked(
+        val spot: Spot,
+        val tree: Clones.Worktree?,
+        val steps: List<Step>,
+        val missing: List<String> = emptyList(),
+        val where: Where = Where.LINUX,
+        val dir: String = spot.guestDir,
+        val termux: TermuxActions.Call? = null,
+    ) {
+        val ready: Boolean get() = ready(steps) && (where == Where.LINUX || termux != null)
     }
 
     /** Состояние Linux-среды приложения. */
@@ -133,9 +148,10 @@ object CommandActions {
 
     /**
      * Команда журнала для уровня 1 (D-07, D-82): какая команда, где и на каком коммите
-     * рабочего дерева; вывода и аргументов от человека нет — их и не бывает (F-40).
+     * рабочего дерева; вывода и аргументов от человека нет — их и не бывает (F-40). В
+     * Termux (D-84) — его каталог и `place = termux`; коммита клона Termux пульт не знает.
      */
-    fun command(spec: CommandSpec, spot: Spot, tree: Clones.Worktree?): ActionCommand {
+    fun command(spec: CommandSpec, spot: Spot, tree: Clones.Worktree?, where: Where = Where.LINUX, dir: String = spot.guestDir): ActionCommand {
         require(spec.level == 1) { "в журнал — только команды уровня 1" }
         return ActionCommand(
             ActionKind.COMMAND_RUN,
@@ -143,19 +159,20 @@ object CommandActions {
             linkedMapOf(
                 "command" to spec.id,
                 "project" to spot.project,
-                "dir" to spot.guestDir,
+                "dir" to dir,
                 "line" to spec.line,
-            ) + (tree?.sha?.let { mapOf("before" to it) } ?: emptyMap()),
+            ) + (if (where == Where.TERMUX) mapOf("place" to "termux") else emptyMap()) +
+                (tree?.sha?.takeIf { where == Where.LINUX }?.let { mapOf("before" to it) } ?: emptyMap()),
         )
     }
 
     /** Окно «что изменится» (уровень 1): что, где и чего ждать. */
-    fun preview(spec: CommandSpec, spot: Spot, tree: Clones.Worktree?): List<String> = listOfNotNull(
-        "«${spec.title}» в ${spot.guestDir}.",
+    fun preview(spec: CommandSpec, spot: Spot, tree: Clones.Worktree?, where: Where = Where.LINUX, dir: String = spot.guestDir): List<String> = listOfNotNull(
+        "«${spec.title}» в $dir" + (if (where == Where.TERMUX) " (Termux)." else "."),
         "Команда: ${spec.line}",
-        treeLine(tree),
+        if (where == Where.LINUX) treeLine(tree) else "Рабочее дерево — клон Termux; его ветку и коммит пульт не видит.",
         spec.expect?.let { "Ждать: $it." },
-        "Меняется только рабочее дерево клона на телефоне; GitHub не меняется.",
+        if (where == Where.LINUX) "Меняется только рабочее дерево клона на телефоне; GitHub не меняется." else "Меняется только рабочее дерево клона в Termux; GitHub не меняется.",
     )
 
     /** Итог запуска: код возврата (`null` — процесс остановлен), остановлен ли человеком или пределом времени. */

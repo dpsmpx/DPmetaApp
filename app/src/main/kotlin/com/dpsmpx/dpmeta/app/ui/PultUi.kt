@@ -314,6 +314,23 @@ interface Loader {
     /** Запуск: итог и вывод — в [CommandSession]; уровень 1 — уже после окна «что изменится». */
     fun commandStart(spec: CommandSpec, checked: CommandActions.Checked) {}
 
+    /** Папка проектов Termux (D-83, D-84): сохранённая или по умолчанию. */
+    fun termuxFolder(): String = com.dpsmpx.dpmeta.app.screens.TermuxActions.DEFAULT_FOLDER
+
+    /** Сохранить папку проектов Termux из ввода: итог — путь, как он сохранён, или что не так. */
+    fun setTermuxFolder(input: String): Outcome<String> =
+        Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "настроек Termux здесь нет", "termux")
+
+    /** Готовность команды в Termux по шагам (F-42): с пробой папки, клона и программы. */
+    fun termuxCheck(spec: CommandSpec, registry: com.dpsmpx.dpmeta.model.Registry, project: String?, done: (Outcome<CommandActions.Checked>) -> Unit) =
+        done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "Termux здесь нет", spec.id))
+
+    /** Попросить разрешение «Запуск команд в Termux»; [done] — когда человек ответил. */
+    fun termuxPermit(done: () -> Unit) = done()
+
+    /** Страница приложения в настройках Android — там «Другие разрешения», если окна запроса нет. */
+    fun appSettings() {}
+
     /** Поделиться текстом (экспорт журнала, F-44). */
     fun share(subject: String, text: String) {}
 }
@@ -1209,7 +1226,7 @@ private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -
     Text("Вопросы о состоянии проектов — моделью по ключу API из «AI». Claude только читает срез; действий из разговора нет.", style = MaterialTheme.typography.bodySmall)
     TextButton(onClick = onAsk) { Text("Спросить Claude ▸") }
     Text("Команды проектов", style = MaterialTheme.typography.titleMedium)
-    Text("Проверки и отчёты проектов — в Linux-среде приложения, в клонах. Только команды из списка; своих здесь не набрать.", style = MaterialTheme.typography.bodySmall)
+    Text("Проверки и отчёты проектов — в Linux-среде приложения или в Termux, в клонах. Только команды из списка; своих здесь не набрать.", style = MaterialTheme.typography.bodySmall)
     TextButton(onClick = onCommands) { Text("Команды ▸") }
     Text("Синхронизация", style = MaterialTheme.typography.titleMedium)
     // Постоянная строка последней синхронизации (UX-10); временные итоги — снэкбаром.
@@ -1549,24 +1566,27 @@ private fun JournalScreen(loader: Loader, onBack: () -> Unit) {
 }
 
 /**
- * Команды проектов (F-40, F-43; D-82): только из реестра, без ввода аргументов. У команды —
- * где идёт, готовность по шагам, рабочее дерево клона; уровень 1 — окно «что изменится» и
- * журнал. Вывод — по ходу; запуск переживает уход с экрана ([CommandSession]).
+ * Команды проектов (F-40…F-43; D-82, D-84): только из реестра, без ввода аргументов. У
+ * команды — где идёт (Linux-среда приложения или Termux), готовность по шагам, рабочее
+ * дерево клона; уровень 1 — окно «что изменится» и журнал. Вывод — по ходу (в Termux —
+ * целиком в конце); запуск переживает уход с экрана ([CommandSession]).
  */
 @Composable
 private fun CommandsScreen(loader: Loader, onBack: () -> Unit) {
     var catalog by remember { mutableStateOf<Outcome<CommandActions.Catalog>?>(null) }
     LaunchedEffect(Unit) { loader.commands { catalog = it } }
     var opened by rememberSaveable { mutableStateOf<String?>(null) }
+    var folderRound by remember { mutableIntStateOf(0) }
     LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         item { TextButton(onClick = onBack, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("← Назад") } }
         item { Text("Команды проектов", style = MaterialTheme.typography.titleMedium) }
         item {
             Text(
-                "Идут в Linux-среде приложения, в клонах /root/repos — там же, где работает «AI». Чтение — сразу; правка рабочего дерева — после окна «что изменится», с записью в журнал.",
+                "Идут в Linux-среде приложения, в клонах /root/repos — там же, где работает «AI», или в Termux, в его папке проектов. Чтение — сразу; правка рабочего дерева — после окна «что изменится», с записью в журнал.",
                 style = MaterialTheme.typography.bodySmall,
             )
         }
+        item { TermuxFolder(loader) { folderRound++ } }
         when (val c = catalog) {
             null -> item { Text("Читаю реестр…", style = MaterialTheme.typography.bodySmall) }
             is Outcome.Failure -> item { Text("Реестр не прочитан: ${c.errors.first().message}", color = MaterialTheme.colorScheme.error) }
@@ -1589,21 +1609,79 @@ private fun CommandsScreen(loader: Loader, onBack: () -> Unit) {
                         }
                         Text(if (open) "▾" else "▸")
                     }
-                    if (open) CommandDetail(spec, c.value, loader)
+                    if (open) CommandDetail(spec, c.value, loader, folderRound)
                 }
             }
         }
     }
 }
 
+/**
+ * Папка проектов Termux (D-83, D-84): клоны в ней — под своими именами. Выбор — вводом пути:
+ * каталог Termux приложению не виден, есть ли папка — скажет проверка готовности команды.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun CommandDetail(spec: CommandSpec, catalog: CommandActions.Catalog, loader: Loader) {
+private fun TermuxFolder(loader: Loader, onChanged: () -> Unit) {
+    var folder by remember { mutableStateOf(loader.termuxFolder()) }
+    var editing by rememberSaveable { mutableStateOf(false) }
+    var input by rememberSaveable { mutableStateOf("") }
+    var problem by remember { mutableStateOf<String?>(null) }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("Папка проектов в Termux", fontWeight = FontWeight.SemiBold)
+        if (!editing) {
+            Text(folder, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+            TextButton(onClick = {
+                input = folder
+                problem = null
+                editing = true
+            }) { Text("Изменить папку") }
+        } else {
+            OutlinedTextField(
+                value = input,
+                onValueChange = {
+                    input = it
+                    problem = null
+                },
+                label = { Text("Путь в Termux") },
+                singleLine = true,
+                isError = problem != null,
+                supportingText = { Text(problem ?: "Клоны — в ней под своими именами: …/DPmetaApp, …/DPlearn. «~/» — домашний каталог Termux.") },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+                Button(onClick = {
+                    when (val r = loader.setTermuxFolder(input)) {
+                        is Outcome.Success -> {
+                            folder = r.value
+                            editing = false
+                            onChanged()
+                        }
+                        is Outcome.Failure -> problem = r.errors.first().message.replaceFirstChar { it.uppercase() } + "."
+                    }
+                }) { Text("Сохранить") }
+                TextButton(onClick = { input = com.dpsmpx.dpmeta.app.screens.TermuxActions.DEFAULT_FOLDER }) { Text("По умолчанию") }
+                TextButton(onClick = { editing = false }) { Text("Отмена") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CommandDetail(spec: CommandSpec, catalog: CommandActions.Catalog, loader: Loader, folderRound: Int = 0) {
     var project by rememberSaveable(spec.id) { mutableStateOf(if (spec.anyProject) catalog.anyProjects.firstOrNull() else spec.project) }
+    var where by rememberSaveable(spec.id) { mutableStateOf(CommandActions.Where.LINUX) }
     var round by remember { mutableIntStateOf(0) }
     var checked by remember { mutableStateOf<Outcome<CommandActions.Checked>?>(null) }
-    LaunchedEffect(spec.id, project, round) {
+    LaunchedEffect(spec.id, project, round, where, folderRound) {
         checked = null
-        project?.let { p -> loader.commandCheck(spec, catalog.registry, p) { checked = it } }
+        project?.let { p ->
+            if (where == CommandActions.Where.TERMUX) {
+                loader.termuxCheck(spec, catalog.registry, p) { checked = it }
+            } else {
+                loader.commandCheck(spec, catalog.registry, p) { checked = it }
+            }
+        }
     }
     var installing by remember { mutableStateOf(false) }
     var installed by remember { mutableStateOf<String?>(null) }
@@ -1618,20 +1696,31 @@ private fun CommandDetail(spec: CommandSpec, catalog: CommandActions.Catalog, lo
                 }
             }
         }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.Center) {
+            FilterChip(selected = where == CommandActions.Where.LINUX, onClick = { where = CommandActions.Where.LINUX }, label = { Text("Linux в приложении") })
+            FilterChip(selected = where == CommandActions.Where.TERMUX, onClick = { where = CommandActions.Where.TERMUX }, label = { Text("Termux") })
+        }
         Text(spec.line, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
         spec.expect?.let { Text("Ждать: $it.", style = MaterialTheme.typography.bodySmall) }
         when (val ch = checked) {
-            null -> if (project != null) Text("Проверяю готовность…", style = MaterialTheme.typography.bodySmall)
+            null -> if (project != null) Text(if (where == CommandActions.Where.TERMUX) "Спрашиваю Termux…" else "Проверяю готовность…", style = MaterialTheme.typography.bodySmall)
             is Outcome.Failure -> Text(ch.errors.first().message.replaceFirstChar { it.uppercase() }, color = MaterialTheme.colorScheme.error)
             is Outcome.Success -> {
                 val v = ch.value
-                Text("Каталог: ${v.spot.guestDir}", style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+                val inTermux = v.where == CommandActions.Where.TERMUX
+                Text("Каталог: ${v.dir}", style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
                 if (v.tree != null) Text(CommandActions.treeLine(v.tree), style = MaterialTheme.typography.bodySmall)
                 for (st in v.steps) {
                     Text((if (st.ok) "✓ " else "✗ ") + st.title, style = MaterialTheme.typography.bodySmall, color = if (st.ok) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error)
                     if (!st.ok) st.hint?.let { Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 16.dp)) }
                 }
-                val key = CommandSession.key(spec.id, v.spot.project)
+                if (inTermux && v.steps.any { !it.ok && it.title == com.dpsmpx.dpmeta.app.screens.TermuxActions.NO_PERMISSION }) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+                        OutlinedButton(onClick = { loader.termuxPermit { round++ } }) { Text("Разрешить") }
+                        TextButton(onClick = { loader.appSettings() }) { Text("Настройки приложения") }
+                    }
+                }
+                val key = CommandSession.key(spec.id, v.spot.project, inTermux)
                 val run = CommandSession.runs[key]
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(Tokens.gap)) {
                     if (v.missing.isNotEmpty()) {
@@ -1649,7 +1738,8 @@ private fun CommandDetail(spec: CommandSpec, catalog: CommandActions.Catalog, lo
                         }, enabled = !installing) { Text(if (installing) "Ставлю…" else "Поставить пакеты") }
                     }
                     if (run?.running == true) {
-                        OutlinedButton(onClick = { CommandSession.stop(key) }) { Text("Остановить") }
+                        // Termux команду извне не останавливает: кнопки нет, итог придёт сам.
+                        if (!inTermux) OutlinedButton(onClick = { CommandSession.stop(key) }) { Text("Остановить") }
                     } else {
                         Button(onClick = { if (spec.level == 1) confirming = true else loader.commandStart(spec, v) }, enabled = v.ready) {
                             Text(if (spec.level == 1) "Запустить…" else "Запустить")
@@ -1659,7 +1749,7 @@ private fun CommandDetail(spec: CommandSpec, catalog: CommandActions.Catalog, lo
                 }
                 installed?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                 if (run != null) {
-                    if (run.running) Text("Идёт…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                    if (run.running) Text(if (inTermux) "Идёт в Termux…" else "Идёт…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                     run.result?.let { Text(it, color = if (run.failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface) }
                     if (run.lines.isNotEmpty()) {
                         val scroll = rememberScrollState()
@@ -1679,7 +1769,7 @@ private fun CommandDetail(spec: CommandSpec, catalog: CommandActions.Catalog, lo
                     AlertDialog(
                         onDismissRequest = { confirming = false },
                         title = { Text("Запустить «${spec.title}»?") },
-                        text = { Text(CommandActions.preview(spec, v.spot, v.tree).joinToString("\n")) },
+                        text = { Text(CommandActions.preview(spec, v.spot, v.tree, v.where, v.dir).joinToString("\n")) },
                         confirmButton = {
                             TextButton(onClick = {
                                 confirming = false
