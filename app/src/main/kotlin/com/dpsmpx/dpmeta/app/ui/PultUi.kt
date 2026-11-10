@@ -350,6 +350,9 @@ private sealed interface Nav {
      */
     data class Brief(val project: String, val brief: String?, val source: String?, val question: String?) : Nav
 
+    /** «Спросить Claude» (F-21) — из «Ещё»; из документа — с приложенным файлом [project]:[path]. */
+    data class Ask(val project: String?, val path: String?) : Nav
+
     companion object {
         private const val SEP = "\u0001"
 
@@ -365,6 +368,7 @@ private sealed interface Nav {
             is Branch -> listOf("branch", n.project, n.name)
             is Edit -> listOf("edit", n.project, n.path)
             is Brief -> listOf("brief", n.project, n.brief.orEmpty(), n.source.orEmpty(), n.question.orEmpty())
+            is Ask -> listOf("ask", n.project.orEmpty(), n.path.orEmpty())
         }.joinToString(SEP)
 
         fun decode(s: String): Nav? {
@@ -380,6 +384,7 @@ private sealed interface Nav {
                 "branch" -> if (p.size >= 3) Branch(p[1], p[2]) else null
                 "edit" -> if (p.size >= 3) Edit(p[1], p[2]) else null
                 "brief" -> if (p.size >= 5) Brief(p[1], p[2].ifEmpty { null }, p[3].ifEmpty { null }, p[4].ifEmpty { null }) else null
+                "ask" -> if (p.size >= 3) Ask(p[1].ifEmpty { null }, p[2].ifEmpty { null }) else null
                 else -> null
             }
         }
@@ -517,11 +522,12 @@ fun PultApp(
                 top is Nav.Journal -> JournalScreen(loader, back)
                 top is Nav.Edit -> EditScreen(top.project, top.path, loader, back)
                 top is Nav.Brief -> BriefScreen(top, loader, back)
+                top is Nav.Ask -> AskScreen(top, s != null, loader, back)
                 top is Nav.Branch -> {
                     val pulls = remember(s, top) { s?.let { Screens.card(it, top.project) }?.pulls?.filter { it.head == top.name }?.map { it.number }.orEmpty() }
                     BranchScreen(top.project, top.name, pulls, loader, back)
                 }
-                tab == Section.MORE -> Settings(view, onSync, onSaveToken, onForgetToken, onClones, onZone, onJournal = { open(Nav.Journal) })
+                tab == Section.MORE -> Settings(view, onSync, onSaveToken, onForgetToken, onClones, onZone, onJournal = { open(Nav.Journal) }, onAsk = { open(Nav.Ask(null, null)) })
                 s == null && view.loading -> Text("Читаю срез…", style = MaterialTheme.typography.bodySmall)
                 // Пустое состояние ведёт дальше (UX-11): кнопкой, а не словами «где-то в настройках».
                 s == null -> Column(verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
@@ -968,6 +974,7 @@ private fun DocScreen(nav: Nav.Doc, names: Map<String, String>, loader: Loader, 
             TextButton(onClick = onBack, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("← Назад") }
             androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
             TextButton(onClick = { searching = !searching }) { Text(if (searching) "Скрыть поиск" else "Найти") }
+            TextButton(onClick = { open(Nav.Ask(nav.project, nav.path)) }) { Text("Спросить…") }
             TextButton(onClick = { open(Nav.Edit(nav.project, nav.path)) }) { Text("Править…") }
         }
         Text("${nav.project}: ${nav.path}", style = MaterialTheme.typography.titleMedium)
@@ -1101,7 +1108,7 @@ private fun Questions(q: List<Screens.Question>, open: (Nav) -> Unit) = LazyColu
 
 @Composable
 // Листается (UX-15): при шрифте 200 % и в альбомной ориентации «Клоны…» не уходят за край.
-private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -> Unit, onForget: () -> Unit, onClones: () -> Unit, onZone: (Int) -> Unit = {}, onJournal: () -> Unit = {}) = Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -> Unit, onForget: () -> Unit, onClones: () -> Unit, onZone: (Int) -> Unit = {}, onJournal: () -> Unit = {}, onAsk: () -> Unit = {}) = Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
     var token by remember { mutableStateOf("") }
     // Пока токен сохранён — одна строка, поле — по «Заменить» (UX-12): пустое поле при сохранённом токене путало.
     var replacing by rememberSaveable { mutableStateOf(false) }
@@ -1146,6 +1153,9 @@ private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -
     Text("Действия", style = MaterialTheme.typography.titleMedium)
     Text("Всё, что пульт сделал в репозиториях, и отказы — в журнале.", style = MaterialTheme.typography.bodySmall)
     TextButton(onClick = onJournal) { Text("Журнал действий ▸") }
+    Text("Claude", style = MaterialTheme.typography.titleMedium)
+    Text("Вопросы о состоянии проектов — моделью по ключу API из «AI». Claude только читает срез; действий из разговора нет.", style = MaterialTheme.typography.bodySmall)
+    TextButton(onClick = onAsk) { Text("Спросить Claude ▸") }
     Text("Синхронизация", style = MaterialTheme.typography.titleMedium)
     // Постоянная строка последней синхронизации (UX-10); временные итоги — снэкбаром.
     view.state?.let { st -> Text("Последняя: ${Screens.time(st.asOf)} · ${Screens.summary(st).syncHealth}", style = MaterialTheme.typography.bodySmall) }
@@ -1603,6 +1613,163 @@ private fun DangerDialog(title: String, losses: List<String>, name: String, type
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
     )
+}
+
+/**
+ * «Спросить Claude» (F-21): модель API-профиля Anthropic из «AI» отвечает о состоянии
+ * экосистемы, читая срез инструментами; ответ потоком, под ним — расход токенов. Файл
+ * репозитория уходит в вопрос, только если автор открыл экран из документа и не убрал
+ * его. История — на телефоне, зашифрованно. Действий отсюда нет.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun AskScreen(nav: Nav.Ask, hasSnapshot: Boolean, loader: Loader, onBack: () -> Unit) {
+    LaunchedEffect(Unit) { loader.askOpen() }
+    var profiles by remember { mutableStateOf<List<AskActions.Profile>?>(null) }
+    LaunchedEffect(Unit) { loader.askProfiles { profiles = it } }
+    val saved = AskSession.saved
+    val running = AskSession.running
+    val ready = profiles.orEmpty().filter { it.hasKey }
+    val profile = ready.firstOrNull { it.id == saved?.profile } ?: ready.firstOrNull()
+    var models by remember(profile?.id) { mutableStateOf<Outcome<List<AskActions.Model>>?>(null) }
+    LaunchedEffect(profile?.id) { profile?.let { p -> loader.askModels(p.id) { models = it } } }
+    val modelIds = (models as? Outcome.Success)?.value?.map { it.id }.orEmpty()
+    val model = saved?.model?.takeIf { saved.profile == profile?.id && (modelIds.isEmpty() || it in modelIds) }
+        ?: AskActions.DEFAULT_MODEL.takeIf { modelIds.isEmpty() || it in modelIds }
+        ?: profile?.model?.takeIf { it.isNotBlank() }
+        ?: modelIds.firstOrNull()
+        ?: AskActions.DEFAULT_MODEL
+    val effort = saved?.effort
+    var pickModel by remember { mutableStateOf(false) }
+    var asking by rememberSaveable { mutableStateOf("") }
+    var clearing by remember { mutableStateOf(false) }
+    // Файл — только явным выбором: экран открыт из документа; «Убрать» — вопрос без него.
+    var withFile by rememberSaveable(nav) { mutableStateOf(nav.path != null) }
+    var file by remember(nav) { mutableStateOf<Outcome<String>?>(null) }
+    LaunchedEffect(nav) { if (nav.project != null && nav.path != null) loader.document(nav.project, nav.path) { file = it } }
+    val fileText = (file as? Outcome.Success)?.value
+    val fileWhy = fileText?.let(AskActions::fileRefusal)
+    val list = androidx.compose.foundation.lazy.rememberLazyListState()
+    val entries = saved?.entries.orEmpty()
+    LaunchedEffect(entries.size, running != null) { if (entries.isNotEmpty() || running != null) list.animateScrollToItem(entries.size + 1) }
+    if (clearing) {
+        AlertDialog(
+            onDismissRequest = { clearing = false },
+            title = { Text("Новый разговор?") },
+            text = { Text("Прежние вопросы и ответы сотрутся с телефона. Вернуть их нельзя.") },
+            confirmButton = { TextButton(onClick = { clearing = false; AskSession.clear() }) { Text("Стереть", color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = { clearing = false }) { Text("Отмена") } },
+        )
+    }
+    Column(Modifier.fillMaxSize()) {
+        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            TextButton(onClick = onBack, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("← Назад") }
+            androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+            if (entries.isNotEmpty()) TextButton(onClick = { clearing = true }) { Text("Новый разговор") }
+        }
+        LazyColumn(Modifier.weight(1f), state = list, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            item(key = "head") {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Спросить Claude", style = MaterialTheme.typography.titleMedium)
+                    AskSession.problem?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                    when {
+                        profiles == null || saved == null -> Text("Читаю профили и историю…", style = MaterialTheme.typography.bodySmall)
+                        ready.isEmpty() -> Text(
+                            "Нет API-профиля Anthropic с ключом. Добавить: вкладка «AI» → «Модели» → «Добавить профиль» → Anthropic.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        else -> {
+                            if (ready.size > 1) {
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    for (p in ready) FilterChip(selected = p.id == profile?.id, enabled = running == null, onClick = { AskSession.choose(p.id, null, effort) }, label = { Text(p.name) })
+                                }
+                            }
+                            TextButton(enabled = running == null, onClick = { pickModel = !pickModel }) { Text("Модель: $model " + if (pickModel) "▴" else "▾") }
+                            if (pickModel) {
+                                when (val m = models) {
+                                    null -> Text("Читаю список моделей…", style = MaterialTheme.typography.bodySmall)
+                                    is Outcome.Failure -> Text("Список моделей не получен: ${m.errors.first().message}", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                                    is Outcome.Success -> for (x in m.value) {
+                                        Row(Modifier.fillMaxWidth().toggleable(value = x.id == model, role = Role.RadioButton) { AskSession.choose(profile?.id, x.id, effort); pickModel = false }.padding(vertical = 4.dp)) {
+                                            Text((if (x.id == model) "● " else "○ ") + (x.name?.let { "$it (${x.id})" } ?: x.id), style = MaterialTheme.typography.bodySmall)
+                                        }
+                                    }
+                                }
+                            }
+                            Text("Глубина ответа", style = MaterialTheme.typography.labelMedium)
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                FilterChip(selected = effort == null, enabled = running == null, onClick = { AskSession.choose(profile?.id, model, null) }, label = { Text("как у модели") })
+                                for (e in AskActions.EFFORTS) FilterChip(selected = effort == e, enabled = running == null, onClick = { AskSession.choose(profile?.id, model, e) }, label = { Text(e) })
+                            }
+                            if (!hasSnapshot) Text("Среза состояния ещё нет: сначала «Обновить» в «Ещё» — иначе Claude нечего читать.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                }
+            }
+            items(entries.size, key = { "e:$it:${entries[it].at}" }) { i ->
+                val e = entries[i]
+                if (e.user) {
+                    Card(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(8.dp)) {
+                            androidx.compose.foundation.text.selection.SelectionContainer { Text(e.text) }
+                            e.file?.let { Text("Файл: $it", style = MaterialTheme.typography.labelSmall) }
+                        }
+                    }
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        if (e.text.isNotEmpty()) androidx.compose.foundation.text.selection.SelectionContainer { Text(e.text) }
+                        e.note?.let { Text(it, color = if (e.failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) }
+                        if (!e.failed || e.inputTokens != null) Text(AskActions.usageLine(e), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+            item(key = "running") {
+                running?.let { r ->
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        if (r.text.isNotEmpty()) Text(r.text)
+                        Text(r.step ?: "Claude отвечает…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                    }
+                }
+            }
+        }
+        if (nav.path != null && withFile) {
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Text(
+                    "Файл: ${nav.project}:${nav.path}" + when {
+                        file == null -> " — читаю…"
+                        file is Outcome.Failure -> " — не прочитан"
+                        fileWhy != null -> " — $fileWhy"
+                        else -> " (${fileText?.length ?: 0} знаков)"
+                    },
+                    Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
+                    color = if (file is Outcome.Failure || fileWhy != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                )
+                TextButton(onClick = { withFile = false }) { Text("Убрать") }
+            }
+        }
+        Row(verticalAlignment = androidx.compose.ui.Alignment.Bottom) {
+            OutlinedTextField(
+                value = asking, onValueChange = { asking = it }, label = { Text("Вопрос") },
+                modifier = Modifier.weight(1f), minLines = 1, maxLines = 6, enabled = running == null,
+            )
+            if (running != null) {
+                TextButton(onClick = { AskSession.stop() }) { Text("Стоп") }
+            } else {
+                val fileReady = !(nav.path != null && withFile) || (fileText != null && fileWhy == null)
+                TextButton(
+                    enabled = asking.isNotBlank() && profile != null && saved != null && fileReady,
+                    onClick = {
+                        val p = profile ?: return@TextButton
+                        val attach = nav.path != null && withFile
+                        loader.askSend(p, model, effort, asking, if (attach) "${nav.project}:${nav.path}" else null, if (attach) fileText else null)
+                        asking = ""
+                        withFile = false
+                    },
+                ) { Text("Спросить") }
+            }
+        }
+    }
 }
 
 /** Шаблон ответа на вопрос (F-25): `config/briefs/answer-question.md`. */
