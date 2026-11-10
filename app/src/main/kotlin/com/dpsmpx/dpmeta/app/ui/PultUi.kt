@@ -103,6 +103,8 @@ import com.dpsmpx.dpmeta.app.screens.IssueActions
 import com.dpsmpx.dpmeta.app.screens.EditActions
 import com.dpsmpx.dpmeta.app.screens.LineDiff
 import com.dpsmpx.dpmeta.app.screens.RouteActions
+import com.dpsmpx.dpmeta.app.screens.AskActions
+import com.dpsmpx.dpmeta.app.data.AskSession
 import com.dpsmpx.dpmeta.github.PullDetail
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.OutlinedButton
@@ -268,6 +270,19 @@ interface Loader {
 
     /** Журнал действий (F-44). */
     fun journal(done: (Outcome<List<ActionEntry>>) -> Unit) = done(Outcome.success(emptyList()))
+
+    /** «Спросить Claude» (F-21): профили Anthropic из «AI»; без оболочки — пусто. */
+    fun askProfiles(done: (List<AskActions.Profile>) -> Unit) = done(emptyList())
+
+    /** Модели профиля — из Models API. */
+    fun askModels(profile: String, done: (Outcome<List<AskActions.Model>>) -> Unit) =
+        done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "моделей здесь нет", profile))
+
+    /** Открыть историю разговора (читается один раз на процесс). */
+    fun askOpen() {}
+
+    /** Вопрос: срез для инструментов берётся на момент отправки; [file] — приложенный автором файл. */
+    fun askSend(profile: AskActions.Profile, model: String, effort: String?, question: String, file: String?, fileText: String?) {}
 
     /** Маршруты Claude Code (F-22) — из подсистемы «AI» через оболочку; без оболочки — пусто. */
     fun routes(done: (List<RouteActions.Route>) -> Unit) = done(emptyList())

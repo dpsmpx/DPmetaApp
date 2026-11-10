@@ -165,6 +165,24 @@ open class PultActivity : ComponentActivity() {
      */
     protected open fun routes(): List<com.dpsmpx.dpmeta.app.screens.RouteActions.Route> = emptyList()
 
+    /**
+     * «Спросить Claude» (F-21): API-профили Anthropic ведёт подсистема «AI»; пульт видит
+     * имя и модель и шлёт вопрос с инструментами чтения среза. Даёт оболочка `:shell`;
+     * без неё профилей нет. Вызываются не на главном потоке.
+     */
+    protected open fun askProfiles(): List<com.dpsmpx.dpmeta.app.screens.AskActions.Profile> = emptyList()
+
+    protected open fun askModels(profile: String): Outcome<List<com.dpsmpx.dpmeta.app.screens.AskActions.Model>> =
+        Outcome.failure(DiagCode.UNSUPPORTED, "моделей нет: профили ведёт подсистема «AI»", "ask")
+
+    protected open fun ask(
+        request: com.dpsmpx.dpmeta.app.screens.AskActions.Request,
+        onCancel: (() -> Unit) -> Unit,
+        onText: (String) -> Unit,
+        tool: (String, com.dpsmpx.dpai.core.serialization.JsonObject) -> Pair<String, Boolean>,
+    ): Outcome<com.dpsmpx.dpmeta.app.screens.AskActions.Answer> =
+        Outcome.failure(DiagCode.UNSUPPORTED, "спросить некого: профили ведёт подсистема «AI»", "ask")
+
     /** Запуск маршрута [id] с поручением [text] — через оболочку; не на главном потоке. */
     protected open fun fireRoute(id: String, text: String): Outcome<com.dpsmpx.dpmeta.app.screens.RouteActions.Fired> =
         Outcome.failure(DiagCode.UNSUPPORTED, "маршрутов нет: их ведёт подсистема «AI»", "route")
@@ -584,6 +602,23 @@ open class PultActivity : ComponentActivity() {
 
         override fun base(project: String, done: (Outcome<Pair<com.dpsmpx.dpmeta.model.RepoRef, String>>) -> Unit) =
             run({ repo.base(it, project) }, done)
+
+        override fun askProfiles(done: (List<com.dpsmpx.dpmeta.app.screens.AskActions.Profile>) -> Unit) =
+            background({ runCatching { this@PultActivity.askProfiles() }.getOrDefault(emptyList()) }, done)
+
+        override fun askModels(profile: String, done: (Outcome<List<com.dpsmpx.dpmeta.app.screens.AskActions.Model>>) -> Unit) =
+            background({ this@PultActivity.askModels(profile) }, done)
+
+        /** История — зашифрованным файлом рядом с данными пульта; читается один раз на процесс. */
+        override fun askOpen() =
+            com.dpsmpx.dpmeta.app.data.AskSession.load(com.dpsmpx.dpmeta.app.data.AskStore(NioVfs(noBackupFilesDir.toPath().resolve("dpmeta"))))
+
+        override fun askSend(profile: com.dpsmpx.dpmeta.app.screens.AskActions.Profile, model: String, effort: String?, question: String, file: String?, fileText: String?) {
+            val v = view.value
+            val snap = com.dpsmpx.dpmeta.app.screens.AskActions.Snapshot(v.state, v.feed, v.history, com.dpsmpx.dpai.core.clock.Clock.SYSTEM.now())
+            debugLog("спросить", "вопрос: профиль ${profile.name}, модель $model, знаков ${question.length}" + if (file != null) ", с файлом" else "")
+            com.dpsmpx.dpmeta.app.data.AskSession.send({ r, c, t, tool -> this@PultActivity.ask(r, c, t, tool) }, profile, model, effort, snap, question, file, fileText)
+        }
 
         /** Работа без токена GitHub — в пуле, итог — на главном потоке. */
         private fun <T> background(work: () -> T, done: (T) -> Unit) {
