@@ -125,7 +125,9 @@ class RootfsInstallerTest {
         entry(tar, "./etc/h", '1', link = "./etc/y")
         entry(tar, "./up", '2', link = "..")
         entry(tar, "./h2", '1', link = "up/secret")
-        entry(tar, "./var/", '5')
+        // Каталог должен разрешать проход и без root: образец проверяет
+        // замену ссылки, а не отказ из-за режима обычного файла 0644.
+        entry(tar, "./var/", '5', mode = "0000755")
         entry(tar, "./var/log", '0', "log".toByteArray())
         // Оборванная прошлая установка оставила ./var ссылкой наружу.
         val outside = dir.resolve("outside").also { it.toFile().mkdirs() }
