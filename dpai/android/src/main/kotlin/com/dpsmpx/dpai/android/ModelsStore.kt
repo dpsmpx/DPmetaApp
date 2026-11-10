@@ -105,6 +105,23 @@ object ModelsStore {
 
     fun hasKey(id: AccountId): Boolean = ApiKeys.has(app, id)
 
+    /** Admin-ключ API-профиля Anthropic (`DPmetaApp:D-44`) — только отчёты; хранится рядом с ключом API, под своим именем. */
+    private fun adminName(id: AccountId) = "${id.value}:admin"
+
+    fun hasAdminKey(id: AccountId): Boolean = ApiKeys.hasNamed(app, adminName(id))
+
+    fun adminKey(id: AccountId): Secret? = ApiKeys.getNamed(app, adminName(id))
+
+    /** Сохранить Admin-ключ ([key] — новый) или стереть его ([remove]). Итог — текст отказа или `null`. */
+    fun saveAdminKey(id: AccountId, key: Secret?, remove: Boolean): String? {
+        if (remove) {
+            ApiKeys.removeNamed(app, adminName(id))
+            return null
+        }
+        if (key == null || key.isEmpty) return null
+        return if (ApiKeys.putNamed(app, adminName(id), key)) null else "Admin-ключ не сохранён: Keystore отказал"
+    }
+
     /** Сохранить профиль; [key] — новый ключ (`null` — оставить прежний). Итог — текст отказа или `null`. */
     @Synchronized
     fun saveProfile(p: ApiProfile, key: Secret?): String? {
@@ -124,6 +141,7 @@ object ModelsStore {
         val next = profileFlow.value.filter { it.id != id }
         if (d.write(PROFILES, ApiProfileBook.toJson(next)) is Outcome.Success) profileFlow.value = next
         ApiKeys.remove(app, id)
+        ApiKeys.removeNamed(app, adminName(id))
         chatFlow.value.filter { it.profile == id }.forEach { c -> runningFlow.value[c.id]?.cancel?.cancel() }
         writeChats(chatFlow.value.filter { it.profile != id })
     }
