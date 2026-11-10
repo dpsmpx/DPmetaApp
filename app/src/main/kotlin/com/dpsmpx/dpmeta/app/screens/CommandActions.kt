@@ -115,13 +115,12 @@ object CommandActions {
     fun ready(steps: List<Step>): Boolean = steps.all { it.ok }
 
     /** Строка о рабочем дереве (D-70): ветка, коммит и голова GitHub — на чём идёт команда. */
-    fun treeLine(t: Clones.Worktree?): String = when {
-        t == null -> "Рабочее дерево не прочитано."
-        t.sha == null -> "В клоне нет коммитов."
-        t.branch == null -> "Рабочее дерево — на коммите ${t.sha.take(7)} без ветки."
-        t.upstream == null -> "Рабочее дерево — ветка ${t.branch}, ${t.sha.take(7)}; на GitHub такой ветки нет."
-        t.even -> "Рабочее дерево — ветка ${t.branch}, ${t.sha.take(7)}, как на GitHub."
-        else -> "Рабочее дерево — ветка ${t.branch}, ${t.sha.take(7)}; на GitHub — ${t.upstream.take(7)}."
+    fun treeLine(t: Clones.Worktree?): String {
+        if (t == null) return "Рабочее дерево не прочитано."
+        val sha = t.sha?.take(7) ?: return "В клоне нет коммитов."
+        val branch = t.branch ?: return "Рабочее дерево — на коммите $sha без ветки."
+        val up = t.upstream?.take(7) ?: return "Рабочее дерево — ветка $branch, $sha; на GitHub такой ветки нет."
+        return if (t.even) "Рабочее дерево — ветка $branch, $sha, как на GitHub." else "Рабочее дерево — ветка $branch, $sha; на GitHub — $up."
     }
 
     /**
