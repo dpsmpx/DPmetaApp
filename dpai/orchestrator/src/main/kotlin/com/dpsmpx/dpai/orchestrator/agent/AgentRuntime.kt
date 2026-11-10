@@ -110,7 +110,7 @@ class AgentRuntime(
      * (D-75): на target — отдельный процесс ОС ([ProcessSupervision]), в
      * приложении — поток ([ThreadSupervision]).
      */
-    private val supervision: Supervision = ProcessSupervision(home, selfCommand, detacher ?: Detacher(), clock),
+    private val supervision: Supervision = ProcessSupervision(home, selfCommand, detacher ?: Detacher(), clock, AgentService(home, clock, version)),
     /** Память машины для `doctor`: на JVM — сведения JDK ([JvmOsFacts]), в приложении — `/proc/meminfo`. */
     private val osFacts: () -> OsFacts = JvmOsFacts::read,
     /**
@@ -171,6 +171,25 @@ class AgentRuntime(
             }
             is Outcome.Success -> AgentReply("start", ok = true, run = doc.status(last))
         }
+    }
+
+    /**
+     * Служба агента на ПК (D-109): `dpai agent serve` — запускает супервизоры по
+     * просьбам `start` своими потомками, пока её не остановят. Только на target с
+     * процессами ОС; в приложении (поток-супервизор) — отказ.
+     */
+    fun serve(stop: () -> Boolean = { false }): AgentReply {
+        val sup = supervision as? ProcessSupervision
+            ?: return AgentReply.failure("serve", listOf(Diagnostic.error(DiagCode.UNSUPPORTED, "служба агента — только на ПК", "service")))
+        AgentService(home, clock, version).serve(sup.self(), launch = { id -> sup.spawn(id) }, stop = stop)
+        return AgentReply("serve", ok = true)
+    }
+
+    /** Состояние службы агента (D-109) — ответом `service` тем же протоколом. */
+    fun serviceStatus(): AgentReply {
+        val sup = supervision as? ProcessSupervision
+        val status = AgentService(home, clock, version).status { s -> sup?.serviceAlive(s) ?: false }
+        return AgentReply("service", ok = true, service = status)
     }
 
     fun supervise(id: SessionId): AgentReply {

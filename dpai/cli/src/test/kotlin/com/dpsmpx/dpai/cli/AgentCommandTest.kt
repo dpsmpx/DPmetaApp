@@ -39,6 +39,21 @@ class AgentCommandTest {
     @TempDir
     lateinit var dir: Path
 
+    /** Служба агента (D-109): `service status` — ответ `service` тем же протоколом; без подкоманды — подсказка. */
+    @Test
+    fun serviceStatusAnswersWithTheSameProtocol() {
+        val out = mutableListOf<String>()
+        val err = mutableListOf<String>()
+        val cmd = AgentCommand(out = { out += it }, err = { err += it }, version = "t")
+        assertEquals(Cli.OK, cmd.run(listOf("service", "status", "--home", dir.toString())))
+        val reply = AgentReply.parse(out.single()).valueOrNull()!!
+        assertEquals("service", reply.command)
+        assertEquals("absent", reply.service!!.state)
+        assertTrue(err.any { "служба: absent" in it }, err.toString())
+        assertEquals(Cli.USAGE_ERROR, AgentCommand(out = {}, err = {}, version = "t").run(listOf("service")))
+        assertEquals(Cli.USAGE_ERROR, AgentCommand(out = {}, err = {}, version = "t").run(listOf("service", "status", "лишнее")))
+    }
+
     private val ids = IdGenerator(Clock.SYSTEM, RandomSource.seeded(5))
 
     @Test

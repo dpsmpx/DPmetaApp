@@ -72,6 +72,16 @@ Expand-Archive "$HOME\Downloads\dpai-agent.zip" -DestinationPath $HOME -Force; S
 
 Ожидается одна строка JSON с `"ok":true`.
 
+Служба агента (по желанию, D-109) — задача при входе пользователя, без
+прав администратора; ход и без неё переживает обрыв SSH:
+
+```powershell
+& "$HOME\dpai-agent.cmd" agent service install
+```
+
+Ожидается в конце строка «служба: running». Снять — `agent service
+remove`.
+
 ## 4. Ключ приложения
 
 Строка ключа — Targets → «Ключ приложения» → «Показать открытый ключ».
