@@ -22,8 +22,9 @@ import androidx.compose.ui.unit.dp
 import com.dpsmpx.dpai.orchestrator.linux.LinuxEnvironment
 
 /**
- * Локальная модель на телефоне (D-105): поставить llama.cpp, выбрать файл
- * GGUF из своих каталогов, запустить и остановить сервер на `127.0.0.1`.
+ * Локальная модель на телефоне (D-105): поставить llama.cpp, скачать файл GGUF
+ * с Hugging Face (D-110, D-113), выбрать файл из своих каталогов, запустить и
+ * остановить сервер на `127.0.0.1`.
  * Запущенный сервер — профиль «Телефон: llama.cpp» во вкладке «Модели».
  */
 @Composable
@@ -48,7 +49,7 @@ fun LocalModelSection() {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text("Локальная модель (llama.cpp)", style = MaterialTheme.typography.titleSmall)
         Text(
-            "Модель — файл GGUF: в /root/models (скачать терминалом) или в общем хранилище при «Доступе ко всем файлам» " +
+            "Модель — файл GGUF: в /root/models (скачать ниже, с Hugging Face, или терминалом) или в общем хранилище при «Доступе ко всем файлам» " +
                 "(например, Download). Связанная папка копирует файлы до 32 МиБ — модели в неё не входят. " +
                 "Сервер — на этом телефоне, с ключом этого запуска; модель берёт память — начинайте с маленькой (1–3 млрд параметров, Q4).",
             style = MaterialTheme.typography.bodySmall,
@@ -83,6 +84,8 @@ fun LocalModelSection() {
         }
         (note ?: status.problem)?.let { Text(it, style = MaterialTheme.typography.labelSmall) }
         if (status.tail.isNotEmpty()) Text(status.tail.takeLast(12).joinToString("\n"), style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace)
+        // Загрузка модели — здесь же, рядом с выбором (D-113).
+        HfDownloadSection()
     }
 }
 

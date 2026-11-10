@@ -15,3 +15,5 @@ android/src/main/kotlin/com/dpsmpx/dpai/android/CloudSync.kt:CloudSettingsDialog
 android/src/main/kotlin/com/dpsmpx/dpai/android/CloudSync.kt:CloudRestoreDialog
 # Токен маршрута Claude Code (D-116) — диалог Compose с SecureFlagPolicy.SecureOn.
 android/src/main/kotlin/com/dpsmpx/dpai/android/RoutinesPane.kt:RoutineDialog
+# Токен Hugging Face (D-110, T21) — диалог Compose с SecureFlagPolicy.SecureOn.
+android/src/main/kotlin/com/dpsmpx/dpai/android/HfModelsPane.kt:HfTokenDialog
