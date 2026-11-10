@@ -8,9 +8,9 @@
 | Репозиторий | Сохранённая запись/работа |
 |---|---|
 | DPmetaApp | D-86…D-90, карта ролей, ТЗ, мастер-ТЗ, ROADMAP, TODO; [PR #183](https://github.com/dpsmpx/DPmetaApp/pull/183) |
-| DPmeta | M-17 и полная карта в `dpmeta/`; [запись в прежнем репозитории](https://github.com/dpsmpx/DPmeta/blob/dpmeta/mobile-studio-roles/docs/PROJECT_ROLES.md), `e5b8426`, без возобновления второго источника |
+| DPmeta | DPmeta:M-17 и полная карта в `dpmeta/`; [запись в прежнем репозитории](https://github.com/dpsmpx/DPmeta/blob/dpmeta/mobile-studio-roles/docs/PROJECT_ROLES.md), `e5b8426`, без возобновления второго источника |
 | SocialMediaImage + DPprofile | [PR #33](https://github.com/dpsmpx/SocialMediaImage/pull/33), `846da8a`: актуальная контентная система и компонент с обеими исходными историями, требования будущего приложения, без новой функциональности |
-| DP-Verify | [Документ в main](https://github.com/dpsmpx/DP-Verify/blob/main/docs/DP_META_APP.md), `4e19caf`: V-23, общая папка, обновление в простое, проверенный прямой main без PR |
+| DP-Verify | [Документ в main](https://github.com/dpsmpx/DP-Verify/blob/main/docs/DP_META_APP.md), `4e19caf`: DP-Verify:V-23, общая папка, обновление в простое, проверенный прямой main без PR |
 | dp_termux_setup | [Роль](https://github.com/dpsmpx/dp_termux_setup/blob/dpmeta/mobile-studio-roles/docs/direction/DP_META_APP.md), `3011978` |
 | build_tools | [Роль](https://github.com/dpsmpx/build_tools/blob/dpmeta/mobile-studio-roles/docs/DP_META_APP.md), `d8ef970`; сгенерированный README не правился |
 | DPlang / будущая IDE | [PR #48](https://github.com/dpsmpx/DPlang/pull/48), `b5f1e0b`: самостоятельная завершённость и проверка до включения |
