@@ -17,8 +17,10 @@ tasks.named<Test>("test") {
     if (rootProject.findProject(":android") != null) mustRunAfter(":android:assemble", ":android:lint")
 }
 
-val performanceResults = layout.buildDirectory.file("perf/results.txt")
 tasks.register<Test>("performanceTest") {
+    // Локальное значение: doFirst хранит Provider, а не объект скрипта
+    // Gradle, который запрещён в кеше конфигурации.
+    val performanceResults = layout.buildDirectory.file("perf/results.txt")
     description = "Бюджеты хоста и нагрузка после сборки (D-121)"
     group = "verification"
     testClassesDirs = sourceSets["test"].output.classesDirs
