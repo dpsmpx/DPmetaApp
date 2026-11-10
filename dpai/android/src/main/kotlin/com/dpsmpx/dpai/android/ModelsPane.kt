@@ -79,7 +79,12 @@ import kotlinx.coroutines.withContext
 fun ModelsPane() {
     val context = LocalContext.current
     val ready by ModelsStore.ready.collectAsState()
-    LaunchedEffect(Unit) { withContext(Dispatchers.IO) { ModelsStore.init(context) } }
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            ModelsStore.init(context)
+            ProfileMarks.init(context)
+        }
+    }
     if (!ready) {
         Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) { CircularProgressIndicator() }
         return
@@ -160,9 +165,14 @@ fun ModelsPane() {
 private fun ProfileCard(p: ApiProfile, onChat: () -> Unit, onEdit: () -> Unit, onUsage: () -> Unit) {
     val hasKey = remember(p) { ModelsStore.hasKey(p.id) }
     val hasAdmin = remember(p) { p.kind == ProviderKind.ANTHROPIC && ModelsStore.hasAdminKey(p.id) }
+    val marks by ProfileMarks.colors.collectAsState()
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
-            Text(p.name, style = MaterialTheme.typography.titleSmall)
+            // Цвет профиля — кружком у имени (`DPmetaApp:D-83`), не фоном и не текстом.
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                ProfileDot(com.dpsmpx.dpai.ui.ProfileColors.of(marks[p.id.value]))
+                Text(p.name, style = MaterialTheme.typography.titleSmall)
+            }
             Text(
                 "${providerName(p)} · ${p.model.ifEmpty { "модель не выбрана" }}" + if (!hasKey && Providers.keyRequired(p.kind)) " · нет ключа" else "",
                 style = MaterialTheme.typography.bodySmall,
@@ -227,6 +237,9 @@ private fun ProfileDialog(existing: ApiProfile?, onDone: () -> Unit) {
     var status by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     val id = remember { existing?.id ?: ModelsStore.newProfileId() }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    // Цвет — отметкой, не полем профиля (`DPmetaApp:D-83`): пишется вместе с сохранением.
+    var color by remember { mutableStateOf(ProfileMarks.colors.value[id.value]) }
     var asking by remember { mutableStateOf(false) }
     if (asking && existing != null) {
         ConfirmDialog(
@@ -284,6 +297,8 @@ private fun ProfileDialog(existing: ApiProfile?, onDone: () -> Unit) {
                     }
                 }
                 OutlinedTextField(name, { name = it }, label = { Text("Имя профиля") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Text("Цвет — кружок у имени", style = MaterialTheme.typography.labelMedium)
+                ProfileColorChips(color) { color = it }
                 OutlinedTextField(
                     key, { key = it },
                     label = { Text(if (existing != null && ModelsStore.hasKey(id)) "Ключ API (пусто — прежний)" else if (kind == ProviderKind.OPENAI_COMPATIBLE) "Ключ API (свой сервер — можно без)" else "Ключ API") },
@@ -383,7 +398,12 @@ private fun ProfileDialog(existing: ApiProfile?, onDone: () -> Unit) {
                                 ModelsStore.saveProfile(f.value, typed) ?: ModelsStore.saveAdminKey(f.value.id, typedAdmin, remove = adminRemove || kind != ProviderKind.ANTHROPIC)
                             }
                             busy = false
-                            if (err == null) onDone() else status = err
+                            if (err == null) {
+                                ProfileMarks.set(context, id.value, color)
+                                onDone()
+                            } else {
+                                status = err
+                            }
                         }
                     }
                 }

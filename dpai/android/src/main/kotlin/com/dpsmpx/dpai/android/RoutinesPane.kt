@@ -57,8 +57,14 @@ import kotlinx.coroutines.withContext
 @Composable
 fun RoutinesPane(model: DemoModel, onBack: () -> Unit) {
     val context = LocalContext.current
-    LaunchedEffect(Unit) { withContext(Dispatchers.IO) { ModelsStore.init(context) } }
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            ModelsStore.init(context)
+            ProfileMarks.init(context)
+        }
+    }
     val routines by ModelsStore.routines.collectAsState()
+    val marks by ProfileMarks.colors.collectAsState()
     val problem by ModelsStore.problem.collectAsState()
     val subs = remember { model.subscriptions() }
     var editing by remember { mutableStateOf<Routine?>(null) }
@@ -81,10 +87,28 @@ fun RoutinesPane(model: DemoModel, onBack: () -> Unit) {
                     Button(onClick = { adding = true }) { Text("Добавить маршрут") }
                 }
             }
+            // Цвет профиля подписки — кружком у её маршрутов (`DPmetaApp:D-83`; ТЗ DPmetaApp, F-17).
+            if (subs.isNotEmpty()) {
+                item(key = "subs") {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Цвет подписок", style = MaterialTheme.typography.titleSmall)
+                        for (s in subs) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                ProfileDot(com.dpsmpx.dpai.ui.ProfileColors.of(marks[s.id.value]))
+                                Text(s.plan?.let { "${s.label} ($it)" } ?: s.label, style = MaterialTheme.typography.bodySmall)
+                            }
+                            ProfileColorChips(marks[s.id.value]) { ProfileMarks.set(context, s.id.value, it) }
+                        }
+                    }
+                }
+            }
             items(routines, key = { it.id.value }) { r ->
                 Card(Modifier.fillMaxWidth().clickable { editing = r }) {
                     Column(Modifier.padding(12.dp)) {
-                        Text(r.name, style = MaterialTheme.typography.titleSmall)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            ProfileDot(com.dpsmpx.dpai.ui.ProfileColors.of(r.subscription?.let { marks[it.value] }))
+                            Text(r.name, style = MaterialTheme.typography.titleSmall)
+                        }
                         Text(r.trigger, style = MaterialTheme.typography.bodySmall)
                         Text(
                             listOfNotNull(

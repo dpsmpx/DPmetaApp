@@ -12,12 +12,18 @@ import com.dpsmpx.dpai.core.result.Outcome
  * Вызовы — не на главном потоке.
  */
 object PultRoutes {
-    /** Маршрут глазами пульта: id `acc_…`, имя, проект, шаблон, есть ли токен, подписка `sub_…`. */
-    data class View(val id: String, val name: String, val project: String?, val brief: String?, val hasToken: Boolean, val subscription: String?)
+    /**
+     * Маршрут глазами пульта: id `acc_…`, имя, проект, шаблон, есть ли токен, подписка `sub_…`;
+     * [color] — цвет профиля подписки (`DPmetaApp:D-83`), без цвета — `null`.
+     */
+    data class View(val id: String, val name: String, val project: String?, val brief: String?, val hasToken: Boolean, val subscription: String?, val color: String? = null)
 
     fun list(context: Context): List<View> {
         ModelsStore.init(context)
-        return ModelsStore.routines.value.map { View(it.id.value, it.name, it.project, it.brief, ModelsStore.hasKey(it.id), it.subscription?.value) }
+        ProfileMarks.init(context)
+        return ModelsStore.routines.value.map {
+            View(it.id.value, it.name, it.project, it.brief, ModelsStore.hasKey(it.id), it.subscription?.value, it.subscription?.let { s -> ProfileMarks.colors.value[s.value] })
+        }
     }
 
     /** Запуск: итог — id сессии и ссылка на неё (`https://claude.ai/code/…`). */

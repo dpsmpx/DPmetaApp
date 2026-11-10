@@ -23,7 +23,8 @@ import com.dpsmpx.dpmeta.metrics.MetricPoint
  */
 object AskActions {
     /** API-профиль Anthropic глазами пульта: id, имя, модель профиля, есть ли ключ. */
-    data class Profile(val id: String, val name: String, val model: String, val hasKey: Boolean)
+    /** [color] — ключ цвета профиля (кружок у имени, D-83), без цвета — `null`. */
+    data class Profile(val id: String, val name: String, val model: String, val hasKey: Boolean, val color: String? = null)
 
     data class Model(val id: String, val name: String?)
 

@@ -22,9 +22,10 @@ import com.dpsmpx.dpmeta.model.RepoRef
 object RouteActions {
     /**
      * Маршрут глазами пульта: id, имя, проект и шаблон по умолчанию, есть ли токен;
-     * [subscription] — подписка (аккаунт) маршрута, если указана: у аккаунта свой предел.
+     * [subscription] — подписка (аккаунт) маршрута, если указана: у аккаунта свой предел;
+     * [color] — цвет профиля подписки (кружок у имени, D-83), без цвета — `null`.
      */
-    data class Route(val id: String, val name: String, val project: String?, val brief: String?, val hasToken: Boolean, val subscription: String? = null)
+    data class Route(val id: String, val name: String, val project: String?, val brief: String?, val hasToken: Boolean, val subscription: String? = null, val color: String? = null)
 
     /** Пределы запусков (приложение В ТЗ; `DP_AI_Orcestrator:docs/research/ROUTINES_FIRE.md`). */
     const val ROUTE_PER_HOUR: Int = 30

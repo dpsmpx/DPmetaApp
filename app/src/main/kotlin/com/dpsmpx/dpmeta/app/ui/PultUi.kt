@@ -1,6 +1,7 @@
 package com.dpsmpx.dpmeta.app.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -81,6 +82,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.TextLayoutResult
@@ -1692,6 +1694,26 @@ private fun CommandDetail(spec: CommandSpec, catalog: CommandActions.Catalog, lo
     }
 }
 
+/**
+ * Имя профиля Claude с цветом — кружком у имени (D-83; ТЗ, F-17): не фон и не текст; набор
+ * цветов — свой, вне смысловых (`ProfileColors`). Без цвета — только имя.
+ */
+@Composable
+private fun ProfileName(name: String, color: String?) {
+    val c = com.dpsmpx.dpai.ui.ProfileColors.of(color)
+    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (c != null) {
+            val dark = isSystemInDarkTheme()
+            androidx.compose.foundation.layout.Box(
+                // Кружок — не элемент для TalkBack: имя рядом его называет.
+                Modifier.size(10.dp).background(Color(c.of(dark)), androidx.compose.foundation.shape.CircleShape)
+                    .then(Modifier.clearAndSetSemantics { }),
+            )
+        }
+        Text(name)
+    }
+}
+
 /** Строка журнала для «Поделиться»: время, уровень, действие, цель, итог, ссылка. */
 private fun journalLine(r: ActionEntry): String =
     listOf(Screens.time(r.at), "ур. ${r.level}", r.kind, r.target, r.status.word, r.detail, r.link.orEmpty()).filter { it.isNotEmpty() }.joinToString(" · ")
@@ -1880,7 +1902,12 @@ private fun AskScreen(nav: Nav.Ask, hasSnapshot: Boolean, loader: Loader, onBack
                         else -> {
                             if (ready.size > 1) {
                                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    for (p in ready) FilterChip(selected = p.id == profile?.id, enabled = running == null, onClick = { AskSession.choose(p.id, null, effort) }, label = { Text(p.name) })
+                                    for (p in ready) {
+                                        FilterChip(
+                                            selected = p.id == profile?.id, enabled = running == null, onClick = { AskSession.choose(p.id, null, effort) },
+                                            label = { ProfileName(p.name, p.color) },
+                                        )
+                                    }
                                 }
                             }
                             TextButton(enabled = running == null, onClick = { pickModel = !pickModel }) { Text("Модель: $model " + if (pickModel) "▴" else "▾") }
@@ -2031,8 +2058,9 @@ private fun BriefScreen(nav: Nav.Brief, loader: Loader, onBack: () -> Unit) {
                 Text("$repo · основная ветка $branch", style = MaterialTheme.typography.bodySmall)
                 Text("Маршрут", fontWeight = FontWeight.SemiBold)
                 for (r in rs) {
-                    Row(Modifier.fillMaxWidth().toggleable(value = r.id == route?.id, enabled = r.hasToken && !running, role = Role.RadioButton) { routeId = r.id }.padding(vertical = 4.dp)) {
-                        Text((if (r.id == route?.id) "● " else "○ ") + r.name + listOfNotNull(r.project, if (r.hasToken) null else "нет токена").joinToString(" · ").let { if (it.isEmpty()) "" else " — $it" })
+                    Row(Modifier.fillMaxWidth().toggleable(value = r.id == route?.id, enabled = r.hasToken && !running, role = Role.RadioButton) { routeId = r.id }.padding(vertical = 4.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        Text(if (r.id == route?.id) "● " else "○ ")
+                        ProfileName(r.name + listOfNotNull(r.project, if (r.hasToken) null else "нет токена").joinToString(" · ").let { if (it.isEmpty()) "" else " — $it" }, r.color)
                     }
                 }
                 // F-19: только то, что знает приложение; расход подписки — на claude.ai.

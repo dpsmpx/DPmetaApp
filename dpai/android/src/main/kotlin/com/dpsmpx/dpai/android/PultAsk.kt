@@ -24,7 +24,8 @@ import com.dpsmpx.dpai.providers.ToolSpec
  */
 object PultAsk {
     /** API-профиль Anthropic глазами пульта. */
-    data class Profile(val id: String, val name: String, val model: String, val hasKey: Boolean)
+    /** [color] — ключ цвета профиля (`ProfileColors`, `DPmetaApp:D-83`), без цвета — `null`. */
+    data class Profile(val id: String, val name: String, val model: String, val hasKey: Boolean, val color: String? = null)
 
     data class Tool(val name: String, val description: String, val schema: JsonObject)
 
@@ -36,8 +37,9 @@ object PultAsk {
 
     fun profiles(context: Context): List<Profile> {
         ModelsStore.init(context)
+        ProfileMarks.init(context)
         return ModelsStore.profiles.value.filter { it.kind == ProviderKind.ANTHROPIC }
-            .map { Profile(it.id.value, it.name, it.model, ModelsStore.hasKey(it.id)) }
+            .map { Profile(it.id.value, it.name, it.model, ModelsStore.hasKey(it.id), ProfileMarks.colors.value[it.id.value]) }
     }
 
     /** Модели профиля — из Models API: id и имя для экрана. */
