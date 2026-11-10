@@ -1,0 +1,134 @@
+# Правила тревог по умолчанию (ТЗ, F-37, F-52; D-85).
+#
+# Решает первое подходящее включённое правило — порядок важен: частное
+# «промолчать» ставится выше общего «уведомить». Не подошло ни одно — событие
+# только в ленте.
+#
+#   id, title   ключ и подпись правила
+#   on          тип события каталога (config/events.toml) или маска «часть.*»
+#   action      notify — уведомить, feed — только лента, digest — в сводку,
+#               silent — промолчать
+#   channel     вид канала (нет — канал типа события); importance — low, default, high
+#   enabled     false — правило выключено
+#   project, contains, regex — проект, текст (без учёта регистра), выражение
+#   field + at_least / at_most — число события из numbers его типа (целые, границы включительно)
+#   days        дни недели: mon … sun (нет — все)
+#   limit + window — не больше limit уведомлений за window минут по правилу и проекту
+#   quiet       false — звучит и в тихие часы
+#
+# Правка в приложении и экспорт файлом (F-52) — поверх этого формата.
+
+schema = 1
+
+[[rule]]
+id = "site.down"
+title = "Сайт не отвечает или отвечает не 200"
+on = "site.down"
+action = "notify"
+importance = "high"
+limit = 1
+window = 60
+
+[[rule]]
+id = "site.header"
+title = "Пропал или изменился заголовок сайта"
+on = "site.header.changed"
+action = "notify"
+
+[[rule]]
+id = "site.tls"
+title = "Сертификат сайта истекает меньше чем через 14 дней"
+on = "site.tls.expiring"
+action = "notify"
+field = "days"
+at_most = 13
+limit = 1
+window = 1440
+
+[[rule]]
+id = "pr.waiting"
+title = "PR ждёт автора больше 2 суток"
+on = "pr.waiting_author"
+action = "notify"
+field = "hours"
+at_least = 48
+limit = 1
+window = 1440
+
+[[rule]]
+id = "question.new"
+title = "Новый вопрос автору"
+on = "question.new"
+action = "notify"
+
+[[rule]]
+id = "branch.stale"
+title = "Ветка с невлитой работой без движения больше 7 дней"
+on = "branch.unmerged.stale"
+action = "notify"
+field = "days"
+at_least = 7
+limit = 1
+window = 10080
+
+[[rule]]
+id = "usage.threshold"
+title = "Расход API за сутки выше порога"
+on = "claude.usage.threshold"
+action = "notify"
+limit = 1
+window = 1440
+
+[[rule]]
+id = "sync.failed"
+title = "Синхронизация источника не удалась 3 раза подряд"
+on = "sync.failed"
+action = "notify"
+field = "count"
+at_least = 3
+limit = 1
+window = 1440
+
+[[rule]]
+id = "routine.limit"
+title = "До часового предела маршрута осталось меньше 5 запусков"
+on = "claude.routine.fired"
+action = "notify"
+field = "left"
+at_most = 4
+
+[[rule]]
+id = "claude.done"
+title = "Claude закончил ответ"
+on = "claude.turn.done"
+action = "notify"
+
+[[rule]]
+id = "claude.input"
+title = "Claude ждёт разрешения или ввода"
+on = "claude.needs_input"
+action = "notify"
+importance = "high"
+quiet = false
+
+[[rule]]
+id = "social.comment"
+title = "Новый комментарий в соцсети"
+on = "social.comment.new"
+action = "notify"
+
+[[rule]]
+id = "social.unanswered"
+title = "Комментарий без ответа больше 12 часов"
+on = "social.comment.unanswered"
+action = "notify"
+field = "hours"
+at_least = 12
+limit = 1
+window = 720
+
+[[rule]]
+id = "social.milestone"
+title = "Подписчики перешли веху"
+on = "social.followers.milestone"
+action = "notify"

@@ -279,6 +279,10 @@ enum class DiagCode(val category: Category, val defaultSeverity: Severity, val r
     /** Предел запусков маршрута (429): 30 в час на маршрут, 100 — на аккаунт; повтор — позже или другим маршрутом. */
     ROUTINE_LIMIT_REACHED(Category.NETWORK, Severity.ERROR, Retryability.RETRYABLE),
 
+    // --- уведомления пульта DPmetaApp (ТЗ DPmetaApp, §6.9, F-51, F-52; DPmetaApp:D-85) ---
+    /** Событие неизвестного каталогу типа или правило тревоги с неизвестным типом, полем, неверным `regex`. */
+    RULE_INVALID(Category.FORMAT, Severity.ERROR, Retryability.NON_RETRYABLE),
+
     /** Запечатанный сегмент журнала пропал или испорчен — восстановлен из копии (D-95). */
     JOURNAL_SEGMENT_RESTORED(Category.INTEGRITY, Severity.WARNING, Retryability.NON_RETRYABLE),
 

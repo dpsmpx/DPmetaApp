@@ -3,7 +3,9 @@ package com.dpsmpx.dpmeta.corpus
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpmeta.formats.DecisionLog
 import com.dpsmpx.dpmeta.formats.BriefFormat
+import com.dpsmpx.dpmeta.formats.AlertFormat
 import com.dpsmpx.dpmeta.formats.CommandFormat
+import com.dpsmpx.dpmeta.formats.EventCatalogFormat
 import com.dpsmpx.dpmeta.formats.CommandSpec
 import com.dpsmpx.dpmeta.formats.PanelFormat
 import com.dpsmpx.dpmeta.formats.RegistryFormat
@@ -100,6 +102,26 @@ class OwnDocumentsTest {
         }
         assertEquals(listOf("repo.ff"), commands.filter { it.level == 1 }.map { it.id })
         assertTrue(commands.first { it.id == "repo.ff" }.project == CommandSpec.ANY)
+    }
+
+    /**
+     * Каталог событий и правила тревог (F-37, F-51; D-85): разбираются; в каталоге —
+     * все типы ТЗ, §8.1, и каждый вид ленты; правило F-37 — у каждого пункта по умолчанию.
+     */
+    @Test
+    fun ownEventsAndAlertsParse() {
+        val catalog = EventCatalogFormat.parse(text("config/events.toml"), "config/events.toml").ok("config/events.toml")
+        val tz = text("docs/direction/TECHNICAL_TASK.md")
+        val section = tz.substringAfter("### 8.1 Каталог событий").substringBefore("\n## ")
+        val named = Regex("^\\| ([^|]+) \\|", RegexOption.MULTILINE).findAll(section)
+            .flatMap { m -> Regex("`([a-z][a-z0-9_.]*)`").findAll(m.groupValues[1]).map { it.groupValues[1] } }.toSet()
+        assertTrue(named.size >= 40, "типов в §8.1: ${named.size}")
+        assertEquals(named, catalog.types.map { it.type }.toSet(), "каталог — ровно типы ТЗ, §8.1")
+        for (t in com.dpsmpx.dpmeta.metrics.Feed.TYPES.values) assertTrue(catalog.type(t) != null, "вид ленты $t — не в каталоге")
+        val rules = AlertFormat.parse(text("config/alerts.toml"), catalog, "config/alerts.toml").ok("config/alerts.toml").rules
+        assertEquals(14, rules.size, "правил по умолчанию F-37")
+        assertTrue(rules.all { it.enabled })
+        assertEquals(listOf("claude.input"), rules.filter { !it.quiet }.map { it.id }, "звучит в тихие часы — только «Claude ждёт»")
     }
 
     @Test

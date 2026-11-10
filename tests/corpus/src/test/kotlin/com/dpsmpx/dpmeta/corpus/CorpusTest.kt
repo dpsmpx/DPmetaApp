@@ -3,9 +3,11 @@ package com.dpsmpx.dpmeta.corpus
 import com.dpsmpx.dpai.core.diagnostics.Severity
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.serialization.CanonicalJson
+import com.dpsmpx.dpmeta.formats.AlertFormat
 import com.dpsmpx.dpmeta.formats.BriefFormat
 import com.dpsmpx.dpmeta.formats.CommandFormat
 import com.dpsmpx.dpmeta.formats.DecisionLog
+import com.dpsmpx.dpmeta.formats.EventCatalogFormat
 import com.dpsmpx.dpmeta.formats.PanelFormat
 import com.dpsmpx.dpmeta.formats.PrDescription
 import com.dpsmpx.dpmeta.formats.RegistryFormat
@@ -41,6 +43,24 @@ class CorpusTest {
             r.commands.joinToString(",") { c ->
                 "${c.id}=${c.project}" + (c.workdir?.let { "/$it" } ?: "") + ":L${c.level}:${c.plan.code}:${c.timeoutMinutes}m:" +
                     c.packages.joinToString("+").ifEmpty { "-" } + ":" + c.line
+            }
+        }
+        "events" -> EventCatalogFormat.parse(text, "").map { c ->
+            c.types.joinToString(",") { t ->
+                "${t.type}:" + t.sources.joinToString("+") { it.code } + ":${t.channel.code}:" +
+                    t.fields.joinToString("+").ifEmpty { "-" } + "|" + t.numbers.joinToString("+").ifEmpty { "-" }
+            }
+        }
+        // Правила разбираются против каталога (D-85): синтетический — samples/alerts/catalog.toml.
+        "alerts" -> AlertFormat.parse(text, EventCatalogFormat.parse(File(root, "alerts/catalog.toml").readText(), "catalog").valueOrNull()!!, "").map { r ->
+            r.rules.joinToString(",") { x ->
+                "${x.id}:${x.on}:${x.action.code}" + (x.channel?.let { ":${it.code}" } ?: "") +
+                    (if (x.importance.code != "default") ":${x.importance.code}" else "") +
+                    (x.project?.let { "@$it" } ?: "") + (x.contains?.let { "~$it" } ?: "") + (x.regex?.let { "/${it.pattern}/" } ?: "") +
+                    (x.number?.let { n -> "#${n.field}" + (n.atLeast?.let { ">=$it" } ?: "") + (n.atMost?.let { "<=$it" } ?: "") } ?: "") +
+                    (if (x.days.isEmpty()) "" else x.days.sorted().joinToString("+", "[", "]")) +
+                    (x.debounce?.let { "${it.limit}/${it.windowMinutes}" } ?: "") +
+                    (if (!x.quiet) "!loud" else "") + (if (!x.enabled) "!off" else "")
             }
         }
         "toml" -> Toml.parse(text, "").map { CanonicalJson.write(it) }

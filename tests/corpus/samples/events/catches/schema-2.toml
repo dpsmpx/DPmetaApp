@@ -1,0 +1,7 @@
+schema = 2
+
+[[event]]
+type = "alpha.opened"
+title = "Альфа"
+source = ["sync"]
+channel = "dev"

@@ -1,0 +1,2 @@
+error: VALUE_INVALID
+at: event[1].type

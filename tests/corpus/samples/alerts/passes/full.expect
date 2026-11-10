@@ -1,0 +1,1 @@
+summary: alpha.quiet:alpha.*:silent@Gamma,alpha.long:alpha.opened:notify:questions:high~срочно/^#[0-9]+/#hours>=2.0<=48.0[MONDAY+FRIDAY]1/60!loud,beta.off:beta.signal:digest!off

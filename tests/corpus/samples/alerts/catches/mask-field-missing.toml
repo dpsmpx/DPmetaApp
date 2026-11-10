@@ -1,0 +1,9 @@
+schema = 1
+
+[[rule]]
+id = "alpha"
+title = "Альфа"
+on = "alpha.*"
+action = "notify"
+field = "hours"
+at_least = 1
