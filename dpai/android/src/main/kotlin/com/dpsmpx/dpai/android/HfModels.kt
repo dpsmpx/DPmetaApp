@@ -106,7 +106,7 @@ object HfModels {
         val part = "$target.part"
         if (vfs.exists(target)) return finish("Уже скачан: $guest.", failed = false)
         val have = vfs.size(part) ?: 0
-        val free = GuestPaths.home(app).usableSpace
+        val free = free(app)
         val need = (file.size - have).coerceAtLeast(0)
         if (free < need + RESERVE) {
             return finish("Мало места: нужно ${size(need)} и ${size(RESERVE)} запаса, свободно ${size(free)}.", failed = true)
@@ -180,6 +180,20 @@ object HfModels {
         val s = flow.value
         val file = s.retry?.let { p -> s.rows.firstOrNull { it.file.path == p }?.file }
         if (file != null) download(context, file) else if (s.input.isNotBlank()) list(context, s.input)
+    }
+
+    /**
+     * Сколько места можно занять под `/root`: с учётом кэша, который система очистит
+     * сама (`StorageManager`); не ответила — свободное по `StatFs`.
+     */
+    private fun free(context: Context): Long {
+        val home = GuestPaths.home(context)
+        val sm = context.getSystemService(android.os.storage.StorageManager::class.java)
+        return try {
+            sm.getAllocatableBytes(sm.getUuidForPath(home))
+        } catch (_: IOException) {
+            android.os.StatFs(home.path).availableBytes
+        }
     }
 
     private fun finish(note: String, failed: Boolean) {
