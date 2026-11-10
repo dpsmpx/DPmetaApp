@@ -48,7 +48,8 @@ class PultRepository(
     private val store = Store(vfs, clock, RandomSource.secure())
 
     /** Итог синхронизации для экрана: строка «что вышло» и отказы источников. */
-    data class SyncReport(val line: String, val failures: List<SourceFailure>)
+    /** Итог синхронизации: строка замера, отказы источников и новые события ленты — для тревог (D-85). */
+    data class SyncReport(val line: String, val failures: List<SourceFailure>, val events: List<com.dpsmpx.dpmeta.metrics.FeedEvent> = emptyList())
 
     /**
      * Строка окна выбора клонов (D-70): репозиторий, из реестра ли, закрытый ли;
@@ -551,7 +552,8 @@ class PultRepository(
         val state = EcosystemState.derive(reg, result.observations, result.failures + cloned.failures + carried, previous, clock.now())
         store.writeState(state).let { if (it is Outcome.Failure) return it }
         store.appendHistory(state.points()).let { if (it is Outcome.Failure) return it }
-        store.appendFeed(Feed.diff(previous, state)).let { if (it is Outcome.Failure) return it }
+        val fresh = Feed.diff(previous, state)
+        store.appendFeed(fresh).let { if (it is Outcome.Failure) return it }
         etags.save()
         val s = net.stats
         // Числа замера A-02 (ТЗ; как строка `dpmeta-cli sync --live`): запросы, доля 304, время.
@@ -563,7 +565,7 @@ class PultRepository(
             (if (cloned.skipped > 0) ", отменено ${cloned.skipped}" else "") +
             (if (cloned.rewritten > 0) ", с перезаписанной историей ${cloned.rewritten}" else "") +
             "), ${"%.1f".format(java.util.Locale.ROOT, seconds)} с"
-        return Outcome.success(SyncReport(line, result.failures + cloned.failures))
+        return Outcome.success(SyncReport(line, result.failures + cloned.failures, fresh))
     }
 
     /**

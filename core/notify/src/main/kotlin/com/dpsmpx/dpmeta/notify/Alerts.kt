@@ -13,7 +13,7 @@ import com.dpsmpx.dpmeta.model.EventCatalog
 import com.dpsmpx.dpmeta.model.EventType
 import java.time.DayOfWeek
 import java.time.Instant
-import java.time.ZoneOffset
+import java.time.ZoneId
 
 /**
  * Тихие часы (F-38): с минуты суток [fromMinute] до [toMinute] (через полночь —
@@ -25,9 +25,9 @@ data class QuietHours(val fromMinute: Int, val toMinute: Int, val days: Set<DayO
         require(fromMinute in 0 until MINUTES_IN_DAY && toMinute in 0 until MINUTES_IN_DAY) { "минуты суток — 0…1439" }
     }
 
-    fun covers(at: Timestamp, zone: ZoneOffset): Boolean {
+    fun covers(at: Timestamp, zone: ZoneId): Boolean {
         if (fromMinute == toMinute) return false
-        val t = Instant.ofEpochMilli(at.epochMillis).atOffset(zone)
+        val t = Instant.ofEpochMilli(at.epochMillis).atZone(zone)
         val m = t.hour * 60 + t.minute
         val inside = if (fromMinute < toMinute) m in fromMinute until toMinute else m >= fromMinute || m < toMinute
         if (!inside) return false
@@ -100,7 +100,7 @@ object Alerts {
         catalog: EventCatalog,
         rules: AlertRules,
         now: Timestamp,
-        zone: ZoneOffset,
+        zone: ZoneId,
         quiet: QuietHours?,
         shown: List<Shown>,
     ): Decided = run(events.sortedBy { it.at.epochMillis }, catalog, rules.rules, zone, quiet, shown) { now }
@@ -110,7 +110,7 @@ object Alerts {
      * [TRY_DAYS] дней до [now], как если бы каждое пришло в своё время, с пустой
      * историей показа. Итог — решения правила (без событий, которые оно не взяло).
      */
-    fun tryRule(rule: AlertRule, events: List<Event>, catalog: EventCatalog, now: Timestamp, zone: ZoneOffset, quiet: QuietHours?): List<Decision> {
+    fun tryRule(rule: AlertRule, events: List<Event>, catalog: EventCatalog, now: Timestamp, zone: ZoneId, quiet: QuietHours?): List<Decision> {
         val from = now.epochMillis - TRY_DAYS * 24L * 60 * 60 * 1000
         val window = events.filter { it.at.epochMillis in from..now.epochMillis }.sortedBy { it.at.epochMillis }
         return run(window, catalog, listOf(rule.copy(enabled = true)), zone, quiet, emptyList()) { it.at }
@@ -121,7 +121,7 @@ object Alerts {
         events: List<Event>,
         catalog: EventCatalog,
         rules: List<AlertRule>,
-        zone: ZoneOffset,
+        zone: ZoneId,
         quiet: QuietHours?,
         shown: List<Shown>,
         time: (Event) -> Timestamp,
@@ -172,7 +172,7 @@ object Alerts {
     }
 
     /** Подходит ли правило к событию: тип или маска, проект, текст, regex, число, день недели. */
-    fun matches(rule: AlertRule, e: Event, type: EventType, zone: ZoneOffset): Boolean {
+    fun matches(rule: AlertRule, e: Event, type: EventType, zone: ZoneId): Boolean {
         val typeOk = if (rule.on.endsWith(".*")) type.type.startsWith(rule.on.removeSuffix("*")) else type.type == rule.on
         if (!typeOk) return false
         // Свойства модели — из другого модуля: умного приведения нет, значения — в локальные.
@@ -191,7 +191,7 @@ object Alerts {
             if (low != null && v < low) return false
             if (high != null && v > high) return false
         }
-        if (rule.days.isNotEmpty() && Instant.ofEpochMilli(e.at.epochMillis).atOffset(zone).dayOfWeek !in rule.days) return false
+        if (rule.days.isNotEmpty() && Instant.ofEpochMilli(e.at.epochMillis).atZone(zone).dayOfWeek !in rule.days) return false
         return true
     }
 }

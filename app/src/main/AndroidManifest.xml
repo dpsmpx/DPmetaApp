@@ -8,6 +8,8 @@
     <!-- Клонирование под службой переднего плана (D-78): процесс не выгружается на середине клона. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Тревоги пульта (F-38; D-85): Android 13+ спрашивает разрешение; без него — только лента. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Мост Termux (F-41; D-84): команды реестра и проба готовности; разрешение даёт человек. -->
     <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
 

@@ -917,6 +917,11 @@ open class PultActivity : ComponentActivity() {
             } finally {
                 if (service) CloneService.stop(app)
             }
+            // Тревоги (D-85): новые события — через правила в уведомления; сбой показа синхронизацию не роняет.
+            if (r is Outcome.Success && r.value.events.isNotEmpty()) {
+                val line = runCatching { com.dpsmpx.dpmeta.app.data.PultAlerts.post(app, r.value.events, Clock.SYSTEM.now()) }.getOrElse { "сбой: ${it.javaClass.simpleName}" }
+                debugLog("тревоги", line)
+            }
             val state = (repo.state() as? Outcome.Success)?.value
             val feed = (repo.feed() as? Outcome.Success)?.value.orEmpty()
             runOnUiThread {
