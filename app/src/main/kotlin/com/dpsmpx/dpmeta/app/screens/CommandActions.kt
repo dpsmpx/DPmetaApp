@@ -67,6 +67,14 @@ object CommandActions {
         return script?.let { listOf(spot.inClone, it).filter(String::isNotEmpty).joinToString("/") }
     }
 
+    /** Реестр команд для экрана: команды, реестр проектов и проекты для команды «любой проект». */
+    data class Catalog(val commands: List<CommandSpec>, val registry: Registry, val anyProjects: List<String>)
+
+    /** Команда на месте: где идёт, рабочее дерево клона, готовность по шагам и каких пакетов нет. */
+    data class Checked(val spot: Spot, val tree: Clones.Worktree?, val steps: List<Step>, val missing: List<String> = emptyList()) {
+        val ready: Boolean get() = ready(steps)
+    }
+
     /** Состояние Linux-среды приложения. */
     enum class Linux { UNSUPPORTED, NOT_INSTALLED, READY }
 

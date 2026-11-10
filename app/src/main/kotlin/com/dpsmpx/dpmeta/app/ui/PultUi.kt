@@ -105,6 +105,9 @@ import com.dpsmpx.dpmeta.app.screens.LineDiff
 import com.dpsmpx.dpmeta.app.screens.RouteActions
 import com.dpsmpx.dpmeta.app.screens.AskActions
 import com.dpsmpx.dpmeta.app.data.AskSession
+import com.dpsmpx.dpmeta.app.data.CommandSession
+import com.dpsmpx.dpmeta.app.screens.CommandActions
+import com.dpsmpx.dpmeta.formats.CommandSpec
 import com.dpsmpx.dpmeta.github.PullDetail
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.OutlinedButton
@@ -294,6 +297,21 @@ interface Loader {
     fun base(project: String, done: (Outcome<Pair<com.dpsmpx.dpmeta.model.RepoRef, String>>) -> Unit) =
         done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "поручений здесь нет", project))
 
+    /** Реестр команд (F-40; D-82): команды, реестр проектов, проекты с клоном; без оболочки — отказ. */
+    fun commands(done: (Outcome<CommandActions.Catalog>) -> Unit) =
+        done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "команд здесь нет", "commands"))
+
+    /** Готовность команды на месте: шаги, рабочее дерево клона. */
+    fun commandCheck(spec: CommandSpec, registry: com.dpsmpx.dpmeta.model.Registry, project: String?, done: (Outcome<CommandActions.Checked>) -> Unit) =
+        done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "команд здесь нет", spec.id))
+
+    /** Поставить пакеты Alpine в Linux-среду. */
+    fun commandInstall(packages: List<String>, done: (Outcome<List<String>>) -> Unit) =
+        done(Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "Linux-среды здесь нет", "apk"))
+
+    /** Запуск: итог и вывод — в [CommandSession]; уровень 1 — уже после окна «что изменится». */
+    fun commandStart(spec: CommandSpec, checked: CommandActions.Checked) {}
+
     /** Поделиться текстом (экспорт журнала, F-44). */
     fun share(subject: String, text: String) {}
 }
@@ -353,6 +371,9 @@ private sealed interface Nav {
     /** «Спросить Claude» (F-21) — из «Ещё»; из документа — с приложенным файлом [project]:[path]. */
     data class Ask(val project: String?, val path: String?) : Nav
 
+    /** Команды проектов (F-40; D-82) — из «Ещё». */
+    data object Commands : Nav
+
     companion object {
         private const val SEP = "\u0001"
 
@@ -369,6 +390,7 @@ private sealed interface Nav {
             is Edit -> listOf("edit", n.project, n.path)
             is Brief -> listOf("brief", n.project, n.brief.orEmpty(), n.source.orEmpty(), n.question.orEmpty())
             is Ask -> listOf("ask", n.project.orEmpty(), n.path.orEmpty())
+            Commands -> listOf("commands")
         }.joinToString(SEP)
 
         fun decode(s: String): Nav? {
@@ -385,6 +407,7 @@ private sealed interface Nav {
                 "edit" -> if (p.size >= 3) Edit(p[1], p[2]) else null
                 "brief" -> if (p.size >= 5) Brief(p[1], p[2].ifEmpty { null }, p[3].ifEmpty { null }, p[4].ifEmpty { null }) else null
                 "ask" -> if (p.size >= 3) Ask(p[1].ifEmpty { null }, p[2].ifEmpty { null }) else null
+                "commands" -> Commands
                 else -> null
             }
         }
@@ -523,11 +546,12 @@ fun PultApp(
                 top is Nav.Edit -> EditScreen(top.project, top.path, loader, back)
                 top is Nav.Brief -> BriefScreen(top, loader, back)
                 top is Nav.Ask -> AskScreen(top, s != null, loader, back)
+                top is Nav.Commands -> CommandsScreen(loader, back)
                 top is Nav.Branch -> {
                     val pulls = remember(s, top) { s?.let { Screens.card(it, top.project) }?.pulls?.filter { it.head == top.name }?.map { it.number }.orEmpty() }
                     BranchScreen(top.project, top.name, pulls, loader, back)
                 }
-                tab == Section.MORE -> Settings(view, onSync, onSaveToken, onForgetToken, onClones, onZone, onJournal = { open(Nav.Journal) }, onAsk = { open(Nav.Ask(null, null)) })
+                tab == Section.MORE -> Settings(view, onSync, onSaveToken, onForgetToken, onClones, onZone, onJournal = { open(Nav.Journal) }, onAsk = { open(Nav.Ask(null, null)) }, onCommands = { open(Nav.Commands) })
                 s == null && view.loading -> Text("Читаю срез…", style = MaterialTheme.typography.bodySmall)
                 // Пустое состояние ведёт дальше (UX-11): кнопкой, а не словами «где-то в настройках».
                 s == null -> Column(verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
@@ -1134,7 +1158,7 @@ private fun QuestionsList(q: List<Screens.Question>, open: (Nav) -> Unit, below:
 
 @Composable
 // Листается (UX-15): при шрифте 200 % и в альбомной ориентации «Клоны…» не уходят за край.
-private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -> Unit, onForget: () -> Unit, onClones: () -> Unit, onZone: (Int) -> Unit = {}, onJournal: () -> Unit = {}, onAsk: () -> Unit = {}) = Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -> Unit, onForget: () -> Unit, onClones: () -> Unit, onZone: (Int) -> Unit = {}, onJournal: () -> Unit = {}, onAsk: () -> Unit = {}, onCommands: () -> Unit = {}) = Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
     var token by remember { mutableStateOf("") }
     // Пока токен сохранён — одна строка, поле — по «Заменить» (UX-12): пустое поле при сохранённом токене путало.
     var replacing by rememberSaveable { mutableStateOf(false) }
@@ -1182,6 +1206,9 @@ private fun Settings(view: PultView, onSync: () -> Unit, onSaveToken: (String) -
     Text("Claude", style = MaterialTheme.typography.titleMedium)
     Text("Вопросы о состоянии проектов — моделью по ключу API из «AI». Claude только читает срез; действий из разговора нет.", style = MaterialTheme.typography.bodySmall)
     TextButton(onClick = onAsk) { Text("Спросить Claude ▸") }
+    Text("Команды проектов", style = MaterialTheme.typography.titleMedium)
+    Text("Проверки и отчёты проектов — в Linux-среде приложения, в клонах. Только команды из списка; своих здесь не набрать.", style = MaterialTheme.typography.bodySmall)
+    TextButton(onClick = onCommands) { Text("Команды ▸") }
     Text("Синхронизация", style = MaterialTheme.typography.titleMedium)
     // Постоянная строка последней синхронизации (UX-10); временные итоги — снэкбаром.
     view.state?.let { st -> Text("Последняя: ${Screens.time(st.asOf)} · ${Screens.summary(st).syncHealth}", style = MaterialTheme.typography.bodySmall) }
@@ -1513,6 +1540,152 @@ private fun JournalScreen(loader: Loader, onBack: () -> Unit) {
                         Text(r.status.word + (r.detail.takeIf { it.isNotEmpty() }?.let { ": $it" } ?: ""), color = if (bad) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
                         r.link?.let { url -> Text(url, Modifier.clickable(onClickLabel = "ссылка") { external(context, taps, url) }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
                     }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Команды проектов (F-40, F-43; D-82): только из реестра, без ввода аргументов. У команды —
+ * где идёт, готовность по шагам, рабочее дерево клона; уровень 1 — окно «что изменится» и
+ * журнал. Вывод — по ходу; запуск переживает уход с экрана ([CommandSession]).
+ */
+@Composable
+private fun CommandsScreen(loader: Loader, onBack: () -> Unit) {
+    var catalog by remember { mutableStateOf<Outcome<CommandActions.Catalog>?>(null) }
+    LaunchedEffect(Unit) { loader.commands { catalog = it } }
+    var opened by rememberSaveable { mutableStateOf<String?>(null) }
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        item { TextButton(onClick = onBack, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("← Назад") } }
+        item { Text("Команды проектов", style = MaterialTheme.typography.titleMedium) }
+        item {
+            Text(
+                "Идут в Linux-среде приложения, в клонах /root/repos — там же, где работает «AI». Чтение — сразу; правка рабочего дерева — после окна «что изменится», с записью в журнал.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        when (val c = catalog) {
+            null -> item { Text("Читаю реестр…", style = MaterialTheme.typography.bodySmall) }
+            is Outcome.Failure -> item { Text("Реестр не прочитан: ${c.errors.first().message}", color = MaterialTheme.colorScheme.error) }
+            is Outcome.Success -> items(c.value.commands, key = { it.id }) { spec ->
+                val open = opened == spec.id
+                Column(Modifier.fillMaxWidth()) {
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClickLabel = if (open) "свернуть" else "готовность и запуск") { opened = if (open) null else spec.id }.padding(vertical = 4.dp),
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(spec.title, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                (if (spec.anyProject) "любой проект" else spec.project) + " · " + if (spec.level == 0) "только чтение" else "правка рабочего дерева",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        if (CommandSession.runs.any { (k, r) -> k.startsWith("${spec.id}@") && r.running }) {
+                            Text("идёт", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(end = 6.dp))
+                        }
+                        Text(if (open) "▾" else "▸")
+                    }
+                    if (open) CommandDetail(spec, c.value, loader)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CommandDetail(spec: CommandSpec, catalog: CommandActions.Catalog, loader: Loader) {
+    var project by rememberSaveable(spec.id) { mutableStateOf(if (spec.anyProject) catalog.anyProjects.firstOrNull() else spec.project) }
+    var round by remember { mutableIntStateOf(0) }
+    var checked by remember { mutableStateOf<Outcome<CommandActions.Checked>?>(null) }
+    LaunchedEffect(spec.id, project, round) {
+        checked = null
+        project?.let { p -> loader.commandCheck(spec, catalog.registry, p) { checked = it } }
+    }
+    var installing by remember { mutableStateOf(false) }
+    var installed by remember { mutableStateOf<String?>(null) }
+    var confirming by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth().padding(start = 12.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (spec.anyProject) {
+            if (catalog.anyProjects.isEmpty()) {
+                Text("Нет проектов со своим клоном — отметьте их в «Клоны репозиториев».", style = MaterialTheme.typography.bodySmall)
+            } else {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    for (p in catalog.anyProjects) FilterChip(selected = p == project, onClick = { project = p }, label = { Text(p) })
+                }
+            }
+        }
+        Text(spec.line, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+        spec.expect?.let { Text("Ждать: $it.", style = MaterialTheme.typography.bodySmall) }
+        when (val ch = checked) {
+            null -> if (project != null) Text("Проверяю готовность…", style = MaterialTheme.typography.bodySmall)
+            is Outcome.Failure -> Text(ch.errors.first().message.replaceFirstChar { it.uppercase() }, color = MaterialTheme.colorScheme.error)
+            is Outcome.Success -> {
+                val v = ch.value
+                Text("Каталог: ${v.spot.guestDir}", style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+                if (v.tree != null) Text(CommandActions.treeLine(v.tree), style = MaterialTheme.typography.bodySmall)
+                for (st in v.steps) {
+                    Text((if (st.ok) "✓ " else "✗ ") + st.title, style = MaterialTheme.typography.bodySmall, color = if (st.ok) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error)
+                    if (!st.ok) st.hint?.let { Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 16.dp)) }
+                }
+                val key = CommandSession.key(spec.id, v.spot.project)
+                val run = CommandSession.runs[key]
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+                    if (v.missing.isNotEmpty()) {
+                        OutlinedButton(onClick = {
+                            installing = true
+                            installed = null
+                            loader.commandInstall(v.missing) { r ->
+                                installing = false
+                                installed = when (r) {
+                                    is Outcome.Success -> "Пакеты поставлены: ${v.missing.joinToString(", ")}."
+                                    is Outcome.Failure -> "Не поставлены: ${r.errors.first().message}"
+                                }
+                                round++
+                            }
+                        }, enabled = !installing) { Text(if (installing) "Ставлю…" else "Поставить пакеты") }
+                    }
+                    if (run?.running == true) {
+                        OutlinedButton(onClick = { CommandSession.stop(key) }) { Text("Остановить") }
+                    } else {
+                        Button(onClick = { if (spec.level == 1) confirming = true else loader.commandStart(spec, v) }, enabled = v.ready) {
+                            Text(if (spec.level == 1) "Запустить…" else "Запустить")
+                        }
+                    }
+                    TextButton(onClick = { round++ }, enabled = run?.running != true) { Text("Проверить снова") }
+                }
+                installed?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                if (run != null) {
+                    if (run.running) Text("Идёт…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                    run.result?.let { Text(it, color = if (run.failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface) }
+                    if (run.lines.isNotEmpty()) {
+                        val scroll = rememberScrollState()
+                        // Вывод — к последней строке по ходу, как в терминале.
+                        LaunchedEffect(run.lines.size) { scroll.scrollTo(scroll.maxValue) }
+                        androidx.compose.foundation.text.selection.SelectionContainer {
+                            Text(
+                                run.lines.joinToString("\n"),
+                                Modifier.fillMaxWidth().heightIn(max = 360.dp).verticalScroll(scroll),
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace,
+                            )
+                        }
+                    }
+                }
+                if (confirming) {
+                    AlertDialog(
+                        onDismissRequest = { confirming = false },
+                        title = { Text("Запустить «${spec.title}»?") },
+                        text = { Text(CommandActions.preview(spec, v.spot, v.tree).joinToString("\n")) },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                confirming = false
+                                loader.commandStart(spec, v)
+                            }) { Text("Запустить") }
+                        },
+                        dismissButton = { TextButton(onClick = { confirming = false }) { Text("Отмена") } },
+                    )
                 }
             }
         }

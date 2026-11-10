@@ -6,11 +6,13 @@ import com.dpsmpx.dpai.android.AiBackground
 import com.dpsmpx.dpai.android.AiSummary
 import com.dpsmpx.dpai.android.MainActivity
 import com.dpsmpx.dpai.android.PultAsk
+import com.dpsmpx.dpai.android.PultCommands
 import com.dpsmpx.dpai.android.PultRoutes
 import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpmeta.app.PultActivity
 import com.dpsmpx.dpmeta.app.screens.AskActions
+import com.dpsmpx.dpmeta.app.screens.CommandActions
 import com.dpsmpx.dpmeta.app.screens.RouteActions
 import com.dpsmpx.dpmeta.app.screens.Screens
 
@@ -52,6 +54,28 @@ class DpmetaActivity : PultActivity() {
             is Outcome.Failure -> r
             is Outcome.Success -> Outcome.success(RouteActions.Fired(r.value.first, r.value.second))
         }
+
+    /** Команды реестра (`DPmetaApp:D-82`): Linux-среда — подсистемы «AI»; что запускать и уровень решает пульт. */
+    override fun commandLinux(): CommandActions.Linux = when (PultCommands.linux(applicationContext)) {
+        "ready" -> CommandActions.Linux.READY
+        "absent" -> CommandActions.Linux.NOT_INSTALLED
+        else -> CommandActions.Linux.UNSUPPORTED
+    }
+
+    override fun commandMissing(packages: List<String>): List<String> = PultCommands.missing(applicationContext, packages)
+
+    override fun commandInstall(packages: List<String>): Outcome<List<String>> = PultCommands.install(applicationContext, packages)
+
+    override fun commandRun(
+        dir: String,
+        argv: List<String>,
+        minutes: Int,
+        onLine: (String) -> Unit,
+        onStop: (() -> Unit) -> Unit,
+    ): Outcome<CommandActions.Exit> = when (val r = PultCommands.run(applicationContext, dir, argv, minutes, onLine, onStop)) {
+        is Outcome.Failure -> r
+        is Outcome.Success -> Outcome.success(CommandActions.Exit(r.value.code, r.value.stopped, r.value.timedOut))
+    }
 
     /** «Спросить Claude» (F-21): профили Anthropic и ход с инструментами — у подсистемы «AI» (`DP_AI_Orcestrator:D-118`). */
     override fun askProfiles(): List<AskActions.Profile> =

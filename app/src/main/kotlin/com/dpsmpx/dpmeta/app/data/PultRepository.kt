@@ -228,6 +228,36 @@ class PultRepository(
     ): Outcome<com.dpsmpx.dpmeta.actions.ActionResult> =
         actions.run(command, confirm(actions)) { com.dpsmpx.dpmeta.app.screens.RouteActions.execute(command, text, fire) }
 
+    /**
+     * Реестр проектов для команд (D-82): прочитанный при синхронизации, иначе — из клона
+     * DPmetaApp, без сети и токена.
+     */
+    fun commandRegistry(selected: Set<String>): Outcome<Registry> {
+        registry?.let { return Outcome.success(it) }
+        val host = RepoRef.parse(HOST).valueOrNull() ?: return Outcome.failure(DiagCode.INTERNAL_ERROR, "адрес DPmetaApp", HOST)
+        val clones = com.dpsmpx.dpmeta.git.Clones(clonesDir, com.dpsmpx.dpmeta.git.Clones.allowList())
+        return localRegistry(clones, host, selected)?.let { Outcome.success(it) }
+            ?: Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "реестра проектов ещё нет: синхронизируйте пульт или отметьте клон DPmetaApp", REGISTRY)
+    }
+
+    /** Каталог клона репозитория [repo] на телефоне — тот же, что у гостя в `/root/repos` (D-72). */
+    fun cloneDir(repo: RepoRef): java.io.File = com.dpsmpx.dpmeta.git.Clones(clonesDir, com.dpsmpx.dpmeta.git.Clones.allowList()).dir("$repo")
+
+    /** Рабочее дерево клона (D-70): ветка и коммит рядом с `origin/<ветка>`; клона нет — `null`. */
+    fun worktree(repo: RepoRef): com.dpsmpx.dpmeta.git.Clones.Worktree? =
+        com.dpsmpx.dpmeta.git.Clones(clonesDir, com.dpsmpx.dpmeta.git.Clones.allowList()).worktree("$repo").valueOrNull()
+
+    /**
+     * Команда реестра уровня 1 (D-82): та же политика и журнал (D-07), исполнитель — [run],
+     * запуск в Linux-среде мостом оболочки.
+     */
+    fun runCommand(
+        command: com.dpsmpx.dpmeta.actions.ActionCommand,
+        confirm: (com.dpsmpx.dpmeta.actions.Actions) -> com.dpsmpx.dpmeta.actions.Confirmation?,
+        run: () -> Outcome<com.dpsmpx.dpmeta.app.screens.CommandActions.Exit>,
+    ): Outcome<com.dpsmpx.dpmeta.actions.ActionResult> =
+        actions.run(command, confirm(actions)) { com.dpsmpx.dpmeta.app.screens.CommandActions.execute(command, run) }
+
     /** Репозиторий проекта и его основная ветка — для мест шаблона поручения (F-23). */
     fun base(token: Secret, project: String): Outcome<Pair<RepoRef, String>> {
         val repo = when (val r = repoFor(token, project)) {

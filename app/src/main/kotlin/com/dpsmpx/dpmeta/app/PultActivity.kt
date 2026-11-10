@@ -187,6 +187,29 @@ open class PultActivity : ComponentActivity() {
     protected open fun fireRoute(id: String, text: String): Outcome<com.dpsmpx.dpmeta.app.screens.RouteActions.Fired> =
         Outcome.failure(DiagCode.UNSUPPORTED, "маршрутов нет: их ведёт подсистема «AI»", "route")
 
+    /**
+     * Команды реестра (F-40; D-82) идут в Linux-среде подсистемы «AI» — её даёт оболочка
+     * `:shell`; без неё Linux-среды нет. Вызываются не на главном потоке.
+     */
+    protected open fun commandLinux(): com.dpsmpx.dpmeta.app.screens.CommandActions.Linux = com.dpsmpx.dpmeta.app.screens.CommandActions.Linux.UNSUPPORTED
+
+    /** Каких пакетов Alpine нет в Linux-среде. */
+    protected open fun commandMissing(packages: List<String>): List<String> = packages
+
+    /** Поставить пакеты Alpine: итог — последние строки вывода `apk`. */
+    protected open fun commandInstall(packages: List<String>): Outcome<List<String>> =
+        Outcome.failure(DiagCode.UNSUPPORTED, "Linux-среды нет: её даёт подсистема «AI»", "linux")
+
+    /** Запустить [argv] в каталоге гостя [dir] не дольше [minutes]; строки — в [onLine], остановка — в [onStop]. */
+    protected open fun commandRun(
+        dir: String,
+        argv: List<String>,
+        minutes: Int,
+        onLine: (String) -> Unit,
+        onStop: (() -> Unit) -> Unit,
+    ): Outcome<com.dpsmpx.dpmeta.app.screens.CommandActions.Exit> =
+        Outcome.failure(DiagCode.UNSUPPORTED, "Linux-среды нет: её даёт подсистема «AI»", "linux")
+
     /** «О программе» (UX-23, D-54): версия DPmetaApp из пакета и версия «AI» от оболочки. */
     private fun about(): String {
         val app = runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull() ?: "?"
@@ -629,6 +652,99 @@ open class PultActivity : ComponentActivity() {
             }
         }
 
+        /** Реестр команд (F-40, F-43; D-82) — `config/commands.toml` в APK, реестр проектов — из среза или клона. */
+        override fun commands(done: (Outcome<com.dpsmpx.dpmeta.app.screens.CommandActions.Catalog>) -> Unit) = background({
+            val text = runCatching { assets.open(COMMANDS_ASSET).use { String(it.readBytes(), Charsets.UTF_8) } }.getOrNull()
+            val parsed = if (text == null) {
+                Outcome.failure(DiagCode.ENTITY_NOT_FOUND, "реестра команд нет в сборке", COMMANDS_ASSET)
+            } else {
+                com.dpsmpx.dpmeta.formats.CommandFormat.parse(text, COMMANDS_ASSET)
+            }
+            when (parsed) {
+                is Outcome.Failure -> parsed
+                is Outcome.Success -> when (val reg = repo.commandRegistry(clonesSelected())) {
+                    is Outcome.Failure -> reg
+                    is Outcome.Success -> Outcome.success(
+                        com.dpsmpx.dpmeta.app.screens.CommandActions.Catalog(
+                            parsed.value.commands,
+                            reg.value,
+                            com.dpsmpx.dpmeta.app.screens.CommandActions.anyProjects(reg.value) { java.io.File(repo.cloneDir(it), ".git").isDirectory },
+                        ),
+                    )
+                }
+            }
+        }, done)
+
+        /** Готовность команды на месте (D-82): Linux, пакеты, клон, каталог, скрипт — и рабочее дерево. */
+        override fun commandCheck(
+            spec: com.dpsmpx.dpmeta.formats.CommandSpec,
+            registry: com.dpsmpx.dpmeta.model.Registry,
+            project: String?,
+            done: (Outcome<com.dpsmpx.dpmeta.app.screens.CommandActions.Checked>) -> Unit,
+        ) = background({
+            when (val sp = com.dpsmpx.dpmeta.app.screens.CommandActions.spot(spec, registry, project)) {
+                is Outcome.Failure -> sp
+                is Outcome.Success -> {
+                    val spot = sp.value
+                    val clone = repo.cloneDir(spot.repo)
+                    val hasClone = java.io.File(clone, ".git").isDirectory
+                    val workdir = spot.inClone.isEmpty() || java.io.File(clone, spot.inClone).isDirectory
+                    val script = com.dpsmpx.dpmeta.app.screens.CommandActions.scriptInClone(spec, spot)?.let { java.io.File(clone, it).isFile }
+                    val linux = runCatching { commandLinux() }.getOrDefault(com.dpsmpx.dpmeta.app.screens.CommandActions.Linux.UNSUPPORTED)
+                    val missing = if (linux == com.dpsmpx.dpmeta.app.screens.CommandActions.Linux.READY) runCatching { commandMissing(spec.packages) }.getOrDefault(spec.packages) else spec.packages
+                    val facts = com.dpsmpx.dpmeta.app.screens.CommandActions.Facts(linux, missing, hasClone, hasClone && workdir, script?.let { hasClone && it })
+                    Outcome.success(
+                        com.dpsmpx.dpmeta.app.screens.CommandActions.Checked(
+                            spot,
+                            if (hasClone) repo.worktree(spot.repo) else null,
+                            com.dpsmpx.dpmeta.app.screens.CommandActions.readiness(spec, spot, facts),
+                            if (linux == com.dpsmpx.dpmeta.app.screens.CommandActions.Linux.READY) missing else emptyList(),
+                        ),
+                    )
+                }
+            }
+        }, done)
+
+        override fun commandInstall(packages: List<String>, done: (Outcome<List<String>>) -> Unit) =
+            background({ runCatching { this@PultActivity.commandInstall(packages) }.getOrElse { Outcome.failure(DiagCode.INTERNAL_ERROR, "сбой: ${it.javaClass.simpleName}", "apk") } }, done)
+
+        /**
+         * Запуск команды (D-82): уровень 0 — сразу; уровень 1 — после окна «что изменится»
+         * экрана, через политику и журнал `:core:actions` (D-07). Итог — и в журнал отладки
+         * (D-39): id, проект, итог; без вывода.
+         */
+        override fun commandStart(spec: com.dpsmpx.dpmeta.formats.CommandSpec, checked: com.dpsmpx.dpmeta.app.screens.CommandActions.Checked) {
+            val key = com.dpsmpx.dpmeta.app.data.CommandSession.key(spec.id, checked.spot.project)
+            val argv = com.dpsmpx.dpmeta.app.screens.CommandActions.argv(spec)
+            val job = com.dpsmpx.dpmeta.app.data.CommandSession.Job { onLine, onStop ->
+                val started = com.dpsmpx.dpai.core.clock.Clock.SYSTEM.now().epochMillis
+                fun seconds() = (com.dpsmpx.dpai.core.clock.Clock.SYSTEM.now().epochMillis - started) / 1000
+                fun run() = commandRun(checked.spot.guestDir, argv, spec.timeoutMinutes, onLine, onStop)
+                if (spec.level == 1) {
+                    val c = com.dpsmpx.dpmeta.app.screens.CommandActions.command(spec, checked.spot, checked.tree)
+                    when (val r = repo.runCommand(c, { it.shown(c) }, ::run)) {
+                        is Outcome.Failure -> r
+                        is Outcome.Success -> Outcome.success("Готово: ${r.value.detail} (${seconds()} с).")
+                    }
+                } else {
+                    when (val r = run()) {
+                        is Outcome.Failure -> r
+                        is Outcome.Success -> if (r.value.code == 0) {
+                            Outcome.success(com.dpsmpx.dpmeta.app.screens.CommandActions.exitLine(r.value, seconds()))
+                        } else {
+                            Outcome.failure(DiagCode.PROCESS_EXIT_NONZERO, com.dpsmpx.dpmeta.app.screens.CommandActions.exitLine(r.value, seconds()).removeSuffix("."), key)
+                        }
+                    }
+                }
+            }
+            com.dpsmpx.dpmeta.app.data.CommandSession.start(key, job) { r ->
+                debugLog("команды", "${spec.id} ${checked.spot.project} ур.${spec.level}: " + when (r) {
+                    is Outcome.Success -> "готово"
+                    is Outcome.Failure -> "${r.errors.first().code}"
+                })
+            }
+        }
+
         /** Экспорт журнала (F-44): текстом через системное «Поделиться». */
         override fun share(subject: String, text: String) {
             val send = android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain")
@@ -750,6 +866,9 @@ open class PultActivity : ComponentActivity() {
 
         /** Каталог клонов репозиториев экосистемы (D-65) в `filesDir`. */
         const val CLONES_DIR = "clones"
+
+        /** Реестр команд в APK (F-40): `config/commands.toml` корня. */
+        const val COMMANDS_ASSET = "commands.toml"
 
         /** Выбор клонов автора (D-70): спрошен ли, какие отмечены (`владелец/имя`). */
         private const val CLONES_PREFS = "dpmeta.clones"
