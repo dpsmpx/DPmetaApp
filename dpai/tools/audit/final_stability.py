@@ -3,7 +3,7 @@
 
 Каждый пункт аудитов A–S (ТЗ, §100–§118) сопоставлен с тестами, которые
 его проверяют. Статус пункта — из результатов JUnit последнего прогона
-(`*/build/test-results/test/*.xml`), а не из заявления:
+(`*/build/test-results/test/*.xml` и отдельный performanceTest), а не из заявления:
 
   PASS     все тесты-доказательства прошли;
   FAIL     хотя бы один упал;
@@ -143,11 +143,17 @@ MAP = {
 def load_results():
     results = {}
     files = glob.glob(os.path.join(ROOT, "*", "build", "test-results", "test", "*.xml")) + \
-        glob.glob(os.path.join(ROOT, "tests", "*", "build", "test-results", "test", "*.xml"))
+        glob.glob(os.path.join(ROOT, "tests", "*", "build", "test-results", "test", "*.xml")) + \
+        glob.glob(os.path.join(ROOT, "tests", "integration", "build", "test-results", "performanceTest", "*.xml"))
     for f in files:
-        s = open(f, encoding="utf-8").read()
+        with open(f, encoding="utf-8") as source:
+            s = source.read()
         for m in re.finditer(r'<testcase name="([^"(]+)[^"]*" classname="([^"]+)"[^>]*?(/>|>(.*?)</testcase>)', s, re.S):
             name, cls, body = m.group(1), m.group(2).split(".")[-1], m.group(4) or ""
+            # Старый test/ мог остаться от сборки до D-121. Доказательство
+            # бюджетов теперь принимается только от отдельного шага замеров.
+            if cls == "PerformanceTest" and os.path.basename(os.path.dirname(f)) != "performanceTest":
+                continue
             status = "FAIL" if "<failure" in body or "<error" in body else "SKIPPED" if "<skipped" in body else "PASS"
             results[f"{cls}.{name}"] = status
     return results

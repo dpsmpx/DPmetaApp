@@ -17,6 +17,14 @@ mock-исполнение, нагрузка и хаос (ТЗ, §88–§97). К�
 | Сквозные | `tests/integration` | задача → назначение → сессия → события → проверка → завершение (ТЗ, §88): `V1ScenariosTest`, сценарии V1 1–4 | этап 14 |
 | Нагрузка, хаос, выносливость | `tests/integration` (`PerformanceTest`, `RecoveryTest` в `orchestrator`, `ChaosLoopTest` — хаос ТЗ, §117 на модельном времени за минуту, `EnduranceTest`) | ТЗ, §93–§95, §116, §117; выносливость — только явно: `-Ddpai.endurance.minutes=1440`, отчёт `build/audits/final-stability/` | этапы 13, 17, 19 |
 
+Замеры `PerformanceTest` отделены от обычной `test` (D-121): после
+завершения сборки — `./gradlew :tests:integration:performanceTest
+--no-parallel --max-workers=1`. `tools/verify/run.sh full` запускает оба
+шага последовательно; `affected` — когда затронут межмодульный набор.
+JUnit замеров — `tests/integration/build/test-results/performanceTest/`,
+текстовые числа текущего прогона — `tests/integration/build/perf/results.txt`.
+Выносливость остаётся в обычной `test` и включается явно, как прежде.
+
 ## 2. Детерминизм
 
 - Время — `ManualClock`: `now()`, `advance()`; `Thread.sleep` в тестах

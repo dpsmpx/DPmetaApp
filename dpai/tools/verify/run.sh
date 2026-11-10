@@ -3,7 +3,7 @@
 #
 #   tools/verify/run.sh static       секунды: самотесты, формат, ссылки, модули, API, секреты, контракты, зависимости, README
 #   tools/verify/run.sh affected     static + сборка и тесты затронутых модулей (tools/verify/affected.py)
-#   tools/verify/run.sh full         всё: static + ./gradlew build + dpai; пропуск недоступного шага — ошибка
+#   tools/verify/run.sh full         static + сборка + dpai + отдельные замеры; пропуск недоступного шага — ошибка
 #   tools/verify/run.sh plan LEVEL   что будет запущено и почему, без запуска
 #   tools/verify/run.sh report       итог последнего прогона (markdown) — в описание PR
 #   tools/verify/run.sh doctor       окружение проверок: JDK, Python, git
@@ -18,6 +18,7 @@ PY="${PYTHON:-python3}"
 OUT="build/verify"
 STATIC_STEPS=(
   "самотесты проверок:selftest.py"
+  "порядок сборки и замеров:verify_flow_test.py"
   "формат:check_format.py"
   "ссылки:check_docs.py"
   "модули:check_modules.py"
@@ -67,10 +68,12 @@ if [ "$LEVEL" = plan ]; then
   echo "план: $target"
   for s in "${STATIC_STEPS[@]}"; do echo "  static: ${s%%:*} — tools/verify/${s#*:}"; done
   case "$target" in
-    affected) "$PY" -B tools/verify/affected.py --plan | sed 's/^/  /' ;;
+    affected) "$PY" -B tools/verify/affected.py --plan | sed 's/^/  /'
+              echo "  affected: если затронут tests/integration — замеры отдельным вызовом Gradle после сборки" ;;
     full) echo "  full: ./gradlew build :cli:installDist — все модули, тесты, предупреждения как ошибки"
           echo "  full: dpai — собранная команда запускается, коды выхода"
-          echo "  full: API Android — tools/verify/check_android_api.py (при Android SDK)" ;;
+          echo "  full: API Android — tools/verify/check_android_api.py (при Android SDK)"
+          echo "  full: :tests:integration:performanceTest --no-parallel --max-workers=1 — отдельный вызов после сборки (D-121)" ;;
   esac
   exit 0
 fi
@@ -130,6 +133,12 @@ gradle_step() { # gradle_step <имя> <аргументы gradlew…>
   done
 }
 
+performance_step() {
+  # Отдельный процесс Gradle: mustRunAfter подсистемы не охватывает
+  # включающую сборку DPmetaApp (D-121). Пороги тестов остаются прежними.
+  gradle_step "замеры производительности" :tests:integration:performanceTest --no-parallel --max-workers=1
+}
+
 smoke_cli() { # собранная команда dpai: коды выхода и вывод
   local out code
   out="$("$CLI" version 2>&1)"; code=$?
@@ -155,7 +164,11 @@ case "$LEVEL" in
     tasks="$("$PY" -B tools/verify/affected.py)"
     if [ -n "$tasks" ]; then
       # shellcheck disable=SC2086
-      gradle_step "сборка и тесты (affected)" $tasks
+      if gradle_step "сборка и тесты (affected)" $tasks; then
+        case " $tasks " in
+          *" :tests:integration:check "*) performance_step ;;
+        esac
+      fi
     else
       echo "… сборка не нужна: изменены только документы и проверки"
       record skip "сборка и тесты (affected)" "-" 0
@@ -171,6 +184,7 @@ case "$LEVEL" in
         echo "… API Android: нет Android SDK — модуль android не собирается, сверка не нужна"
         record skip "API Android" "-" 0
       fi
+      performance_step
     else
       record fail "dpai" "-" 0
     fi ;;
