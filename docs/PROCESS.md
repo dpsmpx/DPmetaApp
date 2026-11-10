@@ -82,7 +82,10 @@
   (`python3 -B -X utf8 -m unittest discover -s tests`), проверки
   подсистемы (`subsystem.dpai` — `dpai/tools/verify/run.sh static`) и
   `build.gradle` — `./gradlew build` из корня: ядро, подсистема и, при
-  Android SDK, приложение. Нет JDK или SDK — пропуск называется знаком
+  Android SDK, приложение. После успешной сборки — отдельный вызов
+  `:tests:integration:performanceTest --no-parallel --max-workers=1`
+  из `dpai/` (`DP_AI_Orcestrator:D-121`): отказ бюджета валит `full`,
+  пороги прежние. Нет JDK или SDK — пропуск называется знаком
   `○`, но не валит прогон. Отказ загрузки зависимостей (`429`, сеть) —
   сбой проверки, код 3: окружение, а не код.
 - **`full --strict`** — то же, но пропуск — ошибка: перед вливанием

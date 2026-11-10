@@ -755,6 +755,14 @@ def check_gradle(root, java=None, sdk=None, run=gradle_run):
     rc, out = run([os.path.join(root, "gradlew"), "build", "--console=plain"], root)
     m = TASKS_DONE.search(out)
     r.scanned = int(m.group(1)) if m else 0
+    if rc == 0:
+        # Замеры после всей включающей сборки: mustRunAfter внутри dpai
+        # не упорядочивает задачи корня (DP_AI_Orcestrator:D-121).
+        dpai = os.path.join(root, "dpai")
+        rc, out = run([os.path.join(dpai, "gradlew"), ":tests:integration:performanceTest",
+                       "--no-parallel", "--max-workers=1", "--console=plain"], dpai)
+        if rc != 0:
+            out = "Замеры производительности dpai после сборки:\n" + out
     if rc != 0:
         tail = [l for l in out.strip().split("\n") if l.strip()][-SHOW * 2:]
         if TRANSIENT.search(out):

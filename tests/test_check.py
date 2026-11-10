@@ -356,6 +356,39 @@ class GradleTest(unittest.TestCase):
         self.assertEqual([], r.findings)
         self.assertEqual(3, quiet_report([r]))
 
+    def test_measurements_start_in_separate_call_after_root_build(self):
+        calls = []
+
+        def run(cmd, cwd):
+            calls.append((cmd, cwd))
+            return 0, "BUILD SUCCESSFUL\n12 actionable tasks: 12 executed\n"
+
+        r = check.check_gradle(ROOT, java="/jdk/bin/java", sdk="/sdk", run=run)
+        self.assertEqual(0, quiet_report([r], strict=True))
+        self.assertEqual(len(calls), 2)
+        self.assertIn("build", calls[0][0])
+        self.assertEqual(calls[1][1], os.path.join(ROOT, "dpai"))
+        self.assertIn(":tests:integration:performanceTest", calls[1][0])
+        self.assertIn("--no-parallel", calls[1][0])
+        self.assertIn("--max-workers=1", calls[1][0])
+
+    def test_failed_measurements_fail_full(self):
+        replies = iter([(0, "BUILD SUCCESSFUL\n"), (1, "PerformanceTest > eventIngest FAILED\n")])
+        r = check.check_gradle(ROOT, java="/jdk/bin/java", sdk="/sdk", run=lambda cmd, cwd: next(replies))
+        self.assertTrue(any("eventIngest" in f for f in r.findings))
+        self.assertEqual(1, quiet_report([r], strict=True))
+
+    def test_failed_root_build_does_not_start_measurements(self):
+        calls = []
+
+        def run(cmd, cwd):
+            calls.append(cmd)
+            return 1, "BUILD FAILED\n"
+
+        r = check.check_gradle(ROOT, java="/jdk/bin/java", sdk="/sdk", run=run)
+        self.assertEqual(1, quiet_report([r]))
+        self.assertEqual(len(calls), 1)
+
     def test_strict_only_with_full(self):
         import contextlib
         with open(os.devnull, "w") as null, contextlib.redirect_stdout(null):

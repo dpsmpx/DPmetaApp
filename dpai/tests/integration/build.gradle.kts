@@ -12,6 +12,9 @@ dependencies {
 // DPmetaApp. Замеры — отдельным вызовом Gradle после сборки (D-121).
 tasks.named<Test>("test") {
     exclude("**/PerformanceTest*.class")
+    // Обычные межмодульные сценарии сохраняют прежний порядок.
+    mustRunAfter(rootProject.subprojects.filter { it.path != project.path && it.path != ":tests" }.map { "${it.path}:test" })
+    if (rootProject.findProject(":android") != null) mustRunAfter(":android:assemble", ":android:lint")
 }
 
 val performanceResults = layout.buildDirectory.file("perf/results.txt")
