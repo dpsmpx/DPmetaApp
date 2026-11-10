@@ -91,7 +91,7 @@ object CommandActions {
     fun readiness(spec: CommandSpec, spot: Spot, f: Facts): List<Step> = listOf(
         when (f.linux) {
             Linux.READY -> Step("Linux в приложении установлен", true)
-            Linux.NOT_INSTALLED -> Step("Linux в приложении не установлен", false, "Установите: «AI» ▸ Настройки ▸ Linux в приложении.")
+            Linux.NOT_INSTALLED -> Step("Linux в приложении не установлен", false, "Установите: «AI» → «Настройки AI» → «Linux в приложении».")
             Linux.UNSUPPORTED -> Step("Linux в приложении — только на телефоне с arm64", false, "Команды реестра на этом телефоне не идут.")
         },
         if (spec.packages.isEmpty()) {
@@ -106,7 +106,7 @@ object CommandActions {
         Step(
             if (f.clone) "Клон ${spot.repo} есть" else "Клона ${spot.repo} нет",
             f.clone,
-            if (f.clone) null else "Отметьте репозиторий в выборе клонов (Настройки ▸ Клоны) и синхронизируйте.",
+            if (f.clone) null else "Отметьте репозиторий: «Ещё» → «Клоны…», затем «Обновить».",
         ),
         Step(
             if (spot.inClone.isEmpty()) "Каталог — корень клона" else if (f.workdir) "Каталог ${spot.inClone} есть" else "Каталога ${spot.inClone} нет",
