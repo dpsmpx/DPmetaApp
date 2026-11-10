@@ -238,6 +238,25 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
             ?: repo.branch
     }
 
+    /**
+     * Рабочее дерево клона — работа ИИ (D-70): текущая ветка (`null` — HEAD отсоединён),
+     * её коммит и голова `origin/<ветка>` в клоне (`null` — такой ветки GitHub нет). Для
+     * экрана команд реестра (D-82): видно, на чём идёт команда и отстаёт ли дерево.
+     */
+    data class Worktree(val branch: String?, val sha: String?, val upstream: String?) {
+        /** Дерево совпадает с веткой GitHub — догонять нечего. */
+        val even: Boolean get() = sha != null && sha == upstream
+    }
+
+    /** [Worktree] клона; клона нет — `ENTITY_NOT_FOUND`. Рабочее дерево не читается и не меняется. */
+    fun worktree(project: String): Outcome<Worktree> = withRepo(project) { repo ->
+        val head = repo.exactRef(Constants.HEAD)
+        val branch = head?.takeIf { it.isSymbolic }?.target?.name?.takeIf { it.startsWith(Constants.R_HEADS) }?.removePrefix(Constants.R_HEADS)
+        val sha = head?.objectId?.name
+        val upstream = branch?.let { repo.exactRef(Constants.R_REMOTES + "origin/" + it)?.objectId?.name }
+        Worktree(branch, sha, upstream)
+    }
+
     /** Ветки GitHub в клоне с головами; клона нет — `ENTITY_NOT_FOUND`. Символьная `origin/HEAD` — не ветка. */
     fun heads(project: String): Outcome<List<Head>> = withRepo(project) { repo ->
         RevWalk(repo).use { walk ->

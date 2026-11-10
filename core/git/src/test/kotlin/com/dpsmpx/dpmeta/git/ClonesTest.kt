@@ -195,6 +195,30 @@ class ClonesTest {
         assertTrue(r.conflicts.isEmpty())
     }
 
+    /** Рабочее дерево для экрана команд (D-82): ветка, её коммит, голова GitHub; отставание видно. */
+    @Test
+    fun worktreeShowsBranchCommitAndGitHubHead() {
+        val uri = remote()
+        val c = clones()
+        assertEquals(DiagCode.ENTITY_NOT_FOUND, assertIs<Outcome.Failure>(c.worktree("Alpha")).errors.single().code)
+        c.sync("Alpha", uri, null, build)
+        val fresh = (c.worktree("Alpha") as Outcome.Success).value
+        assertEquals("main", fresh.branch)
+        assertTrue(fresh.even)
+        Git.open(work).use { git ->
+            commit(git, "TODO.md", "- [x] пункт\n", "Сделано")
+            git.push().setRemote("origin").add("main").call()
+        }
+        c.sync("Alpha", uri, null, build)
+        val behind = (c.worktree("Alpha") as Outcome.Success).value
+        assertEquals(fresh.sha, behind.sha, "синхронизация дерево не трогает")
+        assertTrue(!behind.even && behind.upstream != null)
+        Git.open(c.dir("Alpha")).use { git -> git.checkout().setName(behind.upstream).call() }
+        val detached = (c.worktree("Alpha") as Outcome.Success).value
+        assertNull(detached.branch)
+        assertNull(detached.upstream)
+    }
+
     @Test
     fun localWorkIsNotAConflictAndRewrittenHistoryIsNoted() {
         val uri = remote()

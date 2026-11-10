@@ -31,6 +31,9 @@ enum class ActionKind(val code: String, val level: ActionLevel, val what: String
     ROUTE_RUN("route.run", ActionLevel.REVERSIBLE, "запуск маршрута — поручение сессии Claude", Named.REPOSITORY),
     FILES_COMMIT_PR("files.commit-pr", ActionLevel.REVERSIBLE, "правка файлов коммитом в новую ветку и PR", Named.BRANCH),
 
+    /** Команда реестра уровня 1 (F-40, D-82): правка рабочего дерева клона в Linux-среде. */
+    COMMAND_RUN("command.run", ActionLevel.REVERSIBLE, "команда реестра — правка рабочего дерева клона", Named.REPOSITORY),
+
     // --- уровень 2: значимое (D-07, D-36) ---
     PR_MERGE("pr.merge", ActionLevel.SIGNIFICANT, "влить PR без перезаписи истории", Named.REPOSITORY),
     PR_CLOSE("pr.close", ActionLevel.SIGNIFICANT, "закрыть PR", Named.REPOSITORY),

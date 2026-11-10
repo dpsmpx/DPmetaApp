@@ -42,7 +42,7 @@ class ActionsTest {
     @Test
     fun kindsCarryLevelsOfTheDecisions() {
         val want = mapOf(
-            ActionKind.COMMENT to 1, ActionKind.FILES_COMMIT_PR to 1, ActionKind.PR_READY to 1,
+            ActionKind.COMMENT to 1, ActionKind.FILES_COMMIT_PR to 1, ActionKind.PR_READY to 1, ActionKind.COMMAND_RUN to 1,
             ActionKind.PR_MERGE to 2, ActionKind.PR_CLOSE to 2, ActionKind.COMMIT_DEFAULT to 2, ActionKind.BRANCH_DELETE_MERGED to 2,
             ActionKind.HISTORY_REWRITE to 3, ActionKind.BRANCH_DELETE_UNMERGED to 3, ActionKind.REPO_DELETE to 3,
             ActionKind.REPO_SETTINGS to 3, ActionKind.BRANCH_PROTECTION to 3,
