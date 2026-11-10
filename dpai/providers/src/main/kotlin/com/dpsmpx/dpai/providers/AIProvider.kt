@@ -20,13 +20,39 @@ enum class ChatRole { USER, ASSISTANT }
 
 data class ChatMessage(val role: ChatRole, val text: String)
 
-/** Запрос чата: модель, переписка (первая реплика — человека), системная подсказка, предел ответа. */
+/**
+ * Запрос чата: модель, переписка (первая реплика — человека), системная подсказка, предел
+ * ответа. [effort] — глубина работы модели (`low`…`max`); `null` — по умолчанию модели.
+ * Понимает его только Anthropic; остальные провайдеры поле не шлют.
+ */
 data class ChatRequest(
     val model: String,
     val messages: List<ChatMessage>,
     val system: String? = null,
     val maxOutputTokens: Int? = null,
+    val effort: String? = null,
 )
+
+/** Инструмент для модели (D-118): имя, когда его звать, схема входа (JSON Schema). */
+data class ToolSpec(val name: String, val description: String, val inputSchema: JsonObject)
+
+/** Вызов инструмента моделью: [input] — разобранный строго JSON-объект. */
+data class ToolCall(val id: String, val name: String, val input: JsonObject)
+
+/** Итог инструмента — текст для модели; [isError] — инструмент не выполнен, текст — причина. */
+data class ToolResult(val text: String, val isError: Boolean = false)
+
+/**
+ * Провайдер, умеющий ходить с инструментами (D-118): модель просит данные, приложение
+ * исполняет [run] и возвращает итог, пока модель не ответит. Инструменты — только чтение:
+ * что делает [run], решает вызывающий; провайдер ничего, кроме него, не исполняет.
+ */
+interface ToolChat {
+    fun chatWithTools(request: ChatRequest, tools: List<ToolSpec>, cancel: Cancel, onText: (String) -> Unit, run: (ToolCall) -> ToolResult): Outcome<ChatReply>
+}
+
+/** Уровни effort Anthropic (`output_config.effort`): от быстрого к самому тщательному. */
+val EFFORT_LEVELS: List<String> = listOf("low", "medium", "high", "xhigh", "max")
 
 /** Модель провайдера: id для запроса, имя для экрана, предел ответа — если провайдер его сообщает. */
 data class ModelInfo(val id: String, val name: String? = null, val maxOutputTokens: Int? = null)
