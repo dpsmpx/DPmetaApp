@@ -24,7 +24,7 @@ tasks.withType<Test>().configureEach {
     systemProperty("corpus.ecosystem", ecosystem.asFile.absolutePath)
     // Свои документы DPmetaApp — тоже образцы: разбор не должен отстать от них.
     val repo = rootProject.layout.projectDirectory
-    for (f in listOf("dpmeta/tools/ecosystem.toml", "docs/direction/DECISIONS.md", "TODO.md", "ROADMAP/ROADMAP.md", "README.md")) {
+    for (f in listOf("dpmeta/tools/ecosystem.toml", "docs/direction/DECISIONS.md", "TODO.md", "ROADMAP/ROADMAP.md", "README.md", "config/commands.toml")) {
         inputs.file(repo.file(f)).withPropertyName("own:$f")
     }
     inputs.dir(repo.dir("config/projects")).withPropertyName("own:config/projects")

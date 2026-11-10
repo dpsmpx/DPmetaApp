@@ -4,6 +4,7 @@ import com.dpsmpx.dpai.core.diagnostics.Severity
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.serialization.CanonicalJson
 import com.dpsmpx.dpmeta.formats.BriefFormat
+import com.dpsmpx.dpmeta.formats.CommandFormat
 import com.dpsmpx.dpmeta.formats.DecisionLog
 import com.dpsmpx.dpmeta.formats.PanelFormat
 import com.dpsmpx.dpmeta.formats.PrDescription
@@ -35,6 +36,12 @@ class CorpusTest {
         "brief" -> BriefFormat.parse(text, "sample", "").map { b ->
             "${b.title} " + b.fields.joinToString(",") { it.name + if (it.multiline) "*" else "" }.ifEmpty { "-" } +
                 " places=" + Regex("\\{\\{[a-z][a-z0-9_]*}}").findAll(b.body).count()
+        }
+        "command" -> CommandFormat.parse(text, "").map { r ->
+            r.commands.joinToString(",") { c ->
+                "${c.id}=${c.project}" + (c.workdir?.let { "/$it" } ?: "") + ":L${c.level}:${c.plan.code}:${c.timeoutMinutes}m:" +
+                    c.packages.joinToString("+").ifEmpty { "-" } + ":" + c.line
+            }
         }
         "toml" -> Toml.parse(text, "").map { CanonicalJson.write(it) }
         "registry" -> RegistryFormat.parse(text, "").map { r ->

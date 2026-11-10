@@ -1,0 +1,34 @@
+# Все ключи и оба вида программы.
+schema = 1
+
+[[command]]
+id = "alpha.check"
+title = "Проверки Alpha"
+project = "Alpha"
+workdir = "tools/sub"
+path = "/bin/bash"
+args = ["check.sh", "--quick", "два слова"]
+plan = "foreground"
+level = 0
+packages = ["bash", "python3", "py3-yaml"]
+expect = "строки ✓ и ✗"
+timeout = 30
+
+[[command]]
+id = "repo.ff"
+title = "Догнать origin"
+project = "*"
+path = "/usr/bin/git"
+args = ["merge", "--ff-only", "@{upstream}"]
+plan = "background"
+level = 1
+packages = ["git"]
+timeout = 1
+
+[[command]]
+id = "beta.run"
+title = "Скрипт из клона"
+project = "DP AIM Trainer"
+path = "tools/run.sh"
+plan = "background"
+level = 0

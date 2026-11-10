@@ -66,6 +66,19 @@ CLEAN = {
         "package core\n\nsealed interface Outcome<out T>\nclass OperationResult<out T>\nclass Diagnostic\n"
         "enum class DiagCode { A }\nclass Secret(private val v: String)\ninterface Clock\n"),
     "dpai/core/src/main/kotlin/Use.kt": "package core\n\nclass ManualClock : Clock\nval x: Outcome<Int>? = null\n",
+    # Реестр команд (F-43, D-82): проект подсистемы — из реестра DPmeta, его скрипт — на месте.
+    "dpmeta/tools/ecosystem.toml": (
+        'schema = 1\n\n[[repo]]\nname = "DPmetaApp"\nslug = "dpsmpx/DPmetaApp"\nplace = "control"\n\n'
+        '[[repo]]\nname = "DPmeta"\nslug = "dpsmpx/DPmeta"\nplace = "sync"\ndir = "dpmeta"\n\n'
+        '[[repo]]\nname = "Old"\nslug = "dpsmpx/Old"\nplace = "archive"\n\n'
+        '[[repo]]\nname = "DPlearn"\nslug = "dpsmpx/DPlearn"\nplace = "core"\n'),
+    "dpmeta/tools/check.sh": "#!/bin/sh\nexit 0\n",
+    "config/commands.toml": (
+        'schema = 1\n\n[[command]]\nid = "dpmeta.check"\ntitle = "Проверки"\nproject = "DPmeta"\npath = "/bin/bash"\n'
+        'args = ["tools/check.sh"]\nplan = "background"\nlevel = 0\npackages = ["bash"]\n\n'
+        '[[command]]\nid = "dplearn.next"\ntitle = "План"\nproject = "DPlearn"\npath = "tools/dpl"\nplan = "background"\nlevel = 0\n\n'
+        '[[command]]\nid = "repo.ff"\ntitle = "Догнать"\nproject = "*"\npath = "/usr/bin/git"\n'
+        'args = ["merge", "--ff-only", "@{upstream}"]\nplan = "background"\nlevel = 1\ntimeout = 2\n'),
 }
 # Wrapper Gradle: копия в корне — та же, что в dpai/ (D-28); пакетный файл — с CRLF, как его пишет Gradle.
 for _rel, _text in {"gradlew": "#!/bin/sh\nexec java\n", "gradlew.bat": "@echo off\r\nexit /b 0\r\n",
@@ -147,6 +160,48 @@ class LayoutTest(CheckCase):
 
     def test_workflow_is_forbidden(self):
         self.assertCatches(self.sample({".github/workflows/ci.yml": "on: push\n"}).run("repo.layout"), "D-13")
+
+
+COMMAND = ('[[command]]\nid = "x.y"\ntitle = "Т"\nproject = "DPmeta"\npath = "/bin/bash"\nargs = ["tools/check.sh"]\n'
+           'plan = "background"\nlevel = 0\n')
+
+
+class CommandsTest(CheckCase):
+    """config.commands — реестр команд (F-43, D-82)."""
+
+    def commands(self, body):
+        return self.sample({"config/commands.toml": "schema = 1\n\n" + body}).run("config.commands")
+
+    def test_clean_registry(self):
+        self.assertClean(self.commands(COMMAND))
+
+    def test_missing_registry(self):
+        self.assertCatches(self.sample(remove=("config/commands.toml",)).run("config.commands"), "нет реестра команд")
+
+    def test_level_two(self):
+        self.assertCatches(self.commands(COMMAND.replace("level = 0", "level = 2")), "уровней 2 и 3 в реестре нет")
+
+    def test_unknown_key(self):
+        self.assertCatches(self.commands(COMMAND + 'env = "X=1"\n'), "неизвестный ключ «env»")
+
+    def test_duplicate_id(self):
+        self.assertCatches(self.commands(COMMAND + "\n" + COMMAND), "уже был")
+
+    def test_project_not_in_registry_or_archived(self):
+        self.assertCatches(self.commands(COMMAND.replace('"DPmeta"', '"Nope"')), "нет в реестре")
+        self.assertCatches(self.commands(COMMAND.replace('"DPmeta"', '"Old"')), "нет в реестре")
+
+    def test_subsystem_script_must_exist(self):
+        self.assertCatches(self.commands(COMMAND.replace("tools/check.sh", "tools/gone.sh")), "нет файла `dpmeta/tools/gone.sh`")
+
+    def test_paths_stay_inside(self):
+        self.assertCatches(self.commands(COMMAND + 'workdir = "../x"\n'), "workdir")
+        self.assertCatches(self.commands(COMMAND.replace('"/bin/bash"', '"/root/x"')), "программа гостя")
+        self.assertCatches(self.commands(COMMAND.replace('"/bin/bash"', '"../x.sh"')), "без «..»")
+
+    def test_bad_package_and_timeout(self):
+        self.assertCatches(self.commands(COMMAND + 'packages = ["Python3"]\n'), "пакетов Alpine")
+        self.assertCatches(self.commands(COMMAND + "timeout = 31\n"), "1…30 минут")
 
 
 class SubsystemScopeTest(CheckCase):

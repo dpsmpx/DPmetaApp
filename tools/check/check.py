@@ -6,7 +6,8 @@
 Пустая проверка — провал (`DP-Verify:V-07`): проверка, которой нечего проверять, только
 выглядит защитой.
 
-Уровни: static — структура, текст, секреты, ссылки, номера, процесс, единое ядро, wrapper (секунды);
+Уровни: static — структура, текст, секреты, ссылки, номера, процесс, единое ядро, wrapper,
+                 реестр команд (секунды);
         full   — static, самотесты проверок (tests/), проверки подсистем (D-28) и сборка
                  Gradle из корня (`build.gradle`, ТЗ, §14); пропуск (нет JDK, нет
                  Android SDK) назван, а с --strict — ошибка.
@@ -97,7 +98,6 @@ PLANNED = {
     "tools/notify/": "набор хуков уведомлений Claude Code (F-56) — этап 7",
     # Каталог config/ появился с панелями проектов (D-57); остальные файлы ТЗ — со своими этапами.
     "config/site.toml": "адреса и пробы сайта (F-27…F-30) — этап 6",
-    "config/commands.toml": "реестр команд (ТЗ, приложение Б) — этап 6",
     "config/platforms.toml": "каталог возможностей площадок (F-67) — этап 6",
     "config/events.toml": "каталог событий (F-51) — этап 7",
     "config/alerts.toml": "правила тревог (F-37) — этап 7",
@@ -767,6 +767,116 @@ def check_gradle(root, java=None, sdk=None, run=gradle_run):
     return r
 
 
+COMMANDS = "config/commands.toml"
+REGISTRY = "dpmeta/tools/ecosystem.toml"
+COMMAND_KEYS = {"id", "title", "project", "workdir", "path", "args", "plan", "level", "packages", "expect", "timeout"}
+COMMAND_ID = re.compile(r"[a-z0-9][a-z0-9_-]*(\.[a-z0-9][a-z0-9_-]*)*")
+COMMAND_PART = re.compile(r"[A-Za-z0-9._+-]+")
+ALPINE_PACKAGE = re.compile(r"[a-z0-9][a-z0-9+._-]{0,63}")
+GUEST_BIN = ("/bin/", "/usr/bin/", "/usr/local/bin/")
+
+
+def _relative(p):
+    return bool(p) and not p.startswith("/") and all(x and x not in (".", "..") and COMMAND_PART.fullmatch(x) for x in p.split("/"))
+
+
+def _command_problems(c, names, homes, repo):
+    """Что не так с одной командой реестра: ключи, значения, проект, файл скрипта в своём репозитории."""
+    out = []
+    unknown = sorted(set(c) - COMMAND_KEYS)
+    if unknown:
+        out.append(f"неизвестный ключ «{unknown[0]}»")
+    for key in ("id", "title", "project", "path", "plan", "level"):
+        if key not in c:
+            out.append(f"нет ключа {key}")
+    if out:
+        return out
+    if not isinstance(c["id"], str) or not COMMAND_ID.fullmatch(c["id"]):
+        out.append("id — строчные латинские буквы, цифры, «_-», части через точку")
+    level = c["level"]
+    if not isinstance(level, int) or isinstance(level, bool) or level not in (0, 1):
+        out.append("уровень — 0 или 1: уровней 2 и 3 в реестре нет (D-82)")
+    if c["plan"] not in ("foreground", "background"):
+        out.append("план — foreground или background")
+    timeout = c.get("timeout", 10)
+    if not isinstance(timeout, int) or isinstance(timeout, bool) or not 1 <= timeout <= 30:
+        out.append("предел времени — 1…30 минут")
+    packages = c.get("packages", [])
+    if not isinstance(packages, list) or not all(isinstance(x, str) and ALPINE_PACKAGE.fullmatch(x) for x in packages):
+        out.append("packages — имена пакетов Alpine")
+    args = c.get("args", [])
+    if not isinstance(args, list) or not all(isinstance(x, str) for x in args):
+        out.append("args — строки")
+        args = []
+    workdir = c.get("workdir")
+    if workdir is not None and not (isinstance(workdir, str) and _relative(workdir)):
+        out.append("workdir — каталог внутри проекта, без «..»")
+        workdir = None
+    path = c["path"]
+    if not isinstance(path, str):
+        return out + ["path — строка"]
+    if path.startswith("/"):
+        if not path.startswith(GUEST_BIN) or not _relative(path[1:]):
+            out.append("программа гостя — из /bin, /usr/bin, /usr/local/bin, без «..»")
+    elif not _relative(path):
+        out.append("path — путь от workdir без «..» или абсолютный путь гостя")
+    project = c["project"]
+    if project != "*" and project not in names:
+        out.append(f"проекта «{project}» нет в реестре DPmeta (или он в архиве)")
+    # Скрипт подсистемы или самого DPmetaApp лежит здесь — его можно найти; чужой репозиторий — нет.
+    home = homes.get(project)
+    if home is not None and not out:
+        base = "/".join(x for x in (home, workdir) if x)
+        script = path if not path.startswith("/") else next((a for a in args[:1] if _relative(a) and ("/" in a or "." in a)), None)
+        if script and not repo.exists("/".join(x for x in (base, script) if x)):
+            out.append(f"нет файла `{'/'.join(x for x in (base, script) if x)}`")
+    return out
+
+
+def check_commands(repo, r):
+    """config.commands — реестр команд `config/commands.toml` разбирается (схема 1, ключи, уровни 0–1,
+    пути без «..»), id не повторяются, проекты — из реестра DPmeta, скрипт подсистемы — на месте (F-43, D-82)."""
+    import tomllib
+    if not repo.exists(COMMANDS):
+        r.add(COMMANDS, "нет реестра команд (ТЗ, F-40)")
+        return
+    try:
+        doc = tomllib.loads(repo.text(COMMANDS) or "")
+    except tomllib.TOMLDecodeError as e:
+        r.add(COMMANDS, f"не TOML: {e}")
+        return
+    try:
+        registry = tomllib.loads(repo.text(REGISTRY) or "") if repo.exists(REGISTRY) else {}
+    except tomllib.TOMLDecodeError as e:
+        r.add(REGISTRY, f"не TOML: {e}")
+        return
+    rows = [x for x in registry.get("repo", []) if isinstance(x, dict) and x.get("place") != "archive"]
+    names = {x.get("name") for x in rows}
+    homes = {x.get("name"): x.get("dir") for x in rows if x.get("dir")}
+    homes.update({x.get("name"): "" for x in rows if x.get("place") == "control"})
+    if set(doc) - {"schema", "command"}:
+        r.add(COMMANDS, f"неизвестный ключ «{sorted(set(doc) - {'schema', 'command'})[0]}»")
+    if doc.get("schema") != 1:
+        r.add(COMMANDS, "схема — 1")
+        return
+    commands = doc.get("command")
+    if not isinstance(commands, list) or not commands:
+        r.add(COMMANDS, "нет команд [[command]]")
+        return
+    seen = set()
+    for i, c in enumerate(commands):
+        r.scanned += 1
+        where = f"{COMMANDS}: command[{i}]"
+        if not isinstance(c, dict):
+            r.add(where, "команда — не таблица")
+            continue
+        for problem in _command_problems(c, names, homes, repo):
+            r.add(where, problem)
+        if c.get("id") in seen:
+            r.add(where, f"id «{c.get('id')}» — уже был")
+        seen.add(c.get("id"))
+
+
 def check_files(repo, r):
     """process.files — обязательные документы процесса на месте."""
     r.scanned = len(REQUIRED)
@@ -792,6 +902,7 @@ CHECKS = [
     ("code.forbidden", check_forbidden),
     ("ui.words", check_ui_words),
     ("build.wrapper", check_wrapper),
+    ("config.commands", check_commands),
 ]
 
 

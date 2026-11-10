@@ -1,0 +1,9 @@
+schema = 1
+[[command]]
+id = "a.b"
+title = "Т"
+project = "Alpha"
+path = "/bin/sh"
+plan = "background"
+level = 0
+packages = ["Python3"]
