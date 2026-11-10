@@ -557,7 +557,7 @@ fun PultApp(
                     when (devTab) {
                         DevTab.PROJECTS -> Projects(remember(s) { Screens.projects(s) }) { open(Nav.Card(it)) }
                         DevTab.PULLS -> Pulls(remember(s) { Screens.pulls(s) }, s.asOf, pullFilter, pullProject, { pullFilter = it }, { pullProject = it }) { r -> open(Nav.Pull(r.project, r.number.toInt())) }
-                        DevTab.QUESTIONS -> Questions(remember(s) { Screens.questions(s) }, open)
+                        DevTab.QUESTIONS -> Questions(remember(s) { Screens.questions(s) }, remember(s) { Screens.pulls(s) }, loader, open)
                     }
                 }
             }
@@ -1085,22 +1085,48 @@ private fun Pulls(
  * `TODO.md` проекта на разделе вопроса.
  */
 @Composable
-private fun Questions(q: List<Screens.Question>, open: (Nav) -> Unit) = LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+private fun Questions(q: List<Screens.Question>, pulls: List<Screens.PullRow>, loader: Loader, open: (Nav) -> Unit) {
+    // F-25: поручения ответа — из журнала действий; PR после поручения — из среза.
+    var journal by remember { mutableStateOf<List<ActionEntry>>(emptyList()) }
+    LaunchedEffect(q) { loader.journal { r -> journal = r.valueOrNull().orEmpty() } }
+    val context = LocalContext.current
+    val taps = remember { LinkTaps() }
+    QuestionsList(q, open) { i ->
+        RouteActions.answered(journal, pulls, i)?.let { a ->
+            Column(Modifier.padding(start = 12.dp, bottom = 4.dp)) {
+                Text("Ответ поручен ${Screens.time(a.at)}" + if (a.pulls.isEmpty()) " — PR после поручения пока нет" else "", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                a.session?.let { url -> TextButton(onClick = { external(context, taps, url) }) { Text("Сессия Claude") } }
+                for (p in a.pulls) {
+                    Text(
+                        "PR #${p.number} ${p.title} ▸", style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.fillMaxWidth().clickable { open(Nav.Pull(p.project, p.number.toInt())) }.padding(vertical = 4.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun QuestionsList(q: List<Screens.Question>, open: (Nav) -> Unit, below: @Composable (Screens.Question) -> Unit) = LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
     item { Text("Вопросов автору: ${q.size}", style = MaterialTheme.typography.titleMedium) }
     for ((project, items) in Screens.questionGroups(q)) {
         item(key = "p:$project") { Text(project, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp)) }
         val keys = contentKeys(items) { "${it.title}|${it.label}" }
         items(items.size, key = { "q:$project:${keys[it]}" }) { n ->
             val i = items[n]
-            Row(
-                Modifier.fillMaxWidth().clickable(enabled = i.path != null) { open(Nav.Doc(i.project, i.path!!, i.section?.let(Links::slug))) }.padding(vertical = 4.dp),
-                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-            ) {
-                i.label?.let { AssistChip(onClick = {}, enabled = false, label = { Text(it) }, modifier = Modifier.padding(end = 6.dp)) }
-                Text(i.title, Modifier.weight(1f))
-                // F-25: ответ — поручением сессии репозитория-владельца по шаблону «записать ответ».
-                TextButton(onClick = { open(Nav.Brief(i.project, ANSWER_BRIEF, Screens.questionSource(i), i.title)) }) { Text("Ответить") }
-                if (i.path != null) Text("▸")
+            Column {
+                Row(
+                    Modifier.fillMaxWidth().clickable(enabled = i.path != null) { open(Nav.Doc(i.project, i.path!!, i.section?.let(Links::slug))) }.padding(vertical = 4.dp),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                ) {
+                    i.label?.let { AssistChip(onClick = {}, enabled = false, label = { Text(it) }, modifier = Modifier.padding(end = 6.dp)) }
+                    Text(i.title, Modifier.weight(1f))
+                    // F-25: ответ — поручением сессии репозитория-владельца по шаблону «записать ответ».
+                    TextButton(onClick = { open(Nav.Brief(i.project, ANSWER_BRIEF, Screens.questionSource(i), i.title)) }) { Text("Ответить") }
+                    if (i.path != null) Text("▸")
+                }
+                below(i)
             }
         }
     }
@@ -1865,7 +1891,7 @@ private fun BriefScreen(nav: Nav.Brief, loader: Loader, onBack: () -> Unit) {
                             val text = (rendered as Outcome.Success).value
                             result = null
                             link = null
-                            pending = Triple(RouteActions.command(route!!, nav.project, repo, brief, text), brief, text)
+                            pending = Triple(RouteActions.command(route!!, nav.project, repo, brief, text, nav.question.takeIf { brief.key == ANSWER_BRIEF }), brief, text)
                         },
                     ) { Text("Дальше: что уйдёт") }
                 }

@@ -84,7 +84,11 @@ object RouteActions {
     fun pickBrief(briefs: List<Brief>, route: Route?, wanted: String?): Brief? =
         briefs.firstOrNull { it.key == wanted } ?: briefs.firstOrNull { it.key == route?.brief } ?: briefs.firstOrNull()
 
-    fun command(route: Route, project: String, repo: RepoRef, brief: Brief, text: String): ActionCommand = ActionCommand(
+    /**
+     * [question] — вопрос автору, на который поручен ответ (F-25): его заголовок из `TODO.md`
+     * — в параметрах, чтобы у вопроса показать поручение и PR после него.
+     */
+    fun command(route: Route, project: String, repo: RepoRef, brief: Brief, text: String, question: String? = null): ActionCommand = ActionCommand(
         ActionKind.ROUTE_RUN,
         ActionTarget(repo),
         mapOf(
@@ -94,8 +98,28 @@ object RouteActions {
             "brief" to brief.key,
             "chars" to "${text.length}",
             "text_sha256" to EditActions.sha256(text),
-        ),
+        ) + (question?.takeIf { it.isNotBlank() }?.let { mapOf("question" to it.take(MAX_QUESTION)) } ?: emptyMap()),
     )
+
+    /** Предел заголовка вопроса в параметрах команды: журнал хранит параметры с пределом. */
+    const val MAX_QUESTION: Int = 300
+
+    /** Ответ на вопрос поручен (F-25): когда, какой сессией и какие PR проекта открыты после. */
+    data class Answered(val at: Timestamp, val session: String?, val pulls: List<Screens.PullRow>)
+
+    /**
+     * F-25: последнее поручение «записать ответ» на этот вопрос (по журналу: проект и
+     * заголовок; итог «выполнено» или «неизвестен») и PR проекта, открытые после него, —
+     * среди них сессия и записала ответ. Вопрос снимается сам, когда исчез из `TODO.md`.
+     */
+    fun answered(entries: List<ActionEntry>, pulls: List<Screens.PullRow>, q: Screens.Question): Answered? {
+        val e = entries.lastOrNull {
+            it.kind == ActionKind.ROUTE_RUN.code && it.params["project"] == q.project && it.params["question"] == q.title.take(MAX_QUESTION) &&
+                (it.status == ActionStatus.DONE || it.status == ActionStatus.UNKNOWN)
+        } ?: return null
+        val after = pulls.filter { it.project == q.project && (it.createdAt ?: -1) >= e.at.epochMillis }.sortedBy { it.createdAt }
+        return Answered(e.at, e.link, after)
+    }
 
     /** Окно «что уйдёт» (уровень 1): куда и чем; сам текст экран показывает целиком под этими строками. */
     fun preview(c: ActionCommand, brief: Brief): List<String> = listOf(

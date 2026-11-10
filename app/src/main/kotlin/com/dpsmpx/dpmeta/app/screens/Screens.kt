@@ -409,6 +409,8 @@ object Screens {
         val checks: String?,
         val waitingMillis: Long?,
         val stale: Boolean,
+        /** Когда PR открыт (мс UTC); `null` — GitHub не сообщил. */
+        val createdAt: Long? = null,
     )
 
     /** Фильтры списка (F-11): «ждут автора» — открыт и не черновик; «давние» — ждут дольше срока шлюза. */
@@ -422,6 +424,7 @@ object Screens {
             PullRow(
                 p.name, long(o, "number") ?: 0, str(o, "title").orEmpty(), draft, str(o, "head").orEmpty(), str(o, "author").orEmpty(),
                 str(o, "checks"), waiting, !draft && waiting != null && waiting > Rules.PR_WAITING_LIMIT.inWholeMilliseconds,
+                long(o, "createdAt"),
             )
         }
     }
