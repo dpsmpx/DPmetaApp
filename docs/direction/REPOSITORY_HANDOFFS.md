@@ -16,7 +16,7 @@
 | DPlang / будущая IDE | [PR #48](https://github.com/dpsmpx/DPlang/pull/48), `b5f1e0b`: самостоятельная завершённость и проверка до включения |
 | DPlearn | [Роль](https://github.com/dpsmpx/DPlearn/blob/dpmeta/mobile-studio-roles/docs/direction/DP_META_APP.md), `2ce5181` |
 | DP_game_market_analytic_system | [Роль](https://github.com/dpsmpx/DP_game_market_analytic_system/blob/dpmeta/mobile-studio-roles/docs/direction/DP_META_APP.md), `c48a624` |
-| DPmonetization | [Роль](https://github.com/dpsmpx/DPmonetization/blob/dpmeta/mobile-studio-roles/docs/direction/DP_META_APP.md), `7f496b1`: будущая часть SocialMediaImage, прежнее поручение архивировать отменено |
+| DPmonetization | [PR #3](https://github.com/dpsmpx/DPmonetization/pull/3), `7f496b1`: будущая часть SocialMediaImage, прежнее поручение архивировать отменено |
 | DP_Repeated_Tasks | [Роль](https://github.com/dpsmpx/DP_Repeated_Tasks/blob/dpmeta/mobile-studio-roles/docs/direction/DP_META_APP.md), `dfabc84`; самостоятельность DP_Clock и постоянные задачи уже записаны в документации часов |
 | DP_TextFile_Sorter | [Роль](https://github.com/dpsmpx/DP_TextFile_Sorter/blob/dpmeta/mobile-studio-roles/docs/direction/DP_META_APP.md), `bf51462` |
 | Анализатор знаний | [Запись в изолированной линии](https://github.com/dpsmpx/MAIN_OBSIDIAN_PC_works/blob/dpmeta/knowledge-mobile-role/KNOWLEDGE_SYSTEM/docs/PROJECT_ROLE_2026_11_11.md), `676aea9`; линия PR #1 и личный vault не сливались |
@@ -56,3 +56,8 @@ DPlearn — static, DPmeta — свои проверки/самотесты пр
 домашнего ПК; посредник будет выбран только по результатам. Фактическую
 топологию с этого облачного окружения проверить нельзя. Адреса и ключи
 автора не запрашивались и не читались.
+
+DPmetaApp: `tools/check/run.sh full --strict` на `cbef5e94` — PASS,
+25/25, 61,3 с, без пропусков обязательных шагов. Самотесты — 130,
+из них 14 проверяют новый контроллер общей папки. Замеры производительности
+прошли отдельным последовательным шагом с прежними порогами.
