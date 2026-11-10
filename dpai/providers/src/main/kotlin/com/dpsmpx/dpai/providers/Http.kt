@@ -37,6 +37,14 @@ interface HttpReply : AutoCloseable {
     @Throws(IOException::class)
     fun readLine(): String?
 
+    /**
+     * Тело байтами — для файлов (модели GGUF, D-119): до `buf.size` байт, конец тела —
+     * `-1`. В одном ответе — либо строки, либо байты. Транспорт без потока байт —
+     * отказ чтения.
+     */
+    @Throws(IOException::class)
+    fun read(buf: ByteArray): Int = throw IOException("тело байтами этот ответ не отдаёт")
+
     /** Тело целиком, не больше [limit] знаков: остальное отбрасывается. */
     @Throws(IOException::class)
     fun readText(limit: Int): String {

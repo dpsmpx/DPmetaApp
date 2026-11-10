@@ -27,6 +27,19 @@ interface Vfs {
     @Throws(IOException::class)
     fun size(path: String): Long? = read(path)?.size?.toLong()
 
+    /**
+     * Часть файла: до [length] байт с [offset] (за концом — пусто); нет файла — `null`.
+     * Для больших файлов, которые целиком в память не читаются (модели GGUF, D-119).
+     * Где нельзя иначе — чтением целиком.
+     */
+    @Throws(IOException::class)
+    fun readRange(path: String, offset: Long, length: Int): ByteArray? {
+        require(offset >= 0 && length >= 0) { "часть файла — с неотрицательного места" }
+        val all = read(path) ?: return null
+        if (offset >= all.size) return ByteArray(0)
+        return all.copyOfRange(offset.toInt(), minOf(all.size.toLong(), offset + length).toInt())
+    }
+
     /** Имена файлов прямо в каталоге [dir] (без подкаталогов), по порядку. */
     @Throws(IOException::class)
     fun list(dir: String): List<String>

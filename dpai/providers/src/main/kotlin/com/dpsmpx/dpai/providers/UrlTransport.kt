@@ -95,6 +95,8 @@ class UrlTransport(
             return if (s.endsWith('\r')) s.dropLast(1) else s
         }
 
+        override fun read(buf: ByteArray): Int = input?.read(buf) ?: -1
+
         override fun close() {
             runCatching { input?.close() }
             c.disconnect()
