@@ -85,7 +85,7 @@ class CodeEditorBuffer(val original: String, private val clock: Clock = Clock.SY
 
     /** Следующее/предыдущее совпадение с циклическим переходом и выделением. */
     fun findNext(query: String, backwards: Boolean = false, ignoreCase: Boolean = true): Boolean {
-        if (query.isEmpty()) return false
+        if (query.isEmpty() || query.length > text.length) return false
         val s = state.selection
         val pattern = EditorPattern(query, ignoreCase)
         val at = if (backwards) {
@@ -157,7 +157,7 @@ class CodeEditorBuffer(val original: String, private val clock: Clock = Clock.SY
         const val MAX_MATCHES = 10_000
 
         fun find(text: String, query: String, ignoreCase: Boolean = true): EditorMatches {
-            if (query.isEmpty()) return EditorMatches(emptyList(), false)
+            if (query.isEmpty() || query.length > text.length) return EditorMatches(emptyList(), false)
             val ranges = mutableListOf<IntRange>()
             var limited = false
             EditorPattern(query, ignoreCase).scan(text) { at ->
@@ -216,6 +216,7 @@ object EditorChanges {
         val new = after.lines()
         var first = 0
         while (first < minOf(old.size, new.size) && old[first] == new[first]) first++
+        if (first == old.size && first == new.size) return listOf(DiffLine(DiffKind.NOTE, "Изменились переводы строк"))
         var tail = 0
         while (tail < minOf(old.size, new.size) - first && old[old.lastIndex - tail] == new[new.lastIndex - tail]) tail++
         val removed = old.size - first - tail
@@ -223,7 +224,11 @@ object EditorChanges {
         var oldRows = minOf(removed, limit / 2)
         val newRows = minOf(added, limit - oldRows)
         oldRows = minOf(removed, limit - newRows)
-        fun display(line: String): String = if (line.length > 2000) line.take(2000) + " … [строка сокращена]" else line
+        fun display(line: String): String {
+            if (line.length <= 2000) return line
+            val end = if (Character.isHighSurrogate(line[1999])) 1999 else 2000
+            return line.take(end) + " … [строка сокращена]"
+        }
         return buildList {
             add(DiffLine(DiffKind.HUNK, "Строка ${first + 1}: −$removed +$added"))
             for (i in first until first + oldRows) {

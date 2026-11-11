@@ -52,6 +52,7 @@ class CodeEditorTest {
         assertEquals(EditorSelection(0, 3), b.state.selection)
         assertFalse(b.findNext(""))
         assertTrue(b.matches("").ranges.isEmpty())
+        assertTrue(b.matches("longer than this document").ranges.isEmpty())
         assertEquals(listOf(0..0, 1..1), CodeEditorBuffer.find("Ää", "ä").ranges)
         val overlap = CodeEditorBuffer("aaa")
         overlap.select(1, 3)
@@ -120,5 +121,16 @@ class CodeEditorTest {
         assertTrue(EditorChanges.preview("a\n".repeat(1000), "b\n".repeat(1000), 20).size <= 22)
         val longLine = EditorChanges.preview("a".repeat(100_000), "b".repeat(100_000))
         assertTrue(longLine.all { it.text.length < 2100 })
+    }
+
+    @Test
+    fun previewReportsLineEndingChangesAndKeepsUnicodeAtCut() {
+        val format = EditorChanges.preview("code\r\n", "code\n").single()
+        assertEquals(DiffKind.NOTE, format.kind)
+        assertTrue("переводы строк" in format.text)
+        val text = "a".repeat(1999) + "😀".repeat(100)
+        val preview = EditorChanges.preview("before", text)
+        val added = preview.single { it.kind == DiffKind.ADDED }.text
+        assertFalse(added.any { Character.isSurrogate(it) }, "сокращение не оставляет половину пары")
     }
 }
