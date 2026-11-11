@@ -64,6 +64,9 @@ class SecretStore(private val vfs: Vfs, private val path: String = "github.token
         Outcome.failure(DiagCode.STORAGE_IO_FAILED, "секрет не зашифрован: ${e.javaClass.simpleName}", path)
     } catch (e: IOException) {
         Outcome.failure(DiagCode.STORAGE_IO_FAILED, "секрет не записан: ${e.javaClass.simpleName}", path)
+    } finally {
+        // Отозвать и вход, начатый во время замены файла/ключа.
+        ConnectedGitHub.close()
     }
 
     fun load(): Outcome<Secret?> {
@@ -91,7 +94,11 @@ class SecretStore(private val vfs: Vfs, private val path: String = "github.token
 
     fun clear() {
         ConnectedGitHub.close()
-        if (vfs.exists(path)) vfs.delete(path)
+        try {
+            if (vfs.exists(path)) vfs.delete(path)
+        } finally {
+            ConnectedGitHub.close()
+        }
     }
 
     /** «Забыть токен»: файл и ключ — следующий токен ляжет под новый ключ. */
