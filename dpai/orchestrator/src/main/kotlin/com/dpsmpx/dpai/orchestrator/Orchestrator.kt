@@ -2775,14 +2775,14 @@ class Orchestrator(
         if (path != repo.root && worktrees.worktrees.values.none { !it.removed && it.repository == repo.id && it.path == path }) {
             return Outcome.failure(DiagCode.STATE_CONFLICT, "путь больше не принадлежит рабочему проекту")
         }
-        return Outcome.success {
+        return Outcome.success({
             when (val status = g.status(path, 256 * 1024)) {
                 is Outcome.Failure -> status
                 is Outcome.Success -> if (status.value.head?.matches(Regex("[0-9a-fA-F]{40}|[0-9a-fA-F]{64}")) == false) {
                     Outcome.failure(DiagCode.GIT_OUTPUT_INVALID, "Git вернул некорректный HEAD")
                 } else status
             }
-        }
+        })
     }
 
     /**

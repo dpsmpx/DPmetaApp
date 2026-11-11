@@ -13,6 +13,7 @@ data class EditorMatches(val ranges: List<IntRange>, val limited: Boolean)
 
 /** Ручная правка: история в памяти, буквальный поиск, одна замена — один undo (D-131). */
 class CodeEditorBuffer(val original: String, private val clock: Clock = Clock.SYSTEM) {
+    @Volatile
     var state = EditorSnapshot(original, EditorSelection(0))
         private set
     val text: String get() = state.text

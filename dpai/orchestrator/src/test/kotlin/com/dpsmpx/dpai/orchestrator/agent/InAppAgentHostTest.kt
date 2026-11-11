@@ -63,6 +63,16 @@ class InAppAgentHostTest {
 
     private fun client(host: InAppAgentHost) = AgentClient(host, listOf("dpai"), home = null, subject = "target в приложении")
 
+    @Test
+    fun profilesAndFenceWorkThroughInAppClientAndForbidDelayedStart() {
+        val client = client(host())
+        assertIs<Outcome.Success<Unit>>(client.profiles())
+        val run = ids.next(IdKinds.SESSION)
+        assertIs<Outcome.Success<AgentReply>>(client.fenceStop(run))
+        assertIs<Outcome.Failure>(client.start(run, RunSpec(listOf("unused"))))
+    }
+
+
     /** stdout хода; stderr JVM-потомка несёт «Picked up JAVA_TOOL_OPTIONS» окружения. */
     private fun outputs(events: List<EventEnvelope>) =
         events.filter { it.type == EventType.TARGET_PROCESS_OUTPUT && (it.payload["stream"] as JsonString).value == "stdout" }

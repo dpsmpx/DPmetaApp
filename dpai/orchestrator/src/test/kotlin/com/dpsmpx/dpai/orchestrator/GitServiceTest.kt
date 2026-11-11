@@ -65,6 +65,26 @@ class GitServiceTest {
         assertEquals(0, r.exitCode, (r.stderr + r.stdout).joinToString("\n"))
     }
 
+    @Test
+    fun boundedStatusObservesRealBranchDetachedHeadAndDirtyFiles() {
+        val repo = repo()
+        val initial = git.status(repo.root, 256 * 1024).valueOrNull()!!
+        assertEquals("main", initial.branch)
+        assertTrue(initial.head!!.matches(Regex("[a-f0-9]{40}")))
+        File(repo.root, "README.md").appendText("правка\n")
+        File(repo.root, "new.txt").writeText("новое")
+        sh("-C", repo.root, "switch", "-q", "-c", "actual")
+        val dirty = git.status(repo.root, 256 * 1024).valueOrNull()!!
+        assertEquals("actual", dirty.branch)
+        assertTrue(dirty.changed.contains("README.md"))
+        assertTrue(dirty.untracked.contains("new.txt"))
+        assertIs<Outcome.Failure>(git.status(repo.root, 20), "усечённый вывод не успешен")
+        sh("-C", repo.root, "checkout", "-q", "--detach")
+        val detached = git.status(repo.root, 256 * 1024).valueOrNull()!!
+        assertEquals(initial.head, detached.head)
+        assertEquals(null, detached.branch)
+    }
+
     private fun repo(): Repository {
         val root = dir.resolve("repo").toFile().apply { mkdirs() }.path
         sh("init", "-q", "-b", "main", root)

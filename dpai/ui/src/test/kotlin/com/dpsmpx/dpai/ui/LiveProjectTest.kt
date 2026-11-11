@@ -318,6 +318,26 @@ class LiveProjectTest {
         return true
     }
 
+    @Test
+    fun manualPauseBlocksQueuedCommandsAndSchedulingUntilReleased() {
+        val (project, target) = repoProject()
+        var paused = true
+        LiveSystem(clock, NioVfs(dir.resolve("ctl")), listOf(target), { _, _ -> targetHost }, "/known_hosts", RandomSource.seeded(134), project = project, externalPause = { paused }).use { live ->
+            val o = live.orchestrator
+            assertTrue(o.manualProfileFree())
+            val queued = o.submit(com.dpsmpx.dpai.orchestrator.commands.Command.AddTask("после сборки", "работа"))
+            assertEquals(0, o.runCommands())
+            o.tick(); live.step()
+            assertTrue(!queued.isDone)
+            assertTrue(o.tasks.tasks.isEmpty())
+            assertTrue(!o.manualProfileFree(), "очередь тоже не свободный контур")
+            paused = false
+            assertEquals(1, o.runCommands())
+            assertTrue(queued.isDone)
+            assertEquals(1, o.tasks.tasks.size)
+        }
+    }
+
     private fun live(project: ProjectEntry, target: TargetEntry, seed: Long) =
         LiveSystem(clock, NioVfs(dir.resolve("ctl").also { it.toFile().mkdirs() }), listOf(target), { _, _ -> targetHost }, "/known_hosts", RandomSource.seeded(seed), project = project)
 

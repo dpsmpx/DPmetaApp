@@ -57,6 +57,20 @@ class AgentCommandTest {
     private val ids = IdGenerator(Clock.SYSTEM, RandomSource.seeded(5))
 
     @Test
+    fun manualProfileCapabilityAndFenceUseTheSameAgentProtocol() {
+        val out = mutableListOf<String>()
+        val cmd = AgentCommand(out = { out += it }, err = {}, version = "t")
+        assertEquals(Cli.OK, cmd.run(listOf("profiles", "--home", dir.toString())))
+        assertEquals("profiles", AgentReply.parse(out.last()).valueOrNull()!!.command)
+        val run = ids.next(IdKinds.SESSION)
+        assertEquals(Cli.OK, cmd.run(listOf("fence-stop", "--run", run.value, "--home", dir.toString())))
+        val reply = AgentReply.parse(out.last()).valueOrNull()!!
+        assertEquals(run, reply.run!!.id)
+        assertEquals(RunState.EXITED, reply.run!!.state)
+        assertTrue(reply.stop!!.survivors.isEmpty())
+    }
+
+    @Test
     fun usageErrorsAreCodeTwo() {
         val err = mutableListOf<String>()
         val cli = Cli(out = {}, err = { err += it }, version = "t")

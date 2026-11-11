@@ -131,6 +131,8 @@ class AgentCommand(
             |dpai agent — агент оркестратора на target (D-26)
             |
             |  dpai agent doctor   [--home DIR]
+            |  dpai agent profiles [--home DIR]
+            |  dpai agent fence-stop --run ID [--home DIR]
             |  dpai agent start    --run ID [--home DIR] [--dir DIR] [--timeout-seconds N]
             |                      [--env NAME=VALUE]... [--unset NAME]... -- КОМАНДА…
             |  dpai agent start    --run ID [--home DIR] --spec-stdin   (dpai.run-spec на входе)

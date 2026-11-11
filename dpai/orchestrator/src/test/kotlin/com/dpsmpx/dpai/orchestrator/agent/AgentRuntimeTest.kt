@@ -81,6 +81,28 @@ class AgentRuntimeTest {
     private fun alive(pid: Long) = ProcessHandle.of(pid).map { it.isAlive }.orElse(false)
 
     @Test
+    fun fenceBeforeStartSurvivesRuntimeRestartAndNeverAllowsLateStart() {
+        val run = ids.next(IdKinds.SESSION)
+        val rt = runtime()
+        val fenced = rt.fenceStop(run)
+        assertTrue(fenced.ok, fenced.diagnostics.toString())
+        assertEquals(RunState.EXITED, fenced.run!!.state)
+        assertFalse(runtime().start(run, RunSpec(TestChild.command("child", "hang"))).ok)
+    }
+
+    @Test
+    fun fenceAfterStartBeforeSupervisorPreventsChildAndClosesId() {
+        val rt = AgentRuntime(dir.toString(), Clock.SYSTEM, "test", TestChild.selfCommand() + "noop", supervisorWait = 200.milliseconds, pollEvery = 20.milliseconds)
+        val run = ids.next(IdKinds.SESSION)
+        assertTrue(rt.start(run, RunSpec(TestChild.command("child", "hang"))).ok)
+        assertEquals(RunState.STARTING, rt.fenceStop(run).run!!.state)
+        assertTrue(rt.supervise(run).ok)
+        assertEquals(listOf(EventType.TARGET_PROCESS_EXITED), rt.events(run, 0, 1000).events.map { it.type })
+        assertTrue(rt.fenceStop(run).ok)
+        assertFalse(rt.start(run, RunSpec(TestChild.command("child", "hang"))).ok)
+    }
+
+    @Test
     fun startStreamAndStopWholeTree() {
         val rt = runtime()
         val run = ids.next(IdKinds.SESSION)

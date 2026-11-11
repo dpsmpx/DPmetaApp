@@ -138,14 +138,14 @@ class AgentRuntime(
 
     private val fences = DocumentStore(vfs, "run-fences")
 
-    private fun fenced(id: SessionId): Boolean = when (val r = fences.read(id.value)) {
+    private fun fenced(id: SessionId): Boolean = when (val r = fences.read(id.value.lowercase())) {
         is Outcome.Failure -> true
         is Outcome.Success -> r.value != null
     }
 
     /** Постоянный запрет ID перед остановкой: опоздавший start не создаст процесс (D-134). */
     fun fenceStop(id: SessionId): AgentReply {
-        val mark = fences.write(id.value, JsonObject.of("format" to JsonString("dpai.run-fence"), "version" to JsonNumber.of(1)))
+        val mark = fences.write(id.value.lowercase(), JsonObject.of("format" to JsonString("dpai.run-fence"), "version" to JsonNumber.of(1)))
         if (mark is Outcome.Failure) return AgentReply.failure("fence-stop", mark.diagnostics)
         val observed = observe(id)
         if (observed is Outcome.Failure) {
@@ -155,8 +155,13 @@ class AgentRuntime(
         }
         val stopped = stop(id, RunningProcess.DEFAULT_GRACE)
         if (!stopped.ok || stopped.run?.state != RunState.EXITED) return stopped.copy(command = "fence-stop")
-        val prior = stoppedBySupervisor(id, stopped.run.turn)
-        if (prior.survivors.isNotEmpty()) return AgentReply.failure("fence-stop", listOf(Diagnostic.error(DiagCode.PROCESS_ORPHANS_LEFT, "после остановки остались процессы; проект остаётся на паузе", "run $id")))
+        val records = EventJournal.readCommitted(vfs, journalPath(id))
+        if (records is Outcome.Failure) return AgentReply.failure("fence-stop", records.diagnostics)
+        val status = stopped.run!!
+        val exit = (records as Outcome.Success).value.lastOrNull { it.event.type == EventType.TARGET_PROCESS_EXITED && (it.event.payload["turn"] as? JsonNumber)?.toLongExact() == status.turn.toLong() }
+        if (exit == null && status.reason != ExitReason.START_FAILED) return AgentReply.failure("fence-stop", listOf(Diagnostic.error(DiagCode.STORAGE_CORRUPTED, "нет подтверждённого события выхода; пауза сохраняется", "run $id")))
+        val prior = stoppedBySupervisor(id, status.turn)
+        if (prior.survivors.isNotEmpty() || stopped.stop?.survivors?.isNotEmpty() == true) return AgentReply.failure("fence-stop", listOf(Diagnostic.error(DiagCode.PROCESS_ORPHANS_LEFT, "после остановки остались процессы; проект остаётся на паузе", "run $id")))
         return stopped.copy(command = "fence-stop")
     }
 

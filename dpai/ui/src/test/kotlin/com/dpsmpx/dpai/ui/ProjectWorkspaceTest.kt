@@ -35,6 +35,14 @@ class ProjectWorkspaceTest {
         ProjectWorkspaceView.of(p, listOf(target), ready, listOf(task), trees = tree?.let { mapOf(task.id to it) }.orEmpty())
 
     @Test
+    fun manualPauseAllowsReadButRefusesAnyWorkspaceWrite() {
+        val v = view().copy(paused = true)
+        assertIs<Outcome.Success<Unit>>(v.allow(project, v.main, false))
+        assertIs<Outcome.Failure>(v.allow(project, v.main, true))
+        assertIs<Outcome.Failure>(v.allow(project, v.location(task.id)!!, true))
+    }
+
+    @Test
     fun mainAndTaskLocationsNeverFallBackToEachOther() {
         val v = view()
         assertEquals(project.root, v.location(null)!!.path)

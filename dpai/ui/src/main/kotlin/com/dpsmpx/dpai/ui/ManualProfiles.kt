@@ -64,7 +64,7 @@ class ManualProfiles(private val docs: DocumentStore, private val ids: IdGenerat
             val result = docs.read(RESULT).valueOrNull()?.content
             ManualRunView(null, false, result?.text("note").orEmpty(), result?.text("output").orEmpty())
         } else {
-            val run = readRun(r.value.content)
+            val run = readRun(r.value!!.content)
             ManualRunView(run, true, if (run == null) "повреждён якорь профиля; контур на паузе" else "восстановлен запуск; нужна сверка с агентом", "")
         }
     }
@@ -72,7 +72,7 @@ class ManualProfiles(private val docs: DocumentStore, private val ids: IdGenerat
     @Synchronized
     fun profile(project: ProjectEntry, kind: ManualProfileKind): Outcome<ManualProfile?> = when (val r = docs.read(key(project, kind))) {
         is Outcome.Failure -> r
-        is Outcome.Success -> if (r.value == null) Outcome.success(null) else ManualProfile.read(r.value.content)?.let { Outcome.success(it) }
+        is Outcome.Success -> if (r.value == null) Outcome.success(null) else ManualProfile.read(r.value!!.content)?.let { Outcome.success(it) }
             ?: Outcome.failure(DiagCode.STORAGE_CORRUPTED, "повреждён профиль ${kind.name}")
     }
 
@@ -92,11 +92,13 @@ class ManualProfiles(private val docs: DocumentStore, private val ids: IdGenerat
     @Synchronized
     fun prepare(project: ProjectEntry, target: TargetEntry, location: WorkspaceLocation, profile: ManualProfile): Outcome<ManualRun> {
         if (blocked) return Outcome.failure(DiagCode.WORKTREE_OWNED, "ручной запуск уже держит контур на паузе")
-        if (ManualProfile.read(profile.toJson()) == null || target.id != location.target || project.target != target.id) return Outcome.failure(DiagCode.VALUE_INVALID, "неверный профиль или target")
+        if (ManualProfile.read(profile.toJson()) == null || target.id != location.target || project.target != target.id || location.project != project.project || location.repository != project.repository) return Outcome.failure(DiagCode.VALUE_INVALID, "неверный профиль или target")
         val run = ManualRun(ids.next(IdKinds.SESSION), project, target, location.path, location.branch, profile)
-        val r = docs.write(ACTIVE, JsonObject.of("format" to JsonString("dpai.manual-run"), "version" to JsonNumber.of(1),
+        val anchor = JsonObject.of("format" to JsonString("dpai.manual-run"), "version" to JsonNumber.of(1),
             "id" to JsonString(run.id.value), "project" to ProjectBook.toJson(project), "target" to TargetBook.toJson(listOf(target)),
-            "path" to JsonString(run.path), "branch" to JsonString(run.branch), "profile" to profile.toJson()))
+            "path" to JsonString(run.path), "branch" to JsonString(run.branch), "profile" to profile.toJson())
+        if (readRun(anchor) == null) return Outcome.failure(DiagCode.VALUE_INVALID, "снимок проекта/target не прошёл проверку")
+        val r = docs.write(ACTIVE, anchor)
         // Даже частичная запись могла оставить якорь. При ошибке перечитать и блокировать при неопределённости.
         if (r is Outcome.Failure) { view = load(); return r }
         sequence = 0; tail = ""
@@ -115,9 +117,15 @@ class ManualProfiles(private val docs: DocumentStore, private val ids: IdGenerat
     /** false: завершено; true: пауза остаётся. LOST/нет связи не равны завершению. */
     fun poll(client: AgentClient): Boolean {
         val run = view.active ?: return blocked
-        when (val r = client.events(run.id, sequence, 100)) {
-            is Outcome.Failure -> note("нужна сверка: ${r.errors.first().message}")
+        val status = when (val r = client.status(run.id)) {
+            is Outcome.Failure -> { note("связь с запуском не подтверждена; доступна безопасная остановка: ${r.errors.first().message}"); return true }
+            is Outcome.Success -> r.value
+        }
+        val after = maxOf(sequence, status.lastSequence - 100)
+        when (val r = client.events(run.id, after, 100)) {
+            is Outcome.Failure -> note("вывод не обновлён: ${r.errors.first().message}")
             is Outcome.Success -> {
+                if (after > sequence) tail = "…показан хвост вывода…\n"
                 for (e in r.value.events) {
                     val text = (e.payload["text"] as? JsonString)?.value
                     if (text != null) tail = (tail + Redactor.STANDARD.redact(text).takeLast(MAX_OUTPUT) + "\n").takeLast(MAX_OUTPUT)
@@ -126,18 +134,16 @@ class ManualProfiles(private val docs: DocumentStore, private val ids: IdGenerat
                 view = view.copy(output = tail)
             }
         }
-        when (val r = client.status(run.id)) {
-            is Outcome.Failure -> note("связь с запуском не подтверждена; доступна безопасная остановка: ${r.errors.first().message}")
-            is Outcome.Success -> if (r.value.state == RunState.EXITED) {
-                val why = when (r.value.reason) {
-                    ExitReason.EXITED -> "код выхода ${r.value.exitCode ?: "неизвестен"}"
-                    ExitReason.TIMEOUT -> "истёк таймаут"
-                    ExitReason.STOPPED -> "остановлено"
-                    else -> "запуск завершён: ${r.value.reason}"
-                }
-                return finish(client, run, why)
-            } else if (r.value.state == RunState.LOST) note("агент потерял супервизор; требуется безопасная остановка")
+        if (status.state == RunState.EXITED) {
+            val why = when (status.reason) {
+                ExitReason.EXITED -> "код выхода ${status.exitCode ?: "неизвестен"}"
+                ExitReason.TIMEOUT -> "истёк таймаут"
+                ExitReason.STOPPED -> "остановлено"
+                else -> "запуск завершён: ${status.reason}"
+            }
+            return finish(client, run, why)
         }
+        if (status.state == RunState.LOST) note("агент потерял супервизор; требуется безопасная остановка")
         return true
     }
 
@@ -163,7 +169,7 @@ class ManualProfiles(private val docs: DocumentStore, private val ids: IdGenerat
     }
 
     private fun note(text: String) { view = view.copy(note = Redactor.STANDARD.redact(text).take(1000)) }
-    private fun key(p: ProjectEntry, kind: ManualProfileKind) = "${kind.name.lowercase()}-${p.project.value}"
+    private fun key(p: ProjectEntry, kind: ManualProfileKind) = "${kind.name.lowercase()}-${p.project.value.lowercase()}"
 
     private fun readRun(o: JsonObject): ManualRun? {
         if (o.text("format") != "dpai.manual-run" || o.number("version") != 1L) return null

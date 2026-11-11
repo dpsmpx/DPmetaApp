@@ -492,12 +492,6 @@ class DemoModel(
             val client = manualClient(target) ?: return@start LongJobs.Done("агент target недоступен", failed = true)
             val capability = client.profiles()
             if (capability is Outcome.Failure) return@start LongJobs.Done("обновите агент target для ручных профилей: ${capability.errors.first().message}", failed = true)
-            val git = workspaceGit(p, location)
-            if (git is Outcome.Failure) return@start LongJobs.Done(git.errors.first().message, failed = true)
-            val status = (git as Outcome.Success).value
-            if (status.branch != location.branch || status.head == null || status.conflicted.isNotEmpty()) {
-                return@start LongJobs.Done("проверьте ветку, HEAD и конфликты дерева перед запуском", failed = true)
-            }
             val prepared = lock.withLock {
                 val fresh = controller.project()
                 val allowed = fresh?.let { workspaceLocked(it).allow(p, location, true) }
@@ -511,6 +505,13 @@ class DemoModel(
             }
             if (prepared is Outcome.Failure) return@start LongJobs.Done(prepared.errors.first().message, failed = true)
             manualStop = false
+            // Проверка Git уже под долговечной паузой: такт не сменит дерево между status и start.
+            val git = workspaceGit(p, location)
+            val status = git.valueOrNull()
+            if (status == null || status.branch != location.branch || status.head == null || status.conflicted.isNotEmpty()) {
+                controller.manualProfiles.stop(client)
+                return@start LongJobs.Done("проверьте ветку, HEAD и конфликты дерева: ${git.diagnostics.firstOrNull()?.message.orEmpty()}", failed = true)
+            }
             controller.manualProfiles.launch((prepared as Outcome.Success).value, client)
             watchManual(client)
         }

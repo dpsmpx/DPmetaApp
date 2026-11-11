@@ -2936,7 +2936,7 @@ worktree, Android build/Lint; приёмка экрана на телефоне 
 старт; автоматического сохранения нет. После перезапуска активный запуск
 сверяется, повторного start нет. Ошибка связи не освобождает проект.
 **Почему.** Ответ автора на форму о сосуществовании ручной сборки и ИИ.
-**Проверка.** ManualProfilesTest, OrchestratorTest, Android compile/Lint;
+**Проверка.** ManualProfilesTest, LiveProjectTest, Android compile/Lint;
 приёмка перезапуска/SSH на телефоне — TODO.md.
 
 ## История
