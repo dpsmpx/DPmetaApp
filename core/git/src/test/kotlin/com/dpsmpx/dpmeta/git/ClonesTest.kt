@@ -65,6 +65,20 @@ class ClonesTest {
     private fun clones() = Clones(File(tmp, "clones"), open, setOf("file"))
 
     @Test
+    fun oversizedDocumentIsRefusedBeforeLoadingAndMalformedRevisionDoesNotEscapeOutcome() {
+        val uri = remote()
+        Git.open(work).use { git ->
+            commit(git, "large.md", "x".repeat(Clones.MAX_DOCUMENT.toInt() + 1), "Большой документ")
+            git.push().setRemote("origin").add("main").call()
+        }
+        val c = clones()
+        val sha = c.sync("Alpha", uri, null, build).valueOrNull()!!.mainSha!!
+        assertEquals(DiagCode.JSON_TOO_LARGE, assertIs<Outcome.Failure>(c.file("Alpha", "main", "large.md")).diagnostics.first().code)
+        assertEquals(DiagCode.JSON_TOO_LARGE, assertIs<Outcome.Failure>(c.fileAt("Alpha", sha, "large.md")).diagnostics.first().code)
+        assertIs<Outcome.Failure>(c.file("Alpha", "main@{", "TODO.md"))
+    }
+
+    @Test
     fun guestCannotChooseTrustedMainThroughConfigOrOriginHead() {
         val uri = remote()
         val c = clones()

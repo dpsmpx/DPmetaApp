@@ -182,7 +182,7 @@ class LinuxEnvironmentTest {
         }
         val claude = LinuxEnvironment.claudeInstall()
         assertEquals(listOf("apk", "add", "-U", "--no-progress", "git", "nodejs", "npm", "bash"), claude[0].command)
-        assertEquals(listOf("/bin/sh", "-lc", "npm install -g @anthropic-ai/claude-code && claude --version"), claude[1].command)
+        assertEquals(listOf("/bin/sh", "-lc", "npm install -g @anthropic-ai/claude-code@2.1.322 && claude --version"), claude[1].command)
         assertEquals(listOf("llama-server", "--version"), LinuxEnvironment.llamaInstall().last().command)
     }
 

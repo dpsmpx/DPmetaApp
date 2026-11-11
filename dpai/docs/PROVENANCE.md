@@ -24,7 +24,7 @@ D-17). `tools/verify/check_dependencies.py` сверяет таблицу §2 с
 | `compose-bom` (Compose BOM: Material 3, UI, Foundation, Runtime) | 2026.09.00 | Apache-2.0 | приложение Android во время выполнения | Google Maven, `androidx.compose` | 7 октября 2026 |
 | `activity-compose` (AndroidX Activity Compose) | 1.13.0 | Apache-2.0 | приложение Android во время выполнения | Google Maven, `androidx.activity` | 7 октября 2026 |
 | `androidx-core` (AndroidX Core: `FileProvider`) | 1.18.0 | Apache-2.0 | пульт DPmetaApp (`:app`) во время выполнения — «Поделиться» экспортом (`DPmetaApp:D-67`); та же версия прежде приходила транзитивно от `activity-compose` | Google Maven, `androidx.core` | 4 ноября 2026 |
-| `jgit` (Eclipse JGit; с ним JavaEWAH 1.1.13 — Apache-2.0, SLF4J API 1.7.30 — MIT) | 5.13.3.202401111512-r | EDL-1.0 (BSD-3-Clause) | пульт DPmetaApp (`:core:git` → приложение) во время выполнения — клоны репозиториев (`DPmetaApp:D-65`); ветка 5.13 — последняя для Java 8, на Android без недостающих API JDK 11+ | Maven Central, `org.eclipse.jgit` | 4 ноября 2026 |
+| `jgit` (Eclipse JGit; с ним JavaEWAH 1.1.13 — Apache-2.0, SLF4J API 1.7.30 — MIT) | 5.13.5.202508271544-r | EDL-1.0 (BSD-3-Clause) | пульт DPmetaApp (`:core:git` → приложение) во время выполнения — клоны репозиториев (`DPmetaApp:D-65`); ветка 5.13 — последняя для Java 8, на Android без недостающих API JDK 11+ | Maven Central, `org.eclipse.jgit` | 4 ноября 2026 |
 | `jsch` (JSch, форк mwiede) | 2.28.7 | BSD-3-Clause, ISC | модуль `jsch` → приложение Android во время выполнения | Maven Central, `com.github.mwiede` | 7 октября 2026 |
 <!-- provenance: end -->
 
@@ -137,3 +137,23 @@ Sysroot сборки proot — пакеты Alpine 3.24 `main` (в APK из ни
 | Идея | Откуда | Лицензия, дата | Где здесь |
 |---|---|---|---|
 | Роли ревью (код, безопасность) отдельно от исполнителя; оценка попыток pass@k | `https://github.com/affaan-m/everything-claude-code` (`agents/code-reviewer.md`, `agents/security-reviewer.md`, `skills/eval-harness/SKILL.md`); прочитан форк `WorldFlowAI/everything-claude-code`, коммит `432485b` | MIT (файл `LICENSE` — в исходном проекте, у форка его нет), 22 октября 2026 | D-73 |
+
+## Закреплённые npm-установщики (аудит A-05, 11 ноября 2026)
+
+Кнопка установки использует точные версии из публичного npm registry;
+существующие установки автоматически не обновляются. Лицензии: Codex —
+Apache-2.0, Gemini CLI — Apache-2.0, Claude Code — собственная лицензия
+Anthropic. Метаданные `dist.integrity` (SHA-512) опубликованных пакетов:
+
+| Пакет | Версия | dist.integrity |
+|---|---|---|
+| @openai/codex | 0.167.1 | sha512-39uApTRT9bkhE8tMXTIfZxaZ27oi7hPqWoF2Coyp+iQFAD3NVHgH838IYVUfJaX85leMSP2s4JOmVw0mMSCN5Q== |
+| @google/gemini-cli | 0.68.0 | sha512-eq7AWY+YCijNGKVwyiRjN+GuOdXU/djuOZhX18p+HDmNyUqFdqH7C5V6vDJLl1uffhRPhGijePV+YvY8lymrbQ== |
+| @anthropic-ai/claude-code | 2.1.322 | sha512-oP7oW4vM5DREWfL1jn4JSGlmLcrJ5QmppgADrVNJBUPiC1mQ5YvRrke0on+YZ/3QhKIaCJtdr6jPvehcAQIHLQ== |
+
+Источники: https://registry.npmjs.org/@openai/codex/0.167.1 ,
+https://registry.npmjs.org/@google/gemini-cli/0.68.0 ,
+https://registry.npmjs.org/@anthropic-ai/claude-code/2.1.322 .
+Это закрепление пакетов верхнего уровня, не полный lock всех транзитивных
+зависимостей npm. Скрипты установки не отключены: Claude устанавливает
+нативный исполнитель через install.cjs. Проверка APK на телефоне требуется.

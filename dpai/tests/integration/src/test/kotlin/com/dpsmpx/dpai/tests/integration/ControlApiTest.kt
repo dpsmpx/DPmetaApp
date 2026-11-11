@@ -110,7 +110,8 @@ class ControlApiTest {
     fun pairingStateCommandsAndConfirmation() {
         val o = boot()
         val pairing = Pairing(NioVfs(dir.resolve("app").also { it.toFile().mkdirs() }), RandomSource.seeded(9), clock)
-        val api = api(o, pairing)
+        val shown = mutableListOf<Command>()
+        val api = api(o, pairing) { shown += it }
         assertEquals(401, call(api, "GET", "/v1/state", null, null).status, "без токена — отказ")
         assertEquals(403, call(api, "POST", "/v1/pair", null, """{"code":"123456"}""").status, "кода нет")
         val (code, _) = pairing.newCode()
@@ -122,12 +123,16 @@ class ControlApiTest {
         assertEquals(401, call(api, "GET", "/v1/state", "0".repeat(64), null).status, "чужой токен")
 
         val add = call(api, "POST", "/v1/commands", token, CanonicalJson.write(CommandCodec.encode(Command.AddTask("из dpai", "цель", key = "cli-key-00001"))))
-        assertEquals(200, add.status, add.body.toString())
-        val task = IdKinds.TASK.parse(str(add.body, "value")).valueOrNull()!!
+        assertEquals(202, add.status, add.body.toString())
+        assertTrue(o.tasks.tasks.isEmpty(), "новая работа ждёт телефона")
+        val approved = shown.removeAt(0) as Command.AddTask
+        val task = o.addTask(approved.title, approved.objective).valueOrNull()!!
         // Зависимости и область — при создании (D-42, п. 1).
         val after = call(api, "POST", "/v1/commands", token, CanonicalJson.write(CommandCodec.encode(Command.AddTask("после", "цель 2", dependencies = setOf(task), scope = setOf("src/main.kt"), key = "cli-key-00002"))))
-        assertEquals(200, after.status, after.body.toString())
-        val second = o.tasks.tasks.getValue(IdKinds.TASK.parse(str(after.body, "value")).valueOrNull()!!)
+        assertEquals(202, after.status, after.body.toString())
+        val approvedAfter = shown.removeAt(0) as Command.AddTask
+        o.submit(approvedAfter).also { o.runCommands() }.get()
+        val second = o.tasks.tasks.values.single { it.id != task }
         assertEquals(setOf(task), second.dependencies)
         assertEquals(setOf("src/main.kt"), second.scope)
         val bad = call(api, "POST", "/v1/commands", token, """{"command":"task.add","title":"x","objective":"y","dependencies":["не-id"]}""")
@@ -156,6 +161,30 @@ class ControlApiTest {
         val (code3, _) = pairing.newCode()
         clock.advance(3.minutes)
         assertEquals(403, call(api, "POST", "/v1/pair", null, """{"code":"$code3"}""").status)
+    }
+
+    @Test
+    fun channelCannotWeakenPolicyOrChangeExecutionAuthority() {
+        val o = boot()
+        val task = o.addTask("задача", "цель").valueOrNull()!!
+        val shown = mutableListOf<Command>()
+        val pairing = Pairing(NioVfs(dir.resolve("app").also { it.toFile().mkdirs() }), RandomSource.seeded(12), clock)
+        val api = api(o, pairing) { shown += it }
+        val (code, _) = pairing.newCode()
+        val token = str(call(api, "POST", "/v1/pair", null, """{"code":"$code"}""").body, "token")
+        val before = o.tasks.tasks.getValue(task).policy
+        val commands = listOf(
+            Command.SetPolicy(task, com.dpsmpx.dpai.tasks.TaskClass.TRIVIAL, before.model, before.effort, before.maxBudgetUsdCents),
+            Command.SetPolicy(task, before.taskClass, "different-model", before.effort, before.maxBudgetUsdCents),
+            Command.SetSessionLimit(20),
+            Command.MoveTask(task, ids.next(IdKinds.TARGET)),
+        )
+        for (command in commands) {
+            val response = call(api, "POST", "/v1/commands", token, CanonicalJson.write(CommandCodec.encode(command, confirmed = true)))
+            assertEquals(202, response.status, command.operation)
+        }
+        assertEquals(commands, shown)
+        assertEquals(before, o.tasks.tasks.getValue(task).policy)
     }
 
     /** Поиск (ТЗ, §75) для `dpai`: его даёт оболочка; запрос проверяется здесь, нет поиска или контура — 503 с причиной. */

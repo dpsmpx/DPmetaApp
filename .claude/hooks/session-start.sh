@@ -152,7 +152,7 @@ fi
         n="$(git -C "$PROJ" rev-list --count "origin/main..$ref" 2>/dev/null || echo 0)"
         [ "$n" -gt 0 ] || continue
         found=1
-        echo "  ${ref#origin/}: коммитов $n, последний — $(git -C "$PROJ" log -1 --format='%cr: %s' "$ref")"
+        echo "  ${ref#origin/}: коммитов $n, последний — $(git -C "$PROJ" log -1 --format='%cr' "$ref")"
     done < <(git -C "$PROJ" for-each-ref --sort=-committerdate --format='%(refname:short)' \
                  refs/remotes/origin 2>/dev/null | grep -v -e '^origin$' -e '^origin/HEAD$' -e '^origin/main$' \
                  -e '^origin/.*_debug$' -e '^origin/apk-' -e '^origin/linux-debug$' | head -8)

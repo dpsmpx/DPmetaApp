@@ -260,6 +260,15 @@ class ControlApi(
      */
     private fun decisive(o: Orchestrator, c: Command): Boolean = when (c) {
         is Command.Waive -> true
+        // Аудит A-02: токен канала не доказывает, что команду дал человек.
+        // Автопрогон по доверенному манифесту использует внутренний канал и сюда не попадает.
+        is Command.AddTask, is Command.MoveTask, is Command.SetSessionLimit -> true
+        is Command.SetPolicy -> o.tasks.tasks[c.task]?.policy?.let { previous ->
+            (c.reviews != null && !c.reviews.containsAll(previous.reviews)) ||
+                c.taskClass.ordinal < previous.taskClass.ordinal ||
+                c.model != previous.model || c.effort != previous.effort ||
+                c.maxBudgetUsdCents != previous.maxBudgetUsdCents
+        } == true
         is Command.AnswerRequest -> RequestAction.parse(c.uri).valueOrNull()?.let { a ->
             val r = o.requests.requests[a.request] ?: return@let false
             RequestPurpose.of(r.purpose) in PHONE_ONLY && r.options.firstOrNull { it.id == a.option }?.role in DECISIVE_ROLES

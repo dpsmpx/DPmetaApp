@@ -36,12 +36,41 @@ enum class Place(val code: String, val title: String) {
 data class IdSource(val path: String, val pattern: String) {
     /** Шаблон собран; неверный шаблон — `VALUE_INVALID`, а не исключение. */
     fun regex(): Outcome<Regex> = try {
+        require(safePattern(pattern)) { "допустим конечный префикс и \\d+ без повторов, вложенных групп и lookaround" }
         Outcome.success(Regex(pattern))
     } catch (e: IllegalArgumentException) {
         Outcome.failure(DiagCode.VALUE_INVALID, "шаблон номера не собирается: ${e.message?.lineSequence()?.firstOrNull()}", pattern)
     }
 
     fun toJson(): JsonObject = JsonObject.of("path" to JsonString(path), "id" to JsonString(pattern))
+
+    companion object {
+        /** Конечный префикс и один числовой суффикс: данные не задают произвольный backtracking. */
+        private fun safePattern(pattern: String): Boolean {
+            if (pattern.length > 128 || !pattern.endsWith("\\d+")) return false
+            val prefix = pattern.dropLast(3)
+            if (prefix.isEmpty()) return false
+            var i = 0
+            var inGroup = false
+            var groups = 0
+            var alternatives = 0
+            while (i < prefix.length) {
+                when {
+                    prefix[i].isLetterOrDigit() || prefix[i] in "_-" -> i++
+                    prefix[i] == '[' -> {
+                        val end = prefix.indexOf(']', i + 1)
+                        if (end <= i + 1 || prefix.substring(i + 1, end).any { !it.isLetterOrDigit() && it != '-' }) return false
+                        i = end + 1
+                    }
+                    prefix.startsWith("(?:", i) && !inGroup && ++groups == 1 -> { inGroup = true; i += 3 }
+                    prefix[i] == '|' && inGroup && ++alternatives <= 8 -> i++
+                    prefix[i] == ')' && inGroup -> { inGroup = false; i++ }
+                    else -> return false
+                }
+            }
+            return !inGroup
+        }
+    }
 }
 
 /**

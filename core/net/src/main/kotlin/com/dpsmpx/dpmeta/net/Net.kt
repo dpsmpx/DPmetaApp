@@ -63,7 +63,9 @@ class AllowList(val hosts: Set<String>, val plainHttp: Set<String> = emptySet())
 }
 
 /** Сохранённый ответ для условного запроса: ETag и тело. */
-class CachedResponse(val etag: String, val body: ByteArray)
+class CachedResponse(val etag: String, val body: ByteArray, val link: String? = null) {
+    val usable: Boolean get() = printable(etag)
+}
 
 /**
  * Кэш условных запросов (ТЗ, §6.4, N-03). Ключ — адрес и отпечаток секрета:
@@ -132,7 +134,8 @@ class Net(
     /** [store] = false — ответ не кладётся в кэш (файлы кода, F-09: «без сохранения в кэше»). */
     fun get(url: URI, headers: Map<String, String> = emptyMap(), auth: Secret? = null, store: Boolean = true): Outcome<Fetched> {
         val key = cacheKey(url, auth)
-        val cached = if (store) cache.get(key) else null
+        // K-05: испорченный ETag не превращается в навсегда неверный заголовок запроса.
+        val cached = if (store) cache.get(key)?.takeIf { it.usable } else null
         val h = if (cached != null) headers + ("If-None-Match" to cached.etag) else headers
         val r = when (val s = send(HttpRequest("GET", url, h, null, auth))) {
             is Outcome.Failure -> return s
@@ -140,10 +143,14 @@ class Net(
         }
         if (r.status == 304 && cached != null) {
             synchronized(lock) { notModified++ }
-            return Outcome.success(Fetched(200, cached.body, true, r.headers))
+            // GitHub может не повторять Link в ответе 304: список всё равно должен быть полным.
+            val responseHeaders = if (r.header("link") == null && cached.link != null) r.headers + ("link" to listOf(cached.link)) else r.headers
+            return Outcome.success(Fetched(200, cached.body, true, responseHeaders))
         }
         val etag = r.header("etag")
-        if (store && r.status == 200 && etag != null) cache.put(key, CachedResponse(etag, r.body))
+        if (store && r.status == 200 && etag != null && printable(etag)) {
+            cache.put(key, CachedResponse(etag, r.body, r.headers["link"]?.joinToString(",")))
+        }
         return Outcome.success(Fetched(r.status, r.body, false, r.headers))
     }
 

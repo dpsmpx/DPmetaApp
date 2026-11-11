@@ -31,7 +31,7 @@ Compose, JSch; wrapper Gradle со сверкой SHA-256) — `dpai/docs/PROVEN
 
 | Компонент | Версия | Лицензия | Зачем | Модуль | Решение |
 |---|---|---|---|---|---|
-| Eclipse JGit (`org.eclipse.jgit:org.eclipse.jgit`, каталог `jgit`; с ним JavaEWAH 1.1.13 — Apache-2.0, SLF4J API 1.7.30 — MIT) | 5.13.3.202401111512-r | EDL-1.0 (BSD-3-Clause) | клоны репозиториев: клонирование, обновление, ветки и файлы (ветка 5.13 — последняя для Java 8, на Android без недостающих API JDK 11+; CVE-2023-4759 закрыта) | `:core:git` | D-65 |
+| Eclipse JGit (`org.eclipse.jgit:org.eclipse.jgit`, каталог `jgit`; с ним JavaEWAH 1.1.13 — Apache-2.0, SLF4J API 1.7.30 — MIT) | 5.13.5.202508271544-r | EDL-1.0 (BSD-3-Clause) | клоны репозиториев: клонирование, обновление, ветки и файлы (ветка 5.13 — последняя для Java 8, на Android без недостающих API JDK 11+; CVE-2023-4759 закрыта) | `:core:git` | D-65 |
 | AndroidX Core (`androidx.core:core`, каталог `androidx-core`) | 1.18.0 | Apache-2.0 | `FileProvider` — «Поделиться» экспортом истории (F-36) | `:app` | D-67 |
 
 ## Данные
@@ -40,3 +40,9 @@ Compose, JSch; wrapper Gradle со сверкой SHA-256) — `dpai/docs/PROVEN
 файлов других репозиториев нет. Двоичных файлов вне `dpai/` нет; в
 `dpai/` — `gradle-wrapper.jar` со сверкой SHA-256
 (`dpai/docs/PROVENANCE.md`) и корпуса подсистемы (`dpai/tests/data/`).
+
+JGit обновлён 11 ноября 2026 после аудита K-04: версия 5.13.5 сохраняет
+Java 8 и отключает внешние сущности/DOCTYPE в ManifestParser (CVE-2025-4949).
+Официальный исходник тега: https://github.com/eclipse-jgit/jgit/blob/v5.13.5.202508271544-r/org.eclipse.jgit/src/org/eclipse/jgit/gitrepo/ManifestParser.java ,
+blob `726c7b430e0c221ab6734dc363d8c589b32b1086`. Глобальный реестр
+транспортов JGit не изменён; URL сетевого клона проверяется до запуска.

@@ -20,7 +20,7 @@ activity-compose = "1.13.0"
 androidx-core = "1.18.0"
 # Git на JVM — клоны репозиториев пульта DPmetaApp (DPmetaApp:D-65). Ветка 5.13 — последняя
 # для Java 8: на Android (minSdk 30) нет недостающих API JDK 11+; CVE-2023-4759 в 5.13.3 закрыта.
-jgit = "5.13.3.202401111512-r"
+jgit = "5.13.5.202508271544-r"
 # SSH на JVM для приложения Android (D-35).
 jsch = "2.28.7"
 

@@ -120,10 +120,11 @@ class AppDiskProvider : DocumentsProvider() {
         if (write && !AppDisk.writable(r)) throw SecurityException("диск приложения: запись — только в папке Linux /root")
         val flags = OsConstants.O_NOFOLLOW or OsConstants.O_CLOEXEC or when (mode) {
             "r" -> OsConstants.O_RDONLY
-            "w", "wt" -> OsConstants.O_WRONLY or OsConstants.O_CREAT or OsConstants.O_TRUNC
-            "wa" -> OsConstants.O_WRONLY or OsConstants.O_CREAT or OsConstants.O_APPEND
-            "rw" -> OsConstants.O_RDWR or OsConstants.O_CREAT
-            "rwt" -> OsConstants.O_RDWR or OsConstants.O_CREAT or OsConstants.O_TRUNC
+            // A-03: openDocument открывает существующий ID; создание — createDocument.
+            // Усечение выполняется только после проверки настоящего пути дескриптора.
+            "w", "wt" -> OsConstants.O_WRONLY
+            "wa" -> OsConstants.O_WRONLY or OsConstants.O_APPEND
+            "rw", "rwt" -> OsConstants.O_RDWR
             else -> throw IllegalArgumentException("неизвестный режим: $mode")
         }
         val fd = try {
@@ -139,6 +140,14 @@ class AppDiskProvider : DocumentsProvider() {
             if (refused != null) {
                 pfd.close()
                 throw FileNotFoundException(refused)
+            }
+            if (mode == "w" || mode == "wt" || mode == "rwt") {
+                try {
+                    Os.ftruncate(fd, 0)
+                } catch (error: android.system.ErrnoException) {
+                    pfd.close()
+                    throw FileNotFoundException("файл не усечён после проверки")
+                }
             }
             return pfd
         } finally {

@@ -649,7 +649,7 @@ class PultRepository(
         private val running = java.util.concurrent.atomic.AtomicBoolean(false)
 
         /** Предел документа из клона: больше — не читается в память (журнал решений DPmetaApp — около 0,3 МБ). */
-        private const val MAX_DOCUMENT = 2L * 1_048_576
+        private const val MAX_DOCUMENT = com.dpsmpx.dpmeta.git.Clones.MAX_DOCUMENT
 
         /** «Отменить» клоны текущей синхронизации (UX-10). */
         private val cancel = java.util.concurrent.atomic.AtomicBoolean(false)

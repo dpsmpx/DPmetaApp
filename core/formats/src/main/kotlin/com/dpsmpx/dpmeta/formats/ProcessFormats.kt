@@ -295,7 +295,17 @@ data class StatusBlocks(val blocks: List<Block>) : ProcessDocument {
         const val SCHEMA = "process.status.v1"
         private val BEGIN = Regex("^\\s*<!--\\s*([a-z0-9_.-]+):begin\\s*-->\\s*$")
         private val END = Regex("^\\s*<!--\\s*([a-z0-9_.-]+):end\\s*-->\\s*$")
-        private val COMMENT = Regex("<!--.*?-->", RegexOption.DOT_MATCHES_ALL)
+        private fun withoutComments(text: String): String = buildString {
+            var at = 0
+            while (at < text.length) {
+                val start = text.indexOf("<!--", at)
+                if (start < 0) { append(text, at, text.length); break }
+                append(text, at, start)
+                val end = text.indexOf("-->", start + 4)
+                if (end < 0) { append(text, start, text.length); break }
+                at = end + 3
+            }
+        }
 
         fun parse(text: String, source: String = "README.md"): Outcome<StatusBlocks> {
             val lines = Markdown.lines(text)
@@ -311,7 +321,7 @@ data class StatusBlocks(val blocks: List<Block>) : ProcessDocument {
                 val name = b.groupValues[1]
                 val end = (i + 1 until lines.size).firstOrNull { END.find(lines[it])?.groupValues?.get(1) == name }
                     ?: return Outcome.failure(DiagCode.FORMAT_UNRECOGNIZED, "блок «$name» не закрыт", "$source:${i + 1}")
-                val body = lines.subList(i + 1, end).joinToString("\n").replace(COMMENT, "").trim()
+                val body = withoutComments(lines.subList(i + 1, end).joinToString("\n")).trim()
                 blocks += Block(name, body, i + 1)
                 i = end + 1
             }

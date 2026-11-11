@@ -70,7 +70,7 @@ class SshProcessHostTest {
     @Test
     fun windowsRejectsWhatCmdWouldReinterpret() {
         assertEquals("dpai --dir \"C:\\Program Files\\x\"", RemoteShell.join(TargetPlatform.WINDOWS, listOf("dpai", "--dir", "C:\\Program Files\\x")).valueOrNull())
-        for (bad in listOf("%PATH%", "a\"b", "x^y", "")) {
+        for (bad in listOf("%PATH%", "a\"b", "x^y", "!VAR!", "\$(Get-Process)", "\$env:PATH", "a`n", "")) {
             assertIs<Outcome.Failure>(RemoteShell.join(TargetPlatform.WINDOWS, listOf("dpai", bad)), bad)
         }
     }

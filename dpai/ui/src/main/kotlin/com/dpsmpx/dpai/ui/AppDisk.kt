@@ -38,7 +38,7 @@ object AppDisk {
      * угодно.
      */
     /** Каталоги слотов в домашней папке гостя: `.claude-slot-N`, `.codex-slot-N`, `.gemini-slot-N`. */
-    private val SLOT_PREFIXES = listOf(".claude-slot-", ".codex-slot-", ".gemini-slot-")
+    private val SAFE_DOT_NAMES = setOf(".gitignore", ".gitattributes", ".editorconfig")
 
     fun hidden(rel: String): Boolean {
         val p = parts(rel)
@@ -46,10 +46,9 @@ object AppDisk {
         if (p.any { it == ".ssh" || it == ".credentials.json" }) return true
         val home = parts(LINUX_HOME)
         if (p.size <= home.size || p.take(home.size) != home) return false
-        // Каталоги слотов (D-29, D-100): в них — вход Claude, Codex и Gemini.
-        if (SLOT_PREFIXES.any { p[home.size].startsWith(it) }) return true
-        // Ключ сервера локальной модели (D-105, T18): `~/.config/llama`.
-        return p.drop(home.size).take(2) == listOf(".config", "llama")
+        // Аудит A-01: новый способ входа не должен расширять доступ менеджеру
+        // файлов. Скрытые конфиги закрыты по умолчанию, в том числе внутри проекта.
+        return p.drop(home.size).any { it.startsWith('.') && it !in SAFE_DOT_NAMES }
     }
 
     /** Можно ли менять (создать, заменить, удалить, переименовать) документ [rel]: только внутри `/root` гостя. */

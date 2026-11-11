@@ -169,14 +169,14 @@ class LinuxEnvironment(private val vfs: Vfs, dir: String = DIR) {
         }
 
         /** Пакеты npm исполнителей Codex и Gemini (D-100): ставятся в госте глобально. */
-        val EXECUTOR_PACKAGES: List<String> = listOf("@openai/codex", "@google/gemini-cli")
+        val EXECUTOR_PACKAGES: List<String> = listOf("@openai/codex@0.167.1", "@google/gemini-cli@0.68.0")
 
         /**
          * Пакет npm Claude Code: ставит готовый бинарник платформы (`linux-arm64-musl` на
          * телефоне) — Node.js нужен только установщику. Бинарник ~330 МБ; жёсткую ссылку
          * Android запрещает, и установщик пакета его копирует — на диске около 0,7 ГБ.
          */
-        const val CLAUDE_PACKAGE: String = "@anthropic-ai/claude-code"
+        const val CLAUDE_PACKAGE: String = "@anthropic-ai/claude-code@2.1.322"
 
         /** Шаг `apk add` с именами из кода (они заведомо проходят [PACKAGE]). */
         private fun apkAdd(vararg names: String): ProcessSpec =

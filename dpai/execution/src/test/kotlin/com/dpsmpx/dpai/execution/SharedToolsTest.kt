@@ -45,11 +45,11 @@ class SharedToolsTest {
         for (executor in Executor.entries) {
             val source = request(executor)
             val prepared = config.prepare(source, executor)
-            assertEquals(listOf("python3", config.controller, "--repo", config.repository, "run", "--"), prepared.command.take(6))
+            assertEquals(listOf("python3", config.controller, "--repo", config.repository, "session", "--"), prepared.command.take(6))
             assertEquals("/worktree", prepared.workDir)
             assertEquals(source.environment, prepared.environment)
             assertTrue(prepared.stdin!!.endsWith("\n\n" + source.stdin))
-            assertTrue(prepared.stdin!!.contains(config.repository))
+            assertTrue(prepared.stdin.contains(config.repository))
         }
     }
 
@@ -63,7 +63,7 @@ class SharedToolsTest {
         val codex = config.prepare(request(Executor.CODEX, true), Executor.CODEX).command
         assertEquals("-", codex.last())
         assertTrue(codex.contains("sandbox_mode=\"read-only\""))
-        assertTrue(codex.any { it == "sandbox_workspace_write.writable_roots=[\"${config.repository}\"]" })
+        assertEquals(config.repository, codex[codex.indexOf("--add-dir") + 1])
         assertFalse(codex.any { it.contains("danger-full-access") })
     }
 
@@ -73,7 +73,17 @@ class SharedToolsTest {
         val prepared = value.prepare(request(Executor.CODEX), Executor.CODEX)
         assertEquals(value.repository, prepared.command[3])
         assertFalse(prepared.command.contains("sh"))
-        assertTrue(prepared.command.any { it.startsWith("sandbox_workspace_write.writable_roots=[\"/tools/quote\\\"") })
+        assertEquals(value.repository, prepared.command[prepared.command.indexOf("--add-dir") + 1])
+    }
+
+    @Test
+    fun codexResumePreservesExistingWritableRootsAndGetsExecOptionBeforeSubcommand() {
+        val request = ClaudeRequest("дальше", executor = Executor.CODEX)
+        val command = ExecutorCli.argv(listOf("codex"), request, provider, true).toMutableList()
+        command.addAll(command.lastIndex, listOf("-c", "sandbox_workspace_write.writable_roots=[\"/existing\"]"))
+        val prepared = config.prepare(ProcessSpec(command, stdin = request.prompt), Executor.CODEX).command
+        assertTrue(prepared.indexOf("--add-dir") < prepared.indexOf("resume"))
+        assertTrue(prepared.contains("sandbox_workspace_write.writable_roots=[\"/existing\"]"))
     }
 
     @Test

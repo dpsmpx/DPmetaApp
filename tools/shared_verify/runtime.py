@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -56,12 +57,12 @@ def lock_path(repo):
 
 
 @contextmanager
-def file_lease(path, exclusive=False):
+def file_lease(path, exclusive=False, blocking=False):
     with path.open('a+b') as handle:
         os.chmod(path, 0o600)
         mode = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
         try:
-            fcntl.flock(handle, mode | fcntl.LOCK_NB)
+            fcntl.flock(handle, mode | (0 if blocking else fcntl.LOCK_NB))
         except BlockingIOError as error:
             raise Busy('tools_in_use') from error
         try:
@@ -71,8 +72,8 @@ def file_lease(path, exclusive=False):
 
 
 @contextmanager
-def lease(repo, exclusive=False):
-    with file_lease(lock_path(canonical(repo)), exclusive) as descriptor:
+def lease(repo, exclusive=False, blocking=False):
+    with file_lease(lock_path(canonical(repo)), exclusive, blocking) as descriptor:
         yield descriptor
 
 
@@ -240,11 +241,35 @@ def watch(repo, state, interval=POLL_SECONDS, pause=None, emit=None):
             return
 
 
-def run(repo, command):
+def tool_environment(repo):
+    return dict(os.environ, DP_VERIFY_HOME=str(repo), DP_VERIFY_REVISION=git(repo, 'rev-parse', 'HEAD'),
+                DP_VERIFY_CONTROLLER=str(Path(__file__).resolve()), DP_VERIFY_PYTHON=sys.executable)
+
+
+def session(repo, command):
+    """Ожидающая ИИ-сессия не держит lease. dpv на PATH берёт его на саму проверку (D-92)."""
     repo = canonical(repo)
-    with lease(repo) as descriptor:
-        revision = git(repo, 'rev-parse', 'HEAD')
-        env = dict(os.environ, DP_VERIFY_HOME=str(repo), DP_VERIFY_REVISION=revision)
+    with lease(repo, blocking=True):
+        key = hashlib.sha256(str(repo).encode()).hexdigest()[:16]
+        bindir = repo.parent / '.dpmetaapp-tools' / key / 'bin'
+        bindir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        argv = [sys.executable, str(Path(__file__).resolve()), '--repo', str(repo), 'run', '--', str(repo / 'dpv')]
+        content = '#!/bin/sh\nexec ' + ' '.join(shlex.quote(part) for part in argv) + ' "$@"\n'
+        # Отдельная папка: управляемая обёртка не меняет Git-дерево DP-Verify.
+        with tempfile.NamedTemporaryFile(mode='w', dir=bindir, delete=False) as temporary:
+            temporary.write(content)
+            os.fchmod(temporary.fileno(), 0o700)
+            temporary_path = Path(temporary.name)
+        temporary_path.replace(bindir / 'dpv')
+        env = tool_environment(repo)
+        env['PATH'] = str(bindir) + os.pathsep + env.get('PATH', os.defpath)
+    return subprocess.run(command, env=env).returncode
+
+
+def run(repo, command, exclusive=False):
+    repo = canonical(repo)
+    with lease(repo, exclusive=exclusive, blocking=True) as descriptor:
+        env = tool_environment(repo)
         # Дочерний процесс сохраняет lease даже при аварийном завершении обёртки.
         return subprocess.run(command, env=env, pass_fds=(descriptor,)).returncode
 
@@ -260,8 +285,9 @@ def main(argv=None):
     ticker = sub.add_parser('watch')
     ticker.add_argument('--state', required=True, type=Path)
     ticker.add_argument('--interval', type=float, default=POLL_SECONDS)
-    use = sub.add_parser('run')
-    use.add_argument('command', nargs=argparse.REMAINDER)
+    for action in ('run', 'edit', 'session'):
+        use = sub.add_parser(action)
+        use.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
     try:
         if args.action == 'init':
@@ -276,7 +302,9 @@ def main(argv=None):
         command = args.command[1:] if args.command[:1] == ['--'] else args.command
         if not command:
             parser.error('нужна команда после run --')
-        return run(args.repo, command)
+        if args.action == 'session':
+            return session(args.repo, command)
+        return run(args.repo, command, exclusive=args.action == 'edit')
     except KeyboardInterrupt:
         return 130
     except Busy:

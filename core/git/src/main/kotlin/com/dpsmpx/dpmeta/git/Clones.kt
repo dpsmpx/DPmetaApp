@@ -331,7 +331,9 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
 
     /** Байты объекта [id] вида [type], если id совпадает с хешем содержимого; иначе — `CorruptObjectException`. */
     private fun verified(repo: Repository, id: ObjectId, type: Int): ByteArray {
-        val bytes = repo.open(id, type).bytes
+        val loader = repo.open(id, type)
+        if (type == Constants.OBJ_BLOB && loader.size > MAX_DOCUMENT) throw org.eclipse.jgit.errors.LargeObjectException.ExceedsLimit(MAX_DOCUMENT, loader.size)
+        val bytes = if (type == Constants.OBJ_BLOB) loader.getBytes(MAX_DOCUMENT.toInt()) else loader.bytes
         val actual = ObjectInserter.Formatter().idFor(type, bytes)
         if (actual != id) throw org.eclipse.jgit.errors.CorruptObjectException(id, "содержимое не совпадает с id")
         return bytes
@@ -339,13 +341,18 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
 
     /** Файл ветки GitHub [branch] по пути от корня; нет файла (или это каталог) — `null`, нет клона или ветки — отказ. */
     fun file(project: String, branch: String, path: String): Outcome<ByteArray?> = withRepo(project) { repo ->
+        require(Repository.isValidRefName("${Constants.R_REMOTES}origin/$branch")) { "неверное имя ветки" }
         val tree = repo.resolve("${Constants.R_REMOTES}origin/$branch^{tree}") ?: return@withRepo null
         // Каталог — не файл: байты объекта-дерева на экран не идут (проверка PR #173).
-        TreeWalk.forPath(repo, path, tree)?.use { tw -> if (tw.isSubtree) null else repo.open(tw.getObjectId(0)).bytes }
+        TreeWalk.forPath(repo, path, tree)?.use { tw -> if (tw.isSubtree) null else repo.open(tw.getObjectId(0)).let { loader ->
+            if (loader.size > MAX_DOCUMENT) throw org.eclipse.jgit.errors.LargeObjectException.ExceedsLimit(MAX_DOCUMENT, loader.size)
+            loader.getBytes(MAX_DOCUMENT.toInt())
+        } }
     }
 
     /** Размер файла ветки [branch] без чтения его в память; нет файла — `null`. */
     fun size(project: String, branch: String, path: String): Outcome<Long?> = withRepo(project) { repo ->
+        require(Repository.isValidRefName("${Constants.R_REMOTES}origin/$branch")) { "неверное имя ветки" }
         val tree = repo.resolve("${Constants.R_REMOTES}origin/$branch^{tree}") ?: return@withRepo null
         TreeWalk.forPath(repo, path, tree)?.use { tw -> if (tw.isSubtree) null else repo.open(tw.getObjectId(0)).size }
     }
@@ -522,6 +529,10 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
             failure(DiagCode.STORAGE_IO_FAILED, "клон не читается: ${e.javaClass.simpleName}", project)
         } catch (e: JGitInternalException) {
             failure(DiagCode.STORAGE_IO_FAILED, "клон не читается: ${e.javaClass.simpleName}", project)
+        } catch (e: org.eclipse.jgit.errors.LargeObjectException) {
+            failure(DiagCode.JSON_TOO_LARGE, "документ Git превышает предел чтения на телефоне", project)
+        } catch (e: IllegalArgumentException) {
+            failure(DiagCode.VALUE_INVALID, "недопустимая ветка, путь или объект Git", project)
         }
     }
 
@@ -608,6 +619,8 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
     }
 
     companion object {
+        /** Единый предел текстового документа клона и его показа на телефоне — 2 МиБ. */
+        const val MAX_DOCUMENT = 2L * 1_048_576
         /** Слияние PR кнопкой GitHub: «Merge pull request #N from владелец/ветка». */
         private val PR_MERGE = Regex("^Merge pull request #\\d+ from \\S+")
 

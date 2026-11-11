@@ -4,9 +4,7 @@ import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.diagnostics.DiagnosticCollector
 import com.dpsmpx.dpai.core.ids.Executor
 import com.dpsmpx.dpai.core.result.Outcome
-import com.dpsmpx.dpai.core.serialization.CanonicalJson
 import com.dpsmpx.dpai.core.serialization.FormatHeader
-import com.dpsmpx.dpai.core.serialization.JsonArray
 import com.dpsmpx.dpai.core.serialization.JsonFields
 import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonString
@@ -40,18 +38,20 @@ data class SharedTools(val repository: String, val controller: String, val pytho
         when (executor) {
             Executor.CLAUDE -> command.addAll(listOf("--add-dir", repository))
             Executor.CODEX -> {
-                // -c поддерживается и exec, и exec resume; разрешён только этот дополнительный корень.
-                val roots = CanonicalJson.write(JsonArray(listOf(JsonString(repository))))
-                val at = if (command.lastOrNull() == "-") command.lastIndex else command.size
-                command.addAll(at, listOf("-c", "sandbox_workspace_write.writable_roots=$roots"))
+                // Опция exec ставится до подкоманды resume. Дополнение через add-dir
+                // сохраняет ранее настроенные writable_roots и режим read-only.
+                val at = command.indexOf("exec").let { if (it < 0) command.size else it + 1 }
+                command.addAll(at, listOf("--add-dir", repository))
             }
             Executor.GEMINI -> command.addAll(listOf("--include-directories", repository))
         }
         val context = "Общие инструменты проверки DP-Verify находятся в $repository. " +
-            "Этот путь также доступен как DP_VERIFY_HOME; DP_VERIFY_REVISION — версия запуска. " +
-            "Сначала прочитай инструкции инструментов; синхронизацией с GitHub управляет контроллер DPmetaApp."
+            "Основные проверки выбирай по документации проекта. Если проект подключён к DP-Verify, используй dpv на PATH: он защищает версию на время проверки. " +
+            "Другие инструменты запускай через DP_VERIFY_PYTHON и DP_VERIFY_CONTROLLER с --repo DP_VERIFY_HOME run -- командой; " +
+            "правки инструментов — через edit вместо run. " +
+            "В паузах папка может обновляться. Сначала прочитай инструкции инструментов; синхронизацией с GitHub управляет DPmetaApp."
         return spec.copy(
-            command = listOf(python, controller, "--repo", repository, "run", "--") + command,
+            command = listOf(python, controller, "--repo", repository, "session", "--") + command,
             stdin = context + "\n\n" + spec.stdin.orEmpty(),
         )
     }

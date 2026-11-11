@@ -196,6 +196,33 @@ class SharedVerifyTest(unittest.TestCase):
         with self.assertRaisesRegex(runtime.Refused, 'positive_interval_required'):
             runtime.watch(self.repo, self.state, 0)
 
+    def test_waiting_ai_session_does_not_block_update(self):
+        argv = [sys.executable, str(SOURCE), '--repo', str(self.repo), 'session', '--',
+                sys.executable, '-c', 'print("ready", flush=True); input()']
+        process = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            self.assertEqual(process.stdout.readline().strip(), 'ready')
+            self.assertEqual(self.sync()['status'], 'unchanged')
+        finally:
+            process.communicate('\n', timeout=20)
+        self.assertEqual(process.returncode, 0)
+
+    def test_dpv_gateway_holds_lease_only_while_tool_runs(self):
+        dpv = self.repo / 'dpv'
+        dpv.write_text('#!' + sys.executable + '\nprint("ready", flush=True)\ninput()\n')
+        dpv.chmod(0o700)
+        argv = [sys.executable, str(SOURCE), '--repo', str(self.repo), 'session', '--', 'dpv']
+        process = subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            self.assertEqual(process.stdout.readline().strip(), 'ready')
+            with self.assertRaises(runtime.Busy):
+                self.sync()
+        finally:
+            process.communicate('\n', timeout=20)
+        self.assertEqual(process.returncode, 0)
+        with runtime.lease(self.repo, exclusive=True):
+            pass
+
     def test_divergence_does_not_merge_or_reset(self):
         other = self.other()
         remote = self.commit(other, 'remote')

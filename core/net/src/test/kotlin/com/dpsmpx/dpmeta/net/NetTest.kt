@@ -12,6 +12,39 @@ import kotlin.test.assertTrue
 
 /** Список адресов, условные запросы и бюджет (ТЗ, §6.4, §6.8; D-10). */
 class NetTest {
+    @Test
+    fun invalidEtagsFromServerOrOldCacheNeverBecomeRequestHeaders() {
+        val seen = mutableListOf<HttpRequest>()
+        val transport = object : Transport {
+            override fun send(request: HttpRequest): Outcome<HttpResponse> {
+                seen += request
+                return Outcome.success(HttpResponse(200, mapOf("etag" to listOf("bad\nvalue")), "body".toByteArray()))
+            }
+        }
+        val cache = MemoryEtagCache().apply { put(api.toString(), CachedResponse("old\rvalue", "old".toByteArray())) }
+        val net = Net(transport, cache = cache)
+        assertIs<Outcome.Success<*>>(net.get(api))
+        assertIs<Outcome.Success<*>>(net.get(api))
+        assertTrue(seen.all { "If-None-Match" !in it.headers })
+    }
+
+    @Test
+    fun notModifiedKeepsPaginationLinkFromCachedResponse() {
+        var count = 0
+        val link = "<https://api.github.com/repos/x/y?page=2>; rel=\"next\""
+        val transport = object : Transport {
+            override fun send(request: HttpRequest): Outcome<HttpResponse> {
+                count++
+                return Outcome.success(if (count == 1) HttpResponse(200, mapOf("etag" to listOf("v1"), "link" to listOf(link)), "[]".toByteArray())
+                    else HttpResponse(304, emptyMap(), ByteArray(0)))
+            }
+        }
+        val net = Net(transport)
+        net.get(api)
+        val cached = net.get(api).valueOrNull()!!
+        assertTrue(cached.notModified)
+        assertEquals(link, cached.header("link"))
+    }
     /** Сервер на одну строку: ETag "v1", на If-None-Match "v1" — 304. */
     private class FakeServer : Transport {
         val seen = mutableListOf<HttpRequest>()
