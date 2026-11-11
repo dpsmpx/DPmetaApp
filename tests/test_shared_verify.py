@@ -1,5 +1,6 @@
 """D-89: настоящие Git-репозитории и процессы, без сети и учётных данных."""
 import importlib.util
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -48,6 +49,36 @@ class SharedVerifyTest(unittest.TestCase):
 
     def sync(self):
         return runtime.sync(self.repo, self.state, str(self.remote), self.command)
+
+    def test_push_url_cannot_publish_to_another_repository(self):
+        redirected = self.base / 'redirected.git'
+        self.git(self.base, 'clone', '--bare', str(self.remote), str(redirected))
+        before = self.git(redirected, 'rev-parse', 'main')
+        self.git(self.repo, 'remote', 'set-url', '--push', 'origin', str(redirected))
+        self.commit(self.repo, 'candidate')
+        with self.assertRaisesRegex(runtime.Refused, 'unexpected_remote'):
+            self.sync()
+        self.assertEqual(self.git(redirected, 'rev-parse', 'main'), before)
+
+    def test_validator_cannot_redirect_a_checked_publish(self):
+        redirected = self.base / 'redirected.git'
+        self.git(self.base, 'clone', '--bare', str(self.remote), str(redirected))
+        self.commit(self.repo, 'candidate')
+        args = ['git', '-C', str(self.repo), 'remote', 'set-url', '--push', 'origin', str(redirected)]
+        self.command = [sys.executable, '-c', 'import subprocess; subprocess.run(' + repr(args) + ', check=True)']
+        with self.assertRaisesRegex(runtime.Refused, 'unexpected_remote'):
+            self.sync()
+
+    def test_initial_clone_cannot_be_rewritten_by_global_configuration(self):
+        redirected = self.base / 'redirected.git'
+        self.git(self.base, 'clone', '--bare', str(self.remote), str(redirected))
+        config = self.base / 'rewrite.gitconfig'
+        self.git(self.base, 'config', '--file', str(config), 'url.' + str(redirected) + '.insteadOf', str(self.remote))
+        target = self.base / 'new-tools'
+        with patch.dict(os.environ, {'GIT_CONFIG_GLOBAL': str(config)}):
+            with self.assertRaisesRegex(runtime.Refused, 'unexpected_remote'):
+                runtime.install(target, self.state, str(self.remote), self.command)
+        self.assertFalse(target.exists())
 
     def test_aliases_and_worktrees_share_one_lease(self):
         alias = self.base / 'alias'

@@ -121,6 +121,14 @@ def identity(repo):
     return git(repo, 'rev-parse', 'HEAD'), git(repo, 'symbolic-ref', '--short', 'HEAD')
 
 
+def check_remote(repo, expected):
+    # get-url раскрывает insteadOf/pushInsteadOf. pushurl и несколько адресов
+    # не должны незаметно отправить проверенные инструменты в другой репозиторий.
+    if (git(repo, 'remote', 'get-url', '--all', 'origin') != expected or
+            git(repo, 'remote', 'get-url', '--push', '--all', 'origin') != expected):
+        raise Refused('unexpected_remote')
+
+
 def validate(repo, revision, state, command):
     """Отдельное дерево: проверка не запускается поверх инструментов сессии."""
     with tempfile.TemporaryDirectory(prefix='candidate-', dir=state) as directory:
@@ -153,13 +161,17 @@ def install(repo, state, expected_remote=UPSTREAM, command=('./dpv', 'run', 'ful
     with file_lease(repo.parent / ('.' + repo.name + '.install.lock'), exclusive=True):
         if repo.exists() or repo.is_symlink():
             raise Refused('tools_already_exist')
+        if git(repo.parent, 'ls-remote', '--get-url', expected_remote) != expected_remote:
+            raise Refused('unexpected_remote')
         with tempfile.TemporaryDirectory(prefix='.dpv-install-', dir=repo.parent) as directory:
             candidate = Path(directory) / 'tools'
             git(repo.parent, 'clone', '--branch', 'main', '--single-branch', '--no-tags', expected_remote, str(candidate))
             revision, branch = identity(candidate)
             if branch != 'main' or not clean(candidate):
                 raise Refused('invalid_initial_copy')
+            check_remote(candidate, expected_remote)
             validate(candidate, revision, state, command)
+            check_remote(candidate, expected_remote)
             if repo.exists() or repo.is_symlink():
                 raise Refused('tools_already_exist')
             candidate.rename(repo)
@@ -189,8 +201,7 @@ def sync(repo, state, expected_remote=UPSTREAM, command=('./dpv', 'run', 'full',
         local, branch = identity(repo)
         if branch != 'main':
             raise Refused('main_required')
-        if git(repo, 'remote', 'get-url', 'origin') != expected_remote:
-            raise Refused('unexpected_remote')
+        check_remote(repo, expected_remote)
         git(repo, 'fetch', '--no-tags', 'origin', 'refs/heads/main:refs/remotes/origin/main')
         remote = git(repo, 'rev-parse', 'refs/remotes/origin/main')
         if not clean(repo):
@@ -212,6 +223,7 @@ def sync(repo, state, expected_remote=UPSTREAM, command=('./dpv', 'run', 'full',
             validate(repo, candidate, state, command)
         if identity(repo) != (local, branch) or not clean(repo):
             raise Refused('local_changed_during_validation')
+        check_remote(repo, expected_remote)
         if direction == 'downloaded':
             git(repo, 'merge', '--ff-only', candidate)
         elif direction == 'published':

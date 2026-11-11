@@ -182,7 +182,8 @@ class AdminClient(private val transport: Transport = UrlTransport()) {
         private const val MAX_PAGES = 10
         private const val MAX_REPLY_CHARS = 4 * 1024 * 1024
 
-        private fun enc(s: String) = URLEncoder.encode(s, Charsets.UTF_8)
+        // Перегрузка с Charset появилась в Android 33; приложение поддерживает API 30.
+        private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
 
         /** День строки — дата начала корзины (UTC). */
         private fun day(o: JsonObject): String = o["starting_at"].str()?.take(10).orEmpty()
