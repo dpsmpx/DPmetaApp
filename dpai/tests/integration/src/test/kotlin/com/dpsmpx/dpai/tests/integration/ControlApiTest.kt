@@ -21,6 +21,7 @@ import com.dpsmpx.dpai.execution.claude.MockScenario
 import com.dpsmpx.dpai.execution.process.Completed
 import com.dpsmpx.dpai.notifications.RequestAction
 import com.dpsmpx.dpai.notifications.RequestState
+import com.dpsmpx.dpai.notifications.UserRequest
 import com.dpsmpx.dpai.orchestrator.Orchestrator
 import com.dpsmpx.dpai.orchestrator.ProjectConfig
 import com.dpsmpx.dpai.orchestrator.TargetSlot
@@ -31,6 +32,7 @@ import com.dpsmpx.dpai.orchestrator.control.ControlAuth
 import com.dpsmpx.dpai.orchestrator.control.ControlRequest
 import com.dpsmpx.dpai.orchestrator.control.ControlResponse
 import com.dpsmpx.dpai.orchestrator.control.Pairing
+import com.dpsmpx.dpai.orchestrator.requests.RequestPurpose
 import com.dpsmpx.dpai.core.serialization.CanonicalJson
 import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonString
@@ -222,6 +224,13 @@ class ControlApiTest {
         assertEquals(400, call(api, "POST", "/v1/search", token, """{"q":"задача"}""").status, "нет поля query")
         assertEquals(503, call(api, "POST", "/v1/search", token, """{"query":"нет контура"}""").status)
         assertEquals(listOf("задача", "нет контура"), asked, "до поиска доходит только проверенный запрос")
+    }
+
+    /** Список решающих назначений (D-128) — в модуле уведомлений; он обязан совпадать с назначениями оркестратора по D-91. */
+    @Test
+    fun decisivePurposesMatchOrchestrator() {
+        val phoneOnly = listOf(RequestPurpose.TASK_MERGE, RequestPurpose.TASK_UNVERIFIED, RequestPurpose.TASK_REVIEW, RequestPurpose.RECOVERY).map { it.code }.toSet()
+        assertEquals(phoneOnly, UserRequest.DECISIVE_PURPOSES)
     }
 
     /**

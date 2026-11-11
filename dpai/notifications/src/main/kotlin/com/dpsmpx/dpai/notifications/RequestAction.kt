@@ -25,9 +25,12 @@ data class RequestAction(val request: RequestId, val option: String, val hash: C
             return Outcome.success(RequestAction(id, m.groupValues[2], hash))
         }
 
-        /** Кнопки запроса: по варианту на кнопку, с пометками «нужен текст» и «опасно». */
+        /**
+         * Кнопки запроса: по варианту на кнопку, с пометками «нужен текст» и
+         * «подтвердить» — у опасного варианта и у решающего «да» (D-128).
+         */
         fun buttons(r: UserRequest): List<NotificationAction> = r.options.map { o ->
-            NotificationAction(o.label, RequestAction(r.id, o.id, r.hash).toUri(), input = o.needsText, confirm = o.role == OptionRole.DESTRUCTIVE)
+            NotificationAction(o.label, RequestAction(r.id, o.id, r.hash).toUri(), input = o.needsText, confirm = r.confirms(o.id))
         }
     }
 }

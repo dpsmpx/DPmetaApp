@@ -159,7 +159,8 @@ object RequestPresenter {
         val pending = model.pending()
         val id = when (c) {
             is Command.AnswerRequest -> RequestAction.parse(c.uri).valueOrNull()?.request
-            is Command.Waive -> pending.values.firstOrNull { it.task == c.task && it.buttons.any { b -> b.confirm } }?.id
+            // Запрос задачи с опасным вариантом («принять без проверки», «без ревью»); «Слить» тоже с подтверждением (D-128), но это не он.
+            is Command.Waive -> pending.values.firstOrNull { it.task == c.task && it.buttons.any { b -> b.tone == com.dpsmpx.dpai.ui.Tone.ERROR } }?.id
             else -> null
         }
         val card = id?.let { pending[it] }

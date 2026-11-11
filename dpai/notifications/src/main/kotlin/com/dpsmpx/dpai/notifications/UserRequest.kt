@@ -140,6 +140,17 @@ data class UserRequest(
     /** Опасный ли вариант: такой подтверждается явно на любом канале. */
     fun destructive(option: String): Boolean = option(option)?.role == OptionRole.DESTRUCTIVE
 
+    /**
+     * Решающий ли вариант (D-91, D-128): «да» или опасный ответ на запрос,
+     * который решает за человека, — слияние, задача без проверки, ревью без
+     * итога, сверка после перезапуска. Из канала `dpai` он применяется только
+     * подтверждением на телефоне, в окне и уведомлении — как опасный.
+     */
+    fun decisive(option: String): Boolean = purpose in DECISIVE_PURPOSES && option(option)?.role in DECISIVE_ROLES
+
+    /** Ответ этим вариантом — только вторым нажатием и через вход приложения, если он нужен (D-44, D-104, D-128). */
+    fun confirms(option: String): Boolean = destructive(option) || decisive(option)
+
     fun expired(now: Timestamp): Boolean = expiresAt != null && now >= expiresAt
 
     /** Неизменная часть — то, что видел человек: вид, назначение, текст, варианты, привязка, срок. */
@@ -162,6 +173,16 @@ data class UserRequest(
         const val MAX_OPTIONS = 6
         const val MAX_TEXT = 2000
         val PURPOSE = Regex("[a-z][a-z0-9_.-]{0,63}")
+
+        /**
+         * Назначения решающих запросов (D-91) — коды `RequestPurpose`
+         * оркестратора: `task.merge`, `task.unverified`, `task.review`,
+         * `recovery.question`. Список — здесь: его читают и канал `dpai`, и
+         * кнопки уведомления и окна (D-128), а модуль ниже оркестратора.
+         */
+        val DECISIVE_PURPOSES: Set<String> = setOf("task.merge", "task.unverified", "task.review", "recovery.question")
+
+        private val DECISIVE_ROLES = setOf(OptionRole.ACCEPT, OptionRole.DESTRUCTIVE)
 
         internal fun optionJson(o: RequestOption): JsonObject = JsonObject(
             linkedMapOf<String, JsonValue>("id" to JsonString(o.id), "label" to JsonString(o.label), "role" to JsonString(o.role.name)).apply {

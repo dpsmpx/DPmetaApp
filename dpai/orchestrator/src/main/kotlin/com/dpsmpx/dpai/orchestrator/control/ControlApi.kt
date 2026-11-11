@@ -15,11 +15,9 @@ import com.dpsmpx.dpai.core.serialization.JsonObject
 import com.dpsmpx.dpai.core.serialization.JsonParser
 import com.dpsmpx.dpai.core.serialization.JsonString
 import com.dpsmpx.dpai.core.serialization.JsonValue
-import com.dpsmpx.dpai.notifications.OptionRole
 import com.dpsmpx.dpai.notifications.RequestAction
 import com.dpsmpx.dpai.orchestrator.Orchestrator
 import com.dpsmpx.dpai.orchestrator.commands.Command
-import com.dpsmpx.dpai.orchestrator.requests.RequestPurpose
 import com.dpsmpx.dpai.storage.vfs.Vfs
 import java.security.MessageDigest
 import kotlin.time.Duration
@@ -290,9 +288,9 @@ class ControlApi(
                 c.model != previous.model || c.effort != previous.effort ||
                 c.maxBudgetUsdCents != previous.maxBudgetUsdCents
         } == true
+        // Список решающих — у запроса (D-128): тот же, что у кнопок уведомления и окна.
         is Command.AnswerRequest -> RequestAction.parse(c.uri).valueOrNull()?.let { a ->
-            val r = o.requests.requests[a.request] ?: return@let false
-            RequestPurpose.of(r.purpose) in PHONE_ONLY && r.options.firstOrNull { it.id == a.option }?.role in DECISIVE_ROLES
+            o.requests.requests[a.request]?.decisive(a.option)
         } == true
         else -> false
     }
@@ -336,11 +334,6 @@ class ControlApi(
         }
 
         private val LOOPBACK = setOf("127.0.0.1", "localhost", "[::1]")
-
-        /** Запросы, «да» на которые из канала не применяется (D-91). */
-        private val PHONE_ONLY = setOf(RequestPurpose.TASK_MERGE, RequestPurpose.TASK_UNVERIFIED, RequestPurpose.TASK_REVIEW, RequestPurpose.RECOVERY)
-
-        private val DECISIVE_ROLES = setOf(OptionRole.ACCEPT, OptionRole.DESTRUCTIVE)
     }
 }
 
