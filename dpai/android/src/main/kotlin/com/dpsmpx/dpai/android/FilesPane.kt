@@ -117,7 +117,15 @@ private fun treeOf(context: android.content.Context, p: Place): FileTree = when 
  * правка текста, «Открыть в терминале».
  */
 @Composable
-fun FilesPane(onLinux: () -> Unit = {}) {
+fun FilesPane(onLinux: () -> Unit = {}, model: DemoModel? = null, onSession: (String) -> Unit = {}) {
+    var projectOpen by rememberSaveable { mutableStateOf(false) }
+    val workspaceState = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
+    if (projectOpen && model != null) {
+        workspaceState.SaveableStateProvider("project") {
+            ProjectWorkspacePane(model, onTargets = onLinux, onSession = onSession) { projectOpen = false }
+        }
+        return
+    }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var ready by remember { mutableStateOf(false) }
@@ -168,6 +176,9 @@ fun FilesPane(onLinux: () -> Unit = {}) {
     // Готова ли среда — файл на диске: не в главном потоке и не на каждую перекомпозицию (AI:A-16).
     val linux = rememberRead(Unit, initial = false) { LinuxSetup.available(context) && LinuxSetup.environment(context).installed() != null }
     LazyColumn(contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (model != null) item {
+            androidx.compose.material3.OutlinedButton(onClick = { projectOpen = true }, Modifier.fillMaxWidth()) { Text("Рабочий проект") }
+        }
         item {
             SwitchRow(wanted && granted, onChange = { on ->
                 AllFiles.set(context, on)
@@ -447,6 +458,17 @@ private fun decodeImage(bytes: ByteArray): ImageBitmap? {
 @Composable
 private fun FileView(p: Place, path: String, onClose: () -> Unit) {
     val context = LocalContext.current
+    val tree = remember(p) { treeOf(context, p) }
+    TreeFileView(tree, p.key(), path, onClose = onClose)
+}
+
+@Composable
+internal fun TreeFileView(tree: FileTree, treeKey: String, path: String, readOnly: Boolean = false, onClose: () -> Unit) {
+    androidx.compose.runtime.key(treeKey, path) { TreeFileContent(tree, treeKey, path, readOnly, onClose) }
+}
+
+@Composable
+private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readOnly: Boolean, onClose: () -> Unit) {
     val scope = rememberCoroutineScope()
     val image = TextFile.isImage(path)
     var text by remember { mutableStateOf<String?>(null) }
@@ -454,7 +476,7 @@ private fun FileView(p: Place, path: String, onClose: () -> Unit) {
     var bitmap by remember { mutableStateOf<ImageBitmap?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     // Правка — черновиком вне окна (Drafts): смена вкладки её не теряет; несохранённая — с вопросом (AI:A-2).
-    val draftKey = "file:${p.key()}\u0001$path"
+    val draftKey = "file:$treeKey\u0001$path"
     var editing by remember(draftKey) { mutableStateOf(Drafts.file(draftKey)) }
     var revision by remember { mutableStateOf(0) }
     var saving by remember { mutableStateOf(false) }
@@ -471,7 +493,7 @@ private fun FileView(p: Place, path: String, onClose: () -> Unit) {
         saving = true
         val content = e.editor.text
         return try {
-            val r = withContext(Dispatchers.IO) { com.dpsmpx.dpai.files.TextFileEdit.save(treeOf(context, p), path, e.original, content) }
+            val r = withContext(Dispatchers.IO) { com.dpsmpx.dpai.files.TextFileEdit.save(tree, path, e.original, content) }
             if (r is Outcome.Success) {
                 text = content
                 original = r.value
@@ -495,7 +517,7 @@ private fun FileView(p: Place, path: String, onClose: () -> Unit) {
                 TextButton(onClick = {
                     leaving = false
                     scope.launch { editing?.let { if (saveEdit(it)) onClose() } }
-                }) { Text("Сохранить") }
+                }, enabled = !readOnly) { Text("Сохранить") }
             },
             dismissButton = {
                 Row {
@@ -507,7 +529,7 @@ private fun FileView(p: Place, path: String, onClose: () -> Unit) {
     }
     LaunchedEffect(path) {
         withContext(Dispatchers.IO) {
-            when (val r = treeOf(context, p).read(path, if (image) IMAGE_MAX else TextFile.MAX_EDIT_BYTES)) {
+            when (val r = tree.read(path, if (image) IMAGE_MAX else TextFile.MAX_EDIT_BYTES)) {
                 is Outcome.Failure -> error = r.errors.first().message
                 is Outcome.Success -> if (image) {
                     bitmap = decodeImage(r.value)
@@ -527,21 +549,22 @@ private fun FileView(p: Place, path: String, onClose: () -> Unit) {
             TextButton(onClick = leave, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("←") }
             Text(FileNames.name(path), Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val t = text
-            if (t != null && original != null && editing == null) TextButton(onClick = {
+            if (t != null && original != null && editing == null) TextButton(enabled = !readOnly, onClick = {
                 editing = Drafts.startFile(draftKey, original!!, t)
                 if (editing == null) status = "Открыто восемь черновиков: сохраните или отмените один из них"
             }) { Text("Править") }
             editing?.let { e ->
-                TextButton(enabled = !saving && !loading, onClick = { scope.launch { saveEdit(e) } }) { Text(if (saving) "Сохраняю…" else "Сохранить") }
+                TextButton(enabled = !readOnly && !saving && !loading, onClick = { scope.launch { saveEdit(e) } }) { Text(if (saving) "Сохраняю…" else "Сохранить") }
                 TextButton(enabled = !saving, onClick = drop) { Text("Отмена") }
             }
         }
+        if (readOnly) Text("Только чтение: дерево занято или контроллер не готов", Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.bodySmall)
         status?.let { Text(it, Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.bodySmall) }
         error?.let { Text(it, Modifier.padding(12.dp), color = MaterialTheme.colorScheme.error) }
         val e = editing
         when {
             e != null -> Clipboard.Sensitive {
-                CodeEditor(e.editor, path, revision, onChange = { revision++ }, enabled = !saving, modifier = Modifier.weight(1f).fillMaxWidth())
+                CodeEditor(e.editor, path, revision, onChange = { revision++ }, enabled = !readOnly && !saving, modifier = Modifier.weight(1f).fillMaxWidth())
             }
             bitmap != null -> Image(bitmap!!, FileNames.name(path), Modifier.fillMaxSize().padding(8.dp))
             text != null && text.orEmpty().length <= WHOLE_TEXT_MAX -> SelectionContainer(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)) {

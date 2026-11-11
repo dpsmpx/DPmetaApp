@@ -437,6 +437,46 @@ class DemoModel(
         runCatching { built?.orchestrator?.taskDiff(task) }.getOrNull()
             ?: Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "контроллер не запущен", "task $task")
 
+    @Volatile
+    private var workspaceCached: com.dpsmpx.dpai.ui.ProjectWorkspaceView? = null
+
+    /** Снимок без IO target; занятый такт не задерживает интерфейс (D-132). */
+    fun workspace(): com.dpsmpx.dpai.ui.ProjectWorkspaceView? {
+        val p = controller.project() ?: return null
+        if (!lock.tryLock()) return workspaceCached?.takeIf { it.project == p }
+            ?: com.dpsmpx.dpai.ui.ProjectWorkspaceView.of(p, controller.targets(), false)
+        return try { workspaceLocked(p).also { workspaceCached = it } } finally { lock.unlock() }
+    }
+
+    private fun workspaceLocked(p: ProjectEntry): com.dpsmpx.dpai.ui.ProjectWorkspaceView {
+        val targets = controller.targets()
+        val o = (built as? LiveSystem)?.orchestrator?.takeIf {
+            liveFor == (targets to p) && it.projectConfig.repository == p.repository() && it.worktrees.repositories[p.repository] == p.repository()
+        }
+        return com.dpsmpx.dpai.ui.ProjectWorkspaceView.of(p, targets, o != null,
+            o?.tasks?.tasks?.values.orEmpty(), o?.sessions ?: com.dpsmpx.dpai.sessions.SessionsState.EMPTY,
+            o?.tasks?.tasks?.keys?.mapNotNull { t -> o.taskWorktree(t)?.let { t to it } }?.toMap().orEmpty())
+    }
+
+    /** Сверка идентичности и локальное действие под замком, общим с запуском хода. Не для UI-потока. */
+    fun <T> workspaceAccess(p: ProjectEntry, location: com.dpsmpx.dpai.ui.WorkspaceLocation, write: Boolean, action: () -> Outcome<T>): Outcome<T> {
+        if (!write) {
+            val current = workspace() ?: return Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.STATE_CONFLICT, "проект отключён")
+            return when (val allowed = current.allow(p, location, false)) {
+                is Outcome.Failure -> allowed
+                is Outcome.Success -> action()
+            }
+        }
+        if (!lock.tryLock()) return Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.WORKTREE_OWNED, "контроллер занят; повторите действие")
+        return try {
+            val current = controller.project() ?: return Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.STATE_CONFLICT, "проект отключён")
+            when (val allowed = workspaceLocked(current).allow(p, location, write)) {
+                is Outcome.Failure -> allowed
+                is Outcome.Success -> action()
+            }
+        } finally { lock.unlock() }
+    }
+
     /** PR проекта через `gh` на его target (D-108): `null` — контур не запущен или у него нет проекта с репозиторием. */
     fun github(): com.dpsmpx.dpai.orchestrator.github.GitHubDesk? = runCatching { (built as? LiveSystem)?.github }.getOrNull()
 

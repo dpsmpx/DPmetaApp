@@ -463,7 +463,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                                 screen == AiTab.TARGETS.ordinal -> TargetsPane(controller, model)
                                 screen == AiTab.REQUESTS.ordinal -> RequestsPane(model, s)
                                 screen == AiTab.MODELS.ordinal -> ModelsPane()
-                                screen == AiTab.FILES.ordinal -> FilesPane(onLinux = { openTab(AiTab.TARGETS) })
+                                screen == AiTab.FILES.ordinal -> FilesPane(onLinux = { openTab(AiTab.TARGETS) }, model = model, onSession = { selectedId = it })
                                 s == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                                 screen == SESSION_SCREEN -> {
                                     val t = s.session?.task

@@ -116,6 +116,11 @@ class LiveProjectTest {
         assertEquals(TaskState.DONE, record.state, s.problems.toString() + s.orchestrator.problems)
         assertEquals("PASSED", record.verification!!.verdict)
         val tree = s.orchestrator.worktrees.worktrees.values.single()
+        assertEquals(tree, s.orchestrator.taskWorktree(task), "экран получает настоящее дерево задачи из контура")
+        val workspace = ProjectWorkspaceView.of(project, listOf(target), true, s.orchestrator.tasks.tasks.values,
+            s.orchestrator.sessions, mapOf(task to s.orchestrator.taskWorktree(task)!!))
+        assertEquals(tree.path, workspace.location(task)!!.path)
+        assertTrue(workspace.allow(project, workspace.location(task)!!, true).isSuccess, "после завершения ход отпустил дерево")
         assertTrue(tree.path.startsWith(worktrees), "дерево задачи — в каталоге деревьев проекта")
         // Слияние в main — только по одобрению.
         assertTrue(!File(root, "feature.txt").exists())

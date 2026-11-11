@@ -320,7 +320,7 @@ private fun ReplyEditor(busy: Boolean, onSend: (String) -> Unit) {
  * строки — прокруткой вбок, без переноса.
  */
 @Composable
-private fun ChangesSection(model: DemoModel, task: TaskId) {
+internal fun ChangesSection(model: DemoModel, task: TaskId) {
     val scope = rememberCoroutineScope()
     val context = androidx.compose.ui.platform.LocalContext.current
     var view by remember(task) { mutableStateOf<com.dpsmpx.dpai.ui.ChangesView?>(null) }

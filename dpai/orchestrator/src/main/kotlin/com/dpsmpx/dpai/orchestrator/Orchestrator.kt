@@ -2768,6 +2768,8 @@ class Orchestrator(
      * ищется в неизменяемом снимке [worktrees], поэтому вызов безопасен вне
      * потока такта (экран, канал управления).
      */
+    fun taskWorktree(task: TaskId): com.dpsmpx.dpai.git.Worktree? = treeOf[task]?.let { worktrees.worktrees[it] }?.takeIf { !it.removed }
+
     fun taskDiff(task: TaskId, maxChars: Int = com.dpsmpx.dpai.orchestrator.git.TaskDiff.MAX_CHARS): Outcome<com.dpsmpx.dpai.orchestrator.git.TaskDiff> {
         val g = git ?: return Outcome.failure(DiagCode.UNSUPPORTED, "у проекта нет репозитория: изменений задачи нет", "task $task")
         val repo = config.repository ?: return Outcome.failure(DiagCode.UNSUPPORTED, "у проекта нет репозитория: изменений задачи нет", "task $task")
