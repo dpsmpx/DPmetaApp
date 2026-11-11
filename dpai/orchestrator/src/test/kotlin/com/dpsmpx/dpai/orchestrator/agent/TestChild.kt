@@ -106,7 +106,9 @@ object TestChild {
             "wide" -> {
                 // [count] строк по [width] знаков: страницы ответа агента и предел текста события.
                 val (count, width) = args.drop(1).map { it.toInt() }
-                repeat(count) { i -> println("$i:" + "x".repeat(width)) }
+                // Текст с пробелами: сплошные 40+ букв теперь скрываются как возможный ключ (D-130).
+                val text = "word ".repeat((width + 4) / 5).take(width)
+                repeat(count) { i -> println("$i:" + text) }
                 exitProcess(0)
             }
             "stdin-length" -> {

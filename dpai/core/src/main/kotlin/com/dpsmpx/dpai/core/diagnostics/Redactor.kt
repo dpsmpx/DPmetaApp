@@ -139,10 +139,10 @@ class Redactor private constructor(private val strict: Boolean) {
         if ('/' in v && '+' !in v && '=' !in v) {
             val segments = v.split('/')
             // Непрозрачные смешанные сегменты base64 не становятся путём только из-за `/` (D-130).
-            val opaque = segments.any { part -> part.length >= 8 && part.any(Char::isUpperCase) && part.any(Char::isLowerCase) }
+            val opaque = segments.any { part ->
+                !TYPED_ID.matches(part) && !UUID.matches(part) && part.length >= 8 && part.any(Char::isUpperCase) && part.any(Char::isLowerCase)
+            }
             if (!opaque && segments.all { it.length < 24 || TYPED_ID.matches(it) || UUID.matches(it) }) return false
-            // Типизированный id — явное исключение даже при смешанном регистре ULID.
-            if (segments.all { it.length < 8 || TYPED_ID.matches(it) || UUID.matches(it) }) return false
         }
         return true
     }

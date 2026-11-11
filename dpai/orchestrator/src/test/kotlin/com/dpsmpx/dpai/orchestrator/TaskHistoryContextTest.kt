@@ -65,4 +65,12 @@ class TaskHistoryContextTest {
         assertEquals(null, TaskHistoryContext.transcript(project, listOf(ChatEntry(Timestamp(0), ChatRole.EVENT, "событие"))))
         assertEquals(null, TaskHistoryContext.background(project, emptyList()))
     }
+
+    @Test
+    fun truncationKeepsUnicodePairsValid() {
+        val content = TaskHistoryContext.transcript(project, listOf(
+            ChatEntry(Timestamp(0), ChatRole.ASSISTANT, "a" + "😀".repeat(1000)),
+        ))!!.content
+        assertTrue(JsonParser().parse(content).isSuccess, "обрезка не оставляет одиночный суррогат")
+    }
 }

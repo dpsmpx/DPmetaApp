@@ -16,7 +16,7 @@ internal object TaskHistoryContext {
         val records = entries.filter { it.role == ChatRole.USER || it.role == ChatRole.ASSISTANT }.takeLast(12).map { e ->
             JsonObject.of(
                 "role" to JsonString(e.role.name),
-                "text" to JsonString(if (e.text.length > 1500) e.text.take(1500) + " …" else e.text),
+                "text" to JsonString(clip(e.text, 1500)),
             )
         }.toMutableList()
         if (records.isEmpty()) return null
@@ -28,7 +28,7 @@ internal object TaskHistoryContext {
             } else {
                 val record = records.single()
                 val value = (record.fields.getValue("text") as JsonString).value
-                records[0] = JsonObject(record.fields + ("text" to JsonString(value.take(value.length / 2) + " …")))
+                records[0] = JsonObject(record.fields + ("text" to JsonString(clip(value, value.length / 2))))
             }
             text = CanonicalJson.write(JsonArray(records))
         }
@@ -43,4 +43,10 @@ internal object TaskHistoryContext {
 
     private fun source(project: ProjectId, key: String, text: String) =
         ContextSource(key, SourceLevel.PROJECT, project, Sensitivity.INTERNAL, Origin.MODEL, text)
+
+    private fun clip(text: String, limit: Int): String {
+        if (text.length <= limit) return text
+        val end = if (limit > 0 && Character.isHighSurrogate(text[limit - 1])) limit - 1 else limit
+        return text.take(end) + " …"
+    }
 }
