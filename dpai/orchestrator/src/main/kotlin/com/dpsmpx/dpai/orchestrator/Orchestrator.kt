@@ -210,6 +210,7 @@ class Orchestrator(
     private val onEvents: (List<EventEnvelope>) -> Unit = {},
     /** Новая проблема контура — наружу (D-43: строка журнала приложения с причинами); сбой получателя контур не трогает. */
     private val onProblem: (Diagnostic) -> Unit = {},
+    private val externalPause: () -> Boolean = { false },
 ) {
     private val recorder = EventRecorder(ids, clock)
     private var lastSnapshotAt = 0L
@@ -647,7 +648,7 @@ class Orchestrator(
         // Журнал закрыт после отказа записи (кончилось место): ни ходов, ни слияний, ни отмен — внешнее
         // действие без записи итога разошлось бы с журналом (ТЗ, §80; аудит надёжности, A-4). Оживляет
         // контур оболочка — открыв журнал заново, когда место есть.
-        if (journal.isBroken) return
+        if (journal.isBroken || externalPause()) return
         runCommands()
         deliverIdleQueues()
         commitTasks(tasksLogic.promote(tasks, clock.now()))
@@ -1886,7 +1887,9 @@ class Orchestrator(
      * Исполнить пришедшие команды — только поток такта и только в
      * безопасной точке: вне пачки, когда память совпадает с журналом.
      */
-    fun runCommands(): Int = if (pending != null) 0 else inbox.drain(::execute, ::settleAccepted)
+    fun manualProfileFree(): Boolean = pending == null && inbox.size == 0 && sessions.sessions.values.none { !it.terminal } && worktrees.worktrees.values.none { it.owner != null && !it.removed }
+
+    fun runCommands(): Int = if (pending != null || externalPause()) 0 else inbox.drain(::execute, ::settleAccepted)
 
     /**
      * Принять команду, когда такт занят вызовом target (D-94): сначала

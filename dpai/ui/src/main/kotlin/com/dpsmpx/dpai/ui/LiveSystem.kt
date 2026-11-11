@@ -115,6 +115,7 @@ class LiveSystem(
      * сети. `null` — Linux не установлен.
      */
     private val inAppGuest: com.dpsmpx.dpai.execution.process.ProcessHost? = null,
+    private val externalPause: () -> Boolean = { false },
 ) : ControlView, AutoCloseable {
     override val mode: String = "контроллер"
     private val ids = IdGenerator(clock, random)
@@ -268,7 +269,7 @@ class LiveSystem(
             clock, ids, random, journal, router, config,
             working.map { TargetSlot(it.id, emptySet(), maxSessions = 1, label = it.label) }, git, verifier,
             snapshots = snapshots, snapshotEvery = SEGMENT.toLong(), documents = DocumentStore(vfs, "docs"),
-            onEvents = onEvents, onProblem = onProblem,
+            onEvents = onEvents, onProblem = onProblem, externalPause = externalPause,
         )
         orchestrator = o
         // Слот target — после первой пробы входа: подписка выбирается по аккаунту (см. [placeSlot]).
@@ -447,6 +448,7 @@ class LiveSystem(
     }
 
     override fun step() {
+        if (externalPause()) return
         if (!probesStarted) {
             probesStarted = true
             for (e in usable) probeSlot(e.id)

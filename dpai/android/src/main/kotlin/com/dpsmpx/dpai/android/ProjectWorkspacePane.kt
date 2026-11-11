@@ -25,31 +25,23 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
-import com.dpsmpx.dpai.core.clock.Clock
-import com.dpsmpx.dpai.core.clock.RandomSource
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
-import com.dpsmpx.dpai.core.diagnostics.Redactor
-import com.dpsmpx.dpai.core.ids.IdGenerator
-import com.dpsmpx.dpai.core.ids.IdKinds
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.core.text.Words
 import com.dpsmpx.dpai.files.FileEntry
 import com.dpsmpx.dpai.files.FileNames
 import com.dpsmpx.dpai.files.FileTree
 import com.dpsmpx.dpai.files.SubTree
-import com.dpsmpx.dpai.orchestrator.commands.Command
 import com.dpsmpx.dpai.ui.ProjectWorkspaceView
 import com.dpsmpx.dpai.ui.WorkspaceLocation
 import com.dpsmpx.dpai.ui.WorkspacePaths
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private enum class WorkspacePage(val title: String) { FILES("Файлы"), AI("ИИ"), CHANGES("Изменения"), CHECKS("Проверки"), BUILD("Сборка") }
@@ -81,7 +73,6 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
     if (draftsOpen) FileDraftsDialog { draftsOpen = false }
     val selected = current.tasks.firstOrNull { it.id.value == taskKey }
     val location = if (taskKey == null) current.main else selected?.location
-    val context = LocalContext.current
     val keyboard = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     val pageStates = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     if (taskSheet && selected != null) TaskSheet(model, selected.id, onSession = onSession) { taskSheet = false }
@@ -99,6 +90,7 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
                 Text("${if (it.task == null) "Ветка интеграции" else "Ветка дерева"}: ${it.branch}", style = MaterialTheme.typography.bodySmall)
                 Text("Дерево: ${it.path}", style = MaterialTheme.typography.bodySmall)
             }
+            if (current.paused) Text("Проект на паузе: ручной профиль", color = MaterialTheme.colorScheme.error)
             if (!current.ready) Text("Контроллер не готов для этой конфигурации", color = MaterialTheme.colorScheme.error)
             if (selected?.owner != null) Text("Редактор: только чтение — дерево занято ИИ", color = MaterialTheme.colorScheme.error)
             TextButton(onClick = { choose = true }) { Text(if (taskKey == null) "Основное дерево ▾" else "${selected?.title ?: "Задача больше не доступна"} ▾") }
@@ -115,7 +107,7 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
         pageStates.SaveableStateProvider("${location?.key ?: "${project.project.value}:$taskKey"}:$page") {
             when (page) {
                 WorkspacePage.FILES.name -> if (location == null) Text("У задачи ещё нет доступного рабочего дерева", Modifier.padding(12.dp)) else {
-                    WorkspaceFiles(model, current, location, readOnly = !current.ready || selected?.owner != null, modifier = Modifier.weight(1f))
+                    WorkspaceFiles(model, current, location, readOnly = current.paused || !current.ready || selected?.owner != null, modifier = Modifier.weight(1f))
                 }
                 WorkspacePage.AI.name -> Column(Modifier.padding(12.dp).verticalScroll(rememberScrollState())) {
                     if (selected == null) Text("Выберите задачу контура, чтобы открыть её чат и действия") else {
@@ -128,47 +120,12 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
                     location?.let { WorkspaceGitPanel(model, project, it) }
                     if (selected == null) Text("Выберите задачу: её изменения сравниваются с веткой интеграции") else ChangesSection(model, selected.id)
                 }
-                WorkspacePage.CHECKS.name -> WorkspaceChecks(model, current, location, selected)
-                WorkspacePage.BUILD.name -> Column(Modifier.padding(12.dp)) {
-                    Text("Профили сборки и артефакты — следующий шаг. Сейчас доступен терминал target.")
-                    TextButton(enabled = current.ready && current.target != null && location != null && selected?.owner == null, onClick = {
-                        if (current.target?.inApp == true) TerminalActivity.startLinux(context, location!!.path)
-                        else TerminalActivity.start(context, current.target!!.id.value)
-                    }) { Text(if (current.target?.inApp == true) "Терминал в дереве" else "Терминал target") }
+                WorkspacePage.CHECKS.name -> {
+                    WorkspaceProfilePanel(model, current, location, com.dpsmpx.dpai.ui.ManualProfileKind.CHECK)
                 }
+                WorkspacePage.BUILD.name -> WorkspaceProfilePanel(model, current, location, com.dpsmpx.dpai.ui.ManualProfileKind.BUILD)
             }
         }
-    }
-}
-
-@Composable
-private fun WorkspaceChecks(model: DemoModel, view: ProjectWorkspaceView, location: WorkspaceLocation?, task: com.dpsmpx.dpai.ui.WorkspaceTask?) {
-    val scope = rememberCoroutineScope()
-    var busy by remember { mutableStateOf(false) }
-    var note by remember { mutableStateOf<String?>(null) }
-    val keys = remember { IdGenerator(Clock.SYSTEM, RandomSource.secure()) }
-    Column(Modifier.padding(12.dp).verticalScroll(rememberScrollState())) {
-        Text("Профиль проверки", style = MaterialTheme.typography.titleSmall)
-        if (view.project.checks.isEmpty()) Text("Профиль не задан: успешная проверка не предполагается")
-        view.project.checks.forEach { step -> Text("${step.name}: ${Redactor.STANDARD.redact(step.command.joinToString(" "))}", style = MaterialTheme.typography.bodySmall) }
-        task?.verification?.let { v ->
-            val verdict = if (v.waivedBy != null) "принято без проверки" else when (v.verdict) { "PASSED" -> "пройдено"; "FAILED" -> "не пройдено"; else -> "нет полного итога" }
-            Text("Последний записанный итог: $verdict")
-        }
-        if (task != null && !task.canVerify) Text("Повторная проверка в контуре доступна после результата «Без проверки». Ручной запуск профиля — следующий шаг.", style = MaterialTheme.typography.bodySmall)
-        TextButton(enabled = !busy && task?.canVerify == true && location != null && view.ready, onClick = {
-            busy = true
-            val command = Command.Verify(task!!.id, keys.next(IdKinds.OPERATION).value)
-            scope.launch {
-                val r = withContext(Dispatchers.IO) { model.workspaceAccess(view.project, location!!, true) { model.command(command) } }
-                note = when (r) {
-                    is Outcome.Success -> "Проверка принята"
-                    is Outcome.Failure -> if (r.errors.first().code == DiagCode.COMMAND_QUEUED) "Проверка в очереди" else r.errors.first().message
-                }
-                busy = false
-            }
-        }) { Text("Проверить снова") }
-        note?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
     }
 }
 
@@ -203,7 +160,7 @@ private fun WorkspaceFiles(model: DemoModel, view: ProjectWorkspaceView, locatio
     androidx.activity.compose.BackHandler(enabled = file == null && dir.isNotEmpty()) { dir = FileNames.parent(dir) }
     Column(modifier.fillMaxWidth()) {
         val path = file
-        if (path != null) TreeFileView(tree, "workspace:${location.key}", path, readOnly) { file = null } else {
+        if (path != null) TreeFileView(tree, "workspace:${location.key}", path, readOnly, guestPath = "${location.path.trimEnd('/')}/$path") { file = null } else {
             Row {
                 TextButton(enabled = dir.isNotEmpty(), onClick = { dir = FileNames.parent(dir) }) { Text("Вверх") }
                 Text(if (dir.isEmpty()) "/" else dir, Modifier.weight(1f).padding(12.dp))

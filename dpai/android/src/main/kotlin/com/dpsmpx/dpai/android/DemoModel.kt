@@ -455,10 +455,77 @@ class DemoModel(
         }
         return com.dpsmpx.dpai.ui.ProjectWorkspaceView.of(p, targets, o != null,
             o?.tasks?.tasks?.values.orEmpty(), o?.sessions ?: com.dpsmpx.dpai.sessions.SessionsState.EMPTY,
-            o?.tasks?.tasks?.keys?.mapNotNull { t -> o.taskWorktree(t)?.let { t to it } }?.toMap().orEmpty())
+            o?.tasks?.tasks?.keys?.mapNotNull { t -> o.taskWorktree(t)?.let { t to it } }?.toMap().orEmpty()).copy(paused = controller.manualProfiles.blocked)
     }
 
     private val workspaceWriteGate = com.dpsmpx.dpai.ui.WorkspaceWriteGate(lock) { controller.project()?.let(::workspaceLocked) }
+
+    fun manualProfileView() = controller.manualProfiles.snapshot()
+    fun manualProfile(p: ProjectEntry, kind: com.dpsmpx.dpai.ui.ManualProfileKind) = controller.manualProfiles.profile(p, kind)
+    fun saveManualProfile(p: ProjectEntry, profile: com.dpsmpx.dpai.ui.ManualProfile) = controller.manualProfiles.save(p, profile)
+    @Volatile private var manualStop = false
+
+    fun stopManualProfile() { manualStop = true; resumeManualProfile() }
+
+    private fun manualClient(target: TargetEntry): com.dpsmpx.dpai.execution.agent.AgentClient? {
+        val host = context?.takeIf { target.inApp }?.let { com.dpsmpx.dpai.android.linux.LinuxSetup.agentHost(it, controller.version) }
+        return controller.profileAgent(target, host)
+    }
+
+    /** Единственный worker живёт вне экрана. После рестарта start не повторяется (D-134). */
+    fun resumeManualProfile() {
+        val app = context ?: return
+        val active = controller.manualProfiles.snapshot().active ?: return
+        if (!controller.manualProfiles.blocked) return
+        LongJobs.get(app).start(LongJobs.WORKSPACE_PROFILE, "Ручной профиль", LongJobs.GUEST) {
+            val client = manualClient(active.target)
+                ?: return@start LongJobs.Done("target недоступен; пауза сохраняется", failed = true)
+            watchManual(client)
+        }
+    }
+
+    fun startManualProfile(p: ProjectEntry, location: com.dpsmpx.dpai.ui.WorkspaceLocation, profile: com.dpsmpx.dpai.ui.ManualProfile): Boolean {
+        val app = context ?: return false
+        return LongJobs.get(app).start(LongJobs.WORKSPACE_PROFILE, "Ручной профиль", LongJobs.GUEST) {
+            val target = controller.targets().firstOrNull { it.id == location.target }
+                ?: return@start LongJobs.Done("target удалён", failed = true)
+            val client = manualClient(target) ?: return@start LongJobs.Done("агент target недоступен", failed = true)
+            val capability = client.profiles()
+            if (capability is Outcome.Failure) return@start LongJobs.Done("обновите агент target для ручных профилей: ${capability.errors.first().message}", failed = true)
+            val git = workspaceGit(p, location)
+            if (git is Outcome.Failure) return@start LongJobs.Done(git.errors.first().message, failed = true)
+            val status = (git as Outcome.Success).value
+            if (status.branch != location.branch || status.head == null || status.conflicted.isNotEmpty()) {
+                return@start LongJobs.Done("проверьте ветку, HEAD и конфликты дерева перед запуском", failed = true)
+            }
+            val prepared = lock.withLock {
+                val fresh = controller.project()
+                val allowed = fresh?.let { workspaceLocked(it).allow(p, location, true) }
+                    ?: return@withLock Outcome.failure(DiagCode.STATE_CONFLICT, "проект отключён")
+                if (allowed is Outcome.Failure) return@withLock allowed
+                if (controller.targets().firstOrNull { it.id == target.id } != target || (built as? LiveSystem)?.orchestrator?.manualProfileFree() != true) {
+                    return@withLock Outcome.failure(DiagCode.WORKTREE_OWNED, "контур занят; дождитесь завершения сессий и команд")
+                }
+                if (Drafts.dirtyIn(location, target.inApp)) return@withLock Outcome.failure(DiagCode.STATE_CONFLICT, "сначала сохраните или отмените правки редактора в этом дереве")
+                controller.manualProfiles.prepare(p, target, location, profile)
+            }
+            if (prepared is Outcome.Failure) return@start LongJobs.Done(prepared.errors.first().message, failed = true)
+            manualStop = false
+            controller.manualProfiles.launch((prepared as Outcome.Success).value, client)
+            watchManual(client)
+        }
+    }
+
+    private suspend fun watchManual(client: com.dpsmpx.dpai.execution.agent.AgentClient): LongJobs.Done {
+        while (controller.manualProfiles.blocked) {
+            val keep = if (manualStop) controller.manualProfiles.stop(client) else controller.manualProfiles.poll(client)
+            if (!keep) break
+            kotlinx.coroutines.delay(1500)
+        }
+        manualStop = false
+        val final = controller.manualProfiles.snapshot()
+        return LongJobs.Done(final.note, final.output.lines().takeLast(100))
+    }
 
     /** Только захват ссылки — под замком; сам Git работает вне него (D-133). */
     fun workspaceGit(p: ProjectEntry, location: com.dpsmpx.dpai.ui.WorkspaceLocation): Outcome<com.dpsmpx.dpai.git.GitStatus> {

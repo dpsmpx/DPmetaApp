@@ -97,6 +97,16 @@ class Controller(private val root: File, val version: String?) {
      * копия настроек (D-51) — после переустановки политика выключена.
      */
     val ecosystemAuto = com.dpsmpx.dpai.orchestrator.ecosystem.AutoEcosystem(docs, Clock.SYSTEM)
+    val manualProfiles = com.dpsmpx.dpai.ui.ManualProfiles(
+        DocumentStore(NioVfs(File(root.parentFile, "manual-profiles").toPath()), "docs"), IdGenerator(Clock.SYSTEM, RandomSource.secure()))
+
+    /** Клиент закреплённого target: смена настроек не перенаправит остановку старой команды. */
+    fun profileAgent(target: TargetEntry, inApp: com.dpsmpx.dpai.execution.process.ProcessHost?): com.dpsmpx.dpai.execution.agent.AgentClient? {
+        val host = if (target.inApp) inApp ?: return null else JschProcessHost(checkNotNull(target.toTarget(knownHostsFile).ssh), target.platform, identities = listOf(KeystoreKey.identity()))
+        val t = target.toTarget(knownHostsFile)
+        return com.dpsmpx.dpai.execution.agent.AgentClient(host, t.agentCommand, t.agentHome, target.label)
+    }
+
     val knownHostsFile: String = File(root, KNOWN_HOSTS).path
     private val ids = IdGenerator(Clock.SYSTEM, RandomSource.secure())
 
@@ -244,6 +254,7 @@ class Controller(private val root: File, val version: String?) {
             quarantineConfirmed = confirmed,
             inAppHost = inAppHost,
             inAppGuest = inAppGuest,
+            externalPause = { manualProfiles.blocked },
         ).also { if (confirmed) runCatching { dir.delete(QUARANTINE_CONFIRMED) } }
     }
 

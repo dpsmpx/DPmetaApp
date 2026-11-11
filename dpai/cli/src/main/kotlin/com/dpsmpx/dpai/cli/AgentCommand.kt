@@ -53,7 +53,7 @@ class AgentCommand(
             return if (reply.ok) Cli.OK else FAILED
         }
         if (command !in AgentCommands.SINGLE_REPLY) return usage("неизвестная команда агента: $command")
-        if (command != "doctor" && opts.single("run")?.let { IdKinds.SESSION.parse(it).valueOrNull() } == null) return usage("--run <SessionId> обязателен")
+        if (command !in setOf("doctor", "profiles") && opts.single("run")?.let { IdKinds.SESSION.parse(it).valueOrNull() } == null) return usage("--run <SessionId> обязателен")
         val reply = AgentCommands.reply(runtime, command, opts, stdin) ?: return usage("неверные параметры команды $command")
         out(CanonicalJson.write(reply.toJson()))
         return if (reply.ok) Cli.OK else FAILED

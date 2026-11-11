@@ -78,7 +78,9 @@ class LongJobs(private val scope: CoroutineScope, private val onDone: (String, D
         const val SHARED_VERIFY = "shared-verify"
 
         /** Всё, что запускает процессы гостя: идут по одному. */
-        val GUEST = setOf(LINUX_INSTALL, LINUX_APK, LLAMA, SHARED_VERIFY)
+        const val WORKSPACE_PROFILE = "workspace-profile"
+
+        val GUEST = setOf(LINUX_INSTALL, LINUX_APK, LLAMA, SHARED_VERIFY, WORKSPACE_PROFILE)
 
         /** Сколько последних строк вывода неудачи идёт в журнал. */
         private const val MAX_LOGGED = 20

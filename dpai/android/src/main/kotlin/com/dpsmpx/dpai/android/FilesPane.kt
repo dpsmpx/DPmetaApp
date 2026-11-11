@@ -461,17 +461,29 @@ private fun decodeImage(bytes: ByteArray): ImageBitmap? {
 @Composable
 private fun FileView(p: Place, path: String, onClose: () -> Unit) {
     val context = LocalContext.current
-    val tree = remember(p) { treeOf(context, p) }
-    TreeFileView(tree, p.key(), path, onClose = onClose)
+    val profiles = remember { Controller.get(context.filesDir).manualProfiles }
+    val tree = remember(p) {
+        val inner = treeOf(context, p)
+        object : FileTree by inner {
+            override fun write(path: String, bytes: ByteArray) = profiles.edit { inner.write(path, bytes) }
+        }
+    }
+    val guestRoot = when (p.kind) {
+        Kind.HOME -> "/root"
+        Kind.COPY -> p.link?.let { GuestPaths.guestCopy(it.dir) }
+        Kind.SHARED -> GuestPaths.guestShared("")
+        Kind.FOLDER -> null
+    }
+    TreeFileView(tree, p.key(), path, guestPath = guestRoot?.let { FileNames.join(it, path) }, onClose = onClose)
 }
 
 @Composable
-internal fun TreeFileView(tree: FileTree, treeKey: String, path: String, readOnly: Boolean = false, onClose: () -> Unit) {
-    androidx.compose.runtime.key(treeKey, path) { TreeFileContent(tree, treeKey, path, readOnly, onClose) }
+internal fun TreeFileView(tree: FileTree, treeKey: String, path: String, readOnly: Boolean = false, guestPath: String? = null, onClose: () -> Unit) {
+    androidx.compose.runtime.key(treeKey, path) { TreeFileContent(tree, treeKey, path, readOnly, guestPath, onClose) }
 }
 
 @Composable
-private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readOnly: Boolean, onClose: () -> Unit) {
+private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readOnly: Boolean, guestPath: String?, onClose: () -> Unit) {
     val scope = rememberCoroutineScope()
     val image = TextFile.isImage(path)
     var text by remember { mutableStateOf<String?>(null) }
@@ -553,7 +565,7 @@ private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readO
             Text(FileNames.name(path), Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val t = text
             if (t != null && original != null && editing == null) TextButton(enabled = !readOnly, onClick = {
-                editing = Drafts.startFile(draftKey, original!!, t)
+                editing = Drafts.startFile(draftKey, original!!, t, guestPath)
                 if (editing == null) status = "Открыто восемь черновиков: сохраните или отмените один из них"
             }) { Text("Править") }
             editing?.let { e ->

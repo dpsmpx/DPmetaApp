@@ -136,7 +136,32 @@ class AgentRuntime(
 
     private fun journalPath(id: SessionId) = "${runDir(id)}/events.jsonl"
 
+    private val fences = DocumentStore(vfs, "run-fences")
+
+    private fun fenced(id: SessionId): Boolean = when (val r = fences.read(id.value)) {
+        is Outcome.Failure -> true
+        is Outcome.Success -> r.value != null
+    }
+
+    /** Постоянный запрет ID перед остановкой: опоздавший start не создаст процесс (D-134). */
+    fun fenceStop(id: SessionId): AgentReply {
+        val mark = fences.write(id.value, JsonObject.of("format" to JsonString("dpai.run-fence"), "version" to JsonNumber.of(1)))
+        if (mark is Outcome.Failure) return AgentReply.failure("fence-stop", mark.diagnostics)
+        val observed = observe(id)
+        if (observed is Outcome.Failure) {
+            return if (observed.errors.all { it.code == DiagCode.ENTITY_NOT_FOUND }) {
+                AgentReply("fence-stop", ok = true, run = RunStatus(id, RunState.EXITED, reason = ExitReason.STOPPED), stop = StopResult(false, emptyList()))
+            } else AgentReply.failure("fence-stop", observed.diagnostics)
+        }
+        val stopped = stop(id, RunningProcess.DEFAULT_GRACE)
+        if (!stopped.ok || stopped.run?.state != RunState.EXITED) return stopped.copy(command = "fence-stop")
+        val prior = stoppedBySupervisor(id, stopped.run.turn)
+        if (prior.survivors.isNotEmpty()) return AgentReply.failure("fence-stop", listOf(Diagnostic.error(DiagCode.PROCESS_ORPHANS_LEFT, "после остановки остались процессы; проект остаётся на паузе", "run $id")))
+        return stopped.copy(command = "fence-stop")
+    }
+
     fun start(id: SessionId, spec: RunSpec): AgentReply {
+        if (fenced(id)) return AgentReply.failure("start", listOf(Diagnostic.error(DiagCode.INVALID_TRANSITION, "идентификатор запуска закрыт навсегда", "run $id")))
         prune(RETENTION, keep = id)
         val store = docs(id)
         val previous = when (val r = store.read(RUN_KEY)) {
@@ -235,7 +260,7 @@ class AgentRuntime(
         var current = doc.copy(supervisorPid = self.pid, supervisorStartedAt = self.startedAt, bootAt = self.bootAt)
         // Супервизор записывает себя до запуска процесса: так stop находит его и просит, а не пишет сам (A-4).
         store.write(RUN_KEY, current.toJson()).let { if (it is Outcome.Failure) return AgentReply.failure("supervise", it.diagnostics) }
-        if (stopRequest(store, doc.turn) != null) {
+        if (stopRequest(id, store, doc.turn) != null) {
             // Остановку попросили раньше, чем ход начался: процесс не запускается.
             if (stdin != null) store.delete(INPUT_KEY)
             emit(EventType.TARGET_PROCESS_EXITED, exitPayload(doc.turn, null, ExitReason.STOPPED, emptyList()))
@@ -324,7 +349,7 @@ class AgentRuntime(
                 reason = ExitReason.EXITED
                 break
             }
-            val stopRequest = stopRequest(store, doc.turn)
+            val stopRequest = stopRequest(id, store, doc.turn)
             val timedOut = doc.spec.timeout?.let { clock.monotonicNanos() - begin >= it.inWholeNanoseconds } ?: false
             val lostJournal = journalError.get()
             if (stopRequest != null || timedOut || lostJournal != null) {
@@ -361,7 +386,8 @@ class AgentRuntime(
     }
 
     /** Пауза остановки, если для этого хода её попросили. */
-    private fun stopRequest(store: DocumentStore, turn: Int): Duration? {
+    private fun stopRequest(id: SessionId, store: DocumentStore, turn: Int): Duration? {
+        if (fenced(id)) return RunningProcess.DEFAULT_GRACE
         val req = (store.read(STOP_KEY) as? Outcome.Success)?.value?.content ?: return null
         if ((req["turn"] as? JsonNumber)?.toLongExact() != turn.toLong()) return null
         return (req["graceSeconds"] as? JsonNumber)?.toLongExact()?.seconds ?: RunningProcess.DEFAULT_GRACE
@@ -515,7 +541,7 @@ class AgentRuntime(
         // Супервизор мёртв — у журнала нет писателя; выход записывает stop.
         EventJournal.open(vfs, journalPath(id)).valueOrNull()?.let { journal ->
             val recorder = EventRecorder(ids, clock).apply { resumeFrom(journal.records()) }
-            journal.append(recorder.envelope(EventType.TARGET_PROCESS_EXITED, StreamRef.of(id), clock.now(), exitPayload(doc.turn, null, ExitReason.STOPPED, emptyList())))
+            journal.append(recorder.envelope(EventType.TARGET_PROCESS_EXITED, StreamRef.of(id), clock.now(), exitPayload(doc.turn, null, ExitReason.STOPPED, emptyList(), r)))
         }
         store.write(RUN_KEY, exited.toJson())
         val diags = if (r.survivors.isEmpty()) {

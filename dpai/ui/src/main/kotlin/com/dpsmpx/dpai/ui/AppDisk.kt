@@ -42,7 +42,7 @@ object AppDisk {
 
     fun hidden(rel: String): Boolean {
         val p = parts(rel)
-        if (p.firstOrNull() == CONTROL_TOKEN) return true
+        if (p.firstOrNull() in setOf(CONTROL_TOKEN, "manual-profiles")) return true
         if (p.any { it == ".ssh" || it == ".credentials.json" }) return true
         val home = parts(LINUX_HOME)
         if (p.size <= home.size || p.take(home.size) != home) return false

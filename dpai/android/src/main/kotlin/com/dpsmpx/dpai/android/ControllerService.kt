@@ -118,7 +118,7 @@ class ControllerService : Service() {
             keeper = Executors.newSingleThreadScheduledExecutor().also { k ->
                 k.scheduleWithFixedDelay({
                     runCatching {
-                        if (ticking || LongJobs.get(app).busy(LongJobs.SHARED_VERIFY)) lock.acquire(TimeUnit.MINUTES.toMillis(WAKE_MINUTES))
+                        if (ticking || LongJobs.get(app).busy(LongJobs.SHARED_VERIFY, LongJobs.WORKSPACE_PROFILE)) lock.acquire(TimeUnit.MINUTES.toMillis(WAKE_MINUTES))
                     }
                 }, 1, 1, TimeUnit.MINUTES)
             }
@@ -129,9 +129,10 @@ class ControllerService : Service() {
                     // Такт, умерший молча, оставлял уведомление «контроллер работает», `running = true`
                     // и застывший экран — приложение говорило «работаю», когда работа встала.
                     try {
+                        model.resumeManualProfile()
                         // Без targets служба занимается только общими инструментами; демо в фоне не шагает (A-28).
                         if (!model.hasLive()) {
-                            if (!SharedVerify.enabled(app) && !LongJobs.get(app).busy(LongJobs.SHARED_VERIFY)) {
+                            if (!SharedVerify.enabled(app) && !LongJobs.get(app).busy(LongJobs.SHARED_VERIFY, LongJobs.WORKSPACE_PROFILE)) {
                                 log.step("служба контроллера: нет targets и фоновых инструментов")
                                 stopSelf()
                                 return@scheduleWithFixedDelay

@@ -43,6 +43,7 @@ data class ProjectWorkspaceView(
     val target: TargetEntry?,
     val ready: Boolean,
     val tasks: List<WorkspaceTask>,
+    val paused: Boolean = false,
 ) {
     val main: WorkspaceLocation get() = WorkspaceLocation(project.project, project.repository, project.target, null, null, project.root, project.integrationBranch)
 
@@ -53,6 +54,7 @@ data class ProjectWorkspaceView(
         if (!ready || target == null || project != expectedProject || location != this.location(location.task)) {
             return Outcome.failure(DiagCode.STATE_CONFLICT, "проект или рабочее дерево изменились; откройте папку заново")
         }
+        if (write && paused) return Outcome.failure(DiagCode.WORKTREE_OWNED, "проект на паузе: выполняется ручной профиль")
         if (write && location.task != null && tasks.first { it.id == location.task }.owner != null) {
             return Outcome.failure(DiagCode.WORKTREE_OWNED, "дерево занято сессией ИИ; доступно только чтение")
         }

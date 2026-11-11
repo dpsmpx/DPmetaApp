@@ -14,7 +14,7 @@ object Drafts {
     private val map = ConcurrentHashMap<String, String>()
     private val files = ConcurrentHashMap<String, FileDraft>()
 
-    class FileDraft(val original: ByteArray, val editor: com.dpsmpx.dpai.ui.CodeEditorBuffer)
+    class FileDraft(val original: ByteArray, val editor: com.dpsmpx.dpai.ui.CodeEditorBuffer, val guestPath: String? = null)
 
     fun file(key: String): FileDraft? = files[key]
 
@@ -23,10 +23,17 @@ object Drafts {
 
     /** Черновик не вытесняется: девятый файл можно начать после сохранения/отмены одного из восьми. */
     @Synchronized
-    fun startFile(key: String, original: ByteArray, text: String): FileDraft? {
+    fun startFile(key: String, original: ByteArray, text: String, guestPath: String? = null): FileDraft? {
         files[key]?.let { return it }
         if (files.size >= 8) return null
-        return FileDraft(original, com.dpsmpx.dpai.ui.CodeEditorBuffer(text)).also { files[key] = it }
+        return FileDraft(original, com.dpsmpx.dpai.ui.CodeEditorBuffer(text), guestPath).also { files[key] = it }
+    }
+
+    fun dirtyIn(location: com.dpsmpx.dpai.ui.WorkspaceLocation, inApp: Boolean): Boolean = files.any { (key, draft) ->
+        if (!draft.editor.dirty) false else {
+            val path = draft.guestPath
+            key.startsWith("file:workspace:${location.key}\u0001") || (inApp && path != null && path.startsWith(location.path.trimEnd('/') + "/"))
+        }
     }
 
     fun dropFile(key: String) { files.remove(key) }
