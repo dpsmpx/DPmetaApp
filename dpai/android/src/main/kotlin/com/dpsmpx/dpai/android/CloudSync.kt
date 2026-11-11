@@ -252,7 +252,7 @@ object CloudSync {
      * запуске. Её блоб запоминается своим: первая отправка после
      * восстановления заменит её без «чужая копия».
      */
-    fun stage(context: Context, f: Fetched): Outcome<String> = restore(context).stage(f.entries).also {
+    fun stage(context: Context, f: Fetched): Outcome<String> = Controller.get(context.filesDir).manualProfiles.edit { restore(context).stage(f.entries) }.also {
         if (it is Outcome.Success) context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString("lastBlob", f.blob).putString("lastBlobDevice", f.device).remove("lastNote").apply()
     }
 

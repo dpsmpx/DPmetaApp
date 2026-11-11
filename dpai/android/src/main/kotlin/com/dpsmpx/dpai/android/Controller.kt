@@ -120,7 +120,7 @@ class Controller(private val root: File, val version: String?) {
      * (свойства инициализируются по порядку: это — после [vfs] и до всего,
      * что читает данные). Итог: `true` — применена; отказ — с причиной.
      */
-    val cloudRestored: com.dpsmpx.dpai.core.result.Outcome<Boolean> = com.dpsmpx.dpai.sync.CloudRestore(vfs, Clock.SYSTEM).applyPending()
+    val cloudRestored: com.dpsmpx.dpai.core.result.Outcome<Boolean> = if (manualProfiles.blocked) Outcome.success(false) else com.dpsmpx.dpai.sync.CloudRestore(vfs, Clock.SYSTEM).applyPending()
 
     /** Каталог данных контура — для облачной копии (D-107). */
     val dataRoot: File get() = root
@@ -187,8 +187,9 @@ class Controller(private val root: File, val version: String?) {
     }
 
     /** Записать список targets; кэш — записанное, а при отказе — сброс до чтения с диска. */
-    private fun writeTargets(list: List<TargetEntry>) =
+    private fun writeTargets(list: List<TargetEntry>) = manualProfiles.edit {
         docs.write(BOOK, TargetBook.toJson(list)).also { targetsCache = if (it is Outcome.Success) list else null }
+    }
 
     fun form(label: String, host: String, port: String, user: String, windows: Boolean, agent: String, configDir: String): Outcome<TargetEntry> =
         TargetForm.validate(ids.next(IdKinds.TARGET), label, host, port, user, windows, agent, configDir)
@@ -218,11 +219,11 @@ class Controller(private val root: File, val version: String?) {
     ): Outcome<ProjectEntry> = ProjectForm.validate(ids, target, root, worktreeRoot, branch, check, claudeOn, identityFile, knownHostsFile)
 
     @Synchronized
-    fun setProject(p: ProjectEntry?): Outcome<Unit> {
+    fun setProject(p: ProjectEntry?): Outcome<Unit> = manualProfiles.edit {
         val r = if (p == null) docs.delete(PROJECT) else docs.write(PROJECT, ProjectBook.toJson(p)).let { w -> if (w is Outcome.Failure) w else Outcome.success(Unit) }
         projectCache = p
         projectKnown = r is Outcome.Success
-        return r
+        r
     }
 
     /** Настоящий контроллер над [targets]: SSH — JSch с ключом Keystore, журнал — в каталоге контроллера. */
@@ -352,7 +353,9 @@ class Controller(private val root: File, val version: String?) {
      * заменяются целиком. known_hosts — атомарно (A-85).
      */
     @Synchronized
-    fun restore(s: SettingsSnapshot): Outcome<Unit> {
+    fun restore(s: SettingsSnapshot): Outcome<Unit> = manualProfiles.edit { restoreSettings(s) }
+
+    private fun restoreSettings(s: SettingsSnapshot): Outcome<Unit> {
         try {
             val tmp = "$KNOWN_HOSTS.tmp"
             vfs.write(tmp, s.knownHosts.toByteArray(Charsets.UTF_8))

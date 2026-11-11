@@ -35,7 +35,7 @@ import org.junit.jupiter.api.io.TempDir
 class ManualProfilesTest {
     @TempDir lateinit var dir: Path
     private val ids = IdGenerator(ManualClock(), RandomSource.seeded(134))
-    private val target = TargetEntry(ids.next(IdKinds.TARGET), "Linux", "", 22, "", TargetPlatform.POSIX, "dpai", configDir = "/root/.claude-slot-1", inApp = true)
+    private val target = TargetForm.inApp(ids.next(IdKinds.TARGET), "Linux", "/root/.claude-slot-1").valueOrNull()!!
     private val project = ProjectEntry(ids.next(IdKinds.PROJECT), ids.next(IdKinds.REPOSITORY), target.id, "/root/repo", "/root/trees", "main", emptyList())
     private val profile = ManualProfile.form(ManualProfileKind.BUILD, "./gradlew 'assembleDebug'", "60").valueOrNull()!!
     private fun store() = ManualProfiles(DocumentStore(NioVfs(dir), "profiles"), ids)
