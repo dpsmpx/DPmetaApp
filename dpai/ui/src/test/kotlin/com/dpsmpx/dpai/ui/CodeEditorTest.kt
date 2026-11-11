@@ -52,6 +52,12 @@ class CodeEditorTest {
         assertEquals(EditorSelection(0, 3), b.state.selection)
         assertFalse(b.findNext(""))
         assertTrue(b.matches("").ranges.isEmpty())
+        assertEquals(listOf(0..0, 1..1), CodeEditorBuffer.find("Ää", "ä").ranges)
+        val overlap = CodeEditorBuffer("aaa")
+        overlap.select(1, 3)
+        overlap.findNext("aa", backwards = true)
+        assertEquals(EditorSelection(0, 2), overlap.state.selection)
+        assertTrue(CodeEditorBuffer.find("a".repeat(200_000), "a".repeat(4000) + "b").ranges.isEmpty())
     }
 
     @Test
@@ -112,5 +118,7 @@ class CodeEditorTest {
         assertEquals("+ new", preview[2].text)
         assertEquals(DiffKind.NOTE, EditorChanges.preview("same", "same").single().kind)
         assertTrue(EditorChanges.preview("a\n".repeat(1000), "b\n".repeat(1000), 20).size <= 22)
+        val longLine = EditorChanges.preview("a".repeat(100_000), "b".repeat(100_000))
+        assertTrue(longLine.all { it.text.length < 2100 })
     }
 }

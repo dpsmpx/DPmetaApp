@@ -23,7 +23,6 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -459,6 +458,7 @@ private fun FileView(p: Place, path: String, onClose: () -> Unit) {
     var editing by remember(draftKey) { mutableStateOf(Drafts.file(draftKey)) }
     var revision by remember { mutableStateOf(0) }
     var saving by remember { mutableStateOf(false) }
+    var loading by remember { mutableStateOf(true) }
     var status by remember { mutableStateOf<String?>(null) }
     var leaving by remember { mutableStateOf(false) }
     val changed = revision.let { editing?.editor?.dirty == true }
@@ -474,9 +474,7 @@ private fun FileView(p: Place, path: String, onClose: () -> Unit) {
             val r = withContext(Dispatchers.IO) { com.dpsmpx.dpai.files.TextFileEdit.save(treeOf(context, p), path, e.original, content) }
             if (r is Outcome.Success) {
                 text = content
-                original = if (e.original.size >= 3 && e.original[0] == 0xEF.toByte() && e.original[1] == 0xBB.toByte() && e.original[2] == 0xBF.toByte()) {
-                    e.original.copyOfRange(0, 3) + TextFile.encode(content)
-                } else TextFile.encode(content)
+                original = r.value
                 drop()
                 status = "сохранено"
                 true
@@ -522,6 +520,7 @@ private fun FileView(p: Place, path: String, onClose: () -> Unit) {
                 }
             }
         }
+        loading = false
     }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -533,7 +532,7 @@ private fun FileView(p: Place, path: String, onClose: () -> Unit) {
                 if (editing == null) status = "Открыто восемь черновиков: сохраните или отмените один из них"
             }) { Text("Править") }
             editing?.let { e ->
-                TextButton(enabled = !saving, onClick = { scope.launch { saveEdit(e) } }) { Text(if (saving) "Сохраняю…" else "Сохранить") }
+                TextButton(enabled = !saving && !loading, onClick = { scope.launch { saveEdit(e) } }) { Text(if (saving) "Сохраняю…" else "Сохранить") }
                 TextButton(enabled = !saving, onClick = drop) { Text("Отмена") }
             }
         }
@@ -541,7 +540,9 @@ private fun FileView(p: Place, path: String, onClose: () -> Unit) {
         error?.let { Text(it, Modifier.padding(12.dp), color = MaterialTheme.colorScheme.error) }
         val e = editing
         when {
-            e != null -> CodeEditor(e.editor, path, revision, onChange = { revision++ }, enabled = !saving, modifier = Modifier.weight(1f).fillMaxWidth())
+            e != null -> Clipboard.Sensitive {
+                CodeEditor(e.editor, path, revision, onChange = { revision++ }, enabled = !saving, modifier = Modifier.weight(1f).fillMaxWidth())
+            }
             bitmap != null -> Image(bitmap!!, FileNames.name(path), Modifier.fillMaxSize().padding(8.dp))
             text != null && text.orEmpty().length <= WHOLE_TEXT_MAX -> SelectionContainer(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)) {
                 Text(text.orEmpty(), style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace))

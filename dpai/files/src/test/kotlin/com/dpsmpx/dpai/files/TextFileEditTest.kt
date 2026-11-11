@@ -48,5 +48,8 @@ class TextFileEditTest {
         tree.write("code.txt", original)
         assertIs<Outcome.Failure>(TextFileEdit.save(tree, "code.txt", original, "я".repeat(TextFile.MAX_EDIT_BYTES.toInt())))
         assertContentEquals(original, tree.read("code.txt", 100).valueOrNull()!!)
+        assertIs<Outcome.Failure>(TextFileEdit.save(tree, "code.txt", original, "bad\u0000text"))
+        assertIs<Outcome.Failure>(TextFileEdit.save(tree, "code.txt", original, "bad\uD800"))
+        assertContentEquals(original, tree.read("code.txt", 100).valueOrNull()!!)
     }
 }

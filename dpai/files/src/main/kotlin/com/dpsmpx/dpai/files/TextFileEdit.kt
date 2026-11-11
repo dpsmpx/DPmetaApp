@@ -2,11 +2,21 @@ package com.dpsmpx.dpai.files
 
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.result.Outcome
+import java.nio.CharBuffer
+import java.nio.charset.CharacterCodingException
+import java.nio.charset.CodingErrorAction
 
 /** Сохранение ручной правки с проверкой наблюдаемого исходного снимка (D-131). */
 object TextFileEdit {
-    fun save(tree: FileTree, path: String, original: ByteArray, text: String): Outcome<FileMeta> {
-        val encoded = TextFile.encode(text)
+    fun save(tree: FileTree, path: String, original: ByteArray, text: String): Outcome<ByteArray> {
+        if ('\u0000' in text) return Outcome.failure(DiagCode.VALUE_INVALID, "нулевой символ — не текстовый файл", path)
+        val encoded = try {
+            val data = Charsets.UTF_8.newEncoder().onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT).encode(CharBuffer.wrap(text))
+            ByteArray(data.remaining()).also { data.get(it) }
+        } catch (_: CharacterCodingException) {
+            return Outcome.failure(DiagCode.VALUE_INVALID, "некорректный Unicode — файл не сохранён", path)
+        }
         val bom = original.size >= 3 && original[0] == 0xEF.toByte() && original[1] == 0xBB.toByte() && original[2] == 0xBF.toByte()
         val bytes = if (bom) original.copyOfRange(0, 3) + encoded else encoded
         if (bytes.size > TextFile.MAX_EDIT_BYTES) return Outcome.failure(DiagCode.VALUE_INVALID, "текст больше 2 МиБ — не сохранён", path)
@@ -17,6 +27,9 @@ object TextFileEdit {
             }
         }
         // FileTree не обещает CAS с внешними процессами: это проверка снимка перед обычной записью.
-        return tree.write(path, bytes)
+        return when (val written = tree.write(path, bytes)) {
+            is Outcome.Failure -> written
+            is Outcome.Success -> Outcome.success(bytes)
+        }
     }
 }

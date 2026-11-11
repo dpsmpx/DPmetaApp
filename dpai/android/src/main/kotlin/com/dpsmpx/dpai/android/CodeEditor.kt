@@ -23,6 +23,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
@@ -58,6 +60,9 @@ internal fun CodeEditor(buffer: CodeEditorBuffer, path: String, revision: Int, o
     var lineDialog by remember { mutableStateOf(false) }
     var changes by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf<String?>(null) }
+    val editorFocus = remember { FocusRequester() }
+    var focusRequest by remember { mutableStateOf(0) }
+    LaunchedEffect(focusRequest) { if (focusRequest > 0) editorFocus.requestFocus() }
     // Синхронизация после undo/поиска; composition IME при обычном вводе сохраняется.
     LaunchedEffect(revision) {
         val s = buffer.state.selection
@@ -89,6 +94,7 @@ internal fun CodeEditor(buffer: CodeEditorBuffer, path: String, revision: Int, o
     fun changed() {
         value = TextFieldValue(buffer.text, TextRange(buffer.state.selection.start, buffer.state.selection.end))
         onChange()
+        focusRequest++
     }
     Column(modifier) {
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
@@ -125,8 +131,8 @@ internal fun CodeEditor(buffer: CodeEditorBuffer, path: String, revision: Int, o
                     value = next
                     onChange()
                 } else note = "Достигнут предел размера текста"
-            }, Modifier.weight(1f).fillMaxWidth().padding(8.dp),
-            textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+            }, Modifier.weight(1f).fillMaxWidth().padding(8.dp).focusRequester(editorFocus),
+            textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
             readOnly = !enabled,
             keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
             visualTransformation = VisualTransformation { source ->

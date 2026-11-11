@@ -41,7 +41,8 @@ class CodeEditorBuffer(val original: String, private val clock: Clock = Clock.SY
         val now = clock.monotonicNanos()
         val delta = text.length - this.text.length
         val sign = delta.compareTo(0)
-        val small = typing && kotlin.math.abs(delta) in 1..2 && state.selection.start == state.selection.end && selected.start == selected.end
+        val adjacent = if (delta > 0) selected.start == state.selection.end + delta else selected.start in (state.selection.end + delta)..state.selection.end
+        val small = typing && adjacent && kotlin.math.abs(delta) in 1..2 && state.selection.start == state.selection.end && selected.start == selected.end
         val merge = small && direction == sign && lastEdit?.let { now - it in 0..750_000_000L } == true
         if (!merge) {
             undo.addLast(state)
@@ -86,10 +87,18 @@ class CodeEditorBuffer(val original: String, private val clock: Clock = Clock.SY
     fun findNext(query: String, backwards: Boolean = false, ignoreCase: Boolean = true): Boolean {
         if (query.isEmpty()) return false
         val s = state.selection
+        val pattern = EditorPattern(query, ignoreCase)
         val at = if (backwards) {
-            text.lastIndexOf(query, s.from - 1, ignoreCase).takeIf { it >= 0 } ?: text.lastIndexOf(query, text.length, ignoreCase)
+            var previous = -1
+            var last = -1
+            pattern.scan(text, overlap = true) { at ->
+                last = at
+                if (at < s.from) previous = at
+                true
+            }
+            if (previous >= 0) previous else last
         } else {
-            text.indexOf(query, s.until, ignoreCase).takeIf { it >= 0 } ?: text.indexOf(query, 0, ignoreCase)
+            pattern.first(text, s.until).takeIf { it >= 0 } ?: pattern.first(text, 0)
         }
         if (at < 0) return false
         select(at, at + query.length)
@@ -122,7 +131,11 @@ class CodeEditorBuffer(val original: String, private val clock: Clock = Clock.SY
         return found.ranges.size
     }
 
-    val line: Int get() = text.take(state.selection.end).count { it == '\n' } + 1
+    val line: Int get() {
+        var line = 1
+        for (i in 0 until state.selection.end) if (text[i] == '\n') line++
+        return line
+    }
     val column: Int get() = state.selection.end - text.lastIndexOf('\n', state.selection.end - 1)
 
     fun goToLine(line: Int): Boolean {
@@ -146,15 +159,50 @@ class CodeEditorBuffer(val original: String, private val clock: Clock = Clock.SY
         fun find(text: String, query: String, ignoreCase: Boolean = true): EditorMatches {
             if (query.isEmpty()) return EditorMatches(emptyList(), false)
             val ranges = mutableListOf<IntRange>()
-            var at = 0
-            while (at <= text.length - query.length) {
-                val next = text.indexOf(query, at, ignoreCase)
-                if (next < 0) break
-                if (ranges.size == MAX_MATCHES) return EditorMatches(ranges, true)
-                ranges += next until next + query.length
-                at = next + query.length
+            var limited = false
+            EditorPattern(query, ignoreCase).scan(text) { at ->
+                if (ranges.size == MAX_MATCHES) {
+                    limited = true
+                    false
+                } else {
+                    ranges += at until at + query.length
+                    true
+                }
             }
-            return EditorMatches(ranges, false)
+            return EditorMatches(ranges, limited)
+        }
+    }
+}
+
+/** KMP: повторяющийся текст и длинный запрос не дают произведения их длин. */
+private class EditorPattern(query: String, private val ignoreCase: Boolean) {
+    private fun fold(c: Char): Char = if (ignoreCase) c.uppercaseChar().lowercaseChar() else c
+    private val pattern = CharArray(query.length) { fold(query[it]) }
+    private val prefix = IntArray(pattern.size).also { table ->
+        var j = 0
+        for (i in 1 until pattern.size) {
+            while (j > 0 && pattern[i] != pattern[j]) j = table[j - 1]
+            if (pattern[i] == pattern[j]) j++
+            table[i] = j
+        }
+    }
+
+    fun first(text: String, from: Int): Int {
+        var result = -1
+        scan(text, from) { result = it; false }
+        return result
+    }
+
+    fun scan(text: String, from: Int = 0, overlap: Boolean = false, accept: (Int) -> Boolean) {
+        var j = 0
+        for (i in from until text.length) {
+            val c = fold(text[i])
+            while (j > 0 && c != pattern[j]) j = prefix[j - 1]
+            if (c == pattern[j]) j++
+            if (j == pattern.size) {
+                if (!accept(i - pattern.size + 1)) return
+                j = if (overlap) prefix[j - 1] else 0
+            }
         }
     }
 }
@@ -172,17 +220,19 @@ object EditorChanges {
         while (tail < minOf(old.size, new.size) - first && old[old.lastIndex - tail] == new[new.lastIndex - tail]) tail++
         val removed = old.size - first - tail
         val added = new.size - first - tail
+        var oldRows = minOf(removed, limit / 2)
+        val newRows = minOf(added, limit - oldRows)
+        oldRows = minOf(removed, limit - newRows)
+        fun display(line: String): String = if (line.length > 2000) line.take(2000) + " … [строка сокращена]" else line
         return buildList {
             add(DiffLine(DiffKind.HUNK, "Строка ${first + 1}: −$removed +$added"))
-            for (i in first until old.size - tail) {
-                if (size > limit) break
-                add(DiffLine(DiffKind.REMOVED, "− ${old[i]}"))
+            for (i in first until first + oldRows) {
+                add(DiffLine(DiffKind.REMOVED, "− ${display(old[i])}"))
             }
-            for (i in first until new.size - tail) {
-                if (size > limit) break
-                add(DiffLine(DiffKind.ADDED, "+ ${new[i]}"))
+            for (i in first until first + newRows) {
+                add(DiffLine(DiffKind.ADDED, "+ ${display(new[i])}"))
             }
-            if (removed + added > limit) add(DiffLine(DiffKind.NOTE, "Показаны первые $limit строк изменённого диапазона"))
+            if (removed > oldRows || added > newRows) add(DiffLine(DiffKind.NOTE, "Показан сокращённый изменённый диапазон"))
         }
     }
 }
