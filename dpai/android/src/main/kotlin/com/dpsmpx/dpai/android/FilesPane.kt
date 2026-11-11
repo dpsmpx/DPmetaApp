@@ -119,6 +119,8 @@ private fun treeOf(context: android.content.Context, p: Place): FileTree = when 
 @Composable
 fun FilesPane(onLinux: () -> Unit = {}, model: DemoModel? = null, onSession: (String) -> Unit = {}) {
     var projectOpen by rememberSaveable { mutableStateOf(false) }
+    var draftsOpen by remember { mutableStateOf(false) }
+    if (draftsOpen) FileDraftsDialog { draftsOpen = false }
     val workspaceState = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     if (projectOpen && model != null) {
         workspaceState.SaveableStateProvider("project") {
@@ -179,6 +181,7 @@ fun FilesPane(onLinux: () -> Unit = {}, model: DemoModel? = null, onSession: (St
         if (model != null) item {
             androidx.compose.material3.OutlinedButton(onClick = { projectOpen = true }, Modifier.fillMaxWidth()) { Text("Рабочий проект") }
         }
+        item { TextButton(onClick = { draftsOpen = true }) { Text("Черновики файлов в памяти") } }
         item {
             SwitchRow(wanted && granted, onChange = { on ->
                 AllFiles.set(context, on)

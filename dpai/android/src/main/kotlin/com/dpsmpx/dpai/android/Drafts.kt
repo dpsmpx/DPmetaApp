@@ -18,6 +18,9 @@ object Drafts {
 
     fun file(key: String): FileDraft? = files[key]
 
+    /** Для восстановления текста, когда исходное дерево задачи уже убрано. Содержимое не уходит на диск. */
+    fun fileDrafts(): List<Pair<String, FileDraft>> = files.entries.filter { it.value.editor.dirty }.sortedBy { it.key }.map { it.key to it.value }
+
     /** Черновик не вытесняется: девятый файл можно начать после сохранения/отмены одного из восьми. */
     @Synchronized
     fun startFile(key: String, original: ByteArray, text: String): FileDraft? {

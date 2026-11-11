@@ -4,6 +4,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -28,6 +30,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import com.dpsmpx.dpai.core.clock.Clock
 import com.dpsmpx.dpai.core.clock.RandomSource
@@ -73,17 +76,22 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
     var taskKey by rememberSaveable(project.project.value) { mutableStateOf<String?>(null) }
     var page by rememberSaveable(project.project.value) { mutableStateOf(WorkspacePage.FILES.name) }
     var choose by remember { mutableStateOf(false) }
-    var taskSheet by remember { mutableStateOf(false) }
+    var taskSheet by remember(project.project, taskKey) { mutableStateOf(false) }
+    var draftsOpen by remember { mutableStateOf(false) }
+    if (draftsOpen) FileDraftsDialog { draftsOpen = false }
     val selected = current.tasks.firstOrNull { it.id.value == taskKey }
     val location = if (taskKey == null) current.main else selected?.location
     val context = LocalContext.current
+    val keyboard = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     val pageStates = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     if (taskSheet && selected != null) TaskSheet(model, selected.id, onSession = onSession) { taskSheet = false }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth()) {
             TextButton(onClick = onClose) { Text("← Файлы") }
-            Text("Рабочий проект", Modifier.padding(12.dp), style = MaterialTheme.typography.titleMedium)
+            Text("Рабочий проект", Modifier.weight(1f).padding(12.dp), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            TextButton(onClick = { draftsOpen = true }) { Text("Черновики") }
         }
+        if (!keyboard) {
         Column(Modifier.padding(horizontal = 12.dp)) {
             Text(project.root, style = MaterialTheme.typography.bodySmall)
             Text("Target: ${current.target?.label ?: "не найден"}", style = MaterialTheme.typography.bodySmall)
@@ -92,7 +100,7 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
                 Text("Дерево: ${it.path}", style = MaterialTheme.typography.bodySmall)
             }
             if (!current.ready) Text("Контроллер не готов для этой конфигурации", color = MaterialTheme.colorScheme.error)
-            if (selected?.owner != null) Text("Дерево занято ИИ — только чтение", color = MaterialTheme.colorScheme.error)
+            if (selected?.owner != null) Text("Редактор: только чтение — дерево занято ИИ", color = MaterialTheme.colorScheme.error)
             TextButton(onClick = { choose = true }) { Text(if (taskKey == null) "Основное дерево ▾" else "${selected?.title ?: "Задача больше не доступна"} ▾") }
             DropdownMenu(expanded = choose, onDismissRequest = { choose = false }) {
                 DropdownMenuItem(text = { Text("Основное дерево") }, onClick = { taskKey = null; choose = false })
@@ -102,6 +110,7 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
         }
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp)) {
             for (p in WorkspacePage.entries) FilterChip(selected = page == p.name, onClick = { page = p.name }, label = { Text(p.title) })
+        }
         }
         pageStates.SaveableStateProvider("${location?.key ?: "${project.project.value}:$taskKey"}:$page") {
             when (page) {
@@ -121,7 +130,7 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
                 WorkspacePage.CHECKS.name -> WorkspaceChecks(model, current, location, selected)
                 WorkspacePage.BUILD.name -> Column(Modifier.padding(12.dp)) {
                     Text("Профили сборки и артефакты — следующий шаг. Сейчас доступен терминал target.")
-                    TextButton(enabled = current.target != null && location != null, onClick = {
+                    TextButton(enabled = current.ready && current.target != null && location != null && selected?.owner == null, onClick = {
                         if (current.target?.inApp == true) TerminalActivity.startLinux(context, location!!.path)
                         else TerminalActivity.start(context, current.target!!.id.value)
                     }) { Text(if (current.target?.inApp == true) "Терминал в дереве" else "Терминал target") }
@@ -145,6 +154,7 @@ private fun WorkspaceChecks(model: DemoModel, view: ProjectWorkspaceView, locati
             val verdict = if (v.waivedBy != null) "принято без проверки" else when (v.verdict) { "PASSED" -> "пройдено"; "FAILED" -> "не пройдено"; else -> "нет полного итога" }
             Text("Последний записанный итог: $verdict")
         }
+        if (task != null && !task.canVerify) Text("Повторная проверка в контуре доступна после результата «Без проверки». Ручной запуск профиля — следующий шаг.", style = MaterialTheme.typography.bodySmall)
         TextButton(enabled = !busy && task?.canVerify == true && location != null && view.ready, onClick = {
             busy = true
             val command = Command.Verify(task!!.id, keys.next(IdKinds.OPERATION).value)
