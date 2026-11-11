@@ -46,3 +46,12 @@ Java 8 и отключает внешние сущности/DOCTYPE в Manifest
 Официальный исходник тега: https://github.com/eclipse-jgit/jgit/blob/v5.13.5.202508271544-r/org.eclipse.jgit/src/org/eclipse/jgit/gitrepo/ManifestParser.java ,
 blob `726c7b430e0c221ab6734dc363d8c589b32b1086`. Глобальный реестр
 транспортов JGit не изменён; URL сетевого клона проверяется до запуска.
+
+Проверка целостности Gradle (11 ноября 2026, N-14/B-01): файлы
+gradle/verification-metadata.xml и dpai/gradle/verification-metadata.xml
+получены полными build из объявленных Maven Central/Google Maven.
+Первичная запись доверяет TLS этих источников. 636 общих артефактов
+обеих сборок и 363 записи прежнего DPpass совпали по SHA-256.
+Проверка подписи PGP не заявляется. Намеренно неверный SHA-256 KGP
+отклонён обычным Gradle strict в обеих сборках; файлы восстановлены.
+Источник механизма: https://docs.gradle.org/current/userguide/dependency_verification.html .

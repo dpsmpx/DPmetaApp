@@ -22,6 +22,7 @@
 """
 import os
 import re
+import xml.etree.ElementTree as ET
 import shutil
 import subprocess
 import sys
@@ -92,7 +93,6 @@ REQUIRED = [
 # Пути, которые документы называют заранее: появятся на своих этапах. Путь появился —
 # убрать отсюда (иначе находка): список не должен прятать опечатки.
 PLANNED = {
-    "gradle/verification-metadata.xml": "контрольные суммы зависимостей (ТЗ, N-14) — с первой зависимостью модулей DPmetaApp, этап 1",
     "docs/RELEASE.md": "отпечаток ключа и порядок выпуска — этап 8",
     "tools/release/": "сборка неподписанного APK — этап 8",
     "tools/notify/": "набор хуков уведомлений Claude Code (F-56) — этап 7",
@@ -669,6 +669,34 @@ def check_ui_words(repo, r):
                 r.add(f"{rel}:{i}", "номер решения в строке экрана — человеку слово, номер — в KDoc (UX-13, AI:A-10)")
 
 
+def check_verification(repo, r):
+    """N-14/B-01: контрольные суммы обязательны и в корне, и для отдельной сборки dpai."""
+    for rel in ("gradle/verification-metadata.xml", "dpai/gradle/verification-metadata.xml"):
+        r.scanned += 1
+        if not repo.exists(rel):
+            r.add(rel, "нет обязательных контрольных сумм зависимостей")
+            continue
+        try:
+            root = ET.fromstring(repo.text(rel))
+        except ET.ParseError:
+            r.add(rel, "повреждён XML контрольных сумм")
+            continue
+        for node in root.iter():
+            node.tag = node.tag.rsplit("}", 1)[-1]
+        if root.tag != "verification-metadata" or root.findtext("configuration/verify-metadata") != "true":
+            r.add(rel, "сверка метаданных должна быть включена")
+        if list(root.findall("configuration/trusted-artifacts/*")):
+            r.add(rel, "обход сверки через trusted-artifacts не допускается")
+        artifacts = root.findall("components/component/artifact")
+        if not artifacts:
+            r.add(rel, "нет артефактов с контрольными суммами")
+        for artifact in artifacts:
+            hashes = artifact.findall("sha256")
+            if not hashes or any(not re.fullmatch(r"[0-9a-f]{64}", item.get("value", "")) for item in hashes):
+                r.add(rel, "у артефакта нет корректного SHA-256")
+                break
+
+
 def check_wrapper(repo, r):
     """build.wrapper — wrapper Gradle корня совпадает с wrapper подсистемы dpai/ байт в байт (D-28)."""
     for rel in WRAPPER:
@@ -908,6 +936,7 @@ CHECKS = [
     ("code.forbidden", check_forbidden),
     ("ui.words", check_ui_words),
     ("build.wrapper", check_wrapper),
+    ("build.verification", check_verification),
     ("config.commands", check_commands),
 ]
 

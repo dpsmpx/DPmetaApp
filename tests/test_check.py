@@ -87,6 +87,13 @@ for _rel, _text in {"gradlew": "#!/bin/sh\nexec java\n", "gradlew.bat": "@echo o
     CLEAN[_rel] = _text
     CLEAN["dpai/" + _rel] = _text
 
+VERIFICATION = (
+    '<verification-metadata><configuration><verify-metadata>true</verify-metadata></configuration>'
+    '<components><component group="example" name="tool" version="1"><artifact name="tool.jar">'
+    '<sha256 value="' + 'a' * 64 + '"/></artifact></component></components></verification-metadata>\n')
+for _rel in ("gradle/verification-metadata.xml", "dpai/gradle/verification-metadata.xml"):
+    CLEAN[_rel] = VERIFICATION
+
 
 def readme_for(roadmap):
     return "# DPmetaApp\n\n" + check.status_block(roadmap) + "\n"
@@ -283,6 +290,19 @@ class CoreSingleTest(CheckCase):
     def test_similar_names_pass(self):
         s = self.sample({"core/model/src/main/kotlin/M.kt": "class OutcomeView\nclass TestClock\nfun Secret() = 1\n"})
         self.assertClean(s.run("core.single"))
+
+
+class VerificationTest(CheckCase):
+    def test_metadata_required_for_both_builds(self):
+        for path in ("gradle/verification-metadata.xml", "dpai/gradle/verification-metadata.xml"):
+            self.assertCatches(self.sample(remove=[path]).run("build.verification"), "нет обязательных")
+
+    def test_broken_hash_and_bypass_are_refused(self):
+        path = "gradle/verification-metadata.xml"
+        self.assertCatches(self.sample({path: VERIFICATION.replace('a' * 64, 'bad')}).run("build.verification"), "SHA-256")
+        skipped = VERIFICATION.replace('</configuration>', '<trusted-artifacts><trust group=".*" regex="true"/></trusted-artifacts></configuration>')
+        self.assertCatches(self.sample({path: skipped}).run("build.verification"), "trusted-artifacts")
+        self.assertCatches(self.sample({path: '<broken'}).run("build.verification"), "повреждён XML")
 
 
 class WrapperTest(CheckCase):
