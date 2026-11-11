@@ -30,6 +30,7 @@ object SharedVerify {
     fun enabled(context: Context): Boolean = available(context) && prefs(context).getBoolean("automatic", false)
     fun automatic(context: Context, value: Boolean) {
         prefs(context).edit().putBoolean("automatic", value).apply()
+        if (!value) (context.applicationContext as? DpaiApplication)?.sharedToolsSessionClosed()
         if (value) AiBackground.ensureService(context)
     }
 
@@ -49,10 +50,10 @@ object SharedVerify {
         if (lastAttempt != Long.MIN_VALUE && now - lastAttempt < 60_000_000_000L) return
         if (LongJobs.get(context).busy(*LongJobs.GUEST.toTypedArray())) return
         lastAttempt = now
-        // Не запускаем Git и не спрашиваем PIN из фона. Повтор — после следующего входа.
+        // Не запускаем Git и не спрашиваем PIN из фона. Право живёт только до остановки службы.
         val account = (context.applicationContext as DpaiApplication).sharedToolsAccount()
         if (account !is Outcome.Success || account.value == null) {
-            publish(context, "Ожидается вход в приложение и подключённый GitHub-аккаунт")
+            publish(context, "Нужен вход для DP-Verify: нажмите кнопку синхронизации")
             return
         }
         start(context, install = false)
@@ -61,12 +62,17 @@ object SharedVerify {
     fun start(context: Context, install: Boolean): Boolean {
         val app = context.applicationContext
         val started = LongJobs.get(app).start(LongJobs.SHARED_VERIFY, "DP-Verify", excludes = LongJobs.GUEST) {
-            val result = synchronize(app, install)
-            publish(app, result.note)
-            result
+            try {
+                val result = synchronize(app, install)
+                publish(app, result.note)
+                result
+            } finally {
+                if (!ControllerService.running) (app as? DpaiApplication)?.sharedToolsSessionClosed()
+            }
         }
         // Первая установка тоже долгая, ещё до включения автоматической синхронизации.
         if (started && !ControllerService.running) ControllerService.start(app)
+        if (!started && !ControllerService.running) (app as? DpaiApplication)?.sharedToolsSessionClosed()
         return started
     }
 
@@ -109,7 +115,7 @@ object SharedVerify {
         }
         val token = when (val r = (context.applicationContext as DpaiApplication).sharedToolsAccount()) {
             is Outcome.Failure -> return LongJobs.Done("Нужен вход в приложение по PIN или биометрии", failed = true)
-            is Outcome.Success -> r.value ?: return LongJobs.Done("Сначала подключите GitHub-аккаунт в пульте", failed = true)
+            is Outcome.Success -> r.value ?: return LongJobs.Done("Повторите вход для DP-Verify кнопкой синхронизации", failed = true)
         }
         val files = NioVfs(File(LinuxSetup.layout(context).rootfs, BASE.removePrefix("/")).toPath())
         files.mkdirs("")

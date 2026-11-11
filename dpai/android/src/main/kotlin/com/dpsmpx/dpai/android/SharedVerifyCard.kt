@@ -23,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.dpsmpx.dpai.core.result.Outcome
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -37,6 +38,7 @@ fun SharedVerifyCard() {
     var connected by remember { mutableStateOf(false) }
     var automatic by remember { mutableStateOf(SharedVerify.enabled(context)) }
     var authorizing by remember { mutableStateOf(false) }
+    var authMessage by remember { mutableStateOf<String?>(null) }
     var signal by remember { mutableStateOf<CancellationSignal?>(null) }
     val busy = authorizing || jobs.any { it.key in LongJobs.GUEST && it.value.running }
     LaunchedEffect(jobs) {
@@ -50,12 +52,16 @@ fun SharedVerifyCard() {
         if (authorizing) return
         val owner = activity ?: return
         authorizing = true
+        authMessage = null
         val pending = CancellationSignal()
         signal = pending
-        application.authorizeSharedTools(owner, pending) { ok ->
+        application.authorizeSharedTools(owner, pending) { result ->
             authorizing = false
             signal = null
-            if (ok) SharedVerify.start(context, install)
+            when (result) {
+                is Outcome.Success -> SharedVerify.start(context, install)
+                is Outcome.Failure -> authMessage = result.errors.first().message
+            }
         }
     }
 
@@ -64,6 +70,7 @@ fun SharedVerifyCard() {
             Text("Общие инструменты DP-Verify", style = MaterialTheme.typography.titleSmall)
             Text("Одна папка для Claude, Codex и Gemini на этом телефоне. ИИ может обновлять инструменты; каждая версия проверяется до отправки в main.", style = MaterialTheme.typography.bodySmall)
             Text(note.ifEmpty { "Чтение состояния…" }, style = MaterialTheme.typography.bodySmall)
+            authMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             jobs[LongJobs.SHARED_VERIFY]?.note?.takeIf { it != note }?.let {
                 Text("Последняя операция: $it", style = MaterialTheme.typography.bodySmall)
             }
@@ -83,7 +90,7 @@ fun SharedVerifyCard() {
                 automatic = it
                 SharedVerify.automatic(context, it)
             }) { Text("Синхронизировать в фоне", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall) }
-            Text("В фоне — раз в минуту, пока работает служба контроллера. Занятые инструменты ждут паузы. После закрытия доступа Keystore синхронизация ждёт нового входа; кнопка выше открывает доступ по PIN или биометрии.", style = MaterialTheme.typography.bodySmall)
+            Text("В фоне — раз в минуту, пока работает служба контроллера. Занятые инструменты ждут паузы. После входа доступ хранится только в памяти службы; её остановка, перезапуск или отключение фона требуют нового PIN или биометрии кнопкой выше.", style = MaterialTheme.typography.bodySmall)
             Text("Папка: /root/dp-verify. Подключение действует со следующего ИИ-хода. Отключение сохраняет файлы и историю.", style = MaterialTheme.typography.bodySmall)
         }
     }

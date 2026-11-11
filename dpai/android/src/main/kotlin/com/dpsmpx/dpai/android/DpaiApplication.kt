@@ -50,10 +50,14 @@ open class DpaiApplication : Application() {
     /** Аккаунт предоставляет оболочка; подсистема не знает ни хранилища, ни токена пульта (D-125). */
     open val sharedToolsAccountAvailable: Boolean get() = false
 
-    /** Только на время операции. Закрытый Keystore — отложить до входа, без обхода защиты. */
+    /** Право для общей папки выдаёт оболочка после явного входа (DPmetaApp:D-95). */
     open fun sharedToolsAccount(): com.dpsmpx.dpai.core.result.Outcome<com.dpsmpx.dpai.core.diagnostics.Secret?> =
         com.dpsmpx.dpai.core.result.Outcome.success(null)
 
     /** Явный запрос экрана; отмена при уходе/повороте принадлежит экрану. Из фона не вызывается. */
-    open fun authorizeSharedTools(activity: android.app.Activity, signal: android.os.CancellationSignal, done: (Boolean) -> Unit) = done(false)
+    open fun authorizeSharedTools(activity: android.app.Activity, signal: android.os.CancellationSignal, done: (com.dpsmpx.dpai.core.result.Outcome<Unit>) -> Unit) =
+        done(com.dpsmpx.dpai.core.result.Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.UNSUPPORTED, "Источник GitHub-аккаунта недоступен"))
+
+    /** Служба остановлена: отозвать право, в том числе у незавершённого окна входа. */
+    open fun sharedToolsSessionClosed() = Unit
 }

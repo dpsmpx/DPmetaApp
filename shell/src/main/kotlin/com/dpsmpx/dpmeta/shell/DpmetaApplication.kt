@@ -30,12 +30,20 @@ class DpmetaApplication : DpaiApplication() {
     override val sharedToolsAccountAvailable: Boolean get() = true
 
     override fun sharedToolsAccount(): com.dpsmpx.dpai.core.result.Outcome<com.dpsmpx.dpai.core.diagnostics.Secret?> =
-        com.dpsmpx.dpmeta.app.data.ConnectedGitHub.load(this)
+        com.dpsmpx.dpmeta.app.data.ConnectedGitHub.account()
 
-    override fun authorizeSharedTools(activity: android.app.Activity, signal: android.os.CancellationSignal, done: (Boolean) -> Unit) =
+    override fun authorizeSharedTools(activity: android.app.Activity, signal: android.os.CancellationSignal, done: (com.dpsmpx.dpai.core.result.Outcome<Unit>) -> Unit) {
+        if (com.dpsmpx.dpmeta.app.data.ConnectedGitHub.active()) {
+            done(com.dpsmpx.dpai.core.result.Outcome.success(Unit))
+            return
+        }
+        val request = com.dpsmpx.dpmeta.app.data.ConnectedGitHub.request()
         com.dpsmpx.dpmeta.app.Lock.ask(activity, "GitHub для общей папки DP-Verify", pinOnly = false, signal = signal,
-            onOpen = { if (!signal.isCanceled && !activity.isDestroyed) done(true) },
-            onDenied = { _, _ -> if (!signal.isCanceled && !activity.isDestroyed) done(false) })
+            onOpen = { if (!signal.isCanceled && !activity.isDestroyed) done(com.dpsmpx.dpmeta.app.data.ConnectedGitHub.authorize(this, request)) },
+            onDenied = { _, _ -> if (!signal.isCanceled && !activity.isDestroyed) done(com.dpsmpx.dpai.core.result.Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.OPERATION_NOT_ALLOWED, "Вход не подтверждён")) })
+    }
+
+    override fun sharedToolsSessionClosed() = com.dpsmpx.dpmeta.app.data.ConnectedGitHub.close()
 
     /** «AI» открывается над пультом, «назад» из неё — в пульт (D-73, UX-1). */
     override fun parentIntent(): android.content.Intent = android.content.Intent(this, DpmetaActivity::class.java)

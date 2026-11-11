@@ -44,6 +44,7 @@ class SecretStore(private val vfs: Vfs, private val path: String = "github.token
     }
 
     fun save(secret: Secret): Outcome<Unit> = try {
+        ConnectedGitHub.close()
         val c = Cipher.getInstance(TRANSFORMATION).apply {
             try {
                 init(Cipher.ENCRYPT_MODE, key())
@@ -89,6 +90,7 @@ class SecretStore(private val vfs: Vfs, private val path: String = "github.token
     fun exists(): Boolean = vfs.exists(path)
 
     fun clear() {
+        ConnectedGitHub.close()
         if (vfs.exists(path)) vfs.delete(path)
     }
 

@@ -249,6 +249,7 @@ class ControllerService : Service() {
     }
 
     override fun onDestroy() {
+        (applicationContext as? DpaiApplication)?.sharedToolsSessionClosed()
         runCatching { AppLogs.get(applicationContext).step("служба контроллера остановлена") }
         ControlServer.stop()
         running = false
