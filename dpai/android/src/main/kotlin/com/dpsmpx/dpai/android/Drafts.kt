@@ -12,6 +12,21 @@ import java.util.concurrent.ConcurrentHashMap
  */
 object Drafts {
     private val map = ConcurrentHashMap<String, String>()
+    private val files = ConcurrentHashMap<String, FileDraft>()
+
+    class FileDraft(val original: ByteArray, val editor: com.dpsmpx.dpai.ui.CodeEditorBuffer)
+
+    fun file(key: String): FileDraft? = files[key]
+
+    /** Черновик не вытесняется: девятый файл можно начать после сохранения/отмены одного из восьми. */
+    @Synchronized
+    fun startFile(key: String, original: ByteArray, text: String): FileDraft? {
+        files[key]?.let { return it }
+        if (files.size >= 8) return null
+        return FileDraft(original, com.dpsmpx.dpai.ui.CodeEditorBuffer(text)).also { files[key] = it }
+    }
+
+    fun dropFile(key: String) { files.remove(key) }
 
     fun get(key: String): String? = map[key]
 

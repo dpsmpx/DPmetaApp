@@ -451,29 +451,41 @@ private fun FileView(p: Place, path: String, onClose: () -> Unit) {
     val scope = rememberCoroutineScope()
     val image = TextFile.isImage(path)
     var text by remember { mutableStateOf<String?>(null) }
+    var original by remember { mutableStateOf<ByteArray?>(null) }
     var bitmap by remember { mutableStateOf<ImageBitmap?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     // Правка — черновиком вне окна (Drafts): смена вкладки её не теряет; несохранённая — с вопросом (AI:A-2).
     val draftKey = "file:${p.key()}\u0001$path"
-    var editing by remember(draftKey) { mutableStateOf(Drafts.get(draftKey)) }
-    androidx.compose.runtime.SideEffect { Drafts.set(draftKey, editing) }
+    var editing by remember(draftKey) { mutableStateOf(Drafts.file(draftKey)) }
+    var revision by remember { mutableStateOf(0) }
+    var saving by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
     var leaving by remember { mutableStateOf(false) }
-    val changed = editing != null && editing != text
+    val changed = revision.let { editing?.editor?.dirty == true }
     // Уходя, черновик снимается явно: экран уходит в том же кадре, и SideEffect его уже не снимет.
-    val drop = { editing = null; Drafts.set(draftKey, null) }
-    val leave = { if (changed) leaving = true else { drop(); onClose() } }
+    val drop = { editing = null; Drafts.dropFile(draftKey) }
+    val leave = { if (!saving) { if (changed) leaving = true else { drop(); onClose() } } }
     androidx.activity.compose.BackHandler(onBack = leave)
-    suspend fun saveEdit(e: String): Boolean {
-        val r = withContext(Dispatchers.IO) { treeOf(context, p).write(path, TextFile.encode(e)) }
-        return if (r is Outcome.Success) {
-            text = e
-            drop()
-            status = "сохранено"
-            true
-        } else {
-            status = "не сохранено: ${(r as Outcome.Failure).errors.first().message}"
-            false
+    suspend fun saveEdit(e: Drafts.FileDraft): Boolean {
+        if (saving) return false
+        saving = true
+        val content = e.editor.text
+        return try {
+            val r = withContext(Dispatchers.IO) { com.dpsmpx.dpai.files.TextFileEdit.save(treeOf(context, p), path, e.original, content) }
+            if (r is Outcome.Success) {
+                text = content
+                original = if (e.original.size >= 3 && e.original[0] == 0xEF.toByte() && e.original[1] == 0xBB.toByte() && e.original[2] == 0xBF.toByte()) {
+                    e.original.copyOfRange(0, 3) + TextFile.encode(content)
+                } else TextFile.encode(content)
+                drop()
+                status = "сохранено"
+                true
+            } else {
+                status = "не сохранено: ${(r as Outcome.Failure).errors.first().message}"
+                false
+            }
+        } finally {
+            saving = false
         }
     }
     if (leaving) {
@@ -504,7 +516,7 @@ private fun FileView(p: Place, path: String, onClose: () -> Unit) {
                     if (bitmap == null) error = "картинка не читается"
                 } else {
                     when (val t = TextFile.decode(r.value)) {
-                        is Outcome.Success -> text = t.value
+                        is Outcome.Success -> { text = t.value; original = r.value }
                         is Outcome.Failure -> error = t.errors.first().message
                     }
                 }
@@ -516,20 +528,20 @@ private fun FileView(p: Place, path: String, onClose: () -> Unit) {
             TextButton(onClick = leave, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("←") }
             Text(FileNames.name(path), Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val t = text
-            if (t != null && editing == null) TextButton(onClick = { editing = t }) { Text("Править") }
+            if (t != null && original != null && editing == null) TextButton(onClick = {
+                editing = Drafts.startFile(draftKey, original!!, t)
+                if (editing == null) status = "Открыто восемь черновиков: сохраните или отмените один из них"
+            }) { Text("Править") }
             editing?.let { e ->
-                TextButton(onClick = { scope.launch { saveEdit(e) } }) { Text("Сохранить") }
-                TextButton(onClick = drop) { Text("Отмена") }
+                TextButton(enabled = !saving, onClick = { scope.launch { saveEdit(e) } }) { Text(if (saving) "Сохраняю…" else "Сохранить") }
+                TextButton(enabled = !saving, onClick = drop) { Text("Отмена") }
             }
         }
         status?.let { Text(it, Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.bodySmall) }
         error?.let { Text(it, Modifier.padding(12.dp), color = MaterialTheme.colorScheme.error) }
         val e = editing
         when {
-            e != null -> OutlinedTextField(
-                e, { editing = it }, Modifier.fillMaxSize().padding(8.dp),
-                textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-            )
+            e != null -> CodeEditor(e.editor, path, revision, onChange = { revision++ }, enabled = !saving, modifier = Modifier.weight(1f).fillMaxWidth())
             bitmap != null -> Image(bitmap!!, FileNames.name(path), Modifier.fillMaxSize().padding(8.dp))
             text != null && text.orEmpty().length <= WHOLE_TEXT_MAX -> SelectionContainer(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)) {
                 Text(text.orEmpty(), style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace))
