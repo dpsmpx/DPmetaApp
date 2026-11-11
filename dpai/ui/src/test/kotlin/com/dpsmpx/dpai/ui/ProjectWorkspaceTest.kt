@@ -122,6 +122,8 @@ class ProjectWorkspaceTest {
     fun guestPathMappingDoesNotTreatRemoteOrTraversalAsPhoneFiles() {
         assertEquals("project/sub", WorkspacePaths.homeRelative(target, "/root/project/sub"))
         assertEquals("", WorkspacePaths.homeRelative(target, "/root"))
+        assertEquals("", WorkspacePaths.homeRelative(target, "/root/"))
+        assertEquals("project", WorkspacePaths.homeRelative(target, "/root/project/"))
         for (path in listOf("/root/../elsewhere", "/root/a/./b", "/root/a//b", "/rootish/a", "/tmp/root/a", "/root/a\\b", "/root/a\u0000b")) {
             assertNull(WorkspacePaths.homeRelative(target, path), path)
         }

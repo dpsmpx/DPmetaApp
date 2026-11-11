@@ -79,9 +79,10 @@ data class ProjectWorkspaceView(
 object WorkspacePaths {
     fun homeRelative(target: TargetEntry?, guest: String): String? {
         if (target?.inApp != true) return null
-        if (guest == "/root") return ""
-        if (!guest.startsWith("/root/")) return null
-        val relative = guest.removePrefix("/root/")
+        val path = guest.trimEnd('/')
+        if (path == "/root") return ""
+        if (!path.startsWith("/root/")) return null
+        val relative = path.removePrefix("/root/")
         return relative.takeIf { it.split('/').all { segment ->
             segment.isNotEmpty() && segment != "." && segment != ".." && segment.none { c -> c == '\\' || c.code < 32 || c.code == 127 }
         } }
