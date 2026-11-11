@@ -143,26 +143,40 @@ class AgentRuntime(
         is Outcome.Success -> r.value != null
     }
 
-    /** Постоянный запрет ID перед остановкой: опоздавший start не создаст процесс (D-134). */
+    private fun fenceMark(confirmed: Boolean) = JsonObject.of("format" to JsonString("dpai.run-fence"), "version" to JsonNumber.of(1), "confirmed" to JsonBool(confirmed))
+
+    private fun confirmFence(id: SessionId, reply: AgentReply): AgentReply = when (val w = fences.write(id.value.lowercase(), fenceMark(true))) {
+        is Outcome.Failure -> AgentReply.failure("fence-stop", w.diagnostics)
+        is Outcome.Success -> reply.copy(command = "fence-stop")
+    }
+
+    /** Постоянный запрет ID и отдельное доказательство безопасного выхода переживают очистку журнала (D-134). */
     fun fenceStop(id: SessionId): AgentReply {
-        val mark = fences.write(id.value.lowercase(), JsonObject.of("format" to JsonString("dpai.run-fence"), "version" to JsonNumber.of(1)))
+        val saved = fences.read(id.value.lowercase())
+        if (saved is Outcome.Failure) return AgentReply.failure("fence-stop", saved.diagnostics)
+        val content = (saved as Outcome.Success).value?.content
+        if (content != null && ((content["format"] as? JsonString)?.value != "dpai.run-fence" || (content["version"] as? JsonNumber)?.toLongExact() != 1L)) return AgentReply.failure("fence-stop", listOf(Diagnostic.error(DiagCode.STORAGE_CORRUPTED, "неизвестный формат запрета запуска", "run $id")))
+        val confirmed = (content?.get("confirmed") as? JsonBool)?.value == true
+        val mark = fences.write(id.value.lowercase(), fenceMark(confirmed))
         if (mark is Outcome.Failure) return AgentReply.failure("fence-stop", mark.diagnostics)
         val observed = observe(id)
         if (observed is Outcome.Failure) {
-            return if (observed.errors.all { it.code == DiagCode.ENTITY_NOT_FOUND }) {
-                AgentReply("fence-stop", ok = true, run = RunStatus(id, RunState.EXITED, reason = ExitReason.STOPPED), stop = StopResult(false, emptyList()))
-            } else AgentReply.failure("fence-stop", observed.diagnostics)
+            if (observed.errors.any { it.code != DiagCode.ENTITY_NOT_FOUND }) return AgentReply.failure("fence-stop", observed.diagnostics)
+            val tomb = docs(id).read(PRUNED_KEY)
+            if (tomb is Outcome.Failure) return AgentReply.failure("fence-stop", tomb.diagnostics)
+            if ((tomb as Outcome.Success).value != null && !confirmed) return AgentReply.failure("fence-stop", listOf(Diagnostic.error(DiagCode.AGENT_RUN_LOST, "журнал очищен без подтверждения безопасного выхода; пауза сохраняется", "run $id")))
+            return confirmFence(id, AgentReply("fence-stop", ok = true, run = RunStatus(id, RunState.EXITED, reason = ExitReason.STOPPED), stop = StopResult(false, emptyList())))
         }
         val stopped = stop(id, RunningProcess.DEFAULT_GRACE)
         if (!stopped.ok || stopped.run?.state != RunState.EXITED) return stopped.copy(command = "fence-stop")
-        val records = EventJournal.readCommitted(vfs, journalPath(id))
-        if (records is Outcome.Failure) return AgentReply.failure("fence-stop", records.diagnostics)
         val status = stopped.run!!
-        val exit = (records as Outcome.Success).value.lastOrNull { it.event.type == EventType.TARGET_PROCESS_EXITED && (it.event.payload["turn"] as? JsonNumber)?.toLongExact() == status.turn.toLong() }
+        val records = EventJournal.readCommittedAfter(vfs, journalPath(id), (status.lastSequence - 16).coerceAtLeast(0))
+        if (records is Outcome.Failure) return AgentReply.failure("fence-stop", records.diagnostics)
+        val exit = (records as Outcome.Success).value.first.lastOrNull { it.event.type == EventType.TARGET_PROCESS_EXITED && (it.event.payload["turn"] as? JsonNumber)?.toLongExact() == status.turn.toLong() }
         if (exit == null && status.reason != ExitReason.START_FAILED) return AgentReply.failure("fence-stop", listOf(Diagnostic.error(DiagCode.STORAGE_CORRUPTED, "нет подтверждённого события выхода; пауза сохраняется", "run $id")))
-        val prior = stoppedBySupervisor(id, status.turn)
-        if (prior.survivors.isNotEmpty() || stopped.stop?.survivors?.isNotEmpty() == true) return AgentReply.failure("fence-stop", listOf(Diagnostic.error(DiagCode.PROCESS_ORPHANS_LEFT, "после остановки остались процессы; проект остаётся на паузе", "run $id")))
-        return stopped.copy(command = "fence-stop")
+        val survivors = (exit?.event?.payload?.get("survivors") as? JsonArray)?.items
+        if (survivors?.isNotEmpty() == true || stopped.stop?.survivors?.isNotEmpty() == true) return AgentReply.failure("fence-stop", listOf(Diagnostic.error(DiagCode.PROCESS_ORPHANS_LEFT, "после остановки остались процессы; проект остаётся на паузе", "run $id")))
+        return confirmFence(id, stopped)
     }
 
     fun start(id: SessionId, spec: RunSpec): AgentReply {

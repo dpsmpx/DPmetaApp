@@ -81,6 +81,35 @@ class AgentRuntimeTest {
     private fun alive(pid: Long) = ProcessHandle.of(pid).map { it.isAlive }.orElse(false)
 
     @Test
+    fun unknownFenceFormatCannotPretendToConfirmSafeExit() {
+        val run = ids.next(IdKinds.SESSION)
+        val store = DocumentStore(NioVfs(dir), "run-fences")
+        store.write(run.value.lowercase(), com.dpsmpx.dpai.core.serialization.JsonObject.of("format" to JsonString("unknown"), "version" to com.dpsmpx.dpai.core.serialization.JsonNumber.of(2), "confirmed" to JsonBool(true)))
+        assertFalse(runtime().fenceStop(run).ok)
+        assertFalse(runtime().start(run, RunSpec(TestChild.command("child", "hang"))).ok)
+    }
+
+    @Test
+    fun prunedRunWithoutSafeFenceCannotBeMistakenForNeverStartedRun() {
+        val run = ids.next(IdKinds.SESSION)
+        val store = DocumentStore(NioVfs(dir), "runs/${run.value}")
+        assertTrue(store.write(AgentRuntime.PRUNED_KEY, PrunedDoc(1, 42, Clock.SYSTEM.now()).toJson()) is Outcome.Success)
+        assertFalse(runtime().fenceStop(run).ok)
+        assertFalse(runtime().fenceStop(run).ok, "повтор тоже не теряет неопределённость")
+        assertFalse(runtime().start(run, RunSpec(TestChild.command("child", "hang"))).ok)
+    }
+
+    @Test
+    fun safeFenceProofSurvivesPrunedJournalAndRuntimeRestart() {
+        val run = ids.next(IdKinds.SESSION)
+        assertTrue(runtime().fenceStop(run).ok)
+        val store = DocumentStore(NioVfs(dir), "runs/${run.value}")
+        store.write(AgentRuntime.PRUNED_KEY, PrunedDoc(1, 42, Clock.SYSTEM.now()).toJson())
+        assertTrue(runtime().fenceStop(run).ok)
+        assertFalse(runtime().start(run, RunSpec(TestChild.command("child", "hang"))).ok)
+    }
+
+    @Test
     fun fenceBeforeStartSurvivesRuntimeRestartAndNeverAllowsLateStart() {
         val run = ids.next(IdKinds.SESSION)
         val rt = runtime()
