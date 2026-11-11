@@ -129,7 +129,7 @@ class ControllerService : Service() {
                     try {
                         // Targets с каталогом Claude не осталось — контроллеру нечего опрашивать: служба уходит,
                         // а не шагает демо в фоне (ревью 8 октября 2026, A-28). Экран поднимет её, когда target появится.
-                        if (!model.hasLive()) {
+                        if (!model.hasLive() && !SharedVerify.enabled(app)) {
                             log.step("служба контроллера: нет targets с каталогом Claude")
                             stopSelf()
                             return@scheduleWithFixedDelay
@@ -137,9 +137,15 @@ class ControllerService : Service() {
                         lock.acquire(TimeUnit.MINUTES.toMillis(WAKE_MINUTES))
                         ticking = true
                         meter.begin()
+                        // Проверка общей папки идёт отдельно: не задерживает такт и ждёт lease инструментов.
+                        try {
+                            SharedVerify.tick(app)
+                        } catch (e: Exception) {
+                            log.warn("общие инструменты", AppLogs.describe(e))
+                        }
                         // Сбой такта — в журнал приложения, а не молча (D-43): контур идёт дальше.
                         val ok = try {
-                            model.step(null).notifications.forEach(notifier::show)
+                            if (model.hasLive()) model.step(null).notifications.forEach(notifier::show)
                             // Лимиты слотов с автообновлением — раз в минуту, и без открытой сводки.
                             val auto = UsageAuto.enabled(app)
                             val tick = Clock.SYSTEM.monotonicNanos()
@@ -172,7 +178,7 @@ class ControllerService : Service() {
                         meter.end(ok)
                         // Строка уведомления — числа контура (AI:A-26), без текста задач; только когда изменилась.
                         try {
-                            val line = counts(model)
+                            val line = if (model.hasLive()) counts(model) else "DP-Verify: фоновая синхронизация"
                             if (line != shown) {
                                 shown = line
                                 getSystemService(NotificationManager::class.java).notify(ID, notification(line))

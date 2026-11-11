@@ -74,8 +74,11 @@ class LongJobs(private val scope: CoroutineScope, private val onDone: (String, D
         /** Облачная копия (D-107): отправка, замена, отмена восстановления. */
         const val CLOUD = "cloud"
 
+        /** Получение, проверка и синхронизация общей папки. */
+        const val SHARED_VERIFY = "shared-verify"
+
         /** Всё, что запускает процессы гостя: идут по одному. */
-        val GUEST = setOf(LINUX_INSTALL, LINUX_APK, LLAMA)
+        val GUEST = setOf(LINUX_INSTALL, LINUX_APK, LLAMA, SHARED_VERIFY)
 
         /** Сколько последних строк вывода неудачи идёт в журнал. */
         private const val MAX_LOGGED = 20

@@ -174,6 +174,7 @@ fun LinuxScreen(onBack: () -> Unit) {
                 }
             }
         }
+        if (installed != null && SharedVerify.available(context)) SharedVerifyCard()
         // Ход — полосой (AI:A-14); итог операции — строкой, пока его не убрали.
         for (j in listOfNotNull(install, work)) {
             if (j.running) {

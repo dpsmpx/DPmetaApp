@@ -27,6 +27,16 @@ class DpmetaApplication : DpaiApplication() {
 
     override val ecosystemRegistry: Boolean get() = true
 
+    override val sharedToolsAccountAvailable: Boolean get() = true
+
+    override fun sharedToolsAccount(): com.dpsmpx.dpai.core.result.Outcome<com.dpsmpx.dpai.core.diagnostics.Secret?> =
+        com.dpsmpx.dpmeta.app.data.ConnectedGitHub.load(this)
+
+    override fun authorizeSharedTools(activity: android.app.Activity, signal: android.os.CancellationSignal, done: (Boolean) -> Unit) =
+        com.dpsmpx.dpmeta.app.Lock.ask(activity, "GitHub для общей папки DP-Verify", pinOnly = false, signal = signal,
+            onOpen = { if (!signal.isCanceled && !activity.isDestroyed) done(true) },
+            onDenied = { _, _ -> if (!signal.isCanceled && !activity.isDestroyed) done(false) })
+
     /** «AI» открывается над пультом, «назад» из неё — в пульт (D-73, UX-1). */
     override fun parentIntent(): android.content.Intent = android.content.Intent(this, DpmetaActivity::class.java)
 }

@@ -21,6 +21,55 @@ UPSTREAM = 'https://github.com/dpsmpx/DP-Verify.git'
 GIT_TIMEOUT = 120
 VALIDATION_TIMEOUT = 15 * 60
 POLL_SECONDS = 60
+ACCOUNT = None
+TOKEN_ENV = 'DPMETA_VERIFY_GITHUB_TOKEN'
+
+
+def credential(operation):
+    """Git helper: секрет только для официального HTTPS-пути, без сохранения."""
+    if operation != 'get':
+        return 0
+    fields = dict(line.rstrip('\n').split('=', 1) for line in sys.stdin
+                  if '=' in line)
+    token = os.environ.get(TOKEN_ENV, '')
+    if (fields.get('protocol') == 'https' and fields.get('host') == 'github.com'
+            and fields.get('path') == 'dpsmpx/DP-Verify.git' and token):
+        sys.stdout.write('username=x-access-token\npassword=' + token + '\n\n')
+    return 0
+
+
+def git_environment(args):
+    env = dict(os.environ, GIT_TERMINAL_PROMPT='0')
+    if ACCOUNT is None:
+        return env
+    # Автор автоматических коммитов; пользовательский Git config не меняется.
+    env.update(GIT_AUTHOR_NAME='DPmetaApp', GIT_AUTHOR_EMAIL='dpmetaapp@localhost',
+               GIT_COMMITTER_NAME='DPmetaApp', GIT_COMMITTER_EMAIL='dpmetaapp@localhost')
+    if args[0] not in ('clone', 'fetch', 'push'):
+        return env
+    # Только сетевые команды получают токен. Валидатор, hooks коммита и ИИ — нет.
+    env[TOKEN_ENV] = ACCOUNT
+    helper = '!' + shlex.quote(sys.executable) + ' ' + shlex.quote(str(Path(__file__).resolve())) + ' credential'
+    settings = [('credential.helper', ''), ('credential.helper', helper),
+                ('credential.useHttpPath', 'true'), ('http.followRedirects', 'false'),
+                ('http.sslVerify', 'true')]
+    count = int(env.get('GIT_CONFIG_COUNT', '0'))
+    for index, (key, value) in enumerate(settings, count):
+        env['GIT_CONFIG_KEY_' + str(index)] = key
+        env['GIT_CONFIG_VALUE_' + str(index)] = value
+    env['GIT_CONFIG_COUNT'] = str(count + len(settings))
+    return env
+
+
+def read_account():
+    try:
+        value = json.loads(sys.stdin.read(8193))
+        token = value['token']
+        if not isinstance(token, str) or not 0 < len(token) <= 4096 or any(not '!' <= c <= '~' for c in token):
+            raise ValueError()
+        return token
+    except (ValueError, KeyError, TypeError) as error:
+        raise Refused('invalid_account') from error
 
 
 class Busy(Exception):
@@ -34,7 +83,7 @@ class Refused(Exception):
 def git(repo, *args):
     try:
         p = subprocess.run(['git', '-C', str(repo), *args], capture_output=True,
-                           env=dict(os.environ, GIT_TERMINAL_PROMPT='0'), timeout=GIT_TIMEOUT)
+                           env=git_environment(args), timeout=GIT_TIMEOUT)
     except subprocess.TimeoutExpired as error:
         raise Refused('git_timeout') from error
     if p.returncode:
@@ -287,13 +336,16 @@ def run(repo, command, exclusive=False):
 
 
 def main(argv=None):
+    global ACCOUNT
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--repo', required=True, type=Path)
     sub = parser.add_subparsers(dest='action', required=True)
     update = sub.add_parser('sync')
     update.add_argument('--state', required=True, type=Path)
+    update.add_argument('--github-stdin', action='store_true')
     first = sub.add_parser('init')
     first.add_argument('--state', required=True, type=Path)
+    first.add_argument('--github-stdin', action='store_true')
     ticker = sub.add_parser('watch')
     ticker.add_argument('--state', required=True, type=Path)
     ticker.add_argument('--interval', type=float, default=POLL_SECONDS)
@@ -302,6 +354,7 @@ def main(argv=None):
         use.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
     try:
+        ACCOUNT = read_account() if getattr(args, 'github_stdin', False) else None
         if args.action == 'init':
             print(json.dumps(install(args.repo, args.state)))
             return 0
@@ -329,4 +382,6 @@ def main(argv=None):
 
 
 if __name__ == '__main__':
+    if sys.argv[1:2] == ['credential']:
+        sys.exit(credential(sys.argv[2] if len(sys.argv) > 2 else ''))
     sys.exit(main())

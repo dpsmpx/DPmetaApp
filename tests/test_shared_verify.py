@@ -330,5 +330,16 @@ class SharedVerifyTest(unittest.TestCase):
                          [str(self.repo), self.git(self.repo, 'rev-parse', 'HEAD')])
 
 
+    def test_validator_never_inherits_connected_account(self):
+        revision = self.git(self.repo, 'rev-parse', 'HEAD')
+        self.state.mkdir()
+        command = [sys.executable, '-c',
+                   'import os; assert "DPMETA_VERIFY_GITHUB_TOKEN" not in os.environ; print("clean")']
+        with patch.object(runtime, 'ACCOUNT', ''.join(('synthetic', '-', 'account'))):
+            runtime.validate(self.repo, revision, self.state, command)
+        self.assertEqual((self.state / 'validation.log').read_text().strip(), 'clean')
+        self.assertEqual(self.git(self.repo, 'config', 'user.name'), 'Synthetic')
+
+
 if __name__ == '__main__':
     unittest.main()

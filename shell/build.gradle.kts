@@ -56,6 +56,16 @@ kotlin {
     }
 }
 
+// Один исходник контроллера: APK получает его при сборке, копия кода вручную не ведётся.
+val sharedVerifyAssets by tasks.registering(Copy::class) {
+    from(rootProject.file("tools/shared_verify/runtime.py"))
+    into(layout.buildDirectory.dir("generated/shared-verify-assets/shared-verify"))
+}
+android.sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/shared-verify-assets"))
+tasks.configureEach {
+    if (name.startsWith("merge") && name.endsWith("Assets")) dependsOn(sharedVerifyAssets)
+}
+
 dependencies {
     implementation(project(":app"))
     implementation("com.dpsmpx.dpai:android")

@@ -58,6 +58,8 @@ RULES = [
          # в шифр Keystore — только хранилище ключей приложения.
          "providers/src/main/kotlin/com/dpsmpx/dpai/providers/UrlTransport.kt",
          "android/src/main/kotlin/com/dpsmpx/dpai/android/ApiKeys.kt",
+         # Подключённый GitHub — только stdin контроллера общих инструментов (D-125).
+         "execution/src/main/kotlin/com/dpsmpx/dpai/execution/tools/SharedToolsSync.kt",
          # Пароль облачной копии (D-107): только в вывод ключа шифра.
          "sync/src/main/kotlin/com/dpsmpx/dpai/sync/CloudCrypto.kt",
      ],

@@ -158,6 +158,10 @@ object LinuxSetup {
     /** Каталог агента target «в приложении»: в данных приложения, гостю виден по тому же пути. */
     private const val AGENT_HOME = "agent-in-app"
 
+    /** Та же настройка, которую агент перечитывает перед каждым новым ИИ-ходом (D-125). */
+    fun sharedToolsStore(context: Context): com.dpsmpx.dpai.orchestrator.agent.SharedToolsStore =
+        com.dpsmpx.dpai.orchestrator.agent.SharedToolsStore(NioVfs(File(context.filesDir, AGENT_HOME).toPath()))
+
     @Volatile
     private var agent: com.dpsmpx.dpai.orchestrator.agent.InAppAgentHost? = null
 

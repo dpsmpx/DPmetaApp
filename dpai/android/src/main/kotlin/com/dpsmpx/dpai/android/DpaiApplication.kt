@@ -46,4 +46,14 @@ open class DpaiApplication : Application() {
 
     /** Есть ли [ecosystemManifest] у этой сборки — без вызова (он читает клоны). */
     open val ecosystemRegistry: Boolean get() = false
+
+    /** Аккаунт предоставляет оболочка; подсистема не знает ни хранилища, ни токена пульта (D-125). */
+    open val sharedToolsAccountAvailable: Boolean get() = false
+
+    /** Только на время операции. Закрытый Keystore — отложить до входа, без обхода защиты. */
+    open fun sharedToolsAccount(): com.dpsmpx.dpai.core.result.Outcome<com.dpsmpx.dpai.core.diagnostics.Secret?> =
+        com.dpsmpx.dpai.core.result.Outcome.success(null)
+
+    /** Явный запрос экрана; отмена при уходе/повороте принадлежит экрану. Из фона не вызывается. */
+    open fun authorizeSharedTools(activity: android.app.Activity, signal: android.os.CancellationSignal, done: (Boolean) -> Unit) = done(false)
 }
