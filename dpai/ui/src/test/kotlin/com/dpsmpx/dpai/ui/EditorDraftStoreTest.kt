@@ -39,6 +39,7 @@ class EditorDraftStoreTest {
             val c = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, bytes, 0, 12)); updateAAD(record.toByteArray()) }
             Outcome.success(c.doFinal(bytes, 12, bytes.size - 12))
         } catch (_: GeneralSecurityException) { Outcome.failure(DiagCode.STORAGE_CORRUPTED, "копия не открыта") }
+        catch (_: IllegalArgumentException) { Outcome.failure(DiagCode.STORAGE_CORRUPTED, "копия обрезана") }
     }
 
     @Test fun restartRestoresTextOriginalBytesSelectionAndIdentityWithoutPlaintextOnDisk() {
