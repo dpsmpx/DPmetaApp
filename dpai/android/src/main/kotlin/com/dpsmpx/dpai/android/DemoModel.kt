@@ -500,6 +500,7 @@ class DemoModel(
                 if (controller.targets().firstOrNull { it.id == target.id } != target || (built as? LiveSystem)?.orchestrator?.manualProfileFree() != true) {
                     return@withLock Outcome.failure(DiagCode.WORKTREE_OWNED, "контур занят; дождитесь завершения сессий и команд")
                 }
+                if (!Drafts.recovery.value.ready) return@withLock Outcome.failure(DiagCode.STATE_CONFLICT, "сначала дождитесь восстановления черновиков")
                 if (Drafts.dirtyIn(location, target.inApp)) return@withLock Outcome.failure(DiagCode.STATE_CONFLICT, "сначала сохраните или отмените правки редактора в этом дереве")
                 controller.manualProfiles.prepare(p, target, location, profile)
             }

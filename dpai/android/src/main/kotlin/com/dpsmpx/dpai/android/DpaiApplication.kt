@@ -15,6 +15,16 @@ import com.dpsmpx.dpai.core.diagnostics.Redactor
 open class DpaiApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        Drafts.install(this)
+        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+            override fun onActivityStopped(activity: android.app.Activity) = Drafts.flushNow()
+            override fun onActivityCreated(activity: android.app.Activity, state: android.os.Bundle?) = Unit
+            override fun onActivityStarted(activity: android.app.Activity) = Unit
+            override fun onActivityResumed(activity: android.app.Activity) = Unit
+            override fun onActivityPaused(activity: android.app.Activity) = Unit
+            override fun onActivitySaveInstanceState(activity: android.app.Activity, state: android.os.Bundle) = Unit
+            override fun onActivityDestroyed(activity: android.app.Activity) = Unit
+        })
         CrashRecord.install(filesDir)
         CrashRecord.onFatal = { text -> AppLogs.get(this).fatal("падение", Redactor.STANDARD.redact(text)) }
         // Диск открыт и после перезапуска процесса (D-96): уведомление «открыт» — снова в шторке.

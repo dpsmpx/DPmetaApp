@@ -485,6 +485,7 @@ internal fun TreeFileView(tree: FileTree, treeKey: String, path: String, readOnl
 @Composable
 private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readOnly: Boolean, guestPath: String?, onClose: () -> Unit) {
     val scope = rememberCoroutineScope()
+    val recovery by Drafts.recovery.collectAsState()
     val image = TextFile.isImage(path)
     var text by remember { mutableStateOf<String?>(null) }
     var original by remember { mutableStateOf<ByteArray?>(null) }
@@ -499,9 +500,32 @@ private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readO
     var status by remember { mutableStateOf<String?>(null) }
     var leaving by remember { mutableStateOf(false) }
     val changed = revision.let { editing?.editor?.dirty == true }
-    // Уходя, черновик снимается явно: экран уходит в том же кадре, и SideEffect его уже не снимет.
-    val drop = { editing = null; Drafts.dropFile(draftKey) }
-    val leave = { if (!saving) { if (changed) leaving = true else { drop(); onClose() } } }
+    suspend fun dropEdit(): Boolean {
+        val result = withContext(Dispatchers.IO) { Drafts.dropFile(draftKey) }
+        return if (result is Outcome.Success) { editing = null; true } else {
+            status = (result as Outcome.Failure).errors.first().message; false
+        }
+    }
+    val drop = {
+        if (!saving) scope.launch {
+            saving = true
+            try { dropEdit() } finally { saving = false }
+        }
+        Unit
+    }
+    val leave = {
+        if (!saving) {
+            if (changed) leaving = true else scope.launch {
+                saving = true
+                try { if (dropEdit()) onClose() } finally { saving = false }
+            }
+        }
+        Unit
+    }
+    LaunchedEffect(recovery.ready) {
+        if (recovery.ready && editing == null) editing = Drafts.file(draftKey)
+    }
+    DisposableEffect(draftKey) { onDispose { Drafts.flushNow() } }
     androidx.activity.compose.BackHandler(onBack = leave)
     suspend fun saveEdit(e: Drafts.FileDraft): Boolean {
         if (saving) return false
@@ -512,9 +536,10 @@ private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readO
             if (r is Outcome.Success) {
                 text = content
                 original = r.value
-                drop()
-                status = "сохранено"
-                true
+                if (dropEdit()) { status = "сохранено"; true } else {
+                    status = "Файл сохранён, но копия черновика не удалена. ${status.orEmpty()}"
+                    false
+                }
             } else {
                 status = "не сохранено: ${(r as Outcome.Failure).errors.first().message}"
                 false
@@ -536,7 +561,13 @@ private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readO
             },
             dismissButton = {
                 Row {
-                    TextButton(onClick = { leaving = false; drop(); onClose() }) { Text("Не сохранять", color = MaterialTheme.colorScheme.error) }
+                    TextButton(onClick = {
+                        leaving = false
+                        scope.launch {
+                            saving = true
+                            try { if (dropEdit()) onClose() } finally { saving = false }
+                        }
+                    }) { Text("Не сохранять", color = MaterialTheme.colorScheme.error) }
                     TextButton(onClick = { leaving = false }) { Text("Отмена") }
                 }
             },
@@ -564,9 +595,9 @@ private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readO
             TextButton(onClick = leave, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("←") }
             Text(FileNames.name(path), Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val t = text
-            if (t != null && original != null && editing == null) TextButton(enabled = !readOnly, onClick = {
+            if (t != null && original != null && editing == null) TextButton(enabled = recovery.ready && !readOnly && !saving, onClick = {
                 editing = Drafts.startFile(draftKey, original!!, t, guestPath)
-                if (editing == null) status = "Открыто восемь черновиков: сохраните или отмените один из них"
+                if (editing == null) status = Drafts.startFailure(draftKey)
             }) { Text("Править") }
             editing?.let { e ->
                 TextButton(enabled = !readOnly && !saving && !loading, onClick = { scope.launch { saveEdit(e) } }) { Text(if (saving) "Сохраняю…" else "Сохранить") }
@@ -574,12 +605,17 @@ private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readO
             }
         }
         if (readOnly) Text("Только чтение: дерево занято или контроллер не готов", Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.bodySmall)
+        if (!recovery.ready) Text(recovery.note, Modifier.padding(horizontal = 12.dp), color = MaterialTheme.colorScheme.error)
+        editing?.let { e ->
+            Text(Drafts.checkpoint(draftKey), Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.bodySmall)
+            if (e.restored) Text("Восстановлен черновик; исходный файл не изменён", Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.bodySmall)
+        }
         status?.let { Text(it, Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.bodySmall) }
         error?.let { Text(it, Modifier.padding(12.dp), color = MaterialTheme.colorScheme.error) }
         val e = editing
         when {
             e != null -> Clipboard.Sensitive {
-                CodeEditor(e.editor, path, revision, onChange = { revision++ }, enabled = !readOnly && !saving, modifier = Modifier.weight(1f).fillMaxWidth())
+                CodeEditor(e.editor, path, revision, onChange = { revision++; Drafts.changed(draftKey) }, enabled = recovery.ready && !readOnly && !saving, modifier = Modifier.weight(1f).fillMaxWidth())
             }
             bitmap != null -> Image(bitmap!!, FileNames.name(path), Modifier.fillMaxSize().padding(8.dp))
             text != null && text.orEmpty().length <= WHOLE_TEXT_MAX -> SelectionContainer(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)) {
