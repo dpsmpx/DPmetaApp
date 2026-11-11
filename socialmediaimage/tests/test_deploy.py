@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import json
 import os
 import subprocess
 import unittest
@@ -104,8 +105,61 @@ class Guard(unittest.TestCase):
         with mock.patch.dict(os.environ, LOCAL):
             result = deploy.run(repo, repo.path("build/site"), runner=runner)
         self.assertFalse(result.ok)
-        self.assertTrue(any("rsync" in problem for problem in result.problems))
+        self.assertTrue(any("не исполняется (Д55)" in problem for problem in result.problems))
         runner.assert_not_called()
+
+    def command_repo(self, deploy_cfg):
+        repo = site_repo()
+        path = repo.path("data/website/site.yaml")
+        cfg = yaml.safe_load(path.read_text(encoding="utf-8"))
+        cfg["environments"]["production"]["deploy"] = {**deploy_cfg, "mark": {"required": False}}
+        path.write_text(yaml.safe_dump(cfg, allow_unicode=True), encoding="utf-8")
+        repo.reset()
+        return repo
+
+    def test_author_command_bad_refs_and_values_refused(self):
+        never = mock.Mock(side_effect=AssertionError("команда не должна запускаться"))
+        cases = [
+            ({"kind": "command", "command_ref": "PATH"}, {}, "CS_<ОКР>_SITE_DEPLOY_COMMAND"),
+            ({"kind": "command", "command_ref": "CS_DEV_SITE_DEPLOY_COMMAND"}, {}, "не для окружения production"),
+            ({"kind": "command", "command_ref": "CS_PROD_SITE_DEPLOY_COMMAND"}, {}, "нет команды выгрузки"),
+            ({"kind": "command", "command_ref": "CS_PROD_SITE_DEPLOY_COMMAND"}, {"CS_PROD_SITE_DEPLOY_COMMAND": "deploy.sh"}, "не массив JSON"),
+            ({"kind": "command", "command_ref": "CS_PROD_SITE_DEPLOY_COMMAND"}, {"CS_PROD_SITE_DEPLOY_COMMAND": '["deploy.sh"]'}, "абсолютным путём"),
+            ({"kind": "command", "command_ref": "CS_PROD_SITE_DEPLOY_COMMAND"}, {"CS_PROD_SITE_DEPLOY_COMMAND": '[]'}, "непустых строк"),
+            ({"kind": "command", "command_ref": "CS_PROD_SITE_DEPLOY_COMMAND", "command": ["/bin/true"]},
+             {"CS_PROD_SITE_DEPLOY_COMMAND": '["/bin/true"]'}, "не исполняется (Д55)"),
+        ]
+        for deploy_cfg, env, why in cases:
+            repo = self.command_repo(deploy_cfg)
+            with mock.patch.dict(os.environ, AUTHOR):
+                res = deploy.run(repo, repo.path("build/site"), store=EnvCredentialStore(env), runner=never)
+            self.assertFalse(res.ok, deploy_cfg)
+            self.assertTrue(any(why in p for p in res.problems), (why, res.problems))
+        never.assert_not_called()
+
+    def test_author_command_runs_as_list_and_is_not_printed(self):
+        repo = self.command_repo({"kind": "command", "command_ref": "CS_PROD_SITE_DEPLOY_COMMAND"})
+        argv = ["/home/author/bin/deploy-site", "--to", "секретный-хост"]
+        store = EnvCredentialStore({"CS_PROD_SITE_DEPLOY_COMMAND": json.dumps(argv)})
+        calls = []
+
+        def runner(a, **kw):
+            calls.append((a, kw))
+            return mock.Mock(returncode=0, stdout="ok", stderr="")
+
+        with mock.patch.dict(os.environ, AUTHOR):
+            dry = deploy.run(repo, repo.path("build/site"), store=store, runner=runner, dry_run=True)
+            res = deploy.run(repo, repo.path("build/site"), store=store, runner=runner)
+        self.assertTrue(dry.ok)
+        self.assertEqual(calls[0][0], argv, "пробный прогон команду не запускает — запуск один")
+        self.assertEqual(len(calls), 1)
+        self.assertNotIn("shell", calls[0][1])
+        self.assertTrue(res.ok)
+        self.assertNotIn("секретный-хост", " ".join(res.command + dry.command))
+        with mock.patch.dict(os.environ, REMOTE):
+            remote = deploy.run(repo, repo.path("build/site"), store=store, runner=runner)
+        self.assertFalse(remote.ok, "облачная сессия не выгружает и командой (Д36)")
+        self.assertEqual(len(calls), 1)
 
     def test_reasons(self):
         repo = site_repo(live=False)
