@@ -40,7 +40,16 @@ class GitService(private val host: ProcessHost, private val commands: GitCommand
             }
         }
 
-    fun status(path: String): Outcome<GitStatus> = run(GitOp.STATUS, path).then { GitStatus.parse(it.stdout) }
+    fun status(path: String): Outcome<GitStatus> = status(path, Int.MAX_VALUE)
+
+    /** Усечённый статус не доказывает отсутствие изменений/конфликтов (D-133). */
+    fun status(path: String, maxChars: Int): Outcome<GitStatus> = run(GitOp.STATUS, path, maxStdoutChars = maxChars).then {
+        if (it.truncated) Outcome.failure(DiagCode.GIT_OUTPUT_INVALID, "вывод Git больше предела; полный статус неизвестен", path)
+        else if (maxChars != Int.MAX_VALUE && (it.stdout.none { line -> line.startsWith("# branch.oid ") } || it.stdout.none { line -> line.startsWith("# branch.head ") })) {
+            Outcome.failure(DiagCode.GIT_OUTPUT_INVALID, "Git не вернул ветку и HEAD; состояние неизвестно", path)
+        }
+        else GitStatus.parse(it.stdout)
+    }
 
     /** Изменение дерева сессией: только владелец; чтение — любому. */
     fun write(state: WorktreesState, worktree: WorktreeId, session: SessionId, op: GitOp, args: List<String> = emptyList(), approval: Approval? = null): Outcome<Completed> {

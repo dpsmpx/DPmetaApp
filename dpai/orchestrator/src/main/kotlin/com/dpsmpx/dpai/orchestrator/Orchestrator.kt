@@ -2765,6 +2765,23 @@ class Orchestrator(
     /** Дерево из привязки задачи (D-132). Читать под синхронизацией контроллера: treeOf изменяет такт. */
     fun taskWorktree(task: TaskId): com.dpsmpx.dpai.git.Worktree? = treeOf[task]?.let { worktrees.worktrees[it] }?.takeIf { !it.removed }
 
+    /** Зафиксировать разрешённое чтение под замком, вызвать после освобождения (D-133). */
+    fun workspaceGitProbe(path: String): Outcome<() -> Outcome<com.dpsmpx.dpai.git.GitStatus>> {
+        val repo = config.repository ?: return Outcome.failure(DiagCode.UNSUPPORTED, "репозиторий не настроен")
+        val g = git ?: return Outcome.failure(DiagCode.UNSUPPORTED, "клиент Git не готов")
+        if (path != repo.root && worktrees.worktrees.values.none { !it.removed && it.repository == repo.id && it.path == path }) {
+            return Outcome.failure(DiagCode.STATE_CONFLICT, "путь больше не принадлежит рабочему проекту")
+        }
+        return Outcome.success {
+            when (val status = g.status(path, 256 * 1024)) {
+                is Outcome.Failure -> status
+                is Outcome.Success -> if (status.value.head?.matches(Regex("[0-9a-fA-F]{40}|[0-9a-fA-F]{64}")) == false) {
+                    Outcome.failure(DiagCode.GIT_OUTPUT_INVALID, "Git вернул некорректный HEAD")
+                } else status
+            }
+        }
+    }
+
     /**
      * Изменения задачи (D-42): от базы ветки интеграции до рабочего дерева
      * задачи, а после его уборки — до ветки задачи. Только чтение; дерево

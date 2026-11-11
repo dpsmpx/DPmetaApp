@@ -125,6 +125,7 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
                     }
                 }
                 WorkspacePage.CHANGES.name -> Column(Modifier.padding(12.dp).verticalScroll(rememberScrollState())) {
+                    location?.let { WorkspaceGitPanel(model, project, it) }
                     if (selected == null) Text("Выберите задачу: её изменения сравниваются с веткой интеграции") else ChangesSection(model, selected.id)
                 }
                 WorkspacePage.CHECKS.name -> WorkspaceChecks(model, current, location, selected)

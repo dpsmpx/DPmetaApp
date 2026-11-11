@@ -460,6 +460,22 @@ class DemoModel(
 
     private val workspaceWriteGate = com.dpsmpx.dpai.ui.WorkspaceWriteGate(lock) { controller.project()?.let(::workspaceLocked) }
 
+    /** Только захват ссылки — под замком; сам Git работает вне него (D-133). */
+    fun workspaceGit(p: ProjectEntry, location: com.dpsmpx.dpai.ui.WorkspaceLocation): Outcome<com.dpsmpx.dpai.git.GitStatus> {
+        if (!lock.tryLock()) return Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.WORKTREE_OWNED, "контроллер занят; повторите обновление Git")
+        val read = try {
+            val current = controller.project() ?: return Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.STATE_CONFLICT, "проект отключён")
+            when (val allowed = workspaceLocked(current).allow(p, location, false)) {
+                is Outcome.Failure -> return allowed
+                is Outcome.Success -> (built as LiveSystem).orchestrator.workspaceGitProbe(location.path)
+            }
+        } finally { lock.unlock() }
+        return when (read) {
+            is Outcome.Failure -> read
+            is Outcome.Success -> read.value()
+        }
+    }
+
     /** Сверка идентичности и локальное действие под замком, общим с запуском хода. Не для UI-потока. */
     fun <T> workspaceAccess(p: ProjectEntry, location: com.dpsmpx.dpai.ui.WorkspaceLocation, write: Boolean, action: () -> Outcome<T>): Outcome<T> {
         if (!write) {
