@@ -27,14 +27,15 @@ object SharedVerify {
     private var lastAttempt = Long.MIN_VALUE
 
     fun available(context: Context): Boolean = (context.applicationContext as? DpaiApplication)?.sharedToolsAccountAvailable == true
-    fun enabled(context: Context): Boolean = prefs(context).getBoolean("automatic", false)
+    fun enabled(context: Context): Boolean = available(context) && prefs(context).getBoolean("automatic", false)
     fun automatic(context: Context, value: Boolean) {
         prefs(context).edit().putBoolean("automatic", value).apply()
         if (value) AiBackground.ensureService(context)
     }
 
     fun connected(context: Context): Boolean =
-        (LinuxSetup.sharedToolsStore(context).read() as? Outcome.Success)?.value == tools
+        (LinuxSetup.sharedToolsStore(context).read() as? Outcome.Success)?.value == tools &&
+            File(LinuxSetup.layout(context).rootfs, tools.repository.removePrefix("/") + "/.git").exists()
 
     fun refresh(context: Context) {
         note.value = prefs(context).getString("note", "Папка ещё не подключена").orEmpty()
@@ -59,17 +60,27 @@ object SharedVerify {
 
     fun start(context: Context, install: Boolean): Boolean {
         val app = context.applicationContext
-        return LongJobs.get(app).start(LongJobs.SHARED_VERIFY, "DP-Verify", excludes = LongJobs.GUEST) {
+        val started = LongJobs.get(app).start(LongJobs.SHARED_VERIFY, "DP-Verify", excludes = LongJobs.GUEST) {
             val result = synchronize(app, install)
             publish(app, result.note)
             result
         }
+        // Первая установка тоже долгая, ещё до включения автоматической синхронизации.
+        if (started && !ControllerService.running) ControllerService.start(app)
+        return started
     }
 
     fun disconnect(context: Context): Boolean = LongJobs.get(context).start(
         LongJobs.SHARED_VERIFY, "DP-Verify", excludes = LongJobs.GUEST,
     ) {
-        val result = LinuxSetup.sharedToolsStore(context).disable()
+        val store = LinuxSetup.sharedToolsStore(context)
+        val current = store.read()
+        if (current !is Outcome.Success || (current.value != null && current.value != tools)) {
+            val done = LongJobs.Done("Настройка папки изменилась; отключение не применено", failed = true)
+            publish(context, done.note)
+            return@start done
+        }
+        val result = store.disable()
         val done = if (result is Outcome.Success) {
             automatic(context, false)
             LongJobs.Done("Подключение к новым ИИ-ходам выключено; папка и история сохранены")
@@ -83,6 +94,10 @@ object SharedVerify {
         val current = when (val r = store.read()) {
             is Outcome.Failure -> return LongJobs.Done("Настройка общих инструментов не прочитана", failed = true)
             is Outcome.Success -> r.value
+        }
+        if (!install && current != tools) {
+            automatic(context, false)
+            return LongJobs.Done("Настройка изменена вне экрана; фон остановлен, папка сохранена")
         }
         if (current != null && current != tools) return LongJobs.Done("У target уже настроена другая общая папка; измените её через dpai tools", failed = true)
         val host = LinuxSetup.guestHost(context) ?: return LongJobs.Done("Сначала установите Linux в приложении", failed = true)
@@ -118,6 +133,7 @@ object SharedVerify {
                 "validation_failed" -> "Проверка версии не прошла; подробности в $BASE/state/validation.log"
                 "local_remote_changes", "diverged" -> "Копии разошлись; обе сохранены, нужно разобрать изменения"
                 "author_identity_required" -> "В Git не задан автор коммитов"
+                "tools_already_exist" -> "Папка уже существует; проверьте её вручную, автоматической замены нет"
                 "unexpected_remote" -> "Адрес Git отличается от официального DP-Verify; синхронизация остановлена"
                 else -> "Синхронизация не выполнена; проверьте сеть, права аккаунта и состояние Git"
             }
@@ -125,9 +141,16 @@ object SharedVerify {
         }
         val revision = field("revision")?.takeIf { it.matches(Regex("[0-9a-f]{40}")) }
             ?: return LongJobs.Done("Контроллер не вернул проверенную версию", failed = true)
-        when (store.write(tools)) {
-            is Outcome.Failure -> return LongJobs.Done("Версия проверена, но подключение к ИИ не сохранено", failed = true)
-            is Outcome.Success -> Unit
+        // Фон никогда не переписывает конфигурацию: ручное отключение/смена папки сохраняются.
+        val latest = store.read()
+        if (latest !is Outcome.Success || latest.value != current) {
+            return LongJobs.Done("Версия ${revision.take(12)} проверена; настройка ИИ изменилась во время синхронизации", failed = true)
+        }
+        if (install && current == null) {
+            when (store.write(tools)) {
+                is Outcome.Failure -> return LongJobs.Done("Версия проверена, но подключение к ИИ не сохранено", failed = true)
+                is Outcome.Success -> Unit
+            }
         }
         if (install) automatic(context, true)
         return LongJobs.Done("Проверенная версия ${revision.take(12)}; подключена к новым ИИ-ходам")

@@ -335,10 +335,25 @@ class SharedVerifyTest(unittest.TestCase):
         self.state.mkdir()
         command = [sys.executable, '-c',
                    'import os; assert "DPMETA_VERIFY_GITHUB_TOKEN" not in os.environ; print("clean")']
-        with patch.object(runtime, 'ACCOUNT', ''.join(('synthetic', '-', 'account'))):
+        with patch.object(runtime, 'ACCOUNT', ''.join(('synthetic', '-', 'account'))), patch.dict(os.environ, {runtime.TOKEN_ENV: 'ambient'}):
             runtime.validate(self.repo, revision, self.state, command)
+            self.assertNotIn(runtime.TOKEN_ENV, runtime.tool_environment(self.repo))
         self.assertEqual((self.state / 'validation.log').read_text().strip(), 'clean')
         self.assertEqual(self.git(self.repo, 'config', 'user.name'), 'Synthetic')
+
+    def test_account_mode_publishes_verified_edit_without_persisting_identity_or_secret(self):
+        self.git(self.repo, 'config', '--unset', 'user.name')
+        self.git(self.repo, 'config', '--unset', 'user.email')
+        (self.repo / 'tool.txt').write_text('updated-by-session')
+        token = ''.join(('synthetic', '-', 'account'))
+        with patch.object(runtime, 'ACCOUNT', token):
+            result = runtime.sync(self.repo, self.state, str(self.remote), self.command)
+        self.assertEqual(self.git(self.remote, 'rev-parse', 'main'), result['revision'])
+        self.assertEqual(self.git(self.repo, 'show', '-s', '--format=%an <%ae>'), 'DPmetaApp <dpmetaapp@localhost>')
+        config = (self.repo / '.git/config').read_text()
+        self.assertNotIn('[user]', config)
+        self.assertNotIn(token, config)
+        self.assertNotIn(token, ''.join(path.read_text() for path in self.state.glob('*.json')))
 
 
 if __name__ == '__main__':

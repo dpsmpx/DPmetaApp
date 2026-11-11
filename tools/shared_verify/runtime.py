@@ -38,8 +38,14 @@ def credential(operation):
     return 0
 
 
+def clean_environment():
+    env = dict(os.environ)
+    env.pop(TOKEN_ENV, None)
+    return env
+
+
 def git_environment(args):
-    env = dict(os.environ, GIT_TERMINAL_PROMPT='0')
+    env = dict(clean_environment(), GIT_TERMINAL_PROMPT='0')
     if ACCOUNT is None:
         return env
     # Автор автоматических коммитов; пользовательский Git config не меняется.
@@ -160,7 +166,8 @@ def clean(repo):
 
 def ancestor(repo, older, newer):
     p = subprocess.run(['git', '-C', str(repo), 'merge-base', '--is-ancestor', older, newer],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                       env=git_environment(('merge-base',)))
     if p.returncode not in (0, 1):
         raise Refused('history_unavailable')
     return p.returncode == 0
@@ -188,7 +195,7 @@ def validate(repo, revision, state, command):
                 os.fchmod(log.fileno(), 0o600)
                 try:
                     rc = subprocess.run(command, cwd=candidate, stdout=log, stderr=subprocess.STDOUT,
-                                        env=dict(os.environ, GIT_TERMINAL_PROMPT='0'),
+                                        env=dict(clean_environment(), GIT_TERMINAL_PROMPT='0'),
                                         timeout=VALIDATION_TIMEOUT).returncode
                 except subprocess.TimeoutExpired as error:
                     raise Refused('validation_timeout') from error
@@ -303,7 +310,7 @@ def watch(repo, state, interval=POLL_SECONDS, pause=None, emit=None):
 
 
 def tool_environment(repo):
-    return dict(os.environ, DP_VERIFY_HOME=str(repo), DP_VERIFY_REVISION=git(repo, 'rev-parse', 'HEAD'),
+    return dict(clean_environment(), DP_VERIFY_HOME=str(repo), DP_VERIFY_REVISION=git(repo, 'rev-parse', 'HEAD'),
                 DP_VERIFY_CONTROLLER=str(Path(__file__).resolve()), DP_VERIFY_PYTHON=sys.executable)
 
 

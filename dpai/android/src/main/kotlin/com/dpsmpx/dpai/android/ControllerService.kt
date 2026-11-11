@@ -117,7 +117,9 @@ class ControllerService : Service() {
             }
             keeper = Executors.newSingleThreadScheduledExecutor().also { k ->
                 k.scheduleWithFixedDelay({
-                    runCatching { if (ticking) lock.acquire(TimeUnit.MINUTES.toMillis(WAKE_MINUTES)) }
+                    runCatching {
+                        if (ticking || LongJobs.get(app).busy(LongJobs.SHARED_VERIFY)) lock.acquire(TimeUnit.MINUTES.toMillis(WAKE_MINUTES))
+                    }
                 }, 1, 1, TimeUnit.MINUTES)
             }
             timer = Executors.newSingleThreadScheduledExecutor().also { t ->
@@ -127,11 +129,27 @@ class ControllerService : Service() {
                     // Такт, умерший молча, оставлял уведомление «контроллер работает», `running = true`
                     // и застывший экран — приложение говорило «работаю», когда работа встала.
                     try {
-                        // Targets с каталогом Claude не осталось — контроллеру нечего опрашивать: служба уходит,
-                        // а не шагает демо в фоне (ревью 8 октября 2026, A-28). Экран поднимет её, когда target появится.
-                        if (!model.hasLive() && !SharedVerify.enabled(app)) {
-                            log.step("служба контроллера: нет targets с каталогом Claude")
-                            stopSelf()
+                        // Без targets служба занимается только общими инструментами; демо в фоне не шагает (A-28).
+                        if (!model.hasLive()) {
+                            if (!SharedVerify.enabled(app) && !LongJobs.get(app).busy(LongJobs.SHARED_VERIFY)) {
+                                log.step("служба контроллера: нет targets и фоновых инструментов")
+                                stopSelf()
+                                return@scheduleWithFixedDelay
+                            }
+                            try {
+                                SharedVerify.tick(app)
+                            } catch (e: Exception) {
+                                log.warn("общие инструменты", AppLogs.describe(e))
+                            }
+                            val working = LongJobs.get(app).busy(LongJobs.SHARED_VERIFY)
+                            // Один DP-Verify не держит CPU в ожидании PIN/изменений; долгую проверку поддерживает keeper.
+                            if (working) lock.acquire(TimeUnit.MINUTES.toMillis(WAKE_MINUTES)) else if (lock.isHeld) lock.release()
+                            val line = if (working) "DP-Verify: проверка и синхронизация" else "DP-Verify: ожидание следующей попытки"
+                            if (line != shown) {
+                                shown = line
+                                getSystemService(NotificationManager::class.java).notify(ID, notification(line))
+                            }
+                            failures = 0
                             return@scheduleWithFixedDelay
                         }
                         lock.acquire(TimeUnit.MINUTES.toMillis(WAKE_MINUTES))
@@ -145,7 +163,7 @@ class ControllerService : Service() {
                         }
                         // Сбой такта — в журнал приложения, а не молча (D-43): контур идёт дальше.
                         val ok = try {
-                            if (model.hasLive()) model.step(null).notifications.forEach(notifier::show)
+                            model.step(null).notifications.forEach(notifier::show)
                             // Лимиты слотов с автообновлением — раз в минуту, и без открытой сводки.
                             val auto = UsageAuto.enabled(app)
                             val tick = Clock.SYSTEM.monotonicNanos()
@@ -178,7 +196,7 @@ class ControllerService : Service() {
                         meter.end(ok)
                         // Строка уведомления — числа контура (AI:A-26), без текста задач; только когда изменилась.
                         try {
-                            val line = if (model.hasLive()) counts(model) else "DP-Verify: фоновая синхронизация"
+                            val line = counts(model)
                             if (line != shown) {
                                 shown = line
                                 getSystemService(NotificationManager::class.java).notify(ID, notification(line))

@@ -59,7 +59,8 @@ class SharedVerifyAccountTest(unittest.TestCase):
         for action in ('clone', 'fetch', 'push'):
             self.assertEqual(self.environment(action)[runtime.TOKEN_ENV], SYNTHETIC)
         for action in ('commit', 'add', 'var', 'worktree', 'status', 'rev-parse'):
-            self.assertNotIn(runtime.TOKEN_ENV, self.environment(action))
+            with patch.dict(os.environ, {runtime.TOKEN_ENV: SYNTHETIC}):
+                self.assertNotIn(runtime.TOKEN_ENV, self.environment(action))
         self.assertNotIn(runtime.TOKEN_ENV, os.environ)
 
     def test_redirects_disabled_and_previous_helpers_reset(self):

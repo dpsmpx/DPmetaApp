@@ -57,14 +57,29 @@ kotlin {
 }
 
 // Один исходник контроллера: APK получает его при сборке, копия кода вручную не ведётся.
-val sharedVerifyAssets by tasks.registering(Copy::class) {
-    from(rootProject.file("tools/shared_verify/runtime.py"))
-    into(layout.buildDirectory.dir("generated/shared-verify-assets/shared-verify"))
+abstract class SharedVerifyAssets : DefaultTask() {
+    @get:InputFile
+    abstract val controller: RegularFileProperty
+
+    @get:OutputDirectory
+    abstract val output: DirectoryProperty
+
+    @TaskAction
+    fun generate() {
+        val target = output.get().file("shared-verify/runtime.py").asFile
+        target.parentFile.mkdirs()
+        controller.get().asFile.copyTo(target, overwrite = true)
+    }
 }
-android.sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/shared-verify-assets"))
-tasks.configureEach {
-    if (name.startsWith("merge") && name.endsWith("Assets")) dependsOn(sharedVerifyAssets)
+val sharedVerifyAssets by tasks.registering(SharedVerifyAssets::class) {
+    controller.set(rootProject.layout.projectDirectory.file("tools/shared_verify/runtime.py"))
+    output.set(layout.buildDirectory.dir("generated/shared-verify-assets"))
 }
+androidComponents.onVariants { variant ->
+    variant.sources.assets?.addGeneratedSourceDirectory(sharedVerifyAssets, SharedVerifyAssets::output)
+}
+// AGP 9: модель Lint читает generated assets через preBuild, без зависимости от mergeAssets.
+tasks.named("preBuild") { dependsOn(sharedVerifyAssets) }
 
 dependencies {
     implementation(project(":app"))

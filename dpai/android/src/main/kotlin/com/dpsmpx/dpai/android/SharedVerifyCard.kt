@@ -47,6 +47,7 @@ fun SharedVerifyCard() {
     DisposableEffect(Unit) { onDispose { signal?.cancel() } }
 
     fun run(install: Boolean) {
+        if (authorizing) return
         val owner = activity ?: return
         authorizing = true
         val pending = CancellationSignal()
@@ -63,6 +64,9 @@ fun SharedVerifyCard() {
             Text("Общие инструменты DP-Verify", style = MaterialTheme.typography.titleSmall)
             Text("Одна папка для Claude, Codex и Gemini на этом телефоне. ИИ может обновлять инструменты; каждая версия проверяется до отправки в main.", style = MaterialTheme.typography.bodySmall)
             Text(note.ifEmpty { "Чтение состояния…" }, style = MaterialTheme.typography.bodySmall)
+            jobs[LongJobs.SHARED_VERIFY]?.note?.takeIf { it != note }?.let {
+                Text("Последняя операция: $it", style = MaterialTheme.typography.bodySmall)
+            }
             if (jobs[LongJobs.SHARED_VERIFY]?.running == true) {
                 Text("Получение и полная проверка версии могут занять несколько минут", style = MaterialTheme.typography.bodySmall)
                 LinearProgressIndicator(Modifier.fillMaxWidth())
