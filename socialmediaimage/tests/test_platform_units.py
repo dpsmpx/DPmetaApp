@@ -139,6 +139,10 @@ class CredentialTest(unittest.TestCase):
         self.assertEqual(ref_environment("CS_STAGING_X"), "staging")
         self.assertIsNone(ref_environment("TELEGRAM_TOKEN"))
         self.assertEqual(repr(store.get("CS_PROD_TELEGRAM_BOT_TOKEN")), "Secret(***)")
+        value = store.get("CS_PROD_TELEGRAM_BOT_TOKEN")
+        self.assertEqual(str(value), "***")
+        self.assertEqual(f"{value}", "***")
+        self.assertEqual(value.reveal(), "123:abc")
 
     def test_redact(self):
         fake = "12345678:" + "AA" + "abcdefghijklmnopqrstuvwxyz0123456"  # собрано, чтобы проверка secrets не видела токен

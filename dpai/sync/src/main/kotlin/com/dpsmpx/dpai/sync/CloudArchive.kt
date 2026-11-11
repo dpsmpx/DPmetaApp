@@ -70,14 +70,36 @@ object CloudArchive {
 
     fun deviceProblem(device: String): String? = if (DEVICE.matches(device)) null else "имя устройства — латиница, цифры, «-» и «_», до 40 знаков"
 
-    fun pack(entries: List<CopyEntry>, createdAt: Timestamp, device: String): Outcome<ByteArray> {
+    /** Размер проверяется до чтения каждого файла; readRange ограничивает рост файла между stat и read. */
+    fun collect(vfs: Vfs, paths: Sequence<String>, maxBytes: Long): Outcome<List<CopyEntry>> {
+        if (maxBytes !in 1..MAX_BYTES) return Outcome.failure(DiagCode.VALUE_INVALID, "неверный предел копии", FORMAT)
+        val out = mutableListOf<CopyEntry>()
+        var total = 0L
+        var metadata = 256L
+        for (path in paths.filter(::wanted)) {
+            if (out.size >= MAX_FILES) return Outcome.failure(DiagCode.VALUE_INVALID, "слишком много файлов копии", FORMAT)
+            metadata += CanonicalJson.bytes(JsonString(path)).size + 256L
+            val left = maxBytes - total - metadata
+            if (left < 0) return Outcome.failure(DiagCode.VALUE_INVALID, "оглавление копии больше допустимого размера", FORMAT)
+            val size = vfs.size(path) ?: continue
+            if (size > left) return Outcome.failure(DiagCode.VALUE_INVALID, "копия больше допустимого размера", FORMAT)
+            val body = vfs.readRange(path, 0, (left + 1).toInt()) ?: continue
+            if (body.size > left) return Outcome.failure(DiagCode.VALUE_INVALID, "файл копии вырос за допустимый размер", FORMAT)
+            out += CopyEntry(path, body)
+            total += body.size
+        }
+        return Outcome.success(out)
+    }
+
+    fun pack(entries: List<CopyEntry>, createdAt: Timestamp, device: String, maxBytes: Long = MAX_BYTES): Outcome<ByteArray> {
+        if (maxBytes !in 1..MAX_BYTES) return Outcome.failure(DiagCode.VALUE_INVALID, "неверный предел копии", FORMAT)
         deviceProblem(device)?.let { return Outcome.failure(DiagCode.VALUE_INVALID, it, FORMAT) }
         if (entries.size > MAX_FILES) return Outcome.failure(DiagCode.VALUE_INVALID, "файлов больше $MAX_FILES", FORMAT)
         val sorted = entries.sortedBy { it.path }
         sorted.firstNotNullOfOrNull { pathProblem(it.path) }?.let { return Outcome.failure(DiagCode.VALUE_INVALID, it, FORMAT) }
         if (sorted.zipWithNext().any { (a, b) -> a.path == b.path }) return Outcome.failure(DiagCode.VALUE_INVALID, "файл дважды", FORMAT)
         val total = sorted.sumOf { it.bytes.size.toLong() }
-        if (total > MAX_BYTES) return Outcome.failure(DiagCode.VALUE_INVALID, "копия больше ${MAX_BYTES / 1024 / 1024} МиБ", FORMAT)
+        if (total > maxBytes) return Outcome.failure(DiagCode.VALUE_INVALID, "копия больше ${maxBytes / 1024 / 1024} МиБ", FORMAT)
         val manifest = CanonicalJson.bytes(
             JsonObject(
                 linkedMapOf(
@@ -92,6 +114,7 @@ object CloudArchive {
                 ),
             ),
         )
+        if (manifest.size.toLong() + 4 + total > maxBytes) return Outcome.failure(DiagCode.VALUE_INVALID, "копия с оглавлением больше допустимого размера", FORMAT)
         val out = ByteArrayOutputStream(manifest.size + 4 + total.toInt())
         out.write(ByteBuffer.allocate(4).putInt(manifest.size).array())
         out.write(manifest)

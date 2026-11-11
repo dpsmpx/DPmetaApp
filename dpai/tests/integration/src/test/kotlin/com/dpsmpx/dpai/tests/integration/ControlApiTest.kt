@@ -51,6 +51,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
 import org.junit.jupiter.api.io.TempDir
 
 /**
@@ -105,6 +106,18 @@ class ControlApiTest {
     }
 
     private fun str(j: JsonObject, k: String) = (j[k] as JsonString).value
+
+    @Test
+    fun pairingCooldownSurvivesNewCodeAndDoesNotDestroyTheCode() {
+        val pairing = Pairing(NioVfs(dir), RandomSource.seeded(13), clock)
+        val (first, _) = pairing.newCode()
+        repeat(Pairing.MAX_ATTEMPTS) { assertTrue(pairing.pair(first + "x") is Outcome.Failure) }
+        val (second, _) = pairing.newCode()
+        assertTrue(pairing.pair(second) is Outcome.Failure, "новый код не сбрасывает общий лимит")
+        assertEquals(Pairing.MAX_ATTEMPTS, pairing.status().refusals)
+        clock.advance(31.seconds)
+        assertTrue(pairing.pair(second) is Outcome.Success, "код после паузы остаётся действительным")
+    }
 
     @Test
     fun pairingStateCommandsAndConfirmation() {

@@ -93,9 +93,9 @@ def guard(repo: Repo, env: str = "production", store: EnvCredentialStore | None 
         if not target:
             out.append(f"нет адреса выгрузки: переменная {cfg.get('target_ref')} (docs/operations/CREDENTIALS.md, «Сайт: Beget»)")
         else:
-            out += target_problems(str(target), cfg)
-    elif cfg.get("kind") != "command":
-        out.append(f"deploy.kind {cfg.get('kind')} — нужно rsync или command")
+            out += target_problems(target.reveal(), cfg)
+    else:
+        out.append("deploy.kind — допускается только проверенный rsync")
     return out
 
 
@@ -158,12 +158,13 @@ def run(repo: Repo, src: Path, env: str = "production", dry_run: bool = False,
             return DeployResult(False, problems=[f"нет ключа метки (Д41): {mkey.key_path()} — один раз на машине автора: "
                                                  "python3 -m tools.cs mark init"])
         files = mark_build(src, key, objects)  # повторяемо: пробный прогон видит те же байты, что и выгрузка
-    if cfg.get("kind") == "command":
-        if dry_run:
-            return DeployResult(True, list(cfg.get("command") or []), problems=["kind: command — показа изменений нет"])
-        argv = list(cfg.get("command") or [])
-    else:
-        argv = rsync_argv(src, str((store or EnvCredentialStore()).get(cfg["target_ref"])), cfg, dry_run)
+    target = (store or EnvCredentialStore()).get(cfg["target_ref"])
+    if target is None:
+        return DeployResult(False, problems=["адрес выгрузки больше недоступен"])
+    problems = target_problems(target.reveal(), cfg)
+    if problems:
+        return DeployResult(False, problems=problems)
+    argv = rsync_argv(src, target.reveal(), cfg, dry_run)
     r = runner(argv, cwd=repo.root, capture_output=True, text=True)
     shown = [a if not TARGET.match(a.rstrip("/")) else "<адрес выгрузки>" for a in argv]
     changes = [ln for ln in (r.stdout or "").splitlines() if ln[:1] in "<>ch*." and ln.strip()]

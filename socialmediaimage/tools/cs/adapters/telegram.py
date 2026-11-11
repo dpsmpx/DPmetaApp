@@ -109,7 +109,7 @@ class TelegramAdapter(PlatformAdapter):
 
     def _call(self, method: str, params: dict, files: dict | None = None):
         if self.transport is None:
-            self.transport = urllib_transport(self.credential())
+            self.transport = urllib_transport(self.credential().reveal())
         self.rate_limiter.wait()
         try:
             resp = self.transport(method, params, files)

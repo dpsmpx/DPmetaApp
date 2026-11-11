@@ -184,8 +184,12 @@ object CloudSync {
         val c = copies(context) ?: return "Нет настроек или токена копии"
         val passphrase = ApiKeys.getNamed(context, PASSPHRASE) ?: return "Нет пароля копии (или Keystore сброшен): задайте его заново"
         val root = Controller.get(context.filesDir).dataRoot
-        val entries = model.whileStill(STILL_WAIT_MS) { collect(root) } ?: return "Контур занят дольше ${STILL_WAIT_MS / 1000} с — копия позже"
-        val packed = when (val r = CloudArchive.pack(entries, Clock.SYSTEM.now(), s.device)) {
+        val collected = model.whileStill(STILL_WAIT_MS) { collect(root) } ?: return "Контур занят дольше ${STILL_WAIT_MS / 1000} с — копия позже"
+        val entries = when (collected) {
+            is Outcome.Failure -> return note(context, "Копия не собрана: ${collected.errors.firstOrNull()?.message}", false)
+            is Outcome.Success -> collected.value
+        }
+        val packed = when (val r = CloudArchive.pack(entries, Clock.SYSTEM.now(), s.device, (GitHubCopies.MAX_COPY_BYTES - SEAL_OVERHEAD).toLong())) {
             is Outcome.Failure -> return note(context, "Копия не собрана: ${r.errors.firstOrNull()?.message}", false)
             is Outcome.Success -> r.value
         }
@@ -258,24 +262,19 @@ object CloudSync {
      * Файлы контура для копии: корни [CloudArchive.ROOTS], без ссылок и
      * без того, что в копию не идёт ([CloudArchive.wanted]).
      */
-    private fun collect(root: File): List<CopyEntry> {
-        val out = mutableListOf<CopyEntry>()
-        for (name in CloudArchive.ROOTS) {
-            val top = File(root, name)
-            if (Files.isSymbolicLink(top.toPath())) continue
-            if (top.isFile) {
-                if (CloudArchive.wanted(name)) out += CopyEntry(name, top.readBytes())
-                continue
-            }
-            if (!top.isDirectory) continue
-            top.walkTopDown().onEnter { !Files.isSymbolicLink(it.toPath()) }
-                .filter { it.isFile && !Files.isSymbolicLink(it.toPath()) }
-                .forEach { f ->
-                    val rel = f.relativeTo(root).invariantSeparatorsPath
-                    if (CloudArchive.wanted(rel)) out += CopyEntry(rel, f.readBytes())
+    private fun collect(root: File): Outcome<List<CopyEntry>> {
+        val paths = sequence {
+            for (name in CloudArchive.ROOTS) {
+                val top = File(root, name)
+                if (Files.isSymbolicLink(top.toPath())) continue
+                if (top.isFile) { yield(name); continue }
+                if (!top.isDirectory) continue
+                for (file in top.walkTopDown().onEnter { !Files.isSymbolicLink(it.toPath()) }) {
+                    if (file.isFile && !Files.isSymbolicLink(file.toPath())) yield(file.relativeTo(root).invariantSeparatorsPath)
                 }
+            }
         }
-        return out
+        return CloudArchive.collect(NioVfs(root.toPath()), paths, (GitHubCopies.MAX_COPY_BYTES - SEAL_OVERHEAD).toLong())
     }
 
     private fun copies(context: Context): GitHubCopies? {

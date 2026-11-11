@@ -774,9 +774,11 @@ internal fun CliCard() {
             Text("Командная строка dpai", style = MaterialTheme.typography.titleMedium)
             var running by remember { mutableStateOf(ControlServer.running) }
             var problem by remember { mutableStateOf(ControlServer.problem) }
+            var pairingStatus by remember { mutableStateOf(ControlServer.pairing(context).status()) }
             Poll(periodMs = 2000) {
                 running = ControlServer.running
                 problem = ControlServer.problem
+                pairingStatus = ControlServer.pairing(context).status()
             }
             Text(
                 when {
@@ -799,6 +801,12 @@ internal fun CliCard() {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text(c, style = MaterialTheme.typography.headlineMedium)
                             Text("В Termux: dpai control pair $c — код действует 2 минуты", style = MaterialTheme.typography.bodySmall)
+                            if (pairingStatus.refusals > 0) {
+                                Text("Отклонено попыток: ${pairingStatus.refusals}", style = MaterialTheme.typography.bodySmall)
+                            }
+                            if (pairingStatus.retryAfterMillis > 0) {
+                                Text("Повторите через ${(pairingStatus.retryAfterMillis + 999) / 1000} с; код сохраняется", style = MaterialTheme.typography.bodySmall)
+                            }
                         }
                     },
                     confirmButton = { TextButton(onClick = { code = null }) { Text("Готово") } },

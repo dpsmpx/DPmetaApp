@@ -50,7 +50,12 @@ object AppLock {
     private fun locked(a: Activity): Boolean = a !is LockActivity && policy?.locked == true
 
     private fun hide(a: Activity, hidden: Boolean) {
-        a.window?.decorView?.alpha = if (hidden) 0f else 1f
+        a.window?.let { window ->
+            window.decorView.alpha = if (hidden) 0f else 1f
+            window.decorView.importantForAccessibility = if (hidden) android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS else android.view.View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
+            if (hidden) window.addFlags(android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+            else window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+        }
     }
 
     private val callbacks = object : Application.ActivityLifecycleCallbacks {

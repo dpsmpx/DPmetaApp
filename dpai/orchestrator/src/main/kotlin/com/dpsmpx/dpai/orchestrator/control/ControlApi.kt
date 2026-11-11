@@ -37,38 +37,59 @@ data class ControlResponse(val status: Int, val body: JsonObject, val signature:
 
 /**
  * Сопряжение `dpai` с приложением (D-47): код из шести цифр на
- * [codeTtl] — его показывает экран, не больше [MAX_ATTEMPTS] попыток на
- * код; верный код — постоянный токен (32 случайных байта, hex), он лежит в
+ * [codeTtl] — его показывает экран, после [MAX_ATTEMPTS] неверных попыток
+ * действует общая пауза 30 секунд без уничтожения кода; верный код — постоянный токен (32 случайных байта, hex), он лежит в
  * файле приложения [TOKEN] через `Vfs` (D-24). Токен — секрет: в журнал и
  * ответы, кроме ответа на сопряжение, не попадает; запросы `dpai` и ответы
  * приложения подписываются им, сам он в сеть больше не уходит (D-92).
  */
-class Pairing(private val vfs: Vfs, private val random: RandomSource, private val clock: Clock, private val codeTtl: Duration = 2.minutes) {
-    private data class Code(val value: String, val until: Timestamp, var attempts: Int)
+class Pairing(
+    private val vfs: Vfs,
+    private val random: RandomSource,
+    private val clock: Clock,
+    private val codeTtl: Duration = 2.minutes,
+    private val onRefusal: () -> Unit = {},
+) {
+    private data class Code(val value: String, val until: Timestamp)
 
     private var code: Code? = null
+    private var attempts = 0
+    private var blockedUntil: Timestamp? = null
+    private var refusals = 0
+
+    data class Status(val refusals: Int, val retryAfterMillis: Long)
+
+    @Synchronized
+    fun status(): Status = Status(refusals, ((blockedUntil?.epochMillis ?: 0) - clock.now().epochMillis).coerceAtLeast(0))
 
     @Synchronized
     fun newCode(): Pair<String, Timestamp> {
         val n = random.nextInt(1_000_000)
-        val c = Code("%06d".format(n), clock.now() + codeTtl, 0)
+        val c = Code("%06d".format(n), clock.now() + codeTtl)
         code = c
         return c.value to c.until
     }
 
     @Synchronized
     fun pair(entered: String): Outcome<String> {
+        val blocked = blockedUntil
+        if (blocked != null && clock.now() < blocked) {
+            return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "слишком много попыток сопряжения: подождите 30 секунд; код не уничтожен")
+        }
+        if (blocked != null) { blockedUntil = null; attempts = 0 }
         val c = code ?: return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "кода нет: покажите код на экране приложения")
         if (clock.now() >= c.until) {
             code = null
             return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "срок кода истёк: покажите новый")
         }
-        if (++c.attempts > MAX_ATTEMPTS) {
-            code = null
-            return Outcome.failure(DiagCode.OPERATION_NOT_ALLOWED, "слишком много попыток: покажите новый код")
+        if (!same(entered.trim(), c.value)) {
+            refusals++
+            onRefusal()
+            if (++attempts >= MAX_ATTEMPTS) blockedUntil = Timestamp(clock.now().epochMillis + 30_000)
+            return Outcome.failure(DiagCode.VALUE_INVALID, "код не подходит")
         }
-        if (!same(entered.trim(), c.value)) return Outcome.failure(DiagCode.VALUE_INVALID, "код не подходит")
         code = null
+        attempts = 0
         return Outcome.success(token())
     }
 

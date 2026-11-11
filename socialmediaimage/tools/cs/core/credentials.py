@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import datetime as _dt
+from dataclasses import dataclass
 import os
 import re
 from pathlib import Path
@@ -23,8 +24,20 @@ REF = re.compile(r"^CS_(DEV|STAGING|PROD)_[A-Z0-9_]+$")
 ENV_OF_PREFIX = {"DEV": "development", "STAGING": "staging", "PROD": "production"}
 
 
-class Secret(str):
-    """Строка-секрет: repr и str в логах не раскрывают значение."""
+@dataclass(frozen=True, repr=False)
+class Secret:
+    """Секрет раскрывается только явным reveal на границе транспорта."""
+
+    _value: str
+
+    def reveal(self) -> str:
+        return self._value
+
+    def __str__(self) -> str:
+        return "***"
+
+    def __bool__(self) -> bool:
+        return bool(self._value)
 
     def __repr__(self) -> str:  # pragma: no cover - защитное
         return "Secret(***)"

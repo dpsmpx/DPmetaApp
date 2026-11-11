@@ -119,10 +119,10 @@ fi
     # Зависимости проверок SocialMediaImage (PyYAML, jsonschema и др.) — в веб-сессии, если их нет.
     if ! python3 -c "import yaml, jsonschema" 2>/dev/null; then
         if [ "${CLAUDE_CODE_REMOTE:-}" = "true" ]; then
-            pip install -q -r "$PROJ/socialmediaimage/tools/requirements.txt" >/dev/null 2>&1 \
-                || echo "  ! зависимости SocialMediaImage не поставились: pip install -r socialmediaimage/tools/requirements.txt"
+            python3 -m pip install -q --require-hashes -r "$PROJ/socialmediaimage/tools/requirements.txt" >/dev/null 2>&1 \
+                || echo "  ! зависимости SocialMediaImage не поставились: python3 -m pip install --require-hashes -r socialmediaimage/tools/requirements.txt"
         else
-            echo "  ! нужны PyYAML и jsonschema: pip install -r socialmediaimage/tools/requirements.txt"
+            echo "  ! нужны PyYAML и jsonschema: python3 -m pip install --require-hashes -r socialmediaimage/tools/requirements.txt"
         fi
     fi
     for tool in python3 git java; do

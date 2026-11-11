@@ -49,7 +49,10 @@ object ControlServer {
     private var pairing: Pairing? = null
 
     fun pairing(context: Context): Pairing = pairing ?: synchronized(this) {
-        pairing ?: Pairing(NioVfs(context.applicationContext.filesDir.toPath()), RandomSource.secure(), Clock.SYSTEM).also { pairing = it }
+        pairing ?: Pairing(
+            NioVfs(context.applicationContext.filesDir.toPath()), RandomSource.secure(), Clock.SYSTEM,
+            onRefusal = { AppLogs.get(context.applicationContext).warn("dpai", "отклонена попытка сопряжения командной строки") },
+        ).also { pairing = it }
     }
 
     val running: Boolean get() = socket?.isClosed == false

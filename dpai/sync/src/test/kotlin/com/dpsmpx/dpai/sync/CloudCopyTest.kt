@@ -24,6 +24,18 @@ import kotlin.time.Duration.Companion.minutes
  * довершается после прерывания.
  */
 class CloudCopyTest {
+    @Test
+    fun oversizedFileIsRefusedBeforeReadingAndWireLimitIncludesManifest() {
+        val disk = NioVfs(dir)
+        disk.mkdirs("live")
+        disk.write("live/large", ByteArray(4096))
+        val guarded = object : com.dpsmpx.dpai.storage.vfs.Vfs by disk {
+            override fun readRange(path: String, offset: Long, length: Int): ByteArray? = error("слишком большой файл нельзя читать")
+        }
+        assertIs<Outcome.Failure>(CloudArchive.collect(guarded, sequenceOf("live/large"), 1024))
+        assertIs<Outcome.Failure>(CloudArchive.pack(listOf(CopyEntry("live/one", byteArrayOf(1))), clock.now(), "device", 32))
+    }
+
     @TempDir
     lateinit var dir: Path
 

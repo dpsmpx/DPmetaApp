@@ -92,6 +92,21 @@ class Rsync(unittest.TestCase):
 
 
 class Guard(unittest.TestCase):
+    def test_repository_command_cannot_execute(self):
+        repo = site_repo()
+        path = repo.path("data/website/site.yaml")
+        cfg = yaml.safe_load(path.read_text(encoding="utf-8"))
+        cfg["environments"]["production"]["deploy"]["kind"] = "command"
+        cfg["environments"]["production"]["deploy"]["command"] = ["untrusted-program"]
+        path.write_text(yaml.safe_dump(cfg, allow_unicode=True), encoding="utf-8")
+        repo.reset()
+        runner = mock.Mock(side_effect=AssertionError("команда не должна запускаться"))
+        with mock.patch.dict(os.environ, LOCAL):
+            result = deploy.run(repo, repo.path("build/site"), runner=runner)
+        self.assertFalse(result.ok)
+        self.assertTrue(any("rsync" in problem for problem in result.problems))
+        runner.assert_not_called()
+
     def test_reasons(self):
         repo = site_repo(live=False)
         store = EnvCredentialStore({})
