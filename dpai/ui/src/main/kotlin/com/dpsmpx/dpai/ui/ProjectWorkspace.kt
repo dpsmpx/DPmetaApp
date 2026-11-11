@@ -12,6 +12,7 @@ import com.dpsmpx.dpai.git.Worktree
 import com.dpsmpx.dpai.sessions.SessionsState
 import com.dpsmpx.dpai.tasks.TaskRecord
 import com.dpsmpx.dpai.tasks.VerificationRecord
+import java.util.concurrent.locks.ReentrantLock
 
 /** Идентичность открытой папки: смена проекта/дерева не переиспользует старый черновик (D-132). */
 data class WorkspaceLocation(
@@ -84,5 +85,19 @@ object WorkspacePaths {
         return relative.takeIf { it.split('/').all { segment ->
             segment.isNotEmpty() && segment != "." && segment != ".." && segment.none { c -> c == '\\' || c.code < 32 || c.code == 127 }
         } }
+    }
+}
+
+/** Свежая проверка и действие под одним замком с запуском ИИ, без ожидания занятого такта (D-132). */
+class WorkspaceWriteGate(private val lock: ReentrantLock, private val current: () -> ProjectWorkspaceView?) {
+    fun <T> perform(project: ProjectEntry, location: WorkspaceLocation, action: () -> Outcome<T>): Outcome<T> {
+        if (!lock.tryLock()) return Outcome.failure(DiagCode.WORKTREE_OWNED, "контроллер занят; повторите действие")
+        return try {
+            val view = current() ?: return Outcome.failure(DiagCode.STATE_CONFLICT, "проект отключён")
+            when (val allowed = view.allow(project, location, true)) {
+                is Outcome.Failure -> allowed
+                is Outcome.Success -> action()
+            }
+        } finally { lock.unlock() }
     }
 }

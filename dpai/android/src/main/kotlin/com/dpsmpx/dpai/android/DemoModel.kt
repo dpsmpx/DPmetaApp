@@ -458,6 +458,8 @@ class DemoModel(
             o?.tasks?.tasks?.keys?.mapNotNull { t -> o.taskWorktree(t)?.let { t to it } }?.toMap().orEmpty())
     }
 
+    private val workspaceWriteGate = com.dpsmpx.dpai.ui.WorkspaceWriteGate(lock) { controller.project()?.let(::workspaceLocked) }
+
     /** Сверка идентичности и локальное действие под замком, общим с запуском хода. Не для UI-потока. */
     fun <T> workspaceAccess(p: ProjectEntry, location: com.dpsmpx.dpai.ui.WorkspaceLocation, write: Boolean, action: () -> Outcome<T>): Outcome<T> {
         if (!write) {
@@ -467,14 +469,7 @@ class DemoModel(
                 is Outcome.Success -> action()
             }
         }
-        if (!lock.tryLock()) return Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.WORKTREE_OWNED, "контроллер занят; повторите действие")
-        return try {
-            val current = controller.project() ?: return Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.STATE_CONFLICT, "проект отключён")
-            when (val allowed = workspaceLocked(current).allow(p, location, write)) {
-                is Outcome.Failure -> allowed
-                is Outcome.Success -> action()
-            }
-        } finally { lock.unlock() }
+        return workspaceWriteGate.perform(p, location, action)
     }
 
     /** PR проекта через `gh` на его target (D-108): `null` — контур не запущен или у него нет проекта с репозиторием. */

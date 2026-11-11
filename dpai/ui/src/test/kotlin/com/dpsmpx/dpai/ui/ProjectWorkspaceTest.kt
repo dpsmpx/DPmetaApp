@@ -12,6 +12,10 @@ import com.dpsmpx.dpai.tasks.Priority
 import com.dpsmpx.dpai.tasks.TaskPolicy
 import com.dpsmpx.dpai.tasks.TaskRecord
 import com.dpsmpx.dpai.tasks.VerificationRecord
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.ReentrantLock
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -48,6 +52,49 @@ class ProjectWorkspaceTest {
         assertTrue(claimed.allow(project, expected, false).isSuccess)
         assertIs<Outcome.Failure>(claimed.allow(project, expected, true))
         assertTrue(view().allow(project, expected, true).isSuccess)
+    }
+
+    @Test
+    fun writeGateChecksFreshOwnerAndHoldsControllerLockDuringWrite() {
+        val lock = ReentrantLock()
+        var current = view()
+        val expected = current.location(task.id)!!
+        val gate = WorkspaceWriteGate(lock) { current }
+        current = view(tree.copy(owner = ids.next(IdKinds.SESSION)))
+        var writes = 0
+        assertIs<Outcome.Failure>(gate.perform(project, expected) { writes++; Outcome.success(Unit) })
+        assertEquals(0, writes)
+        current = view()
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            val writing = executor.submit<Boolean> { gate.perform(project, expected) {
+                entered.countDown()
+                assertTrue(release.await(5, TimeUnit.SECONDS))
+                Outcome.success(Unit)
+            }.isSuccess }
+            assertTrue(entered.await(5, TimeUnit.SECONDS))
+            val acquired = lock.tryLock()
+            if (acquired) lock.unlock()
+            assertFalse(acquired, "контроллер не захватит дерево до конца записи")
+            release.countDown()
+            assertTrue(writing.get(5, TimeUnit.SECONDS))
+            assertTrue(lock.tryLock())
+            lock.unlock()
+        } finally { release.countDown(); executor.shutdownNow() }
+    }
+
+    @Test
+    fun busyControllerRejectsWriteWithoutCallingItsAction() {
+        val lock = ReentrantLock()
+        val gate = WorkspaceWriteGate(lock) { view() }
+        val executor = Executors.newSingleThreadExecutor()
+        lock.lock()
+        try {
+            val r = executor.submit<Boolean> { gate.perform<Unit>(project, view().main) { error("запись не должна начаться") }.isSuccess }
+            assertFalse(r.get(5, TimeUnit.SECONDS))
+        } finally { lock.unlock(); executor.shutdownNow() }
     }
 
     @Test
