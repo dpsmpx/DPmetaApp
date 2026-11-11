@@ -18,7 +18,9 @@ import com.dpsmpx.dpai.core.serialization.JsonValue
  * - блоки закрытых ключей;
  * - известные виды токенов (Anthropic, GitHub, AWS, Slack, Google, Telegram);
  * - заголовки авторизации и `Bearer …`;
- * - пары `имя=значение` и `имя: значение` с секретными именами;
+ * - пары `имя=значение` и `имя: значение` с секретными именами, в том
+ *   числе с приставкой (`DB_PASSWORD`, `GITHUB_TOKEN`, `OPENAI_API_KEY`) и
+ *   в JSON (`"password": "…"`; аудит C-01, C-02);
  * - логин и пароль в URL;
  * - длинные последовательности букв и цифр (32+), кроме UUID (идентификаторы
  *   сессий провайдера, `docs/DATA_MODEL.md`, §1), путей и хешей вида
@@ -71,7 +73,10 @@ class Redactor private constructor(private val strict: Boolean) {
     private fun redactValues(v: JsonValue): JsonValue = when (v) {
         is JsonString -> JsonString(redact(v.value))
         is JsonArray -> JsonArray(v.items.map(::redactValues))
-        is JsonObject -> JsonObject(v.fields.mapValues { redactValues(it.value) })
+        // Поле с секретным именем — значение целиком (аудит C-02): `{"password":"…"}` в выводе процесса.
+        is JsonObject -> JsonObject(
+            v.fields.mapValues { (k, x) -> if (x is JsonString && SECRET_NAME.matches(k)) JsonString(MARK) else redactValues(x) },
+        )
         else -> v
     }
 
@@ -112,10 +117,26 @@ class Redactor private constructor(private val strict: Boolean) {
             Regex("\\b\\d{8,10}:AA[A-Za-z0-9_-]{33}\\b"),
         )
         private val BEARER = Regex("(?i)\\b(bearer\\s+)[A-Za-z0-9._~+/=-]+")
+        /** Секретные слова имени. */
+        private const val SECRET_WORDS = "password|passwd|pwd|secret|client[_-]?secret|token|access[_-]?token|refresh[_-]?token|" +
+            "api[_-]?key|access[_-]?key|private[_-]?key|authorization|auth|credentials?|session[_-]?key|cookie"
+
+        /**
+         * Имя с секретным словом в конце и любыми словами перед ним через `_`, `.`
+         * или `-` (`DB_PASSWORD`, `GITHUB_TOKEN`, `aws_secret_access_key`; аудит
+         * C-01): граница — перед всем именем, а не перед словом — `\b` не видит
+         * границы после `_`. Слова приставки кончаются разделителем — перебор
+         * линейный.
+         */
+        private const val SECRET_NAME_PATTERN = "(?:[A-Za-z0-9]+[_.-])*(?:$SECRET_WORDS)"
+
+        /** Имя поля JSON целиком — секретное (аудит C-02). */
+        private val SECRET_NAME = Regex("(?i)$SECRET_NAME_PATTERN")
+
+        /** Пара «имя=значение», «имя: значение» и `"имя": "значение"` (закрывающая кавычка имени — в разделителе). */
         private val SECRET_PAIR = Regex(
-            "(?i)\\b(password|passwd|pwd|secret|client[_-]?secret|token|access[_-]?token|refresh[_-]?token|" +
-                "api[_-]?key|access[_-]?key|private[_-]?key|authorization|auth|credentials?|session[_-]?key|cookie)" +
-                "(\\s*[=:]\\s*)(\"?)(?!<redacted)[^\\s\"&,;]+",
+            "(?i)(?<![A-Za-z0-9_.-])($SECRET_NAME_PATTERN)" +
+                "(\"?\\s*[=:]\\s*)(\"?)(?!<redacted)[^\\s\"&,;]+",
         )
         private val URL_USERINFO = Regex("\\b([a-zA-Z][a-zA-Z0-9+.-]{1,15}://)[^\\s/@\"'<>]+@")
         private val LONG_TOKEN = Regex("(?<![A-Za-z0-9+/_=-])[A-Za-z0-9+/_=-]{32,}(?![A-Za-z0-9+/_=-])")

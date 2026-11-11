@@ -114,4 +114,44 @@ class RedactorTest {
         val text = "Ветка задачи task/tsk_01M4EWP74S6EWVHWSM33QD5YK0 → main."
         assertEquals(text, Redactor.STRICT.redact(text))
     }
+
+    /** Аудит C-01: имя с приставкой (`DB_PASSWORD`, `GITHUB_TOKEN`) — секретное, как без неё. */
+    @Test
+    fun prefixedSecretNames() {
+        val value = "pw" + "-x7".repeat(3)
+        for (name in listOf("DB_PASSWORD", "GITHUB_TOKEN", "OPENAI_API_KEY", "my_secret", "aws_secret_access_key", "db.password", "X-Auth")) {
+            for (sep in listOf("=", ": ", " = ")) assertRedacted("$name$sep$value", value)
+        }
+        assertEquals("export DB_PASSWORD=<redacted> && run", Redactor.STANDARD.redact("export DB_PASSWORD=$value && run"))
+    }
+
+    /** Похожие, но не секретные имена — как есть (иначе журнал расхода и статусы теряли бы числа). */
+    @Test
+    fun lookAlikeNamesUntouched() {
+        for (text in listOf("max_tokens: 100", "input_tokens=5", "token_count: 3", "author: dpsmpx", "password_hash_algo=argon2", "tokenizer: cl100k")) {
+            assertEquals(text, Redactor.STANDARD.redact(text), text)
+        }
+    }
+
+    /** Аудит C-02: поле JSON с секретным именем — и в тексте, и в строке JSON вывода. */
+    @Test
+    fun jsonSecretFields() {
+        val value = "pw" + "-y5".repeat(3)
+        assertRedacted("""{"password": "$value", "user": "a"}""", value)
+        assertRedacted("""{"db_password":"$value"}""", value)
+        val line = """{"type":"result","env":{"GITHUB_TOKEN":"$value","HOME":"/root"}}"""
+        val out = Redactor.STANDARD.redactLine(line)
+        assertTrue(value !in out, out)
+        assertTrue(out.contains("\"HOME\":\"/root\""), "прочие поля целы: $out")
+        assertTrue(com.dpsmpx.dpai.core.serialization.JsonParser().parse(out) is com.dpsmpx.dpai.core.result.Outcome.Success, "строка разбирается")
+    }
+
+    /** Длинное имя из многих слов не даёт квадратичного перебора. */
+    @Test
+    fun longNamesAreLinear() {
+        val text = "a_".repeat(50_000) + "x=1 " + "b-".repeat(50_000) + "y"
+        val started = System.nanoTime()
+        assertEquals(text, Redactor.STANDARD.redact(text))
+        assertTrue((System.nanoTime() - started) / 1_000_000 < 2_000)
+    }
 }

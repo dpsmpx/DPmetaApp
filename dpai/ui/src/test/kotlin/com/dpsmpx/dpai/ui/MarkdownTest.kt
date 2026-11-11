@@ -66,4 +66,38 @@ class MarkdownTest {
         assertEquals(expected.trimEnd(), r.text.trimEnd())
         assertTrue(r.marks.any { it.style == MarkStyle.TABLE } && r.marks.count { it.style == MarkStyle.CODE_BLOCK } == 4, r.marks.toString())
     }
+
+    /** Заголовок и разделитель — проходом по строке (аудит N-14): смысл прежнего шаблона сохранён. */
+    @Test
+    fun headingAndRuleKeepMeaning() {
+        fun heading(md: String) = Markdown.render(md).let { r -> r.text to r.marks.map { it.style } }
+        assertEquals("Заголовок" to listOf(MarkStyle.HEADING_2), heading("## Заголовок ##"))
+        assertEquals("Заголовок" to listOf(MarkStyle.HEADING_1), heading("#\t Заголовок  \t"))
+        assertEquals("a#b" to listOf(MarkStyle.HEADING_3), heading("### a#b"))
+        assertEquals("" to listOf(MarkStyle.HEADING_1), heading("# #"))
+        assertEquals("####### семь", Markdown.render("####### семь").text, "семь # — не заголовок")
+        assertEquals("#тег", Markdown.render("#тег").text, "без пробела — не заголовок")
+        for (r in listOf("---", "- - -", " *  *  * ", "___")) assertEquals("────────", Markdown.render(r).text, r)
+        for (r in listOf("--", "- - x", "-*-", "* * *x")) assertTrue(Markdown.render(r).text != "────────", r)
+    }
+
+    /** Враждебная строка (вывод модели, документ репозитория) не подвешивает разбор (аудит N-14). */
+    @Test
+    fun hostileLinesAreFast() {
+        val n = 20_000
+        val lines = listOf(
+            "# x" + " \t".repeat(n / 2) + "\u00A0",
+            "-" + " -".repeat(n / 2) + " x",
+            "[".repeat(n),
+            "x" + " `".repeat(n / 2),
+            "| --" + " ".repeat(n) + "x",
+        )
+        for (line in lines) {
+            val started = System.nanoTime()
+            val r = Markdown.render(line + "\n" + line)
+            val ms = (System.nanoTime() - started) / 1_000_000
+            assertTrue(ms < 2_000, "разбор строки ${line.take(8)}… — $ms мс")
+            assertTrue(r.text.isNotEmpty())
+        }
+    }
 }

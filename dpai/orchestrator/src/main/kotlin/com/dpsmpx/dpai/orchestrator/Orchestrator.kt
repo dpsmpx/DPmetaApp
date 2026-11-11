@@ -1179,7 +1179,7 @@ class Orchestrator(
         // задачу DONE без запроса, и слияния не было бы никогда.
         batch {
             commitTasks(ok(tasksLogic.complete(tasks, task, clock.now()), "завершение задачи").orEmpty())
-            if (tree != null && tasks.tasks[task]?.state == TaskState.DONE) recordMergeRequest(task, tree.branch)
+            if (tree != null && tasks.tasks[task]?.state == TaskState.DONE) recordMergeRequest(task, tree.branch, tree.path)
         }
         if (tasks.tasks[task]?.state != TaskState.DONE) return
         progress(task, NotificationCategory.SUCCESS, "Задача выполнена", why)
@@ -1555,14 +1555,28 @@ class Orchestrator(
         commitMerges(listOf(MergeEvent.Committed(task, TaskCommit(head, branch, clock.now()))))
     }
 
-    /** Слияние ждёт ответа — в журнал; сам запрос задаёт вызывающий после пачки (askMerges в такте — после перезапуска). */
-    private fun recordMergeRequest(task: TaskId, branch: String) {
+    /**
+     * Слияние ждёт ответа — в журнал; сам запрос задаёт вызывающий после пачки (askMerges в такте — после перезапуска).
+     * В предложении — ветка и коммит, прошедший проверку (аудит O-02): сливается он, а не то, что в ветке
+     * к моменту ответа. Прежнее предложение задачи с другим коммитом (задача снова была в работе) снимается.
+     */
+    private fun recordMergeRequest(task: TaskId, branch: String, path: String) {
         val repo = config.repository ?: return
         val target = config.integrationBranch ?: return
-        if (mergesState.pending.values.any { it.task == task }) return
-        val proposal = Proposal("git.merge", "${repo.root}#$target", listOf(branch))
+        val head = git?.run(GitOp.HEAD, path)?.valueOrNull()?.stdout?.firstOrNull()?.trim()?.lowercase()
+        if (head == null || !TaskCommit.HASH.matches(head)) {
+            problems += Diagnostic.warning(DiagCode.GIT_COMMAND_FAILED, "слияние не предложено: коммит проверенной работы не прочитан (${head ?: "git rev-parse не удался"})", "task $task")
+            return
+        }
+        val proposal = Proposal("git.merge", "${repo.root}#$target", listOf(branch, head))
+        val prior = mergesState.pending.values.filter { it.task == task }
+        if (prior.any { it.proposal == proposal }) return
+        commitMerges(prior.map { MergeEvent.Declined(task, it.approval, clock.now()) })
         commitMerges(listOf(MergeEvent.Requested(PendingMerge(task, ids.next(IdKinds.APPROVAL), proposal, clock.now() + requestTtl), clock.now())))
     }
+
+    /** Ветка и проверенный коммит предложения; у предложения до аудита O-02 коммита нет — `null`. */
+    private fun mergeParts(p: Proposal): Pair<String, String?> = p.arguments.first() to p.arguments.getOrNull(1)
 
     /**
      * Запрос «Слить?» (D-49) — обычный запрос человеку (D-44): уведомление,
@@ -1572,8 +1586,9 @@ class Orchestrator(
      */
     private fun askMerge(m: PendingMerge, failure: String? = null) {
         val target = m.proposal.subject.substringAfterLast('#')
-        val branch = m.proposal.arguments.joinToString(" ")
-        val body = (failure?.let { "Слияние не удалось: $it. " } ?: "Проверка прошла. ") + "Ветка задачи $branch → $target."
+        val (branch, commit) = mergeParts(m.proposal)
+        val what = commit?.let { "Ветка задачи $branch, проверенный коммит ${it.take(12)} → $target." } ?: "Ветка задачи $branch → $target."
+        val body = (failure?.let { "Слияние не удалось: $it. " } ?: "Проверка прошла. ") + what
         ask(
             RequestPurpose.TASK_MERGE, RequestKind.CONFIRMATION, "task:${m.task.value}:merge",
             "Слить в $target: ${taskTitle(m.task)}", body,
@@ -1585,6 +1600,8 @@ class Orchestrator(
     /** Ждущие слияния без ждущего запроса (истёк, перезапуск, прежний механизм одобрений) — спросить снова (A-51). */
     private fun askMerges() {
         for (m in mergesState.pending.values.sortedBy { it.approval.value }) {
+            // Задача снова в работе (аудит O-02) — не спрашивать: новая проверка заменит предложение.
+            if (tasks.tasks[m.task]?.state != TaskState.DONE) continue
             if (requests.pendingFor("task:${m.task.value}:merge") == null) askMerge(m)
         }
     }
@@ -1602,8 +1619,22 @@ class Orchestrator(
                 val repo = config.repository ?: return Outcome.failure(DiagCode.UNSUPPORTED, "у проекта нет репозитория")
                 val g = git ?: return Outcome.failure(DiagCode.UNSUPPORTED, "нет Git")
                 val target = pending.proposal.subject.substringAfterLast('#')
+                // Аудит O-02: сливается проверенное — задача всё ещё `DONE`, ветка указывает на коммит из предложения.
+                if (tasks.tasks[task]?.state != TaskState.DONE) {
+                    return Outcome.failure(DiagCode.STATE_CONFLICT, "задача снова в работе — слияние будет предложено после новой проверки", "task $task")
+                }
+                val (branch, commit) = mergeParts(pending.proposal)
+                val what = if (commit == null) {
+                    listOf(branch)
+                } else {
+                    val now = g.run(GitOp.REV_PARSE, repo.root, listOf(branch)).valueOrNull()?.stdout?.firstOrNull()?.trim()?.lowercase()
+                    if (now != commit) {
+                        return Outcome.failure(DiagCode.STATE_CONFLICT, "ветка $branch изменилась после проверки (${now?.take(12) ?: "нет ветки"} вместо ${commit.take(12)}) — не сливаю", "task $task")
+                    }
+                    listOf(commit)
+                }
                 mergeBlocker(g, repo.root, target)?.let { return it }
-                when (val m = g.run(GitOp.MERGE, repo.root, pending.proposal.arguments)) {
+                when (val m = g.run(GitOp.MERGE, repo.root, what)) {
                     is Outcome.Failure -> m.also {
                         // A-54: конфликт оставил бы рабочую копию автора посреди слияния, и повтор упал бы
                         // на нём же. До слияния копия была чистой (mergeBlocker), так что отмена ничего не теряет.
@@ -2512,6 +2543,8 @@ class Orchestrator(
             when (RequestPurpose.of(r.purpose)) {
                 RequestPurpose.TASK_BLOCKED -> state != TaskState.BLOCKED
                 RequestPurpose.TASK_UNVERIFIED -> state != TaskState.COMPLETION_UNVERIFIED
+                // Слияние (аудит O-02): задача снова в работе — вопрос снят, новая проверка предложит слияние заново.
+                RequestPurpose.TASK_MERGE -> state != TaskState.DONE
                 // Ревью без итога (D-73): задача ушла из VERIFIED или ревью роли снова идёт — вопрос снят.
                 RequestPurpose.TASK_REVIEW -> state != TaskState.VERIFIED || r.task?.let { t -> tasks.tasks[t]?.let { nextReview(it) != null } } == true
                 else -> false

@@ -373,6 +373,36 @@ class V1ScenariosTest {
         assertEquals(emptyList<TaskId>(), orchestrator.merged)
     }
 
+    /**
+     * Аудит O-02: сливается коммит, прошедший проверку, а не то, что в ветке к
+     * моменту ответа. Коммит в ветку задачи после проверки — «Слить» отказывает,
+     * main не тронут; в тексте запроса — проверенный коммит.
+     */
+    @Test
+    fun mergeOnlyTheVerifiedCommit() {
+        setUp(slots = 1)
+        val t = task("фича", MockScenario.SLOW_OUTPUT)
+        orchestrator.tick()
+        val tree = orchestrator.worktrees.worktrees.values.single { it.owner != null }
+        File(tree.path, "feature.txt").writeText("новая возможность\n")
+        runUntilQuiet(3)
+        assertEquals(TaskState.DONE, state(t))
+        val request = mergeRequest()
+        val verified = host.run(ProcessSpec(listOf("git", "-C", tree.path, "rev-parse", "HEAD")), 1.minutes).valueOrNull()!!.stdout.single().trim()
+        assertTrue(verified.take(12) in request.body, request.body)
+        // После проверки в ветку задачи попал чужой коммит.
+        File(tree.path, "late.txt").writeText("непроверенное\n")
+        for (cmd in listOf(listOf("add", "late.txt"), listOf("-c", "user.name=t", "-c", "user.email=t@localhost", "commit", "-q", "-m", "после проверки"))) {
+            host.run(ProcessSpec(listOf("git", "-C", tree.path) + cmd), 1.minutes)
+        }
+        val answer = orchestrator.answer(request.id, "merge", null, request.hash, "автор")
+        assertEquals(OperationStatus.FAILED, answer.status)
+        assertTrue(answer.diagnostics.any { "изменилась после проверки" in it.message }, answer.diagnostics.toString())
+        assertFalse(File(repo.root, "feature.txt").exists(), "main не тронут")
+        assertFalse(File(repo.root, "late.txt").exists())
+        assertEquals(emptyList<TaskId>(), orchestrator.merged)
+    }
+
     /** Запрос истёк, слияние ждёт (A-51): такт спрашивает снова, а не теряет слияние. */
     @Test
     fun expiredMergeRequestIsAskedAgain() {
