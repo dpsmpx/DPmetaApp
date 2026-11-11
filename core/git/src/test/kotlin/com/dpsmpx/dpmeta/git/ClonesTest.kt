@@ -65,6 +65,38 @@ class ClonesTest {
     private fun clones() = Clones(File(tmp, "clones"), open, setOf("file"))
 
     @Test
+    fun guestCannotChooseTrustedMainThroughConfigOrOriginHead() {
+        val uri = remote()
+        val c = clones()
+        val expected = c.sync("Alpha", uri, null, build).valueOrNull()!!.mainSha
+        Git.open(c.dir("Alpha")).use { git ->
+            git.repository.config.apply { setString("dpmeta", null, "main", "work") }.save()
+            git.repository.updateRef("refs/remotes/origin/HEAD").link("refs/remotes/origin/work")
+        }
+        val report = c.sync("Alpha", uri, null, build).valueOrNull()!!
+        assertEquals("main", report.main)
+        assertEquals(expected, report.mainSha)
+    }
+
+    @Test
+    fun guestUrlRewriteCannotRedirectFetch() {
+        val uri = remote()
+        val c = clones()
+        c.sync("Alpha", uri, null, build).valueOrNull()!!
+        Git.open(c.dir("Alpha")).use { git ->
+            git.repository.config.apply {
+                setString("url", File(tmp, "not-a-repository").toURI().toString(), "insteadOf", uri.toString())
+            }.save()
+        }
+        Git.open(work).use { git ->
+            commit(git, "TODO.md", "- [ ] новый пункт\n", "Обновление")
+            git.push().setRemote("origin").add("main").call()
+        }
+        assertIs<Outcome.Success<*>>(c.sync("Alpha", uri, null, build))
+        assertEquals("- [ ] новый пункт\n", String(c.file("Alpha", "main", "TODO.md").valueOrNull()!!))
+    }
+
+    @Test
     fun clonesWithoutBuildBranchesAndReadsFilesFromGitHubBranches() {
         val uri = remote()
         val c = clones()

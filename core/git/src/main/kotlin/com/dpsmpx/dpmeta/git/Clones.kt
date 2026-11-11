@@ -154,20 +154,24 @@ class Clones(private val root: File, private val gate: Gate, private val schemes
     }
 
     private fun fetch(project: String, remote: URI, dir: File, creds: CredentialsProvider?, excluded: (String) -> Boolean): Outcome<Report> = open(dir).use { repo ->
-        Git(repo).use { git ->
-            val main = mainOf(repo)
+        Git(repo).use fetched@ { git ->
             // Адрес — тот, что прошёл пропуск: переименованный в реестре репозиторий не тянется со старого адреса.
             // Пишется, только если другой: конфиг клона правит и git гостя (D-72) — лишняя запись спорит с ним.
             if (repo.config.getString("remote", "origin", "url") != remote.toString()) {
                 repo.config.apply { setString("remote", "origin", "url", remote.toString()) }.save()
             }
-            val remoteRefs = Git.lsRemoteRepository().setRemote(remote.toString()).setHeads(true).setCredentialsProvider(creds).call()
-            val mainSha = remoteRefs.firstOrNull { it.name == Constants.R_HEADS + main }?.objectId?.name
-            val refs = remoteRefs.map { it.name.removePrefix(Constants.R_HEADS) }
+            // T19, аудит K-01: основную ветку называет сервер. Конфиг и origin/HEAD
+            // пишет гость; для доверенной головы им пользоваться нельзя.
+            val remoteRefs = Git.lsRemoteRepository().setRemote(remote.toString()).setTags(false).setCredentialsProvider(creds).callAsMap()
+            val refs = remoteRefs.keys.filter { it.startsWith(Constants.R_HEADS) }.map { it.removePrefix(Constants.R_HEADS) }
+            val main = remoteRefs[Constants.HEAD]?.target?.name?.removePrefix(Constants.R_HEADS)?.takeIf { it in refs }
+                ?: return@fetched failure(DiagCode.VALUE_INVALID, "сервер не назвал основную ветку", project)
+            val mainSha = remoteRefs[Constants.R_HEADS + main]?.objectId?.name
             val keep = refs.filter { it == main || !excluded(it) }.sorted()
             val before = keep.associateWith { repo.resolve(Constants.R_REMOTES + "origin/" + it) }
             git.fetch()
-                .setRemote("origin")
+                // K-02: адрес целиком, не RemoteConfig("origin") с url.*.insteadOf.
+                .setRemote(remote.toString())
                 .setRefSpecs(keep.map { RefSpec("+${Constants.R_HEADS}$it:${Constants.R_REMOTES}origin/$it") })
                 .setCredentialsProvider(creds)
                 .call()
