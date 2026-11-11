@@ -14,8 +14,8 @@ class RequestActionTest {
     private val ids = IdGenerator(clock, RandomSource.seeded(128))
     private val task = ids.next(IdKinds.TASK)
 
-    private fun request(purpose: String, vararg options: RequestOption): UserRequest = UserRequest.create(
-        ids.next(IdKinds.REQUEST), RequestKind.CONFIRMATION, purpose, "task:a", "Заголовок", "Текст", options.toList(), task, null, clock.now(), clock.now() + 10.minutes,
+    private fun request(purpose: String, vararg options: RequestOption, kind: RequestKind = RequestKind.CONFIRMATION): UserRequest = UserRequest.create(
+        ids.next(IdKinds.REQUEST), kind, purpose, "task:a", "Заголовок", "Текст", options.toList(), task, null, clock.now(), clock.now() + 10.minutes,
     ).valueOrNull()!!
 
     private fun confirms(r: UserRequest): Map<String, Boolean> = RequestAction.buttons(r).zip(r.options).associate { (b, o) -> o.id to b.confirm }
@@ -35,10 +35,13 @@ class RequestActionTest {
 
     @Test
     fun acceptOfOtherPurposesIsOneTap() {
-        val r = request("task.blocked", RequestOption("retry", "Повторить", OptionRole.ACCEPT), RequestOption("cancel", "Отменить", OptionRole.DESTRUCTIVE))
-        assertEquals(mapOf("retry" to false, "cancel" to true), confirms(r))
+        val r = request("task.blocked", RequestOption("retry", "Повторить", OptionRole.ACCEPT), RequestOption("no", "Нет", OptionRole.REJECT))
+        assertEquals(mapOf("retry" to false, "no" to false), confirms(r))
         assertEquals(false, r.decisive("retry"))
-        assertEquals(false, r.decisive("cancel"))
+        // Опасный вариант — с подтверждением при любом назначении (D-44), но не «решающий».
+        val d = request("task.blocked", RequestOption("do", "Удалить", OptionRole.DESTRUCTIVE), RequestOption("no", "Отмена", OptionRole.REJECT), kind = RequestKind.DESTRUCTIVE_CONFIRMATION)
+        assertEquals(mapOf("do" to true, "no" to false), confirms(d))
+        assertEquals(false, d.decisive("do"))
     }
 
     @Test
