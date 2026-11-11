@@ -47,6 +47,7 @@ class Cli(
             OK
         }
         "agent" -> AgentCommand(out, err, version, outClosed = outClosed).run(args.drop(1))
+        "tools" -> ToolsCommand(out, err).run(args.drop(1))
         // Пульт приложения (D-47): те же команды, что на экране, через канал на loopback.
         "control", "status", "task", "session", "requests", "answer", "limit", "target", "slot", "sessions-limit", "search" ->
             control().run(args.first(), args.drop(1))
@@ -80,6 +81,7 @@ class Cli(
             |
             |  dpai version   версия
             |  dpai agent     агент на execution target (dpai agent без параметров — справка)
+            |  dpai tools     общая папка инструментов target (configure|status|disable)
             |${ControlCommand.USAGE}
             |${EcosystemCommand.USAGE}
             |  dpai help      эта справка

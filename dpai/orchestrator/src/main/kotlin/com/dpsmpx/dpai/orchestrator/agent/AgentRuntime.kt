@@ -122,6 +122,7 @@ class AgentRuntime(
     private val baseEnvironment: () -> Map<String, String> = System::getenv,
 ) {
     private val vfs = NioVfs(File(home).toPath())
+    private val taskHost = com.dpsmpx.dpai.execution.tools.SharedToolsHost(host) { SharedToolsStore(vfs).read() }
     private val ids = IdGenerator(clock, RandomSource.secure())
     private val pace = java.util.concurrent.CountDownLatch(1)
 
@@ -243,6 +244,7 @@ class AgentRuntime(
             return AgentReply("supervise", ok = true, run = current.status(journal.position))
         }
         val env = HashMap(baseEnvironment()).apply {
+            remove(com.dpsmpx.dpai.execution.tools.SharedTools.EXECUTOR_ENV)
             doc.spec.unsetEnv.forEach { remove(it) }
             putAll(doc.spec.setEnv)
         }
@@ -250,7 +252,7 @@ class AgentRuntime(
         val captured = StringBuilder()
         // Вывод ждёт блокировки, пока не записано TARGET_PROCESS_STARTED: в журнале ход начинается с него.
         val process: RunningProcess = synchronized(lock) {
-            val started = host.start(ProcessSpec(doc.spec.command, doc.spec.workDir, env, stdin)) { line ->
+            val started = taskHost.start(ProcessSpec(doc.spec.command, doc.spec.workDir, env, stdin)) { line ->
                 // Вывод пробы входа — только в памяти (D-69): в журнал идёт сведённый итог при выходе.
                 if (capture && line.stream == OutputStream.STDOUT) {
                     synchronized(captured) { if (captured.length < CAPTURE_LIMIT) captured.append(line.text).append('\n') }

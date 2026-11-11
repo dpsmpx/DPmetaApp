@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 SOURCE = Path(__file__).resolve().parents[1] / 'tools/shared_verify/runtime.py'
 spec = importlib.util.spec_from_file_location('shared_verify', SOURCE)
@@ -89,13 +90,111 @@ class SharedVerifyTest(unittest.TestCase):
         self.assertEqual(self.git(self.remote, 'rev-parse', 'main'), remote)
         self.assertFalse((self.state / 'last-sync.json').exists())
 
-    def test_uncommitted_files_are_preserved(self):
+    def test_uncommitted_files_are_committed_checked_and_published(self):
         (self.repo / 'tool.txt').write_text('AI edits')
         (self.repo / 'new.txt').write_text('new')
-        with self.assertRaisesRegex(runtime.Refused, 'uncommitted_changes'):
-            self.sync()
+        self.assertEqual(self.sync()['status'], 'published')
         self.assertEqual((self.repo / 'tool.txt').read_text(), 'AI edits')
         self.assertEqual((self.repo / 'new.txt').read_text(), 'new')
+        self.assertTrue(runtime.clean(self.repo))
+        self.assertEqual(self.git(self.remote, 'show', 'main:new.txt'), 'new')
+
+    def test_failed_auto_commit_candidate_stays_local(self):
+        remote = self.git(self.remote, 'rev-parse', 'main')
+        (self.repo / 'tool.txt').write_text('unverified edit')
+        self.command = [sys.executable, '-c', 'raise SystemExit(1)']
+        with self.assertRaisesRegex(runtime.Refused, 'validation_failed'):
+            self.sync()
+        self.assertEqual(self.git(self.remote, 'rev-parse', 'main'), remote)
+        self.assertEqual((self.repo / 'tool.txt').read_text(), 'unverified edit')
+        self.assertNotEqual(self.git(self.repo, 'rev-parse', 'HEAD'), remote)
+        self.assertTrue(runtime.clean(self.repo))
+
+    def test_dirty_local_and_new_remote_are_not_overwritten(self):
+        other = self.other()
+        remote = self.commit(other, 'remote')
+        self.git(other, 'push', 'origin', 'main')
+        local = self.git(self.repo, 'rev-parse', 'HEAD')
+        (self.repo / 'tool.txt').write_text('pending local')
+        with self.assertRaisesRegex(runtime.Refused, 'local_remote_changes'):
+            self.sync()
+        self.assertEqual(self.git(self.repo, 'rev-parse', 'HEAD'), local)
+        self.assertEqual((self.repo / 'tool.txt').read_text(), 'pending local')
+        self.assertEqual(self.git(self.remote, 'rev-parse', 'main'), remote)
+
+    def test_init_validates_before_exposing_folder(self):
+        destination = self.base / 'installed'
+        result = runtime.install(destination, self.state, str(self.remote), self.command)
+        self.assertEqual(result['status'], 'installed')
+        self.assertEqual(self.git(destination, 'rev-parse', 'HEAD'), result['revision'])
+        self.assertEqual(self.git(destination, 'remote', 'get-url', 'origin'), str(self.remote))
+        self.assertEqual((destination / 'tool.txt').read_text(), 'first')
+        self.assertEqual(list(destination.parent.glob('.dpv-install-*')), [])
+
+    def test_failed_init_never_activates_candidate(self):
+        destination = self.base / 'installed'
+        with self.assertRaisesRegex(runtime.Refused, 'validation_failed'):
+            runtime.install(destination, self.state, str(self.remote), [sys.executable, '-c', 'raise SystemExit(1)'])
+        self.assertFalse(destination.exists())
+        self.assertEqual(list(destination.parent.glob('.dpv-install-*')), [])
+
+    def test_init_does_not_replace_existing_directory(self):
+        destination = self.base / 'installed'
+        destination.mkdir()
+        (destination / 'mine.txt').write_text('keep')
+        with self.assertRaisesRegex(runtime.Refused, 'tools_already_exist'):
+            runtime.install(destination, self.state, str(self.remote), self.command)
+        self.assertEqual((destination / 'mine.txt').read_text(), 'keep')
+
+    def test_two_installers_share_destination_lock(self):
+        destination = self.base / 'installed'
+        with runtime.file_lease(self.base / '.installed.install.lock', exclusive=True):
+            with self.assertRaises(runtime.Busy):
+                runtime.install(destination, self.state, str(self.remote), self.command)
+        self.assertFalse(destination.exists())
+
+    def test_unchanged_poll_avoids_repeating_full_validation(self):
+        self.sync()
+        with patch.object(runtime, 'validate', side_effect=AssertionError('needless validation')):
+            self.assertEqual(self.sync()['status'], 'unchanged')
+
+    def test_cached_validation_never_authorizes_publication(self):
+        local = self.commit(self.repo, 'local')
+        self.state.mkdir()
+        runtime.write_state(self.state, 'last-validation.json', runtime.validation_key(local, self.command))
+        with patch.object(runtime, 'validate', side_effect=runtime.Refused('validation_failed')):
+            with self.assertRaisesRegex(runtime.Refused, 'validation_failed'):
+                self.sync()
+        self.assertNotEqual(self.git(self.remote, 'rev-parse', 'main'), local)
+
+    def test_missing_or_corrupt_validation_stamp_is_not_trusted(self):
+        self.sync()
+        (self.state / 'last-validation.json').write_text('broken')
+        with patch.object(runtime, 'validate', side_effect=runtime.Refused('validation_failed')):
+            with self.assertRaisesRegex(runtime.Refused, 'validation_failed'):
+                self.sync()
+
+    def test_validator_has_timeout_and_candidate_is_removed(self):
+        with patch.object(runtime, 'VALIDATION_TIMEOUT', 0.05):
+            self.command = [sys.executable, '-c', 'import time; time.sleep(5)']
+            with self.assertRaisesRegex(runtime.Refused, 'validation_timeout'):
+                self.sync()
+        self.assertEqual(list(self.state.glob('candidate-*')), [])
+
+    def test_watch_retries_after_busy_and_error(self):
+        events, waits = [], []
+        def pause(seconds):
+            waits.append(seconds)
+            return len(waits) == 3
+        with patch.object(runtime, 'sync', side_effect=[runtime.Busy(), runtime.Refused('git_failed'), {'status': 'unchanged'}]):
+            runtime.watch(self.repo, self.state, 10, pause=pause, emit=events.append)
+        self.assertEqual(events, [{'status': 'deferred', 'reason': 'tools_in_use'},
+                                  {'status': 'refused', 'reason': 'git_failed'}, {'status': 'unchanged'}])
+        self.assertEqual(waits, [10, 10, 10])
+
+    def test_watch_rejects_nonpositive_interval(self):
+        with self.assertRaisesRegex(runtime.Refused, 'positive_interval_required'):
+            runtime.watch(self.repo, self.state, 0)
 
     def test_divergence_does_not_merge_or_reset(self):
         other = self.other()
