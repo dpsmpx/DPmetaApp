@@ -125,10 +125,11 @@ class Redactor private constructor(private val strict: Boolean) {
          * Имя с секретным словом в конце и любыми словами перед ним через `_`, `.`
          * или `-` (`DB_PASSWORD`, `GITHUB_TOKEN`, `aws_secret_access_key`; аудит
          * C-01): граница — перед всем именем, а не перед словом — `\b` не видит
-         * границы после `_`. Слова приставки кончаются разделителем — перебор
-         * линейный.
+         * границы после `_`. Класс знаков сканируется итеративно: повтор группы
+         * «слово + разделитель» переполнял стек Java Regex на длинном имени.
+         * Последний разделитель сохраняет границу перед секретным словом.
          */
-        private const val SECRET_NAME_PATTERN = "(?:[A-Za-z0-9]+[_.-])*(?:$SECRET_WORDS)"
+        private const val SECRET_NAME_PATTERN = "(?:[A-Za-z0-9_.-]*[_.-])?(?:$SECRET_WORDS)"
 
         /** Имя поля JSON целиком — секретное (аудит C-02). */
         private val SECRET_NAME = Regex("(?i)$SECRET_NAME_PATTERN")

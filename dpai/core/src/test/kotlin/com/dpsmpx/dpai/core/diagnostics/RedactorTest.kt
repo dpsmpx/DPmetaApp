@@ -1,5 +1,6 @@
 package com.dpsmpx.dpai.core.diagnostics
 
+import com.dpsmpx.dpai.core.clock.Clock
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -149,9 +150,12 @@ class RedactorTest {
     /** Длинное имя из многих слов не даёт квадратичного перебора. */
     @Test
     fun longNamesAreLinear() {
-        val text = "a_".repeat(50_000) + "x=1 " + "b-".repeat(50_000) + "y"
-        val started = System.nanoTime()
+        // Без цифры: длинное слово с цифрой STANDARD намеренно считает возможным токеном.
+        val text = "a_".repeat(50_000) + "x=yes " + "b-".repeat(50_000) + "y"
+        val started = Clock.SYSTEM.monotonicNanos()
         assertEquals(text, Redactor.STANDARD.redact(text))
-        assertTrue((System.nanoTime() - started) / 1_000_000 < 2_000)
+        val name = "a_".repeat(50_000) + "token"
+        assertEquals("$name=${Secret.REDACTED}", Redactor.STANDARD.redact("$name=" + listOf("short", "value").joinToString("-")))
+        assertTrue((Clock.SYSTEM.monotonicNanos() - started) / 1_000_000 < 2_000)
     }
 }

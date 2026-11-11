@@ -1,5 +1,6 @@
 package com.dpsmpx.dpai.ui
 
+import com.dpsmpx.dpai.core.clock.Clock
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -93,9 +94,9 @@ class MarkdownTest {
             "| --" + " ".repeat(n) + "x",
         )
         for (line in lines) {
-            val started = System.nanoTime()
+            val started = Clock.SYSTEM.monotonicNanos()
             val r = Markdown.render(line + "\n" + line)
-            val ms = (System.nanoTime() - started) / 1_000_000
+            val ms = (Clock.SYSTEM.monotonicNanos() - started) / 1_000_000
             assertTrue(ms < 2_000, "разбор строки ${line.take(8)}… — $ms мс")
             assertTrue(r.text.isNotEmpty())
         }

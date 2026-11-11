@@ -1624,15 +1624,15 @@ class Orchestrator(
                     return Outcome.failure(DiagCode.STATE_CONFLICT, "задача снова в работе — слияние будет предложено после новой проверки", "task $task")
                 }
                 val (branch, commit) = mergeParts(pending.proposal)
-                val what = if (commit == null) {
-                    listOf(branch)
-                } else {
-                    val now = g.run(GitOp.REV_PARSE, repo.root, listOf(branch)).valueOrNull()?.stdout?.firstOrNull()?.trim()?.lowercase()
-                    if (now != commit) {
-                        return Outcome.failure(DiagCode.STATE_CONFLICT, "ветка $branch изменилась после проверки (${now?.take(12) ?: "нет ветки"} вместо ${commit.take(12)}) — не сливаю", "task $task")
-                    }
-                    listOf(commit)
+                // Старое предложение после обновления читается, но не разрешает слияние непроверенной вершины ветки.
+                if (commit == null) {
+                    return Outcome.failure(DiagCode.STATE_CONFLICT, "предложение без проверенного коммита — повторите проверку задачи", "task $task")
                 }
+                val now = g.run(GitOp.REV_PARSE, repo.root, listOf(branch)).valueOrNull()?.stdout?.firstOrNull()?.trim()?.lowercase()
+                if (now != commit) {
+                    return Outcome.failure(DiagCode.STATE_CONFLICT, "ветка $branch изменилась после проверки (${now?.take(12) ?: "нет ветки"} вместо ${commit.take(12)}) — не сливаю", "task $task")
+                }
+                val what = listOf(commit)
                 mergeBlocker(g, repo.root, target)?.let { return it }
                 when (val m = g.run(GitOp.MERGE, repo.root, what)) {
                     is Outcome.Failure -> m.also {

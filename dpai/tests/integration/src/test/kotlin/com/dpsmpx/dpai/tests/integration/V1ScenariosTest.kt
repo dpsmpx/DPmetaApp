@@ -30,6 +30,9 @@ import com.dpsmpx.dpai.git.GitOp
 import com.dpsmpx.dpai.git.Repository
 import com.dpsmpx.dpai.notifications.NotificationDecision
 import com.dpsmpx.dpai.orchestrator.Orchestrator
+import com.dpsmpx.dpai.orchestrator.EventRecorder
+import com.dpsmpx.dpai.orchestrator.MergeEvent
+import com.dpsmpx.dpai.orchestrator.mergeEnvelopes
 import com.dpsmpx.dpai.orchestrator.ProjectConfig
 import com.dpsmpx.dpai.orchestrator.TargetSlot
 import com.dpsmpx.dpai.orchestrator.control.ControlSnapshot
@@ -463,6 +466,31 @@ class V1ScenariosTest {
 
         val unknown = orchestrator.taskDiff(com.dpsmpx.dpai.core.ids.IdKinds.TASK.let { ids.next(it) })
         assertEquals(DiagCode.ENTITY_NOT_FOUND, (unknown as Outcome.Failure).errors.single().code)
+    }
+
+    /** Предложение старой версии не содержит проверенного SHA: после перезапуска слияние запрещено. */
+    @Test
+    fun legacyMergeProposalCannotMergeUnpinnedBranch() {
+        setUp(slots = 1)
+        val t = task("фича", MockScenario.SLOW_OUTPUT)
+        orchestrator.tick()
+        val tree = orchestrator.worktrees.worktrees.values.single { it.owner != null }
+        File(tree.path, "feature.txt").writeText("проверенная возможность\n")
+        runUntilQuiet(3)
+        assertEquals(TaskState.DONE, state(t))
+        val pending = orchestrator.mergesState.pending.values.single()
+        val legacy = pending.copy(proposal = pending.proposal.copy(arguments = pending.proposal.arguments.take(1)))
+        val recorder = EventRecorder(ids, clock).apply {
+            resumeFrom(EventJournal.readCommitted(NioVfs(dir), "data/journal.log").valueOrNull()!!)
+        }
+        assertTrue(journal.appendAll(recorder.mergeEnvelopes(listOf(MergeEvent.Requested(legacy, clock.now())))).isSuccess)
+        boot()
+        val request = mergeRequest()
+        val answer = orchestrator.answer(request.id, "merge", null, request.hash, "автор")
+        assertEquals(OperationStatus.FAILED, answer.status)
+        assertTrue(answer.diagnostics.any { "без проверенного коммита" in it.message }, answer.diagnostics.toString())
+        assertFalse(File(repo.root, "feature.txt").exists(), "main не изменяется старым предложением")
+        assertEquals(emptyList<TaskId>(), orchestrator.merged)
     }
 
     private fun mergeRequest() = orchestrator.pendingRequests().single { it.purpose == "task.merge" }
