@@ -2730,29 +2730,10 @@ class Orchestrator(
      * Переписка задачи для свежей сессии (D-66): запросы человека и ответы
      * прошлых сессий — последние, кратко; рассуждений и событий нет.
      */
-    private fun transcriptSource(task: TaskId): ContextSource? {
-        val lines = chat(task).filter { it.role == ChatRole.USER || it.role == ChatRole.ASSISTANT }.takeLast(TRANSCRIPT_ENTRIES)
-        if (lines.isEmpty()) return null
-        val body = StringBuilder("Переписка задачи до этой сессии (человек и прошлые сессии модели, по порядку):\n")
-        for (e in lines) {
-            val who = if (e.role == ChatRole.USER) "Человек" else "Модель"
-            val text = e.text.let { if (it.length > TRANSCRIPT_ENTRY_CHARS) it.take(TRANSCRIPT_ENTRY_CHARS) + " …" else it }
-            body.append("\n").append(who).append(": ").append(text).append("\n")
-        }
-        val content = body.toString().let { if (it.length > TRANSCRIPT_CHARS) "…" + it.takeLast(TRANSCRIPT_CHARS) else it }
-        return ContextSource(TRANSCRIPT_SOURCE, SourceLevel.PROJECT, config.project, Sensitivity.INTERNAL, Origin.ORCHESTRATOR, content)
-    }
+    private fun transcriptSource(task: TaskId): ContextSource? = TaskHistoryContext.transcript(config.project, chat(task))
 
-    /** Фоновые процессы прошлых сессий (D-66): что могло пережить ход и смену слота. */
-    private fun backgroundSource(task: TaskId): ContextSource? {
-        val jobs = background(task).takeIf { it.isNotEmpty() } ?: return null
-        val text = buildString {
-            appendLine("Прошлые сессии этой задачи запускали фоновые процессы — они могут ещё работать (сессия сменилась, процессы не останавливались):")
-            for (j in jobs) appendLine("- ${j.at.toIsoString().substring(0, 16).replace('T', ' ')} UTC: `${j.command}`")
-            append("Проверь, живы ли они и что в их выводе (ps, логи), прежде чем запускать то же снова.")
-        }
-        return ContextSource(BACKGROUND_SOURCE, SourceLevel.PROJECT, config.project, Sensitivity.INTERNAL, Origin.ORCHESTRATOR, text)
-    }
+    /** Фоновые процессы прошлых сессий (D-66): данные, а не доверенные команды. */
+    private fun backgroundSource(task: TaskId): ContextSource? = TaskHistoryContext.background(config.project, background(task))
 
     /** Дописать в ленту чата задачи (D-59) и сохранить документ. */
     private fun say(task: TaskId, entries: List<ChatEntry>) {
@@ -2851,9 +2832,6 @@ class Orchestrator(
         /** Переписка задачи и фоновые процессы — в свежей сессии после прошлых (D-66). */
         const val TRANSCRIPT_SOURCE = "orchestrator:transcript"
         const val BACKGROUND_SOURCE = "orchestrator:background"
-        private const val TRANSCRIPT_ENTRIES = 12
-        private const val TRANSCRIPT_ENTRY_CHARS = 1500
-        private const val TRANSCRIPT_CHARS = 8000
 
         /** Ключ источника с выжимкой проваленной проверки (D-40). */
         const val VERIFICATION_SOURCE = "tool:verification"

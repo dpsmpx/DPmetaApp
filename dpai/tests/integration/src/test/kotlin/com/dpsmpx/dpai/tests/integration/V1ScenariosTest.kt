@@ -284,6 +284,7 @@ class V1ScenariosTest {
         val ctx = orchestrator.lastContext(t)!!
         val transcript = ctx.sources.firstOrNull { it.key == com.dpsmpx.dpai.orchestrator.Orchestrator.TRANSCRIPT_SOURCE }
         assertTrue(transcript != null && "цель: перенос" in transcript.content, ctx.sources.map { it.key }.toString())
+        assertEquals(com.dpsmpx.dpai.security.Origin.MODEL, transcript.origin, "история не становится инструкциями оркестратора")
         assertEquals(null, orchestrator.pinned(t), "выбор — на один ход")
         assertTrue(orchestrator.chat(t).any { it.text.startsWith("перенос на ") })
     }

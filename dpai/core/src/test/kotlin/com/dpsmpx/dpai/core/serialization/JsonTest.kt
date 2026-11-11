@@ -1,6 +1,7 @@
 package com.dpsmpx.dpai.core.serialization
 
 import com.dpsmpx.dpai.core.diagnostics.DiagCode
+import com.dpsmpx.dpai.core.clock.Clock
 import com.dpsmpx.dpai.core.diagnostics.DiagnosticCollector
 import com.dpsmpx.dpai.core.result.Outcome
 import kotlin.test.Test
@@ -8,6 +9,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
+import java.io.File
 
 class JsonTest {
     private val parser = JsonParser()
@@ -41,6 +44,26 @@ class JsonTest {
         val f = assertIs<Outcome.Failure>(parser.parse("""{"a":{"b":1,"b":2}}"""))
         assertEquals(DiagCode.JSON_DUPLICATE_KEY, f.errors.single().code)
         assertEquals("$.a.b", f.errors.single().subject)
+    }
+
+    @Test
+    fun duplicatePathKeepsArrayIndicesAndEscapedFieldNames() {
+        val root = System.getProperty("dpai.repoRoot") ?: error("нет dpai.repoRoot")
+        val text = File(root, "tests/data/json/nested-duplicate-path.json").readText()
+        val failure = assertIs<Outcome.Failure>(parser.parse(text))
+        assertEquals(DiagCode.JSON_DUPLICATE_KEY, failure.errors.single().code)
+        assertEquals("$[\"a.b\"][1][\"quote\\\"key\"].x", failure.errors.single().subject)
+    }
+
+    @Test
+    fun largeArrayUnderLongFieldDoesNotCopyPathForEveryItem() {
+        val key = "field".repeat(30_000)
+        val text = "{\"$key\":[" + List(100_000) { "0" }.joinToString(",") + "]}"
+        val start = Clock.SYSTEM.monotonicNanos()
+        val value = ok(text) as JsonObject
+        val elapsed = Clock.SYSTEM.monotonicNanos() - start
+        assertEquals(100_000, (value.fields[key] as JsonArray).items.size)
+        assertTrue(elapsed < 2_000_000_000L, "разбор занял ${elapsed / 1_000_000} мс")
     }
 
     @Test

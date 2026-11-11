@@ -29,7 +29,7 @@ class JsonParser(private val limits: Limits = Limits()) {
         val reader = Reader(text, limits.maxDepth)
         return try {
             reader.skipWs()
-            val value = reader.value("$", 0)
+            val value = reader.value(0)
             reader.skipWs()
             if (!reader.atEnd()) reader.fail(DiagCode.JSON_SYNTAX, "лишнее после значения")
             Outcome.success(value)
@@ -42,6 +42,25 @@ class JsonParser(private val limits: Limits = Limits()) {
 
     private class Reader(val s: String, val maxDepth: Int) {
         var i = 0
+        // Не копируем весь путь для каждого значения (D-129): имя может занимать мегабайты.
+        private val path = ArrayList<Any>()
+
+        private fun pathAt(key: String): String = buildString {
+            append('$')
+            for (step in path) {
+                if (step is String) JsonPath.appendField(this, step) else append('[').append(step).append(']')
+            }
+            JsonPath.appendField(this, key)
+        }
+
+        private fun child(step: Any, depth: Int): JsonValue {
+            path.add(step)
+            return try {
+                value(depth)
+            } finally {
+                path.removeAt(path.lastIndex)
+            }
+        }
 
         fun atEnd() = i >= s.length
 
@@ -63,11 +82,11 @@ class JsonParser(private val limits: Limits = Limits()) {
             while (i < s.length && (s[i] == ' ' || s[i] == '\t' || s[i] == '\n' || s[i] == '\r')) i++
         }
 
-        fun value(path: String, depth: Int): JsonValue {
+        fun value(depth: Int): JsonValue {
             if (atEnd()) fail(DiagCode.JSON_SYNTAX, "неожиданный конец документа")
             return when (val c = s[i]) {
-                '{' -> obj(path, depth + 1)
-                '[' -> array(path, depth + 1)
+                '{' -> obj(depth + 1)
+                '[' -> array(depth + 1)
                 '"' -> JsonString(string())
                 't' -> literal("true", JsonBool(true))
                 'f' -> literal("false", JsonBool(false))
@@ -82,7 +101,7 @@ class JsonParser(private val limits: Limits = Limits()) {
             return v
         }
 
-        fun obj(path: String, depth: Int): JsonObject {
+        fun obj(depth: Int): JsonObject {
             if (depth > maxDepth) fail(DiagCode.JSON_TOO_DEEP, "вложенность больше $maxDepth")
             i++ // {
             val fields = LinkedHashMap<String, JsonValue>()
@@ -95,13 +114,12 @@ class JsonParser(private val limits: Limits = Limits()) {
                 skipWs()
                 if (atEnd() || s[i] != '"') fail(DiagCode.JSON_SYNTAX, "ожидалось имя поля в кавычках")
                 val key = string()
-                val childPath = JsonPath.field(path, key)
-                if (key in fields) throw ParseError(DiagCode.JSON_DUPLICATE_KEY, "повтор ключа", childPath)
+                if (key in fields) throw ParseError(DiagCode.JSON_DUPLICATE_KEY, "повтор ключа", pathAt(key))
                 skipWs()
                 if (atEnd() || s[i] != ':') fail(DiagCode.JSON_SYNTAX, "ожидалось «:»")
                 i++
                 skipWs()
-                fields[key] = value(childPath, depth)
+                fields[key] = child(key, depth)
                 skipWs()
                 if (atEnd()) fail(DiagCode.JSON_SYNTAX, "незакрытый объект")
                 when (s[i]) {
@@ -115,7 +133,7 @@ class JsonParser(private val limits: Limits = Limits()) {
             }
         }
 
-        fun array(path: String, depth: Int): JsonArray {
+        fun array(depth: Int): JsonArray {
             if (depth > maxDepth) fail(DiagCode.JSON_TOO_DEEP, "вложенность больше $maxDepth")
             i++ // [
             val items = ArrayList<JsonValue>()
@@ -126,7 +144,7 @@ class JsonParser(private val limits: Limits = Limits()) {
             }
             while (true) {
                 skipWs()
-                items += value(JsonPath.index(path, items.size), depth)
+                items += child(items.size, depth)
                 skipWs()
                 if (atEnd()) fail(DiagCode.JSON_SYNTAX, "незакрытый массив")
                 when (s[i]) {
@@ -252,12 +270,20 @@ class JsonParser(private val limits: Limits = Limits()) {
 object JsonPath {
     private val SIMPLE = Regex("[A-Za-z_][A-Za-z0-9_]*")
 
-    fun field(parent: String, name: String): String =
+    fun field(parent: String, name: String): String = buildString {
+        append(parent)
+        appendField(this, name)
+    }
+
+    internal fun appendField(out: StringBuilder, name: String) {
         if (SIMPLE.matches(name)) {
-            "$parent.$name"
+            out.append('.').append(name)
         } else {
-            "$parent[" + StringBuilder().also { CanonicalJson.appendString(it, name) } + "]"
+            out.append('[')
+            CanonicalJson.appendString(out, name)
+            out.append(']')
         }
+    }
 
     fun index(parent: String, index: Int): String = "$parent[$index]"
 }

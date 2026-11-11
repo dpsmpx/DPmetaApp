@@ -46,6 +46,46 @@ class RedactorTest {
     }
 
     @Test
+    fun completeHeaderAndMultiwordValuesAreHidden() {
+        val basic = listOf("dXNlcj", "pwYXNz").joinToString("")
+        val cookie = listOf("session", "value").joinToString("-")
+        for (header in listOf("Authorization", "Proxy-Authorization")) {
+            val out = r.redact("$header: Basic $basic\nstatus=200")
+            assertEquals("$header: ${Redactor.MARK}\nstatus=200", out)
+        }
+        for (header in listOf("Cookie", "Set-Cookie")) {
+            assertEquals("$header: ${Redactor.MARK}", r.redact("$header: sid=first; csrftoken=$cookie; Path=/"))
+        }
+        val phrase = listOf("several", "secret", "words").joinToString(" ")
+        for (name in listOf("token", "pass", "passphrase", "ssh_passphrase")) {
+            assertEquals("$name: ${Redactor.MARK}", r.redact("$name: $phrase"))
+            assertEquals("$name='${Redactor.MARK}' user=alice", r.redact("$name='$phrase' user=alice"))
+        }
+        val quoted = listOf("some", "\\\"quoted\\\"", "words").joinToString(" ")
+        assertEquals("token=\"${Redactor.MARK}\" user=alice", r.redact("token=\"$quoted\" user=alice"))
+        val source = "token=$phrase user=alice"
+        assertEquals("token=${Redactor.MARK} user=alice", r.redact(source))
+        assertEquals(r.redact(source), r.redact(r.redact(source)), "повторное редактирование устойчиво")
+    }
+
+    @Test
+    fun opaqueSlashTokensLettersAndFalseHashLabelsAreHidden() {
+        val slash = listOf("wJalrXUtnFEMI", "K7MDENG", "bPxRfiCYEXAMPLEKEY").joinToString("/")
+        val letters = "AbCdEfGhIj".repeat(4)
+        val hf = "hf" + "_" + "AbCdEfGhIj".repeat(3)
+        for (redactor in listOf(Redactor.STANDARD, Redactor.STRICT)) {
+            for (value in listOf(slash, letters, hf)) {
+                assertFalse(value in redactor.redact("ключ $value"), "не скрыт образец")
+                assertFalse(value in redactor.redact("sha256:$value"), "метка не делает значение хешем")
+            }
+            val shortKey = listOf("short", "value").joinToString("-")
+            assertEquals("https://example.org?key=${Redactor.MARK}&x=1", redactor.redact("https://example.org?key=$shortKey&x=1"))
+            val hash = "sha256:" + "abcdef0123456789".repeat(4)
+            assertEquals(hash, redactor.redact(hash))
+        }
+    }
+
+    @Test
     fun longMixedTokensButNotIdsHashesUuidsOrPaths() {
         val token = "Zx9" + "Qw8Er7Ty6Ui5Op4As3Df2Gh1Jk0".repeat(2)
         assertRedacted("получен $token от сервера", token)
