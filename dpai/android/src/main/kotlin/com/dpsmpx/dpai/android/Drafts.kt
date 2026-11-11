@@ -22,7 +22,7 @@ import kotlin.concurrent.withLock
 /** Черновики чата — RAM; файлов — приватные восстановимые копии с D-135. */
 object Drafts {
     data class Checkpoint(val current: Long = 0, val saved: Long = -1, val error: String? = null)
-    data class Recovery(val ready: Boolean = true, val note: String = "", val checkpoints: Map<String, Checkpoint> = emptyMap())
+    data class Recovery(val ready: Boolean = true, val note: String = "", val unreadable: Int = 0, val checkpoints: Map<String, Checkpoint> = emptyMap())
     private val flow = MutableStateFlow(Recovery())
     val recovery: StateFlow<Recovery> = flow
     private val statusLock = Any()
@@ -70,7 +70,7 @@ object Drafts {
                                 if (r.value.previous.isNotEmpty()) add("Часть копий восстановлена из прежней целой версии")
                                 if (blocked.isNotEmpty()) add("Не прочитано копий: ${blocked.size}; они оставлены на месте")
                             }
-                            status { it.copy(ready = true, note = warnings.joinToString(". ")) }
+                            status { it.copy(ready = true, note = warnings.joinToString(". "), unreadable = blocked.size) }
                         }
                     }
                 } catch (_: Exception) {
@@ -163,8 +163,24 @@ object Drafts {
         Outcome.success(Unit)
     }
 
+    /** Явная кнопка после подтверждения: читаемые черновики и исходники не затрагиваются. */
+    fun discardUnavailable(): Outcome<Unit> = io.withLock {
+        val vault = store ?: return@withLock Outcome.success(Unit)
+        for (record in blocked.toList()) {
+            val result = vault.removeUnavailable(record)
+            if (result is Outcome.Failure) {
+                status { it.copy(unreadable = blocked.size, note = "Не все недоступные копии удалены") }
+                return@withLock result
+            }
+            blocked.remove(record)
+        }
+        status { it.copy(unreadable = 0, note = "Недоступные копии удалены; сохранённые файлы не изменены") }
+        Outcome.success(Unit)
+    }
+
     fun checkpoint(key: String): String {
         if (!flow.value.ready) return flow.value.note
+        if (files[key]?.editor?.dirty != true) return "Нет несохранённых изменений"
         if (store == null) return "Черновик в памяти"
         val check = flow.value.checkpoints[key] ?: return "Исходный файл меняется только по «Сохранить»"
         return check.error ?: if (check.saved < check.current) "Запись восстановимой копии…" else "Восстановимая копия записана"

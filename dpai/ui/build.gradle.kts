@@ -7,4 +7,5 @@ plugins {
 dependencies {
     api(project(":orchestrator"))
     testImplementation(project(":testkit"))
+    testImplementation(project(":files"))
 }

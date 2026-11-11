@@ -54,6 +54,10 @@ class EditorDraftStore(private val vfs: Vfs, private val cipher: DraftCipher) {
 
     fun remove(key: String): Outcome<Unit> = docs.delete(recordId(key))
 
+    /** Только для явно подтверждённого удаления недоступной копии. */
+    fun removeUnavailable(record: String): Outcome<Unit> = if (RECORD.matches(record)) docs.delete(record)
+        else Outcome.failure(DiagCode.VALUE_INVALID, "неверное имя копии черновика")
+
     /** .prev/.tmp тоже учитываются: прерванная запись/удаление не прячет копию от восстановления. */
     fun restore(): Outcome<DraftRestore> {
         val ids = try {
@@ -83,7 +87,7 @@ class EditorDraftStore(private val vfs: Vfs, private val cipher: DraftCipher) {
     }
 
     private fun encode(draft: SavedFileDraft): ByteArray? { return try {
-        if (draft.original.size > MAX_ORIGINAL || draft.text.length > MAX_TEXT || draft.selection.start !in 0..draft.text.length || draft.selection.end !in 0..draft.text.length) return null
+        if (!draft.key.startsWith("file:") || draft.original.size > MAX_ORIGINAL || draft.text.length > MAX_TEXT || draft.selection.start !in 0..draft.text.length || draft.selection.end !in 0..draft.text.length) return null
         val output = ByteArrayOutputStream()
         DataOutputStream(output).use { out ->
             out.writeInt(MAGIC)

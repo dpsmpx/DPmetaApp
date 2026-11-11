@@ -144,9 +144,50 @@ class EditorDraftStoreTest {
     @Test fun unknownEnvelopeVersionIsRetainedAndNotOpened() {
         val d = draft(); val id = EditorDraftStore.recordId(d.key)
         val docs = DocumentStore(NioVfs(dir), "drafts")
-        docs.write(id, JsonObject.of("format" to JsonString("dpai.editor-draft"), "version" to JsonNumber.of(2), "sealed" to JsonString("")))
+        docs.write(id, com.dpsmpx.dpai.core.serialization.JsonParser().parse(javaClass.getResource("/editor-drafts/unknown-version.json")!!.readText()).valueOrNull() as JsonObject)
         assertTrue(id in store().restore().valueOrNull()!!.unreadable)
         assertTrue(dir.resolve("drafts/$id").toFile().exists())
+    }
+
+    @Test fun restoredCopyCannotOverwriteExternalChangeButCanSaveUnchangedOriginal() {
+        val home = dir.resolve("project").also { it.toFile().mkdirs() }
+        val source = home.resolve("main.kt").toFile()
+        val d = draft(text = "новый текст\r\n")
+        source.writeBytes(d.original)
+        store().save(d)
+        val restored = store().restore().valueOrNull()!!.drafts.single()
+        val tree = com.dpsmpx.dpai.files.LocalTree(home)
+        source.writeText("external change")
+        assertIs<Outcome.Failure>(com.dpsmpx.dpai.files.TextFileEdit.save(tree, "main.kt", restored.original, restored.text))
+        assertEquals("external change", source.readText())
+        source.writeBytes(restored.original)
+        assertTrue(com.dpsmpx.dpai.files.TextFileEdit.save(tree, "main.kt", restored.original, restored.text) is Outcome.Success)
+        assertEquals(restored.text, com.dpsmpx.dpai.files.TextFile.decode(source.readBytes()).valueOrNull())
+        assertContentEquals(d.original.take(3).toByteArray(), source.readBytes().take(3).toByteArray())
+    }
+
+    @Test fun binaryLengthCannotAllocateBeyondBoundAndUnreadableCopyIsRetained() {
+        val d = draft(); val id = EditorDraftStore.recordId(d.key)
+        DocumentStore(NioVfs(dir), "drafts").write(id, envelope("AA=="))
+        val malformed = java.nio.ByteBuffer.allocate(8).putInt(0x44504431).putInt(Int.MAX_VALUE).array()
+        val fake = object : DraftCipher {
+            override fun seal(record: String, bytes: ByteArray) = Outcome.success(bytes)
+            override fun open(record: String, bytes: ByteArray) = Outcome.success(malformed)
+        }
+        assertTrue(id in store(cipher = fake).restore().valueOrNull()!!.unreadable)
+        assertTrue(dir.resolve("drafts/$id").toFile().exists())
+    }
+
+    @Test fun explicitRemovalOfUnavailableCopyKeepsOtherReadableDrafts() {
+        val d = draft(); store().save(d)
+        val badId = EditorDraftStore.recordId("file:unreadable")
+        DocumentStore(NioVfs(dir), "drafts").write(badId, envelope("invalid"))
+        assertTrue(badId in store().restore().valueOrNull()!!.unreadable)
+        assertIs<Outcome.Success<Unit>>(store().removeUnavailable(badId))
+        assertIs<Outcome.Failure>(store().removeUnavailable("../other"))
+        val restored = store().restore().valueOrNull()!!
+        assertEquals(d.key, restored.drafts.single().key)
+        assertTrue(restored.unreadable.isEmpty())
     }
 
     private fun envelope(sealed: String) = JsonObject.of("format" to JsonString("dpai.editor-draft"), "version" to JsonNumber.of(1), "sealed" to JsonString(sealed))
