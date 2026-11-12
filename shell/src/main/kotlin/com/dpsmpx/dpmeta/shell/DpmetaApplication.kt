@@ -18,9 +18,16 @@ class DpmetaApplication : DpaiApplication() {
         // Одно хранилище (D-111, D-113): клоны пульта живут в ~/projects гостя — их видят терминал, IDE и «AI»;
         // прежний каталог клонов переезжает туда один раз, до первого окна. Карта ~/STORAGE.md — в фоне.
         com.dpsmpx.dpai.android.StorageMap.adopt(java.io.File(filesDir, com.dpsmpx.dpmeta.app.PultActivity.LEGACY_CLONES_DIR), "projects")
-        com.dpsmpx.dpai.android.StorageMap.secrets { ctx ->
-            if (com.dpsmpx.dpmeta.app.PultActivity.hasGithubToken(ctx)) listOf(com.dpsmpx.dpai.android.StorageMap.SecretName("Токен GitHub", "GH_TOKEN", false)) else emptyList()
-        }
+        // Токен GitHub пульта — в общем списке секретов; ИИ — по разрешению и после входа раз за запуск (D-114).
+        com.dpsmpx.dpai.android.SecretGrants.register(
+            com.dpsmpx.dpai.android.SecretGrants.Source(
+                id = "github", name = "Токен GitHub", variable = "GH_TOKEN",
+                present = { com.dpsmpx.dpmeta.app.PultActivity.hasGithubToken(it) },
+                value = { com.dpsmpx.dpmeta.app.data.AiGitHub.account() },
+                unlocked = { com.dpsmpx.dpmeta.app.data.AiGitHub.active() },
+                unlock = { activity, done -> unlockGithubForAi(activity, done) },
+            ),
+        )
         com.dpsmpx.dpai.android.StorageMap.prepare(this)
         com.dpsmpx.dpai.android.StorageMap.refresh(this)
     }
@@ -50,6 +57,18 @@ class DpmetaApplication : DpaiApplication() {
     }
 
     override fun sharedToolsSessionClosed() = com.dpsmpx.dpmeta.app.data.ConnectedGitHub.close()
+
+    /** Служба остановлена: право ИИ на токен GitHub отзывается (D-114). */
+    override fun controllerStopped() = com.dpsmpx.dpmeta.app.data.AiGitHub.close()
+
+    /** Вход для токена GitHub ИИ (D-114): PIN или биометрия, право — до остановки процесса или службы. */
+    private fun unlockGithubForAi(activity: android.app.Activity, done: (com.dpsmpx.dpai.core.result.Outcome<Unit>) -> Unit) {
+        if (com.dpsmpx.dpmeta.app.data.AiGitHub.active()) return done(com.dpsmpx.dpai.core.result.Outcome.success(Unit))
+        val request = com.dpsmpx.dpmeta.app.data.AiGitHub.request()
+        com.dpsmpx.dpmeta.app.Lock.ask(activity, "Токен GitHub для ИИ", pinOnly = false,
+            onOpen = { if (!activity.isDestroyed) done(com.dpsmpx.dpmeta.app.data.AiGitHub.authorize(this, request)) },
+            onDenied = { _, _ -> if (!activity.isDestroyed) done(com.dpsmpx.dpai.core.result.Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.OPERATION_NOT_ALLOWED, "Вход не подтверждён")) })
+    }
 
     /** «AI» открывается над пультом, «назад» из неё — в пульт (D-73, UX-1). */
     override fun parentIntent(): android.content.Intent = android.content.Intent(this, DpmetaActivity::class.java)

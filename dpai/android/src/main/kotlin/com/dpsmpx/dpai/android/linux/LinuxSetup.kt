@@ -161,7 +161,10 @@ object LinuxSetup {
         // Команда вкладки (например, `claude` слота «в приложении») — через оболочку гостя по полному пути.
         val argv = if (command.isEmpty()) listOf("/bin/sh", "-l") else command.mapIndexed { i, a -> if (i == 0 && a == "sh") "/bin/sh" else a }
         // 24-битный цвет (терминал:A-23): COLORTERM — как у kitty и Windows Terminal.
-        val spec = ProcessSpec(argv, environment = ProotHost.GUEST_ENVIRONMENT + ("TERM" to "xterm-256color") + ("COLORTERM" to com.dpsmpx.dpai.ui.TerminalLaunch.COLORTERM))
+        // Секреты, выданные ИИ автором (DPmetaApp:D-114), — и терминалу; слот во вкладке убирает перекрывающие вход сам (`env -u`).
+        val env = ProotHost.GUEST_ENVIRONMENT + com.dpsmpx.dpai.android.SecretGrants.environment(context) +
+            ("TERM" to "xterm-256color") + ("COLORTERM" to com.dpsmpx.dpai.ui.TerminalLaunch.COLORTERM)
+        val spec = ProcessSpec(argv, environment = env)
         val wrapped = host(context).wrap(spec)
         return JniProcesses().spawn(wrapped.command, wrapped.environment.orEmpty(), null, size)
     }
@@ -191,7 +194,12 @@ object LinuxSetup {
         synchronized(this) {
             agent?.let { return it }
             val home = File(context.filesDir, AGENT_HOME).apply { mkdirs() }.path
-            return com.dpsmpx.dpai.orchestrator.agent.InAppAgentHost.create(home, Clock.SYSTEM, version ?: "dev", JniProcesses(), guestHost(context)!!, ProotHost.GUEST_ENVIRONMENT)
+            val app = context.applicationContext
+            return com.dpsmpx.dpai.orchestrator.agent.InAppAgentHost.create(
+                home, Clock.SYSTEM, version ?: "dev", JniProcesses(), guestHost(context)!!, ProotHost.GUEST_ENVIRONMENT,
+                // Секреты, выданные ИИ автором (DPmetaApp:D-114; D-144): на каждый запуск, не в документ хода.
+                secrets = { com.dpsmpx.dpai.android.SecretGrants.environment(app) },
+            )
                 .also { agent = it }
         }
     }

@@ -160,8 +160,11 @@ object GuestStorage {
     /** Модель в `~/tools/models`: имя файла и размер. */
     data class Model(val name: String, val size: Long)
 
-    /** Секрет для карты: имя, переменная окружения и выдаётся ли ИИ — без значения. */
-    data class SecretLine(val name: String, val variable: String?, val toAi: Boolean)
+    /**
+     * Секрет для карты: имя, переменная окружения, имя у слотов, где стандартное
+     * удаляется (`DPmetaApp:D-114`), выдаётся ли ИИ сейчас — без значения.
+     */
+    data class SecretLine(val name: String, val variable: String?, val toAi: Boolean, val alias: String? = null)
 
     /**
      * Что знает карта. Размеры разделов — `null`, если не посчитаны; [approx] — счёт
@@ -356,7 +359,8 @@ object GuestStorage {
         appendLine("## Секреты")
         if (f.secrets.isEmpty()) appendLine("- нет")
         for (s in f.secrets) {
-            appendLine("- ${s.name}" + (s.variable?.let { " — `$it`" } ?: "") + if (s.toAi) " — выдаётся ИИ" else " — ИИ не выдаётся")
+            val name = s.variable?.let { v -> " — `$v`" + (s.alias?.let { " (слотам, где `$v` перекрыл бы вход подпиской, — `$it`)" } ?: "") } ?: ""
+            appendLine("- ${s.name}$name" + if (s.toAi) " — выдаётся ИИ" else " — ИИ не выдаётся")
         }
         appendLine()
         appendLine("## Место")

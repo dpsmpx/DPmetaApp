@@ -69,6 +69,9 @@ object HfModels {
 
     fun forgetToken(context: Context) = ApiKeys.removeNamed(context, TOKEN)
 
+    /** Токен для выдачи ИИ по разрешению автора (`DPmetaApp:D-114`): `null` — нет его или Keystore сброшен. */
+    fun token(context: Context): Secret? = ApiKeys.getNamed(context, TOKEN)
+
     private fun vfs(context: Context): NioVfs = NioVfs(GuestPaths.home(context).toPath()).also { it.mkdirs(DIR) }
 
     /** Список файлов GGUF модели [input] (`владелец/имя` или адрес модели). */

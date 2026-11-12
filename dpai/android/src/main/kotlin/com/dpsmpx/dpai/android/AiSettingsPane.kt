@@ -100,6 +100,7 @@ fun AiSettingsPane(controller: Controller, model: DemoModel, sub: String?, onSub
             }
         }
         item(key = "cli") { CliCard() }
+        item(key = "storage") { StorageSecretsCard() }
         item(key = "disk") { AppDiskCard() }
         item(key = "overlay") { OverlayCard() }
         item(key = "end") { androidx.compose.foundation.layout.Spacer(Modifier.height(8.dp)) }

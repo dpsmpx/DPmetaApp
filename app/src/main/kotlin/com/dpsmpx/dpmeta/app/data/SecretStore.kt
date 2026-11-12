@@ -45,6 +45,7 @@ class SecretStore(private val vfs: Vfs, private val path: String = "github.token
 
     fun save(secret: Secret): Outcome<Unit> = try {
         ConnectedGitHub.close()
+        AiGitHub.close()
         val c = Cipher.getInstance(TRANSFORMATION).apply {
             try {
                 init(Cipher.ENCRYPT_MODE, key())
@@ -67,6 +68,7 @@ class SecretStore(private val vfs: Vfs, private val path: String = "github.token
     } finally {
         // Отозвать и вход, начатый во время замены файла/ключа.
         ConnectedGitHub.close()
+        AiGitHub.close()
     }
 
     fun load(): Outcome<Secret?> {
@@ -94,10 +96,12 @@ class SecretStore(private val vfs: Vfs, private val path: String = "github.token
 
     fun clear() {
         ConnectedGitHub.close()
+        AiGitHub.close()
         try {
             if (vfs.exists(path)) vfs.delete(path)
         } finally {
             ConnectedGitHub.close()
+            AiGitHub.close()
         }
     }
 

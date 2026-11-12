@@ -71,4 +71,7 @@ open class DpaiApplication : Application() {
 
     /** Служба остановлена: отозвать право, в том числе у незавершённого окна входа. */
     open fun sharedToolsSessionClosed() = Unit
+
+    /** Служба контроллера остановлена: оболочка отзывает права, выданные «до остановки службы» (`DPmetaApp:D-114`). */
+    open fun controllerStopped() = Unit
 }

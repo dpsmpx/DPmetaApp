@@ -62,6 +62,9 @@ RULES = [
          "execution/src/main/kotlin/com/dpsmpx/dpai/execution/tools/SharedToolsSync.kt",
          # Пароль облачной копии (D-107): только в вывод ключа шифра.
          "sync/src/main/kotlin/com/dpsmpx/dpai/sync/CloudCrypto.kt",
+         # Секрет, выданный ИИ автором (DPmetaApp:D-114, D-144): только в окружение процесса гостя, и его тест.
+         "orchestrator/src/main/kotlin/com/dpsmpx/dpai/orchestrator/linux/GuestSecrets.kt",
+         "orchestrator/src/test/kotlin/com/dpsmpx/dpai/orchestrator/linux/GuestSecretsTest.kt",
      ],
      "reveal() — только в разрешённых местах (D-14)", False),
     ("file-write",

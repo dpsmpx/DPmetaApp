@@ -86,6 +86,11 @@ object CloudSync {
         return Settings(p.getString("owner", "").orEmpty(), p.getString("repo", "").orEmpty(), p.getString("device", null) ?: defaultDevice(), p.getBoolean("daily", false))
     }
 
+    /** Есть ли токен и пароль копии — для списка секретов (`DPmetaApp:D-114`): только признак, без значения. */
+    fun hasToken(context: Context): Boolean = ApiKeys.hasNamed(context, TOKEN)
+
+    fun hasPassphrase(context: Context): Boolean = ApiKeys.hasNamed(context, PASSPHRASE)
+
     /** Есть ли всё для отправки: адрес, токен и пароль. */
     fun ready(context: Context): Boolean = canRestore(context) && ApiKeys.hasNamed(context, PASSPHRASE)
 

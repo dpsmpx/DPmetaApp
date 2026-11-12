@@ -24,14 +24,10 @@ import java.util.concurrent.atomic.AtomicBoolean
  * домашней папки гостя, перенос из прежних мест — один раз на процесс, `~/tools/bin`
  * в `PATH` оболочек входа, карта `~/STORAGE.md` и строка о ней в инструкции каждого
  * слота ИИ. Каталоги приложения, которые должны жить в разделе гостя (клоны пульта),
- * отдаёт приложение через [adopt]; имена секретов для карты — через [secrets].
+ * отдаёт приложение через [adopt]; секреты для карты — список [SecretGrants], без значений.
  */
 object StorageMap {
     private val adopted = CopyOnWriteArrayList<Pair<File, String>>()
-    /** Секрет для карты — имя, переменная окружения для ИИ, выдаётся ли ИИ; значения нет. */
-    data class SecretName(val name: String, val variable: String?, val toAi: Boolean)
-
-    private val sources = CopyOnWriteArrayList<(Context) -> List<SecretName>>()
     private val prepared = AtomicBoolean(false)
     private val running = AtomicBoolean(false)
     private val dirty = AtomicBoolean(false)
@@ -40,11 +36,6 @@ object StorageMap {
     fun adopt(host: File, section: String) {
         require(section in GuestStorage.SECTIONS) { "раздел хранилища: $section" }
         if (adopted.none { it.first == host }) adopted += host to section
-    }
-
-    /** Источник имён секретов для карты: имена и переменные, без значений. */
-    fun secrets(source: (Context) -> List<SecretName>) {
-        sources += source
     }
 
     /**
@@ -92,7 +83,7 @@ object StorageMap {
         val rootfs = File(app.filesDir, LinuxSetup.environment(app).rootfs).toPath()
         val space = StorageSpace.facts(app)
         val at = Instant.ofEpochMilli(Clock.SYSTEM.now().epochMillis).atZone(DisplayZone.current).format(TIME)
-        val secrets = sources.flatMap { s -> runCatching { s(app) }.getOrDefault(emptyList()) }.map { GuestStorage.SecretLine(it.name, it.variable, it.toAi) }
+        val secrets = runCatching { SecretGrants.rows(app) }.getOrDefault(emptyList()).map { GuestStorage.SecretLine(it.name, it.variable, it.toAi, it.alias) }
         val facts = GuestStorage.scan(home, rootfs, at, secrets, space.free, space.limit)
         replace(home, GuestStorage.MAP, GuestStorage.render(facts))
         val ai = home.resolve(GuestStorage.AI)
