@@ -375,6 +375,7 @@ private val Screens.Entry.icon: Int get() = when (this) {
     Screens.Entry.IDE -> R.drawable.ic_pult_ide
     Screens.Entry.AI -> R.drawable.ic_pult_ai
     Screens.Entry.SETTINGS -> R.drawable.ic_pult_more
+    Screens.Entry.HELP -> R.drawable.ic_pult_help
 }
 
 /** Ширина левой панели (D-112): на планшете — не во весь экран. */
@@ -498,7 +499,7 @@ fun PultApp(
      * Документ настроек приложения (D-112) — от оболочки: в нём блок пульта — слотом.
      * `null` — настройки пульта своим экраном (сборка без оболочки).
      */
-    settingsDocument: (@Composable (projects: @Composable () -> Unit) -> Unit)? = null,
+    settingsDocument: (@Composable (query: String, projects: @Composable () -> Unit) -> Unit)? = null,
     /** Раздел с левой панели окна «AI» (D-112): перейти и сбросить [onGoTo]. */
     goTo: com.dpsmpx.dpai.ui.AppSection? = null,
     onGoTo: () -> Unit = {},
@@ -520,12 +521,15 @@ fun PultApp(
     var pullFilter by rememberSaveable { mutableStateOf(Screens.PullFilter.WAITING) }
     var pullProject by rememberSaveable { mutableStateOf<String?>(null) }
     val stacks = rememberSaveable(saver = StacksSaver) { mutableStateMapOf() }
+    // Поиск документа настроек по ссылке из справки («Настройки → тема»); пункт панели открывает его пустым.
+    var settingsQuery by rememberSaveable { mutableStateOf("") }
     LaunchedEffect(goTo) {
         val to = goTo ?: return@LaunchedEffect
         tab = when (to) {
             com.dpsmpx.dpai.ui.AppSection.SUMMARY -> Section.SUMMARY
             com.dpsmpx.dpai.ui.AppSection.PROJECTS -> Section.DEV
             com.dpsmpx.dpai.ui.AppSection.SETTINGS -> Section.MORE
+            com.dpsmpx.dpai.ui.AppSection.HELP -> Section.HELP
         }
         onGoTo()
     }
@@ -573,7 +577,10 @@ fun PultApp(
                             scope.launch { drawer.close() }
                             when {
                                 // Касание открытого — к его началу, другого — туда, где оставили.
-                                section != null -> if (tab == section) stacks[section] = emptyList() else tab = section
+                                section != null -> {
+                                    if (section == Section.MORE) settingsQuery = ""
+                                    if (tab == section) stacks[section] = emptyList() else tab = section
+                                }
                                 e == Screens.Entry.IDE -> onIde?.invoke()
                                 else -> onAi?.invoke(false)
                             }
@@ -636,9 +643,21 @@ fun PultApp(
                     val doc = settingsDocument
                     if (doc != null) {
                         // Один документ на приложение (D-112): блок пульта — без своей прокрутки, внутри документа.
-                        doc { Settings(view, onSync, onSaveToken, onForgetToken, onClones, onZone, onJournal = { open(Nav.Journal) }, onAsk = { open(Nav.Ask(null, null)) }, onCommands = { open(Nav.Commands) }, onExport = onExport, scroll = false) }
+                        doc(settingsQuery) { Settings(view, onSync, onSaveToken, onForgetToken, onClones, onZone, onJournal = { open(Nav.Journal) }, onAsk = { open(Nav.Ask(null, null)) }, onCommands = { open(Nav.Commands) }, onExport = onExport, scroll = false) }
                     } else {
                         Settings(view, onSync, onSaveToken, onForgetToken, onClones, onZone, onJournal = { open(Nav.Journal) }, onAsk = { open(Nav.Ask(null, null)) }, onCommands = { open(Nav.Commands) }, onExport = onExport)
+                    }
+                }
+                // Справка — и без токена и среза (D-112): с неё начинают.
+                tab == Section.HELP -> HelpScreen { url ->
+                    // Ссылки справки внутрь приложения: app:summary, app:projects, app:ide, app:ai, app:settings?q=…
+                    val what = url.removePrefix("app:").substringBefore('?')
+                    when (what) {
+                        "summary" -> tab = Section.SUMMARY
+                        "projects" -> { tab = Section.DEV; devTab = DevTab.PROJECTS }
+                        "ide" -> onIde?.invoke()
+                        "ai" -> onAi?.invoke(false)
+                        "settings" -> { settingsQuery = url.substringAfter("q=", ""); tab = Section.MORE }
                     }
                 }
                 s == null && view.loading -> Text("Читаю срез…", style = MaterialTheme.typography.bodySmall)
@@ -1022,6 +1041,69 @@ private fun DirScreen(nav: Nav.Dir, loader: Loader, onBack: () -> Unit, open: (N
  * абзацы — списком (якорь — номер абзаца), поиск по тексту, выделение и
  * копирование; внешняя ссылка — по D-75 ([external]).
  */
+/**
+ * Справка (D-112): документ Markdown из APK — строгое оформление пульта,
+ * оглавление по разделам, поиск по абзацам. Ссылки `app:` — внутрь приложения
+ * ([onApp]): разделы и документ настроек с готовым поиском; адреса сайтов — по
+ * D-75: первое касание копирует, второе открывает (только `https`).
+ */
+@Composable
+private fun HelpScreen(onApp: (String) -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val taps = remember { LinkTaps() }
+    val linkColor = MaterialTheme.colorScheme.primary
+    var anchor by remember { mutableStateOf<String?>(null) }
+    val doc by produceState<Pair<DocText.Doc, DocText.Blocks>?>(null, linkColor) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val md = runCatching { context.assets.open(HELP_ASSET).use { it.readBytes().toString(Charsets.UTF_8) } }.getOrDefault("# Справка\n\nФайл справки не прочитан.")
+            val d = DocText.build(md)
+            val text = DocText.annotated(d, emptyMap(), "", HELP_ASSET, linkColor) { target ->
+                when (target) {
+                    is Links.Target.Anchor -> anchor = target.anchor
+                    is Links.Target.External -> if (target.url.startsWith("app:")) onApp(target.url) else external(context, taps, target.url)
+                    is Links.Target.File -> Unit
+                }
+            }
+            d to DocText.blocks(text, d.headings, markdown = true)
+        }
+    }
+    val list = androidx.compose.foundation.lazy.rememberLazyListState()
+    var query by rememberSaveable { mutableStateOf("") }
+    var hit by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(anchor, doc) {
+        val a = anchor ?: return@LaunchedEffect
+        doc?.second?.anchorIndex(a)?.let { list.animateScrollToItem(it) }
+        anchor = null
+    }
+    LaunchedEffect(hit) { hit?.let { list.animateScrollToItem(it) } }
+    val d = doc
+    if (d == null) {
+        androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical = 8.dp))
+        return
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(Tokens.gap)) {
+        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            OutlinedTextField(query, { query = it; hit = d.second.find(it) }, label = { Text("Найти в справке") }, singleLine = true, modifier = Modifier.weight(1f))
+            TextButton(enabled = query.isNotBlank(), onClick = { hit = d.second.find(query, hit ?: -1) }) { Text("Далее") }
+        }
+        if (query.isNotBlank() && hit == null) Text("Не найдено", style = MaterialTheme.typography.bodyMedium)
+        // Оглавление — разделы второго уровня: касание — к разделу.
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            for ((_, h) in d.first.headings.drop(1)) {
+                androidx.compose.material3.SuggestionChip(onClick = { anchor = Links.slug(h) }, label = { Text(h) })
+            }
+        }
+        androidx.compose.foundation.text.selection.SelectionContainer {
+            LazyColumn(state = list, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                itemsIndexed(d.second.items) { _, t -> Text(t, style = MaterialTheme.typography.bodyLarge) }
+            }
+        }
+    }
+}
+
+/** Справка в APK пульта (D-112). */
+private const val HELP_ASSET = "help.md"
+
 @Composable
 private fun DocScreen(nav: Nav.Doc, names: Map<String, String>, loader: Loader, onBack: () -> Unit, open: (Nav) -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current

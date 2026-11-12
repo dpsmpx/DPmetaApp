@@ -106,7 +106,7 @@ object Screens {
     // --- Левая панель приложения (D-112; прежде — нижняя панель D-73) ---
 
     /** Разделы пульта со своими экранами; графиков нет (D-112): «Статистика» убрана, сводка — числами. */
-    enum class Section(val title: String) { SUMMARY("Сводка"), DEV("Проекты"), MORE("Настройки") }
+    enum class Section(val title: String) { SUMMARY("Сводка"), DEV("Проекты"), MORE("Настройки"), HELP("Справка") }
 
     /** Вкладки раздела «Проекты» — в верхней панели (D-113): проекты, PR (F-11), вопросы автору. */
     enum class DevTab(val title: String) { PROJECTS("Проекты"), PULLS("PR"), QUESTIONS("Вопросы") }
@@ -121,6 +121,7 @@ object Screens {
         IDE("IDE", null),
         AI(AI_TITLE, null),
         SETTINGS("Настройки", Section.MORE),
+        HELP("Справка", Section.HELP),
     }
 
     /** Пункты левой панели по порядку; без подсистемы «AI» — без IDE и AI. */

@@ -38,11 +38,13 @@ import kotlinx.coroutines.launch
  * кнопками. Поиск оставляет разделы, в названии или словах которых есть запрос.
  * Блок пульта («Проекты и GitHub») приходит слотом [projects]: подсистема от
  * модулей пульта не зависит. [onAiSettings] — «Настройки AI» (Linux, targets,
- * маршруты, журнал, копии), пока они не перенесены сюда целиком.
+ * маршруты, журнал, копии), пока они не перенесены сюда целиком; [initialQuery] —
+ * поиск по ссылке из справки.
  */
 @Composable
-fun SettingsDocument(projects: (@Composable () -> Unit)?, onAiSettings: () -> Unit) {
-    var query by rememberSaveable { mutableStateOf("") }
+fun SettingsDocument(projects: (@Composable () -> Unit)?, initialQuery: String = "", onAiSettings: () -> Unit) {
+    // Запрос из справки (ссылка «Настройки → тема») — сразу в поиске; новый запрос — новый поиск.
+    var query by rememberSaveable(initialQuery) { mutableStateOf(initialQuery) }
     val list = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val sections = remember(projects != null) { sections(projects != null) }

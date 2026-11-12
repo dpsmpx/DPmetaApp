@@ -163,7 +163,7 @@ open class PultActivity : ComponentActivity() {
     protected open fun aiIntent(requests: Boolean): Intent? = aiIntent()
 
     /** Документ настроек приложения (D-112) — от оболочки; `null` — настройки пульта своим экраном. */
-    protected open val settingsDocument: (@androidx.compose.runtime.Composable (projects: @androidx.compose.runtime.Composable () -> Unit) -> Unit)? = null
+    protected open val settingsDocument: (@androidx.compose.runtime.Composable (query: String, projects: @androidx.compose.runtime.Composable () -> Unit) -> Unit)? = null
 
     /** Пункт «IDE» левой панели (D-112): окно «AI» на «Файлах»; нет подсистемы — пункта нет. */
     protected open fun ideIntent(): Intent? = null

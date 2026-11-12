@@ -35,7 +35,7 @@ const val AI_SETTINGS_TITLE = "Настройки AI"
  * их экраны — у пульта, открывает их оболочка приложения. В отдельной сборке «AI»
  * их нет.
  */
-enum class AppSection(val title: String) { SUMMARY("Сводка"), PROJECTS("Проекты"), SETTINGS("Настройки") }
+enum class AppSection(val title: String) { SUMMARY("Сводка"), PROJECTS("Проекты"), SETTINGS("Настройки"), HELP("Справка") }
 
 /** Вкладки раздела AI в верхней панели (D-113): без «Файлов» — это раздел IDE. */
 val AI_SECTION_TABS: List<AiTab> = AiTab.entries.filter { it != AiTab.FILES }

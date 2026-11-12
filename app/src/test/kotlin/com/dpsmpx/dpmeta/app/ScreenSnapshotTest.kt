@@ -66,11 +66,11 @@ class ScreenSnapshotTest {
         assertEquals(0, Screens.filterPulls(rows, Screens.PullFilter.WAITING, null).size)
     }
 
-    /** Левая панель (D-112): пять пунктов с «AI», три — без подсистемы; графиков нет; «Проекты» — три вкладки. */
+    /** Левая панель (D-112): шесть пунктов с «AI», четыре — без подсистемы; графиков нет; «Проекты» — три вкладки. */
     @Test
     fun panel() {
-        assertEquals(listOf("Сводка", "Проекты", "IDE", "AI", "Настройки"), Screens.panel(ai = true))
-        assertEquals(listOf("Сводка", "Проекты", "Настройки"), Screens.panel(ai = false))
+        assertEquals(listOf("Сводка", "Проекты", "IDE", "AI", "Настройки", "Справка"), Screens.panel(ai = true))
+        assertEquals(listOf("Сводка", "Проекты", "Настройки", "Справка"), Screens.panel(ai = false))
         assertEquals(listOf("Проекты", "PR", "Вопросы"), Screens.DevTab.entries.map { it.title })
     }
 

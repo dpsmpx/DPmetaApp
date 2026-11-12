@@ -320,6 +320,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                 item("AI", R.drawable.ic_ai_requests, !ide && !settings) { openTab(AiTab.of(lastAi)) }
                 if (pultBelow) {
                     item(com.dpsmpx.dpai.ui.AppSection.SETTINGS.title, R.drawable.ic_ai_settings, false) { section(com.dpsmpx.dpai.ui.AppSection.SETTINGS) }
+                    item(com.dpsmpx.dpai.ui.AppSection.HELP.title, R.drawable.ic_ai_help, false) { section(com.dpsmpx.dpai.ui.AppSection.HELP) }
                 } else {
                     item(AI_SETTINGS_TITLE, R.drawable.ic_ai_settings, settings) { settings = true; settingsSub = null; selectedId = null }
                 }
