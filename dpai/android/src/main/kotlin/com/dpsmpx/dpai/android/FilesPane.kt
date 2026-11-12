@@ -428,7 +428,7 @@ private fun BrowserContent(p: Place, onPlace: (Place) -> Unit, onClose: () -> Un
     file?.let { path ->
         tabStates.SaveableStateProvider(path) {
             FileView(p.copy(dir = FileNames.parent(path)), path, onBrowse = { openFiles.finishedBrowse(path) }, onNext = openFiles::next,
-                onActions = { openFiles.ready(path, it) }) { openFiles.close(path) }
+                onActions = { openFiles.ready(path, it) }, onOpen = openFiles::openAt) { openFiles.close(path) }
         }
         return
     }
@@ -478,7 +478,7 @@ private fun decodeImage(bytes: ByteArray): ImageBitmap? {
 
 /** Просмотр и правка файла: текст (UTF-8, до 2 МиБ) — с правкой; картинка — показом. */
 @Composable
-private fun FileView(p: Place, path: String, onBrowse: () -> Unit, onNext: (Boolean) -> Unit, onActions: (EditorCallbacks) -> Unit, onClose: () -> Unit) {
+private fun FileView(p: Place, path: String, onBrowse: () -> Unit, onNext: (Boolean) -> Unit, onActions: (EditorCallbacks) -> Unit, onOpen: ((String, Int) -> Unit)? = null, onClose: () -> Unit) {
     val context = LocalContext.current
     val profiles = remember { Controller.get(context.filesDir).manualProfiles }
     val tree = remember(p) {
@@ -493,17 +493,17 @@ private fun FileView(p: Place, path: String, onBrowse: () -> Unit, onNext: (Bool
         Kind.SHARED -> GuestPaths.guestShared("")
         Kind.FOLDER -> null
     }
-    TreeFileView(tree, p.key(), path, guestPath = guestRoot?.let { FileNames.join(it, path) }, onBrowse = onBrowse, onNext = onNext, onActions = onActions, guestRoot = guestRoot, editorRootKey = p.copy(dir = "").key(), runGuard = { profiles.edit { Outcome.success(Unit) } }, onClose = onClose)
+    TreeFileView(tree, p.key(), path, guestPath = guestRoot?.let { FileNames.join(it, path) }, onBrowse = onBrowse, onNext = onNext, onActions = onActions, guestRoot = guestRoot, editorRootKey = p.copy(dir = "").key(), runGuard = { profiles.edit { Outcome.success(Unit) } }, onOpen = onOpen, onClose = onClose)
 }
 
 @Composable
-internal fun TreeFileView(tree: FileTree, treeKey: String, path: String, readOnly: Boolean = false, guestPath: String? = null, onBrowse: (() -> Unit)? = null, onNext: (Boolean) -> Unit = {}, onActions: (EditorCallbacks) -> Unit = {}, guestRoot: String? = null, editorRootKey: String = treeKey, runGuard: () -> Outcome<Unit> = { Outcome.success(Unit) }, onClose: () -> Unit) {
-    androidx.compose.runtime.key(treeKey, path) { TreeFileContent(tree, treeKey, path, readOnly, guestPath, guestRoot, editorRootKey, runGuard, onBrowse, onNext, onActions, onClose) }
+internal fun TreeFileView(tree: FileTree, treeKey: String, path: String, readOnly: Boolean = false, guestPath: String? = null, onBrowse: (() -> Unit)? = null, onNext: (Boolean) -> Unit = {}, onActions: (EditorCallbacks) -> Unit = {}, guestRoot: String? = null, editorRootKey: String = treeKey, runGuard: () -> Outcome<Unit> = { Outcome.success(Unit) }, onOpen: ((String, Int) -> Unit)? = null, onClose: () -> Unit) {
+    androidx.compose.runtime.key(treeKey, path) { TreeFileContent(tree, treeKey, path, readOnly, guestPath, guestRoot, editorRootKey, runGuard, onBrowse, onNext, onActions, onOpen, onClose) }
 }
 
 @Composable
 private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readOnly: Boolean, guestPath: String?, guestRoot: String?, editorRootKey: String,
-    runGuard: () -> Outcome<Unit>, onBrowse: (() -> Unit)?, onNext: (Boolean) -> Unit, onActions: (EditorCallbacks) -> Unit, onClose: () -> Unit) {
+    runGuard: () -> Outcome<Unit>, onBrowse: (() -> Unit)?, onNext: (Boolean) -> Unit, onActions: (EditorCallbacks) -> Unit, onOpen: ((String, Int) -> Unit)?, onClose: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
@@ -520,6 +520,8 @@ private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readO
     var saving by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(true) }
     var status by remember { mutableStateOf<String?>(null) }
+    /** Буфер, показанный сейчас (просмотр или черновик): к нему переходит строка из другой вкладки. */
+    var shown by remember { mutableStateOf<com.dpsmpx.dpai.ui.CodeEditorBuffer?>(null) }
     var leaving by remember { mutableStateOf(false) }
     var afterLeaving by remember { mutableStateOf<(() -> Unit)?>(null) }
     var configure by remember { mutableStateOf(false) }
@@ -597,7 +599,8 @@ private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readO
     }
     val callbacks = EditorCallbacks(save = { scope.launch { save() } }, close = close, browse = exit, next = onNext, busy = saving,
         canSave = !readOnly && recovery.ready && draft?.editor?.dirty == true, canRun = !readOnly && guestPath != null && text != null && !loading,
-        preview = { if (!saving) { editing = false; keyboard?.hide() } }, exit = exit, run = { run() }, configureRun = { configureOnly = true; configure = true })
+        preview = { if (!saving) { editing = false; keyboard?.hide() } }, exit = exit, run = { run() }, configureRun = { configureOnly = true; configure = true },
+        open = onOpen, goToLine = { line -> shown?.goToLine(line)?.also { if (it) revision++ } == true })
     SideEffect { onActions(callbacks) }
     LaunchedEffect(recovery.ready) { if (recovery.ready && draft == null) draft = Drafts.file(draftKey) }
     DisposableEffect(draftKey) { onDispose { Drafts.flushNow() } }
@@ -647,6 +650,8 @@ private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readO
         val preview = remember(source) { source?.let { com.dpsmpx.dpai.ui.CodeEditorBuffer(it) } }
         val binding = editorDocumentBinding(draft, preview, editing)
         val buffer = binding?.buffer
+        // Буфер появился в этом кадре — сообщить вкладке ещё раз: ждущий переход к строке (D-105) выполнится сразу.
+        SideEffect { val fresh = shown !== buffer; shown = buffer; if (fresh && buffer != null) onActions(callbacks) }
         val documentEditing = binding?.editing == true
         when {
             buffer != null -> Clipboard.Sensitive {

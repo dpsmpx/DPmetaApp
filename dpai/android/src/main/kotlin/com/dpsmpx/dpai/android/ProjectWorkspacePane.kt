@@ -171,7 +171,7 @@ private fun WorkspaceFiles(model: DemoModel, view: ProjectWorkspaceView, locatio
         if (path != null) tabStates.SaveableStateProvider(path) {
             TreeFileView(tree, "workspace:${location.key}", path, readOnly, guestPath = "${location.path.trimEnd('/')}/$path",
                 onBrowse = { openFiles.finishedBrowse(path) }, onNext = openFiles::next, onActions = { openFiles.ready(path, it) }, guestRoot = location.path.trimEnd('/').ifEmpty { "/" }, editorRootKey = location.key,
-                runGuard = { model.workspaceAccess(view.project, location, true) { Outcome.success(Unit) } }) { openFiles.close(path) }
+                runGuard = { model.workspaceAccess(view.project, location, true) { Outcome.success(Unit) } }, onOpen = openFiles::openAt) { openFiles.close(path) }
         } else {
             Row {
                 TextButton(enabled = dir.isNotEmpty(), onClick = { dir = FileNames.parent(dir) }) { Text("Вверх") }

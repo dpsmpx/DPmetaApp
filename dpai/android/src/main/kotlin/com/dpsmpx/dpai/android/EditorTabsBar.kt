@@ -42,8 +42,12 @@ internal class OpenEditorFiles(private val key: String, private val state: Mutab
     var canSave: Boolean by mutableStateOf(false)
     var canRun: Boolean by mutableStateOf(false)
     private var actions = EditorCallbacks()
+    /** Чьи [actions]: до первого кадра новой вкладки они ещё прежнего документа. */
+    private var actionsPath: String? = null
     private var pendingClose: String? = null
     private var pendingPreview: String? = null
+    /** Строка, к которой перейти во вкладке, когда её текст загрузится (переход службы C++, D-105). */
+    private val pendingLine = mutableMapOf<String, Int>()
     private fun change(next: EditorTabs) {
         state.value = next
         val root = IdeState.state.value.roots[key] ?: EditorRootSession()
@@ -55,6 +59,14 @@ internal class OpenEditorFiles(private val key: String, private val state: Mutab
         note = if (path !in next.paths) "Открыто ${EditorTabs.MAX_OPEN} файлов: закройте одну вкладку" else null
         if (next.active != tabs.active) pendingPreview = next.active
         change(next)
+    }
+    /** Открыть [path] вкладкой и перейти к [line] (с единицы); вкладку открыть нельзя — подсказка в [note]. */
+    fun openAt(path: String, line: Int) {
+        if (busy) return
+        open(path)
+        if (path in tabs.paths) {
+            if (actionsPath == path && tabs.active == path && actions.goToLine(line)) pendingLine.remove(path) else pendingLine[path] = line
+        }
     }
     fun preview(path: String) {
         if (busy) return
@@ -75,7 +87,8 @@ internal class OpenEditorFiles(private val key: String, private val state: Mutab
     }
     fun ready(path: String, callbacks: EditorCallbacks) {
         if (path != tabs.active) return
-        actions = callbacks; busy = callbacks.busy; canSave = callbacks.canSave; canRun = callbacks.canRun
+        actions = callbacks; actionsPath = path; busy = callbacks.busy; canSave = callbacks.canSave; canRun = callbacks.canRun
+        pendingLine[path]?.let { line -> if (callbacks.goToLine(line)) pendingLine.remove(path) }
         if (pendingPreview == path) { pendingPreview = null; callbacks.preview() }
         if (pendingClose == path) { pendingClose = null; callbacks.close() }
     }
