@@ -95,7 +95,7 @@ internal class EditorDependencyUi(private val activity: TerminalActivity, privat
         val run = TerminalHub.current?.editorRun
         val started = jobs.start(LongJobs.LINUX_APK, LABEL, excludes = LongJobs.GUEST) {
             val done = CppSetup.install(app, packages)
-            if (done.failed) run?.report = run?.report?.withFailure(done.output.joinToString("\n") + "\n" + done.note)
+            if (done.failed && run != null) run.report = run.report?.withFailure(done.output.joinToString("\n") + "\n" + done.note)
             done
         }
         toast(if (started) "Устанавливаю: ${packages.joinToString()}. Итог — кнопкой «Решения…»." else "Другая операция Linux ещё идёт. Дождитесь её завершения.")
@@ -105,7 +105,7 @@ internal class EditorDependencyUi(private val activity: TerminalActivity, privat
         val run = TerminalHub.current?.editorRun
         val started = jobs.start(LongJobs.LINUX_APK, LABEL, excludes = LongJobs.GUEST) {
             val done = if (repair) CppSetup.repair(app) else CppSetup.check(app)
-            if (done.failed) run?.report = run?.report?.withFailure(done.output.joinToString("\n") + "\n" + done.note)
+            if (done.failed && run != null) run.report = run.report?.withFailure(done.output.joinToString("\n") + "\n" + done.note)
             done
         }
         toast(if (started) "${if (repair) "Восстанавливаю пакеты" else "Проверяю среду"}. Итог — кнопкой «Решения…»." else "Другая операция Linux ещё идёт. Дождитесь её завершения.")
