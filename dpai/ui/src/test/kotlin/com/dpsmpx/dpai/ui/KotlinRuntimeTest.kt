@@ -16,6 +16,7 @@ class KotlinRuntimeTest {
         val r = KotlinRuntime.diagnose("error: unresolved reference: kotlinx\nimport kotlinx.coroutines.*", 1)
         assertEquals(listOf("org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.10.2"), r.maven)
         assertTrue(r.packages.isEmpty())
+        assertEquals(listOf("com.google.code.gson:gson:2.13.2"), KotlinRuntime.diagnose("NoClassDefFoundError: com/google/gson/Gson", 1).maven)
     }
     @Test fun androidAndGradleRequireProjectCommandWithoutInstallingBareJvmLibraries() {
         for (text in listOf("DPAI_KOTLIN_PROJECT: /root/project", "error: unresolved reference: androidx\nimport androidx.compose.runtime.*\nimport kotlinx.coroutines.*")) {

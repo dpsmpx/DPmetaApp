@@ -414,3 +414,13 @@ TerminalHub.EditorRun принадлежит своей PTY-вкладке; Edit
 запускает штатную компиляцию и проверяет запись без изменения проекта.
 AlpinePackageState учитывает виртуальные provides. Api FIX требует
 конкретные пакеты, ProotHost запускает apk без /proc для add и fix.
+
+Языки запуска (D-141): EditorRunOutput возвращает RunDiagnosis по пути
+файла, C++ использует прежний CppDependencies. PythonRuntime/KotlinRuntime
+формируют команды/диагнозы без Android, ProjectRuntime определяет приватный
+каталог окружения. RuntimeSetup выполняет подтверждённые планы через
+LinuxSetup/LongJobs; EditorDependencyUi показывает действия и сохраняет
+команду выбранного языка через EditorRootSession.withCommand. Метаданные
+v2 читают v1; текст по-прежнему хранится отдельно в EditorDraftStore.
+SDK проверяется до распаковки; resolver пишет отдельный снимок и меняет
+current только после успеха. Шаблон JVM использует manifest Class-Path.

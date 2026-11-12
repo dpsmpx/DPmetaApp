@@ -97,7 +97,7 @@ object KotlinRuntime {
         check(jars.isNotEmpty() && jars.size <= 512) { "DPAI_MAVEN_RESOLVE: no dependency jars or too many jars" }
         Files.writeString(output.resolve("classpath"), jars.joinToString(java.io.File.pathSeparator))
         val manifest = Manifest()
-        manifest.mainAttributes[Attributes.Name.MANIFEST_VERSION] = "1.0"
+        // Этот manifest дополняет уже собранный jar: Manifest-Version остаётся от компилятора.
         manifest.mainAttributes[Attributes.Name.CLASS_PATH] = jars.joinToString(" ") { it.toUri().toASCIIString() }
         Files.newOutputStream(output.resolve("manifest")).use { manifest.write(it) }
         println("DPAI_MAVEN_OK")
@@ -120,7 +120,7 @@ object KotlinRuntime {
             else : > "${'$'}DPAI_NEXT/all"; fi
             printf '%s\n' "${'$'}@" >> "${'$'}DPAI_NEXT/all"
             if grep -Ev '^[A-Za-z0-9_][A-Za-z0-9_.-]*:[A-Za-z0-9_][A-Za-z0-9_.-]*:[A-Za-z0-9][A-Za-z0-9_.+-]*${'$'}' "${'$'}DPAI_NEXT/all"; then printf 'DPAI_MAVEN_FORMAT: invalid coordinate\n'; exit 1; fi
-            awk 'length(${ '$' }0)>282 { exit 1 }' "${'$'}DPAI_NEXT/all" || { printf 'DPAI_MAVEN_FORMAT: oversized coordinate\n'; exit 1; }
+            awk 'length(${'$'}0)>282 { exit 1 }' "${'$'}DPAI_NEXT/all" || { printf 'DPAI_MAVEN_FORMAT: oversized coordinate\n'; exit 1; }
             awk -F: '{ items[${'$'}1 ":" ${'$'}2] = ${'$'}0 } END { for (k in items) print items[k] }' "${'$'}DPAI_NEXT/all" | LC_ALL=C sort > "${'$'}DPAI_NEXT/unique"
             test "${'$'}(wc -l < "${'$'}DPAI_NEXT/unique")" -le 50 || exit 1
             printf 'dpai.kotlin-libraries.v1\n' > "${'$'}DPAI_NEXT/libraries"
@@ -129,6 +129,8 @@ object KotlinRuntime {
             while IFS= read -r DPAI_GAV; do printf '@file:DependsOn("%s")\n' "${'$'}DPAI_GAV"; done < "${'$'}DPAI_NEXT/unique" >> "${'$'}DPAI_NEXT/Resolve.main.kts"
             cat >> "${'$'}DPAI_NEXT/Resolve.main.kts" <<'DPAI_RESOLVER'
         """.trimIndent() + "\n" + resolver + "\nDPAI_RESOLVER\n" + """
+            # Maven HTTP-клиент иначе печатает Set-Cookie в предупреждениях разбора даты; ошибки загрузки остаются видимыми.
+            JAVA_OPTS="${'$'}JAVA_OPTS -Dorg.slf4j.simpleLogger.log.org.jetbrains.kotlin.org.apache.http.client.protocol.ResponseProcessCookies=error"; export JAVA_OPTS
             "${'$'}DPAI_KOTLINC" -script "${'$'}DPAI_NEXT/Resolve.main.kts" -- "${'$'}DPAI_NEXT" || exit
             test -s "${'$'}DPAI_NEXT/classpath" && test -s "${'$'}DPAI_NEXT/manifest" || exit 1
             ln -s "${'$'}DPAI_NEXT" "${'$'}DPAI_NEXT/link" && mv -fT "${'$'}DPAI_NEXT/link" "${'$'}DPAI_BASE/current" || exit
@@ -150,9 +152,10 @@ object KotlinRuntime {
             project = true
             advice += "Этот файл относится к Gradle/Android/Compose/KMP-проекту. Выберите команду/профиль проекта с нужными SDK и target. Одиночный JVM-запуск не собирает Android-приложение."
         }
-        if (!project) for ((prefix, gav) in libraries) if (text.contains(prefix) && (text.contains("unresolved reference", true) || text.contains("ClassNotFoundException") || text.contains("NoClassDefFoundError"))) maven += gav
+        if (!project) for ((prefix, gav) in libraries) if ((text.contains(prefix) || text.contains(prefix.replace('.', '/'))) && (text.contains("unresolved reference", true) || text.contains("ClassNotFoundException") || text.contains("NoClassDefFoundError"))) maven += gav
         if (maven.isNotEmpty()) advice += "Можно разрешить эти JVM-библиотеки из Maven Central вместе с зависимостями для одиночного файла. Версии указаны явно; Gradle-файлы проекта не меняются."
         if (text.contains("unresolved reference", true) && maven.isEmpty()) advice += "Проверьте имя/import и classpath. Для зависимостей можно указать точные Maven-координаты; для Android/Gradle используйте проектную задачу."
+        if ((text.contains("ClassNotFoundException") || text.contains("NoClassDefFoundError")) && maven.isEmpty()) advice += "JVM не нашла класс. Проверьте runtime-classpath, версию библиотеки и команду запуска; шаблон .kt включает стандартную библиотеку Kotlin."
         if (text.contains("incompatible version of Kotlin") || text.contains("binary version of its metadata")) advice += "Версии компилятора и библиотеки несовместимы. Выберите совместимую версию библиотеки либо согласуйте Kotlin-плагин проекта; доступен шаблон Kotlin $VERSION."
         if (text.contains("no main manifest attribute") || text.contains("main method not found", true) || text.contains("could not find or load main class", true)) advice += "Для .kt нужна точка входа fun main() или @JvmStatic main. Скрипт запускается как .kts; многофайловый проект — своей командой."
         if (text.contains("DPAI_KOTLIN_CHECKSUM:")) { env = true; advice += "Контрольная сумма компилятора не совпала: архив не установлен. Повторите загрузку после проверки подключения." }

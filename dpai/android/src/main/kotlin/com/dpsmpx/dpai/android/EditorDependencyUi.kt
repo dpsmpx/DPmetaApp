@@ -133,7 +133,8 @@ internal class EditorDependencyUi(private val activity: TerminalActivity, privat
             .setNegativeButton("Отмена", null).setPositiveButton("Установить") { _, _ -> start(run) { RuntimeSetup.libraries(it, run, names) } })
     }
     private fun template(run: TerminalHub.EditorRun, report: RunDiagnosis) {
-        val command = if (run.language == RunLanguage.CPP && report.cpp != null) CppDependencies.singleFileCommand(report.cpp, run.command) else EditorTerminalRun.defaultCommand(run.file)
+        val cpp = report.cpp
+        val command = if (run.language == RunLanguage.CPP && cpp != null) CppDependencies.singleFileCommand(cpp, run.command) else EditorTerminalRun.defaultCommand(run.file)
         val text = TextView(activity).apply { this.text = "Шаблон одного файла ${run.language.title}. Он заменит команду этого языка только после сохранения.\n\n$command"; setTextIsSelectable(true); setPadding(24, 8, 24, 8) }
         val builder = AlertDialog.Builder(activity).setTitle("Команда запуска").setView(ScrollView(activity).apply { addView(text) })
             .setNegativeButton("Отмена", null).setNeutralButton("Копировать") { _, _ -> activity.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("Команда", command)) }
