@@ -32,6 +32,19 @@ D-104 разрешает ручную выкладку APK в GitHub Releases з
 
 ## Выпуски
 
+- **0.4.0-dev.34** — выложен 12 ноября 2026 в **apk_debug**, коммит
+  `1cedd858094a1d76a174e86cccad5f5938551af4`, файл
+  `dpmetaapp/dpmetaapp-0.4.0-dev.34-debug.apk`. Python/venv/PyPI и
+  Kotlin/JVM/скрипты/Maven: начальные команды, решения ошибок,
+  подтверждённые подготовка/проверка/восстановление; команды по языкам.
+  Код `4569b81bdb122d0355577f0b4416d59f33bb82e8`, PR #184;
+  affected PASS (UI 234 / Android 38), `full --strict` 26/26.
+  APK 56 038 645 байт, SHA-256
+  `cead5465058252b95587085c1487131c6ace5660fdae31c502e57d4cdfb1a4c0`,
+  Android Debug v2, сертификат тот же, что у dev.32/dev.33 ветки.
+  ZIP, DEX, подпись проверены; после загрузки сверены ref, размер и blob
+  SHA API. Соседние сборки сохранены; GitHub Release не создавался.
+  Реальные хост-прогоны SDK/библиотек/PTY успешны; Android/proot — приёмка.
 - **0.4.0-dev.33** — выложен 12 ноября 2026 в **apk_debug**, коммит
   `2f1793dd3e78536ca730c580e1c14b59abc80668`, файл
   `dpmetaapp/dpmetaapp-0.4.0-dev.33-debug.apk`. Исправлен запуск C++:
