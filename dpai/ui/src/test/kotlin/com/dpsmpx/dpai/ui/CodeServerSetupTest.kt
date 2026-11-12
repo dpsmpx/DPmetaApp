@@ -1,30 +1,30 @@
 package com.dpsmpx.dpai.ui
 
 import com.dpsmpx.dpai.core.result.Outcome
+import com.dpsmpx.dpai.execution.process.LocalProcessHost
+import com.dpsmpx.dpai.execution.process.ProcessSpec
+import com.dpsmpx.dpai.execution.process.run
 import com.dpsmpx.dpai.lsp.KotlinLsp
 import com.dpsmpx.dpai.lsp.PythonServers
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
 import java.security.MessageDigest
-import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 
 /** Команды установки и поиска языковых служб (D-142) — настоящим `sh` на машине теста. */
 class CodeServerSetupTest {
     private data class Run(val code: Int, val out: String)
 
     private fun run(command: List<String>, path: String? = null): Run {
-        val pb = ProcessBuilder(command).redirectErrorStream(true)
-        if (path != null) pb.environment()["PATH"] = path + ":" + pb.environment()["PATH"]
-        val p = pb.start()
-        val out = p.inputStream.bufferedReader().readText()
-        assertTrue(p.waitFor(60, TimeUnit.SECONDS))
-        return Run(p.exitValue(), out)
+        val env = path?.let { mapOf("PATH" to it + ":" + System.getenv("PATH")) }
+        val done = (LocalProcessHost().run(ProcessSpec(command, environment = env), 60.seconds) as Outcome.Success).value
+        return Run(done.exitCode, (done.stdout + done.stderr).joinToString("\n"))
     }
 
     @Test

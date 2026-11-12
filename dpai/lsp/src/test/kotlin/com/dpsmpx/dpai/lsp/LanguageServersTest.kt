@@ -14,7 +14,7 @@ class LanguageServersTest {
     @Test
     fun languagesByFileName() {
         assertEquals(CodeLanguage.CPP, LanguageServers.language("src/a.cpp"))
-        assertEquals(CodeLanguage.PYTHON, LanguageServers.language("tools/run.py"))
+        assertEquals(CodeLanguage.PYTHON, LanguageServers.language("lib/run.py"))
         assertEquals("python", LanguageServers.languageId("stubs/m.pyi"))
         assertEquals("python", LanguageServers.languageId("gui.pyw"))
         assertEquals(CodeLanguage.KOTLIN, LanguageServers.language("app/Main.kt"))

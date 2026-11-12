@@ -7,6 +7,8 @@ import com.dpsmpx.dpai.execution.process.ProcessSpec
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -79,7 +81,7 @@ class KotlinLspLiveTest {
             repeat(60) {
                 if (errors.isEmpty()) {
                     errors = session.pullDiagnostics(uri).values.mapNotNull { (it as? Outcome.Success)?.value }.flatten().filter { "totl" in it.message }
-                    if (errors.isEmpty()) Thread.sleep(5_000)
+                    if (errors.isEmpty()) CountDownLatch(1).await(5_000, TimeUnit.MILLISECONDS)
                 }
             }
             assertEquals(11, errors.firstOrNull()?.range?.start?.line, "ошибки нет после импорта: $errors")

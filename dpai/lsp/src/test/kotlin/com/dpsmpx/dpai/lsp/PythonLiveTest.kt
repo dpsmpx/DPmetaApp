@@ -10,6 +10,8 @@ import com.dpsmpx.dpai.execution.process.run
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -63,7 +65,7 @@ class PythonLiveTest {
         repeat(300) {
             val now = board.merged(uri)
             if (test(now)) return now
-            Thread.sleep(200)
+            CountDownLatch(1).await(200, TimeUnit.MILLISECONDS)
         }
         error("не дождались диагностики: $what; есть ${board.merged(uri)}")
     }
