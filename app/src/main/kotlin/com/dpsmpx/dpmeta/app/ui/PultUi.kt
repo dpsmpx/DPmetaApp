@@ -651,13 +651,12 @@ fun PultApp(
                 // Справка — и без токена и среза (D-112): с неё начинают.
                 tab == Section.HELP -> HelpScreen { url ->
                     // Ссылки справки внутрь приложения: app:summary, app:projects, app:ide, app:ai, app:settings?q=…
-                    val what = url.removePrefix("app:").substringBefore('?')
-                    when (what) {
-                        "summary" -> tab = Section.SUMMARY
-                        "projects" -> { tab = Section.DEV; devTab = DevTab.PROJECTS }
-                        "ide" -> onIde?.invoke()
-                        "ai" -> onAi?.invoke(false)
-                        "settings" -> { settingsQuery = url.substringAfter("q=", ""); tab = Section.MORE }
+                    when (HelpLinks.section(url)) {
+                        HelpLinks.SUMMARY -> tab = Section.SUMMARY
+                        HelpLinks.PROJECTS -> { tab = Section.DEV; devTab = DevTab.PROJECTS }
+                        HelpLinks.IDE -> onIde?.invoke()
+                        HelpLinks.AI -> onAi?.invoke(false)
+                        HelpLinks.SETTINGS -> { settingsQuery = HelpLinks.query(url); tab = Section.MORE }
                     }
                 }
                 s == null && view.loading -> Text("Читаю срез…", style = MaterialTheme.typography.bodySmall)
@@ -1060,7 +1059,7 @@ private fun HelpScreen(onApp: (String) -> Unit) {
             val text = DocText.annotated(d, emptyMap(), "", HELP_ASSET, linkColor) { target ->
                 when (target) {
                     is Links.Target.Anchor -> anchor = target.anchor
-                    is Links.Target.External -> if (target.url.startsWith("app:")) onApp(target.url) else external(context, taps, target.url)
+                    is Links.Target.External -> if (target.url.startsWith(HelpLinks.SCHEME)) onApp(target.url) else external(context, taps, target.url)
                     is Links.Target.File -> Unit
                 }
             }

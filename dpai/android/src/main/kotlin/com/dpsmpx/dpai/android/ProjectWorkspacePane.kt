@@ -158,6 +158,7 @@ private fun WorkspaceFiles(model: DemoModel, view: ProjectWorkspaceView, locatio
     var entries by remember(location, dir) { mutableStateOf<List<FileEntry>?>(null) }
     var error by remember(location, dir) { mutableStateOf<String?>(null) }
     var refresh by remember { mutableStateOf(0) }
+    var searching by rememberSaveable(location.key) { mutableStateOf(false) }
     LaunchedEffect(location, dir, refresh) {
         when (val r = withContext(Dispatchers.IO) { tree.list(dir) }) {
             is Outcome.Success -> { entries = r.value; error = null }
@@ -172,10 +173,13 @@ private fun WorkspaceFiles(model: DemoModel, view: ProjectWorkspaceView, locatio
             TreeFileView(tree, "workspace:${location.key}", path, readOnly, guestPath = "${location.path.trimEnd('/')}/$path",
                 onBrowse = { openFiles.finishedBrowse(path) }, onNext = openFiles::next, onActions = { openFiles.ready(path, it) }, guestRoot = location.path.trimEnd('/').ifEmpty { "/" }, editorRootKey = location.key,
                 runGuard = { model.workspaceAccess(view.project, location, true) { Outcome.success(Unit) } }, onOpen = openFiles::openAt) { openFiles.close(path) }
+        } else if (searching) {
+            TreeSearchPanel(tree, dir, "workspace:${location.key}", onOpen = { searching = false; openFiles.open(it) }, onOpenAt = { found, line -> searching = false; openFiles.openAt(found, line) }) { searching = false }
         } else {
             Row {
                 TextButton(enabled = dir.isNotEmpty(), onClick = { dir = FileNames.parent(dir) }) { Text("Вверх") }
                 Text(if (dir.isEmpty()) "/" else dir, Modifier.weight(1f).padding(12.dp))
+                TextButton(onClick = { searching = true }) { Text("Поиск") }
                 TextButton(onClick = { refresh++ }) { Text("Обновить") }
             }
             error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(12.dp)) }

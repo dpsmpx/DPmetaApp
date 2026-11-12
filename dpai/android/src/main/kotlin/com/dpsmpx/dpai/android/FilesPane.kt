@@ -432,10 +432,17 @@ private fun BrowserContent(p: Place, onPlace: (Place) -> Unit, onClose: () -> Un
         }
         return
     }
+    var searching by androidx.compose.runtime.saveable.rememberSaveable(rootKey) { mutableStateOf(false) }
+    if (searching) {
+        val tree = remember(rootKey) { treeOf(context, p) }
+        TreeSearchPanel(tree, p.dir, rootKey, onOpen = { searching = false; openFiles.open(it) }, onOpenAt = { path, line -> searching = false; openFiles.openAt(path, line) }) { searching = false }
+        return
+    }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = { if (p.dir.isEmpty()) onClose() else onPlace(p.copy(dir = FileNames.parent(p.dir))) }, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("←") }
             Text(p.title, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            TextButton(onClick = { searching = true }) { Text("Поиск") }
             p.guestDir?.let { g -> TextButton(onClick = { TerminalActivity.startLinux(context, g) }) { Text("В терминале") } }
         }
         error?.let { Text(it, Modifier.padding(12.dp), color = MaterialTheme.colorScheme.error) }
