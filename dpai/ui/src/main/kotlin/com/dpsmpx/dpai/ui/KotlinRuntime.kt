@@ -97,9 +97,11 @@ object KotlinRuntime {
         check(jars.isNotEmpty() && jars.size <= 512) { "DPAI_MAVEN_RESOLVE: no dependency jars or too many jars" }
         Files.writeString(output.resolve("classpath"), jars.joinToString(java.io.File.pathSeparator))
         val manifest = Manifest()
-        // Этот manifest дополняет уже собранный jar: Manifest-Version остаётся от компилятора.
+        manifest.mainAttributes[Attributes.Name.MANIFEST_VERSION] = "1.0"
         manifest.mainAttributes[Attributes.Name.CLASS_PATH] = jars.joinToString(" ") { it.toUri().toASCIIString() }
-        Files.newOutputStream(output.resolve("manifest")).use { manifest.write(it) }
+        val encoded = java.io.ByteArrayOutputStream().also { manifest.write(it) }.toString("UTF-8")
+        // Manifest.write без версии пропускает атрибуты; после корректного folding убираем только заголовок версии.
+        Files.writeString(output.resolve("manifest"), encoded.substringAfter("\r\n"))
         println("DPAI_MAVEN_OK")
     """.trimIndent()
     fun dependencies(root: String, file: String, coordinates: List<String>): Outcome<List<String>> {
