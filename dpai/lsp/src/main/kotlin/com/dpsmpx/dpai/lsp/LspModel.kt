@@ -74,6 +74,9 @@ data class ServerCapabilities(
     val rename: Boolean,
     val formatting: Boolean,
     val codeAction: Boolean,
+    /** Служба отдаёт диагностику по запросу `textDocument/diagnostic`; присылает ли сама — не обещано. */
+    val pullDiagnostics: Boolean = false,
+    val declaration: Boolean = false,
 )
 
 /** Имя и версия службы, если она их назвала. */
@@ -183,6 +186,18 @@ internal object LspParse {
         return CompletionList(parsed, incomplete || items.size > MAX_ITEMS)
     }
 
+    /** Ответ `textDocument/diagnostic`: полный список; «не изменилось» — список `null`. */
+    data class DocumentDiagnostics(val items: List<LspDiagnostic>?)
+
+    fun documentDiagnostics(v: JsonValue?): DocumentDiagnostics? {
+        val o = v as? JsonObject ?: return null
+        return when (str(o["kind"])) {
+            "unchanged" -> DocumentDiagnostics(null)
+            "full" -> DocumentDiagnostics(((o["items"] as? JsonArray)?.items ?: return null).take(MAX_ITEMS).mapNotNull { diagnostic(it) })
+            else -> null
+        }
+    }
+
     fun hover(v: JsonValue?): Hover? {
         val o = v as? JsonObject ?: return null
         return Hover(markup(o["contents"]) ?: return null, range(o["range"]))
@@ -263,6 +278,8 @@ internal object LspParse {
             rename = has("renameProvider"),
             formatting = has("documentFormattingProvider"),
             codeAction = has("codeActionProvider"),
+            pullDiagnostics = has("diagnosticProvider"),
+            declaration = has("declarationProvider"),
         )
     }
 

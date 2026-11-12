@@ -24,13 +24,19 @@ internal class FakeServer(private val answer: (method: String, params: JsonValue
     val clientOut: java.io.OutputStream = toServer
 
     val received = CopyOnWriteArrayList<Pair<String, JsonValue?>>()
+
+    /** Ответы клиента на запросы службы (`id` без `method`). */
+    val responses = CopyOnWriteArrayList<JsonObject>()
     private val writer = LspWriter(fromServer)
 
     private val thread = Thread({
         val reader = LspReader(serverIn)
         while (true) {
             val m = (reader.read() as? Outcome.Success)?.value as? JsonObject ?: break
-            val method = (m["method"] as? JsonString)?.value ?: continue
+            val method = (m["method"] as? JsonString)?.value ?: run {
+                responses += m
+                null
+            } ?: continue
             received += method to m["params"]
             val id = m["id"] ?: continue
             val result = answer(method, m["params"]) ?: continue

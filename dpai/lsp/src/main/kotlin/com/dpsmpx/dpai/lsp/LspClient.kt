@@ -26,8 +26,20 @@ import kotlin.time.Duration.Companion.seconds
  * [Listener] вызывается из потока чтения и не должен обращаться к клиенту
  * с ожиданием ответа. Запросы блокируют вызывающий поток до ответа или
  * тайм-аута — их место вне потока интерфейса.
+ *
+ * [settings] — постоянные настройки службы (D-142): ими клиент отвечает на
+ * `workspace/configuration` (по разделу через точку) и шлёт их
+ * `workspace/didChangeConfiguration` после рукопожатия. Пустые — на каждый
+ * вопрос `null`, как раньше.
  */
-class LspClient(input: InputStream, output: OutputStream, private val rootUri: String, private val listener: Listener, maxBody: Int = LspReader.DEFAULT_MAX_BODY) {
+class LspClient(
+    input: InputStream,
+    output: OutputStream,
+    private val rootUri: String,
+    private val listener: Listener,
+    maxBody: Int = LspReader.DEFAULT_MAX_BODY,
+    private val settings: JsonObject = JsonObject(emptyMap()),
+) {
     interface Listener {
         /** Диагностика файла целиком: новый список заменяет прежний. [version] — версия текста, к которой он относится, если служба её назвала. */
         fun diagnostics(uri: String, version: Int?, items: List<LspDiagnostic>)
@@ -56,8 +68,10 @@ class LspClient(input: InputStream, output: OutputStream, private val rootUri: S
             }
 
             override fun request(method: String, params: JsonValue?): Outcome<JsonValue> = when (method) {
-                // Настроек у редактора для службы нет: на каждый вопрос — null.
-                "workspace/configuration" -> Outcome.success(JsonArray((((params as? JsonObject)?.get("items") as? JsonArray)?.items ?: emptyList()).map { JsonNull }))
+                // Каждый вопрос — раздел настроек [settings] через точку; нет раздела — null.
+                "workspace/configuration" -> Outcome.success(
+                    JsonArray((((params as? JsonObject)?.get("items") as? JsonArray)?.items ?: emptyList()).map { section(LspParse.str((it as? JsonObject)?.get("section"))) }),
+                )
                 "client/registerCapability", "client/unregisterCapability", "window/workDoneProgress/create" -> Outcome.success(JsonNull)
                 // Правки по команде службы не применяются молча: только те, что редактор запросил сам.
                 "workspace/applyEdit" -> Outcome.success(JsonObject.of("applied" to json(false)))
@@ -89,6 +103,7 @@ class LspClient(input: InputStream, output: OutputStream, private val rootUri: S
         val about = reply["serverInfo"] as? JsonObject
         val result = ServerInfo(LspParse.str(about?.get("name"))?.take(100), LspParse.str(about?.get("version"))?.take(200), LspParse.capabilities(reply["capabilities"]))
         peer.notify("initialized", JsonObject(emptyMap())).let { if (it is Outcome.Failure) return it }
+        if (settings.fields.isNotEmpty()) peer.notify("workspace/didChangeConfiguration", JsonObject.of("settings" to settings)).let { if (it is Outcome.Failure) return it }
         server = result
         return Outcome.success(result)
     }
@@ -187,6 +202,17 @@ class LspClient(input: InputStream, output: OutputStream, private val rootUri: S
         timeout, LspParse::codeActions,
     )
 
+    /**
+     * Диагностика файла по запросу (`textDocument/diagnostic`, LSP 3.17) — для
+     * служб, которые её не присылают сами ([ServerCapabilities.pullDiagnostics]).
+     * `null` — с прошлого раза не изменилась.
+     */
+    fun pullDiagnostics(uri: String, timeout: Duration = SLOW_TIMEOUT): Outcome<List<LspDiagnostic>?> =
+        when (val r = askOptional("textDocument/diagnostic", JsonObject.of("textDocument" to JsonObject.of("uri" to json(uri))), timeout, LspParse::documentDiagnostics)) {
+            is Outcome.Failure -> r
+            is Outcome.Success -> Outcome.success(r.value?.items)
+        }
+
     /** Вежливая остановка: `shutdown`, `exit`, закрытие потоков. Процесс службы завершает тот, кто его запустил. */
     fun stop(timeout: Duration = STOP_TIMEOUT) {
         if (server != null && peer.isOpen) {
@@ -199,6 +225,13 @@ class LspClient(input: InputStream, output: OutputStream, private val rootUri: S
     private fun ready(): Outcome.Failure? = when {
         server == null -> Outcome.failure(DiagCode.STATE_CONFLICT, "служба ещё не запущена")
         else -> null
+    }
+
+    /** Раздел настроек: `null` — все; `a.b` — вложенный объект; нет такого — `null`. */
+    private fun section(name: String?): JsonValue {
+        var at: JsonValue = settings
+        for (part in name?.split('.').orEmpty().filter { it.isNotEmpty() }) at = (at as? JsonObject)?.get(part) ?: return JsonNull
+        return at
     }
 
     private fun place(uri: String, at: Position): JsonObject = JsonObject.of("textDocument" to JsonObject.of("uri" to json(uri)), "position" to LspParse.toJson(at))
@@ -254,7 +287,12 @@ class LspClient(input: InputStream, output: OutputStream, private val rootUri: S
             "capabilities" to JsonObject.of(
                 "general" to JsonObject.of("positionEncodings" to JsonArray(listOf(json("utf-16")))),
                 "textDocument" to text,
-                "workspace" to JsonObject.of("workspaceEdit" to JsonObject.of("documentChanges" to json(false)), "applyEdit" to json(false)),
+                "workspace" to JsonObject.of(
+                    "workspaceEdit" to JsonObject.of("documentChanges" to json(false)),
+                    "applyEdit" to json(false),
+                    "configuration" to json(settings.fields.isNotEmpty()),
+                    "didChangeConfiguration" to JsonObject(emptyMap()),
+                ),
             ),
         )
     }
