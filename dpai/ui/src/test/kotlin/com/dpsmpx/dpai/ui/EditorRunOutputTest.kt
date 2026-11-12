@@ -1,0 +1,35 @@
+package com.dpsmpx.dpai.ui
+
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+
+class EditorRunOutputTest {
+    private val failure = "file.cpp:14:10: fatal error: 'ncurses.h' file not found\r\n1 error generated.\r\n[Код выхода: 1]\r\nlocalhost:~# "
+    @Test fun statusAndUtf8MayBeSplitAtEveryByteAndPromptMayFollowInSamePacket() {
+        val bytes = failure.toByteArray()
+        for (split in 0..bytes.size) {
+            val output = EditorRunOutput()
+            val first = output.feed(bytes.copyOfRange(0, split))
+            val report = first ?: output.feed(bytes.copyOfRange(split, bytes.size))
+            assertEquals(listOf("ncurses-dev"), report?.packages, "разрыв $split")
+        }
+    }
+    @Test fun reportIsProducedOnlyOnceAndInteractiveShellIsNotAnalyzed() {
+        val output = EditorRunOutput()
+        assertEquals(1, output.feed(failure.toByteArray())?.exitCode)
+        assertNull(output.feed(failure.toByteArray()))
+    }
+    @Test fun largeOutputKeepsRecentDiagnosticsAndLongShellPromptDoesNotHideStatus() {
+        val output = EditorRunOutput()
+        assertNull(output.feed("x".repeat(EditorRunOutput.MAX_BYTES * 4).toByteArray()))
+        val report = output.feed((failure + "prompt".repeat(500)).toByteArray())
+        assertEquals(listOf("ncurses-dev"), report?.packages)
+    }
+    @Test fun noReportBeforeExitAndSuccessHasNoInstallProposal() {
+        val output = EditorRunOutput()
+        assertNull(output.feed("fatal error: 'ncurses.h' file not found\n".toByteArray()))
+        assertTrue(output.feed("\n[Код выхода: 0]\n".toByteArray())?.packages?.isEmpty() == true)
+    }
+}
