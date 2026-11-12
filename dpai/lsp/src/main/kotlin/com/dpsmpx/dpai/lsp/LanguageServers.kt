@@ -241,6 +241,23 @@ object KotlinLsp {
     /** Запуск службы командой [command] ([KotlinLsp.command]); диагностику она отдаёт по запросу. */
     fun launch(command: List<String>, androidHome: String?): ServerLaunch = ServerLaunch("kotlin-lsp", command, environment = environment(androidHome), pull = true)
 
+    /** Та же JVM и classpath, но вместо службы — `license status`: срок сборки EAP без запуска протокола. */
+    fun statusCommand(command: List<String>): List<String> {
+        val main = command.indexOf("--stdio") - 1
+        require(main > 0) { "это не команда службы" }
+        return command.subList(0, main + 1) + listOf("license", "status")
+    }
+
+    /** Срок сборки по выводу `license status`: дней осталось (`null` — не названо) и истекла ли. */
+    data class Validity(val daysLeft: Int?, val expired: Boolean)
+
+    private val DAYS_LEFT = Regex("\\((-?[0-9]{1,5}) days? left\\)")
+
+    fun validity(exitCode: Int?, output: String): Validity {
+        val days = DAYS_LEFT.find(output)?.groupValues?.get(1)?.toIntOrNull()
+        return Validity(days, expired(exitCode, output) || (days != null && days < 0))
+    }
+
     /** Признак истёкшей сборки в выводе службы. */
     fun expired(exitCode: Int?, stderr: String): Boolean = exitCode == EXPIRED_EXIT || "has expired" in stderr
 }

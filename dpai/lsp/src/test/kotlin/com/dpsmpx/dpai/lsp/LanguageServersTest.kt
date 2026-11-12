@@ -101,6 +101,17 @@ class LanguageServersTest {
     }
 
     @Test
+    fun kotlinBuildValidityIsReadWithoutStartingTheProtocol() {
+        val cmd = listOf("/j/java", "-Xmx1g", "-cp", "/k/lib/a.jar", "demo.Main", "--stdio", "--data-sharing=none", "--system-path=/s")
+        assertEquals(listOf("/j/java", "-Xmx1g", "-cp", "/k/lib/a.jar", "demo.Main", "license", "status"), KotlinLsp.statusCommand(cmd))
+        assertFailsWith<IllegalArgumentException> { KotlinLsp.statusCommand(listOf("java")) }
+        assertEquals(KotlinLsp.Validity(0, false), KotlinLsp.validity(0, "Source: eap (Valid), licensed to kotlin-server EAP User, valid through 2026-11-13 (0 days left)"))
+        assertEquals(KotlinLsp.Validity(12, false), KotlinLsp.validity(0, "valid through 2026-12-01 (12 days left)"))
+        assertEquals(KotlinLsp.Validity(null, true), KotlinLsp.validity(7, "This build of intellij-server has expired"))
+        assertEquals(KotlinLsp.Validity(null, false), KotlinLsp.validity(0, "This build does not require a license."))
+    }
+
+    @Test
     fun kotlinLaunchPullsDiagnosticsAndGivesGradleAJdk() {
         val launch = KotlinLsp.launch(listOf("java"), "/root/android-sdk")
         assertTrue(launch.pull)
