@@ -155,6 +155,9 @@ class LspClient(input: InputStream, output: OutputStream, private val rootUri: S
 
     fun definition(uri: String, at: Position, timeout: Duration = REQUEST_TIMEOUT): Outcome<List<Location>> = ask("textDocument/definition", place(uri, at), timeout, LspParse::locations)
 
+    /** Объявление символа под курсором — служба находит его и без индекса проекта, по разобранным заголовкам. */
+    fun declaration(uri: String, at: Position, timeout: Duration = REQUEST_TIMEOUT): Outcome<List<Location>> = ask("textDocument/declaration", place(uri, at), timeout, LspParse::locations)
+
     fun references(uri: String, at: Position, declaration: Boolean = true, timeout: Duration = SLOW_TIMEOUT): Outcome<List<Location>> = ask(
         "textDocument/references",
         JsonObject(place(uri, at).fields + ("context" to JsonObject.of("includeDeclaration" to json(declaration)))),

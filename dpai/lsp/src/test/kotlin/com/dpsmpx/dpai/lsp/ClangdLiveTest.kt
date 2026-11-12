@@ -110,15 +110,32 @@ class ClangdLiveTest {
             val def = ok(client.definition(uri, areaAt)).single()
             assertEquals(header, def.uri)
             assertEquals(4, def.range.start.line)
+            // Экран (D-105): определение в заголовке того же корня — вкладка на строке 5.
+            assertEquals(Assist.Target.Tab("include/shape.hpp", 5), Assist.target(def, uri, dir.path))
             // Подпись функции внутри скобок вызова.
             val help = assertNotNull(ok(client.signatureHelp(uri, index.position(main.indexOf("twice(total") + "twice(".length))))
             assertTrue(help.signatures.single().label.contains("int value"), help.toString())
+            val line = assertNotNull(Assist.signature(help))
+            assertEquals("int value", line.label.substring(assertNotNull(line.parameter, line.toString())), line.toString())
             // Использования и переименование локальной переменной: обе точки, текст сходится.
             val totalAt = index.position(main.indexOf("total"))
             assertEquals(2, ok(client.references(uri, totalAt)).size)
             val rename = ok(client.rename(uri, totalAt, "sum"))
             assertEquals(setOf(uri), rename.changes.keys)
             assertEquals(main.replace("total", "sum"), ok(TextEdits.apply(main, rename.changes.getValue(uri))))
+            assertEquals(main.replace("total", "sum"), ok(Assist.applyEdits(main, 0, ok(Assist.editsForFile(rename, uri)))).text)
+            // Функция объявлена в заголовке: переименование задевает два файла — экран отказывает целиком.
+            val wide = ok(client.rename(uri, index.position(main.indexOf("twice(int")), "doubled"))
+            // Без индекса проекта (D-105) clangd вернул правки только main.cpp, без объявления в shape.hpp, —
+            // такое переименование было бы частичным. Экран сверяет объявление: оно в заголовке — отказ.
+            assertEquals(setOf(uri), wide.changes.keys, "служба без индекса не видит заголовок — поэтому и нужна сверка")
+            val twiceAt = index.position(main.indexOf("twice(int"))
+            val places = ok(client.declaration(uri, twiceAt)) + ok(client.definition(uri, twiceAt))
+            assertTrue(places.any { it.uri == header }, places.toString())
+            val refused = Assist.renameScope(uri, places)
+            assertTrue(refused is Outcome.Failure && "shape.hpp" in refused.errors.single().message, refused.toString())
+            // Локальная переменная — объявлена здесь: переименование разрешено.
+            assertTrue(Assist.renameScope(uri, ok(client.declaration(uri, totalAt)) + ok(client.definition(uri, totalAt))) is Outcome.Success)
             // Форматирование: правки службы приводят текст к её стилю, повторное — пусто.
             val ugly = main.replace("int main() {", "int   main( ){")
             ok(client.update(uri, ugly))
@@ -132,6 +149,8 @@ class ClangdLiveTest {
             val problem = diagnosticsOf(seen, uri, client.version(uri)!!).first { it.severity == LspSeverity.ERROR }
             val fix = ok(client.codeActions(uri, problem.range, listOf(problem))).firstOrNull { it.edit != null }
             assertEquals(main, ok(TextEdits.apply(typo, assertNotNull(fix, "исправления нет").edit!!.changes.getValue(uri))))
+            val fixes = Assist.fixes(ok(client.codeActions(uri, problem.range, listOf(problem))))
+            assertEquals(main, ok(Assist.applyEdits(typo, 0, ok(Assist.editsForFile(fixes.applicable.first().edit!!, uri)))).text)
         } finally {
             client.stop()
             process.stop(2.seconds)

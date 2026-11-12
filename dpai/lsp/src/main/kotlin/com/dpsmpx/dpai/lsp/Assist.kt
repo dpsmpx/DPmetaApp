@@ -85,6 +85,120 @@ object Assist {
         }
     }
 
+    /**
+     * Куда ведёт место, найденное службой (определение, использование): этот
+     * файл, файл того же корня — его откроет вкладка, или файл вне корня —
+     * только путь и строка. Строки — с единицы, как в редакторе.
+     */
+    sealed interface Target {
+        val line: Int
+
+        data class Here(override val line: Int, val position: Position) : Target
+
+        data class Tab(val path: String, override val line: Int) : Target
+
+        data class Outside(val path: String, override val line: Int) : Target
+    }
+
+    /**
+     * Место [location] относительно файла [uri] и корня [guestRoot] (путь
+     * гостя, от которого открыт файл). Адреса сравниваются путями — у одной
+     * службы кодирование одно, а путь вне корня или с `..` вкладкой не
+     * открывается. Адрес не `file://` — `null`.
+     */
+    fun target(location: Location, uri: String, guestRoot: String): Target? {
+        val path = DocumentUri.toPath(location.uri) ?: return null
+        val line = location.range.start.line + 1
+        if (path == DocumentUri.toPath(uri)) return Target.Here(line, location.range.start)
+        val root = guestRoot.trimEnd('/')
+        val rel = if (path.startsWith("$root/")) path.substring(root.length + 1) else null
+        val parts = rel?.split('/')
+        return if (parts != null && parts.none { it.isEmpty() || it == "." || it == ".." }) Target.Tab(rel, line) else Target.Outside(path, line)
+    }
+
+    /**
+     * Правки этого файла из правки службы (переименование, исправление).
+     * Правка задевает другие файлы — отказ целиком: часть переименования
+     * ломает код, а другие файлы редактор пока не правит (D-105).
+     */
+    fun editsForFile(edit: WorkspaceEdit, uri: String): Outcome<List<TextEdit>> {
+        val here = DocumentUri.toPath(uri)
+        val mine = mutableListOf<TextEdit>()
+        val others = sortedSetOf<String>()
+        for ((u, edits) in edit.changes) {
+            if (edits.isEmpty()) continue
+            val path = DocumentUri.toPath(u)
+            if (path != null && path == here) mine += edits else others += (path ?: u)
+        }
+        if (others.isNotEmpty()) {
+            val names = others.take(3).joinToString { it.substringAfterLast('/') } + if (others.size > 3) " и ещё ${others.size - 3}" else ""
+            return Outcome.failure(DiagCode.UNSUPPORTED, "правка задевает другие файлы (${others.size}: $names) — пока применяется только в одном файле; ничего не изменено")
+        }
+        return Outcome.success(mine)
+    }
+
+    /**
+     * Переименование без индекса проекта безопасно, только если символ —
+     * этого файла: [places] (объявление и определение по ответу службы) все
+     * в нём, и сам файл не заголовок. Без фонового индекса (D-105) служба не
+     * видит другие файлы проекта: для символа из заголовка она вернула бы
+     * правки одного файла — и переименование молча стало бы частичным.
+     */
+    fun renameScope(uri: String, places: List<Location>): Outcome<Unit> {
+        val here = DocumentUri.toPath(uri) ?: return Outcome.failure(DiagCode.UNSUPPORTED, "файл не на диске службы")
+        if (here.substringAfterLast('/').substringAfterLast('.', "").lowercase() in HEADERS) {
+            return Outcome.failure(DiagCode.UNSUPPORTED, "это заголовок: его символы видят другие файлы, а служба без индекса проекта их не знает — переименование пока только в исходном файле")
+        }
+        if (places.isEmpty()) return Outcome.failure(DiagCode.UNSUPPORTED, "служба не нашла объявления символа под курсором")
+        val outside = places.mapNotNull { DocumentUri.toPath(it.uri) ?: it.uri }.filter { it != here }.distinct()
+        if (outside.isNotEmpty()) {
+            return Outcome.failure(DiagCode.UNSUPPORTED, "символ объявлен в ${outside.first().substringAfterLast('/')}: другие файлы проекта служба без индекса не видит — переименование отменено, чтобы не стать частичным")
+        }
+        return Outcome.success(Unit)
+    }
+
+    private val HEADERS = setOf("h", "hh", "hpp", "hxx", "h++", "inl", "ipp", "tcc", "ixx")
+
+    /** Имя для переименования — идентификатор C/C++: латиница, цифры, `_`, не с цифры. */
+    fun validName(name: String): Boolean = name.length in 1..MAX_NAME && IDENTIFIER.matches(name)
+
+    /**
+     * Подпись вызова для показа: текст активной перегрузки, отрезок текущего
+     * параметра в нём (если служба его назвала) и сколько ещё перегрузок.
+     */
+    data class SignatureLine(val label: String, val parameter: IntRange?, val more: Int)
+
+    fun signature(help: SignatureHelp?): SignatureLine? {
+        val list = help?.signatures?.takeIf { it.isNotEmpty() } ?: return null
+        val active = list[help.active.coerceIn(0, list.lastIndex)]
+        val parameter = help.activeParameter?.let { active.parameters.getOrNull(it) }?.takeIf { it.first >= 0 && it.last < active.label.length }
+        return SignatureLine(active.label, parameter, list.size - 1)
+    }
+
+    /** Подсказка подписи нужна: курсор сразу после `(` или `,` (пробелы не в счёт). */
+    fun wantsSignature(text: String, cursor: Int): Boolean {
+        var i = cursor.coerceIn(0, text.length) - 1
+        while (i >= 0 && (text[i] == ' ' || text[i] == '\t')) i--
+        return i >= 0 && (text[i] == '(' || text[i] == ',')
+    }
+
+    /** Подсказку подписи снять: вызов закрыт или строка кончилась. */
+    fun endsSignature(text: String, cursor: Int): Boolean {
+        val i = cursor.coerceIn(0, text.length) - 1
+        return i < 0 || text[i] == ')' || text[i] == ';' || text[i] == '\n'
+    }
+
+    /** Исправления с правкой — сначала предпочтительные; [commands] — сколько предложено командой, без правки (не поддержано). */
+    data class Fixes(val applicable: List<CodeAction>, val commands: Int)
+
+    fun fixes(actions: List<CodeAction>): Fixes {
+        val (withEdit, without) = actions.partition { it.edit != null }
+        return Fixes(withEdit.sortedWith(compareBy({ !it.preferred }, { it.title })), without.size)
+    }
+
+    private val IDENTIFIER = Regex("[A-Za-z_][A-Za-z0-9_]*")
+    private const val MAX_NAME = 255
+
     /** Строка состояния: «ошибок: 2 · предупреждений: 1» или «замечаний нет». */
     fun summary(diagnostics: List<LspDiagnostic>): String {
         val errors = diagnostics.count { it.severity == LspSeverity.ERROR }

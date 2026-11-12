@@ -68,4 +68,78 @@ class AssistTest {
         assertEquals("замечаний нет", Assist.summary(emptyList()))
         assertEquals("ошибок: 2 · предупреждений: 1 · подсказок: 1", Assist.summary(listOf(d(LspSeverity.ERROR), d(LspSeverity.ERROR), d(LspSeverity.WARNING), d(LspSeverity.HINT))))
     }
+
+    private val root = "/root/repos/dpsmpx/Galdhold"
+    private val here = DocumentUri.ofPath("$root/src/main.cpp")
+    private fun at(path: String, line: Int, ch: Int = 0) = Location(DocumentUri.ofPath(path), Range(Position(line, ch), Position(line, ch + 1)))
+
+    /** D-105: место службы — этот файл, вкладка того же корня или путь вне корня. */
+    @Test
+    fun targetIsHereTabOrOutside() {
+        assertEquals(Assist.Target.Here(5, Position(4, 2)), Assist.target(at("$root/src/main.cpp", 4, 2), here, root))
+        assertEquals(Assist.Target.Tab("src/world/Чанк.h", 10), Assist.target(at("$root/src/world/Чанк.h", 9), here, "$root/"))
+        assertEquals(Assist.Target.Outside("/usr/include/c++/14/vector", 1), Assist.target(at("/usr/include/c++/14/vector", 0), here, root))
+        assertEquals(Assist.Target.Outside("${root}x/a.h", 1), Assist.target(at("${root}x/a.h", 0), here, root), "соседний каталог с тем же началом — не корень")
+        assertEquals(null, Assist.target(Location("http://x/a.h", Range(Position(0, 0), Position(0, 0))), here, root))
+    }
+
+    /** Правка только этого файла применяется; задевшая другие файлы — отказ целиком, без частичного переименования. */
+    @Test
+    fun editsForFileRefusesOtherFiles() {
+        val e = edit(0, 0, 0, 1, "y")
+        assertEquals(listOf(e), ok(Assist.editsForFile(WorkspaceEdit(mapOf(here to listOf(e))), here)))
+        // Тот же файл другим кодированием адреса — тот же файл.
+        val other = here.replace("main", "%6Dain")
+        assertEquals(listOf(e), ok(Assist.editsForFile(WorkspaceEdit(mapOf(other to listOf(e))), here)))
+        val wide = WorkspaceEdit(mapOf(here to listOf(e), DocumentUri.ofPath("$root/src/a.h") to listOf(e), DocumentUri.ofPath("$root/src/b.cpp") to emptyList()))
+        val refused = Assist.editsForFile(wide, here)
+        assertTrue(refused is Outcome.Failure && "другие файлы (1: a.h)" in refused.errors.single().message, refused.toString())
+        assertEquals(emptyList(), ok(Assist.editsForFile(WorkspaceEdit(emptyMap()), here)))
+    }
+
+    @Test
+    fun renameNameIsIdentifier() {
+        for (good in listOf("x", "_tmp", "chunkSize2", "Мир".let { "a" })) assertTrue(Assist.validName(good), good)
+        for (bad in listOf("", "2x", "a-b", "a b", "a::b", "мир", "x".repeat(256))) assertTrue(!Assist.validName(bad), bad)
+    }
+
+    @Test
+    fun signatureLineMarksActiveParameter() {
+        val sig = Signature("int add(int a, int b)", null, listOf(8..12, 15..19))
+        val help = SignatureHelp(listOf(sig, Signature("double add(double a, double b)", null, emptyList())), 0, 1)
+        assertEquals(Assist.SignatureLine("int add(int a, int b)", 15..19, 1), Assist.signature(help))
+        assertEquals(Assist.SignatureLine("int add(int a, int b)", null, 0), Assist.signature(SignatureHelp(listOf(sig), 7, 5)), "номера за пределами — без отметки, перегрузка — последняя")
+        assertEquals(null, Assist.signature(SignatureHelp(emptyList(), 0, null)))
+        assertEquals(null, Assist.signature(null))
+    }
+
+    @Test
+    fun signatureTriggers() {
+        assertTrue(Assist.wantsSignature("f(", 2))
+        assertTrue(Assist.wantsSignature("f(a,  ", 6))
+        assertTrue(!Assist.wantsSignature("f(a", 3))
+        assertTrue(Assist.endsSignature("f(a)", 4))
+        assertTrue(Assist.endsSignature("f(a);", 5))
+        assertTrue(!Assist.endsSignature("f(a, b", 6))
+    }
+
+    @Test
+    fun fixesWithEditFirstPreferred() {
+        val fix = WorkspaceEdit(mapOf(here to listOf(edit(0, 0, 0, 0, ";"))))
+        val actions = listOf(CodeAction("b: add include", "quickfix", fix, false), CodeAction("run tweak", "refactor", null, false), CodeAction("a: insert ;", "quickfix", fix, true))
+        val f = Assist.fixes(actions)
+        assertEquals(listOf("a: insert ;", "b: add include"), f.applicable.map { it.title })
+        assertEquals(1, f.commands)
+    }
+
+    /** Без индекса проекта — только символы этого исходного файла. */
+    @Test
+    fun renameScopeOnlyForSymbolsOfThisSourceFile() {
+        assertTrue(Assist.renameScope(here, listOf(at("$root/src/main.cpp", 3), at("$root/src/main.cpp", 9))) is Outcome.Success)
+        val fromHeader = Assist.renameScope(here, listOf(at("$root/src/world/chunk.h", 3), at("$root/src/main.cpp", 9)))
+        assertTrue(fromHeader is Outcome.Failure && "chunk.h" in fromHeader.errors.single().message, fromHeader.toString())
+        val header = DocumentUri.ofPath("$root/src/world/chunk.hpp")
+        assertTrue(Assist.renameScope(header, listOf(at("$root/src/world/chunk.hpp", 3))) is Outcome.Failure)
+        assertTrue(Assist.renameScope(here, emptyList()) is Outcome.Failure)
+    }
 }
