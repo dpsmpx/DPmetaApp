@@ -9,7 +9,8 @@ object EditorTerminalRun {
         "py", "pyw" -> "python3 \"\$DPAI_FILE\""
         "kts" -> "kotlinc -script \"\$DPAI_FILE\""
         "sh" -> "sh \"\$DPAI_FILE\""
-        else -> "" // Флаги и исполняемый файл настоящего C++/Gradle-проекта задаёт пользователь.
+        "cpp", "cc", "cxx", "c++" -> CppDependencies.singleFileCommand(CppDependencies.Report(0, emptyList(), emptyList()))
+        else -> "" // Команда настоящего Gradle/многофайлового проекта задаётся пользователем.
     }
     fun argv(file: String, root: String, command: String): Outcome<List<String>> {
         if (!file.startsWith('/') || !root.startsWith('/') || file.any { it.code < 32 } || root.any { it.code < 32 } || command.isBlank() || command.length > 4096 || '\u0000' in command) {

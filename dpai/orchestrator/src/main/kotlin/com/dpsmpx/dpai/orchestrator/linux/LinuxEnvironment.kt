@@ -120,6 +120,9 @@ class LinuxEnvironment(private val vfs: Vfs, dir: String = DIR) {
         /** Поставить: индекс обновляется тем же вызовом (`-U`). */
         ADD(listOf("add", "-U", "--no-progress"), true),
 
+        /** Переустановить выбранные пакеты и зависимости после частичной ошибки; данные проектов не трогаются (D-140). */
+        FIX(listOf("fix", "-U", "--no-progress", "--depends"), true),
+
         /** Убрать. */
         DEL(listOf("del", "--no-progress"), true),
 

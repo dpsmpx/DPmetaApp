@@ -3,10 +3,21 @@ package com.dpsmpx.dpai.ui
 /** Каталог подсказок Alpine: вывод компилятора не становится именем пакета или shell-кодом (D-139). */
 object CppDependencies {
     data class Library(val name: String, val packages: List<String>, val flags: List<String>, val headers: List<String>, val links: List<String> = emptyList())
-    data class Report(val exitCode: Int, val libraries: List<Library>, val unknownHeaders: List<String>) {
+    enum class Issue(val advice: String) {
+        TOOLCHAIN("Неполный или повреждённый тулчейн C++. Установите полный набор, затем проверьте среду; если пакеты уже числятся установленными — восстановите их."),
+        PACKAGE_WRITE("Менеджер пакетов не смог записать файлы. В Android apk из интерактивного терминала может упираться в /proc. Кнопки IDE выполняют apk отдельно без /proc. Если ошибка повторится, проверьте запись в корневой системе."),
+        EXECUTION_PERMISSION("Нет доступа к файлу или запрещено выполнение. Во внешнем хранилище Android возможен noexec: шаблон IDE собирает исполняемый файл во внутреннем /tmp. Проверьте также права исходников."),
+        DISK_FULL("Закончилось место. Освободите место в памяти приложения/устройства и повторите установку или сборку."),
+        COMPILER_ERROR("Компилятор сообщил ошибку. Откройте указанную в выводе строку исходника, исправьте код и запустите снова."),
+        LINK_FLAGS("Компоновщик не нашёл определение символа. Проверьте, что в сборку включены все исходные файлы и нужные библиотеки; для проекта используйте его CMake/Make-команду."),
+        PROGRAM_EXIT("Программа или команда завершилась с ненулевым кодом. Причина — в выводе терминала; проверьте входные данные и команду запуска."),
+    }
+    val TOOLCHAIN_PACKAGES = listOf("build-base", "clang", "lld", "compiler-rt")
+    data class Report(val exitCode: Int, val libraries: List<Library>, val unknownHeaders: List<String>, val issues: List<Issue> = emptyList()) {
         val packages: List<String> get() = libraries.flatMap { it.packages }.distinct()
         val flags: List<String> get() = libraries.flatMap { it.flags }.distinct()
-        val useful: Boolean get() = libraries.isNotEmpty() || unknownHeaders.isNotEmpty()
+        val useful: Boolean get() = exitCode != 0
+        val advice: List<String> get() = issues.map { it.advice }
     }
     val catalog = listOf(
         Library("ncurses", listOf("ncurses-dev"), listOf("-lncursesw"), listOf("ncurses.h", "curses.h", "ncursesw/curses.h", "ncursesw/ncurses.h"), listOf("ncurses", "ncursesw", "curses", "tinfo")),
@@ -37,6 +48,7 @@ object CppDependencies {
         val text = plain(output.takeLast(EditorRunOutput.MAX_BYTES))
         val headers = (clangHeader.findAll(text).map { it.groupValues[1] } + gccHeader.findAll(text).map { it.groupValues[1].trim() }).distinct().take(50).toList()
         val found = linkedSetOf<Library>()
+        val issues = linkedSetOf<Issue>()
         val unknown = mutableListOf<String>()
         for (header in headers) {
             val lib = catalog.firstOrNull { l -> l.headers.any { if (it.endsWith('/')) header.startsWith(it) else header == it } }
@@ -44,12 +56,28 @@ object CppDependencies {
         }
         for (match in linker.findAll(text)) catalog.firstOrNull { match.groupValues[1] in it.links }?.let { found += it }
         if (cursesSymbol.containsMatchIn(text)) found += catalog.first()
+        val brokenToolchain = text.contains("DPAI_CXX_TOOLCHAIN:") ||
+            (text.contains("clang") && (text.contains("unable to execute command") || text.contains("invalid linker name"))) ||
+            Regex("(?:crtbeginS?\\.o|crtendS?\\.o|crt[1in]\\.o|libclang_rt\\.[^\\s:]*builtins[^\\s:]*|library -lgcc(?:_s)?)").containsMatchIn(text) ||
+            found.any { it.name == "заголовки C++" || it.name == "заголовки C" }
+        if (brokenToolchain) issues += Issue.TOOLCHAIN
         for ((tool, pkg) in tools) {
             if (Regex("(?:^|[\\s:])${Regex.escape(tool)}:\\s*(?:not found|command not found)(?:\\s|$)").containsMatchIn(text)) {
-                found += Library(tool, listOf(pkg), emptyList(), emptyList())
+                if (tool in setOf("clang++", "clang", "g++", "gcc")) issues += Issue.TOOLCHAIN
+                else found += Library(tool, listOf(pkg), emptyList(), emptyList())
             }
         }
-        return Report(exitCode, found.toList(), unknown)
+        if (Issue.TOOLCHAIN in issues) found += Library("полный тулчейн C++", TOOLCHAIN_PACKAGES, emptyList(), emptyList())
+        if (text.contains("No space left on device", ignoreCase = true)) issues += Issue.DISK_FULL
+        if (text.contains("Permission denied", ignoreCase = true) || text.contains("Read-only file system", ignoreCase = true) || text.contains("DPAI_PACKAGE_WRITE:")) {
+            issues += if (text.contains("apk", ignoreCase = true) || text.contains("failed to extract") || text.contains("failed to write database") || text.contains("DPAI_PACKAGE_WRITE:")) Issue.PACKAGE_WRITE else Issue.EXECUTION_PERMISSION
+        }
+        if (found.isEmpty() && unknown.isEmpty() && issues.isEmpty()) issues += when {
+            text.contains("undefined reference") || text.contains("undefined symbol") -> Issue.LINK_FLAGS
+            text.contains("error:") -> Issue.COMPILER_ERROR
+            else -> Issue.PROGRAM_EXIT
+        }
+        return Report(exitCode, found.toList(), unknown, issues.toList())
     }
     /** Шаблон предлагается отдельно; произвольная команда проекта не переписывается. */
     fun singleFileCommand(report: Report, previousCommand: String = ""): String {
@@ -59,9 +87,9 @@ object CppDependencies {
             }
         }.flatMap { it.flags }
         val flags = (previous + report.flags).distinct().joinToString(" ")
-        return "DPAI_BIN=\$(mktemp /tmp/dpai-cpp.XXXXXX) || exit\n" +
+        return CppToolchain.preflight + "\nDPAI_BIN=\$(mktemp /tmp/dpai-cpp.XXXXXX) || exit\n" +
             "trap 'rm -f \"\$DPAI_BIN\"' EXIT\n" +
-            "clang++ \"\$DPAI_FILE\" -std=c++20 -o \"\$DPAI_BIN\"${if (flags.isEmpty()) "" else " $flags"} && \"\$DPAI_BIN\""
+            "clang++ \"\$DPAI_FILE\" -std=c++20 -fuse-ld=lld -o \"\$DPAI_BIN\"${if (flags.isEmpty()) "" else " $flags"} && \"\$DPAI_BIN\""
     }
     /** ANSI CSI/OSC убираются итеративно: чужой вывод ограничен по памяти и не вызывает рекурсивного regex. */
     private fun plain(text: String): String = buildString {

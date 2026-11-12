@@ -42,6 +42,9 @@ class EditorTerminalRunTest {
             Triple("/root/code.py", "/root", "x".repeat(4097)))) {
             assertIs<Outcome.Failure>(EditorTerminalRun.argv(args.first, args.second, args.third))
         }
-        assertIs<Outcome.Failure>(EditorTerminalRun.argv("/root/main.cpp", "/root", EditorTerminalRun.defaultCommand("main.cpp")))
+        val command = EditorTerminalRun.defaultCommand("main.cpp")
+        assertIs<Outcome.Success<List<String>>>(EditorTerminalRun.argv("/root/storage/shared/main.cpp", "/root/storage/shared", command))
+        assertTrue(command.contains("-fuse-ld=lld"))
+        assertTrue(command.contains("mktemp /tmp/dpai-cpp.XXXXXX"))
     }
 }

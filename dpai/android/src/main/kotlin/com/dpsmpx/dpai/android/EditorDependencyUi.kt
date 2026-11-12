@@ -39,6 +39,8 @@ internal class EditorDependencyUi(private val activity: TerminalActivity, privat
                 if (!visible() || tab !== TerminalHub.current || run.report !== report) return@launch
                 run.offered = true
                 val text = buildString {
+                    append("Код завершения: ${report.exitCode}.\n")
+                    report.advice.forEach { append(it + "\n") }
                     if (report.libraries.isNotEmpty()) append("Библиотеки/инструменты: ${report.libraries.joinToString { it.name }}.\n")
                     if (report.packages.isNotEmpty()) append("Пакеты Alpine: ${report.packages.joinToString()}.\n")
                     if (missing.isNotEmpty()) append("Нужно скачать: ${missing.joinToString()}. Зависимости поставятся вместе с ними.\n")
@@ -55,9 +57,19 @@ internal class EditorDependencyUi(private val activity: TerminalActivity, privat
                     orientation = LinearLayout.VERTICAL
                     setPadding(24, 8, 24, 8)
                     addView(TextView(activity).apply { this.text = text; setTextIsSelectable(true) })
-                    addView(Button(activity).apply { this.text = "Указать пакеты вручную"; setOnClickListener { packageInput(missing) } })
+                    if (report.packages.isNotEmpty() || report.unknownHeaders.isNotEmpty()) {
+                        addView(Button(activity).apply { this.text = "Указать пакеты вручную"; setOnClickListener { packageInput(missing) } })
+                    }
+                    if (report.issues.any { it in setOf(CppDependencies.Issue.TOOLCHAIN, CppDependencies.Issue.PACKAGE_WRITE, CppDependencies.Issue.EXECUTION_PERMISSION) }) {
+                        addView(Button(activity).apply { this.text = "Проверить среду C++"; setOnClickListener { environment(repair = false) } })
+                        addView(Button(activity).apply { this.text = "Восстановить пакеты C++…"; setOnClickListener {
+                            show(AlertDialog.Builder(activity).setTitle("Восстановить тулчейн?")
+                                .setMessage("Переустановить ${CppDependencies.TOOLCHAIN_PACKAGES.joinToString()} и их зависимости через apk fix. Данные проектов не меняются. Нужен интернет.")
+                                .setNegativeButton("Отмена", null).setPositiveButton("Восстановить") { _, _ -> environment(repair = true) })
+                        } })
+                    }
                 }
-                val builder = AlertDialog.Builder(activity).setTitle("Зависимости запуска").setView(ScrollView(activity).apply { addView(content) })
+                val builder = AlertDialog.Builder(activity).setTitle("Проблема запуска").setView(ScrollView(activity).apply { addView(content) })
                     .setNegativeButton("Позже", null)
                 if (missing.isNotEmpty()) builder.setPositiveButton("Установить (${missing.size})") { _, _ -> install(missing) }
                 if (run.file.substringAfterLast('.').lowercase() in setOf("cpp", "cc", "cxx", "c++")) {
@@ -85,7 +97,13 @@ internal class EditorDependencyUi(private val activity: TerminalActivity, privat
                 is Outcome.Failure -> LongJobs.Done(result.errors.first().message, failed = true)
             }
         }
-        toast(if (started) "Устанавливаю: ${packages.joinToString()}. Итог — кнопкой «Библиотеки…»." else "Другая операция Linux ещё идёт. Дождитесь её завершения.")
+        toast(if (started) "Устанавливаю: ${packages.joinToString()}. Итог — кнопкой «Решения…»." else "Другая операция Linux ещё идёт. Дождитесь её завершения.")
+    }
+    private fun environment(repair: Boolean) {
+        val app = activity.applicationContext
+        val started = jobs.start(LongJobs.LINUX_APK, LABEL, excludes = LongJobs.GUEST) { if (repair) CppSetup.repair(app) else CppSetup.check(app) }
+        toast(if (started) "${if (repair) "Восстанавливаю пакеты" else "Проверяю среду"}. Итог — кнопкой «Решения…»." else "Другая операция Linux ещё идёт. Дождитесь её завершения.")
+        dialog?.dismiss()
     }
     private fun command(run: TerminalHub.EditorRun, report: CppDependencies.Report) {
         val command = CppDependencies.singleFileCommand(report, run.command)

@@ -160,6 +160,8 @@ class LinuxEnvironmentTest {
         }
         assertEquals(DiagCode.FIELD_MISSING, (LinuxEnvironment.apk(LinuxEnvironment.Apk.DEL, emptyList()) as Outcome.Failure).errors.single().code)
         assertEquals(listOf("apk", "upgrade", "-U", "--no-progress"), LinuxEnvironment.apk(LinuxEnvironment.Apk.UPGRADE, emptyList()).valueOrNull()!!.command)
+        assertEquals(listOf("apk", "fix", "-U", "--no-progress", "--depends", "build-base"), LinuxEnvironment.apk(LinuxEnvironment.Apk.FIX, listOf("build-base")).valueOrNull()!!.command)
+        assertEquals(DiagCode.FIELD_MISSING, (LinuxEnvironment.apk(LinuxEnvironment.Apk.FIX, emptyList()) as Outcome.Failure).errors.single().code)
         assertEquals("/root/.claude-slot-2", LinuxEnvironment.slotDir(2))
     }
 

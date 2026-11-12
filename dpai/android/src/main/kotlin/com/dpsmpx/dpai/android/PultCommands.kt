@@ -33,7 +33,7 @@ object PultCommands {
      */
     fun missing(context: Context, packages: List<String>): List<String> {
         val db = File(LinuxSetup.layout(context).rootfs, "lib/apk/db/installed")
-        val installed = runCatching { db.useLines { lines -> lines.filter { it.startsWith("P:") }.map { it.removePrefix("P:").trim() }.toSet() } }.getOrNull()
+        val installed = runCatching { db.useLines { com.dpsmpx.dpai.ui.AlpinePackageState.names(it) } }.getOrNull()
             ?: return packages
         return packages.filter { it !in installed }
     }

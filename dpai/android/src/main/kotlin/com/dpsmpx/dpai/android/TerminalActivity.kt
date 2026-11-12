@@ -604,7 +604,7 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
             setPadding(dp(12), dp(4), dp(12), dp(4))
         }
         reconnect = chip("↻ Переподключить") { TerminalHub.current?.let { TerminalHub.connect(this, it) } }
-        dependencies = chip("Библиотеки…") { TerminalHub.current?.let { dependencyUi?.offer(it, automatic = false) } }
+        dependencies = chip("Решения…") { TerminalHub.current?.let { dependencyUi?.offer(it, automatic = false) } }
         statusRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL

@@ -72,9 +72,11 @@ class ProotHostTest {
     fun apkRunsWithoutProc() {
         val host = ProotHost(Recorder(), layout)
         for (apk in listOf("apk", "/sbin/apk")) {
-            val argv = host.wrap(ProcessSpec(listOf(apk, "add", "git"))).command
-            assertFalse(pairs(argv, "-b").any { it.startsWith("/proc") }, apk)
-            assertEquals(ProotHost.DEVICES, pairs(argv, "-b").take(ProotHost.DEVICES.size), apk)
+            for (operation in listOf("add", "fix")) {
+                val argv = host.wrap(ProcessSpec(listOf(apk, operation, "build-base"))).command
+                assertFalse(pairs(argv, "-b").any { it.startsWith("/proc") }, apk)
+                assertEquals(ProotHost.DEVICES, pairs(argv, "-b").take(ProotHost.DEVICES.size), apk)
+            }
         }
         // Только сама программа apk: аргумент «apk» у другой программы /proc не убирает.
         assertTrue("/proc" in pairs(host.wrap(ProcessSpec(listOf("echo", "apk"))).command, "-b"))
