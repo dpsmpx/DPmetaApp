@@ -4,6 +4,7 @@ import android.content.Context
 import com.dpsmpx.dpai.android.linux.LinuxSetup
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.execution.process.ProcessSpec
+import com.dpsmpx.dpai.execution.process.Completed
 import com.dpsmpx.dpai.execution.process.run
 import com.dpsmpx.dpai.orchestrator.linux.LinuxEnvironment
 import com.dpsmpx.dpai.ui.CppDependencies
@@ -27,12 +28,14 @@ internal object CppSetup {
             }
         }
     }
-    fun repair(context: Context): LongJobs.Done = when (val result = LinuxSetup.apk(context, LinuxEnvironment.Apk.FIX, CppDependencies.TOOLCHAIN_PACKAGES)) {
+    fun install(context: Context, packages: List<String>): LongJobs.Done = completed(LinuxSetup.apk(context, LinuxEnvironment.Apk.ADD, packages), "Пакеты установлены. Проверьте флаги и запустите файл из IDE.")
+    fun repair(context: Context): LongJobs.Done = completed(LinuxSetup.apk(context, LinuxEnvironment.Apk.FIX, CppDependencies.TOOLCHAIN_PACKAGES), "Пакеты тулчейна восстановлены. Нажмите «Проверить среду», затем запустите файл из IDE.")
+    private fun completed(result: Outcome<Completed>, success: String): LongJobs.Done = when (result) {
         is Outcome.Failure -> LongJobs.Done(result.errors.first().message, failed = true)
         is Outcome.Success -> {
             val output = result.value.stdout + result.value.stderr
-            LongJobs.Done(if (result.value.ok) "Пакеты тулчейна восстановлены. Нажмите «Проверить среду», затем запустите файл из IDE."
-                else "Восстановление: код ${result.value.exitCode}. " + CppDependencies.analyze(output.joinToString("\n"), result.value.exitCode).advice.joinToString(" "), output.takeLast(20), failed = !result.value.ok)
+            LongJobs.Done(if (result.value.ok) success
+                else "apk: код ${result.value.exitCode}. " + CppDependencies.analyze(output.joinToString("\n"), result.value.exitCode).advice.joinToString(" "), output.takeLast(40), failed = !result.value.ok)
         }
     }
 }

@@ -74,4 +74,11 @@ class CppDependenciesTest {
             assertTrue(report.advice.isNotEmpty())
         }
     }
+    @Test fun failedLibraryInstallationKeepsOriginalFlagsAndAddsWriteRepairAdvice() {
+        val report = CppDependencies.analyze("fatal error: 'ncurses.h' file not found", 1)
+            .withFailure("ERROR: failed to extract usr/bin/ld: Permission denied")
+        assertEquals(listOf("ncurses-dev"), report.packages)
+        assertEquals(listOf("-lncursesw"), report.flags)
+        assertTrue(CppDependencies.Issue.PACKAGE_WRITE in report.issues)
+    }
 }

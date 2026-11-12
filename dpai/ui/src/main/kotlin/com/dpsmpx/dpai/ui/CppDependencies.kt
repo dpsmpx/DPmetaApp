@@ -18,6 +18,10 @@ object CppDependencies {
         val flags: List<String> get() = libraries.flatMap { it.flags }.distinct()
         val useful: Boolean get() = exitCode != 0
         val advice: List<String> get() = issues.map { it.advice }
+        fun withFailure(output: String): Report {
+            val next = analyze(output, 1)
+            return copy(libraries = (libraries + next.libraries).distinct(), unknownHeaders = (unknownHeaders + next.unknownHeaders).distinct(), issues = (issues + next.issues).distinct())
+        }
     }
     val catalog = listOf(
         Library("ncurses", listOf("ncurses-dev"), listOf("-lncursesw"), listOf("ncurses.h", "curses.h", "ncursesw/curses.h", "ncursesw/ncurses.h"), listOf("ncurses", "ncursesw", "curses", "tinfo")),

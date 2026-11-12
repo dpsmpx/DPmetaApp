@@ -18,10 +18,10 @@ object CppToolchain {
             rm -f "${'$'}DPAI_PROBE" || exit 73
         done
         $preflight
-        DPAI_CPP=${'$'}(mktemp /tmp/dpai-check.XXXXXX.cpp) || exit
+        DPAI_CPP=${'$'}(mktemp /tmp/dpai-check-src.XXXXXX) || exit
         DPAI_BIN=${'$'}(mktemp /tmp/dpai-check.XXXXXX) || { rm -f "${'$'}DPAI_CPP"; exit 1; }
         trap 'rm -f "${'$'}DPAI_CPP" "${'$'}DPAI_BIN"' EXIT
         printf '#include <iostream>\n#include <cstdio>\nint main() { std::cout << "DPAI_CPP_OK" << std::endl; return 0; }\n' > "${'$'}DPAI_CPP" || exit
-        clang++ -std=c++20 -fuse-ld=lld "${'$'}DPAI_CPP" -o "${'$'}DPAI_BIN" && "${'$'}DPAI_BIN"
+        clang++ -x c++ -std=c++20 -fuse-ld=lld "${'$'}DPAI_CPP" -o "${'$'}DPAI_BIN" && "${'$'}DPAI_BIN"
     """.trimIndent())
 }

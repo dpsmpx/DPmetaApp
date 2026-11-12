@@ -72,7 +72,8 @@ internal class EditorDependencyUi(private val activity: TerminalActivity, privat
                 val builder = AlertDialog.Builder(activity).setTitle("Проблема запуска").setView(ScrollView(activity).apply { addView(content) })
                     .setNegativeButton("Позже", null)
                 if (missing.isNotEmpty()) builder.setPositiveButton("Установить (${missing.size})") { _, _ -> install(missing) }
-                if (run.file.substringAfterLast('.').lowercase() in setOf("cpp", "cc", "cxx", "c++")) {
+                val commandMayHelp = report.flags.isNotEmpty() || report.issues.any { it in setOf(CppDependencies.Issue.TOOLCHAIN, CppDependencies.Issue.EXECUTION_PERMISSION, CppDependencies.Issue.LINK_FLAGS) }
+                if (commandMayHelp && run.file.substringAfterLast('.').lowercase() in setOf("cpp", "cc", "cxx", "c++")) {
                     builder.setNeutralButton("Команда C++20") { _, _ -> command(run, report) }
                 }
                 show(builder)
@@ -91,17 +92,22 @@ internal class EditorDependencyUi(private val activity: TerminalActivity, privat
     }
     private fun install(packages: List<String>) {
         val app = activity.applicationContext
+        val run = TerminalHub.current?.editorRun
         val started = jobs.start(LongJobs.LINUX_APK, LABEL, excludes = LongJobs.GUEST) {
-            when (val result = PultCommands.install(app, packages)) {
-                is Outcome.Success -> LongJobs.Done("Пакеты установлены. Проверьте флаги и запустите файл из IDE.", result.value)
-                is Outcome.Failure -> LongJobs.Done(result.errors.first().message, failed = true)
-            }
+            val done = CppSetup.install(app, packages)
+            if (done.failed) run?.report = run?.report?.withFailure(done.output.joinToString("\n") + "\n" + done.note)
+            done
         }
         toast(if (started) "Устанавливаю: ${packages.joinToString()}. Итог — кнопкой «Решения…»." else "Другая операция Linux ещё идёт. Дождитесь её завершения.")
     }
     private fun environment(repair: Boolean) {
         val app = activity.applicationContext
-        val started = jobs.start(LongJobs.LINUX_APK, LABEL, excludes = LongJobs.GUEST) { if (repair) CppSetup.repair(app) else CppSetup.check(app) }
+        val run = TerminalHub.current?.editorRun
+        val started = jobs.start(LongJobs.LINUX_APK, LABEL, excludes = LongJobs.GUEST) {
+            val done = if (repair) CppSetup.repair(app) else CppSetup.check(app)
+            if (done.failed) run?.report = run?.report?.withFailure(done.output.joinToString("\n") + "\n" + done.note)
+            done
+        }
         toast(if (started) "${if (repair) "Восстанавливаю пакеты" else "Проверяю среду"}. Итог — кнопкой «Решения…»." else "Другая операция Linux ещё идёт. Дождитесь её завершения.")
         dialog?.dismiss()
     }
