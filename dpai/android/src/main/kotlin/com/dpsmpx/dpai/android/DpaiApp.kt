@@ -51,6 +51,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -276,8 +277,13 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
     val pultBelow = remember { (context.applicationContext as? DpaiApplication)?.parentIntent() != null }
     val snack = remember { androidx.compose.material3.SnackbarHostState() }
     val undo = remember(scope) { Undo(snack, scope) }
-    androidx.compose.runtime.CompositionLocalProvider(LocalUndo provides undo) {
+    val ideChrome = remember { IdeChrome() }
+    val ideSettings by IdeState.state.collectAsState()
+    val ideFullscreen = ideChrome.active && ideSettings.options.zen
+    IdeWindow(ideFullscreen)
+    androidx.compose.runtime.CompositionLocalProvider(LocalUndo provides undo, LocalIdeChrome provides ideChrome) {
         Scaffold(
+            contentWindowInsets = if (ideFullscreen) WindowInsets(0, 0, 0, 0) else androidx.compose.material3.ScaffoldDefaults.contentWindowInsets,
             snackbarHost = { androidx.compose.material3.SnackbarHost(snack) },
             // «Новая задача» — плавающей кнопкой на «Сводке» и «Задачах» (AI:A-6); в демо задач не ставят.
             floatingActionButton = {
@@ -286,7 +292,8 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                     androidx.compose.material3.ExtendedFloatingActionButton(onClick = { creating = true }, text = { Text("Новая задача") }, icon = { Text("+", style = MaterialTheme.typography.titleLarge) })
                 }
             },
-            topBar = {
+            topBar = top@ {
+                if (ideFullscreen) return@top
                 // Узкая строка (D-61): больше места чату; в окне сессии — кружок состояния и имя (нажатие — переименовать).
                 androidx.compose.material3.Surface(tonalElevation = 3.dp) {
                     Row(
@@ -342,7 +349,8 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                     }
                 }
             },
-            bottomBar = {
+            bottomBar = bottom@ {
+                if (ideFullscreen) return@bottom
                 // Панель — всегда: её исчезновение на экране сессии сдвигало всё содержимое. Значки без подписей (D-61);
                 // подпись — долгим нажатием, для TalkBack — роль вкладки, «выбрано» и название; строка — 48 dp (D-112).
                 androidx.compose.material3.Surface(tonalElevation = 3.dp) {
@@ -391,8 +399,9 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
             Column(
                 Modifier.padding(padding).consumeWindowInsets(padding).imePadding()
                     .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
-                    .fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = if (twoPane) TWO_PANE_MAX else CONTENT_MAX).fillMaxWidth(),
+                    .fillMaxSize().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = if (ideFullscreen) androidx.compose.ui.unit.Dp.Infinity else if (twoPane) TWO_PANE_MAX else CONTENT_MAX).fillMaxWidth(),
             ) {
+                if (!ideFullscreen) {
                 corrupted?.let { what ->
                     // D-24: карантин хвоста — только явным решением; необратимое — окном (AI:A-4).
                     var asking by remember { mutableStateOf(false) }
@@ -446,6 +455,7 @@ fun DpaiApp(model: DemoModel, controller: Controller, incoming: Incoming = Incom
                         Text("Контроллер остановлен: такты не идут, уведомлений нет.", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
                         Button(onClick = { scope.launch(Dispatchers.IO) { ControllerService.resume(context) }; stopped = false }) { Text("Запустить") }
                     }
+                }
                 }
                 // Смена вкладки или экрана — плавно, без скачка содержимого; кадр перехода рисует свой экран.
                 // Состояние вкладки (место в «Файлах», открытый разговор, прокрутка) — своё у каждой и переживает

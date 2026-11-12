@@ -31,7 +31,7 @@ internal object EditorLanguages {
                     IGrammarSource.fromInputStream(assets.open("editor/$id.json"), "$id.json", Charsets.UTF_8),
                     "editor/$id.config.json", id, "source.$id"))
             }
-            for (id in listOf("dark", "light")) {
+            for (id in listOf("dark", "light", "dark-plain", "light-plain")) {
                 ThemeRegistry.getInstance().loadTheme(ThemeModel(IThemeSource.fromInputStream(
                     assets.open("editor/$id.theme.json"), "$id.theme.json", Charsets.UTF_8), "studio-$id"))
             }
@@ -47,8 +47,8 @@ internal object EditorLanguages {
             useTab(tabs) // Тот же объект использует обработчик Enter, не только внешнее поле.
         }
     }
-    fun scheme(dark: Boolean): TextMateColorScheme {
-        ThemeRegistry.getInstance().setTheme(if (dark) "studio-dark" else "studio-light")
+    fun scheme(dark: Boolean, highlighted: Boolean = true): TextMateColorScheme {
+        ThemeRegistry.getInstance().setTheme((if (dark) "studio-dark" else "studio-light") + if (highlighted) "" else "-plain")
         return TextMateColorScheme.create(ThemeRegistry.getInstance())
     }
 }

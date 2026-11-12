@@ -37,7 +37,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 internal enum class EditorCommand { UNDO, REDO, SAVE, FIND, REPLACE, GOTO, COMMENT, DUPLICATE, DELETE_LINE, MOVE_UP, MOVE_DOWN, INDENT, UNINDENT, NEXT_FILE, PREV_FILE, CLOSE_FILE, FILES }
-internal data class EditorCallbacks(val save: () -> Unit = {}, val close: () -> Unit = {}, val browse: () -> Unit = {}, val next: (Boolean) -> Unit = {}, val busy: Boolean = false)
+internal data class EditorCallbacks(val save: () -> Unit = {}, val close: () -> Unit = {}, val browse: () -> Unit = {}, val next: (Boolean) -> Unit = {}, val busy: Boolean = false, val canSave: Boolean = false, val preview: () -> Unit = {}, val exit: () -> Unit = {}, val run: () -> Unit = {}, val configureRun: () -> Unit = {})
 
 /** Тонкий адаптер: рендеринг/IME у Sora, снимки и история — CodeEditorBuffer (D-136). */
 internal class StudioCodeField(context: Context) : SoraEditor(context) {
@@ -138,15 +138,15 @@ internal class StudioCodeField(context: Context) : SoraEditor(context) {
         }
     }
 
-    fun bind(buffer: CodeEditorBuffer, path: String, ready: Boolean, dark: Boolean, wrap: Boolean, size: Int, width: Int, tabs: Boolean, restored: Pair<Int, Int>?) {
+    fun bind(buffer: CodeEditorBuffer, path: String, ready: Boolean, dark: Boolean, wrap: Boolean, size: Int, width: Int, tabs: Boolean, restored: Pair<Int, Int>?, highlighted: Boolean) {
         val initial = model !== buffer
         if (initial) { model = buffer; observed = null }
         isWordwrap = wrap
         tabWidth = width
         if (lastSize != size) { setTextSize(size.toFloat()); lastSize = size }
-        val key = "$path:$ready:$dark:$width:$tabs"
+        val key = "$path:$ready:$dark:$width:$tabs:$highlighted"
         if (ready && languageKey != key) {
-            colorScheme = EditorLanguages.scheme(dark)
+            colorScheme = EditorLanguages.scheme(dark, highlighted)
             setEditorLanguage(EditorLanguages.language(path, width, tabs))
             languageKey = key
         }
@@ -217,7 +217,7 @@ internal class StudioCodeField(context: Context) : SoraEditor(context) {
 }
 
 @Composable
-internal fun NativeCodeField(buffer: CodeEditorBuffer, path: String, revision: Int, enabled: Boolean, wrap: Boolean, size: Int, width: Int, tabs: Boolean, marks: List<com.dpsmpx.dpai.lsp.Assist.Mark>,
+internal fun NativeCodeField(buffer: CodeEditorBuffer, path: String, revision: Int, enabled: Boolean, wrap: Boolean, size: Int, width: Int, tabs: Boolean, marks: List<com.dpsmpx.dpai.lsp.Assist.Mark>, highlighted: Boolean, onActivate: (() -> Unit)?,
     onChange: () -> Unit, onCommand: (EditorCommand) -> Unit, onPosition: (Int, Int) -> Unit, onIssue: (String) -> Unit, onZoom: (Int) -> Unit, modifier: Modifier) {
     val context = LocalContext.current
     val dark = isSystemInDarkTheme()
@@ -227,6 +227,7 @@ internal fun NativeCodeField(buffer: CodeEditorBuffer, path: String, revision: I
     val position by rememberUpdatedState(onPosition)
     val issue by rememberUpdatedState(onIssue)
     val zoom by rememberUpdatedState(onZoom)
+    val activate by rememberUpdatedState(onActivate)
     var visited by rememberSaveable(path) { mutableStateOf(false) }
     var offsetX by rememberSaveable(path) { mutableStateOf(0) }
     var offsetY by rememberSaveable(path) { mutableStateOf(0) }
@@ -242,8 +243,14 @@ internal fun NativeCodeField(buffer: CodeEditorBuffer, path: String, revision: I
             val restored = if (visited) offsetX to offsetY else null
             editor.viewport = { x, y -> offsetX = x; offsetY = y; visited = true }
             editor.zoom = { zoom(it) }
+            val entering = !editor.isEditable && enabled
+            editor.setOnClickListener { if (!enabled) editor.postInLifecycle { activate?.invoke() } }
             editor.isEditable = enabled
-            editor.bind(buffer, path, ready, dark, wrap, size, width, tabs, restored)
+            editor.bind(buffer, path, ready, dark, wrap, size, width, tabs, restored, highlighted)
+            if (entering) editor.postInLifecycle {
+                editor.requestFocus()
+                (editor.context.getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).showSoftInput(editor, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+            }
             editor.mark(marks)
         })
     }

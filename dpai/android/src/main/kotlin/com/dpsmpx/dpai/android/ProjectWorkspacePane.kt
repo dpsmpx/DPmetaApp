@@ -76,7 +76,9 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
     val keyboard = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     val pageStates = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     if (taskSheet && selected != null) TaskSheet(model, selected.id, onSession = onSession) { taskSheet = false }
+    val zen = ideZen()
     Column(Modifier.fillMaxSize()) {
+        if (!zen) {
         Row(Modifier.fillMaxWidth()) {
             TextButton(onClick = onClose) { Text("← Файлы") }
             Text("Рабочий проект", Modifier.weight(1f).padding(12.dp), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
@@ -102,6 +104,7 @@ internal fun ProjectWorkspacePane(model: DemoModel, onTargets: () -> Unit, onSes
         }
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp)) {
             for (p in WorkspacePage.entries) FilterChip(selected = page == p.name, onClick = { page = p.name }, label = { Text(p.title) })
+        }
         }
         }
         pageStates.SaveableStateProvider("${location?.key ?: "${project.project.value}:$taskKey"}:$page") {
@@ -165,7 +168,8 @@ private fun WorkspaceFiles(model: DemoModel, view: ProjectWorkspaceView, locatio
         val path = file
         if (path != null) tabStates.SaveableStateProvider(path) {
             TreeFileView(tree, "workspace:${location.key}", path, readOnly, guestPath = "${location.path.trimEnd('/')}/$path",
-                onBrowse = openFiles::browse, onNext = openFiles::next, onActions = { openFiles.ready(path, it) }, guestRoot = location.path.trimEnd('/').ifEmpty { "/" }) { openFiles.close(path) }
+                onBrowse = openFiles::browse, onNext = openFiles::next, onActions = { openFiles.ready(path, it) }, guestRoot = location.path.trimEnd('/').ifEmpty { "/" }, sessionKey = location.key,
+                runGuard = { model.workspaceAccess(view.project, location, true) { Outcome.success(Unit) } }) { openFiles.close(path) }
         } else {
             Row {
                 TextButton(enabled = dir.isNotEmpty(), onClick = { dir = FileNames.parent(dir) }) { Text("Вверх") }

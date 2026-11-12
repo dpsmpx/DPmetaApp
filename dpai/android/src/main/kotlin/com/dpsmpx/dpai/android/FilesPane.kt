@@ -119,6 +119,8 @@ private fun treeOf(context: android.content.Context, p: Place): FileTree = when 
  */
 @Composable
 fun FilesPane(onLinux: () -> Unit = {}, model: DemoModel? = null, onSession: (String) -> Unit = {}) {
+    val uiReady by IdeState.ready.collectAsState()
+    if (!uiReady) { CircularProgressIndicator(Modifier.padding(12.dp)); return }
     var projectOpen by rememberSaveable { mutableStateOf(false) }
     var draftsOpen by remember { mutableStateOf(false) }
     if (draftsOpen) FileDraftsDialog { draftsOpen = false }
@@ -144,7 +146,8 @@ fun FilesPane(onLinux: () -> Unit = {}, model: DemoModel? = null, onSession: (St
     val undo = LocalUndo.current
     val problem by FileLinks.problem.collectAsState()
     // Место — строкой в сохранённом состоянии вкладки: смена вкладки его не сбрасывает (AI:A-2).
-    var placeKey by rememberSaveable { mutableStateOf<String?>(null) }
+    var placeKey by rememberSaveable { mutableStateOf(IdeState.state.value.lastPlace) }
+    LaunchedEffect(placeKey) { IdeState.place(placeKey) }
     val place = placeKey?.let { placeOf(it, links) }
     var syncing by remember { mutableStateOf<FileLink?>(null) }
     var note by remember { mutableStateOf<String?>(null) }
@@ -490,16 +493,18 @@ private fun FileView(p: Place, path: String, onBrowse: () -> Unit, onNext: (Bool
         Kind.SHARED -> GuestPaths.guestShared("")
         Kind.FOLDER -> null
     }
-    TreeFileView(tree, p.key(), path, guestPath = guestRoot?.let { FileNames.join(it, path) }, onBrowse = onBrowse, onNext = onNext, onActions = onActions, guestRoot = guestRoot, onClose = onClose)
+    TreeFileView(tree, p.key(), path, guestPath = guestRoot?.let { FileNames.join(it, path) }, onBrowse = onBrowse, onNext = onNext, onActions = onActions, guestRoot = guestRoot, sessionKey = p.copy(dir = "").key(), onClose = onClose)
 }
 
 @Composable
-internal fun TreeFileView(tree: FileTree, treeKey: String, path: String, readOnly: Boolean = false, guestPath: String? = null, onBrowse: (() -> Unit)? = null, onNext: (Boolean) -> Unit = {}, onActions: (EditorCallbacks) -> Unit = {}, guestRoot: String? = null, onClose: () -> Unit) {
-    androidx.compose.runtime.key(treeKey, path) { TreeFileContent(tree, treeKey, path, readOnly, guestPath, guestRoot, onBrowse, onNext, onActions, onClose) }
+internal fun TreeFileView(tree: FileTree, treeKey: String, path: String, readOnly: Boolean = false, guestPath: String? = null, onBrowse: (() -> Unit)? = null, onNext: (Boolean) -> Unit = {}, onActions: (EditorCallbacks) -> Unit = {}, guestRoot: String? = null, sessionKey: String = treeKey, runGuard: () -> Outcome<Unit> = { Outcome.success(Unit) }, onClose: () -> Unit) {
+    androidx.compose.runtime.key(treeKey, path) { TreeFileContent(tree, treeKey, path, readOnly, guestPath, guestRoot, sessionKey, runGuard, onBrowse, onNext, onActions, onClose) }
 }
 
 @Composable
-private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readOnly: Boolean, guestPath: String?, guestRoot: String?, onBrowse: (() -> Unit)?, onNext: (Boolean) -> Unit, onActions: (EditorCallbacks) -> Unit, onClose: () -> Unit) {
+private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readOnly: Boolean, guestPath: String?, guestRoot: String?, sessionKey: String,
+    runGuard: () -> Outcome<Unit>, onBrowse: (() -> Unit)?, onNext: (Boolean) -> Unit, onActions: (EditorCallbacks) -> Unit, onClose: () -> Unit) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val recovery by Drafts.recovery.collectAsState()
     val image = TextFile.isImage(path)
@@ -507,157 +512,153 @@ private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readO
     var original by remember { mutableStateOf<ByteArray?>(null) }
     var bitmap by remember { mutableStateOf<ImageBitmap?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
-    // Правка — черновиком вне окна (Drafts): смена вкладки её не теряет; несохранённая — с вопросом (AI:A-2).
     val draftKey = "file:$treeKey\u0001$path"
-    var editing by remember(draftKey) { mutableStateOf(Drafts.file(draftKey)) }
+    var draft by remember(draftKey) { mutableStateOf(Drafts.file(draftKey)) }
+    var editing by rememberSaveable { mutableStateOf(false) }
     var revision by remember { mutableStateOf(0) }
     var saving by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(true) }
     var status by remember { mutableStateOf<String?>(null) }
     var leaving by remember { mutableStateOf(false) }
-    val changed = revision.let { editing?.editor?.dirty == true }
-    suspend fun dropEdit(): Boolean {
-        val result = withContext(Dispatchers.IO) { Drafts.dropFile(draftKey, expected = editing) }
-        return if (result is Outcome.Success) { editing = null; true } else {
-            status = (result as Outcome.Failure).errors.first().message; false
-        }
+    var afterLeaving by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var configure by remember { mutableStateOf(false) }
+    var configureOnly by remember { mutableStateOf(false) }
+    var command by remember { mutableStateOf(IdeState.state.value.roots[sessionKey]?.runCommand.orEmpty().ifEmpty { com.dpsmpx.dpai.ui.EditorTerminalRun.defaultCommand(path) }) }
+    val zen = ideZen()
+    fun issue(message: String) { status = message; android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show() }
+    suspend fun discard(): Boolean {
+        val result = withContext(Dispatchers.IO) { Drafts.dropFile(draftKey, expected = draft) }
+        return if (result is Outcome.Success) { draft = null; editing = false; true } else { issue((result as Outcome.Failure).errors.first().message); false }
     }
-    val drop = {
-        if (!saving) scope.launch {
-            saving = true
-            try { dropEdit() } finally { saving = false }
-        }
-        Unit
-    }
-    val leave = {
-        if (!saving) {
-            val current = editing ?: Drafts.file(draftKey)
-            if (current?.editor?.dirty == true) { editing = current; leaving = true }
-            else if (!recovery.ready || current == null) onClose()
-            else scope.launch {
-                saving = true
-                try { if (dropEdit()) onClose() } finally { saving = false }
-            }
-        }
-        Unit
-    }
-    LaunchedEffect(recovery.ready) {
-        if (recovery.ready && editing == null) editing = Drafts.file(draftKey)
-    }
-    DisposableEffect(draftKey) { onDispose { Drafts.flushNow() } }
-    androidx.activity.compose.BackHandler { if (onBrowse != null) { Drafts.flushNow(); onBrowse() } else leave() }
-    suspend fun saveEdit(e: Drafts.FileDraft): Boolean {
-        if (saving) return false
+    suspend fun save(): Boolean {
+        val current = draft ?: return true
+        if (saving || readOnly) return false
         saving = true
-        val content = e.editor.text
+        val content = current.editor.text
         return try {
-            val r = withContext(Dispatchers.IO) { com.dpsmpx.dpai.files.TextFileEdit.save(tree, path, e.original, content) }
-            if (r is Outcome.Success) {
-                text = content
-                original = r.value
-                val copied = withContext(Dispatchers.IO) { Drafts.savedFile(draftKey, e, r.value, content) }
-                status = if (copied is Outcome.Success) "сохранено" else "Файл сохранён, но копия черновика не удалена"
-                copied is Outcome.Success
-            } else {
-                status = "не сохранено: ${(r as Outcome.Failure).errors.first().message}"
-                false
+            when (val result = withContext(Dispatchers.IO) { com.dpsmpx.dpai.files.TextFileEdit.save(tree, path, current.original, content) }) {
+                is Outcome.Failure -> { issue("Не сохранено: ${result.errors.first().message}"); false }
+                is Outcome.Success -> {
+                    text = content; original = result.value
+                    when (val copy = withContext(Dispatchers.IO) { Drafts.savedFile(draftKey, current, result.value, content) }) {
+                        is Outcome.Failure -> { issue(copy.errors.first().message); false }
+                        is Outcome.Success -> { status = "Сохранено"; true }
+                    }
+                }
             }
-        } finally {
-            saving = false
+        } finally { saving = false }
+    }
+    fun requestLeave(action: () -> Unit) {
+        if (saving) return
+        val current = draft ?: Drafts.file(draftKey)
+        if (current?.editor?.dirty == true) { draft = current; afterLeaving = action; leaving = true }
+        else action()
+    }
+    val exit = { requestLeave { Drafts.flushNow(); if (onBrowse != null) onBrowse() else onClose() } }
+    val close = { requestLeave { scope.launch { saving = true; try { if (!recovery.ready || draft == null || discard()) onClose() } finally { saving = false } } }; Unit }
+    fun runSaved() {
+        if (saving) return
+        scope.launch {
+            if (saving) return@launch
+            saving = true
+            try {
+                val file = guestPath
+                val root = guestRoot
+                if (readOnly || file == null || root == null) { issue("Для запуска нужна доступная для записи папка Linux"); return@launch }
+                val dirty = Drafts.fileDrafts().any { (_, d) -> d.guestPath?.let { it == root || it.startsWith(root.trimEnd('/') + "/") } == true }
+                if (dirty) { issue("Сначала сохраните или отмените правки остальных файлов этой папки"); return@launch }
+                val result = withContext(Dispatchers.IO) {
+                    val guard = runGuard()
+                    if (guard is Outcome.Failure) guard else {
+                        val bytes = tree.read(path, TextFile.MAX_EDIT_BYTES)
+                        when {
+                            bytes is Outcome.Failure -> bytes
+                            bytes is Outcome.Success && original?.contentEquals(bytes.value) != true -> Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.STATE_CONFLICT, "Файл изменился снаружи; откройте его заново")
+                            !LinuxSetup.available(context) || LinuxSetup.environment(context).installed() == null -> Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.OPERATION_NOT_ALLOWED, "Сначала установите Linux в приложении")
+                            else -> com.dpsmpx.dpai.ui.EditorTerminalRun.argv(file, root, command)
+                        }
+                    }
+                }
+                if (result is Outcome.Failure) issue(result.errors.first().message)
+                else TerminalActivity.startCode(context, file, root, command)
+            } finally { saving = false }
         }
     }
-    val editorActions = EditorCallbacks(save = { scope.launch { editing?.let { saveEdit(it) } } }, close = leave,
-        browse = { Drafts.flushNow(); onBrowse?.invoke() }, next = onNext, busy = saving)
-    SideEffect { onActions(editorActions) }
-    if (leaving) {
-        AlertDialog(
-            onDismissRequest = { leaving = false },
-            title = { Text("Сохранить правку?") },
-            text = { Text("В «${FileNames.name(path)}» есть несохранённые изменения.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    leaving = false
-                    scope.launch { editing?.let { if (saveEdit(it) && dropEdit()) onClose() } }
-                }, enabled = !readOnly) { Text("Сохранить") }
-            },
-            dismissButton = {
-                Row {
-                    TextButton(onClick = {
-                        leaving = false
-                        scope.launch {
-                            saving = true
-                            try { if (dropEdit()) onClose() } finally { saving = false }
-                        }
-                    }) { Text("Не сохранять", color = MaterialTheme.colorScheme.error) }
-                    TextButton(onClick = { leaving = false }) { Text("Отмена") }
-                }
-            },
-        )
+    fun run() {
+        if (command.isBlank()) { configureOnly = false; configure = true }
+        else requestLeave { runSaved() }
     }
+    val callbacks = EditorCallbacks(save = { scope.launch { save() } }, close = close, browse = exit, next = onNext, busy = saving,
+        canSave = !readOnly && recovery.ready && draft?.editor?.dirty == true,
+        preview = { if (!saving) editing = false }, exit = exit, run = { run() }, configureRun = { configureOnly = true; configure = true })
+    SideEffect { onActions(callbacks) }
+    LaunchedEffect(recovery.ready) { if (recovery.ready && draft == null) draft = Drafts.file(draftKey) }
+    DisposableEffect(draftKey) { onDispose { Drafts.flushNow() } }
+    androidx.activity.compose.BackHandler(onBack = exit)
+    if (leaving) AlertDialog(onDismissRequest = { leaving = false; afterLeaving = null }, title = { Text("Есть несохранённые изменения") },
+        text = { Text("Сохранить «${FileNames.name(path)}» ?") },
+        confirmButton = { TextButton(enabled = !saving && !readOnly, onClick = { scope.launch {
+            if (save()) { val action = afterLeaving; afterLeaving = null; leaving = false; action?.invoke() }
+        } }) { Text("Сохранить") } },
+        dismissButton = { TextButton(enabled = !saving, onClick = { scope.launch {
+            saving = true
+            val discarded = try { discard() } finally { saving = false }
+            if (discarded) { val action = afterLeaving; afterLeaving = null; leaving = false; action?.invoke() }
+        } }) { Text("Отменить изменения") } })
+    if (configure) AlertDialog(onDismissRequest = { configure = false }, title = { Text("Команда запуска") },
+        text = { Column { Text("Рабочая папка: ${guestRoot ?: "нет Linux-пути"}. Путь текущего файла доступен как DPAI_FILE.")
+            androidx.compose.material3.OutlinedTextField(command, { if (it.length <= 4096) command = it }, label = { Text("Команда проекта") }) } },
+        confirmButton = { TextButton(enabled = command.isNotBlank(), onClick = {
+            val root = IdeState.state.value.roots[sessionKey] ?: com.dpsmpx.dpai.ui.EditorRootSession()
+            IdeState.root(sessionKey, root.copy(runCommand = command)); configure = false
+            if (!configureOnly) requestLeave { runSaved() }
+        }) { Text(if (configureOnly) "Сохранить команду" else "Запустить") } }, dismissButton = { TextButton(onClick = { configure = false }) { Text("Отмена") } })
     LaunchedEffect(path) {
         withContext(Dispatchers.IO) {
             when (val r = tree.read(path, if (image) IMAGE_MAX else TextFile.MAX_EDIT_BYTES)) {
                 is Outcome.Failure -> error = r.errors.first().message
                 is Outcome.Success -> if (image) {
                     bitmap = decodeImage(r.value)
-                    if (bitmap == null) error = "картинка не читается"
-                } else {
-                    when (val t = TextFile.decode(r.value)) {
-                        is Outcome.Success -> { text = t.value; original = r.value }
-                        is Outcome.Failure -> error = t.errors.first().message
-                    }
+                    if (bitmap == null) error = "Картинка не читается"
+                } else when (val decoded = TextFile.decode(r.value)) {
+                    is Outcome.Success -> { text = decoded.value; original = r.value }
+                    is Outcome.Failure -> error = decoded.errors.first().message
                 }
             }
         }
         loading = false
     }
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = { if (onBrowse != null) { Drafts.flushNow(); onBrowse() } else leave() }, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("←") }
-            Text(FileNames.name(path), Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            val t = text
-            if (t != null && original != null && editing == null) TextButton(enabled = recovery.ready && !readOnly && !saving, onClick = {
-                editing = Drafts.startFile(draftKey, original!!, t, guestPath)
-                if (editing == null) status = Drafts.startFailure(draftKey)
-            }) { Text("Править") }
-            editing?.let { e ->
-                TextButton(enabled = !readOnly && !saving && !loading, onClick = { scope.launch { saveEdit(e) } }) { Text(if (saving) "Сохраняю…" else "Сохранить") }
-                TextButton(enabled = !saving, onClick = drop) { Text("Отмена") }
-            }
+        if (!zen) {
+            if (readOnly) Text("Только чтение: дерево занято или контроллер не готов", Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.bodySmall)
+            if (!recovery.ready) Text(recovery.note, Modifier.padding(horizontal = 8.dp), color = MaterialTheme.colorScheme.error)
+            if (draft != null) Text(Drafts.checkpoint(draftKey), Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.bodySmall)
+            status?.let { Text(it, Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.bodySmall) }
         }
-        if (readOnly) Text("Только чтение: дерево занято или контроллер не готов", Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.bodySmall)
-        if (!recovery.ready) Text(recovery.note, Modifier.padding(horizontal = 12.dp), color = MaterialTheme.colorScheme.error)
-        editing?.let { e ->
-            Text(Drafts.checkpoint(draftKey), Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.bodySmall)
-            if (e.restored) Text("Восстановлен черновик; исходный файл не изменён", Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.bodySmall)
-        }
-        status?.let { Text(it, Modifier.padding(horizontal = 12.dp), style = MaterialTheme.typography.bodySmall) }
-        error?.let { Text(it, Modifier.padding(12.dp), color = MaterialTheme.colorScheme.error) }
-        val e = editing
+        error?.let { Text(it, Modifier.padding(8.dp), color = MaterialTheme.colorScheme.error) }
+        val source = text
+        val preview = remember(source) { source?.let { com.dpsmpx.dpai.ui.CodeEditorBuffer(it) } }
+        val buffer = draft?.editor ?: preview
         when {
-            e != null -> Clipboard.Sensitive {
-                CodeEditor(e.editor, path, revision, onChange = { revision++; Drafts.changed(draftKey) }, enabled = recovery.ready && !readOnly && !saving, modifier = Modifier.weight(1f).fillMaxWidth(), callbacks = editorActions, guestPath = guestPath, guestRoot = guestRoot)
+            buffer != null -> Clipboard.Sensitive {
+                CodeEditor(buffer, path, revision, onChange = { revision++; if (draft != null) Drafts.changed(draftKey) },
+                    enabled = editing && recovery.ready && !readOnly && !saving,
+                    modifier = Modifier.weight(1f).fillMaxWidth(), callbacks = callbacks, guestPath = guestPath, guestRoot = guestRoot,
+                    presentation = true, editing = editing, onActivate = if (!readOnly && recovery.ready && !saving) ({
+                        if (!editing) {
+                            val started = draft ?: Drafts.startFile(draftKey, original ?: byteArrayOf(), source.orEmpty(), guestPath)
+                            if (started == null) issue(Drafts.startFailure(draftKey)) else {
+                                if (draft == null) started.editor.select(buffer.state.selection.start, buffer.state.selection.end)
+                                draft = started; editing = true
+                            }
+                        }
+                    }) else null)
             }
             bitmap != null -> Image(bitmap!!, FileNames.name(path), Modifier.fillMaxSize().padding(8.dp))
-            text != null && text.orEmpty().length <= WHOLE_TEXT_MAX -> SelectionContainer(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)) {
-                Text(text.orEmpty(), style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace))
-            }
-            // Большой файл (до 2 МиБ) — по строкам (AI:A-25): одним Text он раскладывался бы целиком на каждом кадре.
-            text != null -> {
-                val lines = remember(text) { text.orEmpty().lines() }
-                SelectionContainer(Modifier.fillMaxSize()) {
-                    LazyColumn(contentPadding = androidx.compose.foundation.layout.PaddingValues(12.dp)) {
-                        items(lines.size, key = { it }) { i -> Text(lines[i], style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)) }
-                    }
-                }
-            }
-            error == null -> CircularProgressIndicator(Modifier.padding(12.dp))
+            loading && error == null -> CircularProgressIndicator(Modifier.padding(12.dp))
         }
     }
 }
-
-/** Текст файла до стольких знаков — одним блоком (выделение через строки); больше — по строкам. */
-private const val WHOLE_TEXT_MAX = 64 * 1024
 
 /** Картинка больше этого не читается в память целиком. */
 private const val IMAGE_MAX: Long = 32L * 1024 * 1024

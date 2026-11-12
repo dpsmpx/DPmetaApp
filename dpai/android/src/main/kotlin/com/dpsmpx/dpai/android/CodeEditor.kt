@@ -16,6 +16,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -41,7 +42,16 @@ import kotlinx.coroutines.withContext
 /** Инструменты IDE над нативным полем; снимки, история и восстановление остаются общими (D-136). */
 @Composable
 internal fun CodeEditor(buffer: CodeEditorBuffer, path: String, revision: Int, onChange: () -> Unit, enabled: Boolean = true,
-    modifier: Modifier = Modifier, callbacks: EditorCallbacks = EditorCallbacks(), guestPath: String? = null, guestRoot: String? = null) {
+    modifier: Modifier = Modifier, callbacks: EditorCallbacks = EditorCallbacks(), guestPath: String? = null, guestRoot: String? = null, presentation: Boolean = false, editing: Boolean = enabled, onActivate: (() -> Unit)? = null) {
+    val settings by IdeState.state.collectAsState()
+    val zen = presentation && settings.options.zen
+    val syntax = if (editing) settings.options.editorSyntax else settings.options.previewSyntax
+    val chrome = LocalIdeChrome.current
+    val owner = remember { Any() }
+    androidx.compose.runtime.DisposableEffect(owner, presentation) {
+        if (presentation) chrome.enter(owner)
+        onDispose { if (presentation) chrome.leave(owner) }
+    }
     var marks by remember { mutableStateOf<List<com.dpsmpx.dpai.lsp.Assist.Mark>>(emptyList()) }
     var searching by rememberSaveable(path) { mutableStateOf(false) }
     var query by rememberSaveable(path) { mutableStateOf("") }
@@ -92,7 +102,7 @@ internal fun CodeEditor(buffer: CodeEditorBuffer, path: String, revision: Int, o
         }
     }
     Column(modifier) {
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+        if (!zen) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
             TextButton(enabled = enabled && buffer.canUndo, onClick = { command(EditorCommand.UNDO) }) { Text("↶") }
             TextButton(enabled = enabled && buffer.canRedo, onClick = { command(EditorCommand.REDO) }) { Text("↷") }
             TextButton(onClick = { searching = !searching }) { Text("Поиск") }
@@ -100,8 +110,10 @@ internal fun CodeEditor(buffer: CodeEditorBuffer, path: String, revision: Int, o
             TextButton(onClick = { view = !view }) { Text("Вид / команды") }
             TextButton(onClick = { changes = true }) { Text("Правки") }
         }
-        if (view) {
+        if (view && !zen) {
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+                FilterChip(settings.options.previewSyntax, { IdeState.options(settings.options.copy(previewSyntax = !settings.options.previewSyntax)) }, label = { Text("Подсветка просмотра") })
+                FilterChip(settings.options.editorSyntax, { IdeState.options(settings.options.copy(editorSyntax = !settings.options.editorSyntax)) }, label = { Text("Подсветка редактора") })
                 FilterChip(wrap, { wrap = !wrap }, label = { Text("Перенос") })
                 FilterChip(symbols, { symbols = !symbols }, label = { Text("Клавиши") })
                 TextButton(enabled = fontSize > 10, onClick = { fontSize-- }) { Text("A−") }
@@ -118,7 +130,7 @@ internal fun CodeEditor(buffer: CodeEditorBuffer, path: String, revision: Int, o
             }
             Text("Ctrl+S — сохранить · Ctrl+F/H — поиск/замена · Ctrl+G — строка · Ctrl+/ — комментарий · Ctrl+D — дубль · Alt+↑/↓ — строки · Ctrl+Tab — вкладка · Ctrl+W — закрыть · Ctrl+P — файлы", Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.bodySmall)
         }
-        if (symbols) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+        if (symbols && editing && !zen) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
             TextButton(enabled = enabled, onClick = { command(EditorCommand.INDENT) }) { Text("Tab →") }
             TextButton(enabled = enabled, onClick = { command(EditorCommand.UNINDENT) }) { Text("← Tab") }
             for (pair in listOf("()", "[]", "{}", "\"\"", "''")) TextButton(enabled = enabled, onClick = {
@@ -144,10 +156,10 @@ internal fun CodeEditor(buffer: CodeEditorBuffer, path: String, revision: Int, o
                 Text("${matches.ranges.size}${if (matches.limited) "+" else ""}", Modifier.padding(12.dp))
             }
         }
-        Text("${CodeSyntax.language(path)} · ${position.first}:${position.second} · ${if (EditorActions.separator(buffer.text) == "\r\n") "CRLF" else "LF"}", Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.labelSmall)
-        note?.let { Text(it, Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.bodySmall) }
-        if (guestPath != null && guestRoot != null) CodeAssist(buffer, guestPath, guestRoot, revision, enabled, width, tabs, onChange = { changed() }, onMarks = { marks = it })
-        NativeCodeField(buffer, path, revision, enabled, wrap, fontSize, width, tabs, marks, onChange, ::command,
+        if (!zen) Text("${CodeSyntax.language(path)} · ${position.first}:${position.second} · ${if (EditorActions.separator(buffer.text) == "\r\n") "CRLF" else "LF"}", Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.labelSmall)
+        if (!zen) note?.let { Text(it, Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.bodySmall) }
+        if (guestPath != null && guestRoot != null) CodeAssist(buffer, guestPath, guestRoot, revision, enabled, width, tabs, onChange = { changed() }, onMarks = { marks = it }, compact = zen)
+        NativeCodeField(buffer, path, revision, enabled, wrap, fontSize, width, tabs, marks, syntax, onActivate, onChange, ::command,
             onPosition = { line, column -> position = line to column }, onIssue = { note = it }, onZoom = { fontSize = it }, modifier = Modifier.weight(1f).fillMaxWidth())
     }
     if (lineDialog) {

@@ -16,8 +16,9 @@ open class DpaiApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         Drafts.install(this)
+        IdeState.install(this)
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
-            override fun onActivityStopped(activity: android.app.Activity) = Drafts.flushNow()
+            override fun onActivityStopped(activity: android.app.Activity) { Drafts.flushNow(); IdeState.flush() }
             override fun onActivityCreated(activity: android.app.Activity, state: android.os.Bundle?) = Unit
             override fun onActivityStarted(activity: android.app.Activity) = Unit
             override fun onActivityResumed(activity: android.app.Activity) = Unit

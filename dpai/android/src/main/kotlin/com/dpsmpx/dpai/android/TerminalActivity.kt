@@ -125,6 +125,15 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         if (intent?.getBooleanExtra(EXTRA_LINUX, false) == true) {
             // «Открыть в терминале» вкладки «Файлы» (D-99): оболочка гостя сразу в этой папке.
             val dir = intent.getStringExtra(EXTRA_DIR)
+            val code = intent.getStringExtra(EXTRA_RUN_FILE)
+            val run = intent.getStringExtra(EXTRA_RUN_COMMAND)
+            if (code != null && run != null && dir != null) {
+                when (val plan = com.dpsmpx.dpai.ui.EditorTerminalRun.argv(code, dir, run)) {
+                    is Outcome.Success -> show(TerminalHub.open(this, null, plan.value, "▶ ${code.substringAfterLast('/')}"))
+                    is Outcome.Failure -> android.widget.Toast.makeText(this, plan.errors.first().message, android.widget.Toast.LENGTH_LONG).show()
+                }
+                return
+            }
             show(
                 if (dir == null) {
                     TerminalHub.openLinux(this)
@@ -760,6 +769,8 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
         const val EXTRA_CLAUDE = "com.dpsmpx.dpai.terminal.CLAUDE"
         const val EXTRA_LOGIN = "com.dpsmpx.dpai.terminal.LOGIN"
         const val EXTRA_LINUX = "com.dpsmpx.dpai.terminal.LINUX"
+        private const val EXTRA_RUN_FILE = "com.dpsmpx.dpai.terminal.RUN_FILE"
+        private const val EXTRA_RUN_COMMAND = "com.dpsmpx.dpai.terminal.RUN_COMMAND"
         const val EXTRA_DIR = "com.dpsmpx.dpai.terminal.DIR"
 
         /**
@@ -795,6 +806,14 @@ class TerminalActivity : ComponentActivity(), TerminalHub.Observer {
             if (targetId != null) i.putExtra(EXTRA_TARGET, targetId).putExtra(EXTRA_CLAUDE, claude).putExtra(EXTRA_LOGIN, login)
             if (context !is Activity) i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(i)
+        }
+
+        /** Явный запуск в собственной PTY, без ввода команды в уже работающую программу (D-138). */
+        internal fun startCode(context: Context, file: String, dir: String, command: String) {
+            val intent = Intent(context, TerminalActivity::class.java).putExtra(EXTRA_LINUX, true)
+                .putExtra(EXTRA_DIR, dir).putExtra(EXTRA_RUN_FILE, file).putExtra(EXTRA_RUN_COMMAND, command)
+            if (context !is Activity) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
         }
 
         /** Открыть терминал Linux-среды в приложении (D-75, шаг 5); [dir] — каталог гостя, в котором начать (D-99). */

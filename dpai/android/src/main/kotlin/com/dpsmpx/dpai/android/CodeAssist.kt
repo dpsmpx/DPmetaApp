@@ -53,7 +53,7 @@ import kotlinx.coroutines.withContext
  * диагностикой (доли секунды).
  */
 @Composable
-internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: String, revision: Int, enabled: Boolean, tabSize: Int, tabs: Boolean, onChange: () -> Unit, onMarks: (List<Assist.Mark>) -> Unit) {
+internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: String, revision: Int, enabled: Boolean, tabSize: Int, tabs: Boolean, onChange: () -> Unit, onMarks: (List<Assist.Mark>) -> Unit, compact: Boolean = false) {
     val language = Clangd.languageId(guestPath) ?: return
     val context = LocalContext.current.applicationContext
     val scope = rememberCoroutineScope()
@@ -128,7 +128,7 @@ internal fun CodeAssist(buffer: CodeEditorBuffer, guestPath: String, guestRoot: 
         }
     }
 
-    Column(Modifier.fillMaxWidth()) {
+    if (!compact) Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
             when (state) {
                 CodeService.State.Off -> {
