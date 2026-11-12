@@ -172,8 +172,11 @@ fun FilesPane(onLinux: () -> Unit = {}, model: DemoModel? = null, onSession: (St
             }
         }
     }
+    val roots = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     place?.let { p ->
-        Browser(p, onPlace = { placeKey = it.key() }) { placeKey = null }
+        roots.SaveableStateProvider(p.copy(dir = "").key()) {
+            Browser(p, onPlace = { placeKey = it.key() }) { placeKey = null }
+        }
         return
     }
     // Готова ли среда — файл на диске: не в главном потоке и не на каждую перекомпозицию (AI:A-16).
