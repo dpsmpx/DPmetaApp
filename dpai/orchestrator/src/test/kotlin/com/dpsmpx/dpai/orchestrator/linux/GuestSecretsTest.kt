@@ -52,4 +52,16 @@ class GuestSecretsTest {
         assertTrue("DPMETA_ANTHROPIC_API_KEY" in claude && "GH_TOKEN" in claude)
         assertEquals(listOf("GH_TOKEN"), GuestSecrets.names(listOf(GuestSecrets.Issued("GH_TOKEN", sample("g")), GuestSecrets.Issued("HF_TOKEN", Secret("")))))
     }
+
+    @Test
+    fun customNameIsAnOrdinaryVariableNotAManagedOrSystemOne() {
+        assertEquals("MY_SERVICE_TOKEN", GuestSecrets.customName("  MY_SERVICE_TOKEN ").valueOrNull())
+        assertEquals("S3_KEY2", GuestSecrets.customName("S3_KEY2").valueOrNull())
+        for (bad in listOf("", "my_token", "1TOKEN", "_TOKEN", "A B", "A-B", "ТОКЕН", "A".repeat(65), "DPMETA_X", "GH_TOKEN", "ANTHROPIC_API_KEY",
+            "PATH", "HOME", "LD_PRELOAD", "GIT_SSH_COMMAND", "PROOT_TMP_DIR", "CLAUDE_CONFIG_DIR", "NODE_OPTIONS", "PYTHONPATH", "BASH_ENV")) {
+            assertTrue(GuestSecrets.customName(bad) is com.dpsmpx.dpai.core.result.Outcome.Failure, "«$bad» принят")
+        }
+        // Всё, что перекрывает вход слота, — управляется приложением и своим секретом не задаётся.
+        for (v in GuestSecrets.SLOT_OVERRIDING) assertTrue(GuestSecrets.customName(v) is com.dpsmpx.dpai.core.result.Outcome.Failure, v)
+    }
 }

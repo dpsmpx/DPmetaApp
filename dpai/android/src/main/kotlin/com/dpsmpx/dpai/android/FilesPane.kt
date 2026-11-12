@@ -434,8 +434,16 @@ private fun BrowserContent(p: Place, onPlace: (Place) -> Unit, onClose: () -> Un
     }
     var searching by androidx.compose.runtime.saveable.rememberSaveable(rootKey) { mutableStateOf(false) }
     if (searching) {
-        val tree = remember(rootKey) { treeOf(context, p) }
-        TreeSearchPanel(tree, p.dir, rootKey, onOpen = { searching = false; openFiles.open(it) }, onOpenAt = { path, line -> searching = false; openFiles.openAt(path, line) }) { searching = false }
+        val profiles = remember { Controller.get(context.filesDir).manualProfiles }
+        // Запись замены — тем же путём, что «Сохранить» редактора: под замком ручных профилей.
+        val tree = remember(rootKey) {
+            val inner = treeOf(context, p)
+            object : FileTree by inner {
+                override fun write(path: String, bytes: ByteArray) = profiles.edit { inner.write(path, bytes) }
+            }
+        }
+        TreeSearchPanel(tree, p.dir, rootKey, onOpen = { searching = false; openFiles.open(it) }, onOpenAt = { path, line -> searching = false; openFiles.openAt(path, line) },
+            replaceBlocked = "закройте вкладки файлов этого места".takeIf { openFiles.tabs.paths.isNotEmpty() }) { searching = false }
         return
     }
     Column(Modifier.fillMaxSize()) {
@@ -595,7 +603,11 @@ private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readO
                         }
                     }
                 }
+                // Запуск и сборка из редактора — в Linux приложения: размер неизвестен и часто нулевой, поэтому
+                // проверяются только жёсткий запас и предел (DPmetaApp:D-113), без оценки в гигабайт.
+                val space = StorageSpace.check(context, com.dpsmpx.dpai.storage.space.SpaceGuard.Kind.BUILD, 0, "запуск из редактора")
                 if (result is Outcome.Failure) issue(result.errors.first().message)
+                else if (space is Outcome.Failure) issue(space.diagnostics.first().message)
                 else TerminalActivity.startCode(context, file, root, command, editorRootKey)
             } finally { saving = false }
         }

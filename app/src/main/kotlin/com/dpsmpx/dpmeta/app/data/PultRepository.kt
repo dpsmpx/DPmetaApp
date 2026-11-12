@@ -546,7 +546,9 @@ class PultRepository(
         val regKeys = reg.shown.map { if (it.dir != null) host.toString() else it.slug.toString() }.toSet()
         val chosen = selected.map { s -> regKeys.firstOrNull { it.equals(s, ignoreCase = true) } ?: s }.toSet()
         val reader = CloneReader(clones, GitHubReader(gh, host), host, Rules::isBuildBranch, CloneReader.HistoryRules(Rules.HISTORY_ZONE, Rules.AI_AUTHORS, Rules.HUMAN_AUTHORS)) { it in chosen }
-        val cloned = cloneAll(reg, clones, reader, token, chosen, progress)
+        // Размер нового клона — по ответу GitHub; не ответил — оценка вида работы (D-113).
+        val sizeOf = { key: String -> RepoRef.parse(key).valueOrNull()?.let { gh.repoSize(it).valueOrNull() } }
+        val cloned = cloneAll(reg, clones, reader, token, chosen, sizeOf, progress)
         progress("Источники…")
         val result = Sync.run(Sync.plan(reg, known, carried.map { it.project to it.kind }.toSet()), reader, clock, commits, parallel)
         val state = EcosystemState.derive(reg, result.observations, result.failures + cloned.failures + carried, previous, clock.now())
@@ -582,7 +584,7 @@ class PultRepository(
      * работа ИИ в клоне — не конфликт, перезаписанная на GitHub история —
      * сведение в строке итога.
      */
-    private fun cloneAll(reg: Registry, clones: com.dpsmpx.dpmeta.git.Clones, reader: CloneReader, token: Secret, selected: Set<String>, progress: (String) -> Unit): Cloned {
+    private fun cloneAll(reg: Registry, clones: com.dpsmpx.dpmeta.git.Clones, reader: CloneReader, token: Secret, selected: Set<String>, sizeOf: (String) -> Long?, progress: (String) -> Unit): Cloned {
         val byKey = reg.shown.groupBy { reader.key(it) }
         val now = clock.now()
         // Только отмеченные автором (D-70) — из реестра и любые другие репозитории аккаунта.
@@ -590,6 +592,10 @@ class PultRepository(
             clonePool.submit<Pair<String, Outcome<com.dpsmpx.dpmeta.git.Clones.Report>>> {
                 // «Отменить» (UX-10) — между репозиториями: ещё не начатый клон не трогается.
                 if (cancel.get()) return@submit key to Outcome.failure(DiagCode.CANCELLED_BY_USER, "отменено", key)
+                // Новый клон не начинается без места (D-113): обновление уже лежащего клона — малые догрузки, не проверяется.
+                if (!java.io.File(clones.dir(cloneKey(key)), ".git").isDirectory) {
+                    (spaceCheck(key, cloneNeed(sizeOf(key))) as? Outcome.Failure)?.let { return@submit key to it }
+                }
                 // Сбой одного клона — его отказ, а не исключение из get(): иначе остальные клоны шли бы без защиты running.
                 key to runCatching { clones.sync(key, com.dpsmpx.dpmeta.git.Clones.github(key), token, Rules::isBuildBranch) }
                     .getOrElse { Outcome.failure(DiagCode.INTERNAL_ERROR, "клон: ${it.javaClass.simpleName}", key) }
@@ -635,6 +641,21 @@ class PultRepository(
     }
 
     companion object {
+        /**
+         * Защита места перед новым клоном (D-113, `DP_AI_Orcestrator:D-143`): факты о
+         * месте и предел автора знает оболочка приложения — она и ставит проверку;
+         * без неё (тесты, отдельный пульт) клон не ограничен.
+         */
+        @Volatile
+        var spaceCheck: (repository: String, need: Long?) -> Outcome<Unit> = { _, _ -> Outcome.success(Unit) }
+
+        /**
+         * Место под новый клон по размеру репозитория на GitHub: история и рабочее
+         * дерево — вдвое больше названного GitHub; размер неизвестен — `null`
+         * (защита берёт оценку вида работы).
+         */
+        fun cloneNeed(githubBytes: Long?): Long? = githubBytes?.let { it * 2 }
+
         const val HOST = "dpsmpx/DPmetaApp"
         const val REGISTRY = "dpmeta/tools/ecosystem.toml"
 

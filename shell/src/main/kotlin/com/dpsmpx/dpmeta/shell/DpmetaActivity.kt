@@ -29,6 +29,11 @@ class DpmetaActivity : PultActivity() {
         super.onCreate(savedInstanceState)
         // Служба «AI» и разрешение на уведомления — уже с пульта, а не только из вкладки «AI» (UX-4).
         AiBackground.attach(this)
+        // Новый клон пульта — под той же защитой места, что загрузки и установки «AI» (D-113).
+        val app = applicationContext
+        com.dpsmpx.dpmeta.app.data.PultRepository.spaceCheck = { repository, need ->
+            com.dpsmpx.dpai.android.StorageSpace.check(app, com.dpsmpx.dpai.storage.space.SpaceGuard.Kind.CLONE, need, repository)
+        }
     }
 
     // Окно «AI» — одно: уже открытое выходит вперёд, второго экземпляра нет (UX-1).
@@ -39,7 +44,7 @@ class DpmetaActivity : PultActivity() {
 
     // Настройки — одним документом (D-112): «Оформление», «Хранилище и секреты», «AI» — подсистемы, блок пульта — слотом.
     override val settingsDocument: @androidx.compose.runtime.Composable (query: String, projects: @androidx.compose.runtime.Composable () -> Unit) -> Unit =
-        { query, projects -> com.dpsmpx.dpai.android.SettingsDocument(projects, query) { startActivity(MainActivity.settings(this)) } }
+        { query, projects -> com.dpsmpx.dpai.android.SettingsDocument(projects, query) { sub -> startActivity(MainActivity.settings(this, sub)) } }
 
     // Пункт «IDE» левой панели (D-112): окно «AI» на «Файлах» — дерево, редактор, терминал проекта.
     override fun ideIntent(): Intent = MainActivity.ide(this)

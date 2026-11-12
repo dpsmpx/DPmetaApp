@@ -17,7 +17,7 @@ import androidx.activity.enableEdgeToEdge
  * подтверждения на экране (D-44). Экран забирает и очищает.
  */
 /** Что пришло в окно «AI»: ссылка, подтверждение, остановка или вкладка ([tab] — имя `AiTab`, пункт панели приложения, D-112). */
-data class Incoming(val link: String? = null, val confirm: String? = null, val stop: Boolean = false, val tab: String? = null, val settings: Boolean = false)
+data class Incoming(val link: String? = null, val confirm: String? = null, val stop: Boolean = false, val tab: String? = null, val settings: Boolean = false, val settingsSub: String? = null)
 
 /** Единственная activity: экраны — Compose (D-34), данные — контроллер или демо (D-35). */
 class MainActivity : ComponentActivity() {
@@ -34,7 +34,8 @@ class MainActivity : ComponentActivity() {
             CONFIRM -> intent.getStringExtra(EXTRA_URI)?.let { incoming.value = Incoming(confirm = it) }
             STOP_CONFIRM -> incoming.value = Incoming(stop = true)
             OPEN_TAB -> intent.getStringExtra(EXTRA_TAB)?.let { incoming.value = Incoming(tab = it) }
-            OPEN_SETTINGS -> incoming.value = Incoming(settings = true)
+            // Подэкран — только из известного списка: чужая строка открывает корень настроек.
+            OPEN_SETTINGS -> incoming.value = Incoming(settings = true, settingsSub = intent.getStringExtra(EXTRA_SUB)?.takeIf { it in SETTINGS_SUBS })
         }
     }
 
@@ -103,7 +104,11 @@ class MainActivity : ComponentActivity() {
         /** «Настройки AI» из документа настроек приложения (`DPmetaApp:D-112`). */
         const val OPEN_SETTINGS = "com.dpsmpx.dpai.OPEN_SETTINGS"
 
-        fun settings(context: Context): Intent = internal(context).setAction(OPEN_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+        private const val EXTRA_SUB = "sub"
+
+        /** [sub] — подэкран («Linux в приложении», «Журнал»…): `null` — корень настроек. */
+        fun settings(context: Context, sub: String? = null): Intent =
+            internal(context).setAction(OPEN_SETTINGS).putExtra(EXTRA_SUB, sub).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
 
         /** Пункт «IDE» левой панели приложения: «Файлы» — дерево, редактор и терминал проекта. */
         fun ide(context: Context): Intent = tab(context, com.dpsmpx.dpai.ui.AiTab.FILES)

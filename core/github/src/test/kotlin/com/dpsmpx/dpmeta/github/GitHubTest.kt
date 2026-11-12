@@ -113,6 +113,15 @@ class GitHubTest {
     }
 
     @Test
+    fun repoSizeIsBytesAndUnknownIsNull() {
+        val repo = RepoRef.parse("dpsmpx/DPmetaApp").valueOrNull()!!
+        val known = GitHub(Net(Fake(mapOf("/repos/dpsmpx/DPmetaApp" to (200 to "{\"full_name\":\"dpsmpx/DPmetaApp\",\"size\":2048}")))), Secret("t"))
+        assertEquals(2048L * 1024, (known.repoSize(repo) as Outcome.Success).value)
+        val unknown = GitHub(Net(Fake(mapOf("/repos/dpsmpx/DPmetaApp" to (200 to "{\"full_name\":\"dpsmpx/DPmetaApp\"}")))), Secret("t"))
+        assertEquals(null, (unknown.repoSize(repo) as Outcome.Success).value, "неизвестное — не ноль")
+    }
+
+    @Test
     fun mapsStatusesToCodes() {
         fun code(status: Int, headers: Map<String, List<String>> = emptyMap()): DiagCode {
             val gh = GitHub(Net(Fake(mapOf("/repos/example/Alpha/branches?per_page=100" to (status to "{}")), headers)), null)

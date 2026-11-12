@@ -83,7 +83,7 @@ fun AiSettingsPane(controller: Controller, model: DemoModel, sub: String?, onSub
             }
         }
         if (appSettings != null) {
-            item(key = "app") { Entry("Оформление, хранилище и секреты", "в настройках приложения — одним документом") { context.startActivity(appSettings) } }
+            item(key = "app") { Entry("Все настройки приложения", "оформление, хранилище, секреты, управление, копии — одним документом с поиском") { context.startActivity(appSettings) } }
         } else {
             item(key = "look") { LookCard() }
         }
@@ -91,34 +91,37 @@ fun AiSettingsPane(controller: Controller, model: DemoModel, sub: String?, onSub
         item(key = "github") { Entry("PR на GitHub", "открытые PR проекта, проверки, отзывы — через gh") { onSub(GITHUB) } }
         item(key = "routines") { Entry("Маршруты Claude Code", "облачные сессии по токену маршрута — для поручений из пульта") { onSub(ROUTINES) } }
         item(key = "log") { Entry("Журнал", "строки журнала, выгрузка, отладка") { onSub(LOG) } }
-        item(key = "key") { AppKeyCard(controller) }
-        item(key = "control") { ControlCard(model) }
-        // Три копии — одной карточкой (AI:A-3, §4, п. 6): копия настроек, восстановление доступа, облако.
-        item(key = "copies") {
-            Card(Modifier.fillMaxWidth()) {
-                Column {
-                    Text("Копии и восстановление", Modifier.padding(start = 12.dp, top = 12.dp), style = MaterialTheme.typography.titleMedium)
-                    BackupCard(controller, framed = false, onRestoreAccess = { restoring = true }) {}
-                    if (restoring) {
+        // В DPmetaApp карточки ниже — в документе настроек приложения (D-151); здесь — отдельная сборка «AI».
+        if (appSettings == null) {
+            item(key = "key") { AppKeyCard(controller) }
+            item(key = "control") { ControlCard(model) }
+            // Три копии — одной карточкой (AI:A-3, §4, п. 6): копия настроек, восстановление доступа, облако.
+            item(key = "copies") {
+                Card(Modifier.fillMaxWidth()) {
+                    Column {
+                        Text("Копии и восстановление", Modifier.padding(start = 12.dp, top = 12.dp), style = MaterialTheme.typography.titleMedium)
+                        BackupCard(controller, framed = false, onRestoreAccess = { restoring = true }) {}
+                        if (restoring) {
+                            HorizontalDivider()
+                            RestoreCard(controller, framed = false, onHide = { restoring = false }) {}
+                        }
                         HorizontalDivider()
-                        RestoreCard(controller, framed = false, onHide = { restoring = false }) {}
+                        CloudCard(model, framed = false)
                     }
-                    HorizontalDivider()
-                    CloudCard(model, framed = false)
                 }
             }
+            item(key = "cli") { CliCard() }
+            item(key = "storage") { StorageSecretsCard() }
+            item(key = "disk") { AppDiskCard() }
+            item(key = "overlay") { OverlayCard() }
         }
-        item(key = "cli") { CliCard() }
-        if (appSettings == null) item(key = "storage") { StorageSecretsCard() }
-        item(key = "disk") { AppDiskCard() }
-        item(key = "overlay") { OverlayCard() }
         item(key = "end") { androidx.compose.foundation.layout.Spacer(Modifier.height(8.dp)) }
     }
 }
 
 /** Строка-вход в свой экран настроек: название, что внутри, «▸». */
 @Composable
-private fun Entry(title: String, detail: String, onOpen: () -> Unit) {
+internal fun Entry(title: String, detail: String, onOpen: () -> Unit) {
     Card(Modifier.fillMaxWidth().clickable(onClick = onOpen)) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -130,10 +133,16 @@ private fun Entry(title: String, detail: String, onOpen: () -> Unit) {
     }
 }
 
-private const val GUIDE = "guide"
-private const val LINUX = "linux"
-private const val GITHUB = "github"
-private const val ROUTINES = "routines"
+/** Подэкраны «Настроек AI»: на них ведут ссылки документа настроек приложения (D-151). */
+internal const val SETTINGS_GUIDE = "guide"
+internal const val SETTINGS_LINUX = "linux"
+internal const val SETTINGS_GITHUB = "github"
+internal const val SETTINGS_ROUTINES = "routines"
+internal val SETTINGS_SUBS: Set<String> = setOf(SETTINGS_GUIDE, SETTINGS_LINUX, SETTINGS_GITHUB, SETTINGS_ROUTINES, "log")
+private const val GUIDE = SETTINGS_GUIDE
+private const val LINUX = SETTINGS_LINUX
+private const val GITHUB = SETTINGS_GITHUB
+private const val ROUTINES = SETTINGS_ROUTINES
 
 /** Под-экран журнала — его открывает и «Журнал» у сбоя контроллера (AI:A-17). */
 internal const val SETTINGS_LOG = "log"

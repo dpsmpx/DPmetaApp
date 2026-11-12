@@ -174,7 +174,12 @@ private fun WorkspaceFiles(model: DemoModel, view: ProjectWorkspaceView, locatio
                 onBrowse = { openFiles.finishedBrowse(path) }, onNext = openFiles::next, onActions = { openFiles.ready(path, it) }, guestRoot = location.path.trimEnd('/').ifEmpty { "/" }, editorRootKey = location.key,
                 runGuard = { model.workspaceAccess(view.project, location, true) { Outcome.success(Unit) } }, onOpen = openFiles::openAt) { openFiles.close(path) }
         } else if (searching) {
-            TreeSearchPanel(tree, dir, "workspace:${location.key}", onOpen = { searching = false; openFiles.open(it) }, onOpenAt = { found, line -> searching = false; openFiles.openAt(found, line) }) { searching = false }
+            TreeSearchPanel(tree, dir, "workspace:${location.key}", onOpen = { searching = false; openFiles.open(it) }, onOpenAt = { found, line -> searching = false; openFiles.openAt(found, line) },
+                replaceBlocked = when {
+                    readOnly -> "дерево занято или контроллер не готов"
+                    openFiles.tabs.paths.isNotEmpty() -> "закройте вкладки файлов проекта"
+                    else -> null
+                }) { searching = false }
         } else {
             Row {
                 TextButton(enabled = dir.isNotEmpty(), onClick = { dir = FileNames.parent(dir) }) { Text("Вверх") }

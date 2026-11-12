@@ -1,5 +1,6 @@
 package com.dpsmpx.dpai.files
 
+import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.result.Outcome
 
 /**
@@ -57,9 +58,137 @@ object TreeSearch {
         return Outcome.success(Result(sorted.take(limit), limitedWalk || sorted.size > limit, scanned, 0))
     }
 
+    /**
+     * Что искать: буквальный текст или регулярное выражение Java. Выражение
+     * длиннее [MAX_PATTERN], неразборное или совпадающее с пустой строкой —
+     * отказ: пустое совпадение «нашлось» бы в каждой строке.
+     */
+    class Query private constructor(private val literal: String, private val pattern: java.util.regex.Pattern?, private val ignoreCase: Boolean) {
+        val isRegex: Boolean get() = pattern != null
+
+        /** Первая находка не раньше [from]: начало и конец (не включён); `null` — нет. */
+        internal fun find(text: CharSequence, from: Int): Pair<Int, Int>? {
+            if (pattern == null) {
+                val at = text.indexOf(literal, from, ignoreCase)
+                return if (at < 0) null else at to at + literal.length
+            }
+            val m = pattern.matcher(text)
+            var start = from
+            while (start <= text.length && m.find(start)) {
+                if (m.end() > m.start()) return m.start() to m.end()
+                start = m.end() + 1
+            }
+            return null
+        }
+
+        /** Все находки заменены на [replacement]; у выражения `$1`…`$9` — группы, `\$` и `\\` — сами знаки. Итог — текст и число замен. */
+        internal fun replaceAll(text: CharSequence, replacement: String): Pair<String, Int> {
+            val out = StringBuilder(text.length)
+            var at = 0
+            var count = 0
+            if (pattern == null) {
+                while (true) {
+                    val hit = text.indexOf(literal, at, ignoreCase)
+                    if (hit < 0) break
+                    out.append(text, at, hit).append(replacement)
+                    at = hit + literal.length
+                    count++
+                }
+                out.append(text, at, text.length)
+                return out.toString() to count
+            }
+            val m = pattern.matcher(text)
+            val sb = StringBuilder()
+            while (m.find()) {
+                if (m.end() == m.start()) continue
+                m.appendReplacement(sb, replacement)
+                count++
+            }
+            m.appendTail(sb)
+            return sb.toString() to count
+        }
+
+        /** Годна ли строка замены: у выражения `$` — только с номером существующей группы, `\` — не последним. */
+        internal fun replacementProblem(replacement: String): String? {
+            val p = pattern ?: return null
+            val groups = p.matcher("").groupCount()
+            var i = 0
+            while (i < replacement.length) {
+                when (replacement[i]) {
+                    '\\' -> {
+                        if (i + 1 >= replacement.length) return "замена кончается на «\\»: напишите «\\\\» для самой черты"
+                        i++
+                    }
+                    '$' -> {
+                        val d = replacement.getOrNull(i + 1)?.digitToIntOrNull() ?: return "после «$» — номер группы: «$1»; сам знак — «\\$»"
+                        if (d > groups) return "группы $$d в выражении нет: групп — $groups"
+                        i++
+                    }
+                }
+                i++
+            }
+            return null
+        }
+
+        companion object {
+            const val MAX_PATTERN: Int = 500
+
+            fun of(text: String, ignoreCase: Boolean = true, regex: Boolean = false): Outcome<Query> {
+                if (text.isEmpty()) return Outcome.failure(DiagCode.FIELD_MISSING, "введите, что искать")
+                if (!regex) return Outcome.success(Query(text, null, ignoreCase))
+                if (text.length > MAX_PATTERN) return Outcome.failure(DiagCode.VALUE_INVALID, "выражение длиннее $MAX_PATTERN знаков")
+                val flags = java.util.regex.Pattern.MULTILINE or if (ignoreCase) java.util.regex.Pattern.CASE_INSENSITIVE or java.util.regex.Pattern.UNICODE_CASE else 0
+                val pattern = try {
+                    java.util.regex.Pattern.compile(text, flags)
+                } catch (e: java.util.regex.PatternSyntaxException) {
+                    return Outcome.failure(DiagCode.VALUE_INVALID, "выражение не разобрано: ${e.description} (знак ${e.index + 1})")
+                }
+                if (pattern.matcher("").find()) return Outcome.failure(DiagCode.VALUE_INVALID, "выражение совпадает с пустой строкой — уточните его")
+                return Outcome.success(Query("", pattern, ignoreCase))
+            }
+        }
+    }
+
+    /** Отмена и предел работы выражения: сигнал из [Guarded], наружу не выходит. */
+    private class Stop(val budget: Boolean) : RuntimeException() {
+        override fun fillInStackTrace(): Throwable = this
+    }
+
+    /**
+     * Текст для выражения с пределом работы: неудачное выражение может
+     * перебирать варианты часами. Каждое обращение к знаку считается; сверх
+     * [MAX_REGEX_STEPS] на файл — файл пропущен, отмена — обход кончен.
+     */
+    private class Guarded(private val text: String, private val cancelled: () -> Boolean) : CharSequence {
+        private var steps = 0L
+        override val length: Int get() = text.length
+
+        override fun get(index: Int): Char {
+            if (++steps and 0xFFFF == 0L) {
+                if (cancelled()) throw Stop(false)
+                if (steps > regexSteps) throw Stop(true)
+            }
+            return text[index]
+        }
+
+        override fun subSequence(startIndex: Int, endIndex: Int): CharSequence = text.subSequence(startIndex, endIndex)
+
+        override fun toString(): String = text
+    }
+
+    const val MAX_REGEX_STEPS: Long = 200_000_000
+
+    /** Действующий предел шагов выражения на файл; меняют только тесты. */
+    @Volatile
+    internal var regexSteps: Long = MAX_REGEX_STEPS
+
     /** Строки файлов с буквальным [query]; одна находка на строку — первая. */
-    fun text(tree: FileTree, query: String, ignoreCase: Boolean = true, dir: String = "", limit: Int = 300, cancelled: () -> Boolean = { false }): Outcome<Result<TextHit>> {
+    fun text(tree: FileTree, query: String, ignoreCase: Boolean = true, dir: String = "", limit: Int = 300, regex: Boolean = false, cancelled: () -> Boolean = { false }): Outcome<Result<TextHit>> {
         if (query.isEmpty()) return Outcome.success(Result(emptyList(), false, 0, 0))
+        val q = when (val r = Query.of(query, ignoreCase, regex)) {
+            is Outcome.Failure -> return r
+            is Outcome.Success -> r.value
+        }
         val hits = ArrayList<TextHit>()
         var scanned = 0
         var skipped = 0
@@ -81,9 +210,18 @@ object TreeSearch {
             var from = 0
             var line = 1
             var lineStart = 0
+            val subject: CharSequence = if (q.isRegex) Guarded(text, cancelled) else text
             while (true) {
-                val at = text.indexOf(query, from, ignoreCase)
-                if (at < 0) break
+                val found = try {
+                    q.find(subject, from)
+                } catch (stop: Stop) {
+                    // Выражение не уложилось в предел на этом файле — файл пропущен; отмена — обход кончен.
+                    if (!stop.budget) return@walk false
+                    scanned--
+                    skipped++
+                    null
+                } ?: break
+                val at = found.first
                 while (true) {
                     val next = text.indexOf('\n', lineStart)
                     if (next < 0 || next >= at) break
@@ -95,7 +233,7 @@ object TreeSearch {
                     full = true
                     return@walk false
                 }
-                hits += TextHit(path, line, at - lineStart + 1, preview(text.substring(lineStart, end).trimEnd('\r'), at - lineStart, query.length))
+                hits += TextHit(path, line, at - lineStart + 1, preview(text.substring(lineStart, end).trimEnd('\r'), at - lineStart, minOf(found.second, end) - at))
                 if (end >= text.length) break
                 from = end + 1
             }
@@ -106,6 +244,60 @@ object TreeSearch {
             is Outcome.Success -> walked.value
         }
         return Outcome.success(Result(hits, full || limitedWalk, scanned, skipped))
+    }
+
+    /** [files] — изменено файлов, [replacements] — замен; [failed] — путь и причина там, где запись не прошла. */
+    data class Replaced(val files: Int, val replacements: Int, val failed: List<Pair<String, String>>, val limited: Boolean, val skipped: Int)
+
+    /**
+     * Замена по проекту (DPmetaApp:D-116, D-150): во всех текстовых файлах под
+     * [dir] все находки [query] — на [replacement]. Файл пишется, только если
+     * он не изменился с момента чтения ([TextFileEdit.save]); отказ одного
+     * файла не останавливает остальные и назван в итоге. Отмена оставляет уже
+     * записанные файлы записанными — итог говорит, сколько их.
+     */
+    fun replace(tree: FileTree, query: String, replacement: String, ignoreCase: Boolean = true, regex: Boolean = false, dir: String = "", cancelled: () -> Boolean = { false }): Outcome<Replaced> {
+        val q = when (val r = Query.of(query, ignoreCase, regex)) {
+            is Outcome.Failure -> return r
+            is Outcome.Success -> r.value
+        }
+        q.replacementProblem(replacement)?.let { return Outcome.failure(DiagCode.VALUE_INVALID, it) }
+        var files = 0
+        var count = 0
+        var skipped = 0
+        val failed = ArrayList<Pair<String, String>>()
+        val walked = walk(tree, dir, cancelled) { path, meta ->
+            if (meta.size > MAX_FILE_BYTES) {
+                skipped++
+                return@walk true
+            }
+            val original = (tree.read(path, MAX_FILE_BYTES) as? Outcome.Success)?.value
+            val text = original?.let { (TextFile.decode(it, MAX_FILE_BYTES) as? Outcome.Success)?.value }
+            if (original == null || text == null) {
+                skipped++
+                return@walk true
+            }
+            val (changed, n) = try {
+                q.replaceAll(if (q.isRegex) Guarded(text, cancelled) else text, replacement)
+            } catch (stop: Stop) {
+                if (!stop.budget) return@walk false
+                skipped++
+                return@walk true
+            }
+            if (n == 0 || changed == text) return@walk true
+            when (val saved = TextFileEdit.save(tree, path, original, changed)) {
+                is Outcome.Failure -> failed += path to saved.diagnostics.first().message
+                is Outcome.Success -> {
+                    files++
+                    count += n
+                }
+            }
+            true
+        }
+        return when (walked) {
+            is Outcome.Failure -> walked
+            is Outcome.Success -> Outcome.success(Replaced(files, count, failed, walked.value, skipped))
+        }
     }
 
     /** Строка для списка: без отступа, не длиннее [MAX_PREVIEW], находка — в видимой части. */

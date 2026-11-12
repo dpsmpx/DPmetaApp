@@ -52,6 +52,26 @@ fun StorageSecretsCard() {
     var rows by remember { mutableStateOf<List<SecretGrants.Row>>(emptyList()) }
     var limit by remember { mutableStateOf(StorageSpace.limitGb(app).toString()) }
     var note by remember { mutableStateOf<String?>(null) }
+    var adding by remember { mutableStateOf(false) }
+    var removing by remember { mutableStateOf<SecretGrants.Row?>(null) }
+    if (adding) OwnSecretDialog(onClose = { adding = false }) { version++ }
+    removing?.let { r ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { removing = null },
+            title = { Text("Удалить «${r.name}»?") },
+            text = { Text("Значение сотрётся с телефона, ИИ и терминал перестанут получать ${r.variable.orEmpty()}. Вернуть — только ввести заново.") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    removing = null
+                    scope.launch {
+                        withContext(Dispatchers.IO) { SecretGrants.removeCustom(app, r.id) }
+                        version++
+                    }
+                }) { Text("Удалить") }
+            },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { removing = null }) { Text("Отмена") } },
+        )
+    }
     LaunchedEffect(version) {
         withContext(Dispatchers.IO) {
             space = runCatching { StorageSpace.facts(app) }.getOrNull()
@@ -102,15 +122,67 @@ fun StorageSecretsCard() {
                     note = (res as? Outcome.Failure)?.errors?.firstOrNull()?.message
                     version++
                 }
-            })
+            }, onRemove = if (SecretGrants.isCustom(r.id)) ({ removing = r }) else null)
+            OutlinedButton(onClick = { adding = true }) { Text("Добавить свой секрет") }
             note?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
         }
     }
 }
 
+/**
+ * Свой секрет автора (DPmetaApp:D-117): имя — оно же переменная окружения, значение
+ * скрыто при вводе и после сохранения не показывается нигде. Окно — без снимков экрана.
+ */
 @Composable
-private fun SecretRow(r: SecretGrants.Row, onGrant: (Boolean) -> Unit, onUnlock: () -> Unit) {
+private fun OwnSecretDialog(onClose: () -> Unit, onSaved: () -> Unit) {
+    val app = LocalContext.current.applicationContext
+    val scope = rememberCoroutineScope()
+    var name by remember { mutableStateOf("") }
+    var value by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    var saving by remember { mutableStateOf(false) }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onClose,
+        title = { Text("Свой секрет") },
+        text = {
+            // У диалога своё окно: запрет снимков ставится ему, а не активности.
+            val view = androidx.compose.ui.platform.LocalView.current
+            androidx.compose.runtime.DisposableEffect(view) {
+                val window = (view.parent as? androidx.compose.ui.window.DialogWindowProvider)?.window
+                window?.setFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE, android.view.WindowManager.LayoutParams.FLAG_SECURE)
+                onDispose { }
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Имя — переменная окружения в Linux приложения: латиница в верхнем регистре, цифры и «_». ИИ секрет получит, только когда включите «давать ИИ».", style = MaterialTheme.typography.bodyMedium)
+                OutlinedTextField(name, { name = it.uppercase().take(64); error = null }, label = { Text("Имя, например MY_SERVICE_TOKEN") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii, autoCorrectEnabled = false))
+                OutlinedTextField(value, { value = it.take(8192); error = null }, label = { Text("Значение") }, singleLine = true,
+                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false))
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(enabled = !saving, onClick = {
+                saving = true
+                scope.launch {
+                    val secret = com.dpsmpx.dpai.core.diagnostics.Secret(value)
+                    val r = withContext(Dispatchers.IO) { SecretGrants.addCustom(app, name, secret) }
+                    saving = false
+                    when (r) {
+                        is Outcome.Failure -> error = r.errors.first().message
+                        is Outcome.Success -> { value = ""; onSaved(); onClose() }
+                    }
+                }
+            }) { Text("Сохранить") }
+        },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = onClose) { Text("Отмена") } },
+    )
+}
+
+@Composable
+private fun SecretRow(r: SecretGrants.Row, onGrant: (Boolean) -> Unit, onUnlock: () -> Unit, onRemove: (() -> Unit)? = null) {
     Column(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+        onRemove?.let { remove -> Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) { androidx.compose.material3.TextButton(onClick = remove) { Text("Удалить «${r.variable.orEmpty()}»") } } }
         if (r.eligible) {
             SwitchRow(r.granted, onChange = onGrant) {
                 Column(Modifier.weight(1f)) {

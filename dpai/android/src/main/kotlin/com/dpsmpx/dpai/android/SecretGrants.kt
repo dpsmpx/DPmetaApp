@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import androidx.core.content.edit
 import com.dpsmpx.dpai.core.diagnostics.Secret
+import com.dpsmpx.dpai.core.diagnostics.DiagCode
 import com.dpsmpx.dpai.core.result.Outcome
 import com.dpsmpx.dpai.orchestrator.linux.GuestSecrets
 import java.util.concurrent.CopyOnWriteArrayList
@@ -22,6 +23,9 @@ import java.util.concurrent.atomic.AtomicReference
 object SecretGrants {
     private const val PREFS = "dpmeta.secrets"
     private const val GRANTED = "granted"
+    private const val CUSTOM_NAMES = "custom"
+    private const val CUSTOM = "custom:"
+    const val MAX_CUSTOM = 32
 
     /**
      * Секрет оболочки: [variable] — имя для ИИ (`null` — только в списке); [value] —
@@ -77,8 +81,50 @@ object SecretGrants {
             for (r in ModelsStore.routines.value) add(Source("routine:${r.id.value}", "Токен маршрута «${r.name}»", null, { ApiKeys.has(it, r.id) }, { null }))
             add(Source("cloud.token", "Токен облачной копии", null, CloudSync::hasToken, { null }))
             add(Source("cloud.passphrase", "Пароль облачной копии", null, CloudSync::hasPassphrase, { null }))
+            // Свои секреты автора (DPmetaApp:D-117): имя — оно же переменная; значение — под тем же ключом Keystore, что ключи API.
+            for (name in customNames(app)) add(Source(CUSTOM + name, "Свой секрет $name", name, { ApiKeys.hasNamed(it, CUSTOM + name) }, { ApiKeys.getNamed(it, CUSTOM + name) }))
         }
         return sources.toList() + own
+    }
+
+    private fun customNames(context: Context): List<String> = prefs(context).getStringSet(CUSTOM_NAMES, emptySet()).orEmpty().sorted()
+
+    /** Свой ли это секрет автора: его можно удалить из списка. */
+    fun isCustom(id: String): Boolean = id.startsWith(CUSTOM)
+
+    /**
+     * Добавить или заменить свой секрет (DPmetaApp:D-117): [name] проверяет
+     * `GuestSecrets.customName`, значение — в Keystore. «Давать ИИ» не включается
+     * само. В журнал — имя, без значения.
+     */
+    fun addCustom(context: Context, name: String, value: Secret): Outcome<String> {
+        val app = context.applicationContext
+        val valid = when (val n = GuestSecrets.customName(name)) {
+            is Outcome.Failure -> return n
+            is Outcome.Success -> n.value
+        }
+        if (value.isEmpty) return Outcome.failure(DiagCode.FIELD_MISSING, "введите значение секрета")
+        val names = customNames(app)
+        if (valid !in names && names.size >= MAX_CUSTOM) return Outcome.failure(DiagCode.VALUE_INVALID, "своих секретов — не больше $MAX_CUSTOM")
+        if (!ApiKeys.putNamed(app, CUSTOM + valid, value)) return Outcome.failure(DiagCode.STORAGE_IO_FAILED, "секрет не сохранён: хранилище ключей недоступно")
+        prefs(app).edit { putStringSet(CUSTOM_NAMES, (names + valid).toSet()) }
+        AppLogs.info(app, "секреты", if (valid in names) "свой секрет $valid заменён" else "добавлен свой секрет $valid")
+        StorageMap.refresh(app)
+        return Outcome.success(valid)
+    }
+
+    /** Удалить свой секрет: значение, выдачу ИИ и имя из списка. */
+    fun removeCustom(context: Context, id: String) {
+        if (!isCustom(id)) return
+        val app = context.applicationContext
+        val name = id.removePrefix(CUSTOM)
+        ApiKeys.removeNamed(app, id)
+        prefs(app).edit {
+            putStringSet(CUSTOM_NAMES, (customNames(app) - name).toSet())
+            putStringSet(GRANTED, granted(app) - id)
+        }
+        AppLogs.info(app, "секреты", "свой секрет $name удалён")
+        StorageMap.refresh(app)
     }
 
     /** Список для экрана и карты: только существующие секреты; читает Keystore — не с главного потока. */

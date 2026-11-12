@@ -128,6 +128,16 @@ class GitHub(private val net: Net, private val token: Secret?, private val api: 
         return Outcome.success(out.distinctBy { it.slug.toString() }.sortedBy { it.slug.toString().lowercase() })
     }
 
+    /**
+     * Размер репозитория на GitHub в байтах — для защиты места перед клоном (D-113).
+     * GitHub считает его в килобайтах и обновляет не сразу; поля нет — `null`:
+     * неизвестное — не ноль.
+     */
+    fun repoSize(repo: RepoRef): Outcome<Long?> = get("repos/$repo", "$repo").then { p ->
+        val o = p.value as? JsonObject ?: return@then missing("repo", "$repo")
+        Outcome.success((o["size"] as? JsonNumber)?.toLongExact()?.takeIf { it >= 0 }?.let { it * 1024 })
+    }
+
     /** Коммит по SHA — неизменяемый: вызывающий хранит уже известные и не спрашивает снова. */
     fun commit(repo: RepoRef, sha: String): Outcome<CommitInfo> {
         if (!SHA.matches(sha)) return Outcome.failure(DiagCode.VALUE_INVALID, "SHA коммита — 40 шестнадцатеричных знаков", sha)

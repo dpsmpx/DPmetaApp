@@ -37,12 +37,19 @@ import kotlinx.coroutines.launch
  * разделами, ниже — разделы с заголовками и своими полями, переключателями и
  * кнопками. Поиск оставляет разделы, в названии или словах которых есть запрос.
  * Блок пульта («Проекты и GitHub») приходит слотом [projects]: подсистема от
- * модулей пульта не зависит. [onAiSettings] — «Настройки AI» (Linux, targets,
- * маршруты, журнал, копии), пока они не перенесены сюда целиком; [initialQuery] —
- * поиск по ссылке из справки.
+ * модулей пульта не зависит. Разделы «AI» (D-151) — те же карточки, что в окне
+ * «AI», на общих контроллере и модели; экраны со своей навигацией (Linux,
+ * инструкция, PR, маршруты, журнал) открывает [onAiSettings] сразу на нужном
+ * подэкране (`null` — корень «Настроек AI»). [initialQuery] — поиск по ссылке
+ * из справки.
  */
 @Composable
-fun SettingsDocument(projects: (@Composable () -> Unit)?, initialQuery: String = "", onAiSettings: () -> Unit) {
+fun SettingsDocument(projects: (@Composable () -> Unit)?, initialQuery: String = "", onAiSettings: (sub: String?) -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    // Карточки «AI» работают с тем же контроллером и моделью, что окно «AI»: одно приложение — одно состояние (D-151).
+    val controller = remember { Controller.get(context.applicationContext.filesDir) }
+    val model = remember { DemoModel.get(context.applicationContext) }
+    var restoring by remember { mutableStateOf(false) }
     // Запрос из справки (ссылка «Настройки → тема») — сразу в поиске; новый запрос — новый поиск.
     var query by rememberSaveable(initialQuery) { mutableStateOf(initialQuery) }
     val list = rememberLazyListState()
@@ -75,13 +82,35 @@ fun SettingsDocument(projects: (@Composable () -> Unit)?, initialQuery: String =
                         LOOK -> LookCard()
                         PROJECTS -> projects?.let { block -> Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp)) { block() } } }
                         STORAGE -> StorageSecretsCard()
-                        AI -> Card(Modifier.fillMaxWidth()) {
-                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text("Linux в приложении, targets и инструкция, PR на GitHub, маршруты Claude Code, журнал, ключ доступа, копии и восстановление, окно запросов поверх приложений.", style = MaterialTheme.typography.bodyMedium)
-                                OutlinedButton(onClick = onAiSettings) { Text("Открыть настройки AI") }
-                                HorizontalDivider(Modifier.padding(vertical = 4.dp))
-                                AppDiskCard()
+                        AI_LINUX -> {
+                            Entry("Linux в приложении", "Alpine, пакеты, слоты ИИ") { onAiSettings(SETTINGS_LINUX) }
+                            Entry("Инструкция", "Termux, агент, ключ, вход, проект, dpai — по шагам") { onAiSettings(SETTINGS_GUIDE) }
+                            AppDiskCard()
+                        }
+                        AI_ACCESS -> {
+                            ControlCard(model)
+                            AppKeyCard(controller)
+                            CliCard()
+                            OverlayCard()
+                        }
+                        AI_SERVICES -> {
+                            Entry("PR на GitHub", "открытые PR проекта, проверки, отзывы — через gh") { onAiSettings(SETTINGS_GITHUB) }
+                            Entry("Маршруты Claude Code", "облачные сессии по токену маршрута — для поручений из пульта") { onAiSettings(SETTINGS_ROUTINES) }
+                        }
+                        AI_COPIES -> Card(Modifier.fillMaxWidth()) {
+                            Column {
+                                BackupCard(controller, framed = false, onRestoreAccess = { restoring = true }) {}
+                                if (restoring) {
+                                    HorizontalDivider()
+                                    RestoreCard(controller, framed = false, onHide = { restoring = false }) {}
+                                }
+                                HorizontalDivider()
+                                CloudCard(model, framed = false)
                             }
+                        }
+                        AI_LOG -> {
+                            Entry("Журнал", "строки журнала, выгрузка, отладка") { onAiSettings(SETTINGS_LOG) }
+                            Entry("Все настройки AI", "окно «AI»: targets и остальные экраны") { onAiSettings(null) }
                         }
                     }
                 }
@@ -102,7 +131,11 @@ private class Section(val key: String, val title: String, val about: String, val
 private const val LOOK = "look"
 private const val PROJECTS = "projects"
 private const val STORAGE = "storage"
-private const val AI = "ai"
+private const val AI_LINUX = "ai-linux"
+private const val AI_ACCESS = "ai-access"
+private const val AI_SERVICES = "ai-services"
+private const val AI_COPIES = "ai-copies"
+private const val AI_LOG = "ai-log"
 
 private fun sections(pult: Boolean): List<Section> = listOfNotNull(
     Section(LOOK, "Оформление", "Тема, акцент, размер текста, плотность и шрифт редактора — сразу во всём приложении.",
@@ -115,6 +148,14 @@ private fun sections(pult: Boolean): List<Section> = listOfNotNull(
     },
     Section(STORAGE, "Хранилище и секреты", "Предел объёма, свободное место, карта ~/STORAGE.md и секреты для ИИ.",
         "хранилище место память гигабайт предел карта storage секреты токен ключ api hugging face github давать ии"),
-    Section(AI, "AI", "Linux, targets, маршруты, журнал, копии и диск приложения.",
-        "ai linux alpine targets пк агент маршруты журнал копия восстановление ключ доступа диск файлы менеджер окно запросов"),
+    Section(AI_LINUX, "Linux и диск приложения", "Linux в приложении, инструкция по шагам, диск приложения в менеджере файлов.",
+        "ai linux alpine пакеты слоты termux агент инструкция шаги диск файлы менеджер targets пк"),
+    Section(AI_ACCESS, "Управление и доступ", "Пауза и автономность контура, ключ приложения для targets, команда dpai, окно запросов поверх приложений.",
+        "ai управление пауза автономный режим контур ключ доступа ssh публичный targets dpai cli команда канал окно запросов поверх приложений подтверждение"),
+    Section(AI_SERVICES, "GitHub и маршруты", "PR проекта через gh и маршруты Claude Code для поручений.",
+        "ai github pr gh проверки отзывы маршруты claude code routine облачные сессии поручения токен"),
+    Section(AI_COPIES, "Копии и восстановление", "Копия настроек в «Загрузках», восстановление доступа после переустановки, облачная копия контура.",
+        "ai копия настроек загрузки backup восстановление доступа переустановка termux облако облачная копия пароль токен репозиторий"),
+    Section(AI_LOG, "Журнал и остальное", "Журнал приложения и окно «AI» целиком.",
+        "ai журнал лог отладка выгрузка ошибки настройки targets"),
 )

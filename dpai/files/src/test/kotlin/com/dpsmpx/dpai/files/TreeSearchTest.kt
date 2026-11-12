@@ -104,4 +104,75 @@ class TreeSearchTest {
         assertEquals(listOf("Main.kt", "notes/main-notes.md"), r.hits)
         assertTrue(r.limited, "часть дерева не прочитана — итог неполон")
     }
+
+    @Test
+    fun regexFindsByPatternAndBadPatternsAreRefused() {
+        val r = ok(TreeSearch.text(tree, "sha\\w+ \\w+;", regex = true))
+        assertEquals(listOf(TreeSearch.TextHit("src/main.cpp", 4, 5, "Shape shape; // Shape дважды")), r.hits)
+        assertEquals(listOf(1), ok(TreeSearch.text(tree, "^struct", regex = true)).hits.map { it.line })
+        assertEquals(emptyList(), ok(TreeSearch.text(tree, "^STRUCT", ignoreCase = false, regex = true)).hits)
+        // Буквальный поиск не понимает выражений: «.» — это точка.
+        assertEquals(listOf("src/main.cpp"), ok(TreeSearch.text(tree, "shape.hpp")).hits.map { it.path })
+        for (bad in listOf("(", "[a-", "x*", "", "a".repeat(501))) {
+            assertTrue(TreeSearch.Query.of(bad, regex = true) is Outcome.Failure, "«${bad.take(10)}» принят")
+        }
+    }
+
+    @Test
+    fun runawayRegexSkipsTheFileInsteadOfHanging() {
+        val t = MemoryTree(mapOf("evil.txt" to "a".repeat(40) + "c\n", "ok.txt" to "aaa\n"))
+        TreeSearch.regexSteps = 2_000_000
+        val r = try {
+            ok(TreeSearch.text(t, "(a*)*\\1b|^aaa$", regex = true))
+        } finally {
+            TreeSearch.regexSteps = TreeSearch.MAX_REGEX_STEPS
+        }
+        // Катастрофический перебор на evil.txt упирается в предел шагов: файл пропущен, остальные найдены.
+        assertEquals(listOf("ok.txt"), r.hits.map { it.path })
+        assertEquals(1, r.skipped)
+    }
+
+    @Test
+    fun replaceRewritesEveryHitAndKeepsBomAndLineEndings() {
+        val t = MemoryTree(mapOf("a.cpp" to "\uFEFFint total = total + 1;\r\n", "b/c.h" to "// Total и total\n", "build/x.cpp" to "total\n", "none.txt" to "ничего\n"))
+        val r = ok(TreeSearch.replace(t, "total", "sum", ignoreCase = false))
+        assertEquals(TreeSearch.Replaced(2, 3, emptyList(), false, 0), r)
+        assertEquals("\uFEFFint sum = sum + 1;\r\n", t.text("a.cpp"))
+        assertEquals("// Total и sum\n", t.text("b/c.h"))
+        assertEquals("total\n", t.text("build/x.cpp"), "служебные каталоги не трогаются")
+        // Повтор ничего не меняет; только в папке — только в ней.
+        assertEquals(0, ok(TreeSearch.replace(t, "total", "sum", ignoreCase = false)).files)
+        assertEquals(1, ok(TreeSearch.replace(t, "sum", "s", dir = "b")).files)
+        assertEquals("\uFEFFint sum = sum + 1;\r\n", t.text("a.cpp"))
+    }
+
+    @Test
+    fun regexReplaceUsesGroupsAndLiteralReplaceDoesNot() {
+        val t = MemoryTree(mapOf("a.txt" to "get_width() get_height()\n", "b.txt" to "цена $5\n"))
+        assertEquals(2, ok(TreeSearch.replace(t, "get_(\\w+)\\(\\)", "$1", regex = true)).replacements)
+        assertEquals("width height\n", t.text("a.txt"))
+        // В буквальной замене «$1» и «\\» — просто знаки.
+        ok(TreeSearch.replace(t, "width", "$1\\n"))
+        assertEquals("$1\\n height\n", t.text("a.txt"))
+        ok(TreeSearch.replace(t, "\\$(\\d)", "\\$$1.00", regex = true))
+        assertEquals("цена $5.00\n", t.text("b.txt"))
+        for (bad in listOf("$2", "$", "x\\", "\${name}")) {
+            assertTrue(TreeSearch.replace(t, "(h)eight", bad, regex = true) is Outcome.Failure, "замена «$bad» принята")
+        }
+        assertEquals("$1.00\\n height\n", t.text("a.txt"), "отказ замены ничего не записал")
+    }
+
+    @Test
+    fun failedWriteIsReportedAndOthersAreWritten() {
+        val t = MemoryTree(mapOf("a.txt" to "x\n", "b.txt" to "x\n"))
+        val picky = object : FileTree by t {
+            override fun write(path: String, bytes: ByteArray): Outcome<FileMeta> =
+                if (path == "a.txt") Outcome.failure(com.dpsmpx.dpai.core.diagnostics.DiagCode.STORAGE_IO_FAILED, "диск занят", path) else t.write(path, bytes)
+        }
+        val r = ok(TreeSearch.replace(picky, "x", "y"))
+        assertEquals(1, r.files)
+        assertEquals(listOf("a.txt" to "диск занят"), r.failed)
+        assertEquals("x\n", t.text("a.txt"))
+        assertEquals("y\n", t.text("b.txt"))
+    }
 }
