@@ -133,27 +133,56 @@ object Tokens {
 }
 
 /**
- * Тема пульта — та же, что у «AI» (D-74; UX-5): цвета обоев телефона
- * (Android 12+), на Android 11 — запасная схема `AppPalette` всеми ролями.
+ * Тема пульта — та же, что у «AI» (D-115; D-74; UX-5): нейтральные цвета прототипа и
+ * акцент из «Оформления» (файл `UiLook.PREFS`, общий с «AI»); «Обои телефона» —
+ * цвета обоев (Android 12+). Тема, размер текста и плотность — оттуда же.
  */
 @Composable
 fun PultTheme(content: @Composable () -> Unit) {
-    val dark = isSystemInDarkTheme()
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val scheme = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+    val context = androidx.compose.ui.platform.LocalContext.current.applicationContext
+    val prefs = remember(context) { context.getSharedPreferences(com.dpsmpx.dpai.ui.UiLook.PREFS, android.content.Context.MODE_PRIVATE) }
+    var look by remember { mutableStateOf(com.dpsmpx.dpai.ui.UiLook.fromMap(prefs.all)) }
+    androidx.compose.runtime.DisposableEffect(prefs) {
+        // Слушатель держится ссылкой: SharedPreferences хранит слабую.
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { p, _ -> look = com.dpsmpx.dpai.ui.UiLook.fromMap(p.all) }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+    val dark = when (look.theme) {
+        com.dpsmpx.dpai.ui.UiLook.Theme.SYSTEM -> isSystemInDarkTheme()
+        com.dpsmpx.dpai.ui.UiLook.Theme.LIGHT -> false
+        com.dpsmpx.dpai.ui.UiLook.Theme.DARK -> true
+    }
+    val scheme = if (look.accent == com.dpsmpx.dpai.ui.UiLook.Accent.WALLPAPER && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
         if (dark) androidx.compose.material3.dynamicDarkColorScheme(context) else androidx.compose.material3.dynamicLightColorScheme(context)
     } else {
-        fallbackScheme(dark)
+        schemeOf(com.dpsmpx.dpai.ui.UiLook.scheme(look.accent, dark), dark)
     }
-    MaterialTheme(colorScheme = scheme, content = content)
+    val view = androidx.compose.ui.platform.LocalView.current
+    if (!view.isInEditMode) {
+        androidx.compose.runtime.SideEffect {
+            // Значки строки состояния — под выбранную тему, а не под тему телефона.
+            (view.context as? android.app.Activity)?.window?.let { w ->
+                androidx.core.view.WindowCompat.getInsetsController(w, view).apply {
+                    isAppearanceLightStatusBars = !dark
+                    isAppearanceLightNavigationBars = !dark
+                }
+            }
+        }
+    }
+    val d = androidx.compose.ui.platform.LocalDensity.current
+    // Плотность сжимает dp, размер текста — только sp (как у «AI»).
+    val density = androidx.compose.ui.unit.Density(d.density * look.density.factor, d.fontScale * look.text.factor / look.density.factor)
+    androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides density) {
+        MaterialTheme(colorScheme = scheme, content = content)
+    }
 }
 
 /**
- * Запасная схема Android 11 — роли `AppPalette`. Копия `fallbackScheme` оболочки «AI»
- * (`dpai/android`, `MainActivity.kt`): пульт от неё не зависит (D-53); новая роль — в обе.
+ * Схема Material 3 из ролей `AppPalette.Scheme`. Копия `schemeOf` оболочки «AI»
+ * (`dpai/android/…/Look.kt`, пульт от неё не зависит): новая роль — в обе.
  */
-private fun fallbackScheme(dark: Boolean): ColorScheme {
-    val p = com.dpsmpx.dpai.ui.AppPalette.scheme(dark)
+private fun schemeOf(p: com.dpsmpx.dpai.ui.AppPalette.Scheme, dark: Boolean): ColorScheme {
     fun c(v: Long) = Color(v)
     return if (dark) {
         darkColorScheme(

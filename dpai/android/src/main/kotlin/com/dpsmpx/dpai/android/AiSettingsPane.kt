@@ -78,6 +78,7 @@ fun AiSettingsPane(controller: Controller, model: DemoModel, sub: String?, onSub
                 }
             }
         }
+        item(key = "look") { LookCard() }
         item(key = "linux") { Entry("Linux в приложении", "Alpine, пакеты, слоты") { onSub(LINUX) } }
         item(key = "github") { Entry("PR на GitHub", "открытые PR проекта, проверки, отзывы — через gh") { onSub(GITHUB) } }
         item(key = "routines") { Entry("Маршруты Claude Code", "облачные сессии по токену маршрута — для поручений из пульта") { onSub(ROUTINES) } }

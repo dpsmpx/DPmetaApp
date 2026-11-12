@@ -59,7 +59,9 @@ internal fun CodeEditor(buffer: CodeEditorBuffer, path: String, revision: Int, o
     var caseSensitive by rememberSaveable(path) { mutableStateOf(false) }
     var wrap by rememberSaveable(path) { mutableStateOf(false) }
     var symbols by rememberSaveable(path) { mutableStateOf(true) }
-    var fontSize by rememberSaveable(path) { mutableStateOf(14) }
+    // Начальный размер — «Шрифт редактора» из «Оформления» (DPmetaApp:D-115); A− и A+ меняют его для файла.
+    val startFont = LocalUiLook.current.editorFont
+    var fontSize by rememberSaveable(path) { mutableStateOf(startFont) }
     var width by rememberSaveable(path) { mutableStateOf(4) }
     var tabs by rememberSaveable(path) { mutableStateOf(false) }
     var view by remember { mutableStateOf(false) }
