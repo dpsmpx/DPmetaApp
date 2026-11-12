@@ -152,7 +152,8 @@ data class EditorTabs(val paths: List<String> = emptyList(), val active: String?
     fun next(backwards: Boolean = false): EditorTabs {
         if (paths.isEmpty()) return this
         val index = paths.indexOf(active)
+        if (index < 0) return copy(active = if (backwards) paths.last() else paths.first())
         return copy(active = paths[(index + (if (backwards) paths.size - 1 else 1)).mod(paths.size)])
     }
-    companion object { const val MAX_OPEN = 16 }
+    companion object { const val MAX_OPEN = 8 }
 }

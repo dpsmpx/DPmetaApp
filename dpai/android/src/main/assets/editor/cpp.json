@@ -44,7 +44,7 @@
       "name": "keyword.control.directive.cpp"
     },
     {
-      "match": "\\b(?:0[xX][\\da-fA-F]+|0[bB][01]+|\\d+(?:[\\._]\\d+)*(?:[eE][+-]?\\d+)?)[uUlLfF]*\\b",
+      "match": "\\b(?:0[xX][\\da-fA-F']+|0[bB][01']+|\\d[\\d']*(?:\\.\\d[\\d']*)?(?:[eE][+-]?\\d[\\d']*)?)[uUlLfF]*\\b",
       "name": "constant.numeric"
     },
     {

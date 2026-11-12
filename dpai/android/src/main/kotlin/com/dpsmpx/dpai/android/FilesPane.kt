@@ -27,6 +27,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -397,10 +398,18 @@ private fun ReportView(r: SyncReport) {
 /** Обзор каталога: вход в папки, просмотр файла, «Открыть в терминале». */
 @Composable
 private fun Browser(p: Place, onPlace: (Place) -> Unit, onClose: () -> Unit) {
+    Column(Modifier.fillMaxSize()) { BrowserContent(p, onPlace, onClose) }
+}
+
+@Composable
+private fun BrowserContent(p: Place, onPlace: (Place) -> Unit, onClose: () -> Unit) {
     val context = LocalContext.current
     var entries by remember(p) { mutableStateOf<List<FileEntry>?>(null) }
     var error by remember(p) { mutableStateOf<String?>(null) }
-    var file by rememberSaveable(p.key()) { mutableStateOf<String?>(null) }
+    val rootKey = p.copy(dir = "").key()
+    val openFiles = rememberOpenEditorFiles(rootKey)
+    val tabStates = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
+    val file = openFiles.tabs.active
     // Системный «назад» — на папку вверх, из корня места — к списку «Файлов» (AI:A-2); у открытого файла — свой.
     androidx.activity.compose.BackHandler(enabled = file == null) { if (p.dir.isEmpty()) onClose() else onPlace(p.copy(dir = FileNames.parent(p.dir))) }
     LaunchedEffect(p) {
@@ -409,8 +418,12 @@ private fun Browser(p: Place, onPlace: (Place) -> Unit, onClose: () -> Unit) {
             is Outcome.Failure -> error = r.errors.first().message
         }
     }
+    Column(Modifier.fillMaxWidth()) { EditorTabsBar(openFiles) { path -> "file:${p.copy(dir = FileNames.parent(path)).key()}\u0001$path" } }
     file?.let { path ->
-        FileView(p, path) { file = null }
+        tabStates.SaveableStateProvider(path) {
+            FileView(p.copy(dir = FileNames.parent(path)), path, onBrowse = openFiles::browse, onNext = openFiles::next,
+                onActions = { openFiles.ready(path, it) }) { openFiles.close(path) }
+        }
         return
     }
     Column(Modifier.fillMaxSize()) {
@@ -428,7 +441,7 @@ private fun Browser(p: Place, onPlace: (Place) -> Unit, onClose: () -> Unit) {
                 Row(
                     Modifier.fillMaxWidth().clickable {
                         val path = FileNames.join(p.dir, e.name)
-                        if (e.dir) onPlace(p.copy(dir = path)) else file = path
+                        if (e.dir) onPlace(p.copy(dir = path)) else openFiles.open(path)
                     }.padding(vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -459,7 +472,7 @@ private fun decodeImage(bytes: ByteArray): ImageBitmap? {
 
 /** Просмотр и правка файла: текст (UTF-8, до 2 МиБ) — с правкой; картинка — показом. */
 @Composable
-private fun FileView(p: Place, path: String, onClose: () -> Unit) {
+private fun FileView(p: Place, path: String, onBrowse: () -> Unit, onNext: (Boolean) -> Unit, onActions: (EditorCallbacks) -> Unit, onClose: () -> Unit) {
     val context = LocalContext.current
     val profiles = remember { Controller.get(context.filesDir).manualProfiles }
     val tree = remember(p) {
@@ -474,16 +487,16 @@ private fun FileView(p: Place, path: String, onClose: () -> Unit) {
         Kind.SHARED -> GuestPaths.guestShared("")
         Kind.FOLDER -> null
     }
-    TreeFileView(tree, p.key(), path, guestPath = guestRoot?.let { FileNames.join(it, path) }, onClose = onClose)
+    TreeFileView(tree, p.key(), path, guestPath = guestRoot?.let { FileNames.join(it, path) }, onBrowse = onBrowse, onNext = onNext, onActions = onActions, onClose = onClose)
 }
 
 @Composable
-internal fun TreeFileView(tree: FileTree, treeKey: String, path: String, readOnly: Boolean = false, guestPath: String? = null, onClose: () -> Unit) {
-    androidx.compose.runtime.key(treeKey, path) { TreeFileContent(tree, treeKey, path, readOnly, guestPath, onClose) }
+internal fun TreeFileView(tree: FileTree, treeKey: String, path: String, readOnly: Boolean = false, guestPath: String? = null, onBrowse: (() -> Unit)? = null, onNext: (Boolean) -> Unit = {}, onActions: (EditorCallbacks) -> Unit = {}, onClose: () -> Unit) {
+    androidx.compose.runtime.key(treeKey, path) { TreeFileContent(tree, treeKey, path, readOnly, guestPath, onBrowse, onNext, onActions, onClose) }
 }
 
 @Composable
-private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readOnly: Boolean, guestPath: String?, onClose: () -> Unit) {
+private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readOnly: Boolean, guestPath: String?, onBrowse: (() -> Unit)?, onNext: (Boolean) -> Unit, onActions: (EditorCallbacks) -> Unit, onClose: () -> Unit) {
     val scope = rememberCoroutineScope()
     val recovery by Drafts.recovery.collectAsState()
     val image = TextFile.isImage(path)
@@ -501,7 +514,7 @@ private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readO
     var leaving by remember { mutableStateOf(false) }
     val changed = revision.let { editing?.editor?.dirty == true }
     suspend fun dropEdit(): Boolean {
-        val result = withContext(Dispatchers.IO) { Drafts.dropFile(draftKey) }
+        val result = withContext(Dispatchers.IO) { Drafts.dropFile(draftKey, expected = editing) }
         return if (result is Outcome.Success) { editing = null; true } else {
             status = (result as Outcome.Failure).errors.first().message; false
         }
@@ -515,7 +528,10 @@ private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readO
     }
     val leave = {
         if (!saving) {
-            if (changed) leaving = true else scope.launch {
+            val current = editing ?: Drafts.file(draftKey)
+            if (current?.editor?.dirty == true) { editing = current; leaving = true }
+            else if (!recovery.ready || current == null) onClose()
+            else scope.launch {
                 saving = true
                 try { if (dropEdit()) onClose() } finally { saving = false }
             }
@@ -526,7 +542,7 @@ private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readO
         if (recovery.ready && editing == null) editing = Drafts.file(draftKey)
     }
     DisposableEffect(draftKey) { onDispose { Drafts.flushNow() } }
-    androidx.activity.compose.BackHandler(onBack = leave)
+    androidx.activity.compose.BackHandler { if (onBrowse != null) { Drafts.flushNow(); onBrowse() } else leave() }
     suspend fun saveEdit(e: Drafts.FileDraft): Boolean {
         if (saving) return false
         saving = true
@@ -536,10 +552,9 @@ private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readO
             if (r is Outcome.Success) {
                 text = content
                 original = r.value
-                if (dropEdit()) { status = "сохранено"; true } else {
-                    status = "Файл сохранён, но копия черновика не удалена. ${status.orEmpty()}"
-                    false
-                }
+                val copied = withContext(Dispatchers.IO) { Drafts.savedFile(draftKey, e, r.value, content) }
+                status = if (copied is Outcome.Success) "сохранено" else "Файл сохранён, но копия черновика не удалена"
+                copied is Outcome.Success
             } else {
                 status = "не сохранено: ${(r as Outcome.Failure).errors.first().message}"
                 false
@@ -548,6 +563,9 @@ private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readO
             saving = false
         }
     }
+    val editorActions = EditorCallbacks(save = { scope.launch { editing?.let { saveEdit(it) } } }, close = leave,
+        browse = { Drafts.flushNow(); onBrowse?.invoke() }, next = onNext, busy = saving)
+    SideEffect { onActions(editorActions) }
     if (leaving) {
         AlertDialog(
             onDismissRequest = { leaving = false },
@@ -556,7 +574,7 @@ private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readO
             confirmButton = {
                 TextButton(onClick = {
                     leaving = false
-                    scope.launch { editing?.let { if (saveEdit(it)) onClose() } }
+                    scope.launch { editing?.let { if (saveEdit(it) && dropEdit()) onClose() } }
                 }, enabled = !readOnly) { Text("Сохранить") }
             },
             dismissButton = {
@@ -592,7 +610,7 @@ private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readO
     }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = leave, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("←") }
+            TextButton(onClick = { if (onBrowse != null) { Drafts.flushNow(); onBrowse() } else leave() }, modifier = Modifier.semantics { contentDescription = "Назад" }) { Text("←") }
             Text(FileNames.name(path), Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val t = text
             if (t != null && original != null && editing == null) TextButton(enabled = recovery.ready && !readOnly && !saving, onClick = {
@@ -615,7 +633,7 @@ private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readO
         val e = editing
         when {
             e != null -> Clipboard.Sensitive {
-                CodeEditor(e.editor, path, revision, onChange = { revision++; Drafts.changed(draftKey) }, enabled = recovery.ready && !readOnly && !saving, modifier = Modifier.weight(1f).fillMaxWidth())
+                CodeEditor(e.editor, path, revision, onChange = { revision++; Drafts.changed(draftKey) }, enabled = recovery.ready && !readOnly && !saving, modifier = Modifier.weight(1f).fillMaxWidth(), callbacks = editorActions)
             }
             bitmap != null -> Image(bitmap!!, FileNames.name(path), Modifier.fillMaxSize().padding(8.dp))
             text != null && text.orEmpty().length <= WHOLE_TEXT_MAX -> SelectionContainer(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp)) {

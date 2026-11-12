@@ -39,7 +39,10 @@ android {
         }
     }
 
-    testOptions.unitTests.all { it.useJUnitPlatform() }
+    testOptions.unitTests.all {
+        it.useJUnitPlatform()
+        it.systemProperty("dpai.editor.assets", file("src/main/assets").absolutePath)
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

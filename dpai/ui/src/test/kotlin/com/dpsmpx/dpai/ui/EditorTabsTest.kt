@@ -22,7 +22,7 @@ class EditorTabsTest {
         repeat(EditorTabs.MAX_OPEN) { tabs = tabs.open("$it.kt") }
         assertEquals(tabs, tabs.open("overflow.kt"))
         assertEquals("0.kt", tabs.next().active)
-        assertEquals("14.kt", tabs.next(true).active)
+        assertEquals("${EditorTabs.MAX_OPEN - 2}.kt", tabs.next(true).active)
         assertEquals(tabs.paths, tabs.next().paths)
     }
 }

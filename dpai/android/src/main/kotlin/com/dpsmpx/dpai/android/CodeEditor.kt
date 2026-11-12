@@ -85,7 +85,6 @@ internal fun CodeEditor(buffer: CodeEditorBuffer, path: String, revision: Int, o
                     EditorCommand.DELETE_LINE -> EditorActions.deleteLines(buffer)
                     EditorCommand.MOVE_UP -> EditorActions.moveLines(buffer, true)
                     EditorCommand.MOVE_DOWN -> EditorActions.moveLines(buffer, false)
-                    else -> false
                 }
                 if (result) { note = null; changed() }
             }
@@ -147,7 +146,7 @@ internal fun CodeEditor(buffer: CodeEditorBuffer, path: String, revision: Int, o
         Text("${CodeSyntax.language(path)} · ${position.first}:${position.second} · ${if (EditorActions.separator(buffer.text) == "\r\n") "CRLF" else "LF"}", Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.labelSmall)
         note?.let { Text(it, Modifier.padding(horizontal = 8.dp), style = MaterialTheme.typography.bodySmall) }
         NativeCodeField(buffer, path, revision, enabled, wrap, fontSize, width, tabs, onChange, ::command,
-            onPosition = { line, column -> position = line to column }, onIssue = { note = it }, modifier = Modifier.weight(1f).fillMaxWidth())
+            onPosition = { line, column -> position = line to column }, onIssue = { note = it }, onZoom = { fontSize = it }, modifier = Modifier.weight(1f).fillMaxWidth())
     }
     if (lineDialog) {
         var line by remember { mutableStateOf("") }
@@ -161,7 +160,7 @@ internal fun CodeEditor(buffer: CodeEditorBuffer, path: String, revision: Int, o
     if (changes) EditorChangesDialog(buffer.original, buffer.text) { changes = false }
     if (licenses) {
         var license by remember { mutableStateOf("") }
-        LaunchedEffect(Unit) { license = withContext(Dispatchers.IO) { context.assets.open("editor/SORA-LICENSE.txt").bufferedReader().use { it.readText() } } }
+        LaunchedEffect(Unit) { license = withContext(Dispatchers.IO) { listOf("NOTICES.txt", "SORA-LICENSE.txt", "EPL-2.0.txt").joinToString("\n\n") { name -> context.assets.open("editor/$name").bufferedReader().use { it.readText() } } } }
         FullScreenDialog({ licenses = false }, "Sora Editor 0.24.7 · лицензия") {
             SelectionContainer { Text(license, Modifier.verticalScroll(rememberScrollState()).padding(12.dp), style = MaterialTheme.typography.bodySmall) }
         }

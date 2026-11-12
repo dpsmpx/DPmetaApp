@@ -8,6 +8,25 @@ import kotlin.test.assertTrue
 
 class FileDraftsTest {
     @Test
+    fun staleCloseCannotRemoveNewDraftAndSavingKeepsUndo() {
+        val key = "file:close-generation-test"
+        try {
+            val first = Drafts.startFile(key, "a".toByteArray(), "a")!!
+            Drafts.dropFile(key)
+            val current = Drafts.startFile(key, "b".toByteArray(), "b")!!
+            kotlin.test.assertIs<com.dpsmpx.dpai.core.result.Outcome.Failure>(Drafts.dropFile(key, first))
+            assertEquals(current, Drafts.file(key))
+            current.editor.edit("c", EditorSelection(1))
+            kotlin.test.assertIs<com.dpsmpx.dpai.core.result.Outcome.Success<Unit>>(Drafts.savedFile(key, current, "c".toByteArray(), "c"))
+            kotlin.test.assertFalse(current.editor.dirty)
+            current.editor.undo()
+            assertTrue(current.editor.dirty)
+            assertEquals("b", current.editor.text)
+            kotlin.test.assertContentEquals("c".toByteArray(), current.original)
+        } finally { Drafts.dropFile(key) }
+    }
+
+    @Test
     fun dirtyHomeAliasBlocksSelectedWorkspaceUntilDiscarded() {
         val ids = com.dpsmpx.dpai.core.ids.IdGenerator(com.dpsmpx.dpai.core.clock.ManualClock(), com.dpsmpx.dpai.core.clock.RandomSource.seeded(133))
         val location = com.dpsmpx.dpai.ui.WorkspaceLocation(ids.next(com.dpsmpx.dpai.core.ids.IdKinds.PROJECT), ids.next(com.dpsmpx.dpai.core.ids.IdKinds.REPOSITORY), ids.next(com.dpsmpx.dpai.core.ids.IdKinds.TARGET), null, null, "/root/repo", "main")
@@ -38,7 +57,7 @@ class FileDraftsTest {
             Drafts.dropFile(keys[1])
             assertTrue(Drafts.startFile(keys[8], byteArrayOf(), "") != null)
         } finally {
-            keys.forEach(Drafts::dropFile)
+            keys.forEach { Drafts.dropFile(it) }
         }
     }
 }

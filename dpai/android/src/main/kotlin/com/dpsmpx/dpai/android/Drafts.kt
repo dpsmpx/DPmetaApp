@@ -37,7 +37,7 @@ object Drafts {
     @Volatile private var store: EditorDraftStore? = null
     private var installed = false
 
-    class FileDraft(val original: ByteArray, val editor: com.dpsmpx.dpai.ui.CodeEditorBuffer, val guestPath: String? = null, val restored: Boolean = false)
+    class FileDraft(@Volatile var original: ByteArray, val editor: com.dpsmpx.dpai.ui.CodeEditorBuffer, val guestPath: String? = null, val restored: Boolean = false)
 
     /** До открытия экранов пометить загрузку; сам диск и Keystore — в IO. */
     @Synchronized
@@ -93,7 +93,7 @@ object Drafts {
     fun startFailure(key: String): String = when {
         !flow.value.ready -> "Сначала дождитесь восстановления черновиков; при ошибке перезапустите приложение"
         EditorDraftStore.recordId(key) in blocked -> "Копия этого черновика не прочитана и не будет перезаписана"
-        else -> "Открыто восемь черновиков: сохраните или отмените один из них"
+        else -> "Открыто восемь буферов: закройте одну вкладку (правки можно сохранить)"
     }
 
     fun changed(key: String) {
@@ -145,8 +145,26 @@ object Drafts {
         }
     }
 
+    /** Исходник уже записан: обновить базу, сохранив поле и undo; копия удаляется под общим IO-замком. */
+    fun savedFile(key: String, expected: FileDraft, bytes: ByteArray, text: String): Outcome<Unit> = io.withLock {
+        if (files[key] !== expected) return@withLock Outcome.failure(DiagCode.STATE_CONFLICT, "файл записан, но черновик сменился")
+        expected.original = bytes
+        expected.editor.markSaved(text)
+        val result = store?.remove(key) ?: Outcome.success(Unit)
+        if (expected.editor.dirty) { pending += key; schedule() }
+        status { state ->
+            val current = state.checkpoints[key] ?: Checkpoint()
+            state.copy(checkpoints = state.checkpoints + (key to current.copy(saved = current.current,
+                error = if (result is Outcome.Failure) "Файл сохранён, но копия не удалена" else null)))
+        }
+        result
+    }
+
     /** Вызывать вне UI. Удаление подтверждается только после удаления всех версий копии. */
-    fun dropFile(key: String): Outcome<Unit> = io.withLock {
+    fun dropFile(key: String, expected: FileDraft? = files[key]): Outcome<Unit> {
+        if (!flow.value.ready) return Outcome.failure(DiagCode.STATE_CONFLICT, "сначала дождитесь восстановления черновиков")
+        return io.withLock {
+        if (files[key] !== expected) return@withLock Outcome.failure(DiagCode.STATE_CONFLICT, "черновик изменился; откройте его заново")
         val generation = flow.value.checkpoints[key]?.current
         val result = store?.remove(key) ?: Outcome.success(Unit)
         if (result is Outcome.Failure) {
@@ -161,6 +179,7 @@ object Drafts {
         files.remove(key)
         status { it.copy(checkpoints = it.checkpoints - key) }
         Outcome.success(Unit)
+        }
     }
 
     /** Явная кнопка после подтверждения: читаемые черновики и исходники не затрагиваются. */

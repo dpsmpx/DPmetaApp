@@ -147,7 +147,9 @@ private fun WorkspaceFiles(model: DemoModel, view: ProjectWorkspaceView, locatio
         }
     }
     var dir by rememberSaveable(location.key) { mutableStateOf("") }
-    var file by rememberSaveable(location.key) { mutableStateOf<String?>(null) }
+    val openFiles = rememberOpenEditorFiles(location.key)
+    val tabStates = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
+    val file = openFiles.tabs.active
     var entries by remember(location, dir) { mutableStateOf<List<FileEntry>?>(null) }
     var error by remember(location, dir) { mutableStateOf<String?>(null) }
     var refresh by remember { mutableStateOf(0) }
@@ -159,8 +161,12 @@ private fun WorkspaceFiles(model: DemoModel, view: ProjectWorkspaceView, locatio
     }
     androidx.activity.compose.BackHandler(enabled = file == null && dir.isNotEmpty()) { dir = FileNames.parent(dir) }
     Column(modifier.fillMaxWidth()) {
+        EditorTabsBar(openFiles) { path -> "file:workspace:${location.key}\u0001$path" }
         val path = file
-        if (path != null) TreeFileView(tree, "workspace:${location.key}", path, readOnly, guestPath = "${location.path.trimEnd('/')}/$path") { file = null } else {
+        if (path != null) tabStates.SaveableStateProvider(path) {
+            TreeFileView(tree, "workspace:${location.key}", path, readOnly, guestPath = "${location.path.trimEnd('/')}/$path",
+                onBrowse = openFiles::browse, onNext = openFiles::next, onActions = { openFiles.ready(path, it) }) { openFiles.close(path) }
+        } else {
             Row {
                 TextButton(enabled = dir.isNotEmpty(), onClick = { dir = FileNames.parent(dir) }) { Text("Вверх") }
                 Text(if (dir.isEmpty()) "/" else dir, Modifier.weight(1f).padding(12.dp))
@@ -173,7 +179,7 @@ private fun WorkspaceFiles(model: DemoModel, view: ProjectWorkspaceView, locatio
                 items(entries.orEmpty(), key = { it.name }) { entry -> Text((if (entry.dir) "▸ " else "") + entry.name,
                     Modifier.fillMaxWidth().clickable {
                         val next = FileNames.join(dir, entry.name)
-                        if (entry.dir) dir = next else file = next
+                        if (entry.dir) dir = next else openFiles.open(next)
                     }.padding(12.dp)) }
             }
         }

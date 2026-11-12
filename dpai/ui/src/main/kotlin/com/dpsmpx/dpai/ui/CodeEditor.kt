@@ -12,7 +12,11 @@ data class EditorSnapshot(val text: String, val selection: EditorSelection)
 data class EditorMatches(val ranges: List<IntRange>, val limited: Boolean)
 
 /** Ручная правка: история в памяти, буквальный поиск, одна замена — один undo (D-131). */
-class CodeEditorBuffer(val original: String, private val clock: Clock = Clock.SYSTEM) {
+class CodeEditorBuffer(original: String, private val clock: Clock = Clock.SYSTEM) {
+    @Volatile var original: String = original
+        private set
+    /** Сохранение меняет базу сравнения, история undo остаётся доступной (D-136). */
+    fun markSaved(text: String = this.text) { original = text }
     @Volatile
     var state = EditorSnapshot(original, EditorSelection(0))
         private set

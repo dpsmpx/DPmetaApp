@@ -10,6 +10,11 @@
     "code": {
       "patterns": [
         {
+          "begin": "`",
+          "end": "`|$",
+          "name": "variable.other.escaped.kotlin"
+        },
+        {
           "begin": "//",
           "end": "$",
           "name": "comment.line.double-slash.kotlin"

@@ -3,6 +3,8 @@ package com.dpsmpx.dpai.android
 import android.content.Context
 import android.graphics.Typeface
 import android.text.InputType
+import android.util.TypedValue
+import kotlin.math.roundToInt
 import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
@@ -14,6 +16,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -26,6 +29,7 @@ import com.dpsmpx.dpai.ui.EditorSnapshot
 import io.github.rosemoe.sora.event.ContentChangeEvent
 import io.github.rosemoe.sora.event.EditorKeyEvent
 import io.github.rosemoe.sora.event.SelectionChangeEvent
+import io.github.rosemoe.sora.event.ScrollEvent
 import io.github.rosemoe.sora.text.LineSeparator
 import io.github.rosemoe.sora.widget.CodeEditor as SoraEditor
 import io.github.rosemoe.sora.widget.component.EditorAutoCompletion
@@ -33,7 +37,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 internal enum class EditorCommand { UNDO, REDO, SAVE, FIND, REPLACE, GOTO, COMMENT, DUPLICATE, DELETE_LINE, MOVE_UP, MOVE_DOWN, INDENT, UNINDENT, NEXT_FILE, PREV_FILE, CLOSE_FILE, FILES }
-internal data class EditorCallbacks(val save: () -> Unit = {}, val close: () -> Unit = {}, val browse: () -> Unit = {}, val next: (Boolean) -> Unit = {})
+internal data class EditorCallbacks(val save: () -> Unit = {}, val close: () -> Unit = {}, val browse: () -> Unit = {}, val next: (Boolean) -> Unit = {}, val busy: Boolean = false)
 
 /** Тонкий адаптер: рендеринг/IME у Sora, снимки и история — CodeEditorBuffer (D-136). */
 internal class StudioCodeField(context: Context) : SoraEditor(context) {
@@ -41,6 +45,8 @@ internal class StudioCodeField(context: Context) : SoraEditor(context) {
     var command: (EditorCommand) -> Unit = {}
     var position: (Int, Int) -> Unit = { _, _ -> }
     var issue: (String) -> Unit = {}
+    var viewport: (Int, Int) -> Unit = { _, _ -> }
+    var zoom: (Int) -> Unit = {}
     private var model: CodeEditorBuffer? = null
     private var observed: EditorSnapshot? = null
     private var applying = false
@@ -60,6 +66,7 @@ internal class StudioCodeField(context: Context) : SoraEditor(context) {
         setInputType(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS)
         props.clipboardTextLengthLimit = 256 * 1024
         getComponent(EditorAutoCompletion::class.java).isEnabled = false
+        subscribeEvent(ScrollEvent::class.java) { event, _ -> if (!applying) viewport(event.endX, event.endY) }
         subscribeEvent(ContentChangeEvent::class.java) { _, _ ->
             if (!applying) {
                 val buffer = model ?: return@subscribeEvent
@@ -110,8 +117,9 @@ internal class StudioCodeField(context: Context) : SoraEditor(context) {
         }
     }
 
-    fun bind(buffer: CodeEditorBuffer, path: String, ready: Boolean, dark: Boolean, wrap: Boolean, size: Int, width: Int, tabs: Boolean) {
-        if (model !== buffer) { model = buffer; observed = null }
+    fun bind(buffer: CodeEditorBuffer, path: String, ready: Boolean, dark: Boolean, wrap: Boolean, size: Int, width: Int, tabs: Boolean, restored: Pair<Int, Int>?) {
+        val initial = model !== buffer
+        if (initial) { model = buffer; observed = null }
         isWordwrap = wrap
         tabWidth = width
         if (lastSize != size) { setTextSize(size.toFloat()); lastSize = size }
@@ -122,6 +130,18 @@ internal class StudioCodeField(context: Context) : SoraEditor(context) {
             languageKey = key
         }
         sync()
+        if (initial && restored != null) postInLifecycle {
+            scroller.startScroll(restored.first.coerceIn(0, scrollMaxX), restored.second.coerceIn(0, scrollMaxY), 0, 0, 0)
+            invalidate()
+        }
+    }
+
+    override fun setTextSizePxDirect(size: Float) {
+        super.setTextSizePxDirect(size)
+        if (model != null) {
+            val sp = (size / TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, 1f, resources.displayMetrics)).roundToInt().coerceIn(10, 32)
+            zoom(sp)
+        }
     }
 
     fun sync(force: Boolean = false) {
@@ -138,7 +158,10 @@ internal class StudioCodeField(context: Context) : SoraEditor(context) {
             val from = text.indexer.getCharPosition(state.selection.from.coerceIn(0, text.length))
             val until = text.indexer.getCharPosition(state.selection.until.coerceIn(0, text.length))
             if (from.index == until.index) setSelection(from.line, from.column)
-            else setSelectionRegion(from.line, from.column, until.line, until.column, state.selection.start < state.selection.end)
+            else {
+                setSelectionRegion(from.line, from.column, until.line, until.column, state.selection.start < state.selection.end)
+                selectionAnchor = if (state.selection.start < state.selection.end) cursor.left() else cursor.right()
+            }
             observed = state
         } finally { applying = false }
     }
@@ -174,7 +197,7 @@ internal class StudioCodeField(context: Context) : SoraEditor(context) {
 
 @Composable
 internal fun NativeCodeField(buffer: CodeEditorBuffer, path: String, revision: Int, enabled: Boolean, wrap: Boolean, size: Int, width: Int, tabs: Boolean,
-    onChange: () -> Unit, onCommand: (EditorCommand) -> Unit, onPosition: (Int, Int) -> Unit, onIssue: (String) -> Unit, modifier: Modifier) {
+    onChange: () -> Unit, onCommand: (EditorCommand) -> Unit, onPosition: (Int, Int) -> Unit, onIssue: (String) -> Unit, onZoom: (Int) -> Unit, modifier: Modifier) {
     val context = LocalContext.current
     val dark = isSystemInDarkTheme()
     var ready by remember { mutableStateOf(false) }
@@ -182,6 +205,10 @@ internal fun NativeCodeField(buffer: CodeEditorBuffer, path: String, revision: I
     val action by rememberUpdatedState(onCommand)
     val position by rememberUpdatedState(onPosition)
     val issue by rememberUpdatedState(onIssue)
+    val zoom by rememberUpdatedState(onZoom)
+    var visited by rememberSaveable(path) { mutableStateOf(false) }
+    var offsetX by rememberSaveable(path) { mutableStateOf(0) }
+    var offsetY by rememberSaveable(path) { mutableStateOf(0) }
     LaunchedEffect(Unit) {
         val result = withContext(Dispatchers.IO) { EditorLanguages.prepare(context) }
         ready = result is Outcome.Success
@@ -191,8 +218,11 @@ internal fun NativeCodeField(buffer: CodeEditorBuffer, path: String, revision: I
     revision.let {
         AndroidView(factory = { StudioCodeField(it) }, modifier = modifier, onRelease = { it.dispose() }, update = { editor ->
             editor.changed = { change() }; editor.command = { action(it) }; editor.position = { line, column -> position(line, column) }; editor.issue = { issue(it) }
+            val restored = if (visited) offsetX to offsetY else null
+            editor.viewport = { x, y -> offsetX = x; offsetY = y; visited = true }
+            editor.zoom = { zoom(it) }
             editor.isEditable = enabled
-            editor.bind(buffer, path, ready, dark, wrap, size, width, tabs)
+            editor.bind(buffer, path, ready, dark, wrap, size, width, tabs, restored)
         })
     }
 }
