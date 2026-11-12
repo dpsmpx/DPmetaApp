@@ -68,7 +68,7 @@ class EditorGrammarTest {
         val lines = listOf("value = RF\"\"\"\\n {", "    data[\"key\"] if ready else 0", "}\"\"\" # end")
         val t = tokens("python", lines)
         assertFalse(t[0].has(lines[0].indexOf("\\n"), "constant.character.escape"))
-        assertTrue(t[1].has(4, "meta.interpolation")); assertTrue(t[1].has(15, "keyword.control.python"))
+        assertTrue(t[1].has(4, "meta.interpolation")); assertTrue(t[1].has(lines[1].indexOf("if ready"), "keyword.control.python"))
         assertTrue(t[2].has(lines[2].indexOf('#'), "comment"))
         val single = "f\"{data[\"key\"]}\" # done"
         assertTrue(tokens("python", listOf(single))[0].has(single.indexOf('#'), "comment"))
@@ -85,7 +85,7 @@ class EditorGrammarTest {
             assertTrue(t[5].has(at + number.length - 1, "constant.numeric"), number)
         }
     }
-    private fun pythonConfig() = java.io.File(System.getProperty("dpai.editor.assets"), "editor/python.config.json").reader().use {
+    private fun pythonConfig(): org.eclipse.tm4e.languageconfiguration.internal.model.LanguageConfiguration = java.io.File(System.getProperty("dpai.editor.assets"), "editor/python.config.json").reader().use {
         checkNotNull(org.eclipse.tm4e.languageconfiguration.internal.model.LanguageConfiguration.load(it))
     }
     @Test fun pythonEnterIndentsBlockHeadersAndOpeningBrackets() {
@@ -108,5 +108,16 @@ class EditorGrammarTest {
             assertFalse(indent.shouldIncrease(line), line)
         }
         assertTrue(indent.shouldDecrease("    ] # end"))
+    }
+    @Test fun pythonIndentRulesHandleLongHeadersWithoutRecursiveRegexOverflow() {
+        val config = pythonConfig()
+        val enter = org.eclipse.tm4e.languageconfiguration.internal.supports.OnEnterSupport(config.brackets, config.onEnterRules)
+        val indent = org.eclipse.tm4e.languageconfiguration.internal.supports.IndentRulesSupport(checkNotNull(config.indentationRules))
+        for (body in listOf("identifier".repeat(5000), "\"x\" + ".repeat(5000) + "value")) {
+            val line = "if $body: # block"
+            kotlin.test.assertEquals(org.eclipse.tm4e.languageconfiguration.internal.model.EnterAction.IndentAction.Indent, enter.onEnter("", line, "")?.indentAction)
+            assertTrue(indent.shouldIncrease(line))
+            assertFalse(indent.shouldIncrease("if " + body + " # :"))
+        }
     }
 }

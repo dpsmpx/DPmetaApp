@@ -238,11 +238,11 @@
           ]
         },
         {
-          "match": "^\\s*@[\\p{L}_][\\p{L}\\p{N}_.]*",
+          "match": "^\\s*@[\\p{L}\\p{Nl}_][\\p{L}\\p{Nl}\\p{Mn}\\p{Mc}\\p{Nd}\\p{Pc}]*(?:\\.[\\p{L}\\p{Nl}_][\\p{L}\\p{Nl}\\p{Mn}\\p{Mc}\\p{Nd}\\p{Pc}]*)*",
           "name": "entity.name.function.decorator.python"
         },
         {
-          "match": "\\b(def)(\\s+)([^\\W\\d]\\w*|_\\w*)",
+          "match": "\\b(def)(\\s+)([\\p{L}\\p{Nl}_][\\p{L}\\p{Nl}\\p{Mn}\\p{Mc}\\p{Nd}\\p{Pc}]*)",
           "captures": {
             "1": {
               "name": "keyword.control.python"
@@ -253,7 +253,7 @@
           }
         },
         {
-          "match": "\\b(class)(\\s+)([^\\W\\d]\\w*|_\\w*)",
+          "match": "\\b(class)(\\s+)([\\p{L}\\p{Nl}_][\\p{L}\\p{Nl}\\p{Mn}\\p{Mc}\\p{Nd}\\p{Pc}]*)",
           "captures": {
             "1": {
               "name": "keyword.control.python"

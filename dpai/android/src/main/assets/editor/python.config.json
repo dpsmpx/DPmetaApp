@@ -78,7 +78,7 @@
     ]
   ],
   "indentationRules": {
-    "increaseIndentPattern": "(?:^\\s*(?:(?:async\\s+)?(?:class|def|if|elif|else|for|while|try|except|finally|with|match|case)\\b|[)\\]])(?:[^#\"'\\\\]|\\\\.|\"(?:[^\"\\\\]|\\\\.)*\"|'(?:[^'\\\\]|\\\\.)*')*:\\s*(?:#.*)?$|^(?:[^#\"'\\\\]|\\\\.|\"(?:[^\"\\\\]|\\\\.)*\"|'(?:[^'\\\\]|\\\\.)*')*[\\{\\[\\(]\\s*(?:#.*)?$)",
+    "increaseIndentPattern": "(?:^\\s*(?:(?:async\\s+)?(?:class|def|if|elif|else|for|while|try|except|finally|with|match|case)\\b|[)\\]])(?:[^#\"'\\\\:]++|\\\\.|(?:\"(?:[^\"\\\\]++|\\\\.)*+\"|'(?:[^'\\\\]++|\\\\.)*+')|:(?!\\s*(?:#.*)?$))*+:\\s*(?:#.*)?$|^(?:[^#\"'\\\\\\{\\[\\(]++|\\\\.|(?:\"(?:[^\"\\\\]++|\\\\.)*+\"|'(?:[^'\\\\]++|\\\\.)*+')|[\\{\\[\\(](?!\\s*(?:#.*)?$))*+[\\{\\[\\(]\\s*(?:#.*)?$)",
     "decreaseIndentPattern": "^\\s*[\\}\\]\\)].*$"
   },
   "comments": {
@@ -86,7 +86,7 @@
   },
   "onEnterRules": [
     {
-      "beforeText": "^\\s*(?:(?:async\\s+)?(?:class|def|if|elif|else|for|while|try|except|finally|with|match|case)\\b|[)\\]])(?:[^#\"'\\\\]|\\\\.|\"(?:[^\"\\\\]|\\\\.)*\"|'(?:[^'\\\\]|\\\\.)*')*:\\s*(?:#.*)?$",
+      "beforeText": "^\\s*(?:(?:async\\s+)?(?:class|def|if|elif|else|for|while|try|except|finally|with|match|case)\\b|[)\\]])(?:[^#\"'\\\\:]++|\\\\.|(?:\"(?:[^\"\\\\]++|\\\\.)*+\"|'(?:[^'\\\\]++|\\\\.)*+')|:(?!\\s*(?:#.*)?$))*+:\\s*(?:#.*)?$",
       "action": {
         "indent": "indent"
       }
