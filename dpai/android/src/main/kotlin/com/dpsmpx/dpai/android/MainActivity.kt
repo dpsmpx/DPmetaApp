@@ -16,7 +16,8 @@ import androidx.activity.enableEdgeToEdge
  * Что пришло из своего уведомления: ссылка `dpai://…` или ответ, ждущий
  * подтверждения на экране (D-44). Экран забирает и очищает.
  */
-data class Incoming(val link: String? = null, val confirm: String? = null, val stop: Boolean = false)
+/** Что пришло в окно «AI»: ссылка, подтверждение, остановка или вкладка ([tab] — имя `AiTab`, пункт панели приложения, D-112). */
+data class Incoming(val link: String? = null, val confirm: String? = null, val stop: Boolean = false, val tab: String? = null)
 
 /** Единственная activity: экраны — Compose (D-34), данные — контроллер или демо (D-35). */
 class MainActivity : ComponentActivity() {
@@ -32,6 +33,7 @@ class MainActivity : ComponentActivity() {
             OPEN -> intent.getStringExtra(EXTRA_LINK)?.let { incoming.value = Incoming(link = it) }
             CONFIRM -> intent.getStringExtra(EXTRA_URI)?.let { incoming.value = Incoming(confirm = it) }
             STOP_CONFIRM -> incoming.value = Incoming(stop = true)
+            OPEN_TAB -> intent.getStringExtra(EXTRA_TAB)?.let { incoming.value = Incoming(tab = it) }
         }
     }
 
@@ -88,6 +90,17 @@ class MainActivity : ComponentActivity() {
         const val STOP_CONFIRM = "com.dpsmpx.dpai.CONFIRM_STOP"
         const val EXTRA_LINK = "link"
         const val EXTRA_URI = "uri"
+
+        /** Вкладка «AI» с пункта левой панели приложения (`DPmetaApp:D-112`): IDE — «Файлы». */
+        const val OPEN_TAB = "com.dpsmpx.dpai.OPEN_TAB"
+        const val EXTRA_TAB = "tab"
+
+        /** Окно «AI» на вкладке [tab]: уже открытое выходит вперёд, второго нет (UX-1). */
+        fun tab(context: Context, tab: com.dpsmpx.dpai.ui.AiTab): Intent =
+            internal(context).setAction(OPEN_TAB).putExtra(EXTRA_TAB, tab.name).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+
+        /** Пункт «IDE» левой панели приложения: «Файлы» — дерево, редактор и терминал проекта. */
+        fun ide(context: Context): Intent = tab(context, com.dpsmpx.dpai.ui.AiTab.FILES)
 
         /** Намерение во внутренний вход экрана — для своих `PendingIntent`. */
         fun internal(context: Context): Intent = Intent().setClassName(context, INTERNAL_ENTRY)

@@ -103,28 +103,37 @@ object Screens {
         syncHealth = s.syncHealth.orNull()?.let { "$it % источников" } ?: UNKNOWN,
     )
 
-    // --- Панель пульта (D-73) ---
+    // --- Левая панель приложения (D-112; прежде — нижняя панель D-73) ---
 
-    /** Пункты панели пульта со своими экранами; «AI» — не пункт, а вход в подсистему (D-53). */
-    enum class Section(val title: String) { SUMMARY("Сводка"), DEV("Разработка"), STATS("Статистика"), MORE("Ещё") }
+    /** Разделы пульта со своими экранами; графиков нет (D-112): «Статистика» убрана, сводка — числами. */
+    enum class Section(val title: String) { SUMMARY("Сводка"), DEV("Проекты"), MORE("Настройки") }
 
-    /** Вкладки сверху «Разработки» (D-73): проекты и вопросы автору; позже — PR (F-11). */
+    /** Вкладки раздела «Проекты» — в верхней панели (D-113): проекты, PR (F-11), вопросы автору. */
     enum class DevTab(val title: String) { PROJECTS("Проекты"), PULLS("PR"), QUESTIONS("Вопросы") }
 
     /**
-     * Пункты панели по порядку (D-73) — по нему рисует экран: `null` — вход
-     * «AI» перед «Ещё», если подсистема есть. С «Соцсетями» — шесть.
+     * Пункт левой панели: раздел пульта или вход в окно «AI» ([section] `null`):
+     * IDE — «AI» на вкладке «Файлы», AI — окно «AI» (D-53, D-112).
      */
-    fun panelItems(ai: Boolean): List<Section?> = Section.entries.flatMap { if (it == Section.MORE && ai) listOf(null, it) else listOf(it) }
+    enum class Entry(val title: String, val section: Section?) {
+        SUMMARY("Сводка", Section.SUMMARY),
+        PROJECTS("Проекты", Section.DEV),
+        IDE("IDE", null),
+        AI(AI_TITLE, null),
+        SETTINGS("Настройки", Section.MORE),
+    }
 
-    /** Подписи панели — для снимка (D-73). */
-    fun panel(ai: Boolean): List<String> = panelItems(ai).map { it?.title ?: AI_TITLE }
+    /** Пункты левой панели по порядку; без подсистемы «AI» — без IDE и AI. */
+    fun panelItems(ai: Boolean): List<Entry> = Entry.entries.filter { ai || it.section != null }
+
+    /** Подписи панели — для снимка. */
+    fun panel(ai: Boolean): List<String> = panelItems(ai).map { it.title }
 
     /** Подпись входа в подсистему «AI» на панели (D-53). */
     const val AI_TITLE = "AI"
 
     /** Куда ведёт касание плитки сводки (UX-6; ТЗ, F-04: «каждая плитка ведёт на свой экран»). */
-    enum class Goes(val title: String) { PROJECTS("Проекты"), PULLS("PR"), QUESTIONS("Вопросы"), SYNC("Ещё") }
+    enum class Goes(val title: String) { PROJECTS("Проекты"), PULLS("PR"), QUESTIONS("Вопросы"), SYNC("Настройки") }
 
     /** Плитка сводки: [metric] — ряд истории для изменения и спарклайна (F-34), нет — без них. */
     data class Tile(val title: String, val value: String, val goes: Goes, val metric: String? = null)

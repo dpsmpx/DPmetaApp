@@ -149,6 +149,9 @@ open class PultActivity : ComponentActivity() {
     /** Вход в «AI» со строки сводки (D-76): [requests] — сразу на «Запросы». */
     protected open fun aiIntent(requests: Boolean): Intent? = aiIntent()
 
+    /** Пункт «IDE» левой панели (D-112): окно «AI» на «Файлах»; нет подсистемы — пункта нет. */
+    protected open fun ideIntent(): Intent? = null
+
     /**
      * Числа строки «AI» на сводке (D-76) — их даёт оболочка `:shell`;
      * `null` — строки нет. Вызывается не на главном потоке.
@@ -413,7 +416,7 @@ open class PultActivity : ComponentActivity() {
             PultTheme {
                 PultApp(
                     view.value, loader, onSync = ::sync, onSaveToken = ::saveToken, onForgetToken = ::forgetToken,
-                    onAi = ai, onExport = ::export,
+                    onAi = ai, onIde = ideIntent()?.let { i -> { startActivity(i) } }, onExport = ::export,
                     onClones = { withToken { token -> if (token != null) askClones(token, first = false) } }, onClonesChosen = ::clonesChosen,
                     onCancelSync = {
                         repo.cancelClones()

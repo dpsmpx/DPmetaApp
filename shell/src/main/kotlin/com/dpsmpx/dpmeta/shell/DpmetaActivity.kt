@@ -37,6 +37,9 @@ class DpmetaActivity : PultActivity() {
     // Со строки «AI»: ждут ответа — сразу на «Запросы» (D-76).
     override fun aiIntent(requests: Boolean): Intent = lastAi?.request?.takeIf { requests }?.let { AiSummary.open(this, it) } ?: aiIntent()
 
+    // Пункт «IDE» левой панели (D-112): окно «AI» на «Файлах» — дерево, редактор, терминал проекта.
+    override fun ideIntent(): Intent = MainActivity.ide(this)
+
     override fun aiVersion(): String = com.dpsmpx.dpai.android.BuildConfig.DPAI_VERSION
 
     /** Строки пульта — в журнал приложения подсистемы «AI» (D-39: один журнал отладки на приложение; там же Redactor). */

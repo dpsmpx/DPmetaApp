@@ -81,6 +81,8 @@ CORE_DECL = re.compile(r"^[ \t]*(?:(?:public|internal|private|sealed|data|value|
 # стал первым сегментом таких имён (D-43); срезы docs/audits/ задним числом не правятся.
 NOT_PATHS = {
     "dpmeta/docs-sync": "имя ветки DPmeta в срезе docs/audits/2026-10-10-ecosystem.md, не путь",
+    "app/src/main/kotlin/com/dpsmpx/dpmeta/app/ui/StatsUi.kt":
+        "экран графиков убран по D-112; срез docs/audits/2026-11-05-ui-ux.md задним числом не правится",
 }
 # Документы автора, которые он ведёт сам (через веб-интерфейс): форма текста не проверяется,
 # чтобы не править их ради проверки (D-25).
