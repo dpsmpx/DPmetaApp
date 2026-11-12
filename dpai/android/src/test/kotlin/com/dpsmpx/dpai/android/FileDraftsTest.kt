@@ -7,6 +7,24 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class FileDraftsTest {
+    @Test fun restoredEditFlagCannotTurnTemporaryPreviewIntoAnUnsavedEditor() {
+        val key = "file:restored-mode-test"
+        val preview = com.dpsmpx.dpai.ui.CodeEditorBuffer("on disk")
+        try {
+            val beforeRestart = Drafts.startFile(key, "on disk".toByteArray(), "on disk")!!
+            Drafts.dropFile(key, beforeRestart)
+            val restored = editorDocumentBinding(Drafts.file(key), preview, requestedEditing = true)!!
+            kotlin.test.assertFalse(restored.editing)
+            kotlin.test.assertSame(preview, restored.buffer)
+            val draft = Drafts.startFile(key, "on disk".toByteArray(), "on disk")!!
+            val editable = editorDocumentBinding(draft, preview, requestedEditing = true)!!
+            assertTrue(editable.editing)
+            editable.buffer.edit("registered", EditorSelection(10))
+            assertEquals("registered", Drafts.file(key)?.editor?.text)
+            assertEquals("on disk", preview.text)
+        } finally { Drafts.dropFile(key) }
+    }
+
     @Test fun inputArrivingDuringSaveRemainsDirtyWithTheNewBaseline() {
         val key = "file:save-new-input-test"
         try {

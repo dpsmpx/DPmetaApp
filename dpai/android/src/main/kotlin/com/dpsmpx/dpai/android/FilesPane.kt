@@ -642,15 +642,17 @@ private fun TreeFileContent(tree: FileTree, treeKey: String, path: String, readO
         error?.let { Text(it, Modifier.padding(8.dp), color = MaterialTheme.colorScheme.error) }
         val source = text
         val preview = remember(source) { source?.let { com.dpsmpx.dpai.ui.CodeEditorBuffer(it) } }
-        val buffer = draft?.editor ?: preview
+        val binding = editorDocumentBinding(draft, preview, editing)
+        val buffer = binding?.buffer
+        val documentEditing = binding?.editing == true
         when {
             buffer != null -> Clipboard.Sensitive {
                 CodeEditor(buffer, path, revision, onChange = { revision++; status = null; if (draft != null) Drafts.changed(draftKey) },
-                    enabled = editing && recovery.ready && !readOnly && !saving,
+                    enabled = documentEditing && recovery.ready && !readOnly && !saving,
                     modifier = Modifier.weight(1f).fillMaxWidth(), callbacks = callbacks, guestPath = guestPath, guestRoot = guestRoot,
-                    presentation = true, editing = editing, onActivate = if (!readOnly && recovery.ready && !saving) ({
-                        if (!editing) {
-                            val started = draft ?: Drafts.startFile(draftKey, original ?: byteArrayOf(), source.orEmpty(), guestPath)
+                    presentation = true, editing = documentEditing, onActivate = if (!readOnly && recovery.ready && !saving && (draft != null || !loading)) ({
+                        if (!documentEditing) {
+                            val started = draft ?: original?.let { Drafts.startFile(draftKey, it, source.orEmpty(), guestPath) }
                             if (started == null) issue(Drafts.startFailure(draftKey)) else {
                                 if (draft == null) started.editor.select(buffer.state.selection.start, buffer.state.selection.end)
                                 draft = started; editing = true
